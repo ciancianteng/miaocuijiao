@@ -43,6 +43,7 @@
     cards.forEach(function (card) {
       var icon = card.querySelector("i, .feature-icon, .quick-icon, .stat-icon, .service-icon, .entry-icon");
       if (!icon) return;
+      if (card.matches(".quick-entry-card") && icon.querySelector("img")) return;
       normalizeIconSlot(icon, pickIconKey(card.textContent || ""));
     });
   }

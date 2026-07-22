@@ -61,7 +61,7 @@
     return tags.map(function (tag) { return "<span>" + esc(tag) + "</span>"; }).join("");
   }
   function emptyCard(text) {
-    return '<article class="neon-card companion-card hot-card mcj-empty-card"><div class="hot-info"><h3>' + esc(text || "暂时还没有陪玩入驻。") + '</h3><p>欢迎符合条件的玩家提交申请。</p><a class="mini-order" href="companion-apply.html">申请成为陪玩</a></div></article>';
+    return '<article class="neon-card companion-card hot-card mcj-empty-card"><div class="hot-info"><h3>' + esc(text || "暂时还没有陪玩入驻，敬请期待。") + '</h3></div></article>';
   }
   function companionCardHtml(item, rank) {
     var cover = item.cover || item.cardCover || item.image || "";
@@ -90,7 +90,7 @@
     if (!track) return;
     var items = sorted(companions || []).slice(0, 3);
     track.dataset.ready = "";
-    if (!items.length) { track.innerHTML = emptyCard("暂时还没有陪玩入驻。"); return; }
+    if (!items.length) { track.innerHTML = emptyCard("暂时还没有陪玩入驻，敬请期待。"); return; }
     track.innerHTML = items.map(companionCardHtml).join("") +
       '<a class="neon-card companion-card hot-card hot-more-card" href="' + esc(options.moreHref || "companion-center.html") + '"><div class="hot-more-inner"><span>MORE</span><strong>更多</strong><p>' + esc(options.moreDesc || "进入陪玩大厅") + '</p></div></a>';
   }

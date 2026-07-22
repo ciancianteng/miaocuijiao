@@ -159,8 +159,8 @@
     document.head.appendChild(style);
   }
 
-  function quickButton(title, subtitle, action, icon) {
-    return '<button class="neon-card quick-entry-card" type="button" ' + action + '><i>' + icon + '</i><div><strong>' + title + '</strong><span>' + subtitle + '</span></div></button>';
+  function quickButton(title, subtitle, action, iconSrc) {
+    return '<button class="neon-card quick-entry-card" type="button" ' + action + '><i><img src="' + iconSrc + '" alt=""></i><div><strong>' + title + '</strong><span>' + subtitle + '</span></div></button>';
   }
 
   function rebuildHomeQuickEntries() {
@@ -173,13 +173,11 @@
     grid.dataset.launchQuickReady = "1";
     grid.classList.add("launch-entry-grid");
     grid.innerHTML = [
-      quickButton("自定义订单", "填写需求，客服匹配陪玩", 'data-href="custom-order.html"', "📝"),
-      quickButton("更多玩法", "护航、跑刀、代肝、趣味单", 'data-href="more-gameplays.html"', '<img src="assets/quick-more-play-plus.png" alt="">'),
-      quickButton("陪玩大厅", "挑选认证陪玩，立即下单", 'data-href="companion-center.html"', "🎮"),
-      quickButton("语音大厅", "语音陪伴、聊天、挂房", 'data-href="companion-center.html?service=voice"', "🎧"),
-      quickButton("组队大厅", "后台配置后开放组队入口", 'data-team-lobby="true"', "🔗"),
-      quickButton("充值中心", "人工审核充值，安全入账", 'data-href="mine.html#recharge"', "💎"),
-      quickButton("活动中心", "查看平台活动与福利", 'data-href="activities.html"', "🎁")
+      quickButton("自定义订单", "填写需求，客服匹配陪玩", 'data-href="custom-order.html"', "assets/icon-home-custom-order.svg"),
+      quickButton("更多玩法", "护航、跑刀、代肝、趣味单", 'data-href="more-gameplays.html"', "assets/icon-home-more-play.svg"),
+      quickButton("陪玩大厅", "浏览已上架陪玩", 'data-href="companion-center.html"', "assets/icon-home-companion-hall.svg"),
+      quickButton("组队大厅", "进入组队社区", 'data-team-lobby="true"', "assets/icon-home-team-lobby.svg"),
+      quickButton("充值中心", "查看充值与余额", 'data-href="miao-coin.html"', "assets/icon-home-recharge.svg")
     ].join("");
   }
 

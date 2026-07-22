@@ -67,7 +67,8 @@
         card.remove();
         return;
       }
-      setText(card.querySelector("i"), item[0]);
+      var icon = card.querySelector("i");
+      if (icon && !icon.querySelector("img,svg")) setText(icon, item[0]);
       setText(card.querySelector("strong"), item[1]);
       setText(card.querySelector("span"), item[2]);
     });

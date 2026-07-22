@@ -66,7 +66,7 @@
       alt: config.alt || config.title || "MEOW CUI JIAO Banner",
       fitMode: config.fitMode === "cover" ? "cover" : "contain",
       objectPosition: config.objectPosition || "50% 50%",
-      desktopHeight: clamp(config.desktopHeight, 300, 380, 340),
+      desktopHeight: clamp(config.desktopHeight, 280, 360, 320),
       mobileHeight: clamp(config.mobileHeight, 150, 260, 190),
       maxWidth: clamp(config.maxWidth, 960, 1200, 1200),
       radius: clamp(config.radius, 18, 24, 20),
@@ -107,6 +107,10 @@
       (total > 1 ? '<button class="mcj-hero-arrow prev" type="button" data-hero-prev aria-label="上一张"></button><button class="mcj-hero-arrow next" type="button" data-hero-next aria-label="下一张"></button><div class="mcj-hero-dots">' + dots + '</div>' : "");
   }
 
+  function emptyHeroHtml() {
+    return '<div class="mcj-hero-empty" role="status"><strong>暂无启用 Banner</strong><span>后台上传并启用 Banner 后会在这里显示。</span></div>';
+  }
+
   function renderNotice(announcements) {
     var notice = document.querySelector(".announcement-strip");
     var span = notice && notice.querySelector("span");
@@ -117,11 +121,21 @@
       return;
     }
     notice.hidden = false;
-    span.textContent = announcements.join("　·　");
+    span.textContent = announcements.join(" · ");
   }
 
   function clearGeneratedHeroExtras() {
     document.querySelectorAll(".mcj-hero-below-actions,.mcj-hero-notice").forEach(function (node) { node.remove(); });
+  }
+
+  function renderEmpty(root, data, device, announcements) {
+    root.hidden = false;
+    root.classList.add("mcj-home-hero", "is-empty");
+    root.dataset.heroIndex = "0";
+    applyVars(root, data || normalized({}), device || "desktop");
+    root.innerHTML = emptyHeroHtml();
+    renderNotice(announcements || []);
+    return null;
   }
 
   function render(target, config, options) {
@@ -130,27 +144,18 @@
     clearGeneratedHeroExtras();
     var banners = Array.isArray(config) ? config : (config ? [config] : activeBanners());
     var announcements = getAnnouncements();
-    if (!banners.length) {
-      root.hidden = true;
-      root.innerHTML = "";
-      renderNotice(announcements);
-      return null;
-    }
+    if (!banners.length) return renderEmpty(root, normalized({}), "desktop", announcements);
     var device = (options && options.device) || (window.matchMedia && window.matchMedia("(max-width: 640px)").matches ? "mobile" : "desktop");
     var current = Number(root.dataset.heroIndex || 0);
     if (options && Number.isFinite(Number(options.index))) current = Number(options.index);
     current = Math.max(0, Math.min(banners.length - 1, current));
     var data = normalized(banners[current]);
     var source = sourceFor(data, device);
-    if (!source) {
-      root.hidden = true;
-      root.innerHTML = "";
-      renderNotice(announcements);
-      return null;
-    }
+    if (!source) return renderEmpty(root, data, device, announcements);
     root.hidden = false;
     root.dataset.heroIndex = String(current);
     root.classList.add("mcj-home-hero");
+    root.classList.remove("is-empty");
     applyVars(root, data, device);
     root.innerHTML = heroHtml(data, source, current, banners.length);
     renderNotice(announcements);
