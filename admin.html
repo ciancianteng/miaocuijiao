@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>超级管理员总后台 · MEOW CUI JIAO</title>
+  <link rel="stylesheet" href="src/admin-suite.css">
+</head>
+<body data-allowed-roles="super_admin" data-default-role="super_admin">
+  <main class="admin-shell">
+    <aside class="admin-sidebar">
+      <div class="admin-brand">
+        <div class="admin-logo">🐾</div>
+        <div><h1>超级管理员总后台</h1><p>平台方 / 创办人最高权限，统一查看老板、陪玩、订单、财务和运营。</p></div>
+      </div>
+      <nav class="admin-nav">
+        <button class="active" data-section="dashboard">数据中心 <small>Dashboard</small></button>
+        <button data-section="bosses">老板资料 <small>Boss Info</small></button>
+        <button data-section="players">陪玩资料 <small>Player Info</small></button>
+        <button data-section="orders">订单管理 <small>Orders</small></button>
+        <button data-section="finance">财务中心 <small>Finance</small></button>
+        <button data-section="withdraw">提现审核 <small>Withdraw</small></button>
+        <button data-section="clubs">俱乐部管理 <small>Clubs</small></button>
+        <button data-section="rebates">邀请返利 <small>Rebate</small></button>
+        <button data-section="service">客服管理 <small>Service</small></button>
+        <button data-section="staff">员工管理 <small>Staff</small></button>
+        <button data-section="support-payroll">客服工资中心 <small>Payroll</small></button>
+        <button data-section="home">首页运营设置 <small>Home Ops</small></button>
+        <button data-section="reviews">评论管理 <small>Reviews</small></button>
+        <button data-section="games">游戏管理 <small>Games</small></button>
+        <button data-section="vip">VIP管理 <small>VIP</small></button>
+        <button data-section="payment">支付中心 <small>Payment</small></button>
+        <button data-section="messages">消息中心 <small>Messages</small></button>
+        <button data-section="settings">平台设置 <small>Settings</small></button>
+        <button data-section="logs">操作日志 <small>Logs</small></button>
+      </nav>
+      <div class="sidebar-footer">
+        <button class="btn primary" data-preview-home>预览首页</button>
+        
+      </div>
+    </aside>
+
+    <section class="admin-main">
+      <header class="admin-topbar">
+        <div class="page-title"><h2>MEOW CUI JIAO 平台总管理</h2><p>admin.html 是最高权限后台：老板资料、陪玩资料、订单、充值、提现、返利、邀请关系全部在这里看。</p></div>
+        <div class="top-actions"><span class="role-pill">SUPER ADMIN</span></div>
+      </header>
+
+      <section class="section active" id="section-dashboard">
+        <div id="superStats"></div>
+        <div class="card"><div class="card-head"><div><h3>最高权限说明</h3><p>老板后台和陪玩后台功能已合并进超级管理员总后台；超级管理员在这里拥有全部数据查看和管理权限。</p></div></div><div class="notice">预留数据表：users、clubs、players、orders、wallets、wallet_transactions、recharge_requests、withdraw_requests、reviews、games、banners、announcements、admin_logs、role_permissions。</div></div>
+        <div class="card"><div class="card-head"><div><h3>老板资料总览</h3><p>超级管理员可直接查看全部老板资料、充值记录、订单记录和邀请关系。</p></div><button class="btn primary" data-section="bosses">进入老板管理</button></div><div id="table-dashboard-bosses"></div></div>
+        <div class="card"><div class="card-head"><div><h3>陪玩资料总览</h3><p>超级管理员可直接查看全部陪玩资料、审核资料、结款账户、接单状态和收入提现。</p></div><button class="btn primary" data-section="players">进入陪玩管理</button></div><div id="table-dashboard-players"></div></div>
+      </section>
+
+      <section class="section" id="section-bosses">
+        <div class="card"><div class="card-head"><div><h3>老板资料</h3><p>查看老板完整资料、充值记录、订单记录、邀请关系。</p></div><button class="btn primary" data-action="create-boss">新增老板</button></div><div class="admin-search"><input data-table-search="table-bosses" placeholder="搜索老板昵称 / UID / 手机号 / VIP / 俱乐部 / 状态"><span>输入关键词自动筛选</span></div><div id="table-bosses"></div></div>
+      </section>
+
+      <section class="section" id="section-players">
+        <div class="card"><div class="card-head"><div><h3>陪玩资料</h3><p>查看身份证资料、自拍认证、结款银行账户、审核状态、收入和提现。</p></div><button class="btn primary" data-action="create-player">新增陪玩</button></div><div class="admin-search"><input data-table-search="table-players" placeholder="搜索陪玩昵称 / UID / 电话 / 游戏 / 审核状态 / 俱乐部"><span>输入关键词自动筛选</span></div><div id="table-players"></div></div>
+      </section>
+
+      <section class="section" id="section-orders">
+        <div class="card"><div class="card-head"><div><h3>订单管理</h3><p>全部订单、待付款、待接单、进行中、已完成、退款、异常订单。</p></div></div><div id="table-orders"></div></div>
+      </section>
+
+      <section class="section" id="section-finance">
+        <div class="grid-2"><div class="card"><h3>财务中心</h3><p>充值、消费、喵币流水、平台抽成、老板钱包、陪玩钱包。</p><div id="table-wallet_transactions"></div></div><div class="card"><h3>钱包总览</h3><p>用户钱包、陪玩钱包、俱乐部钱包。</p><div id="table-wallets"></div></div></div>
+      </section>
+
+      <section class="section" id="section-withdraw">
+        <div class="card"><div class="card-head"><div><h3>提现审核</h3><p>查看待处理提现，审核通过或拒绝，保留记录。</p></div></div><div id="table-withdraw_requests"></div></div>
+      </section>
+
+      <section class="section" id="section-clubs">
+        <div class="card"><div class="card-head"><div><h3>俱乐部管理</h3><p>审核俱乐部、冻结俱乐部、查看俱乐部营业额。</p></div><button class="btn primary" data-action="create-club">新增俱乐部</button></div><div id="table-clubs"></div></div>
+      </section>
+
+      <section class="section" id="section-rebates">
+        <div class="card"><div class="card-head"><div><h3>邀请返利</h3><p>查看邀请关系、邀请人数、返利金额、返利状态。</p></div></div><div id="table-invite_rebates"></div></div>
+      </section>
+
+      <section class="section" id="section-service">
+        <div class="card"><div class="card-head"><div><h3>客服管理</h3><p>客服链接、问题工单、处理状态、客服备注。</p></div><button class="btn primary" data-action="create-ticket">新增工单</button></div><div id="table-customer_tickets"></div></div>
+      </section>
+
+      <section class="section" id="section-staff">
+        <div class="card">
+          <div class="card-head"><div><h3>员工管理 · 班次设置</h3><p>设置客服姓名、上下班时间、休息日、底薪、全勤奖金和迟到早退扣款规则。</p></div><button class="btn primary" data-action="create-support-staff">新增客服</button></div>
+          <div class="notice">打卡规则：上班后 5 分钟内正常，超过算迟到；未到下班时间打卡算早退；缺勤、补卡和工资调整都会记录到管理员日志。</div>
+          <div class="admin-search"><input data-table-search="table-support_staff" placeholder="搜索客服姓名 / 班次 / 底薪 / 休息日"><span>输入关键词自动筛选</span></div>
+          <div id="table-support_staff"></div>
+        </div>
+      </section>
+
+      <section class="section" id="section-support-payroll">
+        <div class="card">
+          <div class="card-head"><div><h3>客服工资中心</h3><p>客服不按订单抽成，按底薪 + 工单绩效 + 审核绩效 + 满意度奖金计算。</p></div><button class="btn primary" data-action="create-support-payroll">新增工资记录</button></div>
+          <div id="supportPayrollStats"></div>
+          <div class="grid-2">
+            <div class="mini-card"><h4>推荐工资规则</h4><p>底薪 RM150/月；工单 RM0.30；投诉 RM1；充值审核 RM0.20；提现审核 RM0.30；满意度 4.8⭐ 以上奖金 RM20-100；全勤 RM20。</p></div>
+            <div class="mini-card"><h4>权限边界</h4><p>客服只看工单、举报、授权审核、客服聊天、工资中心和公告；不能看平台总营业额、API Key、财务总数据和管理员设置。</p></div>
+          </div>
+          <div class="admin-search"><input data-table-search="table-support_salary_records" placeholder="搜索客服 / 项目 / 状态 / 日期"><span>输入关键词自动筛选</span></div>
+          <div id="table-support_salary_records"></div>
+        </div>
+      </section>
+
+      <section class="section" id="section-home">
+        <div class="grid-2"><div class="card"><div class="card-head"><div><h3>首页运营设置</h3><p>Banner、广告位、公告、推荐陪玩、排行榜、热门游戏、模块显示隐藏。</p></div></div><div id="crud-banners"></div></div><div class="card"><h3>推荐与公告</h3><p>运营推荐、热门游戏、公告轮播。</p><div id="crud-players"></div><hr style="border-color:rgba(246,174,210,.12);margin:16px 0"><div id="crud-announcements"></div></div></div>
+      </section>
+
+      <section class="section" id="section-reviews"><div class="card"><div class="card-head"><div><h3>评论管理</h3><p>查看评价、隐藏违规评价、举报处理，不建议直接删除。</p></div></div><div id="table-reviews"></div></div></section>
+      <section class="section" id="section-games"><div class="card"><div class="card-head"><div><h3>游戏管理</h3><p>新增游戏、游戏 Logo、排序、显示隐藏。</p></div><button class="btn primary" data-action="create-game">新增游戏</button></div><div id="table-games"></div></div></section>
+      <section class="section" id="section-vip"><div class="card"><h3>VIP管理</h3><p>VIP等级、折扣、图标、权益。</p><div class="grid-3"><div class="mini-card"><h4>VIP1</h4><p>下单 98 折、基础徽章。</p><button class="btn small">编辑权益</button></div><div class="mini-card"><h4>VIP2</h4><p>下单 95 折、专属头像框、优先活动。</p><button class="btn small">编辑权益</button></div><div class="mini-card"><h4>VIP3</h4><p>下单 92 折、优先客服、生日奖励。</p><button class="btn small">编辑权益</button></div></div></div></section>
+      <section class="section" id="section-payment"><div class="card"><h3>支付中心</h3><p>支付方式、API Key 占位、Webhook 状态、支付日志。</p><div class="grid-3"><label>Touch n Go API Key<input placeholder="sk_test_..."></label><label>FPX Merchant ID<input placeholder="merchant_xxx"></label><label>Webhook 状态<select><option>正常</option><option>关闭</option></select></label></div><div class="form-actions"><button class="btn primary" data-action="save-payment">保存支付设置</button><button class="btn" data-action="test-webhook">测试 Webhook</button></div></div></section>
+      <section class="section" id="section-messages"><div class="card"><h3>消息中心</h3><p>系统公告、站内信、订单通知。</p><div id="table-announcements"></div></div></section>
+      <section class="section" id="section-settings"><div class="card"><div class="card-head"><div><h3>平台设置</h3><p>网站名称、Logo、客服链接、维护模式、注册开关、SEO 设置。</p></div><button class="btn primary" data-save-settings>保存设置</button></div><div class="grid-2"><label>网站名称<input id="siteName" value="MEOW CUI JIAO 妙脆角电竞"></label><label>Logo 地址<input id="logoUrl" placeholder="assets/logo.png"></label><label>客服链接<input id="customerServiceUrl" placeholder="customer-service.html"></label><label>Discord 邀请链接<input id="discordInviteUrl" placeholder="https://discord.gg/..."></label><label>WhatsApp 链接<input id="whatsappUrl" placeholder="https://wa.me/..."></label><label>维护模式<select id="maintenanceMode"><option>关闭</option><option>开启</option></select></label><label>注册开关<select id="registerOpen"><option>开启</option><option>关闭</option></select></label><label>SEO标题<input id="seoTitle" value="妙脆角电竞陪玩平台"></label></div></div></section>
+      <section class="section" id="section-logs"><div class="card"><div class="card-head"><div><h3>管理员操作日志</h3><p>记录谁修改了什么。</p></div></div><div id="table-admin_logs"></div></div></section>
+    </section>
+  </main>
+  <script src="src/admin-suite.js"></script>
+</body>
+</html>
+

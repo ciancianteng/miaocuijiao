@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.sites-package/
+.tools/
+*.log
+*.tar
+.DS_Store

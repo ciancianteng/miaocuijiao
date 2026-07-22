@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MEOW CUI JIAO GAMING CLUB</title>
+  <style>
+    :root{
+      --bg:#050406;
+      --panel:rgba(18,12,24,.78);
+      --panel-strong:rgba(27,16,34,.9);
+      --pink:#f3a8cb;
+      --pink-soft:#ffdceb;
+      --hot:#ff6fb4;
+      --purple:#8d72ff;
+      --text:#fff5fa;
+      --muted:#bfaebb;
+      --line:rgba(243,168,203,.28);
+      --glow:0 0 28px rgba(243,168,203,.16),0 18px 58px rgba(0,0,0,.42);
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:radial-gradient(circle at 18% 8%,rgba(243,168,203,.16),transparent 28%),radial-gradient(circle at 82% 22%,rgba(141,114,255,.12),transparent 28%),var(--bg);color:var(--text);font-family:Inter,Arial,"Microsoft YaHei",sans-serif;overflow-x:hidden}
+    a{color:inherit;text-decoration:none}button{font:inherit}
+    .site-header{background:rgba(5,4,6,.9);border-bottom:1px solid rgba(243,168,203,.16);backdrop-filter:blur(16px)}
+    .header-inner{max-width:1200px;margin:0 auto;min-height:72px;padding:0 24px;display:flex;align-items:center;justify-content:space-between;gap:24px}
+    .brand{display:flex;align-items:center;gap:12px;font-weight:1000;color:var(--pink-soft);white-space:nowrap}
+    .live2d-avatar{position:relative;width:56px;height:56px;border-radius:50%;display:grid;place-items:center;background:radial-gradient(circle at 50% 35%,rgba(255,220,235,.24),rgba(243,168,203,.04));border:1px solid rgba(255,220,235,.42);box-shadow:0 0 24px rgba(243,168,203,.24),inset 0 0 14px rgba(255,255,255,.08);animation:logoBreath 2.8s ease-in-out infinite;flex:0 0 auto}
+    .live2d-avatar img{width:48px;height:48px;border-radius:50%;object-fit:cover;display:block}.live2d-avatar i{position:absolute;inset:-5px;border-radius:50%;border:1px solid rgba(243,168,203,.30);animation:logoRing 3.8s linear infinite}.brand small{display:block;margin-top:2px;color:var(--pink);font-size:11px;letter-spacing:.1em}@keyframes logoBreath{0%,100%{transform:translateY(0) scale(1)}50%{transform:translateY(-2px) scale(1.035)}}@keyframes logoRing{to{transform:rotate(360deg)}}
+    .top-actions{display:flex;align-items:center;gap:16px}.top-actions button{height:40px;border-radius:999px;border:1px solid var(--line);background:rgba(255,255,255,.035);color:var(--text);padding:0 16px;font-weight:950;cursor:pointer}.top-actions .login{background:linear-gradient(180deg,#ffe2ef,#e7a0c4);color:#1b0712;border:0}
+    .container{max-width:1200px;margin:0 auto;padding:24px}
+    .notice-bar{margin-bottom:28px;border:1px solid rgba(243,168,203,.22);background:rgba(21,12,25,.72);border-radius:999px;padding:12px 18px;color:#ffdceb;white-space:nowrap;overflow:hidden}.notice-bar span{display:inline-block;min-width:100%;padding-left:100%;animation:noticeScroll 14s linear infinite}@keyframes noticeScroll{from{transform:translateX(0)}to{transform:translateX(-100%)}}
+    .banner{margin-bottom:24px;border-radius:20px;overflow:hidden;border:1px solid rgba(243,168,203,.24);background:#050406;box-shadow:var(--glow)}
+    .banner img{display:block;width:100%;height:auto;object-fit:contain;background:#050406}
+    .main-nav{margin:0 0 38px;display:flex;align-items:center;justify-content:center;gap:14px;flex-wrap:wrap}.main-nav a,.main-nav button{min-height:44px;padding:0 22px;border-radius:999px;border:1px solid var(--line);background:rgba(255,255,255,.04);color:#fbe8f2;font-weight:1000;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;transition:.2s ease}.main-nav a:hover,.main-nav button:hover{transform:translateY(-2px);box-shadow:0 0 22px rgba(243,168,203,.18);border-color:rgba(255,220,235,.52)}.main-nav .primary{border:0;background:linear-gradient(180deg,#ffe2ef,#f0a7ca);color:#190812;box-shadow:0 0 24px rgba(243,168,203,.28)}
+    .section{margin-bottom:46px}.grid{display:grid;gap:24px}.live-stats{grid-template-columns:repeat(4,1fr)}
+    .neon-card{position:relative;overflow:hidden;border-radius:24px;border:1px solid var(--line);background:linear-gradient(145deg,rgba(255,255,255,.07),rgba(255,255,255,.025) 40%,rgba(243,168,203,.08)),var(--panel);box-shadow:var(--glow);transition:transform .22s ease,border-color .22s ease,box-shadow .22s ease}.neon-card:before{content:"";position:absolute;inset:-1px;border-radius:inherit;background:radial-gradient(circle at 20% 10%,rgba(255,220,235,.22),transparent 26%),radial-gradient(circle at 86% 90%,rgba(255,111,180,.20),transparent 30%);pointer-events:none}.neon-card:hover{transform:translateY(-6px);border-color:rgba(255,220,235,.64);box-shadow:0 0 36px rgba(243,168,203,.24),0 22px 68px rgba(0,0,0,.50)}
+    .stat-card{min-height:132px;padding:22px;display:flex;align-items:center;justify-content:space-between;gap:16px;cursor:pointer}.stat-copy{position:relative;z-index:1}.stat-card span{display:block;color:var(--muted);font-size:13px;font-weight:950}.stat-card strong{display:block;margin-top:5px;font-size:44px;line-height:1;color:#fff}.stat-card b{display:block;margin-top:8px;color:var(--pink);font-size:13px;letter-spacing:.16em}.stat-icon{position:relative;z-index:1;width:58px;height:58px;border-radius:20px;display:grid;place-items:center;background:rgba(243,168,203,.13);border:1px solid rgba(243,168,203,.28);font-size:28px;box-shadow:inset 0 0 18px rgba(255,220,235,.08)}
+    .feature-row{grid-template-columns:repeat(3,1fr)}.feature-card{min-height:190px;padding:26px;display:flex;flex-direction:column;justify-content:space-between}.feature-head{position:relative;z-index:1;display:flex;align-items:flex-start;gap:16px}.feature-icon{width:58px;height:58px;border-radius:20px;display:grid;place-items:center;background:rgba(255,220,235,.12);border:1px solid rgba(243,168,203,.28);font-size:28px}.feature-card h3{margin:0;font-size:25px}.feature-card p{margin:7px 0 0;color:var(--muted);font-weight:850}.feature-card .btn{position:relative;z-index:1;width:max-content;min-height:42px;padding:0 17px;border:0;border-radius:999px;background:linear-gradient(180deg,#ffe2ef,#e9a0c6);color:#1b0712;font-weight:1000;cursor:pointer}
+    .section-title{display:flex;align-items:end;justify-content:space-between;gap:16px;margin-bottom:18px}.section-title h2{margin:0;font-size:28px}.section-title p{margin:5px 0 0;color:var(--muted)}
+    .order-strip{display:flex;gap:20px;overflow-x:auto;padding:4px 2px 18px;scroll-snap-type:x mandatory}.order-strip::-webkit-scrollbar{height:8px}.order-strip::-webkit-scrollbar-thumb{background:rgba(243,168,203,.36);border-radius:99px}.companion-card{flex:0 0 238px;scroll-snap-align:start;padding:12px}.avatar{position:relative;height:190px;border-radius:20px;overflow:hidden;border:1px solid rgba(243,168,203,.28);background:#120d15}.avatar img{width:100%;height:100%;object-fit:cover}.online-dot{position:absolute;right:12px;top:12px;width:13px;height:13px;border-radius:50%;background:#72efb4;box-shadow:0 0 12px #72efb4}.companion-info{position:relative;z-index:1;padding:13px 4px 2px}.row{display:flex;align-items:center;justify-content:space-between;gap:8px}.companion-info h3{margin:0;font-size:19px}.price{font-weight:1000;color:var(--pink-soft)}.muted{color:var(--muted)}.mini{margin:8px 0 12px;color:var(--muted);font-size:13px}.order-btn{width:100%;height:40px;border:0;border-radius:999px;background:linear-gradient(180deg,#ffe2ef,#e9a0c6);color:#1b0712;font-weight:1000;cursor:pointer;transition:.2s ease}.order-btn:hover{transform:translateY(-2px);box-shadow:0 0 20px rgba(243,168,203,.24)}
+    .modal{position:fixed;inset:0;z-index:100;display:none;place-items:center;background:rgba(2,1,4,.76);backdrop-filter:blur(12px);padding:20px}.modal.open{display:grid}.dialog{width:min(680px,100%);max-height:84vh;overflow:auto;border:1px solid rgba(243,168,203,.34);border-radius:24px;background:linear-gradient(180deg,rgba(30,24,36,.96),rgba(9,8,13,.98));box-shadow:0 24px 90px rgba(0,0,0,.62);padding:22px}.close{float:right;width:36px;height:36px;border-radius:50%;border:1px solid rgba(243,168,203,.28);background:rgba(0,0,0,.25);color:#ffe1ef;font-size:22px;cursor:pointer}
+    @media(max-width:980px){.live-stats{grid-template-columns:repeat(2,1fr)}.feature-row{grid-template-columns:1fr}.container{padding:20px}.main-nav{justify-content:flex-start;overflow-x:auto;flex-wrap:nowrap;padding-bottom:4px}.main-nav a,.main-nav button{white-space:nowrap}.brand span{display:block}}
+    @media(max-width:560px){.header-inner{padding:0 16px}.top-actions{gap:10px}.top-actions button{padding:0 12px}.container{padding:16px}.notice-bar{margin-bottom:20px}.banner{margin-bottom:20px}.live-stats{grid-template-columns:1fr}.stat-card{min-height:118px}.stat-card strong{font-size:38px}.feature-card{min-height:168px}.section{margin-bottom:34px}.section-title{align-items:flex-start;flex-direction:column}.companion-card{flex-basis:220px}.avatar{height:176px}}
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="index.html"><span class="live2d-avatar"><img src="assets/meow-cuijiao-brand.jpg" alt="logo"><i></i></span><span>MEOW CUI JIAO<small>妙脆角电竞</small></span></a>
+      <div class="top-actions"><button class="login" data-modal="login">登录</button><button data-modal="messages">消息</button></div>
+    </div>
+  </header>
+  <main class="container">
+    <div class="notice-bar"><span>公告提醒：本周三晚 20:00 开放「三角洲行动」护航专场。</span></div>
+    <section class="banner"><img src="assets/homepage-cat-cover.png" alt="妙脆角电竞首页封面"></section>
+    <nav class="main-nav"><a href="index.html">首页</a><a href="companion-center.html">找陪玩</a><button class="primary" data-modal="order">快速下单</button><button data-modal="messages">消息</button><a href="mine.html">我的</a></nav>
+
+    <section class="section grid live-stats">
+      <a class="neon-card stat-card" href="companion-center.html?status=online"><div class="stat-copy"><span>在线陪玩</span><strong>128</strong><b>ONLINE</b></div><div class="stat-icon">🐾</div></a>
+      <a class="neon-card stat-card" href="orders.html"><div class="stat-copy"><span>今日订单</span><strong>56</strong><b>ORDERS</b></div><div class="stat-icon">🎮</div></a>
+      <a class="neon-card stat-card" href="messages.html"><div class="stat-copy"><span>正在语聊</span><strong>89</strong><b>ROOMS</b></div><div class="stat-icon">🎧</div></a>
+      <a class="neon-card stat-card" href="companion-center.html"><div class="stat-copy"><span>极速响应</span><strong>3秒</strong><b>FAST MATCH</b></div><div class="stat-icon">⚡</div></a>
+    </section>
+
+    <section class="section grid feature-row">
+      <article class="neon-card feature-card"><div class="feature-head"><div class="feature-icon">🎮</div><div><h3>立即找陪玩</h3><p>200+ 在线 · 马上开始</p></div></div><a class="btn" href="companion-center.html">马上开始</a></article>
+      <article class="neon-card feature-card"><div class="feature-head"><div class="feature-icon">👑</div><div><h3>加入陪玩</h3><p>申请成为陪玩</p></div></div><button class="btn" data-modal="join">立即申请</button></article>
+      <article class="neon-card feature-card"><div class="feature-head"><div class="feature-icon">📖</div><div><h3>新手下单教学</h3><p>30 秒学会</p></div></div><button class="btn" data-modal="guide">查看教程</button></article>
+    </section>
+
+    <section class="section">
+      <div class="section-title"><div><h2>🔥 正在接单</h2><p>真实在线感，横向滑动查看更多陪玩</p></div><a class="btn" href="companion-center.html">进入大厅</a></div>
+      <div class="order-strip">
+        <article class="neon-card companion-card"><div class="avatar"><img src="assets/meow-cuijiao-brand.jpg" alt="MOMO"><i class="online-dot"></i></div><div class="companion-info"><div class="row"><h3>MOMO</h3><span class="price">RM12/h</span></div><p class="mini">VALORANT · ⭐5.0</p><button class="order-btn" data-book>立即下单</button></div></article>
+        <article class="neon-card companion-card"><div class="avatar"><img src="assets/lianmiao-club-ad.png" alt="NANA"><i class="online-dot"></i></div><div class="companion-info"><div class="row"><h3>NANA</h3><span class="price">RM15/h</span></div><p class="mini">APEX · ⭐4.9</p><button class="order-btn" data-book>立即下单</button></div></article>
+        <article class="neon-card companion-card"><div class="avatar"><img src="assets/meow-cuijiao-brand.jpg" alt="YUKI"><i class="online-dot"></i></div><div class="companion-info"><div class="row"><h3>YUKI</h3><span class="price">RM10/h</span></div><p class="mini">CSGO · ⭐4.8</p><button class="order-btn" data-book>立即下单</button></div></article>
+        <article class="neon-card companion-card"><div class="avatar"><img src="assets/lianmiao-club-ad.png" alt="CHEESE"><i class="online-dot"></i></div><div class="companion-info"><div class="row"><h3>CHEESE</h3><span class="price">RM18/h</span></div><p class="mini">LOL · ⭐5.0</p><button class="order-btn" data-book>立即下单</button></div></article>
+        <article class="neon-card companion-card"><div class="avatar"><img src="assets/meow-cuijiao-brand.jpg" alt="MOON"><i class="online-dot"></i></div><div class="companion-info"><div class="row"><h3>MOON</h3><span class="price">RM16/h</span></div><p class="mini">Delta Force · ⭐4.9</p><button class="order-btn" data-book>立即下单</button></div></article>
+        <article class="neon-card companion-card"><div class="avatar"><img src="assets/lianmiao-club-ad.png" alt="LULU"><i class="online-dot"></i></div><div class="companion-info"><div class="row"><h3>LULU</h3><span class="price">RM14/h</span></div><p class="mini">APEX · ⭐4.7</p><button class="order-btn" data-book>立即下单</button></div></article>
+      </div>
+    </section>
+  </main>
+
+  <div class="modal" id="modal"><div class="dialog"><button class="close" data-close>×</button><div id="modalBody"></div></div></div>
+  <script>
+    const modal=document.getElementById('modal');const modalBody=document.getElementById('modalBody');
+    function openModal(html){modalBody.innerHTML=html;modal.classList.add('open');document.body.style.overflow='hidden'}
+    function closeModal(){modal.classList.remove('open');document.body.style.overflow=''}
+    document.addEventListener('click',function(e){
+      if(e.target.matches('[data-close]')||e.target===modal)closeModal();
+      if(e.target.closest('[data-book]')) location.href='companion-detail.html';
+      const target=e.target.closest('[data-modal]');
+      if(target){const map={login:'<h2>登录</h2><p class="muted">手机号 + 验证码登录。</p><button class="order-btn">获取验证码</button>',messages:'<h2>消息</h2><p class="muted">订单通知、系统通知和客服消息都在这里。</p><div class="grid"><a class="neon-card feature-card" href="messages.html"><h3>消息中心</h3><p>查看通知</p></a><a class="neon-card feature-card" href="orders.html"><h3>我的订单</h3><p>订单入口</p></a></div>',order:'<h2>快速下单</h2><p class="muted">选择服务、人数、预算后，客服会快速帮你匹配陪玩。</p><a class="order-btn" href="companion-center.html">进入陪玩大厅</a>',join:'<h2>加入陪玩</h2><p class="muted">提交资料后，后台中心可审核入职申请。</p><button class="order-btn">立即申请</button>',guide:'<h2>下单教学</h2><p>1. 点击找陪玩。<br>2. 选择游戏和陪玩。<br>3. 点击立即下单。<br>4. 客服确认后开始服务。</p>'};openModal(map[target.dataset.modal]||'')}
+    });
+    document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal()});
+  </script>
+</body>
+</html>

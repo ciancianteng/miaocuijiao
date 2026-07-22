@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>组队大厅 · MEOW CUI JIAO</title>
+  <style>
+    :root{
+      --bg:#050406;
+      --panel:rgba(18,12,24,.78);
+      --panel-strong:rgba(27,16,34,.92);
+      --pink:#f3a8cb;
+      --pink-soft:#ffdceb;
+      --hot:#ff6fb4;
+      --purple:#8d72ff;
+      --text:#fff5fa;
+      --muted:#bfaebb;
+      --line:rgba(243,168,203,.28);
+      --glow:0 0 28px rgba(243,168,203,.16),0 18px 58px rgba(0,0,0,.42);
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:radial-gradient(circle at 16% 4%,rgba(243,168,203,.16),transparent 30%),radial-gradient(circle at 84% 16%,rgba(141,114,255,.13),transparent 28%),var(--bg);color:var(--text);font-family:Inter,Arial,"Microsoft YaHei",sans-serif;overflow-x:hidden}
+    a{color:inherit;text-decoration:none}button{font:inherit}
+    .site-header{background:rgba(5,4,6,.9);border-bottom:1px solid rgba(243,168,203,.16);backdrop-filter:blur(16px)}
+    .header-inner{max-width:1200px;margin:0 auto;min-height:72px;padding:0 24px;display:flex;align-items:center;justify-content:space-between;gap:24px}
+    .brand{display:flex;align-items:center;gap:12px;font-weight:1000;color:var(--pink-soft);white-space:nowrap}.brand img{width:48px;height:48px;border-radius:50%;object-fit:cover;border:1px solid rgba(255,220,235,.42);box-shadow:0 0 22px rgba(243,168,203,.22)}.brand small{display:block;color:var(--pink);font-size:11px;letter-spacing:.1em;margin-top:2px}
+    .top-actions{display:flex;gap:12px;align-items:center}.top-actions a{height:40px;padding:0 16px;border-radius:999px;border:1px solid var(--line);background:rgba(255,255,255,.035);display:inline-flex;align-items:center;font-weight:950}.top-actions a:hover{box-shadow:0 0 20px rgba(243,168,203,.18)}
+    .container{max-width:1200px;margin:0 auto;padding:28px 24px 72px}
+    .hero{position:relative;overflow:hidden;border:1px solid var(--line);border-radius:26px;background:linear-gradient(135deg,rgba(255,255,255,.07),rgba(255,255,255,.02) 45%,rgba(243,168,203,.09)),var(--panel);box-shadow:var(--glow);padding:44px 36px;margin-bottom:28px}.hero:before{content:"🐾";position:absolute;right:38px;top:26px;font-size:86px;opacity:.10;filter:drop-shadow(0 0 20px rgba(243,168,203,.5))}.hero h1{margin:0;font-size:48px;letter-spacing:.04em}.hero p{margin:12px 0 0;color:var(--muted);font-size:18px;font-weight:850}
+    .layout{display:grid;grid-template-columns:1fr 320px;gap:24px;align-items:start}.section-title{display:flex;justify-content:space-between;align-items:end;gap:14px;margin:0 0 18px}.section-title h2{margin:0;font-size:26px}.section-title p{margin:4px 0 0;color:var(--muted)}
+    .games{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}.game-card,.discord-card{position:relative;overflow:hidden;border:1px solid var(--line);border-radius:24px;background:linear-gradient(145deg,rgba(255,255,255,.07),rgba(255,255,255,.025) 42%,rgba(243,168,203,.08)),var(--panel);box-shadow:var(--glow);padding:22px;transition:.22s ease}.game-card:hover,.discord-card:hover{transform:translateY(-5px);border-color:rgba(255,220,235,.62);box-shadow:0 0 38px rgba(243,168,203,.24),0 22px 68px rgba(0,0,0,.5)}.game-card:after{content:"";position:absolute;right:-36px;bottom:-36px;width:120px;height:120px;border-radius:50%;background:radial-gradient(circle,rgba(243,168,203,.18),transparent 68%)}
+    .game-head{display:flex;align-items:center;justify-content:space-between;gap:12px}.game-name{margin:0;font-size:24px}.game-icon{width:48px;height:48px;border-radius:18px;display:grid;place-items:center;background:rgba(243,168,203,.13);border:1px solid rgba(243,168,203,.28);font-size:24px}.game-stats{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:20px 0}.stat{border:1px solid rgba(243,168,203,.16);border-radius:18px;background:rgba(255,255,255,.035);padding:14px}.stat span{display:block;color:var(--muted);font-size:12px;font-weight:900}.stat strong{display:block;margin-top:6px;font-size:28px;color:#fff}.join-btn{position:relative;z-index:1;width:100%;height:44px;border:0;border-radius:999px;background:linear-gradient(180deg,#ffe2ef,#e9a0c6);color:#1b0712;font-weight:1000;cursor:pointer;box-shadow:0 0 22px rgba(243,168,203,.18);transition:.2s ease}.join-btn:hover{transform:translateY(-2px);box-shadow:0 0 30px rgba(243,168,203,.34)}
+    .discord-card{position:sticky;top:94px;cursor:pointer}.discord-logo{width:64px;height:64px;border-radius:22px;display:grid;place-items:center;background:linear-gradient(180deg,rgba(141,114,255,.22),rgba(243,168,203,.12));border:1px solid rgba(255,220,235,.24);font-size:32px;margin-bottom:18px}.discord-card h2{margin:0;font-size:28px}.discord-card p{margin:8px 0 22px;color:var(--muted);font-weight:850}.community-stat{display:flex;align-items:center;justify-content:space-between;border:1px solid rgba(243,168,203,.16);border-radius:16px;background:rgba(255,255,255,.035);padding:13px;margin-bottom:10px}.community-stat span{color:var(--muted);font-weight:900}.community-stat strong{font-size:20px}.discord-card .join-btn{margin-top:12px}
+    .paw-note{margin-top:20px;color:var(--muted);font-size:13px;text-align:center}.paw-note b{color:var(--pink-soft)}
+    @media(max-width:940px){.layout{grid-template-columns:1fr}.discord-card{position:relative;top:auto}.games{grid-template-columns:1fr}.hero h1{font-size:40px}}
+    @media(max-width:560px){.header-inner{padding:0 16px}.brand span{display:none}.top-actions a{padding:0 12px}.container{padding:20px 16px 52px}.hero{padding:32px 24px}.hero h1{font-size:34px}.hero p{font-size:15px}.game-stats{grid-template-columns:1fr}.discord-card h2{font-size:24px}}
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="index.html"><img src="assets/meow-cuijiao-brand.jpg" alt="MEOW CUI JIAO"><span>MEOW CUI JIAO<small>妙脆角电竞</small></span></a>
+      <nav class="top-actions"><a href="index.html">首页</a><a href="companion-center.html">找陪玩</a><a href="messages.html">消息</a></nav>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="hero">
+      <h1>组队大厅</h1>
+      <p>寻找队友，立即开黑。</p>
+    </section>
+
+    <section class="layout">
+      <div>
+        <div class="section-title">
+          <div><h2>游戏分类</h2><p>选择游戏，加入 Discord 语音社区快速组队。</p></div>
+        </div>
+        <div class="games" id="gameList"></div>
+      </div>
+
+      <aside class="discord-card" id="discordCard">
+        <div class="discord-logo">💬</div>
+        <h2>Discord Community</h2>
+        <p>进入妙脆角电竞社区，找队友、开黑、语音聊天。</p>
+        <div class="community-stat"><span>Members</span><strong>8,926</strong></div>
+        <div class="community-stat"><span>Online</span><strong>1,284</strong></div>
+        <button class="join-btn" type="button">加入 Discord</button>
+        <div class="paw-note">点击卡片即可跳转 <b>Discord</b></div>
+      </aside>
+    </section>
+  </main>
+
+  <script>
+    const DISCORD_INVITE_URL = "https://discord.gg/xxxxxxxx";
+    const games = [
+      { name: "APEX", icon: "▲", online: 342, rooms: 28 },
+      { name: "CS2", icon: "✦", online: 218, rooms: 19 },
+      { name: "Valorant", icon: "V", online: 426, rooms: 36 },
+      { name: "League of Legends", icon: "L", online: 389, rooms: 31 },
+      { name: "Delta Force", icon: "△", online: 174, rooms: 12 }
+    ];
+    const gameList = document.getElementById("gameList");
+    function goDiscord(){ window.location.href = DISCORD_INVITE_URL; }
+    gameList.innerHTML = games.map(game => `
+      <article class="game-card">
+        <div class="game-head"><h3 class="game-name">${game.name}</h3><div class="game-icon">${game.icon}</div></div>
+        <div class="game-stats">
+          <div class="stat"><span>在线人数</span><strong>${game.online}</strong></div>
+          <div class="stat"><span>语音房</span><strong>${game.rooms}</strong></div>
+        </div>
+        <button class="join-btn" type="button">立即加入</button>
+      </article>
+    `).join("");
+    document.querySelectorAll(".game-card .join-btn").forEach(button => button.addEventListener("click", goDiscord));
+    document.getElementById("discordCard").addEventListener("click", goDiscord);
+  </script>
+</body>
+</html>

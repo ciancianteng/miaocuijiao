@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>我的订单 - MEOW CUI JIAO</title>
+  <link rel="stylesheet" href="src/style.css">
+  <link rel="stylesheet" href="src/notify-system.css">
+  <link rel="stylesheet" href="src/real-data-admin.css">
+  <link rel="stylesheet" href="src/design-system.css">
+</head>
+<body>
+  <header class="topbar"><a class="brand" href="index.html"><img src="assets/meow-cuijiao-brand.jpg" alt="MEOW CUI JIAO"><span>MEOW CUI JIAO</span></a><nav class="navlinks"><a href="index.html">首页</a><a href="companion-center.html">陪玩大厅</a><a href="mine.html">我的</a></nav><button class="login-btn" data-login>登录</button></header>
+  <main class="dashboard">
+    <section class="page-title"><p class="eyebrow">ORDERS</p><h1>我的订单</h1><p>这里读取前台下单和后台订单管理的同一套数据</p></section>
+    <section class="metric-grid" id="orderStats"></section>
+    <section class="panel"><h2>订单列表</h2><div class="list" id="orderList"></div></section>
+  </main>
+  <div class="modal" id="loginModal" aria-hidden="true"><div class="modal-box"><button class="close" data-close>×</button><h2>手机号登录</h2><p>登录后可查看自己的订单</p><label>手机号<input id="phoneInput" maxlength="11" placeholder="请输入手机号"></label><label>验证码<div class="code-row"><input id="codeInput" maxlength="6" placeholder="6位验证码"><button id="sendCode">获取验证码</button></div></label><button class="primary full" id="confirmLogin">登录并进入</button><div class="login-state" id="loginState">请输入收到的验证码</div></div></div>
+  <script src="src/app.js"></script>
+  <script src="src/site-data.js"></script>
+  <script>
+    (function(){
+      function read(key){try{return JSON.parse(localStorage.getItem(key)||'[]')}catch(e){return []}}
+      function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
+      function statusClass(s){return /完成|成功|进行中|已派单|已通过/.test(s)?'ok':/取消|拒绝|退款/.test(s)?'bad':'wait'}
+      function normalize(){
+        var frontend=read('mcjOrders').map(function(o){return {id:o.order_id||o.id,boss:(o.user&&o.user.name)||o.boss||'老板',player:o.player_name||o.player||o.name,game:o.game,amount:o.total?'RM'+o.total:(o.amount||o.price),status:o.status||'待付款',time:o.created_at||o.time||''}});
+        var backend=read('mcj_orders').map(function(o){return {id:o.id||o.order_id,boss:o.boss||'老板',player:o.player||o.player_name,game:o.game,amount:o.amount||o.total,status:o.status||'待付款',time:o.time||o.created_at||''}});
+        var seen={};return frontend.concat(backend).filter(function(o){if(!o.id||seen[o.id])return false;seen[o.id]=1;return true;});
+      }
+      function render(){var orders=normalize();var stats=document.getElementById('orderStats');var list=document.getElementById('orderList');var total=orders.reduce(function(n,o){var m=String(o.amount||'').match(/[\d.]+/);return n+(m?Number(m[0]):0)},0);stats.innerHTML='<div><small>订单总数</small><strong>'+orders.length+'</strong></div><div><small>进行中</small><strong>'+orders.filter(function(o){return /进行中|派单/.test(o.status)}).length+'</strong></div><div><small>已完成</small><strong>'+orders.filter(function(o){return /完成|成功/.test(o.status)}).length+'</strong></div><div><small>订单金额</small><strong>RM '+total.toFixed(2)+'</strong></div>';list.innerHTML=orders.length?orders.map(function(o){return '<div class="item"><span><b>'+esc(o.id)+' · '+esc(o.player||'未知陪玩')+'</b><small>'+esc(o.game||'-')+' / '+esc(o.boss||'-')+' / '+esc(o.time||'-')+'</small></span><strong class="chip '+statusClass(o.status)+'">'+esc(o.status||'待处理')+'</strong></div>'}).join(''):'<div class="item"><span><b>暂无订单</b><small>从首页下单或后台新增订单后会显示在这里</small></span></div>';}
+      render();
+    })();
+  </script>
+  <script src="src/notify-system.js" defer></script>
+  <script src="src/real-data-admin.js" defer></script>
+  <script src="src/footer-system.js" defer></script>
+  <script src="src/meow-butler.js?v=20260711-floating" defer></script>
+  <script src="src/text-guard.js" defer></script>
+  <script src="src/design-system.js" defer></script>
+</body>
+</html>
+
+
+
+
+
+

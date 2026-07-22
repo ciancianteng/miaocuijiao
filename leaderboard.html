@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>俱乐部排行榜 · Meow Cui Jiao</title>
+  <link rel="stylesheet" href="src/platform.css">
+  <style>
+    body{
+      background:
+        radial-gradient(circle at 18% 8%, rgba(243,168,203,.18), transparent 28%),
+        radial-gradient(circle at 80% 16%, rgba(141,114,255,.13), transparent 30%),
+        linear-gradient(180deg,#070409,#120914 46%,#050406);
+    }
+    .leader-page{max-width:1160px;margin:0 auto;padding:30px 20px 96px}
+    .leader-hero{
+      margin-bottom:24px;
+      border-radius:24px;
+      border:1px solid rgba(243,168,203,.28);
+      background:linear-gradient(135deg,rgba(32,18,40,.82),rgba(10,7,14,.88));
+      backdrop-filter:blur(18px);
+      padding:34px;
+      box-shadow:0 0 36px rgba(243,168,203,.15),0 24px 80px rgba(0,0,0,.45);
+    }
+    .leader-hero h1{
+      margin:0;
+      color:#fff5fa;
+      font-size:42px;
+      line-height:1;
+      font-weight:1000;
+      letter-spacing:.03em;
+      text-shadow:0 0 18px rgba(243,168,203,.28);
+    }
+    .leader-hero p{
+      margin:12px 0 0;
+      color:#d8c4cf;
+      font-weight:850;
+      letter-spacing:.04em;
+    }
+    .rank-tabs{
+      display:flex;
+      gap:14px;
+      flex-wrap:wrap;
+      margin-bottom:26px;
+    }
+    .rank-tab{
+      min-width:118px;
+      height:44px;
+      border:1px solid rgba(243,168,203,.30);
+      border-radius:999px;
+      background:rgba(255,255,255,.045);
+      color:#ffe4f0;
+      font-weight:1000;
+      cursor:pointer;
+      transition:.22s ease;
+      box-shadow:inset 0 0 14px rgba(255,220,235,.04);
+    }
+    .rank-tab:hover{transform:translateY(-2px);border-color:rgba(255,220,235,.58);box-shadow:0 0 22px rgba(243,168,203,.18)}
+    .rank-tab.active{
+      background:linear-gradient(180deg,#ffe2ef,#e9a0c6);
+      color:#190812;
+      border-color:transparent;
+      box-shadow:0 0 26px rgba(243,168,203,.30);
+    }
+    .podium{
+      display:grid;
+      grid-template-columns:1fr 1.16fr 1fr;
+      gap:22px;
+      align-items:end;
+      margin-bottom:26px;
+    }
+    .podium-card{
+      position:relative;
+      min-height:286px;
+      border-radius:24px;
+      border:1px solid rgba(243,168,203,.28);
+      background:linear-gradient(145deg,rgba(255,255,255,.075),rgba(255,255,255,.025)),rgba(18,11,24,.78);
+      backdrop-filter:blur(16px);
+      box-shadow:0 0 28px rgba(243,168,203,.12),0 18px 58px rgba(0,0,0,.42);
+      padding:24px;
+      text-align:center;
+      transition:.22s ease;
+      overflow:hidden;
+    }
+    .podium-card:before{
+      content:"";
+      position:absolute;
+      inset:-1px;
+      background:radial-gradient(circle at 50% 0%,rgba(255,220,235,.20),transparent 38%);
+      pointer-events:none;
+    }
+    .podium-card:hover{transform:translateY(-6px);border-color:rgba(255,220,235,.58);box-shadow:0 0 38px rgba(243,168,203,.24),0 24px 70px rgba(0,0,0,.48)}
+    .podium-card.first{
+      min-height:330px;
+      border-color:rgba(255,220,235,.52);
+      box-shadow:0 0 46px rgba(243,168,203,.28),0 28px 90px rgba(0,0,0,.55);
+    }
+    .rank-crown{font-size:34px;filter:drop-shadow(0 0 14px rgba(243,168,203,.35))}
+    .rank-place{
+      position:absolute;
+      left:18px;
+      top:18px;
+      z-index:1;
+      width:42px;
+      height:42px;
+      border-radius:50%;
+      display:grid;
+      place-items:center;
+      color:#16070f;
+      background:#ffdceb;
+      font-weight:1000;
+      box-shadow:0 0 20px rgba(243,168,203,.32);
+    }
+    .rank-avatar{
+      position:relative;
+      z-index:1;
+      width:96px;
+      height:96px;
+      margin:10px auto 16px;
+      border-radius:28px;
+      object-fit:cover;
+      border:1px solid rgba(255,220,235,.42);
+      box-shadow:0 0 26px rgba(243,168,203,.22);
+    }
+    .first .rank-avatar{width:118px;height:118px;border-radius:32px}
+    .podium-card h2{
+      position:relative;
+      z-index:1;
+      margin:0;
+      color:#fff5fa;
+      font-size:28px;
+      font-weight:1000;
+      text-shadow:0 0 16px rgba(243,168,203,.32);
+    }
+    .podium-card p{position:relative;z-index:1;margin:8px 0;color:#d7c0cc;font-weight:900;letter-spacing:.08em;text-transform:uppercase}
+    .rank-score{position:relative;z-index:1;display:block;margin-top:12px;color:#ffdceb;font-size:22px;font-weight:1000;text-shadow:0 0 14px rgba(243,168,203,.30)}
+    .rank-tag{position:relative;z-index:1;display:inline-flex;margin-top:14px;border-radius:999px;border:1px solid rgba(255,220,235,.30);background:rgba(243,168,203,.12);color:#ffe5f1;padding:7px 12px;font-size:12px;font-weight:1000}
+    .rank-list{
+      display:grid;
+      gap:12px;
+    }
+    .rank-row{
+      display:grid;
+      grid-template-columns:48px 58px 1fr auto;
+      align-items:center;
+      gap:14px;
+      min-height:86px;
+      border-radius:20px;
+      border:1px solid rgba(243,168,203,.22);
+      background:rgba(18,11,24,.68);
+      backdrop-filter:blur(14px);
+      padding:12px 16px;
+      transition:.22s ease;
+    }
+    .rank-row:hover{transform:translateY(-3px);border-color:rgba(255,220,235,.48);box-shadow:0 0 24px rgba(243,168,203,.16)}
+    .rank-row .num{color:#ffdceb;font-size:22px;font-weight:1000;text-align:center}
+    .rank-row img{width:56px;height:56px;border-radius:16px;object-fit:cover;border:1px solid rgba(243,168,203,.28)}
+    .rank-row h3{margin:0;color:#fff5fa;font-size:19px;font-weight:1000}
+    .rank-row p{margin:5px 0 0;color:#bfaebb;font-size:13px;font-weight:850}
+    .row-score{color:#ffdceb;font-weight:1000;white-space:nowrap;text-shadow:0 0 12px rgba(243,168,203,.22)}
+    @media(max-width:820px){
+      .leader-hero{padding:26px}.leader-hero h1{font-size:34px}
+      .podium{grid-template-columns:1fr;align-items:stretch}
+      .podium-card,.podium-card.first{min-height:260px}
+      .podium-card.first{order:-1}
+      .rank-row{grid-template-columns:40px 52px 1fr;gap:12px}
+      .row-score{grid-column:3;justify-self:start}
+    }
+    @media(max-width:520px){
+      .leader-page{padding:20px 14px 86px}
+      .rank-tabs{gap:10px}
+      .rank-tab{min-width:104px;height:40px}
+      .podium-card{padding:20px}
+      .rank-row{padding:11px;grid-template-columns:34px 48px 1fr}
+      .rank-row img{width:48px;height:48px}
+      .rank-row h3{font-size:17px}
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="index.html">
+        <img src="assets/meow-cuijiao-brand.jpg" alt="logo">
+        <span>MEOW CUI JIAO<small>妙脆角电竞</small></span>
+      </a>
+      <nav class="nav">
+        <a href="index.html">首页</a>
+        <a href="companion-center.html">陪玩大厅</a>
+        <a class="active" href="leaderboard.html">排行榜</a>
+        <a href="activities.html">活动中心</a>
+        <a href="miao-coin.html">喵币</a>
+        <a href="orders.html">我的订单</a>
+        <a href="messages.html">消息</a>
+        <a href="mine.html">我的</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="leader-page">
+    <section class="leader-hero">
+      <h1>俱乐部排行榜</h1>
+      <p>根据陪玩热度、好评表现，展示本周优质陪玩。</p>
+    </section>
+
+    <section>
+      <div class="rank-tabs" role="tablist" aria-label="排行榜类型">
+        <button class="rank-tab active" type="button" data-board="hot">热度榜</button>
+        <button class="rank-tab" type="button" data-board="rating">好评榜</button>
+      </div>
+      <div class="podium" id="podium"></div>
+      <div class="rank-list" id="rankList"></div>
+    </section>
+  </main>
+
+  <nav class="bottom-nav">
+    <a href="index.html">首页</a>
+    <a href="companion-center.html">大厅</a>
+    <a class="active" href="leaderboard.html">排行</a>
+    <a href="miao-coin.html">喵币</a>
+    <a href="mine.html">我的</a>
+  </nav>
+
+  <div class="modal" id="modal">
+    <div class="dialog">
+      <button class="close" data-close>×</button>
+      <div id="modalBody"></div>
+    </div>
+  </div>
+
+  <script src="src/platform.js"></script>
+  <script>
+    const avatar = "assets/meow-cuijiao-brand.jpg";
+    const boards = {
+      hot: [
+        { rank: 1, name: "MOMO", game: "无畏契约", score: "热度 9820", tag: "人气爆单" },
+        { rank: 2, name: "NANA", game: "APEX", score: "热度 8750", tag: "在线活跃" },
+        { rank: 3, name: "CHEESE", game: "LOL", score: "热度 8120", tag: "老板常点" },
+        { rank: 4, name: "YUKI", game: "CSGO", score: "热度 7660" },
+        { rank: 5, name: "MOON", game: "DELTA FORCE", score: "热度 7200" }
+      ],
+      rating: [
+        { rank: 1, name: "CHEESE", game: "LOL", score: "评分 5.0", tag: "零差评" },
+        { rank: 2, name: "MOON", game: "DELTA FORCE", score: "评分 4.9", tag: "稳定发挥" },
+        { rank: 3, name: "MOMO", game: "VALORANT", score: "评分 4.8", tag: "沟通舒服" },
+        { rank: 4, name: "LULU", game: "APEX", score: "评分 4.7" },
+        { rank: 5, name: "NANA", game: "APEX", score: "评分 4.7" }
+      ]
+    };
+
+    function renderBoard(type) {
+      const data = boards[type];
+      const top = [data[1], data[0], data[2]];
+      document.getElementById("podium").innerHTML = top.map(function(item) {
+        const first = item.rank === 1;
+        return `
+          <article class="podium-card ${first ? "first" : ""}">
+            <span class="rank-place">${item.rank}</span>
+            ${first ? '<div class="rank-crown">👑</div>' : '<div class="rank-crown">🐾</div>'}
+            <img class="rank-avatar" src="${avatar}" alt="${item.name}">
+            <h2>${item.name}</h2>
+            <p>${item.game}</p>
+            <strong class="rank-score">${item.score}</strong>
+            <span class="rank-tag">${item.tag || "优质陪玩"}</span>
+          </article>
+        `;
+      }).join("");
+
+      document.getElementById("rankList").innerHTML = data.slice(3).map(function(item) {
+        return `
+          <article class="rank-row">
+            <span class="num">${item.rank}</span>
+            <img src="${avatar}" alt="${item.name}">
+            <div>
+              <h3>${item.name}</h3>
+              <p>${item.game}</p>
+            </div>
+            <strong class="row-score">${item.score}</strong>
+          </article>
+        `;
+      }).join("");
+    }
+
+    document.querySelectorAll(".rank-tab").forEach(function(button) {
+      button.addEventListener("click", function() {
+        document.querySelectorAll(".rank-tab").forEach(function(tab) {
+          tab.classList.remove("active");
+        });
+        button.classList.add("active");
+        renderBoard(button.dataset.board);
+      });
+    });
+
+    renderBoard("hot");
+  </script>
+<script src="src/meow-butler.js"></script></body>
+</html>

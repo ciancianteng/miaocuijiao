@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>充值中心 · Meow Cui Jiao</title>
+  <style>
+    *{box-sizing:border-box}
+    body{margin:0;color:#fff0f7;font-family:Inter,Arial,"Microsoft YaHei",sans-serif;background:radial-gradient(circle at 18% 0%,rgba(225,120,180,.18),transparent 30%),radial-gradient(circle at 88% 12%,rgba(255,182,217,.10),transparent 24%),#050406}
+    .page{min-height:100vh;padding:28px 16px 46px}
+    .shell{width:min(1080px,100%);margin:0 auto;display:grid;gap:18px}
+    .glass{border:1px solid rgba(232,154,196,.34);border-radius:22px;background:linear-gradient(180deg,rgba(255,255,255,.055),rgba(255,255,255,.018)),rgba(14,10,18,.82);box-shadow:0 18px 60px rgba(0,0,0,.34),0 0 24px rgba(225,120,180,.10),inset 0 1px 0 rgba(255,255,255,.10);backdrop-filter:blur(14px) saturate(1.04)}
+    header{position:relative;padding:28px;overflow:hidden}
+    header:after{content:"🐾";position:absolute;right:28px;top:18px;font-size:86px;opacity:.08;transform:rotate(-12deg);pointer-events:none}
+    .top-row{display:flex;align-items:flex-start;justify-content:space-between;gap:22px;position:relative;z-index:1}
+    .brand{display:flex;align-items:center;gap:12px;color:#ffb6d9;font-weight:900;letter-spacing:.04em}
+    .brand img{width:44px;height:44px;border-radius:50%;object-fit:cover;border:1px solid rgba(255,214,235,.38)}
+    h1{margin:20px 0 8px;font-size:42px;letter-spacing:.03em;text-shadow:0 0 20px rgba(225,120,180,.24)}
+    p{margin:0;color:#cdb9c5}
+    .home{height:38px;padding:0 15px;display:inline-grid;place-items:center;border-radius:999px;border:1px solid rgba(232,154,196,.28);background:rgba(0,0,0,.22);color:#ffd6e7;text-decoration:none;font-weight:900;white-space:nowrap;transition:.18s ease}
+    .home:hover,button:hover{transform:translateY(-2px);box-shadow:0 0 18px rgba(225,120,180,.16)}
+    .asset-overview{margin-top:24px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;position:relative;z-index:1}
+    .asset-card{min-height:128px;border:1px solid rgba(232,154,196,.28);border-radius:22px;background:linear-gradient(135deg,rgba(255,182,217,.12),rgba(0,0,0,.22));padding:16px;display:flex;gap:14px;align-items:center;transition:.18s ease;box-shadow:inset 0 0 18px rgba(255,176,212,.055)}
+    .asset-card:hover{border-color:rgba(246,180,215,.68);box-shadow:0 0 24px rgba(225,120,180,.16),inset 0 0 20px rgba(255,176,212,.08)}
+    .asset-icon{width:52px;height:52px;border-radius:18px;display:grid;place-items:center;flex:0 0 auto;background:rgba(255,214,235,.12);border:1px solid rgba(255,214,235,.20);font-size:26px}
+    .asset-card strong{display:block;font-size:31px;line-height:1;color:#fff7fb;text-shadow:0 0 16px rgba(225,120,180,.22)}
+    .asset-card span{display:block;margin-top:8px;color:#a994a0;font-size:13px;font-weight:900}
+    .vip-progress{margin-top:10px}
+    .vip-progress small{display:flex;justify-content:space-between;gap:8px;color:#ffc7df;font-size:12px;font-weight:900}
+    .bar{height:8px;margin-top:7px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden;border:1px solid rgba(232,154,196,.12)}
+    .bar i{display:block;width:38%;height:100%;border-radius:999px;background:linear-gradient(90deg,#ffb6d9,#f06ba9);box-shadow:0 0 14px rgba(240,107,169,.5)}
+    .grid{display:grid;grid-template-columns:1.35fr .85fr;gap:18px}
+    .card{padding:20px}
+    .eyebrow{margin:0 0 6px;color:#ffb6d9;font-size:12px;letter-spacing:.16em;font-weight:900}
+    h2{margin:0;font-size:22px}
+    .packages{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-top:18px}
+    .packages button,.payments button{border:1px solid rgba(232,154,196,.22);border-radius:16px;background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(0,0,0,.16));color:#ffe8f4;cursor:pointer;transition:.18s ease}
+    .packages button{min-height:118px;padding:16px;text-align:left}
+    .packages small{display:block;color:#ffb6d9;font-weight:900}
+    .packages strong{display:block;margin-top:12px;font-size:30px}
+    .packages span{color:#cdb9c5;font-weight:800}
+    .active{border-color:rgba(246,180,215,.74)!important;box-shadow:0 0 22px rgba(225,120,180,.18),inset 0 0 16px rgba(255,176,212,.10)}
+    .custom{display:grid;gap:10px;margin-top:16px;color:#ffc7df;font-weight:900}
+    .custom div{height:46px;border-radius:14px;border:1px solid rgba(232,154,196,.24);background:rgba(0,0,0,.26);display:flex;align-items:center;gap:10px;padding:0 12px}
+    .custom input{flex:1;height:100%;border:0;outline:0;background:transparent;color:#fff0f7;font-size:16px}
+    .summary{display:flex;flex-direction:column;gap:16px}
+    .summary-line{display:flex;align-items:center;justify-content:space-between;border-radius:14px;border:1px solid rgba(232,154,196,.16);background:rgba(0,0,0,.20);padding:14px}
+    .summary-line span{color:#a994a0;font-weight:900}
+    .summary-line b{font-size:20px}
+    .payments{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .payments button{height:42px;font-weight:900}
+    .pay-now,.success-pay{height:48px;border:0;border-radius:999px;cursor:pointer;background:linear-gradient(180deg,#ffe2f0,#e99ac4);color:#1b0712;font-size:16px;font-weight:1000;box-shadow:0 12px 28px rgba(225,120,180,.22)}
+    .records{display:grid;gap:10px;margin-top:16px}
+    .record{display:grid;grid-template-columns:1fr 90px 120px 70px;gap:10px;align-items:center;border-radius:14px;border:1px solid rgba(232,154,196,.14);background:rgba(0,0,0,.18);padding:12px}
+    .record span{color:#bfaeba}
+    .record em{color:#8ff0bd;font-style:normal;font-weight:900}
+    .modal{position:fixed;inset:0;z-index:100;background:rgba(2,1,4,.78);backdrop-filter:blur(12px);display:none;place-items:center;padding:20px}
+    .modal.open{display:grid}
+    .dialog{position:relative;width:min(460px,100%);padding:24px;border-radius:20px;border:1px solid rgba(232,154,196,.38);background:linear-gradient(180deg,rgba(34,27,38,.94),rgba(9,8,14,.98));box-shadow:0 24px 90px rgba(0,0,0,.62),0 0 22px rgba(225,120,180,.18)}
+    .close{position:absolute;right:14px;top:14px;width:34px;height:34px;border-radius:50%;border:1px solid rgba(232,154,196,.32);background:rgba(0,0,0,.22);color:#ffd6e7;font-size:22px;cursor:pointer}
+    .confirm{display:grid;gap:10px;margin:18px 0}
+    .confirm div{display:flex;justify-content:space-between;border-radius:14px;background:rgba(0,0,0,.20);border:1px solid rgba(232,154,196,.14);padding:13px}
+    .ok{border-radius:14px;border:1px solid rgba(143,240,189,.28);background:rgba(143,240,189,.10);color:#8ff0bd;font-weight:1000;padding:14px;text-align:center;display:none}
+    @media(max-width:860px){.asset-overview{grid-template-columns:1fr}.top-row{display:block}.home{margin-top:16px}.grid,.packages{grid-template-columns:1fr}.payments{grid-template-columns:1fr}.record{grid-template-columns:1fr 1fr}}
+    @media(max-width:520px){.page{padding:16px 12px 30px}header{padding:22px}h1{font-size:32px}.asset-card strong{font-size:27px}.asset-card{min-height:112px}}
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="shell">
+      <header class="glass">
+        <div class="top-row">
+          <div>
+            <div class="brand"><img src="assets/meow-cuijiao-brand.jpg" alt="Meow Cui Jiao"><span>Meow Cui Jiao / 妙脆角电竞</span></div>
+            <h1>充值中心</h1>
+            <p>RM1 = 10 喵币，用于下单、送礼、盲盒派单和专属互动。</p>
+          </div>
+          <a class="home" href="index.html">首页</a>
+        </div>
+        <div class="asset-overview" aria-label="资产概览">
+          <article class="asset-card">
+            <div class="asset-icon">💼</div>
+            <div><strong>RM1,680</strong><span>总消费</span></div>
+          </article>
+          <article class="asset-card">
+            <div class="asset-icon">🪙</div>
+            <div><strong><span id="balance">320</span> 喵币</strong><span>当前余额</span></div>
+          </article>
+          <article class="asset-card">
+            <div class="asset-icon">👑</div>
+            <div>
+              <strong>VIP3</strong><span>VIP等级</span>
+              <div class="vip-progress"><small><b>380 / 1000</b><b>差620积分</b></small><div class="bar"><i></i></div></div>
+            </div>
+          </article>
+        </div>
+      </header>
+
+      <section class="grid">
+        <div class="glass card">
+          <p class="eyebrow">RECHARGE</p>
+          <h2>选择充值套餐</h2>
+          <div class="packages" id="packages">
+            <button data-rm="10" data-coins="100"><small>轻量补给</small><strong>RM10</strong><span>100 喵币</span></button>
+            <button class="active" data-rm="30" data-coins="300"><small>热门选择</small><strong>RM30</strong><span>300 喵币</span></button>
+            <button data-rm="50" data-coins="500"><small>老板常用</small><strong>RM50</strong><span>500 喵币</span></button>
+            <button data-rm="100" data-coins="1000"><small>高能储备</small><strong>RM100</strong><span>1000 喵币</span></button>
+          </div>
+          <label class="custom"><span>自定义充值金额</span><div><b>RM</b><input id="customAmount" type="number" min="1" placeholder="输入金额"></div></label>
+        </div>
+
+        <aside class="glass card summary">
+          <p class="eyebrow">SUMMARY</p>
+          <h2>订单预览</h2>
+          <div class="summary-line"><span>应付金额</span><b id="payAmount">RM30</b></div>
+          <div class="summary-line"><span>到账喵币</span><b id="coinAmount">300 喵币</b></div>
+          <strong>支付方式</strong>
+          <div class="payments" id="payments">
+            <button class="active">Touch n Go</button><button>FPX</button><button>GrabPay</button><button>DuitNow</button><button>银行卡</button>
+          </div>
+          <button class="pay-now" id="openPay">立即充值</button>
+        </aside>
+      </section>
+
+      <section class="glass card">
+        <p class="eyebrow">HISTORY</p>
+        <h2>充值记录</h2>
+        <div class="records" id="records">
+          <div class="record"><span>2026-07-01 12:20</span><b>RM30</b><strong>300 喵币</strong><em>成功</em></div>
+          <div class="record"><span>2026-06-30 22:18</span><b>RM50</b><strong>500 喵币</strong><em>成功</em></div>
+          <div class="record"><span>2026-06-29 18:06</span><b>RM10</b><strong>100 喵币</strong><em>成功</em></div>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <div class="modal" id="payModal">
+    <div class="dialog">
+      <button class="close" id="closePay">×</button>
+      <p class="eyebrow">CONFIRM</p>
+      <h2>付款确认</h2>
+      <div class="confirm">
+        <div><span>充值金额</span><b id="modalRm">RM30</b></div>
+        <div><span>到账喵币</span><b id="modalCoins">300 喵币</b></div>
+        <div><span>支付方式</span><b id="modalPay">Touch n Go</b></div>
+        <div><span>订单编号</span><b id="modalOrder">MCJ0000</b></div>
+      </div>
+      <button class="success-pay" id="successPay">模拟付款成功</button>
+      <div class="ok" id="successMsg">充值成功，喵币已到账</div>
+    </div>
+  </div>
+
+  <script>
+    var state={rm:30,coins:300,pay:"Touch n Go",balance:320};
+    var $=function(id){return document.getElementById(id)};
+    function render(){ $("payAmount").textContent="RM"+state.rm; $("coinAmount").textContent=state.coins+" 喵币"; $("balance").textContent=state.balance; }
+    $("packages").addEventListener("click",function(event){var button=event.target.closest("button"); if(!button)return; document.querySelectorAll("#packages button").forEach(function(item){item.classList.remove("active")}); button.classList.add("active"); $("customAmount").value=""; state.rm=Number(button.dataset.rm); state.coins=Number(button.dataset.coins); render();});
+    $("customAmount").addEventListener("input",function(event){var value=Math.max(0,Number(event.target.value||0)); document.querySelectorAll("#packages button").forEach(function(item){item.classList.remove("active")}); state.rm=value; state.coins=value*10; render();});
+    $("payments").addEventListener("click",function(event){var button=event.target.closest("button"); if(!button)return; document.querySelectorAll("#payments button").forEach(function(item){item.classList.remove("active")}); button.classList.add("active"); state.pay=button.textContent.trim();});
+    $("openPay").addEventListener("click",function(){ if(!state.rm){alert("请先选择或输入充值金额");return;} $("modalRm").textContent="RM"+state.rm; $("modalCoins").textContent=state.coins+" 喵币"; $("modalPay").textContent=state.pay; $("modalOrder").textContent="MCJ"+Date.now().toString().slice(-8); $("successMsg").style.display="none"; $("successPay").style.display="block"; $("payModal").classList.add("open");});
+    $("closePay").addEventListener("click",function(){ $("payModal").classList.remove("open")});
+    $("payModal").addEventListener("click",function(event){ if(event.target.id==="payModal") $("payModal").classList.remove("open");});
+    document.addEventListener("keydown",function(event){ if(event.key==="Escape") $("payModal").classList.remove("open");});
+    $("successPay").addEventListener("click",function(){ state.balance+=state.coins; render(); var now=new Date(); var time=now.getFullYear()+"-"+String(now.getMonth()+1).padStart(2,"0")+"-"+String(now.getDate()).padStart(2,"0")+" "+String(now.getHours()).padStart(2,"0")+":"+String(now.getMinutes()).padStart(2,"0"); $("records").insertAdjacentHTML("afterbegin",'<div class="record"><span>'+time+'</span><b>RM'+state.rm+'</b><strong>'+state.coins+' 喵币</strong><em>成功</em></div>'); $("successPay").style.display="none"; $("successMsg").style.display="block";});
+    render();
+  </script>
+<script src="src/meow-butler.js"></script></body>
+</html>

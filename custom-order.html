@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>自定义订单 | MEOW CUI JIAO</title>
+  <link rel="stylesheet" href="src/style.css">
+  <link rel="stylesheet" href="src/real-data-admin.css">
+  <style>
+    .custom-shell{width:min(980px,calc(100% - 32px));margin:0 auto;padding:26px 0 44px}
+    .custom-form{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+    .custom-form label{display:grid;gap:8px;color:#ffdceb;font-weight:900}
+    .custom-form input,.custom-form select,.custom-form textarea{width:100%;box-sizing:border-box;border:1px solid rgba(243,168,203,.25);border-radius:14px;background:rgba(255,255,255,.055);color:#fff;padding:13px 15px;outline:0}
+    .custom-form textarea{min-height:118px;resize:vertical}
+    .wide{grid-column:1/-1}.custom-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:18px}
+    .empty-note{border:1px dashed rgba(243,168,203,.28);border-radius:18px;padding:18px;color:#ffdceb;background:rgba(255,255,255,.035)}
+    @media(max-width:760px){.custom-form{grid-template-columns:1fr}.custom-actions{flex-direction:column}.custom-actions .btn{width:100%;justify-content:center}}
+  </style>
+  <link rel="stylesheet" href="src/design-system.css">
+</head>
+<body>
+  <header class="topbar"><a class="brand" href="index.html"><img src="assets/meow-cuijiao-brand.jpg" alt="MEOW CUI JIAO"><span>MEOW CUI JIAO</span></a><nav class="nav"><a href="index.html">首页</a><a href="companion-center.html">陪玩大厅</a><a href="mine.html">我的</a></nav></header>
+  <main class="custom-shell">
+    <section class="section-title"><div><h1>自定义订单</h1><p>填写需求后进入客服报价与匹配流程。</p></div></section>
+    <section class="neon-card" style="padding:22px">
+      <form class="custom-form" id="customOrderForm">
+        <label>需求标题<input name="title" required placeholder="例如：Valorant 双排上分"></label>
+        <label>游戏或服务<input name="game" required placeholder="游戏 / 陪聊 / 护航"></label>
+        <label>预算 RM<input name="budget" type="number" min="0" step="0.01" required></label>
+        <label>预约时间<input name="scheduled_at" type="datetime-local" required></label>
+        <label>预计时长<input name="duration" required placeholder="例如：2 小时"></label>
+        <label>需要人数<input name="people" type="number" min="1" value="1"></label>
+        <label>性别偏好<select name="gender_preference"><option>不限</option><option>女</option><option>男</option><option>保密</option></select></label>
+        <label>语言要求<input name="language" placeholder="中文 / 英文 / 马来语"></label>
+        <label class="wide">完整需求<textarea name="requirements" required placeholder="写清楚游戏区服、目标、玩法、备注和特殊要求"></textarea></label>
+        <label class="wide">附件（可选）<input name="attachment" type="file" accept="image/*"></label>
+      </form>
+      <div class="custom-actions">
+        <a class="btn" href="index.html">返回首页</a>
+        <button class="btn primary" type="submit" form="customOrderForm" id="customSubmit">提交给客服报价</button>
+      </div>
+      <p class="empty-note" id="customState" hidden></p>
+    </section>
+  </main>
+  <script src="src/role-gates.js"></script>
+  <script src="src/dropdown-system.js" defer></script>
+  <script src="src/design-system.js" defer></script>
+  <script>
+    (function(){
+      var KEY='mcjPlatformData.v1';
+      function read(){try{return JSON.parse(localStorage.getItem(KEY)||'{}')||{}}catch(e){return {}}}
+      function write(db){localStorage.setItem(KEY,JSON.stringify(db||{}));window.dispatchEvent(new CustomEvent('mcj:platform-data-updated'))}
+      function isLogged(){return window.MCJRoleGate&&window.MCJRoleGate.isLogged('customer')}
+      function user(){return window.MCJRoleGate?window.MCJRoleGate.user('customer'):{}}
+      function fileUrl(file){return new Promise(function(resolve){if(!file)return resolve('');var r=new FileReader();r.onload=function(){resolve(String(r.result||''))};r.readAsDataURL(file)})}
+      var form=document.getElementById('customOrderForm'),state=document.getElementById('customState'),btn=document.getElementById('customSubmit');
+      form.addEventListener('submit',async function(e){
+        e.preventDefault();
+        if(!isLogged()){sessionStorage.setItem('mcjAfterLoginRedirect','custom-order.html');location.href='index.html';return}
+        if(btn.disabled)return;btn.disabled=true;btn.textContent='正在提交...';
+        var data={};Array.prototype.forEach.call(form.elements,function(el){if(el.name&&el.type!=='file')data[el.name]=el.value.trim()});
+        var attachment=await fileUrl(form.elements.attachment.files&&form.elements.attachment.files[0]);
+        var db=read();db.orders=Array.isArray(db.orders)?db.orders:[];var u=user();
+        db.orders.unshift(Object.assign(data,{id:'CO-'+Date.now(),order_no:'MCJ-CUSTOM-'+Date.now(),order_type:'custom',status:'quote_pending',boss_id:u.id||'',boss_nickname:u.name||'老板',attachmentUrl:attachment,created_at:new Date().toISOString()}));
+        write(db);state.hidden=false;state.textContent='自定义需求已提交，等待客服报价。';form.reset();btn.disabled=false;btn.textContent='提交给客服报价';
+      });
+    })();
+  </script>
+</body>
+</html>

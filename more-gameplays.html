@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>更多玩法 | MEOW CUI JIAO</title>
+  <link rel="stylesheet" href="src/style.css">
+  <link rel="stylesheet" href="src/real-data-admin.css">
+  <style>
+    .gameplay-shell{width:min(1120px,calc(100% - 32px));margin:0 auto;padding:26px 0 44px}
+    .gameplay-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}
+    .gameplay-card{padding:18px;display:grid;gap:12px}
+    .gameplay-card img{width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:16px;border:1px solid rgba(243,168,203,.2)}
+    .gameplay-card h2{margin:0;color:#fff}.gameplay-card p{margin:0;color:#cdb8c4;line-height:1.6}
+    @media(max-width:900px){.gameplay-grid{grid-template-columns:1fr 1fr}}@media(max-width:560px){.gameplay-grid{grid-template-columns:1fr}}
+  </style>
+  <link rel="stylesheet" href="src/design-system.css">
+</head>
+<body>
+  <header class="topbar"><a class="brand" href="index.html"><img src="assets/meow-cuijiao-brand.jpg" alt="MEOW CUI JIAO"><span>MEOW CUI JIAO</span></a><nav class="nav"><a href="index.html">首页</a><a href="companion-center.html">陪玩大厅</a><a href="mine.html">我的</a></nav></header>
+  <main class="gameplay-shell">
+    <section class="section-title"><div><h1>更多玩法</h1><p>后台上架的固定价格玩法会显示在这里。</p></div></section>
+    <section class="gameplay-grid" id="gameplayList"></section>
+  </main>
+  <script>
+    (function(){
+      function read(){try{return JSON.parse(localStorage.getItem('mcjPlatformData.v1')||'{}')||{}}catch(e){return {}}}
+      function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
+      var db=read();
+      var rows=(db.fixedGameplays||db.gameplays||[]).filter(function(x){return x&&x.enabled!==false&&x.visible!==false}).sort(function(a,b){return Number(a.sort||99)-Number(b.sort||99)});
+      document.getElementById('gameplayList').innerHTML=rows.length?rows.map(function(x){return '<article class="neon-card gameplay-card"><img src="'+esc(x.image||x.cover||'assets/quick-more-play-plus.png')+'" alt="'+esc(x.title||x.name||'玩法')+'"><h2>'+esc(x.title||x.name||'未命名玩法')+'</h2><p>'+esc(x.description||x.intro||'')+'</p><strong>'+esc(x.price||x.priceRange||'后台未设置价格')+'</strong><a class="btn primary" href="custom-order.html?gameplay='+encodeURIComponent(x.id||x.name||'')+'">发布需求</a></article>'}).join(''):'<article class="neon-card gameplay-card"><h2>暂时没有更多玩法</h2><p>后台上架固定价格玩法后会显示在这里。</p><a class="btn" href="index.html">返回首页</a></article>';
+    })();
+  </script>
+  <script src="src/design-system.js" defer></script>
+</body>
+</html>

@@ -1,0 +1,440 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MEOW CUI JIAO GAMING CLUB</title>
+  <link rel="stylesheet" href="src/front-ui.css">
+  <link rel="stylesheet" href="src/design-system.css">
+  <link rel="stylesheet" href="src/footer-system.css">
+</head>
+<body class="front-shell" data-page="home">
+  <header class="front-header">
+    <div class="front-container front-header-inner">
+      <a class="front-brand" href="index.html" aria-label="MEOW CUI JIAO 首页">
+        <img src="assets/meow-cuijiao-brand.jpg" alt="MEOW CUI JIAO">
+        <span>
+          <strong>MEOW CUI JIAO</strong>
+          <small>BLACK PINK GAMING CLUB</small>
+        </span>
+      </a>
+
+      <nav class="front-nav" aria-label="前台导航">
+        <a class="active" href="index.html">首页</a>
+        <a href="companion-center.html">陪玩大厅</a>
+        <a href="companion-center.html?service=voice">语音大厅</a>
+        <a href="more-gameplays.html">更多玩法</a>
+        <a href="mine.html" data-auth-link>个人中心</a>
+      </nav>
+
+      <div class="front-actions">
+        <a class="front-icon-link" href="messages.html" aria-label="消息">
+          <span class="front-dot"></span>
+          消息
+        </a>
+        <button class="front-login" type="button" data-modal="login" data-guest-only>登录</button>
+        <a class="front-user auth-only" data-auth-only href="mine.html">
+          <span class="front-user-dot"></span>
+          我的
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="home-hero">
+      <div class="front-container home-hero-grid">
+        <div class="home-hero-copy">
+          <p class="front-kicker">MALAYSIA ESPORTS COMPANION PLATFORM</p>
+          <h1>黑粉电竞陪玩俱乐部</h1>
+          <p class="home-hero-sub">
+            快速匹配游戏陪玩、语音陪伴、娱乐开黑与定制订单。前台体验重新统一，后台数据与订单流程继续沿用当前系统。
+          </p>
+
+          <div class="home-hero-actions">
+            <a class="front-btn primary" href="companion-center.html">立即找陪玩</a>
+            <a class="front-btn ghost" href="custom-order.html">发布定制需求</a>
+          </div>
+
+          <div class="home-trust-row" aria-label="平台能力">
+            <span><b>24H</b> 在线接单</span>
+            <span><b>RM</b> 透明报价</span>
+            <span><b>4.9</b> 好评体验</span>
+          </div>
+        </div>
+
+        <div class="home-hero-media">
+          <img src="assets/hero-banner-latest.png" alt="MEOW CUI JIAO 首页 Banner">
+        </div>
+      </div>
+    </section>
+
+    <section class="front-section home-quick-section">
+      <div class="front-container">
+        <div class="front-section-head">
+          <div>
+            <p class="front-kicker">QUICK START</p>
+            <h2>常用入口</h2>
+          </div>
+          <a class="front-text-link" href="more-gameplays.html">查看全部玩法</a>
+        </div>
+
+        <div class="front-card-grid quick-grid">
+          <a class="front-card quick-card" href="companion-center.html">
+            <span class="quick-code">01</span>
+            <strong>陪玩大厅</strong>
+            <small>浏览在线陪玩，按游戏、评分、价格筛选</small>
+          </a>
+          <a class="front-card quick-card" href="companion-center.html?service=voice">
+            <span class="quick-code">02</span>
+            <strong>语音大厅</strong>
+            <small>聊天、挂房、哄睡、情绪陪伴统一入口</small>
+          </a>
+          <a class="front-card quick-card" href="custom-order.html">
+            <span class="quick-code">03</span>
+            <strong>自定义订单</strong>
+            <small>填写预算、时间与需求，由客服协助匹配</small>
+          </a>
+          <a class="front-card quick-card" href="mine.html#recharge" data-auth-link>
+            <span class="quick-code">04</span>
+            <strong>充值中心</strong>
+            <small>充值记录、喵币余额和订单支付入口</small>
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <section class="front-section">
+      <div class="front-container">
+        <div class="front-section-head">
+          <div>
+            <p class="front-kicker">LIVE DATA</p>
+            <h2>今日概览</h2>
+          </div>
+          <span class="front-muted">读取本地统一数据，后续接后台发布内容</span>
+        </div>
+
+        <div class="front-card-grid stat-grid">
+          <button class="front-card stat-card" type="button" data-today-detail="players">
+            <span>在线陪玩</span>
+            <strong data-stat="players">0</strong>
+            <small>AVAILABLE NOW</small>
+          </button>
+          <button class="front-card stat-card" type="button" data-today-detail="orders">
+            <span>今日订单</span>
+            <strong data-stat="orders">0</strong>
+            <small>ORDERS TODAY</small>
+          </button>
+          <button class="front-card stat-card" type="button" data-today-detail="revenue">
+            <span>今日营业额</span>
+            <strong data-stat="revenue">RM 0</strong>
+            <small>REVENUE</small>
+          </button>
+          <button class="front-card stat-card" type="button" data-today-detail="reviews">
+            <span>好评率</span>
+            <strong data-stat="reviews">0%</strong>
+            <small>RATING</small>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <section class="front-section">
+      <div class="front-container">
+        <div class="front-section-head">
+          <div>
+            <p class="front-kicker">RECOMMENDED</p>
+            <h2>热门陪玩</h2>
+          </div>
+          <a class="front-text-link" href="companion-center.html">进入大厅</a>
+        </div>
+
+        <div class="companion-showcase" id="homeCompanionShowcase">
+          <article class="front-card companion-card" data-player-card>
+            <img src="assets/meow-cuijiao-brand.jpg" alt="MOMO">
+            <div>
+              <span class="front-pill">在线</span>
+              <h3>MOMO</h3>
+              <p>VALORANT · 指挥 · 甜妹音</p>
+              <div class="card-bottom">
+                <strong>RM12/h</strong>
+                <a class="front-mini-btn" href="profile.html?name=MOMO&game=VALORANT&rating=5.0&price=RM12%2Fh&image=assets%2Fmeow-cuijiao-brand.jpg&status=%E5%9C%A8%E7%BA%BF&tags=%E7%94%9C%E5%A6%B9%E9%9F%B3%2C%E6%8C%87%E6%8C%A5&desc=MOMO%E6%98%AF%E5%A6%99%E8%84%86%E8%A7%92%E7%94%B5%E7%AB%9E%E8%AE%A4%E8%AF%81%E9%99%AA%E7%8E%A9">查看</a>
+              </div>
+            </div>
+          </article>
+          <article class="front-card companion-card" data-player-card>
+            <img src="assets/lianmiao-club-ad.png" alt="NANA">
+            <div>
+              <span class="front-pill">接单中</span>
+              <h3>NANA</h3>
+              <p>APEX · 娱乐 · 上分</p>
+              <div class="card-bottom">
+                <strong>RM15/h</strong>
+                <a class="front-mini-btn" href="companion-center.html">下单</a>
+              </div>
+            </div>
+          </article>
+          <article class="front-card companion-card" data-player-card>
+            <img src="assets/cat-neon-avatar.png" alt="YUKI">
+            <div>
+              <span class="front-pill">可预约</span>
+              <h3>YUKI</h3>
+              <p>CS2 · 教学 · 稳定</p>
+              <div class="card-bottom">
+                <strong>RM10/h</strong>
+                <a class="front-mini-btn" href="companion-center.html">下单</a>
+              </div>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="front-section">
+      <div class="front-container">
+        <div class="home-flow front-card">
+          <div>
+            <p class="front-kicker">ORDER FLOW</p>
+            <h2>下单流程</h2>
+          </div>
+          <ol class="flow-list">
+            <li><span>01</span><strong>选择服务</strong><small>从大厅或定制订单进入</small></li>
+            <li><span>02</span><strong>确认需求</strong><small>选择游戏、时间和预算</small></li>
+            <li><span>03</span><strong>客服匹配</strong><small>订单系统继续使用现有逻辑</small></li>
+            <li><span>04</span><strong>开始服务</strong><small>消息与个人中心同步记录</small></li>
+          </ol>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div class="modal" id="modal" aria-hidden="true">
+    <div class="dialog">
+      <button class="close" type="button" data-close aria-label="关闭">×</button>
+      <div id="modalBody"></div>
+    </div>
+  </div>
+
+  <script src="src/unified-config.js"></script>
+  <script src="src/commission-engine.js"></script>
+  <script src="src/unified-api.js"></script>
+  <script src="src/role-gates.js"></script>
+  <script src="src/site-data.js"></script>
+  <script src="src/home-banner.js"></script>
+  <script src="src/dropdown-system.js" defer></script>
+  <script src="src/real-data-admin.js" defer></script>
+  <script src="src/footer-system.js" defer></script>
+  <script src="src/text-guard.js" defer></script>
+  <script src="src/launch-readiness-fixes.js" defer></script>
+  <script src="src/meow-butler.js?v=20260711-floating" defer></script>
+  <script src="src/design-system.js" defer></script>
+  <script>
+    (function () {
+      var modal = document.getElementById("modal");
+      var modalBody = document.getElementById("modalBody");
+
+      function esc(value) {
+        return String(value || "").replace(/[&<>"']/g, function (ch) {
+          return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch];
+        });
+      }
+
+      function isLoggedIn() {
+        return window.MCJRoleGate ? window.MCJRoleGate.isLogged("customer") : false;
+      }
+
+      function refreshAuthUI() {
+        document.body.classList.toggle("is-logged-in", isLoggedIn());
+      }
+
+      function openModal(html) {
+        if (!modal || !modalBody) return;
+        modalBody.innerHTML = html;
+        modal.classList.add("open");
+        modal.setAttribute("aria-hidden", "false");
+        document.body.style.overflow = "hidden";
+      }
+
+      function closeModal() {
+        if (!modal) return;
+        modal.classList.remove("open");
+        modal.setAttribute("aria-hidden", "true");
+        document.body.style.overflow = "";
+      }
+
+      function loginHtml() {
+        return '<div class="front-login-modal">' +
+          '<p class="front-kicker">ACCOUNT LOGIN</p>' +
+          '<h2>登录 MEOW CUI JIAO</h2>' +
+          '<div class="login-tabs">' +
+          '<button class="login-tab active" type="button" data-login-tab="phone">手机验证</button>' +
+          '<button class="login-tab" type="button" data-login-tab="gmail">Gmail 登录</button>' +
+          '</div>' +
+          '<div class="login-panel active" data-login-panel="phone">' +
+          '<label>手机号码<input id="loginPhone" inputmode="tel" placeholder="请输入手机号码"></label>' +
+          '<label>验证码<span class="login-code-row"><input id="loginCode" inputmode="numeric" placeholder="请输入验证码"><button type="button" data-send-code>获取验证码</button></span></label>' +
+          '<button class="front-btn primary full" type="button" data-login-confirm>登录</button>' +
+          '</div>' +
+          '<div class="login-panel" data-login-panel="gmail">' +
+          '<label>Gmail 邮箱<input id="loginGmail" type="email" placeholder="name@gmail.com"></label>' +
+          '<label>密码或验证码<input id="loginGmailCode" type="password" placeholder="请输入密码或验证码"></label>' +
+          '<button class="front-btn primary full" type="button" data-login-confirm>登录</button>' +
+          '</div>' +
+          '</div>';
+      }
+
+      function readDB() {
+        try { return JSON.parse(localStorage.getItem("mcjRealDB.v1") || "{}") || {}; }
+        catch (e) { return {}; }
+      }
+
+      function money(value) {
+        var number = Number(value || 0);
+        return "RM " + number.toFixed(number % 1 ? 2 : 0);
+      }
+
+      function amount(order) {
+        var raw = order.amount || order.total || order.price || 0;
+        var match = String(raw).match(/\d+(?:\.\d+)?/);
+        return match ? Number(match[0]) : 0;
+      }
+
+      function todayData() {
+        var db = readDB();
+        var companions = Array.isArray(db.companions) ? db.companions.filter(function (item) {
+          return item.auditStatus === "approved" && item.visible !== false;
+        }) : [];
+        var orders = Array.isArray(db.orders) ? db.orders : [];
+        var reviews = Array.isArray(db.reviews) ? db.reviews : [];
+        var revenue = orders.reduce(function (sum, item) { return sum + amount(item); }, 0);
+        var rating = reviews.length ? reviews.reduce(function (sum, item) {
+          return sum + (Number(item.rating || item.score || 5) || 5);
+        }, 0) / reviews.length : 4.9;
+        return {
+          companions: companions,
+          orders: orders,
+          reviews: reviews,
+          revenue: revenue,
+          goodRate: Math.min(100, Math.max(0, rating / 5 * 100))
+        };
+      }
+
+      function updateStats() {
+        var data = todayData();
+        var values = {
+          players: data.companions.length || 3,
+          orders: data.orders.length,
+          revenue: money(data.revenue),
+          reviews: data.goodRate.toFixed(1) + "%"
+        };
+        Object.keys(values).forEach(function (key) {
+          var node = document.querySelector('[data-stat="' + key + '"]');
+          if (node) node.textContent = values[key];
+        });
+      }
+
+      function detailHtml(type) {
+        var data = todayData();
+        var title = "今日概览";
+        var rows = [];
+        if (type === "players") {
+          title = "在线陪玩明细";
+          rows = (data.companions.length ? data.companions : [
+            { name: "MOMO", game: "VALORANT", price: "RM12/h", rating: "5.0" },
+            { name: "NANA", game: "APEX", price: "RM15/h", rating: "4.9" },
+            { name: "YUKI", game: "CS2", price: "RM10/h", rating: "4.8" }
+          ]).map(function (item) {
+            return [item.name || "未命名", (item.game || item.mainGame || "游戏") + " · " + (item.price || "未设置价格") + " · " + (item.rating || "5.0")];
+          });
+        } else if (type === "orders") {
+          title = "今日订单明细";
+          rows = data.orders.map(function (item) {
+            return [item.order_id || item.id || "未编号订单", (item.status || "待处理") + " · " + (item.game || item.service || "服务")];
+          });
+        } else if (type === "revenue") {
+          title = "今日营业额明细";
+          rows = data.orders.map(function (item) {
+            return [item.order_id || item.id || "订单", item.amount || item.total || "RM0"];
+          });
+        } else {
+          title = "好评明细";
+          rows = data.reviews.map(function (item) {
+            return [item.name || item.user || "老板", (item.rating || item.score || "5.0") + " 分 · " + (item.comment || "暂无评价内容")];
+          });
+        }
+        if (!rows.length) rows = [["暂无后台数据", "后台新增数据后会同步显示在这里"]];
+        return '<div class="front-detail-modal"><p class="front-kicker">DATA DETAIL</p><h2>' + esc(title) + '</h2><div class="detail-list">' +
+          rows.slice(0, 12).map(function (row) {
+            return '<div><strong>' + esc(row[0]) + '</strong><span>' + esc(row[1]) + '</span></div>';
+          }).join("") +
+          '</div><button class="front-btn ghost full" type="button" data-close>关闭</button></div>';
+      }
+
+      document.addEventListener("click", function (event) {
+        var close = event.target.closest("[data-close]");
+        if (close || event.target === modal) {
+          closeModal();
+          return;
+        }
+
+        var tab = event.target.closest("[data-login-tab]");
+        if (tab) {
+          var box = tab.closest(".front-login-modal");
+          box.querySelectorAll("[data-login-tab]").forEach(function (node) {
+            node.classList.toggle("active", node === tab);
+          });
+          box.querySelectorAll("[data-login-panel]").forEach(function (node) {
+            node.classList.toggle("active", node.getAttribute("data-login-panel") === tab.getAttribute("data-login-tab"));
+          });
+          return;
+        }
+
+        var sendCode = event.target.closest("[data-send-code]");
+        if (sendCode) {
+          sendCode.textContent = "已发送";
+          return;
+        }
+
+        var loginConfirm = event.target.closest("[data-login-confirm]");
+        if (loginConfirm) {
+          if (window.MCJRoleGate) window.MCJRoleGate.login("customer", "customer_demo");
+          refreshAuthUI();
+          var redirect = sessionStorage.getItem("mcjAfterLoginRedirect");
+          sessionStorage.removeItem("mcjAfterLoginRedirect");
+          closeModal();
+          if (redirect) location.href = redirect;
+          return;
+        }
+
+        var modalTrigger = event.target.closest("[data-modal]");
+        if (modalTrigger && modalTrigger.dataset.modal === "login") {
+          event.preventDefault();
+          openModal(loginHtml());
+          return;
+        }
+
+        var authLink = event.target.closest("[data-auth-link]");
+        if (authLink && !isLoggedIn()) {
+          event.preventDefault();
+          sessionStorage.setItem("mcjAfterLoginRedirect", authLink.getAttribute("href") || "mine.html");
+          openModal(loginHtml());
+          return;
+        }
+
+        var detail = event.target.closest("[data-today-detail]");
+        if (detail) {
+          openModal(detailHtml(detail.getAttribute("data-today-detail")));
+        }
+      });
+
+      document.addEventListener("keydown", function (event) {
+        if (event.key === "Escape") closeModal();
+      });
+
+      refreshAuthUI();
+      updateStats();
+      window.addEventListener("mcj:data-updated", updateStats);
+    })();
+  </script>
+</body>
+</html>

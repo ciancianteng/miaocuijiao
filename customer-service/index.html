@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>客服端 | MEOW CUI JIAO</title>
+  <link rel="stylesheet" href="../src/theme.css">
+  <link rel="stylesheet" href="../src/chat-ui.css">
+  <link rel="stylesheet" href="../src/customer-service.css">
+  <link rel="stylesheet" href="../src/design-system.css">
+</head>
+<body>
+  <section class="mcj-login" data-service-login>
+    <div class="mcj-login-card mcj-card">
+      <h1>MEOW CUI JIAO 客服端</h1>
+      <p>独立客服工作台，只允许客服账号进入。</p>
+      <label>User ID<input name="userId" autocomplete="username" placeholder="请输入客服 User ID"></label>
+      <label>密码<input name="password" type="password" autocomplete="current-password" placeholder="请输入密码"></label>
+      <button class="mcj-btn primary" type="button" data-service-login-submit>进入客服端</button>
+    </div>
+  </section>
+
+  <div data-service-app>
+    <header class="service-header">
+      <div class="service-header-inner">
+        <strong>MEOW CUI JIAO · 客服端</strong>
+        <nav class="service-nav" aria-label="客服端导航">
+          <button class="active" type="button" data-service-view="home">工作台</button>
+          <button type="button" data-service-view="pending">待处理 <span data-service-count="pending">0</span></button>
+          <button type="button" data-service-view="orders">订单管理</button>
+          <button type="button" data-service-view="messages">老板消息 <span data-service-count="messages">0</span></button>
+          <button type="button" data-service-view="dispatch">陪玩调度</button>
+          <button type="button" data-service-view="tickets">售后工单 <span data-service-count="tickets">0</span></button>
+          <button type="button" data-service-view="salary">工资与考勤</button>
+          <button type="button" data-service-view="mine">我的</button>
+        </nav>
+      </div>
+    </header>
+    <main class="mcj-shell">
+      <section class="service-view active" id="service-home" data-service-panel="home"></section>
+      <section class="service-view" id="service-pending" data-service-panel="pending"></section>
+      <section class="service-view" id="service-orders" data-service-panel="orders"></section>
+      <section class="service-view" id="service-messages" data-service-panel="messages"></section>
+      <section class="service-view" id="service-dispatch" data-service-panel="dispatch"></section>
+      <section class="service-view" id="service-tickets" data-service-panel="tickets"></section>
+      <section class="service-view" id="service-salary" data-service-panel="salary"></section>
+      <section class="service-view" id="service-mine" data-service-panel="mine"></section>
+    </main>
+  </div>
+  <script src="../src/unified-config.js"></script>
+  <script src="../src/commission-engine.js"></script>
+  <script src="../src/unified-api.js"></script>
+  <script src="../src/role-gates.js"></script>
+  <script src="../src/customer-service-header.js"></script>
+  <script src="../src/chat-api.js"></script>
+  <script src="../src/service-message-pool.js"></script>
+  <script src="../src/chat-ui.js"></script>
+  <script src="../src/customer-service-api.js"></script>
+  <script src="../src/dropdown-system.js"></script>
+  <script src="../src/customer-service-app.js"></script>
+  <script src="../src/date-flow-filter.js"></script>
+  <script src="../src/design-system.js"></script>
+</body>
+</html>

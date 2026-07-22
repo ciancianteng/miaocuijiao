@@ -1,0 +1,44 @@
+.companion-filter-card {
+  overflow: visible;
+}
+
+.companion-filters {
+  align-items: end;
+}
+
+.companion-search-field {
+  grid-column: span 2;
+}
+
+.companion-hall-grid .player-card,
+.companion-hall-grid .companion-card {
+  min-height: 100%;
+}
+
+.companion-pagination {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.companion-pagination button {
+  min-width: 36px;
+  height: 36px;
+  border: 1px solid rgba(239, 171, 201, .32);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, .04);
+  color: inherit;
+  font-weight: 800;
+}
+
+.companion-pagination button.active {
+  background: #efabc9;
+  color: #16070d;
+}
+
+@media (max-width: 760px) {
+  .companion-search-field {
+    grid-column: auto;
+  }
+}

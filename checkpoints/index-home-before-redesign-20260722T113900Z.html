@@ -1,0 +1,546 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MEOW CUI JIAO GAMING CLUB</title>
+  <style>
+    :root{
+      --bg:#050406;
+      --panel:rgba(18,12,24,.78);
+      --panel-strong:rgba(27,16,34,.9);
+      --pink:#f3a8cb;
+      --pink-soft:#ffdceb;
+      --hot:#ff6fb4;
+      --purple:#8d72ff;
+      --text:#fff5fa;
+      --muted:#bfaebb;
+      --line:rgba(243,168,203,.28);
+      --glow:0 0 28px rgba(243,168,203,.16),0 18px 58px rgba(0,0,0,.42);
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:radial-gradient(circle at 18% 8%,rgba(243,168,203,.16),transparent 28%),radial-gradient(circle at 82% 22%,rgba(141,114,255,.12),transparent 28%),var(--bg);color:var(--text);font-family:Inter,Arial,"Microsoft YaHei",sans-serif;overflow-x:hidden}
+    a{color:inherit;text-decoration:none}button{font:inherit}
+    .site-header{background:rgba(5,4,6,.9);border-bottom:1px solid rgba(243,168,203,.16);backdrop-filter:blur(16px)}
+    .header-inner{max-width:1200px;margin:0 auto;min-height:72px;padding:0 24px;display:flex;align-items:center;justify-content:space-between;gap:24px}
+    .brand{display:flex;align-items:center;gap:12px;font-weight:1000;color:var(--pink-soft);white-space:nowrap}
+    .live2d-avatar{position:relative;width:56px;height:56px;border-radius:50%;display:grid;place-items:center;background:radial-gradient(circle at 50% 35%,rgba(255,220,235,.24),rgba(243,168,203,.04));border:1px solid rgba(255,220,235,.42);box-shadow:0 0 24px rgba(243,168,203,.24),inset 0 0 14px rgba(255,255,255,.08);animation:logoBreath 2.8s ease-in-out infinite;flex:0 0 auto}
+    .live2d-avatar img{width:48px;height:48px;border-radius:50%;object-fit:cover;display:block}.live2d-avatar i{position:absolute;inset:-5px;border-radius:50%;border:1px solid rgba(243,168,203,.30);animation:logoRing 3.8s linear infinite}.brand small{display:block;margin-top:2px;color:var(--pink);font-size:11px;letter-spacing:.1em}@keyframes logoBreath{0%,100%{transform:translateY(0) scale(1)}50%{transform:translateY(-2px) scale(1.035)}}@keyframes logoRing{to{transform:rotate(360deg)}}
+    .top-actions{display:flex;align-items:center;gap:16px}.top-actions button,.top-actions a{height:40px;border-radius:999px;border:1px solid var(--line);background:rgba(255,255,255,.035);color:var(--text);padding:0 16px;font-weight:950;cursor:pointer;display:inline-flex;align-items:center;justify-content:center}.top-actions .login{background:linear-gradient(180deg,#ffe2ef,#e7a0c4);color:#1b0712;border:0}.auth-only{display:none}.is-logged-in .auth-only{display:inline-flex}.is-logged-in .login{display:none}.user-chip{gap:8px;color:#ffdceb}.user-dot{width:18px;height:18px;border-radius:50%;background:radial-gradient(circle at 45% 35%,#fff,#f3a8cb 55%,#21101a);box-shadow:0 0 12px rgba(243,168,203,.36)}
+    .container{max-width:1200px;margin:0 auto;padding:24px}
+    .notice-bar{margin-bottom:28px;border:1px solid rgba(243,168,203,.22);background:rgba(21,12,25,.72);border-radius:999px;padding:12px 18px;color:#ffdceb;white-space:nowrap;overflow:hidden}.notice-bar span{display:inline-block;min-width:100%;padding-left:100%;animation:noticeScroll 14s linear infinite}@keyframes noticeScroll{from{transform:translateX(0)}to{transform:translateX(-100%)}}
+    .banner{margin-bottom:24px;border-radius:20px;overflow:hidden;border:1px solid rgba(243,168,203,.24);background:#050406;box-shadow:var(--glow)}
+    .banner img{display:block;width:100%;height:auto;object-fit:contain;background:#050406}
+    .main-nav{margin:0 0 38px;display:flex;align-items:center;justify-content:center;gap:14px;flex-wrap:wrap}.main-nav a,.main-nav button{min-height:44px;padding:0 22px;border-radius:999px;border:1px solid var(--line);background:rgba(255,255,255,.04);color:#fbe8f2;font-weight:1000;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;transition:.2s ease}.main-nav a:hover,.main-nav button:hover{transform:translateY(-2px);box-shadow:0 0 22px rgba(243,168,203,.18);border-color:rgba(255,220,235,.52)}.main-nav .primary{border:0;background:linear-gradient(180deg,#ffe2ef,#f0a7ca);color:#190812;box-shadow:0 0 24px rgba(243,168,203,.28)}
+    .section{margin-bottom:46px}.grid{display:grid;gap:24px}.live-stats{grid-template-columns:repeat(4,1fr)}
+    .neon-card{position:relative;overflow:hidden;border-radius:24px;border:1px solid var(--line);background:linear-gradient(145deg,rgba(255,255,255,.07),rgba(255,255,255,.025) 40%,rgba(243,168,203,.08)),var(--panel);box-shadow:var(--glow);transition:transform .22s ease,border-color .22s ease,box-shadow .22s ease}.neon-card:before{content:"";position:absolute;inset:-1px;border-radius:inherit;background:radial-gradient(circle at 20% 10%,rgba(255,220,235,.22),transparent 26%),radial-gradient(circle at 86% 90%,rgba(255,111,180,.20),transparent 30%);pointer-events:none}.neon-card:hover{transform:translateY(-6px);border-color:rgba(255,220,235,.64);box-shadow:0 0 36px rgba(243,168,203,.24),0 22px 68px rgba(0,0,0,.50)}
+    .stat-card{min-height:132px;padding:22px;display:flex;align-items:center;justify-content:space-between;gap:16px;cursor:pointer}.stat-copy{position:relative;z-index:1}.stat-card span{display:block;color:var(--muted);font-size:13px;font-weight:950}.stat-card strong{display:block;margin-top:5px;font-size:44px;line-height:1;color:#fff}.stat-card b{display:block;margin-top:8px;color:var(--pink);font-size:13px;letter-spacing:.16em}.stat-icon{position:relative;z-index:1;width:58px;height:58px;border-radius:20px;display:grid;place-items:center;background:rgba(243,168,203,.13);border:1px solid rgba(243,168,203,.28);font-size:28px;box-shadow:inset 0 0 18px rgba(255,220,235,.08)}
+    .feature-row{grid-template-columns:repeat(4,1fr)}.feature-card{min-height:190px;padding:26px;display:flex;flex-direction:column;justify-content:space-between}.feature-head{position:relative;z-index:1;display:flex;align-items:flex-start;gap:16px}.feature-icon{width:58px;height:58px;border-radius:20px;display:grid;place-items:center;background:rgba(255,220,235,.12);border:1px solid rgba(243,168,203,.28);font-size:28px}.feature-card h3{margin:0;font-size:25px}.feature-card p{margin:7px 0 0;color:var(--muted);font-weight:850}.feature-card .btn{position:relative;z-index:1;width:max-content;min-height:42px;padding:0 17px;border:0;border-radius:999px;background:linear-gradient(180deg,#ffe2ef,#e9a0c6);color:#1b0712;font-weight:1000;cursor:pointer}
+    .section-title{display:flex;align-items:end;justify-content:space-between;gap:16px;margin-bottom:18px}.section-title h2{margin:0;font-size:28px}.section-title p{margin:5px 0 0;color:var(--muted)}
+    .order-strip{display:flex;gap:20px;overflow-x:auto;padding:4px 2px 18px;scroll-snap-type:x mandatory}.order-strip::-webkit-scrollbar{height:8px}.order-strip::-webkit-scrollbar-thumb{background:rgba(243,168,203,.36);border-radius:99px}.companion-card{flex:0 0 238px;scroll-snap-align:start;padding:12px}.avatar{position:relative;height:190px;border-radius:20px;overflow:hidden;border:1px solid rgba(243,168,203,.28);background:#120d15}.avatar img{width:100%;height:100%;object-fit:cover}.online-dot{position:absolute;right:12px;top:12px;width:13px;height:13px;border-radius:50%;background:#72efb4;box-shadow:0 0 12px #72efb4}.companion-info{position:relative;z-index:1;padding:13px 4px 2px}.row{display:flex;align-items:center;justify-content:space-between;gap:8px}.companion-info h3{margin:0;font-size:19px}.price{font-weight:1000;color:var(--pink-soft)}.muted{color:var(--muted)}.mini{margin:8px 0 12px;color:var(--muted);font-size:13px}.order-btn{width:100%;height:40px;border:0;border-radius:999px;background:linear-gradient(180deg,#ffe2ef,#e9a0c6);color:#1b0712;font-weight:1000;cursor:pointer;transition:.2s ease}.order-btn:hover{transform:translateY(-2px);box-shadow:0 0 20px rgba(243,168,203,.24)}
+    .modal{position:fixed;inset:0;z-index:100;display:none;place-items:center;background:rgba(2,1,4,.76);backdrop-filter:blur(12px);padding:20px}.modal.open{display:grid}.dialog{width:min(680px,100%);max-height:84vh;overflow:auto;border:1px solid rgba(243,168,203,.34);border-radius:24px;background:linear-gradient(180deg,rgba(30,24,36,.96),rgba(9,8,13,.98));box-shadow:0 24px 90px rgba(0,0,0,.62);padding:22px}.close{float:right;width:36px;height:36px;border-radius:50%;border:1px solid rgba(243,168,203,.28);background:rgba(0,0,0,.25);color:#ffe1ef;font-size:22px;cursor:pointer}
+    .team-lobby-card .feature-icon{box-shadow:0 0 22px rgba(243,168,203,.22);background:radial-gradient(circle at 50% 40%,rgba(255,220,235,.22),rgba(243,168,203,.09))}.team-lobby-card .btn{box-shadow:0 0 20px rgba(243,168,203,.22)}@media(max-width:980px){.live-stats{grid-template-columns:repeat(2,1fr)}.feature-row{grid-template-columns:1fr}.container{padding:20px}.main-nav{justify-content:flex-start;overflow-x:auto;flex-wrap:nowrap;padding-bottom:4px}.main-nav a,.main-nav button{white-space:nowrap}.brand span{display:block}}
+    @media(max-width:560px){.header-inner{padding:0 16px}.top-actions{gap:10px}.top-actions button{padding:0 12px}.container{padding:16px}.notice-bar{margin-bottom:20px}.banner{margin-bottom:20px}.live-stats{grid-template-columns:1fr}.stat-card{min-height:118px}.stat-card strong{font-size:38px}.feature-card{min-height:168px}.section{margin-bottom:34px}.section-title{align-items:flex-start;flex-direction:column}.companion-card{flex-basis:220px}.avatar{height:176px}}
+  
+/* mcj-premium-motion */
+html{scroll-behavior:smooth}
+body{animation:pageIn .28s ease both}
+@keyframes pageIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.ambient-layer{position:fixed;inset:0;pointer-events:none;z-index:0;overflow:hidden}.ambient-layer span{position:absolute;display:block;opacity:.07;filter:drop-shadow(0 0 14px rgba(243,168,203,.35));animation:ambientFloat var(--dur,18s) ease-in-out infinite alternate}.ambient-layer .paw{font-size:64px;color:#fff}.ambient-layer .heart{font-size:28px;color:#f3a8cb}.ambient-layer .spark{width:5px;height:5px;border-radius:50%;background:#ffdceb;box-shadow:0 0 18px rgba(255,220,235,.85);animation:softTwinkle 3.8s ease-in-out infinite}.ambient-layer .p1{left:6%;top:22%;--dur:19s}.ambient-layer .p2{right:8%;top:62%;--dur:23s;transform:rotate(18deg)}.ambient-layer .p3{left:48%;top:76%;--dur:21s;transform:rotate(-10deg)}.ambient-layer .h1{left:18%;top:72%;--dur:15s}.ambient-layer .h2{right:22%;top:18%;--dur:17s}.ambient-layer .s1{left:32%;top:16%}.ambient-layer .s2{left:77%;top:38%;animation-delay:1.1s}.ambient-layer .s3{left:58%;top:88%;animation-delay:2s}@keyframes ambientFloat{from{transform:translate3d(0,0,0) rotate(-6deg)}to{transform:translate3d(24px,-38px,0) rotate(8deg)}}@keyframes softTwinkle{0%,100%{opacity:.035;transform:scale(.7)}50%{opacity:.09;transform:scale(1)}}
+.site-header,.container{position:relative;z-index:1}.brand{animation:brandGlow 4.8s ease-in-out infinite}@keyframes brandGlow{0%,100%{text-shadow:0 0 8px rgba(243,168,203,.20)}50%{text-shadow:0 0 18px rgba(243,168,203,.42)}}
+.banner{position:relative;animation:bannerBreath 4.8s ease-in-out infinite}.banner:after{content:"";position:absolute;inset:0;border-radius:20px;pointer-events:none;background:linear-gradient(110deg,transparent 0%,transparent 42%,rgba(255,220,235,.20) 49%,transparent 57%,transparent 100%);transform:translateX(-120%);animation:bannerSweep 6s ease-in-out infinite}.banner:before{content:"";position:absolute;inset:-1px;border-radius:21px;pointer-events:none;border:1px solid rgba(255,220,235,.22);box-shadow:0 0 18px rgba(243,168,203,.18);animation:borderBreath 3.8s ease-in-out infinite}.banner:hover{transform:scale(1.01);transition:transform .45s ease}.banner img{transition:filter .45s ease}.banner:hover img{filter:saturate(1.06) contrast(1.03)}@keyframes bannerSweep{0%,64%{transform:translateX(-120%)}86%,100%{transform:translateX(120%)}}@keyframes borderBreath{0%,100%{box-shadow:0 0 14px rgba(243,168,203,.12)}50%{box-shadow:0 0 28px rgba(243,168,203,.24)}}@keyframes bannerBreath{0%,100%{box-shadow:var(--glow)}50%{box-shadow:0 0 32px rgba(243,168,203,.18),0 20px 62px rgba(0,0,0,.44)}}
+.notice-bar{position:relative}.notice-bar.fade-cycle{animation:noticeFade 4s ease-in-out infinite}@keyframes noticeFade{0%,100%{opacity:.76}15%,82%{opacity:1}}
+.neon-card,.main-nav a,.main-nav button,.feature-card .btn,.order-btn,.top-actions button,.top-actions a{will-change:transform}.main-nav a:active,.main-nav button:active,.feature-card .btn:active,.order-btn:active,.top-actions button:active{transform:scale(.97)}.feature-card:hover{transform:scale(1.03);border-color:rgba(255,220,235,.64)}.feature-card:hover .btn{transform:scale(1.04);box-shadow:0 0 24px rgba(243,168,203,.28)}
+.stat-card strong{font-variant-numeric:tabular-nums}.online-dot{animation:onlineBreath 2.1s ease-in-out infinite}@keyframes onlineBreath{0%,100%{box-shadow:0 0 10px rgba(114,239,180,.55);transform:scale(1)}50%{box-shadow:0 0 20px rgba(114,239,180,.85);transform:scale(1.08)}}
+.order-strip{scrollbar-width:none;-ms-overflow-style:none;cursor:grab}.order-strip::-webkit-scrollbar{display:none}.order-strip.paused{cursor:grab}.companion-card:hover{transform:translateY(-5px) scale(1.02)}
+.recent-orders{padding:20px}.recent-orders h2{margin:0 0 14px;font-size:24px}.order-ticker{height:132px;overflow:hidden;position:relative}.order-ticker-track{display:grid;gap:10px;animation:orderTicker 12s linear infinite}.recent-orders:hover .order-ticker-track{animation-play-state:paused}.recent-order-item{display:grid;grid-template-columns:86px 1fr auto;align-items:center;gap:14px;padding:13px 14px;border-radius:16px;border:1px solid rgba(243,168,203,.15);background:rgba(255,255,255,.035)}.recent-order-item time{color:#ffb6d9;font-weight:900}.recent-order-item strong{color:#fff}.recent-order-item span{color:#bfaebb;font-size:13px}.recent-order-item b{color:#ffdceb}@keyframes orderTicker{from{transform:translateY(0)}to{transform:translateY(-50%)}}
+@media(max-width:720px){.ambient-layer .paw{font-size:42px}.recent-order-item{grid-template-columns:1fr;gap:4px}.order-ticker{height:190px}.banner:hover{transform:none}}
+@media(prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+
+/* official-selected-ads */
+.official-ads{position:relative}.official-ad-slider{position:relative;height:300px;border-radius:24px;border:1px solid rgba(243,168,203,.30);overflow:hidden;background:radial-gradient(circle at 20% 15%,rgba(243,168,203,.15),transparent 38%),linear-gradient(135deg,rgba(24,13,30,.96),rgba(5,4,8,.98));box-shadow:0 0 34px rgba(243,168,203,.16),0 24px 70px rgba(0,0,0,.45)}.official-ad-track{height:100%;position:relative}.official-ad{position:absolute;inset:0;display:block;opacity:0;transform:translateX(18px);transition:opacity .55s ease,transform .55s ease;color:#fff}.official-ad.active{opacity:1;transform:translateX(0);z-index:2}.official-ad img{width:100%;height:100%;object-fit:contain;object-position:center;display:block;background:radial-gradient(circle at 50% 45%,rgba(255,220,235,.08),transparent 52%),linear-gradient(135deg,rgba(18,10,24,.92),rgba(4,4,7,.96));transition:filter .65s ease}.official-ad:hover img{filter:saturate(1.04) contrast(1.02)}.official-ad:after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,rgba(0,0,0,.10),rgba(0,0,0,.06) 46%,rgba(0,0,0,.32));pointer-events:none}.ad-badge{position:absolute;right:20px;top:18px;z-index:3;border-radius:999px;border:1px solid rgba(255,220,235,.38);background:rgba(10,7,12,.58);backdrop-filter:blur(12px);padding:7px 12px;color:#ffdceb;font-size:12px;font-weight:1000;letter-spacing:.14em;box-shadow:0 0 18px rgba(243,168,203,.16)}.ad-glass-copy{position:absolute;right:18px;bottom:18px;z-index:3;width:min(330px,34%);border-radius:20px;border:1px solid rgba(255,220,235,.26);background:rgba(8,6,10,.50);backdrop-filter:blur(16px);padding:16px;box-shadow:0 0 26px rgba(243,168,203,.12),inset 0 0 18px rgba(255,220,235,.05)}.ad-glass-copy h2{margin:0;font-size:24px;line-height:1.12;color:#fff4fa;text-shadow:0 0 16px rgba(243,168,203,.22)}.ad-glass-copy p{margin:7px 0 13px;color:#dac4d1;font-weight:850;font-size:13px;line-height:1.45}.ad-action{display:inline-flex;height:38px;align-items:center;justify-content:center;border-radius:999px;border:0;background:linear-gradient(180deg,#ffe2ef,#e9a0c6);color:#180711;font-weight:1000;padding:0 15px;box-shadow:0 0 20px rgba(243,168,203,.20);transition:.2s ease}.official-ad:hover .ad-action,.ad-action:hover{transform:scale(1.04);box-shadow:0 0 28px rgba(243,168,203,.32)}.ad-dots{position:absolute;left:50%;bottom:14px;z-index:5;transform:translateX(-50%);display:flex;gap:8px}.ad-dot{width:9px;height:9px;border-radius:50%;border:1px solid rgba(255,220,235,.5);background:rgba(255,255,255,.14);cursor:pointer;padding:0}.ad-dot.active{width:24px;border-radius:999px;background:#ffdceb;box-shadow:0 0 14px rgba(243,168,203,.55)}@media(max-width:720px){.official-ad-slider{height:210px}.ad-glass-copy{right:12px;bottom:12px;width:min(260px,58%);padding:12px;border-radius:16px}.ad-glass-copy h2{font-size:18px}.ad-glass-copy p{font-size:12px;margin:5px 0 9px}.ad-action{height:34px;padding:0 12px;font-size:12px}.ad-badge{right:12px;top:12px;font-size:10px;padding:6px 10px}}
+
+/* hot-recommend-carousel-v2 */
+.section-title h2,.feature-card h3,.companion-info h3{font-family:"Microsoft YaHei UI","Arial Rounded MT Bold",Inter,sans-serif;font-weight:1000;letter-spacing:.01em;text-shadow:0 0 16px rgba(243,168,203,.30),0 2px 0 rgba(0,0,0,.45)}.section-title p{letter-spacing:.08em;text-transform:uppercase;font-weight:900}.hot-title-row{align-items:flex-start}.lobby-link{min-height:42px;padding:0 18px;border-radius:999px;border:1px solid rgba(243,168,203,.34);background:rgba(255,255,255,.045);color:#ffe3f0;font-weight:1000;display:inline-flex;align-items:center}.live-order-flash{margin-top:12px;display:inline-flex;align-items:center;min-height:34px;padding:0 14px;border-radius:999px;border:1px solid rgba(243,168,203,.22);background:rgba(18,12,24,.58);color:#ffdceb;font-size:13px;font-weight:950;letter-spacing:.04em;box-shadow:inset 0 0 12px rgba(255,220,235,.05);transition:opacity .35s ease,transform .35s ease}.live-order-flash.switching{opacity:0;transform:translateY(5px)}.hot-carousel{position:relative;overflow:hidden;padding:6px 0 12px;mask-image:linear-gradient(90deg,transparent,#000 4%,#000 96%,transparent);-webkit-mask-image:linear-gradient(90deg,transparent,#000 4%,#000 96%,transparent);touch-action:pan-y}.hot-track{display:flex;gap:22px;will-change:transform;transform:translate3d(0,0,0)}.hot-card{flex:0 0 258px;padding:12px;border-radius:24px}.hot-card .avatar{height:188px}.hot-card .avatar img{transition:transform .45s ease}.hot-card:hover{transform:scale(1.03);border-color:rgba(255,220,235,.68);box-shadow:0 0 34px rgba(243,168,203,.24),0 20px 62px rgba(0,0,0,.46)}.hot-card:hover .avatar img{transform:scale(1.045)}.hot-card .row{position:relative;z-index:1}.hot-card h3{font-size:22px;color:#fff4fa}.rating{color:#ffdceb;font-weight:1000;text-shadow:0 0 12px rgba(243,168,203,.22)}.game-line{margin:8px 0 5px;color:#ffb6d9;font-size:13px;font-weight:1000;letter-spacing:.16em;text-transform:uppercase}.order-line{margin:0 0 10px;color:#d7c3cf;font-size:12px;font-weight:850}.tag-row{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:12px}.tag-row span{border-radius:999px;border:1px solid rgba(243,168,203,.20);background:rgba(255,255,255,.045);color:#ffe1ef;font-size:12px;font-weight:900;padding:5px 8px}.bottom-row{align-items:center}.bottom-row .price{font-size:18px;color:#ffe2ef;text-shadow:0 0 12px rgba(243,168,203,.22)}.bottom-row .order-btn{width:auto;min-width:92px;padding:0 13px}.hot-card:hover .order-btn{filter:brightness(1.06);box-shadow:0 0 26px rgba(243,168,203,.32)}@media(max-width:720px){.hot-card{flex-basis:228px}.hot-card .avatar{height:168px}.hot-title-row{gap:12px}.live-order-flash{white-space:normal;border-radius:16px;padding:9px 12px}}
+
+/* home-structure-polish-v3 */
+.recent-orders-panel{padding:22px}.order-flash-wide{width:100%;justify-content:center;font-size:15px;min-height:46px;border-radius:18px}.game-zone-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:18px}.game-zone-card{min-height:116px;padding:20px;display:flex;flex-direction:column;justify-content:space-between}.game-zone-card strong{font-size:24px;color:#fff5fa;letter-spacing:.04em;text-shadow:0 0 16px rgba(243,168,203,.28)}.game-zone-card span{color:#d8c1cd;font-weight:850;font-size:13px}.game-zone-card:hover{transform:translateY(-5px) scale(1.02);border-color:rgba(255,220,235,.58)}.review-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}.review-card{padding:22px}.review-card strong{display:block;color:#ffdceb;text-shadow:0 0 14px rgba(243,168,203,.28);letter-spacing:.08em}.review-card p{margin:12px 0;color:#fff4fa;font-weight:900;line-height:1.7}.review-card span{color:#ffb6d9;font-weight:950}.site-footer{margin:18px 0 34px;padding:24px;border-top:1px solid rgba(243,168,203,.18);color:#bfaebb;text-align:center;font-weight:900;letter-spacing:.08em}.stat-card strong,.price,.rating{font-family:"Arial Rounded MT Bold","Microsoft YaHei UI",Inter,sans-serif}.main-nav{margin-bottom:34px}.live-stats{margin-top:0}.official-ads{margin-top:2px}.hot-recommend-section{margin-top:2px}@media(max-width:980px){.game-zone-grid{grid-template-columns:repeat(2,1fr)}.review-grid{grid-template-columns:1fr}.official-ad-slider{height:230px}}@media(max-width:560px){.game-zone-grid{grid-template-columns:1fr}.recent-orders-panel{padding:16px}.order-flash-wide{justify-content:flex-start}.site-footer{font-size:12px}}
+
+/* home-no-duplicate-nav-v4 */
+.banner{margin-bottom:32px}.official-ads{margin-top:0}.official-ads .section-title{margin-top:0}
+
+/* multi-companion-carousels-v5 */
+.carousel-section{margin-top:6px}.carousel-section .section-title{margin-bottom:16px}.carousel-section .hot-carousel{padding-top:4px}.carousel-section .hot-card{flex-basis:252px}.review-companions .order-line:nth-of-type(2),.recent-order-companions .order-line:nth-of-type(2){color:#ffdceb;font-weight:950}.game-companions .tag-row span:first-child{border-color:rgba(255,220,235,.38);background:rgba(243,168,203,.12);color:#fff4fa}.site-footer{margin-top:30px}
+
+/* header-restored-nav-v6 */
+.header-inner{position:relative}.header-nav{display:flex;align-items:center;justify-content:center;gap:12px;flex:1;min-width:0}.header-nav a,.header-nav button{height:40px;border-radius:999px;border:1px solid rgba(243,168,203,.20);background:rgba(255,255,255,.035);color:#fbe8f2;padding:0 15px;font-weight:950;letter-spacing:.02em;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;transition:.22s ease;white-space:nowrap}.header-nav a:hover,.header-nav button:hover{transform:translateY(-2px);border-color:rgba(255,220,235,.48);box-shadow:0 0 20px rgba(243,168,203,.18)}.header-nav .header-primary{border:0;background:linear-gradient(180deg,#ffe2ef,#f0a7ca);color:#190812;box-shadow:0 0 22px rgba(243,168,203,.24)}.top-actions .user-chip{display:inline-flex}.is-logged-in .login{display:inline-flex}@media(max-width:980px){.header-inner{flex-wrap:wrap;padding-top:12px;padding-bottom:12px}.header-nav{order:3;width:100%;justify-content:flex-start;overflow-x:auto;padding-bottom:2px}.header-nav::-webkit-scrollbar{display:none}}@media(max-width:560px){.header-nav a,.header-nav button{height:38px;padding:0 13px;font-size:13px}.top-actions a,.top-actions button{height:36px;padding:0 11px}}
+
+/* header-text-nav-v7 */
+.header-nav{gap:28px}.header-nav a,.header-nav button{height:auto;border:0!important;border-radius:0!important;background:transparent!important;box-shadow:none!important;padding:4px 0!important;color:#eadbe4;font-size:14px;font-weight:950;letter-spacing:.08em;position:relative}.header-nav a:after,.header-nav button:after{content:"";position:absolute;left:0;right:0;bottom:-8px;height:2px;border-radius:999px;background:#f3a8cb;opacity:0;transform:scaleX(.25);transition:.22s ease;box-shadow:0 0 12px rgba(243,168,203,.45)}.header-nav a:hover,.header-nav button:hover{transform:translateY(-1px);color:#fff5fa;text-shadow:0 0 12px rgba(243,168,203,.32)}.header-nav a:hover:after,.header-nav button:hover:after{opacity:1;transform:scaleX(1)}.header-nav .header-primary{color:#ffdceb!important;text-shadow:0 0 12px rgba(243,168,203,.26)}.header-nav .header-primary:after{opacity:.7;transform:scaleX(1)}@media(max-width:980px){.header-nav{gap:22px}}@media(max-width:560px){.header-nav a,.header-nav button{font-size:13px;padding:3px 0!important}}
+
+/* data-entry-expanded-v8 */
+.live-stats{grid-template-columns:repeat(7,minmax(0,1fr));gap:16px}.live-stats .stat-card{min-height:118px;padding:18px}.live-stats .stat-card strong{font-size:34px}.live-stats .stat-card b{font-size:11px}.live-stats .stat-icon{width:50px;height:50px;font-size:24px}@media(max-width:1180px){.live-stats{grid-template-columns:repeat(4,1fr)}}@media(max-width:720px){.live-stats{grid-template-columns:repeat(2,1fr)}}@media(max-width:420px){.live-stats{grid-template-columns:1fr}}
+
+/* banner-data-entry-redesign-v9 */
+.announcement-strip{margin:28px 0;border-radius:999px;border:1px solid rgba(243,168,203,.24);background:linear-gradient(90deg,rgba(28,16,34,.86),rgba(58,22,44,.58),rgba(12,8,16,.86));box-shadow:0 0 24px rgba(243,168,203,.10),inset 0 0 18px rgba(255,220,235,.04);padding:12px 18px;color:#ffdceb;white-space:nowrap;overflow:hidden}.announcement-strip span{display:inline-block;min-width:100%;padding-left:100%;animation:noticeScroll 18s linear infinite;font-weight:950;letter-spacing:.04em}.compact-title{margin-bottom:16px}.compact-title h2{font-size:25px}.today-data,.quick-entry-section{margin-bottom:34px}.today-data-grid,.quick-entry-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:20px}.data-card{min-height:116px;padding:22px;display:flex;align-items:center;justify-content:space-between;border-radius:22px;background:linear-gradient(145deg,rgba(45,28,54,.76),rgba(10,7,14,.86));backdrop-filter:blur(14px)}.data-card span{display:block;color:#cdb8c4;font-size:13px;font-weight:950;letter-spacing:.05em}.data-card strong{display:block;margin-top:8px;font-size:34px;line-height:1;color:#fff5fa;text-shadow:0 0 17px rgba(243,168,203,.26);font-family:"Arial Rounded MT Bold","Microsoft YaHei UI",Inter,sans-serif}.data-card i{width:52px;height:52px;border-radius:50%;display:grid;place-items:center;background:rgba(243,168,203,.13);border:1px solid rgba(255,220,235,.26);font-style:normal;font-size:24px;box-shadow:inset 0 0 16px rgba(255,220,235,.06)}.quick-entry-card{min-height:126px;padding:22px;border-radius:22px;display:flex;align-items:center;gap:18px;border:1px solid rgba(243,168,203,.24);background:linear-gradient(145deg,rgba(255,255,255,.055),rgba(255,255,255,.018)),rgba(17,10,22,.82);text-align:left;color:#fff;cursor:pointer}.quick-entry-card i{width:58px;height:58px;border-radius:20px;display:grid;place-items:center;font-style:normal;font-size:28px;background:radial-gradient(circle at 45% 35%,rgba(255,220,235,.24),rgba(243,168,203,.08));border:1px solid rgba(243,168,203,.30);box-shadow:0 0 18px rgba(243,168,203,.13)}.quick-entry-card strong{display:block;font-size:22px;color:#fff5fa;text-shadow:0 0 14px rgba(243,168,203,.22)}.quick-entry-card span{display:block;margin-top:7px;color:#cdb8c4;font-size:13px;font-weight:850;line-height:1.45}.data-card:hover,.quick-entry-card:hover{transform:translateY(-5px) scale(1.02);border-color:rgba(255,220,235,.60);box-shadow:0 0 32px rgba(243,168,203,.22),0 22px 62px rgba(0,0,0,.45)}.quick-entry-card:hover i{box-shadow:0 0 22px rgba(243,168,203,.26),inset 0 0 16px rgba(255,220,235,.08)}@media(max-width:900px){.today-data-grid,.quick-entry-grid{grid-template-columns:repeat(2,1fr)}}@media(max-width:520px){.announcement-strip{margin:22px 0;border-radius:18px}.today-data-grid,.quick-entry-grid{grid-template-columns:repeat(2,1fr);gap:14px}.data-card{min-height:104px;padding:16px}.data-card strong{font-size:27px}.data-card i{width:44px;height:44px}.quick-entry-card{min-height:112px;padding:16px;gap:12px}.quick-entry-card i{width:46px;height:46px;font-size:23px}.quick-entry-card strong{font-size:18px}.quick-entry-card span{font-size:12px}}
+/* official-ad-cover-fix-v11 */
+.official-ad-slider{height:290px;border-radius:24px;overflow:hidden;background:#09050b}
+.official-ad img{width:100%;height:100%;object-fit:cover;object-position:center;display:block;background:transparent}
+.official-ad:after{background:linear-gradient(90deg,rgba(0,0,0,.04),rgba(0,0,0,.06) 48%,rgba(0,0,0,.34))}
+.ad-glass-copy{right:18px;bottom:18px;width:min(330px,32%);background:rgba(20,10,20,.72);backdrop-filter:blur(12px);padding:15px;border-radius:18px}
+
+/* order-click-fix */
+.bottom-row,.hot-info{position:relative;z-index:3}
+.bottom-row [data-book],.hot-info [data-book]{position:relative;z-index:4;pointer-events:auto}
+.companion-card,.hot-card{cursor:pointer}
+.ad-glass-copy h2{font-size:23px;line-height:1.12}
+.ad-glass-copy p{font-size:13px;line-height:1.42;margin:7px 0 12px}
+.ad-action{height:36px;padding:0 14px}
+@media(max-width:980px){.official-ad-slider{height:270px}.ad-glass-copy{width:min(310px,38%)}}
+@media(max-width:720px){.official-ad-slider{height:210px}.ad-glass-copy{right:12px;bottom:12px;width:min(235px,52%);padding:11px}.ad-glass-copy h2{font-size:17px}.ad-glass-copy p{font-size:12px;margin:5px 0 8px}.ad-action{height:32px;padding:0 11px;font-size:12px}}
+@media(max-width:520px){.official-ad-slider{height:190px}.ad-glass-copy{width:min(210px,58%)}.ad-glass-copy p{display:none}}
+
+/* official-ad-fill-final */
+.official-ad-slider{
+  height:300px!important;
+  border-radius:24px!important;
+  overflow:hidden!important;
+  background:#09050b!important;
+}
+.official-ad-track,
+.official-ad,
+.official-ad-slide{
+  width:100%;
+  height:100%;
+}
+.official-ad,
+.official-ad-slide{
+  position:absolute;
+  inset:0;
+  display:block;
+  border-radius:24px;
+  overflow:hidden;
+  color:#fff;
+}
+.official-ad-slide{opacity:0;transform:translateX(18px);transition:opacity .55s ease,transform .55s ease}
+.official-ad-slide.active{opacity:1;transform:translateX(0);z-index:2}
+.official-ad img,
+.official-ad-slide img,
+.ad-banner img{
+  width:100%;
+  height:100%;
+  object-fit:cover;
+  object-position:center;
+  display:block;
+  background:transparent;
+}
+.official-ad:after,
+.official-ad-slide:after{
+  content:"";
+  position:absolute;
+  inset:0;
+  pointer-events:none;
+  background:linear-gradient(90deg,rgba(0,0,0,.04),rgba(0,0,0,.06) 46%,rgba(0,0,0,.34));
+}
+.ad-glass-copy,
+.official-ad-copy{
+  position:absolute;
+  right:18px;
+  bottom:18px;
+  z-index:4;
+  width:min(320px,32%);
+  border-radius:18px;
+  border:1px solid rgba(255,220,235,.24);
+  background:rgba(20,10,20,.72);
+  backdrop-filter:blur(12px);
+  padding:14px 15px;
+  box-shadow:0 0 24px rgba(243,168,203,.14),inset 0 0 18px rgba(255,220,235,.05);
+}
+.ad-badge,
+.official-ad-badge{
+  position:absolute;
+  right:20px;
+  top:18px;
+  z-index:4;
+  border-radius:999px;
+  border:1px solid rgba(255,220,235,.38);
+  background:rgba(10,7,12,.58);
+  backdrop-filter:blur(12px);
+  padding:7px 12px;
+  color:#ffdceb;
+  font-size:12px;
+  font-weight:1000;
+  letter-spacing:.14em;
+}
+.official-ad-copy h3,
+.ad-glass-copy h2{margin:0;font-size:22px;line-height:1.12;color:#fff4fa;text-shadow:0 0 16px rgba(243,168,203,.22)}
+.official-ad-copy p,
+.ad-glass-copy p{margin:7px 0 12px;color:#dac4d1;font-weight:850;font-size:13px;line-height:1.42}
+.official-ad-copy button,
+.ad-action{height:36px;border:0;border-radius:999px;background:linear-gradient(180deg,#ffe2ef,#e9a0c6);color:#180711;font-weight:1000;padding:0 14px;box-shadow:0 0 20px rgba(243,168,203,.20);cursor:pointer}
+.ad-dots{bottom:12px!important}
+@media(max-width:980px){.official-ad-slider{height:270px!important}.ad-glass-copy,.official-ad-copy{width:min(290px,36%)}}
+@media(max-width:720px){.official-ad-slider{height:210px!important}.ad-glass-copy,.official-ad-copy{right:12px;bottom:12px;width:min(220px,50%);padding:10px 11px}.official-ad-copy h3,.ad-glass-copy h2{font-size:16px}.official-ad-copy p,.ad-glass-copy p{font-size:11px;margin:5px 0 8px}.official-ad-copy button,.ad-action{height:31px;font-size:12px;padding:0 10px}}
+@media(max-width:520px){.official-ad-slider{height:190px!important}.ad-glass-copy,.official-ad-copy{width:min(190px,56%)}.official-ad-copy p,.ad-glass-copy p{display:none}}
+/* companion-order-detail-modal-v1 */
+.companion-detail-modal{display:grid;grid-template-columns:210px 1fr;gap:20px;clear:both}.detail-cover{position:relative;min-height:262px;border-radius:20px;overflow:hidden;border:1px solid rgba(243,168,203,.34);background:#120d15}.detail-cover img{width:100%;height:100%;object-fit:cover}.detail-status{position:absolute;right:12px;top:12px;border-radius:999px;background:rgba(5,4,6,.72);border:1px solid rgba(255,255,255,.18);padding:7px 10px;font-size:12px;font-weight:1000}.detail-status:before{content:"";display:inline-block;width:8px;height:8px;margin-right:6px;border-radius:50%;background:#72efb4;box-shadow:0 0 10px #72efb4}.detail-body h2{margin:4px 0 6px;font-size:30px;color:#fff5fa;text-shadow:0 0 16px rgba(243,168,203,.28)}.detail-meta{color:#ffdceb;font-weight:950}.detail-desc{color:#d8c6d0;line-height:1.7;font-weight:800}.detail-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin:14px 0}.detail-chip{border:1px solid rgba(243,168,203,.20);border-radius:16px;background:rgba(255,255,255,.04);padding:10px}.detail-chip span{display:block;color:#bfaebb;font-size:12px;font-weight:900}.detail-chip strong{display:block;margin-top:4px;color:#fff5fa}.detail-tags{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0 18px}.detail-tags span{border-radius:999px;border:1px solid rgba(243,168,203,.24);background:rgba(243,168,203,.10);padding:6px 10px;color:#ffe1ef;font-size:12px;font-weight:900}.confirm-order{width:100%;height:46px;border:0;border-radius:999px;background:linear-gradient(180deg,#ffe2ef,#e7a0c4);color:#1b0712;font-weight:1000;cursor:pointer;box-shadow:0 0 22px rgba(243,168,203,.22)}@media(max-width:640px){.modal{align-items:end;padding:0}.dialog{width:100%;max-height:88vh;border-radius:26px 26px 0 0}.companion-detail-modal{grid-template-columns:1fr}.detail-cover{min-height:240px}.detail-body h2{font-size:26px}}
+</style>
+</head>
+<body>
+  <div class="ambient-layer" aria-hidden="true"><span class="paw p1">🐾</span><span class="paw p2">🐾</span><span class="paw p3">🐾</span><span class="heart h1">♥</span><span class="heart h2">♥</span><span class="spark s1"></span><span class="spark s2"></span><span class="spark s3"></span></div>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="index.html"><span class="live2d-avatar"><img src="assets/meow-cuijiao-brand.jpg" alt="logo"><i></i></span><span>MEOW CUI JIAO<small>妙脆角电竞</small></span></a>
+<div class="top-actions"><button class="login" data-modal="login">登录</button><button type="button" data-message-link>消息</button><a class="user-chip" href="mine.html"><span class="user-dot"></span><span>我的</span></a></div>
+    </div>
+  </header>
+  <main class="container">
+    <section class="banner"><img src="assets/homepage-cat-cover.png" alt="妙脆角电竞首页封面"></section>
+
+    <div class="announcement-strip fade-cycle"><span>🐾 喵喵公告：新人福利开启｜老板充值送积分｜热门陪玩限时推荐｜组队大厅频道开放中</span></div>
+
+    <section class="section today-data">
+      <div class="section-title compact-title"><div><h2>今日数据</h2><p>TODAY OVERVIEW</p></div></div>
+      <div class="today-data-grid">
+        <a class="neon-card data-card" href="companion-center.html?status=online"><div><span>在线陪玩</span><strong data-count="128">0</strong></div><i>🐾</i></a>
+        <a class="neon-card data-card" href="orders.html"><div><span>今日订单</span><strong data-count="56">0</strong></div><i>🎮</i></a>
+        <a class="neon-card data-card" href="admin-center.html"><div><span>今日营业额</span><strong data-prefix="RM " data-count="2680">RM 0</strong></div><i>💎</i></a>
+        <a class="neon-card data-card" href="companion-center.html"><div><span>好评率</span><strong data-count="99.8" data-suffix="%">0%</strong></div><i>⭐</i></a>
+      </div>
+    </section>
+
+    <section class="section quick-entry-section">
+      <div class="section-title compact-title"><div><h2>快速进入</h2><p>QUICK ACCESS</p></div></div>
+      <div class="quick-entry-grid">
+        <a class="neon-card quick-entry-card" href="companion-center.html"><i>🎮</i><div><strong>陪玩大厅</strong><span>浏览在线陪玩，快速下单</span></div></a>
+        <a class="neon-card quick-entry-card" href="companion-center.html?service=voice"><i>🎧</i><div><strong>语聊大厅</strong><span>语音陪伴、聊天、挂睡</span></div></a>
+        <button class="neon-card quick-entry-card" type="button" data-discord-join><i>🐾</i><div><strong>组队大厅</strong><span>找队友、开黑语音、进入社区</span></div></button>
+        <a class="neon-card quick-entry-card" href="activities.html"><i>🎁</i><div><strong>活动中心</strong><span>福利活动、限时推荐</span></div></a>
+      </div>
+    </section>
+<section class="section official-ads" aria-label="官方精选广告位">
+      <div class="section-title"><div><h2>官方精选广告位</h2><p>官方活动、老板推广、赛事与社区推荐</p></div></div>
+      <div class="official-ad-slider" id="officialAdSlider">
+        <div class="official-ad-track" id="officialAdTrack"></div>
+        <div class="ad-dots" id="officialAdDots"></div>
+      </div>
+    </section>
+        <section class="section hot-recommend-section">
+      <div class="section-title hot-title-row"><div><h2>🔥 热门推荐陪玩</h2><p>根据游戏热度与近期下单推荐</p></div><a class="btn lobby-link" href="companion-center.html">进入大厅</a></div>
+      <div class="hot-carousel" id="hotCompanionCarousel">
+        <div class="hot-track">
+          <article class="neon-card companion-card hot-card"><div class="avatar"><img src="assets/meow-cuijiao-brand.jpg" alt="MOMO"><i class="online-dot"></i></div><div class="companion-info"><div class="row"><h3>MOMO</h3><span class="rating">⭐ 5.0</span></div><p class="game-line">VALORANT</p><p class="order-line">近24小时下单：36 单</p><div class="tag-row"><span>甜妹音</span><span>指挥</span></div><div class="row bottom-row"><span class="price">RM12/h</span><button class="order-btn" data-book>立即下单</button></div></div></article>
+          <article class="neon-card companion-card hot-card"><div class="avatar"><img src="assets/lianmiao-club-ad.png" alt="NANA"><i class="online-dot"></i></div><div class="companion-info"><div class="row"><h3>NANA</h3><span class="rating">⭐ 4.9</span></div><p class="game-line">APEX</p><p class="order-line">近24小时下单：28 单</p><div class="tag-row"><span>钢枪</span><span>上分</span></div><div class="row bottom-row"><span class="price">RM15/h</span><button class="order-btn" data-book>立即下单</button></div></div></article>
+          <article class="neon-card companion-card hot-card"><div class="avatar"><img src="assets/meow-cuijiao-brand.jpg" alt="YUKI"><i class="online-dot"></i></div><div class="companion-info"><div class="row"><h3>YUKI</h3><span class="rating">⭐ 4.8</span></div><p class="game-line">CSGO</p><p class="order-line">近24小时下单：22 单</p><div class="tag-row"><span>指挥</span><span>娱乐陪</span></div><div class="row bottom-row"><span class="price">RM10/h</span><button class="order-btn" data-book>立即下单</button></div></div></article>
+          <article class="neon-card companion-card hot-card"><div class="avatar"><img src="assets/lianmiao-club-ad.png" alt="CHEESE"><i class="online-dot"></i></div><div class="companion-info"><div class="row"><h3>CHEESE</h3><span class="rating">⭐ 5.0</span></div><p class="game-line">LOL</p><p class="order-line">近24小时下单：41 单</p><div class="tag-row"><span>甜妹音</span><span>会聊天</span></div><div class="row bottom-row"><span class="price">RM18/h</span><button class="order-btn" data-book>立即下单</button></div></div></article>
+          <article class="neon-card companion-card hot-card"><div class="avatar"><img src="assets/meow-cuijiao-brand.jpg" alt="MOON"><i class="online-dot"></i></div><div class="companion-info"><div class="row"><h3>MOON</h3><span class="rating">⭐ 4.9</span></div><p class="game-line">Delta Force</p><p class="order-line">近24小时下单：19 单</p><div class="tag-row"><span>钢枪</span><span>指挥</span></div><div class="row bottom-row"><span class="price">RM16/h</span><button class="order-btn" data-book>立即下单</button></div></div></article>
+          <article class="neon-card companion-card hot-card"><div class="avatar"><img src="assets/lianmiao-club-ad.png" alt="LULU"><i class="online-dot"></i></div><div class="companion-info"><div class="row"><h3>LULU</h3><span class="rating">⭐ 4.7</span></div><p class="game-line">APEX</p><p class="order-line">近24小时下单：17 单</p><div class="tag-row"><span>上分</span><span>不压力</span></div><div class="row bottom-row"><span class="price">RM14/h</span><button class="order-btn" data-book>立即下单</button></div></div></article>
+        </div>
+      </div>
+    </section>
+    <section class="section carousel-section recent-order-companions">
+      <div class="section-title"><div><h2>🧾 最近下单陪玩</h2><p>RECENTLY ORDERED COMPANIONS</p></div><a class="btn lobby-link" href="orders.html">查看订单</a></div>
+      <div class="hot-carousel auto-carousel">
+        <div class="hot-track">
+          <article class="neon-card companion-card hot-card"><div class="avatar"><img src="assets/lianmiao-club-ad.png" alt="NANA"><i class="online-dot"></i></div><div class="companion-info"><div class="row"><h3>NANA</h3><span class="rating">⭐ 4.9</span></div><p class="game-line">APEX</p><p class="order-line">近24小时下单：28 单</p><p class="order-line">最近下单：12分钟前</p><div class="tag-row"><span>钢枪</span><span>上分</span></div><div class="row bottom-row"><span class="price">RM15/h</span><button class="order-btn" data-book>立即下单</button></div></div></article>
+          <article class="neon-card companion-card hot-card"><div class="avatar"><img src="assets/meow-cuijiao-brand.jpg" alt="MOMO"><i class="online-dot"></i></div><div class="companion-info"><div class="row"><h3>MOMO</h3><span class="rating">⭐ 5.0</span></div><p class="game-line">VALORANT</p><p class="order-line">近24小时下单：36 单</p><p class="order-line">最近下单：18分钟前</p><div class="tag-row"><span>甜妹音</span><span>指挥</span></div><div class="row bottom-row"><span class="price">RM12/h</span><button class="order-btn" data-book>立即下单</button></div></div></article>
+          <article class="neon-card companion-card hot-card"><div class="avatar"><img src="assets/lianmiao-club-ad.png" alt="CHEESE"><i class="online-dot"></i></div><div class="companion-info"><div class="row"><h3>CHEESE</h3><span class="rating">⭐ 5.0</span></div><p class="game-line">LOL</p><p class="order-line">近24小时下单：41 单</p><p class="order-line">最近下单：30分钟前</p><div class="tag-row"><span>会聊天</span><span>甜妹音</span></div><div class="row bottom-row"><span class="price">RM18/h</span><button class="order-btn" data-book>立即下单</button></div></div></article>
+          <article class="neon-card companion-card hot-card"><div class="avatar"><img src="assets/meow-cuijiao-brand.jpg" alt="YUKI"><i class="online-dot"></i></div><div class="companion-info"><div class="row"><h3>YUKI</h3><span class="rating">⭐ 4.8</span></div><p class="game-line">CSGO</p><p class="order-line">近24小时下单：22 单</p><p class="order-line">最近下单：42分钟前</p><div class="tag-row"><span>指挥</span><span>娱乐陪</span></div><div class="row bottom-row"><span class="price">RM10/h</span><button class="order-btn" data-book>立即下单</button></div></div></article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section carousel-section game-companions">
+      <div class="section-title"><div><h2>🎮 热门游戏陪玩</h2><p>POPULAR GAME COMPANIONS</p></div><a class="btn lobby-link" href="companion-center.html">全部游戏</a></div>
+      <div class="hot-carousel auto-carousel">
+        <div class="hot-track">
+          <article class="neon-card companion-card hot-card"><div class="avatar"><img src="assets/meow-cuijiao-brand.jpg" alt="MOON"><i class="online-dot"></i></div><div class="companion-info"><div class="row"><h3>MOON</h3><span class="rating">⭐ 4.9</span></div><p class="game-line">Delta Force</p><p class="order-line">近24小时下单：19 单</p><div class="tag-row"><span>Delta Force</span><span>护航</span></div><div class="row bottom-row"><span class="price">RM16/h</span><button class="order-btn" data-book>立即下单</button></div></div></article>
+          <article class="neon-card companion-card hot-card"><div class="avatar"><img src="assets/lianmiao-club-ad.png" alt="NANA"><i class="online-dot"></i></div><div class="companion-info"><div class="row"><h3>NANA</h3><span class="rating">⭐ 4.9</span></div><p class="game-line">APEX</p><p class="order-line">近24小时下单：28 单</p><div class="tag-row"><span>APEX</span><span>钢枪</span></div><div class="row bottom-row"><span class="price">RM15/h</span><button class="order-btn" data-book>立即下单</button></div></div></article>
+          <article class="neon-card companion-card hot-card"><div class="avatar"><img src="assets/meow-cuijiao-brand.jpg" alt="MOMO"><i class="online-dot"></i></div><div class="companion-info"><div class="row"><h3>MOMO</h3><span class="rating">⭐ 5.0</span></div><p class="game-line">Valorant</p><p class="order-line">近24小时下单：36 单</p><div class="tag-row"><span>Valorant</span><span>报点</span></div><div class="row bottom-row"><span class="price">RM12/h</span><button class="order-btn" data-book>立即下单</button></div></div></article>
+          <article class="neon-card companion-card hot-card"><div class="avatar"><img src="assets/lianmiao-club-ad.png" alt="CHEESE"><i class="online-dot"></i></div><div class="companion-info"><div class="row"><h3>CHEESE</h3><span class="rating">⭐ 5.0</span></div><p class="game-line">LOL</p><p class="order-line">近24小时下单：41 单</p><div class="tag-row"><span>LOL</span><span>会聊天</span></div><div class="row bottom-row"><span class="price">RM18/h</span><button class="order-btn" data-book>立即下单</button></div></div></article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section carousel-section review-companions">
+      <div class="section-title"><div><h2>⭐ 最新好评陪玩</h2><p>LATEST HIGH-RATED COMPANIONS</p></div></div>
+      <div class="hot-carousel auto-carousel">
+        <div class="hot-track">
+          <article class="neon-card companion-card hot-card"><div class="avatar"><img src="assets/lianmiao-club-ad.png" alt="CHEESE"><i class="online-dot"></i></div><div class="companion-info"><div class="row"><h3>CHEESE</h3><span class="rating">⭐ 5.0</span></div><p class="game-line">LOL</p><p class="order-line">客户短评：声音好听</p><p class="order-line">评价时间：刚刚</p><div class="tag-row"><span>甜妹音</span><span>会聊天</span></div><div class="row bottom-row"><span class="price">RM18/h</span><button class="order-btn" data-book>立即下单</button></div></div></article>
+          <article class="neon-card companion-card hot-card"><div class="avatar"><img src="assets/meow-cuijiao-brand.jpg" alt="MOMO"><i class="online-dot"></i></div><div class="companion-info"><div class="row"><h3>MOMO</h3><span class="rating">⭐ 5.0</span></div><p class="game-line">VALORANT</p><p class="order-line">客户短评：报点非常细</p><p class="order-line">评价时间：6分钟前</p><div class="tag-row"><span>指挥</span><span>不压力</span></div><div class="row bottom-row"><span class="price">RM12/h</span><button class="order-btn" data-book>立即下单</button></div></div></article>
+          <article class="neon-card companion-card hot-card"><div class="avatar"><img src="assets/lianmiao-club-ad.png" alt="NANA"><i class="online-dot"></i></div><div class="companion-info"><div class="row"><h3>NANA</h3><span class="rating">⭐ 4.9</span></div><p class="game-line">APEX</p><p class="order-line">客户短评：带飞很稳</p><p class="order-line">评价时间：15分钟前</p><div class="tag-row"><span>钢枪</span><span>上分</span></div><div class="row bottom-row"><span class="price">RM15/h</span><button class="order-btn" data-book>立即下单</button></div></div></article>
+          <article class="neon-card companion-card hot-card"><div class="avatar"><img src="assets/meow-cuijiao-brand.jpg" alt="YUKI"><i class="online-dot"></i></div><div class="companion-info"><div class="row"><h3>YUKI</h3><span class="rating">⭐ 4.8</span></div><p class="game-line">CSGO</p><p class="order-line">客户短评：指挥很清楚</p><p class="order-line">评价时间：28分钟前</p><div class="tag-row"><span>指挥</span><span>娱乐陪</span></div><div class="row bottom-row"><span class="price">RM10/h</span><button class="order-btn" data-book>立即下单</button></div></div></article>
+        </div>
+      </div>
+    </section>
+<footer class="site-footer">MEOW CUI JIAO GAMING CLUB · 妙脆角电竞 · Play Together, Win Together</footer>
+  </main>
+
+  <div class="modal" id="modal"><div class="dialog"><button class="close" data-close>×</button><div id="modalBody"></div></div></div>
+    <script>
+    const modal=document.getElementById('modal');const modalBody=document.getElementById('modalBody');
+    function isLoggedIn(){return localStorage.getItem('mcjLoggedIn')==='1'}
+    function refreshAuthUI(){document.body.classList.toggle('is-logged-in',isLoggedIn())}
+    function getDiscordInviteUrl(){
+      var direct=(localStorage.getItem('discordInviteUrl')||'').trim();
+      if(direct)return direct;
+      try{var settings=JSON.parse(localStorage.getItem('mcjPlatformSettings')||'{}');return String(settings.discordInviteUrl||'').trim();}catch(e){return '';}
+    }
+    function openDiscordInvite(){
+      var url=getDiscordInviteUrl();
+      if(url){window.open(url,'_blank','noopener');return;}
+      alert('组队大厅链接暂未开放，请稍后再试。');
+    }
+    function openModal(html){modalBody.innerHTML=html;modal.classList.add('open');document.body.style.overflow='hidden'}
+    function closeModal(){modal.classList.remove('open');document.body.style.overflow=''}
+    function htmlSafe(text){return String(text||'').replace(/[&<>"']/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]})}
+    function readText(el,selector,fallback){var node=selector?el.querySelector(selector):el;return ((node&&node.textContent)||fallback||'').trim()}
+    function collectCompanionData(button){
+      var card=button.closest('.companion-card,.hot-card')||button.closest('article')||document;
+      var img=card.querySelector('img');
+      var tags=Array.from(card.querySelectorAll('.tag-row span,.hot-tags span,.mini-tags span')).map(function(x){return readText(x)}).filter(Boolean);
+      var name=readText(card,'h3','MOMO');
+      var game=readText(card,'.game-line,.hot-info p','VALORANT');
+      var price=readText(card,'.price,.hot-meta span:last-child','RM12/h');
+      var rating=readText(card,'.rating,.hot-meta span:first-child','⭐ 5.0');
+      var orders=readText(card,'.order-line,.hot-orders','近24小时下单：36 单');
+      var playerId=card.dataset.playerId||card.dataset.player||('player_'+name.toLowerCase().replace(/[^a-z0-9]+/g,'_'));
+      return {playerId:playerId,name:name,game:game,price:price,rating:rating,orders:orders,status:'在线',img:img?img.getAttribute('src'):'assets/meow-cuijiao-brand.jpg',tags:tags.length?tags:['甜妹音','会聊天','不压力'],desc:name+' 是妙脆角电竞认证陪玩，沟通舒服、服务稳定，会根据老板需求安排游戏或陪伴服务。'};
+    }
+    function companionDetailHtml(data){
+      var tags=data.tags.map(function(t){return '<span>'+htmlSafe(t)+'</span>'}).join('');
+      return '<div class="companion-detail-modal"><div class="detail-cover"><img src="'+htmlSafe(data.img)+'" alt="'+htmlSafe(data.name)+'"><span class="detail-status">'+htmlSafe(data.status)+'</span></div><div class="detail-body"><h2>'+htmlSafe(data.name)+'</h2><p class="detail-meta">'+htmlSafe(data.game)+' · '+htmlSafe(data.rating)+' · '+htmlSafe(data.price)+'</p><p class="detail-desc">'+htmlSafe(data.desc)+'</p><div class="detail-grid"><div class="detail-chip"><span>近24小时</span><strong>'+htmlSafe(data.orders.replace('近24小时下单：',''))+'</strong></div><div class="detail-chip"><span>可服务时间</span><strong>24H 可预约</strong></div><div class="detail-chip"><span>服务方式</span><strong>语音 / 文字</strong></div><div class="detail-chip"><span>在线状态</span><strong>'+htmlSafe(data.status)+'</strong></div></div><div class="detail-tags">'+tags+'</div><button class="confirm-order" data-open-order data-player-id="'+htmlSafe(data.playerId)+'" data-name="'+htmlSafe(data.name)+'" data-game="'+htmlSafe(data.game)+'" data-price="'+htmlSafe(data.price)+'" data-img="'+htmlSafe(data.img)+'">确认下单</button></div></div>';
+    }
+    function openCompanionOrder(button){openModal(companionDetailHtml(collectCompanionData(button)))}
+    function numericPrice(price){var m=String(price||'').match(/[\d.]+/);return m?Number(m[0]):12}
+    function loginRequiredModal(){
+      openModal('<h2>请先登录</h2><p class="muted">登录后才可以创建订单，订单会保存到「我的订单」。</p><div class="detail-grid"><button class="confirm-order" data-login-confirm>登录 / 注册</button><a class="confirm-order" href="mine.html" style="text-decoration:none;display:flex;align-items:center;justify-content:center">去我的页面</a></div>');
+    }
+    function orderConfirmHtml(data){
+      var unit=numericPrice(data.price);
+      return '<div class="companion-detail-modal order-confirm-modal"><div class="detail-cover"><img src="'+htmlSafe(data.img)+'" alt="'+htmlSafe(data.name)+'"><span class="detail-status">待确认</span></div><div class="detail-body"><h2>确认下单</h2><p class="detail-meta">'+htmlSafe(data.name)+' · '+htmlSafe(data.game)+' · RM'+unit+'/h</p><div class="detail-grid"><label class="field"><span>选择时长</span><select id="orderHours"><option value="1">1 小时</option><option value="2">2 小时</option><option value="3">3 小时</option><option value="4">4 小时</option><option value="8">包夜 8 小时</option></select></label><div class="detail-chip"><span>总价</span><strong id="orderTotal">RM'+unit+'</strong></div></div><label class="field"><span>备注</span><textarea id="orderRemark" placeholder="例如：想玩排位、语音聊天、不要压力队友..."></textarea></label><button class="confirm-order" data-create-order data-player-id="'+htmlSafe(data.playerId)+'" data-name="'+htmlSafe(data.name)+'" data-game="'+htmlSafe(data.game)+'" data-price="'+unit+'" data-img="'+htmlSafe(data.img)+'">确认创建订单</button></div></div>';
+    }
+    function openOrderConfirm(data){openModal(orderConfirmHtml(data))}
+    function getCurrentUser(){
+      var user=null;
+      try{user=JSON.parse(localStorage.getItem('mcjCurrentUser')||'null')}catch(e){}
+      if(!user){user={user_id:'user_demo_001',name:'Demo Boss'};localStorage.setItem('mcjCurrentUser',JSON.stringify(user))}
+      return user;
+    }
+    function createPendingOrder(button){
+      var user=getCurrentUser();
+      var hours=Number((document.getElementById('orderHours')||{}).value||1);
+      var unit=Number(button.dataset.price||12);
+      var remark=(document.getElementById('orderRemark')||{}).value||'';
+      var order={order_id:'MCJ-'+Date.now(),user_id:user.user_id,player_id:button.dataset.playerId,player_name:button.dataset.name,player_avatar:button.dataset.img,game:button.dataset.game,service_time:new Date().toLocaleString(),duration:hours+' hours',hours:hours,unit_price:unit,amount:'RM'+(unit*hours),remark:remark,status:'pending_payment',created_at:new Date().toISOString()};
+      var orders=[];
+      try{orders=JSON.parse(localStorage.getItem('mcjOrders')||'[]')}catch(e){orders=[]}
+      orders.unshift(order);
+      localStorage.setItem('mcjOrders',JSON.stringify(orders));
+      closeModal();
+      location.href='orders.html?created='+encodeURIComponent(order.order_id);
+    }
+    function openMessages(){
+      if(!isLoggedIn()){alert('请先登录后查看消息');return;}
+      location.href='messages.html';
+    }
+    refreshAuthUI();
+    function initHotCompanionCarousel(){
+      document.querySelectorAll('#hotCompanionCarousel,.auto-carousel').forEach(function(viewport){
+        var track=viewport&&viewport.querySelector('.hot-track');
+        if(!viewport||!track||track.dataset.ready)return;
+        track.dataset.ready='1';
+        var originals=Array.from(track.children);
+        originals.forEach(function(card){track.appendChild(card.cloneNode(true))});
+        var paused=false,x=0,last=0,speed=.045,resumeTimer=null,dragging=false,startClient=0,startX=0;
+        function halfWidth(){return track.scrollWidth/2}
+        function normalize(){var half=halfWidth();if(Math.abs(x)>=half)x+=half;if(x>0)x-=half}
+        function paint(){track.style.transform='translate3d('+x+'px,0,0)'}
+        function frame(ts){if(!last)last=ts;var dt=ts-last;last=ts;if(!paused&&!dragging){x-=dt*speed;normalize();paint()}requestAnimationFrame(frame)}
+        function pauseFor(ms){paused=true;clearTimeout(resumeTimer);resumeTimer=setTimeout(function(){paused=false},ms||3000)}
+        viewport.addEventListener('mouseenter',function(){paused=true});
+        viewport.addEventListener('mouseleave',function(){if(!dragging)paused=false});
+        viewport.addEventListener('touchstart',function(){pauseFor(3000)},{passive:true});
+        viewport.addEventListener('wheel',function(){pauseFor(3000)},{passive:true});
+        viewport.addEventListener('pointerdown',function(e){dragging=true;paused=true;startClient=e.clientX;startX=x;viewport.setPointerCapture&&viewport.setPointerCapture(e.pointerId)});
+        viewport.addEventListener('pointermove',function(e){if(!dragging)return;x=startX+(e.clientX-startClient);normalize();paint()});
+        function endDrag(){if(!dragging)return;dragging=false;pauseFor(3000)}
+        viewport.addEventListener('pointerup',endDrag);viewport.addEventListener('pointercancel',endDrag);
+        requestAnimationFrame(frame);
+      });
+    }    function initLiveOrderFlash(){
+      var box=document.getElementById('liveOrderFlash');
+      if(!box)return;
+      var items=['2分钟前 老板下单 MOMO · Valorant · 2小时','5分钟前 老板下单 NANA · APEX · 1小时','8分钟前 老板下单 YUKI · CSGO · 3小时','12分钟前 老板下单 CHEESE · LOL · 2小时'];
+      var i=0;
+      setInterval(function(){box.classList.add('switching');setTimeout(function(){i=(i+1)%items.length;box.textContent=items[i];box.classList.remove('switching')},350)},3200);
+    }
+    function initPremiumHomeMotion(){
+      document.querySelectorAll('[data-count]').forEach(function(el){
+        var raw=String(el.dataset.count||'0'), target=parseFloat(raw)||0, suffix=el.dataset.suffix||'', prefix=el.dataset.prefix||'', start=null, decimals=raw.indexOf('.')>-1?1:0;
+        function step(ts){if(!start)start=ts;var p=Math.min((ts-start)/1100,1);var eased=1-Math.pow(1-p,3);var value=target*eased;el.textContent=prefix+(decimals?value.toFixed(decimals):Math.round(value))+suffix;if(p<1)requestAnimationFrame(step)}
+        requestAnimationFrame(step);
+      });
+      var notices=['公告提醒：本周三晚 20:00 开放「三角洲行动」护航专场。','今日新人 8 折活动进行中，先到先得。','七夕礼物上线，送给喜欢的陪玩吧。','招聘陪玩中，欢迎加入妙脆角电竞。'];
+      var notice=document.querySelector('.notice-bar span'), ni=0;
+      if(notice){setInterval(function(){ni=(ni+1)%notices.length;notice.style.opacity='0';setTimeout(function(){notice.textContent=notices[ni];notice.style.opacity='1'},260)},4200)}
+      initHotCompanionCarousel();
+      initLiveOrderFlash();
+    }
+    initPremiumHomeMotion();
+    function getDefaultAds(){return [
+      {title:'妙脆角电竞周年庆',sub:'限时奖励｜新人福利｜双倍积分',button:'立即查看',tag:'OFFICIAL',link:'activities.html',image:'assets/homepage-cat-cover.png',enabled:true,sort:1},
+      {title:'LIAN MIAO CLUB 联动推广',sub:'一起玩 · 一起赢 · 一起闪耀',button:'加入活动',tag:'SPONSORED',link:'activities.html',image:'assets/lianmiao-club-ad.png',enabled:true,sort:2},
+      {title:'Discord 组队频道开放',sub:'找队友、开黑语音、进入社区频道',button:'立即进入',tag:'NEW',link:'discord',image:'assets/meow-cuijiao-brand.jpg',enabled:true,sort:3}
+    ]}
+    function loadOfficialAds(){
+      var defaults=getDefaultAds();
+      try{var saved=JSON.parse(localStorage.getItem('mcjOfficialAds')||'[]');if(Array.isArray(saved)&&saved.length){defaults=saved.concat(defaults)}}catch(e){}
+      var now=Date.now();
+      return defaults.filter(function(ad){
+        if(ad.enabled===false)return false;
+        var start=ad.start?new Date(ad.start).getTime():0,end=ad.end?new Date(ad.end).getTime():0;
+        return (!start||now>=start)&&(!end||now<=end);
+      }).sort(function(a,b){return (Number(a.sort)||99)-(Number(b.sort)||99)}).slice(0,5);
+    }
+    function openAdLink(ad){
+      if(!ad||!ad.link)return;
+      if(ad.link==='discord'){openDiscordInvite();return;}
+      if(/^https?:\/\//i.test(ad.link)){window.open(ad.link,'_blank','noopener');return;}
+      location.href=ad.link;
+    }
+    function initOfficialAds(){
+      var track=document.getElementById('officialAdTrack'),dots=document.getElementById('officialAdDots'),slider=document.getElementById('officialAdSlider');
+      if(!track||!dots||!slider)return;
+      var ads=loadOfficialAds(),index=0,timer=null;
+      function render(){
+        track.innerHTML=ads.map(function(ad,i){return '<a class="official-ad '+(i===index?'active':'')+'" href="#" data-ad-index="'+i+'"><img src="'+ad.image+'" alt="'+ad.title+'"><span class="ad-badge">'+(ad.tag||'OFFICIAL')+'</span><div class="ad-glass-copy"><h2>'+ad.title+'</h2><p>'+ad.sub+'</p><span class="ad-action">'+(ad.button||'立即查看')+'</span></div></a>';}).join('');
+        dots.innerHTML=ads.map(function(_,i){return '<button class="ad-dot '+(i===index?'active':'')+'" data-ad-dot="'+i+'" aria-label="切换广告"></button>';}).join('');
+      }
+      function go(i){index=(i+ads.length)%ads.length;render()}
+      function play(){clearInterval(timer);timer=setInterval(function(){go(index+1)},5000)}
+      slider.addEventListener('mouseenter',function(){clearInterval(timer)});slider.addEventListener('mouseleave',play);
+      slider.addEventListener('touchstart',function(){clearInterval(timer);clearTimeout(slider._resume);slider._resume=setTimeout(play,3000)},{passive:true});
+      slider.addEventListener('click',function(e){var dot=e.target.closest('[data-ad-dot]');if(dot){e.preventDefault();go(Number(dot.dataset.adDot));play();return;}var link=e.target.closest('[data-ad-index]');if(link){e.preventDefault();openAdLink(ads[Number(link.dataset.adIndex)]);}});
+      render();play();
+    }
+    initOfficialAds();
+    document.addEventListener('click',function(e){
+      if(e.target.matches('[data-close]')||e.target===modal)closeModal();
+      if(e.target.closest('[data-discord-join]')) openDiscordInvite();
+      if(e.target.closest('[data-message-link]')) openMessages();
+      if(e.target.closest('[data-login-confirm]')){localStorage.setItem('mcjLoggedIn','1');closeModal();refreshAuthUI();return;}
+      var book=e.target.closest('[data-book]');
+      if(book){e.preventDefault();openCompanionOrder(book);return;}
+      var bookRow=e.target.closest('.bottom-row,.hot-info');
+      var rowBook=bookRow&&bookRow.querySelector&&bookRow.querySelector('[data-book]');
+      if(rowBook){e.preventDefault();openCompanionOrder(rowBook);return;}
+      var bookCard=e.target.closest('.companion-card,.hot-card');
+      var cardBook=bookCard&&bookCard.querySelector&&bookCard.querySelector('[data-book]');
+      if(cardBook){e.preventDefault();openCompanionOrder(cardBook);return;}
+      var openOrder=e.target.closest('[data-open-order]');
+      if(openOrder){e.preventDefault();if(!isLoggedIn()){loginRequiredModal();return;}openOrderConfirm({playerId:openOrder.dataset.playerId,name:openOrder.dataset.name,game:openOrder.dataset.game,price:openOrder.dataset.price,img:openOrder.dataset.img});return;}
+      var createOrder=e.target.closest('[data-create-order]');
+      if(createOrder){e.preventDefault();if(!isLoggedIn()){loginRequiredModal();return;}createPendingOrder(createOrder);return;}
+      var confirm=e.target.closest('[data-confirm-order]');
+      if(confirm){e.preventDefault();if(!isLoggedIn()){loginRequiredModal();return;}location.href='checkin.html?companion='+encodeURIComponent(confirm.dataset.companion||'');return;}
+      const target=e.target.closest('[data-modal]');
+      if(target){const map={login:'<h2>登录</h2><p class="muted">手机号 + 验证码登录。</p><button class="order-btn" data-login-confirm>模拟登录</button>',order:'<h2>快速下单</h2><p class="muted">选择服务、人数、预算后，客服会快速帮你匹配陪玩。</p><a class="order-btn" href="checkin.html">进入快速下单</a>',join:'<h2>加入陪玩</h2><p class="muted">提交资料后，后台中心可审核入职申请。</p><button class="order-btn">立即申请</button>',guide:'<h2>下单教学</h2><p>1. 点击陪玩大厅。<br>2. 选择游戏和陪玩。<br>3. 点击立即下单。<br>4. 客服确认后开始服务。</p>'};openModal(map[target.dataset.modal]||'')}
+    });
+    document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal()});
+  </script>
+  <script src="src/site-data.js"></script>
+  <script>
+    (function(){
+      function safeText(text){return String(text||'').replace(/[&<>"']/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]})}
+      function modalBox(){return {modal:document.getElementById('modal'),body:document.getElementById('modalBody')}}
+      function showModal(html){var box=modalBox();if(!box.modal||!box.body)return;box.body.innerHTML=html;box.modal.classList.add('open');document.body.style.overflow='hidden'}
+      function hideModal(){var box=modalBox();if(!box.modal)return;box.modal.classList.remove('open');document.body.style.overflow=''}
+      function cardText(card,selector,fallback){var el=selector?card.querySelector(selector):card;return ((el&&el.textContent)||fallback||'').trim()}
+      function priceNumber(price){var match=String(price||'').match(/[\d.]+/);return match?Number(match[0]):12}
+      function getPlayer(button){
+        var card=button.closest('.companion-card,.hot-card,article')||document;
+        var img=card.querySelector('.avatar img,.hot-cover img,img');
+        var tags=[].slice.call(card.querySelectorAll('.tag-row span,.hot-tags span,.mini-tags span')).map(function(x){return cardText(x)}).filter(Boolean);
+        var name=cardText(card,'h3','MOMO');
+        return {
+          name:name,
+          game:cardText(card,'.game-line,.hot-info p','VALORANT'),
+          rating:cardText(card,'.rating,.hot-meta span:first-child','5.0'),
+          price:cardText(card,'.price,.hot-meta span:last-child','RM12/h'),
+          image:img?img.getAttribute('src'):'assets/meow-cuijiao-brand.jpg',
+          status:'\u5728\u7ebf',
+          tags:tags.length?tags:['\u751c\u59b9\u97f3','\u4f1a\u804a\u5929','\u4e0d\u538b\u529b'],
+          desc:name+'\u662f\u5999\u8106\u89d2\u7535\u7ade\u8ba4\u8bc1\u966a\u73a9\uff0c\u6c9f\u901a\u8212\u670d\u3001\u670d\u52a1\u7a33\u5b9a\uff0c\u53ef\u6309\u8001\u677f\u9700\u6c42\u5b89\u6392\u6e38\u620f\u6216\u966a\u4f34\u670d\u52a1\u3002'
+        };
+      }
+      function detailHtml(data){
+        var unit=priceNumber(data.price);
+        var tagHtml=data.tags.map(function(tag){return '<span>'+safeText(tag)+'</span>'}).join('');
+        return '<div class="companion-detail-modal order-confirm-modal" data-home-order-modal>'+
+          '<div class="detail-cover"><img src="'+safeText(data.image)+'" alt="'+safeText(data.name)+'"><span class="detail-status">'+safeText(data.status)+'</span></div>'+
+          '<div class="detail-body"><h2>'+safeText(data.name)+'</h2>'+
+          '<p class="detail-meta">'+safeText(data.game)+' · '+safeText(data.rating)+' · '+safeText(data.price)+'</p>'+
+          '<p class="detail-desc">'+safeText(data.desc)+'</p>'+
+          '<div class="detail-tags">'+tagHtml+'</div>'+
+          '<div class="detail-grid">'+
+          '<label class="field"><span>\u9009\u62e9\u65f6\u957f</span><select id="homeOrderHours"><option value="1">1 \u5c0f\u65f6</option><option value="2">2 \u5c0f\u65f6</option><option value="3">3 \u5c0f\u65f6</option><option value="4">4 \u5c0f\u65f6</option><option value="8">\u5305\u591c 8 \u5c0f\u65f6</option></select></label>'+
+          '<div class="detail-chip"><span>\u603b\u4ef7</span><strong id="homeOrderTotal">RM'+unit+'</strong></div>'+
+          '<div class="detail-chip"><span>\u5728\u7ebf\u72b6\u6001</span><strong>'+safeText(data.status)+'</strong></div>'+
+          '<div class="detail-chip"><span>\u670d\u52a1\u65b9\u5f0f</span><strong>\u8bed\u97f3 / \u6587\u5b57</strong></div>'+
+          '</div>'+
+          '<label class="field"><span>\u5907\u6ce8</span><textarea id="homeOrderRemark" placeholder="\u4f8b\u5982\uff1a\u60f3\u73a9\u6392\u4f4d\u3001\u8bed\u97f3\u804a\u5929\u3001\u4e0d\u8981\u538b\u529b\u961f\u53cb..."></textarea></label>'+
+          '<button class="confirm-order" data-home-confirm-order data-unit="'+unit+'">\u786e\u8ba4\u4e0b\u5355</button>'+
+          '</div></div>';
+      }
+      document.addEventListener('click',function(e){
+        var close=e.target.closest('[data-close]');
+        if(close||e.target.id==='modal'){hideModal();return}
+        var btn=e.target.closest('[data-book]');
+        if(!btn){
+          var card=e.target.closest('.companion-card,.hot-card,.neon-card,article');
+          btn=card&&card.querySelector&&card.querySelector('[data-book]');
+        }
+        if(btn){
+          e.preventDefault();
+          e.stopPropagation();
+          if(e.stopImmediatePropagation)e.stopImmediatePropagation();
+          window.__homeOrderPlayer=getPlayer(btn);
+          showModal(detailHtml(window.__homeOrderPlayer));
+          return;
+        }
+        if(e.target.closest('[data-home-confirm-order]')){
+          if(localStorage.getItem('mcjLoggedIn')!=='1'){alert('\u8bf7\u5148\u767b\u5f55');return}
+          alert('\u8ba2\u5355\u5df2\u751f\u6210\uff0c\u72b6\u6001\uff1a\u5f85\u4ed8\u6b3e');
+          hideModal();
+        }
+      },true);
+      document.addEventListener('change',function(e){
+        if(e.target&&e.target.id==='homeOrderHours'){
+          var unit=priceNumber((window.__homeOrderPlayer||{}).price);
+          var total=document.getElementById('homeOrderTotal');
+          if(total)total.textContent='RM'+(unit*Number(e.target.value||1));
+        }
+      },true);
+      document.addEventListener('keydown',function(e){if(e.key==='Escape')hideModal()});
+    })();
+  </script>
+  <script src="src/meow-butler.js"></script>
+</body>
+</html>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
