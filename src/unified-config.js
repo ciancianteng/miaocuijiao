@@ -1,47 +1,51 @@
 (function () {
+  "use strict";
+
   if (window.MCJUnifiedConfig) return;
 
-  var orderStatuses = [
-    ["pending_payment", "待付款"],
-    ["available", "待接单"],
-    ["pending_confirm", "待确认"],
-    ["pending_start", "待开始"],
-    ["in_progress", "进行中"],
-    ["completed", "已完成"],
-    ["refunding", "退款中"],
-    ["refunded", "已退款"],
-    ["after_sale", "售后中"],
-    ["cancelled", "已取消"]
-  ];
-
-  var serviceTypes = [
-    ["standard", "普通陪玩"],
-    ["voice", "语聊"],
-    ["fun", "趣味单"],
-    ["escort", "护航单"],
-    ["loot_run", "跑刀"],
-    ["boost", "代肝 / 代打"],
-    ["custom", "自定义订单"],
-    ["gameplay", "更多玩法"]
+  var contract = window.MCJPlatformContract || {};
+  var orderStatusConfig = contract.statusOptions ? contract.statusOptions() : [
+    { value: "waiting_accept", label: "待接单", tone: "pink", terminal: false },
+    { value: "waiting_customer_confirm", label: "待老板确认", tone: "gold", terminal: false },
+    { value: "waiting_player_start", label: "待陪玩开始", tone: "blue", terminal: false },
+    { value: "in_progress", label: "进行中", tone: "green", terminal: false },
+    { value: "waiting_complete_confirm", label: "待完成确认", tone: "purple", terminal: false },
+    { value: "completed", label: "已完成", tone: "green", terminal: true },
+    { value: "cancelled", label: "已取消", tone: "muted", terminal: true },
+    { value: "refund_requested", label: "退款申请中", tone: "orange", terminal: false },
+    { value: "refunded", label: "已退款", tone: "muted", terminal: true },
+    { value: "after_sale", label: "售后处理中", tone: "red", terminal: false },
+    { value: "closed", label: "已关闭", tone: "muted", terminal: true }
   ];
 
   window.MCJUnifiedConfig = {
     apiBase: window.MCJ_API_BASE || "/api",
     useMockApi: window.MCJ_USE_MOCK_API === true,
+    dataContractVersion: contract.version || "2026-07-23.four-end-unification",
     roles: {
       customer: "老板",
+      companion: "陪玩",
       player: "陪玩",
       customer_service: "客服",
-      super_admin: "超级管理员"
+      super_admin: "管理员",
+      admin: "管理员"
     },
     rolePermissions: {
-      customer: ["home", "hall", "orders", "messages", "wallet", "settings"],
-      player: ["dashboard", "grab", "orders", "messages", "income", "profile"],
-      customer_service: ["dashboard", "pending", "messages", "dispatch", "tickets", "salary"],
-      super_admin: ["dashboard", "users", "orders", "finance", "content", "settings", "logs"]
+      customer: ["home", "hall", "orders", "messages", "wallet", "settings", "refunds", "favorites"],
+      companion: ["dashboard", "grab", "orders", "messages", "income", "profile", "withdrawals", "policies"],
+      player: ["dashboard", "grab", "orders", "messages", "income", "profile", "withdrawals", "policies"],
+      customer_service: ["dashboard", "pending", "messages", "dispatch", "tickets", "salary", "quick_replies"],
+      super_admin: ["dashboard", "users", "orders", "finance", "content", "settings", "logs", "permissions"],
+      admin: ["dashboard", "users", "orders", "finance", "content", "settings", "logs", "permissions"]
     },
-    orderStatusConfig: orderStatuses.map(function (x) { return { value: x[0], label: x[1] }; }),
-    serviceTypeConfig: serviceTypes.map(function (x) { return { value: x[0], label: x[1] }; }),
+    orderStatusConfig: orderStatusConfig,
+    serviceTypeConfig: (contract.serviceTypes || [
+      { value: "game", label: "游戏陪玩" },
+      { value: "voice", label: "语音服务" },
+      { value: "both", label: "游戏陪玩和语音服务" },
+      { value: "custom", label: "自定义订单" },
+      { value: "gameplay", label: "固定玩法" }
+    ]),
     commissionConfig: {
       defaultPlatformCommissionRate: 20,
       defaultPlayerIncomeRate: 80,
@@ -58,11 +62,11 @@
       allowDecimals: true
     },
     playerLevelConfig: [
-      { level_number: 1, level_name: "Lv.1 萌喵", sort_weight: 100, status: "enabled" },
+      { level_number: 1, level_name: "Lv.1 萌新", sort_weight: 100, status: "enabled" },
       { level_number: 2, level_name: "Lv.2 奶猫", sort_weight: 200, status: "enabled" },
       { level_number: 3, level_name: "Lv.3 布偶猫", sort_weight: 300, status: "enabled" },
       { level_number: 4, level_name: "Lv.4 喵神", sort_weight: 400, status: "enabled" },
-      { level_number: 5, level_name: "Lv.5 喵皇", sort_weight: 500, status: "enabled" }
+      { level_number: 5, level_name: "Lv.5 喵王", sort_weight: 500, status: "enabled" }
     ],
     withdrawalConfig: {
       minimumAmount: 10,
@@ -79,6 +83,9 @@
       referral_commission_records: ["id", "order_id", "inviter_user_id", "invited_player_id", "commission_type", "base_amount", "rebate_rate", "rebate_amount", "rebate_source", "status", "settled_at", "created_at"],
       referral_wallets: ["user_id", "pending_amount", "available_amount", "frozen_amount", "total_earned", "total_withdrawn", "updated_at"],
       orders: ["id", "order_number", "customer_id", "player_id", "customer_service_id", "order_source", "service_type", "game", "duration", "paid_amount", "platform_commission_rate", "platform_commission_amount", "player_income_rate", "player_income_amount", "order_status", "payment_status", "created_at", "updated_at"],
+      conversations: ["id", "conversation_type", "customer_id", "player_id", "customer_service_id", "status", "last_message_text", "last_message_at", "created_at", "updated_at"],
+      messages: ["id", "conversation_id", "sender_id", "sender_role", "message_type", "text_content", "media_url", "order_id", "is_read", "created_at"],
+      wallets: ["user_id", "role", "available_balance", "frozen_balance", "total_recharged", "total_spent", "total_withdrawn", "updated_at"],
       platform_settings: ["key", "value", "scope", "updated_by", "updated_at"],
       audit_logs: ["id", "admin_id", "module", "action", "target_id", "before", "after", "ip", "device", "created_at"]
     }
