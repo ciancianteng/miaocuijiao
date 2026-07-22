@@ -1,3 +1,4 @@
+import { cpSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import { resolve } from "node:path";
 import { defineConfig } from "vite";
 
@@ -34,7 +35,21 @@ const pages = [
   "vip.html"
 ];
 
+function copyRuntimeSource() {
+  return {
+    name: "copy-runtime-source",
+    closeBundle() {
+      const outDir = resolve(__dirname, "dist");
+      const target = resolve(outDir, "src");
+      mkdirSync(outDir, { recursive: true });
+      if (existsSync(target)) rmSync(target, { recursive: true, force: true });
+      cpSync(resolve(__dirname, "src"), target, { recursive: true });
+    }
+  };
+}
+
 export default defineConfig({
+  plugins: [copyRuntimeSource()],
   appType: "mpa",
   build: {
     rollupOptions: {
