@@ -17,13 +17,13 @@
   }
 
   function fixHomePageText() {
+    if (!/\/index\.html$|\/$/.test(location.pathname)) return;
     var bannerImg = document.querySelector(".banner img");
     if (bannerImg) {
-      if (!bannerImg.getAttribute("src")) bannerImg.src = "assets/hero-banner-latest.png";
       bannerImg.alt = "妙脆角电竞 Hero Banner";
     }
 
-    setText(document.querySelector(".brand small"), "妙脆角电竞");
+    setText(document.querySelector(".brand small"), "Meow Cui Jiao");
     setText(document.querySelector(".top-actions .login"), "登录");
     setText(document.querySelector("[data-message-link]"), "消息");
     setText(document.querySelector(".user-chip.auth-only span:last-child"), "我的");
@@ -38,26 +38,36 @@
             if (!!b.pinned !== !!a.pinned) return b.pinned ? 1 : -1;
             return Number(a.sort || 99) - Number(b.sort || 99);
           })[0];
-        setText(announcement, activeNotice ? (activeNotice.text || activeNotice.title || "") : "暂无公告，后台发布后会同步显示。");
+        var box = announcement.closest(".announcement-strip");
+        if (activeNotice) {
+          if (box) box.hidden = false;
+          setText(announcement, activeNotice.text || activeNotice.title || "");
+        } else {
+          if (box) box.hidden = true;
+          setText(announcement, "");
+        }
       } catch (e) {
-        setText(announcement, "暂无公告，后台发布后会同步显示。");
+        var fallbackBox = announcement.closest(".announcement-strip");
+        if (fallbackBox) fallbackBox.hidden = true;
+        setText(announcement, "");
       }
     }
 
     var entries = document.querySelectorAll(".quick-entry-grid .quick-entry-card");
     var configs = [
-      ["📝", "自定义订单", "填写需求，客服匹配陪玩"],
-      ["", "更多玩法", "护航、跑刀、代肝、趣味单"],
-      ["🎮", "陪玩大厅", "挑选认证陪玩，立即下单"],
-      ["🎧", "语音大厅", "语音陪伴、聊天、挂房"],
-      ["🐾", "组队大厅", "后台配置后开放组队入口"],
-      ["💎", "充值中心", "人工审核充值，安全入账"],
-      ["🎁", "活动中心", "查看平台活动与福利"]
+      ["单", "自定义订单", "填写需求，客服匹配陪玩"],
+      ["玩", "更多玩法", "护航、跑刀、代肝、趣味单"],
+      ["陪", "陪玩大厅", "浏览已上架陪玩"],
+      ["队", "组队大厅", "进入组队社区"],
+      ["充", "充值中心", "查看充值与余额"]
     ];
     entries.forEach(function (card, index) {
       var item = configs[index];
-      if (!item) return;
-      if (item[0]) setText(card.querySelector("i"), item[0]);
+      if (!item) {
+        card.remove();
+        return;
+      }
+      setText(card.querySelector("i"), item[0]);
       setText(card.querySelector("strong"), item[1]);
       setText(card.querySelector("span"), item[2]);
     });

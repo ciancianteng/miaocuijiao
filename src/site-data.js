@@ -61,7 +61,7 @@
     return tags.map(function (tag) { return "<span>" + esc(tag) + "</span>"; }).join("");
   }
   function emptyCard(text) {
-    return '<article class="neon-card companion-card hot-card mcj-empty-card"><div class="hot-info"><h3>' + esc(text) + '</h3><p>暂无可预约陪玩，请稍后查看。</p></div></article>';
+    return '<article class="neon-card companion-card hot-card mcj-empty-card"><div class="hot-info"><h3>' + esc(text || "暂时还没有陪玩入驻。") + '</h3><p>欢迎符合条件的玩家提交申请。</p><a class="mini-order" href="companion-apply.html">申请成为陪玩</a></div></article>';
   }
   function companionCardHtml(item, rank) {
     var cover = item.cover || item.cardCover || item.image || "";
@@ -90,7 +90,7 @@
     if (!track) return;
     var items = sorted(companions || []).slice(0, 3);
     track.dataset.ready = "";
-    if (!items.length) { track.innerHTML = emptyCard("暂无已审核陪玩"); return; }
+    if (!items.length) { track.innerHTML = emptyCard("暂时还没有陪玩入驻。"); return; }
     track.innerHTML = items.map(companionCardHtml).join("") +
       '<a class="neon-card companion-card hot-card hot-more-card" href="' + esc(options.moreHref || "companion-center.html") + '"><div class="hot-more-inner"><span>MORE</span><strong>更多</strong><p>' + esc(options.moreDesc || "进入陪玩大厅") + '</p></div></a>';
   }
@@ -99,11 +99,14 @@
     var dots = document.getElementById("officialAdDots");
     if (!track) return;
     var ads = sorted(list("ads"));
+    var section = track.closest(".official-ads");
     if (!ads.length) {
-      track.innerHTML = '<article class="official-ad-slide active mcj-empty-ad"><div class="official-ad-copy"><h3>暂无广告位</h3><p>暂无活动内容。</p></div></article>';
+      if (section) section.hidden = true;
+      track.innerHTML = "";
       if (dots) dots.innerHTML = "";
       return;
     }
+    if (section) section.hidden = false;
     track.innerHTML = ads.map(function (ad, index) {
       return '<article class="official-ad-slide' + (index === 0 ? ' active' : '') + '" data-link="' + esc(ad.link || "#") + '">' +
         '<img src="' + esc(ad.image || "") + '" alt="' + esc(ad.title || "") + '">' +
@@ -139,14 +142,25 @@
       if (settings.bannerImage) bannerImg.src = settings.bannerImage;
       else if (!bannerImg.getAttribute("src")) bannerImg.src = "assets/hero-banner-latest.png";
     }
-    var notice = document.querySelector(".announcement-strip span");
-    if (notice) notice.textContent = settings.noticeText || "暂无公告，后台发布后会显示在这里。";
+    var noticeBox = document.querySelector(".announcement-strip");
+    var notice = noticeBox && noticeBox.querySelector("span");
+    if (notice && settings.noticeText) {
+      noticeBox.hidden = false;
+      notice.textContent = settings.noticeText;
+    } else if (noticeBox && !window.MCJHomeBanner) {
+      noticeBox.hidden = true;
+      if (notice) notice.textContent = "";
+    }
     var comps = approvedCompanions();
     renderOfficialAds();
     renderTopThreeTrack("hotCompanionTrack", comps);
-    renderTopThreeTrack("recentCompanionTrack", [], { moreHref: "orders.html", moreDesc: "查看订单" });
-    renderTopThreeTrack("gameCompanionTrack", comps);
-    renderTopThreeTrack("reviewCompanionTrack", comps);
+    [["recentCompanionTrack", "orders.html", "查看订单"], ["gameCompanionTrack", "companion-center.html", "进入陪玩大厅"], ["reviewCompanionTrack", "companion-center.html", "进入陪玩大厅"]].forEach(function (cfg) {
+      var track = document.getElementById(cfg[0]);
+      var section = track && track.closest(".section");
+      if (section) section.hidden = !comps.length;
+      if (comps.length) renderTopThreeTrack(cfg[0], comps, { moreHref: cfg[1], moreDesc: cfg[2] });
+      else if (track) track.innerHTML = "";
+    });
     renderHomepageButtons();
   }
   function validatePrice(service, price) {

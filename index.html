@@ -2965,6 +2965,52 @@ label{
     min-height:44px!important;
   }
 }
+.quick-entry-grid{grid-template-columns:repeat(5,minmax(0,1fr))!important}
+.quick-entry-grid .quick-entry-card{
+  min-height:118px!important;
+  border-radius:20px!important;
+  border:1px solid rgba(243,168,203,.28)!important;
+  background:linear-gradient(145deg,rgba(255,255,255,.055),rgba(255,255,255,.018)),rgba(15,9,20,.86)!important;
+  box-shadow:0 18px 50px rgba(0,0,0,.36),inset 0 1px 0 rgba(255,255,255,.06)!important;
+}
+.quick-entry-grid .quick-entry-card i,
+.quick-entry-grid .quick-entry-card i::before{
+  width:50px!important;
+  height:50px!important;
+  min-width:50px!important;
+  border-radius:16px!important;
+  background:rgba(255,220,235,.08)!important;
+  border:1px solid rgba(243,168,203,.26)!important;
+  color:#ffdceb!important;
+  -webkit-text-fill-color:#ffdceb!important;
+  -webkit-text-stroke:0!important;
+  text-stroke:0!important;
+  font-size:20px!important;
+  font-weight:1000!important;
+  filter:none!important;
+  box-shadow:inset 0 0 18px rgba(255,220,235,.06),0 0 16px rgba(243,168,203,.12)!important;
+}
+.quick-entry-grid .quick-entry-card i::before{content:none!important;display:none!important}
+.quick-entry-grid .quick-entry-card strong{
+  color:#fff5fa!important;
+  -webkit-text-fill-color:#fff5fa!important;
+  -webkit-text-stroke:0!important;
+  text-stroke:0!important;
+  font-size:18px!important;
+  line-height:1.16!important;
+  letter-spacing:0!important;
+}
+.quick-entry-grid .quick-entry-card span{
+  color:rgba(255,226,239,.72)!important;
+  font-size:12px!important;
+  line-height:1.38!important;
+  letter-spacing:0!important;
+}
+.login-links{display:flex;justify-content:space-between;gap:12px;margin-top:2px}
+.login-links a{color:#ffdceb;font-size:13px;font-weight:900;text-decoration:none}
+.login-links a:hover{text-decoration:underline}
+@media(max-width:980px){.quick-entry-grid{grid-template-columns:repeat(3,minmax(0,1fr))!important}}
+@media(max-width:640px){.quick-entry-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}.quick-entry-grid .quick-entry-card{min-height:104px!important;padding:14px!important}.quick-entry-grid .quick-entry-card i{width:44px!important;height:44px!important;min-width:44px!important}.quick-entry-grid .quick-entry-card strong{font-size:16px!important}.quick-entry-grid .quick-entry-card span{font-size:11px!important}}
 </style>
   <link rel="stylesheet" href="src/certification-system.css">
   <link rel="stylesheet" href="src/companion-application.css">
@@ -2976,7 +3022,7 @@ label{
   <div class="ambient-layer" aria-hidden="true"><span class="paw p1">🐾</span><span class="paw p2">🐾</span><span class="paw p3">🐾</span><span class="heart h1">♥</span><span class="heart h2">♥</span><span class="spark s1"></span><span class="spark s2"></span><span class="spark s3"></span></div>
   <header class="site-header">
     <div class="header-inner">
-      <a class="brand" href="index.html"><span class="live2d-avatar"><img src="assets/meow-cuijiao-brand.jpg" alt="logo"><i></i></span><span>MEOW CUI JIAO<small>妙脆角电竞</small></span></a>
+      <a class="brand" href="index.html"><span class="live2d-avatar"><img src="assets/meow-cuijiao-brand.jpg" alt="logo"><i></i></span><span>妙脆角<small>Meow Cui Jiao</small></span></a>
       <nav class="header-nav" aria-label="主导航">
         <a href="companion-center.html">陪玩大厅</a>
         <a href="companion-center.html?service=voice">语音服务</a>
@@ -2989,7 +3035,7 @@ label{
   <main class="container">
     <section class="mcj-home-hero" data-mcj-home-hero aria-label="MEOW CUI JIAO 首页 Banner"></section>
 
-    <div class="announcement-strip fade-cycle" hidden><span>暂无公告，后台发布后会同步显示。</span></div>
+    <div class="announcement-strip fade-cycle" hidden><span></span></div>
 
     <section class="section today-data" style="display:none">
       <div class="section-title compact-title"><div><h2>今日数据</h2><p>TODAY OVERVIEW</p></div></div>
@@ -3004,13 +3050,11 @@ label{
     <section class="section quick-entry-section">
       <div class="section-title compact-title"><div><h2>快速入口</h2><p>QUICK ACCESS</p></div></div>
       <div class="quick-entry-grid">
-        <a class="neon-card quick-entry-card" href="custom-order.html"><i>📝</i><div><strong>自定义订单</strong><span>填写需求，客服匹配陪玩</span></div></a>
-        <a class="neon-card quick-entry-card" href="more-gameplays.html"><i><img src="assets/quick-more-play-plus.png" alt=""></i><div><strong>更多玩法</strong><span>护航、跑刀、代肝、趣味单</span></div></a>
-        <a class="neon-card quick-entry-card" href="companion-center.html"><i>🎮</i><div><strong>陪玩大厅</strong><span>浏览在线陪玩，快速下单</span></div></a>
-        <a class="neon-card quick-entry-card" href="companion-center.html?service=voice"><i>🎧</i><div><strong>语音大厅</strong><span>语音陪伴、聊天、挂房</span></div></a>
-        <button class="neon-card quick-entry-card" type="button" data-discord-join><i>🐾</i><div><strong>组队大厅</strong><span>找队友、开黑语音、进入社区</span></div></button>
-        <a class="neon-card quick-entry-card" href="mine.html#recharge"><i>💎</i><div><strong>充值中心</strong><span>人工审核充值，安全入账</span></div></a>
-        <a class="neon-card quick-entry-card" href="activities.html"><i>🎁</i><div><strong>活动中心</strong><span>查看平台活动与福利</span></div></a>
+        <a class="neon-card quick-entry-card" href="custom-order.html"><i>单</i><div><strong>自定义订单</strong><span>填写需求，客服匹配陪玩</span></div></a>
+        <a class="neon-card quick-entry-card" href="more-gameplays.html"><i>玩</i><div><strong>更多玩法</strong><span>护航、跑刀、代肝、趣味单</span></div></a>
+        <a class="neon-card quick-entry-card" href="companion-center.html"><i>陪</i><div><strong>陪玩大厅</strong><span>浏览已上架陪玩</span></div></a>
+        <button class="neon-card quick-entry-card" type="button" data-discord-join><i>队</i><div><strong>组队大厅</strong><span>进入组队社区</span></div></button>
+        <a class="neon-card quick-entry-card" href="miao-coin.html"><i>充</i><div><strong>充值中心</strong><span>查看充值与余额</span></div></a>
       </div>
     </section>
 
@@ -3024,8 +3068,8 @@ label{
         <a class="order-btn" href="companion-apply.html" data-companion-apply-guide>立即申请成为陪玩</a>
       </div>
     </section>
-<section class="section official-ads" aria-label="官方精选广告位">
-      <div class="section-title"><div><h2>官方精选广告位</h2><p>官方活动、首页推广、赛事与社区推荐</p></div></div>
+<section class="section official-ads" aria-label="首页活动">
+      <div class="section-title"><div><h2>首页活动</h2><p>活动内容由后台配置</p></div></div>
       <div class="official-ad-slider" id="officialAdSlider">
         <div class="official-ad-track" id="officialAdTrack"></div>
         <div class="ad-dots" id="officialAdDots"></div>
@@ -3135,7 +3179,7 @@ label{
     function openCompanionOrder(button){openModal(companionDetailHtml(collectCompanionData(button)))}
     function numericPrice(price){var m=String(price||'').match(/[\d.]+/);return m?Number(m[0]):12}
     function bossLoginHtml(){
-      return '<div class="boss-login-modal"><h2>登录 MEOW CUI JIAO</h2><div class="login-tabs"><button class="login-tab active" type="button" data-login-tab="phone">手机验证</button><button class="login-tab" type="button" data-login-tab="email">邮箱登录</button></div><div class="login-panel active" data-login-panel="phone"><label>国家区号<select id="loginDialCode"><option value="+60">+60 马来西亚</option><option value="+86">+86 中国</option></select></label><label>手机号码<input id="loginPhone" inputmode="tel" placeholder="请输入手机号码"></label><label class="wide">验证码<div class="login-code-row"><input id="loginCode" inputmode="numeric" placeholder="请输入验证码"><button class="login-small-btn" type="button" data-send-code>获取验证码</button></div></label><button class="login-submit" type="button" data-login-confirm data-login-method="phone">登录</button></div><div class="login-panel" data-login-panel="email"><label class="wide">邮箱<input id="loginGmail" type="email" placeholder="请输入邮箱"></label><label class="wide">密码或邮箱验证码<input id="loginGmailCode" type="password" placeholder="请输入密码或验证码"></label><button class="login-submit" type="button" data-login-confirm data-login-method="email">登录</button></div></div>';
+      return '<div class="boss-login-modal"><h2>登录 MEOW CUI JIAO</h2><div class="login-tabs"><button class="login-tab active" type="button" data-login-tab="phone">手机验证码登录</button><button class="login-tab" type="button" data-login-tab="email">邮箱登录</button></div><div class="login-panel active" data-login-panel="phone"><label>国家区号<select id="loginDialCode"><option value="+60">+60 马来西亚</option><option value="+86">+86 中国</option></select></label><label>手机号码<input id="loginPhone" inputmode="tel" placeholder="请输入手机号码"></label><label class="wide">验证码<div class="login-code-row"><input id="loginCode" inputmode="numeric" placeholder="请输入验证码"><button class="login-small-btn" type="button" data-send-code>获取验证码</button></div></label><button class="login-submit" type="button" data-login-confirm data-login-method="phone">登录</button></div><div class="login-panel" data-login-panel="email"><label class="wide">邮箱<input id="loginGmail" type="email" placeholder="请输入邮箱"></label><label class="wide">密码或邮箱验证码<input id="loginGmailCode" type="password" placeholder="请输入密码或验证码"></label><button class="login-submit" type="button" data-login-confirm data-login-method="email">登录</button></div><div class="login-links"><a href="mine.html?register=1">注册新账号</a><a href="mine.html?forgot=1">忘记密码</a></div></div>';
     }
     function loginRequiredModal(){
       openModal(bossLoginHtml());
@@ -3238,7 +3282,7 @@ label{
           return (Number(a.sort)||99)-(Number(b.sort)||99);
         }).map(function(n){return n.text||n.title||''}).filter(Boolean);
       }catch(e){}
-      if(!notices.length)notices=['暂无公告，后台发布后会同步显示。'];
+      if(!notices.length)return;
       var notice=document.querySelector('.notice-bar span'), ni=0;
       if(notice) notice.textContent=notices[0];
       if(notice){setInterval(function(){ni=(ni+1)%notices.length;notice.style.opacity='0';setTimeout(function(){notice.textContent=notices[ni];notice.style.opacity='1'},260)},4200)}
@@ -3699,8 +3743,14 @@ label{
   <script src="src/real-data-admin.js" defer></script>
   <script src="src/footer-system.js" defer></script>
   <script src="src/text-guard.js" defer></script>
-  <script src="src/launch-readiness-fixes.js" defer></script>
   <script src="src/meow-butler.js?v=20260711-floating" defer></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', function(){
+      var style=document.createElement('style');
+      style.textContent='@media(max-width:640px){#floatingCustomerService{bottom:calc(92px + env(safe-area-inset-bottom))!important;right:16px!important}}';
+      document.head.appendChild(style);
+    });
+  </script>
   <script src="src/design-system.js" defer></script>
 </body>
 </html>
