@@ -56,7 +56,7 @@
     var modal = document.getElementById("modal");
     var body = document.getElementById("modalBody");
     if (modal && body) {
-      body.innerHTML = window.bossLoginHtml ? window.bossLoginHtml() : '<div class="boss-login-modal"><h2>登录 MEOW CUI JIAO</h2><div class="login-tabs"><button class="login-tab active" type="button" data-login-tab="phone">手机验证</button><button class="login-tab" type="button" data-login-tab="gmail">Gmail 登录</button></div><div class="login-panel active" data-login-panel="phone"><label>国家区号<select><option>+60 马来西亚</option><option>+86 中国</option></select></label><label>手机号码<input placeholder="请输入手机号码"></label><label>验证码<input placeholder="请输入验证码"></label><button class="login-submit" data-login-confirm type="button">登录并进入</button></div><div class="login-panel" data-login-panel="gmail"><label>Gmail 邮箱<input type="email" placeholder="name@gmail.com"></label><label>密码或邮箱验证码<input type="password"></label><button class="login-submit" data-login-confirm type="button">登录并进入</button></div></div>';
+      body.innerHTML = window.bossLoginHtml ? window.bossLoginHtml() : '<div class="boss-login-modal"><h2>登录 MEOW CUI JIAO</h2><div class="login-tabs"><button class="login-tab active" type="button" data-login-tab="phone">手机验证</button><button class="login-tab" type="button" data-login-tab="email">邮箱登录</button></div><div class="login-panel active" data-login-panel="phone"><label>国家区号<select><option>+60 马来西亚</option><option>+86 中国</option></select></label><label>手机号码<input placeholder="请输入手机号码"></label><label>验证码<input placeholder="请输入验证码"></label><button class="login-submit" data-login-confirm type="button">登录</button></div><div class="login-panel" data-login-panel="email"><label>邮箱<input type="email" placeholder="请输入邮箱"></label><label>密码或邮箱验证码<input type="password"></label><button class="login-submit" data-login-confirm type="button">登录</button></div></div>';
       modal.classList.add("open");
       document.body.style.overflow = "hidden";
       return;
@@ -229,7 +229,7 @@
   function fixCompanionHallState() {
     if (!/companion-center\.html$/.test(location.pathname)) return;
     var count = document.getElementById("resultCount");
-    if (count && new RegExp("正在读取后台" + "数据").test(count.textContent || "")) count.textContent = "等待后台真实陪玩数据";
+    if (count && new RegExp("正在读取后台" + "数据").test(count.textContent || "")) count.textContent = "暂无已上架陪玩";
     setTimeout(function () {
       var list = document.getElementById("playerList");
       var empty = document.getElementById("emptyState");

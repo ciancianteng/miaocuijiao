@@ -15,12 +15,18 @@
     return match ? Number(match[0]) : 0;
   }
 
-  function fallbackItems() {
-    return [
-      { id: "momo", name: "MOMO", game: "VALORANT", price: "RM12/h", rating: "5.0", level: "Lv.8", gender: "女", status: "在线", image: "assets/meow-cuijiao-brand.jpg", tags: ["甜妹音", "指挥", "不压单"] },
-      { id: "nana", name: "NANA", game: "APEX", price: "RM15/h", rating: "4.9", level: "Lv.7", gender: "女", status: "接单中", image: "assets/lianmiao-club-ad.png", tags: ["娱乐", "上分", "会聊天"] },
-      { id: "yuki", name: "YUKI", game: "CSGO", price: "RM10/h", rating: "4.8", level: "Lv.6", gender: "保密", status: "在线", image: "assets/meow-cuijiao-brand.jpg", tags: ["残局", "教学", "稳定"] }
-    ];
+  function normalizeTags(item) {
+    var tags = Array.isArray(item.tags) ? item.tags : String(item.tags || item.serviceTags || "").split(/[，,]/);
+    return tags.map(function (tag) { return String(tag || "").trim(); }).filter(Boolean);
+  }
+
+  function isApprovedVisible(item) {
+    return item && item.auditStatus === "approved" && item.visible !== false && item.visible !== "false";
+  }
+
+  function matchesVoiceService(item) {
+    var value = [item.serviceType, item.serviceTypes, item.category, item.tags, item.serviceTags].join(" ");
+    return /voice|语音|语聊|陪聊/.test(value);
   }
 
   function readItems() {
@@ -28,26 +34,26 @@
     if (window.MCJRealData && typeof window.MCJRealData.approvedCompanions === "function") {
       dataItems = window.MCJRealData.approvedCompanions();
     } else if (window.MCJPlatformStore) {
-      dataItems = window.MCJPlatformStore.list("companions").filter(function (item) {
-        return item.auditStatus === "approved" && item.visible !== false;
-      });
+      dataItems = window.MCJPlatformStore.list("companions").filter(isApprovedVisible);
     }
-    if (!dataItems.length) dataItems = fallbackItems();
-    return dataItems.map(function (item) {
-      var price = item.price || item.servicePrice || "RM12/h";
+    var params = new URLSearchParams(location.search);
+    var voiceOnly = params.get("type") === "voice" || params.get("service") === "voice";
+    if (voiceOnly) dataItems = dataItems.filter(matchesVoiceService);
+    return dataItems.filter(isApprovedVisible).map(function (item) {
+      var price = item.price || item.servicePrice || "";
       return {
         id: item.id || item.name || "",
         name: item.name || "未命名",
-        game: item.game || item.mainGame || "游戏",
+        game: item.game || item.mainGame || "未填写",
         price: price,
         priceValue: priceNumber(price),
-        rating: item.rating || item.score || "5.0",
+        rating: item.rating || item.score || "",
         level: item.level || "Lv.1",
         gender: item.gender || "保密",
-        status: item.status || item.onlineStatus || "在线",
+        status: item.status || item.onlineStatus || "可预约",
         image: item.cover || item.cardCover || item.avatar || item.image || "assets/meow-cuijiao-brand.jpg",
-        tags: Array.isArray(item.tags) ? item.tags : String(item.tags || item.serviceTags || "").split(/[，,]/).filter(Boolean),
-        desc: item.desc || item.description || "妙脆角电竞认证陪玩，沟通舒服、服务稳定。"
+        tags: normalizeTags(item),
+        desc: item.desc || item.description || ""
       };
     });
   }
@@ -115,7 +121,7 @@
       '<img src="' + esc(item.image) + '" alt="' + esc(item.name) + '" style="width:100%;aspect-ratio:16/10;object-fit:cover;border-radius:8px">' +
       '<div class="row"><h3>' + esc(item.name) + '</h3><span class="price">' + esc(item.price) + '</span></div>' +
       '<p class="muted game-line">' + esc(item.game) + ' · ' + esc(item.level) + ' · ' + esc(item.status) + '</p>' +
-      '<p class="muted">' + esc(item.desc) + '</p>' +
+      (item.desc ? '<p class="muted">' + esc(item.desc) + '</p>' : '') +
       '<div class="tag-row">' + item.tags.map(function (tag) { return '<span>' + esc(tag) + '</span>'; }).join("") + '</div>' +
       '<button class="btn primary" data-book type="button">立即下单</button>' +
       '</article>';
@@ -131,10 +137,13 @@
     list.innerHTML = items.slice(start, start + PER_PAGE).map(card).join("");
 
     var count = document.getElementById("resultCount");
-    if (count) count.textContent = items.length ? "共 " + items.length + " 位陪玩" : "暂时没有找到符合条件的陪玩";
+    if (count) count.textContent = items.length ? "共 " + items.length + " 位陪玩" : "暂无已上架陪玩";
 
     var empty = document.getElementById("emptyState");
-    if (empty) empty.hidden = !!items.length;
+    if (empty) {
+      empty.hidden = !!items.length;
+      if (!items.length) empty.textContent = "暂无符合条件的陪玩。";
+    }
 
     var pager = document.getElementById("companionPagination");
     if (pager) {
@@ -164,6 +173,11 @@
   }
 
   function init() {
+    var params = new URLSearchParams(location.search);
+    if (params.get("type") === "voice" || params.get("service") === "voice") {
+      var title = document.querySelector(".companion-hall-hero h1, h1");
+      if (title) title.textContent = "语音大厅";
+    }
     state.items = readItems();
     setupFilters(state.items);
     bind();

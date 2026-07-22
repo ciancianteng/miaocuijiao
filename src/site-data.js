@@ -51,13 +51,17 @@
     return true;
   }
   function sorted(items) { return (items || []).filter(enabled).sort(function (a, b) { return (Number(a.sort) || 999) - (Number(b.sort) || 999); }); }
-  function approvedCompanions() { return sorted(list("companions").filter(function (p) { return p.auditStatus === "approved" && p.visible !== false; })); }
+  function approvedCompanions() {
+    return sorted(list("companions").filter(function (p) {
+      return p.auditStatus === "approved" && p.visible !== false && p.visible !== "false" && p.status !== "offline";
+    }));
+  }
   function tagsHtml(tags) {
     if (!Array.isArray(tags)) tags = String(tags || "").split(/[，,]/).map(function (s) { return s.trim(); }).filter(Boolean);
     return tags.map(function (tag) { return "<span>" + esc(tag) + "</span>"; }).join("");
   }
   function emptyCard(text) {
-    return '<article class="neon-card companion-card hot-card mcj-empty-card"><div class="hot-info"><h3>' + esc(text) + '</h3><p>后台发布并审核通过后会显示在这里。</p><div class="hot-tags"><span>真实数据模式</span></div></div></article>';
+    return '<article class="neon-card companion-card hot-card mcj-empty-card"><div class="hot-info"><h3>' + esc(text) + '</h3><p>暂无可预约陪玩，请稍后查看。</p></div></article>';
   }
   function companionCardHtml(item, rank) {
     var cover = item.cover || item.cardCover || item.image || "";
@@ -73,7 +77,7 @@
       '<h3>' + esc(item.name || "未命名") + '</h3>' +
       '<p>' + esc(item.game || item.mainGame || "") + '</p>' +
       '<div class="hot-meta"><span>' + esc(item.level || "Lv.1") + '</span><span>★ ' + esc(item.rating || "") + '</span></div>' +
-      '<div class="hot-orders">' + esc(price ? price : "后台未设置价格") + '</div>' +
+      '<div class="hot-orders">' + esc(price || "") + '</div>' +
       certBadges +
       '<div class="hot-tags">' + tagsHtml(item.tags || item.serviceTags) + '</div>' +
       '<a class="mini-order" href="' + esc(detail) + '">查看详情</a>' +
@@ -96,7 +100,7 @@
     if (!track) return;
     var ads = sorted(list("ads"));
     if (!ads.length) {
-      track.innerHTML = '<article class="official-ad-slide active mcj-empty-ad"><div class="official-ad-copy"><h3>暂无广告位</h3><p>后台发布并上架广告后会显示在这里。</p><button type="button">真实数据模式</button></div></article>';
+      track.innerHTML = '<article class="official-ad-slide active mcj-empty-ad"><div class="official-ad-copy"><h3>暂无广告位</h3><p>暂无活动内容。</p></div></article>';
       if (dots) dots.innerHTML = "";
       return;
     }
