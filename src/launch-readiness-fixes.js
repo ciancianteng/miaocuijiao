@@ -176,7 +176,7 @@
       quickButton("自定义订单", "填写需求，客服匹配陪玩", 'data-href="custom-order.html"', "assets/icon-home-custom-order.svg"),
       quickButton("更多玩法", "护航、跑刀、代肝、趣味单", 'data-href="more-gameplays.html"', "assets/icon-home-more-play.svg"),
       quickButton("陪玩大厅", "浏览已上架陪玩", 'data-href="companion-center.html"', "assets/icon-home-companion-hall.svg"),
-      quickButton("组队大厅", "进入组队社区", 'data-team-lobby="true"', "assets/icon-home-team-lobby.svg"),
+      quickButton("组队大厅", "进入组队社区", 'data-href="team-lobby.html"', "assets/icon-home-team-lobby.svg"),
       quickButton("充值中心", "查看充值与余额", 'data-href="miao-coin.html"', "assets/icon-home-recharge.svg")
     ].join("");
   }
