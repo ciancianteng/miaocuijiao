@@ -26,6 +26,7 @@
         <div class="nav-group open" data-group="users">
           <button type="button" data-section="bosses">老板管理</button>
           <button type="button" data-section="players">陪玩管理</button>
+          <button type="button" data-section="companion-levels">陪玩等级</button>
           <button type="button" data-section="service">客服管理</button>
         </div>
 
@@ -97,10 +98,11 @@
           </div>
         </section>
 
-        <section class="section" id="section-bosses"><section class="panel"><h2>老板管理</h2><div class="toolbar"><input data-table-search="table-bosses" placeholder="搜索老板昵称 / UID / 手机号"></div><div id="table-bosses"></div></section></section>
-        <section class="section" id="section-players"><section class="panel"><h2>陪玩管理</h2><div class="toolbar"><input data-table-search="table-players" placeholder="搜索陪玩昵称 / UID / 游戏 / 审核状态"></div><div id="table-players"></div></section><section class="panel"><h2>陪玩等级与价格设置</h2><button class="primary-btn" type="button" data-save-companion-levels>保存等级设置</button><div id="companionLevelSettings"></div></section></section>
+        <section class="section" id="section-bosses"><section class="panel"><h2>老板管理</h2><div id="bossManagement"></div></section></section>
+        <section class="section" id="section-players"><section class="panel"><h2>陪玩管理</h2><div id="playerManagement"></div></section></section>
+        <section class="section" id="section-companion-levels"><section class="panel"><h2>陪玩等级</h2><button class="primary-btn" type="button" data-save-companion-levels>保存等级设置</button><div id="companionLevelSettings"></div></section></section>
         <section class="section" id="section-service"><section class="panel"><h2>客服管理</h2><div id="table-customer_tickets"></div></section></section>
-        <section class="section" id="section-orders"><section class="panel"><h2>订单管理</h2><div id="table-orders"></div></section></section>
+        <section class="section" id="section-orders"><section class="panel"><h2>订单管理</h2><div id="orderManagement"></div></section></section>
 
         <section class="section" id="section-recharge-center"><section class="panel"><h2>充值中心</h2><div id="table-recharge_requests"></div></section></section>
         <section class="section" id="section-finance"><div class="panel-grid"><section class="panel"><h2>财务流水</h2><div id="table-wallet_transactions"></div></section><section class="panel"><h2>钱包总览</h2><div id="table-wallets"></div></section></div></section>
@@ -123,7 +125,7 @@
         <section class="section" id="section-companion-deposit"><section class="panel"><h2>陪玩押金设置</h2><div id="table-companion_deposit"></div></section></section>
         <section class="section" id="section-companion-applications"><section class="panel"><h2>陪玩申请审核</h2><div id="table-companion_applications"></div></section></section>
 
-        <section class="section" id="section-messages"><section class="panel"><h2>消息中心</h2><div id="table-messages"></div></section></section>
+        <section class="section" id="section-messages"><section class="panel admin-message-panel"><h2>消息中心</h2><div id="adminMessageCenter"></div></section></section>
         <section class="section" id="section-statistics"><section class="panel"><h2>统计中心</h2><div id="statisticsPanel"></div></section></section>
         <section class="section" id="section-admin-accounts"><section class="panel"><h2>管理员账号</h2><div id="table-admin_accounts"></div></section></section>
         <section class="section" id="section-permissions"><section class="panel"><h2>权限系统</h2><div id="table-role_permissions"></div></section></section>

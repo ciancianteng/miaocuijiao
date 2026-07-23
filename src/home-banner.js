@@ -3,13 +3,37 @@
 
   if (window.MCJHomeBanner) return;
 
-  var STORE_KEY = "mcjPlatformData.v1";
   var timers = new WeakMap();
   var touchState = new WeakMap();
+  var remoteStore = { contents: { banners: [], notices: [] } };
+  var remoteLoaded = false;
 
   function readStore() {
-    try { return JSON.parse(localStorage.getItem(STORE_KEY) || "{}") || {}; }
-    catch (error) { return {}; }
+    return remoteStore || { contents: { banners: [], notices: [] } };
+  }
+
+  function loadRemoteContent(callback) {
+    fetch("/api/platform/content?types=banners,announcements", { headers: { Accept: "application/json" } })
+      .then(function (response) {
+        var type = response.headers.get("content-type") || "";
+        if (type.indexOf("application/json") < 0) return { ok: true, byType: {} };
+        return response.json();
+      })
+      .then(function (result) {
+        var byType = result.byType || {};
+        remoteStore = {
+          contents: {
+            banners: byType.banners || [],
+            notices: byType.announcements || []
+          }
+        };
+        remoteLoaded = true;
+        if (callback) callback();
+      })
+      .catch(function () {
+        remoteLoaded = true;
+        if (callback) callback();
+      });
   }
 
   function clamp(value, min, max, fallback) {
@@ -216,6 +240,10 @@
   function applyHome() {
     var root = document.querySelector("[data-mcj-home-hero]") || document.querySelector(".mcj-home-hero") || document.querySelector(".banner");
     if (root) render(root);
+    if (!remoteLoaded) loadRemoteContent(function () {
+      var current = document.querySelector("[data-mcj-home-hero]") || document.querySelector(".mcj-home-hero") || document.querySelector(".banner");
+      if (current) render(current);
+    });
   }
 
   window.MCJHomeBanner = {
