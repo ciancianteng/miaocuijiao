@@ -3034,10 +3034,10 @@ label{
 .quick-entry-grid .quick-entry-card strong{font-size:17px!important;font-weight:900!important;color:#fff5fa!important;-webkit-text-fill-color:#fff5fa!important;letter-spacing:0!important}
 .quick-entry-grid .quick-entry-card span{font-size:12px!important;color:rgba(255,226,239,.72)!important;line-height:1.38!important}
 #hotCompanionTrack .companion-card::after,#recentCompanionTrack .companion-card::after,#gameCompanionTrack .companion-card::after,#reviewCompanionTrack .companion-card::after{content:none!important;display:none!important}
-#floatingCustomerService{position:fixed!important;right:20px!important;bottom:calc(20px + env(safe-area-inset-bottom))!important;z-index:9999!important}
-#floatingCustomerService .floating-cs-button{background:linear-gradient(145deg,rgba(255,220,235,.18),rgba(243,168,203,.08)),url("assets/floating-paw.png") center/72% auto no-repeat,rgba(14,8,18,.96)!important;border:1px solid rgba(255,220,235,.34)!important}
+#floatingCustomerService{position:fixed!important;right:24px!important;bottom:24px!important;z-index:9999!important}
+#floatingCustomerService .floating-cs-button{background:rgba(18,14,18,.88)!important;background-image:none!important;border:1px solid rgba(255,145,195,.55)!important}
 @media(max-width:980px){.home-daily-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.quick-entry-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}.container>.mcj-home-hero{height:clamp(210px,34vw,300px)!important}}
-@media(max-width:640px){.home-daily-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.home-daily-card{min-height:86px;padding:14px 12px}.home-daily-card strong{font-size:21px}.container>.mcj-home-hero{height:clamp(170px,50vw,230px)!important;border-radius:18px!important}.quick-entry-grid .quick-entry-card{min-height:104px!important;padding:14px!important}.quick-entry-grid .quick-entry-card i,.quick-entry-grid .quick-entry-card i img{width:42px!important;height:42px!important;min-width:42px!important}.quick-entry-grid .quick-entry-card i img{width:30px!important;height:30px!important;min-width:30px!important;min-height:30px!important}#floatingCustomerService{right:16px!important;bottom:calc(92px + env(safe-area-inset-bottom))!important}}
+@media(max-width:640px){.home-daily-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.home-daily-card{min-height:86px;padding:14px 12px}.home-daily-card strong{font-size:21px}.container>.mcj-home-hero{height:clamp(170px,50vw,230px)!important;border-radius:18px!important}.quick-entry-grid .quick-entry-card{min-height:104px!important;padding:14px!important}.quick-entry-grid .quick-entry-card i,.quick-entry-grid .quick-entry-card i img{width:42px!important;height:42px!important;min-width:42px!important}.quick-entry-grid .quick-entry-card i img{width:30px!important;height:30px!important;min-width:30px!important;min-height:30px!important}#floatingCustomerService{right:16px!important;bottom:18px!important}}
 @media(max-width:360px){.quick-entry-grid{grid-template-columns:1fr!important}.home-daily-grid{grid-template-columns:1fr}}
 
 /* homepage-ui-second-pass-v1 */
@@ -3977,14 +3977,7 @@ label{
   <script src="src/real-data-admin.js" defer></script>
   <script src="src/footer-system.js" defer></script>
   <script src="src/text-guard.js" defer></script>
-  <script src="src/meow-butler.js?v=20260711-floating" defer></script>
-  <script>
-    document.addEventListener('DOMContentLoaded', function(){
-      var style=document.createElement('style');
-      style.textContent='#floatingCustomerService{position:fixed!important;right:20px!important;bottom:calc(20px + env(safe-area-inset-bottom))!important;z-index:9999!important}#floatingCustomerService .floating-cs-button{background:linear-gradient(145deg,rgba(255,220,235,.18),rgba(243,168,203,.08)),url("assets/floating-paw.png") center/72% auto no-repeat,rgba(14,8,18,.96)!important;border:1px solid rgba(255,220,235,.34)!important}@media(max-width:640px){#floatingCustomerService{bottom:calc(92px + env(safe-area-inset-bottom))!important;right:16px!important}}';
-      document.head.appendChild(style);
-    });
-  </script>
+  <script src="src/meow-butler.js?v=20260723-cathead-panel" defer></script>
   <script src="src/design-system.js" defer></script>
 </body>
 </html>
