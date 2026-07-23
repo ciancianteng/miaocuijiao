@@ -42,8 +42,8 @@
     var cards = scope.querySelectorAll(".quick-entry-card, .feature-card, .entry-card, .metric-card, .stat-card, .service-card, .order-card, .mine-btn");
     cards.forEach(function (card) {
       var icon = card.querySelector("i, .feature-icon, .quick-icon, .stat-icon, .service-icon, .entry-icon");
+      if (card.matches(".quick-entry-card")) return;
       if (!icon) return;
-      if (card.matches(".quick-entry-card") && icon.querySelector("img")) return;
       normalizeIconSlot(icon, pickIconKey(card.textContent || ""));
     });
   }

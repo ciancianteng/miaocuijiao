@@ -2,8 +2,19 @@
   "use strict";
 
   var API_URL = "/api/home/daily-stats";
+  var ZERO_STATS = {
+    date: "",
+    timezone: "Asia/Kuala_Lumpur",
+    ordersCreated: 0,
+    ordersCompleted: 0,
+    newCustomers: 0,
+    newCompanions: 0,
+    onlineCompanions: 0,
+    grossRevenue: 0,
+    currency: "MYR"
+  };
   var fields = [
-    ["ordersCreated", "今日订单数", ""],
+    ["ordersCreated", "今日订单", ""],
     ["ordersCompleted", "今日完成订单", ""],
     ["newCustomers", "今日新增老板", ""],
     ["newCompanions", "今日新增陪玩", ""],
@@ -17,31 +28,30 @@
     });
   }
 
-  function valueText(data, key, currencyKey) {
+  function numberValue(data, key) {
     var value = data && data[key];
-    if (value == null || value === "" || Number.isNaN(Number(value))) return "0";
-    if (currencyKey) return esc(data[currencyKey] || "MYR") + " " + Number(value).toFixed(2);
-    return String(Number(value));
+    var number = Number(value);
+    return Number.isFinite(number) ? number : 0;
   }
 
-  function render(data) {
+  function currencyLabel(value) {
+    return String(value || "MYR").toUpperCase() === "MYR" ? "RM" : String(value || "RM");
+  }
+
+  function valueText(data, key, currencyKey) {
+    if (currencyKey) return '<span class="home-daily-unit">' + esc(currencyLabel(data && data[currencyKey])) + '</span>' + numberValue(data, key).toFixed(2);
+    return String(Math.round(numberValue(data, key)));
+  }
+
+  function render(input) {
     var root = document.querySelector("[data-home-daily-stats]");
     if (!root) return;
+    var data = Object.assign({}, ZERO_STATS, input || {});
     root.hidden = false;
-    var meta = data && data.date ? '<p>' + esc(data.date) + ' · ' + esc(data.timezone || "Asia/Kuala_Lumpur") + '</p>' : "";
+    var meta = data.date ? '<p>' + esc(data.date) + ' · ' + esc(data.timezone || "Asia/Kuala_Lumpur") + '</p>' : "";
     root.innerHTML = '<div class="section-title compact-title"><div><h2>今日平台数据</h2>' + meta + '</div></div>' +
       '<div class="home-daily-grid">' + fields.map(function (field) {
         return '<article class="home-daily-card"><span>' + esc(field[1]) + '</span><strong>' + valueText(data, field[0], field[2]) + '</strong></article>';
-      }).join("") + '</div>';
-  }
-
-  function renderError() {
-    var root = document.querySelector("[data-home-daily-stats]");
-    if (!root) return;
-    root.hidden = false;
-    root.innerHTML = '<div class="section-title compact-title"><div><h2>今日平台数据</h2></div></div><div class="home-daily-grid">' +
-      fields.map(function (field) {
-        return '<article class="home-daily-card"><span>' + esc(field[1]) + '</span><strong>暂时无法读取</strong></article>';
       }).join("") + '</div>';
   }
 
@@ -51,7 +61,7 @@
       if (!response.ok) throw new Error("daily stats unavailable");
       render(await response.json());
     } catch (error) {
-      renderError();
+      render(ZERO_STATS);
     }
   }
 

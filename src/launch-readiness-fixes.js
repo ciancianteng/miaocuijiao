@@ -143,14 +143,11 @@
     style.id = "launchReadinessStyles";
     style.textContent = [
       ".launch-hidden{display:none!important}",
-      ".launch-entry-grid{display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr))!important;gap:18px!important}",
-      ".launch-entry-grid .quick-entry-card{min-height:118px!important;display:flex!important;align-items:center!important;gap:16px!important}",
-      ".launch-entry-grid .quick-entry-card i{width:48px!important;height:48px!important;min-width:48px!important;max-width:48px!important;display:grid!important;place-items:center!important;overflow:hidden!important}",
+      ".launch-entry-grid{display:grid!important;grid-template-columns:repeat(5,minmax(0,1fr))!important;gap:14px!important}",
+      ".launch-entry-grid .quick-entry-card{min-height:112px!important;display:flex!important;align-items:center!important;gap:0!important}",
+      ".launch-entry-grid .quick-entry-card i{display:none!important}",
       ".launch-entry-grid .quick-entry-card i:before,.launch-entry-grid .quick-entry-card i:after{content:none!important;display:none!important}",
-      ".launch-entry-grid .quick-entry-card:nth-child(2) i{background-image:none!important;background:rgba(255,220,235,.075)!important;color:transparent!important;font-size:0!important;filter:none!important}",
-      ".launch-entry-grid .quick-entry-card:nth-child(2) i:before,.launch-entry-grid .quick-entry-card:nth-child(2) i:after{content:none!important;display:none!important;width:0!important;height:0!important;background:none!important;background-image:none!important;filter:none!important;box-shadow:none!important}",
-      ".launch-entry-grid .quick-entry-card i img{width:48px!important;height:48px!important;object-fit:contain!important;filter:none!important;opacity:1!important}",
-      ".launch-entry-grid .quick-entry-card:nth-child(2) i img{position:static!important;display:block!important;width:48px!important;height:48px!important;object-fit:contain!important;background:none!important;filter:none!important;box-shadow:none!important;opacity:1!important;transform:none!important}",
+      ".launch-entry-grid .quick-entry-card i img{display:none!important}",
       ".launch-entry-grid .quick-entry-card span{word-break:keep-all!important;overflow-wrap:normal!important}",
       ".launch-empty-state{border:1px dashed rgba(243,168,203,.28);border-radius:20px;background:rgba(255,255,255,.035);padding:24px;text-align:center;color:#ffdceb;font-weight:900}",
       "@media(max-width:980px){.launch-entry-grid{grid-template-columns:repeat(3,minmax(0,1fr))!important}}",
@@ -159,8 +156,8 @@
     document.head.appendChild(style);
   }
 
-  function quickButton(title, subtitle, action, iconSrc) {
-    return '<button class="neon-card quick-entry-card" type="button" ' + action + '><i><img src="' + iconSrc + '" alt=""></i><div><strong>' + title + '</strong><span>' + subtitle + '</span></div></button>';
+  function quickButton(title, subtitle, action) {
+    return '<button class="neon-card quick-entry-card" type="button" ' + action + '><div><strong>' + title + '</strong><span>' + subtitle + '</span></div></button>';
   }
 
   function rebuildHomeQuickEntries() {
@@ -173,11 +170,11 @@
     grid.dataset.launchQuickReady = "1";
     grid.classList.add("launch-entry-grid");
     grid.innerHTML = [
-      quickButton("自定义订单", "填写需求，客服匹配陪玩", 'data-href="custom-order.html"', "assets/icon-home-custom-order.svg"),
-      quickButton("更多玩法", "护航、跑刀、代肝、趣味单", 'data-href="more-gameplays.html"', "assets/icon-home-more-play.svg"),
-      quickButton("陪玩大厅", "浏览已上架陪玩", 'data-href="companion-center.html"', "assets/icon-home-companion-hall.svg"),
-      quickButton("组队大厅", "进入组队社区", 'data-href="team-lobby.html"', "assets/icon-home-team-lobby.svg"),
-      quickButton("充值中心", "查看充值与余额", 'data-href="miao-coin.html"', "assets/icon-home-recharge.svg")
+      quickButton("自定义订单", "填写需求，客服匹配陪玩", 'data-href="custom-order.html"'),
+      quickButton("更多玩法", "护航、跑刀、代肝、趣味单", 'data-href="more-gameplays.html"'),
+      quickButton("陪玩大厅", "浏览已上架陪玩", 'data-href="companion-center.html"'),
+      quickButton("组队大厅", "进入组队社区", 'data-href="team-lobby.html"'),
+      quickButton("充值中心", "查看充值与余额", 'data-href="miao-coin.html"')
     ].join("");
   }
 

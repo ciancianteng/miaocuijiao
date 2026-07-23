@@ -3039,6 +3039,224 @@ label{
 @media(max-width:980px){.home-daily-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.quick-entry-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}.container>.mcj-home-hero{height:clamp(210px,34vw,300px)!important}}
 @media(max-width:640px){.home-daily-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.home-daily-card{min-height:86px;padding:14px 12px}.home-daily-card strong{font-size:21px}.container>.mcj-home-hero{height:clamp(170px,50vw,230px)!important;border-radius:18px!important}.quick-entry-grid .quick-entry-card{min-height:104px!important;padding:14px!important}.quick-entry-grid .quick-entry-card i,.quick-entry-grid .quick-entry-card i img{width:42px!important;height:42px!important;min-width:42px!important}.quick-entry-grid .quick-entry-card i img{width:30px!important;height:30px!important;min-width:30px!important;min-height:30px!important}#floatingCustomerService{right:16px!important;bottom:calc(92px + env(safe-area-inset-bottom))!important}}
 @media(max-width:360px){.quick-entry-grid{grid-template-columns:1fr!important}.home-daily-grid{grid-template-columns:1fr}}
+
+/* homepage-ui-second-pass-v1 */
+.container .section-title h2,
+.container .compact-title h2{
+  font-family:"Microsoft YaHei UI",Inter,Arial,sans-serif!important;
+  font-size:22px!important;
+  font-weight:700!important;
+  letter-spacing:0!important;
+  color:#fff!important;
+  text-shadow:none!important;
+}
+.container .section-title p,
+.container .compact-title p{
+  font-family:"Microsoft YaHei UI",Inter,Arial,sans-serif!important;
+  font-size:12px!important;
+  font-weight:400!important;
+  letter-spacing:.08em!important;
+  color:rgba(255,226,239,.68)!important;
+  opacity:1!important;
+}
+.container>.mcj-home-hero.is-empty{
+  background:
+    radial-gradient(circle at 18% 12%,rgba(255,214,232,.18),transparent 30%),
+    radial-gradient(circle at 84% 78%,rgba(243,168,203,.14),transparent 34%),
+    linear-gradient(135deg,rgba(24,15,30,.98),rgba(8,7,12,.98) 48%,rgba(31,14,27,.96))!important;
+  border:1px solid rgba(255,214,232,.28)!important;
+  box-shadow:0 22px 70px rgba(0,0,0,.42),inset 0 1px 0 rgba(255,255,255,.08),0 0 34px rgba(243,168,203,.12)!important;
+}
+.mcj-hero-empty{
+  gap:12px!important;
+  padding:24px!important;
+}
+.mcj-hero-empty strong{
+  font-family:"Microsoft YaHei UI",Inter,Arial,sans-serif!important;
+  font-size:clamp(26px,3.2vw,42px)!important;
+  font-weight:700!important;
+  letter-spacing:0!important;
+  color:#fff!important;
+  text-shadow:0 0 22px rgba(243,168,203,.20)!important;
+}
+.mcj-hero-empty span{
+  font-family:"Microsoft YaHei UI",Inter,Arial,sans-serif!important;
+  font-size:15px!important;
+  font-weight:400!important;
+  color:rgba(255,226,239,.78)!important;
+}
+.home-daily-grid{
+  grid-template-columns:repeat(6,minmax(0,1fr))!important;
+  gap:14px!important;
+  align-items:stretch!important;
+}
+.home-daily-card{
+  height:112px!important;
+  min-height:112px!important;
+  padding:18px 16px!important;
+  border-radius:18px!important;
+  border:1px solid rgba(255,214,232,.22)!important;
+  background:linear-gradient(145deg,rgba(255,255,255,.055),rgba(255,255,255,.018)),rgba(12,10,16,.82)!important;
+  box-shadow:0 16px 44px rgba(0,0,0,.34),inset 0 1px 0 rgba(255,255,255,.055)!important;
+  transition:transform .22s ease,border-color .22s ease,box-shadow .22s ease,background .22s ease!important;
+}
+.home-daily-card:hover{
+  transform:translateY(-3px)!important;
+  border-color:rgba(255,214,232,.58)!important;
+  background:linear-gradient(145deg,rgba(255,214,232,.075),rgba(255,255,255,.026)),rgba(14,11,18,.9)!important;
+  box-shadow:0 0 28px rgba(243,168,203,.18),0 22px 58px rgba(0,0,0,.42),inset 0 1px 0 rgba(255,255,255,.07)!important;
+}
+.home-daily-card span{
+  font-family:"Microsoft YaHei UI",Inter,Arial,sans-serif!important;
+  font-size:13px!important;
+  font-weight:400!important;
+  line-height:1.3!important;
+  color:rgba(255,226,239,.75)!important;
+}
+.home-daily-card strong{
+  margin-top:12px!important;
+  font-family:"Microsoft YaHei UI",Inter,Arial,sans-serif!important;
+  font-size:32px!important;
+  font-weight:700!important;
+  line-height:1!important;
+  color:#fff!important;
+  -webkit-text-fill-color:#fff!important;
+  text-shadow:none!important;
+}
+.home-daily-card .home-daily-unit{
+  display:inline!important;
+  margin:0!important;
+  font-size:22px!important;
+  font-weight:700!important;
+  color:#fff!important;
+  opacity:.92!important;
+}
+.quick-entry-grid,
+.quick-entry-grid.launch-entry-grid{
+  grid-template-columns:repeat(5,minmax(0,1fr))!important;
+  gap:14px!important;
+}
+.quick-entry-grid .quick-entry-card,
+.quick-entry-grid.launch-entry-grid .quick-entry-card{
+  position:relative!important;
+  display:flex!important;
+  align-items:center!important;
+  min-height:112px!important;
+  height:112px!important;
+  padding:22px 18px 22px 24px!important;
+  gap:0!important;
+  border-radius:18px!important;
+  border:1px solid rgba(255,214,232,.24)!important;
+  background:linear-gradient(145deg,rgba(255,255,255,.055),rgba(255,255,255,.018)),rgba(10,9,14,.84)!important;
+  box-shadow:0 18px 46px rgba(0,0,0,.36),inset 0 1px 0 rgba(255,255,255,.055)!important;
+  color:#fff!important;
+  overflow:hidden!important;
+  text-align:left!important;
+  transition:transform .22s ease,border-color .22s ease,box-shadow .22s ease,background .22s ease!important;
+}
+.quick-entry-grid .quick-entry-card:before,
+.quick-entry-grid.launch-entry-grid .quick-entry-card:before{
+  content:""!important;
+  position:absolute!important;
+  left:0!important;
+  top:16px!important;
+  bottom:16px!important;
+  width:3px!important;
+  border-radius:999px!important;
+  background:linear-gradient(180deg,rgba(255,226,239,.95),rgba(243,168,203,.35),rgba(255,226,239,.72))!important;
+  box-shadow:0 0 16px rgba(243,168,203,.30)!important;
+  opacity:.75!important;
+}
+.quick-entry-grid .quick-entry-card:after,
+.quick-entry-grid.launch-entry-grid .quick-entry-card:after{
+  content:""!important;
+  position:absolute!important;
+  inset:0!important;
+  background:linear-gradient(115deg,transparent,rgba(255,214,232,.055),transparent 62%)!important;
+  opacity:.52!important;
+  pointer-events:none!important;
+}
+.quick-entry-grid .quick-entry-card:hover,
+.quick-entry-grid.launch-entry-grid .quick-entry-card:hover{
+  transform:translateY(-3px)!important;
+  border-color:rgba(255,214,232,.64)!important;
+  background:linear-gradient(145deg,rgba(255,214,232,.075),rgba(255,255,255,.024)),rgba(12,10,16,.92)!important;
+  box-shadow:0 0 28px rgba(243,168,203,.20),0 24px 60px rgba(0,0,0,.44),inset 0 1px 0 rgba(255,255,255,.08)!important;
+}
+.quick-entry-grid .quick-entry-card i,
+.quick-entry-grid .quick-entry-card i:before,
+.quick-entry-grid .quick-entry-card i:after,
+.quick-entry-grid .quick-entry-card img,
+.quick-entry-grid.launch-entry-grid .quick-entry-card i,
+.quick-entry-grid.launch-entry-grid .quick-entry-card i:before,
+.quick-entry-grid.launch-entry-grid .quick-entry-card i:after,
+.quick-entry-grid.launch-entry-grid .quick-entry-card img{
+  display:none!important;
+  content:none!important;
+  width:0!important;
+  height:0!important;
+  min-width:0!important;
+  margin:0!important;
+  padding:0!important;
+  background:none!important;
+  border:0!important;
+  box-shadow:none!important;
+}
+.quick-entry-grid .quick-entry-card>div,
+.quick-entry-grid.launch-entry-grid .quick-entry-card>div{
+  position:relative!important;
+  z-index:2!important;
+  width:100%!important;
+  min-width:0!important;
+}
+.quick-entry-grid .quick-entry-card strong,
+.quick-entry-grid.launch-entry-grid .quick-entry-card strong,
+.quick-entry-grid .quick-entry-card:nth-child(n) strong,
+.quick-entry-grid.launch-entry-grid .quick-entry-card:nth-child(n) strong{
+  display:block!important;
+  font-family:"Microsoft YaHei UI",Inter,Arial,sans-serif!important;
+  font-size:18px!important;
+  font-weight:700!important;
+  line-height:1.25!important;
+  color:#fff!important;
+  -webkit-text-fill-color:#fff!important;
+  -webkit-text-stroke:0!important;
+  text-stroke:0!important;
+  letter-spacing:0!important;
+  text-shadow:none!important;
+  white-space:nowrap!important;
+}
+.quick-entry-grid .quick-entry-card span,
+.quick-entry-grid.launch-entry-grid .quick-entry-card span,
+.quick-entry-grid .quick-entry-card:nth-child(n) span,
+.quick-entry-grid.launch-entry-grid .quick-entry-card:nth-child(n) span{
+  display:block!important;
+  margin-top:8px!important;
+  font-family:"Microsoft YaHei UI",Inter,Arial,sans-serif!important;
+  font-size:13px!important;
+  font-weight:400!important;
+  line-height:1.4!important;
+  color:#ffe2ef!important;
+  -webkit-text-fill-color:#ffe2ef!important;
+  opacity:.75!important;
+  letter-spacing:0!important;
+  text-shadow:none!important;
+}
+@media(max-width:980px){
+  .home-daily-grid{grid-template-columns:repeat(3,minmax(0,1fr))!important}
+  .quick-entry-grid,.quick-entry-grid.launch-entry-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+}
+@media(max-width:640px){
+  .home-daily-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+  .home-daily-card{height:104px!important;min-height:104px!important}
+  .home-daily-card strong{font-size:28px!important}
+  .quick-entry-grid .quick-entry-card,.quick-entry-grid.launch-entry-grid .quick-entry-card{height:104px!important;min-height:104px!important;padding:18px 16px 18px 22px!important}
+  .quick-entry-grid .quick-entry-card strong,.quick-entry-grid.launch-entry-grid .quick-entry-card strong{font-size:18px!important}
+  .quick-entry-grid .quick-entry-card span,.quick-entry-grid.launch-entry-grid .quick-entry-card span{font-size:13px!important}
+}
+@media(max-width:360px){
+  .home-daily-grid,.quick-entry-grid,.quick-entry-grid.launch-entry-grid{grid-template-columns:1fr!important}
+}
 </style>
   <link rel="stylesheet" href="src/certification-system.css">
   <link rel="stylesheet" href="src/companion-application.css">
@@ -3064,11 +3282,11 @@ label{
     <section class="section quick-entry-section">
       <div class="section-title compact-title"><div><h2>快速入口</h2><p>QUICK ACCESS</p></div></div>
       <div class="quick-entry-grid">
-        <a class="neon-card quick-entry-card" href="custom-order.html"><i><img src="assets/icon-home-custom-order.svg" alt=""></i><div><strong>自定义订单</strong><span>填写需求，客服匹配陪玩</span></div></a>
-        <a class="neon-card quick-entry-card" href="more-gameplays.html"><i><img src="assets/icon-home-more-play.svg" alt=""></i><div><strong>更多玩法</strong><span>护航、跑刀、代肝、趣味单</span></div></a>
-        <a class="neon-card quick-entry-card" href="companion-center.html"><i><img src="assets/icon-home-companion-hall.svg" alt=""></i><div><strong>陪玩大厅</strong><span>浏览已上架陪玩</span></div></a>
-        <a class="neon-card quick-entry-card" href="team-lobby.html"><i><img src="assets/icon-home-team-lobby.svg" alt=""></i><div><strong>组队大厅</strong><span>进入组队社区</span></div></a>
-        <a class="neon-card quick-entry-card" href="miao-coin.html"><i><img src="assets/icon-home-recharge.svg" alt=""></i><div><strong>充值中心</strong><span>查看充值与余额</span></div></a>
+        <a class="neon-card quick-entry-card" href="custom-order.html"><div><strong>自定义订单</strong><span>填写需求，客服匹配陪玩</span></div></a>
+        <a class="neon-card quick-entry-card" href="more-gameplays.html"><div><strong>更多玩法</strong><span>护航、跑刀、代肝、趣味单</span></div></a>
+        <a class="neon-card quick-entry-card" href="companion-center.html"><div><strong>陪玩大厅</strong><span>浏览已上架陪玩</span></div></a>
+        <a class="neon-card quick-entry-card" href="team-lobby.html"><div><strong>组队大厅</strong><span>进入组队社区</span></div></a>
+        <a class="neon-card quick-entry-card" href="miao-coin.html"><div><strong>充值中心</strong><span>查看充值与余额</span></div></a>
       </div>
     </section>
 

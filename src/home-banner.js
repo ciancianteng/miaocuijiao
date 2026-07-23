@@ -108,7 +108,7 @@
   }
 
   function emptyHeroHtml() {
-    return '<div class="mcj-hero-empty" role="status"><strong>暂无启用 Banner</strong><span>后台上传并启用 Banner 后会在这里显示。</span></div>';
+    return '<div class="mcj-hero-empty" role="status"><strong>欢迎来到 妙脆角 Meow Cui Jiao</strong><span>选择喜欢的陪玩，开始今天的游戏旅程。</span></div>';
   }
 
   function renderNotice(announcements) {
