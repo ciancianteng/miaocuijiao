@@ -62,11 +62,11 @@
       allowDecimals: true
     },
     playerLevelConfig: [
-      { level_number: 1, level_name: "Lv.1 萌新", sort_weight: 100, status: "enabled" },
-      { level_number: 2, level_name: "Lv.2 奶猫", sort_weight: 200, status: "enabled" },
-      { level_number: 3, level_name: "Lv.3 布偶猫", sort_weight: 300, status: "enabled" },
-      { level_number: 4, level_name: "Lv.4 喵神", sort_weight: 400, status: "enabled" },
-      { level_number: 5, level_name: "Lv.5 喵王", sort_weight: 500, status: "enabled" }
+      { level_number: 1, level_name: "Lv.1 萌喵", minimum_price: 20, maximum_price: 30, sort_weight: 100, status: "enabled" },
+      { level_number: 2, level_name: "Lv.2 灵喵", minimum_price: 30, maximum_price: 40, sort_weight: 200, status: "enabled" },
+      { level_number: 3, level_name: "Lv.3 猎喵", minimum_price: 40, maximum_price: 45, sort_weight: 300, status: "enabled" },
+      { level_number: 4, level_name: "Lv.4 喵神", minimum_price: 60, maximum_price: 75, sort_weight: 400, status: "enabled" },
+      { level_number: 5, level_name: "Lv.5 喵皇", minimum_price: 75, maximum_price: 100, maximum_price_plus: true, sort_weight: 500, status: "enabled" }
     ],
     withdrawalConfig: {
       minimumAmount: 10,

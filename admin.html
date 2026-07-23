@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>超级管理员总后台 · MEOW CUI JIAO</title>
   <link rel="stylesheet" href="src/admin-suite.css">
+  <script src="src/companion-levels.js"></script>
 </head>
 <body data-allowed-roles="super_admin" data-default-role="super_admin">
   <main class="admin-shell">
@@ -17,6 +18,7 @@
         <button class="active" data-section="dashboard">数据中心 <small>Dashboard</small></button>
         <button data-section="bosses">老板资料 <small>Boss Info</small></button>
         <button data-section="players">陪玩资料 <small>Player Info</small></button>
+        <button data-section="companion-levels">等级与价格设置 <small>Levels</small></button>
         <button data-section="orders">订单管理 <small>Orders</small></button>
         <button data-section="finance">财务中心 <small>Finance</small></button>
         <button data-section="withdraw">提现审核 <small>Withdraw</small></button>
@@ -59,6 +61,13 @@
 
       <section class="section" id="section-players">
         <div class="card"><div class="card-head"><div><h3>陪玩资料</h3><p>查看身份证资料、自拍认证、结款银行账户、审核状态、收入和提现。</p></div><button class="btn primary" data-action="create-player">新增陪玩</button></div><div class="admin-search"><input data-table-search="table-players" placeholder="搜索陪玩昵称 / UID / 电话 / 游戏 / 审核状态 / 俱乐部"><span>输入关键词自动筛选</span></div><div id="table-players"></div></div>
+      </section>
+
+      <section class="section" id="section-companion-levels">
+        <div class="card">
+          <div class="card-head"><div><h3>陪玩管理 · 等级与价格设置</h3><p>统一维护妙脆角陪玩等级、价格范围、说明、升级条件和开放状态。</p></div><button class="btn primary" data-save-companion-levels>保存等级设置</button></div>
+          <div id="companionLevelSettings"></div>
+        </div>
       </section>
 
       <section class="section" id="section-orders">

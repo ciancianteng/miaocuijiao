@@ -45,7 +45,7 @@ function collectCompanionData(button) {
   return {
     name: card.dataset.name || readText(card, "h3", "MOMO"),
     game: readText(card, ".game-line", "") || muted.split("·")[0].trim(),
-    price: readText(card, ".price", "RM12/h"),
+    price: readText(card, ".price", "RM20/小时"),
     rating: readText(card, ".rating", "5.0"),
     orders: readText(card, ".order-line", "24h: 36"),
     status: card.dataset.online || readText(card, ".status", "online"),

@@ -120,6 +120,45 @@
   min-height: 100%;
 }
 
+.companion-card-head {
+  align-items: flex-start !important;
+  gap: 12px !important;
+}
+
+.companion-card-head h3 {
+  margin: 0 !important;
+  font-size: 19px !important;
+}
+
+.companion-card-head .price {
+  color: #fff !important;
+  font-size: 17px !important;
+  font-weight: 900 !important;
+  white-space: nowrap !important;
+}
+
+.companion-id {
+  margin: 8px 0 0 !important;
+  font-size: 12px !important;
+}
+
+.companion-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.companion-meta span {
+  border: 1px solid rgba(255, 145, 195, .22);
+  border-radius: 999px;
+  background: rgba(255, 145, 195, .07);
+  color: rgba(255, 235, 246, .92);
+  font-size: 12px;
+  font-weight: 800;
+  padding: 6px 9px;
+}
+
 .companion-pagination {
   display: flex;
   justify-content: center;

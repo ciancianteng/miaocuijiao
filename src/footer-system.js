@@ -42,11 +42,11 @@
     }
     return '<footer class="mcj-site-footer" data-mcj-footer>' +
       '<div class="mcj-footer-inner compact">' +
-      '<section class="mcj-footer-block mcj-footer-brand"><h3>MEOW CUI JIAO ENTERPRISE</h3><p>✓ Registered Malaysian Enterprise</p></section>' +
-      '</div><div class="mcj-footer-bottom"><span>© MEOW CUI JIAO ENTERPRISE</span><span>All Rights Reserved.</span></div></footer>';
+      '<section class="mcj-footer-block mcj-footer-brand"><h3>MEOW CUI JIAO ENTERPRISE</h3><p>✓ Registered Malaysian Enterprise</p><button class="mcj-footer-link" type="button" data-open-coop>商务合作</button></section>' +
+      '</div><div class="mcj-footer-bottom"><span>© MEOW CUI JIAO ENTERPRISE. All rights reserved.</span></div></footer>';
   }
   function modalHtml() {
-    return '<div class="mcj-modal" id="mcjCoopModal" aria-hidden="true"><div class="mcj-modal-box"><div class="mcj-modal-head"><div><h3>商务合作申请</h3><p>欢迎与 Meow Cui Jiao 建立合作关系。</p></div><button class="mcj-close" type="button" data-close-coop>×</button></div>' +
+    return '<div class="mcj-modal" id="mcjCoopModal" aria-hidden="true"><div class="mcj-modal-box"><div class="mcj-modal-head"><div><h3>商务合作申请</h3><p>欢迎与 Meow Cui Jiao 建立合作关系。</p></div><button class="mcj-close" style="width:36px;height:36px;min-width:36px;min-height:36px;max-width:36px;max-height:36px;padding:0" type="button" data-close-coop>×</button></div>' +
       '<form id="mcjCoopForm" class="mcj-form-grid">' +
       '<label>公司/俱乐部名称（必填）<input name="companyName" required></label>' +
       '<label>联系人姓名（必填）<input name="contactName" required></label>' +
@@ -87,21 +87,24 @@
     writeDB(db);
     return item;
   }
-  function bind() {
+  function ensureModal() {
     var modal = document.getElementById("mcjCoopModal");
+    if (!modal) {
+      document.body.insertAdjacentHTML("beforeend", modalHtml());
+      modal = document.getElementById("mcjCoopModal");
+      bindForm();
+    }
+    return modal;
+  }
+  function destroyModal() {
+    var modal = document.getElementById("mcjCoopModal");
+    if (modal) modal.remove();
+    document.body.style.overflow = "";
+  }
+  function bindForm() {
     var form = document.getElementById("mcjCoopForm");
-    function openModal() {
-      modal.classList.add("show");
-      modal.setAttribute("aria-hidden", "false");
-    }
-    function closeModal() {
-      modal.classList.remove("show");
-      modal.setAttribute("aria-hidden", "true");
-    }
-    document.addEventListener("click", function (e) {
-      if (e.target.closest("[data-open-coop]")) { e.preventDefault(); openModal(); }
-      if (e.target.closest("[data-close-coop]") || e.target === modal) { e.preventDefault(); closeModal(); }
-    });
+    if (!form || form.dataset.bound === "1") return;
+    form.dataset.bound = "1";
     form.addEventListener("submit", function (e) {
       e.preventDefault();
       var state = document.getElementById("mcjCoopState");
@@ -114,6 +117,27 @@
       });
     });
   }
+  function bind() {
+    function openModal() {
+      var modal = ensureModal();
+      modal.classList.add("show");
+      modal.setAttribute("aria-hidden", "false");
+      document.body.style.overflow = "hidden";
+      var first = modal.querySelector("input,select,textarea,button");
+      if (first) first.focus();
+    }
+    function closeModal() {
+      destroyModal();
+    }
+    document.addEventListener("click", function (e) {
+      if (e.target.closest("[data-open-coop]")) { e.preventDefault(); openModal(); }
+      var modal = document.getElementById("mcjCoopModal");
+      if (modal && (e.target.closest("[data-close-coop]") || e.target === modal)) { e.preventDefault(); closeModal(); }
+    });
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape" && document.getElementById("mcjCoopModal")) closeModal();
+    });
+  }
   function init() {
     removeBrokenText();
     if (!document.querySelector('link[href="src/footer-system.css"]')) {
@@ -124,7 +148,7 @@
     }
     document.querySelectorAll("[data-mcj-footer], .site-footer, #mcjCoopModal").forEach(function (el) { el.remove(); });
     var isHome = /(^|\/)index\.html$|\/$/.test(location.pathname);
-    document.body.insertAdjacentHTML("beforeend", footerHtml() + (isHome ? modalHtml() : ""));
+    document.body.insertAdjacentHTML("beforeend", footerHtml());
     if (isHome) bind();
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);

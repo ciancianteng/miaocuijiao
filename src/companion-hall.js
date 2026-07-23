@@ -11,16 +11,9 @@
   }
 
   function priceNumber(value) {
+    if (window.MCJCompanionLevels) return window.MCJCompanionLevels.priceNumber(value);
     var match = String(value || "").match(/\d+(?:\.\d+)?/);
     return match ? Number(match[0]) : 0;
-  }
-
-  function fallbackItems() {
-    return [
-      { id: "momo", name: "MOMO", game: "VALORANT", price: "RM12/h", rating: "5.0", level: "Lv.8", gender: "女", status: "在线", image: "assets/meow-cuijiao-brand.jpg", tags: ["甜妹音", "指挥", "不压单"] },
-      { id: "nana", name: "NANA", game: "APEX", price: "RM15/h", rating: "4.9", level: "Lv.7", gender: "女", status: "接单中", image: "assets/lianmiao-club-ad.png", tags: ["娱乐", "上分", "会聊天"] },
-      { id: "yuki", name: "YUKI", game: "CSGO", price: "RM10/h", rating: "4.8", level: "Lv.6", gender: "保密", status: "在线", image: "assets/meow-cuijiao-brand.jpg", tags: ["残局", "教学", "稳定"] }
-    ];
   }
 
   function readItems() {
@@ -32,22 +25,27 @@
         return item.auditStatus === "approved" && item.visible !== false;
       });
     }
-    if (!dataItems.length) dataItems = fallbackItems();
+    var levelApi = window.MCJCompanionLevels;
     return dataItems.map(function (item) {
-      var price = item.price || item.servicePrice || "RM12/h";
+      var normalized = levelApi ? levelApi.normalizeCompanion(item) : item;
+      var priceValue = normalized.priceValue || priceNumber(normalized.price || normalized.servicePrice || normalized.hourlyPrice);
+      var priceDisplay = normalized.priceDisplay || ("RM" + priceValue + "/小时");
+      var levelLabel = normalized.levelLabel || normalized.level || "Lv.1 萌喵";
       return {
-        id: item.id || item.name || "",
-        name: item.name || "未命名",
-        game: item.game || item.mainGame || "游戏",
-        price: price,
-        priceValue: priceNumber(price),
-        rating: item.rating || item.score || "5.0",
-        level: item.level || "Lv.1",
-        gender: item.gender || "保密",
-        status: item.status || item.onlineStatus || "在线",
-        image: item.cover || item.cardCover || item.avatar || item.image || "assets/meow-cuijiao-brand.jpg",
-        tags: Array.isArray(item.tags) ? item.tags : String(item.tags || item.serviceTags || "").split(/[，,]/).filter(Boolean),
-        desc: item.desc || item.description || "妙脆角电竞认证陪玩，沟通舒服、服务稳定。"
+        id: normalized.uid || normalized.companionId || normalized.id || normalized.name || "",
+        name: normalized.name || normalized.nickname || "未命名陪玩",
+        game: normalized.game || normalized.mainGame || "游戏",
+        price: priceDisplay,
+        priceValue: priceValue,
+        rating: normalized.rating || normalized.score || "0",
+        level: levelLabel,
+        levelId: normalized.levelId || "lv1",
+        levelNumber: normalized.levelNumber || 1,
+        gender: normalized.gender || "保密",
+        status: normalized.status || normalized.onlineStatus || "离线",
+        image: normalized.cover || normalized.cardCover || normalized.avatar || normalized.image || "assets/meow-cuijiao-brand.jpg",
+        tags: Array.isArray(normalized.tags) ? normalized.tags : String(normalized.tags || normalized.serviceTags || "").split(/[，,]/).filter(Boolean),
+        desc: normalized.desc || normalized.description || ""
       };
     });
   }
@@ -65,7 +63,14 @@
   function setupFilters(items) {
     fillSelect("typeFilter", Array.from(new Set(items.map(function (x) { return x.game; }))), "全部类型");
     fillSelect("gameFilter", Array.from(new Set(items.map(function (x) { return x.game; }))), "全部游戏");
-    fillSelect("levelFilter", Array.from(new Set(items.map(function (x) { return x.level; }))), "全部等级");
+    var levelEl = document.getElementById("levelFilter");
+    if (levelEl && window.MCJCompanionLevels) {
+      var current = levelEl.value;
+      levelEl.innerHTML = window.MCJCompanionLevels.selectOptions("全部等级");
+      levelEl.value = current;
+    } else {
+      fillSelect("levelFilter", Array.from(new Set(items.map(function (x) { return x.level; }))), "全部等级");
+    }
   }
 
   function value(id) {
@@ -95,7 +100,7 @@
       if (online) ok = ok && item.status === online;
       if (score) ok = ok && Number(item.rating) >= score;
       if (gender) ok = ok && item.gender === gender;
-      if (level) ok = ok && item.level === level;
+      if (level) ok = ok && item.levelId === level;
       return ok;
     });
 
@@ -104,7 +109,7 @@
       if (sort === "ratingDesc") return Number(b.rating) - Number(a.rating);
       if (sort === "priceAsc") return a.priceValue - b.priceValue;
       if (sort === "priceDesc") return b.priceValue - a.priceValue;
-      if (sort === "levelDesc") return String(b.level).localeCompare(String(a.level));
+      if (sort === "levelDesc") return Number(b.levelNumber || 0) - Number(a.levelNumber || 0);
       return 0;
     });
     return items;
@@ -113,9 +118,10 @@
   function card(item) {
     return '<article class="card player-card" data-player data-name="' + esc(item.name) + '" data-game="' + esc(item.game) + '" data-tags="' + esc(item.tags.join(",")) + '" data-price="' + esc(item.priceValue) + '" data-online="' + esc(item.status) + '" data-score="' + esc(item.rating) + '" data-gender="' + esc(item.gender) + '">' +
       '<img src="' + esc(item.image) + '" alt="' + esc(item.name) + '" style="width:100%;aspect-ratio:16/10;object-fit:cover;border-radius:8px">' +
-      '<div class="row"><h3>' + esc(item.name) + '</h3><span class="price">' + esc(item.price) + '</span></div>' +
-      '<p class="muted game-line">' + esc(item.game) + ' · ' + esc(item.level) + ' · ' + esc(item.status) + '</p>' +
-      '<p class="muted">' + esc(item.desc) + '</p>' +
+      '<div class="row companion-card-head"><h3>' + esc(item.name) + '</h3><span class="price">' + esc(item.price) + '</span></div>' +
+      '<p class="muted companion-id">陪玩 ID：' + esc(item.id || "未生成") + '</p>' +
+      '<div class="companion-meta"><span>' + esc(item.level) + '</span><span>' + esc(item.game) + '</span><span>' + esc(item.status) + '</span></div>' +
+      (item.desc ? '<p class="muted">' + esc(item.desc) + '</p>' : '') +
       '<div class="tag-row">' + item.tags.map(function (tag) { return '<span>' + esc(tag) + '</span>'; }).join("") + '</div>' +
       '<button class="btn primary" data-book type="button">立即下单</button>' +
       '</article>';

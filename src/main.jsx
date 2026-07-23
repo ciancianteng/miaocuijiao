@@ -1,12 +1,12 @@
-import React from 'react';
+﻿import React from 'react';
 import { createRoot } from 'react-dom/client';
 import './style.css';
 
 const games = ['CS2', 'VALORANT', 'APEX', 'Delta Force', 'LOL', 'PUBG'];
 const players = [
-  { name: '喵喵', game: 'VALORANT', price: 'RM12/hr', rating: '4.9' },
-  { name: '小白猫', game: 'APEX', price: 'RM15/hr', rating: '5.0' },
-  { name: '奶油', game: 'CS2', price: 'RM10/hr', rating: '4.8' },
+  { name: '喵喵', game: 'VALORANT', price: 'RM25/小时r', rating: '4.9' },
+  { name: '小白猫', game: 'APEX', price: 'RM35/小时r', rating: '5.0' },
+  { name: '奶油', game: 'CS2', price: 'RM20/小时r', rating: '4.8' },
 ];
 
 function App() {
@@ -77,3 +77,4 @@ function App() {
 }
 
 createRoot(document.getElementById('root')).render(<App />);
+

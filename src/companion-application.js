@@ -176,14 +176,15 @@
     var doneCount = steps.filter(function (_, i) { return stepComplete(i, draft); }).length;
     var reachable = maxReachableStep(draft);
     var percent = Math.round((doneCount / steps.length) * 100);
+    var lockIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10V8a5 5 0 0 1 10 0v2"/><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M12 14v2"/></svg>';
     return '<div class="apply-mobile-step"><span>第 ' + (index + 1) + ' 步，共 ' + steps.length + ' 步</span><strong>' + esc(stepLabels[index] || steps[index]) + '</strong><small>已完成 ' + doneCount + ' / ' + steps.length + '</small></div>' +
-      '<aside class="apply-steps" aria-label="申请流程导航"><div class="apply-progress-head"><div><strong>申请进度</strong><span>已完成 ' + doneCount + ' / ' + steps.length + '</span></div><em>' + percent + '%</em></div><div class="apply-progress-bar" aria-hidden="true"><i style="width:' + percent + '%"></i></div><div class="apply-step-list">' + steps.map(function (s, i) {
+      '<aside class="apply-steps" aria-label="申请流程导航"><div class="apply-progress-head"><strong>申请进度</strong><span>' + doneCount + ' / ' + steps.length + ' · ' + percent + '%</span></div><div class="apply-progress-bar" aria-hidden="true"><i style="width:' + percent + '%"></i></div><div class="apply-step-list">' + steps.map(function (s, i) {
         var done = stepComplete(i, draft);
         var locked = i > reachable;
-        var stateText = i === index ? "当前步骤" : done ? "已完成" : locked ? "未开放" : "可填写";
-        var stateIcon = done ? "✓" : locked ? "锁" : "→";
+        var stateText = i === index ? "当前步骤" : done ? "已完成，可返回查看" : locked ? "完成上一步后解锁" : "可继续填写";
+        var stateIcon = done ? "查看" : locked ? lockIcon : "›";
         var numberText = String(i + 1).padStart(2, "0");
-        return '<button class="apply-step ' + (i === index ? "active" : "") + (done ? " done" : "") + (locked ? " locked" : "") + '" data-apply-step="' + i + '" type="button" ' + (locked ? 'aria-disabled="true" disabled' : "") + '><span class="apply-step-index">' + esc(done ? "✓" : numberText) + '</span><span class="apply-step-copy"><strong>' + esc(stepLabels[i] || s) + '</strong><small>' + esc(stateText) + '</small></span><span class="apply-step-state" aria-hidden="true">' + esc(stateIcon) + '</span></button>';
+        return '<button class="apply-step ' + (i === index ? "active" : "") + (done ? " done" : "") + (locked ? " locked" : "") + '" data-apply-step="' + i + '" type="button" ' + (locked ? 'aria-disabled="true" tabindex="-1"' : "") + '><span class="apply-step-index">' + esc(done ? "✓" : numberText) + '</span><span class="apply-step-copy"><strong>' + esc(stepLabels[i] || s) + '</strong><small>' + esc(stateText) + '</small></span><span class="apply-step-state" aria-hidden="true">' + (locked ? stateIcon : esc(stateIcon)) + '</span></button>';
       }).join("") + '</div></aside>';
   }
   function field(name, label, type, value, attrs) {
@@ -614,6 +615,7 @@
       var stepBtn = e.target.closest("[data-apply-step]");
       if (stepBtn) {
         e.preventDefault();
+        if (stepBtn.classList.contains("locked") || stepBtn.getAttribute("aria-disabled") === "true") { alert("请先完成当前步骤"); return; }
         var targetStep = Number(stepBtn.dataset.applyStep);
         await collect(root);
         if (targetStep > maxReachableStep(readDraft())) { alert("请先完成当前步骤"); return; }
