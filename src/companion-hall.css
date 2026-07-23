@@ -216,3 +216,339 @@
     width: 100% !important;
   }
 }
+
+/* companion-hall-desktop-layout-v2 */
+@media (min-width: 981px) {
+  .topbar-inner {
+    max-width: 1600px !important;
+    width: calc(100% - 64px) !important;
+  }
+
+  .topbar .nav {
+    gap: 8px !important;
+    padding-right: 24px !important;
+  }
+
+  .topbar .nav a {
+    min-height: 40px !important;
+    min-width: 88px !important;
+    padding: 0 18px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+  }
+
+  .companion-hall-page {
+    max-width: 1600px !important;
+    width: calc(100% - 64px) !important;
+    margin: 0 auto !important;
+    padding-top: 20px !important;
+  }
+
+  .companion-hall-hero {
+    min-height: 126px !important;
+    padding: 20px 24px !important;
+    gap: 16px !important;
+  }
+
+  .companion-hall-hero h1 {
+    font-size: 34px !important;
+    line-height: 1.08 !important;
+  }
+
+  .companion-hall-hero p {
+    margin-top: 7px !important;
+    font-size: 14px !important;
+    line-height: 1.5 !important;
+  }
+
+  .companion-filter-card {
+    padding: 20px 24px !important;
+    border-radius: 20px !important;
+  }
+
+  .companion-filter-card .section-title {
+    margin-bottom: 12px !important;
+  }
+
+  .companion-filter-card .section-title h2 {
+    font-size: 22px !important;
+    line-height: 1.2 !important;
+  }
+
+  .companion-filter-card .section-title p {
+    margin-top: 4px !important;
+  }
+
+  .companion-filters {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 12px 16px !important;
+    align-items: end !important;
+  }
+
+  .companion-filters .field {
+    gap: 6px !important;
+  }
+
+  .companion-filters .field input,
+  .companion-filters .field select {
+    height: 48px !important;
+    border-radius: 15px !important;
+  }
+
+  .companion-filters .field select {
+    background-position:
+      calc(100% - 23px) 21px,
+      calc(100% - 17px) 21px !important;
+  }
+
+  .companion-filters .companion-search-field {
+    grid-column: 1 / -1 !important;
+  }
+
+  .companion-filter-apply {
+    grid-column: 1 / -1 !important;
+    justify-self: end !important;
+    min-width: 126px !important;
+    height: 40px !important;
+    min-height: 40px !important;
+  }
+
+  .companion-hall-grid {
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)) !important;
+    gap: 16px !important;
+  }
+}
+
+@media (min-width: 1320px) {
+  .companion-hall-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 980px) {
+  .companion-hall-page {
+    width: min(100% - 28px, 960px) !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .companion-hall-page {
+    width: min(100% - 22px, 560px) !important;
+  }
+}
+
+/* companion-hall-desktop-polish-v3 */
+@media (min-width: 981px) {
+  .topbar {
+    min-height: 72px !important;
+  }
+
+  .topbar-inner {
+    max-width: 1600px !important;
+    width: calc(100% - 80px) !important;
+    min-height: 72px !important;
+    gap: 24px !important;
+  }
+
+  .topbar .brand {
+    flex: 0 0 auto !important;
+  }
+
+  .topbar .nav {
+    margin-left: auto !important;
+    gap: 12px !important;
+    padding-right: 40px !important;
+    overflow: visible !important;
+  }
+
+  .topbar .nav a {
+    height: 40px !important;
+    min-height: 40px !important;
+    min-width: 0 !important;
+    padding: 0 18px !important;
+    border-radius: 12px !important;
+    background: transparent !important;
+    color: rgba(255,255,255,.72) !important;
+    box-shadow: none !important;
+  }
+
+  .topbar .nav a.active {
+    background: rgba(239,171,201,.20) !important;
+    border: 1px solid rgba(239,171,201,.28) !important;
+    color: #fff7fb !important;
+  }
+
+  .topbar .nav a:hover {
+    background: rgba(255,255,255,.055) !important;
+    border-color: rgba(239,171,201,.24) !important;
+    color: #fff7fb !important;
+  }
+
+  .companion-hall-page {
+    max-width: 1600px !important;
+    width: calc(100% - 80px) !important;
+    margin: 0 auto !important;
+    padding-top: 28px !important;
+    padding-bottom: 48px !important;
+  }
+
+  .companion-hall-page .section {
+    margin-top: 24px !important;
+  }
+
+  .companion-hall-hero {
+    min-height: 180px !important;
+    height: 180px !important;
+    max-height: 200px !important;
+    padding: 32px !important;
+    align-items: center !important;
+  }
+
+  .companion-hall-hero h1 {
+    font-size: 36px !important;
+    font-weight: 700 !important;
+    line-height: 1.1 !important;
+    letter-spacing: 0 !important;
+  }
+
+  .companion-hall-hero p {
+    margin-top: 8px !important;
+    color: rgba(255,255,255,.70) !important;
+    font-size: 15px !important;
+    line-height: 1.5 !important;
+  }
+
+  .companion-filter-card {
+    padding: 24px !important;
+    border-radius: 20px !important;
+    background:
+      linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.018)),
+      rgba(12,10,16,.68) !important;
+    border-color: rgba(255,255,255,.10) !important;
+    box-shadow: 0 18px 54px rgba(0,0,0,.28) !important;
+  }
+
+  .companion-filter-card .section-title {
+    margin-bottom: 16px !important;
+  }
+
+  .companion-filter-card .section-title h2,
+  .companion-hall-page .section-title h2 {
+    font-size: 22px !important;
+    font-weight: 700 !important;
+    line-height: 1.25 !important;
+  }
+
+  .companion-filter-card .section-title p,
+  .companion-hall-page .section-title p,
+  #resultCount {
+    font-size: 13px !important;
+    color: rgba(255,255,255,.55) !important;
+  }
+
+  .mobile-filter-actions,
+  .companion-filter-apply {
+    display: none !important;
+  }
+
+  .companion-filters {
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 18px !important;
+    align-items: end !important;
+  }
+
+  .companion-filters .companion-search-field {
+    grid-column: 1 / -1 !important;
+  }
+
+  .companion-filters .field {
+    gap: 7px !important;
+  }
+
+  .companion-filters .field span {
+    font-size: 13px !important;
+    font-weight: 500 !important;
+    color: rgba(255,255,255,.72) !important;
+  }
+
+  .companion-filters .field input,
+  .companion-filters .field select {
+    height: 52px !important;
+    border-radius: 14px !important;
+    border-color: rgba(255,145,195,.20) !important;
+    background-color: rgba(18,18,22,.72) !important;
+    box-shadow: none !important;
+  }
+
+  .companion-filters .field select {
+    background-position:
+      calc(100% - 23px) 23px,
+      calc(100% - 17px) 23px !important;
+  }
+
+  .companion-filters .field:hover input,
+  .companion-filters .field:hover select {
+    border-color: rgba(255,145,195,.36) !important;
+    background-color: rgba(20,20,24,.78) !important;
+    box-shadow: none !important;
+  }
+
+  .companion-filters .field input:focus,
+  .companion-filters .field input:focus-visible,
+  .companion-filters .field select:focus,
+  .companion-filters .field select:focus-visible,
+  .companion-filters .field:focus-within input,
+  .companion-filters .field:focus-within select {
+    border-color: rgba(255,145,195,.62) !important;
+    box-shadow: none !important;
+    background-color: rgba(22,22,26,.86) !important;
+  }
+
+  .companion-hall-grid {
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)) !important;
+    gap: 18px !important;
+  }
+
+  .companion-empty {
+    min-height: 180px !important;
+    padding: 28px !important;
+    display: grid !important;
+    place-items: center !important;
+    align-content: center !important;
+    gap: 10px !important;
+    text-align: center !important;
+  }
+
+  .companion-empty[hidden] {
+    display: none !important;
+  }
+
+  .companion-empty strong {
+    color: #fff !important;
+    font-size: 18px !important;
+    font-weight: 700 !important;
+  }
+
+  .companion-empty span {
+    color: rgba(255,255,255,.55) !important;
+    font-size: 13px !important;
+  }
+
+  .companion-empty .btn {
+    width: 160px !important;
+    height: 42px !important;
+    min-height: 42px !important;
+    margin-top: 6px !important;
+    padding: 0 16px !important;
+    border-radius: 12px !important;
+  }
+}
+
+@media (max-width: 980px) {
+  .mobile-filter-actions,
+  .companion-filter-apply {
+    display: revert !important;
+  }
+}

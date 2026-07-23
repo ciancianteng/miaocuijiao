@@ -137,7 +137,7 @@
     list.innerHTML = items.slice(start, start + PER_PAGE).map(card).join("");
 
     var count = document.getElementById("resultCount");
-    if (count) count.textContent = items.length ? "共 " + items.length + " 位陪玩" : "暂时没有找到符合条件的陪玩";
+    if (count) count.textContent = "共" + items.length + "位陪玩";
 
     var empty = document.getElementById("emptyState");
     if (empty) empty.hidden = !!items.length;
