@@ -18,6 +18,13 @@
     "上传头像与资料",
     "身份认证与押金"
   ];
+  var stepLabels = [
+    "阅读陪玩制度",
+    "填写基本资料",
+    "填写游戏资料",
+    "上传头像与资料",
+    "身份认证与押金"
+  ];
 
   var tagGroups = {
     personalTags: {
@@ -154,15 +161,30 @@
     return !!((draft.identity || {}).idFront && (draft.identity || {}).idBack && (draft.identity || {}).depositProof && (draft.identity || {}).settlementName && (draft.identity || {}).settlementMethod && (draft.identity || {}).settlementAccount);
   }
 
+  function maxReachableStep(draft) {
+    draft = draft || readDraft();
+    var max = 0;
+    for (var i = 0; i < steps.length; i++) {
+      if (stepComplete(i, draft)) max = Math.min(i + 1, steps.length - 1);
+      else break;
+    }
+    return max;
+  }
+
   function stepNav(index, draft) {
     draft = draft || readDraft();
-    var prev = steps[index - 1] || "";
-    var next = steps[index + 1] || "";
-    return '<div class="apply-mobile-step"><span>第 ' + (index + 1) + ' 步，共 ' + steps.length + ' 步</span><strong>' + esc(steps[index]) + '</strong><small>' + esc(prev ? prev + " ｜ " : "") + esc(steps[index]) + esc(next ? " ｜ " + next : "") + '</small></div>' +
-      '<aside class="apply-steps">' + steps.map(function (s, i) {
+    var doneCount = steps.filter(function (_, i) { return stepComplete(i, draft); }).length;
+    var reachable = maxReachableStep(draft);
+    var percent = Math.round((doneCount / steps.length) * 100);
+    return '<div class="apply-mobile-step"><span>第 ' + (index + 1) + ' 步，共 ' + steps.length + ' 步</span><strong>' + esc(stepLabels[index] || steps[index]) + '</strong><small>已完成 ' + doneCount + ' / ' + steps.length + '</small></div>' +
+      '<aside class="apply-steps" aria-label="申请流程导航"><div class="apply-progress-head"><div><strong>申请进度</strong><span>已完成 ' + doneCount + ' / ' + steps.length + '</span></div><em>' + percent + '%</em></div><div class="apply-progress-bar" aria-hidden="true"><i style="width:' + percent + '%"></i></div><div class="apply-step-list">' + steps.map(function (s, i) {
         var done = stepComplete(i, draft);
-        return '<button class="apply-step ' + (i === index ? "active" : "") + (done ? " done" : "") + '" data-apply-step="' + i + '" type="button"><span>' + (done ? "✓" : (i + 1)) + '</span>' + esc(s) + '</button>';
-      }).join("") + '</aside>';
+        var locked = i > reachable;
+        var stateText = i === index ? "当前步骤" : done ? "已完成" : locked ? "未开放" : "可填写";
+        var stateIcon = done ? "✓" : locked ? "锁" : "→";
+        var numberText = String(i + 1).padStart(2, "0");
+        return '<button class="apply-step ' + (i === index ? "active" : "") + (done ? " done" : "") + (locked ? " locked" : "") + '" data-apply-step="' + i + '" type="button" ' + (locked ? 'aria-disabled="true" disabled' : "") + '><span class="apply-step-index">' + esc(done ? "✓" : numberText) + '</span><span class="apply-step-copy"><strong>' + esc(stepLabels[i] || s) + '</strong><small>' + esc(stateText) + '</small></span><span class="apply-step-state" aria-hidden="true">' + esc(stateIcon) + '</span></button>';
+      }).join("") + '</div></aside>';
   }
   function field(name, label, type, value, attrs) {
     type = type || "text";
@@ -271,10 +293,12 @@
   function render(index) {
     var root = document.getElementById("companionApplyRoot");
     if (!root) return;
-    index = Math.max(0, Math.min(steps.length - 1, Number(index || readDraft().step || 0)));
+    var requestedIndex = Math.max(0, Math.min(steps.length - 1, Number(index || readDraft().step || 0)));
+    var draft = readDraft();
+    index = Math.min(requestedIndex, maxReachableStep(draft));
     saveDraft({ step: index });
     root.dataset.step = String(index);
-    var draft = readDraft();
+    draft = readDraft();
     var agreed = draft.rulesAgreement && draft.rulesAgreement.accepted;
     if (!agreed) {
       root.innerHTML = statusNotice() + rulesHtml(draft) + '<div class="apply-status-note">请先阅读并同意陪玩制度</div><div class="apply-actions"><button class="apply-btn primary" data-apply-next type="button" disabled>保存并下一步</button></div>';
@@ -282,6 +306,10 @@
     }
     var nextDisabled = index === 0 && !((draft.rulesAgreement || {}).accepted);
     root.innerHTML = statusNotice() + '<div class="apply-layout">' + stepNav(index, draft) + '<div>' + stepHtml(index, draft) + '<div class="step-complete-mark">' + (stepComplete(index, draft) ? "已完成 ✔" : "未完成 ○") + '</div><div class="apply-actions"><button class="apply-btn" data-apply-prev type="button" ' + (index === 0 ? "disabled" : "") + '>上一步</button><button class="apply-btn" data-apply-save type="button">保存草稿</button><button class="apply-btn primary" data-apply-next type="button" ' + (nextDisabled ? "disabled" : "") + '>' + (index === steps.length - 1 ? "提交审核" : "下一步") + '</button></div><p class="apply-note">每填写一个输入框都会自动保存草稿，刷新网页后会自动恢复。</p></div></div>';
+    setTimeout(function () {
+      var current = root.querySelector(".apply-step.active");
+      if (current && current.scrollIntoView) current.scrollIntoView({ block: "nearest", inline: "center" });
+    }, 0);
   }
   function fileToDataURL(file) {
     return new Promise(function (resolve) {
@@ -587,12 +615,12 @@
       if (stepBtn) {
         e.preventDefault();
         var targetStep = Number(stepBtn.dataset.applyStep);
-        if (targetStep > 0 && !(readDraft().rulesAgreement || {}).accepted) { alert("请先阅读并同意陪玩制度"); return; }
         await collect(root);
+        if (targetStep > maxReachableStep(readDraft())) { alert("请先完成当前步骤"); return; }
         render(targetStep);
         return;
       }
-      if (e.target.closest("[data-apply-next]")) { e.preventDefault(); if (Number(root.dataset.step || 0) === 0 && !(readDraft().rulesAgreement || {}).accepted) { alert("请先阅读并同意陪玩制度"); return; } await collect(root); var idx = Number(root.dataset.step || 0); if (idx === steps.length - 1) submitApplication(); else render(idx + 1); return; }
+      if (e.target.closest("[data-apply-next]")) { e.preventDefault(); await collect(root); var idx = Number(root.dataset.step || 0); if (!stepComplete(idx, readDraft())) { alert("请先完成当前步骤"); return; } if (idx === steps.length - 1) submitApplication(); else render(idx + 1); return; }
       if (e.target.closest("[data-apply-prev]")) { e.preventDefault(); await collect(root); render(Math.max(0, Number(root.dataset.step || 0) - 1)); return; }
       if (e.target.closest("[data-rule-agree]")) {
         var rule = publishedRule();
