@@ -1,4 +1,4 @@
-const REQUIRED_ENV = ["ADMIN_DATABASE_URL", "ADMIN_DATABASE_SERVICE_KEY"];
+const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"];
 const RESERVED_BOSS_IDS = ["admin", "system", "official", "root", "support", "service"];
 
 function json(res, status, data) {
@@ -12,7 +12,7 @@ function roleFrom(req) {
 }
 
 function canManageBosses(req) {
-  return roleFrom(req) === "super_admin" || roleFrom(req) === "finance_admin";
+  return roleFrom(req) === "super_admin" || roleFrom(req) === "finance_admin" || roleFrom(req) === "admin";
 }
 
 function validateBossId(value) {
@@ -28,27 +28,45 @@ module.exports = async function handler(req, res) {
   }
 
   if (req.method === "GET") {
+    const missing = REQUIRED_ENV.filter((key) => !process.env[key]);
+    if (missing.length) {
+      return json(res, 200, {
+        ok: true,
+        configured: false,
+        bosses: [],
+        message: "真实老板数据库未配置，未返回任何模拟老板",
+        requiredEnv: missing,
+      });
+    }
+    try {
+      const response = await fetch(`${process.env.SUPABASE_URL}/rest/v1/boss_profiles?order=created_at.desc&limit=100`, {
+        headers: {
+          apikey: process.env.SUPABASE_SERVICE_ROLE_KEY,
+          Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+        },
+      });
+      const text = await response.text();
+      let rows = [];
+      try { rows = text ? JSON.parse(text) : []; } catch (e) {}
+      if (!response.ok) {
+        return json(res, 500, { ok: false, message: rows.message || rows.hint || "老板数据库读取失败" });
+      }
+      return json(res, 200, {
+        ok: true,
+        configured: true,
+        bosses: Array.isArray(rows) ? rows : [],
+        accountStatuses: ["正常", "限制下单", "限制充值", "冻结", "已注销", "黑名单"],
+        loginStatuses: ["在线", "离线"],
+        reservedBossIds: RESERVED_BOSS_IDS,
+      });
+    } catch (error) {
+      return json(res, 500, { ok: false, message: error.message || "老板管理接口异常" });
+    }
+  }
+
+  if (req.method === "OPTIONS") {
     return json(res, 200, {
       ok: true,
-      fields: [
-        "avatar",
-        "nickname",
-        "system_uid",
-        "boss_id",
-        "phone",
-        "email",
-        "game_accounts",
-        "registered_at",
-        "last_login_at",
-        "vip_level",
-        "balance",
-        "total_recharge",
-        "total_spent",
-        "total_orders",
-        "refund_amount",
-        "inviter_uid",
-        "account_status",
-      ],
       accountStatuses: ["正常", "限制下单", "限制充值", "冻结", "已注销", "黑名单"],
       loginStatuses: ["在线", "离线"],
       reservedBossIds: RESERVED_BOSS_IDS,

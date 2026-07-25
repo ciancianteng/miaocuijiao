@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
@@ -42,7 +42,7 @@
         </div>
       </div>
       <div class="boss-right">
-        <a class="balance-link" href="#recharge" data-open-panel="recharge"><span>喵币余额</span><strong id="coinBalance">RM 0.00</strong></a>
+        <a class="balance-link" href="#recharge" data-open-panel="recharge"><span>猫粮余额</span><strong id="coinBalance">0 猫粮</strong></a>
         <button class="vip-progress-box" type="button" data-open-vip>
           <span id="vipNeedText">VIP 等级读取中</span>
           <div class="progress"><i id="vipProgress"></i></div>
@@ -83,21 +83,21 @@
     </section>
 
     <section class="panel" id="panel-recharge">
-      <div class="panel-head"><h2>充值中心</h2></div>
-      <div class="state-warn">请选择金额和支付渠道，上传付款凭证后提交后台审核；审核通过后余额到账。</div>
+      <div class="panel-head"><h2>猫粮充值</h2></div>
+      <div class="state-warn">请选择金额和支付渠道，上传付款凭证后提交后台审核；审核通过后猫粮到账。</div>
       <div class="pay-grid">
-        <button class="pay-option" type="button"><strong>RM 10</strong><span>基础充值金额</span></button>
-        <button class="pay-option" type="button"><strong>RM 30</strong><span>常用充值金额</span></button>
-        <button class="pay-option" type="button"><strong>RM 50</strong><span>常用充值金额</span></button>
-        <button class="pay-option" type="button"><strong>RM 100</strong><span>高频充值金额</span></button>
-        <button class="pay-option" type="button"><strong>RM 200</strong><span>高频充值金额</span></button>
+        <button class="pay-option" type="button"><strong>RM 10</strong><span>预计到账 10 猫粮</span></button>
+        <button class="pay-option" type="button"><strong>RM 30</strong><span>预计到账 30 猫粮</span></button>
+        <button class="pay-option" type="button"><strong>RM 50</strong><span>预计到账 50 猫粮</span></button>
+        <button class="pay-option" type="button"><strong>RM 100</strong><span>预计到账 100 猫粮</span></button>
+        <button class="pay-option" type="button"><strong>RM 200</strong><span>预计到账 200 猫粮</span></button>
         <label class="pay-option"><strong>自定义金额</strong><input id="customRecharge" inputmode="decimal" placeholder="输入 RM 金额"></label>
       </div>
       <h3 style="margin-top:18px">支付方式</h3>
       <div class="pay-grid" id="paymentMethods"></div>
-      <h3 style="margin-top:18px">充值 / 消费 / 退款记录</h3>
-      <div class="msg-list"><div class="msg-item">暂无记录。真实支付接通后会同步显示。</div></div>
-      <div class="msg-item" style="margin-top:12px">充值说明：请按照后台启用的支付方式完成付款，支付完成后等待平台确认。</div>
+      <h3 style="margin-top:18px">猫粮充值 / 猫粮消费 / 猫粮退款记录</h3>
+      <div class="msg-list"><div class="msg-item">暂无猫粮流水记录。</div></div>
+      <div class="msg-item" style="margin-top:12px">猫粮充值说明：请按照后台启用的支付方式完成付款，支付完成后等待平台确认。</div>
     </section>
 
     <section class="panel" id="panel-referrals">
@@ -128,7 +128,7 @@
         <label>银行账号<input name="refundAccount"></label><label>DuitNow ID<input name="refundDuitNow"></label>
         <label>TNG 手机号<input name="refundTng"></label><label>默认退款账户<select name="refundDefault"><option>银行账户</option><option>DuitNow</option><option>TNG</option></select></label>
         <label><input name="notifyOrder" type="checkbox"> 订单通知</label><label><input name="notifyService" type="checkbox"> 客服回复</label>
-        <label><input name="notifyRecharge" type="checkbox"> 充值结果</label><label><input name="notifySystem" type="checkbox"> 系统通知</label>
+        <label><input name="notifyRecharge" type="checkbox"> 猫粮充值结果</label><label><input name="notifySystem" type="checkbox"> 系统通知</label>
         <button class="primary-btn wide" type="submit">保存设置</button>
         <button class="ghost-btn" type="button" data-logout>退出登录</button>
         <button class="ghost-btn" type="button" data-close-devices>退出其他设备</button>
@@ -142,7 +142,7 @@
     (function initMinePage(){
       var DB_KEY = "mcjRealDB.v1";
       if (!window.MCJRoleGate || !window.MCJRoleGate.isLogged("customer")) {
-        document.body.innerHTML = '<main class="shell" style="min-height:100vh;display:grid;place-items:center"><section class="boss-card" style="width:min(560px,100%);grid-template-columns:1fr"><div><h1 style="margin:0 0 8px">登录 / 注册</h1><p style="margin:0;color:var(--muted);line-height:1.7">登录后才能查看老板中心、余额、订单、消息、退款账户和设备记录。</p></div><div class="tabs" data-login-tabs><button class="tab active" type="button" data-login-mode="phone">手机号验证码</button><button class="tab" type="button" data-login-mode="gmail">Gmail 验证</button></div><form class="form-grid" id="mineLoginForm"><label class="phone-field">国家区号<select name="dial"><option value="+60">+60 马来西亚</option><option value="+86">+86 中国</option></select></label><label class="phone-field">手机号<input name="phone" inputmode="tel" placeholder="请输入手机号"></label><label class="gmail-field wide" hidden>Gmail 邮箱<input name="gmail" type="email" placeholder="name@gmail.com"></label><label class="wide">验证码<input name="code" inputmode="numeric" placeholder="请输入验证码"></label><button class="ghost-btn" type="button" data-mine-send-code>获取验证码</button><button class="primary-btn" type="submit">登录并进入</button><p class="wide" id="mineLoginState" style="margin:0;color:var(--muted);font-weight:900"></p></form><a class="ghost-btn" href="index.html" style="display:inline-flex;align-items:center;justify-content:center">返回首页</a></section></main>';
+        document.body.innerHTML = '<main class="shell" style="min-height:100vh;display:grid;place-items:center"><section class="boss-card" style="width:min(560px,100%);grid-template-columns:1fr"><div><h1 style="margin:0 0 8px">登录 / 注册</h1><p style="margin:0;color:var(--muted);line-height:1.7">登录后才能查看老板中心、猫粮余额、订单、消息、退款账户和设备记录。</p></div><div class="tabs" data-login-tabs><button class="tab active" type="button" data-login-mode="phone">手机号验证码</button><button class="tab" type="button" data-login-mode="gmail">Gmail 验证</button></div><form class="form-grid" id="mineLoginForm"><label class="phone-field">国家区号<select name="dial"><option value="+60">+60 马来西亚</option><option value="+86">+86 中国</option></select></label><label class="phone-field">手机号<input name="phone" inputmode="tel" placeholder="请输入手机号"></label><label class="gmail-field wide" hidden>Gmail 邮箱<input name="gmail" type="email" placeholder="name@gmail.com"></label><label class="wide">验证码<input name="code" inputmode="numeric" placeholder="请输入验证码"></label><button class="ghost-btn" type="button" data-mine-send-code>获取验证码</button><button class="primary-btn" type="submit">登录并进入</button><p class="wide" id="mineLoginState" style="margin:0;color:var(--muted);font-weight:900"></p></form><a class="ghost-btn" href="index.html" style="display:inline-flex;align-items:center;justify-content:center">返回首页</a></section></main>';
         document.addEventListener("click",function(e){
           var mode=e.target.closest("[data-login-mode]");
           if(mode){document.querySelectorAll("[data-login-mode]").forEach(function(b){b.classList.toggle("active",b===mode)});var gmail=mode.dataset.loginMode==="gmail";document.querySelectorAll(".phone-field").forEach(function(el){el.hidden=gmail});document.querySelectorAll(".gmail-field").forEach(function(el){el.hidden=!gmail});}
@@ -163,6 +163,7 @@
       function readPlatformDB(){try{return JSON.parse(localStorage.getItem("mcjPlatformData.v1")||"{}")||{}}catch(e){return {}}}
       function saveDB(db){localStorage.setItem(DB_KEY,JSON.stringify(db||{}))}
       function money(v){return "RM " + Number(v||0).toFixed(2)}
+      function catFood(v){return Number(v||0).toFixed(0) + " 猫粮"}
       function esc(v){return String(v==null?"":v).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}
       function userSettings(){try{return JSON.parse(localStorage.getItem("mcjBossSettings")||"{}")}catch(e){return {}}}
       function saveSettings(v){localStorage.setItem("mcjBossSettings",JSON.stringify(v||{}))}
@@ -176,7 +177,7 @@
       var nextVip = vipLevels.find(function(v){return Number(v.threshold||0) > totalSpend});
       document.getElementById("bossName").textContent = settings.name || user.name || "老板账号";
       document.getElementById("bossUserId").textContent = "用户 ID：" + currentCustomerId();
-      document.getElementById("coinBalance").textContent = money(balance);
+      document.getElementById("coinBalance").textContent = catFood(balance);
       document.getElementById("vipBadge").textContent = currentVip.name || "VIP 0";
       if (nextVip) {
         var need = Math.max(0, Number(nextVip.threshold || 0) - totalSpend);

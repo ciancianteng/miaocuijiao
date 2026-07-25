@@ -12,66 +12,58 @@
   <div class="admin-app">
     <aside class="admin-sidebar" id="adminSidebar">
       <div class="side-brand">
-        <div class="brand-mark">MCJ</div>
-        <div>
+        <div class="brand-copy">
           <strong>MEOW CUI JIAO</strong>
           <span>Super Admin</span>
         </div>
       </div>
       <button class="collapse-btn" type="button" data-collapse-sidebar>收起菜单</button>
       <nav class="side-nav" aria-label="超级管理员菜单">
-        <button class="active" type="button" data-section="dashboard">仪表盘</button>
+        <button class="active" type="button" data-section="dashboard">工作台</button>
 
         <button class="nav-parent" type="button" data-toggle-group="users">用户管理</button>
         <div class="nav-group open" data-group="users">
           <button type="button" data-section="bosses">老板管理</button>
           <button type="button" data-section="players">陪玩管理</button>
-          <button type="button" data-section="companion-levels">陪玩等级</button>
           <button type="button" data-section="service">客服管理</button>
         </div>
 
-        <button type="button" data-section="orders">订单管理</button>
+        <button class="nav-parent" type="button" data-toggle-group="orders">订单管理</button>
+        <div class="nav-group open" data-group="orders">
+          <button type="button" data-section="orders">全部订单</button>
+          <button type="button" data-section="pending-orders">待确认订单</button>
+          <button type="button" data-section="after-sale-orders" data-target-section="refunds">售后订单</button>
+          <button type="button" data-section="refund-orders" data-target-section="refunds">退款订单</button>
+        </div>
 
         <button class="nav-parent" type="button" data-toggle-group="finance">财务中心</button>
         <div class="nav-group open" data-group="finance">
-          <button type="button" data-section="recharge-center">充值中心</button>
-          <button type="button" data-section="finance">财务流水</button>
-          <button type="button" data-section="recharges">充值记录</button>
+          <button type="button" data-section="recharges">猫粮充值记录</button>
           <button type="button" data-section="withdraw">提现审核</button>
-          <button type="button" data-section="refunds">退款管理</button>
-          <button type="button" data-section="commissions">抽成与返点设置</button>
+          <button type="button" data-section="finance">财务流水</button>
         </div>
+
+        <button type="button" data-section="messages">在线客服</button>
 
         <button class="nav-parent" type="button" data-toggle-group="content">平台内容</button>
         <div class="nav-group open" data-group="content">
           <button type="button" data-section="banners">Banner 管理</button>
           <button type="button" data-section="announcements">公告管理</button>
+          <button type="button" data-section="home-entry-settings" data-target-section="custom-order-settings">首页入口管理</button>
           <button type="button" data-section="ads">广告位管理</button>
-          <button type="button" data-section="meow-butler">喵管家管理</button>
-          <button type="button" data-section="sync-center">全端功能同步</button>
-          <button type="button" data-section="price-table">俱乐部价格表管理</button>
+          <button type="button" data-section="team-lobby-links">组队大厅链接</button>
           <button type="button" data-section="gameplays">更多玩法管理</button>
-          <button type="button" data-section="custom-order-settings">自定义订单设置</button>
-          <button type="button" data-section="gameplay-qualifications">玩法资格审核</button>
-          <button type="button" data-section="companion-rules">陪玩制度管理</button>
-          <button type="button" data-section="voice-types">声音类型管理</button>
-          <button type="button" data-section="companion-deposit">陪玩押金设置</button>
-          <button type="button" data-section="companion-applications">陪玩申请审核</button>
+          <button type="button" data-section="price-rules-settings" data-target-section="price-table">价格与制度设置</button>
         </div>
 
-        <button type="button" data-section="messages">消息中心</button>
-        <button type="button" data-section="statistics">统计中心</button>
-
-        <button class="nav-parent" type="button" data-toggle-group="security">安全系统</button>
-        <div class="nav-group open" data-group="security">
-          <button type="button" data-section="admin-accounts">管理员账号</button>
-          <button type="button" data-section="permissions">权限系统</button>
+        <button class="nav-parent" type="button" data-toggle-group="settings">系统设置</button>
+        <div class="nav-group open" data-group="settings">
+          <button type="button" data-section="payment">支付设置</button>
+          <button type="button" data-section="admin-accounts">&#36134;&#21495;&#31649;&#29702;</button>
+          <button type="button" data-section="permissions">权限管理</button>
           <button type="button" data-section="logs">操作日志</button>
+          <button type="button" data-section="settings">基础设置</button>
         </div>
-
-        <button type="button" data-section="vip">VIP 设置</button>
-        <button type="button" data-section="payment">支付设置</button>
-        <button type="button" data-section="settings">系统设置</button>
       </nav>
     </aside>
 
@@ -104,9 +96,9 @@
         <section class="section" id="section-service"><section class="panel"><h2>客服管理</h2><div id="table-customer_tickets"></div></section></section>
         <section class="section" id="section-orders"><section class="panel"><h2>订单管理</h2><div id="orderManagement"></div></section></section>
 
-        <section class="section" id="section-recharge-center"><section class="panel"><h2>充值中心</h2><div id="table-recharge_requests"></div></section></section>
-        <section class="section" id="section-finance"><div class="panel-grid"><section class="panel"><h2>财务流水</h2><div id="table-wallet_transactions"></div></section><section class="panel"><h2>钱包总览</h2><div id="table-wallets"></div></section></div></section>
-        <section class="section" id="section-recharges"><section class="panel"><h2>充值记录</h2><div id="table-recharge_requests_alt"></div></section></section>
+        <section class="section" id="section-recharge-center"><section class="panel"><h2>猫粮充值</h2><div id="table-recharge_requests"></div></section></section>
+        <section class="section" id="section-finance"><div class="panel-grid"><section class="panel"><h2>财务流水</h2><div id="table-wallet_transactions"></div></section><section class="panel"><h2>猫粮钱包总览</h2><div id="table-wallets"></div></section></div></section>
+        <section class="section" id="section-recharges"><section class="panel"><h2>猫粮充值记录</h2><div id="table-recharge_requests_alt"></div></section></section>
         <section class="section" id="section-withdraw"><section class="panel"><h2>提现审核</h2><div id="table-withdraw_requests"></div></section></section>
         <section class="section" id="section-refunds"><section class="panel"><h2>退款管理</h2><div id="table-refunds"></div></section></section>
         <section class="section" id="section-commissions"><section class="panel"><h2>抽成与返点设置</h2><div id="table-invite_rebates"></div></section></section>
@@ -127,11 +119,11 @@
 
         <section class="section" id="section-messages"><section class="panel admin-message-panel"><h2>消息中心</h2><div id="adminMessageCenter"></div></section></section>
         <section class="section" id="section-statistics"><section class="panel"><h2>统计中心</h2><div id="statisticsPanel"></div></section></section>
-        <section class="section" id="section-admin-accounts"><section class="panel"><h2>管理员账号</h2><div id="table-admin_accounts"></div></section></section>
+        <section class="section" id="section-admin-accounts"><section class="panel"><h2>&#36134;&#21495;&#31649;&#29702;</h2><div id="table-admin_accounts"></div></section></section>
         <section class="section" id="section-permissions"><section class="panel"><h2>权限系统</h2><div id="table-role_permissions"></div></section></section>
 
         <section class="section" id="section-vip"><section class="panel"><h2>VIP 设置</h2><div id="table-vip_settings"></div></section></section>
-        <section class="section" id="section-payment"><section class="panel"><h2>支付设置</h2><div id="paymentSettings"></div></section></section>
+        <section class="section" id="section-payment"><section class="panel payment-shell-panel"><div id="paymentSettings"></div></section></section>
         <section class="section" id="section-settings"><section class="panel"><h2>系统设置</h2><div id="systemSettings"></div></section></section>
         <section class="section" id="section-logs"><section class="panel"><h2>操作日志</h2><div id="table-admin_logs_full"></div></section></section>
       </section>

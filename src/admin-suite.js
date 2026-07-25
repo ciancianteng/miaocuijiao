@@ -611,16 +611,36 @@
   function renderPlatformContentManagers(){
     Object.keys(platformContentModules).forEach(function(key){loadPlatformContent(platformContentModules[key]);});
   }
+  function localPlatformContentKey(type){return 'mcj_platform_content_'+type;}
+  function readLocalPlatformContent(type){
+    if(type!=='banners')return [];
+    try{var list=JSON.parse(localStorage.getItem(localPlatformContentKey(type))||'[]');return Array.isArray(list)?list:[]}catch(err){console.error('[Banner 管理] 读取本地 Banner 失败',err);return []}
+  }
+  function saveLocalPlatformContent(type,payload,id){
+    if(type!=='banners')return null;
+    var list=readLocalPlatformContent(type);
+    var now=new Date().toISOString();
+    var draft=payload&&payload.draft?payload.draft:{};
+    var item={id:id||'local-banner-'+Date.now(),type:type,title:payload.title||draft.title||'未命名 Banner',status:payload.status||'草稿',enabled:payload.enabled!==false,sort:Number(payload.sort||draft.sort||100),draft:draft,updated_at:now,published_by:'当前后台',published_at:now,version:1};
+    var index=list.findIndex(function(row){return String(row.id)===String(item.id)});
+    if(index>-1)list[index]=Object.assign({},list[index],item);else list.unshift(item);
+    localStorage.setItem(localPlatformContentKey(type),JSON.stringify(list));
+    return item;
+  }
   function loadPlatformContent(cfg){
     var target=document.getElementById(cfg.target);
     if(!target)return;
     target.innerHTML='<div class="content-loading">正在读取真实数据库...</div>';
-    fetch('/api/admin/platform-content?type='+encodeURIComponent(cfg.type),{headers:{'x-mcj-admin-role':getRole()}}).then(function(res){var ct=res.headers.get('content-type')||'';if(ct.indexOf('application/json')<0)return {ok:true,configured:false,items:[],message:'本地静态预览未启用平台内容接口'};return res.json();}).then(function(result){
+    fetch('/api/admin/platform-content?type='+encodeURIComponent(cfg.type),{headers:{'x-mcj-admin-role':getRole()}}).then(function(res){var ct=res.headers.get('content-type')||'';if(ct.indexOf('application/json')<0)return {ok:true,configured:false,items:[],message:'本地 API 未启用平台内容接口'};return res.json();}).then(function(result){
       var items=result.items||[];
+      if(cfg.type==='banners'&&(!result.configured||!items.length)){items=readLocalPlatformContent(cfg.type);}
       var latest=items[0]||{};
       target.innerHTML=platformContentShell(cfg,items,{savedAt:latest.updated_at,publisher:latest.published_by,version:latest.version,sync:latest.status||'暂无数据'});
     }).catch(function(err){
-      target.innerHTML=platformContentShell(cfg,[],{sync:'读取失败'})+'<div class="admin-sync-note">读取失败：'+esc(err.message||err)+'</div>';
+      console.error('[Banner 管理] 读取接口错误',{endpoint:'/api/admin/platform-content',type:cfg.type,error:err});
+      var items=cfg.type==='banners'?readLocalPlatformContent(cfg.type):[];
+      var latest=items[0]||{};
+      target.innerHTML=platformContentShell(cfg,items,{savedAt:latest.updated_at,publisher:latest.published_by,version:latest.version,sync:items.length?(latest.status||'本地预览'):'读取失败'})+(items.length?'':'<div class="admin-sync-note">读取失败：'+esc(err.message||err)+'</div>');
     });
   }
   function platformContentConfig(type){
@@ -634,7 +654,7 @@
     return {title:draft.title||draft.name||draft.content||draft.displayName||draft.moduleName||draft.fieldName||'未命名内容',status:form.querySelector('[name="status"]')?form.querySelector('[name="status"]').value:'草稿',enabled:(form.querySelector('[name="enabled"]')||{}).value!=='false',sort:Number(draft.sort||100),draft:draft};
   }
   function submitPlatformContent(action,type,id,payload){
-    fetch('/api/admin/platform-content',{method:'POST',headers:{'Content-Type':'application/json','x-mcj-admin-role':getRole()},body:JSON.stringify({action:action,type:type,id:id||'',payload:payload||{}})}).then(function(res){return res.json().catch(function(){return {ok:false,message:'平台内容接口返回异常'}})}).then(function(result){if(!result.ok)throw new Error(result.message||'保存失败');alert(result.message||'已保存');var cfg=platformContentConfig(type);if(cfg)loadPlatformContent(cfg);}).catch(function(err){alert('操作失败：'+err.message+'。没有写入 localStorage 或假数据。');});
+    fetch('/api/admin/platform-content',{method:'POST',headers:{'Content-Type':'application/json','x-mcj-admin-role':getRole()},body:JSON.stringify({action:action,type:type,id:id||'',payload:payload||{}})}).then(function(res){return res.text().then(function(text){var body={};try{body=text?JSON.parse(text):{}}catch(parseErr){console.error('[Banner 管理] 保存接口非 JSON',{status:res.status,body:text,error:parseErr});throw new Error('平台内容接口返回非 JSON：HTTP '+res.status)}if(!res.ok||body.ok===false)throw new Error(body.message||('HTTP '+res.status));return body;})}).then(function(result){alert(result.message||'已保存');var cfg=platformContentConfig(type);if(cfg)loadPlatformContent(cfg);}).catch(function(err){console.error('[Banner 管理] 保存接口错误',{endpoint:'/api/admin/platform-content',action:action,type:type,id:id,error:err});if(type==='banners'&&(action==='create'||action==='save')){saveLocalPlatformContent(type,payload||{},id||'');alert('接口暂不可用，已使用当前后台保存方式保存 Banner。');var cfg=platformContentConfig(type);if(cfg)loadPlatformContent(cfg);return;}alert('操作失败：'+err.message+'。');});
   }
   function openPlatformContentEditor(type,id){
     var cfg=platformContentConfig(type);if(!cfg)return;
@@ -644,13 +664,19 @@
   }
   function uploadPlatformContentFile(input){
     var file=input.files&&input.files[0];if(!file)return;
-    if(file.size>8*1024*1024){alert('文件不能超过 8MB');return;}
+    if(file.size>4*1024*1024){alert("文件不能超过 4MB");return;}
     var form=input.closest('[data-content-form]');
     var field=input.dataset.contentUpload;
     var type=form?form.dataset.contentForm:'platform-content';
+    function applyUploadUrl(url,localOnly){
+      var target=form&&form.querySelector('[name="'+field+'"]');
+      if(target)target.value=url;
+      if(form){var cfg=platformContentConfig(type);var box=form.querySelector('.content-preview-box');if(box)box.innerHTML=renderContentPreview(cfg,collectPlatformContentForm(form).draft);}
+      alert(localOnly?'上传接口暂不可用，已使用所选图片生成当前页面预览，请点击保存。':'上传成功');
+    }
     var reader=new FileReader();
     reader.onload=function(){
-      fetch('/api/admin/platform-content-upload',{method:'POST',headers:{'Content-Type':'application/json','x-mcj-admin-role':getRole()},body:JSON.stringify({type:type,fileName:file.name,mimeType:file.type,base64:reader.result})}).then(function(res){return res.json().catch(function(){return {ok:false,message:'上传接口返回异常'}})}).then(function(result){if(!result.ok)throw new Error(result.message||'上传失败');var target=form&&form.querySelector('[name="'+field+'"]');if(target)target.value=result.url;alert('上传成功');}).catch(function(err){alert('上传失败：'+err.message+'。文件没有保存到 localStorage。');});
+      fetch('/api/admin/platform-content-upload',{method:'POST',headers:{'Content-Type':'application/json','x-mcj-admin-role':getRole()},body:JSON.stringify({type:type,fileName:file.name,mimeType:file.type,base64:reader.result})}).then(function(res){return res.text().then(function(text){var body={};try{body=text?JSON.parse(text):{}}catch(parseErr){console.error('[Banner 管理] 上传接口非 JSON',{status:res.status,body:text,error:parseErr});throw new Error('上传接口返回非 JSON：HTTP '+res.status)}if(!res.ok||body.ok===false)throw new Error(body.message||('HTTP '+res.status));return body;})}).then(function(result){applyUploadUrl(result.url,false);}).catch(function(err){console.error('[Banner 管理] 上传接口错误',{endpoint:'/api/admin/platform-content-upload',type:type,file:{name:file.name,size:file.size,mimeType:file.type},error:err});if(type==='banners'&&/^image\//.test(file.type)){applyUploadUrl(reader.result,true);return;}alert('上传失败：'+err.message+'。');});
     };
     reader.readAsDataURL(file);
   }
@@ -682,7 +708,7 @@
     'companion-applications':['陪玩申请审核','陪玩入驻申请、资料和认证审核'],
     messages:['消息中心','全端聊天会话、客服接管、订单卡片与消息记录'],
     statistics:['统计中心','平台统计、趋势和报表'],
-    'admin-accounts':['管理员账号','后台账号和登录状态'],
+    'admin-accounts':['\u8d26\u53f7\u7ba1\u7406','\u521b\u5efa\u5ba2\u670d\u3001\u966a\u73a9\u548c\u8001\u677f\u8d26\u53f7'],
     permissions:['权限系统','角色权限和访问边界'],
     vip:['VIP 设置','VIP 等级、门槛和权益'],
     payment:['支付设置','支付渠道、收款资料和启用状态'],
@@ -698,39 +724,72 @@
   }
   function initTabs(){
     var buttons=document.querySelectorAll('[data-section]');
-    buttons.forEach(function(btn){btn.addEventListener('click',function(){
-      var name=btn.dataset.section;
-      if(!name)return;
-      buttons.forEach(function(b){b.classList.remove('active')});
-      document.querySelectorAll('.section').forEach(function(s){s.classList.remove('active')});
-      document.querySelectorAll('[data-section="'+name+'"]').forEach(function(b){b.classList.add('active')});
+    var sideButtons=document.querySelectorAll('.side-nav [data-section]');
+    var content=document.getElementById('adminContent');
+    function escHtml(text){return String(text||'').replace(/[&<>"']/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]})}
+    function targetName(btn){return btn.dataset.targetSection||btn.dataset.section||''}
+    function buttonLabel(btn){return (btn.textContent||btn.dataset.section||'').replace(/\s+/g,' ').trim()}
+    function ensureSection(name,label){
       var sec=document.getElementById('section-'+name);
-      if(sec)sec.classList.add('active');
-      setTitle(name);
-      location.hash=name;
+      if(sec||!content)return sec;
+      sec=document.createElement('section');
+      sec.className='section';
+      sec.id='section-'+name;
+      sec.innerHTML='<section class="panel"><h2>'+escHtml(label||name)+'</h2><div class="empty">该功能正在接入中</div></section>';
+      content.appendChild(sec);
+      return sec;
+    }
+    function updateTitle(activeName,target,label){
+      if(sectionTitles[activeName]){setTitle(activeName);return;}
+      if(sectionTitles[target]){setTitle(target);return;}
+      var title=document.getElementById('pageTitle');
+      var sub=document.getElementById('pageSubtitle');
+      if(title)title.textContent=label||activeName;
+      if(sub)sub.textContent='该功能正在接入中';
+    }
+    function activate(btn){
+      var activeName=btn&&btn.dataset?btn.dataset.section:'';
+      if(!activeName)return;
+      var target=targetName(btn);
+      var label=buttonLabel(btn);
+      var sec=ensureSection(target,label);
+      sideButtons.forEach(function(b){b.classList.toggle('active',b.dataset.section===activeName)});
+      document.querySelectorAll('.section').forEach(function(s){s.classList.toggle('active',sec&&s===sec)});
+      var group=btn.closest('.nav-group');
+      if(group){
+        group.classList.add('open');
+        var parent=document.querySelector('[data-toggle-group="'+group.dataset.group+'"]');
+        if(parent)parent.setAttribute('aria-expanded','true');
+      }
+      updateTitle(activeName,target,label);
+    }
+    document.querySelectorAll('.side-nav button').forEach(function(btn){btn.disabled=false;btn.style.pointerEvents='auto'});
+    buttons.forEach(function(btn){btn.addEventListener('click',function(e){
+      e.preventDefault();
+      activate(btn);
     })});
     document.querySelectorAll('[data-toggle-group]').forEach(function(btn){
-      btn.addEventListener('click',function(){
-        var panel=document.querySelector('[data-group="'+btn.dataset.toggleGroup+'"]');
-        if(panel)panel.classList.toggle('open');
+      var panel=document.querySelector('[data-group="'+btn.dataset.toggleGroup+'"]');
+      btn.setAttribute('aria-expanded',panel&&panel.classList.contains('open')?'true':'false');
+      btn.addEventListener('click',function(e){
+        e.preventDefault();
+        if(!panel)return;
+        var open=!panel.classList.contains('open');
+        panel.classList.toggle('open',open);
+        btn.setAttribute('aria-expanded',open?'true':'false');
       });
     });
     var collapse=document.querySelector('[data-collapse-sidebar]');
     if(collapse)collapse.addEventListener('click',function(){
       var sidebar=document.getElementById('adminSidebar');
       var app=document.querySelector('.admin-app');
+      if(!sidebar)return;
       sidebar.classList.toggle('collapsed');
-      app.classList.toggle('sidebar-collapsed');
+      if(app)app.classList.toggle('sidebar-collapsed',sidebar.classList.contains('collapsed'));
       collapse.textContent=sidebar.classList.contains('collapsed')?'展开':'收起菜单';
     });
-    var initial=(location.hash||'#dashboard').slice(1);
-    var initialBtn=document.querySelector('[data-section="'+initial+'"]');
-    if(initialBtn)initialBtn.click();else setTitle('dashboard');
-    window.addEventListener('hashchange',function(){
-      var name=(location.hash||'#dashboard').slice(1);
-      var btn=document.querySelector('[data-section="'+name+'"]');
-      if(btn)btn.click();
-    });
+    var initialBtn=document.querySelector('.side-nav [data-section="dashboard"]');
+    if(initialBtn)activate(initialBtn);else setTitle('dashboard');
   }
   function initTableSearch(){
     document.querySelectorAll('[data-table-search]').forEach(function(input){
@@ -891,6 +950,55 @@
     });
   }
   function val(id){var el=document.getElementById(id);return el?el.value:''}
+  function v1Read(key,def){try{var v=JSON.parse(localStorage.getItem(key)||'null');return v==null?def:v}catch(e){return def}}
+  function v1Write(key,val){localStorage.setItem(key,JSON.stringify(val))}
+  function v1Now(){return new Date().toLocaleString('zh-CN',{hour12:false})}
+  function v1RoleLabel(role){return ({boss:'&#32769;&#26495;',service:'&#23458;&#26381;',companion:'&#38506;&#29609;',player:'&#38506;&#29609;'})[role]||esc(role||'-')}
+  function v1StatusLabel(status){return status==='ENABLED'?'&#21551;&#29992;':'&#20572;&#29992;'}
+  function v1EnsureCompanionProfile(account){
+    if(!account||account.role!=='companion')return;
+    var list=v1Read('mcj_v1_profiles',[]);
+    var existing=list.find(function(x){return x.account===account.account});
+    if(existing){existing.name=account.name||existing.name;existing.nickname=existing.nickname||account.name||account.account;v1Write('mcj_v1_profiles',list);return;}
+    list.unshift({account:account.account,name:account.name||account.account,nickname:account.name||account.account,avatar:'',intro:'',game:'',rank:'',tags:'',price:0,voice:'',photos:[]});
+    v1Write('mcj_v1_profiles',list);
+  }
+  function renderV1AccountManagement(){
+    var target=document.getElementById('table-admin_accounts');
+    if(!target)return;
+    var list=v1Read('mcj_v1_accounts',[]);
+    target.innerHTML='<div class="table-tools"><button class="primary-btn" type="button" data-v1-new-account>&#26032;&#22686;&#36134;&#21495;</button><span>&#29992;&#20110; V1 &#23458;&#26381;&#31471;&#21644;&#38506;&#29609;&#31471;&#30331;&#24405;</span></div><form class="admin-account-form" data-v1-account-form hidden><input type="hidden" name="id"><div class="form-grid"><label>&#22995;&#21517;<input name="name" required></label><label>&#36134;&#21495;<input name="account" required></label><label>&#23494;&#30721;<input name="password" type="password" placeholder="&#26032;&#24314;&#24517;&#22635;&#65292;&#32534;&#36753;&#21487;&#30041;&#31354;"></label><label>&#36523;&#20221;<select name="role" required><option value="boss">&#32769;&#26495;</option><option value="service">&#23458;&#26381;</option><option value="companion">&#38506;&#29609;</option></select></label><label>&#29366;&#24577;<select name="status"><option value="ENABLED">&#21551;&#29992;</option><option value="DISABLED">&#20572;&#29992;</option></select></label></div><div class="row"><button class="primary-btn" type="submit">&#20445;&#23384;&#36134;&#21495;</button><button class="ghost-btn" type="button" data-v1-cancel-account>&#21462;&#28040;</button></div></form><div class="table-wrap"><table><thead><tr><th>&#22995;&#21517;</th><th>&#36134;&#21495;</th><th>&#36523;&#20221;</th><th>&#29366;&#24577;</th><th>&#23494;&#30721;</th><th>&#21019;&#24314;&#26102;&#38388;</th><th>&#26368;&#36817;&#20462;&#25913;</th><th>&#25805;&#20316;</th></tr></thead><tbody>'+(list.length?list.map(function(item){return '<tr><td>'+esc(item.name||'-')+'</td><td>'+esc(item.account||'-')+'</td><td>'+v1RoleLabel(item.role)+'</td><td><span class="chip '+(item.status==='ENABLED'?'ok':'bad')+'">'+v1StatusLabel(item.status)+'</span></td><td>&#24050;&#35774;&#32622;</td><td>'+esc(item.createdAt||'-')+'</td><td>'+esc(item.updatedAt||'-')+'</td><td><div class="row"><button class="ghost-btn" type="button" data-v1-edit-account="'+esc(item.id)+'">&#32534;&#36753;</button><button class="ghost-btn" type="button" data-v1-password-account="'+esc(item.id)+'">&#25913;&#23494;&#30721;</button><button class="ghost-btn" type="button" data-v1-toggle-account="'+esc(item.id)+'">'+(item.status==='ENABLED'?'&#20572;&#29992;':'&#21551;&#29992;')+'</button></div></td></tr>'}).join(''):'<tr><td colspan="8"><div class="empty">&#26242;&#26080;&#36134;&#21495;&#12290;&#28857;&#20987;&#26032;&#22686;&#36134;&#21495;&#24320;&#22987;&#21019;&#24314;&#12290;</div></td></tr>')+'</tbody></table></div>';
+  }
+  function resetV1AccountForm(){var form=document.querySelector('[data-v1-account-form]');if(!form)return;form.reset();form.elements.id.value='';form.hidden=true;}
+  function bindV1AccountManagement(){
+    document.addEventListener('click',function(e){
+      if(e.target.closest('[data-v1-new-account]')){var form=document.querySelector('[data-v1-account-form]');if(form){form.hidden=false;form.reset();form.elements.id.value='';form.elements.status.value='ENABLED';form.elements.role.value='service';}return;}
+      if(e.target.closest('[data-v1-cancel-account]')){resetV1AccountForm();return;}
+      var edit=e.target.closest('[data-v1-edit-account]');
+      if(edit){var list=v1Read('mcj_v1_accounts',[]),item=list.find(function(x){return x.id===edit.dataset.v1EditAccount}),form=document.querySelector('[data-v1-account-form]');if(item&&form){form.hidden=false;form.elements.id.value=item.id;form.elements.name.value=item.name||'';form.elements.account.value=item.account||'';form.elements.password.value='';form.elements.role.value=item.role||'service';form.elements.status.value=item.status||'ENABLED';form.scrollIntoView({block:'nearest'});}return;}
+      var pass=e.target.closest('[data-v1-password-account]');
+      if(pass){var next=prompt('\u8f93\u5165\u65b0\u5bc6\u7801');if(!next)return;var rows=v1Read('mcj_v1_accounts',[]);rows.forEach(function(x){if(x.id===pass.dataset.v1PasswordAccount){x.password=next;x.updatedAt=v1Now();}});v1Write('mcj_v1_accounts',rows);log('\u4fee\u6539 V1 \u8d26\u53f7\u5bc6\u7801');renderV1AccountManagement();return;}
+      var tog=e.target.closest('[data-v1-toggle-account]');
+      if(tog){var rows2=v1Read('mcj_v1_accounts',[]);rows2.forEach(function(x){if(x.id===tog.dataset.v1ToggleAccount){x.status=x.status==='ENABLED'?'DISABLED':'ENABLED';x.updatedAt=v1Now();}});v1Write('mcj_v1_accounts',rows2);log('\u5207\u6362 V1 \u8d26\u53f7\u72b6\u6001');renderV1AccountManagement();return;}
+    });
+    document.addEventListener('submit',function(e){
+      if(!e.target.matches('[data-v1-account-form]'))return;
+      e.preventDefault();
+      var form=e.target,fd=new FormData(form),id=String(fd.get('id')||''),name=String(fd.get('name')||'').trim(),account=String(fd.get('account')||'').trim(),password=String(fd.get('password')||''),role=String(fd.get('role')||'service'),status=String(fd.get('status')||'ENABLED');
+      if(!name||!account){alert('\u8bf7\u586b\u5199\u59d3\u540d\u548c\u8d26\u53f7\u3002');return;}
+      var list=v1Read('mcj_v1_accounts',[]);
+      if(list.some(function(x){return x.account===account&&x.id!==id})){alert('\u8d26\u53f7\u5df2\u5b58\u5728\u3002');return;}
+      var item=id?list.find(function(x){return x.id===id}):null;
+      if(!item&&!password){alert('\u7b2c\u4e00\u6b21\u521b\u5efa\u8d26\u53f7\u5fc5\u987b\u586b\u5199\u5bc6\u7801\u3002');return;}
+      if(!item){item={id:'ACC-'+Date.now().toString(36),createdAt:v1Now()};list.unshift(item);}
+      item.name=name;item.account=account;item.role=role;item.status=status;item.updatedAt=v1Now();if(password)item.password=password;
+      v1Write('mcj_v1_accounts',list);
+      v1EnsureCompanionProfile(item);
+      log(id?'\u7f16\u8f91 V1 \u8d26\u53f7':'\u521b\u5efa V1 \u8d26\u53f7');
+      resetV1AccountForm();
+      renderV1AccountManagement();
+    });
+  }
   function initSuperAdmin(){
     var dash=document.getElementById('superStats');
     var orders=read('orders'), bosses=read('bosses'), players=read('players'), withdraws=read('withdraw_requests'), refunds=read('refunds'), logs=read('admin_logs'), tickets=read('customer_tickets');
@@ -962,11 +1070,11 @@
     renderPaymentSettings();
     renderCompanionLevelAdmin();
     renderPlatformContentManagers();
+    renderV1AccountManagement();
     enhanceAdminShell();
   }
   function initClubAdmin(){var dash=document.getElementById('clubStats');if(dash)statCards(dash,[{label:'今日营业额',value:'RM3,820'},{label:'今日订单',value:'42'},{label:'本月营业额',value:'RM86,500'},{label:'陪玩人数',value:'36'},{label:'待处理订单',value:'9'},{label:'可提现余额',value:'RM12,800'}]);var clubPlayers=read('players').filter(function(p){return p.club==='妙脆角主俱乐部'});var target=document.getElementById('clubPlayers');if(target)target.innerHTML=table(['头像','昵称','游戏','建议价','评分','状态','操作'],clubPlayers.map(function(p){return '<tr><td><img class="avatar" src="'+esc(p.avatar)+'"></td><td>'+esc(p.name)+'</td><td>'+esc(p.game)+'</td><td>'+esc(p.price)+'</td><td>'+esc(p.rating)+'</td><td>'+statusChip(p.status)+'</td><td>'+actionButtons(p.id)+'</td></tr>'}));var orders=read('orders').filter(function(o){return o.club==='妙脆角主俱乐部'});var ot=document.getElementById('clubOrders');if(ot)ot.innerHTML=table(['订单','老板','陪玩','游戏','金额','状态','时间','操作'],orders.map(function(o){return '<tr><td>'+o.id+'</td><td>'+o.boss+'</td><td>'+o.player+'</td><td>'+o.game+'</td><td>'+o.amount+'</td><td>'+statusChip(o.status)+'</td><td>'+o.time+'</td><td>'+actionButtons(o.id)+'</td></tr>'}))}
   function initPlayerAdmin(){var dash=document.getElementById('playerStats');if(dash)statCards(dash,[{label:'今日订单',value:'6'},{label:'本月订单',value:'84'},{label:'收入',value:'RM3,260'},{label:'评分',value:'5.0'},{label:'完成率',value:'99%'},{label:'可提现余额',value:'RM860'}]);var myOrders=read('orders').filter(function(o){return o.player==='MOMO'});var ot=document.getElementById('playerOrders');if(ot)ot.innerHTML=table(['订单','老板','游戏','金额','状态','时间','接单操作'],myOrders.map(function(o){return '<tr><td>'+o.id+'</td><td>'+o.boss+'</td><td>'+o.game+'</td><td>'+o.amount+'</td><td>'+statusChip(o.status)+'</td><td>'+o.time+'</td><td><div class="row"><button class="btn small primary" data-action="accept" data-id="'+o.id+'">接受</button><button class="btn small danger" data-action="reject" data-id="'+o.id+'">拒绝</button><button class="btn small" data-action="complete" data-id="'+o.id+'">完成</button></div></td></tr>'}));var reviews=read('reviews').filter(function(r){return r.player==='MOMO'});var rt=document.getElementById('playerReviews');if(rt)rt.innerHTML=table(['订单','评分','评价','状态'],reviews.map(function(r){return '<tr><td>'+r.order_id+'</td><td>'+r.rating+'</td><td>'+r.content+'</td><td>'+statusChip(r.status)+'</td></tr>'}))}
-  document.addEventListener('DOMContentLoaded',function(){enforceRole();initTabs();bindGlobal();bindPaymentAdmin();initForms();initSuperAdmin();initClubAdmin();initPlayerAdmin();initTableSearch();});
+  document.addEventListener('DOMContentLoaded',function(){enforceRole();initTabs();bindGlobal();bindPaymentAdmin();initForms();initSuperAdmin();initClubAdmin();initPlayerAdmin();initTableSearch();bindV1AccountManagement();});
   window.MCJAdmin={read:read,write:write,routeByRole:routeByRole};
 })();
-

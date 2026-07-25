@@ -1,4 +1,4 @@
-(function () {
+﻿(function () {
   "use strict";
 
   var REAL_KEY = "mcjRealDB.v1";
@@ -47,7 +47,7 @@
       ["前端模拟" + "验证码", "验证码"],
       ["模拟验证码" + "：", "验证码已发送"],
       ["模拟登录", "登录"],
-      ["测试环境，不会自动增加余额，也不会伪造充值成功" + "。", "提交后将进入后台人工审核，审核通过后余额到账。"],
+      ["测试环境，不会自动增加猫粮，也不会伪造到账" + "。", "提交后将进入后台人工审核，审核通过后猫粮到账。"],
       ["当前为测试" + "环境", "当前为人工审核流程"]
     ]);
   }
@@ -174,7 +174,7 @@
       quickButton("更多玩法", "护航、跑刀、代肝、趣味单", 'data-href="more-gameplays.html"'),
       quickButton("陪玩大厅", "浏览已上架陪玩", 'data-href="companion-center.html"'),
       quickButton("组队大厅", "进入组队社区", 'data-href="team-lobby.html"'),
-      quickButton("充值中心", "查看充值与余额", 'data-href="miao-coin.html"')
+      quickButton("猫粮充值", "查看猫粮充值与猫粮余额", 'data-href="miao-coin.html"')
     ].join("");
   }
 
@@ -303,7 +303,7 @@
     if (!/mine\.html$/.test(location.pathname)) return;
     setTimeout(function () {
       var warn = document.querySelector("#panel-recharge .state-warn");
-      if (warn) warn.textContent = "请选择金额和支付渠道，上传付款凭证后提交后台审核；审核通过后余额到账。";
+      if (warn) warn.textContent = "请选择金额和支付渠道，上传付款凭证后提交后台审核；审核通过后猫粮到账。";
       var panel = document.getElementById("panel-recharge");
       if (panel && !panel.querySelector("[data-recharge-proof]")) {
         var box = document.createElement("div");
@@ -330,7 +330,7 @@
       setTimeout(function () {
         submit.disabled = false;
         submit.textContent = "提交审核";
-        alert("充值申请已提交后台审核");
+        alert("猫粮充值申请已提交后台审核");
       }, 500);
     }, true);
   }

@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <script>location.replace("customer-service/index.html");</script>
 <!--
 <html lang="zh-CN">
@@ -43,7 +43,7 @@
         <button data-view="mine">我的</button>
       </nav>
       <div class="top-actions">
-        <span class="pill coin" id="coinPill">喵币 0</span>
+        <span class="pill coin" id="coinPill">猫粮 0</span>
         <button class="pill auth pending" id="authPill" type="button">未认证</button>
       </div>
     </header>
@@ -72,7 +72,7 @@
     </section>
 
     <section class="view" id="view-income">
-      <div class="section-title"><div><h1>客服收入</h1><p>底薪、对话服务、老板打赏、派单提成和喵币明细。</p></div><span class="tag green">自动统计</span></div>
+      <div class="section-title"><div><h1>客服收入</h1><p>底薪、对话服务、老板打赏、派单提成和猫粮明细。</p></div><span class="tag green">自动统计</span></div>
       <div class="grid income-grid" id="incomeCards"></div>
       <div class="card" style="margin-top:14px"><h3>收入明细</h3><div class="table" id="incomeRows"></div></div>
     </section>
@@ -106,7 +106,7 @@
     let auth=localStorage.getItem('mcjCustomerAuthStatus')||'pending';
     function toast(t){const el=$('#toast');el.textContent=t;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),1700)}
     function authText(){return auth==='approved'?'已认证':auth==='review'?'审核中':auth==='failed'?'认证失败':'未认证'}
-    function updateTop(){const pill=$('#authPill');pill.textContent=authText();pill.className='pill auth '+(auth==='approved'?'approved':auth==='review'?'review':'pending');$('#coinPill').textContent='喵币 '+coins;$('#authNotice').classList.toggle('hide',auth==='approved')}
+    function updateTop(){const pill=$('#authPill');pill.textContent=authText();pill.className='pill auth '+(auth==='approved'?'approved':auth==='review'?'review':'pending');$('#coinPill').textContent='猫粮 '+coins;$('#authNotice').classList.toggle('hide',auth==='approved')}
     function requireAuth(){if(auth!=='approved'){toast('请先完成客服身份认证');showView('auth');return false}return true}
     function showView(id){$$('.view').forEach(v=>v.classList.remove('active'));$('#view-'+id).classList.add('active');$$('#topNav button').forEach(b=>b.classList.toggle('active',b.dataset.view===id));window.scrollTo({top:0,behavior:'smooth'})}
     function boss(){return bosses.find(b=>b.id===activeBoss)||bosses[0]}
@@ -116,7 +116,7 @@
     function addIncome(type,amount,coin,desc){incomeRows.unshift({type,amount,coins:coin,desc});store.set('mcjCustomerIncomeRows',incomeRows);coins+=coin;localStorage.setItem('mcjCustomerCoins',coins);updateTop();renderIncome();window.MCJNotify?.push(type==='老板'?'tip':'income',type,'RM'+amount+' · '+desc,'收入已写入客服收入页')}
     function renderDispatch(){const bossSelect=$('#dispatchBoss');bossSelect.innerHTML=bosses.map(b=>`<option>${b.name}</option>`).join('');$('#dispatchList').innerHTML=dispatches.map(o=>`<article class="order-card"><header><strong>${o.id}</strong><span class="tag ${o.status==='已完成'?'green':o.status==='进行中'?'blue':o.status==='待抢单'?'yellow':'gray'}">${o.status}</span></header><p><strong>${o.boss}</strong> / ${o.service}</p><p>时长：${o.duration} · 价格：RM${o.price}</p><p>渠道：${o.channel}</p><p>${o.note}</p><div class="button-row"><button class="ghost-btn" data-next="已抢单" data-id="${o.id}">已抢单</button><button class="ghost-btn" data-next="进行中" data-id="${o.id}">进行中</button><button class="primary-btn" data-next="已完成" data-id="${o.id}">已完成</button></div></article>`).join('')||'<p style="color:var(--muted)">暂无派单。</p>';$$('[data-next]').forEach(btn=>btn.onclick=()=>{const o=dispatches.find(x=>x.id===btn.dataset.id);if(o){o.status=btn.dataset.next;store.set('mcjCustomerDispatches',dispatches);renderDispatch();toast('派单状态已更新')}})}
     function createDispatch(send){if(!requireAuth())return;const o={id:'#CS-'+Date.now().toString().slice(-8),boss:$('#dispatchBoss').value,service:$('#dispatchService').value,duration:$('#dispatchDuration').value,price:Number($('#dispatchPrice').value||0),channel:$('#dispatchChannel').value,status:send?'待抢单':'草稿',note:$('#dispatchNote').value};dispatches.unshift(o);store.set('mcjCustomerDispatches',dispatches);if(send){const hall=store.get('mcjCompanionGrabHall',[]);hall.unshift({...o,source:'客服派单'});store.set('mcjCompanionGrabHall',hall);window.MCJNotify?.push('dispatch','客服派单已发出',o.boss+' · '+o.service+' · RM'+o.price,'派单状态：待抢单');window.MCJNotify?.push('newOrder','新订单',o.id+' 已生成并进入派单池','陪玩端可看到并抢单');addIncome('派单提成',5,0,'生成并派出 '+o.service)}renderDispatch();toast(send?'已一键派单到陪玩端':'已生成订单草稿')}
-    function renderIncome(){const fixed=2800,chat=sum('对话服务收入'),tip=sum('老板'),commission=sum('派单提成'),bonus=sum('全勤奖励'),total=fixed+chat+tip+commission+bonus;const cards=[['本月底薪','RM'+fixed],['对话服务收入','RM'+chat],['老板','RM'+tip],['派单提成','RM'+commission],['全勤奖励','RM'+bonus],['本月总收入','RM'+total],['可提现金额','RM'+(total-300)],['喵币余额',coins]];$('#incomeCards').innerHTML=cards.map(c=>`<div class="card metric"><span>${c[0]}</span><strong>${c[1]}</strong></div>`).join('');$('#incomeRows').innerHTML=incomeRows.map(r=>`<div class="table-row"><strong>${r.type}</strong><span>RM${r.amount}</span><span>喵币 +${r.coins}</span><span>${r.desc}</span></div>`).join('')}
+    function renderIncome(){const fixed=2800,chat=sum('对话服务收入'),tip=sum('老板'),commission=sum('派单提成'),bonus=sum('全勤奖励'),total=fixed+chat+tip+commission+bonus;const cards=[['本月底薪','RM'+fixed],['对话服务收入','RM'+chat],['老板','RM'+tip],['派单提成','RM'+commission],['全勤奖励','RM'+bonus],['本月总收入','RM'+total],['可提现金额','RM'+(total-300)],['猫粮余额',coins]];$('#incomeCards').innerHTML=cards.map(c=>`<div class="card metric"><span>${c[0]}</span><strong>${c[1]}</strong></div>`).join('');$('#incomeRows').innerHTML=incomeRows.map(r=>`<div class="table-row"><strong>${r.type}</strong><span>RM${r.amount}</span><span>猫粮 +${r.coins}</span><span>${r.desc}</span></div>`).join('')}
     function sum(type){return incomeRows.filter(r=>r.type===type).reduce((a,b)=>a+Number(b.amount||0),0)}
     function renderReplies(){store.set('mcjCustomerQuickReplies',quickReplies);$('#replyList').innerHTML=quickReplies.map((r,i)=>`<div class="reply-item"><div><strong>${r.title}</strong><p>${r.text}</p></div><div class="button-row"><button class="ghost-btn" data-edit-reply="${i}">编辑</button><button class="ghost-btn" data-del-reply="${i}">删除</button></div></div>`).join('');$$('[data-del-reply]').forEach(btn=>btn.onclick=()=>{quickReplies.splice(Number(btn.dataset.delReply),1);renderReplies();renderChat()});$$('[data-edit-reply]').forEach(btn=>btn.onclick=()=>{const r=quickReplies[btn.dataset.editReply];$('#replyTitle').value=r.title;$('#replyText').value=r.text;$('#saveReplyBtn').dataset.edit=btn.dataset.editReply;$('#saveReplyBtn').textContent='保存快捷回复'});renderChat()}
     function renderAttendance(){const logs=store.get('mcjCustomerAttendance',[]);$('#attendanceLog').innerHTML=logs.map(r=>`<div class="table-row"><strong>${r.type}</strong><span>${r.time}</span><span>${r.status}</span><span>${r.note}</span></div>`).join('')||'<p style="color:var(--muted)">暂无打卡记录。</p>'}

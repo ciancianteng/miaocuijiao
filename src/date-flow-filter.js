@@ -1,4 +1,4 @@
-(function(){
+﻿(function(){
   'use strict';
 
   if (window.MCJ_DATE_FLOW_FILTER_READY) return;
@@ -171,7 +171,7 @@
     (db.orders || []).forEach(function(item){ rows.push(Object.assign({ flowType: '订单流水' }, item)); });
     (db.withdrawals || []).forEach(function(item){ rows.push(Object.assign({ flowType: '提现记录' }, item)); });
     (db.refunds || []).forEach(function(item){ rows.push(Object.assign({ flowType: '退款记录' }, item)); });
-    (db.recharges || []).forEach(function(item){ rows.push(Object.assign({ flowType: '充值记录' }, item)); });
+    (db.recharges || []).forEach(function(item){ rows.push(Object.assign({ flowType: '猫粮充值记录' }, item)); });
     (db.incomeRecords || []).forEach(function(item){ rows.push(Object.assign({ flowType: item.incomeType || '收入流水' }, item)); });
     (db.referral_commission_records || []).forEach(function(item){ rows.push(Object.assign({ flowType: item.commission_type || '邀请返利' }, item)); });
     return rows;

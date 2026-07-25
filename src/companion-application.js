@@ -1,4 +1,4 @@
-(function () {
+﻿(function () {
   var DB_KEY = "mcjRealDB.v1";
   var PLATFORM_KEY = "mcjPlatformData.v1";
   var DRAFT_KEY = "mcjCompanionApplicationDraft.v1";
@@ -151,14 +151,64 @@
     }
   }
 
-  function stepComplete(index, draft) {
+  function hasText(obj, key) {
+    return !!(obj && String(obj[key] == null ? "" : obj[key]).trim());
+  }
+  function hasArray(obj, key) {
+    return !!(obj && Array.isArray(obj[key]) && obj[key].length);
+  }
+  function missingForStep(index, draft) {
     draft = draft || readDraft();
     var data = draft.data || {};
-    if (index === 0) return !!((draft.rulesAgreement || {}).accepted);
-    if (index === 1) return !!(data.nickname && data.age && data.gender && data.region && data.phone && data.email && (data.personalTags || []).length);
-    if (index === 2) return !!((data.mainGames || []).length && (data.positions || []).length && (data.modes || []).length && data.rank && data.voiceType && data.onlineStart && data.onlineEnd);
-    if (index === 3) return !!((draft.uploads || {}).avatar && (draft.uploads || {}).cover && (draft.voice || {}).confirmed);
-    return !!((draft.identity || {}).idFront && (draft.identity || {}).idBack && (draft.identity || {}).depositProof && (draft.identity || {}).settlementName && (draft.identity || {}).settlementMethod && (draft.identity || {}).settlementAccount);
+    var uploads = draft.uploads || {};
+    var voice = draft.voice || {};
+    var identity = draft.identity || {};
+    var missing = [];
+    if (index === 0) {
+      if (!publishedRule()) missing.push("后台暂未发布陪玩制度");
+      if (!((draft.rulesAgreement || {}).accepted)) missing.push("阅读并同意陪玩制度");
+      return missing;
+    }
+    if (index === 1) {
+      [["nickname", "昵称"], ["age", "年龄"], ["gender", "性别"], ["region", "地区"], ["phone", "联系电话"], ["email", "邮箱"]].forEach(function (item) {
+        if (!hasText(data, item[0])) missing.push(item[1]);
+      });
+      if (!hasArray(data, "personalTags")) missing.push("个人标签");
+      return missing;
+    }
+    if (index === 2) {
+      if (!hasText(data, "gameNickname")) missing.push("游戏昵称");
+      if (!hasArray(data, "mainGames")) missing.push("主玩游戏");
+      if (!hasArray(data, "positions")) missing.push("擅长位置");
+      if (!hasArray(data, "modes")) missing.push("可接模式");
+      [["rank", "游戏段位"], ["voiceType", "声音类型"], ["onlineStart", "常在线开始时间"], ["onlineEnd", "常在线结束时间"], ["intro", "自我介绍"]].forEach(function (item) {
+        if (!hasText(data, item[0])) missing.push(item[1]);
+      });
+      return missing;
+    }
+    if (index === 3) {
+      if (!uploads.avatar) missing.push("头像");
+      if (!uploads.cover) missing.push("卡面封面");
+      if (!voice.confirmed) missing.push("试音并确认使用");
+      return missing;
+    }
+    if (index === 4) {
+      if (!identity.idFront) missing.push("证件正面");
+      if (!identity.idBack) missing.push("证件背面");
+      if (!identity.depositProof) missing.push("押金付款凭证");
+      [["settlementMethod", "结款方式"], ["settlementName", "结款户名"], ["settlementAccount", "结款账号"]].forEach(function (item) {
+        if (!hasText(identity, item[0])) missing.push(item[1]);
+      });
+      return missing;
+    }
+    return missing;
+  }
+  function showMissing(missing) {
+    missing = missing && missing.length ? missing : ["请按顺序完成前面的步骤"];
+    alert("请先补充以下内容：\n" + missing.map(function (item) { return "- " + item; }).join("\n"));
+  }
+  function stepComplete(index, draft) {
+    return missingForStep(index, draft).length === 0;
   }
 
   function maxReachableStep(draft) {
@@ -181,7 +231,7 @@
       '<aside class="apply-steps" aria-label="申请流程导航"><div class="apply-progress-head"><strong>申请进度</strong><span>' + doneCount + ' / ' + steps.length + ' · ' + percent + '%</span></div><div class="apply-progress-bar" aria-hidden="true"><i style="width:' + percent + '%"></i></div><div class="apply-step-list">' + steps.map(function (s, i) {
         var done = stepComplete(i, draft);
         var locked = i > reachable;
-        var stateText = i === index ? "当前步骤" : done ? "已完成，可返回查看" : locked ? "完成上一步后解锁" : "可继续填写";
+        var stateText = i === index ? "当前步骤" : done ? "已完成" : locked ? "完成上一步后解锁" : "未完成";
         var stateIcon = done ? "查看" : locked ? lockIcon : "›";
         var numberText = String(i + 1).padStart(2, "0");
         return '<button class="apply-step ' + (i === index ? "active" : "") + (done ? " done" : "") + (locked ? " locked" : "") + '" data-apply-step="' + i + '" type="button" ' + (locked ? 'aria-disabled="true" tabindex="-1"' : "") + '><span class="apply-step-index">' + esc(done ? "✓" : numberText) + '</span><span class="apply-step-copy"><strong>' + esc(stepLabels[i] || s) + '</strong><small>' + esc(stateText) + '</small></span><span class="apply-step-state" aria-hidden="true">' + (locked ? stateIcon : esc(stateIcon)) + '</span></button>';
@@ -294,19 +344,15 @@
   function render(index) {
     var root = document.getElementById("companionApplyRoot");
     if (!root) return;
-    var requestedIndex = Math.max(0, Math.min(steps.length - 1, Number(index || readDraft().step || 0)));
     var draft = readDraft();
-    index = Math.min(requestedIndex, maxReachableStep(draft));
-    saveDraft({ step: index });
-    root.dataset.step = String(index);
+    var rawIndex = index == null ? draft.step : index;
+    var requestedIndex = Math.max(0, Math.min(steps.length - 1, Number(rawIndex || 0)));
+    var reachable = maxReachableStep(draft);
+    var activeIndex = Math.min(requestedIndex, reachable);
+    saveDraft({ step: activeIndex });
+    root.dataset.step = String(activeIndex);
     draft = readDraft();
-    var agreed = draft.rulesAgreement && draft.rulesAgreement.accepted;
-    if (!agreed) {
-      root.innerHTML = statusNotice() + rulesHtml(draft) + '<div class="apply-status-note">请先阅读并同意陪玩制度</div><div class="apply-actions"><button class="apply-btn primary" data-apply-next type="button" disabled>保存并下一步</button></div>';
-      return;
-    }
-    var nextDisabled = index === 0 && !((draft.rulesAgreement || {}).accepted);
-    root.innerHTML = statusNotice() + '<div class="apply-layout">' + stepNav(index, draft) + '<div>' + stepHtml(index, draft) + '<div class="step-complete-mark">' + (stepComplete(index, draft) ? "已完成 ✔" : "未完成 ○") + '</div><div class="apply-actions"><button class="apply-btn" data-apply-prev type="button" ' + (index === 0 ? "disabled" : "") + '>上一步</button><button class="apply-btn" data-apply-save type="button">保存草稿</button><button class="apply-btn primary" data-apply-next type="button" ' + (nextDisabled ? "disabled" : "") + '>' + (index === steps.length - 1 ? "提交审核" : "下一步") + '</button></div><p class="apply-note">每填写一个输入框都会自动保存草稿，刷新网页后会自动恢复。</p></div></div>';
+    root.innerHTML = statusNotice() + '<div class="apply-layout">' + stepNav(activeIndex, draft) + '<div>' + stepHtml(activeIndex, draft) + '<div class="step-complete-mark">' + (stepComplete(activeIndex, draft) ? "已完成 ✔" : "未完成 ○") + '</div><div class="apply-actions"><button class="apply-btn" data-apply-prev type="button" ' + (activeIndex === 0 ? "disabled" : "") + '>上一步</button><button class="apply-btn" data-apply-save type="button">保存草稿</button><button class="apply-btn primary" data-apply-next type="button">' + (activeIndex === steps.length - 1 ? "提交审核" : "下一步") + '</button></div><p class="apply-note">每填写一个输入框都会自动保存草稿，刷新网页或返回修改后会自动恢复。</p></div></div>';
     setTimeout(function () {
       var current = root.querySelector(".apply-step.active");
       if (current && current.scrollIntoView) current.scrollIntoView({ block: "nearest", inline: "center" });
@@ -346,22 +392,12 @@
     saveDraft({ data: data, identity: identity, uploads: uploads });
   }
   function validateBeforeSubmit() {
-    var d = readDraft();
     var missing = [];
-    if (!d.rulesAgreement.accepted) missing.push("请先阅读并同意陪玩制度");
-    ["nickname", "age", "gender", "region", "phone", "email"].forEach(function (k) { if (!(d.data || {})[k]) missing.push("基本资料：" + k); });
-    if (!((d.data || {}).personalTags || []).length) missing.push("个人标签未选择");
-    ["rank", "voiceType", "onlineStart", "onlineEnd", "intro"].forEach(function (k) { if (!(d.data || {})[k]) missing.push("游戏资料：" + k); });
-    if (!((d.data || {}).mainGames || []).length) missing.push("主玩游戏未选择");
-    if (!((d.data || {}).positions || []).length) missing.push("擅长位置未选择");
-    if (!((d.data || {}).modes || []).length) missing.push("可接模式未选择");
-    if (!(d.uploads || {}).avatar) missing.push("头像未上传");
-    if (!(d.uploads || {}).cover) missing.push("卡面封面未上传");
-    if (!(d.voice || {}).confirmed) missing.push("试音未试听并确认");
-    if (!(d.identity || {}).idFront) missing.push("证件正面未上传");
-    if (!(d.identity || {}).idBack) missing.push("证件背面未上传");
-    if (!(d.identity || {}).depositProof) missing.push("押金付款凭证未上传");
-    if (!(d.identity || {}).settlementName || !(d.identity || {}).settlementMethod || !(d.identity || {}).settlementAccount) missing.push("结款资料未填写完整");
+    for (var i = 0; i < steps.length; i++) {
+      missingForStep(i, readDraft()).forEach(function (item) {
+        missing.push(stepLabels[i] + "：" + item);
+      });
+    }
     return missing;
   }
   function submitApplication() {
@@ -615,14 +651,14 @@
       var stepBtn = e.target.closest("[data-apply-step]");
       if (stepBtn) {
         e.preventDefault();
-        if (stepBtn.classList.contains("locked") || stepBtn.getAttribute("aria-disabled") === "true") { alert("请先完成当前步骤"); return; }
         var targetStep = Number(stepBtn.dataset.applyStep);
         await collect(root);
-        if (targetStep > maxReachableStep(readDraft())) { alert("请先完成当前步骤"); return; }
+        var draftAfterClick = readDraft();
+        if (targetStep > maxReachableStep(draftAfterClick)) { showMissing(missingForStep(Number(root.dataset.step || 0), draftAfterClick)); return; }
         render(targetStep);
         return;
       }
-      if (e.target.closest("[data-apply-next]")) { e.preventDefault(); await collect(root); var idx = Number(root.dataset.step || 0); if (!stepComplete(idx, readDraft())) { alert("请先完成当前步骤"); return; } if (idx === steps.length - 1) submitApplication(); else render(idx + 1); return; }
+      if (e.target.closest("[data-apply-next]")) { e.preventDefault(); await collect(root); var idx = Number(root.dataset.step || 0); var missing = missingForStep(idx, readDraft()); if (missing.length) { showMissing(missing); return; } if (idx === steps.length - 1) submitApplication(); else render(idx + 1); return; }
       if (e.target.closest("[data-apply-prev]")) { e.preventDefault(); await collect(root); render(Math.max(0, Number(root.dataset.step || 0) - 1)); return; }
       if (e.target.closest("[data-rule-agree]")) {
         var rule = publishedRule();
@@ -712,3 +748,8 @@
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
   else init();
 })();
+
+
+
+
+

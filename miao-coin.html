@@ -3,66 +3,24 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>充值中心 · Meow Cui Jiao</title>
+  <title>猫粮充值 · Meow Cui Jiao</title>
   <style>
     *{box-sizing:border-box}
-    body{margin:0;color:#fff0f7;font-family:Inter,Arial,"Microsoft YaHei",sans-serif;background:radial-gradient(circle at 18% 0%,rgba(225,120,180,.18),transparent 30%),radial-gradient(circle at 88% 12%,rgba(255,182,217,.10),transparent 24%),#050406}
-    .page{min-height:100vh;padding:28px 16px 46px}
-    .shell{width:min(1080px,100%);margin:0 auto;display:grid;gap:18px}
-    .glass{border:1px solid rgba(232,154,196,.34);border-radius:22px;background:linear-gradient(180deg,rgba(255,255,255,.055),rgba(255,255,255,.018)),rgba(14,10,18,.82);box-shadow:0 18px 60px rgba(0,0,0,.34),0 0 24px rgba(225,120,180,.10),inset 0 1px 0 rgba(255,255,255,.10);backdrop-filter:blur(14px) saturate(1.04)}
-    header{position:relative;padding:28px;overflow:hidden}
-    header:after{content:"🐾";position:absolute;right:28px;top:18px;font-size:86px;opacity:.08;transform:rotate(-12deg);pointer-events:none}
-    .top-row{display:flex;align-items:flex-start;justify-content:space-between;gap:22px;position:relative;z-index:1}
-    .brand{display:flex;align-items:center;gap:12px;color:#ffb6d9;font-weight:900;letter-spacing:.04em}
-    .brand img{width:44px;height:44px;border-radius:50%;object-fit:cover;border:1px solid rgba(255,214,235,.38)}
-    h1{margin:20px 0 8px;font-size:42px;letter-spacing:.03em;text-shadow:0 0 20px rgba(225,120,180,.24)}
-    p{margin:0;color:#cdb9c5}
-    .home{height:38px;padding:0 15px;display:inline-grid;place-items:center;border-radius:999px;border:1px solid rgba(232,154,196,.28);background:rgba(0,0,0,.22);color:#ffd6e7;text-decoration:none;font-weight:900;white-space:nowrap;transition:.18s ease}
-    .home:hover,button:hover{transform:translateY(-2px);box-shadow:0 0 18px rgba(225,120,180,.16)}
-    .asset-overview{margin-top:24px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;position:relative;z-index:1}
-    .asset-card{min-height:128px;border:1px solid rgba(232,154,196,.28);border-radius:22px;background:linear-gradient(135deg,rgba(255,182,217,.12),rgba(0,0,0,.22));padding:16px;display:flex;gap:14px;align-items:center;transition:.18s ease;box-shadow:inset 0 0 18px rgba(255,176,212,.055)}
-    .asset-card:hover{border-color:rgba(246,180,215,.68);box-shadow:0 0 24px rgba(225,120,180,.16),inset 0 0 20px rgba(255,176,212,.08)}
-    .asset-icon{width:52px;height:52px;border-radius:18px;display:grid;place-items:center;flex:0 0 auto;background:rgba(255,214,235,.12);border:1px solid rgba(255,214,235,.20);font-size:26px}
-    .asset-card strong{display:block;font-size:31px;line-height:1;color:#fff7fb;text-shadow:0 0 16px rgba(225,120,180,.22)}
-    .asset-card span{display:block;margin-top:8px;color:#a994a0;font-size:13px;font-weight:900}
-    .vip-progress{margin-top:10px}
-    .vip-progress small{display:flex;justify-content:space-between;gap:8px;color:#ffc7df;font-size:12px;font-weight:900}
-    .bar{height:8px;margin-top:7px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden;border:1px solid rgba(232,154,196,.12)}
-    .bar i{display:block;width:38%;height:100%;border-radius:999px;background:linear-gradient(90deg,#ffb6d9,#f06ba9);box-shadow:0 0 14px rgba(240,107,169,.5)}
-    .grid{display:grid;grid-template-columns:1.35fr .85fr;gap:18px}
-    .card{padding:20px}
-    .eyebrow{margin:0 0 6px;color:#ffb6d9;font-size:12px;letter-spacing:.16em;font-weight:900}
-    h2{margin:0;font-size:22px}
-    .packages{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-top:18px}
-    .packages button,.payments button{border:1px solid rgba(232,154,196,.22);border-radius:16px;background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(0,0,0,.16));color:#ffe8f4;cursor:pointer;transition:.18s ease}
-    .packages button{min-height:118px;padding:16px;text-align:left}
-    .packages small{display:block;color:#ffb6d9;font-weight:900}
-    .packages strong{display:block;margin-top:12px;font-size:30px}
-    .packages span{color:#cdb9c5;font-weight:800}
-    .active{border-color:rgba(246,180,215,.74)!important;box-shadow:0 0 22px rgba(225,120,180,.18),inset 0 0 16px rgba(255,176,212,.10)}
-    .custom{display:grid;gap:10px;margin-top:16px;color:#ffc7df;font-weight:900}
-    .custom div{height:46px;border-radius:14px;border:1px solid rgba(232,154,196,.24);background:rgba(0,0,0,.26);display:flex;align-items:center;gap:10px;padding:0 12px}
-    .custom input{flex:1;height:100%;border:0;outline:0;background:transparent;color:#fff0f7;font-size:16px}
-    .summary{display:flex;flex-direction:column;gap:16px}
-    .summary-line{display:flex;align-items:center;justify-content:space-between;border-radius:14px;border:1px solid rgba(232,154,196,.16);background:rgba(0,0,0,.20);padding:14px}
-    .summary-line span{color:#a994a0;font-weight:900}
-    .summary-line b{font-size:20px}
-    .payments{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-    .payments button{height:42px;font-weight:900}
-    .pay-now,.success-pay{height:48px;border:0;border-radius:999px;cursor:pointer;background:linear-gradient(180deg,#ffe2f0,#e99ac4);color:#1b0712;font-size:16px;font-weight:1000;box-shadow:0 12px 28px rgba(225,120,180,.22)}
-    .records{display:grid;gap:10px;margin-top:16px}
-    .record{display:grid;grid-template-columns:1fr 90px 120px 70px;gap:10px;align-items:center;border-radius:14px;border:1px solid rgba(232,154,196,.14);background:rgba(0,0,0,.18);padding:12px}
-    .record span{color:#bfaeba}
-    .record em{color:#8ff0bd;font-style:normal;font-weight:900}
-    .modal{position:fixed;inset:0;z-index:100;background:rgba(2,1,4,.78);backdrop-filter:blur(12px);display:none;place-items:center;padding:20px}
-    .modal.open{display:grid}
-    .dialog{position:relative;width:min(460px,100%);padding:24px;border-radius:20px;border:1px solid rgba(232,154,196,.38);background:linear-gradient(180deg,rgba(34,27,38,.94),rgba(9,8,14,.98));box-shadow:0 24px 90px rgba(0,0,0,.62),0 0 22px rgba(225,120,180,.18)}
-    .close{position:absolute;right:14px;top:14px;width:34px;height:34px;border-radius:50%;border:1px solid rgba(232,154,196,.32);background:rgba(0,0,0,.22);color:#ffd6e7;font-size:22px;cursor:pointer}
-    .confirm{display:grid;gap:10px;margin:18px 0}
-    .confirm div{display:flex;justify-content:space-between;border-radius:14px;background:rgba(0,0,0,.20);border:1px solid rgba(232,154,196,.14);padding:13px}
-    .ok{border-radius:14px;border:1px solid rgba(143,240,189,.28);background:rgba(143,240,189,.10);color:#8ff0bd;font-weight:1000;padding:14px;text-align:center;display:none}
-    @media(max-width:860px){.asset-overview{grid-template-columns:1fr}.top-row{display:block}.home{margin-top:16px}.grid,.packages{grid-template-columns:1fr}.payments{grid-template-columns:1fr}.record{grid-template-columns:1fr 1fr}}
-    @media(max-width:520px){.page{padding:16px 12px 30px}header{padding:22px}h1{font-size:32px}.asset-card strong{font-size:27px}.asset-card{min-height:112px}}
+    body{margin:0;color:#fff0f7;font-family:Inter,Arial,"Microsoft YaHei",sans-serif;background:radial-gradient(circle at 18% 0%,rgba(225,120,180,.16),transparent 30%),radial-gradient(circle at 88% 12%,rgba(255,182,217,.08),transparent 24%),#050406}
+    .page{min-height:100vh;padding:28px 16px 46px}.shell{width:min(1120px,100%);margin:0 auto;display:grid;gap:18px}
+    .glass{border:1px solid rgba(232,154,196,.30);border-radius:22px;background:linear-gradient(180deg,rgba(255,255,255,.050),rgba(255,255,255,.016)),rgba(14,10,18,.82);box-shadow:0 18px 60px rgba(0,0,0,.34),0 0 24px rgba(225,120,180,.10),inset 0 1px 0 rgba(255,255,255,.08);backdrop-filter:blur(14px) saturate(1.04)}
+    header{position:relative;padding:28px;overflow:hidden}header:after{content:"";position:absolute;right:24px;top:20px;width:118px;height:118px;border-radius:36px;border:1px solid rgba(255,182,217,.10);background:radial-gradient(circle at 50% 46%,rgba(255,182,217,.10),transparent 64%);transform:rotate(-10deg);pointer-events:none}.top-row{display:flex;align-items:flex-start;justify-content:space-between;gap:22px;position:relative;z-index:1}
+    .brand{display:flex;align-items:center;gap:12px;color:#ffb6d9;font-weight:900;letter-spacing:.04em}.brand img{width:44px;height:44px;border-radius:50%;object-fit:cover;border:1px solid rgba(255,214,235,.38)}
+    h1{margin:20px 0 8px;font-size:42px;letter-spacing:.03em;text-shadow:0 0 20px rgba(225,120,180,.22)}p{margin:0;color:#cdb9c5}.home{height:40px;padding:0 16px;display:inline-grid;place-items:center;border-radius:13px;border:1px solid rgba(232,154,196,.28);background:rgba(0,0,0,.22);color:#ffd6e7;text-decoration:none;font-weight:900;white-space:nowrap;transition:.18s ease}.home:hover,button:hover{transform:translateY(-1px);box-shadow:0 0 18px rgba(225,120,180,.16)}
+    .asset-overview{margin-top:24px;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;position:relative;z-index:1}.asset-card{min-height:126px;border:1px solid rgba(232,154,196,.22);border-radius:20px;background:linear-gradient(135deg,rgba(255,182,217,.09),rgba(0,0,0,.22));padding:16px;display:flex;gap:14px;align-items:center;transition:.18s ease;box-shadow:inset 0 0 18px rgba(255,176,212,.045)}.asset-card:hover{border-color:rgba(246,180,215,.58);box-shadow:0 0 22px rgba(225,120,180,.14),inset 0 0 18px rgba(255,176,212,.06)}
+    .asset-icon{width:52px;height:52px;border-radius:17px;display:grid;place-items:center;flex:0 0 auto;background:rgba(255,214,235,.075);border:1px solid rgba(255,214,235,.18)}.asset-icon svg{width:30px;height:30px}.asset-card strong{display:block;font-size:30px;line-height:1;color:#fff7fb;text-shadow:0 0 14px rgba(225,120,180,.18)}.asset-card span{display:block;margin-top:8px;color:#a994a0;font-size:13px;font-weight:900}
+    .catfood-icon{display:inline-block;vertical-align:-.18em;fill:none;stroke-linecap:round;stroke-linejoin:round}.catfood-16{width:16px;height:16px}.catfood-24{width:24px;height:24px}.catfood-32{width:32px;height:32px}.catfood-48{width:48px;height:48px}.catfood-icon .coin-neon{stroke:rgba(255,145,195,.64);stroke-width:3.4;filter:drop-shadow(0 0 7px rgba(255,91,170,.34))}.catfood-icon .coin-main{stroke:#fff7fb;stroke-width:2.2}.catfood-icon .paw-main{stroke:#ffd6e8;stroke-width:2.1}.catfood-icon .paw-pad{fill:#ff9ecf;stroke:none}.catfood-icon .spark{stroke:#ff9ecf;stroke-width:1.8}
+    .grid{display:grid;grid-template-columns:1.35fr .85fr;gap:18px}.card{padding:20px}.eyebrow{margin:0 0 6px;color:#ffb6d9;font-size:12px;letter-spacing:.16em;font-weight:900}h2{margin:0;font-size:22px}.packages{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-top:18px}.packages button,.payments button{border:1px solid rgba(232,154,196,.22);border-radius:16px;background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(0,0,0,.16));color:#ffe8f4;cursor:pointer;transition:.18s ease}.packages button{min-height:118px;padding:16px;text-align:left}.package-title{display:flex;align-items:center;gap:8px;color:#ffb6d9;font-weight:900;font-size:12px}.packages strong{display:block;margin-top:12px;font-size:30px}.packages span{display:flex;align-items:center;gap:7px;color:#cdb9c5;font-weight:800}.active{border-color:rgba(246,180,215,.72)!important;box-shadow:0 0 20px rgba(225,120,180,.16),inset 0 0 14px rgba(255,176,212,.08)}
+    .empty-state{margin-top:16px;border:1px dashed rgba(232,154,196,.28);border-radius:16px;background:rgba(0,0,0,.18);padding:18px;color:#cdb9c5;line-height:1.6}.custom{display:grid;gap:10px;margin-top:16px;color:#ffc7df;font-weight:900}.custom div{height:46px;border-radius:14px;border:1px solid rgba(232,154,196,.24);background:rgba(0,0,0,.26);display:flex;align-items:center;gap:10px;padding:0 12px}.custom input{flex:1;height:100%;border:0;outline:0;background:transparent;color:#fff0f7;font-size:16px}.summary{display:flex;flex-direction:column;gap:16px}.summary-line{display:flex;align-items:center;justify-content:space-between;border-radius:14px;border:1px solid rgba(232,154,196,.16);background:rgba(0,0,0,.20);padding:14px}.summary-line span{color:#a994a0;font-weight:900}.summary-line b{font-size:20px;display:inline-flex;align-items:center;gap:7px}.payments{display:grid;grid-template-columns:1fr 1fr;gap:10px}.payments button{height:42px;font-weight:900}.pay-now,.submit-pay{height:48px;border:0;border-radius:14px;cursor:pointer;background:linear-gradient(180deg,#ffe2f0,#e99ac4);color:#1b0712;font-size:16px;font-weight:1000;box-shadow:0 12px 28px rgba(225,120,180,.20)}.pay-now:disabled,.submit-pay:disabled{opacity:.45;cursor:not-allowed;box-shadow:none;transform:none}
+    .records{display:grid;gap:10px;margin-top:16px}.record{display:grid;grid-template-columns:1fr 90px 120px 86px;gap:10px;align-items:center;border-radius:14px;border:1px solid rgba(232,154,196,.14);background:rgba(0,0,0,.18);padding:12px}.record span{color:#bfaeba}.record em{color:#ffd27a;font-style:normal;font-weight:900}.record.success em{color:#8ff0bd}.record strong{display:flex;align-items:center;gap:7px}
+    .modal{position:fixed;inset:0;z-index:100;background:rgba(2,1,4,.78);backdrop-filter:blur(12px);display:none;place-items:center;padding:20px}.modal.open{display:grid}.dialog{position:relative;width:min(460px,100%);padding:24px;border-radius:20px;border:1px solid rgba(232,154,196,.38);background:linear-gradient(180deg,rgba(34,27,38,.94),rgba(9,8,14,.98));box-shadow:0 24px 90px rgba(0,0,0,.62),0 0 22px rgba(225,120,180,.18)}.close{position:absolute;right:14px;top:14px;width:34px;height:34px;border-radius:50%;border:1px solid rgba(232,154,196,.32);background:rgba(0,0,0,.22);color:#ffd6e7;font-size:22px;cursor:pointer}.confirm{display:grid;gap:10px;margin:18px 0}.confirm div{display:flex;justify-content:space-between;border-radius:14px;background:rgba(0,0,0,.20);border:1px solid rgba(232,154,196,.14);padding:13px}.proof{display:grid;gap:8px;margin:12px 0 18px;color:#ffc7df;font-weight:900}.proof input{border:1px solid rgba(232,154,196,.22);border-radius:14px;background:rgba(0,0,0,.22);padding:11px;color:#fff}.ok{border-radius:14px;border:1px solid rgba(143,240,189,.28);background:rgba(143,240,189,.10);color:#8ff0bd;font-weight:1000;padding:14px;text-align:center;display:none}
+    @media(max-width:920px){.asset-overview{grid-template-columns:1fr 1fr}.grid{grid-template-columns:1fr}.top-row{display:block}.home{margin-top:16px}.packages{grid-template-columns:1fr}.payments{grid-template-columns:1fr}.record{grid-template-columns:1fr 1fr}}
+    @media(max-width:520px){.page{padding:16px 12px 30px}header{padding:22px}h1{font-size:32px}.asset-overview{grid-template-columns:1fr}.asset-card strong{font-size:27px}.asset-card{min-height:112px}}
   </style>
 </head>
 <body>
@@ -72,27 +30,16 @@
         <div class="top-row">
           <div>
             <div class="brand"><img src="assets/meow-cuijiao-brand.jpg" alt="Meow Cui Jiao"><span>Meow Cui Jiao / 妙脆角电竞</span></div>
-            <h1>充值中心</h1>
-            <p>RM1 = 10 喵币，用于下单、送礼、盲盒派单和专属互动。</p>
+            <h1>猫粮充值</h1>
+            <p>选择后台启用的支付方式，为账户充值猫粮。</p>
           </div>
           <a class="home" href="index.html">首页</a>
         </div>
         <div class="asset-overview" aria-label="资产概览">
-          <article class="asset-card">
-            <div class="asset-icon">💼</div>
-            <div><strong>RM1,680</strong><span>总消费</span></div>
-          </article>
-          <article class="asset-card">
-            <div class="asset-icon">🪙</div>
-            <div><strong><span id="balance">320</span> 喵币</strong><span>当前余额</span></div>
-          </article>
-          <article class="asset-card">
-            <div class="asset-icon">👑</div>
-            <div>
-              <strong>VIP3</strong><span>VIP等级</span>
-              <div class="vip-progress"><small><b>380 / 1000</b><b>差620积分</b></small><div class="bar"><i></i></div></div>
-            </div>
-          </article>
+          <article class="asset-card"><div class="asset-icon" id="spentIcon"></div><div><strong id="totalSpent">RM0.00</strong><span>总消费</span></div></article>
+          <article class="asset-card"><div class="asset-icon" id="catFoodIcon"></div><div><strong><span id="balance">0</span> 猫粮</strong><span>猫粮余额</span></div></article>
+          <article class="asset-card"><div class="asset-icon" id="vipIcon"></div><div><strong id="vipLevel">VIP0</strong><span>VIP等级</span></div></article>
+          <article class="asset-card"><div class="asset-icon" id="orderIcon"></div><div><strong id="orderCount">0</strong><span>订单</span></div></article>
         </div>
       </header>
 
@@ -100,69 +47,87 @@
         <div class="glass card">
           <p class="eyebrow">RECHARGE</p>
           <h2>选择充值套餐</h2>
-          <div class="packages" id="packages">
-            <button data-rm="10" data-coins="100"><small>轻量补给</small><strong>RM10</strong><span>100 喵币</span></button>
-            <button class="active" data-rm="30" data-coins="300"><small>热门选择</small><strong>RM30</strong><span>300 喵币</span></button>
-            <button data-rm="50" data-coins="500"><small>老板常用</small><strong>RM50</strong><span>500 喵币</span></button>
-            <button data-rm="100" data-coins="1000"><small>高能储备</small><strong>RM100</strong><span>1000 喵币</span></button>
-          </div>
-          <label class="custom"><span>自定义充值金额</span><div><b>RM</b><input id="customAmount" type="number" min="1" placeholder="输入金额"></div></label>
+          <div class="packages" id="packages"></div>
+          <div class="empty-state" id="packageEmpty" hidden>后台暂未配置充值套餐，可使用自定义金额提交充值申请。</div>
+          <label class="custom"><span>自定义充值金额</span><div><b>RM</b><input id="customAmount" type="number" min="1" step="0.01" placeholder="输入金额"></div></label>
         </div>
 
         <aside class="glass card summary">
           <p class="eyebrow">SUMMARY</p>
-          <h2>订单预览</h2>
-          <div class="summary-line"><span>应付金额</span><b id="payAmount">RM30</b></div>
-          <div class="summary-line"><span>到账喵币</span><b id="coinAmount">300 喵币</b></div>
+          <h2>充值申请预览</h2>
+          <div class="summary-line"><span>充值金额</span><b id="payAmount">RM0.00</b></div>
+          <div class="summary-line"><span>预计到账</span><b id="coinAmount"></b></div>
           <strong>支付方式</strong>
-          <div class="payments" id="payments">
-            <button class="active">Touch n Go</button><button>FPX</button><button>GrabPay</button><button>DuitNow</button><button>银行卡</button>
-          </div>
-          <button class="pay-now" id="openPay">立即充值</button>
+          <div class="payments" id="payments"></div>
+          <div class="empty-state" id="paymentEmpty" hidden>后台暂未启用支付方式，暂时不能提交充值申请。</div>
+          <button class="pay-now" id="openPay" disabled>提交充值申请</button>
         </aside>
       </section>
 
       <section class="glass card">
         <p class="eyebrow">HISTORY</p>
-        <h2>充值记录</h2>
-        <div class="records" id="records">
-          <div class="record"><span>2026-07-01 12:20</span><b>RM30</b><strong>300 喵币</strong><em>成功</em></div>
-          <div class="record"><span>2026-06-30 22:18</span><b>RM50</b><strong>500 喵币</strong><em>成功</em></div>
-          <div class="record"><span>2026-06-29 18:06</span><b>RM10</b><strong>100 喵币</strong><em>成功</em></div>
-        </div>
+        <h2>猫粮充值记录</h2>
+        <div class="records" id="records"></div>
+        <div class="empty-state" id="recordEmpty" hidden>暂无猫粮充值记录。</div>
       </section>
     </section>
   </main>
 
   <div class="modal" id="payModal">
     <div class="dialog">
-      <button class="close" id="closePay">×</button>
+      <button class="close" id="closePay" type="button">×</button>
       <p class="eyebrow">CONFIRM</p>
-      <h2>付款确认</h2>
+      <h2>提交充值申请</h2>
       <div class="confirm">
-        <div><span>充值金额</span><b id="modalRm">RM30</b></div>
-        <div><span>到账喵币</span><b id="modalCoins">300 喵币</b></div>
-        <div><span>支付方式</span><b id="modalPay">Touch n Go</b></div>
-        <div><span>订单编号</span><b id="modalOrder">MCJ0000</b></div>
+        <div><span>充值金额</span><b id="modalRm">RM0.00</b></div>
+        <div><span>预计到账</span><b id="modalCoins">0 猫粮</b></div>
+        <div><span>支付方式</span><b id="modalPay">-</b></div>
+        <div><span>申请编号</span><b id="modalOrder">-</b></div>
       </div>
-      <button class="success-pay" id="successPay">模拟付款成功</button>
-      <div class="ok" id="successMsg">充值成功，喵币已到账</div>
+      <label class="proof">付款凭证（如后台要求）<input id="proofFile" type="file" accept="image/*"></label>
+      <button class="submit-pay" id="submitPay" type="button">提交后台审核</button>
+      <div class="ok" id="successMsg">充值申请已提交后台审核，审核通过后猫粮到账。</div>
     </div>
   </div>
 
   <script>
-    var state={rm:30,coins:300,pay:"Touch n Go",balance:320};
-    var $=function(id){return document.getElementById(id)};
-    function render(){ $("payAmount").textContent="RM"+state.rm; $("coinAmount").textContent=state.coins+" 喵币"; $("balance").textContent=state.balance; }
-    $("packages").addEventListener("click",function(event){var button=event.target.closest("button"); if(!button)return; document.querySelectorAll("#packages button").forEach(function(item){item.classList.remove("active")}); button.classList.add("active"); $("customAmount").value=""; state.rm=Number(button.dataset.rm); state.coins=Number(button.dataset.coins); render();});
-    $("customAmount").addEventListener("input",function(event){var value=Math.max(0,Number(event.target.value||0)); document.querySelectorAll("#packages button").forEach(function(item){item.classList.remove("active")}); state.rm=value; state.coins=value*10; render();});
-    $("payments").addEventListener("click",function(event){var button=event.target.closest("button"); if(!button)return; document.querySelectorAll("#payments button").forEach(function(item){item.classList.remove("active")}); button.classList.add("active"); state.pay=button.textContent.trim();});
-    $("openPay").addEventListener("click",function(){ if(!state.rm){alert("请先选择或输入充值金额");return;} $("modalRm").textContent="RM"+state.rm; $("modalCoins").textContent=state.coins+" 喵币"; $("modalPay").textContent=state.pay; $("modalOrder").textContent="MCJ"+Date.now().toString().slice(-8); $("successMsg").style.display="none"; $("successPay").style.display="block"; $("payModal").classList.add("open");});
-    $("closePay").addEventListener("click",function(){ $("payModal").classList.remove("open")});
-    $("payModal").addEventListener("click",function(event){ if(event.target.id==="payModal") $("payModal").classList.remove("open");});
-    document.addEventListener("keydown",function(event){ if(event.key==="Escape") $("payModal").classList.remove("open");});
-    $("successPay").addEventListener("click",function(){ state.balance+=state.coins; render(); var now=new Date(); var time=now.getFullYear()+"-"+String(now.getMonth()+1).padStart(2,"0")+"-"+String(now.getDate()).padStart(2,"0")+" "+String(now.getHours()).padStart(2,"0")+":"+String(now.getMinutes()).padStart(2,"0"); $("records").insertAdjacentHTML("afterbegin",'<div class="record"><span>'+time+'</span><b>RM'+state.rm+'</b><strong>'+state.coins+' 喵币</strong><em>成功</em></div>'); $("successPay").style.display="none"; $("successMsg").style.display="block";});
-    render();
+    (function(){
+      var REAL_KEY="mcjRealDB.v1";
+      var PLATFORM_KEY="mcjPlatformData.v1";
+      var state={rm:0,catFood:0,pay:"",orderNo:""};
+      var $=function(id){return document.getElementById(id)};
+      function esc(value){return String(value==null?"":value).replace(/[&<>"']/g,function(ch){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]})}
+      function read(key){try{return JSON.parse(localStorage.getItem(key)||"{}")||{}}catch(e){return {}}}
+      function write(key,data){localStorage.setItem(key,JSON.stringify(data||{}))}
+      function arrays(name){var out=[];[read(REAL_KEY),read(PLATFORM_KEY)].forEach(function(db){if(Array.isArray(db[name]))out=out.concat(db[name]);if(db.contents&&Array.isArray(db.contents[name]))out=out.concat(db.contents[name]);});return out}
+      function currentUser(){if(window.MCJRoleGate&&window.MCJRoleGate.user){var gated=window.MCJRoleGate.user("customer");if(gated)return gated}var keys=["customerUser","mcjCurrentUser"];for(var i=0;i<keys.length;i++){try{var user=JSON.parse(localStorage.getItem(keys[i])||"null");if(user)return user}catch(e){}}return null}
+      function ids(user){if(!user)return [];return [user.id,user.user_id,user.uid,user.customer_id,user.boss_id,user.bossId,user.phone,user.email,user.account].filter(Boolean).map(String)}
+      function belongs(row,userIds){if(!userIds.length)return false;var keys=["user_id","uid","customer_id","boss_id","bossUid","bossUID","owner_id","account","phone","email"];return keys.some(function(key){return row&&row[key]!=null&&userIds.indexOf(String(row[key]))>=0})}
+      function num(value){var n=Number(value);return Number.isFinite(n)?n:0}
+      function money(value){return "RM"+num(value).toFixed(2)}
+      function nowText(){var d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")+" "+String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0")}
+      function catFoodIcon(size){return '<svg class="catfood-icon catfood-'+(size||24)+'" viewBox="0 0 48 48" aria-hidden="true"><circle class="coin-neon" cx="24" cy="24" r="17"/><circle class="coin-main" cx="24" cy="24" r="15"/><path class="paw-main" d="M18.6 27.2c1.9-3.5 3-4.9 5.4-4.9s3.5 1.4 5.4 4.9c1.1 2 .4 4.3-1.8 4.3-1.5 0-2.2-.7-3.6-.7s-2.1.7-3.6.7c-2.2 0-2.9-2.3-1.8-4.3Z"/><circle class="paw-pad" cx="17.2" cy="21.1" r="2.1"/><circle class="paw-pad" cx="22.4" cy="18.2" r="2.2"/><circle class="paw-pad" cx="27.6" cy="18.2" r="2.2"/><circle class="paw-pad" cx="32.8" cy="21.1" r="2.1"/><path class="spark" d="M35.5 10.2v4.6M33.2 12.5h4.6"/></svg>'}
+      function simpleIcon(type){var svg={spent:'<svg viewBox="0 0 32 32" fill="none"><path d="M8 6h16v20H8z" stroke="#fff7fb" stroke-width="2"/><path d="M12 12h8M12 17h6M12 22h8" stroke="#ffd6e8" stroke-width="2" stroke-linecap="round"/></svg>',vip:'<svg viewBox="0 0 32 32" fill="none"><path d="M6 12l6 5 4-8 4 8 6-5-2 12H8z" stroke="#fff7fb" stroke-width="2.2" stroke-linejoin="round"/><path d="M10 26h12" stroke="#ffd6e8" stroke-width="2" stroke-linecap="round"/></svg>',order:'<svg viewBox="0 0 32 32" fill="none"><path d="M9 5h14l3 5v17H6V10z" stroke="#fff7fb" stroke-width="2"/><path d="M10 12h12M10 17h10M10 22h7" stroke="#ffd6e8" stroke-width="2" stroke-linecap="round"/></svg>'};return svg[type]||catFoodIcon(32)}
+      function userWallet(userIds){return arrays("wallets").concat(arrays("customerWallets"),arrays("balances")).find(function(row){return belongs(row,userIds)})||{}}
+      function ordersFor(userIds){return arrays("orders").filter(function(row){return belongs(row,userIds)})}
+      function rechargesFor(userIds){var rows=arrays("recharges").concat(arrays("payment_transactions"),arrays("paymentTransactions"),arrays("walletTransactions")).filter(function(row){var type=String(row.type||row.flowType||row.transaction_type||row.category||"");return !userIds.length?false:belongs(row,userIds)&&(/recharge|充值|catfood|猫粮/i.test(type)||row.recharge_no||row.payment_method)});var map={};rows.forEach(function(row){map[row.id||row.recharge_no||row.order_no||JSON.stringify(row)]=row});return Object.keys(map).map(function(key){return map[key]}).sort(function(a,b){return String(b.created_at||b.createdAt||b.time||"").localeCompare(String(a.created_at||a.createdAt||a.time||""))})}
+      function packages(){var rows=arrays("catFoodPackages").concat(arrays("rechargePackages"),arrays("paymentPackages"));var map={};rows.filter(function(row){return row&&row.enabled!==false&&row.status!=="disabled"&&row.status!=="下架"}).forEach(function(row){var rm=num(row.rm||row.amount||row.price||row.paymentAmount);if(rm<=0)return;var food=num(row.catFood||row.cat_food||row.coins||row.credits||row.arrivalAmount||rm);var id=row.id||rm+":"+food;map[id]={id:id,tag:row.tag||row.name||row.title||"充值套餐",rm:rm,catFood:food};});return Object.keys(map).map(function(id){return map[id]}).sort(function(a,b){return a.rm-b.rm})}
+      function channels(){var rows=arrays("payment_channels").concat(arrays("paymentChannels"),arrays("paymentMethods"));var map={};rows.filter(function(row){return row&&row.enabled!==false&&row.frontendVisible!==false&&row.status!=="disabled"&&row.status!=="停用"}).forEach(function(row){var name=row.frontendName||row.display_name||row.name||row.title||row.channelName;if(name)map[name]=name});return Object.keys(map)}
+      function renderOverview(){var user=currentUser();var userIds=ids(user);var wallet=userWallet(userIds);var orderRows=ordersFor(userIds);var balance=num(wallet.available_balance||wallet.availableBalance||wallet.catFoodBalance||wallet.balance||wallet.credits||(user&&user.balance));var totalSpent=num(wallet.total_spent||wallet.totalSpent||(user&&user.totalSpent));if(!totalSpent&&orderRows.length){totalSpent=orderRows.reduce(function(sum,row){return sum+num(row.actual_paid||row.actualPaid||row.paid_amount||row.amount||row.total)},0)}var vip=(wallet.vip||wallet.vipLevel||(user&&(user.vip||user.vipLevel)))||"VIP0";if(!/^VIP/i.test(String(vip)))vip="VIP"+vip;$("spentIcon").innerHTML=simpleIcon("spent");$("catFoodIcon").innerHTML=catFoodIcon(32);$("vipIcon").innerHTML=simpleIcon("vip");$("orderIcon").innerHTML=simpleIcon("order");$("totalSpent").textContent=money(totalSpent);$("balance").textContent=String(Math.floor(balance));$("vipLevel").textContent=vip||"VIP0";$("orderCount").textContent=String(orderRows.length||0)}
+      function renderPackages(){var list=packages();$("packageEmpty").hidden=list.length>0;$("packages").innerHTML=list.map(function(pkg,index){return '<button '+(index===0?'class="active"':'')+' data-rm="'+pkg.rm+'" data-food="'+pkg.catFood+'"><span class="package-title">'+catFoodIcon(16)+esc(pkg.tag)+'</span><strong>'+money(pkg.rm)+'</strong><span>'+catFoodIcon(16)+Math.floor(pkg.catFood)+' 猫粮</span></button>'}).join("");if(list.length){state.rm=list[0].rm;state.catFood=list[0].catFood}}
+      function renderChannels(){var list=channels();$("paymentEmpty").hidden=list.length>0;$("payments").innerHTML=list.map(function(name,index){return '<button '+(index===0?'class="active"':'')+' type="button">'+esc(name)+'</button>'}).join("");state.pay=list[0]||""}
+      function renderRecords(){var rows=rechargesFor(ids(currentUser()));$("recordEmpty").hidden=rows.length>0;$("records").innerHTML=rows.map(function(row){var status=row.statusLabel||row.status||"待审核";var ok=/success|paid|approved|成功|已到账|已支付/.test(String(status));var amount=num(row.amount||row.rm||row.paymentAmount||row.pay_amount);var food=num(row.catFoodAmount||row.catFood||row.cat_food||row.coins||row.credits||amount);return '<div class="record '+(ok?'success':'')+'"><span>'+esc(row.created_at||row.createdAt||row.time||"-")+'</span><b>'+money(amount)+'</b><strong>'+catFoodIcon(16)+Math.floor(food)+' 猫粮</strong><em>'+esc(status)+'</em></div>'}).join("")}
+      function renderSummary(){var valid=state.rm>0&&!!state.pay;$("payAmount").textContent=money(state.rm);$("coinAmount").innerHTML=catFoodIcon(16)+Math.floor(state.catFood||0)+" 猫粮";$("openPay").disabled=!valid}
+      function saveRecharge(entry){[REAL_KEY,PLATFORM_KEY].forEach(function(key){var db=read(key);db.recharges=Array.isArray(db.recharges)?db.recharges:[];db.recharges=db.recharges.filter(function(row){return row.id!==entry.id});db.recharges.unshift(entry);write(key,db)});window.dispatchEvent(new CustomEvent("mcj:platform-data-updated"));window.dispatchEvent(new CustomEvent("mcj:data-updated"))}
+      renderOverview();renderPackages();renderChannels();renderRecords();renderSummary();
+      $("packages").addEventListener("click",function(event){var button=event.target.closest("button");if(!button)return;document.querySelectorAll("#packages button").forEach(function(item){item.classList.remove("active")});button.classList.add("active");$("customAmount").value="";state.rm=num(button.dataset.rm);state.catFood=num(button.dataset.food);renderSummary()});
+      $("customAmount").addEventListener("input",function(event){var value=Math.max(0,num(event.target.value));document.querySelectorAll("#packages button").forEach(function(item){item.classList.remove("active")});state.rm=value;state.catFood=value;renderSummary()});
+      $("payments").addEventListener("click",function(event){var button=event.target.closest("button");if(!button)return;document.querySelectorAll("#payments button").forEach(function(item){item.classList.remove("active")});button.classList.add("active");state.pay=button.textContent.trim();renderSummary()});
+      $("openPay").addEventListener("click",function(){if(!state.rm||!state.pay){alert("请先选择金额和支付方式");return}state.orderNo="MCJ-RC-"+Date.now().toString(36).toUpperCase();$("modalRm").textContent=money(state.rm);$("modalCoins").textContent=Math.floor(state.catFood)+" 猫粮";$("modalPay").textContent=state.pay;$("modalOrder").textContent=state.orderNo;$("successMsg").style.display="none";$("submitPay").style.display="block";$("payModal").classList.add("open")});
+      $("closePay").addEventListener("click",function(){$("payModal").classList.remove("open")});$("payModal").addEventListener("click",function(event){if(event.target.id==="payModal")$("payModal").classList.remove("open")});document.addEventListener("keydown",function(event){if(event.key==="Escape")$("payModal").classList.remove("open")});
+      $("submitPay").addEventListener("click",function(){var user=currentUser()||{};var entry={id:state.orderNo,recharge_no:state.orderNo,user_id:user.id||user.user_id||user.customer_id||"",customer_id:user.customer_id||user.id||user.user_id||"",boss_id:user.boss_id||user.bossId||"",amount:state.rm,rm:state.rm,catFoodAmount:state.catFood,coins:state.catFood,payment_method:state.pay,status:"待审核",type:"猫粮充值",proof_name:($("proofFile").files&&$("proofFile").files[0]&&$("proofFile").files[0].name)||"",created_at:nowText()};saveRecharge(entry);$("submitPay").style.display="none";$("successMsg").style.display="block";renderRecords();renderOverview()});
+    })();
   </script>
-<script src="src/meow-butler.js"></script></body>
+  <script src="src/meow-butler.js"></script>
+</body>
 </html>
