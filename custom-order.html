@@ -25,9 +25,9 @@
     <section class="neon-card" style="padding:22px">
       <form class="custom-form" id="customOrderForm">
         <label>需求标题<input name="title" required placeholder="例如：Valorant 双排上分"></label>
-        <label>游戏或服务<input name="game" required placeholder="游戏 / 陪聊 / 护航"></label>
+        <label>游戏或服务<input name="game" list="customGameOptions" required placeholder="游戏 / 陪聊 / 护航"><datalist id="customGameOptions"></datalist></label>
         <label>游戏ID<input name="game_id" required placeholder="请输入您的游戏ID（方便陪玩添加好友或组队）"></label>
-        <label>陪玩等级<select name="companion_level" required>
+        <label>陪玩等级<select name="companion_level" id="customLevelSelect" required>
           <option value="1" selected>Lv.1 萌喵（RM20–30）</option>
           <option value="2">Lv.2 灵喵（RM30–40）</option>
           <option value="3">Lv.3 猎喵（RM40–45）</option>
@@ -80,6 +80,30 @@
         db.orders.unshift(Object.assign(data,{id:'CO-'+Date.now(),order_no:'MCJ-CUSTOM-'+Date.now(),order_type:'custom',status:'quote_pending',boss_id:u.id||'',boss_nickname:u.name||'老板',created_at:new Date().toISOString()}));
         write(db);state.hidden=false;state.textContent='自定义需求已提交，等待客服报价。';form.reset();btn.disabled=false;btn.textContent='提交给客服报价';
       });
+    })();
+  </script>
+  <script src="src/platform-taxonomy.js"></script>
+  <script>
+    (function(){
+      function fillTaxonomyOptions(){
+        if(!window.MCJTaxonomy)return;
+        var games=window.MCJTaxonomy.items("games");
+        var datalist=document.getElementById("customGameOptions");
+        if(datalist&&games.length){datalist.innerHTML=games.map(function(item){return '<option value="'+String(window.MCJTaxonomy.label(item)||'').replace(/"/g,'&quot;')+'"></option>';}).join('');}
+        var levels=window.MCJTaxonomy.items("companion_levels");
+        var select=document.getElementById("customLevelSelect");
+        if(select&&levels.length){
+          var current=select.value;
+          select.innerHTML=levels.map(function(item,index){
+            var id=window.MCJTaxonomy.levelId(item)||String(index+1);
+            var num=String(id).match(/\d+/);var value=num?num[0]:id;
+            var price=(item.minPrice||item.maxPrice)?'（RM'+(item.minPrice||0)+'–'+(item.maxPlus?'100+':(item.maxPrice||''))+'）':'';
+            return '<option value="'+value+'">'+[item.code,item.name].filter(Boolean).join(' ') + price + '</option>';
+          }).join('');
+          select.value=Array.prototype.some.call(select.options,function(opt){return opt.value===current})?current:select.options[0].value;
+        }
+      }
+      if(window.MCJTaxonomy&&window.MCJTaxonomy.load){window.MCJTaxonomy.load().then(fillTaxonomyOptions).catch(fillTaxonomyOptions);} else {fillTaxonomyOptions();}
     })();
   </script>
 </body>
