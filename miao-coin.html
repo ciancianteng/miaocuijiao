@@ -48,7 +48,7 @@
           <p class="eyebrow">RECHARGE</p>
           <h2>选择充值套餐</h2>
           <div class="packages" id="packages"></div>
-          <div class="empty-state" id="packageEmpty" hidden>后台暂未配置充值套餐，可使用自定义金额提交充值申请。</div>
+          <div class="empty-state" id="packageEmpty" hidden>后台暂未配置充值套餐，暂时不能提交猫粮充值申请。</div>
           <label class="custom"><span>自定义充值金额</span><div><b>RM</b><input id="customAmount" type="number" min="1" step="0.01" placeholder="输入金额"></div></label>
         </div>
 
@@ -60,7 +60,7 @@
           <strong>支付方式</strong>
           <div class="payments" id="payments"></div>
           <div class="empty-state" id="paymentEmpty" hidden>后台暂未启用支付方式，暂时不能提交充值申请。</div>
-          <button class="pay-now" id="openPay" disabled>提交充值申请</button>
+          <button class="pay-now" id="openPay" disabled hidden data-audit-hidden="recharge-submit">提交充值申请</button><div class="empty-state" id="rechargeUnavailable">猫粮充值暂未开放线上提交，请联系在线客服处理。</div>
         </aside>
       </section>
 
@@ -85,7 +85,7 @@
         <div><span>申请编号</span><b id="modalOrder">-</b></div>
       </div>
       <label class="proof">付款凭证（如后台要求）<input id="proofFile" type="file" accept="image/*"></label>
-      <button class="submit-pay" id="submitPay" type="button">提交后台审核</button>
+      <button class="submit-pay" id="submitPay" type="button" hidden data-audit-hidden="recharge-modal-submit">提交后台审核</button>
       <div class="ok" id="successMsg">充值申请已提交后台审核，审核通过后猫粮到账。</div>
     </div>
   </div>
@@ -110,22 +110,22 @@
       function simpleIcon(type){var svg={spent:'<svg viewBox="0 0 32 32" fill="none"><path d="M8 6h16v20H8z" stroke="#fff7fb" stroke-width="2"/><path d="M12 12h8M12 17h6M12 22h8" stroke="#ffd6e8" stroke-width="2" stroke-linecap="round"/></svg>',vip:'<svg viewBox="0 0 32 32" fill="none"><path d="M6 12l6 5 4-8 4 8 6-5-2 12H8z" stroke="#fff7fb" stroke-width="2.2" stroke-linejoin="round"/><path d="M10 26h12" stroke="#ffd6e8" stroke-width="2" stroke-linecap="round"/></svg>',order:'<svg viewBox="0 0 32 32" fill="none"><path d="M9 5h14l3 5v17H6V10z" stroke="#fff7fb" stroke-width="2"/><path d="M10 12h12M10 17h10M10 22h7" stroke="#ffd6e8" stroke-width="2" stroke-linecap="round"/></svg>'};return svg[type]||catFoodIcon(32)}
       function userWallet(userIds){return arrays("wallets").concat(arrays("customerWallets"),arrays("balances")).find(function(row){return belongs(row,userIds)})||{}}
       function ordersFor(userIds){return arrays("orders").filter(function(row){return belongs(row,userIds)})}
-      function rechargesFor(userIds){var rows=arrays("recharges").concat(arrays("payment_transactions"),arrays("paymentTransactions"),arrays("walletTransactions")).filter(function(row){var type=String(row.type||row.flowType||row.transaction_type||row.category||"");return !userIds.length?false:belongs(row,userIds)&&(/recharge|充值|catfood|猫粮/i.test(type)||row.recharge_no||row.payment_method)});var map={};rows.forEach(function(row){map[row.id||row.recharge_no||row.order_no||JSON.stringify(row)]=row});return Object.keys(map).map(function(key){return map[key]}).sort(function(a,b){return String(b.created_at||b.createdAt||b.time||"").localeCompare(String(a.created_at||a.createdAt||a.time||""))})}
+      function rechargesFor(userIds){return []}
       function packages(){var rows=arrays("catFoodPackages").concat(arrays("rechargePackages"),arrays("paymentPackages"));var map={};rows.filter(function(row){return row&&row.enabled!==false&&row.status!=="disabled"&&row.status!=="下架"}).forEach(function(row){var rm=num(row.rm||row.amount||row.price||row.paymentAmount);if(rm<=0)return;var food=num(row.catFood||row.cat_food||row.coins||row.credits||row.arrivalAmount||rm);var id=row.id||rm+":"+food;map[id]={id:id,tag:row.tag||row.name||row.title||"充值套餐",rm:rm,catFood:food};});return Object.keys(map).map(function(id){return map[id]}).sort(function(a,b){return a.rm-b.rm})}
       function channels(){var rows=arrays("payment_channels").concat(arrays("paymentChannels"),arrays("paymentMethods"));var map={};rows.filter(function(row){return row&&row.enabled!==false&&row.frontendVisible!==false&&row.status!=="disabled"&&row.status!=="停用"}).forEach(function(row){var name=row.frontendName||row.display_name||row.name||row.title||row.channelName;if(name)map[name]=name});return Object.keys(map)}
       function renderOverview(){var user=currentUser();var userIds=ids(user);var wallet=userWallet(userIds);var orderRows=ordersFor(userIds);var balance=num(wallet.available_balance||wallet.availableBalance||wallet.catFoodBalance||wallet.balance||wallet.credits||(user&&user.balance));var totalSpent=num(wallet.total_spent||wallet.totalSpent||(user&&user.totalSpent));if(!totalSpent&&orderRows.length){totalSpent=orderRows.reduce(function(sum,row){return sum+num(row.actual_paid||row.actualPaid||row.paid_amount||row.amount||row.total)},0)}var vip=(wallet.vip||wallet.vipLevel||(user&&(user.vip||user.vipLevel)))||"VIP0";if(!/^VIP/i.test(String(vip)))vip="VIP"+vip;$("spentIcon").innerHTML=simpleIcon("spent");$("catFoodIcon").innerHTML=catFoodIcon(32);$("vipIcon").innerHTML=simpleIcon("vip");$("orderIcon").innerHTML=simpleIcon("order");$("totalSpent").textContent=money(totalSpent);$("balance").textContent=String(Math.floor(balance));$("vipLevel").textContent=vip||"VIP0";$("orderCount").textContent=String(orderRows.length||0)}
       function renderPackages(){var list=packages();$("packageEmpty").hidden=list.length>0;$("packages").innerHTML=list.map(function(pkg,index){return '<button '+(index===0?'class="active"':'')+' data-rm="'+pkg.rm+'" data-food="'+pkg.catFood+'"><span class="package-title">'+catFoodIcon(16)+esc(pkg.tag)+'</span><strong>'+money(pkg.rm)+'</strong><span>'+catFoodIcon(16)+Math.floor(pkg.catFood)+' 猫粮</span></button>'}).join("");if(list.length){state.rm=list[0].rm;state.catFood=list[0].catFood}}
       function renderChannels(){var list=channels();$("paymentEmpty").hidden=list.length>0;$("payments").innerHTML=list.map(function(name,index){return '<button '+(index===0?'class="active"':'')+' type="button">'+esc(name)+'</button>'}).join("");state.pay=list[0]||""}
       function renderRecords(){var rows=rechargesFor(ids(currentUser()));$("recordEmpty").hidden=rows.length>0;$("records").innerHTML=rows.map(function(row){var status=row.statusLabel||row.status||"待审核";var ok=/success|paid|approved|成功|已到账|已支付/.test(String(status));var amount=num(row.amount||row.rm||row.paymentAmount||row.pay_amount);var food=num(row.catFoodAmount||row.catFood||row.cat_food||row.coins||row.credits||amount);return '<div class="record '+(ok?'success':'')+'"><span>'+esc(row.created_at||row.createdAt||row.time||"-")+'</span><b>'+money(amount)+'</b><strong>'+catFoodIcon(16)+Math.floor(food)+' 猫粮</strong><em>'+esc(status)+'</em></div>'}).join("")}
-      function renderSummary(){var valid=state.rm>0&&!!state.pay;$("payAmount").textContent=money(state.rm);$("coinAmount").innerHTML=catFoodIcon(16)+Math.floor(state.catFood||0)+" 猫粮";$("openPay").disabled=!valid}
-      function saveRecharge(entry){[REAL_KEY,PLATFORM_KEY].forEach(function(key){var db=read(key);db.recharges=Array.isArray(db.recharges)?db.recharges:[];db.recharges=db.recharges.filter(function(row){return row.id!==entry.id});db.recharges.unshift(entry);write(key,db)});window.dispatchEvent(new CustomEvent("mcj:platform-data-updated"));window.dispatchEvent(new CustomEvent("mcj:data-updated"))}
+      function renderSummary(){$("payAmount").textContent=money(state.rm);$("coinAmount").innerHTML=catFoodIcon(16)+Math.floor(state.catFood||0)+" 猫粮";$("openPay").disabled=true;$("openPay").hidden=true}
+      function saveRecharge(entry){return false}
       renderOverview();renderPackages();renderChannels();renderRecords();renderSummary();
       $("packages").addEventListener("click",function(event){var button=event.target.closest("button");if(!button)return;document.querySelectorAll("#packages button").forEach(function(item){item.classList.remove("active")});button.classList.add("active");$("customAmount").value="";state.rm=num(button.dataset.rm);state.catFood=num(button.dataset.food);renderSummary()});
       $("customAmount").addEventListener("input",function(event){var value=Math.max(0,num(event.target.value));document.querySelectorAll("#packages button").forEach(function(item){item.classList.remove("active")});state.rm=value;state.catFood=value;renderSummary()});
       $("payments").addEventListener("click",function(event){var button=event.target.closest("button");if(!button)return;document.querySelectorAll("#payments button").forEach(function(item){item.classList.remove("active")});button.classList.add("active");state.pay=button.textContent.trim();renderSummary()});
       $("openPay").addEventListener("click",function(){if(!state.rm||!state.pay){alert("请先选择金额和支付方式");return}state.orderNo="MCJ-RC-"+Date.now().toString(36).toUpperCase();$("modalRm").textContent=money(state.rm);$("modalCoins").textContent=Math.floor(state.catFood)+" 猫粮";$("modalPay").textContent=state.pay;$("modalOrder").textContent=state.orderNo;$("successMsg").style.display="none";$("submitPay").style.display="block";$("payModal").classList.add("open")});
       $("closePay").addEventListener("click",function(){$("payModal").classList.remove("open")});$("payModal").addEventListener("click",function(event){if(event.target.id==="payModal")$("payModal").classList.remove("open")});document.addEventListener("keydown",function(event){if(event.key==="Escape")$("payModal").classList.remove("open")});
-      $("submitPay").addEventListener("click",function(){var user=currentUser()||{};var entry={id:state.orderNo,recharge_no:state.orderNo,user_id:user.id||user.user_id||user.customer_id||"",customer_id:user.customer_id||user.id||user.user_id||"",boss_id:user.boss_id||user.bossId||"",amount:state.rm,rm:state.rm,catFoodAmount:state.catFood,coins:state.catFood,payment_method:state.pay,status:"待审核",type:"猫粮充值",proof_name:($("proofFile").files&&$("proofFile").files[0]&&$("proofFile").files[0].name)||"",created_at:nowText()};saveRecharge(entry);$("submitPay").style.display="none";$("successMsg").style.display="block";renderRecords();renderOverview()});
+      $("submitPay").addEventListener("click",function(){return false});
     })();
   </script>
   <script src="src/meow-butler.js"></script>
