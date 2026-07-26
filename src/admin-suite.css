@@ -1345,3 +1345,22 @@ body[data-admin-section="bosses"] .topbar-actions .admin-profile-menu {
 .home-preview-frame.show-safe .mcj-home-hero.preview-banner::before{content:""!important;display:block!important;position:absolute;inset:12% 10%;z-index:8;border:1px dashed rgba(255,220,235,.78);border-radius:14px;pointer-events:none;background:transparent!important}
 .home-preview-frame.show-safe .mcj-home-hero.preview-banner::after{content:"安全区域"!important;display:block!important;position:absolute;left:10%;top:calc(12% - 22px);z-index:9;color:#ffdceb;font-size:12px;font-weight:900;pointer-events:none;background:transparent!important}
 .home-preview-frame.mobile .mcj-home-hero.preview-banner{height:260px!important}
+
+/* home-entry-management-v1 */
+.home-entry-admin{display:grid;gap:16px}
+.home-entry-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;padding:16px;border:1px solid rgba(255,255,255,.075);border-radius:16px;background:rgba(255,255,255,.024)}
+.home-entry-head h2{margin:0 0 6px;color:#fff;font-size:20px}
+.home-entry-head p{margin:0;color:var(--muted);font-size:13px;line-height:1.6}
+.home-entry-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.home-entry-card{display:grid;grid-template-columns:64px minmax(0,1fr) auto;align-items:center;gap:14px;padding:14px;border:1px solid rgba(255,255,255,.085);border-radius:16px;background:rgba(255,255,255,.025)}
+.home-entry-card:hover{border-color:rgba(255,145,195,.22);background:rgba(255,255,255,.038)}
+.home-entry-preview{width:64px;height:50px;border-radius:14px;border:1px solid rgba(255,255,255,.09);background:rgba(0,0,0,.22);display:grid;place-items:center;overflow:hidden;color:rgba(255,214,232,.78);font-size:13px;font-weight:800}
+.home-entry-preview img,.home-channel-preview img{width:100%;height:100%;object-fit:cover;display:block}
+.home-entry-info{min-width:0}.home-entry-info strong{display:block;color:#fff;font-size:15px}.home-entry-info p{margin:5px 0 0;color:rgba(255,255,255,.62);font-size:13px;line-height:1.45}.home-entry-info small{display:block;margin-top:6px;color:rgba(255,255,255,.42);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.home-entry-meta{display:grid;justify-items:end;gap:10px}.status.muted{color:rgba(255,255,255,.62);background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.1)}
+.home-entry-drawer{border:1px solid rgba(255,145,195,.16);border-radius:18px;background:rgba(255,255,255,.025);padding:16px}
+.home-entry-editor{display:grid;gap:16px}.home-entry-editor-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start}.home-entry-editor-head h3{margin:0 0 6px;color:#fff}.home-entry-editor-head p{margin:0;color:var(--muted);font-size:13px}
+.home-entry-form,.home-channel-card{display:grid;gap:14px}.home-entry-form .form-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.home-entry-form label,.home-channel-card label{display:grid;gap:7px;color:rgba(255,255,255,.68);font-size:12px;font-weight:700}.home-entry-form input,.home-entry-form select,.home-channel-card input,.home-channel-card select{width:100%;min-height:40px;border-radius:12px;border:1px solid rgba(255,255,255,.09);background:rgba(255,255,255,.035);color:#fff;padding:9px 11px;outline:none}.home-entry-form input:focus,.home-entry-form select:focus,.home-channel-card input:focus,.home-channel-card select:focus{border-color:rgba(255,145,195,.38)}
+.home-entry-special{display:grid;gap:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,.08)}.home-entry-special h3{margin:0;color:#fff;font-size:16px}.home-entry-special p{margin:0;color:var(--muted);font-size:13px;line-height:1.55}
+.home-entry-channel-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.home-channel-card{padding:12px;border:1px solid rgba(255,255,255,.08);border-radius:16px;background:rgba(0,0,0,.15)}.home-channel-preview{height:92px;border-radius:14px;border:1px solid rgba(255,255,255,.09);background:rgba(0,0,0,.24);display:grid;place-items:center;color:rgba(255,255,255,.5);overflow:hidden}
+@media(max-width:1100px){.home-entry-grid,.home-entry-channel-grid{grid-template-columns:1fr}.home-entry-form .form-grid{grid-template-columns:1fr}}

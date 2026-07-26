@@ -1,4 +1,4 @@
-﻿(function () {
+(function () {
   var DB_KEY = "mcjRealDB.v1";
   var EMPTY_DB = {
     siteSettings: { bannerImage: "", noticeText: "", customerServiceUrl: "", discordInviteUrl: "" },
@@ -119,20 +119,61 @@
     window.mcjOfficialAdIndex = 0;
     if (typeof window.showOfficialAd === "function") window.showOfficialAd(0);
   }
-  function renderHomepageButtons() {
-    var grid = document.querySelector(".quick-entry-grid");
-    if (!grid) return;
-    Array.prototype.forEach.call(grid.querySelectorAll("[data-managed-home-button]"), function (node) { node.remove(); });
-    return;
-    var buttons = sorted(list("homepageButtons"));
-    buttons.forEach(function (button) {
-      var a = document.createElement("a");
-      a.className = "neon-card quick-entry-card";
-      a.href = button.href || "#";
-      a.setAttribute("data-managed-home-button", button.id || button.name || "");
-      a.innerHTML = "<i>" + esc(button.icon || "✦") + "</i><div><strong>" + esc(button.name || "未命名") + "</strong><span>" + esc(button.subtitle || "") + "</span></div>";
-      grid.appendChild(a);
+  var homeEntryFetchStarted = false;
+  function homeEntryDefaults() {
+    return [
+      { slug: "custom-order", name: "自定义订单", description: "填写需求，客服匹配陪玩", href: "custom-order.html", sort: 1, enabled: true, inGrid: true },
+      { slug: "more-gameplays", name: "更多玩法", description: "护航、跑刀、代肝、趣味单", href: "more-gameplays.html", sort: 2, enabled: true, inGrid: true },
+      { slug: "companion-hall", name: "陪玩大厅", description: "浏览已上架陪玩", href: "companion-center.html", sort: 3, enabled: true, inGrid: true },
+      { slug: "team-lobby", name: "组队大厅", description: "进入组队社区", href: "team-lobby.html", sort: 4, enabled: true, inGrid: true },
+      { slug: "miao-coin", name: "猫粮充值", description: "查看猫粮充值与猫粮余额", href: "miao-coin.html", sort: 5, enabled: true, inGrid: true },
+      { slug: "companion-apply", name: "申请成为陪玩", description: "提交资料，成为认证陪玩", href: "companion-apply.html", sort: 6, enabled: true, inGrid: false }
+    ];
+  }
+  function normalizeHomeEntry(row) {
+    var data = row && row.data ? row.data : (row && row.draft ? row.draft : row || {});
+    var slug = String(data.slug || row.slug || "").trim();
+    var base = homeEntryDefaults().find(function (item) { return item.slug === slug; }) || {};
+    return Object.assign({}, base, data, {
+      slug: slug || base.slug || "",
+      name: data.name || row.title || base.name || "未命名入口",
+      description: data.description || data.subtitle || base.description || "",
+      href: data.href || data.link || base.href || "#",
+      sort: Number(data.sort || row.sort || base.sort || 100),
+      enabled: row ? row.enabled !== false && data.enabled !== false && data.visible !== false : base.enabled !== false
     });
+  }
+  function mergeHomeEntries(rows) {
+    var mapped = {};
+    (rows || []).forEach(function (row) { var item = normalizeHomeEntry(row); if (item.slug) mapped[item.slug] = item; });
+    return homeEntryDefaults().map(function (def) { return mapped[def.slug] || def; }).sort(function (a, b) { return Number(a.sort || 0) - Number(b.sort || 0); });
+  }
+  function applyHomeEntries(entries) {
+    var grid = document.querySelector(".quick-entry-grid");
+    if (grid) {
+      var html = entries.filter(function (entry) { return entry.enabled !== false && entry.inGrid !== false; }).map(function (entry) {
+        return '<a class="neon-card quick-entry-card" href="' + esc(entry.href || "#") + '" data-home-entry="' + esc(entry.slug) + '"><div><strong>' + esc(entry.name || "未命名入口") + '</strong><span>' + esc(entry.description || "") + '</span></div></a>';
+      }).join("");
+      if (html) grid.innerHTML = html;
+    }
+    var applyButton = document.querySelector("[data-companion-apply-guide]");
+    var applyEntry = entries.find(function (entry) { return entry.slug === "companion-apply"; });
+    if (applyButton && applyEntry) {
+      applyButton.hidden = applyEntry.enabled === false;
+      applyButton.href = applyEntry.href || "companion-apply.html";
+      applyButton.textContent = applyEntry.name || "申请成为陪玩";
+    }
+  }
+  function renderHomepageButtons() {
+    if (homeEntryFetchStarted) return;
+    homeEntryFetchStarted = true;
+    fetch("/api/platform/content?types=homepage_entries", { headers: { Accept: "application/json" }, cache: "no-store" })
+      .then(function (res) { return res.json().catch(function () { return { ok: false, byType: {} }; }); })
+      .then(function (result) {
+        var rows = result.byType && result.byType.homepage_entries ? result.byType.homepage_entries : [];
+        if (rows.length) applyHomeEntries(mergeHomeEntries(rows));
+      })
+      .catch(function (err) { console.error("[首页入口] 读取后台配置失败", err); });
   }
   function renderHomeManagedData() {
     var db = readDB();
