@@ -598,10 +598,16 @@
       var fieldHtml=isLong?'<textarea name="'+esc(field)+'">'+esc(value)+'</textarea>':'<input name="'+esc(field)+'" value="'+esc(value)+'">';
       return '<label><span>'+esc(contentFieldLabel(field))+'</span>'+fieldHtml+(upload?'<input class="content-file" type="file" data-content-upload="'+esc(field)+'" accept="image/*,audio/*,application/pdf"><small>上传后会写入真实文件 URL</small>':'')+'</label>';
     }).join('');
+    var directPublish=cfg.type==='banners'||cfg.type==='announcements';
+    var currentStatus=item.status||(directPublish?'已发布':'草稿');
+    var statusOptions=['草稿','待发布','已发布','已下架','已停用'].map(function(status){return '<option value="'+esc(status)+'" '+(String(currentStatus)===status?'selected':'')+'>'+esc(status)+'</option>';}).join('');
+    var currentEnabled=item.enabled!==false;
+    var enabledOptions='<option value="true" '+(currentEnabled?'selected':'')+'>启用</option><option value="false" '+(!currentEnabled?'selected':'')+'>停用</option>';
+    var submitLabel=directPublish?'保存并应用':'保存草稿';
     return '<form class="platform-content-form" data-content-form="'+esc(cfg.type)+'" data-content-id="'+esc(item.id||'')+'">'+
-      '<div class="form-grid">'+inputs+'<label><span>状态</span><select name="status"><option>草稿</option><option>待发布</option><option>已发布</option><option>已下架</option><option>已停用</option></select></label><label><span>启用</span><select name="enabled"><option value="true">启用</option><option value="false">停用</option></select></label></div>'+
+      '<div class="form-grid">'+inputs+'<label><span>状态</span><select name="status">'+statusOptions+'</select></label><label><span>启用</span><select name="enabled">'+enabledOptions+'</select></label></div>'+
       '<div class="content-preview-box">'+renderContentPreview(cfg,draft)+'</div>'+
-      '<div class="form-actions"><button class="btn primary" type="submit">保存草稿</button><button class="btn" data-content-action="preview" data-content-type="'+esc(cfg.type)+'" type="button">预览</button>'+(item.id?'<button class="btn primary" data-content-action="publish" data-content-type="'+esc(cfg.type)+'" data-content-id="'+esc(item.id)+'" type="button">发布</button>':'')+'<button class="btn" data-content-action="cancel" data-content-type="'+esc(cfg.type)+'" type="button">取消</button></div>'+
+      '<div class="form-actions"><button class="btn primary" type="submit">'+submitLabel+'</button><button class="btn" data-content-action="preview" data-content-type="'+esc(cfg.type)+'" type="button">预览</button>'+(item.id?'<button class="btn primary" data-content-action="publish" data-content-type="'+esc(cfg.type)+'" data-content-id="'+esc(item.id)+'" type="button">发布</button>':'')+'<button class="btn" data-content-action="cancel" data-content-type="'+esc(cfg.type)+'" type="button">取消</button></div>'+
     '</form>';
   }
   function renderContentPreview(cfg,draft){
@@ -612,7 +618,7 @@
   function renderPlatformContentManagers(){
     Object.keys(platformContentModules).forEach(function(key){loadPlatformContent(platformContentModules[key]);});
   }
-  function isLocalPlatformContentType(type){return type==='banners'||type==='team_lobby_channels'}
+  function isLocalPlatformContentType(type){return type==='team_lobby_channels'}
   function localPlatformContentKey(type){return 'mcj_platform_content_'+type;}
   function defaultLocalPlatformContent(type){
     if(type==='team_lobby_channels'){
@@ -722,7 +728,7 @@
     }
     var reader=new FileReader();
     reader.onload=function(){
-      fetch('/api/admin/platform-content-upload',{method:'POST',headers:{'Content-Type':'application/json','x-mcj-admin-role':getRole()},body:JSON.stringify({type:type,fileName:file.name,mimeType:file.type,base64:reader.result})}).then(function(res){return res.text().then(function(text){var body={};try{body=text?JSON.parse(text):{}}catch(parseErr){console.error('[Banner 管理] 上传接口非 JSON',{status:res.status,body:text,error:parseErr});throw new Error('上传接口返回非 JSON：HTTP '+res.status)}if(!res.ok||body.ok===false)throw new Error(body.message||('HTTP '+res.status));return body;})}).then(function(result){applyUploadUrl(result.url,false);}).catch(function(err){console.error('[Banner 管理] 上传接口错误',{endpoint:'/api/admin/platform-content-upload',type:type,file:{name:file.name,size:file.size,mimeType:file.type},error:err});if(isLocalPlatformContentType(type)&&/^image\//.test(file.type)){applyUploadUrl(reader.result,true);return;}alert('上传失败：'+err.message+'。');});
+      fetch('/api/admin/platform-content-upload',{method:'POST',headers:{'Content-Type':'application/json','x-mcj-admin-role':getRole()},body:JSON.stringify({type:type,fileName:file.name,mimeType:file.type,base64:reader.result})}).then(function(res){return res.text().then(function(text){var body={};try{body=text?JSON.parse(text):{}}catch(parseErr){console.error('[Banner 管理] 上传接口非 JSON',{status:res.status,body:text,error:parseErr});throw new Error('上传接口返回非 JSON：HTTP '+res.status)}if(!res.ok||body.ok===false)throw new Error(body.message||('HTTP '+res.status));return body;})}).then(function(result){applyUploadUrl(result.url,false);}).catch(function(err){console.error('[Banner 管理] 上传接口错误',{endpoint:'/api/admin/platform-content-upload',type:type,file:{name:file.name,size:file.size,mimeType:file.type},error:err});if(type!=='banners'&&isLocalPlatformContentType(type)&&/^image\//.test(file.type)){applyUploadUrl(reader.result,true);return;}alert('上传失败：'+err.message+'。');});
     };
     reader.readAsDataURL(file);
   }
