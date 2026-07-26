@@ -1,4 +1,4 @@
-﻿(function () {
+(function () {
   var DB_KEY = "mcjRealDB.v1";
   var PLATFORM_KEY = "mcjPlatformData.v1";
   var DRAFT_KEY = "mcjCompanionApplicationDraft.v1";
@@ -740,10 +740,37 @@
       entry.innerHTML = '<i>🐱</i><div><strong>陪玩中心</strong><span>进入工作台，开始接单</span></div>';
     }
   }
+  function applyRemoteTaxonomy() {
+    var taxonomy = window.MCJTaxonomy;
+    if (!taxonomy || !taxonomy.items) return;
+    var games = taxonomy.items("games").map(taxonomy.label).filter(Boolean);
+    var services = taxonomy.items("service_types").map(taxonomy.label).filter(Boolean);
+    var tags = taxonomy.items("companion_tags");
+    if (games.length) tagGroups.mainGames = { "主玩游戏": games };
+    if (services.length) tagGroups.modes = { "可接模式": services };
+    if (tags.length) {
+      var grouped = {};
+      tags.forEach(function (item) {
+        var group = item.group || "平台标签";
+        var name = taxonomy.label(item);
+        if (!name) return;
+        grouped[group] = grouped[group] || [];
+        if (grouped[group].indexOf(name) < 0) grouped[group].push(name);
+      });
+      if (Object.keys(grouped).length) tagGroups.personalTags = grouped;
+    }
+  }
   function init() {
     ensureDefaultApplicationConfig();
     initHomeEntry();
-    if (document.getElementById("companionApplyRoot")) { render(readDraft().step || 0); bind(); }
+    var start = function () {
+      if (document.getElementById("companionApplyRoot")) { render(readDraft().step || 0); bind(); }
+    };
+    if (window.MCJTaxonomy && window.MCJTaxonomy.load) {
+      window.MCJTaxonomy.load().then(function () { applyRemoteTaxonomy(); start(); }).catch(start);
+    } else {
+      start();
+    }
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
   else init();
