@@ -3,6 +3,13 @@
 
   var PER_PAGE = 12;
   var state = { page: 1, items: [] };
+  var LEVEL_LABELS = {
+    lv1: "Lv.1 萌喵",
+    lv2: "Lv.2 灵喵",
+    lv3: "Lv.3 猎喵",
+    lv4: "Lv.4 喵神",
+    lv5: "Lv.5 喵皇"
+  };
 
   function esc(value) {
     return String(value || "").replace(/[&<>"']/g, function (ch) {
@@ -14,6 +21,30 @@
     if (window.MCJCompanionLevels) return window.MCJCompanionLevels.priceNumber(value);
     var match = String(value || "").match(/\d+(?:\.\d+)?/);
     return match ? Number(match[0]) : 0;
+  }
+
+  function levelIdFrom(value) {
+    var text = String(value || "").toLowerCase();
+    var match = text.match(/lv\.?\s*([1-5])|([1-5])/);
+    if (match) return "lv" + (match[1] || match[2]);
+    return "lv1";
+  }
+
+  function levelLabel(item) {
+    var id = item.levelId || levelIdFrom(item.level || item.rank || item.levelName);
+    return LEVEL_LABELS[id] || LEVEL_LABELS.lv1;
+  }
+
+  function formatHourlyPrice(value) {
+    return "RM" + priceNumber(value) + "/小时";
+  }
+
+  function normalizeStatus(value) {
+    var text = String(value || "离线").trim();
+    if (/online|可接单|在线/i.test(text)) return "在线";
+    if (/busy|忙/i.test(text)) return "忙碌";
+    if (/offline|离线/i.test(text)) return "离线";
+    return text || "离线";
   }
 
   function readItems() {
@@ -28,23 +59,22 @@
     var levelApi = window.MCJCompanionLevels;
     return dataItems.map(function (item) {
       var normalized = levelApi ? levelApi.normalizeCompanion(item) : item;
+      var levelId = normalized.levelId || levelIdFrom(normalized.level || normalized.rank);
       var priceValue = normalized.priceValue || priceNumber(normalized.price || normalized.servicePrice || normalized.hourlyPrice);
-      var priceDisplay = normalized.priceDisplay || ("RM" + priceValue + "/小时");
-      var levelLabel = normalized.levelLabel || normalized.level || "Lv.1 萌喵";
       return {
         id: normalized.uid || normalized.companionId || normalized.id || normalized.name || "",
         name: normalized.name || normalized.nickname || "未命名陪玩",
         game: normalized.game || normalized.mainGame || "游戏",
-        price: priceDisplay,
+        price: formatHourlyPrice(priceValue || normalized.price || normalized.servicePrice || normalized.hourlyPrice),
         priceValue: priceValue,
         rating: normalized.rating || normalized.score || "0",
-        level: levelLabel,
-        levelId: normalized.levelId || "lv1",
-        levelNumber: normalized.levelNumber || 1,
+        level: LEVEL_LABELS[levelId] || levelLabel(normalized),
+        levelId: levelId,
+        levelNumber: normalized.levelNumber || Number(String(levelId).replace("lv", "")) || 1,
         gender: normalized.gender || "保密",
-        status: normalized.status || normalized.onlineStatus || "离线",
+        status: normalizeStatus(normalized.status || normalized.onlineStatus),
         image: normalized.cover || normalized.cardCover || normalized.avatar || normalized.image || "assets/meow-cuijiao-brand.jpg",
-        tags: Array.isArray(normalized.tags) ? normalized.tags : String(normalized.tags || normalized.serviceTags || "").split(/[，,]/).filter(Boolean),
+        tags: Array.isArray(normalized.tags) ? normalized.tags : String(normalized.tags || normalized.serviceTags || "").split(/[,，、\s]+/).filter(Boolean),
         desc: normalized.desc || normalized.description || ""
       };
     });
@@ -64,12 +94,12 @@
     fillSelect("typeFilter", Array.from(new Set(items.map(function (x) { return x.game; }))), "全部类型");
     fillSelect("gameFilter", Array.from(new Set(items.map(function (x) { return x.game; }))), "全部游戏");
     var levelEl = document.getElementById("levelFilter");
-    if (levelEl && window.MCJCompanionLevels) {
+    if (levelEl) {
       var current = levelEl.value;
-      levelEl.innerHTML = window.MCJCompanionLevels.selectOptions("全部等级");
+      levelEl.innerHTML = '<option value="">全部等级</option>' + Object.keys(LEVEL_LABELS).map(function (id) {
+        return '<option value="' + id + '">' + LEVEL_LABELS[id] + "</option>";
+      }).join("");
       levelEl.value = current;
-    } else {
-      fillSelect("levelFilter", Array.from(new Set(items.map(function (x) { return x.level; }))), "全部等级");
     }
   }
 
@@ -116,15 +146,18 @@
   }
 
   function card(item) {
+    var tags = item.tags.slice(0, 3).map(function (tag) { return '<span>' + esc(tag) + '</span>'; }).join("");
+    var offlineClass = item.status === "离线" ? " is-offline" : "";
     return '<article class="card player-card" data-player data-name="' + esc(item.name) + '" data-game="' + esc(item.game) + '" data-tags="' + esc(item.tags.join(",")) + '" data-price="' + esc(item.priceValue) + '" data-online="' + esc(item.status) + '" data-score="' + esc(item.rating) + '" data-gender="' + esc(item.gender) + '">' +
-      '<img src="' + esc(item.image) + '" alt="' + esc(item.name) + '" style="width:100%;aspect-ratio:16/10;object-fit:cover;border-radius:8px">' +
-      '<div class="row companion-card-head"><h3>' + esc(item.name) + '</h3><span class="price">' + esc(item.price) + '</span></div>' +
-      '<p class="muted companion-id">陪玩 ID：' + esc(item.id || "未生成") + '</p>' +
-      '<div class="companion-meta"><span>' + esc(item.level) + '</span><span>' + esc(item.game) + '</span><span>' + esc(item.status) + '</span></div>' +
-      (item.desc ? '<p class="muted">' + esc(item.desc) + '</p>' : '') +
-      '<div class="tag-row">' + item.tags.map(function (tag) { return '<span>' + esc(tag) + '</span>'; }).join("") + '</div>' +
-      '<button class="btn primary" data-book type="button">立即下单</button>' +
-      '</article>';
+      '<div class="companion-card-media"><img src="' + esc(item.image) + '" alt="' + esc(item.name) + '"><span class="companion-online-badge' + offlineClass + '">' + esc(item.status) + '</span></div>' +
+      '<div class="companion-card-body">' +
+        '<div class="row companion-card-head"><h3>' + esc(item.name) + '</h3><span class="price companion-price">' + esc(item.price) + '</span></div>' +
+        '<p class="muted companion-id">陪玩 ID：' + esc(item.id || "未生成") + '</p>' +
+        '<div class="companion-meta"><span class="companion-level-pill">' + esc(item.level) + '</span><span>' + esc(item.game) + '</span></div>' +
+        '<div class="tag-row companion-tags">' + tags + '</div>' +
+        '<button class="btn primary companion-card-action" data-book type="button">查看详情</button>' +
+      '</div>' +
+    '</article>';
   }
 
   function render() {
@@ -137,7 +170,7 @@
     list.innerHTML = items.slice(start, start + PER_PAGE).map(card).join("");
 
     var count = document.getElementById("resultCount");
-    if (count) count.textContent = "共" + items.length + "位陪玩";
+    if (count) count.textContent = "共 " + items.length + " 位陪玩";
 
     var empty = document.getElementById("emptyState");
     if (empty) empty.hidden = !!items.length;

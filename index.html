@@ -3257,6 +3257,45 @@ label{
 @media(max-width:360px){
   .home-daily-grid,.quick-entry-grid,.quick-entry-grid.launch-entry-grid{grid-template-columns:1fr!important}
 }
+
+/* homepage-launch-ready-guard-v1 */
+.container > .mcj-home-hero{
+  height:clamp(220px,28vw,340px)!important;
+  max-height:360px!important;
+  overflow:hidden!important;
+}
+.mcj-home-hero .mcj-hero-image{
+  width:100%!important;
+  height:100%!important;
+  object-fit:var(--hero-fit,contain)!important;
+  object-position:var(--hero-position,50% 50%)!important;
+}
+.quick-entry-grid .quick-entry-card[hidden],
+.mobile-bottom-nav a[hidden]{display:none!important}
+@media(max-width:640px){
+  .container{padding-bottom:104px!important}
+  #floatingCustomerService{bottom:calc(86px + env(safe-area-inset-bottom))!important}
+  .container > .mcj-home-hero{height:clamp(170px,50vw,230px)!important;max-height:230px!important}
+}
+
+/* homepage-clean-background-v1 */
+body{
+  background:
+    radial-gradient(circle at 18% 0%, rgba(243,168,203,.035), transparent 32%),
+    radial-gradient(circle at 86% 18%, rgba(255,255,255,.025), transparent 30%),
+    linear-gradient(180deg,#050507 0%,#08070a 48%,#050406 100%)!important;
+}
+body:before,
+body:after,
+.ambient-layer,
+.ambient-layer *{
+  content:none!important;
+  display:none!important;
+  animation:none!important;
+  background:none!important;
+  box-shadow:none!important;
+  filter:none!important;
+}
 </style>
   <link rel="stylesheet" href="src/certification-system.css">
   <link rel="stylesheet" href="src/companion-application.css">
@@ -3265,11 +3304,11 @@ label{
   <link rel="stylesheet" href="src/design-system.css">
 </head>
 <body>
-  <div class="ambient-layer" aria-hidden="true"><span class="paw p1">🐾</span><span class="paw p2">🐾</span><span class="paw p3">🐾</span><span class="heart h1">♥</span><span class="heart h2">♥</span><span class="spark s1"></span><span class="spark s2"></span><span class="spark s3"></span></div>
+  <div class="ambient-layer" aria-hidden="true"></div>
   <header class="site-header">
     <div class="header-inner">
       <a class="brand" href="index.html"><span class="live2d-avatar"><img src="assets/meow-cuijiao-brand.jpg" alt="logo"><i></i></span><span>妙脆角<small>Meow Cui Jiao</small></span></a>
-      <div class="top-actions"><button class="login" data-modal="login" data-guest-only>登录</button><a class="auth-only" data-auth-only data-message-link data-role="customer" href="messages.html">消息</a><a class="user-chip auth-only" data-auth-only data-role="customer" href="mine.html"><span class="user-dot"></span><span>我的</span></a></div>
+      <div class="top-actions"><button class="login" data-modal="login" data-guest-only>登录 / 注册</button><a class="auth-only" data-auth-only data-message-link data-role="customer" href="messages.html">消息</a><a class="user-chip auth-only" data-auth-only data-role="customer" href="mine.html"><span class="user-dot"></span><span>我的</span></a></div>
     </div>
   </header>
   <main class="container">
@@ -3283,9 +3322,9 @@ label{
       <div class="section-title compact-title"><div><h2>快速入口</h2><p>QUICK ACCESS</p></div></div>
       <div class="quick-entry-grid">
         <a class="neon-card quick-entry-card" href="custom-order.html"><div><strong>自定义订单</strong><span>填写需求，客服匹配陪玩</span></div></a>
-        <a class="neon-card quick-entry-card" href="more-gameplays.html" hidden data-audit-hidden="more-gameplays"><div><strong>更多玩法</strong><span>护航、跑刀、代肝、趣味单</span></div></a>
+        <a class="neon-card quick-entry-card" href="more-gameplays.html"><div><strong>更多玩法</strong><span>护航、跑刀、代肝、趣味单</span></div></a>
         <a class="neon-card quick-entry-card" href="companion-center.html"><div><strong>陪玩大厅</strong><span>浏览已上架陪玩</span></div></a>
-        <a class="neon-card quick-entry-card" href="team-lobby.html" hidden data-audit-hidden="team-lobby"><div><strong>组队大厅</strong><span>进入组队社区</span></div></a>
+        <a class="neon-card quick-entry-card" href="team-lobby.html"><div><strong>组队大厅</strong><span>进入组队社区</span></div></a>
         <a class="neon-card quick-entry-card" href="miao-coin.html"><div><strong>猫粮充值</strong><span>查看猫粮充值与猫粮余额</span></div></a>
       </div>
     </section>
@@ -3363,7 +3402,7 @@ label{
     <a class="active" href="index.html">首页</a>
     <a href="companion-center.html">陪玩</a>
     <a href="companion-center.html?service=voice">语音</a>
-    <a href="more-gameplays.html" hidden data-audit-hidden="mobile-more-gameplays">玩法</a>
+    <a href="more-gameplays.html">玩法</a>
     <a href="mine.html" data-mobile-mine>我的</a>
   </nav>
 
@@ -3531,7 +3570,7 @@ label{
         var contentAds=(db.contents&&Array.isArray(db.contents.ads))?db.contents.ads:[];
         var legacyAds=Array.isArray(db.ads)?db.ads:[];
         var saved=contentAds.concat(legacyAds);
-        if(saved.length){defaults=saved.map(function(ad){return {title:ad.title,sub:ad.description||ad.subtitle||'',button:ad.button||ad.buttonText||'查看',tag:ad.tag||'OFFICIAL',link:ad.link||ad.href||'#',image:ad.image||'',enabled:ad.enabled!==false&&ad.enabled!=='false',sort:ad.sort,start:ad.startAt,end:ad.endAt};});}
+        if(saved.length){defaults=saved.map(function(ad){return {title:ad.title,sub:ad.description||ad.subtitle||'',button:ad.button||ad.buttonText||'查看',tag:ad.tag||'OFFICIAL',link:ad.link||ad.href||'',image:ad.image||'',enabled:ad.enabled!==false&&ad.enabled!=='false',sort:ad.sort,start:ad.startAt,end:ad.endAt};});}
       }catch(e){}
       var now=Date.now();
       return defaults.filter(function(ad){
@@ -3551,8 +3590,8 @@ label{
       if(!track||!dots||!slider)return;
       var ads=loadOfficialAds(),index=0,timer=null;
       function render(){
-        if(!ads.length){track.innerHTML='<article class="official-ad active"><div class="ad-glass-copy"><h2>暂无广告位</h2><p>后台发布并上架广告后会显示在这里。</p><span class="ad-action">真实数据</span></div></article>';dots.innerHTML='';return;}
-        track.innerHTML=ads.map(function(ad,i){return '<a class="official-ad '+(i===index?'active':'')+'" href="#" data-ad-index="'+i+'"><img src="'+ad.image+'" alt="'+ad.title+'"><span class="ad-badge">'+(ad.tag||'OFFICIAL')+'</span><div class="ad-glass-copy"><h2>'+ad.title+'</h2><p>'+ad.sub+'</p><span class="ad-action">'+(ad.button||'立即查看')+'</span></div></a>';}).join('');
+        if(!ads.length){var section=slider.closest(".official-ads");if(section)section.hidden=true;track.innerHTML="";dots.innerHTML="";return;} var section=slider.closest(".official-ads");if(section)section.hidden=false;
+        track.innerHTML=ads.map(function(ad,i){var href=(ad.link&&ad.link!=='discord')?ad.link:'index.html';return '<a class="official-ad '+(i===index?'active':'')+'" href="'+href+'" data-ad-index="'+i+'"><img src="'+ad.image+'" alt="'+ad.title+'"><span class="ad-badge">'+(ad.tag||'OFFICIAL')+'</span><div class="ad-glass-copy"><h2>'+ad.title+'</h2><p>'+ad.sub+'</p><span class="ad-action">'+(ad.button||'立即查看')+'</span></div></a>';}).join('');
         dots.innerHTML=ads.map(function(_,i){return '<button class="ad-dot '+(i===index?'active':'')+'" data-ad-dot="'+i+'" aria-label="切换广告"></button>';}).join('');
       }
       function go(i){if(!ads.length)return;index=(i+ads.length)%ads.length;render()}
@@ -3971,6 +4010,29 @@ label{
         if(e.stopImmediatePropagation)e.stopImmediatePropagation();
         location.href=redirect;
       },true);
+    })();
+  </script>
+
+  <script>
+    (function homepageLaunchGuards(){
+      var placeholder = "assets/meow-cuijiao-brand.jpg";
+      document.addEventListener("error", function(event){
+        var img = event.target;
+        if (!img || img.tagName !== "IMG" || img.dataset.fallbackApplied === "1") return;
+        img.dataset.fallbackApplied = "1";
+        img.src = placeholder;
+      }, true);
+      function applyButlerMobileOffset(){
+        if (document.getElementById("homepageButlerMobileOffset")) return;
+        var style = document.createElement("style");
+        style.id = "homepageButlerMobileOffset";
+        style.textContent = "@media(max-width:640px){#floatingCustomerService{bottom:calc(86px + env(safe-area-inset-bottom))!important}.container{padding-bottom:104px!important}}";
+        document.head.appendChild(style);
+      }
+      window.addEventListener("load", function(){
+        applyButlerMobileOffset();
+        setTimeout(applyButlerMobileOffset, 250);
+      });
     })();
   </script>
   <script src="src/dropdown-system.js" defer></script>

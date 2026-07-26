@@ -554,6 +554,7 @@
     banners:{target:'crud-banners',title:'Banner 管理',type:'banners',desc:'直接同步首页 Banner，支持电脑端与手机端图片、跳转、排期、排序和发布。',fields:['title','desktopImage','mobileImage','link','linkTarget','sort','startAt','endAt','autoPlay','intervalSeconds']},
     announcements:{target:'table-announcements',title:'公告管理',type:'announcements',desc:'对应首页 Banner 下方公告，前台按后台排序和时间播放。',fields:['content','link','sort','startAt','endAt','displayMode']},
     ads:{target:'crud-ads',title:'广告位管理',type:'ad_slots',desc:'同步首页、陪玩大厅、组队大厅、充值中心等广告位。',fields:['title','subtitle','image','link','position','sort','startAt','endAt','carousel','official']},
+    'team-lobby-links':{target:'teamLobbySettings',title:'组队大厅设置',type:'team_lobby_channels',desc:'管理组队大厅 Discord 频道卡片，前台按排序和显示状态读取。',fields:['image','name','description','discordUrl','sort']},
     'meow-butler':{target:'table-meow_butler',title:'喵管家管理',type:'customer_service_widget',desc:'控制首页和老板端右下角客服浮窗。',fields:['displayName','icon','welcomeText','onlineStatus','businessHours','offlineText','clickBehavior','defaultChannel','showRedDot','globalVisible']},
     'sync-center':{target:'table-sync_center',title:'全端功能同步',type:'system_content_versions',desc:'查看各内容模块后台版本、前台版本、发布时间和同步状态。',fields:['moduleName','backendVersion','frontendVersion','syncStatus','publishedBy','publishedAt']},
     'price-table':{target:'table-price_table',title:'俱乐部价格表管理',type:'club_price_tables',desc:'同步陪玩价格范围、下单页面、自定义订单和陪玩端定价限制。',fields:['game','serviceType','level','minPrice','maxPrice','defaultPrice','unit','nightPrice','holidayPrice','sort']},
@@ -566,7 +567,7 @@
     'companion-applications':{target:'table-companion_applications',title:'陪玩申请审核',type:'player_applications',desc:'真实审核工作台，审核通过后开通陪玩端权限。',fields:['applicationNo','uid','nickname','contact','identityDocs','gameProfile','avatar','gallery','voiceSample','depositStatus','auditStatus','reviewer','reviewRemark','level','priceRange','commission','rebate','club']}
   };
   function contentFieldLabel(key){
-    var map={title:'标题',desktopImage:'电脑端图片',mobileImage:'手机端图片',link:'跳转地址',linkTarget:'打开方式',sort:'排序',startAt:'开始时间',endAt:'结束时间',autoPlay:'自动轮播',intervalSeconds:'轮播秒数',content:'公告内容',displayMode:'展示方式',subtitle:'副标题',image:'广告图',position:'展示位置',carousel:'是否轮播',official:'官方精选',displayName:'显示名称',icon:'图标',welcomeText:'欢迎文案',onlineStatus:'在线状态',businessHours:'营业时间',offlineText:'未营业提示',clickBehavior:'点击行为',defaultChannel:'默认客服频道',showRedDot:'显示红点',globalVisible:'全站显示',moduleName:'模块名称',backendVersion:'后台版本',frontendVersion:'前台版本',syncStatus:'同步状态',publishedBy:'发布人',publishedAt:'发布时间',game:'游戏',serviceType:'服务类型',level:'等级',minPrice:'最低价格',maxPrice:'最高价格',defaultPrice:'默认价格',unit:'计价单位',nightPrice:'夜间价格',holidayPrice:'节假日价格',name:'名称',category:'分类',cover:'封面',intro:'简介',fixedPrice:'固定价格',duration:'服务时长',requirements:'资格要求',levelRequired:'接单等级',needQualification:'需要资格审核',showOnHome:'首页显示',fieldKey:'字段 Key',fieldName:'字段名称',placeholder:'提示文字',fieldType:'字段类型',required:'必填',visible:'显示',options:'选项内容',min:'最小值',max:'最大值',applicationId:'申请编号',uid:'UID',nickname:'昵称',gameplay:'玩法',materials:'资料',auditStatus:'审核状态',reviewer:'审核人',remark:'备注',body:'正文',versionNote:'版本说明',description:'说明',amount:'押金金额',currency:'币种',manualRate:'手动汇率',paymentDescription:'支付说明',paymentMethod:'支付方式',refundTerms:'退款条件',refundDescription:'退款说明',auditRequirement:'审核要求',applicationNo:'申请编号',contact:'联系方式',identityDocs:'身份证资料',gameProfile:'游戏资料',avatar:'头像',gallery:'相册',voiceSample:'录音',depositStatus:'押金状态',reviewRemark:'审核备注',priceRange:'价格范围',commission:'佣金',rebate:'返点',club:'所属俱乐部'};
+    var map={title:'标题',desktopImage:'电脑端图片',mobileImage:'手机端图片',link:'跳转地址',discordUrl:'Discord 链接',linkTarget:'打开方式',sort:'排序',startAt:'开始时间',endAt:'结束时间',autoPlay:'自动轮播',intervalSeconds:'轮播秒数',content:'公告内容',displayMode:'展示方式',subtitle:'副标题',image:'广告图',position:'展示位置',carousel:'是否轮播',official:'官方精选',displayName:'显示名称',icon:'图标',welcomeText:'欢迎文案',onlineStatus:'在线状态',businessHours:'营业时间',offlineText:'未营业提示',clickBehavior:'点击行为',defaultChannel:'默认客服频道',showRedDot:'显示红点',globalVisible:'全站显示',moduleName:'模块名称',backendVersion:'后台版本',frontendVersion:'前台版本',syncStatus:'同步状态',publishedBy:'发布人',publishedAt:'发布时间',game:'游戏',serviceType:'服务类型',level:'等级',minPrice:'最低价格',maxPrice:'最高价格',defaultPrice:'默认价格',unit:'计价单位',nightPrice:'夜间价格',holidayPrice:'节假日价格',name:'名称',category:'分类',cover:'封面',intro:'简介',fixedPrice:'固定价格',duration:'服务时长',requirements:'资格要求',levelRequired:'接单等级',needQualification:'需要资格审核',showOnHome:'首页显示',fieldKey:'字段 Key',fieldName:'字段名称',placeholder:'提示文字',fieldType:'字段类型',required:'必填',visible:'显示',options:'选项内容',min:'最小值',max:'最大值',applicationId:'申请编号',uid:'UID',nickname:'昵称',gameplay:'玩法',materials:'资料',auditStatus:'审核状态',reviewer:'审核人',remark:'备注',body:'正文',versionNote:'版本说明',description:'说明',amount:'押金金额',currency:'币种',manualRate:'手动汇率',paymentDescription:'支付说明',paymentMethod:'支付方式',refundTerms:'退款条件',refundDescription:'退款说明',auditRequirement:'审核要求',applicationNo:'申请编号',contact:'联系方式',identityDocs:'身份证资料',gameProfile:'游戏资料',avatar:'头像',gallery:'相册',voiceSample:'录音',depositStatus:'押金状态',reviewRemark:'审核备注',priceRange:'价格范围',commission:'佣金',rebate:'返点',club:'所属俱乐部'};
     return map[key]||key;
   }
   function contentDraft(item){return item&&typeof item.draft==='object'&&item.draft?item.draft:{}}
@@ -611,21 +612,50 @@
   function renderPlatformContentManagers(){
     Object.keys(platformContentModules).forEach(function(key){loadPlatformContent(platformContentModules[key]);});
   }
+  function isLocalPlatformContentType(type){return type==='banners'||type==='team_lobby_channels'}
   function localPlatformContentKey(type){return 'mcj_platform_content_'+type;}
+  function defaultLocalPlatformContent(type){
+    if(type==='team_lobby_channels'){
+      return [
+        {id:'local-team-mobile',type:type,title:'手游组队',status:'已发布',enabled:true,sort:1,draft:{image:'',name:'手游组队',description:'进入手游开黑频道，快速找到同局队友。',discordUrl:'',sort:1},updated_at:new Date().toISOString(),published_by:'系统默认',published_at:'-',version:1},
+        {id:'local-team-pc',type:type,title:'端游组队',status:'已发布',enabled:true,sort:2,draft:{image:'',name:'端游组队',description:'进入端游组队频道，匹配排位、娱乐和固定队。',discordUrl:'',sort:2},updated_at:new Date().toISOString(),published_by:'系统默认',published_at:'-',version:1},
+        {id:'local-team-chat',type:type,title:'闲聊频道',status:'已发布',enabled:true,sort:3,draft:{image:'',name:'闲聊频道',description:'进入社区闲聊频道，认识新朋友并等待开黑。',discordUrl:'',sort:3},updated_at:new Date().toISOString(),published_by:'系统默认',published_at:'-',version:1}
+      ];
+    }
+    return [];
+  }
   function readLocalPlatformContent(type){
-    if(type!=='banners')return [];
-    try{var list=JSON.parse(localStorage.getItem(localPlatformContentKey(type))||'[]');return Array.isArray(list)?list:[]}catch(err){console.error('[Banner 管理] 读取本地 Banner 失败',err);return []}
+    if(!isLocalPlatformContentType(type))return [];
+    try{
+      var list=JSON.parse(localStorage.getItem(localPlatformContentKey(type))||'[]');
+      if(Array.isArray(list)&&list.length)return list;
+      var defaults=defaultLocalPlatformContent(type);
+      if(defaults.length){localStorage.setItem(localPlatformContentKey(type),JSON.stringify(defaults));return defaults;}
+      return [];
+    }catch(err){console.error('[平台内容] 读取本地内容失败',{type:type,error:err});return []}
   }
   function saveLocalPlatformContent(type,payload,id){
-    if(type!=='banners')return null;
+    if(!isLocalPlatformContentType(type))return null;
     var list=readLocalPlatformContent(type);
     var now=new Date().toISOString();
     var draft=payload&&payload.draft?payload.draft:{};
-    var item={id:id||'local-banner-'+Date.now(),type:type,title:payload.title||draft.title||'未命名 Banner',status:payload.status||'草稿',enabled:payload.enabled!==false,sort:Number(payload.sort||draft.sort||100),draft:draft,updated_at:now,published_by:'当前后台',published_at:now,version:1};
+    var prefix=type==='banners'?'local-banner-':'local-team-';
+    var item={id:id||prefix+Date.now(),type:type,title:payload.title||draft.title||draft.name||'未命名内容',status:payload.status||'草稿',enabled:payload.enabled!==false,sort:Number(payload.sort||draft.sort||100),draft:draft,updated_at:now,published_by:'当前后台',published_at:payload.status==='已发布'||payload.status==='published'?now:'-',version:1};
     var index=list.findIndex(function(row){return String(row.id)===String(item.id)});
     if(index>-1)list[index]=Object.assign({},list[index],item);else list.unshift(item);
     localStorage.setItem(localPlatformContentKey(type),JSON.stringify(list));
     return item;
+  }
+  function applyLocalPlatformContentAction(action,type,id,payload){
+    var list=readLocalPlatformContent(type);
+    if(action==='delete')list=list.filter(function(row){return String(row.id)!==String(id)});
+    else if(action==='unpublish'||action==='disable')saveLocalPlatformContent(type,Object.assign({},payload||{},{status:'已下架',enabled:false}),id);
+    else if(action==='publish')saveLocalPlatformContent(type,Object.assign({},payload||{},{status:'已发布',enabled:true}),id);
+    else if(action==='duplicate'){
+      var found=list.find(function(row){return String(row.id)===String(id)});
+      if(found)saveLocalPlatformContent(type,Object.assign({},found,{title:(found.title||'未命名')+' 副本',draft:Object.assign({},found.draft||{})}), 'local-team-'+Date.now());
+    } else saveLocalPlatformContent(type,payload||{},id||'');
+    if(action==='delete')localStorage.setItem(localPlatformContentKey(type),JSON.stringify(list));
   }
   function loadPlatformContent(cfg){
     var target=document.getElementById(cfg.target);
@@ -633,12 +663,12 @@
     target.innerHTML='<div class="content-loading">正在读取真实数据库...</div>';
     fetch('/api/admin/platform-content?type='+encodeURIComponent(cfg.type),{headers:{'x-mcj-admin-role':getRole()}}).then(function(res){var ct=res.headers.get('content-type')||'';if(ct.indexOf('application/json')<0)return {ok:true,configured:false,items:[],message:'本地 API 未启用平台内容接口'};return res.json();}).then(function(result){
       var items=result.items||[];
-      if(cfg.type==='banners'&&(!result.configured||!items.length)){items=readLocalPlatformContent(cfg.type);}
+      if(isLocalPlatformContentType(cfg.type)&&(!result.configured||!items.length)){items=readLocalPlatformContent(cfg.type);}
       var latest=items[0]||{};
       target.innerHTML=platformContentShell(cfg,items,{savedAt:latest.updated_at,publisher:latest.published_by,version:latest.version,sync:latest.status||'暂无数据'});
     }).catch(function(err){
       console.error('[Banner 管理] 读取接口错误',{endpoint:'/api/admin/platform-content',type:cfg.type,error:err});
-      var items=cfg.type==='banners'?readLocalPlatformContent(cfg.type):[];
+      var items=isLocalPlatformContentType(cfg.type)?readLocalPlatformContent(cfg.type):[];
       var latest=items[0]||{};
       target.innerHTML=platformContentShell(cfg,items,{savedAt:latest.updated_at,publisher:latest.published_by,version:latest.version,sync:items.length?(latest.status||'本地预览'):'读取失败'})+(items.length?'':'<div class="admin-sync-note">读取失败：'+esc(err.message||err)+'</div>');
     });
@@ -654,13 +684,29 @@
     return {title:draft.title||draft.name||draft.content||draft.displayName||draft.moduleName||draft.fieldName||'未命名内容',status:form.querySelector('[name="status"]')?form.querySelector('[name="status"]').value:'草稿',enabled:(form.querySelector('[name="enabled"]')||{}).value!=='false',sort:Number(draft.sort||100),draft:draft};
   }
   function submitPlatformContent(action,type,id,payload){
-    fetch('/api/admin/platform-content',{method:'POST',headers:{'Content-Type':'application/json','x-mcj-admin-role':getRole()},body:JSON.stringify({action:action,type:type,id:id||'',payload:payload||{}})}).then(function(res){return res.text().then(function(text){var body={};try{body=text?JSON.parse(text):{}}catch(parseErr){console.error('[Banner 管理] 保存接口非 JSON',{status:res.status,body:text,error:parseErr});throw new Error('平台内容接口返回非 JSON：HTTP '+res.status)}if(!res.ok||body.ok===false)throw new Error(body.message||('HTTP '+res.status));return body;})}).then(function(result){alert(result.message||'已保存');var cfg=platformContentConfig(type);if(cfg)loadPlatformContent(cfg);}).catch(function(err){console.error('[Banner 管理] 保存接口错误',{endpoint:'/api/admin/platform-content',action:action,type:type,id:id,error:err});if(type==='banners'&&(action==='create'||action==='save')){saveLocalPlatformContent(type,payload||{},id||'');alert('接口暂不可用，已使用当前后台保存方式保存 Banner。');var cfg=platformContentConfig(type);if(cfg)loadPlatformContent(cfg);return;}alert('操作失败：'+err.message+'。');});
+    fetch('/api/admin/platform-content',{method:'POST',headers:{'Content-Type':'application/json','x-mcj-admin-role':getRole()},body:JSON.stringify({action:action,type:type,id:id||'',payload:payload||{}})}).then(function(res){return res.text().then(function(text){var body={};try{body=text?JSON.parse(text):{}}catch(parseErr){console.error('[Banner 管理] 保存接口非 JSON',{status:res.status,body:text,error:parseErr});throw new Error('平台内容接口返回非 JSON：HTTP '+res.status)}if(!res.ok||body.ok===false)throw new Error(body.message||('HTTP '+res.status));return body;})}).then(function(result){alert(result.message||'已保存');var cfg=platformContentConfig(type);if(cfg)loadPlatformContent(cfg);}).catch(function(err){console.error('[Banner 管理] 保存接口错误',{endpoint:'/api/admin/platform-content',action:action,type:type,id:id,error:err});if(isLocalPlatformContentType(type)){applyLocalPlatformContentAction(action,type,id||'',payload||{});alert('接口暂不可用，已使用当前后台保存方式保存内容。');var cfg=platformContentConfig(type);if(cfg)loadPlatformContent(cfg);return;}alert('操作失败：'+err.message+'。');});
   }
   function openPlatformContentEditor(type,id){
     var cfg=platformContentConfig(type);if(!cfg)return;
     var target=document.querySelector('[data-content-editor="'+type+'"]');if(!target)return;
     if(!id){target.hidden=false;target.innerHTML=platformContentForm(cfg,null);return;}
-    fetch('/api/admin/platform-content?type='+encodeURIComponent(type),{headers:{'x-mcj-admin-role':getRole()}}).then(function(res){return res.json();}).then(function(result){var item=(result.items||[]).find(function(x){return String(x.id)===String(id)});target.hidden=false;target.innerHTML=platformContentForm(cfg,item||{});target.scrollIntoView({behavior:'smooth',block:'nearest'});}).catch(function(err){alert('读取编辑内容失败：'+err.message);});
+    function openItem(item){target.hidden=false;target.innerHTML=platformContentForm(cfg,item||{});target.scrollIntoView({behavior:'smooth',block:'nearest'});}
+    if(isLocalPlatformContentType(type)&&String(id).indexOf('local-')===0){
+      var localItem=readLocalPlatformContent(type).find(function(x){return String(x.id)===String(id)});
+      openItem(localItem||{id:id,draft:{}});
+      return;
+    }
+    fetch('/api/admin/platform-content?type='+encodeURIComponent(type),{headers:{'x-mcj-admin-role':getRole()}}).then(function(res){return res.json();}).then(function(result){
+      var item=(result.items||[]).find(function(x){return String(x.id)===String(id)});
+      if(!item&&isLocalPlatformContentType(type)){item=readLocalPlatformContent(type).find(function(x){return String(x.id)===String(id)});}
+      openItem(item||{});
+    }).catch(function(err){
+      if(isLocalPlatformContentType(type)){
+        var item=readLocalPlatformContent(type).find(function(x){return String(x.id)===String(id)});
+        if(item){openItem(item);return;}
+      }
+      alert('读取编辑内容失败：'+err.message);
+    });
   }
   function uploadPlatformContentFile(input){
     var file=input.files&&input.files[0];if(!file)return;
@@ -676,7 +722,7 @@
     }
     var reader=new FileReader();
     reader.onload=function(){
-      fetch('/api/admin/platform-content-upload',{method:'POST',headers:{'Content-Type':'application/json','x-mcj-admin-role':getRole()},body:JSON.stringify({type:type,fileName:file.name,mimeType:file.type,base64:reader.result})}).then(function(res){return res.text().then(function(text){var body={};try{body=text?JSON.parse(text):{}}catch(parseErr){console.error('[Banner 管理] 上传接口非 JSON',{status:res.status,body:text,error:parseErr});throw new Error('上传接口返回非 JSON：HTTP '+res.status)}if(!res.ok||body.ok===false)throw new Error(body.message||('HTTP '+res.status));return body;})}).then(function(result){applyUploadUrl(result.url,false);}).catch(function(err){console.error('[Banner 管理] 上传接口错误',{endpoint:'/api/admin/platform-content-upload',type:type,file:{name:file.name,size:file.size,mimeType:file.type},error:err});if(type==='banners'&&/^image\//.test(file.type)){applyUploadUrl(reader.result,true);return;}alert('上传失败：'+err.message+'。');});
+      fetch('/api/admin/platform-content-upload',{method:'POST',headers:{'Content-Type':'application/json','x-mcj-admin-role':getRole()},body:JSON.stringify({type:type,fileName:file.name,mimeType:file.type,base64:reader.result})}).then(function(res){return res.text().then(function(text){var body={};try{body=text?JSON.parse(text):{}}catch(parseErr){console.error('[Banner 管理] 上传接口非 JSON',{status:res.status,body:text,error:parseErr});throw new Error('上传接口返回非 JSON：HTTP '+res.status)}if(!res.ok||body.ok===false)throw new Error(body.message||('HTTP '+res.status));return body;})}).then(function(result){applyUploadUrl(result.url,false);}).catch(function(err){console.error('[Banner 管理] 上传接口错误',{endpoint:'/api/admin/platform-content-upload',type:type,file:{name:file.name,size:file.size,mimeType:file.type},error:err});if(isLocalPlatformContentType(type)&&/^image\//.test(file.type)){applyUploadUrl(reader.result,true);return;}alert('上传失败：'+err.message+'。');});
     };
     reader.readAsDataURL(file);
   }
@@ -696,6 +742,7 @@
     banners:['Banner 管理','首页 Banner 上传、排序和启用'],
     announcements:['公告管理','首页和全站公告内容'],
     ads:['广告位管理','全站广告位素材与投放状态'],
+    'team-lobby-links':['组队大厅设置','Discord 频道卡片、卡面图片、排序和跳转链接'],
     'meow-butler':['喵管家管理','在线客服入口与快捷入口配置'],
     'sync-center':['全端功能同步','用户端、老板端、陪玩端、客服端数据同步'],
     'price-table':['俱乐部价格表管理','俱乐部服务价格范围和规则'],
@@ -899,7 +946,7 @@
     document.querySelectorAll('.side-nav button').forEach(function(btn){
       var key=btn.dataset.section||btn.dataset.toggleGroup||'settings';
       if(/recharge|withdraw|refund|commission|finance/.test(key))key='finance';
-      if(/banner|announcement|ads|content|gameplay|price|voice|deposit|application|custom|meow|sync/.test(key))key='banners';
+      if(/banner|announcement|ads|team|content|gameplay|price|voice|deposit|application|custom|meow|sync/.test(key))key='banners';
       if(/admin|permission|logs|security/.test(key))key='permissions';
       btn.style.setProperty('--admin-icon',svgMask(icons[key]||icons.settings));
     });

@@ -26,14 +26,30 @@
       <form class="custom-form" id="customOrderForm">
         <label>需求标题<input name="title" required placeholder="例如：Valorant 双排上分"></label>
         <label>游戏或服务<input name="game" required placeholder="游戏 / 陪聊 / 护航"></label>
-        <label>预算 RM<input name="budget" type="number" min="0" step="0.01" required></label>
+        <label>游戏ID<input name="game_id" required placeholder="请输入您的游戏ID（方便陪玩添加好友或组队）"></label>
+        <label>陪玩等级<select name="companion_level" required>
+          <option value="1" selected>Lv.1 萌喵（RM20–30）</option>
+          <option value="2">Lv.2 灵喵（RM30–40）</option>
+          <option value="3">Lv.3 猎喵（RM40–45）</option>
+          <option value="4">Lv.4 喵神（RM60–75）</option>
+          <option value="5">Lv.5 喵皇（RM75–100+）</option>
+        </select></label>
         <label>预约时间<input name="scheduled_at" type="datetime-local" required></label>
-        <label>预计时长<input name="duration" required placeholder="例如：2 小时"></label>
+        <label>预计时长<select name="duration" required>
+          <option value="1小时" selected>1小时</option>
+          <option value="2小时">2小时</option>
+          <option value="3小时">3小时</option>
+          <option value="4小时">4小时</option>
+          <option value="5小时">5小时</option>
+          <option value="6小时">6小时</option>
+          <option value="8小时">8小时</option>
+          <option value="10小时">10小时</option>
+          <option value="全天">全天</option>
+        </select></label>
         <label>需要人数<input name="people" type="number" min="1" value="1"></label>
         <label>性别偏好<select name="gender_preference"><option>不限</option><option>女</option><option>男</option><option>保密</option></select></label>
         <label>语言要求<input name="language" placeholder="中文 / 英文 / 马来语"></label>
         <label class="wide">完整需求<textarea name="requirements" required placeholder="写清楚游戏区服、目标、玩法、备注和特殊要求"></textarea></label>
-        <label class="wide">附件（可选）<input name="attachment" type="file" accept="image/*"></label>
       </form>
       <div class="custom-actions">
         <a class="btn" href="index.html">返回首页</a>
@@ -52,16 +68,16 @@
       function write(db){localStorage.setItem(KEY,JSON.stringify(db||{}));window.dispatchEvent(new CustomEvent('mcj:platform-data-updated'))}
       function isLogged(){return window.MCJRoleGate&&window.MCJRoleGate.isLogged('customer')}
       function user(){return window.MCJRoleGate?window.MCJRoleGate.user('customer'):{}}
-      function fileUrl(file){return new Promise(function(resolve){if(!file)return resolve('');var r=new FileReader();r.onload=function(){resolve(String(r.result||''))};r.readAsDataURL(file)})}
       var form=document.getElementById('customOrderForm'),state=document.getElementById('customState'),btn=document.getElementById('customSubmit');
       form.addEventListener('submit',async function(e){
         e.preventDefault();
         if(!isLogged()){sessionStorage.setItem('mcjAfterLoginRedirect','custom-order.html');location.href='index.html';return}
         if(btn.disabled)return;btn.disabled=true;btn.textContent='正在提交...';
-        var data={};Array.prototype.forEach.call(form.elements,function(el){if(el.name&&el.type!=='file')data[el.name]=el.value.trim()});
-        var attachment=await fileUrl(form.elements.attachment.files&&form.elements.attachment.files[0]);
+        var data={};Array.prototype.forEach.call(form.elements,function(el){if(el.name)data[el.name]=el.value.trim()});
+        data.required_level=Number(data.companion_level||1);
+        data.acceptable_levels=[];for(var level=data.required_level;level<=5;level++){data.acceptable_levels.push(level);}
         var db=read();db.orders=Array.isArray(db.orders)?db.orders:[];var u=user();
-        db.orders.unshift(Object.assign(data,{id:'CO-'+Date.now(),order_no:'MCJ-CUSTOM-'+Date.now(),order_type:'custom',status:'quote_pending',boss_id:u.id||'',boss_nickname:u.name||'老板',attachmentUrl:attachment,created_at:new Date().toISOString()}));
+        db.orders.unshift(Object.assign(data,{id:'CO-'+Date.now(),order_no:'MCJ-CUSTOM-'+Date.now(),order_type:'custom',status:'quote_pending',boss_id:u.id||'',boss_nickname:u.name||'老板',created_at:new Date().toISOString()}));
         write(db);state.hidden=false;state.textContent='自定义需求已提交，等待客服报价。';form.reset();btn.disabled=false;btn.textContent='提交给客服报价';
       });
     })();

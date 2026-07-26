@@ -71,7 +71,7 @@
       if (!!b.pinned !== !!a.pinned) return b.pinned ? 1 : -1;
       return Number(a.sort || 99) - Number(b.sort || 99);
     });
-    return list.map(function (item) { return item.text || item.title || ""; }).filter(Boolean);
+    return list.map(function (item) { return item.text || item.content || item.title || ""; }).filter(Boolean);
   }
 
   function esc(value) {
@@ -135,17 +135,23 @@
     return '<div class="mcj-hero-empty" role="status"><strong>欢迎来到 妙脆角 Meow Cui Jiao</strong><span>选择喜欢的陪玩，开始今天的游戏旅程。</span></div>';
   }
 
+  function bindNoticePause(notice, span) {
+    if (notice.dataset.noticePauseBound === "true") return;
+    notice.dataset.noticePauseBound = "true";
+    notice.addEventListener("mouseenter", function () { span.style.animationPlayState = "paused"; });
+    notice.addEventListener("mouseleave", function () { span.style.animationPlayState = "running"; });
+    notice.addEventListener("focusin", function () { span.style.animationPlayState = "paused"; });
+    notice.addEventListener("focusout", function () { span.style.animationPlayState = "running"; });
+  }
+
   function renderNotice(announcements) {
     var notice = document.querySelector(".announcement-strip");
     var span = notice && notice.querySelector("span");
     if (!notice || !span) return;
-    if (!announcements.length) {
-      notice.hidden = true;
-      span.textContent = "";
-      return;
-    }
     notice.hidden = false;
-    span.textContent = announcements.join(" · ");
+    span.textContent = announcements.length ? announcements.join(" \u00b7 ") : "\u6682\u65e0\u516c\u544a";
+    notice.setAttribute("aria-label", span.textContent);
+    bindNoticePause(notice, span);
   }
 
   function clearGeneratedHeroExtras() {
