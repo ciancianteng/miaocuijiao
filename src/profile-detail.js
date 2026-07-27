@@ -1,64 +1,12 @@
-(function(){
-  function getCompanion(){
-    if (!window.MCJCompanionLevels) return null;
-    var params = new URLSearchParams(location.search);
-    var id = params.get("id") || params.get("uid");
-    var lists = [];
-    try {
-      if (window.MCJRealData && typeof window.MCJRealData.approvedCompanions === "function") lists.push(window.MCJRealData.approvedCompanions());
-      if (window.MCJPlatformStore) lists.push(window.MCJPlatformStore.list("companions"));
-      lists.push(JSON.parse(localStorage.getItem("mcj_players") || "[]"));
-    } catch (e) {}
-    var flat = lists.reduce(function (all, list) { return all.concat(Array.isArray(list) ? list : []); }, []);
-    var found = flat.find(function (item) {
-      return id && [item.id, item.uid, item.companionId, item.name].indexOf(id) > -1;
-    });
-    return window.MCJCompanionLevels.normalizeCompanion(found || { level: "Lv.1", price: 25 });
-  }
-
-  function hydrateLevel(){
-    var companion = getCompanion();
-    if (!companion || !window.MCJCompanionLevels) return;
-    var label = document.querySelector("[data-level-label]");
-    var price = document.querySelector("[data-level-price]");
-    var range = document.querySelector("[data-level-range]");
-    var desc = document.querySelector("[data-level-description]");
-    if (label) label.textContent = companion.levelLabel;
-    if (price) price.textContent = companion.priceDisplay;
-    if (range) range.textContent = companion.levelRange;
-    if (desc) desc.textContent = companion.levelDescription;
-  }
-
-  hydrateLevel();
-
-  var cards=[].slice.call(document.querySelectorAll('.game-stat-card'));
-  var dots=[].slice.call(document.querySelectorAll('#gameDots button'));
-  var index=0;
-  function show(i){
-    if(!cards.length)return;
-    index=(i+cards.length)%cards.length;
-    cards.forEach(function(card,n){card.classList.toggle('active',n===index);});
-    dots.forEach(function(dot,n){dot.classList.toggle('active',n===index);});
-  }
-  var prev=document.getElementById('gamePrev');
-  var next=document.getElementById('gameNext');
-  if(prev)prev.addEventListener('click',function(){show(index-1);});
-  if(next)next.addEventListener('click',function(){show(index+1);});
-  dots.forEach(function(dot,n){dot.addEventListener('click',function(){show(n);});});
-  var grid=document.getElementById('uploadGrid');
-  var btn=document.getElementById('uploadMore');
-  var input=document.getElementById('profileUploadInput');
-  if(btn&&input&&grid){
-    btn.addEventListener('click',function(){input.click();});
-    input.addEventListener('change',function(){
-      Array.from(input.files||[]).forEach(function(file){
-        var url=URL.createObjectURL(file);
-        var img=document.createElement('img');
-        img.src=url;
-        img.alt='上传素材预览';
-        grid.insertBefore(img,btn);
-      });
-      input.value='';
-    });
-  }
+﻿(function(){
+  function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
+  function money(v){var n=Number(v||0);return 'RM'+(Number.isFinite(n)?n:0).toFixed(2)}
+  function param(){var p=new URLSearchParams(location.search);return p.get('player')||p.get('id')||p.get('uid')||''}
+  function shell(){return document.querySelector('.profile-detail-shell')}
+  function bottom(){return document.querySelector('.profile-bottom-bar')}
+  function renderLoading(){var s=shell();if(s)s.innerHTML='<section class="detail-card"><h1>陪玩资料</h1><p>正在读取真实陪玩资料...</p></section>'}
+  function renderError(msg){var s=shell();if(s)s.innerHTML='<section class="detail-card"><h1>暂无资料</h1><p>'+esc(msg||'目前暂无可查看的陪玩资料')+'</p><a class="order-now" href="companion-center.html">返回陪玩大厅</a></section>';var b=bottom();if(b)b.hidden=true}
+  function render(c){var s=shell();if(!s)return;var image=c.cardImageUrl||c.cover||c.avatar||'assets/meow-cuijiao-brand.jpg';var voice=c.voiceUrl?'<audio controls src="'+esc(c.voiceUrl)+'" style="width:100%"></audio>':'<p class="muted">暂无语音</p>';s.innerHTML='<section class="profile-hero detail-card"><div class="profile-avatar-wrap"><img class="profile-avatar" src="'+esc(c.avatar||image)+'" alt="'+esc(c.name)+' 头像"></div><div class="profile-info-panel"><p class="detail-label">MEOW CUI JIAO COMPANION</p><h1>'+esc(c.name||c.nickname||'陪玩')+'</h1><div class="profile-id">ID：'+esc(c.uid||c.id)+'</div><p class="profile-bio">'+esc(c.desc||c.description||'暂无介绍')+'</p><div class="game-line">'+esc(c.game||'未设置游戏')+'</div></div></section><section class="detail-two-col"><div class="detail-card info-card"><div class="section-head"><h2>基本资料</h2></div><div class="info-list"><div><span>游戏</span><b>'+esc(c.game||'-')+'</b></div><div><span>等级</span><b>'+esc(c.level||c.levelName||'-')+'</b></div><div><span>在线状态</span><b>'+esc(c.status||c.onlineStatus||'-')+'</b></div><div><span>价格</span><b>'+money(c.priceValue||c.price)+' / 小时</b></div></div></div><div class="detail-card price-card"><div class="section-head"><h2>语音试听</h2></div>'+voice+'</div></section><section class="detail-card game-wall"><div class="section-head"><h2>卡面图片</h2></div><div class="wall-grid"><img src="'+esc(image)+'" alt="'+esc(c.name)+' 卡面"></div></section>';var b=bottom();if(b){b.hidden=false;b.innerHTML='<a href="index.html">首页</a><a href="companion-center.html">陪玩大厅</a><a class="order-now" href="custom-order.html?companion_id='+encodeURIComponent(c.id||c.uid||'')+'">立即下单</a>'}}
+  function load(){var id=param();if(!id){renderError('缺少陪玩 ID');return}renderLoading();fetch('/api/public/companions?id='+encodeURIComponent(id),{headers:{Accept:'application/json'},cache:'no-store'}).then(function(res){return res.json().then(function(body){if(!res.ok||body.ok===false)throw new Error(body.message||'陪玩资料读取失败');return body})}).then(function(body){var c=(body.companions||[])[0];if(!c)renderError('目前暂无可查看的陪玩资料');else render(c)}).catch(function(err){renderError(err.message||'陪玩资料读取失败')})}
+  load();
 })();

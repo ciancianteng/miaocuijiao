@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
@@ -6,9 +6,10 @@
   <title>超级管理员后台 | MEOW CUI JIAO</title>
   <link rel="stylesheet" href="src/admin-suite.css">
   <link rel="stylesheet" href="src/design-system.css">
+  <link rel="stylesheet" href="src/admin-final-v1.css">
   <script src="src/companion-levels.js"></script>
 </head>
-<body data-allowed-roles="super_admin" data-default-role="super_admin">
+<body data-allowed-roles="admin,super_admin" data-default-role="admin">
   <div class="admin-app">
     <aside class="admin-sidebar" id="adminSidebar">
       <div class="side-brand">
@@ -18,113 +19,18 @@
         </div>
       </div>
       <button class="collapse-btn" type="button" data-collapse-sidebar>收起菜单</button>
-      <nav class="side-nav" aria-label="超级管理员菜单">
-        <button class="nav-parent active-parent" type="button" data-toggle-group="dashboard">工作台</button>
-        <div class="nav-group open" data-group="dashboard">
-          <button class="active" type="button" data-section="dashboard">数据总览</button>
-          <button type="button" data-section="dashboard-todos" data-target-section="dashboard">待办事项</button>
-        </div>
-        <button class="nav-parent" type="button" data-section="orders">订单管理</button>
-        <button class="nav-parent" type="button" data-toggle-group="bosses">老板管理</button>
-        <div class="nav-group open" data-group="bosses">
-          <button type="button" data-section="bosses">老板列表</button>
-        </div>
-
-        <button class="nav-parent" type="button" data-toggle-group="players">陪玩管理</button>
-        <div class="nav-group open" data-group="players">
-          <button type="button" data-section="players">陪玩列表</button>
-          <button type="button" data-section="player-audit" data-target-section="companion-applications">陪玩审核</button>
-          <button type="button" data-section="player-identity" data-target-section="companion-applications">实名认证</button>
-          <button type="button" data-section="player-deposit-records" data-target-section="companion-deposit">押金记录</button>
-          <button type="button" data-section="player-commission" data-target-section="commissions">抽成设置</button>
-          <button type="button" data-section="player-direct-rebate" data-target-section="commissions">直属陪返点</button>
-          <button type="button" data-section="player-income-flow" data-target-section="finance">收入流水</button>
-          <button type="button" data-section="player-withdraw" data-target-section="withdraw">提现审核</button>
-        </div>
-
-        <button class="nav-parent" type="button" data-toggle-group="service">客服管理</button>
-        <div class="nav-group open" data-group="service">
-          <button type="button" data-section="service">客服列表</button>
-          <button type="button" data-section="service-accounts" data-target-section="admin-accounts">客服账号</button>
-          <button type="button" data-section="messages">客服工作台</button>
-          <button type="button" data-section="service-records">接待记录</button>
-          <button type="button" data-section="service-attendance" data-target-section="service">排班打卡</button>
-          <button type="button" data-section="service-salary" data-target-section="finance">工资统计</button>
-          <button type="button" data-section="service-replies" data-target-section="messages">快捷回复</button>
-        </div>
-
-        <button class="nav-parent" type="button" data-toggle-group="content">首页与内容管理</button>
-        <div class="nav-group open" data-group="content">
-          <button type="button" data-section="home-entry-settings">首页设置</button>
-          <button type="button" data-section="banners">Banner 管理</button>
-          <button type="button" data-section="announcements">公告管理</button>
-          <button type="button" data-section="ads">广告位管理</button>
-          <button type="button" data-section="featured-players">推荐陪玩</button>
-          <button type="button" data-section="hot-games">热门游戏</button>
-          <button type="button" data-section="team-lobby-links">组队大厅链接</button>
-          <button type="button" data-section="companion-rules">陪玩制度</button>
-          <button type="button" data-section="service-rules">客服制度</button>
-        </div>
-
-        <button class="nav-parent" type="button" data-toggle-group="base-data">基础数据</button>
-        <div class="nav-group open" data-group="base-data">
-          <button type="button" data-section="games">游戏管理</button>
-          <button type="button" data-section="service-types">服务类型管理</button>
-          <button type="button" data-section="companion-levels">陪玩等级管理</button>
-          <button type="button" data-section="companion-tags">陪玩标签管理</button>
-          <button type="button" data-section="voice-types">声音类型管理</button>
-          <button type="button" data-section="availability-times">可接单时间配置</button>
-          <button type="button" data-section="vip-levels">VIP等级管理</button>
-          <button type="button" data-section="badges">徽章 / 身份组管理</button>
-        </div>
-
-        <button class="nav-parent" type="button" data-toggle-group="marketing">营销中心</button>
-        <div class="nav-group open" data-group="marketing">
-          <button type="button" data-section="activities">活动管理</button>
-          <button type="button" data-section="coupons">优惠券管理</button>
-          <button type="button" data-section="coupon-codes">优惠码管理</button>
-          <button type="button" data-section="coupon-issues">平台发放记录</button>
-          <button type="button" data-section="coupon-usages">使用记录</button>
-          <button type="button" data-section="invite-rebate-settings" data-target-section="commissions">邀请返利设置</button>
-        </div>
-
-        <button class="nav-parent" type="button" data-toggle-group="recharge-payment">充值与支付</button>
-        <div class="nav-group open" data-group="recharge-payment">
-          <button type="button" data-section="recharge-center">充值中心设置</button>
-          <button type="button" data-section="recharge-packages">充值套餐</button>
-          <button type="button" data-section="payment-methods" data-target-section="payment">支付方式</button>
-          <button type="button" data-section="payment">支付设置</button>
-          <button type="button" data-section="recharges">充值流水</button>
-        </div>
-
-        <button class="nav-parent" type="button" data-toggle-group="finance">财务管理</button>
-        <div class="nav-group open" data-group="finance">
-          <button type="button" data-section="finance">平台流水</button>
-          <button type="button" data-section="order-flow" data-target-section="orders">订单流水</button>
-          <button type="button" data-section="player-settlement" data-target-section="finance">陪玩结算</button>
-          <button type="button" data-section="service-payroll" data-target-section="finance">客服工资</button>
-          <button type="button" data-section="refund-flow" data-target-section="refunds">退款流水</button>
-          <button type="button" data-section="platform-profit" data-target-section="finance">平台利润</button>
-          <button type="button" data-section="financial-reports" data-target-section="statistics">财务报表</button>
-        </div>
-
-        <button class="nav-parent" type="button" data-toggle-group="risk">消息与风控</button>
-        <div class="nav-group open" data-group="risk">
-          <button type="button" data-section="system-messages">系统消息</button>
-          <button type="button" data-section="sensitive-words">敏感词管理</button>
-          <button type="button" data-section="reports">举报记录</button>
-          <button type="button" data-section="messages">聊天记录</button>
-          <button type="button" data-section="risk-accounts">风险账号</button>
-        </div>
-
-        <button class="nav-parent" type="button" data-toggle-group="system">系统管理</button>
-        <div class="nav-group open" data-group="system">
-          <button type="button" data-section="admin-accounts">管理员账号</button>
-          <button type="button" data-section="permissions">角色权限</button>
-          <button type="button" data-section="login-records" data-target-section="logs">登录记录</button>
-          <button type="button" data-section="logs">操作日志</button>
-          <button type="button" data-section="settings">系统设置</button>
-        </div>
+      <nav class="side-nav compact-final" aria-label="超级管理员菜单">
+        <button class="active" type="button" data-section="dashboard">控制台</button>
+        <button type="button" data-section="bosses">老板管理</button>
+        <button type="button" data-section="players">陪玩管理</button>
+        <button type="button" data-section="service-accounts">客服管理</button>
+        <button type="button" data-section="service-reports">工资报备</button>
+        <button type="button" data-section="orders">订单管理</button>
+        <button type="button" data-section="banners">Banner</button>
+        <button type="button" data-section="announcements">公告</button>
+        <button type="button" data-section="games">游戏</button>
+        <button type="button" data-section="companion-tags">标签</button>
+        <button type="button" data-section="settings">系统设置</button>
       </nav>
     </aside>
 
@@ -171,7 +77,9 @@
         <section class="section" id="section-featured-players"><section class="panel"><h2>推荐陪玩管理</h2><div id="featuredPlayerManagement"></div></section></section>
         <section class="section" id="section-hot-games"><section class="panel"><h2>热门游戏管理</h2><div id="hotGameManagement"></div></section></section>
         <section class="section" id="section-companion-levels"><section class="panel"><h2>陪玩等级管理</h2><div id="companionLevelSettings"></div></section></section>
-        <section class="section" id="section-service"><section class="panel"><h2>客服管理</h2><div id="table-customer_tickets"></div></section></section>
+        <section class="section" id="section-service-accounts"><section class="panel service-account-panel"><div id="serviceAccountManagement"></div></section></section>
+        <section class="section" id="section-service-stats"><section class="panel service-account-panel"><div id="serviceWorkStats"></div></section></section>
+        <section class="section" id="section-service-reports"><section class="panel service-account-panel"><div id="serviceReportsManagement"></div></section></section>
         <section class="section" id="section-orders"><section class="panel"><h2>订单管理</h2><div id="orderManagement"></div></section></section>
 
         <section class="section" id="section-recharge-center"><section class="panel"><h2>猫粮充值</h2><div id="table-recharge_requests"></div></section></section>
@@ -197,9 +105,6 @@
         <section class="section" id="section-voice-types"><section class="panel"><h2>声音类型管理</h2><div id="table-voice_types"></div></section></section>
         <section class="section" id="section-companion-deposit"><section class="panel"><h2>陪玩押金设置</h2><div id="table-companion_deposit"></div></section></section>
         <section class="section" id="section-companion-applications"><section class="panel"><h2>陪玩申请审核</h2><div id="table-companion_applications"></div></section></section>
-
-        <section class="section" id="section-messages"><section class="panel admin-message-panel"><h2>客服工作台</h2><div id="adminMessageCenter"></div></section></section>
-        <section class="section" id="section-service-records"><section class="panel service-record-panel"><h2>接待记录</h2><div id="serviceRecordManagement"></div></section></section>
         <section class="section" id="section-statistics"><section class="panel"><h2>统计中心</h2><div id="statisticsPanel"></div></section></section>
         <section class="section" id="section-admin-accounts"><section class="panel"><h2>&#36134;&#21495;&#31649;&#29702;</h2><div id="table-admin_accounts"></div></section></section>
         <section class="section" id="section-permissions"><section class="panel"><h2>权限系统</h2><div id="table-role_permissions"></div></section></section>
@@ -223,5 +128,12 @@
   </div>
 
   <script src="src/admin-suite.js"></script>
+  <script src="src/admin-service-accounts.js"></script>
+  <script src="src/admin-final-v1.js"></script>
 </body>
 </html>
+
+
+
+
+

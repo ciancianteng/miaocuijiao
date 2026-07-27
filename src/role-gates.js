@@ -1,33 +1,24 @@
-(function () {
-  var SESSION_VERSION = "v3";
-  var DEV_ADMIN_ACCOUNT = "admin@test.com";
-  var DEV_ADMIN_PASSWORD = "12345678";
+﻿(function () {
+  var SESSION_VERSION = "v4";
   var routes = {
-    customer: { token: "customerAuthToken", user: "customerUser", login: "/index.html", allowed: [/\/index\.html$/, /\/$/, /\/mine\.html$/, /\/companion-center\.html$/, /\/profile\.html$/, /\/orders\.html$/, /\/messages\.html$/, /\/service-select\.html$/, /\/custom-order\.html$/, /\/more-gameplays\.html$/, /\/companion-apply\.html$/, /\/companion-deposit\.html$/, /\/activities\.html$/] },
-    companion: { token: "companionAuthToken", user: "companionUser", login: "/companion/index.html", allowed: [/\/companion\//] },
-    customer_service: { token: "customerServiceAuthToken", user: "customerServiceUser", login: "/customer-service/index.html", allowed: [/\/customer-service\//] },
-    admin: { token: "adminAuthToken", user: "adminUser", login: "/admin/index.html", allowed: [/\/admin\//] }
+    customer: { token: "customerAuthToken", user: "customerUser", login: "/index.html", allowed: [/\/index\.html$/, /\/$/, /\/mine\.html$/, /\/companion-center\.html$/, /\/profile\.html$/, /\/orders\.html$/, /\/messages\.html$/, /\/custom-order\.html$/, /\/more-gameplays\.html$/, /\/companion-apply\.html$/, /\/activities\.html$/] },
+    boss: { token: "customerAuthToken", user: "customerUser", login: "/index.html", allowed: [/\/index\.html$/, /\/$/, /\/mine\.html$/, /\/companion-center\.html$/, /\/profile\.html$/, /\/orders\.html$/, /\/messages\.html$/, /\/custom-order\.html$/, /\/more-gameplays\.html$/, /\/companion-apply\.html$/, /\/activities\.html$/] },
+    companion: { token: "companionAuthToken", user: "companionUser", login: "/companion/login", allowed: [/\/companion\//] },
+    customer_service: { token: "customerServiceAuthToken", user: "customerServiceUser", login: "/customer-service/login", allowed: [/\/customer-service\//] },
+    admin: { token: "adminAuthToken", user: "adminUser", login: "/index.html", allowed: [/\/admin\.html$/, /\/admin\//] }
   };
 
-  function path() {
-    return location.pathname.replace(/\\/g, "/");
-  }
+  function path() { return location.pathname.replace(/\\/g, "/"); }
+  function storageRole(role) { role = String(role || ""); if (role === "boss") return "customer"; if (role === "service") return "customer_service"; if (role === "player") return "companion"; return role; }
+  function profileRole(role) { role = String(role || ""); if (role === "customer") return "boss"; if (role === "service") return "customer_service"; if (role === "player") return "companion"; return role; }
+  function roleMatches(expected, actual) { return profileRole(expected) === profileRole(actual); }
+  function routeFor(role) { return { boss: "/index.html", customer: "/index.html", companion: "/companion/", customer_service: "/customer-service/", admin: "/admin/" }[storageRole(role)] || "/index.html"; }
 
-  function isAllowed(role) {
-    var cfg = routes[role];
-    if (!cfg) return true;
-    return cfg.allowed.some(function (rule) { return rule.test(path()); });
-  }
-
-  function isLogged(role) {
-    var cfg = routes[role];
-    var token = cfg && localStorage.getItem(cfg.token);
-    return Boolean(token && token.indexOf(role + "_session_" + SESSION_VERSION + "_") === 0);
-  }
-
-  function isLocalDevHost() {
-    return location.hostname === "localhost" || location.hostname === "127.0.0.1" || location.hostname === "::1";
-  }
+  function cfgFor(role) { return routes[storageRole(role)] || routes[role]; }
+  function readUser(role) { var cfg = cfgFor(role); try { return JSON.parse(localStorage.getItem(cfg.user) || sessionStorage.getItem(cfg.user) || "{}"); } catch (e) { return {}; } }
+  function readToken(role) { var cfg = cfgFor(role); return localStorage.getItem(cfg.token) || sessionStorage.getItem(cfg.token) || ""; }
+  function isAllowed(role) { var cfg = cfgFor(role); if (!cfg) return true; return cfg.allowed.some(function (rule) { return rule.test(path()); }); }
+  function isLogged(role) { var token = readToken(role); var u = readUser(role); if (!token) return false; if (String(token).indexOf(storageRole(role) + "_session_" + SESSION_VERSION + "_") === 0) return roleMatches(role, u.role || role); if (String(token).indexOf(storageRole(role) + "_session_") === 0) return roleMatches(role, u.role || role); return false; }
 
   function setLoginMessage(anchor, message) {
     var box = document.getElementById("loginState") || document.querySelector("[data-login-error]");
@@ -42,109 +33,93 @@
     if (box) box.textContent = message;
   }
 
-  function createDevAdminSession(account) {
-    var cfg = routes.admin;
-    var now = Date.now();
-    var adminUser = {
-      id: "dev_admin",
-      account: account,
-      user_id: "dev_admin",
-      name: "\u5f00\u53d1\u7ba1\u7406\u5458",
-      role: "admin",
-      adminRole: "super_admin",
-      permissions: ["super_admin"],
-      devOnly: true
+  function fieldValue(ids) { for (var i = 0; i < ids.length; i += 1) { var el = document.getElementById(ids[i]); if (el) return el.value || ""; } return ""; }
+  function closeLoginModal() { var modal = document.getElementById("modal"); if (modal) modal.classList.remove("open"); document.body.style.overflow = ""; }
+  function refreshAuthUi() { document.body.classList.toggle("is-logged-in", isLogged("customer") || isLogged("boss")); window.dispatchEvent(new CustomEvent("mcj:auth-updated")); }
+
+  function saveSession(session, remember) {
+    var userData = session && session.user || {};
+    var role = storageRole(userData.role || "boss");
+    var cfg = cfgFor(role);
+    if (!cfg) return null;
+    var store = remember === false ? sessionStorage : localStorage;
+    var token = role + "_session_" + SESSION_VERSION + "_" + Date.now();
+    var user = {
+      id: userData.id || "",
+      uid: userData.id || "",
+      account: userData.email || "",
+      user_id: userData.id || "",
+      name: userData.displayName || userData.email || "",
+      nickname: userData.displayName || "",
+      email: userData.email || "",
+      phone: userData.phone || "",
+      avatarUrl: userData.avatarUrl || "",
+      role: userData.role || role,
+      status: userData.status || "active",
+      adminRole: userData.role === "admin" ? "admin" : "",
+      permissions: userData.role === "admin" ? ["admin"] : []
     };
-    localStorage.setItem(cfg.token, "admin_session_" + SESSION_VERSION + "_" + now);
-    localStorage.setItem(cfg.user, JSON.stringify(adminUser));
-    localStorage.setItem("mcjRole", "super_admin");
-    localStorage.setItem("mcjDevAdminLogin", "localhost");
-    return adminUser;
+    store.setItem(cfg.token, token);
+    store.setItem(cfg.user, JSON.stringify(user));
+    store.setItem("mcjRole", userData.role || role);
+    if (session.accessToken) store.setItem("mcjAuthAccessToken", session.accessToken);
+    if (session.refreshToken) store.setItem("mcjAuthRefreshToken", session.refreshToken);
+    ["customer", "companion", "customer_service", "admin"].forEach(function (other) {
+      if (other === role) return;
+      var otherCfg = cfgFor(other);
+      localStorage.removeItem(otherCfg.token); localStorage.removeItem(otherCfg.user);
+      sessionStorage.removeItem(otherCfg.token); sessionStorage.removeItem(otherCfg.user);
+    });
+    return user;
   }
 
-  function loginWithPassword(account, password) {
-    var normalized = String(account || "").trim().toLowerCase();
-    if (!isLocalDevHost()) return { ok: false, message: "\u8d26\u53f7\u6216\u5bc6\u7801\u9519\u8bef\u3002" };
-    if (normalized === DEV_ADMIN_ACCOUNT && String(password || "") === DEV_ADMIN_PASSWORD) {
-      return { ok: true, role: "admin", redirect: "admin.html", user: createDevAdminSession(normalized) };
-    }
-    return { ok: false, message: "\u8d26\u53f7\u6216\u5bc6\u7801\u9519\u8bef\u3002" };
+  async function loginWithDatabase(account, password, remember) {
+    var response = await fetch("/api/auth", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "login", email: account, password: password }) });
+    var body = await response.json().catch(function () { return {}; });
+    if (!response.ok || !body.ok) throw new Error(body.message || "账号或密码错误。");
+    saveSession(body.session, remember);
+    return body;
   }
 
-  function fieldValue(ids) {
-    for (var i = 0; i < ids.length; i += 1) {
-      var el = document.getElementById(ids[i]);
-      if (el) return el.value || "";
-    }
-    return "";
-  }
+  function loginWithPassword() { return { ok: false, message: "请使用数据库账号邮箱登录。" }; }
+  function login() { return null; }
+  function user(role) { return readUser(role); }
+  function logout(role) { var cfg = cfgFor(role); if (!cfg) return; localStorage.removeItem(cfg.token); localStorage.removeItem(cfg.user); sessionStorage.removeItem(cfg.token); sessionStorage.removeItem(cfg.user); }
+  function guard(role) { var cfg = cfgFor(role); if (!cfg) return true; if (!isAllowed(role)) { location.replace(cfg.login); return false; } if ((storageRole(role) === "admin") && !isLogged("admin")) { location.replace("/index.html"); return false; } return true; }
 
-  function bindDevAdminLogin() {
-    if (!isLocalDevHost()) return;
+  function bindLoginButtons() {
     document.addEventListener("click", function (event) {
       var target = event.target && event.target.closest && event.target.closest("[data-login-confirm]");
       if (!target) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.stopImmediatePropagation) event.stopImmediatePropagation();
       var account = fieldValue(["loginGmail", "loginEmail", "adminEmail", "email"]);
       var password = fieldValue(["loginGmailCode", "loginPassword", "adminPassword", "password"]);
-      if (String(account || "").trim().toLowerCase() !== DEV_ADMIN_ACCOUNT) return;
-
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      var result = loginWithPassword(account, password);
-      if (!result.ok) {
-        setLoginMessage(target, result.message);
-        return;
-      }
-      location.href = result.redirect;
+      if (!account || !password) { setLoginMessage(target, "第一阶段仅支持邮箱 + 密码登录。"); return; }
+      if (target.disabled) return;
+      target.disabled = true;
+      var oldText = target.textContent;
+      target.textContent = "登录中...";
+      loginWithDatabase(account, password, true).then(function (result) {
+        closeLoginModal();
+        refreshAuthUi();
+        var role = result.session && result.session.user && result.session.user.role || "boss";
+        var redirect = sessionStorage.getItem("mcjAfterLoginRedirect") || result.redirect || routeFor(role);
+        sessionStorage.removeItem("mcjAfterLoginRedirect");
+        if (profileRole(role) !== "boss") location.href = redirect;
+        else if (redirect && redirect !== location.pathname && !/index\.html$/.test(location.pathname)) location.href = redirect;
+      }).catch(function (error) {
+        setLoginMessage(target, error.message || "账号或密码错误。");
+      }).finally(function () {
+        target.disabled = false;
+        target.textContent = oldText || "登录";
+      });
     }, true);
   }
 
-  function user(role) {
-    var cfg = routes[role];
-    try { return JSON.parse(localStorage.getItem(cfg.user) || "{}"); } catch (e) { return {}; }
-  }
+  bindLoginButtons();
+  refreshAuthUi();
 
-  function customerNumber(account) {
-    var key = "mcjCustomerIdMap.v1";
-    var counterKey = "mcjCustomerIdCounter.v1";
-    var map = {};
-    try { map = JSON.parse(localStorage.getItem(key) || "{}") || {}; } catch (e) { map = {}; }
-    if (!map[account]) {
-      var next = Number(localStorage.getItem(counterKey) || 0) + 1;
-      map[account] = "MCJ" + String(next).padStart(6, "0");
-      localStorage.setItem(counterKey, String(next));
-      localStorage.setItem(key, JSON.stringify(map));
-    }
-    return map[account];
-  }
-
-  function login(role, id) {
-    var cfg = routes[role];
-    if (!cfg) return;
-    var account = id || (role === "customer" ? "customer_demo" : role === "companion" ? "companion_user" : role === "customer_service" ? "service_demo" : "admin_demo");
-    var publicId = role === "customer" ? customerNumber(account) : account;
-    localStorage.setItem(cfg.token, role + "_session_" + SESSION_VERSION + "_" + Date.now());
-    localStorage.setItem(cfg.user, JSON.stringify({ id: publicId, account: account, user_id: publicId, name: role === "customer" ? "\u8001\u677f\u8d26\u53f7" : account, role: role }));
-  }
-
-  function logout(role) {
-    var cfg = routes[role];
-    if (!cfg) return;
-    localStorage.removeItem(cfg.token);
-    localStorage.removeItem(cfg.user);
-  }
-
-  function guard(role) {
-    var cfg = routes[role];
-    if (!cfg) return true;
-    if (!isAllowed(role)) {
-      location.replace(cfg.login);
-      return false;
-    }
-    return true;
-  }
-
-  bindDevAdminLogin();
-
-  window.MCJRoleGate = { routes: routes, guard: guard, login: login, loginWithPassword: loginWithPassword, logout: logout, isLogged: isLogged, user: user, isLocalDevHost: isLocalDevHost };
+  window.MCJRoleGate = { routes: routes, guard: guard, login: login, loginWithPassword: loginWithPassword, loginWithDatabase: loginWithDatabase, saveSession: saveSession, logout: logout, isLogged: isLogged, user: user };
 })();

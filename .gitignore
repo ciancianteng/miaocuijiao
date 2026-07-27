@@ -1,7 +1,15 @@
-node_modules/
+﻿node_modules/
 dist/
 .sites-package/
 .tools/
 *.log
 *.tar
 .DS_Store
+.env.local.env.*.local
+
+
+.local-data/
+.codex-backups/
+screenshots/
+ADMIN_KEEP_FEATURE_INVENTORY.md
+BUTTON_AUDIT.md

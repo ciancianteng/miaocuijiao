@@ -1,4 +1,4 @@
-(function () {
+﻿(function () {
   "use strict";
 
   var PER_PAGE = 12;
@@ -49,14 +49,18 @@
     if (/offline|离线/i.test(text)) return "离线";
     return text || "离线";
   }
-  function readItems() {
+  async function readItems() {
     var dataItems = [];
-    if (window.MCJRealData && typeof window.MCJRealData.approvedCompanions === "function") {
-      dataItems = window.MCJRealData.approvedCompanions();
-    } else if (window.MCJPlatformStore) {
-      dataItems = window.MCJPlatformStore.list("companions").filter(function (item) {
-        return item.auditStatus === "approved" && item.visible !== false;
-      });
+    state.loadError = "";
+    try {
+      var response = await fetch("/api/public/companions", { headers: { Accept: "application/json" }, cache: "no-store" });
+      var body = await response.json().catch(function () { return {}; });
+      if (!response.ok || !body.ok) throw new Error(body.message || "陪玩列表读取失败");
+      dataItems = Array.isArray(body.companions) ? body.companions : [];
+    } catch (error) {
+      console.error("陪玩大厅读取失败", error);
+      state.loadError = error.message || "陪玩列表读取失败";
+      dataItems = [];
     }
     var levelApi = window.MCJCompanionLevels;
     return dataItems.map(function (item) {
@@ -81,8 +85,7 @@
         desc: normalized.desc || normalized.description || ""
       };
     });
-  }
-  function setOptions(id, options, allLabel) {
+  }  function setOptions(id, options, allLabel) {
     var el = document.getElementById(id);
     if (!el) return;
     var current = el.value;
@@ -152,7 +155,7 @@
         '<p class="muted companion-id">陪玩 ID：' + esc(item.id || "未生成") + '</p>' +
         '<div class="companion-meta"><span class="companion-level-pill">' + esc(item.level) + '</span><span>' + esc(item.game) + '</span></div>' +
         '<div class="tag-row companion-tags">' + tags + '</div>' +
-        '<a class="companion-card-action" href="profile.html?player=' + encodeURIComponent(item.id || item.name || "") + '">查看详情</a>' +
+        '<div class="companion-card-actions"><a class="companion-card-action" href="profile.html?player=' + encodeURIComponent(item.id || item.name || "") + '">查看详情</a><a class="companion-card-action primary" href="custom-order.html?companion_id=' + encodeURIComponent(item.id || "") + '">立即下单</a></div>' +
       '</div>' +
     '</article>';
   }
@@ -193,8 +196,8 @@
       render();
     });
   }
-  function start() {
-    state.items = readItems();
+  async function start() {
+    state.items = await readItems();
     setupFilters();
     bind();
     render();

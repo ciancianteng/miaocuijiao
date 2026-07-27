@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
@@ -63,22 +63,35 @@
   <script src="src/design-system.js" defer></script>
   <script>
     (function(){
-      var KEY='mcjPlatformData.v1';
-      function read(){try{return JSON.parse(localStorage.getItem(KEY)||'{}')||{}}catch(e){return {}}}
-      function write(db){localStorage.setItem(KEY,JSON.stringify(db||{}));window.dispatchEvent(new CustomEvent('mcj:platform-data-updated'))}
       function isLogged(){return window.MCJRoleGate&&window.MCJRoleGate.isLogged('customer')}
-      function user(){return window.MCJRoleGate?window.MCJRoleGate.user('customer'):{}}
+      function user(){return window.MCJRoleGate?window.MCJRoleGate.user('customer'):{} }
+      function authToken(){return localStorage.getItem('mcjAuthAccessToken')||sessionStorage.getItem('mcjAuthAccessToken')||'';}
+      function companionId(){var p=new URLSearchParams(location.search);return p.get('companion_id')||p.get('companion')||p.get('player')||'';}
       var form=document.getElementById('customOrderForm'),state=document.getElementById('customState'),btn=document.getElementById('customSubmit');
       form.addEventListener('submit',async function(e){
         e.preventDefault();
         if(!isLogged()){sessionStorage.setItem('mcjAfterLoginRedirect','custom-order.html');location.href='index.html';return}
         if(btn.disabled)return;btn.disabled=true;btn.textContent='正在提交...';
-        var data={};Array.prototype.forEach.call(form.elements,function(el){if(el.name)data[el.name]=el.value.trim()});
-        data.required_level=Number(data.companion_level||1);
-        data.acceptable_levels=[];for(var level=data.required_level;level<=5;level++){data.acceptable_levels.push(level);}
-        var db=read();db.orders=Array.isArray(db.orders)?db.orders:[];var u=user();
-        db.orders.unshift(Object.assign(data,{id:'CO-'+Date.now(),order_no:'MCJ-CUSTOM-'+Date.now(),order_type:'custom',status:'quote_pending',boss_id:u.id||'',boss_nickname:u.name||'老板',created_at:new Date().toISOString()}));
-        write(db);state.hidden=false;state.textContent='自定义需求已提交，等待客服报价。';form.reset();btn.disabled=false;btn.textContent='提交给客服报价';
+        state.hidden=true;
+        var data={};Array.prototype.forEach.call(form.elements,function(el){if(el.name)data[el.name]=String(el.value||'').trim()});
+        var requiredLevel=Number(data.companion_level||1);
+        data.required_level=requiredLevel;
+        data.acceptable_levels=[];for(var level=requiredLevel;level<=5;level++){data.acceptable_levels.push(level);}
+        var u=user();
+        try{
+          var response=await fetch('/api/orders',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+authToken()},body:JSON.stringify({action:'create',order:Object.assign(data,{companion_id:companionId(),order_type:'custom',description:data.requirements||data.title||'',hours:String(data.duration||'1').replace(/[^\\d.]/g,'')||1,unit_price:data.price||data.budget||0,boss:{id:u.id||'',uid:u.uid||u.id||'',name:u.name||u.nickname||'老板',bossId:u.bossId||''}})})});
+          var body=await response.json().catch(function(){return {}});
+          if(!response.ok||!body.ok)throw new Error(body.message||'订单提交失败');
+          state.hidden=false;
+          state.textContent=body.message||'自定义需求已提交，等待客服确认。';
+          form.reset();
+        }catch(error){
+          state.hidden=false;
+          state.textContent=error.message||'订单提交失败，请稍后重试。';
+        }finally{
+          btn.disabled=false;
+          btn.textContent='提交给客服报价';
+        }
       });
     })();
   </script>
@@ -108,3 +121,6 @@
   </script>
 </body>
 </html>
+
+
+

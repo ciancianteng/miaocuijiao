@@ -1,4 +1,4 @@
-(function () {
+﻿(function () {
   "use strict";
 
   if (window.MCJHomeBanner) return;
@@ -7,6 +7,104 @@
   var touchState = new WeakMap();
   var remoteStore = { contents: { banners: [], notices: [] } };
   var remoteLoaded = false;
+
+
+  var LOCAL_BANNER_DB = "mcj_local_banner_assets_v1";
+  var LOCAL_BANNER_STORE = "images";
+
+  function isLocalBannerImage(url) {
+    return String(url || "").indexOf("mcj-local-banner://") === 0;
+  }
+
+  function openLocalBannerDb() {
+    return new Promise(function (resolve, reject) {
+      if (!window.indexedDB) {
+        reject(new Error("当前浏览器不支持 IndexedDB"));
+        return;
+      }
+      var req = indexedDB.open(LOCAL_BANNER_DB, 1);
+      req.onupgradeneeded = function () {
+        var db = req.result;
+        if (!db.objectStoreNames.contains(LOCAL_BANNER_STORE)) db.createObjectStore(LOCAL_BANNER_STORE, { keyPath: "id" });
+      };
+      req.onsuccess = function () { resolve(req.result); };
+      req.onerror = function () { reject(req.error || new Error("IndexedDB 打开失败")); };
+    });
+  }
+
+  function readLocalBannerImage(url) {
+    var id = String(url || "").replace("mcj-local-banner://", "");
+    if (!id) return Promise.resolve("");
+    return openLocalBannerDb().then(function (db) {
+      return new Promise(function (resolve, reject) {
+        var tx = db.transaction(LOCAL_BANNER_STORE, "readonly");
+        var req = tx.objectStore(LOCAL_BANNER_STORE).get(id);
+        req.onsuccess = function () { db.close(); resolve((req.result && req.result.dataUrl) || ""); };
+        req.onerror = function () { db.close(); reject(req.error || new Error("本地图片读取失败")); };
+      });
+    });
+  }
+
+  function localPlatformContentKey(type) {
+    return "mcj_platform_content_" + type;
+  }
+
+  function readLocalPlatformContent(type) {
+    try {
+      var list = JSON.parse(localStorage.getItem(localPlatformContentKey(type)) || "[]");
+      if (!Array.isArray(list)) return [];
+      return list.map(function (row) {
+        row = row || {};
+        var draft = row.draft && typeof row.draft === "object" ? row.draft : {};
+        var published = row.published && typeof row.published === "object" ? row.published : {};
+        var data = Object.assign({}, published, draft);
+        var status = String(row.status || data.status || "published").toLowerCase();
+        return Object.assign({}, data, {
+          id: row.id || data.id || "",
+          title: data.title || row.title || "",
+          sort: Number(row.sort != null ? row.sort : (data.sort || 100)),
+          enabled: row.enabled !== false && String(row.enabled).toLowerCase() !== "false" && status !== "disabled" && status !== "unpublished" && status.indexOf("停") < 0 && status.indexOf("下架") < 0,
+          published: true,
+          localOnly: true
+        });
+      });
+    } catch (error) {
+      console.error("[首页 Banner] 读取本地测试 Banner 失败", error);
+      return [];
+    }
+  }
+
+  function resolveLocalBannerImages(list) {
+    return Promise.all((list || []).map(function (item) {
+      var copy = Object.assign({}, item || {});
+      var jobs = ["desktopImage", "mobileImage", "image"].map(function (key) {
+        if (!isLocalBannerImage(copy[key])) return Promise.resolve();
+        return readLocalBannerImage(copy[key]).then(function (src) { if (src) copy[key] = src; });
+      });
+      return Promise.all(jobs).then(function () { return copy; });
+    }));
+  }
+
+  function applyLoadedContent(result, callback) {
+    var byType = (result && result.byType) || {};
+    var banners = byType.banners || [];
+    if (!banners.length) banners = [];
+    resolveLocalBannerImages(banners).then(function (resolvedBanners) {
+      remoteStore = {
+        contents: {
+          banners: resolvedBanners,
+          notices: byType.announcements || []
+        }
+      };
+      remoteLoaded = true;
+      if (callback) callback();
+    }).catch(function (error) {
+      console.error("[首页 Banner] 本地测试图片解析失败", error);
+      remoteStore = { contents: { banners: banners, notices: byType.announcements || [] } };
+      remoteLoaded = true;
+      if (callback) callback();
+    });
+  }
 
   function readStore() {
     return remoteStore || { contents: { banners: [], notices: [] } };
@@ -20,19 +118,11 @@
         return response.json();
       })
       .then(function (result) {
-        var byType = result.byType || {};
-        remoteStore = {
-          contents: {
-            banners: byType.banners || [],
-            notices: byType.announcements || []
-          }
-        };
-        remoteLoaded = true;
-        if (callback) callback();
+        applyLoadedContent(result, callback);
       })
-      .catch(function () {
-        remoteLoaded = true;
-        if (callback) callback();
+      .catch(function (error) {
+        console.error("[首页 Banner] 远程内容读取失败，不使用本地假数据", error);
+        applyLoadedContent({ byType: {} }, callback);
       });
   }
 
@@ -264,4 +354,7 @@
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", applyHome);
   else applyHome();
   window.addEventListener("mcj:platform-data-updated", applyHome);
+  window.addEventListener("storage", function (event) { if (event.key === localPlatformContentKey("banners")) { remoteLoaded = false; loadRemoteContent(applyHome); } });
 })();
+
+
