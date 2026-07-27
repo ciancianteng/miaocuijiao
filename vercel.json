@@ -1,7 +1,10 @@
-﻿{
+{
   "rewrites": [
     { "source": "/login", "destination": "/index.html" },
     { "source": "/orders", "destination": "/orders.html" },
+    { "source": "/recharge", "destination": "/recharge.html" },
+    { "source": "/more-gameplays", "destination": "/more-gameplays.html" },
+    { "source": "/fixed-order", "destination": "/fixed-order.html" },
     { "source": "/support", "destination": "/support.html" },
     { "source": "/companion", "destination": "/companion/index.html" },
     { "source": "/companion/:path*", "destination": "/companion/index.html" },

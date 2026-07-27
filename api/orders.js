@@ -1,24 +1,48 @@
-﻿const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY"];
+﻿import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+loadLocalEnv();
+
+function loadLocalEnv() {
+  const apiDir = path.dirname(fileURLToPath(import.meta.url));
+  const envPath = path.resolve(apiDir, "..", ".env.local");
+  if (!fs.existsSync(envPath)) return;
+  for (const rawLine of fs.readFileSync(envPath, "utf8").split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+    const eq = line.indexOf("=");
+    if (eq === -1) continue;
+    const key = line.slice(0, eq).trim();
+    const value = line.slice(eq + 1).trim().replace(/^["']|["']$/g, "");
+    if (key && value && !process.env[key]) process.env[key] = value;
+  }
+}
+function envValue(key) {
+  if (key === "SUPABASE_URL") return process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "";
+  if (key === "SUPABASE_ANON_KEY") return process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || "";
+  return process.env[key] || "";
+}const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY"];
 const TABLE = "orders";
 const STATUS_TEXT = {
-  awaiting_payment: "待付款确认",
-  pending: "待接单",
-  claimed: "陪玩已申请",
-  waiting_boss_confirm: "待老板确认",
-  confirmed: "已确认",
+  awaiting_payment: "待付款",
+  pending: "待客服安排",
+  claimed: "待客服安排",
+  waiting_boss_confirm: "待我确认",
+  confirmed: "进行中",
   in_progress: "进行中",
   completed: "已完成",
   cancelled: "已取消",
-  refund_requested: "退款处理中",
-  refunded: "已退款"
+  refund_requested: "售后",
+  refunded: "售后"
 };
 
 function json(res, status, data) { res.status(status).json(data); }
-function hasDb() { return REQUIRED_ENV.every((key) => process.env[key]); }
-function anonHeaders(extra = {}) { return { apikey: process.env.SUPABASE_ANON_KEY, "Content-Type": "application/json", ...extra }; }
-function serviceHeaders(extra = {}) { return { apikey: process.env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`, "Content-Type": "application/json", Prefer: "return=representation", ...extra }; }
-function restUrl(table, query = "") { return `${process.env.SUPABASE_URL}/rest/v1/${table}${query}`; }
-function authUrl(path) { return `${process.env.SUPABASE_URL}/auth/v1/${path}`; }
+function hasDb() { return REQUIRED_ENV.every((key) => envValue(key)); }
+function anonHeaders(extra = {}) { return { apikey: envValue("SUPABASE_ANON_KEY"), "Content-Type": "application/json", ...extra }; }
+function serviceHeaders(extra = {}) { const key = envValue("SUPABASE_SERVICE_ROLE_KEY"); const base = { apikey: key, "Content-Type": "application/json", Prefer: "return=representation", "User-Agent": "MCJ-Server/1.0", ...extra }; if (!key.startsWith("sb_secret_")) base.Authorization = `Bearer ${key}`; return base; }
+function restUrl(table, query = "") { return `${envValue("SUPABASE_URL")}/rest/v1/${table}${query}`; }
+function authUrl(path) { return `${envValue("SUPABASE_URL")}/auth/v1/${path}`; }
 function money(value) { const n = Number(String(value ?? "").replace(/[^\d.-]/g, "")); return Number.isFinite(n) ? n : 0; }
 function nowIso() { return new Date().toISOString(); }
 function orderNo() { return `MCJ-${Date.now()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`; }
@@ -34,7 +58,7 @@ async function supabaseJson(url, init = {}) {
   const text = await response.text();
   let body = null;
   try { body = text ? JSON.parse(text) : null; } catch { body = text; }
-  if (!response.ok) throw new Error(body?.error_description || body?.message || body?.hint || body?.details || "Supabase 请求失败");
+  if (!response.ok) throw new Error(body?.error_description || body?.message || body?.hint || body?.details || (typeof body === "string" ? body : "") || "Supabase 请求失败");
   return body;
 }
 function tokenFrom(req) {
@@ -169,12 +193,12 @@ export default async function handler(req, res) {
     const id = String(body.id || body.order_id || body.orderId || "");
     if (!id) return json(res, 400, { ok: false, message: "缺少订单 ID。" });
     if (action === "confirm_companion") {
-      const order = await patchOwnedOrder(profile, id, ["waiting_boss_confirm"], { status: "confirmed" }, "老板已确认陪玩，订单进入待开始。");
+      const order = await patchOwnedOrder(profile, id, ["waiting_boss_confirm"], { status: "confirmed" }, "老板已确认陪玩，客服会继续跟进订单。");
       return json(res, 200, { ok: true, message: "已确认陪玩。", order });
     }
     if (action === "reject_companion") {
-      const order = await patchOwnedOrder(profile, id, ["waiting_boss_confirm"], { status: "pending", companion_id: null, accepted_at: null }, "老板已拒绝当前陪玩，订单重新进入待接单。");
-      return json(res, 200, { ok: true, message: "已拒绝陪玩，订单重新进入待接单。", order });
+      const order = await patchOwnedOrder(profile, id, ["waiting_boss_confirm"], { status: "pending", companion_id: null, accepted_at: null }, "老板已选择换一个陪玩，请客服重新安排。");
+      return json(res, 200, { ok: true, message: "已选择换一个陪玩，客服将重新安排。", order });
     }
     if (action === "cancel_order") {
       const order = await patchOwnedOrder(profile, id, ["awaiting_payment", "pending", "claimed", "waiting_boss_confirm", "confirmed"], { status: "cancelled", cancelled_at: nowIso() }, "老板已取消订单。");
@@ -189,3 +213,10 @@ export default async function handler(req, res) {
     return json(res, error.status || 500, { ok: false, message: error.message || "订单接口异常" });
   }
 }
+
+
+
+
+
+
+

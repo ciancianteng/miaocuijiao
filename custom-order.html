@@ -19,7 +19,7 @@
   <link rel="stylesheet" href="src/design-system.css">
 </head>
 <body>
-  <header class="topbar"><a class="brand" href="index.html"><img src="assets/meow-cuijiao-brand.jpg" alt="MEOW CUI JIAO"><span>MEOW CUI JIAO</span></a><nav class="nav"><a href="index.html">首页</a><a href="companion-center.html">陪玩大厅</a><a href="mine.html">我的</a></nav></header>
+  <header class="topbar"><a class="brand" href="index.html"><img src="assets/meow-cuijiao-brand.jpg" alt="MEOW CUI JIAO"><span>MEOW CUI JIAO</span></a><nav class="navlinks"><a href="index.html">首页</a><a href="companion-center.html">陪玩大厅</a><a href="recharge.html">充值中心</a><a href="orders.html">我的订单</a><a href="support.html">在线客服</a><a href="mine.html">我的账号</a><button type="button" data-boss-logout style="border:0;background:transparent;color:#cdb8c4;cursor:pointer;font:inherit;font-size:14px;padding:0">退出登录</button></nav></header>
   <main class="custom-shell">
     <section class="section-title"><div><h1>自定义订单</h1><p>填写需求后进入客服报价与匹配流程。</p></div></section>
     <section class="neon-card" style="padding:22px">
@@ -77,13 +77,19 @@
         var requiredLevel=Number(data.companion_level||1);
         data.required_level=requiredLevel;
         data.acceptable_levels=[];for(var level=requiredLevel;level<=5;level++){data.acceptable_levels.push(level);}
+        var levelPrice={1:20,2:30,3:40,4:60,5:75};
+        var durationText=String(data.duration||'1小时');
+        var parsedHours=durationText==='全天'?10:(Number(durationText.replace(/[^\d.]/g,''))||1);
+        data.hours=parsedHours;
+        data.unit_price=levelPrice[requiredLevel]||20;
+        data.total_amount=data.unit_price*parsedHours;
         var u=user();
         try{
-          var response=await fetch('/api/orders',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+authToken()},body:JSON.stringify({action:'create',order:Object.assign(data,{companion_id:companionId(),order_type:'custom',description:data.requirements||data.title||'',hours:String(data.duration||'1').replace(/[^\\d.]/g,'')||1,unit_price:data.price||data.budget||0,boss:{id:u.id||'',uid:u.uid||u.id||'',name:u.name||u.nickname||'老板',bossId:u.bossId||''}})})});
+          var response=await fetch('/api/orders',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+authToken()},body:JSON.stringify({action:'create',order:Object.assign(data,{companion_id:companionId(),order_type:'custom',description:data.requirements||data.title||'',hours:data.hours,unit_price:data.unit_price,total_amount:data.total_amount,boss:{id:u.id||'',uid:u.uid||u.id||'',name:u.name||u.nickname||'老板',bossId:u.bossId||''}})})});
           var body=await response.json().catch(function(){return {}});
           if(!response.ok||!body.ok)throw new Error(body.message||'订单提交失败');
           state.hidden=false;
-          state.textContent=body.message||'自定义需求已提交，等待客服确认。';
+          state.innerHTML=(body.message||'订单已提交，请联系客服确认付款。')+' <a href="orders.html">查看订单</a> · <a href="support.html">联系在线客服</a>';
           form.reset();
         }catch(error){
           state.hidden=false;
@@ -119,8 +125,26 @@
       if(window.MCJTaxonomy&&window.MCJTaxonomy.load){window.MCJTaxonomy.load().then(fillTaxonomyOptions).catch(fillTaxonomyOptions);} else {fillTaxonomyOptions();}
     })();
   </script>
+<script id="mcjBossLogoutHandler">
+  document.addEventListener('click', function(event) {
+    var btn = event.target && event.target.closest && event.target.closest('[data-boss-logout]');
+    if (!btn) return;
+    if (window.MCJRoleGate) {
+      window.MCJRoleGate.logout('boss');
+      window.MCJRoleGate.logout('customer');
+    }
+    localStorage.removeItem('mcjAuthAccessToken');
+    localStorage.removeItem('mcjAuthRefreshToken');
+    sessionStorage.removeItem('mcjAuthAccessToken');
+    sessionStorage.removeItem('mcjAuthRefreshToken');
+    location.href = 'index.html';
+  });
+</script>
 </body>
 </html>
+
+
+
 
 
 

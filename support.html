@@ -10,11 +10,28 @@
   </style>
 </head>
 <body>
-  <header class="topbar"><a class="brand" href="index.html"><img src="assets/meow-cuijiao-brand.jpg" alt="MEOW CUI JIAO"><span>MEOW CUI JIAO</span></a><nav class="navlinks"><a href="index.html">首页</a><a href="orders.html">我的订单</a></nav></header>
+  <header class="topbar"><a class="brand" href="index.html"><img src="assets/meow-cuijiao-brand.jpg" alt="MEOW CUI JIAO"><span>MEOW CUI JIAO</span></a><nav class="navlinks"><a href="index.html">首页</a><a href="companion-center.html">陪玩大厅</a><a href="recharge.html">充值中心</a><a href="orders.html">我的订单</a><a href="support.html">在线客服</a><a href="mine.html">我的账号</a><button type="button" data-boss-logout style="border:0;background:transparent;color:#cdb8c4;cursor:pointer;font:inherit;font-size:14px;padding:0">退出登录</button></nav></header>
   <main class="support-shell" id="supportApp"></main>
   <script src="src/role-gates.js"></script>
   <script>
     (function(){var root=document.getElementById('supportApp'),state={loading:true,error:'',conversation:null,messages:[],serviceStatus:'正在等待客服接入'};function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}function token(){return localStorage.getItem('mcjAuthAccessToken')||sessionStorage.getItem('mcjAuthAccessToken')||''}function orderId(){return new URLSearchParams(location.search).get('order')||''}function paint(){root.innerHTML='<section class="support-card"><header class="support-head"><div><h1>在线客服</h1><p>'+esc(state.serviceStatus||'正在等待客服接入')+'</p></div><button class="support-btn" data-refresh>刷新</button></header>'+body()+'</section>'}function body(){if(!token())return '<div class="support-alert">请先登录后联系在线客服。</div>';if(state.loading)return '<div class="support-empty">正在读取消息...</div>';if(state.error)return '<div class="support-alert">'+esc(state.error)+'</div>';return '<div class="messages">'+(state.messages.length?state.messages.map(function(m){return '<div class="msg '+(m.sender_role==='boss'?'mine':'')+'"><p>'+esc(m.content||'')+'</p><small>'+esc(m.created_at||'')+'</small></div>'}).join(''):'<div class="support-empty">正在等待客服接入</div>')+'</div><form class="support-form" data-send><input name="content" placeholder="输入消息" autocomplete="off"><button type="submit">发送</button></form>'}function load(){if(!token()){state.loading=false;paint();return}state.loading=true;state.error='';paint();fetch('/api/chat?order_id='+encodeURIComponent(orderId()),{headers:{Accept:'application/json',Authorization:'Bearer '+token()}}).then(function(res){return res.json().then(function(body){if(!res.ok||body.ok===false)throw new Error(body.message||'消息读取失败');return body})}).then(function(body){state.conversation=body.conversation;state.messages=body.messages||[];state.serviceStatus=body.serviceStatus||'正在等待客服接入'}).catch(function(err){state.error=err.message||'消息读取失败'}).finally(function(){state.loading=false;paint();setTimeout(function(){var box=document.querySelector('.messages');if(box)box.scrollTop=box.scrollHeight},0)})}document.addEventListener('click',function(e){if(e.target.closest('[data-refresh]'))load()});document.addEventListener('submit',function(e){if(!e.target.matches('[data-send]'))return;e.preventDefault();var input=e.target.elements.content,content=String(input.value||'').trim();if(!content)return;input.disabled=true;fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token()},body:JSON.stringify({order_id:orderId(),content:content})}).then(function(res){return res.json().then(function(body){if(!res.ok||body.ok===false)throw new Error(body.message||'发送失败');return body})}).then(function(){input.value='';load()}).catch(function(err){alert(err.message||'发送失败')}).finally(function(){input.disabled=false})});load();})();
   </script>
+<script id="mcjBossLogoutHandler">
+  document.addEventListener('click', function(event) {
+    var btn = event.target && event.target.closest && event.target.closest('[data-boss-logout]');
+    if (!btn) return;
+    if (window.MCJRoleGate) {
+      window.MCJRoleGate.logout('boss');
+      window.MCJRoleGate.logout('customer');
+    }
+    localStorage.removeItem('mcjAuthAccessToken');
+    localStorage.removeItem('mcjAuthRefreshToken');
+    sessionStorage.removeItem('mcjAuthAccessToken');
+    sessionStorage.removeItem('mcjAuthRefreshToken');
+    location.href = 'index.html';
+  });
+</script>
 </body>
 </html>
+
+

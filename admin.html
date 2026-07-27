@@ -7,6 +7,8 @@
   <link rel="stylesheet" href="src/admin-suite.css">
   <link rel="stylesheet" href="src/design-system.css">
   <link rel="stylesheet" href="src/admin-final-v1.css">
+  <script src="src/role-gates.js"></script>
+  <script>if (window.MCJRoleGate && !window.MCJRoleGate.guard("admin")) { document.documentElement.innerHTML = ""; }</script>
   <script src="src/companion-levels.js"></script>
 </head>
 <body data-allowed-roles="admin,super_admin" data-default-role="admin">
@@ -30,6 +32,7 @@
         <button type="button" data-section="announcements">公告</button>
         <button type="button" data-section="games">游戏</button>
         <button type="button" data-section="companion-tags">标签</button>
+        <button type="button" data-section="gameplays">更多玩法管理</button>
         <button type="button" data-section="settings">系统设置</button>
       </nav>
     </aside>
@@ -130,8 +133,13 @@
   <script src="src/admin-suite.js"></script>
   <script src="src/admin-service-accounts.js"></script>
   <script src="src/admin-final-v1.js"></script>
+  <script src="src/admin-service-packages.js"></script>
 </body>
 </html>
+
+
+
+
 
 
 

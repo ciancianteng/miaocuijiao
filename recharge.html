@@ -1,0 +1,125 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>充值中心 - MEOW CUI JIAO</title>
+  <link rel="stylesheet" href="src/style.css">
+  <style>
+    *{box-sizing:border-box}
+    body{margin:0;background:#08070a;color:#fff;font-family:Inter,Arial,"Microsoft YaHei",sans-serif}
+    .boss-nav{display:flex;gap:18px;flex:1;flex-wrap:wrap;align-items:center}
+    .boss-nav a,.boss-nav button{border:0;background:transparent;color:#cdb8c4;cursor:pointer;font:inherit;font-size:14px;padding:0;text-decoration:none}
+    .boss-nav a.active{color:#ffd6e7;font-weight:900}
+    .recharge-shell{width:min(1080px,calc(100% - 32px));margin:0 auto;padding:24px 0 80px;display:grid;gap:16px}
+    .page-head,.panel{border:1px solid rgba(255,255,255,.10);border-radius:18px;background:rgba(255,255,255,.045);padding:18px}
+    .page-head{display:flex;align-items:end;justify-content:space-between;gap:16px}
+    .page-head h1{margin:0;font-size:28px}.page-head p{margin:6px 0 0;color:#9ca3af}
+    .stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+    .stat{border:1px solid rgba(255,255,255,.08);border-radius:14px;background:rgba(0,0,0,.22);padding:14px}
+    .stat span{display:block;color:#9ca3af;font-size:13px}.stat strong{display:block;margin-top:8px;font-size:24px}
+    .layout{display:grid;grid-template-columns:1.25fr .75fr;gap:16px}
+    .panel h2{margin:0 0 14px;font-size:20px}.muted{color:#9ca3af}.hint{margin-top:10px;color:#9ca3af;font-size:13px;line-height:1.6}
+    .amounts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+    .chip,.method,.primary-btn,.ghost-btn{border-radius:12px;min-height:42px;display:inline-flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;font-weight:900}
+    .chip,.method,.ghost-btn{border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.055);color:#fff}
+    .chip.active,.method.active{border-color:rgba(255,143,197,.55);background:rgba(255,143,197,.16);color:#ffd6e7}
+    .custom-row{display:flex;align-items:center;gap:10px;margin-top:12px;border:1px solid rgba(255,255,255,.10);border-radius:12px;background:rgba(0,0,0,.20);padding:0 12px;height:44px}
+    .custom-row span{color:#ffd6e7;font-weight:900}.custom-row input{flex:1;border:0;outline:0;background:transparent;color:#fff;font-size:15px;min-width:0}
+    .methods{display:grid;gap:10px}.method{justify-content:space-between;padding:0 12px}.method small{color:#9ca3af;font-weight:800}.method.open small{color:#8ff0bd}.method.closed small{color:#ffd27a}
+    .summary-line{display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid rgba(255,255,255,.08);padding:11px 0}.summary-line:last-of-type{border-bottom:0}
+    .summary-line span{color:#9ca3af}.summary-line strong{font-size:18px}
+    .primary-btn{width:100%;border:1px solid rgba(255,143,197,.45);background:linear-gradient(180deg,#ffdcea,#f3a6ca);color:#1b0712;margin-top:16px}
+    .primary-btn:disabled{opacity:.55;cursor:not-allowed}
+    .ghost-btn{padding:0 12px}
+    .message{display:none;border-radius:12px;padding:12px;margin-top:12px;line-height:1.55}.message.show{display:block}.message.ok{border:1px solid rgba(143,240,189,.24);background:rgba(143,240,189,.09);color:#8ff0bd}.message.warn{border:1px solid rgba(255,210,122,.22);background:rgba(255,210,122,.08);color:#ffd27a}.message.bad{border:1px solid rgba(255,113,145,.24);background:rgba(255,113,145,.08);color:#ff9db7}
+    .records{display:grid;gap:8px}.record{display:grid;grid-template-columns:1.2fr .8fr .8fr .9fr;gap:10px;align-items:center;border:1px solid rgba(255,255,255,.08);border-radius:12px;background:rgba(0,0,0,.18);padding:11px}.record span{color:#9ca3af}.empty{padding:20px;text-align:center;color:#9ca3af}
+    @media(max-width:860px){.layout,.stats{grid-template-columns:1fr}.topbar{align-items:flex-start;flex-direction:column;padding:18px 20px}.page-head{display:block}.amounts{grid-template-columns:repeat(2,minmax(0,1fr))}}
+    @media(max-width:520px){.recharge-shell{width:calc(100% - 24px);padding-top:16px}.boss-nav{gap:12px}.amounts{grid-template-columns:1fr}.record{grid-template-columns:1fr}.primary-btn,.ghost-btn{min-height:44px}.page-head h1{font-size:24px}}
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="index.html"><img src="assets/meow-cuijiao-brand.jpg" alt="MEOW CUI JIAO"><span>MEOW CUI JIAO</span></a>
+    <nav class="boss-nav">
+      <a href="index.html">首页</a>
+      <a href="companion-center.html">陪玩大厅</a>
+      <a class="active" href="recharge.html">充值中心</a>
+      <a href="orders.html">我的订单</a>
+      <a href="support.html">在线客服</a>
+      <a href="mine.html">我的账号</a>
+      <button type="button" data-logout>退出登录</button>
+    </nav>
+  </header>
+
+  <main class="recharge-shell" id="rechargeApp"></main>
+
+  <script src="src/role-gates.js"></script>
+  <script>
+    (function(){
+      var root=document.getElementById('rechargeApp');
+      var AMOUNTS=[20,50,100,200,500];
+      var state={loading:true,submitting:false,error:'',message:'',messageType:'warn',summary:{balance:0,totalRecharge:0,totalSpent:0},methods:[],records:[],amount:20,custom:'',method:'tng',tablesReady:true};
+      function token(){return localStorage.getItem('mcjAuthAccessToken')||sessionStorage.getItem('mcjAuthAccessToken')||''}
+      function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
+      function money(v){var n=Number(v||0);return 'RM'+(Number.isFinite(n)?n:0).toFixed(2)}
+      function amount(){var custom=Number(state.custom||0);return custom>0?custom:Number(state.amount||0)}
+      function date(v){if(!v)return '-';try{return new Date(v).toLocaleString('zh-CN',{hour12:false})}catch(e){return v}}
+      function methodName(code){var m=state.methods.find(function(x){return x.code===code});return m?m.name:'-'}
+      function statusText(s){return {pending:'待支付',pending_payment:'待支付',unavailable:'暂未开放',failed:'失败',paid:'已支付',cancelled:'已取消'}[s]||s||'-'}
+      function messageHtml(){if(!state.message)return '';return '<div class="message show '+state.messageType+'">'+esc(state.message)+'</div>'}
+      function paint(){
+        if(!token()){root.innerHTML='<section class="page-head"><div><h1>充值中心</h1><p>请先登录老板账号后再进行充值。</p></div><a class="ghost-btn" href="index.html">返回首页登录</a></section>';return}
+        if(state.loading){root.innerHTML='<section class="page-head"><div><h1>充值中心</h1><p>正在读取充值数据...</p></div></section>';return}
+        if(state.error){root.innerHTML='<section class="page-head"><div><h1>充值中心</h1><p class="muted">'+esc(state.error)+'</p></div><button class="ghost-btn" data-refresh type="button">重试</button></section>';return}
+        root.innerHTML='<section class="page-head"><div><h1>充值中心</h1><p>选择充值金额与支付方式，创建真实支付订单。</p></div><button class="ghost-btn" data-refresh type="button">刷新</button></section>'
+          +'<section class="stats"><article class="stat"><span>猫粮余额</span><strong>'+esc(state.summary.balance||0)+'</strong></article><article class="stat"><span>累计充值</span><strong>'+money(state.summary.totalRecharge)+'</strong></article><article class="stat"><span>累计消费</span><strong>'+money(state.summary.totalSpent)+'</strong></article></section>'
+          +'<section class="layout"><div class="panel"><h2>选择充值金额</h2><div class="amounts">'+AMOUNTS.map(function(v){return '<button class="chip '+(!state.custom&&state.amount===v?'active':'')+'" data-amount="'+v+'" type="button">RM'+v+'</button>'}).join('')+'</div><label class="custom-row"><span>自定义 RM</span><input data-custom type="number" min="1" step="1" value="'+esc(state.custom)+'" placeholder="输入金额"></label><p class="hint">到账单位为猫粮，第一阶段按 RM1 = 1 猫粮创建支付订单。</p></div>'
+          +'<aside class="panel"><h2>选择支付方式</h2><div class="methods">'+state.methods.map(function(m){return '<button class="method '+(state.method===m.code?'active ':'')+(m.configured?'open':'closed')+'" data-method="'+esc(m.code)+'" type="button"><span>'+esc(m.name)+'</span><small>'+esc(m.statusText||'暂未开放')+'</small></button>'}).join('')+'</div><div class="summary-line"><span>充值金额</span><strong data-summary-amount>'+money(amount())+'</strong></div><div class="summary-line"><span>预计到账</span><strong data-summary-catfood>'+esc(amount())+' 猫粮</strong></div><div class="summary-line"><span>支付方式</span><strong>'+esc(methodName(state.method))+'</strong></div><button class="primary-btn" data-submit type="button" '+(state.submitting?'disabled':'')+'>'+(state.submitting?'正在创建...':'立即充值')+'</button>'+messageHtml()+'</aside></section>'
+          +'<section class="panel"><h2>充值记录</h2>'+recordsHtml()+'</section>';
+      }
+      function recordsHtml(){if(!state.records.length)return '<div class="empty">暂无充值记录</div>';return '<div class="records">'+state.records.map(function(r){return '<div class="record"><strong>'+esc(r.paymentNo)+'</strong><span>'+money(r.amount)+'</span><span>'+esc(statusText(r.status))+'</span><span>'+esc(date(r.createdAt))+'</span></div>'}).join('')+'</div>'}
+      async function load(){
+        if(!token()){state.loading=false;paint();return}
+        state.loading=true;state.error='';paint();
+        try{
+          var res=await fetch('/api/recharge',{headers:{Accept:'application/json',Authorization:'Bearer '+token()}});
+          var body=await res.json().catch(function(){return {}});
+          if(!res.ok||body.ok===false)throw new Error(body.message||'充值数据读取失败');
+          state.summary=body.summary||state.summary;
+          state.methods=body.methods&&body.methods.length?body.methods:[{code:'tng',name:'TNG',statusText:'暂未开放'},{code:'alipay',name:'支付宝',statusText:'暂未开放'},{code:'bank',name:'银行支付',statusText:'暂未开放'}];
+          state.records=body.records||[];
+          state.tablesReady=body.paymentTablesReady!==false;
+          if(!state.methods.some(function(m){return m.code===state.method}))state.method=state.methods[0]?state.methods[0].code:'';
+          if(body.message){state.message=body.message;state.messageType='warn'}else{state.message='';state.messageType='warn'}
+        }catch(err){state.error=err.message||'充值数据读取失败'}finally{state.loading=false;paint()}
+      }
+      async function submit(){
+        var value=amount();
+        if(value<=0){state.message='请选择有效的充值金额。';state.messageType='bad';paint();return}
+        if(!state.method){state.message='请选择支付方式。';state.messageType='bad';paint();return}
+        state.submitting=true;state.message='';paint();
+        try{
+          var res=await fetch('/api/recharge',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token()},body:JSON.stringify({amount:value,paymentMethod:state.method})});
+          var body=await res.json().catch(function(){return {}});
+          if(body.paymentUrl){location.href=body.paymentUrl;return}
+          state.message=body.message||'该支付方式暂未开放';
+          state.messageType=res.ok?'ok':(res.status===409?'warn':'bad');
+          await load();
+          if(!state.message){state.message=body.message||'支付订单已创建';state.messageType='ok';paint()}
+        }catch(err){state.message=err.message||'充值提交失败';state.messageType='bad';paint()}finally{state.submitting=false;paint()}
+      }
+      document.addEventListener('click',function(e){
+        var amountBtn=e.target.closest('[data-amount]');if(amountBtn){state.amount=Number(amountBtn.dataset.amount);state.custom='';paint();return}
+        var methodBtn=e.target.closest('[data-method]');if(methodBtn){state.method=methodBtn.dataset.method;paint();return}
+        if(e.target.closest('[data-submit]')){submit();return}
+        if(e.target.closest('[data-refresh]')){load();return}
+        if(e.target.closest('[data-logout]')){if(window.MCJRoleGate){window.MCJRoleGate.logout('boss');window.MCJRoleGate.logout('customer')}localStorage.removeItem('mcjAuthAccessToken');localStorage.removeItem('mcjAuthRefreshToken');sessionStorage.removeItem('mcjAuthAccessToken');sessionStorage.removeItem('mcjAuthRefreshToken');location.href='index.html';return}
+      });
+      document.addEventListener('input',function(e){if(e.target.matches('[data-custom]')){state.custom=e.target.value;var v=amount();var a=document.querySelector('[data-summary-amount]');var c=document.querySelector('[data-summary-catfood]');if(a)a.textContent=money(v);if(c)c.textContent=String(v)+' 猫粮'}});
+      load();
+    })();
+  </script>
+</body>
+</html>
+

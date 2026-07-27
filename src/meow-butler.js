@@ -1,4 +1,4 @@
-(function () {
+﻿(function () {
   "use strict";
 
   var ROOT_ID = "floatingCustomerService";
@@ -49,6 +49,16 @@
     ].join("");
   }
 
+
+  function floatingButtonIcon() {
+    return [
+      '<svg class="floating-cs-button-icon" viewBox="0 0 64 64" role="img" aria-label="喵管家" focusable="false">',
+      '<path class="cat-bubble" d="M20 23 25.5 15.5 30.2 23h3.6l4.7-7.5L44 23c6.4.9 10 5.7 10 12.6 0 9.2-7 15.4-18.2 15.4h-5.9L20 56l2-7.2C14.6 46.2 10 41.2 10 34.8 10 28 14 24 20 23Z"/>',
+      '<circle class="cat-dot" cx="27" cy="36" r="2.6"/>',
+      '<circle class="cat-dot" cx="37" cy="36" r="2.6"/>',
+      '</svg>'
+    ].join("");
+  }
   function addStyle() {
     var old = document.getElementById(STYLE_ID);
     if (old) old.remove();
@@ -84,6 +94,14 @@
 .floating-cs-note{margin-top:auto;color:rgba(255,226,239,.56);font-size:12px;line-height:1.5}
 html.${BODY_LOCK_CLASS},body.${BODY_LOCK_CLASS}{overflow:hidden!important} body.${BODY_LOCK_CLASS}{touch-action:none!important}
 @media(max-width:640px){#${ROOT_ID}{right:16px!important;bottom:calc(86px + env(safe-area-inset-bottom))!important;width:52px!important;height:52px!important}.floating-cs-button{right:16px!important;bottom:calc(86px + env(safe-area-inset-bottom))!important;width:52px!important;height:52px!important;border-radius:17px!important}.floating-cs-cat{width:31px!important;height:31px!important}.floating-cs-button::after{display:none!important}.floating-cs-panel{left:0!important;right:0!important;bottom:0!important;width:100vw!important;height:auto!important;max-width:100vw!important;max-height:75dvh!important;border-radius:22px 22px 0 0!important;border-left:0!important;border-right:0!important;border-bottom:0!important;transform:translateY(14px)!important;transform-origin:center bottom!important;padding-bottom:env(safe-area-inset-bottom)!important}.floating-cs-head{min-height:64px!important;padding:12px 14px!important}.floating-cs-body{padding:14px 14px calc(14px + env(safe-area-inset-bottom))!important}.floating-cs-action{min-height:44px!important}#${ROOT_ID}[data-cs-open="true"] .floating-cs-panel{transform:translateY(0)!important}}
+#${ROOT_ID} .floating-cs-button::after,#${ROOT_ID} .floating-cs-button:hover::after,#${ROOT_ID} .floating-cs-button:focus-visible::after{content:none!important;display:none!important}
+#${ROOT_ID} .floating-cs-button{width:56px!important;height:56px!important;border-radius:18px!important;background:rgba(12,10,14,.92)!important;background-image:none!important;border:1px solid rgba(255,145,195,.32)!important;box-shadow:0 12px 30px rgba(0,0,0,.42),0 0 12px rgba(255,145,195,.10),inset 0 1px 0 rgba(255,255,255,.055)!important}
+#${ROOT_ID} .floating-cs-button:hover,#${ROOT_ID} .floating-cs-button:focus-visible{transform:scale(1.04)!important;border-color:rgba(255,145,195,.56)!important;box-shadow:0 14px 34px rgba(0,0,0,.48),0 0 16px rgba(255,145,195,.18),inset 0 1px 0 rgba(255,255,255,.07)!important}
+#${ROOT_ID} .floating-cs-button:active{transform:scale(.98)!important}
+#${ROOT_ID} .floating-cs-button-icon{width:32px!important;height:32px!important;display:block!important;overflow:visible!important;fill:none!important;stroke:#ffc2df!important;stroke-linecap:round!important;stroke-linejoin:round!important;filter:drop-shadow(0 0 5px rgba(255,145,195,.24))!important}
+#${ROOT_ID} .floating-cs-button-icon .cat-bubble{fill:rgba(255,145,195,.025)!important;stroke:#ffc2df!important;stroke-width:3.8!important}
+#${ROOT_ID} .floating-cs-button-icon .cat-dot{fill:#ffc2df!important;stroke:none!important}
+@media(max-width:640px){#${ROOT_ID} .floating-cs-button{width:52px!important;height:52px!important;border-radius:17px!important}#${ROOT_ID} .floating-cs-button-icon{width:30px!important;height:30px!important}}
 `;
     document.head.appendChild(style);
   }
@@ -186,7 +204,7 @@ html.${BODY_LOCK_CLASS},body.${BODY_LOCK_CLASS}{overflow:hidden!important} body.
     root.id = ROOT_ID;
     root.dataset.csOpen = "false";
     root.innerHTML = [
-      '<button class="floating-cs-button" type="button" aria-label="打开喵管家" title="喵管家">' + assistantLogo("floating-cs-cat") + "</button>",
+      '<button class="floating-cs-button" type="button" aria-label="打开喵管家" title="喵管家">' + floatingButtonIcon() + "</button>",
       '<section class="floating-cs-panel" role="dialog" aria-label="喵管家在线客服" tabindex="-1">',
       '<header class="floating-cs-head">',
       '<span class="floating-cs-head-logo">' + assistantLogo("floating-cs-cat") + "</span>",

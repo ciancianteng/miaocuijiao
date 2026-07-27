@@ -36,6 +36,7 @@ const pages = [
   "customer-service/attendance/index.html",
   "customer-service/profile/index.html",
   "favorites.html",
+  "fixed-order.html",
   "gifts.html",
   "invite.html",
   "leaderboard.html",
@@ -92,6 +93,27 @@ function localApiFunctions() {
     }
   };
 }
+function localRouteAliases() {
+  const aliases = new Map([
+    ["/companion", "/companion/index.html"],
+    ["/customer-service", "/customer-service/index.html"],
+    ["/admin", "/admin.html"],
+    ["/report", "/report/index.html"],
+    ["/more-gameplays", "/more-gameplays.html"],
+    ["/fixed-order", "/fixed-order.html"],
+  ]);
+  return {
+    name: "local-route-aliases",
+    configureServer(server) {
+      server.middlewares.use((req, _res, next) => {
+        const requestUrl = new URL(req.url || "/", "http://localhost");
+        const target = aliases.get(requestUrl.pathname);
+        if (target) req.url = `${target}${requestUrl.search}`;
+        next();
+      });
+    },
+  };
+}
 function copyRuntimeSource() {
   return {
     name: "copy-runtime-source",
@@ -106,7 +128,7 @@ function copyRuntimeSource() {
 }
 
 export default defineConfig({
-  plugins: [localApiFunctions(), copyRuntimeSource()],
+  plugins: [localRouteAliases(), localApiFunctions(), copyRuntimeSource()],
   appType: "mpa",
   build: {
     rollupOptions: {
@@ -122,4 +144,6 @@ export default defineConfig({
     host: "0.0.0.0"
   }
 });
+
+
 
