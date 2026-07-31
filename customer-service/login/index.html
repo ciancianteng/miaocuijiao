@@ -1,13 +1,42 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>客服端 | MEOW CUI JIAO</title>
-  <link rel="stylesheet" href="/src/customer-service-v2.css">
+  <title>客服端登录 | MEOW CUI JIAO</title>
+  <link rel="stylesheet" href="/src/auth-shell.css">
 </head>
 <body>
-  <div id="serviceApp" class="cs-app" data-route="/customer-service/"></div>
-  <script src="/src/customer-service-v2.js"></script>
+  <div id="serviceApp" class="cs-app">
+    <main class="mcj-auth-page">
+      <section class="mcj-auth-card">
+        <div class="mcj-auth-brand">
+          <p class="mcj-auth-brand-name">妙脆角</p>
+          <p class="mcj-auth-brand-en">MEOW CUI JIAO</p>
+        </div>
+        <h1 class="mcj-auth-title">客服端登录</h1>
+        <p class="mcj-auth-desc">使用后台创建的客服账号登录</p>
+        <form class="mcj-auth-form" data-login autocomplete="on" method="post" action="#">
+          <label class="mcj-auth-field">邮箱
+            <input name="account" type="text" inputmode="email" autocomplete="username" required placeholder="请输入客服邮箱" spellcheck="false">
+          </label>
+          <label class="mcj-auth-field">密码
+            <div class="mcj-auth-password password-field">
+              <input name="password" type="password" autocomplete="current-password" required>
+              <button class="mcj-auth-eye" type="button" tabindex="-1" data-toggle-password aria-label="显示或隐藏密码">显示</button>
+            </div>
+          </label>
+          <label class="mcj-auth-check"><input name="remember" type="checkbox" checked> 记住登录</label>
+          <button class="mcj-auth-btn primary" type="submit">登录</button>
+          <p class="mcj-auth-error" data-auth-error></p>
+          <p class="mcj-auth-note">客服账号由管理员创建，停用账号无法登录。本页面不提供注册入口。</p>
+        </form>
+      </section>
+    </main>
+  </div>
+  <!-- Shared CS auth first, then role-gates + dedicated login script. -->
+  <script src="/src/customer-service-auth.js?v=20260730csP0unread"></script>
+  <script src="/src/role-gates.js?v=20260730csP0unread"></script>
+  <script src="/src/customer-service-login.js?v=20260730csP0unread"></script>
 </body>
 </html>

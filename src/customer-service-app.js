@@ -7,7 +7,10 @@
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
     });
   }
-  function money(v) { return "RM " + Number(v || 0).toFixed(2); }
+  function money(v) {
+    if (window.MCJCurrency) return window.MCJCurrency.formatPlain(v);
+    return Number(v || 0).toFixed(2).replace(/\.00$/, "") + " 猫粮";
+  }
   function panel(name) { return document.querySelector('[data-service-panel="' + name + '"]'); }
   function urgency(o) {
     var map = { red: "立即处理", orange: "即将超时", yellow: "等待处理中", green: "正常" };

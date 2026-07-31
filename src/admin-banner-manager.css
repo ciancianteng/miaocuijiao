@@ -1,0 +1,227 @@
+/* Banner 管理内容区 — 不改变后台壳布局 */
+.banner-ops { display: grid; gap: 20px; width: 100%; box-sizing: border-box; }
+.banner-ops-section { border: 1px solid rgba(255,255,255,.1); border-radius: 12px; background: rgba(0,0,0,.16); padding: 16px; box-sizing: border-box; width: 100%; }
+.banner-ops-section h3 { margin: 0 0 6px; font-size: 16px; color: #fff; }
+.banner-ops-section p { margin: 0 0 12px; color: #9ca3af; font-size: 13px; }
+
+.banner-ops-preview {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(0,0,0,.35);
+}
+.banner-ops-preview img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.banner-ops-preview-empty { display: grid; place-items: center; height: 100%; color: #9ca3af; font-size: 14px; }
+
+/* 单一全宽拖拽上传区 */
+.banner-ops-upload {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  min-height: 240px;
+  height: 240px;
+  box-sizing: border-box;
+  margin: 0;
+  border: 1px dashed rgba(255,143,197,.45);
+  border-radius: 12px;
+  padding: 24px;
+  text-align: center;
+  background: rgba(255,143,197,.04);
+  cursor: pointer;
+  transition: border-color .2s, background .2s;
+  overflow: hidden;
+}
+.banner-ops-upload.is-dragover {
+  border-color: #ff8fc5;
+  background: rgba(255,143,197,.1);
+}
+.banner-ops-upload.has-draft {
+  border-style: solid;
+  border-color: rgba(255,143,197,.55);
+  background: rgba(0,0,0,.28);
+  padding: 0;
+}
+
+/* 彻底隐藏浏览器默认 file 控件，避免左右双区域 */
+.banner-ops-upload input[type="file"],
+.banner-ops-file {
+  position: absolute !important;
+  left: 0 !important;
+  top: 0 !important;
+  width: 1px !important;
+  height: 1px !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  max-width: 1px !important;
+  max-height: 1px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  opacity: 0 !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  clip-path: inset(50%) !important;
+  pointer-events: none !important;
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  font-size: 0 !important;
+  z-index: -1 !important;
+}
+
+.banner-ops-upload-inner {
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+  pointer-events: none;
+  padding: 16px;
+  box-sizing: border-box;
+}
+.banner-ops-upload-icon {
+  font-size: 36px;
+  line-height: 1;
+  margin-bottom: 4px;
+}
+.banner-ops-upload-title {
+  color: #fff;
+  font-size: 16px;
+  font-weight: 700;
+}
+.banner-ops-upload-sub {
+  color: #d1d5db;
+  font-size: 14px;
+}
+.banner-ops-upload-hint {
+  color: #9ca3af;
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.banner-ops-upload-preview {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  pointer-events: none;
+}
+.banner-ops-upload-overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(0,0,0,.42);
+  pointer-events: none;
+}
+.banner-ops-upload-overlay span {
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: rgba(0,0,0,.45);
+  border: 1px solid rgba(255,255,255,.18);
+}
+
+.banner-ops-crop { display: grid; gap: 12px; width: 100%; }
+.banner-ops-crop-stage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,.12);
+  background: #111;
+  touch-action: none;
+  cursor: grab;
+}
+.banner-ops-crop-stage:active { cursor: grabbing; }
+.banner-ops-crop-stage img {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform-origin: center center;
+  user-select: none;
+  pointer-events: none;
+  max-width: none;
+}
+.banner-ops-crop-controls {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.banner-ops-crop-controls label {
+  display: grid;
+  gap: 6px;
+  color: #d1d5db;
+  font-size: 13px;
+}
+.banner-ops-crop-controls input[type="range"] { width: 100%; }
+.banner-ops-upload-replace {
+  height: 88px !important;
+  min-height: 88px !important;
+  padding: 12px !important;
+}
+.banner-ops-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-top: 14px;
+}
+@media (max-width: 767px) {
+  .banner-ops-crop-controls { grid-template-columns: 1fr; }
+}
+
+.banner-ops-history {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 14px;
+}
+.banner-ops-card {
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 12px;
+  overflow: hidden;
+  background: rgba(255,255,255,.03);
+}
+.banner-ops-card.is-active {
+  border-color: rgba(74,222,128,.55);
+  box-shadow: 0 0 0 1px rgba(74,222,128,.25);
+}
+.banner-ops-card-thumb { aspect-ratio: 16 / 9; background: #111; cursor: pointer; }
+.banner-ops-card-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.banner-ops-card-body { padding: 10px 12px 12px; display: grid; gap: 8px; }
+.banner-ops-card-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: center;
+  color: #9ca3af;
+  font-size: 12px;
+}
+.banner-ops-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.banner-ops-badge.live {
+  color: #86efac;
+  background: rgba(34,197,94,.16);
+  border: 1px solid rgba(74,222,128,.35);
+}
+.banner-ops-card-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.banner-ops-loading { color: #9ca3af; font-size: 14px; padding: 24px 0; text-align: center; }
+
+@media (max-width: 767px) {
+  .banner-ops-upload { height: 220px; min-height: 220px; }
+  .banner-ops-history { grid-template-columns: 1fr; }
+}

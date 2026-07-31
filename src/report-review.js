@@ -3,7 +3,10 @@
   if(!root)return;
   var state={loading:true,error:'',reports:[],notice:''};
   function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
-  function money(v){var n=Number(v||0);return 'RM'+(Number.isFinite(n)?n:0).toFixed(2)}
+  function money(v) {
+    if (window.MCJCurrency) return window.MCJCurrency.formatPlain(v);
+    return Number(v || 0).toFixed(2).replace(/\.00$/, "") + " 猫粮";
+  }
   function adminToken(){return localStorage.getItem('mcjAuthAccessToken')||sessionStorage.getItem('mcjAuthAccessToken')||''}
   function paint(){
     root.innerHTML='<main class="report-shell"><header class="report-head"><div><h1>工资报备审核</h1><p>只读取真实 customer_service_reports 数据，不显示假工资。</p></div><button class="report-btn" data-refresh>刷新</button></header>'+bodyHtml()+'</main>';

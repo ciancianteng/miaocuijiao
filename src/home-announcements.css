@@ -1,0 +1,264 @@
+/* 首页公告栏 — 仅作用于 #homeAnnouncementBar，不改 Banner / 其他模块 */
+
+#homeAnnouncementBar.home-announcement-bar.announcement-strip,
+.home-announcement-bar.announcement-strip {
+  position: relative !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 12px !important;
+  width: 100% !important;
+  height: 46px !important;
+  min-height: 46px !important;
+  max-height: 50px !important;
+  margin: 14px 0 18px !important;
+  padding: 0 16px !important;
+  box-sizing: border-box !important;
+  border-radius: 10px !important;
+  border: 1px solid rgba(243, 168, 203, 0.32) !important;
+  background: rgba(8, 7, 12, 0.72) !important;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: none !important;
+  color: #ffe7f2 !important;
+  overflow: hidden !important;
+  white-space: nowrap !important;
+}
+
+/* 去掉历史双层描边 */
+#homeAnnouncementBar.announcement-strip::before,
+.home-announcement-bar.announcement-strip::before,
+#homeAnnouncementBar.announcement-strip::after,
+.home-announcement-bar.announcement-strip::after {
+  content: none !important;
+  display: none !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  inset: auto !important;
+}
+
+.home-announcement-label {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 6px !important;
+  flex: 0 0 110px !important;
+  width: 110px !important;
+  min-width: 110px !important;
+  max-width: 110px !important;
+  height: 28px !important;
+  padding: 0 10px !important;
+  box-sizing: border-box !important;
+  border-radius: 8px !important;
+  background: rgba(255, 158, 207, 0.22) !important;
+  border: 1px solid rgba(255, 182, 217, 0.35) !important;
+  color: #ffd6e9 !important;
+  font-size: 13px !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.02em !important;
+  line-height: 1 !important;
+}
+
+.home-announcement-label span {
+  font-size: 14px !important;
+  line-height: 1 !important;
+}
+
+.home-announcement-label strong {
+  font-size: 13px !important;
+  font-weight: 800 !important;
+  color: inherit !important;
+}
+
+/* 右侧滚动区：不是按钮，避免被 design-system 画成输入框 */
+.home-announcement-track-wrap {
+  position: relative !important;
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: inherit !important;
+  overflow: hidden !important;
+  cursor: pointer !important;
+  text-align: left !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  font: inherit !important;
+  font-size: 13px !important;
+  font-weight: 650 !important;
+  letter-spacing: 0.02em !important;
+  line-height: 1.2 !important;
+  transform: none !important;
+  outline: none !important;
+}
+
+.home-announcement-track-wrap[data-empty="1"] {
+  cursor: default !important;
+}
+
+.home-announcement-static {
+  display: block !important;
+  width: 100% !important;
+  text-align: left !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  color: rgba(255, 220, 235, 0.72) !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+/* 覆盖 index.html 里旧的 .announcement-strip span 规则 */
+#homeAnnouncementBar.announcement-strip span:not(.home-announcement-track),
+.home-announcement-bar.announcement-strip span:not(.home-announcement-track) {
+  min-width: 0 !important;
+  padding-left: 0 !important;
+  animation: none !important;
+  text-shadow: none !important;
+}
+
+.home-announcement-seg {
+  display: inline-block !important;
+  padding-right: 4em !important;
+  color: #ffe7f2 !important;
+  font-size: 13px !important;
+  font-weight: 650 !important;
+  white-space: nowrap !important;
+}
+
+#homeAnnouncementBar .home-announcement-track,
+.home-announcement-bar .home-announcement-track {
+  display: inline-flex !important;
+  align-items: center !important;
+  width: max-content !important;
+  min-width: 0 !important;
+  padding: 0 !important;
+  padding-left: 0 !important;
+  margin: 0 !important;
+  white-space: nowrap !important;
+  animation: homeAnnouncementMarquee 28s linear infinite !important;
+  will-change: transform;
+}
+
+.home-announcement-bar:hover .home-announcement-track,
+.home-announcement-bar:focus-within .home-announcement-track {
+  animation-play-state: paused !important;
+}
+
+@keyframes homeAnnouncementMarquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+.home-announcement-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 12000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.62);
+  backdrop-filter: blur(8px);
+}
+
+.home-announcement-modal[hidden] {
+  display: none !important;
+}
+
+.home-announcement-dialog {
+  width: min(520px, 100%);
+  border-radius: 18px;
+  border: 1px solid rgba(243, 168, 203, 0.28);
+  background: linear-gradient(160deg, rgba(28, 16, 34, 0.96), rgba(10, 7, 14, 0.98));
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.48);
+  padding: 22px 22px 18px;
+  color: #ffe7f2;
+  position: relative;
+}
+
+.home-announcement-dialog h3 {
+  margin: 0 36px 8px 0;
+  font-size: 20px;
+  color: #fff;
+}
+
+.home-announcement-time {
+  display: block;
+  margin-bottom: 14px;
+  color: rgba(255, 220, 235, 0.68);
+  font-size: 12px;
+}
+
+.home-announcement-body {
+  white-space: pre-wrap;
+  line-height: 1.7;
+  color: #ffdceb;
+  font-size: 14px;
+  min-height: 48px;
+}
+
+.home-announcement-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+  font-size: 22px;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.home-announcement-ok {
+  margin-top: 18px;
+  min-height: 40px;
+  padding: 0 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(243, 168, 203, 0.36);
+  background: rgba(243, 168, 203, 0.14);
+  color: #fff;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+@media (max-width: 560px) {
+  #homeAnnouncementBar.home-announcement-bar.announcement-strip,
+  .home-announcement-bar.announcement-strip {
+    height: 46px !important;
+    padding: 0 12px !important;
+    gap: 8px !important;
+    border-radius: 10px !important;
+  }
+
+  .home-announcement-label {
+    flex-basis: 96px !important;
+    width: 96px !important;
+    min-width: 96px !important;
+    max-width: 96px !important;
+    font-size: 12px !important;
+    padding: 0 6px !important;
+  }
+
+  .home-announcement-label strong {
+    font-size: 12px !important;
+  }
+
+  .home-announcement-seg,
+  .home-announcement-static,
+  .home-announcement-track-wrap {
+    font-size: 12px !important;
+  }
+}

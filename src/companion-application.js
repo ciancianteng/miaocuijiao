@@ -33,8 +33,8 @@
       "陪玩风格": ["娱乐", "上分", "护航", "指挥", "教学", "长期搭子", "深夜档", "全天在线"]
     },
     positions: { "擅长位置": ["指挥", "输出", "辅助", "打野", "中路", "射手", "坦克", "自由位", "狙击位", "突破位"] },
-    modes: { "可接模式": ["排位", "娱乐", "护航", "代肝", "跑刀", "教学"] },
-    mainGames: { "主玩游戏": ["王者荣耀", "和平精英", "英雄联盟", "Valorant", "APEX", "PUBG", "永劫无间", "CS2", "原神", "崩铁"] }
+    modes: { "可接模式": [] },
+    mainGames: { "主打服务": [] }
   };
 
   var rankOptions = ["青铜", "白银", "黄金", "铂金", "钻石", "星耀", "王者", "荣耀王者", "大师", "宗师", "超凡", "无畏战神", "其他"];
@@ -400,54 +400,128 @@
     }
     return missing;
   }
+  function companionToken() {
+    try {
+      var session = JSON.parse(localStorage.getItem("mcjCompanionSession") || sessionStorage.getItem("mcjCompanionSession") || "null");
+      return session && session.token ? session.token : "";
+    } catch (e) {
+      return "";
+    }
+  }
+  function postCompanion(action, payload) {
+    var token = companionToken();
+    if (!token) return Promise.reject(new Error("请先登录陪玩端账号后再提交，以便资料同步到后台。"));
+    return fetch("/api/companion", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json", "x-mcj-companion-token": token },
+      body: JSON.stringify(Object.assign({ action: action }, payload || {})),
+    }).then(function (res) {
+      return res.json().then(function (body) {
+        if (!res.ok || body.ok === false) throw new Error(body.message || "提交失败");
+        return body;
+      });
+    });
+  }
   function submitApplication() {
     var missing = validateBeforeSubmit();
     if (missing.length) { alert("还有以下资料没有完成：\n" + missing.join("\n")); return; }
     var draft = readDraft();
     var user = currentUser();
-    var db = readDB();
-    var id = "APP-" + Date.now();
-    var app = {
-      id: id,
-      applicantId: applicantId(),
-      accountName: user.name,
-      data: draft.data,
-      tags: draft.data.personalTags || [],
-      gameProfile: {
-        mainGames: draft.data.mainGames || [],
-        positions: draft.data.positions || [],
-        modes: draft.data.modes || [],
+    var identity = draft.identity || {};
+    var uploads = draft.uploads || {};
+    var voice = draft.voice || {};
+    var mainGames = draft.data.mainGames || [];
+    var chain = Promise.resolve();
+    chain = chain.then(function () {
+      return postCompanion("submit_application", {
+        main_service: (mainGames[0] || ""),
+        main_game: (mainGames[0] || ""),
         rank: draft.data.rank || "",
-        onlineStart: draft.data.onlineStart || "",
-        onlineEnd: draft.data.onlineEnd || "",
-        nickname: draft.data.nickname || "",
-        gameNickname: draft.data.gameNickname || ""
-      },
-      uploads: draft.uploads,
-      voice: draft.voice,
-      identity: draft.identity || {},
-      deposit: { status: "pending_review", method: (draft.identity || {}).depositMethod || "", proof: (draft.identity || {}).depositProof || "", amount: depositSettings().amount || 100 },
-      settlement: {
-        method: (draft.identity || {}).settlementMethod || "",
-        name: (draft.identity || {}).settlementName || "",
-        account: (draft.identity || {}).settlementAccount || ""
-      },
-      rulesAgreement: draft.rulesAgreement,
-      readAgreement: { accepted: !!draft.rulesAgreement.accepted, agreedAt: draft.rulesAgreement.agreedAt || "", ruleId: draft.rulesAgreement.ruleId || "", version: draft.rulesAgreement.version || "" },
-      status: "review",
-      createdAt: now(),
-      reviewer: "",
-      reason: ""
-    };
-    db.companionApplications = (db.companionApplications || []).filter(function (x) { return x.applicantId !== app.applicantId; });
-    db.companionApplications.unshift(app);
-    db.notifications = db.notifications || [];
-    db.notifications.unshift({ id: uid("NT"), type: "companion_application", title: "新的陪玩申请待审核", body: app.accountName + " 提交了陪玩申请", createdAt: now(), targetRole: "super_admin" });
-    db.logs = db.logs || [];
-    db.logs.unshift({ id: uid("LOG"), action: "提交陪玩申请", targetId: id, createdAt: now(), ip: "local-preview" });
-    writeDB(db);
-    syncPlatform(db);
-    showSuccess();
+        position: (draft.data.positions || [])[0] || "",
+        voice_type: "",
+        schedule: [draft.data.onlineStart, draft.data.onlineEnd].filter(Boolean).join(" - "),
+        note: draft.data.bio || draft.data.remark || "",
+        tags: (draft.data.personalTags || []).join(","),
+      });
+    });
+    chain = chain.then(function () {
+      return postCompanion("submit_verification", {
+        real_name: identity.realName || identity.name || draft.data.realName || user.name || "",
+        identity_no: identity.idNumber || identity.identityNo || "",
+        id_front: identity.idFront || "",
+        id_back: identity.idBack || "",
+        id_handheld: identity.idHandheld || "",
+        bank_name: identity.settlementBank || identity.bankName || "",
+        account_name: identity.settlementName || "",
+        bank_account: identity.settlementAccount || "",
+        tng_account: identity.tngAccount || "",
+        method: identity.settlementMethod || "bank",
+        phone: draft.data.phone || "",
+      });
+    });
+    if (uploads.avatar) {
+      chain = chain.then(function () {
+        return postCompanion("upload_media", { media_type: "avatar", data_url: uploads.avatar, filename: "avatar.jpg" });
+      });
+    }
+    var photoList = [];
+    if (Array.isArray(uploads.photos)) photoList = uploads.photos;
+    else if (uploads.photos) photoList = [uploads.photos];
+    else if (Array.isArray(uploads.album)) photoList = uploads.album;
+    photoList.slice(0, 9).forEach(function (img) {
+      if (!img) return;
+      chain = chain.then(function () {
+        return postCompanion("upload_media", { media_type: "gallery", data_url: img.url || img, filename: "gallery.jpg" });
+      });
+    });
+    if (uploads.cover) {
+      chain = chain.then(function () {
+        return postCompanion("upload_media", { media_type: "gallery", data_url: uploads.cover, filename: "cover.jpg" });
+      });
+    }
+    if (voice.url) {
+      chain = chain.then(function () {
+        return postCompanion("upload_media", {
+          media_type: "voice",
+          data_url: voice.url,
+          filename: "voice.webm",
+          duration_seconds: voice.seconds || voice.duration || null,
+        });
+      });
+    }
+    if (identity.depositProof) {
+      chain = chain.then(function () {
+        return postCompanion("submit_deposit_proof", {
+          paid_amount: (depositSettings().amount || 100),
+          payment_method: identity.depositMethod || "",
+          proof_url: identity.depositProof,
+          remark: "陪玩申请一并提交",
+        });
+      });
+    }
+    chain
+      .then(function () {
+        // keep local mirror for progress pages that still read localStorage
+        var db = readDB();
+        var id = "APP-" + Date.now();
+        var app = {
+          id: id,
+          applicantId: applicantId(),
+          accountName: user.name,
+          data: draft.data,
+          status: "review",
+          createdAt: now(),
+          synced: true,
+        };
+        db.companionApplications = (db.companionApplications || []).filter(function (x) { return x.applicantId !== app.applicantId; });
+        db.companionApplications.unshift(app);
+        writeDB(db);
+        syncPlatform(db);
+        showSuccess();
+      })
+      .catch(function (err) {
+        alert(err.message || "提交失败。请先注册/登录陪玩端后再提交申请，以便写入数据库。");
+      });
   }
   function showSuccess() {
     var modal = document.createElement("div");
@@ -743,11 +817,16 @@
   function applyRemoteTaxonomy() {
     var taxonomy = window.MCJTaxonomy;
     if (!taxonomy || !taxonomy.items) return;
-    var games = taxonomy.items("games").map(taxonomy.label).filter(Boolean);
-    var services = taxonomy.items("service_types").map(taxonomy.label).filter(Boolean);
+    var applyServices = (taxonomy.items("games") || []).slice();
+    if (!applyServices.length) applyServices = (taxonomy.items("services") || []).filter(function (item) {
+      var positions = item.displayPositions || [];
+      return item.allowApply !== false && positions.indexOf("companion_apply") >= 0;
+    });
+    var games = applyServices.map(taxonomy.label).filter(Boolean);
+    var orderServices = (taxonomy.items("service_types") || []).map(taxonomy.label).filter(Boolean);
     var tags = taxonomy.items("companion_tags");
-    if (games.length) tagGroups.mainGames = { "主玩游戏": games };
-    if (services.length) tagGroups.modes = { "可接模式": services };
+    tagGroups.mainGames = { "主打服务": games };
+    tagGroups.modes = { "可接模式": orderServices.length ? orderServices : games.slice() };
     if (tags.length) {
       var grouped = {};
       tags.forEach(function (item) {

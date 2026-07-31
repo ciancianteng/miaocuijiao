@@ -1,8 +1,8 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>MEOW CUI JIAO GAMING CLUB</title>
   <style>
     :root{
@@ -38,7 +38,7 @@
     .feature-row{grid-template-columns:repeat(4,1fr)}.feature-card{min-height:190px;padding:26px;display:flex;flex-direction:column;justify-content:space-between}.feature-head{position:relative;z-index:1;display:flex;align-items:flex-start;gap:16px}.feature-icon{width:58px;height:58px;border-radius:20px;display:grid;place-items:center;background:rgba(255,220,235,.12);border:1px solid rgba(243,168,203,.28);font-size:28px}.feature-card h3{margin:0;font-size:25px}.feature-card p{margin:7px 0 0;color:var(--muted);font-weight:850}.feature-card .btn{position:relative;z-index:1;width:max-content;min-height:42px;padding:0 17px;border:0;border-radius:999px;background:linear-gradient(180deg,#ffe2ef,#e9a0c6);color:#1b0712;font-weight:1000;cursor:pointer}
     .section-title{display:flex;align-items:end;justify-content:space-between;gap:16px;margin-bottom:18px}.section-title h2{margin:0;font-size:28px}.section-title p{margin:5px 0 0;color:var(--muted)}
     .order-strip{display:flex;gap:20px;overflow-x:auto;padding:4px 2px 18px;scroll-snap-type:x mandatory}.order-strip::-webkit-scrollbar{height:8px}.order-strip::-webkit-scrollbar-thumb{background:rgba(243,168,203,.36);border-radius:99px}.companion-card{flex:0 0 238px;scroll-snap-align:start;padding:12px}.avatar{position:relative;height:190px;border-radius:20px;overflow:hidden;border:1px solid rgba(243,168,203,.28);background:#120d15}.avatar img{width:100%;height:100%;object-fit:cover}.online-dot{position:absolute;right:12px;top:12px;width:13px;height:13px;border-radius:50%;background:#72efb4;box-shadow:0 0 12px #72efb4}.companion-info{position:relative;z-index:1;padding:13px 4px 2px}.row{display:flex;align-items:center;justify-content:space-between;gap:8px}.companion-info h3{margin:0;font-size:19px}.price{font-weight:1000;color:var(--pink-soft)}.muted{color:var(--muted)}.mini{margin:8px 0 12px;color:var(--muted);font-size:13px}.order-btn{width:100%;height:40px;border:0;border-radius:999px;background:linear-gradient(180deg,#ffe2ef,#e9a0c6);color:#1b0712;font-weight:1000;cursor:pointer;transition:.2s ease}.order-btn:hover{transform:translateY(-2px);box-shadow:0 0 20px rgba(243,168,203,.24)}
-    .modal{position:fixed;inset:0;z-index:100;display:none;align-items:start;justify-items:center;background:rgba(2,1,4,.76);backdrop-filter:blur(12px);padding:320px 20px 20px;overflow:auto}.modal.open{display:grid}.dialog{width:min(680px,100%);max-height:calc(100vh - 340px);overflow:auto;border:1px solid rgba(243,168,203,.34);border-radius:24px;background:linear-gradient(180deg,rgba(30,24,36,.96),rgba(9,8,13,.98));box-shadow:0 24px 90px rgba(0,0,0,.62);padding:22px}.close{float:right;width:36px;height:36px;border-radius:50%;border:1px solid rgba(243,168,203,.28);background:rgba(0,0,0,.25);color:#ffe1ef;font-size:22px;cursor:pointer}
+    .modal{position:fixed;inset:0;z-index:99999;display:none;align-items:center;justify-content:center;background:rgba(2,1,4,.76);backdrop-filter:blur(12px);padding:16px;overflow:hidden;width:100vw;height:100dvh;margin:0;transform:none}.modal.open{display:flex}.dialog{position:relative;width:min(680px,100%);max-height:calc(100dvh - 32px);overflow:auto;border:1px solid rgba(243,168,203,.34);border-radius:24px;background:linear-gradient(180deg,rgba(30,24,36,.96),rgba(9,8,13,.98));box-shadow:0 24px 90px rgba(0,0,0,.62);padding:22px;margin:0;transform:none}.close{position:absolute;right:12px;top:12px;z-index:3;float:none;width:36px;height:36px;border-radius:50%;border:1px solid rgba(243,168,203,.28);background:rgba(0,0,0,.25);color:#ffe1ef;font-size:22px;line-height:1;cursor:pointer;display:grid;place-items:center}.dialog:has(.boss-login-modal),.dialog.is-auth-dialog{width:460px;max-width:min(480px,calc(100vw - 32px));height:auto;min-height:unset;max-height:calc(100dvh - 32px);overflow:hidden;padding:32px 28px 24px}
     .team-lobby-card .feature-icon{box-shadow:0 0 22px rgba(243,168,203,.22);background:radial-gradient(circle at 50% 40%,rgba(255,220,235,.22),rgba(243,168,203,.09))}.team-lobby-card .btn{box-shadow:0 0 20px rgba(243,168,203,.22)}@media(max-width:980px){.live-stats{grid-template-columns:repeat(2,1fr)}.feature-row{grid-template-columns:1fr}.container{padding:20px}.main-nav{justify-content:flex-start;overflow-x:auto;flex-wrap:nowrap;padding-bottom:4px}.main-nav a,.main-nav button{white-space:nowrap}.brand span{display:block}}
     @media(max-width:560px){.header-inner{padding:0 16px}.top-actions{gap:10px}.top-actions button{padding:0 12px}.container{padding:16px}.notice-bar{margin-bottom:20px}.banner{height:clamp(180px,28vh,220px);margin-bottom:18px}.live-stats{grid-template-columns:1fr}.stat-card{min-height:118px}.stat-card strong{font-size:38px}.feature-card{min-height:168px}.section{margin-bottom:34px}.section-title{align-items:flex-start;flex-direction:column}.companion-card{flex-basis:220px}.avatar{height:176px}}
     .mobile-bottom-nav{display:none}
@@ -296,8 +296,8 @@ img,video,canvas,svg{max-width:100%}
   -webkit-backdrop-filter:blur(10px) saturate(1.04)!important;
 }
 @media(max-width:560px){.banner img{border-radius:17px!important;transform:translateY(-4px) scale(1.02)!important;outline-offset:3px!important}.banner:after{left:14%;right:14%;bottom:-10px;height:18px!important}}
-  /* boss-login-modal-v1 */
-.boss-login-modal{display:grid;gap:16px;clear:both}.boss-login-modal h2{margin:0;color:#fff5fa;font-size:28px}.login-tabs{display:grid;grid-template-columns:1fr 1fr;gap:10px}.login-tab{height:42px;border-radius:999px;border:1px solid rgba(243,168,203,.24);background:rgba(255,255,255,.045);color:#ffe1ef;font-weight:1000;cursor:pointer}.login-tab.active{border:0;background:linear-gradient(180deg,#ffe2ef,#e7a0c4);color:#1b0712}.login-panel{display:none;grid-template-columns:1fr 1fr;gap:12px}.login-panel.active{display:grid}.login-panel label{display:grid;gap:7px;color:#ffdceb;font-weight:900;font-size:13px}.login-panel input,.login-panel select{height:44px;border-radius:14px;border:1px solid rgba(243,168,203,.22);background:rgba(255,255,255,.055);color:#fff;padding:0 12px;outline:0}.login-panel .wide{grid-column:1/-1}.login-code-row{display:grid;grid-template-columns:1fr 132px;gap:10px}.login-small-btn{height:44px;border-radius:14px;border:1px solid rgba(243,168,203,.24);background:rgba(255,255,255,.045);color:#ffe1ef;font-weight:1000;cursor:pointer}.login-submit{grid-column:1/-1;height:46px;border:0;border-radius:999px;background:linear-gradient(180deg,#ffe2ef,#e7a0c4);color:#1b0712;font-weight:1000;cursor:pointer;box-shadow:0 0 20px rgba(243,168,203,.22)}@media(max-width:560px){.login-panel{grid-template-columns:1fr}.login-code-row{grid-template-columns:1fr}}
+  /* boss-login-modal-v3 — auth density; final polish in src/login-modal.css */
+.boss-login-modal{display:grid;gap:0;clear:both}.boss-login-modal h2{margin:0;color:#fff5fa;font-size:32px;font-weight:700;line-height:1.2}.boss-login-modal>.muted{margin:8px 0 0;font-size:16px;line-height:1.45;color:rgba(255,255,255,.72);font-weight:500;text-transform:none;letter-spacing:0}.login-tabs{display:grid;grid-template-columns:1fr 1fr;gap:10px}.login-tab{height:42px;border-radius:999px;border:1px solid rgba(243,168,203,.24);background:rgba(255,255,255,.045);color:#ffe1ef;font-weight:1000;cursor:pointer}.login-tab.active{border:0;background:linear-gradient(180deg,#ffe2ef,#e7a0c4);color:#1b0712}.login-panel{display:none;grid-template-columns:1fr;gap:16px}.login-panel.active{display:grid;margin-top:20px}.login-panel label{display:grid;gap:8px;color:#ffdceb;font-weight:700;font-size:13px}.login-panel input,.login-panel select{height:52px;border-radius:14px;border:1.5px solid rgba(255,120,180,.35);background:rgba(255,255,255,.055);color:#fff;padding:0 16px;outline:0;box-sizing:border-box}.login-panel .wide{grid-column:1/-1}.login-code-row{display:grid;grid-template-columns:1fr 132px;gap:10px}.login-small-btn{height:52px;border-radius:14px;border:1px solid rgba(243,168,203,.24);background:rgba(255,255,255,.045);color:#ffe1ef;font-weight:1000;cursor:pointer}.login-submit{grid-column:1/-1;height:52px;border:0;border-radius:14px;background:linear-gradient(180deg,#ffe2ef,#e7a0c4);color:#1b0712;font-weight:800;cursor:pointer;box-shadow:0 10px 28px rgba(0,0,0,.35),0 0 22px rgba(243,168,203,.28)}.boss-login-modal [data-login-error],.boss-login-modal #loginState{margin:10px 0 0;min-height:0;color:#ff8fc5;font-size:13px;font-weight:700;line-height:1.35}.login-links{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:nowrap;height:40px;margin-top:12px}.login-links a,.login-links button.linkish{appearance:none;border:0;background:none;padding:0;color:#ffdceb;font-size:13px;font-weight:700;text-decoration:none;cursor:pointer;font-family:inherit;white-space:nowrap;line-height:40px}.login-links a:hover,.login-links button.linkish:hover{text-decoration:underline}.boss-login-modal[data-auth-mode="register"] .login-links{justify-content:center}@media(max-width:560px){.dialog:has(.boss-login-modal),.dialog.is-auth-dialog{width:calc(100vw - 32px);max-width:calc(100vw - 32px)}.boss-login-modal h2{font-size:26px}.boss-login-modal>.muted{font-size:14px}}
 
   /* auth-visibility-fix-v1 */
 .top-actions .user-chip.auth-only{display:none!important}
@@ -312,10 +312,47 @@ body:not(.is-logged-in) .top-actions .login{display:inline-flex!important}
 @media(max-width:720px){
   .header-nav{display:none!important}
   .site-header .top-actions a{display:none!important}
-  .mobile-bottom-nav{position:fixed;left:12px;right:12px;bottom:12px;z-index:80;display:grid;grid-template-columns:repeat(5,1fr);gap:6px;padding:8px;border:1px solid rgba(243,168,203,.24);border-radius:18px;background:rgba(8,6,12,.88);backdrop-filter:blur(16px);box-shadow:0 12px 34px rgba(0,0,0,.42)}
-  .mobile-bottom-nav a,.mobile-bottom-nav button{height:44px;border:0;border-radius:12px;background:transparent;color:#f7dce9;font-size:12px;font-weight:950;display:grid;place-items:center;text-decoration:none}
+  .mobile-bottom-nav{
+    position:fixed;
+    left:max(8px, env(safe-area-inset-left));
+    right:max(8px, env(safe-area-inset-right));
+    bottom:max(8px, env(safe-area-inset-bottom));
+    z-index:80;
+    display:grid;
+    grid-template-columns:repeat(5,minmax(0,1fr));
+    gap:4px;
+    width:auto;
+    max-width:100%;
+    box-sizing:border-box;
+    padding:8px 6px;
+    border:1px solid rgba(243,168,203,.24);
+    border-radius:18px;
+    background:rgba(8,6,12,.88);
+    backdrop-filter:blur(16px);
+    box-shadow:0 12px 34px rgba(0,0,0,.42);
+    overflow:visible;
+  }
+  .mobile-bottom-nav a,.mobile-bottom-nav button{
+    min-width:0;
+    width:100%;
+    height:44px;
+    padding:0 2px;
+    border:0;
+    border-radius:12px;
+    background:transparent;
+    color:#f7dce9;
+    font-size:12px;
+    font-weight:950;
+    line-height:1.2;
+    display:grid;
+    place-items:center;
+    text-align:center;
+    text-decoration:none;
+    white-space:nowrap;
+    overflow:visible;
+  }
   .mobile-bottom-nav .active{background:rgba(243,168,203,.14);color:#fff5fa}
-  .container{padding-bottom:88px!important}
+  .container{padding-bottom:calc(96px + env(safe-area-inset-bottom))!important}
 }
 
 /* today-data-detail-v1 */
@@ -2224,30 +2261,12 @@ label{
   .quick-entry-grid .quick-entry-card:nth-child(4) i::before{border-radius:10px!important}
 }
 
-/* announcement-cn-neon-border-v1 */
-.announcement-strip{
-  position:relative!important;
-  border:1px solid rgba(255,124,194,.72)!important;
-  background:linear-gradient(90deg,rgba(29,12,25,.88),rgba(68,18,49,.52),rgba(14,7,16,.88))!important;
-  box-shadow:0 0 10px rgba(255,91,170,.22),0 0 24px rgba(255,91,170,.10),inset 0 0 16px rgba(255,220,239,.07)!important;
-}
-.announcement-strip::before{
-  content:"";
-  position:absolute;
-  inset:2px;
-  border-radius:inherit;
-  border:1px solid rgba(255,220,239,.24);
-  pointer-events:none;
-}
-.announcement-strip span{
-  position:relative;
-  z-index:1;
-  color:#ffe0ef!important;
-  text-shadow:0 0 8px rgba(255,108,184,.24);
-}
+/* announcement-cn-neon-border-v1 — 已停用双层描边；正式样式见 home-announcements.css */
+.announcement-strip.home-announcement-bar::before,
+.announcement-strip.home-announcement-bar::after{content:none!important;display:none!important}
 
 /* quick-entry-add-join-custom-v1 */
-.quick-entry-grid{grid-template-columns:repeat(3,minmax(0,1fr))!important}
+.quick-entry-grid{grid-template-columns:repeat(4,minmax(0,1fr))!important}
 .quick-entry-grid .quick-entry-card:nth-child(5),
 .quick-entry-grid .quick-entry-card:nth-child(6){
   border-color:rgba(255,79,170,.38)!important;
@@ -2277,8 +2296,8 @@ label{
     text-stroke:.75px #ffc0dd!important;
   }
 }
-@media(max-width:1180px){.quick-entry-grid{grid-template-columns:repeat(3,minmax(0,1fr))!important}}
-@media(max-width:680px){.quick-entry-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}}
+@media(max-width:1180px){.quick-entry-grid{grid-template-columns:repeat(4,minmax(0,1fr))!important}}
+@media(max-width:767px){.quick-entry-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}}
 /* companion-apply-cta-v2 */
 .companion-apply-guide{margin-top:clamp(12px,1.8vh,22px)!important;margin-bottom:clamp(18px,2.5vh,34px)!important}
 .companion-apply-guide-card{
@@ -2468,10 +2487,7 @@ label{
   -webkit-backdrop-filter:none!important;
   filter:none!important;
 }
-.announcement-strip{
-  margin-top:0!important;
-  margin-bottom:var(--home-gap)!important;
-}
+/* 首页公告栏样式已迁移到 src/home-announcements.css */
 @media(max-width:980px){
   .banner{height:clamp(200px,30vh,300px)!important}
 }
@@ -2622,13 +2638,14 @@ label{
 
 /* mcj-home-hero-platform-v1 */
 .mcj-home-hero{
-  --hero-h:520px;
-  --hero-mobile-h:260px;
-  --hero-radius:24px;
-  --hero-fit:contain;
+  --hero-h:260px;
+  --hero-mobile-h:190px;
+  --hero-radius:20px;
+  --hero-fit:cover;
   --hero-position:50% 50%;
   position:relative;
-  width:min(1440px,calc(100vw - 96px));
+  width:100%;
+  max-width:100%;
   height:var(--hero-h);
   margin:16px auto 18px;
   border-radius:var(--hero-radius);
@@ -2696,14 +2713,14 @@ label{
 @keyframes mcjHeroSweep{0%,60%{transform:translateX(-34%)}84%,100%{transform:translateX(28%)}}
 @keyframes mcjHeroFloat{0%,100%{translate:0 0}50%{translate:0 -8px}}
 @keyframes mcjParticleFloat{0%,100%{opacity:.14;transform:translateY(0) scale(.78)}50%{opacity:.42;transform:translateY(-14px) scale(1)}}
-@media(max-width:980px){.mcj-home-hero{width:calc(100vw - 40px);height:360px}.mcj-hero-stage{grid-template-columns:1fr 1fr;padding:38px 34px 68px}.mcj-hero-copy h1{font-size:48px}.mcj-hero-copy p{font-size:18px}.mcj-hero-visual{height:260px}.mcj-hero-dots{bottom:66px}}
-@media(max-width:640px){.mcj-home-hero{width:calc(100vw - 32px);height:var(--hero-mobile-h);border-radius:18px;margin-top:12px;margin-bottom:16px}.mcj-hero-stage{grid-template-columns:1fr;align-content:center;padding:22px 20px 58px}.mcj-hero-copy{max-width:78%;}.mcj-hero-kicker{height:26px;font-size:10px}.mcj-hero-copy h1{font-size:34px;margin:10px 0 6px}.mcj-hero-copy p{font-size:14px}.mcj-hero-copy small{font-size:11px;letter-spacing:.06em}.mcj-hero-actions{margin-top:14px;gap:9px}.mcj-hero-btn{height:40px;min-width:108px;border-radius:12px;padding:0 12px;font-size:12px}.mcj-hero-visual{position:absolute;right:10px;top:50%;width:46%;height:58%;transform:translateY(-50%)}.mcj-hero-announcement{left:12px;right:12px;bottom:12px;height:32px;padding:0 11px}.mcj-hero-announcement b{font-size:10px}.mcj-hero-ticker span{font-size:11px}.mcj-hero-arrow{display:none}.mcj-hero-dots{bottom:48px}.mcj-hero-dots button{width:7px;height:7px}.mcj-hero-dots button.active{width:20px}}
+@media(max-width:980px){.mcj-home-hero{width:100%;height:clamp(220px,22vw,240px);max-height:240px}.mcj-hero-stage{grid-template-columns:1fr 1fr;padding:38px 34px 68px}.mcj-hero-copy h1{font-size:48px}.mcj-hero-copy p{font-size:18px}.mcj-hero-visual{height:260px}.mcj-hero-dots{bottom:66px}}
+@media(max-width:640px){.mcj-home-hero{width:100%;height:clamp(170px,46vw,210px);max-height:210px;border-radius:18px;margin-top:12px;margin-bottom:16px}.mcj-hero-stage{grid-template-columns:1fr;align-content:center;padding:22px 20px 58px}.mcj-hero-copy{max-width:78%;}.mcj-hero-kicker{height:26px;font-size:10px}.mcj-hero-copy h1{font-size:34px;margin:10px 0 6px}.mcj-hero-copy p{font-size:14px}.mcj-hero-copy small{font-size:11px;letter-spacing:.06em}.mcj-hero-actions{margin-top:14px;gap:9px}.mcj-hero-btn{height:40px;min-width:108px;border-radius:12px;padding:0 12px;font-size:12px}.mcj-hero-visual{position:absolute;right:10px;top:50%;width:46%;height:58%;transform:translateY(-50%)}.mcj-hero-announcement{left:12px;right:12px;bottom:12px;height:32px;padding:0 11px}.mcj-hero-announcement b{font-size:10px}.mcj-hero-ticker span{font-size:11px}.mcj-hero-arrow{display:none}.mcj-hero-dots{bottom:48px}.mcj-hero-dots button{width:7px;height:7px}.mcj-hero-dots button.active{width:20px}}
 @media(prefers-reduced-motion:reduce){.mcj-home-hero,.mcj-home-hero *{animation:none!important;transition:none!important}}
 
 /* mcj-home-banner-single-image-fix-v2 */
 .container > .mcj-home-hero{
-  width:min(1440px,calc(100vw - 96px))!important;
-  height:520px!important;
+  width:100%!important;max-width:100%!important;
+  height:clamp(240px,18vw,280px)!important;max-height:300px!important;
   margin:16px auto 0!important;
   border:0!important;
   border-radius:20px!important;
@@ -2798,8 +2815,8 @@ label{
 .mcj-hero-notice b{color:#ff9ecf;font-size:13px;letter-spacing:.1em;white-space:nowrap}
 .mcj-hero-notice div{min-width:0;flex:1;overflow:hidden;white-space:nowrap}
 .mcj-hero-notice span{display:inline-block;min-width:100%;padding-left:100%;animation:noticeScroll 22s linear infinite}
-@media(max-width:980px){.container > .mcj-home-hero,.mcj-hero-below-actions,.mcj-hero-notice{width:calc(100vw - 40px)!important}.container > .mcj-home-hero{height:520px!important}}
-@media(max-width:640px){.container > .mcj-home-hero{width:calc(100vw - 32px)!important;height:260px!important;border-radius:18px!important}.mcj-hero-below-actions{width:calc(100vw - 32px)!important;margin-top:12px;gap:10px}.mcj-hero-below-actions .mcj-hero-btn{height:46px;min-width:0;flex:1;padding:0 12px;font-size:13px}.mcj-hero-notice{width:calc(100vw - 32px)!important;height:38px;margin-top:14px;margin-bottom:28px;border-radius:18px}.mcj-hero-notice b{font-size:11px}.mcj-hero-notice span{font-size:12px}.mcj-home-hero .mcj-hero-arrow{display:none!important}.mcj-home-hero .mcj-hero-dots{bottom:12px!important}}
+@media(max-width:980px){.container > .mcj-home-hero{width:100%!important;height:clamp(220px,22vw,240px)!important;max-height:240px!important}}
+@media(max-width:640px){.container > .mcj-home-hero{width:100%!important;height:clamp(170px,46vw,210px)!important;max-height:210px!important;border-radius:18px!important}.mcj-hero-below-actions{width:calc(100vw - 32px)!important;margin-top:12px;gap:10px}.mcj-hero-below-actions .mcj-hero-btn{height:46px;min-width:0;flex:1;padding:0 12px;font-size:13px}.mcj-hero-notice{width:calc(100vw - 32px)!important;height:38px;margin-top:14px;margin-bottom:28px;border-radius:18px}.mcj-hero-notice b{font-size:11px}.mcj-hero-notice span{font-size:12px}.mcj-home-hero .mcj-hero-arrow{display:none!important}.mcj-home-hero .mcj-hero-dots{bottom:12px!important}}
 
 /* quick-entry-single-icon-fix-v1 */
 .quick-entry-grid .quick-entry-card{
@@ -2965,30 +2982,32 @@ label{
     min-height:44px!important;
   }
 }
-.quick-entry-grid{grid-template-columns:repeat(5,minmax(0,1fr))!important}
+.quick-entry-grid{grid-template-columns:repeat(4,minmax(0,1fr))!important}
 .quick-entry-grid .quick-entry-card{
-  min-height:118px!important;
-  border-radius:20px!important;
+  min-height:100px!important;
+  height:100px!important;
+  max-height:108px!important;
+  border-radius:16px!important;
   border:1px solid rgba(243,168,203,.28)!important;
-  background:linear-gradient(145deg,rgba(255,255,255,.055),rgba(255,255,255,.018)),rgba(15,9,20,.86)!important;
-  box-shadow:0 18px 50px rgba(0,0,0,.36),inset 0 1px 0 rgba(255,255,255,.06)!important;
+  background:linear-gradient(105deg,rgba(243,168,203,.10),rgba(255,255,255,.02) 40%,transparent),rgba(15,9,20,.90)!important;
+  box-shadow:0 10px 28px rgba(0,0,0,.32),inset 0 1px 0 rgba(255,255,255,.04)!important;
 }
 .quick-entry-grid .quick-entry-card i,
 .quick-entry-grid .quick-entry-card i::before{
-  width:50px!important;
-  height:50px!important;
-  min-width:50px!important;
-  border-radius:16px!important;
+  width:24px!important;
+  height:24px!important;
+  min-width:24px!important;
+  border-radius:8px!important;
   background:rgba(255,220,235,.08)!important;
   border:1px solid rgba(243,168,203,.26)!important;
   color:#ffdceb!important;
   -webkit-text-fill-color:#ffdceb!important;
   -webkit-text-stroke:0!important;
   text-stroke:0!important;
-  font-size:20px!important;
+  font-size:14px!important;
   font-weight:1000!important;
   filter:none!important;
-  box-shadow:inset 0 0 18px rgba(255,220,235,.06),0 0 16px rgba(243,168,203,.12)!important;
+  box-shadow:none!important;
 }
 .quick-entry-grid .quick-entry-card i::before{content:none!important;display:none!important}
 .quick-entry-grid .quick-entry-card strong{
@@ -3006,16 +3025,16 @@ label{
   line-height:1.38!important;
   letter-spacing:0!important;
 }
-.login-links{display:flex;justify-content:space-between;gap:12px;margin-top:2px}
-.login-links a{color:#ffdceb;font-size:13px;font-weight:900;text-decoration:none}
-.login-links a:hover{text-decoration:underline}
-@media(max-width:980px){.quick-entry-grid{grid-template-columns:repeat(3,minmax(0,1fr))!important}}
+.login-links{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:nowrap;height:40px;margin-top:12px}
+.login-links a,.login-links button.linkish{color:#ffdceb;font-size:13px;font-weight:700;text-decoration:none;cursor:pointer;border:0;background:none;padding:0;font-family:inherit;white-space:nowrap;line-height:40px}
+.login-links a:hover,.login-links button.linkish:hover{text-decoration:underline}
+@media(max-width:980px){.quick-entry-grid{grid-template-columns:repeat(4,minmax(0,1fr))!important}}
 @media(max-width:640px){.quick-entry-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}.quick-entry-grid .quick-entry-card{min-height:104px!important;padding:14px!important}.quick-entry-grid .quick-entry-card i{width:44px!important;height:44px!important;min-width:44px!important}.quick-entry-grid .quick-entry-card strong{font-size:16px!important}.quick-entry-grid .quick-entry-card span{font-size:11px!important}}
 
 /* homepage-restored-banner-stats-icons-v1 */
 .site-header .header-inner{justify-content:space-between!important}
 .site-header .header-nav{display:none!important}
-.container>.mcj-home-hero{height:clamp(280px,31vw,360px)!important;margin-top:12px!important;margin-bottom:18px!important}
+.container>.mcj-home-hero{height:clamp(240px,18vw,280px)!important;max-height:300px!important;margin-top:12px!important;margin-bottom:18px!important}
 .mcj-home-hero.is-empty{display:grid!important;place-items:center!important;border:1px solid rgba(243,168,203,.28)!important;background:radial-gradient(circle at 18% 18%,rgba(243,168,203,.14),transparent 36%),linear-gradient(145deg,rgba(18,10,23,.96),rgba(5,4,8,.98))!important;box-shadow:0 0 30px rgba(243,168,203,.13),0 24px 70px rgba(0,0,0,.42)!important}
 .mcj-hero-empty{display:grid;place-items:center;gap:8px;text-align:center;color:#ffe2ef}
 .mcj-hero-empty strong{font-size:22px;font-weight:1000}
@@ -3027,17 +3046,16 @@ label{
 .home-daily-card strong{display:block;margin-top:8px;color:#fff5fa;font-size:24px;line-height:1.05;font-family:"Arial Rounded MT Bold","Microsoft YaHei UI",Inter,sans-serif;text-shadow:0 0 14px rgba(243,168,203,.24);white-space:nowrap}
 .home-daily-card small{display:block;margin-top:6px;color:#bfaebb;font-size:11px;font-weight:850}
 .home-daily-card.is-error strong{font-size:13px;white-space:normal;line-height:1.35}
-.quick-entry-grid{grid-template-columns:repeat(5,minmax(0,1fr))!important;gap:14px!important}
-.quick-entry-grid .quick-entry-card{min-height:112px!important;border-radius:18px!important;border:1px solid rgba(243,168,203,.30)!important;background:linear-gradient(105deg,rgba(243,168,203,.12),rgba(255,255,255,.025) 34%,rgba(0,0,0,.06)),rgba(13,8,17,.86)!important;box-shadow:0 18px 50px rgba(0,0,0,.36),inset 0 1px 0 rgba(255,255,255,.055)!important}
-.quick-entry-grid .quick-entry-card i{width:48px!important;height:48px!important;min-width:48px!important;border-radius:16px!important;background:radial-gradient(circle at 42% 35%,rgba(255,220,235,.22),rgba(243,168,203,.07))!important;border:1px solid rgba(243,168,203,.30)!important;box-shadow:inset 0 0 18px rgba(255,220,235,.06),0 0 16px rgba(243,168,203,.12)!important}
-.quick-entry-grid .quick-entry-card i img{display:block!important;width:34px!important;height:34px!important;min-width:34px!important;min-height:34px!important;object-fit:contain!important;filter:drop-shadow(0 0 8px rgba(243,168,203,.22))!important}
+.quick-entry-grid{grid-template-columns:repeat(4,minmax(0,1fr))!important;gap:14px!important}
+.quick-entry-grid .quick-entry-card{min-height:100px!important;height:100px!important;max-height:108px!important;border-radius:16px!important;border:1px solid rgba(243,168,203,.30)!important;background:linear-gradient(105deg,rgba(243,168,203,.12),rgba(255,255,255,.025) 34%,rgba(0,0,0,.06)),rgba(13,8,17,.86)!important;box-shadow:0 18px 50px rgba(0,0,0,.36),inset 0 1px 0 rgba(255,255,255,.055)!important}
+.quick-entry-grid .quick-entry-card i{width:24px!important;height:24px!important;min-width:24px!important;border-radius:8px!important;background:rgba(255,220,235,.10)!important;border:1px solid rgba(243,168,203,.26)!important;box-shadow:none!important}
+.quick-entry-grid .quick-entry-card i img{display:block!important;width:18px!important;height:18px!important;min-width:18px!important;min-height:18px!important;object-fit:contain!important;filter:none!important}
 .quick-entry-grid .quick-entry-card strong{font-size:17px!important;font-weight:900!important;color:#fff5fa!important;-webkit-text-fill-color:#fff5fa!important;letter-spacing:0!important}
 .quick-entry-grid .quick-entry-card span{font-size:12px!important;color:rgba(255,226,239,.72)!important;line-height:1.38!important}
 #hotCompanionTrack .companion-card::after,#recentCompanionTrack .companion-card::after,#gameCompanionTrack .companion-card::after,#reviewCompanionTrack .companion-card::after{content:none!important;display:none!important}
-#floatingCustomerService{position:fixed!important;right:24px!important;bottom:24px!important;z-index:9999!important}
-#floatingCustomerService .floating-cs-button{background:rgba(18,14,18,.88)!important;background-image:none!important;border:1px solid rgba(255,145,195,.55)!important}
-@media(max-width:980px){.home-daily-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.quick-entry-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}.container>.mcj-home-hero{height:clamp(210px,34vw,300px)!important}}
-@media(max-width:640px){.home-daily-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.home-daily-card{min-height:86px;padding:14px 12px}.home-daily-card strong{font-size:21px}.container>.mcj-home-hero{height:clamp(170px,50vw,230px)!important;border-radius:18px!important}.quick-entry-grid .quick-entry-card{min-height:104px!important;padding:14px!important}.quick-entry-grid .quick-entry-card i,.quick-entry-grid .quick-entry-card i img{width:42px!important;height:42px!important;min-width:42px!important}.quick-entry-grid .quick-entry-card i img{width:30px!important;height:30px!important;min-width:30px!important;min-height:30px!important}#floatingCustomerService{right:16px!important;bottom:18px!important}}
+@media(max-width:980px){.home-daily-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.quick-entry-grid{grid-template-columns:repeat(3,minmax(0,1fr))!important}.container>.mcj-home-hero{height:clamp(220px,22vw,240px)!important;max-height:240px!important}}
+@media(max-width:767px){.quick-entry-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}.quick-entry-grid .quick-entry-card{min-height:92px!important;height:92px!important;max-height:100px!important;padding:14px!important}}
+@media(max-width:640px){.home-daily-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.home-daily-card{min-height:86px;padding:14px 12px}.home-daily-card strong{font-size:21px}.container>.mcj-home-hero{height:clamp(170px,46vw,210px)!important;max-height:210px!important;border-radius:18px!important}}
 @media(max-width:360px){.quick-entry-grid{grid-template-columns:1fr!important}.home-daily-grid{grid-template-columns:1fr}}
 
 /* homepage-ui-second-pass-v1 */
@@ -3068,22 +3086,13 @@ label{
   box-shadow:0 22px 70px rgba(0,0,0,.42),inset 0 1px 0 rgba(255,255,255,.08),0 0 34px rgba(243,168,203,.12)!important;
 }
 .mcj-hero-empty{
-  gap:12px!important;
-  padding:24px!important;
+  display:none!important;
 }
 .mcj-hero-empty strong{
-  font-family:"Microsoft YaHei UI",Inter,Arial,sans-serif!important;
-  font-size:clamp(26px,3.2vw,42px)!important;
-  font-weight:700!important;
-  letter-spacing:0!important;
-  color:#fff!important;
-  text-shadow:0 0 22px rgba(243,168,203,.20)!important;
+  font-size:16px!important;
 }
 .mcj-hero-empty span{
-  font-family:"Microsoft YaHei UI",Inter,Arial,sans-serif!important;
-  font-size:15px!important;
-  font-weight:400!important;
-  color:rgba(255,226,239,.78)!important;
+  font-size:13px!important;
 }
 .home-daily-grid{
   grid-template-columns:repeat(6,minmax(0,1fr))!important;
@@ -3133,26 +3142,32 @@ label{
 }
 .quick-entry-grid,
 .quick-entry-grid.launch-entry-grid{
-  grid-template-columns:repeat(5,minmax(0,1fr))!important;
+  grid-template-columns:repeat(4,minmax(0,1fr))!important;
   gap:14px!important;
+}
+.quick-entry-grid [data-home-entry="my-orders"],
+.quick-entry-grid [data-home-entry="support"]{
+  display:none!important;
 }
 .quick-entry-grid .quick-entry-card,
 .quick-entry-grid.launch-entry-grid .quick-entry-card{
   position:relative!important;
   display:flex!important;
   align-items:center!important;
-  min-height:112px!important;
-  height:112px!important;
-  padding:22px 18px 22px 24px!important;
+  min-height:100px!important;
+  height:100px!important;
+  max-height:108px!important;
+  padding:14px 16px!important;
   gap:0!important;
-  border-radius:18px!important;
+  border-radius:16px!important;
   border:1px solid rgba(255,214,232,.24)!important;
-  background:linear-gradient(145deg,rgba(255,255,255,.055),rgba(255,255,255,.018)),rgba(10,9,14,.84)!important;
-  box-shadow:0 18px 46px rgba(0,0,0,.36),inset 0 1px 0 rgba(255,255,255,.055)!important;
+  background:linear-gradient(105deg,rgba(243,168,203,.10),rgba(255,255,255,.02) 40%,transparent),rgba(10,9,14,.90)!important;
+  box-shadow:0 10px 28px rgba(0,0,0,.32),inset 0 1px 0 rgba(255,255,255,.04)!important;
   color:#fff!important;
   overflow:hidden!important;
   text-align:left!important;
-  transition:transform .22s ease,border-color .22s ease,box-shadow .22s ease,background .22s ease!important;
+  transform:none!important;
+  transition:border-color .18s ease,box-shadow .18s ease,background .18s ease!important;
 }
 .quick-entry-grid .quick-entry-card:before,
 .quick-entry-grid.launch-entry-grid .quick-entry-card:before{
@@ -3178,10 +3193,10 @@ label{
 }
 .quick-entry-grid .quick-entry-card:hover,
 .quick-entry-grid.launch-entry-grid .quick-entry-card:hover{
-  transform:translateY(-3px)!important;
-  border-color:rgba(255,214,232,.64)!important;
-  background:linear-gradient(145deg,rgba(255,214,232,.075),rgba(255,255,255,.024)),rgba(12,10,16,.92)!important;
-  box-shadow:0 0 28px rgba(243,168,203,.20),0 24px 60px rgba(0,0,0,.44),inset 0 1px 0 rgba(255,255,255,.08)!important;
+  transform:none!important;
+  border-color:rgba(255,214,232,.50)!important;
+  background:linear-gradient(105deg,rgba(243,168,203,.14),rgba(255,255,255,.03) 40%,transparent),rgba(12,10,16,.94)!important;
+  box-shadow:0 12px 32px rgba(0,0,0,.38),0 0 14px rgba(243,168,203,.12)!important;
 }
 .quick-entry-grid .quick-entry-card i,
 .quick-entry-grid .quick-entry-card i:before,
@@ -3215,9 +3230,9 @@ label{
 .quick-entry-grid.launch-entry-grid .quick-entry-card:nth-child(n) strong{
   display:block!important;
   font-family:"Microsoft YaHei UI",Inter,Arial,sans-serif!important;
-  font-size:18px!important;
-  font-weight:700!important;
-  line-height:1.25!important;
+  font-size:17px!important;
+  font-weight:800!important;
+  line-height:1.2!important;
   color:#fff!important;
   -webkit-text-fill-color:#fff!important;
   -webkit-text-stroke:0!important;
@@ -3231,11 +3246,11 @@ label{
 .quick-entry-grid .quick-entry-card:nth-child(n) span,
 .quick-entry-grid.launch-entry-grid .quick-entry-card:nth-child(n) span{
   display:block!important;
-  margin-top:8px!important;
+  margin-top:6px!important;
   font-family:"Microsoft YaHei UI",Inter,Arial,sans-serif!important;
-  font-size:13px!important;
-  font-weight:400!important;
-  line-height:1.4!important;
+  font-size:12px!important;
+  font-weight:500!important;
+  line-height:1.35!important;
   color:#ffe2ef!important;
   -webkit-text-fill-color:#ffe2ef!important;
   opacity:.75!important;
@@ -3243,39 +3258,58 @@ label{
   text-shadow:none!important;
 }
 @media(max-width:980px){
-  .home-daily-grid{grid-template-columns:repeat(3,minmax(0,1fr))!important}
   .quick-entry-grid,.quick-entry-grid.launch-entry-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+}
+@media(max-width:980px){
+  .home-daily-grid{grid-template-columns:repeat(3,minmax(0,1fr))!important}
+}
+@media(max-width:767px){
+  .quick-entry-grid,.quick-entry-grid.launch-entry-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+  .quick-entry-grid .quick-entry-card,.quick-entry-grid.launch-entry-grid .quick-entry-card{height:92px!important;min-height:92px!important;max-height:100px!important;padding:14px!important}
+  .quick-entry-grid .quick-entry-card strong,.quick-entry-grid.launch-entry-grid .quick-entry-card strong{font-size:16px!important}
+  .quick-entry-grid .quick-entry-card span,.quick-entry-grid.launch-entry-grid .quick-entry-card span{font-size:11px!important}
 }
 @media(max-width:640px){
   .home-daily-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}
   .home-daily-card{height:104px!important;min-height:104px!important}
   .home-daily-card strong{font-size:28px!important}
-  .quick-entry-grid .quick-entry-card,.quick-entry-grid.launch-entry-grid .quick-entry-card{height:104px!important;min-height:104px!important;padding:18px 16px 18px 22px!important}
-  .quick-entry-grid .quick-entry-card strong,.quick-entry-grid.launch-entry-grid .quick-entry-card strong{font-size:18px!important}
-  .quick-entry-grid .quick-entry-card span,.quick-entry-grid.launch-entry-grid .quick-entry-card span{font-size:13px!important}
 }
 @media(max-width:360px){
   .home-daily-grid,.quick-entry-grid,.quick-entry-grid.launch-entry-grid{grid-template-columns:1fr!important}
 }
 
-/* homepage-launch-ready-guard-v1 */
-.container > .mcj-home-hero{
-  height:clamp(220px,28vw,340px)!important;
-  max-height:360px!important;
-  overflow:hidden!important;
-}
-.mcj-home-hero .mcj-hero-image{
+/* homepage-launch-ready-guard-v1 — size lock deferred to src/home-banner.css */
+
+/* v1-home-mobile-ui-lock — P0 overflow / images / daily empty */
+html,body{max-width:100%;overflow-x:hidden!important}
+body{overflow-x:hidden!important}
+.container,.home-page,main.container{max-width:100%;overflow-x:hidden;box-sizing:border-box}
+img{max-width:100%;height:auto}
+.mcj-home-hero .mcj-hero-image,
+.mcj-home-hero img.mcj-hero-image{
   width:100%!important;
+  max-width:100%!important;
   height:100%!important;
-  object-fit:var(--hero-fit,contain)!important;
-  object-position:var(--hero-position,50% 50%)!important;
+  object-fit:cover!important;
+}
+.home-daily-empty{
+  margin:0;
+  padding:18px 14px;
+  border-radius:18px;
+  border:1px dashed rgba(243,168,203,.28);
+  background:rgba(255,255,255,.03);
+  color:#cdb8c4;
+  font-weight:850;
+  text-align:center;
+}
+@media(max-width:900px){
+  .home-popularity-section,.pop-board,.pop-podium,.pop-list,.pop-podium-card,.pop-list-row{max-width:100%!important}
+  .pop-podium{overflow-x:hidden!important}
 }
 .quick-entry-grid .quick-entry-card[hidden],
 .mobile-bottom-nav a[hidden]{display:none!important}
 @media(max-width:640px){
   .container{padding-bottom:104px!important}
-  #floatingCustomerService{bottom:calc(86px + env(safe-area-inset-bottom))!important}
-  .container > .mcj-home-hero{height:clamp(170px,50vw,230px)!important;max-height:230px!important}
 }
 
 /* homepage-clean-background-v1 */
@@ -3302,30 +3336,47 @@ body:after,
   <link rel="stylesheet" href="src/real-data-admin.css">
   <link rel="stylesheet" href="src/gameplay-flow.css">
   <link rel="stylesheet" href="src/design-system.css">
+  <link rel="stylesheet" href="src/home-banner.css">
+  <link rel="stylesheet" href="src/home-announcements.css">
+  <link rel="stylesheet" href="src/home-popularity.css">
+  <link rel="stylesheet" href="src/home-desktop.css">
+  <link rel="stylesheet" href="src/boss-header.css">
+  <link rel="stylesheet" href="src/login-modal.css">
+  <link rel="stylesheet" href="src/place-order-modal.css">
+  <link rel="stylesheet" href="src/notify-system.css">
+  <script src="src/role-gates.js"></script>
+  <script src="src/avatar-fallback.js"></script>
+  <script src="src/launch-feature-freeze.js"></script>
+  <script src="src/notify-system.js" defer></script>
+  <script src="src/boss-header.js" defer></script>
 </head>
 <body>
   <div class="ambient-layer" aria-hidden="true"></div>
   <header class="site-header">
     <div class="header-inner">
       <a class="brand" href="index.html"><span class="live2d-avatar"><img src="assets/meow-cuijiao-brand.jpg" alt="logo"><i></i></span><span>妙脆角<small>Meow Cui Jiao</small></span></a>
-      <div class="top-actions"><a href="index.html">首页</a><a href="companion-center.html">陪玩大厅</a><a class="auth-only" data-auth-only data-role="customer" href="recharge.html">充值中心</a><a class="auth-only" data-auth-only data-role="customer" href="orders.html">我的订单</a><a class="auth-only" data-auth-only data-role="customer" href="support.html">在线客服</a><a class="user-chip auth-only" data-auth-only data-role="customer" href="mine.html"><span class="user-dot"></span><span>我的账号</span></a><button class="auth-only" data-auth-only data-role="customer" data-boss-logout type="button">退出登录</button><button class="login" data-modal="login" data-guest-only>登录 / 注册</button></div>
+      <div class="top-actions"><a href="index.html">首页</a><a href="companion-center.html">陪玩大厅</a><a class="auth-only" data-auth-only data-role="customer" href="recharge.html">充值中心</a><a class="auth-only" data-auth-only data-role="customer" href="orders.html">我的订单</a><a class="auth-only" data-auth-only data-role="customer" href="support.html?start=1">在线客服</a><a class="user-chip auth-only" data-auth-only data-role="customer" href="mine.html"><span class="user-dot"></span><span>我的账号</span></a><button class="auth-only" data-auth-only data-role="customer" data-boss-logout type="button">退出登录</button><button class="login" data-modal="login" data-guest-only>登录 / 注册</button></div>
     </div>
   </header>
   <main class="container">
     <section class="mcj-home-hero" data-mcj-home-hero aria-label="MEOW CUI JIAO 首页 Banner"></section>
 
-    <div class="announcement-strip fade-cycle" hidden><span></span></div>
+    <div class="announcement-strip home-announcement-bar" id="homeAnnouncementBar" role="region" aria-label="官方公告">
+      <div class="home-announcement-label"><span aria-hidden="true">📢</span><strong>官方公告</strong></div>
+      <div class="home-announcement-track-wrap" data-announcement-open data-empty="1" role="button" aria-label="暂无最新公告">
+        <span class="home-announcement-static">暂无最新公告。</span>
+      </div>
+    </div>
 
     <section class="section home-daily-stats" data-home-daily-stats aria-label="今日平台数据" hidden></section>
 
     <section class="section quick-entry-section">
       <div class="section-title compact-title"><div><h2>快速入口</h2><p>QUICK ACCESS</p></div></div>
             <div class="quick-entry-grid">
-        <a class="neon-card quick-entry-card" href="companion-center.html"><div><strong>陪玩大厅</strong><span>浏览已上架陪玩</span></div></a>
-        <a class="neon-card quick-entry-card" href="more-gameplays.html"><div><strong>更多玩法</strong><span>固定价格玩法套餐</span></div></a>
-        <a class="neon-card quick-entry-card" href="custom-order.html"><div><strong>立即下单</strong><span>填写需求，客服匹配陪玩</span></div></a>
-        <a class="neon-card quick-entry-card" href="orders.html"><div><strong>我的订单</strong><span>查看自己的订单记录</span></div></a>
-        <a class="neon-card quick-entry-card" href="support.html"><div><strong>在线客服</strong><span>进入客服聊天</span></div></a>
+        <a class="neon-card quick-entry-card" href="companion-center.html" data-home-entry="companion-hall"><div><strong>陪玩大厅</strong><span>浏览已上架陪玩，立即下单</span></div></a>
+        <a class="neon-card quick-entry-card" href="more-gameplays.html" data-home-entry="more-gameplays"><div><strong>更多玩法</strong><span>护航、跑刀、代肝、趣味单</span></div></a>
+        <a class="neon-card quick-entry-card" href="custom-order.html" data-home-entry="custom-order"><div><strong>自定义订单</strong><span>填写需求，客服匹配陪玩</span></div></a>
+        <a class="neon-card quick-entry-card" href="team-lobby.html" data-home-entry="team-lobby"><div><strong>组队大厅</strong><span>进入组队社区找队友</span></div></a>
       </div>    </section>
 
     <section class="section companion-apply-guide" hidden>
@@ -3344,6 +3395,16 @@ body:after,
         <div class="official-ad-track" id="officialAdTrack"></div>
         <div class="ad-dots" id="officialAdDots"></div>
       </div>
+    </section>
+    <section class="section home-popularity-section" aria-label="本周人气陪玩榜">
+      <div class="section-title hot-title-row">
+        <div>
+          <h2>本周人气榜</h2>
+          <p>实时根据接单、好评、在线和礼物热度更新。</p>
+        </div>
+        <a class="btn lobby-link" href="companion-center.html">更多陪玩</a>
+      </div>
+      <div class="pop-board" id="homePopularityBoard"></div>
     </section>
         <section class="section hot-recommend-section">
       <div class="section-title hot-title-row">
@@ -3412,11 +3473,12 @@ body:after,
   <script src="src/unified-config.js"></script>
   <script src="src/commission-engine.js"></script>
   <script src="src/unified-api.js"></script>
-  <script src="src/role-gates.js"></script>
+  <script src="src/currency.js"></script>
+  <script src="src/login-modal-portal.js"></script>
   <script>
     const modal=document.getElementById('modal');const modalBody=document.getElementById('modalBody');
-    function isLoggedIn(){return window.MCJRoleGate ? window.MCJRoleGate.isLogged('customer') : false}
-    function refreshAuthUI(){document.body.classList.toggle('is-logged-in',isLoggedIn());}
+    function isLoggedIn(){return window.MCJRoleGate ? !!(window.MCJRoleGate.isLogged('customer')||window.MCJRoleGate.isLogged('boss')) : !!(localStorage.getItem('mcjAuthAccessToken')||sessionStorage.getItem('mcjAuthAccessToken'))}
+    function refreshAuthUI(){document.body.classList.toggle('is-logged-in',isLoggedIn());window.dispatchEvent(new CustomEvent('mcj:auth-updated'));}
     function getDiscordInviteUrl(){
       var direct=(localStorage.getItem('discordInviteUrl')||'').trim();
       if(direct)return direct;
@@ -3427,8 +3489,24 @@ body:after,
       if(url){window.open(url,'_blank','noopener');return;}
       alert('组队大厅链接暂未开放，请稍后再试。');
     }
-    function openModal(html){modalBody.innerHTML=html;modal.classList.add('open');document.body.style.overflow='hidden'}
-    function closeModal(){modal.classList.remove('open');document.body.style.overflow=''}
+    function openModal(html){
+      if(window.MCJModal&&typeof window.MCJModal.open==='function'){
+        window.MCJModal.open(html);
+        return;
+      }
+      if(modal.parentNode!==document.body) document.body.appendChild(modal);
+      modalBody.innerHTML=html;
+      var dialog=modal.querySelector('.dialog');
+      if(dialog){dialog.classList.toggle('is-auth-dialog', /boss-login-modal/.test(String(html||'')));dialog.scrollTop=0;}
+      modal.scrollTop=0;
+      modal.classList.add('open');
+      document.body.style.overflow='hidden';
+    }
+    function closeModal(){
+      if(window.MCJModal&&typeof window.MCJModal.close==='function'){window.MCJModal.close();return;}
+      modal.classList.remove('open');
+      document.body.style.overflow='';
+    }
     function htmlSafe(text){return String(text||'').replace(/[&<>"']/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]})}
     function readText(el,selector,fallback){var node=selector?el.querySelector(selector):el;return ((node&&node.textContent)||fallback||'').trim()}
     function collectCompanionData(button){
@@ -3449,15 +3527,22 @@ body:after,
     }
     function openCompanionOrder(button){openModal(companionDetailHtml(collectCompanionData(button)))}
     function numericPrice(price){var m=String(price||'').match(/[\d.]+/);return m?Number(m[0]):0}
-    function bossLoginHtml(){
-      return '<div class="boss-login-modal"><h2>登录 MEOW CUI JIAO</h2><p class="muted">第一阶段仅支持邮箱和密码登录。</p><div class="login-panel active" data-login-panel="email"><label class="wide">邮箱<input id="loginGmail" type="email" autocomplete="username" placeholder="请输入邮箱"></label><label class="wide">密码<input id="loginGmailCode" type="password" autocomplete="current-password" placeholder="请输入密码"></label><button class="login-submit" type="button" data-login-confirm data-login-method="email">登录</button></div><div class="login-links"><a href="mine.html?register=1">注册新账号</a><a href="mine.html?forgot=1">忘记密码</a></div></div>';
+    function bossLoginHtml(mode){
+      mode = mode === 'register' ? 'register' : 'login';
+      var loginPanel = '<div class="login-panel'+(mode==='login'?' active':'')+'" data-login-panel="email" data-auth-panel="login"><label class="wide">邮箱<input id="loginGmail" type="email" autocomplete="username" placeholder="请输入邮箱"></label><label class="wide">密码<input id="loginGmailCode" type="password" autocomplete="current-password" placeholder="请输入密码"></label><button class="login-submit" type="button" data-login-confirm data-login-method="email">登录</button></div>';
+      var registerPanel = '<div class="login-panel'+(mode==='register'?' active':'')+'" data-login-panel="register" data-auth-panel="register"><label class="wide">昵称<input id="registerNickname" type="text" autocomplete="nickname" placeholder="请输入昵称" maxlength="40"></label><label class="wide">邮箱<input id="registerEmail" type="email" autocomplete="email" placeholder="请输入邮箱"></label><label class="wide">密码<input id="registerPassword" type="password" autocomplete="new-password" placeholder="至少 6 位密码"></label><label class="wide">确认密码<input id="registerPasswordConfirm" type="password" autocomplete="new-password" placeholder="再次输入密码"></label><button class="login-submit" type="button" data-register-confirm>注册</button></div>';
+      var links = mode === 'register'
+        ? '<div class="login-links"><button class="linkish" type="button" data-switch-auth="login">已有账号？立即登录</button></div>'
+        : '<div class="login-links"><a href="mine.html?forgot=1">忘记密码</a><button class="linkish" type="button" data-switch-auth="register">还没有账号？立即注册</button></div>';
+      return '<div class="boss-login-modal" data-auth-mode="'+mode+'"><h2>'+(mode==='register'?'注册老板账号':'登录 MEOW CUI JIAO')+'</h2><p class="muted">'+(mode==='register'?'注册成功后将自动登录，并生成唯一老板 UID。':'邮箱密码登录，支持注册新账号。')+'</p>'+loginPanel+registerPanel+'<p id="loginState" data-login-error></p>'+links+'</div>';
     }
+    window.bossLoginHtml = bossLoginHtml;
     function loginRequiredModal(){
       openModal(bossLoginHtml());
     }
     function orderConfirmHtml(data){
       var unit=numericPrice(data.price);
-      return '<div class="companion-detail-modal order-confirm-modal"><div class="detail-cover"><img src="'+htmlSafe(data.img)+'" alt="'+htmlSafe(data.name)+'"><span class="detail-status">待确认</span></div><div class="detail-body"><h2>确认下单</h2><p class="detail-meta">'+htmlSafe(data.name)+' 路 '+htmlSafe(data.game)+' 路 RM'+unit+'/h</p><div class="detail-grid"><label class="field"><span>选择时长</span><select id="orderHours"><option value="1">1 小时</option><option value="2">2 小时</option><option value="3">3 小时</option><option value="4">4 小时</option><option value="8">包夜 8 小时</option></select></label><div class="detail-chip"><span>总价</span><strong id="orderTotal">RM'+unit+'</strong></div></div><label class="field"><span>备注</span><textarea id="orderRemark" placeholder="例如：想玩排位、语音聊天、不要压力队友..."></textarea></label><button class="confirm-order" data-create-order data-player-id="'+htmlSafe(data.playerId)+'" data-name="'+htmlSafe(data.name)+'" data-game="'+htmlSafe(data.game)+'" data-price="'+unit+'" data-img="'+htmlSafe(data.img)+'">确认创建订单</button></div></div>';
+      return '<div class="companion-detail-modal order-confirm-modal"><div class="detail-cover"><img src="'+htmlSafe(data.img)+'" alt="'+htmlSafe(data.name)+'"><span class="detail-status">待确认</span></div><div class="detail-body"><h2>确认下单</h2><p class="detail-meta">'+htmlSafe(data.name)+' 路 '+htmlSafe(data.game)+' 路 '+unit+' 猫粮/小时</p><div class="detail-grid"><label class="field"><span>选择时长</span><select id="orderHours"><option value="1">1 小时</option><option value="2">2 小时</option><option value="3">3 小时</option><option value="4">4 小时</option><option value="8">包夜 8 小时</option></select></label><div class="detail-chip"><span>总价</span><strong id="orderTotal">'+unit+' 猫粮</strong></div></div><label class="field"><span>备注</span><textarea id="orderRemark" placeholder="例如：想玩排位、语音聊天、不要压力队友..."></textarea></label><button class="confirm-order" data-create-order data-player-id="'+htmlSafe(data.playerId)+'" data-name="'+htmlSafe(data.name)+'" data-game="'+htmlSafe(data.game)+'" data-price="'+unit+'" data-img="'+htmlSafe(data.img)+'">确认创建订单</button></div></div>';
     }
     function openOrderConfirm(data){openModal(orderConfirmHtml(data))}
     function getCurrentUser(){
@@ -3471,7 +3556,7 @@ body:after,
       var hours=Number((document.getElementById('orderHours')||{}).value||1);
       var unit=Number(button.dataset.price||12);
       var remark=(document.getElementById('orderRemark')||{}).value||'';
-      var order={order_id:'MCJ-'+Date.now(),user_id:user.user_id,player_id:button.dataset.playerId,player_name:button.dataset.name,player_avatar:button.dataset.img,game:button.dataset.game,service_time:new Date().toLocaleString(),duration:hours+' hours',hours:hours,unit_price:unit,amount:'RM'+(unit*hours),remark:remark,status:'pending_payment',created_at:new Date().toISOString()};
+      var order={order_id:'MCJ-'+Date.now(),user_id:user.user_id,player_id:button.dataset.playerId,player_name:button.dataset.name,player_avatar:button.dataset.img,game:button.dataset.game,service_time:new Date().toLocaleString(),duration:hours+' hours',hours:hours,unit_price:unit,amount:(unit*hours)+' 猫粮',remark:remark,status:'pending_payment',created_at:new Date().toISOString()};
       var db={};
       try{db=JSON.parse(localStorage.getItem('mcjRealDB.v1')||'{}')}catch(e){db={}}
       db.orders=Array.isArray(db.orders)?db.orders:[];
@@ -3620,20 +3705,37 @@ body:after,
       var confirm=e.target.closest('[data-confirm-order]');
       if(confirm){e.preventDefault();if(!isLoggedIn()){loginRequiredModal();return;}location.href='checkin.html?companion='+encodeURIComponent(confirm.dataset.companion||'');return;}
       const target=e.target.closest('[data-modal]');
-      if(target){const map={login:(typeof bossLoginHtml==='function'?bossLoginHtml():'<h2>登录 MEOW CUI JIAO</h2><button class="order-btn" data-login-confirm>登录</button>'),order:'<h2>快速下单</h2><p class="muted">请选择已上架的陪玩后创建订单。</p><a class="order-btn" href="companion-center.html">进入陪玩大厅</a>',join:'<h2>加入陪玩</h2><p class="muted">提交资料后，平台会审核你的入驻申请</p><button class="order-btn">立即申请</button>',guide:'<h2>下单教学</h2><p>1. 点击陪玩大厅<br>2. 选择游戏和陪玩<br>3. 点击立即下单<br>4. 客服确认后开始服务</p>'};openModal(map[target.dataset.modal]||'')}
+      if(target){
+        var key=String(target.dataset.modal||'');
+        var map={login:(typeof bossLoginHtml==='function'?bossLoginHtml():'<h2>登录 MEOW CUI JIAO</h2><button class="order-btn" data-login-confirm>登录</button>'),order:'<h2>快速下单</h2><p class="muted">请选择已上架的陪玩后创建订单。</p><a class="order-btn" href="companion-center.html">进入陪玩大厅</a>',join:'<h2>加入陪玩</h2><p class="muted">提交资料后，平台会审核你的入驻申请</p><button class="order-btn">立即申请</button>',guide:'<h2>下单教学</h2><p>1. 点击陪玩大厅<br>2. 选择游戏和陪玩<br>3. 点击立即下单<br>4. 客服确认后开始服务</p>'};
+        if(!map[key])return;
+        openModal(map[key]);
+      }
     });
     document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal()});
   </script>
-  <script src="src/site-data.js"></script>
+  <script src="src/site-data.js?v=20260730home4"></script>
   <script src="src/home-banner.js"></script>
+  <script src="src/home-announcements.js"></script>
   <script src="src/home-daily-stats.js"></script>
+  <script src="src/place-order-modal.js"></script>
+  <script src="src/home-popularity.js"></script>
+  <script src="src/home-services.js"></script>
   <script src="src/companion-application.js"></script>
   <script>
     (function(){
       function safeText(text){return String(text||'').replace(/[&<>"']/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]})}
       function modalBox(){return {modal:document.getElementById('modal'),body:document.getElementById('modalBody')}}
-      function showModal(html){var box=modalBox();if(!box.modal||!box.body)return;box.body.innerHTML=html;box.modal.classList.add('open');document.body.style.overflow='hidden'}
-      function hideModal(){var box=modalBox();if(!box.modal)return;box.modal.classList.remove('open');document.body.style.overflow=''}
+      function showModal(html){
+        if(window.MCJModal&&typeof window.MCJModal.open==='function'){window.MCJModal.open(html);return;}
+        var box=modalBox();if(!box.modal||!box.body)return;
+        if(box.modal.parentNode!==document.body)document.body.appendChild(box.modal);
+        box.body.innerHTML=html;box.modal.classList.add('open');document.body.style.overflow='hidden'
+      }
+      function hideModal(){
+        if(window.MCJModal&&typeof window.MCJModal.close==='function'){window.MCJModal.close();return;}
+        var box=modalBox();if(!box.modal)return;box.modal.classList.remove('open');document.body.style.overflow=''
+      }
       function cardText(card,selector,fallback){var el=selector?card.querySelector(selector):card;return ((el&&el.textContent)||fallback||'').trim()}
       function priceNumber(price){var match=String(price||'').match(/[\d.]+/);return match?Number(match[0]):12}
       function getPlayer(button){
@@ -3663,7 +3765,7 @@ body:after,
           '<div class="detail-tags">'+tagHtml+'</div>'+
           '<div class="detail-grid">'+
           '<label class="field"><span>\u9009\u62e9\u65f6\u957f</span><select id="homeOrderHours"><option value="1">1 \u5c0f\u65f6</option><option value="2">2 \u5c0f\u65f6</option><option value="3">3 \u5c0f\u65f6</option><option value="4">4 \u5c0f\u65f6</option><option value="8">\u5305\u591c 8 \u5c0f\u65f6</option></select></label>'+
-          '<div class="detail-chip"><span>\u603b\u4ef7</span><strong id="homeOrderTotal">RM'+unit+'</strong></div>'+
+          '<div class="detail-chip"><span>\u603b\u4ef7</span><strong id="homeOrderTotal">'+unit+' 猫粮</strong></div>'+
           '<div class="detail-chip"><span>\u5728\u7ebf\u72b6\u6001</span><strong>'+safeText(data.status)+'</strong></div>'+
           '<div class="detail-chip"><span>\u670d\u52a1\u65b9\u5f0f</span><strong>\u8bed\u97f3 / \u6587\u5b57</strong></div>'+
           '</div>'+
@@ -3721,7 +3823,7 @@ body:after,
         if(e.target&&e.target.id==='homeOrderHours'){
           var unit=priceNumber((window.__homeOrderPlayer||{}).price);
           var total=document.getElementById('homeOrderTotal');
-          if(total)total.textContent='RM'+(unit*Number(e.target.value||1));
+          if(total)total.textContent=(unit*Number(e.target.value||1))+' 猫粮';
         }
       },true);
       document.addEventListener('keydown',function(e){if(e.key==='Escape')hideModal()});
@@ -3799,7 +3901,7 @@ body:after,
           if(!strong)return;
           var value=map[type];
           if(type==='reviews'){strong.dataset.count=String(value);strong.textContent=value+'%';}
-          else if(type==='revenue'){strong.dataset.count=String(value);strong.textContent=value>0?'RM '+Number(value).toFixed(2):'';}
+          else if(type==='revenue'){strong.dataset.count=String(value);strong.textContent=value>0?(Number(value).toFixed(2).replace(/\.00$/,'')+' 猫粮'):'';}
           else{strong.dataset.count=String(value||0);strong.textContent=String(value||0);}
         });
         document.querySelectorAll('[data-live-stat="revenue"] strong').forEach(function(strong){if(!Number(strong.dataset.count||0))strong.textContent='';});
@@ -3815,10 +3917,10 @@ body:after,
           body=summary([['在线陪玩',data.online.length||data.players.length],['全部陪玩',data.players.length],['可派单','实时同步']])+rows(data.online.length?data.online:data.players,function(p){return {title:(p.name||p.title||'未命名陪玩')+' / '+(p.game||'游戏未填'),desc:'价格 '+(p.price||'未填')+' · 评分 '+(p.rating||p.score||'5.0')+' · 标签 '+((Array.isArray(p.tags)?p.tags.join('、'):p.tags)||'后台未填'),value:(p.orders24h||p.orders||0)+' 单'}});
         } else if(type==='orders'){
           title='今日订单明细'; desc='显示今天创建的订单，可看到订单号、陪玩、游戏、状态和金额。'; actions='<a class="primary" href="orders.html">查看我的订单</a>';
-          body=summary([['今日订单',data.orders.length],['待处理',data.orders.filter(function(o){return /待|pending|匹配|支付/.test(String(o.status||''))}).length],['今日金额','RM '+Math.round(data.revenue)]])+rows(data.orders,function(o){return {title:(o.order_id||o.id||'未编号订单')+' / '+(o.player_name||o.player||o.boss||'未知'),desc:'游戏 '+(o.game||o.service||'未填')+' · 时间 '+(o.service_time||o.time||o.created_at||'刚刚'),value:(o.status||'待处理')+' · '+(o.amount||o.total||'RM0')}});
+          body=summary([['今日订单',data.orders.length],['待处理',data.orders.filter(function(o){return /待|pending|匹配|支付/.test(String(o.status||''))}).length],['今日金额',Math.round(data.revenue)+' 猫粮']])+rows(data.orders,function(o){return {title:(o.order_id||o.id||'未编号订单')+' / '+(o.player_name||o.player||o.boss||'未知'),desc:'游戏 '+(o.game||o.service||'未填')+' · 时间 '+(o.service_time||o.time||o.created_at||'刚刚'),value:(o.status||'待处理')+' · '+(o.amount||o.total||'0 猫粮')}});
         } else if(type==='revenue'){
           title='今日营业额明细'; desc='按今日订单金额汇总。'; actions='<a class="primary" href="orders.html">订单列表</a>';
-          body=summary([['今日营业额','RM '+Math.round(data.revenue)],['订单',data.orders.length],['客单价','RM '+Math.round(data.revenue/Math.max(data.orders.length,1))]])+rows(data.orders,function(o){return {title:(o.order_id||o.id||'未编号订单')+' / '+(o.player_name||o.player||'陪玩未填'),desc:'状态 '+(o.status||'待处理')+' · '+(o.game||o.service||'服务未填'),value:o.amount||o.total||'RM0'}});
+          body=summary([['今日营业额',Math.round(data.revenue)+' 猫粮'],['订单',data.orders.length],['客单价',Math.round(data.revenue/Math.max(data.orders.length,1))+' 猫粮']])+rows(data.orders,function(o){return {title:(o.order_id||o.id||'未编号订单')+' / '+(o.player_name||o.player||'陪玩未填'),desc:'状态 '+(o.status||'待处理')+' · '+(o.game||o.service||'服务未填'),value:o.amount||o.total||'0 猫粮'}});
         } else {
           title='好评明细'; desc='显示已通过评价列表，可看到评分、评价内容和对应游戏。'; actions='<a class="primary" href="companion-center.html">查看陪玩评价</a>';
           body=summary([['好评率',data.goodRate.toFixed(1)+'%'],['评价',data.reviews.length],['平均分',(data.goodRate/20).toFixed(1)]])+rows(data.reviews,function(r){return {title:(r.name||r.user||'老板')+' / '+(r.game||'游戏未填'),desc:r.comment||r.description||'后台暂无评价内容',value:(r.rating||r.score||'5.0')+' 分'}});
@@ -3925,10 +4027,22 @@ body:after,
       if (window.__mcjLoginClickFixReady) return;
       window.__mcjLoginClickFixReady = true;
       function showLogin(){
+        if (window.MCJModal && typeof window.MCJModal.openLogin === 'function') {
+          window.MCJModal.openLogin('login');
+          return;
+        }
+        if (typeof openModal === 'function' && typeof bossLoginHtml === 'function') {
+          openModal(bossLoginHtml());
+          return;
+        }
         var modal = document.getElementById('modal');
         var body = document.getElementById('modalBody');
         if (!modal || !body) return;
+        if (modal.parentNode !== document.body) document.body.appendChild(modal);
         body.innerHTML = typeof bossLoginHtml === 'function' ? bossLoginHtml() : '<h2>登录 MEOW CUI JIAO</h2><button class="order-btn" data-login-confirm type="button">登录</button>';
+        var dialog = modal.querySelector('.dialog');
+        if (dialog) { dialog.classList.add('is-auth-dialog'); dialog.scrollTop = 0; }
+        modal.scrollTop = 0;
         modal.classList.add('open');
         document.body.style.overflow = 'hidden';
       }
@@ -3944,7 +4058,21 @@ body:after,
         localStorage.removeItem('mcjSwitchAccount');
         setTimeout(showLogin, 120);
       }
+      var hash = String(location.hash || '').replace(/^#/, '').toLowerCase();
+      if ((hash === 'login' || hash === 'register') && window.MCJModal && window.MCJModal.openLogin) {
+        var y = window.scrollY || 0;
+        window.MCJModal.openLogin(hash === 'register' ? 'register' : 'login');
+        window.scrollTo(0, y);
+      }
       document.addEventListener('click', function(e){
+        var switchBtn = e.target.closest && e.target.closest('[data-switch-auth]');
+        if (switchBtn) {
+          e.preventDefault();
+          var mode = switchBtn.getAttribute('data-switch-auth') === 'register' ? 'register' : 'login';
+          var body = document.getElementById('modalBody');
+          if (body && typeof bossLoginHtml === 'function') body.innerHTML = bossLoginHtml(mode);
+          return;
+        }
         var tab = e.target.closest && e.target.closest('[data-login-tab]');
         if (tab) {
           var box = tab.closest('.boss-login-modal');
@@ -3960,11 +4088,8 @@ body:after,
         }
         var confirm = e.target.closest && e.target.closest('[data-login-confirm]');
         if (!confirm) return;
+        // Supabase login is owned by role-gates.js (capture). Do not stub-login here.
         return;
-        document.body.classList.add('is-logged-in');
-        var modal = document.getElementById('modal');
-        if (modal) modal.classList.remove('open');
-        document.body.style.overflow = '';
       }, true);
     })();
   </script>
@@ -3974,13 +4099,20 @@ body:after,
       window.__mcjOrderLinkGuardReady=true;
       function loggedIn(){return window.MCJRoleGate ? window.MCJRoleGate.isLogged('customer') : false}
       function openLogin(){
+        if(window.MCJModal&&typeof window.MCJModal.openLogin==='function'){
+          window.MCJModal.openLogin('login');
+          return;
+        }
         if(typeof loginRequiredModal==='function'){
           loginRequiredModal();
           return;
         }
         var modal=document.getElementById('modal'), body=document.getElementById('modalBody');
         if(modal&&body){
-          body.innerHTML='<h2>请先登录</h2><p class="muted">登录后才可以查看「我的订单」</p><button class="order-btn" data-login-confirm type="button">登录 / 注册</button>';
+          if(modal.parentNode!==document.body)document.body.appendChild(modal);
+          body.innerHTML=typeof bossLoginHtml==='function'?bossLoginHtml():'<h2>请先登录</h2><button class="order-btn" data-login-confirm type="button">登录 / 注册</button>';
+          var dialog=modal.querySelector('.dialog');
+          if(dialog){dialog.classList.add('is-auth-dialog');dialog.scrollTop=0;}
           modal.classList.add('open');
           document.body.style.overflow='hidden';
         }
@@ -4017,28 +4149,17 @@ body:after,
       var placeholder = "assets/meow-cuijiao-brand.jpg";
       document.addEventListener("error", function(event){
         var img = event.target;
-        if (!img || img.tagName !== "IMG" || img.dataset.fallbackApplied === "1") return;
+        if (!img || img.tagName !== "IMG" || img.dataset.fallbackApplied === "1" || img.dataset.mcjButlerLogo === "1") return;
         img.dataset.fallbackApplied = "1";
         img.src = placeholder;
       }, true);
-      function applyButlerMobileOffset(){
-        if (document.getElementById("homepageButlerMobileOffset")) return;
-        var style = document.createElement("style");
-        style.id = "homepageButlerMobileOffset";
-        style.textContent = "@media(max-width:640px){#floatingCustomerService{bottom:calc(86px + env(safe-area-inset-bottom))!important}.container{padding-bottom:104px!important}}";
-        document.head.appendChild(style);
-      }
-      window.addEventListener("load", function(){
-        applyButlerMobileOffset();
-        setTimeout(applyButlerMobileOffset, 250);
-      });
     })();
   </script>
   <script src="src/dropdown-system.js" defer></script>
   <script src="src/real-data-admin.js" defer></script>
   <script src="src/footer-system.js" defer></script>
-  <script src="src/text-guard.js" defer></script>
-  <script src="src/meow-butler.js?v=20260723-cathead-panel" defer></script>
+  <script src="src/text-guard.js?v=20260730home4" defer></script>
+  <script src="src/meow-butler.js?v=20260729-fixed-portal" defer></script>
   <script src="src/design-system.js" defer></script>
 <script id="mcjBossLogoutHandler">
   document.addEventListener('click', function(event) {
@@ -4053,6 +4174,14 @@ body:after,
     sessionStorage.removeItem('mcjAuthAccessToken');
     sessionStorage.removeItem('mcjAuthRefreshToken');
     location.href = 'index.html';
+  });
+</script>
+<script id="mcjMvpMaintHandler">
+  document.addEventListener('click', function(event) {
+    var btn = event.target && event.target.closest && event.target.closest('[data-maint]');
+    if (!btn) return;
+    event.preventDefault();
+    try { btn.hidden = true; btn.setAttribute('aria-hidden', 'true'); } catch (e) {}
   });
 </script>
 </body>

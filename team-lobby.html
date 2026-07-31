@@ -44,27 +44,20 @@
     </section>
   </main>
 
+  <script src="/src/role-gates.js"></script>
   <script>
     (function(){
       var TYPE='team_lobby_channels';
-      var LOCAL_KEY='mcj_platform_content_'+TYPE;
       var PLACEHOLDER='assets/meow-cuijiao-brand.jpg';
-      var defaults=[
-        {id:'local-team-mobile',type:TYPE,title:'手游组队',status:'已发布',enabled:true,sort:1,draft:{image:'',name:'手游组队',description:'进入手游开黑频道，快速找到同局队友。',discordUrl:'',sort:1}},
-        {id:'local-team-pc',type:TYPE,title:'端游组队',status:'已发布',enabled:true,sort:2,draft:{image:'',name:'端游组队',description:'进入端游组队频道，匹配排位、娱乐和固定队。',discordUrl:'',sort:2}},
-        {id:'local-team-chat',type:TYPE,title:'闲聊频道',status:'已发布',enabled:true,sort:3,draft:{image:'',name:'闲聊频道',description:'进入社区闲聊频道，认识新朋友并等待开黑。',discordUrl:'',sort:3}}
-      ];
       function esc(value){return String(value==null?'':value).replace(/[&<>"']/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]})}
-      function published(item){var status=String(item.status||'').toLowerCase();return item.enabled!==false && item.enabled!=='false' && (status==='published'||status.indexOf('发布')>-1||status==='已发布')}
-      function normalize(row){var data=row&&row.draft?row.draft:(row&&row.published?row.published:row||{});return {id:row.id||data.id||'',image:data.image||data.cover||'',name:data.name||row.title||'未命名频道',description:data.description||data.intro||'',discordUrl:data.discordUrl||data.discordLink||data.link||'',sort:Number(data.sort||row.sort||99),enabled:row.enabled!==false&&data.enabled!==false&&data.visible!==false,status:row.status||data.status||''}}
-      function readLocal(){try{var list=JSON.parse(localStorage.getItem(LOCAL_KEY)||'null');if(Array.isArray(list)&&list.length)return list;}catch(e){}localStorage.setItem(LOCAL_KEY,JSON.stringify(defaults));return defaults.slice();}
-      function rowsFromLocal(){return readLocal().filter(published).map(normalize).sort(function(a,b){return a.sort-b.sort})}
+      function published(item){var status=String(item.status||'').toLowerCase();return item.enabled!==false && item.enabled!=='false' && (status==='published'||status.indexOf('发布')>-1||status==='已发布'||!status)}
+      function normalize(row){var data=row&&row.draft?row.draft:(row&&row.published?row.published:row||{});return {id:row.id||data.id||'',image:data.image||data.cover||'',name:data.name||row.title||row.name||'未命名频道',description:data.description||data.intro||'',discordUrl:data.discordUrl||data.discordLink||data.link||'',sort:Number(data.sort||row.sort||99),enabled:row.enabled!==false&&data.enabled!==false&&data.visible!==false,status:row.status||data.status||''}}
       function openChannel(channel){if(!channel.discordUrl)return;window.open(channel.discordUrl,'_blank','noopener')}
       function card(channel){var open=!!channel.discordUrl;return '<article class="channel-card '+(open?'is-open':'is-closed')+'" data-channel-id="'+esc(channel.id)+'">'+
         '<div class="channel-cover"><img src="'+esc(channel.image||PLACEHOLDER)+'" alt="'+esc(channel.name)+'" loading="lazy"></div>'+
         '<div class="channel-body"><h3>'+esc(channel.name)+'</h3><p>'+esc(channel.description||'后台配置介绍后将在这里显示。')+'</p><button class="join-btn" type="button" '+(open?'data-discord-url="'+esc(channel.discordUrl)+'"':'disabled')+'>'+(open?'立即进入':'暂未开放')+'</button></div></article>'}
-      function render(list){var grid=document.getElementById('teamChannelGrid');if(!grid)return;var channels=(list||[]).filter(function(x){return x.enabled!==false}).sort(function(a,b){return a.sort-b.sort});grid.innerHTML=channels.length?channels.map(card).join(''):'<div class="empty">暂无频道配置，请在后台“组队大厅设置”中新增频道卡片。</div>'}
-      function load(){fetch('/api/platform/content?types='+encodeURIComponent(TYPE),{headers:{Accept:'application/json'},cache:'no-store'}).then(function(res){return res.json().catch(function(){return {ok:false}})}).then(function(result){var rows=(result.byType&&result.byType[TYPE])||[];render(rows.length?rows.map(normalize):rowsFromLocal())}).catch(function(){render(rowsFromLocal())})}
+      function render(list){var grid=document.getElementById('teamChannelGrid');if(!grid)return;var channels=(list||[]).filter(function(x){return x.enabled!==false && published(x)}).sort(function(a,b){return a.sort-b.sort});grid.innerHTML=channels.length?channels.map(card).join(''):'<div class="empty">暂无组队频道</div>'}
+      function load(){var grid=document.getElementById('teamChannelGrid');if(grid)grid.innerHTML='<div class="empty">正在读取组队频道...</div>';fetch('/api/platform/content?types='+encodeURIComponent(TYPE),{headers:{Accept:'application/json'},cache:'no-store'}).then(function(res){return res.json().catch(function(){return {ok:false}})}).then(function(result){var rows=(result.byType&&result.byType[TYPE])||[];render(rows.map(normalize).filter(function(x){return x.enabled!==false}))}).catch(function(){render([])})}
       document.addEventListener('click',function(event){var button=event.target.closest('[data-discord-url]');var cardNode=event.target.closest('.channel-card.is-open');var url=button?button.dataset.discordUrl:(cardNode&&cardNode.querySelector('[data-discord-url]')?cardNode.querySelector('[data-discord-url]').dataset.discordUrl:'');if(!url)return;event.preventDefault();openChannel({discordUrl:url})});
       document.addEventListener('error',function(event){var img=event.target;if(img&&img.tagName==='IMG'&&img.src.indexOf(PLACEHOLDER)===-1)img.src=PLACEHOLDER},true);
       load();

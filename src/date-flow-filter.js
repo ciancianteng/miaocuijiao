@@ -15,7 +15,7 @@
   }
 
   function money(value){
-    return 'RM ' + Number(value || 0).toFixed(2);
+    return (window.MCJCurrency ? window.MCJCurrency.formatPlain(value) : (Number(value || 0).toFixed(2).replace(/\.00$/, "") + " 猫粮"));
   }
 
   function readJson(key, fallback){

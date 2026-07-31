@@ -1,0 +1,269 @@
+const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY"];
+const ADMIN_ROLES = new Set(["admin", "super_admin"]);
+
+function json(res, status, data) {
+  return res.status(status).json(data);
+}
+function hasDb() {
+  return REQUIRED_ENV.every((key) => process.env[key]);
+}
+function restUrl(table, query = "") {
+  return `${process.env.SUPABASE_URL}/rest/v1/${table}${query}`;
+}
+function authUrl(path) {
+  return `${process.env.SUPABASE_URL}/auth/v1/${path}`;
+}
+function storageUrl(path) {
+  return `${process.env.SUPABASE_URL}/storage/v1/object/${path}`;
+}
+function publicStorageUrl(path) {
+  return `${process.env.SUPABASE_URL}/storage/v1/object/public/${path}`;
+}
+function serviceHeaders(extra = {}) {
+  return {
+    apikey: process.env.SUPABASE_SERVICE_ROLE_KEY,
+    Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+    "Content-Type": "application/json",
+    Prefer: "return=representation",
+    ...extra,
+  };
+}
+function anonHeaders(extra = {}) {
+  return { apikey: process.env.SUPABASE_ANON_KEY, "Content-Type": "application/json", ...extra };
+}
+function supabaseError(body, response) {
+  const parts = [body?.error_description, body?.msg, body?.message, body?.error, body?.hint, body?.details, typeof body === "string" ? body : ""].filter(Boolean);
+  const base = parts[0] || "Supabase 请求失败";
+  const code = body?.code ? ` [${body.code}]` : "";
+  return `${base}${code} (HTTP ${response.status})`;
+}
+async function supabaseJson(url, init = {}) {
+  const response = await fetch(url, init);
+  const text = await response.text();
+  let body = null;
+  try {
+    body = text ? JSON.parse(text) : null;
+  } catch {
+    body = text;
+  }
+  if (!response.ok) throw Object.assign(new Error(supabaseError(body, response)), { status: response.status, body });
+  return body;
+}
+async function parseBody(req) {
+  if (req.body && typeof req.body === "object") return req.body;
+  const chunks = [];
+  for await (const chunk of req) chunks.push(chunk);
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
+  } catch {
+    return {};
+  }
+}
+function tokenFrom(req) {
+  return String(req.headers.authorization || req.headers["x-mcj-access-token"] || "").replace(/^Bearer\s+/i, "").trim();
+}
+async function requireAdmin(req) {
+  const token = tokenFrom(req);
+  if (!token) throw Object.assign(new Error("请先使用管理员账号登录后台。"), { status: 401 });
+  const user = await supabaseJson(authUrl("user"), { headers: anonHeaders({ Authorization: `Bearer ${token}` }) });
+  const rows = await supabaseJson(restUrl("profiles", `?id=eq.${encodeURIComponent(user.id)}&limit=1`), { headers: serviceHeaders() });
+  const profile = rows[0];
+  if (!profile || !ADMIN_ROLES.has(profile.role)) throw Object.assign(new Error("无权访问后台内容管理。"), { status: 403 });
+  if (profile.status !== "active") throw Object.assign(new Error("管理员账号已停用。"), { status: 403 });
+  return profile;
+}
+function decodeDataUrl(dataUrl) {
+  const match = String(dataUrl || "").match(/^data:([^;]+);base64,(.+)$/);
+  if (!match) return null;
+  return { contentType: match[1], buffer: Buffer.from(match[2], "base64") };
+}
+async function uploadBanner(dataUrl, filename = "banner") {
+  const file = decodeDataUrl(dataUrl);
+  if (!file) return "";
+  const ext = (file.contentType.split("/")[1] || "png").replace("jpeg", "jpg");
+  const path = `banners/${Date.now()}-${filename.replace(/[^a-z0-9.-]/gi, "-")}.${ext}`;
+  const response = await fetch(storageUrl(`banners/${path}`), {
+    method: "POST",
+    headers: {
+      apikey: process.env.SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+      "Content-Type": file.contentType,
+      "x-upsert": "true",
+    },
+    body: file.buffer,
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Banner 图片上传失败：${text || response.status}`);
+  }
+  return publicStorageUrl(`banners/${path}`);
+}
+function truthy(value, fallback = true) {
+  if (value === undefined || value === null || value === "") return fallback;
+  if (typeof value === "boolean") return value;
+  const text = String(value).trim().toLowerCase();
+  if (["false", "0", "no", "off", "停用", "关闭", "隐藏", "否", "下线"].includes(text)) return false;
+  if (["true", "1", "yes", "on", "启用", "开启", "显示", "是", "上线"].includes(text)) return true;
+  return fallback;
+}
+function toIsoDateTime(value) {
+  if (!value) return new Date().toISOString();
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return new Date().toISOString();
+  return parsed.toISOString();
+}
+function mapAnnouncement(row = {}) {
+  return {
+    id: row.id,
+    title: row.title || "",
+    content: row.content || "",
+    is_active: row.is_active !== false,
+    is_pinned: row.is_pinned === true,
+    published_at: row.published_at || row.created_at || "",
+    created_at: row.created_at || "",
+    updated_at: row.updated_at || "",
+  };
+}
+function announcementPayload(input = {}) {
+  const title = String(input.title || "").trim();
+  const content = String(input.content || "").trim();
+  if (!title) throw Object.assign(new Error("请填写公告标题。"), { status: 400 });
+  if (!content) throw Object.assign(new Error("请填写公告内容。"), { status: 400 });
+  return {
+    title,
+    content,
+    is_active: truthy(input.is_active ?? input.isActive ?? input.visible, true),
+    is_pinned: truthy(input.is_pinned ?? input.isPinned ?? input.pinned, false),
+    published_at: toIsoDateTime(input.published_at || input.publishedAt || input.publish_time),
+    updated_at: new Date().toISOString(),
+  };
+}
+async function listAnnouncements() {
+  try {
+    const rows = await supabaseJson(
+      restUrl("announcements", "?order=is_pinned.desc,published_at.desc.nullslast,created_at.desc&limit=100"),
+      { headers: serviceHeaders() }
+    );
+    return (Array.isArray(rows) ? rows : []).map(mapAnnouncement);
+  } catch {
+    const rows = await supabaseJson(restUrl("announcements", "?order=created_at.desc&limit=100"), { headers: serviceHeaders() });
+    return (Array.isArray(rows) ? rows : []).map(mapAnnouncement);
+  }
+}
+async function saveAnnouncement(input = {}) {
+  const payload = announcementPayload(input);
+  const id = String(input.id || "").trim();
+  try {
+    if (id) {
+      const rows = await supabaseJson(restUrl("announcements", `?id=eq.${encodeURIComponent(id)}`), {
+        method: "PATCH",
+        headers: serviceHeaders(),
+        body: JSON.stringify(payload),
+      });
+      return mapAnnouncement(rows?.[0] || { ...payload, id });
+    }
+    const rows = await supabaseJson(restUrl("announcements"), {
+      method: "POST",
+      headers: serviceHeaders(),
+      body: JSON.stringify({ ...payload, created_at: new Date().toISOString() }),
+    });
+    return mapAnnouncement(rows?.[0] || payload);
+  } catch (error) {
+    // Fallback when is_pinned / published_at columns are not migrated yet.
+    const legacy = {
+      title: payload.title,
+      content: payload.content,
+      is_active: payload.is_active,
+      updated_at: payload.updated_at,
+    };
+    if (id) {
+      const rows = await supabaseJson(restUrl("announcements", `?id=eq.${encodeURIComponent(id)}`), {
+        method: "PATCH",
+        headers: serviceHeaders(),
+        body: JSON.stringify(legacy),
+      });
+      return mapAnnouncement(rows?.[0] || { ...legacy, id });
+    }
+    const rows = await supabaseJson(restUrl("announcements"), {
+      method: "POST",
+      headers: serviceHeaders(),
+      body: JSON.stringify({ ...legacy, created_at: new Date().toISOString() }),
+    });
+    return mapAnnouncement(rows?.[0] || legacy);
+  }
+}
+
+export default async function handler(req, res) {
+  if (!hasDb()) {
+    return json(res, req.method === "GET" ? 200 : 503, {
+      ok: req.method === "GET",
+      configured: false,
+      banners: [],
+      announcements: [],
+      message: "未配置 Supabase，后台内容不返回假数据。",
+    });
+  }
+  try {
+    await requireAdmin(req);
+    if (req.method === "GET") {
+      const [banners, announcements] = await Promise.all([
+        supabaseJson(restUrl("banners", "?order=sort_order.asc,created_at.desc&limit=100"), { headers: serviceHeaders() }).catch(() => []),
+        listAnnouncements().catch(() => []),
+      ]);
+      return json(res, 200, { ok: true, configured: true, banners, announcements });
+    }
+    if (req.method !== "POST") return json(res, 405, { ok: false, message: "Method Not Allowed" });
+    const body = await parseBody(req);
+    const action = String(body.action || "");
+    if (action === "save_banner") {
+      const input = body.banner || body;
+      let imageUrl = String(input.image_url || input.imageUrl || "");
+      if (input.image_data) imageUrl = await uploadBanner(input.image_data, input.filename || "banner");
+      const payload = {
+        title: String(input.title || ""),
+        subtitle: String(input.subtitle || ""),
+        image_url: imageUrl,
+        button_text: String(input.button_text || input.buttonText || ""),
+        button_link: String(input.button_link || input.buttonLink || ""),
+        is_active: input.is_active === true || input.isActive === true || String(input.is_active || input.status || "true") !== "false",
+        sort_order: Number(input.sort_order || input.sortOrder || 0),
+        updated_at: new Date().toISOString(),
+      };
+      if (input.id) {
+        const rows = await supabaseJson(restUrl("banners", `?id=eq.${encodeURIComponent(input.id)}`), {
+          method: "PATCH",
+          headers: serviceHeaders(),
+          body: JSON.stringify(payload),
+        });
+        return json(res, 200, { ok: true, message: "Banner 已保存。", banner: rows[0] || null });
+      }
+      const rows = await supabaseJson(restUrl("banners"), {
+        method: "POST",
+        headers: serviceHeaders(),
+        body: JSON.stringify({ ...payload, created_at: new Date().toISOString() }),
+      });
+      return json(res, 200, { ok: true, message: "Banner 已新增。", banner: rows[0] || null });
+    }
+    if (action === "delete_banner") {
+      await supabaseJson(restUrl("banners", `?id=eq.${encodeURIComponent(String(body.id || ""))}`), {
+        method: "DELETE",
+        headers: serviceHeaders(),
+      });
+      return json(res, 200, { ok: true, message: "Banner 已删除。" });
+    }
+    if (action === "save_announcement") {
+      const announcement = await saveAnnouncement(body.announcement || body);
+      return json(res, 200, { ok: true, message: "公告已保存，首页将同步显示。", announcement });
+    }
+    if (action === "delete_announcement") {
+      await supabaseJson(restUrl("announcements", `?id=eq.${encodeURIComponent(String(body.id || ""))}`), {
+        method: "DELETE",
+        headers: serviceHeaders(),
+      });
+      return json(res, 200, { ok: true, message: "公告已删除。" });
+    }
+    return json(res, 400, { ok: false, message: "未知内容管理操作。" });
+  } catch (error) {
+    return json(res, error.status || 500, { ok: false, message: error.message || "内容管理接口异常。" });
+  }
+}

@@ -4,7 +4,10 @@
 
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
   function uid(prefix) { return prefix + "-" + Date.now().toString(36).toUpperCase() + Math.random().toString(16).slice(2, 6).toUpperCase(); }
-  function money(v) { return "RM" + Number(v || 0).toFixed(2); }
+  function money(v) {
+    if (window.MCJCurrency) return window.MCJCurrency.formatPlain(v);
+    return Number(v || 0).toFixed(2).replace(/\.00$/, "") + " 猫粮";
+  }
   function now() { return new Date().toLocaleString("zh-CN"); }
   function db() { return window.MCJRealData && window.MCJRealData.readDB ? window.MCJRealData.readDB() : readRaw(REAL_KEY); }
   function readRaw(key) { try { return JSON.parse(localStorage.getItem(key) || "{}") || {}; } catch (e) { return {}; } }

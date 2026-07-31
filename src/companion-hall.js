@@ -9,6 +9,12 @@
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch];
     });
   }
+  var DEFAULT_AVATAR = "/default-avatar.png";
+  function avatarUrl(value) {
+    var src = String(value || "").trim();
+    if (!src || /meow-cuijiao-brand\.(jpe?g|png|webp)$/i.test(src)) return DEFAULT_AVATAR;
+    return src;
+  }
   function priceNumber(value) {
     if (window.MCJCompanionLevels) return window.MCJCompanionLevels.priceNumber(value);
     var match = String(value || "").match(/\d+(?:\.\d+)?/);
@@ -34,20 +40,37 @@
   }
   function levelLabel(item) {
     var id = item.levelId || levelIdFrom(item.level || item.rank || item.levelName);
+    var levels = window.MCJCompanionLevels;
+    if (levels && levels.label && id) {
+      var fromLevels = levels.label(id);
+      if (fromLevels) return fromLevels;
+    }
     var api = taxonomy();
     if (api && api.levelLabel) {
       var fromConfig = api.levelLabel(id);
       if (fromConfig) return fromConfig;
     }
-    return item.levelName || item.level || id || "未设置等级";
+    var raw = String(item.levelName || item.level || "").trim();
+    if (raw && raw !== "未设置等级" && raw !== "未设置") return raw;
+    return id || "未设置等级";
   }
-  function formatHourlyPrice(value) { return "RM" + priceNumber(value) + "/小时"; }
+  function formatHourlyPrice(value) {
+    if (window.MCJCurrency) return window.MCJCurrency.formatRate(value, "小时");
+    return priceNumber(value) + " 猫粮/小时";
+  }
   function normalizeStatus(value) {
     var text = String(value || "离线").trim();
-    if (/online|可接单|在线/i.test(text)) return "在线";
-    if (/busy|忙/i.test(text)) return "忙碌";
-    if (/offline|离线/i.test(text)) return "离线";
+    if (/^online$/i.test(text) || /在线可接单|在线/.test(text)) return "在线可接单";
+    if (/^busy$/i.test(text) || /忙碌/.test(text)) return "忙碌中";
+    if (/^paused$/i.test(text) || /暂停/.test(text)) return "暂停接单";
+    if (/^offline$/i.test(text) || /离线/.test(text)) return "离线";
     return text || "离线";
+  }
+  function statusBadgeClass(status) {
+    if (status === "在线可接单") return " is-online";
+    if (status === "忙碌中") return " is-busy";
+    if (status === "暂停接单") return " is-paused";
+    return " is-offline";
   }
   async function readItems() {
     var dataItems = [];
@@ -66,7 +89,9 @@
     return dataItems.map(function (item) {
       var normalized = levelApi ? levelApi.normalizeCompanion(item) : item;
       var levelId = normalized.levelId || levelIdFrom(normalized.level || normalized.rank || normalized.levelName);
-      var priceValue = normalized.priceValue || priceNumber(normalized.price || normalized.servicePrice || normalized.hourlyPrice);
+      // Prefer API/admin-saved price; only fall back to level clamp when still zero/empty.
+      var apiPrice = priceNumber(item.priceValue != null ? item.priceValue : item.price || item.hourlyPrice || item.servicePrice);
+      var priceValue = apiPrice > 0 ? apiPrice : (normalized.priceValue || priceNumber(normalized.price || normalized.servicePrice || normalized.hourlyPrice));
       return {
         id: normalized.uid || normalized.companionId || normalized.id || normalized.name || "",
         name: normalized.name || normalized.nickname || "未命名陪玩",
@@ -79,8 +104,9 @@
         levelNumber: normalized.levelNumber || Number(String(levelId).replace("lv", "")) || 0,
         gender: normalized.gender || "保密",
         serviceType: normalized.serviceType || normalized.type || normalized.category || normalized.service || "未设置类型",
-        status: normalizeStatus(normalized.status || normalized.onlineStatus),
-        image: normalized.cover || normalized.cardCover || normalized.avatar || normalized.image || "assets/meow-cuijiao-brand.jpg",
+        status: normalizeStatus(normalized.availabilityStatus || normalized.availabilityText || normalized.status || normalized.onlineStatus),
+        publicId: normalized.publicId || "",
+        image: avatarUrl(normalized.cover || normalized.cardCover || normalized.avatar || normalized.image),
         tags: Array.isArray(normalized.tags) ? normalized.tags : String(normalized.tags || normalized.serviceTags || "").split(/[,，、\s]+/).filter(Boolean),
         desc: normalized.desc || normalized.description || ""
       };
@@ -95,10 +121,12 @@
     el.value = Array.prototype.some.call(el.options, function (opt) { return opt.value === current; }) ? current : "";
   }
   function setupFilters() {
-    setOptions("gameFilter", taxonomyItems("games").map(function (item) {
+    var serviceRows = taxonomyItems("services");
+    if (!serviceRows.length) serviceRows = taxonomyItems("games");
+    setOptions("gameFilter", serviceRows.map(function (item) {
       return { value: taxonomyLabel(item), label: taxonomyLabel(item) };
-    }).filter(function (item) { return item.value; }), "全部游戏");
-    setOptions("typeFilter", taxonomyItems("service_types").map(function (item) {
+    }).filter(function (item) { return item.value; }), "全部服务");
+    setOptions("typeFilter", (taxonomyItems("service_types").length ? taxonomyItems("service_types") : serviceRows).map(function (item) {
       return { value: taxonomyLabel(item), label: taxonomyLabel(item) };
     }).filter(function (item) { return item.value; }), "全部类型");
     setOptions("levelFilter", taxonomyItems("companion_levels").map(function (item) {
@@ -147,15 +175,16 @@
   }
   function card(item) {
     var tags = item.tags.slice(0, 3).map(function (tag) { return '<span>' + esc(tag) + '</span>'; }).join("");
-    var offlineClass = item.status === "离线" ? " is-offline" : "";
-    return '<article class="card player-card" data-player data-name="' + esc(item.name) + '" data-game="' + esc(item.game) + '" data-tags="' + esc(item.tags.join(",")) + '" data-price="' + esc(item.priceValue) + '" data-online="' + esc(item.status) + '" data-score="' + esc(item.rating) + '" data-gender="' + esc(item.gender) + '">' +
-      '<div class="companion-card-media"><img src="' + esc(item.image) + '" alt="' + esc(item.name) + '"><span class="companion-online-badge' + offlineClass + '">' + esc(item.status) + '</span></div>' +
+    var badgeClass = statusBadgeClass(item.status);
+    var publicId = item.publicId || item.id || "未生成";
+    return '<article class="card player-card" data-player data-level-id="' + esc(item.levelId || "") + '" data-companion-level="' + esc(item.levelId || "") + '" data-name="' + esc(item.name) + '" data-game="' + esc(item.game) + '" data-tags="' + esc(item.tags.join(",")) + '" data-price="' + esc(item.priceValue) + '" data-online="' + esc(item.status) + '" data-score="' + esc(item.rating) + '" data-gender="' + esc(item.gender) + '">' +
+      '<div class="companion-card-media"><img src="' + esc(item.image) + '" alt="' + esc(item.name) + '" onerror="this.onerror=null;this.src=\'' + DEFAULT_AVATAR + '\'"><span class="companion-online-badge' + badgeClass + '">' + esc(item.status) + '</span></div>' +
       '<div class="companion-card-body">' +
         '<div class="row companion-card-head"><h3>' + esc(item.name) + '</h3><span class="price companion-price">' + esc(item.price) + '</span></div>' +
-        '<p class="muted companion-id">陪玩 ID：' + esc(item.id || "未生成") + '</p>' +
-        '<div class="companion-meta"><span class="companion-level-pill">' + esc(item.level) + '</span><span>' + esc(item.game) + '</span></div>' +
+        '<p class="muted companion-id" style="display:block!important;opacity:.7;font-size:12px;margin:4px 0 0">陪玩 ID：' + esc(publicId) + '</p>' +
+        '<div class="companion-meta"><span class="companion-level-pill" data-level-id="' + esc(item.levelId || "") + '">' + esc(item.level) + '</span><span>' + esc(item.game) + '</span></div>' +
         '<div class="tag-row companion-tags">' + tags + '</div>' +
-        '<div class="companion-card-actions"><a class="companion-card-action" href="profile.html?player=' + encodeURIComponent(item.id || item.name || "") + '">查看详情</a><a class="companion-card-action primary" href="custom-order.html?companion_id=' + encodeURIComponent(item.id || "") + '">立即下单</a></div>' +
+        '<div class="companion-card-actions"><a class="companion-card-action" href="profile.html?player=' + encodeURIComponent(item.id || item.name || "") + '">查看详情</a><button type="button" class="companion-card-action primary" data-hall-order="' + esc(item.id || "") + '" data-hall-name="' + esc(item.name || "") + '" data-hall-price="' + esc(item.priceValue || "") + '" data-hall-game="' + esc(item.game || "") + '" data-hall-avatar="' + esc(item.image || "") + '" data-hall-public-id="' + esc(publicId || "") + '">立即下单</button></div>' +
       '</div>' +
     '</article>';
   }
@@ -195,18 +224,53 @@
       state.page = Number(button.dataset.page || 1);
       render();
     });
+    document.addEventListener("click", function (event) {
+      var orderBtn = event.target.closest("[data-hall-order]");
+      if (!orderBtn) return;
+      event.preventDefault();
+      var id = orderBtn.getAttribute("data-hall-order") || "";
+      if (!id) return;
+      if (!window.MCJPlaceOrder || typeof window.MCJPlaceOrder.openFromCompanion !== "function") {
+        location.href = "profile.html?player=" + encodeURIComponent(id) + "&open_order=1";
+        return;
+      }
+      window.MCJPlaceOrder.openFromCompanion({
+        companionId: id,
+        id: id,
+        uid: id,
+        companionName: orderBtn.getAttribute("data-hall-name") || "陪玩",
+        name: orderBtn.getAttribute("data-hall-name") || "陪玩",
+        unitPrice: Number(orderBtn.getAttribute("data-hall-price") || 0),
+        priceValue: Number(orderBtn.getAttribute("data-hall-price") || 0),
+        price: Number(orderBtn.getAttribute("data-hall-price") || 0),
+        service: orderBtn.getAttribute("data-hall-game") || "陪玩",
+        game: orderBtn.getAttribute("data-hall-game") || "陪玩",
+        avatar: orderBtn.getAttribute("data-hall-avatar") || "",
+        publicId: orderBtn.getAttribute("data-hall-public-id") || "",
+        pricingUnit: "小时",
+      });
+    });
   }
   async function start() {
+    var count = document.getElementById("resultCount");
+    if (count) count.textContent = "正在加载陪玩…";
+    // Fire-and-forget seed; never block the hall list on it.
+    fetch("/api/dev/seed-p03-preview", { method: "POST", headers: { "Content-Type": "application/json" } }).catch(function () {});
     state.items = await readItems();
     setupFilters();
     bind();
     render();
   }
   function init() {
+    // Load companions immediately; refresh filter options when taxonomy arrives.
+    start();
     if (window.MCJTaxonomy && window.MCJTaxonomy.load) {
-      window.MCJTaxonomy.load().then(start).catch(start);
-    } else {
-      start();
+      window.MCJTaxonomy.load()
+        .then(function () {
+          setupFilters();
+          render();
+        })
+        .catch(function () {});
     }
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);

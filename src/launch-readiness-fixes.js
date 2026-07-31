@@ -14,7 +14,14 @@
   }
 
   function isLoggedIn() {
-    return !!localStorage.getItem("customerAuthToken");
+    if (window.MCJRoleGate && typeof window.MCJRoleGate.isLogged === "function") {
+      return !!(window.MCJRoleGate.isLogged("customer") || window.MCJRoleGate.isLogged("boss"));
+    }
+    return !!(
+      localStorage.getItem("mcjAuthAccessToken") ||
+      sessionStorage.getItem("mcjAuthAccessToken") ||
+      localStorage.getItem("customerAuthToken")
+    );
   }
 
   function esc(value) {
@@ -91,37 +98,7 @@
       }
       var loginConfirm = event.target.closest && event.target.closest("[data-login-confirm]");
       if (loginConfirm) {
-        event.preventDefault();
-        event.stopPropagation();
-        if (event.stopImmediatePropagation) event.stopImmediatePropagation();
-        var activePanel = document.querySelector(".login-panel.active") || loginConfirm.closest(".login-panel");
-        var inputs = activePanel ? activePanel.querySelectorAll("input") : document.querySelectorAll(".boss-login-modal input");
-        var account = "";
-        Array.prototype.some.call(inputs, function (input) {
-          if (input.value && input.value.trim()) {
-            account = input.value.trim();
-            return true;
-          }
-          return false;
-        });
-        var state = document.querySelector("[data-login-state]");
-        if (!account) {
-          if (state) state.textContent = "请填写登录信息";
-          return;
-        }
-        if (window.MCJRoleGate) window.MCJRoleGate.login("customer", account);
-        else {
-          localStorage.setItem("customerAuthToken", "customer-" + Date.now());
-          localStorage.setItem("customerUser", JSON.stringify({ account: account, role: "customer" }));
-        }
-        if (state) state.textContent = "登录成功";
-        var modal = document.getElementById("modal");
-        if (modal) modal.classList.remove("open");
-        document.body.style.overflow = "";
-        var next = sessionStorage.getItem("mcjAfterLoginRedirect");
-        sessionStorage.removeItem("mcjAfterLoginRedirect");
-        if (next) location.href = next;
-        else refreshTop();
+        // Real login is handled by MCJRoleGate (Supabase /api/auth). Do not fake-login.
         return;
       }
       var mine = event.target.closest && event.target.closest('a[href="mine.html"], [data-open-mine]');
@@ -143,14 +120,14 @@
     style.id = "launchReadinessStyles";
     style.textContent = [
       ".launch-hidden{display:none!important}",
-      ".launch-entry-grid{display:grid!important;grid-template-columns:repeat(5,minmax(0,1fr))!important;gap:14px!important}",
+      ".launch-entry-grid{display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr))!important;gap:14px!important}",
       ".launch-entry-grid .quick-entry-card{min-height:112px!important;display:flex!important;align-items:center!important;gap:0!important}",
       ".launch-entry-grid .quick-entry-card i{display:none!important}",
       ".launch-entry-grid .quick-entry-card i:before,.launch-entry-grid .quick-entry-card i:after{content:none!important;display:none!important}",
       ".launch-entry-grid .quick-entry-card i img{display:none!important}",
       ".launch-entry-grid .quick-entry-card span{word-break:keep-all!important;overflow-wrap:normal!important}",
       ".launch-empty-state{border:1px dashed rgba(243,168,203,.28);border-radius:20px;background:rgba(255,255,255,.035);padding:24px;text-align:center;color:#ffdceb;font-weight:900}",
-      "@media(max-width:980px){.launch-entry-grid{grid-template-columns:repeat(3,minmax(0,1fr))!important}}",
+      "@media(max-width:980px){.launch-entry-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}}",
       "@media(max-width:760px){.launch-entry-grid{grid-template-columns:1fr 1fr!important}.launch-entry-grid .quick-entry-card{min-height:108px!important;gap:12px!important}.launch-entry-grid .quick-entry-card i,.launch-entry-grid .quick-entry-card i img{width:44px!important;height:44px!important;min-width:44px!important}}"
     ].join("\n");
     document.head.appendChild(style);
@@ -170,11 +147,10 @@
     grid.dataset.launchQuickReady = "1";
     grid.classList.add("launch-entry-grid");
     grid.innerHTML = [
-      quickButton("自定义订单", "填写需求，客服匹配陪玩", 'data-href="custom-order.html"'),
-      quickButton("更多玩法", "护航、跑刀、代肝、趣味单", 'data-href="more-gameplays.html"'),
-      quickButton("陪玩大厅", "浏览已上架陪玩", 'data-href="companion-center.html"'),
-      quickButton("组队大厅", "进入组队社区", 'data-href="team-lobby.html"'),
-      quickButton("猫粮充值", "查看猫粮充值与猫粮余额", 'data-href="miao-coin.html"')
+      quickButton("陪玩大厅", "浏览已上架陪玩，立即下单", 'data-href="companion-center.html" data-home-entry="companion-hall"'),
+      quickButton("更多玩法", "护航、跑刀、代肝、趣味单", 'data-href="more-gameplays.html" data-home-entry="more-gameplays"'),
+      quickButton("自定义订单", "填写需求，客服匹配陪玩", 'data-href="custom-order.html" data-home-entry="custom-order"'),
+      quickButton("组队大厅", "进入组队社区找队友", 'data-href="team-lobby.html" data-home-entry="team-lobby"')
     ].join("");
   }
 
@@ -224,16 +200,18 @@
   function fixCompanionHallState() {
     if (!/companion-center\.html$/.test(location.pathname)) return;
     var count = document.getElementById("resultCount");
-    if (count && new RegExp("正在读取后台" + "数据").test(count.textContent || "")) count.textContent = "等待后台真实陪玩数据";
+    if (count && new RegExp("正在读取后台" + "数据").test(count.textContent || "")) count.textContent = "正在加载陪玩…";
     setTimeout(function () {
       var list = document.getElementById("playerList");
       var empty = document.getElementById("emptyState");
+      var text = count ? String(count.textContent || "") : "";
+      if (/正在加载/.test(text)) return;
       if (list && !list.children.length && empty) {
         empty.hidden = false;
-        empty.innerHTML = '暂时没有找到符合条件的陪玩<br><a class="btn primary" href="companion-apply.html" style="margin-top:12px;display:inline-flex">申请成为陪玩</a>';
+        empty.innerHTML = "<strong>暂无可接单陪玩</strong><br><span>通过审核并上线接单的陪玩将在这里展示。</span>";
         if (count) count.textContent = "暂无已审核上架陪玩";
       }
-    }, 1400);
+    }, 4000);
   }
 
   function fixVoiceHall() {

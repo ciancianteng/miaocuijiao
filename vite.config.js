@@ -1,7 +1,26 @@
-import { cpSync, existsSync, mkdirSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { defineConfig } from "vite";
+
+function ensureLocalEnv() {
+  if (process.env.__MCJ_ENV_LOADED) return;
+  process.env.__MCJ_ENV_LOADED = "1";
+  const envPath = resolve(__dirname, ".env.local");
+  if (!existsSync(envPath)) return;
+  const text = readFileSync(envPath, "utf8");
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+    const eq = line.indexOf("=");
+    if (eq === -1) continue;
+    const key = line.slice(0, eq).trim();
+    const value = line.slice(eq + 1).trim().replace(/^['"]|['"]$/g, "");
+    if (key && value && !process.env[key]) process.env[key] = value;
+  }
+}
+
+ensureLocalEnv();
 
 const pages = [
   "index.html",
@@ -10,6 +29,7 @@ const pages = [
   "admin-center.html",
   "admin-dashboard.html",
   "admin.html",
+  "admin/login/index.html",
   "boss-chat.html",
   "checkin.html",
   "companion-apply.html",
@@ -22,6 +42,7 @@ const pages = [
   "companion/orders/index.html",
   "companion/messages/index.html",
   "companion/earnings/index.html",
+  "companion/wallet/index.html",
   "companion/profile/index.html",
   "companion/verification/index.html",
   "custom-order.html",
@@ -38,7 +59,10 @@ const pages = [
   "favorites.html",
   "fixed-order.html",
   "gifts.html",
+  "gameplay-product.html",
   "invite.html",
+  "launch-audit.html",
+  "login.html",
   "leaderboard.html",
   "messages.html",
   "miao-coin.html",
@@ -46,8 +70,11 @@ const pages = [
   "mobile.html",
   "more-gameplays.html",
   "orders.html",
+  "payment-confirm.html",
+  "place-order.html",
   "preview.html",
   "profile.html",
+  "ranking.html",
   "support.html",
   "tasks.html",
   "team-lobby.html",
@@ -61,8 +88,15 @@ function localApiFunctions() {
       server.middlewares.use(async (req, res, next) => {
         const requestUrl = new URL(req.url || "/", "http://localhost");
         if (!requestUrl.pathname.startsWith("/api/")) return next();
-        const file = resolve(__dirname, `.${requestUrl.pathname}.js`);
-        if (!existsSync(file)) return next();
+        // Prefer server/api (Vercel catch-all layout); fall back to legacy ./api
+        const rel = requestUrl.pathname.replace(/^\/api\//, "");
+        const candidates = [
+          resolve(__dirname, `./server/api/${rel}.js`),
+          resolve(__dirname, `./server/api/${rel}/index.js`),
+          resolve(__dirname, `.${requestUrl.pathname}.js`),
+        ];
+        const file = candidates.find((p) => existsSync(p));
+        if (!file) return next();
 
         try {
           const chunks = [];
@@ -96,18 +130,32 @@ function localApiFunctions() {
 function localRouteAliases() {
   const aliases = new Map([
     ["/companion", "/companion/index.html"],
+    ["/companion/login", "/companion/login/index.html"],
     ["/customer-service", "/customer-service/index.html"],
+    ["/customer-service/login", "/customer-service/login/index.html"],
+    ["/customer-service/dashboard", "/customer-service/dashboard/index.html"],
+    ["/customer-service/orders", "/customer-service/orders/index.html"],
+    ["/customer-service/conversations", "/customer-service/dashboard/index.html"],
+    ["/customer-service/create-order", "/customer-service/dashboard/index.html"],
+    ["/customer-service/compensation", "/customer-service/dashboard/index.html"],
+    ["/customer-service/reports", "/customer-service/dashboard/index.html"],
+    ["/customer-service/profile", "/customer-service/profile/index.html"],
     ["/admin", "/admin.html"],
+    ["/admin/login", "/admin/login/index.html"],
     ["/report", "/report/index.html"],
     ["/more-gameplays", "/more-gameplays.html"],
+    ["/gameplay-product", "/gameplay-product.html"],
     ["/fixed-order", "/fixed-order.html"],
+    ["/ranking", "/ranking.html"],
+    ["/leaderboard", "/ranking.html"],
   ]);
   return {
     name: "local-route-aliases",
     configureServer(server) {
       server.middlewares.use((req, _res, next) => {
         const requestUrl = new URL(req.url || "/", "http://localhost");
-        const target = aliases.get(requestUrl.pathname);
+        const pathname = requestUrl.pathname.replace(/\/+$/, "") || "/";
+        const target = aliases.get(pathname);
         if (target) req.url = `${target}${requestUrl.search}`;
         next();
       });

@@ -2,108 +2,13 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>MOMO 陪玩资料 · MEOW CUI JIAO</title>
-  <link rel="stylesheet" href="src/style.css">
+  <meta http-equiv="refresh" content="0;url=/companion-center.html">
+  <title>跳转陪玩大厅</title>
+  <script>
+    location.replace("/companion-center.html");
+  </script>
 </head>
-<body class="profile-detail-page">
-  <main class="profile-detail-shell">
-    <section class="profile-hero detail-card">
-      <div class="profile-avatar-wrap">
-        <img class="profile-avatar" src="assets/meow-cuijiao-brand.jpg" alt="MOMO 头像">
-        <div class="voice-live">语音连麦中...</div>
-      </div>
-      <div class="profile-info-panel">
-        <button class="fav-only" type="button">收藏</button>
-        <p class="detail-label">MEOW CUI JIAO COMPANION</p>
-        <h1>MOMO <span>🐾</span></h1>
-        <div class="profile-id">ID：MCJ-1024</div>
-        <p class="profile-bio">甜妹 · 会报点 · 不压力队友</p>
-        <div class="game-line">VALORANT <i></i> CSGO <i></i> APEX</div>
-        <div class="profile-stats">
-          <div><b>128</b><span>服务单数</span></div>
-          <div><b>4.98</b><span>评分</span></div>
-          <div><b>99%</b><span>好评率</span></div>
-          <div><b>860h</b><span>总时长</span></div>
-        </div>
-      </div>
-    </section>
-
-    <section class="detail-two-col">
-      <div class="detail-card info-card">
-        <div class="section-head"><h2>基本信息</h2></div>
-        <div class="info-list">
-          <div><span>年龄</span><b>21</b></div>
-          <div><span>语言</span><b>中文 / English</b></div>
-          <div><span>地区</span><b>Malaysia</b></div>
-          <div><span>在线时间</span><b>20:00 - 03:00</b></div>
-          <div><span>性格</span><b>温柔、爱笑、会接话</b></div>
-          <div><span>擅长位置</span><b>烟位 / 辅助 / 报点</b></div>
-        </div>
-      </div>
-      <div class="detail-card price-card companion-level-detail">
-        <div class="section-head"><h2>陪玩等级</h2></div>
-        <div class="price-list">
-          <div><span>当前等级</span><b data-level-label>🩶 Lv.1 萌喵</b></div>
-          <div><span>当前单价</span><b data-level-price>RM25/小时</b></div>
-          <div><span>等级范围</span><b data-level-range>RM20–RM30</b></div>
-        </div>
-        <p class="level-description" data-level-description>新加入平台，需要累积订单与评价。</p>
-        <div class="tag-cloud">
-          <span>枪法稳定</span><span>声音甜美</span><span>不压力队友</span><span>会聊天</span><span>熬夜党</span><span>马来西亚女孩</span>
-        </div>
-      </div>
-    </section>
-
-    <section class="detail-card game-carousel-card">
-      <div class="section-head"><h2>游戏信息</h2><div class="carousel-actions"><button type="button" id="gamePrev">‹</button><button type="button" id="gameNext">›</button></div></div>
-      <div class="game-carousel" id="gameCarousel">
-        <article class="game-stat-card active" style="--game-bg:url('assets/valorant-button-bg.jpg')"><p>VALORANT</p><h3>Radiant 862 RR</h3><div><span>K/D 1.65</span><span>胜率 58%</span></div></article>
-        <article class="game-stat-card" style="--game-bg:url('assets/csgo-button-bg.jpg')"><p>CS2</p><h3>Faceit Lv.10</h3><div><span>K/D 1.48</span><span>胜率 61%</span></div></article>
-        <article class="game-stat-card" style="--game-bg:url('assets/apex-button-bg.jpg')"><p>APEX</p><h3>Master</h3><div><span>K/D 2.15</span><span>胜率 55%</span></div></article>
-      </div>
-      <div class="profile-dots" id="gameDots"><button class="active" type="button"></button><button type="button"></button><button type="button"></button></div>
-    </section>
-
-    <section class="detail-card gift-wall">
-      <div class="section-head"><h2>礼物墙</h2></div>
-      <div class="gift-list">
-        <div><img src="assets/floating-paw.png" alt=""><span><b>小星星</b><small>送出 告白气球 x99</small></span></div>
-        <div><img src="assets/floating-paw.png" alt=""><span><b>夜色</b><small>送出 千纸鹤 x66</small></span></div>
-        <div><img src="assets/floating-paw.png" alt=""><span><b>Cheese</b><small>送出 粉色城堡 x33</small></span></div>
-      </div>
-    </section>
-
-    <section class="detail-card game-wall">
-      <div class="section-head"><h2>游戏墙</h2><button class="more-arrow" type="button">查看更多 ›</button></div>
-      <div class="wall-grid">
-        <img src="assets/valorant-button-bg.jpg" alt="VALORANT 战绩图">
-        <img src="assets/csgo-button-bg.jpg" alt="CS2 MVP图">
-        <img src="assets/apex-button-bg.jpg" alt="APEX 截图">
-        <img src="assets/lianmiao-club-ad.png" alt="陪玩素材图">
-      </div>
-    </section>
-
-    <section class="detail-card upload-wall">
-      <div class="section-head"><h2>素材上传</h2></div>
-      <div class="upload-grid" id="uploadGrid">
-        <img src="assets/meow-cuijiao-brand.jpg" alt="已上传素材">
-        <img src="assets/homepage-cat-cover.png" alt="已上传素材">
-        <button class="upload-more" type="button" id="uploadMore"><input id="profileUploadInput" type="file" accept="image/*" multiple hidden><b>+</b><span>上传更多</span></button>
-      </div>
-    </section>
-  </main>
-
-  <nav class="profile-bottom-bar">
-    <a href="index.html">首页</a>
-    <button type="button">联系客服</button>
-    <button type="button">分享</button>
-    <button type="button">礼物</button>
-    <button type="button">加入购物车</button>
-    <button class="order-now" type="button">立即下单</button>
-  </nav>
-
-  <script src="src/companion-levels.js"></script>
-  <script src="src/profile-detail.js"></script>
-<script src="src/meow-butler.js"></script></body>
+<body>
+  <p>正在跳转真实陪玩大厅… <a href="/companion-center.html">点击进入</a></p>
+</body>
 </html>

@@ -1,0 +1,784 @@
+import "./_load-env.js";
+const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY"];
+const ORDER_STATUS_TEXT = {
+  awaiting_payment: "待付款",
+  pending: "公开抢单中",
+  claimed: "已付款，等待陪玩确认",
+  waiting_boss_confirm: "等待老板选择",
+  confirmed: "待开始",
+  in_progress: "进行中",
+  completed: "已完成",
+  cancelled: "已取消",
+  refund_requested: "售后",
+  refunded: "已退款"
+};
+const SERVICE_ROLES = new Set(["customer_service"]);
+
+function json(res, status, data) { return res.status(status).json(data); }
+function hasDb() { return REQUIRED_ENV.every((key) => process.env[key]); }
+function restUrl(table, query = "") { return `${process.env.SUPABASE_URL}/rest/v1/${table}${query}`; }
+function authUrl(path) { return `${process.env.SUPABASE_URL}/auth/v1/${path}`; }
+function serviceHeaders(extra = {}) { return { apikey: process.env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`, "Content-Type": "application/json", Prefer: "return=representation", ...extra }; }
+function anonHeaders(extra = {}) { return { apikey: process.env.SUPABASE_ANON_KEY, "Content-Type": "application/json", ...extra }; }
+async function supabaseJson(url, init = {}) {
+  const response = await fetch(url, init);
+  const text = await response.text();
+  let body = null;
+  try { body = text ? JSON.parse(text) : null; } catch { body = text; }
+  if (!response.ok) {
+    const raw = typeof body === "string" ? body : "";
+    const detail = body?.error_description || body?.message || body?.hint || body?.details || body?.error || raw || "";
+    const code = body?.code ? ` [${body.code}]` : "";
+    throw new Error((detail ? `${detail}${code}` : `Supabase 请求失败 (HTTP ${response.status})`) || `Supabase 请求失败 (HTTP ${response.status})`);
+  }
+  return body;
+}
+async function parseBody(req) { if (req.body && typeof req.body === "object") return req.body; const chunks = []; for await (const chunk of req) chunks.push(chunk); try { return JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}"); } catch { return {}; } }
+function tokenFrom(req) { return String(req.headers["x-mcj-service-token"] || req.headers.authorization || "").replace(/^Bearer\s+/i, "").trim(); }
+function money(value) { const n = Number(String(value ?? "").replace(/[^\d.-]/g, "")); return Number.isFinite(n) ? n : 0; }
+function nowIso() { return new Date().toISOString(); }
+function orderNo(prefix = "MCJ") { return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`; }
+function isUuid(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(value || "").trim());
+}
+async function tableRows(table, query = "") { const rows = await supabaseJson(restUrl(table, query), { headers: serviceHeaders() }); return Array.isArray(rows) ? rows : []; }
+async function maybeRows(table, query = "") { try { return await tableRows(table, query); } catch { return []; } }
+async function profileById(id) {
+  if (!isUuid(id)) return null;
+  const rows = await tableRows("profiles", `?id=eq.${encodeURIComponent(String(id).trim())}&limit=1`);
+  return rows[0] || null;
+}
+async function profileByBossUid(uid) {
+  const value = String(uid || "").trim();
+  if (!value) return null;
+  const rows = await maybeRows("profiles", `?boss_uid=eq.${encodeURIComponent(value)}&role=eq.boss&limit=1`);
+  return rows[0] || null;
+}
+async function resolveBoss(input) {
+  const value = String(input || "").trim();
+  if (!value) return null;
+  if (isUuid(value)) return profileById(value);
+  if (/^B\d+$/i.test(value)) return profileByBossUid(value.toUpperCase());
+  if (/^\d+$/.test(value)) {
+    const withPrefix = await profileByBossUid(`B${value}`);
+    if (withPrefix) return withPrefix;
+  }
+  return profileByBossUid(value);
+}
+async function resolveCompanion(input) {
+  const value = String(input || "").trim();
+  if (!value) return null;
+  if (isUuid(value)) {
+    const byId = await profileById(value);
+    if (byId && byId.role === "companion") return byId;
+    return null;
+  }
+  const uid = value.replace(/^P/i, "").trim();
+  if (!/^\d+$/.test(uid)) return null;
+  const rows = await maybeRows("companion_profiles", `?companion_uid=eq.${encodeURIComponent(uid)}&select=user_id&limit=1`);
+  const userId = rows[0]?.user_id;
+  if (!isUuid(userId)) return null;
+  const profile = await profileById(userId);
+  return profile && profile.role === "companion" ? profile : null;
+}
+async function profileMap(ids) { const uniq = [...new Set((ids || []).filter(isUuid))]; if (!uniq.length) return {}; const rows = await maybeRows("profiles", `?id=in.(${uniq.map(encodeURIComponent).join(",")})&limit=1000`); return rows.reduce((map, row) => { map[row.id] = row; return map; }, {}); }
+async function authUserFromToken(token) { return supabaseJson(authUrl("user"), { headers: anonHeaders({ Authorization: `Bearer ${token}` }) }); }
+async function requireService(req) { const token = tokenFrom(req); if (!token) throw Object.assign(new Error("请先登录客服端。"), { status: 401 }); const authUser = await authUserFromToken(token); const profile = await profileById(authUser.id); if (!profile || !SERVICE_ROLES.has(profile.role)) throw Object.assign(new Error("无权访问客服端。"), { status: 403 }); if (profile.status !== "active") throw Object.assign(new Error("该客服账号已被停用，请联系管理员。"), { status: 403 }); return { token, authUser, profile }; }
+function safeProfile(row) {
+  const bossUid = row.boss_uid || "";
+  return {
+    id: row.id,
+    bossUid,
+    boss_uid: bossUid,
+    uid: bossUid || row.id,
+    name: row.display_name || row.email || "-",
+    email: row.email || "",
+    phone: row.phone || "",
+    avatar: row.avatar_url || "",
+    status: row.status || "",
+  };
+}
+function safeOrder(row, profiles = {}) {
+  const boss = profiles[row.boss_id] || {};
+  const companion = profiles[row.companion_id] || {};
+  const service = profiles[row.customer_service_id] || {};
+  const bossUid = boss.boss_uid || "";
+  const note = String(row.note || row.cancel_reason || "");
+  const needsReassign =
+    row.status === "pending" && /无法接单|确认超时|拒单|重新安排/.test(note);
+  return {
+    id: row.id,
+    orderNo: row.order_no || row.id,
+    bossId: row.boss_id || "",
+    bossUid,
+    bossName: boss.display_name || boss.email || bossUid || row.boss_id || "-",
+    companionId: row.companion_id || "",
+    companionName: companion.display_name || companion.email || "-",
+    serviceId: row.customer_service_id || "",
+    serviceName: service.display_name || service.email || "-",
+    orderType: row.order_type || "custom",
+    game: row.game || "",
+    title: row.title || "",
+    description: row.description || "",
+    hours: money(row.hours),
+    unitPrice: money(row.unit_price),
+    totalAmount: money(row.total_amount),
+    status: row.status || "",
+    statusText: ORDER_STATUS_TEXT[row.status] || row.status || "-",
+    note,
+    cancelReason: row.cancel_reason || "",
+    needsReassign,
+    reassignHint: needsReassign
+      ? /确认超时/.test(note)
+        ? "陪玩确认超时，需重新指定陪玩"
+        : "陪玩无法接单，可更换陪玩 / 推送抢单 / 联系老板 / 发起退款"
+      : "",
+    createdAt: row.created_at || "",
+    acceptedAt: row.accepted_at || "",
+    startedAt: row.started_at || "",
+    completedAt: row.completed_at || "",
+    cancelledAt: row.cancelled_at || "",
+  };
+}
+function safeMessage(row, profiles = {}) {
+  const sender = profiles[row.sender_id] || {};
+  let senderName = "";
+  if (row.sender_role === "customer_service") {
+    senderName = String(sender.display_name || "").trim() || "客服";
+  } else if (row.sender_role === "boss") {
+    senderName = String(sender.display_name || sender.boss_uid || "").trim() || "老板";
+  }
+  return {
+    id: row.id,
+    conversationId: row.conversation_id,
+    senderId: row.sender_id,
+    senderRole: row.sender_role,
+    senderName,
+    messageType: row.message_type || row.type || "text",
+    content: row.content || "",
+    orderId: row.order_id || "",
+    createdAt: row.created_at || "",
+    readAt: row.read_at || "",
+  };
+}
+async function countUnreadBossMessages(conversationId) {
+  const rows = await maybeRows(
+    "messages",
+    `?conversation_id=eq.${encodeURIComponent(conversationId)}&sender_role=eq.boss&read_at=is.null&select=id&limit=1000`
+  );
+  return Array.isArray(rows) ? rows.length : 0;
+}
+async function markConversationBossMessagesRead(conversationId, opts = {}) {
+  const readAt = nowIso();
+  const bossId = String(opts.bossId || "").trim();
+  // Mark all unread boss-role messages for this conversation.
+  await supabaseJson(
+    restUrl(
+      "messages",
+      `?conversation_id=eq.${encodeURIComponent(conversationId)}&sender_role=eq.boss&read_at=is.null`
+    ),
+    { method: "PATCH", headers: serviceHeaders(), body: JSON.stringify({ read_at: readAt }) }
+  );
+  // Also mark by boss sender_id in case sender_role was stored inconsistently.
+  if (isUuid(bossId)) {
+    try {
+      await supabaseJson(
+        restUrl(
+          "messages",
+          `?conversation_id=eq.${encodeURIComponent(conversationId)}&sender_id=eq.${encodeURIComponent(bossId)}&read_at=is.null`
+        ),
+        { method: "PATCH", headers: serviceHeaders(), body: JSON.stringify({ read_at: readAt }) }
+      );
+    } catch (_) {}
+  }
+  // Persist CS reading cursor (column may be missing on older DBs).
+  try {
+    await supabaseJson(restUrl("conversations", `?id=eq.${encodeURIComponent(conversationId)}`), {
+      method: "PATCH",
+      headers: serviceHeaders(),
+      body: JSON.stringify({ last_read_at: readAt, updated_at: readAt }),
+    });
+  } catch (err) {
+    const detail = String(err?.message || "");
+    if (!/last_read_at|column|schema cache|PGRST/i.test(detail)) throw err;
+    try {
+      await supabaseJson(restUrl("conversations", `?id=eq.${encodeURIComponent(conversationId)}`), {
+        method: "PATCH",
+        headers: serviceHeaders(),
+        body: JSON.stringify({ updated_at: readAt }),
+      });
+    } catch (_) {}
+  }
+  let remaining = await countUnreadBossMessages(conversationId);
+  // One retry if PostgREST returned success but rows still unread (race / filter).
+  if (remaining > 0) {
+    try {
+      await supabaseJson(
+        restUrl(
+          "messages",
+          `?conversation_id=eq.${encodeURIComponent(conversationId)}&sender_role=eq.boss&read_at=is.null`
+        ),
+        { method: "PATCH", headers: serviceHeaders(), body: JSON.stringify({ read_at: readAt }) }
+      );
+      remaining = await countUnreadBossMessages(conversationId);
+    } catch (_) {}
+  }
+  return { readAt, unread: remaining };
+}
+async function ensureConversation({ boss_id, companion_id = null, customer_service_id = null, order_id = null }) {
+  let query = order_id
+    ? `?order_id=eq.${encodeURIComponent(order_id)}&limit=1`
+    : `?boss_id=eq.${encodeURIComponent(boss_id)}&order_id=is.null&order=updated_at.desc&limit=1`;
+  const rows = await maybeRows("conversations", query);
+  if (rows[0]) {
+    try {
+      await supabaseJson(restUrl("conversations", `?id=eq.${encodeURIComponent(rows[0].id)}`), {
+        method: "PATCH",
+        headers: serviceHeaders(),
+        body: JSON.stringify({ updated_at: nowIso() }),
+      });
+    } catch (_) {}
+    return rows[0];
+  }
+  const base = {
+    boss_id,
+    companion_id,
+    customer_service_id,
+    order_id,
+    status: customer_service_id ? "open" : "waiting_service",
+    created_at: nowIso(),
+    updated_at: nowIso(),
+  };
+  const rich = {
+    ...base,
+    conversation_type: order_id ? "order_support" : "general_support",
+  };
+  try {
+    const inserted = await supabaseJson(restUrl("conversations"), {
+      method: "POST",
+      headers: serviceHeaders(),
+      body: JSON.stringify(rich),
+    });
+    return inserted[0] || null;
+  } catch (err) {
+    if (!/conversation_type|column|schema cache|PGRST/i.test(String(err?.message || ""))) throw err;
+    const inserted = await supabaseJson(restUrl("conversations"), {
+      method: "POST",
+      headers: serviceHeaders(),
+      body: JSON.stringify(base),
+    });
+    return inserted[0] || null;
+  }
+}
+async function addMessage(conversation, sender, senderRole, content, messageType = "system", orderId = null) { if (!conversation) return null; const rows = await supabaseJson(restUrl("messages"), { method: "POST", headers: serviceHeaders(), body: JSON.stringify({ conversation_id: conversation.id, sender_id: sender, sender_role: senderRole, message_type: messageType, content: String(content || ""), order_id: orderId || conversation.order_id || null, created_at: nowIso() }) }); await supabaseJson(restUrl("conversations", `?id=eq.${encodeURIComponent(conversation.id)}`), { method: "PATCH", headers: serviceHeaders(), body: JSON.stringify({ updated_at: nowIso() }) }); return rows[0] || null; }
+async function allocateBossUid() {
+  const rows = await maybeRows("profiles", "?role=eq.boss&select=boss_uid&boss_uid=not.is.null&order=created_at.desc&limit=200");
+  let next = 100001;
+  for (const row of rows) {
+    const match = String(row?.boss_uid || "").trim().match(/^B(\d+)$/i);
+    if (match) next = Math.max(next, Number(match[1]) + 1);
+  }
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const candidate = `B${next + attempt}`;
+    const existing = await maybeRows("profiles", `?boss_uid=eq.${encodeURIComponent(candidate)}&select=id&limit=1`);
+    if (!existing.length) return candidate;
+  }
+  return `B${Date.now().toString().slice(-9)}`;
+}
+async function ensureBossUid(profile) {
+  if (!profile?.id) return profile;
+  if (profile.boss_uid && String(profile.boss_uid).trim()) return profile;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const bossUid = await allocateBossUid();
+    try {
+      const rows = await supabaseJson(restUrl("profiles", `?id=eq.${encodeURIComponent(profile.id)}`), {
+        method: "PATCH",
+        headers: serviceHeaders(),
+        body: JSON.stringify({ boss_uid: bossUid }),
+      });
+      const saved = Array.isArray(rows) ? rows[0] : { ...profile, boss_uid: bossUid };
+      if (saved?.boss_uid) return saved;
+    } catch (_) {}
+  }
+  return profile;
+}
+async function loadBootstrap(serviceProfile) {
+  try {
+    const { expireCompanionConfirmTimeouts } = await import("./_order-confirm-timeout.js");
+    await expireCompanionConfirmTimeouts({ limit: 50 });
+  } catch {
+    /* best-effort */
+  }
+  const [ordersRaw, conversationsRaw, profilesRaw, companionsRaw, reportsRaw, payrollsRaw, workData] = await Promise.all([
+    maybeRows("orders", "?order=created_at.desc&limit=300"),
+    maybeRows("conversations", "?order=updated_at.desc&limit=300"),
+    maybeRows("profiles", "?limit=1000"),
+    maybeRows("companion_profiles", "?limit=1000"),
+    maybeRows("customer_service_reports", `?customer_service_id=eq.${encodeURIComponent(serviceProfile.id)}&order=created_at.desc&limit=100`),
+    maybeRows("staff_payrolls", `?staff_id=eq.${encodeURIComponent(serviceProfile.id)}&order=created_at.desc&limit=100`),
+    import("./_customer-service-work.js").then((m) => m.loadServiceWorkData(serviceProfile.id)).catch(() => null),
+  ]);
+  const convIds = (conversationsRaw || []).map((c) => c.id).filter(Boolean);
+  let messagesRawDesc = [];
+  if (convIds.length) {
+    const chunkSize = 40;
+    for (let i = 0; i < convIds.length; i += chunkSize) {
+      const chunk = convIds.slice(i, i + chunkSize);
+      const rows = await maybeRows(
+        "messages",
+        `?conversation_id=in.(${chunk.map(encodeURIComponent).join(",")})&order=created_at.desc&limit=1200`
+      );
+      messagesRawDesc = messagesRawDesc.concat(rows || []);
+    }
+  } else {
+    messagesRawDesc = await maybeRows("messages", "?order=created_at.desc&limit=1500");
+  }
+  const messagesRaw = (messagesRawDesc || []).slice().sort((a, b) => String(a.created_at || "").localeCompare(String(b.created_at || "")));
+  const profiles = profilesRaw.reduce((map, row) => { map[row.id] = row; return map; }, {});
+  // Backfill missing boss_uid so CS pool always shows 老板 UID.
+  const bossIdsNeedingUid = [...new Set((conversationsRaw || []).map((c) => c.boss_id).filter((id) => id && profiles[id] && !profiles[id].boss_uid))];
+  for (const id of bossIdsNeedingUid.slice(0, 20)) {
+    profiles[id] = await ensureBossUid(profiles[id]);
+  }
+  const orders = ordersRaw.map((row) => safeOrder(row, profiles)); const msgByConv = messagesRaw.reduce((map, msg) => { (map[msg.conversation_id] = map[msg.conversation_id] || []).push(msg); return map; }, {}); const conversations = conversationsRaw.map((row) => { const boss = profiles[row.boss_id] || {}; const service = profiles[row.customer_service_id] || {}; const msgs = msgByConv[row.id] || []; const last = msgs[msgs.length - 1] || {}; const bossUid = String(boss.boss_uid || "").trim(); const isClosed = row.status === "closed" || row.status === "ended"; const convStatus = isClosed ? "已结束" : (row.customer_service_id ? "正在接待" : "待接待"); const lastReadAt = row.last_read_at || ""; const unreadBoss = isClosed ? [] : msgs.filter((m) => {
+    if (m.sender_role !== "boss" || m.read_at) return false;
+    // Never count CS/system as unread; respect reading cursor when present.
+    if (lastReadAt && String(m.created_at || "") <= String(lastReadAt)) return false;
+    return true;
+  }); return { id: row.id, bossId: row.boss_id || "", bossUid: bossUid || "", bossName: boss.display_name || bossUid || "老板", orderId: row.order_id || "", orderNo: (orders.find((o) => o.id === row.order_id) || {}).orderNo || "", currentServiceId: isClosed ? (row.customer_service_id || "") : (row.customer_service_id || ""), currentServiceName: String(service.display_name || "").trim() || (row.customer_service_id ? "客服" : "待接待"), status: convStatus, rawStatus: isClosed ? "closed" : (row.status || ""), lastMessage: last.content || "", lastTime: last.created_at || row.updated_at || "", unread: unreadBoss.length, unreadCount: unreadBoss.length, closedAt: row.closed_at || "", closedBy: row.closed_by || "", lastReadAt, acceptedAt: row.accepted_at || "", updatedAt: row.updated_at || "" }; }); const bosses = profilesRaw.filter((p) => p.role === "boss" && p.status === "active").map(safeProfile); const companions = companionsRaw.map((cp) => { const p = profiles[cp.user_id] || {}; return { id: cp.user_id, companionUid: cp.companion_uid || "", name: cp.nickname || p.display_name || p.email || "陪玩", game: cp.game || "", level: cp.level_name || "", price: money(cp.price), status: p.status || "", verificationStatus: cp.verification_status || "", onlineStatus: cp.online_status || "" }; }).filter((p) => p.status === "active" && isUuid(p.id)); const today = new Date().toISOString().slice(0, 10); const receptionStats = await (await import("./_service-receptions.js")).loadReceptionStats(serviceProfile.id, conversations); const summary = { waitingConversations: conversations.filter((c) => !c.currentServiceId && c.rawStatus !== "closed").length, currentReceptions: workData?.summary?.currentReceptions || receptionStats.currentReceptions || 0, todayReceptions: workData?.summary?.todayReceptions || receptionStats.todayReceptions || 0, monthReceptions: receptionStats.monthReceptions || 0, awaitingPayment: orders.filter((o) => o.status === "awaiting_payment").length, pendingOrders: orders.filter((o) => o.status === "pending").length, waitingCompanionConfirm: orders.filter((o) => o.status === "claimed").length, needsReassign: orders.filter((o) => o.needsReassign).length, waitingBossConfirm: orders.filter((o) => o.status === "waiting_boss_confirm").length, inProgress: orders.filter((o) => o.status === "in_progress" || o.status === "confirmed").length, refundRequested: orders.filter((o) => o.status === "refund_requested").length, todayHandled: orders.filter((o) => o.serviceId === serviceProfile.id && String(o.createdAt).slice(0, 10) === today).length, todayCompleted: workData?.summary?.todayCompleted || 0, todayPaid: workData?.summary?.todayPaid || 0, todayRefunds: workData?.summary?.todayRefunds || 0, unreadMessages: workData?.summary?.unreadMessages || 0, monthAttendanceDays: workData?.summary?.monthAttendanceDays || 0, monthLateCount: workData?.summary?.monthLateCount || 0, monthAbsenceCount: workData?.summary?.monthAbsenceCount || 0, estimatedSalary: workData?.summary?.estimatedSalary || 0 }; const payrollStatusText = { draft: "草稿", pending_review: "待审核", approved_pending_pay: "已通过待付款", rejected: "已驳回", paying: "付款处理中", paid_pending_receipt: "已付款待上传收据", completed: "已发放", pay_failed: "付款失败", cancelled: "已撤销" }; const payrolls = (payrollsRaw || []).map((row) => { const snap = row.payment_account_snapshot || {}; return { id: row.id, payrollNo: row.payroll_no, periodStart: row.period_start, periodEnd: row.period_end, baseSalaryRm: money(row.base_salary_rm), bonusRm: money(row.bonus_rm), deductionRm: money(row.deduction_rm), netSalaryRm: money(row.net_salary_rm), accountLast4: snap.account_last4 || "", status: row.status, statusText: payrollStatusText[row.status] || row.status, paidAt: row.paid_at || "", note: row.note || "" }; }); return { staff: safeProfile(serviceProfile), summary, conversations, messages: messagesRaw.map((row) => safeMessage(row, profiles)), orders, bosses, companions, reports: reportsRaw, payrolls, orderStatuses: ORDER_STATUS_TEXT, workData: workData || null };
+}
+async function orderById(id) { if (!isUuid(id)) return null; const rows = await tableRows("orders", `?id=eq.${encodeURIComponent(id)}&limit=1`); return rows[0] || null; }
+async function patchOrder(id, patch) { if (!isUuid(id)) return null; const rows = await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(id)}`), { method: "PATCH", headers: serviceHeaders(), body: JSON.stringify(patch) }); return rows[0] || null; }
+async function handler(req, res) { if (!hasDb()) return json(res, req.method === "GET" ? 200 : 503, { ok: req.method === "GET", configured: false, message: "未配置 Supabase，客服端不返回假数据。", data: { staff: {}, summary: { waitingConversations: 0, currentReceptions: 0, todayReceptions: 0, monthReceptions: 0, awaitingPayment: 0, pendingOrders: 0, waitingBossConfirm: 0, inProgress: 0, refundRequested: 0, todayHandled: 0 }, conversations: [], messages: [], orders: [], bosses: [], companions: [], reports: [], orderStatuses: ORDER_STATUS_TEXT } }); try {
+    const body = req.method === "GET" ? {} : await parseBody(req);
+    if (req.method !== "GET") req.body = body;
+    let pathAction = "";
+    try {
+      const pathname = new URL(req.url || "/", "http://localhost").pathname;
+      if (/\/customer-service\/accept\/?$/.test(pathname) || /\/accept\/?$/.test(pathname)) pathAction = "accept";
+    } catch (_) {}
+    let action = String(req.method === "GET" ? (req.query?.action || "bootstrap") : (body.action || req.query?.action || pathAction || "")).trim();
+    if (action === "accept") action = "take_conversation";
+    if (action === "login") { const email = String(body.account || body.email || "").trim().toLowerCase(); const password = String(body.password || ""); if (!email || !password) return json(res, 400, { ok: false, message: "请输入邮箱和密码。" }); let auth; try { auth = await supabaseJson(authUrl("token?grant_type=password"), { method: "POST", headers: anonHeaders(), body: JSON.stringify({ email, password }) }); } catch { return json(res, 401, { ok: false, message: "账号或密码错误。" }); } const profile = await profileById(auth.user?.id); if (!profile || profile.role !== "customer_service") return json(res, 403, { ok: false, message: "无权访问客服端。" }); if (profile.status !== "active") return json(res, 403, { ok: false, message: "该客服账号已被停用，请联系管理员。" }); return json(res, 200, { ok: true, session: { token: auth.access_token, refreshToken: auth.refresh_token || "", expiresAt: auth.expires_at || auth.expires_in || "", user: safeProfile(profile), remember: true } }); }
+    const service = await requireService(req); if (req.method === "GET") return json(res, 200, { ok: true, configured: true, data: await loadBootstrap(service.profile) });
+    if (action === "bootstrap" || !action) return json(res, 200, { ok: true, configured: true, data: await loadBootstrap(service.profile) });
+    if (action === "take_conversation") {
+      const id = String(body.id || body.conversation_id || body.conversationId || "").trim();
+      if (!id) return json(res, 400, { ok: false, message: "缺少会话 ID。" });
+      const existing = (await tableRows("conversations", `?id=eq.${encodeURIComponent(id)}&limit=1`))[0];
+      if (!existing) return json(res, 404, { ok: false, message: "会话不存在。" });
+      if (existing.status === "closed" || existing.status === "ended") {
+        return json(res, 400, { ok: false, message: "会话已结束，无法接待。" });
+      }
+      if (existing.customer_service_id && existing.customer_service_id !== service.profile.id) {
+        const other = await profileById(existing.customer_service_id);
+        const otherName = String(other?.display_name || "").trim() || "其他客服";
+        return json(res, 409, { ok: false, message: `该会话已由客服 ${otherName} 接待。` });
+      }
+      if (existing.customer_service_id === service.profile.id) {
+        await markConversationBossMessagesRead(id, { bossId: existing.boss_id });
+        return json(res, 200, {
+          ok: true,
+          message: "你已在接待该会话。",
+          conversation: {
+            ...existing,
+            status: existing.status === "serving" ? "active" : (existing.status || "active"),
+            customer_service_id: service.profile.id,
+          },
+        });
+      }
+      const nick = String(service.profile.display_name || "").trim() || "客服";
+      const acceptedAt = nowIso();
+      const claimFilter = `?id=eq.${encodeURIComponent(id)}&customer_service_id=is.null`;
+      async function claimWith(patch) {
+        const rows = await supabaseJson(restUrl("conversations", claimFilter), {
+          method: "PATCH",
+          headers: serviceHeaders(),
+          body: JSON.stringify(patch),
+        });
+        return Array.isArray(rows) ? rows[0] : null;
+      }
+      let conversation = null;
+      try {
+        conversation = await claimWith({
+          customer_service_id: service.profile.id,
+          status: "active",
+          accepted_at: acceptedAt,
+          updated_at: acceptedAt,
+        });
+      } catch (err) {
+        const detail = String(err?.message || "");
+        if (!/accepted_at|column|schema cache|PGRST/i.test(detail)) throw err;
+        try {
+          conversation = await claimWith({
+            customer_service_id: service.profile.id,
+            status: "active",
+            updated_at: acceptedAt,
+          });
+        } catch (err2) {
+          const detail2 = String(err2?.message || "");
+          if (!/status|check|invalid/i.test(detail2)) throw err2;
+          conversation = await claimWith({
+            customer_service_id: service.profile.id,
+            status: "serving",
+            updated_at: acceptedAt,
+          });
+        }
+      }
+      if (!conversation) {
+        try {
+          conversation = await claimWith({
+            customer_service_id: service.profile.id,
+            status: "serving",
+            updated_at: acceptedAt,
+          });
+        } catch (_) {}
+      }
+      if (!conversation) {
+        const again = (await tableRows("conversations", `?id=eq.${encodeURIComponent(id)}&limit=1`))[0];
+        if (again?.customer_service_id === service.profile.id) {
+          await markConversationBossMessagesRead(id, { bossId: again.boss_id });
+          return json(res, 200, { ok: true, message: "你已在接待该会话。", conversation: again });
+        }
+        const other = again?.customer_service_id ? await profileById(again.customer_service_id) : null;
+        const otherName = String(other?.display_name || "").trim() || "其他客服";
+        return json(res, 409, { ok: false, message: `该会话已由客服 ${otherName} 接待。` });
+      }
+      // 有关联订单时绑定当前客服 ID（订单业务状态枚举不含 serving，不改 orders.status）。
+      if (conversation.order_id) {
+        try {
+          await patchOrder(conversation.order_id, { customer_service_id: service.profile.id });
+        } catch (_) {}
+      }
+      try {
+        await (await import("./_service-receptions.js")).startReceptionRecord(conversation, service.profile.id);
+      } catch (_) {}
+      // sender_role 必须是 enum 合法值；系统提示用 message_type=system。
+      await addMessage(conversation, service.profile.id, "customer_service", `客服 ${nick} 已接待您。`, "system");
+      await markConversationBossMessagesRead(id, { bossId: conversation.boss_id || existing.boss_id });
+      return json(res, 200, {
+        ok: true,
+        message: "已接待该会话。",
+        conversation: {
+          ...conversation,
+          status: conversation.status === "serving" ? "active" : (conversation.status || "active"),
+          customer_service_id: service.profile.id,
+          accepted_at: conversation.accepted_at || acceptedAt,
+        },
+      });
+    }
+    if (action === "end_conversation") {
+      const id = String(body.id || body.conversation_id || "").trim();
+      const existing = (await tableRows("conversations", `?id=eq.${encodeURIComponent(id)}&limit=1`))[0];
+      if (!existing) return json(res, 404, { ok: false, message: "会话不存在。" });
+      if (existing.status === "closed" || existing.status === "ended") {
+        await markConversationBossMessagesRead(id, { bossId: existing.boss_id });
+        return json(res, 200, { ok: true, message: "会话已结束。", conversation: existing });
+      }
+      if (!existing.customer_service_id) {
+        return json(res, 400, { ok: false, message: "该会话当前无人接待。" });
+      }
+      if (existing.customer_service_id !== service.profile.id) {
+        const other = await profileById(existing.customer_service_id);
+        const otherName = String(other?.display_name || "").trim() || "其他客服";
+        return json(res, 403, { ok: false, message: `只有接待中的客服可结束。当前由 ${otherName} 接待。` });
+      }
+      const closedAt = nowIso();
+      const basePatch = {
+        status: "closed",
+        updated_at: closedAt,
+      };
+      // Prefer keeping customer_service_id for history; also try optional close metadata columns.
+      const richPatch = {
+        ...basePatch,
+        closed_at: closedAt,
+        closed_by: service.profile.id,
+      };
+      let conversation = null;
+      try {
+        const rows = await supabaseJson(
+          restUrl("conversations", `?id=eq.${encodeURIComponent(id)}&customer_service_id=eq.${encodeURIComponent(service.profile.id)}`),
+          { method: "PATCH", headers: serviceHeaders(), body: JSON.stringify(richPatch) }
+        );
+        conversation = Array.isArray(rows) ? rows[0] : null;
+      } catch (err) {
+        const detail = String(err?.message || "");
+        if (!/closed_at|closed_by|schema cache|column/i.test(detail)) throw err;
+        const rows = await supabaseJson(
+          restUrl("conversations", `?id=eq.${encodeURIComponent(id)}&customer_service_id=eq.${encodeURIComponent(service.profile.id)}`),
+          { method: "PATCH", headers: serviceHeaders(), body: JSON.stringify(basePatch) }
+        );
+        conversation = Array.isArray(rows) ? rows[0] : null;
+      }
+      if (!conversation) {
+        const again = (await tableRows("conversations", `?id=eq.${encodeURIComponent(id)}&limit=1`))[0];
+        conversation = again || existing;
+      }
+      try {
+        await (await import("./_service-receptions.js")).endReceptionRecord(id, service.profile.id);
+      } catch (_) {}
+      await markConversationBossMessagesRead(id, { bossId: existing.boss_id });
+      await addMessage(conversation || existing, service.profile.id, "customer_service", "客服已结束本次接待。", "system");
+      await markConversationBossMessagesRead(id, { bossId: existing.boss_id });
+      return json(res, 200, {
+        ok: true,
+        message: "已结束接待。",
+        conversation: {
+          ...(conversation || existing),
+          status: "closed",
+          closed_at: closedAt,
+          closed_by: service.profile.id,
+        },
+      });
+    }
+    if (action === "mark_read" || action === "read_conversation") {
+      const id = String(body.id || body.conversation_id || body.conversationId || "").trim();
+      if (!id) return json(res, 400, { ok: false, message: "缺少会话 ID。" });
+      const existing = (await tableRows("conversations", `?id=eq.${encodeURIComponent(id)}&limit=1`))[0];
+      if (!existing) return json(res, 404, { ok: false, message: "会话不存在。" });
+      const marked = await markConversationBossMessagesRead(id, { bossId: existing.boss_id });
+      return json(res, 200, {
+        ok: true,
+        message: "已标记已读。",
+        conversation: {
+          ...existing,
+          last_read_at: marked.readAt,
+          unread: marked.unread,
+          unreadCount: marked.unread,
+        },
+        unread: marked.unread,
+        unreadCount: marked.unread,
+        last_read_at: marked.readAt,
+      });
+    }
+    if (action === "send_message") {
+      const conversation = (await tableRows("conversations", `?id=eq.${encodeURIComponent(String(body.conversation_id || body.id || ""))}&limit=1`))[0];
+      if (!conversation) return json(res, 404, { ok: false, message: "会话不存在。" });
+      if (conversation.status === "closed" || conversation.status === "ended") {
+        return json(res, 403, { ok: false, message: "会话已结束，无法继续发送消息。" });
+      }
+      if (!conversation.customer_service_id) {
+        return json(res, 403, { ok: false, message: "请先点击接待后再回复。" });
+      }
+      if (conversation.customer_service_id !== service.profile.id) {
+        return json(res, 403, { ok: false, message: "该会话已由其他客服接待。" });
+      }
+      const msg = await addMessage(conversation, service.profile.id, "customer_service", String(body.content || ""), "text");
+      const messageRow = msg
+        ? Object.assign({}, safeMessage(msg, { [service.profile.id]: service.profile }), {
+            senderName: String(service.profile.display_name || "").trim() || "客服",
+          })
+        : null;
+      return json(res, 200, { ok: true, message: "消息已发送。", messageRow });
+    }
+    if (action === "clock_in" || action === "clock_out") {
+      const workApi = await import("./_customer-service-work.js");
+      const result = action === "clock_in" ? await workApi.clockInService(service.profile.id) : await workApi.clockOutService(service.profile.id);
+      return json(res, 200, {
+        ok: true,
+        message: action === "clock_in" ? "上班打卡成功。" : "下班打卡成功。",
+        attendance: result?.meta || null,
+        data: await loadBootstrap(service.profile),
+      });
+    }
+    if (action === "create_order") {
+      const o = body.order || body;
+      const rawBossId = String(o.boss_id || o.bossId || o.boss || "").trim();
+      const rawBossUid = String(o.boss_uid || o.bossUid || "").trim();
+      const bossInput = isUuid(rawBossId) ? rawBossId : (rawBossUid || rawBossId);
+      const boss = await resolveBoss(bossInput);
+      if (!boss || boss.role !== "boss" || !isUuid(boss.id)) {
+        return json(res, 400, { ok: false, message: "请选择真实老板账号（支持老板 UID / UUID）。" });
+      }
+      const bossId = boss.id;
+      const hours = money(o.hours || o.duration || 1) || 1;
+      const unit = money(o.unit_price || o.unitPrice || o.price);
+      const total = money(o.total_amount || o.totalAmount || o.amount) || unit * hours;
+      if (!o.game || (!o.description && !o.title) || total <= 0) {
+        return json(res, 400, { ok: false, message: "请完整填写游戏、需求和金额。" });
+      }
+      const companionInput = String(o.companion_id || o.companionId || "").trim();
+      let companionId = null;
+      if (companionInput) {
+        const companion = await resolveCompanion(companionInput);
+        if (!companion || !isUuid(companion.id)) {
+          return json(res, 400, { ok: false, message: "指定陪玩无效，请选择真实陪玩账号（UUID / 陪玩 UID）。" });
+        }
+        companionId = companion.id;
+      }
+      const payload = {
+        order_no: orderNo("CS"),
+        boss_id: bossId,
+        companion_id: companionId,
+        customer_service_id: service.profile.id,
+        order_type: String(o.order_type || o.orderType || "customer_service"),
+        game: String(o.game || ""),
+        title: String(o.title || o.description || "客服创建订单"),
+        description: String(o.description || o.requirements || o.title || ""),
+        hours,
+        unit_price: unit || total / hours,
+        total_amount: total,
+        status: "awaiting_payment",
+        created_at: nowIso(),
+      };
+      const rows = await supabaseJson(restUrl("orders"), { method: "POST", headers: serviceHeaders(), body: JSON.stringify(payload) });
+      const order = rows[0];
+      const conversation = await ensureConversation({
+        boss_id: bossId,
+        companion_id: order.companion_id || null,
+        customer_service_id: service.profile.id,
+        order_id: order.id,
+      });
+      const companionLabel = companionId
+        ? (await profileById(companionId).then((p) => p?.display_name).catch(() => "")) || "指定陪玩"
+        : "未指定（公开抢单）";
+      await addMessage(
+        conversation,
+        service.profile.id,
+        "customer_service",
+        `新订单已提交，等待支付，指定陪玩为 ${companionLabel}。订单：${order.order_no} / ${order.game} / ${money(order.total_amount).toFixed(2)} 猫粮。`,
+        "system",
+        order.id
+      );
+      await addMessage(
+        conversation,
+        service.profile.id,
+        "customer_service",
+        `订单卡片：${order.order_no} / ${order.game} / ${money(order.total_amount).toFixed(2)} 猫粮。请确认付款。`,
+        "order_card",
+        order.id
+      );
+      return json(res, 200, { ok: true, message: "订单已创建，进入待付款。", order });
+    }
+    if (action === "confirm_payment") {
+      const order = await orderById(String(body.id || body.order_id || ""));
+      if (!order) return json(res, 404, { ok: false, message: "订单不存在。" });
+      if (order.status !== "awaiting_payment") return json(res, 400, { ok: false, message: "只有待付款确认订单可以确认付款。" });
+      /* 指定陪玩：claimed→陪玩接单；无陪玩：pending→抢单大厅 */
+      const next = order.companion_id ? "claimed" : "pending";
+      const patch = { status: next, customer_service_id: service.profile.id };
+      if (next === "claimed") patch.accepted_at = nowIso();
+      const patched = await patchOrder(order.id, patch);
+      const conversation = await ensureConversation({
+        boss_id: order.boss_id,
+        companion_id: order.companion_id,
+        customer_service_id: service.profile.id,
+        order_id: order.id,
+      });
+      const sysMsg = order.companion_id
+        ? "客服已确认付款，订单已支付，正在等待陪玩确认接单。"
+        : "客服已确认付款，订单已进入抢单大厅。";
+      await addMessage(conversation, service.profile.id, "customer_service", sysMsg, "system", order.id);
+      return json(res, 200, { ok: true, message: order.companion_id ? "已确认付款，等待陪玩确认接单。" : "已确认付款。", order: patched });
+    }
+    if (action === "assign_companion" || action === "push_companion" || action === "dispatch_companion") {
+      const order = await orderById(String(body.id || body.order_id || ""));
+      const companion = await resolveCompanion(String(body.companion_id || body.companionId || ""));
+      if (!order || !companion || !isUuid(companion.id)) return json(res, 400, { ok: false, message: "订单或陪玩不存在。" });
+      const companionId = companion.id;
+      // After payment: push companion into claimed (direct accept). Before payment keep awaiting_payment with companion bound.
+      let nextStatus = "claimed";
+      if (order.status === "awaiting_payment") nextStatus = "awaiting_payment";
+      else if (order.status === "pending" || order.status === "claimed" || order.status === "waiting_boss_confirm") nextStatus = "claimed";
+      else if (order.status === "confirmed" || order.status === "in_progress" || order.status === "completed") {
+        return json(res, 400, { ok: false, message: "当前订单状态不能重新派单。" });
+      }
+      const patched = await patchOrder(order.id, {
+        companion_id: companionId,
+        customer_service_id: service.profile.id,
+        status: nextStatus,
+        accepted_at: nextStatus === "claimed" ? nowIso() : order.accepted_at || null,
+      });
+      const conversation = await ensureConversation({
+        boss_id: order.boss_id,
+        companion_id: companionId,
+        customer_service_id: service.profile.id,
+        order_id: order.id,
+      });
+      await addMessage(
+        conversation,
+        service.profile.id,
+        "customer_service",
+        `已推送陪玩：${companion.display_name || companion.email}，请陪玩尽快接单。`,
+        "order_card",
+        order.id
+      );
+      return json(res, 200, { ok: true, message: "已推送陪玩。", order: patched });
+    }
+    if (action === "update_order_status") { const id = String(body.id || body.order_id || ""); const status = String(body.status || ""); if (!ORDER_STATUS_TEXT[status]) return json(res, 400, { ok: false, message: "订单状态无效。" }); const patch = { status, customer_service_id: service.profile.id }; if (status === "completed") patch.completed_at = nowIso(); if (status === "cancelled") patch.cancelled_at = nowIso(); const patched = await patchOrder(id, patch); const conversation = patched ? await ensureConversation({ boss_id: patched.boss_id, companion_id: patched.companion_id, customer_service_id: service.profile.id, order_id: patched.id }) : null; await addMessage(conversation, service.profile.id, "customer_service", `订单状态已更新为：${ORDER_STATUS_TEXT[status]}`, "system", id); return json(res, 200, { ok: true, message: "订单状态已更新。", order: patched }); }
+    if (action === "refund_decision") { const order = await orderById(String(body.id || body.order_id || "")); if (!order || order.status !== "refund_requested") return json(res, 400, { ok: false, message: "只有退款申请中的订单可以处理退款。" }); const decision = String(body.decision || ""); const note = String(body.note || ""); if (!note) return json(res, 400, { ok: false, message: "退款处理必须填写备注。" }); if (decision === "approve") { const patched = await patchOrder(order.id, { status: "refunded", customer_service_id: service.profile.id }); try { const walletApi = await import("./_wallet.js"); const amount = money(order.total_amount); if (amount > 0) { await walletApi.creditWallet({ bossId: order.boss_id, transactionType: "refund", amount, balanceType: "paid", idempotencyKey: `refund-paid:${order.id}`, reason: note || "订单退款", relatedOrderId: order.id, operatorId: service.profile.id }); } } catch (e) { /* wallet sql may be missing; keep legacy tx */ await supabaseJson(restUrl("transactions"), { method: "POST", headers: serviceHeaders(), body: JSON.stringify({ user_id: order.boss_id, order_id: order.id, transaction_type: "refund", amount: money(order.total_amount), status: "completed", note, created_at: nowIso() }) }).catch(() => null); } try { const pop = await import("./_popularity.js"); pop.scheduleRecomputeSoft(); } catch (e) { /* optional */ } return json(res, 200, { ok: true, message: "退款已批准。", order: patched }); } const restore = ["in_progress", "completed", "cancelled"].includes(String(body.restore_status)) ? String(body.restore_status) : "in_progress"; const patched = await patchOrder(order.id, { status: restore, customer_service_id: service.profile.id }); return json(res, 200, { ok: true, message: "退款已拒绝。", order: patched }); }
+    if (action === "submit_report") { return json(res, 400, { ok: false, message: "客服不能自行填写应付工资。请查看工资记录，如有异议请提交申诉。" }); }
+    if (action === "appeal_payroll") {
+      const payrollId = String(body.payrollId || body.payroll_id || body.id || "").trim();
+      const reason = String(body.reason || "").trim();
+      if (!payrollId || !reason) return json(res, 400, { ok: false, message: "请选择工资单并填写申诉原因。" });
+      const rows = await maybeRows("staff_payrolls", `?id=eq.${encodeURIComponent(payrollId)}&staff_id=eq.${encodeURIComponent(service.profile.id)}&limit=1`);
+      if (!rows[0]) return json(res, 404, { ok: false, message: "工资单不存在。" });
+      const inserted = await supabaseJson(restUrl("staff_payroll_appeals"), {
+        method: "POST",
+        headers: serviceHeaders(),
+        body: JSON.stringify({ payroll_id: payrollId, staff_id: service.profile.id, reason, status: "pending", created_at: nowIso() }),
+      });
+      return json(res, 200, { ok: true, message: "工资申诉已提交，等待管理员处理。", appeal: inserted[0] || null });
+    }
+    if (action === "apply_compensation") {
+      try {
+        const settings = await (await import("./_wallet.js")).getWalletSettings();
+        if (settings.allow_cs_apply === false) return json(res, 403, { ok: false, message: "系统已关闭客服补偿申请。" });
+        const bossInput = String(body.boss_id || body.bossId || body.bossUid || body.boss_uid || "").trim();
+        const boss = await resolveBoss(bossInput);
+        if (!boss || boss.role !== "boss" || !isUuid(boss.id)) return json(res, 400, { ok: false, message: "请填写真实老板 UID / UUID。" });
+        const amount = money(body.suggested_amount || body.suggestedAmount || body.amount);
+        const maxReq = money(settings.cs_max_per_request != null ? settings.cs_max_per_request : 100);
+        if (amount <= 0) return json(res, 400, { ok: false, message: "建议补偿数量必须大于 0。" });
+        if (amount > maxReq) return json(res, 400, { ok: false, message: `单笔申请不能超过 ${maxReq} 猫粮。` });
+        const reason = String(body.reason || "").trim();
+        if (!reason) return json(res, 400, { ok: false, message: "请填写差评或投诉原因。" });
+        const today = new Date().toISOString().slice(0, 10);
+        const todayRows = await maybeRows(
+          "compensation_requests",
+          `?applicant_id=eq.${encodeURIComponent(service.profile.id)}&created_at=gte.${encodeURIComponent(today + "T00:00:00.000Z")}&select=suggested_amount`
+        );
+        const todaySum = todayRows.reduce((n, r) => n + money(r.suggested_amount), 0);
+        const maxDay = money(settings.cs_max_per_day != null ? settings.cs_max_per_day : 300);
+        if (todaySum + amount > maxDay) return json(res, 400, { ok: false, message: `今日申请额度不足（上限 ${maxDay}）。` });
+        const relatedOrderId = String(body.related_order_id || body.relatedOrderId || body.order_id || "").trim();
+        const rows = await supabaseJson(restUrl("compensation_requests"), {
+          method: "POST",
+          headers: serviceHeaders(),
+          body: JSON.stringify({
+            boss_id: boss.id,
+            related_order_id: isUuid(relatedOrderId) ? relatedOrderId : null,
+            request_type: String(body.request_type || body.requestType || "bad_review"),
+            suggested_amount: amount,
+            balance_type: "bonus",
+            reason,
+            staff_note: String(body.staff_note || body.staffNote || body.note || ""),
+            evidence_urls: String(body.evidence_urls || body.evidenceUrls || ""),
+            status: "pending",
+            applicant_id: service.profile.id,
+            notify_boss: body.notify_boss !== false,
+            created_at: nowIso(),
+          }),
+        });
+        return json(res, 200, { ok: true, message: "补偿申请已提交，等待管理员审核。", request: rows[0] || null });
+      } catch (error) {
+        const real = String(error?.message || error || "").trim();
+        const text = `${real} ${JSON.stringify(error?.body || "")}`;
+        if (error?.status === 404 || /Could not find the table|schema cache|PGRST205|does not exist/i.test(text)) {
+          // Do NOT swallow the real Supabase error. Compensation failure must not break CS bootstrap/dashboard.
+          return json(res, 503, {
+            ok: false,
+            message:
+              "补偿申请表 public.compensation_requests 不存在。请到 Supabase SQL Editor 执行 supabase/service-compensation.sql 后再提交。" +
+              (real ? `（Supabase：${real}）` : ""),
+            supabaseMessage: real || null,
+            table: "compensation_requests",
+            sqlFile: "supabase/service-compensation.sql",
+          });
+        }
+        throw error;
+      }
+    }
+    return json(res, 400, { ok: false, message: "未知客服端操作。" }); } catch (error) { return json(res, error.status || 500, { ok: false, message: error.message || "客服端接口异常。" }); } }
+export default handler;

@@ -236,7 +236,7 @@
     });
     box.innerHTML = orders.map(function (order) {
       return '<article class="card order-card" data-status="' + esc(order.status) + '">' +
-        '<div class="row"><div class="row"><img src="' + esc(order.player_avatar || "assets/meow-cuijiao-brand.jpg") + '" style="width:56px;height:56px;border-radius:16px;object-fit:cover"><div><h3>' + esc(order.player_name) + '</h3><p class="muted">' + esc(order.game) + ' · ' + esc(order.service_time) + '</p></div></div><span class="tag">' + esc(statusText(order.status)) + '</span></div>' +
+        '<div class="row"><div class="row"><img src="' + esc(order.player_avatar || "/default-avatar.png") + '" style="width:56px;height:56px;border-radius:16px;object-fit:cover" onerror="this.onerror=null;this.src=\'/default-avatar.png\'"><div><h3>' + esc(order.player_name) + '</h3><p class="muted">' + esc(order.game) + ' · ' + esc(order.service_time) + '</p></div></div><span class="tag">' + esc(statusText(order.status)) + '</span></div>' +
         '<p class="muted">服务时长 ' + esc(order.duration) + ' · 金额 <b class="price">' + esc(order.amount) + '</b></p>' +
         '<div class="row"><button class="btn" data-detail-order="' + esc(order.order_id) + '">查看详情</button>' + orderActionHtml(order) + '<button class="btn primary" data-reorder="' + esc(order.player_name) + '">再次下单</button></div>' +
         '</article>';

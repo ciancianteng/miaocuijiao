@@ -1,3 +1,5 @@
+@import url("./boss-header.css");
+
 /* mcj-design-system: visual-only brand layer */
 :root {
   --mcj-bg: #050406;
@@ -372,7 +374,7 @@ textarea {
 }
 
 /* mcj-design-system hard override: visible, visual-only unification */
-button:not(.modal-close):not(.close):not(.ad-dot):not(.mcj-hero-arrow),
+button:not(.modal-close):not(.close):not(.ad-dot):not(.mcj-hero-arrow):not(.mcj-po-chip):not(.mcj-po-close):not(.mcj-po-cancel-link):not(.mcj-po-submit):not(.mcj-po-pay-card):not(.cs-conversation):not(.support-session):not(.pw-btn):not(.pw-status-btn),
 a.btn,
 .btn,
 .mcj-btn,
@@ -427,7 +429,7 @@ a.btn,
   transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease, background .18s ease !important;
 }
 
-button:not(.modal-close):not(.close):not(.ad-dot):not(.mcj-hero-arrow):hover,
+button:not(.modal-close):not(.close):not(.ad-dot):not(.mcj-hero-arrow):not(.mcj-po-chip):not(.mcj-po-close):not(.mcj-po-cancel-link):not(.mcj-po-submit):not(.mcj-po-pay-card):not(.cs-conversation):not(.support-session):not(.pw-btn):not(.pw-status-btn):hover,
 a.btn:hover,
 .btn:hover,
 .mcj-btn:hover,
@@ -639,8 +641,8 @@ body {
 
 /* header-layout-v1: unified public header spacing */
 :where(.topbar, .site-header) {
-  min-height: 68px !important;
-  height: 68px !important;
+  min-height: 72px !important;
+  height: 72px !important;
   display: flex !important;
   align-items: center !important;
   border-bottom: 1px solid rgba(255, 158, 207, .18) !important;
@@ -655,16 +657,17 @@ body {
 }
 
 :where(.topbar-inner, .header-inner) {
-  min-height: 68px !important;
-  height: 68px !important;
-  width: min(1600px, calc(100% - 80px)) !important;
-  max-width: 1600px !important;
+  min-height: 72px !important;
+  height: 72px !important;
+  width: min(1280px, calc(100% - 48px)) !important;
+  max-width: 1280px !important;
   margin: 0 auto !important;
   padding: 0 !important;
   display: flex !important;
   align-items: center !important;
-  justify-content: flex-start !important;
-  gap: 0 !important;
+  justify-content: space-between !important;
+  gap: 16px !important;
+  flex-wrap: nowrap !important;
 }
 
 :where(.topbar > .brand, .topbar-inner > .brand, .header-inner > .brand) {
@@ -765,27 +768,27 @@ body {
 }
 
 @media (max-width: 860px) {
-  :where(.topbar, .site-header) {
+  :where(.topbar:not(.mcj-boss-header), .site-header:not(.mcj-boss-header)) {
     height: auto !important;
-    min-height: 68px !important;
+    min-height: 72px !important;
   }
 
-  :where(.topbar) {
+  :where(.topbar:not(.mcj-boss-header)) {
     padding: 10px 18px !important;
     flex-wrap: wrap !important;
     row-gap: 10px !important;
   }
 
-  :where(.topbar-inner, .header-inner) {
+  body:not(.mcj-boss-shell) :where(.topbar-inner, .header-inner) {
     width: calc(100% - 32px) !important;
     height: auto !important;
-    min-height: 68px !important;
+    min-height: 72px !important;
     padding: 10px 0 !important;
     flex-wrap: wrap !important;
     row-gap: 10px !important;
   }
 
-  :where(.topbar > .brand, .topbar-inner > .brand, .header-inner > .brand) {
+  body:not(.mcj-boss-shell) :where(.topbar > .brand, .topbar-inner > .brand, .header-inner > .brand) {
     min-height: 44px !important;
     margin-right: 24px !important;
   }

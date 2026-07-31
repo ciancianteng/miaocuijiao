@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
@@ -17,9 +17,10 @@
     @media(max-width:760px){.custom-form{grid-template-columns:1fr}.custom-actions{flex-direction:column}.custom-actions .btn{width:100%;justify-content:center}}
   </style>
   <link rel="stylesheet" href="src/design-system.css">
+  <link rel="stylesheet" href="src/boss-header.css">
 </head>
 <body>
-  <header class="topbar"><a class="brand" href="index.html"><img src="assets/meow-cuijiao-brand.jpg" alt="MEOW CUI JIAO"><span>MEOW CUI JIAO</span></a><nav class="navlinks"><a href="index.html">首页</a><a href="companion-center.html">陪玩大厅</a><a href="recharge.html">充值中心</a><a href="orders.html">我的订单</a><a href="support.html">在线客服</a><a href="mine.html">我的账号</a><button type="button" data-boss-logout style="border:0;background:transparent;color:#cdb8c4;cursor:pointer;font:inherit;font-size:14px;padding:0">退出登录</button></nav></header>
+  <header class="topbar"><a class="brand" href="index.html"><span>MEOW CUI JIAO</span></a><nav class="navlinks"><a href="companion-center.html">陪玩大厅</a></nav></header>
   <main class="custom-shell">
     <section class="section-title"><div><h1>自定义订单</h1><p>填写需求后进入客服报价与匹配流程。</p></div></section>
     <section class="neon-card" style="padding:22px">
@@ -28,11 +29,11 @@
         <label>游戏或服务<input name="game" list="customGameOptions" required placeholder="游戏 / 陪聊 / 护航"><datalist id="customGameOptions"></datalist></label>
         <label>游戏ID<input name="game_id" required placeholder="请输入您的游戏ID（方便陪玩添加好友或组队）"></label>
         <label>陪玩等级<select name="companion_level" id="customLevelSelect" required>
-          <option value="1" selected>Lv.1 萌喵（RM20–30）</option>
-          <option value="2">Lv.2 灵喵（RM30–40）</option>
-          <option value="3">Lv.3 猎喵（RM40–45）</option>
-          <option value="4">Lv.4 喵神（RM60–75）</option>
-          <option value="5">Lv.5 喵皇（RM75–100+）</option>
+          <option value="1" selected>Lv.1 萌喵（20–30 猫粮）</option>
+          <option value="2">Lv.2 灵喵（30–40 猫粮）</option>
+          <option value="3">Lv.3 猎喵（40–45 猫粮）</option>
+          <option value="4">Lv.4 喵神（60–75 猫粮）</option>
+          <option value="5">Lv.5 喵皇（75–100+ 猫粮）</option>
         </select></label>
         <label>预约时间<input name="scheduled_at" type="datetime-local" required></label>
         <label>预计时长<select name="duration" required>
@@ -78,6 +79,14 @@
         data.required_level=requiredLevel;
         data.acceptable_levels=[];for(var level=requiredLevel;level<=5;level++){data.acceptable_levels.push(level);}
         var levelPrice={1:20,2:30,3:40,4:60,5:75};
+        try{
+          if(window.MCJCompanionLevels&&typeof window.MCJCompanionLevels.read==='function'){
+            window.MCJCompanionLevels.read().forEach(function(item){
+              var lv=Number(item.level||0);
+              if(lv) levelPrice[lv]=Number(item.min!=null?item.min:item.minPrice)||levelPrice[lv];
+            });
+          }
+        }catch(levelErr){}
         var durationText=String(data.duration||'1小时');
         var parsedHours=durationText==='全天'?10:(Number(durationText.replace(/[^\d.]/g,''))||1);
         data.hours=parsedHours;
@@ -85,12 +94,15 @@
         data.total_amount=data.unit_price*parsedHours;
         var u=user();
         try{
-          var response=await fetch('/api/orders',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+authToken()},body:JSON.stringify({action:'create',order:Object.assign(data,{companion_id:companionId(),order_type:'custom',description:data.requirements||data.title||'',hours:data.hours,unit_price:data.unit_price,total_amount:data.total_amount,boss:{id:u.id||'',uid:u.uid||u.id||'',name:u.name||u.nickname||'老板',bossId:u.bossId||''}})})});
+          var response=await fetch('/api/orders',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+authToken()},body:JSON.stringify({action:'create',order:Object.assign(data,{companion_id:companionId(),order_type:'custom',description:[data.requirements||data.title||'',data.game_id?('游戏ID：'+data.game_id):'',data.scheduled_at?('预约时间：'+data.scheduled_at):''].filter(Boolean).join('\n'),hours:data.hours,unit_price:data.unit_price,total_amount:data.total_amount,game_id:data.game_id,gameId:data.game_id,boss:{id:u.id||'',uid:u.uid||u.id||'',name:u.name||u.nickname||'老板',bossId:u.bossId||''}})})});
           var body=await response.json().catch(function(){return {}});
           if(!response.ok||!body.ok)throw new Error(body.message||'订单提交失败');
+          var oid=(body.order&&body.order.id)||body.orderId||body.id||'';
           state.hidden=false;
-          state.innerHTML=(body.message||'订单已提交，请联系客服确认付款。')+' <a href="orders.html">查看订单</a> · <a href="support.html">联系在线客服</a>';
+          state.innerHTML='提交成功！订单已创建。'+(oid?(' 订单号：'+(body.order&&(body.order.orderNo||body.order.order_no)||oid)):'')+' <a href="orders.html">查看我的订单</a> · <a href="support.html">联系在线客服</a>';
           form.reset();
+          if(oid){setTimeout(function(){location.href='payment-confirm.html?order='+encodeURIComponent(oid);},600);return;}
+          alert(body.message||'订单已提交，请联系客服确认付款。');
         }catch(error){
           state.hidden=false;
           state.textContent=error.message||'订单提交失败，请稍后重试。';
@@ -101,14 +113,30 @@
       });
     })();
   </script>
+  <script src="src/companion-levels.js"></script>
   <script src="src/platform-taxonomy.js"></script>
   <script>
     (function(){
       function fillTaxonomyOptions(){
         if(!window.MCJTaxonomy)return;
-        var games=window.MCJTaxonomy.items("games");
+        var games=(window.MCJTaxonomy.items("service_types")||[]).filter(function(item){
+          var positions=item.displayPositions||[];
+          return item.allowOrder!==false && positions.indexOf('boss_order')>=0;
+        });
+        if(!games.length)games=(window.MCJTaxonomy.items("services")||[]).filter(function(item){
+          var positions=item.displayPositions||[];
+          return item.allowOrder!==false && positions.indexOf('boss_order')>=0;
+        });
         var datalist=document.getElementById("customGameOptions");
-        if(datalist&&games.length){datalist.innerHTML=games.map(function(item){return '<option value="'+String(window.MCJTaxonomy.label(item)||'').replace(/"/g,'&quot;')+'"></option>';}).join('');}
+        if(datalist){
+          datalist.innerHTML=games.map(function(item){
+            var name=String(window.MCJTaxonomy.label(item)||'');
+            var price=item.defaultPrice||item.default_price||'';
+            var icon=item.icon?String(item.icon)+' ':'';
+            var label=icon+name+(price?' '+price:'');
+            return '<option value="'+name.replace(/"/g,'&quot;')+'">'+label.replace(/</g,'&lt;')+'</option>';
+          }).join('');
+        }
         var levels=window.MCJTaxonomy.items("companion_levels");
         var select=document.getElementById("customLevelSelect");
         if(select&&levels.length){
@@ -116,13 +144,20 @@
           select.innerHTML=levels.map(function(item,index){
             var id=window.MCJTaxonomy.levelId(item)||String(index+1);
             var num=String(id).match(/\d+/);var value=num?num[0]:id;
-            var price=(item.minPrice||item.maxPrice)?'（RM'+(item.minPrice||0)+'–'+(item.maxPlus?'100+':(item.maxPrice||''))+'）':'';
+            var price=(item.minPrice||item.maxPrice)?'（'+(item.minPrice||0)+'–'+(item.maxPlus?'100+':(item.maxPrice||''))+' 猫粮）':'';
             return '<option value="'+value+'">'+[item.code,item.name].filter(Boolean).join(' ') + price + '</option>';
           }).join('');
           select.value=Array.prototype.some.call(select.options,function(opt){return opt.value===current})?current:select.options[0].value;
         }
       }
       if(window.MCJTaxonomy&&window.MCJTaxonomy.load){window.MCJTaxonomy.load().then(fillTaxonomyOptions).catch(fillTaxonomyOptions);} else {fillTaxonomyOptions();}
+      try{
+        var serviceName=new URLSearchParams(location.search).get('service')||'';
+        if(serviceName){
+          var gameInput=document.querySelector('#customOrderForm [name="game"]');
+          if(gameInput&&!gameInput.value)gameInput.value=serviceName;
+        }
+      }catch(e){}
     })();
   </script>
 <script id="mcjBossLogoutHandler">

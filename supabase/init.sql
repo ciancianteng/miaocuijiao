@@ -31,6 +31,7 @@ create table if not exists public.profiles (
   email text not null default '',
   phone text not null default '',
   avatar_url text not null default '',
+  boss_uid text,
   status public.mcj_account_status not null default 'pending',
   created_at timestamptz not null default now()
 );
@@ -126,6 +127,8 @@ create table if not exists public.announcements (
   title text not null default '',
   content text not null default '',
   is_active boolean not null default true,
+  is_pinned boolean not null default false,
+  published_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -147,6 +150,8 @@ create table if not exists public.customer_service_reports (
 
 create index if not exists idx_profiles_role_status on public.profiles(role, status);
 create index if not exists idx_companion_profiles_user_id on public.companion_profiles(user_id);
+-- Public boss UID (B100001+): also run supabase/boss-uid.sql for sequence + trigger + backfill.
+create index if not exists idx_profiles_boss_uid on public.profiles(boss_uid);
 create index if not exists idx_orders_boss_id on public.orders(boss_id);
 create index if not exists idx_orders_companion_id on public.orders(companion_id);
 create index if not exists idx_orders_customer_service_id on public.orders(customer_service_id);
@@ -384,6 +389,42 @@ on conflict (code) do update set
   sort_order = excluded.sort_order,
   updated_at = now();
 
+-- Platform services catalog (服务管理). No image/cover fields.
+-- Prefer running supabase/services.sql for full columns + categories.
+create table if not exists public.services (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  category text not null default '其他',
+  icon text not null default '🎮',
+  default_price text not null default '',
+  enabled boolean not null default true,
+  show_home boolean not null default true,
+  allow_apply boolean not null default true,
+  allow_order boolean not null default true,
+  display_positions jsonb not null default '["home","gameplay","boss_order","companion_apply","cs_order","companion_profile"]'::jsonb,
+  sort integer not null default 100,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.services add column if not exists icon text not null default '🎮';
+alter table public.services add column if not exists default_price text not null default '';
+alter table public.services add column if not exists display_positions jsonb not null default '["home","gameplay","boss_order","companion_apply","cs_order","companion_profile"]'::jsonb;
+
+create index if not exists idx_services_enabled_sort on public.services(enabled, sort);
+create index if not exists idx_services_category on public.services(category);
+create index if not exists idx_services_show_home on public.services(show_home, enabled, sort);
+
+alter table public.services enable row level security;
+
+do $$ begin
+  create policy "services_public_read_enabled" on public.services for select using (enabled = true);
+exception when duplicate_object then null; end $$;
+
+do $$ begin
+  create policy "services_admin_all" on public.services for all using (public.mcj_current_role() = 'admin') with check (public.mcj_current_role() = 'admin');
+exception when duplicate_object then null; end $$;
+
 -- Fixed service packages for 更多玩法.
 create table if not exists public.service_packages (
   id uuid primary key default gen_random_uuid(),
@@ -413,3 +454,25 @@ exception when duplicate_object then null; end $$;
 do $$ begin
   create policy "service_packages_admin_all" on public.service_packages for all using (public.mcj_current_role() = 'admin') with check (public.mcj_current_role() = 'admin');
 exception when duplicate_object then null; end $$;
+
+-- 客服接待历史（亦可单独执行 service-receptions.sql）
+create table if not exists public.service_receptions (
+  id uuid primary key default gen_random_uuid(),
+  conversation_id uuid not null references public.conversations(id) on delete cascade,
+  boss_id uuid references public.profiles(id),
+  customer_service_id uuid not null references public.profiles(id),
+  order_id uuid references public.orders(id) on delete set null,
+  status text not null default 'active',
+  started_at timestamptz not null default now(),
+  ended_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists service_receptions_service_started_idx
+  on public.service_receptions (customer_service_id, started_at desc);
+
+create index if not exists service_receptions_conversation_active_idx
+  on public.service_receptions (conversation_id, status);
+
+create index if not exists service_receptions_boss_idx
+  on public.service_receptions (boss_id, started_at desc);

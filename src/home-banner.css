@@ -1,0 +1,280 @@
+/* Homepage Banner + Quick Entry size lock (loaded after index inline / design-system) */
+
+/* ——— Banner: compact image strip ——— */
+.container > .mcj-home-hero,
+.mcj-home-hero[data-mcj-home-hero] {
+  position: relative !important;
+  display: block !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  height: clamp(240px, 18vw, 280px) !important;
+  max-height: 300px !important;
+  min-height: 0 !important;
+  margin: 12px 0 18px !important;
+  border-radius: 20px !important;
+  overflow: hidden !important;
+  isolation: isolate !important;
+  border: 0 !important;
+  background: #111 !important;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35), 0 0 18px rgba(255, 158, 207, 0.08) !important;
+  backdrop-filter: none !important;
+  transform: none !important;
+  opacity: 1 !important;
+  animation: none !important;
+  aspect-ratio: 16 / 5;
+}
+
+.container > .mcj-home-hero::before,
+.container > .mcj-home-hero::after,
+.mcj-home-hero[data-mcj-home-hero]::before,
+.mcj-home-hero[data-mcj-home-hero]::after {
+  content: none !important;
+  display: none !important;
+}
+
+.mcj-home-hero .mcj-hero-image-link {
+  position: absolute !important;
+  inset: 0 !important;
+  display: block !important;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.mcj-home-hero .mcj-hero-image {
+  display: block !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+  object-position: var(--hero-position, 50% 50%) !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: #111 !important;
+  transform: none !important;
+  scale: 1 !important;
+  filter: none !important;
+}
+
+/* Beat legacy .banner img { object-fit:contain } rules if class overlap */
+.container > .mcj-home-hero .mcj-hero-image,
+.mcj-home-hero[data-mcj-home-hero] .mcj-hero-image {
+  object-fit: cover !important;
+}
+
+.mcj-home-hero:hover .mcj-hero-image {
+  scale: 1 !important;
+  transform: none !important;
+}
+
+/* Optional overlay (only when backend provides title) */
+.mcj-home-hero .mcj-hero-overlay {
+  position: absolute;
+  left: 24px;
+  right: 24px;
+  bottom: 24px;
+  z-index: 3;
+  display: grid;
+  gap: 8px;
+  max-width: 520px;
+  pointer-events: none;
+}
+.mcj-home-hero .mcj-hero-overlay h2 {
+  margin: 0;
+  color: #fff;
+  font-size: clamp(22px, 3vw, 34px);
+  font-weight: 900;
+  text-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+.mcj-home-hero .mcj-hero-overlay p {
+  margin: 0;
+  color: rgba(255, 232, 243, 0.9);
+  font-size: 14px;
+  line-height: 1.5;
+  text-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+}
+.mcj-home-hero .mcj-hero-overlay-btn {
+  pointer-events: auto;
+  width: max-content;
+  min-height: 40px;
+  margin-top: 4px;
+  padding: 0 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 212, 230, 0.4);
+  background: rgba(255, 158, 207, 0.22);
+  color: #fff;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
+
+.mcj-home-hero .mcj-hero-dots {
+  bottom: 14px !important;
+}
+.mcj-home-hero .mcj-hero-arrow {
+  background: rgba(12, 10, 14, 0.46) !important;
+  border-color: rgba(255, 212, 230, 0.18) !important;
+  box-shadow: none !important;
+}
+
+/* Empty / fallback: still image frame, never giant welcome text */
+.mcj-home-hero.is-empty {
+  display: block !important;
+  place-items: unset !important;
+}
+.mcj-home-hero.is-empty .mcj-hero-empty {
+  display: none !important;
+}
+
+@media (max-width: 1024px) {
+  .container > .mcj-home-hero,
+  .mcj-home-hero[data-mcj-home-hero] {
+    height: clamp(220px, 22vw, 240px) !important;
+    max-height: 240px !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .container > .mcj-home-hero,
+  .mcj-home-hero[data-mcj-home-hero] {
+    width: 100% !important;
+    height: clamp(170px, 46vw, 210px) !important;
+    max-height: 210px !important;
+    border-radius: 18px !important;
+    aspect-ratio: 16 / 8;
+  }
+}
+
+/* ——— Quick entry: compact equal cards ——— */
+.quick-entry-grid,
+.quick-entry-grid.launch-entry-grid {
+  display: grid !important;
+  grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+  gap: 12px !important;
+  align-items: stretch !important;
+}
+
+.quick-entry-grid .quick-entry-card,
+.quick-entry-grid.launch-entry-grid .quick-entry-card {
+  box-sizing: border-box !important;
+  display: flex !important;
+  align-items: center !important;
+  width: auto !important;
+  height: 100px !important;
+  min-height: 100px !important;
+  max-height: 108px !important;
+  padding: 14px 16px !important;
+  gap: 0 !important;
+  border-radius: 16px !important;
+  border: 1px solid rgba(243, 168, 203, 0.28) !important;
+  background:
+    linear-gradient(105deg, rgba(243, 168, 203, 0.1), rgba(255, 255, 255, 0.02) 40%, transparent),
+    rgba(12, 10, 16, 0.9) !important;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.04) !important;
+  backdrop-filter: none !important;
+  overflow: hidden !important;
+  text-align: left !important;
+  transform: none !important;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease !important;
+}
+
+.quick-entry-grid .quick-entry-card:hover,
+.quick-entry-grid.launch-entry-grid .quick-entry-card:hover {
+  transform: none !important;
+  border-color: rgba(255, 214, 232, 0.5) !important;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.38), 0 0 14px rgba(243, 168, 203, 0.12) !important;
+  background:
+    linear-gradient(105deg, rgba(243, 168, 203, 0.14), rgba(255, 255, 255, 0.03) 40%, transparent),
+    rgba(14, 11, 18, 0.94) !important;
+}
+
+.quick-entry-grid .quick-entry-card:before,
+.quick-entry-grid .quick-entry-card:after,
+.quick-entry-grid.launch-entry-grid .quick-entry-card:before,
+.quick-entry-grid.launch-entry-grid .quick-entry-card:after {
+  opacity: 0.35 !important;
+}
+
+.quick-entry-grid .quick-entry-card > div,
+.quick-entry-grid.launch-entry-grid .quick-entry-card > div {
+  width: 100% !important;
+  min-width: 0 !important;
+}
+
+.quick-entry-grid .quick-entry-card strong,
+.quick-entry-grid.launch-entry-grid .quick-entry-card strong {
+  display: block !important;
+  font-size: 17px !important;
+  font-weight: 800 !important;
+  line-height: 1.2 !important;
+  letter-spacing: 0 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+.quick-entry-grid .quick-entry-card span,
+.quick-entry-grid.launch-entry-grid .quick-entry-card span {
+  display: block !important;
+  margin-top: 6px !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  line-height: 1.35 !important;
+  opacity: 0.78 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+.quick-entry-grid .quick-entry-card i,
+.quick-entry-grid .quick-entry-card i img,
+.quick-entry-grid.launch-entry-grid .quick-entry-card i,
+.quick-entry-grid.launch-entry-grid .quick-entry-card i img {
+  width: 24px !important;
+  height: 24px !important;
+  min-width: 24px !important;
+  min-height: 24px !important;
+  font-size: 0 !important;
+}
+
+@media (max-width: 1279px) {
+  .quick-entry-grid,
+  .quick-entry-grid.launch-entry-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 767px) {
+  .quick-entry-grid,
+  .quick-entry-grid.launch-entry-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 10px !important;
+  }
+
+  .quick-entry-grid .quick-entry-card,
+  .quick-entry-grid.launch-entry-grid .quick-entry-card {
+    height: 92px !important;
+    min-height: 92px !important;
+    max-height: 100px !important;
+    padding: 14px !important;
+    border-radius: 16px !important;
+  }
+
+  .quick-entry-grid .quick-entry-card strong,
+  .quick-entry-grid.launch-entry-grid .quick-entry-card strong {
+    font-size: 16px !important;
+  }
+
+  .quick-entry-grid .quick-entry-card span,
+  .quick-entry-grid.launch-entry-grid .quick-entry-card span {
+    font-size: 11px !important;
+    margin-top: 4px !important;
+  }
+}
+
+@media (max-width: 360px) {
+  .quick-entry-grid,
+  .quick-entry-grid.launch-entry-grid {
+    grid-template-columns: 1fr !important;
+  }
+}

@@ -71,6 +71,17 @@
     window.setTimeout(function () { normalizeCards(document); normalizeEmojiButtons(document); }, 120);
     window.setTimeout(function () { normalizeCards(document); normalizeEmojiButtons(document); }, 500);
 
+    (function loadBossHeader() {
+      if (window.__MCJBossHeaderScript) return;
+      var p = String(location.pathname || "").replace(/\\/g, "/");
+      if (/\/admin(\/|\.html|$)/i.test(p) || /\/companion\//i.test(p) || /\/customer-service(\/|\.html|$)/i.test(p)) return;
+      window.__MCJBossHeaderScript = true;
+      var s = document.createElement("script");
+      s.src = "/src/boss-header.js";
+      s.defer = true;
+      document.head.appendChild(s);
+    })();
+
     var root = document.body;
     if (root && "MutationObserver" in window) {
       new MutationObserver(function (mutations) {

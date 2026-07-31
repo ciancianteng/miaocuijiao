@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>后台中心登录 | 妙脆角</title>
+  <link rel="stylesheet" href="/src/auth-shell.css">
+  <script src="/src/role-gates.js"></script>
+  <script src="/src/auth-shell.js"></script>
+</head>
+<body>
+  <main class="mcj-auth-page" id="adminLoginApp"></main>
+  <script>
+    (function () {
+      var Auth = window.MCJAuthShell;
+      var Gate = window.MCJRoleGate;
+      var root = document.getElementById("adminLoginApp");
+      if (!Auth || !Gate || !root) return;
+      if (Gate.isLogged("admin")) {
+        location.replace("/admin.html#dashboard");
+        return;
+      }
+      var loginNotice = sessionStorage.getItem("mcjAdminLoginNotice") || "";
+      if (loginNotice) sessionStorage.removeItem("mcjAdminLoginNotice");
+      root.innerHTML =
+        '<section class="mcj-auth-card">' +
+        Auth.brandHeader("后台中心", "仅限管理员账号登录") +
+        '<form class="mcj-auth-form" data-admin-login autocomplete="on">' +
+        '<label class="mcj-auth-field">管理员邮箱<input name="account" type="email" autocomplete="username" required placeholder="请输入管理员邮箱"></label>' +
+        Auth.passwordField("password", "密码") +
+        '<label class="mcj-auth-check"><input name="remember" type="checkbox" checked> 记住登录</label>' +
+        '<button class="mcj-auth-btn primary" type="submit">登录</button>' +
+        '<p class="mcj-auth-error" data-auth-error>' + (loginNotice ? loginNotice.replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }) : "") + '</p>' +
+        '<p class="mcj-auth-note">后台中心不提供注册入口，仅管理员可登录。</p>' +
+        "</form></section>";
+      Auth.bindPasswordToggles(root);
+      var submitting = false;
+      root.addEventListener("submit", function (e) {
+        var form = e.target.closest("[data-admin-login]");
+        if (!form) return;
+        e.preventDefault();
+        if (submitting) return;
+        var fd = new FormData(form);
+        var btn = form.querySelector('[type="submit"]');
+        var account = String(fd.get("account") || "").trim();
+        var password = String(fd.get("password") || "");
+        var remember = true; // Always persist: refresh + new tab keep login
+        if (!account || !password) {
+          Auth.setFormError(form, "请输入管理员邮箱和密码。");
+          return;
+        }
+        submitting = true;
+        Auth.setFormError(form, "");
+        Auth.setLoading(btn, true);
+        Gate.loginPortal("admin", account, password, remember)
+          .then(function (result) {
+            var redirect = sessionStorage.getItem("mcjAfterLoginRedirect") || result.redirect || "/admin.html#dashboard";
+            sessionStorage.removeItem("mcjAfterLoginRedirect");
+            if (redirect === "/admin/" || redirect === "/admin") redirect = "/admin.html#dashboard";
+            location.replace(redirect);
+          })
+          .catch(function (err) {
+            submitting = false;
+            Auth.setLoading(btn, false, "登录");
+            var raw = String((err && err.message) || "").trim();
+            var friendly =
+              !raw || /bad request|invalid|credentials|unauthorized|^\d{3}\b/i.test(raw)
+                ? "账号或密码错误，请重试。"
+                : raw;
+            Auth.setFormError(form, friendly);
+          });
+      });
+    })();
+  </script>
+</body>
+</html>

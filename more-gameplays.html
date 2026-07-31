@@ -1,31 +1,52 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>更多玩法 - MEOW CUI JIAO</title>
+  <title>更多玩法商城 - MEOW CUI JIAO</title>
   <link rel="stylesheet" href="src/style.css">
-  <style>
-    body{background:#08070a;color:#fff}.gameplay-shell{width:min(1120px,calc(100% - 32px));margin:0 auto;padding:24px 0 80px}.boss-nav{display:flex;gap:18px;flex:1;flex-wrap:wrap;align-items:center}.boss-nav a,.boss-nav button{border:0;background:transparent;color:#cdb8c4;cursor:pointer;font:inherit;font-size:14px;padding:0;text-decoration:none}.boss-nav a.active{color:#ffd6e7;font-weight:900}.page-head{display:flex;align-items:end;justify-content:space-between;gap:16px;margin:20px 0}.page-head h1{margin:0;font-size:30px}.page-head p{margin:6px 0 0;color:#9ca3af}.gameplay-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.gameplay-card{border:1px solid rgba(255,255,255,.1);border-radius:16px;background:rgba(255,255,255,.045);padding:16px;display:grid;gap:10px}.gameplay-card h2{margin:0;font-size:20px}.gameplay-card p{margin:0;color:#cdb8c4;line-height:1.6}.gameplay-meta{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.gameplay-meta div{border:1px solid rgba(255,255,255,.08);border-radius:12px;background:rgba(0,0,0,.18);padding:9px}.gameplay-meta span{display:block;color:#9ca3af;font-size:12px}.gameplay-meta strong{display:block;margin-top:4px}.gameplay-price{color:#ffd6e7;font-size:22px;font-weight:900}.btn{border:1px solid rgba(255,143,197,.42);border-radius:12px;background:rgba(255,143,197,.14);color:#fff;text-decoration:none;min-height:42px;display:inline-flex;align-items:center;justify-content:center;font-weight:900}.empty{padding:28px;text-align:center;color:#9ca3af;border:1px dashed rgba(255,255,255,.14);border-radius:14px;background:rgba(255,255,255,.035)}@media(max-width:900px){.gameplay-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.topbar{align-items:flex-start;flex-direction:column;padding:18px 20px}}@media(max-width:560px){.gameplay-shell{width:calc(100% - 24px)}.gameplay-grid,.gameplay-meta{grid-template-columns:1fr}.page-head{display:block}.boss-nav{gap:12px}}
-  </style>
+  <link rel="stylesheet" href="src/gameplay-mall.css">
+  <link rel="stylesheet" href="src/boss-header.css">
+  <script src="src/role-gates.js"></script>
+  <script src="src/boss-header.js" defer></script>
 </head>
-<body>
-  <header class="topbar"><a class="brand" href="index.html"><img src="assets/meow-cuijiao-brand.jpg" alt="MEOW CUI JIAO"><span>MEOW CUI JIAO</span></a><nav class="boss-nav"><a href="index.html">首页</a><a href="companion-center.html">陪玩大厅</a><a class="active" href="more-gameplays.html">更多玩法</a><a href="recharge.html">充值中心</a><a href="orders.html">我的订单</a><a href="support.html">在线客服</a><a href="mine.html">我的账号</a></nav></header>
-  <main class="gameplay-shell">
-    <section class="page-head"><div><h1>更多玩法</h1><p>固定价格玩法由后台统一上架，价格和时长不可由老板修改。</p></div></section>
-    <section class="gameplay-grid" id="gameplayList"><div class="empty">正在读取更多玩法...</div></section>
+<body class="gp-mall-body">
+  <header class="topbar">
+    <a class="brand" href="index.html"><img src="assets/meow-cuijiao-brand.jpg" alt="MEOW CUI JIAO"><span>MEOW CUI JIAO</span></a>
+    <nav class="boss-nav">
+      <a href="index.html">首页</a>
+      <a href="companion-center.html">陪玩大厅</a>
+      <a class="active" href="more-gameplays.html">更多玩法</a>
+      <a href="recharge.html">充值中心</a>
+      <a href="orders.html">我的订单</a>
+      <a href="support.html">在线客服</a>
+      <a href="mine.html">我的账号</a>
+    </nav>
+  </header>
+
+  <main class="gp-mall-shell">
+    <section class="gp-mall-head">
+      <div>
+        <h1>更多玩法</h1>
+        <p>护航、跑刀、上分、陪练与语音娱乐，一键咨询客服派单。</p>
+      </div>
+      <div class="gp-mall-tools">
+        <input id="gpSearch" type="search" placeholder="搜索玩法商品">
+        <select id="gpSort">
+          <option value="recommend">综合</option>
+          <option value="sold">销量</option>
+          <option value="priceAsc">价格从低到高</option>
+          <option value="priceDesc">价格从高到低</option>
+          <option value="newest">最新</option>
+        </select>
+      </div>
+    </section>
+
+    <section class="gp-mall-cats" id="gpCats"></section>
+    <section class="gp-mall-grid" id="gpGrid"><div class="gp-empty">正在读取商城商品...</div></section>
   </main>
-  <script>
-    (function(){
-      var list=document.getElementById('gameplayList');
-      function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
-      function money(v){var n=Number(v||0);return 'RM'+(Number.isFinite(n)?n:0).toFixed(2)}
-      function duration(v){var n=Number(v||0);if(!n)return '-';return n%60===0?(n/60)+'小时':n+'分钟'}
-      function levelText(x){return 'Lv'+(x.levelMin||1)+'-Lv'+(x.levelMax||5)}
-      function card(x){return '<article class="gameplay-card"><h2>'+esc(x.name||'未命名玩法')+'</h2><p>'+esc(x.description||'')+'</p><div class="gameplay-price">'+money(x.fixedPrice)+'</div><div class="gameplay-meta"><div><span>所属游戏</span><strong>'+esc(x.game||'-')+'</strong></div><div><span>玩法分类</span><strong>'+esc(x.category||'-')+'</strong></div><div><span>服务时长</span><strong>'+esc(duration(x.durationMinutes))+'</strong></div><div><span>适用等级</span><strong>'+esc(levelText(x))+'</strong></div></div><a class="btn" href="fixed-order.html?package='+encodeURIComponent(x.id)+'">立即下单</a></article>'}
-      function render(rows){list.innerHTML=rows.length?rows.map(card).join(''):'<div class="empty">暂无更多玩法。</div>'}
-      fetch('/api/service-packages',{headers:{Accept:'application/json'}}).then(function(res){return res.json().then(function(body){if(!res.ok||body.ok===false)throw new Error(body.message||'更多玩法读取失败');return body})}).then(function(body){render(body.packages||[])}).catch(function(err){console.warn(err.message);render([])});
-    })();
-  </script>
+
+  <script src="src/currency.js"></script>
+  <script src="src/gameplay-mall.js"></script>
 </body>
 </html>

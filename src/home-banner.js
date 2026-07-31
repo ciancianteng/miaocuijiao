@@ -1,4 +1,4 @@
-﻿(function () {
+(function () {
   "use strict";
 
   if (window.MCJHomeBanner) return;
@@ -7,103 +7,27 @@
   var touchState = new WeakMap();
   var remoteStore = { contents: { banners: [], notices: [] } };
   var remoteLoaded = false;
+  var FALLBACK_BANNER = "/default-home-banner.png";
 
-
-  var LOCAL_BANNER_DB = "mcj_local_banner_assets_v1";
-  var LOCAL_BANNER_STORE = "images";
-
-  function isLocalBannerImage(url) {
-    return String(url || "").indexOf("mcj-local-banner://") === 0;
+  function resolveFallbackBanner() {
+    return FALLBACK_BANNER;
   }
 
-  function openLocalBannerDb() {
-    return new Promise(function (resolve, reject) {
-      if (!window.indexedDB) {
-        reject(new Error("当前浏览器不支持 IndexedDB"));
-        return;
-      }
-      var req = indexedDB.open(LOCAL_BANNER_DB, 1);
-      req.onupgradeneeded = function () {
-        var db = req.result;
-        if (!db.objectStoreNames.contains(LOCAL_BANNER_STORE)) db.createObjectStore(LOCAL_BANNER_STORE, { keyPath: "id" });
-      };
-      req.onsuccess = function () { resolve(req.result); };
-      req.onerror = function () { reject(req.error || new Error("IndexedDB 打开失败")); };
-    });
-  }
-
-  function readLocalBannerImage(url) {
-    var id = String(url || "").replace("mcj-local-banner://", "");
-    if (!id) return Promise.resolve("");
-    return openLocalBannerDb().then(function (db) {
-      return new Promise(function (resolve, reject) {
-        var tx = db.transaction(LOCAL_BANNER_STORE, "readonly");
-        var req = tx.objectStore(LOCAL_BANNER_STORE).get(id);
-        req.onsuccess = function () { db.close(); resolve((req.result && req.result.dataUrl) || ""); };
-        req.onerror = function () { db.close(); reject(req.error || new Error("本地图片读取失败")); };
-      });
-    });
-  }
-
-  function localPlatformContentKey(type) {
-    return "mcj_platform_content_" + type;
-  }
-
-  function readLocalPlatformContent(type) {
-    try {
-      var list = JSON.parse(localStorage.getItem(localPlatformContentKey(type)) || "[]");
-      if (!Array.isArray(list)) return [];
-      return list.map(function (row) {
-        row = row || {};
-        var draft = row.draft && typeof row.draft === "object" ? row.draft : {};
-        var published = row.published && typeof row.published === "object" ? row.published : {};
-        var data = Object.assign({}, published, draft);
-        var status = String(row.status || data.status || "published").toLowerCase();
-        return Object.assign({}, data, {
-          id: row.id || data.id || "",
-          title: data.title || row.title || "",
-          sort: Number(row.sort != null ? row.sort : (data.sort || 100)),
-          enabled: row.enabled !== false && String(row.enabled).toLowerCase() !== "false" && status !== "disabled" && status !== "unpublished" && status.indexOf("停") < 0 && status.indexOf("下架") < 0,
-          published: true,
-          localOnly: true
-        });
-      });
-    } catch (error) {
-      console.error("[首页 Banner] 读取本地测试 Banner 失败", error);
-      return [];
-    }
-  }
-
-  function resolveLocalBannerImages(list) {
-    return Promise.all((list || []).map(function (item) {
-      var copy = Object.assign({}, item || {});
-      var jobs = ["desktopImage", "mobileImage", "image"].map(function (key) {
-        if (!isLocalBannerImage(copy[key])) return Promise.resolve();
-        return readLocalBannerImage(copy[key]).then(function (src) { if (src) copy[key] = src; });
-      });
-      return Promise.all(jobs).then(function () { return copy; });
-    }));
+  function contentApiUrl() {
+    return "/api/gateway?path=" + encodeURIComponent("platform/content") + "&types=banners&_=" + Date.now();
   }
 
   function applyLoadedContent(result, callback) {
     var byType = (result && result.byType) || {};
-    var banners = byType.banners || [];
-    if (!banners.length) banners = [];
-    resolveLocalBannerImages(banners).then(function (resolvedBanners) {
-      remoteStore = {
-        contents: {
-          banners: resolvedBanners,
-          notices: byType.announcements || []
-        }
-      };
-      remoteLoaded = true;
-      if (callback) callback();
-    }).catch(function (error) {
-      console.error("[首页 Banner] 本地测试图片解析失败", error);
-      remoteStore = { contents: { banners: banners, notices: byType.announcements || [] } };
-      remoteLoaded = true;
-      if (callback) callback();
-    });
+    var banners = Array.isArray(byType.banners) ? byType.banners : [];
+    remoteStore = {
+      contents: {
+        banners: banners,
+        notices: byType.announcements || [],
+      },
+    };
+    remoteLoaded = true;
+    if (callback) callback();
   }
 
   function readStore() {
@@ -111,18 +35,21 @@
   }
 
   function loadRemoteContent(callback) {
-    fetch("/api/platform/content?types=banners,announcements", { headers: { Accept: "application/json" } })
+    fetch(contentApiUrl(), {
+      headers: { Accept: "application/json" },
+      cache: "no-store",
+    })
       .then(function (response) {
         var type = response.headers.get("content-type") || "";
-        if (type.indexOf("application/json") < 0) return { ok: true, byType: {} };
+        if (type.indexOf("application/json") < 0) return { ok: true, byType: { banners: [] } };
         return response.json();
       })
       .then(function (result) {
         applyLoadedContent(result, callback);
       })
       .catch(function (error) {
-        console.error("[首页 Banner] 远程内容读取失败，不使用本地假数据", error);
-        applyLoadedContent({ byType: {} }, callback);
+        console.error("[首页 Banner] 远程内容读取失败", error);
+        applyLoadedContent({ byType: { banners: [] } }, callback);
       });
   }
 
@@ -142,9 +69,15 @@
   function activeBanners() {
     var db = readStore();
     var list = (((db.contents || {}).banners) || []).filter(function (item) {
-      return item && item.enabled !== false && item.published === true && inSchedule(item) && (item.image || item.desktopImage || item.mobileImage);
+      if (!item) return false;
+      if (item.enabled === false) return false;
+      if (item.published === false) return false;
+      if (!inSchedule(item)) return false;
+      return !!(item.image || item.desktopImage || item.mobileImage || item.image_url);
     });
-    list.sort(function (a, b) { return Number(a.sort || 99) - Number(b.sort || 99); });
+    list.sort(function (a, b) {
+      return Number(a.sort || 99) - Number(b.sort || 99);
+    });
     return list;
   }
 
@@ -152,42 +85,40 @@
     return activeBanners()[0] || null;
   }
 
-  function getAnnouncements() {
-    var db = readStore();
-    var list = (((db.contents || {}).notices) || []).filter(function (item) {
-      return item && item.enabled !== false && inSchedule(item);
-    });
-    list.sort(function (a, b) {
-      if (!!b.pinned !== !!a.pinned) return b.pinned ? 1 : -1;
-      return Number(a.sort || 99) - Number(b.sort || 99);
-    });
-    return list.map(function (item) { return item.text || item.content || item.title || ""; }).filter(Boolean);
-  }
-
   function esc(value) {
-    return String(value || "").replace(/[&<>"']/g, function (ch) {
-      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch];
-    }).replace(/`/g, "&#96;");
+    return String(value || "")
+      .replace(/[&<>"']/g, function (ch) {
+        return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch];
+      })
+      .replace(/`/g, "&#96;");
   }
 
   function normalized(config) {
     config = config || {};
+    var image =
+      config.desktopImage ||
+      config.image ||
+      config.image_url ||
+      "";
     return {
       id: config.id || "",
       name: config.name || config.title || "MEOW CUI JIAO Banner",
-      desktopImage: config.desktopImage || config.image || "",
-      mobileImage: config.mobileImage || "",
-      alt: config.alt || config.title || "MEOW CUI JIAO Banner",
-      fitMode: config.fitMode === "cover" ? "cover" : "contain",
+      title: String(config.title || "").trim(),
+      subtitle: String(config.subtitle || "").trim(),
+      buttonText: String(config.buttonText || config.button_text || "").trim(),
+      desktopImage: image,
+      mobileImage: config.mobileImage || config.mobile_image_url || image,
+      alt: config.alt || config.title || "首页 Banner",
+      fitMode: config.fitMode === "contain" ? "contain" : "cover",
       objectPosition: config.objectPosition || "50% 50%",
-      desktopHeight: clamp(config.desktopHeight, 280, 360, 320),
-      mobileHeight: clamp(config.mobileHeight, 150, 260, 190),
-      maxWidth: clamp(config.maxWidth, 960, 1200, 1200),
-      radius: clamp(config.radius, 18, 24, 20),
+      desktopHeight: clamp(config.desktopHeight, 220, 300, 260),
+      mobileHeight: clamp(config.mobileHeight, 170, 210, 190),
+      maxWidth: clamp(config.maxWidth, 960, 1440, 1440),
+      radius: clamp(config.radius, 18, 22, 20),
       marginTop: clamp(config.marginTop, 0, 32, 12),
       marginBottom: clamp(config.marginBottom, 8, 32, 18),
-      link: config.link || config.href || "",
-      linkTarget: config.linkTarget || "_self"
+      link: config.link || config.href || config.button_link || "",
+      linkTarget: config.linkTarget || "_self",
     };
   }
 
@@ -196,65 +127,135 @@
   }
 
   function applyVars(root, data, device) {
-    root.style.setProperty("--hero-h", data.desktopHeight + "px");
-    root.style.setProperty("--hero-mobile-h", data.mobileHeight + "px");
+    /* Sizing is owned by home-banner.css; only pass fit/position/radius hints. */
     root.style.setProperty("--hero-radius", data.radius + "px");
-    root.style.setProperty("--hero-fit", data.fitMode);
+    root.style.setProperty("--hero-fit", "cover");
     root.style.setProperty("--hero-position", data.objectPosition);
-    root.style.maxWidth = data.maxWidth + "px";
+    root.style.removeProperty("max-width");
+    root.style.removeProperty("height");
     root.style.marginTop = data.marginTop + "px";
     root.style.marginBottom = data.marginBottom + "px";
     root.dataset.bannerId = data.id || "";
     root.dataset.bannerDevice = device || "";
   }
 
-  function heroHtml(data, source, index, total) {
-    var tag = data.link ? "a" : "div";
-    var attrs = data.link ? ' href="' + esc(data.link) + '" target="' + esc(data.linkTarget) + '"' : "";
-    var dots = "";
-    for (var i = 0; i < total; i += 1) {
-      dots += '<button type="button" class="' + (i === index ? "active" : "") + '" data-hero-dot="' + i + '" aria-label="切换 Banner"></button>';
+  function overlayHtml(data) {
+    if (!data.title && !data.subtitle && !data.buttonText) return "";
+    var btn = "";
+    if (data.buttonText) {
+      var href = data.link || "#";
+      btn =
+        '<a class="mcj-hero-overlay-btn" href="' +
+        esc(href) +
+        '" target="' +
+        esc(data.linkTarget) +
+        '">' +
+        esc(data.buttonText) +
+        "</a>";
     }
-    return '<' + tag + ' class="mcj-hero-image-link"' + attrs + ' aria-label="' + esc(data.name) + '">' +
-      '<img class="mcj-hero-image" src="' + esc(source) + '" alt="' + esc(data.alt) + '">' +
-      '</' + tag + '>' +
-      (total > 1 ? '<button class="mcj-hero-arrow prev" type="button" data-hero-prev aria-label="上一张"></button><button class="mcj-hero-arrow next" type="button" data-hero-next aria-label="下一张"></button><div class="mcj-hero-dots">' + dots + '</div>' : "");
+    return (
+      '<div class="mcj-hero-overlay">' +
+      (data.title ? "<h2>" + esc(data.title) + "</h2>" : "") +
+      (data.subtitle ? "<p>" + esc(data.subtitle) + "</p>" : "") +
+      btn +
+      "</div>"
+    );
+  }
+
+  function resolveBannerSrc(source) {
+    var fallback = resolveFallbackBanner();
+    var src = String(source || "").trim();
+    if (!src || /^mcj-local-banner:\/\//i.test(src)) return fallback;
+    return src;
+  }
+
+  function heroHtml(data, source, index, total) {
+    var tag = data.link && !data.buttonText ? "a" : "div";
+    var attrs = data.link && !data.buttonText ? ' href="' + esc(data.link) + '" target="' + esc(data.linkTarget) + '"' : "";
+    var dots = "";
+    var fallback = resolveFallbackBanner();
+    var safeSrc = resolveBannerSrc(source);
+    for (var i = 0; i < total; i += 1) {
+      dots +=
+        '<button type="button" class="' +
+        (i === index ? "active" : "") +
+        '" data-hero-dot="' +
+        i +
+        '" aria-label="切换 Banner"></button>';
+    }
+    return (
+      "<" +
+      tag +
+      ' class="mcj-hero-image-link"' +
+      attrs +
+      ' aria-label="' +
+      esc(data.name) +
+      '">' +
+      '<img class="mcj-hero-image" src="' +
+      esc(safeSrc) +
+      '" alt="' +
+      esc(data.alt) +
+      '" decoding="async" data-banner-fallback="' +
+      esc(fallback) +
+      '">' +
+      overlayHtml(data) +
+      "</" +
+      tag +
+      ">" +
+      (total > 1
+        ? '<button class="mcj-hero-arrow prev" type="button" data-hero-prev aria-label="上一张"></button><button class="mcj-hero-arrow next" type="button" data-hero-next aria-label="下一张"></button><div class="mcj-hero-dots">' +
+          dots +
+          "</div>"
+        : "")
+    );
   }
 
   function emptyHeroHtml() {
-    return '<div class="mcj-hero-empty" role="status"><strong>欢迎来到 妙脆角 Meow Cui Jiao</strong><span>选择喜欢的陪玩，开始今天的游戏旅程。</span></div>';
+    var fallback = resolveFallbackBanner();
+    /* Prefer brand image over a giant welcome text box when DB has no banner. */
+    return (
+      '<div class="mcj-hero-image-link" aria-label="妙脆角默认 Banner">' +
+      '<img class="mcj-hero-image" src="' +
+      esc(fallback) +
+      '" alt="妙脆角" decoding="async" data-banner-fallback="' +
+      esc(fallback) +
+      '">' +
+      "</div>"
+    );
   }
 
-  function bindNoticePause(notice, span) {
-    if (notice.dataset.noticePauseBound === "true") return;
-    notice.dataset.noticePauseBound = "true";
-    notice.addEventListener("mouseenter", function () { span.style.animationPlayState = "paused"; });
-    notice.addEventListener("mouseleave", function () { span.style.animationPlayState = "running"; });
-    notice.addEventListener("focusin", function () { span.style.animationPlayState = "paused"; });
-    notice.addEventListener("focusout", function () { span.style.animationPlayState = "running"; });
-  }
-
-  function renderNotice(announcements) {
-    var notice = document.querySelector(".announcement-strip");
-    var span = notice && notice.querySelector("span");
-    if (!notice || !span) return;
-    notice.hidden = false;
-    span.textContent = announcements.length ? announcements.join(" \u00b7 ") : "\u6682\u65e0\u516c\u544a";
-    notice.setAttribute("aria-label", span.textContent);
-    bindNoticePause(notice, span);
+  function wireBannerImageFallback(root) {
+    if (!root) return;
+    root.querySelectorAll("img.mcj-hero-image").forEach(function (img) {
+      img.addEventListener("error", function onBannerError() {
+        img.removeEventListener("error", onBannerError);
+        var fallback = img.getAttribute("data-banner-fallback") || resolveFallbackBanner();
+        if (img.getAttribute("src") === fallback) {
+          img.removeAttribute("src");
+          img.alt = "妙脆角";
+          img.style.background =
+            "radial-gradient(circle at 30% 30%,rgba(243,168,203,.35),transparent 55%),linear-gradient(135deg,#1a0f18,#050406)";
+          return;
+        }
+        img.setAttribute("src", fallback);
+      });
+    });
   }
 
   function clearGeneratedHeroExtras() {
-    document.querySelectorAll(".mcj-hero-below-actions,.mcj-hero-notice").forEach(function (node) { node.remove(); });
+    document.querySelectorAll(".mcj-hero-below-actions,.mcj-hero-notice").forEach(function (node) {
+      node.remove();
+    });
   }
 
-  function renderEmpty(root, data, device, announcements) {
+  function renderEmpty(root, data, device) {
     root.hidden = false;
-    root.classList.add("mcj-home-hero", "is-empty");
+    root.classList.add("mcj-home-hero");
+    root.classList.remove("is-empty");
     root.dataset.heroIndex = "0";
     applyVars(root, data || normalized({}), device || "desktop");
     root.innerHTML = emptyHeroHtml();
-    renderNotice(announcements || []);
+    wireBannerImageFallback(root);
     return null;
   }
 
@@ -262,23 +263,24 @@
     var root = typeof target === "string" ? document.querySelector(target) : target;
     if (!root) return null;
     clearGeneratedHeroExtras();
-    var banners = Array.isArray(config) ? config : (config ? [config] : activeBanners());
-    var announcements = getAnnouncements();
-    if (!banners.length) return renderEmpty(root, normalized({}), "desktop", announcements);
-    var device = (options && options.device) || (window.matchMedia && window.matchMedia("(max-width: 640px)").matches ? "mobile" : "desktop");
+    var banners = Array.isArray(config) ? config : config ? [config] : activeBanners();
+    if (!banners.length) return renderEmpty(root, normalized({}), "desktop");
+    var device =
+      (options && options.device) ||
+      (window.matchMedia && window.matchMedia("(max-width: 640px)").matches ? "mobile" : "desktop");
     var current = Number(root.dataset.heroIndex || 0);
     if (options && Number.isFinite(Number(options.index))) current = Number(options.index);
     current = Math.max(0, Math.min(banners.length - 1, current));
     var data = normalized(banners[current]);
     var source = sourceFor(data, device);
-    if (!source) return renderEmpty(root, data, device, announcements);
+    if (!source) return renderEmpty(root, data, device);
     root.hidden = false;
     root.dataset.heroIndex = String(current);
     root.classList.add("mcj-home-hero");
     root.classList.remove("is-empty");
     applyVars(root, data, device);
     root.innerHTML = heroHtml(data, source, current, banners.length);
-    renderNotice(announcements);
+    wireBannerImageFallback(root);
     bindHero(root, banners, device);
     return data;
   }
@@ -290,7 +292,9 @@
       var timer = timers.get(root);
       if (timer) clearInterval(timer);
     };
-    root.onmouseleave = function () { start(); };
+    root.onmouseleave = function () {
+      start();
+    };
     root.onclick = function (event) {
       var prev = event.target.closest("[data-hero-prev]");
       var next = event.target.closest("[data-hero-next]");
@@ -334,10 +338,16 @@
   }
 
   function applyHome() {
-    var root = document.querySelector("[data-mcj-home-hero]") || document.querySelector(".mcj-home-hero") || document.querySelector(".banner");
-    if (root) render(root);
-    if (!remoteLoaded) loadRemoteContent(function () {
-      var current = document.querySelector("[data-mcj-home-hero]") || document.querySelector(".mcj-home-hero") || document.querySelector(".banner");
+    var root =
+      document.querySelector("[data-mcj-home-hero]") ||
+      document.querySelector(".mcj-home-hero") ||
+      document.querySelector(".banner");
+    if (root && remoteLoaded) render(root);
+    loadRemoteContent(function () {
+      var current =
+        document.querySelector("[data-mcj-home-hero]") ||
+        document.querySelector(".mcj-home-hero") ||
+        document.querySelector(".banner");
       if (current) render(current);
     });
   }
@@ -348,13 +358,32 @@
     activeBanners: activeBanners,
     defaults: normalized,
     render: render,
-    applyHome: applyHome
+    applyHome: applyHome,
+    reload: applyHome,
   };
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", applyHome);
   else applyHome();
   window.addEventListener("mcj:platform-data-updated", applyHome);
-  window.addEventListener("storage", function (event) { if (event.key === localPlatformContentKey("banners")) { remoteLoaded = false; loadRemoteContent(applyHome); } });
+  window.addEventListener("storage", function (event) {
+    if (event.key === "mcj_banner_published_at") {
+      remoteLoaded = false;
+      applyHome();
+    }
+  });
+  window.addEventListener("focus", function () {
+    remoteLoaded = false;
+    applyHome();
+  });
+  window.addEventListener("visibilitychange", function () {
+    if (document.visibilityState === "visible") {
+      remoteLoaded = false;
+      applyHome();
+    }
+  });
+  setInterval(function () {
+    if (document.visibilityState === "hidden") return;
+    remoteLoaded = false;
+    applyHome();
+  }, 20000);
 })();
-
-

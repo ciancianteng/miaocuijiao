@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
@@ -9,12 +9,13 @@
   <link rel="stylesheet" href="src/notify-system.css">
   <link rel="stylesheet" href="src/design-system.css">
   <link rel="stylesheet" href="src/companion-hall.css">
+  <link rel="stylesheet" href="src/place-order-modal.css">
 </head>
 <body>
   <header class="topbar companion-market-header">
     <div class="topbar-inner companion-market-header-inner">
       <a class="brand companion-market-brand" href="index.html">
-        <img src="assets/meow-cuijiao-brand.jpg" alt="MEOW CUI JIAO">
+        <img src="/default-avatar.png" alt="MEOW CUI JIAO" onerror="this.onerror=null;this.src='/default-avatar.png'">
         <span>MEOW CUI JIAO<small>妙脆角电竞</small></span>
       </a>
       <nav class="nav companion-market-nav" aria-label="页面导航">
@@ -31,7 +32,6 @@
         <h1 id="companionHallTitle">陪玩大厅</h1>
         <p>找到喜欢的陪玩，立即开始游戏。</p>
       </div>
-      <a class="hall-apply-link" href="companion-apply.html">申请成为陪玩</a>
     </section>
 
     <section class="hall-search-panel" aria-label="搜索陪玩">
@@ -67,19 +67,20 @@
             <span>价格</span>
             <select id="priceFilter">
               <option value="">全部价格</option>
-              <option value="20-30">RM20-RM30</option>
-              <option value="30-40">RM30-RM40</option>
-              <option value="40-45">RM40-RM45</option>
-              <option value="60-75">RM60-RM75</option>
-              <option value="75-99999">RM75-RM100+</option>
+              <option value="20-30">20-30 猫粮</option>
+              <option value="30-40">30-40 猫粮</option>
+              <option value="40-45">40-45 猫粮</option>
+              <option value="60-75">60-75 猫粮</option>
+              <option value="75-99999">75+ 猫粮</option>
             </select>
           </label>
           <label class="hall-filter-field">
             <span>在线状态</span>
             <select id="onlineFilter">
               <option value="">全部状态</option>
-              <option value="在线">在线</option>
-              <option value="忙碌">忙碌</option>
+              <option value="在线可接单">在线可接单</option>
+              <option value="忙碌中">忙碌中</option>
+              <option value="暂停接单">暂停接单</option>
               <option value="离线">离线</option>
             </select>
           </label>
@@ -109,7 +110,6 @@
       <div class="empty companion-empty" id="emptyState" hidden>
         <strong>目前暂无可接单陪玩</strong>
         <span>通过审核并上线接单的陪玩将在这里展示。</span>
-        <a class="hall-empty-link" href="companion-apply.html">申请成为陪玩</a>
       </div>
       <div class="companion-pagination" id="companionPagination"></div>
     </section>
@@ -124,9 +124,14 @@
   <script src="src/platform-store.js"></script>
   <script src="src/platform-taxonomy.js"></script>
   <script src="src/companion-levels.js"></script>
+  <script src="src/role-gates.js"></script>
+  <script src="src/avatar-fallback.js"></script>
+  <script src="src/boss-header.js" defer></script>
   <script src="src/dropdown-system.js" defer></script>
   <script src="src/design-system.js" defer></script>
   <script src="src/site-data.js" defer></script>
+  <script src="src/currency.js"></script>
+  <script src="src/place-order-modal.js"></script>
   <script src="src/companion-hall.js" defer></script>
   <script src="src/notify-system.js" defer></script>
   <script src="src/launch-readiness-fixes.js" defer></script>

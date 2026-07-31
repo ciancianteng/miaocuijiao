@@ -1,0 +1,45 @@
+---
+description: V1 验收一律以最新 READY Preview 为准，禁止用 localhost 当验收依据
+alwaysApply: true
+---
+
+# Preview 验收铁律
+
+自本规则生效起：所有验收、截图、E2E、UI 核对 **只认最新 READY Preview**。
+
+## 必须做
+
+修改完成后（功能/UI 修完即执行）：
+
+1. `npx vercel deploy --yes` 部署新 Preview
+2. 用浏览器打开该 Preview URL（不是 localhost）
+3. 截图 / 点检 / 跑验收脚本：目标一律是 Preview base URL
+4. localhost / `vite` 仅用于本地开发调试，**不作为 PASS/FAIL 依据**
+
+## 禁止做
+
+```
+// ❌ 验收以 http://localhost:5173 为准
+// ❌ 只改完代码口头说 PASS，不部署 Preview
+// ❌ Preview 未 READY 就开始截图验收
+```
+
+```
+// ✅ Deploy READY → 打开 Preview → 再验收
+// ✅ 报告里写清 Preview URL + readyState
+```
+
+## Preview vs localhost 不一致时
+
+若发现 Preview 与 localhost 表现不同，停止用 localhost 解释结论，并输出这四项：
+
+1. **不一致原因**（构建产物 / 路由 / 静态资源路径 / API 网关 / 缓存等）
+2. **哪个文件不同**（源码未部署、`public/` 未带上、hash 路径等）
+3. **哪个环境变量不同**（Preview env vs `.env.local`）
+4. **为什么 Build 后会不同**（Vite 哈希、rewrites、catch-all API、仅 Preview 生效的 `vercel.json` 等）
+
+## 输出验收结论时
+
+- 标明 Preview URL
+- 标明部署是否 READY
+- 不得用 localhost 结果覆盖 Preview 结果

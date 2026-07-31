@@ -1,8 +1,14 @@
 # MEOW CUI JIAO Phase 1 Deploy
 
+> **上线流程（Staging / Production）**  
+> - 公开预览 = Staging = Vercel Preview → [`STAGING_SETUP.md`](./STAGING_SETUP.md)  
+> - 正式环境 → [`PRODUCTION_SETUP.md`](./PRODUCTION_SETUP.md)  
+> - 发版打勾 → [`DEPLOY_CHECKLIST.md`](./DEPLOY_CHECKLIST.md)  
+> - 环境变量模板：`.env.preview.example`（测库 + HitPay Sandbox）、`.env.production.example`（正式库 + HitPay Live）
+
 ## 1. Environment
 
-Copy `.env.example` to `.env.local` and fill:
+Copy `.env.example` to `.env.local` and fill (prefer **Staging / Sandbox** values locally):
 
 ```bash
 SUPABASE_URL=
