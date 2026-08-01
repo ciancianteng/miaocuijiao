@@ -3100,9 +3100,19 @@ label{
   font-size:13px!important;
 }
 .home-daily-grid{
-  grid-template-columns:repeat(6,minmax(0,1fr))!important;
+  grid-template-columns:repeat(3,minmax(0,1fr))!important;
   gap:14px!important;
   align-items:stretch!important;
+}
+.quick-entry-grid,
+.quick-entry-grid.launch-entry-grid{
+  grid-template-columns:repeat(2,minmax(0,1fr))!important;
+  gap:14px!important;
+}
+.quick-entry-grid .quick-entry-card{
+  min-height:110px!important;
+  height:auto!important;
+  max-height:none!important;
 }
 .home-daily-card{
   height:112px!important;
@@ -3345,7 +3355,7 @@ body:after,
   <link rel="stylesheet" href="src/home-announcements.css">
   <link rel="stylesheet" href="src/home-popularity.css">
   <link rel="stylesheet" href="src/home-desktop.css">
-  <link rel="stylesheet" href="src/boss-header.css?v=20260801fullChain">
+  <link rel="stylesheet" href="src/boss-header.css?v=20260801acceptFix2">
   <link rel="stylesheet" href="src/login-modal.css">
   <link rel="stylesheet" href="src/place-order-modal.css">
   <link rel="stylesheet" href="src/notify-system.css">
@@ -3353,14 +3363,14 @@ body:after,
   <script src="src/avatar-fallback.js"></script>
   <script src="src/launch-feature-freeze.js"></script>
   <script src="src/notify-system.js" defer></script>
-  <script src="src/boss-header.js?v=20260801fullChain" defer></script>
+  <script src="src/boss-header.js?v=20260801acceptFix2" defer></script>
 </head>
 <body>
   <div class="ambient-layer" aria-hidden="true"></div>
   <header class="site-header">
     <div class="header-inner">
       <a class="brand" href="index.html"><span class="live2d-avatar"><img src="assets/meow-cuijiao-brand.jpg" alt="logo"><i></i></span><span>妙脆角<small>Meow Cui Jiao</small></span></a>
-      <div class="top-actions"><a href="index.html">首页</a><a href="companion-center.html">陪玩大厅</a><a class="auth-only" data-auth-only data-role="customer" href="recharge.html">充值中心</a><a class="auth-only" data-auth-only data-role="customer" href="orders.html">我的订单</a><a class="auth-only" data-auth-only data-role="customer" href="support.html?start=1">在线客服</a><a class="user-chip auth-only" data-auth-only data-role="customer" href="mine.html"><span class="user-dot"></span><span>我的账号</span></a><button class="auth-only" data-auth-only data-role="customer" data-boss-logout type="button">退出登录</button><button class="login" data-modal="login" data-guest-only>登录 / 注册</button></div>
+      <div class="top-actions"><a href="index.html">首页</a><a href="companion-center.html">大厅</a><a class="auth-only" data-auth-only data-role="customer" href="orders.html">我的订单</a><a class="auth-only" data-auth-only data-role="customer" href="support.html?start=1">在线客服</a><button class="auth-only" data-auth-only data-role="customer" data-boss-logout type="button">退出登录</button><button class="login" data-modal="login" data-guest-only>登录 / 注册</button></div>
     </div>
   </header>
   <main class="container">

@@ -215,10 +215,13 @@
       "<h3>上传 / 裁剪 / 发布</h3>" +
       "<p>上传后可裁剪，再点击保存并发布到首页。</p>" +
       renderUploadZone() +
+      (state.draft
+        ? '<div class="admin-sync-note">图片已选择，请调整裁剪后点击下方「保存并发布」，否则首页不会更新。</div>'
+        : "") +
       '<div class="banner-ops-actions">' +
       '<button class="primary-btn" type="button" data-banner-publish ' +
       (state.publishing || !state.draft ? "disabled" : "") +
-      ">保存并发布</button>" +
+      ">" + (state.publishing ? "发布中…" : "保存并发布") + "</button>" +
       "</div></section>" +
       '<section class="banner-ops-section">' +
       "<h3>历史 Banner</h3>" +
@@ -323,15 +326,19 @@
       if (!state.draft) return reject(new Error("没有可发布的图片"));
       var img = new Image();
       img.onload = function () {
+        var stage = document.querySelector("[data-banner-crop-stage]");
+        var stageW = stage && stage.clientWidth;
+        var stageH = stage && stage.clientHeight;
+        if (!stageW || !stageH) {
+          reject(new Error("裁剪画布尚未渲染完成，请稍等片刻后重新点击「保存并发布」"));
+          return;
+        }
         var canvas = document.createElement("canvas");
         var outW = 1920;
         var outH = 1080;
         canvas.width = outW;
         canvas.height = outH;
         var ctx = canvas.getContext("2d");
-        var stage = document.querySelector("[data-banner-crop-stage]");
-        var stageW = (stage && stage.clientWidth) || outW;
-        var stageH = (stage && stage.clientHeight) || outH;
         var scale = state.crop.scale;
         var drawW = img.naturalWidth * scale;
         var drawH = img.naturalHeight * scale;

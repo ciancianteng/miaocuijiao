@@ -235,14 +235,18 @@
   }
   function mergeWithdrawals(primary,fallback){
     var byId={};
-    (fallback||[]).forEach(function(w){if(w&&w.id)byId[w.id]=w});
-    return (primary||[]).map(function(w){
-      var base=byId[w.id]||{};
-      return Object.assign({},base,w,{
-        accountLast4:w.accountLast4||base.accountLast4||'',
-        paidAt:w.paidAt||base.paidAt||'',
-        reviewedAt:w.reviewedAt||base.reviewedAt||''
+    (primary||[]).forEach(function(w){if(w&&w.id)byId[String(w.id)]=Object.assign({},w)});
+    (fallback||[]).forEach(function(w){
+      if(!w||!w.id)return;
+      var id=String(w.id);
+      byId[id]=Object.assign({},byId[id]||{},w,{
+        accountLast4:(byId[id]&&byId[id].accountLast4)||w.accountLast4||'',
+        paidAt:(byId[id]&&byId[id].paidAt)||w.paidAt||'',
+        reviewedAt:(byId[id]&&byId[id].reviewedAt)||w.reviewedAt||''
       });
+    });
+    return Object.keys(byId).map(function(k){return byId[k]}).sort(function(a,b){
+      return String(b.submittedAt||b.createdAt||'').localeCompare(String(a.submittedAt||a.createdAt||''));
     });
   }
   function reloadInbox(){
@@ -627,8 +631,8 @@
       if(filter==='waiting_selection')return o.grabStatus==='pending_customer_selection'||o.status==='waiting_boss_confirm';
       if(filter==='waiting_confirm')return o.status==='claimed';
       if(filter==='waiting_start')return o.status==='confirmed';
-      if(filter==='running')return o.status==='in_progress';
-      if(filter==='completed')return o.status==='completed'||orderStatus(o)==='已完成';
+      if(filter==='running')return o.status==='in_progress'&&!o.completionPending;
+      if(filter==='completed')return o.status==='completed'||o.completionPending||orderStatus(o)==='已完成';
       if(filter==='cancelled')return o.status==='cancelled';
       if(filter==='after_sale')return o.status==='refund_requested'||o.status==='refunded'||o.status==='disputed';
       return true;
@@ -1278,8 +1282,9 @@
       if(!confirm('确认抢单？抢单后需等待老板选择，不会立即成为正式接单，也不能直接开始订单。'))return;
       api('accept_order',{id:accept.dataset.acceptOrder}).then(function(x){
         toast(x.message||'已抢单，等待老板确认');
-        // Stay in grab hall — do not jump into formal order / start.
-        state.route='hall';
+        state.route='orders';
+        state.orderFilter='waiting_selection';
+        go('/companion/orders');
         return loadData();
       }).catch(function(err){toast(err.message)});
       return;
@@ -1306,7 +1311,13 @@
       var oid=action.dataset.orderId;
       if(act==='accept_direct_order'){
         if(!confirm('确认接受此订单吗？'))return;
-        api(act,{id:oid}).then(function(x){toast(x.message||'已确认接单');return loadData()}).catch(function(err){toast(err.message)});
+        api(act,{id:oid}).then(function(x){
+          toast(x.message||'已确认接单');
+          state.route='orders';
+          state.orderFilter='waiting_start';
+          go('/companion/orders');
+          return loadData();
+        }).catch(function(err){toast(err.message)});
         return;
       }
       if(act==='reject_direct_order'){
@@ -1320,15 +1331,29 @@
       }
       if(act==='start_order'){
         if(!confirm('确认现在开始服务吗？'))return;
+        api(act,{id:oid}).then(function(x){
+          toast(x.message||'已开始服务');
+          state.route='orders';
+          state.orderFilter='running';
+          go('/companion/orders');
+          return loadData();
+        }).catch(function(err){toast(err.message)});
+        return;
       }
       if(act==='complete_order'||act==='confirm_complete'){
         if(!confirm('确认本次服务已经完成吗？'))return;
+        api(act,{id:oid}).then(function(x){
+          if(x.settlement){state.settlement=x.settlement;}
+          toast(x.message||'已提交完成，订单进入已完成');
+          state.route='orders';
+          state.orderFilter='completed';
+          go('/companion/orders');
+          return loadData();
+        }).catch(function(err){toast(err.message)});
+        return;
       }
       api(act,{id:oid}).then(function(x){
-        if(act==='complete_order'||act==='confirm_complete'){
-          if(x.settlement){state.settlement=x.settlement;}
-          toast(x.message||'已提交完成申请，等待老板确认');
-        }else toast(x.message||'操作成功');
+        toast(x.message||'操作成功');
         return loadData();
       }).catch(function(err){toast(err.message)});
       return;
@@ -1537,7 +1562,22 @@
       api('request_withdrawal',{amount:amount,remark:remark,paymentAccountId:accountId}).then(function(res){
         state.withdrawBusy=false;
         state.earningsTab='records';
+        var item=res&&(res.item||res.withdrawal||(res.data&&res.data.item));
+        if(item&&state.data){
+          var mapped={
+            id:item.id,
+            withdrawalNo:item.withdrawal_no||item.withdrawalNo||'',
+            amount:item.amount||item.cat_food_amount||amount,
+            status:item.status||'pending_review',
+            submittedAt:item.submitted_at||item.submittedAt||new Date().toISOString(),
+            remark:item.remark||remark||'',
+            accountLast4:item.account_last4||item.accountLast4||''
+          };
+          state.data.withdrawals=mergeWithdrawals([mapped],state.data.withdrawals||[]);
+          state.data.withdrawalRecords=mergeWithdrawals([mapped],state.data.withdrawalRecords||[]);
+        }
         toast((res&&res.message)||'提现申请已提交，等待后台审核');
+        paint();
         return loadData({soft:true});
       }).catch(function(err){
         state.withdrawBusy=false;

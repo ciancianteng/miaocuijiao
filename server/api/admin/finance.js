@@ -454,24 +454,61 @@ export default async function handler(req, res) {
     }
 
     if (action === "mark_withdraw_paid" || action === "complete_withdraw") {
+      if (!canConfirmPay(req)) {
+        return json(res, 403, { ok: false, message: "仅超级管理员或财务管理员可确认打款并上传收据" });
+      }
       const id = String(body.id || "").trim();
-      const bankReference = String(body.bankReference || body.bank_reference || body.reference || "").trim() || `MANUAL-${Date.now()}`;
+      const bankReference = String(body.bankReference || body.bank_reference || body.reference || "").trim();
+      const receiptDataUrl = String(
+        body.receiptDataUrl || body.receipt_url || body.payment_proof || body.paymentProof || body.fileDataUrl || ""
+      ).trim();
       const rows = await companionDb("companion_withdrawals", `?id=eq.${encodeURIComponent(id)}&limit=1`);
       const row = rows?.[0];
       if (!row) return json(res, 404, { ok: false, message: "提现单不存在" });
       if (!/approved_pending_pay|paying|paid_pending_receipt/.test(String(row.status || ""))) {
         return json(res, 400, { ok: false, message: "仅已通过待打款的提现单可标记打款完成" });
       }
-      const patched = await companionDb("companion_withdrawals", `?id=eq.${encodeURIComponent(id)}`, {
-        method: "PATCH",
-        body: JSON.stringify({
-          status: "completed",
-          paid_at: nowIso(),
-          completed_at: nowIso(),
-          bank_reference: bankReference,
-          updated_at: nowIso(),
-        }),
-      });
+      if (!receiptDataUrl) {
+        return json(res, 400, { ok: false, message: "必须上传转账收据/截图（图片或 PDF）才能标记打款完成" });
+      }
+      const decoded = decodeDataUrl(receiptDataUrl);
+      if (!decoded) return json(res, 400, { ok: false, message: "收据文件格式无效" });
+      if (!/^(image\/(jpeg|png|webp)|application\/pdf)$/i.test(decoded.contentType)) {
+        return json(res, 400, { ok: false, message: "仅支持 JPG/PNG/WEBP/PDF" });
+      }
+
+      await ensurePrivateBucket(FINANCE_BUCKET, ["image/jpeg", "image/png", "image/webp", "application/pdf"]);
+      const objectPath = buildObjectPath(
+        row.companion_id,
+        "withdraw-receipts",
+        `receipt.${decoded.contentType.includes("pdf") ? "pdf" : "jpg"}`
+      );
+      await uploadPrivateObject(FINANCE_BUCKET, objectPath, decoded.buffer, decoded.contentType);
+      const finalBankReference = bankReference || `RECEIPT-${Date.now()}`;
+
+      const patchBase = {
+        status: "completed",
+        paid_at: nowIso(),
+        completed_at: nowIso(),
+        bank_reference: finalBankReference,
+        updated_at: nowIso(),
+      };
+      let patched;
+      try {
+        patched = await companionDb("companion_withdrawals", `?id=eq.${encodeURIComponent(id)}`, {
+          method: "PATCH",
+          body: JSON.stringify({ ...patchBase, receipt_url: objectPath, receipt_file_type: decoded.contentType }),
+        });
+      } catch (patchErr) {
+        if (!isMissingRelation(patchErr)) throw patchErr;
+        // companion_withdrawals has no dedicated receipt columns yet: keep a JSON note in remark instead.
+        const note = `[打款收据] bucket=${FINANCE_BUCKET} path=${objectPath} type=${decoded.contentType}`;
+        patched = await companionDb("companion_withdrawals", `?id=eq.${encodeURIComponent(id)}`, {
+          method: "PATCH",
+          body: JSON.stringify({ ...patchBase, remark: `${row.remark ? row.remark + " " : ""}${note}` }),
+        });
+      }
+
       try {
         await companionDb("transactions", "", {
           method: "POST",
@@ -480,13 +517,15 @@ export default async function handler(req, res) {
             transaction_type: "withdrawal",
             amount: money(row.cat_food_amount),
             status: "completed",
-            note: `提现打款完成 ${row.withdrawal_no || id} / ${bankReference}`,
+            note: `提现打款完成 ${row.withdrawal_no || id} / ${finalBankReference}`,
             created_at: nowIso(),
           }),
         });
       } catch {
         /* optional */
       }
+
+      let receiptRow = null;
       try {
         const pays = await companionDb(
           "finance_payments",
@@ -498,24 +537,59 @@ export default async function handler(req, res) {
             method: "PATCH",
             body: JSON.stringify({
               status: "completed",
-              bank_reference: bankReference,
+              actual_amount_rm: money(pay.amount_rm),
+              bank_reference: finalBankReference,
+              confirmed_by: body.adminId || null,
               confirmed_at: nowIso(),
               updated_at: nowIso(),
             }),
           });
+          try {
+            const receiptRows = await companionDb("finance_receipts", "", {
+              method: "POST",
+              body: JSON.stringify({
+                receipt_no: no("RCP"),
+                payment_id: pay.id,
+                storage_bucket: FINANCE_BUCKET,
+                file_path: objectPath,
+                file_type: decoded.contentType,
+                amount_rm: money(pay.amount_rm),
+                bank_reference: finalBankReference,
+                accounting_month: `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}`,
+                tax_year: String(new Date().getFullYear()),
+                accounting_category: "companion_settlement",
+                company_name: (await settings()).company_name || "MEOW CUI JIAO ENTERPRISE",
+                payment_purpose: "陪玩结算",
+                reconciliation_status: "pending",
+                uploaded_by: body.adminId || null,
+                uploaded_at: nowIso(),
+                notes: String(body.financeNote || body.notes || ""),
+              }),
+            });
+            receiptRow = receiptRows?.[0] || receiptRow;
+          } catch {
+            /* finance_receipts is best-effort bookkeeping */
+          }
         }
       } catch {
         /* optional linked payment */
       }
+
       await writeAdminLog({
         module: "finance",
         action: "mark_withdraw_paid",
         targetType: "companion_withdrawal",
         targetId: id,
         operatorRole: adminRole,
-        reason: body.reason || `打款完成 ${bankReference}`,
+        reason: body.reason || `打款完成 ${finalBankReference}`,
+        after: { bankReference: finalBankReference, receiptPath: objectPath },
       });
-      return json(res, 200, { ok: true, message: "已标记打款完成，陪玩端将显示「已打款」", item: patched?.[0] });
+      return json(res, 200, {
+        ok: true,
+        message: "已上传收据并标记打款完成，陪玩端将显示「已打款」",
+        item: patched?.[0],
+        receipt: receiptRow,
+      });
     }
 
     if (action === "approve_payroll") {

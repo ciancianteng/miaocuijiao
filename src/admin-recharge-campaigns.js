@@ -74,11 +74,22 @@
   }
   function formHtml() {
     var c = state.editing || { name: "", payAmountRm: 300, baseCatFood: 300, bonusCatFood: 100, totalCatFood: 400, enabled: true, sortOrder: 100, description: "", perBossLimit: 0, firstRechargeOnly: false };
+    var row2 = "display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px";
+    var section = "margin:14px 0;padding:12px;border:1px solid rgba(255,255,255,.08);border-radius:12px;background:rgba(255,255,255,.02)";
+    var sectionTitle = "margin:0 0 10px;font-size:13px;font-weight:700;color:var(--muted,#9ca3af)";
     return (
-      '<form class="service-account-form-shell" data-rc-form style="margin:12px 0"><div class="form-grid" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px">' +
+      '<form class="service-account-form-shell" data-rc-form style="margin:12px 0">' +
+
+      '<div style="' + section + '"><h4 style="' + sectionTitle + '">基本信息</h4><div style="' + row2 + '">' +
       '<label>活动名称<input name="name" required value="' +
       esc(c.name) +
+      '" placeholder="例如：暑期充值双倍猫粮"></label>' +
+      '<label>排序（数字越小越靠前）<input name="sortOrder" type="number" value="' +
+      esc(c.sortOrder || 100) +
       '"></label>' +
+      "</div></div>" +
+
+      '<div style="' + section + '"><h4 style="' + sectionTitle + '">猫粮到账设置</h4><div style="' + row2 + '">' +
       '<label>实付金额 RM<input name="payAmountRm" type="number" min="1" step="1" required value="' +
       esc(c.payAmountRm) +
       '"></label>' +
@@ -88,18 +99,23 @@
       '<label>额外赠送猫粮<input name="bonusCatFood" type="number" min="0" step="1" value="' +
       esc(c.bonusCatFood) +
       '"></label>' +
-      '<label>最终到账<input name="totalCatFood" type="number" min="0" step="1" value="' +
+      '<label>最终到账（自动 = 基础+赠送）<input name="totalCatFood" type="number" min="0" step="1" value="' +
       esc(c.totalCatFood || Number(c.baseCatFood || 0) + Number(c.bonusCatFood || 0)) +
       '"></label>' +
-      '<label>排序<input name="sortOrder" type="number" value="' +
-      esc(c.sortOrder || 100) +
-      '"></label>' +
-      '<label>开始时间<input name="startsAt" type="datetime-local" value="' +
+      "</div></div>" +
+
+      '<div style="' + section + '"><h4 style="' + sectionTitle + '">上线时间与启用（必须启用+设置时间范围，老板端 /api/recharge 才会同步显示）</h4><div style="' + row2 + '">' +
+      '<label>开始时间（留空=立即生效）<input name="startsAt" type="datetime-local" value="' +
       esc((c.startsAt || "").slice(0, 16)) +
       '"></label>' +
-      '<label>结束时间<input name="endsAt" type="datetime-local" value="' +
+      '<label>结束时间（留空=长期有效）<input name="endsAt" type="datetime-local" value="' +
       esc((c.endsAt || "").slice(0, 16)) +
       '"></label>' +
+      '<label>启用<select name="enabled"><option value="true"' +
+      (c.enabled !== false ? " selected" : "") +
+      '>启用（同步老板端）</option><option value="false"' +
+      (c.enabled === false ? " selected" : "") +
+      ">停用（老板端不显示）</option></select></label>" +
       '<label>每人可参与次数（0=不限）<input name="perBossLimit" type="number" min="0" value="' +
       esc(c.perBossLimit || 0) +
       '"></label>' +
@@ -108,15 +124,14 @@
       '>否</option><option value="true"' +
       (c.firstRechargeOnly ? " selected" : "") +
       ">是</option></select></label>" +
-      '<label>启用<select name="enabled"><option value="true"' +
-      (c.enabled !== false ? " selected" : "") +
-      '>启用</option><option value="false"' +
-      (c.enabled === false ? " selected" : "") +
-      ">停用</option></select></label>" +
-      '<label class="wide" style="grid-column:1/-1">活动说明<textarea name="description" rows="2">' +
+      "</div></div>" +
+
+      '<div style="' + section + '"><h4 style="' + sectionTitle + '">活动说明</h4>' +
+      '<label style="display:block">活动说明（老板端展示，可选）<textarea name="description" rows="3" style="width:100%;margin-top:6px">' +
       esc(c.description || "") +
-      "</textarea></label>" +
-      '</div><div style="display:flex;gap:8px;margin-top:10px"><button class="mini-btn primary-lite" type="submit">保存</button><button class="mini-btn" type="button" data-rc-cancel>取消</button></div></form>'
+      "</textarea></label></div>" +
+
+      '<div style="display:flex;gap:8px;margin-top:10px"><button class="mini-btn primary-lite" type="submit">保存</button><button class="mini-btn" type="button" data-rc-cancel>取消</button></div></form>'
     );
   }
   function load() {

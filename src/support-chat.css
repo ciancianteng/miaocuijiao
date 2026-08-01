@@ -403,8 +403,60 @@ body.support-page > .topbar {
 .support-msg p,
 .support-msg strong,
 .support-msg small {
-  margin: 0;
+  margin: 0 0 6px;
   display: block;
+  line-height: 1.45;
+}
+
+.support-msg p:last-child,
+.support-msg strong:last-child,
+.support-msg small:last-child {
+  margin-bottom: 0;
+}
+
+.support-messages {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px !important;
+}
+
+.support-composer {
+  display: flex !important;
+  flex-wrap: wrap;
+  gap: 12px !important;
+  align-items: flex-end;
+  min-height: 72px;
+  padding: 12px 16px;
+  box-sizing: border-box;
+}
+
+.support-composer-tools {
+  display: flex !important;
+  gap: 8px !important;
+  align-items: center;
+  padding-bottom: 2px;
+  flex: 0 0 auto;
+}
+
+.support-composer textarea,
+.support-composer [name="content"] {
+  flex: 1 1 180px !important;
+  min-width: 160px;
+  min-height: 44px;
+  margin: 0 !important;
+}
+
+.support-composer button[type="submit"],
+.support-composer .support-send {
+  flex: 0 0 auto;
+  margin-left: 0 !important;
 }
 
 .support-msg small {

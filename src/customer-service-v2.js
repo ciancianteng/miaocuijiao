@@ -1345,13 +1345,11 @@
             paint();
             return;
           }
-          // Shared auth gate owns redirect; avoid racing before restore.
-          if(!(window.MCJServiceAuth&&window.MCJServiceAuth.hasSession&&window.MCJServiceAuth.hasSession())){
-            if(window.MCJServiceAuth&&window.MCJServiceAuth.redirectToLogin){
-              window.MCJServiceAuth.redirectToLogin(location.pathname+location.search+location.hash);
-            }else{
-              location.replace('/customer-service/login/');
-            }
+          // Always leave empty shell for login — do not trust cross-role shared tokens alone.
+          if(window.MCJServiceAuth&&window.MCJServiceAuth.redirectToLogin){
+            window.MCJServiceAuth.redirectToLogin(location.pathname+location.search+location.hash);
+          }else{
+            location.replace('/customer-service/login/');
           }
           return;
         }

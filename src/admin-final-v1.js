@@ -26,7 +26,25 @@
       target.innerHTML=note(err.message||'数据加载失败')+'<button class="mini-btn" type="button" data-admin-final-refresh="dashboard">重试</button>';
     });
   }
-  function renderOrders(){var target=document.getElementById('orderManagement');if(!target)return;target.innerHTML='<div class="content-loading">正在读取真实订单...</div>';get('/api/admin/orders').then(function(res){var rows=res.orders||[];target.innerHTML=(res.message?note(res.message):'')+'<div class="admin-final-head"><div><h3>订单管理</h3><p>管理平台真实订单，不显示本地假订单。</p></div><button class="mini-btn" data-admin-final-refresh="orders">刷新</button></div><div class="admin-final-table-wrap"><table class="admin-final-table"><thead><tr><th>订单编号</th><th>老板</th><th>陪玩</th><th>客服</th><th>游戏</th><th>金额</th><th>状态</th><th>创建时间</th><th>操作</th></tr></thead><tbody>'+(rows.length?rows.map(function(o){return '<tr><td>'+esc(o.orderNo)+'</td><td>'+esc(o.bossName)+'</td><td>'+esc(o.companionName)+'</td><td>'+esc(o.serviceName)+'</td><td>'+esc(o.game||'-')+'</td><td>'+money(o.totalAmount)+'</td><td>'+esc(o.statusText||statusText(o.status))+'</td><td>'+esc(o.createdAt||'-')+'</td><td><button class="mini-btn" data-admin-order-status="'+esc(o.id)+'">改状态</button><button class="mini-btn danger" data-admin-order-cancel="'+esc(o.id)+'">取消</button><button class="mini-btn danger" data-admin-order-delete="'+esc(o.id)+'">删除</button></td></tr>'}).join(''):'<tr><td colspan="9"><div class="empty">暂无订单</div></td></tr>')+'</tbody></table></div>'}).catch(function(err){target.innerHTML=note(err.message)})}
+  var ORDER_STATUS_OPTIONS=[
+    ['awaiting_payment','待付款'],
+    ['claimed','等待陪玩确认'],
+    ['waiting_boss_confirm','等待老板确认'],
+    ['confirmed','待开始'],
+    ['in_progress','进行中'],
+    ['completed','已完成'],
+    ['refund_requested','售后'],
+    ['refunded','退款'],
+    ['cancelled','取消']
+  ];
+  function orderStatusSelect(orderId,current){
+    return '<select class="admin-order-status-select" data-admin-order-status-select="'+esc(orderId)+'" aria-label="订单状态">'+
+      ORDER_STATUS_OPTIONS.map(function(opt){
+        return '<option value="'+esc(opt[0])+'"'+(String(current)===opt[0]?' selected':'')+'>'+esc(opt[1])+'</option>';
+      }).join('')+
+      '</select><button class="mini-btn" type="button" data-admin-order-status-apply="'+esc(orderId)+'">更新</button>';
+  }
+  function renderOrders(){var target=document.getElementById('orderManagement');if(!target)return;target.innerHTML='<div class="content-loading">正在读取真实订单...</div>';get('/api/admin/orders').then(function(res){var rows=res.orders||[];target.innerHTML=(res.message?note(res.message):'')+'<div class="admin-final-head"><div><h3>订单管理</h3><p>管理平台真实订单，不显示本地假订单。状态请用下拉选择，禁止手输。</p></div><button class="mini-btn" data-admin-final-refresh="orders">刷新</button></div><div class="admin-final-table-wrap"><table class="admin-final-table"><thead><tr><th>订单编号</th><th>老板</th><th>陪玩</th><th>客服</th><th>游戏</th><th>金额</th><th>状态</th><th>创建时间</th><th>操作</th></tr></thead><tbody>'+(rows.length?rows.map(function(o){return '<tr><td>'+esc(o.orderNo)+'</td><td>'+esc(o.bossName)+'</td><td>'+esc(o.companionName)+'</td><td>'+esc(o.serviceName)+'</td><td>'+esc(o.game||'-')+'</td><td>'+money(o.totalAmount)+'</td><td>'+esc(o.statusText||statusText(o.status))+'</td><td>'+esc(o.createdAt||'-')+'</td><td class="admin-order-actions">'+orderStatusSelect(o.id,o.status)+'<button class="mini-btn danger" data-admin-order-cancel="'+esc(o.id)+'">取消</button><button class="mini-btn danger" data-admin-order-delete="'+esc(o.id)+'">删除</button></td></tr>'}).join(''):'<tr><td colspan="9"><div class="empty">暂无订单</div></td></tr>')+'</tbody></table></div>'}).catch(function(err){target.innerHTML=note(err.message)})}
   function renderReports(){
     /* 提现与发薪由 src/admin-finance.js 接管 #serviceReportsManagement */
     if(window.MCJAdminFinance&&typeof window.MCJAdminFinance.reload==='function'){
@@ -107,10 +125,19 @@
       if(rf){rf.reset();rf.elements.id.value='';}
       return;
     }
-    var os=e.target.closest('[data-admin-order-status]');
+    var os=e.target.closest('[data-admin-order-status-apply]');
     if(os){
-      var status=prompt('输入状态码：\nawaiting_payment=待付款\npending/claimed=等待陪玩确认\nwaiting_boss_confirm=待老板确认\nconfirmed=待开始\nin_progress=进行中\ncompleted=已完成\nrefund_requested=售后\nrefunded=退款\ncancelled=已取消');
-      if(status)post('/api/admin/orders',{action:'update_status',id:os.dataset.adminOrderStatus,status:status}).then(renderOrders).catch(function(err){alert(err.message)});
+      var row=os.closest('tr')||os.parentElement;
+      var sel=row&&row.querySelector('[data-admin-order-status-select="'+os.dataset.adminOrderStatusApply+'"]');
+      var status=sel?String(sel.value||'').trim():'';
+      if(!status){alert('请先选择状态');return}
+      if(!confirm('确认将订单状态更新为「'+(sel.options[sel.selectedIndex]?sel.options[sel.selectedIndex].text:status)+'」？'))return;
+      post('/api/admin/orders',{action:'update_status',id:os.dataset.adminOrderStatusApply,status:status}).then(renderOrders).catch(function(err){alert(err.message)});
+      return;
+    }
+    var legacyOs=e.target.closest('[data-admin-order-status]');
+    if(legacyOs){
+      alert('请使用状态下拉框选择，禁止手输状态。');
       return;
     }
     var oc=e.target.closest('[data-admin-order-cancel]');

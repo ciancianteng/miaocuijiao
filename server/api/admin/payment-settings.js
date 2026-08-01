@@ -73,6 +73,9 @@ const CHANNELS = [
   },
 ];
 
+/** Selectable收款渠道 providers for the bank/e-wallet CRUD list (payment_bank_accounts). */
+const BANK_PROVIDERS = ["Maybank", "CIMB", "Public Bank", "Touch 'n Go", "支付宝", "微信支付", "USDT", "其他"];
+
 const TABLES = {
   channels: "payment_channels",
   credentials: "payment_channel_credentials",
@@ -535,13 +538,14 @@ async function handler(req, res) {
       logs: [],
       message: "未配置 SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY。",
       templates: CHANNELS,
+      bankProviders: BANK_PROVIDERS,
     });
   }
 
   try {
     if (req.method === "GET") {
       const state = await loadState();
-      return json(res, 200, { ok: true, configured: true, ...state, templates: CHANNELS });
+      return json(res, 200, { ok: true, configured: true, ...state, templates: CHANNELS, bankProviders: BANK_PROVIDERS });
     }
 
     if (req.method !== "POST") {
@@ -686,13 +690,24 @@ async function handler(req, res) {
 
     if (action === "save_bank") {
       const bank = body.bank || {};
+      const id = String(bank.id || "").trim();
+      let existing = null;
+      if (id) {
+        const rows = await supabaseFetch(TABLES.banks, `?id=eq.${encodeURIComponent(id)}&limit=1`).catch(() => []);
+        existing = rows?.[0] || null;
+      }
+      const accountNumber = String(bank.accountNumber || "").trim();
       const row = {
-        id: bank.id || `bank-${Date.now()}`,
-        bank_name: String(bank.bankName || ""),
+        id: id || `bank-${Date.now()}`,
+        bank_name: String(bank.bankName || bank.provider || (existing && existing.bank_name) || ""),
         account_name: String(bank.accountName || ""),
         enterprise_name: String(bank.enterpriseName || ""),
-        account_number_mask: String(bank.accountNumber || "").replace(/\s+/g, "").replace(/^(.+)(.{4})$/, "**** $2"),
-        encrypted_payload: encryptPayload({ accountNumber: bank.accountNumber || "", swift: bank.swift || "" }),
+        account_number_mask: accountNumber
+          ? accountNumber.replace(/\s+/g, "").replace(/^(.+)(.{4})$/, "**** $2")
+          : String((existing && existing.account_number_mask) || ""),
+        encrypted_payload: accountNumber
+          ? encryptPayload({ accountNumber, swift: bank.swift || "" })
+          : existing?.encrypted_payload || null,
         currency: String(bank.currency || "MYR"),
         usage: String(bank.usage || "充值收款"),
         is_default: Boolean(bank.isDefault),
@@ -700,8 +715,28 @@ async function handler(req, res) {
         updated_at: new Date().toISOString(),
       };
       const rows = await upsert(TABLES.banks, row);
-      await writeLog(req, "save_bank", row.id, null, { ...row, encrypted_payload: "[encrypted]" });
-      return json(res, 200, { ok: true, message: "银行账户已保存", bank: rows?.[0] || row });
+      await writeLog(req, "save_bank", row.id, existing, { ...row, encrypted_payload: "[encrypted]" });
+      return json(res, 200, { ok: true, message: "收款渠道已保存", bank: rows?.[0] || row });
+    }
+
+    if (action === "delete_bank") {
+      const id = String(body.id || "").trim();
+      if (!id) return json(res, 400, { ok: false, message: "缺少收款渠道 ID" });
+      await supabaseFetch(TABLES.banks, `?id=eq.${encodeURIComponent(id)}`, { method: "DELETE" });
+      await writeLog(req, "delete_bank", id, null, null);
+      return json(res, 200, { ok: true, message: "收款渠道已删除" });
+    }
+
+    if (action === "toggle_bank") {
+      const id = String(body.id || "").trim();
+      if (!id) return json(res, 400, { ok: false, message: "缺少收款渠道 ID" });
+      const enabled = Boolean(body.enabled);
+      const rows = await supabaseFetch(TABLES.banks, `?id=eq.${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        body: JSON.stringify({ enabled, updated_at: new Date().toISOString() }),
+      });
+      await writeLog(req, enabled ? "enable_bank" : "disable_bank", id, null, { enabled });
+      return json(res, 200, { ok: true, message: enabled ? "收款渠道已启用" : "收款渠道已停用", bank: rows?.[0] || null });
     }
 
     return json(res, 400, { ok: false, message: "未知支付设置操作" });

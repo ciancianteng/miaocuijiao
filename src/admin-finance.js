@@ -445,6 +445,79 @@
     });
   }
 
+  function openWithdrawPaidUploader(withdrawalId) {
+    var overlay = document.createElement("div");
+    overlay.style.cssText =
+      "position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px";
+    overlay.innerHTML =
+      '<div style="background:#fff;max-width:460px;width:100%;border-radius:12px;padding:18px;box-shadow:0 12px 40px rgba(0,0,0,.2)">' +
+      '<h3 style="margin:0 0 8px">上传打款收据/截图并确认完成</h3>' +
+      '<p style="margin:0 0 12px;color:#666;font-size:13px">必须上传转账收据或截图后才能标记「打款完成」，陪玩端将同步显示已打款。银行流水号可选填。</p>' +
+      '<div data-wp-drop style="border:1px dashed #bbb;border-radius:10px;padding:18px;text-align:center;margin:10px 0;cursor:pointer;background:#fafafa">' +
+      "<strong>点击或拖拽上传收据/截图</strong><div style=\"font-size:12px;color:#888;margin-top:6px\">JPG / PNG / WEBP / PDF</div>" +
+      '<div data-wp-preview style="margin-top:8px;font-size:13px;color:#333"></div></div>' +
+      '<input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" data-wp-file hidden>' +
+      '<label style="display:block;margin:10px 0 8px">银行流水号 / 备注（可选）<input data-wp-ref style="width:100%"></label>' +
+      '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">' +
+      '<button type="button" class="mini-btn" data-wp-cancel>取消</button>' +
+      '<button type="button" class="mini-btn primary-lite" data-wp-submit>确认打款完成</button></div></div>';
+    document.body.appendChild(overlay);
+    var fileData = "";
+    var drop = overlay.querySelector("[data-wp-drop]");
+    var fileInput = overlay.querySelector("[data-wp-file]");
+    var preview = overlay.querySelector("[data-wp-preview]");
+    function setFile(file) {
+      if (!file) return;
+      if (!/^(image\/(jpeg|png|webp)|application\/pdf)$/i.test(file.type)) {
+        alert("仅支持 JPG/PNG/WEBP/PDF");
+        return;
+      }
+      readFileAsDataUrl(file).then(function (dataUrl) {
+        fileData = dataUrl;
+        preview.textContent = file.name + "（已就绪，可替换）";
+      });
+    }
+    drop.addEventListener("click", function () {
+      fileInput.click();
+    });
+    drop.addEventListener("dragover", function (e) {
+      e.preventDefault();
+    });
+    drop.addEventListener("drop", function (e) {
+      e.preventDefault();
+      setFile(e.dataTransfer.files && e.dataTransfer.files[0]);
+    });
+    fileInput.addEventListener("change", function () {
+      setFile(fileInput.files && fileInput.files[0]);
+    });
+    overlay.querySelector("[data-wp-cancel]").addEventListener("click", function () {
+      overlay.remove();
+    });
+    overlay.addEventListener("click", function (e) {
+      if (e.target === overlay) overlay.remove();
+    });
+    overlay.querySelector("[data-wp-submit]").addEventListener("click", function () {
+      if (!fileData) {
+        alert("必须上传转账收据或截图");
+        return;
+      }
+      if (!confirm("确认标记该提现为「打款完成」？陪玩端将同步显示已打款。")) return;
+      post("mark_withdraw_paid", {
+        id: withdrawalId,
+        receiptDataUrl: fileData,
+        bankReference: overlay.querySelector("[data-wp-ref]").value.trim(),
+      })
+        .then(function (res) {
+          overlay.remove();
+          state.message = res.message || "打款已确认";
+          load();
+        })
+        .catch(function (err) {
+          alert(err.message);
+        });
+    });
+  }
+
   document.addEventListener("click", function (e) {
     if (!target() || !target().contains(e.target) && !e.target.closest("[data-fr-submit]")) {
       /* allow overlay buttons outside target */
@@ -488,16 +561,7 @@
     }
     var paidWd = e.target.closest("[data-fin-paid-wd]");
     if (paidWd) {
-      var ref = prompt("打款银行流水号 / 备注（可选）", "") || "";
-      if (!confirm("确认标记该提现为「打款完成」？陪玩端将同步显示已打款。")) return;
-      post("mark_withdraw_paid", { id: paidWd.dataset.finPaidWd, bankReference: ref })
-        .then(function (res) {
-          state.message = res.message;
-          load();
-        })
-        .catch(function (err) {
-          alert(err.message);
-        });
+      openWithdrawPaidUploader(paidWd.dataset.finPaidWd);
       return;
     }
     var approvePay = e.target.closest("[data-fin-approve-pay]");

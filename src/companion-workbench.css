@@ -229,7 +229,7 @@ a.pw-btn{display:inline-flex;align-items:center;justify-content:center;text-deco
 .pw-qr{width:116px;height:116px;margin-top:14px;border-radius:14px;border:1px solid var(--pw-line);object-fit:cover}
 .pw-chat{height:calc(100vh - 160px);min-height:520px;display:grid;grid-template-columns:320px minmax(0,1fr);border:1px solid var(--pw-line);border-radius:20px;overflow:hidden;background:rgba(18,16,22,.72);max-width:100%;width:100%}
 .pw-chat-list{border-right:1px solid var(--pw-line);display:grid;grid-template-rows:1fr;width:320px;min-width:280px;max-width:360px;overflow:hidden}
-.pw-session-avatar{width:42px;height:42px;border-radius:50%;display:grid;place-items:center;background:rgba(255,143,197,.14);font-size:20px}
+.pw-session-avatar{width:42px;height:42px;border-radius:50%;display:grid!important;place-items:center;background:rgba(255,143,197,.14);font-size:20px;flex-shrink:0;line-height:1;overflow:hidden}
 .pw-chat-main-notices{grid-template-rows:66px 1fr!important}
 .pw-notice-list{overflow:auto;padding:16px}
 .pw-chat-search{padding:12px}
@@ -241,8 +241,11 @@ a.pw-btn{display:inline-flex;align-items:center;justify-content:center;text-deco
 .pw-session{width:100%;display:grid;grid-template-columns:42px 1fr auto;gap:10px;align-items:center;padding:12px;border:0;border-bottom:1px solid rgba(255,255,255,.06);background:transparent;color:#fff;text-align:left}
 .pw-session.active,.pw-session:hover{background:rgba(255,255,255,.045)}
 .pw-session img,.pw-user-card img{width:42px;height:42px;border-radius:50%;object-fit:cover;border:1px solid var(--pw-line)}
-.pw-session b,.pw-session span,.pw-session small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.pw-session span,.pw-session small{color:var(--pw-muted);font-size:12px;margin-top:3px}
+.pw-session b,
+.pw-session > span:not(.pw-session-avatar):not(.pw-unread),
+.pw-session small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pw-session > span:not(.pw-session-avatar):not(.pw-unread),
+.pw-session small{color:var(--pw-muted);font-size:12px;margin-top:3px}
 .pw-unread{min-width:20px;height:20px;display:grid;place-items:center;border-radius:999px;background:#ff496f;color:#fff;font-size:11px;font-style:normal}
 .pw-chat-main{min-width:0;max-width:100%;display:grid;grid-template-rows:66px minmax(0,1fr) auto;overflow:hidden}
 .pw-chat-head{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:0 16px;border-bottom:1px solid var(--pw-line);min-height:66px}

@@ -144,8 +144,26 @@
     return decodeJwtExpMs(getAccessToken());
   }
 
+  function hasCsRoleHint() {
+    try {
+      var user = JSON.parse(localStorage.getItem("customerServiceUser") || "null");
+      var role = String((user && (user.role || user.user_role)) || "").toLowerCase();
+      if (role === "customer_service" || role === "service") return true;
+    } catch (e) {}
+    try {
+      var shared = String(localStorage.getItem("mcjAuthRole") || "").toLowerCase();
+      if (shared === "customer_service" || shared === "service") return true;
+    } catch (e2) {}
+    return false;
+  }
+
+  /** CS session only — never treat boss/admin shared tokens as logged-in CS. */
   function hasSession() {
-    return !!(getAccessToken() || getRefreshToken());
+    var blob = readRaw();
+    if (blob && (blob.token || blob.accessToken || blob.access_token)) return true;
+    // Shared mirrors only count when role is explicitly customer_service.
+    if (hasCsRoleHint() && (getAccessToken() || getRefreshToken())) return true;
+    return false;
   }
 
   function needsRefresh() {
@@ -341,42 +359,62 @@
    * Gate CS pages: wait for session restore/refresh before deciding redirect.
    * Never bounce to login solely because init is still in flight.
    */
+  function revealCsPage() {
+    try {
+      document.documentElement.setAttribute("data-mcj-service-auth", "ready");
+      document.documentElement.style.visibility = "";
+    } catch (e) {}
+  }
+
   function guardCustomerServicePages() {
     var path = String(location.pathname || "").replace(/\\/g, "/");
     if (!/\/customer-service(\/|$)/i.test(path)) return Promise.resolve(true);
     if (/\/customer-service\/login/i.test(path)) {
-      return ensureSession().then(function () {
-        if (hasSession()) {
-          location.replace("/customer-service/dashboard/");
-          return false;
-        }
-        return true;
-      });
+      return ensureSession()
+        .then(function () {
+          if (hasSession()) {
+            location.replace("/customer-service/dashboard/");
+            return false;
+          }
+          revealCsPage();
+          return true;
+        })
+        .catch(function () {
+          revealCsPage();
+          return true;
+        });
     }
     try {
       document.documentElement.setAttribute("data-mcj-service-auth", "pending");
       document.documentElement.style.visibility = "hidden";
     } catch (e) {}
+    // Never leave the page permanently black if refresh hangs.
+    var safety = setTimeout(function () {
+      if (!hasSession()) {
+        revealCsPage();
+        redirectToLogin(path + String(location.search || "") + String(location.hash || ""));
+      } else {
+        revealCsPage();
+      }
+    }, 8000);
     return ensureSession()
       .then(function () {
+        clearTimeout(safety);
         if (hasSession()) {
-          try {
-            document.documentElement.setAttribute("data-mcj-service-auth", "ready");
-            document.documentElement.style.visibility = "";
-          } catch (e) {}
+          revealCsPage();
           return true;
         }
+        revealCsPage();
         redirectToLogin(path + String(location.search || "") + String(location.hash || ""));
         return false;
       })
       .catch(function () {
+        clearTimeout(safety);
         if (hasSession()) {
-          try {
-            document.documentElement.setAttribute("data-mcj-service-auth", "ready");
-            document.documentElement.style.visibility = "";
-          } catch (e) {}
+          revealCsPage();
           return true;
         }
+        revealCsPage();
         redirectToLogin(path + String(location.search || "") + String(location.hash || ""));
         return false;
       });

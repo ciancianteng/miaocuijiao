@@ -241,10 +241,7 @@
   function headerHtml() {
     var primary =
       navLink("index.html", "首页") +
-      navLink("companion-center.html", "陪玩") +
-      navLink("companion-center.html?service=voice", "语音") +
-      navLink("more-gameplays.html", "玩法");
-    var desktopExtra =
+      navLink("companion-center.html", "大厅") +
       navLink("orders.html", "我的订单") +
       navLink("support.html?start=1", "在线客服");
     return (
@@ -254,19 +251,15 @@
       "</a>" +
       '<nav class="header-nav mcj-boss-nav mcj-boss-nav-primary" aria-label="主导航">' +
       primary +
-      '<span class="mcj-boss-nav-desktop-extra">' +
-      desktopExtra +
-      "</span>" +
       "</nav>" +
       '<div class="top-actions mcj-boss-user">' +
       '<div class="mcj-boss-more">' +
       '<button type="button" class="mcj-boss-more-toggle" data-mcj-nav-more aria-label="更多菜单" aria-haspopup="true" aria-expanded="false">☰</button>' +
       '<div class="mcj-boss-more-menu" role="menu" hidden data-mcj-nav-more-menu>' +
+      '<a href="index.html" role="menuitem">首页</a>' +
+      '<a href="companion-center.html" role="menuitem">大厅</a>' +
       '<a href="orders.html" role="menuitem">我的订单</a>' +
       '<a href="support.html?start=1" role="menuitem">在线客服</a>' +
-      '<a href="recharge.html" role="menuitem" data-auth-only data-role="customer">充值中心</a>' +
-      '<a href="mine.html" role="menuitem" data-auth-only data-role="customer">我的账号</a>' +
-      '<a href="companion-apply.html" role="menuitem">申请陪玩</a>' +
       '<button type="button" role="menuitem" data-mcj-boss-login data-guest-only>登录 / 注册</button>' +
       '<button type="button" role="menuitem" data-mcj-boss-logout data-auth-only data-role="customer">退出登录</button>' +
       "</div></div>" +
@@ -276,8 +269,6 @@
       '<div class="mcj-boss-mine-menu" role="menu">' +
       '<a href="orders.html" role="menuitem">我的订单</a>' +
       '<a href="support.html?start=1" role="menuitem">在线客服</a>' +
-      '<a href="recharge.html" role="menuitem">充值中心</a>' +
-      '<a href="mine.html" role="menuitem">我的账号</a>' +
       '<button type="button" data-mcj-boss-logout role="menuitem">退出登录</button>' +
       "</div></div></div></div>"
     );

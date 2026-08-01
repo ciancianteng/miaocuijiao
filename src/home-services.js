@@ -63,6 +63,35 @@
       .catch(function () {
         mount([]);
       });
+
+    // Sync 更多玩法 quick-entry copy from admin gameplay mall (published/featured).
+    fetch("/api/platform/gameplay-products", { headers: { Accept: "application/json" }, cache: "no-store" })
+      .then(function (res) {
+        return res.json().catch(function () {
+          return { products: [], items: [] };
+        });
+      })
+      .then(function (body) {
+        var list = body.products || body.items || body.data || [];
+        var featured = list
+          .filter(function (p) {
+            return p && p.enabled !== false && p.published !== false && (p.featured === true || p.showHome === true || p.status === "published");
+          })
+          .slice(0, 4);
+        if (!featured.length) {
+          featured = list.filter(function (p) { return p && p.enabled !== false; }).slice(0, 4);
+        }
+        var card = document.querySelector('[data-home-entry="more-gameplays"] span');
+        if (card && featured.length) {
+          card.textContent = featured
+            .map(function (p) {
+              return p.name || p.title || "";
+            })
+            .filter(Boolean)
+            .join("、");
+        }
+      })
+      .catch(function () {});
   }
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);

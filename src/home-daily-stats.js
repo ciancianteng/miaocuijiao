@@ -4,11 +4,8 @@
   var API_URL = "/api/gateway?path=" + encodeURIComponent("home/daily-stats");
   var fields = [
     ["ordersCreated", "今日订单", ""],
-    ["ordersCompleted", "今日完成订单", ""],
-    ["newCustomers", "今日新增老板", ""],
-    ["newCompanions", "今日新增陪玩", ""],
-    ["onlineCompanions", "当前在线陪玩", ""],
-    ["grossRevenue", "今日交易额", "currency"],
+    ["onlineCompanions", "在线陪玩", ""],
+    ["grossRevenue", "今日营业额", "currency"],
   ];
 
   function esc(value) {
