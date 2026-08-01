@@ -2375,7 +2375,13 @@ export default async function handler(req, res) {
 
     if (action === "send_cs_message" || action === "send_message") {
       const conversation = await ensureCompanionSupportConversation(auth.profile.id);
-      const msg = await sendCompanionChatMessage(conversation, auth.profile.id, body.content || body.message || "");
+      const messageType = String(body.messageType || body.message_type || "text").trim() || "text";
+      const msg = await sendCompanionChatMessage(
+        conversation,
+        auth.profile.id,
+        body.content || body.message || "",
+        messageType
+      );
       return json(res, 200, {
         ok: true,
         message: "消息已发送",

@@ -591,24 +591,53 @@ export default async function handler(req, res) {
     }
     const content = String(body.content || "").trim();
     if (!content) return json(res, 400, { ok: false, message: "请输入消息内容。" });
-    const messageType = String(body.messageType || body.message_type || "text");
+    let messageType = String(body.messageType || body.message_type || "text").trim() || "text";
+    if (messageType === "image") {
+      const looksUrl = /^https?:\/\//i.test(content) || content.startsWith("__IMG__:");
+      if (!looksUrl) return json(res, 400, { ok: false, message: "图片消息内容无效。" });
+    }
     const linkedOrderId = conversation.order_id || orderId || null;
     const createdAt = nowIso();
     // Fast path: insert first, skip presence/decorate/reload (those made send 10s+).
-    const rows = await supabaseJson(restUrl("messages"), {
-      method: "POST",
-      headers: serviceHeaders(),
-      body: JSON.stringify({
-        conversation_id: conversation.id,
-        sender_id: profile.id,
-        sender_role: "boss",
-        message_type: messageType,
-        content,
-        order_id: linkedOrderId,
+    let rows;
+    try {
+      rows = await supabaseJson(restUrl("messages"), {
+        method: "POST",
+        headers: serviceHeaders(),
+        body: JSON.stringify({
+          conversation_id: conversation.id,
+          sender_id: profile.id,
+          sender_role: "boss",
+          message_type: messageType,
+          content,
+          order_id: linkedOrderId,
           read_at: null,
-        created_at: createdAt,
-      }),
-    });
+          created_at: createdAt,
+        }),
+      });
+    } catch (err) {
+      // Enum may not include image yet — persist as tagged text.
+      if (messageType === "image" && /enum|invalid input|message_type/i.test(String(err.message || ""))) {
+        messageType = "text";
+        const tagged = content.startsWith("__IMG__:") ? content : `__IMG__:${content}`;
+        rows = await supabaseJson(restUrl("messages"), {
+          method: "POST",
+          headers: serviceHeaders(),
+          body: JSON.stringify({
+            conversation_id: conversation.id,
+            sender_id: profile.id,
+            sender_role: "boss",
+            message_type: "text",
+            content: tagged,
+            order_id: linkedOrderId,
+            read_at: null,
+            created_at: createdAt,
+          }),
+        });
+      } else {
+        throw err;
+      }
+    }
     supabaseJson(restUrl("conversations", `?id=eq.${encodeURIComponent(conversation.id)}`), {
       method: "PATCH",
       headers: serviceHeaders(),

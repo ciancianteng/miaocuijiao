@@ -231,27 +231,47 @@ export async function loadConversationMessages(conversationId) {
   return Array.isArray(rows) ? rows : [];
 }
 
-export async function sendCompanionChatMessage(conversation, companionUserId, content) {
-  const text = String(content || "").trim();
+export async function sendCompanionChatMessage(conversation, companionUserId, content, messageType = "text") {
+  let text = String(content || "").trim();
+  let type = String(messageType || "text").trim() || "text";
   if (!text) throw Object.assign(new Error("不能发送空消息"), { status: 400 });
   if (!conversation?.id) throw Object.assign(new Error("会话不存在"), { status: 404 });
   if (conversation.status === "closed" || conversation.status === "ended") {
     throw Object.assign(new Error("会话已结束，无法继续发送"), { status: 403 });
   }
-  const rows = await supabaseJson(restUrl("messages"), {
-    method: "POST",
-    headers: serviceHeaders(),
-    body: JSON.stringify({
-      conversation_id: conversation.id,
-      sender_id: companionUserId,
-      sender_role: "companion",
-      message_type: "text",
-      content: text,
-      order_id: conversation.order_id || null,
-      read_at: null,
-      created_at: nowIso(),
-    }),
-  });
+  if (type === "image" && !(/^https?:\/\//i.test(text) || text.startsWith("__IMG__:"))) {
+    throw Object.assign(new Error("图片消息内容无效"), { status: 400 });
+  }
+  const payload = {
+    conversation_id: conversation.id,
+    sender_id: companionUserId,
+    sender_role: "companion",
+    message_type: type,
+    content: text,
+    order_id: conversation.order_id || null,
+    read_at: null,
+    created_at: nowIso(),
+  };
+  let rows;
+  try {
+    rows = await supabaseJson(restUrl("messages"), {
+      method: "POST",
+      headers: serviceHeaders(),
+      body: JSON.stringify(payload),
+    });
+  } catch (err) {
+    if (type === "image" && /enum|invalid input|message_type/i.test(String(err.message || ""))) {
+      payload.message_type = "text";
+      payload.content = text.startsWith("__IMG__:") ? text : `__IMG__:${text}`;
+      rows = await supabaseJson(restUrl("messages"), {
+        method: "POST",
+        headers: serviceHeaders(),
+        body: JSON.stringify(payload),
+      });
+    } else {
+      throw err;
+    }
+  }
   await supabaseJson(restUrl("conversations", `?id=eq.${encodeURIComponent(conversation.id)}`), {
     method: "PATCH",
     headers: serviceHeaders(),

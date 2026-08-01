@@ -161,12 +161,27 @@
   pointer-events:auto;
   background:#111116;
   display:flex;
+  flex-wrap:wrap;
   gap:8px;
   padding:8px 12px;
   border-top:0;
   align-items:center;
-  height:60px;
+  min-height:60px;
+  height:auto;
   box-sizing:border-box;
+}
+.cs-chat-input .mcj-composer-tools{
+  flex:0 0 auto;
+}
+.cs-chat-input .mcj-composer-tool{
+  width:40px;
+  height:40px;
+  border-radius:12px;
+  border:1px solid rgba(255,255,255,.12);
+  background:rgba(255,255,255,.06);
+  color:#fff;
+  cursor:pointer;
+  font-size:18px;
 }
 .cs-chat-input input,
 .cs-chat-input textarea,

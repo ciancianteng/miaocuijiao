@@ -1628,9 +1628,14 @@
       ?('<div class="cs-chat-composer" data-cs-composer-wrap>'+
         '<p class="cs-composer-hint" data-cs-composer-hint'+(canReply?' hidden':'')+'>'+esc(canReply?'':blockReason)+'</p>'+
         '<form class="cs-chat-input" data-send-message action="#" method="post" autocomplete="off" onsubmit="return false;">'+
+        '<div class="mcj-composer-tools">'+
+        '<button class="mcj-composer-tool" type="button" data-cs-emoji'+(canReply?'':' disabled')+' aria-label="表情">😊</button>'+
+        '<button class="mcj-composer-tool" type="button" data-cs-image'+(canReply?'':' disabled')+' aria-label="图片">🖼</button>'+
+        '</div>'+
         '<textarea name="content" data-cs-composer rows="1" placeholder="'+esc(canReply?'输入消息，Enter 发送，Shift+Enter 换行':(blockReason||'无法回复'))+'" autocomplete="off" maxlength="2000"'+(canReply?'':' disabled readonly')+'></textarea>'+
         '<button class="cs-btn primary cs-send-btn" type="button" data-cs-send'+(canReply&&String(state.composerDraft||'').trim()?'':' disabled')+'>发送</button>'+
-        '</form></div>')
+        '</form>'+
+        '<div class="mcj-upload-status" data-cs-upload-status></div></div>')
       :'';
     var listHtml='<aside class="cs-chat-list'+(listOpen?' is-open':'')+'" data-cs-chat-list>'+
       '<div class="cs-chat-list-head"><strong>会话列表</strong><div class="cs-actions">'+
@@ -1678,15 +1683,20 @@
       '<aside class="cs-chat-side"><h3>订单 / 商品资料</h3>'+(activeProduct?productCardHtml(activeProduct):'')+orderPanel+'</aside></div>';
   }
   function messageHtml(m){
-    var when=fmtChatTime(m.createdAt);
-    if(m.messageType==='product_card'){
+    var when=fmtChatTime(m.createdAt||m.created_at);
+    if(m.messageType==='product_card'||m.message_type==='product_card'){
       var card=parseProductCard(m.content);
-      if(card)return '<div class="cs-msg '+(m.senderRole==='customer_service'?'mine':'')+'">'+productCardHtml(card)+'<small>'+esc(when)+'</small></div>';
+      if(card)return '<div class="cs-msg '+(m.senderRole==='customer_service'||m.sender_role==='customer_service'?'mine':'')+'">'+productCardHtml(card)+'<small>'+esc(when)+'</small></div>';
     }
-    var system=m.senderRole==='system'||m.messageType==='system';
-    var mine=m.senderRole==='customer_service'&&!system;
-    var who=mine?(m.senderName||'客服'):(system?'':(m.senderName||(m.senderRole==='boss'?'老板':'')));
-    return '<div class="cs-msg '+(mine?'mine':'')+(system?' system':'')+'">'+(who?'<strong>'+esc(who)+'</strong>':'')+'<p>'+esc(m.content||'')+'</p><small>'+esc(when)+'</small></div>';
+    var system=m.senderRole==='system'||m.sender_role==='system'||m.messageType==='system'||m.message_type==='system';
+    var mine=(m.senderRole==='customer_service'||m.sender_role==='customer_service')&&!system;
+    var who=mine?(m.senderName||m.sender_name||'客服'):(system?'':(m.senderName||m.sender_name||(m.senderRole==='boss'||m.sender_role==='boss'?'老板':(m.senderRole==='companion'||m.sender_role==='companion'?'陪玩':''))));
+    var Media=window.MCJChatMedia;
+    var isImg=Media&&Media.isImageMessage(m);
+    var body=isImg?Media.imageBubbleHtml(Media.imageUrlOf(m),esc):('<p>'+esc(m.content||'')+'</p>');
+    var pending=m._pending?' · 上传中…':'';
+    var failed=m._failed?' · 发送失败 <button type="button" class="cs-link" data-retry-img="'+esc(m._localId||m.id||'')+'">重试</button>':'';
+    return '<div class="cs-msg '+(mine?'mine':'')+(system?' system':'')+(m._failed?' failed':'')+'" data-msg-id="'+esc(m.id||m._localId||'')+'">'+(who?'<strong>'+esc(who)+'</strong>':'')+body+'<small>'+esc(when)+pending+failed+'</small></div>';
   }
   function ordersHtml(){var rows=((state.data&&state.data.orders)||[]).filter(function(o){return !state.orderFilter||o.status===state.orderFilter});var statuses=(state.data&&state.data.orderStatuses)||{};return '<div class="cs-page-head"><div><h2>订单处理</h2><p>确认付款、指派陪玩、处理退款，所有操作写入真实订单表。</p></div><div class="cs-actions"><button class="cs-btn primary" data-route="/customer-service/create-order">客服代下单</button></div></div><div class="cs-toolbar"><select data-order-filter><option value="">全部状态</option>'+Object.keys(statuses).map(function(k){return '<option value="'+esc(k)+'" '+(state.orderFilter===k?'selected':'')+'>'+esc(statuses[k])+'</option>'}).join('')+'</select><button class="cs-btn" data-refresh>刷新</button></div><section class="cs-table-wrap"><table class="cs-table"><thead><tr><th>订单编号</th><th>老板</th><th>陪玩</th><th>游戏</th><th>金额</th><th>状态</th><th>创建时间</th><th>操作</th></tr></thead><tbody>'+(rows.length?rows.map(orderRow).join(''):'<tr><td colspan="8"><div class="cs-empty">暂无订单</div></td></tr>')+'</tbody></table></section>'}
   function compensationHtml(){var bosses=(state.data&&state.data.bosses)||[],orders=(state.data&&state.data.orders)||[];return '<div class="cs-page-head"><div><h2>申请补偿</h2><p>客服只能提交申请，管理员审核通过后才会入账赠送猫粮。</p></div></div><form class="cs-card cs-form" data-compensation-form><label>老板 UID / 选择老板<select name="boss_id" required><option value="">请选择老板</option>'+bosses.map(function(b){return '<option value="'+esc(b.id)+'">'+esc(b.bossUid||b.uid||'')+' / '+esc(b.name)+'</option>'}).join('')+'</select></label><label>或输入老板 UID<input name="boss_uid" placeholder="B100001"></label><label>关联订单<select name="related_order_id"><option value="">可选</option>'+orders.map(function(o){return '<option value="'+esc(o.id)+'">'+esc(o.orderNo)+' / '+esc(o.bossName)+'</option>'}).join('')+'</select></label><label>类型<select name="request_type"><option value="bad_review">差评安抚</option><option value="after_sale">售后补偿</option><option value="activity">活动奖励</option><option value="other">其他</option></select></label><label>建议补偿猫粮<input name="suggested_amount" type="number" min="1" required></label><label>差评或投诉原因<textarea name="reason" required></textarea></label><label>客服说明<textarea name="staff_note"></textarea></label><button class="cs-btn primary" type="submit">提交申请</button></form>'}
@@ -1720,6 +1730,40 @@
   function reportsHtml(){var work=(state.data&&state.data.workData)||{},salary=work.salary||{},cur=salary.current||{},history=salary.history||[],attRows=(work.attendance&&work.attendance.rows)||[];return '<div class="cs-page-head"><div><h2>工资中心</h2><p>工资自动读取真实接待、订单和打卡记录，客服只能查看。</p></div></div><section class="cs-grid cs-metrics">'+metric('基础工资',money(cur.baseSalary||0))+metric('全勤奖励',money(cur.attendanceBonus||0))+metric('接待奖励',money(cur.receptionBonus||0))+metric('订单提成',money(cur.orderCommission||0))+metric('夜班补贴',money(cur.nightShiftAllowance||0))+metric('迟到扣款',money(cur.lateDeduction||0))+metric('缺勤扣款',money(cur.absenceDeduction||0))+metric('其他调整',money(cur.otherAdjustment||0))+metric('本月预计工资',money(cur.totalSalary||0))+metric('工资状态',cur.status||'统计中')+'</section><section class="cs-table-wrap" style="margin-top:14px"><h3 style="margin:0 0 10px">本月打卡（工资计算依据）</h3><table class="cs-table"><thead><tr><th>日期</th><th>上班</th><th>下班</th><th>工时</th><th>迟到</th><th>缺勤</th><th>状态</th></tr></thead><tbody>'+(attRows.length?attRows.map(function(r){return '<tr><td>'+esc(r.reportDate||r.date||'-')+'</td><td>'+esc(r.clockInText||'-')+'</td><td>'+esc(r.clockOutText||'-')+'</td><td>'+esc(r.workHours!=null?r.workHours:'-')+'</td><td>'+esc(r.isLate?'是':'否')+'</td><td>'+esc(r.isAbsent?'是':'否')+'</td><td>'+esc(r.attendanceStatus||'-')+'</td></tr>'}).join(''):'<tr><td colspan="7">暂无打卡记录</td></tr>')+'</tbody></table></section><section class="cs-table-wrap" style="margin-top:14px"><table class="cs-table"><thead><tr><th>月份</th><th>基础工资</th><th>全勤奖励</th><th>接待奖励</th><th>订单提成</th><th>扣款合计</th><th>预计工资</th><th>状态</th></tr></thead><tbody>'+(history.length?history.map(function(r){var deductions=(Number(r.lateDeduction||0)+Number(r.absenceDeduction||0)+Number(r.earlyLeaveDeduction||0));return '<tr><td>'+esc(r.salaryMonth||'-')+'</td><td>'+money(r.baseSalary||0)+'</td><td>'+money(r.attendanceBonus||0)+'</td><td>'+money(r.receptionBonus||0)+'</td><td>'+money(r.orderCommission||0)+'</td><td>'+money(deductions)+'</td><td>'+money(r.totalSalary||0)+'</td><td>'+esc(r.status||'统计中')+'</td></tr>'}).join(''):'<tr><td colspan="8">暂无工资记录</td></tr>')+'</tbody></table></section>'}
   function reportStatus(s){return ({pending:'待审核',approved:'已批准',rejected:'已拒绝',paid:'已支付',completed:'已发放'})[s]||s||'-'}
   function profileHtml(){var s=(state.data&&state.data.staff)||state.session.user||{},work=(state.data&&state.data.workData)||{},cfg=work.config||{},att=work.attendance||{},sum=(state.data&&state.data.summary)||{},avatar='<div class="cs-avatar" style="width:64px;height:64px;display:grid;place-items:center">'+esc((s.name||s.email||'客').slice(0,1))+'</div>';return '<section class="cs-card"><h2>我的资料</h2><div class="cs-user-card">'+avatar+'<div><strong>'+esc(s.name||'-')+'</strong><div style="color:#9ca3af;margin-top:4px">'+esc(cfg.employeeCode||'未设置工号')+' · '+esc(cfg.shiftName||'默认班次')+'</div></div></div><div class="cs-info-list"><div><span>登录邮箱</span><strong>'+esc(s.email||'-')+'</strong></div><div><span>当前班次</span><strong>'+esc((cfg.shiftStart||'09:00')+' - '+(cfg.shiftEnd||'18:00'))+'</strong></div><div><span>入职日期</span><strong>'+esc(cfg.joinDate||'-')+'</strong></div><div><span>在线状态</span><strong>'+esc(sum.currentReceptions>0?'接待中':'在线')+'</strong></div><div><span>今日打卡状态</span><strong>'+esc((work.todayAttendance&&work.todayAttendance.attendanceStatus)||'未打卡')+'</strong></div><div><span>本月出勤</span><strong>'+esc((att.actualDays||0)+' / '+(att.standardDays||0))+'</strong></div><div><span>本月预计工资</span><strong>'+money(sum.estimatedSalary||0)+'</strong></div><div><span>历史工资记录</span><strong>'+esc((work.salary&&work.salary.history&&work.salary.history.length)||0)+' 条</strong></div></div></section>'}
+  function sendChatImage(url){
+    if(!url||!state.activeConversation)return Promise.resolve();
+    var conv=activeConversation();
+    if(!composerCanReply(conv)){
+      toast(composerBlockReason(conv)||'当前无法发送消息');
+      return Promise.resolve();
+    }
+    var localId='local-img-'+Date.now();
+    var optimistic={
+      id:localId,_localId:localId,_pending:true,
+      senderRole:'customer_service',senderName:'客服',
+      messageType:'image',content:url,createdAt:new Date().toISOString()
+    };
+    var box=root.querySelector('.cs-chat-messages');
+    if(box){
+      var empty=box.querySelector('.cs-empty');
+      if(empty)empty.remove();
+      box.insertAdjacentHTML('beforeend',messageHtml(optimistic));
+      try{box.scrollTop=box.scrollHeight;}catch(e){}
+    }
+    return api('send_message',{conversation_id:state.activeConversation,content:url,message_type:'image'}).then(function(res){
+      if(res&&res.messageRow&&box){
+        var old=box.querySelector('[data-msg-id="'+localId+'"]');
+        if(old)old.outerHTML=messageHtml(res.messageRow);
+      }
+      return softRefresh();
+    }).catch(function(err){
+      if(box){
+        var old=box.querySelector('[data-msg-id="'+localId+'"]');
+        if(old)old.outerHTML=messageHtml(Object.assign({},optimistic,{_pending:false,_failed:true}));
+      }
+      toast(err.message||'图片发送失败');
+    });
+  }
   function sendChatMessage(){
     if(state.sendingChat)return;
     var conv=activeConversation();
@@ -1847,6 +1891,68 @@
       e.preventDefault();
       e.stopPropagation();
       sendChatMessage();
+      return;
+    }
+    if(e.target.closest('[data-cs-emoji]')){
+      e.preventDefault();
+      var input=root.querySelector(COMPOSER_SEL);
+      if(!input||input.disabled)return;
+      var emojis=['😊','😂','👍','❤️','🙏','🔥','✨','😺','👌','🎉'];
+      var pick=emojis[Math.floor(Math.random()*emojis.length)];
+      // Simple panel: cycle insert common emoji via prompt-less - open small fixed set
+      var panel=root.querySelector('[data-cs-emoji-panel]');
+      if(!panel){
+        panel=document.createElement('div');
+        panel.setAttribute('data-cs-emoji-panel','1');
+        panel.className='support-emoji-panel';
+        panel.style.cssText='display:flex;flex-wrap:wrap;gap:6px;padding:8px 0';
+        panel.innerHTML=emojis.map(function(em){return '<button type="button" data-cs-pick-emoji="'+em+'">'+em+'</button>'}).join('');
+        var wrap=root.querySelector('[data-cs-composer-wrap]');
+        if(wrap)wrap.insertBefore(panel,wrap.querySelector('form'));
+      }else{
+        panel.hidden=!panel.hidden;
+      }
+      return;
+    }
+    var pickEm=e.target.closest('[data-cs-pick-emoji]');
+    if(pickEm){
+      e.preventDefault();
+      var input2=root.querySelector(COMPOSER_SEL);
+      if(!input2||input2.disabled)return;
+      input2.value=String(input2.value||'')+pickEm.getAttribute('data-cs-pick-emoji');
+      state.composerDraft=input2.value;
+      syncComposerEnabled();
+      input2.focus();
+      return;
+    }
+    if(e.target.closest('[data-cs-image]')){
+      e.preventDefault();
+      var conv=activeConversation();
+      if(!composerCanReply(conv)){toast(composerBlockReason(conv)||'当前无法发送图片');return}
+      var Media=window.MCJChatMedia;
+      if(!Media){toast('图片组件未加载');return}
+      var token=(state.session&&state.session.token)||'';
+      var statusEl=root.querySelector('[data-cs-upload-status]');
+      Media.pickAndSendImages({
+        token:token,
+        multiple:true,
+        onStatus:function(t){if(statusEl)statusEl.textContent=t||'';},
+        onError:function(err){toast((err&&err.message)||'发送失败');},
+        onUploaded:function(url){return sendChatImage(url);}
+      }).then(function(){if(statusEl)setTimeout(function(){statusEl.textContent='';},1500);});
+      return;
+    }
+    var retryImg=e.target.closest('[data-retry-img]');
+    if(retryImg){
+      e.preventDefault();
+      var id=retryImg.getAttribute('data-retry-img');
+      var node=root.querySelector('[data-msg-id="'+id+'"]');
+      var url='';
+      if(node){
+        var a=node.querySelector('[data-chat-image]');
+        url=a?a.getAttribute('data-chat-image'):'';
+      }
+      if(url)sendChatImage(url);
       return;
     }
     var filterBtn=e.target.closest('[data-conv-filter]');
@@ -1995,4 +2101,5 @@
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',bootDashboard);
   else bootDashboard();
+  if(window.MCJChatMedia)window.MCJChatMedia.bindLightboxClicks(document.getElementById('serviceApp')||document);
 })();

@@ -806,13 +806,22 @@
         return !/^(CHAT-|E2E-MSG-|CS-LINK-|SVC-|MSG-|ORDER-CHAT-)/i.test(c.trim());
       }).map(function(m){
         var side=m.side||(m.senderRole==='companion'?'right':'left');
-        return '<div class="pw-msg '+esc(side)+'"><div class="pw-bubble">'+esc(m.content)+'</div><small>'+esc(m.senderLabel||'')+' · '+esc(fmtTime(m.createdAt))+'</small></div>';
+        var Media=window.MCJChatMedia;
+        var isImg=Media&&Media.isImageMessage(m);
+        var body=isImg?Media.imageBubbleHtml(Media.imageUrlOf(m),esc):('<div class="pw-bubble">'+esc(m.content)+'</div>');
+        var pending=m._pending?' · 上传中…':'';
+        var failed=m._failed?' · 发送失败':'';
+        return '<div class="pw-msg '+esc(side)+'" data-msg-id="'+esc(m.id||m._localId||'')+'">'+body+'<small>'+esc(m.senderLabel||'')+' · '+esc(fmtTime(m.createdAt))+pending+failed+'</small></div>';
       }).join('');
       if(!body)body='<div class="pw-empty"><strong>暂无消息</strong><span>发送消息即可联系官方客服。</span></div>';
     }
     var composer='<form class="pw-composer" data-chat-composer>'+
+      '<div class="mcj-composer-tools">'+
+      '<button class="mcj-composer-tool" type="button" data-pw-emoji '+(busy?'disabled':'')+' aria-label="表情">😊</button>'+
+      '<button class="mcj-composer-tool" type="button" data-pw-image '+(busy?'disabled':'')+' aria-label="图片">🖼</button>'+
+      '</div>'+
       '<textarea name="content" placeholder="输入消息，Enter 发送，Shift+Enter 换行" data-chat-input '+(busy?'disabled':'')+'></textarea>'+
-      '<div class="pw-send-line"><span>'+(busy?'发送中…':'')+'</span><button class="pw-btn primary" type="submit" '+(busy?'disabled':'')+'>发送</button></div>'+
+      '<div class="pw-send-line"><span class="mcj-upload-status" data-pw-upload-status>'+(busy?'发送中…':'')+'</span><button class="pw-btn primary" type="submit" '+(busy?'disabled':'')+'>发送</button></div>'+
       '</form>';
     return '<div class="pw-chat-main">'+head+'<div class="pw-messages">'+body+'</div>'+composer+'</div>';
   }
@@ -1606,6 +1615,71 @@
       return;
     }
   });
+  root.addEventListener('click',function(e){
+    if(e.target.closest('[data-pw-emoji]')){
+      e.preventDefault();
+      var ta=root.querySelector('[data-chat-input]');
+      if(!ta||ta.disabled)return;
+      var emojis=['😊','😂','👍','❤️','🙏','🔥','✨','😺','👌','🎉'];
+      var panel=root.querySelector('[data-pw-emoji-panel]');
+      if(!panel){
+        panel=document.createElement('div');
+        panel.setAttribute('data-pw-emoji-panel','1');
+        panel.style.cssText='display:flex;flex-wrap:wrap;gap:6px;padding:8px 12px';
+        panel.innerHTML=emojis.map(function(em){return '<button type="button" data-pw-pick-emoji="'+em+'">'+em+'</button>'}).join('');
+        var composer=root.querySelector('[data-chat-composer]');
+        if(composer)composer.parentNode.insertBefore(panel,composer);
+      }else panel.hidden=!panel.hidden;
+      return;
+    }
+    var pick=e.target.closest('[data-pw-pick-emoji]');
+    if(pick){
+      e.preventDefault();
+      var ta2=root.querySelector('[data-chat-input]');
+      if(!ta2||ta2.disabled)return;
+      ta2.value=String(ta2.value||'')+pick.getAttribute('data-pw-pick-emoji');
+      ta2.focus();
+      return;
+    }
+    if(e.target.closest('[data-pw-image]')){
+      e.preventDefault();
+      if(state.chatBusy)return;
+      if(!state.inbox){toast('客服暂不可用，请稍后重试');return}
+      var Media=window.MCJChatMedia;
+      if(!Media){toast('图片组件未加载');return}
+      var token=(state.session&&state.session.token)||'';
+      var statusEl=root.querySelector('[data-pw-upload-status]');
+      Media.pickAndSendImages({
+        token:token,
+        multiple:true,
+        onStatus:function(t){if(statusEl)statusEl.textContent=t||'';},
+        onError:function(err){toast((err&&err.message)||'发送失败');},
+        onUploaded:function(url){
+          state.chatBusy=true;
+          if(statusEl)statusEl.textContent='上传中…';
+          // optimistic
+          if(state.inbox){
+            state.inbox.messages=(state.inbox.messages||[]).concat([{
+              id:'local-img-'+Date.now(),_localId:'local-img',_pending:true,
+              side:'right',senderRole:'companion',senderLabel:'我',
+              messageType:'image',message_type:'image',content:url,createdAt:new Date().toISOString()
+            }]);
+            paint();
+          }
+          return api('send_cs_message',{content:url,message_type:'image'}).then(function(){
+            state.chatBusy=false;
+            return reloadInbox();
+          }).catch(function(err){
+            state.chatBusy=false;
+            toast(err.message||'图片发送失败');
+            paint();
+          });
+        }
+      }).then(function(){if(statusEl)setTimeout(function(){statusEl.textContent='';},1200);});
+      return;
+    }
+  });
+  if(window.MCJChatMedia)window.MCJChatMedia.bindLightboxClicks(root);
   init();
 })();
 

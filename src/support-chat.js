@@ -271,6 +271,11 @@
     var system = m.sender_role === "system" || m.message_type === "system";
     var failed = !!m._failed;
     var pending = !!m._pending;
+    var Media = window.MCJChatMedia;
+    var isImg = Media && Media.isImageMessage(m);
+    var bodyHtml = isImg
+      ? Media.imageBubbleHtml(Media.imageUrlOf(m), esc)
+      : "<p>" + esc(m.content || "") + "</p>";
     return (
       '<div class="support-msg ' +
       (mine ? "mine" : "") +
@@ -280,14 +285,12 @@
       esc(m.id || m._localId || "") +
       '">' +
       (system ? "" : "<strong>" + esc(m.sender_name || (mine ? "我" : "在线客服")) + "</strong>") +
-      "<p>" +
-      esc(m.content || "") +
-      "</p>" +
+      bodyHtml +
       (system
         ? ""
         : "<small>" +
           esc(shortTime(m.created_at || "")) +
-          (pending ? " · 发送中" : "") +
+          (pending ? " · 上传中…" : "") +
           (failed ? ' · 发送失败 <button type="button" class="support-inline-link" data-retry-msg="' + esc(m._localId || m.id || "") + '">重试</button>' : "") +
           "</small>") +
       "</div>"
@@ -635,9 +638,9 @@
           '</div>'
         : '') +
       '<form class="support-composer" data-send>' +
-      '<div class="support-composer-tools">' +
-      '<button class="support-tool-btn" type="button" data-toggle-emoji aria-label="表情">☺</button>' +
-      '<button class="support-tool-btn" type="button" hidden aria-hidden="true" data-attach-stub>📎</button>' +
+      '<div class="support-composer-tools mcj-composer-tools">' +
+      '<button class="support-tool-btn mcj-composer-tool" type="button" data-toggle-emoji aria-label="表情">😊</button>' +
+      '<button class="support-tool-btn mcj-composer-tool" type="button" data-chat-image-btn aria-label="图片">🖼</button>' +
       '</div>' +
       '<textarea name="content" rows="1" enterkeyhint="send" placeholder="输入消息，Enter 发送，Shift+Enter 换行" autocomplete="off" maxlength="2000">' +
       esc(state.composerDraft || '') +
@@ -646,7 +649,8 @@
       (state.sending || empty ? ' disabled' : '') +
       '>' +
       (state.sending ? '发送中…' : '发送') +
-      '</button></form>'
+      '</button></form>' +
+      '<div class="mcj-upload-status" data-upload-status></div>'
     );
   }
   function canSoftPatch() {
@@ -895,6 +899,47 @@
       softUpdate({ keepScroll: true });
       return;
     }
+    var imgBtn = e.target.closest('[data-chat-image-btn]');
+    if (imgBtn && root.contains(imgBtn)) {
+      e.preventDefault();
+      if (!hasAuthSession()) {
+        location.href = 'index.html?login=1';
+        return;
+      }
+      if (isClosedConversation(state.conversation)) {
+        toast('本次客服会话已结束，请重新发起咨询。');
+        return;
+      }
+      if (!state.conversation || !state.conversation.id) {
+        openConversation(orderId() ? { order_id: orderId() } : {}).then(function () {
+          imgBtn.click();
+        }).catch(function () {});
+        return;
+      }
+      var Media = window.MCJChatMedia;
+      if (!Media) {
+        toast('图片组件未加载');
+        return;
+      }
+      var statusEl = root.querySelector('[data-upload-status]');
+      var token = authAccessToken();
+      Media.pickAndSendImages({
+        token: token,
+        multiple: true,
+        onStatus: function (t) {
+          if (statusEl) statusEl.textContent = t || '';
+        },
+        onError: function (err) {
+          toast((err && err.message) || '发送失败');
+        },
+        onUploaded: function (url) {
+          return sendImageMessage(url);
+        },
+      }).then(function () {
+        if (statusEl) setTimeout(function () { statusEl.textContent = ''; }, 1500);
+      });
+      return;
+    }
     var emojiBtn = e.target.closest('[data-emoji]');
     if (emojiBtn) {
       var emoji = emojiBtn.getAttribute('data-emoji') || '';
@@ -965,6 +1010,55 @@
     }
   });
 
+  function sendImageMessage(url) {
+    if (!url || !state.conversation || !state.conversation.id) return Promise.resolve();
+    var localId = 'local-img-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+    var optimistic = {
+      _localId: localId,
+      _pending: true,
+      id: localId,
+      sender_role: 'boss',
+      message_type: 'image',
+      content: url,
+      created_at: new Date().toISOString(),
+      sender_name: '我',
+    };
+    state.messages = state.messages.concat([optimistic]);
+    softUpdate({ keepScroll: false });
+    var payload = {
+      action: 'send',
+      content: url,
+      message_type: 'image',
+      conversation_id: state.conversation.id,
+    };
+    var oid = orderId() || state.conversation.order_id || state.conversation.orderId || '';
+    if (oid) payload.order_id = oid;
+    return fetchJson('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      _mcjTimeoutMs: 12000,
+    })
+      .then(function (body) {
+        var serverMsg = body.appended || body.row || null;
+        state.messages = state.messages.filter(function (m) {
+          return m._localId !== localId;
+        });
+        if (serverMsg && !state.messages.some(function (m) { return m.id === serverMsg.id; })) {
+          state.messages = state.messages.concat([serverMsg]);
+        }
+        softUpdate({ keepScroll: false });
+      })
+      .catch(function (err) {
+        state.messages = state.messages.map(function (m) {
+          if (m._localId !== localId) return m;
+          return Object.assign({}, m, { _pending: false, _failed: true });
+        });
+        softUpdate({ keepScroll: true });
+        toast(err.message || '图片发送失败，可点击重试');
+      });
+  }
+
   document.addEventListener('submit', function (e) {
     if (!e.target.matches('[data-send]')) return;
     e.preventDefault();
@@ -1033,6 +1127,12 @@
     var failed = (state.messages || []).find(function (m) { return String(m._localId || m.id) === String(lid); });
     if (!failed || !failed.content || state.sending) return;
     state.messages = state.messages.filter(function (m) { return String(m._localId || m.id) !== String(lid); });
+    var Media = window.MCJChatMedia;
+    if (failed.message_type === 'image' || (Media && Media.isImageMessage(failed))) {
+      softUpdate({ keepScroll: true });
+      sendImageMessage(Media ? Media.imageUrlOf(failed) : failed.content);
+      return;
+    }
     state.composerDraft = failed.content;
     var form = root.querySelector('[data-send]');
     if (form) form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
@@ -1042,6 +1142,7 @@
     if (!document.hidden && hasAuthSession()) bootstrap();
   });
 
+  if (window.MCJChatMedia) window.MCJChatMedia.bindLightboxClicks(root);
   paint();
   bootstrap().then(startPoll);
 })();

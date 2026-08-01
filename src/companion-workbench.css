@@ -268,9 +268,10 @@ a.pw-btn{display:inline-flex;align-items:center;justify-content:center;text-deco
 .pw-msg:hover .pw-msg-actions{opacity:1}
 .pw-msg-actions button{height:22px;border:0;background:transparent;color:var(--pw-dim);font-size:11px;padding:0}
 .pw-msg-actions button:hover:not(:disabled){color:#fff}
-.pw-composer{border-top:1px solid var(--pw-line);padding:10px 12px;display:grid;gap:8px;max-width:920px;width:100%;margin:0 auto;box-sizing:border-box;background:rgba(18,16,22,.96)}
-.pw-tools{display:flex;gap:8px;overflow:auto}
-.pw-composer textarea{width:100%;min-height:62px;height:62px;resize:none;border:0;background:transparent;color:#fff;outline:none;box-sizing:border-box}
+.pw-composer{border-top:1px solid var(--pw-line);padding:10px 12px;display:grid;grid-template-columns:auto 1fr;gap:8px;align-items:end;max-width:920px;width:100%;margin:0 auto;box-sizing:border-box;background:rgba(18,16,22,.96)}
+.pw-composer .mcj-composer-tools{grid-column:1;align-self:center}
+.pw-composer textarea{grid-column:2;width:100%;min-height:62px;height:62px;resize:none;border:0;background:transparent;color:#fff;outline:none;box-sizing:border-box}
+.pw-composer .pw-send-line{grid-column:1 / -1}
 .pw-send-line{display:flex;align-items:center;justify-content:space-between;gap:10px;color:var(--pw-dim);font-size:12px;flex-wrap:wrap}
 .pw-send-line .pw-btn{flex:0 0 auto;min-width:88px}
 .pw-profile{border-left:1px solid var(--pw-line);padding:16px;overflow:auto}

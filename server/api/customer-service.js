@@ -787,10 +787,28 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       if (conversation.customer_service_id !== service.profile.id) {
         return json(res, 403, { ok: false, message: "该会话已由其他客服接待。" });
       }
-      const msg = await addMessage(conversation, service.profile.id, "customer_service", String(body.content || ""), "text");
+      let messageType = String(body.messageType || body.message_type || "text").trim() || "text";
+      let content = String(body.content || "").trim();
+      if (!content) return json(res, 400, { ok: false, message: "请输入消息内容。" });
+      if (messageType === "image" && !(/^https?:\/\//i.test(content) || content.startsWith("__IMG__:"))) {
+        return json(res, 400, { ok: false, message: "图片消息内容无效。" });
+      }
+      let msg = null;
+      try {
+        msg = await addMessage(conversation, service.profile.id, "customer_service", content, messageType);
+      } catch (err) {
+        if (messageType === "image" && /enum|invalid input|message_type/i.test(String(err.message || ""))) {
+          content = content.startsWith("__IMG__:") ? content : `__IMG__:${content}`;
+          msg = await addMessage(conversation, service.profile.id, "customer_service", content, "text");
+          messageType = "text";
+        } else {
+          throw err;
+        }
+      }
       const messageRow = msg
         ? Object.assign({}, safeMessage(msg, { [service.profile.id]: service.profile }), {
             senderName: String(service.profile.display_name || "").trim() || "客服",
+            messageType: msg.message_type || messageType,
           })
         : null;
       return json(res, 200, { ok: true, message: "消息已发送。", messageRow });
