@@ -164,6 +164,29 @@
       ? '<div class="pd-info-actions"><button type="button" class="mcj-secondary" data-open-gift>送礼物</button><button type="button" data-open-tip>打赏猫粮</button></div>'
       : "";
 
+    var reviewList = Array.isArray(c.reviews) ? c.reviews : [];
+    var reviewHtml = reviewList.length
+      ? reviewList
+          .slice(0, 12)
+          .map(function (r) {
+            return (
+              '<article class="pd-review-item"><strong>' +
+              esc(r.rating || "-") +
+              "★</strong><p>" +
+              esc(r.content || "老板已完成真实订单评价") +
+              "</p><span>" +
+              esc(r.createdAt ? String(r.createdAt).slice(0, 16).replace("T", " ") : "") +
+              "</span></article>"
+            );
+          })
+          .join("")
+      : '<p class="muted">暂无真实订单评价</p>';
+    var ratingText =
+      c.rating != null && Number(c.rating) > 0
+        ? Number(c.rating).toFixed(1) + "（" + (c.reviewCount || 0) + " 条）"
+        : "暂无评分";
+    var goodText = String(c.goodReviewCount != null ? c.goodReviewCount : 0);
+
     s.setAttribute("data-companion-level", c.levelId || "");
     s.innerHTML =
       '<section class="profile-hero detail-card" data-companion-level="' +
@@ -186,6 +209,8 @@
       esc(c.game || "未设置游戏") +
       " · " +
       esc(priceText) +
+      " · ★ " +
+      esc(ratingText) +
       "</div>" +
       (tags ? '<div class="tag-row companion-tags" style="margin-top:10px">' + tags + "</div>" : "") +
       '</div></section><section class="detail-two-col pd-detail-split"><div class="detail-card info-card pd-info-card"><div class="section-head"><h2>基本资料</h2></div><div class="pd-meta-list">' +
@@ -194,6 +219,8 @@
         "等级",
         '<span class="companion-level-pill" data-level-id="' + esc(c.levelId || "") + '">' + esc(levelText) + "</span>"
       ) +
+      metaRow("评分", esc(ratingText)) +
+      metaRow("好评数", esc(goodText)) +
       metaRow("人气值", esc(popScore)) +
       metaRow("在线状态", statusHtml(c) || esc(statusText)) +
       metaRow("价格区间", esc(rangeText)) +
@@ -209,7 +236,13 @@
       esc(image) +
       '" alt="' +
       esc(c.name) +
-      ' 卡面" onerror="this.onerror=null;this.src=\'/default-avatar.png\'"></div></section>';
+      ' 卡面" onerror="this.onerror=null;this.src=\'/default-avatar.png\'"></div></section><section class="detail-card real-review-wall"><div class="section-head"><h2>真实订单评价</h2><span>好评 ' +
+      esc(goodText) +
+      " · 共 " +
+      esc(c.reviewCount || 0) +
+      ' 条</span></div><div class="review-list" id="realReviewList">' +
+      reviewHtml +
+      "</div></section>";
 
     var b = bottom();
     if (b) {

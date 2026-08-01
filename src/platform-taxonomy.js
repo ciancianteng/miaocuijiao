@@ -31,17 +31,21 @@
     data.allowOrder = data.allowOrder !== false;
     return data;
   }
+  var FIXED_SERVICE_TYPES = [
+    { id: "play_service", name: "陪玩服务", title: "陪玩服务", category: "服务类型", enabled: true, sort: 1 },
+    { id: "chat_service", name: "陪聊服务", title: "陪聊服务", category: "服务类型", enabled: true, sort: 2 }
+  ];
   function applyServices(list) {
     var services = sortItems((list || []).map(normalize).filter(isEnabled));
     state.byType.services = services;
+    // 游戏分类：来自 services 表（启用中的游戏）
     state.byType.games = services.filter(function (item) {
       var positions = item.displayPositions || [];
-      return item.allowApply !== false && positions.indexOf("companion_apply") >= 0;
+      return item.allowApply !== false && (positions.indexOf("companion_apply") >= 0 || !positions.length);
     });
-    state.byType.service_types = services.filter(function (item) {
-      var positions = item.displayPositions || [];
-      return item.allowOrder !== false && (positions.indexOf("boss_order") >= 0 || positions.indexOf("cs_order") >= 0);
-    });
+    if (!state.byType.games.length) state.byType.games = services.slice();
+    // 服务类型：固定「陪玩服务 / 陪聊服务」，禁止把游戏名塞进服务类型
+    state.byType.service_types = FIXED_SERVICE_TYPES.map(normalize);
     state.byType.hot_games = services.filter(function (item) {
       var positions = item.displayPositions || [];
       return item.showOnHome !== false && positions.indexOf("home") >= 0;

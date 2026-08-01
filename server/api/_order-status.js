@@ -80,6 +80,63 @@ export function isCanonicalOrderStatus(status) {
   return Object.prototype.hasOwnProperty.call(ORDER_STATUS_LABELS, key) || key === "reviewed";
 }
 
+/**
+ * Strict CS / admin manual status graph.
+ * Payment confirm + assign companion stay on dedicated actions; 改状态 only offers these edges.
+ * Completed / refunded are never free jumps from early states.
+ */
+export const CS_STATUS_TRANSITIONS = Object.freeze({
+  awaiting_payment: ["cancelled"],
+  pending: ["cancelled", "refund_requested"],
+  claimed: ["pending", "cancelled", "refund_requested"],
+  waiting_boss_confirm: ["pending", "claimed", "cancelled"],
+  confirmed: ["in_progress"],
+  in_progress: ["completed", "refund_requested"],
+  completed: [],
+  cancelled: [],
+  refund_requested: [], // approve/reject via refund_decision
+  refunded: [],
+  reviewed: [],
+});
+
+/** CS 改状态 dropdown labels (stricter wording). */
+export const CS_STATUS_ACTION_LABELS = Object.freeze({
+  awaiting_payment: "待付款",
+  pending: "公开抢单中",
+  claimed: "等待陪玩确认",
+  waiting_boss_confirm: "等待老板选择",
+  confirmed: "待开始",
+  in_progress: "进行中",
+  completed: "已完成",
+  cancelled: "已取消",
+  refund_requested: "售后",
+  refunded: "已退款",
+});
+
+export function allowedCsNextStatuses(fromStatus) {
+  const from = normalizeOrderStatus(fromStatus);
+  return (CS_STATUS_TRANSITIONS[from] || []).slice();
+}
+
+export function assertCsStatusTransition(fromStatus, toStatus) {
+  const from = normalizeOrderStatus(fromStatus);
+  const to = normalizeOrderStatus(toStatus);
+  if (from === to) {
+    throw Object.assign(new Error("订单已是该状态。"), { status: 400 });
+  }
+  if (!isCanonicalOrderStatus(to) || to === "reviewed") {
+    throw Object.assign(new Error(`无效订单状态：${toStatus}`), { status: 400 });
+  }
+  const allowed = allowedCsNextStatuses(from);
+  if (!allowed.includes(to)) {
+    throw Object.assign(
+      new Error(`不允许从「${CS_STATUS_ACTION_LABELS[from] || from}」改为「${CS_STATUS_ACTION_LABELS[to] || to}」。`),
+      { status: 400 }
+    );
+  }
+  return { from, to };
+}
+
 /** Runtime allows Preview TEST pay (never on Vercel Production). */
 export function allowPreviewTestPay() {
   const vercelEnv = String(process.env.VERCEL_ENV || "").toLowerCase();

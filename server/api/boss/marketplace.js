@@ -4,6 +4,7 @@
 } from "../_companion-media-store.js";
 import { debitWallet, getWallet, money as walletMoney, writeAdminLog } from "../_wallet.js";
 import { scheduleRecomputeSoft } from "../_popularity.js";
+import { servicesFromGamePrices, readGamePrices } from "../_game-prices.js";
 
 const REQUIRED = ["SUPABASE_URL", "SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY"];
 
@@ -93,6 +94,7 @@ async function requireBoss(req) {
 }
 
 function availabilityOf(companion = {}) {
+  if (!/approved|verified|passed/.test(String(companion.verification_status || ""))) return "offline";
   const raw = String(companion.availability_status || companion.online_status || "offline").toLowerCase();
   if (raw === "online") return "online";
   if (raw === "busy") return "busy";
@@ -139,21 +141,16 @@ async function loadCompanionServices(companionUserId, companionRow) {
       customFields: Array.isArray(r.custom_fields) ? r.custom_fields : [],
     }));
   }
-  // Fallback: companion main game + price
-  const name = companionRow?.game || companionRow?.main_service || "陪玩服务";
+  // Fallback: one service per game with its own price (boss picks game → auto price)
+  const fromGames = servicesFromGamePrices(companionRow || {});
   const unit = companionRow?.pricing_unit || "小时";
-  return [
-    {
-      id: "default",
-      serviceId: "",
-      name,
-      price: money(companionRow?.price),
-      pricingUnit: unit,
-      specs: defaultSpecs(unit),
-      requiresGameId: !/语音|陪聊|聊天/i.test(name),
-      customFields: [],
-    },
-  ];
+  return fromGames.map((s) => ({
+    ...s,
+    pricingUnit: s.pricingUnit || unit,
+    specs: defaultSpecs(unit),
+    requiresGameId: !/语音|陪聊|聊天/i.test(s.name),
+    customFields: [],
+  }));
 }
 
 function defaultSpecs(unit) {
@@ -240,6 +237,7 @@ export default async function handler(req, res) {
           level: companion.level_name || "",
           avatar: companion.card_image_url || "/default-avatar.png",
           price: money(companion.price),
+          gamePrices: readGamePrices(companion),
           pricingUnit: companion.pricing_unit || "小时",
           availabilityStatus: avail,
           availabilityText: availabilityText(avail),

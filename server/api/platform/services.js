@@ -122,7 +122,8 @@ function filterByScope(services, scope) {
     return list.filter((item) => item.allowApply !== false && hasPosition(item, "companion_apply"));
   }
   if (scope === "profile") {
-    return list.filter((item) => item.allowApply !== false && hasPosition(item, "companion_profile"));
+    // Companion price/game list: all enabled services so admin-added games appear without code changes.
+    return list.filter((item) => item.enabled !== false);
   }
   if (scope === "order" || scope === "boss") {
     return list.filter((item) => item.allowOrder !== false && hasPosition(item, "boss_order"));

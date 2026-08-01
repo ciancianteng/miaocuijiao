@@ -17,7 +17,26 @@
   function resetPassword(id){var password=prompt('请输入新密码（至少 8 位）');if(!password)return;api('reset_password',{id:id,password:password}).then(function(res){state.message=res.message||'密码已重置';return load()}).catch(function(err){state.error=err.message;render();});}
   function toggle(id,status){api('toggle',{id:id,status:status}).then(function(res){state.message=res.message||'状态已更新';return load()}).catch(function(err){state.error=err.message;render();});}
   function remove(id){if(!confirm('确认删除该客服账号？删除后该账号无法登录客服端。'))return;api('delete',{id:id}).then(function(res){state.message=res.message||'客服账号已删除';return load()}).catch(function(err){state.error=err.message;render();});}
-  function renderStats(){var target=document.getElementById('serviceWorkStats');if(!target)return;target.innerHTML='<section class="service-account-admin"><header class="service-account-head"><div><h2>客服工作统计</h2><p>只展示真实打卡和订单处理数据，不显示工资假数字。</p></div><button class="mini-btn" type="button" data-service-account-refresh>刷新</button></header><div class="table-wrap service-account-table-wrap"><table class="service-account-table"><thead><tr><th>客服姓名</th><th>当前状态</th><th>今日上班时间</th><th>今日下班时间</th><th>今日处理订单数</th><th>本月处理订单数</th><th>售后处理数</th><th>最近登录时间</th></tr></thead><tbody>'+(state.rows.length?state.rows.map(function(row){return '<tr><td>'+esc(row.name||'-')+'</td><td>'+statusChip(row.status)+'</td><td>'+esc(row.todayClockInAt||'-')+'</td><td>'+esc(row.todayClockOutAt||'-')+'</td><td>'+esc(row.todayOrders||0)+'</td><td>'+esc(row.monthOrders||0)+'</td><td>'+esc(row.afterSaleCount||0)+'</td><td>'+esc(row.lastLoginAt||'-')+'</td></tr>'}).join(''):'<tr><td colspan="8"><div class="empty">暂无客服工作统计</div></td></tr>')+'</tbody></table></div></section>';}
+  function renderStats(){
+    var target=document.getElementById('serviceWorkStats');
+    if(!target)return;
+    var history=[];
+    state.rows.forEach(function(row){
+      (row.attendanceHistory||[]).forEach(function(h){
+        history.push({
+          name:row.name||'-',
+          date:h.date||'-',
+          clockInText:h.clockInText||'-',
+          clockOutText:h.clockOutText||'-',
+          workHours:h.workHours!=null?h.workHours:'-',
+          isLate:h.isLate?'是':'否',
+          isAbsent:h.isAbsent?'是':'否',
+          attendanceStatus:h.attendanceStatus||'-'
+        });
+      });
+    });
+    target.innerHTML='<section class="service-account-admin"><header class="service-account-head"><div><h2>客服工作统计</h2><p>打卡写入数据库后实时展示，工资中心按打卡记录自动估算。</p></div><button class="mini-btn" type="button" data-service-account-refresh>刷新</button></header><div class="table-wrap service-account-table-wrap"><table class="service-account-table"><thead><tr><th>客服姓名</th><th>当前状态</th><th>今日上班时间</th><th>今日下班时间</th><th>今日工时</th><th>今日处理订单数</th><th>本月处理订单数</th><th>售后处理数</th></tr></thead><tbody>'+(state.rows.length?state.rows.map(function(row){return '<tr><td>'+esc(row.name||'-')+'</td><td>'+esc(row.todayClockStatus||'未打卡')+'</td><td>'+esc(row.todayClockInAt||'-')+'</td><td>'+esc(row.todayClockOutAt||'-')+'</td><td>'+esc(row.todayWorkHours!=null?row.todayWorkHours:'-')+'</td><td>'+esc(row.todayOrders||0)+'</td><td>'+esc(row.monthOrders||0)+'</td><td>'+esc(row.afterSaleCount||0)+'</td></tr>'}).join(''):'<tr><td colspan="8"><div class="empty">暂无客服工作统计</div></td></tr>')+'</tbody></table></div><header class="service-account-head" style="margin-top:18px"><div><h3>本月打卡历史</h3><p>日期 / 上下班 / 工时 / 迟到 / 缺勤</p></div></header><div class="table-wrap service-account-table-wrap"><table class="service-account-table"><thead><tr><th>客服</th><th>日期</th><th>上班时间</th><th>下班时间</th><th>工时</th><th>是否迟到</th><th>是否缺勤</th><th>状态</th></tr></thead><tbody>'+(history.length?history.map(function(h){return '<tr><td>'+esc(h.name)+'</td><td>'+esc(h.date)+'</td><td>'+esc(h.clockInText)+'</td><td>'+esc(h.clockOutText)+'</td><td>'+esc(h.workHours)+'</td><td>'+esc(h.isLate)+'</td><td>'+esc(h.isAbsent)+'</td><td>'+esc(h.attendanceStatus)+'</td></tr>'}).join(''):'<tr><td colspan="8"><div class="empty">本月暂无打卡历史</div></td></tr>')+'</tbody></table></div></section>';
+  }
   document.addEventListener('click',function(e){if(e.target.closest('[data-service-account-new]')){openEditor(null,false);return}var view=e.target.closest('[data-service-account-view]');if(view){openEditor(find(view.dataset.serviceAccountView),true);return}var edit=e.target.closest('[data-service-account-edit]');if(edit){openEditor(find(edit.dataset.serviceAccountEdit),false);return}var reset=e.target.closest('[data-service-account-reset]');if(reset){resetPassword(reset.dataset.serviceAccountReset);return}var tog=e.target.closest('[data-service-account-toggle]');if(tog){toggle(tog.dataset.serviceAccountToggle,tog.dataset.nextStatus);return}var del=e.target.closest('[data-service-account-delete]');if(del){remove(del.dataset.serviceAccountDelete);return}if(e.target.closest('[data-service-account-cancel]')){closeEditor();return}if(e.target.closest('[data-service-account-refresh]')){load();return}});
   document.addEventListener('submit',function(e){if(e.target.matches('[data-service-account-form]')){e.preventDefault();submit(e.target);}});
   document.addEventListener('DOMContentLoaded',function(){render();renderStats();});

@@ -338,8 +338,9 @@ export default async function handler(req, res) {
       const companionId = String(body.companion_id || payload.companion_id || payload.player_id || "").trim();
       if (!companionId) return json(res, 400, { ok: false, message: "请指定陪玩 ID。" });
       patch.companion_id = companionId;
-      // Align with CS push: paid → claimed (companion can accept); unpaid stay awaiting_payment.
+      // Align with CS push: paid → claimed (waiting companion confirm); unpaid stay awaiting_payment.
       patch.status = before.status === "awaiting_payment" ? "awaiting_payment" : "claimed";
+      patch.accepted_at = null;
     } else if (action === "push_hall") {
       patch.companion_id = null;
       patch.status = before.status === "awaiting_payment" ? "awaiting_payment" : "pending";
@@ -354,19 +355,38 @@ export default async function handler(req, res) {
       patch.cancelled_at = new Date().toISOString();
     } else if (action === "refund") {
       patch.status = "refunded";
+    } else if (action === "update_status") {
+      // fallthrough uses patch.status already set above — validate graph
     } else {
       return json(res, 400, { ok: false, message: `未知订单操作：${rawAction}` });
     }
 
     if (!Object.keys(patch).length) return json(res, 400, { ok: false, message: "未知订单操作。" });
+    if (patch.status && patch.status !== before.status && (action === "update_status" || action === "cancel" || action === "refund" || action === "confirm_start" || action === "confirm_complete" || action === "push_hall" || action === "assign_companion")) {
+      try {
+        const { assertCsStatusTransition, writeOrderStatusLog } = await import("../_order-status.js");
+        if (action === "update_status") assertCsStatusTransition(before.status, patch.status);
+        await writeOrderStatusLog(
+          { restUrl, supabaseJson, serviceHeaders },
+          {
+            orderId: id,
+            fromStatus: before.status,
+            toStatus: patch.status,
+            operatorRole: "admin",
+            operatorId: admin.id,
+            note: String(payload.reason || body.reason || action),
+          }
+        );
+      } catch (err) {
+        if (action === "update_status") return json(res, err.status || 400, { ok: false, message: err.message || "非法状态跳转。" });
+      }
+    }
     const updated = await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(id)}`), {
       method: "PATCH",
       headers: serviceHeaders(),
       body: JSON.stringify(patch),
     });
     const after = updated[0] || { ...before, ...patch };
-    await addSystem(after, admin.id, `后台更新订单：${ORDER_STATUS_TEXT[patch.status] || patch.status || action}`);
-    await logAdminOp(admin, action, id, { status: before.status }, { status: after.status, ...patch }, String(payload.reason || ""));
     const ids = [after.boss_id, after.companion_id, after.customer_service_id].filter(Boolean);
     const profiles = ids.length
       ? await supabaseJson(restUrl("profiles", `?id=in.(${ids.map(encodeURIComponent).join(",")})`), { headers: serviceHeaders() }).catch(() => [])
@@ -375,6 +395,14 @@ export default async function handler(req, res) {
       m[p.id] = p;
       return m;
     }, {});
+    if (action === "assign_companion") {
+      const name = map[after.companion_id]?.display_name || map[after.companion_id]?.email || "陪玩";
+      await addSystem(after, admin.id, `已推送陪玩：${name}，请陪玩尽快接单`);
+      await logAdminOp(admin, action, id, { status: before.status }, { status: after.status, ...patch }, String(payload.reason || ""));
+      return json(res, 200, { ok: true, message: "指定成功", order: safeOrder(after, map) });
+    }
+    await addSystem(after, admin.id, `后台更新订单：${ORDER_STATUS_TEXT[patch.status] || patch.status || action}`);
+    await logAdminOp(admin, action, id, { status: before.status }, { status: after.status, ...patch }, String(payload.reason || ""));
     return json(res, 200, { ok: true, message: "订单已更新。", order: safeOrder(after, map) });
   } catch (error) {
     return json(res, error.status || 500, { ok: false, message: error.message || "后台订单接口异常。" });

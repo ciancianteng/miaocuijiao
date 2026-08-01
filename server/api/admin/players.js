@@ -263,8 +263,16 @@ function mapListPlayer(row = {}, profile = {}) {
     mediaStatus: labelStatus(mediaRaw),
     application_status: applicationRaw,
     applicationStatus: labelStatus(applicationRaw),
-    online_status: row.online_status || "offline",
-    onlineStatus: ONLINE_LABEL[row.online_status] || row.online_status || "离线",
+    online_status: (() => {
+      const verified = /approved|verified|passed/.test(String(row.verification_status || applicationRaw || ""));
+      if (!verified) return "offline";
+      return row.online_status || "offline";
+    })(),
+    onlineStatus: (() => {
+      const verified = /approved|verified|passed/.test(String(row.verification_status || applicationRaw || ""));
+      const code = verified ? (row.online_status || "offline") : "offline";
+      return ONLINE_LABEL[code] || code || "离线";
+    })(),
     status: ACCOUNT_LABEL[accountRaw] || accountRaw,
     accountStatus: ACCOUNT_LABEL[accountRaw] || accountRaw,
     account_status: accountRaw,
@@ -277,9 +285,9 @@ function mapListPlayer(row = {}, profile = {}) {
 }
 
 async function loadRelated(profileId, companionId) {
-  const empty = { identity: null, payment: null, media: [], deposit: null, orders: [], income: [] };
+  const empty = { identity: null, payment: null, media: [], deposit: null, orders: [], income: [], reviews: [] };
   try {
-    const [identityRows, paymentRows, mediaRows, depositRows, orderRows, txRows] = await Promise.all([
+    const [identityRows, paymentRows, mediaRows, depositRows, orderRows, txRows, reviewRows] = await Promise.all([
       companionDb("companion_identity_verifications", `?companion_profile_id=eq.${encodeURIComponent(companionId)}&limit=1`).catch((e) => {
         if (isMissingRelation(e)) return [];
         throw e;
@@ -306,6 +314,13 @@ async function loadRelated(profileId, companionId) {
         "transactions",
         `?user_id=eq.${encodeURIComponent(profileId)}&transaction_type=eq.companion_income&order=created_at.desc&limit=30`
       ).catch(() => []),
+      companionDb(
+        "companion_reviews",
+        `?companion_id=eq.${encodeURIComponent(profileId)}&order=created_at.desc&limit=50&select=id,order_id,boss_id,rating,content,status,created_at`
+      ).catch((e) => {
+        if (isMissingRelation(e)) return [];
+        throw e;
+      }),
     ]);
     return {
       identity: identityRows?.[0] || null,
@@ -314,6 +329,7 @@ async function loadRelated(profileId, companionId) {
       deposit: depositRows?.[0] || null,
       orders: Array.isArray(orderRows) ? orderRows : [],
       income: Array.isArray(txRows) ? txRows : [],
+      reviews: Array.isArray(reviewRows) ? reviewRows : [],
     };
   } catch (error) {
     if (isMissingRelation(error)) return empty;
@@ -375,6 +391,11 @@ async function buildDetail(row, profile, opts = {}) {
   const cancelled = related.orders.filter((o) => o.status === "cancelled").length;
   const refunded = related.orders.filter((o) => /refund/i.test(String(o.status || ""))).length;
   const totalIncome = related.income.reduce((n, row) => n + money(row.amount), 0);
+  const reviewList = (related.reviews || []).filter((r) => !r.status || r.status === "published" || r.status === "显示中");
+  const reviewRatings = reviewList.map((r) => Number(r.rating) || 0).filter((n) => n >= 1 && n <= 5);
+  const reviewCount = reviewRatings.length;
+  const avgRating = reviewCount ? Math.round((reviewRatings.reduce((n, v) => n + v, 0) / reviewCount) * 10) / 10 : 0;
+  const goodReviewCount = reviewRatings.filter((n) => n >= 4).length;
 
   const base = mapListPlayer(
     {
@@ -500,7 +521,14 @@ async function buildDetail(row, profile, opts = {}) {
       totalIncome,
       withdrawable: totalIncome,
       withdrawn: 0,
+      rating: avgRating,
+      reviewCount,
+      goodReviewCount,
+      goodRate: reviewCount ? Math.round((goodReviewCount / reviewCount) * 1000) / 10 : 0,
     },
+    rating: avgRating,
+    reviewCount,
+    goodReviewCount,
     recentOrders: related.orders.slice(0, 10).map((o) => ({
       id: o.id,
       orderNo: o.order_no || o.id,
@@ -516,6 +544,14 @@ async function buildDetail(row, profile, opts = {}) {
       status: t.status,
       createdAt: t.created_at,
       note: t.note || "",
+    })),
+    reviews: reviewList.slice(0, 30).map((r) => ({
+      id: r.id,
+      orderId: r.order_id || "",
+      rating: Number(r.rating) || 0,
+      content: r.content || "",
+      status: r.status || "published",
+      createdAt: r.created_at || "",
     })),
     schemaReady: true,
   };

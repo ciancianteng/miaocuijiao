@@ -63,6 +63,16 @@ function withoutCompletionPending(text = "") {
     .trim();
 }
 
+/** Strip internal grab / completion markers so companions never see raw JSON blobs. */
+export function stripInternalOrderMarkers(text = "") {
+  let raw = String(text || "");
+  // Prefer closed marker blocks; also drop truncated open blobs (legacy bad rows).
+  raw = raw.replace(/\[\[ORDER_GRABS\]\][\s\S]*?\[\[\/ORDER_GRABS\]\]/g, "");
+  raw = raw.replace(/\[\[ORDER_GRABS\]\][\s\S]*$/g, "");
+  raw = withoutCompletionPending(raw);
+  return raw.replace(/\n{2,}/g, "\n").trim();
+}
+
 export function createOrderGrabHelpers({ restUrl, supabaseJson, serviceHeaders }) {
   async function patchOrderText(orderId, nextText, preferNote = true) {
     const attempts = preferNote

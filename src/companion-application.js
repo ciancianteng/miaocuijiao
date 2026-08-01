@@ -282,9 +282,9 @@
   function gameHtml(data) {
     return '<section class="apply-panel"><h2>填写游戏资料</h2><form class="apply-grid">' +
       '<label class="form-field">游戏昵称<div class="copy-field"><input name="gameNickname" data-apply-field type="text" value="' + esc(data.gameNickname || "") + '"><button class="apply-btn small" type="button" data-copy-nickname>复制</button></div></label>' +
-      tagPicker("mainGames", "主玩游戏（多选）", data.mainGames, tagGroups.mainGames, 8) +
+      tagPicker("mainGames", "可接游戏（多选）", data.mainGames, tagGroups.mainGames, 8) +
       tagPicker("positions", "擅长位置（多选）", data.positions, tagGroups.positions, 8) +
-      tagPicker("modes", "可接模式（多选）", data.modes, tagGroups.modes, 8) +
+      tagPicker("modes", "可提供服务（多选）", data.modes, tagGroups.modes, 2) +
       selectField("rank", "游戏段位", data.rank, rankOptions) +
       selectField("voiceType", "声音类型", data.voiceType, voiceTypeOptions()) +
       field("onlineStart", "常在线开始时间", "time", data.onlineStart) +
@@ -431,11 +431,13 @@
     var uploads = draft.uploads || {};
     var voice = draft.voice || {};
     var mainGames = draft.data.mainGames || [];
+    var modes = draft.data.modes || [];
     var chain = Promise.resolve();
     chain = chain.then(function () {
       return postCompanion("submit_application", {
         main_service: (mainGames[0] || ""),
-        main_game: (mainGames[0] || ""),
+        main_game: mainGames.join("、"),
+        service_type: modes.join(","),
         rank: draft.data.rank || "",
         position: (draft.data.positions || [])[0] || "",
         voice_type: "",
@@ -822,11 +824,13 @@
       var positions = item.displayPositions || [];
       return item.allowApply !== false && positions.indexOf("companion_apply") >= 0;
     });
-    var games = applyServices.map(taxonomy.label).filter(Boolean);
-    var orderServices = (taxonomy.items("service_types") || []).map(taxonomy.label).filter(Boolean);
+    var games = applyServices.map(function (item) {
+      return taxonomy.label(item);
+    }).filter(Boolean);
+    var orderServices = ["陪玩服务", "陪聊服务"];
     var tags = taxonomy.items("companion_tags");
-    tagGroups.mainGames = { "主打服务": games };
-    tagGroups.modes = { "可接模式": orderServices.length ? orderServices : games.slice() };
+    tagGroups.mainGames = { "可接游戏": games };
+    tagGroups.modes = { "可提供服务": orderServices };
     if (tags.length) {
       var grouped = {};
       tags.forEach(function (item) {

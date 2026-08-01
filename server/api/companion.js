@@ -17,21 +17,45 @@ import { companionPopularityMe, recordOnlineSession, scheduleRecomputeSoft } fro
 import { readLocalLevels, toPublicLevel } from "./_companion-levels-store.js";
 import { resolvePlatformCommission } from "./_commission-rates.js";
 import { writeOrderStatusLog, COMPANION_STATUS_LABELS } from "./_order-status.js";
+import {
+  readGamePrices,
+  writeGamePricesMarker,
+  stripGamePricesMarker,
+  splitGames,
+  parseServiceIds,
+  parseServiceTypes,
+} from "./_game-prices.js";
+import { loadPublicServices } from "./platform/services.js";
+import {
+  buildCompanionInbox,
+  ensureCompanionSupportConversation,
+  sendCompanionChatMessage,
+  markConversationMessagesRead,
+  markNoticesRead,
+  loadConversationMessages,
+  viewMessage,
+  buildSystemNotices,
+  loadReadKeys,
+} from "./_companion-inbox.js";
 import "./_load-env.js";
 
 const ORDER_STATUS_TEXT = COMPANION_STATUS_LABELS;
 const WITHDRAW_STATUS_TEXT = {
+  pending: "待审核",
   pending_review: "待审核",
-  approved_pending_pay: "已批准",
+  approved: "已通过",
+  approved_pending_pay: "已通过",
   rejected: "已拒绝",
-  paying: "付款处理中",
-  paid_pending_receipt: "已批准待确认",
+  paying: "审核中",
+  paid_pending_receipt: "已通过",
   completed: "已打款",
   pay_failed: "付款失败",
-  cancelled: "已撤销",
+  cancelled: "已取消",
 };
 const WITHDRAW_FROZEN = new Set([
+  "pending",
   "pending_review",
+  "approved",
   "approved_pending_pay",
   "paying",
   "paid_pending_receipt",
@@ -412,19 +436,41 @@ async function synthesizeMediaFallback(profile, companion) {
 }
 
 function safePlayer(profile = {}, companion = {}) {
-  const onlineStatus = normalizeOnlineStatus(companion.availability_status || companion.online_status);
+  // Unverified accounts cannot work: never expose stale busy/online to client/admin sync.
+  let onlineStatus = normalizeOnlineStatus(companion.availability_status || companion.online_status);
+  if (!canWork(profile, companion)) onlineStatus = "offline";
+  const gamePrices = readGamePrices(companion);
+  const serviceTypes = parseServiceTypes(companion.service_type, {
+    fallbackPlayWhenGame: true,
+    hasGame: !!(companion.game || parseServiceIds(companion.service_ids).length),
+  });
+  const serviceIds = parseServiceIds(companion.service_ids);
+  const publicTags = stripGamePricesMarker(companion.tags || "")
+    .replace(/\[\[MCJ_GALLERY:[\s\S]*?\]\]/g, "")
+    .replace(/游戏ID:[^,，]*/g, "")
+    .replace(/,\s*,/g, ",")
+    .replace(/^\s*,\s*|\s*,\s*$/g, "")
+    .trim();
   return {
     id: profile.id,
     uid: profile.id,
+    email: profile.email || "",
     name: companion.nickname || profile.display_name || profile.email || "陪玩",
     avatar: resolveDisplayAvatar(profile, companion),
     hasCustomAvatar: !!(profile.avatar_url || companion.card_image_url) && resolveDisplayAvatar(profile, companion) !== "/default-avatar.png",
     mainGame: companion.game || "",
     game: companion.game || "",
+    serviceType: serviceTypes[0] || "陪玩服务",
+    serviceTypes,
+    service_type: serviceTypes.join(","),
+    serviceIds,
+    service_ids: serviceIds,
     gameId: companion.game_id || ((String(companion.tags || "").match(/游戏ID:([^,，]+)/) || [])[1] || "").trim(),
     level: companion.level_name || "未设置",
     rawPrice: money(companion.price),
     price: money(companion.price),
+    gamePrices,
+    publicTags,
     bio: companion.description || "",
     voiceUrl: companion.voice_url || "",
     onlineStatus,
@@ -440,20 +486,58 @@ function safePlayer(profile = {}, companion = {}) {
     applicationRejectReason: companion.application_reject_reason || "",
     mediaRejectReason: companion.media_reject_reason || "",
     tags: companion.tags || "",
+    updatedAt: companion.updated_at || profile.updated_at || "",
     raw: { ...profile, ...companion }
   };
 }
-function canWork(profile = {}, companion = {}) { return profile.status === "active" && companion.verification_status === "approved"; }
-function canAccept(profile = {}, companion = {}) { return canWork(profile, companion) && companion.online_status === "online"; }
+function canWork(profile = {}, companion = {}) {
+  const profileOk = profile.status === "active";
+  const verified = /approved|verified|passed/.test(String(companion.verification_status || ""));
+  return profileOk && verified;
+}
+function canAccept(profile = {}, companion = {}) {
+  return canWork(profile, companion) && normalizeOnlineStatus(companion.availability_status || companion.online_status) === "online";
+}
+function auditLockMessage(profile = {}, companion = {}) {
+  if (canWork(profile, companion)) return "";
+  if (profile.status && profile.status !== "active" && profile.status !== "pending") {
+    return "账号已停用，无法接单。";
+  }
+  return "账号审核通过后即可开始接单。";
+}
+function stripOrderFacingText(text = "") {
+  return String(text || "")
+    .replace(/\[\[ORDER_GRABS\]\][\s\S]*?\[\[\/ORDER_GRABS\]\]/g, "")
+    .replace(/\[\[ORDER_GRABS\]\][\s\S]*$/g, "")
+    .split("[[COMPLETION_PENDING]]")
+    .join("")
+    .replace(/\buuid\s+create\s+regression\s+\d+\b/gi, "")
+    .replace(/\bcreate\s+regression\s+\d+\b/gi, "")
+    .replace(/\bregression\s+\d+\b/gi, "")
+    .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, "")
+    .replace(/\b(selector|grabber|ORDER_GRABS|COMPLETION_PENDING)\b/gi, "")
+    .replace(/\n{2,}/g, "\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+}
 function viewOrder(row = {}, boss = {}, settlement = null) {
   const parsed = settlement || parseSettlementNote(row.settlement_note) || null;
   const rate = money(parsed?.companionShareRate || row.commission_rate || row.player_commission_rate || row.companion_rate || 80) || 80;
   const amount = money(row.total_amount);
   const net = parsed ? money(parsed.companionNetCatFood) : roundMoney((amount * rate) / 100);
   const platformFee = parsed ? money(parsed.platformCommissionCatFood) : roundMoney(amount - net);
-  const description = String(row.description || "");
+  const description = stripOrderFacingText(row.description || "");
   const gameIdFromDesc = (description.match(/游戏ID[：:]\s*([^\n；;]+)/i) || [])[1] || "";
-  const notesLine = String(row.notes || "").trim() || description.split("\n")[0] || "";
+  const serverFromDesc =
+    (description.match(/(?:区服|服务器|大区)[：:]\s*([^\n；;]+)/i) || [])[1] ||
+    (String(row.server || row.region || row.game_server || "").trim());
+  const notesLine = (() => {
+    const rawNotes = stripOrderFacingText(row.notes || "").trim();
+    if (rawNotes && !/^(区服|服务器|大区|游戏ID|付款方式)[：:]/i.test(rawNotes)) return rawNotes;
+    const remarkFromDesc = (description.match(/(?:老板备注|备注)[：:]\s*([^\n；;]+)/i) || [])[1];
+    if (remarkFromDesc) return stripOrderFacingText(remarkFromDesc).trim();
+    return rawNotes || "";
+  })();
   const gameId = String(row.game_id_value || row.game_id || gameIdFromDesc || "").trim();
   const unitPrice = money(row.unit_price);
   const confirmAnchor = row.accepted_at || row.created_at || "";
@@ -468,19 +552,32 @@ function viewOrder(row = {}, boss = {}, settlement = null) {
   if (row.status === "in_progress" && completionPending) statusText = "待老板确认完成";
   if (row._grabStatus === "pending_customer_selection") statusText = "等待老板选择";
   if (row._grabStatus === "not_selected") statusText = "未被选中";
+  const serviceContent =
+    description ||
+    stripOrderFacingText(row.title || "") ||
+    stripOrderFacingText(row.note || "") ||
+    "";
+  const durationLabel = row.hours
+    ? `${row.hours}小时`
+    : row.rounds || row.games_count
+      ? `${row.rounds || row.games_count}局`
+      : "";
   return {
     id: row.id,
     orderNo: row.order_no || row.id,
     orderType: ORDER_TYPE_TEXT[orderTypeKey] || orderTypeKey,
     orderTypeKey,
+    orderSource: ORDER_TYPE_TEXT[orderTypeKey] || orderTypeKey,
     companionId: row.companion_id || "",
     bossName: boss.display_name || boss.email || "老板",
     bossUid: boss.boss_uid || "",
     bossId: row.boss_id || "",
     game: row.game || "",
-    serviceContent: row.description || row.title || "",
+    gameServer: serverFromDesc || "-",
+    serviceContent: serviceContent || "无补充说明",
     serviceName: row.service_name || row.game || row.title || "",
-    duration: row.hours ? `${row.hours}小时` : "",
+    serviceType: row.service_name || row.title || ORDER_TYPE_TEXT[orderTypeKey] || orderTypeKey,
+    duration: durationLabel,
     hours: money(row.hours),
     unitPrice,
     amount,
@@ -488,6 +585,7 @@ function viewOrder(row = {}, boss = {}, settlement = null) {
     platformFee,
     gameId,
     bossNotes: notesLine,
+    remark: notesLine,
     confirmDeadline,
     acceptedAt: row.accepted_at || "",
     startedAt: row.started_at || "",
@@ -520,9 +618,8 @@ async function loadOrdersFor(profile, companion, transactions = []) {
   const visibleMine = (myRows || []).filter((row) => row.status !== "awaiting_payment");
   const openQuery =
     "?and=(companion_id.is.null,or(status.eq.pending,status.eq.waiting_boss_confirm))&order=created_at.desc&limit=100";
-  const openRows = canAccept(profile, companion)
-    ? await supabaseJson(restUrl("orders", openQuery), { headers: serviceHeaders() })
-    : [];
+  // Always list open hall orders so non-online statuses can show disabled grab buttons with reasons.
+  const openRows = await supabaseJson(restUrl("orders", openQuery), { headers: serviceHeaders() }).catch(() => []);
   const { createOrderGrabHelpers } = await import("./_order-grabs.js");
   const grabsApi = createOrderGrabHelpers({ restUrl, supabaseJson, serviceHeaders });
   const myGrabRows = await grabsApi.listMyPendingGrabs(profile.id);
@@ -663,6 +760,7 @@ function emptyWalletBundle() {
     earningDetails: [],
     earnings: {
       todayIncome: 0,
+      yesterdayIncome: 0,
       weekIncome: 0,
       monthIncome: 0,
       totalIncome: 0,
@@ -738,7 +836,19 @@ async function loadWalletBundle(profile, myOrders = []) {
   const walletLedger = [...ledgerFromTx, ...ledgerFromWithdraw].sort((a, b) =>
     String(b.createdAt || "").localeCompare(String(a.createdAt || ""))
   );
-  const earningDetails = ledgerFromTx.filter((row) => row.typeCode === "companion_income");
+  const earningDetails = ledgerFromTx
+    .filter((row) => row.typeCode === "companion_income")
+    .map((row) => {
+      const settlement = row.settlement || parseSettlementNote(row.note) || {};
+      return {
+        ...row,
+        orderNo: settlement.orderNo || settlement.order_no || "",
+        grossAmount: money(settlement.orderAmountCatFood || settlement.gross || row.amount),
+        platformFee: money(settlement.platformCommissionCatFood || settlement.platformFee || 0),
+        netIncome: money(settlement.companionNetCatFood || row.amount),
+        statusText: row.status === "completed" ? "已完成" : row.status === "pending" ? "待处理" : row.status || "-",
+      };
+    });
   return {
     transactions,
     withdrawalRows,
@@ -747,7 +857,8 @@ async function loadWalletBundle(profile, myOrders = []) {
     earningDetails,
     earnings: {
       todayIncome: summary.todayIncome || 0,
-      weekIncome: summary.monthIncome || 0,
+      yesterdayIncome: summary.yesterdayIncome || 0,
+      weekIncome: summary.weekIncome || 0,
       monthIncome: summary.monthIncome || 0,
       totalIncome: summary.totalIncome || 0,
       withdrawable: summary.withdrawable || 0,
@@ -762,6 +873,13 @@ async function loadWalletBundle(profile, myOrders = []) {
 function summaryFrom(myOrders, transactions, withdrawals = []) {
   const today = todayKey();
   const month = monthKey();
+  const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+  const weekStart = (() => {
+    const d = new Date();
+    const day = d.getUTCDay() || 7;
+    d.setUTCDate(d.getUTCDate() - (day - 1));
+    return d.toISOString().slice(0, 10);
+  })();
   const incomeRows = (transactions || []).filter((row) => row.transaction_type === "companion_income" && row.status !== "cancelled");
   const refundRows = (transactions || []).filter((row) => row.transaction_type === "refund" && row.status !== "cancelled");
   const frozen = (withdrawals || [])
@@ -776,6 +894,7 @@ function summaryFrom(myOrders, transactions, withdrawals = []) {
   const gross = incomeRows.reduce((n, row) => n + money(row.amount), 0);
   const refundTotal = refundRows.reduce((n, row) => n + money(row.amount), 0);
   const netGross = Math.max(0, roundMoney(gross - refundTotal));
+  const sumIncomeOn = (pred) => incomeRows.filter(pred).reduce((n, row) => n + money(row.amount), 0);
   return {
     todayOrders: myOrders.filter((o) => String(o.createdAt || "").slice(0,10) === today).length,
     waitingConfirm: myOrders.filter((o) => o.status === "claimed").length,
@@ -784,11 +903,13 @@ function summaryFrom(myOrders, transactions, withdrawals = []) {
     runningOrders: myOrders.filter((o) => o.status === "in_progress").length,
     completedOrders: myOrders.filter((o) => o.status === "completed").length,
     todayCompleted: myOrders.filter((o) => o.status === "completed" && String(o.completedAt || "").slice(0,10) === today).length,
-    todayIncome: incomeRows.filter((row) => String(row.created_at || "").slice(0,10) === today).reduce((n,row)=>n+money(row.amount),0),
+    todayIncome: sumIncomeOn((row) => String(row.created_at || "").slice(0, 10) === today),
+    yesterdayIncome: sumIncomeOn((row) => String(row.created_at || "").slice(0, 10) === yesterday),
+    weekIncome: sumIncomeOn((row) => String(row.created_at || "").slice(0, 10) >= weekStart),
     todayExpectedIncome: myOrders
       .filter((o) => ["claimed", "confirmed", "in_progress"].includes(o.status) && String(o.createdAt || "").slice(0, 10) === today)
       .reduce((n, o) => n + money(o.playerIncome), 0),
-    monthIncome: incomeRows.filter((row) => String(row.created_at || "").slice(0,7) === month).reduce((n,row)=>n+money(row.amount),0),
+    monthIncome: sumIncomeOn((row) => String(row.created_at || "").slice(0, 7) === month),
     totalIncome: netGross,
     withdrawn,
     frozen,
@@ -801,16 +922,37 @@ function summaryFrom(myOrders, transactions, withdrawals = []) {
 }
 async function bootstrapData(profile, companion) {
   const warnings = [];
-  const player = safePlayer(profile, companion || {});
+  // Heal stale online/busy while audit-locked so admin/companion/boss stay consistent.
+  let companionRow = companion || {};
+  if (!canWork(profile, companionRow)) {
+    const cur = normalizeOnlineStatus(companionRow.availability_status || companionRow.online_status);
+    if (cur !== "offline") {
+      try {
+        await supabaseJson(restUrl("companion_profiles", `?user_id=eq.${encodeURIComponent(profile.id)}`), {
+          method: "PATCH",
+          headers: serviceHeaders(),
+          body: JSON.stringify({
+            online_status: "offline",
+            updated_at: nowIso(),
+          }),
+        });
+        companionRow = { ...companionRow, online_status: "offline", availability_status: "offline" };
+      } catch (error) {
+        warnings.push(`offline_heal: ${error.message || error}`);
+        companionRow = { ...companionRow, online_status: "offline", availability_status: "offline" };
+      }
+    }
+  }
+  const player = safePlayer(profile, companionRow);
   const permissions = {
     canLogin: true,
-    canWork: canWork(profile, companion || {}),
-    canSetAvailable: profile.status === "active",
-    canAcceptOrder: canAccept(profile, companion || {}),
-    canStartOrder: canWork(profile, companion || {}),
+    canWork: canWork(profile, companionRow),
+    canSetAvailable: canWork(profile, companionRow),
+    canAcceptOrder: canAccept(profile, companionRow),
+    canStartOrder: canWork(profile, companionRow),
     canWithdraw: false,
     messagesMode: "system_only",
-    lockReason: canWork(profile, companion || {}) ? "" : "账号正在审核中",
+    lockReason: auditLockMessage(profile, companionRow),
   };
   const [cfg, levelBundle] = await Promise.all([
     financeSettings().catch((error) => {
@@ -823,17 +965,17 @@ async function bootstrapData(profile, companion) {
         withdraw_fee_percent: 0,
       };
     }),
-    resolveLevelBundle(companion || {}).catch((error) => {
+    resolveLevelBundle(companionRow).catch((error) => {
       warnings.push(`levels: ${error.message || error}`);
       return {
         levels: [],
         level: null,
-        platformCommissionRate: resolvePlatformCommission(companion?.commission_rate).platformRate,
-        companionShareRate: resolvePlatformCommission(companion?.commission_rate).companionShareRate,
+        platformCommissionRate: resolvePlatformCommission(companionRow?.commission_rate).platformRate,
+        companionShareRate: resolvePlatformCommission(companionRow?.commission_rate).companionShareRate,
         minPrice: 0,
         maxPrice: 0,
         maxPlus: false,
-        price: money(companion?.price),
+        price: money(companionRow?.price),
         priceInRange: true,
         priceNeedsReset: false,
       };
@@ -849,7 +991,7 @@ async function bootstrapData(profile, companion) {
       warnings.push(`transactions:preload: ${error.message || error}`);
       return [];
     });
-    const loaded = await loadOrdersFor(profile, companion || {}, preTx);
+    const loaded = await loadOrdersFor(profile, companionRow, preTx);
     myOrders = loaded.myOrders || [];
     openOrders = loaded.openOrders || [];
   } catch (error) {
@@ -899,11 +1041,11 @@ async function bootstrapData(profile, companion) {
   const monthlyLimit = Number(cfg.max_withdrawals_per_month || 3);
   const minAmount = money(cfg.min_withdraw_cat_food);
   const rate = money(cfg.cat_food_to_rm_rate) || 1;
-  const identityOk = /approved|verified|passed/.test(String(identity?.status || companion?.verification_status || ""));
+  const identityOk = /approved|verified|passed/.test(String(identity?.status || companionRow?.verification_status || ""));
   const bankOk = /approved|verified/.test(String(payment?.status || ""));
-  const accountOk = profile.status === "active" && !companion?.withdraw_frozen;
+  const accountOk = profile.status === "active" && !companionRow?.withdraw_frozen;
   const canWithdrawNow =
-    canWork(profile, companion || {}) &&
+    canWork(profile, companionRow) &&
     identityOk &&
     bankOk &&
     accountOk &&
@@ -911,9 +1053,11 @@ async function bootstrapData(profile, companion) {
     usedThisMonth < monthlyLimit;
   permissions.canWithdraw = canWithdrawNow;
   if (!canWithdrawNow) {
-    if (!identityOk) permissions.withdrawLockReason = "请先完成实名认证";
+    if (!canWork(profile, companionRow)) {
+      permissions.withdrawLockReason = permissions.lockReason || "账号审核通过后即可开始接单。";
+    } else if (!identityOk) permissions.withdrawLockReason = "请先完成实名认证";
     else if (!bankOk) permissions.withdrawLockReason = "请先提交并等待结款账户审核通过";
-    else if (companion?.withdraw_frozen) permissions.withdrawLockReason = "提现已被冻结";
+    else if (companionRow?.withdraw_frozen) permissions.withdrawLockReason = "提现已被冻结";
     else if (summary.withdrawable < minAmount) permissions.withdrawLockReason = `可提现余额不足（最低 ${minAmount}）`;
     else if (usedThisMonth >= monthlyLimit) permissions.withdrawLockReason = "已达本月提现次数上限";
     else if (profile.status !== "active") permissions.withdrawLockReason = "账号状态异常";
@@ -957,7 +1101,7 @@ async function bootstrapData(profile, companion) {
   }
   // Soft-fallback when companion_media table is missing / empty.
   if (!signedMedia.length) {
-    const synthesized = await synthesizeMediaFallback(profile, companion || {});
+    const synthesized = await synthesizeMediaFallback(profile, companionRow);
     signedMedia.push(...synthesized);
   }
 
@@ -980,7 +1124,8 @@ async function bootstrapData(profile, companion) {
     messages: [],
     earnings: {
       todayIncome: summary.todayIncome || 0,
-      weekIncome: summary.monthIncome || 0,
+      yesterdayIncome: summary.yesterdayIncome || 0,
+      weekIncome: summary.weekIncome || 0,
       monthIncome: summary.monthIncome || 0,
       totalIncome: summary.totalIncome || 0,
       withdrawable: summary.withdrawable || 0,
@@ -1009,19 +1154,23 @@ async function bootstrapData(profile, companion) {
     withdrawals: withdrawalRows.map((w) => ({
       id: w.id,
       withdrawalNo: w.withdrawal_no,
-      catFoodAmount: money(w.cat_food_amount),
+      catFoodAmount: money(w.cat_food_amount || w.amount),
       grossAmountRm: money(w.gross_amount_rm),
       feeRm: money(w.fee_rm),
       netAmountRm: money(w.net_amount_rm),
       bankName: w.bank_name || "",
+      accountName: w.account_name || w.account_holder || "",
       accountLast4: w.account_last4 || "",
       status: w.status,
       statusText: WITHDRAW_STATUS_TEXT[w.status] || w.status,
-      rejectReason: w.reject_reason || "",
+      rejectReason: w.reject_reason || w.rejection_reason || "",
       submittedAt: w.submitted_at || w.created_at,
+      reviewedAt: w.reviewed_at || w.approved_at || "",
+      approvedAt: w.approved_at || w.reviewed_at || "",
       paidAt: w.paid_at || "",
+      completedAt: w.completed_at || "",
       bankReferenceMasked: "",
-      amount: money(w.cat_food_amount),
+      amount: money(w.cat_food_amount || w.amount),
       createdAt: w.submitted_at || w.created_at,
     })),
     verification: {
@@ -1063,6 +1212,7 @@ async function bootstrapData(profile, companion) {
         : "请先联系后台设置等级",
       priceInRange: levelBundle.priceInRange,
       priceNeedsReset: levelBundle.priceNeedsReset,
+      gamePrices: readGamePrices(companion || {}),
       effectiveAt: companion?.commission_effective_at || companion?.level_effective_at || "",
     },
     companionLevel: levelBundle.level,
@@ -1181,7 +1331,17 @@ async function saveUploadFromBody(userId, folder, bucket, dataUrlOrPath, filenam
 async function ensureConversation(order) { const existing=await supabaseJson(restUrl("conversations", `?order_id=eq.${encodeURIComponent(order.id)}&limit=1`), { headers: serviceHeaders() }); if(existing?.[0]) return existing[0]; const rows=await supabaseJson(restUrl("conversations"), { method:"POST", headers: serviceHeaders(), body: JSON.stringify({ boss_id: order.boss_id, companion_id: order.companion_id || null, customer_service_id: order.customer_service_id || null, order_id: order.id, status: "open", created_at: nowIso(), updated_at: nowIso() }) }); return rows?.[0] || null; }
 async function addSystemMessage(order, senderId, senderRole, content) { const conversation=await ensureConversation(order); if(!conversation) return; await supabaseJson(restUrl("messages"), { method:"POST", headers: serviceHeaders(), body: JSON.stringify({ conversation_id: conversation.id, sender_id: senderId, sender_role: senderRole, message_type: "system", content, order_id: order.id, created_at: nowIso() }) }); }
 async function claimOrder(profile, companion, id) {
-  if (!canAccept(profile, companion)) throw Object.assign(new Error(canWork(profile, companion) ? "请先切换为上线接单。" : "账号正在审核中，不能抢单。"), { status: 403 });
+  if (!canAccept(profile, companion)) {
+    const status = normalizeOnlineStatus(companion.availability_status || companion.online_status);
+    const reason = !canWork(profile, companion)
+      ? "账号审核通过后即可开始接单。"
+      : status === "busy"
+        ? "忙碌中，无法抢新订单。"
+        : status === "paused"
+          ? "已暂停接单，无法抢新订单。"
+          : "请先在工作台切换为在线接单。";
+    throw Object.assign(new Error(reason), { status: 403 });
+  }
   const beforeRows = await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(id)}&limit=1`), { headers: serviceHeaders() });
   const before = beforeRows?.[0];
   if (!before) throw Object.assign(new Error("订单不存在。"), { status: 404 });
@@ -1278,6 +1438,21 @@ export default async function handler(req, res) {
     const auth = await requireCompanion(req);
     const companion = auth.companion || await companionProfile(auth.profile.id) || {};
     if (req.method === "GET" && action === "bootstrap") return json(res,200,{ok:true,data:await bootstrapData(auth.profile, companion)});
+    if (req.method === "GET" && action === "inbox") {
+      const data = await bootstrapData(auth.profile, companion);
+      const inbox = await buildCompanionInbox(auth.profile, companion, {
+        player: data.player,
+        verification: data.verification,
+        deposit: data.deposit,
+        myOrders: data.myOrders,
+        withdrawals: data.withdrawals,
+        popularity: data.popularity,
+        auditLocked: !data.permissions?.canWork,
+        auditHint: data.permissions?.lockReason || "",
+      });
+      data.summary = { ...(data.summary || {}), unreadMessages: inbox.unreadTotal };
+      return json(res, 200, { ok: true, data: inbox, inbox });
+    }
     if (req.method === "GET" && (action === "wallet" || action === "earnings")) {
       if (!auth.profile?.id) {
         return json(res, 403, { ok: false, message: "profile_id 为空，无法查询钱包" });
@@ -1302,6 +1477,28 @@ export default async function handler(req, res) {
         withdraw_fee_rm: 0,
         withdraw_fee_percent: 0,
       }));
+      const paymentAccounts = await companionDb(
+        "companion_payment_accounts",
+        `?user_id=eq.${encodeURIComponent(auth.profile.id)}&order=submitted_at.desc&limit=20`
+      ).catch(() => []);
+      const payment =
+        (paymentAccounts || []).find((a) => /approved|verified/.test(String(a.status || ""))) ||
+        null;
+      const approvedAccounts = (paymentAccounts || [])
+        .filter((a) => /approved|verified/.test(String(a.status || "")))
+        .map((a) => ({
+          id: a.id,
+          bankName: a.bank_name || "",
+          accountHolder: a.account_name || "",
+          accountLast4: a.account_last4 || maskBankAccount(a.bank_account).slice(-4),
+          status: a.status,
+        }));
+      const usedThisMonth = (wallet.withdrawalRows || []).filter(
+        (w) =>
+          String(w.submitted_at || "").slice(0, 7) === monthKey() &&
+          !/rejected|cancelled/.test(String(w.status || ""))
+      ).length;
+      const monthlyLimit = Number(cfg.max_withdrawals_per_month || 3);
       return json(res, 200, {
         ok: true,
         data: {
@@ -1314,21 +1511,28 @@ export default async function handler(req, res) {
           withdrawals: (wallet.withdrawalRows || []).map((w) => ({
             id: w.id,
             withdrawalNo: w.withdrawal_no,
-            catFoodAmount: money(w.cat_food_amount),
+            catFoodAmount: money(w.cat_food_amount || w.amount),
             netAmountRm: money(w.net_amount_rm),
             status: w.status,
             statusText: WITHDRAW_STATUS_TEXT[w.status] || w.status,
             submittedAt: w.submitted_at || w.created_at,
-            rejectReason: w.reject_reason || "",
-            amount: money(w.cat_food_amount),
+            reviewedAt: w.reviewed_at || w.approved_at || "",
+            rejectReason: w.reject_reason || w.rejection_reason || "",
+            amount: money(w.cat_food_amount || w.amount),
             createdAt: w.submitted_at || w.created_at,
           })),
           withdrawalRules: {
-            monthlyLimit: Number(cfg.max_withdrawals_per_month || 3),
+            monthlyLimit,
+            usedThisMonth,
+            remainingThisMonth: Math.max(0, monthlyLimit - usedThisMonth),
             minAmount: money(cfg.min_withdraw_cat_food),
             exchangeRate: money(cfg.cat_food_to_rm_rate) || 1,
             feeRm: money(cfg.withdraw_fee_rm),
             feePercent: money(cfg.withdraw_fee_percent),
+            currentAccount: payment
+              ? `${payment.bank_name || ""} ${payment.account_name || ""} ****${payment.account_last4 || maskBankAccount(payment.bank_account).slice(-4)}`
+              : "",
+            approvedAccounts,
           },
           warnings: wallet.warnings || [],
         },
@@ -1520,6 +1724,9 @@ export default async function handler(req, res) {
       const raw = String(body.online_status || body.availability_status || body.status || "offline").toLowerCase();
       const status = allowed.has(raw) ? raw : "offline";
       if (auth.profile.status !== "active") return json(res, 403, { ok: false, message: "账号已停用，不能接单" });
+      if (!canWork(auth.profile, companion || {})) {
+        return json(res, 403, { ok: false, message: "账号审核通过后即可开始接单。" });
+      }
       const patch = {
         online_status: status,
         availability_status: status,
@@ -1558,34 +1765,122 @@ export default async function handler(req, res) {
       }
     }
     if (action === "update_profile") {
+      if (body.privacy_only) {
+        const privacyContact = String(body.contact_phone || body.phone || "").trim();
+        if (!privacyContact) return json(res, 400, { ok: false, message: "请填写联系方式", field: "contact_phone" });
+        await patchCompanionProfile(`?user_id=eq.${encodeURIComponent(auth.profile.id)}`, {
+          contact_phone: privacyContact,
+          updated_at: nowIso(),
+        });
+        try {
+          await supabaseJson(restUrl("profiles", `?id=eq.${encodeURIComponent(auth.profile.id)}`), {
+            method: "PATCH",
+            headers: serviceHeaders(),
+            body: JSON.stringify({ phone: privacyContact }),
+          });
+        } catch {
+          /* optional */
+        }
+        return json(res, 200, { ok: true, message: "联系方式已保存（仅自己/客服/后台可见）" });
+      }
+
       const nickname = String(body.nickname || "").trim();
       const ageNum = body.age === "" || body.age == null ? null : Number(body.age);
       const gender = String(body.gender || "").trim();
       const region = String(body.region || "").trim();
-      const contact = String(body.contact_phone || body.phone || "").trim();
-      const mainGame = String(body.main_game || body.game || "").trim();
+      const contactProvided = body.contact_phone != null || body.phone != null;
+      const contact = contactProvided ? String(body.contact_phone || body.phone || "").trim() : "";
       const gameId = String(body.game_id || "").trim();
       if (!nickname) return json(res, 400, { ok: false, message: "请填写昵称", field: "nickname" });
       if (!Number.isFinite(ageNum) || ageNum < 18 || ageNum > 60) return json(res, 400, { ok: false, message: "年龄须为 18–60 的数字", field: "age" });
       if (!["男", "女", "不公开"].includes(gender)) return json(res, 400, { ok: false, message: "请选择性别", field: "gender" });
       if (!region) return json(res, 400, { ok: false, message: "请填写地区", field: "region" });
-      if (!contact) return json(res, 400, { ok: false, message: "请填写联系方式", field: "contact_phone" });
-      if (!mainGame) return json(res, 400, { ok: false, message: "请选择主接游戏", field: "main_game" });
+      if (contactProvided && !contact) return json(res, 400, { ok: false, message: "请填写联系方式", field: "contact_phone" });
       if (!gameId) return json(res, 400, { ok: false, message: "请填写游戏 ID", field: "game_id" });
 
+      const servicesBundle = await loadPublicServices().catch(() => ({ services: [] }));
+      const catalog = Array.isArray(servicesBundle?.services) ? servicesBundle.services : [];
+      const byId = new Map(catalog.map((s) => [String(s.id), s]));
+      const byName = new Map(catalog.map((s) => [String(s.name || s.title || "").trim(), s]));
+
+      let serviceIds = [];
+      if (Array.isArray(body.service_ids) || Array.isArray(body.serviceIds)) {
+        serviceIds = parseServiceIds(body.service_ids || body.serviceIds);
+      } else if (body.service_ids != null || body.serviceIds != null) {
+        serviceIds = parseServiceIds(body.service_ids || body.serviceIds);
+      }
+      const selectedNamesFromBody = splitGames(body.main_game || body.game || "");
+      if (!serviceIds.length && selectedNamesFromBody.length) {
+        serviceIds = selectedNamesFromBody
+          .map((name) => byName.get(name)?.id)
+          .filter(Boolean)
+          .map(String);
+      }
+      serviceIds = [...new Set(serviceIds.filter((id) => byId.has(String(id))))];
+      if (!serviceIds.length) {
+        return json(res, 400, { ok: false, message: "请至少选择一个可接游戏", field: "main_game" });
+      }
+      const selectedServices = serviceIds.map((id) => byId.get(String(id))).filter(Boolean);
+      const mainGame = selectedServices.map((s) => s.name || s.title).filter(Boolean).join("、");
+
+      const serviceTypes = parseServiceTypes(body.service_type || body.serviceType || body.service_types || body.serviceTypes, {
+        fallbackPlayWhenGame: false,
+      });
+      if (!serviceTypes.length) {
+        return json(res, 400, { ok: false, message: "请至少选择一种可提供服务（陪玩服务 / 陪聊服务）", field: "service_type" });
+      }
+
       const levelBundle = await resolveLevelBundle(companion || {});
+      const min = money(levelBundle.minPrice);
+      const max = money(levelBundle.maxPrice);
+      let gamePricesInput = body.game_prices;
+      if (typeof gamePricesInput === "string") {
+        try { gamePricesInput = JSON.parse(gamePricesInput); } catch { gamePricesInput = {}; }
+      }
+      if (!gamePricesInput || typeof gamePricesInput !== "object") gamePricesInput = {};
+      const nextGamePrices = {};
+      if (!levelBundle.level) {
+        return json(res, 400, { ok: false, message: "当前账号尚未设置等级，无法保存单价，请联系后台", field: "price" });
+      }
+      for (const svc of selectedServices) {
+        const id = String(svc.id);
+        const name = String(svc.name || svc.title || "").trim();
+        const rawG = gamePricesInput[id] != null
+          ? String(gamePricesInput[id]).trim()
+          : gamePricesInput[name] != null
+            ? String(gamePricesInput[name]).trim()
+            : "";
+        if (!rawG) return json(res, 400, { ok: false, message: `请填写 ${name} 的价格`, field: "price" });
+        if (!/^\d+(\.\d{1,2})?$/.test(rawG)) {
+          return json(res, 400, { ok: false, message: `${name} 单价只能输入有效数字，最多保留 2 位小数`, field: "price" });
+        }
+        const pv = roundMoney(rawG);
+        if (pv < min || (!levelBundle.maxPlus && pv > max)) {
+          return json(res, 400, {
+            ok: false,
+            message: `${name} 单价必须在 RM${min}–RM${max}${levelBundle.maxPlus ? "+" : ""} 之间`,
+            field: "price",
+            minPrice: min,
+            maxPrice: max,
+          });
+        }
+        nextGamePrices[id] = pv;
+        if (name) nextGamePrices[name] = pv;
+      }
+
       let priceValue = companion.price != null ? money(companion.price) : null;
-      if (body.price != null && String(body.price).trim() !== "") {
+      const firstId = serviceIds[0];
+      const firstName = selectedServices[0]?.name || selectedServices[0]?.title || "";
+      if (firstId && nextGamePrices[firstId] != null) {
+        priceValue = money(nextGamePrices[firstId]);
+      } else if (firstName && nextGamePrices[firstName] != null) {
+        priceValue = money(nextGamePrices[firstName]);
+      } else if (body.price != null && String(body.price).trim() !== "") {
         const rawPrice = String(body.price).trim();
         if (!/^\d+(\.\d{1,2})?$/.test(rawPrice)) {
           return json(res, 400, { ok: false, message: "单价只能输入有效数字，最多保留 2 位小数", field: "price" });
         }
         priceValue = roundMoney(rawPrice);
-        if (!levelBundle.level) {
-          return json(res, 400, { ok: false, message: "当前账号尚未设置等级，无法保存单价，请联系后台", field: "price" });
-        }
-        const min = money(levelBundle.minPrice);
-        const max = money(levelBundle.maxPrice);
         if (priceValue < min || (!levelBundle.maxPlus && priceValue > max)) {
           return json(res, 400, {
             ok: false,
@@ -1595,7 +1890,7 @@ export default async function handler(req, res) {
             maxPrice: max,
           });
         }
-      } else if (levelBundle.priceNeedsReset) {
+      } else if (levelBundle.priceNeedsReset && !Object.keys(nextGamePrices).length) {
         return json(res, 400, {
           ok: false,
           message: "当前单价已超出等级范围，请重新设置单价后再保存",
@@ -1604,18 +1899,26 @@ export default async function handler(req, res) {
         });
       }
 
+      const publicTags = String(body.public_tags || body.tags || "").trim();
+      const galleryKeep = (String(companion.tags || "").match(/\[\[MCJ_GALLERY:[\s\S]*?\]\]/) || [])[0] || "";
+      let tagsForWrite = publicTags || stripGamePricesMarker(String(companion.tags || "")).replace(/\[\[MCJ_GALLERY:[\s\S]*?\]\]/g, "").trim();
+      if (galleryKeep) tagsForWrite = `${tagsForWrite}${tagsForWrite ? "," : ""}${galleryKeep}`;
+      tagsForWrite = writeGamePricesMarker(tagsForWrite, nextGamePrices);
+
       const patch = {
         nickname,
         game: mainGame,
         main_service: String(body.main_service || body.mainService || companion.main_service || ""),
+        service_type: serviceTypes.join(","),
+        service_ids: serviceIds,
         description: String(body.bio || body.description || ""),
         voice_url: String(body.voice_url || companion.voice_url || ""),
         price: priceValue != null ? priceValue : money(companion.price),
+        game_prices: nextGamePrices,
         age: ageNum,
         gender,
         region,
-        tags: String(body.tags || companion.tags || ""),
-        contact_phone: contact,
+        tags: tagsForWrite,
         game_rank: String(body.rank || body.game_rank || ""),
         position: String(body.position || ""),
         schedule: String(body.schedule || companion.schedule || ""),
@@ -1623,6 +1926,7 @@ export default async function handler(req, res) {
         application_status: "pending",
         updated_at: nowIso(),
       };
+      if (contactProvided) patch.contact_phone = contact;
       if (body.card_image_url) patch.card_image_url = String(body.card_image_url);
       Object.keys(patch).forEach((k) => patch[k] === undefined && delete patch[k]);
       try {
@@ -1644,13 +1948,12 @@ export default async function handler(req, res) {
           voice_url: patch.voice_url,
           price: patch.price,
           updated_at: patch.updated_at,
+          tags: writeGamePricesMarker(String(patch.tags || ""), nextGamePrices),
         };
         if (patch.card_image_url) core.card_image_url = patch.card_image_url;
-        // Preserve contact/gameId in tags when dedicated columns are absent.
-        const tagBits = [];
-        if (patch.tags) tagBits.push(String(patch.tags).replace(/游戏ID:[^,，]*/g, "").replace(/,\s*,/g, ",").replace(/^,|,$/g, "").trim());
+        const tagBits = [core.tags];
         if (gameId) tagBits.push(`游戏ID:${gameId}`);
-        if (contact) tagBits.push(`联系:${contact}`);
+        if (contactProvided && contact) tagBits.push(`联系:${contact}`);
         if (region) tagBits.push(`地区:${region}`);
         if (gender) tagBits.push(`性别:${gender}`);
         if (ageNum != null) tagBits.push(`年龄:${ageNum}`);
@@ -1663,10 +1966,10 @@ export default async function handler(req, res) {
         headers: serviceHeaders(),
         body: JSON.stringify({
           display_name: nickname,
-          phone: contact,
+          ...(contactProvided ? { phone: contact } : {}),
         }),
       });
-      return json(res, 200, { ok: true, message: "资料已提交审核" });
+      return json(res, 200, { ok: true, message: "公开资料已提交审核", gamePrices: nextGamePrices });
     }
 
     if (action === "submit_verification") {
@@ -2016,9 +2319,28 @@ export default async function handler(req, res) {
 
     if (action === "submit_application") {
       const row = await ensureCompanionRow(auth.profile, companion);
+      const applyGameNames = splitGames(body.main_game || body.game || body.mainGame || "");
+      const servicesBundle = await loadPublicServices().catch(() => ({ services: [] }));
+      const catalog = Array.isArray(servicesBundle?.services) ? servicesBundle.services : [];
+      const byId = new Map(catalog.map((s) => [String(s.id), s]));
+      const byName = new Map(catalog.map((s) => [String(s.name || s.title || "").trim(), s]));
+      let applyServiceIds = parseServiceIds(body.service_ids || body.serviceIds);
+      if (!applyServiceIds.length && applyGameNames.length) {
+        applyServiceIds = applyGameNames.map((n) => byName.get(n)?.id).filter(Boolean).map(String);
+      }
+      applyServiceIds = [...new Set(applyServiceIds.filter((id) => byId.has(String(id))))];
+      const applyGame = applyServiceIds.length
+        ? applyServiceIds.map((id) => byId.get(String(id))?.name || byId.get(String(id))?.title).filter(Boolean).join("、")
+        : applyGameNames.join("、");
+      const applyServiceTypes = parseServiceTypes(body.service_type || body.serviceType || body.modes, {
+        fallbackPlayWhenGame: true,
+        hasGame: !!applyGame,
+      });
       const patch = {
-        main_service: String(body.main_service || body.mainService || ""),
-        game: String(body.main_game || body.game || body.mainGame || ""),
+        main_service: String(body.main_service || body.mainService || applyGameNames[0] || ""),
+        game: applyGame,
+        service_type: (applyServiceTypes.length ? applyServiceTypes : ["陪玩服务"]).join(","),
+        service_ids: applyServiceIds,
         game_rank: String(body.rank || body.game_rank || ""),
         position: String(body.position || ""),
         voice_type: String(body.voice_type || body.voiceType || ""),
@@ -2051,6 +2373,47 @@ export default async function handler(req, res) {
       return json(res, 200, { ok: true, message: "陪玩申请已提交，等待后台审核。" });
     }
 
+    if (action === "send_cs_message" || action === "send_message") {
+      const conversation = await ensureCompanionSupportConversation(auth.profile.id);
+      const msg = await sendCompanionChatMessage(conversation, auth.profile.id, body.content || body.message || "");
+      return json(res, 200, {
+        ok: true,
+        message: "消息已发送",
+        messageRow: viewMessage(msg),
+      });
+    }
+    if (action === "mark_notices_read") {
+      const keys = Array.isArray(body.keys) ? body.keys : body.key ? [body.key] : [];
+      const result = await markNoticesRead(auth.profile.id, keys);
+      return json(res, 200, { ok: true, message: "已标记已读", ...result });
+    }
+    if (action === "mark_all_read") {
+      const data = await bootstrapData(auth.profile, companion);
+      const notices = buildSystemNotices({
+        companionUserId: auth.profile.id,
+        player: data.player,
+        verification: data.verification,
+        deposit: data.deposit,
+        orders: data.myOrders,
+        withdrawals: data.withdrawals,
+        popularity: data.popularity,
+        auditLocked: !data.permissions?.canWork,
+        auditHint: data.permissions?.lockReason || "",
+      });
+      const keys = Array.isArray(body.keys) && body.keys.length
+        ? body.keys
+        : notices.map((n) => n.key);
+      await markNoticesRead(auth.profile.id, keys);
+      const conversation = await ensureCompanionSupportConversation(auth.profile.id);
+      if (conversation?.id) await markConversationMessagesRead(conversation.id, { companionUserId: auth.profile.id });
+      return json(res, 200, { ok: true, message: "已全部标记已读", marked: keys.length });
+    }
+    if (action === "mark_cs_read" || action === "read_cs_conversation") {
+      const conversation = await ensureCompanionSupportConversation(auth.profile.id);
+      if (conversation?.id) await markConversationMessagesRead(conversation.id, { companionUserId: auth.profile.id });
+      return json(res, 200, { ok: true, message: "已标记已读" });
+    }
+
     if (action === "request_withdrawal") {
       const amount = money(body.amount || body.cat_food_amount || body.catFoodAmount);
       const remark = String(body.remark || body.note || "").trim();
@@ -2059,12 +2422,15 @@ export default async function handler(req, res) {
       if (!data.permissions.canWithdraw) {
         return json(res, 400, { ok: false, message: data.permissions.withdrawLockReason || "暂不可提现" });
       }
-      if (amount <= 0) return json(res, 400, { ok: false, message: "请输入提现猫粮数量" });
+      if (!(amount > 0)) return json(res, 400, { ok: false, message: "提现金额必须大于 0" });
       if (amount < money(data.withdrawalRules.minAmount)) {
         return json(res, 400, { ok: false, message: `最低提现 ${data.withdrawalRules.minAmount} 猫粮` });
       }
       if (amount > money(data.earnings.withdrawable)) {
         return json(res, 400, { ok: false, message: "可提现余额不足" });
+      }
+      if (Number(data.withdrawalRules.remainingThisMonth || 0) <= 0) {
+        return json(res, 400, { ok: false, message: "本月提现次数已用完" });
       }
       const accounts = data.withdrawalRules.approvedAccounts || [];
       const account = accounts.find((a) => a.id === accountId) || accounts[0];
@@ -2079,36 +2445,82 @@ export default async function handler(req, res) {
         return json(res, 400, { ok: false, message: "结款账户未审核通过" });
       }
 
+      const pendingDup = (data.withdrawals || []).find((w) =>
+        /^(pending|pending_review)$/.test(String(w.status || ""))
+      );
+      if (pendingDup) {
+        return json(res, 400, {
+          ok: false,
+          message: "已有待审核提现申请，请等待后台处理后再提交",
+        });
+      }
+
       const rate = money(data.withdrawalRules.exchangeRate) || 1;
       const gross = Math.round(amount * rate * 100) / 100;
       const fee = Math.round((money(data.withdrawalRules.feeRm) + gross * (money(data.withdrawalRules.feePercent) / 100)) * 100) / 100;
       const net = Math.max(0, Math.round((gross - fee) * 100) / 100);
-      const last4 = full.account_last4 || maskBankAccount(full.bank_account).slice(-4);
+      const rawAccount = String(full.bank_account || full.tng_account || full.alipay_account || "").replace(/\s+/g, "");
+      const last4 = full.account_last4 || (rawAccount ? rawAccount.slice(-4) : maskBankAccount(full.bank_account).slice(-4));
+      const holder = String(full.account_name || full.account_holder || auth.profile.display_name || "").trim();
+      const accountNumber = rawAccount
+        ? rawAccount.length <= 4
+          ? rawAccount
+          : `${"*".repeat(Math.max(0, rawAccount.length - 4))}${last4}`
+        : last4
+          ? `****${last4}`
+          : "";
 
-      const rows = await companionDb("companion_withdrawals", "", {
-        method: "POST",
-        body: JSON.stringify({
-          withdrawal_no: `WD-${Date.now()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`,
-          companion_id: auth.profile.id,
-          payment_account_id: full.id,
-          cat_food_amount: amount,
-          exchange_rate: rate,
-          gross_amount_rm: gross,
-          fee_rm: fee,
-          net_amount_rm: net,
-          bank_name: full.bank_name || "",
-          account_holder: full.account_name || "",
-          account_last4: last4,
-          remark,
-          status: "pending_review",
-          submitted_at: nowIso(),
-          created_at: nowIso(),
-          updated_at: nowIso(),
-        }),
-      });
-      const item = rows?.[0] || null;
+      const withdrawalPayload = {
+        withdrawal_no: `WD-${Date.now()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`,
+        companion_id: auth.profile.id,
+        payment_account_id: full.id,
+        amount,
+        cat_food_amount: amount,
+        exchange_rate: rate,
+        gross_amount_rm: gross,
+        fee_rm: fee,
+        net_amount_rm: net,
+        bank_name: full.bank_name || "",
+        account_name: holder,
+        account_holder: holder,
+        account_number: accountNumber,
+        account_last4: last4,
+        remark,
+        status: "pending_review",
+        submitted_at: nowIso(),
+        created_at: nowIso(),
+        updated_at: nowIso(),
+      };
+      let item = null;
+      {
+        let payload = { ...withdrawalPayload };
+        for (let attempt = 0; attempt < 8; attempt++) {
+          try {
+            const rows = await companionDb("companion_withdrawals", "", {
+              method: "POST",
+              body: JSON.stringify(payload),
+            });
+            item = rows?.[0] || null;
+            break;
+          } catch (error) {
+            const msg = `${error?.message || ""} ${JSON.stringify(error?.body || "")}`;
+            if (/companion_withdrawals|schema cache|PGRST/i.test(msg) && /Could not find the table/i.test(msg)) {
+              return json(res, 503, {
+                ok: false,
+                message: "提现表未就绪，请稍后重试或联系管理员执行数据库迁移",
+              });
+            }
+            const m = msg.match(/Could not find the '([^']+)' column/i);
+            if (!m || !(m[1] in payload)) throw error;
+            delete payload[m[1]];
+          }
+        }
+      }
+      if (!item) return json(res, 500, { ok: false, message: "提现申请写入失败，请稍后重试" });
+
+      let freezeTxId = null;
       try {
-        await supabaseJson(restUrl("transactions"), {
+        const txRows = await supabaseJson(restUrl("transactions"), {
           method: "POST",
           headers: serviceHeaders(),
           body: JSON.stringify({
@@ -2121,22 +2533,40 @@ export default async function handler(req, res) {
             created_at: nowIso(),
           }),
         });
+        freezeTxId = txRows?.[0]?.id || null;
+        if (freezeTxId && item?.id) {
+          await companionDb("companion_withdrawals", `?id=eq.${encodeURIComponent(item.id)}`, {
+            method: "PATCH",
+            body: JSON.stringify({ freeze_tx_id: freezeTxId, updated_at: nowIso() }),
+          }).catch(() => null);
+          item = { ...item, freeze_tx_id: freezeTxId };
+        }
       } catch {
-        /* ledger marker optional if enum/status constraints fail */
+        /* ledger marker optional if enum/status constraints fail; withdrawal row still pending */
       }
+
       return json(res, 200, {
         ok: true,
-        message: "提现申请已提交，对应猫粮已冻结，等待后台审核",
+        message: "提现申请已提交，等待后台审核",
         preview: {
           catFoodAmount: amount,
+          amount,
           grossAmountRm: gross,
           feeRm: fee,
           netAmountRm: net,
           bankName: full.bank_name,
-          accountHolder: full.account_name,
+          accountHolder: holder,
           accountLast4: last4,
+          withdrawalNo: item.withdrawal_no,
+          status: item.status || "pending_review",
+          statusText: "待审核",
         },
         item,
+        data: {
+          withdrawalId: item.id,
+          withdrawalNo: item.withdrawal_no,
+          status: item.status || "pending_review",
+        },
       });
     }
 

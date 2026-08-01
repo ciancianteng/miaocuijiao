@@ -76,44 +76,19 @@ document.querySelectorAll('.service-card').forEach(function(card){card.addEventL
 (function(){var input=document.getElementById('customPrice');if(!input)return;input.addEventListener('change',function(){if(Number(input.value)<10||!input.value)input.value=10;});})();
 
 
-// floating service
+// floating service (legacy 喵管家) — permanently removed
 (function(){
-  function initServiceChat(){
-    var btn=document.getElementById('floatingService');
-    var chat=document.getElementById('serviceChat');
-    var close=document.getElementById('closeServiceChat');
-    var input=document.getElementById('serviceChatInput');
-    var send=document.getElementById('sendServiceChat');
-    var body=document.getElementById('serviceChatBody');
-    if(!btn||!chat||btn.dataset.bound==='1')return;
-    btn.dataset.bound='1';
-    function add(text,type){
-      var div=document.createElement('div');
-      div.className='chat-bubble '+type;
-      div.textContent=text;
-      body.appendChild(div);
-      body.scrollTop=body.scrollHeight;
-    }
-    btn.addEventListener('click',function(){
-      chat.classList.add('open');
-      chat.setAttribute('aria-hidden','false');
-      setTimeout(function(){if(input)input.focus();},50);
+  function purge(){
+    ['floatingService','serviceChat','closeServiceChat','serviceChatInput','sendServiceChat','serviceChatBody'].forEach(function(id){
+      var el=document.getElementById(id);
+      if(el&&el.parentNode)el.parentNode.removeChild(el);
     });
-    if(close)close.addEventListener('click',function(){
-      chat.classList.remove('open');
-      chat.setAttribute('aria-hidden','true');
+    document.querySelectorAll('.floating-service,#floatingService,.service-chat,#serviceChat').forEach(function(el){
+      if(el&&el.parentNode)el.parentNode.removeChild(el);
     });
-    function sendMsg(){
-      var text=(input&&input.value||'').trim();
-      if(!text)return;
-      add(text,'boss');
-      input.value='';
-      setTimeout(function(){add('收到，客服会根据您的订单需求帮您处理。','staff');},500);
-    }
-    if(send)send.addEventListener('click',sendMsg);
-    if(input)input.addEventListener('keydown',function(e){if(e.key==='Enter')sendMsg();});
   }
-  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',initServiceChat);else initServiceChat();
+  purge();
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',purge);
 })();
 
 // service tip modal
@@ -360,47 +335,7 @@ document.querySelectorAll('.service-card').forEach(function(card){card.addEventL
   document.querySelectorAll('[data-guide-close]').forEach(function(btn){btn.addEventListener('click',function(){modal.classList.remove('show');modal.setAttribute('aria-hidden','true');});});
 })();
 
-// draggable floating service with bounce
-(function(){
-  function initDrag(){
-    var btn=document.getElementById('floatingService');
-    var chat=document.getElementById('serviceChat');
-    if(!btn||btn.dataset.dragBound==='ball')return;
-    btn.dataset.dragBound='ball';
-    var x=window.innerWidth-120,y=window.innerHeight-110,vx=0,vy=0,dragging=false,lastX=0,lastY=0,lastT=0,anim=0,moved=false;
-    var saved=JSON.parse(localStorage.getItem('mcjServiceFloatPos')||'null');if(saved){x=saved.x;y=saved.y}
-    function limits(){return {maxX:window.innerWidth-btn.offsetWidth-8,maxY:window.innerHeight-btn.offsetHeight-8}}
-    function burstFur(edge){
-      var r=btn.getBoundingClientRect();
-      var cx=r.left+r.width/2, cy=r.top+r.height/2;
-      for(var i=0;i<9;i++){
-        var fur=document.createElement('i');
-        fur.className='cat-fur-particle';
-        var spread=(Math.random()*70-35);
-        var out=edge==='left'?70:edge==='right'?-70:Math.random()*80-40;
-        var up=edge==='bottom'?-70:edge==='top'?70:(Math.random()*70-35);
-        fur.style.left=(cx+(Math.random()*34-17))+'px';
-        fur.style.top=(cy+(Math.random()*30-15))+'px';
-        fur.style.setProperty('--dx',(out+spread*.35)+'px');
-        fur.style.setProperty('--dy',(up+spread)+'px');
-        fur.style.setProperty('--rot',(Math.random()*120-60)+'deg');
-        document.body.appendChild(fur);
-        setTimeout(function(el){el.remove();},950,fur);
-      }
-    }
-    function place(){var l=limits();x=Math.max(8,Math.min(l.maxX,x));y=Math.max(8,Math.min(l.maxY,y));btn.style.left=x+'px';btn.style.top=y+'px';btn.style.right='auto';btn.style.bottom='auto';btn.style.position='fixed';if(chat){chat.style.position='fixed';chat.style.right='auto';chat.style.bottom='auto';var cw=chat.offsetWidth||340;var ch=chat.offsetHeight||460;var cx=Math.min(Math.max(8,x-cw+btn.offsetWidth),window.innerWidth-cw-8);var cy=Math.min(Math.max(8,y-ch-12),window.innerHeight-ch-8);chat.style.left=cx+'px';chat.style.top=cy+'px';}localStorage.setItem('mcjServiceFloatPos',JSON.stringify({x:x,y:y}));}
-    function step(){if(dragging)return;var l=limits();x+=vx;y+=vy;vx*=.94;vy*=.94;if(x<=8){x=8;vx=Math.abs(vx)*.72;burstFur('left')}if(y<=8){y=8;vy=Math.abs(vy)*.72;burstFur('top')}if(x>=l.maxX){x=l.maxX;vx=-Math.abs(vx)*.72;burstFur('right')}if(y>=l.maxY){y=l.maxY;vy=-Math.abs(vy)*.72;burstFur('bottom')}place();if(Math.abs(vx)+Math.abs(vy)>.18)anim=requestAnimationFrame(step);else{vx=0;vy=0;cancelAnimationFrame(anim);}}
-    requestAnimationFrame(place);
-    btn.addEventListener('pointerdown',function(e){dragging=true;moved=false;cancelAnimationFrame(anim);btn.classList.add('dragging');btn.setPointerCapture&&btn.setPointerCapture(e.pointerId);lastX=e.clientX;lastY=e.clientY;lastT=Date.now();});
-    btn.addEventListener('pointermove',function(e){if(!dragging)return;var now=Date.now();var dt=Math.max(16,now-lastT);var dx=e.clientX-lastX;var dy=e.clientY-lastY;if(Math.abs(dx)+Math.abs(dy)>2)moved=true;x+=dx;y+=dy;vx=dx/dt*16;vy=dy/dt*16;lastX=e.clientX;lastY=e.clientY;lastT=now;place();});
-    btn.addEventListener('pointerup',function(e){if(!dragging)return;dragging=false;btn.classList.remove('dragging');if(moved){btn.dataset.justDragged='1';e.preventDefault();e.stopPropagation();vx*=1.55;vy*=1.55;anim=requestAnimationFrame(step);setTimeout(function(){btn.dataset.justDragged='';},120);} });
-    btn.addEventListener('click',function(e){if(btn.dataset.justDragged==='1'){e.preventDefault();e.stopImmediatePropagation();btn.dataset.justDragged='';}},true);
-    window.addEventListener('resize',place);
-  }
-  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',initDrag);else initDrag();
-})();
-
-
+// draggable floating service — removed with 喵管家
 
 // safe channel no jump
 (function(){

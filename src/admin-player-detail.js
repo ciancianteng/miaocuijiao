@@ -392,18 +392,39 @@
         );
       })
       .join("");
+    var reviewRows = (d.reviews || [])
+      .slice(0, 20)
+      .map(function (r) {
+        return (
+          "<tr><td>" +
+          esc(r.rating || "-") +
+          "★</td><td>" +
+          esc(r.content || "无文字") +
+          "</td><td>" +
+          esc(r.orderId || "-") +
+          "</td><td>" +
+          esc(r.createdAt || "-") +
+          "</td></tr>"
+        );
+      })
+      .join("");
     var income =
       rows([
         ["累计订单", stats.totalOrders || 0],
         ["已完成订单", stats.completedOrders || 0],
         ["取消订单", stats.cancelledOrders || 0],
         ["退款订单", stats.refundOrders || 0],
+        ["平均评分", (stats.rating != null ? stats.rating : d.rating) || 0],
+        ["评价数", (stats.reviewCount != null ? stats.reviewCount : d.reviewCount) || 0],
+        ["好评数", (stats.goodReviewCount != null ? stats.goodReviewCount : d.goodReviewCount) || 0],
         ["累计收入", "RM" + (stats.totalIncome || 0)],
         ["可提现余额", "RM" + (stats.withdrawable || 0)],
         ["已提现金额", "RM" + (stats.withdrawn || 0)],
       ]) +
       '<div class="table-wrap player-drawer-table"><table><thead><tr><th>订单号</th><th>服务</th><th>金额</th><th>状态</th><th>时间</th></tr></thead><tbody>' +
       (orderRows || '<tr><td colspan="5"><div class="boss-record-empty">暂无真实历史订单</div></td></tr>') +
+      '</tbody></table></div><div class="table-wrap player-drawer-table" style="margin-top:12px"><table><thead><tr><th>评分</th><th>评价内容</th><th>订单</th><th>时间</th></tr></thead><tbody>' +
+      (reviewRows || '<tr><td colspan="4"><div class="boss-record-empty">暂无真实评价</div></td></tr>') +
       "</tbody></table></div>";
 
     var account =

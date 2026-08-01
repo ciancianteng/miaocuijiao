@@ -13,11 +13,14 @@
   var softRefreshSeq=0;
   var toastTimer=null;
   var COMPOSER_SEL='[data-cs-composer], form[data-send-message] textarea[name="content"], form[data-send-message] input[name="content"]';
-  var state={route:'dashboard',session:null,data:null,services:[],servicesError:'',servicesSource:'',createOrderErrors:{bosses:'',companions:'',services:''},loading:false,error:'',notice:'',activeConversation:'',orderFilter:'',convFilter:'active',suppressAutoSelect:false,loginError:'',loginBusy:false,loginDraft:{account:'',password:'',remember:false},composerDraft:'',composerDrafts:{},composerFocused:false,sendingChat:false,showConversationList:false,acceptLock:null,readCursors:{},acceptingId:''};
+  var state={route:'dashboard',session:null,data:null,services:[],servicesError:'',servicesSource:'',createOrderErrors:{bosses:'',companions:'',services:''},loading:false,error:'',notice:'',activeConversation:'',orderFilter:'',convFilter:'active',suppressAutoSelect:false,loginError:'',loginBusy:false,loginDraft:{account:'',password:'',remember:false},composerDraft:'',composerDrafts:{},composerFocused:false,sendingChat:false,showConversationList:false,acceptLock:null,readCursors:{},acceptingId:'',clockBusy:false,assignBusy:false,realtimeReady:false,hoursTimer:null,lastPollAt:'',listScrollTop:0,poolRealtimeBound:false,virtStart:0,attPage:0};
+  var CONV_ROW_H=92;
+  var CONV_OVERSCAN=6;
+  var ATT_PAGE_SIZE=10;
   function myServiceId(){
     return String(
       (state.session&&state.session.user&&(state.session.user.id||state.session.user.user_id||state.session.user.uid))||
-      (state.data&&state.data.staff&&(state.data.staff.id||state.data.staff.user_id))||
+      (state.data&&state.data.staff&&(state.data.staff.id||state.data.staff.user_id||state.data.staff.uid))||
       ''
     ).trim();
   }
@@ -55,6 +58,456 @@
     var f=state.convFilter||'active';
     return ((state.data&&state.data.conversations)||[]).filter(function(c){return convBucket(c)===f});
   }
+  function mergeConversationLists(localList, remoteList, incremental){
+    var byId={};
+    (localList||[]).forEach(function(c){if(c&&c.id)byId[c.id]=c;});
+    (remoteList||[]).forEach(function(c){
+      if(!c||!c.id)return;
+      // Full/top poll must not inflate the pool with noise-unfiltered rows.
+      // New sessions arrive via Realtime INSERT (incremental) or bootstrap reload.
+      if(!byId[c.id]&&!incremental)return;
+      var prev=byId[c.id]||{};
+      var next=Object.assign({},prev,c);
+      if(!c.lastMessage&&prev.lastMessage)next.lastMessage=prev.lastMessage;
+      if(!c.lastTime&&prev.lastTime)next.lastTime=prev.lastTime;
+      // Never let a stale poll wipe a just-claimed / just-ended local state.
+      if(prev.currentServiceId&&!c.currentServiceId){
+        next.currentServiceId=prev.currentServiceId;
+        next.currentServiceName=prev.currentServiceName||next.currentServiceName;
+        next.status=prev.status||next.status;
+        next.rawStatus=prev.rawStatus||next.rawStatus;
+      }
+      if(prev.currentServiceId==='local-self'&&c.currentServiceId){
+        next.currentServiceId=c.currentServiceId;
+      }
+      if(prev.currentServiceId==='local-self'&&!c.currentServiceId){
+        next.currentServiceId='local-self';
+        next.status=prev.status||'正在接待';
+        next.rawStatus=prev.rawStatus||'active';
+      }
+      if(isClosedConv(prev)&&!isClosedConv(next)){
+        next.status=prev.status;
+        next.rawStatus=prev.rawStatus;
+        next.closedAt=prev.closedAt||next.closedAt;
+      }
+      if(state.readCursors&&state.readCursors[c.id]){
+        var at=state.readCursors[c.id];
+        if(!next.lastReadAt||String(next.lastReadAt)<String(at))next.lastReadAt=at;
+        if(next.lastTime&&String(next.lastTime)<=String(at)){
+          next.unread=0;
+          next.unreadCount=0;
+        }else if((c.unread==null||c.unread==='')&&prev.unread!=null&&Number(prev.unread)===0){
+          next.unread=0;
+          next.unreadCount=0;
+        }
+      }else if((c.unread==null||c.unread==='')&&prev.unread!=null){
+        next.unread=prev.unread;
+        next.unreadCount=prev.unreadCount!=null?prev.unreadCount:prev.unread;
+      }
+      byId[c.id]=next;
+    });
+    var merged=Object.keys(byId).map(function(k){return byId[k];});
+    merged.sort(function(a,b){
+      return String(b.updatedAt||b.lastTime||'').localeCompare(String(a.updatedAt||a.lastTime||''));
+    });
+    return merged;
+  }
+  function totalUnreadCount(){
+    return ((state.data&&state.data.conversations)||[]).reduce(function(sum,c){
+      if(isClosedConv(c))return sum;
+      return sum+(Number(c.unread||c.unreadCount||0)||0);
+    },0);
+  }
+  function recomputeSummaryFromConversations(){
+    if(!state.data)return;
+    if(!state.data.summary)state.data.summary={};
+    var counts=filterCounts();
+    var myId=myServiceId();
+    var mine=((state.data.conversations)||[]).filter(function(c){
+      return !isClosedConv(c)&&c.currentServiceId&&myId&&c.currentServiceId===myId;
+    }).length;
+    state.data.summary.waitingConversations=counts.waiting;
+    state.data.summary.currentReceptions=mine;
+    state.data.summary.unreadMessages=totalUnreadCount();
+  }
+  function syncPoolCounters(){
+    recomputeSummaryFromConversations();
+    var counts=filterCounts();
+    var unread=Number((state.data&&state.data.summary&&state.data.summary.unreadMessages)||0)||0;
+    root.querySelectorAll('[data-conv-filter]').forEach(function(btn){
+      var f=btn.getAttribute('data-conv-filter');
+      var em=btn.querySelector('em');
+      if(em&&counts[f]!=null)em.textContent=String(counts[f]);
+    });
+    root.querySelectorAll('[data-nav-unread]').forEach(function(el){
+      if(unread>0){
+        el.hidden=false;
+        el.textContent=unread>99?'99+':String(unread);
+      }else{
+        el.hidden=true;
+        el.textContent='';
+      }
+    });
+    var mUnread=root.querySelector('[data-metric-unread]');
+    if(mUnread)mUnread.textContent=String(unread);
+    var mCurrent=root.querySelector('[data-metric-current]');
+    if(mCurrent)mCurrent.textContent=String((state.data.summary&&state.data.summary.currentReceptions)||0);
+    var mWaiting=root.querySelector('[data-metric-waiting]');
+    if(mWaiting)mWaiting.textContent=String((state.data.summary&&state.data.summary.waitingConversations)||0);
+  }
+  function applyClockResult(res){
+    if(!state.data)state.data={};
+    if(!state.data.workData)state.data.workData={};
+    if(res&&res.attendance){
+      state.data.workData.todayAttendance=res.attendance;
+      upsertLocalAttendanceRow(res.attendance);
+    }
+    startHoursTimer();
+  }
+  function shanghaiNowText(){
+    try{
+      return new Intl.DateTimeFormat('zh-CN',{
+        timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit',
+        hour:'2-digit',minute:'2-digit',hour12:false
+      }).format(new Date()).replace(/\//g,'-');
+    }catch(e){
+      var d=new Date();
+      return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+    }
+  }
+  function shanghaiTodayKey(){
+    try{
+      return new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+    }catch(e){
+      return new Date().toISOString().slice(0,10);
+    }
+  }
+  function monthAttendanceRows(){
+    var rows=((state.data&&state.data.workData&&state.data.workData.attendance&&state.data.workData.attendance.rows)||[]).slice();
+    var ym=shanghaiTodayKey().slice(0,7);
+    return rows.filter(function(r){
+      var d=String(r.reportDate||r.date||'');
+      return !d||d.indexOf(ym)===0;
+    }).sort(function(a,b){
+      return String(b.reportDate||b.date||'').localeCompare(String(a.reportDate||a.date||''));
+    });
+  }
+  function fmtAttDateTime(text,iso){
+    var raw=String(text||'').trim();
+    if(raw&&/^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}/.test(raw))return raw.slice(0,16);
+    if(iso){
+      try{
+        var p=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).formatToParts(new Date(iso));
+        var get=function(t){var f=p.find(function(x){return x.type===t});return f?f.value:'';};
+        return get('year')+'-'+get('month')+'-'+get('day')+' '+get('hour')+':'+get('minute');
+      }catch(e){}
+    }
+    return raw||'';
+  }
+  function attRowView(r){
+    var date=String(r.reportDate||r.date||'-');
+    var inText=fmtAttDateTime(r.clockInText,r.clockInAt)||'-';
+    var outRaw=fmtAttDateTime(r.clockOutText,r.clockOutAt);
+    var onDuty=!!(r.clockInAt||r.clockInText)&&!(r.clockOutAt||r.clockOutText);
+    var outText=onDuty?'上班中':(outRaw||'-');
+    var hours=onDuty?'—':(r.workHours!=null&&r.workHours!==''?String(r.workHours)+' 小时':'-');
+    var status=r.attendanceStatus||(onDuty?'上班中':(r.clockOutAt?'已下班':'未打卡'));
+    return {date:date,inText:inText,outText:outText,hours:hours,status:status,onDuty:onDuty};
+  }
+  function attendanceHistoryHtml(){
+    var all=monthAttendanceRows();
+    var page=Math.max(0,Number(state.attPage)||0);
+    var totalPages=Math.max(1,Math.ceil(all.length/ATT_PAGE_SIZE)||1);
+    if(page>totalPages-1){page=totalPages-1;state.attPage=page;}
+    var slice=all.slice(page*ATT_PAGE_SIZE,(page+1)*ATT_PAGE_SIZE);
+    var tableRows=slice.length?slice.map(function(r){
+      var v=attRowView(r);
+      return '<tr data-att-row="'+esc(v.date)+'">'+
+        '<td class="cs-att-date">'+esc(v.date)+'</td>'+
+        '<td class="cs-att-in">'+esc(v.inText)+'</td>'+
+        '<td class="cs-att-out">'+(v.onDuty?'<span class="cs-att-onduty">上班中</span>':esc(v.outText))+'</td>'+
+        '<td class="cs-att-hours">'+esc(v.hours)+'</td>'+
+        '<td class="cs-att-status">'+esc(v.status)+'</td>'+
+        '</tr>';
+    }).join(''):'<tr><td colspan="5" class="cs-att-empty">本月暂无打卡记录</td></tr>';
+    var cards=slice.length?slice.map(function(r){
+      var v=attRowView(r);
+      return '<article class="cs-att-card" data-att-row="'+esc(v.date)+'">'+
+        '<div class="cs-att-card-head"><strong>'+esc(v.date)+'</strong><span>'+esc(v.status)+'</span></div>'+
+        '<div class="cs-att-card-row"><span>上班时间</span><strong>'+esc(v.inText)+'</strong></div>'+
+        '<div class="cs-att-card-row"><span>下班时间</span><strong>'+(v.onDuty?'上班中':esc(v.outText))+'</strong></div>'+
+        '<div class="cs-att-card-row"><span>当日工时</span><strong>'+esc(v.hours)+'</strong></div>'+
+        '</article>';
+    }).join(''):'<div class="cs-empty">本月暂无打卡记录</div>';
+    var pager=all.length>ATT_PAGE_SIZE
+      ?('<div class="cs-att-pager">'+
+        '<button class="cs-btn" type="button" data-att-page="prev"'+(page<=0?' disabled':'')+'>上一页</button>'+
+        '<span>第 '+(page+1)+' / '+totalPages+' 页 · 共 '+all.length+' 条</span>'+
+        '<button class="cs-btn" type="button" data-att-page="next"'+(page>=totalPages-1?' disabled':'')+'>下一页</button>'+
+        '</div>')
+      :(all.length?'<div class="cs-att-pager"><span>共 '+all.length+' 条（本月）</span></div>':'');
+    return '<section class="cs-att-section" style="margin-top:14px">'+
+      '<div class="cs-att-head"><h3>本月打卡记录</h3><span>默认仅显示本月，每页 '+ATT_PAGE_SIZE+' 条</span></div>'+
+      '<div class="cs-att-wrap">'+
+      '<table class="cs-table cs-att-table"><thead><tr><th>日期</th><th>上班时间</th><th>下班时间</th><th>当日工时</th><th>状态</th></tr></thead>'+
+      '<tbody data-att-history-body>'+tableRows+'</tbody></table>'+
+      '</div>'+
+      '<div class="cs-att-cards" data-att-cards>'+cards+'</div>'+
+      pager+
+      '</section>';
+  }
+  function upsertLocalAttendanceRow(att){
+    if(!att)return;
+    if(!state.data)state.data={};
+    if(!state.data.workData)state.data.workData={};
+    if(!state.data.workData.attendance)state.data.workData.attendance={rows:[]};
+    var rows=state.data.workData.attendance.rows||[];
+    var date=String(att.reportDate||att.date||shanghaiTodayKey());
+    var next=Object.assign({},att,{reportDate:date,date:date});
+    var idx=rows.findIndex(function(r){return String(r.reportDate||r.date)===date});
+    if(idx>=0)rows[idx]=Object.assign({},rows[idx],next);
+    else rows.unshift(next);
+    state.data.workData.attendance.rows=rows;
+    // Rebuild history block if present (keeps pagination + mobile cards in sync).
+    var section=root.querySelector('.cs-att-section');
+    if(section){
+      var wrap=document.createElement('div');
+      wrap.innerHTML=attendanceHistoryHtml();
+      var fresh=wrap.firstChild;
+      if(fresh)section.replaceWith(fresh);
+    }
+  }
+  function patchClockPanel(att,busy){
+    att=att||((state.data&&state.data.workData&&state.data.workData.todayAttendance)||{});
+    var clocked=!!att.clockInAt;
+    var clockedOut=!!att.clockOutAt;
+    var liveHours=att.workHours;
+    if(clocked&&!clockedOut&&att.clockInAt){
+      var diff=(Date.now()-Date.parse(att.clockInAt))/3600000;
+      liveHours=diff>0?Math.round(diff*100)/100:0;
+    }
+    var statusEl=root.querySelector('[data-clock-status]');
+    var inEl=root.querySelector('[data-clock-in-at]');
+    var outEl=root.querySelector('[data-clock-out-at]');
+    var hoursEl=root.querySelector('[data-live-hours]');
+    var btnIn=root.querySelector('[data-clock-in]');
+    var btnOut=root.querySelector('[data-clock-out]');
+    if(statusEl)statusEl.textContent=att.attendanceStatus||'未打卡';
+    if(inEl)inEl.textContent=att.clockInText||'-';
+    if(outEl)outEl.textContent=att.clockOutText||'-';
+    if(hoursEl)hoursEl.textContent=(liveHours!=null&&liveHours!==''?(liveHours+' 小时'):'-');
+    if(btnIn){
+      btnIn.disabled=!!(busy||clocked);
+      btnIn.textContent=busy?'处理中…':(clocked?'已打卡':'上班打卡');
+    }
+    if(btnOut){
+      btnOut.disabled=!!(busy||!clocked||clockedOut);
+      btnOut.textContent=busy?'处理中…':(clockedOut?'已下班':'下班打卡');
+    }
+  }
+  function optimisticClockIn(){
+    var started=new Date().toISOString();
+    return {
+      reportDate:shanghaiTodayKey(),
+      clockInAt:started,
+      clockOutAt:'',
+      clockInText:shanghaiNowText(),
+      clockOutText:'-',
+      attendanceStatus:'上班中',
+      dutyStatus:'on_duty',
+      workHours:0,
+      canClockIn:false,
+      canClockOut:true,
+      clockedIn:true,
+      clockedOut:false,
+      isLate:false,
+      isAbsent:false
+    };
+  }
+  function optimisticClockOut(prev){
+    prev=prev||{};
+    var ended=new Date().toISOString();
+    var hours=0;
+    if(prev.clockInAt){
+      var diff=(Date.parse(ended)-Date.parse(prev.clockInAt))/3600000;
+      hours=diff>0?Math.round(diff*100)/100:0;
+    }
+    return Object.assign({},prev,{
+      clockOutAt:ended,
+      clockOutText:shanghaiNowText(),
+      attendanceStatus:'已下班',
+      dutyStatus:'off_duty',
+      workHours:hours,
+      canClockIn:false,
+      canClockOut:false,
+      clockedIn:true,
+      clockedOut:true
+    });
+  }
+  function apiClock(action){
+    var cfg=(state.data&&state.data.workData&&state.data.workData.config)||null;
+    var payload=cfg?{config:{shiftStart:cfg.shiftStart,shiftEnd:cfg.shiftEnd,graceMinutes:cfg.graceMinutes}}:{};
+    var req=api(action,payload);
+    var timeout=new Promise(function(_,reject){
+      setTimeout(function(){
+        reject(Object.assign(new Error('网络较慢，请重试'),{timeout:true,status:408}));
+      },5000);
+    });
+    return Promise.race([req,timeout]);
+  }
+  function runClock(action){
+    if(state.clockBusy)return;
+    var prev=(state.data&&state.data.workData&&state.data.workData.todayAttendance)||{};
+    if(action==='clock_in'&&prev.clockInAt){toast('今日已上班打卡');patchClockPanel(prev,false);return;}
+    if(action==='clock_out'&&(!prev.clockInAt||prev.clockOutAt)){
+      toast(prev.clockOutAt?'今日已下班打卡':'请先上班打卡');
+      patchClockPanel(prev,false);
+      return;
+    }
+    state.clockBusy=true;
+    var optimistic=action==='clock_in'?optimisticClockIn():optimisticClockOut(prev);
+    if(!state.data)state.data={};
+    if(!state.data.workData)state.data.workData={};
+    state.data.workData.todayAttendance=optimistic;
+    upsertLocalAttendanceRow(optimistic);
+    patchClockPanel(optimistic,true);
+    var t0=performance&&performance.now?performance.now():Date.now();
+    apiClock(action).then(function(res){
+      var ms=Math.round((performance&&performance.now?performance.now():Date.now())-t0);
+      if(!res||(!res.attendance&&!res.persisted))throw new Error((res&&res.message)||'打卡未写入数据库');
+      applyClockResult(res);
+      state.clockBusy=false;
+      patchClockPanel(res.attendance||optimistic,false);
+      toast((res.message||'打卡成功')+(res.elapsedMs!=null?(' · '+res.elapsedMs+'ms'):(' · '+ms+'ms')));
+      try{console.info('[mcj-clock]',action,'clientMs='+ms,'serverElapsedMs='+(res.elapsedMs||res.totalMs||'-'));}catch(e){}
+    }).catch(function(err){
+      state.clockBusy=false;
+      // Revert optimistic if request failed (keep if already=true came back as success path only).
+      if(action==='clock_in'&&!prev.clockInAt){
+        state.data.workData.todayAttendance=prev;
+        patchClockPanel(prev,false);
+      }else if(action==='clock_out'&&!prev.clockOutAt){
+        state.data.workData.todayAttendance=prev;
+        patchClockPanel(prev,false);
+      }else{
+        patchClockPanel((state.data.workData&&state.data.workData.todayAttendance)||prev,false);
+      }
+      toast(err.message||'打卡失败');
+    });
+  }
+  function startHoursTimer(){
+    if(state.hoursTimer){clearInterval(state.hoursTimer);state.hoursTimer=null;}
+    var att=(state.data&&state.data.workData&&state.data.workData.todayAttendance)||{};
+    if(!(att.clockInAt&&!att.clockOutAt))return;
+    state.hoursTimer=setInterval(function(){
+      if(state.route!=='dashboard')return;
+      var el=root.querySelector('[data-live-hours]');
+      var a=(state.data&&state.data.workData&&state.data.workData.todayAttendance)||{};
+      if(!el||!a.clockInAt||a.clockOutAt)return;
+      var diff=(Date.now()-Date.parse(a.clockInAt))/3600000;
+      el.textContent=(diff>0?Math.round(diff*100)/100:0)+' 小时';
+    },30000);
+  }
+  function virtualListHtml(list,active,data,scrollTop,viewportH){
+    var total=list.length;
+    if(total<=40){
+      return (total?list.map(function(c){return conversationCardHtml(c,active,data)}).join(''):'<div class="cs-empty">该分类暂无会话</div>');
+    }
+    var start=Math.max(0,Math.floor((scrollTop||0)/CONV_ROW_H)-CONV_OVERSCAN);
+    var visible=Math.ceil((viewportH||600)/CONV_ROW_H)+CONV_OVERSCAN*2;
+    var end=Math.min(total,start+visible);
+    state.virtStart=start;
+    var topPad=start*CONV_ROW_H;
+    var bottomPad=Math.max(0,(total-end)*CONV_ROW_H);
+    var slice=list.slice(start,end);
+    return '<div class="cs-virt-spacer" style="height:'+topPad+'px"></div>'+
+      slice.map(function(c){return conversationCardHtml(c,active,data)}).join('')+
+      '<div class="cs-virt-spacer" style="height:'+bottomPad+'px"></div>';
+  }
+  function bindListScroll(listEl){
+    if(!listEl||listEl.dataset.virtBound==='1')return;
+    listEl.dataset.virtBound='1';
+    listEl.addEventListener('scroll',function(){
+      state.listScrollTop=listEl.scrollTop||0;
+      if(state.route!=='conversations')return;
+      var full=filteredConversations();
+      if(full.length<=40)return;
+      // Re-window without resetting scroll.
+      var body=listEl.querySelector('[data-cs-virt-body]');
+      if(!body)return;
+      var active=((state.data&&state.data.conversations)||[]).find(function(c){return c.id===state.activeConversation})||null;
+      body.innerHTML=virtualListHtml(full,active,state.data||{},state.listScrollTop,listEl.clientHeight);
+    },{passive:true});
+  }
+  function bindPoolRealtime(){
+    var RT=window.MCJChatRealtime;
+    if(!RT||typeof RT.subscribeConversations!=='function')return;
+    if(state.poolRealtimeBound)return;
+    var token=(state.session&&state.session.token)||'';
+    if(!token)return;
+    state.poolRealtimeBound=true;
+    RT.subscribeConversations(token,{
+      onChange:function(row){
+        if(!row||!row.id||!state.data)return;
+        var list=state.data.conversations||[];
+        var idx=list.findIndex(function(c){return c.id===row.id});
+        var patch={
+          id:row.id,
+          currentServiceId:row.customer_service_id||'',
+          rawStatus:row.status||'',
+          status:(row.status==='closed'||row.status==='ended')?'已结束':(row.customer_service_id?'正在接待':'待接待'),
+          updatedAt:row.updated_at||new Date().toISOString(),
+          closedAt:row.closed_at||'',
+          orderId:row.order_id||''
+        };
+        if(row.last_read_at)patch.lastReadAt=row.last_read_at;
+        if(idx>=0){
+          var prev=list[idx];
+          // Another CS claimed / ended — trust realtime row; keep local unread zero if we already read.
+          if(state.readCursors&&state.readCursors[row.id]&&!isClosedConv(patch)){
+            if(prev.lastTime&&String(prev.lastTime)<=String(state.readCursors[row.id])){
+              patch.unread=0;
+              patch.unreadCount=0;
+            }
+          }
+          list[idx]=Object.assign({},prev,patch);
+        }else{
+          list.unshift(Object.assign({bossName:'老板',lastMessage:'',unread:0,unreadCount:0},patch));
+        }
+        state.data.conversations=list;
+        syncPoolCounters();
+        if(state.route==='conversations'&&root.querySelector('.cs-chat-layout'))patchConversationMessages();
+        else if(state.route==='dashboard')syncPoolCounters();
+      },
+      onMessage:function(row){
+        if(!row||!row.conversation_id||!state.data)return;
+        var cid=row.conversation_id;
+        var list=state.data.conversations||[];
+        var idx=list.findIndex(function(c){return c.id===cid});
+        if(idx>=0){
+          var unread=Number(list[idx].unread||0)||0;
+          if(state.activeConversation!==cid&&(row.sender_role==='boss'||row.sender_role==='companion'))unread+=1;
+          else if(state.activeConversation===cid)unread=0;
+          list[idx]=Object.assign({},list[idx],{
+            lastMessage:row.content||list[idx].lastMessage,
+            lastTime:row.created_at||list[idx].lastTime,
+            updatedAt:row.created_at||list[idx].updatedAt,
+            unread:unread,
+            unreadCount:unread
+          });
+          // Move bumped conversation toward top.
+          var item=list.splice(idx,1)[0];
+          list.unshift(item);
+          state.data.conversations=list;
+        }
+        if(state.activeConversation===cid){
+          mergeIncomingMessage(mapDbMessage(row));
+        }
+        syncPoolCounters();
+        if(state.route==='conversations'&&root.querySelector('.cs-chat-layout'))patchConversationMessages();
+      }
+    }).catch(function(){state.poolRealtimeBound=false;});
+  }
   function activeConversation(){
     var list=(state.data&&state.data.conversations)||[];
     if(!state.activeConversation)return null;
@@ -77,8 +530,14 @@
   }
   function applyAcceptedLocally(cid, remoteConv){
     if(!cid||!state.data)return;
-    var myId=myServiceId()||String((remoteConv&&(remoteConv.customer_service_id||remoteConv.currentServiceId))||'').trim();
+    remoteConv=remoteConv||{};
+    var myId=myServiceId()||String(remoteConv.customer_service_id||remoteConv.currentServiceId||'').trim();
+    if(!myId&&state.data.staff)myId=String(state.data.staff.id||state.data.staff.user_id||'').trim();
     var nick=myServiceName();
+    if(myId&&state.session){
+      if(!state.session.user)state.session.user={};
+      if(!state.session.user.id)state.session.user.id=myId;
+    }
     state.acceptLock={id:cid,until:Date.now()+60000};
     state.convFilter='active';
     state.activeConversation=cid;
@@ -87,18 +546,25 @@
     state.readCursors[cid]=new Date().toISOString();
     var list=state.data.conversations||[];
     var idx=list.findIndex(function(c){return c.id===cid});
-    if(idx>=0){
-      list[idx]=Object.assign({},list[idx],{
-        currentServiceId:myId||list[idx].currentServiceId,
-        currentServiceName:nick,
-        status:'正在接待',
-        rawStatus:String((remoteConv&&remoteConv.status)||list[idx].rawStatus||'active'),
-        unread:0,
-        unreadCount:0,
-        lastReadAt:state.readCursors[cid],
-        lastMessage:'客服 '+nick+' 已接待您。'
-      });
+    var patch={
+      currentServiceId:myId||(idx>=0?list[idx].currentServiceId:''),
+      currentServiceName:nick,
+      status:'正在接待',
+      rawStatus:String(remoteConv.status||(idx>=0&&list[idx].rawStatus)||'active'),
+      unread:0,
+      unreadCount:0,
+      lastReadAt:state.readCursors[cid],
+      lastMessage:'客服 '+nick+' 已接待您。',
+      acceptedAt:remoteConv.accepted_at||remoteConv.acceptedAt||new Date().toISOString(),
+      updatedAt:new Date().toISOString()
+    };
+    if(!patch.currentServiceId){
+      // Still force out of waiting so counters move even if profile id is momentarily missing.
+      patch.currentServiceId='local-self';
     }
+    if(idx>=0)list[idx]=Object.assign({},list[idx],patch);
+    else list.unshift(Object.assign({id:cid,bossName:'老板'},patch));
+    state.data.conversations=list;
     clearUnreadLocally(cid);
     var msgs=state.data.messages||[];
     var already=msgs.some(function(m){
@@ -119,6 +585,7 @@
     }
     if(root.querySelector('.cs-chat-layout'))patchConversationMessages();
     else if(state.route==='conversations')paint();
+    syncPoolCounters();
     syncComposerEnabled();
   }
   function acceptConversation(cid){
@@ -126,13 +593,9 @@
     if(!id)return Promise.reject(new Error('缺少会话 ID'));
     if(state.acceptingId===id)return Promise.resolve();
     state.acceptingId=id;
-    var opts={
-      method:'POST',
-      headers:{'Content-Type':'application/json',Accept:'application/json'},
-      body:JSON.stringify({id:id,conversation_id:id,action:'accept'})
-    };
-    if(token())opts.headers['x-mcj-service-token']=token();
-    return fetch('/api/customer-service/accept',opts).then(parse).then(function(res){
+    // Optimistic move so counters update immediately even if network is slow.
+    applyAcceptedLocally(id,{});
+    return api('take_conversation',{id:id,conversation_id:id}).then(function(res){
       applyAcceptedLocally(id,res.conversation||{});
       toast(res.message||'已接待');
       syncComposerEnabled();
@@ -147,10 +610,18 @@
       }
       var hint=root.querySelector('[data-cs-composer-hint]');
       if(hint){hint.hidden=true;hint.textContent='';}
-      return softRefresh().then(function(){
-        applyAcceptedLocally(id,res.conversation||{});
-        syncComposerEnabled();
-      }).catch(function(){});
+      syncPoolCounters();
+    }).catch(function(err){
+      // Roll back optimistic claim on failure.
+      var list=(state.data&&state.data.conversations)||[];
+      var idx=list.findIndex(function(c){return c.id===id});
+      if(idx>=0&&list[idx].currentServiceId==='local-self'){
+        list[idx]=Object.assign({},list[idx],{currentServiceId:'',currentServiceName:'待接待',status:'待接待',rawStatus:'waiting_service'});
+        state.convFilter='waiting';
+        syncPoolCounters();
+        if(root.querySelector('.cs-chat-layout'))patchConversationMessages();
+      }
+      throw err;
     }).finally(function(){
       if(state.acceptingId===id)state.acceptingId='';
     });
@@ -175,10 +646,11 @@
       list[idx]=Object.assign({},list[idx],{unread:0,unreadCount:0,lastReadAt:readAt});
     }
     (state.data.messages||[]).forEach(function(m){
-      if(m.conversationId===cid&&m.senderRole==='boss'&&!m.readAt)m.readAt=readAt;
+      if(m.conversationId===cid&&(m.senderRole==='boss'||m.senderRole==='companion')&&!m.readAt)m.readAt=readAt;
     });
     var badge=root.querySelector('[data-conversation="'+cid+'"] .cs-conv-unread');
     if(badge)badge.remove();
+    syncPoolCounters();
   }
   function applyReadCursors(remote){
     if(!remote||!state.readCursors)return remote;
@@ -186,13 +658,14 @@
     (remote.conversations||[]).forEach(function(c){
       var at=cursors[c.id];
       if(!at)return;
+      var roles=c.conversationType==='companion_support'?{companion:1}:{boss:1};
       (remote.messages||[]).forEach(function(m){
-        if(m.conversationId===c.id&&m.senderRole==='boss'&&String(m.createdAt||'')<=String(at)){
+        if(m.conversationId===c.id&&roles[m.senderRole]&&String(m.createdAt||'')<=String(at)){
           m.readAt=m.readAt||at;
         }
       });
       var newer=(remote.messages||[]).filter(function(m){
-        return m.conversationId===c.id&&m.senderRole==='boss'&&!m.readAt&&String(m.createdAt||'')>String(at);
+        return m.conversationId===c.id&&roles[m.senderRole]&&!m.readAt&&String(m.createdAt||'')>String(at);
       }).length;
       c.unread=newer;
       c.unreadCount=newer;
@@ -204,26 +677,97 @@
     var id=String(cid||'').trim();
     if(!id)return Promise.resolve();
     clearUnreadLocally(id);
-    if(root.querySelector('.cs-chat-layout'))patchConversationMessages();
+    // Do not softRefresh after read — stale poll used to restore unread and freeze tab counts.
+    syncPoolCounters();
     return api('mark_read',{id:id,conversation_id:id}).then(function(res){
       clearUnreadLocally(id);
-      var unread=Number((res&&(res.unreadCount!=null?res.unreadCount:res.unread))||0)||0;
-      if(unread===0)clearUnreadLocally(id);
-      else if(state.data&&state.data.conversations){
-        var idx=state.data.conversations.findIndex(function(c){return c.id===id});
-        if(idx>=0){
-          state.data.conversations[idx]=Object.assign({},state.data.conversations[idx],{unread:unread,unreadCount:unread});
-        }
+      if(res&&(res.last_read_at||(res.conversation&&res.conversation.last_read_at))){
+        var at=res.last_read_at||res.conversation.last_read_at;
+        if(!state.readCursors)state.readCursors={};
+        state.readCursors[id]=at;
+        var list=state.data&&state.data.conversations||[];
+        var idx=list.findIndex(function(c){return c.id===id});
+        if(idx>=0)list[idx]=Object.assign({},list[idx],{lastReadAt:at,unread:0,unreadCount:0});
       }
-      if(root.querySelector('.cs-chat-layout'))patchConversationMessages();
-      return softRefresh().then(function(){
-        // Soft refresh must not resurrect cleared unread for this cursor.
-        clearUnreadLocally(id);
-        if(root.querySelector('.cs-chat-layout'))patchConversationMessages();
-      }).catch(function(){});
+      syncPoolCounters();
     }).catch(function(err){
       toast((err&&err.message)||'标记已读失败，请刷新重试');
     });
+  }
+  function mergeIncomingMessage(msg){
+    if(!msg||!msg.id||!state.data)return false;
+    if(!state.data.messages)state.data.messages=[];
+    if(state.data.messages.some(function(m){return m.id===msg.id}))return false;
+    state.data.messages.push(msg);
+    var list=state.data.conversations||[];
+    var idx=list.findIndex(function(c){return c.id===msg.conversationId});
+    if(idx>=0){
+      var bump=msg.senderRole==='boss'||msg.senderRole==='companion';
+      var active=state.activeConversation===msg.conversationId;
+      var nextUnread=active?0:(Number(list[idx].unread||0)||0)+(bump?1:0);
+      list[idx]=Object.assign({},list[idx],{
+        lastMessage:msg.content||list[idx].lastMessage,
+        lastTime:msg.createdAt||list[idx].lastTime,
+        unread:nextUnread,
+        unreadCount:nextUnread
+      });
+      if(active)clearUnreadLocally(msg.conversationId);
+      else syncPoolCounters();
+    }
+    return true;
+  }
+  function mapDbMessage(row){
+    if(!row)return null;
+    return {
+      id:row.id,
+      conversationId:row.conversation_id||row.conversationId||'',
+      senderId:row.sender_id||row.senderId||'',
+      senderRole:row.sender_role||row.senderRole||'',
+      senderName:row.senderName||'',
+      content:row.content||'',
+      messageType:row.message_type||row.messageType||'text',
+      orderId:row.order_id||row.orderId||'',
+      createdAt:row.created_at||row.createdAt||'',
+      readAt:row.read_at||row.readAt||'',
+      sendStatus:row.sendStatus||'sent'
+    };
+  }
+  function loadActiveConversationMessages(cid){
+    var id=String(cid||state.activeConversation||'').trim();
+    if(!id||!state.session||!state.session.token)return Promise.resolve();
+    return api('list_messages',{id:id,conversation_id:id}).then(function(res){
+      var remote=(res.messages||[]);
+      if(!state.data)return;
+      var others=(state.data.messages||[]).filter(function(m){return m.conversationId!==id});
+      state.data.messages=others.concat(remote);
+      if(state.route==='conversations'){
+        if(root.querySelector('.cs-chat-layout'))patchConversationMessages();
+        else paint();
+      }
+    }).catch(function(){});
+  }
+  function bindRealtime(cid){
+    var id=String(cid||'').trim();
+    var RT=window.MCJChatRealtime;
+    if(!RT||!id)return;
+    var token=(state.session&&state.session.token)||'';
+    // Do not kill pool subscription — only replace this conversation channel.
+    if(typeof RT.unsubscribe==='function')RT.unsubscribe(id);
+    RT.subscribeMessages(id,token,function(row){
+      var msg=mapDbMessage(row);
+      if(!mergeIncomingMessage(msg))return;
+      if(state.activeConversation===id){
+        clearUnreadLocally(id);
+        markConversationRead(id);
+      }
+      if(state.route==='conversations'&&root.querySelector('.cs-chat-layout'))patchConversationMessages();
+      else if(state.route==='conversations')paint();
+    }).then(function(){
+      state.realtimeReady=true;
+    }).catch(function(){
+      state.realtimeReady=false;
+    });
+    bindPoolRealtime();
   }
   function applyEndedLocally(cid){
     if(!cid||!state.data)return;
@@ -237,21 +781,30 @@
         unreadCount:0,
         lastMessage:'客服已结束本次接待。',
         closedAt:new Date().toISOString(),
+        endedAt:new Date().toISOString(),
         closedBy:myServiceId()
       });
     }
     var msgs=state.data.messages||[];
-    msgs.push({
-      id:'local-end-'+Date.now(),
-      conversationId:cid,
-      senderId:myServiceId()||'',
-      senderRole:'customer_service',
-      senderName:myServiceName(),
-      messageType:'system',
-      content:'客服已结束本次接待。',
-      createdAt:new Date().toISOString()
+    var already=msgs.some(function(m){
+      return m.conversationId===cid&&m.messageType==='system'&&String(m.content||'').indexOf('已结束本次接待')>=0;
     });
-    state.data.messages=msgs;
+    if(!already){
+      msgs.push({
+        id:'local-end-'+Date.now(),
+        conversationId:cid,
+        senderId:myServiceId()||'',
+        senderRole:'customer_service',
+        senderName:myServiceName(),
+        messageType:'system',
+        content:'客服已结束本次接待。',
+        createdAt:new Date().toISOString()
+      });
+      state.data.messages=msgs;
+    }
+    state.convFilter='ended';
+    syncPoolCounters();
+    if(state.activeConversation&&root.querySelector('.cs-chat-layout'))patchConversationMessages();
   }
   function saveComposerDraftFor(id){
     if(!id)return;
@@ -521,6 +1074,8 @@
       state.createOrderErrors.services=state.servicesError;
     });
   }
+  // Prefer SPA in-memory route so soft refresh / typing never snaps back to 工作台.
+  // Also fix bootstrap summary unread/current from live conversation list.
   function load(){
     if(!state.session||!state.session.token){state.loading=false;paint();return Promise.resolve()}
     state.loading=true;state.error='';
@@ -545,6 +1100,7 @@
       state.data=next;
       healSessionStaff(next);
       applyReadCursors(state.data);
+      recomputeSummaryFromConversations();
       if(state.suppressAutoSelect){
         state.activeConversation='';
       }else if(state.activeConversation){
@@ -575,10 +1131,35 @@
     var keepConv=state.activeConversation;
     if(keepRoute==='conversations')captureComposer();
     var seq=++softRefreshSeq;
-    return api('bootstrap',{},'GET').then(function(res){
+    // Conversations page: lightweight poll (not full bootstrap) for <5s freshness.
+    var poller=(keepRoute==='conversations')
+      ? api('poll_updates',{conversation_id:keepConv||'',since:state.lastPollAt||''})
+      : api('bootstrap',{},'GET');
+    return poller.then(function(res){
       if(seq!==softRefreshSeq)return;
       var nowRoute=state.route||keepRoute;
-      var remote=res.data||state.data||emptyDashboardData();
+      var remote;
+      if(keepRoute==='conversations'&&res&&res.data&&(res.data.conversations||res.data.messages)){
+        state.lastPollAt=res.data.polledAt||new Date().toISOString();
+        var mergedConvs=mergeConversationLists(
+          (state.data&&state.data.conversations)||[],
+          res.data.conversations||[],
+          !!res.data.incremental
+        );
+        remote=Object.assign({},state.data||emptyDashboardData(),{
+          conversations:mergedConvs,
+          orders:res.data.orders&&res.data.orders.length?res.data.orders:(state.data&&state.data.orders)||[]
+        });
+        // Merge messages: keep non-active history, replace/merge active + new.
+        var byId={};
+        ((state.data&&state.data.messages)||[]).forEach(function(m){if(m&&m.id)byId[m.id]=m;});
+        (res.data.messages||[]).forEach(function(m){if(m&&m.id)byId[m.id]=Object.assign({},byId[m.id]||{},m);});
+        remote.messages=Object.keys(byId).map(function(k){return byId[k];}).sort(function(a,b){
+          return String(a.createdAt||'').localeCompare(String(b.createdAt||''));
+        });
+      }else{
+        remote=res.data||state.data||emptyDashboardData();
+      }
       healSessionStaff(remote);
       // Protect just-accepted conversation from a stale poll overwriting the claim.
       if(state.acceptLock&&state.acceptLock.until>Date.now()&&state.data&&state.data.conversations){
@@ -610,6 +1191,18 @@
         }
       }
       applyReadCursors(remote);
+      // Keep active conversation history sticky across page polls / route switches.
+      if(keepConv&&state.data&&state.data.messages){
+        var keepMsgs=(state.data.messages||[]).filter(function(m){return m.conversationId===keepConv});
+        var remoteOthers=(remote.messages||[]).filter(function(m){return m.conversationId!==keepConv});
+        var byId={};
+        keepMsgs.concat(remoteOthers).concat(remote.messages||[]).forEach(function(m){
+          if(m&&m.id)byId[m.id]=Object.assign({},byId[m.id]||{},m);
+        });
+        remote.messages=Object.keys(byId).map(function(k){return byId[k];}).sort(function(a,b){
+          return String(a.createdAt||'').localeCompare(String(b.createdAt||''));
+        });
+      }
       state.data=remote;
       // Keep focus sticky: never jump to conversations[0] on poll/refresh.
       if(state.suppressAutoSelect){
@@ -622,11 +1215,16 @@
       }
       if(nowRoute)state.route=nowRoute;
       else if(keepRoute)state.route=keepRoute;
+      recomputeSummaryFromConversations();
       // Conversations: always patch in place — never remount composer on poll / realtime / send refresh.
       if(state.route==='conversations'){
-        if(patchConversationMessages())return;
+        if(patchConversationMessages()){
+          syncPoolCounters();
+          return;
+        }
       }
       paint();
+      syncPoolCounters();
     }).catch(function(){});
   }
   function patchConversationMessages(){
@@ -634,14 +1232,11 @@
     var box=root.querySelector('.cs-chat-messages');
     var listEl=root.querySelector('.cs-chat-list');
     if(!layout||!box)return false;
-    // Do NOT captureComposer here — softRefresh already captured before fetch.
-    // Capturing mid-switch would write the previous conversation's textarea into the new draft.
     var data=state.data||{};
     var list=filteredConversations();
     var all=data.conversations||[];
     var active=all.find(function(c){return c.id===state.activeConversation})||null;
     if(!active){
-      // No selected conversation (e.g. after end reception) — force full remount.
       return false;
     }
     var msgs=(data.messages||[]).filter(function(m){return active&&m.conversationId===active.id});
@@ -650,6 +1245,8 @@
     box.innerHTML=msgs.length?msgs.map(messageHtml).join(''):'<div class="cs-empty">暂无消息</div>';
     if(wasNearBottom){try{box.scrollTop=box.scrollHeight;}catch(e){}}
     if(listEl){
+      var savedScroll=typeof state.listScrollTop==='number'?state.listScrollTop:(listEl.scrollTop||0);
+      try{if(listEl.scrollTop)savedScroll=listEl.scrollTop;}catch(e){}
       var counts=filterCounts();
       var headHtml='<div class="cs-chat-list-head"><strong>会话列表</strong><div class="cs-actions"><button class="cs-btn" type="button" data-refresh>刷新</button><button class="cs-btn cs-list-close" type="button" data-close-conv-list>关闭</button></div></div>'+
         '<div class="cs-conv-tabs" role="tablist">'+
@@ -657,8 +1254,11 @@
         '<button type="button" class="cs-conv-tab'+(state.convFilter==='active'?' active':'')+'" data-conv-filter="active">接待中 <em>'+counts.active+'</em></button>'+
         '<button type="button" class="cs-conv-tab'+(state.convFilter==='ended'?' active':'')+'" data-conv-filter="ended">已结束 <em>'+counts.ended+'</em></button>'+
         '</div>';
-      listEl.innerHTML=headHtml+(list.length?list.map(function(c){return conversationCardHtml(c,active,data)}).join(''):'<div class="cs-empty">该分类暂无会话</div>');
+      var bodyHtml='<div data-cs-virt-body>'+virtualListHtml(list,active,data,savedScroll,listEl.clientHeight||600)+'</div>';
+      listEl.innerHTML=headHtml+bodyHtml;
       listEl.classList.toggle('is-open',!!state.showConversationList);
+      try{listEl.scrollTop=savedScroll;state.listScrollTop=savedScroll;}catch(e){}
+      bindListScroll(listEl);
     }
     var layoutEl=root.querySelector('.cs-chat-layout');
     if(layoutEl)layoutEl.classList.toggle('list-open',!!state.showConversationList);
@@ -673,7 +1273,7 @@
         var bossLabel=active.bossUid||active.bossId||'';
         titleBox.innerHTML='<h2>'+esc(active.bossName||'老板')+'</h2><p>'+(bossLabel?'编号 '+esc(bossLabel)+' · ':'')+(active.orderNo?'订单 '+esc(active.orderNo)+' · ':'')+esc(active.currentServiceId?(active.currentServiceName||'接待中'):'待接待')+'</p>';
       }
-      var actionBtn=headEl.querySelector('[data-take],[data-end],button.cs-btn');
+      var actionBtn=headEl.querySelector('[data-take],[data-end]');
       var isClosed=isClosedConv(active);
       var takeHtml=isClosed
         ?'<button class="cs-btn" type="button" disabled>会话已结束</button>'
@@ -682,8 +1282,13 @@
         :(takenByMe
           ?'<button class="cs-btn danger" type="button" data-end="'+esc(active.id)+'">结束接待</button>'
           :'<button class="cs-btn primary" type="button" data-take="'+esc(active.id)+'"'+(state.acceptingId===active.id?' disabled data-taking="1"':'')+'>'+(state.acceptingId===active.id?'接待中…':'接待')+'</button>');
-      if(actionBtn)actionBtn.outerHTML=takeHtml;
-      else headEl.insertAdjacentHTML('beforeend',takeHtml);
+      // Remove any stale take/end buttons (avoid 接待+结束接待 both showing).
+      headEl.querySelectorAll('[data-take],[data-end]').forEach(function(btn){btn.remove();});
+      var disabledStatus=headEl.querySelectorAll('.cs-chat-head > .cs-btn:not(.cs-back-list)');
+      disabledStatus.forEach(function(btn){
+        if(!btn.getAttribute('data-take')&&!btn.getAttribute('data-end')&&/已结束|已由客服|接待/.test(btn.textContent||''))btn.remove();
+      });
+      headEl.insertAdjacentHTML('beforeend',takeHtml);
       // Closed conversations must not keep composer.
       var composerWrap=root.querySelector('[data-cs-composer-wrap]');
       if(composerWrap&&isClosed)composerWrap.remove();
@@ -691,6 +1296,7 @@
       // Return to list empty state handled by paint; patch only when layout exists with active.
     }
     syncComposerEnabled();
+    syncPoolCounters();
     // While typing, never overwrite textarea. Otherwise sync from draft map.
     var input=root.querySelector(COMPOSER_SEL);
     if(input){
@@ -714,10 +1320,11 @@
   }
   function startPoll(){
     if(window.__MCJCsPoll)return;
+    bindPoolRealtime();
     window.__MCJCsPoll=setInterval(function(){
       if(isLoginView())return;
       quietRefresh();
-    },2000);
+    }, 5000);
   }
   function paintSafeFallback(){
     try{
@@ -790,7 +1397,17 @@
       }
       if(!state.data)state.data=emptyDashboardData();
       renderShell();
-      if(state.route==='conversations')restoreComposer();
+      syncPoolCounters();
+      if(state.route==='conversations'){
+        restoreComposer();
+        var listEl=root.querySelector('.cs-chat-list');
+        if(listEl){
+          try{listEl.scrollTop=state.listScrollTop||0;}catch(e){}
+          bindListScroll(listEl);
+        }
+        bindPoolRealtime();
+      }
+      if(state.route==='dashboard')startHoursTimer();
     }catch(e){
       paintSafeFallback();
     }
@@ -847,7 +1464,16 @@
     }
   }
   function title(){return ({dashboard:'客服工作台',conversations:'统一会话池',orders:'订单处理',createOrder:'客服代下单',compensation:'申请补偿',reports:'工资中心',profile:'我的资料'})[state.route]||'客服端'}
-  function renderShell(){var staff=(state.data&&state.data.staff)||(state.session&&state.session.user)||{};root.innerHTML='<div class="cs-shell"><aside class="cs-side"><div class="cs-brand"><strong>MEOW CUI JIAO</strong><span>Customer Service</span></div><nav class="cs-nav">'+NAV.map(function(n){if(n[0]==='logout')return '<button type="button" data-logout>'+n[1]+'</button>';return '<button type="button" class="'+(state.route===n[0]?'active':'')+'" data-route="'+n[2]+'">'+n[1]+'</button>'}).join('')+'</nav></aside><section class="cs-main"><header class="cs-top"><div><h1>'+title()+'</h1><p>客服端只处理会话与订单主流程。</p></div><div class="cs-account"><span>'+esc(staff.name||staff.email||'客服')+'</span></div></header><main class="cs-page" data-route="'+esc(state.route||'dashboard')+'">'+pageHtml()+'</main></section></div>'+noticeHtml()}
+  function renderShell(){
+    var staff=(state.data&&state.data.staff)||(state.session&&state.session.user)||{};
+    recomputeSummaryFromConversations();
+    var unread=Number((state.data&&state.data.summary&&state.data.summary.unreadMessages)||0)||0;
+    root.innerHTML='<div class="cs-shell"><aside class="cs-side"><div class="cs-brand"><strong>MEOW CUI JIAO</strong><span>Customer Service</span></div><nav class="cs-nav">'+NAV.map(function(n){
+      if(n[0]==='logout')return '<button type="button" data-logout>'+n[1]+'</button>';
+      var badge=n[0]==='conversations'?('<b class="cs-nav-unread" data-nav-unread'+(unread?'':' hidden')+'>'+(unread>99?'99+':String(unread||''))+'</b>'):'';
+      return '<button type="button" class="'+(state.route===n[0]?'active':'')+'" data-route="'+n[2]+'">'+n[1]+badge+'</button>';
+    }).join('')+'</nav></aside><section class="cs-main"><header class="cs-top"><div><h1>'+title()+'</h1><p>客服端只处理会话与订单主流程。</p></div><div class="cs-account"><span>'+esc(staff.name||staff.email||'客服')+'</span></div></header><main class="cs-page" data-route="'+esc(state.route||'dashboard')+'">'+pageHtml()+'</main></section></div>'+noticeHtml();
+  }
   function maintenanceHtml(name){return '<div class="cs-page-head"><div><h2>'+esc(name||'功能开发中')+'</h2><p>该模块暂未开放上线，请返回工作台继续处理会话与订单。</p></div><button class="cs-btn primary" type="button" data-route="/customer-service/dashboard">返回工作台</button></div><div class="cs-empty">功能开发中</div>'}
   function pageHtml(){
     var note='';
@@ -861,8 +1487,53 @@
     if(state.route==='profile')return note+profileHtml();
     return note+dashboardHtml();
   }
-  function metric(label,value){return '<article class="cs-card cs-metric"><span>'+esc(label)+'</span><strong>'+esc(value==null||value===''?'0':value)+'</strong></article>'}
-  function dashboardHtml(){var s=(state.data&&state.data.summary)||{},work=(state.data&&state.data.workData)||{},att=work.todayAttendance||{},reassign=s.needsReassign||0,clocked=!!att.clockInAt,clockedOut=!!att.clockOutAt;return '<div class="cs-page-head"><div><h2>工作台</h2><p>今晚主流程：接待会话、确认付款、推进订单。</p></div><div class="cs-actions"><button class="cs-btn primary" type="button" data-route="/customer-service/conversations">进入会话池</button><button class="cs-btn" type="button" data-route="/customer-service/orders">订单处理</button></div></div><section class="cs-card" style="margin-bottom:14px"><h3>今日打卡</h3><div class="cs-info-list"><div><span>当前状态</span><strong>'+esc(att.attendanceStatus||'未打卡')+'</strong></div><div><span>上班时间</span><strong>'+esc(att.clockInText||'-')+'</strong></div><div><span>下班时间</span><strong>'+esc(att.clockOutText||'-')+'</strong></div><div><span>今日工时</span><strong>'+esc(att.workHours?att.workHours+' 小时':'-')+'</strong></div></div><div class="cs-actions" style="margin-top:12px"><button class="cs-btn primary" type="button" data-clock-in '+(clocked?'disabled':'')+'>上班打卡</button><button class="cs-btn" type="button" data-clock-out '+(!clocked||clockedOut?'disabled':'')+'>下班打卡</button></div></section>'+(reassign?'<div class="cs-empty" style="margin-bottom:12px"><strong>待重新安排订单</strong><span>共 '+esc(reassign)+' 单陪玩无法接单或确认超时，请到订单处理中更换陪玩 / 推送抢单 / 联系老板 / 发起退款。</span></div>':'')+'<section class="cs-grid cs-metrics">'+metric('当前接待中会话',s.currentReceptions||0)+metric('今日已接待会话',s.todayReceptions||0)+metric('今日完成订单',s.todayCompleted||0)+metric('今日协助付款',s.todayPaid||0)+metric('今日退款处理',s.todayRefunds||0)+metric('未读消息',s.unreadMessages||0)+metric('本月出勤天数',s.monthAttendanceDays||0)+metric('本月迟到次数',s.monthLateCount||0)+metric('本月缺勤次数',s.monthAbsenceCount||0)+metric('本月预计工资',money(s.estimatedSalary||0))+metric('待重新安排',reassign)+metric('今日处理订单数',s.todayHandled||0)+'</section>'}
+  function metric(label,value,key){
+    var attr=key?' data-metric-'+esc(key):'';
+    return '<article class="cs-card cs-metric"><span>'+esc(label)+'</span><strong'+attr+'>'+esc(value==null||value===''?'0':value)+'</strong></article>';
+  }
+  function dashboardHtml(){
+    var s=(state.data&&state.data.summary)||{};
+    var work=(state.data&&state.data.workData)||{};
+    var att=work.todayAttendance||{};
+    var reassign=s.needsReassign||0;
+    var clocked=!!att.clockInAt;
+    var clockedOut=!!att.clockOutAt;
+    var liveHours=att.workHours;
+    if(clocked&&!clockedOut&&att.clockInAt){
+      var diff=(Date.now()-Date.parse(att.clockInAt))/3600000;
+      liveHours=diff>0?Math.round(diff*100)/100:0;
+    }
+    var clockInLabel=state.clockBusy?'处理中…':(clocked?'已打卡':'上班打卡');
+    var clockOutLabel=state.clockBusy?'处理中…':(clockedOut?'已下班':'下班打卡');
+    recomputeSummaryFromConversations();
+    s=(state.data&&state.data.summary)||s;
+    return '<div class="cs-page-head"><div><h2>工作台</h2><p>今晚主流程：接待会话、确认付款、推进订单。</p></div><div class="cs-actions"><button class="cs-btn primary" type="button" data-route="/customer-service/conversations">进入会话池</button><button class="cs-btn" type="button" data-route="/customer-service/orders">订单处理</button></div></div>'+
+      '<section class="cs-card" style="margin-bottom:14px" data-clock-panel><h3>今日打卡</h3><div class="cs-info-list">'+
+      '<div><span>当前状态</span><strong data-clock-status>'+esc(att.attendanceStatus||'未打卡')+'</strong></div>'+
+      '<div><span>上班时间</span><strong data-clock-in-at>'+esc(fmtAttDateTime(att.clockInText,att.clockInAt)||'-')+'</strong></div>'+
+      '<div><span>下班时间</span><strong data-clock-out-at>'+esc(clocked&&!clockedOut?'上班中':(fmtAttDateTime(att.clockOutText,att.clockOutAt)||'-'))+'</strong></div>'+
+      '<div><span>今日工时</span><strong data-live-hours>'+esc(liveHours!=null&&liveHours!==''?(liveHours+' 小时'):'-')+'</strong></div>'+
+      '</div><div class="cs-actions" style="margin-top:12px">'+
+      '<button class="cs-btn primary" type="button" data-clock-in '+(clocked||state.clockBusy?'disabled':'')+'>'+esc(clockInLabel)+'</button>'+
+      '<button class="cs-btn" type="button" data-clock-out '+(!clocked||clockedOut||state.clockBusy?'disabled':'')+'>'+esc(clockOutLabel)+'</button>'+
+      '</div></section>'+
+      attendanceHistoryHtml()+
+      (reassign?'<div class="cs-empty" style="margin-bottom:12px"><strong>待重新安排订单</strong><span>共 '+esc(reassign)+' 单陪玩无法接单或确认超时，请到订单处理中更换陪玩 / 推送抢单 / 联系老板 / 发起退款。</span></div>':'')+
+      '<section class="cs-grid cs-metrics">'+
+      metric('当前接待中会话',s.currentReceptions||0,'current')+
+      metric('今日已接待会话',s.todayReceptions||0)+
+      metric('今日完成订单',s.todayCompleted||0)+
+      metric('今日协助付款',s.todayPaid||0)+
+      metric('今日退款处理',s.todayRefunds||0)+
+      metric('未读消息',s.unreadMessages||0,'unread')+
+      metric('本月出勤天数',s.monthAttendanceDays||0)+
+      metric('本月迟到次数',s.monthLateCount||0)+
+      metric('本月缺勤次数',s.monthAbsenceCount||0)+
+      metric('本月预计工资',money(s.estimatedSalary||0))+
+      metric('待重新安排',reassign)+
+      metric('今日处理订单数',s.todayHandled||0)+
+      '</section>';
+  }
   function parseProductCard(content){
     try{
       var data=typeof content==='string'?JSON.parse(content):content;
@@ -973,7 +1644,7 @@
       '<button type="button" class="cs-conv-tab'+(state.convFilter==='active'?' active':'')+'" data-conv-filter="active">接待中 <em>'+counts.active+'</em></button>'+
       '<button type="button" class="cs-conv-tab'+(state.convFilter==='ended'?' active':'')+'" data-conv-filter="ended">已结束 <em>'+counts.ended+'</em></button>'+
       '</div>'+
-      (list.length?list.map(function(c){return conversationCardHtml(c,active,data)}).join(''):'<div class="cs-empty">该分类暂无会话</div>')+
+      '<div data-cs-virt-body>'+virtualListHtml(list,active,data,state.listScrollTop||0,560)+'</div>'+
       '</aside>';
     var orderPanel=order
       ?('<div class="cs-info-list">'+
@@ -1048,7 +1719,7 @@
     }
     return '<div class="cs-page-head"><div><h2>客服代下单</h2><p>客服根据老板需求代为创建订单。可通过老板 UID 识别账号。</p></div></div><form class="cs-card cs-form" data-order-form><label>选择老板<select name="boss_id"><option value="">请选择老板</option>'+bosses.map(function(b){return '<option value="'+esc(b.id)+'" '+(draft&&draft.bossId===b.id?'selected':'')+'>'+esc(b.bossUid||b.uid||'')+' / '+esc(b.name)+' / '+esc(b.email)+'</option>'}).join('')+'</select></label>'+bossesTip+'<label>或输入老板 UID<input name="boss_uid" placeholder="例如 B100001" value=""></label><label>指定陪玩（可选）<select name="companion_id"><option value="">发布到抢单大厅</option>'+companions.map(function(p){return '<option value="'+esc(p.id)+'">'+esc(p.name)+' / '+(p.companionUid?'P'+esc(p.companionUid):esc(p.id))+' / '+esc(p.game||'-')+' / '+money(p.price)+'</option>'}).join('')+'</select></label>'+companionsTip+serviceField+'<label>订单类型<input name="order_type" value="'+(draft?'gameplay_mall':'customer_service')+'"></label><label>需求说明<textarea name="description" required>'+(draft?('更多玩法商品：'+(draft.name||'')+'（ID：'+(draft.productId||'')+'）\n计价：'+(draft.unit||'')+'\n数量：\n时长：\n游戏区服：\n开始时间：\n备注：'):'')+'</textarea></label><label>时长<input name="hours" type="number" min="1" value="1" required></label><label>单价 RM<input name="unit_price" type="number" min="0" value="'+esc(draft&&draft.price||'')+'" required></label><label>总金额 RM<input name="total_amount" type="number" min="1" value="'+esc(draft&&draft.price||'')+'" required></label><button class="cs-btn primary" type="submit">创建订单</button></form>';
   }
-  function reportsHtml(){var work=(state.data&&state.data.workData)||{},salary=work.salary||{},cur=salary.current||{},history=salary.history||[];return '<div class="cs-page-head"><div><h2>工资中心</h2><p>工资来源于真实接待、订单和出勤统计，客服只能查看。</p></div></div><section class="cs-grid cs-metrics">'+metric('基础工资',money(cur.baseSalary||0))+metric('全勤奖励',money(cur.attendanceBonus||0))+metric('接待奖励',money(cur.receptionBonus||0))+metric('订单提成',money(cur.orderCommission||0))+metric('夜班补贴',money(cur.nightShiftAllowance||0))+metric('迟到扣款',money(cur.lateDeduction||0))+metric('缺勤扣款',money(cur.absenceDeduction||0))+metric('其他调整',money(cur.otherAdjustment||0))+metric('本月预计工资',money(cur.totalSalary||0))+metric('工资状态',cur.status||'统计中')+'</section><section class="cs-table-wrap" style="margin-top:14px"><table class="cs-table"><thead><tr><th>月份</th><th>基础工资</th><th>全勤奖励</th><th>接待奖励</th><th>订单提成</th><th>扣款合计</th><th>预计工资</th><th>状态</th></tr></thead><tbody>'+(history.length?history.map(function(r){var deductions=(Number(r.lateDeduction||0)+Number(r.absenceDeduction||0)+Number(r.earlyLeaveDeduction||0));return '<tr><td>'+esc(r.salaryMonth||'-')+'</td><td>'+money(r.baseSalary||0)+'</td><td>'+money(r.attendanceBonus||0)+'</td><td>'+money(r.receptionBonus||0)+'</td><td>'+money(r.orderCommission||0)+'</td><td>'+money(deductions)+'</td><td>'+money(r.totalSalary||0)+'</td><td>'+esc(r.status||'统计中')+'</td></tr>'}).join(''):'<tr><td colspan="8">暂无工资记录</td></tr>')+'</tbody></table></section>'}
+  function reportsHtml(){var work=(state.data&&state.data.workData)||{},salary=work.salary||{},cur=salary.current||{},history=salary.history||[],attRows=(work.attendance&&work.attendance.rows)||[];return '<div class="cs-page-head"><div><h2>工资中心</h2><p>工资自动读取真实接待、订单和打卡记录，客服只能查看。</p></div></div><section class="cs-grid cs-metrics">'+metric('基础工资',money(cur.baseSalary||0))+metric('全勤奖励',money(cur.attendanceBonus||0))+metric('接待奖励',money(cur.receptionBonus||0))+metric('订单提成',money(cur.orderCommission||0))+metric('夜班补贴',money(cur.nightShiftAllowance||0))+metric('迟到扣款',money(cur.lateDeduction||0))+metric('缺勤扣款',money(cur.absenceDeduction||0))+metric('其他调整',money(cur.otherAdjustment||0))+metric('本月预计工资',money(cur.totalSalary||0))+metric('工资状态',cur.status||'统计中')+'</section><section class="cs-table-wrap" style="margin-top:14px"><h3 style="margin:0 0 10px">本月打卡（工资计算依据）</h3><table class="cs-table"><thead><tr><th>日期</th><th>上班</th><th>下班</th><th>工时</th><th>迟到</th><th>缺勤</th><th>状态</th></tr></thead><tbody>'+(attRows.length?attRows.map(function(r){return '<tr><td>'+esc(r.reportDate||r.date||'-')+'</td><td>'+esc(r.clockInText||'-')+'</td><td>'+esc(r.clockOutText||'-')+'</td><td>'+esc(r.workHours!=null?r.workHours:'-')+'</td><td>'+esc(r.isLate?'是':'否')+'</td><td>'+esc(r.isAbsent?'是':'否')+'</td><td>'+esc(r.attendanceStatus||'-')+'</td></tr>'}).join(''):'<tr><td colspan="7">暂无打卡记录</td></tr>')+'</tbody></table></section><section class="cs-table-wrap" style="margin-top:14px"><table class="cs-table"><thead><tr><th>月份</th><th>基础工资</th><th>全勤奖励</th><th>接待奖励</th><th>订单提成</th><th>扣款合计</th><th>预计工资</th><th>状态</th></tr></thead><tbody>'+(history.length?history.map(function(r){var deductions=(Number(r.lateDeduction||0)+Number(r.absenceDeduction||0)+Number(r.earlyLeaveDeduction||0));return '<tr><td>'+esc(r.salaryMonth||'-')+'</td><td>'+money(r.baseSalary||0)+'</td><td>'+money(r.attendanceBonus||0)+'</td><td>'+money(r.receptionBonus||0)+'</td><td>'+money(r.orderCommission||0)+'</td><td>'+money(deductions)+'</td><td>'+money(r.totalSalary||0)+'</td><td>'+esc(r.status||'统计中')+'</td></tr>'}).join(''):'<tr><td colspan="8">暂无工资记录</td></tr>')+'</tbody></table></section>'}
   function reportStatus(s){return ({pending:'待审核',approved:'已批准',rejected:'已拒绝',paid:'已支付',completed:'已发放'})[s]||s||'-'}
   function profileHtml(){var s=(state.data&&state.data.staff)||state.session.user||{},work=(state.data&&state.data.workData)||{},cfg=work.config||{},att=work.attendance||{},sum=(state.data&&state.data.summary)||{},avatar='<div class="cs-avatar" style="width:64px;height:64px;display:grid;place-items:center">'+esc((s.name||s.email||'客').slice(0,1))+'</div>';return '<section class="cs-card"><h2>我的资料</h2><div class="cs-user-card">'+avatar+'<div><strong>'+esc(s.name||'-')+'</strong><div style="color:#9ca3af;margin-top:4px">'+esc(cfg.employeeCode||'未设置工号')+' · '+esc(cfg.shiftName||'默认班次')+'</div></div></div><div class="cs-info-list"><div><span>登录邮箱</span><strong>'+esc(s.email||'-')+'</strong></div><div><span>当前班次</span><strong>'+esc((cfg.shiftStart||'09:00')+' - '+(cfg.shiftEnd||'18:00'))+'</strong></div><div><span>入职日期</span><strong>'+esc(cfg.joinDate||'-')+'</strong></div><div><span>在线状态</span><strong>'+esc(sum.currentReceptions>0?'接待中':'在线')+'</strong></div><div><span>今日打卡状态</span><strong>'+esc((work.todayAttendance&&work.todayAttendance.attendanceStatus)||'未打卡')+'</strong></div><div><span>本月出勤</span><strong>'+esc((att.actualDays||0)+' / '+(att.standardDays||0))+'</strong></div><div><span>本月预计工资</span><strong>'+money(sum.estimatedSalary||0)+'</strong></div><div><span>历史工资记录</span><strong>'+esc((work.salary&&work.salary.history&&work.salary.history.length)||0)+' 条</strong></div></div></section>'}
   function sendChatMessage(){
@@ -1164,8 +1835,16 @@
     if(e.target.matches('[data-login]')){e.preventDefault();var form=e.target;var fd=new FormData(form);var btn=form.querySelector('[type="submit"]');var remember=!!fd.get('remember');captureLoginDraft();state.loginError='';state.loginBusy=true;updateLoginChrome();if(Auth&&Auth.setFormError)Auth.setFormError(form,'');else{var box=form.querySelector('[data-auth-error]');if(box)box.textContent='';}if(Auth&&Auth.setLoading)Auth.setLoading(btn,true);else if(btn){btn.disabled=true;btn.textContent='登录中…';}api('login',{account:String(fd.get('account')||'').trim(),password:String(fd.get('password')||''),remember:remember}).then(function(res){saveSession(res.session,true);state.loginBusy=false;state.loginError='';state.loginDraft={account:'',password:'',remember:false};location.assign('/customer-service/dashboard/');}).catch(function(err){state.loginBusy=false;state.loginError=err.message||'账号或密码错误。';updateLoginChrome();if(Auth&&Auth.setLoading)Auth.setLoading(btn,false,'登录');else if(btn){btn.disabled=false;btn.textContent='登录';}if(Auth&&Auth.setFormError)Auth.setFormError(form,state.loginError);else{var errBox=form.querySelector('[data-auth-error]');if(errBox)errBox.textContent=state.loginError;else toast(state.loginError);}restoreLoginDraft();});return}if(e.target.matches('[data-order-form]')){e.preventDefault();var fd2=new FormData(e.target),order={};fd2.forEach(function(v,k){order[k]=String(v||'')});var bossId=String(order.boss_id||'').trim();var bossUid=String(order.boss_uid||'').trim();var companionId=String(order.companion_id||'').trim();if(!bossId&&!bossUid){toast('请选择老板或输入老板 UID');return;}order.boss_id=bossId||bossUid;order.boss_uid=bossUid||'';order.companion_id=companionId||null;api('create_order',{order:order}).then(function(res){toast(res.message||'订单已创建');go('/customer-service/orders');return softRefresh()}).catch(function(err){toast(err.message||'创建订单失败')});return}if(e.target.matches('[data-compensation-form]')){e.preventDefault();var cf=new FormData(e.target),payload={};cf.forEach(function(v,k){payload[k]=String(v||'')});if(payload.boss_uid&&payload.boss_uid.trim())payload.boss_id=payload.boss_uid.trim();api('apply_compensation',payload).then(function(res){toast(res.message||'补偿申请已提交');go('/customer-service/orders');return softRefresh()}).catch(function(err){toast(err.message)});return}if(e.target.matches('[data-report-form]')){e.preventDefault();toast('客服不能自行填写应付工资，请使用工资记录申诉');return}
   });
   document.addEventListener('click',function(e){
-    if(e.target.closest('[data-clock-in]')){api('clock_in',{}).then(function(res){toast(res.message||'上班打卡成功');state.data=res.data||state.data;paint();}).catch(function(err){toast(err.message||'上班打卡失败')});return}
-    if(e.target.closest('[data-clock-out]')){api('clock_out',{}).then(function(res){toast(res.message||'下班打卡成功');state.data=res.data||state.data;paint();}).catch(function(err){toast(err.message||'下班打卡失败')});return}
+    if(e.target.closest('[data-clock-in]')){
+      e.preventDefault();
+      runClock('clock_in');
+      return;
+    }
+    if(e.target.closest('[data-clock-out]')){
+      e.preventDefault();
+      runClock('clock_out');
+      return;
+    }
     if(e.target.closest('[data-cs-send]')){
       e.preventDefault();
       e.stopPropagation();
@@ -1195,7 +1874,19 @@
     if(!targetPath||targetPath==='/'||targetPath==='/customer-service'||targetPath==='/customer-service/')return;
     setTimeout(function(){ go(targetPath); }, 0);
     return;
-  }var appealBtn=e.target.closest('[data-payroll-appeal]');if(appealBtn){var reason=prompt('请填写工资异议申诉原因');if(!reason)return;api('appeal_payroll',{payrollId:appealBtn.dataset.payrollAppeal,reason:reason}).then(function(res){toast(res.message||'申诉已提交');return softRefresh()}).catch(function(err){toast(err.message)});return}if(e.target.closest('[data-logout]')){clearSession();if(window.MCJRoleGate&&window.MCJRoleGate.logout)window.MCJRoleGate.logout('customer_service');location.assign('/customer-service/login/');return}if(e.target.closest('[data-refresh]')){softRefresh();return}
+  }var appealBtn=e.target.closest('[data-payroll-appeal]');if(appealBtn){var reason=prompt('请填写工资异议申诉原因');if(!reason)return;api('appeal_payroll',{payrollId:appealBtn.dataset.payrollAppeal,reason:reason}).then(function(res){toast(res.message||'申诉已提交');return softRefresh()}).catch(function(err){toast(err.message)});return}if(e.target.closest('[data-logout]')){clearSession();if(window.MCJRoleGate&&window.MCJRoleGate.logout)window.MCJRoleGate.logout('customer_service');location.assign('/customer-service/login/');return}  if(e.target.closest('[data-refresh]')){softRefresh();return}
+  var attPageBtn=e.target.closest('[data-att-page]');
+  if(attPageBtn){
+    e.preventDefault();
+    if(attPageBtn.disabled)return;
+    var dir=attPageBtn.getAttribute('data-att-page');
+    var total=monthAttendanceRows().length;
+    var maxPage=Math.max(0,Math.ceil(total/ATT_PAGE_SIZE)-1);
+    if(dir==='prev')state.attPage=Math.max(0,(Number(state.attPage)||0)-1);
+    else if(dir==='next')state.attPage=Math.min(maxPage,(Number(state.attPage)||0)+1);
+    if(state.route==='dashboard')paint();
+    return;
+  }
   if(e.target.closest('[data-open-conv-list]')){state.showConversationList=true;if(state.route==='conversations')paint();return}
   if(e.target.closest('[data-close-conv-list]')){state.showConversationList=false;if(state.route==='conversations')paint();return}
   var c=e.target.closest('[data-conversation]');if(c){e.preventDefault();e.stopPropagation();var cid=c.dataset.conversation;setTimeout(function(){
@@ -1216,6 +1907,7 @@
       loadComposerDraftFor(cid);
       paint();
       markConversationRead(cid);
+      loadActiveConversationMessages(cid).then(function(){bindRealtime(cid);});
     },0);return}var take=e.target.closest('[data-take]');if(take){e.preventDefault();e.stopPropagation();
       if(take.disabled||take.getAttribute('data-taking')==='1')return;
       var cid=String(take.getAttribute('data-take')||take.dataset.take||'').trim();
@@ -1248,18 +1940,55 @@
         state.showConversationList=true;
         state.composerDraft='';
         state.route='conversations';
-        return softRefresh().finally(function(){
-          state.activeConversation='';
-          state.suppressAutoSelect=true;
-          state.convFilter='ended';
-          paint();
-        });
+        paint();
+        syncPoolCounters();
       }).catch(function(err){toast(err.message||'结束接待失败')});return}var pay=e.target.closest('[data-confirm-payment]');if(pay){api('confirm_payment',{id:pay.dataset.confirmPayment}).then(function(res){toast(res.message||'已确认付款');return softRefresh()}).catch(function(err){toast(err.message)});return}var assign=e.target.closest('[data-assign-order]');if(assign){openAssign(assign.dataset.assignOrder);return}var st=e.target.closest('[data-status-order]');if(st){openStatus(st.dataset.statusOrder);return}var refund=e.target.closest('[data-refund-order]');if(refund){openRefund(refund.dataset.refundOrder);return}var close=e.target.closest('[data-close-modal]');if(close){close.closest('.cs-modal').remove();return}});
   function modal(html){document.body.insertAdjacentHTML('beforeend','<div class="cs-modal"><div class="cs-dialog cs-form">'+html+'</div></div>')}
-  function openAssign(id){var cs=(state.data&&state.data.companions)||[];modal('<div class="cs-dialog-head"><h3>指定陪玩</h3><button class="cs-btn" type="button" data-close-modal>关闭</button></div><label>陪玩<select data-assign-companion>'+cs.map(function(p){return '<option value="'+esc(p.id)+'">'+esc(p.name)+' / '+esc(p.game||'-')+'</option>'}).join('')+'</select></label><button class="cs-btn primary" type="button" data-do-assign="'+esc(id)+'" '+(!cs.length?'disabled':'')+'>保存</button>')}
-  function openStatus(id){var statuses=(state.data&&state.data.orderStatuses)||{};modal('<div class="cs-dialog-head"><h3>修改订单状态</h3><button class="cs-btn" type="button" data-close-modal>关闭</button></div><label>状态<select data-next-status>'+Object.keys(statuses).map(function(k){return '<option value="'+esc(k)+'">'+esc(statuses[k])+'</option>'}).join('')+'</select></label><button class="cs-btn primary" type="button" data-do-status="'+esc(id)+'">保存</button>')}
+  function openAssign(id){var cs=(state.data&&state.data.companions)||[];var opts=cs.length?cs.map(function(p){return '<option value="'+esc(p.id)+'">'+esc(p.name)+(p.companionUid?' / P'+esc(p.companionUid):'')+' / '+esc(p.game||'-')+'</option>'}).join(''):'<option value="">暂无陪玩，请手动输入 UID</option>';modal('<div class="cs-dialog-head"><h3>指定陪玩</h3><button class="cs-btn" type="button" data-close-modal>关闭</button></div><label>选择陪玩<select data-assign-companion>'+opts+'</select></label><label>或输入陪玩 UID / UUID<input data-assign-companion-uid placeholder="例如 P100001 或 UUID"></label><p class="cs-composer-hint" data-assign-hint style="min-height:18px"></p><button class="cs-btn primary" type="button" data-do-assign="'+esc(id)+'">保存</button>')}
+  function openStatus(id){
+    var order=((state.data&&state.data.orders)||[]).find(function(o){return o.id===id})||{};
+    var box=document.createElement('div');
+    modal('<div class="cs-dialog-head"><h3>修改订单状态</h3><button class="cs-btn" type="button" data-close-modal>关闭</button></div><p>当前：'+esc(order.statusText||order.status||'-')+'</p><label>下一步状态<select data-next-status><option value="">加载中…</option></select></label><button class="cs-btn primary" type="button" data-do-status="'+esc(id)+'" disabled>保存</button>');
+    api('allowed_order_statuses',{id:id}).then(function(res){
+      var sel=document.querySelector('[data-next-status]');
+      var btn=document.querySelector('[data-do-status="'+id+'"]');
+      if(!sel)return;
+      var options=res.options||{};
+      var keys=Object.keys(options);
+      if(!keys.length){
+        sel.innerHTML='<option value="">当前无可选下一步（请用专用按钮推进）</option>';
+        if(btn)btn.disabled=true;
+        return;
+      }
+      sel.innerHTML=keys.map(function(k){return '<option value="'+esc(k)+'">'+esc(options[k])+'</option>'}).join('');
+      if(btn)btn.disabled=false;
+    }).catch(function(err){
+      toast(err.message||'加载允许状态失败');
+      var sel=document.querySelector('[data-next-status]');
+      if(sel)sel.innerHTML='<option value="">加载失败</option>';
+    });
+  }
   function openRefund(id){modal('<div class="cs-dialog-head"><h3>处理退款</h3><button class="cs-btn" type="button" data-close-modal>关闭</button></div><label>处理结果<select data-refund-decision><option value="approve">批准退款</option><option value="reject">拒绝退款</option></select></label><label>拒绝后恢复状态<select data-restore-status><option value="in_progress">进行中</option><option value="completed">已完成</option><option value="cancelled">已取消</option></select></label><label>备注<textarea data-refund-note required></textarea></label><button class="cs-btn primary" type="button" data-do-refund="'+esc(id)+'">保存</button>')}
-  document.addEventListener('click',function(e){var a=e.target.closest('[data-do-assign]');if(a){var val=document.querySelector('[data-assign-companion]').value;api('assign_companion',{id:a.dataset.doAssign,companion_id:val}).then(function(res){toast(res.message||'已指定');a.closest('.cs-modal').remove();return softRefresh()}).catch(function(err){toast(err.message)});return}var s=e.target.closest('[data-do-status]');if(s){var status=document.querySelector('[data-next-status]').value;api('update_order_status',{id:s.dataset.doStatus,status:status}).then(function(res){toast(res.message||'已更新');s.closest('.cs-modal').remove();return softRefresh()}).catch(function(err){toast(err.message)});return}var rf=e.target.closest('[data-do-refund]');if(rf){api('refund_decision',{id:rf.dataset.doRefund,decision:document.querySelector('[data-refund-decision]').value,restore_status:document.querySelector('[data-restore-status]').value,note:document.querySelector('[data-refund-note]').value}).then(function(res){toast(res.message||'已处理');rf.closest('.cs-modal').remove();return softRefresh()}).catch(function(err){toast(err.message)});return}});
+  document.addEventListener('click',function(e){var a=e.target.closest('[data-do-assign]');if(a){
+    if(state.assignBusy||a.disabled)return;
+    var uidInput=document.querySelector('[data-assign-companion-uid]');
+    var sel=document.querySelector('[data-assign-companion]');
+    var val=String((uidInput&&uidInput.value)||'').trim()||String((sel&&sel.value)||'').trim();
+    var hint=document.querySelector('[data-assign-hint]');
+    if(!val){if(hint)hint.textContent='请选择或输入陪玩';toast('请选择或输入陪玩');return;}
+    state.assignBusy=true;a.disabled=true;a.textContent='保存中…';if(hint)hint.textContent='正在指定陪玩…';
+    api('assign_companion',{id:a.dataset.doAssign,companion_id:val}).then(function(res){
+      toast(res.message||'指定成功');
+      var modalEl=a.closest('.cs-modal');if(modalEl)modalEl.remove();
+      state.assignBusy=false;
+      return softRefresh();
+    }).catch(function(err){
+      state.assignBusy=false;a.disabled=false;a.textContent='保存';
+      if(hint)hint.textContent=err.message||'指定失败';
+      toast(err.message||'指定失败');
+    });
+    return;
+  }var s=e.target.closest('[data-do-status]');if(s){var status=document.querySelector('[data-next-status]').value;if(!status){toast('没有可切换的下一步状态');return;}s.disabled=true;s.textContent='保存中…';api('update_order_status',{id:s.dataset.doStatus,status:status}).then(function(res){toast(res.message||'已更新');s.closest('.cs-modal').remove();return softRefresh()}).catch(function(err){s.disabled=false;s.textContent='保存';toast(err.message)});return}var rf=e.target.closest('[data-do-refund]');if(rf){api('refund_decision',{id:rf.dataset.doRefund,decision:document.querySelector('[data-refund-decision]').value,restore_status:document.querySelector('[data-restore-status]').value,note:document.querySelector('[data-refund-note]').value}).then(function(res){toast(res.message||'已处理');rf.closest('.cs-modal').remove();return softRefresh()}).catch(function(err){toast(err.message)});return}});
   window.__MCJ_CS_DEBUG = state;
   function bootDashboard(){
     if(window.__MCJCsBooted)return;

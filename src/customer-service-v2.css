@@ -508,3 +508,35 @@
   border:1px solid rgba(255,145,195,.45)!important;
 }
 
+/* Attendance history: table on desktop, cards on mobile; never widen the page */
+.cs-app,.cs-shell,.cs-main,.cs-page{max-width:100%;overflow-x:hidden}
+.cs-att-section{border:1px solid var(--line);border-radius:16px;background:var(--panel);padding:14px 14px 10px;min-width:0}
+.cs-att-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:10px;flex-wrap:wrap}
+.cs-att-head h3{margin:0;font-size:16px}
+.cs-att-head span{color:var(--muted);font-size:12px}
+.cs-att-wrap{width:100%;max-width:100%;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch}
+.cs-att-table{width:100%;min-width:560px;border-collapse:collapse;table-layout:fixed}
+.cs-att-table th,.cs-att-table td{padding:10px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle;font-size:13px;word-break:break-word}
+.cs-att-table th{color:var(--muted);font-weight:600;white-space:nowrap}
+.cs-att-table .cs-att-date{width:18%}
+.cs-att-table .cs-att-in,.cs-att-table .cs-att-out{width:24%}
+.cs-att-table .cs-att-hours{width:16%}
+.cs-att-table .cs-att-status{width:18%}
+.cs-att-onduty{color:var(--ok);font-weight:700}
+.cs-att-empty{color:var(--muted);text-align:center}
+.cs-att-cards{display:none;gap:10px}
+.cs-att-card{border:1px solid var(--line2);border-radius:14px;background:var(--panel2);padding:12px 14px}
+.cs-att-card-head{display:flex;justify-content:space-between;gap:8px;margin-bottom:8px}
+.cs-att-card-head strong{font-size:15px}
+.cs-att-card-head span{color:var(--pink2);font-size:12px}
+.cs-att-card-row{display:flex;justify-content:space-between;gap:12px;padding:4px 0;color:var(--muted);font-size:13px}
+.cs-att-card-row strong{color:var(--text);font-weight:600;text-align:right}
+.cs-att-pager{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;flex-wrap:wrap;color:var(--muted);font-size:12px}
+.cs-nav button{position:relative}
+.cs-nav-unread{position:absolute;top:6px;right:8px;min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:#ff6b7a;color:#fff;font-size:11px;line-height:18px;text-align:center;font-weight:700}
+@media (max-width:860px){
+  .cs-att-wrap{display:none}
+  .cs-att-cards{display:grid}
+}
+
+

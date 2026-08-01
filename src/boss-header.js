@@ -60,10 +60,19 @@
 
   function activeHref(href) {
     var file = fileName().toLowerCase();
-    var target = String(href || "").split("?")[0].split("/").pop().toLowerCase();
+    var raw = String(href || "");
+    var target = raw.split("?")[0].split("/").pop().toLowerCase();
+    var wantVoice = /(?:^|[?&])service=voice(?:&|$)/i.test(raw);
+    var hasVoice = /(?:^|[?&])service=voice(?:&|$)/i.test(location.search || "");
+    if (target === "companion-center.html") {
+      if (file === "companion-center.html") {
+        return wantVoice ? hasVoice : !hasVoice;
+      }
+      if (!wantVoice && /profile\.html|order-confirm\.html|companion-detail\.html/.test(file)) return true;
+      return false;
+    }
     if (file === target) return true;
     if (target === "index.html" && isHomePage()) return true;
-    if (target === "companion-center.html" && /profile\.html|order-confirm\.html|companion-detail\.html/.test(file)) return true;
     if (target === "more-gameplays.html" && /gameplay-product\.html|fixed-order\.html/.test(file)) return true;
     if (target === "orders.html" && /custom-order\.html/.test(file)) return true;
     if (target === "support.html" && /support\.html/.test(file)) return true;
@@ -142,6 +151,7 @@
   function applyAuthVisibility() {
     if (!document.body) return;
     var logged = isLoggedIn();
+    var isMobileNav = !!(window.matchMedia && window.matchMedia("(max-width: 820px)").matches);
     document.body.classList.toggle("is-logged-in", logged);
     document.body.classList.toggle("is-guest", !logged);
     document.body.setAttribute("data-mcj-auth", logged ? "in" : "out");
@@ -153,25 +163,43 @@
     header.setAttribute("data-mcj-auth", logged ? "in" : "out");
     header.classList.toggle("is-logged-in", logged);
     header.classList.toggle("is-guest", !logged);
+    header.classList.toggle("mcj-mobile-nav", isMobileNav);
+
+    function showEl(el, displayValue) {
+      el.removeAttribute("hidden");
+      el.style.setProperty("display", displayValue, "important");
+    }
+    function hideEl(el) {
+      el.setAttribute("hidden", "");
+      el.style.setProperty("display", "none", "important");
+    }
 
     header.querySelectorAll("[data-guest-only], .mcj-boss-login").forEach(function (el) {
+      var inMore = !!el.closest("[data-mcj-nav-more-menu]");
       if (logged) {
-        el.setAttribute("hidden", "");
-        el.style.setProperty("display", "none", "important");
-      } else {
-        el.removeAttribute("hidden");
-        el.style.setProperty("display", "inline-flex", "important");
+        hideEl(el);
+        return;
       }
+      // Mobile: login lives in ☰ menu only.
+      if (!inMore && isMobileNav && el.classList.contains("mcj-boss-login")) {
+        hideEl(el);
+        return;
+      }
+      showEl(el, inMore ? "flex" : "inline-flex");
     });
 
-    header.querySelectorAll(".mcj-boss-auth-only").forEach(function (el) {
-      if (logged) {
-        el.removeAttribute("hidden");
-        el.style.setProperty("display", "inline-flex", "important");
-      } else {
-        el.setAttribute("hidden", "");
-        el.style.setProperty("display", "none", "important");
+    header.querySelectorAll(".mcj-boss-auth-only, [data-auth-only]").forEach(function (el) {
+      var inMore = !!el.closest("[data-mcj-nav-more-menu]");
+      if (!logged) {
+        hideEl(el);
+        return;
       }
+      // Mobile: account menu lives in ☰.
+      if (!inMore && isMobileNav && el.classList.contains("mcj-boss-auth-only")) {
+        hideEl(el);
+        return;
+      }
+      showEl(el, inMore ? "flex" : "inline-flex");
     });
 
     if (!logged) {
@@ -211,26 +239,45 @@
   }
 
   function headerHtml() {
-    var homeLink = isHomePage() ? "" : navLink("index.html", "首页");
-    // Tonight MVP: only hall / orders / support. Non-core → launch-feature-freeze.
+    var primary =
+      navLink("index.html", "首页") +
+      navLink("companion-center.html", "陪玩") +
+      navLink("companion-center.html?service=voice", "语音") +
+      navLink("more-gameplays.html", "玩法");
+    var desktopExtra =
+      navLink("orders.html", "我的订单") +
+      navLink("support.html?start=1", "在线客服");
     return (
       '<div class="mcj-boss-header-inner header-inner">' +
       '<a class="brand mcj-boss-brand" href="index.html" aria-label="妙脆角首页">' +
       '<span class="mcj-boss-brand-text"><strong>妙脆角</strong><small>MEOW CUI JIAO</small></span>' +
       "</a>" +
-      '<nav class="header-nav mcj-boss-nav" aria-label="主导航">' +
-      homeLink +
-      navLink("companion-center.html", "陪玩大厅") +
-      navLink("orders.html", "我的订单") +
-      navLink("support.html?start=1", "在线客服") +
+      '<nav class="header-nav mcj-boss-nav mcj-boss-nav-primary" aria-label="主导航">' +
+      primary +
+      '<span class="mcj-boss-nav-desktop-extra">' +
+      desktopExtra +
+      "</span>" +
       "</nav>" +
       '<div class="top-actions mcj-boss-user">' +
+      '<div class="mcj-boss-more">' +
+      '<button type="button" class="mcj-boss-more-toggle" data-mcj-nav-more aria-label="更多菜单" aria-haspopup="true" aria-expanded="false">☰</button>' +
+      '<div class="mcj-boss-more-menu" role="menu" hidden data-mcj-nav-more-menu>' +
+      '<a href="orders.html" role="menuitem">我的订单</a>' +
+      '<a href="support.html?start=1" role="menuitem">在线客服</a>' +
+      '<a href="recharge.html" role="menuitem" data-auth-only data-role="customer">充值中心</a>' +
+      '<a href="mine.html" role="menuitem" data-auth-only data-role="customer">我的账号</a>' +
+      '<a href="companion-apply.html" role="menuitem">申请陪玩</a>' +
+      '<button type="button" role="menuitem" data-mcj-boss-login data-guest-only>登录 / 注册</button>' +
+      '<button type="button" role="menuitem" data-mcj-boss-logout data-auth-only data-role="customer">退出登录</button>' +
+      "</div></div>" +
       '<button class="login mcj-boss-login" type="button" data-mcj-boss-login data-guest-only>登录</button>' +
       '<div class="mcj-boss-mine mcj-boss-auth-only" hidden>' +
       '<button type="button" data-mcj-mine-toggle aria-haspopup="true" aria-expanded="false">我的</button>' +
       '<div class="mcj-boss-mine-menu" role="menu">' +
       '<a href="orders.html" role="menuitem">我的订单</a>' +
       '<a href="support.html?start=1" role="menuitem">在线客服</a>' +
+      '<a href="recharge.html" role="menuitem">充值中心</a>' +
+      '<a href="mine.html" role="menuitem">我的账号</a>' +
       '<button type="button" data-mcj-boss-logout role="menuitem">退出登录</button>' +
       "</div></div></div></div>"
     );
@@ -386,7 +433,7 @@
 
   function mount() {
     if (!isBossPublicPage() || !document.body) return;
-    ensureCss("/src/boss-header.css", "data-mcj-boss-header-css");
+    ensureCss("/src/boss-header.css?v=20260731-mobile-nav", "data-mcj-boss-header-css");
     document.body.classList.add("mcj-boss-shell");
 
     var existing = findExistingHeader();
@@ -473,9 +520,24 @@
     window.__MCJBossHeaderBound = true;
 
     document.addEventListener("click", function (e) {
+      var moreToggle = e.target.closest("[data-mcj-nav-more]");
+      if (moreToggle) {
+        e.preventDefault();
+        document.querySelectorAll(".mcj-boss-mine.open").forEach(function (n) {
+          n.classList.remove("open");
+          var b = n.querySelector("[data-mcj-mine-toggle]");
+          if (b) b.setAttribute("aria-expanded", "false");
+        });
+        notifyState.open = false;
+        renderNotifyPanel();
+        toggleNavMoreMenu();
+        return;
+      }
+
       var login = e.target.closest("[data-mcj-boss-login]");
       if (login) {
         e.preventDefault();
+        closeNavMoreMenu();
         openLogin();
         return;
       }
@@ -483,6 +545,7 @@
       var notifyToggle = e.target.closest("[data-mcj-notify-toggle]");
       if (notifyToggle) {
         e.preventDefault();
+        closeNavMoreMenu();
         if (!isLoggedIn()) {
           openLogin();
           return;
@@ -515,6 +578,7 @@
       var toggle = e.target.closest("[data-mcj-mine-toggle]");
       if (toggle) {
         e.preventDefault();
+        closeNavMoreMenu();
         var wrap = toggle.closest(".mcj-boss-mine");
         if (!wrap) return;
         var open = !wrap.classList.contains("open");
@@ -554,6 +618,9 @@
           n.classList.remove("open");
         });
       }
+      if (!e.target.closest(".mcj-boss-more")) {
+        closeNavMoreMenu();
+      }
       if (!e.target.closest(".mcj-boss-notify")) {
         if (notifyState.open) {
           notifyState.open = false;
@@ -561,6 +628,22 @@
         }
       }
     });
+
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape") closeNavMoreMenu();
+    });
+
+    window.addEventListener("scroll", closeNavMoreMenu, { passive: true });
+
+    if (window.matchMedia) {
+      var mq = window.matchMedia("(max-width: 820px)");
+      var onNavMq = function () {
+        closeNavMoreMenu();
+        scheduleAuthVisibility();
+      };
+      if (typeof mq.addEventListener === "function") mq.addEventListener("change", onNavMq);
+      else if (typeof mq.addListener === "function") mq.addListener(onNavMq);
+    }
 
     window.addEventListener("mcj:auth-updated", function () {
       scheduleAuthVisibility();
@@ -601,19 +684,53 @@
     document.head.appendChild(s);
   }
 
+  function removeMeowButlerWidgets() {
+    var sel = [
+      "#floatingCustomerService",
+      "#floatingService",
+      ".floating-service",
+      ".floating-cs-button",
+      ".floating-cs-panel",
+      ".floating-cs-root",
+      ".service-float",
+      ".online-service",
+      "#mcjButler",
+      "#mcjButlerModal",
+      "#mcjFloatingAssistant",
+      "#mcjFloatingAssistantBackdrop",
+      "[data-mcj-meow-butler]",
+      "link[data-mcj-meow-butler-css]",
+    ].join(",");
+    document.querySelectorAll(sel).forEach(function (el) {
+      if (el && el.parentNode) el.parentNode.removeChild(el);
+    });
+    document.documentElement.classList.remove("mcj-floating-cs-lock");
+    if (document.body) document.body.classList.remove("mcj-floating-cs-lock");
+  }
+
   function ensureMeowButler() {
-    if (window.__MCJMeowButlerScript || window.__MCJMeowButlerLoaded) return;
-    if (!isBossPublicPage()) return;
-    if (document.querySelector('script[src*="meow-butler.js"],script[data-mcj-meow-butler-script]')) {
-      window.__MCJMeowButlerScript = true;
-      return;
-    }
-    window.__MCJMeowButlerScript = true;
-    var s = document.createElement("script");
-    s.src = "/src/meow-butler.js?v=20260729-fixed-portal";
-    s.defer = true;
-    s.setAttribute("data-mcj-meow-butler-script", "1");
-    document.head.appendChild(s);
+    // Permanently removed: no floating 喵管家 on homepage / boss public pages.
+    removeMeowButlerWidgets();
+  }
+
+  function closeNavMoreMenu() {
+    var wrap = document.querySelector(".mcj-boss-more");
+    var toggle = document.querySelector("[data-mcj-nav-more]");
+    var menu = document.querySelector("[data-mcj-nav-more-menu]");
+    if (wrap) wrap.classList.remove("open");
+    if (toggle) toggle.setAttribute("aria-expanded", "false");
+    if (menu) menu.hidden = true;
+  }
+
+  function toggleNavMoreMenu(forceClose) {
+    var wrap = document.querySelector(".mcj-boss-more");
+    var toggle = document.querySelector("[data-mcj-nav-more]");
+    var menu = document.querySelector("[data-mcj-nav-more-menu]");
+    if (!wrap || !toggle || !menu) return;
+    var open = forceClose === true ? false : !wrap.classList.contains("open");
+    wrap.classList.toggle("open", open);
+    toggle.setAttribute("aria-expanded", open ? "true" : "false");
+    menu.hidden = !open;
   }
 
   function boot() {

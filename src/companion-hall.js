@@ -103,7 +103,21 @@
         levelId: levelId,
         levelNumber: normalized.levelNumber || Number(String(levelId).replace("lv", "")) || 0,
         gender: normalized.gender || "保密",
-        serviceType: normalized.serviceType || normalized.type || normalized.category || normalized.service || "未设置类型",
+        serviceType: (Array.isArray(normalized.serviceTypes) && normalized.serviceTypes[0])
+          || normalized.serviceType
+          || normalized.service_type
+          || "陪玩服务",
+        serviceTypes: Array.isArray(normalized.serviceTypes) && normalized.serviceTypes.length
+          ? normalized.serviceTypes.slice()
+          : String(normalized.serviceType || normalized.service_type || "陪玩服务")
+              .split(/[,，、/|]+/)
+              .map(function (part) { return String(part || "").trim(); })
+              .filter(Boolean),
+        serviceIds: Array.isArray(normalized.serviceIds) && normalized.serviceIds.length
+          ? normalized.serviceIds.map(function (id) { return String(id); })
+          : Array.isArray(normalized.service_ids)
+            ? normalized.service_ids.map(function (id) { return String(id); })
+            : [],
         status: normalizeStatus(normalized.availabilityStatus || normalized.availabilityText || normalized.status || normalized.onlineStatus),
         publicId: normalized.publicId || "",
         image: avatarUrl(normalized.cover || normalized.cardCover || normalized.avatar || normalized.image),
@@ -120,20 +134,74 @@
     }).join("");
     el.value = Array.prototype.some.call(el.options, function (opt) { return opt.value === current; }) ? current : "";
   }
+  var SERVICE_TYPE_OPTIONS = [
+    { value: "陪玩服务", label: "陪玩服务" },
+    { value: "陪聊服务", label: "陪聊服务" }
+  ];
+  var stateGameOptions = [];
+  function companionGames(item) {
+    return String(item && item.game || "")
+      .split(/[,，、/|]+/)
+      .map(function (part) { return String(part || "").trim(); })
+      .filter(Boolean);
+  }
+  function companionServiceIds(item) {
+    if (Array.isArray(item && item.serviceIds) && item.serviceIds.length) {
+      return item.serviceIds.map(function (id) { return String(id); });
+    }
+    if (Array.isArray(item && item.service_ids) && item.service_ids.length) {
+      return item.service_ids.map(function (id) { return String(id); });
+    }
+    // Legacy fallback: map game names → service ids from loaded options
+    var names = companionGames(item);
+    if (!names.length || !stateGameOptions.length) return [];
+    return stateGameOptions
+      .filter(function (opt) { return names.indexOf(opt.label) > -1; })
+      .map(function (opt) { return opt.value; });
+  }
   function setupFilters() {
-    var serviceRows = taxonomyItems("services");
-    if (!serviceRows.length) serviceRows = taxonomyItems("games");
-    setOptions("gameFilter", serviceRows.map(function (item) {
-      return { value: taxonomyLabel(item), label: taxonomyLabel(item) };
-    }).filter(function (item) { return item.value; }), "全部服务");
-    setOptions("typeFilter", (taxonomyItems("service_types").length ? taxonomyItems("service_types") : serviceRows).map(function (item) {
-      return { value: taxonomyLabel(item), label: taxonomyLabel(item) };
-    }).filter(function (item) { return item.value; }), "全部类型");
+    // 服务类型：固定陪玩/陪聊，禁止游戏名进入此下拉
+    setOptions("typeFilter", SERVICE_TYPE_OPTIONS, "全部类型");
+    // 游戏分类：优先已加载的 services（value=service_id）
+    if (stateGameOptions.length) {
+      setOptions("gameFilter", stateGameOptions, "全部游戏");
+    } else {
+      var gameRows = taxonomyItems("games");
+      if (!gameRows.length) gameRows = taxonomyItems("services");
+      setOptions("gameFilter", gameRows.map(function (item) {
+        var id = String(item.id || item.value || "").trim();
+        var label = taxonomyLabel(item);
+        return { value: id || label, label: label };
+      }).filter(function (item) { return item.value && item.label; }), "全部游戏");
+    }
     setOptions("levelFilter", taxonomyItems("companion_levels").map(function (item) {
       var api = taxonomy();
       var value = api && api.levelId ? api.levelId(item) : taxonomyValue(item);
       return { value: value, label: [item.code, item.name || item.title].filter(Boolean).join(" ") || taxonomyLabel(item) };
     }).filter(function (item) { return item.value; }), "全部等级");
+  }
+  function loadGameFilterFromServicesApi() {
+    return fetch("/api/platform/services", { headers: { Accept: "application/json" } })
+      .then(function (res) {
+        return res.text().then(function (raw) {
+          var body = {};
+          try { body = raw ? JSON.parse(raw) : {}; } catch (err) { body = {}; }
+          if (!res.ok || body.ok === false) return [];
+          return Array.isArray(body.services) ? body.services : [];
+        });
+      })
+      .then(function (services) {
+        var enabled = (services || []).filter(function (item) {
+          return item && item.enabled !== false && item.status !== "disabled";
+        });
+        stateGameOptions = enabled.map(function (item) {
+          var id = String(item.id || "").trim();
+          var name = String(item.name || item.title || item.game || "").trim();
+          return { value: id || name, label: name };
+        }).filter(function (item) { return item.value && item.label; });
+        setOptions("gameFilter", stateGameOptions, "全部游戏");
+      })
+      .catch(function () {});
   }
   function value(id) {
     var el = document.getElementById(id);
@@ -151,8 +219,16 @@
     var items = state.items.filter(function (item) {
       var hay = [item.name, item.id, item.game, item.serviceType, item.level, item.gender, item.status, item.desc].concat(item.tags).join(" ").toLowerCase();
       var ok = !q || hay.indexOf(q) > -1;
-      if (type) ok = ok && item.serviceType === type;
-      if (game) ok = ok && item.game === game;
+      if (type) {
+        var types = Array.isArray(item.serviceTypes) && item.serviceTypes.length
+          ? item.serviceTypes
+          : [item.serviceType].filter(Boolean);
+        ok = ok && types.indexOf(type) > -1;
+      }
+      if (game) {
+        var ids = companionServiceIds(item);
+        ok = ok && (ids.indexOf(game) > -1 || companionGames(item).indexOf(game) > -1);
+      }
       if (price) {
         var range = price.split("-").map(Number);
         ok = ok && item.priceValue >= range[0] && item.priceValue <= range[1];
@@ -258,6 +334,7 @@
     fetch("/api/dev/seed-p03-preview", { method: "POST", headers: { "Content-Type": "application/json" } }).catch(function () {});
     state.items = await readItems();
     setupFilters();
+    await loadGameFilterFromServicesApi();
     bind();
     render();
   }
@@ -268,8 +345,9 @@
       window.MCJTaxonomy.load()
         .then(function () {
           setupFilters();
-          render();
+          return loadGameFilterFromServicesApi();
         })
+        .then(function () { render(); })
         .catch(function () {});
     }
   }

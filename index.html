@@ -311,7 +311,12 @@ body:not(.is-logged-in) .top-actions a{display:none!important}
 body:not(.is-logged-in) .top-actions .login{display:inline-flex!important}
 @media(max-width:720px){
   .header-nav{display:none!important}
+  header.mcj-boss-header .header-nav,
+  header.mcj-boss-header .mcj-boss-nav{display:flex!important}
   .site-header .top-actions a{display:none!important}
+  header.mcj-boss-header .mcj-boss-more-menu a,
+  header.mcj-boss-header .mcj-boss-more-menu button{display:flex!important}
+  header.mcj-boss-header .mcj-boss-more-menu [hidden]{display:none!important}
   .mobile-bottom-nav{
     position:fixed;
     left:max(8px, env(safe-area-inset-left));
@@ -2816,7 +2821,7 @@ label{
 .mcj-hero-notice div{min-width:0;flex:1;overflow:hidden;white-space:nowrap}
 .mcj-hero-notice span{display:inline-block;min-width:100%;padding-left:100%;animation:noticeScroll 22s linear infinite}
 @media(max-width:980px){.container > .mcj-home-hero{width:100%!important;height:clamp(220px,22vw,240px)!important;max-height:240px!important}}
-@media(max-width:640px){.container > .mcj-home-hero{width:100%!important;height:clamp(170px,46vw,210px)!important;max-height:210px!important;border-radius:18px!important}.mcj-hero-below-actions{width:calc(100vw - 32px)!important;margin-top:12px;gap:10px}.mcj-hero-below-actions .mcj-hero-btn{height:46px;min-width:0;flex:1;padding:0 12px;font-size:13px}.mcj-hero-notice{width:calc(100vw - 32px)!important;height:38px;margin-top:14px;margin-bottom:28px;border-radius:18px}.mcj-hero-notice b{font-size:11px}.mcj-hero-notice span{font-size:12px}.mcj-home-hero .mcj-hero-arrow{display:none!important}.mcj-home-hero .mcj-hero-dots{bottom:12px!important}}
+@media(max-width:640px){.container > .mcj-home-hero{width:100%!important;height:clamp(170px,46vw,210px)!important;max-height:210px!important;border-radius:18px!important}.mcj-hero-below-actions{width:100%!important;max-width:100%!important;box-sizing:border-box;margin-top:12px;gap:10px}.mcj-hero-below-actions .mcj-hero-btn{height:46px;min-width:0;flex:1;padding:0 12px;font-size:13px}.mcj-hero-notice{width:100%!important;max-width:100%!important;box-sizing:border-box;height:38px;margin-top:14px;margin-bottom:28px;border-radius:18px}.mcj-hero-notice b{font-size:11px}.mcj-hero-notice span{font-size:12px}.mcj-home-hero .mcj-hero-arrow{display:none!important}.mcj-home-hero .mcj-hero-dots{bottom:12px!important}}
 
 /* quick-entry-single-icon-fix-v1 */
 .quick-entry-grid .quick-entry-card{
@@ -3340,7 +3345,7 @@ body:after,
   <link rel="stylesheet" href="src/home-announcements.css">
   <link rel="stylesheet" href="src/home-popularity.css">
   <link rel="stylesheet" href="src/home-desktop.css">
-  <link rel="stylesheet" href="src/boss-header.css">
+  <link rel="stylesheet" href="src/boss-header.css?v=20260801fullChain">
   <link rel="stylesheet" href="src/login-modal.css">
   <link rel="stylesheet" href="src/place-order-modal.css">
   <link rel="stylesheet" href="src/notify-system.css">
@@ -3348,7 +3353,7 @@ body:after,
   <script src="src/avatar-fallback.js"></script>
   <script src="src/launch-feature-freeze.js"></script>
   <script src="src/notify-system.js" defer></script>
-  <script src="src/boss-header.js" defer></script>
+  <script src="src/boss-header.js?v=20260801fullChain" defer></script>
 </head>
 <body>
   <div class="ambient-layer" aria-hidden="true"></div>
@@ -4157,9 +4162,8 @@ body:after,
   </script>
   <script src="src/dropdown-system.js" defer></script>
   <script src="src/real-data-admin.js" defer></script>
-  <script src="src/footer-system.js" defer></script>
+  <script src="src/footer-system.js?v=20260731-footer-actions" defer></script>
   <script src="src/text-guard.js?v=20260730home4" defer></script>
-  <script src="src/meow-butler.js?v=20260729-fixed-portal" defer></script>
   <script src="src/design-system.js" defer></script>
 <script id="mcjBossLogoutHandler">
   document.addEventListener('click', function(event) {

@@ -115,7 +115,14 @@
               esc(w.id) +
               '">通过</button> <button class="mini-btn" type="button" data-fin-reject-wd="' +
               esc(w.id) +
-              '">驳回</button>'
+              '">拒绝</button>'
+            : "") +
+          (/approved_pending_pay|paying|paid_pending_receipt/.test(String(w.status || ""))
+            ? ' <button class="mini-btn primary-lite" type="button" data-fin-paid-wd="' +
+              esc(w.id) +
+              '">打款完成</button> <button class="mini-btn" type="button" data-fin-reject-wd="' +
+              esc(w.id) +
+              '">拒绝</button>'
             : "") +
           (w.paymentAccountId
             ? ' <button class="mini-btn" type="button" data-fin-reveal="' + esc(w.paymentAccountId) + '">查看账号</button>'
@@ -479,6 +486,20 @@
         });
       return;
     }
+    var paidWd = e.target.closest("[data-fin-paid-wd]");
+    if (paidWd) {
+      var ref = prompt("打款银行流水号 / 备注（可选）", "") || "";
+      if (!confirm("确认标记该提现为「打款完成」？陪玩端将同步显示已打款。")) return;
+      post("mark_withdraw_paid", { id: paidWd.dataset.finPaidWd, bankReference: ref })
+        .then(function (res) {
+          state.message = res.message;
+          load();
+        })
+        .catch(function (err) {
+          alert(err.message);
+        });
+      return;
+    }
     var approvePay = e.target.closest("[data-fin-approve-pay]");
     if (approvePay) {
       if (!confirm("确认通过该工资单并进入待付款？")) return;
@@ -511,6 +532,7 @@
         baseSalaryRm: base,
         bonusRm: bonus,
         deductionRm: deduction,
+        fromAttendance: true,
         paymentAccount: { bank_name: bankName, account_holder: holder, account_last4: last4 },
       })
         .then(function (res) {

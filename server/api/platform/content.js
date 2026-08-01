@@ -215,11 +215,11 @@ export default async function handler(req, res) {
         );
       }
       if (types.includes("service_types")) {
-        byType.service_types = mapped.filter(
-          (item) =>
-            item.allowOrder !== false &&
-            ((item.displayPositions || []).includes("boss_order") || (item.displayPositions || []).includes("cs_order"))
-        );
+        // 服务类型固定为陪玩/陪聊，禁止把 games/services 游戏名塞进服务类型
+        byType.service_types = [
+          { id: "play_service", name: "陪玩服务", title: "陪玩服务", category: "服务类型", enabled: true, sort: 1 },
+          { id: "chat_service", name: "陪聊服务", title: "陪聊服务", category: "服务类型", enabled: true, sort: 2 },
+        ];
       }
       if (types.includes("hot_games")) {
         byType.hot_games = mapped.filter(

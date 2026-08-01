@@ -178,7 +178,84 @@
     return fallback||'-';
   }
   var bossAdminState={page:1,pageSize:20,rows:[],loaded:false,error:'',activeBossId:'',activeBossTab:'profile'};
+  var bossMorePopover={el:null,anchor:null,bossId:'',onScroll:null,bound:false};
+  function closeBossMoreMenu(){
+    if(bossMorePopover.el){
+      bossMorePopover.el.remove();
+      bossMorePopover.el=null;
+    }
+    bossMorePopover.anchor=null;
+    bossMorePopover.bossId='';
+    if(bossMorePopover.onScroll){
+      document.querySelectorAll('.boss-table-wrap').forEach(function(scroller){
+        scroller.removeEventListener('scroll',bossMorePopover.onScroll);
+      });
+      window.removeEventListener('scroll',bossMorePopover.onScroll,true);
+      window.removeEventListener('resize',bossMorePopover.onScroll);
+      bossMorePopover.onScroll=null;
+    }
+  }
+  function positionBossMoreMenu(){
+    var menu=bossMorePopover.el;
+    var anchor=bossMorePopover.anchor;
+    if(!menu||!anchor||!document.body.contains(anchor)){closeBossMoreMenu();return;}
+    var rect=anchor.getBoundingClientRect();
+    var menuWidth=Math.max(176,menu.offsetWidth||176);
+    var menuHeight=menu.offsetHeight||280;
+    var gap=6;
+    var left=Math.min(Math.max(8,rect.right-menuWidth),window.innerWidth-menuWidth-8);
+    var top=rect.bottom+gap;
+    if(top+menuHeight>window.innerHeight-8 && rect.top-gap-menuHeight>8){
+      top=rect.top-gap-menuHeight;
+    }
+    top=Math.max(8,Math.min(top,window.innerHeight-menuHeight-8));
+    menu.style.left=Math.round(left)+'px';
+    menu.style.top=Math.round(top)+'px';
+  }
+  function openBossMoreMenu(anchorBtn){
+    var bossId=String(anchorBtn.getAttribute('data-boss-id')||'').trim();
+    if(!bossId)return;
+    if(bossMorePopover.el&&bossMorePopover.bossId===bossId){closeBossMoreMenu();return;}
+    closeBossMoreMenu();
+    var items=[
+      ['view','查看资料'],
+      ['orders','订单记录'],
+      ['recharge','充值记录'],
+      ['consume','消费记录'],
+      ['refunds','退款记录'],
+      ['vip','VIP设置'],
+      ['coupon','优惠券'],
+      ['remark','备注']
+    ];
+    var menu=document.createElement('div');
+    menu.className='boss-more-popover';
+    menu.setAttribute('role','menu');
+    menu.setAttribute('data-boss-more-popover','1');
+    menu.innerHTML=items.map(function(item){
+      return '<button type="button" role="menuitem" data-boss-action="'+esc(item[0])+'" data-boss-id="'+esc(bossId)+'">'+esc(item[1])+'</button>';
+    }).join('');
+    document.body.appendChild(menu);
+    bossMorePopover.el=menu;
+    bossMorePopover.anchor=anchorBtn;
+    bossMorePopover.bossId=bossId;
+    positionBossMoreMenu();
+    bossMorePopover.onScroll=function(){closeBossMoreMenu();};
+    document.querySelectorAll('.boss-table-wrap').forEach(function(scroller){
+      scroller.addEventListener('scroll',bossMorePopover.onScroll,{passive:true});
+    });
+    window.addEventListener('scroll',bossMorePopover.onScroll,true);
+    window.addEventListener('resize',bossMorePopover.onScroll);
+  }
+  function ensureBossMorePopoverBound(){
+    if(bossMorePopover.bound)return;
+    bossMorePopover.bound=true;
+    document.addEventListener('keydown',function(e){
+      if(e.key==='Escape')closeBossMoreMenu();
+    });
+  }
+  ensureBossMorePopoverBound();
   function closeAdminModal(){
+    closeBossMoreMenu();
     var modal=document.getElementById('adminModal');
     var body=document.getElementById('modalBody');
     if(body)body.innerHTML='';
@@ -262,6 +339,7 @@
   }
   function bossCell(label,value,extra){return '<td data-label="'+esc(label)+'" title="'+esc(value)+'" '+(extra||'')+'>'+value+'</td>'}
   function renderBossTableRows(){
+    closeBossMoreMenu();
     var box=document.getElementById('bossManagementTable');if(!box)return;
     var rows=visibleBossRows();
     var count=document.querySelector('[data-boss-count]');if(count)count.textContent=rows.length+' 条';
@@ -277,7 +355,7 @@
       '<td data-label="昵称" title="'+esc(item.name)+'"><button class="boss-name-link" type="button" data-boss-action="view" data-boss-id="'+esc(item.id)+'">'+esc(item.name)+'</button></td>'+ 
       bossCell('VIP',esc(item.vip))+bossCell('余额',esc(item.balance))+bossCell('累计充值',esc(item.totalRecharge))+bossCell('累计消费',esc(item.totalSpent))+bossCell('订单数量',esc(item.totalOrders))+
       '<td data-label="状态">'+statusChip(item.status)+'</td>'+ 
-      '<td data-label="操作" class="boss-action-cell"><button class="mini-btn" type="button" data-boss-action="view" data-boss-id="'+esc(item.id)+'">查看</button><span class="boss-more-wrap"><button class="mini-btn" type="button" data-boss-more>更多</button><span class="boss-more-menu" hidden><button type="button" data-boss-action="orders" data-boss-id="'+esc(item.id)+'">订单记录</button><button type="button" data-boss-action="recharge" data-boss-id="'+esc(item.id)+'">充值记录</button><button type="button" data-boss-action="consume" data-boss-id="'+esc(item.id)+'">消费记录</button><button type="button" data-boss-action="refunds" data-boss-id="'+esc(item.id)+'">退款记录</button><button type="button" data-boss-action="chat" data-boss-id="'+esc(item.id)+'">客服聊天记录</button><button type="button" data-boss-action="coupon" data-boss-id="'+esc(item.id)+'">优惠券</button><button type="button" data-boss-action="vip" data-boss-id="'+esc(item.id)+'">VIP</button><button type="button" data-boss-action="invite" data-boss-id="'+esc(item.id)+'">邀请记录</button><button type="button" data-boss-action="remark" data-boss-id="'+esc(item.id)+'">备注</button><button type="button" data-boss-action="reset_password" data-boss-id="'+esc(item.id)+'">重置密码</button><button type="button" data-boss-action="unbind" data-boss-id="'+esc(item.id)+'">解绑</button><button type="button" data-boss-action="ban" data-boss-id="'+esc(item.id)+'">封禁</button><span class="boss-menu-label">高级操作</span><button class="danger" type="button" data-boss-action="freeze" data-boss-id="'+esc(item.id)+'">冻结</button><button type="button" data-boss-action="unban" data-boss-id="'+esc(item.id)+'">解封</button><button class="danger" type="button" data-boss-action="blacklist" data-boss-id="'+esc(item.id)+'">加入黑名单</button></span></span></td>'+ 
+      '<td data-label="操作" class="boss-action-cell"><button class="mini-btn" type="button" data-boss-action="view" data-boss-id="'+esc(item.id)+'">查看</button><button class="mini-btn" type="button" data-boss-more data-boss-id="'+esc(item.id)+'" aria-haspopup="menu" aria-expanded="false">更多</button></td>'+ 
     '</tr>';}).join('');
     if(!body)body='<tr><td colspan="'+headers.length+'"><div class="boss-table-empty"><strong>'+(bossAdminState.error?'老板数据读取失败':'暂无老板数据')+'</strong>'+(bossAdminState.error?'<span>'+esc(bossAdminState.error)+'</span>':'')+'</div></td></tr>';
     box.innerHTML='<div class="table-wrap boss-table-wrap"><table class="boss-data-table"><thead><tr>'+headers.map(function(h){return '<th>'+esc(h)+'</th>'}).join('')+'</tr></thead><tbody>'+body+'</tbody></table></div><div class="boss-pagination compact"><span>共 '+total+' 条 · 第 '+bossAdminState.page+' / '+pages+' 页</span><div><select data-boss-page-size><option value="20" '+(bossAdminState.pageSize===20?'selected':'')+'>20 条/页</option><option value="50" '+(bossAdminState.pageSize===50?'selected':'')+'>50 条/页</option><option value="100" '+(bossAdminState.pageSize===100?'selected':'')+'>100 条/页</option></select><button class="mini-btn" type="button" data-boss-page="prev" '+(bossAdminState.page<=1?'disabled':'')+'>上一页</button><input data-boss-page-jump value="'+bossAdminState.page+'" inputmode="numeric" aria-label="页码"><button class="mini-btn" type="button" data-boss-page-go>跳转</button><button class="mini-btn" type="button" data-boss-page="next" '+(bossAdminState.page>=pages?'disabled':'')+'>下一页</button></div></div>'+(bossAdminState.error?'<div class="admin-sync-note">老板接口读取失败：'+esc(bossAdminState.error)+'。当前页面没有使用本地假数据。</div>':'');
@@ -1833,14 +1911,23 @@
       if(!e.target.closest('.admin-profile-menu'))document.querySelectorAll('.admin-profile-menu.open').forEach(function(menu){menu.classList.remove('open')});
       var profileJump=e.target.closest('.admin-profile-dropdown [data-section]');if(profileJump){var menu=profileJump.closest('.admin-profile-menu');if(menu)menu.classList.remove('open');if(window.MCJAdminActivateSection)window.MCJAdminActivateSection(profileJump.dataset.section);return;}
       var jump=e.target.closest('.todo-item[data-section],.activity-item[data-section]');if(jump){var nav=document.querySelector('.side-nav [data-section="'+jump.dataset.section+'"]');if(nav)nav.click();return;}
-      var bossMore=e.target.closest('[data-boss-more]');if(bossMore){document.querySelectorAll('.boss-more-menu').forEach(function(menu){if(menu!==bossMore.parentElement.querySelector('.boss-more-menu'))menu.hidden=true;});var bmenu=bossMore.parentElement.querySelector('.boss-more-menu');if(bmenu)bmenu.hidden=!bmenu.hidden;return;}
+      var bossMore=e.target.closest('[data-boss-more]');
+      if(bossMore){
+        e.preventDefault();
+        e.stopPropagation();
+        openBossMoreMenu(bossMore);
+        return;
+      }
+      if(bossMorePopover.el&&!e.target.closest('[data-boss-more-popover]')&&!e.target.closest('[data-boss-more]')){
+        closeBossMoreMenu();
+      }
       var bossBulkToggle=e.target.closest('[data-boss-bulk-toggle]');if(bossBulkToggle&&!bossBulkToggle.disabled){var bulkMenu=bossBulkToggle.parentElement.querySelector('.boss-bulk-menu');if(bulkMenu)bulkMenu.hidden=!bulkMenu.hidden;return;}
       var bossSearchBtn=e.target.closest('[data-boss-search-button]');if(bossSearchBtn){filterBossManagement();return;}
       var bossClear=e.target.closest('[data-boss-clear]');if(bossClear){var bs=document.querySelector('[data-boss-search]');if(bs)bs.value='';document.querySelectorAll('[data-boss-filter]').forEach(function(input){input.value='';});filterBossManagement();return;}
       var bossExport=e.target.closest('[data-boss-export]');if(bossExport){exportBossRows();return;}
-      var bossPage=e.target.closest('[data-boss-page]');if(bossPage){bossAdminState.page+=bossPage.dataset.bossPage==='next'?1:-1;renderBossTableRows();return;}
-      var bossPageGo=e.target.closest('[data-boss-page-go]');if(bossPageGo){var bj=document.querySelector('[data-boss-page-jump]');var bt=visibleBossRows().length;var bp=Math.max(1,Math.ceil(bt/bossAdminState.pageSize));bossAdminState.page=Math.min(Math.max(1,Number(bj&&bj.value)||1),bp);renderBossTableRows();return;}
-      var bossAction=e.target.closest('[data-boss-action]');if(bossAction){var bossAct=bossAction.dataset.bossAction,bossId=bossAction.dataset.bossId;if(/view|orders|recharge|consume|refunds|coupon|chat|login|vip|invite|ban/.test(bossAct)){openBossDetail(bossId,bossAct);return;}if(bossAct==='remark'){var remark=prompt('编辑老板备注',((bossAdminState.rows||[]).find(function(r){return String(r.id)===String(bossId)})||{}).remark||'');if(remark==null)return;submitBossSecure('remark',bossId,{remark:remark});return;}if(bossAct==='reset_password'){var pwd=prompt('输入新密码（至少 8 位）','');if(!pwd)return;if(!confirm('确认重置该老板密码？'))return;submitBossSecure('reset_password',bossId,{password:pwd});return;}if(bossAct==='unbind'){if(!confirm('确认解绑该老板手机号？'))return;submitBossSecure('unbind',bossId,{});return;}if(/freeze|blacklist|unban|ban/.test(bossAct)&&!confirm('确认执行该老板账号操作？'))return;submitBossSecure(bossAct,bossId,{});return;}
+      var bossPage=e.target.closest('[data-boss-page]');if(bossPage){closeBossMoreMenu();bossAdminState.page+=bossPage.dataset.bossPage==='next'?1:-1;renderBossTableRows();return;}
+      var bossPageGo=e.target.closest('[data-boss-page-go]');if(bossPageGo){closeBossMoreMenu();var bj=document.querySelector('[data-boss-page-jump]');var bt=visibleBossRows().length;var bp=Math.max(1,Math.ceil(bt/bossAdminState.pageSize));bossAdminState.page=Math.min(Math.max(1,Number(bj&&bj.value)||1),bp);renderBossTableRows();return;}
+      var bossAction=e.target.closest('[data-boss-action]');if(bossAction){var bossAct=bossAction.dataset.bossAction,bossId=bossAction.dataset.bossId;closeBossMoreMenu();if(/view|orders|recharge|consume|refunds|coupon|chat|login|vip|invite|ban/.test(bossAct)){openBossDetail(bossId,bossAct);return;}if(bossAct==='remark'){var remark=prompt('编辑老板备注',((bossAdminState.rows||[]).find(function(r){return String(r.id)===String(bossId)})||{}).remark||'');if(remark==null)return;submitBossSecure('remark',bossId,{remark:remark});return;}if(bossAct==='reset_password'){var pwd=prompt('输入新密码（至少 8 位）','');if(!pwd)return;if(!confirm('确认重置该老板密码？'))return;submitBossSecure('reset_password',bossId,{password:pwd});return;}if(bossAct==='unbind'){if(!confirm('确认解绑该老板手机号？'))return;submitBossSecure('unbind',bossId,{});return;}if(/freeze|blacklist|unban|ban/.test(bossAct)&&!confirm('确认执行该老板账号操作？'))return;submitBossSecure(bossAct,bossId,{});return;}
       var bossTab=e.target.closest('[data-boss-tab]');if(bossTab){switchBossDetailTab(bossTab.dataset.bossTab);return;}
       var bossOpen=e.target.closest('[data-boss-open]');if(bossOpen&&!e.target.closest('button,a,input,select')){openBossDetail(bossOpen.dataset.bossOpen);return;}
       var bossGrant=e.target.closest('[data-boss-wallet-grant]');if(bossGrant){submitBossWalletAction('grant',bossGrant.dataset.bossWalletGrant);return;}

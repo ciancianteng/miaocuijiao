@@ -31,38 +31,64 @@ body.support-page > .topbar {
   z-index: 40;
 }
 
+.support-msg.failed {
+  border: 1px solid rgba(255, 107, 122, 0.55);
+  background: rgba(255, 107, 122, 0.12);
+}
+
+.support-msg.failed .support-inline-link {
+  display: inline;
+  width: auto;
+  min-height: 0;
+  margin: 0;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: #ffd6e7;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 .support-shell {
   flex: 1 1 auto;
   min-height: 0;
   width: 100%;
-  max-width: none;
+  max-width: 100%;
   margin: 0;
   padding: 10px 12px 12px;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  overflow-x: hidden;
 }
 
 .support-layout {
   flex: 1 1 auto;
   min-height: 0;
   min-width: 0;
+  width: 100%;
+  max-width: 100%;
   display: grid;
-  grid-template-columns: 300px minmax(0, 1fr) 320px;
+  grid-template-columns: 280px minmax(0, 1fr) 300px;
   gap: 0;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 18px;
   background: linear-gradient(160deg, rgba(28, 18, 26, 0.96), rgba(10, 9, 14, 0.98));
   overflow: hidden;
+  position: relative;
+  z-index: 1;
 }
 
 .support-aside,
 .support-main,
 .support-rail {
+  position: relative;
+  z-index: 1;
   min-width: 0;
   min-height: 0;
   height: 100%;
+  max-height: 100%;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -618,9 +644,25 @@ button.support-send-btn[type="submit"]:disabled {
   opacity: 1;
 }
 
+@media (max-width: 1440px) {
+  .support-layout {
+    grid-template-columns: 260px minmax(0, 1fr) 280px;
+  }
+}
+
+@media (max-width: 1366px) {
+  .support-layout {
+    grid-template-columns: 240px minmax(0, 1fr) 260px;
+  }
+
+  .support-shell {
+    padding: 8px 8px 10px;
+  }
+}
+
 @media (max-width: 1100px) {
   .support-layout {
-    grid-template-columns: 280px minmax(0, 1fr) 280px;
+    grid-template-columns: 240px minmax(0, 1fr) 240px;
   }
 }
 

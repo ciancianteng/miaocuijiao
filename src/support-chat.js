@@ -30,6 +30,7 @@
     mobileDetail: false,
     orderCardOpen: false,
     emojiOpen: false,
+    realtimeReady: false,
   };
 
   var COMPOSER_SEL = '[data-send] [name="content"]';
@@ -268,18 +269,58 @@
     }
     var mine = m.sender_role === "boss";
     var system = m.sender_role === "system" || m.message_type === "system";
+    var failed = !!m._failed;
+    var pending = !!m._pending;
     return (
       '<div class="support-msg ' +
       (mine ? "mine" : "") +
       (system ? " system" : "") +
+      (failed ? " failed" : "") +
+      '" data-msg-id="' +
+      esc(m.id || m._localId || "") +
       '">' +
       (system ? "" : "<strong>" + esc(m.sender_name || (mine ? "我" : "在线客服")) + "</strong>") +
       "<p>" +
       esc(m.content || "") +
       "</p>" +
-      (system ? "" : "<small>" + esc(shortTime(m.created_at || "")) + "</small>") +
+      (system
+        ? ""
+        : "<small>" +
+          esc(shortTime(m.created_at || "")) +
+          (pending ? " · 发送中" : "") +
+          (failed ? ' · 发送失败 <button type="button" class="support-inline-link" data-retry-msg="' + esc(m._localId || m.id || "") + '">重试</button>' : "") +
+          "</small>") +
       "</div>"
     );
+  }
+  function authAccessToken() {
+    return (
+      localStorage.getItem("mcjAuthAccessToken") ||
+      sessionStorage.getItem("mcjAuthAccessToken") ||
+      ""
+    );
+  }
+  function bindBossRealtime(conversationId) {
+    var RT = window.MCJChatRealtime;
+    var cid = String(conversationId || (state.conversation && state.conversation.id) || "").trim();
+    if (!RT || !cid) return;
+    RT.unsubscribeAll();
+    RT.subscribeMessages(cid, authAccessToken(), function (row) {
+      if (!row || !row.id) return;
+      if (state.messages.some(function (m) { return m.id === row.id; })) return;
+      // Drop matching optimistic pending/failed of same content within 2 minutes.
+      state.messages = state.messages.filter(function (m) {
+        if (!(m._pending || m._failed)) return true;
+        return !(m.content === row.content && m.sender_role === "boss");
+      });
+      state.messages = state.messages.concat([row]);
+      if (root.querySelector("[data-messages]")) patchMessages({ keepScroll: false });
+      else softUpdate({ keepScroll: false });
+    }).then(function () {
+      state.realtimeReady = true;
+    }).catch(function () {
+      state.realtimeReady = false;
+    });
   }
   function captureComposer() {
     var input = root.querySelector(COMPOSER_SEL);
@@ -682,13 +723,23 @@
   function applyPayload(body, opts) {
     opts = opts || {};
     if (Array.isArray(body.conversations)) state.conversations = body.conversations;
+    var prevCid = state.conversation && state.conversation.id;
     if (body.conversation) {
       state.conversation = body.conversation;
       state.mobileDetail = true;
       syncUrl(body.conversation);
     }
-    if (Array.isArray(body.messages)) state.messages = body.messages;
-    else if (body.appended || body.row) {
+    if (Array.isArray(body.messages)) {
+      // Preserve failed local drafts across silent polls.
+      var failedLocals = (state.messages || []).filter(function (m) { return m._failed || m._pending; });
+      var remote = body.messages.slice();
+      failedLocals.forEach(function (local) {
+        if (!remote.some(function (m) { return m.content === local.content && m.sender_role === "boss"; })) {
+          remote.push(local);
+        }
+      });
+      state.messages = remote;
+    } else if (body.appended || body.row) {
       var added = body.appended || body.row;
       if (added && added.content) {
         var exists = state.messages.some(function (m) {
@@ -701,6 +752,9 @@
     if (body.serviceStatus) state.serviceStatus = body.serviceStatus;
     state.error = '';
     softUpdate(opts);
+    var nextCid = state.conversation && state.conversation.id;
+    if (nextCid && nextCid !== prevCid) bindBossRealtime(nextCid);
+    else if (nextCid && !state.realtimeReady) bindBossRealtime(nextCid);
   }
   function bootstrap() {
     paint();
@@ -771,8 +825,9 @@
         Promise.all([loadList(), loadOrders()]).then(function () { softUpdate({ keepScroll: true }); }).catch(function () {});
         return;
       }
+      // Realtime is primary when publication is enabled; 3s poll is reliability backup only.
       Promise.all([loadList(), loadOrders(), loadThread(state.conversation.id, true)]).catch(function () {});
-    }, 2500);
+    }, 3000);
   }
 
   root.addEventListener('input', function (e) {
@@ -946,22 +1001,41 @@
     fetchJson('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload), _mcjTimeoutMs: 6000 }).then(function (body) {
       var serverMsg = body.appended || body.row || null;
       state.messages = state.messages.filter(function (m) { return m._localId !== localId; });
-      if (serverMsg) state.messages = state.messages.concat([serverMsg]);
+      if (serverMsg) {
+        if (!state.messages.some(function (m) { return m.id === serverMsg.id; })) {
+          state.messages = state.messages.concat([serverMsg]);
+        }
+      }
       if (body.conversation) state.conversation = body.conversation;
       if (typeof body.serviceOnline === 'boolean') state.serviceOnline = body.serviceOnline;
       if (body.serviceStatus) state.serviceStatus = body.serviceStatus;
       softUpdate({ keepScroll: false });
     }).catch(function (err) {
-      state.messages = state.messages.filter(function (m) { return m._localId !== localId; });
-      state.composerDraft = content;
+      state.messages = state.messages.map(function (m) {
+        if (m._localId !== localId) return m;
+        return Object.assign({}, m, { _pending: false, _failed: true });
+      });
       softUpdate({ keepScroll: true });
-      toast(err.message || '发送失败');
+      toast(err.message || '发送失败，可点击重试');
     }).finally(function () {
       state.sending = false;
       state.composerFocused = true;
       syncComposerChrome();
       setTimeout(focusComposer, 0);
     });
+  });
+
+  document.addEventListener('click', function (e) {
+    var retry = e.target.closest('[data-retry-msg]');
+    if (!retry || !root.contains(retry)) return;
+    e.preventDefault();
+    var lid = retry.getAttribute('data-retry-msg');
+    var failed = (state.messages || []).find(function (m) { return String(m._localId || m.id) === String(lid); });
+    if (!failed || !failed.content || state.sending) return;
+    state.messages = state.messages.filter(function (m) { return String(m._localId || m.id) !== String(lid); });
+    state.composerDraft = failed.content;
+    var form = root.querySelector('[data-send]');
+    if (form) form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
   });
 
   document.addEventListener('visibilitychange', function () {

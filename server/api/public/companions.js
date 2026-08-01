@@ -1,6 +1,14 @@
 ﻿import "../_load-env.js";
 import { readLocalLevels, toPublicLevel } from "../_companion-levels-store.js";
 import { resolvePlatformCommission } from "../_commission-rates.js";
+import {
+  readGamePrices,
+  stripGamePricesMarker,
+  parseServiceIds,
+  parseServiceTypes,
+  splitGames,
+} from "../_game-prices.js";
+import { loadPublicServices } from "../platform/services.js";
 const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"];
 
 function json(res, status, data) {
@@ -83,7 +91,28 @@ function findLevelMeta(levels, row = {}) {
     null
   );
 }
-function publicCompanion(row = {}, profile = {}, levels = []) {
+function resolveServiceTypes(row = {}) {
+  const hasGame = !!(String(row.game || "").trim() || parseServiceIds(row.service_ids).length);
+  const types = parseServiceTypes(row.service_type || row.serviceType, {
+    fallbackPlayWhenGame: true,
+    hasGame,
+  });
+  if (types.length) return types;
+  const hint = `${row.main_service || ""} ${row.tags || ""} ${row.description || ""}`;
+  const inferred = parseServiceTypes(hint);
+  if (inferred.length) return inferred;
+  return hasGame ? ["陪玩服务"] : ["陪玩服务"];
+}
+function resolveCompanionServiceIds(row = {}, catalog = []) {
+  const stored = parseServiceIds(row.service_ids);
+  if (stored.length) return stored;
+  const names = new Set(splitGames(row.game));
+  if (!names.size) return [];
+  return (catalog || [])
+    .filter((svc) => names.has(String(svc.name || svc.title || "").trim()))
+    .map((svc) => String(svc.id));
+}
+function publicCompanion(row = {}, profile = {}, levels = [], catalog = []) {
   const avail = availabilityCode(row);
   const publicId = row.companion_uid ? `P${row.companion_uid}` : "";
   const avatar = resolveAvatar(profile, row);
@@ -95,6 +124,15 @@ function publicCompanion(row = {}, profile = {}, levels = []) {
       ? row.level_name
       : "未设置等级";
   const rates = resolvePlatformCommission(row.commission_rate, level?.commissionRate ?? 20);
+  const serviceTypes = resolveServiceTypes(row);
+  const serviceIds = resolveCompanionServiceIds(row, catalog);
+  const byId = new Map((catalog || []).map((s) => [String(s.id), s]));
+  const serviceNames = serviceIds
+    .map((id) => byId.get(String(id)))
+    .filter(Boolean)
+    .map((s) => s.name || s.title)
+    .filter(Boolean);
+  const gameDisplay = serviceNames.length ? serviceNames.join("、") : row.game || "";
   return {
     id: row.user_id || row.id,
     uid: row.user_id || row.id,
@@ -104,14 +142,20 @@ function publicCompanion(row = {}, profile = {}, levels = []) {
     name,
     nickname: name,
     nameValid: !!resolveCompanionName(row, profile),
-    game: row.game || "",
-    mainGame: row.game || "",
+    game: gameDisplay || row.game || "",
+    mainGame: gameDisplay || row.game || "",
+    service_type: serviceTypes.join(","),
+    serviceType: serviceTypes[0] || "陪玩服务",
+    serviceTypes,
+    service_ids: serviceIds,
+    serviceIds,
     level: levelName,
     levelName,
     levelId: level?.id || row.level_id || "",
     price: money(row.price),
     priceValue: money(row.price),
     hourlyPrice: money(row.price),
+    gamePrices: readGamePrices(row),
     pricingUnit: row.pricing_unit || "小时",
     availabilityStatus: avail,
     availabilityText: availabilityText(avail),
@@ -124,10 +168,14 @@ function publicCompanion(row = {}, profile = {}, levels = []) {
     cardImageUrl: row.card_image_url || "",
     desc: row.description || "",
     description: row.description || "",
-    tags: String(row.tags || "")
+    tags: stripGamePricesMarker(String(row.tags || ""))
+      .replace(/\[\[MCJ_GALLERY:[\s\S]*?\]\]/g, "")
       .split(/[,，、]/)
       .map((t) => t.trim())
-      .filter(Boolean),
+      .filter((t) => t && !/^游戏ID:|^联系:|^地区:|^性别:|^年龄:/.test(t)),
+    // Never expose private fields to boss-facing public API
+    contactPhone: undefined,
+    identityNo: undefined,
     commissionRate: rates.platformRate,
     giftCommissionRate: money(row.gift_commission_rate),
     directRebateRate: money(row.direct_rebate_rate),
@@ -135,8 +183,71 @@ function publicCompanion(row = {}, profile = {}, levels = []) {
     depositStatus: row.deposit_status || "",
     lastOnlineAt: row.last_online_at || "",
     statusUpdatedAt: row.status_updated_at || "",
+    rating: 0,
+    score: 0,
+    reviewCount: 0,
+    goodReviewCount: 0,
+    goodRate: 0,
+    reviews: [],
   };
 }
+
+function summarizeReviews(list = []) {
+  const ratings = (list || []).map((r) => Number(r.rating) || 0).filter((n) => n >= 1 && n <= 5);
+  const count = ratings.length;
+  const sum = ratings.reduce((n, v) => n + v, 0);
+  const avg = count ? Math.round((sum / count) * 10) / 10 : 0;
+  const good = ratings.filter((n) => n >= 4).length;
+  return {
+    rating: avg,
+    score: avg,
+    reviewCount: count,
+    goodReviewCount: good,
+    goodRate: count ? Math.round((good / count) * 1000) / 10 : 0,
+  };
+}
+
+async function attachReviews(companions = []) {
+  const ids = [...new Set((companions || []).map((c) => c.id || c.uid).filter(Boolean))];
+  if (!ids.length) return companions || [];
+  let rows = [];
+  try {
+    rows = await supabaseJson(
+      restUrl(
+        "companion_reviews",
+        `?companion_id=in.(${ids.map(encodeURIComponent).join(",")})&or=(status.eq.published,status.is.null)&order=created_at.desc&limit=3000&select=id,companion_id,boss_id,order_id,rating,content,status,created_at`
+      ),
+      { headers: headers() }
+    );
+  } catch (e) {
+    if (/companion_reviews|schema cache|PGRST|does not exist/i.test(String(e.message || e))) return companions;
+    throw e;
+  }
+  const byCid = {};
+  for (const r of Array.isArray(rows) ? rows : []) {
+    const cid = r.companion_id;
+    if (!cid) continue;
+    if (!byCid[cid]) byCid[cid] = [];
+    byCid[cid].push(r);
+  }
+  return (companions || []).map((c) => {
+    const cid = c.id || c.uid;
+    const list = byCid[cid] || [];
+    const summary = summarizeReviews(list);
+    return {
+      ...c,
+      ...summary,
+      reviews: list.slice(0, 30).map((r) => ({
+        id: r.id,
+        orderId: r.order_id || "",
+        rating: Number(r.rating) || 0,
+        content: r.content || "",
+        createdAt: r.created_at || "",
+      })),
+    };
+  });
+}
+
 async function loadCompanions(id = "") {
   let query = id
     ? `?or=(user_id.eq.${encodeURIComponent(id)},companion_uid.eq.${encodeURIComponent(String(id).replace(/^P/i, ""))})&verification_status=eq.approved&limit=1`
@@ -156,16 +267,21 @@ async function loadCompanions(id = "") {
   const companions = Array.isArray(rows) ? rows : [];
   const userIds = [...new Set(companions.map((row) => row.user_id).filter(Boolean))];
   if (!userIds.length) return [];
-  const [profiles, levels] = await Promise.all([
+  const [profiles, levels, servicesBundle] = await Promise.all([
     supabaseJson(
       restUrl("profiles", `?id=in.(${userIds.map(encodeURIComponent).join(",")})&role=eq.companion&status=eq.active&select=id,display_name,avatar_url,email,status,role`),
       { headers: headers() }
     ),
     readLocalLevels().catch(() => []),
+    loadPublicServices().catch(() => ({ services: [] })),
   ]);
+  const catalog = Array.isArray(servicesBundle?.services) ? servicesBundle.services : [];
   const profileMap = Object.fromEntries((profiles || []).map((row) => [row.id, row]));
   const levelList = Array.isArray(levels) ? levels.map((l) => toPublicLevel(l)) : [];
-  return companions.filter((row) => profileMap[row.user_id]).map((row) => publicCompanion(row, profileMap[row.user_id], levelList));
+  const mapped = companions
+    .filter((row) => profileMap[row.user_id])
+    .map((row) => publicCompanion(row, profileMap[row.user_id], levelList, catalog));
+  return attachReviews(mapped);
 }
 
 export default async function handler(req, res) {

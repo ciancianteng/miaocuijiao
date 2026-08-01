@@ -15,12 +15,14 @@ const FINANCE_ROLES = new Set(["admin", "super_admin", "finance_admin"]);
 const REVEAL_ROLES = new Set(["super_admin", "finance_admin"]);
 
 const WITHDRAW_STATUS = {
-  pending_review: "待审核",
-  approved_pending_pay: "已批准",
+  pending: "审核中",
+  pending_review: "审核中",
+  approved: "审核通过",
+  approved_pending_pay: "审核通过",
   rejected: "已拒绝",
-  paying: "付款处理中",
-  paid_pending_receipt: "已批准待确认",
-  completed: "已打款",
+  paying: "审核通过",
+  paid_pending_receipt: "审核通过",
+  completed: "已到账",
   pay_failed: "付款失败",
   cancelled: "已撤销",
 };
@@ -129,9 +131,10 @@ function viewWithdraw(row, profile = {}, account = {}) {
     remark: row.remark || "",
     status: row.status,
     statusText: WITHDRAW_STATUS[row.status] || row.status,
-    rejectReason: row.reject_reason || "",
+    rejectReason: row.reject_reason || row.rejection_reason || "",
     submittedAt: row.submitted_at || row.created_at,
-    approvedAt: row.approved_at || "",
+    reviewedAt: row.reviewed_at || row.approved_at || "",
+    approvedAt: row.approved_at || row.reviewed_at || "",
     paidAt: row.paid_at || "",
     completedAt: row.completed_at || "",
     paymentAccountId: row.payment_account_id || "",
@@ -312,24 +315,69 @@ export default async function handler(req, res) {
       const rows = await companionDb("companion_withdrawals", `?id=eq.${encodeURIComponent(id)}&limit=1`);
       const row = rows?.[0];
       if (!row) return json(res, 404, { ok: false, message: "提现单不存在" });
-      if (row.status !== "pending_review") return json(res, 400, { ok: false, message: "当前状态不可审核通过" });
+      if (!/^(pending|pending_review)$/.test(String(row.status || ""))) {
+        return json(res, 400, { ok: false, message: "当前状态不可审核通过" });
+      }
+      const amountCat = money(row.cat_food_amount || row.amount);
       const patched = await companionDb("companion_withdrawals", `?id=eq.${encodeURIComponent(id)}`, {
         method: "PATCH",
         body: JSON.stringify({
           status: "approved_pending_pay",
           approved_at: nowIso(),
           approved_by: body.adminId || null,
+          reviewed_at: nowIso(),
+          reviewed_by: body.adminId || null,
           updated_at: nowIso(),
         }),
       });
-      await ensureFinancePayment(
-        "companion_withdraw",
-        id,
-        row.companion_id,
-        money(row.net_amount_rm),
-        { bank_name: row.bank_name, account_holder: row.account_holder, account_last4: row.account_last4 },
-        body.adminId
-      );
+      // Settle freeze ledger: mark freeze tx completed (balance already locked via withdrawal status).
+      if (row.freeze_tx_id) {
+        try {
+          await companionDb("transactions", `?id=eq.${encodeURIComponent(row.freeze_tx_id)}`, {
+            method: "PATCH",
+            body: JSON.stringify({
+              status: "completed",
+              note: `提现审核通过结算 ${row.withdrawal_no || id}`,
+            }),
+          });
+        } catch {
+          /* optional */
+        }
+      } else {
+        try {
+          await companionDb("transactions", "", {
+            method: "POST",
+            body: JSON.stringify({
+              user_id: row.companion_id,
+              order_id: null,
+              transaction_type: "withdrawal",
+              amount: amountCat,
+              status: "completed",
+              note: `提现审核通过结算 ${row.withdrawal_no || id}`,
+              created_at: nowIso(),
+            }),
+          });
+        } catch {
+          /* optional ledger */
+        }
+      }
+      try {
+        await ensureFinancePayment(
+          "companion_withdraw",
+          id,
+          row.companion_id,
+          money(row.net_amount_rm),
+          {
+            bank_name: row.bank_name,
+            account_holder: row.account_holder || row.account_name,
+            account_last4: row.account_last4,
+          },
+          body.adminId
+        );
+      } catch (payErr) {
+        // Approval already persisted; payment ledger is best-effort.
+        console.warn("[finance] ensureFinancePayment after approve_withdraw:", payErr?.message || payErr);
+      }
       await writeAdminLog({
         module: "finance",
         action: "approve_withdraw",
@@ -348,28 +396,51 @@ export default async function handler(req, res) {
       const rows = await companionDb("companion_withdrawals", `?id=eq.${encodeURIComponent(id)}&limit=1`);
       const row = rows?.[0];
       if (!row) return json(res, 404, { ok: false, message: "提现单不存在" });
-      if (!/pending_review|approved_pending_pay|paying/.test(row.status)) {
+      if (!/pending|pending_review|approved_pending_pay|paying/.test(String(row.status || ""))) {
         return json(res, 400, { ok: false, message: "当前状态不可驳回" });
       }
+      const amountCat = money(row.cat_food_amount || row.amount);
       const patched = await companionDb("companion_withdrawals", `?id=eq.${encodeURIComponent(id)}`, {
         method: "PATCH",
-        body: JSON.stringify({ status: "rejected", reject_reason: reason, updated_at: nowIso() }),
+        body: JSON.stringify({
+          status: "rejected",
+          reject_reason: reason,
+          rejection_reason: reason,
+          reviewed_at: nowIso(),
+          reviewed_by: body.adminId || null,
+          updated_at: nowIso(),
+        }),
       });
-      try {
-        await companionDb("transactions", "", {
-          method: "POST",
-          body: JSON.stringify({
-            user_id: row.companion_id,
-            order_id: null,
-            transaction_type: "withdrawal",
-            amount: money(row.cat_food_amount),
-            status: "cancelled",
-            note: `提现驳回退回 ${row.withdrawal_no || id}：${reason}`,
-            created_at: nowIso(),
-          }),
-        });
-      } catch {
-        /* optional ledger */
+      // Unfreeze: cancel freeze ledger so amount returns to withdrawable (rejected status unlocks).
+      if (row.freeze_tx_id) {
+        try {
+          await companionDb("transactions", `?id=eq.${encodeURIComponent(row.freeze_tx_id)}`, {
+            method: "PATCH",
+            body: JSON.stringify({
+              status: "cancelled",
+              note: `提现驳回解冻 ${row.withdrawal_no || id}：${reason}`,
+            }),
+          });
+        } catch {
+          /* optional */
+        }
+      } else {
+        try {
+          await companionDb("transactions", "", {
+            method: "POST",
+            body: JSON.stringify({
+              user_id: row.companion_id,
+              order_id: null,
+              transaction_type: "withdrawal",
+              amount: amountCat,
+              status: "cancelled",
+              note: `提现驳回退回 ${row.withdrawal_no || id}：${reason}`,
+              created_at: nowIso(),
+            }),
+          });
+        } catch {
+          /* optional ledger */
+        }
       }
       await writeAdminLog({
         module: "finance",
@@ -380,6 +451,71 @@ export default async function handler(req, res) {
         reason,
       });
       return json(res, 200, { ok: true, message: "已拒绝，冻结余额已退回可用余额", item: patched?.[0] });
+    }
+
+    if (action === "mark_withdraw_paid" || action === "complete_withdraw") {
+      const id = String(body.id || "").trim();
+      const bankReference = String(body.bankReference || body.bank_reference || body.reference || "").trim() || `MANUAL-${Date.now()}`;
+      const rows = await companionDb("companion_withdrawals", `?id=eq.${encodeURIComponent(id)}&limit=1`);
+      const row = rows?.[0];
+      if (!row) return json(res, 404, { ok: false, message: "提现单不存在" });
+      if (!/approved_pending_pay|paying|paid_pending_receipt/.test(String(row.status || ""))) {
+        return json(res, 400, { ok: false, message: "仅已通过待打款的提现单可标记打款完成" });
+      }
+      const patched = await companionDb("companion_withdrawals", `?id=eq.${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          status: "completed",
+          paid_at: nowIso(),
+          completed_at: nowIso(),
+          bank_reference: bankReference,
+          updated_at: nowIso(),
+        }),
+      });
+      try {
+        await companionDb("transactions", "", {
+          method: "POST",
+          body: JSON.stringify({
+            user_id: row.companion_id,
+            transaction_type: "withdrawal",
+            amount: money(row.cat_food_amount),
+            status: "completed",
+            note: `提现打款完成 ${row.withdrawal_no || id} / ${bankReference}`,
+            created_at: nowIso(),
+          }),
+        });
+      } catch {
+        /* optional */
+      }
+      try {
+        const pays = await companionDb(
+          "finance_payments",
+          `?related_record_id=eq.${encodeURIComponent(id)}&payment_type=eq.companion_withdraw&limit=5`
+        );
+        for (const pay of pays || []) {
+          if (pay.status === "completed") continue;
+          await companionDb("finance_payments", `?id=eq.${encodeURIComponent(pay.id)}`, {
+            method: "PATCH",
+            body: JSON.stringify({
+              status: "completed",
+              bank_reference: bankReference,
+              confirmed_at: nowIso(),
+              updated_at: nowIso(),
+            }),
+          });
+        }
+      } catch {
+        /* optional linked payment */
+      }
+      await writeAdminLog({
+        module: "finance",
+        action: "mark_withdraw_paid",
+        targetType: "companion_withdrawal",
+        targetId: id,
+        operatorRole: adminRole,
+        reason: body.reason || `打款完成 ${bankReference}`,
+      });
+      return json(res, 200, { ok: true, message: "已标记打款完成，陪玩端将显示「已打款」", item: patched?.[0] });
     }
 
     if (action === "approve_payroll") {
@@ -412,33 +548,56 @@ export default async function handler(req, res) {
     if (action === "create_payroll") {
       const staffId = String(body.staffId || body.staff_id || "").trim();
       if (!staffId) return json(res, 400, { ok: false, message: "缺少客服 ID" });
-      const base = money(body.baseSalaryRm ?? body.base_salary_rm);
-      const bonus = money(body.bonusRm ?? body.bonus_rm);
-      const deduction = money(body.deductionRm ?? body.deduction_rm);
+      let base = money(body.baseSalaryRm ?? body.base_salary_rm);
+      let bonus = money(body.bonusRm ?? body.bonus_rm);
+      let deduction = money(body.deductionRm ?? body.deduction_rm);
+      let workDays = Number(body.workDays || body.work_days || 0);
+      let fullAttendance = !!body.fullAttendance;
+      let receptionCount = Number(body.receptionCount || 0);
+      let orderCount = Number(body.orderCount || 0);
+      let note = String(body.note || "");
+      let periodStart = body.periodStart || body.period_start;
+      let periodEnd = body.periodEnd || body.period_end;
+      // Auto-fill from attendance / wage estimate when requested or amounts omitted.
+      if (body.fromAttendance || body.autoFromAttendance || (base === 0 && bonus === 0 && deduction === 0)) {
+        try {
+          const workApi = await import("../_customer-service-work.js");
+          const draft = await workApi.payrollDraftFromAttendance(staffId, periodStart, periodEnd);
+          base = base || money(draft.baseSalaryRm);
+          bonus = bonus || money(draft.bonusRm);
+          deduction = deduction || money(draft.deductionRm);
+          workDays = workDays || Number(draft.workDays || 0);
+          fullAttendance = body.fullAttendance != null ? !!body.fullAttendance : !!draft.fullAttendance;
+          receptionCount = receptionCount || Number(draft.receptionCount || 0);
+          periodStart = periodStart || draft.periodStart;
+          periodEnd = periodEnd || draft.periodEnd;
+          if (!note) note = draft.note || "";
+        } catch (_) {}
+      }
       const net = money(body.netSalaryRm ?? body.net_salary_rm) || Math.max(0, base + bonus - deduction);
       const rows = await companionDb("staff_payrolls", "", {
         method: "POST",
         body: JSON.stringify({
           payroll_no: no("PAYROLL"),
           staff_id: staffId,
-          period_start: body.periodStart || body.period_start,
-          period_end: body.periodEnd || body.period_end,
-          work_days: Number(body.workDays || body.work_days || 0),
-          full_attendance: !!body.fullAttendance,
-          reception_count: Number(body.receptionCount || 0),
-          order_count: Number(body.orderCount || 0),
+          period_start: periodStart,
+          period_end: periodEnd,
+          work_days: workDays,
+          full_attendance: fullAttendance,
+          reception_count: receptionCount,
+          order_count: orderCount,
           base_salary_rm: base,
           bonus_rm: bonus,
           deduction_rm: deduction,
           net_salary_rm: net,
           payment_account_snapshot: body.paymentAccount || body.payment_account_snapshot || {},
           status: "pending_review",
-          note: String(body.note || ""),
+          note,
           created_at: nowIso(),
           updated_at: nowIso(),
         }),
       });
-      return json(res, 200, { ok: true, message: "工资单已创建，待审核", item: rows?.[0] });
+      return json(res, 200, { ok: true, message: "工资单已创建（已按打卡记录填充），待审核", item: rows?.[0] });
     }
 
     if (action === "mark_paying") {
