@@ -75,6 +75,7 @@ const pages = [
   "preview.html",
   "profile.html",
   "ranking.html",
+  "recharge.html",
   "support.html",
   "tasks.html",
   "team-lobby.html",
