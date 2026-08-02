@@ -32,6 +32,7 @@ const pages = [
   "admin/login/index.html",
   "boss-chat.html",
   "checkin.html",
+  "club-levels.html",
   "companion-apply.html",
   "companion-center.html",
   "companion-detail.html",

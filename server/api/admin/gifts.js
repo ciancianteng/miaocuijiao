@@ -24,6 +24,11 @@ async function parseBody(req) {
 
 export default async function handler(req, res) {
   try {
+    await (await import("../_admin-auth.js")).requireAdmin(req);
+  } catch (err) {
+    return json(res, err.status || 403, { ok: false, message: err.message || "无权限" });
+  }
+  try {
     if (req.method === "GET") {
       const rows = await companionDb("gifts", "?order=sort_order.asc&limit=200").catch((e) => {
         if (isMissingRelation(e)) return [];

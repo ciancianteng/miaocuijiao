@@ -151,61 +151,49 @@
   function applyAuthVisibility() {
     if (!document.body) return;
     var logged = isLoggedIn();
-    var isMobileNav = !!(window.matchMedia && window.matchMedia("(max-width: 820px)").matches);
     document.body.classList.toggle("is-logged-in", logged);
     document.body.classList.toggle("is-guest", !logged);
     document.body.setAttribute("data-mcj-auth", logged ? "in" : "out");
 
     var header = document.querySelector("header.mcj-boss-header");
     if (!header) return;
-
-    // Header-owned auth flag — survives body.is-logged-in races with other scripts.
     header.setAttribute("data-mcj-auth", logged ? "in" : "out");
     header.classList.toggle("is-logged-in", logged);
     header.classList.toggle("is-guest", !logged);
-    header.classList.toggle("mcj-mobile-nav", isMobileNav);
 
-    function showEl(el, displayValue) {
-      el.removeAttribute("hidden");
-      el.style.setProperty("display", displayValue, "important");
-    }
-    function hideEl(el) {
-      el.setAttribute("hidden", "");
-      el.style.setProperty("display", "none", "important");
-    }
-
-    header.querySelectorAll("[data-guest-only], .mcj-boss-login").forEach(function (el) {
-      var inMore = !!el.closest("[data-mcj-nav-more-menu]");
-      if (logged) {
-        hideEl(el);
-        return;
-      }
-      // Mobile: login lives in ☰ menu only.
-      if (!inMore && isMobileNav && el.classList.contains("mcj-boss-login")) {
-        hideEl(el);
-        return;
-      }
-      showEl(el, inMore ? "flex" : "inline-flex");
+    // Remove legacy / conflicting chrome (stars, old brand duplicates, old hamburger, old tabs)
+    // Keep .mcj-header-brand — that is the live left brand block.
+    header.querySelectorAll(
+      ".mcj-boss-user, .top-actions, .live2d-avatar, .mcj-boss-mine, .mcj-boss-login, .mcj-boss-more, .mcj-boss-brand:not(.mcj-header-brand), .brand:not(.mcj-header-brand), .mcj-mnav-brand, [data-favorite], [data-mcj-favorite], .mcj-boss-star, .header-star, [data-mcj-notify-toggle], [data-mcj-nav-more], nav.header-nav:not(.mcj-desk-nav), nav.mcj-boss-nav:not(.mcj-desk-nav)"
+    ).forEach(function (el) {
+      el.remove();
     });
 
-    header.querySelectorAll(".mcj-boss-auth-only, [data-auth-only]").forEach(function (el) {
-      var inMore = !!el.closest("[data-mcj-nav-more-menu]");
-      if (!logged) {
-        hideEl(el);
-        return;
-      }
-      // Mobile: account menu lives in ☰.
-      if (!inMore && isMobileNav && el.classList.contains("mcj-boss-auth-only")) {
-        hideEl(el);
-        return;
-      }
-      showEl(el, inMore ? "flex" : "inline-flex");
+    // Keep mobile menu button as plain ☰ (strip design-system star SVG injection)
+    header.querySelectorAll(".mcj-mnav-toggle, [data-mcj-mnav-toggle]").forEach(function (btn) {
+      btn.querySelectorAll(".mcj-line-icon, .mcj-inline-icon, svg").forEach(function (n) {
+        n.remove();
+      });
+      if ((btn.textContent || "").trim() !== "☰") btn.textContent = "☰";
     });
 
-    if (!logged) {
-      notifyState.open = false;
-      var panel = header.querySelector("[data-mcj-notify-panel]");
-      if (panel) panel.hidden = true;
+    if (
+      !header.querySelector(".mcj-header-brand") ||
+      !header.querySelector(".mcj-desk-nav") ||
+      !header.querySelector(".mcj-mnav")
+    ) {
+      header.innerHTML = headerHtml();
+      fillMobileDrawerLinks();
+    } else {
+      var desk = header.querySelector(".mcj-desk-nav");
+      if (desk) {
+        desk.innerHTML =
+          navLink("index.html", "首页") +
+          navLink("companion-center.html", "大厅") +
+          navLink("orders.html", "订单") +
+          navLink("support.html?start=1", "客服");
+      }
+      fillMobileDrawerLinks();
     }
   }
 
@@ -238,40 +226,114 @@
     });
   }
 
-  function headerHtml() {
-    var primary =
+  function mobileAuthLinkHtml() {
+    if (isLoggedIn()) {
+      return navLink("mine.html", "个人中心");
+    }
+    return (
+      '<a href="login.html" data-mcj-boss-login' +
+      (activeHref("login.html") ? ' class="active"' : "") +
+      ">登录</a>"
+    );
+  }
+
+  function mobileDrawerLinksHtml() {
+    return (
       navLink("index.html", "首页") +
-      navLink("companion-center.html", "大厅") +
-      navLink("orders.html", "我的订单") +
-      navLink("support.html?start=1", "在线客服");
+      navLink("companion-center.html", "陪玩大厅") +
+      navLink("orders.html", "订单") +
+      navLink("support.html?start=1", "客服") +
+      mobileAuthLinkHtml()
+    );
+  }
+
+  function fillMobileDrawerLinks() {
+    var links = document.querySelector("[data-mcj-mnav-links]");
+    if (links) links.innerHTML = mobileDrawerLinksHtml();
+  }
+
+  function brandHtml() {
+    return (
+      '<a class="mcj-header-brand" href="/" aria-label="MEOW CUI JIAO 妙脆角 首页">' +
+      '<img class="mcj-header-brand-logo" src="/src/assets/meow-cuijiao-brand.jpg" alt="MEOW CUI JIAO" width="40" height="40" decoding="async" data-mcj-brand-logo="1">' +
+      '<span class="mcj-header-brand-text">' +
+      '<span class="mcj-header-brand-en">MEOW CUI JIAO</span>' +
+      '<span class="mcj-header-brand-zh">妙脆角</span>' +
+      "</span></a>"
+    );
+  }
+
+  function headerHtml() {
     return (
       '<div class="mcj-boss-header-inner header-inner">' +
-      '<a class="brand mcj-boss-brand" href="index.html" aria-label="妙脆角首页">' +
-      '<span class="mcj-boss-brand-text"><strong>妙脆角</strong><small>MEOW CUI JIAO</small></span>' +
-      "</a>" +
-      '<nav class="header-nav mcj-boss-nav mcj-boss-nav-primary" aria-label="主导航">' +
-      primary +
-      "</nav>" +
-      '<div class="top-actions mcj-boss-user">' +
-      '<div class="mcj-boss-more">' +
-      '<button type="button" class="mcj-boss-more-toggle" data-mcj-nav-more aria-label="更多菜单" aria-haspopup="true" aria-expanded="false">☰</button>' +
-      '<div class="mcj-boss-more-menu" role="menu" hidden data-mcj-nav-more-menu>' +
-      '<a href="index.html" role="menuitem">首页</a>' +
-      '<a href="companion-center.html" role="menuitem">大厅</a>' +
-      '<a href="orders.html" role="menuitem">我的订单</a>' +
-      '<a href="support.html?start=1" role="menuitem">在线客服</a>' +
-      '<button type="button" role="menuitem" data-mcj-boss-login data-guest-only>登录 / 注册</button>' +
-      '<button type="button" role="menuitem" data-mcj-boss-logout data-auth-only data-role="customer">退出登录</button>' +
-      "</div></div>" +
-      '<button class="login mcj-boss-login" type="button" data-mcj-boss-login data-guest-only>登录</button>' +
-      '<div class="mcj-boss-mine mcj-boss-auth-only" hidden>' +
-      '<button type="button" data-mcj-mine-toggle aria-haspopup="true" aria-expanded="false">我的</button>' +
-      '<div class="mcj-boss-mine-menu" role="menu">' +
-      '<a href="orders.html" role="menuitem">我的订单</a>' +
-      '<a href="support.html?start=1" role="menuitem">在线客服</a>' +
-      '<button type="button" data-mcj-boss-logout role="menuitem">退出登录</button>' +
-      "</div></div></div></div>"
+      '<div class="mcj-mnav">' +
+      '<button type="button" class="mcj-mnav-toggle" data-mcj-mnav-toggle aria-controls="mcjMnavSheet" aria-expanded="false" aria-label="打开菜单">☰</button>' +
+      "</div>" +
+      brandHtml() +
+      '<nav class="mcj-desk-nav" aria-label="桌面主导航">' +
+      navLink("index.html", "首页") +
+      navLink("companion-center.html", "大厅") +
+      navLink("orders.html", "订单") +
+      navLink("support.html?start=1", "客服") +
+      "</nav></div>"
     );
+  }
+
+  function ensureMobileNavSheet() {
+    var sheet = document.getElementById("mcjMnavSheet");
+    if (sheet) {
+      fillMobileDrawerLinks();
+      return sheet;
+    }
+    sheet = document.createElement("div");
+    sheet.id = "mcjMnavSheet";
+    sheet.className = "mcj-mnav-sheet";
+    sheet.setAttribute("data-mcj-mnav-sheet", "1");
+    sheet.hidden = true;
+    sheet.innerHTML =
+      '<button type="button" class="mcj-mnav-backdrop" data-mcj-mnav-backdrop aria-label="关闭菜单" tabindex="-1"></button>' +
+      '<div class="mcj-mnav-drawer" data-mcj-mnav-drawer role="dialog" aria-modal="true" aria-label="导航菜单">' +
+      '<div class="mcj-mnav-drawer-head">' +
+      "<strong>菜单</strong>" +
+      '<button type="button" class="mcj-mnav-close" data-mcj-mnav-close aria-label="关闭菜单">×</button>' +
+      "</div>" +
+      '<nav class="mcj-mnav-drawer-links" data-mcj-mnav-links aria-label="移动端主导航">' +
+      mobileDrawerLinksHtml() +
+      "</nav></div>";
+    document.body.appendChild(sheet);
+    return sheet;
+  }
+
+  function setMobileNavScrollLock(lock) {
+    var html = document.documentElement;
+    var body = document.body;
+    if (!body) return;
+    if (lock) {
+      if (body.classList.contains("mcj-mnav-open")) return;
+      var y = window.scrollY || window.pageYOffset || 0;
+      body.dataset.mcjMnavScrollY = String(y);
+      html.classList.add("mcj-mnav-open");
+      body.classList.add("mcj-mnav-open");
+      body.style.position = "fixed";
+      body.style.top = "-" + y + "px";
+      body.style.left = "0";
+      body.style.right = "0";
+      body.style.width = "100%";
+      body.style.overflow = "hidden";
+    } else {
+      if (!body.classList.contains("mcj-mnav-open")) return;
+      var restoreY = Number(body.dataset.mcjMnavScrollY || 0) || 0;
+      html.classList.remove("mcj-mnav-open");
+      body.classList.remove("mcj-mnav-open");
+      body.style.position = "";
+      body.style.top = "";
+      body.style.left = "";
+      body.style.right = "";
+      body.style.width = "";
+      body.style.overflow = "";
+      delete body.dataset.mcjMnavScrollY;
+      window.scrollTo(0, restoreY);
+    }
   }
 
   function findExistingHeader() {
@@ -424,7 +486,10 @@
 
   function mount() {
     if (!isBossPublicPage() || !document.body) return;
-    ensureCss("/src/boss-header.css?v=20260731-mobile-nav", "data-mcj-boss-header-css");
+    // Always rebuild header markup for tab-nav-only layout
+    ensureCss("/src/boss-header.css?v=20260802mobileP0c", "data-mcj-boss-header-css");
+    ensureCss("/src/mcj-safe-area.css?v=20260802mobileP0c", "data-mcj-safe-area-css");
+    ensureCss("/src/home-mobile.css?v=20260802mobileP0c", "data-mcj-home-mobile-css");
     document.body.classList.add("mcj-boss-shell");
 
     var existing = findExistingHeader();
@@ -443,6 +508,7 @@
     }
 
     scheduleAuthVisibility();
+    ensureMobileNavSheet();
     renderNotifyPanel();
     if (isLoggedIn()) loadNotifications({ silent: true });
     window.addEventListener("mcj:auth-expired", function () {
@@ -511,9 +577,10 @@
     window.__MCJBossHeaderBound = true;
 
     document.addEventListener("click", function (e) {
-      var moreToggle = e.target.closest("[data-mcj-nav-more]");
+      var moreToggle = e.target.closest("[data-mcj-mnav-toggle], [data-mcj-nav-more]");
       if (moreToggle) {
         e.preventDefault();
+        e.stopPropagation();
         document.querySelectorAll(".mcj-boss-mine.open").forEach(function (n) {
           n.classList.remove("open");
           var b = n.querySelector("[data-mcj-mine-toggle]");
@@ -522,6 +589,20 @@
         notifyState.open = false;
         renderNotifyPanel();
         toggleNavMoreMenu();
+        return;
+      }
+
+      var mnavClose = e.target.closest("[data-mcj-mnav-close], [data-mcj-mnav-backdrop]");
+      if (mnavClose) {
+        e.preventDefault();
+        closeNavMoreMenu();
+        return;
+      }
+
+      var mnavLink = e.target.closest("[data-mcj-mnav-links] a");
+      if (mnavLink && !mnavLink.hasAttribute("data-mcj-boss-login")) {
+        closeNavMoreMenu();
+        // allow default navigation
         return;
       }
 
@@ -609,7 +690,11 @@
           n.classList.remove("open");
         });
       }
-      if (!e.target.closest(".mcj-boss-more")) {
+      if (
+        !e.target.closest(".mcj-mnav") &&
+        !e.target.closest(".mcj-boss-more") &&
+        !e.target.closest("[data-mcj-mnav-sheet]")
+      ) {
         closeNavMoreMenu();
       }
       if (!e.target.closest(".mcj-boss-notify")) {
@@ -624,10 +709,8 @@
       if (e.key === "Escape") closeNavMoreMenu();
     });
 
-    window.addEventListener("scroll", closeNavMoreMenu, { passive: true });
-
     if (window.matchMedia) {
-      var mq = window.matchMedia("(max-width: 820px)");
+      var mq = window.matchMedia("(max-width: 899px)");
       var onNavMq = function () {
         closeNavMoreMenu();
         scheduleAuthVisibility();
@@ -705,23 +788,35 @@
   }
 
   function closeNavMoreMenu() {
-    var wrap = document.querySelector(".mcj-boss-more");
-    var toggle = document.querySelector("[data-mcj-nav-more]");
-    var menu = document.querySelector("[data-mcj-nav-more-menu]");
+    var wrap = document.querySelector(".mcj-mnav");
+    var toggle = document.querySelector("[data-mcj-mnav-toggle]");
+    var sheet = document.getElementById("mcjMnavSheet") || document.querySelector("[data-mcj-mnav-sheet]");
     if (wrap) wrap.classList.remove("open");
-    if (toggle) toggle.setAttribute("aria-expanded", "false");
-    if (menu) menu.hidden = true;
+    if (toggle) {
+      toggle.setAttribute("aria-expanded", "false");
+      toggle.setAttribute("aria-label", "打开菜单");
+    }
+    if (sheet) {
+      sheet.hidden = true;
+      sheet.classList.remove("open");
+    }
+    setMobileNavScrollLock(false);
   }
 
   function toggleNavMoreMenu(forceClose) {
-    var wrap = document.querySelector(".mcj-boss-more");
-    var toggle = document.querySelector("[data-mcj-nav-more]");
-    var menu = document.querySelector("[data-mcj-nav-more-menu]");
-    if (!wrap || !toggle || !menu) return;
+    ensureMobileNavSheet();
+    var wrap = document.querySelector(".mcj-mnav");
+    var toggle = document.querySelector("[data-mcj-mnav-toggle]");
+    var sheet = document.getElementById("mcjMnavSheet") || document.querySelector("[data-mcj-mnav-sheet]");
+    if (!wrap || !toggle || !sheet) return;
     var open = forceClose === true ? false : !wrap.classList.contains("open");
     wrap.classList.toggle("open", open);
     toggle.setAttribute("aria-expanded", open ? "true" : "false");
-    menu.hidden = !open;
+    toggle.setAttribute("aria-label", open ? "关闭菜单" : "打开菜单");
+    sheet.hidden = !open;
+    sheet.classList.toggle("open", open);
+    fillMobileDrawerLinks();
+    setMobileNavScrollLock(open);
   }
 
   function boot() {

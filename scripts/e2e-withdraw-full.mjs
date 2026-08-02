@@ -71,14 +71,14 @@ async function companionApi(token, action, body = {}) {
   return j;
 }
 
-async function finance(action, body = {}) {
+async function finance(action, body = {}, adminToken = "") {
   const isGet = action === "bootstrap";
   const url = isGet ? `${API_BASE}/api/admin/finance?action=bootstrap` : `${API_BASE}/api/admin/finance`;
   const r = await fetch(url, {
     method: isGet ? "GET" : "POST",
     headers: {
+      Authorization: `Bearer ${adminToken}`,
       "x-mcj-admin-role": "admin",
-      "x-user-role": "admin",
       "Content-Type": "application/json",
       Accept: "application/json",
     },
@@ -129,6 +129,7 @@ async function main() {
   await ensureIncome();
   await cancelPending();
   const token = await auth("companion@meow.test", "McjTest@12345678");
+  const adminToken = await auth("admin@meow.test", "McjTest@12345678");
 
   // 1) create
   const created = await companionApi(token, "request_withdrawal", {
@@ -161,24 +162,20 @@ async function main() {
   }
 
   // 4) admin sees it
-  const boot = await finance("bootstrap");
+  const boot = await finance("bootstrap", {}, adminToken);
   const adminRow = (boot.withdrawals || []).find((x) => x.id === id);
   console.log("STEP4_admin_see", { found: !!adminRow, status: adminRow?.status });
   if (!adminRow) throw new Error("admin cannot see withdrawal");
 
-  // 5) reject path (separate record)
+  // 5) reject path
   await cancelPending();
-  // recreate after cancel cleaned the pending one - wait, cancelPending cancelled our id!
-  // Need separate reject test - create rejectId first before cancel, or don't cancel the main id.
-
-  // Actually we cancelled everything including id. Re-run create for reject and approve separately.
   const rejCreate = await companionApi(token, "request_withdrawal", {
     amount: 50,
     remark: "e2e reject",
     paymentAccountId: ACCOUNT_ID,
   });
   const rejectId = rejCreate.item?.id;
-  const rej = await finance("reject_withdraw", { id: rejectId, reason: "E2E 驳回原因" });
+  const rej = await finance("reject_withdraw", { id: rejectId, reason: "E2E 驳回原因" }, adminToken);
   const rejDb = (await rest("companion_withdrawals", `?id=eq.${rejectId}&select=id,status,rejection_reason,freeze_tx_id`))?.[0];
   console.log("STEP5_reject", { ok: rej.ok, status: rejDb.status, reason: rejDb.rejection_reason });
   if (rejDb.status !== "rejected") throw new Error("reject failed");
@@ -190,7 +187,7 @@ async function main() {
     paymentAccountId: ACCOUNT_ID,
   });
   const approveId = aprCreate.item?.id;
-  const apr = await finance("approve_withdraw", { id: approveId });
+  const apr = await finance("approve_withdraw", { id: approveId }, adminToken);
   const aprDb = (await rest("companion_withdrawals", `?id=eq.${approveId}&select=id,status,reviewed_at`))?.[0];
   const pay = await rest(
     "finance_payments",

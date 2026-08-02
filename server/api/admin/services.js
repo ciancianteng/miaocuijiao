@@ -426,13 +426,7 @@ async function addCategory(name) {
 
 export default async function handler(req, res) {
   try {
-    if (hasDb()) await requireAdmin(req);
-    else {
-      const role = String(req.headers["x-mcj-admin-role"] || "");
-      if (!ADMIN_ROLES.has(role) && !tokenFrom(req)) {
-        return json(res, 401, { ok: false, message: "请先登录管理员账号。" });
-      }
-    }
+    await requireAdmin(req);
 
     if (req.method === "GET") {
       const result = await listServices();

@@ -112,11 +112,49 @@ function toIsoDateTime(value) {
   if (Number.isNaN(parsed.getTime())) return new Date().toISOString();
   return parsed.toISOString();
 }
+const ANNOUNCEMENT_CATEGORIES = new Set(["home", "companion"]);
+const ANNOUNCEMENT_AUDIENCES = new Set(["home", "boss", "companion", "customer_service", "all"]);
+
+function normalizeCategory(value, audience) {
+  const raw = String(value || "").trim().toLowerCase();
+  if (raw === "homepage" || raw === "boss" || raw === "index") return "home";
+  if (raw === "player" || raw === "陪玩" || raw === "companion") return "companion";
+  if (ANNOUNCEMENT_CATEGORIES.has(raw)) return raw;
+  const aud = String(audience || "").trim().toLowerCase();
+  if (aud === "companion") return "companion";
+  return "home";
+}
+function normalizeAudience(value, category) {
+  const raw = String(value || "").trim().toLowerCase();
+  if (raw === "homepage" || raw === "index") return "home";
+  if (raw === "cs" || raw === "service" || raw === "customer-service") return "customer_service";
+  if (raw === "player") return "companion";
+  if (ANNOUNCEMENT_AUDIENCES.has(raw)) return raw;
+  return normalizeCategory(category) === "companion" ? "companion" : "home";
+}
+function optionalIsoDateTime(value) {
+  if (value === undefined || value === null || String(value).trim() === "") return null;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toISOString();
+}
 function mapAnnouncement(row = {}) {
+  const category = normalizeCategory(row.category, row.audience);
+  const audience = normalizeAudience(row.audience, category);
+  const kind = String(row.kind || "normal").toLowerCase() === "forced" ? "forced" : "normal";
   return {
     id: row.id,
     title: row.title || "",
     content: row.content || "",
+    category,
+    audience,
+    kind,
+    content_version: Number(row.content_version || 1) || 1,
+    requires_ack: kind === "forced" || row.requires_ack === true,
+    start_at: row.start_at || "",
+    end_at: row.end_at || "",
+    is_scrolling: row.is_scrolling !== false,
+    sort_order: Number(row.sort_order ?? 100),
     is_active: row.is_active !== false,
     is_pinned: row.is_pinned === true,
     published_at: row.published_at || row.created_at || "",
@@ -124,73 +162,159 @@ function mapAnnouncement(row = {}) {
     updated_at: row.updated_at || "",
   };
 }
-function announcementPayload(input = {}) {
+function announcementPayload(input = {}, previous = null) {
   const title = String(input.title || "").trim();
   const content = String(input.content || "").trim();
   if (!title) throw Object.assign(new Error("请填写公告标题。"), { status: 400 });
   if (!content) throw Object.assign(new Error("请填写公告内容。"), { status: 400 });
+  const category = normalizeCategory(input.category || input.announcement_category, input.audience);
+  const audience = normalizeAudience(input.audience || input.target || input.publish_to, category);
+  const sortOrder = Number(input.sort_order ?? input.sortOrder ?? input.sort ?? 100);
+  const kindRaw = String(input.kind || input.announcement_kind || input.type || "normal").toLowerCase();
+  const kind = kindRaw === "forced" || kindRaw === "强制" || kindRaw === "强制阅读公告" ? "forced" : "normal";
+  let contentVersion = Number(input.content_version ?? input.contentVersion ?? previous?.content_version ?? 1) || 1;
+  if (previous && (String(previous.content || "") !== content || String(previous.title || "") !== title)) {
+    contentVersion = (Number(previous.content_version) || 1) + 1;
+  }
+  if (!previous && kind === "forced") contentVersion = Math.max(1, contentVersion);
   return {
     title,
     content,
+    category,
+    audience,
+    kind,
+    content_version: contentVersion,
+    requires_ack: kind === "forced" || truthy(input.requires_ack ?? input.requiresAck, kind === "forced"),
+    start_at: optionalIsoDateTime(input.start_at || input.startAt),
+    end_at: optionalIsoDateTime(input.end_at || input.endAt),
+    is_scrolling: truthy(input.is_scrolling ?? input.isScrolling ?? input.scroll, true),
+    sort_order: Number.isFinite(sortOrder) ? Math.max(0, Math.round(sortOrder)) : 100,
     is_active: truthy(input.is_active ?? input.isActive ?? input.visible, true),
     is_pinned: truthy(input.is_pinned ?? input.isPinned ?? input.pinned, false),
-    published_at: toIsoDateTime(input.published_at || input.publishedAt || input.publish_time),
+    published_at: toIsoDateTime(input.published_at || input.publishedAt || input.publish_time || input.start_at || input.startAt),
     updated_at: new Date().toISOString(),
   };
 }
-async function listAnnouncements() {
-  try {
-    const rows = await supabaseJson(
-      restUrl("announcements", "?order=is_pinned.desc,published_at.desc.nullslast,created_at.desc&limit=100"),
-      { headers: serviceHeaders() }
-    );
-    return (Array.isArray(rows) ? rows : []).map(mapAnnouncement);
-  } catch {
-    const rows = await supabaseJson(restUrl("announcements", "?order=created_at.desc&limit=100"), { headers: serviceHeaders() });
-    return (Array.isArray(rows) ? rows : []).map(mapAnnouncement);
-  }
-}
-async function saveAnnouncement(input = {}) {
-  const payload = announcementPayload(input);
-  const id = String(input.id || "").trim();
-  try {
-    if (id) {
-      const rows = await supabaseJson(restUrl("announcements", `?id=eq.${encodeURIComponent(id)}`), {
-        method: "PATCH",
-        headers: serviceHeaders(),
-        body: JSON.stringify(payload),
-      });
-      return mapAnnouncement(rows?.[0] || { ...payload, id });
-    }
-    const rows = await supabaseJson(restUrl("announcements"), {
-      method: "POST",
-      headers: serviceHeaders(),
-      body: JSON.stringify({ ...payload, created_at: new Date().toISOString() }),
-    });
-    return mapAnnouncement(rows?.[0] || payload);
-  } catch (error) {
-    // Fallback when is_pinned / published_at columns are not migrated yet.
-    const legacy = {
+function payloadFallbacks(payload) {
+  return [
+    payload,
+    {
+      title: payload.title,
+      content: payload.content,
+      category: payload.category,
+      audience: payload.audience,
+      kind: payload.kind,
+      content_version: payload.content_version,
+      requires_ack: payload.requires_ack,
+      start_at: payload.start_at,
+      end_at: payload.end_at,
+      is_scrolling: payload.is_scrolling,
+      sort_order: payload.sort_order,
+      is_active: payload.is_active,
+      is_pinned: payload.is_pinned,
+      published_at: payload.published_at,
+      updated_at: payload.updated_at,
+    },
+    {
+      title: payload.title,
+      content: payload.content,
+      category: payload.category,
+      audience: payload.audience,
+      start_at: payload.start_at,
+      end_at: payload.end_at,
+      is_scrolling: payload.is_scrolling,
+      sort_order: payload.sort_order,
+      is_active: payload.is_active,
+      is_pinned: payload.is_pinned,
+      published_at: payload.published_at,
+      updated_at: payload.updated_at,
+    },
+    {
+      title: payload.title,
+      content: payload.content,
+      category: payload.category,
+      audience: payload.audience,
+      is_active: payload.is_active,
+      is_pinned: payload.is_pinned,
+      published_at: payload.published_at,
+      updated_at: payload.updated_at,
+    },
+    {
+      title: payload.title,
+      content: payload.content,
+      is_active: payload.is_active,
+      is_pinned: payload.is_pinned,
+      published_at: payload.published_at,
+      updated_at: payload.updated_at,
+    },
+    {
       title: payload.title,
       content: payload.content,
       is_active: payload.is_active,
       updated_at: payload.updated_at,
-    };
-    if (id) {
-      const rows = await supabaseJson(restUrl("announcements", `?id=eq.${encodeURIComponent(id)}`), {
-        method: "PATCH",
-        headers: serviceHeaders(),
-        body: JSON.stringify(legacy),
-      });
-      return mapAnnouncement(rows?.[0] || { ...legacy, id });
+    },
+  ];
+}
+async function listAnnouncements() {
+  try {
+    const rows = await supabaseJson(
+      restUrl("announcements", "?order=category.asc,is_pinned.desc,sort_order.asc.nullslast,published_at.desc.nullslast,created_at.desc&limit=200"),
+      { headers: serviceHeaders() }
+    );
+    return (Array.isArray(rows) ? rows : []).map(mapAnnouncement);
+  } catch {
+    try {
+      const rows = await supabaseJson(
+        restUrl("announcements", "?order=is_pinned.desc,published_at.desc.nullslast,created_at.desc&limit=200"),
+        { headers: serviceHeaders() }
+      );
+      return (Array.isArray(rows) ? rows : []).map(mapAnnouncement);
+    } catch {
+      const rows = await supabaseJson(restUrl("announcements", "?order=created_at.desc&limit=200"), { headers: serviceHeaders() });
+      return (Array.isArray(rows) ? rows : []).map(mapAnnouncement);
     }
-    const rows = await supabaseJson(restUrl("announcements"), {
-      method: "POST",
-      headers: serviceHeaders(),
-      body: JSON.stringify({ ...legacy, created_at: new Date().toISOString() }),
-    });
-    return mapAnnouncement(rows?.[0] || legacy);
   }
+}
+async function saveAnnouncement(input = {}) {
+  const id = String(input.id || "").trim();
+  let previous = null;
+  if (id) {
+    try {
+      const rows = await supabaseJson(restUrl("announcements", `?id=eq.${encodeURIComponent(id)}&limit=1`), {
+        headers: serviceHeaders(),
+      });
+      previous = Array.isArray(rows) ? rows[0] : null;
+    } catch {
+      previous = null;
+    }
+  }
+  const payload = announcementPayload(input, previous);
+  const attempts = payloadFallbacks(payload);
+  let lastError = null;
+  for (const body of attempts) {
+    try {
+      if (id) {
+        const rows = await supabaseJson(restUrl("announcements", `?id=eq.${encodeURIComponent(id)}`), {
+          method: "PATCH",
+          headers: serviceHeaders(),
+          body: JSON.stringify(body),
+        });
+        return mapAnnouncement(rows?.[0] || { ...body, id });
+      }
+      const rows = await supabaseJson(restUrl("announcements"), {
+        method: "POST",
+        headers: serviceHeaders(),
+        body: JSON.stringify({ ...body, created_at: new Date().toISOString() }),
+      });
+      return mapAnnouncement(rows?.[0] || body);
+    } catch (error) {
+      lastError = error;
+      const msg = String(error?.message || error?.body?.message || "");
+      // Retry only when PostgREST rejects unknown columns / schema cache.
+      if (!/column|schema cache|Could not find/i.test(msg)) throw error;
+    }
+  }
+  throw lastError || Object.assign(new Error("公告保存失败。"), { status: 500 });
 }
 
 export default async function handler(req, res) {
@@ -253,7 +377,7 @@ export default async function handler(req, res) {
     }
     if (action === "save_announcement") {
       const announcement = await saveAnnouncement(body.announcement || body);
-      return json(res, 200, { ok: true, message: "公告已保存，首页将同步显示。", announcement });
+      return json(res, 200, { ok: true, message: "公告已保存，对应端将实时同步显示。", announcement });
     }
     if (action === "delete_announcement") {
       await supabaseJson(restUrl("announcements", `?id=eq.${encodeURIComponent(String(body.id || ""))}`), {

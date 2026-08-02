@@ -9,6 +9,11 @@ import {
   supabaseJson,
   writeAdminLog,
 } from "./_wallet.js";
+import {
+  resolveCompanionAvatar,
+  resolveCompanionCover,
+  resolveCompanionName,
+} from "./_companion-public-map.js";
 
 const TZ = "Asia/Kuala_Lumpur";
 const BRUSH_ORDER_LIMIT_24H = 5;
@@ -631,8 +636,9 @@ export async function listBoard({ period = "weekly", gameKey = "", limit, online
         rank: r.rank,
         companionId: r.companion_id,
         publicId: c.companion_uid ? `P${c.companion_uid}` : "",
-        nickname: c.nickname || p.display_name || "未命名陪玩",
-        avatar: p.avatar_url || c.card_image_url || "/default-avatar.png",
+        nickname: resolveCompanionName(c, p) || "未命名陪玩",
+        avatar: resolveCompanionAvatar(p, c),
+        cover: resolveCompanionCover(p, c),
         level: c.level_name || "未设置等级",
         levelId: c.level_id || "",
         mainService: c.main_service || c.game || "",

@@ -276,18 +276,14 @@
     if(!target)return;
     target.innerHTML='<div class="boss-admin-page compact">'+
       '<div class="admin-section-head compact"><div><h3>老板列表</h3><p>搜索老板账号，查看基础资料、资金、订单、充值与退款记录。</p></div><span class="admin-count-pill" data-boss-count>0 条</span></div>'+
-      '<div class="boss-filter-panel compact">'+
-        '<div class="boss-filter-row">'+
-          '<input class="boss-keyword" data-boss-search placeholder="老板 UID / 昵称 / 手机号 / 邮箱">' +
-          '<select data-boss-filter="vip"><option value="">VIP等级</option><option>VIP0</option><option>VIP1</option><option>VIP2</option><option>VIP3</option><option>VIP4</option><option>VIP5</option></select>'+
-          '<select data-boss-filter="status"><option value="">账号状态</option><option>正常</option><option>限制下单</option><option>限制充值</option><option>冻结</option><option>已注销</option><option>黑名单</option></select>'+
-          '<input type="date" data-boss-filter="registered">'+
-        '</div>'+
-        '<div class="boss-filter-row actions">'+
-          '<button class="mini-btn primary-lite" type="button" data-boss-search-button>搜索</button>'+
-          '<button class="mini-btn" type="button" data-boss-clear>重置</button>'+
-          '<button class="mini-btn" type="button" data-boss-export>导出</button>'+
-        '</div>'+
+      '<div class="boss-filter-bar" data-boss-filter-bar>'+
+        '<select class="boss-filter-field" data-boss-filter="vip" aria-label="VIP等级"><option value="">VIP等级</option><option>VIP0</option><option>VIP1</option><option>VIP2</option><option>VIP3</option><option>VIP4</option><option>VIP5</option></select>'+
+        '<select class="boss-filter-field" data-boss-filter="status" aria-label="账号状态"><option value="">账号状态</option><option>正常</option><option>限制下单</option><option>限制充值</option><option>冻结</option><option>已注销</option><option>黑名单</option></select>'+
+        '<input class="boss-filter-field" type="date" data-boss-filter="registered" aria-label="注册日期">'+
+        '<input class="boss-filter-field boss-filter-search" data-boss-search placeholder="老板 UID / 昵称 / 手机号 / 邮箱" aria-label="搜索">'+
+        '<button class="mini-btn primary-lite boss-filter-action" type="button" data-boss-search-button>搜索</button>'+
+        '<button class="mini-btn boss-filter-action" type="button" data-boss-clear>重置</button>'+
+        '<button class="mini-btn boss-filter-action" type="button" data-boss-export>导出</button>'+
       '</div>'+
       '<div id="bossManagementTable" class="boss-table-shell compact"></div>'+
     '</div>';
@@ -355,7 +351,7 @@
       '<td data-label="昵称" title="'+esc(item.name)+'"><button class="boss-name-link" type="button" data-boss-action="view" data-boss-id="'+esc(item.id)+'">'+esc(item.name)+'</button></td>'+ 
       bossCell('VIP',esc(item.vip))+bossCell('余额',esc(item.balance))+bossCell('累计充值',esc(item.totalRecharge))+bossCell('累计消费',esc(item.totalSpent))+bossCell('订单数量',esc(item.totalOrders))+
       '<td data-label="状态">'+statusChip(item.status)+'</td>'+ 
-      '<td data-label="操作" class="boss-action-cell"><button class="mini-btn" type="button" data-boss-action="view" data-boss-id="'+esc(item.id)+'">查看</button><button class="mini-btn" type="button" data-boss-more data-boss-id="'+esc(item.id)+'" aria-haspopup="menu" aria-expanded="false">更多</button></td>'+ 
+      '<td data-label="操作" class="boss-action-cell"><button class="mini-btn" type="button" data-boss-action="view" data-boss-id="'+esc(item.id)+'">查看</button></td>'+ 
     '</tr>';}).join('');
     if(!body)body='<tr><td colspan="'+headers.length+'"><div class="boss-table-empty"><strong>'+(bossAdminState.error?'老板数据读取失败':'暂无老板数据')+'</strong>'+(bossAdminState.error?'<span>'+esc(bossAdminState.error)+'</span>':'')+'</div></td></tr>';
     box.innerHTML='<div class="table-wrap boss-table-wrap"><table class="boss-data-table"><thead><tr>'+headers.map(function(h){return '<th>'+esc(h)+'</th>'}).join('')+'</tr></thead><tbody>'+body+'</tbody></table></div><div class="boss-pagination compact"><span>共 '+total+' 条 · 第 '+bossAdminState.page+' / '+pages+' 页</span><div><select data-boss-page-size><option value="20" '+(bossAdminState.pageSize===20?'selected':'')+'>20 条/页</option><option value="50" '+(bossAdminState.pageSize===50?'selected':'')+'>50 条/页</option><option value="100" '+(bossAdminState.pageSize===100?'selected':'')+'>100 条/页</option></select><button class="mini-btn" type="button" data-boss-page="prev" '+(bossAdminState.page<=1?'disabled':'')+'>上一页</button><input data-boss-page-jump value="'+bossAdminState.page+'" inputmode="numeric" aria-label="页码"><button class="mini-btn" type="button" data-boss-page-go>跳转</button><button class="mini-btn" type="button" data-boss-page="next" '+(bossAdminState.page>=pages?'disabled':'')+'>下一页</button></div></div>'+(bossAdminState.error?'<div class="admin-sync-note">老板接口读取失败：'+esc(bossAdminState.error)+'。当前页面没有使用本地假数据。</div>':'');
@@ -600,7 +596,7 @@
     order=order||{};
     var statusText=orderValue(order,['orderStatus','order_status','statusText','status_text'],'');
     var rawStatus=orderValue(order,['status'],'');
-    var STATUS_CN={awaiting_payment:'待付款',pending:'等待陪玩确认',claimed:'等待陪玩确认',waiting_boss_confirm:'待老板确认',confirmed:'待开始',in_progress:'进行中',completed:'已完成',cancelled:'已取消',refund_requested:'售后',refunded:'退款',after_sale:'售后'};
+    var STATUS_CN={awaiting_payment:'待付款',pending:'待接单',claimed:'待陪玩确认',waiting_boss_confirm:'选择陪玩中',confirmed:'待开始',in_progress:'进行中',completed:'已完成',cancelled:'已取消',refund_requested:'售后',refunded:'已退款',after_sale:'售后',reviewed:'已评价'};
     if(!statusText||STATUS_CN[statusText])statusText=STATUS_CN[rawStatus]||STATUS_CN[statusText]||statusText||rawStatus||'待付款';
     return Object.assign({},order,{
       id:orderValue(order,['orderNo','order_no','id'],'-'),
@@ -1285,16 +1281,16 @@
     gameplays:{target:'table-gameplays',title:'更多玩法商城管理',type:'fixed_play_services',desc:'已迁移至更多玩法商城商品管理模块。',fields:['name','game','category','cover','intro','fixedPrice','unit','duration','requirements','levelRequired','needQualification','showOnHome','sort'],disabled:true},
     'custom-order-settings':{target:'table-custom_orders',title:'自定义订单设置',type:'custom_order_fields',desc:'配置老板自定义订单页面字段，发布后前台表单同步。',fields:['fieldKey','fieldName','placeholder','fieldType','required','visible','options','min','max','sort']},
     'gameplay-qualifications':{target:'table-gameplay_qualifications',title:'玩法资格审核',type:'gameplay_qualifications',desc:'管理陪玩固定玩法服务资格，审核后同步抢单和建单权限。',fields:['applicationId','uid','nickname','gameplay','materials','auditStatus','reviewer','remark']},
-    'companion-rules':{target:'table-companion_rules',title:'陪玩制度管理',type:'player_rules',desc:'发布后同步到申请陪玩第 1 步。',fields:['title','body','versionNote','sort']},
+    'companion-rules':{target:'table-companion_rules',title:'陪玩申请制度',type:'player_rules',desc:'编辑标题、正文后保存并应用，陪玩申请第 1 步立即读取最新内容。',fields:['title','body','versionNote','notes','penaltyRules','depositRules','sort']},
     'voice-types':{target:'table-voice_types',title:'声音类型管理',type:'voice_types',desc:'同步陪玩申请、陪玩资料编辑、陪玩大厅筛选和陪玩详情。',fields:['name','description','sort']},
     'availability-times':{target:'availabilityTimeManagement',title:'可接单时间配置',type:'availability_times',desc:'配置上午、下午、晚上、深夜和自定义时间段，陪玩申请和资料编辑同步读取。',fields:['name','weekdays','startTime','endTime','sort']},
     'vip-levels':{target:'vipLevelManagement',title:'VIP等级管理',type:'vip_levels',desc:'管理老板 VIP 等级、累计消费门槛、权益、优惠券权益和客服优先级。',fields:['code','name','spendThreshold','icon','description','benefits','couponBenefits','servicePriority','sort']},
     badges:{target:'badgeManagement',title:'徽章 / 身份组管理',type:'badges',desc:'管理老板、陪玩、客服、管理员身份组和前台徽章展示。',fields:['icon','name','description','condition','role','showPublic','sort']},
     'companion-deposit':{target:'table-companion_deposit',title:'陪玩押金设置',type:'player_deposit_settings',desc:'同步陪玩申请和陪玩端认证页面，默认可配置 RM100。',fields:['amount','currency','manualRate','paymentDescription','paymentMethod','refundTerms','refundDescription','auditRequirement']},
-    'companion-applications':{target:'table-companion_applications',title:'陪玩申请审核',type:'player_applications',desc:'真实审核工作台，审核通过后开通陪玩端权限。',fields:['applicationNo','uid','nickname','contact','identityDocs','gameProfile','avatar','gallery','voiceSample','depositStatus','auditStatus','reviewer','reviewRemark','level','priceRange','commission','rebate','club']}
+    'companion-applications':{target:'table-companion_applications',title:'陪玩申请审核',type:'player_applications',desc:'真实审核工作台，审核通过后开通陪玩端权限。',fields:['applicationNo','uid','nickname','contact','identityDocs','gameProfile','avatar','gallery','voiceSample','depositStatus','auditStatus','reviewer','reviewRemark','level','priceRange','commission','rebate','club'],disabled:true}
   };
   function contentFieldLabel(key){
-    var map={title:'标题',desktopImage:'电脑端图片',mobileImage:'手机端图片',link:'跳转地址',discordUrl:'Discord 链接',linkTarget:'打开方式',sort:'排序',startAt:'开始时间',endAt:'结束时间',autoPlay:'自动轮播',intervalSeconds:'轮播秒数',content:'公告内容',displayMode:'展示方式',subtitle:'副标题',image:'广告图',position:'展示位置',carousel:'是否轮播',official:'官方精选',displayName:'显示名称',icon:'图标',welcomeText:'欢迎文案',onlineStatus:'在线状态',businessHours:'营业时间',offlineText:'未营业提示',clickBehavior:'点击行为',defaultChannel:'默认客服频道',showRedDot:'显示红点',globalVisible:'全站显示',moduleName:'模块名称',backendVersion:'后台版本',frontendVersion:'前台版本',syncStatus:'同步状态',publishedBy:'发布人',publishedAt:'发布时间',game:'游戏',serviceType:'服务类型',level:'等级',minPrice:'最低价格',maxPrice:'最高价格',defaultPrice:'默认价格',unit:'计价单位',nightPrice:'夜间价格',holidayPrice:'节假日价格',name:'名称',category:'分类',cover:'封面',intro:'简介',fixedPrice:'固定价格',duration:'服务时长',requirements:'资格要求',levelRequired:'接单等级',needQualification:'需要资格审核',showOnHome:'首页显示',fieldKey:'字段 Key',fieldName:'字段名称',placeholder:'提示文字',fieldType:'字段类型',required:'必填',visible:'显示',options:'选项内容',min:'最小值',max:'最大值',applicationId:'申请编号',uid:'UID',nickname:'昵称',gameplay:'玩法',materials:'资料',auditStatus:'审核状态',reviewer:'审核人',remark:'备注',body:'正文',versionNote:'版本说明',description:'说明',amount:'押金金额',currency:'币种',manualRate:'手动汇率',paymentDescription:'支付说明',paymentMethod:'支付方式',refundTerms:'退款条件',refundDescription:'退款说明',auditRequirement:'审核要求',applicationNo:'申请编号',contact:'联系方式',identityDocs:'身份证资料',gameProfile:'游戏资料',avatar:'头像',gallery:'相册',voiceSample:'录音',depositStatus:'押金状态',reviewRemark:'审核备注',priceRange:'价格范围',commission:'佣金',rebate:'返点',club:'所属俱乐部',slug:'标识',group:'分组',code:'等级编号',cardColor:'卡片颜色',commissionRate:'抽成比例',maxPlus:'最高价以上',companionUid:'陪玩UID',reason:'推荐理由',showOnHome:'首页展示',shortName:'游戏简称',terminalType:'终端类型',isHot:'是否热门',allowApply:'申请可选',allowOrder:'订单可选',allGames:'适用全部游戏',fixedPrice:'固定价格',allowCustomOrder:'允许自定义订单',allowGrab:'允许抢单',showInHallFilter:'大厅筛选显示',selfSelectable:'允许陪玩选择',requiresAudit:'需要后台审核',showInHall:'大厅展示',supportsFilter:'支持筛选',cardStyle:'卡片样式标识',giftCommissionRate:'礼物抽成',directRebateRate:'直属陪返点',weekdays:'星期',startTime:'开始时间',endTime:'结束时间',spendThreshold:'累计消费门槛',benefits:'优惠权益',couponBenefits:'优惠券权益',servicePriority:'客服优先级',condition:'获取条件',role:'适用角色',showPublic:'前台展示'};
+    var map={title:'标题',desktopImage:'电脑端图片',mobileImage:'手机端图片',link:'跳转地址',discordUrl:'Discord 链接',linkTarget:'打开方式',sort:'排序',startAt:'开始时间',endAt:'结束时间',autoPlay:'自动轮播',intervalSeconds:'轮播秒数',content:'公告内容',displayMode:'展示方式',subtitle:'副标题',image:'广告图',position:'展示位置',carousel:'是否轮播',official:'官方精选',displayName:'显示名称',icon:'图标',welcomeText:'欢迎文案',onlineStatus:'在线状态',businessHours:'营业时间',offlineText:'未营业提示',clickBehavior:'点击行为',defaultChannel:'默认客服频道',showRedDot:'显示红点',globalVisible:'全站显示',moduleName:'模块名称',backendVersion:'后台版本',frontendVersion:'前台版本',syncStatus:'同步状态',publishedBy:'发布人',publishedAt:'发布时间',game:'游戏',serviceType:'服务类型',level:'等级',minPrice:'最低价格',maxPrice:'最高价格',defaultPrice:'默认价格',unit:'计价单位',nightPrice:'夜间价格',holidayPrice:'节假日价格',name:'名称',category:'分类',cover:'封面',intro:'简介',fixedPrice:'固定价格',duration:'服务时长',requirements:'资格要求',levelRequired:'接单等级',needQualification:'需要资格审核',showOnHome:'首页显示',fieldKey:'字段 Key',fieldName:'字段名称',placeholder:'提示文字',fieldType:'字段类型',required:'必填',visible:'显示',options:'选项内容',min:'最小值',max:'最大值',applicationId:'申请编号',uid:'UID',nickname:'昵称',gameplay:'玩法',materials:'资料',auditStatus:'审核状态',reviewer:'审核人',remark:'备注',body:'正文内容',versionNote:'版本 / 更新说明',notes:'注意事项',penaltyRules:'处罚规则',depositRules:'退款与押金规则',description:'说明',amount:'押金金额',currency:'币种',manualRate:'手动汇率',paymentDescription:'支付说明',paymentMethod:'支付方式',refundTerms:'退款条件',refundDescription:'退款说明',auditRequirement:'审核要求',applicationNo:'申请编号',contact:'联系方式',identityDocs:'身份证资料',gameProfile:'游戏资料',avatar:'头像',gallery:'相册',voiceSample:'录音',depositStatus:'押金状态',reviewRemark:'审核备注',priceRange:'价格范围',commission:'佣金',rebate:'返点',club:'所属俱乐部',slug:'标识',group:'分组',code:'等级编号',cardColor:'卡片颜色',commissionRate:'抽成比例',maxPlus:'最高价以上',companionUid:'陪玩UID',reason:'推荐理由',showOnHome:'首页展示',shortName:'游戏简称',terminalType:'终端类型',isHot:'是否热门',allowApply:'申请可选',allowOrder:'订单可选',allGames:'适用全部游戏',fixedPrice:'固定价格',allowCustomOrder:'允许自定义订单',allowGrab:'允许抢单',showInHallFilter:'大厅筛选显示',selfSelectable:'允许陪玩选择',requiresAudit:'需要后台审核',showInHall:'大厅展示',supportsFilter:'支持筛选',cardStyle:'卡片样式标识',giftCommissionRate:'礼物抽成',directRebateRate:'直属陪返点',weekdays:'星期',startTime:'开始时间',endTime:'结束时间',spendThreshold:'累计消费门槛',benefits:'优惠权益',couponBenefits:'优惠券权益',servicePriority:'客服优先级',condition:'获取条件',role:'适用角色',showPublic:'前台展示'};
     return map[key]||key;
   }
   function contentDraft(item){return item&&typeof item.draft==='object'&&item.draft?item.draft:{}}
@@ -1450,7 +1446,7 @@
       var fieldHtml=options?'<select name="'+esc(field)+'" data-admin-control="'+(isBoolContentField(field)?'switch':'select')+'">'+options.map(function(pair){return '<option value="'+esc(pair[0])+'" '+(String(value)===String(pair[0])?'selected':'')+'>'+esc(pair[1])+'</option>';}).join('')+'</select>':(isLong?'<textarea name="'+esc(field)+'">'+esc(value)+'</textarea>':'<input name="'+esc(field)+'" value="'+esc(value)+'">');
       return '<label><span>'+esc(contentFieldLabel(field))+'</span>'+fieldHtml+(upload?'<input class="content-file" type="file" data-content-upload="'+esc(field)+'" accept="image/*,audio/*,application/pdf"><small>上传后会写入真实文件 URL</small>':'')+'</label>';
     }).join('');
-    var directPublish=['banners','announcements','games','service_types','companion_tags','companion_levels','voice_types','availability_times','vip_levels','badges','featured_players','hot_games'].indexOf(cfg.type)>-1;
+    var directPublish=['banners','announcements','games','service_types','companion_tags','companion_levels','voice_types','availability_times','vip_levels','badges','featured_players','hot_games','player_rules'].indexOf(cfg.type)>-1;
     var currentStatus=String(item.status||(directPublish?'published':'draft'));
     var statusMap={'草稿':'draft','待发布':'pending','已发布':'published','已下架':'unpublished','已停用':'disabled'};
     currentStatus=statusMap[currentStatus]||currentStatus;
@@ -1468,6 +1464,9 @@
   function renderContentPreview(cfg,draft){
     var image=draft.desktopImage||draft.mobileImage||draft.image||draft.cover||draft.icon||'';
     if(cfg.type==='banners')return '<div class="content-banner-preview">'+(image?'<img src="'+esc(image)+'" alt="">':'<span>Banner 预览：上传图片后显示</span>')+'</div>';
+    if(cfg.type==='player_rules'){
+      return '<div class="content-card-preview"><strong>'+esc(draft.title||'陪玩制度')+'</strong><span>'+esc(draft.versionNote||'版本说明')+'</span><pre style="white-space:pre-wrap;margin:10px 0 0;max-height:180px;overflow:auto;color:rgba(255,255,255,.78);font:inherit">'+esc((draft.body||'').slice(0,600))+'</pre></div>';
+    }
     return '<div class="content-card-preview">'+(image?'<img src="'+esc(image)+'" alt="">':'')+'<strong>'+esc(draft.title||draft.name||draft.content||cfg.title)+'</strong><span>'+esc(draft.subtitle||draft.intro||draft.description||draft.welcomeText||'预览区域')+'</span></div>';
   }
   function renderPlatformContentManagers(){
@@ -1735,7 +1734,8 @@
     gameplays:['更多玩法商城管理','管理老板端更多玩法商城中的服务商品、价格、库存状态及客服派单规则'],
     'custom-order-settings':['自定义订单设置','自定义订单字段、规则和价格限制'],
     'gameplay-qualifications':['玩法资格审核','陪玩固定玩法服务资格审核'],
-    'companion-rules':['陪玩制度管理','陪玩制度内容与展示状态'],
+    'companion-rules':['制度管理 · 陪玩申请制度','编辑陪玩申请第 1 步制度标题、正文与启用状态'],
+    'rules-hub':['制度与等级','俱乐部等级说明、陪玩规则、强制公告与阅读记录'],
     'voice-types':['声音类型管理','声音标签、分类和筛选项'],
     'companion-deposit':['陪玩押金设置','押金金额、审核规则和状态'],
     'companion-applications':['陪玩申请审核','陪玩入驻申请、资料和认证审核'],

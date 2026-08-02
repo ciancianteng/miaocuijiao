@@ -9,6 +9,14 @@ import {
   splitGames,
 } from "../_game-prices.js";
 import { loadPublicServices } from "../platform/services.js";
+import {
+  DEFAULT_COMPANION_AVATAR,
+  mapCompanionPublicFields,
+  pickStableMediaUrl,
+  resolveCompanionAvatar,
+  resolveCompanionCover,
+} from "../_companion-public-map.js";
+import { createSignedUrl, publicObjectUrl } from "../_companion-media-store.js";
 const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"];
 
 function json(res, status, data) {
@@ -53,32 +61,6 @@ function availabilityCode(row = {}) {
 function availabilityText(code) {
   return ({ online: "在线可接单", busy: "忙碌中", paused: "暂停接单", offline: "离线" })[code] || "离线";
 }
-function resolveAvatar(profile = {}, row = {}) {
-  const raw = String(profile.avatar_url || row.card_image_url || "").trim();
-  if (!raw || /meow-cuijiao-brand\.(jpe?g|png|webp)$/i.test(raw)) {
-    return "/default-avatar.png";
-  }
-  return raw;
-}
-function isGarbledName(value) {
-  const s = String(value == null ? "" : value).trim();
-  if (!s) return true;
-  const marks = (s.match(/[?\uFFFD？]/g) || []).length;
-  if (marks >= 2 && marks >= Math.ceil(s.length * 0.4)) return true;
-  if (/^(?:\?|？|\uFFFD){2,}/.test(s)) return true;
-  return false;
-}
-function resolveCompanionName(row = {}, profile = {}) {
-  const candidates = [row.nickname, profile.display_name, profile.email];
-  for (const c of candidates) {
-    const s = String(c == null ? "" : c).trim();
-    if (!s) continue;
-    if (isGarbledName(s)) continue;
-    if (/@/.test(s)) return s.split("@")[0] || s;
-    return s;
-  }
-  return "";
-}
 function findLevelMeta(levels, row = {}) {
   const list = Array.isArray(levels) ? levels : [];
   const id = String(row.level_id || "").trim();
@@ -112,11 +94,13 @@ function resolveCompanionServiceIds(row = {}, catalog = []) {
     .filter((svc) => names.has(String(svc.name || svc.title || "").trim()))
     .map((svc) => String(svc.id));
 }
-function publicCompanion(row = {}, profile = {}, levels = [], catalog = []) {
-  const avail = availabilityCode(row);
-  const publicId = row.companion_uid ? `P${row.companion_uid}` : "";
-  const avatar = resolveAvatar(profile, row);
-  const name = resolveCompanionName(row, profile) || "未命名陪玩";
+function publicCompanion(row = {}, profile = {}, levels = [], catalog = [], mediaExtras = {}) {
+  const base = mapCompanionPublicFields(row, profile, mediaExtras);
+  const avail = base.availabilityStatus || availabilityCode(row);
+  const publicId = base.publicId || (row.companion_uid ? `P${row.companion_uid}` : "");
+  const avatar = resolveCompanionAvatar(profile, row, mediaExtras) || DEFAULT_COMPANION_AVATAR;
+  const cover = resolveCompanionCover(profile, row, mediaExtras) || avatar;
+  const name = base.name || "未命名陪玩";
   const level = findLevelMeta(levels, row);
   const levelName = level
     ? `${level.code || ""} ${level.name || ""}`.trim()
@@ -141,7 +125,7 @@ function publicCompanion(row = {}, profile = {}, levels = [], catalog = []) {
     companionProfileId: row.id,
     name,
     nickname: name,
-    nameValid: !!resolveCompanionName(row, profile),
+    nameValid: !!base.nameValid,
     game: gameDisplay || row.game || "",
     mainGame: gameDisplay || row.game || "",
     service_type: serviceTypes.join(","),
@@ -163,9 +147,9 @@ function publicCompanion(row = {}, profile = {}, levels = [], catalog = []) {
     status: availabilityText(avail),
     canOrderNow: avail === "online",
     avatar,
-    cover: row.card_image_url || avatar,
-    voiceUrl: row.voice_url || "",
-    cardImageUrl: row.card_image_url || "",
+    cover,
+    voiceUrl: pickStableMediaUrl(row.voice_url, mediaExtras.voiceUrl) || row.voice_url || "",
+    cardImageUrl: pickStableMediaUrl(row.card_image_url, cover) || "",
     desc: row.description || "",
     description: row.description || "",
     tags: stripGamePricesMarker(String(row.tags || ""))
@@ -248,11 +232,55 @@ async function attachReviews(companions = []) {
   });
 }
 
+async function mediaExtrasByProfile(profileIds = []) {
+  const ids = [...new Set((profileIds || []).filter(Boolean))];
+  if (!ids.length) return {};
+  let rows = [];
+  try {
+    rows = await supabaseJson(
+      restUrl(
+        "companion_media",
+        `?companion_profile_id=in.(${ids.map(encodeURIComponent).join(",")})&media_type=in.(avatar,cover,gallery)&order=sort_order.asc&limit=2000&select=id,companion_profile_id,media_type,storage_bucket,storage_path,status`
+      ),
+      { headers: headers() }
+    );
+  } catch (e) {
+    if (/companion_media|schema cache|PGRST|does not exist/i.test(String(e.message || e))) return {};
+    throw e;
+  }
+  const byProfile = {};
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const pid = row.companion_profile_id;
+    if (!pid) continue;
+    if (!byProfile[pid]) byProfile[pid] = { avatarUrl: "", coverUrl: "" };
+    const bucket = String(row.storage_bucket || "").trim();
+    const path = String(row.storage_path || "").trim();
+    if (!bucket || !path) continue;
+    let url = "";
+    try {
+      if (bucket === "companion-public" || /public/i.test(bucket)) {
+        url = publicObjectUrl(bucket, path);
+      } else {
+        url = await createSignedUrl(bucket, path, 60 * 60 * 12);
+      }
+    } catch (err) {
+      console.warn("[public/companions] media URL resolve failed", bucket, path, err?.message || err);
+      continue;
+    }
+    if (!url || !/^https?:\/\//i.test(url)) continue;
+    if (row.media_type === "avatar" && !byProfile[pid].avatarUrl) byProfile[pid].avatarUrl = url;
+    if ((row.media_type === "cover" || row.media_type === "gallery") && !byProfile[pid].coverUrl) {
+      byProfile[pid].coverUrl = url;
+    }
+    if (row.media_type === "avatar" && !byProfile[pid].coverUrl) byProfile[pid].coverUrl = url;
+  }
+  return byProfile;
+}
+
 async function loadCompanions(id = "") {
   let query = id
     ? `?or=(user_id.eq.${encodeURIComponent(id)},companion_uid.eq.${encodeURIComponent(String(id).replace(/^P/i, ""))})&verification_status=eq.approved&limit=1`
     : "?verification_status=eq.approved&order=updated_at.desc&limit=300";
-  // Fallback if companion_uid column missing
   let rows;
   try {
     rows = await supabaseJson(restUrl("companion_profiles", query), { headers: headers() });
@@ -267,20 +295,22 @@ async function loadCompanions(id = "") {
   const companions = Array.isArray(rows) ? rows : [];
   const userIds = [...new Set(companions.map((row) => row.user_id).filter(Boolean))];
   if (!userIds.length) return [];
-  const [profiles, levels, servicesBundle] = await Promise.all([
+  const profileIds = companions.map((row) => row.id).filter(Boolean);
+  const [profiles, levels, servicesBundle, mediaMap] = await Promise.all([
     supabaseJson(
       restUrl("profiles", `?id=in.(${userIds.map(encodeURIComponent).join(",")})&role=eq.companion&status=eq.active&select=id,display_name,avatar_url,email,status,role`),
       { headers: headers() }
     ),
     readLocalLevels().catch(() => []),
     loadPublicServices().catch(() => ({ services: [] })),
+    mediaExtrasByProfile(profileIds).catch(() => ({})),
   ]);
   const catalog = Array.isArray(servicesBundle?.services) ? servicesBundle.services : [];
   const profileMap = Object.fromEntries((profiles || []).map((row) => [row.id, row]));
   const levelList = Array.isArray(levels) ? levels.map((l) => toPublicLevel(l)) : [];
   const mapped = companions
     .filter((row) => profileMap[row.user_id])
-    .map((row) => publicCompanion(row, profileMap[row.user_id], levelList, catalog));
+    .map((row) => publicCompanion(row, profileMap[row.user_id], levelList, catalog, mediaMap[row.id] || {}));
   return attachReviews(mapped);
 }
 

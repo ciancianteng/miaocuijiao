@@ -296,6 +296,24 @@ export default async function handler(req, res) {
     res.setHeader("Allow", "GET, POST");
     return json(res, 405, { ok: false, message: "Method Not Allowed" });
   }
+  const vercelEnv = String(process.env.VERCEL_ENV || "").toLowerCase();
+  if (vercelEnv === "production") {
+    return json(res, 403, { ok: false, message: "正式环境禁止执行种子脚本。" });
+  }
+  const seedKey = String(process.env.MCJ_SEED_KEY || "").trim();
+  // On any Vercel deployment (preview included), require seed key — no anonymous DB writes.
+  if (vercelEnv === "preview" || vercelEnv === "development" || process.env.VERCEL) {
+    if (!seedKey) {
+      return json(res, 403, { ok: false, message: "未配置 MCJ_SEED_KEY，禁止执行种子脚本。" });
+    }
+    const provided = String(req.headers["x-mcj-seed-key"] || req.query?.key || "").trim();
+    if (provided !== seedKey) return json(res, 401, { ok: false, message: "种子密钥无效。" });
+  } else if (seedKey) {
+    const provided = String(req.headers["x-mcj-seed-key"] || req.query?.key || "").trim();
+    if (provided !== seedKey) return json(res, 401, { ok: false, message: "种子密钥无效。" });
+  } else if (String(process.env.NODE_ENV || "").toLowerCase() === "production") {
+    return json(res, 403, { ok: false, message: "正式环境禁止执行种子脚本。" });
+  }
   if (!hasDb()) return json(res, 503, { ok: false, message: "未配置 Supabase" });
   try {
     const companion = await ensureCompanion();

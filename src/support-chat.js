@@ -430,18 +430,44 @@
     });
   }
   function openConversation(payload) {
+    if (state.opening) {
+      return Promise.reject(new Error("正在创建会话，请稍候…"));
+    }
     state.opening = true;
     state.error = "";
+    softUpdate({ keepScroll: true });
+    var bodyPayload = Object.assign({ action: "open" }, payload || {});
+    // Never send empty IDs that confuse the API.
+    if (!bodyPayload.order_id && !bodyPayload.orderId) {
+      delete bodyPayload.order_id;
+      delete bodyPayload.orderId;
+    }
+    if (!bodyPayload.conversation_id && !bodyPayload.conversationId) {
+      delete bodyPayload.conversation_id;
+      delete bodyPayload.conversationId;
+    }
     return fetchJson("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(Object.assign({ action: "open" }, payload || {})),
+      body: JSON.stringify(bodyPayload),
+      _mcjTimeoutMs: 12000,
     }).then(function (body) {
-      applyPayload(body);
+      if (!body || !body.ok || !(body.conversation && body.conversation.id)) {
+        throw new Error((body && body.message) || "创建客服会话失败，请稍后重试。");
+      }
+      state.composerDraft = "";
+      state.mobileDetail = true;
+      applyPayload(body, { keepScroll: false });
+      toast(body.created ? "已创建新的客服会话" : "已进入客服会话");
       return body;
     }).catch(function (err) {
-      state.error = err.message || "创建客服会话失败";
-      toast(state.error);
+      var msg = String((err && err.message) || "创建客服会话失败，请稍后重试。");
+      if (/正在创建会话/.test(msg)) {
+        toast(msg);
+        return Promise.reject(err);
+      }
+      state.error = msg;
+      toast(msg);
       softUpdate({ keepScroll: true });
       throw err;
     }).finally(function () {
@@ -826,12 +852,12 @@
     state.pollTimer = setInterval(function () {
       if (!hasAuthSession() || state.sending || state.opening || document.hidden) return;
       if (!state.conversation || !state.conversation.id) {
-        Promise.all([loadList(), loadOrders()]).then(function () { softUpdate({ keepScroll: true }); }).catch(function () {});
+        loadList().then(function () { softUpdate({ keepScroll: true }); }).catch(function () {});
         return;
       }
-      // Realtime is primary when publication is enabled; 3s poll is reliability backup only.
-      Promise.all([loadList(), loadOrders(), loadThread(state.conversation.id, true)]).catch(function () {});
-    }, 3000);
+      // Realtime is primary; poll only active thread + conversation list (orders load on demand).
+      Promise.all([loadList(), loadThread(state.conversation.id, true)]).catch(function () {});
+    }, 10000);
   }
 
   root.addEventListener('input', function (e) {
@@ -863,34 +889,47 @@
   document.addEventListener('click', function (e) {
     var contact = e.target.closest('[data-contact-service]');
     if (contact) {
+      e.preventDefault();
       if (!hasAuthSession()) {
         location.href = 'index.html?login=1';
         return;
       }
+      if (state.opening || state.creatingGeneral) {
+        toast('正在创建会话，请稍候…');
+        return;
+      }
       state.creatingGeneral = true;
-      openConversation({}).then(startPoll).catch(function () {}).finally(function () {
-        state.creatingGeneral = false;
-        softUpdate({ keepScroll: true });
-      });
+      softUpdate({ keepScroll: true });
+      // Prefer reuse of an active general thread; forceNew when current thread is closed.
+      var needNew = isClosedConversation(state.conversation);
+      openConversation(needNew ? { action: 'reopen', forceNew: true } : { action: 'open' })
+        .then(startPoll)
+        .catch(function () {})
+        .finally(function () {
+          state.creatingGeneral = false;
+          softUpdate({ keepScroll: true });
+        });
       return;
     }
     var reopen = e.target.closest('[data-reopen-chat]');
     if (reopen) {
+      e.preventDefault();
       if (!hasAuthSession()) {
         location.href = 'index.html?login=1';
         return;
       }
+      if (state.opening || state.creatingGeneral) {
+        toast('正在创建会话，请稍候…');
+        return;
+      }
       var cur = state.conversation || {};
-      var oid = cur.orderId || cur.order_id || orderId() || '';
-      state.opening = true;
-      softUpdate({ keepScroll: true });
-      openConversation(oid ? { action: 'reopen', forceNew: true, order_id: oid } : { action: 'reopen', forceNew: true })
+      var oid = String(cur.orderId || cur.order_id || orderId() || '').trim();
+      var payload = oid
+        ? { action: 'reopen', forceNew: true, order_id: oid }
+        : { action: 'reopen', forceNew: true };
+      openConversation(payload)
         .then(startPoll)
-        .catch(function () {})
-        .finally(function () {
-          state.opening = false;
-          softUpdate({ keepScroll: false });
-        });
+        .catch(function () {});
       return;
     }
     var emojiToggle = e.target.closest('[data-toggle-emoji]');
@@ -1141,6 +1180,28 @@
   document.addEventListener('visibilitychange', function () {
     if (!document.hidden && hasAuthSession()) bootstrap();
   });
+
+  function syncKeyboardInset() {
+    try {
+      var vv = window.visualViewport;
+      if (!vv) {
+        document.documentElement.style.setProperty("--support-keyboard-inset", "0px");
+        return;
+      }
+      var inset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+      document.documentElement.style.setProperty("--support-keyboard-inset", inset + "px");
+      if (inset > 40 && state.composerFocused) {
+        var messages = root.querySelector("[data-messages]");
+        if (messages) messages.scrollTop = messages.scrollHeight;
+      }
+    } catch (e) {}
+  }
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener("resize", syncKeyboardInset);
+    window.visualViewport.addEventListener("scroll", syncKeyboardInset);
+  }
+  window.addEventListener("resize", syncKeyboardInset);
+  syncKeyboardInset();
 
   if (window.MCJChatMedia) window.MCJChatMedia.bindLightboxClicks(root);
   paint();

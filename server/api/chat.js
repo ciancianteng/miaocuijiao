@@ -165,9 +165,13 @@ async function getOrCreateConversation(profile, orderId = "", meta = {}) {
     order = orders?.[0] || null;
   }
 
+  // conversations schema: boss_id / companion_id / customer_service_id / order_id / status / conversation_type
+  // Do NOT send customer_id — column does not exist and causes PostgREST 400 on create/reopen.
+  if (!profile?.id) {
+    throw Object.assign(new Error("账号身份无效，无法创建客服会话。请重新登录后再试。"), { status: 401 });
+  }
   const payload = {
     boss_id: profile.id,
-    customer_id: profile.id,
     order_id: orderId || null,
     companion_id: order?.companion_id || null,
     conversation_type: conversationType,
@@ -176,11 +180,35 @@ async function getOrCreateConversation(profile, orderId = "", meta = {}) {
     created_at: nowIso(),
     updated_at: nowIso(),
   };
-  const rows = await supabaseJson(restUrl("conversations"), {
-    method: "POST",
-    headers: serviceHeaders(),
-    body: JSON.stringify(payload),
-  });
+  let rows;
+  try {
+    rows = await supabaseJson(restUrl("conversations"), {
+      method: "POST",
+      headers: serviceHeaders(),
+      body: JSON.stringify(payload),
+    });
+  } catch (err) {
+    const msg = String(err?.message || err || "");
+    // Fallback if conversation_type column missing in an older DB.
+    if (/conversation_type/i.test(msg)) {
+      const legacy = { ...payload };
+      delete legacy.conversation_type;
+      rows = await supabaseJson(restUrl("conversations"), {
+        method: "POST",
+        headers: serviceHeaders(),
+        body: JSON.stringify(legacy),
+      });
+    } else {
+      throw Object.assign(
+        new Error(
+          /customer_id|column/i.test(msg)
+            ? "创建客服会话失败：数据字段不匹配，请稍后重试或联系管理员。"
+            : msg || "创建客服会话失败，请稍后重试。"
+        ),
+        { status: err?.status || 500 }
+      );
+    }
+  }
   const conversation = rows?.[0];
   if (conversation?.id) {
     const tip = order
@@ -434,6 +462,12 @@ export default async function handler(req, res) {
     const profile = await profileFromToken(req);
     const body = req.method === "GET" ? {} : await parseBody(req);
     const action = String(req.method === "GET" ? req.query.action || "list" : body.action || "send").trim();
+    if (/update_order|set_order_status|change_order_status|patch_order|order_status/i.test(action)) {
+      return json(res, 403, { ok: false, message: "聊天室不能修改订单状态，请走订单/客服流程。" });
+    }
+    if (body && (body.order_status || body.orderStatus || body.new_status || body.newStatus) && /order/i.test(action)) {
+      return json(res, 403, { ok: false, message: "聊天室禁止前端直接篡改订单状态。" });
+    }
 
     if (req.method === "POST" && action === "consult_gameplay") {
       const productId = String(body.productId || body.product_id || body.id || "").trim();

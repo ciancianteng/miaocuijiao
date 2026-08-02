@@ -176,11 +176,14 @@
   }
   function applyHomeEntries(entries) {
     ensureCompanionApplyCard();
+    var applySection = document.querySelector("[data-companion-apply-section], .companion-apply-guide");
     var applyButton = document.querySelector("[data-companion-apply-guide]");
     var applyEntry = (entries || []).find(function (entry) { return entry && entry.slug === "companion-apply"; });
+    if (applySection) applySection.hidden = false;
     if (applyButton) {
-      applyButton.hidden = true;
+      applyButton.hidden = false;
       if (applyEntry && applyEntry.href) applyButton.href = applyEntry.href;
+      else applyButton.href = "companion-apply.html";
     }
   }
   function renderHomepageButtons() {
@@ -217,8 +220,12 @@
       rating: item.rating || item.score || "",
       price: priceLabel,
       servicePrice: priceLabel,
-      cover: window.MCJAvatar ? window.MCJAvatar.resolve(item.cover || item.cardImageUrl || item.avatar || "") : (item.cover || item.cardImageUrl || item.avatar || "/default-avatar.png"),
-      avatar: window.MCJAvatar ? window.MCJAvatar.resolve(item.avatar || item.cover || "") : (item.avatar || item.cover || "/default-avatar.png"),
+      cover: window.MCJCompanionMedia
+        ? window.MCJCompanionMedia.resolveCover(item)
+        : (window.MCJAvatar ? window.MCJAvatar.resolve(item.cover || item.cardImageUrl || item.avatar || "") : (item.cover || item.cardImageUrl || item.avatar || "/default-avatar.png")),
+      avatar: window.MCJCompanionMedia
+        ? window.MCJCompanionMedia.resolveAvatar(item)
+        : (window.MCJAvatar ? window.MCJAvatar.resolve(item.avatar || item.cover || "") : (item.avatar || item.cover || "/default-avatar.png")),
       tags: item.tags || item.serviceTags || [],
       certificationStatus: item.verificationStatus || "",
       auditStatus: "approved",

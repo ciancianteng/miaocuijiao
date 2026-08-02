@@ -10,8 +10,12 @@
   }
   var DEFAULT_AVATAR = "/default-avatar.png";
   function avatarUrl(v) {
+    if (window.MCJCompanionMedia && window.MCJCompanionMedia.pickStableMediaUrl) {
+      return window.MCJCompanionMedia.pickStableMediaUrl(v) || DEFAULT_AVATAR;
+    }
     var s = String(v == null ? "" : v).trim();
     if (!s || /meow-cuijiao-brand\.(jpe?g|png|webp)$/i.test(s)) return DEFAULT_AVATAR;
+    if (/^(blob:|data:)/i.test(s) || /\/storage\/v1\/object\/sign\//i.test(s)) return DEFAULT_AVATAR;
     return s;
   }
   function isGarbledName(value) {
@@ -61,7 +65,7 @@
       esc(profileHref(item)) +
       '"><img src="' +
       esc(avatarUrl(item.avatar)) +
-      '" alt="" onerror="this.onerror=null;this.src=\'' +
+      '" alt="" loading="lazy" decoding="async" onerror="this.onerror=null;this.src=\'' +
       DEFAULT_AVATAR +
       '\'"></a>' +
       "<h3>" +
@@ -117,7 +121,7 @@
       esc(profileHref(item)) +
       '"><img class="pop-list-avatar" src="' +
       esc(avatarUrl(item.avatar)) +
-      '" alt="" onerror="this.onerror=null;this.src=\'' +
+      '" alt="" loading="lazy" decoding="async" onerror="this.onerror=null;this.src=\'' +
       DEFAULT_AVATAR +
       '\'"></a>' +
       '<div class="pop-list-main"><strong>' +

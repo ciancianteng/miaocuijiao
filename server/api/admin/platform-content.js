@@ -325,9 +325,10 @@ async function writeLog(req, action, type, itemId, beforeValue, afterValue) {
 }
 
 export default async function handler(req, res) {
-  const role = roleFromRequest(req);
-  if (!ADMIN_ROLES.has(role)) {
-    return json(res, 403, { ok: false, message: "没有平台内容管理权限" });
+  try {
+    await (await import("../_admin-auth.js")).requireAdmin(req, { allowRoles: ADMIN_ROLES });
+  } catch (err) {
+    return json(res, err.status || 403, { ok: false, message: err.message || "没有平台内容管理权限" });
   }
   if (!hasDatabaseConfig()) {
     return json(res, req.method === "GET" ? 200 : 503, {
@@ -378,7 +379,7 @@ export default async function handler(req, res) {
         item.created_by = role;
         item.created_at = new Date().toISOString();
         if (!item.id) item.id = `pc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-        if (item.type === "banners" && item.enabled !== false) {
+        if ((item.type === "banners" || item.type === "player_rules") && item.enabled !== false) {
           item.status = "published";
           item.published = item.draft || {};
           item.version = 1;
@@ -389,8 +390,8 @@ export default async function handler(req, res) {
           const rows = await supabaseFetch("", { method: "POST", body: JSON.stringify(item) });
           const saved = rows?.[0] || item;
           await syncPublicFrontTables(saved);
-          await writeLog(req, item.type === "banners" ? "create_publish" : "create", item.type, saved?.id, null, saved);
-          return json(res, 200, { ok: true, message: item.type === "banners" ? "已保存并同步到前台" : "已保存", item: saved });
+          await writeLog(req, (item.type === "banners" || item.type === "player_rules") ? "create_publish" : "create", item.type, saved?.id, null, saved);
+          return json(res, 200, { ok: true, message: (item.type === "banners" || item.type === "player_rules") ? "已保存并同步到前台" : "已保存", item: saved });
         } catch (error) {
           if (!isMissingTableError(error)) throw error;
           const saved = await upsertAnnouncementItem(item);
@@ -425,7 +426,7 @@ export default async function handler(req, res) {
         };
         const item = normalizeItem(mergedPayload, before.type);
         item.id = before.id || id;
-        if (before.type === "banners" && item.enabled !== false) {
+        if ((before.type === "banners" || before.type === "player_rules") && item.enabled !== false) {
           item.status = "published";
           item.published = item.draft || {};
           item.version = Number(before.version || 0) + 1;
@@ -436,8 +437,8 @@ export default async function handler(req, res) {
           const rows = await supabaseFetch(`?id=eq.${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(item) });
           const saved = rows?.[0] || item;
           await syncPublicFrontTables(saved);
-          await writeLog(req, before.type === "banners" ? "save_publish" : "save_draft", before.type, id, before, saved);
-          return json(res, 200, { ok: true, message: before.type === "banners" ? "已保存并同步到前台" : "已保存", item: saved });
+          await writeLog(req, (before.type === "banners" || before.type === "player_rules") ? "save_publish" : "save_draft", before.type, id, before, saved);
+          return json(res, 200, { ok: true, message: (before.type === "banners" || before.type === "player_rules") ? "已保存并同步到前台" : "已保存", item: saved });
         } catch (error) {
           if (!isMissingTableError(error)) throw error;
           const saved = await upsertAnnouncementItem(item);

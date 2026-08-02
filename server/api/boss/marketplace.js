@@ -2,6 +2,7 @@
   companionDb,
   isMissingRelation,
 } from "../_companion-media-store.js";
+import { resolveCompanionAvatar, resolveCompanionCover } from "../_companion-public-map.js";
 import { debitWallet, getWallet, money as walletMoney, writeAdminLog } from "../_wallet.js";
 import { scheduleRecomputeSoft } from "../_popularity.js";
 import { servicesFromGamePrices, readGamePrices } from "../_game-prices.js";
@@ -219,6 +220,16 @@ export default async function handler(req, res) {
       if (!companionId) return json(res, 400, { ok: false, message: "缺少陪玩 ID" });
       const companion = await loadCompanion(companionId);
       if (!companion) return json(res, 404, { ok: false, message: "陪玩不存在" });
+      let profile = null;
+      try {
+        const profiles = await supabaseJson(
+          rest("profiles", `?id=eq.${encodeURIComponent(companion.user_id)}&select=id,display_name,avatar_url&limit=1`),
+          { headers: serviceHeaders() }
+        );
+        profile = profiles?.[0] || null;
+      } catch {
+        profile = null;
+      }
       const services = await loadCompanionServices(companionId, companion);
       let gifts = [];
       try {
@@ -233,9 +244,10 @@ export default async function handler(req, res) {
         companion: {
           id: companion.user_id,
           publicId: publicId(companion),
-          name: companion.nickname || "",
+          name: companion.nickname || profile?.display_name || "",
           level: companion.level_name || "",
-          avatar: companion.card_image_url || "/default-avatar.png",
+          avatar: resolveCompanionAvatar(profile || {}, companion),
+          cover: resolveCompanionCover(profile || {}, companion),
           price: money(companion.price),
           gamePrices: readGamePrices(companion),
           pricingUnit: companion.pricing_unit || "小时",
@@ -306,8 +318,13 @@ export default async function handler(req, res) {
       if (!service) return json(res, 400, { ok: false, message: "没有可下单服务" });
 
       const quantity = Math.max(0.5, money(body.quantity || 1));
-      const unitPrice = money(body.unitPrice != null ? body.unitPrice : service.price);
+      // Server-authoritative unit price from companion service listing — never trust client unitPrice.
+      const unitPrice = money(service.price);
       if (unitPrice <= 0) return json(res, 400, { ok: false, message: "单价无效" });
+      const clientUnit = money(body.unitPrice != null ? body.unitPrice : body.unit_price);
+      if (clientUnit > 0 && Math.abs(clientUnit - unitPrice) > 0.05) {
+        return json(res, 400, { ok: false, message: `价格已变化，请刷新后重试（单价 ${unitPrice}）` });
+      }
       // Server recompute total — never trust client total alone
       const total = Math.round(unitPrice * quantity * 100) / 100;
       const clientTotal = money(body.totalAmount || body.total_amount);

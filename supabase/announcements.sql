@@ -8,3 +8,5 @@ where published_at is null;
 
 create index if not exists idx_announcements_pinned_published
   on public.announcements(is_active, is_pinned desc, published_at desc);
+
+-- See also: supabase/announcements-classified.sql (category / audience / schedule / scroll / sort)

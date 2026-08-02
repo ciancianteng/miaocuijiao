@@ -2,6 +2,7 @@
 import path from "node:path";
 import { assertBossProfile, identityView } from "./_boss-identity.js";
 import { resolvePlatformCommission } from "./_commission-rates.js";
+import { priceForGame } from "./_game-prices.js";
 import {
   ORDER_STATUS_LABELS,
   allowPreviewTestPay,
@@ -160,14 +161,14 @@ function acceptStatusLabel(row = {}) {
   const s = row.status || "";
   const note = String(row.note || row.cancel_reason || "");
   if (s === "awaiting_payment") return "尚未付款";
-  if (s === "claimed") return "等待陪玩确认";
-  if (s === "confirmed") return "已接单待开始";
-  if (s === "in_progress") return "服务进行中";
-  if (s === "waiting_boss_confirm") return "待老板确认";
+  if (s === "claimed") return "待陪玩确认";
+  if (s === "confirmed") return "待开始";
+  if (s === "in_progress") return "进行中";
+  if (s === "waiting_boss_confirm") return "选择陪玩中";
   if (s === "completed" || s === "reviewed") return "已完成";
   if (s === "pending" && /陪玩确认超时|确认超时/.test(note)) return "陪玩确认超时";
   if (s === "pending" && /无法接单|拒单/.test(note)) return "陪玩无法接单，等待重新安排";
-  if (s === "pending") return row.companion_id ? "待客服安排" : "公开抢单中";
+  if (s === "pending") return row.companion_id ? "待接单" : "待接单";
   if (s === "cancelled") return "已取消";
   return STATUS_TEXT[s] || s || "-";
 }
@@ -192,8 +193,24 @@ function viewOrder(row = {}) {
   const completionPending =
     String(row.note || "").includes("[[COMPLETION_PENDING]]") ||
     String(row.description || "").includes("[[COMPLETION_PENDING]]");
-  let statusText = STATUS_TEXT[status] || STATUS_TEXT[row.status] || row.status || "待付款确认";
+  let statusText = STATUS_TEXT[status] || STATUS_TEXT[row.status] || row.status || "待付款";
   if (status === "in_progress" && completionPending) statusText = "陪玩已完成，待确认";
+  const grabCount = Array.isArray(row.grabs)
+    ? row.grabs.length
+    : Number(row.grabCount != null ? row.grabCount : row.grab_count || 0) || 0;
+  const bossIntent = row.bossIntent || null;
+  const flowStatus =
+    row.flowStatus ||
+    ({
+      awaiting_payment: "draft",
+      pending: "pending_grab",
+      waiting_boss_confirm: "selecting",
+      claimed: "pending_companion_confirm",
+      confirmed: "confirmed",
+      in_progress: "in_progress",
+      completed: "completed",
+      cancelled: "cancelled",
+    }[status] || status);
   return {
     id: row.id,
     orderNo: row.order_no || row.id,
@@ -222,9 +239,13 @@ function viewOrder(row = {}) {
     paidCatFood: money(row.paid_cat_food || (status !== "awaiting_payment" && status !== "cancelled" ? row.total_amount : 0)),
     status,
     dbStatus: row.status || "awaiting_payment",
+    flowStatus,
     statusText,
     completionPending,
     grabs: row.grabs || [],
+    grabCount,
+    bossIntent,
+    preferredCompanionId: bossIntent?.companionId || "",
     paymentStatus: paymentStatusLabel(row),
     acceptStatus: acceptStatusLabel(row),
     bossHint: bossHint(row),
@@ -258,14 +279,21 @@ async function loadOrders(profile, id = "") {
   } catch {
     /* best-effort SLA — never block boss list */
   }
-  // Core columns only (supabase/init.sql). Do not select note/cancel_reason — Preview DB lacks them
-  // and a failed rich select + retry was doubling latency on every boss list load.
-  const select =
+  // Core columns + note when available (boss intent / grab markers).
+  const selectCore =
     "id,order_no,boss_id,companion_id,customer_service_id,order_type,game,title,description,hours,unit_price,total_amount,status,created_at,accepted_at,started_at,completed_at,cancelled_at";
-  const query = id
-    ? `?id=eq.${encodeURIComponent(id)}&boss_id=eq.${encodeURIComponent(profile.id)}&select=${select}&order=created_at.desc&limit=1`
-    : `?boss_id=eq.${encodeURIComponent(profile.id)}&select=${select}&order=created_at.desc&limit=80`;
-  const rows = await supabaseJson(restUrl(TABLE, query), { headers: serviceHeaders() });
+  const selectRich = selectCore + ",note,cancel_reason";
+  const queryOf = (sel) =>
+    id
+      ? `?id=eq.${encodeURIComponent(id)}&boss_id=eq.${encodeURIComponent(profile.id)}&select=${sel}&order=created_at.desc&limit=1`
+      : `?boss_id=eq.${encodeURIComponent(profile.id)}&select=${sel}&order=created_at.desc&limit=80`;
+  let rows;
+  try {
+    rows = await supabaseJson(restUrl(TABLE, queryOf(selectRich)), { headers: serviceHeaders() });
+  } catch (err) {
+    if (!/column|schema cache|PGRST/i.test(String(err?.message || ""))) throw err;
+    rows = await supabaseJson(restUrl(TABLE, queryOf(selectCore)), { headers: serviceHeaders() });
+  }
   const orders = Array.isArray(rows) ? rows : [];
   const companionIds = [...new Set(orders.map((row) => row.companion_id).filter(Boolean))];
   const serviceIds = [...new Set(orders.map((row) => row.customer_service_id).filter(Boolean))];
@@ -302,44 +330,35 @@ async function loadOrders(profile, id = "") {
     if (rev?.order_id && !reviewByOrder[rev.order_id]) reviewByOrder[rev.order_id] = rev;
   }
   const { createOrderGrabHelpers } = await import("./_order-grabs.js");
+  const { enrichGrabCompanions, parseBossIntent, toFlowStatus, isOrderExpired } = await import("./_order-flow.js");
   const grabsApi = createOrderGrabHelpers({ restUrl, supabaseJson, serviceHeaders });
 
+  const grabEligible = orders.filter((row) =>
+    ["waiting_boss_confirm", "pending", "claimed", "confirmed"].includes(row.status)
+  );
+  const grabNoteMap = Object.fromEntries(grabEligible.map((row) => [row.id, row.note || row.description || ""]));
+  const grabMapRaw = await grabsApi.listGrabsBatch(
+    grabEligible.map((row) => row.id),
+    grabNoteMap
+  );
+  const allGrabsFlat = grabEligible.flatMap((row) => grabMapRaw[row.id] || []);
+  const enrichedAll = await enrichGrabCompanions({ restUrl, supabaseJson, serviceHeaders }, allGrabsFlat).catch(() => allGrabsFlat);
+  const enrichedById = Object.fromEntries((enrichedAll || []).map((g) => [String(g.id || g.grabId || `${g.orderId}:${g.companionId}`), g]));
+
   async function grabsFor(row) {
-    if (row.status !== "waiting_boss_confirm" && row.status !== "pending") return [];
+    if (!["waiting_boss_confirm", "pending", "claimed", "confirmed"].includes(row.status)) return [];
     try {
-      let grabs = await grabsApi.listGrabs(row.id, row.note || row.description || "");
-      const gIds = [...new Set(grabs.map((g) => g.companionId).filter(Boolean))];
-      if (!gIds.length) return grabs;
-      const [cps, ps] = await Promise.all([
-        supabaseJson(
-          restUrl("companion_profiles", `?user_id=in.(${gIds.map(encodeURIComponent).join(",")})`),
-          { headers: serviceHeaders() }
-        ).catch(() => []),
-        supabaseJson(
-          restUrl("profiles", `?id=in.(${gIds.map(encodeURIComponent).join(",")})&select=id,display_name,email,avatar_url`),
-          { headers: serviceHeaders() }
-        ).catch(() => []),
-      ]);
-      const cMap = Object.fromEntries((cps || []).map((c) => [c.user_id, c]));
-      const pMap = Object.fromEntries((ps || []).map((p) => [p.id, p]));
+      const grabs = grabMapRaw[row.id] || [];
+      const intent = parseBossIntent(row);
       return grabs.map((g) => {
-        const c = cMap[g.companionId] || {};
-        const p = pMap[g.companionId] || {};
+        const key = String(g.id || g.grabId || `${g.orderId}:${g.companionId}`);
+        const enriched = enrichedById[key] || g;
         return {
-          ...g,
-          companion: {
-            id: g.companionId,
-            nickname: c.nickname || p.display_name || "陪玩",
-            avatarUrl: c.avatar_url || p.avatar_url || "",
-            level: c.level_name || "",
-            onlineStatus: c.online_status || "offline",
-            price: money(c.price),
-            tags: c.tags || "",
-            mainGame: c.game || "",
-            rating: money(c.rating || 0),
-            completedOrders: Number(c.completed_orders || 0) || 0,
-            voiceUrl: c.voice_url || "",
-          },
+          ...enriched,
+          companion: enriched.companion
+            ? { ...enriched.companion, bossPreferred: !!(intent && intent.companionId === enriched.companionId) }
+            : null,
+          bossPreferred: !!(intent && intent.companionId === enriched.companionId),
         };
       });
     } catch {
@@ -351,9 +370,14 @@ async function loadOrders(profile, id = "") {
   const grabLists = await Promise.all(orders.map((row) => grabsFor(row)));
   return orders.map((row, index) => {
     const rev = reviewByOrder[row.id];
+    const grabs = grabLists[index] || [];
+    const intent = parseBossIntent(row);
     return viewOrder({
       ...row,
-      grabs: grabLists[index] || [],
+      grabs,
+      grabCount: grabs.length,
+      bossIntent: intent,
+      flowStatus: toFlowStatus(row.status, { expired: isOrderExpired(row) }),
       companion: companionMap[row.companion_id] || null,
       customerService: serviceMap[row.customer_service_id] || null,
       reviewed: !!rev,
@@ -497,9 +521,6 @@ export default async function handler(req, res) {
       const quantity = Math.max(1, Math.floor(money(order.quantity || 1) || 1));
       const baseHours = Math.max(0.5, money(order.hours || order.duration || 1));
       const hours = Math.round(baseHours * quantity * 100) / 100;
-      const unitPrice = money(order.unit_price || order.unitPrice || order.price || order.budget || 0);
-      let totalAmount = money(order.total_amount || order.totalAmount);
-      if (!(totalAmount > 0)) totalAmount = Math.round(unitPrice * hours * 100) / 100;
       const serviceType = String(order.serviceType || order.service_type || order.serviceName || order.service || "陪玩").trim() || "陪玩";
       const companionName = String(order.companionName || order.companion_name || "").trim();
       const gameId = String(order.gameId || order.game_id || order.gameIdValue || order.game_id_value || "").trim();
@@ -507,19 +528,13 @@ export default async function handler(req, res) {
       const paymentMethod = String(order.paymentMethod || order.payment_method || "catfood").trim().toLowerCase();
       const notes = String(order.notes || order.remark || order.description || "").trim();
       const game = String(order.game || serviceType || "陪玩").trim();
-      if (action === "place_order") {
-        if (!(unitPrice > 0)) return json(res, 400, { ok: false, message: "陪玩单价无效，请刷新后重试。" });
-        if (!gameId) return json(res, 400, { ok: false, message: "请填写游戏 ID。" });
-        if (!(totalAmount > 0)) return json(res, 400, { ok: false, message: "订单金额无效。" });
-      } else if (!order.game || !order.description && !order.requirements && !order.title) {
-        return json(res, 400, { ok: false, message: "请填写游戏和需求说明。" });
-      }
+      let unitPrice = 0;
+      let totalAmount = 0;
 
       if (companionId) {
         let companions = await supabaseJson(restUrl("profiles", `?id=eq.${encodeURIComponent(companionId)}&limit=1`), { headers: serviceHeaders() });
         let companion = Array.isArray(companions) ? companions[0] : null;
         if (!companion || companion.role !== "companion") {
-          // Accept companion_profiles.id as well as profiles.id (user_id).
           try {
             const cpRows = await supabaseJson(
               restUrl("companion_profiles", `?id=eq.${encodeURIComponent(companionId)}&select=id,user_id&limit=1`),
@@ -538,6 +553,40 @@ export default async function handler(req, res) {
         if (!companion || companion.role !== "companion") {
           return json(res, 404, { ok: false, message: "指定陪玩不存在或不可下单。" });
         }
+      }
+
+      if (action === "place_order") {
+        if (!gameId) return json(res, 400, { ok: false, message: "请填写游戏 ID。" });
+        // Server-authoritative unit price from companion_profiles — never trust client unit/total.
+        const cpRows = await supabaseJson(
+          restUrl(
+            "companion_profiles",
+            `?user_id=eq.${encodeURIComponent(companionId)}&select=price,game_prices,tags,game,main_service,service_ids,pricing_unit&limit=1`
+          ),
+          { headers: serviceHeaders() }
+        ).catch(() => []);
+        const cp = Array.isArray(cpRows) ? cpRows[0] : null;
+        const serviceId = String(order.serviceId || order.service_id || "").trim();
+        unitPrice = money(priceForGame(cp || {}, game, serviceId));
+        if (!(unitPrice > 0)) unitPrice = money(cp?.price);
+        if (!(unitPrice > 0)) return json(res, 400, { ok: false, message: "陪玩单价无效，请刷新后重试。" });
+        totalAmount = Math.round(unitPrice * hours * 100) / 100;
+        const clientUnit = money(order.unit_price || order.unitPrice || order.price || order.budget || 0);
+        const clientTotal = money(order.total_amount || order.totalAmount);
+        if (clientUnit > 0 && Math.abs(clientUnit - unitPrice) > 0.05) {
+          return json(res, 400, { ok: false, message: `价格已变化，请刷新后重试（单价 ${unitPrice}）` });
+        }
+        if (clientTotal > 0 && Math.abs(clientTotal - totalAmount) > 0.05) {
+          return json(res, 400, { ok: false, message: `价格已变化，请刷新后重试（应付 ${totalAmount}）` });
+        }
+        if (!(totalAmount > 0)) return json(res, 400, { ok: false, message: "订单金额无效。" });
+      } else {
+        if (!order.game || (!order.description && !order.requirements && !order.title)) {
+          return json(res, 400, { ok: false, message: "请填写游戏和需求说明。" });
+        }
+        unitPrice = money(order.unit_price || order.unitPrice || order.price || order.budget || 0);
+        totalAmount = money(order.total_amount || order.totalAmount);
+        if (!(totalAmount > 0)) totalAmount = Math.round(unitPrice * hours * 100) / 100;
       }
 
       const useWallet = action === "place_order" && isWalletMethod(paymentMethod);
@@ -730,6 +779,12 @@ export default async function handler(req, res) {
       } catch (_) {
         /* chat soft-fail — status already persisted */
       }
+      let reward = null;
+      try {
+        reward = await (await import("./_cs-dock-rewards.js")).trySettleDockReward(saved, {
+          source: usedTestPay ? "boss_test_pay" : "boss_pay",
+        });
+      } catch (_) {}
       return json(res, 200, {
         ok: true,
         testPay: usedTestPay,
@@ -742,6 +797,7 @@ export default async function handler(req, res) {
             : "支付成功，订单已进入待客服安排。",
         order: viewOrder(saved),
         allowTestPay: previewAllowed,
+        reward,
       });
     }
     if (action === "list_grabs" || action === "grab_applicants") {
@@ -791,74 +847,98 @@ export default async function handler(req, res) {
         order: viewOrder(before),
       });
     }
-    if (action === "confirm_companion" || action === "select_grabber") {
+    if (action === "confirm_companion" || action === "select_grabber" || action === "set_boss_intent") {
       const beforeRows = await supabaseJson(restUrl(TABLE, `?id=eq.${encodeURIComponent(id)}&boss_id=eq.${encodeURIComponent(profile.id)}&limit=1`), { headers: serviceHeaders() });
       const before = Array.isArray(beforeRows) ? beforeRows[0] : null;
       if (!before) return json(res, 404, { ok: false, message: "订单不存在。" });
       if (!["waiting_boss_confirm", "pending"].includes(before.status)) {
-        return json(res, 409, { ok: false, message: "当前订单状态不能选择陪玩。" });
+        return json(res, 409, { ok: false, message: "当前订单状态不能选择意向陪玩。" });
       }
       const { createOrderGrabHelpers } = await import("./_order-grabs.js");
+      const {
+        enrichGrabCompanions,
+        parseBossIntent,
+        withBossIntent,
+        patchOrderNoteField,
+        toFlowStatus,
+      } = await import("./_order-flow.js");
       const grabsApi = createOrderGrabHelpers({ restUrl, supabaseJson, serviceHeaders });
       const grabs = await grabsApi.listGrabs(before.id, before.note || before.description || "");
-      // Boss must explicitly pick — never auto-assign first grabber / bound companion.
+      // Boss intent only — never auto-lock companion; CS must confirm.
       let selectedId = String(body.companion_id || body.companionId || body.grab_companion_id || "").trim();
       const grabId = String(body.grab_id || body.grabId || "").trim();
       if (!selectedId && grabId) {
         selectedId = (grabs.find((g) => g.grabId === grabId || g.id === grabId) || {}).companionId || "";
       }
       if (!selectedId) {
-        return json(res, 400, { ok: false, message: "请手动选择一位抢单陪玩，系统不会自动分配。" });
+        return json(res, 400, { ok: false, message: "请手动选择一位抢单陪玩作为意向。" });
       }
       const pendingOk = grabs.some((g) => g.companionId === selectedId && g.status === "pending_customer_selection");
-      if (grabs.length) {
-        if (!pendingOk) return json(res, 409, { ok: false, message: "该陪玩未抢单或状态无效，请从抢单列表中选择。" });
-      } else if (before.companion_id) {
-        // Legacy single-bind waiting confirm: only that companion can be chosen, still requires explicit id.
-        if (selectedId !== before.companion_id) {
-          return json(res, 409, { ok: false, message: "请选择当前申请接单的陪玩。" });
-        }
-      } else {
+      if (!pendingOk && grabs.length) {
+        return json(res, 409, { ok: false, message: "该陪玩未抢单或状态无效，请从抢单列表中选择。" });
+      }
+      if (!grabs.length) {
         return json(res, 409, { ok: false, message: "暂无陪玩抢单，请等待陪玩申请后再选择。" });
       }
-      await grabsApi.finalizeGrabSelection(before, selectedId);
-      // Only now bind companion and enter 待开始 (confirmed / accepted_waiting_start).
-      const patch = { status: "confirmed", companion_id: selectedId, accepted_at: before.accepted_at || nowIso() };
-      const rows = await supabaseJson(
-        restUrl(TABLE, `?id=eq.${encodeURIComponent(id)}&boss_id=eq.${encodeURIComponent(profile.id)}`),
-        { method: "PATCH", headers: serviceHeaders(), body: JSON.stringify(patch) }
-      );
-      const saved = rows?.[0] || { ...before, ...patch };
-      const cpRows = await supabaseJson(
-        restUrl("companion_profiles", `?user_id=eq.${encodeURIComponent(selectedId)}&limit=1`),
-        { headers: serviceHeaders() }
-      ).catch(() => []);
-      const pRows = await supabaseJson(
-        restUrl("profiles", `?id=eq.${encodeURIComponent(selectedId)}&limit=1`),
-        { headers: serviceHeaders() }
-      ).catch(() => []);
-      const pickName = cpRows?.[0]?.nickname || pRows?.[0]?.display_name || "陪玩";
-      await writeOrderStatusLog(
-        { restUrl, supabaseJson, serviceHeaders },
-        {
-          orderId: id,
-          fromStatus: before.status,
-          toStatus: "confirmed",
-          operatorRole: "boss",
-          operatorId: profile.id,
-          note: `boss selected companion ${selectedId}`,
-        }
-      );
-      await addSystemMessage(saved, profile.id, `老板已选择陪玩 ${pickName}，等待开始服务。`);
-      const notSelected = grabs.filter((g) => g.companionId !== selectedId);
-      if (notSelected.length) {
-        await addSystemMessage(saved, profile.id, "该订单已由其他陪玩接单。");
+      // Keep selecting: pending → waiting_boss_confirm if needed; do NOT bind companion_id.
+      let order = before;
+      if (before.status === "pending") {
+        const rows = await supabaseJson(
+          restUrl(TABLE, `?id=eq.${encodeURIComponent(id)}&boss_id=eq.${encodeURIComponent(profile.id)}`),
+          {
+            method: "PATCH",
+            headers: serviceHeaders(),
+            body: JSON.stringify({ status: "waiting_boss_confirm" }),
+          }
+        );
+        order = rows?.[0] || { ...before, status: "waiting_boss_confirm" };
+        await writeOrderStatusLog(
+          { restUrl, supabaseJson, serviceHeaders },
+          {
+            orderId: id,
+            fromStatus: before.status,
+            toStatus: "waiting_boss_confirm",
+            operatorRole: "boss",
+            operatorId: profile.id,
+            note: "boss intent selection opened selecting state",
+          }
+        );
       }
-      await addSystemMessage(saved, profile.id, "老板已选择你，请准备开始订单。");
+      const enriched = await enrichGrabCompanions({ restUrl, supabaseJson, serviceHeaders }, grabs);
+      const pick = enriched.find((g) => g.companionId === selectedId);
+      const pickName = pick?.companion?.nickname || "陪玩";
+      order = await patchOrderNoteField({ restUrl, supabaseJson, serviceHeaders }, id, (text) =>
+        withBossIntent(text, {
+          companion_id: selectedId,
+          companion_name: pickName,
+          at: nowIso(),
+          by: "boss",
+        })
+      );
+      await addSystemMessage(
+        order,
+        profile.id,
+        `老板选择了陪玩 ${pickName}（意向）。请客服确认指定后，订单才会锁定。`
+      );
+      const intent = parseBossIntent(order);
+      const marked = enriched.map((g) => ({
+        ...g,
+        bossPreferred: g.companionId === selectedId,
+        companion: g.companion ? { ...g.companion, bossPreferred: g.companionId === selectedId } : null,
+      }));
       return json(res, 200, {
         ok: true,
-        message: `已选择陪玩 ${pickName}，等待开始服务。`,
-        order: viewOrder(saved),
+        message: `已提交意向：${pickName}。等待客服确认指定。`,
+        intentOnly: true,
+        order: viewOrder({
+          ...order,
+          status: order.status || "waiting_boss_confirm",
+          companion_id: null,
+          grabs: marked,
+          grabCount: marked.length,
+          bossIntent: intent,
+          flowStatus: toFlowStatus(order.status || "waiting_boss_confirm"),
+        }),
       });
     }
     if (action === "reject_companion") {
@@ -871,6 +951,17 @@ export default async function handler(req, res) {
       if (!before) return json(res, 404, { ok: false, message: "订单不存在。" });
       if (before.status !== "in_progress") {
         return json(res, 409, { ok: false, message: "当前订单不能确认完成。" });
+      }
+      if (/refunded|refund_requested|cancelled/.test(String(before.status || ""))) {
+        return json(res, 409, { ok: false, message: "订单已退款或取消，不能结算。" });
+      }
+      if (String(before.settlement_status || "") === "settled") {
+        return json(res, 200, {
+          ok: true,
+          message: "订单已结算，无需重复结算。",
+          order: viewOrder(before),
+          duplicate: true,
+        });
       }
       const { createOrderGrabHelpers } = await import("./_order-grabs.js");
       const grabsApi = createOrderGrabHelpers({ restUrl, supabaseJson, serviceHeaders });
@@ -947,10 +1038,28 @@ export default async function handler(req, res) {
           }
         } catch (_) {}
       }
-      return json(res, 200, { ok: true, message: "已确认完成，订单已完成。", order: viewOrder(saved) });
+      let reward = null;
+      try {
+        reward = await (await import("./_cs-dock-rewards.js")).trySettleDockReward(
+          { ...saved, status: "completed" },
+          { source: "boss_confirm_complete" }
+        );
+      } catch (_) {}
+      return json(res, 200, {
+        ok: true,
+        message: "已确认完成，订单已完成。",
+        order: viewOrder(saved),
+        reward,
+      });
     }
     if (action === "cancel_order") {
       const order = await patchOwnedOrder(profile, id, ["awaiting_payment", "pending", "claimed", "waiting_boss_confirm", "confirmed"], { status: "cancelled", cancelled_at: nowIso() }, "老板已取消订单。");
+      try {
+        await (await import("./_cs-dock-rewards.js")).clawbackOrCancelReward(
+          { id: order?.id || id, status: "cancelled" },
+          { reason: "老板取消订单", mode: "cancel" }
+        );
+      } catch (_) {}
       return json(res, 200, { ok: true, message: "订单已取消。", order });
     }
     if (action === "request_refund") {

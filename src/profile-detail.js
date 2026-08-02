@@ -116,8 +116,19 @@
     }
     state.companion = c;
     var image =
-      c.cardImageUrl || c.cover || c.avatar || "/default-avatar.png";
-    if (!String(image).trim() || /meow-cuijiao-brand\.(jpe?g|png|webp)$/i.test(String(image))) {
+      (window.MCJCompanionMedia && window.MCJCompanionMedia.resolveCover
+        ? window.MCJCompanionMedia.resolveCover(c)
+        : "") ||
+      c.cardImageUrl ||
+      c.cover ||
+      c.avatar ||
+      "/default-avatar.png";
+    if (
+      !String(image).trim() ||
+      /meow-cuijiao-brand\.(jpe?g|png|webp)$/i.test(String(image)) ||
+      /^(blob:|data:)/i.test(String(image)) ||
+      /\/storage\/v1\/object\/sign\//i.test(String(image))
+    ) {
       image = "/default-avatar.png";
     }
     var hasVoice = !!(c.voiceUrl && String(c.voiceUrl).trim());

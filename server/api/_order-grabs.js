@@ -97,10 +97,55 @@ export function createOrderGrabHelpers({ restUrl, supabaseJson, serviceHeaders }
 
   async function listGrabsFromTable(orderId) {
     const rows = await supabaseJson(
-      restUrl("order_grabs", `?order_id=eq.${encodeURIComponent(orderId)}&order=grabbed_at.asc`),
+      restUrl("order_grabs", `?order_id=eq.${encodeURIComponent(orderId)}&order=grabbed_at.asc&limit=80`),
       { headers: serviceHeaders() }
     );
     return Array.isArray(rows) ? rows : [];
+  }
+
+  /** Batch load grabs for many orders in one (or few chunked) REST calls. */
+  async function listGrabsBatch(orderIds = [], orderNoteById = {}) {
+    const ids = [...new Set((orderIds || []).map(String).filter(Boolean))];
+    const byOrder = Object.fromEntries(ids.map((id) => [id, []]));
+    if (!ids.length) return byOrder;
+    const chunkSize = 40;
+    try {
+      for (let i = 0; i < ids.length; i += chunkSize) {
+        const chunk = ids.slice(i, i + chunkSize);
+        const rows = await supabaseJson(
+          restUrl(
+            "order_grabs",
+            `?order_id=in.(${chunk.map(encodeURIComponent).join(",")})&order=grabbed_at.asc&limit=800`
+          ),
+          { headers: serviceHeaders() }
+        );
+        (Array.isArray(rows) ? rows : []).forEach((r) => {
+          const oid = String(r.order_id || "");
+          if (!byOrder[oid]) byOrder[oid] = [];
+          byOrder[oid].push({
+            id: r.id,
+            grabId: r.id,
+            orderId: r.order_id,
+            companionId: r.companion_id,
+            status: r.status || "pending_customer_selection",
+            grabbedAt: r.grabbed_at || "",
+          });
+        });
+      }
+    } catch {
+      /* fall through to per-order / note blob */
+    }
+    await Promise.all(
+      ids.map(async (id) => {
+        if (byOrder[id] && byOrder[id].length) return;
+        try {
+          byOrder[id] = await listGrabs(id, orderNoteById[id] || "");
+        } catch {
+          byOrder[id] = [];
+        }
+      })
+    );
+    return byOrder;
   }
 
   async function listGrabs(orderId, orderNote = "") {
@@ -206,19 +251,33 @@ export function createOrderGrabHelpers({ restUrl, supabaseJson, serviceHeaders }
 
   async function finalizeGrabSelection(order, selectedCompanionId) {
     const orderId = order.id;
+    const stamp = nowIso();
     let usedTable = false;
     try {
       const all = await listGrabsFromTable(orderId);
       if (all.length) {
         usedTable = true;
         for (const row of all) {
-          const next = row.companion_id === selectedCompanionId ? "selected" : "not_selected";
+          const selected = row.companion_id === selectedCompanionId;
+          const next = selected ? "selected" : "not_selected";
           if (row.status !== next) {
-            await supabaseJson(restUrl("order_grabs", `?id=eq.${encodeURIComponent(row.id)}`), {
-              method: "PATCH",
-              headers: serviceHeaders(),
-              body: JSON.stringify({ status: next }),
-            });
+            const body = { status: next };
+            // Soft columns — ignore if migration not applied.
+            if (selected) body.selected_at = stamp;
+            else body.rejected_at = stamp;
+            try {
+              await supabaseJson(restUrl("order_grabs", `?id=eq.${encodeURIComponent(row.id)}`), {
+                method: "PATCH",
+                headers: serviceHeaders(),
+                body: JSON.stringify(body),
+              });
+            } catch {
+              await supabaseJson(restUrl("order_grabs", `?id=eq.${encodeURIComponent(row.id)}`), {
+                method: "PATCH",
+                headers: serviceHeaders(),
+                body: JSON.stringify({ status: next }),
+              });
+            }
           }
         }
       }
@@ -231,10 +290,17 @@ export function createOrderGrabHelpers({ restUrl, supabaseJson, serviceHeaders }
       const nextGrabs = grabs.map((g) => ({
         ...g,
         status: g.companion_id === selectedCompanionId ? "selected" : "not_selected",
+        selected_at: g.companion_id === selectedCompanionId ? stamp : g.selected_at || null,
+        rejected_at: g.companion_id === selectedCompanionId ? null : stamp,
       }));
       await patchOrderText(orderId, serializeGrabNote(rest, nextGrabs));
     }
     return listGrabs(orderId, orderBlobSource(order));
+  }
+
+  async function countGrabs(orderId, orderNote = "") {
+    const grabs = await listGrabs(orderId, orderNote);
+    return grabs.length;
   }
 
   async function listMyPendingGrabs(companionId) {
@@ -307,8 +373,10 @@ export function createOrderGrabHelpers({ restUrl, supabaseJson, serviceHeaders }
 
   return {
     listGrabs,
+    listGrabsBatch,
     insertGrab,
     finalizeGrabSelection,
+    countGrabs,
     listMyPendingGrabs,
     hasCompletionPending,
     withCompletionPending,

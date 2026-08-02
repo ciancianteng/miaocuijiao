@@ -14,6 +14,8 @@
     { "source": "/payment-confirm", "destination": "/payment-confirm.html" },
     { "source": "/support", "destination": "/support.html" },
     { "source": "/support/", "destination": "/support.html" },
+    { "source": "/club-levels", "destination": "/club-levels.html" },
+    { "source": "/club-levels/", "destination": "/club-levels.html" },
     { "source": "/companion/login", "destination": "/companion/login/index.html" },
     { "source": "/companion", "destination": "/companion/index.html" },
     { "source": "/companion/:path*", "destination": "/companion/index.html" },

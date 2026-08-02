@@ -21,18 +21,17 @@ const ORDER_STATUS_TEXT = {
   after_sale: "售后",
 };
 
+const BOSS_ADMIN_ROLES = new Set(["admin", "super_admin", "finance_admin"]);
+
 function json(res, status, data) {
   res.statusCode = status;
   res.setHeader("Content-Type", "application/json; charset=utf-8");
   res.end(JSON.stringify(data));
 }
 
-function roleFrom(req) {
-  return req.headers["x-mcj-admin-role"] || req.headers["x-user-role"] || "";
-}
-
-function canManageBosses(req) {
-  return roleFrom(req) === "super_admin" || roleFrom(req) === "finance_admin" || roleFrom(req) === "admin";
+async function assertBossAdmin(req) {
+  const { requireAdmin } = await import("../_admin-auth.js");
+  return requireAdmin(req, { allowRoles: BOSS_ADMIN_ROLES });
 }
 
 function validateBossId(value) {
@@ -466,8 +465,10 @@ async function parseBody(req) {
 }
 
 export default async function handler(req, res) {
-  if (!canManageBosses(req)) {
-    return json(res, 403, { ok: false, message: "没有老板管理权限" });
+  try {
+    await assertBossAdmin(req);
+  } catch (err) {
+    return json(res, err.status || 403, { ok: false, message: err.message || "没有老板管理权限" });
   }
 
   const missing = REQUIRED_ENV.filter((key) => !process.env[key]);

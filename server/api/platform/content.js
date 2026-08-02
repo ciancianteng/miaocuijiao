@@ -48,31 +48,100 @@ function bannerItem(row) {
 }
 function announcementItem(row) {
   const title = stripMcjMarker(row.title || "");
+  const category = String(row.category || "").trim().toLowerCase() === "companion" ? "companion" : "home";
+  let audience = String(row.audience || "").trim().toLowerCase();
+  if (audience === "homepage" || audience === "index") audience = "home";
+  if (audience === "cs" || audience === "service") audience = "customer_service";
+  if (audience === "player") audience = "companion";
+  if (!audience) audience = category === "companion" ? "companion" : "home";
+  const kind = String(row.kind || "normal").toLowerCase() === "forced" ? "forced" : "normal";
   return {
     id: row.id,
     title: title,
     content: row.content || "",
     text: row.content || title || "",
-    sort: row.sort_order || 100,
+    category,
+    audience,
+    kind,
+    contentVersion: Number(row.content_version || 1) || 1,
+    content_version: Number(row.content_version || 1) || 1,
+    requiresAck: kind === "forced" || row.requires_ack === true,
+    requires_ack: kind === "forced" || row.requires_ack === true,
+    startAt: row.start_at || "",
+    endAt: row.end_at || "",
+    start_at: row.start_at || "",
+    end_at: row.end_at || "",
+    scroll: row.is_scrolling !== false,
+    is_scrolling: row.is_scrolling !== false,
+    sort: row.sort_order == null ? 100 : Number(row.sort_order),
+    sort_order: row.sort_order == null ? 100 : Number(row.sort_order),
     enabled: row.is_active !== false,
     pinned: row.is_pinned === true,
     is_pinned: row.is_pinned === true,
     publishedAt: row.published_at || row.created_at || "",
     published_at: row.published_at || row.created_at || "",
+    updatedAt: row.updated_at || "",
     created_at: row.created_at || "",
     published: true
   };
 }
-async function loadAnnouncements() {
-  try {
-    return (await rows("announcements", "?is_active=eq.true&order=is_pinned.desc,published_at.desc.nullslast,created_at.desc&limit=50"))
-      .filter((row) => !String(row.title || "").includes("[MCJ_GP]") && !String(row.title || "").startsWith("[MCJ_PC]"))
-      .map(announcementItem);
-  } catch {
-    return (await rows("announcements", "?is_active=eq.true&order=created_at.desc&limit=50"))
-      .filter((row) => !String(row.title || "").includes("[MCJ_GP]") && !String(row.title || "").startsWith("[MCJ_PC]"))
-      .map(announcementItem);
+function inAnnouncementSchedule(row, now = Date.now()) {
+  const start = row.start_at || row.startAt;
+  const end = row.end_at || row.endAt;
+  if (start) {
+    const t = Date.parse(start);
+    if (Number.isFinite(t) && now < t) return false;
   }
+  if (end) {
+    const t = Date.parse(end);
+    if (Number.isFinite(t) && now > t) return false;
+  }
+  return true;
+}
+function matchesAnnouncementAudience(item, audience) {
+  const want = String(audience || "").trim().toLowerCase();
+  if (!want || want === "all") return true;
+  const itemAudience = String(item.audience || "").toLowerCase();
+  const category = String(item.category || "").toLowerCase();
+  if (itemAudience === "all") return true;
+  if (want === "home" || want === "homepage" || want === "boss") {
+    // Homepage / boss: home category, or audience home/boss/all; legacy empty = home
+    if (category === "companion" && itemAudience !== "all" && itemAudience !== "home" && itemAudience !== "boss") return false;
+    if (itemAudience === "companion" || itemAudience === "customer_service") return false;
+    return category !== "companion" || itemAudience === "home" || itemAudience === "boss" || itemAudience === "all" || !itemAudience;
+  }
+  if (want === "companion" || want === "player") {
+    return category === "companion" || itemAudience === "companion" || itemAudience === "all";
+  }
+  if (want === "customer_service" || want === "cs") {
+    return itemAudience === "customer_service" || itemAudience === "all";
+  }
+  return itemAudience === want || category === want;
+}
+async function loadAnnouncements(audience) {
+  const now = Date.now();
+  let list = [];
+  try {
+    list = await rows(
+      "announcements",
+      "?is_active=eq.true&order=is_pinned.desc,sort_order.asc.nullslast,published_at.desc.nullslast,created_at.desc&limit=80"
+    );
+  } catch {
+    try {
+      list = await rows("announcements", "?is_active=eq.true&order=is_pinned.desc,published_at.desc.nullslast,created_at.desc&limit=80");
+    } catch {
+      list = await rows("announcements", "?is_active=eq.true&order=created_at.desc&limit=80");
+    }
+  }
+  return list
+    .filter((row) => !String(row.title || "").includes("[MCJ_GP]") && !String(row.title || "").startsWith("[MCJ_PC]"))
+    .filter((row) => inAnnouncementSchedule(row, now))
+    .map(announcementItem)
+    .filter((item) => {
+      const blob = `${item?.title || ""} ${item?.content || ""} ${item?.body || ""}`;
+      return !blob.includes("[MCJ_CS_DOCK_REWARD_SETTINGS]");
+    })
+    .filter((item) => matchesAnnouncementAudience(item, audience));
 }
 function serviceTaxonomyItem(service) {
   return {
@@ -132,6 +201,96 @@ function teamLobbyItem(row = {}) {
     }
   };
 }
+function playerRuleItem(row = {}) {
+  const draft = row.draft && typeof row.draft === "object" ? row.draft : {};
+  const published = row.published && typeof row.published === "object" ? row.published : {};
+  const data = { ...published, ...draft };
+  const enabled = row.enabled !== false && String(row.status || "published") !== "disabled" && String(row.status || "") !== "unpublished";
+  const body = String(data.body || data.content || "").trim();
+  return {
+    id: row.id,
+    type: "player_rules",
+    title: data.title || row.title || "陪玩制度",
+    status: row.status || (enabled ? "published" : "draft"),
+    enabled,
+    sort: Number(row.sort ?? data.sort ?? 100),
+    updated_at: row.updated_at || row.published_at || "",
+    published_at: row.published_at || row.updated_at || "",
+    draft: {
+      title: data.title || row.title || "陪玩制度",
+      body,
+      content: body,
+      subtitle: data.subtitle || "",
+      versionNote: data.versionNote || data.version || "",
+      version: data.version || data.versionNote || "",
+      notes: data.notes || "",
+      penaltyRules: data.penaltyRules || "",
+      depositRules: data.depositRules || "",
+      sort: Number(data.sort ?? row.sort ?? 100),
+    },
+    published: {
+      title: data.title || row.title || "陪玩制度",
+      body,
+      content: body,
+      subtitle: data.subtitle || "",
+      versionNote: data.versionNote || data.version || "",
+      version: data.version || data.versionNote || "",
+      notes: data.notes || "",
+      penaltyRules: data.penaltyRules || "",
+      depositRules: data.depositRules || "",
+      sort: Number(data.sort ?? row.sort ?? 100),
+    },
+    body,
+    content: body,
+    versionNote: data.versionNote || data.version || "",
+    notes: data.notes || "",
+    penaltyRules: data.penaltyRules || "",
+    depositRules: data.depositRules || "",
+  };
+}
+
+async function loadPlayerRules() {
+  try {
+    const list = await rows(
+      "platform_content_items",
+      "?type=eq.player_rules&order=sort.desc,updated_at.desc&limit=20"
+    );
+    return list
+      .map(playerRuleItem)
+      .filter((item) => {
+        const st = String(item.status || "published").toLowerCase();
+        const published = st === "published" || st === "已发布" || st === "";
+        return item.enabled !== false && !!item.body && published;
+      });
+  } catch {
+    /* fall through to announcements stub storage */
+  }
+  try {
+    const list = await rows("announcements", "?order=updated_at.desc&limit=200");
+    return list
+      .filter((row) => String(row.title || "").startsWith("[MCJ_PC]player_rules:"))
+      .map((row) => {
+        try {
+          const parsed = JSON.parse(row.content || "{}");
+          if (!parsed || parsed.type !== "player_rules") return null;
+          return playerRuleItem({
+            ...parsed,
+            id: parsed.id || row.id,
+            updated_at: row.updated_at || parsed.updated_at || "",
+            enabled: row.is_active !== false && parsed.enabled !== false,
+            status: parsed.status || (row.is_active === false ? "disabled" : "published"),
+          });
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean)
+      .filter((item) => item.enabled !== false && item.body);
+  } catch {
+    return [];
+  }
+}
+
 async function loadTeamLobbyChannels() {
   try {
     const list = await rows(
@@ -189,6 +348,9 @@ export default async function handler(req, res) {
     const needLevels = types.includes("companion_levels");
     const needTags = types.includes("companion_tags");
     const needTeamLobby = types.includes("team_lobby_channels");
+    const needPlayerRules = types.includes("player_rules");
+    const needWorkRules = types.includes("companion_work_rules");
+    const needClubGuide = types.includes("club_level_guide");
 
     if (hasDatabaseConfig()) {
       if (needBanners) {
@@ -196,12 +358,35 @@ export default async function handler(req, res) {
           .filter((row) => !/__team_lobby__/i.test(String(row.subtitle || "")))
           .map(bannerItem);
       }
-      if (needAnnouncements) byType.announcements = await loadAnnouncements();
+      if (needAnnouncements) {
+        const audience = String(req.query.audience || req.query.target || "").trim();
+        byType.announcements = await loadAnnouncements(audience || "home");
+      }
       if (needTeamLobby) byType.team_lobby_channels = await loadTeamLobbyChannels();
+      if (needPlayerRules) byType.player_rules = await loadPlayerRules();
+      if (needWorkRules) {
+        try {
+          const rulesApi = await import("../_companion-work-rules.js");
+          byType.companion_work_rules = await rulesApi.listWorkRules({ includeDisabled: false });
+        } catch {
+          byType.companion_work_rules = [];
+        }
+      }
+      if (needClubGuide) {
+        try {
+          const rulesApi = await import("../_companion-work-rules.js");
+          byType.club_level_guide = [await rulesApi.loadClubLevelGuide()];
+        } catch {
+          byType.club_level_guide = [];
+        }
+      }
     } else {
       if (needBanners) byType.banners = [];
       if (needAnnouncements) byType.announcements = [];
       if (needTeamLobby) byType.team_lobby_channels = [];
+      if (needPlayerRules) byType.player_rules = [];
+      if (needWorkRules) byType.companion_work_rules = [];
+      if (needClubGuide) byType.club_level_guide = [];
     }
 
     if (needServices) {

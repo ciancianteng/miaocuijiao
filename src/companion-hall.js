@@ -11,9 +11,19 @@
   }
   var DEFAULT_AVATAR = "/default-avatar.png";
   function avatarUrl(value) {
+    if (window.MCJCompanionMedia && window.MCJCompanionMedia.pickStableMediaUrl) {
+      return window.MCJCompanionMedia.pickStableMediaUrl(value) || DEFAULT_AVATAR;
+    }
     var src = String(value || "").trim();
     if (!src || /meow-cuijiao-brand\.(jpe?g|png|webp)$/i.test(src)) return DEFAULT_AVATAR;
+    if (/^(blob:|data:)/i.test(src) || /\/storage\/v1\/object\/sign\//i.test(src)) return DEFAULT_AVATAR;
     return src;
+  }
+  function cardImage(item) {
+    if (window.MCJCompanionMedia && window.MCJCompanionMedia.resolveCover) {
+      return window.MCJCompanionMedia.resolveCover(item);
+    }
+    return avatarUrl(item && (item.cover || item.cardImageUrl || item.avatar || item.image));
   }
   function priceNumber(value) {
     if (window.MCJCompanionLevels) return window.MCJCompanionLevels.priceNumber(value);
@@ -120,7 +130,9 @@
             : [],
         status: normalizeStatus(normalized.availabilityStatus || normalized.availabilityText || normalized.status || normalized.onlineStatus),
         publicId: normalized.publicId || "",
-        image: avatarUrl(normalized.cover || normalized.cardCover || normalized.avatar || normalized.image),
+        avatar: avatarUrl(normalized.avatar || normalized.cover || normalized.image),
+        cover: cardImage(normalized),
+        image: cardImage(normalized),
         tags: Array.isArray(normalized.tags) ? normalized.tags : String(normalized.tags || normalized.serviceTags || "").split(/[,，、\s]+/).filter(Boolean),
         desc: normalized.desc || normalized.description || ""
       };
@@ -254,7 +266,7 @@
     var badgeClass = statusBadgeClass(item.status);
     var publicId = item.publicId || item.id || "未生成";
     return '<article class="card player-card" data-player data-level-id="' + esc(item.levelId || "") + '" data-companion-level="' + esc(item.levelId || "") + '" data-name="' + esc(item.name) + '" data-game="' + esc(item.game) + '" data-tags="' + esc(item.tags.join(",")) + '" data-price="' + esc(item.priceValue) + '" data-online="' + esc(item.status) + '" data-score="' + esc(item.rating) + '" data-gender="' + esc(item.gender) + '">' +
-      '<div class="companion-card-media"><img src="' + esc(item.image) + '" alt="' + esc(item.name) + '" onerror="this.onerror=null;this.src=\'' + DEFAULT_AVATAR + '\'"><span class="companion-online-badge' + badgeClass + '">' + esc(item.status) + '</span></div>' +
+      '<div class="companion-card-media"><img src="' + esc(item.image) + '" alt="' + esc(item.name) + '" loading="lazy" decoding="async" onerror="this.onerror=null;this.src=\'' + DEFAULT_AVATAR + '\'"><span class="companion-online-badge' + badgeClass + '">' + esc(item.status) + '</span></div>' +
       '<div class="companion-card-body">' +
         '<div class="row companion-card-head"><h3>' + esc(item.name) + '</h3><span class="price companion-price">' + esc(item.price) + '</span></div>' +
         '<p class="muted companion-id" style="display:block!important;opacity:.7;font-size:12px;margin:4px 0 0">陪玩 ID：' + esc(publicId) + '</p>' +

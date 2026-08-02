@@ -27,7 +27,7 @@
   }
 
   function target() {
-    return document.getElementById(TARGET_ID);
+    return document.getElementById("companionLevelSettingsHub") || document.getElementById("companionLevelSettings");
   }
 
   function normalize(row, index) {

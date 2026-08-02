@@ -28,6 +28,19 @@
     }
   }
 
+  function inSchedule(item) {
+    var now = Date.now();
+    if (item.startAt) {
+      var s = Date.parse(item.startAt);
+      if (Number.isFinite(s) && now < s) return false;
+    }
+    if (item.endAt) {
+      var e = Date.parse(item.endAt);
+      if (Number.isFinite(e) && now > e) return false;
+    }
+    return true;
+  }
+
   function normalize(item) {
     item = item || {};
     return {
@@ -38,28 +51,33 @@
       pinned: item.pinned === true || item.is_pinned === true || item.isPinned === true,
       enabled: item.enabled !== false && item.is_active !== false,
       sort: Number(item.sort || item.sort_order || 100),
+      category: String(item.category || "home").toLowerCase() === "companion" ? "companion" : "home",
+      audience: String(item.audience || "home").toLowerCase(),
+      startAt: item.startAt || item.start_at || "",
+      endAt: item.endAt || item.end_at || "",
+      scroll: item.scroll !== false && item.is_scrolling !== false,
     };
   }
 
   function sortItems(list) {
     return (list || []).slice().sort(function (a, b) {
       if (!!b.pinned !== !!a.pinned) return b.pinned ? 1 : -1;
+      var sa = Number(a.sort || 100);
+      var sb = Number(b.sort || 100);
+      if (sa !== sb) return sa - sb;
       var tb = Date.parse(b.publishedAt || 0) || 0;
       var ta = Date.parse(a.publishedAt || 0) || 0;
-      if (tb !== ta) return tb - ta;
-      return Number(a.sort || 100) - Number(b.sort || 100);
+      return tb - ta;
     });
   }
 
   function tickerText(items) {
     if (!items.length) return "暂无最新公告。";
-    return items
-      .map(function (item) {
-        var title = item.title || "官方公告";
-        var body = item.content || "";
-        return body && body !== title ? title + "：" + body : title;
-      })
-      .join("　　·　　");
+    var item = items[0];
+    var title = item.title || "官方公告";
+    var body = item.content || "";
+    var line = body && body !== title ? title + "：" + body : title;
+    return String(line).replace(/\s+/g, " ").trim();
   }
 
   function ensureModal() {
@@ -129,12 +147,22 @@
     openDetail(item);
   }
 
+  function preferEllipsis(item) {
+    if (item && item.scroll === false) return true;
+    try {
+      return window.matchMedia && window.matchMedia("(max-width: 899px)").matches;
+    } catch (e) {
+      return typeof window !== "undefined" && window.innerWidth <= 899;
+    }
+  }
+
   function render() {
     var bar = strip();
     if (!bar) return;
     var items = state.items;
     var text = tickerText(items);
     var empty = !items.length;
+    var useEllipsis = preferEllipsis(items[0]);
     bar.hidden = false;
     bar.classList.add("home-announcement-bar", "announcement-strip");
     bar.setAttribute("aria-label", "官方公告");
@@ -145,7 +173,7 @@
       ' role="button" aria-label="' +
       (empty ? "暂无最新公告" : "查看公告详情") +
       '">' +
-      (empty
+      (empty || useEllipsis
         ? '<span class="home-announcement-static">' + esc(text) + "</span>"
         : '<span class="home-announcement-track">' +
           '<span class="home-announcement-seg">' +
@@ -178,7 +206,9 @@
   }
 
   function load() {
-    return fetch("/api/platform/content?types=announcements", {
+    // Launch-safe: prefer audience=home; if empty (schema/filter drift), fall back to unfiltered list
+    // and keep only non-companion items client-side so homepage never goes blank silently.
+    return fetch("/api/platform/content?types=announcements&audience=home", {
       headers: { Accept: "application/json" },
       cache: "no-store",
     })
@@ -189,9 +219,28 @@
       })
       .then(function (body) {
         var rows = (((body || {}).byType || {}).announcements) || [];
+        if (rows.length) return rows;
+        return fetch("/api/platform/content?types=announcements", {
+          headers: { Accept: "application/json" },
+          cache: "no-store",
+        })
+          .then(function (res2) {
+            return res2.json().catch(function () {
+              return { byType: { announcements: [] } };
+            });
+          })
+          .then(function (body2) {
+            return ((((body2 || {}).byType || {}).announcements) || []).filter(function (row) {
+              var cat = String(row.category || "home").toLowerCase();
+              var aud = String(row.audience || "home").toLowerCase();
+              return cat !== "companion" && aud !== "companion" && aud !== "customer_service";
+            });
+          });
+      })
+      .then(function (rows) {
         state.items = sortItems(
-          rows.map(normalize).filter(function (item) {
-            return item.enabled !== false && (item.title || item.content);
+          (rows || []).map(normalize).filter(function (item) {
+            return item.enabled !== false && (item.title || item.content) && inSchedule(item);
           })
         );
         state.loaded = true;

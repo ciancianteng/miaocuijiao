@@ -16,7 +16,7 @@ const PUBLIC_BUCKETS = {
   profile: "companion-public",
 };
 
-const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const ALLOWED_IMAGE_MIME = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp"]);
 
 function loadLocalEnv() {
@@ -190,7 +190,7 @@ export function assertImageUpload(decoded) {
     throw Object.assign(new Error("仅支持 jpg、jpeg、png、webp 格式"), { status: 400 });
   }
   if (decoded.buffer.length > MAX_IMAGE_BYTES) {
-    throw Object.assign(new Error("单张图片不能超过 5MB"), { status: 413 });
+    throw Object.assign(new Error("单张图片不能超过 10MB"), { status: 413 });
   }
   return { ...decoded, contentType: normalized === "image/jpg" ? "image/jpeg" : normalized || "image/jpeg" };
 }

@@ -35,6 +35,11 @@ async function db(table, query = "", init) {
 }
 
 export default async function handler(req, res) {
+  try {
+    await (await import("../_admin-auth.js")).requireAdmin(req);
+  } catch (err) {
+    return json(res, err.status || 403, { ok: false, message: err.message || "无权限" });
+  }
   if (!hasPopularityDb()) return json(res, 503, { ok: false, message: "数据库未配置" });
   try {
     if (req.method === "GET") {

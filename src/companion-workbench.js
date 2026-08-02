@@ -10,7 +10,8 @@
     '/companion/withdraw':'withdraw',
     '/companion/messages':'messages',
     '/companion/settings':'settings',
-    '/companion/popularity':'popularity'
+    '/companion/popularity':'popularity',
+    '/companion/rules':'rules'
   };
   var NAV=[
     ['dashboard','工作台','/companion/dashboard'],
@@ -54,15 +55,15 @@
       var v=String(s||'').trim().toLowerCase();
       if(!v||/none|not_submitted|missing|unsubmitted/.test(v))return '未提交';
       if(/approved|verified|passed|active/.test(v))return '已通过';
-      if(/reject|declin|fail/.test(v))return '未通过';
+      if(/reject|declin|fail/.test(v))return '已拒绝';
       if(/pending|review|submit/.test(v))return '待审核';
       return s||'未提交';
     },
     deposit:function(s){
       var v=String(s||'').trim().toLowerCase();
       if(!v||/none|not_submitted|missing|unsubmitted/.test(v))return '未缴纳';
-      if(/approved|verified|passed|paid|active|completed/.test(v))return '已缴纳';
-      if(/reject|declin|fail/.test(v))return '未通过';
+      if(/approved|verified|passed|paid|active|completed/.test(v))return '已通过';
+      if(/reject|declin|fail/.test(v))return '已拒绝';
       if(/pending|review|submit/.test(v))return '待审核';
       return s||'未缴纳';
     }
@@ -123,13 +124,31 @@
   function num(v){var n=Number(v);return Number.isFinite(n)?n:0}
   function isAuditLocked(){
     var perm=(state.data||{}).permissions||{};
-    return perm.canWork===false||perm.canSetAvailable===false;
+    return perm.canWork===false||perm.canSetAvailable===false||!!(state.data||{}).forcedAckRequired;
   }
   function auditHint(){
     var perm=(state.data||{}).permissions||{};
+    var data=state.data||{};
+    if(data.forcedAckRequired||perm.forcedAckRequired)return perm.forcedAckReason||'请先阅读并确认最新强制公告后，才能切换状态、抢单或接单。';
     return perm.lockReason||'账号审核通过后即可开始接单。';
   }
   function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
+  function loadWorkRules(){
+    state.rulesLoading=true;
+    paint();
+    return fetch('/api/platform/content?types=companion_work_rules',{cache:'no-store',headers:{Accept:'application/json'}})
+      .then(function(r){return r.json()})
+      .then(function(body){
+        state.workRules=(((body||{}).byType||{}).companion_work_rules)||[];
+        state.rulesLoading=false;
+        paint();
+      })
+      .catch(function(){
+        state.workRules=[];
+        state.rulesLoading=false;
+        paint();
+      });
+  }
   function money(v) {
     if (window.MCJCurrency) return window.MCJCurrency.formatPlain(v);
     var n = Number(v || 0);
@@ -206,6 +225,11 @@
     var opts={method:method||'POST',headers:{'Content-Type':'application/json'}};
     var session=state.session||readSession();
     if(session&&session.token)opts.headers['x-mcj-companion-token']=session.token;
+    var ctrl=typeof AbortController!=='undefined'?new AbortController():null;
+    if(ctrl){
+      opts.signal=ctrl.signal;
+      setTimeout(function(){try{ctrl.abort()}catch(e){}},18000);
+    }
     if(opts.method==='GET'){
       var qs='action='+encodeURIComponent(action);
       if(body&&typeof body==='object'){
@@ -214,10 +238,16 @@
           qs+='&'+encodeURIComponent(k)+'='+encodeURIComponent(body[k]);
         });
       }
-      return fetch('/api/companion?'+qs,opts).then(parseResponse);
+      return fetch('/api/companion?'+qs,opts).then(parseResponse).catch(function(err){
+        if(err&&err.name==='AbortError')throw new Error('请求超时，请重试');
+        throw err;
+      });
     }
     opts.body=JSON.stringify(Object.assign({action:action},body||{}));
-    return fetch('/api/companion',opts).then(parseResponse);
+    return fetch('/api/companion',opts).then(parseResponse).catch(function(err){
+      if(err&&err.name==='AbortError')throw new Error('请求超时，请重试');
+      throw err;
+    });
   }
   function parseResponse(res){return res.text().then(function(text){var body={};try{body=text?JSON.parse(text):{}}catch(e){throw new Error('接口返回格式错误')}if(!res.ok||body.ok===false)throw new Error(body.message||('请求失败：HTTP '+res.status));return body})}
   function loadProfileServices(){
@@ -333,6 +363,10 @@
       state.walletWarning=(walletResult&&walletResult.data&&walletResult.data.warnings&&walletResult.data.warnings[0])
         || (result.data&&result.data.walletWarnings&&result.data.walletWarnings[0])
         || '';
+      if(window.MCJCompanionForcedAck&&window.MCJCompanionForcedAck.refreshFromBootstrap){
+        window.MCJCompanionForcedAck.refreshFromBootstrap(state.data);
+      }
+      if(state.route==='rules')loadWorkRules();
     }).catch(function(err){
       // Keep previous data if any; wallet page must still show zeros instead of blank failure.
       state.error=err.message||'陪玩端数据读取失败';
@@ -366,10 +400,92 @@
       state.loading=false;
       paint();
       if(state.route==='messages')markActiveChatSessionRead();
+      bindCompanionChatRealtime();
     });
   }
-  function startPoll(){if(state.pollTimer)clearInterval(state.pollTimer);state.pollTimer=setInterval(function(){if(!state.session||!state.session.token||document.hidden||state.statusBusy)return;if(['dashboard','hall','orders','earnings','profile','account','messages'].indexOf(state.route)===-1)return;api('bootstrap',{},'GET').then(function(result){state.data=Object.assign({},state.data||{},result.data||{});state.ordersCacheAt=Date.now();state.error='';if(state.route==='messages'){return api('inbox',{},'GET').then(function(res){if(res&&res.ok){state.inbox=res.data||res.inbox||null;if(state.data&&state.data.summary&&state.inbox)state.data.summary.unreadMessages=num(state.inbox.unreadTotal);}var session=state.chatSession==='system'?'system':'cs';var cs=(state.inbox&&state.inbox.conversations||[]).filter(function(c){return c.key==='cs'||c.type==='cs'})[0];var needMark=session==='cs'?num(cs&&cs.unread)>0:((state.inbox&&state.inbox.systemNotices)||[]).some(function(n){return n.unread});paint();if(needMark)return markActiveChatSessionRead();}).catch(function(){paint()});}paint();}).catch(function(){});},4000)}
-  function init(){state.settings=readSettings();state.session=readSession();state.route=route();if(!state.session&&state.route!=='login'){go('/companion/login');return}if(state.session&&state.route==='login'){go('/companion/dashboard');return}if(state.session)loadData().then(startPoll);else paint()}
+  function startPoll(){
+    if(state.pollTimer)clearInterval(state.pollTimer);
+    state.pollTimer=setInterval(function(){
+      if(!state.session||!state.session.token||document.hidden||state.statusBusy)return;
+      if(['dashboard','hall','orders','earnings','profile','account','messages'].indexOf(state.route)===-1)return;
+      // Light poll: only refresh heavy bootstrap on hall/orders; elsewhere soft-merge less often.
+      var heavy=['hall','orders','dashboard'].indexOf(state.route)>-1;
+      var tick=Number(state._pollTick||0)+1;
+      state._pollTick=tick;
+      if(!heavy&&tick%3!==0){
+        if(state.route==='messages'){
+          api('inbox',{},'GET').then(function(res){
+            if(res&&res.ok){
+              state.inbox=res.data||res.inbox||null;
+              if(state.data&&state.data.summary&&state.inbox)state.data.summary.unreadMessages=num(state.inbox.unreadTotal);
+              bindCompanionChatRealtime();
+            }
+            paint();
+          }).catch(function(){});
+        }
+        return;
+      }
+      api('bootstrap',{},'GET').then(function(result){
+        state.data=Object.assign({},state.data||{},result.data||{});
+        state.ordersCacheAt=Date.now();
+        state.error='';
+        if(state.route==='messages'){
+          return api('inbox',{},'GET').then(function(res){
+            if(res&&res.ok){
+              state.inbox=res.data||res.inbox||null;
+              if(state.data&&state.data.summary&&state.inbox)state.data.summary.unreadMessages=num(state.inbox.unreadTotal);
+              bindCompanionChatRealtime();
+            }
+            var session=state.chatSession==='system'?'system':'cs';
+            var cs=(state.inbox&&state.inbox.conversations||[]).filter(function(c){return c.key==='cs'||c.type==='cs'})[0];
+            var needMark=session==='cs'?num(cs&&cs.unread)>0:((state.inbox&&state.inbox.systemNotices)||[]).some(function(n){return n.unread});
+            paint();
+            if(needMark)return markActiveChatSessionRead();
+          }).catch(function(){paint()});
+        }
+        paint();
+      }).catch(function(){});
+    },8000);
+  }
+  function companionCsConversationId(){
+    if(state.inbox&&state.inbox.csConversationId)return String(state.inbox.csConversationId);
+    var cs=(state.inbox&&state.inbox.conversations||[]).filter(function(c){return c.key==='cs'||c.type==='cs'})[0];
+    var id=cs&&cs.id?String(cs.id):'';
+    return id&&id!=='cs'?id:'';
+  }
+  function bindCompanionChatRealtime(){
+    var RT=window.MCJChatRealtime;
+    var cid=companionCsConversationId();
+    var token=state.session&&state.session.token;
+    if(!RT||!cid||!token)return;
+    if(state._rtBoundCid===cid)return;
+    state._rtBoundCid=cid;
+    if(typeof RT.unsubscribeAll==='function')RT.unsubscribeAll();
+    RT.subscribeMessages(cid,token,function(row){
+      if(!row||!row.id)return;
+      if(!state.inbox)state.inbox={messages:[],conversations:[]};
+      var list=state.inbox.messages=Array.isArray(state.inbox.messages)?state.inbox.messages:[];
+      if(list.some(function(m){return String(m.id)===String(row.id)}))return;
+      var role=String(row.sender_role||'');
+      var view={
+        id:row.id,
+        conversationId:row.conversation_id||cid,
+        content:row.content||'',
+        senderRole:role,
+        senderLabel:role==='companion'?'我':(role==='customer_service'?'客服':'系统'),
+        side:role==='companion'?'right':'left',
+        createdAt:row.created_at||new Date().toISOString(),
+        messageType:row.message_type||'text',
+        mediaUrl:row.media_url||row.image_url||''
+      };
+      state.inbox.messages=list.filter(function(m){
+        if(!(m._pending||m._failed))return true;
+        return !(m.content===view.content&&(m.senderRole==='companion'||m.side==='right'));
+      }).concat([view]);
+      if(state.route==='messages')paint();
+    }).catch(function(){ state._rtBoundCid=''; });
+  }
+  function init(){state.settings=readSettings();state.session=readSession();state.route=route();if(!state.session&&state.route!=='login'){go('/companion/login');return}if(state.session&&state.route==='login'){go('/companion/dashboard');return}if(state.session){if(window.MCJCompanionAnnouncements&&window.MCJCompanionAnnouncements.start)window.MCJCompanionAnnouncements.start();loadData().then(function(){startPoll();bindCompanionChatRealtime();});}else paint()}
   window.addEventListener('popstate',init);
   document.addEventListener('visibilitychange',function(){if(!document.hidden&&state.session)loadData({soft:true});});
   function paint(){
@@ -419,7 +535,7 @@
       '</section></main>';
     if(Auth&&Auth.bindPasswordToggles)Auth.bindPasswordToggles(root);
   }
-  function title(){return ({dashboard:'工作台',hall:'抢单大厅',orders:'我的订单',earnings:'收益中心',wallet:'收益中心',profile:'我的资料（公开）',account:'账号中心（隐私）',mine:'账号中心（隐私）',withdraw:'提现',messages:'消息中心',settings:'设置',popularity:'我的人气'})[state.route]||'陪玩端'}
+  function title(){return ({dashboard:'工作台',hall:'抢单大厅',orders:'我的订单',earnings:'收益中心',wallet:'收益中心',profile:'我的资料（公开）',account:'账号中心（隐私）',mine:'账号中心（隐私）',withdraw:'提现',messages:'消息中心',settings:'设置',popularity:'我的人气',rules:'陪玩规则'})[state.route]||'陪玩端'}
   function maintenanceHtml(name){return '<div class="pw-page-head"><div><h2>'+esc(name||'功能开发中')+'</h2><p>该模块今晚暂未开放，请先处理抢单与订单完成。</p></div><button class="pw-btn primary" type="button" data-route="/companion/dashboard">返回工作台</button></div><div class="pw-empty">功能开发中</div>'}
   function bottomNavHtml(){
     return '<nav class="pw-bottom-nav">'+BOTTOM_NAV.map(function(n){
@@ -450,7 +566,8 @@
     root.innerHTML='<div class="pw-shell"><aside class="pw-side"><div class="pw-brand"><strong>MEOW CUI JIAO</strong><span>Companion Workbench</span></div><nav class="pw-nav">'+NAV.map(function(n){
       var badge=n[0]==='messages'&&unread?' <em class="pw-nav-badge">'+unread+'</em>':'';
       return '<button class="'+(state.route===n[0]||(n[0]==='account'&&(state.route==='mine'||state.route==='verification'))||(n[0]==='earnings'&&state.route==='wallet')?'active':'')+'" data-route="'+n[2]+'">'+n[1]+badge+'</button>';
-    }).join('')+'</nav></aside><section class="pw-main"><header class="pw-top"><div><h1>'+title()+'</h1><p>'+(lock?esc(lock):'抢单 → 服务 → 完成订单 → 收益提现')+'</p></div><div class="pw-account"><button class="pw-avatar" data-account-toggle>'+esc(String(player.name||player.uid||'P').slice(0,1).toUpperCase())+'</button><div class="pw-menu"><button type="button" data-route="/companion/profile">我的资料</button><button type="button" data-route="/companion/account">账号中心</button><button type="button" data-route="/companion/settings">设置</button><button class="danger" type="button" data-logout>退出登录</button></div></div></header><main class="pw-page">'+pageHtml()+'</main></section>'+bottomNavHtml()+'</div>'+noticeHtml()+settlementModalHtml();
+    }).join('')+'</nav></aside><section class="pw-main"><header class="pw-top"><div><h1>'+title()+'</h1><p>'+(lock?esc(lock):'抢单 → 服务 → 完成订单 → 收益提现')+'</p></div><div class="pw-account"><button class="pw-avatar" data-account-toggle>'+esc(String(player.name||player.uid||'P').slice(0,1).toUpperCase())+'</button><div class="pw-menu"><button type="button" data-route="/companion/profile">我的资料</button><button type="button" data-route="/companion/account">账号中心</button><button type="button" data-route="/companion/settings">设置</button><button class="danger" type="button" data-logout>退出登录</button></div></div></header>'+(window.MCJCompanionAnnouncements&&window.MCJCompanionAnnouncements.hostHtml?window.MCJCompanionAnnouncements.hostHtml():'<div class="pw-announcement-host" data-pw-announcement-host hidden></div>')+'<main class="pw-page">'+pageHtml()+'</main></section>'+bottomNavHtml()+'</div>'+noticeHtml()+settlementModalHtml();
+    if(window.MCJCompanionAnnouncements&&window.MCJCompanionAnnouncements.reload)window.MCJCompanionAnnouncements.reload();
   }
   function pageHtml(){
     if(state.loading&&!state.data)return '<div class="pw-empty pw-skeleton"><div class="pw-skel-line"></div><div class="pw-skel-line short"></div><div class="pw-skel-cards"></div><span>加载中…</span></div>';
@@ -467,6 +584,7 @@
     else if(state.route==='popularity')body=popularityHtml();
     else if(state.route==='profile')body=profileHtml();
     else if(state.route==='account'||state.route==='mine')body=accountHtml();
+    else if(state.route==='rules')body=rulesHtml();
     else body=dashboardHtml();
     return softBanner+body;
   }
@@ -574,7 +692,7 @@
       metric('今日完成',num(s.todayCompleted))+
       '</section>'+
       '<section class="pw-card pad" style="margin-top:14px"><h3>待处理事项</h3>'+todoList()+'</section>'+
-      '<div class="pw-actions" style="margin-top:14px"><button class="pw-btn" type="button" data-route="/companion/earnings">收益中心</button><button class="pw-btn" type="button" data-route="/companion/messages">消息中心</button></div>';
+      '<div class="pw-actions" style="margin-top:14px;flex-wrap:wrap"><button class="pw-btn" type="button" data-route="/companion/earnings">收益中心</button><button class="pw-btn" type="button" data-route="/companion/messages">消息中心</button><button class="pw-btn" type="button" data-route="/companion/rules">规则与制度</button></div>';
   }
   function todoList(){var s=(state.data||{}).summary||{},p=(state.data||{}).player||{};var rows=[['待确认订单',s.waitingConfirm||0],['待开始订单',s.waitingStart||0],['待完成订单',s.waitingComplete||0],['待处理消息',unreadCount()],['资料审核状态',STATUS_CN.verification(p.auditStatus)],['押金状态',STATUS_CN.deposit(p.depositStatus)]];return '<div class="pw-info-list">'+rows.map(function(r){return '<div><span>'+esc(r[0])+'</span><strong>'+esc(r[1])+'</strong></div>'}).join('')+'</div>'}
   function orderStatus(o){return o.orderStatus||o.statusText||o.status||'-'}
@@ -1050,16 +1168,29 @@
       filtersRow+
       '<section class="pw-card-list">'+(filtered.length?filtered.map(function(o){
         var already=!!o.alreadyGrabbed||!!(o.myGrab&&o.myGrab.companionId);
+        var hallState=o.hallState||'open';
+        var grabCount=Number(o.grabCount||0)||0;
         var disabled=false,btnLabel='立即抢单';
-        if(already){disabled=true;btnLabel='已抢单，等待老板确认';}
+        if(hallState==='settled'){disabled=true;btnLabel='已结单';}
+        else if(hallState==='cancelled'){disabled=true;btnLabel='已取消';}
+        else if(hallState==='expired'){disabled=true;btnLabel='已失效';}
+        else if(already){disabled=true;btnLabel='已抢单，等待选择';}
         else if(locked){disabled=true;btnLabel='审核通过后可抢单';}
         else if(statusKey==='busy'){disabled=true;btnLabel='当前忙碌，无法抢新订单';}
         else if(statusKey==='paused'){disabled=true;btnLabel='已暂停接单，无法抢新订单';}
         else if(statusKey==='offline'){disabled=true;btnLabel='离线状态无法抢单';}
         else if(!perm.canAcceptOrder){disabled=true;btnLabel=perm.lockReason||perm.acceptLockReason||'暂不可接单';}
+        var hallBadge=hallState==='settled'
+          ?'<em class="pw-hall-badge settled">已结单</em>'
+          :hallState==='cancelled'
+            ?'<em class="pw-hall-badge cancelled">已取消</em>'
+            :hallState==='expired'
+              ?'<em class="pw-hall-badge expired">已失效</em>'
+              :(grabCount>0?'<em class="pw-hall-badge grabbing">抢单中 · 已有 '+grabCount+' 人抢单</em>':'<em class="pw-hall-badge open">待抢单 · 已有 '+grabCount+' 人抢单</em>');
         var serviceText=String(o.serviceContent||'')
           .replace(/\[\[ORDER_GRABS\]\][\s\S]*$/g,'')
           .replace(/\[\[COMPLETION_PENDING\]\]/g,'')
+          .replace(/\[\[BOSS_INTENT\]\][\s\S]*?\[\[\/BOSS_INTENT\]\]/g,'')
           .replace(/\buuid\s+create\s+regression\s+\d+\b/gi,'')
           .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi,'')
           .replace(/\b(selector|grabber)\b/gi,'')
@@ -1067,14 +1198,46 @@
         var orderNo=o.orderNo||humanId(o.id)||'-';
         var created=o.createdAt||o.appointmentAt||'';
         var createdLabel=created?fmtTime(created):'-';
-        return '<article class="pw-grab-card" data-order-id="'+esc(o.id)+'"><header><div><span class="pw-type">'+esc(o.orderType||o.orderSource||'订单')+'</span><h3>'+esc(o.game||'-')+'</h3><p>'+esc(serviceText)+'</p></div><strong>'+money(o.amount||o.budget||0)+'</strong></header><div class="pw-order-meta"><div><span>订单编号</span><strong>'+esc(orderNo)+'</strong></div><div><span>服务类型</span><strong>'+esc(o.serviceType||o.serviceName||o.orderType||'-')+'</strong></div><div><span>游戏</span><strong>'+esc(o.game||'-')+'</strong></div><div><span>区服</span><strong>'+esc(o.gameServer||'-')+'</strong></div><div><span>单价</span><strong>'+money(o.unitPrice||0)+'</strong></div><div><span>时长/局数</span><strong>'+esc(o.duration||'-')+'</strong></div><div><span>老板备注</span><strong>'+esc(o.bossNotes||o.remark||'-')+'</strong></div><div><span>下单时间</span><strong>'+esc(createdLabel)+'</strong></div><div><span>订单来源</span><strong>'+esc(o.orderSource||o.orderType||'-')+'</strong></div><div><span>预计收入</span><strong>'+money(o.playerIncome||0)+'</strong></div><div><span>当前状态</span><strong>'+esc(o.statusText||o.orderStatus||'待抢单')+'</strong></div></div><footer><button class="pw-btn primary" data-accept-order="'+esc(o.id)+'" '+(disabled?'disabled':'')+'>'+esc(btnLabel)+'</button></footer></article>';
+        return '<article class="pw-grab-card'+(hallState==='settled'?' is-settled':'')+'" data-order-id="'+esc(o.id)+'"><header><div><span class="pw-type">'+esc(o.orderType||o.orderSource||'订单')+'</span>'+hallBadge+'<h3>'+esc(o.game||'-')+'</h3><p>'+esc(serviceText)+'</p></div><strong>'+money(o.amount||o.budget||0)+'</strong></header><div class="pw-order-meta"><div><span>订单编号</span><strong>'+esc(orderNo)+'</strong></div><div><span>服务类型</span><strong>'+esc(o.serviceType||o.serviceName||o.orderType||'-')+'</strong></div><div><span>游戏</span><strong>'+esc(o.game||'-')+'</strong></div><div><span>区服</span><strong>'+esc(o.gameServer||'-')+'</strong></div><div><span>单价</span><strong>'+money(o.unitPrice||0)+'</strong></div><div><span>时长/局数</span><strong>'+esc(o.duration||'-')+'</strong></div><div><span>老板备注</span><strong>'+esc(o.bossNotes||o.remark||'-')+'</strong></div><div><span>下单时间</span><strong>'+esc(createdLabel)+'</strong></div><div><span>订单来源</span><strong>'+esc(o.orderSource||o.orderType||'-')+'</strong></div><div><span>预计收入</span><strong>'+money(o.playerIncome||0)+'</strong></div><div><span>抢单人数</span><strong>'+esc(grabCount)+'</strong></div><div><span>当前状态</span><strong>'+esc(o.hallStateLabel||o.statusText||o.orderStatus||'待抢单')+'</strong></div></div><footer><button class="pw-btn primary" data-accept-order="'+esc(o.id)+'" '+(disabled?'disabled':'')+'>'+esc(btnLabel)+'</button></footer></article>';
       }).join(''):'<div class="pw-empty"><strong>暂无可抢订单</strong><span>'+(locked?auditHint():(!online?'请先切换为在线接单。':'客服发布订单后会自动显示，或调整筛选条件。'))+'</span></div>')+'</section>';
+  }
+  function accountDocCard(opts){
+    var key=opts.key;
+    var label=opts.label;
+    var url=String(opts.url||'').trim();
+    var busy=state.uploadBusy===key;
+    var statusText=opts.statusText||'';
+    var rejectReason=opts.rejectReason||'';
+    var hasImg=!!url && !/^data:/i.test(url) && !/^blob:/i.test(url);
+    return '<div class="pw-field pw-doc-upload" data-doc-card="'+esc(key)+'">'+
+      '<div class="pw-doc-upload-head"><span class="pw-field-label">'+esc(label)+'</span>'+
+      (statusText?'<em class="pw-doc-status">'+esc(statusText)+'</em>':'')+
+      '</div>'+
+      (rejectReason?'<p class="pw-field-error">拒绝原因：'+esc(rejectReason)+'</p>':'')+
+      (hasImg
+        ?('<div class="pw-doc-preview-wrap">'+
+          '<img class="pw-doc-preview" src="'+esc(url)+'" alt="'+esc(label)+'" data-doc-preview="'+esc(key)+'">'+
+          '<div class="pw-upload-actions">'+
+          '<label class="pw-btn'+(busy?' is-busy':'')+'">'+(busy?'正在上传…':'重新上传')+
+          '<input type="file" accept="image/jpeg,image/jpg,image/png,image/webp,image/*" capture="environment" data-upload-doc="'+esc(key)+'" hidden '+(busy?'disabled':'')+'>'+
+          '</label>'+
+          '<button type="button" class="pw-btn danger" data-delete-doc="'+esc(key)+'" '+(busy?'disabled':'')+'>删除</button>'+
+          '</div></div>')
+        :('<label class="pw-doc-drop'+(busy?' is-busy':'')+'">'+
+          '<input type="file" accept="image/jpeg,image/jpg,image/png,image/webp,image/*" capture="environment" data-upload-doc="'+esc(key)+'" hidden '+(busy?'disabled':'')+'>'+
+          '<span class="pw-doc-plus">＋</span>'+
+          '<strong>'+(busy?'正在上传…':esc(opts.cta||('上传'+label)))+'</strong>'+
+          '<small>支持 jpg / png / webp，单张不超过 10MB；可从相册选择或拍照</small>'+
+          '</label>'))+
+      '</div>';
   }
   function accountHtml(){
     var v=(state.data&&state.data.verification)||{},d=(state.data&&state.data.deposit)||{},level=(state.data&&state.data.levelInfo)||{},p=(state.data&&state.data.player)||{};
     var raw=p.raw||{};
     var rules=(state.data&&state.data.withdrawalRules)||{};
     var rejectBits=[v.identityRejectReason,v.paymentRejectReason,v.applicationRejectReason,v.mediaRejectReason,v.depositRejectReason,d.rejectReason].filter(Boolean);
+    var idStatus=STATUS_CN.verification(v.identityStatus);
+    var depositStatus=STATUS_CN.deposit(d.status||v.depositStatus);
     return '<div class="pw-page-head"><div><h2>账号中心（隐私）</h2><p>仅本人 / 客服 / 后台可见，老板永远看不到。</p></div><button class="pw-btn" type="button" data-route="/companion/profile">公开资料</button></div>'+
       '<div class="pw-alert"><strong>隐私提示</strong><span>本页面仅本人和平台后台可见，不会公开给老板。</span></div>'+
       (rejectBits.length?'<div class="pw-empty" style="margin-bottom:12px"><strong>审核驳回</strong><span>'+esc(rejectBits.join('；'))+'</span></div>':'')+
@@ -1082,7 +1245,7 @@
         '<section class="pw-card pad"><h3>账号信息</h3><div class="pw-info-list">'+
           infoRow('登录邮箱',p.email||p.uid||'-')+
           infoRow('联系方式',raw.contact_phone||v.phone||'未填写')+
-          infoRow('实名认证',STATUS_CN.verification(v.identityStatus))+
+          infoRow('实名认证',idStatus)+
           infoRow('真实姓名',v.realName||'未填写')+
           infoRow('资料审核状态',STATUS_CN.verification(p.auditStatus))+
         '</div></section>'+
@@ -1090,7 +1253,7 @@
           infoRow('收款账户审核',STATUS_CN.verification(v.bankStatus))+
           infoRow('银行名称',v.bankName||'未填写')+
           infoRow('当前提现账户',rules.currentAccount||'未绑定')+
-          infoRow('押金状态',STATUS_CN.deposit(d.status||v.depositStatus))+
+          infoRow('押金状态',depositStatus)+
           infoRow('当前等级',level.level||p.level||'未设置')+
         '</div>'+
         '<div class="pw-actions" style="margin-top:12px"><button class="pw-btn primary" type="button" data-route="/companion/earnings" data-earnings-tab="withdraw">去提现</button></div>'+
@@ -1099,22 +1262,24 @@
       '<form class="pw-card pad pw-form pw-form-narrow" style="margin-top:14px" data-private-contact-form><h3>联系方式</h3>'+
       '<label>联系方式（WhatsApp / 手机）<input name="contact_phone" value="'+esc(raw.contact_phone||v.phone||'')+'" required placeholder="仅后台/客服可见"></label>'+
       '<button class="pw-btn primary" type="submit">保存联系方式</button></form>'+
-      '<form class="pw-card pad pw-form pw-form-narrow" style="margin-top:14px" data-verification-form><h3>身份证 / 实名认证 / 收款账户</h3>'+
+      '<form class="pw-card pad pw-form pw-form-narrow pw-account-verify" style="margin-top:14px" data-verification-form><h3>身份证 / 实名认证 / 收款账户</h3>'+
+      '<p class="pw-note">审核状态：<strong>'+esc(idStatus)+'</strong>'+(v.identityRejectReason?' · 拒绝原因：'+esc(v.identityRejectReason):'')+'</p>'+
       '<label>真实姓名<input name="real_name" value="'+esc(v.realName||'')+'" required></label>'+
-      '<label>身份证号码<input name="identity_no" required></label>'+
-      '<label>身份证正面（可选）<input name="id_front" placeholder="data:image/... 或留空"></label>'+
-      '<label>身份证反面<input name="id_back" placeholder="data:image/... 或留空"></label>'+
+      '<label>身份证号码<input name="identity_no" required autocomplete="off"></label>'+
+      accountDocCard({key:'id_front',label:'身份证正面',cta:'上传身份证正面',url:v.idFrontUrl||'',statusText:idStatus,rejectReason:v.identityRejectReason||''})+
+      accountDocCard({key:'id_back',label:'身份证反面',cta:'上传身份证反面',url:v.idBackUrl||'',statusText:idStatus,rejectReason:v.identityRejectReason||''})+
       '<label>联系方式<input name="phone" value="'+esc(v.phone||raw.contact_phone||'')+'" required></label>'+
       '<label>银行名称<input name="bank_name" value="'+esc(v.bankName||'')+'" required></label>'+
-      '<label>收款账号 / 提现账户<input name="bank_account" required></label>'+
+      '<label>收款账号 / 提现账户<input name="bank_account" required autocomplete="off"></label>'+
       '<label>TNG 账号<input name="tng_account"></label>'+
       '<label>备注<textarea name="remark"></textarea></label>'+
       '<button class="pw-btn primary" type="submit">提交认证审核</button></form>'+
-      '<form class="pw-card pad pw-form pw-form-narrow" style="margin-top:14px" data-deposit-form><h3>押金</h3>'+
-      '<label>已缴金额 RM<input name="paid_amount" type="number" min="1" required></label>'+
-      '<label>付款方式<input name="payment_method" required></label>'+
-      '<label>付款凭证（图片 dataURL 或链接）<input name="proof_url" required></label>'+
-      '<label>备注<textarea name="remark"></textarea></label>'+
+      '<form class="pw-card pad pw-form pw-form-narrow pw-account-deposit" style="margin-top:14px" data-deposit-form><h3>押金</h3>'+
+      '<p class="pw-note">审核状态：<strong>'+esc(depositStatus)+'</strong>'+(d.rejectReason?' · 拒绝原因：'+esc(d.rejectReason):'')+'</p>'+
+      '<label>已缴金额 RM<input name="paid_amount" type="number" min="1" required value="'+esc(d.paidAmount||'')+'"></label>'+
+      '<label>付款方式<input name="payment_method" required value="'+esc(d.paymentMethod||'')+'" placeholder="例如：银行转账 / TNG"></label>'+
+      accountDocCard({key:'deposit_proof',label:'押金付款凭证',cta:'上传付款凭证',url:d.proofUrl||'',statusText:depositStatus,rejectReason:d.rejectReason||''})+
+      '<label>备注<textarea name="remark">'+esc(d.remark||'')+'</textarea></label>'+
       '<button class="pw-btn primary" type="submit">提交押金凭证</button></form>'+
       '<section class="pw-card pad pw-form-narrow" style="margin-top:14px"><h3>账号安全 / 登录设备 / 修改密码</h3>'+
       '<div class="pw-info-list">'+
@@ -1123,7 +1288,17 @@
       infoRow('本机设备',navigator.userAgent?String(navigator.userAgent).slice(0,48)+'…':'未知')+
       '</div>'+
       '<p class="pw-note" style="margin-top:10px">修改密码：请到登录页使用「忘记密码」。后台通知请查看「消息中心」。</p>'+
-      '<div class="pw-actions" style="margin-top:12px"><button class="pw-btn" type="button" data-route="/companion/settings">打开设置</button><button class="pw-btn danger" type="button" data-logout>退出登录</button></div></section>';
+      '<div class="pw-actions" style="margin-top:12px"><button class="pw-btn" type="button" data-route="/companion/settings">打开设置</button><button class="pw-btn" type="button" data-route="/companion/rules">陪玩规则</button><button class="pw-btn danger" type="button" data-logout>退出登录</button></div></section>';
+  }
+  function rulesHtml(){
+    var rules=state.workRules||[];
+    if(state.rulesLoading)return '<div class="pw-empty">正在加载陪玩规则…</div>';
+    return '<div class="pw-page-head"><div><h2>陪玩规则</h2><p>内容由后台「制度与等级」维护，保存后实时同步。</p></div><button class="pw-btn" type="button" data-reload-rules>刷新</button></div>'+
+      (rules.length?rules.map(function(r){
+        return '<section class="pw-card pad" style="margin-bottom:12px"><h3 style="margin:0 0 8px">'+esc(r.category||r.title||'规则')+'</h3>'+
+          '<div style="white-space:pre-wrap;line-height:1.65;color:rgba(255,220,235,.9);font-size:14px">'+esc(r.body||r.content||'')+'</div>'+
+          '<p class="pw-note" style="margin-top:10px">版本 '+esc(r.version||'1')+(r.updatedAt?' · 更新 '+esc(r.updatedAt):'')+'</p></section>';
+      }).join(''):'<div class="pw-empty"><strong>暂无规则</strong><span>请联系管理员在后台发布陪玩规则。</span></div>');
   }
   function mineHtml(){return accountHtml()}
   function hallGateMessage(){
@@ -1144,12 +1319,70 @@
         if(!/image\/(jpeg|jpg|png|webp)/.test(type) && !/\.(jpe?g|png|webp)$/i.test(name)){
           return reject(new Error('仅支持 jpg、jpeg、png、webp 格式'));
         }
-        if(file.size>5*1024*1024)return reject(new Error('单张图片不能超过 5MB'));
+        if(file.size>10*1024*1024)return reject(new Error('单张图片不能超过 10MB'));
       }
       var reader=new FileReader();
       reader.onload=function(){resolve(String(reader.result||''))};
       reader.onerror=function(){reject(new Error(kind==='voice'?'读取录音失败，请重试':'读取图片失败，请重试'))};
       reader.readAsDataURL(file);
+    });
+  }
+  function compressImageDataUrl(dataUrl,maxEdge,quality){
+    return new Promise(function(resolve){
+      try{
+        var img=new Image();
+        img.onload=function(){
+          var w=img.naturalWidth||img.width||0;
+          var h=img.naturalHeight||img.height||0;
+          if(!w||!h){resolve(dataUrl);return}
+          var edge=Math.max(w,h);
+          var scale=edge>maxEdge?(maxEdge/edge):1;
+          // Keep ID text readable: only shrink very large photos.
+          if(scale>=0.98){resolve(dataUrl);return}
+          var canvas=document.createElement('canvas');
+          canvas.width=Math.max(1,Math.round(w*scale));
+          canvas.height=Math.max(1,Math.round(h*scale));
+          var ctx=canvas.getContext('2d');
+          if(!ctx){resolve(dataUrl);return}
+          ctx.drawImage(img,0,0,canvas.width,canvas.height);
+          resolve(canvas.toDataURL('image/jpeg',quality||0.88));
+        };
+        img.onerror=function(){resolve(dataUrl)};
+        img.src=dataUrl;
+      }catch(e){resolve(dataUrl)}
+    });
+  }
+  function uploadPrivateDoc(docType,file){
+    if(state.uploadBusy){toast('请等待当前上传完成');return Promise.resolve()}
+    state.uploadBusy=docType;
+    paint();
+    return withTimeout(readFileAsDataUrl(file,'image').then(function(dataUrl){
+      return compressImageDataUrl(dataUrl,1280,0.82);
+    }).then(function(dataUrl){
+      return api('upload_private_doc',{doc_type:docType,data_url:dataUrl,filename:file.name||(docType+'.jpg')});
+    }),60000,'上传超时，请检查网络后重试').then(function(res){
+      toast(res.message||'上传成功');
+      state.uploadBusy='';
+      return loadData({soft:true});
+    }).catch(function(err){
+      state.uploadBusy='';
+      paint();
+      toast(err.message||'上传失败，请重试');
+    });
+  }
+  function deletePrivateDoc(docType){
+    if(state.uploadBusy){toast('请等待当前上传完成');return}
+    if(!window.confirm('确定删除这张图片吗？'))return;
+    state.uploadBusy=docType;
+    paint();
+    api('delete_private_doc',{doc_type:docType}).then(function(res){
+      toast(res.message||'已删除');
+      state.uploadBusy='';
+      return loadData({soft:true});
+    }).catch(function(err){
+      state.uploadBusy='';
+      paint();
+      toast(err.message||'删除失败');
     });
   }
   function withTimeout(promise,ms,message){
@@ -1257,6 +1490,10 @@
       go('/companion/order-hall');
       return;
     }
+    if(e.target.closest('[data-reload-rules]')){
+      loadWorkRules();
+      return;
+    }
     var r=e.target.closest('[data-route]');
     if(r){
       if(r.dataset.route==='/companion/order-hall' && isAuditLocked()){
@@ -1266,6 +1503,7 @@
       if(r.dataset.orderFilter)state.orderFilter=r.dataset.orderFilter;
       if(r.dataset.earningsTab)state.earningsTab=r.dataset.earningsTab;
       go(r.dataset.route);
+      if(/\/rules/.test(r.dataset.route||''))loadWorkRules();
       if(/\/(wallet|earnings|withdraw|account|mine)/.test(r.dataset.route||''))loadData({soft:true});
       if(/\/messages/.test(r.dataset.route||'')){
         loadData({soft:true}).then(function(){return markActiveChatSessionRead()});
@@ -1386,6 +1624,12 @@
       api('delete_media',{media_type:'avatar'}).then(function(x){toast(x.message||'头像已删除');return loadData()}).catch(function(err){toast(err.message)});
       return;
     }
+    var delDoc=e.target.closest('[data-delete-doc]');
+    if(delDoc){
+      e.preventDefault();
+      deletePrivateDoc(delDoc.getAttribute('data-delete-doc')||'');
+      return;
+    }
     var del=e.target.closest('[data-delete-media]');
     if(del){
       api('delete_media',{media_id:del.dataset.deleteMedia}).then(function(x){toast(x.message||'已删除');return loadData()}).catch(function(err){toast(err.message)});
@@ -1453,6 +1697,12 @@
     if(galleryInput&&galleryInput.files&&galleryInput.files[0]){uploadImage('gallery',galleryInput.files[0]);galleryInput.value='';return}
     var voiceInput=e.target.closest('[data-upload-voice]');
     if(voiceInput&&voiceInput.files&&voiceInput.files[0]){uploadImage('voice',voiceInput.files[0]);voiceInput.value='';return}
+    var docInput=e.target.closest('[data-upload-doc]');
+    if(docInput&&docInput.files&&docInput.files[0]){
+      uploadPrivateDoc(docInput.getAttribute('data-upload-doc')||'',docInput.files[0]);
+      docInput.value='';
+      return;
+    }
   });
   document.addEventListener('focusin',function(e){
     var field=e.target.closest('.pw-profile-form input,.pw-profile-form textarea,.pw-profile-form select');
@@ -1534,8 +1784,30 @@
       });
       return;
     }
-    if(e.target.matches('[data-verification-form]')){e.preventDefault();var vf=new FormData(e.target),vp={};vf.forEach(function(v,k){vp[k]=String(v||'')});api('submit_verification',vp).then(function(res){toast(res.message||'认证已提交');return loadData({soft:true})}).catch(function(err){toast(err.message)});return}
-    if(e.target.matches('[data-deposit-form]')){e.preventDefault();var df=new FormData(e.target),dp={};df.forEach(function(v,k){dp[k]=String(v||'')});api('submit_deposit_proof',dp).then(function(res){toast(res.message||'押金凭证已提交');return loadData({soft:true})}).catch(function(err){toast(err.message)});return}
+    if(e.target.matches('[data-verification-form]')){
+      e.preventDefault();
+      var vForm=e.target;
+      var vf=new FormData(vForm),vp={};
+      vf.forEach(function(v,k){vp[k]=String(v||'')});
+      var ver=(state.data&&state.data.verification)||{};
+      if(!ver.hasIdFront&&!ver.idFrontUrl){toast('请先上传身份证正面');return}
+      if(!ver.hasIdBack&&!ver.idBackUrl){toast('请先上传身份证反面');return}
+      // Photos already uploaded via upload_private_doc; keep existing storage paths.
+      delete vp.id_front;delete vp.id_back;delete vp.proof_url;
+      api('submit_verification',vp).then(function(res){toast(res.message||'认证已提交');return loadData({soft:true})}).catch(function(err){toast(err.message)});
+      return;
+    }
+    if(e.target.matches('[data-deposit-form]')){
+      e.preventDefault();
+      var dForm=e.target;
+      var df=new FormData(dForm),dp={};
+      df.forEach(function(v,k){dp[k]=String(v||'')});
+      var dep=(state.data&&state.data.deposit)||{};
+      if(!dep.hasProof&&!dep.proofUrl){toast('请先上传押金付款凭证');return}
+      delete dp.proof_url;
+      api('submit_deposit_proof',dp).then(function(res){toast(res.message||'押金凭证已提交');return loadData({soft:true})}).catch(function(err){toast(err.message)});
+      return;
+    }
     if(e.target.matches('[data-private-contact-form]')){
       e.preventDefault();
       var cf=new FormData(e.target);
@@ -1680,6 +1952,8 @@
     }
   });
   if(window.MCJChatMedia)window.MCJChatMedia.bindLightboxClicks(root);
+  window.MCJCompanionApi=api;
+  window.__MCJCompanionAfterForcedAck=function(){loadData({soft:true}).then(function(){paint()});};
   init();
 })();
 

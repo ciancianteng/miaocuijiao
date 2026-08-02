@@ -1,0 +1,421 @@
+/* Isolated namespace for gameplay-product.html only — do not reuse on other pages */
+
+.gameplay-product-page {
+  min-height: 100vh;
+  margin: 0;
+  color: #fff7fb;
+  background:
+    radial-gradient(circle at 88% 8%, rgba(255, 120, 180, 0.14), transparent 32%),
+    radial-gradient(circle at 12% 0%, rgba(120, 70, 140, 0.12), transparent 34%),
+    #08070a;
+  overflow-x: hidden;
+}
+
+.gameplay-product-page .topbar.mcj-boss-header,
+.gameplay-product-page .mcj-boss-header {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.gameplay-product-page .boss-nav,
+.gameplay-product-page .mcj-boss-nav-primary {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  gap: 18px;
+  align-items: center;
+}
+
+.gameplay-product-page .boss-nav a,
+.gameplay-product-page .mcj-boss-nav-primary a {
+  color: #cdb8c4;
+  text-decoration: none;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.gameplay-product-container {
+  width: min(1180px, calc(100% - 32px));
+  margin: 32px auto 80px;
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(360px, 0.65fr);
+  gap: 24px;
+  align-items: start;
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+.gameplay-product-info,
+.gameplay-order-card {
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.gameplay-product-info {
+  display: grid;
+  gap: 18px;
+  padding: 20px;
+  border-radius: 22px;
+  border: 1px solid rgba(255, 180, 214, 0.28);
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.02)),
+    rgba(12, 10, 16, 0.88);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.36), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(14px);
+}
+
+.gameplay-product-cover {
+  width: 100%;
+  max-width: 100%;
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 180, 214, 0.22);
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.gameplay-product-cover-img,
+.gameplay-product-cover-fallback {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  box-sizing: border-box;
+}
+
+.gameplay-product-cover-fallback {
+  display: grid;
+  place-items: center;
+  color: rgba(255, 214, 232, 0.78);
+  letter-spacing: 0.22em;
+  font-weight: 900;
+  font-size: 18px;
+  background:
+    radial-gradient(circle at 28% 22%, rgba(255, 168, 208, 0.24), transparent 46%),
+    linear-gradient(145deg, rgba(42, 24, 40, 0.96), rgba(10, 8, 14, 0.98));
+}
+
+.gameplay-product-game {
+  margin: 0;
+  color: #ffc6df;
+  font-weight: 800;
+  font-size: 14px;
+}
+
+.gameplay-product-info > h1 {
+  margin: 0;
+  font-size: clamp(24px, 2.6vw, 32px);
+  line-height: 1.25;
+  color: #fff5fa;
+  word-break: break-word;
+}
+
+.gameplay-product-intro,
+.gameplay-product-section {
+  margin: 0;
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 180, 214, 0.18);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.gameplay-product-section h2 {
+  margin: 0 0 8px;
+  font-size: 15px;
+  color: #ffe2ef;
+}
+
+.gameplay-product-section p,
+.gameplay-product-intro {
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: rgba(255, 245, 250, 0.8);
+  line-height: 1.7;
+  font-size: 14px;
+}
+
+.gameplay-order-card {
+  position: sticky;
+  top: 88px;
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+  border-radius: 22px;
+  border: 1px solid rgba(255, 168, 208, 0.34);
+  background:
+    linear-gradient(160deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.02)),
+    rgba(8, 7, 12, 0.94);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(14px);
+}
+
+.gameplay-order-card > h2 {
+  margin: 0;
+  font-size: 20px;
+  color: #fff5fa;
+}
+
+.gameplay-order-meta {
+  display: grid;
+  gap: 8px;
+}
+
+.gameplay-order-meta-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: baseline;
+  color: #d9c3cf;
+  font-size: 14px;
+}
+
+.gameplay-order-meta-row strong {
+  color: #ffe2ef;
+  text-align: right;
+  word-break: break-word;
+}
+
+.gameplay-product-field {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  min-width: 0;
+  color: #ffd6e7;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.gameplay-product-field > span .req {
+  color: #ff8ebd;
+}
+
+.gameplay-product-page .gameplay-order-card input,
+.gameplay-product-page .gameplay-order-card select,
+.gameplay-product-page .gameplay-order-card textarea,
+.gameplay-product-page .gameplay-package-btn {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+.gameplay-product-page .gameplay-order-card input,
+.gameplay-product-page .gameplay-order-card select,
+.gameplay-product-page .gameplay-order-card textarea {
+  min-height: 44px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 180, 214, 0.24);
+  background: rgba(0, 0, 0, 0.34);
+  color: #fff;
+  padding: 10px 12px;
+  font: inherit;
+}
+
+.gameplay-product-page .gameplay-order-card textarea {
+  min-height: 88px;
+  resize: vertical;
+}
+
+.gameplay-package-list {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.gameplay-package-btn {
+  display: grid;
+  gap: 4px;
+  text-align: left;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 180, 214, 0.22);
+  background: rgba(255, 255, 255, 0.03);
+  color: #fff;
+  cursor: pointer;
+  font: inherit;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.gameplay-package-btn strong {
+  display: block;
+  font-size: 14px;
+  font-weight: 800;
+  color: #fff;
+}
+
+.gameplay-package-btn em {
+  display: block;
+  font-style: normal;
+  font-weight: 800;
+  font-size: 13px;
+  color: #ffc6df;
+}
+
+.gameplay-package-btn.is-active {
+  border-color: rgba(255, 158, 207, 0.7);
+  background: rgba(255, 158, 207, 0.14);
+  box-shadow: 0 0 0 1px rgba(255, 158, 207, 0.25);
+}
+
+.gameplay-qty-row {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 44px;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  max-width: 100%;
+}
+
+.gameplay-qty-row button {
+  min-height: 44px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 180, 214, 0.24);
+  background: rgba(255, 255, 255, 0.05);
+  color: #ffe2ef;
+  font-size: 20px;
+  cursor: pointer;
+}
+
+.gameplay-coupon-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  width: 100%;
+  max-width: 100%;
+}
+
+.gameplay-coupon-row button {
+  min-height: 44px;
+  padding: 0 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 180, 214, 0.24);
+  background: rgba(255, 255, 255, 0.05);
+  color: #ffe2ef;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.gameplay-product-hint {
+  color: #ffb3c8;
+  font-weight: 700;
+  font-size: 12px;
+}
+
+.gameplay-product-totals {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 158, 207, 0.28);
+  background: rgba(255, 158, 207, 0.08);
+}
+
+.gameplay-product-totals > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: #e7d0dc;
+  font-size: 14px;
+}
+
+.gameplay-product-totals .gameplay-pay strong {
+  color: #ffd6e7;
+  font-size: 22px;
+}
+
+.gameplay-product-msg {
+  color: #ffb3c8;
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.gameplay-submit-btn {
+  width: 100%;
+  max-width: 100%;
+  min-height: 48px;
+  border: 0;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #ffd6e7, #ff9fc8);
+  color: #17070f;
+  font: inherit;
+  font-size: 16px;
+  font-weight: 900;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+
+.gameplay-submit-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.gameplay-back-link {
+  text-align: center;
+  color: #cbb3c1;
+  text-decoration: none;
+  font-weight: 800;
+  font-size: 13px;
+}
+
+.gameplay-product-empty {
+  grid-column: 1 / -1;
+  max-width: 520px;
+  margin: 48px auto;
+  padding: 28px 22px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 180, 214, 0.24);
+  background: rgba(12, 10, 16, 0.88);
+  text-align: center;
+  box-sizing: border-box;
+}
+
+.gameplay-product-empty strong {
+  display: block;
+  margin-bottom: 8px;
+  color: #fff5fa;
+  font-size: 20px;
+}
+
+.gameplay-product-empty p {
+  margin: 0 0 18px;
+  color: #cbb3c1;
+}
+
+.gameplay-product-empty a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  padding: 0 18px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #ffd6e7, #ff9fc8);
+  color: #17070f;
+  font-weight: 900;
+  text-decoration: none;
+}
+
+@media (max-width: 767px) {
+  .gameplay-product-container {
+    grid-template-columns: 1fr;
+    width: min(100% - 24px, 680px);
+    margin-top: 16px;
+    margin-bottom: 64px;
+  }
+
+  .gameplay-order-card {
+    position: static;
+    top: auto;
+  }
+
+  .gameplay-coupon-row {
+    grid-template-columns: 1fr;
+  }
+}

@@ -99,10 +99,8 @@
     writeRaw(DRAFT_KEY, draft);
   }
   function publishedRule() {
-    var db = readDB();
-    var rows = (db.companionRules || []).filter(function (r) { return r.status === "published" && r.enabled !== false; });
-    if (!rows.length) return null;
-    return rows.sort(function (a, b) { return Number(b.sort || 0) - Number(a.sort || 0) || String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")); })[0];
+    if (remoteRuleCache && remoteRuleCache.body) return remoteRuleCache;
+    return null;
   }
   function depositSettings() {
     return Object.assign(defaultDeposit(), readDB().depositSettings || readPlatform().depositSettings || {});
@@ -120,22 +118,10 @@
   function ensureDefaultApplicationConfig() {
     var db = readDB();
     var changed = false;
-    if (!Array.isArray(db.companionRules)) db.companionRules = [];
-    if (!db.companionRules.some(function (rule) { return rule.status === "published" && rule.enabled !== false; })) {
-      db.companionRules.unshift({
-        id: "RULE-DEFAULT-COMPANION",
-        title: "Meow Cui Jiao 陪玩制度",
-        subtitle: "申请前请阅读并遵守平台服务规范。",
-        body: "1. 礼貌服务，尊重老板和客服。\n2. 准时上线，按订单时间完成服务。\n3. 禁止私下交易、诱导转账或索取额外财物。\n4. 禁止泄露老板、陪玩、客服和平台隐私。\n5. 服务中如遇争议，请第一时间联系平台客服处理。",
-        notes: "申请资料必须真实、清楚、可审核。头像、卡面、试音和游戏资料通过后才会展示到前台。",
-        penaltyRules: "违规会根据情节进行警告、暂停接单、扣除保证金、封禁账号或移交进一步处理。",
-        depositRules: "身份认证、押金 RM100 和结款资料会在最终提交时一并进入后台审核。",
-        version: "2026.07",
-        status: "published",
-        enabled: true,
-        sort: 1,
-        updatedAt: now(),
-        updatedBy: "system-default"
+    // 陪玩制度仅以后台 / 数据库为准，不再写入本地写死文案
+    if (Array.isArray(db.companionRules) && db.companionRules.some(function (rule) { return String(rule.id || "").indexOf("RULE-DEFAULT") === 0 || rule.updatedBy === "system-default"; })) {
+      db.companionRules = (db.companionRules || []).filter(function (rule) {
+        return String(rule.id || "").indexOf("RULE-DEFAULT") !== 0 && rule.updatedBy !== "system-default";
       });
       changed = true;
     }
@@ -184,6 +170,7 @@
       [["rank", "游戏段位"], ["voiceType", "声音类型"], ["onlineStart", "常在线开始时间"], ["onlineEnd", "常在线结束时间"], ["intro", "自我介绍"]].forEach(function (item) {
         if (!hasText(data, item[0])) missing.push(item[1]);
       });
+      if (!hasText(data, "hourlyPrice") && !(data.gamePriceMap && Object.keys(data.gamePriceMap).length)) missing.push("游戏报价");
       return missing;
     }
     if (index === 3) {
@@ -264,8 +251,16 @@
   function rulesHtml(draft) {
     var rule = publishedRule();
     var agreed = draft.rulesAgreement && draft.rulesAgreement.accepted;
-    if (!rule) return '<section class="apply-panel apply-rules-card"><h2>阅读陪玩制度</h2><div class="rules-reader"><h3>后台暂未发布陪玩制度</h3><p>请等待超级管理员在后台发布陪玩制度后再继续申请。</p></div><label class="agree-row"><input type="checkbox" disabled> 我已完整阅读并同意《陪玩制度》及《平台规范》</label></section>';
-    return '<section class="apply-panel apply-rules-card"><h2>阅读陪玩制度</h2><div class="rules-reader"><h3>' + esc(rule.title) + '</h3><p>' + esc(rule.subtitle || "") + '</p><pre>' + esc(rule.body || "") + '</pre><div class="rules-extra"><b>注意事项</b><pre>' + esc(rule.notes || "") + '</pre><b>处罚规则</b><pre>' + esc(rule.penaltyRules || "") + '</pre><b>退款与押金规则</b><pre>' + esc(rule.depositRules || "") + '</pre></div></div><label class="agree-row"><input type="checkbox" data-rule-agree ' + (agreed ? "checked" : "") + '> 我已完整阅读并同意《陪玩制度》及《平台规范》</label></section>';
+    if (!remoteConfigLoaded && !rule) {
+      return '<section class="apply-panel apply-rules-card"><h2>阅读陪玩制度</h2><div class="rules-reader"><h3>正在加载制度…</h3><p>正在从后台读取最新陪玩制度，请稍候。</p></div><label class="agree-row"><input type="checkbox" disabled> 我已阅读并同意陪玩制度</label></section>';
+    }
+    if (!rule) return '<section class="apply-panel apply-rules-card"><h2>阅读陪玩制度</h2><div class="rules-reader"><h3>后台暂未发布陪玩制度</h3><p>请等待超级管理员在「后台中心 → 制度管理」发布陪玩申请制度后再继续申请。</p></div><label class="agree-row"><input type="checkbox" disabled> 我已阅读并同意陪玩制度</label></section>';
+    var updated = rule.updatedAt ? ('<p class="rules-updated">更新时间：' + esc(rule.updatedAt) + (rule.version ? ' · 版本 ' + esc(rule.version) : '') + '</p>') : (rule.version ? '<p class="rules-updated">版本 ' + esc(rule.version) + '</p>' : '');
+    var extras = '';
+    if (rule.notes) extras += '<b>注意事项</b><pre>' + esc(rule.notes) + '</pre>';
+    if (rule.penaltyRules) extras += '<b>处罚规则</b><pre>' + esc(rule.penaltyRules) + '</pre>';
+    if (rule.depositRules) extras += '<b>退款与押金规则</b><pre>' + esc(rule.depositRules) + '</pre>';
+    return '<section class="apply-panel apply-rules-card"><h2>阅读陪玩制度</h2><div class="rules-reader"><h3>' + esc(rule.title) + '</h3><p>' + esc(rule.subtitle || "") + '</p>' + updated + '<pre>' + esc(rule.body || "") + '</pre>' + (extras ? '<div class="rules-extra">' + extras + '</div>' : '') + '</div><label class="agree-row"><input type="checkbox" data-rule-agree ' + (agreed ? "checked" : "") + '> 我已阅读并同意陪玩制度</label></section>';
   }
   function basicHtml(data) {
     return '<section class="apply-panel"><h2>填写基本资料</h2><form class="apply-grid">' +
@@ -280,6 +275,13 @@
       '</form></section>';
   }
   function gameHtml(data) {
+    var games = Array.isArray(data.mainGames) ? data.mainGames : [];
+    var priceMap = data.gamePriceMap && typeof data.gamePriceMap === "object" ? data.gamePriceMap : {};
+    var priceFields = games.length
+      ? games.map(function (g) {
+          return field("gamePrice__" + g, esc(g) + " 报价（猫粮/小时）", "number", priceMap[g] || data.hourlyPrice || "", 'min="1" step="1" data-game-price="' + esc(g) + '"');
+        }).join("")
+      : field("hourlyPrice", "默认报价（猫粮/小时）", "number", data.hourlyPrice || "", 'min="1" step="1"');
     return '<section class="apply-panel"><h2>填写游戏资料</h2><form class="apply-grid">' +
       '<label class="form-field">游戏昵称<div class="copy-field"><input name="gameNickname" data-apply-field type="text" value="' + esc(data.gameNickname || "") + '"><button class="apply-btn small" type="button" data-copy-nickname>复制</button></div></label>' +
       tagPicker("mainGames", "可接游戏（多选）", data.mainGames, tagGroups.mainGames, 8) +
@@ -289,6 +291,7 @@
       selectField("voiceType", "声音类型", data.voiceType, voiceTypeOptions()) +
       field("onlineStart", "常在线开始时间", "time", data.onlineStart) +
       field("onlineEnd", "常在线结束时间", "time", data.onlineEnd) +
+      priceFields +
       field("intro", "自我介绍", "textarea", data.intro) +
       '</form></section>';
   }
@@ -336,10 +339,30 @@
     return identityHtml(draft);
   }
   function statusNotice() {
-    var app = existingApplication();
-    if (!app) return "";
-    var label = app.status === "review" ? "审核中" : app.status === "approved" ? "已通过" : app.status === "rejected" ? "已退回/拒绝" : app.status;
-    return '<div class="apply-status-note">当前申请状态：<b>' + esc(label || "草稿") + '</b>。你仍可打开制度页查看内容，也可以继续补充草稿。</div>';
+    var code = remoteStatus && remoteStatus.applicationStatus;
+    var reason = remoteStatus && remoteStatus.rejectReason;
+    var local = existingApplication();
+    if (!code && local) code = local.status === "review" ? "pending" : local.status;
+    if (!code) return "";
+    var tip = "";
+    if (/resubmit|need_more/.test(String(code))) tip = "请按审核意见修改后重新提交。";
+    else if (/pending|review|submitted/.test(String(code))) tip = "请耐心等待后台审核，可刷新本页查看最新状态。";
+    else if (/approved|verified|passed/.test(String(code))) tip = "可前往陪玩端登录；完成身份认证与押金后即可接单。";
+    else if (/rejected/.test(String(code))) tip = "如有疑问请联系平台客服。";
+    return '<div class="apply-status-note">当前申请状态：<b>' + esc(statusLabelOf(code)) + '</b>' +
+      (reason ? ' · 原因：' + esc(reason) : "") +
+      (tip ? '。<span>' + esc(tip) + "</span>" : "。") +
+      (/approved|verified|passed/.test(String(code)) ? ' <a class="apply-btn small" href="companion/index.html">进入陪玩端</a>' : "") +
+      "</div>";
+  }
+  function authGateHtml() {
+    if (companionToken()) return "";
+    return '<section class="apply-panel apply-auth-gate"><h2>先创建 / 登录陪玩账号</h2><p>申请资料会写入平台数据库，审核通过后可直接用此账号登录陪玩端。</p><form class="apply-grid" data-apply-auth-form>' +
+      field("authEmail", "邮箱", "email", "", 'required autocomplete="username"') +
+      field("authPassword", "密码（至少 8 位）", "password", "", 'required minlength="8" autocomplete="new-password"') +
+      field("authNickname", "昵称（注册时必填）", "text", "", 'autocomplete="nickname"') +
+      field("authPhone", "手机号（选填）", "tel", "") +
+      '</form><div class="apply-actions"><button class="apply-btn" type="button" data-apply-login>登录已有账号</button><button class="apply-btn primary" type="button" data-apply-register>注册并继续申请</button></div><p class="apply-note">已有陪玩账号请直接登录；新用户请注册后继续五步申请。</p></section>';
   }
   function render(index) {
     var root = document.getElementById("companionApplyRoot");
@@ -352,7 +375,7 @@
     saveDraft({ step: activeIndex });
     root.dataset.step = String(activeIndex);
     draft = readDraft();
-    root.innerHTML = statusNotice() + '<div class="apply-layout">' + stepNav(activeIndex, draft) + '<div>' + stepHtml(activeIndex, draft) + '<div class="step-complete-mark">' + (stepComplete(activeIndex, draft) ? "已完成 ✔" : "未完成 ○") + '</div><div class="apply-actions"><button class="apply-btn" data-apply-prev type="button" ' + (activeIndex === 0 ? "disabled" : "") + '>上一步</button><button class="apply-btn" data-apply-save type="button">保存草稿</button><button class="apply-btn primary" data-apply-next type="button">' + (activeIndex === steps.length - 1 ? "提交审核" : "下一步") + '</button></div><p class="apply-note">每填写一个输入框都会自动保存草稿，刷新网页或返回修改后会自动恢复。</p></div></div>';
+    root.innerHTML = statusNotice() + authGateHtml() + '<div class="apply-layout"' + (!companionToken() ? ' hidden' : '') + '>' + stepNav(activeIndex, draft) + '<div>' + stepHtml(activeIndex, draft) + '<div class="step-complete-mark">' + (stepComplete(activeIndex, draft) ? "已完成 ✔" : "未完成 ○") + '</div><div class="apply-actions"><button class="apply-btn" data-apply-prev type="button" ' + (activeIndex === 0 ? "disabled" : "") + '>上一步</button><button class="apply-btn" data-apply-save type="button">保存草稿</button><button class="apply-btn primary" data-apply-next type="button">' + (activeIndex === steps.length - 1 ? "提交审核" : "下一步") + '</button></div><p class="apply-note">每填写一个输入框都会自动保存草稿，刷新网页或返回修改后会自动恢复。</p></div></div>';
     setTimeout(function () {
       var current = root.querySelector(".apply-step.active");
       if (current && current.scrollIntoView) current.scrollIntoView({ block: "nearest", inline: "center" });
@@ -373,6 +396,16 @@
     var uploads = draft.uploads || {};
     var step = Number(root.dataset.step || 0);
     Array.prototype.slice.call(root.querySelectorAll("[data-apply-field]")).forEach(function (el) { data[el.name] = el.value.trim(); });
+    var priceMap = {};
+    Array.prototype.slice.call(root.querySelectorAll("[data-game-price]")).forEach(function (el) {
+      var g = el.getAttribute("data-game-price");
+      var v = String(el.value || "").trim();
+      if (g && v) priceMap[g] = v;
+    });
+    if (Object.keys(priceMap).length) {
+      data.gamePriceMap = priceMap;
+      if (!data.hourlyPrice) data.hourlyPrice = priceMap[Object.keys(priceMap)[0]] || "";
+    }
     Array.prototype.slice.call(root.querySelectorAll("[data-tag-picker]")).forEach(function (picker) {
       var key = picker.dataset.tagPicker;
       data[key] = Array.prototype.slice.call(picker.querySelectorAll("[data-tag-field]:checked")).map(function (el) { return el.value; });
@@ -400,6 +433,30 @@
     }
     return missing;
   }
+  var remoteRuleCache = null;
+  var remoteStatus = null;
+  var remoteConfigLoaded = false;
+
+  function statusLabelOf(code) {
+    var map = {
+      pending: "待审核",
+      review: "待审核",
+      submitted: "待审核",
+      resubmit: "需要补资料",
+      need_more: "需要补资料",
+      approved: "已通过",
+      verified: "已通过",
+      passed: "已通过",
+      rejected: "已拒绝",
+    };
+    return map[String(code || "").toLowerCase()] || code || "草稿";
+  }
+  function saveCompanionSession(session) {
+    if (!session) return;
+    var raw = JSON.stringify(session);
+    try { localStorage.setItem("mcjCompanionSession", raw); } catch (e) {}
+    try { sessionStorage.setItem("mcjCompanionSession", raw); } catch (e) {}
+  }
   function companionToken() {
     try {
       var session = JSON.parse(localStorage.getItem("mcjCompanionSession") || sessionStorage.getItem("mcjCompanionSession") || "null");
@@ -410,7 +467,7 @@
   }
   function postCompanion(action, payload) {
     var token = companionToken();
-    if (!token) return Promise.reject(new Error("请先登录陪玩端账号后再提交，以便资料同步到后台。"));
+    if (!token) return Promise.reject(new Error("请先登录或注册陪玩账号后再提交，以便资料同步到后台。"));
     return fetch("/api/companion", {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json", "x-mcj-companion-token": token },
@@ -421,6 +478,93 @@
         return body;
       });
     });
+  }
+  function fetchCompanionBootstrap() {
+    var token = companionToken();
+    if (!token) return Promise.resolve(null);
+    return fetch("/api/companion?action=bootstrap", {
+      headers: { Accept: "application/json", "x-mcj-companion-token": token },
+      cache: "no-store",
+    }).then(function (res) {
+      return res.json().then(function (body) {
+        if (!res.ok || body.ok === false) return null;
+        return body.data || body;
+      });
+    }).catch(function () { return null; });
+  }
+  function loadRemoteApplyConfig() {
+    return fetch("/api/platform/content?types=player_rules,voice_types,player_deposit_settings", {
+      headers: { Accept: "application/json" },
+      cache: "no-store",
+    })
+      .then(function (res) { return res.json().catch(function () { return {}; }); })
+      .then(function (result) {
+        var byType = (result && result.byType) || {};
+        var rules = byType.player_rules || [];
+        var published = rules
+          .map(function (item) {
+            var d = Object.assign({}, item.published || {}, item.draft || {}, item);
+            return {
+              id: item.id || d.id || "RULE-REMOTE",
+              title: d.title || item.title || "陪玩制度",
+              subtitle: d.subtitle || d.versionNote || "",
+              body: d.body || d.content || "",
+              notes: d.notes || "",
+              penaltyRules: d.penaltyRules || "",
+              depositRules: d.depositRules || "",
+              version: d.version || d.versionNote || "1.0",
+              status: item.status === "published" || item.enabled !== false || d.enabled !== false ? "published" : "draft",
+              enabled: item.enabled !== false,
+              sort: Number(d.sort || item.sort || 0),
+              updatedAt: item.updated_at || "",
+            };
+          })
+          .filter(function (r) { return r.status === "published" && r.body; })
+          .sort(function (a, b) { return Number(b.sort || 0) - Number(a.sort || 0); });
+        if (published[0]) {
+          remoteRuleCache = published[0];
+          var agr = (readDraft().rulesAgreement || {});
+          if (agr.accepted && (String(agr.ruleId || "") !== String(published[0].id) || String(agr.version || "") !== String(published[0].version || ""))) {
+            saveDraft({
+              rulesAgreement: {
+                accepted: false,
+                version: published[0].version,
+                ruleId: published[0].id,
+                agreedAt: "",
+                applicantId: applicantId(),
+                device: navigator.userAgent,
+              },
+            });
+          }
+        } else {
+          remoteRuleCache = null;
+        }
+        var voices = byType.voice_types || [];
+        if (voices.length) {
+          var db = readDB();
+          db.voiceTypes = voices.map(function (item, index) {
+            var d = Object.assign({}, item.published || {}, item.draft || {}, item);
+            return { id: item.id || "VOICE-" + index, name: d.name || d.title || item.title, sort: Number(d.sort || index + 1), enabled: item.enabled !== false };
+          }).filter(function (v) { return v.name; });
+          writeDB(db);
+        }
+        var deposits = byType.player_deposit_settings || [];
+        if (deposits[0]) {
+          var dep = Object.assign({}, deposits[0].published || {}, deposits[0].draft || {}, deposits[0]);
+          var db2 = readDB();
+          db2.depositSettings = Object.assign(defaultDeposit(), {
+            amount: Number(dep.amount || 100),
+            currency: dep.currency || "MYR",
+            description: dep.paymentDescription || dep.description || defaultDeposit().description,
+            refundRule: dep.refundDescription || dep.refundTerms || defaultDeposit().refundRule,
+            methods: Array.isArray(dep.paymentMethod) ? dep.paymentMethod : String(dep.paymentMethod || "TNG,DuitNow,Alipay").split(/[,，]/).map(function (s) { return s.trim(); }).filter(Boolean),
+          });
+          writeDB(db2);
+          syncPlatform(db2);
+        }
+        remoteConfigLoaded = true;
+      })
+      .catch(function () { remoteConfigLoaded = true; });
   }
   function submitApplication() {
     var missing = validateBeforeSubmit();
@@ -440,10 +584,19 @@
         service_type: modes.join(","),
         rank: draft.data.rank || "",
         position: (draft.data.positions || [])[0] || "",
-        voice_type: "",
+        voice_type: draft.data.voiceType || "",
         schedule: [draft.data.onlineStart, draft.data.onlineEnd].filter(Boolean).join(" - "),
-        note: draft.data.bio || draft.data.remark || "",
+        note: draft.data.bio || draft.data.remark || draft.data.intro || "",
         tags: (draft.data.personalTags || []).join(","),
+        price: draft.data.hourlyPrice || (draft.data.gamePriceMap && draft.data.gamePriceMap[mainGames[0]]) || "",
+        game_prices: draft.data.gamePriceMap || {},
+        nickname: draft.data.nickname || "",
+        age: draft.data.age || "",
+        gender: draft.data.gender || "",
+        region: draft.data.region || "",
+        phone: draft.data.phone || "",
+        email: draft.data.email || "",
+        contact_public: draft.data.contactPublic || "",
       });
     });
     chain = chain.then(function () {
@@ -519,6 +672,7 @@
         db.companionApplications.unshift(app);
         writeDB(db);
         syncPlatform(db);
+        remoteStatus = { applicationStatus: "pending", rejectReason: "" };
         showSuccess();
       })
       .catch(function (err) {
@@ -528,7 +682,7 @@
   function showSuccess() {
     var modal = document.createElement("div");
     modal.className = "apply-submit-modal";
-    modal.innerHTML = '<div><h2>申请提交成功</h2><p>感谢你的加入，我们会尽快完成审核。</p><p>审核结果会通过站内消息通知你，请耐心等待。</p><div class="apply-actions"><a class="apply-btn" href="companion-apply.html">查看审核进度</a><a class="apply-btn primary" href="index.html">返回首页</a></div></div>';
+    modal.innerHTML = '<div><h2>申请已提交，等待后台审核。</h2><p>当前状态：待审核。你可随时回到本页查看审核进度。</p><div class="apply-actions"><a class="apply-btn" href="companion-apply.html">查看审核进度</a><a class="apply-btn primary" href="index.html">返回首页</a></div></div>';
     document.body.appendChild(modal);
   }
   function setVoiceState(text, seconds) {
@@ -724,6 +878,48 @@
     var root = document.getElementById("companionApplyRoot");
     if (!root) return;
     document.addEventListener("click", async function (e) {
+      if (e.target.closest("[data-apply-login]") || e.target.closest("[data-apply-register]")) {
+        e.preventDefault();
+        var form = document.querySelector("[data-apply-auth-form]");
+        if (!form) return;
+        var email = (form.querySelector('[name="authEmail"]') || {}).value || "";
+        var password = (form.querySelector('[name="authPassword"]') || {}).value || "";
+        var nickname = (form.querySelector('[name="authNickname"]') || {}).value || "";
+        var phone = (form.querySelector('[name="authPhone"]') || {}).value || "";
+        var isRegister = !!e.target.closest("[data-apply-register]");
+        if (!email || !password) { alert("请填写邮箱和密码"); return; }
+        if (isRegister && !nickname) { alert("注册请填写昵称"); return; }
+        try {
+          var res = await fetch("/api/companion", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Accept: "application/json" },
+            body: JSON.stringify({
+              action: isRegister ? "register" : "login",
+              email: email,
+              account: email,
+              password: password,
+              nickname: nickname,
+              phone: phone,
+              remember: true,
+            }),
+          });
+          var body = await res.json().catch(function () { return {}; });
+          if (!res.ok || body.ok === false) throw new Error(body.message || "登录失败");
+          saveCompanionSession(body.session);
+          if (nickname) saveDraft({ data: { nickname: nickname, email: email, phone: phone } });
+          var boot = await fetchCompanionBootstrap();
+          if (boot && boot.player) {
+            remoteStatus = {
+              applicationStatus: boot.player.auditStatus || boot.player.applicationStatus || "",
+              rejectReason: boot.player.applicationRejectReason || "",
+            };
+          }
+          render(Number(document.getElementById("companionApplyRoot").dataset.step || 0));
+        } catch (err) {
+          alert(err.message || "操作失败");
+        }
+        return;
+      }
       var stepBtn = e.target.closest("[data-apply-step]");
       if (stepBtn) {
         e.preventDefault();
@@ -847,7 +1043,22 @@
     ensureDefaultApplicationConfig();
     initHomeEntry();
     var start = function () {
-      if (document.getElementById("companionApplyRoot")) { render(readDraft().step || 0); bind(); }
+      if (!document.getElementById("companionApplyRoot")) return;
+      var finish = function () {
+        render(readDraft().step || 0);
+        bind();
+      };
+      loadRemoteApplyConfig().then(function () {
+        return fetchCompanionBootstrap();
+      }).then(function (boot) {
+        if (boot && boot.player) {
+          remoteStatus = {
+            applicationStatus: boot.player.auditStatus || boot.player.applicationStatus || "",
+            rejectReason: boot.player.applicationRejectReason || "",
+          };
+        }
+        finish();
+      }).catch(finish);
     };
     if (window.MCJTaxonomy && window.MCJTaxonomy.load) {
       window.MCJTaxonomy.load().then(function () { applyRemoteTaxonomy(); start(); }).catch(start);

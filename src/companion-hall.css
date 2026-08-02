@@ -18,3 +18,15 @@ body{background:radial-gradient(circle at 76% 4%,rgba(255,145,195,.055),transpar
 .companion-card-actions{display:flex;gap:10px;margin-top:12px}.companion-card-action.primary{background:rgba(255,143,197,.16);border-color:rgba(255,143,197,.45);color:#ffd7e8}
 @media(max-width:520px){.companion-card-actions{flex-direction:column}}
 
+
+/* Unified media placeholder — never solid red / broken-image flash */
+.companion-card-media{
+  background:#16131a!important;
+}
+.companion-card-media img{
+  display:block!important;
+  width:100%!important;
+  height:100%!important;
+  object-fit:cover!important;
+  background:#1b171f!important;
+}

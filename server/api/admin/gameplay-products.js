@@ -111,10 +111,8 @@ function tokenFrom(req) {
 
 async function requireAdmin(req) {
   const token = tokenFrom(req);
-  const role = String(req.headers["x-mcj-admin-role"] || "").trim();
-  if (!token && ADMIN_ROLES.has(role) && !hasDb()) return { role };
   if (!token) throw Object.assign(new Error("请先登录管理员账号。"), { status: 401 });
-  if (!hasDb()) return { role: role || "admin" };
+  if (!hasDb()) throw Object.assign(new Error("未配置数据库，无法校验管理员身份。"), { status: 503 });
   const authUser = await supabaseJson(authUrl("user"), { headers: authHeaders({ Authorization: `Bearer ${token}` }) });
   const rows = await supabaseJson(restUrl("profiles", `?id=eq.${encodeURIComponent(authUser.id)}&limit=1`), { headers: serviceHeaders() });
   const profile = Array.isArray(rows) ? rows[0] : null;

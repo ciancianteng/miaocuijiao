@@ -309,7 +309,28 @@ export default async function handler(req, res) {
       const user = safeProfile(profile, authUser);
       if (!VALID_ROLES.has(user.role)) return json(res, 403, { ok: false, message: "账号角色无效。" });
       if (user.status !== "active") return json(res, 403, { ok: false, message: "账号未启用或正在审核。" });
-      return json(res, 200, { ok: true, user, redirect: redirectFor(user.role) });
+      let pendingForced = [];
+      let forcedAckRequired = false;
+      if (["boss", "customer", "owner", "user"].includes(String(user.role || "").toLowerCase())) {
+        try {
+          const acks = await import("./_content-acks.js");
+          pendingForced = await acks.pendingForcedForUser(profile.id, { audience: "boss" });
+          forcedAckRequired = pendingForced.length > 0;
+        } catch {
+          /* optional */
+        }
+      }
+      return json(res, 200, { ok: true, user, redirect: redirectFor(user.role), pendingForced, forcedAckRequired });
+    }
+
+    if (req.method === "GET" && action === "pending_forced") {
+      const token = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "");
+      if (!token) return json(res, 401, { ok: false, message: "未登录" });
+      const authUser = await userFromToken(token);
+      const profile = await profileFor(authUser.id);
+      if (!profile) return json(res, 403, { ok: false, message: "账号未绑定平台资料。" });
+      const pending = await (await import("./_content-acks.js")).pendingForcedForUser(profile.id, { audience: "boss" });
+      return json(res, 200, { ok: true, pendingForced: pending, forcedAckRequired: pending.length > 0 });
     }
 
     if (req.method !== "POST") {
@@ -319,6 +340,42 @@ export default async function handler(req, res) {
 
     const body = await parseBody(req);
     const requestedAction = String(body.action || "login");
+    if (requestedAction === "acknowledge_forced" || requestedAction === "ack_forced") {
+      const token = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "");
+      if (!token) return json(res, 401, { ok: false, message: "未登录" });
+      const authUser = await userFromToken(token);
+      const profile = await profileFor(authUser.id);
+      if (!profile) return json(res, 403, { ok: false, message: "账号未绑定平台资料。" });
+      const contentId = String(body.content_id || body.contentId || body.id || "").trim();
+      const contentVersion = String(body.content_version || body.contentVersion || body.version || "1").trim() || "1";
+      const contentType = String(body.content_type || body.contentType || "player_rules").trim() || "player_rules";
+      if (!contentId) return json(res, 400, { ok: false, message: "缺少内容 ID" });
+      const acks = await import("./_content-acks.js");
+      const pending = await acks.pendingForcedForUser(profile.id, { audience: "boss" });
+      const match = pending.find((p) => String(p.id) === contentId);
+      if (!match && contentType !== "announcement") {
+        return json(res, 404, { ok: false, message: "强制内容不存在或已确认" });
+      }
+      const ip = String(req.headers["x-forwarded-for"] || req.headers["x-real-ip"] || "").split(",")[0].trim();
+      const saved = await acks.acknowledgeContent({
+        userId: profile.id,
+        contentType: match?.contentType || contentType,
+        contentId,
+        contentVersion: contentVersion || match?.version || "1",
+        effectiveAt: match?.publishedAt || "",
+        contentUpdatedAt: match?.updatedAt || "",
+        ip,
+        userAgent: String(req.headers["user-agent"] || ""),
+      });
+      const still = await acks.pendingForcedForUser(profile.id, { audience: "boss" });
+      return json(res, 200, {
+        ok: true,
+        message: "已确认阅读",
+        ack: saved,
+        pendingForced: still,
+        forcedAckRequired: still.length > 0,
+      });
+    }
     if (requestedAction === "update_profile") {
       const token = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "");
       if (!token) return json(res, 401, { ok: false, message: "未登录" });

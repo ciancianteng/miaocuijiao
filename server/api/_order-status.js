@@ -16,35 +16,41 @@ export const ORDER_STATUSES = Object.freeze({
   REVIEWED: "reviewed", // view-layer only (completed + review)
 });
 
-/** Boss / shared Chinese labels (tabs + cards). */
+/** Boss / shared Chinese labels (tabs + cards). Unified CN vocabulary. */
 export const ORDER_STATUS_LABELS = Object.freeze({
   awaiting_payment: "待付款",
-  claimed: "等待陪玩确认",
-  pending: "待客服安排",
-  waiting_boss_confirm: "待我确认",
-  confirmed: "已接单待开始",
+  pending: "待接单",
+  waiting_boss_confirm: "选择陪玩中",
+  claimed: "待陪玩确认",
+  confirmed: "待开始",
   in_progress: "进行中",
   completed: "已完成",
   reviewed: "已评价",
   cancelled: "已取消",
   refund_requested: "售后",
   refunded: "已退款",
+  expired: "已失效",
 });
 
 /** Companion portal labels (same keys, wording tuned for 陪玩). */
 export const COMPANION_STATUS_LABELS = Object.freeze({
   ...ORDER_STATUS_LABELS,
-  claimed: "已付款，等待陪玩确认",
-  pending: "公开抢单中",
-  waiting_boss_confirm: "等待老板选择",
+  claimed: "待陪玩确认",
+  pending: "待接单",
+  waiting_boss_confirm: "选择陪玩中",
   confirmed: "待开始",
 });
 
 /**
  * Forbidden / legacy aliases → canonical DB status.
  * Never store these aliases in orders.status.
+ * Public flow names (draft/pending_grab/…) normalize to DB enum.
  */
 const ALIASES = Object.freeze({
+  draft: "awaiting_payment",
+  pending_grab: "pending",
+  selecting: "waiting_boss_confirm",
+  pending_companion_confirm: "claimed",
   pending_payment: "awaiting_payment",
   unpaid: "awaiting_payment",
   waiting_payment: "awaiting_payment",
@@ -60,6 +66,7 @@ const ALIASES = Object.freeze({
   after_sale: "refund_requested",
   aftersale: "refund_requested",
   refund: "refund_requested",
+  expired: "cancelled",
 });
 
 export function normalizeOrderStatus(raw) {
@@ -102,9 +109,9 @@ export const CS_STATUS_TRANSITIONS = Object.freeze({
 /** CS 改状态 dropdown labels (stricter wording). */
 export const CS_STATUS_ACTION_LABELS = Object.freeze({
   awaiting_payment: "待付款",
-  pending: "公开抢单中",
-  claimed: "等待陪玩确认",
-  waiting_boss_confirm: "等待老板选择",
+  pending: "待接单",
+  claimed: "待陪玩确认",
+  waiting_boss_confirm: "选择陪玩中",
   confirmed: "待开始",
   in_progress: "进行中",
   completed: "已完成",
@@ -137,13 +144,13 @@ export function assertCsStatusTransition(fromStatus, toStatus) {
   return { from, to };
 }
 
-/** Runtime allows Preview TEST pay (never on Vercel Production). */
+/** Runtime allows Preview TEST pay only on Vercel Preview / local non-production. Never on Production. */
 export function allowPreviewTestPay() {
   const vercelEnv = String(process.env.VERCEL_ENV || "").toLowerCase();
   if (vercelEnv === "production") return false;
-  if (vercelEnv === "preview" || vercelEnv === "development") return true;
-  // Local / unset: allow for acceptance scripts.
-  return String(process.env.NODE_ENV || "").toLowerCase() !== "production" || !vercelEnv;
+  if (vercelEnv === "preview") return true;
+  // Local only when NODE_ENV is not production
+  return String(process.env.NODE_ENV || "").toLowerCase() !== "production";
 }
 
 /**
@@ -190,13 +197,21 @@ export async function transitionOrderStatus(
     throw Object.assign(new Error(`无效订单状态：${toStatus}`), { status: 400 });
   }
   const body = { ...patch, status: next };
-  const q = filterQuery || `?id=eq.${encodeURIComponent(orderId)}`;
+  let q = filterQuery || `?id=eq.${encodeURIComponent(orderId)}`;
+  // Optimistic CAS: when fromStatus known and filter lacks status=, require current status match.
+  const from = fromStatus ? normalizeOrderStatus(fromStatus) : "";
+  if (from && !/status=eq\./i.test(q)) {
+    q += (q.includes("?") ? "&" : "?") + `status=eq.${encodeURIComponent(from)}`;
+  }
   const rows = await supabaseJson(restUrl("orders", q), {
     method: "PATCH",
     headers: serviceHeaders(),
     body: JSON.stringify(body),
   });
   const saved = Array.isArray(rows) ? rows[0] : null;
+  if (!saved) {
+    throw Object.assign(new Error("订单状态已变更，请刷新后重试。"), { status: 409 });
+  }
   await writeOrderStatusLog(deps, {
     orderId,
     fromStatus,

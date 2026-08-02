@@ -87,7 +87,7 @@
       { value: "pending", label: "待审核" },
       { value: "approved", label: "已通过" },
       { value: "rejected", label: "已驳回" },
-      { value: "resubmit", label: "需要重新提交" },
+      { value: "resubmit", label: "需要补资料" },
     ].map(function (opt) {
       return '<option value="' + opt.value + '" ' + (String(selected) === opt.value ? "selected" : "") + ">" + opt.label + "</option>";
     }).join("");

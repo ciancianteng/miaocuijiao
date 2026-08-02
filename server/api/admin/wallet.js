@@ -17,19 +17,12 @@ import {
   viewWallet,
   writeAdminLog,
 } from "../_wallet.js";
+import { requireAdmin } from "../_admin-auth.js";
 
 const ADMIN_ROLES = new Set(["admin", "super_admin", "finance_admin"]);
 
 function json(res, status, data) {
   res.status(status).json(data);
-}
-
-function roleFrom(req) {
-  return String(req.headers["x-mcj-admin-role"] || req.headers["x-user-role"] || "").trim();
-}
-
-function canManage(req) {
-  return ADMIN_ROLES.has(roleFrom(req));
 }
 
 async function parseBody(req) {
@@ -40,30 +33,6 @@ async function parseBody(req) {
     return JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
   } catch {
     return {};
-  }
-}
-
-function authHeaders(extra = {}) {
-  return {
-    apikey: process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || "",
-    "Content-Type": "application/json",
-    ...extra,
-  };
-}
-
-async function adminFromToken(req) {
-  const token = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "").trim();
-  if (!token) return { id: null, role: roleFrom(req) || "admin" };
-  try {
-    const user = await supabaseJson(`${process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL}/auth/v1/user`, {
-      headers: authHeaders({ Authorization: `Bearer ${token}` }),
-    });
-    const rows = await supabaseJson(restUrl("profiles", `?id=eq.${encodeURIComponent(user.id)}&limit=1`), {
-      headers: serviceHeaders(),
-    });
-    return rows?.[0] || { id: user.id, role: roleFrom(req) || "admin" };
-  } catch {
-    return { id: null, role: roleFrom(req) || "admin" };
   }
 }
 
@@ -82,7 +51,12 @@ function compensationTypeToTx(type) {
 }
 
 export default async function handler(req, res) {
-  if (!canManage(req)) return json(res, 403, { ok: false, message: "没有钱包管理权限" });
+  let adminProfile;
+  try {
+    adminProfile = await requireAdmin(req, { allowRoles: ADMIN_ROLES });
+  } catch (err) {
+    return json(res, err.status || 403, { ok: false, message: err.message || "没有钱包管理权限" });
+  }
   if (!hasWalletDb()) return json(res, 503, { ok: false, message: "未配置数据库" });
 
   try {
@@ -119,7 +93,7 @@ export default async function handler(req, res) {
 
     const body = await parseBody(req);
     const action = String(body.action || "").trim();
-    const admin = await adminFromToken(req);
+    const admin = adminProfile;
     const operatorId = admin.id || null;
 
     if (action === "grant") {
@@ -159,7 +133,7 @@ export default async function handler(req, res) {
         targetType: "boss",
         targetId: bossId,
         operatorId,
-        operatorRole: roleFrom(req),
+        operatorRole: admin.role || "admin",
         reason,
         before,
         after,
@@ -196,7 +170,7 @@ export default async function handler(req, res) {
         targetType: "boss",
         targetId: bossId,
         operatorId,
-        operatorRole: roleFrom(req),
+        operatorRole: admin.role || "admin",
         reason,
         before,
         after,
@@ -220,7 +194,7 @@ export default async function handler(req, res) {
         targetType: "boss",
         targetId: bossId,
         operatorId,
-        operatorRole: roleFrom(req),
+        operatorRole: admin.role || "admin",
         reason: String(body.reason || ""),
         after: rows?.[0] || { frozen },
       });
@@ -258,7 +232,7 @@ export default async function handler(req, res) {
           targetType: "compensation_request",
           targetId: id,
           operatorId,
-          operatorRole: roleFrom(req),
+          operatorRole: admin.role || "admin",
           reason: reviewNote,
         });
         return json(res, 200, { ok: true, message: "已驳回", item: patched?.[0] || null });
@@ -308,7 +282,7 @@ export default async function handler(req, res) {
         targetType: "compensation_request",
         targetId: id,
         operatorId,
-        operatorRole: roleFrom(req),
+        operatorRole: admin.role || "admin",
         reason: reviewNote || reqRow.reason,
         after: { amount, credit },
       });
@@ -342,7 +316,7 @@ export default async function handler(req, res) {
         targetType: "wallet_settings",
         targetId: "1",
         operatorId,
-        operatorRole: roleFrom(req),
+        operatorRole: admin.role || "admin",
         after: patch,
       });
       return json(res, 200, { ok: true, message: "钱包设置已保存", settings: rows?.[0] || patch });
@@ -370,7 +344,7 @@ export default async function handler(req, res) {
         targetType: "payment_order",
         targetId: paymentNo,
         operatorId,
-        operatorRole: roleFrom(req),
+        operatorRole: admin.role || "admin",
         after: result,
       });
       return json(res, 200, {

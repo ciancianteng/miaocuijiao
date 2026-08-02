@@ -52,8 +52,12 @@
     var scope = root || document;
     var targets = scope.querySelectorAll("button, a.btn, a.mcj-btn, .primary-btn, .ghost-btn, .mini-btn");
     targets.forEach(function (el) {
+      // Never rewrite mobile menu toggle (☰) — design-system was injecting a star SVG into it.
+      if (el.matches(".mcj-mnav-toggle, [data-mcj-mnav-toggle]") || el.closest(".mcj-mnav")) return;
       if (el.querySelector("svg, img, .mcj-line-icon")) return;
       var text = (el.textContent || "").trim();
+      // Skip pure menu glyphs (☰ U+2630 is inside \u2600-\u27ff).
+      if (/^[☰≡☰\u2630\u2261]+$/.test(text)) return;
       if (!/^[\u2600-\u27ff\ud83c-\udfff]/.test(text)) return;
       var key = pickIconKey(text);
       var clean = text.replace(/^[\u2600-\u27ff\ud83c-\udfff]\s*/u, "");
@@ -66,6 +70,14 @@
   }
 
   function init() {
+    try {
+      var cores = Number(navigator.hardwareConcurrency || 8);
+      var mem = Number(navigator.deviceMemory || 8);
+      var saveData = !!(navigator.connection && navigator.connection.saveData);
+      if (cores <= 4 || mem <= 4 || saveData || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        document.documentElement.classList.add("mcj-low-perf");
+      }
+    } catch (e) {}
     normalizeCards(document);
     normalizeEmojiButtons(document);
     window.setTimeout(function () { normalizeCards(document); normalizeEmojiButtons(document); }, 120);
@@ -77,7 +89,7 @@
       if (/\/admin(\/|\.html|$)/i.test(p) || /\/companion\//i.test(p) || /\/customer-service(\/|\.html|$)/i.test(p)) return;
       window.__MCJBossHeaderScript = true;
       var s = document.createElement("script");
-      s.src = "/src/boss-header.js";
+      s.src = "/src/boss-header.js?v=20260802mobileP0c";
       s.defer = true;
       document.head.appendChild(s);
     })();

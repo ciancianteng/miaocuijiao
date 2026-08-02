@@ -1,7 +1,5 @@
 const REQUIRED_ENV = ["ADMIN_DATABASE_URL", "ADMIN_DATABASE_SERVICE_KEY"];
 const ADMIN_ROLES = new Set(["super_admin", "admin", "finance_admin"]);
-const SERVICE_ROLES = new Set(["customer_service", "service"]);
-const USER_ROLES = new Set(["boss", "customer", "player", "companion"]);
 const ACTIONS = new Set([
   "send_message",
   "take-over",
@@ -24,14 +22,6 @@ const ACTIONS = new Set([
   "tool_quick"
 ]);
 
-function roleFromRequest(req) {
-  return String(req.headers["x-mcj-admin-role"] || req.headers["x-mcj-role"] || "").trim();
-}
-
-function canRead(role) {
-  return ADMIN_ROLES.has(role) || SERVICE_ROLES.has(role) || USER_ROLES.has(role);
-}
-
 function hasDatabaseConfig() {
   return REQUIRED_ENV.every((key) => process.env[key]);
 }
@@ -41,10 +31,13 @@ function json(res, status, data) {
 }
 
 export default async function handler(req, res) {
-  const role = roleFromRequest(req);
-  if (!canRead(role)) {
-    return json(res, 403, { ok: false, message: "没有消息中心访问权限" });
+  let adminProfile;
+  try {
+    adminProfile = await (await import("../_admin-auth.js")).requireAdmin(req, { allowRoles: ADMIN_ROLES });
+  } catch (err) {
+    return json(res, err.status || 403, { ok: false, message: err.message || "没有消息中心访问权限" });
   }
+  const role = String(adminProfile.role || "");
 
   if (req.method === "GET") {
     if (!hasDatabaseConfig()) {

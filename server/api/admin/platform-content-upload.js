@@ -113,8 +113,11 @@ async function uploadToDatabaseAsset({ type, fileName, mimeType, base64, size })
 }
 
 export default async function handler(req, res) {
-  const role = roleFromRequest(req);
-  if (!ADMIN_ROLES.has(role)) return json(res, 403, { ok: false, message: "没有上传权限" });
+  try {
+    await (await import("../_admin-auth.js")).requireAdmin(req, { allowRoles: ADMIN_ROLES });
+  } catch (err) {
+    return json(res, err.status || 403, { ok: false, message: err.message || "没有上传权限" });
+  }
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
     return json(res, 405, { ok: false, message: "Method Not Allowed" });

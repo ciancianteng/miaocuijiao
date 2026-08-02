@@ -10,6 +10,7 @@ import {
 } from "../_companion-media-store.js";
 import { readLocalLevels } from "../_companion-levels-store.js";
 import { resolvePlatformCommission } from "../_commission-rates.js";
+import { resolveCompanionAvatar, resolveCompanionCover } from "../_companion-public-map.js";
 
 const ADMIN_ROLES = new Set(["super_admin", "admin"]);
 const PLAYER_TABLE = "companion_profiles";
@@ -21,7 +22,7 @@ const STATUS_LABEL = {
   pending: "待审核",
   approved: "已通过",
   rejected: "已驳回",
-  resubmit: "需要重新提交",
+  resubmit: "需要补资料",
   verified: "已通过",
   unverified: "未认证",
   paid: "已缴纳",
@@ -116,11 +117,9 @@ function tokenFrom(req) {
 }
 
 async function requireAdmin(req) {
-  const headerRole = roleFrom(req);
-  if (ADMIN_ROLES.has(headerRole)) return { role: headerRole, id: null };
   const token = tokenFrom(req);
   if (!token || !ANON_KEY()) {
-    throw Object.assign(new Error("没有陪玩管理权限"), { status: 403 });
+    throw Object.assign(new Error("请先登录管理员账号。"), { status: 401 });
   }
   const authRes = await fetch(`${process.env.SUPABASE_URL}/auth/v1/user`, {
     headers: {
@@ -231,8 +230,10 @@ function mapListPlayer(row = {}, profile = {}) {
     name: row.nickname || profile.display_name || "-",
     email: profile.email || "",
     phone: row.contact_phone || profile.phone || "",
-    avatar: profile.avatar_url || row.card_image_url || "",
-    avatar_url: profile.avatar_url || "",
+    avatar: resolveCompanionAvatar(profile, row),
+    avatar_url: resolveCompanionAvatar(profile, row),
+    cover: resolveCompanionCover(profile, row),
+    card_image_url: resolveCompanionCover(profile, row),
     game: row.game || "",
     mainGame: row.game || "",
     main_service: row.main_service || "",
@@ -778,17 +779,57 @@ async function reviewApplication(req, companion, payload) {
   const status = normalizeStatusInput(payload.status || payload.applicationStatus || payload.auditStatus, "pending");
   const reason = String(payload.rejectReason || payload.reason || "").trim();
   if ((status === "rejected" || status === "resubmit") && !reason) {
-    throw Object.assign(new Error("驳回陪玩申请时必须填写原因。"), { status: 400 });
+    throw Object.assign(new Error("驳回或要求补资料时必须填写原因。"), { status: 400 });
+  }
+  const patch = {
+    application_status: status,
+    application_reject_reason: reason,
+    updated_at: new Date().toISOString(),
+  };
+  if (status === "approved") {
+    // 申请通过 ≠ 身份/押金通过：默认离线，须完成认证与押金后才可接单
+    patch.online_status = "offline";
+    if (payload.levelId != null || payload.level_id != null) {
+      patch.level_id = String(payload.levelId || payload.level_id || "").trim();
+    }
+    if (payload.levelName != null || payload.level_name != null) {
+      patch.level_name = String(payload.levelName || payload.level_name || "").trim();
+    }
+    const orderRate = percent(payload.orderCommissionRate ?? payload.commission_rate ?? payload.commissionRate);
+    if (orderRate !== undefined) patch.commission_rate = orderRate;
+    const giftRate = percent(payload.giftCommissionRate ?? payload.gift_commission_rate);
+    if (giftRate !== undefined) patch.gift_commission_rate = giftRate;
+    const rebate = percent(payload.directRebateRate ?? payload.direct_rebate_rate);
+    if (rebate !== undefined) patch.direct_rebate_rate = rebate;
+    if (payload.price != null) patch.price = money(payload.price);
+    if (payload.minPrice != null || payload.price_min != null) {
+      patch.price_min = money(payload.minPrice ?? payload.price_min);
+    }
+    if (payload.maxPrice != null || payload.price_max != null) {
+      patch.price_max = money(payload.maxPrice ?? payload.price_max);
+    }
+    if (payload.allowOrders != null || payload.allow_orders != null) {
+      patch.allow_orders = bool(payload.allowOrders ?? payload.allow_orders, true);
+    }
   }
   const after = await companionDb(PLAYER_TABLE, `?id=eq.${encodeURIComponent(companion.id)}`, {
     method: "PATCH",
-    body: JSON.stringify({
-      application_status: status,
-      application_reject_reason: reason,
-      verification_status: status === "approved" ? "approved" : status,
-      updated_at: new Date().toISOString(),
-    }),
+    body: JSON.stringify(patch),
   });
+  if (status === "approved" && companion.user_id) {
+    try {
+      await companionDb("profiles", `?id=eq.${encodeURIComponent(companion.user_id)}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          role: "companion",
+          status: "active",
+          updated_at: new Date().toISOString(),
+        }),
+      });
+    } catch {
+      /* best effort: register already creates companion profile */
+    }
+  }
   await logOperation(req, "review_application", companion.id, companion, after?.[0], reason);
   return after?.[0];
 }

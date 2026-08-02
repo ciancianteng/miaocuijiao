@@ -3,8 +3,10 @@ import path from "node:path";
 import {
   CATEGORIES,
   PRICING_UNITS,
+  DEFAULT_PRODUCTS,
   fromDbRow,
   toPublicProduct,
+  isJunkGameplayProduct,
   readLocalProducts,
 } from "../_gameplay-products-store.js";
 
@@ -21,7 +23,7 @@ function loadLocalEnv() {
     const eq = line.indexOf("=");
     if (eq === -1) continue;
     const key = line.slice(0, eq).trim();
-    const value = line.slice(eq + 1).trim().replace(/^["']|["']$/g, "");
+    const value = line.slice(eq + 1).trim().replace(/^["']|['"]$/g, "");
     if (key && value && !process.env[key]) process.env[key] = value;
   }
 }
@@ -55,6 +57,36 @@ function isMissingTable(error) {
   return error?.status === 404 || /Could not find the table|schema cache|PGRST205|does not exist/i.test(text);
 }
 
+function cleanProducts(list) {
+  return (list || [])
+    .map((item) => toPublicProduct(item))
+    .filter((item) => item && item.status === "published" && !isJunkGameplayProduct(item));
+}
+
+async function loadAnnouncementProducts() {
+  const scan = await fetch(restUrl("announcements", "?is_active=eq.true&order=updated_at.desc&limit=80"), {
+    headers: serviceHeaders(),
+  });
+  const scanText = await scan.text();
+  let scanBody = null;
+  try {
+    scanBody = scanText ? JSON.parse(scanText) : null;
+  } catch {
+    scanBody = null;
+  }
+  if (!scan.ok || !Array.isArray(scanBody)) return [];
+  return scanBody
+    .filter((row) => String(row.title || "").includes("[MCJ_GP]"))
+    .map((row) => {
+      try {
+        return JSON.parse(row.content || "{}");
+      } catch {
+        return null;
+      }
+    })
+    .filter((item) => item && item.name);
+}
+
 async function listPublished() {
   if (hasDb()) {
     try {
@@ -72,78 +104,34 @@ async function listPublished() {
       if (!response.ok) {
         throw Object.assign(new Error(body?.message || "读取商品失败"), { status: response.status, body });
       }
-      return {
-        products: (Array.isArray(body) ? body : []).map(fromDbRow).map((item) => toPublicProduct(item)),
-        source: "supabase",
-      };
+      const products = cleanProducts((Array.isArray(body) ? body : []).map(fromDbRow));
+      if (products.length) return { products, source: "supabase" };
     } catch (error) {
       if (!isMissingTable(error)) throw error;
     }
-    // Fallback: Preview TEST products stored in announcements (no gameplay_products table yet).
+
     try {
-      const response = await fetch(
-        restUrl("announcements", `?is_active=eq.true&title=like.${encodeURIComponent("*[MCJ_GP]*")}&limit=20`),
-        { headers: serviceHeaders() }
-      );
-      const text = await response.text();
-      let body = null;
-      try {
-        body = text ? JSON.parse(text) : null;
-      } catch {
-        body = text;
-      }
-      if (response.ok && Array.isArray(body) && body.length) {
-        const products = body
-          .map((row) => {
-            try {
-              return JSON.parse(row.content || "{}");
-            } catch {
-              return null;
-            }
-          })
-          .filter((item) => item && item.name)
-          .map((item) => toPublicProduct(item));
-        if (products.length) return { products, source: "announcements" };
-      }
-      // PostgREST like may fail; scan recent announcements
-      const scan = await fetch(restUrl("announcements", "?is_active=eq.true&order=updated_at.desc&limit=50"), {
-        headers: serviceHeaders(),
-      });
-      const scanText = await scan.text();
-      let scanBody = null;
-      try {
-        scanBody = scanText ? JSON.parse(scanText) : null;
-      } catch {
-        scanBody = null;
-      }
-      if (scan.ok && Array.isArray(scanBody)) {
-        const products = scanBody
-          .filter((row) => String(row.title || "").includes("[MCJ_GP]"))
-          .map((row) => {
-            try {
-              return JSON.parse(row.content || "{}");
-            } catch {
-              return null;
-            }
-          })
-          .filter((item) => item && item.name)
-          .map((item) => toPublicProduct(item));
-        if (products.length) return { products, source: "announcements" };
-      }
+      const products = cleanProducts(await loadAnnouncementProducts());
+      if (products.length) return { products, source: "announcements" };
     } catch {
       /* ignore */
     }
-    return { products: [], source: "supabase-empty" };
+
+    // No usable published catalog — expose built-in formal catalog (never test junk).
+    return {
+      products: cleanProducts(DEFAULT_PRODUCTS),
+      source: "catalog-fallback",
+    };
   }
+
   try {
     const rows = await readLocalProducts();
-    return {
-      products: rows.filter((item) => item.status === "published").map((item) => toPublicProduct(item)),
-      source: "local",
-    };
+    const products = cleanProducts(rows);
+    if (products.length) return { products, source: "local" };
   } catch {
-    return { products: [], source: "local-empty" };
+    /* ignore */
   }
+  return { products: cleanProducts(DEFAULT_PRODUCTS), source: "catalog-fallback" };
 }
 
 export default async function handler(req, res) {
@@ -156,7 +144,7 @@ export default async function handler(req, res) {
     const result = await listPublished();
     if (id) {
       const product = result.products.find((item) => String(item.id) === id) || null;
-      if (!product) return json(res, 404, { ok: false, message: "商品不存在或已下架。" });
+      if (!product) return json(res, 404, { ok: false, message: "该商品已下架或不存在" });
       return json(res, 200, { ok: true, product, categories: CATEGORIES, pricingUnits: PRICING_UNITS, source: result.source });
     }
     return json(res, 200, {

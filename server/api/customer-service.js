@@ -1,17 +1,8 @@
 import "./_load-env.js";
+import { mapCompanionPublicFields } from "./_companion-public-map.js";
+import { ORDER_STATUS_LABELS } from "./_order-status.js";
 const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY"];
-const ORDER_STATUS_TEXT = {
-  awaiting_payment: "待付款",
-  pending: "公开抢单中",
-  claimed: "等待陪玩确认",
-  waiting_boss_confirm: "等待老板选择",
-  confirmed: "待开始",
-  in_progress: "进行中",
-  completed: "已完成",
-  cancelled: "已取消",
-  refund_requested: "售后",
-  refunded: "已退款"
-};
+const ORDER_STATUS_TEXT = { ...ORDER_STATUS_LABELS };
 const SERVICE_ROLES = new Set(["customer_service"]);
 const ASSIGN_LOCKS = new Map();
 const TEST_NOISE_RE = /\[TEST\]|E2E-MSG|E2E[_-]|CHAT-|CS-LINK|SVC-|MSG-|ORDER-CHAT-|acceptance|自动化测试/i;
@@ -101,7 +92,7 @@ function safeProfile(row) {
     status: row.status || "",
   };
 }
-function safeOrder(row, profiles = {}) {
+function safeOrder(row, profiles = {}, extras = {}) {
   const boss = profiles[row.boss_id] || {};
   const companion = profiles[row.companion_id] || {};
   const service = profiles[row.customer_service_id] || {};
@@ -109,6 +100,18 @@ function safeOrder(row, profiles = {}) {
   const note = String(row.note || row.cancel_reason || "");
   const needsReassign =
     row.status === "pending" && /无法接单|确认超时|拒单|重新安排/.test(note);
+  const flowStatus =
+    extras.flowStatus ||
+    ({
+      awaiting_payment: "draft",
+      pending: "pending_grab",
+      waiting_boss_confirm: "selecting",
+      claimed: "pending_companion_confirm",
+      confirmed: "confirmed",
+      in_progress: "in_progress",
+      completed: "completed",
+      cancelled: "cancelled",
+    }[row.status] || row.status || "");
   return {
     id: row.id,
     orderNo: row.order_no || row.id,
@@ -127,6 +130,7 @@ function safeOrder(row, profiles = {}) {
     unitPrice: money(row.unit_price),
     totalAmount: money(row.total_amount),
     status: row.status || "",
+    flowStatus,
     statusText: ORDER_STATUS_TEXT[row.status] || row.status || "-",
     note,
     cancelReason: row.cancel_reason || "",
@@ -136,6 +140,10 @@ function safeOrder(row, profiles = {}) {
         ? "陪玩确认超时，需重新指定陪玩"
         : "陪玩无法接单，可更换陪玩 / 推送抢单 / 联系老板 / 发起退款"
       : "",
+    grabCount: Number(extras.grabCount != null ? extras.grabCount : 0) || 0,
+    grabs: extras.grabs || [],
+    bossIntent: extras.bossIntent || null,
+    preferredCompanionId: extras.bossIntent?.companionId || "",
     createdAt: row.created_at || "",
     acceptedAt: row.accepted_at || "",
     startedAt: row.started_at || "",
@@ -395,11 +403,94 @@ async function loadBootstrap(serviceProfile) {
   for (const id of bossIdsNeedingUid.slice(0, 20)) {
     profiles[id] = await ensureBossUid(profiles[id]);
   }
-  const orders = ordersRaw.map((row) => safeOrder(row, profiles)); const msgByConv = messagesRaw.reduce((map, msg) => { (map[msg.conversation_id] = map[msg.conversation_id] || []).push(msg); return map; }, {}); const conversationsMapped = conversationsRaw.map((row) => { const boss = profiles[row.boss_id] || {}; const companionProf = profiles[row.companion_id] || {}; const service = profiles[row.customer_service_id] || {}; const msgs = msgByConv[row.id] || []; const last = msgs[msgs.length - 1] || {}; const bossUid = String(boss.boss_uid || "").trim(); const isCompanionSupport = String(row.conversation_type || "") === "companion_support" || (!row.boss_id && row.companion_id); const isClosed = row.status === "closed" || row.status === "ended"; const convStatus = isClosed ? "已结束" : (row.customer_service_id ? "正在接待" : "待接待"); const lastReadAt = row.last_read_at || ""; const unreadRoles = isCompanionSupport ? ["companion"] : ["boss"]; const unreadBoss = isClosed ? [] : msgs.filter((m) => {
+  const { createOrderGrabHelpers } = await import("./_order-grabs.js");
+  const { parseBossIntent, enrichGrabCompanions, toFlowStatus } = await import("./_order-flow.js");
+  const grabsApi = createOrderGrabHelpers({ restUrl, supabaseJson, serviceHeaders });
+  const grabEligible = (ordersRaw || []).slice(0, 80).filter((row) =>
+    ["pending", "waiting_boss_confirm", "claimed", "confirmed"].includes(row.status)
+  );
+  const grabNoteMap = Object.fromEntries(grabEligible.map((row) => [row.id, row.note || row.description || ""]));
+  const grabMapRaw = await grabsApi.listGrabsBatch(
+    grabEligible.map((row) => row.id),
+    grabNoteMap
+  );
+  const needsEnrich = grabEligible.filter((row) => ["pending", "waiting_boss_confirm"].includes(row.status));
+  const enrichFlat = needsEnrich.flatMap((row) => grabMapRaw[row.id] || []);
+  const enrichedAll = await enrichGrabCompanions({ restUrl, supabaseJson, serviceHeaders }, enrichFlat).catch(() => enrichFlat);
+  const enrichedByKey = Object.fromEntries(
+    (enrichedAll || []).map((g) => [String(g.id || g.grabId || `${g.orderId}:${g.companionId}`), g])
+  );
+  const grabExtras = (ordersRaw || []).slice(0, 80).map((row) => {
+    if (!["pending", "waiting_boss_confirm", "claimed", "confirmed"].includes(row.status)) {
+      return { id: row.id, grabCount: 0, grabs: [], bossIntent: parseBossIntent(row) };
+    }
+    const grabs = grabMapRaw[row.id] || [];
+    const intent = parseBossIntent(row);
+    let enriched = grabs;
+    if (["pending", "waiting_boss_confirm"].includes(row.status) && grabs.length) {
+      enriched = grabs.map((g) => {
+        const key = String(g.id || g.grabId || `${g.orderId}:${g.companionId}`);
+        const eg = enrichedByKey[key] || g;
+        return {
+          ...eg,
+          bossPreferred: !!(intent && intent.companionId === eg.companionId),
+          companion: eg.companion
+            ? { ...eg.companion, bossPreferred: !!(intent && intent.companionId === eg.companionId) }
+            : null,
+        };
+      });
+    }
+    return { id: row.id, grabCount: grabs.length, grabs: enriched, bossIntent: intent };
+  });
+  const grabMap = Object.fromEntries(grabExtras.map((g) => [g.id, g]));
+  const orders = ordersRaw.map((row) => {
+    const extra = grabMap[row.id] || {};
+    return safeOrder(row, profiles, {
+      grabCount: extra.grabCount || 0,
+      grabs: extra.grabs || [],
+      bossIntent: extra.bossIntent || null,
+      flowStatus: toFlowStatus(row.status),
+    });
+  }); const msgByConv = messagesRaw.reduce((map, msg) => { (map[msg.conversation_id] = map[msg.conversation_id] || []).push(msg); return map; }, {}); const conversationsMapped = conversationsRaw.map((row) => { const boss = profiles[row.boss_id] || {}; const companionProf = profiles[row.companion_id] || {}; const service = profiles[row.customer_service_id] || {}; const msgs = msgByConv[row.id] || []; const last = msgs[msgs.length - 1] || {}; const bossUid = String(boss.boss_uid || "").trim(); const isCompanionSupport = String(row.conversation_type || "") === "companion_support" || (!row.boss_id && row.companion_id); const isClosed = row.status === "closed" || row.status === "ended"; const convStatus = isClosed ? "已结束" : (row.customer_service_id ? "正在接待" : "待接待"); const lastReadAt = row.last_read_at || ""; const unreadRoles = isCompanionSupport ? ["companion"] : ["boss"]; const unreadBoss = isClosed ? [] : msgs.filter((m) => {
     if (!unreadRoles.includes(m.sender_role) || m.read_at) return false;
     if (lastReadAt && String(m.created_at || "") <= String(lastReadAt)) return false;
     return true;
-  }); const companionName = String(companionProf.display_name || "").trim() || "陪玩"; return { id: row.id, bossId: row.boss_id || "", bossUid: bossUid || "", bossName: isCompanionSupport ? `陪玩 · ${companionName}` : (boss.display_name || bossUid || "老板"), companionId: row.companion_id || "", conversationType: row.conversation_type || (isCompanionSupport ? "companion_support" : "general_support"), orderId: row.order_id || "", orderNo: (orders.find((o) => o.id === row.order_id) || {}).orderNo || "", currentServiceId: isClosed ? (row.customer_service_id || "") : (row.customer_service_id || ""), currentServiceName: String(service.display_name || "").trim() || (row.customer_service_id ? "客服" : "待接待"), status: convStatus, rawStatus: isClosed ? "closed" : (row.status || ""), lastMessage: last.content || "", lastTime: last.created_at || row.updated_at || "", unread: unreadBoss.length, unreadCount: unreadBoss.length, closedAt: row.closed_at || "", closedBy: row.closed_by || "", lastReadAt, acceptedAt: row.accepted_at || "", updatedAt: row.updated_at || "" }; }); const conversations = conversationsMapped.filter((c) => !isTestNoiseConversation({ last_message: c.lastMessage, title: c.bossName }, (messagesRaw || []).filter((m) => m.conversation_id === c.id).map((m) => ({ content: m.content })), c.orderNo)); const bosses = profilesRaw.filter((p) => p.role === "boss" && p.status === "active").map(safeProfile); const companions = companionsRaw.map((cp) => { const p = profiles[cp.user_id] || {}; const verified = /approved|verified|passed/.test(String(cp.verification_status || "")); const onlineRaw = String(cp.online_status || "offline").toLowerCase(); const onlineStatus = verified ? onlineRaw : "offline"; return { id: cp.user_id, companionUid: cp.companion_uid || "", name: cp.nickname || p.display_name || p.email || "陪玩", game: cp.game || "", level: cp.level_name || "", price: money(cp.price), status: p.status || "", verificationStatus: cp.verification_status || "", onlineStatus, online: onlineStatus === "online", idle: onlineStatus === "online" }; }).filter((p) => isUuid(p.id) && (!p.status || p.status === "active" || p.status === "启用")); const today = new Date().toISOString().slice(0, 10); const receptionStats = await (await import("./_service-receptions.js")).loadReceptionStats(serviceProfile.id, conversations); const summary = { waitingConversations: conversations.filter((c) => !c.currentServiceId && c.rawStatus !== "closed").length, currentReceptions: workData?.summary?.currentReceptions || receptionStats.currentReceptions || 0, todayReceptions: workData?.summary?.todayReceptions || receptionStats.todayReceptions || 0, monthReceptions: receptionStats.monthReceptions || 0, awaitingPayment: orders.filter((o) => o.status === "awaiting_payment").length, pendingOrders: orders.filter((o) => o.status === "pending").length, waitingCompanionConfirm: orders.filter((o) => o.status === "claimed").length, needsReassign: orders.filter((o) => o.needsReassign).length, waitingBossConfirm: orders.filter((o) => o.status === "waiting_boss_confirm").length, inProgress: orders.filter((o) => o.status === "in_progress" || o.status === "confirmed").length, refundRequested: orders.filter((o) => o.status === "refund_requested").length, todayHandled: orders.filter((o) => o.serviceId === serviceProfile.id && String(o.createdAt).slice(0, 10) === today).length, todayCompleted: workData?.summary?.todayCompleted || 0, todayPaid: workData?.summary?.todayPaid || 0, todayRefunds: workData?.summary?.todayRefunds || 0, unreadMessages: workData?.summary?.unreadMessages || 0, monthAttendanceDays: workData?.summary?.monthAttendanceDays || 0, monthLateCount: workData?.summary?.monthLateCount || 0, monthAbsenceCount: workData?.summary?.monthAbsenceCount || 0, estimatedSalary: workData?.summary?.estimatedSalary || 0 }; const payrollStatusText = { draft: "草稿", pending_review: "待审核", approved_pending_pay: "已通过待付款", rejected: "已驳回", paying: "付款处理中", paid_pending_receipt: "已付款待上传收据", completed: "已发放", pay_failed: "付款失败", cancelled: "已撤销" }; const payrolls = (payrollsRaw || []).map((row) => { const snap = row.payment_account_snapshot || {}; return { id: row.id, payrollNo: row.payroll_no, periodStart: row.period_start, periodEnd: row.period_end, baseSalaryRm: money(row.base_salary_rm), bonusRm: money(row.bonus_rm), deductionRm: money(row.deduction_rm), netSalaryRm: money(row.net_salary_rm), accountLast4: snap.account_last4 || "", status: row.status, statusText: payrollStatusText[row.status] || row.status, paidAt: row.paid_at || "", note: row.note || "" }; }); return { staff: safeProfile(serviceProfile), summary, conversations, messages: messagesRaw.map((row) => safeMessage(row, profiles)), orders, bosses, companions, reports: reportsRaw, payrolls, orderStatuses: ORDER_STATUS_TEXT, workData: workData || null };
+  }); const companionName = String(companionProf.display_name || "").trim() || "陪玩"; return { id: row.id, bossId: row.boss_id || "", bossUid: bossUid || "", bossName: isCompanionSupport ? `陪玩 · ${companionName}` : (boss.display_name || bossUid || "老板"), companionId: row.companion_id || "", conversationType: row.conversation_type || (isCompanionSupport ? "companion_support" : "general_support"), orderId: row.order_id || "", orderNo: (orders.find((o) => o.id === row.order_id) || {}).orderNo || "", currentServiceId: isClosed ? (row.customer_service_id || "") : (row.customer_service_id || ""), currentServiceName: String(service.display_name || "").trim() || (row.customer_service_id ? "客服" : "待接待"), status: convStatus, rawStatus: isClosed ? "closed" : (row.status || ""), lastMessage: last.content || "", lastTime: last.created_at || row.updated_at || "", unread: unreadBoss.length, unreadCount: unreadBoss.length, closedAt: row.closed_at || "", closedBy: row.closed_by || "", lastReadAt, acceptedAt: row.accepted_at || "", updatedAt: row.updated_at || "" }; }); const conversations = conversationsMapped.filter((c) => !isTestNoiseConversation({ last_message: c.lastMessage, title: c.bossName }, (messagesRaw || []).filter((m) => m.conversation_id === c.id).map((m) => ({ content: m.content })), c.orderNo)); const bosses = profilesRaw.filter((p) => p.role === "boss" && p.status === "active").map(safeProfile); const companions = companionsRaw.map((cp) => { const p = profiles[cp.user_id] || {}; const verified = /approved|verified|passed/.test(String(cp.verification_status || "")); const mapped = mapCompanionPublicFields(cp, p); const onlineRaw = String(cp.online_status || mapped.availabilityStatus || "offline").toLowerCase(); const onlineStatus = verified ? onlineRaw : "offline"; return { id: mapped.id || cp.user_id, companionUid: mapped.companionUid || cp.companion_uid || "", name: mapped.name || "陪玩", game: cp.game || "", level: cp.level_name || "", price: money(cp.price), avatar: mapped.avatar, cover: mapped.cover, cardImageUrl: mapped.cardImageUrl || mapped.cover, status: p.status || "", verificationStatus: mapped.verificationStatus || cp.verification_status || "", onlineStatus, online: onlineStatus === "online", idle: onlineStatus === "online" }; }).filter((p) => isUuid(p.id) && (!p.status || p.status === "active" || p.status === "启用")); const today = new Date().toISOString().slice(0, 10); const receptionStats = await (await import("./_service-receptions.js")).loadReceptionStats(serviceProfile.id, conversations); const summary = { waitingConversations: conversations.filter((c) => !c.currentServiceId && c.rawStatus !== "closed").length, currentReceptions: workData?.summary?.currentReceptions || receptionStats.currentReceptions || 0, todayReceptions: workData?.summary?.todayReceptions || receptionStats.todayReceptions || 0, monthReceptions: receptionStats.monthReceptions || 0, awaitingPayment: orders.filter((o) => o.status === "awaiting_payment").length, pendingOrders: orders.filter((o) => o.status === "pending").length, waitingCompanionConfirm: orders.filter((o) => o.status === "claimed").length, needsReassign: orders.filter((o) => o.needsReassign).length, waitingBossConfirm: orders.filter((o) => o.status === "waiting_boss_confirm").length, inProgress: orders.filter((o) => o.status === "in_progress" || o.status === "confirmed").length, refundRequested: orders.filter((o) => o.status === "refund_requested").length, todayHandled: orders.filter((o) => o.serviceId === serviceProfile.id && String(o.createdAt).slice(0, 10) === today).length, todayCompleted: workData?.summary?.todayCompleted || 0, todayPaid: workData?.summary?.todayPaid || 0, todayRefunds: workData?.summary?.todayRefunds || 0, unreadMessages: workData?.summary?.unreadMessages || 0, monthAttendanceDays: workData?.summary?.monthAttendanceDays || 0, monthLateCount: workData?.summary?.monthLateCount || 0, monthAbsenceCount: workData?.summary?.monthAbsenceCount || 0, estimatedSalary: workData?.summary?.estimatedSalary || 0 }; const payrollStatusText = { draft: "草稿", pending_review: "待审核", approved_pending_pay: "已通过待付款", rejected: "已驳回", paying: "付款处理中", paid_pending_receipt: "已付款待上传收据", completed: "已发放", pay_failed: "付款失败", cancelled: "已撤销" };   const payrolls = (payrollsRaw || []).map((row) => { const snap = row.payment_account_snapshot || {}; return { id: row.id, payrollNo: row.payroll_no, periodStart: row.period_start, periodEnd: row.period_end, baseSalaryRm: money(row.base_salary_rm), bonusRm: money(row.bonus_rm), deductionRm: money(row.deduction_rm), netSalaryRm: money(row.net_salary_rm), accountLast4: snap.account_last4 || "", status: row.status, statusText: payrollStatusText[row.status] || row.status, paidAt: row.paid_at || "", note: row.note || "" }; });
+  let dockRewards = [];
+  try {
+    dockRewards = await maybeRows(
+      "cs_dock_rewards",
+      `?service_id=eq.${encodeURIComponent(serviceProfile.id)}&order=settled_at.desc.nullslast&limit=80`
+    );
+  } catch {
+    dockRewards = [];
+  }
+  const settledRewards = (dockRewards || []).filter((r) => r.status === "settled");
+  const dockRewardCatFood = settledRewards.reduce((sum, r) => sum + money(r.amount_cat_food), 0);
+  summary.dockRewardCatFood = dockRewardCatFood;
+  summary.dockRewardCount = settledRewards.length;
+  return {
+    staff: safeProfile(serviceProfile),
+    summary,
+    conversations,
+    messages: messagesRaw.map((row) => safeMessage(row, profiles)),
+    orders,
+    bosses,
+    companions,
+    reports: reportsRaw,
+    payrolls,
+    dockRewards: (dockRewards || []).slice(0, 40).map((r) => ({
+      id: r.id,
+      orderId: r.order_id,
+      orderNo: r.order_no || "",
+      amount: money(r.amount_cat_food),
+      status: r.status,
+      settledAt: r.settled_at || "",
+      clawbackAt: r.clawback_at || "",
+    })),
+    orderStatuses: ORDER_STATUS_TEXT,
+    workData: workData || null,
+  };
 }
 async function orderById(id) { if (!isUuid(id)) return null; const rows = await tableRows("orders", `?id=eq.${encodeURIComponent(id)}&limit=1`); return rows[0] || null; }
 async function patchOrder(id, patch) { if (!isUuid(id)) return null; const rows = await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(id)}`), { method: "PATCH", headers: serviceHeaders(), body: JSON.stringify(patch) }); return rows[0] || null; }
@@ -591,12 +682,23 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       try {
         await (await import("./_service-receptions.js")).endReceptionRecord(id, service.profile.id);
       } catch (_) {}
+      let rewardEval = null;
+      try {
+        rewardEval = await (await import("./_cs-dock-rewards.js")).evaluateEndReceptionReward({
+          serviceId: service.profile.id,
+          conversation: conversation || existing,
+        });
+      } catch (_) {
+        rewardEval = { code: "ERROR", message: "奖励结算检查失败，请稍后在后台核对。", settled: false };
+      }
       await markConversationBossMessagesRead(id, { bossId: existing.boss_id, conversation: existing });
       await addMessage(conversation || existing, service.profile.id, "customer_service", "客服已结束本次接待。", "system");
       await markConversationBossMessagesRead(id, { bossId: existing.boss_id, conversation: existing });
+      const endMessage = rewardEval?.message || "已结束接待。";
       return json(res, 200, {
         ok: true,
-        message: "已结束接待。",
+        message: endMessage,
+        reward: rewardEval,
         conversation: {
           ...(conversation || existing),
           status: "closed",
@@ -858,20 +960,52 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         return json(res, 400, { ok: false, message: "请选择真实老板账号（支持老板 UID / UUID）。" });
       }
       const bossId = boss.id;
-      const hours = money(o.hours || o.duration || 1) || 1;
-      const unit = money(o.unit_price || o.unitPrice || o.price);
-      const total = money(o.total_amount || o.totalAmount || o.amount) || unit * hours;
-      if (!o.game || (!o.description && !o.title) || total <= 0) {
-        return json(res, 400, { ok: false, message: "请完整填写游戏、需求和金额。" });
-      }
+      const hours = Math.max(0.5, money(o.hours || o.duration || 1) || 1);
       const companionInput = String(o.companion_id || o.companionId || "").trim();
       let companionId = null;
+      let unit = 0;
       if (companionInput) {
         const companion = await resolveCompanion(companionInput);
         if (!companion || !isUuid(companion.id)) {
           return json(res, 400, { ok: false, message: "指定陪玩无效，请选择真实陪玩账号（UUID / 陪玩 UID）。" });
         }
         companionId = companion.id;
+        const { priceForGame } = await import("./_game-prices.js");
+        const cpRows = await supabaseJson(
+          restUrl(
+            "companion_profiles",
+            `?user_id=eq.${encodeURIComponent(companionId)}&select=price,game_prices,tags,game,main_service,service_ids&limit=1`
+          ),
+          { headers: serviceHeaders() }
+        ).catch(() => []);
+        const cp = Array.isArray(cpRows) ? cpRows[0] : null;
+        const gameName = String(o.game || "").trim();
+        unit = money(priceForGame(cp || {}, gameName, String(o.service_id || o.serviceId || "").trim()));
+        if (!(unit > 0)) unit = money(cp?.price);
+      }
+      // Without companion catalog price, CS may quote — but total is always recomputed server-side from unit×hours.
+      if (!(unit > 0)) unit = money(o.unit_price || o.unitPrice || o.price);
+      const total = Math.round(unit * hours * 100) / 100;
+      if (!o.game || (!o.description && !o.title) || total <= 0 || !(unit > 0)) {
+        return json(res, 400, { ok: false, message: "请完整填写游戏、需求和金额。" });
+      }
+      const clientTotal = money(o.total_amount || o.totalAmount || o.amount);
+      if (clientTotal > 0 && Math.abs(clientTotal - total) > 0.05) {
+        return json(res, 400, { ok: false, message: `金额已按单价×时长重算为 ${total}，请刷新后重试。` });
+      }
+      const idempotencyKey = String(o.idempotencyKey || o.idempotency_key || "").trim();
+      if (idempotencyKey) {
+        try {
+          const existing = await supabaseJson(
+            restUrl("orders", `?idempotency_key=eq.${encodeURIComponent(idempotencyKey)}&limit=1`),
+            { headers: serviceHeaders() }
+          );
+          if (existing?.[0]) {
+            return json(res, 200, { ok: true, message: "订单已存在（幂等）。", order: existing[0], deduped: true });
+          }
+        } catch (_) {
+          /* column may be missing */
+        }
       }
       const payload = {
         order_no: orderNo("CS"),
@@ -883,12 +1017,30 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         title: String(o.title || o.description || "客服创建订单"),
         description: String(o.description || o.requirements || o.title || ""),
         hours,
-        unit_price: unit || total / hours,
+        unit_price: unit,
         total_amount: total,
         status: "awaiting_payment",
         created_at: nowIso(),
       };
-      const rows = await supabaseJson(restUrl("orders"), { method: "POST", headers: serviceHeaders(), body: JSON.stringify(payload) });
+      if (idempotencyKey) payload.idempotency_key = idempotencyKey;
+      let rows;
+      try {
+        rows = await supabaseJson(restUrl("orders"), { method: "POST", headers: serviceHeaders(), body: JSON.stringify(payload) });
+      } catch (insertErr) {
+        if (idempotencyKey && /duplicate|unique|idempotency/i.test(String(insertErr.message || ""))) {
+          const existing = await supabaseJson(
+            restUrl("orders", `?idempotency_key=eq.${encodeURIComponent(idempotencyKey)}&limit=1`),
+            { headers: serviceHeaders() }
+          ).catch(() => []);
+          if (existing?.[0]) return json(res, 200, { ok: true, message: "订单已存在（幂等）。", order: existing[0], deduped: true });
+        }
+        if (idempotencyKey && /column|schema cache|PGRST/i.test(String(insertErr.message || ""))) {
+          const { idempotency_key: _ik, ...rest } = payload;
+          rows = await supabaseJson(restUrl("orders"), { method: "POST", headers: serviceHeaders(), body: JSON.stringify(rest) });
+        } else {
+          throw insertErr;
+        }
+      }
       const order = rows[0];
       const conversation = await ensureConversation({
         boss_id: bossId,
@@ -921,11 +1073,54 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       const order = await orderById(String(body.id || body.order_id || ""));
       if (!order) return json(res, 404, { ok: false, message: "订单不存在。" });
       if (order.status !== "awaiting_payment") return json(res, 400, { ok: false, message: "只有待付款确认订单可以确认付款。" });
+      const amount = money(order.total_amount);
+      if (!(amount > 0)) return json(res, 400, { ok: false, message: "订单金额无效，无法确认付款。" });
+      // Must debit boss wallet — never mark paid on CS click alone.
+      try {
+        const walletApi = await import("./_wallet.js");
+        await walletApi.debitWallet({
+          bossId: order.boss_id,
+          amount,
+          transactionType: "order_payment",
+          idempotencyKey: `order-pay:${order.order_no || order.id}`,
+          reason: `客服确认付款 ${order.order_no || order.id}`,
+          relatedOrderId: order.id,
+          operatorId: service.profile.id,
+        });
+      } catch (e) {
+        const msg = String(e?.message || e || "");
+        if (/insufficient|余额不足|not enough/i.test(msg)) {
+          return json(res, 400, { ok: false, code: "INSUFFICIENT_BALANCE", message: "老板猫粮余额不足，无法确认付款。请先充值。" });
+        }
+        if (/idempotency|duplicate|already/i.test(msg)) {
+          /* already debited — continue to status transition */
+        } else {
+          return json(res, e.status || 400, { ok: false, message: msg || "扣款失败，未确认付款。" });
+        }
+      }
       /* 指定陪玩：claimed→陪玩接单；无陪玩：pending→抢单大厅 */
       const next = order.companion_id ? "claimed" : "pending";
-      const patch = { status: next, customer_service_id: service.profile.id };
-      if (next === "claimed") patch.accepted_at = nowIso();
-      const patched = await patchOrder(order.id, patch);
+      const { transitionOrderStatus } = await import("./_order-status.js");
+      const patched =
+        (await transitionOrderStatus(
+          { restUrl, supabaseJson, serviceHeaders },
+          {
+            orderId: order.id,
+            filterQuery: `?id=eq.${encodeURIComponent(order.id)}&status=eq.awaiting_payment`,
+            fromStatus: "awaiting_payment",
+            toStatus: next,
+            patch: {
+              customer_service_id: service.profile.id,
+              ...(next === "claimed" ? { accepted_at: nowIso() } : {}),
+            },
+            operatorRole: "customer_service",
+            operatorId: service.profile.id,
+            note: "cs confirm_payment with wallet debit",
+          }
+        )) || (await patchOrder(order.id, { status: next, customer_service_id: service.profile.id, ...(next === "claimed" ? { accepted_at: nowIso() } : {}) }));
+      if (!patched || patched.status === "awaiting_payment") {
+        return json(res, 409, { ok: false, message: "订单状态已变更，请刷新后重试。" });
+      }
       const conversation = await ensureConversation({
         boss_id: order.boss_id,
         companion_id: order.companion_id,
@@ -936,9 +1131,48 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         ? "客服已确认付款，订单已支付，正在等待陪玩确认接单。"
         : "客服已确认付款，订单已进入抢单大厅。";
       await addMessage(conversation, service.profile.id, "customer_service", sysMsg, "system", order.id);
-      return json(res, 200, { ok: true, message: order.companion_id ? "已确认付款，等待陪玩确认接单。" : "已确认付款。", order: patched });
+      let reward = null;
+      try {
+        reward = await (await import("./_cs-dock-rewards.js")).trySettleDockReward(
+          { ...order, ...patched, customer_service_id: service.profile.id, status: next },
+          { source: "cs_confirm_payment", forceServiceId: service.profile.id }
+        );
+      } catch (_) {}
+      return json(res, 200, {
+        ok: true,
+        message: order.companion_id ? "已确认付款，等待陪玩确认接单。" : "已确认付款。",
+        order: patched,
+        reward,
+      });
     }
-    if (action === "assign_companion" || action === "push_companion" || action === "dispatch_companion") {
+    if (action === "list_grabs" || action === "grab_applicants") {
+      const order = await orderById(String(body.id || body.order_id || ""));
+      if (!order) return json(res, 404, { ok: false, message: "订单不存在。" });
+      const { createOrderGrabHelpers } = await import("./_order-grabs.js");
+      const { enrichGrabCompanions, parseBossIntent } = await import("./_order-flow.js");
+      const grabsApi = createOrderGrabHelpers({ restUrl, supabaseJson, serviceHeaders });
+      const grabs = await grabsApi.listGrabs(order.id, order.note || order.description || "");
+      const intent = parseBossIntent(order);
+      const enriched = await enrichGrabCompanions({ restUrl, supabaseJson, serviceHeaders }, grabs);
+      return json(res, 200, {
+        ok: true,
+        grabCount: enriched.length,
+        bossIntent: intent,
+        grabs: enriched.map((g) => ({
+          ...g,
+          bossPreferred: !!(intent && intent.companionId === g.companionId),
+          companion: g.companion
+            ? { ...g.companion, bossPreferred: !!(intent && intent.companionId === g.companionId) }
+            : null,
+        })),
+        order: safeOrder(order, await profileMap([order.boss_id, order.companion_id, order.customer_service_id]), {
+          grabCount: enriched.length,
+          grabs: enriched,
+          bossIntent: intent,
+        }),
+      });
+    }
+    if (action === "assign_companion" || action === "push_companion" || action === "dispatch_companion" || action === "confirm_grab_assignment") {
       const order = await orderById(String(body.id || body.order_id || ""));
       const companion = await resolveCompanion(String(body.companion_id || body.companionId || body.companion_uid || ""));
       if (!order || !companion || !isUuid(companion.id)) return json(res, 400, { ok: false, message: "订单或陪玩不存在。" });
@@ -949,6 +1183,24 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       }
       ASSIGN_LOCKS.set(lockKey, Date.now());
       try {
+        const { createOrderGrabHelpers } = await import("./_order-grabs.js");
+        const { clearBossIntent, parseBossIntent, patchOrderNoteField } = await import("./_order-flow.js");
+        const grabsApi = createOrderGrabHelpers({ restUrl, supabaseJson, serviceHeaders });
+        const grabs = await grabsApi.listGrabs(order.id, order.note || order.description || "");
+        const fromGrabs =
+          body.from_grabs === true ||
+          body.fromGrabs === true ||
+          action === "confirm_grab_assignment" ||
+          ["pending", "waiting_boss_confirm"].includes(order.status);
+        if (fromGrabs && grabs.length) {
+          const hit = grabs.find((g) => g.companionId === companionId);
+          if (!hit) {
+            return json(res, 409, { ok: false, message: "只能从已抢单陪玩中指定。请先查看抢单人列表。" });
+          }
+          if (hit.status === "not_selected") {
+            return json(res, 409, { ok: false, message: "该陪玩已被标记为未选中。" });
+          }
+        }
         // After payment: push companion into claimed (waiting companion confirm). Before payment keep awaiting_payment with companion bound.
         let nextStatus = "claimed";
         if (order.status === "awaiting_payment") nextStatus = "awaiting_payment";
@@ -970,6 +1222,9 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
             })(),
             deduped: true,
           });
+        }
+        if (grabs.length && nextStatus === "claimed") {
+          await grabsApi.finalizeGrabSelection(order, companionId);
         }
         const { transitionOrderStatus } = await import("./_order-status.js");
         const deps = { restUrl, supabaseJson, serviceHeaders };
@@ -994,6 +1249,11 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
             status: nextStatus,
             accepted_at: null,
           }));
+        try {
+          await patchOrderNoteField({ restUrl, supabaseJson, serviceHeaders }, order.id, (text) => clearBossIntent(text));
+        } catch {
+          /* ignore */
+        }
         const conversation = await ensureConversation({
           boss_id: order.boss_id,
           companion_id: companionId,
@@ -1001,19 +1261,24 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
           order_id: order.id,
         });
         const companionName = companion.display_name || companion.email || "陪玩";
+        const intent = parseBossIntent(order);
         await addMessage(
           conversation,
           service.profile.id,
           "customer_service",
-          `已推送陪玩：${companionName}，请陪玩尽快接单`,
+          `客服已确认指定陪玩：${companionName}。订单进入待陪玩确认。${
+            intent && intent.companionId === companionId ? "（与老板意向一致）" : intent ? `（老板意向为 ${intent.companionName || "其他陪玩"}）` : ""
+          }`,
           "system",
           order.id
         );
         const profiles = await profileMap([patched?.boss_id || order.boss_id, companionId, service.profile.id]);
         return json(res, 200, {
           ok: true,
-          message: "指定成功",
-          order: safeOrder(patched || { ...order, companion_id: companionId, status: nextStatus }, profiles),
+          message: "指定成功，其他抢单陪玩已标记为未选中。",
+          order: safeOrder(patched || { ...order, companion_id: companionId, status: nextStatus }, profiles, {
+            grabCount: grabs.length,
+          }),
         });
       } finally {
         setTimeout(() => ASSIGN_LOCKS.delete(lockKey), 3000);
@@ -1055,7 +1320,22 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         : null;
       const label = CS_STATUS_ACTION_LABELS[transition.to] || ORDER_STATUS_TEXT[transition.to] || transition.to;
       await addMessage(conversation, service.profile.id, "customer_service", `订单状态已更新为：${label}`, "system", id);
-      return json(res, 200, { ok: true, message: "订单状态已更新。", order: patched });
+      let reward = null;
+      try {
+        const rewardsApi = await import("./_cs-dock-rewards.js");
+        if (transition.to === "cancelled" || transition.to === "refunded") {
+          reward = await rewardsApi.clawbackOrCancelReward(patched || { ...order, status: transition.to }, {
+            reason: transition.to === "refunded" ? "订单退款" : "订单取消",
+            mode: transition.to === "refunded" ? "refund" : "cancel",
+          });
+        } else {
+          reward = await rewardsApi.trySettleDockReward(patched || { ...order, status: transition.to }, {
+            source: "cs_status_update",
+            forceServiceId: service.profile.id,
+          });
+        }
+      } catch (_) {}
+      return json(res, 200, { ok: true, message: "订单状态已更新。", order: patched, reward });
     }
     if (action === "allowed_order_statuses") {
       const id = String(body.id || body.order_id || req.query?.id || "").trim();
@@ -1157,7 +1437,14 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         } catch (e) {
           /* optional */
         }
-        return json(res, 200, { ok: true, message: "退款已批准。", order: patched });
+        let reward = null;
+        try {
+          reward = await (await import("./_cs-dock-rewards.js")).clawbackOrCancelReward(
+            patched || { ...order, status: "refunded" },
+            { reason: note || "订单退款，扣回奖励", mode: "refund" }
+          );
+        } catch (_) {}
+        return json(res, 200, { ok: true, message: "退款已批准。", order: patched, reward });
       }
       const restore = ["in_progress", "completed", "cancelled"].includes(String(body.restore_status))
         ? String(body.restore_status)

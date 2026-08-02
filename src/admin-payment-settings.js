@@ -6,7 +6,7 @@
   "use strict";
   if (window.MCJAdminPaymentSettings) return;
 
-  var BANK_PROVIDERS = ["Maybank", "CIMB", "Public Bank", "Touch 'n Go", "支付宝", "微信支付", "USDT", "其他"];
+  var BANK_PROVIDERS = ["Maybank", "CIMB", "Public Bank", "RHB", "OCBC", "Touch 'n Go", "支付宝", "微信支付", "USDT", "其他"];
 
   var state = {
     loading: false,

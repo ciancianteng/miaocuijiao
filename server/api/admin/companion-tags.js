@@ -6,20 +6,12 @@ import {
   normalizeTagRow,
   toPublicTag,
 } from "../_companion-tags-store.js";
+import { requireAdmin as requireAdminJwt } from "../_admin-auth.js";
 
 const ADMIN_ROLES = new Set(["admin", "super_admin"]);
 
 function json(res, status, data) {
   res.status(status).json(data);
-}
-
-function roleFrom(req) {
-  return String(req.headers["x-mcj-admin-role"] || req.headers["x-user-role"] || "").trim();
-}
-
-function tokenFrom(req) {
-  return String(req.headers.authorization || "").replace(/^Bearer\s+/i, "").trim()
-    || String(req.headers["x-mcj-access-token"] || "").trim();
 }
 
 async function parseBody(req) {
@@ -33,15 +25,19 @@ async function parseBody(req) {
   }
 }
 
-function requireAdmin(req, res) {
-  if (ADMIN_ROLES.has(roleFrom(req)) || tokenFrom(req)) return true;
-  json(res, 401, { ok: false, message: "请先登录管理员账号。" });
-  return false;
+async function requireAdmin(req, res) {
+  try {
+    await requireAdminJwt(req, { allowRoles: ADMIN_ROLES });
+    return true;
+  } catch (err) {
+    json(res, err.status || 401, { ok: false, message: err.message || "请先登录管理员账号。" });
+    return false;
+  }
 }
 
 export default async function handler(req, res) {
   try {
-    if (!requireAdmin(req, res)) return;
+    if (!(await requireAdmin(req, res))) return;
 
     if (req.method === "GET") {
       const tags = await readLocalTags();

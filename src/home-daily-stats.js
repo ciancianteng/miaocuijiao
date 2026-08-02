@@ -37,6 +37,15 @@
       '<div class="home-daily-empty" role="status">暂无平台数据</div>';
   }
 
+  function formatUpdatedLabel(data) {
+    var raw = data && (data.updatedAt || data.updated_at || data.generatedAt || data.asOf);
+    var d = raw ? new Date(raw) : new Date();
+    if (Number.isNaN(d.getTime())) d = new Date();
+    var hh = String(d.getHours()).padStart(2, "0");
+    var mm = String(d.getMinutes()).padStart(2, "0");
+    return "最后更新 " + hh + ":" + mm;
+  }
+
   function render(data) {
     var root = document.querySelector("[data-home-daily-stats]");
     if (!root) return;
@@ -45,7 +54,7 @@
       renderEmpty();
       return;
     }
-    var meta = data.date ? "<p>" + esc(data.date) + " · " + esc(data.timezone || "Asia/Kuala_Lumpur") + "</p>" : "";
+    var meta = "<p>" + esc(formatUpdatedLabel(data)) + "</p>";
     root.innerHTML =
       '<div class="section-title compact-title"><div><h2>今日平台数据</h2>' +
       meta +

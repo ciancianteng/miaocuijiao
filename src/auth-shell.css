@@ -5,18 +5,42 @@
   box-sizing: border-box;
 }
 
+/* Kill browser default body margin (white side gutters on mobile). */
+html.mcj-auth-html,
+html.mcj-auth-html body,
+html:has(.mcj-auth-page),
+html:has(.mcj-auth-page) body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  background: #07070a;
+}
+
+html.mcj-auth-html,
+html:has(.mcj-auth-page) {
+  min-height: 100%;
+  min-height: 100dvh;
+}
+
 .mcj-auth-page {
   position: relative;
   isolation: isolate;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: none;
+  min-width: 0;
   min-height: 100vh;
   min-height: 100dvh;
+  height: auto;
   margin: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   padding: 28px 16px;
-  overflow-x: hidden;
+  overflow-x: clip;
   overflow-y: auto;
   background:
     radial-gradient(circle at 14% 12%, rgba(255, 143, 197, 0.16), transparent 28%),
@@ -57,9 +81,12 @@
   position: relative;
   z-index: 10;
   pointer-events: auto;
+  box-sizing: border-box;
   width: 100%;
   max-width: 460px;
   min-width: 0;
+  min-height: 0;
+  height: auto;
   margin: 0 auto;
   padding: 36px;
   border-radius: 22px;
@@ -71,8 +98,8 @@
 
 .mcj-auth-brand {
   display: grid;
-  gap: 6px;
-  margin-bottom: 22px;
+  gap: 4px;
+  margin-bottom: 18px;
   text-align: left;
   pointer-events: none;
 }
@@ -97,7 +124,7 @@
 }
 
 .mcj-auth-title {
-  margin: 0 0 8px;
+  margin: 0 0 6px;
   font-size: 22px;
   font-weight: 700;
   letter-spacing: 0.02em;
@@ -106,9 +133,9 @@
 }
 
 .mcj-auth-desc {
-  margin: 0 0 26px;
+  margin: 0 0 22px;
   color: #9ca3af;
-  line-height: 1.65;
+  line-height: 1.55;
   font-size: 14px;
   text-align: left;
 }
@@ -145,10 +172,11 @@
 .mcj-auth-field > input,
 .mcj-auth-password > input {
   display: block;
+  box-sizing: border-box;
   width: 100%;
   max-width: 100%;
-  height: 50px;
-  min-height: 50px;
+  height: 52px;
+  min-height: 52px;
   margin: 0;
   border-radius: 14px;
   border: 1px solid rgba(255, 255, 255, 0.12);
@@ -188,24 +216,24 @@
   width: 100%;
   max-width: 100%;
   min-width: 0;
-  min-height: 50px;
+  min-height: 52px;
   z-index: 11;
 }
 
 .mcj-auth-password > input {
-  padding-right: 72px;
+  padding-right: 64px;
 }
 
 .mcj-auth-eye {
   position: absolute;
-  right: 10px;
-  top: 50%;
-  transform: translateY(-50%);
+  right: 8px;
+  top: 0;
+  bottom: 0;
   z-index: 12;
-  height: 34px;
+  height: auto;
   width: auto;
-  max-width: 56px;
-  margin: 0;
+  max-width: 52px;
+  margin: auto 0;
   padding: 0 8px;
   border: 0;
   border-radius: 10px;
@@ -287,10 +315,11 @@
 
 .mcj-auth-btn {
   display: block;
+  box-sizing: border-box;
   width: 100%;
   max-width: 100%;
-  height: 50px;
-  min-height: 50px;
+  height: 52px;
+  min-height: 52px;
   margin: 0;
   border-radius: 14px;
   border: 1px solid rgba(255, 255, 255, 0.12);
@@ -341,6 +370,7 @@
 
 .mcj-auth-tabs .mcj-auth-btn {
   height: 42px;
+  min-height: 42px;
 }
 
 .mcj-auth-tabs .mcj-auth-btn.active,
@@ -362,90 +392,163 @@
   margin: 0;
   color: rgba(255, 255, 255, 0.38);
   font-size: 12px;
-  line-height: 1.65;
+  line-height: 1.55;
 }
 
-/* Phones: 320 / 375 / 390 / 414 */
+/* Admin login: no public floating CS / Preview feedback overlay. */
+body.mcj-admin-login .floating-service,
+body.mcj-admin-login #floatingService,
+body.mcj-admin-login #floatingCustomerService,
+body.mcj-admin-login .floating-cs-button,
+body.mcj-admin-login .floating-cs-panel,
+body.mcj-admin-login .floating-cs-root,
+body.mcj-admin-login .m-float,
+body.mcj-admin-login vercel-live-feedback,
+html.mcj-admin-login vercel-live-feedback {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  opacity: 0 !important;
+}
+
+/* Phones: 320 / 375 / 390 / 430 — real width adapt, no scale/zoom */
 @media (max-width: 560px) {
   .mcj-auth-page {
-    padding: 16px 12px;
-    justify-content: flex-start;
-    align-items: stretch;
+    width: 100%;
+    max-width: none;
+    min-height: 100dvh;
+    height: auto;
+    padding: 20px 0;
+    justify-content: center;
+    align-items: center;
+  }
+
+  .mcj-auth-page::before {
+    width: min(280px, 70vw);
+    height: min(280px, 70vw);
+    left: -100px;
+    top: -90px;
+  }
+
+  .mcj-auth-page::after {
+    width: min(240px, 65vw);
+    height: min(240px, 65vw);
+    right: -90px;
+    bottom: -80px;
   }
 
   .mcj-auth-card {
-    width: 100%;
-    max-width: 100%;
+    width: calc(100% - 32px);
+    max-width: none;
     min-width: 0;
+    min-height: 0;
+    height: auto;
     margin: 0;
-    padding: 24px 16px;
+    padding: 24px;
     border-radius: 18px;
   }
 
   .mcj-auth-brand {
-    margin-bottom: 16px;
-  }
-
-  .mcj-auth-brand-name {
-    font-size: 28px;
-  }
-
-  .mcj-auth-brand-en {
-    font-size: 11px;
-    letter-spacing: 0.16em;
-  }
-
-  .mcj-auth-title {
-    font-size: 18px;
-    margin-bottom: 6px;
-  }
-
-  .mcj-auth-desc {
-    margin-bottom: 18px;
-    font-size: 13px;
-  }
-
-  .mcj-auth-form {
-    gap: 14px;
-  }
-
-  .mcj-auth-field {
-    gap: 6px;
-  }
-
-  .mcj-auth-field > input,
-  .mcj-auth-password > input,
-  .mcj-auth-btn {
-    height: 48px;
-    min-height: 48px;
-    font-size: 16px;
-  }
-
-  .mcj-auth-password,
-  .mcj-auth-password.password-field {
-    min-height: 48px;
-  }
-
-  .mcj-auth-eye {
-    right: 8px;
-  }
-}
-
-@media (max-width: 360px) {
-  .mcj-auth-page {
-    padding: 12px 10px;
-  }
-
-  .mcj-auth-card {
-    padding: 20px 12px;
-    border-radius: 16px;
+    gap: 2px;
+    margin-bottom: 12px;
   }
 
   .mcj-auth-brand-name {
     font-size: 26px;
   }
 
+  .mcj-auth-brand-en {
+    font-size: 11px;
+    letter-spacing: 0.14em;
+  }
+
+  .mcj-auth-title {
+    font-size: 18px;
+    margin-bottom: 4px;
+  }
+
+  .mcj-auth-desc {
+    margin-bottom: 16px;
+    font-size: 13px;
+    line-height: 1.45;
+  }
+
+  .mcj-auth-form {
+    gap: 12px;
+  }
+
+  .mcj-auth-field {
+    gap: 6px;
+    font-size: 12px;
+  }
+
+  .mcj-auth-field > input,
+  .mcj-auth-password > input,
+  .mcj-auth-btn {
+    height: 54px;
+    min-height: 54px;
+    font-size: 15px;
+    border-radius: 12px;
+  }
+
+  .mcj-auth-password,
+  .mcj-auth-password.password-field {
+    min-height: 54px;
+  }
+
+  .mcj-auth-password > input {
+    padding-right: 56px;
+  }
+
+  .mcj-auth-eye {
+    right: 6px;
+    max-width: 48px;
+    font-size: 12px;
+    padding: 0 6px;
+  }
+
+  .mcj-auth-check {
+    font-size: 12px;
+  }
+
+  .mcj-auth-note {
+    font-size: 11px;
+  }
+
+  .mcj-auth-tabs .mcj-auth-btn {
+    height: 40px;
+    min-height: 40px;
+    font-size: 14px;
+  }
+}
+
+@media (max-width: 360px) {
+  .mcj-auth-card {
+    width: calc(100% - 32px);
+    padding: 20px;
+    border-radius: 16px;
+  }
+
+  .mcj-auth-brand-name {
+    font-size: 24px;
+  }
+
   .mcj-auth-title {
     font-size: 17px;
+  }
+
+  .mcj-auth-field > input,
+  .mcj-auth-password > input,
+  .mcj-auth-btn {
+    height: 52px;
+    min-height: 52px;
+    font-size: 15px;
+  }
+
+  .mcj-auth-password,
+  .mcj-auth-password.password-field {
+    min-height: 52px;
   }
 }

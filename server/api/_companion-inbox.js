@@ -22,15 +22,15 @@ const WD_STATUS_TEXT = {
 };
 
 const ORDER_STATUS_TEXT = {
-  awaiting_payment: "待支付",
-  pending: "待处理",
-  claimed: "待确认",
+  awaiting_payment: "待付款",
+  pending: "待接单",
+  claimed: "待陪玩确认",
   confirmed: "待开始",
   in_progress: "进行中",
-  waiting_boss_confirm: "等待老板确认",
+  waiting_boss_confirm: "选择陪玩中",
   completed: "已完成",
   cancelled: "已取消",
-  refund_requested: "售后中",
+  refund_requested: "售后",
   refunded: "已退款",
 };
 

@@ -93,10 +93,30 @@ export default async function handler(req, res) {
     }
 
     const method = await loadMethodByCode(order.payment_method).catch(() => null);
-    if (method?.callback_secret) {
-      if (!secret || !timingSafeEqual(secret, method.callback_secret)) {
+    const vercelEnv = String(process.env.VERCEL_ENV || "").toLowerCase();
+    const nodeEnv = String(process.env.NODE_ENV || "").toLowerCase();
+    // Production always requires callback secret. Preview/local: require when method has secret configured.
+    const requireSecret =
+      vercelEnv === "production" ||
+      nodeEnv === "production" ||
+      !!method?.callback_secret ||
+      !!String(process.env.MCJ_PAYMENT_CALLBACK_SECRET || "").trim();
+    if (requireSecret) {
+      const expected =
+        method?.callback_secret ||
+        String(process.env.MCJ_PAYMENT_CALLBACK_SECRET || "").trim();
+      if (!expected) {
+        return json(res, 503, { ok: false, message: "支付渠道未配置回调密钥，拒绝入账。" });
+      }
+      if (!secret || !timingSafeEqual(secret, expected)) {
         return json(res, 401, { ok: false, message: "回调签名校验失败。" });
       }
+    } else if (vercelEnv !== "preview" && nodeEnv === "production") {
+      return json(res, 503, { ok: false, message: "支付回调密钥未配置，拒绝入账。" });
+    }
+
+    if (!tradeNo && vercelEnv === "production") {
+      return json(res, 400, { ok: false, message: "正式环境回调必须提供支付交易号。" });
     }
 
     const result = await creditRechargePayment(paymentNo, tradeNo, `callback:${paymentNo}`);

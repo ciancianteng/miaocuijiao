@@ -98,7 +98,12 @@ function roleFrom(req) {
 }
 
 function canManagePayment(req) {
-  return ADMIN_ROLES.has(roleFrom(req));
+  return false; // replaced by JWT requireAdmin below
+}
+
+async function assertPaymentAdmin(req) {
+  const { requireAdmin } = await import("../_admin-auth.js");
+  return requireAdmin(req, { allowRoles: ADMIN_ROLES });
 }
 
 function hasDatabaseConfig() {
@@ -522,8 +527,13 @@ async function loadState() {
 }
 
 async function handler(req, res) {
-  if (!canManagePayment(req)) {
-    return json(res, 403, { ok: false, message: "没有支付设置权限。仅管理员 / 超级管理员 / 财务管理员可访问。" });
+  try {
+    await assertPaymentAdmin(req);
+  } catch (err) {
+    return json(res, err.status || 403, {
+      ok: false,
+      message: err.message || "没有支付设置权限。仅管理员 / 超级管理员 / 财务管理员可访问。",
+    });
   }
 
   if (!hasDatabaseConfig()) {

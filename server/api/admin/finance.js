@@ -33,21 +33,17 @@ function json(res, status, data) {
   res.status(status).json(data);
 }
 
-function roleFrom(req) {
-  return String(req.headers["x-mcj-admin-role"] || req.headers["x-user-role"] || "").trim();
+async function assertFinanceAdmin(req) {
+  const { requireAdmin } = await import("../_admin-auth.js");
+  return requireAdmin(req, { allowRoles: FINANCE_ROLES });
 }
 
-function canFinance(req) {
-  return FINANCE_ROLES.has(roleFrom(req));
+function canReveal(profile) {
+  return REVEAL_ROLES.has(String(profile?.role || ""));
 }
 
-function canReveal(req) {
-  const role = roleFrom(req);
-  return REVEAL_ROLES.has(role);
-}
-
-function canConfirmPay(req) {
-  return canReveal(req);
+function canConfirmPay(profile) {
+  return canReveal(profile);
 }
 
 function money(v) {
@@ -112,11 +108,26 @@ async function profileMap(ids) {
   }, {});
 }
 
+function queryOf(req) {
+  if (req?.query && typeof req.query === "object") return req.query;
+  try {
+    return Object.fromEntries(new URL(req.url || "/", "http://localhost").searchParams.entries());
+  } catch {
+    return {};
+  }
+}
+
+function resolveRowId(row = {}) {
+  return String(row.id || row.uuid || row.withdrawal_id || row.withdrawalId || "").trim();
+}
+
 function viewWithdraw(row, profile = {}, account = {}) {
+  const id = resolveRowId(row);
   return {
-    id: row.id,
-    withdrawalNo: row.withdrawal_no,
-    companionId: row.companion_id,
+    id,
+    withdrawalId: id,
+    withdrawalNo: row.withdrawal_no || row.withdrawalNo || id,
+    companionId: row.companion_id || row.companionId || "",
     companionUid: profile.boss_uid || profile.id || row.companion_id,
     companionName: profile.display_name || profile.email || "-",
     catFoodAmount: money(row.cat_food_amount),
@@ -255,21 +266,31 @@ async function ensureFinancePayment(type, relatedId, payeeId, amount, snapshot, 
 }
 
 export default async function handler(req, res) {
-  if (!canFinance(req)) return json(res, 403, { ok: false, message: "没有提现与发薪管理权限" });
+  let adminProfile;
+  try {
+    adminProfile = await assertFinanceAdmin(req);
+  } catch (err) {
+    return json(res, err.status || 403, { ok: false, message: err.message || "没有提现与发薪管理权限" });
+  }
 
   try {
     const body = req.method === "GET" ? {} : await parseBody(req);
-    const action = String(req.method === "GET" ? req.query.action || "bootstrap" : body.action || "").trim();
-    const adminRole = roleFrom(req);
+    const q = queryOf(req);
+    const action = String(req.method === "GET" ? q.action || "bootstrap" : body.action || "").trim();
+    const adminRole = String(adminProfile.role || "admin");
 
     if (req.method === "GET" && action === "bootstrap") {
-      const [withdrawals, payrolls, payments, receipts, cfg] = await Promise.all([
+      const [withdrawalsRaw, payrollsRaw, paymentsRaw, receiptsRaw, cfg] = await Promise.all([
         companionDb("companion_withdrawals", "?order=submitted_at.desc&limit=300").catch((e) => (isMissingRelation(e) ? [] : Promise.reject(e))),
         companionDb("staff_payrolls", "?order=created_at.desc&limit=300").catch((e) => (isMissingRelation(e) ? [] : Promise.reject(e))),
         companionDb("finance_payments", "?order=created_at.desc&limit=300").catch((e) => (isMissingRelation(e) ? [] : Promise.reject(e))),
         companionDb("finance_receipts", "?order=uploaded_at.desc&limit=300").catch((e) => (isMissingRelation(e) ? [] : Promise.reject(e))),
         settings(),
       ]);
+      const withdrawals = (Array.isArray(withdrawalsRaw) ? withdrawalsRaw : []).filter((r) => resolveRowId(r));
+      const payrolls = Array.isArray(payrollsRaw) ? payrollsRaw : [];
+      const payments = Array.isArray(paymentsRaw) ? paymentsRaw : [];
+      const receipts = Array.isArray(receiptsRaw) ? receiptsRaw : [];
       const ids = [
         ...withdrawals.map((r) => r.companion_id),
         ...payrolls.map((r) => r.staff_id),
@@ -289,7 +310,8 @@ export default async function handler(req, res) {
         }, {});
       }
       const paymentMap = (payments || []).reduce((m, p) => {
-        m[p.id] = p;
+        const pid = resolveRowId(p);
+        if (pid) m[pid] = p;
         return m;
       }, {});
       return json(res, 200, {
@@ -311,7 +333,10 @@ export default async function handler(req, res) {
     }
 
     if (action === "approve_withdraw") {
-      const id = String(body.id || "").trim();
+      const id = String(body.id || body.withdrawalId || body.withdrawal_id || "").trim();
+      if (!id || id === "undefined" || id === "null") {
+        return json(res, 400, { ok: false, message: "缺少提现单 id" });
+      }
       const rows = await companionDb("companion_withdrawals", `?id=eq.${encodeURIComponent(id)}&limit=1`);
       const row = rows?.[0];
       if (!row) return json(res, 404, { ok: false, message: "提现单不存在" });
@@ -390,7 +415,10 @@ export default async function handler(req, res) {
     }
 
     if (action === "reject_withdraw") {
-      const id = String(body.id || "").trim();
+      const id = String(body.id || body.withdrawalId || body.withdrawal_id || "").trim();
+      if (!id || id === "undefined" || id === "null") {
+        return json(res, 400, { ok: false, message: "缺少提现单 id" });
+      }
       const reason = String(body.reason || body.reject_reason || "").trim();
       if (!reason) return json(res, 400, { ok: false, message: "请填写驳回原因" });
       const rows = await companionDb("companion_withdrawals", `?id=eq.${encodeURIComponent(id)}&limit=1`);
@@ -454,7 +482,7 @@ export default async function handler(req, res) {
     }
 
     if (action === "mark_withdraw_paid" || action === "complete_withdraw") {
-      if (!canConfirmPay(req)) {
+      if (!canConfirmPay(adminProfile)) {
         return json(res, 403, { ok: false, message: "仅超级管理员或财务管理员可确认打款并上传收据" });
       }
       const id = String(body.id || "").trim();
@@ -692,7 +720,7 @@ export default async function handler(req, res) {
     }
 
     if (action === "reveal_account") {
-      if (!canReveal(req)) return json(res, 403, { ok: false, message: "仅超级管理员或财务管理员可查看完整账号" });
+      if (!canReveal(adminProfile)) return json(res, 403, { ok: false, message: "仅超级管理员或财务管理员可查看完整账号" });
       const accountId = String(body.paymentAccountId || body.accountId || "").trim();
       const rows = await companionDb("companion_payment_accounts", `?id=eq.${encodeURIComponent(accountId)}&limit=1`);
       const acc = rows?.[0];
@@ -719,7 +747,7 @@ export default async function handler(req, res) {
     }
 
     if (action === "upload_receipt_and_confirm") {
-      if (!canConfirmPay(req)) {
+      if (!canConfirmPay(adminProfile)) {
         return json(res, 403, { ok: false, message: "仅超级管理员或财务管理员可确认付款并上传收据" });
       }
       const paymentId = String(body.paymentId || "").trim();
@@ -845,7 +873,7 @@ export default async function handler(req, res) {
     }
 
     if (action === "receipt_signed_url") {
-      if (!canConfirmPay(req)) {
+      if (!canConfirmPay(adminProfile)) {
         return json(res, 403, { ok: false, message: "仅超级管理员或财务管理员可查看财务收据" });
       }
       const id = String(body.id || body.receiptId || "").trim();
@@ -864,7 +892,7 @@ export default async function handler(req, res) {
     }
 
     if (action === "mark_receipt") {
-      if (!canConfirmPay(req)) {
+      if (!canConfirmPay(adminProfile)) {
         return json(res, 403, { ok: false, message: "仅超级管理员或财务管理员可标记对账/归档" });
       }
       const id = String(body.id || "").trim();
@@ -899,7 +927,7 @@ export default async function handler(req, res) {
     }
 
     if (action === "export_month") {
-      if (!canConfirmPay(req)) {
+      if (!canConfirmPay(adminProfile)) {
         return json(res, 403, { ok: false, message: "仅超级管理员或财务管理员可导出财务数据" });
       }
       const month = String(body.month || req.query?.month || "").trim();

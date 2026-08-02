@@ -10,19 +10,12 @@ import {
   viewCampaign,
   writeAdminLog,
 } from "../_wallet.js";
+import { requireAdmin } from "../_admin-auth.js";
 
 const ADMIN_ROLES = new Set(["admin", "super_admin", "finance_admin"]);
 
 function json(res, status, data) {
   res.status(status).json(data);
-}
-
-function roleFrom(req) {
-  return String(req.headers["x-mcj-admin-role"] || req.headers["x-user-role"] || "").trim();
-}
-
-function canManage(req) {
-  return ADMIN_ROLES.has(roleFrom(req));
 }
 
 async function parseBody(req) {
@@ -59,7 +52,12 @@ function normalizeCampaignInput(body = {}) {
 }
 
 export default async function handler(req, res) {
-  if (!canManage(req)) return json(res, 403, { ok: false, message: "没有充值活动管理权限" });
+  let adminProfile;
+  try {
+    adminProfile = await requireAdmin(req, { allowRoles: ADMIN_ROLES });
+  } catch (err) {
+    return json(res, err.status || 403, { ok: false, message: err.message || "没有充值活动管理权限" });
+  }
   if (!hasWalletDb()) return json(res, 503, { ok: false, message: "未配置数据库" });
 
   try {
@@ -75,6 +73,7 @@ export default async function handler(req, res) {
 
     const body = await parseBody(req);
     const action = String(body.action || "save").trim();
+    const operatorRole = String(adminProfile.role || "admin");
 
     if (action === "delete") {
       const id = String(body.id || "").trim();
@@ -89,7 +88,8 @@ export default async function handler(req, res) {
         action: "disable",
         targetType: "recharge_campaign",
         targetId: id,
-        operatorRole: roleFrom(req),
+        operatorRole,
+        operatorId: adminProfile.id,
         reason: "停用活动",
       });
       return json(res, 200, { ok: true, message: "活动已停用" });
@@ -123,7 +123,8 @@ export default async function handler(req, res) {
       action: id ? "update" : "create",
       targetType: "recharge_campaign",
       targetId: saved?.id || id,
-      operatorRole: roleFrom(req),
+      operatorRole,
+      operatorId: adminProfile.id,
       after: saved || patch,
     });
 

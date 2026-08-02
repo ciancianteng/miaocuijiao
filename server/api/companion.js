@@ -490,10 +490,21 @@ function safePlayer(profile = {}, companion = {}) {
     raw: { ...profile, ...companion }
   };
 }
+function depositApproved(companion = {}) {
+  return /approved|verified|passed|paid|received/.test(String(companion.deposit_status || ""));
+}
+function identityApproved(companion = {}) {
+  return /approved|verified|passed/.test(String(companion.verification_status || ""));
+}
 function canWork(profile = {}, companion = {}) {
   const profileOk = profile.status === "active";
-  const verified = /approved|verified|passed/.test(String(companion.verification_status || ""));
-  return profileOk && verified;
+  const allowOrders = companion.allow_orders !== false;
+  const app = String(companion.application_status || "").toLowerCase();
+  if (/rejected/.test(app)) return false;
+  if (/resubmit|need_more/.test(app)) return false;
+  // 新申请待审且尚未身份通过 → 禁止；已身份通过的旧账号不因残留 pending 卡死
+  if (/pending|review|submitted/.test(app) && !identityApproved(companion)) return false;
+  return profileOk && allowOrders && identityApproved(companion) && depositApproved(companion);
 }
 function canAccept(profile = {}, companion = {}) {
   return canWork(profile, companion) && normalizeOnlineStatus(companion.availability_status || companion.online_status) === "online";
@@ -502,6 +513,21 @@ function auditLockMessage(profile = {}, companion = {}) {
   if (canWork(profile, companion)) return "";
   if (profile.status && profile.status !== "active" && profile.status !== "pending") {
     return "账号已停用，无法接单。";
+  }
+  const app = String(companion.application_status || "").toLowerCase();
+  if (/rejected/.test(app)) return "陪玩申请已被拒绝，无法接单。";
+  if (/resubmit|need_more/.test(app)) return "请按审核意见补交资料后再接单。";
+  if (/pending|review|submitted/.test(app) && !identityApproved(companion)) {
+    return "陪玩申请尚未通过审核，暂时无法接单。";
+  }
+  if (!identityApproved(companion)) {
+    return "请先完成身份认证并通过审核后再接单。";
+  }
+  if (!depositApproved(companion)) {
+    return "请先完成押金缴纳并通过审核后再接单。";
+  }
+  if (companion.allow_orders === false) {
+    return "后台已暂停该账号接单权限。";
   }
   return "账号审核通过后即可开始接单。";
 }
@@ -620,10 +646,33 @@ async function loadOrdersFor(profile, companion, transactions = []) {
     "?and=(companion_id.is.null,or(status.eq.pending,status.eq.waiting_boss_confirm))&order=created_at.desc&limit=100";
   // Always list open hall orders so non-online statuses can show disabled grab buttons with reasons.
   const openRows = await supabaseJson(restUrl("orders", openQuery), { headers: serviceHeaders() }).catch(() => []);
+  // Recently settled / cancelled hall cards (keep visible with 已结单 / 已取消).
+  const settledRows = await supabaseJson(
+    restUrl(
+      "orders",
+      "?and=(companion_id.not.is.null,or(status.eq.claimed,status.eq.confirmed,status.eq.in_progress,status.eq.cancelled))&order=created_at.desc&limit=40"
+    ),
+    { headers: serviceHeaders() }
+  ).catch(() => []);
   const { createOrderGrabHelpers } = await import("./_order-grabs.js");
+  const { hallStateForOrder, hallStateLabel, toFlowStatus, isOrderExpired } = await import("./_order-flow.js");
   const grabsApi = createOrderGrabHelpers({ restUrl, supabaseJson, serviceHeaders });
   const myGrabRows = await grabsApi.listMyPendingGrabs(profile.id);
-  const grabOrderIds = myGrabRows.map((g) => g.order_id).filter(Boolean);
+  // Also load not_selected / selected grabs for this companion (outcome visibility).
+  let myOutcomeGrabs = [];
+  try {
+    myOutcomeGrabs = await supabaseJson(
+      restUrl(
+        "order_grabs",
+        `?companion_id=eq.${encodeURIComponent(profile.id)}&or=(status.eq.not_selected,status.eq.selected)&order=grabbed_at.desc&limit=40`
+      ),
+      { headers: serviceHeaders() }
+    );
+    if (!Array.isArray(myOutcomeGrabs)) myOutcomeGrabs = [];
+  } catch {
+    myOutcomeGrabs = [];
+  }
+  const grabOrderIds = [...new Set([...myGrabRows.map((g) => g.order_id), ...myOutcomeGrabs.map((g) => g.order_id)].filter(Boolean))];
   let grabOrders = [];
   if (grabOrderIds.length) {
     grabOrders = await supabaseJson(
@@ -631,22 +680,48 @@ async function loadOrdersFor(profile, companion, transactions = []) {
       { headers: serviceHeaders() }
     ).catch(() => []);
   }
-  const openWithMine = await Promise.all(
-    (openRows || []).slice(0, 40).map(async (row) => {
-      try {
-        const grabs = await grabsApi.listGrabs(row.id, row.note || row.description || "");
-        const mine = grabs.find((g) => g.companionId === profile.id);
-        return { ...row, _myGrab: mine || null, _grabs: grabs };
-      } catch {
-        return { ...row, _myGrab: null, _grabs: [] };
-      }
-    })
+  const openSlice = (openRows || []).slice(0, 40);
+  const openNoteMap = Object.fromEntries(openSlice.map((row) => [row.id, row.note || row.description || ""]));
+  const openGrabMap = await grabsApi.listGrabsBatch(
+    openSlice.map((row) => row.id),
+    openNoteMap
   );
+  const openWithMine = openSlice.map((row) => {
+    const grabs = openGrabMap[row.id] || [];
+    const mine = grabs.find((g) => g.companionId === profile.id);
+    const hallState = hallStateForOrder(row, grabs);
+    return { ...row, _myGrab: mine || null, _grabs: grabs, _hallState: hallState };
+  });
+  const openIds = new Set(openWithMine.map((r) => r.id));
+  const settledSlice = (settledRows || []).slice(0, 30);
+  const settledNoteMap = Object.fromEntries(settledSlice.map((row) => [row.id, row.note || row.description || ""]));
+  const settledGrabMap = await grabsApi.listGrabsBatch(
+    settledSlice.map((row) => row.id),
+    settledNoteMap
+  );
+  const settledHall = [];
+  for (const row of settledSlice) {
+    if (openIds.has(row.id)) continue;
+    const grabs = settledGrabMap[row.id] || [];
+    if (!grabs.length && !row.companion_id) continue;
+    const createdMs = Date.parse(row.accepted_at || row.created_at || "") || 0;
+    if (createdMs && Date.now() - createdMs > 1000 * 60 * 60 * 48) continue; // 48h retention
+    const hallState = hallStateForOrder(row, grabs);
+    if (!["settled", "cancelled", "expired"].includes(hallState)) continue;
+    settledHall.push({
+      ...row,
+      _myGrab: grabs.find((g) => g.companionId === profile.id) || null,
+      _grabs: grabs,
+      _hallState: hallState,
+    });
+  }
   const mineIds = new Set(visibleMine.map((r) => r.id));
   const pendingSelection = [];
   for (const row of grabOrders || []) {
     if (mineIds.has(row.id)) continue;
-    const g = myGrabRows.find((x) => x.order_id === row.id);
+    const g =
+      myGrabRows.find((x) => x.order_id === row.id) ||
+      myOutcomeGrabs.find((x) => x.order_id === row.id);
     pendingSelection.push({ ...row, _grabStatus: g?.status || "pending_customer_selection" });
   }
   for (const row of openWithMine) {
@@ -654,7 +729,7 @@ async function loadOrdersFor(profile, companion, transactions = []) {
       pendingSelection.push({ ...row, _grabStatus: row._myGrab.status });
     }
   }
-  const bossMap = await bossesForOrders([...visibleMine, ...pendingSelection, ...openWithMine]);
+  const bossMap = await bossesForOrders([...visibleMine, ...pendingSelection, ...openWithMine, ...settledHall]);
   const settlementByOrder = {};
   (transactions || []).forEach((tx) => {
     if (tx.transaction_type !== "companion_income" || !tx.order_id) return;
@@ -668,13 +743,18 @@ async function loadOrdersFor(profile, companion, transactions = []) {
         viewOrder(row, bossMap[row.boss_id] || {}, settlementByOrder[row.id] || null)
       ),
     ],
-    openOrders: openWithMine.map((row) => {
+    openOrders: [...openWithMine, ...settledHall].map((row) => {
       const viewed = viewOrder(row, bossMap[row.boss_id] || {});
+      const hallState = row._hallState || hallStateForOrder(row, row._grabs || []);
       return {
         ...viewed,
         myGrab: row._myGrab || null,
         grabCount: (row._grabs || []).length,
         alreadyGrabbed: !!row._myGrab,
+        hallState,
+        hallStateLabel: hallStateLabel(hallState),
+        flowStatus: toFlowStatus(row.status, { expired: isOrderExpired(row) }),
+        canGrab: hallState === "open" || hallState === "grabbing",
       };
     }),
   };
@@ -1041,12 +1121,18 @@ async function bootstrapData(profile, companion) {
   const monthlyLimit = Number(cfg.max_withdrawals_per_month || 3);
   const minAmount = money(cfg.min_withdraw_cat_food);
   const rate = money(cfg.cat_food_to_rm_rate) || 1;
-  const identityOk = /approved|verified|passed/.test(String(identity?.status || companionRow?.verification_status || ""));
+  const identityOk =
+    /approved|verified|passed/.test(String(identity?.status || "")) ||
+    /approved|verified|passed/.test(String(companionRow?.verification_status || ""));
+  const depositOk =
+    /approved|verified|passed|paid|received/.test(String(deposit?.status || "")) ||
+    /approved|verified|passed|paid|received/.test(String(companionRow?.deposit_status || ""));
   const bankOk = /approved|verified/.test(String(payment?.status || ""));
   const accountOk = profile.status === "active" && !companionRow?.withdraw_frozen;
   const canWithdrawNow =
     canWork(profile, companionRow) &&
     identityOk &&
+    depositOk &&
     bankOk &&
     accountOk &&
     summary.withdrawable >= minAmount &&
@@ -1056,6 +1142,7 @@ async function bootstrapData(profile, companion) {
     if (!canWork(profile, companionRow)) {
       permissions.withdrawLockReason = permissions.lockReason || "账号审核通过后即可开始接单。";
     } else if (!identityOk) permissions.withdrawLockReason = "请先完成实名认证";
+    else if (!depositOk) permissions.withdrawLockReason = "请先完成押金审核";
     else if (!bankOk) permissions.withdrawLockReason = "请先提交并等待结款账户审核通过";
     else if (companionRow?.withdraw_frozen) permissions.withdrawLockReason = "提现已被冻结";
     else if (summary.withdrawable < minAmount) permissions.withdrawLockReason = `可提现余额不足（最低 ${minAmount}）`;
@@ -1112,10 +1199,26 @@ async function bootstrapData(profile, companion) {
     popularity = null;
   }
 
+  let pendingForced = [];
+  try {
+    pendingForced = await (await import("./_content-acks.js")).pendingForcedForUser(profile.id, { audience: "companion" });
+  } catch {
+    pendingForced = [];
+  }
+  if (pendingForced.length) {
+    permissions.canSetAvailable = false;
+    permissions.canAcceptOrder = false;
+    permissions.canStartOrder = false;
+    permissions.forcedAckRequired = true;
+    permissions.forcedAckReason = "请先阅读并确认最新强制公告";
+  }
+
   return {
     serverTime: nowIso(),
     player,
     permissions,
+    pendingForced,
+    forcedAckRequired: pendingForced.length > 0,
     summary,
     popularity,
     openOrders,
@@ -1185,12 +1288,24 @@ async function bootstrapData(profile, companion) {
       applicationRejectReason: companion?.application_reject_reason || "",
       mediaRejectReason: companion?.media_reject_reason || "",
       depositRejectReason: deposit?.reject_reason || "",
+      // Signed URLs for companion self-view only (never sent to public/boss APIs).
+      idFrontUrl: await signedPrivateDocUrl(PRIVATE_BUCKETS.identity, identity?.id_front_path),
+      idBackUrl: await signedPrivateDocUrl(PRIVATE_BUCKETS.identity, identity?.id_back_path),
+      hasIdFront: !!String(identity?.id_front_path || "").trim(),
+      hasIdBack: !!String(identity?.id_back_path || "").trim(),
     },
     deposit: {
       status: deposit?.status || companion?.deposit_status || "pending",
       requiredAmount: deposit?.required_amount || 100,
       paidAmount: deposit?.paid_amount || 0,
       rejectReason: deposit?.reject_reason || "",
+      paymentMethod: deposit?.payment_method || "",
+      remark: deposit?.remark || "",
+      proofUrl: await signedPrivateDocUrl(
+        deposit?.proof_bucket || PRIVATE_BUCKETS.payment,
+        deposit?.proof_path
+      ),
+      hasProof: !!String(deposit?.proof_path || "").trim(),
     },
     playerGames: [],
     media: signedMedia,
@@ -1319,14 +1434,36 @@ async function upsertByCompanion(table, companionId, userId, payload) {
 
 async function saveUploadFromBody(userId, folder, bucket, dataUrlOrPath, filename) {
   if (!dataUrlOrPath) return { bucket: "", path: "" };
-  if (!String(dataUrlOrPath).startsWith("data:")) {
-    return { bucket, path: String(dataUrlOrPath) };
+  const raw = String(dataUrlOrPath).trim();
+  if (!raw) return { bucket: "", path: "" };
+  if (/^(blob:|filesystem:|file:)/i.test(raw)) {
+    throw Object.assign(new Error("不支持临时预览地址，请重新选择图片上传"), { status: 400 });
   }
-  const decoded = decodeDataUrl(dataUrlOrPath);
-  if (!decoded) throw Object.assign(new Error("文件格式无效"), { status: 400 });
-  const objectPath = buildObjectPath(userId, folder, filename || "file");
+  if (/^(https?:\/\/)?(localhost|127\.0\.0\.1)/i.test(raw)) {
+    throw Object.assign(new Error("不支持本地路径，请重新选择图片上传"), { status: 400 });
+  }
+  if (!raw.startsWith("data:")) {
+    // Existing durable storage path (not a public URL paste for identity docs)
+    if (/^https?:\/\//i.test(raw)) {
+      throw Object.assign(new Error("请通过上传按钮选择图片，不要粘贴链接"), { status: 400 });
+    }
+    return { bucket, path: raw };
+  }
+  const decoded = assertImageUpload(decodeDataUrl(raw));
+  const objectPath = buildObjectPath(userId, folder, filename || "file.jpg");
   await uploadPrivateObject(bucket, objectPath, decoded.buffer, decoded.contentType);
   return { bucket, path: objectPath, contentType: decoded.contentType };
+}
+
+async function signedPrivateDocUrl(bucket, objectPath) {
+  const path = String(objectPath || "").trim();
+  if (!bucket || !path) return "";
+  if (/^https?:\/\//i.test(path) || path.startsWith("data:")) return "";
+  try {
+    return await createSignedUrl(bucket, path, 60 * 60 * 6);
+  } catch {
+    return "";
+  }
 }
 async function ensureConversation(order) { const existing=await supabaseJson(restUrl("conversations", `?order_id=eq.${encodeURIComponent(order.id)}&limit=1`), { headers: serviceHeaders() }); if(existing?.[0]) return existing[0]; const rows=await supabaseJson(restUrl("conversations"), { method:"POST", headers: serviceHeaders(), body: JSON.stringify({ boss_id: order.boss_id, companion_id: order.companion_id || null, customer_service_id: order.customer_service_id || null, order_id: order.id, status: "open", created_at: nowIso(), updated_at: nowIso() }) }); return rows?.[0] || null; }
 async function addSystemMessage(order, senderId, senderRole, content) { const conversation=await ensureConversation(order); if(!conversation) return; await supabaseJson(restUrl("messages"), { method:"POST", headers: serviceHeaders(), body: JSON.stringify({ conversation_id: conversation.id, sender_id: senderId, sender_role: senderRole, message_type: "system", content, order_id: order.id, created_at: nowIso() }) }); }
@@ -1381,7 +1518,7 @@ async function claimOrder(profile, companion, id) {
     });
     order = { ...order, companion_id: null };
   }
-  await addSystemMessage(order, profile.id, "companion", "陪玩已抢单，等待老板确认人选。");
+  await addSystemMessage(order, profile.id, "companion", "陪玩已抢单，等待老板意向与客服指定。");
   return { ...order, companion_id: null, _grab: grab, _grabs: grabs };
 }
 async function patchOwnOrder(profile, id, expected, patch, message) {
@@ -1550,6 +1687,16 @@ export default async function handler(req, res) {
     if (req.method !== "POST") return json(res,405,{ok:false,message:"Method Not Allowed"});
     const body = await parseBody(req);
     if (action === "accept_order") {
+      try {
+        await (await import("./_content-acks.js")).assertCompanionCanWork(auth.profile.id);
+      } catch (err) {
+        return json(res, err.status || 403, {
+          ok: false,
+          message: err.message || "请先确认强制公告",
+          code: err.code || "FORCED_ACK_REQUIRED",
+          pending: err.pending || [],
+        });
+      }
       const order = await claimOrder(auth.profile, companion, String(body.id || ""));
       const already = !!order._already;
       return json(res, 200, {
@@ -1564,6 +1711,16 @@ export default async function handler(req, res) {
       });
     }
     if (action === "accept_direct_order" || action === "accept_direct") {
+      try {
+        await (await import("./_content-acks.js")).assertCompanionCanWork(auth.profile.id);
+      } catch (err) {
+        return json(res, err.status || 403, {
+          ok: false,
+          message: err.message || "请先确认强制公告",
+          code: err.code || "FORCED_ACK_REQUIRED",
+          pending: err.pending || [],
+        });
+      }
       const id = String(body.id || "");
       const name = String(auth.profile.display_name || companion.nickname || "陪玩").trim() || "陪玩";
       const beforeRows = await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(id)}&companion_id=eq.${encodeURIComponent(auth.profile.id)}&limit=1`), { headers: serviceHeaders() });
@@ -1645,6 +1802,16 @@ export default async function handler(req, res) {
       });
     }
     if (action === "start_order") {
+      try {
+        await (await import("./_content-acks.js")).assertCompanionCanWork(auth.profile.id);
+      } catch (err) {
+        return json(res, err.status || 403, {
+          ok: false,
+          message: err.message || "请先确认强制公告",
+          code: err.code || "FORCED_ACK_REQUIRED",
+          pending: err.pending || [],
+        });
+      }
       const orderId = String(body.id || "");
       const beforeRows = await supabaseJson(
         restUrl("orders", `?id=eq.${encodeURIComponent(orderId)}&companion_id=eq.${encodeURIComponent(auth.profile.id)}&limit=1`),
@@ -1669,7 +1836,19 @@ export default async function handler(req, res) {
         { status: "in_progress", started_at: nowIso() },
         "陪玩已开始服务。"
       );
-      return json(res, 200, { ok: true, message: "已开始服务，订单进入进行中。", order: viewOrder(order) });
+      let reward = null;
+      try {
+        reward = await (await import("./_cs-dock-rewards.js")).trySettleDockReward(
+          { ...before, ...order, status: "in_progress" },
+          { source: "companion_start" }
+        );
+      } catch (_) {}
+      return json(res, 200, {
+        ok: true,
+        message: "已开始服务，订单进入进行中。",
+        order: viewOrder(order),
+        reward,
+      });
     }
     if (action === "complete_order" || action === "confirm_complete") {
       const orderId = String(body.id || "");
@@ -1719,6 +1898,48 @@ export default async function handler(req, res) {
         awaitingBossConfirm: true,
       });
     }
+    if (action === "acknowledge_forced" || action === "ack_forced_announcement") {
+      const contentId = String(body.content_id || body.contentId || body.id || "").trim();
+      const contentVersion = String(body.content_version || body.contentVersion || body.version || "1").trim() || "1";
+      const contentType = String(body.content_type || body.contentType || "announcement").trim() || "announcement";
+      if (!contentId) return json(res, 400, { ok: false, message: "缺少内容 ID" });
+      const acks = await import("./_content-acks.js");
+      const pending = await acks.pendingForcedForUser(auth.profile.id, { audience: "companion" });
+      const match = pending.find(
+        (p) =>
+          String(p.id) === contentId &&
+          String(p.version) === contentVersion &&
+          (!p.contentType || p.contentType === contentType || contentType === "announcement")
+      );
+      const forced = contentType === "announcement" ? await acks.listActiveForcedAnnouncements({ audience: "companion" }) : [];
+      const row = forced.find((f) => String(f.id) === contentId) || match;
+      if (!row && !match) return json(res, 404, { ok: false, message: "强制内容不存在或已停用" });
+      const ver = contentVersion || String(row?.content_version || match?.version || 1);
+      const type = match?.contentType || contentType || "announcement";
+      const ip = String(req.headers["x-forwarded-for"] || req.headers["x-real-ip"] || "").split(",")[0].trim();
+      const saved = await acks.acknowledgeContent({
+        userId: auth.profile.id,
+        contentType: type,
+        contentId,
+        contentVersion: ver,
+        effectiveAt: row?.start_at || match?.publishedAt || "",
+        contentUpdatedAt: row?.updated_at || match?.updatedAt || "",
+        ip,
+        userAgent: String(req.headers["user-agent"] || ""),
+      });
+      const still = await acks.pendingForcedForUser(auth.profile.id, { audience: "companion" });
+      return json(res, 200, {
+        ok: true,
+        message: "已确认阅读强制公告",
+        ack: saved,
+        pendingForced: still,
+        forcedAckRequired: still.length > 0,
+      });
+    }
+    if (action === "pending_forced") {
+      const pending = await (await import("./_content-acks.js")).pendingForcedForUser(auth.profile.id, { audience: "companion" });
+      return json(res, 200, { ok: true, pendingForced: pending, forcedAckRequired: pending.length > 0 });
+    }
     if (action === "set_online_status") {
       const allowed = new Set(["online", "busy", "paused", "offline"]);
       const raw = String(body.online_status || body.availability_status || body.status || "offline").toLowerCase();
@@ -1726,6 +1947,18 @@ export default async function handler(req, res) {
       if (auth.profile.status !== "active") return json(res, 403, { ok: false, message: "账号已停用，不能接单" });
       if (!canWork(auth.profile, companion || {})) {
         return json(res, 403, { ok: false, message: "账号审核通过后即可开始接单。" });
+      }
+      if (status === "online" || status === "busy") {
+        try {
+          await (await import("./_content-acks.js")).assertCompanionCanWork(auth.profile.id);
+        } catch (err) {
+          return json(res, err.status || 403, {
+            ok: false,
+            message: err.message || "请先确认强制公告",
+            code: err.code || "FORCED_ACK_REQUIRED",
+            pending: err.pending || [],
+          });
+        }
       }
       const patch = {
         online_status: status,
@@ -1975,15 +2208,33 @@ export default async function handler(req, res) {
     if (action === "submit_verification") {
       const row = await ensureCompanionRow(auth.profile, companion);
       await ensureCompanionBuckets();
-      const front = await saveUploadFromBody(auth.profile.id, "id-front", PRIVATE_BUCKETS.identity, body.id_front || body.idFront, "id-front.jpg");
-      const back = await saveUploadFromBody(auth.profile.id, "id-back", PRIVATE_BUCKETS.identity, body.id_back || body.idBack, "id-back.jpg");
-      const handheld = await saveUploadFromBody(
-        auth.profile.id,
-        "id-handheld",
-        PRIVATE_BUCKETS.identity,
-        body.id_handheld || body.idHandheld,
-        "id-handheld.jpg"
-      );
+      const existingIdentity = (
+        await companionDb(
+          "companion_identity_verifications",
+          `?companion_profile_id=eq.${encodeURIComponent(row.id)}&limit=1`
+        ).catch((e) => (isMissingRelation(e) ? [] : Promise.reject(e)))
+      )?.[0];
+      const frontRaw = body.id_front || body.idFront || "";
+      const backRaw = body.id_back || body.idBack || "";
+      const handheldRaw = body.id_handheld || body.idHandheld || "";
+      const front = frontRaw
+        ? await saveUploadFromBody(auth.profile.id, "id-front", PRIVATE_BUCKETS.identity, frontRaw, "id-front.jpg")
+        : { path: existingIdentity?.id_front_path || "" };
+      const back = backRaw
+        ? await saveUploadFromBody(auth.profile.id, "id-back", PRIVATE_BUCKETS.identity, backRaw, "id-back.jpg")
+        : { path: existingIdentity?.id_back_path || "" };
+      const handheld = handheldRaw
+        ? await saveUploadFromBody(
+            auth.profile.id,
+            "id-handheld",
+            PRIVATE_BUCKETS.identity,
+            handheldRaw,
+            "id-handheld.jpg"
+          )
+        : { path: existingIdentity?.id_handheld_path || "" };
+      if (!front.path || !back.path) {
+        return json(res, 400, { ok: false, message: "请上传身份证正面和反面照片。" });
+      }
       await upsertByCompanion("companion_identity_verifications", row.id, auth.profile.id, {
         real_name: String(body.real_name || body.realName || ""),
         identity_no: String(body.identity_no || body.identityNo || ""),
@@ -2018,18 +2269,243 @@ export default async function handler(req, res) {
       return json(res, 200, { ok: true, message: "认证资料已提交，等待后台审核。" });
     }
 
+    if (action === "upload_private_doc") {
+      const row = await ensureCompanionRow(auth.profile, companion);
+      await ensureCompanionBuckets();
+      const docType = String(body.doc_type || body.docType || body.media_type || "").trim();
+      const dataUrl = body.data_url || body.dataUrl || body.file;
+      if (!dataUrl || !String(dataUrl).startsWith("data:")) {
+        return json(res, 400, { ok: false, message: "请选择图片文件上传。" });
+      }
+      if (docType === "id_front" || docType === "id-front") {
+        const uploaded = await saveUploadFromBody(
+          auth.profile.id,
+          "id-front",
+          PRIVATE_BUCKETS.identity,
+          dataUrl,
+          body.filename || "id-front.jpg"
+        );
+        const existing = (
+          await companionDb(
+            "companion_identity_verifications",
+            `?companion_profile_id=eq.${encodeURIComponent(row.id)}&limit=1`
+          ).catch(() => [])
+        )?.[0];
+        await upsertByCompanion("companion_identity_verifications", row.id, auth.profile.id, {
+          real_name: existing?.real_name || "",
+          identity_no: existing?.identity_no || "",
+          id_front_path: uploaded.path,
+          id_back_path: existing?.id_back_path || "",
+          id_handheld_path: existing?.id_handheld_path || "",
+          status: "pending",
+          reject_reason: "",
+          submitted_at: nowIso(),
+        });
+        await supabaseJson(restUrl("companion_profiles", `?id=eq.${encodeURIComponent(row.id)}`), {
+          method: "PATCH",
+          headers: serviceHeaders(),
+          body: JSON.stringify({ verification_status: "pending", updated_at: nowIso() }),
+        });
+        const url = await signedPrivateDocUrl(PRIVATE_BUCKETS.identity, uploaded.path);
+        return json(res, 200, { ok: true, message: "身份证正面上传成功", docType: "id_front", url, path: uploaded.path });
+      }
+      if (docType === "id_back" || docType === "id-back") {
+        const uploaded = await saveUploadFromBody(
+          auth.profile.id,
+          "id-back",
+          PRIVATE_BUCKETS.identity,
+          dataUrl,
+          body.filename || "id-back.jpg"
+        );
+        const existing = (
+          await companionDb(
+            "companion_identity_verifications",
+            `?companion_profile_id=eq.${encodeURIComponent(row.id)}&limit=1`
+          ).catch(() => [])
+        )?.[0];
+        await upsertByCompanion("companion_identity_verifications", row.id, auth.profile.id, {
+          real_name: existing?.real_name || "",
+          identity_no: existing?.identity_no || "",
+          id_front_path: existing?.id_front_path || "",
+          id_back_path: uploaded.path,
+          id_handheld_path: existing?.id_handheld_path || "",
+          status: "pending",
+          reject_reason: "",
+          submitted_at: nowIso(),
+        });
+        await supabaseJson(restUrl("companion_profiles", `?id=eq.${encodeURIComponent(row.id)}`), {
+          method: "PATCH",
+          headers: serviceHeaders(),
+          body: JSON.stringify({ verification_status: "pending", updated_at: nowIso() }),
+        });
+        const url = await signedPrivateDocUrl(PRIVATE_BUCKETS.identity, uploaded.path);
+        return json(res, 200, { ok: true, message: "身份证反面上传成功", docType: "id_back", url, path: uploaded.path });
+      }
+      if (docType === "deposit_proof" || docType === "deposit" || docType === "proof") {
+        const uploaded = await saveUploadFromBody(
+          auth.profile.id,
+          "deposit",
+          PRIVATE_BUCKETS.payment,
+          dataUrl,
+          body.filename || "deposit-proof.jpg"
+        );
+        const existing = (
+          await companionDb(
+            "companion_deposits",
+            `?companion_profile_id=eq.${encodeURIComponent(row.id)}&order=created_at.desc&limit=1`
+          ).catch(() => [])
+        )?.[0];
+        await upsertByCompanion("companion_deposits", row.id, auth.profile.id, {
+          required_amount: money(existing?.required_amount || 100) || 100,
+          paid_amount: money(existing?.paid_amount || body.paid_amount || 0),
+          payment_method: String(existing?.payment_method || body.payment_method || ""),
+          proof_path: uploaded.path,
+          proof_bucket: uploaded.bucket || PRIVATE_BUCKETS.payment,
+          status: "pending",
+          reject_reason: "",
+          remark: String(existing?.remark || body.remark || ""),
+          paid_at: nowIso(),
+        });
+        await supabaseJson(restUrl("companion_profiles", `?id=eq.${encodeURIComponent(row.id)}`), {
+          method: "PATCH",
+          headers: serviceHeaders(),
+          body: JSON.stringify({ deposit_status: "pending", updated_at: nowIso() }),
+        });
+        const url = await signedPrivateDocUrl(PRIVATE_BUCKETS.payment, uploaded.path);
+        return json(res, 200, {
+          ok: true,
+          message: "付款凭证上传成功",
+          docType: "deposit_proof",
+          url,
+          path: uploaded.path,
+        });
+      }
+      return json(res, 400, { ok: false, message: "不支持的证件类型" });
+    }
+
+    if (action === "delete_private_doc") {
+      const row = await ensureCompanionRow(auth.profile, companion);
+      const docType = String(body.doc_type || body.docType || "").trim();
+      if (docType === "id_front" || docType === "id-front") {
+        const existing = (
+          await companionDb(
+            "companion_identity_verifications",
+            `?companion_profile_id=eq.${encodeURIComponent(row.id)}&limit=1`
+          ).catch(() => [])
+        )?.[0];
+        if (existing?.id_front_path) {
+          try {
+            await deleteStorageObject(PRIVATE_BUCKETS.identity, existing.id_front_path);
+          } catch {
+            /* ignore */
+          }
+        }
+        if (existing) {
+          await upsertByCompanion("companion_identity_verifications", row.id, auth.profile.id, {
+            real_name: existing.real_name || "",
+            identity_no: existing.identity_no || "",
+            id_front_path: "",
+            id_back_path: existing.id_back_path || "",
+            id_handheld_path: existing.id_handheld_path || "",
+            status: "pending",
+            reject_reason: "",
+            submitted_at: existing.submitted_at || nowIso(),
+          });
+        }
+        return json(res, 200, { ok: true, message: "已删除身份证正面" });
+      }
+      if (docType === "id_back" || docType === "id-back") {
+        const existing = (
+          await companionDb(
+            "companion_identity_verifications",
+            `?companion_profile_id=eq.${encodeURIComponent(row.id)}&limit=1`
+          ).catch(() => [])
+        )?.[0];
+        if (existing?.id_back_path) {
+          try {
+            await deleteStorageObject(PRIVATE_BUCKETS.identity, existing.id_back_path);
+          } catch {
+            /* ignore */
+          }
+        }
+        if (existing) {
+          await upsertByCompanion("companion_identity_verifications", row.id, auth.profile.id, {
+            real_name: existing.real_name || "",
+            identity_no: existing.identity_no || "",
+            id_front_path: existing.id_front_path || "",
+            id_back_path: "",
+            id_handheld_path: existing.id_handheld_path || "",
+            status: "pending",
+            reject_reason: "",
+            submitted_at: existing.submitted_at || nowIso(),
+          });
+        }
+        return json(res, 200, { ok: true, message: "已删除身份证反面" });
+      }
+      if (docType === "deposit_proof" || docType === "deposit" || docType === "proof") {
+        const existing = (
+          await companionDb(
+            "companion_deposits",
+            `?companion_profile_id=eq.${encodeURIComponent(row.id)}&order=created_at.desc&limit=1`
+          ).catch(() => [])
+        )?.[0];
+        if (existing?.proof_path) {
+          try {
+            await deleteStorageObject(existing.proof_bucket || PRIVATE_BUCKETS.payment, existing.proof_path);
+          } catch {
+            /* ignore */
+          }
+        }
+        if (existing) {
+          await upsertByCompanion("companion_deposits", row.id, auth.profile.id, {
+            required_amount: money(existing.required_amount || 100) || 100,
+            paid_amount: money(existing.paid_amount),
+            payment_method: String(existing.payment_method || ""),
+            proof_path: "",
+            proof_bucket: existing.proof_bucket || PRIVATE_BUCKETS.payment,
+            status: "pending",
+            reject_reason: "",
+            remark: String(existing.remark || ""),
+            paid_at: existing.paid_at || nowIso(),
+          });
+        }
+        await supabaseJson(restUrl("companion_profiles", `?id=eq.${encodeURIComponent(row.id)}`), {
+          method: "PATCH",
+          headers: serviceHeaders(),
+          body: JSON.stringify({ deposit_status: "pending", updated_at: nowIso() }),
+        });
+        return json(res, 200, { ok: true, message: "已删除付款凭证" });
+      }
+      return json(res, 400, { ok: false, message: "不支持的证件类型" });
+    }
+
     if (action === "submit_deposit_proof" || action === "submit_deposit") {
       const row = await ensureCompanionRow(auth.profile, companion);
       await ensureCompanionBuckets();
-      const proof = await saveUploadFromBody(
-        auth.profile.id,
-        "deposit",
-        PRIVATE_BUCKETS.payment,
-        body.proof_url || body.proofUrl || body.proof,
-        "deposit-proof.jpg"
-      );
+      const existingDeposit = (
+        await companionDb(
+          "companion_deposits",
+          `?companion_profile_id=eq.${encodeURIComponent(row.id)}&order=created_at.desc&limit=1`
+        ).catch((e) => (isMissingRelation(e) ? [] : Promise.reject(e)))
+      )?.[0];
+      const proofRaw = body.proof_url || body.proofUrl || body.proof || "";
+      const proof = proofRaw
+        ? await saveUploadFromBody(
+            auth.profile.id,
+            "deposit",
+            PRIVATE_BUCKETS.payment,
+            proofRaw,
+            "deposit-proof.jpg"
+          )
+        : {
+            path: existingDeposit?.proof_path || "",
+            bucket: existingDeposit?.proof_bucket || PRIVATE_BUCKETS.payment,
+          };
+      if (!proof.path) {
+        return json(res, 400, { ok: false, message: "请先上传押金付款凭证图片。" });
+      }
       await upsertByCompanion("companion_deposits", row.id, auth.profile.id, {
-        required_amount: money(body.required_amount || 100) || 100,
+        required_amount: money(body.required_amount || existingDeposit?.required_amount || 100) || 100,
         paid_amount: money(body.paid_amount || body.paidAmount),
         payment_method: String(body.payment_method || body.paymentMethod || ""),
         proof_path: proof.path || "",
@@ -2050,8 +2526,9 @@ export default async function handler(req, res) {
     if (action === "upload_media") {
       const row = await ensureCompanionRow(auth.profile, companion);
       await ensureCompanionBuckets();
-      const mediaType = String(body.media_type || body.mediaType || "gallery");
-      if (!["avatar", "gallery", "voice"].includes(mediaType)) {
+      let mediaType = String(body.media_type || body.mediaType || "gallery");
+      if (mediaType === "card" || mediaType === "card_image") mediaType = "cover";
+      if (!["avatar", "cover", "gallery", "voice"].includes(mediaType)) {
         return json(res, 400, { ok: false, message: "不支持的媒体类型" });
       }
       const dataUrl = body.data_url || body.dataUrl || body.file;
@@ -2086,21 +2563,26 @@ export default async function handler(req, res) {
         try {
           await uploadPrivateObject(bucket, objectPath, decoded.buffer, decoded.contentType);
           publicUrl = publicObjectUrl(bucket, objectPath);
-        } catch {
+        } catch (publicErr) {
+          // Private fallback is allowed for storage, but NEVER persist signed URLs into profile fields.
           bucket = PRIVATE_BUCKETS.gallery;
           await uploadPrivateObject(bucket, objectPath, decoded.buffer, decoded.contentType);
-          publicUrl = await createSignedUrl(bucket, objectPath, 60 * 60 * 24 * 30);
+          publicUrl = "";
+          console.warn(
+            "[companion.upload_media] public bucket failed, stored in private gallery without durable profile URL",
+            publicErr?.message || publicErr
+          );
         }
         uploaded = { bucket, path: objectPath, contentType: decoded.contentType };
       }
       if (!uploaded.path) return json(res, 400, { ok: false, message: "缺少上传文件" });
 
-      if (mediaType === "avatar") {
-        const oldAvatars = await companionDb(
+      if (mediaType === "avatar" || mediaType === "cover") {
+        const oldRows = await companionDb(
           "companion_media",
-          `?companion_profile_id=eq.${encodeURIComponent(row.id)}&media_type=eq.avatar`
+          `?companion_profile_id=eq.${encodeURIComponent(row.id)}&media_type=eq.${encodeURIComponent(mediaType)}`
         ).catch(() => []);
-        for (const old of oldAvatars || []) {
+        for (const old of oldRows || []) {
           try {
             await deleteStorageObject(old.storage_bucket, old.storage_path);
           } catch {
@@ -2117,6 +2599,8 @@ export default async function handler(req, res) {
       const sortOrder =
         mediaType === "avatar"
           ? 0
+          : mediaType === "cover"
+            ? 1
           : body.sort_order != null
             ? Number(body.sort_order)
             : 100 + (Date.now() % 100000);
@@ -2148,26 +2632,48 @@ export default async function handler(req, res) {
 
       if (!publicUrl && uploaded.bucket && uploaded.path) {
         try {
-          publicUrl =
-            uploaded.bucket === PUBLIC_BUCKETS.profile
-              ? publicObjectUrl(uploaded.bucket, uploaded.path)
-              : await createSignedUrl(uploaded.bucket, uploaded.path, 60 * 60 * 24 * 30);
+          if (uploaded.bucket === PUBLIC_BUCKETS.profile || /public/i.test(uploaded.bucket)) {
+            publicUrl = publicObjectUrl(uploaded.bucket, uploaded.path);
+          } else {
+            // Request response may include a short-lived signed URL for immediate preview,
+            // but profile.avatar_url / card_image_url stay empty so public pages resolve via companion_media.
+            publicUrl = await createSignedUrl(uploaded.bucket, uploaded.path, 60 * 60);
+          }
         } catch {
           publicUrl = "";
         }
       }
 
       const companionPatch = { media_status: "approved", media_reject_reason: "", updated_at: nowIso() };
-      if (mediaType === "avatar" && publicUrl) {
-        companionPatch.card_image_url = publicUrl;
+      const durablePublicUrl =
+        uploaded.bucket === PUBLIC_BUCKETS.profile || /public/i.test(String(uploaded.bucket || ""))
+          ? publicObjectUrl(uploaded.bucket, uploaded.path)
+          : "";
+      if (mediaType === "avatar" && durablePublicUrl) {
+        // Avatar updates profile.avatar_url. Only seed card_image_url when cover is empty.
+        if (!String(companion.card_image_url || "").trim()) {
+          companionPatch.card_image_url = durablePublicUrl;
+        }
         await supabaseJson(restUrl("profiles", `?id=eq.${encodeURIComponent(auth.profile.id)}`), {
           method: "PATCH",
           headers: serviceHeaders(),
-          body: JSON.stringify({ avatar_url: publicUrl }),
+          body: JSON.stringify({ avatar_url: durablePublicUrl }),
         });
+      } else if (mediaType === "avatar" && !durablePublicUrl) {
+        // Clear stale signed/broken avatar URLs; keep existing cover if present.
+        await supabaseJson(restUrl("profiles", `?id=eq.${encodeURIComponent(auth.profile.id)}`), {
+          method: "PATCH",
+          headers: serviceHeaders(),
+          body: JSON.stringify({ avatar_url: "" }),
+        }).catch(() => {});
       }
-      if (mediaType === "gallery" && publicUrl && !companion.card_image_url && !auth.profile.avatar_url) {
-        companionPatch.card_image_url = publicUrl;
+      if (mediaType === "cover" && durablePublicUrl) {
+        companionPatch.card_image_url = durablePublicUrl;
+      } else if (mediaType === "cover" && !durablePublicUrl) {
+        companionPatch.card_image_url = "";
+      }
+      if (mediaType === "gallery" && durablePublicUrl && !companion.card_image_url && !auth.profile.avatar_url) {
+        companionPatch.card_image_url = durablePublicUrl;
       }
       if (mediaType === "voice") companionPatch.voice_url = publicUrl || "";
 
@@ -2193,6 +2699,8 @@ export default async function handler(req, res) {
         message:
           mediaType === "avatar"
             ? "头像上传成功"
+            : mediaType === "cover"
+              ? "卡面上传成功"
             : mediaType === "gallery"
               ? "相册照片上传成功"
               : mediaType === "voice"
@@ -2350,9 +2858,19 @@ export default async function handler(req, res) {
         application_status: "pending",
         application_reject_reason: "",
         application_submitted_at: nowIso(),
-        verification_status: "pending",
+        verification_status: companion.verification_status || "pending",
         updated_at: nowIso(),
       };
+      if (body.nickname) patch.nickname = String(body.nickname).trim();
+      if (body.phone || body.contact_phone) patch.contact_phone = String(body.phone || body.contact_phone || "").trim();
+      if (body.price != null && body.price !== "") patch.price = money(body.price);
+      if (body.age != null && body.age !== "") patch.age = Number(body.age) || null;
+      if (body.gender) patch.gender = String(body.gender).trim();
+      if (body.region) patch.region = String(body.region).trim();
+      if (body.contact_public != null) patch.contact_public = String(body.contact_public).trim();
+      if (body.game_prices && typeof body.game_prices === "object") {
+        try { patch.game_prices = body.game_prices; } catch { /* optional column */ }
+      }
       try {
         await supabaseJson(restUrl("companion_profiles", `?id=eq.${encodeURIComponent(row.id)}`), {
           method: "PATCH",
@@ -2360,17 +2878,43 @@ export default async function handler(req, res) {
           body: JSON.stringify(patch),
         });
       } catch {
-        await supabaseJson(restUrl("companion_profiles", `?id=eq.${encodeURIComponent(row.id)}`), {
-          method: "PATCH",
-          headers: serviceHeaders(),
-          body: JSON.stringify({
-            game: patch.game,
-            verification_status: "pending",
-            updated_at: nowIso(),
-          }),
-        });
+        const core = {
+          main_service: patch.main_service,
+          game: patch.game,
+          service_type: patch.service_type,
+          game_rank: patch.game_rank,
+          position: patch.position,
+          voice_type: patch.voice_type,
+          schedule: patch.schedule,
+          application_note: patch.application_note,
+          tags: patch.tags,
+          application_status: "pending",
+          application_reject_reason: "",
+          application_submitted_at: nowIso(),
+          updated_at: nowIso(),
+        };
+        if (patch.nickname) core.nickname = patch.nickname;
+        if (patch.contact_phone) core.contact_phone = patch.contact_phone;
+        if (patch.price != null) core.price = patch.price;
+        try {
+          await supabaseJson(restUrl("companion_profiles", `?id=eq.${encodeURIComponent(row.id)}`), {
+            method: "PATCH",
+            headers: serviceHeaders(),
+            body: JSON.stringify(core),
+          });
+        } catch {
+          await supabaseJson(restUrl("companion_profiles", `?id=eq.${encodeURIComponent(row.id)}`), {
+            method: "PATCH",
+            headers: serviceHeaders(),
+            body: JSON.stringify({
+              game: patch.game,
+              application_status: "pending",
+              updated_at: nowIso(),
+            }),
+          });
+        }
       }
-      return json(res, 200, { ok: true, message: "陪玩申请已提交，等待后台审核。" });
+      return json(res, 200, { ok: true, message: "申请已提交，等待后台审核。" });
     }
 
     if (action === "send_cs_message" || action === "send_message") {
