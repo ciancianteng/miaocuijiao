@@ -688,6 +688,15 @@ export default async function handler(req, res) {
     }
     const body = await parseBody(req);
     const action = String(body.action || "create");
+    if (action === "list_my_refunds" || action === "my_refunds") {
+      try {
+        const refundApi = await import("./_boss-refund-payout.js");
+        const refunds = await refundApi.listBossRefunds(companionDb, { bossId: profile.id, limit: 100 });
+        return json(res, 200, { ok: true, refunds });
+      } catch (e) {
+        return json(res, 200, { ok: true, refunds: [], message: e.message || "" });
+      }
+    }
     if (action === "create" || action === "place_order") {
       const order = body.order || body;
       const idempotencyKey = String(
@@ -1431,8 +1440,32 @@ export default async function handler(req, res) {
       return json(res, 200, { ok: true, message: "订单已取消。", order });
     }
     if (action === "request_refund") {
-      const order = await patchOwnedOrder(profile, id, ["confirmed", "in_progress", "completed"], { status: "refund_requested" }, "老板已申请退款，等待客服处理。");
-      return json(res, 200, { ok: true, message: "退款申请已提交。", order });
+      const beforeRows = await supabaseJson(
+        restUrl(TABLE, `?id=eq.${encodeURIComponent(id)}&boss_id=eq.${encodeURIComponent(profile.id)}&limit=1`),
+        { headers: serviceHeaders() }
+      ).catch(() => []);
+      const before = Array.isArray(beforeRows) ? beforeRows[0] : null;
+      const order = await patchOwnedOrder(profile, id, ["confirmed", "in_progress", "completed"], { status: "refund_requested" }, "老板已申请退款，等待客服处理。预计周五统一退款，不会即时到账。");
+      let refund = null;
+      try {
+        const refundApi = await import("./_boss-refund-payout.js");
+        const amount = money(body.amount != null ? body.amount : order?.total_amount || before?.total_amount || order?.paid_cat_food);
+        const created = await refundApi.createBossRefundRequest(companionDb, {
+          order: order || before || { id, boss_id: profile.id, total_amount: amount, order_no: before?.order_no },
+          boss: profile,
+          amount,
+          reason: String(body.reason || body.note || "老板申请退款"),
+        });
+        if (created.ok) refund = created.refund;
+      } catch (e) {
+        console.warn("[orders] friday refund enqueue:", e?.message || e);
+      }
+      return json(res, 200, {
+        ok: true,
+        message: "退款申请已提交。当前状态：待审核。预计处理日为本周五或下周五，不会即时到账。",
+        order,
+        refund,
+      });
     }
     if (action === "submit_review") {
       const beforeRows = await supabaseJson(

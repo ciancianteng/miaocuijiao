@@ -6,12 +6,15 @@
     loading: true,
     error: "",
     message: "",
-    tab: "withdrawals",
+    tab: "friday",
     withdrawals: [],
     payrolls: [],
+    bossRefunds: [],
     pendingPayments: [],
     receipts: [],
     settings: {},
+    weeklyRules: {},
+    settlementSummary: {},
     filterUid: "",
     filterMonth: "",
   };
@@ -62,9 +65,11 @@
   }
   function tabsHtml() {
     var tabs = [
-      ["withdrawals", "陪玩提现"],
+      ["friday", "周五结算中心"],
+      ["refunds", "老板退款"],
+      ["withdrawals", "陪玩工资"],
       ["payrolls", "客服工资"],
-      ["pending", "待付款"],
+      ["pending", "待付款单"],
       ["receipts", "收据库"],
     ];
     return (
@@ -83,6 +88,77 @@
         })
         .join("") +
       "</div>"
+    );
+  }
+  function fridayBannerHtml() {
+    var rules = state.weeklyRules || {};
+    var sum = state.settlementSummary || {};
+    return (
+      '<div class="admin-sync-note">' +
+      "周结：周四 23:59（Asia/Kuala_Lumpur）前 → 本周五发放；截止后 → 下周五。人工银行转账后须上传打款凭证。退款/陪玩工资/客服工资统一周五批次。" +
+      "<br>本周五 " +
+      esc(rules.thisFriday || sum.thisFriday || "-") +
+      " · 待退款 " +
+      esc(sum.pendingRefunds || 0) +
+      " · 待陪玩 " +
+      esc(sum.pendingCompanion || 0) +
+      " · 待客服 " +
+      esc(sum.pendingCs || 0) +
+      " · 待退款额 RM " +
+      esc(sum.refundPendingRm || 0) +
+      ' <button class="mini-btn" type="button" data-fin-export-settle>导出本月结算 CSV</button>' +
+      "</div>"
+    );
+  }
+  function refundsHtml(list) {
+    var rows = (list || state.bossRefunds || [])
+      .map(function (r) {
+        var actions = "";
+        if (/approved_for_payout|carried_forward|failed/i.test(String(r.status || ""))) {
+          actions +=
+            '<button class="mini-btn" type="button" data-fin-refund-batch="' +
+            esc(r.id) +
+            '">加入本周批次</button> ';
+          actions +=
+            '<button class="mini-btn" type="button" data-fin-refund-next="' +
+            esc(r.id) +
+            '">移至下周</button> ';
+        }
+        if (/approved_for_payout|included_in_batch|processing|failed|carried_forward/i.test(String(r.status || ""))) {
+          actions +=
+            '<button class="mini-btn primary-lite" type="button" data-fin-refund-paid="' +
+            esc(r.id) +
+            '">上传凭证/打款完成</button>';
+        }
+        return (
+          "<tr><td>" +
+          esc(r.refundNo) +
+          "</td><td>" +
+          esc(r.bossName) +
+          "<br><small>" +
+          esc(r.bossUid) +
+          "</small></td><td>" +
+          esc(r.orderNo) +
+          "</td><td>RM " +
+          esc(r.amountRm) +
+          "</td><td>" +
+          esc(r.assignedCsName || "-") +
+          "</td><td>" +
+          esc(r.settlementDate || "-") +
+          "</td><td>" +
+          esc(r.statusText) +
+          "</td><td>" +
+          esc(r.createdAt) +
+          "</td><td>" +
+          actions +
+          "</td></tr>"
+        );
+      })
+      .join("");
+    return (
+      '<div class="table-wrap"><table><thead><tr><th>退款单号</th><th>老板</th><th>订单</th><th>金额</th><th>负责人客服</th><th>预计结算日</th><th>状态</th><th>申请时间</th><th>操作</th></tr></thead><tbody>' +
+      (rows || '<tr><td colspan="9">暂无老板退款</td></tr>') +
+      "</tbody></table></div>"
     );
   }
   function withdrawalsHtml() {
@@ -110,14 +186,17 @@
           "</td><td>" +
           esc(w.submittedAt) +
           "</td><td>" +
-          (w.status === "pending_review"
+          (w.status === "pending_review" ||
+          w.status === "pending_friday" ||
+          w.status === "submitted" ||
+          w.status === "rolled_over"
             ? '<button class="mini-btn primary-lite" type="button" data-fin-approve-wd="' +
               esc(w.id) +
               '">通过</button> <button class="mini-btn" type="button" data-fin-reject-wd="' +
               esc(w.id) +
               '">拒绝</button>'
             : "") +
-          (/approved_pending_pay|paying|paid_pending_receipt/.test(String(w.status || ""))
+          (/approved_pending_pay|paying|paid_pending_receipt|pending_payment|approved|paid/.test(String(w.status || ""))
             ? ' <button class="mini-btn primary-lite" type="button" data-fin-paid-wd="' +
               esc(w.id) +
               '">打款完成</button> <button class="mini-btn" type="button" data-fin-reject-wd="' +
@@ -305,10 +384,27 @@
           ? pendingHtml()
           : state.tab === "receipts"
             ? receiptsHtml()
-            : withdrawalsHtml();
+            : state.tab === "refunds"
+              ? refundsHtml()
+              : state.tab === "friday"
+                ? fridayBannerHtml() +
+                  "<h4>老板退款（本周）</h4>" +
+                  refundsHtml(
+                    (state.bossRefunds || []).filter(function (r) {
+                      return /pending_review|approved_for_payout|included_in_batch|processing|carried_forward|failed/i.test(
+                        String(r.status || "")
+                      );
+                    })
+                  ) +
+                  "<h4>陪玩工资（待处理）</h4>" +
+                  withdrawalsHtml() +
+                  "<h4>客服工资（待处理）</h4>" +
+                  payrollsHtml()
+                : withdrawalsHtml();
     box.innerHTML =
-      '<div class="admin-section-head compact"><div><h3>提现与发薪</h3><p>管理陪玩提现猫粮、客服工资发放、银行转账确认与财务收据库。</p></div><button class="mini-btn" type="button" data-fin-reload>刷新</button></div>' +
+      '<div class="admin-section-head compact"><div><h3>周五结算中心</h3><p>老板退款 · 陪玩工资 · 客服工资统一周五结算；打款须上传凭证。禁止即时到账。</p></div><button class="mini-btn" type="button" data-fin-reload>刷新</button></div>' +
       (state.message ? '<div class="admin-sync-note">' + esc(state.message) + "</div>" : "") +
+      (state.tab !== "friday" ? fridayBannerHtml() : "") +
       tabsHtml() +
       body;
   }
@@ -320,9 +416,12 @@
       .then(function (res) {
         state.withdrawals = res.withdrawals || [];
         state.payrolls = res.payrolls || [];
+        state.bossRefunds = res.bossRefunds || [];
         state.pendingPayments = res.pendingPayments || [];
         state.receipts = res.receipts || [];
         state.settings = res.settings || {};
+        state.weeklyRules = res.weeklyRules || {};
+        state.settlementSummary = res.settlementSummary || {};
         state.loading = false;
         paint();
       })
@@ -445,6 +544,76 @@
     });
   }
 
+  function openBossRefundPaidUploader(refundId) {
+    var row = (state.bossRefunds || []).find(function (r) {
+      return String(r.id) === String(refundId);
+    });
+    var amount = row ? row.amountRm : "";
+    var overlay = document.createElement("div");
+    overlay.style.cssText =
+      "position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px";
+    overlay.innerHTML =
+      '<div style="background:#fff;max-width:480px;width:100%;border-radius:12px;padding:18px;box-shadow:0 12px 40px rgba(0,0,0,.2)">' +
+      '<h3 style="margin:0 0 8px">老板退款 · 上传打款凭证</h3>' +
+      '<p style="margin:0 0 12px;color:#666;font-size:13px">必须上传凭证并填写银行参考号后才能标记完成。应付：RM ' +
+      esc(amount) +
+      "</p>" +
+      '<label style="display:block;margin-bottom:8px">实际打款金额 RM<input type="number" step="0.01" data-rf-amount value="' +
+      esc(amount) +
+      '" style="width:100%"></label>' +
+      '<label style="display:block;margin-bottom:8px">银行参考号 / Transaction Reference<input data-rf-ref required style="width:100%"></label>' +
+      '<div data-rf-drop style="border:1px dashed #bbb;border-radius:10px;padding:18px;text-align:center;margin:10px 0;cursor:pointer;background:#fafafa"><strong>点击上传打款凭证</strong></div>' +
+      '<input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" data-rf-file hidden>' +
+      '<div data-rf-preview style="font-size:13px;margin:8px 0"></div>' +
+      '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">' +
+      '<button type="button" class="mini-btn" data-rf-cancel>取消</button>' +
+      '<button type="button" class="mini-btn primary-lite" data-rf-submit>二次确认 · 打款完成</button></div></div>';
+    document.body.appendChild(overlay);
+    var fileData = "";
+    var drop = overlay.querySelector("[data-rf-drop]");
+    var fileInput = overlay.querySelector("[data-rf-file]");
+    drop.addEventListener("click", function () {
+      fileInput.click();
+    });
+    fileInput.addEventListener("change", function () {
+      var file = fileInput.files && fileInput.files[0];
+      if (!file) return;
+      readFileAsDataUrl(file).then(function (url) {
+        fileData = url;
+        overlay.querySelector("[data-rf-preview]").textContent = "已选择：" + file.name;
+      });
+    });
+    overlay.querySelector("[data-rf-cancel]").addEventListener("click", function () {
+      overlay.remove();
+    });
+    overlay.querySelector("[data-rf-submit]").addEventListener("click", function () {
+      var ref = overlay.querySelector("[data-rf-ref]").value.trim();
+      if (!ref) {
+        alert("必须填写银行参考号");
+        return;
+      }
+      if (!fileData) {
+        alert("没有上传打款凭证，不允许标记完成");
+        return;
+      }
+      if (!confirm("确认该笔老板退款已银行打款完成？将通知老板并入账（幂等，重复点击不会重复入账）。")) return;
+      post("mark_refund_paid", {
+        id: refundId,
+        bankReference: ref,
+        paidAmount: overlay.querySelector("[data-rf-amount]").value,
+        receiptDataUrl: fileData,
+      })
+        .then(function (res) {
+          overlay.remove();
+          state.message = res.message || "退款打款完成";
+          load();
+        })
+        .catch(function (err) {
+          alert(err.message);
+        });
+    });
+  }
+
   function openWithdrawPaidUploader(withdrawalId) {
     var overlay = document.createElement("div");
     overlay.style.cssText =
@@ -530,6 +699,58 @@
     if (tab && target() && target().contains(tab)) {
       state.tab = tab.dataset.finTab;
       paint();
+      return;
+    }
+    var refundBatch = e.target.closest("[data-fin-refund-batch]");
+    if (refundBatch) {
+      post("add_refund_to_batch", { id: refundBatch.dataset.finRefundBatch })
+        .then(function (res) {
+          state.message = res.message || "已加入本周批次";
+          load();
+        })
+        .catch(function (err) {
+          alert(err.message);
+        });
+      return;
+    }
+    var refundNext = e.target.closest("[data-fin-refund-next]");
+    if (refundNext) {
+      if (!confirm("确认将该退款移至下周结算？")) return;
+      post("rollover_refund", { id: refundNext.dataset.finRefundNext })
+        .then(function (res) {
+          state.message = res.message || "已顺延";
+          load();
+        })
+        .catch(function (err) {
+          alert(err.message);
+        });
+      return;
+    }
+    var refundPaid = e.target.closest("[data-fin-refund-paid]");
+    if (refundPaid) {
+      openBossRefundPaidUploader(refundPaid.dataset.finRefundPaid);
+      return;
+    }
+    var exportSettle = e.target.closest("[data-fin-export-settle]");
+    if (exportSettle) {
+      var now = new Date();
+      post("export_settlement", {
+        year: String(now.getFullYear()),
+        month: String(now.getMonth() + 1).padStart(2, "0"),
+        type: "all",
+      })
+        .then(function (res) {
+          var blob = new Blob(["\ufeff" + (res.csv || "")], { type: "text/csv;charset=utf-8" });
+          var a = document.createElement("a");
+          a.href = URL.createObjectURL(blob);
+          a.download = (res.fileBase || "MeowCuiJiao_Settlement") + ".csv";
+          a.click();
+          state.message = "已导出 " + (res.count || 0) + " 笔，合计 RM " + (res.totalRm || 0);
+          paint();
+        })
+        .catch(function (err) {
+          alert(err.message);
+        });
       return;
     }
     var approveWd = e.target.closest("[data-fin-approve-wd]");

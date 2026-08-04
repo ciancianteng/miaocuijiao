@@ -2,6 +2,7 @@ import {
   companionDb,
   createSignedUrl,
   decodeDataUrl,
+  deleteStorageObject,
   ensurePrivateBucket,
   isMissingRelation,
   maskBankAccount,
@@ -9,25 +10,55 @@ import {
   buildObjectPath,
 } from "../_companion-media-store.js";
 import { writeAdminLog } from "../_wallet.js";
+import { insertCompanionNotification } from "../_companion-inbox.js";
+import {
+  canApprove,
+  canMarkPaid,
+  canStartReview,
+  computeSettlementDate,
+  mergeWeeklySettings,
+  normalizePayoutStatus,
+  PAYOUT_STATUS_TEXT,
+  statusText,
+  viewWeeklyRules,
+} from "../_weekly-settlement.js";
+import {
+  releasePayoutSources,
+  settlePayoutSources,
+  syncPayoutRequestStatus,
+  viewPayoutRequest,
+} from "../_payout-requests.js";
+import {
+  allocateCsPayrollNo,
+  publicDisplayName,
+  resolveCompanionPublicCode,
+} from "../_account-codes.js";
 
 const FINANCE_BUCKET = "finance-receipts";
 const FINANCE_ROLES = new Set(["admin", "super_admin", "finance_admin"]);
 const REVEAL_ROLES = new Set(["super_admin", "finance_admin"]);
 
+/** Unified weekly payout statuses */
 const WITHDRAW_STATUS = {
-  pending: "审核中",
-  pending_review: "审核中",
-  approved: "审核通过",
-  approved_pending_pay: "审核通过",
-  rejected: "已拒绝",
-  paying: "审核通过",
-  paid_pending_receipt: "审核通过",
-  completed: "已到账",
+  ...PAYOUT_STATUS_TEXT,
+  pending: "已提交",
+  pending_review: "待周五结算",
+  pending_friday: "待周五结算",
+  reviewing: "审核中",
+  approved: "审核通过待打款",
+  approved_pending_pay: "审核通过待打款",
+  pending_payment: "审核通过待打款",
+  paying: "审核通过待打款",
+  paid_pending_receipt: "已打款",
+  paid: "已打款",
+  completed: "已完成",
+  rejected: "已驳回",
+  rolled_over: "顺延至下周",
   pay_failed: "付款失败",
   cancelled: "已撤销",
 };
 
-const PAYROLL_STATUS = { ...WITHDRAW_STATUS, draft: "草稿" };
+const PAYROLL_STATUS = { ...WITHDRAW_STATUS, draft: "待结算", completed: "已完成" };
 
 function json(res, status, data) {
   res.status(status).json(data);
@@ -43,7 +74,8 @@ function canReveal(profile) {
 }
 
 function canConfirmPay(profile) {
-  return canReveal(profile);
+  // Manual remittance confirm: admin / super_admin / finance_admin
+  return FINANCE_ROLES.has(String(profile?.role || ""));
 }
 
 function money(v) {
@@ -57,6 +89,136 @@ function nowIso() {
 
 function no(prefix) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+}
+
+function clientIp(req) {
+  const xf = String(req?.headers?.["x-forwarded-for"] || req?.headers?.["x-real-ip"] || "").split(",")[0].trim();
+  return xf || String(req?.socket?.remoteAddress || req?.connection?.remoteAddress || "").trim() || "";
+}
+
+function adminDisplayName(profile = {}) {
+  return String(profile.display_name || profile.email || profile.id || "admin").trim();
+}
+
+async function insertStaffNotification({ staffId, category = "payroll", title = "", body = "", href = "/customer-service/reports/", noticeKey = "" } = {}) {
+  const uid = String(staffId || "").trim();
+  if (!uid) return null;
+  const key = String(noticeKey || "").trim() || `${category}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  try {
+    await companionDb("staff_notifications", "", {
+      method: "POST",
+      body: JSON.stringify({
+        staff_id: uid,
+        notice_key: key,
+        category: String(category || "payroll"),
+        title: String(title || "").trim() || "系统通知",
+        body: String(body || "").trim(),
+        href: String(href || "/customer-service/reports/"),
+        created_at: nowIso(),
+      }),
+    });
+    return key;
+  } catch (err) {
+    if (!isMissingRelation(err)) console.warn("[finance] insertStaffNotification:", err?.message || err);
+    return null;
+  }
+}
+
+async function writePayoutLog({
+  payoutType,
+  relatedRecordId,
+  paymentId,
+  receiptId,
+  payeeUserId,
+  payeeName,
+  payeeUid,
+  amountRm,
+  bankReference,
+  receiptPath,
+  receiptFileType,
+  notes,
+  adminId,
+  adminName,
+  adminRole,
+  ip,
+  action = "confirm_paid",
+} = {}) {
+  try {
+    const rows = await companionDb("finance_payout_logs", "", {
+      method: "POST",
+      body: JSON.stringify({
+        log_no: no("PLOG"),
+        payout_type: payoutType || "other",
+        related_record_id: relatedRecordId || null,
+        payment_id: paymentId || null,
+        receipt_id: receiptId || null,
+        payee_user_id: payeeUserId || null,
+        payee_name: String(payeeName || ""),
+        payee_uid: String(payeeUid || ""),
+        amount_rm: money(amountRm),
+        bank_reference: String(bankReference || ""),
+        receipt_path: String(receiptPath || ""),
+        receipt_file_type: String(receiptFileType || ""),
+        notes: String(notes || ""),
+        admin_id: adminId || null,
+        admin_name: String(adminName || ""),
+        admin_role: String(adminRole || ""),
+        client_ip: String(ip || ""),
+        action: String(action || "confirm_paid"),
+        created_at: nowIso(),
+      }),
+    });
+    return rows?.[0] || null;
+  } catch (err) {
+    if (!isMissingRelation(err)) console.warn("[finance] writePayoutLog:", err?.message || err);
+    return null;
+  }
+}
+
+function viewPayoutLog(row = {}) {
+  return {
+    id: row.id,
+    logNo: row.log_no,
+    payoutType: row.payout_type,
+    payoutTypeText:
+      ({ companion_withdraw: "陪玩提现", staff_payroll: "客服工资", other: "其他" })[row.payout_type] || row.payout_type,
+    relatedRecordId: row.related_record_id || "",
+    paymentId: row.payment_id || "",
+    receiptId: row.receipt_id || "",
+    payeeUserId: row.payee_user_id || "",
+    payeeName: row.payee_name || "",
+    payeeUid: row.payee_uid || "",
+    amountRm: money(row.amount_rm),
+    bankReference: row.bank_reference || "",
+    receiptPath: row.receipt_path || "",
+    hasReceipt: !!row.receipt_path,
+    notes: row.notes || "",
+    adminId: row.admin_id || "",
+    adminName: row.admin_name || "",
+    adminRole: row.admin_role || "",
+    clientIp: row.client_ip || "",
+    action: row.action || "",
+    createdAt: row.created_at || "",
+  };
+}
+
+async function sumDockRewardRm(staffId, periodStart, periodEnd) {
+  try {
+    const rows = await companionDb(
+      "cs_dock_rewards",
+      `?service_id=eq.${encodeURIComponent(staffId)}&status=eq.settled&limit=500`
+    ).catch(() => []);
+    const start = periodStart ? new Date(periodStart).getTime() : 0;
+    const end = periodEnd ? new Date(periodEnd).getTime() + 86400000 : Number.MAX_SAFE_INTEGER;
+    return (rows || [])
+      .filter((r) => {
+        const t = new Date(r.settled_at || r.created_at || 0).getTime();
+        return t >= start && t <= end;
+      })
+      .reduce((sum, r) => sum + money(r.amount_cat_food || r.amount_rm || 0), 0);
+  } catch {
+    return 0;
+  }
 }
 
 async function parseBody(req) {
@@ -73,10 +235,11 @@ async function parseBody(req) {
 async function settings() {
   try {
     const rows = await companionDb("finance_settings", "?id=eq.1&limit=1");
-    return (
+    return mergeWeeklySettings(
       rows?.[0] || {
         min_withdraw_cat_food: 50,
-        max_withdrawals_per_month: 3,
+        max_withdrawals_per_month: 8,
+        max_withdrawals_per_week: 2,
         cat_food_to_rm_rate: 1,
         withdraw_fee_rm: 0,
         withdraw_fee_percent: 0,
@@ -85,14 +248,15 @@ async function settings() {
     );
   } catch (e) {
     if (isMissingRelation(e)) {
-      return {
+      return mergeWeeklySettings({
         min_withdraw_cat_food: 50,
-        max_withdrawals_per_month: 3,
+        max_withdrawals_per_month: 8,
+        max_withdrawals_per_week: 2,
         cat_food_to_rm_rate: 1,
         withdraw_fee_rm: 0,
         withdraw_fee_percent: 0,
         company_name: "MEOW CUI JIAO ENTERPRISE",
-      };
+      });
     }
     throw e;
   }
@@ -121,15 +285,25 @@ function resolveRowId(row = {}) {
   return String(row.id || row.uuid || row.withdrawal_id || row.withdrawalId || "").trim();
 }
 
-function viewWithdraw(row, profile = {}, account = {}) {
+function viewWithdraw(row, profile = {}, account = {}, adminMap = {}, companionExtra = {}) {
   const id = resolveRowId(row);
+  const approvedById = row.approved_by || row.reviewed_by || "";
+  const paidById = row.paid_by || row.confirmed_by || "";
+  const approvedAdmin = adminMap[approvedById] || {};
+  const paidAdmin = adminMap[paidById] || {};
+  const companionCode = resolveCompanionPublicCode(companionExtra, profile);
+  const companionName = publicDisplayName(
+    { display_name: companionExtra.nickname || profile.display_name, email: profile.email },
+    companionCode || "-"
+  );
   return {
     id,
     withdrawalId: id,
-    withdrawalNo: row.withdrawal_no || row.withdrawalNo || id,
+    withdrawalNo: row.withdrawal_no || row.withdrawalNo || "",
     companionId: row.companion_id || row.companionId || "",
-    companionUid: profile.boss_uid || profile.id || row.companion_id,
-    companionName: profile.display_name || profile.email || "-",
+    companionUid: companionCode || "",
+    companionCode: companionCode || "",
+    companionName,
     catFoodAmount: money(row.cat_food_amount),
     exchangeRate: money(row.exchange_rate),
     grossAmountRm: money(row.gross_amount_rm),
@@ -140,26 +314,50 @@ function viewWithdraw(row, profile = {}, account = {}) {
     accountLast4: row.account_last4 || account.account_last4 || maskBankAccount(account.bank_account).slice(-4),
     accountStatus: account.status || "",
     remark: row.remark || "",
+    paymentRemark: row.payment_remark || row.finance_note || "",
+    bankReference: row.bank_reference || "",
+    receiptUrl: row.receipt_url || "",
+    receiptFileType: row.receipt_file_type || "",
     status: row.status,
     statusText: WITHDRAW_STATUS[row.status] || row.status,
     rejectReason: row.reject_reason || row.rejection_reason || "",
     submittedAt: row.submitted_at || row.created_at,
     reviewedAt: row.reviewed_at || row.approved_at || "",
     approvedAt: row.approved_at || row.reviewed_at || "",
+    approvedBy: approvedById,
+    approvedByName: publicDisplayName(approvedAdmin, ""),
     paidAt: row.paid_at || "",
     completedAt: row.completed_at || "",
+    paidBy: paidById,
+    paidByName: publicDisplayName(paidAdmin, ""),
     paymentAccountId: row.payment_account_id || "",
+    settlementDate: row.settlement_date || "",
+    statusCanonical: normalizePayoutStatus(row.status),
   };
 }
 
-function viewPayroll(row, profile = {}) {
+function viewPayroll(row, profile = {}, adminMap = {}) {
   const snap = row.payment_account_snapshot || {};
+  const breakdown = row.wage_breakdown && typeof row.wage_breakdown === "object" ? row.wage_breakdown : {};
+  const approvedById = row.approved_by || "";
+  const confirmedById = row.confirmed_by || "";
+  const approvedAdmin = adminMap[approvedById] || {};
+  const confirmedAdmin = adminMap[confirmedById] || {};
+  const commissionRm =
+    row.commission_rm != null && Number(row.commission_rm) !== 0
+      ? money(row.commission_rm)
+      : money(breakdown.commissionRm ?? breakdown.orderCommission ?? 0);
+  const catFoodRewardRm =
+    row.cat_food_reward_rm != null && Number(row.cat_food_reward_rm) !== 0
+      ? money(row.cat_food_reward_rm)
+      : money(breakdown.catFoodRewardRm ?? breakdown.dockRewardRm ?? 0);
+  const otherBonus = Math.max(0, money(row.bonus_rm) - commissionRm);
   return {
     id: row.id,
     payrollNo: row.payroll_no,
     staffId: row.staff_id,
-    staffUid: profile.id || row.staff_id,
-    staffName: profile.display_name || profile.email || "-",
+    staffUid: "",
+    staffName: publicDisplayName(profile, "-"),
     periodStart: row.period_start,
     periodEnd: row.period_end,
     workDays: row.work_days || 0,
@@ -168,18 +366,41 @@ function viewPayroll(row, profile = {}) {
     orderCount: row.order_count || 0,
     baseSalaryRm: money(row.base_salary_rm),
     bonusRm: money(row.bonus_rm),
+    commissionRm,
+    catFoodRewardRm,
+    otherBonusRm: otherBonus,
     deductionRm: money(row.deduction_rm),
     netSalaryRm: money(row.net_salary_rm),
+    wageBreakdown: {
+      baseSalaryRm: money(row.base_salary_rm),
+      commissionRm,
+      catFoodRewardRm,
+      otherBonusRm: otherBonus,
+      deductionRm: money(row.deduction_rm),
+      netSalaryRm: money(row.net_salary_rm),
+      ...breakdown,
+    },
     bankName: snap.bank_name || "",
     accountHolder: snap.account_holder || "",
     accountLast4: snap.account_last4 || "",
+    bankReference: row.bank_reference || "",
+    receiptUrl: row.receipt_url || "",
     status: row.status,
     statusText: PAYROLL_STATUS[row.status] || row.status,
     rejectReason: row.reject_reason || "",
     note: row.note || "",
     approvedAt: row.approved_at || "",
+    approvedBy: approvedById,
+    approvedByName: publicDisplayName(approvedAdmin, ""),
     paidAt: row.paid_at || "",
     completedAt: row.completed_at || "",
+    confirmedBy: confirmedById,
+    confirmedByName: publicDisplayName(confirmedAdmin, ""),
+    settlementDate: row.settlement_date || "",
+    submittedAt: row.submitted_at || row.created_at || "",
+    reviewedAt: row.reviewed_at || row.approved_at || "",
+    transactionNo: row.transaction_no || row.bank_reference || "",
+    statusCanonical: normalizePayoutStatus(row.status),
   };
 }
 
@@ -193,8 +414,8 @@ function viewPayment(row, profile = {}) {
       row.payment_type,
     relatedRecordId: row.related_record_id,
     payeeUserId: row.payee_user_id,
-    payeeName: row.payee_name || profile.display_name || "-",
-    payeeUid: profile.boss_uid || profile.id || row.payee_user_id,
+    payeeName: row.payee_name || publicDisplayName(profile, "-"),
+    payeeUid: profile.boss_uid || "",
     amountRm: money(row.amount_rm),
     actualAmountRm: row.actual_amount_rm != null ? money(row.actual_amount_rm) : null,
     bankReference: row.bank_reference || "",
@@ -202,7 +423,7 @@ function viewPayment(row, profile = {}) {
     payeeAccountLast4: row.payee_account_last4 || "",
     paymentDate: row.payment_date || "",
     status: row.status,
-    statusText: ({ pending_pay: "待付款", paying: "付款处理中", completed: "已完成", failed: "付款失败", void: "已作废" })[
+    statusText: ({ pending_pay: "待付款", paying: "打款中", completed: "已完成", failed: "付款失败", void: "已作废" })[
       row.status
     ] || row.status,
     createdAt: row.created_at,
@@ -210,7 +431,7 @@ function viewPayment(row, profile = {}) {
   };
 }
 
-function viewReceipt(row, payment = {}, profile = {}) {
+function viewReceipt(row, payment = {}, profile = {}, extra = {}) {
   return {
     id: row.id,
     receiptNo: row.receipt_no,
@@ -218,6 +439,7 @@ function viewReceipt(row, payment = {}, profile = {}) {
     paymentNo: payment.payment_no || "",
     paymentType: payment.payment_type || "",
     relatedRecordId: payment.related_record_id || "",
+    withdrawalNo: extra.withdrawalNo || "",
     payeeName: payment.payee_name || profile.display_name || "-",
     payeeUid: profile.boss_uid || profile.id || payment.payee_user_id || "",
     amountRm: money(row.amount_rm),
@@ -280,23 +502,42 @@ export default async function handler(req, res) {
     const adminRole = String(adminProfile.role || "admin");
 
     if (req.method === "GET" && action === "bootstrap") {
-      const [withdrawalsRaw, payrollsRaw, paymentsRaw, receiptsRaw, cfg] = await Promise.all([
+      const refundApi = await import("../_boss-refund-payout.js");
+      const [withdrawalsRaw, payrollsRaw, paymentsRaw, receiptsRaw, logsRaw, cfg, refundsList] = await Promise.all([
         companionDb("companion_withdrawals", "?order=submitted_at.desc&limit=300").catch((e) => (isMissingRelation(e) ? [] : Promise.reject(e))),
         companionDb("staff_payrolls", "?order=created_at.desc&limit=300").catch((e) => (isMissingRelation(e) ? [] : Promise.reject(e))),
         companionDb("finance_payments", "?order=created_at.desc&limit=300").catch((e) => (isMissingRelation(e) ? [] : Promise.reject(e))),
         companionDb("finance_receipts", "?order=uploaded_at.desc&limit=300").catch((e) => (isMissingRelation(e) ? [] : Promise.reject(e))),
+        companionDb("finance_payout_logs", "?order=created_at.desc&limit=300").catch((e) => (isMissingRelation(e) ? [] : [])),
         settings(),
+        refundApi.listBossRefunds(companionDb, { limit: 300 }).catch(() => []),
       ]);
       const withdrawals = (Array.isArray(withdrawalsRaw) ? withdrawalsRaw : []).filter((r) => resolveRowId(r));
       const payrolls = Array.isArray(payrollsRaw) ? payrollsRaw : [];
       const payments = Array.isArray(paymentsRaw) ? paymentsRaw : [];
       const receipts = Array.isArray(receiptsRaw) ? receiptsRaw : [];
+      const payoutLogs = Array.isArray(logsRaw) ? logsRaw : [];
+      const bossRefunds = Array.isArray(refundsList) ? refundsList : [];
       const ids = [
         ...withdrawals.map((r) => r.companion_id),
         ...payrolls.map((r) => r.staff_id),
         ...payments.map((r) => r.payee_user_id),
+        ...withdrawals.flatMap((r) => [r.approved_by, r.reviewed_by, r.confirmed_by, r.paid_by]),
+        ...payrolls.flatMap((r) => [r.approved_by, r.confirmed_by]),
+        ...bossRefunds.map((r) => r.bossId || r.boss_id),
       ];
       const profiles = await profileMap(ids);
+      const companionCodes = {};
+      const companionUserIds = withdrawals.map((r) => r.companion_id).filter(Boolean);
+      if (companionUserIds.length) {
+        const cpRows = await companionDb(
+          "companion_profiles",
+          `?user_id=in.(${companionUserIds.map(encodeURIComponent).join(",")})&select=id,user_id,companion_code,nickname&limit=500`
+        ).catch(() => []);
+        for (const cp of Array.isArray(cpRows) ? cpRows : []) {
+          if (cp.user_id) companionCodes[cp.user_id] = cp;
+        }
+      }
       const accountIds = withdrawals.map((r) => r.payment_account_id).filter(Boolean);
       let accounts = {};
       if (accountIds.length) {
@@ -314,15 +555,86 @@ export default async function handler(req, res) {
         if (pid) m[pid] = p;
         return m;
       }, {});
+      const withdrawNoMap = withdrawals.reduce((m, r) => {
+        const wid = resolveRowId(r);
+        if (wid) m[wid] = r.withdrawal_no || wid;
+        return m;
+      }, {});
+      const friKey = String(viewWeeklyRules(cfg).thisFriday || "").slice(0, 10);
+      const settlementSummary = {
+        thisFriday: friKey,
+        pendingRefunds: bossRefunds.filter((r) =>
+          /approved_for_payout|included_in_batch|processing|carried_forward|pending_review/i.test(String(r.status))
+        ).length,
+        pendingCompanion: withdrawals.filter((r) =>
+          /pending_friday|submitted|reviewing|pending_payment|approved|rolled_over/i.test(String(r.status))
+        ).length,
+        pendingCs: payrolls.filter((r) =>
+          /pending_friday|submitted|reviewing|pending_payment|approved|rolled_over|draft/i.test(String(r.status))
+        ).length,
+        refundPendingRm: bossRefunds
+          .filter((r) => /approved_for_payout|included_in_batch|processing|carried_forward/i.test(String(r.status)))
+          .reduce((n, r) => n + money(r.amountRm), 0),
+        refundPaidRm: bossRefunds.filter((r) => r.status === "paid").reduce((n, r) => n + money(r.paidAmountRm || r.amountRm), 0),
+      };
       return json(res, 200, {
         ok: true,
         settings: cfg,
-        withdrawals: withdrawals.map((r) => viewWithdraw(r, profiles[r.companion_id], accounts[r.payment_account_id])),
-        payrolls: payrolls.map((r) => viewPayroll(r, profiles[r.staff_id])),
+        weeklyRules: viewWeeklyRules(cfg),
+        settlementSummary,
+        bossRefunds,
+        withdrawals: withdrawals.map((r) =>
+          viewWithdraw(r, profiles[r.companion_id], accounts[r.payment_account_id], profiles, companionCodes[r.companion_id])
+        ),
+        payrolls: payrolls.map((r) => viewPayroll(r, profiles[r.staff_id], profiles)),
+        payoutRequests: [
+          ...bossRefunds.map((r) => ({
+            ...r,
+            applicantType: "boss",
+            applicantTypeText: "老板退款",
+            payoutType: "boss_refund",
+            amount: money(r.amountRm),
+            payoutNo: r.refundNo,
+            settlementDate: r.settlementDate || "",
+            statusCanonical: r.status,
+            statusText: r.statusText,
+          })),
+          ...withdrawals.map((r) => ({
+            ...viewWithdraw(r, profiles[r.companion_id], accounts[r.payment_account_id], profiles, companionCodes[r.companion_id]),
+            applicantType: "companion",
+            applicantTypeText: "陪玩提现",
+            payoutType: "companion_wage",
+            amount: money(r.net_amount_rm),
+            payoutNo: r.withdrawal_no,
+            settlementDate: r.settlement_date || "",
+            statusCanonical: normalizePayoutStatus(r.status),
+            statusText: statusText(r.status),
+          })),
+          ...payrolls.map((r) => ({
+            ...viewPayroll(r, profiles[r.staff_id], profiles),
+            applicantType: "customer_service",
+            applicantTypeText: "客服工资",
+            payoutType: "cs_wage",
+            amount: money(r.net_salary_rm),
+            payoutNo: r.payroll_no,
+            settlementDate: r.settlement_date || "",
+            statusCanonical: normalizePayoutStatus(r.status),
+            statusText: statusText(r.status),
+          })),
+        ],
         pendingPayments: payments
           .filter((p) => /pending_pay|paying/.test(p.status))
           .map((p) => viewPayment(p, profiles[p.payee_user_id])),
-        receipts: receipts.map((r) => viewReceipt(r, paymentMap[r.payment_id], profiles[paymentMap[r.payment_id]?.payee_user_id])),
+        receipts: receipts.map((r) => {
+          const pay = paymentMap[r.payment_id] || {};
+          return viewReceipt(r, pay, profiles[pay.payee_user_id], {
+            withdrawalNo:
+              pay.payment_type === "companion_withdraw"
+                ? withdrawNoMap[pay.related_record_id] || ""
+                : "",
+          });
+        }),
+        payoutLogs: payoutLogs.map((r) => viewPayoutLog(r)),
         statusMaps: { withdraw: WITHDRAW_STATUS, payroll: PAYROLL_STATUS },
       });
     }
@@ -340,50 +652,40 @@ export default async function handler(req, res) {
       const rows = await companionDb("companion_withdrawals", `?id=eq.${encodeURIComponent(id)}&limit=1`);
       const row = rows?.[0];
       if (!row) return json(res, 404, { ok: false, message: "提现单不存在" });
-      if (!/^(pending|pending_review)$/.test(String(row.status || ""))) {
+      if (!/^(submitted|pending_friday|reviewing|pending|pending_review|rolled_over)$/.test(String(row.status || ""))) {
         return json(res, 400, { ok: false, message: "当前状态不可审核通过" });
       }
-      const amountCat = money(row.cat_food_amount || row.amount);
       const patched = await companionDb("companion_withdrawals", `?id=eq.${encodeURIComponent(id)}`, {
         method: "PATCH",
         body: JSON.stringify({
-          status: "approved_pending_pay",
+          status: "pending_payment",
           approved_at: nowIso(),
-          approved_by: body.adminId || null,
+          approved_by: body.adminId || adminProfile.id || null,
           reviewed_at: nowIso(),
-          reviewed_by: body.adminId || null,
+          reviewed_by: body.adminId || adminProfile.id || null,
           updated_at: nowIso(),
         }),
       });
-      // Settle freeze ledger: mark freeze tx completed (balance already locked via withdrawal status).
+      await syncPayoutRequestStatus(companionDb, {
+        relatedTable: "companion_withdrawals",
+        relatedRecordId: id,
+        status: "pending_payment",
+        patch: {
+          reviewed_at: nowIso(),
+          reviewed_by: body.adminId || adminProfile.id || null,
+        },
+      });
+      // Keep freeze intact until remittance is confirmed. Do NOT deduct / settle freeze here.
       if (row.freeze_tx_id) {
         try {
           await companionDb("transactions", `?id=eq.${encodeURIComponent(row.freeze_tx_id)}`, {
             method: "PATCH",
             body: JSON.stringify({
-              status: "completed",
-              note: `提现审核通过结算 ${row.withdrawal_no || id}`,
+              note: `提现审核通过，待线下打款 ${row.withdrawal_no || id}`,
             }),
           });
         } catch {
           /* optional */
-        }
-      } else {
-        try {
-          await companionDb("transactions", "", {
-            method: "POST",
-            body: JSON.stringify({
-              user_id: row.companion_id,
-              order_id: null,
-              transaction_type: "withdrawal",
-              amount: amountCat,
-              status: "completed",
-              note: `提现审核通过结算 ${row.withdrawal_no || id}`,
-              created_at: nowIso(),
-            }),
-          });
-        } catch {
-          /* optional ledger */
         }
       }
       try {
@@ -400,7 +702,6 @@ export default async function handler(req, res) {
           body.adminId
         );
       } catch (payErr) {
-        // Approval already persisted; payment ledger is best-effort.
         console.warn("[finance] ensureFinancePayment after approve_withdraw:", payErr?.message || payErr);
       }
       await writeAdminLog({
@@ -408,10 +709,47 @@ export default async function handler(req, res) {
         action: "approve_withdraw",
         targetType: "companion_withdrawal",
         targetId: id,
+        operatorId: body.adminId || adminProfile.id || null,
         operatorRole: adminRole,
-        reason: body.reason || "审核通过",
+        reason: body.reason || "审核通过，进入待打款",
       });
-      return json(res, 200, { ok: true, message: "已通过，进入待付款", item: patched?.[0] });
+      await insertCompanionNotification({
+        companionUserId: row.companion_id,
+        category: "withdraw",
+        title: "提现审核已通过",
+        body: `提现单 ${row.withdrawal_no || id} 已审核通过，金额 RM ${money(row.net_amount_rm)}，等待平台线下打款（预计发放 ${row.settlement_date || ""}）。`,
+        href: "/companion/account/",
+        noticeKey: `withdraw-approved-${id}`,
+      });
+      return json(res, 200, {
+        ok: true,
+        message: "已审核通过，进入待打款（需线下汇款并上传收据后确认）",
+        item: viewWithdraw(patched?.[0] || { ...row, status: "pending_payment" }),
+      });
+    }
+
+    if (action === "start_review_withdraw") {
+      const id = String(body.id || body.withdrawalId || "").trim();
+      if (!id) return json(res, 400, { ok: false, message: "缺少提现单 id" });
+      const rows = await companionDb("companion_withdrawals", `?id=eq.${encodeURIComponent(id)}&limit=1`);
+      const row = rows?.[0];
+      if (!row) return json(res, 404, { ok: false, message: "提现单不存在" });
+      if (!canStartReview(row.status)) return json(res, 400, { ok: false, message: "当前状态不可开始审核" });
+      const patched = await companionDb("companion_withdrawals", `?id=eq.${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          status: "reviewing",
+          reviewed_at: nowIso(),
+          reviewed_by: body.adminId || adminProfile.id || null,
+          updated_at: nowIso(),
+        }),
+      });
+      await syncPayoutRequestStatus(companionDb, {
+        relatedTable: "companion_withdrawals",
+        relatedRecordId: id,
+        status: "reviewing",
+      });
+      return json(res, 200, { ok: true, message: "已开始审核", item: viewWithdraw(patched?.[0] || { ...row, status: "reviewing" }) });
     }
 
     if (action === "reject_withdraw") {
@@ -424,7 +762,7 @@ export default async function handler(req, res) {
       const rows = await companionDb("companion_withdrawals", `?id=eq.${encodeURIComponent(id)}&limit=1`);
       const row = rows?.[0];
       if (!row) return json(res, 404, { ok: false, message: "提现单不存在" });
-      if (!/pending|pending_review|approved_pending_pay|paying/.test(String(row.status || ""))) {
+      if (!/pending|pending_review|pending_friday|submitted|reviewing|approved|pending_payment|approved_pending_pay|paying|rolled_over/.test(String(row.status || ""))) {
         return json(res, 400, { ok: false, message: "当前状态不可驳回" });
       }
       const amountCat = money(row.cat_food_amount || row.amount);
@@ -475,29 +813,81 @@ export default async function handler(req, res) {
         action: "reject_withdraw",
         targetType: "companion_withdrawal",
         targetId: id,
+        operatorId: body.adminId || adminProfile.id || null,
         operatorRole: adminRole,
         reason,
       });
-      return json(res, 200, { ok: true, message: "已拒绝，冻结余额已退回可用余额", item: patched?.[0] });
+      await releasePayoutSources(companionDb, {
+        relatedTable: "companion_withdrawals",
+        relatedRecordId: id,
+      });
+      await syncPayoutRequestStatus(companionDb, {
+        relatedTable: "companion_withdrawals",
+        relatedRecordId: id,
+        status: "rejected",
+        patch: { reject_reason: reason, reviewed_at: nowIso() },
+      });
+      await insertCompanionNotification({
+        companionUserId: row.companion_id,
+        category: "withdraw",
+        title: "提现申请已驳回",
+        body: `提现单 ${row.withdrawal_no || id} 已驳回。原因：${reason}`,
+        href: "/companion/account/",
+        noticeKey: `withdraw-rejected-${id}-${Date.now()}`,
+      });
+      return json(res, 200, { ok: true, message: "已驳回，冻结余额已退回可用余额", item: patched?.[0] });
     }
 
     if (action === "mark_withdraw_paid" || action === "complete_withdraw") {
       if (!canConfirmPay(adminProfile)) {
-        return json(res, 403, { ok: false, message: "仅超级管理员或财务管理员可确认打款并上传收据" });
+        return json(res, 403, { ok: false, message: "仅管理员或财务管理员可确认线下打款并上传收据" });
       }
-      const id = String(body.id || "").trim();
+      const id = String(body.id || body.withdrawalId || body.withdrawal_id || "").trim();
       const bankReference = String(body.bankReference || body.bank_reference || body.reference || "").trim();
+      const paymentRemark = String(body.paymentRemark || body.financeNote || body.notes || body.remark || "").trim();
       const receiptDataUrl = String(
         body.receiptDataUrl || body.receipt_url || body.payment_proof || body.paymentProof || body.fileDataUrl || ""
       ).trim();
+      if (!id || id === "undefined" || id === "null") {
+        return json(res, 400, { ok: false, message: "缺少提现单 id" });
+      }
       const rows = await companionDb("companion_withdrawals", `?id=eq.${encodeURIComponent(id)}&limit=1`);
       const row = rows?.[0];
       if (!row) return json(res, 404, { ok: false, message: "提现单不存在" });
-      if (!/approved_pending_pay|paying|paid_pending_receipt/.test(String(row.status || ""))) {
-        return json(res, 400, { ok: false, message: "仅已通过待打款的提现单可标记打款完成" });
+
+      // Idempotent: already completed — do not re-deduct / re-create receipt
+      if (String(row.status || "") === "completed") {
+        const existingPay = (
+          await companionDb(
+            "finance_payments",
+            `?related_record_id=eq.${encodeURIComponent(id)}&payment_type=eq.companion_withdraw&limit=1`
+          ).catch(() => [])
+        )?.[0];
+        let existingReceipt = null;
+        if (existingPay?.id) {
+          existingReceipt = (
+            await companionDb("finance_receipts", `?payment_id=eq.${encodeURIComponent(existingPay.id)}&limit=1`).catch(
+              () => []
+            )
+          )?.[0];
+        }
+        return json(res, 200, {
+          ok: true,
+          message: "该提现已完成，无需重复确认",
+          duplicate: true,
+          item: viewWithdraw(row),
+          receipt: existingReceipt,
+        });
+      }
+
+      if (!/approved|pending_payment|approved_pending_pay|paying|paid_pending_receipt|paid/.test(String(row.status || ""))) {
+        return json(res, 400, { ok: false, message: "仅「待打款」状态可确认已打款" });
+      }
+      if (!bankReference) {
+        return json(res, 400, { ok: false, message: "请填写交易编号 / 银行流水号" });
       }
       if (!receiptDataUrl) {
-        return json(res, 400, { ok: false, message: "必须上传转账收据/截图（图片或 PDF）才能标记打款完成" });
+        return json(res, 400, { ok: false, message: "必须上传汇款收据图片后才能确认已打款" });
       }
       const decoded = decodeDataUrl(receiptDataUrl);
       if (!decoded) return json(res, 400, { ok: false, message: "收据文件格式无效" });
@@ -512,67 +902,141 @@ export default async function handler(req, res) {
         `receipt.${decoded.contentType.includes("pdf") ? "pdf" : "jpg"}`
       );
       await uploadPrivateObject(FINANCE_BUCKET, objectPath, decoded.buffer, decoded.contentType);
-      const finalBankReference = bankReference || `RECEIPT-${Date.now()}`;
 
-      const patchBase = {
-        status: "completed",
-        paid_at: nowIso(),
-        completed_at: nowIso(),
-        bank_reference: finalBankReference,
-        updated_at: nowIso(),
-      };
-      let patched;
-      try {
-        patched = await companionDb("companion_withdrawals", `?id=eq.${encodeURIComponent(id)}`, {
+      const paidAt =
+        body.paidAt || body.paymentDate
+          ? new Date(
+              `${String(body.paymentDate || body.paidAt).slice(0, 10)}${
+                body.paymentTime ? "T" + String(body.paymentTime).slice(0, 8) : "T12:00:00"
+              }`
+            ).toISOString()
+          : nowIso();
+      if (Number.isNaN(new Date(paidAt).getTime())) {
+        return json(res, 400, { ok: false, message: "打款时间格式无效" });
+      }
+      async function patchWithdrawal(payload) {
+        return companionDb("companion_withdrawals", `?id=eq.${encodeURIComponent(id)}`, {
           method: "PATCH",
-          body: JSON.stringify({ ...patchBase, receipt_url: objectPath, receipt_file_type: decoded.contentType }),
-        });
-      } catch (patchErr) {
-        if (!isMissingRelation(patchErr)) throw patchErr;
-        // companion_withdrawals has no dedicated receipt columns yet: keep a JSON note in remark instead.
-        const note = `[打款收据] bucket=${FINANCE_BUCKET} path=${objectPath} type=${decoded.contentType}`;
-        patched = await companionDb("companion_withdrawals", `?id=eq.${encodeURIComponent(id)}`, {
-          method: "PATCH",
-          body: JSON.stringify({ ...patchBase, remark: `${row.remark ? row.remark + " " : ""}${note}` }),
+          body: JSON.stringify(payload),
         });
       }
+      let patched = null;
+      let payload = {
+        status: "completed",
+        paid_at: paidAt,
+        completed_at: nowIso(),
+        bank_reference: bankReference,
+        payment_remark: paymentRemark,
+        receipt_url: objectPath,
+        receipt_file_type: decoded.contentType,
+        confirmed_by: body.adminId || adminProfile.id || null,
+        paid_by: body.adminId || adminProfile.id || null,
+        updated_at: nowIso(),
+      };
+      for (let attempt = 0; attempt < 8; attempt++) {
+        try {
+          patched = await patchWithdrawal(payload);
+          break;
+        } catch (patchErr) {
+          const msg = `${patchErr?.message || ""} ${JSON.stringify(patchErr?.body || "")}`;
+          const m = msg.match(/Could not find the '([^']+)' column/i);
+          if (m && m[1] in payload) {
+            delete payload[m[1]];
+            continue;
+          }
+          if (isMissingRelation(patchErr)) {
+            const note = `[打款收据] bucket=${FINANCE_BUCKET} path=${objectPath} type=${decoded.contentType} ref=${bankReference}`;
+            patched = await patchWithdrawal({
+              status: "completed",
+              paid_at: paidAt,
+              completed_at: paidAt,
+              updated_at: paidAt,
+              remark: `${row.remark ? row.remark + " " : ""}${note}${paymentRemark ? " " + paymentRemark : ""}`,
+            });
+            break;
+          }
+          throw patchErr;
+        }
+      }
+      if (!patched?.[0] && !patched) {
+        return json(res, 500, { ok: false, message: "更新提现单失败" });
+      }
 
-      try {
-        await companionDb("transactions", "", {
-          method: "POST",
-          body: JSON.stringify({
-            user_id: row.companion_id,
-            transaction_type: "withdrawal",
-            amount: money(row.cat_food_amount),
-            status: "completed",
-            note: `提现打款完成 ${row.withdrawal_no || id} / ${finalBankReference}`,
-            created_at: nowIso(),
-          }),
-        });
-      } catch {
-        /* optional */
+      // Settle freeze once (formal deduct). Do not insert a second withdrawal ledger row if freeze exists.
+      const amountCat = money(row.cat_food_amount || row.amount);
+      if (row.freeze_tx_id) {
+        try {
+          await companionDb("transactions", `?id=eq.${encodeURIComponent(row.freeze_tx_id)}`, {
+            method: "PATCH",
+            body: JSON.stringify({
+              status: "completed",
+              note: `提现已线下打款完成 ${row.withdrawal_no || id} / ${bankReference}`,
+            }),
+          });
+        } catch {
+          /* optional */
+        }
+      } else {
+        try {
+          const existed = await companionDb(
+            "transactions",
+            `?user_id=eq.${encodeURIComponent(row.companion_id)}&transaction_type=eq.withdrawal&note=ilike.*${encodeURIComponent(row.withdrawal_no || id)}*&status=eq.completed&limit=1`
+          ).catch(() => []);
+          if (!existed?.[0]) {
+            await companionDb("transactions", "", {
+              method: "POST",
+              body: JSON.stringify({
+                user_id: row.companion_id,
+                transaction_type: "withdrawal",
+                amount: amountCat,
+                status: "completed",
+                note: `提现已线下打款完成 ${row.withdrawal_no || id} / ${bankReference}`,
+                created_at: paidAt,
+              }),
+            });
+          }
+        } catch {
+          /* optional */
+        }
       }
 
       let receiptRow = null;
       try {
-        const pays = await companionDb(
-          "finance_payments",
-          `?related_record_id=eq.${encodeURIComponent(id)}&payment_type=eq.companion_withdraw&limit=5`
-        );
-        for (const pay of pays || []) {
-          if (pay.status === "completed") continue;
-          await companionDb("finance_payments", `?id=eq.${encodeURIComponent(pay.id)}`, {
-            method: "PATCH",
-            body: JSON.stringify({
-              status: "completed",
-              actual_amount_rm: money(pay.amount_rm),
-              bank_reference: finalBankReference,
-              confirmed_by: body.adminId || null,
-              confirmed_at: nowIso(),
-              updated_at: nowIso(),
-            }),
-          });
-          try {
+        const pay =
+          (await ensureFinancePayment(
+            "companion_withdraw",
+            id,
+            row.companion_id,
+            money(row.net_amount_rm),
+            {
+              bank_name: row.bank_name,
+              account_holder: row.account_holder || row.account_name,
+              account_last4: row.account_last4,
+            },
+            body.adminId
+          )) || null;
+        if (pay?.id) {
+          if (String(pay.status || "") !== "completed") {
+            await companionDb("finance_payments", `?id=eq.${encodeURIComponent(pay.id)}`, {
+              method: "PATCH",
+              body: JSON.stringify({
+                status: "completed",
+                actual_amount_rm: money(pay.amount_rm),
+                bank_reference: bankReference,
+                finance_note: paymentRemark,
+                confirmed_by: body.adminId || null,
+                confirmed_at: paidAt,
+                updated_at: paidAt,
+              }),
+            });
+          }
+          const existingReceipts = await companionDb(
+            "finance_receipts",
+            `?payment_id=eq.${encodeURIComponent(pay.id)}&limit=1`
+          ).catch(() => []);
+          if (existingReceipts?.[0]) {
+            receiptRow = existingReceipts[0];
+          } else {
             const receiptRows = await companionDb("finance_receipts", "", {
               method: "POST",
               body: JSON.stringify({
@@ -581,26 +1045,24 @@ export default async function handler(req, res) {
                 storage_bucket: FINANCE_BUCKET,
                 file_path: objectPath,
                 file_type: decoded.contentType,
-                amount_rm: money(pay.amount_rm),
-                bank_reference: finalBankReference,
+                amount_rm: money(pay.amount_rm || row.net_amount_rm),
+                bank_reference: bankReference,
                 accounting_month: `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}`,
                 tax_year: String(new Date().getFullYear()),
                 accounting_category: "companion_settlement",
                 company_name: (await settings()).company_name || "MEOW CUI JIAO ENTERPRISE",
-                payment_purpose: "陪玩结算",
+                payment_purpose: "陪玩结算（线下汇款）",
                 reconciliation_status: "pending",
                 uploaded_by: body.adminId || null,
-                uploaded_at: nowIso(),
-                notes: String(body.financeNote || body.notes || ""),
+                uploaded_at: paidAt,
+                notes: paymentRemark || `提现单 ${row.withdrawal_no || id}`,
               }),
             });
-            receiptRow = receiptRows?.[0] || receiptRow;
-          } catch {
-            /* finance_receipts is best-effort bookkeeping */
+            receiptRow = receiptRows?.[0] || null;
           }
         }
-      } catch {
-        /* optional linked payment */
+      } catch (err) {
+        console.warn("[finance] receipt bookkeeping:", err?.message || err);
       }
 
       await writeAdminLog({
@@ -608,14 +1070,72 @@ export default async function handler(req, res) {
         action: "mark_withdraw_paid",
         targetType: "companion_withdrawal",
         targetId: id,
+        operatorId: body.adminId || adminProfile.id || null,
         operatorRole: adminRole,
-        reason: body.reason || `打款完成 ${finalBankReference}`,
-        after: { bankReference: finalBankReference, receiptPath: objectPath },
+        reason: `线下打款确认 ${bankReference}`,
+        after: { bankReference, receiptPath: objectPath, paymentRemark, paidAt },
+      });
+      const payeeProfile = (await profileMap([row.companion_id]))[row.companion_id] || {};
+      await writePayoutLog({
+        payoutType: "companion_withdraw",
+        relatedRecordId: id,
+        paymentId: (
+          await companionDb(
+            "finance_payments",
+            `?related_record_id=eq.${encodeURIComponent(id)}&payment_type=eq.companion_withdraw&limit=1`
+          ).catch(() => [])
+        )?.[0]?.id,
+        receiptId: receiptRow?.id,
+        payeeUserId: row.companion_id,
+        payeeName: payeeProfile.display_name || row.account_holder || "",
+        payeeUid: payeeProfile.boss_uid || payeeProfile.id || row.companion_id,
+        amountRm: money(row.net_amount_rm),
+        bankReference,
+        receiptPath: objectPath,
+        receiptFileType: decoded.contentType,
+        notes: paymentRemark,
+        adminId: body.adminId || adminProfile.id || null,
+        adminName: adminDisplayName(adminProfile),
+        adminRole,
+        ip: clientIp(req),
+        action: "mark_withdraw_paid",
+      });
+      await insertCompanionNotification({
+        companionUserId: row.companion_id,
+        category: "withdraw",
+        title: "提现已打款完成",
+        body: `提现单 ${row.withdrawal_no || id} 已线下打款完成，金额 RM ${money(row.net_amount_rm)}，交易编号 ${bankReference}。`,
+        href: "/companion/account/",
+        noticeKey: `withdraw-paid-${id}`,
+      });
+      await settlePayoutSources(companionDb, {
+        relatedTable: "companion_withdrawals",
+        relatedRecordId: id,
+      });
+      await syncPayoutRequestStatus(companionDb, {
+        relatedTable: "companion_withdrawals",
+        relatedRecordId: id,
+        status: "completed",
+        patch: {
+          paid_at: paidAt,
+          transaction_no: bankReference,
+          receipt_url: objectPath,
+          paid_by: body.adminId || adminProfile.id || null,
+        },
       });
       return json(res, 200, {
         ok: true,
-        message: "已上传收据并标记打款完成，陪玩端将显示「已打款」",
-        item: patched?.[0],
+        message: "已上传收据并确认打款，提现状态为已完成",
+        item: viewWithdraw(
+          patched?.[0] || {
+            ...row,
+            status: "completed",
+            bank_reference: bankReference,
+            receipt_url: objectPath,
+            paid_at: paidAt,
+            completed_at: paidAt,
+          }
+        ),
         receipt: receiptRow,
       });
     }
@@ -625,15 +1145,25 @@ export default async function handler(req, res) {
       const rows = await companionDb("staff_payrolls", `?id=eq.${encodeURIComponent(id)}&limit=1`);
       const row = rows?.[0];
       if (!row) return json(res, 404, { ok: false, message: "工资单不存在" });
-      if (!/draft|pending_review/.test(row.status)) return json(res, 400, { ok: false, message: "当前状态不可审核" });
+      if (!/draft|pending_review|pending_friday|submitted|reviewing|rolled_over|pending/.test(row.status)) {
+        return json(res, 400, { ok: false, message: "当前状态不可审核" });
+      }
       const patched = await companionDb("staff_payrolls", `?id=eq.${encodeURIComponent(id)}`, {
         method: "PATCH",
         body: JSON.stringify({
-          status: "approved_pending_pay",
+          status: "pending_payment",
           approved_at: nowIso(),
-          approved_by: body.adminId || null,
+          approved_by: body.adminId || adminProfile.id || null,
+          reviewed_at: nowIso(),
+          reviewed_by: body.adminId || adminProfile.id || null,
           updated_at: nowIso(),
         }),
+      });
+      await syncPayoutRequestStatus(companionDb, {
+        relatedTable: "staff_payrolls",
+        relatedRecordId: id,
+        status: "pending_payment",
+        patch: { reviewed_at: nowIso(), reviewed_by: body.adminId || adminProfile.id || null },
       });
       const snap = row.payment_account_snapshot || {};
       await ensureFinancePayment("staff_payroll", id, row.staff_id, money(row.net_salary_rm), snap, body.adminId);
@@ -642,9 +1172,81 @@ export default async function handler(req, res) {
         action: "approve_payroll",
         targetType: "staff_payroll",
         targetId: id,
+        operatorId: body.adminId || adminProfile.id || null,
         operatorRole: adminRole,
       });
+      await insertStaffNotification({
+        staffId: row.staff_id,
+        category: "payroll",
+        title: "工资单已审核通过",
+        body: `工资单 ${row.payroll_no || id}（${row.period_start} ~ ${row.period_end}）已审核通过，应发 RM ${money(row.net_salary_rm)}，等待平台打款（预计 ${row.settlement_date || ""}）。`,
+        href: "/customer-service/reports/",
+        noticeKey: `payroll-approved-${id}`,
+      });
       return json(res, 200, { ok: true, message: "工资已通过，进入待付款", item: patched?.[0] });
+    }
+
+    if (action === "start_review_payroll") {
+      const id = String(body.id || body.payrollId || "").trim();
+      if (!id) return json(res, 400, { ok: false, message: "缺少工资单 id" });
+      const rows = await companionDb("staff_payrolls", `?id=eq.${encodeURIComponent(id)}&limit=1`);
+      const row = rows?.[0];
+      if (!row) return json(res, 404, { ok: false, message: "工资单不存在" });
+      if (!canStartReview(row.status) && !/draft/.test(String(row.status || ""))) {
+        return json(res, 400, { ok: false, message: "当前状态不可开始审核" });
+      }
+      const patched = await companionDb("staff_payrolls", `?id=eq.${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          status: "reviewing",
+          reviewed_at: nowIso(),
+          reviewed_by: body.adminId || adminProfile.id || null,
+          updated_at: nowIso(),
+        }),
+      });
+      await syncPayoutRequestStatus(companionDb, {
+        relatedTable: "staff_payrolls",
+        relatedRecordId: id,
+        status: "reviewing",
+      });
+      return json(res, 200, { ok: true, message: "已开始审核", item: patched?.[0] });
+    }
+
+    if (action === "reject_payroll") {
+      const id = String(body.id || body.payrollId || "").trim();
+      const reason = String(body.reason || body.reject_reason || "").trim();
+      if (!id) return json(res, 400, { ok: false, message: "缺少工资单 id" });
+      if (!reason) return json(res, 400, { ok: false, message: "请填写驳回原因" });
+      const rows = await companionDb("staff_payrolls", `?id=eq.${encodeURIComponent(id)}&limit=1`);
+      const row = rows?.[0];
+      if (!row) return json(res, 404, { ok: false, message: "工资单不存在" });
+      const patched = await companionDb("staff_payrolls", `?id=eq.${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          status: "rejected",
+          reject_reason: reason,
+          reviewed_at: nowIso(),
+          reviewed_by: body.adminId || adminProfile.id || null,
+          frozen_amount_rm: 0,
+          updated_at: nowIso(),
+        }),
+      });
+      await releasePayoutSources(companionDb, { relatedTable: "staff_payrolls", relatedRecordId: id });
+      await syncPayoutRequestStatus(companionDb, {
+        relatedTable: "staff_payrolls",
+        relatedRecordId: id,
+        status: "rejected",
+        patch: { reject_reason: reason },
+      });
+      await insertStaffNotification({
+        staffId: row.staff_id,
+        category: "payroll",
+        title: "工资单已驳回",
+        body: `工资单 ${row.payroll_no || id} 已驳回。原因：${reason}`,
+        href: "/customer-service/reports/",
+        noticeKey: `payroll-rejected-${id}-${Date.now()}`,
+      });
+      return json(res, 200, { ok: true, message: "已驳回，金额已恢复可申请", item: patched?.[0] });
     }
 
     if (action === "create_payroll") {
@@ -674,36 +1276,124 @@ export default async function handler(req, res) {
           periodStart = periodStart || draft.periodStart;
           periodEnd = periodEnd || draft.periodEnd;
           if (!note) note = draft.note || "";
+          if (draft.salary) {
+            body._salaryDraft = draft.salary;
+          }
         } catch (_) {}
       }
-      const net = money(body.netSalaryRm ?? body.net_salary_rm) || Math.max(0, base + bonus - deduction);
-      const rows = await companionDb("staff_payrolls", "", {
-        method: "POST",
-        body: JSON.stringify({
-          payroll_no: no("PAYROLL"),
-          staff_id: staffId,
-          period_start: periodStart,
-          period_end: periodEnd,
-          work_days: workDays,
-          full_attendance: fullAttendance,
-          reception_count: receptionCount,
-          order_count: orderCount,
-          base_salary_rm: base,
-          bonus_rm: bonus,
-          deduction_rm: deduction,
-          net_salary_rm: net,
-          payment_account_snapshot: body.paymentAccount || body.payment_account_snapshot || {},
-          status: "pending_review",
-          note,
-          created_at: nowIso(),
-          updated_at: nowIso(),
-        }),
-      });
-      return json(res, 200, { ok: true, message: "工资单已创建（已按打卡记录填充），待审核", item: rows?.[0] });
+      const salaryDraft = body._salaryDraft || {};
+      let commissionRm = money(body.commissionRm ?? body.commission_rm ?? salaryDraft.orderCommission ?? 0);
+      let catFoodRewardRm = money(body.catFoodRewardRm ?? body.cat_food_reward_rm ?? 0);
+      if (!catFoodRewardRm) {
+        catFoodRewardRm = money(await sumDockRewardRm(staffId, periodStart, periodEnd));
+      }
+      const wageBreakdown = {
+        baseSalaryRm: base,
+        commissionRm,
+        catFoodRewardRm,
+        receptionBonus: money(salaryDraft.receptionBonus),
+        attendanceBonus: money(salaryDraft.attendanceBonus),
+        nightShiftAllowance: money(salaryDraft.nightShiftAllowance),
+        otherAdjustment: money(salaryDraft.otherAdjustment),
+        deductionRm: deduction,
+        netSalaryRm: 0,
+      };
+      const net =
+        money(body.netSalaryRm ?? body.net_salary_rm) ||
+        Math.max(0, base + Math.max(bonus, commissionRm) + catFoodRewardRm - deduction);
+      wageBreakdown.netSalaryRm = net;
+      if (bonus === 0 && (commissionRm || catFoodRewardRm)) {
+        bonus = money(commissionRm + money(salaryDraft.receptionBonus) + money(salaryDraft.attendanceBonus) + money(salaryDraft.nightShiftAllowance));
+      }
+      const insertPayload = {
+        payroll_no: await allocateCsPayrollNo(companionDb).catch(() => `CSW${String(Date.now()).slice(-6)}`),
+        staff_id: staffId,
+        period_start: periodStart,
+        period_end: periodEnd,
+        work_days: workDays,
+        full_attendance: fullAttendance,
+        reception_count: receptionCount,
+        order_count: orderCount,
+        base_salary_rm: base,
+        bonus_rm: bonus,
+        deduction_rm: deduction,
+        net_salary_rm: net,
+        commission_rm: commissionRm,
+        cat_food_reward_rm: catFoodRewardRm,
+        wage_breakdown: wageBreakdown,
+        payment_account_snapshot: body.paymentAccount || body.payment_account_snapshot || {},
+        status: "pending_friday",
+        note,
+        settlement_date: computeSettlementDate(new Date(), await settings().catch(() => mergeWeeklySettings({}))),
+        submitted_at: nowIso(),
+        created_at: nowIso(),
+        updated_at: nowIso(),
+      };
+      let rows = null;
+      try {
+        rows = await companionDb("staff_payrolls", "", {
+          method: "POST",
+          body: JSON.stringify(insertPayload),
+        });
+      } catch (err) {
+        // Older schema without wage composition columns
+        delete insertPayload.commission_rm;
+        delete insertPayload.cat_food_reward_rm;
+        delete insertPayload.wage_breakdown;
+        delete insertPayload.settlement_date;
+        delete insertPayload.submitted_at;
+        rows = await companionDb("staff_payrolls", "", {
+          method: "POST",
+          body: JSON.stringify(insertPayload),
+        });
+      }
+      return json(res, 200, { ok: true, message: "工资单已创建，进入待周五结算", item: rows?.[0] });
     }
 
     if (action === "mark_paying") {
-      const paymentId = String(body.paymentId || body.id || "").trim();
+      let paymentId = String(body.paymentId || body.id || "").trim();
+      const relatedId = String(body.withdrawalId || body.payrollId || body.relatedRecordId || "").trim();
+      const relatedType = String(body.paymentType || body.type || "").trim();
+      if (!paymentId && relatedId) {
+        const typeHint =
+          relatedType ||
+          (body.withdrawalId ? "companion_withdraw" : body.payrollId ? "staff_payroll" : "");
+        const q = typeHint
+          ? `?related_record_id=eq.${encodeURIComponent(relatedId)}&payment_type=eq.${encodeURIComponent(typeHint)}&limit=1`
+          : `?related_record_id=eq.${encodeURIComponent(relatedId)}&limit=1`;
+        const found = await companionDb("finance_payments", q).catch(() => []);
+        paymentId = found?.[0]?.id || "";
+        if (!paymentId && body.withdrawalId) {
+          const wRows = await companionDb("companion_withdrawals", `?id=eq.${encodeURIComponent(relatedId)}&limit=1`);
+          const w = wRows?.[0];
+          if (w) {
+            const pay = await ensureFinancePayment(
+              "companion_withdraw",
+              relatedId,
+              w.companion_id,
+              money(w.net_amount_rm),
+              { bank_name: w.bank_name, account_holder: w.account_holder, account_last4: w.account_last4 },
+              body.adminId
+            );
+            paymentId = pay?.id || "";
+          }
+        }
+        if (!paymentId && body.payrollId) {
+          const pRows = await companionDb("staff_payrolls", `?id=eq.${encodeURIComponent(relatedId)}&limit=1`);
+          const p = pRows?.[0];
+          if (p) {
+            const pay = await ensureFinancePayment(
+              "staff_payroll",
+              relatedId,
+              p.staff_id,
+              money(p.net_salary_rm),
+              p.payment_account_snapshot || {},
+              body.adminId
+            );
+            paymentId = pay?.id || "";
+          }
+        }
+      }
       const rows = await companionDb("finance_payments", `?id=eq.${encodeURIComponent(paymentId)}&limit=1`);
       const pay = rows?.[0];
       if (!pay) return json(res, 404, { ok: false, message: "付款单不存在" });
@@ -716,7 +1406,15 @@ export default async function handler(req, res) {
         method: "PATCH",
         body: JSON.stringify({ status: "paying", updated_at: nowIso() }),
       }).catch(() => null);
-      return json(res, 200, { ok: true, message: "已标记付款处理中" });
+      await writeAdminLog({
+        module: "finance",
+        action: "mark_paying",
+        targetType: pay.payment_type,
+        targetId: pay.related_record_id,
+        operatorId: body.adminId || adminProfile.id || null,
+        operatorRole: adminRole,
+      });
+      return json(res, 200, { ok: true, message: "已标记为打款中" });
     }
 
     if (action === "reveal_account") {
@@ -748,7 +1446,7 @@ export default async function handler(req, res) {
 
     if (action === "upload_receipt_and_confirm") {
       if (!canConfirmPay(adminProfile)) {
-        return json(res, 403, { ok: false, message: "仅超级管理员或财务管理员可确认付款并上传收据" });
+        return json(res, 403, { ok: false, message: "仅管理员或财务管理员可确认线下打款并上传收据" });
       }
       const paymentId = String(body.paymentId || "").trim();
       const bankReference = String(body.bankReference || body.bank_reference || "").trim();
@@ -767,12 +1465,42 @@ export default async function handler(req, res) {
       const pays = await companionDb("finance_payments", `?id=eq.${encodeURIComponent(paymentId)}&limit=1`);
       const pay = pays?.[0];
       if (!pay) return json(res, 404, { ok: false, message: "付款单不存在" });
-      if (pay.status === "completed") return json(res, 400, { ok: false, message: "该付款已完成" });
+      if (pay.status === "completed") {
+        return json(res, 200, {
+          ok: true,
+          message: "该付款已完成，无需重复确认",
+          duplicate: true,
+          receipt: (
+            await companionDb("finance_receipts", `?payment_id=eq.${encodeURIComponent(paymentId)}&limit=1`).catch(() => [])
+          )?.[0],
+        });
+      }
 
       const actual = body.actualAmountRm != null ? money(body.actualAmountRm) : money(pay.amount_rm);
       const varianceReason = String(body.varianceReason || "").trim();
       if (Math.abs(actual - money(pay.amount_rm)) > 0.009 && !varianceReason) {
         return json(res, 400, { ok: false, message: "实付与应付不一致时必须填写差异原因" });
+      }
+
+      // Companion withdraw: prefer unified mark_withdraw_paid path semantics
+      if (pay.payment_type === "companion_withdraw" && pay.related_record_id) {
+        const wdRows = await companionDb(
+          "companion_withdrawals",
+          `?id=eq.${encodeURIComponent(pay.related_record_id)}&limit=1`
+        );
+        const wd = wdRows?.[0];
+        if (wd && String(wd.status || "") === "completed") {
+          return json(res, 200, {
+            ok: true,
+            message: "该提现已完成，无需重复确认",
+            duplicate: true,
+            receipt: (
+              await companionDb("finance_receipts", `?payment_id=eq.${encodeURIComponent(paymentId)}&limit=1`).catch(
+                () => []
+              )
+            )?.[0],
+          });
+        }
       }
 
       await ensurePrivateBucket(FINANCE_BUCKET, ["image/jpeg", "image/png", "image/webp", "application/pdf"]);
@@ -783,27 +1511,34 @@ export default async function handler(req, res) {
       const accountingMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
       const taxYear = String(d.getFullYear());
 
-      const receiptRows = await companionDb("finance_receipts", "", {
-        method: "POST",
-        body: JSON.stringify({
-          receipt_no: no("RCP"),
-          payment_id: paymentId,
-          storage_bucket: FINANCE_BUCKET,
-          file_path: objectPath,
-          file_type: decoded.contentType,
-          amount_rm: actual,
-          bank_reference: bankReference,
-          accounting_month: accountingMonth,
-          tax_year: taxYear,
-          accounting_category: pay.payment_type === "staff_payroll" ? "staff_salary" : "companion_settlement",
-          company_name: (await settings()).company_name || "MEOW CUI JIAO ENTERPRISE",
-          payment_purpose: pay.payment_type === "staff_payroll" ? "客服工资" : "陪玩结算",
-          reconciliation_status: Math.abs(actual - money(pay.amount_rm)) > 0.009 ? "variance" : "pending",
-          uploaded_by: body.adminId || null,
-          uploaded_at: nowIso(),
-          notes: String(body.financeNote || body.notes || ""),
-        }),
-      });
+      const existingReceipts = await companionDb(
+        "finance_receipts",
+        `?payment_id=eq.${encodeURIComponent(paymentId)}&limit=1`
+      ).catch(() => []);
+      let receiptRows = existingReceipts;
+      if (!existingReceipts?.[0]) {
+        receiptRows = await companionDb("finance_receipts", "", {
+          method: "POST",
+          body: JSON.stringify({
+            receipt_no: no("RCP"),
+            payment_id: paymentId,
+            storage_bucket: FINANCE_BUCKET,
+            file_path: objectPath,
+            file_type: decoded.contentType,
+            amount_rm: actual,
+            bank_reference: bankReference,
+            accounting_month: accountingMonth,
+            tax_year: taxYear,
+            accounting_category: pay.payment_type === "staff_payroll" ? "staff_salary" : "companion_settlement",
+            company_name: (await settings()).company_name || "MEOW CUI JIAO ENTERPRISE",
+            payment_purpose: pay.payment_type === "staff_payroll" ? "客服工资" : "陪玩结算（线下汇款）",
+            reconciliation_status: Math.abs(actual - money(pay.amount_rm)) > 0.009 ? "variance" : "pending",
+            uploaded_by: body.adminId || null,
+            uploaded_at: nowIso(),
+            notes: String(body.financeNote || body.notes || ""),
+          }),
+        });
+      }
 
       await companionDb("finance_payments", `?id=eq.${encodeURIComponent(paymentId)}`, {
         method: "PATCH",
@@ -824,32 +1559,79 @@ export default async function handler(req, res) {
       });
 
       const table = pay.payment_type === "staff_payroll" ? "staff_payrolls" : "companion_withdrawals";
-      await companionDb(table, `?id=eq.${encodeURIComponent(pay.related_record_id)}`, {
-        method: "PATCH",
-        body: JSON.stringify({
-          status: "completed",
-          paid_at: nowIso(),
-          completed_at: nowIso(),
-          updated_at: nowIso(),
-        }),
-      }).catch(() => null);
+      const relatedPatch =
+        pay.payment_type === "companion_withdraw"
+          ? {
+              status: "completed",
+              paid_at: nowIso(),
+              completed_at: nowIso(),
+              bank_reference: bankReference,
+              payment_remark: String(body.financeNote || body.notes || ""),
+              receipt_url: objectPath,
+              receipt_file_type: decoded.contentType,
+              updated_at: nowIso(),
+            }
+          : {
+              status: "completed",
+              paid_at: nowIso(),
+              completed_at: nowIso(),
+              bank_reference: bankReference,
+              receipt_url: objectPath,
+              confirmed_by: body.adminId || adminProfile.id || null,
+              updated_at: nowIso(),
+            };
+      try {
+        await companionDb(table, `?id=eq.${encodeURIComponent(pay.related_record_id)}`, {
+          method: "PATCH",
+          body: JSON.stringify(relatedPatch),
+        });
+      } catch (e) {
+        if (!isMissingRelation(e)) throw e;
+        await companionDb(table, `?id=eq.${encodeURIComponent(pay.related_record_id)}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            status: "completed",
+            paid_at: nowIso(),
+            completed_at: nowIso(),
+            updated_at: nowIso(),
+          }),
+        }).catch(() => null);
+      }
 
-      // Record companion income deduction as withdrawal transaction marker
       if (pay.payment_type === "companion_withdraw") {
         try {
-          const w = (await companionDb("companion_withdrawals", `?id=eq.${encodeURIComponent(pay.related_record_id)}&limit=1`))?.[0];
-          if (w) {
-            await companionDb("transactions", "", {
-              method: "POST",
+          const w = (
+            await companionDb("companion_withdrawals", `?id=eq.${encodeURIComponent(pay.related_record_id)}&limit=1`)
+          )?.[0];
+          if (w?.freeze_tx_id) {
+            await companionDb("transactions", `?id=eq.${encodeURIComponent(w.freeze_tx_id)}`, {
+              method: "PATCH",
               body: JSON.stringify({
-                user_id: w.companion_id,
-                transaction_type: "withdrawal",
-                amount: money(w.cat_food_amount),
                 status: "completed",
-                note: `提现完成 ${w.withdrawal_no} / ${bankReference}`,
-                created_at: nowIso(),
+                note: `提现已线下打款完成 ${w.withdrawal_no || w.id} / ${bankReference}`,
               }),
             });
+          } else if (w) {
+            const existed = await companionDb(
+              "transactions",
+              `?user_id=eq.${encodeURIComponent(w.companion_id)}&transaction_type=eq.withdrawal&status=eq.completed&limit=5`
+            ).catch(() => []);
+            const hasMarker = (existed || []).some((t) =>
+              String(t.note || "").includes(String(w.withdrawal_no || w.id))
+            );
+            if (!hasMarker) {
+              await companionDb("transactions", "", {
+                method: "POST",
+                body: JSON.stringify({
+                  user_id: w.companion_id,
+                  transaction_type: "withdrawal",
+                  amount: money(w.cat_food_amount),
+                  status: "completed",
+                  note: `提现已线下打款完成 ${w.withdrawal_no} / ${bankReference}`,
+                  created_at: nowIso(),
+                }),
+              });
+            }
           }
         } catch {
           /* optional */
@@ -861,13 +1643,56 @@ export default async function handler(req, res) {
         action: "confirm_payment_with_receipt",
         targetType: "finance_payment",
         targetId: paymentId,
+        operatorId: body.adminId || adminProfile.id || null,
         operatorRole: adminRole,
         after: { bankReference, actual, receiptId: receiptRows?.[0]?.id },
       });
 
+      const payeeProfile = (await profileMap([pay.payee_user_id]))[pay.payee_user_id] || {};
+      await writePayoutLog({
+        payoutType: pay.payment_type,
+        relatedRecordId: pay.related_record_id,
+        paymentId,
+        receiptId: receiptRows?.[0]?.id,
+        payeeUserId: pay.payee_user_id,
+        payeeName: pay.payee_name || payeeProfile.display_name || "",
+        payeeUid: payeeProfile.boss_uid || payeeProfile.id || pay.payee_user_id,
+        amountRm: actual,
+        bankReference,
+        receiptPath: objectPath,
+        receiptFileType: decoded.contentType,
+        notes: String(body.financeNote || body.notes || ""),
+        adminId: body.adminId || adminProfile.id || null,
+        adminName: adminDisplayName(adminProfile),
+        adminRole,
+        ip: clientIp(req),
+        action: "confirm_payment_with_receipt",
+      });
+
+      if (pay.payment_type === "companion_withdraw") {
+        await insertCompanionNotification({
+          companionUserId: pay.payee_user_id,
+          category: "withdraw",
+          title: "提现已打款完成",
+          body: `提现已线下打款完成，金额 RM ${actual}，交易编号 ${bankReference}。`,
+          href: "/companion/account/",
+          noticeKey: `withdraw-paid-${pay.related_record_id}`,
+        });
+      }
+      if (pay.payment_type === "staff_payroll") {
+        await insertStaffNotification({
+          staffId: pay.payee_user_id,
+          category: "payroll",
+          title: "工资已发放",
+          body: `工资单已线下发放完成，金额 RM ${actual}，交易编号 ${bankReference}。`,
+          href: "/customer-service/reports/",
+          noticeKey: `payroll-paid-${pay.related_record_id}`,
+        });
+      }
+
       return json(res, 200, {
         ok: true,
-        message: "已上传收据并确认付款完成",
+        message: "已上传收据并确认线下付款完成",
         receipt: receiptRows?.[0] || null,
       });
     }
@@ -984,6 +1809,336 @@ export default async function handler(req, res) {
                 .join(",")
             )
             .join("\n"),
+      });
+    }
+
+    if (action === "delete_receipt") {
+      if (!canConfirmPay(adminProfile)) {
+        return json(res, 403, { ok: false, message: "仅管理员或财务管理员可删除收据" });
+      }
+      const id = String(body.id || body.receiptId || "").trim();
+      if (!id) return json(res, 400, { ok: false, message: "缺少收据 id" });
+      const rows = await companionDb("finance_receipts", `?id=eq.${encodeURIComponent(id)}&limit=1`);
+      const r = rows?.[0];
+      if (!r) return json(res, 404, { ok: false, message: "收据不存在" });
+      if (r.file_path) {
+        try {
+          await deleteStorageObject(r.storage_bucket || FINANCE_BUCKET, r.file_path);
+        } catch (err) {
+          console.warn("[finance] delete receipt file:", err?.message || err);
+        }
+      }
+      await companionDb("finance_receipts", `?id=eq.${encodeURIComponent(id)}`, { method: "DELETE" });
+      await writeAdminLog({
+        module: "finance",
+        action: "delete_receipt",
+        targetType: "finance_receipt",
+        targetId: id,
+        operatorId: body.adminId || adminProfile.id || null,
+        operatorRole: adminRole,
+        reason: body.reason || "删除收据",
+        before: { receiptNo: r.receipt_no, filePath: r.file_path },
+      });
+      return json(res, 200, { ok: true, message: "收据已删除（打款日志仍保留且不可改）" });
+    }
+
+    if (action === "upload_library_receipt") {
+      if (!canConfirmPay(adminProfile)) {
+        return json(res, 403, { ok: false, message: "仅管理员或财务管理员可上传收据" });
+      }
+      const fileData = String(body.fileDataUrl || body.file || "").trim();
+      const bankReference = String(body.bankReference || "").trim();
+      const amountRm = money(body.amountRm);
+      if (!fileData) return json(res, 400, { ok: false, message: "请上传收据文件" });
+      const decoded = decodeDataUrl(fileData);
+      if (!decoded) return json(res, 400, { ok: false, message: "收据文件格式无效" });
+      if (!/^(image\/(jpeg|png|webp)|application\/pdf)$/i.test(decoded.contentType)) {
+        return json(res, 400, { ok: false, message: "仅支持 JPG/PNG/WEBP/PDF" });
+      }
+      await ensurePrivateBucket(FINANCE_BUCKET, ["image/jpeg", "image/png", "image/webp", "application/pdf"]);
+      const objectPath = buildObjectPath(body.adminId || adminProfile.id || "admin", "library", `receipt.${decoded.contentType.includes("pdf") ? "pdf" : "jpg"}`);
+      await uploadPrivateObject(FINANCE_BUCKET, objectPath, decoded.buffer, decoded.contentType);
+      const d = new Date();
+      const paymentRows = await companionDb("finance_payments", "", {
+        method: "POST",
+        body: JSON.stringify({
+          payment_no: no("PAYOUT"),
+          payment_type: "other",
+          related_record_id: body.adminId || adminProfile.id,
+          payee_user_id: body.payeeUserId || body.adminId || adminProfile.id,
+          amount_rm: amountRm,
+          bank_reference: bankReference,
+          payee_name: String(body.payeeName || "收据库上传"),
+          status: "completed",
+          created_by: body.adminId || adminProfile.id || null,
+          confirmed_by: body.adminId || adminProfile.id || null,
+          confirmed_at: nowIso(),
+          finance_note: String(body.notes || "收据库手动上传"),
+          created_at: nowIso(),
+          updated_at: nowIso(),
+        }),
+      });
+      const paymentId = paymentRows?.[0]?.id;
+      const receiptRows = await companionDb("finance_receipts", "", {
+        method: "POST",
+        body: JSON.stringify({
+          receipt_no: no("RCP"),
+          payment_id: paymentId,
+          storage_bucket: FINANCE_BUCKET,
+          file_path: objectPath,
+          file_type: decoded.contentType,
+          amount_rm: amountRm,
+          bank_reference: bankReference,
+          accounting_month: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`,
+          tax_year: String(d.getFullYear()),
+          accounting_category: "manual_library",
+          company_name: (await settings()).company_name || "MEOW CUI JIAO ENTERPRISE",
+          payment_purpose: "收据库手动上传",
+          reconciliation_status: "pending",
+          uploaded_by: body.adminId || adminProfile.id || null,
+          uploaded_at: nowIso(),
+          notes: String(body.notes || ""),
+        }),
+      });
+      return json(res, 200, { ok: true, message: "收据已上传到收据库", receipt: receiptRows?.[0] });
+    }
+
+    if (action === "view_withdraw_detail") {
+      const id = String(body.id || body.withdrawalId || "").trim();
+      const rows = await companionDb("companion_withdrawals", `?id=eq.${encodeURIComponent(id)}&limit=1`);
+      const row = rows?.[0];
+      if (!row) return json(res, 404, { ok: false, message: "提现单不存在" });
+      const profiles = await profileMap([row.companion_id, row.approved_by, row.reviewed_by, row.confirmed_by, row.paid_by]);
+      let account = {};
+      if (row.payment_account_id) {
+        account =
+          (
+            await companionDb("companion_payment_accounts", `?id=eq.${encodeURIComponent(row.payment_account_id)}&limit=1`).catch(
+              () => []
+            )
+          )?.[0] || {};
+      }
+      const pay = (
+        await companionDb(
+          "finance_payments",
+          `?related_record_id=eq.${encodeURIComponent(id)}&payment_type=eq.companion_withdraw&limit=1`
+        ).catch(() => [])
+      )?.[0];
+      let receipt = null;
+      if (pay?.id) {
+        receipt = (await companionDb("finance_receipts", `?payment_id=eq.${encodeURIComponent(pay.id)}&limit=1`).catch(() => []))?.[0];
+      }
+      return json(res, 200, {
+        ok: true,
+        item: viewWithdraw(row, profiles[row.companion_id], account, profiles),
+        payment: pay ? viewPayment(pay, profiles[pay.payee_user_id]) : null,
+        receipt: receipt ? viewReceipt(receipt, pay || {}, profiles[row.companion_id], { withdrawalNo: row.withdrawal_no }) : null,
+      });
+    }
+
+    if (action === "view_payroll_detail") {
+      const id = String(body.id || body.payrollId || "").trim();
+      const rows = await companionDb("staff_payrolls", `?id=eq.${encodeURIComponent(id)}&limit=1`);
+      const row = rows?.[0];
+      if (!row) return json(res, 404, { ok: false, message: "工资单不存在" });
+      const profiles = await profileMap([row.staff_id, row.approved_by, row.confirmed_by]);
+      let item = viewPayroll(row, profiles[row.staff_id], profiles);
+      if (!item.catFoodRewardRm) {
+        const dock = money(await sumDockRewardRm(row.staff_id, row.period_start, row.period_end));
+        item = {
+          ...item,
+          catFoodRewardRm: dock,
+          wageBreakdown: { ...item.wageBreakdown, catFoodRewardRm: dock },
+        };
+      }
+      const pay = (
+        await companionDb(
+          "finance_payments",
+          `?related_record_id=eq.${encodeURIComponent(id)}&payment_type=eq.staff_payroll&limit=1`
+        ).catch(() => [])
+      )?.[0];
+      return json(res, 200, {
+        ok: true,
+        item,
+        payment: pay ? viewPayment(pay, profiles[pay.payee_user_id]) : null,
+      });
+    }
+
+    // ── Friday settlement center: boss refunds ─────────────────────
+    if (action === "add_refund_to_batch") {
+      if (!canConfirmPay(adminProfile)) {
+        return json(res, 403, { ok: false, message: "仅财务管理员可操作批次" });
+      }
+      const refundApi = await import("../_boss-refund-payout.js");
+      const result = await refundApi.addRefundToBatch(companionDb, String(body.id || body.refundId || ""));
+      if (!result.ok) return json(res, 400, result);
+      return json(res, 200, result);
+    }
+
+    if (action === "rollover_refund" || action === "move_refund_next_week") {
+      if (!canConfirmPay(adminProfile)) {
+        return json(res, 403, { ok: false, message: "仅财务管理员可顺延" });
+      }
+      const refundApi = await import("../_boss-refund-payout.js");
+      const result = await refundApi.rolloverRefundToNextWeek(
+        companionDb,
+        String(body.id || body.refundId || ""),
+        String(body.reason || "移至下周结算")
+      );
+      if (!result.ok) return json(res, 400, result);
+      return json(res, 200, result);
+    }
+
+    if (action === "mark_refund_paid" || action === "complete_boss_refund") {
+      if (!canConfirmPay(adminProfile)) {
+        return json(res, 403, { ok: false, message: "仅超级管理员或财务管理员可确认打款" });
+      }
+      const refundId = String(body.id || body.refundId || "").trim();
+      const bankReference = String(body.bankReference || body.transactionNo || "").trim();
+      const dataUrl = String(body.receiptDataUrl || body.fileDataUrl || "").trim();
+      if (!refundId) return json(res, 400, { ok: false, message: "缺少退款 id" });
+      if (!bankReference) return json(res, 400, { ok: false, message: "必须填写银行参考号" });
+      if (!dataUrl) return json(res, 400, { ok: false, message: "没有上传打款凭证，不允许标记完成" });
+
+      const decoded = decodeDataUrl(dataUrl);
+      if (!decoded?.buffer?.length) return json(res, 400, { ok: false, message: "凭证文件无效" });
+      const bucket = "finance-receipts";
+      await ensurePrivateBucket(bucket);
+      const parts = new Date().toISOString().slice(0, 10).split("-");
+      const objectPath = `payout-receipts/${parts[0]}/W/${refundId}-${Date.now()}.${
+        (decoded.contentType || "image/jpeg").includes("png") ? "png" : "jpg"
+      }`;
+      await uploadPrivateObject(bucket, objectPath, decoded.buffer, decoded.contentType || "image/jpeg");
+
+      const refundApi = await import("../_boss-refund-payout.js");
+      const result = await refundApi.completeBossRefundPayout(companionDb, {
+        refundId,
+        paidAmount: body.paidAmount != null ? body.paidAmount : body.amount,
+        bankReference,
+        paidAt: body.paidAt || nowIso(),
+        receiptBucket: bucket,
+        receiptPath: objectPath,
+        adminId: adminProfile.id,
+        adminName: adminProfile.display_name || adminProfile.email || "",
+      });
+      if (!result.ok) return json(res, 400, result);
+
+      await writePayoutLog({
+        payoutType: "boss_refund",
+        relatedRecordId: refundId,
+        payeeUserId: result.refund?.bossId,
+        payeeName: result.refund?.bossName,
+        payeeUid: result.refund?.bossUid,
+        amountRm: result.refund?.paidAmountRm || result.refund?.amountRm,
+        bankReference,
+        receiptPath: objectPath,
+        notes: String(body.notes || ""),
+        adminId: adminProfile.id,
+        adminName: adminProfile.display_name || "",
+        adminRole,
+        action: "mark_refund_paid",
+      });
+      await writeAdminLog({
+        module: "finance",
+        action: "mark_refund_paid",
+        targetType: "boss_refund_requests",
+        targetId: refundId,
+        operatorRole: adminRole,
+      });
+      return json(res, 200, result);
+    }
+
+    if (action === "export_settlement") {
+      if (!canConfirmPay(adminProfile)) {
+        return json(res, 403, { ok: false, message: "仅财务管理员可导出结算报账" });
+      }
+      const year = String(body.year || "").trim();
+      const month = String(body.month || "").trim();
+      const type = String(body.type || body.payoutType || "all").trim();
+      const refundApi = await import("../_boss-refund-payout.js");
+      const [refunds, withdrawals, payrolls] = await Promise.all([
+        refundApi.listBossRefunds(companionDb, { limit: 2000 }),
+        companionDb("companion_withdrawals", "?order=submitted_at.desc&limit=2000").catch(() => []),
+        companionDb("staff_payrolls", "?order=created_at.desc&limit=2000").catch(() => []),
+      ]);
+      const inMonth = (iso) => {
+        const s = String(iso || "").slice(0, 7);
+        if (year && month) return s === `${year}-${String(month).padStart(2, "0")}`;
+        if (year) return s.startsWith(year);
+        return true;
+      };
+      const rows = [];
+      if (type === "all" || type === "boss_refund" || type === "refund") {
+        for (const r of refunds || []) {
+          if (r.status !== "paid") continue;
+          if (!inMonth(r.paidAt || r.createdAt)) continue;
+          rows.push({
+            type: "老板退款",
+            payoutNo: r.refundNo,
+            userNo: r.bossUid,
+            userName: r.bossName,
+            amountRm: money(r.paidAmountRm || r.amountRm),
+            status: r.statusText,
+            settledAt: r.paidAt || "",
+            bankReference: r.bankReference || "",
+            detail: r.orderNo || "",
+          });
+        }
+      }
+      if (type === "all" || type === "companion_wage" || type === "withdraw") {
+        for (const r of withdrawals || []) {
+          if (!/paid|completed/i.test(String(r.status))) continue;
+          if (!inMonth(r.paid_at || r.completed_at || r.submitted_at)) continue;
+          rows.push({
+            type: "陪玩工资",
+            payoutNo: r.withdrawal_no,
+            userNo: r.companion_id,
+            userName: "",
+            amountRm: money(r.net_amount_rm),
+            status: statusText(r.status),
+            settledAt: r.paid_at || r.completed_at || "",
+            bankReference: r.bank_reference || r.transaction_no || "",
+            detail: "",
+          });
+        }
+      }
+      if (type === "all" || type === "cs_wage" || type === "payroll") {
+        for (const r of payrolls || []) {
+          if (!/paid|completed/i.test(String(r.status))) continue;
+          if (!inMonth(r.paid_at || r.completed_at || r.created_at)) continue;
+          rows.push({
+            type: "客服工资",
+            payoutNo: r.payroll_no,
+            userNo: r.staff_id,
+            userName: "",
+            amountRm: money(r.net_salary_rm),
+            status: statusText(r.status),
+            settledAt: r.paid_at || r.completed_at || "",
+            bankReference: r.bank_reference || r.transaction_no || "",
+            detail: "",
+          });
+        }
+      }
+      const totalRm = rows.reduce((n, r) => n + money(r.amountRm), 0);
+      const ym = year && month ? `${year}_${String(month).padStart(2, "0")}` : year || "ALL";
+      const fileBase = `MeowCuiJiao_Settlement_${ym}`;
+      const csv =
+        "类型,结算编号,用户编号,用户姓名,金额RM,状态,打款时间,银行参考号,明细\n" +
+        rows
+          .map((r) =>
+            [r.type, r.payoutNo, r.userNo, r.userName, r.amountRm, r.status, r.settledAt, r.bankReference, r.detail]
+              .map((c) => `"${String(c ?? "").replace(/"/g, '""')}"`)
+              .join(",")
+          )
+          .join("\n");
+      return json(res, 200, {
+        ok: true,
+        fileBase,
+        count: rows.length,
+        totalRm,
+        rows,
+        csv,
+        pdfHint: "前端可用 csv/rows 生成 PDF；服务端返回结构化报账数据。",
       });
     }
 

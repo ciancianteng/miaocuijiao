@@ -1,9 +1,30 @@
 import "./_load-env.js";
 import { mapCompanionPublicFields } from "./_companion-public-map.js";
 import { ORDER_STATUS_LABELS } from "./_order-status.js";
+import {
+  allocateOrderNo,
+  csDisplayName,
+  formatBossCode,
+  formatCompanionCode,
+  parseBossCodeNumber,
+  parseCompanionCodeNumber,
+  resolveCompanionPublicCode,
+} from "./_account-codes.js";
+import { companionDb } from "./_companion-media-store.js";
+import { bossForCs } from "./_privacy.js";
+import {
+  conversationLockedByOther as lockOwnedByOther,
+  consultTypeLabel,
+  normalizeCompanionConsultType,
+  normalizeBossConsultType,
+  companionProactiveTitle,
+  TRANSFER_USER_TIP,
+  isPendingTransferStatus,
+} from "./_conversation-lock.js";
 const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY"];
 const ORDER_STATUS_TEXT = { ...ORDER_STATUS_LABELS };
 const SERVICE_ROLES = new Set(["customer_service"]);
+const ADMIN_ROLES = new Set(["admin", "super_admin"]);
 const ASSIGN_LOCKS = new Map();
 const TEST_NOISE_RE = /\[TEST\]|E2E-MSG|E2E[_-]|CHAT-|CS-LINK|SVC-|MSG-|ORDER-CHAT-|acceptance|自动化测试/i;
 const GARBLE_RE = /Ã.|Â.|ä¸|æ.|å.|ç.|è.|é.|ðŸ|ï¼|ï½/;
@@ -31,7 +52,13 @@ async function parseBody(req) { if (req.body && typeof req.body === "object") re
 function tokenFrom(req) { return String(req.headers["x-mcj-service-token"] || req.headers.authorization || "").replace(/^Bearer\s+/i, "").trim(); }
 function money(value) { const n = Number(String(value ?? "").replace(/[^\d.-]/g, "")); return Number.isFinite(n) ? n : 0; }
 function nowIso() { return new Date().toISOString(); }
-function orderNo(prefix = "MCJ") { return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`; }
+async function nextOrderNo() {
+  try {
+    return await allocateOrderNo(companionDb);
+  } catch {
+    return `MCJO${String(Date.now()).slice(-6)}`;
+  }
+}
 function isUuid(value) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(value || "").trim());
 }
@@ -52,10 +79,20 @@ async function resolveBoss(input) {
   const value = String(input || "").trim();
   if (!value) return null;
   if (isUuid(value)) return profileById(value);
-  if (/^B\d+$/i.test(value)) return profileByBossUid(value.toUpperCase());
+  if (/^(MCJ|B)\d+$/i.test(value)) {
+    const n = parseBossCodeNumber(value);
+    const normalized = n ? formatBossCode(n) : "";
+    if (normalized) {
+      const byNormalized = await profileByBossUid(normalized);
+      if (byNormalized) return byNormalized;
+    }
+    return profileByBossUid(value.toUpperCase());
+  }
   if (/^\d+$/.test(value)) {
-    const withPrefix = await profileByBossUid(`B${value}`);
+    const withPrefix = await profileByBossUid(formatBossCode(Number(value)));
     if (withPrefix) return withPrefix;
+    const legacyPrefix = await profileByBossUid(`B${value}`);
+    if (legacyPrefix) return legacyPrefix;
   }
   return profileByBossUid(value);
 }
@@ -67,17 +104,250 @@ async function resolveCompanion(input) {
     if (byId && byId.role === "companion") return byId;
     return null;
   }
-  const uid = value.replace(/^P/i, "").trim();
-  if (!/^\d+$/.test(uid)) return null;
-  const rows = await maybeRows("companion_profiles", `?companion_uid=eq.${encodeURIComponent(uid)}&select=user_id&limit=1`);
-  const userId = rows[0]?.user_id;
-  if (!isUuid(userId)) return null;
-  const profile = await profileById(userId);
-  return profile && profile.role === "companion" ? profile : null;
+  const seq = parseCompanionCodeNumber(value);
+  if (seq > 0) {
+    const code = formatCompanionCode(seq);
+    const byCode = await maybeRows(
+      "companion_profiles",
+      `?companion_code=eq.${encodeURIComponent(code)}&select=user_id,companion_uid,companion_code&limit=1`
+    );
+    if (isUuid(byCode[0]?.user_id)) {
+      const profile = await profileById(byCode[0].user_id);
+      if (profile && profile.role === "companion") return profile;
+    }
+    for (const uid of [seq, seq + 100000, code.replace(/^PW/i, "")]) {
+      const rows = await maybeRows(
+        "companion_profiles",
+        `?companion_uid=eq.${encodeURIComponent(uid)}&select=user_id&limit=1`
+      );
+      if (isUuid(rows[0]?.user_id)) {
+        const profile = await profileById(rows[0].user_id);
+        if (profile && profile.role === "companion") return profile;
+      }
+    }
+    // Scan public-code resolution (covers missing companion_code column values).
+    const pool = await maybeRows(
+      "companion_profiles",
+      "?select=user_id,companion_uid,companion_code,nickname&limit=500"
+    );
+    const hit = (pool || []).find((cp) => resolveCompanionPublicCode(cp) === code);
+    if (isUuid(hit?.user_id)) {
+      const profile = await profileById(hit.user_id);
+      if (profile && profile.role === "companion") return profile;
+    }
+  }
+  // Nickname / display_name fallback (exact then ilike).
+  const nickExact = await maybeRows(
+    "companion_profiles",
+    `?nickname=eq.${encodeURIComponent(value)}&select=user_id&limit=3`
+  );
+  for (const row of nickExact || []) {
+    if (!isUuid(row?.user_id)) continue;
+    const profile = await profileById(row.user_id);
+    if (profile && profile.role === "companion") return profile;
+  }
+  const nameExact = await maybeRows(
+    "profiles",
+    `?role=eq.companion&display_name=eq.${encodeURIComponent(value)}&select=id&limit=3`
+  );
+  if (isUuid(nameExact[0]?.id)) {
+    const profile = await profileById(nameExact[0].id);
+    if (profile && profile.role === "companion") return profile;
+  }
+  return null;
 }
 async function profileMap(ids) { const uniq = [...new Set((ids || []).filter(isUuid))]; if (!uniq.length) return {}; const rows = await maybeRows("profiles", `?id=in.(${uniq.map(encodeURIComponent).join(",")})&limit=1000`); return rows.reduce((map, row) => { map[row.id] = row; return map; }, {}); }
 async function authUserFromToken(token) { return supabaseJson(authUrl("user"), { headers: anonHeaders({ Authorization: `Bearer ${token}` }) }); }
 async function requireService(req) { const token = tokenFrom(req); if (!token) throw Object.assign(new Error("请先登录客服端。"), { status: 401 }); const authUser = await authUserFromToken(token); const profile = await profileById(authUser.id); if (!profile || !SERVICE_ROLES.has(profile.role)) throw Object.assign(new Error("无权访问客服端。"), { status: 403 }); if (profile.status !== "active") throw Object.assign(new Error("该客服账号已被停用，请联系管理员。"), { status: 403 }); return { token, authUser, profile }; }
+
+function randomOtpCode() {
+  return String(Math.floor(100000 + Math.random() * 900000));
+}
+function maskPhoneHint(phone) {
+  const d = String(phone || "").replace(/\D/g, "");
+  if (d.length < 7) return "";
+  return d.slice(0, 3) + "****" + d.slice(-4);
+}
+function maskEmailHint(email) {
+  const s = String(email || "").trim();
+  const at = s.indexOf("@");
+  if (at < 1) return "";
+  return s.slice(0, 1) + "***" + s.slice(at);
+}
+async function resolveCsAccount(accountRaw) {
+  const account = String(accountRaw || "").trim();
+  if (!account) return null;
+  const digits = account.replace(/\D/g, "");
+  // Phone path (preferred)
+  if (digits.length >= 7 && (/^\+?\d[\d\s-]{6,}$/.test(account) || digits.length === account.replace(/^\+/, "").length)) {
+    const phoneCandidates = [...new Set([account, digits, digits.slice(-11), digits.slice(-10)].filter(Boolean))];
+    for (const p of phoneCandidates) {
+      const byPhone = await maybeRows(
+        "profiles",
+        `?role=eq.customer_service&phone=eq.${encodeURIComponent(p)}&select=id,email,phone,phone_e164,display_name,status&limit=1`
+      );
+      if (byPhone[0]?.id) return { profile: byPhone[0], via: "phone" };
+      const byE164 = await maybeRows(
+        "profiles",
+        `?role=eq.customer_service&phone_e164=eq.${encodeURIComponent(p.startsWith("+") ? p : `+${p}`)}&select=id,email,phone,phone_e164,display_name,status&limit=1`
+      );
+      if (byE164[0]?.id) return { profile: byE164[0], via: "phone" };
+      if (digits.length >= 10) {
+        const loose = await maybeRows(
+          "profiles",
+          `?role=eq.customer_service&or=(phone.ilike.*${encodeURIComponent(digits.slice(-11))}*,phone_e164.ilike.*${encodeURIComponent(digits.slice(-11))}*)&select=id,email,phone,phone_e164,display_name,status&limit=3`
+        );
+        if (loose[0]?.id) return { profile: loose[0], via: "phone" };
+      }
+    }
+  }
+  // Email path (allowed; message will say email later / fallback)
+  if (/@/.test(account)) {
+    const byEmail = await maybeRows(
+      "profiles",
+      `?role=eq.customer_service&email=eq.${encodeURIComponent(account.toLowerCase())}&select=id,email,phone,phone_e164,display_name,status&limit=1`
+    );
+    if (byEmail[0]?.id) return { profile: byEmail[0], via: "email" };
+  }
+  return null;
+}
+async function storeCsResetOtp(accountKey, code) {
+  const id = `csr_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  const exp = Date.now() + 15 * 60 * 1000;
+  const status = `otp:${code}:exp:${exp}`;
+  try {
+    await supabaseJson(restUrl("password_reset_requests"), {
+      method: "POST",
+      headers: serviceHeaders(),
+      body: JSON.stringify({ id, account: accountKey, role: "customer_service", status, created_at: new Date().toISOString() }),
+    });
+  } catch {
+    globalThis.__mcjCsResets = globalThis.__mcjCsResets || new Map();
+    globalThis.__mcjCsResets.set(accountKey, { id, code, exp });
+  }
+  return { id, exp };
+}
+async function findCsResetOtp(accountKey) {
+  const rows = await supabaseJson(
+    restUrl(
+      "password_reset_requests",
+      `?account=eq.${encodeURIComponent(accountKey)}&role=eq.customer_service&order=created_at.desc&limit=5`
+    ),
+    { headers: serviceHeaders() }
+  ).catch(() => []);
+  for (const row of rows || []) {
+    const m = String(row.status || "").match(/^otp:(\d{6}):exp:(\d+)$/);
+    if (m) return { id: row.id, code: m[1], exp: Number(m[2]), row };
+    const v = String(row.status || "").match(/^verified:([A-Za-z0-9_-]+):exp:(\d+)$/);
+    if (v) return { id: row.id, verifiedToken: v[1], exp: Number(v[2]), row };
+  }
+  const mem = globalThis.__mcjCsResets?.get(accountKey);
+  if (mem) return mem;
+  return null;
+}
+async function markCsResetVerified(accountKey, rowId, token) {
+  const exp = Date.now() + 15 * 60 * 1000;
+  if (rowId) {
+    await supabaseJson(restUrl("password_reset_requests", `?id=eq.${encodeURIComponent(rowId)}`), {
+      method: "PATCH",
+      headers: serviceHeaders(),
+      body: JSON.stringify({ status: `verified:${token}:exp:${exp}` }),
+    }).catch(() => null);
+  }
+  globalThis.__mcjCsResets = globalThis.__mcjCsResets || new Map();
+  globalThis.__mcjCsResets.set(accountKey, { id: rowId || token, verifiedToken: token, exp });
+  return exp;
+}
+function csResetAccountKey(profile) {
+  return String(profile?.id || profile?.email || "").trim().toLowerCase();
+}
+async function handleCsSendResetCode(body, res) {
+  const account = String(body.account || body.phone || body.email || "").trim();
+  const genericOk = {
+    ok: true,
+    message: "如该手机号 / 邮箱已绑定客服账号，将收到验证码。请查收后继续。",
+    channel: "none",
+    expiresInSec: 900,
+  };
+  if (!account) return json(res, 400, { ok: false, message: "请输入绑定手机号（推荐）或邮箱。" });
+  const resolved = await resolveCsAccount(account);
+  if (!resolved?.profile || resolved.profile.status === "disabled") return json(res, 200, genericOk);
+  const profile = resolved.profile;
+  const code = randomOtpCode();
+  const key = csResetAccountKey(profile);
+  await storeCsResetOtp(key, code);
+  const phone = String(profile.phone || profile.phone_e164 || "").trim();
+  const email = String(profile.email || "").trim();
+  let channel = resolved.via === "phone" || phone ? "phone" : "email";
+  let message = "";
+  // SMS gateway may be unset — still issue OTP so phone path UI works; expose staging debug code.
+  const staging =
+    String(process.env.ALLOW_STAGING_OTP || "") === "1" ||
+    String(process.env.MCJ_OTP_DEBUG || "") === "1" ||
+    /staging|vercel\.app|localhost/i.test(String(process.env.VERCEL_URL || process.env.MCJ_PUBLIC_BASE || ""));
+  if (channel === "phone" && phone) {
+    message = `验证码已发送至手机 ${maskPhoneHint(phone) || "绑定手机"}。`;
+  } else if (email) {
+    channel = "email";
+    message = `手机短信暂未开通时，验证码已发往绑定邮箱 ${maskEmailHint(email)}（邮箱通道为临时兜底）。`;
+    try {
+      await supabaseJson(authUrl("otp"), {
+        method: "POST",
+        headers: anonHeaders(),
+        body: JSON.stringify({ email, create_user: false }),
+      });
+    } catch {
+      /* optional */
+    }
+  } else {
+    message = genericOk.message;
+  }
+  const out = { ok: true, message, channel, phoneMasked: maskPhoneHint(phone), emailMasked: maskEmailHint(email), expiresInSec: 900 };
+  if (staging) out.devCode = code;
+  return json(res, 200, out);
+}
+async function handleCsVerifyResetCode(body, res) {
+  const account = String(body.account || body.phone || body.email || "").trim();
+  const code = String(body.code || body.otp || "").trim();
+  if (!account || !/^\d{4,8}$/.test(code)) {
+    return json(res, 400, { ok: false, message: "验证码无效或已过期" });
+  }
+  const resolved = await resolveCsAccount(account);
+  if (!resolved?.profile) return json(res, 400, { ok: false, message: "验证码无效或已过期" });
+  const key = csResetAccountKey(resolved.profile);
+  const stored = await findCsResetOtp(key);
+  if (stored && stored.code && String(stored.code) === code && Number(stored.exp) > Date.now()) {
+    const token = "mcj_" + randomOtpCode() + Date.now().toString(36);
+    await markCsResetVerified(key, stored.id, token);
+    return json(res, 200, { ok: true, message: "验证成功，请设置新密码", resetToken: token });
+  }
+  return json(res, 400, { ok: false, message: "验证码无效或已过期" });
+}
+async function handleCsResetPassword(body, res) {
+  const newPassword = String(body.newPassword || body.password || "");
+  const confirmPassword = String(body.confirmPassword || body.confirm_password || "");
+  if (!newPassword || newPassword.length < 8) return json(res, 400, { ok: false, message: "新密码至少 8 位" });
+  if (confirmPassword && confirmPassword !== newPassword) {
+    return json(res, 400, { ok: false, message: "两次输入的新密码不一致" });
+  }
+  const resetToken = String(body.resetToken || body.token || "").trim();
+  const account = String(body.account || body.phone || body.email || "").trim();
+  if (!resetToken.startsWith("mcj_")) return json(res, 400, { ok: false, message: "请先完成验证码校验" });
+  const resolved = await resolveCsAccount(account);
+  if (!resolved?.profile?.id) return json(res, 400, { ok: false, message: "缺少账号信息" });
+  const key = csResetAccountKey(resolved.profile);
+  const stored = await findCsResetOtp(key);
+  if (!stored || stored.verifiedToken !== resetToken || Number(stored.exp) < Date.now()) {
+    return json(res, 400, { ok: false, message: "重置凭证无效或已过期，请重新获取验证码" });
+  }
+  await supabaseJson(authUrl("admin/users/" + encodeURIComponent(resolved.profile.id)), {
+    method: "PUT",
+    headers: serviceHeaders(),
+    body: JSON.stringify({ password: newPassword }),
+  });
+  if (globalThis.__mcjCsResets) globalThis.__mcjCsResets.delete(key);
+  return json(res, 200, { ok: true, message: "密码已重设，请使用新密码登录" });
+}
 function safeProfile(row) {
   const bossUid = row.boss_uid || "";
   return {
@@ -85,7 +355,7 @@ function safeProfile(row) {
     bossUid,
     boss_uid: bossUid,
     uid: bossUid || row.id,
-    name: row.display_name || row.email || "-",
+    name: csDisplayName(row),
     email: row.email || "",
     phone: row.phone || "",
     avatar: row.avatar_url || "",
@@ -96,7 +366,8 @@ function safeOrder(row, profiles = {}, extras = {}) {
   const boss = profiles[row.boss_id] || {};
   const companion = profiles[row.companion_id] || {};
   const service = profiles[row.customer_service_id] || {};
-  const bossUid = boss.boss_uid || "";
+  const bossInfo = bossForCs(boss);
+  const bossUid = bossInfo.bossUid;
   const note = String(row.note || row.cancel_reason || "");
   const needsReassign =
     row.status === "pending" && /无法接单|确认超时|拒单|重新安排/.test(note);
@@ -117,12 +388,15 @@ function safeOrder(row, profiles = {}, extras = {}) {
     orderNo: row.order_no || row.id,
     bossId: row.boss_id || "",
     bossUid,
-    bossName: boss.display_name || boss.email || bossUid || row.boss_id || "-",
+    bossName: bossInfo.bossName,
     companionId: row.companion_id || "",
-    companionName: companion.display_name || companion.email || "-",
+    companionName: String(companion.display_name || companion.nickname || "").trim() || "-",
     serviceId: row.customer_service_id || "",
-    serviceName: service.display_name || service.email || "-",
+    serviceName: csDisplayName(service),
     orderType: row.order_type || "custom",
+    assignmentType:
+      row.assignment_type ||
+      (row.companion_id ? "assigned" : "public"),
     game: row.game || "",
     title: row.title || "",
     description: row.description || "",
@@ -145,6 +419,7 @@ function safeOrder(row, profiles = {}, extras = {}) {
     bossIntent: extras.bossIntent || null,
     preferredCompanionId: extras.bossIntent?.companionId || "",
     createdAt: row.created_at || "",
+    updatedAt: row.updated_at || row.created_at || "",
     acceptedAt: row.accepted_at || "",
     startedAt: row.started_at || "",
     completedAt: row.completed_at || "",
@@ -155,9 +430,11 @@ function safeMessage(row, profiles = {}) {
   const sender = profiles[row.sender_id] || {};
   let senderName = "";
   if (row.sender_role === "customer_service") {
-    senderName = String(sender.display_name || "").trim() || "客服";
+    senderName = csDisplayName(sender);
   } else if (row.sender_role === "boss") {
-    senderName = String(sender.display_name || sender.boss_uid || "").trim() || "老板";
+    senderName = bossForCs(sender).bossName;
+  } else if (row.sender_role === "companion") {
+    senderName = String(sender.display_name || "").trim() || "陪玩";
   }
   return {
     id: row.id,
@@ -177,6 +454,27 @@ function unreadRolesForConversation(conversation) {
     String(conversation?.conversation_type || "") === "companion_support" ||
     (!conversation?.boss_id && conversation?.companion_id);
   return isCompanionSupport ? ["companion"] : ["boss"];
+}
+function isAdminProfile(profile) {
+  return ADMIN_ROLES.has(String(profile?.role || ""));
+}
+function conversationLockedByOther(conversation, serviceProfileId) {
+  return lockOwnedByOther(conversation, serviceProfileId);
+}
+async function lockMessageForConversation(conversation, serviceProfile) {
+  if (!conversation?.customer_service_id || conversation.customer_service_id === serviceProfile.id) return null;
+  if (isAdminProfile(serviceProfile)) return null;
+  const other = await profileById(conversation.customer_service_id);
+  const otherName = String(other?.display_name || "").trim() || "其他客服";
+  return `该会话已由 ${otherName} 接待`;
+}
+function withConversationLockFields(conv, serviceProfileId) {
+  if (!conv || !serviceProfileId) return conv;
+  const lockedByOther = conversationLockedByOther(
+    { customer_service_id: conv.currentServiceId, status: conv.rawStatus === "closed" || conv.rawStatus === "ended" ? "closed" : "open" },
+    serviceProfileId
+  );
+  return Object.assign({}, conv, { lockedByOther });
 }
 async function countUnreadBossMessages(conversationId, opts = {}) {
   const roles = Array.isArray(opts.roles) && opts.roles.length ? opts.roles : ["boss"];
@@ -288,11 +586,31 @@ function isTestNoiseConversation(row, msgs = [], orderNo = "") {
   if (GARBLE_RE.test(blob)) return true;
   return false;
 }
-async function ensureConversation({ boss_id, companion_id = null, customer_service_id = null, order_id = null }) {
-  let query = order_id
-    ? `?order_id=eq.${encodeURIComponent(order_id)}&limit=1`
-    : `?boss_id=eq.${encodeURIComponent(boss_id)}&order_id=is.null&order=updated_at.desc&limit=1`;
-  const rows = await maybeRows("conversations", query);
+async function ensureConversation({
+  boss_id,
+  companion_id = null,
+  customer_service_id = null,
+  order_id = null,
+  consult_type = "",
+  forceNew = false,
+}) {
+  const consultType = order_id
+    ? normalizeBossConsultType(consult_type || "current_order", { orderId: order_id })
+    : normalizeBossConsultType(consult_type || "other");
+  let rows = [];
+  if (!forceNew) {
+    let query = order_id
+      ? `?order_id=eq.${encodeURIComponent(order_id)}&status=not.in.(closed,ended)&limit=1`
+      : `?boss_id=eq.${encodeURIComponent(boss_id)}&order_id=is.null&consult_type=eq.${encodeURIComponent(consultType)}&status=not.in.(closed,ended)&order=updated_at.desc&limit=1`;
+    rows = await maybeRows("conversations", query);
+    if (!rows[0] && !order_id) {
+      // Column may be missing — fall back to order-null open thread only (still not all statuses).
+      rows = await maybeRows(
+        "conversations",
+        `?boss_id=eq.${encodeURIComponent(boss_id)}&order_id=is.null&status=not.in.(closed,ended)&order=updated_at.desc&limit=1`
+      );
+    }
+  }
   if (rows[0]) {
     try {
       await supabaseJson(restUrl("conversations", `?id=eq.${encodeURIComponent(rows[0].id)}`), {
@@ -315,6 +633,7 @@ async function ensureConversation({ boss_id, companion_id = null, customer_servi
   const rich = {
     ...base,
     conversation_type: order_id ? "order_support" : "general_support",
+    consult_type: consultType,
   };
   try {
     const inserted = await supabaseJson(restUrl("conversations"), {
@@ -324,29 +643,180 @@ async function ensureConversation({ boss_id, companion_id = null, customer_servi
     });
     return inserted[0] || null;
   } catch (err) {
-    if (!/conversation_type|column|schema cache|PGRST/i.test(String(err?.message || ""))) throw err;
+    if (!/consult_type|conversation_type|column|schema cache|PGRST/i.test(String(err?.message || ""))) throw err;
+    const legacy = { ...base };
+    if (!/conversation_type/i.test(String(err?.message || ""))) {
+      legacy.conversation_type = order_id ? "order_support" : "general_support";
+    }
     const inserted = await supabaseJson(restUrl("conversations"), {
       method: "POST",
       headers: serviceHeaders(),
-      body: JSON.stringify(base),
+      body: JSON.stringify(legacy),
     });
     return inserted[0] || null;
   }
 }
-async function addMessage(conversation, sender, senderRole, content, messageType = "system", orderId = null) { if (!conversation) return null; const rows = await supabaseJson(restUrl("messages"), { method: "POST", headers: serviceHeaders(), body: JSON.stringify({ conversation_id: conversation.id, sender_id: sender, sender_role: senderRole, message_type: messageType, content: String(content || ""), order_id: orderId || conversation.order_id || null, created_at: nowIso() }) }); await supabaseJson(restUrl("conversations", `?id=eq.${encodeURIComponent(conversation.id)}`), { method: "PATCH", headers: serviceHeaders(), body: JSON.stringify({ updated_at: nowIso() }) }); return rows[0] || null; }
-async function allocateBossUid() {
-  const rows = await maybeRows("profiles", "?role=eq.boss&select=boss_uid&boss_uid=not.is.null&order=created_at.desc&limit=200");
-  let next = 100001;
-  for (const row of rows) {
-    const match = String(row?.boss_uid || "").trim().match(/^B(\d+)$/i);
-    if (match) next = Math.max(next, Number(match[1]) + 1);
+
+/** Release owned open conversations back to the waiting pool (CS off-duty / transfer). */
+async function releaseConversationsToPool(serviceProfile, conversationIds = null, reason = "off_duty") {
+  const serviceId = serviceProfile?.id;
+  if (!serviceId) return { released: 0, ids: [] };
+  let rows = [];
+  if (Array.isArray(conversationIds) && conversationIds.length) {
+    const ids = conversationIds.filter(Boolean);
+    for (const id of ids) {
+      const found = (await maybeRows("conversations", `?id=eq.${encodeURIComponent(id)}&limit=1`))[0];
+      if (found) rows.push(found);
+    }
+  } else {
+    rows = await maybeRows(
+      "conversations",
+      `?customer_service_id=eq.${encodeURIComponent(serviceId)}&status=not.in.(closed,ended)&limit=200`
+    );
   }
-  for (let attempt = 0; attempt < 8; attempt += 1) {
-    const candidate = `B${next + attempt}`;
+  const releasedIds = [];
+  const nick = String(serviceProfile.display_name || "").trim() || "客服";
+  const tip =
+    reason === "transfer"
+      ? TRANSFER_USER_TIP
+      : `${TRANSFER_USER_TIP}（原客服 ${nick} 已下班/离线）`;
+  for (const row of rows || []) {
+    if (!row?.id) continue;
+    if (row.customer_service_id && row.customer_service_id !== serviceId && reason !== "admin") continue;
+    const patchedAt = nowIso();
+    let updated = null;
+    try {
+      const patchRows = await supabaseJson(
+        restUrl(
+          "conversations",
+          `?id=eq.${encodeURIComponent(row.id)}&customer_service_id=eq.${encodeURIComponent(serviceId)}`
+        ),
+        {
+          method: "PATCH",
+          headers: serviceHeaders(),
+          body: JSON.stringify({
+            customer_service_id: null,
+            status: "pending_transfer",
+            updated_at: patchedAt,
+          }),
+        }
+      );
+      updated = Array.isArray(patchRows) ? patchRows[0] : null;
+    } catch (err) {
+      // status check may reject pending_transfer on older DBs — fall back to waiting_service
+      try {
+        const patchRows = await supabaseJson(
+          restUrl(
+            "conversations",
+            `?id=eq.${encodeURIComponent(row.id)}&customer_service_id=eq.${encodeURIComponent(serviceId)}`
+          ),
+          {
+            method: "PATCH",
+            headers: serviceHeaders(),
+            body: JSON.stringify({
+              customer_service_id: null,
+              status: "waiting_service",
+              updated_at: patchedAt,
+            }),
+          }
+        );
+        updated = Array.isArray(patchRows) ? patchRows[0] : null;
+      } catch (_) {
+        updated = null;
+      }
+    }
+    if (!updated) continue;
+    try {
+      await (await import("./_service-receptions.js")).endReceptionRecord(row.id, serviceId);
+    } catch (_) {}
+    await addMessage(updated, serviceId, "customer_service", tip, "system");
+    releasedIds.push(row.id);
+  }
+  return { released: releasedIds.length, ids: releasedIds };
+}
+async function addMessage(conversation, sender, senderRole, content, messageType = "system", orderId = null) {
+  if (!conversation) return null;
+  const payload = {
+    conversation_id: conversation.id,
+    sender_id: sender,
+    sender_role: senderRole,
+    message_type: messageType,
+    content: String(content || ""),
+    order_id: orderId || conversation.order_id || null,
+    created_at: nowIso(),
+  };
+  let rows;
+  try {
+    rows = await supabaseJson(restUrl("messages"), {
+      method: "POST",
+      headers: serviceHeaders(),
+      body: JSON.stringify(payload),
+    });
+  } catch (err) {
+    // Enum may lag migrations — persist card payload as text so boss still receives it.
+    if (
+      (messageType === "companion_card" || messageType === "product_card" || messageType === "image") &&
+      /enum|invalid input|message_type/i.test(String(err?.message || ""))
+    ) {
+      rows = await supabaseJson(restUrl("messages"), {
+        method: "POST",
+        headers: serviceHeaders(),
+        body: JSON.stringify({ ...payload, message_type: "text" }),
+      });
+    } else {
+      throw err;
+    }
+  }
+  await supabaseJson(restUrl("conversations", `?id=eq.${encodeURIComponent(conversation.id)}`), {
+    method: "PATCH",
+    headers: serviceHeaders(),
+    body: JSON.stringify({ updated_at: nowIso() }),
+  });
+  return rows[0] || null;
+}
+
+/** Find boss↔CS conversation for card push (prefer live reception, else order thread). */
+async function resolveBossCsConversation(order, serviceProfile) {
+  const bossId = order.boss_id;
+  if (!bossId) return null;
+  const openRows = await maybeRows(
+    "conversations",
+    `?boss_id=eq.${encodeURIComponent(bossId)}&status=not.in.(closed,ended)&order=updated_at.desc&limit=20`
+  );
+  const live =
+    (openRows || []).find(
+      (c) =>
+        c.customer_service_id === serviceProfile.id &&
+        String(c.conversation_type || "") !== "companion_support" &&
+        !(!c.boss_id && c.companion_id)
+    ) ||
+    (openRows || []).find(
+      (c) =>
+        String(c.conversation_type || "") !== "companion_support" &&
+        !(!c.boss_id && c.companion_id) &&
+        (c.order_id === order.id || !c.companion_id)
+    );
+  if (live) return live;
+  return ensureConversation({
+    boss_id: bossId,
+    companion_id: null,
+    customer_service_id: serviceProfile.id,
+    order_id: order.id,
+  });
+}
+async function allocateBossUid() {
+  const rows = await maybeRows("profiles", "?role=eq.boss&select=boss_uid&boss_uid=not.is.null&order=created_at.desc&limit=500");
+  let next = 1;
+  for (const row of rows) {
+    const n = parseBossCodeNumber(row?.boss_uid);
+    if (n) next = Math.max(next, n + 1);
+  }
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    const candidate = formatBossCode(next + attempt);
     const existing = await maybeRows("profiles", `?boss_uid=eq.${encodeURIComponent(candidate)}&select=id&limit=1`);
     if (!existing.length) return candidate;
   }
-  return `B${Date.now().toString().slice(-9)}`;
+  return formatBossCode(next + (Date.now() % 1000));
 }
 async function ensureBossUid(profile) {
   if (!profile?.id) return profile;
@@ -451,12 +921,150 @@ async function loadBootstrap(serviceProfile) {
       bossIntent: extra.bossIntent || null,
       flowStatus: toFlowStatus(row.status),
     });
-  }); const msgByConv = messagesRaw.reduce((map, msg) => { (map[msg.conversation_id] = map[msg.conversation_id] || []).push(msg); return map; }, {}); const conversationsMapped = conversationsRaw.map((row) => { const boss = profiles[row.boss_id] || {}; const companionProf = profiles[row.companion_id] || {}; const service = profiles[row.customer_service_id] || {}; const msgs = msgByConv[row.id] || []; const last = msgs[msgs.length - 1] || {}; const bossUid = String(boss.boss_uid || "").trim(); const isCompanionSupport = String(row.conversation_type || "") === "companion_support" || (!row.boss_id && row.companion_id); const isClosed = row.status === "closed" || row.status === "ended"; const convStatus = isClosed ? "已结束" : (row.customer_service_id ? "正在接待" : "待接待"); const lastReadAt = row.last_read_at || ""; const unreadRoles = isCompanionSupport ? ["companion"] : ["boss"]; const unreadBoss = isClosed ? [] : msgs.filter((m) => {
+  }); const msgByConv = messagesRaw.reduce((map, msg) => { (map[msg.conversation_id] = map[msg.conversation_id] || []).push(msg); return map; }, {}); const conversationsMapped = conversationsRaw.map((row) => { const boss = profiles[row.boss_id] || {}; const companionProf = profiles[row.companion_id] || {}; const service = profiles[row.customer_service_id] || {}; const msgs = msgByConv[row.id] || []; const last = msgs[msgs.length - 1] || {}; const bossUid = bossForCs(boss).bossUid; const isCompanionSupport = String(row.conversation_type || "") === "companion_support" || (!row.boss_id && row.companion_id); const isClosed = row.status === "closed" || row.status === "ended"; const convStatus = isClosed ? "已结束" : (row.customer_service_id ? "正在接待" : "待接待"); const lastReadAt = row.last_read_at || ""; const unreadRoles = isCompanionSupport ? ["companion"] : ["boss"];   const unreadBoss = isClosed ? [] : msgs.filter((m) => {
     if (!unreadRoles.includes(m.sender_role) || m.read_at) return false;
     if (lastReadAt && String(m.created_at || "") <= String(lastReadAt)) return false;
     return true;
-  }); const companionName = String(companionProf.display_name || "").trim() || "陪玩"; return { id: row.id, bossId: row.boss_id || "", bossUid: bossUid || "", bossName: isCompanionSupport ? `陪玩 · ${companionName}` : (boss.display_name || bossUid || "老板"), companionId: row.companion_id || "", conversationType: row.conversation_type || (isCompanionSupport ? "companion_support" : "general_support"), orderId: row.order_id || "", orderNo: (orders.find((o) => o.id === row.order_id) || {}).orderNo || "", currentServiceId: isClosed ? (row.customer_service_id || "") : (row.customer_service_id || ""), currentServiceName: String(service.display_name || "").trim() || (row.customer_service_id ? "客服" : "待接待"), status: convStatus, rawStatus: isClosed ? "closed" : (row.status || ""), lastMessage: last.content || "", lastTime: last.created_at || row.updated_at || "", unread: unreadBoss.length, unreadCount: unreadBoss.length, closedAt: row.closed_at || "", closedBy: row.closed_by || "", lastReadAt, acceptedAt: row.accepted_at || "", updatedAt: row.updated_at || "" }; }); const conversations = conversationsMapped.filter((c) => !isTestNoiseConversation({ last_message: c.lastMessage, title: c.bossName }, (messagesRaw || []).filter((m) => m.conversation_id === c.id).map((m) => ({ content: m.content })), c.orderNo)); const bosses = profilesRaw.filter((p) => p.role === "boss" && p.status === "active").map(safeProfile); const companions = companionsRaw.map((cp) => { const p = profiles[cp.user_id] || {}; const verified = /approved|verified|passed/.test(String(cp.verification_status || "")); const mapped = mapCompanionPublicFields(cp, p); const onlineRaw = String(cp.online_status || mapped.availabilityStatus || "offline").toLowerCase(); const onlineStatus = verified ? onlineRaw : "offline"; return { id: mapped.id || cp.user_id, companionUid: mapped.companionUid || cp.companion_uid || "", name: mapped.name || "陪玩", game: cp.game || "", level: cp.level_name || "", price: money(cp.price), avatar: mapped.avatar, cover: mapped.cover, cardImageUrl: mapped.cardImageUrl || mapped.cover, status: p.status || "", verificationStatus: mapped.verificationStatus || cp.verification_status || "", onlineStatus, online: onlineStatus === "online", idle: onlineStatus === "online" }; }).filter((p) => isUuid(p.id) && (!p.status || p.status === "active" || p.status === "启用")); const today = new Date().toISOString().slice(0, 10); const receptionStats = await (await import("./_service-receptions.js")).loadReceptionStats(serviceProfile.id, conversations); const summary = { waitingConversations: conversations.filter((c) => !c.currentServiceId && c.rawStatus !== "closed").length, currentReceptions: workData?.summary?.currentReceptions || receptionStats.currentReceptions || 0, todayReceptions: workData?.summary?.todayReceptions || receptionStats.todayReceptions || 0, monthReceptions: receptionStats.monthReceptions || 0, awaitingPayment: orders.filter((o) => o.status === "awaiting_payment").length, pendingOrders: orders.filter((o) => o.status === "pending").length, waitingCompanionConfirm: orders.filter((o) => o.status === "claimed").length, needsReassign: orders.filter((o) => o.needsReassign).length, waitingBossConfirm: orders.filter((o) => o.status === "waiting_boss_confirm").length, inProgress: orders.filter((o) => o.status === "in_progress" || o.status === "confirmed").length, refundRequested: orders.filter((o) => o.status === "refund_requested").length, todayHandled: orders.filter((o) => o.serviceId === serviceProfile.id && String(o.createdAt).slice(0, 10) === today).length, todayCompleted: workData?.summary?.todayCompleted || 0, todayPaid: workData?.summary?.todayPaid || 0, todayRefunds: workData?.summary?.todayRefunds || 0, unreadMessages: workData?.summary?.unreadMessages || 0, monthAttendanceDays: workData?.summary?.monthAttendanceDays || 0, monthLateCount: workData?.summary?.monthLateCount || 0, monthAbsenceCount: workData?.summary?.monthAbsenceCount || 0, estimatedSalary: workData?.summary?.estimatedSalary || 0 }; const payrollStatusText = { draft: "草稿", pending_review: "待审核", approved_pending_pay: "已通过待付款", rejected: "已驳回", paying: "付款处理中", paid_pending_receipt: "已付款待上传收据", completed: "已发放", pay_failed: "付款失败", cancelled: "已撤销" };   const payrolls = (payrollsRaw || []).map((row) => { const snap = row.payment_account_snapshot || {}; return { id: row.id, payrollNo: row.payroll_no, periodStart: row.period_start, periodEnd: row.period_end, baseSalaryRm: money(row.base_salary_rm), bonusRm: money(row.bonus_rm), deductionRm: money(row.deduction_rm), netSalaryRm: money(row.net_salary_rm), accountLast4: snap.account_last4 || "", status: row.status, statusText: payrollStatusText[row.status] || row.status, paidAt: row.paid_at || "", note: row.note || "" }; });
+  });
+  const companionNameRaw = String(companionProf.display_name || "").trim() || "陪玩";
+  const companionName = /@/.test(companionNameRaw) || /^(boss|companion|service)\./i.test(companionNameRaw) ? "陪玩" : companionNameRaw;
+  const identity = isCompanionSupport ? "陪玩" : "老板";
+  const consultKey = row.consult_type
+    || (isCompanionSupport ? (row.order_id ? "order_dock" : "other") : (row.order_id ? "current_order" : "other"));
+  const consultLabel = consultTypeLabel(isCompanionSupport ? "companion" : "boss", consultKey);
+  const userIdLabel = isCompanionSupport
+    ? (companionProf.companion_uid || companionProf.companion_code || row.companion_id || "")
+    : (bossUid || row.boss_id || "");
+  const nickname = isCompanionSupport ? companionName : bossForCs(boss).bossName;
+  const isTransfer = isPendingTransferStatus(row.status);
+  const convStatusLabel = isClosed ? "已结束" : isTransfer ? "待转接" : (row.customer_service_id ? "接待中" : "待接待");
+  return {
+    id: row.id,
+    identity,
+    nickname,
+    userId: userIdLabel,
+    bossId: row.boss_id || "",
+    bossUid: bossUid || "",
+    bossName: isCompanionSupport ? `陪玩 · ${companionName}` : bossForCs(boss).bossName,
+    companionId: row.companion_id || "",
+    companionCode: isCompanionSupport ? (companionProf.companion_code || companionProf.companion_uid || "") : "",
+    conversationType: row.conversation_type || (isCompanionSupport ? "companion_support" : "general_support"),
+    consultType: consultKey,
+    consultTypeLabel: consultLabel,
+    title: row.title || "",
+    orderId: row.order_id || "",
+    orderNo: (orders.find((o) => o.id === row.order_id) || {}).orderNo || "",
+    currentServiceId: isClosed ? (row.customer_service_id || "") : (isTransfer ? "" : (row.customer_service_id || "")),
+    currentServiceName: isTransfer ? "待转接" : (row.customer_service_id ? csDisplayName(service) : "待接待"),
+    status: convStatusLabel,
+    rawStatus: isClosed ? "closed" : (row.status || ""),
+    lastMessage: last.content || "",
+    lastTime: last.created_at || row.updated_at || "",
+    createdAt: row.created_at || "",
+    unread: unreadBoss.length,
+    unreadCount: unreadBoss.length,
+    closedAt: row.closed_at || "",
+    closedBy: row.closed_by || "",
+    lastReadAt,
+    acceptedAt: row.accepted_at || "",
+    updatedAt: row.updated_at || "",
+  }; }); const conversations = conversationsMapped.filter((c) => {
+    if (c.conversationType === "companion_support" || (!c.bossId && c.companionId)) return true;
+    return !isTestNoiseConversation({ last_message: c.lastMessage, title: c.bossName }, (messagesRaw || []).filter((m) => m.conversation_id === c.id).map((m) => ({ content: m.content })), c.orderNo);
+  }); const bosses = profilesRaw.filter((p) => p.role === "boss" && p.status === "active").map((p) => bossForCs(p)); const companions = companionsRaw.map((cp) => {
+    const p = profiles[cp.user_id] || {};
+    const appSt = String(cp.application_status || "").toLowerCase();
+    const isDraft =
+      /^(draft|archived|deleted)$/.test(appSt) ||
+      (!cp.application_submitted_at && !/approved|verified|passed/.test(appSt));
+    if (isDraft) return null;
+    const verified = /approved|verified|passed/.test(String(cp.application_status || cp.verification_status || ""));
+    if (!verified) return null;
+    const mapped = mapCompanionPublicFields(cp, p);
+    const onlineRaw = String(cp.online_status || mapped.availabilityStatus || "offline").toLowerCase();
+    const onlineStatus = verified ? onlineRaw : "offline";
+    const code = mapped.companionCode || mapped.publicId || "";
+    return {
+      id: mapped.id || cp.user_id,
+      companionUid: mapped.companionUid || cp.companion_uid || "",
+      companionCode: code,
+      publicId: code,
+      name: mapped.name || "陪玩",
+      game: cp.game || "",
+      level: cp.level_name || "",
+      price: money(cp.price),
+      avatar: mapped.avatar,
+      cover: mapped.cover,
+      cardImageUrl: mapped.cardImageUrl || mapped.cover,
+      status: p.status || "",
+      verificationStatus: mapped.verificationStatus || cp.verification_status || "",
+      onlineStatus,
+      online: onlineStatus === "online",
+      idle: onlineStatus === "online",
+    };
+  }).filter((p) => p && isUuid(p.id) && (!p.status || p.status === "active" || p.status === "启用")); const today = new Date().toISOString().slice(0, 10); const receptionStats = await (await import("./_service-receptions.js")).loadReceptionStats(serviceProfile.id, conversations); const summary = { waitingConversations: conversations.filter((c) => !c.currentServiceId && c.rawStatus !== "closed").length, currentReceptions: workData?.summary?.currentReceptions || receptionStats.currentReceptions || 0, todayReceptions: workData?.summary?.todayReceptions || receptionStats.todayReceptions || 0, monthReceptions: receptionStats.monthReceptions || 0, awaitingPayment: orders.filter((o) => o.status === "awaiting_payment").length, pendingOrders: orders.filter((o) => o.status === "pending").length, waitingCompanionConfirm: orders.filter((o) => o.status === "claimed").length, needsReassign: orders.filter((o) => o.needsReassign).length, waitingBossConfirm: orders.filter((o) => o.status === "waiting_boss_confirm").length, inProgress: orders.filter((o) => o.status === "in_progress" || o.status === "confirmed").length, refundRequested: orders.filter((o) => o.status === "refund_requested").length, todayHandled: orders.filter((o) => o.serviceId === serviceProfile.id && String(o.createdAt).slice(0, 10) === today).length, todayCompleted: workData?.summary?.todayCompleted || 0, todayPaid: workData?.summary?.todayPaid || 0, todayRefunds: workData?.summary?.todayRefunds || 0, unreadMessages: workData?.summary?.unreadMessages || 0, monthAttendanceDays: workData?.summary?.monthAttendanceDays || 0, monthLateCount: workData?.summary?.monthLateCount || 0, monthAbsenceCount: workData?.summary?.monthAbsenceCount || 0, estimatedSalary: workData?.summary?.estimatedSalary || 0 }; const payrollStatusText = {
+    draft: "草稿",
+    submitted: "已提交",
+    pending_friday: "待周五结算",
+    reviewing: "审核中",
+    pending: "已提交",
+    pending_review: "待周五结算",
+    approved: "审核通过待打款",
+    pending_payment: "审核通过待打款",
+    approved_pending_pay: "审核通过待打款",
+    rejected: "已驳回",
+    paying: "审核通过待打款",
+    paid_pending_receipt: "已打款",
+    paid: "已打款",
+    completed: "已完成",
+    rolled_over: "顺延至下周",
+    pay_failed: "付款失败",
+    cancelled: "已撤销",
+  };
+  const payrolls = (payrollsRaw || []).map((row) => {
+    const snap = row.payment_account_snapshot || {};
+    return {
+      id: row.id,
+      payrollNo: row.payroll_no,
+      periodStart: row.period_start,
+      periodEnd: row.period_end,
+      baseSalaryRm: money(row.base_salary_rm),
+      bonusRm: money(row.bonus_rm),
+      deductionRm: money(row.deduction_rm),
+      netSalaryRm: money(row.net_salary_rm),
+      accountLast4: snap.account_last4 || "",
+      status: row.status,
+      statusText: payrollStatusText[row.status] || row.status,
+      settlementDate: row.settlement_date || "",
+      settlementHint: row.settlement_date
+        ? `预计发放日期：${String(row.settlement_date).slice(0, 10)}（星期五）`
+        : "",
+      submittedAt: row.submitted_at || row.created_at || "",
+      reviewedAt: row.reviewed_at || row.approved_at || "",
+      paidAt: row.paid_at || "",
+      transactionNo: row.transaction_no || row.bank_reference || "",
+      receiptUrl: row.receipt_url || "",
+      rejectReason: row.reject_reason || "",
+      note: row.note || "",
+    };
+  });
+  let weeklySettlement = null;
+  try {
+    const { loadFinanceWeeklySettings, viewWeeklyRules } = await import("./_payout-requests.js");
+    const { companionDb } = await import("./_companion-media-store.js");
+    const cfg = await loadFinanceWeeklySettings(companionDb);
+    weeklySettlement = viewWeeklyRules(cfg);
+  } catch {
+    weeklySettlement = null;
+  }
+  const pendingFridayAmount = payrolls
+    .filter((p) => /pending_friday|reviewing|submitted|pending_review|rolled_over/.test(String(p.status || "")))
+    .reduce((s, p) => s + money(p.netSalaryRm), 0);
+  const appliedAmount = payrolls
+    .filter((p) => !/rejected|cancelled|pay_failed/.test(String(p.status || "")))
+    .reduce((s, p) => s + money(p.netSalaryRm), 0);
   let dockRewards = [];
+  let staffNotifications = [];
   try {
     dockRewards = await maybeRows(
       "cs_dock_rewards",
@@ -465,20 +1073,65 @@ async function loadBootstrap(serviceProfile) {
   } catch {
     dockRewards = [];
   }
+  try {
+    staffNotifications = await maybeRows(
+      "staff_notifications",
+      `?staff_id=eq.${encodeURIComponent(serviceProfile.id)}&order=created_at.desc&limit=40`
+    );
+  } catch {
+    staffNotifications = [];
+  }
   const settledRewards = (dockRewards || []).filter((r) => r.status === "settled");
   const dockRewardCatFood = settledRewards.reduce((sum, r) => sum + money(r.amount_cat_food), 0);
   summary.dockRewardCatFood = dockRewardCatFood;
   summary.dockRewardCount = settledRewards.length;
+  summary.incomeToday = workData?.summary?.incomeToday || 0;
+  summary.incomeMonth = workData?.summary?.incomeMonth || 0;
+  summary.incomeTotal = workData?.summary?.incomeTotal || 0;
+  const activePayrollStatuses = new Set(["draft", "pending_review", "approved_pending_pay", "paying", "paid_pending_receipt", "completed"]);
+  const monthPayrollLocked = (payrolls || [])
+    .filter((p) => activePayrollStatuses.has(String(p.status || "")) && String(p.periodStart || "").slice(0, 7) === String(today || "").slice(0, 7))
+    .reduce((sum, p) => sum + money(p.netSalaryRm), 0);
+  const estimated = money(workData?.summary?.estimatedSalary || summary.estimatedSalary || 0);
+  summary.withdrawableSalary = Math.max(0, money(estimated - monthPayrollLocked));
+  summary.orderFixedReward = money(workData?.config?.orderCommission || workData?.salary?.current?.orderFixedReward || 0);
+  const conversationsWithLock = conversations.map((c) => withConversationLockFields(c, serviceProfile.id));
+  const commissionSettlements = (workData?.commissionSettlements || []).map((r) => ({
+    id: r.id,
+    orderId: r.orderId,
+    orderNo: r.orderNo || "",
+    rewardType: r.rewardType || "order_commission",
+    category: r.category || "",
+    categoryLabel: r.categoryLabel || "",
+    paidAmount: money(r.paidAmount),
+    paymentStatus: r.paymentStatus || "",
+    fixedRewardRm: money(r.fixedRewardRm),
+    percentCommissionRm: money(r.percentCommissionRm),
+    nightShiftRm: money(r.nightShiftRm),
+    attendanceBonusRm: money(r.attendanceBonusRm),
+    clawbackRm: money(r.clawbackRm),
+    finalAmountRm: money(r.finalAmountRm),
+    status: r.status,
+    settlementStatus: r.settlementStatus || r.status,
+    settledAt: r.settledAt || "",
+  }));
   return {
     staff: safeProfile(serviceProfile),
     summary,
-    conversations,
+    conversations: conversationsWithLock,
     messages: messagesRaw.map((row) => safeMessage(row, profiles)),
     orders,
     bosses,
     companions,
     reports: reportsRaw,
     payrolls,
+    weeklySettlement,
+    payrollSummary: {
+      settleableAmount: money((workData?.summary?.estimatedSalary || 0) - pendingFridayAmount),
+      appliedAmount,
+      pendingFridayAmount,
+      nextSettlementDate: weeklySettlement?.nextSettlementDate || "",
+    },
     dockRewards: (dockRewards || []).slice(0, 40).map((r) => ({
       id: r.id,
       orderId: r.order_id,
@@ -487,6 +1140,16 @@ async function loadBootstrap(serviceProfile) {
       status: r.status,
       settledAt: r.settled_at || "",
       clawbackAt: r.clawback_at || "",
+    })),
+    commissionSettlements,
+    notifications: (staffNotifications || []).map((n) => ({
+      id: n.id,
+      key: n.notice_key,
+      category: n.category || "payroll",
+      title: n.title || "系统通知",
+      body: n.body || "",
+      href: n.href || "/customer-service/reports/",
+      at: n.created_at || "",
     })),
     orderStatuses: ORDER_STATUS_TEXT,
     workData: workData || null,
@@ -505,6 +1168,16 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
     let action = String(req.method === "GET" ? (req.query?.action || "bootstrap") : (body.action || req.query?.action || pathAction || "")).trim();
     if (action === "accept") action = "take_conversation";
     if (action === "login") { const email = String(body.account || body.email || "").trim().toLowerCase(); const password = String(body.password || ""); if (!email || !password) return json(res, 400, { ok: false, message: "请输入邮箱和密码。" }); let auth; try { auth = await supabaseJson(authUrl("token?grant_type=password"), { method: "POST", headers: anonHeaders(), body: JSON.stringify({ email, password }) }); } catch { return json(res, 401, { ok: false, message: "账号或密码错误。" }); } const profile = await profileById(auth.user?.id); if (!profile || profile.role !== "customer_service") return json(res, 403, { ok: false, message: "无权访问客服端。" }); if (profile.status !== "active") return json(res, 403, { ok: false, message: "该客服账号已被停用，请联系管理员。" }); return json(res, 200, { ok: true, session: { token: auth.access_token, refreshToken: auth.refresh_token || "", expiresAt: auth.expires_at || auth.expires_in || "", user: safeProfile(profile), remember: true } }); }
+    // Password recovery (public — before requireService). Phone OTP preferred; email stubbed clearly.
+    if (action === "forgot_password" || action === "send_reset_code") {
+      return handleCsSendResetCode(body, res);
+    }
+    if (action === "verify_reset_code") {
+      return handleCsVerifyResetCode(body, res);
+    }
+    if (action === "reset_password") {
+      return handleCsResetPassword(body, res);
+    }
     const service = await requireService(req); if (req.method === "GET") return json(res, 200, { ok: true, configured: true, data: await loadBootstrap(service.profile) });
     if (action === "bootstrap" || !action) return json(res, 200, { ok: true, configured: true, data: await loadBootstrap(service.profile) });
     if (action === "take_conversation") {
@@ -515,12 +1188,12 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       if (existing.status === "closed" || existing.status === "ended") {
         return json(res, 400, { ok: false, message: "会话已结束，无法接待。" });
       }
-      if (existing.customer_service_id && existing.customer_service_id !== service.profile.id) {
+      if (existing.customer_service_id && existing.customer_service_id !== service.profile.id && !isPendingTransferStatus(existing.status)) {
         const other = await profileById(existing.customer_service_id);
         const otherName = String(other?.display_name || "").trim() || "其他客服";
         return json(res, 409, { ok: false, message: `该会话已由客服 ${otherName} 接待。` });
       }
-      if (existing.customer_service_id === service.profile.id) {
+      if (existing.customer_service_id === service.profile.id && !isPendingTransferStatus(existing.status)) {
         await markConversationBossMessagesRead(id, { bossId: existing.boss_id, conversation: existing });
         return json(res, 200, {
           ok: true,
@@ -534,6 +1207,17 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       }
       const nick = String(service.profile.display_name || "").trim() || "客服";
       const acceptedAt = nowIso();
+      // If stuck in pending_transfer with a stale owner id, clear before CAS claim.
+      if (isPendingTransferStatus(existing.status) && existing.customer_service_id) {
+        try {
+          await supabaseJson(restUrl("conversations", `?id=eq.${encodeURIComponent(id)}`), {
+            method: "PATCH",
+            headers: serviceHeaders(),
+            body: JSON.stringify({ customer_service_id: null, status: "pending_transfer", updated_at: acceptedAt }),
+          });
+        } catch (_) {}
+      }
+      // pending_transfer / waiting: claim by null owner (release clears owner before pool).
       const claimFilter = `?id=eq.${encodeURIComponent(id)}&customer_service_id=is.null`;
       async function claimWith(patch) {
         const rows = await supabaseJson(restUrl("conversations", claimFilter), {
@@ -612,6 +1296,622 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         },
       });
     }
+    if (action === "force_take_conversation") {
+      if (!isAdminProfile(service.profile)) {
+        return json(res, 403, { ok: false, message: "仅管理员可强制接管会话。" });
+      }
+      const id = String(body.id || body.conversation_id || body.conversationId || "").trim();
+      if (!id) return json(res, 400, { ok: false, message: "缺少会话 ID。" });
+      const existing = (await tableRows("conversations", `?id=eq.${encodeURIComponent(id)}&limit=1`))[0];
+      if (!existing) return json(res, 404, { ok: false, message: "会话不存在。" });
+      if (existing.status === "closed" || existing.status === "ended") {
+        return json(res, 400, { ok: false, message: "会话已结束，无法接管。" });
+      }
+      const acceptedAt = nowIso();
+      const nick = String(service.profile.display_name || "").trim() || "客服";
+      const prevOwner = existing.customer_service_id && existing.customer_service_id !== service.profile.id
+        ? await profileById(existing.customer_service_id)
+        : null;
+      const prevName = String(prevOwner?.display_name || "").trim() || "其他客服";
+      let conversation = null;
+      const forcePatch = {
+        customer_service_id: service.profile.id,
+        status: "active",
+        accepted_at: acceptedAt,
+        updated_at: acceptedAt,
+      };
+      try {
+        const rows = await supabaseJson(restUrl("conversations", `?id=eq.${encodeURIComponent(id)}`), {
+          method: "PATCH",
+          headers: serviceHeaders(),
+          body: JSON.stringify(forcePatch),
+        });
+        conversation = Array.isArray(rows) ? rows[0] : null;
+      } catch (err) {
+        const detail = String(err?.message || "");
+        if (/accepted_at|column|schema/i.test(detail)) {
+          const rows = await supabaseJson(restUrl("conversations", `?id=eq.${encodeURIComponent(id)}`), {
+            method: "PATCH",
+            headers: serviceHeaders(),
+            body: JSON.stringify({
+              customer_service_id: service.profile.id,
+              status: "active",
+              updated_at: acceptedAt,
+            }),
+          });
+          conversation = Array.isArray(rows) ? rows[0] : null;
+        } else if (/status|check|invalid/i.test(detail)) {
+          const rows = await supabaseJson(restUrl("conversations", `?id=eq.${encodeURIComponent(id)}`), {
+            method: "PATCH",
+            headers: serviceHeaders(),
+            body: JSON.stringify({
+              customer_service_id: service.profile.id,
+              status: "serving",
+              updated_at: acceptedAt,
+            }),
+          });
+          conversation = Array.isArray(rows) ? rows[0] : null;
+        } else {
+          throw err;
+        }
+      }
+      if (!conversation) {
+        conversation = (await tableRows("conversations", `?id=eq.${encodeURIComponent(id)}&limit=1`))[0] || existing;
+      }
+      if (conversation.order_id) {
+        try {
+          await patchOrder(conversation.order_id, { customer_service_id: service.profile.id });
+        } catch (_) {}
+      }
+      if (prevOwner?.id) {
+        await addMessage(conversation, service.profile.id, "customer_service", `管理员 ${nick} 已强制接管（原接待：${prevName}）。`, "system");
+      } else if (!existing.customer_service_id) {
+        await addMessage(conversation, service.profile.id, "customer_service", `客服 ${nick} 已接待您。`, "system");
+      }
+      await markConversationBossMessagesRead(id, { bossId: conversation.boss_id || existing.boss_id, conversation });
+      return json(res, 200, {
+        ok: true,
+        message: "已强制接管该会话。",
+        conversation: {
+          ...conversation,
+          status: conversation.status === "serving" ? "active" : (conversation.status || "active"),
+          customer_service_id: service.profile.id,
+          accepted_at: conversation.accepted_at || acceptedAt,
+        },
+      });
+    }
+    if (action === "start_consult" || action === "create_conversation" || action === "new_conversation") {
+      const targetRole = String(body.targetRole || body.target_role || body.role || "boss").trim().toLowerCase();
+      const forceNew =
+        body.forceNew === true ||
+        body.force_new === true ||
+        String(body.forceNew || body.force_new || "").trim() === "1";
+      const orderIdRaw = String(body.orderId || body.order_id || "").trim();
+      const consultRaw = String(body.consult_type || body.consultType || "").trim();
+
+      if (targetRole === "companion" || targetRole === "player") {
+        const companionInput = String(body.companionId || body.companion_id || body.targetId || body.target_id || "").trim();
+        const companion = await resolveCompanion(companionInput);
+        if (!companion || !isUuid(companion.id)) {
+          return json(res, 400, { ok: false, message: "请选择有效陪玩（编号 PW00001 / 昵称）。" });
+        }
+        let order = null;
+        let orderId = "";
+        if (orderIdRaw) {
+          order = (await orderById(orderIdRaw)) || null;
+          if (!order && orderIdRaw) {
+            const byNo = (
+              await maybeRows("orders", `?order_no=eq.${encodeURIComponent(orderIdRaw)}&limit=1`)
+            )[0];
+            order = byNo || null;
+          }
+          if (!order) return json(res, 404, { ok: false, message: "关联订单不存在。" });
+          orderId = order.id;
+        }
+        const consultType = normalizeCompanionConsultType(consultRaw || (orderId ? "order_dock" : "general"), {
+          orderId,
+        });
+        const companionName = String(companion.display_name || "").trim() || "陪玩";
+        const companionCode =
+          resolveCompanionPublicCode(companion) ||
+          companion.companion_code ||
+          companion.companion_uid ||
+          "";
+        let existing = null;
+        if (!forceNew && orderId) {
+          existing = (
+            await maybeRows(
+              "conversations",
+              `?companion_id=eq.${encodeURIComponent(companion.id)}&order_id=eq.${encodeURIComponent(orderId)}&conversation_type=eq.companion_support&status=not.in.(closed,ended)&order=updated_at.desc&limit=1`
+            )
+          )[0];
+        } else if (!forceNew && !orderId) {
+          existing = (
+            await maybeRows(
+              "conversations",
+              `?companion_id=eq.${encodeURIComponent(companion.id)}&order_id=is.null&conversation_type=eq.companion_support&consult_type=eq.${encodeURIComponent(consultType)}&status=not.in.(closed,ended)&order=updated_at.desc&limit=1`
+            )
+          )[0];
+        }
+        let conversation = existing;
+        if (!conversation) {
+          const payload = {
+            boss_id: null,
+            companion_id: companion.id,
+            customer_service_id: service.profile.id,
+            order_id: orderId || null,
+            status: "open",
+            conversation_type: "companion_support",
+            consult_type: consultType,
+            title: order
+              ? `陪玩 · ${companionName} · ${order.order_no || orderId}`
+              : `陪玩 · ${companionName} · 普通咨询`,
+            created_at: nowIso(),
+            updated_at: nowIso(),
+            accepted_at: nowIso(),
+          };
+          try {
+            const inserted = await supabaseJson(restUrl("conversations"), {
+              method: "POST",
+              headers: serviceHeaders(),
+              body: JSON.stringify(payload),
+            });
+            conversation = inserted?.[0] || null;
+          } catch (err) {
+            const legacy = { ...payload };
+            delete legacy.consult_type;
+            delete legacy.title;
+            delete legacy.accepted_at;
+            if (/boss_id/i.test(String(err?.message || ""))) delete legacy.boss_id;
+            const inserted = await supabaseJson(restUrl("conversations"), {
+              method: "POST",
+              headers: serviceHeaders(),
+              body: JSON.stringify(legacy),
+            });
+            conversation = inserted?.[0] || null;
+          }
+        } else if (!existing.customer_service_id) {
+          try {
+            await supabaseJson(restUrl("conversations", `?id=eq.${encodeURIComponent(existing.id)}`), {
+              method: "PATCH",
+              headers: serviceHeaders(),
+              body: JSON.stringify({
+                customer_service_id: service.profile.id,
+                status: "open",
+                updated_at: nowIso(),
+              }),
+            });
+            conversation = { ...existing, customer_service_id: service.profile.id, status: "open" };
+          } catch (_) {}
+        }
+        if (!conversation?.id) return json(res, 500, { ok: false, message: "无法创建陪玩会话。" });
+        return json(res, 200, {
+          ok: true,
+          message: orderId ? "已打开陪玩订单会话" : "已创建陪玩普通咨询",
+          conversationId: conversation.id,
+          conversation: {
+            id: conversation.id,
+            identity: "陪玩",
+            nickname: companionName,
+            bossName: `陪玩 · ${companionName}`,
+            companionId: companion.id,
+            companionCode,
+            conversationType: "companion_support",
+            consultType,
+            consultTypeLabel: consultTypeLabel("companion", consultType),
+            orderId: orderId || "",
+            orderNo: order?.order_no || "",
+            currentServiceId: conversation.customer_service_id || service.profile.id,
+            currentServiceName: csDisplayName(service.profile) || "客服",
+            status: "接待中",
+            rawStatus: conversation.status || "open",
+            lockedByOther: false,
+          },
+        });
+      }
+
+      // Boss general / order consult
+      const bossInput = String(body.bossId || body.boss_id || body.targetId || body.target_id || "").trim();
+      let boss = null;
+      if (isUuid(bossInput)) boss = await profileById(bossInput);
+      if (!boss) {
+        const codeNum = parseBossCodeNumber(bossInput);
+        if (codeNum) {
+          boss = (
+            await maybeRows(
+              "profiles",
+              `?or=(boss_uid.eq.${encodeURIComponent(formatBossCode(codeNum))},boss_uid.eq.${encodeURIComponent(String(codeNum))})&role=eq.boss&limit=1`
+            )
+          )[0];
+        }
+      }
+      if (!boss) {
+        const q = bossInput.replace(/[%_]/g, "");
+        if (q) {
+          boss = (
+            await maybeRows(
+              "profiles",
+              `?role=eq.boss&or=(display_name.ilike.*${encodeURIComponent(q)}*,boss_uid.ilike.*${encodeURIComponent(q)}*)&limit=1`
+            )
+          )[0];
+        }
+      }
+      if (!boss || !isUuid(boss.id)) {
+        return json(res, 400, { ok: false, message: "请选择有效老板（编号 MCJ00001 / 昵称）。" });
+      }
+      let order = null;
+      let orderId = "";
+      if (orderIdRaw) {
+        order = (await orderById(orderIdRaw)) || null;
+        if (!order) {
+          order = (
+            await maybeRows("orders", `?order_no=eq.${encodeURIComponent(orderIdRaw)}&limit=1`)
+          )[0];
+        }
+        if (!order) return json(res, 404, { ok: false, message: "关联订单不存在。" });
+        orderId = order.id;
+      }
+      const consultType = normalizeBossConsultType(consultRaw || (orderId ? "current_order" : "other"), {
+        orderId,
+      });
+      const conversation = await ensureConversation({
+        boss_id: boss.id,
+        companion_id: order?.companion_id || null,
+        customer_service_id: service.profile.id,
+        order_id: orderId || null,
+        consult_type: consultType,
+        forceNew: forceNew || (!orderId && (consultRaw === "other" || !consultRaw)),
+      });
+      if (!conversation?.id) return json(res, 500, { ok: false, message: "无法创建老板会话。" });
+      const bossCode = formatBossCode(parseBossCodeNumber(boss.boss_uid) || boss.boss_uid) || boss.boss_uid || "";
+      const bossName = String(boss.display_name || "").trim() || (bossCode ? `老板 ${bossCode}` : "老板");
+      return json(res, 200, {
+        ok: true,
+        message: orderId ? "已打开老板订单会话" : "已创建老板普通咨询",
+        conversationId: conversation.id,
+        conversation: {
+          id: conversation.id,
+          identity: "老板",
+          nickname: bossName,
+          bossId: boss.id,
+          bossUid: bossCode,
+          bossName,
+          companionId: conversation.companion_id || "",
+          conversationType: orderId ? "order_support" : "general_support",
+          consultType,
+          consultTypeLabel: consultTypeLabel("boss", consultType),
+          orderId: orderId || "",
+          orderNo: order?.order_no || "",
+          currentServiceId: conversation.customer_service_id || service.profile.id,
+          currentServiceName: csDisplayName(service.profile) || "客服",
+          status: "接待中",
+          rawStatus: conversation.status || "open",
+          lockedByOther: false,
+        },
+      });
+    }
+
+    if (action === "start_companion_chat") {
+      const companionInput = String(body.companionId || body.companion_id || "").trim();
+      const orderId = String(body.orderId || body.order_id || "").trim();
+      const companion = await resolveCompanion(companionInput);
+      if (!companion || !isUuid(companion.id)) {
+        return json(res, 400, { ok: false, message: "请填写有效的陪玩编号 / 昵称。" });
+      }
+      // Allow general companion consult without order (CS 「新建对话」).
+      if (!orderId) {
+        body.targetRole = "companion";
+        body.companionId = companion.id;
+        body.consultType = body.consult_type || body.consultType || "general";
+        body.forceNew = body.forceNew !== false;
+        // Re-enter via start_consult path by recursive call pattern: fall through by rewriting.
+        const consultType = normalizeCompanionConsultType(body.consultType || "general", { orderId: "" });
+        const companionName = String(companion.display_name || "").trim() || "陪玩";
+        const companionCode =
+          resolveCompanionPublicCode(companion) || companion.companion_code || companion.companion_uid || "";
+        const payload = {
+          boss_id: null,
+          companion_id: companion.id,
+          customer_service_id: service.profile.id,
+          order_id: null,
+          status: "open",
+          conversation_type: "companion_support",
+          consult_type: consultType,
+          title: `陪玩 · ${companionName} · 普通咨询`,
+          created_at: nowIso(),
+          updated_at: nowIso(),
+          accepted_at: nowIso(),
+        };
+        let conversation = null;
+        try {
+          const inserted = await supabaseJson(restUrl("conversations"), {
+            method: "POST",
+            headers: serviceHeaders(),
+            body: JSON.stringify(payload),
+          });
+          conversation = inserted?.[0] || null;
+        } catch (err) {
+          const legacy = { ...payload };
+          delete legacy.consult_type;
+          delete legacy.title;
+          delete legacy.accepted_at;
+          const inserted = await supabaseJson(restUrl("conversations"), {
+            method: "POST",
+            headers: serviceHeaders(),
+            body: JSON.stringify(legacy),
+          });
+          conversation = inserted?.[0] || null;
+        }
+        if (!conversation?.id) return json(res, 500, { ok: false, message: "无法创建陪玩普通咨询。" });
+        return json(res, 200, {
+          ok: true,
+          message: "已创建陪玩普通咨询",
+          conversationId: conversation.id,
+          conversation: {
+            id: conversation.id,
+            identity: "陪玩",
+            nickname: companionName,
+            bossName: `陪玩 · ${companionName}`,
+            companionId: companion.id,
+            companionCode,
+            conversationType: "companion_support",
+            consultType,
+            consultTypeLabel: consultTypeLabel("companion", consultType),
+            orderId: "",
+            orderNo: "",
+            currentServiceId: service.profile.id,
+            currentServiceName: csDisplayName(service.profile) || "客服",
+            status: "接待中",
+            rawStatus: "open",
+            lockedByOther: false,
+          },
+        });
+      }
+      if (!isUuid(orderId)) {
+        return json(res, 400, { ok: false, message: "订单咨询请选择有效订单。" });
+      }
+      const order = await orderById(orderId);
+      if (!order) return json(res, 404, { ok: false, message: "订单不存在。" });
+      const consultType = normalizeCompanionConsultType(body.consult_type || body.consultType || "order_dock", {
+        orderId,
+      });
+      const companionName = String(companion.display_name || "").trim() || "陪玩";
+      const companionCode =
+        resolveCompanionPublicCode(companion) ||
+        companion.companion_code ||
+        companion.companion_uid ||
+        companion.id;
+      const orderNo = order.order_no || order.id;
+      const title = companionProactiveTitle({
+        nickname: companionName,
+        companionCode,
+        companionId: companion.id,
+        orderNo,
+        orderId,
+      });
+
+      // Scope lock to companion + order_id + consult_type (never whole companion account).
+      let existing = (await maybeRows(
+        "conversations",
+        `?companion_id=eq.${encodeURIComponent(companion.id)}&order_id=eq.${encodeURIComponent(orderId)}&conversation_type=eq.companion_support&consult_type=eq.${encodeURIComponent(consultType)}&status=not.in.(closed,ended)&order=updated_at.desc&limit=1`
+      ))[0];
+      if (!existing) {
+        // Fallback if consult_type column missing / older rows without consult_type.
+        existing = (await maybeRows(
+          "conversations",
+          `?companion_id=eq.${encodeURIComponent(companion.id)}&order_id=eq.${encodeURIComponent(orderId)}&conversation_type=eq.companion_support&status=not.in.(closed,ended)&order=updated_at.desc&limit=1`
+        ))[0];
+        if (existing?.consult_type && existing.consult_type !== consultType) existing = null;
+      }
+      if (existing?.customer_service_id && existing.customer_service_id !== service.profile.id && !isAdminProfile(service.profile) && !isPendingTransferStatus(existing.status)) {
+        const other = await profileById(existing.customer_service_id);
+        const otherName = String(other?.display_name || "").trim() || "其他客服";
+        return json(res, 200, {
+          ok: true,
+          message: `已定位该订单陪玩会话（当前由 ${otherName} 接待）`,
+          conversationId: existing.id,
+          conversation: {
+            id: existing.id,
+            identity: "陪玩",
+            nickname: companionName,
+            userId: companionCode,
+            bossId: "",
+            bossUid: "",
+            bossName: `陪玩 · ${companionName}`,
+            companionId: companion.id,
+            companionCode,
+            conversationType: "companion_support",
+            consultType,
+            consultTypeLabel: consultTypeLabel("companion", consultType),
+            title: existing.title || title,
+            orderId,
+            orderNo,
+            currentServiceId: existing.customer_service_id,
+            currentServiceName: otherName,
+            status: "接待中",
+            rawStatus: existing.status || "active",
+            lockedByOther: true,
+            lastMessage: existing.last_message || "",
+            lastTime: existing.updated_at || "",
+            createdAt: existing.created_at || "",
+            unread: 0,
+            unreadCount: 0,
+          },
+        });
+      }
+      const acceptedAt = nowIso();
+      const nick = companionName;
+      let conversation = existing;
+      if (!conversation) {
+        const payload = {
+          boss_id: null,
+          companion_id: companion.id,
+          customer_service_id: service.profile.id,
+          order_id: orderId,
+          conversation_type: "companion_support",
+          consult_type: consultType,
+          title,
+          status: "active",
+          accepted_at: acceptedAt,
+          created_at: acceptedAt,
+          updated_at: acceptedAt,
+        };
+        try {
+          const rows = await supabaseJson(restUrl("conversations"), {
+            method: "POST",
+            headers: serviceHeaders(),
+            body: JSON.stringify(payload),
+          });
+          conversation = rows?.[0] || null;
+        } catch (err) {
+          if (!/consult_type|title|conversation_type|column|schema/i.test(String(err?.message || ""))) throw err;
+          const legacy = {
+            boss_id: null,
+            companion_id: companion.id,
+            customer_service_id: service.profile.id,
+            order_id: orderId,
+            status: "active",
+            created_at: acceptedAt,
+            updated_at: acceptedAt,
+          };
+          if (!/conversation_type/i.test(String(err?.message || ""))) legacy.conversation_type = "companion_support";
+          if (!/consult_type/i.test(String(err?.message || ""))) legacy.consult_type = consultType;
+          if (!/title/i.test(String(err?.message || ""))) legacy.title = title;
+          const rows = await supabaseJson(restUrl("conversations"), {
+            method: "POST",
+            headers: serviceHeaders(),
+            body: JSON.stringify(legacy),
+          });
+          conversation = rows?.[0] || null;
+        }
+        if (conversation?.id) {
+          await addMessage(
+            conversation,
+            service.profile.id,
+            "customer_service",
+            `客服已主动联系陪玩（${title}）。范围仅限本订单对接。`,
+            "system"
+          );
+        }
+      } else if (!conversation.customer_service_id || conversation.customer_service_id === service.profile.id || isPendingTransferStatus(conversation.status)) {
+        const claimFilter =
+          conversation.customer_service_id && !isPendingTransferStatus(conversation.status)
+            ? `?id=eq.${encodeURIComponent(conversation.id)}`
+            : `?id=eq.${encodeURIComponent(conversation.id)}&customer_service_id=is.null`;
+        try {
+          const rows = await supabaseJson(restUrl("conversations", claimFilter), {
+            method: "PATCH",
+            headers: serviceHeaders(),
+            body: JSON.stringify({
+              customer_service_id: service.profile.id,
+              status: "active",
+              accepted_at: acceptedAt,
+              updated_at: acceptedAt,
+              title: conversation.title || title,
+              consult_type: conversation.consult_type || consultType,
+            }),
+          });
+          conversation = Array.isArray(rows) ? rows[0] : conversation;
+        } catch (err) {
+          const detail = String(err?.message || "");
+          if (/accepted_at|title|consult_type|column|schema/i.test(detail)) {
+            const rows = await supabaseJson(restUrl("conversations", claimFilter), {
+              method: "PATCH",
+              headers: serviceHeaders(),
+              body: JSON.stringify({
+                customer_service_id: service.profile.id,
+                status: "active",
+                updated_at: acceptedAt,
+              }),
+            });
+            conversation = Array.isArray(rows) ? rows[0] : conversation;
+          } else if (/status|check|invalid/i.test(detail)) {
+            const rows = await supabaseJson(restUrl("conversations", claimFilter), {
+              method: "PATCH",
+              headers: serviceHeaders(),
+              body: JSON.stringify({
+                customer_service_id: service.profile.id,
+                status: "serving",
+                updated_at: acceptedAt,
+              }),
+            });
+            conversation = Array.isArray(rows) ? rows[0] : conversation;
+          } else {
+            throw err;
+          }
+        }
+        if (!existing.customer_service_id || isPendingTransferStatus(existing.status)) {
+          await addMessage(conversation, service.profile.id, "customer_service", `客服 ${String(service.profile.display_name || "").trim() || "客服"} 已接待陪玩 ${nick}（订单 ${orderNo}）。`, "system");
+        }
+      }
+      if (!conversation?.id) return json(res, 500, { ok: false, message: "无法创建陪玩会话。" });
+      const mapped = withConversationLockFields(
+        {
+          id: conversation.id,
+          identity: "陪玩",
+          nickname: companionName,
+          userId: companionCode,
+          bossId: "",
+          bossUid: "",
+          bossName: `陪玩 · ${companionName}`,
+          companionId: companion.id,
+          companionCode,
+          conversationType: "companion_support",
+          consultType: conversation.consult_type || consultType,
+          consultTypeLabel: consultTypeLabel("companion", conversation.consult_type || consultType),
+          title: conversation.title || title,
+          orderId,
+          orderNo,
+          currentServiceId: service.profile.id,
+          currentServiceName: String(service.profile.display_name || "").trim() || "客服",
+          status: "接待中",
+          rawStatus: conversation.status || "active",
+          lastMessage: "",
+          lastTime: conversation.updated_at || acceptedAt,
+          createdAt: conversation.created_at || acceptedAt,
+          unread: 0,
+          unreadCount: 0,
+          updatedAt: conversation.updated_at || acceptedAt,
+        },
+        service.profile.id
+      );
+      return json(res, 200, {
+        ok: true,
+        message: "已打开陪玩订单会话。",
+        conversationId: conversation.id,
+        conversation: mapped,
+      });
+    }
+    if (action === "release_conversation" || action === "transfer_to_pool") {
+      const id = String(body.id || body.conversation_id || body.conversationId || "").trim();
+      if (!id) return json(res, 400, { ok: false, message: "缺少会话 ID。" });
+      const existing = (await tableRows("conversations", `?id=eq.${encodeURIComponent(id)}&limit=1`))[0];
+      if (!existing) return json(res, 404, { ok: false, message: "会话不存在。" });
+      if (existing.status === "closed" || existing.status === "ended") {
+        return json(res, 400, { ok: false, message: "会话已结束，无法转接。" });
+      }
+      if (existing.customer_service_id && existing.customer_service_id !== service.profile.id && !isAdminProfile(service.profile)) {
+        return json(res, 403, { ok: false, message: "只有当前接待客服或管理员可将会话转回公共池。" });
+      }
+      const result = await releaseConversationsToPool(service.profile, [id], "transfer");
+      if (!result.released) {
+        // Admin override when owner differs
+        if (isAdminProfile(service.profile) && existing.customer_service_id) {
+          const owner = await profileById(existing.customer_service_id);
+          const alt = await releaseConversationsToPool(owner || { id: existing.customer_service_id, display_name: "客服" }, [id], "admin");
+          if (!alt.released) return json(res, 500, { ok: false, message: "转接失败，请重试。" });
+        } else {
+          return json(res, 500, { ok: false, message: "转接失败，请重试。" });
+        }
+      }
+      const again = (await tableRows("conversations", `?id=eq.${encodeURIComponent(id)}&limit=1`))[0] || existing;
+      return json(res, 200, {
+        ok: true,
+        message: "会话已转回公共池，其他在线客服可接待。",
+        conversation: again,
+        userTip: TRANSFER_USER_TIP,
+      });
+    }
     if (action === "end_conversation") {
       const id = String(body.id || body.conversation_id || "").trim();
       const existing = (await tableRows("conversations", `?id=eq.${encodeURIComponent(id)}&limit=1`))[0];
@@ -630,7 +1930,7 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       }
       const closedAt = nowIso();
       const basePatch = {
-        status: "closed",
+        status: "ended",
         updated_at: closedAt,
       };
       // Prefer keeping customer_service_id for history; also try optional close metadata columns.
@@ -650,7 +1950,7 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         conversation = Array.isArray(rows) ? rows[0] : null;
       } catch (err) {
         const detail = String(err?.message || "");
-        if (!/closed_at|closed_by|ended_at|unread_count|schema cache|column/i.test(detail)) throw err;
+        if (!/closed_at|closed_by|ended_at|unread_count|schema cache|column|status|check|invalid/i.test(detail)) throw err;
         try {
           const rows = await supabaseJson(
             restUrl("conversations", `?id=eq.${encodeURIComponent(id)}&customer_service_id=eq.${encodeURIComponent(service.profile.id)}`),
@@ -658,7 +1958,8 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
               method: "PATCH",
               headers: serviceHeaders(),
               body: JSON.stringify({
-                ...basePatch,
+                status: /status|check|invalid/i.test(detail) ? "closed" : "ended",
+                updated_at: closedAt,
                 closed_at: closedAt,
                 closed_by: service.profile.id,
               }),
@@ -667,10 +1968,17 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
           conversation = Array.isArray(rows) ? rows[0] : null;
         } catch (err2) {
           const detail2 = String(err2?.message || "");
-          if (!/closed_at|closed_by|schema cache|column/i.test(detail2)) throw err2;
+          if (!/closed_at|closed_by|ended_at|schema cache|column|status|check|invalid/i.test(detail2)) throw err2;
           const rows = await supabaseJson(
             restUrl("conversations", `?id=eq.${encodeURIComponent(id)}&customer_service_id=eq.${encodeURIComponent(service.profile.id)}`),
-            { method: "PATCH", headers: serviceHeaders(), body: JSON.stringify(basePatch) }
+            {
+              method: "PATCH",
+              headers: serviceHeaders(),
+              body: JSON.stringify({
+                status: /status|check|invalid/i.test(detail2) ? "closed" : "ended",
+                updated_at: closedAt,
+              }),
+            }
           );
           conversation = Array.isArray(rows) ? rows[0] : null;
         }
@@ -683,6 +1991,7 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         await (await import("./_service-receptions.js")).endReceptionRecord(id, service.profile.id);
       } catch (_) {}
       let rewardEval = null;
+      let commissionEval = null;
       try {
         rewardEval = await (await import("./_cs-dock-rewards.js")).evaluateEndReceptionReward({
           serviceId: service.profile.id,
@@ -691,14 +2000,36 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       } catch (_) {
         rewardEval = { code: "ERROR", message: "奖励结算检查失败，请稍后在后台核对。", settled: false };
       }
+      try {
+        commissionEval = await (await import("./_cs-commission-settle.js")).evaluateEndReceptionCommission({
+          serviceId: service.profile.id,
+          conversation: conversation || existing,
+        });
+      } catch (_) {
+        commissionEval = {
+          code: "ERROR",
+          message: "提成结算检查失败，请稍后在后台核对。",
+          settled: false,
+          commissionAmount: 0,
+        };
+      }
       await markConversationBossMessagesRead(id, { bossId: existing.boss_id, conversation: existing });
       await addMessage(conversation || existing, service.profile.id, "customer_service", "客服已结束本次接待。", "system");
       await markConversationBossMessagesRead(id, { bossId: existing.boss_id, conversation: existing });
-      const endMessage = rewardEval?.message || "已结束接待。";
+      const consultMsg =
+        commissionEval?.consultation || commissionEval?.code === "CONSULTATION" || commissionEval?.code === "UNPAID"
+          ? "本次为普通咨询，无订单提成"
+          : "";
+      const endMessage =
+        consultMsg ||
+        commissionEval?.message ||
+        rewardEval?.message ||
+        "已结束接待。";
       return json(res, 200, {
         ok: true,
         message: endMessage,
         reward: rewardEval,
+        commission: commissionEval,
         conversation: {
           ...(conversation || existing),
           status: "closed",
@@ -737,6 +2068,17 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       if (!id) return json(res, 400, { ok: false, message: "缺少会话 ID。" });
       const existing = (await tableRows("conversations", `?id=eq.${encodeURIComponent(id)}&limit=1`))[0];
       if (!existing) return json(res, 404, { ok: false, message: "会话不存在。" });
+      const lockMsg = await lockMessageForConversation(existing, service.profile);
+      if (lockMsg) {
+        const other = await profileById(existing.customer_service_id);
+        return json(res, 403, {
+          ok: false,
+          message: lockMsg,
+          locked: true,
+          currentServiceId: existing.customer_service_id || "",
+          currentServiceName: String(other?.display_name || "").trim() || "其他客服",
+        });
+      }
       const rows = await maybeRows(
         "messages",
         `?conversation_id=eq.${encodeURIComponent(id)}&order=created_at.asc&limit=500`
@@ -759,7 +2101,12 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       }
       const convRows = await maybeRows("conversations", convQuery);
       // When incremental returns few rows, still refresh top active pool lightly for status drift.
-      let visible = (convRows || []).filter((row) => !isTestNoiseConversation(row, [], ""));
+      let visible = (convRows || []).filter((row) => {
+        const isCompanion =
+          String(row.conversation_type || "") === "companion_support" || (!row.boss_id && row.companion_id);
+        if (isCompanion) return true;
+        return !isTestNoiseConversation(row, [], "");
+      });
       if (since && visible.length < 5) {
         const top = await maybeRows("conversations", "?order=updated_at.desc&limit=40");
         const byId = {};
@@ -776,15 +2123,28 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         ),
       ];
       const profiles = await profileMap(profileIds);
-      let msgQuery = activeId
-        ? `?conversation_id=eq.${encodeURIComponent(activeId)}&order=created_at.desc&limit=80`
-        : `?order=created_at.desc&limit=120`;
+      // Always pull global recent/new messages so companion→CS traffic is not dropped
+      // when another conversation is active in the desk UI.
+      let msgRows = [];
       if (since) {
-        msgQuery = activeId
-          ? `?conversation_id=eq.${encodeURIComponent(activeId)}&created_at=gt.${encodeURIComponent(since)}&order=created_at.asc&limit=80`
-          : `?created_at=gt.${encodeURIComponent(since)}&order=created_at.asc&limit=120`;
+        msgRows = await maybeRows(
+          "messages",
+          `?created_at=gt.${encodeURIComponent(since)}&order=created_at.asc&limit=200`
+        );
+      } else {
+        msgRows = await maybeRows("messages", "?order=created_at.desc&limit=200");
       }
-      const msgRows = await maybeRows("messages", msgQuery);
+      if (activeId) {
+        const activeRows = await maybeRows(
+          "messages",
+          `?conversation_id=eq.${encodeURIComponent(activeId)}&order=created_at.desc&limit=120`
+        );
+        const byMsgId = {};
+        (msgRows || []).concat(activeRows || []).forEach((row) => {
+          if (row?.id) byMsgId[row.id] = row;
+        });
+        msgRows = Object.keys(byMsgId).map((k) => byMsgId[k]);
+      }
       const orderIds = [...new Set(visible.map((c) => c.order_id).filter(Boolean))];
       const ordersRaw = orderIds.length
         ? await maybeRows("orders", `?id=in.(${orderIds.map(encodeURIComponent).join(",")})&limit=80`)
@@ -801,21 +2161,27 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
           String(row.conversation_type || "") === "companion_support" || (!row.boss_id && row.companion_id);
         const isClosed = row.status === "closed" || row.status === "ended";
         const unreadRoles = isCompanionSupport ? ["companion"] : ["boss"];
+        const lockedByOther = conversationLockedByOther(row, service.profile.id);
+        const bossInfo = bossForCs(boss);
         return {
           id: row.id,
           bossId: row.boss_id || "",
-          bossUid: boss.boss_uid || "",
+          bossUid: bossInfo.bossUid,
           bossName: isCompanionSupport
-            ? `陪玩 · ${companionProf.display_name || "陪玩"}`
-            : boss.display_name || boss.boss_uid || "老板",
+            ? `陪玩 · ${(() => {
+                const n = String(companionProf.display_name || "").trim() || "陪玩";
+                return /@/.test(n) || /^(boss|companion|service)\./i.test(n) ? "陪玩" : n;
+              })()}`
+            : bossInfo.bossName,
           companionId: row.companion_id || "",
           conversationType: row.conversation_type || (isCompanionSupport ? "companion_support" : "general_support"),
           orderId: row.order_id || "",
           orderNo: orderNoById[row.order_id] || "",
           currentServiceId: isClosed ? row.customer_service_id || "" : row.customer_service_id || "",
-          currentServiceName: String(serviceProf.display_name || "").trim() || (row.customer_service_id ? "客服" : "待接待"),
+          currentServiceName: row.customer_service_id ? csDisplayName(serviceProf) : "待接待",
           status: isClosed ? "已结束" : row.customer_service_id ? "正在接待" : "待接待",
           rawStatus: isClosed ? "closed" : row.status || "",
+          lockedByOther,
           lastMessage: "",
           lastTime: row.updated_at || "",
           unread: 0,
@@ -827,9 +2193,13 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
           _unreadRoles: unreadRoles,
         };
       });
+      const lockedConvIds = new Set(
+        conversations.filter((c) => c.lockedByOther).map((c) => c.id)
+      );
       const messages = (msgRows || [])
         .slice()
-        .reverse()
+        .sort((a, b) => String(a.created_at || "").localeCompare(String(b.created_at || "")))
+        .filter((row) => !lockedConvIds.has(row.conversation_id))
         .map((row) => safeMessage(row, profiles));
       // Light unread recount for listed conversations using last_read_at + recent messages sample.
       const byConv = messages.reduce((m, msg) => {
@@ -837,6 +2207,13 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         return m;
       }, {});
       for (const c of conversations) {
+        if (c.lockedByOther) {
+          c.lastMessage = "该会话已由其他客服接待";
+          c.unread = 0;
+          c.unreadCount = 0;
+          delete c._unreadRoles;
+          continue;
+        }
         const list = byConv[c.id] || [];
         if (list.length) {
           const last = list[list.length - 1];
@@ -855,7 +2232,7 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       // Accurate unread for active conversation.
       if (activeId) {
         const active = conversations.find((c) => c.id === activeId);
-        if (active) {
+        if (active && !active.lockedByOther) {
           const roles = unreadRolesForConversation({
             conversation_type: active.conversationType,
             boss_id: active.bossId,
@@ -887,7 +2264,15 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         return json(res, 403, { ok: false, message: "请先点击接待后再回复。" });
       }
       if (conversation.customer_service_id !== service.profile.id) {
-        return json(res, 403, { ok: false, message: "该会话已由其他客服接待。" });
+        const other = await profileById(conversation.customer_service_id);
+        const otherName = String(other?.display_name || "").trim() || "其他客服";
+        return json(res, 403, {
+          ok: false,
+          message: `该会话已由 ${otherName} 接待`,
+          locked: true,
+          currentServiceId: conversation.customer_service_id || "",
+          currentServiceName: otherName,
+        });
       }
       let messageType = String(body.messageType || body.message_type || "text").trim() || "text";
       let content = String(body.content || "").trim();
@@ -930,6 +2315,14 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       if (action === "clock_out" && !result?.meta?.clockOutAt && !result?.already) {
         return json(res, 500, { ok: false, message: "下班打卡未写入数据库，请重试。" });
       }
+      let released = { released: 0, ids: [] };
+      if (action === "clock_out" && !result?.already) {
+        try {
+          released = await releaseConversationsToPool(service.profile, null, "off_duty");
+        } catch (_) {
+          released = { released: 0, ids: [] };
+        }
+      }
       const attendance = result.meta;
       const totalMs = Date.now() - t0;
       return json(res, 200, {
@@ -941,10 +2334,15 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
               : "上班打卡成功。"
             : result?.already
               ? "今日已下班打卡。"
-              : "下班打卡成功。",
+              : released.released
+                ? `下班打卡成功，已将会话转回公共池（${released.released}）。`
+                : "下班打卡成功。",
         attendance,
         already: !!result?.already,
         persisted: true,
+        releasedConversations: released.ids,
+        releasedCount: released.released,
+        userTip: action === "clock_out" && released.released ? TRANSFER_USER_TIP : "",
         rowId: result?.row?.id || "",
         elapsedMs: result?.elapsedMs ?? totalMs,
         totalMs,
@@ -1007,12 +2405,33 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
           /* column may be missing */
         }
       }
+      const wantHall =
+        !companionId &&
+        (o.send_to_hall === true ||
+          o.sendToHall === true ||
+          o.publish_to_hall === true ||
+          /open_grab|customer_service|custom/i.test(String(o.order_type || o.orderType || "customer_service")));
+      // A 公开抢单: companion_id null + assignment_type=public
+      // B 指定陪玩: companion_id required + assignment_type=assigned
+      if (companionId && (o.send_to_hall === true || o.sendToHall === true || o.publish_to_hall === true)) {
+        return json(res, 400, {
+          ok: false,
+          message: "指定陪玩订单不能发布到抢单大厅。请选择「指定陪玩」或清空陪玩后发布公开抢单。",
+        });
+      }
+      const assignmentType = companionId ? "assigned" : "public";
+      const orderType = String(
+        o.order_type ||
+          o.orderType ||
+          (assignmentType === "assigned" ? "direct_companion" : wantHall ? "open_grab" : "customer_service")
+      );
       const payload = {
-        order_no: orderNo("CS"),
+        order_no: await nextOrderNo(),
         boss_id: bossId,
         companion_id: companionId,
         customer_service_id: service.profile.id,
-        order_type: String(o.order_type || o.orderType || "customer_service"),
+        order_type: orderType,
+        assignment_type: assignmentType,
         game: String(o.game || ""),
         title: String(o.title || o.description || "客服创建订单"),
         description: String(o.description || o.requirements || o.title || ""),
@@ -1022,10 +2441,26 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         status: "awaiting_payment",
         created_at: nowIso(),
       };
+      // Optional appointment / headcount / note fields when columns exist.
+      const appointment = String(o.appointment_time || o.appointmentTime || o.scheduled_at || "").trim();
+      const headcount = Number(o.headcount || o.head_count || o.players || 0) || 0;
+      const bossNote = String(o.boss_note || o.bossNote || o.note || "").trim();
+      if (appointment) payload.scheduled_at = appointment;
+      if (headcount > 0) payload.headcount = headcount;
+      if (bossNote && !payload.description.includes(bossNote)) {
+        payload.description = payload.description ? `${payload.description}\n备注：${bossNote}` : bossNote;
+      }
       if (idempotencyKey) payload.idempotency_key = idempotencyKey;
       let rows;
+      async function insertOrder(body) {
+        return supabaseJson(restUrl("orders"), {
+          method: "POST",
+          headers: serviceHeaders(),
+          body: JSON.stringify(body),
+        });
+      }
       try {
-        rows = await supabaseJson(restUrl("orders"), { method: "POST", headers: serviceHeaders(), body: JSON.stringify(payload) });
+        rows = await insertOrder(payload);
       } catch (insertErr) {
         if (idempotencyKey && /duplicate|unique|idempotency/i.test(String(insertErr.message || ""))) {
           const existing = await supabaseJson(
@@ -1034,14 +2469,27 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
           ).catch(() => []);
           if (existing?.[0]) return json(res, 200, { ok: true, message: "订单已存在（幂等）。", order: existing[0], deduped: true });
         }
-        if (idempotencyKey && /column|schema cache|PGRST/i.test(String(insertErr.message || ""))) {
-          const { idempotency_key: _ik, ...rest } = payload;
-          rows = await supabaseJson(restUrl("orders"), { method: "POST", headers: serviceHeaders(), body: JSON.stringify(rest) });
+        if (/column|schema cache|PGRST/i.test(String(insertErr.message || ""))) {
+          const {
+            idempotency_key: _ik,
+            scheduled_at: _sa,
+            headcount: _hc,
+            assignment_type: _at,
+            ...rest
+          } = payload;
+          // Retry without optional columns; append appointment/headcount into description.
+          let desc = String(rest.description || "");
+          if (appointment) desc = desc ? `${desc}\n预约时间：${appointment}` : `预约时间：${appointment}`;
+          if (headcount > 0) desc = desc ? `${desc}\n人数：${headcount}` : `人数：${headcount}`;
+          rows = await insertOrder({ ...rest, description: desc });
         } else {
           throw insertErr;
         }
       }
-      const order = rows[0];
+      let order = rows[0];
+      const autoPublish =
+        !companionId &&
+        (o.send_to_hall === true || o.sendToHall === true || o.publish_to_hall === true || body.send_to_hall === true);
       const conversation = await ensureConversation({
         boss_id: bossId,
         companion_id: order.companion_id || null,
@@ -1067,15 +2515,87 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         "order_card",
         order.id
       );
-      return json(res, 200, { ok: true, message: "订单已创建，进入待付款。", order });
+      if (autoPublish) {
+        // Create + publish to hall in one step when CS explicitly requests it.
+        body.id = order.id;
+        body.action = "confirm_payment";
+        // Fall through by recursive-style inline: reuse confirm_payment path via status patch below.
+        try {
+          const walletApi = await import("./_wallet.js");
+          await walletApi
+            .debitWallet({
+              bossId: order.boss_id,
+              amount: money(order.total_amount),
+              transactionType: "order_payment",
+              idempotencyKey: `order-pay:${order.order_no || order.id}`,
+              reason: `客服代下单发送抢单大厅 ${order.order_no || order.id}`,
+              relatedOrderId: order.id,
+              operatorId: service.profile.id,
+            })
+            .catch((e) => {
+              if (!/insufficient|余额不足|not enough|idempotency|duplicate|already/i.test(String(e?.message || e || ""))) {
+                throw e;
+              }
+            });
+        } catch (_) {
+          /* offline / ops confirm allowed */
+        }
+        const { transitionOrderStatus } = await import("./_order-status.js");
+        const patched =
+          (await transitionOrderStatus(
+            { restUrl, supabaseJson, serviceHeaders },
+            {
+              orderId: order.id,
+              filterQuery: `?id=eq.${encodeURIComponent(order.id)}&status=eq.awaiting_payment`,
+              fromStatus: "awaiting_payment",
+              toStatus: "pending",
+              patch: {
+                customer_service_id: service.profile.id,
+                assignment_type: "public",
+                companion_id: null,
+                order_type: "open_grab",
+              },
+              operatorRole: "customer_service",
+              operatorId: service.profile.id,
+              note: "cs create_order auto send_to_hall",
+            }
+          ).catch(() => null)) ||
+          (await patchOrder(order.id, {
+            status: "pending",
+            customer_service_id: service.profile.id,
+            companion_id: null,
+          }));
+        order = patched || { ...order, status: "pending", assignment_type: "public", companion_id: null };
+        await addMessage(
+          conversation,
+          service.profile.id,
+          "customer_service",
+          "客服已发送订单至抢单大厅。",
+          "system",
+          order.id
+        );
+        return json(res, 200, {
+          ok: true,
+          message: "已发送至抢单大厅。",
+          order,
+          sentToGrabHall: true,
+        });
+      }
+      return json(res, 200, {
+        ok: true,
+        message: companionId ? "订单已创建，进入待付款。" : "订单已创建。请点击「发送到抢单大厅」完成发布。",
+        order,
+        needsSendToHall: !companionId,
+      });
     }
-    if (action === "confirm_payment") {
+    if (action === "confirm_payment" || action === "push_to_grab_hall" || action === "send_to_grab_hall") {
       const order = await orderById(String(body.id || body.order_id || ""));
       if (!order) return json(res, 404, { ok: false, message: "订单不存在。" });
-      if (order.status !== "awaiting_payment") return json(res, 400, { ok: false, message: "只有待付款确认订单可以确认付款。" });
+      if (order.status !== "awaiting_payment") return json(res, 400, { ok: false, message: "只有待付款确认订单可以确认付款 / 发送到抢单大厅。" });
       const amount = money(order.total_amount);
       if (!(amount > 0)) return json(res, 400, { ok: false, message: "订单金额无效，无法确认付款。" });
-      // Must debit boss wallet — never mark paid on CS click alone.
+      // Try wallet debit first; CS ops path allows zero-balance offline confirmation.
+      let walletSkipped = false;
       try {
         const walletApi = await import("./_wallet.js");
         await walletApi.debitWallet({
@@ -1090,34 +2610,76 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       } catch (e) {
         const msg = String(e?.message || e || "");
         if (/insufficient|余额不足|not enough/i.test(msg)) {
-          return json(res, 400, { ok: false, code: "INSUFFICIENT_BALANCE", message: "老板猫粮余额不足，无法确认付款。请先充值。" });
-        }
-        if (/idempotency|duplicate|already/i.test(msg)) {
+          walletSkipped = true;
+        } else if (/idempotency|duplicate|already/i.test(msg)) {
           /* already debited — continue to status transition */
         } else {
           return json(res, e.status || 400, { ok: false, message: msg || "扣款失败，未确认付款。" });
         }
       }
-      /* 指定陪玩：claimed→陪玩接单；无陪玩：pending→抢单大厅 */
+      /* 指定陪玩：claimed→陪玩接单（永不进大厅）；无陪玩：pending→抢单大厅 */
+      if (action === "push_to_grab_hall" || action === "send_to_grab_hall") {
+        if (order.companion_id) {
+          return json(res, 400, {
+            ok: false,
+            message: "该订单已指定陪玩，不能发送到公开抢单大厅。请使用「确认已付款」进入待陪玩确认。",
+          });
+        }
+      }
       const next = order.companion_id ? "claimed" : "pending";
       const { transitionOrderStatus } = await import("./_order-status.js");
-      const patched =
-        (await transitionOrderStatus(
-          { restUrl, supabaseJson, serviceHeaders },
-          {
-            orderId: order.id,
-            filterQuery: `?id=eq.${encodeURIComponent(order.id)}&status=eq.awaiting_payment`,
-            fromStatus: "awaiting_payment",
-            toStatus: next,
-            patch: {
-              customer_service_id: service.profile.id,
-              ...(next === "claimed" ? { accepted_at: nowIso() } : {}),
-            },
-            operatorRole: "customer_service",
-            operatorId: service.profile.id,
-            note: "cs confirm_payment with wallet debit",
+      const basePatch = {
+        customer_service_id: service.profile.id,
+        assignment_type: order.companion_id ? "assigned" : "public",
+        ...(order.companion_id
+          ? { order_type: order.order_type || "direct_companion", companion_id: order.companion_id }
+          : { order_type: order.order_type || "open_grab", companion_id: null }),
+      };
+      async function transitionWithOptionalPaidAt() {
+        const tryPatch = async (patch) =>
+          transitionOrderStatus(
+            { restUrl, supabaseJson, serviceHeaders },
+            {
+              orderId: order.id,
+              filterQuery: `?id=eq.${encodeURIComponent(order.id)}&status=eq.awaiting_payment`,
+              fromStatus: "awaiting_payment",
+              toStatus: next,
+              patch,
+              operatorRole: "customer_service",
+              operatorId: service.profile.id,
+              note: walletSkipped ? "cs confirm_payment ops (no wallet debit)" : "cs confirm_payment with wallet debit",
+            }
+          );
+        try {
+          return await tryPatch({ ...basePatch, paid_at: nowIso() });
+        } catch (err) {
+          const msg = String(err?.message || err || "");
+          if (/paid_at|assignment_type|order_type|PGRST204|schema cache|column/i.test(msg)) {
+            const soft = { customer_service_id: service.profile.id };
+            if (order.companion_id) soft.companion_id = order.companion_id;
+            else soft.companion_id = null;
+            try {
+              return await tryPatch(soft);
+            } catch (err2) {
+              if (!/paid_at|PGRST204|schema cache/i.test(String(err2?.message || err2))) throw err2;
+              return tryPatch(soft);
+            }
           }
-        )) || (await patchOrder(order.id, { status: next, customer_service_id: service.profile.id, ...(next === "claimed" ? { accepted_at: nowIso() } : {}) }));
+          throw err;
+        }
+      }
+      let patched = await transitionWithOptionalPaidAt();
+      if (!patched) {
+        try {
+          patched = await patchOrder(order.id, { status: next, ...basePatch, paid_at: nowIso() });
+        } catch (err) {
+          if (/paid_at|PGRST204|schema cache/i.test(String(err?.message || err))) {
+            patched = await patchOrder(order.id, { status: next, ...basePatch });
+          } else {
+            throw err;
+          }
+        }
+      }
       if (!patched || patched.status === "awaiting_payment") {
         return json(res, 409, { ok: false, message: "订单状态已变更，请刷新后重试。" });
       }
@@ -1128,21 +2690,27 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         order_id: order.id,
       });
       const sysMsg = order.companion_id
-        ? "客服已确认付款，订单已支付，正在等待陪玩确认接单。"
-        : "客服已确认付款，订单已进入抢单大厅。";
+        ? (walletSkipped
+            ? "客服已确认线下付款（未扣钱包余额），订单已支付，正在等待陪玩确认接单。"
+            : "客服已确认付款，订单已支付，正在等待陪玩确认接单。")
+        : (walletSkipped
+            ? "客服已确认线下付款（未扣钱包余额），订单已进入抢单大厅。"
+            : "客服已确认付款，订单已进入抢单大厅。");
       await addMessage(conversation, service.profile.id, "customer_service", sysMsg, "system", order.id);
       let reward = null;
       try {
-        reward = await (await import("./_cs-dock-rewards.js")).trySettleDockReward(
+        reward = await (await import("./_cs-commission-settle.js")).settleCsOrderIncome(
           { ...order, ...patched, customer_service_id: service.profile.id, status: next },
           { source: "cs_confirm_payment", forceServiceId: service.profile.id }
         );
       } catch (_) {}
+      const hallMsg = "已发送至抢单大厅。";
       return json(res, 200, {
         ok: true,
-        message: order.companion_id ? "已确认付款，等待陪玩确认接单。" : "已确认付款。",
+        message: order.companion_id ? "已确认付款，等待陪玩确认接单。" : hallMsg,
         order: patched,
         reward,
+        sentToGrabHall: !order.companion_id,
       });
     }
     if (action === "list_grabs" || action === "grab_applicants") {
@@ -1170,6 +2738,87 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
           grabs: enriched,
           bossIntent: intent,
         }),
+      });
+    }
+    if (
+      action === "push_companion_to_boss" ||
+      action === "push_to_boss" ||
+      action === "send_companion_card"
+    ) {
+      const order = await orderById(String(body.id || body.order_id || ""));
+      const companion = await resolveCompanion(String(body.companion_id || body.companionId || body.companion_uid || ""));
+      if (!order || !companion || !isUuid(companion.id)) {
+        return json(res, 400, { ok: false, message: "订单或陪玩不存在。" });
+      }
+      if (!["pending", "waiting_boss_confirm"].includes(order.status)) {
+        return json(res, 409, { ok: false, message: "当前订单状态不能推送陪玩名片给老板。" });
+      }
+      const { createOrderGrabHelpers } = await import("./_order-grabs.js");
+      const { enrichGrabCompanions } = await import("./_order-flow.js");
+      const grabsApi = createOrderGrabHelpers({ restUrl, supabaseJson, serviceHeaders });
+      const grabs = await grabsApi.listGrabs(order.id, order.note || order.description || "");
+      const hit = grabs.find((g) => g.companionId === companion.id);
+      if (!hit && grabs.length) {
+        return json(res, 409, { ok: false, message: "只能推送已抢单的陪玩。" });
+      }
+      const enriched = await enrichGrabCompanions({ restUrl, supabaseJson, serviceHeaders }, [
+        hit || { companionId: companion.id, status: "pending_customer_selection" },
+      ]);
+      const c = enriched[0]?.companion || {};
+      const card = {
+        type: "companion_card",
+        orderId: order.id,
+        orderNo: order.order_no || "",
+        companionId: companion.id,
+        nickname: c.nickname || companion.display_name || companion.nickname || "陪玩",
+        companionCode: c.companionUid || c.publicId || "",
+        avatarUrl: c.avatarUrl || c.cardImageUrl || "",
+        level: c.level || "",
+        voiceType: c.voiceType || c.voice_type || "",
+        voiceUrl: c.voiceUrl || "",
+        tags: c.tags || "",
+        certTags: c.certTags || [],
+        game: c.mainGame || c.game || order.game || "",
+        unitPrice: Number(c.price || order.unit_price || 0) || 0,
+        onlineStatus: c.onlineStatus || "",
+        onlineStatusLabel: c.onlineStatusLabel || "",
+        detailUrl: c.detailUrl || `/profile.html?player=${encodeURIComponent(companion.id)}`,
+        actions: ["view_detail", "want_him"],
+      };
+      const conversation = await resolveBossCsConversation(order, service.profile);
+      if (!conversation) {
+        return json(res, 500, { ok: false, message: "无法定位老板客服会话。" });
+      }
+      await addMessage(
+        conversation,
+        service.profile.id,
+        "customer_service",
+        `客服向您推荐陪玩：${card.nickname}（订单 ${order.order_no || order.id}）。`,
+        "text",
+        order.id
+      );
+      const msg = await addMessage(
+        conversation,
+        service.profile.id,
+        "customer_service",
+        JSON.stringify(card),
+        "companion_card",
+        order.id
+      );
+      return json(res, 200, {
+        ok: true,
+        message: "已推送陪玩名片给老板。",
+        conversationId: conversation.id,
+        messageRow: msg
+          ? {
+              id: msg.id,
+              conversationId: conversation.id,
+              messageType: msg.message_type || "companion_card",
+              content: msg.content,
+              orderId: order.id,
+            }
+          : null,
+        card,
       });
     }
     if (action === "assign_companion" || action === "push_companion" || action === "dispatch_companion" || action === "confirm_grab_assignment") {
@@ -1202,6 +2851,8 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
           }
         }
         // After payment: push companion into claimed (waiting companion confirm). Before payment keep awaiting_payment with companion bound.
+        // Direct assign (not from grabs) → assignment_type=assigned (NEVER public hall).
+        // From grabs selection → keep public history but bind companion for confirm.
         let nextStatus = "claimed";
         if (order.status === "awaiting_payment") nextStatus = "awaiting_payment";
         else if (order.status === "pending" || order.status === "claimed" || order.status === "waiting_boss_confirm") nextStatus = "claimed";
@@ -1226,29 +2877,51 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         if (grabs.length && nextStatus === "claimed") {
           await grabsApi.finalizeGrabSelection(order, companionId);
         }
+        const directAssign = !fromGrabs || !grabs.length;
+        const assignPatch = {
+          companion_id: companionId,
+          customer_service_id: service.profile.id,
+          // Do NOT set accepted_at — companion must confirm.
+          accepted_at: null,
+          assignment_type: directAssign ? "assigned" : "public",
+          order_type: directAssign ? "direct_companion" : order.order_type || "open_grab",
+        };
         const { transitionOrderStatus } = await import("./_order-status.js");
         const deps = { restUrl, supabaseJson, serviceHeaders };
-        const patched =
-          (await transitionOrderStatus(deps, {
-            orderId: order.id,
-            fromStatus: order.status,
-            toStatus: nextStatus,
-            patch: {
-              companion_id: companionId,
-              customer_service_id: service.profile.id,
-              // Do NOT set accepted_at — companion must confirm.
-              accepted_at: null,
-            },
-            operatorRole: "customer_service",
-            operatorId: service.profile.id,
-            note: `指定陪玩 ${companion.display_name || companion.email || companionId}`,
-          })) ||
-          (await patchOrder(order.id, {
-            companion_id: companionId,
-            customer_service_id: service.profile.id,
-            status: nextStatus,
-            accepted_at: null,
-          }));
+        let patched = null;
+        try {
+          patched =
+            (await transitionOrderStatus(deps, {
+              orderId: order.id,
+              fromStatus: order.status,
+              toStatus: nextStatus,
+              patch: assignPatch,
+              operatorRole: "customer_service",
+              operatorId: service.profile.id,
+              note: `指定陪玩 ${companion.display_name || companion.nickname || companionId}`,
+            })) ||
+            (await patchOrder(order.id, {
+              ...assignPatch,
+              status: nextStatus,
+            }));
+        } catch (err) {
+          if (/assignment_type|PGRST204|schema cache|column/i.test(String(err?.message || err || ""))) {
+            const { assignment_type: _a, order_type: _o, ...rest } = assignPatch;
+            patched =
+              (await transitionOrderStatus(deps, {
+                orderId: order.id,
+                fromStatus: order.status,
+                toStatus: nextStatus,
+                patch: rest,
+                operatorRole: "customer_service",
+                operatorId: service.profile.id,
+                note: `指定陪玩 ${companion.display_name || companion.nickname || companionId}`,
+              }).catch(() => null)) ||
+              (await patchOrder(order.id, { ...rest, status: nextStatus }));
+          } else {
+            throw err;
+          }
+        }
         try {
           await patchOrderNoteField({ restUrl, supabaseJson, serviceHeaders }, order.id, (text) => clearBossIntent(text));
         } catch {
@@ -1260,7 +2933,7 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
           customer_service_id: service.profile.id,
           order_id: order.id,
         });
-        const companionName = companion.display_name || companion.email || "陪玩";
+        const companionName = companion.display_name || companion.nickname || "陪玩";
         const intent = parseBossIntent(order);
         await addMessage(
           conversation,
@@ -1322,14 +2995,14 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       await addMessage(conversation, service.profile.id, "customer_service", `订单状态已更新为：${label}`, "system", id);
       let reward = null;
       try {
-        const rewardsApi = await import("./_cs-dock-rewards.js");
+        const settleApi = await import("./_cs-commission-settle.js");
         if (transition.to === "cancelled" || transition.to === "refunded") {
-          reward = await rewardsApi.clawbackOrCancelReward(patched || { ...order, status: transition.to }, {
+          reward = await settleApi.clawbackCsOrderIncome(patched || { ...order, status: transition.to }, {
             reason: transition.to === "refunded" ? "订单退款" : "订单取消",
             mode: transition.to === "refunded" ? "refund" : "cancel",
           });
         } else {
-          reward = await rewardsApi.trySettleDockReward(patched || { ...order, status: transition.to }, {
+          reward = await settleApi.settleCsOrderIncome(patched || { ...order, status: transition.to }, {
             source: "cs_status_update",
             forceServiceId: service.profile.id,
           });
@@ -1360,39 +3033,42 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       const decision = String(body.decision || "");
       const note = String(body.note || "");
       if (!note) return json(res, 400, { ok: false, message: "退款处理必须填写备注。" });
-      if (decision === "approve") {
-        const patched = await patchOrder(order.id, { status: "refunded", customer_service_id: service.profile.id });
-        try {
-          const walletApi = await import("./_wallet.js");
-          const amount = money(order.total_amount);
-          if (amount > 0) {
-            await walletApi.creditWallet({
-              bossId: order.boss_id,
-              transactionType: "refund",
-              amount,
-              balanceType: "paid",
-              idempotencyKey: `refund-paid:${order.id}`,
-              reason: note || "订单退款",
-              relatedOrderId: order.id,
-              operatorId: service.profile.id,
-            });
-          }
-        } catch (e) {
-          await supabaseJson(restUrl("transactions"), {
-            method: "POST",
-            headers: serviceHeaders(),
-            body: JSON.stringify({
-              user_id: order.boss_id,
-              order_id: order.id,
-              transaction_type: "refund",
-              amount: money(order.total_amount),
-              status: "completed",
-              note,
-              created_at: nowIso(),
-            }),
-          }).catch(() => null);
+      const refundApi = await import("./_boss-refund-payout.js");
+      // Resolve or create Friday refund row for this order
+      let refundRows = await companionDb(
+        "boss_refund_requests",
+        `?order_id=eq.${encodeURIComponent(order.id)}&status=eq.pending_review&order=created_at.desc&limit=1`
+      ).catch(() => []);
+      let refundRow = Array.isArray(refundRows) ? refundRows[0] : null;
+      if (!refundRow && decision === "approve") {
+        const created = await refundApi.createBossRefundRequest(companionDb, {
+          order,
+          boss: { id: order.boss_id, display_name: "", public_uid: "" },
+          amount: money(order.total_amount),
+          reason: note,
+        });
+        refundRow = created.refund
+          ? { id: created.refund.id, status: "pending_review" }
+          : null;
+        if (created.refund?.id) {
+          refundRows = await companionDb("boss_refund_requests", `?id=eq.${encodeURIComponent(created.refund.id)}&limit=1`).catch(() => []);
+          refundRow = refundRows?.[0] || refundRow;
         }
-        // Claw back companion income so wallet netGross deducts refunded orders.
+      }
+      if (!refundRow) {
+        return json(res, 400, { ok: false, message: "未找到待审核退款申请，请老板先提交退款。" });
+      }
+      if (decision === "approve") {
+        const result = await refundApi.csSuggestRefund(companionDb, {
+          refundId: refundRow.id,
+          decision: "approve",
+          note,
+          csProfile: service.profile,
+        });
+        if (!result.ok) return json(res, 400, result);
+        // Keep order in refund_requested until Friday payout completes; mark CS binding
+        const patched = await patchOrder(order.id, { customer_service_id: service.profile.id });
+        // Claw back companion / CS commission when approved into Friday queue (prevents withdraw of refunded income)
         if (order.companion_id) {
           try {
             const incomeRows = await supabaseJson(
@@ -1421,38 +3097,298 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
                     transaction_type: "refund",
                     amount: claw,
                     status: "completed",
-                    note: note || "订单退款扣回陪玩收入",
+                    note: note || "订单退款扣回陪玩收入（待周五退款）",
                     created_at: nowIso(),
                   }),
                 });
               }
             }
           } catch (e) {
-            /* keep refund approve even if clawback insert fails */
+            /* keep approve even if clawback insert fails */
           }
-        }
-        try {
-          const pop = await import("./_popularity.js");
-          pop.scheduleRecomputeSoft();
-        } catch (e) {
-          /* optional */
         }
         let reward = null;
         try {
-          reward = await (await import("./_cs-dock-rewards.js")).clawbackOrCancelReward(
-            patched || { ...order, status: "refunded" },
-            { reason: note || "订单退款，扣回奖励", mode: "refund" }
+          reward = await (await import("./_cs-commission-settle.js")).clawbackCsOrderIncome(
+            { ...order, status: "refund_requested" },
+            { reason: note || "订单退款入周五队列，扣回奖励", mode: "refund" }
           );
         } catch (_) {}
-        return json(res, 200, { ok: true, message: "退款已批准。", order: patched, reward });
+        return json(res, 200, {
+          ok: true,
+          message: "已批准进入周五退款队列（不会即时到账）。后台打款完成并上传凭证后，老板才会收到退款。",
+          order: patched,
+          refund: result.refund,
+          reward,
+        });
       }
+      const rejectResult = await refundApi.csSuggestRefund(companionDb, {
+        refundId: refundRow.id,
+        decision: "reject",
+        note,
+        csProfile: service.profile,
+      });
       const restore = ["in_progress", "completed", "cancelled"].includes(String(body.restore_status))
         ? String(body.restore_status)
         : "in_progress";
       const patched = await patchOrder(order.id, { status: restore, customer_service_id: service.profile.id });
-      return json(res, 200, { ok: true, message: "退款已拒绝。", order: patched });
+      return json(res, 200, {
+        ok: true,
+        message: "退款已拒绝。",
+        order: patched,
+        refund: rejectResult.refund,
+      });
     }
-    if (action === "submit_report") { return json(res, 400, { ok: false, message: "客服不能自行填写应付工资。请查看工资记录，如有异议请提交申诉。" }); }
+    if (action === "submit_report") { return json(res, 400, { ok: false, message: "客服不能自行填写应付工资。请使用「申请本周结算」，金额由系统自动计算。" }); }
+    if (
+      action === "request_salary_withdraw" ||
+      action === "request_withdraw" ||
+      action === "apply_salary" ||
+      action === "request_payroll" ||
+      action === "apply_payroll_settlement"
+    ) {
+      const workApi = await import("./_customer-service-work.js");
+      const {
+        computeSettlementDate,
+        mergeWeeklySettings,
+        viewWeeklyRules,
+        statusText: payoutStatusText,
+      } = await import("./_weekly-settlement.js");
+      const {
+        loadFinanceWeeklySettings,
+        lockPayoutSources,
+        upsertPayoutRequest,
+      } = await import("./_payout-requests.js");
+      const { companionDb } = await import("./_companion-media-store.js");
+
+      const work = await workApi.loadServiceWorkData(service.profile.id);
+      const estimated = money(work?.summary?.estimatedSalary || work?.salary?.current?.totalSalary || 0);
+      const payrollsRaw = await maybeRows(
+        "staff_payrolls",
+        `?staff_id=eq.${encodeURIComponent(service.profile.id)}&order=created_at.desc&limit=100`
+      );
+      const activeStatuses = new Set([
+        "draft",
+        "submitted",
+        "pending_friday",
+        "reviewing",
+        "pending",
+        "pending_review",
+        "approved",
+        "pending_payment",
+        "approved_pending_pay",
+        "paying",
+        "paid_pending_receipt",
+        "paid",
+        "completed",
+        "rolled_over",
+      ]);
+      const month = String(new Date().toISOString()).slice(0, 7);
+      const locked = (payrollsRaw || [])
+        .filter((p) => activeStatuses.has(String(p.status || "")) && String(p.period_start || "").slice(0, 7) === month)
+        .reduce((sum, p) => sum + money(p.net_salary_rm), 0);
+      const amount = Math.max(0, money(estimated - locked));
+      if (amount <= 0) {
+        return json(res, 400, {
+          ok: false,
+          message: "当前无可申请工资（工资中心实时计算为 0 或本月已申请/冻结）。",
+          amount: 0,
+          estimated,
+          locked,
+        });
+      }
+      // Reject any client-supplied amount — must use wage-center calculation only.
+      if (body.amount != null && Math.abs(money(body.amount) - amount) > 0.009) {
+        return json(res, 400, {
+          ok: false,
+          message: `提现金额必须等于工资中心实时计算值 RM ${amount}，不可人工修改。`,
+          amount,
+        });
+      }
+
+      const openDup = (payrollsRaw || []).find(
+        (r) =>
+          activeStatuses.has(String(r.status || "")) &&
+          String(r.period_start || "").slice(0, 7) === month &&
+          !/completed|rejected|cancelled|pay_failed/.test(String(r.status || ""))
+      );
+      if (openDup && /pending_friday|reviewing|pending_review|pending|submitted|rolled_over|approved|pending_payment|paying|paid/.test(String(openDup.status || ""))) {
+        return json(res, 409, {
+          ok: false,
+          message: `本周期已有结算单 ${openDup.payroll_no || openDup.id}（${payoutStatusText(openDup.status)}），不可重复申请。`,
+          payrollId: openDup.id,
+          settlementDate: openDup.settlement_date || "",
+        });
+      }
+
+      const draft = await workApi.payrollDraftFromAttendance(service.profile.id);
+      const weeklyCfg = await loadFinanceWeeklySettings(companionDb).catch(() => mergeWeeklySettings({}));
+      const settlementDate = computeSettlementDate(new Date(), weeklyCfg);
+      const periodKey = `cs-payroll:${service.profile.id}:${String(draft.periodStart).slice(0, 7)}`;
+      const salary = draft.salary || {};
+      const commissionRm = money(salary.orderCommission || 0);
+      let catFoodRewardRm = 0;
+      try {
+        const rewards = await maybeRows(
+          "cs_dock_rewards",
+          `?service_id=eq.${encodeURIComponent(service.profile.id)}&status=eq.settled&limit=500`
+        );
+        catFoodRewardRm = (rewards || []).reduce((s, r) => s + money(r.amount_cat_food || r.amount_rm), 0);
+      } catch {
+        catFoodRewardRm = 0;
+      }
+      const wageBreakdown = {
+        baseSalaryRm: money(draft.baseSalaryRm),
+        commissionRm,
+        catFoodRewardRm,
+        receptionBonus: money(salary.receptionBonus),
+        attendanceBonus: money(salary.attendanceBonus),
+        nightShiftAllowance: money(salary.nightShiftAllowance),
+        otherAdjustment: money(salary.otherAdjustment),
+        deductionRm: money(draft.deductionRm),
+        netSalaryRm: amount,
+        autoCalculated: true,
+        fromWageCenter: true,
+      };
+      const payrollNo = `PAYROLL-CS-${Date.now().toString(36).toUpperCase()}`;
+      const insertPayload = {
+        payroll_no: payrollNo,
+        staff_id: service.profile.id,
+        period_start: draft.periodStart,
+        period_end: draft.periodEnd,
+        work_days: draft.workDays || 0,
+        full_attendance: !!draft.fullAttendance,
+        reception_count: draft.receptionCount || 0,
+        order_count: 0,
+        base_salary_rm: money(draft.baseSalaryRm),
+        bonus_rm: money(draft.bonusRm),
+        deduction_rm: money(draft.deductionRm),
+        net_salary_rm: amount,
+        commission_rm: commissionRm,
+        cat_food_reward_rm: catFoodRewardRm,
+        wage_breakdown: wageBreakdown,
+        note: `客服申请周结（工资中心实时计算 RM ${amount}，预计发放 ${settlementDate}）`,
+        status: "pending_friday",
+        settlement_date: settlementDate,
+        source_ledger_ids: [periodKey],
+        frozen_amount_rm: amount,
+        submitted_at: nowIso(),
+        created_at: nowIso(),
+        updated_at: nowIso(),
+      };
+      let inserted = null;
+      try {
+        inserted = await supabaseJson(restUrl("staff_payrolls"), {
+          method: "POST",
+          headers: serviceHeaders(),
+          body: JSON.stringify(insertPayload),
+        });
+      } catch (err) {
+        const msg = `${err?.message || ""}`;
+        if (/Could not find the '/i.test(msg)) {
+          delete insertPayload.commission_rm;
+          delete insertPayload.cat_food_reward_rm;
+          delete insertPayload.wage_breakdown;
+          delete insertPayload.settlement_date;
+          delete insertPayload.source_ledger_ids;
+          delete insertPayload.frozen_amount_rm;
+          insertPayload.status = "pending_review";
+          try {
+            inserted = await supabaseJson(restUrl("staff_payrolls"), {
+              method: "POST",
+              headers: serviceHeaders(),
+              body: JSON.stringify(insertPayload),
+            });
+          } catch (err2) {
+            return json(res, 500, { ok: false, message: err2.message || "创建工资申请失败。" });
+          }
+        } else {
+          return json(res, 500, { ok: false, message: err.message || "创建工资申请失败。" });
+        }
+      }
+      const item = Array.isArray(inserted) ? inserted[0] : inserted;
+      if (!item?.id) return json(res, 500, { ok: false, message: "创建工资申请失败。" });
+
+      try {
+        await lockPayoutSources(companionDb, {
+          applicantId: service.profile.id,
+          sources: [{ kind: "period", id: periodKey }],
+          relatedTable: "staff_payrolls",
+          relatedRecordId: item.id,
+        });
+      } catch (lockErr) {
+        if (lockErr?.code === "SOURCE_LOCKED") {
+          try {
+            await supabaseJson(restUrl("staff_payrolls", `?id=eq.${encodeURIComponent(item.id)}`), {
+              method: "PATCH",
+              headers: serviceHeaders(),
+              body: JSON.stringify({
+                status: "cancelled",
+                note: "重复周期锁定，已撤销",
+                updated_at: nowIso(),
+              }),
+            });
+          } catch {
+            /* ignore */
+          }
+          return json(res, 409, { ok: false, message: lockErr.message });
+        }
+      }
+
+      await upsertPayoutRequest(companionDb, {
+        payoutNo: item.payroll_no || payrollNo,
+        applicantType: "customer_service",
+        applicantId: service.profile.id,
+        applicantName: service.profile.display_name || "",
+        applicantUid: service.profile.id || "",
+        amount,
+        currency: "MYR",
+        payoutMethod: "bank",
+        sourcePeriodStart: draft.periodStart,
+        sourcePeriodEnd: draft.periodEnd,
+        sourceLedgerIds: [periodKey],
+        settlementDate,
+        status: "pending_friday",
+        relatedTable: "staff_payrolls",
+        relatedRecordId: item.id,
+        meta: wageBreakdown,
+      });
+
+      try {
+        await supabaseJson(restUrl("staff_notifications"), {
+          method: "POST",
+          headers: serviceHeaders(),
+          body: JSON.stringify({
+            staff_id: service.profile.id,
+            notice_key: `payroll-submitted-${item.id}`,
+            category: "payroll",
+            title: "工资结算已提交",
+            body: `工资单 ${item.payroll_no || payrollNo} 已进入待周五结算，应发 RM ${amount}，预计发放 ${settlementDate}。`,
+            href: "/customer-service/reports/",
+            created_at: nowIso(),
+          }),
+        });
+      } catch {
+        /* optional */
+      }
+
+      return json(res, 200, {
+        ok: true,
+        message: `已提交工资结算 RM ${amount}，进入待周五结算。预计发放日期：${settlementDate}（星期五）`,
+        amount,
+        settlementDate,
+        weeklyRules: viewWeeklyRules(weeklyCfg),
+        payroll: item,
+        item: {
+          id: item.id,
+          payrollNo: item.payroll_no || payrollNo,
+          netSalaryRm: amount,
+          status: item.status || "pending_friday",
+          statusText: "待周五结算",
+          settlementDate,
+        },
+      });
+    }
     if (action === "appeal_payroll") {
       const payrollId = String(body.payrollId || body.payroll_id || body.id || "").trim();
       const reason = String(body.reason || "").trim();

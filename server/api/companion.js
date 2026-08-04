@@ -1,6 +1,7 @@
 ﻿import {
   PRIVATE_BUCKETS,
   PUBLIC_BUCKETS,
+  assertAudioUpload,
   assertImageUpload,
   buildObjectPath,
   companionDb,
@@ -27,40 +28,69 @@ import {
 } from "./_game-prices.js";
 import { loadPublicServices } from "./platform/services.js";
 import {
+  anonymousBossLabel,
+  allocateWithdrawalNo,
+  resolveBossPublicCode,
+  publicDisplayName,
+  resolveCompanionPublicCode,
+} from "./_account-codes.js";
+import {
+  normalizeSelectedVoiceTypes,
+} from "./_companion-voice-types-store.js";
+import { evaluatePublishGate } from "./_companion-publish-gate.js";
+import { resolveCertTagsForProfiles } from "./_companion-cert-tags-store.js";
+import {
   buildCompanionInbox,
   ensureCompanionSupportConversation,
+  endCompanionSupportConversation,
   sendCompanionChatMessage,
   markConversationMessagesRead,
   markNoticesRead,
   loadConversationMessages,
   viewMessage,
   buildSystemNotices,
+  loadCompanionNotifications,
   loadReadKeys,
+  insertCompanionNotification,
 } from "./_companion-inbox.js";
+import { isClosedConversationStatus } from "./_conversation-lock.js";
 import "./_load-env.js";
+import {
+  computeSettlementDate,
+  mergeWeeklySettings,
+  normalizePayoutStatus,
+  PAYOUT_STATUS_TEXT,
+  PAYOUT_FROZEN_STATUSES,
+  viewWeeklyRules,
+} from "./_weekly-settlement.js";
+import {
+  loadFinanceWeeklySettings,
+  lockPayoutSources,
+  upsertPayoutRequest,
+} from "./_payout-requests.js";
 
 const ORDER_STATUS_TEXT = COMPANION_STATUS_LABELS;
+
 const WITHDRAW_STATUS_TEXT = {
-  pending: "待审核",
-  pending_review: "待审核",
-  approved: "已通过",
-  approved_pending_pay: "已通过",
-  rejected: "已拒绝",
-  paying: "审核中",
-  paid_pending_receipt: "已通过",
-  completed: "已打款",
+  ...PAYOUT_STATUS_TEXT,
+  pending: "已提交",
+  pending_review: "待周五结算",
+  pending_friday: "待周五结算",
+  reviewing: "审核中",
+  approved: "审核通过待打款",
+  approved_pending_pay: "审核通过待打款",
+  pending_payment: "审核通过待打款",
+  paying: "审核通过待打款",
+  paid_pending_receipt: "已打款",
+  paid: "已打款",
+  completed: "已完成",
+  rejected: "已驳回",
+  rolled_over: "顺延至下周",
   pay_failed: "付款失败",
   cancelled: "已取消",
 };
-const WITHDRAW_FROZEN = new Set([
-  "pending",
-  "pending_review",
-  "approved",
-  "approved_pending_pay",
-  "paying",
-  "paid_pending_receipt",
-]);
-const WITHDRAW_ACTIVE = new Set([...WITHDRAW_FROZEN, "completed"]);
+const WITHDRAW_FROZEN = PAYOUT_FROZEN_STATUSES;
+const WITHDRAW_ACTIVE = new Set([...WITHDRAW_FROZEN, "completed", "paid"]);
 const SETTLEMENT_PREFIX = "MCJ_SETTLEMENT:";
 
 const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY"];
@@ -200,8 +230,8 @@ function buildSettlement({ order, boss = {}, companion = {}, rates, completedAt 
   return {
     orderId: order.id,
     orderNo: order.order_no || order.id,
-    bossName: boss.display_name || boss.email || "老板",
-    bossUid: boss.boss_uid || "",
+    bossName: anonymousBossLabel(boss),
+    bossUid: resolveBossPublicCode(boss),
     bossId: order.boss_id || "",
     serviceName: order.title || order.description || order.game || "陪玩服务",
     game: order.game || "",
@@ -261,6 +291,107 @@ function tokenFrom(req) { return String(req.headers["x-mcj-companion-token"] || 
 async function authUserFromToken(token) { return supabaseJson(authUrl("user"), { headers: anonHeaders({ Authorization: `Bearer ${token}` }) }); }
 async function profileById(id) { const rows = await supabaseJson(restUrl("profiles", `?id=eq.${encodeURIComponent(id)}&limit=1`), { headers: serviceHeaders() }); return rows?.[0] || null; }
 async function companionProfile(userId) { const rows = await supabaseJson(restUrl("companion_profiles", `?user_id=eq.${encodeURIComponent(userId)}&limit=1`), { headers: serviceHeaders() }); return rows?.[0] || null; }
+
+function maskEmailHint(email = "") {
+  const e = String(email || "").trim().toLowerCase();
+  const at = e.indexOf("@");
+  if (at < 1) return "";
+  const name = e.slice(0, at);
+  const domain = e.slice(at + 1);
+  const shown = name.length <= 2 ? `${name[0] || "*"}*` : `${name.slice(0, 2)}***`;
+  return `${shown}@${domain}`;
+}
+
+async function resolveCompanionAuthEmail(accountRaw = "") {
+  const account = String(accountRaw || "").trim();
+  if (!account) return null;
+  const lower = account.toLowerCase();
+  if (/^\S+@\S+\.\S+$/.test(lower)) {
+    const byEmail = await supabaseJson(
+      restUrl("profiles", `?email=eq.${encodeURIComponent(lower)}&role=eq.companion&limit=1`),
+      { headers: serviceHeaders() }
+    ).catch(() => []);
+    if (byEmail?.[0]?.email) return { email: String(byEmail[0].email).toLowerCase(), profile: byEmail[0] };
+    return { email: lower, profile: null };
+  }
+  const byPhone = await supabaseJson(
+    restUrl("profiles", `?phone=eq.${encodeURIComponent(account)}&role=eq.companion&limit=1`),
+    { headers: serviceHeaders() }
+  ).catch(() => []);
+  if (byPhone?.[0]?.email) return { email: String(byPhone[0].email).toLowerCase(), profile: byPhone[0] };
+  const byUid = await supabaseJson(
+    restUrl("companion_profiles", `?companion_uid=eq.${encodeURIComponent(account)}&select=user_id,companion_uid&limit=1`),
+    { headers: serviceHeaders() }
+  ).catch(() => []);
+  if (byUid?.[0]?.user_id) {
+    const profile = await profileById(byUid[0].user_id);
+    if (profile?.role === "companion" && profile.email) {
+      return { email: String(profile.email).toLowerCase(), profile };
+    }
+  }
+  const byName = await supabaseJson(
+    restUrl("profiles", `?display_name=eq.${encodeURIComponent(account)}&role=eq.companion&limit=1`),
+    { headers: serviceHeaders() }
+  ).catch(() => []);
+  if (byName?.[0]?.email) return { email: String(byName[0].email).toLowerCase(), profile: byName[0] };
+  return null;
+}
+
+function randomOtpCode() {
+  return String(Math.floor(100000 + Math.random() * 900000));
+}
+
+async function storePasswordResetOtp(email, code) {
+  const id = `pwr_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  const exp = Date.now() + 15 * 60 * 1000;
+  const status = `otp:${code}:exp:${exp}`;
+  try {
+    await supabaseJson(restUrl("password_reset_requests"), {
+      method: "POST",
+      headers: serviceHeaders(),
+      body: JSON.stringify({ id, account: email, role: "companion", status, created_at: new Date().toISOString() }),
+    });
+    return { id, exp };
+  } catch {
+    globalThis.__mcjPwResets = globalThis.__mcjPwResets || new Map();
+    globalThis.__mcjPwResets.set(email, { id, code, exp });
+    return { id, exp, memory: true };
+  }
+}
+
+async function findPasswordResetOtp(email) {
+  const rows = await supabaseJson(
+    restUrl(
+      "password_reset_requests",
+      `?account=eq.${encodeURIComponent(email)}&role=eq.companion&order=created_at.desc&limit=5`
+    ),
+    { headers: serviceHeaders() }
+  ).catch(() => []);
+  for (const row of rows || []) {
+    const m = String(row.status || "").match(/^otp:(\d{6}):exp:(\d+)$/);
+    if (m) return { id: row.id, code: m[1], exp: Number(m[2]), row };
+    const v = String(row.status || "").match(/^verified:([A-Za-z0-9_-]+):exp:(\d+)$/);
+    if (v) return { id: row.id, verifiedToken: v[1], exp: Number(v[2]), row };
+  }
+  const mem = globalThis.__mcjPwResets?.get(email);
+  if (mem) return mem;
+  return null;
+}
+
+async function markPasswordResetVerified(email, rowId, token) {
+  const exp = Date.now() + 15 * 60 * 1000;
+  if (rowId) {
+    await supabaseJson(restUrl("password_reset_requests", `?id=eq.${encodeURIComponent(rowId)}`), {
+      method: "PATCH",
+      headers: serviceHeaders(),
+      body: JSON.stringify({ status: `verified:${token}:exp:${exp}` }),
+    }).catch(() => null);
+  }
+  globalThis.__mcjPwResets = globalThis.__mcjPwResets || new Map();
+  globalThis.__mcjPwResets.set(email, { id: rowId || token, verifiedToken: token, exp });
+  return exp;
+}
+
 async function requireCompanion(req) {
   const token = tokenFrom(req);
   if (!token) throw Object.assign(new Error("请先登录陪玩端。"), { status: 401 });
@@ -421,16 +552,37 @@ async function synthesizeMediaFallback(profile, companion) {
   }
 
   if (companion?.voice_url) {
-    signedMedia.push({
-      id: "legacy-voice",
-      mediaType: "voice",
-      status: "approved",
-      rejectReason: "",
-      durationSeconds: null,
-      uploadedAt: companion?.updated_at || "",
-      sortOrder: 999,
-      url: companion.voice_url,
-    });
+    let voiceUrl = String(companion.voice_url || "").trim();
+    if (/^storage:\/\//i.test(voiceUrl)) {
+      const rest = voiceUrl.replace(/^storage:\/\//i, "");
+      const slash = rest.indexOf("/");
+      if (slash > 0) {
+        const bucket = rest.slice(0, slash);
+        const objectPath = rest.slice(slash + 1);
+        try {
+          voiceUrl = await createSignedUrl(bucket, objectPath, 60 * 60 * 24 * 7);
+        } catch {
+          voiceUrl = "";
+        }
+      } else {
+        voiceUrl = "";
+      }
+    } else if (/\/storage\/v1\/object\/sign\//i.test(voiceUrl) || (/[?&]token=/i.test(voiceUrl) && /\/storage\/v1\//i.test(voiceUrl))) {
+      // Stale signed URL — skip; companion_media row (if any) will provide a fresh one.
+      voiceUrl = "";
+    }
+    if (voiceUrl) {
+      signedMedia.push({
+        id: "legacy-voice",
+        mediaType: "voice",
+        status: "approved",
+        rejectReason: "",
+        durationSeconds: null,
+        uploadedAt: companion?.updated_at || "",
+        sortOrder: 999,
+        url: voiceUrl,
+      });
+    }
   }
   return signedMedia;
 }
@@ -471,14 +623,22 @@ function safePlayer(profile = {}, companion = {}) {
     price: money(companion.price),
     gamePrices,
     publicTags,
+    voiceType: String(companion.voice_type || "").trim(),
+    voice_type: String(companion.voice_type || "").trim(),
     bio: companion.description || "",
     voiceUrl: companion.voice_url || "",
     onlineStatus,
     onlineStatusLabel: statusLabel(onlineStatus),
     workStatus: statusLabel(onlineStatus),
     accountStatus: profile.status || "pending",
-    auditStatus: companion.application_status || companion.verification_status || "pending",
-    depositStatus: companion.deposit_status || "pending",
+    profileReviewStatus: normalizeProfileReviewStatus(companion),
+    profile_review_status: normalizeProfileReviewStatus(companion),
+    depositStatus: normalizeDepositStatus(companion),
+    deposit_status: normalizeDepositStatus(companion),
+    accountAccessStatus: resolveAccountAccessStatus(profile, companion).status,
+    account_access_status: resolveAccountAccessStatus(profile, companion).status,
+    accountAccessLabel: resolveAccountAccessStatus(profile, companion).label,
+    auditStatus: normalizeProfileReviewStatus(companion),
     verificationStatus: companion.verification_status || "pending",
     orderCommissionRate: resolvePlatformCommission(companion.commission_rate).platformRate,
     giftCommissionRate: money(companion.gift_commission_rate) || 0,
@@ -490,46 +650,197 @@ function safePlayer(profile = {}, companion = {}) {
     raw: { ...profile, ...companion }
   };
 }
-function depositApproved(companion = {}) {
-  return /approved|verified|passed|paid|received/.test(String(companion.deposit_status || ""));
+function normalizeProfileReviewStatus(companion = {}) {
+  const raw = String(companion.application_status || "").trim().toLowerCase();
+  if (/approved|verified|passed/.test(raw)) return "approved";
+  if (/reject/.test(raw)) return "rejected";
+  if (/resubmit|need_more/.test(raw)) return "need_more";
+  if (/^draft$|^archived$|^deleted$/.test(raw)) return "draft";
+  // submitted / pending_review → pending (审核中)
+  if (/submitted|pending_review/.test(raw)) return "pending";
+  // Legacy never-submitted register rows behave as draft for UI.
+  if (!companion.application_submitted_at && !/pending|submitted|review/.test(raw)) return "draft";
+  if (!companion.application_submitted_at && (!raw || raw === "pending")) return "draft";
+  return "pending";
 }
-function identityApproved(companion = {}) {
-  return /approved|verified|passed/.test(String(companion.verification_status || ""));
+function normalizeDepositStatus(companion = {}, depositRow = null) {
+  const raw = String(depositRow?.status || companion.deposit_status || "").trim().toLowerCase();
+  if (/approved|verified|passed|paid|received/.test(raw)) return "approved";
+  if (/reject/.test(raw)) return "rejected";
+  if (/pending|review|submitted/.test(raw)) return "pending";
+  if (/unpaid|draft|none|not_submitted/.test(raw) || !raw) return "unpaid";
+  return "pending";
 }
-function canWork(profile = {}, companion = {}) {
-  const profileOk = profile.status === "active";
-  const allowOrders = companion.allow_orders !== false;
-  const app = String(companion.application_status || "").toLowerCase();
-  if (/rejected/.test(app)) return false;
-  if (/resubmit|need_more/.test(app)) return false;
-  // 新申请待审且尚未身份通过 → 禁止；已身份通过的旧账号不因残留 pending 卡死
-  if (/pending|review|submitted/.test(app) && !identityApproved(companion)) return false;
-  return profileOk && allowOrders && identityApproved(companion) && depositApproved(companion);
+function profileReviewApproved(companion = {}) {
+  return normalizeProfileReviewStatus(companion) === "approved";
 }
-function canAccept(profile = {}, companion = {}) {
-  return canWork(profile, companion) && normalizeOnlineStatus(companion.availability_status || companion.online_status) === "online";
+function depositApproved(companion = {}, depositRow = null) {
+  return normalizeDepositStatus(companion, depositRow) === "approved";
 }
-function auditLockMessage(profile = {}, companion = {}) {
-  if (canWork(profile, companion)) return "";
+const COMPANION_AUTH_LOCK_MSG = "您的陪玩认证尚未通过，暂不可使用此功能。";
+const COMPANION_ISOLATION_MSG = "您的陪玩认证尚未通过，目前只能查看审核进度。";
+/** Actions allowed while application is not approved (isolation mode). */
+const COMPANION_ISOLATION_ALLOWED_ACTIONS = new Set([
+  "bootstrap",
+  "inbox",
+  "update_profile",
+  "submit_application",
+  "submit_verification",
+  "upload_private_doc",
+  "delete_private_doc",
+  "submit_deposit",
+  "submit_deposit_proof",
+  "upload_media",
+  "delete_media",
+  "reorder_media",
+  "start_cs_consult",
+  "open_cs_conversation",
+  "end_cs_conversation",
+  "end_conversation",
+  "send_cs_message",
+  "send_message",
+  "mark_notices_read",
+  "mark_all_read",
+  "mark_cs_read",
+  "read_cs_conversation",
+  "acknowledge_forced",
+  "ack_forced_announcement",
+  "pending_forced",
+]);
+/** Maps "companion.enabled" — no dedicated column; allow_orders / enabled flag. */
+function companionEnabled(companion = {}) {
+  if (companion.enabled === false || companion.enabled === 0 || companion.enabled === "false") return false;
+  if (companion.allow_orders === false) return false;
+  return true;
+}
+/**
+ * Isolation UI gate: draft / pending_review / rejected / need_more, or non-active account.
+ * Approved companions leave isolation even if deposit/canWork still soft-locks grab.
+ */
+function isCompanionIsolated(profile = {}, companion = {}) {
+  const accountOk = !profile.status || profile.status === "active" || profile.status === "pending";
+  if (profile.status && profile.status !== "active" && profile.status !== "pending") return true;
+  if (!accountOk) return true;
+  return normalizeProfileReviewStatus(companion) !== "approved";
+}
+/**
+ * Business API gate: application approved + companion enabled + account active.
+ */
+function assertCompanionBusinessAccess(profile = {}, companion = {}) {
+  const appOk = normalizeProfileReviewStatus(companion) === "approved";
+  const accountOk = profile.status === "active";
+  const enabled = companionEnabled(companion);
+  if (appOk && accountOk && enabled) return;
+  const err = new Error(COMPANION_ISOLATION_MSG);
+  err.status = 403;
+  err.code = "COMPANION_ISOLATED";
+  err.applicationStatus = normalizeProfileReviewStatus(companion);
+  err.accountStatus = profile.status || "";
+  err.companionEnabled = enabled;
+  throw err;
+}
+function isolationForbiddenResponse(res, err) {
+  return json(res, err?.status || 403, {
+    ok: false,
+    message: err?.message || COMPANION_ISOLATION_MSG,
+    code: err?.code || "COMPANION_ISOLATED",
+    applicationStatus: err?.applicationStatus,
+    accountStatus: err?.accountStatus,
+    companionEnabled: err?.companionEnabled,
+  });
+}
+function resolveCredentialMode(companion = {}, depositRow = null) {
+  const tagged = String(companion.credential_mode || companion.auth_mode || "").trim().toLowerCase();
+  if (tagged === "id_card" || tagged === "deposit") return tagged;
+  const note = String(companion.application_note || "");
+  const m = note.match(/\[AUTH_MODE:(id_card|deposit)\]/i);
+  if (m) return m[1].toLowerCase();
+  const depSt = normalizeDepositStatus(companion, depositRow);
+  if (depSt === "approved" || depSt === "pending") return "deposit";
+  return "id_card";
+}
+/**
+ * Work/order access: approved application + active + allow_orders.
+ * Deposit is XOR with id_card — only required when credential_mode=deposit.
+ */
+function resolveAccountAccessStatus(profile = {}, companion = {}, depositRow = null) {
+  const profileSt = normalizeProfileReviewStatus(companion);
+  const depositSt = normalizeDepositStatus(companion, depositRow);
+  const authMode = resolveCredentialMode(companion, depositRow);
   if (profile.status && profile.status !== "active" && profile.status !== "pending") {
-    return "账号已停用，无法接单。";
+    return { status: "blocked", label: "账号已停用，无法接单。" };
   }
-  const app = String(companion.application_status || "").toLowerCase();
-  if (/rejected/.test(app)) return "陪玩申请已被拒绝，无法接单。";
-  if (/resubmit|need_more/.test(app)) return "请按审核意见补交资料后再接单。";
-  if (/pending|review|submitted/.test(app) && !identityApproved(companion)) {
-    return "陪玩申请尚未通过审核，暂时无法接单。";
+  if (profile.status !== "active") {
+    return { status: "pending", label: "账号尚未启用，暂时无法接单。" };
   }
-  if (!identityApproved(companion)) {
-    return "请先完成身份认证并通过审核后再接单。";
+  if (companion.allow_orders === false && profileSt === "approved") {
+    return { status: "blocked", label: "后台已暂停该账号接单权限。" };
   }
-  if (!depositApproved(companion)) {
-    return "请先完成押金缴纳并通过审核后再接单。";
+  if (profileSt === "rejected") {
+    const appReason = String(companion.application_reject_reason || "").trim();
+    return {
+      status: "rejected",
+      label: appReason ? `审核未通过：${appReason}` : "资料审核未通过，请修改后重新提交。",
+    };
+  }
+  if (profileSt === "need_more") {
+    const appReason = String(companion.application_reject_reason || "").trim();
+    return {
+      status: "need_more",
+      label: appReason ? `需补交资料：${appReason}` : "请按审核意见补交资料后再接单。",
+    };
+  }
+  if (profileSt === "draft") {
+    return { status: "draft", label: "资料未完成，请继续填写申请。完成后提交审核。" };
+  }
+  if (profileSt !== "approved") {
+    return { status: "pending", label: "资料审核中，暂时无法接单。" };
+  }
+  // application approved
+  if (authMode === "deposit" && depositSt === "rejected") {
+    const depReason = String(depositRow?.reject_reason || companion.deposit_reject_reason || "").trim();
+    return {
+      status: "rejected",
+      label: depReason ? `押金审核未通过：${depReason}` : "押金审核未通过，请重新提交。",
+    };
+  }
+  if (authMode === "deposit" && depositSt !== "approved") {
+    if (depositSt === "unpaid") {
+      return { status: "pending", label: "请完成押金认证后再接单。" };
+    }
+    return { status: "pending", label: "押金审核中，暂时无法接单。" };
   }
   if (companion.allow_orders === false) {
-    return "后台已暂停该账号接单权限。";
+    return { status: "blocked", label: "后台已暂停该账号接单权限。" };
   }
-  return "账号审核通过后即可开始接单。";
+  return { status: "approved", label: "认证已通过，可正常接单。" };
+}
+function canWork(profile = {}, companion = {}, depositRow = null) {
+  return resolveAccountAccessStatus(profile, companion, depositRow).status === "approved";
+}
+function canAccept(profile = {}, companion = {}, depositRow = null) {
+  return canWork(profile, companion, depositRow) && normalizeOnlineStatus(companion.availability_status || companion.online_status) === "online";
+}
+function auditLockMessage(profile = {}, companion = {}, depositRow = null) {
+  const access = resolveAccountAccessStatus(profile, companion, depositRow);
+  if (access.status === "approved") return "";
+  if (access.status === "rejected" || access.status === "need_more") return access.label || COMPANION_AUTH_LOCK_MSG;
+  if (access.status === "draft") return access.label || "资料未完成，请继续填写申请。";
+  return COMPANION_AUTH_LOCK_MSG;
+}
+function applyUnifiedAccessFields(player, profile, companionRow, depositRow = null) {
+  const access = resolveAccountAccessStatus(profile, companionRow, depositRow);
+  const profileReview = normalizeProfileReviewStatus(companionRow);
+  const depositSt = normalizeDepositStatus(companionRow, depositRow);
+  player.profileReviewStatus = profileReview;
+  player.profile_review_status = profileReview;
+  player.depositStatus = depositSt;
+  player.deposit_status = depositSt;
+  player.accountAccessStatus = access.status;
+  player.account_access_status = access.status;
+  player.accountAccessLabel = access.label;
+  player.auditStatus = profileReview;
+  return access;
 }
 function stripOrderFacingText(text = "") {
   return String(text || "")
@@ -577,7 +888,7 @@ function viewOrder(row = {}, boss = {}, settlement = null) {
   let statusText = ORDER_STATUS_TEXT[row.status] || row.status || "待付款确认";
   if (row.status === "in_progress" && completionPending) statusText = "待老板确认完成";
   if (row._grabStatus === "pending_customer_selection") statusText = "等待老板选择";
-  if (row._grabStatus === "not_selected") statusText = "未被选中";
+  if (row._grabStatus === "not_selected") statusText = "该订单已由老板选择其他陪玩。";
   const serviceContent =
     description ||
     stripOrderFacingText(row.title || "") ||
@@ -595,8 +906,8 @@ function viewOrder(row = {}, boss = {}, settlement = null) {
     orderTypeKey,
     orderSource: ORDER_TYPE_TEXT[orderTypeKey] || orderTypeKey,
     companionId: row.companion_id || "",
-    bossName: boss.display_name || boss.email || "老板",
-    bossUid: boss.boss_uid || "",
+    bossName: anonymousBossLabel(boss),
+    bossUid: resolveBossPublicCode(boss),
     bossId: row.boss_id || "",
     game: row.game || "",
     gameServer: serverFromDesc || "-",
@@ -628,11 +939,19 @@ function viewOrder(row = {}, boss = {}, settlement = null) {
     settlement,
     hasSettlement: !!parsed || row.status === "completed",
     isDesignatedConfirm: row.status === "claimed",
+    assignmentType: row.assignment_type || "",
     raw: row
   };
 }
 async function bossesForOrders(orders) { const ids=[...new Set((orders||[]).map((row)=>row.boss_id).filter(Boolean))]; if(!ids.length) return {}; const rows=await supabaseJson(restUrl("profiles", `?id=in.(${ids.map(encodeURIComponent).join(",")})`), { headers: serviceHeaders() }); return Object.fromEntries((rows||[]).map((row)=>[row.id,row])); }
 async function loadOrdersFor(profile, companion, transactions = []) {
+  const {
+    resolveAssignmentType,
+    isPublicHallEligible,
+    sanitizeHallOrderView,
+    ASSIGNMENT_ASSIGNED,
+    ASSIGNMENT_PUBLIC,
+  } = await import("./_order-assignment.js");
   try {
     const { expireCompanionConfirmTimeouts } = await import("./_order-confirm-timeout.js");
     await expireCompanionConfirmTimeouts({ companionId: profile.id, limit: 40 });
@@ -641,19 +960,24 @@ async function loadOrdersFor(profile, companion, transactions = []) {
   }
   const myRows = await supabaseJson(restUrl("orders", `?companion_id=eq.${encodeURIComponent(profile.id)}&order=created_at.desc&limit=200`), { headers: serviceHeaders() });
   // Never surface unpaid designated orders (awaiting_payment) as actionable confirm tasks.
+  // Assigned pending-confirm stays in 我的订单→待确认 only.
   const visibleMine = (myRows || []).filter((row) => row.status !== "awaiting_payment");
-  const openQuery =
+  // 抢单大厅 ONLY: public + companion_id null + hall-open statuses.
+  const openQueryWithType =
+    "?and=(assignment_type.eq.public,companion_id.is.null,or(status.eq.pending,status.eq.waiting_boss_confirm))&order=created_at.desc&limit=100";
+  const openQueryFallback =
     "?and=(companion_id.is.null,or(status.eq.pending,status.eq.waiting_boss_confirm))&order=created_at.desc&limit=100";
-  // Always list open hall orders so non-online statuses can show disabled grab buttons with reasons.
-  const openRows = await supabaseJson(restUrl("orders", openQuery), { headers: serviceHeaders() }).catch(() => []);
-  // Recently settled / cancelled hall cards (keep visible with 已结单 / 已取消).
-  const settledRows = await supabaseJson(
-    restUrl(
-      "orders",
-      "?and=(companion_id.not.is.null,or(status.eq.claimed,status.eq.confirmed,status.eq.in_progress,status.eq.cancelled))&order=created_at.desc&limit=40"
-    ),
-    { headers: serviceHeaders() }
-  ).catch(() => []);
+  let openRows = [];
+  try {
+    openRows = await supabaseJson(restUrl("orders", openQueryWithType), { headers: serviceHeaders() });
+  } catch (err) {
+    if (/assignment_type|PGRST204|schema cache|column/i.test(String(err?.message || err || ""))) {
+      openRows = await supabaseJson(restUrl("orders", openQueryFallback), { headers: serviceHeaders() }).catch(() => []);
+    } else {
+      openRows = [];
+    }
+  }
+  openRows = (openRows || []).filter((row) => isPublicHallEligible(row));
   const { createOrderGrabHelpers } = await import("./_order-grabs.js");
   const { hallStateForOrder, hallStateLabel, toFlowStatus, isOrderExpired } = await import("./_order-flow.js");
   const grabsApi = createOrderGrabHelpers({ restUrl, supabaseJson, serviceHeaders });
@@ -680,6 +1004,38 @@ async function loadOrdersFor(profile, companion, transactions = []) {
       { headers: serviceHeaders() }
     ).catch(() => []);
   }
+  // Settled hall cards: ONLY public-hall history (had grabs). Never assigned-only orders.
+  // Prefer orders this companion actually grabbed; fall back to recent public settled with grabs.
+  const settledCandidateIds = [...new Set(grabOrderIds)];
+  let settledRows = [];
+  if (settledCandidateIds.length) {
+    settledRows = await supabaseJson(
+      restUrl(
+        "orders",
+        `?id=in.(${settledCandidateIds.map(encodeURIComponent).join(",")})&or=(status.eq.claimed,status.eq.confirmed,status.eq.in_progress,status.eq.cancelled,status.eq.completed)&order=created_at.desc&limit=40`
+      ),
+      { headers: serviceHeaders() }
+    ).catch(() => []);
+  }
+  // Optional: recent public settled (assignment_type=public) that others grabbed — still only if grabs exist.
+  let recentPublicSettled = [];
+  try {
+    recentPublicSettled = await supabaseJson(
+      restUrl(
+        "orders",
+        "?and=(assignment_type.eq.public,companion_id.not.is.null,or(status.eq.claimed,status.eq.confirmed,status.eq.in_progress,status.eq.cancelled))&order=created_at.desc&limit=30"
+      ),
+      { headers: serviceHeaders() }
+    );
+  } catch {
+    recentPublicSettled = [];
+  }
+  const settledById = new Map();
+  for (const row of [...(settledRows || []), ...(recentPublicSettled || [])]) {
+    if (!row?.id) continue;
+    if (resolveAssignmentType(row) === ASSIGNMENT_ASSIGNED) continue;
+    settledById.set(row.id, row);
+  }
   const openSlice = (openRows || []).slice(0, 40);
   const openNoteMap = Object.fromEntries(openSlice.map((row) => [row.id, row.note || row.description || ""]));
   const openGrabMap = await grabsApi.listGrabsBatch(
@@ -690,10 +1046,10 @@ async function loadOrdersFor(profile, companion, transactions = []) {
     const grabs = openGrabMap[row.id] || [];
     const mine = grabs.find((g) => g.companionId === profile.id);
     const hallState = hallStateForOrder(row, grabs);
-    return { ...row, _myGrab: mine || null, _grabs: grabs, _hallState: hallState };
+    return { ...row, _myGrab: mine || null, _grabs: grabs, _hallState: hallState, _hadPublicGrabs: true };
   });
   const openIds = new Set(openWithMine.map((r) => r.id));
-  const settledSlice = (settledRows || []).slice(0, 30);
+  const settledSlice = [...settledById.values()].slice(0, 30);
   const settledNoteMap = Object.fromEntries(settledSlice.map((row) => [row.id, row.note || row.description || ""]));
   const settledGrabMap = await grabsApi.listGrabsBatch(
     settledSlice.map((row) => row.id),
@@ -702,8 +1058,10 @@ async function loadOrdersFor(profile, companion, transactions = []) {
   const settledHall = [];
   for (const row of settledSlice) {
     if (openIds.has(row.id)) continue;
+    if (resolveAssignmentType({ ...row, _hadPublicGrabs: true }) === ASSIGNMENT_ASSIGNED) continue;
     const grabs = settledGrabMap[row.id] || [];
-    if (!grabs.length && !row.companion_id) continue;
+    // Hard privacy rule: no grab history ⇒ never show in public hall (blocks assigned leaks).
+    if (!grabs.length) continue;
     const createdMs = Date.parse(row.accepted_at || row.created_at || "") || 0;
     if (createdMs && Date.now() - createdMs > 1000 * 60 * 60 * 48) continue; // 48h retention
     const hallState = hallStateForOrder(row, grabs);
@@ -713,12 +1071,15 @@ async function loadOrdersFor(profile, companion, transactions = []) {
       _myGrab: grabs.find((g) => g.companionId === profile.id) || null,
       _grabs: grabs,
       _hallState: hallState,
+      _hadPublicGrabs: true,
     });
   }
   const mineIds = new Set(visibleMine.map((r) => r.id));
   const pendingSelection = [];
   for (const row of grabOrders || []) {
     if (mineIds.has(row.id)) continue;
+    // Assigned orders must not leak into "pending selection" via grab rows.
+    if (resolveAssignmentType(row) === ASSIGNMENT_ASSIGNED) continue;
     const g =
       myGrabRows.find((x) => x.order_id === row.id) ||
       myOutcomeGrabs.find((x) => x.order_id === row.id);
@@ -738,7 +1099,15 @@ async function loadOrdersFor(profile, companion, transactions = []) {
   });
   return {
     myOrders: [
-      ...visibleMine.map((row) => viewOrder(row, bossMap[row.boss_id] || {}, settlementByOrder[row.id] || null)),
+      ...visibleMine.map((row) => {
+        const v = viewOrder(row, bossMap[row.boss_id] || {}, settlementByOrder[row.id] || null);
+        return {
+          ...v,
+          assignmentType: resolveAssignmentType(row),
+          isDesignatedConfirm:
+            row.status === "claimed" && resolveAssignmentType(row) === ASSIGNMENT_ASSIGNED,
+        };
+      }),
       ...pendingSelection.map((row) =>
         viewOrder(row, bossMap[row.boss_id] || {}, settlementByOrder[row.id] || null)
       ),
@@ -746,8 +1115,9 @@ async function loadOrdersFor(profile, companion, transactions = []) {
     openOrders: [...openWithMine, ...settledHall].map((row) => {
       const viewed = viewOrder(row, bossMap[row.boss_id] || {});
       const hallState = row._hallState || hallStateForOrder(row, row._grabs || []);
-      return {
+      const hallView = {
         ...viewed,
+        assignmentType: ASSIGNMENT_PUBLIC,
         myGrab: row._myGrab || null,
         grabCount: (row._grabs || []).length,
         alreadyGrabbed: !!row._myGrab,
@@ -756,6 +1126,7 @@ async function loadOrdersFor(profile, companion, transactions = []) {
         flowStatus: toFlowStatus(row.status, { expired: isOrderExpired(row) }),
         canGrab: hallState === "open" || hallState === "grabbing",
       };
+      return sanitizeHallOrderView(hallView);
     }),
   };
 }
@@ -1004,7 +1375,8 @@ async function bootstrapData(profile, companion) {
   const warnings = [];
   // Heal stale online/busy while audit-locked so admin/companion/boss stay consistent.
   let companionRow = companion || {};
-  if (!canWork(profile, companionRow)) {
+  const isolated = isCompanionIsolated(profile, companionRow);
+  if (!canWork(profile, companionRow) || isolated) {
     const cur = normalizeOnlineStatus(companionRow.availability_status || companionRow.online_status);
     if (cur !== "offline") {
       try {
@@ -1031,20 +1403,36 @@ async function bootstrapData(profile, companion) {
     canAcceptOrder: canAccept(profile, companionRow),
     canStartOrder: canWork(profile, companionRow),
     canWithdraw: false,
-    messagesMode: "system_only",
+    messagesMode: isolated ? "system_cs_only" : "system_only",
     lockReason: auditLockMessage(profile, companionRow),
+    isolationMode: isolated,
+    applicationStatus: normalizeProfileReviewStatus(companionRow),
+    accountStatus: profile.status || "active",
+    companionEnabled: companionEnabled(companionRow),
+    isolationMessage: isolated ? COMPANION_ISOLATION_MSG : "",
+    allowedRoutes: isolated
+      ? ["review-status", "profile", "account", "login"]
+      : null,
   };
   const [cfg, levelBundle] = await Promise.all([
-    financeSettings().catch((error) => {
-      warnings.push(`finance_settings: ${error.message || error}`);
-      return {
-        min_withdraw_cat_food: 50,
-        max_withdrawals_per_month: 3,
-        cat_food_to_rm_rate: 1,
-        withdraw_fee_rm: 0,
-        withdraw_fee_percent: 0,
-      };
-    }),
+    isolated
+      ? Promise.resolve({
+          min_withdraw_cat_food: 50,
+          max_withdrawals_per_month: 3,
+          cat_food_to_rm_rate: 1,
+          withdraw_fee_rm: 0,
+          withdraw_fee_percent: 0,
+        })
+      : financeSettings().catch((error) => {
+          warnings.push(`finance_settings: ${error.message || error}`);
+          return {
+            min_withdraw_cat_food: 50,
+            max_withdrawals_per_month: 3,
+            cat_food_to_rm_rate: 1,
+            withdraw_fee_rm: 0,
+            withdraw_fee_percent: 0,
+          };
+        }),
     resolveLevelBundle(companionRow).catch((error) => {
       warnings.push(`levels: ${error.message || error}`);
       return {
@@ -1065,23 +1453,24 @@ async function bootstrapData(profile, companion) {
   let myOrders = [];
   let openOrders = [];
   let wallet = emptyWalletBundle();
-  try {
-    // Prefetch transactions for settlement notes; soft-fail inside transactionsFor.
-    const preTx = await transactionsFor(profile.id).catch((error) => {
-      warnings.push(`transactions:preload: ${error.message || error}`);
-      return [];
-    });
-    const loaded = await loadOrdersFor(profile, companionRow, preTx);
-    myOrders = loaded.myOrders || [];
-    openOrders = loaded.openOrders || [];
-  } catch (error) {
-    warnings.push(`orders: ${error.message || error}`);
-    myOrders = [];
-    openOrders = [];
+  if (!isolated) {
+    try {
+      // Prefetch transactions for settlement notes; soft-fail inside transactionsFor.
+      const preTx = await transactionsFor(profile.id).catch((error) => {
+        warnings.push(`transactions:preload: ${error.message || error}`);
+        return [];
+      });
+      const loaded = await loadOrdersFor(profile, companionRow, preTx);
+      myOrders = loaded.myOrders || [];
+      openOrders = loaded.openOrders || [];
+    } catch (error) {
+      warnings.push(`orders: ${error.message || error}`);
+      myOrders = [];
+      openOrders = [];
+    }
+    wallet = await loadWalletBundle(profile, myOrders);
+    if (wallet.warnings?.length) warnings.push(...wallet.warnings);
   }
-
-  wallet = await loadWalletBundle(profile, myOrders);
-  if (wallet.warnings?.length) warnings.push(...wallet.warnings);
   const { summary, walletLedger, earningDetails, earnings, withdrawalRows } = wallet;
 
   player.priceNeedsReset = levelBundle.priceNeedsReset;
@@ -1091,7 +1480,8 @@ async function bootstrapData(profile, companion) {
   player.level = levelBundle.level
     ? `${levelBundle.level.code || ""} ${levelBundle.level.name || ""}`.trim()
     : player.level;
-  player.orderCommissionRate = levelBundle.platformCommissionRate;
+  // Do not expose internal commission rates while isolated.
+  player.orderCommissionRate = isolated ? null : levelBundle.platformCommissionRate;
 
   let identity = null;
   let payment = null;
@@ -1099,12 +1489,39 @@ async function bootstrapData(profile, companion) {
   let media = [];
   let paymentAccounts = [];
   try {
-    const [identityRows, paymentRows, depositRows, mediaRows] = await Promise.all([
-      companionDb("companion_identity_verifications", `?user_id=eq.${encodeURIComponent(profile.id)}&limit=1`).catch((e) => (isMissingRelation(e) ? [] : Promise.reject(e))),
-      companionDb("companion_payment_accounts", `?user_id=eq.${encodeURIComponent(profile.id)}&order=submitted_at.desc&limit=20`).catch((e) => (isMissingRelation(e) ? [] : Promise.reject(e))),
-      companionDb("companion_deposits", `?user_id=eq.${encodeURIComponent(profile.id)}&order=created_at.desc&limit=1`).catch((e) => (isMissingRelation(e) ? [] : Promise.reject(e))),
-      companionDb("companion_media", `?user_id=eq.${encodeURIComponent(profile.id)}&order=sort_order.asc`).catch((e) => (isMissingRelation(e) ? [] : Promise.reject(e))),
+    const cpId = companionRow?.id || "";
+    const byProfile = (table, extra = "") =>
+      cpId
+        ? companionDb(table, `?companion_profile_id=eq.${encodeURIComponent(cpId)}${extra}`).catch((e) =>
+            isMissingRelation(e) ? [] : Promise.reject(e)
+          )
+        : Promise.resolve([]);
+    const byUser = (table, extra = "") =>
+      companionDb(table, `?user_id=eq.${encodeURIComponent(profile.id)}${extra}`).catch((e) =>
+        isMissingRelation(e) ? [] : Promise.reject(e)
+      );
+    const [identityRowsRaw, paymentRowsRaw, depositRowsRaw, mediaRowsRaw] = await Promise.all([
+      byProfile("companion_identity_verifications", "&order=updated_at.desc&limit=1"),
+      byProfile("companion_payment_accounts", "&order=submitted_at.desc&limit=20"),
+      byProfile("companion_deposits", "&order=created_at.desc&limit=1"),
+      byProfile("companion_media", "&order=sort_order.asc"),
     ]);
+    let identityRows = identityRowsRaw;
+    let paymentRows = paymentRowsRaw;
+    let depositRows = depositRowsRaw;
+    let mediaRows = mediaRowsRaw;
+    if (!identityRows?.length || !paymentRows?.length || !depositRows?.length || !mediaRows?.length) {
+      const [i2, p2, d2, m2] = await Promise.all([
+        identityRows?.length ? Promise.resolve(identityRows) : byUser("companion_identity_verifications", "&order=updated_at.desc&limit=1"),
+        paymentRows?.length ? Promise.resolve(paymentRows) : byUser("companion_payment_accounts", "&order=submitted_at.desc&limit=20"),
+        depositRows?.length ? Promise.resolve(depositRows) : byUser("companion_deposits", "&order=created_at.desc&limit=1"),
+        mediaRows?.length ? Promise.resolve(mediaRows) : byUser("companion_media", "&order=sort_order.asc"),
+      ]);
+      identityRows = i2;
+      paymentRows = p2;
+      depositRows = d2;
+      mediaRows = m2;
+    }
     identity = identityRows?.[0] || null;
     paymentAccounts = Array.isArray(paymentRows) ? paymentRows : [];
     payment = paymentAccounts.find((a) => a.status === "approved" || a.status === "verified") || paymentAccounts[0] || null;
@@ -1114,39 +1531,93 @@ async function bootstrapData(profile, companion) {
     warnings.push(`profile-assets: ${error.message || error}`);
   }
 
+  if (deposit?.status && companionRow?.id) {
+    const tableDep = String(deposit.status || "").trim();
+    const profileDep = String(companionRow.deposit_status || "").trim();
+    if (tableDep && tableDep !== profileDep) {
+      try {
+        await patchCompanionProfile(`?id=eq.${encodeURIComponent(companionRow.id)}`, {
+          deposit_status: tableDep,
+          updated_at: nowIso(),
+        });
+        companionRow = { ...companionRow, deposit_status: tableDep };
+      } catch (error) {
+        warnings.push(`deposit_status_sync: ${error.message || error}`);
+      }
+    }
+  }
+
+  const unifiedAccess = applyUnifiedAccessFields(player, profile, companionRow, deposit);
+  permissions.canWork = canWork(profile, companionRow, deposit);
+  permissions.canSetAvailable = permissions.canWork;
+  permissions.canAcceptOrder = canAccept(profile, companionRow, deposit);
+  permissions.canStartOrder = permissions.canWork;
+  permissions.lockReason = auditLockMessage(profile, companionRow, deposit);
+  permissions.isolationMode = isCompanionIsolated(profile, companionRow);
+  permissions.applicationStatus = normalizeProfileReviewStatus(companionRow);
+  permissions.accountStatus = profile.status || "active";
+  permissions.companionEnabled = companionEnabled(companionRow);
+  permissions.isolationMessage = permissions.isolationMode ? COMPANION_ISOLATION_MSG : "";
+  permissions.allowedRoutes = permissions.isolationMode
+    ? ["review-status", "profile", "account", "login"]
+    : null;
+  if (permissions.isolationMode) {
+    permissions.canWork = false;
+    permissions.canSetAvailable = false;
+    permissions.canAcceptOrder = false;
+    permissions.canStartOrder = false;
+    permissions.canWithdraw = false;
+    permissions.messagesMode = "system_cs_only";
+  }
+
   const month = monthKey();
-  const usedThisMonth = withdrawalRows.filter(
-    (w) => String(w.submitted_at || "").slice(0, 7) === month && !/rejected|cancelled/.test(w.status)
+  const weeklyCfg = mergeWeeklySettings(cfg);
+  const nextSettlement = computeSettlementDate(new Date(), weeklyCfg);
+  const usedThisWeek = withdrawalRows.filter(
+    (w) =>
+      String(w.settlement_date || "").slice(0, 10) === nextSettlement &&
+      !/rejected|cancelled|pay_failed/.test(String(w.status || ""))
   ).length;
-  const monthlyLimit = Number(cfg.max_withdrawals_per_month || 3);
+  const usedThisMonth = withdrawalRows.filter(
+    (w) => String(w.submitted_at || "").slice(0, 7) === month && !/rejected|cancelled|pay_failed/.test(String(w.status || ""))
+  ).length;
+  const weeklyLimit = Number(weeklyCfg.max_withdrawals_per_week || cfg.max_withdrawals_per_month || 2);
+  const monthlyLimit = Number(cfg.max_withdrawals_per_month || 8);
   const minAmount = money(cfg.min_withdraw_cat_food);
   const rate = money(cfg.cat_food_to_rm_rate) || 1;
-  const identityOk =
-    /approved|verified|passed/.test(String(identity?.status || "")) ||
-    /approved|verified|passed/.test(String(companionRow?.verification_status || ""));
-  const depositOk =
-    /approved|verified|passed|paid|received/.test(String(deposit?.status || "")) ||
-    /approved|verified|passed|paid|received/.test(String(companionRow?.deposit_status || ""));
+  const depositOk = depositApproved(companionRow, deposit);
   const bankOk = /approved|verified/.test(String(payment?.status || ""));
   const accountOk = profile.status === "active" && !companionRow?.withdraw_frozen;
+  const authModeWd = resolveCredentialMode(companionRow, deposit);
+  const credentialOk = authModeWd === "deposit" ? depositOk : true;
+  const openPending = withdrawalRows.some((w) =>
+    /^(submitted|pending_friday|reviewing|pending|pending_review|rolled_over)$/.test(String(w.status || ""))
+  );
   const canWithdrawNow =
-    canWork(profile, companionRow) &&
-    identityOk &&
-    depositOk &&
+    canWork(profile, companionRow, deposit) &&
+    credentialOk &&
     bankOk &&
     accountOk &&
     summary.withdrawable >= minAmount &&
-    usedThisMonth < monthlyLimit;
+    usedThisWeek < weeklyLimit &&
+    !openPending;
   permissions.canWithdraw = canWithdrawNow;
+  if (permissions.isolationMode) {
+    permissions.canWithdraw = false;
+    permissions.canWork = false;
+    permissions.canSetAvailable = false;
+    permissions.canAcceptOrder = false;
+    permissions.canStartOrder = false;
+  }
   if (!canWithdrawNow) {
-    if (!canWork(profile, companionRow)) {
-      permissions.withdrawLockReason = permissions.lockReason || "账号审核通过后即可开始接单。";
-    } else if (!identityOk) permissions.withdrawLockReason = "请先完成实名认证";
-    else if (!depositOk) permissions.withdrawLockReason = "请先完成押金审核";
+    if (!canWork(profile, companionRow, deposit)) {
+      permissions.withdrawLockReason = COMPANION_AUTH_LOCK_MSG;
+    } else if (!credentialOk) permissions.withdrawLockReason = "请先完成押金认证并通过审核";
     else if (!bankOk) permissions.withdrawLockReason = "请先提交并等待结款账户审核通过";
     else if (companionRow?.withdraw_frozen) permissions.withdrawLockReason = "提现已被冻结";
+    else if (openPending) permissions.withdrawLockReason = "已有待周五结算的提现申请，请等待处理后再提交";
     else if (summary.withdrawable < minAmount) permissions.withdrawLockReason = `可提现余额不足（最低 ${minAmount}）`;
-    else if (usedThisMonth >= monthlyLimit) permissions.withdrawLockReason = "已达本月提现次数上限";
+    else if (usedThisWeek >= weeklyLimit) permissions.withdrawLockReason = "已达本周提现次数上限";
     else if (profile.status !== "active") permissions.withdrawLockReason = "账号状态异常";
     else permissions.withdrawLockReason = permissions.lockReason || "暂不可提现";
   }
@@ -1163,11 +1634,12 @@ async function bootstrapData(profile, companion) {
       status: a.status,
     }));
 
-  const signedMedia = [];
+  const signedMediaRaw = [];
+  const seenTypes = { avatar: false, cover: false, gallery: false, voice: false, video: false };
   for (const item of media) {
     let url = "";
     try {
-      if (item.storage_bucket === PUBLIC_BUCKETS.profile) {
+      if (item.storage_bucket === PUBLIC_BUCKETS.profile || /public/i.test(String(item.storage_bucket || ""))) {
         url = publicObjectUrl(item.storage_bucket, item.storage_path);
       } else {
         url = await createSignedUrl(item.storage_bucket, item.storage_path, 60 * 60 * 24 * 7);
@@ -1175,7 +1647,7 @@ async function bootstrapData(profile, companion) {
     } catch {
       url = "";
     }
-    signedMedia.push({
+    signedMediaRaw.push({
       id: item.id,
       mediaType: item.media_type,
       status: item.status,
@@ -1183,20 +1655,90 @@ async function bootstrapData(profile, companion) {
       durationSeconds: item.duration_seconds,
       uploadedAt: item.uploaded_at,
       sortOrder: item.sort_order,
+      storagePath: item.storage_path || "",
       url,
     });
   }
-  // Soft-fallback when companion_media table is missing / empty.
-  if (!signedMedia.length) {
+  // Keep current review set only: 1 avatar, unique gallery, 1 latest voice.
+  const byUploadedDesc = (a, b) =>
+    new Date(b.uploadedAt || 0).getTime() - new Date(a.uploadedAt || 0).getTime();
+  const avatars = signedMediaRaw.filter((m) => m.mediaType === "avatar").sort(byUploadedDesc);
+  const voicesOnly = signedMediaRaw.filter((m) => m.mediaType === "voice").sort(byUploadedDesc);
+  const gallerySeen = new Set();
+  const galleryOnly = [];
+  for (const g of signedMediaRaw
+    .filter((m) => m.mediaType === "gallery")
+    .sort((a, b) => Number(a.sortOrder ?? 100) - Number(b.sortOrder ?? 100))) {
+    const key = String(g.storagePath || g.url || g.id || "").trim();
+    if (!key || gallerySeen.has(key)) continue;
+    gallerySeen.add(key);
+    galleryOnly.push(g);
+  }
+  const signedMedia = [];
+  if (avatars[0]) {
+    signedMedia.push(avatars[0]);
+    seenTypes.avatar = true;
+  }
+  for (const g of galleryOnly) {
+    signedMedia.push(g);
+    seenTypes.gallery = true;
+  }
+  if (voicesOnly[0]) {
+    signedMedia.push(voicesOnly[0]);
+    seenTypes.voice = true;
+  }
+  for (const m of signedMediaRaw) {
+    if (m.mediaType === "cover") {
+      signedMedia.push(m);
+      seenTypes.cover = true;
+    }
+  }
+  const videosOnly = signedMediaRaw.filter((m) => m.mediaType === "video").sort(byUploadedDesc);
+  if (videosOnly[0]) {
+    signedMedia.push(videosOnly[0]);
+    seenTypes.video = true;
+  }
+  // Merge synthesized fallbacks for ANY missing media type (not only when table is empty).
+  // Fixes: avatar-only companion_media rows hiding gallery tags / voice_url / storage listing.
+  {
     const synthesized = await synthesizeMediaFallback(profile, companionRow);
-    signedMedia.push(...synthesized);
+    for (const syn of synthesized) {
+      const mt = String(syn.mediaType || "");
+      if (mt === "avatar" && seenTypes.avatar) continue;
+      if (mt === "cover" && seenTypes.cover) continue;
+      if (mt === "voice" && seenTypes.voice) continue;
+      if (mt === "gallery" && seenTypes.gallery) continue;
+      if (mt === "gallery") {
+        // Allow multiple gallery items from fallback only when table had none.
+        if (signedMedia.some((m) => m.mediaType === "gallery" && m.url === syn.url)) continue;
+      }
+      if (mt === "avatar") seenTypes.avatar = true;
+      if (mt === "cover") seenTypes.cover = true;
+      if (mt === "voice") seenTypes.voice = true;
+      if (mt === "gallery") seenTypes.gallery = true;
+      signedMedia.push(syn);
+    }
+  }
+  // Prefer fresh companion_media voice URL on player payload.
+  const voiceFromMedia = signedMedia.find((m) => m.mediaType === "voice" && m.url);
+  if (voiceFromMedia) {
+    player.voiceUrl = voiceFromMedia.url;
+  } else if (/^storage:\/\//i.test(String(player.voiceUrl || ""))) {
+    player.voiceUrl = "";
+  }
+  const videoFromMedia = signedMedia.find((m) => m.mediaType === "video" && m.url);
+  if (videoFromMedia) {
+    player.videoUrl = videoFromMedia.url;
+    player.showcaseVideoUrl = videoFromMedia.url;
   }
 
   let popularity = null;
-  try {
-    popularity = await companionPopularityMe(profile.id);
-  } catch {
-    popularity = null;
+  if (!permissions.isolationMode) {
+    try {
+      popularity = await companionPopularityMe(profile.id);
+    } catch {
+      popularity = null;
+    }
   }
 
   let pendingForced = [];
@@ -1213,80 +1755,136 @@ async function bootstrapData(profile, companion) {
     permissions.forcedAckReason = "请先阅读并确认最新强制公告";
   }
 
+  const mediaExtrasForGate = {
+    avatarUrl: signedMedia.find((m) => m.mediaType === "avatar" && m.url)?.url || "",
+    voiceUrl: player.voiceUrl || "",
+    gallery: signedMedia.filter((m) => m.mediaType === "gallery" && m.url).map((m) => ({ id: m.id, url: m.url })),
+  };
+  const publishGate = evaluatePublishGate(companionRow, profile, mediaExtrasForGate);
+  permissions.publishReady = publishGate.publishReady;
+  permissions.profileComplete = publishGate.profileComplete;
+  let certTags = [];
+  try {
+    const map = await resolveCertTagsForProfiles([companionRow.id].filter(Boolean));
+    certTags = map[companionRow.id] || [];
+  } catch {
+    certTags = [];
+  }
+
   return {
     serverTime: nowIso(),
-    player,
+    player: { ...player, certTags },
     permissions,
-    pendingForced,
-    forcedAckRequired: pendingForced.length > 0,
-    summary,
-    popularity,
-    openOrders,
-    myOrders,
+    publishGate: permissions.isolationMode
+      ? { publishReady: false, profileComplete: publishGate.profileComplete, missing: publishGate.missing || [], statusLabel: "审核未通过前不对老板公开" }
+      : publishGate,
+    publishStatus: permissions.isolationMode ? "审核未通过前不对老板公开" : publishGate.statusLabel,
+    publishMissing: publishGate.missing,
+    pendingForced: permissions.isolationMode ? [] : pendingForced,
+    forcedAckRequired: permissions.isolationMode ? false : pendingForced.length > 0,
+    summary: permissions.isolationMode ? emptyWalletBundle().summary : summary,
+    popularity: permissions.isolationMode ? null : popularity,
+    openOrders: permissions.isolationMode ? [] : openOrders,
+    myOrders: permissions.isolationMode ? [] : myOrders,
     conversations: [],
     messages: [],
-    earnings: {
-      todayIncome: summary.todayIncome || 0,
-      yesterdayIncome: summary.yesterdayIncome || 0,
-      weekIncome: summary.weekIncome || 0,
-      monthIncome: summary.monthIncome || 0,
-      totalIncome: summary.totalIncome || 0,
-      withdrawable: summary.withdrawable || 0,
-      available: summary.withdrawable || 0,
-      frozen: summary.frozen || 0,
-      pendingSettlement: summary.pendingSettlement || 0,
-      withdrawn: summary.withdrawn || 0,
-    },
-    earningDetails,
-    walletLedger,
+    earnings: permissions.isolationMode
+      ? emptyWalletBundle().earnings
+      : {
+          todayIncome: summary.todayIncome || 0,
+          yesterdayIncome: summary.yesterdayIncome || 0,
+          weekIncome: summary.weekIncome || 0,
+          monthIncome: summary.monthIncome || 0,
+          totalIncome: summary.totalIncome || 0,
+          withdrawable: summary.withdrawable || 0,
+          available: summary.withdrawable || 0,
+          frozen: summary.frozen || 0,
+          pendingSettlement: summary.pendingSettlement || 0,
+          withdrawn: summary.withdrawn || 0,
+        },
+    earningDetails: permissions.isolationMode ? [] : earningDetails,
+    walletLedger: permissions.isolationMode ? [] : walletLedger,
     walletWarnings: warnings,
     warnings,
-    withdrawalRules: {
-      monthlyLimit,
-      usedThisMonth,
-      remainingThisMonth: Math.max(0, monthlyLimit - usedThisMonth),
-      minAmount,
-      exchangeRate: rate,
-      feeRm: feeFixed,
-      feePercent,
-      currentAccount: payment
-        ? `${payment.bank_name || ""} ${payment.account_name || ""} ****${payment.account_last4 || maskBankAccount(payment.bank_account).slice(-4)}`
-        : "",
-      approvedAccounts,
-    },
-    withdrawals: withdrawalRows.map((w) => ({
-      id: w.id,
-      withdrawalNo: w.withdrawal_no,
-      catFoodAmount: money(w.cat_food_amount || w.amount),
-      grossAmountRm: money(w.gross_amount_rm),
-      feeRm: money(w.fee_rm),
-      netAmountRm: money(w.net_amount_rm),
-      bankName: w.bank_name || "",
-      accountName: w.account_name || w.account_holder || "",
-      accountLast4: w.account_last4 || "",
-      status: w.status,
-      statusText: WITHDRAW_STATUS_TEXT[w.status] || w.status,
-      rejectReason: w.reject_reason || w.rejection_reason || "",
-      submittedAt: w.submitted_at || w.created_at,
-      reviewedAt: w.reviewed_at || w.approved_at || "",
-      approvedAt: w.approved_at || w.reviewed_at || "",
-      paidAt: w.paid_at || "",
-      completedAt: w.completed_at || "",
-      bankReferenceMasked: "",
-      amount: money(w.cat_food_amount || w.amount),
-      createdAt: w.submitted_at || w.created_at,
-    })),
+    withdrawalRules: permissions.isolationMode
+      ? {
+          monthlyLimit: 0,
+          usedThisMonth: 0,
+          remainingThisMonth: 0,
+          weeklyLimit: 0,
+          usedThisWeek: 0,
+          remainingThisWeek: 0,
+          minAmount: 0,
+          exchangeRate: 1,
+          feeRm: 0,
+          feePercent: 0,
+          nextSettlementDate: "",
+          settlementHint: "",
+          weeklyBanner: "",
+          currentAccount: "",
+          approvedAccounts: [],
+        }
+      : {
+          monthlyLimit,
+          usedThisMonth,
+          remainingThisMonth: Math.max(0, monthlyLimit - usedThisMonth),
+          weeklyLimit,
+          usedThisWeek,
+          remainingThisWeek: Math.max(0, weeklyLimit - usedThisWeek),
+          minAmount,
+          exchangeRate: rate,
+          feeRm: feeFixed,
+          feePercent,
+          nextSettlementDate: nextSettlement,
+          settlementHint: `预计发放日期：${nextSettlement}（星期五）`,
+          weeklyBanner: viewWeeklyRules(weeklyCfg),
+          currentAccount: payment
+            ? `${payment.bank_name || ""} ${payment.account_name || ""} ****${payment.account_last4 || maskBankAccount(payment.bank_account).slice(-4)}`
+            : "",
+          approvedAccounts,
+        },
+    withdrawals: permissions.isolationMode ? [] : await Promise.all(withdrawalRows.map((w) => viewCompanionWithdrawal(w))),
     verification: {
-      identityStatus: identity?.status || companion?.verification_status || "pending",
-      contactStatus: companion?.verification_status || "pending",
-      bankStatus: payment?.status || "pending",
-      depositStatus: deposit?.status || companion?.deposit_status || "pending",
+      identityStatus: identity?.status || "draft",
+      contactStatus: companionRow?.verification_status || "draft",
+      bankStatus: payment?.status || "draft",
+      depositStatus: normalizeDepositStatus(companionRow, deposit),
+      profile_review_status: normalizeProfileReviewStatus(companionRow),
+      profileReviewStatus: normalizeProfileReviewStatus(companionRow),
+      deposit_status: normalizeDepositStatus(companionRow, deposit),
+      account_access_status: unifiedAccess.status,
+      accountAccessStatus: unifiedAccess.status,
+      accountAccessLabel: unifiedAccess.label,
       realName: identity?.real_name || "",
       bankName: payment?.bank_name || "",
+      phone: companion?.contact_phone || "",
+      tngAccount: payment?.tng_account || "",
+      identityNoMasked: identity?.identity_no
+        ? `****${String(identity.identity_no).replace(/\s+/g, "").slice(-4)}`
+        : "",
+      bankAccountMasked: payment?.account_last4
+        ? `****${String(payment.account_last4)}`
+        : payment?.bank_account
+          ? `****${String(payment.bank_account).replace(/\s+/g, "").slice(-4)}`
+          : "",
+      hasIdentityNo: !!String(identity?.identity_no || "").trim(),
+      hasBankAccount: !!String(payment?.bank_account || payment?.account_last4 || "").trim(),
+      identitySubmitted: !!(
+        String(identity?.real_name || "").trim() &&
+        String(identity?.identity_no || "").trim() &&
+        String(identity?.id_front_path || "").trim() &&
+        String(identity?.id_back_path || "").trim() &&
+        !/draft|uploaded|none|not_submitted/i.test(String(identity?.status || ""))
+      ),
+      paymentSubmitted: !!(
+        String(payment?.bank_name || "").trim() &&
+        String(payment?.bank_account || payment?.account_last4 || "").trim() &&
+        !/draft|uploaded|none|not_submitted/i.test(String(payment?.status || ""))
+      ),
       identityRejectReason: identity?.reject_reason || "",
       paymentRejectReason: payment?.reject_reason || "",
-      applicationRejectReason: companion?.application_reject_reason || "",
-      mediaRejectReason: companion?.media_reject_reason || "",
+      applicationRejectReason: companionRow?.application_reject_reason || "",
+      mediaRejectReason: companionRow?.media_reject_reason || "",
       depositRejectReason: deposit?.reject_reason || "",
       // Signed URLs for companion self-view only (never sent to public/boss APIs).
       idFrontUrl: await signedPrivateDocUrl(PRIVATE_BUCKETS.identity, identity?.id_front_path),
@@ -1295,12 +1893,21 @@ async function bootstrapData(profile, companion) {
       hasIdBack: !!String(identity?.id_back_path || "").trim(),
     },
     deposit: {
-      status: deposit?.status || companion?.deposit_status || "pending",
+      status: normalizeDepositStatus(companionRow, deposit),
+      deposit_status: normalizeDepositStatus(companionRow, deposit),
+      profile_review_status: normalizeProfileReviewStatus(companionRow),
+      account_access_status: unifiedAccess.status,
       requiredAmount: deposit?.required_amount || 100,
       paidAmount: deposit?.paid_amount || 0,
       rejectReason: deposit?.reject_reason || "",
       paymentMethod: deposit?.payment_method || "",
       remark: deposit?.remark || "",
+      depositSubmitted: !!(
+        String(deposit?.proof_path || "").trim() &&
+        Number(deposit?.paid_amount || 0) > 0 &&
+        String(deposit?.payment_method || "").trim() &&
+        !/draft|uploaded|none|not_submitted/i.test(String(deposit?.status || ""))
+      ),
       proofUrl: await signedPrivateDocUrl(
         deposit?.proof_bucket || PRIVATE_BUCKETS.payment,
         deposit?.proof_path
@@ -1345,13 +1952,23 @@ async function loadCompanionReviews(companionUserId) {
     const rows = await supabaseJson(
       restUrl(
         "companion_reviews",
-        `?companion_id=eq.${encodeURIComponent(companionUserId)}&order=created_at.desc&limit=50&select=id,order_id,boss_id,rating,content,status,created_at`
+        `?companion_id=eq.${encodeURIComponent(companionUserId)}&or=(status.eq.published,status.is.null)&order=created_at.desc&limit=50&select=id,order_id,boss_id,rating,content,status,created_at`
       ),
       { headers: serviceHeaders() }
     );
     const list = Array.isArray(rows) ? rows : [];
-    const bossIds = [...new Set(list.map((r) => r.boss_id).filter(Boolean))];
+    // One review per order (keep newest).
+    const byOrder = new Map();
+    for (const r of list) {
+      const key = String(r.order_id || r.id || "");
+      if (!key) continue;
+      if (!byOrder.has(key)) byOrder.set(key, r);
+    }
+    const deduped = [...byOrder.values()];
+    const bossIds = [...new Set(deduped.map((r) => r.boss_id).filter(Boolean))];
+    const orderIds = [...new Set(deduped.map((r) => r.order_id).filter(Boolean))];
     let bosses = {};
+    let orders = {};
     if (bossIds.length) {
       const profiles = await supabaseJson(
         restUrl("profiles", `?id=in.(${bossIds.map(encodeURIComponent).join(",")})&select=id,display_name,boss_uid`),
@@ -1359,16 +1976,32 @@ async function loadCompanionReviews(companionUserId) {
       ).catch(() => []);
       bosses = Object.fromEntries((profiles || []).map((p) => [p.id, p]));
     }
-    return list.map((r) => {
+    if (orderIds.length) {
+      const orderRows = await supabaseJson(
+        restUrl("orders", `?id=in.(${orderIds.map(encodeURIComponent).join(",")})&select=id,order_no,game,status`),
+        { headers: serviceHeaders() }
+      ).catch(() => []);
+      orders = Object.fromEntries((orderRows || []).map((o) => [o.id, o]));
+    }
+    return deduped.map((r) => {
       const boss = bosses[r.boss_id] || {};
+      const order = orders[r.order_id] || {};
+      const bossCode = resolveBossPublicCode(boss) || "";
       return {
         id: r.id,
-        orderId: r.order_id || "",
+        orderId: order.order_no || r.order_id || "",
+        orderNo: order.order_no || r.order_id || "",
+        gameName: order.game || "",
+        game: order.game || "",
         rating: Number(r.rating || 0),
         content: r.content || "",
         status: r.status || "published",
         createdAt: r.created_at || "",
-        bossName: boss.display_name || boss.boss_uid || "老板",
+        bossName: anonymousBossLabel(boss),
+        bossUid: bossCode,
+        bossCode,
+        avatarUrl: "",
+        anonymous: true,
       };
     });
   } catch {
@@ -1384,9 +2017,11 @@ async function ensureCompanionRow(profile, companion) {
     body: JSON.stringify({
       user_id: profile.id,
       nickname: profile.display_name || "",
+      contact_phone: String(profile.phone || profile.phone_e164 || "").trim() || "",
       verification_status: "pending",
       deposit_status: "pending",
-      application_status: "pending",
+      application_status: "draft",
+      allow_orders: false,
       online_status: "offline",
       created_at: nowIso(),
       updated_at: nowIso(),
@@ -1465,13 +2100,57 @@ async function signedPrivateDocUrl(bucket, objectPath) {
     return "";
   }
 }
+
+function parseReceiptPathFromRemark(remark = "") {
+  const m = String(remark || "").match(/\[打款收据\][^\n]*path=([^\s]+)/);
+  return m?.[1] || "";
+}
+
+async function viewCompanionWithdrawal(w) {
+  let receiptPath = String(w.receipt_url || "").trim();
+  if (!receiptPath) receiptPath = parseReceiptPathFromRemark(w.remark);
+  const receiptUrl = receiptPath
+    ? await signedPrivateDocUrl("finance-receipts", receiptPath)
+    : "";
+  const statusKey = normalizePayoutStatus(w.status);
+  return {
+    id: w.id,
+    withdrawalNo: w.withdrawal_no,
+    catFoodAmount: money(w.cat_food_amount || w.amount),
+    grossAmountRm: money(w.gross_amount_rm),
+    feeRm: money(w.fee_rm),
+    netAmountRm: money(w.net_amount_rm),
+    bankName: w.bank_name || "",
+    accountName: w.account_name || w.account_holder || "",
+    accountLast4: w.account_last4 || "",
+    status: w.status,
+    statusCanonical: statusKey,
+    statusText: WITHDRAW_STATUS_TEXT[w.status] || WITHDRAW_STATUS_TEXT[statusKey] || w.status,
+    rejectReason: w.reject_reason || w.rejection_reason || "",
+    submittedAt: w.submitted_at || w.created_at,
+    reviewedAt: w.reviewed_at || w.approved_at || "",
+    approvedAt: w.approved_at || w.reviewed_at || "",
+    paidAt: w.paid_at || "",
+    completedAt: w.completed_at || "",
+    settlementDate: w.settlement_date || "",
+    settlementHint: w.settlement_date ? `预计发放日期：${String(w.settlement_date).slice(0, 10)}（星期五）` : "",
+    bankReference: w.bank_reference || w.transaction_no || "",
+    bankReferenceMasked: w.bank_reference || w.transaction_no || "",
+    transactionNo: w.transaction_no || w.bank_reference || "",
+    paymentRemark: w.payment_remark || "",
+    receiptUrl,
+    hasReceipt: !!receiptPath,
+    amount: money(w.cat_food_amount || w.amount),
+    createdAt: w.submitted_at || w.created_at,
+  };
+}
 async function ensureConversation(order) { const existing=await supabaseJson(restUrl("conversations", `?order_id=eq.${encodeURIComponent(order.id)}&limit=1`), { headers: serviceHeaders() }); if(existing?.[0]) return existing[0]; const rows=await supabaseJson(restUrl("conversations"), { method:"POST", headers: serviceHeaders(), body: JSON.stringify({ boss_id: order.boss_id, companion_id: order.companion_id || null, customer_service_id: order.customer_service_id || null, order_id: order.id, status: "open", created_at: nowIso(), updated_at: nowIso() }) }); return rows?.[0] || null; }
 async function addSystemMessage(order, senderId, senderRole, content) { const conversation=await ensureConversation(order); if(!conversation) return; await supabaseJson(restUrl("messages"), { method:"POST", headers: serviceHeaders(), body: JSON.stringify({ conversation_id: conversation.id, sender_id: senderId, sender_role: senderRole, message_type: "system", content, order_id: order.id, created_at: nowIso() }) }); }
 async function claimOrder(profile, companion, id) {
   if (!canAccept(profile, companion)) {
     const status = normalizeOnlineStatus(companion.availability_status || companion.online_status);
     const reason = !canWork(profile, companion)
-      ? "账号审核通过后即可开始接单。"
+      ? COMPANION_AUTH_LOCK_MSG
       : status === "busy"
         ? "忙碌中，无法抢新订单。"
         : status === "paused"
@@ -1482,10 +2161,13 @@ async function claimOrder(profile, companion, id) {
   const beforeRows = await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(id)}&limit=1`), { headers: serviceHeaders() });
   const before = beforeRows?.[0];
   if (!before) throw Object.assign(new Error("订单不存在。"), { status: 404 });
+  const { resolveAssignmentType, ASSIGNMENT_ASSIGNED, isPublicHallEligible } = await import("./_order-assignment.js");
   // Open grab only: never auto-bind companion_id; never jump to confirmed/in_progress.
-  const openForGrab =
-    !before.companion_id &&
-    (before.status === "pending" || before.status === "waiting_boss_confirm");
+  // Assigned / 指定陪玩 orders are invisible to the public hall and cannot be grabbed.
+  if (resolveAssignmentType(before) === ASSIGNMENT_ASSIGNED || before.companion_id) {
+    throw Object.assign(new Error("该订单为指定陪玩单，不在公开抢单大厅。"), { status: 409 });
+  }
+  const openForGrab = isPublicHallEligible(before);
   if (!openForGrab) throw Object.assign(new Error("该订单当前不可抢单。"), { status: 409 });
   if (["confirmed", "in_progress", "completed", "claimed"].includes(before.status)) {
     throw Object.assign(new Error("该订单已进入正式接单，不能再抢。"), { status: 409 });
@@ -1545,52 +2227,357 @@ async function patchOwnOrder(profile, id, expected, patch, message) {
   return saved;
 }
 
+async function trySendResetCodeEmail(email, code) {
+  try {
+    const host = process.env.SMTP_HOST || "";
+    const pass = process.env.SMTP_PASS || "";
+    const user = process.env.SMTP_USER || "";
+    if (!host || !pass) return false;
+    const nodemailer = (await import("nodemailer")).default;
+    const port = Number(process.env.SMTP_PORT || 587);
+    const transporter = nodemailer.createTransport({
+      host,
+      port,
+      secure: port === 465,
+      auth: { user: user || "apikey", pass },
+    });
+    await transporter.sendMail({
+      from: process.env.SMTP_FROM || user || ("noreply@" + String(host).replace(/^mail\./, "")),
+      to: email,
+      subject: "妙脆角陪玩端 · 密码重设验证码",
+      text: "你的验证码是：" + code + "\n\n15 分钟内有效。如非本人操作请忽略。",
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export default async function handler(req, res) {
   if (!hasDb()) return json(res, req.method === "GET" ? 200 : 503, { ok: req.method === "GET", data: { player: {}, permissions: { canAcceptOrder: false, lockReason: "真实数据库未配置" }, summary: { todayOrders: 0, waitingConfirm: 0, runningOrders: 0, completedOrders: 0, monthIncome: 0, withdrawable: 0 }, openOrders: [], myOrders: [], earnings: {}, earningDetails: [] }, message: "未配置 Supabase，陪玩端不返回假业务数据。" });
   try {
-    const action = String(req.method === "GET" ? req.query.action || "bootstrap" : (req.body?.action || ""));
+    const bodyEarly = req.method === "GET" ? null : await parseBody(req);
+    if (bodyEarly && typeof bodyEarly === "object" && (!req.body || typeof req.body !== "object")) {
+      req.body = bodyEarly;
+    }
+    const action = String(
+      req.method === "GET"
+        ? req.query.action || "bootstrap"
+        : bodyEarly?.action || req.query?.action || ""
+    ).trim();
     if (action === "login") {
-      const body = await parseBody(req); const account=String(body.account || body.email || "").trim().toLowerCase(); const password=String(body.password || "");
+      const body = bodyEarly || (await parseBody(req)); const account=String(body.account || body.email || "").trim().toLowerCase(); const password=String(body.password || "");
       if (!account || !password) return json(res,400,{ok:false,message:"请输入邮箱和密码"});
-      const auth = await supabaseJson(authUrl("token?grant_type=password"), { method:"POST", headers: anonHeaders(), body: JSON.stringify({ email: account, password }) });
+      const resolvedLogin = await resolveCompanionAuthEmail(account);
+      const email = (resolvedLogin && resolvedLogin.email) || account.toLowerCase();
+      let auth;
+      try {
+        auth = await supabaseJson(authUrl("token?grant_type=password"), { method:"POST", headers: anonHeaders(), body: JSON.stringify({ email, password }) });
+      } catch {
+        return json(res,401,{ok:false,message:"账号或密码错误"});
+      }
       const profile = await profileById(auth.user.id);
       if (!profile || profile.role !== "companion") return json(res,403,{ok:false,message:"无权访问陪玩端"});
       if (profile.status === "disabled") return json(res,403,{ok:false,message:"陪玩账号已停用"});
       const companion = await companionProfile(profile.id);
-      return json(res,200,{ok:true,session:{token:auth.access_token,user:safePlayer(profile, companion || {}),remember:!!body.remember}});
+      return json(res,200,{ok:true,session:{
+        token:auth.access_token,
+        accessToken:auth.access_token,
+        refreshToken:auth.refresh_token || "",
+        expiresAt:auth.expires_at || "",
+        user:safePlayer(profile, companion || {}),
+        remember:!!body.remember
+      }});
+    }
+    if (action === "forgot_password" || action === "send_reset_code") {
+      const body = await parseBody(req);
+      const account = String(body.account || body.email || "").trim();
+      const genericOk = {
+        ok: true,
+        message: "如该邮箱已注册，将收到重设邮件或验证码，请查收后继续。",
+        emailMasked: "",
+        expiresInSec: 900,
+      };
+      if (!account) return json(res, 400, { ok: false, message: "请输入注册邮箱" });
+      const resolved = await resolveCompanionAuthEmail(account);
+      const email = resolved && resolved.email;
+      // Anti-enumeration: always return the same success shape when lookup fails.
+      if (!email) return json(res, 200, genericOk);
+      const profile =
+        (resolved && resolved.profile) ||
+        (
+          await supabaseJson(
+            restUrl("profiles", `?role=eq.companion&email=eq.${encodeURIComponent(email)}&select=id,role,status&limit=1`),
+            { headers: serviceHeaders() }
+          ).catch(() => [])
+        )?.[0];
+      if (!profile || profile.status === "disabled") return json(res, 200, genericOk);
+      const code = randomOtpCode();
+      await storePasswordResetOtp(email, code);
+      let mailSent = await trySendResetCodeEmail(email, code);
+      try {
+        await supabaseJson(authUrl("recover"), {
+          method: "POST",
+          headers: anonHeaders(),
+          body: JSON.stringify({ email }),
+        });
+        mailSent = true;
+      } catch {
+        /* recover optional — keep SMTP result */
+      }
+      try {
+        await supabaseJson(authUrl("otp"), {
+          method: "POST",
+          headers: anonHeaders(),
+          body: JSON.stringify({ email, create_user: false }),
+        });
+        mailSent = true;
+      } catch {
+        /* otp optional */
+      }
+      const masked = maskEmailHint(email);
+      return json(res, 200, {
+        ok: true,
+        message: mailSent
+          ? `如该邮箱已注册，验证码 / 重设邮件已发送至 ${masked || "你的邮箱"}。`
+          : "如该邮箱已注册，将收到重设邮件或验证码，请查收后继续。",
+        emailMasked: masked,
+        expiresInSec: 900,
+      });
+    }
+    if (action === "verify_reset_code") {
+      const body = await parseBody(req);
+      const account = String(body.account || body.email || "").trim();
+      const code = String(body.code || body.otp || "").trim();
+      const resolvedV = await resolveCompanionAuthEmail(account);
+      const email = resolvedV && resolvedV.email;
+      if (!email || !/^\d{4,8}$/.test(code)) {
+        return json(res, 400, { ok: false, message: "验证码无效或已过期" });
+      }
+      const stored = await findPasswordResetOtp(email);
+      if (stored && stored.code && String(stored.code) === code && Number(stored.exp) > Date.now()) {
+        const token = "mcj_" + randomOtpCode() + Date.now().toString(36);
+        await markPasswordResetVerified(email, stored.id, token);
+        // One-time: wipe OTP code from memory after issue token
+        return json(res, 200, { ok: true, message: "验证成功，请设置新密码", resetToken: token, emailMasked: maskEmailHint(email) });
+      }
+      try {
+        const verified = await supabaseJson(authUrl("verify"), {
+          method: "POST",
+          headers: anonHeaders(),
+          body: JSON.stringify({ type: "email", email, token: code }),
+        });
+        if (verified?.access_token) {
+          return json(res, 200, {
+            ok: true,
+            message: "验证成功，请设置新密码",
+            resetToken: verified.access_token,
+            emailMasked: maskEmailHint(email),
+          });
+        }
+      } catch {
+        /* fall through */
+      }
+      try {
+        const verified = await supabaseJson(authUrl("verify"), {
+          method: "POST",
+          headers: anonHeaders(),
+          body: JSON.stringify({ type: "recovery", email, token: code }),
+        });
+        if (verified?.access_token) {
+          return json(res, 200, {
+            ok: true,
+            message: "验证成功，请设置新密码",
+            resetToken: verified.access_token,
+            emailMasked: maskEmailHint(email),
+          });
+        }
+      } catch {
+        /* fall through */
+      }
+      return json(res, 400, { ok: false, message: "验证码无效或已过期" });
+    }
+    if (action === "reset_password") {
+      const body = await parseBody(req);
+      const newPassword = String(body.newPassword || body.password || "");
+      const confirmPassword = String(body.confirmPassword || body.confirm_password || "");
+      if (!newPassword || newPassword.length < 8) return json(res, 400, { ok: false, message: "新密码至少 8 位" });
+      if (confirmPassword && confirmPassword !== newPassword) {
+        return json(res, 400, { ok: false, message: "两次输入的新密码不一致" });
+      }
+      const resetToken = String(body.resetToken || body.token || "").trim();
+      if (!resetToken) return json(res, 400, { ok: false, message: "请先完成验证码校验" });
+      if (resetToken.startsWith("mcj_") || resetToken.startsWith("mcj:")) {
+        if (resetToken.startsWith("mcj_")) {
+          const resolvedR = await resolveCompanionAuthEmail(String(body.account || body.email || ""));
+          const emailR = resolvedR && resolvedR.email;
+          if (!emailR) return json(res, 400, { ok: false, message: "缺少账号信息" });
+          const storedR = await findPasswordResetOtp(emailR);
+          if (!storedR || storedR.verifiedToken !== resetToken || Number(storedR.exp) < Date.now()) {
+            return json(res, 400, { ok: false, message: "重置凭证无效或已过期，请重新获取验证码" });
+          }
+          const rowsR = await supabaseJson(
+            restUrl("profiles", "?role=eq.companion&email=eq." + encodeURIComponent(emailR) + "&select=id&limit=1"),
+            { headers: serviceHeaders() }
+          ).catch(() => []);
+          const profileR = (resolvedR && resolvedR.profile) || (rowsR && rowsR[0]);
+          if (!profileR || !profileR.id) return json(res, 404, { ok: false, message: "账号不存在" });
+          await supabaseJson(authUrl("admin/users/" + encodeURIComponent(profileR.id)), {
+            method: "PUT",
+            headers: serviceHeaders(),
+            body: JSON.stringify({ password: newPassword }),
+          });
+          if (globalThis.__mcjPwResets) globalThis.__mcjPwResets.delete(emailR);
+          return json(res, 200, { ok: true, message: "密码已重设，请使用新密码登录" });
+        }
+        if (resetToken.startsWith("mcj:")) {
+        let payload;
+        try {
+          payload = JSON.parse(Buffer.from(resetToken.slice(4), "base64url").toString("utf8"));
+        } catch {
+          return json(res, 400, { ok: false, message: "重置凭证无效，请重新获取验证码" });
+        }
+        if (!payload?.email || Date.now() - Number(payload.at || 0) > 20 * 60 * 1000) {
+          return json(res, 400, { ok: false, message: "重置凭证已过期，请重新获取验证码" });
+        }
+        const profile = (
+          await supabaseJson(
+            restUrl("profiles", `?role=eq.companion&email=eq.${encodeURIComponent(payload.email)}&select=id&limit=1`),
+            { headers: serviceHeaders() }
+          ).catch(() => [])
+        )?.[0];
+        if (!profile?.id) return json(res, 404, { ok: false, message: "账号不存在" });
+        await supabaseJson(authUrl(`admin/users/${encodeURIComponent(profile.id)}`), {
+          method: "PUT",
+          headers: serviceHeaders(),
+          body: JSON.stringify({ password: newPassword }),
+        });
+        return json(res, 200, { ok: true, message: "密码已重设，请使用新密码登录" });
+        }
+      }
+      // Supabase recovery/session token path
+      try {
+        await supabaseJson(authUrl("user"), {
+          method: "PUT",
+          headers: anonHeaders({ Authorization: `Bearer ${resetToken}` }),
+          body: JSON.stringify({ password: newPassword }),
+        });
+        return json(res, 200, { ok: true, message: "密码已重设，请使用新密码登录" });
+      } catch (err) {
+        return json(res, 400, { ok: false, message: err.message || "重设失败，请重新获取验证码" });
+      }
     }
     if (action === "register") {
       const body = await parseBody(req); const email=String(body.email || body.account || "").trim().toLowerCase(); const password=String(body.password || ""); const nickname=String(body.nickname || body.name || "").trim();
+      const phoneReg = String(body.phone || "").trim();
       if (!email || !/^\S+@\S+\.\S+$/.test(email)) return json(res,400,{ok:false,message:"请输入有效邮箱"});
       if (!password || password.length < 8) return json(res,400,{ok:false,message:"密码至少 8 位"});
       if (!nickname) return json(res,400,{ok:false,message:"请输入陪玩昵称"});
+      // Block register when email/phone already belongs to a formal (approved) companion,
+      // or an active draft/pending application (must login to continue, not create duplicates).
+      try {
+        const { isFormalCompanion, isApplicationDraft } = await import("./_companion-draft.js");
+        const emailProfiles = await supabaseJson(
+          restUrl("profiles", `?email=eq.${encodeURIComponent(email)}&select=id,email,phone,phone_e164,role&limit=5`),
+          { headers: serviceHeaders() }
+        ).catch(() => []);
+        for (const ep of Array.isArray(emailProfiles) ? emailProfiles : []) {
+          const cp = await companionProfile(ep.id);
+          if (!cp) continue;
+          if (isFormalCompanion(cp)) {
+            return json(res, 409, { ok: false, message: "该邮箱已是正式陪玩账号，请直接登录。" });
+          }
+          const st = String(cp.application_status || "").toLowerCase();
+          if (!/archived|deleted/.test(st) && (isApplicationDraft(cp) || /pending|submitted|review|reject|resubmit|need_more/.test(st))) {
+            return json(res, 409, { ok: false, message: "该邮箱已有陪玩申请，请直接登录陪玩端继续填写或查看审核进度。" });
+          }
+        }
+        if (phoneReg) {
+          const phoneProfiles = await supabaseJson(
+            restUrl(
+              "profiles",
+              `?or=(phone.eq.${encodeURIComponent(phoneReg)},phone_e164.eq.${encodeURIComponent(phoneReg)})&select=id,email,phone,phone_e164&limit=10`
+            ),
+            { headers: serviceHeaders() }
+          ).catch(() => []);
+          for (const pp of Array.isArray(phoneProfiles) ? phoneProfiles : []) {
+            const cp = await companionProfile(pp.id);
+            if (!cp) continue;
+            if (isFormalCompanion(cp)) {
+              return json(res, 409, { ok: false, message: "该手机号已绑定正式陪玩账号。" });
+            }
+            const st = String(cp.application_status || "").toLowerCase();
+            if (!/archived|deleted/.test(st) && (isApplicationDraft(cp) || /pending|submitted|review|reject|resubmit|need_more/.test(st))) {
+              return json(res, 409, { ok: false, message: "该手机号已有陪玩申请，请直接登录陪玩端继续。" });
+            }
+          }
+        }
+      } catch (uniqErr) {
+        console.warn("[companion/register] uniqueness probe:", uniqErr?.message || uniqErr);
+      }
       const created = await supabaseJson(authUrl("admin/users"), { method:"POST", headers: serviceHeaders(), body: JSON.stringify({ email, password, email_confirm: true, user_metadata: { display_name: nickname } }) });
-      await supabaseJson(restUrl("profiles"), { method:"POST", headers: serviceHeaders(), body: JSON.stringify({ id: created.id, role: "companion", display_name: nickname, email, phone: String(body.phone || ""), status: "active", created_at: nowIso() }) });
-      await supabaseJson(restUrl("companion_profiles"), { method:"POST", headers: serviceHeaders(), body: JSON.stringify({ user_id: created.id, nickname, verification_status: "pending", deposit_status: "pending", online_status: "offline", created_at: nowIso(), updated_at: nowIso() }) });
+      await supabaseJson(restUrl("profiles"), { method:"POST", headers: serviceHeaders(), body: JSON.stringify({ id: created.id, role: "companion", display_name: nickname, email, phone: phoneReg, status: "active", created_at: nowIso() }) });
+      await supabaseJson(restUrl("companion_profiles"), { method:"POST", headers: serviceHeaders(), body: JSON.stringify({ user_id: created.id, nickname, contact_phone: phoneReg || "", verification_status: "pending", deposit_status: "pending", application_status: "draft", allow_orders: false, online_status: "offline", created_at: nowIso(), updated_at: nowIso() }) });
       const auth = await supabaseJson(authUrl("token?grant_type=password"), { method:"POST", headers: anonHeaders(), body: JSON.stringify({ email, password }) });
       const profile = await profileById(created.id);
       const companion = await companionProfile(created.id);
-      return json(res,200,{ok:true,message:"陪玩账号已创建，请继续提交资料审核。",session:{token:auth.access_token,user:safePlayer(profile, companion || {}),remember:!!body.remember}});
+      return json(res,200,{ok:true,message:"陪玩账号已创建，请继续填写资料。草稿不会出现在正式陪玩列表。",session:{token:auth.access_token,user:safePlayer(profile, companion || {}),remember:!!body.remember}});
     }
     const auth = await requireCompanion(req);
     const companion = auth.companion || await companionProfile(auth.profile.id) || {};
+    const isolated = isCompanionIsolated(auth.profile, companion);
+    if (isolated && !COMPANION_ISOLATION_ALLOWED_ACTIONS.has(action || "bootstrap")) {
+      return isolationForbiddenResponse(res, {
+        status: 403,
+        message: COMPANION_ISOLATION_MSG,
+        code: "COMPANION_ISOLATED",
+        applicationStatus: normalizeProfileReviewStatus(companion),
+        accountStatus: auth.profile.status || "",
+        companionEnabled: companionEnabled(companion),
+      });
+    }
     if (req.method === "GET" && action === "bootstrap") return json(res,200,{ok:true,data:await bootstrapData(auth.profile, companion)});
     if (req.method === "GET" && action === "inbox") {
-      const data = await bootstrapData(auth.profile, companion);
-      const inbox = await buildCompanionInbox(auth.profile, companion, {
-        player: data.player,
-        verification: data.verification,
-        deposit: data.deposit,
-        myOrders: data.myOrders,
-        withdrawals: data.withdrawals,
-        popularity: data.popularity,
-        auditLocked: !data.permissions?.canWork,
-        auditHint: data.permissions?.lockReason || "",
-      });
-      data.summary = { ...(data.summary || {}), unreadMessages: inbox.unreadTotal };
-      return json(res, 200, { ok: true, data: inbox, inbox });
+      const activeConversationId = String(req.query.conversation_id || req.query.conversationId || "").trim();
+      try {
+        const data = await bootstrapData(auth.profile, companion).catch(() => ({}));
+        const inbox = await buildCompanionInbox(auth.profile, companion, {
+          player: data.player,
+          verification: data.verification,
+          deposit: data.deposit,
+          myOrders: data.permissions?.isolationMode ? [] : data.myOrders,
+          withdrawals: data.permissions?.isolationMode ? [] : data.withdrawals,
+          popularity: data.permissions?.isolationMode ? null : data.popularity,
+          auditLocked: !data.permissions?.canWork || !!data.permissions?.isolationMode,
+          auditHint: data.permissions?.isolationMessage || data.permissions?.lockReason || "",
+          activeConversationId,
+        });
+        return json(res, 200, { ok: true, data: inbox, inbox });
+      } catch (err) {
+        return json(res, 200, {
+          ok: true,
+          data: {
+            conversations: [
+              { id: "system", key: "system", type: "system", title: "系统通知", subtitle: "", lastMessage: "", unread: 0 },
+            ],
+            csConversations: [],
+            csConversationId: "",
+            messages: [],
+            systemNotices: [],
+            unreadTotal: 0,
+            unreadMessages: 0,
+            connectError: err.message || "客服连接失败",
+          },
+          message: err.message || "客服连接失败",
+        });
+      }
     }
     if (req.method === "GET" && (action === "wallet" || action === "earnings")) {
+      try {
+        assertCompanionBusinessAccess(auth.profile, companion);
+      } catch (err) {
+        return isolationForbiddenResponse(res, err);
+      }
       if (!auth.profile?.id) {
         return json(res, 403, { ok: false, message: "profile_id 为空，无法查询钱包" });
       }
@@ -1645,19 +2632,7 @@ export default async function handler(req, res) {
           earnings: wallet.earnings,
           walletLedger: wallet.walletLedger,
           earningDetails: wallet.earningDetails,
-          withdrawals: (wallet.withdrawalRows || []).map((w) => ({
-            id: w.id,
-            withdrawalNo: w.withdrawal_no,
-            catFoodAmount: money(w.cat_food_amount || w.amount),
-            netAmountRm: money(w.net_amount_rm),
-            status: w.status,
-            statusText: WITHDRAW_STATUS_TEXT[w.status] || w.status,
-            submittedAt: w.submitted_at || w.created_at,
-            reviewedAt: w.reviewed_at || w.approved_at || "",
-            rejectReason: w.reject_reason || w.rejection_reason || "",
-            amount: money(w.cat_food_amount || w.amount),
-            createdAt: w.submitted_at || w.created_at,
-          })),
+          withdrawals: await Promise.all((wallet.withdrawalRows || []).map((w) => viewCompanionWithdrawal(w))),
           withdrawalRules: {
             monthlyLimit,
             usedThisMonth,
@@ -1676,6 +2651,11 @@ export default async function handler(req, res) {
       });
     }
     if (req.method === "GET" && action === "get_settlement") {
+      try {
+        assertCompanionBusinessAccess(auth.profile, companion);
+      } catch (err) {
+        return isolationForbiddenResponse(res, err);
+      }
       const orderId = String(req.query.id || req.query.order_id || "").trim();
       if (!orderId) return json(res, 400, { ok: false, message: "缺少订单 ID" });
       const txs = await transactionsFor(auth.profile.id);
@@ -1687,6 +2667,14 @@ export default async function handler(req, res) {
     if (req.method !== "POST") return json(res,405,{ok:false,message:"Method Not Allowed"});
     const body = await parseBody(req);
     if (action === "accept_order") {
+      try {
+        assertCompanionBusinessAccess(auth.profile, companion || {});
+      } catch (err) {
+        return isolationForbiddenResponse(res, err);
+      }
+      if (!canWork(auth.profile, companion || {})) {
+        return json(res, 403, { ok: false, message: COMPANION_AUTH_LOCK_MSG });
+      }
       try {
         await (await import("./_content-acks.js")).assertCompanionCanWork(auth.profile.id);
       } catch (err) {
@@ -1701,7 +2689,7 @@ export default async function handler(req, res) {
       const already = !!order._already;
       return json(res, 200, {
         ok: true,
-        message: already ? "你已抢过该单，请等待老板确认。" : "已抢单，等待老板确认。",
+        message: already ? "你已抢过该单，请等待老板选择。" : "已抢单，等待老板选择。",
         order: viewOrder({ ...order, companion_id: null, status: order.status || "waiting_boss_confirm" }),
         grab: order._grab || null,
         already,
@@ -1711,6 +2699,14 @@ export default async function handler(req, res) {
       });
     }
     if (action === "accept_direct_order" || action === "accept_direct") {
+      try {
+        assertCompanionBusinessAccess(auth.profile, companion || {});
+      } catch (err) {
+        return isolationForbiddenResponse(res, err);
+      }
+      if (!canWork(auth.profile, companion || {})) {
+        return json(res, 403, { ok: false, message: COMPANION_AUTH_LOCK_MSG });
+      }
       try {
         await (await import("./_content-acks.js")).assertCompanionCanWork(auth.profile.id);
       } catch (err) {
@@ -1736,6 +2732,11 @@ export default async function handler(req, res) {
       return json(res, 200, { ok: true, message: "已确认接单，订单进入待开始", order: viewOrder(order) });
     }
     if (action === "reject_direct_order") {
+      try {
+        assertCompanionBusinessAccess(auth.profile, companion || {});
+      } catch (err) {
+        return isolationForbiddenResponse(res, err);
+      }
       const id = String(body.id || "");
       const reasonRaw = String(body.reason || body.reject_reason || body.payload?.reason || "").trim();
       const reason = REJECT_REASONS.includes(reasonRaw) ? reasonRaw : (reasonRaw ? "其他原因" : "");
@@ -1745,6 +2746,16 @@ export default async function handler(req, res) {
       if (!before || before.status !== "claimed") return json(res, 409, { ok: false, message: "当前订单不能拒绝" });
       const name = String(auth.profile.display_name || companion.nickname || "陪玩").trim() || "陪玩";
       const note = `陪玩无法接单|原因:${reason}|原陪玩:${auth.profile.id}|${nowIso()}`;
+      // Reject designated → reopen as public hall for CS re-assign / public grab.
+      const rejectPatch = {
+        companion_id: null,
+        status: "pending",
+        accepted_at: null,
+        assignment_type: "public",
+        order_type: "open_grab",
+        cancel_reason: `陪玩无法接单：${reason}`,
+        note,
+      };
       let rows;
       try {
         rows = await supabaseJson(
@@ -1752,30 +2763,24 @@ export default async function handler(req, res) {
           {
             method: "PATCH",
             headers: serviceHeaders(),
-            body: JSON.stringify({
-              companion_id: null,
-              status: "pending",
-              accepted_at: null,
-              cancel_reason: `陪玩无法接单：${reason}`,
-              note,
-            }),
+            body: JSON.stringify(rejectPatch),
           }
         );
-      } catch {
+      } catch (err) {
+        const { assignment_type: _a, order_type: _o, cancel_reason: _c, note: _n, ...rest } = rejectPatch;
+        const fallback = /assignment_type|order_type|PGRST204|schema cache|column/i.test(String(err?.message || err || ""))
+          ? { ...rest, cancel_reason: rejectPatch.cancel_reason, note }
+          : { companion_id: null, status: "pending", accepted_at: null };
         rows = await supabaseJson(
           restUrl("orders", `?id=eq.${encodeURIComponent(id)}&companion_id=eq.${encodeURIComponent(auth.profile.id)}&status=eq.claimed`),
           {
             method: "PATCH",
             headers: serviceHeaders(),
-            body: JSON.stringify({
-              companion_id: null,
-              status: "pending",
-              accepted_at: null,
-            }),
+            body: JSON.stringify(fallback),
           }
         );
       }
-      const saved = rows?.[0] || { ...before, companion_id: null, status: "pending", note, cancel_reason: `陪玩无法接单：${reason}` };
+      const saved = rows?.[0] || { ...before, companion_id: null, status: "pending", assignment_type: "public", note, cancel_reason: `陪玩无法接单：${reason}` };
       await writeOrderStatusLog(
         { restUrl, supabaseJson, serviceHeaders },
         {
@@ -1802,6 +2807,14 @@ export default async function handler(req, res) {
       });
     }
     if (action === "start_order") {
+      try {
+        assertCompanionBusinessAccess(auth.profile, companion || {});
+      } catch (err) {
+        return isolationForbiddenResponse(res, err);
+      }
+      if (!canWork(auth.profile, companion || {})) {
+        return json(res, 403, { ok: false, message: COMPANION_AUTH_LOCK_MSG });
+      }
       try {
         await (await import("./_content-acks.js")).assertCompanionCanWork(auth.profile.id);
       } catch (err) {
@@ -1838,7 +2851,7 @@ export default async function handler(req, res) {
       );
       let reward = null;
       try {
-        reward = await (await import("./_cs-dock-rewards.js")).trySettleDockReward(
+        reward = await (await import("./_cs-commission-settle.js")).settleCsOrderIncome(
           { ...before, ...order, status: "in_progress" },
           { source: "companion_start" }
         );
@@ -1851,6 +2864,11 @@ export default async function handler(req, res) {
       });
     }
     if (action === "complete_order" || action === "confirm_complete") {
+      try {
+        assertCompanionBusinessAccess(auth.profile, companion || {});
+      } catch (err) {
+        return isolationForbiddenResponse(res, err);
+      }
       const orderId = String(body.id || "");
       const existingTx = (await transactionsFor(auth.profile.id)).find(
         (t) => t.order_id === orderId && t.transaction_type === "companion_income" && t.status !== "cancelled"
@@ -1945,8 +2963,13 @@ export default async function handler(req, res) {
       const raw = String(body.online_status || body.availability_status || body.status || "offline").toLowerCase();
       const status = allowed.has(raw) ? raw : "offline";
       if (auth.profile.status !== "active") return json(res, 403, { ok: false, message: "账号已停用，不能接单" });
+      try {
+        assertCompanionBusinessAccess(auth.profile, companion || {});
+      } catch (err) {
+        return isolationForbiddenResponse(res, err);
+      }
       if (!canWork(auth.profile, companion || {})) {
-        return json(res, 403, { ok: false, message: "账号审核通过后即可开始接单。" });
+        return json(res, 403, { ok: false, message: COMPANION_AUTH_LOCK_MSG });
       }
       if (status === "online" || status === "busy") {
         try {
@@ -2066,6 +3089,15 @@ export default async function handler(req, res) {
       const levelBundle = await resolveLevelBundle(companion || {});
       const min = money(levelBundle.minPrice);
       const max = money(levelBundle.maxPrice);
+      const reviewStNow = normalizeProfileReviewStatus(companion || {});
+      // 审核中不可改价；草稿/驳回可改；通过后可改。
+      if (reviewStNow === "pending") {
+        return json(res, 403, {
+          ok: false,
+          message: "资料审核中，暂不可修改价格。请等待审核结果。",
+          field: "price",
+        });
+      }
       let gamePricesInput = body.game_prices;
       if (typeof gamePricesInput === "string") {
         try { gamePricesInput = JSON.parse(gamePricesInput); } catch { gamePricesInput = {}; }
@@ -2138,6 +3170,22 @@ export default async function handler(req, res) {
       if (galleryKeep) tagsForWrite = `${tagsForWrite}${tagsForWrite ? "," : ""}${galleryKeep}`;
       tagsForWrite = writeGamePricesMarker(tagsForWrite, nextGamePrices);
 
+      let voiceTypeValue = "";
+      try {
+        voiceTypeValue = await normalizeSelectedVoiceTypes(
+          body.voice_type != null || body.voiceType != null
+            ? body.voice_type || body.voiceType
+            : companion.voice_type || "",
+          { required: true }
+        );
+      } catch (voiceErr) {
+        return json(res, voiceErr.status || 400, {
+          ok: false,
+          message: voiceErr.message || "请选择声线",
+          field: voiceErr.field || "voice_type",
+        });
+      }
+
       const patch = {
         nickname,
         game: mainGame,
@@ -2146,6 +3194,7 @@ export default async function handler(req, res) {
         service_ids: serviceIds,
         description: String(body.bio || body.description || ""),
         voice_url: String(body.voice_url || companion.voice_url || ""),
+        voice_type: voiceTypeValue,
         price: priceValue != null ? priceValue : money(companion.price),
         game_prices: nextGamePrices,
         age: ageNum,
@@ -2156,9 +3205,16 @@ export default async function handler(req, res) {
         position: String(body.position || ""),
         schedule: String(body.schedule || companion.schedule || ""),
         game_id: gameId,
-        application_status: "pending",
+        // Already-approved companions keep approved so price writes stay live for boss orders.
+        // Rejected / resubmit / pending → re-enter review queue and clear prior reject text.
+        application_status: /approved|verified|passed/i.test(String(companion.application_status || ""))
+          ? "approved"
+          : "pending",
         updated_at: nowIso(),
       };
+      if (!/approved|verified|passed/i.test(String(companion.application_status || ""))) {
+        patch.application_reject_reason = "";
+      }
       if (contactProvided) patch.contact_phone = contact;
       if (body.card_image_url) patch.card_image_url = String(body.card_image_url);
       Object.keys(patch).forEach((k) => patch[k] === undefined && delete patch[k]);
@@ -2179,6 +3235,7 @@ export default async function handler(req, res) {
           game: patch.game,
           description: patch.description,
           voice_url: patch.voice_url,
+          voice_type: patch.voice_type,
           price: patch.price,
           updated_at: patch.updated_at,
           tags: writeGamePricesMarker(String(patch.tags || ""), nextGamePrices),
@@ -2202,7 +3259,19 @@ export default async function handler(req, res) {
           ...(contactProvided ? { phone: contact } : {}),
         }),
       });
-      return json(res, 200, { ok: true, message: "公开资料已提交审核", gamePrices: nextGamePrices });
+      const stayedApproved = /approved|verified|passed/i.test(String(patch.application_status || ""));
+      const wasRejected = /reject|resubmit|need_more/i.test(String(companion.application_status || ""));
+      return json(res, 200, {
+        ok: true,
+        message: stayedApproved
+          ? "保存成功"
+          : wasRejected
+            ? "已重新提交审核，请等待后台复核"
+            : "保存成功，资料已提交审核",
+        gamePrices: nextGamePrices,
+        price: priceValue != null ? priceValue : money(companion.price),
+        applicationStatus: patch.application_status,
+      });
     }
 
     if (action === "submit_verification") {
@@ -2212,6 +3281,12 @@ export default async function handler(req, res) {
         await companionDb(
           "companion_identity_verifications",
           `?companion_profile_id=eq.${encodeURIComponent(row.id)}&limit=1`
+        ).catch((e) => (isMissingRelation(e) ? [] : Promise.reject(e)))
+      )?.[0];
+      const existingPayment = (
+        await companionDb(
+          "companion_payment_accounts",
+          `?companion_profile_id=eq.${encodeURIComponent(row.id)}&order=created_at.desc&limit=1`
         ).catch((e) => (isMissingRelation(e) ? [] : Promise.reject(e)))
       )?.[0];
       const frontRaw = body.id_front || body.idFront || "";
@@ -2235,9 +3310,26 @@ export default async function handler(req, res) {
       if (!front.path || !back.path) {
         return json(res, 400, { ok: false, message: "请上传身份证正面和反面照片。" });
       }
+      const identityNoRaw = String(body.identity_no || body.identityNo || "").trim();
+      const identityNo =
+        !identityNoRaw || /^\*+\d{0,4}$/.test(identityNoRaw)
+          ? String(existingIdentity?.identity_no || "")
+          : identityNoRaw;
+      if (!identityNo) {
+        // Apply form uploads ID photos but does not collect identity_no; allow pending review with empty number.
+        if (!(front.path && back.path)) {
+          return json(res, 400, { ok: false, message: "请填写身份证号码。" });
+        }
+        identityNo = "";
+      }
+      const bankAccountRaw = String(body.bank_account || body.bankAccount || "").trim();
+      const bankAccount =
+        !bankAccountRaw || /^\*+\d{0,4}$/.test(bankAccountRaw)
+          ? String(existingPayment?.bank_account || "")
+          : bankAccountRaw;
       await upsertByCompanion("companion_identity_verifications", row.id, auth.profile.id, {
         real_name: String(body.real_name || body.realName || ""),
-        identity_no: String(body.identity_no || body.identityNo || ""),
+        identity_no: identityNo,
         id_front_path: front.path || "",
         id_back_path: back.path || "",
         id_handheld_path: handheld.path || "",
@@ -2245,28 +3337,48 @@ export default async function handler(req, res) {
         reject_reason: "",
         submitted_at: nowIso(),
       });
-      if (body.bank_name || body.bank_account || body.settlementMethod || body.method || body.tng_account || body.alipay_account) {
+      if (body.bank_name || bankAccount || body.settlementMethod || body.method || body.tng_account || body.alipay_account) {
         await upsertByCompanion("companion_payment_accounts", row.id, auth.profile.id, {
           method: String(body.settlementMethod || body.method || body.payment_method || "bank"),
           bank_name: String(body.bank_name || body.bankName || ""),
           account_name: String(body.account_name || body.accountName || body.real_name || ""),
-          bank_account: String(body.bank_account || body.bankAccount || ""),
-          account_last4: String(body.bank_account || body.bankAccount || "")
+          bank_account: bankAccount,
+          account_last4: String(bankAccount || "")
             .replace(/\s+/g, "")
             .slice(-4),
-          tng_account: String(body.tng_account || body.tngAccount || ""),
+          tng_account: String(body.tng_account || body.tngAccount || existingPayment?.tng_account || ""),
           alipay_account: String(body.alipay_account || body.alipayAccount || ""),
           status: "pending",
           reject_reason: "",
           submitted_at: nowIso(),
         });
       }
+      if (body.phone || body.contact_phone) {
+        try {
+          await supabaseJson(restUrl("companion_profiles", `?id=eq.${encodeURIComponent(row.id)}`), {
+            method: "PATCH",
+            headers: serviceHeaders(),
+            body: JSON.stringify({
+              contact_phone: String(body.phone || body.contact_phone || "").trim(),
+              updated_at: nowIso(),
+            }),
+          });
+        } catch {
+          /* optional */
+        }
+      }
       await supabaseJson(restUrl("companion_profiles", `?id=eq.${encodeURIComponent(row.id)}`), {
         method: "PATCH",
         headers: serviceHeaders(),
-        body: JSON.stringify({ verification_status: "pending", updated_at: nowIso() }),
+        body: JSON.stringify({
+          verification_status: "pending",
+          application_status: "pending",
+          application_reject_reason: "",
+          application_submitted_at: nowIso(),
+          updated_at: nowIso(),
+        }),
       });
-      return json(res, 200, { ok: true, message: "认证资料已提交，等待后台审核。" });
+      return json(res, 200, { ok: true, message: "已提交审核，等待后台审核。" });
     }
 
     if (action === "upload_private_doc") {
@@ -2291,20 +3403,20 @@ export default async function handler(req, res) {
             `?companion_profile_id=eq.${encodeURIComponent(row.id)}&limit=1`
           ).catch(() => [])
         )?.[0];
+        const cur = String(existing?.status || "").toLowerCase();
+        const keepPending =
+          /pending|review|submit/.test(cur) &&
+          String(existing?.real_name || "").trim() &&
+          String(existing?.identity_no || "").trim();
         await upsertByCompanion("companion_identity_verifications", row.id, auth.profile.id, {
           real_name: existing?.real_name || "",
           identity_no: existing?.identity_no || "",
           id_front_path: uploaded.path,
           id_back_path: existing?.id_back_path || "",
           id_handheld_path: existing?.id_handheld_path || "",
-          status: "pending",
-          reject_reason: "",
-          submitted_at: nowIso(),
-        });
-        await supabaseJson(restUrl("companion_profiles", `?id=eq.${encodeURIComponent(row.id)}`), {
-          method: "PATCH",
-          headers: serviceHeaders(),
-          body: JSON.stringify({ verification_status: "pending", updated_at: nowIso() }),
+          status: keepPending ? "pending" : "draft",
+          reject_reason: existing?.reject_reason || "",
+          submitted_at: existing?.submitted_at || null,
         });
         const url = await signedPrivateDocUrl(PRIVATE_BUCKETS.identity, uploaded.path);
         return json(res, 200, { ok: true, message: "身份证正面上传成功", docType: "id_front", url, path: uploaded.path });
@@ -2323,20 +3435,20 @@ export default async function handler(req, res) {
             `?companion_profile_id=eq.${encodeURIComponent(row.id)}&limit=1`
           ).catch(() => [])
         )?.[0];
+        const cur = String(existing?.status || "").toLowerCase();
+        const keepPending =
+          /pending|review|submit/.test(cur) &&
+          String(existing?.real_name || "").trim() &&
+          String(existing?.identity_no || "").trim();
         await upsertByCompanion("companion_identity_verifications", row.id, auth.profile.id, {
           real_name: existing?.real_name || "",
           identity_no: existing?.identity_no || "",
           id_front_path: existing?.id_front_path || "",
           id_back_path: uploaded.path,
           id_handheld_path: existing?.id_handheld_path || "",
-          status: "pending",
-          reject_reason: "",
-          submitted_at: nowIso(),
-        });
-        await supabaseJson(restUrl("companion_profiles", `?id=eq.${encodeURIComponent(row.id)}`), {
-          method: "PATCH",
-          headers: serviceHeaders(),
-          body: JSON.stringify({ verification_status: "pending", updated_at: nowIso() }),
+          status: keepPending ? "pending" : "draft",
+          reject_reason: existing?.reject_reason || "",
+          submitted_at: existing?.submitted_at || null,
         });
         const url = await signedPrivateDocUrl(PRIVATE_BUCKETS.identity, uploaded.path);
         return json(res, 200, { ok: true, message: "身份证反面上传成功", docType: "id_back", url, path: uploaded.path });
@@ -2355,21 +3467,21 @@ export default async function handler(req, res) {
             `?companion_profile_id=eq.${encodeURIComponent(row.id)}&order=created_at.desc&limit=1`
           ).catch(() => [])
         )?.[0];
+        const cur = String(existing?.status || "").toLowerCase();
+        const keepPending =
+          /pending|review|submit/.test(cur) &&
+          Number(existing?.paid_amount || 0) > 0 &&
+          String(existing?.payment_method || "").trim();
         await upsertByCompanion("companion_deposits", row.id, auth.profile.id, {
           required_amount: money(existing?.required_amount || 100) || 100,
           paid_amount: money(existing?.paid_amount || body.paid_amount || 0),
           payment_method: String(existing?.payment_method || body.payment_method || ""),
           proof_path: uploaded.path,
           proof_bucket: uploaded.bucket || PRIVATE_BUCKETS.payment,
-          status: "pending",
-          reject_reason: "",
+          status: keepPending ? "pending" : "draft",
+          reject_reason: existing?.reject_reason || "",
           remark: String(existing?.remark || body.remark || ""),
-          paid_at: nowIso(),
-        });
-        await supabaseJson(restUrl("companion_profiles", `?id=eq.${encodeURIComponent(row.id)}`), {
-          method: "PATCH",
-          headers: serviceHeaders(),
-          body: JSON.stringify({ deposit_status: "pending", updated_at: nowIso() }),
+          paid_at: existing?.paid_at || null,
         });
         const url = await signedPrivateDocUrl(PRIVATE_BUCKETS.payment, uploaded.path);
         return json(res, 200, {
@@ -2515,12 +3627,46 @@ export default async function handler(req, res) {
         remark: String(body.remark || ""),
         paid_at: nowIso(),
       });
+      const bankAccountRaw = String(body.bank_account || body.bankAccount || body.settlementAccount || "").trim();
+      const settlementMethod = String(
+        body.settlementMethod || body.method || body.payment_method || body.paymentMethod || ""
+      ).trim();
+      const settlementName = String(body.account_name || body.accountName || body.settlementName || "").trim();
+      const settlementBank = String(body.bank_name || body.bankName || body.settlementBank || "").trim();
+      const tngAccount = String(body.tng_account || body.tngAccount || "").trim();
+      const alipayAccount = String(body.alipay_account || body.alipayAccount || "").trim();
+      if (bankAccountRaw || settlementName || settlementBank || tngAccount || alipayAccount || settlementMethod) {
+        const existingPayment = (
+          await companionDb(
+            "companion_payment_accounts",
+            `?companion_profile_id=eq.${encodeURIComponent(row.id)}&order=created_at.desc&limit=1`
+          ).catch((e) => (isMissingRelation(e) ? [] : Promise.reject(e)))
+        )?.[0];
+        const bankAccount =
+          !bankAccountRaw || /^\*+\d{0,4}$/.test(bankAccountRaw)
+            ? String(existingPayment?.bank_account || "")
+            : bankAccountRaw;
+        await upsertByCompanion("companion_payment_accounts", row.id, auth.profile.id, {
+          method: settlementMethod || String(existingPayment?.method || "bank"),
+          bank_name: settlementBank || String(existingPayment?.bank_name || ""),
+          account_name: settlementName || String(existingPayment?.account_name || ""),
+          bank_account: bankAccount,
+          account_last4: String(bankAccount || "")
+            .replace(/\s+/g, "")
+            .slice(-4),
+          tng_account: tngAccount || String(existingPayment?.tng_account || ""),
+          alipay_account: alipayAccount || String(existingPayment?.alipay_account || ""),
+          status: "pending",
+          reject_reason: "",
+          submitted_at: nowIso(),
+        });
+      }
       await supabaseJson(restUrl("companion_profiles", `?id=eq.${encodeURIComponent(row.id)}`), {
         method: "PATCH",
         headers: serviceHeaders(),
         body: JSON.stringify({ deposit_status: "pending", updated_at: nowIso() }),
       });
-      return json(res, 200, { ok: true, message: "押金凭证已提交，等待后台确认。" });
+      return json(res, 200, { ok: true, message: "已提交审核，等待后台审核。" });
     }
 
     if (action === "upload_media") {
@@ -2528,7 +3674,7 @@ export default async function handler(req, res) {
       await ensureCompanionBuckets();
       let mediaType = String(body.media_type || body.mediaType || "gallery");
       if (mediaType === "card" || mediaType === "card_image") mediaType = "cover";
-      if (!["avatar", "cover", "gallery", "voice"].includes(mediaType)) {
+      if (!["avatar", "cover", "gallery", "voice", "video"].includes(mediaType)) {
         return json(res, 400, { ok: false, message: "不支持的媒体类型" });
       }
       const dataUrl = body.data_url || body.dataUrl || body.file;
@@ -2549,13 +3695,30 @@ export default async function handler(req, res) {
       let uploaded;
       let publicUrl = "";
       if (mediaType === "voice") {
-        uploaded = await saveUploadFromBody(
-          auth.profile.id,
-          mediaType,
-          PRIVATE_BUCKETS.audio,
-          dataUrl,
-          body.filename || "voice.webm"
-        );
+        const decoded = decodeDataUrl(dataUrl);
+        if (!decoded) return json(res, 400, { ok: false, message: "请选择要上传的语音文件" });
+        const checked = assertAudioUpload(decoded);
+        const objectPath = buildObjectPath(auth.profile.id, "voice", body.filename || "voice.webm");
+        await uploadPrivateObject(PRIVATE_BUCKETS.audio, objectPath, checked.buffer, checked.contentType);
+        uploaded = { bucket: PRIVATE_BUCKETS.audio, path: objectPath, contentType: checked.contentType };
+      } else if (mediaType === "video") {
+        const decoded = decodeDataUrl(dataUrl);
+        if (!decoded) return json(res, 400, { ok: false, message: "请选择要上传的视频文件" });
+        const mime = String(decoded.contentType || "").toLowerCase();
+        const okVideo =
+          /^video\//.test(mime) ||
+          mime === "application/octet-stream" ||
+          !mime;
+        if (!okVideo) return json(res, 400, { ok: false, message: "仅支持 mp4 / mov 视频" });
+        if (decoded.buffer && decoded.buffer.length > 40 * 1024 * 1024) {
+          return json(res, 400, { ok: false, message: "视频不能超过 40MB" });
+        }
+        const dur = body.duration_seconds != null ? Number(body.duration_seconds) : null;
+        if (dur && dur > 30.5) return json(res, 400, { ok: false, message: "视频最长 30 秒" });
+        const objectPath = buildObjectPath(auth.profile.id, "video", body.filename || "showcase.mp4");
+        const bucket = PRIVATE_BUCKETS.gallery || PRIVATE_BUCKETS.audio;
+        await uploadPrivateObject(bucket, objectPath, decoded.buffer, decoded.contentType || "video/mp4");
+        uploaded = { bucket, path: objectPath, contentType: decoded.contentType || "video/mp4" };
       } else {
         const decoded = assertImageUpload(decodeDataUrl(dataUrl));
         const objectPath = buildObjectPath(auth.profile.id, mediaType, body.filename || `${mediaType}.jpg`);
@@ -2577,7 +3740,7 @@ export default async function handler(req, res) {
       }
       if (!uploaded.path) return json(res, 400, { ok: false, message: "缺少上传文件" });
 
-      if (mediaType === "avatar" || mediaType === "cover") {
+      if (mediaType === "avatar" || mediaType === "cover" || mediaType === "voice" || mediaType === "video") {
         const oldRows = await companionDb(
           "companion_media",
           `?companion_profile_id=eq.${encodeURIComponent(row.id)}&media_type=eq.${encodeURIComponent(mediaType)}`
@@ -2606,25 +3769,50 @@ export default async function handler(req, res) {
             : 100 + (Date.now() % 100000);
       let mediaRow = null;
       let mediaTableMissing = false;
+      let persistedMediaType = mediaType;
       try {
-        const mediaRows = await companionDb("companion_media", "", {
-          method: "POST",
-          body: JSON.stringify({
-            companion_profile_id: row.id,
-            user_id: auth.profile.id,
-            media_type: mediaType,
-            storage_bucket: uploaded.bucket,
-            storage_path: uploaded.path,
-            content_type: uploaded.contentType || "",
-            duration_seconds: body.duration_seconds != null ? Number(body.duration_seconds) : null,
-            status: "approved",
-            sort_order: sortOrder,
-            uploaded_at: nowIso(),
-            created_at: nowIso(),
-            updated_at: nowIso(),
-          }),
-        });
-        mediaRow = Array.isArray(mediaRows) ? mediaRows[0] : mediaRows;
+        const mediaPayload = {
+          companion_profile_id: row.id,
+          user_id: auth.profile.id,
+          media_type: mediaType,
+          storage_bucket: uploaded.bucket,
+          storage_path: uploaded.path,
+          content_type: uploaded.contentType || "",
+          duration_seconds: body.duration_seconds != null ? Number(body.duration_seconds) : null,
+          status: "pending",
+          sort_order: sortOrder,
+          uploaded_at: nowIso(),
+          created_at: nowIso(),
+          updated_at: nowIso(),
+        };
+        try {
+          const mediaRows = await companionDb("companion_media", "", {
+            method: "POST",
+            body: JSON.stringify(mediaPayload),
+          });
+          mediaRow = Array.isArray(mediaRows) ? mediaRows[0] : mediaRows;
+        } catch (insertErr) {
+          // Legacy DB check only allows avatar|gallery|voice — store cover as gallery sort 1 so admin still sees it.
+          const insertMsg = `${insertErr?.message || ""} ${JSON.stringify(insertErr?.body || "")}`;
+          if (
+            (mediaType === "cover" || mediaType === "video") &&
+            /media_type|check|23514|violates/i.test(insertMsg)
+          ) {
+            persistedMediaType = "gallery";
+            const fallbackPayload = {
+              ...mediaPayload,
+              media_type: "gallery",
+              sort_order: mediaType === "cover" ? 1 : 2,
+            };
+            const mediaRows = await companionDb("companion_media", "", {
+              method: "POST",
+              body: JSON.stringify(fallbackPayload),
+            });
+            mediaRow = Array.isArray(mediaRows) ? mediaRows[0] : mediaRows;
+          } else {
+            throw insertErr;
+          }
+        }
       } catch (error) {
         if (!isMissingRelation(error)) throw error;
         mediaTableMissing = true;
@@ -2644,11 +3832,14 @@ export default async function handler(req, res) {
         }
       }
 
-      const companionPatch = { media_status: "approved", media_reject_reason: "", updated_at: nowIso() };
+      // Keep media pending until admin review_application / review_media approves.
+      const companionPatch = { media_status: "pending", media_reject_reason: "", updated_at: nowIso() };
       const durablePublicUrl =
         uploaded.bucket === PUBLIC_BUCKETS.profile || /public/i.test(String(uploaded.bucket || ""))
           ? publicObjectUrl(uploaded.bucket, uploaded.path)
           : "";
+      const durableStorageRef =
+        uploaded.bucket && uploaded.path ? `storage://${uploaded.bucket}/${uploaded.path}` : "";
       if (mediaType === "avatar" && durablePublicUrl) {
         // Avatar updates profile.avatar_url. Only seed card_image_url when cover is empty.
         if (!String(companion.card_image_url || "").trim()) {
@@ -2669,13 +3860,17 @@ export default async function handler(req, res) {
       }
       if (mediaType === "cover" && durablePublicUrl) {
         companionPatch.card_image_url = durablePublicUrl;
-      } else if (mediaType === "cover" && !durablePublicUrl) {
-        companionPatch.card_image_url = "";
+      } else if (mediaType === "cover" && !durablePublicUrl && durableStorageRef) {
+        // Private bucket fallback: durable storage:// ref (admin/public resolve via companion_media + sign).
+        companionPatch.card_image_url = durableStorageRef;
       }
       if (mediaType === "gallery" && durablePublicUrl && !companion.card_image_url && !auth.profile.avatar_url) {
         companionPatch.card_image_url = durablePublicUrl;
       }
-      if (mediaType === "voice") companionPatch.voice_url = publicUrl || "";
+      if (mediaType === "voice") {
+        // Never persist short-lived signed URLs into voice_url; companion_media is source of truth.
+        companionPatch.voice_url = durableStorageRef || `storage://${uploaded.bucket}/${uploaded.path}`;
+      }
 
       let fallbackMediaId = mediaRow?.id || null;
       if (mediaTableMissing && mediaType === "gallery") {
@@ -2707,10 +3902,14 @@ export default async function handler(req, res) {
                 ? "录音上传成功"
                 : "媒体上传成功",
         url: publicUrl,
+        path: uploaded.path,
+        bucket: uploaded.bucket,
         media: {
           id: fallbackMediaId || `legacy-${mediaType}`,
-          mediaType,
+          mediaType: persistedMediaType || mediaType,
           url: publicUrl,
+          path: uploaded.path,
+          bucket: uploaded.bucket,
           sortOrder,
         },
       });
@@ -2844,6 +4043,20 @@ export default async function handler(req, res) {
         fallbackPlayWhenGame: true,
         hasGame: !!applyGame,
       });
+      const authModeRaw = String(body.auth_mode || body.credential_mode || body.authMode || body.credentialMode || "")
+        .trim()
+        .toLowerCase();
+      const authMode = authModeRaw === "id_card" || authModeRaw === "deposit" ? authModeRaw : "";
+      const rawNote = String(body.note || body.application_note || "").replace(/\[AUTH_MODE:(?:id_card|deposit)\]\s*/gi, "").trim();
+      const applicationNote = authMode ? `[AUTH_MODE:${authMode}]${rawNote ? ` ${rawNote}` : ""}` : rawNote;
+      let applyVoiceType = "";
+      try {
+        applyVoiceType = await normalizeSelectedVoiceTypes(body.voice_type || body.voiceType || "", {
+          required: false,
+        });
+      } catch {
+        applyVoiceType = String(body.voice_type || body.voiceType || "").trim();
+      }
       const patch = {
         main_service: String(body.main_service || body.mainService || applyGameNames[0] || ""),
         game: applyGame,
@@ -2851,9 +4064,9 @@ export default async function handler(req, res) {
         service_ids: applyServiceIds,
         game_rank: String(body.rank || body.game_rank || ""),
         position: String(body.position || ""),
-        voice_type: String(body.voice_type || body.voiceType || ""),
+        voice_type: applyVoiceType,
         schedule: String(body.schedule || ""),
-        application_note: String(body.note || body.application_note || ""),
+        application_note: applicationNote,
         tags: String(body.tags || ""),
         application_status: "pending",
         application_reject_reason: "",
@@ -2861,6 +4074,7 @@ export default async function handler(req, res) {
         verification_status: companion.verification_status || "pending",
         updated_at: nowIso(),
       };
+      if (authMode) patch.credential_mode = authMode;
       if (body.nickname) patch.nickname = String(body.nickname).trim();
       if (body.phone || body.contact_phone) patch.contact_phone = String(body.phone || body.contact_phone || "").trim();
       if (body.price != null && body.price !== "") patch.price = money(body.price);
@@ -2877,48 +4091,203 @@ export default async function handler(req, res) {
           headers: serviceHeaders(),
           body: JSON.stringify(patch),
         });
-      } catch {
-        const core = {
-          main_service: patch.main_service,
-          game: patch.game,
-          service_type: patch.service_type,
-          game_rank: patch.game_rank,
-          position: patch.position,
-          voice_type: patch.voice_type,
-          schedule: patch.schedule,
-          application_note: patch.application_note,
-          tags: patch.tags,
-          application_status: "pending",
-          application_reject_reason: "",
-          application_submitted_at: nowIso(),
-          updated_at: nowIso(),
-        };
-        if (patch.nickname) core.nickname = patch.nickname;
-        if (patch.contact_phone) core.contact_phone = patch.contact_phone;
-        if (patch.price != null) core.price = patch.price;
-        try {
-          await supabaseJson(restUrl("companion_profiles", `?id=eq.${encodeURIComponent(row.id)}`), {
-            method: "PATCH",
-            headers: serviceHeaders(),
-            body: JSON.stringify(core),
-          });
-        } catch {
-          await supabaseJson(restUrl("companion_profiles", `?id=eq.${encodeURIComponent(row.id)}`), {
-            method: "PATCH",
-            headers: serviceHeaders(),
-            body: JSON.stringify({
-              game: patch.game,
-              application_status: "pending",
-              updated_at: nowIso(),
-            }),
+      } catch (firstErr) {
+        // Optional credential_mode column may be absent — strip and retry like other optional cols.
+        let patched = false;
+        if (patch.credential_mode && /column|schema cache|PGRST|credential_mode/i.test(String(firstErr?.message || firstErr || ""))) {
+          delete patch.credential_mode;
+          try {
+            await supabaseJson(restUrl("companion_profiles", `?id=eq.${encodeURIComponent(row.id)}`), {
+              method: "PATCH",
+              headers: serviceHeaders(),
+              body: JSON.stringify(patch),
+            });
+            patched = true;
+          } catch {
+            /* fall through to core strip */
+          }
+        }
+        if (!patched) {
+          const core = {
+            main_service: patch.main_service,
+            game: patch.game,
+            service_type: patch.service_type,
+            game_rank: patch.game_rank,
+            position: patch.position,
+            voice_type: patch.voice_type,
+            schedule: patch.schedule,
+            application_note: patch.application_note,
+            tags: patch.tags,
+            application_status: "pending",
+            application_reject_reason: "",
+            application_submitted_at: nowIso(),
+            updated_at: nowIso(),
+          };
+          if (patch.nickname) core.nickname = patch.nickname;
+          if (patch.contact_phone) core.contact_phone = patch.contact_phone;
+          if (patch.price != null) core.price = patch.price;
+          try {
+            await supabaseJson(restUrl("companion_profiles", `?id=eq.${encodeURIComponent(row.id)}`), {
+              method: "PATCH",
+              headers: serviceHeaders(),
+              body: JSON.stringify(core),
+            });
+          } catch {
+            await supabaseJson(restUrl("companion_profiles", `?id=eq.${encodeURIComponent(row.id)}`), {
+              method: "PATCH",
+              headers: serviceHeaders(),
+              body: JSON.stringify({
+                game: patch.game,
+                application_note: patch.application_note,
+                application_status: "pending",
+                updated_at: nowIso(),
+              }),
+            });
+          }
+        }
+      }
+      // Formal submit: promote draft identity / deposit rows so admin review sees materials immediately.
+      try {
+        const identityRow = (
+          await companionDb(
+            "companion_identity_verifications",
+            `?companion_profile_id=eq.${encodeURIComponent(row.id)}&limit=1`
+          ).catch(() => [])
+        )?.[0];
+        if (
+          identityRow &&
+          String(identityRow.status || "").toLowerCase() === "draft" &&
+          (identityRow.id_front_path || identityRow.id_back_path)
+        ) {
+          await upsertByCompanion("companion_identity_verifications", row.id, auth.profile.id, {
+            real_name: identityRow.real_name || "",
+            identity_no: identityRow.identity_no || "",
+            id_front_path: identityRow.id_front_path || "",
+            id_back_path: identityRow.id_back_path || "",
+            id_handheld_path: identityRow.id_handheld_path || "",
+            status: "pending",
+            reject_reason: "",
+            submitted_at: nowIso(),
           });
         }
+      } catch {
+        /* optional */
+      }
+      try {
+        const depositRow = (
+          await companionDb(
+            "companion_deposits",
+            `?companion_profile_id=eq.${encodeURIComponent(row.id)}&order=created_at.desc&limit=1`
+          ).catch(() => [])
+        )?.[0];
+        if (depositRow && String(depositRow.status || "").toLowerCase() === "draft" && depositRow.proof_path) {
+          await upsertByCompanion("companion_deposits", row.id, auth.profile.id, {
+            required_amount: money(depositRow.required_amount || 100) || 100,
+            paid_amount: money(depositRow.paid_amount),
+            payment_method: String(depositRow.payment_method || ""),
+            proof_path: depositRow.proof_path || "",
+            proof_bucket: depositRow.proof_bucket || PRIVATE_BUCKETS.payment,
+            status: "pending",
+            reject_reason: "",
+            remark: String(depositRow.remark || ""),
+            paid_at: depositRow.paid_at || nowIso(),
+          });
+        }
+      } catch {
+        /* optional */
       }
       return json(res, 200, { ok: true, message: "申请已提交，等待后台审核。" });
     }
 
+    if (action === "start_cs_consult" || action === "open_cs_conversation") {
+      const orderId = String(body.order_id || body.orderId || "").trim();
+      const consultType = String(body.consult_type || body.consultType || "").trim();
+      const forceNew =
+        action === "start_cs_consult"
+          ? body.forceNew !== false && String(body.forceNew || body.force_new || "").trim() !== "0"
+          : body.forceNew === true || String(body.forceNew || body.force_new || "").trim() === "1";
+      const conversation = await ensureCompanionSupportConversation(auth.profile.id, {
+        orderId,
+        consultType,
+        forceNew,
+      });
+      const activeConversationId = String(conversation?.id || "").trim();
+      const data = await bootstrapData(auth.profile, companion);
+      const inbox = await buildCompanionInbox(auth.profile, companion, {
+        player: data.player,
+        verification: data.verification,
+        deposit: data.deposit,
+        myOrders: data.myOrders,
+        withdrawals: data.withdrawals,
+        popularity: data.popularity,
+        auditLocked: !data.permissions?.canWork,
+        auditHint: data.permissions?.lockReason || "",
+        activeConversationId,
+      });
+      return json(res, 200, {
+        ok: true,
+        message: "咨询会话已创建",
+        conversationId: activeConversationId,
+        consultType: conversation?.consult_type || consultType || "",
+        orderId: conversation?.order_id || orderId || "",
+        data: inbox,
+        inbox,
+      });
+    }
+    if (action === "end_cs_conversation" || action === "end_conversation") {
+      const conversationId = String(body.conversation_id || body.conversationId || body.id || "").trim();
+      await endCompanionSupportConversation(auth.profile.id, conversationId);
+      const data = await bootstrapData(auth.profile, companion);
+      const inbox = await buildCompanionInbox(auth.profile, companion, {
+        player: data.player,
+        verification: data.verification,
+        deposit: data.deposit,
+        myOrders: data.myOrders,
+        withdrawals: data.withdrawals,
+        popularity: data.popularity,
+        auditLocked: !data.permissions?.canWork,
+        auditHint: data.permissions?.lockReason || "",
+        activeConversationId: conversationId,
+      });
+      return json(res, 200, {
+        ok: true,
+        message: "会话已结束",
+        conversationId,
+        data: inbox,
+        inbox,
+      });
+    }
+
     if (action === "send_cs_message" || action === "send_message") {
-      const conversation = await ensureCompanionSupportConversation(auth.profile.id);
+      const orderId = String(body.order_id || body.orderId || "").trim();
+      const consultType = String(body.consult_type || body.consultType || "").trim();
+      const conversationId = String(body.conversation_id || body.conversationId || "").trim();
+      const forceNew =
+        body.forceNew === true ||
+        String(body.forceNew || body.force_new || "").trim() === "1";
+      let conversation = null;
+      if (conversationId && !forceNew) {
+        const rows = await supabaseJson(
+          restUrl(
+            "conversations",
+            `?id=eq.${encodeURIComponent(conversationId)}&companion_id=eq.${encodeURIComponent(auth.profile.id)}&limit=1`
+          ),
+          { headers: serviceHeaders() }
+        ).catch(() => []);
+        conversation = rows?.[0] || null;
+        if (!conversation) {
+          return json(res, 404, { ok: false, message: "会话不存在" });
+        }
+        if (isClosedConversationStatus(conversation.status)) {
+          return json(res, 403, { ok: false, message: "会话已结束，无法继续发送" });
+        }
+      } else {
+        conversation = await ensureCompanionSupportConversation(auth.profile.id, {
+          orderId,
+          consultType,
+          forceNew,
+        });
+      }
       const messageType = String(body.messageType || body.message_type || "text").trim() || "text";
       const msg = await sendCompanionChatMessage(
         conversation,
@@ -2929,6 +4298,9 @@ export default async function handler(req, res) {
       return json(res, 200, {
         ok: true,
         message: "消息已发送",
+        conversationId: conversation?.id || conversationId || "",
+        consultType: conversation?.consult_type || consultType || "",
+        orderId: conversation?.order_id || orderId || "",
         messageRow: viewMessage(msg),
       });
     }
@@ -2939,7 +4311,7 @@ export default async function handler(req, res) {
     }
     if (action === "mark_all_read") {
       const data = await bootstrapData(auth.profile, companion);
-      const notices = buildSystemNotices({
+      const derived = buildSystemNotices({
         companionUserId: auth.profile.id,
         player: data.player,
         verification: data.verification,
@@ -2950,21 +4322,54 @@ export default async function handler(req, res) {
         auditLocked: !data.permissions?.canWork,
         auditHint: data.permissions?.lockReason || "",
       });
+      const dbNotices = await loadCompanionNotifications(auth.profile.id).catch(() => []);
+      const notices = [...(dbNotices || []), ...(derived || [])];
       const keys = Array.isArray(body.keys) && body.keys.length
         ? body.keys
         : notices.map((n) => n.key);
       await markNoticesRead(auth.profile.id, keys);
-      const conversation = await ensureCompanionSupportConversation(auth.profile.id);
+      // Mark most recent open CS thread only — do not create a new consult lock.
+      const openRows = await supabaseJson(
+        restUrl(
+          "conversations",
+          `?companion_id=eq.${encodeURIComponent(auth.profile.id)}&conversation_type=eq.companion_support&status=not.in.(closed,ended)&order=updated_at.desc&limit=1`
+        ),
+        { headers: serviceHeaders() }
+      ).catch(() => []);
+      const conversation = openRows?.[0] || null;
       if (conversation?.id) await markConversationMessagesRead(conversation.id, { companionUserId: auth.profile.id });
       return json(res, 200, { ok: true, message: "已全部标记已读", marked: keys.length });
     }
     if (action === "mark_cs_read" || action === "read_cs_conversation") {
-      const conversation = await ensureCompanionSupportConversation(auth.profile.id);
+      const conversationId = String(body.conversation_id || body.conversationId || "").trim();
+      let conversation = null;
+      if (conversationId) {
+        const rows = await supabaseJson(
+          restUrl("conversations", `?id=eq.${encodeURIComponent(conversationId)}&companion_id=eq.${encodeURIComponent(auth.profile.id)}&limit=1`),
+          { headers: serviceHeaders() }
+        ).catch(() => []);
+        conversation = rows?.[0] || null;
+      }
+      if (!conversation) {
+        const openRows = await supabaseJson(
+          restUrl(
+            "conversations",
+            `?companion_id=eq.${encodeURIComponent(auth.profile.id)}&conversation_type=eq.companion_support&status=not.in.(closed,ended)&order=updated_at.desc&limit=1`
+          ),
+          { headers: serviceHeaders() }
+        ).catch(() => []);
+        conversation = openRows?.[0] || null;
+      }
       if (conversation?.id) await markConversationMessagesRead(conversation.id, { companionUserId: auth.profile.id });
       return json(res, 200, { ok: true, message: "已标记已读" });
     }
 
     if (action === "request_withdrawal") {
+      try {
+        assertCompanionBusinessAccess(auth.profile, companion || {});
+      } catch (err) {
+        return isolationForbiddenResponse(res, err);
+      }
       const amount = money(body.amount || body.cat_food_amount || body.catFoodAmount);
       const remark = String(body.remark || body.note || "").trim();
       const accountId = String(body.paymentAccountId || body.payment_account_id || "").trim();
@@ -2979,8 +4384,8 @@ export default async function handler(req, res) {
       if (amount > money(data.earnings.withdrawable)) {
         return json(res, 400, { ok: false, message: "可提现余额不足" });
       }
-      if (Number(data.withdrawalRules.remainingThisMonth || 0) <= 0) {
-        return json(res, 400, { ok: false, message: "本月提现次数已用完" });
+      if (Number(data.withdrawalRules.remainingThisWeek ?? data.withdrawalRules.remainingThisMonth ?? 0) <= 0) {
+        return json(res, 400, { ok: false, message: "本周提现次数已用完" });
       }
       const accounts = data.withdrawalRules.approvedAccounts || [];
       const account = accounts.find((a) => a.id === accountId) || accounts[0];
@@ -2996,14 +4401,41 @@ export default async function handler(req, res) {
       }
 
       const pendingDup = (data.withdrawals || []).find((w) =>
-        /^(pending|pending_review)$/.test(String(w.status || ""))
+        /^(submitted|pending_friday|reviewing|pending|pending_review|rolled_over)$/.test(String(w.status || ""))
       );
       if (pendingDup) {
         return json(res, 400, {
           ok: false,
-          message: "已有待审核提现申请，请等待后台处理后再提交",
+          message: "已有待周五结算的提现申请，请等待后台处理后再提交",
         });
       }
+
+      // Block withdraw while companion has orders in Friday refund queue / open refund
+      try {
+        const openRefunds = await companionDb(
+          "boss_refund_requests",
+          `?status=in.(pending_review,approved_for_payout,included_in_batch,processing,carried_forward)&select=id,order_id,status&limit=200`
+        ).catch(() => []);
+        const refundOrderIds = new Set((openRefunds || []).map((r) => r.order_id).filter(Boolean));
+        if (refundOrderIds.size) {
+          const incomeOnRefund = await companionDb(
+            "transactions",
+            `?user_id=eq.${encodeURIComponent(auth.profile.id)}&transaction_type=eq.companion_income&status=neq.cancelled&select=order_id&limit=500`
+          ).catch(() => []);
+          const hit = (incomeOnRefund || []).some((t) => t.order_id && refundOrderIds.has(t.order_id));
+          if (hit) {
+            return json(res, 400, {
+              ok: false,
+              message: "存在待处理/待周五退款的订单，相关收入暂不可提现。请等待退款结算完成或冲减后再申请。",
+            });
+          }
+        }
+      } catch {
+        /* soft */
+      }
+
+      const weeklyCfg = await loadFinanceWeeklySettings(companionDb).catch(() => mergeWeeklySettings({}));
+      const settlementDate = computeSettlementDate(new Date(), weeklyCfg);
 
       const rate = money(data.withdrawalRules.exchangeRate) || 1;
       const gross = Math.round(amount * rate * 100) / 100;
@@ -3020,8 +4452,11 @@ export default async function handler(req, res) {
           ? `****${last4}`
           : "";
 
+      const withdrawalNo = await allocateWithdrawalNo(companionDb).catch(
+        () => `WD${String(Date.now()).slice(-6)}`
+      );
       const withdrawalPayload = {
-        withdrawal_no: `WD-${Date.now()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`,
+        withdrawal_no: withdrawalNo,
         companion_id: auth.profile.id,
         payment_account_id: full.id,
         amount,
@@ -3036,7 +4471,13 @@ export default async function handler(req, res) {
         account_number: accountNumber,
         account_last4: last4,
         remark,
-        status: "pending_review",
+        status: "pending_friday",
+        settlement_date: settlementDate,
+        source_ledger_ids: [],
+        source_order_ids: [],
+        currency: "CAT_FOOD",
+        payout_method: full.tng_account ? "tng" : "bank",
+        tng_account: full.tng_account ? `****${String(full.tng_account).slice(-4)}` : "",
         submitted_at: nowIso(),
         created_at: nowIso(),
         updated_at: nowIso(),
@@ -3079,7 +4520,7 @@ export default async function handler(req, res) {
             transaction_type: "withdrawal",
             amount,
             status: "pending",
-            note: `提现申请冻结 ${item?.withdrawal_no || ""}`.trim(),
+            note: `提现申请冻结 ${item?.withdrawal_no || ""} 预计发放 ${settlementDate}`.trim(),
             created_at: nowIso(),
           }),
         });
@@ -3092,43 +4533,57 @@ export default async function handler(req, res) {
           item = { ...item, freeze_tx_id: freezeTxId };
         }
       } catch {
-        /* ledger marker optional if enum/status constraints fail; withdrawal row still pending */
+        /* ledger marker optional */
       }
 
-      return json(res, 200, {
-        ok: true,
-        message: "提现申请已提交，等待后台审核",
-        preview: {
-          catFoodAmount: amount,
-          amount,
-          grossAmountRm: gross,
-          feeRm: fee,
-          netAmountRm: net,
-          bankName: full.bank_name,
-          accountHolder: holder,
-          accountLast4: last4,
-          withdrawalNo: item.withdrawal_no,
-          status: item.status || "pending_review",
-          statusText: "待审核",
-        },
-        item,
-        data: {
-          withdrawalId: item.id,
-          withdrawalNo: item.withdrawal_no,
-          status: item.status || "pending_review",
-        },
+      // Anti-duplicate: period-level lock for this withdrawal row (amount freeze via freeze_tx).
+      const sourceLedgerIds = freezeTxId ? [String(freezeTxId)] : [];
+      const sourceOrderIds = [];
+
+      const payoutRow = await upsertPayoutRequest(companionDb, {
+        payoutNo: item.withdrawal_no,
+        applicantType: "companion",
+        applicantId: auth.profile.id,
+        applicantName: auth.profile.display_name || "",
+        applicantUid: auth.profile.boss_uid || auth.profile.id || "",
+        amount: net,
+        currency: "MYR",
+        payoutMethod: withdrawalPayload.payout_method,
+        bankName: full.bank_name || "",
+        accountName: holder,
+        accountNumberMasked: accountNumber,
+        tngAccount: withdrawalPayload.tng_account,
+        sourceOrderIds,
+        sourceLedgerIds,
+        settlementDate,
+        status: "pending_friday",
+        relatedTable: "companion_withdrawals",
+        relatedRecordId: item.id,
+        meta: { catFoodAmount: amount, grossRm: gross, feeRm: fee },
       });
-    }
 
-    return json(res,400,{ok:false,message:"未知陪玩端操作"});
-  } catch (error) {
-    return json(res, error.status || 500, {
-      ok: false,
-      message: error.message || "陪玩端接口异常",
-      status: error.status || 500,
-      supabase: error.body || null,
-      url: error.url || "",
-    });
-  }
-}
+      try {
+        await lockPayoutSources(companionDb, {
+          applicantId: auth.profile.id,
+          sources: [{ kind: "period", id: `companion-wd:${item.id}` }],
+          payoutRequestId: payoutRow?.id,
+          relatedTable: "companion_withdrawals",
+          relatedRecordId: item.id,
+        });
+      } catch (lockErr) {
+        if (lockErr?.code === "SOURCE_LOCKED") {
+          return json(res, 409, { ok: false, message: lockErr.message });
+        }
+      }
 
+      try {
+        await insertCompanionNotification({
+          companionUserId: auth.profile.id,
+          category: "withdraw",
+          title: "提现申请已提交",
+          body: `提现单 ${item.withdrawal_no} 已进入待周五结算，预计发放 ${settlementDate}。`,
+          href: "/companion/withdraw/",
+          noticeKey: `withdraw-submitted-${item.id}`,
+        });
+      } catch {
+        /* optional */
