@@ -1,0 +1,93 @@
+{
+  "meta": {
+    "base": "https://meow-cuijiao-homepage-staging.vercel.app",
+    "startedAt": "2026-08-03T12:47:21.072Z",
+    "stagingFixed": "https://meow-cuijiao-homepage-staging.vercel.app/",
+    "supabaseHosts": {
+      "staging": "jqfaknpmcnqwqvatrwgo.supabase.co",
+      "prodVercel": "jqfaknpmcnqwqvatrwgo.supabase.co"
+    },
+    "finishedAt": "2026-08-03T12:52:37.116Z"
+  },
+  "gates": {
+    "G_health": {
+      "status": "PASS",
+      "note": "{\"ok\":true,\"configured\":true,\"missing\":[],\"tables\":[\"profiles\",\"companion_profiles\",\"orders\",\"conversations\",\"messages\",\"transactions\",\"banners\",\"announcements\",\"customer_service_reports\"]}"
+    },
+    "G_env_separated": {
+      "status": "FAIL",
+      "note": "stagingStorage=jqfaknpmcnqwqvatrwgo.supabase.co prodVercelStorage=jqfaknpmcnqwqvatrwgo.supabase.co separated=false"
+    },
+    "G_banner_layout": {
+      "status": "PASS",
+      "note": "hasHero=true coverFill=true shortClamp168=false css=/assets/index-C9miY4dV.css"
+    },
+    "G_order_path": {
+      "status": "PASS",
+      "note": "order=MCJ-1785761291232-9Q8P exit=0 checklistFail=0"
+    }
+  },
+  "orderPath": {
+    "exitCode": 0,
+    "summary": {
+      "total": 12,
+      "pass": 12,
+      "fail": 0,
+      "launch": "YES"
+    },
+    "orderId": "9fab8c09-c0a3-44c7-830f-dd9f9b11f519",
+    "orderNo": "MCJ-1785761291232-9Q8P",
+    "results": {
+      "C01_login_isolation": {
+        "status": "PASS",
+        "note": "denyUnauth=true denyCross=true allowOwn=true unauthOrders=401 bossAsAdmin=403 bossAsCs=403"
+      },
+      "C02_order_create_idempotent": {
+        "status": "PASS",
+        "note": "order=MCJ-1785761291232-9Q8P paid=true db=pending bossSees=true csSees=true adminSees=true idempotent=true c1=200 c2=200"
+      },
+      "C04_claim_lock": {
+        "status": "PASS",
+        "note": "grab1=true/已抢单，等待老板确认。 grab2=true grabAlt=true grabs=2 intent=true intentOnly=true bossSees=true csAssign=true/指定成功，其他抢单陪玩已标记为未选中。 csAssignAlt=false/该陪玩已被标记为未选中。 companion=1d3fe6a0-830f-47aa-a135-e3f3ab9ff6d0 status=claimed"
+      },
+      "C05_boss_cs_chat": {
+        "status": "PASS",
+        "note": "conv=f2af62e4-997b-4a18-87a8-dae90084e5c4 boss=true cs=true img=true persist=true take=true takeMsg=已接待该会话。"
+      },
+      "C06_cs_exclusive_accept": {
+        "status": "PASS",
+        "note": "take2=409 msg=该会话已由客服 终验客服 接待。 createCs2=true"
+      },
+      "C07_privacy_isolation": {
+        "status": "PASS",
+        "note": "leakPublic=false leakBoss=false ownBootOk=true ownHasContext=true"
+      },
+      "C08_real_uploads": {
+        "status": "PASS",
+        "note": "avatar=true/https://jqfaknpmcnqwqvatrwgo.supabase.co/storage/v1/object/p voice=true/https://jqfaknpmcnqwqvatrwgo.supabase.co idDoc=true/200 chatImg=true imgUrl=https://jqfaknpmcnqwqvatrwgo.supabase.co/storage/v1/object/p mediaUp=true"
+      },
+      "C03_status_machine": {
+        "status": "PASS",
+        "note": "flow={\"afterPay\":\"pending\",\"afterGrab\":\"claimed\",\"afterSelect\":\"claimed\",\"inProgress\":\"in_progress\",\"completed\":\"completed\"} acceptDirect=true/已确认接单，订单进入待开始 start=true/已开始服务，订单进入进行中。 complete=true done=true reclaim=false reassign=false companion=1d3fe6a0-830f-47aa-a135-e3f3ab9ff6d0"
+      },
+      "C09_settle_once": {
+        "status": "PASS",
+        "note": "incomeCount=1 amt=40 csRewards=1 platform=0 again=false/false"
+      },
+      "C10_withdraw_flow": {
+        "status": "PASS",
+        "note": "submit=true id=f9fe3500-3a43-43f9-9ffa-eccf820e3407 msg=提现申请已提交，等待后台审核 review=true/已审核通过，进入待打款（需线下汇款并上传收据后确认） paid=true/已上传收据并确认打款，提现状态为已完成 balSync=true status=completed avail 230->180"
+      },
+      "C11_debounce_guards": {
+        "status": "PASS",
+        "note": "createIdem=true d1=98c749e0-16d3-4a73-bbda-5b2ee7b9a6e8 d2=98c749e0-16d3-4a73-bbda-5b2ee7b9a6e8 wdA=false wdB=false wdBmsg=最低提现 50 猫粮 grab2msg=你已抢过该单，请等待老板确认。"
+      },
+      "C12_full_path": {
+        "status": "PASS",
+        "note": "order=MCJ-1785761291232-9Q8P conv=f2af62e4-997b-4a18-87a8-dae90084e5c4 withdraw=f9fe3500-3a43-43f9-9ffa-eccf820e3407 criticalPass=true"
+      }
+    }
+  },
+  "launch": "NO",
+  "productionDeployAllowed": false
+}

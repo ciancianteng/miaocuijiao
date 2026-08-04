@@ -1,0 +1,62 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>活动中心 - MEOW CUI JIAO</title>
+  <script type="module" crossorigin src="/assets/activities-CD3IND-b.js"></script>
+  <link rel="modulepreload" crossorigin href="/assets/modulepreload-polyfill-Dezn_h7o.js">
+  <link rel="modulepreload" crossorigin href="/assets/role-gates-BpI1sUYK.js">
+  <link rel="modulepreload" crossorigin href="/assets/notify-system-CZ0z3dts.js">
+  <link rel="modulepreload" crossorigin href="/assets/real-data-admin-B0bng4Wu.js">
+  <link rel="modulepreload" crossorigin href="/assets/design-system-Vj8UxIjb.js">
+  <link rel="modulepreload" crossorigin href="/assets/site-data-BsmG5t1H.js">
+  <link rel="modulepreload" crossorigin href="/assets/launch-readiness-fixes-B1BTV5-S.js">
+  <link rel="stylesheet" crossorigin href="/assets/real-data-admin-DKHMFpI9.css">
+  <link rel="stylesheet" crossorigin href="/assets/design-system-B5vWJaMD.css">
+  <link rel="stylesheet" crossorigin href="/assets/notify-system-S5DURIzK.css">
+  <link rel="stylesheet" crossorigin href="/assets/style-CU5EgNCP.css">
+</head>
+<body>
+  <header class="topbar"><a class="brand" href="index.html"><img src="/assets/meow-cuijiao-brand-CuF7I-dn.jpg" alt="MEOW CUI JIAO"><span>MEOW CUI JIAO</span></a><nav class="navlinks"><a href="index.html">首页</a><a href="mine.html">我的</a></nav><button class="login-btn" data-login>登录</button></header>
+  <main class="dashboard">
+    <section class="page-title"><p class="eyebrow">ACTIVITY CENTER</p><h1>活动中心</h1><p>后台发布的活动会在这里展示。</p></section>
+    <section class="section-row" id="activityList"></section>
+  </main>
+  <div class="modal" id="loginModal" aria-hidden="true"><div class="modal-box"><button class="close" data-close>×</button><h2>手机号登录</h2><p>登录后可参加活动</p><label>手机号<input id="phoneInput" maxlength="11" placeholder="请输入手机号"></label><label>验证码<div class="code-row"><input id="codeInput" maxlength="6" placeholder="6位验证码"><button id="sendCode">获取验证码</button></div></label><button class="primary full" id="confirmLogin">登录并进入</button><div class="login-state" id="loginState">请输入收到的验证码</div></div></div>
+  <script>
+    (function(){
+      function readDb(){try{return JSON.parse(localStorage.getItem('mcjPlatformData.v1')||'{}')}catch(e){return {}}}
+      function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
+      function active(item){
+        if(!item || item.enabled===false)return false;
+        var now=Date.now(),start=item.startAt?new Date(item.startAt).getTime():0,end=item.endAt?new Date(item.endAt).getTime():0;
+        return (!start||now>=start)&&(!end||now<=end);
+      }
+      function openLink(link){
+        if(!link)return '#';
+        return link;
+      }
+      var db=readDb();
+      var items=((db.contents&&Array.isArray(db.contents.activities))?db.contents.activities:[]).filter(active).sort(function(a,b){return (Number(a.sort)||99)-(Number(b.sort)||99)});
+      document.getElementById('activityList').innerHTML=items.length?items.map(function(item){
+        var btn=item.buttonText||item.button||'立即查看';
+        var needLogin=/参加|领取|报名|兑换/.test(btn);
+        return '<article class="work-card"><img class="hero-logo" src="'+esc(item.image||'assets/hero-banner-latest.png')+'" alt="'+esc(item.title||'活动')+'"><h2>'+esc(item.title||'活动')+'</h2><p>'+esc(item.description||'')+'</p><small>'+esc((item.startAt||'不限')+' - '+(item.endAt||'不限'))+'</small><p>'+esc(item.condition||item.conditions||'参与条件以活动说明为准')+'</p><a class="primary" '+(needLogin?'data-activity-join ':'')+'style="display:inline-flex;align-items:center;justify-content:center;text-decoration:none" href="'+esc(openLink(item.link))+'">'+esc(btn)+'</a></article>';
+      }).join(''):'<article class="work-card"><h2>暂时没有活动</h2><p>后台发布并启用活动后会显示在这里。</p></article>';
+      document.addEventListener('click',function(e){
+        var join=e.target.closest&&e.target.closest('[data-activity-join]');
+        if(!join)return;
+        var logged=window.MCJRoleGate&&window.MCJRoleGate.isLogged&&window.MCJRoleGate.isLogged('customer');
+        if(!logged){e.preventDefault();document.getElementById('loginModal').classList.add('show');document.getElementById('loginModal').setAttribute('aria-hidden','false');}
+      },true);
+    })();
+  </script>
+</body>
+</html>
+
+
+
+
+
+

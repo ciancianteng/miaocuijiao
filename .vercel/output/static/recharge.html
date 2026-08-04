@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <script src="/portal-early-gate.js?v=20260804authP0hard"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>充值中心 - MEOW CUI JIAO</title>
+  <style>
+    *{box-sizing:border-box}
+    body{margin:0;background:#08070a;color:#fff;font-family:"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+    .boss-nav{display:flex;gap:18px;flex:1;flex-wrap:wrap;align-items:center}
+    .boss-nav a,.boss-nav button{border:0;background:transparent;color:#cdb8c4;cursor:pointer;font:inherit;font-size:14px;padding:0;text-decoration:none}
+    .boss-nav a.active{color:#ffd6e7;font-weight:900}
+    .recharge-shell{width:min(1080px,calc(100% - 32px));margin:0 auto;padding:24px 0 80px;display:grid;gap:16px}
+    .page-head,.panel{border:1px solid rgba(255,255,255,.10);border-radius:18px;background:rgba(255,255,255,.045);padding:18px}
+    .page-head{display:flex;align-items:end;justify-content:space-between;gap:16px}
+    .page-head h1{margin:0;font-size:28px}.page-head p{margin:6px 0 0;color:#9ca3af}
+    .stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+    .stat{border:1px solid rgba(255,255,255,.08);border-radius:14px;background:rgba(0,0,0,.22);padding:14px}
+    .stat span{display:block;color:#9ca3af;font-size:13px}.stat strong{display:block;margin-top:8px;font-size:24px}
+    .layout{display:grid;grid-template-columns:1.25fr .75fr;gap:16px}
+    .panel h2{margin:0 0 14px;font-size:20px}.muted{color:#9ca3af}.hint{margin-top:10px;color:#9ca3af;font-size:13px;line-height:1.6}
+    .campaigns{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+    .campaign,.method,.primary-btn,.ghost-btn{border-radius:12px;min-height:42px;display:inline-flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;font-weight:900}
+    .campaign{flex-direction:column;align-items:flex-start;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.055);color:#fff;padding:14px;text-align:left}
+    .campaign.active{border-color:rgba(255,143,197,.55);background:rgba(255,143,197,.16)}
+    .campaign strong{font-size:18px}.campaign small{color:#9ca3af;font-weight:700;line-height:1.5}
+    .campaign .tag{display:inline-block;margin-top:8px;padding:2px 8px;border-radius:999px;background:rgba(255,143,197,.18);color:#ffd6e7;font-size:12px}
+    .methods{display:grid;gap:10px}.method{justify-content:space-between;padding:0 12px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.055);color:#fff}
+    .method.active{border-color:rgba(255,143,197,.55);background:rgba(255,143,197,.16);color:#ffd6e7}
+    .method small{color:#9ca3af;font-weight:800}.method.open small{color:#8ff0bd}.method.closed small{color:#ffd27a}
+    .summary-line{display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid rgba(255,255,255,.08);padding:11px 0}.summary-line:last-of-type{border-bottom:0}
+    .summary-line span{color:#9ca3af}.summary-line strong{font-size:18px}
+    .primary-btn{width:100%;border:1px solid rgba(255,143,197,.45);background:linear-gradient(180deg,#ffdcea,#f3a6ca);color:#1b0712;margin-top:16px}
+    .primary-btn:disabled{opacity:.55;cursor:not-allowed}
+    .ghost-btn{padding:0 12px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.055);color:#fff}
+    .message{display:none;border-radius:12px;padding:12px;margin-top:12px;line-height:1.55}.message.show{display:block}.message.ok{border:1px solid rgba(143,240,189,.24);background:rgba(143,240,189,.09);color:#8ff0bd}.message.warn{border:1px solid rgba(255,210,122,.22);background:rgba(255,210,122,.08);color:#ffd27a}.message.bad{border:1px solid rgba(255,113,145,.24);background:rgba(255,113,145,.08);color:#ff9db7}
+    .records,.ledger{display:grid;gap:8px}.record,.tx{display:grid;grid-template-columns:1.2fr .8fr .8fr .9fr;gap:10px;align-items:center;border:1px solid rgba(255,255,255,.08);border-radius:12px;background:rgba(0,0,0,.18);padding:11px}.record span,.tx span{color:#9ca3af}.empty{padding:20px;text-align:center;color:#9ca3af}
+    @media(max-width:860px){.layout,.stats,.campaigns{grid-template-columns:1fr}.page-head{display:block}}
+    @media(max-width:520px){.recharge-shell{width:calc(100% - 24px);padding-top:16px}.boss-nav{gap:12px}.record,.tx{grid-template-columns:1fr}.page-head h1{font-size:24px}}
+  </style>
+  <link rel="stylesheet" crossorigin href="/assets/style-CU5EgNCP.css">
+  <link rel="stylesheet" crossorigin href="/assets/boss-header-DuK7QfHV.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="index.html"><img src="/assets/meow-cuijiao-brand-CuF7I-dn.jpg" alt="MEOW CUI JIAO"><span>MEOW CUI JIAO</span></a>
+    <nav class="boss-nav">
+      <a href="index.html">首页</a>
+      <a href="companion-center.html">陪玩大厅</a>
+      <a class="active" href="recharge.html">充值中心</a>
+      <a href="orders.html">我的订单</a>
+      <a href="support.html">在线客服</a>
+      <a href="mine.html">我的账号</a>
+      <button type="button" data-logout>退出登录</button>
+    </nav>
+  </header>
+
+  <main class="recharge-shell" id="rechargeApp"></main>
+
+  <script src="src/role-gates.js"></script>
+  <script src="src/boss-header.js" defer></script>
+  <script>
+    (function(){
+      var root=document.getElementById('rechargeApp');
+      var state={loading:true,submitting:false,error:'',message:'',messageType:'warn',summary:{balance:0,paidBalance:0,bonusBalance:0,totalRecharge:0,totalSpent:0},campaigns:[],transactions:[],methods:[],records:[],campaignId:'',method:'tng'};
+      function token(){return localStorage.getItem('mcjAuthAccessToken')||sessionStorage.getItem('mcjAuthAccessToken')||''}
+      function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
+      function money(v){var n=Number(v||0);return 'RM'+(Number.isFinite(n)?n:0).toFixed(2)}
+      function date(v){if(!v)return '-';try{return new Date(v).toLocaleString('zh-CN',{hour12:false})}catch(e){return v}}
+      function methodName(code){var m=state.methods.find(function(x){return x.code===code});return m?m.name:'-'}
+      function statusText(s){return {pending:'待支付',pending_payment:'待支付',unavailable:'暂未开放',failed:'失败',paid:'已支付',cancelled:'已取消'}[s]||s||'-'}
+      function selectedCampaign(){return (state.campaigns||[]).find(function(c){return c.id===state.campaignId})||null}
+      function messageHtml(){if(!state.message)return '';return '<div class="message show '+state.messageType+'">'+esc(state.message)+'</div>'}
+      function paint(){
+        if(!token()){root.innerHTML='<section class="page-head"><div><h1>充值中心</h1><p>请先登录老板账号后再进行充值。</p></div><a class="ghost-btn" href="index.html">返回首页登录</a></section>';return}
+        if(state.loading){root.innerHTML='<section class="page-head"><div><h1>充值中心</h1><p>正在读取充值数据...</p></div></section>';return}
+        if(state.error){root.innerHTML='<section class="page-head"><div><h1>充值中心</h1><p class="muted">'+esc(state.error)+'</p></div><button class="ghost-btn" data-refresh type="button">重试</button></section>';return}
+        var c=selectedCampaign();
+        root.innerHTML='<section class="page-head"><div><h1>充值中心</h1><p>选择充值活动档位，支付成功后由服务端回调入账，刷新页面不会重复到账。</p></div><button class="ghost-btn" data-refresh type="button">刷新</button></section>'
+          +'<section class="stats"><article class="stat"><span>猫粮余额</span><strong>'+esc(state.summary.balance||0)+' 猫粮</strong></article><article class="stat"><span>充值猫粮</span><strong>'+esc(state.summary.paidBalance||0)+' 猫粮</strong></article><article class="stat"><span>赠送猫粮</span><strong>'+esc(state.summary.bonusBalance||0)+' 猫粮</strong></article></section>'
+          +'<section class="layout"><div class="panel"><h2>充值活动档位</h2>'+(state.campaigns.length?'<div class="campaigns">'+state.campaigns.map(function(item){return '<button class="campaign '+(state.campaignId===item.id?'active':'')+'" data-campaign="'+esc(item.id)+'" type="button"><strong>'+esc(item.name)+'</strong><small>购买 '+esc(item.totalCatFood)+' 猫粮<br>需支付 '+money(item.payAmountRm)+'<br>基础 '+esc(item.baseCatFood)+' · 赠送 '+esc(item.bonusCatFood)+'</small><span class="tag">活动</span></button>'}).join('')+'</div>':'<div class="empty">暂无启用中的充值活动，请联系管理员在后台创建。</div>')+'<p class="hint">到账以支付平台服务端回调为准，前端成功页不会直接加余额。</p></div>'
+          +'<aside class="panel"><h2>确认支付</h2><div class="methods">'+state.methods.map(function(m){return '<button class="method '+(state.method===m.code?'active ':'')+(m.configured?'open':'closed')+'" data-method="'+esc(m.code)+'" type="button"><span>'+esc(m.name)+'</span><small>'+esc(m.statusText||'暂未开放')+'</small></button>'}).join('')+'</div>'
+          +'<div class="summary-line"><span>购买猫粮</span><strong>'+esc(c?c.totalCatFood:'-')+' 猫粮</strong></div><div class="summary-line"><span>需支付</span><strong>'+(c?money(c.payAmountRm):'-')+'</strong></div><div class="summary-line"><span>基础猫粮</span><strong>'+esc(c?c.baseCatFood:'-')+' 猫粮</strong></div><div class="summary-line"><span>赠送猫粮</span><strong>'+esc(c?c.bonusCatFood:'-')+' 猫粮</strong></div><div class="summary-line"><span>支付方式</span><strong>'+esc(methodName(state.method))+'</strong></div>'
+          +'<button class="primary-btn" data-submit type="button" '+(state.submitting||!c?'disabled':'')+'>'+(state.submitting?'正在创建...':'立即充值')+'</button>'+messageHtml()+'</aside></section>'
+          +'<section class="panel"><h2>钱包流水</h2>'+ledgerHtml()+'</section>'
+          +'<section class="panel"><h2>充值订单</h2>'+recordsHtml()+'</section>';
+      }
+      function ledgerHtml(){if(!state.transactions.length)return '<div class="empty">暂无钱包流水</div>';return '<div class="ledger">'+state.transactions.map(function(t){return '<div class="tx"><strong>'+esc(t.typeText)+'</strong><span>'+(t.signedAmount>0?'+':'')+esc(t.signedAmount)+' 猫粮 · '+esc(t.balanceTypeText)+'</span><span>'+esc(t.reason||'-')+'</span><span>'+esc(date(t.createdAt))+'</span></div>'}).join('')+'</div>'}
+      function recordsHtml(){if(!state.records.length)return '<div class="empty">暂无充值记录</div>';return '<div class="records">'+state.records.map(function(r){return '<div class="record"><strong>'+esc(r.paymentNo)+'</strong><span>'+money(r.amount)+'</span><span>'+esc(statusText(r.status))+'</span><span>'+esc(date(r.createdAt))+'</span></div>'}).join('')+'</div>'}
+      async function load(){
+        if(!token()){state.loading=false;paint();return}
+        state.loading=true;state.error='';paint();
+        try{
+          var res=await fetch('/api/recharge',{headers:{Accept:'application/json',Authorization:'Bearer '+token()}});
+          var body=await res.json().catch(function(){return {}});
+          if(!res.ok||body.ok===false)throw new Error(body.message||'充值数据读取失败');
+          state.summary=body.summary||state.summary;
+          state.campaigns=body.campaigns||[];
+          state.transactions=body.transactions||[];
+          state.methods=body.methods&&body.methods.length?body.methods:[{code:'tng',name:'TNG',statusText:'暂未开放'},{code:'alipay',name:'支付宝',statusText:'暂未开放'},{code:'bank',name:'银行支付',statusText:'暂未开放'}];
+          state.records=body.records||[];
+          if(!state.campaigns.some(function(c){return c.id===state.campaignId}))state.campaignId=state.campaigns[0]?state.campaigns[0].id:'';
+          if(!state.methods.some(function(m){return m.code===state.method}))state.method=state.methods[0]?state.methods[0].code:'';
+          if(body.message){state.message=body.message;state.messageType='warn'}else if(!state.message||state.messageType==='warn'){state.message='';}
+        }catch(err){state.error=err.message||'充值数据读取失败'}finally{state.loading=false;paint()}
+      }
+      async function submit(){
+        var c=selectedCampaign();
+        if(!c){state.message='请选择充值活动档位。';state.messageType='bad';paint();return}
+        if(!state.method){state.message='请选择支付方式。';state.messageType='bad';paint();return}
+        state.submitting=true;state.message='';paint();
+        try{
+          var res=await fetch('/api/recharge',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token()},body:JSON.stringify({campaignId:c.id,paymentMethod:state.method})});
+          var body=await res.json().catch(function(){return {}});
+          if(body.paymentUrl){location.href=body.paymentUrl;return}
+          state.message=body.message||'该支付方式暂未开放';
+          state.messageType=res.ok?'ok':(res.status===409?'warn':'bad');
+          await load();
+        }catch(err){state.message=err.message||'充值提交失败';state.messageType='bad';paint()}finally{state.submitting=false;paint()}
+      }
+      document.addEventListener('click',function(e){
+        var camp=e.target.closest('[data-campaign]');if(camp){state.campaignId=camp.dataset.campaign;paint();return}
+        var methodBtn=e.target.closest('[data-method]');if(methodBtn){state.method=methodBtn.dataset.method;paint();return}
+        if(e.target.closest('[data-submit]')){submit();return}
+        if(e.target.closest('[data-refresh]')){load();return}
+        if(e.target.closest('[data-logout]')){if(window.MCJRoleGate){window.MCJRoleGate.logout('boss');window.MCJRoleGate.logout('customer')}localStorage.removeItem('mcjAuthAccessToken');localStorage.removeItem('mcjAuthRefreshToken');sessionStorage.removeItem('mcjAuthAccessToken');sessionStorage.removeItem('mcjAuthRefreshToken');location.href='index.html';return}
+      });
+      load();
+    })();
+  </script>
+</body>
+</html>

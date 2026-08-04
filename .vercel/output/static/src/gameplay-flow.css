@@ -1,0 +1,35 @@
+.club-price-modal{--club-modal-top:clamp(38px,6vh,72px);position:fixed;inset:0;z-index:999999;display:grid;align-items:start;justify-items:center;padding:var(--club-modal-top) 18px 18px;background:rgba(0,0,0,.68);backdrop-filter:blur(12px);overflow:auto}
+.club-price-card{position:relative;width:min(980px,100%);max-height:calc(100vh - var(--club-modal-top) - 18px);overflow:auto;border-radius:24px;border:1px solid rgba(255,190,224,.42);background:linear-gradient(145deg,rgba(20,12,24,.98),rgba(7,6,10,.98));box-shadow:0 24px 80px rgba(0,0,0,.55),0 0 32px rgba(255,142,199,.16);padding:22px;color:#fff5fa}
+.club-price-close{position:absolute;right:14px;top:14px;width:36px;height:36px;border-radius:13px;border:1px solid rgba(255,190,224,.24);background:rgba(255,255,255,.06);color:#ffd6e9;font-size:20px}
+.club-price-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:16px;padding-right:42px}
+.club-price-head h2{margin:0;color:#ffe2ef;font-size:26px}.club-price-head p{margin:7px 0 0;color:#cbb3c1}
+.club-price-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.club-price-service{display:grid;gap:12px;border:1px solid rgba(255,190,224,.20);border-radius:18px;background:linear-gradient(145deg,rgba(255,255,255,.07),rgba(255,255,255,.025));padding:15px;min-height:210px}
+.club-price-service h3{margin:8px 0 6px;color:#fff;font-size:20px}.club-price-service p{margin:0;color:#cab6c2;line-height:1.6}
+.club-price-tag{display:inline-flex;width:max-content;border:1px solid rgba(255,142,199,.38);border-radius:999px;padding:4px 9px;color:#ffc4de;background:rgba(255,142,199,.10);font-size:12px;font-weight:900}
+.club-price-meta{display:grid;gap:5px;color:#d8c6d0}.club-price-meta b{font-size:18px;color:#ffd6e9}.club-price-meta span{font-size:12px}
+.club-price-actions{display:flex;gap:9px;align-items:center;margin-top:auto}.club-price-actions.single{margin-top:14px}
+.club-price-actions button,.club-demand-submit,.club-chat-form button{min-height:40px;border-radius:999px;border:1px solid rgba(255,190,224,.26);background:rgba(255,255,255,.05);color:#ffd6e9;font-weight:1000;padding:0 14px}
+.club-price-actions button:first-child,.club-demand-submit,.club-chat-form button{background:linear-gradient(180deg,#ffe2ef,#f09ac3);border:0;color:#1b0712}
+.club-price-detail{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.club-price-detail.wide{grid-column:1/-1}
+.club-price-detail div{border:1px solid rgba(255,190,224,.16);border-radius:14px;background:rgba(255,255,255,.04);padding:12px}
+.club-price-detail span{display:block;color:#bfaeba;font-size:12px}.club-price-detail strong{display:block;margin-top:5px;color:#fff}
+.club-demand-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.club-demand-form label{display:grid;gap:7px;color:#ffd6e9;font-weight:900}
+.club-demand-form .wide,.club-demand-submit{grid-column:1/-1}.club-demand-form input,.club-demand-form select,.club-demand-form textarea,.club-chat-form input{min-height:42px;border-radius:13px;border:1px solid rgba(255,190,224,.20);background:rgba(255,255,255,.045);color:#fff;padding:9px 12px}
+.club-demand-form textarea{min-height:96px;resize:vertical}.club-price-empty{border:1px solid rgba(255,190,224,.16);border-radius:18px;padding:18px;color:#cbb3c1;background:rgba(255,255,255,.035)}
+.club-chat-box{max-height:360px;overflow:auto;border:1px solid rgba(255,190,224,.16);border-radius:18px;background:rgba(0,0,0,.20);padding:12px}
+.club-chat-line{max-width:82%;border:1px solid rgba(255,190,224,.14);border-radius:15px;padding:10px 12px;margin-bottom:10px;background:rgba(255,255,255,.045)}
+.club-chat-line.me{margin-left:auto;background:rgba(255,142,199,.12)}.club-chat-line.system{max-width:100%;background:rgba(255,142,199,.08)}
+.club-chat-line p{margin:5px 0}.club-chat-line small{color:#bfaeba}.club-chat-form{display:grid;grid-template-columns:1fr auto;gap:8px;margin-top:12px}
+.club-candidate-list{display:grid;gap:8px}.club-candidate{display:flex;align-items:center;gap:10px;justify-content:space-between;border:1px solid rgba(255,190,224,.16);border-radius:14px;padding:10px;background:rgba(255,255,255,.04)}
+.gameplay-cover{width:100%;height:110px;border-radius:14px;object-fit:cover;border:1px solid rgba(255,190,224,.16);margin-bottom:8px}
+.combined-order-entry i{overflow:hidden;padding:0;background:linear-gradient(145deg,rgba(255,142,199,.16),rgba(20,8,18,.88))!important}
+.combined-order-entry i img{display:block;width:100%;height:100%;object-fit:cover;border-radius:inherit}
+.combined-hub-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.combined-hub-card{min-height:190px;text-align:left;border:1px solid rgba(255,190,224,.26);border-radius:20px;background:linear-gradient(145deg,rgba(255,142,199,.12),rgba(255,255,255,.035));color:#fff5fa;padding:18px;box-shadow:inset 0 0 18px rgba(255,220,235,.04);cursor:pointer}
+.combined-hub-card span{display:inline-flex;width:max-content;border:1px solid rgba(255,142,199,.34);border-radius:999px;padding:4px 10px;color:#ffc6df;background:rgba(255,142,199,.10);font-size:12px;font-weight:1000}
+.combined-hub-card strong{display:block;margin-top:14px;font-size:22px;color:#fff}
+.combined-hub-card p{margin:9px 0 0;color:#cdb8c4;line-height:1.6}
+.combined-hub-card:hover{transform:translateY(-3px);border-color:rgba(255,220,235,.56);box-shadow:0 0 26px rgba(255,142,199,.18),0 18px 48px rgba(0,0,0,.32)}
+@media(max-width:760px){.club-price-modal{--club-modal-top:28px;padding-left:12px;padding-right:12px}.club-price-grid,.club-price-detail,.club-demand-form{grid-template-columns:1fr}.club-price-card{padding:18px;border-radius:20px;max-height:calc(100vh - var(--club-modal-top) - 14px)}.club-price-head h2{font-size:22px}.club-chat-form{grid-template-columns:1fr}}
+@media(max-width:760px){.combined-hub-grid{grid-template-columns:1fr}.combined-hub-card{min-height:150px}}

@@ -1,0 +1,18 @@
+{
+  "error": "companion submit failed: missing ) after argument list",
+  "log": [
+    {
+      "expectedSettlement": "2026-08-07",
+      "BASE": "https://meow-cuijiao-homepage-staging.vercel.app"
+    },
+    {
+      "companionId": "c776e811-6003-48a4-8f11-ed9eb1b70898"
+    },
+    {
+      "companion_submit": {
+        "ok": false,
+        "message": "missing ) after argument list"
+      }
+    }
+  ]
+}

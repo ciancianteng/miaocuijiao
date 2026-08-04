@@ -1,0 +1,78 @@
+{
+  "base": "https://meow-cuijiao-homepage-staging.vercel.app",
+  "at": "2026-08-03T16:13:49.476Z",
+  "pass": true,
+  "failed": 0,
+  "results": [
+    {
+      "name": "modal has no hardcoded service list",
+      "pass": true,
+      "detail": "uses companion services"
+    },
+    {
+      "name": "modal switches unit price on service select",
+      "pass": true,
+      "detail": "applySelectedService present"
+    },
+    {
+      "name": "modal hydrates from catalog",
+      "pass": true,
+      "detail": "catalog hydrate"
+    },
+    {
+      "name": "place-order page has no hardcoded service list",
+      "pass": true,
+      "detail": "page chips from companion.services"
+    },
+    {
+      "name": "companion login",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "companion bootstrap",
+      "pass": true,
+      "detail": "id=1d3fe6a0-830f-47aa-a135-e3f3ab9ff6d0 game=VALORANT"
+    },
+    {
+      "name": "platform has VALORANT + 三角洲",
+      "pass": true,
+      "detail": "count=7"
+    },
+    {
+      "name": "companion save VALORANT+三角洲",
+      "pass": true,
+      "detail": "保存成功"
+    },
+    {
+      "name": "catalog shows only VALORANT + 三角洲",
+      "pass": true,
+      "detail": "[\"VALORANT\",\"三角洲\"]"
+    },
+    {
+      "name": "catalog prices match selected games",
+      "pass": true,
+      "detail": "[{\"name\":\"VALORANT\",\"price\":22},{\"name\":\"三角洲\",\"price\":25}]"
+    },
+    {
+      "name": "public companions payload includes services",
+      "pass": true,
+      "detail": "[\"VALORANT\",\"三角洲\"]"
+    },
+    {
+      "name": "companion save VALORANT only",
+      "pass": true,
+      "detail": "保存成功"
+    },
+    {
+      "name": "after disable 三角洲, catalog only VALORANT",
+      "pass": true,
+      "detail": "[\"VALORANT\"]"
+    },
+    {
+      "name": "boss login",
+      "pass": true,
+      "detail": ""
+    }
+  ]
+}

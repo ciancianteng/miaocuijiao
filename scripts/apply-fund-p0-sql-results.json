@@ -1,0 +1,17 @@
+[
+  {
+    "file": "supabase/wallet-system.sql",
+    "ok": true,
+    "detail": "applied"
+  },
+  {
+    "file": "supabase/migrations/20260803_withdraw_manual_remittance.sql",
+    "ok": true,
+    "detail": "applied"
+  },
+  {
+    "file": "admin_role_super_admin",
+    "ok": false,
+    "detail": "invalid input value for enum mcj_user_role: \"super_admin\""
+  }
+]

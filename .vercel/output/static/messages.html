@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <script src="/portal-early-gate.js?v=20260804authP0hard"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>消息 - MEOW CUI JIAO</title>
+  <link rel="stylesheet" crossorigin href="/src/messages.css">
+  <link rel="stylesheet" crossorigin href="/assets/design-system-B5vWJaMD.css">
+  <link rel="stylesheet" crossorigin href="/assets/style-CU5EgNCP.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="index.html"><img src="/assets/meow-cuijiao-brand-CuF7I-dn.jpg" alt="MEOW"><span>MEOW CUI JIAO</span></a>
+    <nav class="nav">
+      <a href="index.html">首页</a>
+      <a href="companion-center.html">陪玩大厅</a>
+      <a class="active" href="messages.html">消息</a>
+      <a href="mine.html">我的</a>
+    </nav>
+  </header>
+  <main class="mcj-shell">
+    <section id="customerChatRoot"></section>
+  </main>
+  <script src="src/platform-contract.js"></script>
+  <script src="src/unified-config.js"></script>
+  <script src="src/commission-engine.js"></script>
+  <script src="src/unified-api.js"></script>
+  <script src="src/role-gates.js"></script>
+  <script src="src/boss-header.js" defer></script>
+  <script src="src/chat-api.js"></script>
+  <script src="src/chat-ui.js"></script>
+  <script src="src/customer-service-customer-chat.js"></script>
+  <script>
+    window.addEventListener("DOMContentLoaded", function () {
+      window.MCJChat.render({
+        id: "customer-messages",
+        target: document.getElementById("customerChatRoot"),
+        role: "customer",
+        title: "消息"
+      });
+    });
+  </script>
+  <script src="src/text-guard.js" defer></script>
+  <script src="src/design-system.js" defer></script>
+</body>
+</html>

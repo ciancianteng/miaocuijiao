@@ -1,0 +1,47 @@
+{
+  "base": "https://meow-cuijiao-homepage-ely9w333a-ciancianteng-4581s-projects.vercel.app",
+  "announcementId": "7e22201b-99ed-4933-9bab-bff86f2420e4",
+  "results": [
+    {
+      "name": "FORCED_CREATE",
+      "ok": true,
+      "detail": "7e22201b-99ed-4933-9bab-bff86f2420e4"
+    },
+    {
+      "name": "CONTENT_API",
+      "ok": true,
+      "detail": "{\"player_rules\":[{\"id\":\"pc-player-rules-platform\",\"type\":\"player_rules\",\"title\":\"俱乐部等级与平台使用规则\",\"status\":\"published\",\"enabled\":true,\"sort\":10,\"updated_at\":\"2026-08-02T16:53:52.602564+00:00\",\"published_"
+    },
+    {
+      "name": "LEVELS_API",
+      "ok": true,
+      "detail": "{\"ok\":true,\"levels\":[{\"id\":\"lv1\",\"level\":1,\"code\":\"Lv1\",\"name\":\"萌喵\",\"title\":\"Lv1 萌喵\",\"icon\":\"🩶\",\"color\":\"#9CA3AF\",\"displayColor\":\"#9CA3AF\",\"cardBackground\":\"so"
+    },
+    {
+      "name": "LOGIN",
+      "ok": true,
+      "detail": "c776e811-6003-48a4-8f11-ed9eb1b70898"
+    },
+    {
+      "name": "PENDING_FORCED",
+      "ok": true,
+      "detail": "{\"forcedAckRequired\":true,\"pendingLen\":11}"
+    },
+    {
+      "name": "BLOCK_WITHOUT_ACK",
+      "ok": true,
+      "detail": "403 请先阅读并确认最新强制公告后，才能切换状态、抢单或接单。"
+    },
+    {
+      "name": "ACK",
+      "ok": true,
+      "detail": "200 已确认阅读强制公告"
+    },
+    {
+      "name": "ADMIN_SYNC",
+      "ok": true,
+      "detail": "dbVersion=2 len=24"
+    }
+  ],
+  "pass": true
+}

@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>自定义订单 | MEOW CUI JIAO</title>
+  <style>
+    .custom-shell{width:min(980px,calc(100% - 32px));margin:0 auto;padding:26px 0 44px}
+    .custom-form{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+    .custom-form label{display:grid;gap:8px;color:#ffdceb;font-weight:900}
+    .custom-form input,.custom-form select,.custom-form textarea{width:100%;box-sizing:border-box;border:1px solid rgba(243,168,203,.25);border-radius:14px;background:rgba(255,255,255,.055);color:#fff;padding:13px 15px;outline:0}
+    .custom-form textarea{min-height:118px;resize:vertical}
+    .wide{grid-column:1/-1}.custom-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:18px}
+    .empty-note{border:1px dashed rgba(243,168,203,.28);border-radius:18px;padding:18px;color:#ffdceb;background:rgba(255,255,255,.035)}
+    @media(max-width:760px){.custom-form{grid-template-columns:1fr}.custom-actions{flex-direction:column}.custom-actions .btn{width:100%;justify-content:center}}
+  </style>
+  <script type="module" crossorigin src="/assets/modulepreload-polyfill-Dezn_h7o.js"></script>
+  <script type="module" crossorigin src="/assets/role-gates-BpI1sUYK.js"></script>
+  <script type="module" crossorigin src="/assets/dropdown-system-BMTtE3fg.js"></script>
+  <script type="module" crossorigin src="/assets/design-system-Vj8UxIjb.js"></script>
+  <script type="module" crossorigin src="/assets/companion-levels-CL5obk9D.js"></script>
+  <script type="module" crossorigin src="/assets/platform-taxonomy-BGvDxGu6.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/real-data-admin-DKHMFpI9.css">
+  <link rel="stylesheet" crossorigin href="/assets/design-system-B5vWJaMD.css">
+  <link rel="stylesheet" crossorigin href="/assets/style-CU5EgNCP.css">
+  <link rel="stylesheet" crossorigin href="/assets/boss-header-DuK7QfHV.css">
+</head>
+<body>
+  <header class="topbar"><a class="brand" href="index.html"><span>MEOW CUI JIAO</span></a><nav class="navlinks"><a href="companion-center.html">陪玩大厅</a></nav></header>
+  <main class="custom-shell">
+    <section class="section-title"><div><h1>自定义订单</h1><p>填写需求后进入客服报价与匹配流程。</p></div></section>
+    <section class="neon-card" style="padding:22px">
+      <form class="custom-form" id="customOrderForm">
+        <label>需求标题<input name="title" required placeholder="例如：Valorant 双排上分"></label>
+        <label>游戏或服务<input name="game" list="customGameOptions" required placeholder="游戏 / 陪聊 / 护航"><datalist id="customGameOptions"></datalist></label>
+        <label>游戏ID<input name="game_id" required placeholder="请输入您的游戏ID（方便陪玩添加好友或组队）"></label>
+        <label>陪玩等级<select name="companion_level" id="customLevelSelect" required>
+          <option value="1" selected>Lv.1 萌喵（20–30 猫粮）</option>
+          <option value="2">Lv.2 灵喵（30–40 猫粮）</option>
+          <option value="3">Lv.3 猎喵（40–45 猫粮）</option>
+          <option value="4">Lv.4 喵神（60–75 猫粮）</option>
+          <option value="5">Lv.5 喵皇（75–100+ 猫粮）</option>
+        </select></label>
+        <label>预约时间<input name="scheduled_at" type="datetime-local" required></label>
+        <label>预计时长<select name="duration" required>
+          <option value="1小时" selected>1小时</option>
+          <option value="2小时">2小时</option>
+          <option value="3小时">3小时</option>
+          <option value="4小时">4小时</option>
+          <option value="5小时">5小时</option>
+          <option value="6小时">6小时</option>
+          <option value="8小时">8小时</option>
+          <option value="10小时">10小时</option>
+          <option value="全天">全天</option>
+        </select></label>
+        <label>需要人数<input name="people" type="number" min="1" value="1"></label>
+        <label>性别偏好<select name="gender_preference"><option>不限</option><option>女</option><option>男</option><option>保密</option></select></label>
+        <label>语言要求<input name="language" placeholder="中文 / 英文 / 马来语"></label>
+        <label class="wide">完整需求<textarea name="requirements" required placeholder="写清楚游戏区服、目标、玩法、备注和特殊要求"></textarea></label>
+      </form>
+      <div class="custom-actions">
+        <a class="btn" href="index.html">返回首页</a>
+        <button class="btn primary" type="submit" form="customOrderForm" id="customSubmit">提交给客服报价</button>
+      </div>
+      <p class="empty-note" id="customState" hidden></p>
+    </section>
+  </main>
+  <script>
+    (function(){
+      function isLogged(){return window.MCJRoleGate&&window.MCJRoleGate.isLogged('customer')}
+      function user(){return window.MCJRoleGate?window.MCJRoleGate.user('customer'):{} }
+      function authToken(){return localStorage.getItem('mcjAuthAccessToken')||sessionStorage.getItem('mcjAuthAccessToken')||'';}
+      function companionId(){var p=new URLSearchParams(location.search);return p.get('companion_id')||p.get('companion')||p.get('player')||'';}
+      var form=document.getElementById('customOrderForm'),state=document.getElementById('customState'),btn=document.getElementById('customSubmit');
+      form.addEventListener('submit',async function(e){
+        e.preventDefault();
+        if(!isLogged()){
+          if(window.MCJAuthContinue&&typeof window.MCJAuthContinue.requireLogin==='function'){
+            window.MCJAuthContinue.requireLogin(function(){form.requestSubmit?form.requestSubmit():form.dispatchEvent(new Event('submit',{cancelable:true,bubbles:true}));});
+            return;
+          }
+          if(window.MCJModal&&typeof window.MCJModal.openLogin==='function'){
+            window.MCJModal.openLogin('login');
+            return;
+          }
+          sessionStorage.setItem('mcjAfterLoginRedirect','custom-order.html');
+          location.href='index.html#login';
+          return;
+        }
+        if(btn.disabled)return;btn.disabled=true;btn.textContent='正在提交...';
+        state.hidden=true;
+        var data={};Array.prototype.forEach.call(form.elements,function(el){if(el.name)data[el.name]=String(el.value||'').trim()});
+        var requiredLevel=Number(data.companion_level||1);
+        data.required_level=requiredLevel;
+        data.acceptable_levels=[];for(var level=requiredLevel;level<=5;level++){data.acceptable_levels.push(level);}
+        var levelPrice={1:20,2:30,3:40,4:60,5:75};
+        try{
+          if(window.MCJCompanionLevels&&typeof window.MCJCompanionLevels.read==='function'){
+            window.MCJCompanionLevels.read().forEach(function(item){
+              var lv=Number(item.level||0);
+              if(lv) levelPrice[lv]=Number(item.min!=null?item.min:item.minPrice)||levelPrice[lv];
+            });
+          }
+        }catch(levelErr){}
+        var durationText=String(data.duration||'1小时');
+        var parsedHours=durationText==='全天'?10:(Number(durationText.replace(/[^\d.]/g,''))||1);
+        data.hours=parsedHours;
+        data.unit_price=levelPrice[requiredLevel]||20;
+        data.total_amount=data.unit_price*parsedHours;
+        var u=user();
+        try{
+          var response=await fetch('/api/orders',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+authToken()},body:JSON.stringify({action:'create',order:Object.assign(data,{companion_id:companionId(),order_type:'custom',description:[data.requirements||data.title||'',data.game_id?('游戏ID：'+data.game_id):'',data.scheduled_at?('预约时间：'+data.scheduled_at):''].filter(Boolean).join('\n'),hours:data.hours,unit_price:data.unit_price,total_amount:data.total_amount,game_id:data.game_id,gameId:data.game_id,boss:{id:u.id||'',uid:u.uid||u.id||'',name:u.name||u.nickname||'老板',bossId:u.bossId||''}})})});
+          var body=await response.json().catch(function(){return {}});
+          if(!response.ok||!body.ok)throw new Error(body.message||'订单提交失败');
+          var oid=(body.order&&body.order.id)||body.orderId||body.id||'';
+          state.hidden=false;
+          state.innerHTML='提交成功！订单已创建。'+(oid?(' 订单号：'+(body.order&&(body.order.orderNo||body.order.order_no)||oid)):'')+' <a href="orders.html">查看我的订单</a> · <a href="support.html">联系在线客服</a>';
+          form.reset();
+          if(oid){setTimeout(function(){location.href='payment-confirm.html?order='+encodeURIComponent(oid);},600);return;}
+          alert(body.message||'订单已提交，请联系客服确认付款。');
+        }catch(error){
+          state.hidden=false;
+          state.textContent=error.message||'订单提交失败，请稍后重试。';
+        }finally{
+          btn.disabled=false;
+          btn.textContent='提交给客服报价';
+        }
+      });
+    })();
+  </script>
+  <script>
+    (function(){
+      function fillTaxonomyOptions(){
+        if(!window.MCJTaxonomy)return;
+        var games=(window.MCJTaxonomy.items("service_types")||[]).filter(function(item){
+          var positions=item.displayPositions||[];
+          return item.allowOrder!==false && positions.indexOf('boss_order')>=0;
+        });
+        if(!games.length)games=(window.MCJTaxonomy.items("services")||[]).filter(function(item){
+          var positions=item.displayPositions||[];
+          return item.allowOrder!==false && positions.indexOf('boss_order')>=0;
+        });
+        var datalist=document.getElementById("customGameOptions");
+        if(datalist){
+          datalist.innerHTML=games.map(function(item){
+            var name=String(window.MCJTaxonomy.label(item)||'');
+            var price=item.defaultPrice||item.default_price||'';
+            var icon=item.icon?String(item.icon)+' ':'';
+            var label=icon+name+(price?' '+price:'');
+            return '<option value="'+name.replace(/"/g,'&quot;')+'">'+label.replace(/</g,'&lt;')+'</option>';
+          }).join('');
+        }
+        var levels=window.MCJTaxonomy.items("companion_levels");
+        var select=document.getElementById("customLevelSelect");
+        if(select&&levels.length){
+          var current=select.value;
+          select.innerHTML=levels.map(function(item,index){
+            var id=window.MCJTaxonomy.levelId(item)||String(index+1);
+            var num=String(id).match(/\d+/);var value=num?num[0]:id;
+            var price=(item.minPrice||item.maxPrice)?'（'+(item.minPrice||0)+'–'+(item.maxPlus?'100+':(item.maxPrice||''))+' 猫粮）':'';
+            return '<option value="'+value+'">'+[item.code,item.name].filter(Boolean).join(' ') + price + '</option>';
+          }).join('');
+          select.value=Array.prototype.some.call(select.options,function(opt){return opt.value===current})?current:select.options[0].value;
+        }
+      }
+      if(window.MCJTaxonomy&&window.MCJTaxonomy.load){window.MCJTaxonomy.load().then(fillTaxonomyOptions).catch(fillTaxonomyOptions);} else {fillTaxonomyOptions();}
+      try{
+        var serviceName=new URLSearchParams(location.search).get('service')||'';
+        if(serviceName){
+          var gameInput=document.querySelector('#customOrderForm [name="game"]');
+          if(gameInput&&!gameInput.value)gameInput.value=serviceName;
+        }
+      }catch(e){}
+    })();
+  </script>
+<script id="mcjBossLogoutHandler">
+  document.addEventListener('click', function(event) {
+    var btn = event.target && event.target.closest && event.target.closest('[data-boss-logout]');
+    if (!btn) return;
+    if (window.MCJRoleGate) {
+      window.MCJRoleGate.logout('boss');
+      window.MCJRoleGate.logout('customer');
+    }
+    localStorage.removeItem('mcjAuthAccessToken');
+    localStorage.removeItem('mcjAuthRefreshToken');
+    sessionStorage.removeItem('mcjAuthAccessToken');
+    sessionStorage.removeItem('mcjAuthRefreshToken');
+    location.href = 'index.html';
+  });
+</script>
+</body>
+</html>
+
+
+
+
+
+

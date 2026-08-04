@@ -1,0 +1,19 @@
+{
+  "name": "1717",
+  "price": 75,
+  "level": "Lv5 喵皇",
+  "game": "VALORANT、三角洲",
+  "voiceType": "甜妹",
+  "gender": "女",
+  "tags": [
+    "随和"
+  ],
+  "certTags": [
+    "官方推荐"
+  ],
+  "avatar": "https://jqfaknpmcnqwqvatrwgo.supabase.co/storage/v1/object/public/companion-public/db27b7be-f0e2-4af1-9c1b-d1ddd18c6c81/avatar/1785748957892-7ad819bb-Image_20260601115805_454_50.jpg",
+  "cover": "https://jqfaknpmcnqwqvatrwgo.supabase.co/storage/v1/object/public/companion-public/db27b7be-f0e2-4af1-9c1b-d1ddd18c6c81/avatar/1785748957892-7ad819bb-Image_20260601115805_454_50.jpg",
+  "galleryCount": 1,
+  "hasVoice": true,
+  "featured": true
+}

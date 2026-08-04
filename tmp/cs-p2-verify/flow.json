@@ -1,0 +1,17 @@
+{
+  "before": {
+    "waiting": 19,
+    "active": 19,
+    "ended": 5,
+    "unreadNav": "49"
+  },
+  "afterOpen": {
+    "waiting": 19,
+    "active": 19,
+    "unreadNav": "48",
+    "activeUnread": "no",
+    "take": true,
+    "end": false,
+    "head": "会话列表\n陪玩 · 陪玩B验收\n\n待接待\n\n接待"
+  }
+}

@@ -1,0 +1,483 @@
+(function () {
+  "use strict";
+
+  var PER_PAGE = 12;
+  var state = { page: 1, items: [], taxonomyReady: false };
+
+  function esc(value) {
+    return String(value || "").replace(/[&<>"']/g, function (ch) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch];
+    });
+  }
+  var DEFAULT_AVATAR = "/default-avatar.png";
+  function avatarUrl(value) {
+    if (window.MCJCompanionMedia && window.MCJCompanionMedia.pickStableMediaUrl) {
+      return window.MCJCompanionMedia.pickStableMediaUrl(value) || DEFAULT_AVATAR;
+    }
+    var src = String(value || "").trim();
+    if (!src || /meow-cuijiao-brand\.(jpe?g|png|webp)$/i.test(src)) return DEFAULT_AVATAR;
+    if (/^(blob:|data:)/i.test(src) || /\/storage\/v1\/object\/sign\//i.test(src)) return DEFAULT_AVATAR;
+    return src;
+  }
+  function cardImage(item) {
+    if (window.MCJCompanionMedia && window.MCJCompanionMedia.resolveCover) {
+      return window.MCJCompanionMedia.resolveCover(item);
+    }
+    return avatarUrl(item && (item.cover || item.cardImageUrl || item.avatar || item.image));
+  }
+  function priceNumber(value) {
+    if (window.MCJCompanionLevels) return window.MCJCompanionLevels.priceNumber(value);
+    var match = String(value || "").match(/\d+(?:\.\d+)?/);
+    return match ? Number(match[0]) : 0;
+  }
+  function levelIdFrom(value) {
+    var text = String(value || "").toLowerCase();
+    var match = text.match(/lv\.?\s*([1-9])|([1-9])/);
+    return match ? "lv" + (match[1] || match[2]) : "";
+  }
+  function taxonomy() { return window.MCJTaxonomy || null; }
+  function taxonomyItems(type) {
+    var api = taxonomy();
+    return api && api.items ? api.items(type) : [];
+  }
+  function taxonomyLabel(item) {
+    var api = taxonomy();
+    return api && api.label ? api.label(item) : String(item && (item.name || item.title || "") || "");
+  }
+  function taxonomyValue(item) {
+    var api = taxonomy();
+    return api && api.value ? api.value(item) : String(item && (item.slug || item.code || item.id || item.name || item.title || "") || "");
+  }
+  function levelLabel(item) {
+    var id = item.levelId || levelIdFrom(item.level || item.rank || item.levelName);
+    var levels = window.MCJCompanionLevels;
+    if (levels && levels.label && id) {
+      var fromLevels = levels.label(id);
+      if (fromLevels) return fromLevels;
+    }
+    var api = taxonomy();
+    if (api && api.levelLabel) {
+      var fromConfig = api.levelLabel(id);
+      if (fromConfig) return fromConfig;
+    }
+    var raw = String(item.levelName || item.level || "").trim();
+    if (raw && raw !== "未设置等级" && raw !== "未设置") return raw;
+    return id || "未设置等级";
+  }
+  function formatHourlyPrice(value) {
+    if (window.MCJCurrency) return window.MCJCurrency.formatRate(value, "小时");
+    return priceNumber(value) + " 猫粮/小时";
+  }
+  function formatHourlyPriceFx(value) {
+    if (window.MCJCurrency && typeof window.MCJCurrency.formatCatFoodWithFx === "function") {
+      return window.MCJCurrency.formatCatFoodWithFx(value);
+    }
+    if (window.MCJCurrency && typeof window.MCJCurrency.formatRmWithFx === "function") {
+      return "≈ " + window.MCJCurrency.formatRmWithFx(value);
+    }
+    return "";
+  }
+  function normalizeStatus(value) {
+    var text = String(value || "离线").trim();
+    if (/^online$/i.test(text) || /在线可接单|在线/.test(text)) return "在线可接单";
+    if (/^busy$/i.test(text) || /忙碌/.test(text)) return "忙碌中";
+    if (/^paused$/i.test(text) || /暂停/.test(text)) return "暂停接单";
+    if (/^offline$/i.test(text) || /离线/.test(text)) return "离线";
+    return text || "离线";
+  }
+  function statusBadgeClass(status) {
+    if (status === "在线可接单") return " is-online";
+    if (status === "忙碌中") return " is-busy";
+    if (status === "暂停接单") return " is-paused";
+    return " is-offline";
+  }
+  async function readItems() {
+    var dataItems = [];
+    state.loadError = "";
+    try {
+      var response = await fetch("/api/public/companions", { headers: { Accept: "application/json" }, cache: "no-store" });
+      var body = await response.json().catch(function () { return {}; });
+      if (!response.ok || !body.ok) throw new Error(body.message || "陪玩列表读取失败");
+      dataItems = Array.isArray(body.companions) ? body.companions : [];
+    } catch (error) {
+      console.error("陪玩大厅读取失败", error);
+      state.loadError = error.message || "陪玩列表读取失败";
+      dataItems = [];
+    }
+    var levelApi = window.MCJCompanionLevels;
+    return dataItems.map(function (item) {
+      var normalized = levelApi ? levelApi.normalizeCompanion(item) : item;
+      var levelId = normalized.levelId || levelIdFrom(normalized.level || normalized.rank || normalized.levelName);
+      // Prefer API/admin-saved price; only fall back to level clamp when still zero/empty.
+      var apiPrice = priceNumber(item.priceValue != null ? item.priceValue : item.price || item.hourlyPrice || item.servicePrice);
+      var priceValue = apiPrice > 0 ? apiPrice : (normalized.priceValue || priceNumber(normalized.price || normalized.servicePrice || normalized.hourlyPrice));
+      return {
+        id: normalized.uid || normalized.companionId || normalized.id || normalized.name || "",
+        name: normalized.name || normalized.nickname || "未命名陪玩",
+        game: normalized.game || normalized.mainGame || "未设置游戏",
+        price: formatHourlyPrice(priceValue || normalized.price || normalized.servicePrice || normalized.hourlyPrice),
+        priceValue: priceValue,
+        rating: normalized.rating || normalized.score || "0",
+        level: levelLabel(Object.assign({}, normalized, { levelId: levelId })),
+        levelId: levelId,
+        levelNumber: normalized.levelNumber || Number(String(levelId).replace("lv", "")) || 0,
+        gender: normalized.gender || "保密",
+        voiceType: normalized.voiceType || normalized.voice_type || "",
+        serviceType: (Array.isArray(normalized.serviceTypes) && normalized.serviceTypes[0])
+          || normalized.serviceType
+          || normalized.service_type
+          || "陪玩服务",
+        serviceTypes: Array.isArray(normalized.serviceTypes) && normalized.serviceTypes.length
+          ? normalized.serviceTypes.slice()
+          : String(normalized.serviceType || normalized.service_type || "陪玩服务")
+              .split(/[,，、/|]+/)
+              .map(function (part) { return String(part || "").trim(); })
+              .filter(Boolean),
+        serviceIds: Array.isArray(normalized.serviceIds) && normalized.serviceIds.length
+          ? normalized.serviceIds.map(function (id) { return String(id); })
+          : Array.isArray(normalized.service_ids)
+            ? normalized.service_ids.map(function (id) { return String(id); })
+            : [],
+        status: normalizeStatus(normalized.availabilityStatus || normalized.availabilityText || normalized.status || normalized.onlineStatus),
+        availabilityStatus: String(normalized.availabilityStatus || "").toLowerCase() || "",
+        publicId: normalized.publicId || "",
+        avatar: avatarUrl(normalized.avatar || normalized.cover || normalized.image),
+        cover: cardImage(normalized),
+        image: cardImage(normalized),
+        objectPositionX: normalized.objectPositionX != null ? normalized.objectPositionX : normalized.object_position_x,
+        objectPositionY: normalized.objectPositionY != null ? normalized.objectPositionY : normalized.object_position_y,
+        focalPoint: normalized.focalPoint || normalized.focal_point || null,
+        coverFit: normalized.coverFit || normalized.cover_fit || "",
+        tags: Array.isArray(normalized.tags) ? normalized.tags : String(normalized.tags || normalized.serviceTags || "").split(/[,，、\s]+/).filter(Boolean),
+        certTags: Array.isArray(normalized.certTags)
+          ? normalized.certTags
+          : Array.isArray(normalized.certificationTags)
+            ? normalized.certificationTags
+            : [],
+        desc: normalized.desc || normalized.description || ""
+      };
+    });
+  }  function setOptions(id, options, allLabel) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    var current = el.value;
+    el.innerHTML = '<option value="">' + esc(allLabel) + '</option>' + options.map(function (option) {
+      return '<option value="' + esc(option.value) + '">' + esc(option.label) + '</option>';
+    }).join("");
+    el.value = Array.prototype.some.call(el.options, function (opt) { return opt.value === current; }) ? current : "";
+  }
+  var SERVICE_TYPE_OPTIONS = [
+    { value: "陪玩服务", label: "陪玩服务" },
+    { value: "陪聊服务", label: "陪聊服务" }
+  ];
+  var stateGameOptions = [];
+  function companionGames(item) {
+    return String(item && item.game || "")
+      .split(/[,，、/|]+/)
+      .map(function (part) { return String(part || "").trim(); })
+      .filter(Boolean);
+  }
+  function companionServiceIds(item) {
+    if (Array.isArray(item && item.serviceIds) && item.serviceIds.length) {
+      return item.serviceIds.map(function (id) { return String(id); });
+    }
+    if (Array.isArray(item && item.service_ids) && item.service_ids.length) {
+      return item.service_ids.map(function (id) { return String(id); });
+    }
+    // Legacy fallback: map game names → service ids from loaded options
+    var names = companionGames(item);
+    if (!names.length || !stateGameOptions.length) return [];
+    return stateGameOptions
+      .filter(function (opt) { return names.indexOf(opt.label) > -1; })
+      .map(function (opt) { return opt.value; });
+  }
+  function setupFilters() {
+    // 服务类型：固定陪玩/陪聊，禁止游戏名进入此下拉
+    setOptions("typeFilter", SERVICE_TYPE_OPTIONS, "全部类型");
+    // 游戏分类：优先已加载的 services（value=service_id）
+    if (stateGameOptions.length) {
+      setOptions("gameFilter", stateGameOptions, "全部游戏");
+    } else {
+      var gameRows = taxonomyItems("games");
+      if (!gameRows.length) gameRows = taxonomyItems("services");
+      setOptions("gameFilter", gameRows.map(function (item) {
+        var id = String(item.id || item.value || "").trim();
+        var label = taxonomyLabel(item);
+        return { value: id || label, label: label };
+      }).filter(function (item) { return item.value && item.label; }), "全部游戏");
+    }
+    setOptions("levelFilter", taxonomyItems("companion_levels").map(function (item) {
+      var api = taxonomy();
+      var value = api && api.levelId ? api.levelId(item) : taxonomyValue(item);
+      return { value: value, label: [item.code, item.name || item.title].filter(Boolean).join(" ") || taxonomyLabel(item) };
+    }).filter(function (item) { return item.value; }), "全部等级");
+    setOptions("voiceFilter", taxonomyItems("voice_types").map(function (item) {
+      return { value: taxonomyLabel(item) || taxonomyValue(item), label: taxonomyLabel(item) || taxonomyValue(item) };
+    }).filter(function (item) { return item.value; }), "全部声线");
+    setOptions("tagFilter", taxonomyItems("companion_tags").map(function (item) {
+      return { value: taxonomyLabel(item) || taxonomyValue(item), label: taxonomyLabel(item) || taxonomyValue(item) };
+    }).filter(function (item) { return item.value; }), "全部标签");
+  }
+  function loadGameFilterFromServicesApi() {
+    return fetch("/api/platform/services", { headers: { Accept: "application/json" } })
+      .then(function (res) {
+        return res.text().then(function (raw) {
+          var body = {};
+          try { body = raw ? JSON.parse(raw) : {}; } catch (err) { body = {}; }
+          if (!res.ok || body.ok === false) return [];
+          return Array.isArray(body.services) ? body.services : [];
+        });
+      })
+      .then(function (services) {
+        var enabled = (services || []).filter(function (item) {
+          return item && item.enabled !== false && item.status !== "disabled";
+        });
+        stateGameOptions = enabled.map(function (item) {
+          var id = String(item.id || "").trim();
+          var name = String(item.name || item.title || item.game || "").trim();
+          return { value: id || name, label: name };
+        }).filter(function (item) { return item.value && item.label; });
+        setOptions("gameFilter", stateGameOptions, "全部游戏");
+      })
+      .catch(function () {});
+  }
+  function value(id) {
+    var el = document.getElementById(id);
+    return el ? el.value : "";
+  }
+  function filtered() {
+    var q = value("searchInput").trim().toLowerCase();
+    var type = value("typeFilter");
+    var game = value("gameFilter");
+    var price = value("priceFilter");
+    var online = value("onlineFilter");
+    var score = Number(value("scoreFilter") || 0);
+    var gender = value("genderFilter");
+    var level = value("levelFilter");
+    var voice = value("voiceFilter");
+    var tag = value("tagFilter");
+    var items = state.items.filter(function (item) {
+      var hay = [item.name, item.id, item.game, item.serviceType, item.level, item.gender, item.status, item.desc, item.voiceType]
+        .concat(item.tags)
+        .join(" ")
+        .toLowerCase();
+      var ok = !q || hay.indexOf(q) > -1;
+      if (type) {
+        var types = Array.isArray(item.serviceTypes) && item.serviceTypes.length
+          ? item.serviceTypes
+          : [item.serviceType].filter(Boolean);
+        ok = ok && types.indexOf(type) > -1;
+      }
+      if (game) {
+        var ids = companionServiceIds(item);
+        ok = ok && (ids.indexOf(game) > -1 || companionGames(item).indexOf(game) > -1);
+      }
+      if (price) {
+        var range = price.split("-").map(Number);
+        ok = ok && item.priceValue >= range[0] && item.priceValue <= range[1];
+      }
+      if (online) ok = ok && item.status === online;
+      if (score) ok = ok && Number(item.rating) >= score;
+      if (gender) ok = ok && item.gender === gender;
+      if (level) ok = ok && item.levelId === level;
+      if (voice) {
+        var vt = String(item.voiceType || item.voice_type || "").trim();
+        ok = ok && (vt === voice || vt.indexOf(voice) > -1);
+      }
+      if (tag) {
+        var tags = Array.isArray(item.tags) ? item.tags : String(item.tags || "").split(/[,，、]/);
+        ok = ok && tags.some(function (t) { return String(t || "").trim() === tag || String(t || "").indexOf(tag) > -1; });
+      }
+      return ok;
+    });
+    var sort = value("sortFilter");
+    items.sort(function (a, b) {
+      if (sort === "ratingDesc") return Number(b.rating) - Number(a.rating);
+      if (sort === "priceAsc") return a.priceValue - b.priceValue;
+      if (sort === "priceDesc") return b.priceValue - a.priceValue;
+      if (sort === "levelDesc") return Number(b.levelNumber || 0) - Number(a.levelNumber || 0);
+      return Number(b.levelNumber || 0) - Number(a.levelNumber || 0);
+    });
+    return items;
+  }
+  function gameChips(item) {
+    var raw = item.game || item.mainGame || "";
+    var list = Array.isArray(raw)
+      ? raw
+      : String(raw)
+          .split(/[,，、/|]+/)
+          .map(function (part) { return String(part || "").trim(); })
+          .filter(Boolean);
+    if (!list.length) list = ["未设置游戏"];
+    return list.slice(0, 4).map(function (game) {
+      return '<span class="mcj-service-tag companion-game-chip">' + esc(game) + "</span>";
+    }).join("");
+  }
+  function card(item) {
+    var identityApi = window.MCJCompanionIdentity;
+    var identityRow = identityApi
+      ? identityApi.renderTags({
+          levelId: item.levelId || "",
+          levelLabel: item.level,
+          gender: item.gender,
+          voiceType: item.voiceType || "",
+          certTags: item.certTags || [],
+          tags: item.tags || [],
+          className: "companion-identity-row companion-tags",
+          includeLevel: true,
+          includeGender: true,
+          serviceLimit: 3,
+          certLimit: 2,
+        })
+      : (function () {
+          var level = item.level
+            ? '<span class="companion-level-pill mcj-level-tag" data-level-id="' + esc(item.levelId || "") + '">' + esc(item.level) + "</span>"
+            : "";
+          var gender = item.gender && !/^(保密|不公开|未知|-|—)$/.test(String(item.gender))
+            ? '<span class="mcj-gender-tag">' + esc(item.gender) + "</span>"
+            : "";
+          var styleTags = (item.tags || []).slice(0, 3).map(function (tag) {
+            return '<span class="mcj-service-tag">' + esc(tag) + "</span>";
+          }).join("");
+          var certTags = (item.certTags || []).slice(0, 2).map(function (t) {
+            var name = typeof t === "string" ? t : (t.name || t.title || "");
+            if (!name) return "";
+            var icon = typeof t === "object" && t.icon ? t.icon + " " : "";
+            var official = /官方推荐/.test(name) ? " is-official" : "";
+            return '<span class="mcj-cert-badge' + official + '">' + esc(icon + name) + "</span>";
+          }).filter(Boolean).join("");
+          var voice = String(item.voiceType || "").trim().replace(/^声线\s*[:：]\s*/, "");
+          var voiceHtml =
+            '<span class="mcj-voice-tag' +
+            (voice ? "" : " is-unset") +
+            '"><span class="mcj-voice-label">声线：</span>' +
+            esc(voice || "未设置") +
+            "</span>";
+          return level || gender || certTags || voiceHtml || styleTags
+            ? '<div class="mcj-id-tags companion-identity-row companion-tags">' + level + gender + certTags + voiceHtml + styleTags + "</div>"
+            : "";
+        })();
+    var gamesRow = '<div class="mcj-id-tags companion-games-row companion-tags">' + gameChips(item) + "</div>";
+    var fx = formatHourlyPriceFx(item.priceValue);
+    var priceHtml =
+      '<div class="price companion-price">' +
+      esc(item.price) +
+      (fx ? ' <span class="price-fx-approx">' + esc(fx) + "</span>" : "") +
+      "</div>";
+    var badgeClass = statusBadgeClass(item.status);
+    var publicId = item.publicId || item.id || "未生成";
+    var focusX = item.objectPositionX != null ? item.objectPositionX : item.object_position_x;
+    var focusY = item.objectPositionY != null ? item.objectPositionY : item.object_position_y;
+    if (focusX == null && String(publicId).toUpperCase() === "PW00002") focusX = 50;
+    if (focusY == null && String(publicId).toUpperCase() === "PW00002") focusY = 22;
+    if (focusX == null && String(publicId).toUpperCase() === "PW00004") focusX = 50;
+    if (focusY == null && String(publicId).toUpperCase() === "PW00004") focusY = 40;
+    if (focusX == null) focusX = 50;
+    if (focusY == null) focusY = 25;
+    var pos = Number(focusX) + "% " + Number(focusY) + "%";
+    return '<article class="card player-card" data-player data-public-id="' + esc(String(publicId).toUpperCase()) + '" data-level-id="' + esc(item.levelId || "") + '" data-companion-level="' + esc(item.levelId || "") + '" data-name="' + esc(item.name) + '" data-game="' + esc(item.game) + '" data-tags="' + esc(item.tags.join(",")) + '" data-price="' + esc(item.priceValue) + '" data-online="' + esc(item.status) + '" data-score="' + esc(item.rating) + '" data-gender="' + esc(item.gender) + '">' +
+      '<div class="companion-card-media"><img src="' + esc(item.image) + '" alt="' + esc(item.name) + '" loading="lazy" decoding="async" style="object-position:' + esc(pos) + ';--mcj-cover-pos:' + esc(pos) + '" onerror="this.onerror=null;this.src=\'' + DEFAULT_AVATAR + '\'"><span class="companion-online-badge' + badgeClass + '">' + esc(item.status) + '</span></div>' +
+      '<div class="companion-card-body">' +
+        '<div class="row companion-card-head companion-card-title-row"><h3>' + esc(item.name) + '</h3><span class="companion-status-inline' + badgeClass + '">' + esc(item.status) + '</span></div>' +
+        '<p class="muted companion-id">陪玩 ID：' + esc(publicId) + '</p>' +
+        '<div class="companion-meta companion-meta-desktop"><span class="companion-level-pill mcj-level-tag" data-level-id="' + esc(item.levelId || "") + '">' + esc(item.level) + '</span><span class="companion-game-text">' + esc(item.game) + '</span></div>' +
+        identityRow +
+        gamesRow +
+        priceHtml +
+        '<div class="companion-card-actions"><a class="companion-card-action" href="profile.html?player=' + encodeURIComponent(item.id || item.name || "") + '">查看详情</a><button type="button" class="companion-card-action primary" data-hall-order="' + esc(item.id || "") + '" data-hall-name="' + esc(item.name || "") + '" data-hall-price="' + esc(item.priceValue || "") + '" data-hall-level="' + esc(item.levelId || "") + '" data-hall-game="' + esc(item.game || "") + '" data-hall-avatar="' + esc(item.image || "") + '" data-hall-public-id="' + esc(publicId || "") + '" data-hall-status="' + esc(item.availabilityStatus || "") + '" data-hall-status-text="' + esc(item.status || "") + '">立即下单</button></div>' +
+      '</div>' +
+    '</article>';
+  }
+  function render() {
+    var list = document.getElementById("playerList");
+    if (!list) return;
+    var items = filtered();
+    var pages = Math.max(1, Math.ceil(items.length / PER_PAGE));
+    if (state.page > pages) state.page = pages;
+    var start = (state.page - 1) * PER_PAGE;
+    list.innerHTML = items.slice(start, start + PER_PAGE).map(card).join("");
+    var count = document.getElementById("resultCount");
+    if (count) count.textContent = "共 " + items.length + " 位陪玩";
+    var empty = document.getElementById("emptyState");
+    if (empty) empty.hidden = !!items.length;
+    var pager = document.getElementById("companionPagination");
+    if (pager) {
+      pager.innerHTML = Array.from({ length: pages }, function (_, i) {
+        var page = i + 1;
+        return '<button type="button" class="' + (page === state.page ? "active" : "") + '" data-page="' + page + '">' + page + '</button>';
+      }).join("");
+    }
+  }
+  function bind() {
+    ["searchInput", "typeFilter", "priceFilter", "onlineFilter", "scoreFilter", "genderFilter", "gameFilter", "levelFilter", "sortFilter"].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (!el) return;
+      el.addEventListener("input", function () { state.page = 1; render(); });
+      el.addEventListener("change", function () { state.page = 1; render(); });
+    });
+    var apply = document.getElementById("applyFilter");
+    if (apply) apply.addEventListener("click", function () { state.page = 1; render(); });
+    var pager = document.getElementById("companionPagination");
+    if (pager) pager.addEventListener("click", function (event) {
+      var button = event.target.closest("[data-page]");
+      if (!button) return;
+      state.page = Number(button.dataset.page || 1);
+      render();
+    });
+    document.addEventListener("click", function (event) {
+      var orderBtn = event.target.closest("[data-hall-order]");
+      if (!orderBtn) return;
+      event.preventDefault();
+      var id = orderBtn.getAttribute("data-hall-order") || "";
+      if (!id) return;
+      if (!window.MCJPlaceOrder || typeof window.MCJPlaceOrder.openFromCompanion !== "function") {
+        location.href = "profile.html?player=" + encodeURIComponent(id) + "&open_order=1";
+        return;
+      }
+      window.MCJPlaceOrder.openFromCompanion({
+        companionId: id,
+        id: id,
+        uid: id,
+        companionName: orderBtn.getAttribute("data-hall-name") || "陪玩",
+        name: orderBtn.getAttribute("data-hall-name") || "陪玩",
+        unitPrice: Number(orderBtn.getAttribute("data-hall-price") || 0),
+        priceValue: Number(orderBtn.getAttribute("data-hall-price") || 0),
+        price: Number(orderBtn.getAttribute("data-hall-price") || 0),
+        levelId: orderBtn.getAttribute("data-hall-level") || "",
+        service: orderBtn.getAttribute("data-hall-game") || "陪玩",
+        game: orderBtn.getAttribute("data-hall-game") || "陪玩",
+        avatar: orderBtn.getAttribute("data-hall-avatar") || "",
+        publicId: orderBtn.getAttribute("data-hall-public-id") || "",
+        pricingUnit: "小时",
+        availabilityStatus: orderBtn.getAttribute("data-hall-status") || "",
+        availabilityText: orderBtn.getAttribute("data-hall-status-text") || "",
+        status: orderBtn.getAttribute("data-hall-status-text") || "",
+        publishReady: true,
+      });
+    });
+  }
+  async function start() {
+    var count = document.getElementById("resultCount");
+    if (count) count.textContent = "正在加载陪玩…";
+    state.items = await readItems();
+    setupFilters();
+    await loadGameFilterFromServicesApi();
+    bind();
+    render();
+  }
+  function init() {
+    // Load companions immediately; refresh filter options when taxonomy arrives.
+    start();
+    if (window.MCJTaxonomy && window.MCJTaxonomy.load) {
+      window.MCJTaxonomy.load()
+        .then(function () {
+          setupFilters();
+          return loadGameFilterFromServicesApi();
+        })
+        .then(function () { render(); })
+        .catch(function () {});
+    }
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
+  else init();
+})();

@@ -1,0 +1,14 @@
+{
+  "meta": {
+    "base": "https://meow-cuijiao-homepage-staging.vercel.app",
+    "startedAt": "2026-08-04T06:57:22.237Z",
+    "supabase": "https://jqfaknpmcnqwqvatrwgo.supabase.co"
+  },
+  "results": {
+    "E00_same_db": {
+      "status": "PASS",
+      "note": "preview=https://jqfaknpmcnqwqvatrwgo.supabase.co env=https://jqfaknpmcnqwqvatrwgo.supabase.co"
+    }
+  },
+  "fatal": "auth boss@meow.test: {\"code\":400,\"error_code\":\"invalid_credentials\",\"msg\":\"Invalid login credentials\"}"
+}
