@@ -117,11 +117,15 @@
   }
 
   function accessToken() {
-    return (
-      localStorage.getItem("mcjAuthAccessToken") ||
-      sessionStorage.getItem("mcjAuthAccessToken") ||
-      ""
-    );
+    try {
+      localStorage.removeItem("mcjAuthAccessToken");
+      localStorage.removeItem("mcjAuthRefreshToken");
+      localStorage.removeItem("mcjAuthExpiresAt");
+      localStorage.removeItem("customerAuthToken");
+      localStorage.removeItem("customerUser");
+      localStorage.removeItem("mcjCurrentUser");
+    } catch (e) {}
+    return sessionStorage.getItem("mcjAuthAccessToken") || "";
   }
 
   function looksLikeJwt(token) {
@@ -158,7 +162,7 @@
     }
     var token = accessToken();
     if (!looksLikeJwt(token)) return false;
-    var expRaw = localStorage.getItem("mcjAuthExpiresAt") || sessionStorage.getItem("mcjAuthExpiresAt") || "";
+    var expRaw = sessionStorage.getItem("mcjAuthExpiresAt") || "";
     var exp = 0;
     if (expRaw) {
       var n = Number(expRaw);
@@ -170,7 +174,7 @@
   }
 
   function purgeGuestAuthArtifacts() {
-    if (hasValidBossJwt()) return;
+    // Always strip localStorage boss identity (acceptance leftovers).
     [
       "customerAuthToken",
       "customerUser",
@@ -182,11 +186,24 @@
     ].forEach(function (key) {
       try {
         localStorage.removeItem(key);
-        sessionStorage.removeItem(key);
       } catch (e) {}
     });
+    if (hasValidBossJwt()) return;
+    [
+      "customerAuthToken",
+      "customerUser",
+      "mcjCurrentUser",
+      "mcjAuthAccessToken",
+      "mcjAuthRefreshToken",
+      "mcjAuthExpiresAt",
+      "mcjRole",
+    ].forEach(function (key) {
+      try {
+        sessionStorage.removeItem(key);
+      } catch (e2) {}
+    });
     if (window.MCJBossAuth && typeof window.MCJBossAuth.clearSession === "function") {
-      try { window.MCJBossAuth.clearSession(); } catch (e2) {}
+      try { window.MCJBossAuth.clearSession(); } catch (e3) {}
     }
   }
 
@@ -293,13 +310,17 @@
   }
 
   function mobileDrawerLinksHtml() {
-    return (
+    var html =
       navLink("index.html", "首页") +
-      navLink("companion-center.html", "陪玩大厅") +
+      navLink("companion-center.html", "大厅") +
       navLink("orders.html", "订单") +
       navLink("support.html?start=1", "客服") +
-      mobileAuthLinkHtml()
-    );
+      mobileAuthLinkHtml();
+    if (isLoggedIn()) {
+      html +=
+        '<button type="button" class="mcj-mnav-logout" data-mcj-boss-logout>退出登录</button>';
+    }
+    return html;
   }
 
   function fillMobileDrawerLinks() {
@@ -321,9 +342,6 @@
   function headerHtml() {
     return (
       '<div class="mcj-boss-header-inner header-inner">' +
-      '<div class="mcj-mnav">' +
-      '<button type="button" class="mcj-mnav-toggle" data-mcj-mnav-toggle aria-controls="mcjMnavSheet" aria-expanded="false" aria-label="打开菜单">☰</button>' +
-      "</div>" +
       brandHtml() +
       '<nav class="mcj-desk-nav" aria-label="桌面主导航">' +
       navLink("index.html", "首页") +
@@ -331,7 +349,10 @@
       navLink("orders.html", "订单") +
       navLink("support.html?start=1", "客服") +
       deskAuthLinkHtml() +
-      "</nav></div>"
+      "</nav>" +
+      '<div class="mcj-mnav">' +
+      '<button type="button" class="mcj-mnav-toggle" data-mcj-mnav-toggle aria-controls="mcjMnavSheet" aria-expanded="false" aria-label="打开菜单">☰</button>' +
+      "</div></div>"
     );
   }
 
@@ -543,7 +564,7 @@
   function mount() {
     if (!isBossPublicPage() || !document.body) return;
     // Always rebuild header markup for tab-nav-only layout
-    ensureCss("/src/boss-header.css?v=20260804navAuth3", "data-mcj-boss-header-css");
+    ensureCss("/src/boss-header.css?v=20260804navAuth4", "data-mcj-boss-header-css");
     ensureCss("/src/mcj-safe-area.css?v=20260802mobileP0c", "data-mcj-safe-area-css");
     ensureCss("/src/home-mobile.css?v=20260802mobileP0c", "data-mcj-home-mobile-css");
     document.body.classList.add("mcj-boss-shell");

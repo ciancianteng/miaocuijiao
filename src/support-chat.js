@@ -147,20 +147,22 @@
   }
   function sharedRoleHint() {
     try {
-      var u = JSON.parse(localStorage.getItem("customerUser") || sessionStorage.getItem("customerUser") || "{}");
+      var u = JSON.parse(sessionStorage.getItem("customerUser") || "{}");
       if (u && u.role) return String(u.role).toLowerCase();
     } catch (e) {}
-    return String(localStorage.getItem("mcjRole") || sessionStorage.getItem("mcjRole") || "").toLowerCase();
+    return String(sessionStorage.getItem("mcjRole") || "").toLowerCase();
   }
   function hasBossGateSession() {
+    try {
+      localStorage.removeItem("mcjAuthAccessToken");
+      localStorage.removeItem("mcjAuthRefreshToken");
+      localStorage.removeItem("customerAuthToken");
+      localStorage.removeItem("customerUser");
+    } catch (e0) {}
     if (window.MCJBossAuth && typeof window.MCJBossAuth.hasValidAccessToken === "function") {
       if (!window.MCJBossAuth.hasValidAccessToken()) return false;
     } else {
-      var jwt =
-        localStorage.getItem("mcjAuthAccessToken") ||
-        sessionStorage.getItem("mcjAuthAccessToken") ||
-        "";
-      // Soft / refresh alone never unlocks support data.
+      var jwt = sessionStorage.getItem("mcjAuthAccessToken") || "";
       if (!jwt || String(jwt).split(".").length !== 3) return false;
     }
     var role = sharedRoleHint();

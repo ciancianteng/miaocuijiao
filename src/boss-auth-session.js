@@ -8,14 +8,39 @@
   var refreshPromise = null;
   var sessionReadyPromise = null;
 
+  var BOSS_KEYS = [
+    "mcjAuthAccessToken",
+    "mcjAuthRefreshToken",
+    "mcjAuthExpiresAt",
+    "customerAuthToken",
+    "customerUser",
+    "mcjCurrentUser",
+    "mcjRole",
+  ];
+
+  /** Boss sessions must NOT persist in localStorage across browser restarts. */
+  function wipeLocalBossAuth() {
+    BOSS_KEYS.forEach(function (key) {
+      try {
+        localStorage.removeItem(key);
+      } catch (e) {}
+    });
+  }
+
+  // Run immediately — kill leftover acceptance JWT / soft tokens from prior visits.
+  wipeLocalBossAuth();
+
   function readItem(key) {
-    return localStorage.getItem(key) || sessionStorage.getItem(key) || "";
+    // Boss portal: sessionStorage only (tab lifetime). Never revive localStorage.
+    try {
+      return sessionStorage.getItem(key) || "";
+    } catch (e) {
+      return "";
+    }
   }
 
   function authStore() {
-    if (localStorage.getItem("mcjAuthAccessToken")) return localStorage;
-    if (sessionStorage.getItem("mcjAuthAccessToken")) return sessionStorage;
-    return localStorage;
+    return sessionStorage;
   }
 
   function getAccessToken() {
@@ -55,8 +80,8 @@
     });
   }
 
-  /** Live access JWT only — refresh alone never counts as signed-in. */
   function hasValidAccessToken() {
+    wipeLocalBossAuth();
     var access = getAccessToken();
     if (!looksLikeJwt(access)) return false;
     var exp = getExpiresAtMs();
@@ -76,6 +101,7 @@
 
   function saveSession(session) {
     if (!session) return;
+    wipeLocalBossAuth();
     var store = authStore();
     if (session.accessToken) store.setItem("mcjAuthAccessToken", session.accessToken);
     if (session.refreshToken) store.setItem("mcjAuthRefreshToken", session.refreshToken);
@@ -85,26 +111,21 @@
   }
 
   function clearSession() {
-    [
-      "mcjAuthAccessToken",
-      "mcjAuthRefreshToken",
-      "mcjAuthExpiresAt",
-    ].forEach(function (key) {
-      localStorage.removeItem(key);
-      sessionStorage.removeItem(key);
+    wipeLocalBossAuth();
+    BOSS_KEYS.forEach(function (key) {
+      try {
+        sessionStorage.removeItem(key);
+      } catch (e) {}
     });
     try {
       window.dispatchEvent(new CustomEvent("mcj:auth-expired"));
-    } catch (e) {}
+    } catch (e2) {}
   }
 
   function hasSession() {
-    // UI / gates: only a non-expired access JWT = logged in.
-    // Refresh-only leftovers must NOT auto-enter private pages.
     return hasValidAccessToken();
   }
 
-  /** Equivalent to supabase.auth.getSession() via local /api auth session. */
   function getSession() {
     return Promise.resolve().then(function () {
       if (!hasSession()) {
@@ -122,7 +143,6 @@
     });
   }
 
-  /** Equivalent to supabase.auth.refreshSession() via /api/auth. */
   function refreshSession() {
     if (refreshPromise) return refreshPromise;
     var refreshToken = getRefreshToken();
@@ -146,7 +166,7 @@
           return { data: { session: { expires_at: body.session.expiresAt || null } }, error: null };
         });
       })
-      .catch(function (err) {
+      .catch(function () {
         clearSession();
         throw new Error(EXPIRED_MESSAGE);
       })
@@ -156,7 +176,6 @@
     return refreshPromise;
   }
 
-  /** Wait for getSession, then refreshSession when near expiry / access missing. */
   function ensureSession() {
     sessionReadyPromise = getSession().then(function (result) {
       var access = getAccessToken();
@@ -240,6 +259,7 @@
     authFetch: authFetch,
     authHeaders: authHeaders,
     clearSession: clearSession,
+    wipeLocalBossAuth: wipeLocalBossAuth,
     hasSession: hasSession,
     hasValidAccessToken: hasValidAccessToken,
     looksLikeJwt: looksLikeJwt,

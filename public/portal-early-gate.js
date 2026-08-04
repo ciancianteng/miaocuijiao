@@ -8,7 +8,7 @@
 (function () {
   "use strict";
 
-  var GATE_VERSION = "20260804authP0boss3";
+  var GATE_VERSION = "20260804authP0boss4";
 
   function pathNow() {
     return String(location.pathname || "/").replace(/\\/g, "/");
@@ -18,6 +18,18 @@
     try {
       return localStorage.getItem(key) || sessionStorage.getItem(key) || "";
     } catch (e) {
+      return "";
+    }
+  }
+
+  function bossItem(key) {
+    // Boss private pages: sessionStorage only — never revive localStorage JWT.
+    try {
+      localStorage.removeItem(key);
+    } catch (e) {}
+    try {
+      return sessionStorage.getItem(key) || "";
+    } catch (e2) {
       return "";
     }
   }
@@ -51,7 +63,10 @@
 
   function hasValidAccessJwt(access) {
     if (!looksLikeJwt(access)) return false;
-    var expRaw = item("mcjAuthExpiresAt");
+    var expRaw = "";
+    try {
+      expRaw = sessionStorage.getItem("mcjAuthExpiresAt") || "";
+    } catch (e) {}
     var exp = 0;
     if (expRaw) {
       var n = Number(expRaw);
@@ -259,14 +274,19 @@
       try {
         if (document.body) document.body.innerHTML = "";
       } catch (e0) {}
-      var bossUser = readJson("customerUser") || {};
-      var bossShared = String(item("mcjRole") || "").toLowerCase();
+      var bossUser = null;
+      try {
+        bossUser = JSON.parse(bossItem("customerUser") || "null") || {};
+      } catch (e1) {
+        bossUser = {};
+      }
+      var bossShared = String(bossItem("mcjRole") || "").toLowerCase();
       var roleHint = roleOf(bossUser) || bossShared;
       if (roleHint && !isBossRole(roleHint)) {
         wipeBossIdentity();
         return deny("/login.html");
       }
-      if (!hasValidAccessJwt(item("mcjAuthAccessToken"))) {
+      if (!hasValidAccessJwt(bossItem("mcjAuthAccessToken"))) {
         wipeBossIdentity();
         return deny("/login.html");
       }

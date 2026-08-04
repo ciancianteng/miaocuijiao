@@ -3389,23 +3389,33 @@ header.mcj-boss-header .mcj-mnav-brand{display:none!important}
     flex-wrap:nowrap!important;
     align-items:center!important;
     justify-content:flex-end!important;
-    gap:8px!important;
-    max-width:min(720px,calc(100% - 200px))!important
+    gap:6px!important;
+    max-width:none!important
   }
   header.mcj-boss-header .mcj-desk-nav>a{
-    flex:1 1 0!important;
+    flex:0 0 auto!important;
     min-width:0!important;
-    max-width:112px!important;
-    padding:0 10px!important;
-    font-size:14px!important;
-    white-space:nowrap!important
+    max-width:none!important;
+    height:40px!important;
+    padding:0 11px!important;
+    font-size:13px!important;
+    font-weight:750!important;
+    border-radius:10px!important;
+    white-space:nowrap!important;
+    box-shadow:none!important
   }
 }
 @media(max-width:899px){
   header.mcj-boss-header .mcj-desk-nav,
   header.mcj-boss-header .header-nav:not(.mcj-desk-nav),
   header.mcj-boss-header .mcj-boss-nav:not(.mcj-desk-nav){display:none!important}
-  /* ☰ shrink-wrap only — NEVER width:100% (that shoved Logo off-screen) */
+  header.mcj-boss-header .mcj-header-brand{
+    display:flex!important;
+    flex:1 1 auto!important;
+    order:0!important;
+    min-width:0!important;
+    max-width:none!important
+  }
   header.mcj-boss-header .mcj-mnav{
     display:flex!important;
     align-items:center!important;
@@ -3413,15 +3423,8 @@ header.mcj-boss-header .mcj-mnav-brand{display:none!important}
     flex:0 0 auto!important;
     width:auto!important;
     max-width:48px!important;
-    margin:0!important;
-    order:0!important;
-  }
-  header.mcj-boss-header .mcj-header-brand{
-    display:flex!important;
-    flex:1 1 auto!important;
-    order:1!important;
-    min-width:0!important;
-    max-width:none!important;
+    margin:0 0 0 auto!important;
+    order:2!important
   }
   header.mcj-boss-header .mcj-mnav-toggle{display:inline-flex!important}
 }
@@ -3475,9 +3478,9 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
   <script type="module" src="src/companion-media.js?v=20260802mediaSync"></script>
   <script type="module" src="src/launch-feature-freeze.js"></script>
   <script type="module" src="src/notify-system.js" defer></script>
-  <script type="module" src="src/boss-header.js?v=20260804authP0boss3" defer></script>
+  <script type="module" src="src/boss-header.js?v=20260804authP0boss4" defer></script>
   <script type="module" src="src/boss-forced-ack.js?v=20260803rules1" defer></script>
-  <link rel="stylesheet" href="src/boss-header.css?v=20260804navAuth3">
+  <link rel="stylesheet" href="src/boss-header.css?v=20260804navAuth4">
   <link rel="stylesheet" href="/src/mcj-safe-area.css?v=20260802mobileP0c">
   <link rel="stylesheet" href="src/home-mobile.css?v=20260804annMarquee3">
 </head>
@@ -3485,9 +3488,6 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
   <div class="ambient-layer" aria-hidden="true"></div>
   <header class="site-header mcj-boss-header" data-mcj-boss-header="1" aria-label="顶部导航">
     <div class="mcj-boss-header-inner header-inner">
-      <div class="mcj-mnav">
-        <button type="button" class="mcj-mnav-toggle" data-mcj-mnav-toggle aria-controls="mcjMnavSheet" aria-expanded="false" aria-label="打开菜单">☰</button>
-      </div>
       <a class="mcj-header-brand" href="/" aria-label="MEOW CUI JIAO 妙脆角 首页">
         <img class="mcj-header-brand-logo" src="/src/assets/meow-cuijiao-brand.jpg" alt="MEOW CUI JIAO" width="40" height="40" decoding="async" data-mcj-brand-logo="1">
         <span class="mcj-header-brand-text">
@@ -3502,6 +3502,9 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
         <a href="support.html?start=1">客服</a>
         <a href="login.html" data-mcj-boss-login>登录</a>
       </nav>
+      <div class="mcj-mnav">
+        <button type="button" class="mcj-mnav-toggle" data-mcj-mnav-toggle aria-controls="mcjMnavSheet" aria-expanded="false" aria-label="打开菜单">☰</button>
+      </div>
     </div>
   </header>
   <main class="container">

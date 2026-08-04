@@ -35,11 +35,36 @@
   }
 
   function cfgFor(role) { return routes[storageRole(role)] || routes[role]; }
-  function readUser(role) { var cfg = cfgFor(role); try { return JSON.parse(localStorage.getItem(cfg.user) || sessionStorage.getItem(cfg.user) || "{}"); } catch (e) { return {}; } }
-  function readToken(role) { var cfg = cfgFor(role); return localStorage.getItem(cfg.token) || sessionStorage.getItem(cfg.token) || ""; }
+  function readUser(role) {
+    var cfg = cfgFor(role);
+    var isBoss = storageRole(role) === "customer" || role === "boss";
+    try {
+      if (isBoss) {
+        return JSON.parse(sessionStorage.getItem(cfg.user) || "{}");
+      }
+      return JSON.parse(localStorage.getItem(cfg.user) || sessionStorage.getItem(cfg.user) || "{}");
+    } catch (e) {
+      return {};
+    }
+  }
+  function readToken(role) {
+    var cfg = cfgFor(role);
+    var isBoss = storageRole(role) === "customer" || role === "boss";
+    if (isBoss) return sessionStorage.getItem(cfg.token) || "";
+    return localStorage.getItem(cfg.token) || sessionStorage.getItem(cfg.token) || "";
+  }
   function isAllowed(role) { var cfg = cfgFor(role); if (!cfg) return true; return cfg.allowed.some(function (rule) { return rule.test(path()); }); }
   function readAccessToken() {
-    return localStorage.getItem("mcjAuthAccessToken") || sessionStorage.getItem("mcjAuthAccessToken") || "";
+    // Boss: sessionStorage only — never revive localStorage leftovers.
+    try {
+      localStorage.removeItem("mcjAuthAccessToken");
+      localStorage.removeItem("mcjAuthRefreshToken");
+      localStorage.removeItem("mcjAuthExpiresAt");
+      localStorage.removeItem("customerAuthToken");
+      localStorage.removeItem("customerUser");
+      localStorage.removeItem("mcjCurrentUser");
+    } catch (e) {}
+    return sessionStorage.getItem("mcjAuthAccessToken") || "";
   }
 
   function looksLikeJwt(token) {
@@ -65,7 +90,10 @@
   function hasValidBossAccessToken() {
     var access = readAccessToken();
     if (!looksLikeJwt(access)) return false;
-    var expRaw = localStorage.getItem("mcjAuthExpiresAt") || sessionStorage.getItem("mcjAuthExpiresAt") || "";
+    var expRaw = "";
+    try {
+      expRaw = sessionStorage.getItem("mcjAuthExpiresAt") || "";
+    } catch (e) {}
     var exp = 0;
     if (expRaw) {
       var n = Number(expRaw);
@@ -170,8 +198,10 @@
     var role = storageRole(userData.role || "boss");
     var cfg = cfgFor(role);
     if (!cfg) return null;
-    var store = remember === false ? sessionStorage : localStorage;
-    var otherStore = remember === false ? localStorage : sessionStorage;
+    var isBoss = role === "customer" || role === "boss";
+    // Boss portal: tab-scoped session only. Never persist acceptance JWT in localStorage.
+    var store = isBoss ? sessionStorage : remember === false ? sessionStorage : localStorage;
+    var otherStore = store === localStorage ? sessionStorage : localStorage;
     var token = role + "_session_" + SESSION_VERSION + "_" + Date.now();
     var adminOk = isAdminRole(userData.role);
     var user = {
@@ -191,13 +221,24 @@
       adminRole: adminOk ? (userData.role === "super_admin" ? "super_admin" : "admin") : "",
       permissions: adminOk ? [userData.role === "super_admin" ? "super_admin" : "admin"] : []
     };
-    // Avoid stale copies across storage buckets after remember toggle.
     otherStore.removeItem(cfg.token);
     otherStore.removeItem(cfg.user);
     otherStore.removeItem("mcjRole");
     otherStore.removeItem("mcjAuthAccessToken");
     otherStore.removeItem("mcjAuthRefreshToken");
     otherStore.removeItem("mcjAuthExpiresAt");
+    otherStore.removeItem("mcjCurrentUser");
+    if (isBoss) {
+      try {
+        localStorage.removeItem(cfg.token);
+        localStorage.removeItem(cfg.user);
+        localStorage.removeItem("mcjRole");
+        localStorage.removeItem("mcjAuthAccessToken");
+        localStorage.removeItem("mcjAuthRefreshToken");
+        localStorage.removeItem("mcjAuthExpiresAt");
+        localStorage.removeItem("mcjCurrentUser");
+      } catch (e) {}
+    }
     store.setItem(cfg.token, token);
     store.setItem(cfg.user, JSON.stringify(user));
     store.setItem("mcjRole", userData.role || role);
