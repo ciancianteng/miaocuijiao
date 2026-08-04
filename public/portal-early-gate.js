@@ -1,13 +1,14 @@
 /**
  * Sync early gate (classic script, NOT type=module).
- * Soft localStorage tokens alone NEVER unlock a portal — require JWT or refresh.
+ * Soft localStorage tokens alone NEVER unlock a portal — require non-expired access JWT.
+ * Refresh-only leftovers NEVER unlock boss private pages (prevents auto re-entry).
  * Full role verify still runs in role-gates.js after modules load.
  * Also re-checks on pageshow (bfcache / back-button after logout).
  */
 (function () {
   "use strict";
 
-  var GATE_VERSION = "20260804authP0boss2";
+  var GATE_VERSION = "20260804authP0boss3";
 
   function pathNow() {
     return String(location.pathname || "/").replace(/\\/g, "/");
@@ -21,6 +22,13 @@
     }
   }
 
+  function removeItem(key) {
+    try {
+      localStorage.removeItem(key);
+      sessionStorage.removeItem(key);
+    } catch (e) {}
+  }
+
   function looksLikeJwt(token) {
     var t = String(token || "").trim();
     if (!t || t.length < 20) return false;
@@ -28,6 +36,30 @@
     return parts.length === 3 && parts.every(function (part) {
       return part.length > 0;
     });
+  }
+
+  function decodeJwtExpMs(raw) {
+    try {
+      var parts = String(raw || "").split(".");
+      if (parts.length < 2) return 0;
+      var payload = JSON.parse(atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")));
+      return payload.exp ? Number(payload.exp) * 1000 : 0;
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  function hasValidAccessJwt(access) {
+    if (!looksLikeJwt(access)) return false;
+    var expRaw = item("mcjAuthExpiresAt");
+    var exp = 0;
+    if (expRaw) {
+      var n = Number(expRaw);
+      if (Number.isFinite(n) && n > 0) exp = n < 1e12 ? n * 1000 : n;
+    }
+    if (!exp) exp = decodeJwtExpMs(access);
+    if (exp && Date.now() >= exp) return false;
+    return true;
   }
 
   function readJson(key) {
@@ -72,6 +104,19 @@
   function isCsRole(role) {
     role = String(role || "").trim().toLowerCase();
     return role === "customer_service" || role === "service";
+  }
+
+  function wipeBossIdentity() {
+    [
+      "customerAuthToken",
+      "customerUser",
+      "mcjCurrentUser",
+      "mcjAuthAccessToken",
+      "mcjAuthRefreshToken",
+      "mcjAuthExpiresAt",
+      "mcjRole",
+      "mcjAfterLoginRedirect",
+    ].forEach(removeItem);
   }
 
   function hideShell() {
@@ -169,7 +214,6 @@
         isCompanionRole(roleOf(pwUser)) ||
         isCompanionRole(pwShared) ||
         (pwSoftOk && !pwShared);
-      // Soft token alone is never enough — require JWT/refresh + soft + role.
       if (!pwSoftOk || !hasJwtOrRefresh(pwAccess, pwRefresh) || !pwRoleOk) {
         return deny("/companion/login/");
       }
@@ -204,8 +248,8 @@
       return true;
     }
 
-    // —— Boss protected pages (hard redirect, not soft modal) ——
-    // Soft token alone NEVER unlocks. URL params (order/conversation) never grant access.
+    // —— Boss protected pages ——
+    // Soft / refresh / URL params NEVER unlock. Require non-expired access JWT.
     if (
       /\/(mine|orders|support|recharge|messages|favorites|profile|payment-confirm|order-confirm|gifts)\.html$/i.test(
         p
@@ -215,21 +259,15 @@
       try {
         if (document.body) document.body.innerHTML = "";
       } catch (e0) {}
-      var bossSoft = item("customerAuthToken");
-      var bossOkSoft =
-        String(bossSoft).indexOf("customer_session_") === 0 ||
-        String(bossSoft).indexOf("boss_session_") === 0;
       var bossUser = readJson("customerUser") || {};
       var bossShared = String(item("mcjRole") || "").toLowerCase();
       var roleHint = roleOf(bossUser) || bossShared;
-      // Foreign portal roles must never open boss private pages.
       if (roleHint && !isBossRole(roleHint)) {
+        wipeBossIdentity();
         return deny("/login.html");
       }
-      if (
-        !bossOkSoft ||
-        !hasJwtOrRefresh(item("mcjAuthAccessToken"), item("mcjAuthRefreshToken"))
-      ) {
+      if (!hasValidAccessJwt(item("mcjAuthAccessToken"))) {
+        wipeBossIdentity();
         return deny("/login.html");
       }
       revealShell();
@@ -239,10 +277,8 @@
     return true;
   }
 
-  // First paint: evaluate immediately.
   evaluate();
 
-  // Back-button / bfcache: re-validate so logout cannot be undone by history.
   window.addEventListener(
     "pageshow",
     function (event) {
@@ -253,11 +289,11 @@
     true
   );
 
-  // Expose for role-gates / tests (no unlock API — evaluate only).
   window.MCJPortalEarlyGate = {
     version: GATE_VERSION,
     evaluate: evaluate,
     looksLikeJwt: looksLikeJwt,
-    hasJwtOrRefresh: hasJwtOrRefresh,
+    hasValidAccessJwt: hasValidAccessJwt,
+    wipeBossIdentity: wipeBossIdentity,
   };
 })();

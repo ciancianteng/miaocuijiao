@@ -153,16 +153,20 @@
     return String(localStorage.getItem("mcjRole") || sessionStorage.getItem("mcjRole") || "").toLowerCase();
   }
   function hasBossGateSession() {
-    var jwt =
-      localStorage.getItem("mcjAuthAccessToken") ||
-      sessionStorage.getItem("mcjAuthAccessToken") ||
-      "";
-    // Soft session alone is never enough for support data.
-    if (!jwt || String(jwt).split(".").length !== 3) return false;
+    if (window.MCJBossAuth && typeof window.MCJBossAuth.hasValidAccessToken === "function") {
+      if (!window.MCJBossAuth.hasValidAccessToken()) return false;
+    } else {
+      var jwt =
+        localStorage.getItem("mcjAuthAccessToken") ||
+        sessionStorage.getItem("mcjAuthAccessToken") ||
+        "";
+      // Soft / refresh alone never unlocks support data.
+      if (!jwt || String(jwt).split(".").length !== 3) return false;
+    }
     var role = sharedRoleHint();
     if (role && role !== "boss" && role !== "customer" && role !== "user") return false;
     if (window.MCJRoleGate && typeof window.MCJRoleGate.isLogged === "function") {
-      return !!(window.MCJRoleGate.isLogged("customer") || window.MCJRoleGate.isLogged("boss") || jwt);
+      return !!(window.MCJRoleGate.isLogged("customer") || window.MCJRoleGate.isLogged("boss"));
     }
     return true;
   }
@@ -184,18 +188,7 @@
   }
 
   function hasAuthSession() {
-    // Boss support must not treat CS/companion shared JWT as a boss session.
-    if (hasBossGateSession()) {
-      var auth = Auth();
-      if (auth && typeof auth.hasSession === "function") return !!auth.hasSession();
-      return !!(
-        localStorage.getItem("mcjAuthAccessToken") ||
-        sessionStorage.getItem("mcjAuthAccessToken") ||
-        localStorage.getItem("mcjAuthRefreshToken") ||
-        sessionStorage.getItem("mcjAuthRefreshToken")
-      );
-    }
-    return false;
+    return hasBossGateSession();
   }
   function isBossLikeRole(role) {
     role = String(role || "").trim().toLowerCase();

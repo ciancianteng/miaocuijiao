@@ -33,10 +33,14 @@
   function currentUser() {
     var user = read(USER_KEY, null);
     if (!user) {
-      user = { user_id: "user_demo_001", name: "Demo Boss" };
-      write(USER_KEY, user);
+      try {
+        user = JSON.parse(localStorage.getItem("customerUser") || "null");
+      } catch (e) {
+        user = null;
+      }
     }
-    return user;
+    // Never invent Demo Boss / acceptance identity.
+    return user || null;
   }
 
   function demoOrders() {
@@ -97,9 +101,9 @@
   }
 
   function seed() {
-    if (!localStorage.getItem(ORDER_KEY)) write(ORDER_KEY, demoOrders());
+    // Do not seed fake demo orders or auto-create a demo user.
+    if (!localStorage.getItem(ORDER_KEY)) write(ORDER_KEY, []);
     if (!localStorage.getItem(REVIEW_KEY)) write(REVIEW_KEY, []);
-    currentUser();
   }
 
   function getOrders() {

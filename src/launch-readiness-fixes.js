@@ -17,11 +17,14 @@
     if (window.MCJRoleGate && typeof window.MCJRoleGate.isLogged === "function") {
       return !!(window.MCJRoleGate.isLogged("customer") || window.MCJRoleGate.isLogged("boss"));
     }
-    return !!(
+    if (window.MCJBossAuth && typeof window.MCJBossAuth.hasValidAccessToken === "function") {
+      return !!window.MCJBossAuth.hasValidAccessToken();
+    }
+    var t =
       localStorage.getItem("mcjAuthAccessToken") ||
       sessionStorage.getItem("mcjAuthAccessToken") ||
-      localStorage.getItem("customerAuthToken")
-    );
+      "";
+    return !!(t && t.split(".").length === 3);
   }
 
   function esc(value) {

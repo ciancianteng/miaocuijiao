@@ -3384,7 +3384,22 @@ header.mcj-boss-header .header-star,
 header.mcj-boss-header .mcj-mnav-brand{display:none!important}
 @media(min-width:900px){
   header.mcj-boss-header .mcj-mnav{display:none!important}
-  header.mcj-boss-header .mcj-desk-nav{display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr))!important;gap:10px!important}
+  header.mcj-boss-header .mcj-desk-nav{
+    display:flex!important;
+    flex-wrap:nowrap!important;
+    align-items:center!important;
+    justify-content:flex-end!important;
+    gap:8px!important;
+    max-width:min(720px,calc(100% - 200px))!important
+  }
+  header.mcj-boss-header .mcj-desk-nav>a{
+    flex:1 1 0!important;
+    min-width:0!important;
+    max-width:112px!important;
+    padding:0 10px!important;
+    font-size:14px!important;
+    white-space:nowrap!important
+  }
 }
 @media(max-width:899px){
   header.mcj-boss-header .mcj-desk-nav,
@@ -3460,9 +3475,9 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
   <script type="module" src="src/companion-media.js?v=20260802mediaSync"></script>
   <script type="module" src="src/launch-feature-freeze.js"></script>
   <script type="module" src="src/notify-system.js" defer></script>
-  <script type="module" src="src/boss-header.js?v=20260804authP0boss2" defer></script>
+  <script type="module" src="src/boss-header.js?v=20260804authP0boss3" defer></script>
   <script type="module" src="src/boss-forced-ack.js?v=20260803rules1" defer></script>
-  <link rel="stylesheet" href="src/boss-header.css?v=20260802mobileP0c">
+  <link rel="stylesheet" href="src/boss-header.css?v=20260804navAuth3">
   <link rel="stylesheet" href="/src/mcj-safe-area.css?v=20260802mobileP0c">
   <link rel="stylesheet" href="src/home-mobile.css?v=20260804annMarquee3">
 </head>
@@ -3485,6 +3500,7 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
         <a href="companion-center.html">大厅</a>
         <a href="orders.html">订单</a>
         <a href="support.html?start=1">客服</a>
+        <a href="login.html" data-mcj-boss-login>登录</a>
       </nav>
     </div>
   </header>
@@ -3612,7 +3628,7 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
   <script type="module" src="src/login-modal-portal.js"></script>
   <script>
     const modal=document.getElementById('modal');const modalBody=document.getElementById('modalBody');
-    function isLoggedIn(){return window.MCJRoleGate ? !!(window.MCJRoleGate.isLogged('customer')||window.MCJRoleGate.isLogged('boss')) : !!(localStorage.getItem('mcjAuthAccessToken')||sessionStorage.getItem('mcjAuthAccessToken'))}
+    function isLoggedIn(){return window.MCJRoleGate ? !!(window.MCJRoleGate.isLogged('customer')||window.MCJRoleGate.isLogged('boss')) : !!(function(){var t=localStorage.getItem('mcjAuthAccessToken')||sessionStorage.getItem('mcjAuthAccessToken')||'';return t&&t.split('.').length===3;})()}
     function refreshAuthUI(){document.body.classList.toggle('is-logged-in',isLoggedIn());window.dispatchEvent(new CustomEvent('mcj:auth-updated'));}
     function getDiscordInviteUrl(){
       var direct=(localStorage.getItem('discordInviteUrl')||'').trim();

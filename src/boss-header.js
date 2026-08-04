@@ -133,22 +133,68 @@
     });
   }
 
+  function decodeJwtExpMs(raw) {
+    try {
+      var parts = String(raw || "").split(".");
+      if (parts.length < 2) return 0;
+      var payload = JSON.parse(atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")));
+      return payload.exp ? Number(payload.exp) * 1000 : 0;
+    } catch (e) {
+      return 0;
+    }
+  }
+
   function hasValidBossJwt() {
+    if (window.MCJBossAuth && typeof window.MCJBossAuth.hasValidAccessToken === "function") {
+      try {
+        if (window.MCJBossAuth.hasValidAccessToken()) return true;
+        return false;
+      } catch (e) {}
+    }
     if (window.MCJBossAuth && typeof window.MCJBossAuth.hasSession === "function") {
       try {
         if (window.MCJBossAuth.hasSession()) return true;
-      } catch (e) {}
+      } catch (e2) {}
     }
-    return looksLikeJwt(accessToken());
+    var token = accessToken();
+    if (!looksLikeJwt(token)) return false;
+    var expRaw = localStorage.getItem("mcjAuthExpiresAt") || sessionStorage.getItem("mcjAuthExpiresAt") || "";
+    var exp = 0;
+    if (expRaw) {
+      var n = Number(expRaw);
+      if (Number.isFinite(n) && n > 0) exp = n < 1e12 ? n * 1000 : n;
+    }
+    if (!exp) exp = decodeJwtExpMs(token);
+    if (exp && Date.now() >= exp) return false;
+    return true;
+  }
+
+  function purgeGuestAuthArtifacts() {
+    if (hasValidBossJwt()) return;
+    [
+      "customerAuthToken",
+      "customerUser",
+      "mcjCurrentUser",
+      "mcjAuthAccessToken",
+      "mcjAuthRefreshToken",
+      "mcjAuthExpiresAt",
+      "mcjRole",
+    ].forEach(function (key) {
+      try {
+        localStorage.removeItem(key);
+        sessionStorage.removeItem(key);
+      } catch (e) {}
+    });
+    if (window.MCJBossAuth && typeof window.MCJBossAuth.clearSession === "function") {
+      try { window.MCJBossAuth.clearSession(); } catch (e2) {}
+    }
   }
 
   function hasAuthSession() {
-    // Soft customerAuthToken alone is NOT a session — require live JWT.
     return hasValidBossJwt();
   }
 
   function isLoggedIn() {
-    // Soft/cached identity must never hide the Login CTA or unlock private UI.
     return hasValidBossJwt();
   }
 
@@ -497,10 +543,11 @@
   function mount() {
     if (!isBossPublicPage() || !document.body) return;
     // Always rebuild header markup for tab-nav-only layout
-    ensureCss("/src/boss-header.css?v=20260802mobileP0c", "data-mcj-boss-header-css");
+    ensureCss("/src/boss-header.css?v=20260804navAuth3", "data-mcj-boss-header-css");
     ensureCss("/src/mcj-safe-area.css?v=20260802mobileP0c", "data-mcj-safe-area-css");
     ensureCss("/src/home-mobile.css?v=20260802mobileP0c", "data-mcj-home-mobile-css");
     document.body.classList.add("mcj-boss-shell");
+    purgeGuestAuthArtifacts();
 
     var existing = findExistingHeader();
     var header;
@@ -540,14 +587,19 @@
     [
       "customerAuthToken",
       "customerUser",
+      "mcjCurrentUser",
       "mcjAuthAccessToken",
       "mcjAuthRefreshToken",
       "mcjAuthExpiresAt",
       "mcjRole",
+      "mcjAfterLoginRedirect",
     ].forEach(function (key) {
       localStorage.removeItem(key);
       sessionStorage.removeItem(key);
     });
+    if (window.MCJBossAuth && typeof window.MCJBossAuth.clearSession === "function") {
+      try { window.MCJBossAuth.clearSession(); } catch (e) {}
+    }
     notifyState.items = [];
     notifyState.unread = 0;
     notifyState.open = false;

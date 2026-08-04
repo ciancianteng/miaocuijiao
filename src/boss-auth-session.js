@@ -46,11 +46,29 @@
     return decodeJwtExpMs(getAccessToken());
   }
 
+  function looksLikeJwt(token) {
+    var t = String(token || "").trim();
+    if (!t || t.length < 20) return false;
+    var parts = t.split(".");
+    return parts.length === 3 && parts.every(function (part) {
+      return part.length > 0;
+    });
+  }
+
+  /** Live access JWT only — refresh alone never counts as signed-in. */
+  function hasValidAccessToken() {
+    var access = getAccessToken();
+    if (!looksLikeJwt(access)) return false;
+    var exp = getExpiresAtMs();
+    if (exp && Date.now() >= exp) return false;
+    return true;
+  }
+
   function needsRefresh() {
     var access = getAccessToken();
     var refresh = getRefreshToken();
     if (!access && refresh) return true;
-    if (!access) return false;
+    if (!looksLikeJwt(access)) return !!refresh;
     var exp = getExpiresAtMs();
     if (!exp) return false;
     return Date.now() >= exp - REFRESH_BUFFER_MS;
@@ -81,7 +99,9 @@
   }
 
   function hasSession() {
-    return !!(getAccessToken() || getRefreshToken());
+    // UI / gates: only a non-expired access JWT = logged in.
+    // Refresh-only leftovers must NOT auto-enter private pages.
+    return hasValidAccessToken();
   }
 
   /** Equivalent to supabase.auth.getSession() via local /api auth session. */
@@ -136,11 +156,17 @@
     return refreshPromise;
   }
 
-  /** Wait for getSession, then refreshSession when near expiry. */
+  /** Wait for getSession, then refreshSession when near expiry / access missing. */
   function ensureSession() {
     sessionReadyPromise = getSession().then(function (result) {
-      if (!hasSession()) return result;
-      if (!needsRefresh()) return result;
+      var access = getAccessToken();
+      var refresh = getRefreshToken();
+      if (!access && !refresh) return result;
+      if (hasValidAccessToken() && !needsRefresh()) return result;
+      if (!refresh) {
+        clearSession();
+        return { data: { session: null }, error: null };
+      }
       return refreshSession().then(function () {
         return getSession();
       });
@@ -215,6 +241,8 @@
     authHeaders: authHeaders,
     clearSession: clearSession,
     hasSession: hasSession,
+    hasValidAccessToken: hasValidAccessToken,
+    looksLikeJwt: looksLikeJwt,
     expiredMessage: EXPIRED_MESSAGE,
   };
 })();

@@ -42,6 +42,55 @@
     return localStorage.getItem("mcjAuthAccessToken") || sessionStorage.getItem("mcjAuthAccessToken") || "";
   }
 
+  function looksLikeJwt(token) {
+    var t = String(token || "").trim();
+    if (!t || t.length < 20) return false;
+    var parts = t.split(".");
+    return parts.length === 3 && parts.every(function (part) {
+      return part.length > 0;
+    });
+  }
+
+  function decodeJwtExpMs(raw) {
+    try {
+      var parts = String(raw || "").split(".");
+      if (parts.length < 2) return 0;
+      var payload = JSON.parse(atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")));
+      return payload.exp ? Number(payload.exp) * 1000 : 0;
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  function hasValidBossAccessToken() {
+    var access = readAccessToken();
+    if (!looksLikeJwt(access)) return false;
+    var expRaw = localStorage.getItem("mcjAuthExpiresAt") || sessionStorage.getItem("mcjAuthExpiresAt") || "";
+    var exp = 0;
+    if (expRaw) {
+      var n = Number(expRaw);
+      if (Number.isFinite(n) && n > 0) exp = n < 1e12 ? n * 1000 : n;
+    }
+    if (!exp) exp = decodeJwtExpMs(access);
+    if (exp && Date.now() >= exp) return false;
+    return true;
+  }
+
+  function wipeBossGuestArtifacts() {
+    [
+      "customerAuthToken",
+      "customerUser",
+      "mcjCurrentUser",
+      "mcjAuthAccessToken",
+      "mcjAuthRefreshToken",
+      "mcjAuthExpiresAt",
+      "mcjRole",
+    ].forEach(function (key) {
+      localStorage.removeItem(key);
+      sessionStorage.removeItem(key);
+    });
+  }
+
   function isBossSurfaceRole(role) {
     var key = storageRole(role);
     return key === "customer" || key === "boss";
@@ -49,8 +98,14 @@
 
   function isLogged(role) {
     var key = storageRole(role);
-    var token = readToken(role);
     var u = readUser(role);
+    // Boss / customer: soft session alone NEVER counts — require live access JWT.
+    if (isBossSurfaceRole(role)) {
+      if (!hasValidBossAccessToken()) return false;
+      if (!u || !u.role) return true;
+      return roleMatches(role, u.role);
+    }
+    var token = readToken(role);
     if (token) {
       if (String(token).indexOf(key + "_session_" + SESSION_VERSION + "_") === 0) {
         return roleMatches(role, u.role || role);
@@ -58,12 +113,6 @@
       if (String(token).indexOf(key + "_session_") === 0) {
         return roleMatches(role, u.role || role);
       }
-    }
-    // Boss pages: treat a live Supabase access token as signed-in even if the
-    // soft session wrapper is missing (keeps Header in sync across pages).
-    if (isBossSurfaceRole(role) && readAccessToken()) {
-      if (!u || !u.role) return true;
-      return roleMatches(role, u.role);
     }
     return false;
   }
@@ -337,6 +386,15 @@
       sessionStorage.removeItem("mcjAuthRefreshToken");
       localStorage.removeItem("mcjAuthExpiresAt");
       sessionStorage.removeItem("mcjAuthExpiresAt");
+      localStorage.removeItem("mcjCurrentUser");
+      sessionStorage.removeItem("mcjCurrentUser");
+      localStorage.removeItem("customerAuthToken");
+      sessionStorage.removeItem("customerAuthToken");
+      localStorage.removeItem("customerUser");
+      sessionStorage.removeItem("customerUser");
+      if (window.MCJBossAuth && typeof window.MCJBossAuth.clearSession === "function") {
+        try { window.MCJBossAuth.clearSession(); } catch (e) {}
+      }
     }
     refreshAuthUi();
   }
@@ -409,8 +467,9 @@
     }
 
     if (/\/(mine|orders|support|recharge|messages|favorites|profile|payment-confirm|order-confirm|gifts)\.html$/i.test(p)) {
-      // Soft session alone is insufficient — require live access JWT.
-      if (!readAccessToken()) {
+      // Soft / refresh alone insufficient — require non-expired access JWT.
+      if (!hasValidBossAccessToken()) {
+        wipeBossGuestArtifacts();
         return denyUnauthed("/login.html", returnPath());
       }
       return true;
@@ -430,7 +489,8 @@
     }
     if (storageRole(role) === "customer" || role === "boss") {
       if (/\/(mine|orders|support|recharge|messages|favorites|profile|payment-confirm|order-confirm|gifts)\.html$/i.test(path())) {
-        if (!readAccessToken()) {
+        if (!hasValidBossAccessToken()) {
+          wipeBossGuestArtifacts();
           return denyUnauthed("/login.html", returnPath());
         }
       }
@@ -574,9 +634,10 @@
       var a = event.target && event.target.closest && event.target.closest("a[href]");
       if (!a) return;
       var href = String(a.getAttribute("href") || "");
-      if (!/mine\.html|orders\.html|support\.html|recharge\.html/i.test(href)) return;
-      if (isLogged("customer") || isLogged("boss") || readAccessToken()) return;
+      if (!/mine\.html|orders\.html|support\.html|recharge\.html|messages\.html|favorites\.html|profile\.html|gifts\.html/i.test(href)) return;
+      if (hasValidBossAccessToken()) return;
       event.preventDefault();
+      wipeBossGuestArtifacts();
       try {
         var abs = new URL(href, location.href);
         sessionStorage.setItem("mcjAfterLoginRedirect", abs.pathname + abs.search + abs.hash);
