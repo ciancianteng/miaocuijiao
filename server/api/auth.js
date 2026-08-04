@@ -334,23 +334,38 @@ async function storeForgotOtp(accountKey, role, code, kind = "otp") {
   const id = `fpr_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
   const exp = Date.now() + 15 * 60 * 1000;
   const status = `${kind}:${code}:exp:${exp}`;
-  try {
-    await supabaseJson(restUrl("password_reset_requests"), {
-      method: "POST",
-      headers: headersWithServiceRole(),
-      body: JSON.stringify({
-        id,
-        account: accountKey,
-        role,
-        status,
-        created_at: new Date().toISOString(),
-      }),
-    });
-  } catch {
-    globalThis.__mcjForgotResets = globalThis.__mcjForgotResets || new Map();
-    globalThis.__mcjForgotResets.set(`${role}:${kind}:${accountKey}`, { id, code, exp, kind });
+  // Always mirror to memory for same-instance lookups.
+  globalThis.__mcjForgotResets = globalThis.__mcjForgotResets || new Map();
+  globalThis.__mcjForgotResets.set(`${role}:${kind}:${accountKey}`, { id, code, exp, kind });
+  let dbOk = false;
+  let dbError = "";
+  for (let attempt = 0; attempt < 2 && !dbOk; attempt += 1) {
+    try {
+      await supabaseJson(restUrl("password_reset_requests"), {
+        method: "POST",
+        headers: headersWithServiceRole({ Prefer: "return=minimal" }),
+        body: JSON.stringify({
+          id: attempt === 0 ? id : `${id}_${attempt}`,
+          account: accountKey,
+          role,
+          status,
+          created_at: new Date().toISOString(),
+        }),
+      });
+      dbOk = true;
+    } catch (err) {
+      dbError = String(err?.message || err || "password_reset_requests write failed");
+      console.error("[auth/storeForgotOtp] db write failed", kind, accountKey, dbError);
+    }
   }
-  return { id, exp };
+  // Login/register OTPs must survive across serverless isolates — refuse soft memory-only success.
+  if (!dbOk && (kind === "register_otp" || kind === "login_otp")) {
+    throw Object.assign(new Error(`验证码存储失败，请稍后重试。${dbError ? `（${dbError}）` : ""}`), {
+      status: 503,
+      code: "OTP_STORE_FAILED",
+    });
+  }
+  return { id, exp, dbOk };
 }
 
 async function findForgotOtp(accountKey, role, kind = "otp") {
@@ -488,7 +503,15 @@ async function handleLoginSendOtp(body, res) {
   const profile = resolved.profile;
   const code = randomOtpCode();
   const key = forgotAccountKey(profile);
-  await storeForgotOtp(key, role, code, "login_otp");
+  try {
+    await storeForgotOtp(key, role, code, "login_otp");
+  } catch (storeErr) {
+    return json(res, storeErr?.status || 503, {
+      ok: false,
+      message: storeErr?.message || "验证码存储失败，请稍后重试。",
+      mail: mailProviderStatus(),
+    });
+  }
   void sendSmsOtp({ phone: profile.phone || "", code, purpose: "login" });
   let mailOk = false;
   let mailError = "";
@@ -686,7 +709,15 @@ async function handleSendRegisterOtp(body, res) {
     });
   }
   const code = randomOtpCode();
-  await storeForgotOtp(email, role, code, "register_otp");
+  try {
+    await storeForgotOtp(email, role, code, "register_otp");
+  } catch (storeErr) {
+    return json(res, storeErr?.status || 503, {
+      ok: false,
+      message: storeErr?.message || "验证码存储失败，请稍后重试。",
+      mail: mailProviderStatus(),
+    });
+  }
   let mailOk = false;
   let mailError = "";
   try {
