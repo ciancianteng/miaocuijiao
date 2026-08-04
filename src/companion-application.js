@@ -1529,42 +1529,70 @@
     var until = Date.now() + Math.max(1, Number(seconds) || 60) * 1000;
     if (kind === "login") authUi.loginCooldownUntil = until;
     else authUi.cooldownUntil = until;
-    var tick = function () {
-      var left = authCooldownLeft(kind === "login" ? authUi.loginCooldownUntil : authUi.cooldownUntil);
-      if (left <= 0) {
-        render(Number((document.getElementById("companionApplyRoot") || {}).dataset.step || 0));
+    if (authUi._cooldownTimer) {
+      try { clearInterval(authUi._cooldownTimer); } catch (e) {}
+      authUi._cooldownTimer = null;
+    }
+    authUi._cooldownTimer = setInterval(function () {
+      if (companionToken()) {
+        try { clearInterval(authUi._cooldownTimer); } catch (e2) {}
+        authUi._cooldownTimer = null;
         return;
       }
+      var left = authCooldownLeft(kind === "login" ? authUi.loginCooldownUntil : authUi.cooldownUntil);
       var sel = kind === "login" ? "[data-apply-send-login-otp]" : "[data-apply-send-register-otp]";
       var btn = document.querySelector(sel);
+      if (left <= 0) {
+        try { clearInterval(authUi._cooldownTimer); } catch (e3) {}
+        authUi._cooldownTimer = null;
+        if (btn && !authUi.emailVerified) {
+          btn.disabled = false;
+          btn.textContent = "发送验证码";
+        }
+        return;
+      }
       if (btn && !authUi.emailVerified) {
         btn.disabled = true;
         btn.textContent = left + "s";
       }
-      setTimeout(tick, 1000);
-    };
-    tick();
+    }, 1000);
   }
 
   async function afterCompanionAuthSuccess(session, email, nickname) {
     saveCompanionSession(session);
     if (nickname || email) {
-      saveDraft({ data: { nickname: nickname || "", email: email || "" } });
+      try { saveDraft({ data: { nickname: nickname || "", email: email || "" } }); } catch (e) {}
     }
     setAuthMessage("", "ok");
     authUi.busy = false;
     authUi.emailVerified = false;
     authUi.registerToken = "";
-    var boot = await fetchCompanionBootstrap();
-    if (boot && boot.player) {
-      remoteStatus = {
-        applicationStatus: boot.player.auditStatus || boot.player.applicationStatus || "",
-        rejectReason: boot.player.applicationRejectReason || "",
-      };
+    authUi.cooldownUntil = 0;
+    authUi.loginCooldownUntil = 0;
+    if (authUi._cooldownTimer) {
+      try { clearInterval(authUi._cooldownTimer); } catch (e4) {}
+      authUi._cooldownTimer = null;
     }
-    hydrateUploadsFromBootstrap(boot);
-    render(0, { alignStepNav: true });
-    showApplyTip("登录成功，请从第 1 步开始填写申请。", "ok");
+    // Unlock 1/5 UI immediately; bootstrap can hydrate in the background.
+    try {
+      render(0, { alignStepNav: true });
+      showApplyTip("登录成功，请从第 1 步开始填写申请。", "ok");
+    } catch (renderErr) {
+      showApplyTip(renderErr.message || "登录成功，但页面刷新失败，请手动刷新。");
+    }
+    try {
+      var boot = await fetchCompanionBootstrap();
+      if (boot && boot.player) {
+        remoteStatus = {
+          applicationStatus: boot.player.auditStatus || boot.player.applicationStatus || "",
+          rejectReason: boot.player.applicationRejectReason || "",
+        };
+      }
+      hydrateUploadsFromBootstrap(boot);
+      render(0, { alignStepNav: true });
+    } catch (bootErr) {
+      try { console.warn("[apply-auth] bootstrap", bootErr); } catch (e5) {}
+    }
   }
 
   function activeAuthForm() {
