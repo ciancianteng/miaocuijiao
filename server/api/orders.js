@@ -1,7 +1,8 @@
-﻿import fs from "node:fs";
+import fs from "node:fs";
 import path from "node:path";
 import { assertBossProfile, identityView } from "./_boss-identity.js";
 import { resolvePlatformCommission } from "./_commission-rates.js";
+import { readLocalLevels } from "./_companion-levels-store.js";
 import { priceForGame } from "./_game-prices.js";
 import {
   ORDER_STATUS_LABELS,
@@ -11,6 +12,9 @@ import {
   writeOrderStatusLog,
   transitionOrderStatus,
 } from "./_order-status.js";
+import { evaluatePublishGate } from "./_companion-publish-gate.js";
+import { allocateOrderNo, resolveOrderPublicNo } from "./_account-codes.js";
+import { companionDb } from "./_companion-media-store.js";
 
 loadLocalEnv();
 
@@ -61,8 +65,162 @@ function serviceHeaders(extra = {}) {
 function restUrl(table, query = "") { return `${envValue("SUPABASE_URL")}/rest/v1/${table}${query}`; }
 function authUrl(path) { return `${envValue("SUPABASE_URL")}/auth/v1/${path}`; }
 function money(value) { const n = Number(String(value ?? "").replace(/[^\d.-]/g, "")); return Number.isFinite(n) ? n : 0; }
+
+/** Load companion pricing row; omit optional columns that may be missing in older schemas. */
+async function loadCompanionPricingRow(userId) {
+  const id = String(userId || "").trim();
+  if (!id) return null;
+  // Prefer wide select, but never fall all the way to price-only — publish gate needs profile fields.
+  const selects = [
+    "id,user_id,price,game_prices,tags,game,main_service,service_ids,pricing_unit,nickname,age,gender,region,service_type,voice_url,card_image_url,application_status,verification_status,deposit_status,allow_orders,online_status,availability_status",
+    "id,user_id,price,game_prices,tags,game,main_service,service_ids,nickname,age,gender,region,service_type,voice_url,card_image_url,application_status,verification_status,allow_orders,online_status,availability_status",
+    "id,user_id,price,game_prices,tags,game,main_service,nickname,age,gender,region,service_type,voice_url,card_image_url,application_status,verification_status,allow_orders,online_status",
+    "id,user_id,price,tags,game,nickname,age,gender,region,voice_url,card_image_url,application_status,verification_status,allow_orders,online_status",
+    "id,user_id,price,game,nickname,application_status,verification_status,allow_orders,online_status",
+  ];
+  for (const select of selects) {
+    try {
+      const rows = await supabaseJson(
+        restUrl("companion_profiles", `?user_id=eq.${encodeURIComponent(id)}&select=${select}&limit=1`),
+        { headers: serviceHeaders() }
+      );
+      if (Array.isArray(rows) && rows[0]) return rows[0];
+    } catch (error) {
+      const msg = String(error?.message || error || "");
+      if (!/42703|column|schema cache|PGRST204|does not exist/i.test(msg)) throw error;
+    }
+  }
+  return null;
+}
+
+async function loadCompanionMediaExtras(companionProfileId) {
+  const pid = String(companionProfileId || "").trim();
+  if (!pid) return {};
+  try {
+    const rows = await supabaseJson(
+      restUrl(
+        "companion_media",
+        `?companion_profile_id=eq.${encodeURIComponent(pid)}&media_type=in.(avatar,cover,gallery,voice)&select=id,media_type,storage_path,status&limit=50`
+      ),
+      { headers: serviceHeaders() }
+    );
+    const list = Array.isArray(rows) ? rows : [];
+    const extras = { avatarUrl: "", voiceUrl: "", gallery: [] };
+    for (const row of list) {
+      if (row.status && /rejected|deleted/i.test(String(row.status))) continue;
+      // Presence markers only — publish gate checks existence, not durable public URLs.
+      if (row.media_type === "avatar" && (row.storage_path || row.id)) {
+        extras.avatarUrl = "storage://present/" + (row.storage_path || row.id);
+      }
+      if (row.media_type === "voice" && (row.storage_path || row.id)) {
+        extras.voiceUrl = "storage://present/" + (row.storage_path || row.id);
+      }
+      if (row.media_type === "gallery") {
+        extras.gallery.push({ id: row.id, url: row.storage_path || String(row.id) });
+      }
+    }
+    return extras;
+  } catch {
+    return {};
+  }
+}
+
+async function assertCompanionOrderable(companionUserId) {
+  const cp = await loadCompanionPricingRow(companionUserId);
+  if (!cp) return { ok: false, message: "指定陪玩不存在或不可下单。" };
+  let profile = null;
+  try {
+    const rows = await supabaseJson(
+      restUrl("profiles", `?id=eq.${encodeURIComponent(companionUserId)}&select=id,display_name,avatar_url,status,role&limit=1`),
+      { headers: serviceHeaders() }
+    );
+    profile = Array.isArray(rows) ? rows[0] : null;
+  } catch {
+    profile = null;
+  }
+  const mediaExtras = await loadCompanionMediaExtras(cp.id);
+  const gate = evaluatePublishGate(
+    cp,
+    profile || { role: "companion", status: "active", display_name: cp.nickname, avatar_url: "" },
+    mediaExtras
+  );
+  if (!gate.ok) {
+    return {
+      ok: false,
+      message: gate.statusLabel === "资料不完整"
+        ? "该陪玩资料未完善，暂不可下单"
+        : gate.statusLabel === "待审核"
+          ? "该陪玩尚未通过审核，暂不可下单"
+          : `该陪玩暂不可下单（${gate.statusLabel}）`,
+      gate,
+      cp,
+    };
+  }
+  const online = String(cp.availability_status || cp.online_status || "offline").toLowerCase();
+  if (online === "paused") {
+    return { ok: false, message: "该陪玩已暂停接单，请稍后再试", gate, cp };
+  }
+  if (online === "offline") {
+    return { ok: false, message: "该陪玩当前离线，暂不可下单", gate, cp };
+  }
+  return { ok: true, gate, cp, online };
+}
+
+/** Resolve profiles.id / companion_profiles.id / PW code → profiles user id. */
+async function resolveCompanionUserId(rawId) {
+  const id = String(rawId || "").trim();
+  if (!id) return "";
+  try {
+    const byUser = await supabaseJson(restUrl("profiles", `?id=eq.${encodeURIComponent(id)}&role=eq.companion&select=id&limit=1`), {
+      headers: serviceHeaders(),
+    });
+    if (Array.isArray(byUser) && byUser[0]?.id) return byUser[0].id;
+  } catch {
+    /* continue */
+  }
+  try {
+    const byCpId = await supabaseJson(
+      restUrl("companion_profiles", `?id=eq.${encodeURIComponent(id)}&select=user_id&limit=1`),
+      { headers: serviceHeaders() }
+    );
+    if (Array.isArray(byCpId) && byCpId[0]?.user_id) return byCpId[0].user_id;
+  } catch {
+    /* continue */
+  }
+  const code = id.toUpperCase();
+  if (/^PW\d+$/i.test(code) || /^P\d+$/i.test(code)) {
+    try {
+      const byCode = await supabaseJson(
+        restUrl("companion_profiles", `?companion_code=eq.${encodeURIComponent(code)}&select=user_id&limit=1`),
+        { headers: serviceHeaders() }
+      );
+      if (Array.isArray(byCode) && byCode[0]?.user_id) return byCode[0].user_id;
+    } catch {
+      /* column may be missing */
+    }
+    const digits = code.replace(/^PW0*/i, "").replace(/^P0*/i, "");
+    if (digits) {
+      try {
+        const byUid = await supabaseJson(
+          restUrl("companion_profiles", `?companion_uid=eq.${encodeURIComponent(digits)}&select=user_id&limit=1`),
+          { headers: serviceHeaders() }
+        );
+        if (Array.isArray(byUid) && byUid[0]?.user_id) return byUid[0].user_id;
+      } catch {
+        /* continue */
+      }
+    }
+  }
+  return id;
+}
 function nowIso() { return new Date().toISOString(); }
-function orderNo() { return `MCJ-${Date.now()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`; }
+async function nextOrderNo() {
+  try {
+    return await allocateOrderNo(companionDb);
+  } catch {
+    return `MCJO${String(Date.now()).slice(-6)}`;
+  }
+}
 function paymentMethodLabel(method) {
   const key = String(method || "").toLowerCase();
   if (/tng/.test(key)) return "TNG";
@@ -283,6 +441,22 @@ async function loadOrders(profile, id = "") {
   const selectCore =
     "id,order_no,boss_id,companion_id,customer_service_id,order_type,game,title,description,hours,unit_price,total_amount,status,created_at,accepted_at,started_at,completed_at,cancelled_at";
   const selectRich = selectCore + ",note,cancel_reason";
+  if (id) {
+    // Ownership check first — foreign order id must not leak existence details as 200 empty.
+    let probe;
+    try {
+      probe = await supabaseJson(
+        restUrl(TABLE, `?id=eq.${encodeURIComponent(id)}&select=id,boss_id&limit=1`),
+        { headers: serviceHeaders() }
+      );
+    } catch {
+      probe = [];
+    }
+    const hit = Array.isArray(probe) ? probe[0] : null;
+    if (hit && String(hit.boss_id || "") !== String(profile.id || "")) {
+      throw Object.assign(new Error("无权限查看该订单。"), { status: 403, code: "FORBIDDEN_ORDER" });
+    }
+  }
   const queryOf = (sel) =>
     id
       ? `?id=eq.${encodeURIComponent(id)}&boss_id=eq.${encodeURIComponent(profile.id)}&select=${sel}&order=created_at.desc&limit=1`
@@ -503,7 +677,9 @@ export default async function handler(req, res) {
         orders,
         statusText: STATUS_TEXT,
         identity: profile._identity || null,
-        allowTestPay: allowPreviewTestPay(),
+        allowTestPay: allowPreviewTestPay({
+          allowTestPay: req.query?.allowTestPay ?? req.query?.allow_test_pay,
+        }),
       });
     }
     if (req.method !== "POST") {
@@ -514,9 +690,34 @@ export default async function handler(req, res) {
     const action = String(body.action || "create");
     if (action === "create" || action === "place_order") {
       const order = body.order || body;
+      const idempotencyKey = String(
+        body.idempotencyKey || body.idempotency_key || order.idempotencyKey || order.idempotency_key || ""
+      ).trim();
+      if (idempotencyKey) {
+        try {
+          const existing = await supabaseJson(
+            restUrl(TABLE, `?idempotency_key=eq.${encodeURIComponent(idempotencyKey)}&limit=1`),
+            { headers: serviceHeaders() }
+          );
+          if (existing?.[0]) {
+            return json(res, 200, {
+              ok: true,
+              message: "订单已存在（防重复提交）",
+              order: viewOrder(existing[0]),
+              deduped: true,
+              replayed: true,
+            });
+          }
+        } catch (e) {
+          if (!/idempotency|column|schema cache|PGRST/i.test(String(e.message || ""))) throw e;
+        }
+      }
       let companionId = String(order.companion_id || order.companionId || body.companionId || "").trim();
       if (action === "place_order" && !companionId) {
         return json(res, 400, { ok: false, message: "缺少陪玩信息，无法下单。" });
+      }
+      if (companionId) {
+        companionId = (await resolveCompanionUserId(companionId)) || companionId;
       }
       const quantity = Math.max(1, Math.floor(money(order.quantity || 1) || 1));
       const baseHours = Math.max(0.5, money(order.hours || order.duration || 1));
@@ -558,18 +759,29 @@ export default async function handler(req, res) {
       if (action === "place_order") {
         if (!gameId) return json(res, 400, { ok: false, message: "请填写游戏 ID。" });
         // Server-authoritative unit price from companion_profiles — never trust client unit/total.
-        const cpRows = await supabaseJson(
-          restUrl(
-            "companion_profiles",
-            `?user_id=eq.${encodeURIComponent(companionId)}&select=price,game_prices,tags,game,main_service,service_ids,pricing_unit&limit=1`
-          ),
-          { headers: serviceHeaders() }
-        ).catch(() => []);
-        const cp = Array.isArray(cpRows) ? cpRows[0] : null;
+        const orderable = await assertCompanionOrderable(companionId);
+        if (!orderable.ok) {
+          return json(res, 400, { ok: false, message: orderable.message || "该陪玩暂不可下单" });
+        }
+        const cp = orderable.cp;
         const serviceId = String(order.serviceId || order.service_id || "").trim();
-        unitPrice = money(priceForGame(cp || {}, game, serviceId));
-        if (!(unitPrice > 0)) unitPrice = money(cp?.price);
-        if (!(unitPrice > 0)) return json(res, 400, { ok: false, message: "陪玩单价无效，请刷新后重试。" });
+        const gameHint = String(order.gameName || order.game_name || order.mainGame || order.main_game || game || "").trim();
+        unitPrice = money(priceForGame(cp, gameHint, serviceId));
+        if (!(unitPrice > 0)) unitPrice = money(cp.price);
+        if (!(unitPrice > 0)) {
+          // Prefer first positive game_prices entry when service/game labels don't match keys.
+          const gp = cp.game_prices && typeof cp.game_prices === "object" ? cp.game_prices : {};
+          for (const k of Object.keys(gp)) {
+            const v = money(gp[k]);
+            if (v > 0) {
+              unitPrice = v;
+              break;
+            }
+          }
+        }
+        if (!(unitPrice > 0)) {
+          return json(res, 400, { ok: false, message: "该陪玩尚未设置单价" });
+        }
         totalAmount = Math.round(unitPrice * hours * 100) / 100;
         const clientUnit = money(order.unit_price || order.unitPrice || order.price || order.budget || 0);
         const clientTotal = money(order.total_amount || order.totalAmount);
@@ -610,11 +822,12 @@ export default async function handler(req, res) {
             ].filter(Boolean);
 
       const row = {
-        order_no: orderNo(),
+        order_no: await nextOrderNo(),
         boss_id: profile.id,
         companion_id: companionId || null,
         customer_service_id: null,
         order_type: companionId ? "direct_companion" : String(order.order_type || order.orderType || "custom"),
+        assignment_type: companionId ? "assigned" : "public",
         game: action === "place_order" ? game : String(order.game || game || ""),
         title: action === "place_order" ? title : String(order.title || "自定义订单"),
         description: descriptionParts.join("\n"),
@@ -624,6 +837,7 @@ export default async function handler(req, res) {
         status,
         created_at: nowIso()
       };
+      if (idempotencyKey) row.idempotency_key = idempotencyKey;
       // Optional marketplace columns (ignore if schema missing).
       const enriched = {
         ...row,
@@ -637,8 +851,64 @@ export default async function handler(req, res) {
       try {
         rows = await supabaseJson(restUrl(TABLE), { method: "POST", headers: serviceHeaders(), body: JSON.stringify(enriched) });
       } catch (insertErr) {
-        if (!/column|schema cache|PGRST/i.test(String(insertErr.message || ""))) throw insertErr;
-        rows = await supabaseJson(restUrl(TABLE), { method: "POST", headers: serviceHeaders(), body: JSON.stringify(row) });
+        const msg = String(insertErr.message || "");
+        if (idempotencyKey && /duplicate|unique|idempotency/i.test(msg)) {
+          const existing = await supabaseJson(
+            restUrl(TABLE, `?idempotency_key=eq.${encodeURIComponent(idempotencyKey)}&limit=1`),
+            { headers: serviceHeaders() }
+          ).catch(() => []);
+          if (existing?.[0]) {
+            return json(res, 200, {
+              ok: true,
+              message: "订单已存在（防重复提交）",
+              order: viewOrder(existing[0]),
+              deduped: true,
+              replayed: true,
+            });
+          }
+        }
+        if (!/column|schema cache|PGRST/i.test(msg)) throw insertErr;
+        try {
+          rows = await supabaseJson(restUrl(TABLE), {
+            method: "POST",
+            headers: serviceHeaders(),
+            body: JSON.stringify(row),
+          });
+        } catch (e2) {
+          const msg2 = String(e2.message || "");
+          if (idempotencyKey && /duplicate|unique|idempotency/i.test(msg2)) {
+            const existing = await supabaseJson(
+              restUrl(TABLE, `?idempotency_key=eq.${encodeURIComponent(idempotencyKey)}&limit=1`),
+              { headers: serviceHeaders() }
+            ).catch(() => []);
+            if (existing?.[0]) {
+              return json(res, 200, {
+                ok: true,
+                message: "订单已存在（防重复提交）",
+                order: viewOrder(existing[0]),
+                deduped: true,
+                replayed: true,
+              });
+            }
+          }
+          if (idempotencyKey && /idempotency_key|column|schema cache|PGRST/i.test(msg2)) {
+            const { idempotency_key: _ik, assignment_type: _at, ...core } = row;
+            rows = await supabaseJson(restUrl(TABLE), {
+              method: "POST",
+              headers: serviceHeaders(),
+              body: JSON.stringify(core),
+            });
+          } else if (/assignment_type|column|schema cache|PGRST/i.test(msg2)) {
+            const { assignment_type: _at, ...core } = row;
+            rows = await supabaseJson(restUrl(TABLE), {
+              method: "POST",
+              headers: serviceHeaders(),
+              body: JSON.stringify(core),
+            });
+          } else {
+            throw e2;
+          }
+        }
       }
       let saved = rows?.[0] || enriched;
 
@@ -665,9 +935,15 @@ export default async function handler(req, res) {
       const previewTest =
         String(body.preview_test || body.previewTest || "").trim() === "1" ||
         String(body.test_pay || "").trim() === "1";
-      const previewAllowed = allowPreviewTestPay();
+      const previewAllowed = allowPreviewTestPay({
+        allowTestPay: body.allowTestPay ?? body.allow_test_pay ?? req.query?.allowTestPay,
+      });
       if (previewTest && !previewAllowed) {
-        return json(res, 403, { ok: false, message: "正式环境不允许使用测试支付。" });
+        return json(res, 403, {
+          ok: false,
+          message: "测试支付未开启。请使用猫粮支付，或在 URL 加 ?allowTestPay=1 / 设置 MCJ_ALLOW_TEST_PAY=1。",
+          allowTestPay: false,
+        });
       }
 
       let usedTestPay = false;
@@ -722,6 +998,13 @@ export default async function handler(req, res) {
       const nextStatus = before.companion_id ? "claimed" : "pending";
       const acceptedAt = nextStatus === "claimed" ? nowIso() : null;
       const deps = { restUrl, supabaseJson, serviceHeaders };
+      const payPatch = {
+        accepted_at: acceptedAt,
+        assignment_type: before.companion_id ? "assigned" : "public",
+        ...(before.companion_id
+          ? { order_type: before.order_type || "direct_companion" }
+          : { companion_id: null, order_type: before.order_type || "open_grab" }),
+      };
       let saved;
       try {
         saved = await transitionOrderStatus(deps, {
@@ -729,20 +1012,20 @@ export default async function handler(req, res) {
           filterQuery: `?id=eq.${encodeURIComponent(before.id)}&boss_id=eq.${encodeURIComponent(profile.id)}&status=eq.awaiting_payment`,
           fromStatus: before.status,
           toStatus: nextStatus,
-          patch: { accepted_at: acceptedAt },
+          patch: payPatch,
           operatorRole: "boss",
           operatorId: profile.id,
           note: usedTestPay ? "TEST preview pay success" : "boss wallet/gateway pay success",
         });
       } catch (e) {
-        // Retry without accepted_at if column missing (should not happen on init.sql).
-        if (!/accepted_at|column|schema cache|PGRST/i.test(String(e.message || ""))) throw e;
+        // Retry without optional columns if schema missing.
+        if (!/accepted_at|assignment_type|order_type|column|schema cache|PGRST/i.test(String(e.message || ""))) throw e;
         saved = await transitionOrderStatus(deps, {
           orderId: before.id,
           filterQuery: `?id=eq.${encodeURIComponent(before.id)}&boss_id=eq.${encodeURIComponent(profile.id)}&status=eq.awaiting_payment`,
           fromStatus: before.status,
           toStatus: nextStatus,
-          patch: {},
+          patch: before.companion_id ? {} : { companion_id: null },
           operatorRole: "boss",
           operatorId: profile.id,
           note: usedTestPay ? "TEST preview pay success" : "boss pay success",
@@ -781,7 +1064,7 @@ export default async function handler(req, res) {
       }
       let reward = null;
       try {
-        reward = await (await import("./_cs-dock-rewards.js")).trySettleDockReward(saved, {
+        reward = await (await import("./_cs-commission-settle.js")).settleCsOrderIncome(saved, {
           source: usedTestPay ? "boss_test_pay" : "boss_pay",
         });
       } catch (_) {}
@@ -847,31 +1130,31 @@ export default async function handler(req, res) {
         order: viewOrder(before),
       });
     }
-    if (action === "confirm_companion" || action === "select_grabber" || action === "set_boss_intent") {
+    if (action === "confirm_companion" || action === "select_grabber" || action === "set_boss_intent" || action === "want_him" || action === "select_and_bind") {
       const beforeRows = await supabaseJson(restUrl(TABLE, `?id=eq.${encodeURIComponent(id)}&boss_id=eq.${encodeURIComponent(profile.id)}&limit=1`), { headers: serviceHeaders() });
       const before = Array.isArray(beforeRows) ? beforeRows[0] : null;
       if (!before) return json(res, 404, { ok: false, message: "订单不存在。" });
       if (!["waiting_boss_confirm", "pending"].includes(before.status)) {
-        return json(res, 409, { ok: false, message: "当前订单状态不能选择意向陪玩。" });
+        return json(res, 409, { ok: false, message: "当前订单状态不能选择陪玩。" });
       }
       const { createOrderGrabHelpers } = await import("./_order-grabs.js");
       const {
         enrichGrabCompanions,
         parseBossIntent,
         withBossIntent,
+        clearBossIntent,
         patchOrderNoteField,
         toFlowStatus,
       } = await import("./_order-flow.js");
       const grabsApi = createOrderGrabHelpers({ restUrl, supabaseJson, serviceHeaders });
       const grabs = await grabsApi.listGrabs(before.id, before.note || before.description || "");
-      // Boss intent only — never auto-lock companion; CS must confirm.
       let selectedId = String(body.companion_id || body.companionId || body.grab_companion_id || "").trim();
       const grabId = String(body.grab_id || body.grabId || "").trim();
       if (!selectedId && grabId) {
         selectedId = (grabs.find((g) => g.grabId === grabId || g.id === grabId) || {}).companionId || "";
       }
       if (!selectedId) {
-        return json(res, 400, { ok: false, message: "请手动选择一位抢单陪玩作为意向。" });
+        return json(res, 400, { ok: false, message: "请选择一位陪玩。" });
       }
       const pendingOk = grabs.some((g) => g.companionId === selectedId && g.status === "pending_customer_selection");
       if (!pendingOk && grabs.length) {
@@ -880,7 +1163,84 @@ export default async function handler(req, res) {
       if (!grabs.length) {
         return json(res, 409, { ok: false, message: "暂无陪玩抢单，请等待陪玩申请后再选择。" });
       }
-      // Keep selecting: pending → waiting_boss_confirm if needed; do NOT bind companion_id.
+      // 我要他 / want_him / bind=true → lock companion immediately (waiting_companion_confirm = claimed).
+      const bindNow =
+        action === "want_him" ||
+        action === "select_and_bind" ||
+        body.bind === true ||
+        body.bind === "true" ||
+        body.lock === true ||
+        String(body.mode || "").toLowerCase() === "bind";
+      const enriched = await enrichGrabCompanions({ restUrl, supabaseJson, serviceHeaders }, grabs);
+      const pick = enriched.find((g) => g.companionId === selectedId);
+      const pickName = pick?.companion?.nickname || "陪玩";
+
+      if (bindNow) {
+        await grabsApi.finalizeGrabSelection(before, selectedId);
+        const { transitionOrderStatus } = await import("./_order-status.js");
+        const patched =
+          (await transitionOrderStatus(
+            { restUrl, supabaseJson, serviceHeaders },
+            {
+              orderId: id,
+              fromStatus: before.status,
+              toStatus: "claimed",
+              patch: {
+                companion_id: selectedId,
+                accepted_at: null,
+              },
+              operatorRole: "boss",
+              operatorId: profile.id,
+              note: `老板选择陪玩 ${pickName}（我要他）`,
+            }
+          ).catch(() => null)) ||
+          (
+            await supabaseJson(restUrl(TABLE, `?id=eq.${encodeURIComponent(id)}&boss_id=eq.${encodeURIComponent(profile.id)}`), {
+              method: "PATCH",
+              headers: serviceHeaders(),
+              body: JSON.stringify({ status: "claimed", companion_id: selectedId, accepted_at: null }),
+            })
+          )?.[0];
+        try {
+          await patchOrderNoteField({ restUrl, supabaseJson, serviceHeaders }, id, (text) => clearBossIntent(text));
+        } catch {
+          /* ignore */
+        }
+        const order = patched || { ...before, status: "claimed", companion_id: selectedId };
+        await addSystemMessage(
+          order,
+          profile.id,
+          `老板已选择陪玩 ${pickName}。订单进入待陪玩确认。`
+        );
+        // Notify non-selected grabbers via order-linked system trail (companions read via grabs status).
+        for (const g of enriched) {
+          if (g.companionId === selectedId) continue;
+          try {
+            await addSystemMessage(
+              { ...order, companion_id: g.companionId },
+              profile.id,
+              "该订单已由老板选择其他陪玩。"
+            );
+          } catch {
+            /* best-effort */
+          }
+        }
+        return json(res, 200, {
+          ok: true,
+          message: `已选择陪玩 ${pickName}，等待陪玩确认接单。`,
+          intentOnly: false,
+          bound: true,
+          order: viewOrder({
+            ...order,
+            status: "claimed",
+            companion_id: selectedId,
+            flowStatus: toFlowStatus("claimed"),
+            grabCount: enriched.length,
+          }),
+        });
+      }
+
+      // Legacy intent-only path (CS still confirms).
       let order = before;
       if (before.status === "pending") {
         const rows = await supabaseJson(
@@ -904,9 +1264,6 @@ export default async function handler(req, res) {
           }
         );
       }
-      const enriched = await enrichGrabCompanions({ restUrl, supabaseJson, serviceHeaders }, grabs);
-      const pick = enriched.find((g) => g.companionId === selectedId);
-      const pickName = pick?.companion?.nickname || "陪玩";
       order = await patchOrderNoteField({ restUrl, supabaseJson, serviceHeaders }, id, (text) =>
         withBossIntent(text, {
           companion_id: selectedId,
@@ -998,7 +1355,18 @@ export default async function handler(req, res) {
               ).catch(() => [])
             )?.[0] || {};
             const amount = money(saved.total_amount);
-            const { platformRate, companionShareRate } = resolvePlatformCommission(cp.commission_rate, 20);
+            const levels = await readLocalLevels().catch(() => []);
+            const levelMeta =
+              (levels || []).find(
+                (l) =>
+                  String(l.id) === String(cp.level_id || "") ||
+                  String(l.code) === String(cp.level_id || "") ||
+                  String(l.name) === String(cp.level_name || "")
+              ) || null;
+            const { platformRate, companionShareRate } = resolvePlatformCommission(
+              cp.commission_rate,
+              levelMeta?.commissionRate ?? 20
+            );
             const companionNet = Math.round((amount * companionShareRate) / 100 * 100) / 100;
             const platformFee = Math.round((amount - companionNet) * 100) / 100;
             const settlement = {
@@ -1040,7 +1408,7 @@ export default async function handler(req, res) {
       }
       let reward = null;
       try {
-        reward = await (await import("./_cs-dock-rewards.js")).trySettleDockReward(
+        reward = await (await import("./_cs-commission-settle.js")).settleCsOrderIncome(
           { ...saved, status: "completed" },
           { source: "boss_confirm_complete" }
         );
@@ -1055,7 +1423,7 @@ export default async function handler(req, res) {
     if (action === "cancel_order") {
       const order = await patchOwnedOrder(profile, id, ["awaiting_payment", "pending", "claimed", "waiting_boss_confirm", "confirmed"], { status: "cancelled", cancelled_at: nowIso() }, "老板已取消订单。");
       try {
-        await (await import("./_cs-dock-rewards.js")).clawbackOrCancelReward(
+        await (await import("./_cs-commission-settle.js")).clawbackCsOrderIncome(
           { id: order?.id || id, status: "cancelled" },
           { reason: "老板取消订单", mode: "cancel" }
         );

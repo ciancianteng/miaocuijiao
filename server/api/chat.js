@@ -239,13 +239,15 @@ async function getOrCreateConversation(profile, orderId = "", meta = {}) {
 async function conversationByIdForBoss(profile, conversationId) {
   if (!conversationId) return null;
   const rows = await supabaseJson(
-    restUrl(
-      "conversations",
-      `?id=eq.${encodeURIComponent(conversationId)}&boss_id=eq.${encodeURIComponent(profile.id)}&limit=1`
-    ),
+    restUrl("conversations", `?id=eq.${encodeURIComponent(conversationId)}&limit=1`),
     { headers: serviceHeaders() }
   );
-  return Array.isArray(rows) ? rows[0] : null;
+  const row = Array.isArray(rows) ? rows[0] : null;
+  if (!row) return null;
+  if (String(row.boss_id || "") !== String(profile.id || "")) {
+    throw Object.assign(new Error("无权限查看该会话。"), { status: 403, code: "FORBIDDEN_CONVERSATION" });
+  }
+  return row;
 }
 
 async function servicePresence() {
