@@ -17,20 +17,20 @@
     /* No business shell before auth — prevent order/session flash */
     #supportApp { min-height: 100%; }
   </style>
-  <link rel="stylesheet" crossorigin href="/src/support.css">
+  <link rel="stylesheet" crossorigin href="/src/support-chat.css?v=20260804supportClean1">
   <link rel="stylesheet" crossorigin href="/src/style.css">
-  <link rel="stylesheet" crossorigin href="/src/boss-header.css">
+  <link rel="stylesheet" crossorigin href="/src/boss-header.css?v=20260804navAuth4">
 </head>
 <body class="support-page">
   <main class="support-shell" id="supportApp" aria-busy="true"></main>
 
   <script src="src/currency.js"></script>
-  <script src="src/role-gates.js?v=20260804authP0boss2"></script>
+  <script src="src/role-gates.js?v=20260804authP0boss4"></script>
   <script src="src/boss-auth-session.js"></script>
-  <script src="src/boss-header.js?v=20260804authP0boss2" defer></script>
+  <script src="src/boss-header.js?v=20260804authP0boss4" defer></script>
   <script src="src/mcj-chat-media.js?v=20260801chatImg"></script>
   <script src="src/mcj-chat-realtime.js?v=20260801chatImg"></script>
-  <script src="src/support-chat.js?v=20260804authP0boss2"></script>
+  <script src="src/support-chat.js?v=20260804supportClean1"></script>
 <script id="mcjBossLogoutHandler">
   document.addEventListener('click', function(event) {
     var btn = event.target && event.target.closest && event.target.closest('[data-boss-logout]');

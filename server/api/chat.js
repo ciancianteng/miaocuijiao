@@ -140,11 +140,15 @@ async function getOrCreateConversation(profile, orderId = "", meta = {}) {
   const conversationType = orderId ? "order_support" : "general_support";
   const forceNew = !!(meta && (meta.forceNew || meta.force_new || meta.reopen));
   if (orderId) {
-    const owned = await supabaseJson(
-      restUrl("orders", `?id=eq.${encodeURIComponent(orderId)}&boss_id=eq.${encodeURIComponent(profile.id)}&limit=1`),
+    const probe = await supabaseJson(
+      restUrl("orders", `?id=eq.${encodeURIComponent(orderId)}&select=id,boss_id&limit=1`),
       { headers: serviceHeaders() }
     ).catch(() => []);
-    if (!owned?.[0]) throw Object.assign(new Error("订单不存在或不属于当前账号。"), { status: 404 });
+    const hit = Array.isArray(probe) ? probe[0] : null;
+    if (!hit) throw Object.assign(new Error("订单不存在。"), { status: 404, code: "ORDER_NOT_FOUND" });
+    if (String(hit.boss_id || "") !== String(profile.id || "")) {
+      throw Object.assign(new Error("无权限查看该订单。"), { status: 403, code: "FORBIDDEN_ORDER" });
+    }
   }
 
   // Prefer an active (non-closed) thread. Closed threads stay read-only history.

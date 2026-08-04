@@ -646,26 +646,74 @@
     });
   }
   function loadOrders() {
-    return fetchJson("/api/orders").then(function (body) {
-      state.orders = body.orders || [];
-      if (body.identity) {
-        try {
-          console.info("[support-chat] orders identity", body.identity);
-        } catch (e) {}
-      }
-      return state.orders;
-    }).catch(function () {
+    // Only fetch the active conversation's order — never dump the full order list into support UI.
+    var c = state.conversation;
+    var oid = (c && (c.orderId || c.order_id)) || orderId() || "";
+    if (!oid) {
       state.orders = [];
-      return [];
-    });
+      return Promise.resolve([]);
+    }
+    return fetchJson("/api/orders?id=" + encodeURIComponent(oid))
+      .then(function (body) {
+        var list = body.orders || [];
+        if (body.order) list = [body.order];
+        state.orders = Array.isArray(list) ? list : [];
+        return state.orders;
+      })
+      .catch(function (err) {
+        var msg = String((err && err.message) || "");
+        var status = Number(err && err.status) || 0;
+        if (status === 403 || /无权限/.test(msg)) {
+          state.orders = [];
+          state.error = "无权限查看该订单";
+          return [];
+        }
+        if (status === 404 || /不存在/.test(msg)) {
+          state.orders = [];
+          if (orderId()) state.error = "订单不存在";
+          return [];
+        }
+        state.orders = [];
+        return [];
+      });
   }
   function loadThread(conversationId, silent) {
     var cid = conversationId || (state.conversation && state.conversation.id) || conversationParam();
     if (!cid) return Promise.resolve(null);
-    return fetchJson("/api/chat?conversation_id=" + encodeURIComponent(cid)).then(function (body) {
-      applyPayload(body, { keepScroll: !!silent });
-      return body;
-    });
+    return fetchJson("/api/chat?conversation_id=" + encodeURIComponent(cid))
+      .then(function (body) {
+        applyPayload(body, { keepScroll: !!silent });
+        return loadOrders().then(function () {
+          softUpdate({ keepScroll: !!silent });
+          return body;
+        });
+      })
+      .catch(function (err) {
+        var msg = String((err && err.message) || "");
+        var status = Number(err && err.status) || 0;
+        if (status === 403 || /无权限/.test(msg)) {
+          state.conversation = null;
+          state.messages = [];
+          state.error = "无权限查看该会话";
+          try {
+            var u = new URL(location.href);
+            u.searchParams.delete("conversation");
+            u.searchParams.delete("order");
+            history.replaceState({}, "", u.pathname + u.search);
+          } catch (e) {}
+          softUpdate({ keepScroll: true });
+          return null;
+        }
+        if (status === 404 || /不存在/.test(msg)) {
+          state.conversation = null;
+          state.messages = [];
+          state.error = "会话不存在";
+          softUpdate({ keepScroll: true });
+          return null;
+        }
+        if (!silent) throw err;
+        return null;
+      });
   }
   function openConversation(payload) {
     if (state.opening) {
@@ -730,6 +778,8 @@
   }
   function orderSummaryHtml(order) {
     if (!order) return "";
+    var grab = order.grabCount != null ? order.grabCount : order.claimCount != null ? order.claimCount : order.applicantCount;
+    var grabText = grab != null && grab !== "" ? String(grab) : "-";
     return (
       '<section class="support-order-summary' +
       (state.orderCardOpen ? " is-open" : "") +
@@ -738,85 +788,94 @@
       "<strong>订单 " +
       esc(order.orderNo || order.id) +
       "</strong>" +
-      "<span>状态：" +
-      esc(order.statusText || order.status || "-") +
+      "<span>" +
+      esc(order.serviceType || order.game || "-") +
       "</span>" +
-      "<span>陪玩：" +
-      esc(order.acceptStatus || order.companionName || "待安排") +
+      "<span>" +
+      esc(order.totalAmount != null ? order.totalAmount + " 猫粮" : "-") +
+      "</span>" +
+      "<span>" +
+      esc(order.statusText || order.status || "-") +
       "</span></div><span>" +
       (state.orderCardOpen ? "收起" : "展开") +
       "</span></button>" +
       '<div class="support-order-summary-body">' +
-      "<div><span>陪玩昵称</span><strong>" +
-      esc(order.companionName || "待安排") +
+      "<div><span>订单号</span><strong>" +
+      esc(order.orderNo || order.id) +
       "</strong></div>" +
-      "<div><span>游戏/服务</span><strong>" +
+      "<div><span>游戏</span><strong>" +
       esc(order.serviceType || order.game || "-") +
       "</strong></div>" +
-      "<div><span>支付状态</span><strong>" +
-      esc(order.paymentStatus || "-") +
-      "</strong></div></div></section>"
+      "<div><span>金额</span><strong>" +
+      esc(order.totalAmount != null ? order.totalAmount + " 猫粮" : "-") +
+      "</strong></div>" +
+      "<div><span>状态</span><strong>" +
+      esc(order.statusText || order.status || "-") +
+      "</strong></div>" +
+      "<div><span>已有抢单人数</span><strong>" +
+      esc(grabText) +
+      "</strong></div>" +
+      '<div class="support-order-summary-actions">' +
+      '<a class="support-inline-link" href="orders.html?id=' +
+      encodeURIComponent(order.id) +
+      '">返回订单详情</a>' +
+      '<a class="support-inline-link" href="orders.html?id=' +
+      encodeURIComponent(order.id) +
+      '&tab=claims">查看抢单陪玩</a>' +
+      "</div></div></section>"
     );
   }
   function railHtml() {
-    var order = state.conversation ? conversationOrder(state.conversation) : null;
-    if (!hasAuthSession()) {
-      return '<aside class="support-rail"><div class="support-rail-head"><div><h2>订单信息</h2><p>登录后可查看</p></div></div><div class="support-rail-empty">请先登录</div></aside>';
-    }
-    if (!order) {
-      return (
-        '<aside class="support-rail"><div class="support-rail-head"><div><h2>订单信息</h2><p>当前会话未绑定订单</p></div></div>' +
-        '<div class="support-rail-empty">人工客服咨询无需订单卡片。<br>从订单咨询进入后会显示订单详情。</div></aside>'
-      );
-    }
-    return (
-      '<aside class="support-rail"><div class="support-rail-head"><div><h2>订单信息</h2><p>当前咨询关联订单</p></div></div>' +
-      '<div class="support-rail-body">' +
-      '<div class="support-rail-row"><span>订单号</span><strong>' +
-      esc(order.orderNo || order.id) +
-      "</strong></div>" +
-      '<div class="support-rail-row"><span>订单状态</span><strong>' +
-      esc(order.statusText || order.status || "-") +
-      "</strong></div>" +
-      '<div class="support-rail-row"><span>支付状态</span><strong>' +
-      esc(order.paymentStatus || "-") +
-      "</strong></div>" +
-      '<div class="support-rail-row"><span>陪玩状态</span><strong>' +
-      esc(order.acceptStatus || "-") +
-      "</strong></div>" +
-      '<div class="support-rail-row"><span>陪玩昵称</span><strong>' +
-      esc(order.companionName || "待安排") +
-      "</strong></div>" +
-      '<div class="support-rail-row"><span>游戏/服务</span><strong>' +
-      esc(order.serviceType || order.game || "-") +
-      "</strong></div>" +
-      '<div class="support-rail-row"><span>金额</span><strong>' +
-      esc(order.totalAmount != null ? order.totalAmount + " 猫粮" : "-") +
-      "</strong></div>" +
-      '<a class="support-inline-link" href="orders.html?id=' +
-      encodeURIComponent(order.id) +
-      '">查看订单详情</a></div></aside>'
-    );
+    // WeChat-style: no third-column order dump. Current order card lives in chat panel.
+    return "";
   }
   function listHtml() {
     var activeId = state.conversation && state.conversation.id;
-    var general = state.conversations.filter(function (c) {
-      return !(c.conversationType === "order_support" || c.orderId || c.order_id || c.orderNo || c.order_no);
-    });
-    var orders = state.orders || [];
-    if (!general.length && !orders.length) {
-      return '<div class="support-empty-panel support-empty-list"><strong>暂无客服会话</strong><span>需要帮助时，可以联系人工客服，或从订单详情发起订单咨询。</span><button class="support-btn primary" type="button" data-contact-service>联系人工客服</button></div>';
+    var list = state.conversations || [];
+    var actions =
+      '<div class="support-list-actions"><button class="support-btn primary" type="button" data-contact-service' +
+      (state.creatingGeneral ? " disabled" : "") +
+      ">" +
+      (state.creatingGeneral ? "创建中…" : "新建客服咨询") +
+      "</button></div>";
+    if (!list.length) {
+      return (
+        actions +
+        '<div class="support-empty-panel support-empty-list"><strong>暂无客服会话</strong><span>需要帮助时，点击上方按钮新建咨询。从订单详情进入时会自动关联当前订单。</span></div>'
+      );
     }
-    var blocks = [];
-    blocks.push('<section class="support-list-block"><div class="support-list-actions"><button class="support-btn primary" type="button" data-contact-service>' + (state.creatingGeneral ? '创建中…' : '新建人工客服咨询') + '</button></div><div class="support-list-caption">人工客服咨询</div>' + (general.length ? general.map(function (c) {
-      return '<button type="button" class="support-session support-general' + (activeId && c.id === activeId ? ' active' : '') + '" data-select-conversation="' + esc(c.id) + '"><div class="support-session-main"><strong>人工客服咨询</strong><span>' + esc(c.lastMessage || '暂无消息') + '</span></div><small>' + esc(shortTime(c.lastMessageAt || c.updatedAt || '')) + '</small></button>';
-    }).join('') : '<div class="support-list-empty">暂无人工客服会话</div>') + '</section>');
-    blocks.push('<section class="support-list-block"><div class="support-list-caption">订单咨询</div>' + (orders.length ? orders.map(function (o) {
-      var conv = findOrderConversation(o.id);
-      var unread = conv && Number(conv.unreadCount || 0) ? '<em class="support-unread">' + esc(Number(conv.unreadCount || 0) > 99 ? '99+' : conv.unreadCount) + '</em>' : '';
-      return '<button type="button" class="support-session support-order-card' + (activeId && conv && conv.id === activeId ? ' active' : '') + '" data-open-order-conversation="' + esc(o.id) + '"><div class="support-order-top"><strong title="' + esc(o.orderNo || o.id) + '">订单号：' + esc(o.orderNo || o.id) + '</strong><span class="support-status-pill">' + esc(o.statusText || o.status || '-') + '</span></div><div class="support-order-grid"><span>陪玩昵称</span><b>' + esc(o.companionName || '待安排') + '</b><span>游戏/服务</span><b>' + esc(o.serviceType || o.game || '-') + '</b></div><div class="support-order-last"><span>' + esc(conv ? (isClosedConversation(conv) ? '会话已结束 · 可重新发起' : (conv.lastMessage || '暂无消息')) : '点击发起订单咨询') + '</span><small>' + esc(shortTime((conv && (conv.lastMessageAt || conv.updatedAt)) || o.createdAt || '')) + '</small></div>' + unread + '</button>';
-    }).join('') : '<div class="support-list-empty">暂无订单，可从我的订单发起订单咨询。</div>') + '</section>');
-    return blocks.join('');
+    return (
+      actions +
+      '<section class="support-list-block"><div class="support-list-caption">我的会话</div>' +
+      list
+        .map(function (c) {
+          var orderMode = isOrderConversation(c);
+          var title = orderMode
+            ? "订单咨询" + (c.orderNo || c.order_no ? " · " + (c.orderNo || c.order_no) : "")
+            : "人工客服咨询";
+          var unread = Number(c.unreadCount || 0)
+            ? '<em class="support-unread">' + esc(Number(c.unreadCount || 0) > 99 ? "99+" : c.unreadCount) + "</em>"
+            : "";
+          return (
+            '<button type="button" class="support-session' +
+            (orderMode ? " support-session-order" : " support-session-general") +
+            (activeId && c.id === activeId ? " active" : "") +
+            '" data-select-conversation="' +
+            esc(c.id) +
+            '"><div class="support-session-main"><strong>' +
+            esc(title) +
+            "</strong><span>" +
+            esc(isClosedConversation(c) ? "会话已结束 · 可重新发起" : c.lastMessage || "暂无消息") +
+            "</span></div><small>" +
+            esc(shortTime(c.lastMessageAt || c.updatedAt || "")) +
+            "</small>" +
+            unread +
+            "</button>"
+          );
+        })
+        .join("") +
+      "</section>"
+    );
   }
   function mainHtml() {
     if (state.authLoading || state.customerLoading) {
@@ -917,41 +976,34 @@
   }
   function canSoftPatch() {
     return !!(
-      root.querySelector('.support-layout') &&
-      root.querySelector('.support-aside') &&
-      root.querySelector('.support-main') &&
-      root.querySelector('.support-rail')
+      root.querySelector(".support-layout") &&
+      root.querySelector(".support-aside") &&
+      root.querySelector(".support-main")
     );
   }
   function patchSessionList() {
-    var list = root.querySelector('.support-session-list');
+    var list = root.querySelector(".support-session-list");
     if (list) list.innerHTML = listHtml();
   }
   function patchMain() {
-    var main = root.querySelector('.support-main');
+    var main = root.querySelector(".support-main");
     if (main) main.innerHTML = mainHtml();
   }
   function patchRail() {
-    var rail = root.querySelector('.support-rail');
-    if (!rail) return;
-    var wrap = document.createElement('div');
-    wrap.innerHTML = railHtml();
-    var next = wrap.firstElementChild;
-    if (next) rail.replaceWith(next);
+    /* rail removed — WeChat 2-column layout */
   }
   function softUpdate(opts) {
     opts = opts || {};
     captureComposer();
     syncChatChrome();
     if (canSoftPatch()) {
-      var box = root.querySelector('[data-messages]');
+      var box = root.querySelector("[data-messages]");
       var prevBottom = box ? box.scrollHeight - box.scrollTop : 0;
       var stickBottom = !opts.keepScroll || prevBottom < 96;
       var prevScroll = box ? box.scrollTop : 0;
       patchSessionList();
       patchMain();
-      patchRail();
-      var next = root.querySelector('[data-messages]');
+      var next = root.querySelector("[data-messages]");
       if (next) {
         if (stickBottom) next.scrollTop = next.scrollHeight;
         else next.scrollTop = Math.max(0, prevScroll);
@@ -968,17 +1020,16 @@
     var keepFocus = !!state.composerFocused;
     root.innerHTML =
       '<section class="support-layout' +
-      (state.mobileDetail ? ' mobile-detail' : '') +
-      '" aria-label="在线客服">' +
-      '<aside class="support-aside"><div class="support-aside-head"><div><h1>在线客服</h1><p>会话列表</p></div></div><div class="support-session-list">' +
+      (state.mobileDetail ? " mobile-detail" : "") +
+      '" aria-label="我的客服会话">' +
+      '<aside class="support-aside"><div class="support-aside-head"><div><h1>我的客服会话</h1><p>仅显示本人会话</p></div></div><div class="support-session-list">' +
       listHtml() +
-      '</div></aside>' +
+      "</div></aside>" +
       '<div class="support-main">' +
       mainHtml() +
-      '</div>' +
-      railHtml() +
-      '</section>';
-    var next = root.querySelector('[data-messages]');
+      "</div>" +
+      "</section>";
+    var next = root.querySelector("[data-messages]");
     if (next) next.scrollTop = next.scrollHeight;
     syncComposerChrome();
     if (keepFocus) {
@@ -1052,30 +1103,48 @@
           softUpdate({ keepScroll: true });
           return null;
         }
-        return Promise.all([loadList(), loadOrders()]).then(function () {
+        return Promise.all([loadList()]).then(function () {
           state.loading = false;
           softUpdate({ keepScroll: true });
           var oid = orderId();
           var cid = conversationParam();
           var picked = pickConversation(state.conversations);
-          if (oid && (!picked || String(picked.orderId || "") !== String(oid))) return openConversation({ order_id: oid });
-          if (cid && !picked) return loadThread(cid, false);
-          if (picked) {
-            state.conversation = Object.assign({}, picked, {
-              id: picked.id,
-              order_id: picked.orderId || "",
-              customer_service_id: picked.customerServiceId || "",
-            });
-            state.mobileDetail = isMobile();
-            syncUrl(state.conversation);
-            return loadThread(picked.id, false);
+          function openOwned() {
+            if (oid && (!picked || String(picked.orderId || picked.order_id || "") !== String(oid))) {
+              return openConversation({ order_id: oid }).catch(function (err) {
+                var msg = String((err && err.message) || "");
+                var status = Number(err && err.status) || 0;
+                if (status === 403 || /无权限/.test(msg)) state.error = "无权限查看该订单";
+                else if (status === 404 || /不存在/.test(msg)) state.error = "订单不存在";
+                softUpdate({ keepScroll: true });
+                return null;
+              });
+            }
+            if (cid && !picked) {
+              return loadThread(cid, false);
+            }
+            if (picked) {
+              state.conversation = Object.assign({}, picked, {
+                id: picked.id,
+                order_id: picked.orderId || picked.order_id || "",
+                customer_service_id: picked.customerServiceId || "",
+              });
+              state.mobileDetail = isMobile();
+              syncUrl(state.conversation);
+              return loadThread(picked.id, false);
+            }
+            if (wantsAutoOpen()) {
+              return openConversation(oid ? { order_id: oid } : {}).catch(function () {
+                return null;
+              });
+            }
+            state.conversation = null;
+            state.messages = [];
+            state.mobileDetail = false;
+            softUpdate({ keepScroll: true });
+            return null;
           }
-          if (wantsAutoOpen()) return openConversation(oid ? { order_id: oid } : {});
-          state.conversation = null;
-          state.messages = [];
-          state.mobileDetail = false;
-          softUpdate({ keepScroll: true });
-          return null;
+          return openOwned();
         }).then(function (result) {
           applyDraftFromQuery();
           return result;

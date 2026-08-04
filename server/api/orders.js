@@ -453,7 +453,10 @@ async function loadOrders(profile, id = "") {
       probe = [];
     }
     const hit = Array.isArray(probe) ? probe[0] : null;
-    if (hit && String(hit.boss_id || "") !== String(profile.id || "")) {
+    if (!hit) {
+      throw Object.assign(new Error("订单不存在。"), { status: 404, code: "ORDER_NOT_FOUND" });
+    }
+    if (String(hit.boss_id || "") !== String(profile.id || "")) {
       throw Object.assign(new Error("无权限查看该订单。"), { status: 403, code: "FORBIDDEN_ORDER" });
     }
   }
