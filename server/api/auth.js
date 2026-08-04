@@ -1224,6 +1224,32 @@ export default async function handler(req, res) {
     if (requestedAction === "mail_status") {
       return json(res, 200, { ok: true, mail: mailProviderStatus() });
     }
+    if (requestedAction === "mail_ping") {
+      if (!allowStagingOtp()) {
+        return json(res, 403, { ok: false, message: "mail_ping 仅 Staging / Preview 可用。" });
+      }
+      const to = String(body.to || body.email || "").trim().toLowerCase();
+      if (!to || !/^\S+@\S+\.\S+$/.test(to)) {
+        return json(res, 400, { ok: false, message: "请提供 to 邮箱。", mail: mailProviderStatus() });
+      }
+      try {
+        const { sendMail } = await import("./_mail.js");
+        const result = await sendMail({
+          to,
+          subject: "妙脆角 · Resend 探活邮件",
+          text: "这是 Staging mail_ping 探活邮件。若你收到此信，说明 RESEND_API_KEY / RESEND_FROM 已生效。",
+          html: "<p>这是 Staging <b>mail_ping</b> 探活邮件。若你收到此信，说明 Resend 已生效。</p>",
+          purpose: "mail_ping",
+        });
+        return json(res, 200, { ok: true, message: "探活邮件已发送", result, mail: mailProviderStatus() });
+      } catch (err) {
+        return json(res, 502, {
+          ok: false,
+          message: String(err?.message || err || "发送失败"),
+          mail: mailProviderStatus(),
+        });
+      }
+    }
     if (requestedAction !== "login") return json(res, 400, { ok: false, message: "未知登录操作" });
     const email = String(body.email || body.account || "").trim().toLowerCase();
     const password = String(body.password || "");

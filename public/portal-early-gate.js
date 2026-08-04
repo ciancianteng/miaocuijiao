@@ -8,7 +8,7 @@
 (function () {
   "use strict";
 
-  var GATE_VERSION = "20260804adminAuthP0";
+  var GATE_VERSION = "20260804profilePublic1";
 
   function pathNow() {
     return String(location.pathname || "/").replace(/\\/g, "/");
