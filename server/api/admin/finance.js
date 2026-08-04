@@ -691,28 +691,89 @@ export default async function handler(req, res) {
     }
 
     if (action === "approve_payment_proof" || action === "reject_payment_proof") {
-      const orderId = String(body.orderId || body.order_id || body.id || "").trim();
-      const receiptId = String(body.receiptId || body.receipt_id || "").trim();
-      if (!orderId && !receiptId) return json(res, 400, { ok: false, message: "缺少订单或凭证 ID。" });
-      const pending = await listPendingForAdmin();
-      const receipt =
-        (pending || []).find((row) => (receiptId && row.id === receiptId) || (orderId && row.order_id === orderId)) || null;
-      if (!receipt) return json(res, 404, { ok: false, message: "未找到待审核付款凭证。" });
-      const orderRows = await companionDb("orders", `?id=eq.${encodeURIComponent(receipt.order_id)}&limit=1`).catch(() => []);
-      const order = orderRows?.[0];
-      if (!order) return json(res, 404, { ok: false, message: "订单不存在。" });
-      if (order.status !== "awaiting_payment") {
-        return json(res, 409, { ok: false, message: "当前订单不在付款审核中。" });
-      }
-      if (action === "reject_payment_proof") {
-        const reason = String(body.reason || body.reject_reason || "").trim();
-        if (!reason) return json(res, 400, { ok: false, message: "请填写驳回付款原因。" });
-        await rejectProof({ receipt, reviewerId: adminProfile.id, reason });
-        const nextNote = String(order.note || "").replace(/\n?\[\[PAYMENT_PROOF\]\][^\n]*/g, "").trim();
-        await companionDb("orders", `?id=eq.${encodeURIComponent(order.id)}`, {
-          method: "PATCH",
-          body: JSON.stringify({ note: nextNote }),
-        }).catch(() => null);
+      try {
+        const orderId = String(body.orderId || body.order_id || body.id || "").trim();
+        const receiptId = String(body.receiptId || body.receipt_id || "").trim();
+        if (!orderId && !receiptId) return json(res, 400, { ok: false, message: "缺少订单或凭证 ID。" });
+        const pending = await listPendingForAdmin();
+        const receipt =
+          (pending || []).find((row) => (receiptId && row.id === receiptId) || (orderId && row.order_id === orderId)) || null;
+        if (!receipt) return json(res, 404, { ok: false, message: "未找到待审核付款凭证。" });
+        const orderRows = await companionDb("orders", `?id=eq.${encodeURIComponent(receipt.order_id)}&limit=1`).catch(() => []);
+        const order = orderRows?.[0];
+        if (!order) return json(res, 404, { ok: false, message: "订单不存在。" });
+        if (order.status !== "awaiting_payment") {
+          return json(res, 409, { ok: false, message: "当前订单不在付款审核中。" });
+        }
+        if (action === "reject_payment_proof") {
+          const reason = String(body.reason || body.reject_reason || "").trim();
+          if (!reason) return json(res, 400, { ok: false, message: "请填写驳回付款原因。" });
+          await rejectProof({ receipt, reviewerId: adminProfile.id, reason });
+          const nextNote = String(order.note || "").replace(/\n?\[\[PAYMENT_PROOF\]\][^\n]*/g, "").trim();
+          await companionDb("orders", `?id=eq.${encodeURIComponent(order.id)}`, {
+            method: "PATCH",
+            body: JSON.stringify({ note: nextNote }),
+          }).catch(() => null);
+          await writeAdminLog({
+            module: "finance",
+            action,
+            targetType: "payment_receipt",
+            targetId: receipt.id,
+            operatorId: adminProfile.id,
+            operatorRole: adminRole,
+            reason,
+            after: { orderId: order.id, status: "rejected" },
+          }).catch(() => null);
+          return json(res, 200, { ok: true, message: "已驳回付款凭证，老板可重新上传。" });
+        }
+        await approveAndLedger({ order, receipt, reviewerId: adminProfile.id });
+        const next = order.companion_id ? "claimed" : "pending";
+        // Keep patch minimal — avoid optional columns that break Prefer/404 on some schemas.
+        let patched = null;
+        const attempts = [
+          {
+            status: next,
+            companion_id: order.companion_id || null,
+            customer_service_id: order.customer_service_id || null,
+            updated_at: nowIso(),
+          },
+          { status: next, companion_id: order.companion_id || null },
+          { status: next },
+        ];
+        for (const patch of attempts) {
+          try {
+            patched = (
+              await companionDb("orders", `?id=eq.${encodeURIComponent(order.id)}&status=eq.awaiting_payment`, {
+                method: "PATCH",
+                body: JSON.stringify(patch),
+              })
+            )?.[0];
+            if (patched && patched.status !== "awaiting_payment") break;
+          } catch (err) {
+            const msg = String(err?.message || err || "");
+            if (/paid_at|assignment_type|order_type|customer_service_id|updated_at|PGRST204|schema cache|column/i.test(msg)) {
+              continue;
+            }
+            // Do not mis-label order patch failures as missing finance SQL.
+            throw Object.assign(new Error(msg || "订单状态更新失败"), { status: err?.status && err.status !== 404 ? err.status : 500 });
+          }
+        }
+        if (!patched || patched.status === "awaiting_payment") {
+          // Fallback unconditional status write (still scoped by id).
+          try {
+            patched = (
+              await companionDb("orders", `?id=eq.${encodeURIComponent(order.id)}`, {
+                method: "PATCH",
+                body: JSON.stringify({ status: next }),
+              })
+            )?.[0];
+          } catch (err2) {
+            throw Object.assign(new Error(err2?.message || "订单状态更新失败"), { status: 500 });
+          }
+        }
+        if (!patched || patched.status === "awaiting_payment") {
+          return json(res, 409, { ok: false, message: "订单状态已变更，请刷新后重试。" });
+        }
         await writeAdminLog({
           module: "finance",
           action,
@@ -720,64 +781,21 @@ export default async function handler(req, res) {
           targetId: receipt.id,
           operatorId: adminProfile.id,
           operatorRole: adminRole,
-          reason,
-          after: { orderId: order.id, status: "rejected" },
+          reason: "admin approved manual payment proof",
+          after: { orderId: order.id, nextStatus: next },
         }).catch(() => null);
-        return json(res, 200, { ok: true, message: "已驳回付款凭证，老板可重新上传。" });
+        return json(res, 200, {
+          ok: true,
+          message: order.companion_id ? "已审核通过，订单进入待陪玩确认。" : "已审核通过，订单已进入抢单大厅。",
+          orderId: order.id,
+          status: next,
+        });
+      } catch (proofErr) {
+        return json(res, proofErr.status || 500, {
+          ok: false,
+          message: proofErr.message || "付款凭证审核失败",
+        });
       }
-      await approveAndLedger({ order, receipt, reviewerId: adminProfile.id });
-      const next = order.companion_id ? "claimed" : "pending";
-      const basePatch = {
-        status: next,
-        assignment_type: order.companion_id ? "assigned" : "public",
-        order_type: order.companion_id ? order.order_type || "direct_companion" : order.order_type || "open_grab",
-        companion_id: order.companion_id || null,
-        paid_at: nowIso(),
-        updated_at: nowIso(),
-      };
-      let patched = null;
-      try {
-        patched = (
-          await companionDb("orders", `?id=eq.${encodeURIComponent(order.id)}&status=eq.awaiting_payment`, {
-            method: "PATCH",
-            body: JSON.stringify(basePatch),
-          })
-        )?.[0];
-      } catch (err) {
-        if (/paid_at|assignment_type|order_type|PGRST204|schema cache|column/i.test(String(err?.message || err))) {
-          patched = (
-            await companionDb("orders", `?id=eq.${encodeURIComponent(order.id)}&status=eq.awaiting_payment`, {
-              method: "PATCH",
-              body: JSON.stringify({
-                status: next,
-                companion_id: order.companion_id || null,
-                updated_at: nowIso(),
-              }),
-            })
-          )?.[0];
-        } else {
-          throw err;
-        }
-      }
-      if (!patched || patched.status === "awaiting_payment") {
-        return json(res, 409, { ok: false, message: "订单状态已变更，请刷新后重试。" });
-      }
-      await writeAdminLog({
-        module: "finance",
-        action,
-        targetType: "payment_receipt",
-        targetId: receipt.id,
-        operatorId: adminProfile.id,
-        operatorRole: adminRole,
-        reason: "admin approved manual payment proof",
-        after: { orderId: order.id, nextStatus: next },
-      }).catch(() => null);
-      return json(res, 200, {
-        ok: true,
-        message: order.companion_id ? "已审核通过，订单进入待陪玩确认。" : "已审核通过，订单已进入抢单大厅。",
-        orderId: order.id,
-        status: next,
-      });
     }
 
     if (action === "approve_withdraw") {
