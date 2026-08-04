@@ -1,11 +1,12 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="zh-CN">
 <head>
+  <script src="/portal-early-gate.js?v=20260804authP0hard"></script>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>我的订单 - MEOW CUI JIAO</title>
-  <link rel="stylesheet" href="src/style.css">
-  <link rel="stylesheet" href="src/boss-header.css?v=20260802mobileP0c">
+
+
   <style>
     body{background:#08070a;color:#fff}.orders-shell{width:min(1080px,calc(100% - 32px));margin:0 auto;padding:24px 0 80px}.orders-head{display:flex;justify-content:space-between;gap:16px;align-items:end;margin:18px 0}.orders-head h1{margin:0;font-size:28px}.orders-head p{margin:6px 0 0;color:#9ca3af}.tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}.tab{border:1px solid rgba(255,255,255,.1);border-radius:10px;background:rgba(255,255,255,.045);color:#d8c8d1;padding:8px 10px;cursor:pointer;white-space:nowrap;flex:0 0 auto}.tab.active{border-color:rgba(255,143,197,.42);background:rgba(255,143,197,.15);color:#ffd6e7}.order-list{display:grid;gap:10px}.order-card{border:1px solid rgba(255,255,255,.1);border-radius:14px;background:rgba(255,255,255,.045);padding:14px}.order-card header{display:flex;justify-content:space-between;gap:12px;align-items:start}.order-card h3{margin:0 0 5px;font-size:18px;word-break:break-word}.order-card p{margin:0;color:#9ca3af}.order-grid{display:grid;grid-template-columns:1.2fr 1fr .8fr .9fr 1fr auto;gap:10px;align-items:center;margin-top:12px}.order-grid span{display:block;color:#9ca3af;font-size:12px}.order-grid strong{display:block;margin-top:4px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.order-status{border:1px solid rgba(255,143,197,.35);border-radius:999px;color:#ffd7e8;padding:5px 9px;white-space:nowrap;font-size:13px}.order-actions{display:flex;gap:7px;flex-wrap:wrap;justify-content:flex-end}.order-btn{border:1px solid rgba(255,255,255,.18);border-radius:10px;background:rgba(255,255,255,.1);color:#fff;padding:8px 10px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;text-decoration:none;font-weight:700;min-height:40px}.order-btn.primary{border-color:rgba(255,143,197,.55);background:rgba(255,143,197,.22)}.order-btn:disabled,.order-btn.is-disabled{opacity:.55;cursor:not-allowed}.order-hint{margin:8px 0 0;color:#ffd6e7;font-size:12px;line-height:1.45}.order-empty{padding:22px;text-align:center;color:#9ca3af}.order-alert{border:1px solid rgba(255,143,197,.28);border-radius:14px;background:rgba(255,143,197,.08);padding:16px;color:#ffd6e8}.order-alert .order-btn{margin-top:12px}.order-skel{display:grid;gap:10px}.order-skel-card{border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:14px;background:rgba(255,255,255,.03)}.order-skel-line{height:12px;border-radius:8px;margin:8px 0;background:linear-gradient(90deg,rgba(255,255,255,.05),rgba(255,255,255,.12),rgba(255,255,255,.05));background-size:200% 100%;animation:orderShimmer 1.2s linear infinite}.order-skel-line.lg{height:18px;width:42%}.order-sync{margin:0 0 10px;color:#9ca3af;font-size:12px}@keyframes orderShimmer{0%{background-position:100% 0}100%{background-position:-100% 0}}    .modal{position:fixed;inset:0;background:rgba(0,0,0,.68);display:none;align-items:center;justify-content:center;padding:18px;z-index:40}
     .modal.open{display:flex}
@@ -50,9 +51,11 @@
     @media(max-width:880px){.order-grid{grid-template-columns:1fr 1fr}.order-actions{justify-content:flex-start}.od-layout{grid-template-columns:1fr}.modal-box.order-detail-modal{width:min(100%,calc(100% - 16px));max-height:92vh}}
     @media(max-width:560px){.tabs{flex-wrap:nowrap;overflow-x:auto;padding-bottom:6px;-webkit-overflow-scrolling:touch}.order-grid{grid-template-columns:1fr}.orders-head{display:block}.order-card header{display:block}.order-status{display:inline-block;margin-top:8px}.order-btn{width:100%}.status-actions{display:grid}.companion-pick{grid-template-columns:48px 1fr}.companion-avatar{width:48px;height:48px}.od-fields{grid-template-columns:1fr}.order-detail-modal .modal-footer{justify-content:stretch}.order-detail-modal .modal-footer .order-btn{flex:1 1 calc(50% - 6px);min-width:0}}
   </style>
+  <link rel="stylesheet" crossorigin href="/src/boss-header.css">
+  <link rel="stylesheet" crossorigin href="/src/style.css">
 </head>
 <body>
-  <header class="topbar"><a class="brand" href="index.html"><img src="assets/meow-cuijiao-brand.jpg" alt="MEOW CUI JIAO"><span>MEOW CUI JIAO</span></a><nav class="boss-nav"><a href="index.html">首页</a><a href="companion-center.html">陪玩大厅</a><a href="orders.html">我的订单</a><a href="support.html?start=1">在线客服</a></nav></header>
+  <header class="topbar"><a class="brand" href="index.html"><img src="/assets/meow-cuijiao-brand.jpg" alt="MEOW CUI JIAO"><span>MEOW CUI JIAO</span></a><nav class="boss-nav"><a href="index.html">首页</a><a href="companion-center.html">陪玩大厅</a><a href="orders.html">我的订单</a><a href="support.html?start=1">在线客服</a></nav></header>
   <main class="orders-shell" id="ordersApp"></main>
   <div class="modal" id="detailModal" aria-hidden="true">
     <div class="modal-box order-detail-modal">

@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <script>location.replace("customer-service/index.html");</script>
 <!--
 <html lang="zh-CN">
@@ -16,7 +16,7 @@
   <link rel="stylesheet" href="/src/mcj-safe-area.css?v=20260801safeArea">
 </head>
 <body>
-  <script src="src/auth-system.js"></script>
+  <script type="module" src="src/auth-system.js"></script>
   <script>
     if (window.MCJAuth && !window.MCJAuth.guardRole("customer_service", "index.html")) {
       throw new Error("Blocked customer-service route for current role");
@@ -90,7 +90,7 @@
 
     <section class="view" id="view-auth">
       <div class="section-title"><div><h1>身份认证</h1><p>认证通过后可以开始接待老板、打卡和派单。状态会保存在本机，已认证后无需重复验证。</p></div></div>
-      <div class="auth-layout"><form class="card form-grid" id="authForm"><label>真实姓名<input id="realName" placeholder="请输入姓名"></label><label>手机号<input id="authPhone" placeholder="国内或马来西亚手机号"></label><label class="full">身份证号 / 护照号<input id="idNumber" placeholder="请输入证件号码"></label><label>身份证正面<input type="file" id="idFront"></label><label>身份证反面<input type="file" id="idBack"></label><div class="button-row full"><button class="primary-btn" type="button" id="submitAuthBtn">提交认证审核</button><button class="ghost-btn" type="button" id="demoApproveBtn">模拟后台通过</button></div></form><div class="card"><h3>认证规则</h3><div class="info-row"><span>未认证</span><strong>不能开始工作</strong></div><div class="info-row"><span>审核中</span><strong>等待后台确认</strong></div><div class="info-row"><span>已认证</span><strong>可接待 / 派单 / 打卡</strong></div><div class="info-row"><span>认证失败</span><strong>需要重新提交</strong></div></div></div>
+      <div class="auth-layout"><form class="card form-grid" id="authForm"><label>真实姓名<input id="realName" placeholder="请输入姓名"></label><label>手机号<input id="authPhone" placeholder="国内或马来西亚手机号"></label><label class="full">身份证号 / 护照号<input id="idNumber" placeholder="请输入证件号码"></label><label>身份证正面<input type="file" id="idFront"></label><label>身份证反面<input type="file" id="idBack"></label><div class="button-row full"><button class="primary-btn" type="button" id="submitAuthBtn">提交认证审核</button></div></form><div class="card"><h3>认证规则</h3><div class="info-row"><span>未认证</span><strong>不能开始工作</strong></div><div class="info-row"><span>审核中</span><strong>等待后台确认</strong></div><div class="info-row"><span>已认证</span><strong>可接待 / 派单 / 打卡</strong></div><div class="info-row"><span>认证失败</span><strong>需要重新提交</strong></div></div></div>
     </section>
   </div>
   <div class="toast" id="toast">已完成</div>
@@ -126,12 +126,12 @@
     (function login(){const gate=$('#staffLoginGate'),key='mcjStaffGate:customer';function enter(){gate.classList.add('hide')}function submit(){if(!$('#staffUserId').value.trim()||!$('#staffPassword').value.trim()){ $('#staffLoginError').textContent='请先输入 User ID 和密码'; return }const id=$('#staffUserId').value.trim();localStorage.setItem(key,'1');localStorage.setItem('mcjCustomerUserId',id);if(window.MCJAuth)window.MCJAuth.setLogin('customer_service',{user_id:id,name:id,role:'customer_service'});enter()}if((window.MCJAuth&&window.MCJAuth.getRole()==='customer_service')||localStorage.getItem(key)==='1'){if(window.MCJAuth&&window.MCJAuth.getRole()!=='customer_service')window.MCJAuth.setLogin('customer_service',{user_id:localStorage.getItem('mcjCustomerUserId')||'customer_service',name:'客服账号',role:'customer_service'});enter()}$('#staffLoginBtn').onclick=submit;$('#staffPassword').onkeydown=e=>{if(e.key==='Enter')submit()}})();
     renderAll();
   </script>
-  <script src="src/notify-system.js" defer></script>
-  <script src="src/dropdown-system.js" defer></script>
-<script src="src/cooperation-crm.js" defer></script>
-  <script src="src/customer-ticket-crm.js" defer></script>
-  <script src="src/footer-system.js" defer></script>
-  <script src="src/text-guard.js" defer></script>
+  <script type="module" src="src/notify-system.js" defer></script>
+  <script type="module" src="src/dropdown-system.js" defer></script>
+<script type="module" src="src/cooperation-crm.js" defer></script>
+  <script type="module" src="src/customer-ticket-crm.js" defer></script>
+  <script type="module" src="src/footer-system.js" defer></script>
+  <script type="module" src="src/text-guard.js" defer></script>
 </body>
 </html>
 -->

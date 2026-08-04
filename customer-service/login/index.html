@@ -29,6 +29,7 @@
           </label>
           <label class="mcj-auth-check"><input name="remember" type="checkbox" checked> 记住登录</label>
           <button class="mcj-auth-btn primary" type="submit">登录</button>
+          <button class="mcj-auth-btn ghost" type="button" data-forgot-password data-forgot-role="customer_service">忘记密码</button>
           <p class="mcj-auth-error" data-auth-error></p>
           <p class="mcj-auth-note">客服账号由管理员创建，停用账号无法登录。本页面不提供注册入口。</p>
         </form>
@@ -36,8 +37,9 @@
     </main>
   </div>
   <!-- Shared CS auth first, then role-gates + dedicated login script. -->
-  <script src="/src/customer-service-auth.js?v=20260730csP0unread"></script>
-  <script src="/src/role-gates.js?v=20260730csP0unread"></script>
-  <script src="/src/customer-service-login.js?v=20260730csP0unread"></script>
+  <script type="module" src="/src/customer-service-auth.js?v=20260803idP0"></script>
+  <script type="module" src="/src/role-gates.js?v=20260803idP0"></script>
+  <script type="module" src="/src/forgot-password.js?v=20260804forgotP0b"></script>
+  <script type="module" src="/src/customer-service-login.js?v=20260804forgotP0"></script>
 </body>
 </html>
