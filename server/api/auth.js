@@ -444,22 +444,27 @@ async function handleForgotSendOtp(body, res) {
   } catch (err) {
     mailError = String(err?.message || err || "");
   }
+  const mailStatus = mailProviderStatus();
   const out = {
     ok: true,
     message: mailOk
       ? `验证码已发送至邮箱 ${maskEmailHint(email)}。`
       : allowStagingOtp()
-        ? `邮件服务暂不可用，已生成 Staging 调试验证码（${maskEmailHint(email)}）。`
+        ? mailStatus.resend
+          ? `验证码邮件发送失败：${mailError || "Resend 错误"}。已生成 Staging 调试验证码（${maskEmailHint(email)}）。`
+          : `邮件服务暂不可用（未读到 RESEND_API_KEY），已生成 Staging 调试验证码（${maskEmailHint(email)}）。`
         : `如该邮箱已绑定账号，将收到验证码邮件。请查收后继续。`,
     channel: "email",
     emailMasked: maskEmailHint(email),
     phoneMasked: "",
     expiresInSec: 900,
     role,
-    mail: mailProviderStatus(),
+    mail: mailStatus,
   };
-  if (allowStagingOtp()) out.devCode = code;
+  // Only expose Staging debug OTP when mail actually failed.
+  if (!mailOk && allowStagingOtp()) out.devCode = code;
   if (!mailOk && allowStagingOtp() && mailError) out.mailWarning = mailError;
+  if (!mailOk) console.error("[auth/forgot_send_otp] mail failed", mailError, mailStatus);
   return json(res, 200, out);
 }
 
@@ -493,20 +498,26 @@ async function handleLoginSendOtp(body, res) {
   } catch (err) {
     mailError = String(err?.message || err || "");
   }
+  const mailStatus = mailProviderStatus();
   const out = {
     ok: true,
     message: mailOk
       ? `登录验证码已发送至 ${maskEmailHint(profile.email || email)}。`
       : allowStagingOtp()
-        ? "邮件服务暂不可用，已生成 Staging 调试验证码。"
+        ? mailStatus.resend
+          ? `验证码邮件发送失败：${mailError || "Resend 错误"}。已生成 Staging 调试验证码。`
+          : "邮件服务暂不可用（未读到 RESEND_API_KEY），已生成 Staging 调试验证码。"
         : generic.message,
     channel: "email",
     emailMasked: maskEmailHint(profile.email || email),
     expiresInSec: 900,
     role,
+    mail: mailStatus,
   };
-  if (allowStagingOtp()) out.devCode = code;
+  // Only expose Staging debug OTP when mail actually failed.
+  if (!mailOk && allowStagingOtp()) out.devCode = code;
   if (!mailOk && allowStagingOtp() && mailError) out.mailWarning = mailError;
+  if (!mailOk) console.error("[auth/send_login_otp] mail failed", mailError, mailStatus);
   return json(res, 200, out);
 }
 

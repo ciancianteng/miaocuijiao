@@ -3,18 +3,28 @@
  * Primary: Resend HTTP API
  * Fallback: SMTP (nodemailer) when configured
  * SMS: stub only — reserved for a later international SMS release (not used in MVP).
+ *
+ * Env (Vercel Preview + Production):
+ * - RESEND_API_KEY
+ * - RESEND_FROM  (bare email or `Name <email@domain>`)
  */
 
 function env(name, fallback = "") {
-  return String(process.env[name] || fallback).trim();
+  const raw = process.env[name];
+  if (raw == null) return String(fallback || "").trim();
+  return String(raw).trim().replace(/^['"]|['"]$/g, "");
 }
 
+/** Normalize From header: accept bare email or RFC display-name form. */
 function mailFrom() {
-  return env("RESEND_FROM") || env("SMTP_FROM") || env("MAIL_FROM") || "MEOW CUI JIAO <onboarding@resend.dev>";
+  const raw = env("RESEND_FROM") || env("SMTP_FROM") || env("MAIL_FROM") || "onboarding@resend.dev";
+  if (/<[^>]+@[^>]+>/.test(raw)) return raw;
+  if (/^\S+@\S+\.\S+$/.test(raw)) return `MEOW CUI JIAO <${raw}>`;
+  return raw;
 }
 
 function hasResend() {
-  return !!env("RESEND_API_KEY");
+  return env("RESEND_API_KEY").length > 0;
 }
 
 function hasSmtp() {
@@ -22,10 +32,14 @@ function hasSmtp() {
 }
 
 export function mailProviderStatus() {
+  const key = env("RESEND_API_KEY");
   return {
     resend: hasResend(),
+    resendKeyLen: key ? key.length : 0,
+    resendKeyPrefix: key ? `${key.slice(0, 3)}…` : "",
     smtp: hasSmtp(),
     from: mailFrom(),
+    vercelEnv: String(process.env.VERCEL_ENV || ""),
     smsEnabled: false,
   };
 }
@@ -48,21 +62,32 @@ export async function sendSmsOtp({ phone, code, purpose } = {}) {
 async function sendViaResend({ to, subject, text, html }) {
   const apiKey = env("RESEND_API_KEY");
   if (!apiKey) throw Object.assign(new Error("未配置 RESEND_API_KEY"), { status: 503, code: "NO_RESEND" });
-  const response = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
-    body: JSON.stringify({
-      from: mailFrom(),
-      to: [String(to).trim()],
-      subject: String(subject || "妙脆角通知"),
-      text: String(text || ""),
-      html: html || undefined,
-    }),
-  });
+  const from = mailFrom();
+  const payload = {
+    from,
+    to: [String(to).trim()],
+    subject: String(subject || "妙脆角通知"),
+    text: String(text || ""),
+    html: html || undefined,
+  };
+  let response;
+  try {
+    response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+  } catch (err) {
+    console.error("[mail/resend] network error", err?.message || err);
+    throw Object.assign(new Error(`Resend 网络错误：${err?.message || err}`), {
+      status: 502,
+      code: "RESEND_NETWORK",
+    });
+  }
   const raw = await response.text();
   let body = {};
   try {
@@ -71,12 +96,15 @@ async function sendViaResend({ to, subject, text, html }) {
     body = { raw };
   }
   if (!response.ok) {
-    throw Object.assign(new Error(body?.message || body?.error?.message || raw || "Resend 发送失败"), {
+    const detail = body?.message || body?.error?.message || (typeof body?.error === "string" ? body.error : "") || raw || "Resend 发送失败";
+    console.error("[mail/resend] fail", response.status, detail, { from, to: payload.to });
+    throw Object.assign(new Error(detail), {
       status: response.status || 502,
       code: "RESEND_FAIL",
       body,
     });
   }
+  console.info("[mail/resend] sent", { id: body.id || "", to: payload.to[0], from });
   return { ok: true, provider: "resend", id: body.id || "", to };
 }
 
@@ -112,11 +140,13 @@ export async function sendMail({ to, subject, text, html, purpose } = {}) {
     try {
       return await sendViaResend({ to: email, subject, text, html });
     } catch (err) {
+      console.error("[mail] Resend failed, smtp=", hasSmtp(), "purpose=", purpose || "", err?.message || err);
       if (!hasSmtp()) throw err;
       // Fall through to SMTP if Resend fails and SMTP exists.
     }
   }
   if (hasSmtp()) return sendViaSmtp({ to: email, subject, text, html });
+  console.error("[mail] no provider", mailProviderStatus(), "purpose=", purpose || "");
   throw Object.assign(new Error("邮件服务未配置（需要 RESEND_API_KEY 或 SMTP_*）"), {
     status: 503,
     code: "NO_MAIL",
