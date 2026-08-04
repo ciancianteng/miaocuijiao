@@ -2434,9 +2434,53 @@ export default async function handler(req, res) {
     }
     if (action === "register") {
       const body = await parseBody(req); const email=String(body.email || body.account || "").trim().toLowerCase(); const password=String(body.password || ""); const nickname=String(body.nickname || body.name || "").trim();
+      const registerToken = String(body.registerToken || body.emailOtpToken || body.otpToken || "").trim();
       if (!email || !/^\S+@\S+\.\S+$/.test(email)) return json(res,400,{ok:false,message:"请输入有效邮箱"});
+      if (!registerToken) return json(res,400,{ok:false,message:"请先完成邮箱验证后再注册。"});
       if (!password || password.length < 8) return json(res,400,{ok:false,message:"密码至少 8 位"});
       if (!nickname) return json(res,400,{ok:false,message:"请输入陪玩昵称"});
+      try {
+        const otpRows = await supabaseJson(
+          restUrl(
+            "password_reset_requests",
+            `?account=eq.${encodeURIComponent(email)}&role=eq.companion&order=created_at.desc&limit=8`
+          ),
+          { headers: serviceHeaders() }
+        ).catch(() => []);
+        const otpRe = /^register_verified:([A-Za-z0-9_-]+):exp:(\d+)$/;
+        let otpHit = null;
+        for (const row of Array.isArray(otpRows) ? otpRows : []) {
+          const m = String(row.status || "").match(otpRe);
+          if (m && m[1] === registerToken && Number(m[2]) > Date.now()) {
+            otpHit = { id: row.id, token: m[1] };
+            break;
+          }
+        }
+        if (!otpHit) {
+          const mem = globalThis.__mcjForgotResets?.get(`companion:register_verified:${email}`);
+          if (!(mem?.verifiedToken === registerToken && Number(mem.exp) > Date.now())) {
+            return json(res, 400, { ok: false, message: "邮箱验证已失效，请重新获取验证码。" });
+          }
+          otpHit = { id: mem.id, token: mem.verifiedToken };
+        }
+        if (otpHit.id) {
+          await supabaseJson(restUrl("password_reset_requests", `?id=eq.${encodeURIComponent(otpHit.id)}`), {
+            method: "PATCH",
+            headers: serviceHeaders(),
+            body: JSON.stringify({ status: `register_used:${Date.now()}` }),
+          }).catch(() => null);
+        }
+        try {
+          globalThis.__mcjForgotResets?.delete(`companion:register_verified:${email}`);
+        } catch {
+          /* ignore */
+        }
+      } catch (otpErr) {
+        return json(res, 400, {
+          ok: false,
+          message: otpErr?.message || "邮箱验证已失效，请重新获取验证码。",
+        });
+      }
       // Block register when email already belongs to a formal (approved) companion,
       // or an active draft/pending application (must login to continue, not create duplicates).
       try {

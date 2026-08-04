@@ -221,7 +221,141 @@
   }
   function showMissing(missing) {
     missing = missing && missing.length ? missing : ["请按顺序完成前面的步骤"];
-    alert("请先补充以下内容：\n" + missing.map(function (item) { return "- " + item; }).join("\n"));
+    showApplyTip("请先补充以下内容：\n" + missing.map(function (item) { return "- " + item; }).join("\n"));
+  }
+  var applyTipTimer = null;
+  function showApplyTip(message, tone) {
+    tone = tone || "error";
+    var text = String(message || "").trim();
+    if (!text) return;
+    var host = document.getElementById("companionApplyRoot");
+    if (!host) {
+      try { console.warn("[apply]", text); } catch (e) {}
+      return;
+    }
+    var el = host.querySelector("[data-apply-tip]");
+    if (!el) {
+      el = document.createElement("div");
+      el.className = "apply-tip-banner";
+      el.setAttribute("data-apply-tip", "1");
+      host.insertBefore(el, host.firstChild);
+    }
+    el.className = "apply-tip-banner " + (tone === "ok" ? "is-ok" : "is-error");
+    el.textContent = text;
+    el.hidden = false;
+    try { el.scrollIntoView({ block: "nearest", behavior: "smooth" }); } catch (e2) {}
+    if (applyTipTimer) clearTimeout(applyTipTimer);
+    applyTipTimer = setTimeout(function () {
+      try { el.hidden = true; } catch (e3) {}
+    }, tone === "ok" ? 3200 : 8000);
+  }
+
+  var authUi = {
+    mode: "register", // register | login
+    loginMethod: "password", // password | otp
+    emailVerified: false,
+    verifiedEmail: "",
+    draftEmail: "",
+    loginEmail: "",
+    registerToken: "",
+    cooldownUntil: 0,
+    loginCooldownUntil: 0,
+    busy: false,
+    message: "",
+    messageTone: "error",
+  };
+
+  function setAuthMessage(msg, tone) {
+    authUi.message = String(msg || "");
+    authUi.messageTone = tone === "ok" ? "ok" : "error";
+  }
+
+  function authCooldownLeft(until) {
+    return Math.max(0, Math.ceil((Number(until || 0) - Date.now()) / 1000));
+  }
+
+  function authMessageHtml() {
+    if (!authUi.message) return '<p class="apply-auth-msg" data-apply-auth-msg hidden></p>';
+    return '<p class="apply-auth-msg ' + (authUi.messageTone === "ok" ? "is-ok" : "is-error") + '" data-apply-auth-msg>' + esc(authUi.message) + "</p>";
+  }
+
+  function authGateHtml() {
+    if (companionToken()) return "";
+    var mode = authUi.mode === "login" ? "login" : "register";
+    var loginMethod = authUi.loginMethod === "otp" ? "otp" : "password";
+    var regCooldown = authCooldownLeft(authUi.cooldownUntil);
+    var loginCooldown = authCooldownLeft(authUi.loginCooldownUntil);
+    var verified = !!authUi.emailVerified && !!authUi.registerToken;
+    var tabs =
+      '<div class="apply-auth-tabs" role="tablist">' +
+      '<button type="button" class="apply-auth-tab' + (mode === "register" ? " active" : "") + '" data-apply-auth-mode="register">注册新陪玩</button>' +
+      '<button type="button" class="apply-auth-tab' + (mode === "login" ? " active" : "") + '" data-apply-auth-mode="login">已有账号登录</button>' +
+      "</div>";
+
+    var registerPanel =
+      '<form class="apply-auth-form" data-apply-auth-form="register" data-apply-auth-panel="register"' + (mode === "register" ? "" : " hidden") + ' autocomplete="on">' +
+      '<div class="apply-auth-email-row form-field full">' +
+      "<label>邮箱" +
+      '<div class="apply-auth-inline">' +
+      '<input name="authEmail" type="email" inputmode="email" autocomplete="email" placeholder="name@example.com" required value="' + esc(authUi.verifiedEmail || authUi.draftEmail || "") + '"' + (verified ? " readonly" : "") + ">" +
+      '<button class="apply-btn apply-auth-send" type="button" data-apply-send-register-otp' + (regCooldown > 0 || verified || authUi.busy ? " disabled" : "") + ">" +
+      (verified ? "已验证" : regCooldown > 0 ? regCooldown + "s" : "发送验证码") +
+      "</button>" +
+      "</div></label></div>" +
+      '<label class="form-field full">邮箱验证码' +
+      '<div class="apply-auth-inline">' +
+      '<input name="authRegisterCode" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6 位验证码"' + (verified ? " disabled" : "") + ">" +
+      '<button class="apply-btn" type="button" data-apply-verify-register-otp' + (verified || authUi.busy ? " disabled" : "") + ">验证邮箱</button>" +
+      "</div></label>" +
+      (verified
+        ? '<p class="apply-auth-verified" data-apply-email-verified>邮箱已验证 · ' + esc(authUi.verifiedEmail) + "</p>"
+        : '<p class="apply-note full">请先验证邮箱，验证成功后才能设置密码并注册。</p>') +
+      '<label class="form-field">密码（至少 8 位）<input name="authPassword" type="password" autocomplete="new-password" minlength="8" required' + (verified ? "" : " disabled") + "></label>" +
+      '<label class="form-field">昵称<input name="authNickname" type="text" autocomplete="nickname" maxlength="40" placeholder="陪玩昵称" required' + (verified ? "" : " disabled") + "></label>" +
+      '<div class="apply-actions apply-auth-actions full">' +
+      '<button class="apply-btn primary" type="button" data-apply-register' + (!verified || authUi.busy ? " disabled" : "") + ">注册并继续申请</button>" +
+      "</div>" +
+      authMessageHtml() +
+      "</form>";
+
+    var loginTabs =
+      '<div class="apply-auth-tabs apply-auth-subtabs" role="tablist">' +
+      '<button type="button" class="apply-auth-tab' + (loginMethod === "password" ? " active" : "") + '" data-apply-login-method="password">密码登录</button>' +
+      '<button type="button" class="apply-auth-tab' + (loginMethod === "otp" ? " active" : "") + '" data-apply-login-method="otp">验证码登录</button>' +
+      "</div>";
+
+    var loginPwd =
+      '<form class="apply-auth-form" data-apply-auth-form="login-password" data-apply-auth-panel="login-password"' + (mode === "login" && loginMethod === "password" ? "" : " hidden") + ' autocomplete="on">' +
+      '<label class="form-field full">邮箱<input name="authEmail" type="email" inputmode="email" autocomplete="username" placeholder="name@example.com" required value="' + esc(authUi.loginEmail || "") + '"></label>' +
+      '<label class="form-field full">密码<input name="authPassword" type="password" autocomplete="current-password" required></label>' +
+      '<div class="apply-actions apply-auth-actions full"><button class="apply-btn primary" type="button" data-apply-login-password' + (authUi.busy ? " disabled" : "") + ">登录并继续申请</button></div>" +
+      authMessageHtml() +
+      "</form>";
+
+    var loginOtp =
+      '<form class="apply-auth-form" data-apply-auth-form="login-otp" data-apply-auth-panel="login-otp"' + (mode === "login" && loginMethod === "otp" ? "" : " hidden") + ' autocomplete="on">' +
+      '<div class="apply-auth-email-row form-field full">' +
+      "<label>邮箱" +
+      '<div class="apply-auth-inline">' +
+      '<input name="authEmail" type="email" inputmode="email" autocomplete="username" placeholder="name@example.com" required value="' + esc(authUi.loginEmail || "") + '">' +
+      '<button class="apply-btn apply-auth-send" type="button" data-apply-send-login-otp' + (loginCooldown > 0 || authUi.busy ? " disabled" : "") + ">" +
+      (loginCooldown > 0 ? loginCooldown + "s" : "发送验证码") +
+      "</button>" +
+      "</div></label></div>" +
+      '<label class="form-field full">邮箱验证码<input name="authLoginCode" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6 位验证码" required></label>' +
+      '<div class="apply-actions apply-auth-actions full"><button class="apply-btn primary" type="button" data-apply-login-otp' + (authUi.busy ? " disabled" : "") + ">验证码登录</button></div>" +
+      authMessageHtml() +
+      "</form>";
+
+    return (
+      '<section class="apply-panel apply-auth-gate">' +
+      "<h2>先创建 / 登录陪玩账号</h2>" +
+      "<p>申请资料会写入平台数据库，审核通过后可直接用此邮箱登录陪玩端。MVP 仅支持邮箱验证码，不再使用手机号。</p>" +
+      tabs +
+      (mode === "register" ? registerPanel : loginTabs + loginPwd + loginOtp) +
+      '<p class="apply-note">新用户：邮箱 → 发送验证码 → 验证成功 → 设置密码与昵称 → 注册并进入 1/5 申请流程。</p>' +
+      "</section>"
+    );
   }
   function stepComplete(index, draft) {
     return missingForStep(index, draft).length === 0;
@@ -473,14 +607,6 @@
       (/approved|verified|passed/.test(String(code)) ? ' <a class="apply-btn small" href="companion/index.html">进入陪玩端</a>' : "") +
       "</div>";
   }
-  function authGateHtml() {
-    if (companionToken()) return "";
-    return '<section class="apply-panel apply-auth-gate"><h2>先创建 / 登录陪玩账号</h2><p>申请资料会写入平台数据库，审核通过后可直接用此账号登录陪玩端。</p><form class="apply-grid" data-apply-auth-form>' +
-      field("authEmail", "邮箱", "email", "", 'required autocomplete="username"') +
-      field("authPassword", "密码（至少 8 位）", "password", "", 'required minlength="8" autocomplete="new-password"') +
-      field("authNickname", "昵称（注册时必填）", "text", "", 'autocomplete="nickname"') +
-      '</form><div class="apply-actions"><button class="apply-btn" type="button" data-apply-login>登录已有账号</button><button class="apply-btn primary" type="button" data-apply-register>注册并继续申请</button></div><p class="apply-note">已有陪玩账号请直接登录；新用户请用邮箱注册后继续五步申请。</p></section>';
-  }
   function formatRulesUpdatedAt(v) {
     if (!v) return "";
     var d = new Date(v);
@@ -618,7 +744,16 @@
   }
   function saveCompanionSession(session) {
     if (!session) return;
-    var raw = JSON.stringify(session);
+    var token = session.token || session.accessToken || session.access_token || "";
+    var normalized = {
+      token: token,
+      accessToken: token,
+      refreshToken: session.refreshToken || session.refresh_token || "",
+      expiresAt: session.expiresAt || session.expires_at || "",
+      user: session.user || null,
+      remember: !!session.remember,
+    };
+    var raw = JSON.stringify(normalized);
     try { localStorage.setItem("mcjCompanionSession", raw); } catch (e) {}
     try { sessionStorage.setItem("mcjCompanionSession", raw); } catch (e) {}
   }
@@ -786,7 +921,7 @@
   }
   function submitApplication() {
     var missing = validateBeforeSubmit();
-    if (missing.length) { alert("还有以下资料没有完成：\n" + missing.join("\n")); return; }
+    if (missing.length) { showApplyTip("还有以下资料没有完成：\n" + missing.join("\n")); return; }
     var draft = readDraft();
     var user = currentUser();
     var identity = draft.identity || {};
@@ -913,7 +1048,7 @@
         showSuccess();
       })
       .catch(function (err) {
-        alert(err.message || "提交失败。请先注册/登录陪玩端后再提交申请，以便写入数据库。");
+        showApplyTip(err.message || "提交失败。请先注册/登录陪玩端后再提交申请，以便写入数据库。");
       });
   }
   function showSuccess() {
@@ -1009,7 +1144,7 @@
     return result;
   }
   async function startRecording() {
-    if (!navigator.mediaDevices || !window.MediaRecorder) { alert("当前浏览器不支持网页录音，请更换手机 Chrome 或 Safari。"); return; }
+    if (!navigator.mediaDevices || !window.MediaRecorder) { showApplyTip("当前浏览器不支持网页录音，请更换手机 Chrome 或 Safari。"); return; }
     if (recorder && recorder.state === "recording") return;
     chunks = [];
     suppressVoiceSave = false;
@@ -1017,7 +1152,7 @@
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch (e) {
-      alert("无法开启麦克风，请检查浏览器麦克风权限。");
+      showApplyTip("无法开启麦克风，请检查浏览器麦克风权限。");
       return;
     }
     recorder = new MediaRecorder(stream, (function () {
@@ -1101,11 +1236,11 @@
   function confirmVoice() {
     var d = readDraft();
     var duration = Number((d.voice || {}).duration || 0);
-    if (duration < MIN_VOICE_SECONDS) { alert("试音不能少于 10 秒，请重新录制。"); return; }
-    if (!((d.voice || {}).listened)) { alert("请先播放完整试听，再确认使用。"); return; }
+    if (duration < MIN_VOICE_SECONDS) { showApplyTip("试音不能少于 10 秒，请重新录制。"); return; }
+    if (!((d.voice || {}).listened)) { showApplyTip("请先播放完整试听，再确认使用。"); return; }
     var q = (d.voice || {}).quality || {};
-    if (!q.volumeOk || !q.durationOk || !q.notBlank) { alert("录音质量检测未通过，请重新录制。"); return; }
-    if (!companionToken()) { alert("请先登录陪玩账号后再上传试音。"); return; }
+    if (!q.volumeOk || !q.durationOk || !q.notBlank) { showApplyTip("录音质量检测未通过，请重新录制。"); return; }
+    if (!companionToken()) { showApplyTip("请先登录陪玩账号后再上传试音。"); return; }
     if (hasDurableUpload(d.voice) || hasDurableUpload(d.voice.url)) {
       d.voice.status = "已确认";
       d.voice.confirmed = true;
@@ -1116,7 +1251,7 @@
       render(3);
       return;
     }
-    if (!d.voice.url) { alert("请先完成录音。"); return; }
+    if (!d.voice.url) { showApplyTip("请先完成录音。"); return; }
     uploadBusy.voice = true;
     render(3);
     var dataUrlPromise = /^data:/i.test(String(d.voice.url))
@@ -1158,7 +1293,7 @@
         var next = readDraft();
         next.voice = Object.assign({}, next.voice || {}, { status: "上传失败，请重新确认", confirmed: false, uploaded: false });
         writeRaw(DRAFT_KEY, next);
-        alert("试音上传失败：" + (err.message || "请重试"));
+        showApplyTip("试音上传失败：" + (err.message || "请重试"));
         render(3);
       });
   }
@@ -1245,11 +1380,11 @@
     var cfg = uploadKeyConfig(key);
     if (!cfg) return Promise.resolve();
     if (!companionToken()) {
-      alert("请先登录或注册陪玩账号后再上传，以便同步到云端存储。");
+      showApplyTip("请先登录或注册陪玩账号后再上传，以便同步到云端存储。");
       return Promise.resolve();
     }
     if (!payload._queued && Object.keys(uploadBusy).some(function (k) { return uploadBusy[k]; })) {
-      alert("请等待当前上传完成");
+      showApplyTip("请等待当前上传完成");
       return Promise.resolve();
     }
     var file = files[0];
@@ -1258,13 +1393,13 @@
     var check = U() ? U().validateFile(file, kind) : { ok: true };
     if (!check.ok) {
       uploadErrors[key] = check.error || "文件格式不支持";
-      alert(uploadErrors[key]);
+      showApplyTip(uploadErrors[key]);
       render(Number(document.getElementById("companionApplyRoot").dataset.step || 0));
       return Promise.resolve();
     }
     function continueUpload(durationSeconds) {
     if (key === "photos" && photoListOf(readDraft().uploads).length >= 6) {
-      alert("相册最多上传 6 张");
+      showApplyTip("相册最多上传 6 张");
       return Promise.resolve();
     }
     uploadBusy[key] = true;
@@ -1327,7 +1462,7 @@
           delete du.uploads[key];
           writeRaw(DRAFT_KEY, du);
         }
-        alert("上传失败：" + (err.message || "请重试"));
+        showApplyTip("上传失败：" + (err.message || "请重试"));
         render(Number(document.getElementById("companionApplyRoot").dataset.step || 0));
         return Promise.reject(err);
       });
@@ -1342,7 +1477,7 @@
           try { URL.revokeObjectURL(url); } catch (e) {}
           if (dur && dur > 30.5) {
             uploadErrors[key] = "视频最长 30 秒";
-            alert("视频最长 30 秒，请裁剪后再上传");
+            showApplyTip("视频最长 30 秒，请裁剪后再上传");
             resolve(Promise.resolve());
             return;
           }
@@ -1372,6 +1507,78 @@
     });
     return chain;
   }
+  function postAuthJson(action, payload) {
+    return fetch("/api/auth", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify(Object.assign({ action: action }, payload || {})),
+    }).then(function (res) {
+      return res.json().then(function (body) {
+        if (!res.ok || body.ok === false) {
+          var err = new Error((body && body.message) || "请求失败");
+          err.body = body;
+          err.status = res.status;
+          throw err;
+        }
+        return body;
+      });
+    });
+  }
+
+  function startAuthCooldown(kind, seconds) {
+    var until = Date.now() + Math.max(1, Number(seconds) || 60) * 1000;
+    if (kind === "login") authUi.loginCooldownUntil = until;
+    else authUi.cooldownUntil = until;
+    var tick = function () {
+      var left = authCooldownLeft(kind === "login" ? authUi.loginCooldownUntil : authUi.cooldownUntil);
+      if (left <= 0) {
+        render(Number((document.getElementById("companionApplyRoot") || {}).dataset.step || 0));
+        return;
+      }
+      var sel = kind === "login" ? "[data-apply-send-login-otp]" : "[data-apply-send-register-otp]";
+      var btn = document.querySelector(sel);
+      if (btn && !authUi.emailVerified) {
+        btn.disabled = true;
+        btn.textContent = left + "s";
+      }
+      setTimeout(tick, 1000);
+    };
+    tick();
+  }
+
+  async function afterCompanionAuthSuccess(session, email, nickname) {
+    saveCompanionSession(session);
+    if (nickname || email) {
+      saveDraft({ data: { nickname: nickname || "", email: email || "" } });
+    }
+    setAuthMessage("", "ok");
+    authUi.busy = false;
+    authUi.emailVerified = false;
+    authUi.registerToken = "";
+    var boot = await fetchCompanionBootstrap();
+    if (boot && boot.player) {
+      remoteStatus = {
+        applicationStatus: boot.player.auditStatus || boot.player.applicationStatus || "",
+        rejectReason: boot.player.applicationRejectReason || "",
+      };
+    }
+    hydrateUploadsFromBootstrap(boot);
+    render(0, { alignStepNav: true });
+    showApplyTip("登录成功，请从第 1 步开始填写申请。", "ok");
+  }
+
+  function activeAuthForm() {
+    if (authUi.mode === "register") return document.querySelector('[data-apply-auth-form="register"]');
+    if (authUi.loginMethod === "otp") return document.querySelector('[data-apply-auth-form="login-otp"]');
+    return document.querySelector('[data-apply-auth-form="login-password"]');
+  }
+
+  function authFormValue(form, name) {
+    if (!form) return "";
+    var el = form.querySelector('[name="' + name + '"]');
+    return el ? String(el.value || "").trim() : "";
+  }
+
   function bind() {
     var root = document.getElementById("companionApplyRoot");
     if (!root) return;
@@ -1399,45 +1606,271 @@
         runApplyBootstrap(true);
         return;
       }
-      if (e.target.closest("[data-apply-login]") || e.target.closest("[data-apply-register]")) {
+
+      var authModeBtn = e.target.closest("[data-apply-auth-mode]");
+      if (authModeBtn) {
         e.preventDefault();
-        var form = document.querySelector("[data-apply-auth-form]");
-        if (!form) return;
-        var email = (form.querySelector('[name="authEmail"]') || {}).value || "";
-        var password = (form.querySelector('[name="authPassword"]') || {}).value || "";
-        var nickname = (form.querySelector('[name="authNickname"]') || {}).value || "";
-        var isRegister = !!e.target.closest("[data-apply-register]");
-        if (!email || !password) { alert("请填写邮箱和密码"); return; }
-        if (isRegister && !nickname) { alert("注册请填写昵称"); return; }
+        authUi.mode = authModeBtn.getAttribute("data-apply-auth-mode") === "login" ? "login" : "register";
+        setAuthMessage("");
+        render(Number(root.dataset.step || 0));
+        return;
+      }
+      var loginMethodBtn = e.target.closest("[data-apply-login-method]");
+      if (loginMethodBtn) {
+        e.preventDefault();
+        authUi.loginMethod = loginMethodBtn.getAttribute("data-apply-login-method") === "otp" ? "otp" : "password";
+        setAuthMessage("");
+        render(Number(root.dataset.step || 0));
+        return;
+      }
+
+      if (e.target.closest("[data-apply-send-register-otp]")) {
+        e.preventDefault();
+        var regForm = document.querySelector('[data-apply-auth-form="register"]');
+        var regEmail = authFormValue(regForm, "authEmail").toLowerCase();
+        authUi.draftEmail = regEmail;
+        if (!regEmail || !/^\S+@\S+\.\S+$/.test(regEmail)) {
+          setAuthMessage("请输入有效邮箱。");
+          render(Number(root.dataset.step || 0));
+          return;
+        }
+        if (authCooldownLeft(authUi.cooldownUntil) > 0) return;
+        authUi.busy = true;
+        setAuthMessage("正在发送验证码…", "ok");
+        render(Number(root.dataset.step || 0));
         try {
-          var res = await fetch("/api/companion", {
+          var sent = await postAuthJson("send_register_otp", { email: regEmail, role: "companion" });
+          authUi.busy = false;
+          var tip = sent.message || "验证码已发送";
+          if (sent.devCode) tip += "（测试 " + sent.devCode + "）";
+          setAuthMessage(tip, "ok");
+          startAuthCooldown("register", 60);
+          render(Number(root.dataset.step || 0));
+        } catch (err) {
+          authUi.busy = false;
+          setAuthMessage(err.message || "发送失败");
+          render(Number(root.dataset.step || 0));
+        }
+        return;
+      }
+
+      if (e.target.closest("[data-apply-verify-register-otp]")) {
+        e.preventDefault();
+        var vForm = document.querySelector('[data-apply-auth-form="register"]');
+        var vEmail = authFormValue(vForm, "authEmail").toLowerCase();
+        authUi.draftEmail = vEmail;
+        var vCode = authFormValue(vForm, "authRegisterCode");
+        if (!vEmail || !/^\S+@\S+\.\S+$/.test(vEmail)) {
+          setAuthMessage("请输入有效邮箱。");
+          render(Number(root.dataset.step || 0));
+          return;
+        }
+        if (!/^\d{6}$/.test(vCode)) {
+          setAuthMessage("请输入 6 位邮箱验证码。");
+          render(Number(root.dataset.step || 0));
+          return;
+        }
+        authUi.busy = true;
+        setAuthMessage("正在验证…", "ok");
+        render(Number(root.dataset.step || 0));
+        try {
+          var verified = await postAuthJson("verify_register_otp", {
+            email: vEmail,
+            code: vCode,
+            role: "companion",
+          });
+          authUi.busy = false;
+          authUi.emailVerified = true;
+          authUi.verifiedEmail = vEmail;
+          authUi.registerToken = verified.registerToken || "";
+          setAuthMessage("邮箱已验证，请设置密码并填写昵称。", "ok");
+          render(Number(root.dataset.step || 0));
+        } catch (err) {
+          authUi.busy = false;
+          authUi.emailVerified = false;
+          authUi.registerToken = "";
+          setAuthMessage(err.message || "验证码错误或已过期");
+          render(Number(root.dataset.step || 0));
+        }
+        return;
+      }
+
+      if (e.target.closest("[data-apply-send-login-otp]")) {
+        e.preventDefault();
+        var loForm = document.querySelector('[data-apply-auth-form="login-otp"]');
+        var loEmail = authFormValue(loForm, "authEmail").toLowerCase();
+        authUi.loginEmail = loEmail;
+        if (!loEmail || !/^\S+@\S+\.\S+$/.test(loEmail)) {
+          setAuthMessage("请输入有效邮箱。");
+          render(Number(root.dataset.step || 0));
+          return;
+        }
+        if (authCooldownLeft(authUi.loginCooldownUntil) > 0) return;
+        authUi.busy = true;
+        setAuthMessage("正在发送登录验证码…", "ok");
+        render(Number(root.dataset.step || 0));
+        try {
+          var loginSent = await postAuthJson("send_login_otp", { email: loEmail, role: "companion" });
+          authUi.busy = false;
+          var loginTip = loginSent.message || "验证码已发送";
+          if (loginSent.devCode) loginTip += "（测试 " + loginSent.devCode + "）";
+          setAuthMessage(loginTip, "ok");
+          startAuthCooldown("login", 60);
+          render(Number(root.dataset.step || 0));
+        } catch (err) {
+          authUi.busy = false;
+          setAuthMessage(err.message || "发送失败");
+          render(Number(root.dataset.step || 0));
+        }
+        return;
+      }
+
+      if (e.target.closest("[data-apply-register]")) {
+        e.preventDefault();
+        var rForm = document.querySelector('[data-apply-auth-form="register"]');
+        if (!rForm) return;
+        var rEmail = (authUi.verifiedEmail || authFormValue(rForm, "authEmail")).toLowerCase();
+        var rPassword = authFormValue(rForm, "authPassword");
+        var rNickname = authFormValue(rForm, "authNickname");
+        if (!authUi.emailVerified || !authUi.registerToken) {
+          setAuthMessage("请先完成邮箱验证，再注册。");
+          render(Number(root.dataset.step || 0));
+          return;
+        }
+        if (!rEmail || !/^\S+@\S+\.\S+$/.test(rEmail)) {
+          setAuthMessage("请输入有效邮箱。");
+          render(Number(root.dataset.step || 0));
+          return;
+        }
+        if (!rPassword || rPassword.length < 8) {
+          setAuthMessage("密码至少 8 位。");
+          render(Number(root.dataset.step || 0));
+          return;
+        }
+        if (!rNickname) {
+          setAuthMessage("请填写昵称。");
+          render(Number(root.dataset.step || 0));
+          return;
+        }
+        authUi.busy = true;
+        setAuthMessage("正在注册…", "ok");
+        render(Number(root.dataset.step || 0));
+        try {
+          var regRes = await fetch("/api/companion", {
             method: "POST",
             headers: { "Content-Type": "application/json", Accept: "application/json" },
             body: JSON.stringify({
-              action: isRegister ? "register" : "login",
-              email: email,
-              account: email,
-              password: password,
-              nickname: nickname,
+              action: "register",
+              email: rEmail,
+              account: rEmail,
+              password: rPassword,
+              nickname: rNickname,
+              registerToken: authUi.registerToken,
               remember: true,
             }),
           });
-          var body = await res.json().catch(function () { return {}; });
-          if (!res.ok || body.ok === false) throw new Error(body.message || "登录失败");
-          saveCompanionSession(body.session);
-          if (nickname) saveDraft({ data: { nickname: nickname, email: email } });
-          var boot = await fetchCompanionBootstrap();
-          if (boot && boot.player) {
-            remoteStatus = {
-              applicationStatus: boot.player.auditStatus || boot.player.applicationStatus || "",
-              rejectReason: boot.player.applicationRejectReason || "",
-            };
-          }
-          hydrateUploadsFromBootstrap(boot);
-          render(Number(document.getElementById("companionApplyRoot").dataset.step || 0));
+          var regBody = await regRes.json().catch(function () { return {}; });
+          if (!regRes.ok || regBody.ok === false) throw new Error(regBody.message || "注册失败");
+          await afterCompanionAuthSuccess(regBody.session, rEmail, rNickname);
         } catch (err) {
-          alert(err.message || "操作失败");
+          authUi.busy = false;
+          setAuthMessage(err.message || "注册失败");
+          render(Number(root.dataset.step || 0));
         }
+        return;
+      }
+
+      if (e.target.closest("[data-apply-login-password]")) {
+        e.preventDefault();
+        var pForm = document.querySelector('[data-apply-auth-form="login-password"]');
+        var pEmail = authFormValue(pForm, "authEmail").toLowerCase();
+        authUi.loginEmail = pEmail;
+        var pPassword = authFormValue(pForm, "authPassword");
+        if (!pEmail || !/^\S+@\S+\.\S+$/.test(pEmail)) {
+          setAuthMessage("请输入有效邮箱。");
+          render(Number(root.dataset.step || 0));
+          return;
+        }
+        if (!pPassword) {
+          setAuthMessage("请填写密码。");
+          render(Number(root.dataset.step || 0));
+          return;
+        }
+        authUi.busy = true;
+        setAuthMessage("正在登录…", "ok");
+        render(Number(root.dataset.step || 0));
+        try {
+          var pwdRes = await fetch("/api/companion", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Accept: "application/json" },
+            body: JSON.stringify({
+              action: "login",
+              email: pEmail,
+              account: pEmail,
+              password: pPassword,
+              remember: true,
+            }),
+          });
+          var pwdBody = await pwdRes.json().catch(function () { return {}; });
+          if (!pwdRes.ok || pwdBody.ok === false) throw new Error(pwdBody.message || "登录失败");
+          await afterCompanionAuthSuccess(pwdBody.session, pEmail, "");
+        } catch (err) {
+          authUi.busy = false;
+          setAuthMessage(err.message || "登录失败");
+          render(Number(root.dataset.step || 0));
+        }
+        return;
+      }
+
+      if (e.target.closest("[data-apply-login-otp]")) {
+        e.preventDefault();
+        var oForm = document.querySelector('[data-apply-auth-form="login-otp"]');
+        var oEmail = authFormValue(oForm, "authEmail").toLowerCase();
+        authUi.loginEmail = oEmail;
+        var oCode = authFormValue(oForm, "authLoginCode");
+        if (!oEmail || !/^\S+@\S+\.\S+$/.test(oEmail)) {
+          setAuthMessage("请输入有效邮箱。");
+          render(Number(root.dataset.step || 0));
+          return;
+        }
+        if (!/^\d{6}$/.test(oCode)) {
+          setAuthMessage("请输入 6 位邮箱验证码。");
+          render(Number(root.dataset.step || 0));
+          return;
+        }
+        authUi.busy = true;
+        setAuthMessage("正在登录…", "ok");
+        render(Number(root.dataset.step || 0));
+        try {
+          var otpBody = await postAuthJson("login_with_otp", {
+            email: oEmail,
+            code: oCode,
+            role: "companion",
+          });
+          var session = otpBody.session || {};
+          await afterCompanionAuthSuccess(
+            {
+              token: session.accessToken || session.token || "",
+              accessToken: session.accessToken || session.token || "",
+              refreshToken: session.refreshToken || "",
+              expiresAt: session.expiresAt || "",
+              user: session.user || null,
+              remember: true,
+            },
+            oEmail,
+            ""
+          );
+        } catch (err) {
+          authUi.busy = false;
+          setAuthMessage(err.message || "验证码无效或已过期");
+          render(Number(root.dataset.step || 0));
+        }
+        return;
+      }
+
+      // legacy hooks removed — use dedicated password/otp buttons above
+      if (e.target.closest("[data-apply-login]") || e.target.closest("[data-apply-register]")) {
+        e.preventDefault();
         return;
       }
       var stepBtn = e.target.closest("[data-apply-step]");
@@ -1465,17 +1898,17 @@
       if (e.target.closest("[data-record-play]")) {
         var audio = document.getElementById("voicePreview");
         if (audio && audio.src) audio.play();
-        else alert("请先完成录音。");
+        else showApplyTip("请先完成录音。");
       }
       if (e.target.closest("[data-copy-voice-template]")) {
         var text = document.getElementById("voiceTemplateText");
         if (text && navigator.clipboard) navigator.clipboard.writeText(text.textContent || "");
-        alert("试音模板已复制");
+        showApplyTip("试音模板已复制", "ok");
       }
       if (e.target.closest("[data-record-reset]")) clearVoiceRecording();
       if (e.target.closest("[data-record-delete]")) clearVoiceRecording();
       if (e.target.closest("[data-record-confirm]")) confirmVoice();
-      if (e.target.closest("[data-apply-save]")) { e.preventDefault(); await collect(root); alert("草稿已保存"); return; }
+      if (e.target.closest("[data-apply-save]")) { e.preventDefault(); await collect(root); showApplyTip("草稿已保存", "ok"); return; }
       var addTag = e.target.closest("[data-add-custom-tag]");
       if (addTag) {
         var key = addTag.dataset.addCustomTag;
@@ -1486,7 +1919,7 @@
         d.data = d.data || {};
         d.data[key] = Array.isArray(d.data[key]) ? d.data[key] : [];
         var limit = Number((document.querySelector('[data-tag-picker="' + key + '"]') || {}).dataset && document.querySelector('[data-tag-picker="' + key + '"]').dataset.tagLimit || 99);
-        if (d.data[key].length >= limit) { alert("最多只能选择 " + limit + " 个标签"); return; }
+        if (d.data[key].length >= limit) { showApplyTip("最多只能选择 " + limit + " 个标签"); return; }
         if (d.data[key].indexOf(value) < 0) d.data[key].push(value);
         writeRaw(DRAFT_KEY, d);
         render(Number(root.dataset.step || 0));
@@ -1542,7 +1975,7 @@
         var checked = picker.querySelectorAll("[data-tag-field]:checked");
         if (checked.length > limit) {
           e.target.checked = false;
-          alert("最多只能选择 " + limit + " 个标签");
+          showApplyTip("最多只能选择 " + limit + " 个标签");
           return;
         }
         var pill = e.target.closest(".tag-pill");

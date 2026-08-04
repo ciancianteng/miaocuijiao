@@ -577,6 +577,176 @@ async function handleLoginWithOtp(body, res) {
   });
 }
 
+/** Register OTP is keyed by email (account may not exist yet). */
+function registerOtpAccountKey(email) {
+  return String(email || "").trim().toLowerCase();
+}
+
+async function markRegisterVerified(emailKey, role, rowId, token) {
+  const exp = Date.now() + 30 * 60 * 1000;
+  const status = `register_verified:${token}:exp:${exp}`;
+  if (rowId) {
+    await supabaseJson(restUrl("password_reset_requests", `?id=eq.${encodeURIComponent(rowId)}`), {
+      method: "PATCH",
+      headers: headersWithServiceRole(),
+      body: JSON.stringify({ status }),
+    }).catch(() => null);
+  }
+  globalThis.__mcjForgotResets = globalThis.__mcjForgotResets || new Map();
+  globalThis.__mcjForgotResets.set(`${role}:register_verified:${emailKey}`, {
+    id: rowId || token,
+    verifiedToken: token,
+    exp,
+    kind: "register_verified",
+  });
+  return exp;
+}
+
+async function findRegisterVerified(emailKey, role, token) {
+  const want = String(token || "").trim();
+  if (!want) return null;
+  const rows = await supabaseJson(
+    restUrl(
+      "password_reset_requests",
+      `?account=eq.${encodeURIComponent(emailKey)}&role=eq.${encodeURIComponent(role)}&order=created_at.desc&limit=8`
+    ),
+    { headers: headersWithServiceRole() }
+  ).catch(() => []);
+  const re = /^register_verified:([A-Za-z0-9_-]+):exp:(\d+)$/;
+  for (const row of rows || []) {
+    const m = String(row.status || "").match(re);
+    if (m && m[1] === want && Number(m[2]) > Date.now()) {
+      return { id: row.id, verifiedToken: m[1], exp: Number(m[2]), row };
+    }
+  }
+  const mem = globalThis.__mcjForgotResets?.get(`${role}:register_verified:${emailKey}`);
+  if (mem?.verifiedToken === want && Number(mem.exp) > Date.now()) return mem;
+  return null;
+}
+
+/**
+ * Consume a one-time register email verification token.
+ * Used by companion register so accounts cannot be created without OTP.
+ */
+export async function consumeRegisterEmailToken(emailRaw, tokenRaw, roleRaw = "companion") {
+  const role = normalizeForgotRole(roleRaw || "companion");
+  const email = registerOtpAccountKey(emailRaw);
+  const token = String(tokenRaw || "").trim();
+  if (!email || !/^\S+@\S+\.\S+$/.test(email)) {
+    throw Object.assign(new Error("请输入有效邮箱。"), { status: 400 });
+  }
+  if (!token) {
+    throw Object.assign(new Error("请先完成邮箱验证。"), { status: 400 });
+  }
+  const hit = await findRegisterVerified(email, role, token);
+  if (!hit) {
+    throw Object.assign(new Error("邮箱验证已失效，请重新获取验证码。"), { status: 400 });
+  }
+  if (hit.id) {
+    await supabaseJson(restUrl("password_reset_requests", `?id=eq.${encodeURIComponent(hit.id)}`), {
+      method: "PATCH",
+      headers: headersWithServiceRole(),
+      body: JSON.stringify({ status: `register_used:${Date.now()}` }),
+    }).catch(() => null);
+  }
+  try {
+    globalThis.__mcjForgotResets?.delete(`${role}:register_verified:${email}`);
+  } catch {
+    /* ignore */
+  }
+  return { ok: true, email, role };
+}
+
+/** Companion API consumes register tokens without importing the full auth handler. */
+export async function assertRegisterEmailVerified(emailRaw, tokenRaw, roleRaw = "companion") {
+  return consumeRegisterEmailToken(emailRaw, tokenRaw, roleRaw);
+}
+
+async function handleSendRegisterOtp(body, res) {
+  const role = normalizeForgotRole(body.role || "companion");
+  if (role !== "companion" && role !== "boss") {
+    return json(res, 400, { ok: false, message: "该端不支持邮箱注册验证码。" });
+  }
+  const email = registerOtpAccountKey(body.email || body.account);
+  if (!email || !/^\S+@\S+\.\S+$/.test(email)) {
+    return json(res, 400, { ok: false, message: "请输入有效邮箱。" });
+  }
+  const existing = await profilesLookup(
+    `?email=eq.${encodeURIComponent(email)}&select=id,email,role,status&limit=5`
+  ).catch(() => []);
+  const companionHit = (existing || []).find((row) => String(row.role || "").toLowerCase() === "companion");
+  if (companionHit) {
+    return json(res, 409, { ok: false, message: "该邮箱已有陪玩账号，请切换到「已有账号登录」。" });
+  }
+  const otherHit = (existing || []).find((row) => String(row.role || "").toLowerCase() !== "companion");
+  if (otherHit) {
+    return json(res, 409, {
+      ok: false,
+      message: "该邮箱已被其他角色占用，请更换邮箱后再注册陪玩。",
+    });
+  }
+  const code = randomOtpCode();
+  await storeForgotOtp(email, role, code, "register_otp");
+  let mailOk = false;
+  let mailError = "";
+  try {
+    await sendEmailOtp({ to: email, code, purpose: "register", roleLabel: roleLabelOf(role) });
+    mailOk = true;
+  } catch (err) {
+    mailError = String(err?.message || err || "");
+  }
+  const mailStatus = mailProviderStatus();
+  const out = {
+    ok: true,
+    message: mailOk
+      ? `注册验证码已发送至 ${maskEmailHint(email)}。`
+      : allowStagingOtp()
+        ? mailStatus.resend
+          ? `验证码邮件发送失败：${mailError || "Resend 错误"}。已生成 Staging 调试验证码。`
+          : "邮件服务暂不可用（未读到 RESEND_API_KEY），已生成 Staging 调试验证码。"
+        : "如邮箱可用，将收到注册验证码，请查收后继续。",
+    channel: "email",
+    emailMasked: maskEmailHint(email),
+    expiresInSec: 900,
+    role,
+    mail: mailStatus,
+  };
+  if (!mailOk && allowStagingOtp()) out.devCode = code;
+  if (!mailOk && allowStagingOtp() && mailError) out.mailWarning = mailError;
+  if (!mailOk) console.error("[auth/send_register_otp] mail failed", mailError, mailStatus);
+  return json(res, 200, out);
+}
+
+async function handleVerifyRegisterOtp(body, res) {
+  const role = normalizeForgotRole(body.role || "companion");
+  const email = registerOtpAccountKey(body.email || body.account);
+  const code = String(body.code || body.otp || "").trim();
+  if (!email || !/^\S+@\S+\.\S+$/.test(email)) {
+    return json(res, 400, { ok: false, message: "请输入有效邮箱。" });
+  }
+  if (!/^\d{6}$/.test(code)) {
+    return json(res, 400, { ok: false, message: "请输入 6 位邮箱验证码。" });
+  }
+  const stored = await findForgotOtp(email, role, "register_otp");
+  if (!stored?.code || String(stored.code) !== code) {
+    return json(res, 400, { ok: false, message: "验证码错误，请重新输入。" });
+  }
+  if (Number(stored.exp) <= Date.now()) {
+    return json(res, 400, { ok: false, message: "验证码已过期，请重新发送。" });
+  }
+  const token = `reg_${randomOtpCode()}${Date.now().toString(36)}`;
+  await markRegisterVerified(email, role, stored.id, token);
+  return json(res, 200, {
+    ok: true,
+    message: "邮箱已验证",
+    emailVerified: true,
+    registerToken: token,
+    email,
+    emailMasked: maskEmailHint(email),
+    expiresInSec: 1800,
+  });
+}
+
 async function markForgotVerified(accountKey, role, rowId, token) {
   const exp = Date.now() + 15 * 60 * 1000;
   if (rowId) {
@@ -1220,6 +1390,20 @@ export default async function handler(req, res) {
       requestedAction === "verify_login_otp"
     ) {
       return handleLoginWithOtp(body, res);
+    }
+    if (
+      requestedAction === "send_register_otp" ||
+      requestedAction === "register_send_otp" ||
+      requestedAction === "email_register_otp"
+    ) {
+      return handleSendRegisterOtp(body, res);
+    }
+    if (
+      requestedAction === "verify_register_otp" ||
+      requestedAction === "register_verify_otp" ||
+      requestedAction === "verify_email_otp"
+    ) {
+      return handleVerifyRegisterOtp(body, res);
     }
     if (requestedAction === "mail_status") {
       return json(res, 200, { ok: true, mail: mailProviderStatus() });
