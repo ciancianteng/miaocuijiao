@@ -376,6 +376,9 @@ function viewOrder(row = {}) {
       completed: "completed",
       cancelled: "cancelled",
     }[status] || status);
+  const paymentReview =
+    status === "awaiting_payment" &&
+    !!(row.payment_proof_url || /\[\[PAYMENT_PROOF\]\]|\[\[PAYMENT_SUBMITTED\]\]/i.test(String(row.note || row.description || "")));
   return {
     id: row.id,
     orderNo: row.order_no || row.id,
@@ -413,6 +416,7 @@ function viewOrder(row = {}) {
     preferredCompanionId: bossIntent?.companionId || "",
     paymentStatus: paymentStatusLabel(row),
     acceptStatus: acceptStatusLabel(row),
+    paymentReview,
     bossHint: bossHint(row),
     cancelReason: row.cancel_reason || "",
     note: row.note || "",

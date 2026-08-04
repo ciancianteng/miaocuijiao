@@ -13,6 +13,7 @@
     pendingPayments: [],
     receipts: [],
     paymentReceipts: [],
+    pendingPaymentProofs: [],
     settings: {},
     weeklyRules: {},
     settlementSummary: {},
@@ -403,15 +404,66 @@
     );
   }
   function paymentProofsHtml() {
-    var rows = (state.paymentReceipts || []).map(function (r) {
-      return "<tr><td>" + esc(r.receiptNo) + "</td><td>" + esc(r.orderId) + "</td><td>" +
-        esc(r.amount) + "</td><td>" + esc(r.paymentMethod) + "</td><td>已付款</td><td>" +
-        esc(r.confirmedAt) + "</td></tr>";
+    var pending = (state.pendingPaymentProofs || []).map(function (r) {
+      var img = r.proofUrl
+        ? '<a href="' + esc(r.proofUrl) + '" target="_blank" rel="noopener"><img src="' + esc(r.proofUrl) + '" alt="付款凭证" style="width:72px;height:72px;object-fit:cover;border-radius:8px"></a>'
+        : "无图";
+      return (
+        "<tr><td>" +
+        esc(r.receiptNo || r.id) +
+        "</td><td>" +
+        esc(r.orderNo || r.orderId) +
+        "</td><td>" +
+        esc(r.amount) +
+        "</td><td>" +
+        esc(r.paymentMethod || "-") +
+        "</td><td>" +
+        img +
+        "</td><td>待审核</td><td>" +
+        esc(r.uploadedAt || "-") +
+        '</td><td><button class="mini-btn primary-lite" type="button" data-fin-approve-proof="' +
+        esc(r.orderId) +
+        '" data-receipt-id="' +
+        esc(r.receiptId || r.id) +
+        '">通过</button> <button class="mini-btn" type="button" data-fin-reject-proof="' +
+        esc(r.orderId) +
+        '" data-receipt-id="' +
+        esc(r.receiptId || r.id) +
+        '">驳回</button></td></tr>'
+      );
     }).join("");
-    return '<div class="admin-section-head compact"><div><h4>付款凭证中心</h4><p>仅展示已确认收款的订单凭证。</p></div>' +
+    var paid = (state.paymentReceipts || []).map(function (r) {
+      var img = r.proofUrl
+        ? '<a href="' + esc(r.proofUrl) + '" target="_blank" rel="noopener"><img src="' + esc(r.proofUrl) + '" alt="付款凭证" style="width:56px;height:56px;object-fit:cover;border-radius:8px"></a>'
+        : esc(r.proofPath || "-");
+      return (
+        "<tr><td>" +
+        esc(r.receiptNo) +
+        "</td><td>" +
+        esc(r.orderId) +
+        "</td><td>" +
+        esc(r.amount) +
+        "</td><td>" +
+        esc(r.paymentMethod) +
+        "</td><td>" +
+        img +
+        "</td><td>已付款</td><td>" +
+        esc(r.confirmedAt) +
+        "</td><td>-</td></tr>"
+      );
+    }).join("");
+    return (
+      '<div class="admin-section-head compact"><div><h4>付款凭证中心</h4><p>待审核凭证通过后订单进入下一流程；已确认收款凭证长期保留。</p></div>' +
       '<button class="mini-btn primary-lite" type="button" data-payment-receipts-export>导出 CSV</button></div>' +
-      '<div class="table-wrap"><table><thead><tr><th>凭证编号</th><th>订单</th><th>金额</th><th>方式</th><th>状态</th><th>确认时间</th></tr></thead><tbody>' +
-      (rows || '<tr><td colspan="6">暂无已付款凭证</td></tr>') + "</tbody></table></div>";
+      "<h4>待审核</h4>" +
+      '<div class="table-wrap"><table><thead><tr><th>凭证编号</th><th>订单</th><th>金额</th><th>方式</th><th>截图</th><th>状态</th><th>上传时间</th><th>操作</th></tr></thead><tbody>' +
+      (pending || '<tr><td colspan="8">暂无待审核付款凭证</td></tr>') +
+      "</tbody></table></div>" +
+      "<h4 style=\"margin-top:18px\">已确认收款</h4>" +
+      '<div class="table-wrap"><table><thead><tr><th>凭证编号</th><th>订单</th><th>金额</th><th>方式</th><th>截图</th><th>状态</th><th>确认时间</th><th>操作</th></tr></thead><tbody>' +
+      (paid || '<tr><td colspan="8">暂无已付款凭证</td></tr>') +
+      "</tbody></table></div>"
+    );
   }
   function paint() {
     var box = target();
@@ -472,6 +524,7 @@
         state.pendingPayments = res.pendingPayments || [];
         state.receipts = res.receipts || [];
         state.paymentReceipts = res.paymentReceipts || [];
+        state.pendingPaymentProofs = res.pendingPaymentProofs || [];
         state.settings = res.settings || {};
         state.weeklyRules = res.weeklyRules || {};
         state.settlementSummary = res.settlementSummary || {};
@@ -1115,6 +1168,39 @@
         })
         .catch(function (err) {
           alert(err.message);
+        });
+      return;
+    }
+    var approveProof = e.target.closest("[data-fin-approve-proof]");
+    if (approveProof) {
+      post("approve_payment_proof", {
+        orderId: approveProof.dataset.finApproveProof,
+        receiptId: approveProof.getAttribute("data-receipt-id") || "",
+      })
+        .then(function (res) {
+          state.message = res.message || "已审核通过";
+          load();
+        })
+        .catch(function (err) {
+          alert(err.message || "审核失败");
+        });
+      return;
+    }
+    var rejectProofBtn = e.target.closest("[data-fin-reject-proof]");
+    if (rejectProofBtn) {
+      var rejectReason = prompt("请输入驳回付款原因");
+      if (!rejectReason) return;
+      post("reject_payment_proof", {
+        orderId: rejectProofBtn.dataset.finRejectProof,
+        receiptId: rejectProofBtn.getAttribute("data-receipt-id") || "",
+        reason: rejectReason,
+      })
+        .then(function (res) {
+          state.message = res.message || "已驳回";
+          load();
+        })
+        .catch(function (err) {
+          alert(err.message || "驳回失败");
         });
     }
   });

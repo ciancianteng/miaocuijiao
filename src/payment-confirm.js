@@ -78,6 +78,17 @@
 
   function statusGuide(status, order) {
     var s = String(status || "");
+    var reviewing = !!(order && (order.paymentReview || /付款待审核/i.test(String(order.paymentStatus || order.statusText || ""))));
+    if (s === "awaiting_payment" && reviewing) {
+      return {
+        title: "付款待审核",
+        reason: "付款凭证已提交，正在等待后台/客服审核。",
+        next: "审核通过后订单才会进入派单或抢单流程；驳回后可重新上传凭证。",
+        primary: "orders",
+        primaryLabel: "查看我的订单",
+        disabledHint: "付款凭证审核中，请勿重复上传",
+      };
+    }
     if (s === "awaiting_payment") {
       return {
         title: "待付款",
@@ -209,7 +220,8 @@
     var csHref = "support.html?order=" + encodeURIComponent(order.id);
     var ordersHref = "orders.html?id=" + encodeURIComponent(order.id);
     var actions = '<div class="pay-actions">';
-    if (guide.primary === "pay" && st === "awaiting_payment") {
+    var reviewing = !!(order.paymentReview || /付款待审核/i.test(String(order.paymentStatus || order.statusText || "")));
+    if (guide.primary === "pay" && st === "awaiting_payment" && !reviewing) {
       if (isWalletMethod(order)) {
         actions += '<button type="button" class="pay-btn primary" data-pay-order="' + esc(order.id) + '">' + esc(guide.primaryLabel + " " + money(order.totalAmount || order.amount)) + "</button>";
       }
@@ -281,11 +293,13 @@
         (st === "awaiting_payment"
           ? '<p class="pay-alert">' +
             esc(
-              canShowTestPay()
-                ? "Preview / 测试环境：可点「测试支付成功（TEST）」真实写入订单状态；正式环境无此入口。"
-                : isWalletMethod(order)
-                  ? "支付成功后将进入“等待陪玩确认”。"
-                  : "请上传付款凭证，客服审核通过后将派单。"
+              reviewing
+                ? "付款凭证已提交，等待后台/客服审核通过后才会派单。"
+                : canShowTestPay()
+                  ? "Preview / 测试环境：可点「测试支付成功（TEST）」真实写入订单状态；正式环境无此入口。"
+                  : isWalletMethod(order)
+                    ? "支付成功后将进入“等待陪玩确认”。"
+                    : "请上传付款凭证，客服或后台审核通过后将派单。"
             ) +
             "</p>"
           : "") +

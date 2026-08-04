@@ -92,14 +92,46 @@ export async function rejectProof({ receipt, reviewerId, reason }) {
   return rows[0];
 }
 
+export async function listPendingForAdmin() {
+  const receipts = await companionDb("payment_receipts", "?status=eq.pending&order=uploaded_at.asc&limit=500").catch(() => []);
+  const orderIds = [...new Set((receipts || []).map((row) => row.order_id).filter(Boolean))];
+  let orders = [];
+  if (orderIds.length) {
+    orders = await companionDb(
+      "orders",
+      `?id=in.(${orderIds.map(encodeURIComponent).join(",")})&select=id,order_no,boss_id,companion_id,total_amount,status,payment_method,note,description&limit=500`
+    ).catch(() => []);
+  }
+  const orderMap = Object.fromEntries((orders || []).map((row) => [row.id, row]));
+  return Promise.all(
+    (receipts || []).map(async (receipt) => {
+      const order = orderMap[receipt.order_id] || {};
+      const proofUrl = await signedProofUrl(receipt).catch(() => "");
+      return {
+        ...receipt,
+        order,
+        orderNo: order.order_no || order.id || receipt.order_id || "",
+        amount: money(receipt.amount != null ? receipt.amount : order.total_amount),
+        proofUrl: proofUrl || "",
+      };
+    })
+  );
+}
+
 export async function listPaidForAdmin({ year = "", month = "" } = {}) {
   const rows = await companionDb("payment_transactions", "?payment_status=eq.paid&order=confirmed_at.desc&limit=2000").catch(() => []);
   const receipts = await companionDb("payment_receipts", "?status=eq.approved&limit=2000").catch(() => []);
   const receiptMap = Object.fromEntries((receipts || []).map((row) => [row.id, row]));
-  return (rows || []).filter((row) => {
+  const filtered = (rows || []).filter((row) => {
     const date = String(row.confirmed_at || row.created_at || "");
     return (!year || date.startsWith(year)) && (!month || date.slice(5, 7) === String(month).padStart(2, "0"));
   }).map((row) => ({ ...row, receipt: receiptMap[row.receipt_id] || null }));
+  return Promise.all(
+    filtered.map(async (row) => {
+      const proofUrl = row.receipt ? await signedProofUrl(row.receipt).catch(() => "") : "";
+      return { ...row, proofUrl: proofUrl || "" };
+    })
+  );
 }
 
 export function exportCsv(rows = []) {

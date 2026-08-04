@@ -8,6 +8,7 @@
   var EXPIRED_MESSAGE = "登录已过期，请重新登录。";
   var refreshPromise = null;
   var sessionReadyPromise = null;
+  var guardPromise = null;
   var listeners = [];
 
   function readRaw() {
@@ -178,34 +179,69 @@
 
   function hasCsRoleHint() {
     try {
-      var user = JSON.parse(localStorage.getItem("customerServiceUser") || "null");
+      var user = JSON.parse(
+        localStorage.getItem("customerServiceUser") || sessionStorage.getItem("customerServiceUser") || "null"
+      );
       var role = String((user && (user.role || user.user_role)) || "").toLowerCase();
       if (role === "customer_service" || role === "service") return true;
     } catch (e) {}
     try {
-      var shared = String(localStorage.getItem("mcjAuthRole") || "").toLowerCase();
+      var shared = String(localStorage.getItem("mcjRole") || sessionStorage.getItem("mcjRole") || "").toLowerCase();
       if (shared === "customer_service" || shared === "service") return true;
     } catch (e2) {}
     return false;
   }
 
-  /** CS session only — never treat boss/admin shared tokens as logged-in CS. */
-  function hasSession() {
-    var blob = readRaw();
-    var access = String((blob && (blob.token || blob.accessToken || blob.access_token)) || "").trim();
-    var refresh = String((blob && (blob.refreshToken || blob.refresh_token)) || getRefreshToken() || "").trim();
-    var looksJwt =
+  function looksLikeJwt(token) {
+    var access = String(token || "").trim();
+    return (
       access.length >= 20 &&
       access.split(".").length === 3 &&
       access.split(".").every(function (p) {
         return p.length > 0;
-      });
-    if (!looksJwt && !refresh) return false;
+      })
+    );
+  }
+
+  /** Heal soft/mirror leftovers into mcjServiceSession so login↔dashboard never loop. */
+  function healSessionBlobIfNeeded() {
+    var blob = readRaw();
+    var blobAccess = String((blob && (blob.token || blob.accessToken || blob.access_token)) || "").trim();
+    var blobRefresh = String((blob && (blob.refreshToken || blob.refresh_token)) || "").trim();
+    if (blob && (looksLikeJwt(blobAccess) || blobRefresh)) return blob;
     var soft = readItem("customerServiceAuthToken");
-    if (String(soft).indexOf("customer_service_session_") !== 0) {
-      // Shared mirrors only count when role is explicitly customer_service.
-      if (!(hasCsRoleHint() && (looksJwt || refresh))) return false;
+    if (String(soft).indexOf("customer_service_session_") !== 0) return blob;
+    if (!hasCsRoleHint()) return blob;
+    var access = String(readItem("mcjAuthAccessToken") || blobAccess || "").trim();
+    var refresh = String(readItem("mcjAuthRefreshToken") || blobRefresh || "").trim();
+    if (!looksLikeJwt(access) && !refresh) return blob;
+    var user = {};
+    try {
+      user = JSON.parse(localStorage.getItem("customerServiceUser") || sessionStorage.getItem("customerServiceUser") || "{}") || {};
+    } catch (e) {
+      user = {};
     }
+    return saveSession(
+      {
+        token: access,
+        refreshToken: refresh,
+        expiresAt: readItem("mcjAuthExpiresAt") || (blob && blob.expiresAt) || "",
+        user: user,
+      },
+      true
+    );
+  }
+
+  /** CS session only — require portal blob (after heal). Soft mirrors alone never unlock. */
+  function hasSession() {
+    healSessionBlobIfNeeded();
+    var blob = readRaw();
+    if (!blob) return false;
+    var access = String(blob.token || blob.accessToken || blob.access_token || "").trim();
+    var refresh = String(blob.refreshToken || blob.refresh_token || "").trim();
+    if (!looksLikeJwt(access) && !refresh) return false;
+    var soft = readItem("customerServiceAuthToken");
+    if (String(soft).indexOf("customer_service_session_") !== 0 && !hasCsRoleHint()) return false;
     return true;
   }
 
@@ -299,13 +335,18 @@
   }
 
   function ensureSession() {
-    sessionReadyPromise = getSession().then(function (result) {
-      if (!hasSession()) return result;
-      if (!needsRefresh()) return result;
-      return refreshSession().then(function () {
-        return getSession();
+    if (sessionReadyPromise) return sessionReadyPromise;
+    sessionReadyPromise = getSession()
+      .then(function (result) {
+        if (!hasSession()) return result;
+        if (!needsRefresh()) return result;
+        return refreshSession().then(function () {
+          return getSession();
+        });
+      })
+      .finally(function () {
+        sessionReadyPromise = null;
       });
-    });
     return sessionReadyPromise;
   }
 
@@ -410,10 +451,11 @@
   }
 
   function guardCustomerServicePages() {
+    if (guardPromise) return guardPromise;
     var path = String(location.pathname || "").replace(/\\/g, "/");
     if (!/\/customer-service(\/|$)/i.test(path)) return Promise.resolve(true);
     if (/\/customer-service\/login/i.test(path)) {
-      return ensureSession()
+      guardPromise = ensureSession()
         .then(function () {
           if (hasSession()) {
             location.replace("/customer-service/dashboard/");
@@ -425,7 +467,11 @@
         .catch(function () {
           revealCsPage();
           return true;
+        })
+        .finally(function () {
+          guardPromise = null;
         });
+      return guardPromise;
     }
     try {
       document.documentElement.setAttribute("data-mcj-service-auth", "pending");
@@ -440,7 +486,7 @@
         revealCsPage();
       }
     }, 8000);
-    return ensureSession()
+    guardPromise = ensureSession()
       .then(function () {
         clearTimeout(safety);
         if (hasSession()) {
@@ -460,7 +506,11 @@
         revealCsPage();
         redirectToLogin(path + String(location.search || "") + String(location.hash || ""));
         return false;
+      })
+      .finally(function () {
+        guardPromise = null;
       });
+    return guardPromise;
   }
 
   window.MCJServiceAuth = {

@@ -1021,7 +1021,17 @@
       alert("无法开启麦克风，请检查浏览器麦克风权限。");
       return;
     }
-    recorder = new MediaRecorder(stream);
+    recorder = new MediaRecorder(stream, (function () {
+      var candidates = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg;codecs=opus"];
+      for (var i = 0; i < candidates.length; i += 1) {
+        try {
+          if (window.MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(candidates[i])) {
+            return { mimeType: candidates[i] };
+          }
+        } catch (e) {}
+      }
+      return undefined;
+    })());
     recorder.ondataavailable = function (e) { if (e.data && e.data.size) chunks.push(e.data); };
     recorder.onstop = async function () {
       stream.getTracks().forEach(function (t) { t.stop(); });
@@ -1031,7 +1041,15 @@
         return;
       }
       var duration = Math.round((Date.now() - recordStartedAt) / 1000);
-      var blob = new Blob(chunks, { type: "audio/webm" });
+      var mime = (recorder && recorder.mimeType) || (chunks[0] && chunks[0].type) || "audio/webm";
+      var blob = new Blob(chunks, { type: mime });
+      if (!blob.size) {
+        saveDraft({ voice: { status: "录音失败（无声音数据），请重录", url: "", duration: duration, confirmed: false, listened: false, uploaded: false } });
+        setVoiceState("录音失败，请重录", duration);
+        document.body.classList.remove("voice-recording-active");
+        render(3);
+        return;
+      }
       var quality = await analyzeVoiceBlob(blob, duration);
       var url = await blobToDataURL(blob);
       var audio = document.getElementById("voicePreview");
@@ -1042,7 +1060,8 @@
       render(3);
     };
     recordStartedAt = Date.now();
-    recorder.start();
+    // timeslice keeps chunks flowing so stop always yields playable audio
+    try { recorder.start(250); } catch (eStart) { recorder.start(); }
     document.body.classList.add("voice-recording-active");
     setRecordingUi(true);
     setVoiceState("正在录音", 0);
@@ -1111,7 +1130,8 @@
         return postCompanion("upload_media", {
           media_type: "voice",
           data_url: dataUrl,
-          filename: "voice.webm",
+          filename: /mp4/i.test(String((d.voice && d.voice.mimeType) || "")) ? "voice.m4a" : "voice.webm",
+          content_type: (d.voice && d.voice.mimeType) || "",
           duration_seconds: duration,
         });
       })

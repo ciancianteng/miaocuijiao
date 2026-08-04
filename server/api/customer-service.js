@@ -11,7 +11,7 @@ import {
   resolveCompanionPublicCode,
 } from "./_account-codes.js";
 import { companionDb } from "./_companion-media-store.js";
-import { approveAndLedger, listPendingForCs, rejectProof } from "./_payment-receipts.js";
+import { approveAndLedger, listPendingForCs, rejectProof, signedProofUrl } from "./_payment-receipts.js";
 import { bossForCs } from "./_privacy.js";
 import {
   conversationLockedByOther as lockOwnedByOther,
@@ -925,6 +925,13 @@ async function loadBootstrap(serviceProfile) {
   const grabMap = Object.fromEntries(grabExtras.map((g) => [g.id, g]));
   const pendingReceipts = await listPendingForCs({ orderIds: ordersRaw.map((row) => row.id).filter(Boolean) });
   const receiptByOrder = Object.fromEntries((pendingReceipts || []).map((receipt) => [receipt.order_id, receipt]));
+  const signedPairs = await Promise.all(
+    (pendingReceipts || []).map(async (receipt) => {
+      const url = await signedProofUrl(receipt).catch(() => "");
+      return [receipt.order_id, url || ""];
+    })
+  );
+  const signedByOrder = Object.fromEntries(signedPairs);
   const orders = ordersRaw.map((row) => {
     const extra = grabMap[row.id] || {};
     const receipt = receiptByOrder[row.id] || null;
@@ -934,7 +941,7 @@ async function loadBootstrap(serviceProfile) {
       bossIntent: extra.bossIntent || null,
       flowStatus: toFlowStatus(row.status),
       paymentReceipt: receipt,
-      paymentProofUrl: receipt ? `proof:${receipt.id}` : "",
+      paymentProofUrl: receipt ? signedByOrder[row.id] || "" : "",
     });
   }); const msgByConv = messagesRaw.reduce((map, msg) => { (map[msg.conversation_id] = map[msg.conversation_id] || []).push(msg); return map; }, {}); const conversationsMapped = conversationsRaw.map((row) => { const boss = profiles[row.boss_id] || {}; const companionProf = profiles[row.companion_id] || {}; const service = profiles[row.customer_service_id] || {}; const msgs = msgByConv[row.id] || []; const last = msgs[msgs.length - 1] || {}; const bossUid = bossForCs(boss).bossUid; const isCompanionSupport = String(row.conversation_type || "") === "companion_support" || (!row.boss_id && row.companion_id); const isClosed = row.status === "closed" || row.status === "ended"; const convStatus = isClosed ? "已结束" : (row.customer_service_id ? "正在接待" : "待接待"); const lastReadAt = row.last_read_at || ""; const unreadRoles = isCompanionSupport ? ["companion"] : ["boss"];   const unreadBoss = isClosed ? [] : msgs.filter((m) => {
     if (!unreadRoles.includes(m.sender_role) || m.read_at) return false;

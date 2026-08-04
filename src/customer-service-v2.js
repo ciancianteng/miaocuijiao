@@ -223,6 +223,26 @@
     var mWaiting=root.querySelector('[data-metric-waiting]');
     if(mWaiting)mWaiting.textContent=String((state.data.summary&&state.data.summary.waitingConversations)||0);
   }
+  function patchDashboardMetrics(){
+    syncPoolCounters();
+    var s=(state.data&&state.data.summary)||{};
+    var map={
+      unread:s.unreadMessages,
+      current:s.currentReceptions,
+      waiting:s.waitingConversations,
+      pendingOrders:s.pendingOrders,
+      paymentReview:s.paymentReview,
+      needsReassign:s.needsReassign
+    };
+    Object.keys(map).forEach(function(key){
+      var el=root.querySelector('[data-metric-'+key+']');
+      if(el&&map[key]!=null)el.textContent=String(map[key]);
+    });
+    var work=(state.data&&state.data.workData)||{};
+    var att=work.todayAttendance||{};
+    var hoursEl=root.querySelector('[data-live-hours]');
+    if(hoursEl)hoursEl.textContent=String(liveTotalHours(att));
+  }
   function applyClockResult(res){
     if(!state.data)state.data={};
     if(!state.data.workData)state.data.workData={};
@@ -1120,21 +1140,23 @@
     setTimeout(function(){ paint(); }, 0);
   }
   function readSession(){
-    if(window.MCJServiceAuth&&typeof window.MCJServiceAuth.hasSession==='function'&&window.MCJServiceAuth.hasSession()){
-      try{
-        var raw=JSON.parse(localStorage.getItem(SESSION_KEY)||sessionStorage.getItem(SESSION_KEY)||'null');
-        if(raw&&(raw.token||raw.accessToken||raw.refreshToken)){
-          return {
-            token:raw.token||raw.accessToken||'',
-            refreshToken:raw.refreshToken||'',
-            expiresAt:raw.expiresAt||'',
-            user:raw.user||{},
-            remember:raw.remember!==false
-          };
-        }
-      }catch(e){}
+    if(window.MCJServiceAuth&&typeof window.MCJServiceAuth.hasSession==='function'){
+      // Force heal soft/mirror leftovers into mcjServiceSession before reading.
+      try{window.MCJServiceAuth.hasSession();}catch(e){}
     }
-    try{return JSON.parse(localStorage.getItem(SESSION_KEY)||sessionStorage.getItem(SESSION_KEY)||'null')}catch(e){return null}
+    try{
+      var raw=JSON.parse(localStorage.getItem(SESSION_KEY)||sessionStorage.getItem(SESSION_KEY)||'null');
+      if(raw&&(raw.token||raw.accessToken||raw.refreshToken)){
+        return {
+          token:raw.token||raw.accessToken||'',
+          refreshToken:raw.refreshToken||'',
+          expiresAt:raw.expiresAt||'',
+          user:raw.user||{},
+          remember:raw.remember!==false
+        };
+      }
+    }catch(e){}
+    return null;
   }
   function saveSession(session,remember){
     if(window.MCJServiceAuth&&typeof window.MCJServiceAuth.saveSession==='function'){
@@ -1545,6 +1567,12 @@
           syncPoolCounters();
           return;
         }
+      }
+      // Dashboard: poll must NOT remount the shell (was causing login/workbench flicker).
+      if(state.route==='dashboard'&&isPollPayload&&!isFullBootstrap){
+        syncPoolCounters();
+        patchDashboardMetrics();
+        return;
       }
       paint();
       syncPoolCounters();
@@ -2629,7 +2657,7 @@
     return '<div class="cs-page-head"><div><h2>订单处理</h2><p>确认付款、指派陪玩、处理退款，所有操作写入真实订单表。</p></div><div class="cs-actions"><button class="cs-btn primary" data-route="/customer-service/create-order">客服代下单</button></div></div><div class="cs-toolbar"><select data-order-filter><option value="">全部状态</option>'+Object.keys(statuses).map(function(k){return '<option value="'+esc(k)+'" '+(state.orderFilter===k?'selected':'')+'>'+esc(statuses[k])+'</option>'}).join('')+'</select><button class="cs-btn" data-refresh>刷新</button></div><section class="cs-table-wrap"><table class="cs-table"><thead><tr><th>订单编号</th><th>老板</th><th>陪玩</th><th>游戏</th><th>金额</th><th>状态</th><th>创建时间</th><th>操作</th></tr></thead><tbody>'+(rows.length?rows.map(orderRow).join(''):'<tr><td colspan="8"><div class="cs-empty">暂无订单</div></td></tr>')+'</tbody></table></section>';
   }
   function compensationHtml(){var bosses=(state.data&&state.data.bosses)||[],orders=(state.data&&state.data.orders)||[];return '<div class="cs-page-head"><div><h2>申请补偿</h2><p>客服只能提交申请，管理员审核通过后才会入账赠送猫粮。</p></div></div><form class="cs-card cs-form" data-compensation-form><label>老板 UID / 选择老板<select name="boss_id" required><option value="">请选择老板</option>'+bosses.map(function(b){return '<option value="'+esc(b.id)+'">'+esc(b.bossUid||b.uid||'')+' / '+esc(b.name)+'</option>'}).join('')+'</select></label><label>或输入老板 UID<input name="boss_uid" placeholder="MCJ00001"></label><label>关联订单<select name="related_order_id"><option value="">可选</option>'+orders.map(function(o){return '<option value="'+esc(o.id)+'">'+esc(o.orderNo)+' / '+esc(o.bossName)+'</option>'}).join('')+'</select></label><label>类型<select name="request_type"><option value="bad_review">差评安抚</option><option value="after_sale">售后补偿</option><option value="activity">活动奖励</option><option value="other">其他</option></select></label><label>建议补偿猫粮<input name="suggested_amount" type="number" min="1" required></label><label>差评或投诉原因<textarea name="reason" required></textarea></label><label>客服说明<textarea name="staff_note"></textarea></label><button class="cs-btn primary" type="submit">提交申请</button></form>'}
-  function orderRow(o){var actions=[];if(o.status==='awaiting_payment'){if(o.paymentReview){actions.push('<button class="cs-btn primary" data-confirm-payment="'+esc(o.id)+'">确认收款并派单</button>');actions.push('<button class="cs-btn" data-reject-payment-proof="'+esc(o.id)+'">驳回付款</button>')}else if(!o.companionId)actions.push('<button class="cs-btn primary" data-confirm-payment="'+esc(o.id)+'" data-send-hall="1">发送到抢单大厅</button>');else actions.push('<button class="cs-btn" data-confirm-payment="'+esc(o.id)+'">确认已付款</button>');}var bossLocked=!!(o.companionId&&(o.status==='claimed'||o.status==='confirmed'||o.status==='in_progress'));var bossMustPick=o.status==='waiting_boss_confirm'||(o.status==='pending'&&(o.grabCount||0)>0);if(o.needsReassign&&!bossLocked)actions.push('<button class="cs-btn primary" data-assign-order="'+esc(o.id)+'">更换陪玩</button>');else if(!bossLocked&&!bossMustPick&&(o.status==='pending'||o.status==='awaiting_payment'))actions.push('<button class="cs-btn" data-assign-order="'+esc(o.id)+'">指定陪玩</button>');else if(bossMustPick)actions.push('<span class="cs-note">等待老板选择陪玩</span>');else if(bossLocked)actions.push('<span class="cs-note">负责人陪玩已锁定</span>');if((o.grabCount||0)>0||o.status==='waiting_boss_confirm'||o.status==='pending')actions.push('<button class="cs-btn" data-view-grabs="'+esc(o.id)+'">查看抢单人('+(o.grabCount||0)+')</button>');if(o.status==='in_progress')actions.push('<button class="cs-btn primary" data-complete-order="'+esc(o.id)+'">结单</button>');actions.push('<button class="cs-btn" data-status-order="'+esc(o.id)+'">改状态</button>');actions.push('<button class="cs-btn" data-route="/customer-service/compensation" type="button">申请补偿</button>');if(o.status==='refund_requested'||o.needsReassign)actions.push('<button class="cs-btn" data-refund-order="'+esc(o.id)+'">'+(o.needsReassign?'发起退款':'处理退款')+'</button>');var statusCell=esc(o.paymentReview?'付款待审核':o.statusText)+(o.needsReassign?'<br><small style="color:#f59e0b">'+(esc(o.reassignHint||'待重新安排'))+'</small>':'')+(o.acceptedAt&&o.status==='confirmed'?'<br><small>确认：'+esc(o.acceptedAt)+'</small>':'')+('<br><small>抢单 '+(o.grabCount||0)+' 人</small>')+(o.preferredCompanionId?'<br><small style="color:#60a5fa">老板意向已提交</small>':'');return '<tr'+(o.needsReassign?' style="background:rgba(245,158,11,.08)"':'')+'><td>'+esc(o.orderNo)+'</td><td>'+esc(sanitizeBossLabel(o.bossName,publicBossCode(o)))+(publicBossCode(o)?'<br><small>'+esc(publicBossCode(o))+'</small>':'')+'</td><td>'+esc(o.companionName)+'</td><td>'+esc(o.game||'-')+'</td><td>'+money(o.totalAmount)+'</td><td>'+statusCell+'</td><td>'+esc(o.createdAt||'-')+'</td><td><div class="cs-actions">'+actions.join('')+'</div></td></tr>'}
+  function orderRow(o){var actions=[];var proofBlock=(o.paymentReview&&o.paymentProofUrl&&!/^proof:/i.test(String(o.paymentProofUrl||'')))?('<div class="cs-proof-preview" style="margin:6px 0"><a href="'+esc(o.paymentProofUrl)+'" target="_blank" rel="noopener"><img src="'+esc(o.paymentProofUrl)+'" alt="付款凭证" style="max-width:120px;max-height:120px;border-radius:8px;object-fit:cover;border:1px solid rgba(255,255,255,.15)"></a></div>'):'';if(o.status==='awaiting_payment'){if(o.paymentReview){actions.push('<button class="cs-btn primary" data-confirm-payment="'+esc(o.id)+'">确认收款并派单</button>');actions.push('<button class="cs-btn" data-reject-payment-proof="'+esc(o.id)+'">驳回付款</button>')}else if(!o.companionId)actions.push('<button class="cs-btn primary" data-confirm-payment="'+esc(o.id)+'" data-send-hall="1">发送到抢单大厅</button>');else actions.push('<button class="cs-btn" data-confirm-payment="'+esc(o.id)+'">确认已付款</button>');}var bossLocked=!!(o.companionId&&(o.status==='claimed'||o.status==='confirmed'||o.status==='in_progress'));var bossMustPick=o.status==='waiting_boss_confirm'||(o.status==='pending'&&(o.grabCount||0)>0);if(o.needsReassign&&!bossLocked)actions.push('<button class="cs-btn primary" data-assign-order="'+esc(o.id)+'">更换陪玩</button>');else if(!bossLocked&&!bossMustPick&&(o.status==='pending'||o.status==='awaiting_payment'))actions.push('<button class="cs-btn" data-assign-order="'+esc(o.id)+'">指定陪玩</button>');else if(bossMustPick)actions.push('<span class="cs-note">等待老板选择陪玩</span>');else if(bossLocked)actions.push('<span class="cs-note">负责人陪玩已锁定</span>');if((o.grabCount||0)>0||o.status==='waiting_boss_confirm'||o.status==='pending')actions.push('<button class="cs-btn" data-view-grabs="'+esc(o.id)+'">查看抢单人('+(o.grabCount||0)+')</button>');if(o.status==='in_progress')actions.push('<button class="cs-btn primary" data-complete-order="'+esc(o.id)+'">结单</button>');actions.push('<button class="cs-btn" data-status-order="'+esc(o.id)+'">改状态</button>');actions.push('<button class="cs-btn" data-route="/customer-service/compensation" type="button">申请补偿</button>');if(o.status==='refund_requested'||o.needsReassign)actions.push('<button class="cs-btn" data-refund-order="'+esc(o.id)+'">'+(o.needsReassign?'发起退款':'处理退款')+'</button>');var statusCell=esc(o.paymentReview?'付款待审核':o.statusText)+(o.needsReassign?'<br><small style="color:#f59e0b">'+(esc(o.reassignHint||'待重新安排'))+'</small>':'')+(o.acceptedAt&&o.status==='confirmed'?'<br><small>确认：'+esc(o.acceptedAt)+'</small>':'')+('<br><small>抢单 '+(o.grabCount||0)+' 人</small>')+(o.preferredCompanionId?'<br><small style="color:#60a5fa">老板意向已提交</small>':'')+proofBlock;return '<tr'+(o.needsReassign?' style="background:rgba(245,158,11,.08)"':'')+'><td>'+esc(o.orderNo)+'</td><td>'+esc(sanitizeBossLabel(o.bossName,publicBossCode(o)))+(publicBossCode(o)?'<br><small>'+esc(publicBossCode(o))+'</small>':'')+'</td><td>'+esc(o.companionName)+'</td><td>'+esc(o.game||'-')+'</td><td>'+money(o.totalAmount)+'</td><td>'+statusCell+'</td><td>'+esc(o.createdAt||'-')+'</td><td><div class="cs-actions">'+actions.join('')+'</div></td></tr>'}
   function createOrderHtml(){
     var bosses=(state.data&&state.data.bosses)||[];
     var companions=(state.data&&state.data.companions)||[];
@@ -3137,11 +3165,10 @@
         '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">'+
         '<a class="cs-btn" href="'+esc(c.detailUrl||('/profile.html?player='+encodeURIComponent(c.id||'')))+'" target="_blank" rel="noopener">查看详情</a>'+
         '<button class="cs-btn" type="button" data-push-to-boss="'+esc(id)+'" data-companion-id="'+esc(g.companionId||c.id||'')+'">推送给老板</button>'+
-        '<button class="cs-btn primary" type="button" data-confirm-assign="'+esc(id)+'" data-companion-id="'+esc(g.companionId||c.id||'')+'">确认指定</button>'+
         '</div></div></div></article>';
     }
     var grabBlock=grabs.length
-      ?('<div><h4 style="margin:0 0 8px">已抢单陪玩（'+grabs.length+'）</h4>'+grabs.map(grabCard).join('')+'</div>')
+      ?('<div><h4 style="margin:0 0 8px">已抢单陪玩（'+grabs.length+'）</h4><p class="cs-note">公开抢单由老板选择陪玩，客服可推送名片，不可代选。</p>'+grabs.map(grabCard).join('')+'</div>')
       :'<p class="cs-composer-hint">暂无抢单记录。可先刷新，或从下方全量列表指定（开放抢单订单建议只从抢单人中选）。</p>';
     var cs=(state.data&&state.data.companions)||[];
     var optsList=cs.length?cs.map(function(p){return '<option value="'+esc(p.id)+'">'+esc(p.name)+(p.companionCode||p.publicId?(' / '+(p.companionCode||p.publicId)):'')+' / '+esc(p.game||'-')+'</option>'}).join(''):'<option value="">暂无陪玩，请手动输入 UID</option>';
@@ -3234,25 +3261,7 @@
     }
     var confirmAssign=e.target.closest('[data-confirm-assign]');
     if(confirmAssign){
-      if(state.assignBusy)return;
-      var cid=confirmAssign.getAttribute('data-companion-id')||'';
-      var oid=confirmAssign.getAttribute('data-confirm-assign')||'';
-      if(!cid||!oid)return;
-      if(!confirm('确定指定该陪玩？\n\n指定后，其他抢单陪玩将无法再接此订单。'))return;
-      state.assignBusy=true;
-      confirmAssign.disabled=true;
-      confirmAssign.textContent='指定中…';
-      Promise.reject({message:'公开抢单请由老板选择陪玩，客服不可代选'}).then(function(res){
-        toast(res.message||'指定成功');
-        var modalEl=confirmAssign.closest('.cs-modal');if(modalEl)modalEl.remove();
-        state.assignBusy=false;
-        return softRefresh();
-      }).catch(function(err){
-        state.assignBusy=false;
-        confirmAssign.disabled=false;
-        confirmAssign.textContent='确认指定';
-        toast(err.message||'指定失败');
-      });
+      toast('公开抢单请由老板选择陪玩，客服可推送名片，不可代选。');
       return;
     }
     var a=e.target.closest('[data-do-assign]');if(a){

@@ -1968,9 +1968,12 @@
     var level=(state.data&&state.data.levelInfo)||{};
     var media=(state.data&&state.data.media)||[];
     var avatarMedia=media.filter(function(m){return m.mediaType==='avatar'})[0];
+    var coverMedia=media.filter(function(m){return m.mediaType==='cover'})[0]||media.filter(function(m){return m.mediaType==='gallery'&&Number(m.sortOrder||0)===1})[0];
     var gallery=media.filter(function(m){return m.mediaType==='gallery'}).slice().sort(function(a,b){return (a.sortOrder||0)-(b.sortOrder||0)});
     var avatarUrl=avatarMedia&&avatarMedia.url?avatarMedia.url:(p.hasCustomAvatar?p.avatar:'');
+    var coverUrl=(coverMedia&&coverMedia.url)||p.coverUrl||p.cardImageUrl||raw.card_image_url||'';
     var displayAvatar=avatarUrl||'/default-avatar.png';
+    var displayCover=coverUrl||displayAvatar;
     var gender=draft&&draft.gender!=null&&draft.gender!==''?String(draft.gender):String(raw.gender||'');
     var gameId=draft&&draft.game_id!=null?String(draft.game_id):(p.gameId||raw.game_id||'');
     var nickname=draft&&draft.nickname!=null?String(draft.nickname):(p.name||'');
@@ -2073,6 +2076,18 @@
       '</div></div>'+
       '<p class="pw-field-hint">支持 jpg / png / webp，单张不超过 5MB。</p>'+
       fieldErr('avatar')+
+      '</div>'+
+      '<div class="pw-field pw-upload-block" data-field="cover">'+
+      fieldLabel('卡面封面',false)+
+      '<div class="pw-avatar-upload">'+
+      '<img class="pw-avatar-preview" src="'+esc(displayCover)+'" alt="封面预览" data-cover-preview style="border-radius:12px">'+
+      '<div class="pw-upload-actions">'+
+      '<label class="pw-btn pw-file-btn'+(uploadBusy==='cover'?' is-busy':'')+'" data-pw-upload-trigger="cover">'+
+      (uploadBusy==='cover'?'上传中…':'上传封面')+
+      '<input type="file" class="pw-file-input" accept="image/jpeg,image/jpg,image/png,image/webp,image/*" data-upload-cover '+(uploadBusy?'disabled':'')+'>'+
+      '</label>'+
+      '</div></div>'+
+      '<p class="pw-field-hint">用于陪玩大厅与详情页卡面；支持 jpg / png / webp。</p>'+
       '</div>'+
       '<div class="pw-two-col">'+
       '<div class="pw-field">'+fieldLabel('昵称',true)+'<input name="nickname" value="'+esc(nickname)+'" placeholder="例如：1717大王" autocomplete="nickname">'+fieldErr('nickname')+'</div>'+
@@ -3041,7 +3056,7 @@
     if(!isPwTouchUpload())return;
     var host=e.target.closest('[data-pw-upload-trigger]');
     if(!host||host.classList.contains('is-busy'))return;
-    var input=host.querySelector('[data-upload-avatar],[data-upload-gallery],[data-upload-doc],[data-upload-voice]');
+    var input=host.querySelector('[data-upload-avatar],[data-upload-cover],[data-upload-gallery],[data-upload-doc],[data-upload-voice]');
     if(!input||input.disabled)return;
     if(input.hasAttribute('data-upload-voice'))return; // audio: native picker
     e.preventDefault();
@@ -3051,6 +3066,7 @@
       var accept=input.getAttribute('accept')||'image/jpeg,image/jpg,image/png,image/webp,image/*';
       triggerPwHiddenPick(accept,!!opts.capture,function(file){
         if(input.hasAttribute('data-upload-avatar'))uploadImage('avatar',file);
+        else if(input.hasAttribute('data-upload-cover'))uploadImage('cover',file);
         else if(input.hasAttribute('data-upload-gallery'))uploadImage('gallery',file);
         else if(input.hasAttribute('data-upload-doc'))uploadPrivateDoc(input.getAttribute('data-upload-doc')||'',file);
       });
@@ -3085,6 +3101,8 @@
     }
     var avatarInput=e.target.closest('[data-upload-avatar]');
     if(avatarInput&&avatarInput.files&&avatarInput.files[0]){uploadImage('avatar',avatarInput.files[0]);avatarInput.value='';return}
+    var coverInput=e.target.closest('[data-upload-cover]');
+    if(coverInput&&coverInput.files&&coverInput.files[0]){uploadImage('cover',coverInput.files[0]);coverInput.value='';return}
     var galleryInput=e.target.closest('[data-upload-gallery]');
     if(galleryInput&&galleryInput.files&&galleryInput.files[0]){uploadImage('gallery',galleryInput.files[0]);galleryInput.value='';return}
     var voiceInput=e.target.closest('[data-upload-voice]');

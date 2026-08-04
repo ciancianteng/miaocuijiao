@@ -33,7 +33,7 @@ import {
   publicDisplayName,
   resolveCompanionPublicCode,
 } from "../_account-codes.js";
-import { exportCsv as exportPaymentReceiptsCsv, listPaidForAdmin } from "../_payment-receipts.js";
+import { exportCsv as exportPaymentReceiptsCsv, listPaidForAdmin, listPendingForAdmin, approveAndLedger, rejectProof } from "../_payment-receipts.js";
 
 const FINANCE_BUCKET = "finance-receipts";
 const FINANCE_ROLES = new Set(["admin", "super_admin", "finance_admin"]);
@@ -504,7 +504,7 @@ export default async function handler(req, res) {
 
     if (req.method === "GET" && action === "bootstrap") {
       const refundApi = await import("../_boss-refund-payout.js");
-      const [withdrawalsRaw, payrollsRaw, paymentsRaw, receiptsRaw, logsRaw, cfg, refundsList, paymentReceipts] = await Promise.all([
+      const [withdrawalsRaw, payrollsRaw, paymentsRaw, receiptsRaw, logsRaw, cfg, refundsList, paymentReceipts, pendingPaymentProofs] = await Promise.all([
         companionDb("companion_withdrawals", "?order=submitted_at.desc&limit=300").catch((e) => (isMissingRelation(e) ? [] : Promise.reject(e))),
         companionDb("staff_payrolls", "?order=created_at.desc&limit=300").catch((e) => (isMissingRelation(e) ? [] : Promise.reject(e))),
         companionDb("finance_payments", "?order=created_at.desc&limit=300").catch((e) => (isMissingRelation(e) ? [] : Promise.reject(e))),
@@ -513,6 +513,7 @@ export default async function handler(req, res) {
         settings(),
         refundApi.listBossRefunds(companionDb, { limit: 300 }).catch(() => []),
         listPaidForAdmin().catch(() => []),
+        listPendingForAdmin().catch(() => []),
       ]);
       const withdrawals = (Array.isArray(withdrawalsRaw) ? withdrawalsRaw : []).filter((r) => resolveRowId(r));
       const payrolls = Array.isArray(payrollsRaw) ? payrollsRaw : [];
@@ -648,6 +649,22 @@ export default async function handler(req, res) {
           id: row.id, orderId: row.order_id, receiptNo: row.receipt?.receipt_no || "",
           amount: money(row.net_amount), paymentMethod: row.payment_method || "",
           confirmedAt: row.confirmed_at || "", proofPath: row.receipt?.storage_path || "",
+          proofUrl: row.proofUrl || "", status: "approved", statusText: "已付款",
+        })),
+        pendingPaymentProofs: (pendingPaymentProofs || []).map((row) => ({
+          id: row.id,
+          receiptId: row.id,
+          receiptNo: row.receipt_no || "",
+          orderId: row.order_id || "",
+          orderNo: row.orderNo || row.order?.order_no || row.order_id || "",
+          bossId: row.boss_id || row.order?.boss_id || "",
+          companionId: row.order?.companion_id || "",
+          amount: money(row.amount),
+          paymentMethod: row.payment_method || row.order?.payment_method || "",
+          uploadedAt: row.uploaded_at || row.created_at || "",
+          proofUrl: row.proofUrl || "",
+          status: "pending",
+          statusText: "待审核",
         })),
         statusMaps: { withdraw: WITHDRAW_STATUS, payroll: PAYROLL_STATUS },
       });
@@ -670,6 +687,96 @@ export default async function handler(req, res) {
         ok: true, rows,
         csv: action === "export_payment_receipts" ? exportPaymentReceiptsCsv(rows) : undefined,
         formats: action === "export_payment_receipts" ? ["csv", "xlsx_via_csv"] : undefined,
+      });
+    }
+
+    if (action === "approve_payment_proof" || action === "reject_payment_proof") {
+      const orderId = String(body.orderId || body.order_id || body.id || "").trim();
+      const receiptId = String(body.receiptId || body.receipt_id || "").trim();
+      if (!orderId && !receiptId) return json(res, 400, { ok: false, message: "缺少订单或凭证 ID。" });
+      const pending = await listPendingForAdmin();
+      const receipt =
+        (pending || []).find((row) => (receiptId && row.id === receiptId) || (orderId && row.order_id === orderId)) || null;
+      if (!receipt) return json(res, 404, { ok: false, message: "未找到待审核付款凭证。" });
+      const orderRows = await companionDb("orders", `?id=eq.${encodeURIComponent(receipt.order_id)}&limit=1`).catch(() => []);
+      const order = orderRows?.[0];
+      if (!order) return json(res, 404, { ok: false, message: "订单不存在。" });
+      if (order.status !== "awaiting_payment") {
+        return json(res, 409, { ok: false, message: "当前订单不在付款审核中。" });
+      }
+      if (action === "reject_payment_proof") {
+        const reason = String(body.reason || body.reject_reason || "").trim();
+        if (!reason) return json(res, 400, { ok: false, message: "请填写驳回付款原因。" });
+        await rejectProof({ receipt, reviewerId: adminProfile.id, reason });
+        const nextNote = String(order.note || "").replace(/\n?\[\[PAYMENT_PROOF\]\][^\n]*/g, "").trim();
+        await companionDb("orders", `?id=eq.${encodeURIComponent(order.id)}`, {
+          method: "PATCH",
+          body: JSON.stringify({ note: nextNote }),
+        }).catch(() => null);
+        await writeAdminLog({
+          module: "finance",
+          action,
+          targetType: "payment_receipt",
+          targetId: receipt.id,
+          operatorId: adminProfile.id,
+          operatorRole: adminRole,
+          reason,
+          after: { orderId: order.id, status: "rejected" },
+        }).catch(() => null);
+        return json(res, 200, { ok: true, message: "已驳回付款凭证，老板可重新上传。" });
+      }
+      await approveAndLedger({ order, receipt, reviewerId: adminProfile.id });
+      const next = order.companion_id ? "claimed" : "pending";
+      const basePatch = {
+        status: next,
+        assignment_type: order.companion_id ? "assigned" : "public",
+        order_type: order.companion_id ? order.order_type || "direct_companion" : order.order_type || "open_grab",
+        companion_id: order.companion_id || null,
+        paid_at: nowIso(),
+        updated_at: nowIso(),
+      };
+      let patched = null;
+      try {
+        patched = (
+          await companionDb("orders", `?id=eq.${encodeURIComponent(order.id)}&status=eq.awaiting_payment`, {
+            method: "PATCH",
+            body: JSON.stringify(basePatch),
+          })
+        )?.[0];
+      } catch (err) {
+        if (/paid_at|assignment_type|order_type|PGRST204|schema cache|column/i.test(String(err?.message || err))) {
+          patched = (
+            await companionDb("orders", `?id=eq.${encodeURIComponent(order.id)}&status=eq.awaiting_payment`, {
+              method: "PATCH",
+              body: JSON.stringify({
+                status: next,
+                companion_id: order.companion_id || null,
+                updated_at: nowIso(),
+              }),
+            })
+          )?.[0];
+        } else {
+          throw err;
+        }
+      }
+      if (!patched || patched.status === "awaiting_payment") {
+        return json(res, 409, { ok: false, message: "订单状态已变更，请刷新后重试。" });
+      }
+      await writeAdminLog({
+        module: "finance",
+        action,
+        targetType: "payment_receipt",
+        targetId: receipt.id,
+        operatorId: adminProfile.id,
+        operatorRole: adminRole,
+        reason: "admin approved manual payment proof",
+        after: { orderId: order.id, nextStatus: next },
+      }).catch(() => null);
+      return json(res, 200, {
+        ok: true,
+        message: order.companion_id ? "已审核通过，订单进入待陪玩确认。" : "已审核通过，订单已进入抢单大厅。",
+        orderId: order.id,
+        status: next,
       });
     }
 
