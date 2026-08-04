@@ -16,3 +16,7 @@ dist/
 screenshots/
 ADMIN_KEEP_FEATURE_INVENTORY.md
 BUTTON_AUDIT.md
+
+# Local / poisoned Vercel build artifacts — never commit
+.vercel/
+.vercel/**

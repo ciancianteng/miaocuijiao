@@ -1,18 +1,150 @@
 {
-  "error": "companion submit failed: missing ) after argument list",
-  "log": [
+  "base": "https://meow-cuijiao-homepage-staging.vercel.app",
+  "at": "2026-08-04T08:32:04.686Z",
+  "expectedSettlement": "2026-08-07",
+  "checks": [
     {
-      "expectedSettlement": "2026-08-07",
-      "BASE": "https://meow-cuijiao-homepage-staging.vercel.app"
+      "id": "env",
+      "name": "Staging + Supabase config resolved",
+      "pass": true,
+      "detail": "https://meow-cuijiao-homepage-staging.vercel.app"
     },
     {
-      "companionId": "c776e811-6003-48a4-8f11-ed9eb1b70898"
+      "id": "auth_boss",
+      "name": "Login boss",
+      "pass": true,
+      "detail": "boss@meow.test"
     },
     {
-      "companion_submit": {
-        "ok": false,
-        "message": "missing ) after argument list"
-      }
+      "id": "auth_companion",
+      "name": "Login companion",
+      "pass": true,
+      "detail": "companion@meow.test"
+    },
+    {
+      "id": "auth_cs",
+      "name": "Login cs",
+      "pass": true,
+      "detail": "service@meow.test"
+    },
+    {
+      "id": "auth_admin",
+      "name": "Login admin",
+      "pass": true,
+      "detail": "admin@meow.test"
+    },
+    {
+      "id": "1_admin_friday_center",
+      "name": "Admin bootstrap exposes Friday settlement summary + tabs data",
+      "pass": true,
+      "detail": "{\"thisFriday\":\"2026-08-07\",\"pendingRefunds\":0,\"pendingCompanion\":0,\"pendingCs\":0,\"refundPendingRm\":0,\"refundPaidRm\":0}"
+    },
+    {
+      "id": "1b_batch_panel",
+      "name": "Current settlement batch panel available (MCJ-PAYOUT…)",
+      "pass": true,
+      "detail": "2026-08-07"
+    },
+    {
+      "id": "2_boss_finance_denied",
+      "name": "Boss cannot access admin finance API",
+      "pass": true,
+      "detail": "http=403 msg=没有后台管理权限。"
+    },
+    {
+      "id": "3_companion_finance_denied",
+      "name": "Companion cannot access admin finance API",
+      "pass": true,
+      "detail": "http=403"
+    },
+    {
+      "id": "4_cs_finance_denied",
+      "name": "CS cannot access admin finance API",
+      "pass": true,
+      "detail": "http=403"
+    },
+    {
+      "id": "5_boss_list_refunds",
+      "name": "Boss list_my_refunds works",
+      "pass": true,
+      "detail": "count=0"
+    },
+    {
+      "id": "5b_boss_orders",
+      "name": "Boss can list orders",
+      "pass": true,
+      "detail": "count=0"
+    },
+    {
+      "id": "6_boss_request_refund",
+      "name": "Boss request_refund enqueues Friday path",
+      "pass": false,
+      "detail": "no eligible order on staging for boss"
+    },
+    {
+      "id": "6b_no_instant_wallet",
+      "name": "No instant wallet on request",
+      "pass": true,
+      "detail": "skipped — no eligible order"
+    },
+    {
+      "id": "7_cs_approve_friday_queue",
+      "name": "CS approve Friday queue",
+      "pass": false,
+      "detail": "skipped — no eligible order"
+    },
+    {
+      "id": "7b_admin_sees_refund",
+      "name": "Admin sees refund",
+      "pass": false,
+      "detail": "skipped"
+    },
+    {
+      "id": "8_add_refund_batch",
+      "name": "Add refund to batch",
+      "pass": false,
+      "detail": "skipped"
+    },
+    {
+      "id": "9_no_receipt_blocked",
+      "name": "No-receipt blocked",
+      "pass": false,
+      "detail": "skipped"
+    },
+    {
+      "id": "9b_mark_refund_paid",
+      "name": "Mark refund paid",
+      "pass": false,
+      "detail": "skipped"
+    },
+    {
+      "id": "9c_mark_refund_idempotent",
+      "name": "Idempotent mark paid",
+      "pass": false,
+      "detail": "skipped"
+    },
+    {
+      "id": "10_export_csv",
+      "name": "Export settlement CSV available",
+      "pass": true,
+      "detail": "file=MeowCuiJiao_Settlement_2026_08 count=4"
+    },
+    {
+      "id": "comp_bootstrap",
+      "name": "Companion bootstrap works",
+      "pass": false,
+      "detail": "未知陪玩端操作"
+    },
+    {
+      "id": "cs_bootstrap",
+      "name": "CS bootstrap works",
+      "pass": true,
+      "detail": ""
     }
-  ]
+  ],
+  "summary": {
+    "passed": 15,
+    "failed": 8,
+    "total": 23
+  }
 }

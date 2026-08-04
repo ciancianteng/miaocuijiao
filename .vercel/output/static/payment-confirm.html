@@ -1,43 +1,0 @@
-<!doctype html>
-<html lang="zh-CN">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>支付确认 | MEOW CUI JIAO</title>
-  <style>
-    .pay-shell{width:min(720px,calc(100% - 32px));margin:0 auto;padding:28px 0 80px}
-    .pay-card{border:1px solid rgba(255,255,255,.1);border-radius:18px;background:rgba(255,255,255,.045);padding:22px}
-    .pay-card h1{margin:0 0 8px;font-size:26px}
-    .pay-card p{margin:0;color:#9ca3af}
-    .pay-grid{display:grid;gap:10px;margin-top:18px}
-    .pay-row{border:1px solid rgba(255,255,255,.08);border-radius:12px;background:rgba(0,0,0,.18);padding:12px;display:flex;justify-content:space-between;gap:12px}
-    .pay-row span{color:#9ca3af;font-size:13px}.pay-row strong{color:#fff;word-break:break-word;text-align:right}
-    .pay-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:18px}
-    .pay-btn{border:1px solid rgba(255,255,255,.22);border-radius:12px;background:rgba(255,255,255,.1);color:#fff;padding:10px 14px;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;font-weight:700;min-height:44px}
-    .pay-btn.primary{border-color:rgba(255,143,197,.65);background:rgba(255,143,197,.28);color:#fff}
-    .pay-btn:disabled,.pay-btn.is-disabled{opacity:.55;cursor:not-allowed;pointer-events:none}
-    .pay-alert{margin-top:14px;color:#ffb9d6;font-weight:600}
-    .pay-status-box{margin-top:14px;border:1px solid rgba(255,143,197,.35);border-radius:12px;background:rgba(255,143,197,.12);padding:12px 14px}
-    .pay-status-box strong{display:block;color:#ffd6e7;font-size:15px}
-    .pay-status-box p{margin:6px 0 0;color:#f3e6ee;font-size:13px;line-height:1.5}
-    .pay-hint{margin:10px 0 0;color:#ffd6e7;font-size:13px;line-height:1.5}
-    .pay-sync{margin-top:8px;color:#9ca3af;font-size:12px}
-    .pay-skel{display:grid;gap:10px;margin:16px 0}
-    .pay-skel-line{height:14px;border-radius:8px;background:linear-gradient(90deg,rgba(255,255,255,.06),rgba(255,255,255,.14),rgba(255,255,255,.06));background-size:200% 100%;animation:payShimmer 1.2s linear infinite}
-    .pay-skel-line.short{width:55%}
-    @keyframes payShimmer{0%{background-position:100% 0}100%{background-position:-100% 0}}
-    @media(max-width:560px){.pay-actions{display:grid}.pay-btn{width:100%;justify-content:center}}
-  </style>
-  <script type="module" crossorigin src="/assets/payment-confirm-CvmLFpSM.js"></script>
-  <link rel="modulepreload" crossorigin href="/assets/currency-CfMUYzq0.js">
-  <link rel="modulepreload" crossorigin href="/assets/modulepreload-polyfill-Dezn_h7o.js">
-  <link rel="modulepreload" crossorigin href="/assets/role-gates-BpI1sUYK.js">
-  <link rel="modulepreload" crossorigin href="/assets/boss-header-Dy23I39Y.js">
-  <link rel="stylesheet" crossorigin href="/assets/style-CU5EgNCP.css">
-  <link rel="stylesheet" crossorigin href="/assets/boss-header-DuK7QfHV.css">
-</head>
-<body style="background:#08070a;color:#fff">
-  <header class="topbar"><a class="brand" href="index.html"><span>MEOW CUI JIAO</span></a><nav class="boss-nav"><a href="index.html">首页</a><a href="companion-center.html">陪玩大厅</a><a href="orders.html">我的订单</a></nav></header>
-  <main class="pay-shell" id="paymentConfirmApp"><section class="pay-card"><h1>支付确认</h1><p>正在读取订单…</p></section></main>
-</body>
-</html>

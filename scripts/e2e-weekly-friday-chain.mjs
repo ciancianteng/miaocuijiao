@@ -38,9 +38,9 @@ loadEnvFile();
 
 const PASS = process.env.MCJ_TEST_PASSWORD || "McjTest@12345678";
 const ACCOUNTS = {
-  boss: process.env.E2E_BOSS_EMAIL || "boss@meow.test",
-  companion: process.env.E2E_COMPANION_EMAIL || "companion@meow.test",
-  cs: process.env.E2E_CS_EMAIL || "service@meow.test",
+  boss: process.env.E2E_BOSS_EMAIL || "boss.final.1785714993009@meow.test",
+  companion: process.env.E2E_COMPANION_EMAIL || "companion.final.1785714993009@meow.test",
+  cs: process.env.E2E_CS_EMAIL || "service.final.1785714993009@meow.test",
   admin: process.env.E2E_ADMIN_EMAIL || "admin@meow.test",
 };
 
@@ -334,12 +334,14 @@ async function main() {
 
   // Companion withdraw / CS payroll smoke (pending_friday messaging)
   if (tokens.companion) {
-    const bootC = await api(tokens.companion, "/api/companion", "bootstrap", {});
+    const bootC = await fetchJson(`${API_BASE}/api/companion?action=bootstrap`, {
+      headers: { Authorization: `Bearer ${tokens.companion}`, Accept: "application/json" },
+    });
     check(
       "comp_bootstrap",
       "Companion bootstrap works",
       bootC.ok === true,
-      bootC.message || ""
+      bootC.message || `http=${bootC.http}`
     );
   }
   if (tokens.cs) {
