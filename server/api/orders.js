@@ -681,10 +681,32 @@ export default async function handler(req, res) {
     const profile = await profileFromToken(req);
     if (req.method === "GET") {
       const orders = await loadOrders(profile, String(req.query.id || ""));
+      let refundByOrder = {};
+      try {
+        const refundApi = await import("./_boss-refund-payout.js");
+        const refunds = await refundApi.listBossRefunds(companionDb, { bossId: profile.id, limit: 200 });
+        for (const r of refunds || []) {
+          if (r.orderId && !refundByOrder[r.orderId]) refundByOrder[r.orderId] = r;
+        }
+      } catch {
+        refundByOrder = {};
+      }
+      const enriched = (orders || []).map((o) => {
+        const r = refundByOrder[o.id];
+        if (!r) return o;
+        return {
+          ...o,
+          fridayRefundStatus: r.status,
+          fridayRefundStatusText: r.statusText,
+          fridaySettlementDate: r.settlementDate || "",
+          fridayRefundAmountRm: r.amountRm,
+          fridayRefundNo: r.refundNo,
+        };
+      });
       return json(res, 200, {
         ok: true,
         configured: true,
-        orders,
+        orders: enriched,
         statusText: STATUS_TEXT,
         identity: profile._identity || null,
         allowTestPay: allowPreviewTestPay({

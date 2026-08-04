@@ -272,7 +272,12 @@
           }
           html+='</div>';
         }else if(o.status==='refund_requested'||o.status==='refunded'){
-          html='<div class="status-panel"><p>售后类型：退款申请 / 投诉 / 补单</p><p>处理进度：'+esc(o.status==='refunded'?'已处理':'客服处理中')+'</p><p>客服回复：请在在线客服中查看最新回复。</p></div>';
+          var refundHint=o.status==='refunded'
+            ?'退款已完成（周五银行打款到账）'
+            :'客服审核中 / 待周五统一退款（不会即时到账）';
+          if(o.fridayRefundStatusText)refundHint=o.fridayRefundStatusText;
+          if(o.fridaySettlementDate)refundHint+=' · 预计 '+String(o.fridaySettlementDate).slice(0,10)+'（周五）';
+          html='<div class="status-panel"><p>售后类型：退款申请</p><p>处理进度：'+esc(refundHint)+'</p><p>客服回复：请在在线客服中查看最新回复。批准后进入周五结算批次，管理员打款并上传凭证后才会到账。</p></div>';
         }else if(o.status==='cancelled'){
           html='<div class="status-panel"><p>取消原因：'+esc(o.cancelReason||o.cancel_reason||'订单已取消')+'</p><p>取消时间：'+esc(date(o.cancelledAt||o.cancelled_at))+'</p></div>';
         }else{

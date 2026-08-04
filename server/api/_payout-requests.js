@@ -41,7 +41,27 @@ export async function loadFinanceWeeklySettings(db) {
   }
 }
 
+function normalizePayoutType(raw, fallback = "other") {
+  const v = String(raw || "").trim().toLowerCase();
+  if (v === "boss_refund" || v === "refund") return "boss_refund";
+  if (v === "companion_wage" || v === "withdraw" || v === "companion") return "companion_wage";
+  if (v === "cs_wage" || v === "payroll" || v === "customer_service") return "cs_wage";
+  return fallback;
+}
+
 export async function upsertPayoutRequest(db, payload = {}) {
+  const meta = { ...(payload.meta || {}) };
+  const payoutType = normalizePayoutType(
+    payload.payoutType || payload.payout_type || meta.payout_type,
+    payload.applicantType === "boss"
+      ? "boss_refund"
+      : payload.applicantType === "companion"
+        ? "companion_wage"
+        : payload.applicantType === "customer_service"
+          ? "cs_wage"
+          : "other"
+  );
+  meta.payout_type = payoutType;
   const body = {
     payout_no: payload.payoutNo || payload.payout_no || no("PO"),
     applicant_type: payload.applicantType || payload.applicant_type,
@@ -64,10 +84,13 @@ export async function upsertPayoutRequest(db, payload = {}) {
     submitted_at: payload.submittedAt || payload.submitted_at || nowIso(),
     related_table: payload.relatedTable || payload.related_table || "",
     related_record_id: payload.relatedRecordId || payload.related_record_id || null,
-    meta: payload.meta || {},
+    batch_id: payload.batchId || payload.batch_id || null,
+    payout_type: payoutType,
+    meta,
     created_at: nowIso(),
     updated_at: nowIso(),
   };
+  if (!body.batch_id) delete body.batch_id;
   try {
     const rows = await db("payout_requests", "", {
       method: "POST",

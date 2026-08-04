@@ -563,6 +563,7 @@ export default async function handler(req, res) {
         return m;
       }, {});
       const friKey = String(viewWeeklyRules(cfg).thisFriday || "").slice(0, 10);
+      const currentBatch = await refundApi.getCurrentBatchPanel(companionDb, friKey).catch(() => null);
       const settlementSummary = {
         thisFriday: friKey,
         pendingRefunds: bossRefunds.filter((r) =>
@@ -578,12 +579,18 @@ export default async function handler(req, res) {
           .filter((r) => /approved_for_payout|included_in_batch|processing|carried_forward/i.test(String(r.status)))
           .reduce((n, r) => n + money(r.amountRm), 0),
         refundPaidRm: bossRefunds.filter((r) => r.status === "paid").reduce((n, r) => n + money(r.paidAmountRm || r.amountRm), 0),
+        batchCode: currentBatch?.batchCode || "",
+        batchPaidCount: currentBatch?.paidCount || 0,
+        batchFailedCount: currentBatch?.failedCount || 0,
+        batchPendingAmountRm: currentBatch?.pendingAmountRm || 0,
+        batchPaidAmountRm: currentBatch?.paidAmountRm || 0,
       };
       return json(res, 200, {
         ok: true,
         settings: cfg,
         weeklyRules: viewWeeklyRules(cfg),
         settlementSummary,
+        currentBatch,
         bossRefunds,
         withdrawals: withdrawals.map((r) =>
           viewWithdraw(r, profiles[r.companion_id], accounts[r.payment_account_id], profiles, companionCodes[r.companion_id])
@@ -2076,6 +2083,7 @@ export default async function handler(req, res) {
       }
       const year = String(body.year || "").trim();
       const month = String(body.month || "").trim();
+      const week = String(body.week || body.weekNumber || "").trim();
       const type = String(body.type || body.payoutType || "all").trim();
       const refundApi = await import("../_boss-refund-payout.js");
       const [refunds, withdrawals, payrolls] = await Promise.all([
@@ -2083,17 +2091,30 @@ export default async function handler(req, res) {
         companionDb("companion_withdrawals", "?order=submitted_at.desc&limit=2000").catch(() => []),
         companionDb("staff_payrolls", "?order=created_at.desc&limit=2000").catch(() => []),
       ]);
-      const inMonth = (iso) => {
-        const s = String(iso || "").slice(0, 7);
-        if (year && month) return s === `${year}-${String(month).padStart(2, "0")}`;
-        if (year) return s.startsWith(year);
+      const { isoWeekParts } = await import("../_weekly-settlement.js");
+      const matchPeriod = (iso) => {
+        const s = String(iso || "").slice(0, 10);
+        if (year && month) {
+          const ym = `${year}-${String(month).padStart(2, "0")}`;
+          if (!s.startsWith(ym)) return false;
+        } else if (year && !s.startsWith(year)) {
+          return false;
+        }
+        if (week) {
+          try {
+            const { weekNumber } = isoWeekParts(s || `${year}-01-01`);
+            if (String(weekNumber) !== String(Number(week))) return false;
+          } catch {
+            return true;
+          }
+        }
         return true;
       };
       const rows = [];
       if (type === "all" || type === "boss_refund" || type === "refund") {
         for (const r of refunds || []) {
           if (r.status !== "paid") continue;
-          if (!inMonth(r.paidAt || r.createdAt)) continue;
+          if (!matchPeriod(r.paidAt || r.createdAt)) continue;
           rows.push({
             type: "老板退款",
             payoutNo: r.refundNo,
@@ -2110,7 +2131,7 @@ export default async function handler(req, res) {
       if (type === "all" || type === "companion_wage" || type === "withdraw") {
         for (const r of withdrawals || []) {
           if (!/paid|completed/i.test(String(r.status))) continue;
-          if (!inMonth(r.paid_at || r.completed_at || r.submitted_at)) continue;
+          if (!matchPeriod(r.paid_at || r.completed_at || r.submitted_at)) continue;
           rows.push({
             type: "陪玩工资",
             payoutNo: r.withdrawal_no,
@@ -2127,7 +2148,7 @@ export default async function handler(req, res) {
       if (type === "all" || type === "cs_wage" || type === "payroll") {
         for (const r of payrolls || []) {
           if (!/paid|completed/i.test(String(r.status))) continue;
-          if (!inMonth(r.paid_at || r.completed_at || r.created_at)) continue;
+          if (!matchPeriod(r.paid_at || r.completed_at || r.created_at)) continue;
           rows.push({
             type: "客服工资",
             payoutNo: r.payroll_no,
@@ -2143,7 +2164,7 @@ export default async function handler(req, res) {
       }
       const totalRm = rows.reduce((n, r) => n + money(r.amountRm), 0);
       const ym = year && month ? `${year}_${String(month).padStart(2, "0")}` : year || "ALL";
-      const fileBase = `MeowCuiJiao_Settlement_${ym}`;
+      const fileBase = `MeowCuiJiao_Settlement_${ym}${week ? `_W${week}` : ""}`;
       const csv =
         "类型,结算编号,用户编号,用户姓名,金额RM,状态,打款时间,银行参考号,明细\n" +
         rows
@@ -2163,6 +2184,112 @@ export default async function handler(req, res) {
         // PDF 导出延后至 V1.1；本轮仅 CSV/Excel（CSV 内容可被 Excel 打开）
         formats: ["csv", "xlsx_via_csv"],
       });
+    }
+
+    if (action === "mark_refund_processing") {
+      if (!canConfirmPay(adminProfile)) {
+        return json(res, 403, { ok: false, message: "仅财务管理员可操作" });
+      }
+      const refundApi = await import("../_boss-refund-payout.js");
+      const result = await refundApi.markRefundProcessing(companionDb, String(body.id || body.refundId || ""));
+      if (!result.ok) return json(res, 400, result);
+      return json(res, 200, result);
+    }
+
+    if (action === "mark_refund_failed") {
+      if (!canConfirmPay(adminProfile)) {
+        return json(res, 403, { ok: false, message: "仅财务管理员可操作" });
+      }
+      const refundApi = await import("../_boss-refund-payout.js");
+      const result = await refundApi.markRefundFailed(
+        companionDb,
+        String(body.id || body.refundId || ""),
+        String(body.reason || "打款失败")
+      );
+      if (!result.ok) return json(res, 400, result);
+      return json(res, 200, result);
+    }
+
+    if (action === "add_withdraw_to_batch" || action === "add_companion_wage_to_batch") {
+      if (!canConfirmPay(adminProfile)) {
+        return json(res, 403, { ok: false, message: "仅财务管理员可操作批次" });
+      }
+      const refundApi = await import("../_boss-refund-payout.js");
+      const result = await refundApi.addWageToBatch(companionDb, {
+        kind: "companion_wage",
+        id: String(body.id || body.withdrawalId || ""),
+      });
+      if (!result.ok) return json(res, 400, result);
+      return json(res, 200, result);
+    }
+
+    if (action === "add_payroll_to_batch" || action === "add_cs_wage_to_batch") {
+      if (!canConfirmPay(adminProfile)) {
+        return json(res, 403, { ok: false, message: "仅财务管理员可操作批次" });
+      }
+      const refundApi = await import("../_boss-refund-payout.js");
+      const result = await refundApi.addWageToBatch(companionDb, {
+        kind: "cs_wage",
+        id: String(body.id || body.payrollId || ""),
+      });
+      if (!result.ok) return json(res, 400, result);
+      return json(res, 200, result);
+    }
+
+    if (action === "rollover_withdraw" || action === "move_withdraw_next_week") {
+      if (!canConfirmPay(adminProfile)) {
+        return json(res, 403, { ok: false, message: "仅财务管理员可顺延" });
+      }
+      const refundApi = await import("../_boss-refund-payout.js");
+      const result = await refundApi.rolloverWageToNextWeek(companionDb, {
+        kind: "companion_wage",
+        id: String(body.id || body.withdrawalId || ""),
+        reason: String(body.reason || "移至下周结算"),
+      });
+      if (!result.ok) return json(res, 400, result);
+      return json(res, 200, result);
+    }
+
+    if (action === "rollover_payroll" || action === "move_payroll_next_week") {
+      if (!canConfirmPay(adminProfile)) {
+        return json(res, 403, { ok: false, message: "仅财务管理员可顺延" });
+      }
+      const refundApi = await import("../_boss-refund-payout.js");
+      const result = await refundApi.rolloverWageToNextWeek(companionDb, {
+        kind: "cs_wage",
+        id: String(body.id || body.payrollId || ""),
+        reason: String(body.reason || "移至下周结算"),
+      });
+      if (!result.ok) return json(res, 400, result);
+      return json(res, 200, result);
+    }
+
+    if (action === "mark_withdraw_failed") {
+      if (!canConfirmPay(adminProfile)) {
+        return json(res, 403, { ok: false, message: "仅财务管理员可操作" });
+      }
+      const refundApi = await import("../_boss-refund-payout.js");
+      const result = await refundApi.markWageFailed(companionDb, {
+        kind: "companion_wage",
+        id: String(body.id || body.withdrawalId || ""),
+        reason: String(body.reason || "打款失败"),
+      });
+      if (!result.ok) return json(res, 400, result);
+      return json(res, 200, result);
+    }
+
+    if (action === "mark_payroll_failed") {
+      if (!canConfirmPay(adminProfile)) {
+        return json(res, 403, { ok: false, message: "仅财务管理员可操作" });
+      }
+      const refundApi = await import("../_boss-refund-payout.js");
+      const result = await refundApi.markWageFailed(companionDb, {
+        kind: "cs_wage",
+        id: String(body.id || body.payrollId || ""),
+        reason: String(body.reason || "打款失败"),
+      });
+      if (!result.ok) return json(res, 400, result);
+      return json(res, 200, result);
     }
 
     return json(res, 400, { ok: false, message: "未知财务操作" });

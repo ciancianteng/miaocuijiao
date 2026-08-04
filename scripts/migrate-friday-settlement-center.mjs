@@ -7,6 +7,7 @@ import pg from "pg";
 
 const ROOT = path.resolve(process.cwd());
 const FILES = [
+  "20260804_weekly_friday_payout.sql",
   "20260804_cs_commission_settlements.sql",
   "20260804_finance_payout_complete.sql",
   "20260804_friday_settlement_center.sql",

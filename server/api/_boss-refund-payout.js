@@ -207,6 +207,7 @@ export async function csSuggestRefund(db, {
     currency: "MYR",
     settlementDate,
     status: "pending_friday",
+    payoutType: "boss_refund",
     relatedTable: "boss_refund_requests",
     relatedRecordId: saved.id,
     sourceOrderIds: [saved.order_id],
@@ -259,6 +260,51 @@ export async function ensureSettlementBatch(db, settlementFriday) {
   }
 }
 
+export async function refreshBatchTotals(db, batchId) {
+  if (!batchId) return null;
+  try {
+    const [refunds, withdrawals, payrolls] = await Promise.all([
+      db("boss_refund_requests", `?batch_id=eq.${encodeURIComponent(batchId)}&select=id,amount_rm,paid_amount_rm,status&limit=2000`).catch(() => []),
+      db("companion_withdrawals", `?batch_id=eq.${encodeURIComponent(batchId)}&select=id,net_amount_rm,status&limit=2000`).catch(() => []),
+      db("staff_payrolls", `?batch_id=eq.${encodeURIComponent(batchId)}&select=id,net_salary_rm,status&limit=2000`).catch(() => []),
+    ]);
+    const refundRows = refunds || [];
+    const wdRows = withdrawals || [];
+    const payRows = payrolls || [];
+    const refundTotal = refundRows.reduce((n, r) => n + money(r.amount_rm), 0);
+    const companionTotal = wdRows.reduce((n, r) => n + money(r.net_amount_rm), 0);
+    const csTotal = payRows.reduce((n, r) => n + money(r.net_salary_rm), 0);
+    const all = [
+      ...refundRows.map((r) => ({ status: r.status, paid: money(r.paid_amount_rm || r.amount_rm), amount: money(r.amount_rm) })),
+      ...wdRows.map((r) => ({ status: r.status, paid: money(r.net_amount_rm), amount: money(r.net_amount_rm) })),
+      ...payRows.map((r) => ({ status: r.status, paid: money(r.net_salary_rm), amount: money(r.net_salary_rm) })),
+    ];
+    const paidItems = all.filter((r) => /^(paid|completed)$/i.test(String(r.status)));
+    const failedItems = all.filter((r) => /failed|pay_failed/i.test(String(r.status)));
+    const pendingItems = all.filter((r) => !/^(paid|completed|rejected|cancelled)$/i.test(String(r.status)));
+    const patch = {
+      refund_total_rm: refundTotal,
+      companion_wage_total_rm: companionTotal,
+      cs_wage_total_rm: csTotal,
+      total_count: all.length,
+      paid_count: paidItems.length,
+      failed_count: failedItems.length,
+      pending_amount_rm: pendingItems.reduce((n, r) => n + money(r.amount), 0),
+      paid_amount_rm: paidItems.reduce((n, r) => n + money(r.paid), 0),
+      updated_at: nowIso(),
+    };
+    const updated = await db("settlement_batches", `?id=eq.${encodeURIComponent(batchId)}`, {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    });
+    return updated?.[0] || { id: batchId, ...patch };
+  } catch (e) {
+    if (isMissing(e)) return null;
+    console.warn("[friday-batch] refreshBatchTotals:", e?.message || e);
+    return null;
+  }
+}
+
 export async function addRefundToBatch(db, refundId) {
   const rows = await db("boss_refund_requests", `?id=eq.${encodeURIComponent(refundId)}&limit=1`);
   const row = rows?.[0];
@@ -266,7 +312,10 @@ export async function addRefundToBatch(db, refundId) {
   if (!/approved_for_payout|carried_forward|failed/i.test(String(row.status))) {
     return { ok: false, message: "仅待周五退款/顺延/失败记录可加入批次。" };
   }
-  if (row.batch_id) return { ok: true, message: "已在批次中", refund: viewBossRefund(row), duplicate: true };
+  if (row.batch_id) {
+    await refreshBatchTotals(db, row.batch_id);
+    return { ok: true, message: "已在批次中", refund: viewBossRefund(row), duplicate: true };
+  }
   const batch = await ensureSettlementBatch(db, row.settlement_date);
   if (!batch?.id) return { ok: false, message: "无法创建结算批次" };
   const patched = await db("boss_refund_requests", `?id=eq.${encodeURIComponent(refundId)}`, {
@@ -277,15 +326,19 @@ export async function addRefundToBatch(db, refundId) {
       updated_at: nowIso(),
     }),
   });
-  if (row.payout_request_id) {
-    await syncPayoutRequestStatus(db, {
-      relatedTable: "boss_refund_requests",
-      relatedRecordId: refundId,
-      status: "pending_payment",
-      patch: { batch_id: batch.id },
-    });
-  }
-  return { ok: true, batch, refund: viewBossRefund(patched?.[0] || { ...row, status: "included_in_batch", batch_id: batch.id }) };
+  await syncPayoutRequestStatus(db, {
+    relatedTable: "boss_refund_requests",
+    relatedRecordId: refundId,
+    status: "pending_payment",
+    patch: { batch_id: batch.id, payout_type: "boss_refund" },
+  });
+  const refreshed = await refreshBatchTotals(db, batch.id);
+  return {
+    ok: true,
+    message: "已加入本周批次",
+    batch: refreshed || batch,
+    refund: viewBossRefund(patched?.[0] || { ...row, status: "included_in_batch", batch_id: batch.id }),
+  };
 }
 
 export async function rolloverRefundToNextWeek(db, refundId, reason = "周五未完成打款，顺延下周") {
@@ -295,6 +348,7 @@ export async function rolloverRefundToNextWeek(db, refundId, reason = "周五未
   if (/paid|rejected|cancelled/i.test(String(row.status))) {
     return { ok: false, message: "已完成/驳回记录不可顺延。" };
   }
+  const prevBatchId = row.batch_id || null;
   const next = nextSettlementFriday(row.settlement_date || computeSettlementDate(new Date(), {}));
   const patched = await db("boss_refund_requests", `?id=eq.${encodeURIComponent(refundId)}`, {
     method: "PATCH",
@@ -312,7 +366,185 @@ export async function rolloverRefundToNextWeek(db, refundId, reason = "周五未
     status: "rolled_over",
     patch: { settlement_date: next, batch_id: null },
   });
+  if (prevBatchId) await refreshBatchTotals(db, prevBatchId);
   return { ok: true, refund: viewBossRefund(patched?.[0]), message: `已顺延至 ${next}` };
+}
+
+export async function markRefundProcessing(db, refundId) {
+  const rows = await db("boss_refund_requests", `?id=eq.${encodeURIComponent(refundId)}&limit=1`);
+  const row = rows?.[0];
+  if (!row) return { ok: false, message: "记录不存在" };
+  if (!/approved_for_payout|included_in_batch|carried_forward|failed/i.test(String(row.status))) {
+    return { ok: false, message: "当前状态不可标记处理中" };
+  }
+  let batchId = row.batch_id;
+  if (!batchId) {
+    const batch = await ensureSettlementBatch(db, row.settlement_date);
+    batchId = batch?.id || null;
+  }
+  const patched = await db("boss_refund_requests", `?id=eq.${encodeURIComponent(refundId)}`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      status: "processing",
+      batch_id: batchId,
+      updated_at: nowIso(),
+    }),
+  });
+  await syncPayoutRequestStatus(db, {
+    relatedTable: "boss_refund_requests",
+    relatedRecordId: refundId,
+    status: "processing",
+    patch: batchId ? { batch_id: batchId } : {},
+  });
+  if (batchId) await refreshBatchTotals(db, batchId);
+  return { ok: true, message: "已标记处理中", refund: viewBossRefund(patched?.[0] || { ...row, status: "processing" }) };
+}
+
+export async function markRefundFailed(db, refundId, reason = "打款失败") {
+  const rows = await db("boss_refund_requests", `?id=eq.${encodeURIComponent(refundId)}&limit=1`);
+  const row = rows?.[0];
+  if (!row) return { ok: false, message: "记录不存在" };
+  if (/paid|rejected|cancelled/i.test(String(row.status))) {
+    return { ok: false, message: "已完成/驳回记录不可标记失败" };
+  }
+  const note = String(reason || "打款失败").trim() || "打款失败";
+  const patched = await db("boss_refund_requests", `?id=eq.${encodeURIComponent(refundId)}`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      status: "failed",
+      fail_reason: note,
+      updated_at: nowIso(),
+    }),
+  });
+  await syncPayoutRequestStatus(db, {
+    relatedTable: "boss_refund_requests",
+    relatedRecordId: refundId,
+    status: "failed",
+    patch: { fail_reason: note },
+  });
+  if (row.batch_id) await refreshBatchTotals(db, row.batch_id);
+  try {
+    const { notifyBoss } = await import("./_wallet.js");
+    await notifyBoss(
+      row.boss_id,
+      "退款打款失败",
+      `订单 ${row.order_no || ""} 退款打款失败：${note}。可联系客服或等待重新入队。`,
+      "refund",
+      row.id
+    );
+  } catch {
+    /* optional */
+  }
+  return { ok: true, message: "已标记打款失败", refund: viewBossRefund(patched?.[0] || { ...row, status: "failed" }) };
+}
+
+const WAGE_TABLE = {
+  companion_wage: {
+    table: "companion_withdrawals",
+    amountCol: "net_amount_rm",
+    open: /pending_friday|submitted|reviewing|approved|pending_payment|rolled_over|failed/i,
+    payoutType: "companion_wage",
+  },
+  cs_wage: {
+    table: "staff_payrolls",
+    amountCol: "net_salary_rm",
+    open: /pending_friday|submitted|reviewing|approved|pending_payment|rolled_over|failed|draft|pending_review/i,
+    payoutType: "cs_wage",
+  },
+};
+
+export async function addWageToBatch(db, { kind, id } = {}) {
+  const cfg = WAGE_TABLE[kind === "cs_wage" || kind === "payroll" ? "cs_wage" : "companion_wage"];
+  const rows = await db(cfg.table, `?id=eq.${encodeURIComponent(id)}&limit=1`);
+  const row = rows?.[0];
+  if (!row) return { ok: false, message: "记录不存在" };
+  if (!cfg.open.test(String(row.status || ""))) {
+    return { ok: false, message: "当前状态不可加入本周批次" };
+  }
+  if (row.batch_id) {
+    await refreshBatchTotals(db, row.batch_id);
+    return { ok: true, message: "已在批次中", item: row, duplicate: true };
+  }
+  const settlementDate = row.settlement_date || computeSettlementDate(new Date(), {});
+  const batch = await ensureSettlementBatch(db, settlementDate);
+  if (!batch?.id) return { ok: false, message: "无法创建结算批次" };
+  const patched = await db(cfg.table, `?id=eq.${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      status: "pending_payment",
+      batch_id: batch.id,
+      settlement_date: settlementDate,
+      updated_at: nowIso(),
+    }),
+  });
+  await syncPayoutRequestStatus(db, {
+    relatedTable: cfg.table,
+    relatedRecordId: id,
+    status: "pending_payment",
+    patch: { batch_id: batch.id, payout_type: cfg.payoutType },
+  });
+  const refreshed = await refreshBatchTotals(db, batch.id);
+  return {
+    ok: true,
+    message: "已加入本周批次",
+    batch: refreshed || batch,
+    item: patched?.[0] || { ...row, batch_id: batch.id, status: "pending_payment" },
+  };
+}
+
+export async function rolloverWageToNextWeek(db, { kind, id, reason = "周五未完成打款，顺延下周" } = {}) {
+  const cfg = WAGE_TABLE[kind === "cs_wage" || kind === "payroll" ? "cs_wage" : "companion_wage"];
+  const rows = await db(cfg.table, `?id=eq.${encodeURIComponent(id)}&limit=1`);
+  const row = rows?.[0];
+  if (!row) return { ok: false, message: "记录不存在" };
+  if (/paid|completed|rejected|cancelled/i.test(String(row.status || ""))) {
+    return { ok: false, message: "已完成/驳回记录不可顺延" };
+  }
+  const prevBatchId = row.batch_id || null;
+  const next = nextSettlementFriday(row.settlement_date || computeSettlementDate(new Date(), {}));
+  const patched = await db(cfg.table, `?id=eq.${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      status: "rolled_over",
+      settlement_date: next,
+      batch_id: null,
+      updated_at: nowIso(),
+    }),
+  });
+  await syncPayoutRequestStatus(db, {
+    relatedTable: cfg.table,
+    relatedRecordId: id,
+    status: "rolled_over",
+    patch: { settlement_date: next, batch_id: null },
+  });
+  if (prevBatchId) await refreshBatchTotals(db, prevBatchId);
+  return { ok: true, message: `已顺延至 ${next}`, item: patched?.[0] || row, reason };
+}
+
+export async function markWageFailed(db, { kind, id, reason = "打款失败" } = {}) {
+  const cfg = WAGE_TABLE[kind === "cs_wage" || kind === "payroll" ? "cs_wage" : "companion_wage"];
+  const rows = await db(cfg.table, `?id=eq.${encodeURIComponent(id)}&limit=1`);
+  const row = rows?.[0];
+  if (!row) return { ok: false, message: "记录不存在" };
+  if (/paid|completed|rejected|cancelled/i.test(String(row.status || ""))) {
+    return { ok: false, message: "已完成/驳回记录不可标记失败" };
+  }
+  const note = String(reason || "打款失败").trim() || "打款失败";
+  const patched = await db(cfg.table, `?id=eq.${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      status: "failed",
+      updated_at: nowIso(),
+    }),
+  });
+  await syncPayoutRequestStatus(db, {
+    relatedTable: cfg.table,
+    relatedRecordId: id,
+    status: "failed",
+    patch: { fail_reason: note },
+  });
+  if (row.batch_id) await refreshBatchTotals(db, row.batch_id);
+  return { ok: true, message: "已标记打款失败", item: patched?.[0] || { ...row, status: "failed" }, reason: note };
 }
 
 /**
@@ -421,6 +653,31 @@ export async function completeBossRefundPayout(db, {
     } catch (e) {
       console.warn("[friday-refund] order status:", e?.message || e);
     }
+    // Net revenue: increase refunded_amount only after bank payout confirmed
+    try {
+      const txs = await db(
+        "payment_transactions",
+        `?order_id=eq.${encodeURIComponent(saved.order_id)}&select=id,gross_amount,refunded_amount,net_amount&limit=1`
+      );
+      const tx = txs?.[0];
+      if (tx?.id) {
+        const refunded = Math.min(money(tx.gross_amount), money(tx.refunded_amount) + amount);
+        const net = Math.max(0, money(tx.gross_amount) - refunded);
+        await db("payment_transactions", `?id=eq.${encodeURIComponent(tx.id)}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            refunded_amount: refunded,
+            net_amount: net,
+          }),
+        });
+      }
+    } catch (e) {
+      console.warn("[friday-refund] payment_transactions net:", e?.message || e);
+    }
+  }
+
+  if (saved.batch_id || row.batch_id) {
+    await refreshBatchTotals(db, saved.batch_id || row.batch_id);
   }
 
   // Notify boss
@@ -448,10 +705,6 @@ export async function completeBossRefundPayout(db, {
 export async function listBossRefunds(db, { bossId, status, limit = 100 } = {}) {
   try {
     let q = `?order=created_at.desc&limit=${Number(limit) || 100}`;
-    if (bossId) q = `?boss_id=eq.${encodeURIComponent(bossId)}&order=created_at.desc&limit=${Number(limit) || 100}`;
-    if (status) q += (q.includes("?") ? "&" : "?") + `status=eq.${encodeURIComponent(status)}`;
-    // fix double ?
-    q = q.replace(/\?([^?]*)&status/, "?status").replace(/^&/, "?");
     if (bossId && status) {
       q = `?boss_id=eq.${encodeURIComponent(bossId)}&status=eq.${encodeURIComponent(status)}&order=created_at.desc&limit=${Number(limit) || 100}`;
     } else if (bossId) {
@@ -465,4 +718,26 @@ export async function listBossRefunds(db, { bossId, status, limit = 100 } = {}) 
     if (isMissing(e)) return [];
     throw e;
   }
+}
+
+export async function getCurrentBatchPanel(db, settlementFriday) {
+  const friday = String(settlementFriday || computeSettlementDate(new Date(), {})).slice(0, 10);
+  const batch = await ensureSettlementBatch(db, friday);
+  if (!batch?.id) return null;
+  const refreshed = (await refreshBatchTotals(db, batch.id)) || batch;
+  return {
+    id: refreshed.id || batch.id,
+    batchCode: refreshed.batch_code || batch.batch_code || buildBatchCode(friday),
+    weekStart: refreshed.week_start || batch.week_start,
+    weekEnd: refreshed.week_end || batch.week_end,
+    status: refreshed.status || batch.status,
+    refundTotalRm: money(refreshed.refund_total_rm),
+    companionWageTotalRm: money(refreshed.companion_wage_total_rm),
+    csWageTotalRm: money(refreshed.cs_wage_total_rm),
+    totalCount: Number(refreshed.total_count || 0),
+    paidCount: Number(refreshed.paid_count || 0),
+    failedCount: Number(refreshed.failed_count || 0),
+    pendingAmountRm: money(refreshed.pending_amount_rm),
+    paidAmountRm: money(refreshed.paid_amount_rm),
+  };
 }

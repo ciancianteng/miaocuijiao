@@ -1736,6 +1736,7 @@
     var available=e.available!=null?e.available:e.withdrawable;
     return (!perm.canWithdraw&&perm.withdrawLockReason?'<div class="pw-empty" style="margin-bottom:12px"><strong>暂不可提现</strong><span>'+esc(perm.withdrawLockReason)+'</span></div>':'')+
       '<div class="pw-empty" style="margin-bottom:12px"><strong>每周五统一发放</strong><span>'+esc((rules.weeklyBanner&&rules.weeklyBanner.bannerBody)||rules.settlementHint||'周四 23:59 前提交 → 本周五发放；截止后提交 → 下周五发放。')+'</span></div>'+
+      '<div class="pw-empty" style="margin-bottom:12px"><strong>退款冲减</strong><span>若订单进入待周五退款队列，相关收入会被冲减或锁定，暂不可提现；已入批次未打款将重算，已打款后退款记入下期负向调整。</span></div>'+
       '<form class="pw-card pad pw-form" data-withdraw-form novalidate>'+
       '<div class="pw-info-list" style="margin-bottom:14px">'+
       infoRow('可提现余额',money(num(available)))+

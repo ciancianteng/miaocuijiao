@@ -3297,6 +3297,22 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         });
       }
 
+      // Block CS payroll while this CS owns open Friday refund queues (commission may still claw)
+      try {
+        const openRefunds = await companionDb(
+          "boss_refund_requests",
+          `?assigned_cs_id=eq.${encodeURIComponent(service.profile.id)}&status=in.(pending_review,approved_for_payout,included_in_batch,processing,carried_forward)&select=id&limit=5`
+        ).catch(() => []);
+        if ((openRefunds || []).length) {
+          return json(res, 400, {
+            ok: false,
+            message: "你名下仍有待周五退款的订单，相关提成可能冲减中。请等待退款打款完成或冲减落账后再申请工资。",
+          });
+        }
+      } catch {
+        /* keep apply path available if refund table missing */
+      }
+
       const draft = await workApi.payrollDraftFromAttendance(service.profile.id);
       const weeklyCfg = await loadFinanceWeeklySettings(companionDb).catch(() => mergeWeeklySettings({}));
       const settlementDate = computeSettlementDate(new Date(), weeklyCfg);
@@ -3425,9 +3441,10 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         sourceLedgerIds: [periodKey],
         settlementDate,
         status: "pending_friday",
+        payoutType: "cs_wage",
         relatedTable: "staff_payrolls",
         relatedRecordId: item.id,
-        meta: wageBreakdown,
+        meta: { payout_type: "cs_wage", ...wageBreakdown },
       });
 
       try {

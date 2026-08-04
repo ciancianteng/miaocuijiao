@@ -4423,7 +4423,7 @@ export default async function handler(req, res) {
       }
 
       // Block withdraw while companion has orders in Friday refund queue / open refund
-      try {
+      {
         const openRefunds = await companionDb(
           "boss_refund_requests",
           `?status=in.(pending_review,approved_for_payout,included_in_batch,processing,carried_forward)&select=id,order_id,status&limit=200`
@@ -4442,8 +4442,6 @@ export default async function handler(req, res) {
             });
           }
         }
-      } catch {
-        /* soft */
       }
 
       const weeklyCfg = await loadFinanceWeeklySettings(companionDb).catch(() => mergeWeeklySettings({}));
@@ -4569,9 +4567,10 @@ export default async function handler(req, res) {
         sourceLedgerIds,
         settlementDate,
         status: "pending_friday",
+        payoutType: "companion_wage",
         relatedTable: "companion_withdrawals",
         relatedRecordId: item.id,
-        meta: { catFoodAmount: amount, grossRm: gross, feeRm: fee },
+        meta: { payout_type: "companion_wage", catFoodAmount: amount, grossRm: gross, feeRm: fee },
       });
 
       try {

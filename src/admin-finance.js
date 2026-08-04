@@ -16,6 +16,7 @@
     settings: {},
     weeklyRules: {},
     settlementSummary: {},
+    currentBatch: null,
     filterUid: "",
     filterMonth: "",
   };
@@ -95,11 +96,14 @@
   function fridayBannerHtml() {
     var rules = state.weeklyRules || {};
     var sum = state.settlementSummary || {};
+    var batch = state.currentBatch || {};
     return (
       '<div class="admin-sync-note">' +
       "周结：周四 23:59（Asia/Kuala_Lumpur）前 → 本周五发放；截止后 → 下周五。人工银行转账后须上传打款凭证。退款/陪玩工资/客服工资统一周五批次。" +
       "<br>本周五 " +
       esc(rules.thisFriday || sum.thisFriday || "-") +
+      " · 批次 " +
+      esc(batch.batchCode || sum.batchCode || "-") +
       " · 待退款 " +
       esc(sum.pendingRefunds || 0) +
       " · 待陪玩 " +
@@ -108,6 +112,12 @@
       esc(sum.pendingCs || 0) +
       " · 待退款额 RM " +
       esc(sum.refundPendingRm || 0) +
+      " · 已打款 " +
+      esc(batch.paidCount || sum.batchPaidCount || 0) +
+      " · 失败 " +
+      esc(batch.failedCount || sum.batchFailedCount || 0) +
+      " · 实付总额 RM " +
+      esc(batch.paidAmountRm || sum.batchPaidAmountRm || 0) +
       ' <button class="mini-btn" type="button" data-fin-export-settle>导出本月结算 CSV</button>' +
       "</div>"
     );
@@ -126,11 +136,21 @@
             esc(r.id) +
             '">移至下周</button> ';
         }
+        if (/approved_for_payout|included_in_batch|carried_forward|failed/i.test(String(r.status || ""))) {
+          actions +=
+            '<button class="mini-btn" type="button" data-fin-refund-processing="' +
+            esc(r.id) +
+            '">标记处理中</button> ';
+        }
         if (/approved_for_payout|included_in_batch|processing|failed|carried_forward/i.test(String(r.status || ""))) {
           actions +=
             '<button class="mini-btn primary-lite" type="button" data-fin-refund-paid="' +
             esc(r.id) +
-            '">上传凭证/打款完成</button>';
+            '">上传凭证/打款完成</button> ';
+          actions +=
+            '<button class="mini-btn" type="button" data-fin-refund-fail="' +
+            esc(r.id) +
+            '">打款失败</button>';
         }
         return (
           "<tr><td>" +
@@ -191,19 +211,26 @@
           (w.status === "pending_review" ||
           w.status === "pending_friday" ||
           w.status === "submitted" ||
-          w.status === "rolled_over"
+          w.status === "rolled_over" ||
+          w.status === "failed"
             ? '<button class="mini-btn primary-lite" type="button" data-fin-approve-wd="' +
               esc(w.id) +
               '">通过</button> <button class="mini-btn" type="button" data-fin-reject-wd="' +
               esc(w.id) +
-              '">拒绝</button>'
+              '">拒绝</button> <button class="mini-btn" type="button" data-fin-wd-batch="' +
+              esc(w.id) +
+              '">加入本周批次</button> <button class="mini-btn" type="button" data-fin-wd-next="' +
+              esc(w.id) +
+              '">移至下周</button>'
             : "") +
-          (/approved_pending_pay|paying|paid_pending_receipt|pending_payment|approved|paid/.test(String(w.status || ""))
+          (/approved_pending_pay|paying|paid_pending_receipt|pending_payment|approved|paid|failed/.test(String(w.status || ""))
             ? ' <button class="mini-btn primary-lite" type="button" data-fin-paid-wd="' +
               esc(w.id) +
               '">打款完成</button> <button class="mini-btn" type="button" data-fin-reject-wd="' +
               esc(w.id) +
-              '">拒绝</button>'
+              '">拒绝</button> <button class="mini-btn" type="button" data-fin-wd-fail="' +
+              esc(w.id) +
+              '">打款失败</button>'
             : "") +
           (w.paymentAccountId
             ? ' <button class="mini-btn" type="button" data-fin-reveal="' + esc(w.paymentAccountId) + '">查看账号</button>'
@@ -213,7 +240,7 @@
       })
       .join("");
     return (
-      '<div class="admin-sync-note">陪玩提现与客服工资分开管理。审核通过后进入待付款，必须上传收据后才能完成。</div>' +
+      '<div class="admin-sync-note">陪玩提现进入周五批次；审核通过后须上传收据才能完成。无凭证不可标记完成。</div>' +
       '<div class="table-wrap"><table><thead><tr><th>提现单号</th><th>陪玩</th><th>提现猫粮</th><th>应付 RM</th><th>银行账户</th><th>状态</th><th>提交时间</th><th>操作</th></tr></thead><tbody>' +
       (rows || '<tr><td colspan="8">暂无提现申请</td></tr>') +
       "</tbody></table></div>"
@@ -244,15 +271,25 @@
           "</td><td>" +
           esc(p.statusText) +
           "</td><td>" +
-          (/draft|pending_review/.test(p.status)
-            ? '<button class="mini-btn primary-lite" type="button" data-fin-approve-pay="' + esc(p.id) + '">审核通过</button>'
-            : "-") +
+          (/draft|pending_review|pending_friday|submitted|rolled_over|failed/.test(String(p.status || ""))
+            ? '<button class="mini-btn primary-lite" type="button" data-fin-approve-pay="' +
+              esc(p.id) +
+              '">审核通过</button> <button class="mini-btn" type="button" data-fin-pay-batch="' +
+              esc(p.id) +
+              '">加入本周批次</button> <button class="mini-btn" type="button" data-fin-pay-next="' +
+              esc(p.id) +
+              '">移至下周</button> <button class="mini-btn" type="button" data-fin-pay-fail="' +
+              esc(p.id) +
+              '">打款失败</button>'
+            : /pending_payment|approved|paying/.test(String(p.status || ""))
+              ? '<button class="mini-btn" type="button" data-fin-pay-fail="' + esc(p.id) + '">打款失败</button>'
+              : "-") +
           "</td></tr>"
         );
       })
       .join("");
     return (
-      '<div class="admin-section-head compact" style="margin-bottom:10px"><div><p>工资金额由系统/管理员计算确认，客服不能自行填写应付工资。</p></div><button class="mini-btn primary-lite" type="button" data-fin-create-payroll>创建工资单</button></div>' +
+      '<div class="admin-section-head compact" style="margin-bottom:10px"><div><p>客服工资按工资中心实时计算入周五批次；打款完成须上传凭证。</p></div><button class="mini-btn primary-lite" type="button" data-fin-create-payroll>创建工资单</button></div>' +
       '<div class="table-wrap"><table><thead><tr><th>工资单号</th><th>客服</th><th>工资周期</th><th>基础工资</th><th>奖金</th><th>扣款</th><th>实付 RM</th><th>状态</th><th>操作</th></tr></thead><tbody>' +
       (rows || '<tr><td colspan="9">暂无工资单</td></tr>') +
       "</tbody></table></div>"
@@ -438,6 +475,7 @@
         state.settings = res.settings || {};
         state.weeklyRules = res.weeklyRules || {};
         state.settlementSummary = res.settlementSummary || {};
+        state.currentBatch = res.currentBatch || null;
         state.loading = false;
         paint();
       })
@@ -745,6 +783,110 @@
     var refundPaid = e.target.closest("[data-fin-refund-paid]");
     if (refundPaid) {
       openBossRefundPaidUploader(refundPaid.dataset.finRefundPaid);
+      return;
+    }
+    var refundProcessing = e.target.closest("[data-fin-refund-processing]");
+    if (refundProcessing) {
+      post("mark_refund_processing", { id: refundProcessing.dataset.finRefundProcessing })
+        .then(function (res) {
+          state.message = res.message || "已标记处理中";
+          load();
+        })
+        .catch(function (err) {
+          alert(err.message);
+        });
+      return;
+    }
+    var refundFail = e.target.closest("[data-fin-refund-fail]");
+    if (refundFail) {
+      var failReason = prompt("打款失败原因", "银行打款失败");
+      if (!failReason) return;
+      post("mark_refund_failed", { id: refundFail.dataset.finRefundFail, reason: failReason })
+        .then(function (res) {
+          state.message = res.message || "已标记失败";
+          load();
+        })
+        .catch(function (err) {
+          alert(err.message);
+        });
+      return;
+    }
+    var wdBatch = e.target.closest("[data-fin-wd-batch]");
+    if (wdBatch) {
+      post("add_withdraw_to_batch", { id: wdBatch.dataset.finWdBatch })
+        .then(function (res) {
+          state.message = res.message || "已加入本周批次";
+          load();
+        })
+        .catch(function (err) {
+          alert(err.message);
+        });
+      return;
+    }
+    var wdNext = e.target.closest("[data-fin-wd-next]");
+    if (wdNext) {
+      if (!confirm("确认将该陪玩工资移至下周结算？")) return;
+      post("rollover_withdraw", { id: wdNext.dataset.finWdNext })
+        .then(function (res) {
+          state.message = res.message || "已顺延";
+          load();
+        })
+        .catch(function (err) {
+          alert(err.message);
+        });
+      return;
+    }
+    var wdFail = e.target.closest("[data-fin-wd-fail]");
+    if (wdFail) {
+      var wdFailReason = prompt("打款失败原因", "银行打款失败");
+      if (!wdFailReason) return;
+      post("mark_withdraw_failed", { id: wdFail.dataset.finWdFail, reason: wdFailReason })
+        .then(function (res) {
+          state.message = res.message || "已标记失败";
+          load();
+        })
+        .catch(function (err) {
+          alert(err.message);
+        });
+      return;
+    }
+    var payBatch = e.target.closest("[data-fin-pay-batch]");
+    if (payBatch) {
+      post("add_payroll_to_batch", { id: payBatch.dataset.finPayBatch })
+        .then(function (res) {
+          state.message = res.message || "已加入本周批次";
+          load();
+        })
+        .catch(function (err) {
+          alert(err.message);
+        });
+      return;
+    }
+    var payNext = e.target.closest("[data-fin-pay-next]");
+    if (payNext) {
+      if (!confirm("确认将该客服工资移至下周结算？")) return;
+      post("rollover_payroll", { id: payNext.dataset.finPayNext })
+        .then(function (res) {
+          state.message = res.message || "已顺延";
+          load();
+        })
+        .catch(function (err) {
+          alert(err.message);
+        });
+      return;
+    }
+    var payFail = e.target.closest("[data-fin-pay-fail]");
+    if (payFail) {
+      var payFailReason = prompt("打款失败原因", "银行打款失败");
+      if (!payFailReason) return;
+      post("mark_payroll_failed", { id: payFail.dataset.finPayFail, reason: payFailReason })
+        .then(function (res) {
+          state.message = res.message || "已标记失败";
+          load();
+        })
+        .catch(function (err) {
+          alert(err.message);
+        });
       return;
     }
     var exportSettle = e.target.closest("[data-fin-export-settle]");
