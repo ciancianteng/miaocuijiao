@@ -51,7 +51,7 @@ if (!host) {
 }
 
 console.log(`[deploy-staging] alias → ${FIXED_ALIAS}`);
-const alias = run("npx", ["vercel", "alias", "set", host, FIXED_ALIAS, "--yes"]);
+const alias = run("npx", ["vercel", "alias", "set", host, FIXED_ALIAS]);
 process.stdout.write(alias.stdout || "");
 if (alias.stderr) process.stderr.write(alias.stderr);
 if (alias.status !== 0) {
