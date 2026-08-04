@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { randomInt } from "node:crypto";
 import { formatBossCode, parseBossCodeNumber, resolveBossPublicCode } from "./_account-codes.js";
 import {
   decodeDataUrl,
@@ -8,6 +9,7 @@ import {
   publicObjectUrl,
   buildObjectPath,
 } from "./_companion-media-store.js";
+import { sendEmailOtp, sendSmsOtp, mailProviderStatus } from "./_mail.js";
 
 const VALID_ROLES = new Set(["boss", "companion", "customer_service", "admin", "super_admin"]);
 const TABLES = ["profiles", "companion_profiles", "orders", "conversations", "messages", "transactions", "banners", "announcements", "customer_service_reports"];
@@ -247,7 +249,7 @@ async function profileFor(userId) {
 }
 
 function randomOtpCode() {
-  return String(Math.floor(100000 + Math.random() * 900000));
+  return String(randomInt(100000, 1000000));
 }
 
 function maskPhoneHint(phone) {
@@ -264,13 +266,13 @@ function maskEmailHint(email) {
 }
 
 function allowStagingOtp() {
-  return (
-    String(process.env.ALLOW_STAGING_OTP || "") === "1" ||
-    String(process.env.MCJ_OTP_DEBUG || "") === "1" ||
-    /staging|vercel\.app|localhost/i.test(
-      String(process.env.VERCEL_URL || process.env.MCJ_PUBLIC_BASE || process.env.VERCEL_ENV || "")
-    )
-  );
+  if (String(process.env.ALLOW_STAGING_OTP || "") === "1" || String(process.env.MCJ_OTP_DEBUG || "") === "1") {
+    return true;
+  }
+  // Never expose OTP codes on production deployments.
+  if (String(process.env.VERCEL_ENV || "").toLowerCase() === "production") return false;
+  const base = String(process.env.MCJ_PUBLIC_BASE || process.env.VERCEL_URL || "");
+  return /staging|localhost|127\.0\.0\.1/i.test(base) || String(process.env.VERCEL_ENV || "").toLowerCase() === "preview";
 }
 
 function normalizeForgotRole(roleRaw) {
@@ -304,63 +306,14 @@ async function resolveForgotAccount(accountRaw, roleRaw) {
   const account = String(accountRaw || "").trim();
   if (!account) return null;
   const select = "id,email,phone,phone_e164,display_name,status,role,boss_uid";
-  const digits = account.replace(/\D/g, "");
-  const looksPhone =
-    !/@/.test(account) &&
-    digits.length >= 7 &&
-    (/^\+?\d[\d\s-]{6,}$/.test(account) || digits.length === account.replace(/^\+/, "").length);
 
-  if (looksPhone) {
-    const candidates = [...new Set([account, digits, digits.slice(-11), digits.slice(-10), normalizeE164(account)].filter(Boolean))];
-    for (const p of candidates) {
-      const exact = await profilesLookup(
-        `?${roleFilterSql(role)}&and=(or(phone.eq.${encodeURIComponent(p)},phone_e164.eq.${encodeURIComponent(p.startsWith("+") ? p : `+${p}`)}))&select=${select}&limit=3`
-      );
-      if (exact?.[0]?.id && profileMatchesRole(exact[0], role)) return { profile: exact[0], via: "phone", role };
-      // Fallback without nested and/or if PostgREST rejects complex filter
-      const byPhone = await profilesLookup(
-        `?phone=eq.${encodeURIComponent(p)}&select=${select}&limit=5`
-      );
-      const hitPhone = (byPhone || []).find((row) => profileMatchesRole(row, role));
-      if (hitPhone?.id) return { profile: hitPhone, via: "phone", role };
-      const e164 = p.startsWith("+") ? p : `+${p}`;
-      const byE164 = await profilesLookup(
-        `?phone_e164=eq.${encodeURIComponent(e164)}&select=${select}&limit=5`
-      );
-      const hitE164 = (byE164 || []).find((row) => profileMatchesRole(row, role));
-      if (hitE164?.id) return { profile: hitE164, via: "phone", role };
-    }
-    if (digits.length >= 10) {
-      const loose = await profilesLookup(
-        `?or=(phone.ilike.*${encodeURIComponent(digits.slice(-11))}*,phone_e164.ilike.*${encodeURIComponent(digits.slice(-11))}*)&select=${select}&limit=8`
-      );
-      const hit = (loose || []).find((row) => profileMatchesRole(row, role));
-      if (hit?.id) return { profile: hit, via: "phone", role };
-    }
-  }
-
+  // MVP: email is the auth recovery identity. Phone lookup is intentionally not used.
   if (/@/.test(account)) {
     const byEmail = await profilesLookup(
       `?email=eq.${encodeURIComponent(account.toLowerCase())}&select=${select}&limit=3`
     );
     const hit = (byEmail || []).find((row) => profileMatchesRole(row, role));
     if (hit?.id) return { profile: hit, via: "email", role };
-  }
-
-  if (role === "companion") {
-    const byUid = await supabaseJson(
-      restUrl("companion_profiles", `?companion_uid=eq.${encodeURIComponent(account)}&select=user_id&limit=1`),
-      { headers: headersWithServiceRole() }
-    ).catch(() => []);
-    const userId = byUid?.[0]?.user_id;
-    if (userId) {
-      const profile = await profileFor(userId);
-      if (profile && profileMatchesRole(profile, role)) return { profile, via: "companion_id", role };
-    }
-    const byName = await profilesLookup(
-      `?role=eq.companion&display_name=eq.${encodeURIComponent(account)}&select=${select}&limit=1`
-    );
-    if (byName?.[0]?.id) return { profile: byName[0], via: "display_name", role };
   }
 
   return null;
@@ -370,10 +323,17 @@ function forgotAccountKey(profile) {
   return String(profile?.id || profile?.email || "").trim().toLowerCase();
 }
 
-async function storeForgotOtp(accountKey, role, code) {
+function roleLabelOf(role) {
+  if (role === "companion") return "陪玩端";
+  if (role === "customer_service") return "客服端";
+  if (role === "admin" || role === "super_admin") return "后台";
+  return "老板端";
+}
+
+async function storeForgotOtp(accountKey, role, code, kind = "otp") {
   const id = `fpr_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
   const exp = Date.now() + 15 * 60 * 1000;
-  const status = `otp:${code}:exp:${exp}`;
+  const status = `${kind}:${code}:exp:${exp}`;
   try {
     await supabaseJson(restUrl("password_reset_requests"), {
       method: "POST",
@@ -388,28 +348,222 @@ async function storeForgotOtp(accountKey, role, code) {
     });
   } catch {
     globalThis.__mcjForgotResets = globalThis.__mcjForgotResets || new Map();
-    globalThis.__mcjForgotResets.set(`${role}:${accountKey}`, { id, code, exp });
+    globalThis.__mcjForgotResets.set(`${role}:${kind}:${accountKey}`, { id, code, exp, kind });
   }
   return { id, exp };
 }
 
-async function findForgotOtp(accountKey, role) {
+async function findForgotOtp(accountKey, role, kind = "otp") {
   const rows = await supabaseJson(
     restUrl(
       "password_reset_requests",
-      `?account=eq.${encodeURIComponent(accountKey)}&role=eq.${encodeURIComponent(role)}&order=created_at.desc&limit=5`
+      `?account=eq.${encodeURIComponent(accountKey)}&role=eq.${encodeURIComponent(role)}&order=created_at.desc&limit=8`
     ),
     { headers: headersWithServiceRole() }
   ).catch(() => []);
+  const otpRe = new RegExp(`^${kind}:(\\d{6}):exp:(\\d+)$`);
   for (const row of rows || []) {
-    const m = String(row.status || "").match(/^otp:(\d{6}):exp:(\d+)$/);
-    if (m) return { id: row.id, code: m[1], exp: Number(m[2]), row };
-    const v = String(row.status || "").match(/^verified:([A-Za-z0-9_-]+):exp:(\d+)$/);
-    if (v) return { id: row.id, verifiedToken: v[1], exp: Number(v[2]), row };
+    const m = String(row.status || "").match(otpRe);
+    if (m) return { id: row.id, code: m[1], exp: Number(m[2]), row, kind };
+    if (kind === "otp") {
+      const v = String(row.status || "").match(/^verified:([A-Za-z0-9_-]+):exp:(\d+)$/);
+      if (v) return { id: row.id, verifiedToken: v[1], exp: Number(v[2]), row, kind };
+    }
   }
-  const mem = globalThis.__mcjForgotResets?.get(`${role}:${accountKey}`);
-  if (mem) return mem;
+  const mem = globalThis.__mcjForgotResets?.get(`${role}:${kind}:${accountKey}`)
+    || globalThis.__mcjForgotResets?.get(`${role}:${accountKey}`);
+  if (mem && (!mem.kind || mem.kind === kind)) return mem;
   return null;
+}
+
+async function createSessionForUserId(userId, email) {
+  const link = await supabaseJson(authUrl("admin/generate_link"), {
+    method: "POST",
+    headers: headersWithServiceRole(),
+    body: JSON.stringify({
+      type: "magiclink",
+      email: String(email || "").trim().toLowerCase(),
+    }),
+  });
+  const hashed =
+    link?.hashed_token ||
+    link?.properties?.hashed_token ||
+    link?.email_otp_hash ||
+    "";
+  if (!hashed) {
+    throw Object.assign(new Error("无法创建登录会话，请改用密码登录或稍后重试。"), { status: 500 });
+  }
+  let verified;
+  try {
+    verified = await supabaseJson(authUrl("verify"), {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ type: "magiclink", token_hash: hashed }),
+    });
+  } catch {
+    verified = await supabaseJson(authUrl("verify"), {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ type: "email", token_hash: hashed }),
+    });
+  }
+  if (!verified?.access_token) {
+    throw Object.assign(new Error("验证码登录失败，请改用密码登录。"), { status: 401 });
+  }
+  return verified;
+}
+
+async function handleForgotSendOtp(body, res) {
+  const role = normalizeForgotRole(body.role);
+  const account = String(body.email || body.account || body.phone || "").trim();
+  const genericOk = {
+    ok: true,
+    message: "如该邮箱已绑定账号，将收到验证码邮件。请查收后继续。",
+    channel: "email",
+    expiresInSec: 900,
+  };
+  if (!account) return json(res, 400, { ok: false, message: "请输入绑定邮箱。" });
+  if (!/@/.test(account)) {
+    return json(res, 400, { ok: false, message: "请输入有效邮箱地址。" });
+  }
+  const resolved = await resolveForgotAccount(account, role);
+  if (!resolved?.profile || resolved.profile.status === "disabled") return json(res, 200, genericOk);
+  const profile = resolved.profile;
+  const email = String(profile.email || account).trim().toLowerCase();
+  if (!email || !/@/.test(email)) return json(res, 200, genericOk);
+  const code = randomOtpCode();
+  const key = forgotAccountKey(profile);
+  await storeForgotOtp(key, role, code, "otp");
+  // MVP: email only. SMS stub kept for later international release.
+  void sendSmsOtp({ phone: profile.phone || profile.phone_e164 || "", code, purpose: "forgot" });
+  let mailOk = false;
+  let mailError = "";
+  try {
+    await sendEmailOtp({ to: email, code, purpose: "forgot", roleLabel: roleLabelOf(role) });
+    mailOk = true;
+  } catch (err) {
+    mailError = String(err?.message || err || "");
+  }
+  const out = {
+    ok: true,
+    message: mailOk
+      ? `验证码已发送至邮箱 ${maskEmailHint(email)}。`
+      : allowStagingOtp()
+        ? `邮件服务暂不可用，已生成 Staging 调试验证码（${maskEmailHint(email)}）。`
+        : `如该邮箱已绑定账号，将收到验证码邮件。请查收后继续。`,
+    channel: "email",
+    emailMasked: maskEmailHint(email),
+    phoneMasked: "",
+    expiresInSec: 900,
+    role,
+    mail: mailProviderStatus(),
+  };
+  if (allowStagingOtp()) out.devCode = code;
+  if (!mailOk && allowStagingOtp() && mailError) out.mailWarning = mailError;
+  return json(res, 200, out);
+}
+
+async function handleLoginSendOtp(body, res) {
+  const role = normalizeForgotRole(body.role || "boss");
+  if (role === "customer_service" || role === "admin" || role === "super_admin") {
+    return json(res, 400, { ok: false, message: "该端请使用邮箱密码登录。" });
+  }
+  const email = String(body.email || body.account || "").trim().toLowerCase();
+  if (!email || !/^\S+@\S+\.\S+$/.test(email)) {
+    return json(res, 400, { ok: false, message: "请输入有效邮箱。" });
+  }
+  const generic = {
+    ok: true,
+    message: "如该邮箱已注册，将收到登录验证码。",
+    channel: "email",
+    expiresInSec: 900,
+  };
+  const resolved = await resolveForgotAccount(email, role);
+  if (!resolved?.profile || resolved.profile.status === "disabled") return json(res, 200, generic);
+  const profile = resolved.profile;
+  const code = randomOtpCode();
+  const key = forgotAccountKey(profile);
+  await storeForgotOtp(key, role, code, "login_otp");
+  void sendSmsOtp({ phone: profile.phone || "", code, purpose: "login" });
+  let mailOk = false;
+  let mailError = "";
+  try {
+    await sendEmailOtp({ to: String(profile.email || email).toLowerCase(), code, purpose: "login", roleLabel: roleLabelOf(role) });
+    mailOk = true;
+  } catch (err) {
+    mailError = String(err?.message || err || "");
+  }
+  const out = {
+    ok: true,
+    message: mailOk
+      ? `登录验证码已发送至 ${maskEmailHint(profile.email || email)}。`
+      : allowStagingOtp()
+        ? "邮件服务暂不可用，已生成 Staging 调试验证码。"
+        : generic.message,
+    channel: "email",
+    emailMasked: maskEmailHint(profile.email || email),
+    expiresInSec: 900,
+    role,
+  };
+  if (allowStagingOtp()) out.devCode = code;
+  if (!mailOk && allowStagingOtp() && mailError) out.mailWarning = mailError;
+  return json(res, 200, out);
+}
+
+async function handleLoginWithOtp(body, res) {
+  const role = normalizeForgotRole(body.role || "boss");
+  if (role === "customer_service" || role === "admin" || role === "super_admin") {
+    return json(res, 400, { ok: false, message: "该端请使用邮箱密码登录。" });
+  }
+  const email = String(body.email || body.account || "").trim().toLowerCase();
+  const code = String(body.code || body.otp || "").trim();
+  if (!email || !/^\S+@\S+\.\S+$/.test(email)) return json(res, 400, { ok: false, message: "请输入有效邮箱。" });
+  if (!/^\d{4,8}$/.test(code)) return json(res, 400, { ok: false, message: "验证码无效或已过期" });
+  const resolved = await resolveForgotAccount(email, role);
+  if (!resolved?.profile) return json(res, 400, { ok: false, message: "验证码无效或已过期" });
+  const profile0 = resolved.profile;
+  if (profile0.status && profile0.status !== "active") {
+    return json(res, 403, { ok: false, message: "账号未启用或正在审核。" });
+  }
+  const key = forgotAccountKey(profile0);
+  const stored = await findForgotOtp(key, role, "login_otp");
+  if (!stored?.code || String(stored.code) !== code || Number(stored.exp) <= Date.now()) {
+    return json(res, 400, { ok: false, message: "验证码无效或已过期" });
+  }
+  const auth = await createSessionForUserId(profile0.id, profile0.email || email);
+  let profile = await profileFor(auth.user?.id || profile0.id);
+  if (!profile) profile = profile0;
+  if (["boss", "customer", "owner", "user"].includes(String(profile.role || "").trim().toLowerCase())) {
+    try {
+      profile = await ensureBossUid({ ...profile, role: "boss" }, auth.user);
+    } catch {
+      /* keep login usable */
+    }
+  }
+  const user = safeProfile(profile, {
+    ...(auth.user || {}),
+    user_metadata: { ...((auth.user && auth.user.user_metadata) || {}), boss_uid: profile.boss_uid || metaBossUid(auth.user) },
+  });
+  if (!VALID_ROLES.has(user.role)) return json(res, 403, { ok: false, message: "账号角色无效。" });
+  if (user.status !== "active") return json(res, 403, { ok: false, message: "账号未启用或正在审核。" });
+  if (stored.id) {
+    await supabaseJson(restUrl("password_reset_requests", `?id=eq.${encodeURIComponent(stored.id)}`), {
+      method: "PATCH",
+      headers: headersWithServiceRole(),
+      body: JSON.stringify({ status: `used_login:${Date.now()}` }),
+    }).catch(() => null);
+  }
+  return json(res, 200, {
+    ok: true,
+    message: "登录成功",
+    session: {
+      accessToken: auth.access_token,
+      refreshToken: auth.refresh_token,
+      expiresAt: auth.expires_at,
+      user,
+    },
+    redirect: redirectFor(user.role),
+  });
 }
 
 async function markForgotVerified(accountKey, role, rowId, token) {
@@ -422,53 +576,14 @@ async function markForgotVerified(accountKey, role, rowId, token) {
     }).catch(() => null);
   }
   globalThis.__mcjForgotResets = globalThis.__mcjForgotResets || new Map();
-  globalThis.__mcjForgotResets.set(`${role}:${accountKey}`, { id: rowId || token, verifiedToken: token, exp });
+  globalThis.__mcjForgotResets.set(`${role}:otp:${accountKey}`, { id: rowId || token, verifiedToken: token, exp, kind: "otp" });
+  globalThis.__mcjForgotResets.set(`${role}:${accountKey}`, { id: rowId || token, verifiedToken: token, exp, kind: "otp" });
   return exp;
-}
-
-async function handleForgotSendOtp(body, res) {
-  const role = normalizeForgotRole(body.role);
-  const account = String(body.phone || body.account || body.email || "").trim();
-  const genericOk = {
-    ok: true,
-    message: "如该手机号已绑定账号，将收到验证码。请查收后继续。",
-    channel: "none",
-    expiresInSec: 900,
-  };
-  if (!account) return json(res, 400, { ok: false, message: "请输入绑定手机号。" });
-  const resolved = await resolveForgotAccount(account, role);
-  if (!resolved?.profile || resolved.profile.status === "disabled") return json(res, 200, genericOk);
-  const profile = resolved.profile;
-  const code = randomOtpCode();
-  const key = forgotAccountKey(profile);
-  await storeForgotOtp(key, role, code);
-  const phone = String(profile.phone || profile.phone_e164 || "").trim();
-  const email = String(profile.email || "").trim();
-  let channel = resolved.via === "phone" || phone ? "phone" : email ? "email" : "none";
-  let message = genericOk.message;
-  if (channel === "phone" && phone) {
-    message = `验证码已发送至手机 ${maskPhoneHint(phone) || "绑定手机"}。`;
-    // SMS gateway may be unset — OTP is still issued; staging returns debug code.
-  } else if (email) {
-    channel = "email";
-    message = `短信通道暂未开通时，验证码已按绑定邮箱 ${maskEmailHint(email)} 兜底记录（Staging 可使用调试验证码）。`;
-  }
-  const out = {
-    ok: true,
-    message,
-    channel,
-    phoneMasked: maskPhoneHint(phone),
-    emailMasked: maskEmailHint(email),
-    expiresInSec: 900,
-    role,
-  };
-  if (allowStagingOtp()) out.devCode = code;
-  return json(res, 200, out);
 }
 
 async function handleForgotVerifyOtp(body, res) {
   const role = normalizeForgotRole(body.role);
-  const account = String(body.phone || body.account || body.email || "").trim();
+  const account = String(body.email || body.account || body.phone || "").trim();
   const code = String(body.code || body.otp || "").trim();
   if (!account || !/^\d{4,8}$/.test(code)) {
     return json(res, 400, { ok: false, message: "验证码无效或已过期" });
@@ -476,7 +591,7 @@ async function handleForgotVerifyOtp(body, res) {
   const resolved = await resolveForgotAccount(account, role);
   if (!resolved?.profile) return json(res, 400, { ok: false, message: "验证码无效或已过期" });
   const key = forgotAccountKey(resolved.profile);
-  const stored = await findForgotOtp(key, role);
+  const stored = await findForgotOtp(key, role, "otp");
   if (stored && stored.code && String(stored.code) === code && Number(stored.exp) > Date.now()) {
     const token = `mcj_${randomOtpCode()}${Date.now().toString(36)}`;
     await markForgotVerified(key, role, stored.id, token);
@@ -484,7 +599,8 @@ async function handleForgotVerifyOtp(body, res) {
       ok: true,
       message: "验证成功，请设置新密码",
       resetToken: token,
-      phoneMasked: maskPhoneHint(resolved.profile.phone || resolved.profile.phone_e164 || ""),
+      emailMasked: maskEmailHint(resolved.profile.email || account),
+      phoneMasked: "",
     });
   }
   return json(res, 400, { ok: false, message: "验证码无效或已过期" });
@@ -499,12 +615,12 @@ async function handleForgotResetPassword(body, res) {
     return json(res, 400, { ok: false, message: "两次输入的新密码不一致" });
   }
   const resetToken = String(body.resetToken || body.token || "").trim();
-  const account = String(body.phone || body.account || body.email || "").trim();
+  const account = String(body.email || body.account || body.phone || "").trim();
   if (!resetToken.startsWith("mcj_")) return json(res, 400, { ok: false, message: "请先完成验证码校验" });
   const resolved = await resolveForgotAccount(account, role);
   if (!resolved?.profile?.id) return json(res, 400, { ok: false, message: "缺少账号信息" });
   const key = forgotAccountKey(resolved.profile);
-  const stored = await findForgotOtp(key, role);
+  const stored = await findForgotOtp(key, role, "otp");
   if (!stored || stored.verifiedToken !== resetToken || Number(stored.exp) < Date.now()) {
     return json(res, 400, { ok: false, message: "重置凭证无效或已过期，请重新获取验证码" });
   }
@@ -513,7 +629,10 @@ async function handleForgotResetPassword(body, res) {
     headers: headersWithServiceRole(),
     body: JSON.stringify({ password: newPassword }),
   });
-  if (globalThis.__mcjForgotResets) globalThis.__mcjForgotResets.delete(`${role}:${key}`);
+  if (globalThis.__mcjForgotResets) {
+    globalThis.__mcjForgotResets.delete(`${role}:otp:${key}`);
+    globalThis.__mcjForgotResets.delete(`${role}:${key}`);
+  }
   if (stored.id) {
     await supabaseJson(restUrl("password_reset_requests", `?id=eq.${encodeURIComponent(stored.id)}`), {
       method: "PATCH",
@@ -931,22 +1050,15 @@ export default async function handler(req, res) {
       const displayName = String(body.displayName || body.nickname || body.name || "").trim().slice(0, 40);
       const countryCode = normalizeCountryCode(body.countryCode || body.country_code || "MY");
       const dialCode = String(body.dialCode || body.dial_code || dialForCountry(countryCode)).trim() || dialForCountry(countryCode);
-      let phoneE164 = String(body.phoneE164 || body.phone_e164 || "").trim().slice(0, 32);
-      let phone = String(body.phone || "").trim().slice(0, 30);
-      const national = nationalPhoneDigits(phone);
-      // Prefer national digits in phone; E.164 in phone_e164.
-      if (national) phone = national;
-      if (!phoneE164 && national) phoneE164 = `${String(dialCode).replace(/\s+/g, "")}${national}`;
-      phoneE164 = normalizeE164(phoneE164).slice(0, 32);
+      // MVP: auth is email-only. Phone fields are ignored for registration (kept for schema compat).
+      let phoneE164 = "";
+      let phone = "";
+      void dialCode;
+      void body.phone;
+      void body.phoneE164;
+      void body.phone_e164;
       if (!email || !password) return json(res, 400, { ok: false, message: "请输入邮箱和密码。" });
       if (password.length < 6) return json(res, 400, { ok: false, message: "密码至少 6 位。" });
-      if (phoneE164) {
-        try {
-          await assertPhoneAvailable(phoneE164);
-        } catch (phoneErr) {
-          return json(res, phoneErr.status || 400, { ok: false, message: phoneErr.message || "该手机号已注册。" });
-        }
-      }
       let created;
       try {
         created = await supabaseJson(authUrl("admin/users"), {
@@ -1083,6 +1195,20 @@ export default async function handler(req, res) {
     }
     if (requestedAction === "forgot_reset_password" || requestedAction === "reset_password") {
       return handleForgotResetPassword(body, res);
+    }
+    if (
+      requestedAction === "send_login_otp" ||
+      requestedAction === "login_send_otp" ||
+      requestedAction === "email_login_otp"
+    ) {
+      return handleLoginSendOtp(body, res);
+    }
+    if (
+      requestedAction === "login_with_otp" ||
+      requestedAction === "login_otp" ||
+      requestedAction === "verify_login_otp"
+    ) {
+      return handleLoginWithOtp(body, res);
     }
     if (requestedAction !== "login") return json(res, 400, { ok: false, message: "未知登录操作" });
     const email = String(body.email || body.account || "").trim().toLowerCase();

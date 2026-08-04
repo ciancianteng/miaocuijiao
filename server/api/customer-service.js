@@ -13,6 +13,7 @@ import {
 import { companionDb } from "./_companion-media-store.js";
 import { approveAndLedger, listPendingForCs, rejectProof, signedProofUrl } from "./_payment-receipts.js";
 import { bossForCs } from "./_privacy.js";
+import { sendEmailOtp, mailProviderStatus } from "./_mail.js";
 import {
   conversationLockedByOther as lockOwnedByOther,
   consultTypeLabel,
@@ -178,31 +179,7 @@ function maskEmailHint(email) {
 async function resolveCsAccount(accountRaw) {
   const account = String(accountRaw || "").trim();
   if (!account) return null;
-  const digits = account.replace(/\D/g, "");
-  // Phone path (preferred)
-  if (digits.length >= 7 && (/^\+?\d[\d\s-]{6,}$/.test(account) || digits.length === account.replace(/^\+/, "").length)) {
-    const phoneCandidates = [...new Set([account, digits, digits.slice(-11), digits.slice(-10)].filter(Boolean))];
-    for (const p of phoneCandidates) {
-      const byPhone = await maybeRows(
-        "profiles",
-        `?role=eq.customer_service&phone=eq.${encodeURIComponent(p)}&select=id,email,phone,phone_e164,display_name,status&limit=1`
-      );
-      if (byPhone[0]?.id) return { profile: byPhone[0], via: "phone" };
-      const byE164 = await maybeRows(
-        "profiles",
-        `?role=eq.customer_service&phone_e164=eq.${encodeURIComponent(p.startsWith("+") ? p : `+${p}`)}&select=id,email,phone,phone_e164,display_name,status&limit=1`
-      );
-      if (byE164[0]?.id) return { profile: byE164[0], via: "phone" };
-      if (digits.length >= 10) {
-        const loose = await maybeRows(
-          "profiles",
-          `?role=eq.customer_service&or=(phone.ilike.*${encodeURIComponent(digits.slice(-11))}*,phone_e164.ilike.*${encodeURIComponent(digits.slice(-11))}*)&select=id,email,phone,phone_e164,display_name,status&limit=3`
-        );
-        if (loose[0]?.id) return { profile: loose[0], via: "phone" };
-      }
-    }
-  }
-  // Email path (allowed; message will say email later / fallback)
+  // MVP: email-only recovery / lookup for CS accounts.
   if (/@/.test(account)) {
     const byEmail = await maybeRows(
       "profiles",
@@ -263,48 +240,52 @@ function csResetAccountKey(profile) {
   return String(profile?.id || profile?.email || "").trim().toLowerCase();
 }
 async function handleCsSendResetCode(body, res) {
-  const account = String(body.account || body.phone || body.email || "").trim();
+  const account = String(body.account || body.email || body.phone || "").trim().toLowerCase();
   const genericOk = {
     ok: true,
-    message: "如该手机号 / 邮箱已绑定客服账号，将收到验证码。请查收后继续。",
-    channel: "none",
+    message: "如该邮箱已绑定客服账号，将收到验证码邮件。请查收后继续。",
+    channel: "email",
     expiresInSec: 900,
   };
-  if (!account) return json(res, 400, { ok: false, message: "请输入绑定手机号（推荐）或邮箱。" });
+  if (!account || !/^\S+@\S+\.\S+$/.test(account)) {
+    return json(res, 400, { ok: false, message: "请输入绑定邮箱。" });
+  }
   const resolved = await resolveCsAccount(account);
   if (!resolved?.profile || resolved.profile.status === "disabled") return json(res, 200, genericOk);
   const profile = resolved.profile;
   const code = randomOtpCode();
   const key = csResetAccountKey(profile);
   await storeCsResetOtp(key, code);
-  const phone = String(profile.phone || profile.phone_e164 || "").trim();
-  const email = String(profile.email || "").trim();
-  let channel = resolved.via === "phone" || phone ? "phone" : "email";
-  let message = "";
-  // SMS gateway may be unset — still issue OTP so phone path UI works; expose staging debug code.
+  const email = String(profile.email || account).trim().toLowerCase();
   const staging =
     String(process.env.ALLOW_STAGING_OTP || "") === "1" ||
     String(process.env.MCJ_OTP_DEBUG || "") === "1" ||
-    /staging|vercel\.app|localhost/i.test(String(process.env.VERCEL_URL || process.env.MCJ_PUBLIC_BASE || ""));
-  if (channel === "phone" && phone) {
-    message = `验证码已发送至手机 ${maskPhoneHint(phone) || "绑定手机"}。`;
-  } else if (email) {
-    channel = "email";
-    message = `手机短信暂未开通时，验证码已发往绑定邮箱 ${maskEmailHint(email)}（邮箱通道为临时兜底）。`;
-    try {
-      await supabaseJson(authUrl("otp"), {
-        method: "POST",
-        headers: anonHeaders(),
-        body: JSON.stringify({ email, create_user: false }),
-      });
-    } catch {
-      /* optional */
-    }
-  } else {
-    message = genericOk.message;
+    (String(process.env.VERCEL_ENV || "").toLowerCase() !== "production" &&
+      (/staging|localhost|127\.0\.0\.1/i.test(String(process.env.MCJ_PUBLIC_BASE || process.env.VERCEL_URL || "")) ||
+        String(process.env.VERCEL_ENV || "").toLowerCase() === "preview"));
+  let mailOk = false;
+  let mailError = "";
+  try {
+    await sendEmailOtp({ to: email, code, purpose: "forgot", roleLabel: "客服端" });
+    mailOk = true;
+  } catch (err) {
+    mailError = String(err?.message || err || "");
   }
-  const out = { ok: true, message, channel, phoneMasked: maskPhoneHint(phone), emailMasked: maskEmailHint(email), expiresInSec: 900 };
+  const out = {
+    ok: true,
+    message: mailOk
+      ? `验证码已发送至 ${maskEmailHint(email)}。`
+      : staging
+        ? "邮件服务暂不可用，已生成 Staging 调试验证码。"
+        : genericOk.message,
+    channel: "email",
+    phoneMasked: "",
+    emailMasked: maskEmailHint(email),
+    expiresInSec: 900,
+    mail: mailProviderStatus(),
+  };
   if (staging) out.devCode = code;
+  if (!mailOk && staging && mailError) out.mailWarning = mailError;
   return json(res, 200, out);
 }
 async function handleCsVerifyResetCode(body, res) {
@@ -1190,7 +1171,7 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
     let action = String(req.method === "GET" ? (req.query?.action || "bootstrap") : (body.action || req.query?.action || pathAction || "")).trim();
     if (action === "accept") action = "take_conversation";
     if (action === "login") { const email = String(body.account || body.email || "").trim().toLowerCase(); const password = String(body.password || ""); if (!email || !password) return json(res, 400, { ok: false, message: "请输入邮箱和密码。" }); let auth; try { auth = await supabaseJson(authUrl("token?grant_type=password"), { method: "POST", headers: anonHeaders(), body: JSON.stringify({ email, password }) }); } catch { return json(res, 401, { ok: false, message: "账号或密码错误。" }); } const profile = await profileById(auth.user?.id); if (!profile || profile.role !== "customer_service") return json(res, 403, { ok: false, message: "无权访问客服端。" }); if (profile.status !== "active") return json(res, 403, { ok: false, message: "该客服账号已被停用，请联系管理员。" }); return json(res, 200, { ok: true, session: { token: auth.access_token, refreshToken: auth.refresh_token || "", expiresAt: auth.expires_at || auth.expires_in || "", user: safeProfile(profile), remember: true } }); }
-    // Password recovery (public — before requireService). Phone OTP preferred; email stubbed clearly.
+    // Password recovery (public — before requireService). MVP: email OTP via Resend/SMTP.
     if (action === "forgot_password" || action === "send_reset_code") {
       return handleCsSendResetCode(body, res);
     }

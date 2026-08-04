@@ -479,8 +479,7 @@
       field("authEmail", "邮箱", "email", "", 'required autocomplete="username"') +
       field("authPassword", "密码（至少 8 位）", "password", "", 'required minlength="8" autocomplete="new-password"') +
       field("authNickname", "昵称（注册时必填）", "text", "", 'autocomplete="nickname"') +
-      field("authPhone", "手机号（选填）", "tel", "") +
-      '</form><div class="apply-actions"><button class="apply-btn" type="button" data-apply-login>登录已有账号</button><button class="apply-btn primary" type="button" data-apply-register>注册并继续申请</button></div><p class="apply-note">已有陪玩账号请直接登录；新用户请注册后继续五步申请。</p></section>';
+      '</form><div class="apply-actions"><button class="apply-btn" type="button" data-apply-login>登录已有账号</button><button class="apply-btn primary" type="button" data-apply-register>注册并继续申请</button></div><p class="apply-note">已有陪玩账号请直接登录；新用户请用邮箱注册后继续五步申请。</p></section>';
   }
   function formatRulesUpdatedAt(v) {
     if (!v) return "";
@@ -1407,7 +1406,6 @@
         var email = (form.querySelector('[name="authEmail"]') || {}).value || "";
         var password = (form.querySelector('[name="authPassword"]') || {}).value || "";
         var nickname = (form.querySelector('[name="authNickname"]') || {}).value || "";
-        var phone = (form.querySelector('[name="authPhone"]') || {}).value || "";
         var isRegister = !!e.target.closest("[data-apply-register]");
         if (!email || !password) { alert("请填写邮箱和密码"); return; }
         if (isRegister && !nickname) { alert("注册请填写昵称"); return; }
@@ -1421,14 +1419,13 @@
               account: email,
               password: password,
               nickname: nickname,
-              phone: phone,
               remember: true,
             }),
           });
           var body = await res.json().catch(function () { return {}; });
           if (!res.ok || body.ok === false) throw new Error(body.message || "登录失败");
           saveCompanionSession(body.session);
-          if (nickname) saveDraft({ data: { nickname: nickname, email: email, phone: phone } });
+          if (nickname) saveDraft({ data: { nickname: nickname, email: email } });
           var boot = await fetchCompanionBootstrap();
           if (boot && boot.player) {
             remoteStatus = {

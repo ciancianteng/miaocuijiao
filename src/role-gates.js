@@ -618,6 +618,72 @@
         return;
       }
 
+      var tabBtn = event.target && event.target.closest && event.target.closest("[data-login-tab]");
+      if (tabBtn) {
+        event.preventDefault();
+        var tab = tabBtn.getAttribute("data-login-tab") || "otp";
+        var modal = tabBtn.closest(".boss-login-modal") || document;
+        modal.querySelectorAll("[data-login-tab]").forEach(function (el) {
+          el.classList.toggle("active", el === tabBtn);
+        });
+        modal.querySelectorAll("[data-login-panel]").forEach(function (panel) {
+          var key = panel.getAttribute("data-login-panel");
+          if (key === "register") return;
+          panel.classList.toggle("active", key === tab);
+        });
+        return;
+      }
+
+      var sendOtpBtn = event.target && event.target.closest && event.target.closest("[data-send-login-otp]");
+      if (sendOtpBtn) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (sendOtpBtn.disabled) return;
+        var otpEmail = fieldValue(["loginOtpEmail", "loginGmail", "loginEmail", "email"]).trim().toLowerCase();
+        if (!otpEmail || !/^\S+@\S+\.\S+$/.test(otpEmail)) {
+          setLoginMessage(sendOtpBtn, "请输入有效邮箱。");
+          return;
+        }
+        var role = sendOtpBtn.getAttribute("data-login-role") || "boss";
+        sendOtpBtn.disabled = true;
+        var oldSend = sendOtpBtn.textContent;
+        sendOtpBtn.textContent = "发送中…";
+        fetch("/api/auth", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({ action: "send_login_otp", email: otpEmail, role: role }),
+        })
+          .then(function (r) {
+            return r.json().then(function (j) {
+              if (!r.ok || j.ok === false) throw new Error((j && j.message) || "发送失败");
+              return j;
+            });
+          })
+          .then(function (j) {
+            var tip = j.message || "验证码已发送";
+            if (j.devCode) tip += "（测试 " + j.devCode + "）";
+            setLoginMessage(sendOtpBtn, tip);
+            var left = 60;
+            sendOtpBtn.textContent = left + "s";
+            var timer = setInterval(function () {
+              left -= 1;
+              if (left <= 0) {
+                clearInterval(timer);
+                sendOtpBtn.disabled = false;
+                sendOtpBtn.textContent = oldSend || "获取验证码";
+              } else {
+                sendOtpBtn.textContent = left + "s";
+              }
+            }, 1000);
+          })
+          .catch(function (err) {
+            sendOtpBtn.disabled = false;
+            sendOtpBtn.textContent = oldSend || "获取验证码";
+            setLoginMessage(sendOtpBtn, humanizeAuthError(err));
+          });
+        return;
+      }
+
       var registerBtn = event.target && event.target.closest && event.target.closest("[data-register-confirm]");
       if (registerBtn) {
         event.preventDefault();
@@ -654,6 +720,44 @@
       event.preventDefault();
       event.stopPropagation();
       if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+      var method = String(target.getAttribute("data-login-method") || "email").toLowerCase();
+      if (method === "otp") {
+        var otpAccount = fieldValue(["loginOtpEmail", "loginGmail", "loginEmail", "email"]).trim().toLowerCase();
+        var otpCode = fieldValue(["loginOtpCode", "loginCode", "otp"]);
+        if (!otpAccount || !otpCode) { setLoginMessage(target, "请输入邮箱和验证码。"); return; }
+        if (target.disabled) return;
+        target.disabled = true;
+        var oldOtpText = target.textContent;
+        target.textContent = "登录中...";
+        fetch("/api/auth", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({
+            action: "login_with_otp",
+            email: otpAccount,
+            code: otpCode,
+            role: target.getAttribute("data-login-role") || "boss",
+          }),
+        })
+          .then(function (r) {
+            return r.json().then(function (j) {
+              if (!r.ok || j.ok === false) throw new Error((j && j.message) || "登录失败");
+              return j;
+            });
+          })
+          .then(function (result) {
+            saveSession(result.session, true);
+            afterAuthSuccess(result, { remember: true });
+          })
+          .catch(function (error) {
+            setLoginMessage(target, humanizeAuthError(error));
+          })
+          .finally(function () {
+            target.disabled = false;
+            target.textContent = oldOtpText || "验证码登录";
+          });
+        return;
+      }
       var account = fieldValue(["loginGmail", "loginEmail", "adminEmail", "email"]);
       var passwordLogin = fieldValue(["loginGmailCode", "loginPassword", "adminPassword", "password"]);
       if (!account || !passwordLogin) { setLoginMessage(target, "请输入邮箱和密码。"); return; }

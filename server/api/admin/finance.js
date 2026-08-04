@@ -696,16 +696,27 @@ export default async function handler(req, res) {
         const receiptId = String(body.receiptId || body.receipt_id || "").trim();
         if (!orderId && !receiptId) return json(res, 400, { ok: false, message: "缺少订单或凭证 ID。" });
         const pending = await listPendingForAdmin();
-        const receipt =
+        let receipt =
           (pending || []).find((row) => (receiptId && row.id === receiptId) || (orderId && row.order_id === orderId)) || null;
+        // Recover: ledger already approved but order still awaiting_payment after a prior partial failure.
+        if (!receipt && orderId) {
+          const approvedRows = await companionDb(
+            "payment_receipts",
+            `?order_id=eq.${encodeURIComponent(orderId)}&status=eq.approved&order=reviewed_at.desc&limit=1`
+          ).catch(() => []);
+          if (approvedRows?.[0]) receipt = approvedRows[0];
+        }
         if (!receipt) return json(res, 404, { ok: false, message: "未找到待审核付款凭证。" });
-        const orderRows = await companionDb("orders", `?id=eq.${encodeURIComponent(receipt.order_id)}&limit=1`).catch(() => []);
+        const orderRows = await companionDb("orders", `?id=eq.${encodeURIComponent(receipt.order_id || orderId)}&limit=1`).catch(() => []);
         const order = orderRows?.[0];
         if (!order) return json(res, 404, { ok: false, message: "订单不存在。" });
         if (order.status !== "awaiting_payment") {
           return json(res, 409, { ok: false, message: "当前订单不在付款审核中。" });
         }
         if (action === "reject_payment_proof") {
+          if (String(receipt.status || "") !== "pending") {
+            return json(res, 409, { ok: false, message: "付款凭证已被处理，无法驳回。" });
+          }
           const reason = String(body.reason || body.reject_reason || "").trim();
           if (!reason) return json(res, 400, { ok: false, message: "请填写驳回付款原因。" });
           await rejectProof({ receipt, reviewerId: adminProfile.id, reason });
@@ -726,7 +737,9 @@ export default async function handler(req, res) {
           }).catch(() => null);
           return json(res, 200, { ok: true, message: "已驳回付款凭证，老板可重新上传。" });
         }
-        await approveAndLedger({ order, receipt, reviewerId: adminProfile.id });
+        if (String(receipt.status || "pending") === "pending") {
+          await approveAndLedger({ order, receipt, reviewerId: adminProfile.id });
+        }
         const next = order.companion_id ? "claimed" : "pending";
         // Keep patch minimal — avoid optional columns that break Prefer/404 on some schemas.
         let patched = null;

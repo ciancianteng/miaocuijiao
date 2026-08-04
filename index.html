@@ -3474,6 +3474,7 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
   <link rel="stylesheet" href="src/place-order-modal.css">
   <link rel="stylesheet" href="src/notify-system.css">
   <script type="module" src="src/role-gates.js"></script>
+  <script type="module" src="src/forgot-password.js?v=20260804emailMvp1"></script>
   <script type="module" src="src/avatar-fallback.js"></script>
   <script type="module" src="src/companion-media.js?v=20260802mediaSync"></script>
   <script type="module" src="src/launch-feature-freeze.js"></script>
@@ -3683,12 +3684,32 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
     function numericPrice(price){var m=String(price||'').match(/[\d.]+/);return m?Number(m[0]):0}
     function bossLoginHtml(mode){
       mode = mode === 'register' ? 'register' : 'login';
-      var loginPanel = '<div class="login-panel'+(mode==='login'?' active':'')+'" data-login-panel="email" data-auth-panel="login"><label class="wide">邮箱<input id="loginGmail" type="email" autocomplete="username" placeholder="请输入邮箱"></label><label class="wide">密码<input id="loginGmailCode" type="password" autocomplete="current-password" placeholder="请输入密码"></label><button class="login-submit" type="button" data-login-confirm data-login-method="email">登录</button></div>';
+      var otpPanel =
+        '<div class="login-panel'+(mode==='login'?' active':'')+'" data-login-panel="otp" data-auth-panel="login-otp">'+
+        '<label class="wide">邮箱<input id="loginOtpEmail" type="email" autocomplete="username" placeholder="请输入邮箱"></label>'+
+        '<label class="wide">验证码<div class="login-code-row" style="display:flex;gap:8px;align-items:center">'+
+        '<input id="loginOtpCode" inputmode="numeric" autocomplete="one-time-code" placeholder="6 位验证码" maxlength="6" style="flex:1">'+
+        '<button class="login-small-btn" type="button" data-send-login-otp data-login-role="boss">获取验证码</button>'+
+        '</div></label>'+
+        '<button class="login-submit" type="button" data-login-confirm data-login-method="otp">验证码登录</button>'+
+        '</div>';
+      var passPanel =
+        '<div class="login-panel" data-login-panel="email" data-auth-panel="login-pass">'+
+        '<label class="wide">邮箱<input id="loginGmail" type="email" autocomplete="username" placeholder="请输入邮箱"></label>'+
+        '<label class="wide">密码<input id="loginGmailCode" type="password" autocomplete="current-password" placeholder="请输入密码"></label>'+
+        '<button class="login-submit" type="button" data-login-confirm data-login-method="email">密码登录</button>'+
+        '</div>';
+      var loginPanel = mode==='login'
+        ? ('<div class="login-tabs" style="display:flex;gap:8px;margin:0 0 12px">'+
+          '<button class="login-tab active" type="button" data-login-tab="otp">验证码登录</button>'+
+          '<button class="login-tab" type="button" data-login-tab="email">密码登录</button></div>'+
+          otpPanel+passPanel)
+        : '';
       var registerPanel = '<div class="login-panel'+(mode==='register'?' active':'')+'" data-login-panel="register" data-auth-panel="register"><label class="wide">昵称<input id="registerNickname" type="text" autocomplete="nickname" placeholder="请输入昵称" maxlength="40"></label><label class="wide">邮箱<input id="registerEmail" type="email" autocomplete="email" placeholder="请输入邮箱"></label><label class="wide">密码<input id="registerPassword" type="password" autocomplete="new-password" placeholder="至少 6 位密码"></label><label class="wide">确认密码<input id="registerPasswordConfirm" type="password" autocomplete="new-password" placeholder="再次输入密码"></label><button class="login-submit" type="button" data-register-confirm>注册</button></div>';
       var links = mode === 'register'
         ? '<div class="login-links"><button class="linkish" type="button" data-switch-auth="login">已有账号？立即登录</button></div>'
-        : '<div class="login-links"><a href="mine.html?forgot=1">忘记密码</a><button class="linkish" type="button" data-switch-auth="register">还没有账号？立即注册</button></div>';
-      return '<div class="boss-login-modal" data-auth-mode="'+mode+'"><h2>'+(mode==='register'?'注册老板账号':'登录 MEOW CUI JIAO')+'</h2><p class="muted">'+(mode==='register'?'注册成功后将自动登录，并生成唯一老板 UID。':'邮箱密码登录，支持注册新账号。')+'</p>'+loginPanel+registerPanel+'<p id="loginState" data-login-error></p>'+links+'</div>';
+        : '<div class="login-links"><button class="linkish" type="button" data-forgot-password data-forgot-role="boss">忘记密码</button><button class="linkish" type="button" data-switch-auth="register">还没有账号？立即注册</button></div>';
+      return '<div class="boss-login-modal" data-auth-mode="'+mode+'"><h2>'+(mode==='register'?'注册老板账号':'登录 MEOW CUI JIAO')+'</h2><p class="muted">'+(mode==='register'?'使用邮箱注册，成功后自动登录并生成老板 UID。':'邮箱验证码登录（也可使用密码）。')+'</p>'+loginPanel+registerPanel+'<p id="loginState" data-login-error></p>'+links+'</div>';
     }
     window.bossLoginHtml = bossLoginHtml;
     function loginRequiredModal(){

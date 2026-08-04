@@ -1,6 +1,7 @@
 /**
- * Shared phone-OTP password recovery for boss / companion / customer_service.
- * API: POST /api/auth  { action: forgot_send_otp | forgot_verify_otp | forgot_reset_password, role, ... }
+ * Shared email-OTP password recovery for boss / companion / customer_service.
+ * API: POST /api/auth  { action: forgot_send_otp | forgot_verify_otp | forgot_reset_password, role, email, ... }
+ * MVP: email only (SMS reserved for later).
  */
 (function () {
   "use strict";
@@ -14,11 +15,13 @@
   var state = {
     open: false,
     role: "boss",
-    step: "phone",
-    phone: "",
+    step: "email",
+    email: "",
+    emailMasked: "",
     resetToken: "",
     busy: false,
     msg: "",
+    msgOk: false,
     countdown: 0,
     countdownTimer: null,
     onDone: null,
@@ -124,28 +127,47 @@
     el.textContent = text;
     document.body.appendChild(el);
     setTimeout(function () {
-      el.remove();
-    }, 2800);
+      try {
+        el.remove();
+      } catch (e) {}
+    }, 2600);
+  }
+
+  function setMsg(msg, ok) {
+    state.msg = String(msg || "");
+    state.msgOk = !!ok;
   }
 
   function ensureHost() {
-    ensureStyles();
-    if (state.host && document.body.contains(state.host)) return state.host;
+    if (state.host && state.host.isConnected) return state.host;
     var host = document.createElement("div");
     host.className = "mcj-forgot-host";
     host.setAttribute("data-mcj-forgot-host", "1");
     host.hidden = true;
+    document.body.appendChild(host);
+    state.host = host;
     host.addEventListener("click", function (e) {
       if (e.target === host) close();
     });
-    document.body.appendChild(host);
-    state.host = host;
+    host.addEventListener("submit", function (e) {
+      var form = e.target && e.target.closest && e.target.closest("[data-forgot-form]");
+      if (!form) return;
+      e.preventDefault();
+      onSubmit(form);
+    });
+    host.addEventListener("click", function (e) {
+      if (e.target.closest("[data-forgot-back]")) {
+        e.preventDefault();
+        close();
+        return;
+      }
+      if (e.target.closest("[data-forgot-resend]")) {
+        e.preventDefault();
+        if (state.busy || state.countdown > 0) return;
+        sendOtp(state.email).catch(function () {});
+      }
+    });
     return host;
-  }
-
-  function setMsg(msg, ok) {
-    state.msg = msg || "";
-    state.msgOk = !!ok;
   }
 
   function paint() {
@@ -155,10 +177,10 @@
     var step = state.step;
     var busy = state.busy;
     var body = "";
-    if (step === "phone") {
+    if (step === "email" || step === "phone") {
       body =
-        '<label>手机号<input name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="绑定手机号（Staging 可填邮箱）" value="' +
-        esc(state.phone) +
+        '<label>邮箱<input name="email" type="email" inputmode="email" autocomplete="email" placeholder="请输入绑定邮箱" value="' +
+        esc(state.email) +
         '" required></label>' +
         '<div class="mcj-forgot-actions">' +
         '<button class="mcj-forgot-btn primary" type="submit" data-forgot-submit' +
@@ -169,11 +191,10 @@
         '<button class="mcj-forgot-btn ghost" type="button" data-forgot-back>返回登录</button>' +
         "</div>";
     } else if (step === "code") {
-      var resendLabel =
-        state.countdown > 0 ? "重新发送（" + state.countdown + "s）" : "重新发送";
+      var resendLabel = state.countdown > 0 ? "重新发送（" + state.countdown + "s）" : "重新发送";
       body =
         '<p class="mcj-forgot-desc">验证码已发送至 ' +
-        esc(state.phoneMasked || state.phone) +
+        esc(state.emailMasked || state.email) +
         "。请输入 6 位验证码。</p>" +
         '<label>验证码<input name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" placeholder="000000" required></label>' +
         '<div class="mcj-forgot-actions">' +
@@ -205,7 +226,7 @@
     host.innerHTML =
       '<form class="mcj-forgot-card" data-forgot-form autocomplete="on">' +
       "<h2>找回密码</h2>" +
-      '<p class="mcj-forgot-desc">通过绑定手机号接收短信验证码后重设密码。</p>' +
+      '<p class="mcj-forgot-desc">通过绑定邮箱接收验证码后重设密码（MVP 不使用短信）。</p>' +
       body +
       '<p class="mcj-forgot-msg' +
       (state.msgOk ? " is-ok" : "") +
@@ -219,9 +240,9 @@
     stopCountdown();
     state.open = false;
     state.busy = false;
-    state.step = "phone";
-    state.phone = "";
-    state.phoneMasked = "";
+    state.step = "email";
+    state.email = "";
+    state.emailMasked = "";
     state.resetToken = "";
     state.msg = "";
     state.msgOk = false;
@@ -246,9 +267,9 @@
     stopCountdown();
     state.open = true;
     state.role = normalizeRole(opts.role || "boss");
-    state.step = "phone";
-    state.phone = String(opts.phone || "").trim();
-    state.phoneMasked = "";
+    state.step = "email";
+    state.email = String(opts.email || opts.phone || "").trim();
+    state.emailMasked = "";
     state.resetToken = "";
     state.busy = false;
     state.msg = "";
@@ -265,16 +286,16 @@
     }, 40);
   }
 
-  function sendOtp(phone) {
+  function sendOtp(email) {
     state.busy = true;
     setMsg("");
     paint();
-    return api("forgot_send_otp", { phone: phone, account: phone })
+    return api("forgot_send_otp", { email: email, account: email })
       .then(function (res) {
         state.busy = false;
-        state.phone = phone;
-        state.phoneMasked = res.phoneMasked || res.emailMasked || phone;
-        state.channel = res.channel || "";
+        state.email = email;
+        state.emailMasked = res.emailMasked || email;
+        state.channel = res.channel || "email";
         state.step = "code";
         var hint = res.message || "验证码已发送";
         if (res.devCode) hint += "（测试验证码 " + res.devCode + "）";
@@ -294,19 +315,14 @@
   function onSubmit(form) {
     if (state.busy) return;
     var fd = new FormData(form);
-    if (state.step === "phone") {
-      var phone = String(fd.get("phone") || "").trim();
-      if (!phone) {
-        setMsg("请输入绑定手机号。");
+    if (state.step === "email" || state.step === "phone") {
+      var email = String(fd.get("email") || fd.get("phone") || "").trim();
+      if (!email || !/^\S+@\S+\.\S+$/.test(email)) {
+        setMsg("请输入有效邮箱。");
         paint();
         return;
       }
-      if (!/@/.test(phone) && phone.replace(/\D/g, "").length < 7) {
-        setMsg("请输入有效的绑定手机号。");
-        paint();
-        return;
-      }
-      sendOtp(phone).catch(function () {});
+      sendOtp(email).catch(function () {});
       return;
     }
     if (state.step === "code") {
@@ -319,7 +335,7 @@
       state.busy = true;
       setMsg("");
       paint();
-      api("forgot_verify_otp", { phone: state.phone, account: state.phone, code: code })
+      api("forgot_verify_otp", { email: state.email, account: state.email, code: code })
         .then(function (res) {
           state.busy = false;
           state.resetToken = res.resetToken || "";
@@ -341,7 +357,7 @@
     }
     if (state.step === "reset") {
       if (!state.resetToken) {
-        setMsg("请先完成手机验证");
+        setMsg("请先完成邮箱验证");
         paint();
         return;
       }
@@ -361,88 +377,39 @@
       setMsg("");
       paint();
       api("forgot_reset_password", {
-        phone: state.phone,
-        account: state.phone,
+        email: state.email,
+        account: state.email,
+        resetToken: state.resetToken,
         newPassword: np,
         confirmPassword: cp,
-        resetToken: state.resetToken,
       })
-        .then(function () {
+        .then(function (res) {
           state.busy = false;
-          toast(SUCCESS_TOAST);
+          toast(res.message || SUCCESS_TOAST);
           close();
         })
         .catch(function (err) {
           state.busy = false;
-          setMsg((err && err.message) || "重置失败");
+          setMsg((err && err.message) || "重设失败");
           paint();
         });
     }
   }
 
-  function onHostClick(e) {
-    var t = e.target;
-    if (!t || !t.closest) return;
-    if (t.closest("[data-forgot-back]")) {
+  document.addEventListener(
+    "click",
+    function (e) {
+      var btn = e.target && e.target.closest && e.target.closest("[data-forgot-password]");
+      if (!btn) return;
       e.preventDefault();
-      close();
-      return;
-    }
-    if (t.closest("[data-forgot-resend]")) {
-      e.preventDefault();
-      if (state.busy || state.countdown > 0 || !state.phone) return;
-      sendOtp(state.phone).catch(function () {});
-    }
-  }
-
-  function onHostSubmit(e) {
-    var form = e.target && e.target.closest && e.target.closest("[data-forgot-form]");
-    if (!form) return;
-    e.preventDefault();
-    e.stopPropagation();
-    onSubmit(form);
-  }
-
-  function bindDocument() {
-    if (window.__MCJForgotBound) return;
-    window.__MCJForgotBound = true;
-    document.addEventListener(
-      "click",
-      function (e) {
-        var btn = e.target && e.target.closest && e.target.closest("[data-forgot-password]");
-        if (!btn) return;
-        e.preventDefault();
-        e.stopPropagation();
-        open({ role: inferRole(btn) });
-      },
-      true
-    );
-    document.addEventListener(
-      "click",
-      function (e) {
-        if (!state.open || !state.host) return;
-        if (!state.host.contains(e.target)) return;
-        onHostClick(e);
-      },
-      true
-    );
-    document.addEventListener(
-      "submit",
-      function (e) {
-        if (!state.open || !state.host) return;
-        if (!state.host.contains(e.target)) return;
-        onHostSubmit(e);
-      },
-      true
-    );
-  }
-
-  bindDocument();
+      e.stopPropagation();
+      open({ role: inferRole(btn) });
+    },
+    true
+  );
 
   window.MCJForgotPassword = {
     open: open,
     close: close,
-    normalizeRole: normalizeRole,
-    SUCCESS_TOAST: SUCCESS_TOAST,
   };
 })();

@@ -2,6 +2,7 @@
  * Companion application review: inbox notice + email (or email_pending).
  */
 import { insertCompanionNotification } from "./_companion-inbox.js";
+import { sendMail } from "./_mail.js";
 
 function nowIso() {
   return new Date().toISOString();
@@ -55,31 +56,15 @@ export function normalizeApplicationStatus(raw = "") {
 }
 
 async function trySendReviewEmail({ to, approved, reason = "" }) {
-  const host = process.env.SMTP_HOST || "";
-  const pass = process.env.SMTP_PASS || "";
-  const user = process.env.SMTP_USER || "";
-  if (!host || !pass || !to) {
-    return { ok: false, status: "email_pending", detail: !host || !pass ? "SMTP 未配置" : "无收件邮箱" };
+  if (!to) {
+    return { ok: false, status: "email_pending", detail: "无收件邮箱" };
   }
   try {
-    const nodemailer = (await import("nodemailer")).default;
-    const port = Number(process.env.SMTP_PORT || 587);
-    const transporter = nodemailer.createTransport({
-      host,
-      port,
-      secure: port === 465,
-      auth: { user: user || "apikey", pass },
-    });
     const subject = approved ? "妙脆角陪玩认证已通过" : "妙脆角陪玩申请需要修改";
     const text = approved
       ? "恭喜您已通过 Meow Cui Jiao 陪玩认证。\n现在可以登录陪玩端开始接单。"
       : `您的陪玩申请暂未通过。\n请登录陪玩端查看驳回原因并修改后重新提交。${reason ? `\n驳回原因：${reason}` : ""}`;
-    await transporter.sendMail({
-      from: process.env.SMTP_FROM || user || `noreply@${String(host).replace(/^mail\./, "")}`,
-      to,
-      subject,
-      text,
-    });
+    await sendMail({ to, subject, text, purpose: "companion_review" });
     return { ok: true, status: "sent", detail: "sent" };
   } catch (err) {
     return { ok: false, status: "email_pending", detail: String(err?.message || err || "send failed") };
@@ -113,7 +98,7 @@ async function persistEmailPendingRecord({ companionUserId, noticeKey, email, su
 
 /**
  * Inbox + email for application review result.
- * Email never pretends success when SMTP missing — surfaces email_pending.
+ * Email never pretends success when mail provider missing — surfaces email_pending.
  */
 export async function notifyCompanionApplicationReview(
   companionUserId,
@@ -177,7 +162,7 @@ export async function notifyCompanionApplicationReview(
   // Surface email_pending on the same notice body when mail was not sent.
   if (mail.status === "email_pending" && inboxKey) {
     try {
-      const pendingNote = `${content}\n\n[email_pending] 邮件待发送：${mail.detail || "SMTP 未配置或发送失败"}`;
+      const pendingNote = `${content}\n\n[email_pending] 邮件待发送：${mail.detail || "邮件服务未配置或发送失败"}`;
       await supabaseJson(
         restUrl("companion_notifications", `?companion_id=eq.${encodeURIComponent(companionUserId)}&notice_key=eq.${encodeURIComponent(inboxKey)}`),
         {

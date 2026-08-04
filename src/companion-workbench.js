@@ -54,7 +54,7 @@
   };
   var COMPANION_ISOLATION_MSG='您的陪玩认证尚未通过，目前只能查看审核进度。';
   var HIDDEN_MVP_ROUTES={};
-  var state={route:'dashboard',session:null,data:null,notice:'',loading:false,error:'',walletWarning:'',authTab:'login',loginError:'',loginBusy:false,forgotStep:'',forgotAccount:'',forgotBusy:false,forgotMsg:'',forgotResetToken:'',profileServices:[],profileVoiceTypes:[],profileCompanionTags:[],profileErrors:{},profileDraft:null,accountDraft:null,uploadBusy:'',statusBusy:false,pendingOnlineStatus:null,settlement:null,orderFilter:'all',pollTimer:null,rulesPollTimer:null,ordersCacheAt:0,msgFilter:'all',settings:null,earningsTab:'overview',chatSession:'cs',chatConversationId:'',chatBusy:false,withdrawBusy:false,inbox:null,inboxError:'',hallOrderType:'all',hallGame:'all',_prevDesignated:null,_prevAuditLocked:null,_toastTimer:null};
+  var state={route:'dashboard',session:null,data:null,notice:'',loading:false,error:'',walletWarning:'',authTab:'login',loginMethod:'otp',loginError:'',loginBusy:false,forgotStep:'',forgotAccount:'',forgotBusy:false,forgotMsg:'',forgotResetToken:'',profileServices:[],profileVoiceTypes:[],profileCompanionTags:[],profileErrors:{},profileDraft:null,accountDraft:null,uploadBusy:'',statusBusy:false,pendingOnlineStatus:null,settlement:null,orderFilter:'all',pollTimer:null,rulesPollTimer:null,ordersCacheAt:0,msgFilter:'all',settings:null,earningsTab:'overview',chatSession:'cs',chatConversationId:'',chatBusy:false,withdrawBusy:false,inbox:null,inboxError:'',hallOrderType:'all',hallGame:'all',_prevDesignated:null,_prevAuditLocked:null,_toastTimer:null};
   var SESSION_KEY='mcjCompanionSession';
   var SETTINGS_KEY='mcjCompanionSettings';
   var MSG_READ_KEY='mcjCompanionMsgRead';
@@ -1276,7 +1276,8 @@
   }
   function renderLogin(){
     var tab=state.authTab==='register'?'register':'login';
-    var header=Auth&&Auth.brandHeader?Auth.brandHeader('陪玩端登录','登录或注册成为妙脆角陪玩'):'<h1 class="mcj-auth-title">陪玩端登录</h1><p class="mcj-auth-desc">登录或注册成为妙脆角陪玩</p>';
+    var method=state.loginMethod==='password'?'password':'otp';
+    var header=Auth&&Auth.brandHeader?Auth.brandHeader('陪玩端登录','邮箱注册 / 邮箱验证码登录'):'<h1 class="mcj-auth-title">陪玩端登录</h1><p class="mcj-auth-desc">邮箱注册 / 邮箱验证码登录</p>';
     var loginPwd=Auth&&Auth.passwordField?Auth.passwordField('password','密码'):'<label class="mcj-auth-field">密码<input name="password" type="password" autocomplete="current-password" required></label>';
     var regPwd=Auth&&Auth.passwordField?Auth.passwordField('password','密码','autocomplete="new-password" minlength="8"'):'<label class="mcj-auth-field">密码<input name="password" type="password" autocomplete="new-password" minlength="8" required></label>';
     var regConfirm=Auth&&Auth.passwordField?Auth.passwordField('confirm_password','确认密码','autocomplete="new-password" minlength="8"'):'<label class="mcj-auth-field">确认密码<input name="confirm_password" type="password" autocomplete="new-password" minlength="8" required></label>';
@@ -1287,25 +1288,38 @@
       '<button class="mcj-auth-btn '+(tab==='login'?'primary active':'ghost')+'" type="button" data-auth-tab="login">登录</button>'+
       '<button class="mcj-auth-btn '+(tab==='register'?'primary active':'ghost')+'" type="button" data-auth-tab="register">注册陪玩</button>'+
       '</div>'+
-      '<form class="mcj-auth-form" data-login '+(tab==='login'?'':'hidden')+' autocomplete="on">'+
-      '<label class="mcj-auth-field">陪玩 ID / 邮箱 / 手机号<input name="account" autocomplete="username" required></label>'+
+      '<div '+(tab==='login'?'':'hidden')+'>'+
+      '<div class="mcj-auth-tabs" style="margin-bottom:12px">'+
+      '<button class="mcj-auth-btn '+(method==='otp'?'primary active':'ghost')+'" type="button" data-login-method-tab="otp">验证码登录</button>'+
+      '<button class="mcj-auth-btn '+(method==='password'?'primary active':'ghost')+'" type="button" data-login-method-tab="password">密码登录</button>'+
+      '</div>'+
+      '<form class="mcj-auth-form" data-login data-login-method="otp" '+(method==='otp'?'':'hidden')+' autocomplete="on">'+
+      '<label class="mcj-auth-field">邮箱<input id="loginOtpEmail" name="account" type="email" autocomplete="username" required placeholder="name@example.com"></label>'+
+      '<label class="mcj-auth-field">验证码<div style="display:flex;gap:8px;align-items:center"><input id="loginOtpCode" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6 位验证码" required style="flex:1"><button class="mcj-auth-btn ghost" type="button" data-send-login-otp data-login-role="companion">获取验证码</button></div></label>'+
+      '<label class="mcj-auth-check"><input name="remember" type="checkbox" checked> 记住登录</label>'+
+      '<button class="mcj-auth-btn primary" type="submit"'+(state.loginBusy?' disabled':'')+'>'+(state.loginBusy?'登录中…':'验证码登录')+'</button>'+
+      '<button class="mcj-auth-btn ghost" type="button" data-forgot-password data-forgot-role="companion">忘记密码</button>'+
+      '<p class="mcj-auth-error" data-auth-error data-login-error>'+esc(state.loginError||'')+'</p>'+
+      '</form>'+
+      '<form class="mcj-auth-form" data-login data-login-method="password" '+(method==='password'?'':'hidden')+' autocomplete="on">'+
+      '<label class="mcj-auth-field">邮箱<input name="account" type="email" autocomplete="username" required placeholder="name@example.com"></label>'+
       loginPwd+
       '<label class="mcj-auth-check"><input name="remember" type="checkbox" checked> 记住登录</label>'+
       '<button class="mcj-auth-btn primary" type="submit"'+(state.loginBusy?' disabled':'')+'>'+(state.loginBusy?'登录中…':'登录')+'</button>'+
       '<button class="mcj-auth-btn ghost" type="button" data-forgot-password data-forgot-role="companion">忘记密码</button>'+
-      '<p class="mcj-auth-error" data-auth-error>'+esc(state.loginError||'')+'</p>'+
+      '<p class="mcj-auth-error" data-auth-error data-login-error>'+esc(state.loginError||'')+'</p>'+
       '</form>'+
+      '</div>'+
       '<form class="mcj-auth-form" data-register '+(tab==='register'?'':'hidden')+' autocomplete="on">'+
       '<label class="mcj-auth-field">邮箱<input name="email" type="email" autocomplete="email" required></label>'+
       '<label class="mcj-auth-field">陪玩昵称<input name="nickname" required></label>'+
-      '<label class="mcj-auth-field">手机号 / 联系方式<input name="phone" autocomplete="tel"></label>'+
       regPwd+regConfirm+
       '<label class="mcj-auth-check"><input name="agree" type="checkbox" required> 我已阅读并同意服务条款</label>'+
       '<label class="mcj-auth-check"><input name="remember" type="checkbox" checked> 注册后保持登录</label>'+
       '<button class="mcj-auth-btn primary" type="submit">注册并提交资料</button>'+
       '<p class="mcj-auth-error" data-auth-error></p>'+
       '</form>'+
-      '<p class="mcj-auth-note">正式数据保存到统一数据库；未配置数据库时不会生成本地假账号。</p>'+
+      '<p class="mcj-auth-note">MVP 使用邮箱体系（验证码 / 找回密码走邮件）。身份认证、押金与身份证审核流程不变。</p>'+
       '</section></main>'+forgotPasswordModalHtml();
     if(Auth&&Auth.bindPasswordToggles)Auth.bindPasswordToggles(root);
   }
@@ -2738,6 +2752,8 @@
   document.addEventListener('click',function(e){
     var tab=e.target.closest('[data-auth-tab]');
     if(tab){state.authTab=tab.dataset.authTab==='register'?'register':'login';state.loginError='';paint();return}
+    var methodTab=e.target.closest('[data-login-method-tab]');
+    if(methodTab){state.loginMethod=methodTab.getAttribute('data-login-method-tab')==='password'?'password':'otp';state.loginError='';paint();return}
     if(e.target.closest('[data-enter-hall]')){
       if(isIsolationMode()){toast(isolationHint());go('/companion/review-status');return}
       if(isAuditLocked()){toast(auditHint());return}
@@ -3143,13 +3159,24 @@
   document.addEventListener('submit',function(e){
     if(e.target.matches('[data-login]')){
       e.preventDefault();
-      var form=e.target;var fd=new FormData(form);var btn=form.querySelector('[type="submit"]');var remember=true;
+      var form=e.target;var fd=new FormData(form);var btn=form.querySelector('[type="submit"]');
+      var remember=fd.get('remember')!=null;
+      var method=String(form.getAttribute('data-login-method')||state.loginMethod||'password').toLowerCase();
       state.loginError='';state.loginBusy=true;
       if(Auth&&Auth.setFormError)Auth.setFormError(form,'');else{var box=form.querySelector('[data-auth-error]');if(box)box.textContent='';}
       if(Auth&&Auth.setLoading)Auth.setLoading(btn,true);else if(btn){btn.disabled=true;btn.textContent='登录中…';}
-      var account=String(fd.get('account')||'').trim();var password=String(fd.get('password')||'');
+      var account=String(fd.get('account')||'').trim().toLowerCase();
       var Gate=window.MCJRoleGate;
-      var run=Gate&&typeof Gate.loginPortal==='function'?Gate.loginPortal('companion',account,password,remember):api('login',{account:account,password:password,remember:remember});
+      var run;
+      if(method==='otp'){
+        var code=String(fd.get('code')||'').trim();
+        if(!account||!/^\S+@\S+\.\S+$/.test(account)){state.loginBusy=false;state.loginError='请输入有效邮箱。';if(Auth&&Auth.setLoading)Auth.setLoading(btn,false,'验证码登录');else if(btn){btn.disabled=false;btn.textContent='验证码登录';}if(Auth&&Auth.setFormError)Auth.setFormError(form,state.loginError);else{var e1=form.querySelector('[data-auth-error]');if(e1)e1.textContent=state.loginError;}return;}
+        if(!/^\d{4,8}$/.test(code)){state.loginBusy=false;state.loginError='请输入验证码。';if(Auth&&Auth.setLoading)Auth.setLoading(btn,false,'验证码登录');else if(btn){btn.disabled=false;btn.textContent='验证码登录';}if(Auth&&Auth.setFormError)Auth.setFormError(form,state.loginError);else{var e2=form.querySelector('[data-auth-error]');if(e2)e2.textContent=state.loginError;}return;}
+        run=fetch('/api/auth',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify({action:'login_with_otp',email:account,code:code,role:'companion'})}).then(function(r){return r.json().then(function(j){if(!r.ok||j.ok===false)throw new Error((j&&j.message)||'登录失败');return j;});});
+      }else{
+        var password=String(fd.get('password')||'');
+        run=Gate&&typeof Gate.loginPortal==='function'?Gate.loginPortal('companion',account,password,remember):api('login',{account:account,password:password,remember:remember});
+      }
       run.then(function(res){
         var sess=res.session||{};
         saveSession({
@@ -3163,7 +3190,8 @@
       }).catch(function(err){
         state.loginBusy=false;
         state.loginError=(Gate&&Gate.humanizeAuthError?Gate.humanizeAuthError(err):null)||err.message||'账号或密码错误。';
-        if(Auth&&Auth.setLoading)Auth.setLoading(btn,false,'登录');else if(btn){btn.disabled=false;btn.textContent='登录';}
+        var fallbackLabel=method==='otp'?'验证码登录':'登录';
+        if(Auth&&Auth.setLoading)Auth.setLoading(btn,false,fallbackLabel);else if(btn){btn.disabled=false;btn.textContent=fallbackLabel;}
         if(Auth&&Auth.setFormError)Auth.setFormError(form,state.loginError);else{var errBox=form.querySelector('[data-auth-error]');if(errBox)errBox.textContent=state.loginError;else toast(state.loginError);}
       });
       return;
@@ -3215,7 +3243,7 @@
       var password=String(rd.get('password')||'');var confirm=String(rd.get('confirm_password')||'');
       if(!rd.get('agree')){toast('请先同意服务条款');return}
       if(password!==confirm){toast('两次输入的密码不一致');return}
-      api('register',{email:String(rd.get('email')||'').trim(),nickname:String(rd.get('nickname')||'').trim(),phone:String(rd.get('phone')||'').trim(),password:password,remember:!!rd.get('remember')}).then(function(res){saveSession(res.session,!!rd.get('remember'));go('/companion/profile');return loadData()}).catch(function(err){toast(err.message)});
+      api('register',{email:String(rd.get('email')||'').trim(),nickname:String(rd.get('nickname')||'').trim(),password:password,remember:!!rd.get('remember')}).then(function(res){saveSession(res.session,!!rd.get('remember'));go('/companion/profile');return loadData()}).catch(function(err){toast(err.message)});
       return;
     }
     if(e.target.matches('[data-profile-form]')){

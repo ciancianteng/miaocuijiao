@@ -306,6 +306,7 @@ async function resolveCompanionAuthEmail(accountRaw = "") {
   const account = String(accountRaw || "").trim();
   if (!account) return null;
   const lower = account.toLowerCase();
+  // MVP: email is the primary auth identity. Companion UID remains a password-login alias.
   if (/^\S+@\S+\.\S+$/.test(lower)) {
     const byEmail = await supabaseJson(
       restUrl("profiles", `?email=eq.${encodeURIComponent(lower)}&role=eq.companion&limit=1`),
@@ -314,11 +315,6 @@ async function resolveCompanionAuthEmail(accountRaw = "") {
     if (byEmail?.[0]?.email) return { email: String(byEmail[0].email).toLowerCase(), profile: byEmail[0] };
     return { email: lower, profile: null };
   }
-  const byPhone = await supabaseJson(
-    restUrl("profiles", `?phone=eq.${encodeURIComponent(account)}&role=eq.companion&limit=1`),
-    { headers: serviceHeaders() }
-  ).catch(() => []);
-  if (byPhone?.[0]?.email) return { email: String(byPhone[0].email).toLowerCase(), profile: byPhone[0] };
   const byUid = await supabaseJson(
     restUrl("companion_profiles", `?companion_uid=eq.${encodeURIComponent(account)}&select=user_id,companion_uid&limit=1`),
     { headers: serviceHeaders() }
@@ -329,11 +325,6 @@ async function resolveCompanionAuthEmail(accountRaw = "") {
       return { email: String(profile.email).toLowerCase(), profile };
     }
   }
-  const byName = await supabaseJson(
-    restUrl("profiles", `?display_name=eq.${encodeURIComponent(account)}&role=eq.companion&limit=1`),
-    { headers: serviceHeaders() }
-  ).catch(() => []);
-  if (byName?.[0]?.email) return { email: String(byName[0].email).toLowerCase(), profile: byName[0] };
   return null;
 }
 
@@ -2229,24 +2220,8 @@ async function patchOwnOrder(profile, id, expected, patch, message) {
 
 async function trySendResetCodeEmail(email, code) {
   try {
-    const host = process.env.SMTP_HOST || "";
-    const pass = process.env.SMTP_PASS || "";
-    const user = process.env.SMTP_USER || "";
-    if (!host || !pass) return false;
-    const nodemailer = (await import("nodemailer")).default;
-    const port = Number(process.env.SMTP_PORT || 587);
-    const transporter = nodemailer.createTransport({
-      host,
-      port,
-      secure: port === 465,
-      auth: { user: user || "apikey", pass },
-    });
-    await transporter.sendMail({
-      from: process.env.SMTP_FROM || user || ("noreply@" + String(host).replace(/^mail\./, "")),
-      to: email,
-      subject: "妙脆角陪玩端 · 密码重设验证码",
-      text: "你的验证码是：" + code + "\n\n15 分钟内有效。如非本人操作请忽略。",
-    });
+    const { sendEmailOtp } = await import("./_mail.js");
+    await sendEmailOtp({ to: email, code, purpose: "forgot", roleLabel: "陪玩端" });
     return true;
   } catch {
     return false;
@@ -2314,36 +2289,26 @@ export default async function handler(req, res) {
       if (!profile || profile.status === "disabled") return json(res, 200, genericOk);
       const code = randomOtpCode();
       await storePasswordResetOtp(email, code);
-      let mailSent = await trySendResetCodeEmail(email, code);
-      try {
-        await supabaseJson(authUrl("recover"), {
-          method: "POST",
-          headers: anonHeaders(),
-          body: JSON.stringify({ email }),
-        });
-        mailSent = true;
-      } catch {
-        /* recover optional — keep SMTP result */
-      }
-      try {
-        await supabaseJson(authUrl("otp"), {
-          method: "POST",
-          headers: anonHeaders(),
-          body: JSON.stringify({ email, create_user: false }),
-        });
-        mailSent = true;
-      } catch {
-        /* otp optional */
-      }
+      const mailSent = await trySendResetCodeEmail(email, code);
+      const staging =
+        String(process.env.ALLOW_STAGING_OTP || "") === "1" ||
+        String(process.env.MCJ_OTP_DEBUG || "") === "1" ||
+        (String(process.env.VERCEL_ENV || "").toLowerCase() !== "production" &&
+          (/staging|localhost|127\.0\.0\.1/i.test(String(process.env.MCJ_PUBLIC_BASE || process.env.VERCEL_URL || "")) ||
+            String(process.env.VERCEL_ENV || "").toLowerCase() === "preview"));
       const masked = maskEmailHint(email);
-      return json(res, 200, {
+      const out = {
         ok: true,
         message: mailSent
-          ? `如该邮箱已注册，验证码 / 重设邮件已发送至 ${masked || "你的邮箱"}。`
-          : "如该邮箱已注册，将收到重设邮件或验证码，请查收后继续。",
+          ? `如该邮箱已注册，验证码已发送至 ${masked || "你的邮箱"}。`
+          : staging
+            ? "邮件服务暂不可用，已生成 Staging 调试验证码。"
+            : "如该邮箱已注册，将收到验证码邮件，请查收后继续。",
         emailMasked: masked,
         expiresInSec: 900,
-      });
+      };
+      if (staging) out.devCode = code;
+      return json(res, 200, out);
     }
     if (action === "verify_reset_code") {
       const body = await parseBody(req);
@@ -2469,16 +2434,15 @@ export default async function handler(req, res) {
     }
     if (action === "register") {
       const body = await parseBody(req); const email=String(body.email || body.account || "").trim().toLowerCase(); const password=String(body.password || ""); const nickname=String(body.nickname || body.name || "").trim();
-      const phoneReg = String(body.phone || "").trim();
       if (!email || !/^\S+@\S+\.\S+$/.test(email)) return json(res,400,{ok:false,message:"请输入有效邮箱"});
       if (!password || password.length < 8) return json(res,400,{ok:false,message:"密码至少 8 位"});
       if (!nickname) return json(res,400,{ok:false,message:"请输入陪玩昵称"});
-      // Block register when email/phone already belongs to a formal (approved) companion,
+      // Block register when email already belongs to a formal (approved) companion,
       // or an active draft/pending application (must login to continue, not create duplicates).
       try {
         const { isFormalCompanion, isApplicationDraft } = await import("./_companion-draft.js");
         const emailProfiles = await supabaseJson(
-          restUrl("profiles", `?email=eq.${encodeURIComponent(email)}&select=id,email,phone,phone_e164,role&limit=5`),
+          restUrl("profiles", `?email=eq.${encodeURIComponent(email)}&select=id,email,role&limit=5`),
           { headers: serviceHeaders() }
         ).catch(() => []);
         for (const ep of Array.isArray(emailProfiles) ? emailProfiles : []) {
@@ -2492,32 +2456,12 @@ export default async function handler(req, res) {
             return json(res, 409, { ok: false, message: "该邮箱已有陪玩申请，请直接登录陪玩端继续填写或查看审核进度。" });
           }
         }
-        if (phoneReg) {
-          const phoneProfiles = await supabaseJson(
-            restUrl(
-              "profiles",
-              `?or=(phone.eq.${encodeURIComponent(phoneReg)},phone_e164.eq.${encodeURIComponent(phoneReg)})&select=id,email,phone,phone_e164&limit=10`
-            ),
-            { headers: serviceHeaders() }
-          ).catch(() => []);
-          for (const pp of Array.isArray(phoneProfiles) ? phoneProfiles : []) {
-            const cp = await companionProfile(pp.id);
-            if (!cp) continue;
-            if (isFormalCompanion(cp)) {
-              return json(res, 409, { ok: false, message: "该手机号已绑定正式陪玩账号。" });
-            }
-            const st = String(cp.application_status || "").toLowerCase();
-            if (!/archived|deleted/.test(st) && (isApplicationDraft(cp) || /pending|submitted|review|reject|resubmit|need_more/.test(st))) {
-              return json(res, 409, { ok: false, message: "该手机号已有陪玩申请，请直接登录陪玩端继续。" });
-            }
-          }
-        }
       } catch (uniqErr) {
         console.warn("[companion/register] uniqueness probe:", uniqErr?.message || uniqErr);
       }
       const created = await supabaseJson(authUrl("admin/users"), { method:"POST", headers: serviceHeaders(), body: JSON.stringify({ email, password, email_confirm: true, user_metadata: { display_name: nickname } }) });
-      await supabaseJson(restUrl("profiles"), { method:"POST", headers: serviceHeaders(), body: JSON.stringify({ id: created.id, role: "companion", display_name: nickname, email, phone: phoneReg, status: "active", created_at: nowIso() }) });
-      await supabaseJson(restUrl("companion_profiles"), { method:"POST", headers: serviceHeaders(), body: JSON.stringify({ user_id: created.id, nickname, contact_phone: phoneReg || "", verification_status: "pending", deposit_status: "pending", application_status: "draft", allow_orders: false, online_status: "offline", created_at: nowIso(), updated_at: nowIso() }) });
+      await supabaseJson(restUrl("profiles"), { method:"POST", headers: serviceHeaders(), body: JSON.stringify({ id: created.id, role: "companion", display_name: nickname, email, phone: "", status: "active", created_at: nowIso() }) });
+      await supabaseJson(restUrl("companion_profiles"), { method:"POST", headers: serviceHeaders(), body: JSON.stringify({ user_id: created.id, nickname, contact_phone: "", verification_status: "pending", deposit_status: "pending", application_status: "draft", allow_orders: false, online_status: "offline", created_at: nowIso(), updated_at: nowIso() }) });
       const auth = await supabaseJson(authUrl("token?grant_type=password"), { method:"POST", headers: anonHeaders(), body: JSON.stringify({ email, password }) });
       const profile = await profileById(created.id);
       const companion = await companionProfile(created.id);
