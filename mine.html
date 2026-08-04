@@ -35,7 +35,7 @@
       var form=document.getElementById('profileForm');
       var editState=document.getElementById('editState');
       var state={loading:true,error:'',user:null,wallet:null};
-      function token(){return localStorage.getItem('mcjAuthAccessToken')||sessionStorage.getItem('mcjAuthAccessToken')||''}
+      function token(){try{localStorage.removeItem('mcjAuthAccessToken');localStorage.removeItem('mcjAuthRefreshToken')}catch(e){}return sessionStorage.getItem('mcjAuthAccessToken')||''}
       function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
       function date(v){if(!v)return '-';try{return new Date(v).toLocaleString('zh-CN',{hour12:false})}catch(e){return v}}
       function avatarHtml(user){var src=user&&user.avatarUrl;if(src)return '<img src="'+esc(src)+'" alt="头像">';var name=(user&&user.displayName)||'老板';return esc(name.slice(0,1)||'B')}
@@ -73,7 +73,7 @@
           var body=await res.json().catch(function(){return {}});
           if(!res.ok||!body.ok)throw new Error(body.message||'注册失败');
           var session=body.session||{};
-          if(session.accessToken){localStorage.setItem('mcjAuthAccessToken',session.accessToken);if(session.refreshToken)localStorage.setItem('mcjAuthRefreshToken',session.refreshToken);}
+          if(session.accessToken){try{localStorage.removeItem('mcjAuthAccessToken');localStorage.removeItem('mcjAuthRefreshToken')}catch(e){}sessionStorage.setItem('mcjAuthAccessToken',session.accessToken);if(session.refreshToken)sessionStorage.setItem('mcjAuthRefreshToken',session.refreshToken);}
           if(window.MCJRoleGate&&window.MCJRoleGate.saveSession)window.MCJRoleGate.saveSession(session,true);
           if(box)box.textContent=body.message||('注册成功。您的老板 UID：'+(body.bossUid||''));
           setTimeout(function(){location.href='mine.html'},800);
@@ -87,7 +87,7 @@
       });
       form.addEventListener('submit',async function(e){
         e.preventDefault();editState.textContent='保存中...';
-        try{var res=await fetch('/api/auth',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token()},body:JSON.stringify({action:'update_profile',avatarUrl:form.elements.avatarUrl.value,displayName:form.elements.displayName.value,phone:form.elements.phone.value})});var body=await res.json().catch(function(){return {}});if(!res.ok||!body.ok)throw new Error(body.message||'保存失败');state.user=body.user;if(window.MCJRoleGate&&window.MCJRoleGate.saveSession)window.MCJRoleGate.saveSession({user:body.user,accessToken:token(),refreshToken:localStorage.getItem('mcjAuthRefreshToken')||''},true);editState.textContent='资料已保存';setTimeout(function(){modal.classList.remove('open');paint()},450)}catch(err){editState.textContent=err.message||'保存失败'}
+        try{var res=await fetch('/api/auth',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token()},body:JSON.stringify({action:'update_profile',avatarUrl:form.elements.avatarUrl.value,displayName:form.elements.displayName.value,phone:form.elements.phone.value})});var body=await res.json().catch(function(){return {}});if(!res.ok||!body.ok)throw new Error(body.message||'保存失败');state.user=body.user;if(window.MCJRoleGate&&window.MCJRoleGate.saveSession)window.MCJRoleGate.saveSession({user:body.user,accessToken:token(),refreshToken:sessionStorage.getItem('mcjAuthRefreshToken')||''},true);editState.textContent='资料已保存';setTimeout(function(){modal.classList.remove('open');paint()},450)}catch(err){editState.textContent=err.message||'保存失败'}
       });
       load();
     })();
