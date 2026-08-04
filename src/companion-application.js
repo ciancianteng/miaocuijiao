@@ -329,7 +329,6 @@
       '<label class="form-field full">邮箱<input name="authEmail" type="email" inputmode="email" autocomplete="username" placeholder="name@example.com" required value="' + esc(authUi.loginEmail || "") + '"></label>' +
       '<label class="form-field full">密码<input name="authPassword" type="password" autocomplete="current-password" required></label>' +
       '<div class="apply-actions apply-auth-actions full"><button class="apply-btn primary" type="button" data-apply-login-password' + (authUi.busy ? " disabled" : "") + ">登录并继续申请</button></div>" +
-      authMessageHtml() +
       "</form>";
 
     var loginOtp =
@@ -344,7 +343,6 @@
       "</div></label></div>" +
       '<label class="form-field full">邮箱验证码<input name="authLoginCode" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6 位验证码" required></label>' +
       '<div class="apply-actions apply-auth-actions full"><button class="apply-btn primary" type="button" data-apply-login-otp' + (authUi.busy ? " disabled" : "") + ">验证码登录</button></div>" +
-      authMessageHtml() +
       "</form>";
 
     return (
@@ -352,7 +350,7 @@
       "<h2>先创建 / 登录陪玩账号</h2>" +
       "<p>申请资料会写入平台数据库，审核通过后可直接用此邮箱登录陪玩端。MVP 仅支持邮箱验证码，不再使用手机号。</p>" +
       tabs +
-      (mode === "register" ? registerPanel : loginTabs + loginPwd + loginOtp) +
+      (mode === "register" ? registerPanel : loginTabs + loginPwd + loginOtp + authMessageHtml()) +
       '<p class="apply-note">新用户：邮箱 → 发送验证码 → 验证成功 → 设置密码与昵称 → 注册并进入 1/5 申请流程。</p>' +
       "</section>"
     );
