@@ -553,8 +553,9 @@
       return true;
     }
 
-    if (/\/(mine|orders|support|recharge|messages|favorites|profile|payment-confirm|order-confirm|gifts)\.html$/i.test(p)) {
+    if (/\/(mine|orders|support|recharge|messages|favorites|payment-confirm|order-confirm|gifts)\.html$/i.test(p)) {
       // Soft / refresh alone insufficient — require non-expired access JWT.
+      // profile.html is public companion detail and stays ungated.
       if (!hasValidBossAccessToken()) {
         wipeBossGuestArtifacts();
         return denyUnauthed("/login.html", returnPath());
@@ -575,7 +576,7 @@
       return true;
     }
     if (storageRole(role) === "customer" || role === "boss") {
-      if (/\/(mine|orders|support|recharge|messages|favorites|profile|payment-confirm|order-confirm|gifts)\.html$/i.test(path())) {
+      if (/\/(mine|orders|support|recharge|messages|favorites|payment-confirm|order-confirm|gifts)\.html$/i.test(path())) {
         if (!hasValidBossAccessToken()) {
           wipeBossGuestArtifacts();
           return denyUnauthed("/login.html", returnPath());

@@ -278,8 +278,9 @@
 
     // —— Boss protected pages ——
     // Soft / refresh / URL params NEVER unlock. Require non-expired access JWT.
+    // NOTE: profile.html is public companion detail — do NOT gate it.
     if (
-      /\/(mine|orders|support|recharge|messages|favorites|profile|payment-confirm|order-confirm|gifts)\.html$/i.test(
+      /\/(mine|orders|support|recharge|messages|favorites|payment-confirm|order-confirm|gifts)\.html$/i.test(
         p
       )
     ) {
