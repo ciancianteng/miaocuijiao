@@ -1221,6 +1221,9 @@ export default async function handler(req, res) {
     ) {
       return handleLoginWithOtp(body, res);
     }
+    if (requestedAction === "mail_status") {
+      return json(res, 200, { ok: true, mail: mailProviderStatus() });
+    }
     if (requestedAction !== "login") return json(res, 400, { ok: false, message: "未知登录操作" });
     const email = String(body.email || body.account || "").trim().toLowerCase();
     const password = String(body.password || "");
