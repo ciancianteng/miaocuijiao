@@ -1,4 +1,4 @@
-﻿(function () {
+(function () {
   var root = document.getElementById("supportApp");
   if (!root) return;
 
@@ -36,6 +36,106 @@
   var COMPOSER_SEL = '[data-send] [name="content"]';
   var EMOJIS = ["😀", "😁", "😂", "😊", "😍", "😘", "👍", "🙏", "🎉", "🐱", "💖", "🔥"];
   var toastTimer = null;
+  var BOSS_CONSULT_TYPES = [
+    { key: "other", label: "普通咨询（无需下单）", needsOrder: false },
+    { key: "new_order", label: "新订单咨询", needsOrder: false },
+    { key: "current_order", label: "当前订单问题", needsOrder: true },
+    { key: "recharge", label: "充值问题", needsOrder: false },
+    { key: "refund", label: "退款售后", needsOrder: true },
+  ];
+
+  /** Modal picker — never use browser prompt / number entry. */
+  function pickBossConsultType(defaultKey) {
+    return new Promise(function (resolve) {
+      var existing = document.querySelector("[data-support-consult-modal]");
+      if (existing) existing.remove();
+      var def = String(defaultKey || "other");
+      var orders = state.orders || [];
+      var modal = document.createElement("div");
+      modal.className = "support-consult-modal";
+      modal.setAttribute("data-support-consult-modal", "1");
+      modal.innerHTML =
+        '<div class="support-consult-dialog" role="dialog" aria-modal="true" aria-labelledby="supportConsultTitle">' +
+        '<div class="support-consult-head"><h3 id="supportConsultTitle">新建人工客服咨询</h3>' +
+        '<button type="button" class="support-btn" data-consult-cancel>取消</button></div>' +
+        '<p class="support-consult-hint">不同问题会进入独立会话；普通咨询无需先下单。</p>' +
+        '<div class="support-consult-types" role="listbox" aria-label="咨询类型">' +
+        BOSS_CONSULT_TYPES.map(function (t) {
+          return (
+            '<button type="button" class="support-consult-type' +
+            (t.key === def ? " is-active" : "") +
+            '" data-consult-type="' +
+            esc(t.key) +
+            '" data-needs-order="' +
+            (t.needsOrder ? "1" : "0") +
+            '">' +
+            esc(t.label) +
+            "</button>"
+          );
+        }).join("") +
+        "</div>" +
+        '<label class="support-consult-order" data-consult-order-wrap hidden>关联订单（可选）' +
+        '<select data-consult-order><option value="">不关联订单</option>' +
+        orders
+          .map(function (o) {
+            return (
+              '<option value="' +
+              esc(o.id) +
+              '">' +
+              esc(o.orderNo || o.id) +
+              " · " +
+              esc(o.statusText || o.status || "") +
+              "</option>"
+            );
+          })
+          .join("") +
+        "</select></label>" +
+        '<button type="button" class="support-btn primary" data-consult-confirm>创建会话</button>' +
+        "</div>";
+      document.body.appendChild(modal);
+      var selected = def;
+      function syncOrderWrap() {
+        var hit = BOSS_CONSULT_TYPES.find(function (t) {
+          return t.key === selected;
+        });
+        var wrap = modal.querySelector("[data-consult-order-wrap]");
+        if (wrap) wrap.hidden = !(hit && hit.needsOrder);
+      }
+      syncOrderWrap();
+      function finish(result) {
+        try {
+          modal.remove();
+        } catch (e) {}
+        resolve(result);
+      }
+      modal.addEventListener("click", function (ev) {
+        if (ev.target === modal || ev.target.closest("[data-consult-cancel]")) {
+          finish(null);
+          return;
+        }
+        var typeBtn = ev.target.closest("[data-consult-type]");
+        if (typeBtn) {
+          selected = typeBtn.getAttribute("data-consult-type") || "other";
+          modal.querySelectorAll("[data-consult-type]").forEach(function (b) {
+            b.classList.toggle("is-active", b.getAttribute("data-consult-type") === selected);
+          });
+          syncOrderWrap();
+          return;
+        }
+        if (ev.target.closest("[data-consult-confirm]")) {
+          var orderSel = modal.querySelector("[data-consult-order]");
+          var orderId = "";
+          var hit = BOSS_CONSULT_TYPES.find(function (t) {
+            return t.key === selected;
+          });
+          if (hit && hit.needsOrder && orderSel) {
+            orderId = String(orderSel.value || "").trim();
+          }
+          finish({ consultType: selected || "other", orderId: orderId });
+        }
+      });
+    });
+  }
 
   function esc(v) {
     return String(v == null ? "" : v).replace(/[&<>"']/g, function (c) {
@@ -45,16 +145,57 @@
   function Auth() {
     return window.MCJBossAuth || null;
   }
-  function hasAuthSession() {
-    var auth = Auth();
-    if (auth && typeof auth.hasSession === "function") return !!auth.hasSession();
-    // Only real JWT session counts — never treat legacy customerAuthToken as login.
-    return !!(
+  function sharedRoleHint() {
+    try {
+      var u = JSON.parse(localStorage.getItem("customerUser") || sessionStorage.getItem("customerUser") || "{}");
+      if (u && u.role) return String(u.role).toLowerCase();
+    } catch (e) {}
+    return String(localStorage.getItem("mcjRole") || sessionStorage.getItem("mcjRole") || "").toLowerCase();
+  }
+  function hasBossGateSession() {
+    var jwt =
       localStorage.getItem("mcjAuthAccessToken") ||
       sessionStorage.getItem("mcjAuthAccessToken") ||
-      localStorage.getItem("mcjAuthRefreshToken") ||
-      sessionStorage.getItem("mcjAuthRefreshToken")
-    );
+      "";
+    // Soft session alone is never enough for support data.
+    if (!jwt || String(jwt).split(".").length !== 3) return false;
+    var role = sharedRoleHint();
+    if (role && role !== "boss" && role !== "customer" && role !== "user") return false;
+    if (window.MCJRoleGate && typeof window.MCJRoleGate.isLogged === "function") {
+      return !!(window.MCJRoleGate.isLogged("customer") || window.MCJRoleGate.isLogged("boss") || jwt);
+    }
+    return true;
+  }
+  function promptBossLogin(resumeFn) {
+    if (window.MCJAuthContinue && typeof window.MCJAuthContinue.requireLogin === 'function') {
+      window.MCJAuthContinue.requireLogin(typeof resumeFn === 'function' ? resumeFn : function () {
+        resolveIdentity().then(function () {
+          softUpdate({ keepScroll: true });
+          if (hasAuthSession()) bootstrap();
+        });
+      });
+      return;
+    }
+    if (window.MCJModal && typeof window.MCJModal.openLogin === 'function') {
+      window.MCJModal.openLogin('login');
+      return;
+    }
+    location.href = 'index.html#login';
+  }
+
+  function hasAuthSession() {
+    // Boss support must not treat CS/companion shared JWT as a boss session.
+    if (hasBossGateSession()) {
+      var auth = Auth();
+      if (auth && typeof auth.hasSession === "function") return !!auth.hasSession();
+      return !!(
+        localStorage.getItem("mcjAuthAccessToken") ||
+        sessionStorage.getItem("mcjAuthAccessToken") ||
+        localStorage.getItem("mcjAuthRefreshToken") ||
+        sessionStorage.getItem("mcjAuthRefreshToken")
+      );
+    }
+    return false;
   }
   function isBossLikeRole(role) {
     role = String(role || "").trim().toLowerCase();
@@ -69,6 +210,14 @@
       state.authLoading = false;
       state.customerLoading = false;
       state.identity = null;
+      // Foreign-role JWT left in shared keys: ask for boss login, do not claim CS identity on boss UI.
+      var foreign = sharedRoleHint();
+      if (foreign && !isBossLikeRole(foreign) && (
+        localStorage.getItem("mcjAuthAccessToken") ||
+        sessionStorage.getItem("mcjAuthAccessToken")
+      )) {
+        state.authError = "请先登录后使用在线客服";
+      }
       return Promise.resolve(null);
     }
     var auth = Auth();
@@ -83,6 +232,17 @@
         var user = body.user;
         if (!isBossLikeRole(user.role)) {
           var role = String(user.role || "").toLowerCase();
+          // Stale foreign JWT: drop shared mirrors so boss UI stops reading CS/companion identity.
+          if (window.MCJRoleGate && typeof window.MCJRoleGate.clearSharedAuthMirrors === "function") {
+            window.MCJRoleGate.clearSharedAuthMirrors();
+          } else {
+            ["mcjAuthAccessToken", "mcjAuthRefreshToken", "mcjAuthExpiresAt", "mcjRole"].forEach(function (k) {
+              try {
+                localStorage.removeItem(k);
+                sessionStorage.removeItem(k);
+              } catch (e) {}
+            });
+          }
           if (role === "companion" || role === "player") {
             state.authError = "当前登录的是陪玩账号，请使用老板账号打开在线客服。";
           } else if (role === "customer_service" || role === "service") {
@@ -130,6 +290,28 @@
   }
   function wantsAutoOpen() {
     return !!(orderId() || conversationParam() || q.get("start") === "1" || q.get("from") === "gameplay");
+  }
+  function isAftersale() {
+    return q.get("aftersale") === "1";
+  }
+  function draftParam() {
+    return q.get("draft") || "";
+  }
+  function applyDraftFromQuery() {
+    var draft = draftParam();
+    if (!draft) return;
+    if (String(state.composerDraft || "").trim()) return;
+    state.composerDraft = draft;
+    state.composerFocused = true;
+    state.mobileDetail = true;
+    try {
+      var u = new URL(location.href);
+      u.searchParams.delete("draft");
+      history.replaceState(null, "", u.pathname + u.search);
+      q = new URLSearchParams(u.search);
+    } catch (e) {}
+    softUpdate({ keepScroll: true });
+    if (isAftersale()) toast("请补充售后原因后发送，客服会尽快跟进处理。");
   }
   function isMobile() {
     return !!(window.matchMedia && window.matchMedia("(max-width: 820px)").matches);
@@ -183,7 +365,8 @@
   function topStatusText(c) {
     var s = String((c && c.status) || "");
     if (s === "closed" || s === "ended") return "会话已结束";
-    if (s === "open" || (c && (c.customerServiceId || c.customer_service_id))) return "客服已接入";
+    if (s === "pending_transfer") return "正在为你更换客服。";
+    if (s === "open" || s === "active" || s === "serving" || (c && (c.customerServiceId || c.customer_service_id))) return "客服已接入";
     if (s === "offline" || (state.serviceOnline === false && s !== "waiting_service" && s !== "waiting")) return "客服暂时离线";
     if (s === "waiting_service" || s === "waiting" || !s) return "等待客服接待";
     return "可重新发起咨询";
@@ -250,8 +433,67 @@
     else box.scrollTop = Math.max(0, box.scrollHeight - prevBottom);
     return true;
   }
+  function parseCompanionCard(raw) {
+    try {
+      var o = typeof raw === "string" ? JSON.parse(raw) : raw;
+      if (!o || typeof o !== "object") return null;
+      if (o.type && o.type !== "companion_card" && !o.companionId) return null;
+      return o;
+    } catch (e) {
+      return null;
+    }
+  }
   function msgHtml(m) {
-    var card = m.message_type === "product_card" ? parseCard(m.content) : null;
+    var mt = m.message_type || m.messageType || "";
+    var companionCard =
+      mt === "companion_card"
+        ? parseCompanionCard(m.content)
+        : mt === "text"
+          ? (function () {
+              var t = String(m.content || "").trim();
+              if (t.charAt(0) !== "{") return null;
+              var c = parseCompanionCard(t);
+              return c && (c.type === "companion_card" || c.companionId) ? c : null;
+            })()
+          : null;
+    if (companionCard) {
+      var avatar = companionCard.avatarUrl
+        ? '<img src="' + esc(companionCard.avatarUrl) + '" alt="" style="width:56px;height:56px;border-radius:12px;object-fit:cover">'
+        : '<div class="support-product-cover">' + esc(String(companionCard.nickname || "陪").slice(0, 1)) + "</div>";
+      return (
+        '<div class="support-msg" data-msg-id="' +
+        esc(m.id || "") +
+        '"><div class="support-product-card support-companion-card" style="display:flex;gap:10px;align-items:flex-start">' +
+        avatar +
+        "<div style=\"flex:1;min-width:0\"><strong>" +
+        esc(companionCard.nickname || "陪玩") +
+        "</strong><span>ID " +
+        esc(companionCard.companionCode || companionCard.companionId || "-") +
+        " · " +
+        esc(companionCard.level || "-") +
+        "</span><span>音色 " +
+        esc(companionCard.voiceType || "-") +
+        " · " +
+        esc(companionCard.game || "-") +
+        " · " +
+        esc(String(companionCard.unitPrice != null ? companionCard.unitPrice : "-")) +
+        "</span><span>标签 " +
+        esc(companionCard.tags || "-") +
+        '</span><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">' +
+        '<a class="support-inline-link" href="' +
+        esc(companionCard.detailUrl || ("profile.html?player=" + encodeURIComponent(companionCard.companionId || ""))) +
+        '" target="_blank" rel="noopener">查看详情</a>' +
+        '<button type="button" class="order-btn primary" data-want-him="' +
+        esc(companionCard.orderId || "") +
+        '" data-companion-id="' +
+        esc(companionCard.companionId || "") +
+        '">我要他</button>' +
+        "</div><small>" +
+        esc(shortTime(m.created_at || "")) +
+        "</small></div></div></div>"
+      );
+    }
+    var card = mt === "product_card" ? parseCard(m.content) : null;
     if (card) {
       return (
         '<div class="support-msg ' +
@@ -268,7 +510,7 @@
       );
     }
     var mine = m.sender_role === "boss";
-    var system = m.sender_role === "system" || m.message_type === "system";
+    var system = m.sender_role === "system" || mt === "system";
     var failed = !!m._failed;
     var pending = !!m._pending;
     var Media = window.MCJChatMedia;
@@ -307,7 +549,8 @@
     var RT = window.MCJChatRealtime;
     var cid = String(conversationId || (state.conversation && state.conversation.id) || "").trim();
     if (!RT || !cid) return;
-    RT.unsubscribeAll();
+    // Only drop this conversation channel — never wipe unrelated pool/message channels.
+    if (typeof RT.unsubscribe === "function") RT.unsubscribe(cid);
     RT.subscribeMessages(cid, authAccessToken(), function (row) {
       if (!row || !row.id) return;
       if (state.messages.some(function (m) { return m.id === row.id; })) return;
@@ -587,9 +830,7 @@
     if (!hasAuthSession() || /请先登录/.test(String(state.authError || ""))) {
       return (
         '<div class="support-login-panel"><strong>请先登录后使用在线客服</strong><br>' +
-        '<a class="support-btn primary" href="index.html?login=1&redirect=' +
-        encodeURIComponent(location.pathname + location.search) +
-        '">立即登录</a></div>'
+        '<button class="support-btn primary" type="button" data-support-login>立即登录</button></div>'
       );
     }
     if (state.authError) {
@@ -619,7 +860,7 @@
     var chatStatus = topStatusText(state.conversation);
     if (isClosedConversation(state.conversation)) chatStatus = '会话已结束 · 可重新发起咨询';
     else if (state.serviceStatus && !/重新安排/.test(String(state.serviceStatus || ''))) {
-      if (/等待客服接待|客服暂时离线|客服已接入|正在为您服务|会话已结束/.test(String(state.serviceStatus))) {
+      if (/等待客服接待|客服暂时离线|客服已接入|正在为您服务|会话已结束|正在为你更换客服/.test(String(state.serviceStatus))) {
         chatStatus = state.serviceStatus;
       }
     }
@@ -780,6 +1021,10 @@
     }
     if (typeof body.serviceOnline === 'boolean') state.serviceOnline = body.serviceOnline;
     if (body.serviceStatus) state.serviceStatus = body.serviceStatus;
+    var st = String((state.conversation && state.conversation.status) || body.serviceStatus || "");
+    if (/pending_transfer|正在为你更换客服/.test(st)) {
+      toast("正在为你更换客服。");
+    }
     state.error = '';
     softUpdate(opts);
     var nextCid = state.conversation && state.conversation.id;
@@ -787,6 +1032,19 @@
     else if (nextCid && !state.realtimeReady) bindBossRealtime(nextCid);
   }
   function bootstrap() {
+    if (!hasAuthSession()) {
+      state.loading = false;
+      state.authLoading = false;
+      state.customerLoading = false;
+      state.authError = "请先登录后使用在线客服";
+      state.conversations = [];
+      state.orders = [];
+      state.conversation = null;
+      state.messages = [];
+      paint();
+      promptBossLogin();
+      return Promise.resolve(null);
+    }
     paint();
     state.loading = true;
     state.error = "";
@@ -823,6 +1081,9 @@
           state.mobileDetail = false;
           softUpdate({ keepScroll: true });
           return null;
+        }).then(function (result) {
+          applyDraftFromQuery();
+          return result;
         });
       })
       .catch(function (err) {
@@ -887,11 +1148,24 @@
   }, true);
 
   document.addEventListener('click', function (e) {
+    var loginBtn = e.target.closest('[data-support-login]');
+    if (loginBtn) {
+      e.preventDefault();
+      promptBossLogin(function () {
+        resolveIdentity().then(function () {
+          softUpdate({ keepScroll: true });
+          if (hasAuthSession()) bootstrap();
+        });
+      });
+      return;
+    }
     var contact = e.target.closest('[data-contact-service]');
     if (contact) {
       e.preventDefault();
       if (!hasAuthSession()) {
-        location.href = 'index.html?login=1';
+        promptBossLogin(function () {
+          contact.click();
+        });
         return;
       }
       if (state.opening || state.creatingGeneral) {
@@ -900,10 +1174,23 @@
       }
       state.creatingGeneral = true;
       softUpdate({ keepScroll: true });
-      // Prefer reuse of an active general thread; forceNew when current thread is closed.
-      var needNew = isClosedConversation(state.conversation);
-      openConversation(needNew ? { action: 'reopen', forceNew: true } : { action: 'open' })
-        .then(startPoll)
+      // Different consult types MUST create independent conversations (no account lock reuse).
+      pickBossConsultType("other").then(function (picked) {
+        if (!picked) {
+          state.creatingGeneral = false;
+          softUpdate({ keepScroll: true });
+          return;
+        }
+        var consultType = picked.consultType || "other";
+        var linkedOrder = String(picked.orderId || "").trim();
+        var needNew = isClosedConversation(state.conversation) ||
+          (state.conversation && String(state.conversation.consultType || state.conversation.consult_type || "") !== consultType);
+        var openPayload = needNew
+          ? { action: "reopen", forceNew: true, consult_type: consultType }
+          : { action: "open", consult_type: consultType };
+        if (linkedOrder) openPayload.order_id = linkedOrder;
+        return openConversation(openPayload).then(startPoll);
+      })
         .catch(function () {})
         .finally(function () {
           state.creatingGeneral = false;
@@ -915,7 +1202,9 @@
     if (reopen) {
       e.preventDefault();
       if (!hasAuthSession()) {
-        location.href = 'index.html?login=1';
+        promptBossLogin(function () {
+          reopen.click();
+        });
         return;
       }
       if (state.opening || state.creatingGeneral) {
@@ -924,12 +1213,15 @@
       }
       var cur = state.conversation || {};
       var oid = String(cur.orderId || cur.order_id || orderId() || '').trim();
-      var payload = oid
-        ? { action: 'reopen', forceNew: true, order_id: oid }
-        : { action: 'reopen', forceNew: true };
-      openConversation(payload)
-        .then(startPoll)
-        .catch(function () {});
+      pickBossConsultType(oid ? "current_order" : "other").then(function (picked) {
+        if (!picked) return;
+        var consultType = picked.consultType || (oid ? "current_order" : "other");
+        var linked = String(picked.orderId || oid || "").trim();
+        var payload = linked
+          ? { action: 'reopen', forceNew: true, order_id: linked, consult_type: consultType }
+          : { action: 'reopen', forceNew: true, consult_type: consultType };
+        return openConversation(payload).then(startPoll);
+      }).catch(function () {});
       return;
     }
     var emojiToggle = e.target.closest('[data-toggle-emoji]');
@@ -942,7 +1234,9 @@
     if (imgBtn && root.contains(imgBtn)) {
       e.preventDefault();
       if (!hasAuthSession()) {
-        location.href = 'index.html?login=1';
+        promptBossLogin(function () {
+          imgBtn.click();
+        });
         return;
       }
       if (isClosedConversation(state.conversation)) {
@@ -1063,7 +1357,7 @@
       sender_name: '我',
     };
     state.messages = state.messages.concat([optimistic]);
-    softUpdate({ keepScroll: false });
+    if (!patchMessages({ keepScroll: false })) softUpdate({ keepScroll: false });
     var payload = {
       action: 'send',
       content: url,
@@ -1086,14 +1380,14 @@
         if (serverMsg && !state.messages.some(function (m) { return m.id === serverMsg.id; })) {
           state.messages = state.messages.concat([serverMsg]);
         }
-        softUpdate({ keepScroll: false });
+        if (!patchMessages({ keepScroll: false })) softUpdate({ keepScroll: false });
       })
       .catch(function (err) {
         state.messages = state.messages.map(function (m) {
           if (m._localId !== localId) return m;
           return Object.assign({}, m, { _pending: false, _failed: true });
         });
-        softUpdate({ keepScroll: true });
+        if (!patchMessages({ keepScroll: true })) softUpdate({ keepScroll: true });
         toast(err.message || '图片发送失败，可点击重试');
       });
   }
@@ -1102,7 +1396,9 @@
     if (!e.target.matches('[data-send]')) return;
     e.preventDefault();
     if (!hasAuthSession()) {
-      location.href = 'index.html?login=1';
+      promptBossLogin(function () {
+        e.target.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+      });
       return;
     }
     captureComposer();
@@ -1127,7 +1423,8 @@
     state.composerDraft = '';
     var inputClear = root.querySelector(COMPOSER_SEL);
     if (inputClear) inputClear.value = '';
-    softUpdate({ keepScroll: false });
+    if (!patchMessages({ keepScroll: false })) softUpdate({ keepScroll: false });
+    syncComposerChrome();
     var payload = { action: 'send', content: content, conversation_id: state.conversation.id };
     var oid = orderId() || state.conversation.order_id || state.conversation.orderId || '';
     if (oid) payload.order_id = oid;
@@ -1142,13 +1439,14 @@
       if (body.conversation) state.conversation = body.conversation;
       if (typeof body.serviceOnline === 'boolean') state.serviceOnline = body.serviceOnline;
       if (body.serviceStatus) state.serviceStatus = body.serviceStatus;
-      softUpdate({ keepScroll: false });
+      if (!patchMessages({ keepScroll: false })) softUpdate({ keepScroll: false });
+      else patchSessionList();
     }).catch(function (err) {
       state.messages = state.messages.map(function (m) {
         if (m._localId !== localId) return m;
         return Object.assign({}, m, { _pending: false, _failed: true });
       });
-      softUpdate({ keepScroll: true });
+      if (!patchMessages({ keepScroll: true })) softUpdate({ keepScroll: true });
       toast(err.message || '发送失败，可点击重试');
     }).finally(function () {
       state.sending = false;
@@ -1159,6 +1457,48 @@
   });
 
   document.addEventListener('click', function (e) {
+    var want = e.target.closest('[data-want-him]');
+    if (want && root.contains(want)) {
+      e.preventDefault();
+      var oid = want.getAttribute('data-want-him') || '';
+      var cid = want.getAttribute('data-companion-id') || '';
+      if (!oid || !cid) {
+        alert('缺少订单或陪玩信息');
+        return;
+      }
+      if (!confirm('确认选择该陪玩？订单将进入待陪玩确认。')) return;
+      want.disabled = true;
+      var prev = want.textContent;
+      want.textContent = '处理中…';
+      var token =
+        localStorage.getItem('mcjAuthAccessToken') ||
+        sessionStorage.getItem('mcjAuthAccessToken') ||
+        '';
+      fetch('/api/orders', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer ' + token,
+        },
+        body: JSON.stringify({ action: 'want_him', id: oid, companion_id: cid, bind: true }),
+      })
+        .then(function (res) {
+          return res.json().then(function (body) {
+            return { res: res, body: body };
+          });
+        })
+        .then(function (x) {
+          if (!x.res.ok || x.body.ok === false) throw new Error(x.body.message || '选择失败');
+          alert(x.body.message || '已选择陪玩，等待陪玩确认。');
+          want.textContent = '已选择';
+        })
+        .catch(function (err) {
+          want.disabled = false;
+          want.textContent = prev || '我要他';
+          alert(err.message || '选择失败');
+        });
+      return;
+    }
     var retry = e.target.closest('[data-retry-msg]');
     if (!retry || !root.contains(retry)) return;
     e.preventDefault();

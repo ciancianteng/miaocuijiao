@@ -124,27 +124,42 @@
     );
   }
 
-  function hasAuthSession() {
+  function looksLikeJwt(token) {
+    var t = String(token || "").trim();
+    if (!t || t.length < 20) return false;
+    var parts = t.split(".");
+    return parts.length === 3 && parts.every(function (part) {
+      return part.length > 0;
+    });
+  }
+
+  function hasValidBossJwt() {
     if (window.MCJBossAuth && typeof window.MCJBossAuth.hasSession === "function") {
-      return !!window.MCJBossAuth.hasSession();
+      try {
+        if (window.MCJBossAuth.hasSession()) return true;
+      } catch (e) {}
     }
-    return !!(
-      accessToken() ||
-      localStorage.getItem("customerAuthToken") ||
-      sessionStorage.getItem("customerAuthToken")
-    );
+    return looksLikeJwt(accessToken());
+  }
+
+  function hasAuthSession() {
+    // Soft customerAuthToken alone is NOT a session — require live JWT.
+    return hasValidBossJwt();
   }
 
   function isLoggedIn() {
-    var gateOk = false;
-    if (window.MCJRoleGate && typeof window.MCJRoleGate.isLogged === "function") {
-      gateOk = !!(window.MCJRoleGate.isLogged("customer") || window.MCJRoleGate.isLogged("boss"));
+    // Soft/cached identity must never hide the Login CTA or unlock private UI.
+    return hasValidBossJwt();
+  }
+
+  function deskAuthLinkHtml() {
+    if (isLoggedIn()) {
+      return navLink("mine.html", "个人中心");
     }
-    if (gateOk) return true;
-    return !!(
-      accessToken() ||
-      localStorage.getItem("customerAuthToken") ||
-      sessionStorage.getItem("customerAuthToken")
+    return (
+      '<a href="login.html" data-mcj-boss-login' +
+      (activeHref("login.html") ? ' class="active"' : "") +
+      ">登录</a>"
     );
   }
 
@@ -191,7 +206,8 @@
           navLink("index.html", "首页") +
           navLink("companion-center.html", "大厅") +
           navLink("orders.html", "订单") +
-          navLink("support.html?start=1", "客服");
+          navLink("support.html?start=1", "客服") +
+          deskAuthLinkHtml();
       }
       fillMobileDrawerLinks();
     }
@@ -227,14 +243,7 @@
   }
 
   function mobileAuthLinkHtml() {
-    if (isLoggedIn()) {
-      return navLink("mine.html", "个人中心");
-    }
-    return (
-      '<a href="login.html" data-mcj-boss-login' +
-      (activeHref("login.html") ? ' class="active"' : "") +
-      ">登录</a>"
-    );
+    return deskAuthLinkHtml();
   }
 
   function mobileDrawerLinksHtml() {
@@ -275,6 +284,7 @@
       navLink("companion-center.html", "大厅") +
       navLink("orders.html", "订单") +
       navLink("support.html?start=1", "客服") +
+      deskAuthLinkHtml() +
       "</nav></div>"
     );
   }

@@ -408,8 +408,9 @@
       return true;
     }
 
-    if (/\/(mine|orders|support|recharge)\.html$/i.test(p)) {
-      if (!isLogged("customer") && !isLogged("boss") && !readAccessToken()) {
+    if (/\/(mine|orders|support|recharge|messages|favorites|profile|payment-confirm|order-confirm|gifts)\.html$/i.test(p)) {
+      // Soft session alone is insufficient — require live access JWT.
+      if (!readAccessToken()) {
         return denyUnauthed("/login.html", returnPath());
       }
       return true;
@@ -428,8 +429,8 @@
       return true;
     }
     if (storageRole(role) === "customer" || role === "boss") {
-      if (/\/(mine|orders|support|recharge)\.html$/i.test(path())) {
-        if (!isLogged("customer") && !isLogged("boss") && !readAccessToken()) {
+      if (/\/(mine|orders|support|recharge|messages|favorites|profile|payment-confirm|order-confirm|gifts)\.html$/i.test(path())) {
+        if (!readAccessToken()) {
           return denyUnauthed("/login.html", returnPath());
         }
       }
