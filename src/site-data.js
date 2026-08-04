@@ -125,7 +125,10 @@
     var displayName = String(item.name || "").trim();
     if (isGarbledName(displayName)) displayName = "未命名陪玩";
     var price = item.price || item.servicePrice || "";
-    var detail = "profile.html?player=" + encodeURIComponent(item.publicId || item.id || item.name || "");
+    var uuid = String(item.id || item.uid || item.companionId || "").trim();
+    var isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(uuid);
+    // Always navigate by real companion/user UUID — never by PW public display code.
+    var detail = isUuid ? ("profile.html?id=" + encodeURIComponent(uuid)) : "";
     var focus = resolveCoverFocus(item);
     var pos = focus.x + "% " + focus.y + "%";
     var certBadges = "";
@@ -148,7 +151,10 @@
       certBadges =
         '<div class="hot-tags mcj-cert-tags"><span>✔ 已认证</span></div>';
     }
-    return '<article class="neon-card companion-card hot-card" data-companion-id="' + esc(item.id || "") + '" data-public-id="' + esc(focus.publicId || item.publicId || "") + '">' +
+    var actionHtml = detail
+      ? '<a class="mini-order" href="' + esc(detail) + '">查看详情</a>'
+      : '<span class="mini-order" aria-disabled="true" style="opacity:.55;pointer-events:none">资料不可用</span>';
+    return '<article class="neon-card companion-card hot-card" data-companion-id="' + esc(isUuid ? uuid : "") + '" data-public-id="' + esc(focus.publicId || item.publicId || "") + '">' +
       '<div class="hot-cover"><img src="' + esc(cover || avatar || "/default-avatar.png") + '" alt="' + esc(displayName) + '" data-cover-fit="' + esc(focus.fit) + '" style="object-fit:' + esc(focus.fit) + ';object-position:' + esc(pos) + ';--mcj-cover-pos:' + esc(pos) + '" onerror="this.onerror=null;this.src=\'/default-avatar.png\'"><span class="online-dot"></span></div>' +
       '<div class="hot-info">' +
       '<h3>' + esc(displayName) + '</h3>' +
@@ -157,7 +163,7 @@
       '<div class="hot-orders">' + esc(price || "") + '</div>' +
       certBadges +
       '<div class="hot-tags">' + tagsHtml(item.tags || item.serviceTags) + '</div>' +
-      '<a class="mini-order" href="' + esc(detail) + '">查看详情</a>' +
+      actionHtml +
       '</div>' +
       '</article>';
   }
@@ -165,9 +171,11 @@
     options = options || {};
     var track = document.getElementById(id);
     if (!track) return;
-    // Only render real companions — never pad blank TOP slots.
+    // Only render real companions with UUID ids — never pad blank TOP slots / fake PW-only rows.
     var source = (companions || []).filter(function (c) {
-      return c && c.id && !isGarbledName(c.name) && c.name;
+      var uuid = String((c && (c.id || c.uid || c.companionId)) || "").trim();
+      var isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(uuid);
+      return c && isUuid && !isGarbledName(c.name) && c.name;
     });
     var items = source.slice(0, 3);
     var cols = Math.max(1, items.length + 1); // companions + MORE
@@ -331,7 +339,9 @@
   function applyHomeCompanionTracks(comps, opts) {
     opts = opts || {};
     var hallValid = (comps || []).filter(function (c) {
-      return c && c.id && !isGarbledName(c.name) && c.name;
+      var uuid = String((c && (c.id || c.uid || c.companionId)) || "").trim();
+      var isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(uuid);
+      return c && isUuid && !isGarbledName(c.name) && c.name;
     });
     var hotPool = pickHotRecommendPool(hallValid);
     // Expose full recommendation source size for acceptance (display still top-3).
@@ -340,7 +350,8 @@
         count: hotPool.length,
         hallCount: hallValid.length,
         featuredCount: hallValid.filter(function (c) { return c.featured; }).length,
-        ids: hotPool.map(function (c) { return c.publicId || c.id; }),
+        ids: hotPool.map(function (c) { return c.id || c.uid; }),
+        publicIds: hotPool.map(function (c) { return c.publicId || ""; }),
         names: hotPool.map(function (c) { return c.name; }),
       };
     } catch (e) {}

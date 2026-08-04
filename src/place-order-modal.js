@@ -322,7 +322,7 @@
     try {
       var cid = state.companion && state.companion.companionId;
       var back = cid
-        ? "profile.html?player=" + encodeURIComponent(cid) + "&open_order=1"
+        ? "profile.html?id=" + encodeURIComponent(cid) + "&open_order=1"
         : location.href;
       sessionStorage.setItem("mcjAfterLoginRedirect", back);
     } catch (e) {}

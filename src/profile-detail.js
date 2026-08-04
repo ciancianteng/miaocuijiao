@@ -71,6 +71,13 @@
   }
   function renderError(msg, opts) {
     opts = opts || {};
+    var raw = String(msg || "");
+    var friendly = raw;
+    if (/invalid input syntax for type uuid|uuid|PGRST|postgres|数据库/i.test(raw)) {
+      friendly = "该陪玩资料不存在";
+    } else if (!friendly.trim()) {
+      friendly = "该陪玩资料不存在或已下架";
+    }
     var s = shell();
     var retry =
       opts.retry !== false
@@ -79,7 +86,7 @@
     if (s)
       s.innerHTML =
         '<section class="detail-card"><h1>暂无资料</h1><p>' +
-        esc(msg || "该陪玩资料不存在或已下架") +
+        esc(friendly) +
         '</p><div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px">' +
         retry +
         '<a class="order-now" href="companion-center.html" style="opacity:.9">返回陪玩大厅</a></div></section>';
@@ -794,7 +801,7 @@
           if (!settled) {
             settled = true;
             clearTimeout(failSafe);
-            renderError("该陪玩资料不存在或已下架", { retry: false });
+            renderError("该陪玩资料不存在", { retry: false });
           }
           return;
         }
@@ -834,7 +841,7 @@
         if (settled) return;
         settled = true;
         clearTimeout(failSafe);
-        renderError(err.message || "陪玩资料读取失败");
+        renderError(err.message || "该陪玩资料不存在");
       });
   }
 

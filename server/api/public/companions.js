@@ -17,6 +17,13 @@ import {
   resolveCompanionCover,
 } from "../_companion-public-map.js";
 import { createSignedUrl, publicObjectUrl } from "../_companion-media-store.js";
+import {
+  formatCompanionCode,
+  isCompanionCode,
+  isDbUuid,
+  parseCompanionCodeNumber,
+  resolveCompanionPublicCode,
+} from "../_account-codes.js";
 const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"];
 
 function json(res, status, data) {
@@ -277,22 +284,65 @@ async function mediaExtrasByProfile(profileIds = []) {
   return byProfile;
 }
 
-async function loadCompanions(id = "") {
-  let query = id
-    ? `?or=(user_id.eq.${encodeURIComponent(id)},companion_uid.eq.${encodeURIComponent(String(id).replace(/^P/i, ""))})&verification_status=eq.approved&limit=1`
-    : "?verification_status=eq.approved&order=updated_at.desc&limit=300";
-  let rows;
-  try {
-    rows = await supabaseJson(restUrl("companion_profiles", query), { headers: headers() });
-  } catch (e) {
-    if (id && /companion_uid|column/i.test(String(e.message || ""))) {
-      rows = await supabaseJson(
-        restUrl("companion_profiles", `?user_id=eq.${encodeURIComponent(id)}&verification_status=eq.approved&limit=1`),
-        { headers: headers() }
-      );
-    } else throw e;
+async function fetchCompanionRows(query) {
+  return supabaseJson(restUrl("companion_profiles", query), { headers: headers() }).catch(() => []);
+}
+
+/**
+ * Resolve one companion profile row by internal UUID or public PW/P code.
+ * Never pass a non-UUID value into a UUID column filter.
+ */
+async function resolveCompanionProfileRows(idRaw = "") {
+  const id = String(idRaw || "").trim();
+  if (!id) return null;
+
+  if (isDbUuid(id)) {
+    const byUser = await fetchCompanionRows(
+      `?user_id=eq.${encodeURIComponent(id)}&verification_status=eq.approved&limit=1`
+    );
+    if (byUser?.[0]) return byUser;
+    // Some callers may pass companion_profiles.id
+    return fetchCompanionRows(
+      `?id=eq.${encodeURIComponent(id)}&verification_status=eq.approved&limit=1`
+    );
   }
-  const companions = Array.isArray(rows) ? rows : [];
+
+  if (isCompanionCode(id)) {
+    const seq = parseCompanionCodeNumber(id);
+    const code = formatCompanionCode(seq);
+    const byCode = await fetchCompanionRows(
+      `?companion_code=eq.${encodeURIComponent(code)}&verification_status=eq.approved&limit=1`
+    );
+    if (byCode?.[0]) return byCode;
+
+    for (const uid of [seq, seq + 100000]) {
+      const byUid = await fetchCompanionRows(
+        `?companion_uid=eq.${encodeURIComponent(uid)}&verification_status=eq.approved&limit=1`
+      );
+      if (byUid?.[0]) return byUid;
+    }
+
+    // Scan fallback for rows with missing companion_code but resolvable public code.
+    const pool = await fetchCompanionRows(
+      "?verification_status=eq.approved&select=*&order=updated_at.desc&limit=500"
+    );
+    const hit = (Array.isArray(pool) ? pool : []).find((row) => resolveCompanionPublicCode(row) === code);
+    return hit ? [hit] : [];
+  }
+
+  // Unknown non-UUID / non-code lookup — do not hit UUID columns.
+  return [];
+}
+
+async function loadCompanions(id = "") {
+  let companions;
+  if (id) {
+    companions = await resolveCompanionProfileRows(id);
+    if (!Array.isArray(companions)) companions = [];
+  } else {
+    const rows = await fetchCompanionRows("?verification_status=eq.approved&order=updated_at.desc&limit=300");
+    companions = Array.isArray(rows) ? rows : [];
+  }
   const userIds = [...new Set(companions.map((row) => row.user_id).filter(Boolean))];
   if (!userIds.length) return [];
   const profileIds = companions.map((row) => row.id).filter(Boolean);
@@ -324,9 +374,15 @@ export default async function handler(req, res) {
     return json(res, 200, { ok: true, configured: false, companions: [], message: "未配置 Supabase，陪玩大厅不返回假数据。" });
   }
   try {
-    const companions = await loadCompanions(String(req.query.id || req.query.uid || req.query.player || ""));
+    const lookup = String(req.query.id || req.query.uid || req.query.player || "").trim();
+    const companions = await loadCompanions(lookup);
     return json(res, 200, { ok: true, configured: true, companions });
   } catch (error) {
-    return json(res, 500, { ok: false, message: error.message || "陪玩列表接口异常" });
+    const msg = String(error?.message || error || "陪玩列表接口异常");
+    // Never surface raw Postgres UUID parse errors to the boss-facing UI.
+    if (/invalid input syntax for type uuid/i.test(msg)) {
+      return json(res, 200, { ok: true, configured: true, companions: [] });
+    }
+    return json(res, 500, { ok: false, message: msg });
   }
 }

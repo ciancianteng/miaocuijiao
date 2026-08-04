@@ -48,10 +48,14 @@
     return '<span class="pop-rank-num">' + esc(rank) + "</span>";
   }
   function profileHref(item) {
-    return "profile.html?id=" + encodeURIComponent(item.companionId || item.publicId || "");
+    var uuid = String(item.companionId || item.id || item.uid || "").trim();
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(uuid)) return "companion-center.html";
+    return "profile.html?id=" + encodeURIComponent(uuid);
   }
   function orderHref(item) {
-    return "profile.html?id=" + encodeURIComponent(item.companionId || "") + "&open_order=1";
+    var uuid = String(item.companionId || item.id || item.uid || "").trim();
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(uuid)) return "companion-center.html";
+    return "profile.html?id=" + encodeURIComponent(uuid) + "&open_order=1";
   }
 
   function podiumCard(item) {

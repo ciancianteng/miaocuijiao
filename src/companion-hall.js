@@ -103,7 +103,7 @@
       var apiPrice = priceNumber(item.priceValue != null ? item.priceValue : item.price || item.hourlyPrice || item.servicePrice);
       var priceValue = apiPrice > 0 ? apiPrice : (normalized.priceValue || priceNumber(normalized.price || normalized.servicePrice || normalized.hourlyPrice));
       return {
-        id: normalized.uid || normalized.companionId || normalized.id || normalized.name || "",
+        id: normalized.uid || normalized.companionId || normalized.id || "",
         name: normalized.name || normalized.nickname || "未命名陪玩",
         game: normalized.game || normalized.mainGame || "未设置游戏",
         price: formatHourlyPrice(priceValue || normalized.price || normalized.servicePrice || normalized.hourlyPrice),
@@ -136,6 +136,8 @@
         tags: Array.isArray(normalized.tags) ? normalized.tags : String(normalized.tags || normalized.serviceTags || "").split(/[,，、\s]+/).filter(Boolean),
         desc: normalized.desc || normalized.description || ""
       };
+    }).filter(function (item) {
+      return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(item.id || ""));
     });
   }  function setOptions(id, options, allLabel) {
     var el = document.getElementById(id);
@@ -264,15 +266,17 @@
   function card(item) {
     var tags = item.tags.slice(0, 3).map(function (tag) { return '<span>' + esc(tag) + '</span>'; }).join("");
     var badgeClass = statusBadgeClass(item.status);
-    var publicId = item.publicId || item.id || "未生成";
-    return '<article class="card player-card" data-player data-level-id="' + esc(item.levelId || "") + '" data-companion-level="' + esc(item.levelId || "") + '" data-name="' + esc(item.name) + '" data-game="' + esc(item.game) + '" data-tags="' + esc(item.tags.join(",")) + '" data-price="' + esc(item.priceValue) + '" data-online="' + esc(item.status) + '" data-score="' + esc(item.rating) + '" data-gender="' + esc(item.gender) + '">' +
+    var publicId = item.publicId || "未生成";
+    var uuid = String(item.id || "").trim();
+    var detailHref = uuid ? ("profile.html?id=" + encodeURIComponent(uuid)) : "#";
+    return '<article class="card player-card" data-player data-level-id="' + esc(item.levelId || "") + '" data-companion-level="' + esc(item.levelId || "") + '" data-companion-id="' + esc(uuid) + '" data-name="' + esc(item.name) + '" data-game="' + esc(item.game) + '" data-tags="' + esc(item.tags.join(",")) + '" data-price="' + esc(item.priceValue) + '" data-online="' + esc(item.status) + '" data-score="' + esc(item.rating) + '" data-gender="' + esc(item.gender) + '">' +
       '<div class="companion-card-media"><img src="' + esc(item.image) + '" alt="' + esc(item.name) + '" loading="lazy" decoding="async" onerror="this.onerror=null;this.src=\'' + DEFAULT_AVATAR + '\'"><span class="companion-online-badge' + badgeClass + '">' + esc(item.status) + '</span></div>' +
       '<div class="companion-card-body">' +
         '<div class="row companion-card-head"><h3>' + esc(item.name) + '</h3><span class="price companion-price">' + esc(item.price) + '</span></div>' +
         '<p class="muted companion-id" style="display:block!important;opacity:.7;font-size:12px;margin:4px 0 0">陪玩 ID：' + esc(publicId) + '</p>' +
         '<div class="companion-meta"><span class="companion-level-pill" data-level-id="' + esc(item.levelId || "") + '">' + esc(item.level) + '</span><span>' + esc(item.game) + '</span></div>' +
         '<div class="tag-row companion-tags">' + tags + '</div>' +
-        '<div class="companion-card-actions"><a class="companion-card-action" href="profile.html?player=' + encodeURIComponent(item.id || item.name || "") + '">查看详情</a><button type="button" class="companion-card-action primary" data-hall-order="' + esc(item.id || "") + '" data-hall-name="' + esc(item.name || "") + '" data-hall-price="' + esc(item.priceValue || "") + '" data-hall-game="' + esc(item.game || "") + '" data-hall-avatar="' + esc(item.image || "") + '" data-hall-public-id="' + esc(publicId || "") + '">立即下单</button></div>' +
+        '<div class="companion-card-actions"><a class="companion-card-action" href="' + esc(detailHref) + '">查看详情</a><button type="button" class="companion-card-action primary" data-hall-order="' + esc(uuid) + '" data-hall-name="' + esc(item.name || "") + '" data-hall-price="' + esc(item.priceValue || "") + '" data-hall-game="' + esc(item.game || "") + '" data-hall-avatar="' + esc(item.image || "") + '" data-hall-public-id="' + esc(publicId || "") + '">立即下单</button></div>' +
       '</div>' +
     '</article>';
   }
@@ -319,7 +323,7 @@
       var id = orderBtn.getAttribute("data-hall-order") || "";
       if (!id) return;
       if (!window.MCJPlaceOrder || typeof window.MCJPlaceOrder.openFromCompanion !== "function") {
-        location.href = "profile.html?player=" + encodeURIComponent(id) + "&open_order=1";
+        location.href = "profile.html?id=" + encodeURIComponent(id) + "&open_order=1";
         return;
       }
       window.MCJPlaceOrder.openFromCompanion({
