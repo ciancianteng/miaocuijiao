@@ -10,6 +10,14 @@ import {
   buildObjectPath,
 } from "./_companion-media-store.js";
 import { sendEmailOtp, sendSmsOtp, mailProviderStatus } from "./_mail.js";
+import {
+  storeOtp,
+  findOtp,
+  markOtpVerified,
+  findRegisterVerified as findRegisterVerifiedRow,
+  consumeRegisterVerified,
+  randomOtpCode as sharedRandomOtpCode,
+} from "./_otp-store.js";
 
 const VALID_ROLES = new Set(["boss", "companion", "customer_service", "admin", "super_admin"]);
 const TABLES = ["profiles", "companion_profiles", "orders", "conversations", "messages", "transactions", "banners", "announcements", "customer_service_reports"];
@@ -249,7 +257,7 @@ async function profileFor(userId) {
 }
 
 function randomOtpCode() {
-  return String(randomInt(100000, 1000000));
+  return sharedRandomOtpCode();
 }
 
 function maskPhoneHint(phone) {
@@ -331,64 +339,11 @@ function roleLabelOf(role) {
 }
 
 async function storeForgotOtp(accountKey, role, code, kind = "otp") {
-  const id = `fpr_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
-  const exp = Date.now() + 15 * 60 * 1000;
-  const status = `${kind}:${code}:exp:${exp}`;
-  // Always mirror to memory for same-instance lookups.
-  globalThis.__mcjForgotResets = globalThis.__mcjForgotResets || new Map();
-  globalThis.__mcjForgotResets.set(`${role}:${kind}:${accountKey}`, { id, code, exp, kind });
-  let dbOk = false;
-  let dbError = "";
-  for (let attempt = 0; attempt < 2 && !dbOk; attempt += 1) {
-    try {
-      await supabaseJson(restUrl("password_reset_requests"), {
-        method: "POST",
-        headers: headersWithServiceRole({ Prefer: "return=minimal" }),
-        body: JSON.stringify({
-          id: attempt === 0 ? id : `${id}_${attempt}`,
-          account: accountKey,
-          role,
-          status,
-          created_at: new Date().toISOString(),
-        }),
-      });
-      dbOk = true;
-    } catch (err) {
-      dbError = String(err?.message || err || "password_reset_requests write failed");
-      console.error("[auth/storeForgotOtp] db write failed", kind, accountKey, dbError);
-    }
-  }
-  // Login/register OTPs must survive across serverless isolates — refuse soft memory-only success.
-  if (!dbOk && (kind === "register_otp" || kind === "login_otp")) {
-    throw Object.assign(new Error(`验证码存储失败，请稍后重试。${dbError ? `（${dbError}）` : ""}`), {
-      status: 503,
-      code: "OTP_STORE_FAILED",
-    });
-  }
-  return { id, exp, dbOk };
+  return storeOtp({ accountKey, role, code, kind });
 }
 
 async function findForgotOtp(accountKey, role, kind = "otp") {
-  const rows = await supabaseJson(
-    restUrl(
-      "password_reset_requests",
-      `?account=eq.${encodeURIComponent(accountKey)}&role=eq.${encodeURIComponent(role)}&order=created_at.desc&limit=8`
-    ),
-    { headers: headersWithServiceRole() }
-  ).catch(() => []);
-  const otpRe = new RegExp(`^${kind}:(\\d{6}):exp:(\\d+)$`);
-  for (const row of rows || []) {
-    const m = String(row.status || "").match(otpRe);
-    if (m) return { id: row.id, code: m[1], exp: Number(m[2]), row, kind };
-    if (kind === "otp") {
-      const v = String(row.status || "").match(/^verified:([A-Za-z0-9_-]+):exp:(\d+)$/);
-      if (v) return { id: row.id, verifiedToken: v[1], exp: Number(v[2]), row, kind };
-    }
-  }
-  const mem = globalThis.__mcjForgotResets?.get(`${role}:${kind}:${accountKey}`)
-    || globalThis.__mcjForgotResets?.get(`${role}:${accountKey}`);
-  if (mem && (!mem.kind || mem.kind === kind)) return mem;
-  return null;
+  return findOtp(accountKey, role, kind);
 }
 
 async function createSessionForUserId(userId, email) {
@@ -606,45 +561,11 @@ function registerOtpAccountKey(email) {
 }
 
 async function markRegisterVerified(emailKey, role, rowId, token) {
-  const exp = Date.now() + 30 * 60 * 1000;
-  const status = `register_verified:${token}:exp:${exp}`;
-  if (rowId) {
-    await supabaseJson(restUrl("password_reset_requests", `?id=eq.${encodeURIComponent(rowId)}`), {
-      method: "PATCH",
-      headers: headersWithServiceRole(),
-      body: JSON.stringify({ status }),
-    }).catch(() => null);
-  }
-  globalThis.__mcjForgotResets = globalThis.__mcjForgotResets || new Map();
-  globalThis.__mcjForgotResets.set(`${role}:register_verified:${emailKey}`, {
-    id: rowId || token,
-    verifiedToken: token,
-    exp,
-    kind: "register_verified",
-  });
-  return exp;
+  return markOtpVerified(emailKey, role, "register_otp", rowId, token, 30 * 60 * 1000);
 }
 
 async function findRegisterVerified(emailKey, role, token) {
-  const want = String(token || "").trim();
-  if (!want) return null;
-  const rows = await supabaseJson(
-    restUrl(
-      "password_reset_requests",
-      `?account=eq.${encodeURIComponent(emailKey)}&role=eq.${encodeURIComponent(role)}&order=created_at.desc&limit=8`
-    ),
-    { headers: headersWithServiceRole() }
-  ).catch(() => []);
-  const re = /^register_verified:([A-Za-z0-9_-]+):exp:(\d+)$/;
-  for (const row of rows || []) {
-    const m = String(row.status || "").match(re);
-    if (m && m[1] === want && Number(m[2]) > Date.now()) {
-      return { id: row.id, verifiedToken: m[1], exp: Number(m[2]), row };
-    }
-  }
-  const mem = globalThis.__mcjForgotResets?.get(`${role}:register_verified:${emailKey}`);
-  if (mem?.verifiedToken === want && Number(mem.exp) > Date.now()) return mem;
-  return null;
+  return findRegisterVerifiedRow(emailKey, role, token);
 }
 
 /**
@@ -661,23 +582,7 @@ export async function consumeRegisterEmailToken(emailRaw, tokenRaw, roleRaw = "c
   if (!token) {
     throw Object.assign(new Error("请先完成邮箱验证。"), { status: 400 });
   }
-  const hit = await findRegisterVerified(email, role, token);
-  if (!hit) {
-    throw Object.assign(new Error("邮箱验证已失效，请重新获取验证码。"), { status: 400 });
-  }
-  if (hit.id) {
-    await supabaseJson(restUrl("password_reset_requests", `?id=eq.${encodeURIComponent(hit.id)}`), {
-      method: "PATCH",
-      headers: headersWithServiceRole(),
-      body: JSON.stringify({ status: `register_used:${Date.now()}` }),
-    }).catch(() => null);
-  }
-  try {
-    globalThis.__mcjForgotResets?.delete(`${role}:register_verified:${email}`);
-  } catch {
-    /* ignore */
-  }
-  return { ok: true, email, role };
+  return consumeRegisterVerified(email, role, token);
 }
 
 /** Companion API consumes register tokens without importing the full auth handler. */

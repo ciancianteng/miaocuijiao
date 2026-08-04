@@ -2440,43 +2440,10 @@ export default async function handler(req, res) {
       if (!password || password.length < 8) return json(res,400,{ok:false,message:"密码至少 8 位"});
       if (!nickname) return json(res,400,{ok:false,message:"请输入陪玩昵称"});
       try {
-        const otpRows = await supabaseJson(
-          restUrl(
-            "password_reset_requests",
-            `?account=eq.${encodeURIComponent(email)}&role=eq.companion&order=created_at.desc&limit=8`
-          ),
-          { headers: serviceHeaders() }
-        ).catch(() => []);
-        const otpRe = /^register_verified:([A-Za-z0-9_-]+):exp:(\d+)$/;
-        let otpHit = null;
-        for (const row of Array.isArray(otpRows) ? otpRows : []) {
-          const m = String(row.status || "").match(otpRe);
-          if (m && m[1] === registerToken && Number(m[2]) > Date.now()) {
-            otpHit = { id: row.id, token: m[1] };
-            break;
-          }
-        }
-        if (!otpHit) {
-          const mem = globalThis.__mcjForgotResets?.get(`companion:register_verified:${email}`);
-          if (!(mem?.verifiedToken === registerToken && Number(mem.exp) > Date.now())) {
-            return json(res, 400, { ok: false, message: "邮箱验证已失效，请重新获取验证码。" });
-          }
-          otpHit = { id: mem.id, token: mem.verifiedToken };
-        }
-        if (otpHit.id) {
-          await supabaseJson(restUrl("password_reset_requests", `?id=eq.${encodeURIComponent(otpHit.id)}`), {
-            method: "PATCH",
-            headers: serviceHeaders(),
-            body: JSON.stringify({ status: `register_used:${Date.now()}` }),
-          }).catch(() => null);
-        }
-        try {
-          globalThis.__mcjForgotResets?.delete(`companion:register_verified:${email}`);
-        } catch {
-          /* ignore */
-        }
+        const { consumeRegisterVerified } = await import("./_otp-store.js");
+        await consumeRegisterVerified(email, "companion", registerToken);
       } catch (otpErr) {
-        return json(res, 400, {
+        return json(res, otpErr?.status || 400, {
           ok: false,
           message: otpErr?.message || "邮箱验证已失效，请重新获取验证码。",
         });
