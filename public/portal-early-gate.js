@@ -8,7 +8,7 @@
 (function () {
   "use strict";
 
-  var GATE_VERSION = "20260804authP0boss4";
+  var GATE_VERSION = "20260804adminAuthP0";
 
   function pathNow() {
     return String(location.pathname || "/").replace(/\\/g, "/");
@@ -24,9 +24,15 @@
 
   function bossItem(key) {
     // Boss private pages: sessionStorage only — never revive localStorage JWT.
-    try {
-      localStorage.removeItem(key);
-    } catch (e) {}
+    // Exception: preserve shared mcjAuth* in localStorage while admin soft session is live
+    // (admin APIs still read those / dedicated mcjAdmin* keys).
+    var preserveSharedAuth =
+      hasAdminSoftSession && hasAdminSoftSession() && /^mcjAuth(AccessToken|RefreshToken|ExpiresAt)$/.test(key);
+    if (!preserveSharedAuth && !/^mcjAdmin/.test(key)) {
+      try {
+        localStorage.removeItem(key);
+      } catch (e) {}
+    }
     try {
       return sessionStorage.getItem(key) || "";
     } catch (e2) {
@@ -121,17 +127,26 @@
     return role === "customer_service" || role === "service";
   }
 
+  function hasAdminSoftSession() {
+    var soft = item("adminAuthToken");
+    return String(soft).indexOf("admin_session_") === 0;
+  }
+
   function wipeBossIdentity() {
+    // Never touch dedicated admin JWT. Keep shared mcjAuth* when admin soft session is live.
+    var preserveSharedAuth = hasAdminSoftSession();
     [
       "customerAuthToken",
       "customerUser",
       "mcjCurrentUser",
-      "mcjAuthAccessToken",
-      "mcjAuthRefreshToken",
-      "mcjAuthExpiresAt",
-      "mcjRole",
       "mcjAfterLoginRedirect",
-    ].forEach(removeItem);
+    ]
+      .concat(
+        preserveSharedAuth
+          ? []
+          : ["mcjAuthAccessToken", "mcjAuthRefreshToken", "mcjAuthExpiresAt", "mcjRole"]
+      )
+      .forEach(removeItem);
   }
 
   function hideShell() {
@@ -204,11 +219,9 @@
       var sharedRole = String(item("mcjRole") || "").toLowerCase();
       var adminRoleOk =
         isAdminRole(roleOf(adminUser)) || isAdminRole(sharedRole) || isAdminRole(adminUser.adminRole);
-      if (
-        !adminOkSoft ||
-        !adminRoleOk ||
-        !hasJwtOrRefresh(item("mcjAuthAccessToken"), item("mcjAuthRefreshToken"))
-      ) {
+      var adminAccess = item("mcjAdminAccessToken") || item("mcjAuthAccessToken");
+      var adminRefresh = item("mcjAdminRefreshToken") || item("mcjAuthRefreshToken");
+      if (!adminOkSoft || !adminRoleOk || !hasJwtOrRefresh(adminAccess, adminRefresh)) {
         return deny("/admin/login/");
       }
       revealShell();

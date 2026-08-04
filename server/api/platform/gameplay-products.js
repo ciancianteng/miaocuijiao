@@ -3,7 +3,6 @@ import path from "node:path";
 import {
   CATEGORIES,
   PRICING_UNITS,
-  DEFAULT_PRODUCTS,
   fromDbRow,
   toPublicProduct,
   isJunkGameplayProduct,
@@ -34,6 +33,8 @@ function envValue(key) {
 }
 
 function json(res, status, data) {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+  res.setHeader("Pragma", "no-cache");
   res.status(status).json(data);
 }
 
@@ -63,31 +64,10 @@ function cleanProducts(list) {
     .filter((item) => item && item.status === "published" && !isJunkGameplayProduct(item));
 }
 
-async function loadAnnouncementProducts() {
-  const scan = await fetch(restUrl("announcements", "?is_active=eq.true&order=updated_at.desc&limit=80"), {
-    headers: serviceHeaders(),
-  });
-  const scanText = await scan.text();
-  let scanBody = null;
-  try {
-    scanBody = scanText ? JSON.parse(scanText) : null;
-  } catch {
-    scanBody = null;
-  }
-  if (!scan.ok || !Array.isArray(scanBody)) return [];
-  return scanBody
-    .filter((row) => String(row.title || "").includes("[MCJ_GP]"))
-    .map((row) => {
-      try {
-        return JSON.parse(row.content || "{}");
-      } catch {
-        return null;
-      }
-    })
-    .filter((item) => item && item.name);
-}
-
 async function listPublished() {
+  // Single source of truth with admin CRUD: public.gameplay_products.
+  // Do NOT fall back to announcements / hardcoded DEFAULT_PRODUCTS when the
+  // table exists (even if empty) — that caused admin empty vs boss fake catalog.
   if (hasDb()) {
     try {
       const response = await fetch(
@@ -105,33 +85,20 @@ async function listPublished() {
         throw Object.assign(new Error(body?.message || "读取商品失败"), { status: response.status, body });
       }
       const products = cleanProducts((Array.isArray(body) ? body : []).map(fromDbRow));
-      if (products.length) return { products, source: "supabase" };
+      return { products, source: "supabase" };
     } catch (error) {
       if (!isMissingTable(error)) throw error;
+      // Table not created yet — fail closed (empty) rather than diverge from admin.
+      return { products: [], source: "missing-table", message: "gameplay_products 表未初始化" };
     }
-
-    try {
-      const products = cleanProducts(await loadAnnouncementProducts());
-      if (products.length) return { products, source: "announcements" };
-    } catch {
-      /* ignore */
-    }
-
-    // No usable published catalog — expose built-in formal catalog (never test junk).
-    return {
-      products: cleanProducts(DEFAULT_PRODUCTS),
-      source: "catalog-fallback",
-    };
   }
 
   try {
     const rows = await readLocalProducts();
-    const products = cleanProducts(rows);
-    if (products.length) return { products, source: "local" };
+    return { products: cleanProducts(rows), source: "local" };
   } catch {
-    /* ignore */
+    return { products: [], source: "local-empty" };
   }
-  return { products: cleanProducts(DEFAULT_PRODUCTS), source: "catalog-fallback" };
 }
 
 export default async function handler(req, res) {

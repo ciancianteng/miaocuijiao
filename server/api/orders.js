@@ -7,6 +7,7 @@ import { priceForGame } from "./_game-prices.js";
 import {
   ORDER_STATUS_LABELS,
   allowPreviewTestPay,
+  bossFacingStatusText,
   normalizeOrderStatus,
   orderStatusLabel,
   writeOrderStatusLog,
@@ -15,6 +16,7 @@ import {
 import { evaluatePublishGate } from "./_companion-publish-gate.js";
 import { allocateOrderNo, resolveOrderPublicNo } from "./_account-codes.js";
 import { companionDb } from "./_companion-media-store.js";
+import { uploadProof } from "./_payment-receipts.js";
 
 loadLocalEnv();
 
@@ -302,16 +304,20 @@ function bossHint(row = {}) {
   const status = row.status || "";
   const note = String(row.note || row.cancel_reason || "");
   if (status === "claimed") return "订单已付款，正在等待陪玩确认接单";
-  if (status === "confirmed") return "陪玩已确认，可以开始服务";
-  if (status === "in_progress") return "服务进行中";
+  if (status === "confirmed" || status === "in_progress") return "服务进行中";
   if (status === "pending" && /陪玩确认超时|确认超时/.test(note)) return "陪玩暂未响应，客服正在处理中";
-  if (status === "pending" && /无法接单|拒单/.test(note)) return "陪玩暂时无法接单，客服正在处理中";
-  if (status === "pending") return "客服正在重新安排陪玩";
+  if (status === "pending" && /无法接单|拒单/.test(note)) return "陪玩暂时无法接单，订单已重新进入抢单大厅";
+  if (status === "pending") return "等待陪玩抢单";
+  if (status === "waiting_boss_confirm") return "已有陪玩抢单，请选择一位";
   return "";
 }
 function paymentStatusLabel(row = {}) {
   const s = row.status || "";
-  if (s === "awaiting_payment") return "待付款";
+  if (s === "awaiting_payment") {
+    const note = String(row.note || row.description || "");
+    if (row.payment_proof_url || /\[\[PAYMENT_PROOF\]\]|\[\[PAYMENT_SUBMITTED\]\]/i.test(note)) return "付款待审核";
+    return "待付款";
+  }
   if (s === "cancelled") return "已取消";
   return "已付款";
 }
@@ -319,16 +325,15 @@ function acceptStatusLabel(row = {}) {
   const s = row.status || "";
   const note = String(row.note || row.cancel_reason || "");
   if (s === "awaiting_payment") return "尚未付款";
-  if (s === "claimed") return "待陪玩确认";
-  if (s === "confirmed") return "待开始";
-  if (s === "in_progress") return "进行中";
-  if (s === "waiting_boss_confirm") return "选择陪玩中";
+  if (s === "claimed") return "等待陪玩确认";
+  if (s === "confirmed" || s === "in_progress") return "进行中";
+  if (s === "waiting_boss_confirm") return "等待老板选择";
   if (s === "completed" || s === "reviewed") return "已完成";
   if (s === "pending" && /陪玩确认超时|确认超时/.test(note)) return "陪玩确认超时";
   if (s === "pending" && /无法接单|拒单/.test(note)) return "陪玩无法接单，等待重新安排";
-  if (s === "pending") return row.companion_id ? "待接单" : "待接单";
+  if (s === "pending") return "等待陪玩抢单";
   if (s === "cancelled") return "已取消";
-  return STATUS_TEXT[s] || s || "-";
+  return bossFacingStatusText(row);
 }
 function viewOrder(row = {}) {
   const reviewed = !!(row.reviewed || row.review_id || row.reviewId);
@@ -351,11 +356,13 @@ function viewOrder(row = {}) {
   const completionPending =
     String(row.note || "").includes("[[COMPLETION_PENDING]]") ||
     String(row.description || "").includes("[[COMPLETION_PENDING]]");
-  let statusText = STATUS_TEXT[status] || STATUS_TEXT[row.status] || row.status || "待付款";
-  if (status === "in_progress" && completionPending) statusText = "陪玩已完成，待确认";
   const grabCount = Array.isArray(row.grabs)
     ? row.grabs.length
     : Number(row.grabCount != null ? row.grabCount : row.grab_count || 0) || 0;
+  let statusText = bossFacingStatusText({ ...row, status, grabs: row.grabs }, grabCount);
+  if ((status === "pending" || status === "waiting_boss_confirm") && grabCount > 0) {
+    statusText = `已有 ${grabCount} 位陪玩抢单（点击查看）`;
+  }
   const bossIntent = row.bossIntent || null;
   const flowStatus =
     row.flowStatus ||
@@ -936,6 +943,39 @@ export default async function handler(req, res) {
     }
     const id = String(body.id || body.order_id || body.orderId || "");
     if (!id) return json(res, 400, { ok: false, message: "缺少订单 ID。" });
+    if (action === "submit_payment_proof") {
+      const beforeRows = await supabaseJson(
+        restUrl(TABLE, `?id=eq.${encodeURIComponent(id)}&boss_id=eq.${encodeURIComponent(profile.id)}&limit=1`),
+        { headers: serviceHeaders() }
+      );
+      const before = Array.isArray(beforeRows) ? beforeRows[0] : null;
+      if (!before) return json(res, 404, { ok: false, message: "订单不存在。" });
+      if (before.status !== "awaiting_payment") {
+        return json(res, 409, { ok: false, message: "当前订单无需提交付款凭证。", order: viewOrder(before) });
+      }
+      const result = await uploadProof({
+        order: before,
+        bossId: profile.id,
+        dataUrl: body.proofDataUrl || body.paymentProof || body.fileDataUrl || body.file || "",
+        paymentMethod: body.paymentMethod || body.payment_method || viewOrder(before).paymentMethod,
+      });
+      const marker = `[[PAYMENT_PROOF]] bucket=${result.receipt?.storage_bucket || "companion-payment-proofs"} path=${result.receipt?.storage_path || ""}`;
+      let saved = before;
+      if (!result.duplicate) {
+        const note = `${String(before.note || "").replace(/\[\[PAYMENT_PROOF\]\][^\n]*/g, "").trim()}\n${marker}`.trim();
+        const rows = await supabaseJson(restUrl(TABLE, `?id=eq.${encodeURIComponent(before.id)}&boss_id=eq.${encodeURIComponent(profile.id)}`), {
+          method: "PATCH", headers: serviceHeaders(), body: JSON.stringify({ note }),
+        });
+        saved = rows?.[0] || { ...before, note };
+        await addSystemMessage(saved, profile.id, "老板已上传付款凭证，等待客服审核。").catch(() => {});
+      }
+      return json(res, 200, {
+        ok: true,
+        message: result.duplicate ? "付款凭证已提交，等待客服审核。" : "付款凭证已提交，等待客服审核。",
+        receipt: { id: result.receipt?.id, receiptNo: result.receipt?.receipt_no },
+        order: { ...viewOrder(saved), paymentReview: true, paymentProofUrl: result.receipt?.storage_path || "" },
+      });
+    }
     if (action === "pay_order") {
       const beforeRows = await supabaseJson(restUrl(TABLE, `?id=eq.${encodeURIComponent(id)}&boss_id=eq.${encodeURIComponent(profile.id)}&limit=1`), { headers: serviceHeaders() });
       const before = Array.isArray(beforeRows) ? beforeRows[0] : null;
@@ -1008,10 +1048,10 @@ export default async function handler(req, res) {
       }
 
       const nextStatus = before.companion_id ? "claimed" : "pending";
-      const acceptedAt = nextStatus === "claimed" ? nowIso() : null;
+      // Companion must confirm before accepted_at / start — never pre-stamp on pay.
       const deps = { restUrl, supabaseJson, serviceHeaders };
       const payPatch = {
-        accepted_at: acceptedAt,
+        accepted_at: null,
         assignment_type: before.companion_id ? "assigned" : "public",
         ...(before.companion_id
           ? { order_type: before.order_type || "direct_companion" }
@@ -1048,7 +1088,7 @@ export default async function handler(req, res) {
           restUrl(TABLE, `?id=eq.${encodeURIComponent(before.id)}&boss_id=eq.${encodeURIComponent(profile.id)}&limit=1`),
           { headers: serviceHeaders() }
         );
-        saved = again?.[0] || { ...before, status: nextStatus, accepted_at: acceptedAt };
+        saved = again?.[0] || { ...before, status: nextStatus, accepted_at: null };
         await writeOrderStatusLog(deps, {
           orderId: before.id,
           fromStatus: before.status,
@@ -1069,7 +1109,7 @@ export default async function handler(req, res) {
           profile.id,
           nextStatus === "claimed"
             ? `${usedTestPay ? "[TEST] " : ""}订单已支付，指定陪玩为 ${companionLabel}，等待陪玩确认。`
-            : `${usedTestPay ? "[TEST] " : ""}订单已支付，已进入待客服安排 / 公开抢单。`
+            : `${usedTestPay ? "[TEST] " : ""}订单已支付，已进入抢单大厅，等待陪玩抢单。`
         );
       } catch (_) {
         /* chat soft-fail — status already persisted */
@@ -1086,10 +1126,10 @@ export default async function handler(req, res) {
         message: usedTestPay
           ? nextStatus === "claimed"
             ? "测试支付成功（TEST）。订单已进入等待陪玩确认。"
-            : "测试支付成功（TEST）。订单已进入待客服安排。"
+            : "测试支付成功（TEST）。订单已进入抢单大厅。"
           : nextStatus === "claimed"
             ? "支付成功，订单已进入等待陪玩确认。"
-            : "支付成功，订单已进入待客服安排。",
+            : "支付成功，订单已进入抢单大厅。",
         order: viewOrder(saved),
         allowTestPay: previewAllowed,
         reward,
@@ -1175,14 +1215,14 @@ export default async function handler(req, res) {
       if (!grabs.length) {
         return json(res, 409, { ok: false, message: "暂无陪玩抢单，请等待陪玩申请后再选择。" });
       }
-      // 我要他 / want_him / bind=true → lock companion immediately (waiting_companion_confirm = claimed).
-      const bindNow =
-        action === "want_him" ||
-        action === "select_and_bind" ||
-        body.bind === true ||
-        body.bind === "true" ||
-        body.lock === true ||
-        String(body.mode || "").toLowerCase() === "bind";
+      // Unified lock: boss pick binds immediately → waiting companion confirm (claimed).
+      // Opt-out only with explicit intentOnly (legacy); never the default.
+      const intentOnly =
+        body.intentOnly === true ||
+        body.intent_only === true ||
+        body.intentOnly === "true" ||
+        String(body.mode || "").toLowerCase() === "intent";
+      const bindNow = !intentOnly;
       const enriched = await enrichGrabCompanions({ restUrl, supabaseJson, serviceHeaders }, grabs);
       const pick = enriched.find((g) => g.companionId === selectedId);
       const pickName = pick?.companion?.nickname || "陪玩";
@@ -1203,7 +1243,7 @@ export default async function handler(req, res) {
               },
               operatorRole: "boss",
               operatorId: profile.id,
-              note: `老板选择陪玩 ${pickName}（我要他）`,
+              note: `老板选择陪玩 ${pickName}`,
             }
           ).catch(() => null)) ||
           (
@@ -1222,16 +1262,16 @@ export default async function handler(req, res) {
         await addSystemMessage(
           order,
           profile.id,
-          `老板已选择陪玩 ${pickName}。订单进入待陪玩确认。`
+          `老板已选择陪玩 ${pickName}。订单进入等待陪玩确认。`
         );
-        // Notify non-selected grabbers via order-linked system trail (companions read via grabs status).
+        // Notify non-selected grabbers — order leaves their grab hall via finalizeGrabSelection.
         for (const g of enriched) {
           if (g.companionId === selectedId) continue;
           try {
             await addSystemMessage(
               { ...order, companion_id: g.companionId },
               profile.id,
-              "该订单已由老板选择其他陪玩。"
+              "该订单已由其他陪玩接单。"
             );
           } catch {
             /* best-effort */
@@ -1252,7 +1292,7 @@ export default async function handler(req, res) {
         });
       }
 
-      // Legacy intent-only path (CS still confirms).
+      // Legacy intent-only path (explicit opt-in only).
       let order = before;
       if (before.status === "pending") {
         const rows = await supabaseJson(

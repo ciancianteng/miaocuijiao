@@ -406,6 +406,21 @@ export default async function handler(req, res) {
     } else if (action === "assign_companion" || action === "confirm_grab_assignment") {
       const companionId = String(body.companion_id || payload.companion_id || payload.player_id || "").trim();
       if (!companionId) return json(res, 400, { ok: false, message: "请指定陪玩 ID。" });
+      // BOSS_PICK_LOCK
+      if (before.companion_id && ["claimed", "confirmed", "in_progress"].includes(before.status)) {
+        return json(res, 409, {
+          ok: false,
+          code: "BOSS_PICK_LOCK",
+          message: "老板已选定陪玩，后台不可再次指定。",
+        });
+      }
+      if (before.status === "waiting_boss_confirm") {
+        return json(res, 409, {
+          ok: false,
+          code: "BOSS_MUST_PICK",
+          message: "公开抢单请由老板选择陪玩，后台不可代选。",
+        });
+      }
       const fromGrabs = body.from_grabs === true || body.fromGrabs === true || action === "confirm_grab_assignment";
       if (fromGrabs || ["pending", "waiting_boss_confirm"].includes(before.status)) {
         const { createOrderGrabHelpers } = await import("../_order-grabs.js");

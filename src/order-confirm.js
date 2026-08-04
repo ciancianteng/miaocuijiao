@@ -90,8 +90,17 @@
       return;
     }
     if (!token()) {
+      if (window.MCJAuthContinue && typeof window.MCJAuthContinue.requireLogin === "function") {
+        window.MCJAuthContinue.requireLogin(function () {
+          document.getElementById("payBtn").click();
+        });
+        return;
+      }
+      if (window.MCJModal && typeof window.MCJModal.openLogin === "function") {
+        window.MCJModal.openLogin("login");
+        return;
+      }
       alert("请先登录老板账号");
-      location.href = "index.html";
       return;
     }
     var btn = document.getElementById("payBtn");

@@ -54,16 +54,34 @@
     return localStorage.getItem(cfg.token) || sessionStorage.getItem(cfg.token) || "";
   }
   function isAllowed(role) { var cfg = cfgFor(role); if (!cfg) return true; return cfg.allowed.some(function (rule) { return rule.test(path()); }); }
+  function hasAdminSoftSession() {
+    try {
+      var soft = localStorage.getItem("adminAuthToken") || sessionStorage.getItem("adminAuthToken") || "";
+      return String(soft).indexOf("admin_session_") === 0;
+    } catch (e) {
+      return false;
+    }
+  }
+
   function readAccessToken() {
     // Boss: sessionStorage only — never revive localStorage leftovers.
-    try {
-      localStorage.removeItem("mcjAuthAccessToken");
-      localStorage.removeItem("mcjAuthRefreshToken");
-      localStorage.removeItem("mcjAuthExpiresAt");
-      localStorage.removeItem("customerAuthToken");
-      localStorage.removeItem("customerUser");
-      localStorage.removeItem("mcjCurrentUser");
-    } catch (e) {}
+    // Keep shared JWT in localStorage when admin soft session is active (admin APIs).
+    if (!hasAdminSoftSession()) {
+      try {
+        localStorage.removeItem("mcjAuthAccessToken");
+        localStorage.removeItem("mcjAuthRefreshToken");
+        localStorage.removeItem("mcjAuthExpiresAt");
+        localStorage.removeItem("customerAuthToken");
+        localStorage.removeItem("customerUser");
+        localStorage.removeItem("mcjCurrentUser");
+      } catch (e) {}
+    } else {
+      try {
+        localStorage.removeItem("customerAuthToken");
+        localStorage.removeItem("customerUser");
+        localStorage.removeItem("mcjCurrentUser");
+      } catch (e2) {}
+    }
     return sessionStorage.getItem("mcjAuthAccessToken") || "";
   }
 
@@ -105,18 +123,25 @@
   }
 
   function wipeBossGuestArtifacts() {
+    // Never touch dedicated admin JWT keys. Shared mcjAuth* only cleared when no admin session.
+    var adminSoft =
+      String(localStorage.getItem("adminAuthToken") || sessionStorage.getItem("adminAuthToken") || "").indexOf(
+        "admin_session_"
+      ) === 0;
     [
       "customerAuthToken",
       "customerUser",
       "mcjCurrentUser",
-      "mcjAuthAccessToken",
-      "mcjAuthRefreshToken",
-      "mcjAuthExpiresAt",
-      "mcjRole",
-    ].forEach(function (key) {
-      localStorage.removeItem(key);
-      sessionStorage.removeItem(key);
-    });
+    ]
+      .concat(
+        adminSoft
+          ? []
+          : ["mcjAuthAccessToken", "mcjAuthRefreshToken", "mcjAuthExpiresAt", "mcjRole"]
+      )
+      .forEach(function (key) {
+        localStorage.removeItem(key);
+        sessionStorage.removeItem(key);
+      });
   }
 
   function isBossSurfaceRole(role) {
@@ -245,11 +270,26 @@
     if (session.accessToken) store.setItem("mcjAuthAccessToken", session.accessToken);
     if (session.refreshToken) store.setItem("mcjAuthRefreshToken", session.refreshToken);
     if (session.expiresAt) store.setItem("mcjAuthExpiresAt", String(session.expiresAt));
+    // Admin JWT must live in dedicated keys so boss wipe never deletes them.
+    if (adminOk) {
+      if (session.accessToken) store.setItem("mcjAdminAccessToken", session.accessToken);
+      if (session.refreshToken) store.setItem("mcjAdminRefreshToken", session.refreshToken);
+      if (session.expiresAt) store.setItem("mcjAdminExpiresAt", String(session.expiresAt));
+      if (window.MCJAdminAuthFetch && typeof window.MCJAdminAuthFetch.saveTokens === "function") {
+        window.MCJAdminAuthFetch.saveTokens(session);
+      }
+    }
     ["customer", "companion", "customer_service", "admin"].forEach(function (other) {
       if (other === role) return;
       var otherCfg = cfgFor(other);
       localStorage.removeItem(otherCfg.token); localStorage.removeItem(otherCfg.user);
       sessionStorage.removeItem(otherCfg.token); sessionStorage.removeItem(otherCfg.user);
+      if (other === "admin") {
+        ["mcjAdminAccessToken", "mcjAdminRefreshToken", "mcjAdminExpiresAt"].forEach(function (k) {
+          localStorage.removeItem(k);
+          sessionStorage.removeItem(k);
+        });
+      }
     });
     return user;
   }
@@ -436,6 +476,12 @@
       if (window.MCJBossAuth && typeof window.MCJBossAuth.clearSession === "function") {
         try { window.MCJBossAuth.clearSession(); } catch (e) {}
       }
+    }
+    if (storageKey === "admin" || !role) {
+      ["mcjAdminAccessToken", "mcjAdminRefreshToken", "mcjAdminExpiresAt"].forEach(function (k) {
+        localStorage.removeItem(k);
+        sessionStorage.removeItem(k);
+      });
     }
     refreshAuthUi();
   }

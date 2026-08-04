@@ -160,7 +160,18 @@ export function servicesFromGamePrices(companion = {}, catalog = []) {
   if (ids.length) {
     return ids.map((id, idx) => {
       const svc = byId.get(String(id));
-      const name = svc?.name || svc?.title || Object.keys(prices).find((k) => k === id) || "游戏";
+      const uuidName = /^[0-9a-f-]{36}$/i.test(String(id));
+      const pricedName = Object.keys(prices).find(
+        (k) => k !== id && !/^[0-9a-f-]{36}$/i.test(k) && money(prices[k]) === money(prices[id] || 0) && money(prices[k]) > 0
+      );
+      const name =
+        svc?.name ||
+        svc?.title ||
+        pricedName ||
+        (!uuidName ? String(id) : "") ||
+        splitGames(companion.game || companion.main_service)[idx] ||
+        Object.keys(prices).find((k) => !/^[0-9a-f-]{36}$/i.test(k) && prices[k] > 0) ||
+        "游戏";
       return {
         id: String(id),
         serviceId: String(id),

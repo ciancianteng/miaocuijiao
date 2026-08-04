@@ -1,4 +1,4 @@
-﻿(function () {
+(function () {
   "use strict";
 
   var state = { items: [], rules: null, loading: true, error: "" };
@@ -71,7 +71,9 @@
       "<h3>" +
       esc(displayName(item)) +
       "</h3>" +
-      '<div class="pop-meta"><span class="companion-level-pill">' +
+      '<div class="pop-meta"><span class="companion-level-pill" data-level-id="' +
+      esc(item.levelId || "") +
+      '">' +
       esc(item.level) +
       '</span><span class="mcj-status-dot ' +
       statusClass(item.availabilityStatus) +
@@ -104,6 +106,10 @@
       esc(avatarUrl(item.avatar)) +
       '" data-pop-public-id="' +
       esc(item.publicId || "") +
+      '" data-pop-status="' +
+      esc(item.availabilityStatus || "") +
+      '" data-pop-status-text="' +
+      esc(item.availabilityText || "") +
       '">立即下单</button>' +
       "</article>"
     );
@@ -128,7 +134,9 @@
       esc(displayName(item)) +
       "</strong><span>" +
       esc(item.publicId || "") +
-      ' · <span class="companion-level-pill">' +
+      ' · <span class="companion-level-pill" data-level-id="' +
+      esc(item.levelId || "") +
+      '">' +
       esc(item.level) +
       "</span> · " +
       esc(item.availabilityText || "") +
@@ -163,6 +171,10 @@
       esc(avatarUrl(item.avatar)) +
       '" data-pop-public-id="' +
       esc(item.publicId || "") +
+      '" data-pop-status="' +
+      esc(item.availabilityStatus || "") +
+      '" data-pop-status-text="' +
+      esc(item.availabilityText || "") +
       '">下单</button></div></article>'
     );
   }
@@ -345,6 +357,10 @@
           avatar: orderBtn.getAttribute("data-pop-avatar") || "",
           publicId: orderBtn.getAttribute("data-pop-public-id") || "",
           pricingUnit: "小时",
+          availabilityStatus: orderBtn.getAttribute("data-pop-status") || "",
+          availabilityText: orderBtn.getAttribute("data-pop-status-text") || "",
+          status: orderBtn.getAttribute("data-pop-status-text") || "",
+          publishReady: true,
         });
       } catch (err) {
         if (window.MCJPlaceOrder && typeof window.MCJPlaceOrder.close === "function") {
@@ -359,6 +375,16 @@
     e.preventDefault();
     var token = localStorage.getItem("mcjAuthAccessToken") || sessionStorage.getItem("mcjAuthAccessToken") || "";
     if (!token) {
+      if (window.MCJAuthContinue && typeof window.MCJAuthContinue.requireLogin === "function") {
+        window.MCJAuthContinue.requireLogin(function () {
+          fav.click();
+        });
+        return;
+      }
+      if (window.MCJModal && typeof window.MCJModal.openLogin === "function") {
+        window.MCJModal.openLogin("login");
+        return;
+      }
       alert("请先登录后再收藏");
       return;
     }

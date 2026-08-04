@@ -10,6 +10,7 @@
     config: null,
     channels: {},
     token: "",
+    handlers: {},
   };
 
   function loadScript() {
@@ -69,8 +70,7 @@
     return "mcj-msg:" + String(conversationId || "");
   }
 
-  function unsubscribe(conversationId) {
-    var key = channelKey(conversationId);
+  function removeChannel(key) {
     var ch = state.channels[key];
     if (!ch) return;
     try {
@@ -79,55 +79,77 @@
     delete state.channels[key];
   }
 
+  function unsubscribe(conversationId) {
+    removeChannel(channelKey(conversationId));
+  }
+
   function unsubscribeAll() {
     Object.keys(state.channels).forEach(function (k) {
-      var ch = state.channels[k];
-      try {
-        if (state.client && ch) state.client.removeChannel(ch);
-      } catch (e) {}
-      delete state.channels[k];
+      removeChannel(k);
     });
   }
 
   function subscribeConversations(accessToken, handlers) {
     handlers = handlers || {};
     var key = "mcj-conv:pool";
-    var existing = state.channels[key];
-    if (existing) {
-      try {
-        if (state.client) state.client.removeChannel(existing);
-      } catch (e) {}
-      delete state.channels[key];
-    }
+    state.handlers[key] = handlers;
+    removeChannel(key);
     return ensureClient(accessToken).then(function (client) {
-      var channel = client.channel(key);
-      ["INSERT", "UPDATE"].forEach(function (event) {
+      var retries = 0;
+      function attach() {
+        var channel = client.channel(key + (retries ? ":r" + retries : ""));
+        ["INSERT", "UPDATE"].forEach(function (event) {
+          channel = channel.on(
+            "postgres_changes",
+            { event: event, schema: "public", table: "conversations" },
+            function (payload) {
+              var row = (payload && payload.new) || null;
+              if (!row) return;
+              try {
+                var h = state.handlers[key] || handlers;
+                if (typeof h.onChange === "function") h.onChange(row, event);
+              } catch (e) {}
+            }
+          );
+        });
         channel = channel.on(
           "postgres_changes",
-          { event: event, schema: "public", table: "conversations" },
+          { event: "INSERT", schema: "public", table: "messages" },
           function (payload) {
             var row = (payload && payload.new) || null;
             if (!row) return;
             try {
-              if (typeof handlers.onChange === "function") handlers.onChange(row, event);
+              var h = state.handlers[key] || handlers;
+              if (typeof h.onMessage === "function") h.onMessage(row);
             } catch (e) {}
           }
         );
-      });
-      channel = channel.on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "messages" },
-        function (payload) {
-          var row = (payload && payload.new) || null;
-          if (!row) return;
-          try {
-            if (typeof handlers.onMessage === "function") handlers.onMessage(row);
-          } catch (e) {}
-        }
-      );
-      channel.subscribe();
-      state.channels[key] = channel;
-      return channel;
+        channel.subscribe(function (status) {
+          if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+            try {
+              var hErr = state.handlers[key] || handlers;
+              if (typeof hErr.onError === "function") hErr.onError(status);
+            } catch (e) {}
+            if (retries >= 4) return;
+            retries += 1;
+            removeChannel(key);
+            setTimeout(function () {
+              if (state.channels[key]) return;
+              if (!state.handlers[key]) return;
+              attach();
+            }, 1000 * retries);
+          } else if (status === "SUBSCRIBED") {
+            retries = 0;
+            try {
+              var hOk = state.handlers[key] || handlers;
+              if (typeof hOk.onReady === "function") hOk.onReady();
+            } catch (e) {}
+          }
+        });
+        state.channels[key] = channel;
+        return channel;
+      }
+      return attach();
     });
   }
 
@@ -138,34 +160,84 @@
   function subscribeMessages(conversationId, accessToken, onInsert) {
     var cid = String(conversationId || "").trim();
     if (!cid || typeof onInsert !== "function") return Promise.resolve(null);
+    var key = channelKey(cid);
+    state.handlers[key] = { onInsert: onInsert };
     unsubscribe(cid);
     return ensureClient(accessToken).then(function (client) {
-      var key = channelKey(cid);
-      var channel = client
-        .channel(key)
-        .on(
-          "postgres_changes",
-          {
-            event: "INSERT",
-            schema: "public",
-            table: "messages",
-            filter: "conversation_id=eq." + cid,
-          },
-          function (payload) {
-            var row = (payload && payload.new) || null;
-            if (!row) return;
-            try {
-              onInsert(row);
-            } catch (e) {}
-          }
-        )
-        .subscribe(function (status) {
-          if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-            // Keep a quiet fail — callers may keep a slow backup poll.
-          }
-        });
-      state.channels[key] = channel;
-      return channel;
+      var retries = 0;
+      function attach() {
+        var channel = client
+          .channel(key + (retries ? ":r" + retries : ""))
+          .on(
+            "postgres_changes",
+            {
+              event: "INSERT",
+              schema: "public",
+              table: "messages",
+              filter: "conversation_id=eq." + cid,
+            },
+            function (payload) {
+              var row = (payload && payload.new) || null;
+              if (!row) return;
+              try {
+                var h = state.handlers[key];
+                var fn = (h && h.onInsert) || onInsert;
+                fn(row);
+              } catch (e) {}
+            }
+          )
+          .subscribe(function (status) {
+            if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+              if (retries >= 4) return;
+              retries += 1;
+              removeChannel(key);
+              setTimeout(function () {
+                if (state.channels[key]) return;
+                if (!state.handlers[key]) return;
+                attach();
+              }, 1200 * retries);
+            } else if (status === "SUBSCRIBED") {
+              retries = 0;
+            }
+          });
+        state.channels[key] = channel;
+        return channel;
+      }
+      return attach();
+    });
+  }
+
+  /** Re-auth + re-subscribe known channels after tab wake / token refresh. */
+  function reconnect(accessToken) {
+    var token = String(accessToken || state.token || "").trim();
+    return ensureClient(token).then(function (client) {
+      try {
+        if (token) client.realtime.setAuth(token);
+      } catch (e) {}
+      var keys = Object.keys(state.handlers);
+      keys.forEach(function (k) {
+        removeChannel(k);
+      });
+      var jobs = [];
+      keys.forEach(function (k) {
+        var h = state.handlers[k];
+        if (!h) return;
+        if (k === "mcj-conv:pool") {
+          jobs.push(subscribeConversations(token, h));
+        } else if (k.indexOf("mcj-msg:") === 0 && typeof h.onInsert === "function") {
+          jobs.push(subscribeMessages(k.slice("mcj-msg:".length), token, h.onInsert));
+        }
+      });
+      return Promise.all(jobs);
+    });
+  }
+
+  if (!global.__MCJChatRealtimeVisBound) {
+    global.__MCJChatRealtimeVisBound = true;
+    document.addEventListener("visibilitychange", function () {
+      if (document.hidden) return;
+      if (!state.client || !Object.keys(state.handlers).length) return;
+      reconnect(state.token).catch(function () {});
     });
   }
 
@@ -175,5 +247,6 @@
     subscribeConversations: subscribeConversations,
     unsubscribe: unsubscribe,
     unsubscribeAll: unsubscribeAll,
+    reconnect: reconnect,
   };
 })(typeof window !== "undefined" ? window : globalThis);

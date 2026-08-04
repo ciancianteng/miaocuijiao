@@ -12,6 +12,7 @@
     bossRefunds: [],
     pendingPayments: [],
     receipts: [],
+    paymentReceipts: [],
     settings: {},
     weeklyRules: {},
     settlementSummary: {},
@@ -71,6 +72,7 @@
       ["payrolls", "客服工资"],
       ["pending", "待付款单"],
       ["receipts", "收据库"],
+      ["payment-proofs", "付款凭证中心"],
     ];
     return (
       '<div class="admin-final-tabs" style="display:flex;gap:8px;flex-wrap:wrap;margin:12px 0">' +
@@ -363,6 +365,17 @@
       "</tbody></table></div>"
     );
   }
+  function paymentProofsHtml() {
+    var rows = (state.paymentReceipts || []).map(function (r) {
+      return "<tr><td>" + esc(r.receiptNo) + "</td><td>" + esc(r.orderId) + "</td><td>" +
+        esc(r.amount) + "</td><td>" + esc(r.paymentMethod) + "</td><td>已付款</td><td>" +
+        esc(r.confirmedAt) + "</td></tr>";
+    }).join("");
+    return '<div class="admin-section-head compact"><div><h4>付款凭证中心</h4><p>仅展示已确认收款的订单凭证。</p></div>' +
+      '<button class="mini-btn primary-lite" type="button" data-payment-receipts-export>导出 CSV</button></div>' +
+      '<div class="table-wrap"><table><thead><tr><th>凭证编号</th><th>订单</th><th>金额</th><th>方式</th><th>状态</th><th>确认时间</th></tr></thead><tbody>' +
+      (rows || '<tr><td colspan="6">暂无已付款凭证</td></tr>') + "</tbody></table></div>";
+  }
   function paint() {
     var box = target();
     if (!box) return;
@@ -384,6 +397,8 @@
           ? pendingHtml()
           : state.tab === "receipts"
             ? receiptsHtml()
+            : state.tab === "payment-proofs"
+              ? paymentProofsHtml()
             : state.tab === "refunds"
               ? refundsHtml()
               : state.tab === "friday"
@@ -419,6 +434,7 @@
         state.bossRefunds = res.bossRefunds || [];
         state.pendingPayments = res.pendingPayments || [];
         state.receipts = res.receipts || [];
+        state.paymentReceipts = res.paymentReceipts || [];
         state.settings = res.settings || {};
         state.weeklyRules = res.weeklyRules || {};
         state.settlementSummary = res.settlementSummary || {};
@@ -924,6 +940,19 @@
       state.filterUid = uidEl ? uidEl.value.trim() : "";
       state.filterMonth = monthEl ? monthEl.value.trim() : "";
       paint();
+      return;
+    }
+    var paymentExport = e.target.closest("[data-payment-receipts-export]");
+    if (paymentExport) {
+      post("export_payment_receipts", {})
+        .then(function (res) {
+          var a = document.createElement("a");
+          a.href = URL.createObjectURL(new Blob(["\ufeff" + (res.csv || "")], { type: "text/csv;charset=utf-8" }));
+          a.download = "payment-receipts.csv";
+          a.click();
+          URL.revokeObjectURL(a.href);
+        })
+        .catch(function (err) { alert(err.message); });
       return;
     }
     var exportBtn = e.target.closest("[data-fin-export]");

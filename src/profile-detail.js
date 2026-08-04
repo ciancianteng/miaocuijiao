@@ -108,6 +108,58 @@
     );
   }
 
+  function middleEllipsis(text, maxLen) {
+    text = String(text || "");
+    maxLen = maxLen || 22;
+    if (text.length <= maxLen) return text;
+    var head = Math.max(6, Math.ceil((maxLen - 3) * 0.55));
+    var tail = Math.max(4, maxLen - 3 - head);
+    return text.slice(0, head) + "..." + text.slice(-tail);
+  }
+
+  function reviewBadge(rating) {
+    var n = Number(rating) || 0;
+    if (n >= 5) return "终验好评";
+    if (n >= 4) return "好评";
+    if (n >= 3) return "中评";
+    if (n > 0) return "评价";
+    return "";
+  }
+
+  function reviewDate(raw) {
+    var s = String(raw || "").trim();
+    if (!s) return "";
+    return s.slice(0, 10);
+  }
+
+  function bindReviewExpand(root) {
+    if (!root) return;
+    root.querySelectorAll(".pd-review-item").forEach(function (card) {
+      var body = card.querySelector(".pd-review-body");
+      var btn = card.querySelector("[data-review-expand]");
+      if (!body || !btn) return;
+      body.classList.remove("is-expanded");
+      btn.hidden = true;
+      btn.setAttribute("aria-expanded", "false");
+      btn.textContent = "展开↓";
+      requestAnimationFrame(function () {
+        var prevClamp = body.style.webkitLineClamp;
+        var prevDisplay = body.style.display;
+        var prevOverflow = body.style.overflow;
+        body.style.webkitLineClamp = "unset";
+        body.style.display = "block";
+        body.style.overflow = "visible";
+        var fullH = body.scrollHeight;
+        body.style.webkitLineClamp = prevClamp;
+        body.style.display = prevDisplay;
+        body.style.overflow = prevOverflow;
+        void body.offsetHeight;
+        var clampedH = body.clientHeight;
+        btn.hidden = !(fullH > clampedH + 2);
+      });
+    });
+  }
+
   function render(c) {
     var s = shell();
     if (!s) return;
@@ -127,16 +179,24 @@
       !String(image).trim() ||
       /meow-cuijiao-brand\.(jpe?g|png|webp)$/i.test(String(image)) ||
       /^(blob:|data:)/i.test(String(image)) ||
-      /\/storage\/v1\/object\/sign\//i.test(String(image))
+      /^(https?:\/\/)?(localhost|127\.0\.0\.1)/i.test(String(image))
     ) {
       image = "/default-avatar.png";
     }
-    var hasVoice = !!(c.voiceUrl && String(c.voiceUrl).trim());
+    var hasVoice = !!(c.voiceUrl && String(c.voiceUrl).trim() && /^https?:\/\//i.test(String(c.voiceUrl)));
     var voice = hasVoice
       ? '<div class="pd-voice-player"><audio controls preload="none" src="' +
         esc(c.voiceUrl) +
         '"></audio></div>'
-      : '<p class="pd-voice-empty">该陪玩暂未上传语音</p>';
+      : "";
+    var videoUrl = String(c.videoUrl || c.showcaseVideoUrl || "").trim();
+    var hasVideo = !!(videoUrl && /^https?:\/\//i.test(videoUrl));
+    var videoHtml = hasVideo
+      ? '<div class="pd-video-player"><video controls playsinline preload="metadata" src="' +
+        esc(videoUrl) +
+        '"></video></div>'
+      : "";
+    var galleryList = Array.isArray(c.gallery) ? c.gallery.filter(function (g) { return g && g.url; }) : [];
     var levelText = c.levelLabel || c.level || c.levelName || "-";
     var priceText = displayCurrency(
       (window.MCJCurrency && c.priceDisplay ? window.MCJCurrency.rewriteLegacy(c.priceDisplay) : "") ||
@@ -151,12 +211,59 @@
     );
     if (!rangeText || rangeText === "-") rangeText = "暂无价格区间";
     var publicId = c.publicId || (c.companionUid ? "P" + c.companionUid : "");
-    var tags = (c.tags || [])
-      .slice(0, 6)
-      .map(function (t) {
-        return "<span>" + esc(t) + "</span>";
-      })
-      .join("");
+    var identityApi = window.MCJCompanionIdentity;
+    var tagsHtml = identityApi
+      ? identityApi.renderTags({
+          levelId: c.levelId || "",
+          levelLabel: levelText,
+          gender: c.gender || "",
+          voiceType: c.voiceType || c.voice_type || "",
+          certTags: c.certTags || c.certificationTags || [],
+          tags: c.tags || [],
+          className: "tag-row companion-tags",
+          includeLevel: true,
+          includeGender: true,
+          serviceLimit: 8,
+        })
+      : (function () {
+          var tags = (c.tags || [])
+            .slice(0, 6)
+            .map(function (t) {
+              return "<span class=\"mcj-service-tag\">" + esc(t) + "</span>";
+            })
+            .join("");
+          var certTags = (c.certTags || c.certificationTags || [])
+            .slice(0, 6)
+            .map(function (t) {
+              var name = typeof t === "string" ? t : t.name || t.title || "";
+              if (!name) return "";
+              var icon = typeof t === "object" && t.icon ? t.icon + " " : "";
+              return '<span class="mcj-cert-badge">' + esc(icon + name) + "</span>";
+            })
+            .filter(Boolean)
+            .join("");
+          return certTags || tags
+            ? '<div class="mcj-id-tags tag-row companion-tags">' + certTags + tags + "</div>"
+            : "";
+        })();
+    var galleryUrls = galleryList.map(function (g) {
+      return g.url;
+    });
+    var galleryWall =
+      galleryList.length > 0
+        ? galleryList
+            .slice(0, 6)
+            .map(function (g, idx) {
+              return (
+                '<img class="mcj-album-thumb" data-album-index="' +
+                idx +
+                '" src="' +
+                esc(g.url) +
+                '" alt="相册" loading="lazy" onerror="this.onerror=null;this.src=\'/default-avatar.png\'">'
+              );
+            })
+            .join("")
+        : "";
     var pop = c.popularity || state.popularity || null;
     var weeklyRank = pop && pop.weekly ? pop.weekly.rank : 0;
     var monthlyRank = pop && pop.monthly ? pop.monthly.rank : 0;
@@ -180,18 +287,58 @@
       ? reviewList
           .slice(0, 12)
           .map(function (r) {
+            var stars = "";
+            var n = Math.max(0, Math.min(5, Math.round(Number(r.rating) || 0)));
+            for (var i = 0; i < 5; i++) stars += i < n ? "★" : "☆";
+            var code = String(r.bossCode || r.bossUid || "").trim();
+            if (!code || /@/.test(code) || /^[0-9a-f-]{20,}$/i.test(code)) code = "";
+            var bossLabel = code || "老板";
+            var orderFull = String(r.orderNo || r.orderId || "").trim() || "-";
+            var orderShown = middleEllipsis(orderFull, 22);
+            var gameLabel = String(r.gameName || r.game || "").trim() || "-";
+            var when = reviewDate(r.createdAt);
+            var badge = reviewBadge(n);
+            var avatarUrl = String(r.avatarUrl || r.bossAvatar || "").trim();
+            var content = String(r.content || "").trim() || "老板已完成真实订单评价";
+            var letter = esc(bossLabel.slice(0, 1) || "匿");
+            var avatarHtml = avatarUrl
+              ? '<img class="pd-review-avatar" src="' +
+                esc(avatarUrl) +
+                '" alt="" loading="lazy" onerror="this.style.display=\'none\';this.nextElementSibling&&(this.nextElementSibling.hidden=false)">' +
+                '<span class="pd-review-avatar is-letter" hidden>' +
+                letter +
+                "</span>"
+              : '<span class="pd-review-avatar is-letter">' + letter + "</span>";
             return (
-              '<article class="pd-review-item"><strong>' +
-              esc(r.rating || "-") +
-              "★</strong><p>" +
-              esc(r.content || "老板已完成真实订单评价") +
-              "</p><span>" +
-              esc(r.createdAt ? String(r.createdAt).slice(0, 16).replace("T", " ") : "") +
-              "</span></article>"
+              '<article class="pd-review-item">' +
+              '<p class="pd-review-stars" aria-label="' +
+              n +
+              ' 星">' +
+              esc(stars) +
+              "</p>" +
+              (badge ? '<p class="pd-review-badge">' + esc(badge) + "</p>" : "") +
+              '<div class="pd-review-boss">' +
+              avatarHtml +
+              '<span class="pd-review-boss-code">' +
+              esc(bossLabel) +
+              "</span></div>" +
+              '<p class="pd-review-order" title="' +
+              esc(orderFull) +
+              '">订单：' +
+              esc(orderShown) +
+              "</p>" +
+              '<p class="pd-review-game">' +
+              esc(gameLabel) +
+              "</p>" +
+              (when ? '<p class="pd-review-time">' + esc(when) + "</p>" : "") +
+              '<p class="pd-review-body">' +
+              esc(content) +
+              '</p><button type="button" class="pd-review-expand" data-review-expand hidden aria-expanded="false">展开↓</button>' +
+              "</article>"
             );
           })
           .join("")
-      : '<p class="muted">暂无真实订单评价</p>';
+      : '<p class="muted pd-review-empty">暂无真实订单评价</p>';
     var ratingText =
       c.rating != null && Number(c.rating) > 0
         ? Number(c.rating).toFixed(1) + "（" + (c.reviewCount || 0) + " 条）"
@@ -223,8 +370,16 @@
       " · ★ " +
       esc(ratingText) +
       "</div>" +
-      (tags ? '<div class="tag-row companion-tags" style="margin-top:10px">' + tags + "</div>" : "") +
-      '</div></section><section class="detail-two-col pd-detail-split"><div class="detail-card info-card pd-info-card"><div class="section-head"><h2>基本资料</h2></div><div class="pd-meta-list">' +
+      (tagsHtml || "") +
+      (hasVoice
+        ? '<div class="detail-card price-card pd-voice-card pd-voice-in-hero"><div class="section-head"><h2>语音试听</h2></div><div class="pd-voice-body">' +
+          voice +
+          "</div></div>"
+        : "") +
+      (hasVideo
+        ? '<div class="detail-card pd-video-card"><div class="section-head"><h2>个人展示视频</h2></div>' + videoHtml + "</div>"
+        : "") +
+      '</div></section><section class="detail-card info-card pd-info-card pd-info-card--full"><div class="section-head"><h2>基本资料</h2></div><div class="pd-meta-list">' +
       metaRow("游戏", esc(c.game || "综合游戏")) +
       metaRow(
         "等级",
@@ -239,21 +394,25 @@
       metaRow("本月排名", esc(rankText(monthlyRank))) +
       '</div>' +
       giftActions +
-      '</div><div class="detail-card price-card pd-voice-card' +
-      (hasVoice ? "" : " is-empty") +
-      '"><div class="section-head"><h2>语音试听</h2></div><div class="pd-voice-body">' +
-      voice +
-      '</div></div></section><section class="detail-card game-wall"><div class="section-head"><h2>卡面图片</h2></div><div class="wall-grid"><img src="' +
-      esc(image) +
-      '" alt="' +
-      esc(c.name) +
-      ' 卡面" onerror="this.onerror=null;this.src=\'/default-avatar.png\'"></div></section><section class="detail-card real-review-wall"><div class="section-head"><h2>真实订单评价</h2><span>好评 ' +
+      "</section>" +
+      (galleryList.length
+        ? '<section class="detail-card game-wall"><div class="section-head"><h2>相册</h2></div><div class="wall-grid" data-profile-album>' +
+          galleryWall +
+          "</div></section>"
+        : "") +
+      '<section class="detail-card real-review-wall"><div class="section-head"><h2>真实订单评价</h2><span>好评 ' +
       esc(goodText) +
       " · 共 " +
       esc(c.reviewCount || 0) +
       ' 条</span></div><div class="review-list" id="realReviewList">' +
       reviewHtml +
       "</div></section>";
+
+    bindReviewExpand(s.querySelector("#realReviewList"));
+
+    if (window.MCJCompanionIdentity && typeof window.MCJCompanionIdentity.bindAlbum === "function") {
+      window.MCJCompanionIdentity.bindAlbum(s.querySelector("[data-profile-album]"), galleryUrls);
+    }
 
     var b = bottom();
     if (b) {
@@ -317,10 +476,21 @@
         companionId: c.id || c.uid,
         companionName: c.name || c.nickname,
         unitPrice: Number(c.priceValue != null ? c.priceValue : c.price) || 0,
-        service: c.game || c.mainGame || "陪玩",
+        service: (c.services && c.services[0] && c.services[0].name) || c.game || c.mainGame || "",
+        services: Array.isArray(c.services) ? c.services : [],
+        serviceIds: c.serviceIds || c.service_ids || [],
+        gamePrices: c.gamePrices || c.game_prices || {},
         avatar: c.avatar || c.cover || c.cardImageUrl || "",
         publicId: c.publicId || "",
         pricingUnit: c.pricingUnit || "小时",
+        availabilityStatus: c.availabilityStatus || "",
+        availabilityText: c.availabilityText || c.status || c.onlineStatus || "",
+        online: c.online != null ? c.online : c.canOrderNow,
+        certTags: c.certTags || c.certificationTags || [],
+        publishReady: c.publishReady,
+        canAcceptOrders: c.canAcceptOrders,
+        canOrderNow: c.canOrderNow,
+        level: c.level || c.levelName || "",
       });
     } catch (err) {
       if (window.MCJPlaceOrder && window.MCJPlaceOrder.close) window.MCJPlaceOrder.close();
@@ -341,15 +511,26 @@
         );
         if (!(unitPrice > 0)) return;
         var serviceName =
-          (selected && selected.name) || catC.game || c.game || c.mainGame || "陪玩";
+          (selected && selected.name) || catC.game || c.game || c.mainGame || "";
         window.MCJPlaceOrder.openFromCompanion(c, {
           companionId: c.id || c.uid,
           companionName: catC.name || c.name || c.nickname,
           unitPrice: unitPrice,
           service: serviceName,
+          services: services,
+          serviceIds: c.serviceIds || c.service_ids || [],
+          gamePrices: catC.gamePrices || c.gamePrices || c.game_prices || {},
           avatar: catC.avatar || c.avatar,
           publicId: catC.publicId || c.publicId || "",
           pricingUnit: (selected && selected.pricingUnit) || catC.pricingUnit || c.pricingUnit || "小时",
+          availabilityStatus: c.availabilityStatus || catC.availabilityStatus || "",
+          availabilityText: c.availabilityText || c.status || c.onlineStatus || "",
+          online: c.online != null ? c.online : c.canOrderNow,
+          certTags: c.certTags || c.certificationTags || [],
+          publishReady: c.publishReady,
+          canAcceptOrders: c.canAcceptOrders,
+          canOrderNow: c.canOrderNow,
+          level: c.level || c.levelName || "",
         });
       })
       .catch(function () {});
@@ -418,11 +599,20 @@
           });
           sheet.querySelector("[data-close-sheet]").onclick = closeSheet;
           sheet.querySelector("[data-send-gift]").onclick = function () {
-            if (!token()) {
-              alert("请先登录老板账号");
-              location.href = "index.html";
-              return;
-            }
+        if (!token()) {
+          if (window.MCJAuthContinue && typeof window.MCJAuthContinue.requireLogin === "function") {
+            window.MCJAuthContinue.requireLogin(function () {
+              sheet.querySelector("[data-send-gift]").click();
+            });
+            return;
+          }
+          if (window.MCJModal && typeof window.MCJModal.openLogin === "function") {
+            window.MCJModal.openLogin("login");
+            return;
+          }
+          alert("请先登录老板账号");
+          return;
+        }
             fetch("/api/boss/marketplace", {
               method: "POST",
               headers: authHeaders(),
@@ -492,8 +682,17 @@
       sheet.querySelector("[data-close-sheet]").onclick = closeSheet;
       sheet.querySelector("[data-send-tip]").onclick = function () {
         if (!token()) {
+          if (window.MCJAuthContinue && typeof window.MCJAuthContinue.requireLogin === "function") {
+            window.MCJAuthContinue.requireLogin(function () {
+              sheet.querySelector("[data-send-tip]").click();
+            });
+            return;
+          }
+          if (window.MCJModal && typeof window.MCJModal.openLogin === "function") {
+            window.MCJModal.openLogin("login");
+            return;
+          }
           alert("请先登录老板账号");
-          location.href = "index.html";
           return;
         }
         preview();
@@ -530,6 +729,17 @@
   }
 
   document.addEventListener("click", function (e) {
+    var expandBtn = e.target.closest("[data-review-expand]");
+    if (expandBtn) {
+      e.preventDefault();
+      var card = expandBtn.closest(".pd-review-item");
+      var body = card && card.querySelector(".pd-review-body");
+      if (!body) return;
+      var open = body.classList.toggle("is-expanded");
+      expandBtn.setAttribute("aria-expanded", open ? "true" : "false");
+      expandBtn.textContent = open ? "收起↑" : "展开↓";
+      return;
+    }
     if (e.target.closest("[data-profile-reload]")) {
       e.preventDefault();
       load();
@@ -642,6 +852,42 @@
       }
       if (tries > 80) clearInterval(timer);
     }, 150);
+  })();
+  // Soft poll online status so boss detail stays in sync without full refresh.
+  (function pollStatus() {
+    var id = param();
+    if (!id) return;
+    setInterval(function () {
+      if (!state.companion || document.hidden) return;
+      fetch("/api/public/companions?id=" + encodeURIComponent(id), {
+        headers: { Accept: "application/json" },
+        cache: "no-store",
+      })
+        .then(function (res) {
+          return res.json().catch(function () {
+            return null;
+          });
+        })
+        .then(function (body) {
+          var c = body && body.companions && body.companions[0];
+          if (!c) return;
+          var prev = state.companion.availabilityStatus;
+          var next = c.availabilityStatus;
+          state.companion.availabilityStatus = c.availabilityStatus;
+          state.companion.availabilityText = c.availabilityText || c.status;
+          state.companion.onlineStatus = c.onlineStatus;
+          state.companion.status = c.status;
+          state.companion.online = c.online;
+          state.companion.canOrderNow = c.canOrderNow;
+          state.companion.certTags = c.certTags || c.certificationTags || state.companion.certTags;
+          if (prev !== next) render(state.companion);
+          else {
+            var badge = document.querySelector(".status-badge, .pd-status, [data-online-status-label]");
+            if (badge && c.availabilityText) badge.textContent = c.availabilityText;
+          }
+        })
+        .catch(function () {});
+    }, 12000);
   })();
   if (window.MCJBossHeader && typeof window.MCJBossHeader.sync === "function") {
     window.MCJBossHeader.sync();

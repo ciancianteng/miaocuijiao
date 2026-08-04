@@ -126,7 +126,7 @@
       in_progress: "进行中",
       cancelled: "已取消",
       refunding: "退款中",
-      pending: "待接单"
+      pending: "等待陪玩抢单"
     };
     return map[status] || status || "未知";
   }

@@ -1,3 +1,5 @@
+import { resolveBossPublicCode, publicDisplayName, isDevLogin, isDbUuid } from "../_account-codes.js";
+
 const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"];
 const RESERVED_BOSS_IDS = ["admin", "system", "official", "root", "support", "service"];
 
@@ -107,17 +109,41 @@ function mapBoss(row, wallet, extras = {}) {
   const bossUid = row.boss_uid || "";
   const w = wallet || {};
   const statusKey = row.status || "active";
+  const countryCode = String(row.country_code || row.countryCode || "MY").toUpperCase() || "MY";
+  const dialMap = {
+    MY: "+60", CN: "+86", SG: "+65", TW: "+886", HK: "+852",
+    JP: "+81", KR: "+82", TH: "+66", ID: "+62", PH: "+63", VN: "+84",
+    US: "+1", GB: "+44", AU: "+61", CA: "+1", DE: "+49", FR: "+33",
+  };
+  const labelMap = {
+    MY: "🇲🇾 马来西亚", CN: "🇨🇳 中国", SG: "🇸🇬 新加坡", TW: "🇹🇼 台湾", HK: "🇭🇰 香港",
+    JP: "🇯🇵 日本", KR: "🇰🇷 韩国", TH: "🇹🇭 泰国", ID: "🇮🇩 印尼", PH: "🇵🇭 菲律宾", VN: "🇻🇳 越南",
+    US: "🇺🇸 美国", GB: "🇬🇧 英国", AU: "🇦🇺 澳大利亚", CA: "🇨🇦 加拿大", DE: "🇩🇪 德国", FR: "🇫🇷 法国",
+  };
+  const dial = dialMap[countryCode] || "+60";
+  const phoneLocal = String(row.phone || "").replace(/\D+/g, "");
+  const phoneE164 = String(row.phone_e164 || row.phoneE164 || "").trim() || (phoneLocal ? dial + phoneLocal : "");
+  const phoneDisplay = phoneE164 || (phoneLocal ? `${dial} ${phoneLocal}` : "") || row.phone || "";
+  const safeName = publicDisplayName(row, bossUid || "未命名老板");
   return {
     id: row.id,
-    uid: bossUid || row.id,
+    uid: bossUid || "",
     boss_uid: bossUid,
     bossUid: bossUid,
-    bossId: bossUid || row.id,
-    nickname: row.display_name || row.email || "-",
-    name: row.display_name || row.email || "-",
-    displayName: row.display_name || "",
-    email: row.email || "",
+    bossId: bossUid || "",
+    nickname: safeName,
+    name: safeName,
+    displayName: String(row.display_name || "").trim() || safeName,
+    email: isDevLogin(row.email) ? "" : row.email || "",
+    rawEmail: row.email || "",
     phone: row.phone || "",
+    countryCode,
+    country_code: countryCode,
+    countryLabel: labelMap[countryCode] || countryCode,
+    phoneE164,
+    phone_e164: phoneE164,
+    phoneDisplay,
+    dialCode: dial,
     avatar: row.avatar_url || "",
     avatar_url: row.avatar_url || "",
     status: STATUS_LABEL[statusKey] || statusKey || "正常",
@@ -374,6 +400,27 @@ async function patchBossStatus(id, status, freezeWallet) {
   return rows?.[0] || null;
 }
 
+async function patchBossDisplayName(id, displayName) {
+  const name = String(displayName || "").trim();
+  if (!name) throw Object.assign(new Error("显示名称不能为空"), { status: 400 });
+  if (/^草稿保留/i.test(name)) throw Object.assign(new Error("显示名称不能使用草稿保留前缀"), { status: 400 });
+  const rows = await supabaseJson(restUrl("profiles", `?id=eq.${encodeURIComponent(id)}`), {
+    method: "PATCH",
+    headers: serviceHeaders(),
+    body: JSON.stringify({ display_name: name, updated_at: new Date().toISOString() }),
+  });
+  try {
+    await supabaseJson(`${process.env.SUPABASE_URL}/auth/v1/admin/users/${encodeURIComponent(id)}`, {
+      method: "PUT",
+      headers: serviceHeaders(),
+      body: JSON.stringify({ user_metadata: { display_name: name } }),
+    });
+  } catch {
+    /* best effort */
+  }
+  return rows?.[0] || null;
+}
+
 async function patchBossRemark(id, remark) {
   try {
     const rows = await supabaseJson(restUrl("profiles", `?id=eq.${encodeURIComponent(id)}`), {
@@ -618,6 +665,28 @@ export default async function handler(req, res) {
       const remark = String(body.payload?.remark ?? body.remark ?? "").trim();
       await patchBossRemark(id, remark);
       return json(res, 200, { ok: true, message: "备注已保存", remark });
+    }
+    if (
+      action === "set_display_name" ||
+      action === "edit_display_name" ||
+      action === "rename" ||
+      action === "edit_name"
+    ) {
+      const name = String(
+        body.payload?.displayName ??
+          body.payload?.display_name ??
+          body.payload?.nickname ??
+          body.displayName ??
+          body.display_name ??
+          body.nickname ??
+          ""
+      ).trim();
+      const row = await patchBossDisplayName(id, name);
+      return json(res, 200, {
+        ok: true,
+        message: "显示名称已更新（编号不变，历史订单仍关联同一账号）",
+        boss: mapBoss(row || { id, display_name: name }),
+      });
     }
     if (action === "reset_password" || action === "reset-password") {
       const password = String(body.payload?.password || body.password || "").trim();

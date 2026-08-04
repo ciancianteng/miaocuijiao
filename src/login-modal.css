@@ -14,7 +14,7 @@ body > #modal {
   margin: 0 !important;
   padding: 16px !important;
   transform: none !important;
-  z-index: 99999 !important;
+  z-index: 100100 !important;
   display: none !important;
   align-items: center !important;
   justify-content: center !important;
@@ -57,7 +57,11 @@ body > #modal.open {
   height: fit-content !important;
   min-height: 0 !important;
   max-height: calc(100dvh - 32px) !important;
-  overflow: hidden !important;
+  /* Allow vertical scroll when register fields exceed viewport (esp. mobile + keyboard). */
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
   padding: 32px 28px 24px !important;
   box-sizing: border-box !important;
   align-self: center !important;
@@ -216,7 +220,8 @@ body > #modal.open {
 }
 
 #modal .boss-login-modal .login-links a,
-#modal .boss-login-modal .login-links button.linkish {
+#modal .boss-login-modal .login-links button.linkish,
+#modal .boss-login-modal .login-links button[data-forgot-password] {
   appearance: none;
   border: 0;
   background: none;
@@ -233,20 +238,47 @@ body > #modal.open {
 }
 
 #modal .boss-login-modal .login-links a:hover,
-#modal .boss-login-modal .login-links button.linkish:hover {
+#modal .boss-login-modal .login-links button.linkish:hover,
+#modal .boss-login-modal .login-links button[data-forgot-password]:hover {
   text-decoration: underline;
 }
 
 @media (max-width: 560px) {
+  /* Overlay: do not double-lock scroll — let the auth dialog scroll inside. */
+  #modal.modal,
+  body > #modal {
+    align-items: flex-start !important;
+    justify-content: center !important;
+    padding: max(8px, env(safe-area-inset-top, 0px)) 12px max(8px, env(safe-area-inset-bottom, 0px)) !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  #modal.modal.open,
+  body > #modal.open {
+    align-items: flex-start !important;
+    justify-content: center !important;
+  }
+
   #modal .dialog.is-auth-dialog,
   #modal .dialog:has(.boss-login-modal) {
-    width: calc(100vw - 32px) !important;
-    max-width: calc(100vw - 32px) !important;
-    padding: 28px 20px 24px !important;
+    width: calc(100vw - 24px) !important;
+    max-width: calc(100vw - 24px) !important;
+    max-height: 90dvh !important;
+    max-height: 90vh !important; /* fallback */
+    margin: 8px auto !important;
+    padding: 28px 20px calc(24px + env(safe-area-inset-bottom, 0px)) !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    align-self: flex-start !important;
   }
 
   #modal .boss-login-modal {
     padding-right: 28px !important;
+    padding-bottom: 8px !important;
   }
 
   #modal .boss-login-modal h2 {
@@ -257,16 +289,30 @@ body > #modal.open {
     font-size: 14px !important;
   }
 
+  #modal .boss-login-modal .login-panel.active {
+    padding-bottom: 4px !important;
+  }
+
+  #modal .boss-login-modal .login-submit {
+    margin-bottom: 4px !important;
+  }
+
   #modal .boss-login-modal .login-links {
     gap: 8px !important;
+    height: auto !important;
+    min-height: 40px !important;
+    padding-bottom: 4px !important;
   }
 
   #modal .boss-login-modal .login-links a,
-  #modal .boss-login-modal .login-links button.linkish {
+  #modal .boss-login-modal .login-links button.linkish,
+  #modal .boss-login-modal .login-links button[data-forgot-password] {
     font-size: 12px;
+    line-height: 1.4;
   }
 }
 
+/* Body scroll lock only — modal dialog remains scrollable. */
 html.mcj-modal-open,
 body.mcj-modal-open {
   overflow: hidden !important;

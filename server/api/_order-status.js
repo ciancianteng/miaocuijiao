@@ -19,10 +19,11 @@ export const ORDER_STATUSES = Object.freeze({
 /** Boss / shared Chinese labels (tabs + cards). Unified CN vocabulary. */
 export const ORDER_STATUS_LABELS = Object.freeze({
   awaiting_payment: "待付款",
-  pending: "待接单",
-  waiting_boss_confirm: "选择陪玩中",
-  claimed: "待陪玩确认",
-  confirmed: "待开始",
+  payment_review: "付款待审核", // view-layer only (awaiting_payment + proof submitted)
+  pending: "等待陪玩抢单",
+  waiting_boss_confirm: "等待老板选择",
+  claimed: "等待陪玩确认",
+  confirmed: "进行中", // legacy hop; new confirm path jumps to in_progress
   in_progress: "进行中",
   completed: "已完成",
   reviewed: "已评价",
@@ -35,11 +36,51 @@ export const ORDER_STATUS_LABELS = Object.freeze({
 /** Companion portal labels (same keys, wording tuned for 陪玩). */
 export const COMPANION_STATUS_LABELS = Object.freeze({
   ...ORDER_STATUS_LABELS,
-  claimed: "待陪玩确认",
-  pending: "待接单",
-  waiting_boss_confirm: "选择陪玩中",
-  confirmed: "待开始",
+  claimed: "等待陪玩确认",
+  pending: "等待陪玩抢单",
+  waiting_boss_confirm: "等待老板选择",
+  confirmed: "进行中",
 });
+
+/**
+ * Boss-facing status text with grab-count variants.
+ * Never returns「待接单」/「老板待接单」.
+ */
+export function bossFacingStatusText(row = {}, grabCountOverride) {
+  const status = normalizeOrderStatus(row.status);
+  const note = String(row.note || row.description || "");
+  const grabCount =
+    grabCountOverride != null
+      ? Number(grabCountOverride) || 0
+      : Array.isArray(row.grabs)
+        ? row.grabs.length
+        : Number(row.grabCount != null ? row.grabCount : row.grab_count || 0) || 0;
+  if (status === "awaiting_payment") {
+    if (
+      row.payment_proof_url ||
+      row.paymentProofUrl ||
+      /\[\[PAYMENT_PROOF\]\]|\[\[PAYMENT_SUBMITTED\]\]|付款凭证|已上传付款/i.test(note)
+    ) {
+      return "付款待审核";
+    }
+    return "待付款";
+  }
+  if (status === "pending" || status === "waiting_boss_confirm") {
+    if (grabCount > 0) return `已有 ${grabCount} 位陪玩抢单`;
+    return status === "waiting_boss_confirm" ? "等待老板选择" : "等待陪玩抢单";
+  }
+  if (status === "claimed") return "等待陪玩确认";
+  if (status === "confirmed" || status === "in_progress") {
+    if (
+      String(row.note || "").includes("[[COMPLETION_PENDING]]") ||
+      String(row.description || "").includes("[[COMPLETION_PENDING]]")
+    ) {
+      return "陪玩已完成，待确认";
+    }
+    return "进行中";
+  }
+  return ORDER_STATUS_LABELS[status] || status || "待付款";
+}
 
 /**
  * Forbidden / legacy aliases → canonical DB status.
@@ -84,6 +125,7 @@ export function orderStatusLabel(status, portal = "boss") {
 
 export function isCanonicalOrderStatus(status) {
   const key = String(status || "");
+  if (key === "payment_review") return false; // view-layer only
   return Object.prototype.hasOwnProperty.call(ORDER_STATUS_LABELS, key) || key === "reviewed";
 }
 
@@ -109,10 +151,10 @@ export const CS_STATUS_TRANSITIONS = Object.freeze({
 /** CS 改状态 dropdown labels (stricter wording). */
 export const CS_STATUS_ACTION_LABELS = Object.freeze({
   awaiting_payment: "待付款",
-  pending: "待接单",
-  claimed: "待陪玩确认",
-  waiting_boss_confirm: "选择陪玩中",
-  confirmed: "待开始",
+  pending: "等待陪玩抢单",
+  claimed: "等待陪玩确认",
+  waiting_boss_confirm: "等待老板选择",
+  confirmed: "进行中",
   in_progress: "进行中",
   completed: "已完成",
   cancelled: "已取消",
@@ -144,13 +186,27 @@ export function assertCsStatusTransition(fromStatus, toStatus) {
   return { from, to };
 }
 
-/** Runtime allows Preview TEST pay only on Vercel Preview / local non-production. Never on Production. */
-export function allowPreviewTestPay() {
+/**
+ * TEST pay is OFF by default — even on Vercel Preview.
+ * Enable only when MCJ_ALLOW_TEST_PAY=1, or when the client explicitly opts in
+ * via ?allowTestPay=1 (forwarded as allowTestPay / allow_test_pay on non-production).
+ * Never on Vercel Production.
+ */
+export function allowPreviewTestPay(opts = {}) {
   const vercelEnv = String(process.env.VERCEL_ENV || "").toLowerCase();
   if (vercelEnv === "production") return false;
+
+  if (String(process.env.MCJ_ALLOW_TEST_PAY || "").trim() === "1") return true;
+
+  const flag = opts.allowTestPay ?? opts.allow_test_pay ?? opts.queryAllowTestPay;
+  const optedIn = flag === true || String(flag || "").trim() === "1";
+  if (!optedIn) return false;
+
+  // Explicit opt-in only outside Vercel Production (Preview / local).
   if (vercelEnv === "preview") return true;
-  // Local only when NODE_ENV is not production
-  return String(process.env.NODE_ENV || "").toLowerCase() !== "production";
+  if (!vercelEnv && String(process.env.NODE_ENV || "").toLowerCase() !== "production") return true;
+  // Vercel Preview sometimes ships NODE_ENV=production; vercelEnv===preview already covered.
+  return vercelEnv !== "production" && vercelEnv !== "";
 }
 
 /**

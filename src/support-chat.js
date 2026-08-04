@@ -1530,7 +1530,7 @@
         alert('缺少订单或陪玩信息');
         return;
       }
-      if (!confirm('确认选择该陪玩？订单将进入待陪玩确认。')) return;
+      if (!confirm('确认选择该陪玩？系统将立即派单，订单进入等待陪玩确认。')) return;
       want.disabled = true;
       var prev = want.textContent;
       want.textContent = '处理中…';

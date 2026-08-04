@@ -13,6 +13,33 @@
     });
   }
 
+  function fmtContentTime(v) {
+    if (window.MCJContentTime && window.MCJContentTime.fmtContentTime) return window.MCJContentTime.fmtContentTime(v);
+    if (!v) return "";
+    try {
+      return new Intl.DateTimeFormat("sv-SE", {
+        timeZone: "Asia/Kuala_Lumpur",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      })
+        .format(new Date(v))
+        .replace(" ", " ");
+    } catch (e) {
+      return String(v).slice(0, 16).replace("T", " ");
+    }
+  }
+
+  function forcedMeta(item) {
+    var html = "版本 " + esc(item.version || "1");
+    if (item.updatedAt) html += "<br>最后更新：" + esc(fmtContentTime(item.updatedAt));
+    html += "<br>请滚动至底部后确认";
+    return html;
+  }
+
   function ensureCss() {
     if (document.getElementById("mcj-forced-ack-css")) return;
     var style = document.createElement("style");
@@ -70,9 +97,9 @@
       '<div class="pw-forced-modal" role="dialog" aria-modal="true" aria-labelledby="pwForcedTitle">' +
       "<header><strong id=\"pwForcedTitle\">" +
       esc(item.title || "强制公告") +
-      "</strong><span>版本 " +
-      esc(item.version) +
-      " · 请滚动至底部后确认</span></header>" +
+      "</strong><span>" +
+      forcedMeta(item) +
+      "</span></header>" +
       '<div class="pw-forced-body" data-pw-forced-body>' +
       esc(item.content || "") +
       "</div>" +

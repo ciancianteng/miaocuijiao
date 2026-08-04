@@ -1,6 +1,15 @@
 /**
  * Companion inbox: official CS chat + system notifications with DB read receipts.
  */
+import {
+  normalizeCompanionConsultType,
+  consultTypeLabel,
+  TRANSFER_USER_TIP,
+  isPendingTransferStatus,
+  isClosedConversationStatus,
+  conversationStatusLabel,
+} from "./_conversation-lock.js";
+
 function nowIso() {
   return new Date().toISOString();
 }
@@ -65,6 +74,141 @@ async function supabaseJson(url, init = {}) {
   return body;
 }
 
+const CATEGORY_LABEL_CN = {
+  system: "系统通知",
+  order: "订单通知",
+  withdraw: "提现通知",
+  audit: "审核通知",
+  activity: "活动通知",
+};
+
+/**
+ * Persist a companion system notification (service role). Survives refresh/relogin.
+ */
+export async function insertCompanionNotification({
+  companionUserId,
+  category = "system",
+  title = "",
+  body = "",
+  href = "/companion/account",
+  noticeKey = "",
+  notificationType = "",
+  relatedApplicationId = "",
+} = {}) {
+  const uid = String(companionUserId || "").trim();
+  if (!uid) return null;
+  const key =
+    String(noticeKey || "").trim() ||
+    `${category || "system"}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const base = {
+    companion_id: uid,
+    notice_key: key,
+    category: String(category || "system"),
+    title: String(title || "").trim() || "系统通知",
+    body: String(body || "").trim(),
+    href: String(href || "/companion/account"),
+    created_at: nowIso(),
+  };
+  const rich = {
+    ...base,
+    notification_type: String(notificationType || category || "system").trim(),
+    related_application_id: String(relatedApplicationId || "").trim() || null,
+  };
+  try {
+    await supabaseJson(restUrl("companion_notifications", ""), {
+      method: "POST",
+      headers: serviceHeaders(),
+      body: JSON.stringify(rich),
+    });
+    return key;
+  } catch (err) {
+    const detail = String(err?.message || err || "");
+    if (/notification_type|related_application_id|column|schema|PGRST/i.test(detail)) {
+      try {
+        await supabaseJson(restUrl("companion_notifications", ""), {
+          method: "POST",
+          headers: serviceHeaders(),
+          body: JSON.stringify(base),
+        });
+        return key;
+      } catch (err2) {
+        console.warn("[companion-inbox] insertCompanionNotification failed:", err2?.message || err2);
+        return null;
+      }
+    }
+    console.warn("[companion-inbox] insertCompanionNotification failed:", err?.message || err);
+    return null;
+  }
+}
+
+export async function notifyCompanionReviewResult(
+  companionUserId,
+  { status, reason = "", kind = "application", applicationId = "", email = "" } = {}
+) {
+  const st = String(status || "").toLowerCase();
+  const approved = /approved|verified|passed|paid/.test(st);
+  const rejected = /reject|resubmit|need_more|declin|fail/.test(st);
+  if (!approved && !rejected) return null;
+
+  // Application review: dedicated titles + email / email_pending
+  if (kind === "application") {
+    const { notifyCompanionApplicationReview } = await import("./_companion-review-notify.js");
+    return notifyCompanionApplicationReview(companionUserId, {
+      status,
+      reason,
+      applicationId,
+      email,
+    });
+  }
+
+  const kindLabel =
+    ({ identity: "实名认证", payment: "收款账户", deposit: "押金审核", media: "媒体审核" })[kind] || "资料审核";
+  const title = approved ? `${kindLabel}已通过` : `${kindLabel}未通过`;
+  const body = approved
+    ? `${kindLabel}已通过，可继续完善资料或接单。`
+    : String(reason || "").trim() || "请根据驳回原因修改后重新提交。";
+  const href =
+    kind === "identity" || kind === "payment" || kind === "deposit" ? "/companion/account" : "/companion/profile";
+  return insertCompanionNotification({
+    companionUserId,
+    category: "audit",
+    title,
+    body,
+    href,
+    noticeKey: `audit-${kind}-${approved ? "pass" : "reject"}-${Date.now()}`,
+    notificationType: `audit_${kind}_${approved ? "pass" : "reject"}`,
+  });
+}
+
+export async function loadCompanionNotifications(companionUserId) {
+  const uid = String(companionUserId || "").trim();
+  if (!uid) return [];
+  const rows = await supabaseJson(
+    restUrl(
+      "companion_notifications",
+      `?companion_id=eq.${encodeURIComponent(uid)}&order=created_at.desc&limit=100&select=id,notice_key,category,title,body,href,created_at`
+    ),
+    { headers: serviceHeaders() }
+  ).catch(() => []);
+  return (Array.isArray(rows) ? rows : []).map((row) => {
+    const key = String(row.notice_key || row.id || "");
+    const category = String(row.category || "system");
+    return {
+      id: key,
+      key,
+      dbId: row.id || "",
+      category,
+      categoryLabel: CATEGORY_LABEL_CN[category] || "系统通知",
+      title: row.title || "系统通知",
+      body: row.body || "",
+      at: row.created_at || "",
+      href: row.href || "/companion/account",
+      fromDb: true,
+    };
+  });
+}
+
+/** Derived notices from live order/withdraw rows. Audit notices come from companion_notifications. */
 export function buildSystemNotices({ companionUserId, player = {}, verification = {}, deposit = {}, orders = [], withdrawals = [], popularity = {}, auditLocked = false, auditHint = "" } = {}) {
   const items = [];
   const push = (key, category, title, body, at, href = "") => {
@@ -72,24 +216,19 @@ export function buildSystemNotices({ companionUserId, player = {}, verification 
       id: key,
       key,
       category,
-      categoryLabel:
-        ({ system: "系统通知", order: "订单通知", withdraw: "提现通知", audit: "审核通知", activity: "活动通知" })[category] || "系统通知",
+      categoryLabel: CATEGORY_LABEL_CN[category] || "系统通知",
       title,
       body,
       at: at || "",
       href,
     });
   };
-  if (auditLocked) push("sys-audit", "audit", "账号审核中", auditHint || "账号审核通过后即可开始接单。", "", "/companion/account");
-  if (verification.identityRejectReason) push("audit-id", "audit", "实名认证未通过", verification.identityRejectReason, "", "/companion/account");
-  if (verification.paymentRejectReason) push("audit-pay", "audit", "收款账户未通过", verification.paymentRejectReason, "", "/companion/account");
-  if (deposit.rejectReason || verification.depositRejectReason) {
-    push("audit-dep", "audit", "押金审核未通过", deposit.rejectReason || verification.depositRejectReason, "", "/companion/account");
-  }
-  if (verification.applicationRejectReason) {
-    push("audit-app", "audit", "资料审核未通过", verification.applicationRejectReason, "", "/companion/profile");
-  }
-  push("sys-welcome", "system", "欢迎使用陪玩端", "完善公开资料与账号中心后，等待后台审核通过即可接单。", "", "/companion/dashboard");
+  void companionUserId;
+  void player;
+  void verification;
+  void deposit;
+  void auditLocked;
+  void auditHint;
   (orders || []).slice(0, 40).forEach((o) => {
     const status = ORDER_STATUS_TEXT[o.status] || o.orderStatus || o.statusText || "状态更新";
     const no = o.orderNo || o.order_no || "";
@@ -158,22 +297,165 @@ export async function markNoticesRead(companionId, keys = []) {
   return { marked: list.length };
 }
 
-export async function ensureCompanionSupportConversation(companionUserId) {
-  const existing = await supabaseJson(
-    restUrl(
-      "conversations",
-      `?companion_id=eq.${encodeURIComponent(companionUserId)}&conversation_type=eq.companion_support&status=not.in.(closed,ended)&order=updated_at.desc&limit=1`
-    ),
+function shanghaiTodayKey() {
+  try {
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Shanghai",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date());
+  } catch {
+    return new Date().toISOString().slice(0, 10);
+  }
+}
+
+function parseCsMeta(note = "") {
+  const text = String(note || "");
+  const idx = text.indexOf("MCJ_CS_META:");
+  if (idx === -1) return {};
+  try {
+    return JSON.parse(text.slice(idx + "MCJ_CS_META:".length));
+  } catch {
+    return {};
+  }
+}
+
+/** Pick an on-duty CS (clocked in); else least-busy active CS. */
+export async function pickOnlineCustomerServiceId() {
+  const profiles = await supabaseJson(
+    restUrl("profiles", "?role=eq.customer_service&status=eq.active&select=id,display_name&order=created_at.asc&limit=80"),
     { headers: serviceHeaders() }
   ).catch(() => []);
-  if (existing?.[0]) return existing[0];
+  const list = Array.isArray(profiles) ? profiles : [];
+  if (!list.length) return null;
+
+  const today = shanghaiTodayKey();
+  const onDuty = [];
+  for (const p of list) {
+    const rows = await supabaseJson(
+      restUrl(
+        "customer_service_reports",
+        `?customer_service_id=eq.${encodeURIComponent(p.id)}&report_date=eq.${encodeURIComponent(today)}&order=created_at.desc&limit=5`
+      ),
+      { headers: serviceHeaders() }
+    ).catch(() => []);
+    for (const row of rows || []) {
+      const meta = parseCsMeta(row.note);
+      if (meta.kind === "config") continue;
+      const clockIn = row.shift_start || meta.clockInAt || "";
+      const clockOut = row.shift_end || meta.clockOutAt || "";
+      if (clockIn && !clockOut) {
+        onDuty.push(p);
+        break;
+      }
+    }
+  }
+  const pool = onDuty.length ? onDuty : list;
+
+  const open = await supabaseJson(
+    restUrl("conversations", "?customer_service_id=not.is.null&status=not.in.(closed,ended)&select=customer_service_id&limit=2000"),
+    { headers: serviceHeaders() }
+  ).catch(() => []);
+  const counts = {};
+  (open || []).forEach((c) => {
+    const id = c.customer_service_id;
+    if (id) counts[id] = (counts[id] || 0) + 1;
+  });
+  pool.sort((a, b) => (counts[a.id] || 0) - (counts[b.id] || 0) || String(a.id).localeCompare(String(b.id)));
+  return pool[0]?.id || null;
+}
+
+async function assignOnlineCustomerService(conversation) {
+  if (!conversation?.id || conversation.customer_service_id) return conversation;
+  const csId = await pickOnlineCustomerServiceId();
+  if (!csId) return conversation;
+  const acceptedAt = nowIso();
+  async function claim(patch) {
+    const rows = await supabaseJson(
+      restUrl("conversations", `?id=eq.${encodeURIComponent(conversation.id)}&customer_service_id=is.null`),
+      {
+        method: "PATCH",
+        headers: serviceHeaders(),
+        body: JSON.stringify(patch),
+      }
+    );
+    return Array.isArray(rows) ? rows[0] : null;
+  }
+  let updated = null;
+  try {
+    updated = await claim({
+      customer_service_id: csId,
+      status: "active",
+      accepted_at: acceptedAt,
+      updated_at: acceptedAt,
+    });
+  } catch (err) {
+    const detail = String(err?.message || "");
+    if (/accepted_at|column|schema/i.test(detail)) {
+      try {
+        updated = await claim({ customer_service_id: csId, status: "active", updated_at: acceptedAt });
+      } catch (err2) {
+        if (/status|check|invalid/i.test(String(err2?.message || ""))) {
+          updated = await claim({ customer_service_id: csId, status: "serving", updated_at: acceptedAt }).catch(() => null);
+        }
+      }
+    } else if (/status|check|invalid/i.test(detail)) {
+      updated = await claim({ customer_service_id: csId, status: "serving", updated_at: acceptedAt }).catch(() => null);
+    }
+  }
+  if (updated?.id) {
+    await supabaseJson(restUrl("messages"), {
+      method: "POST",
+      headers: serviceHeaders(),
+      body: JSON.stringify({
+        conversation_id: conversation.id,
+        sender_id: csId,
+        sender_role: "system",
+        message_type: "system",
+        content: "系统已自动分配在线客服，可直接发消息。",
+        order_id: null,
+        read_at: null,
+        created_at: nowIso(),
+      }),
+    }).catch(() => null);
+    return updated;
+  }
+  return conversation;
+}
+
+export async function ensureCompanionSupportConversation(companionUserId, opts = {}) {
+  const orderId = String(opts.orderId || opts.order_id || "").trim() || null;
+  const forceNew = !!(opts.forceNew || opts.force_new);
+  const consultType = normalizeCompanionConsultType(opts.consultType || opts.consult_type, { orderId: orderId || "" });
+  const consultLabel = consultTypeLabel("companion", consultType);
+
+  // Reuse ONLY same companion + order_id + consult_type. Never lock whole companion account.
+  if (!forceNew) {
+    const base = orderId
+      ? `?companion_id=eq.${encodeURIComponent(companionUserId)}&conversation_type=eq.companion_support&order_id=eq.${encodeURIComponent(orderId)}&status=not.in.(closed,ended)`
+      : `?companion_id=eq.${encodeURIComponent(companionUserId)}&conversation_type=eq.companion_support&order_id=is.null&status=not.in.(closed,ended)`;
+    const withConsult = `${base}&consult_type=eq.${encodeURIComponent(consultType)}&order=updated_at.desc&limit=1`;
+    let existing = await supabaseJson(restUrl("conversations", withConsult), { headers: serviceHeaders() }).catch((err) => {
+      if (/consult_type|column|schema/i.test(String(err?.message || ""))) return null;
+      return [];
+    });
+    if (existing === null) {
+      existing = await supabaseJson(restUrl("conversations", `${base}&order=updated_at.desc&limit=1`), {
+        headers: serviceHeaders(),
+      }).catch(() => []);
+    }
+    // Do NOT auto-assign CS. Conversations stay in the waiting pool until a human CS clicks 接待.
+    if (existing?.[0]) return existing[0];
+  }
 
   const payload = {
     boss_id: null,
     companion_id: companionUserId,
     customer_service_id: null,
-    order_id: null,
+    order_id: orderId,
     conversation_type: "companion_support",
+    consult_type: consultType,
     status: "waiting_service",
     created_at: nowIso(),
     updated_at: nowIso(),
@@ -186,6 +468,9 @@ export async function ensureCompanionSupportConversation(companionUserId) {
     });
     const conversation = rows?.[0];
     if (conversation?.id) {
+      const tip = orderId
+        ? `陪玩发起官方客服咨询（${consultLabel}），已关联订单，正在等待客服接待。`
+        : `陪玩发起官方客服咨询（${consultLabel}），正在等待客服接待。`;
       await supabaseJson(restUrl("messages"), {
         method: "POST",
         headers: serviceHeaders(),
@@ -194,29 +479,33 @@ export async function ensureCompanionSupportConversation(companionUserId) {
           sender_id: companionUserId,
           sender_role: "companion",
           message_type: "system",
-          content: "陪玩发起官方客服咨询。",
-          order_id: null,
+          content: tip,
+          order_id: orderId,
           read_at: null,
           created_at: nowIso(),
         }),
       }).catch(() => null);
     }
-    return conversation;
+    return conversation || null;
   } catch (error) {
-    // retry without conversation_type if column missing
-    if (!/conversation_type|column|schema/i.test(String(error.message || ""))) throw error;
+    // retry without consult_type / conversation_type if column missing
+    if (!/consult_type|conversation_type|column|schema/i.test(String(error.message || ""))) throw error;
+    const legacy = {
+      boss_id: null,
+      companion_id: companionUserId,
+      customer_service_id: null,
+      order_id: orderId,
+      status: "waiting_service",
+      created_at: nowIso(),
+      updated_at: nowIso(),
+    };
+    if (!/conversation_type/i.test(String(error.message || ""))) {
+      legacy.conversation_type = "companion_support";
+    }
     const rows = await supabaseJson(restUrl("conversations"), {
       method: "POST",
       headers: serviceHeaders(),
-      body: JSON.stringify({
-        boss_id: null,
-        companion_id: companionUserId,
-        customer_service_id: null,
-        order_id: null,
-        status: "waiting_service",
-        created_at: nowIso(),
-        updated_at: nowIso(),
-      }),
+      body: JSON.stringify(legacy),
     });
     return rows?.[0] || null;
   }
@@ -323,46 +612,244 @@ export function viewMessage(row = {}) {
   };
 }
 
-export async function buildCompanionInbox(profile, companion, bootstrapSlice = {}) {
-  const conversation = await ensureCompanionSupportConversation(profile.id);
-  const messages = conversation?.id ? await loadConversationMessages(conversation.id) : [];
-  const csUnread = messages.filter(
+function conversationUnreadCount(messages, companionUserId) {
+  return (messages || []).filter(
     (m) =>
       m.sender_role !== "companion" &&
-      String(m.sender_id || "") !== String(profile.id) &&
+      String(m.sender_id || "") !== String(companionUserId || "") &&
       !m.read_at &&
       m.message_type !== "system"
   ).length;
-  const notices = buildSystemNotices({
-    companionUserId: profile.id,
-    player: bootstrapSlice.player,
-    verification: bootstrapSlice.verification,
-    deposit: bootstrapSlice.deposit,
-    orders: bootstrapSlice.myOrders || bootstrapSlice.orders,
-    withdrawals: bootstrapSlice.withdrawals,
-    popularity: bootstrapSlice.popularity,
-    auditLocked: bootstrapSlice.auditLocked,
-    auditHint: bootstrapSlice.auditHint,
+}
+
+async function loadCompanionSupportConversations(companionUserId) {
+  const uid = String(companionUserId || "").trim();
+  if (!uid) return [];
+  const rows = await supabaseJson(
+    restUrl(
+      "conversations",
+      `?companion_id=eq.${encodeURIComponent(uid)}&conversation_type=eq.companion_support&order=updated_at.desc&limit=80&select=id,companion_id,customer_service_id,order_id,consult_type,status,created_at,updated_at,last_message_at,closed_at,ended_at,closed_by,accepted_at,title`
+    ),
+    { headers: serviceHeaders() }
+  ).catch(async (err) => {
+    if (!/consult_type|closed_at|ended_at|closed_by|column|schema/i.test(String(err?.message || ""))) return [];
+    return supabaseJson(
+      restUrl(
+        "conversations",
+        `?companion_id=eq.${encodeURIComponent(uid)}&conversation_type=eq.companion_support&order=updated_at.desc&limit=80`
+      ),
+      { headers: serviceHeaders() }
+    ).catch(() => []);
   });
-  const readKeys = await loadReadKeys(profile.id).catch(() => new Set());
+  return Array.isArray(rows) ? rows : [];
+}
+
+async function resolveOrderNos(orderIds = []) {
+  const ids = [...new Set((orderIds || []).map((id) => String(id || "").trim()).filter(Boolean))];
+  if (!ids.length) return {};
+  const rows = await supabaseJson(
+    restUrl("orders", `?id=in.(${ids.map(encodeURIComponent).join(",")})&select=id,order_no`),
+    { headers: serviceHeaders() }
+  ).catch(() => []);
+  const map = {};
+  (Array.isArray(rows) ? rows : []).forEach((row) => {
+    if (row?.id) map[String(row.id)] = String(row.order_no || "").trim();
+  });
+  return map;
+}
+
+async function resolveCsDisplayNames(csIds = []) {
+  const ids = [...new Set((csIds || []).map((id) => String(id || "").trim()).filter(Boolean))];
+  if (!ids.length) return {};
+  const rows = await supabaseJson(
+    restUrl("profiles", `?id=in.(${ids.map(encodeURIComponent).join(",")})&select=id,display_name,email`),
+    { headers: serviceHeaders() }
+  ).catch(() => []);
+  const map = {};
+  (Array.isArray(rows) ? rows : []).forEach((row) => {
+    if (!row?.id) return;
+    map[String(row.id)] = String(row.display_name || row.email || "").trim() || "客服";
+  });
+  return map;
+}
+
+function viewCompanionCsConversation(row = {}, { orderNo = "", csName = "", lastMessage = "", unread = 0 } = {}) {
+  const closed = isClosedConversationStatus(row.status);
+  const transferring = isPendingTransferStatus(row.status);
+  const consultKey = normalizeCompanionConsultType(row.consult_type, { orderId: row.order_id || "" });
+  const consultLabel = consultTypeLabel("companion", consultKey);
+  const orderLabel = row.order_id ? orderNo || String(row.order_id).slice(0, 8) : "非订单咨询";
+  const statusLabel = conversationStatusLabel(row);
+  const subtitle = transferring
+    ? TRANSFER_USER_TIP
+    : closed
+      ? `已结束 · ${orderLabel}`
+      : `${statusLabel} · ${csName || (row.customer_service_id ? "客服接待中" : "等待客服")} · ${orderLabel}`;
+  return {
+    id: row.id,
+    key: row.id,
+    type: "cs",
+    title: consultLabel,
+    subtitle,
+    status: closed ? "ended" : transferring ? "pending_transfer" : row.customer_service_id ? "active" : "waiting",
+    statusLabel,
+    assignedServiceId: row.customer_service_id || "",
+    assignedServiceName: csName || "",
+    orderId: row.order_id || "",
+    orderNo: orderNo || "",
+    orderLabel,
+    consultType: consultKey,
+    consultTypeLabel: consultLabel,
+    lastMessage: transferring ? TRANSFER_USER_TIP : lastMessage || (closed ? "会话已结束" : "发送消息开始咨询"),
+    lastTime: row.last_message_at || row.updated_at || row.created_at || "",
+    endedAt: row.ended_at || row.closed_at || "",
+    endedBy: row.closed_by || "",
+    unread: closed ? 0 : unread,
+    ended: closed,
+  };
+}
+
+export async function endCompanionSupportConversation(companionUserId, conversationId, { endedByRole = "companion" } = {}) {
+  const uid = String(companionUserId || "").trim();
+  const cid = String(conversationId || "").trim();
+  if (!uid || !cid) throw Object.assign(new Error("会话无效"), { status: 400 });
+  const rows = await supabaseJson(
+    restUrl("conversations", `?id=eq.${encodeURIComponent(cid)}&companion_id=eq.${encodeURIComponent(uid)}&limit=1`),
+    { headers: serviceHeaders() }
+  ).catch(() => []);
+  const existing = rows?.[0] || null;
+  if (!existing) throw Object.assign(new Error("会话不存在"), { status: 404 });
+  if (isClosedConversationStatus(existing.status)) {
+    return existing;
+  }
+  const closedAt = nowIso();
+  const richPatch = {
+    status: "ended",
+    updated_at: closedAt,
+    closed_at: closedAt,
+    ended_at: closedAt,
+    closed_by: uid,
+  };
+  let updated = null;
+  try {
+    const patched = await supabaseJson(restUrl("conversations", `?id=eq.${encodeURIComponent(cid)}&companion_id=eq.${encodeURIComponent(uid)}`), {
+      method: "PATCH",
+      headers: serviceHeaders(),
+      body: JSON.stringify(richPatch),
+    });
+    updated = patched?.[0] || null;
+  } catch (err) {
+    const detail = String(err?.message || "");
+    if (!/closed_at|ended_at|closed_by|column|schema/i.test(detail)) throw err;
+    const patched = await supabaseJson(restUrl("conversations", `?id=eq.${encodeURIComponent(cid)}&companion_id=eq.${encodeURIComponent(uid)}`), {
+      method: "PATCH",
+      headers: serviceHeaders(),
+      body: JSON.stringify({ status: "ended", updated_at: closedAt }),
+    });
+    updated = patched?.[0] || null;
+  }
+  await supabaseJson(restUrl("messages"), {
+    method: "POST",
+    headers: serviceHeaders(),
+    body: JSON.stringify({
+      conversation_id: cid,
+      sender_id: uid,
+      sender_role: "system",
+      message_type: "system",
+      content: endedByRole === "customer_service" ? "客服已结束本次对话。" : "陪玩已结束本次对话。",
+      order_id: existing.order_id || null,
+      read_at: null,
+      created_at: closedAt,
+    }),
+  }).catch(() => null);
+  return updated || { ...existing, status: "ended", closed_at: closedAt, ended_at: closedAt, closed_by: uid };
+}
+
+export async function buildCompanionInbox(profile, companion, bootstrapSlice = {}) {
+  const activeId = String(bootstrapSlice.activeConversationId || bootstrapSlice.conversationId || "").trim();
+  let rows = [];
+  try {
+    rows = await loadCompanionSupportConversations(profile.id);
+  } catch (err) {
+    rows = [];
+  }
+
+  // Never auto-create a dump “官方客服” session on inbox load.
+  // New sessions are created only via send / 发起新咨询 with consult_type (+ optional order_id).
+
+  const orderNos = await resolveOrderNos(rows.map((r) => r.order_id));
+  const csNames = await resolveCsDisplayNames(rows.map((r) => r.customer_service_id));
+
+  // Prefetch last messages + unread for listed threads (cap concurrent).
+  const threadMeta = {};
+  await Promise.all(
+    rows.slice(0, 40).map(async (row) => {
+      if (!row?.id) return;
+      const messages = await loadConversationMessages(row.id).catch(() => []);
+      const last = [...messages].reverse().find((m) => m.message_type !== "system") || messages[messages.length - 1];
+      threadMeta[row.id] = {
+        messages,
+        lastMessage: last?.content || "",
+        lastTime: last?.created_at || row.updated_at || "",
+        unread: conversationUnreadCount(messages, profile.id),
+      };
+    })
+  );
+
+  const csConversations = rows.map((row) => {
+    const meta = threadMeta[row.id] || {};
+    return viewCompanionCsConversation(row, {
+      orderNo: orderNos[String(row.order_id || "")] || "",
+      csName: csNames[String(row.customer_service_id || "")] || "",
+      lastMessage: meta.lastMessage || "",
+      unread: meta.unread || 0,
+    });
+  });
+
+  let active =
+    (activeId && csConversations.find((c) => String(c.id) === activeId)) ||
+    csConversations.find((c) => !c.ended) ||
+    csConversations[0] ||
+    null;
+
+  const activeMessages = active?.id ? threadMeta[active.id]?.messages || (await loadConversationMessages(active.id).catch(() => [])) : [];
+  const csUnreadTotal = csConversations.reduce((sum, c) => sum + Number(c.unread || 0), 0);
+
+  const [dbNotices, derivedNotices, readKeys] = await Promise.all([
+    loadCompanionNotifications(profile.id).catch(() => []),
+    Promise.resolve(
+      buildSystemNotices({
+        companionUserId: profile.id,
+        player: bootstrapSlice.player,
+        verification: bootstrapSlice.verification,
+        deposit: bootstrapSlice.deposit,
+        orders: bootstrapSlice.myOrders || bootstrapSlice.orders,
+        withdrawals: bootstrapSlice.withdrawals,
+        popularity: bootstrapSlice.popularity,
+        auditLocked: bootstrapSlice.auditLocked,
+        auditHint: bootstrapSlice.auditHint,
+      })
+    ),
+    loadReadKeys(profile.id).catch(() => new Set()),
+  ]);
+  const seen = new Set();
+  const notices = [...(dbNotices || []), ...(derivedNotices || [])].filter((n) => {
+    const k = String(n.key || n.id || "");
+    if (!k || seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
   const systemNotices = notices.map((n) => ({
     ...n,
     unread: !readKeys.has(n.key),
   }));
   const systemUnread = systemNotices.filter((n) => n.unread).length;
-  const lastCs = [...messages].reverse().find((m) => m.message_type !== "system") || messages[messages.length - 1];
+  const transferring = active ? isPendingTransferStatus(active.status === "pending_transfer" ? "pending_transfer" : "") : false;
+  const consultKey = active?.consultType || "other";
+
   return {
     conversations: [
-      {
-        id: conversation?.id || "cs",
-        key: "cs",
-        type: "cs",
-        title: "官方客服",
-        subtitle: conversation?.customer_service_id ? "客服接待中" : "等待客服接待",
-        lastMessage: lastCs?.content || "有问题可以咨询官方客服",
-        lastTime: lastCs?.created_at || conversation?.updated_at || "",
-        unread: csUnread,
-      },
+      ...csConversations,
       {
         id: "system",
         key: "system",
@@ -374,10 +861,18 @@ export async function buildCompanionInbox(profile, companion, bootstrapSlice = {
         unread: systemUnread,
       },
     ],
-    csConversationId: conversation?.id || "",
-    messages: messages.map(viewMessage),
+    csConversations,
+    csConversationId: active?.id || "",
+    csConsultType: consultKey,
+    csOrderId: active?.orderId || "",
+    csOrderNo: active?.orderNo || "",
+    csStatus: active?.status || "",
+    csStatusLabel: active?.statusLabel || "",
+    csEnded: !!(active && active.ended),
+    csTransferring: transferring || !!(active && /更换客服/.test(String(active.subtitle || ""))),
+    messages: activeMessages.map(viewMessage),
     systemNotices,
-    unreadTotal: csUnread + systemUnread,
-    unreadMessages: csUnread + systemUnread,
+    unreadTotal: csUnreadTotal + systemUnread,
+    unreadMessages: csUnreadTotal + systemUnread,
   };
 }

@@ -11,6 +11,7 @@ import {
   resolveCompanionPublicCode,
 } from "./_account-codes.js";
 import { companionDb } from "./_companion-media-store.js";
+import { approveAndLedger, listPendingForCs, rejectProof } from "./_payment-receipts.js";
 import { bossForCs } from "./_privacy.js";
 import {
   conversationLockedByOther as lockOwnedByOther,
@@ -405,8 +406,17 @@ function safeOrder(row, profiles = {}, extras = {}) {
     totalAmount: money(row.total_amount),
     status: row.status || "",
     flowStatus,
-    statusText: ORDER_STATUS_TEXT[row.status] || row.status || "-",
+    statusText: (() => {
+      const gc = Number(extras.grabCount != null ? extras.grabCount : 0) || 0;
+      if ((row.status === "pending" || row.status === "waiting_boss_confirm") && gc > 0) {
+        return `已有 ${gc} 位陪玩抢单`;
+      }
+      return ORDER_STATUS_TEXT[row.status] || row.status || "-";
+    })(),
     note,
+    paymentReview: !!extras.paymentReceipt,
+    paymentProofUrl: extras.paymentProofUrl || "",
+    paymentReceiptId: extras.paymentReceipt?.id || "",
     cancelReason: row.cancel_reason || "",
     needsReassign,
     reassignHint: needsReassign
@@ -913,13 +923,18 @@ async function loadBootstrap(serviceProfile) {
     return { id: row.id, grabCount: grabs.length, grabs: enriched, bossIntent: intent };
   });
   const grabMap = Object.fromEntries(grabExtras.map((g) => [g.id, g]));
+  const pendingReceipts = await listPendingForCs({ orderIds: ordersRaw.map((row) => row.id).filter(Boolean) });
+  const receiptByOrder = Object.fromEntries((pendingReceipts || []).map((receipt) => [receipt.order_id, receipt]));
   const orders = ordersRaw.map((row) => {
     const extra = grabMap[row.id] || {};
+    const receipt = receiptByOrder[row.id] || null;
     return safeOrder(row, profiles, {
       grabCount: extra.grabCount || 0,
       grabs: extra.grabs || [],
       bossIntent: extra.bossIntent || null,
       flowStatus: toFlowStatus(row.status),
+      paymentReceipt: receipt,
+      paymentProofUrl: receipt ? `proof:${receipt.id}` : "",
     });
   }); const msgByConv = messagesRaw.reduce((map, msg) => { (map[msg.conversation_id] = map[msg.conversation_id] || []).push(msg); return map; }, {}); const conversationsMapped = conversationsRaw.map((row) => { const boss = profiles[row.boss_id] || {}; const companionProf = profiles[row.companion_id] || {}; const service = profiles[row.customer_service_id] || {}; const msgs = msgByConv[row.id] || []; const last = msgs[msgs.length - 1] || {}; const bossUid = bossForCs(boss).bossUid; const isCompanionSupport = String(row.conversation_type || "") === "companion_support" || (!row.boss_id && row.companion_id); const isClosed = row.status === "closed" || row.status === "ended"; const convStatus = isClosed ? "已结束" : (row.customer_service_id ? "正在接待" : "待接待"); const lastReadAt = row.last_read_at || ""; const unreadRoles = isCompanionSupport ? ["companion"] : ["boss"];   const unreadBoss = isClosed ? [] : msgs.filter((m) => {
     if (!unreadRoles.includes(m.sender_role) || m.read_at) return false;
@@ -2588,15 +2603,45 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         needsSendToHall: !companionId,
       });
     }
+    if (action === "reject_payment_proof") {
+      const order = await orderById(String(body.id || body.order_id || ""));
+      const reason = String(body.reason || body.reject_reason || "").trim();
+      if (!order) return json(res, 404, { ok: false, message: "订单不存在。" });
+      if (order.status !== "awaiting_payment") return json(res, 409, { ok: false, message: "当前订单不在付款审核中。" });
+      if (!reason) return json(res, 400, { ok: false, message: "请填写驳回付款原因。" });
+      const receipts = await listPendingForCs({ orderIds: [order.id] });
+      const receipt = receipts?.[0];
+      if (!receipt) return json(res, 404, { ok: false, message: "未找到待审核付款凭证。" });
+      await rejectProof({ receipt, reviewerId: service.profile.id, reason });
+      const nextNote = String(order.note || "").replace(/\n?\[\[PAYMENT_PROOF\]\][^\n]*/g, "").trim();
+      await patchOrder(order.id, { note: nextNote }).catch(() => null);
+      const conversation = await ensureConversation({
+        boss_id: order.boss_id, companion_id: order.companion_id, customer_service_id: service.profile.id, order_id: order.id,
+      });
+      await addMessage(conversation, service.profile.id, "customer_service", `付款凭证已驳回：${reason}。请重新上传。`, "system", order.id);
+      return json(res, 200, { ok: true, message: "已驳回付款凭证，老板可重新上传。", order: { ...order, paymentReview: false } });
+    }
     if (action === "confirm_payment" || action === "push_to_grab_hall" || action === "send_to_grab_hall") {
       const order = await orderById(String(body.id || body.order_id || ""));
       if (!order) return json(res, 404, { ok: false, message: "订单不存在。" });
       if (order.status !== "awaiting_payment") return json(res, 400, { ok: false, message: "只有待付款确认订单可以确认付款 / 发送到抢单大厅。" });
       const amount = money(order.total_amount);
       if (!(amount > 0)) return json(res, 400, { ok: false, message: "订单金额无效，无法确认付款。" });
-      // Try wallet debit first; CS ops path allows zero-balance offline confirmation.
+      const pendingReceipts = await listPendingForCs({ orderIds: [order.id] });
+      const pendingReceipt = pendingReceipts?.[0] || null;
+      const existingManualPayment = (
+        await companionDb("payment_transactions", `?order_id=eq.${encodeURIComponent(order.id)}&payment_status=eq.paid&limit=1`).catch(() => [])
+      )?.[0] || null;
+      // A submitted manual proof represents an off-wallet payment. Existing CS-only confirmation
+      // retains its legacy wallet debit behavior for orders without a receipt.
       let walletSkipped = false;
-      try {
+      if (pendingReceipt) {
+        await approveAndLedger({ order, receipt: pendingReceipt, reviewerId: service.profile.id });
+        walletSkipped = true;
+      } else if (existingManualPayment) {
+        // Recover a retried transition after the receipt/ledger commit already succeeded.
+        walletSkipped = true;
+      } else try {
         const walletApi = await import("./_wallet.js");
         await walletApi.debitWallet({
           bossId: order.boss_id,
@@ -2647,7 +2692,7 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
               patch,
               operatorRole: "customer_service",
               operatorId: service.profile.id,
-              note: walletSkipped ? "cs confirm_payment ops (no wallet debit)" : "cs confirm_payment with wallet debit",
+              note: pendingReceipt ? "cs approved manual payment proof" : walletSkipped ? "cs confirm_payment ops (no wallet debit)" : "cs confirm_payment with wallet debit",
             }
           );
         try {
@@ -2825,6 +2870,37 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       const order = await orderById(String(body.id || body.order_id || ""));
       const companion = await resolveCompanion(String(body.companion_id || body.companionId || body.companion_uid || ""));
       if (!order || !companion || !isUuid(companion.id)) return json(res, 400, { ok: false, message: "订单或陪玩不存在。" });
+      // BOSS_PICK_LOCK: CS must not pick for public grabs or re-assign after boss bind.
+      {
+        const st = String(order.status || "");
+        const hasCompanion = !!String(order.companion_id || "").trim();
+        if (hasCompanion && ["claimed", "confirmed", "in_progress"].includes(st)) {
+          return json(res, 409, {
+            ok: false,
+            code: "BOSS_PICK_LOCK",
+            message: "老板已选定陪玩，客服不可再次指定。如需更换，请等陪玩拒单或走售后。",
+          });
+        }
+        if (st === "waiting_boss_confirm") {
+          return json(res, 409, {
+            ok: false,
+            code: "BOSS_MUST_PICK",
+            message: "公开抢单请由老板从抢单列表中选择陪玩，客服不可代选。",
+          });
+        }
+        if (st === "pending") {
+          const { createOrderGrabHelpers } = await import("./_order-grabs.js");
+          const grabsApi = createOrderGrabHelpers({ restUrl, supabaseJson, serviceHeaders });
+          const grabs = await grabsApi.listGrabs(order.id, order.note || order.description || "");
+          if (grabs.length) {
+            return json(res, 409, {
+              ok: false,
+              code: "BOSS_MUST_PICK",
+              message: "已有陪玩抢单，请等待老板选择。客服不可代选公开单陪玩。",
+            });
+          }
+        }
+      }
       const companionId = companion.id;
       const lockKey = `${order.id}:${companionId}`;
       if (ASSIGN_LOCKS.get(lockKey) && Date.now() - ASSIGN_LOCKS.get(lockKey) < 8000) {

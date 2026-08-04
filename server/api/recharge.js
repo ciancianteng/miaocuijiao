@@ -398,6 +398,29 @@ export default async function handler(req, res) {
       });
     }
 
+    const methodCategory = String(method.category || "").toLowerCase();
+    const manualCodes = new Set(["tng", "duitnow", "bank-transfer", "bank", "alipay", "manual_tng"]);
+    const isManual = methodCategory === "manual" || manualCodes.has(String(method.code || "").toLowerCase());
+    if (isManual) {
+      const manualUrl = `/recharge.html?paymentNo=${encodeURIComponent(paymentOrder?.payment_no || "")}`;
+      const saved = await updatePaymentOrder(paymentOrder.id, {
+        status: "pending_payment",
+        payment_url: manualUrl,
+        raw_response: {
+          mode: "manual",
+          message: "请按收款指引完成转账，管理员确认后猫粮到账。",
+        },
+      });
+      return json(res, 200, {
+        ok: true,
+        manual: true,
+        message: "充值单已创建。请完成转账，管理员在后台确认到账后猫粮入账。",
+        paymentUrl: manualUrl,
+        paymentOrder: recordView(saved || paymentOrder),
+        campaign: campaign ? viewCampaign(campaign) : null,
+      });
+    }
+
     try {
       const payment = await callPaymentProvider(method, paymentOrder);
       const saved = await updatePaymentOrder(paymentOrder.id, {

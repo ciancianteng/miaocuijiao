@@ -33,6 +33,7 @@ import {
   publicDisplayName,
   resolveCompanionPublicCode,
 } from "../_account-codes.js";
+import { exportCsv as exportPaymentReceiptsCsv, listPaidForAdmin } from "../_payment-receipts.js";
 
 const FINANCE_BUCKET = "finance-receipts";
 const FINANCE_ROLES = new Set(["admin", "super_admin", "finance_admin"]);
@@ -503,7 +504,7 @@ export default async function handler(req, res) {
 
     if (req.method === "GET" && action === "bootstrap") {
       const refundApi = await import("../_boss-refund-payout.js");
-      const [withdrawalsRaw, payrollsRaw, paymentsRaw, receiptsRaw, logsRaw, cfg, refundsList] = await Promise.all([
+      const [withdrawalsRaw, payrollsRaw, paymentsRaw, receiptsRaw, logsRaw, cfg, refundsList, paymentReceipts] = await Promise.all([
         companionDb("companion_withdrawals", "?order=submitted_at.desc&limit=300").catch((e) => (isMissingRelation(e) ? [] : Promise.reject(e))),
         companionDb("staff_payrolls", "?order=created_at.desc&limit=300").catch((e) => (isMissingRelation(e) ? [] : Promise.reject(e))),
         companionDb("finance_payments", "?order=created_at.desc&limit=300").catch((e) => (isMissingRelation(e) ? [] : Promise.reject(e))),
@@ -511,6 +512,7 @@ export default async function handler(req, res) {
         companionDb("finance_payout_logs", "?order=created_at.desc&limit=300").catch((e) => (isMissingRelation(e) ? [] : [])),
         settings(),
         refundApi.listBossRefunds(companionDb, { limit: 300 }).catch(() => []),
+        listPaidForAdmin().catch(() => []),
       ]);
       const withdrawals = (Array.isArray(withdrawalsRaw) ? withdrawalsRaw : []).filter((r) => resolveRowId(r));
       const payrolls = Array.isArray(payrollsRaw) ? payrollsRaw : [];
@@ -635,6 +637,11 @@ export default async function handler(req, res) {
           });
         }),
         payoutLogs: payoutLogs.map((r) => viewPayoutLog(r)),
+        paymentReceipts: paymentReceipts.map((row) => ({
+          id: row.id, orderId: row.order_id, receiptNo: row.receipt?.receipt_no || "",
+          amount: money(row.net_amount), paymentMethod: row.payment_method || "",
+          confirmedAt: row.confirmed_at || "", proofPath: row.receipt?.storage_path || "",
+        })),
         statusMaps: { withdraw: WITHDRAW_STATUS, payroll: PAYROLL_STATUS },
       });
     }
@@ -642,6 +649,21 @@ export default async function handler(req, res) {
     if (req.method !== "POST") {
       res.setHeader("Allow", "GET, POST");
       return json(res, 405, { ok: false, message: "Method Not Allowed" });
+    }
+
+    if (action === "list_payment_receipts" || action === "export_payment_receipts") {
+      const rows = await listPaidForAdmin({ year: body.year || q.year || "", month: body.month || q.month || "" });
+      if (action === "export_payment_receipts") {
+        await writeAdminLog({
+          module: "finance", action, targetType: "payment_receipts",
+          targetId: `${body.year || ""}-${body.month || ""}`, operatorId: adminProfile.id, operatorRole: adminRole,
+        });
+      }
+      return json(res, 200, {
+        ok: true, rows,
+        csv: action === "export_payment_receipts" ? exportPaymentReceiptsCsv(rows) : undefined,
+        formats: action === "export_payment_receipts" ? ["csv", "xlsx_via_csv"] : undefined,
+      });
     }
 
     if (action === "approve_withdraw") {
@@ -2138,7 +2160,8 @@ export default async function handler(req, res) {
         totalRm,
         rows,
         csv,
-        pdfHint: "前端可用 csv/rows 生成 PDF；服务端返回结构化报账数据。",
+        // PDF 导出延后至 V1.1；本轮仅 CSV/Excel（CSV 内容可被 Excel 打开）
+        formats: ["csv", "xlsx_via_csv"],
       });
     }
 

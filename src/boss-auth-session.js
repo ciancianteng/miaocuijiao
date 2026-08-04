@@ -18,9 +18,23 @@
     "mcjRole",
   ];
 
+  function hasAdminSoftSession() {
+    try {
+      var soft = localStorage.getItem("adminAuthToken") || sessionStorage.getItem("adminAuthToken") || "";
+      return String(soft).indexOf("admin_session_") === 0;
+    } catch (e) {
+      return false;
+    }
+  }
+
   /** Boss sessions must NOT persist in localStorage across browser restarts. */
   function wipeLocalBossAuth() {
+    // Never delete dedicated admin JWT keys. If admin soft session is active,
+    // also leave shared mcjAuth* alone so admin APIs keep working after visiting boss pages.
+    var preserveSharedAuth = hasAdminSoftSession();
     BOSS_KEYS.forEach(function (key) {
+      if (preserveSharedAuth && /^mcjAuth(AccessToken|RefreshToken|ExpiresAt)$/.test(key)) return;
+      if (/^mcjAdmin/.test(key)) return;
       try {
         localStorage.removeItem(key);
       } catch (e) {}

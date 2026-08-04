@@ -58,6 +58,33 @@
     return localStorage.getItem(key) || sessionStorage.getItem(key) || "";
   }
 
+  function clearForeignRoleSessions() {
+    // Must wipe boss soft session before writing shared JWT — otherwise boss
+    // pages keep customerUser while APIs use the CS token (identity bleed).
+    if (window.MCJRoleGate && typeof window.MCJRoleGate.clearOtherRoleSessions === "function") {
+      window.MCJRoleGate.clearOtherRoleSessions("customer_service");
+      return;
+    }
+    [
+      "customerAuthToken",
+      "customerUser",
+      "companionAuthToken",
+      "companionUser",
+      "mcjCompanionSession",
+      "adminAuthToken",
+      "adminUser",
+      "mcjAuthAccessToken",
+      "mcjAuthRefreshToken",
+      "mcjAuthExpiresAt",
+      "mcjRole",
+    ].forEach(function (key) {
+      try {
+        localStorage.removeItem(key);
+        sessionStorage.removeItem(key);
+      } catch (e) {}
+    });
+  }
+
   function persistAuthMirrors(session) {
     // Keep soft portal keys + shared auth mirrors in sync for role-gates / API.
     var soft = "customer_service_session_v4_" + Date.now();
@@ -79,12 +106,17 @@
       }
       sessionStorage.removeItem("customerServiceAuthToken");
       sessionStorage.removeItem("customerServiceUser");
+      sessionStorage.removeItem("mcjRole");
+      sessionStorage.removeItem("mcjAuthAccessToken");
+      sessionStorage.removeItem("mcjAuthRefreshToken");
+      sessionStorage.removeItem("mcjAuthExpiresAt");
     } catch (e) {}
   }
 
   function saveSession(input, remember) {
     var session = normalizeSession(input, remember !== false);
     if (!session) return null;
+    clearForeignRoleSessions();
     // P0: always persist to localStorage so refresh + new tabs keep login.
     try {
       localStorage.setItem(SESSION_KEY, JSON.stringify(session));
@@ -160,10 +192,21 @@
   /** CS session only — never treat boss/admin shared tokens as logged-in CS. */
   function hasSession() {
     var blob = readRaw();
-    if (blob && (blob.token || blob.accessToken || blob.access_token)) return true;
-    // Shared mirrors only count when role is explicitly customer_service.
-    if (hasCsRoleHint() && (getAccessToken() || getRefreshToken())) return true;
-    return false;
+    var access = String((blob && (blob.token || blob.accessToken || blob.access_token)) || "").trim();
+    var refresh = String((blob && (blob.refreshToken || blob.refresh_token)) || getRefreshToken() || "").trim();
+    var looksJwt =
+      access.length >= 20 &&
+      access.split(".").length === 3 &&
+      access.split(".").every(function (p) {
+        return p.length > 0;
+      });
+    if (!looksJwt && !refresh) return false;
+    var soft = readItem("customerServiceAuthToken");
+    if (String(soft).indexOf("customer_service_session_") !== 0) {
+      // Shared mirrors only count when role is explicitly customer_service.
+      if (!(hasCsRoleHint() && (looksJwt || refresh))) return false;
+    }
+    return true;
   }
 
   function needsRefresh() {

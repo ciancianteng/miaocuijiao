@@ -888,7 +888,7 @@ function viewOrder(row = {}, boss = {}, settlement = null) {
   let statusText = ORDER_STATUS_TEXT[row.status] || row.status || "待付款确认";
   if (row.status === "in_progress" && completionPending) statusText = "待老板确认完成";
   if (row._grabStatus === "pending_customer_selection") statusText = "等待老板选择";
-  if (row._grabStatus === "not_selected") statusText = "该订单已由老板选择其他陪玩。";
+  if (row._grabStatus === "not_selected") statusText = "该订单已由其他陪玩接单。";
   const serviceContent =
     description ||
     stripOrderFacingText(row.title || "") ||
@@ -2186,10 +2186,10 @@ async function claimOrder(profile, companion, id) {
       {
         method: "PATCH",
         headers: serviceHeaders(),
-        body: JSON.stringify({ status: "waiting_boss_confirm", accepted_at: nowIso() }),
+        body: JSON.stringify({ status: "waiting_boss_confirm" }),
       }
     );
-    order = rows?.[0] || { ...before, status: "waiting_boss_confirm", accepted_at: nowIso() };
+    order = rows?.[0] || { ...before, status: "waiting_boss_confirm" };
   }
   // Guard: claim must not leave companion_id set.
   if (order.companion_id) {
@@ -2200,7 +2200,7 @@ async function claimOrder(profile, companion, id) {
     });
     order = { ...order, companion_id: null };
   }
-  await addSystemMessage(order, profile.id, "companion", "陪玩已抢单，等待老板意向与客服指定。");
+  await addSystemMessage(order, profile.id, "companion", "陪玩已抢单，等待老板选择。");
   return { ...order, companion_id: null, _grab: grab, _grabs: grabs };
 }
 async function patchOwnOrder(profile, id, expected, patch, message) {
@@ -2722,14 +2722,15 @@ export default async function handler(req, res) {
       const beforeRows = await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(id)}&companion_id=eq.${encodeURIComponent(auth.profile.id)}&limit=1`), { headers: serviceHeaders() });
       const before = beforeRows?.[0];
       if (!before || before.status !== "claimed") return json(res, 409, { ok: false, message: "当前订单不能确认接单" });
+      const now = nowIso();
       const order = await patchOwnOrder(
         auth.profile,
         id,
         "claimed",
-        { status: "confirmed", accepted_at: nowIso() },
-        `陪玩 ${name} 已接受订单 ${before.order_no || before.id}。陪玩已确认接单。`
+        { status: "in_progress", accepted_at: now, started_at: now },
+        `陪玩 ${name} 已确认接单，订单进入进行中。`
       );
-      return json(res, 200, { ok: true, message: "已确认接单，订单进入待开始", order: viewOrder(order) });
+      return json(res, 200, { ok: true, message: "已确认接单，订单进入进行中", order: viewOrder(order) });
     }
     if (action === "reject_direct_order") {
       try {
@@ -2832,14 +2833,25 @@ export default async function handler(req, res) {
       );
       const before = beforeRows?.[0];
       if (!before) return json(res, 404, { ok: false, message: "订单不存在。" });
-      // Grab applicants cannot start until boss selects them (status=confirmed).
+      // Already started by accept_direct (claimed → in_progress): idempotent OK.
+      if (before.status === "in_progress") {
+        return json(res, 200, {
+          ok: true,
+          message: "订单已在进行中。",
+          order: viewOrder(before),
+          already: true,
+        });
+      }
+      // Legacy confirmed hop still supported.
       if (before.status !== "confirmed") {
         return json(res, 409, {
           ok: false,
           message:
             before.status === "waiting_boss_confirm" || before.status === "pending"
               ? "老板尚未确认人选，不能开始订单。"
-              : "当前订单状态不能开始服务。",
+              : before.status === "claimed"
+                ? "请先确认接单。"
+                : "当前订单状态不能开始服务。",
         });
       }
       const order = await patchOwnOrder(
@@ -4587,3 +4599,43 @@ export default async function handler(req, res) {
         });
       } catch {
         /* optional */
+      }
+
+      return json(res, 200, {
+        ok: true,
+        message: "提现申请已提交，进入待周五结算",
+        preview: {
+          catFoodAmount: amount,
+          amount,
+          grossAmountRm: gross,
+          feeRm: fee,
+          netAmountRm: net,
+          bankName: full.bank_name,
+          accountHolder: holder,
+          accountLast4: last4,
+          withdrawalNo: item.withdrawal_no,
+          settlementDate,
+          status: item.status || "pending_friday",
+          statusText: WITHDRAW_STATUS_TEXT[item.status || "pending_friday"] || "待周五结算",
+        },
+        item,
+        data: {
+          withdrawalId: item.id,
+          withdrawalNo: item.withdrawal_no,
+          status: item.status || "pending_friday",
+          settlementDate,
+        },
+      });
+    }
+
+    return json(res, 400, { ok: false, message: "未知陪玩端操作" });
+  } catch (error) {
+    return json(res, error.status || 500, {
+      ok: false,
+      message: error.message || "陪玩端接口异常",
+      status: error.status || 500,
+      supabase: error.body || null,
+      url: error.url || "",
+    });
+  }
+}

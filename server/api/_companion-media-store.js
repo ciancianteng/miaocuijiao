@@ -195,6 +195,37 @@ export function assertImageUpload(decoded) {
   return { ...decoded, contentType: normalized === "image/jpg" ? "image/jpeg" : normalized || "image/jpeg" };
 }
 
+const MAX_AUDIO_BYTES = 8 * 1024 * 1024;
+const ALLOWED_AUDIO_MIME = new Set([
+  "audio/webm",
+  "audio/mpeg",
+  "audio/mp3",
+  "audio/mp4",
+  "audio/wav",
+  "audio/x-wav",
+  "audio/ogg",
+  "audio/aac",
+  "application/octet-stream",
+]);
+
+export function assertAudioUpload(decoded) {
+  if (!decoded || !decoded.buffer) {
+    throw Object.assign(new Error("文件格式无效，请选择语音文件（webm / mp3 / wav）"), { status: 400 });
+  }
+  const mime = String(decoded.contentType || "").toLowerCase() || "audio/webm";
+  const ok =
+    ALLOWED_AUDIO_MIME.has(mime) ||
+    /^audio\//.test(mime) ||
+    mime === "application/octet-stream";
+  if (!ok) {
+    throw Object.assign(new Error("仅支持 webm / mp3 / wav / ogg / aac 语音格式"), { status: 400 });
+  }
+  if (decoded.buffer.length > MAX_AUDIO_BYTES) {
+    throw Object.assign(new Error("语音文件不能超过 8MB"), { status: 413 });
+  }
+  return { ...decoded, contentType: mime.startsWith("audio/") ? mime : "audio/webm" };
+}
+
 export async function deleteStorageObject(bucket, objectPath) {
   if (!bucket || !objectPath || /^https?:\/\//i.test(objectPath) || String(objectPath).startsWith("data:")) return;
   const response = await fetch(

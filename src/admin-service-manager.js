@@ -103,13 +103,43 @@
         }
       : blankForm();
     state.formOpen = true;
-    render();
+    if (!openFormOverlay()) render();
   }
 
   function closeForm() {
+    if (window.MCJAdminOverlay && window.MCJAdminOverlay.isOpen && window.MCJAdminOverlay.isOpen()) {
+      window.MCJAdminOverlay.close();
+      return;
+    }
     state.formOpen = false;
     state.editing = null;
     render();
+  }
+
+  function formTitle() {
+    return state.editing && state.editing.id ? "编辑服务" : "新增服务";
+  }
+
+  function openFormOverlay() {
+    if (!state.formOpen || !state.editing) return false;
+    if (window.MCJAdminOverlay) {
+      window.MCJAdminOverlay.open({
+        title: formTitle(),
+        html: renderForm(),
+        onClose: function () {
+          state.formOpen = false;
+          state.editing = null;
+        },
+      });
+      return true;
+    }
+    return false;
+  }
+
+  function syncFormOverlay() {
+    if (!state.formOpen || !state.editing || !window.MCJAdminOverlay) return;
+    if (window.MCJAdminOverlay.isOpen && window.MCJAdminOverlay.isOpen()) window.MCJAdminOverlay.setBody(renderForm());
+    else openFormOverlay();
   }
 
   function renderIconPicker(selected) {
@@ -306,11 +336,12 @@
       '<div class="content-admin-toolbar compact"><input data-service-search placeholder="搜索服务名称 / 分类 / 价格 / 状态">' +
       '<button class="btn primary" type="button" data-service-new>新增服务</button>' +
       '<button class="btn" type="button" data-service-reload>刷新</button></div>' +
-      renderForm() +
+      (!window.MCJAdminOverlay ? renderForm() : "") +
       renderRows() +
       "</div>";
     if (window.MCJAdminForms && window.MCJAdminForms.enhance) window.MCJAdminForms.enhance(box);
     bindSortable();
+    syncFormOverlay();
   }
 
   function collectForm(form) {
@@ -386,8 +417,12 @@
     apiPost({ action: "save", id: payload.id, service: payload })
       .then(function (res) {
         alert(res.message || "服务已保存，全站已同步。");
-        state.formOpen = false;
-        state.editing = null;
+        if (window.MCJAdminOverlay && window.MCJAdminOverlay.isOpen && window.MCJAdminOverlay.isOpen()) {
+          window.MCJAdminOverlay.close();
+        } else {
+          state.formOpen = false;
+          state.editing = null;
+        }
         state.saving = false;
         return load();
       })

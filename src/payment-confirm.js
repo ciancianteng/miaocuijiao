@@ -61,7 +61,7 @@
     pending: "待客服安排",
     claimed: "等待陪玩确认",
     waiting_boss_confirm: "待我确认",
-    confirmed: "已接单待开始",
+    confirmed: "进行中",
     in_progress: "进行中",
     completed: "已完成",
     reviewed: "已评价",
@@ -120,7 +120,7 @@
     }
     if (s === "confirmed") {
       return {
-        title: "已接单待开始",
+        title: "进行中",
         reason: "陪玩已确认接单",
         next: "陪玩开始服务后订单将进入进行中。",
         primary: "orders",
@@ -218,7 +218,10 @@
       } else if (!isWalletMethod(order) && isPreviewTestMethod(order)) {
         actions += '<button type="button" class="pay-btn primary" data-preview-pay="' + esc(order.id) + '">' + esc("测试支付，仅用于 Preview 验收") + "</button>";
       } else if (!isWalletMethod(order)) {
-        actions += '<a class="pay-btn primary" href="' + csHref + '">联系客服确认付款</a>';
+        actions +=
+          '<label class="pay-btn primary" style="cursor:pointer">上传付款凭证<input type="file" accept="image/png,image/jpeg,image/webp" data-payment-proof="' +
+          esc(order.id) +
+          '" style="display:none"></label>';
       }
       actions += '<a class="pay-btn" href="' + ordersHref + '">查看我的订单</a>';
     } else {
@@ -282,7 +285,7 @@
                 ? "Preview / 测试环境：可点「测试支付成功（TEST）」真实写入订单状态；正式环境无此入口。"
                 : isWalletMethod(order)
                   ? "支付成功后将进入“等待陪玩确认”。"
-                  : "该支付方式当前需联系客服确认到账。"
+                  : "请上传付款凭证，客服审核通过后将派单。"
             ) +
             "</p>"
           : "") +
@@ -327,6 +330,31 @@
       location.replace(next);
     } catch (err) {
       failUi(err.message || "支付失败，请重试");
+    } finally {
+      paying = false;
+    }
+  }
+  async function submitProof(orderId, file) {
+    if (!file || paying) return;
+    if (!/^image\/(png|jpeg|webp)$/.test(file.type || "")) return failUi("仅支持 JPG、PNG、WEBP 图片");
+    paying = true;
+    try {
+      var dataUrl = await new Promise(function (resolve, reject) {
+        var reader = new FileReader();
+        reader.onload = function () { resolve(reader.result); };
+        reader.onerror = function () { reject(new Error("读取图片失败")); };
+        reader.readAsDataURL(file);
+      });
+      var res = await fetch("/api/orders", {
+        method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + token() },
+        body: JSON.stringify({ action: "submit_payment_proof", id: orderId, proofDataUrl: dataUrl }),
+      });
+      var body = await res.json().catch(function () { return {}; });
+      if (!res.ok || body.ok === false) throw new Error(body.message || "付款凭证提交失败");
+      if (body.order) writeCache(orderId, body.order);
+      renderOrder(body.order || readCache(orderId) || {});
+    } catch (err) {
+      failUi(err.message || "付款凭证提交失败");
     } finally {
       paying = false;
     }
@@ -438,6 +466,10 @@
       e.preventDefault();
       submitPay(previewBtn.getAttribute("data-preview-pay"), true);
     }
+  });
+  root.addEventListener("change", function (e) {
+    var input = e.target.closest("[data-payment-proof]");
+    if (input && input.files && input.files[0]) submitProof(input.getAttribute("data-payment-proof"), input.files[0]);
   });
 
   document.addEventListener("visibilitychange", function () {
