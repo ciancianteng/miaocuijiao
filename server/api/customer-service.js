@@ -389,6 +389,7 @@ function safeOrder(row, profiles = {}, extras = {}) {
     flowStatus,
     statusText: (() => {
       const gc = Number(extras.grabCount != null ? extras.grabCount : 0) || 0;
+      if (row.status === "awaiting_payment" && extras.paymentReceipt) return "待审核";
       if ((row.status === "pending" || row.status === "waiting_boss_confirm") && gc > 0) {
         return `已有 ${gc} 位陪玩抢单`;
       }
@@ -398,6 +399,9 @@ function safeOrder(row, profiles = {}, extras = {}) {
     paymentReview: !!extras.paymentReceipt,
     paymentProofUrl: extras.paymentProofUrl || "",
     paymentReceiptId: extras.paymentReceipt?.id || "",
+    paymentRejectReason: extras.paymentRejectReason || "",
+    paymentReviewedByName: extras.paymentReviewedByName || "",
+    paymentReviewedAt: extras.paymentReviewedAt || "",
     cancelReason: row.cancel_reason || "",
     needsReassign,
     reassignHint: needsReassign
@@ -2149,10 +2153,30 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         msgRows = Object.keys(byMsgId).map((k) => byMsgId[k]);
       }
       const orderIds = [...new Set(visible.map((c) => c.order_id).filter(Boolean))];
-      const ordersRaw = orderIds.length
-        ? await maybeRows("orders", `?id=in.(${orderIds.map(encodeURIComponent).join(",")})&limit=80`)
+      // Also pull recent awaiting_payment / payment-review orders so CS desk sees new boss proofs
+      // without requiring a conversation link or full bootstrap.
+      let recentPayOrders = [];
+      try {
+        recentPayOrders = await maybeRows(
+          "orders",
+          since
+            ? `?status=eq.awaiting_payment&updated_at=gt.${encodeURIComponent(since)}&order=updated_at.desc&limit=40`
+            : "?status=eq.awaiting_payment&order=updated_at.desc&limit=40"
+        );
+      } catch {
+        recentPayOrders = [];
+      }
+      const allOrderIds = [...new Set(orderIds.concat((recentPayOrders || []).map((r) => r.id).filter(Boolean)))];
+      const ordersRaw = allOrderIds.length
+        ? await maybeRows("orders", `?id=in.(${allOrderIds.map(encodeURIComponent).join(",")})&limit=120`)
         : [];
-      const orderNoById = (ordersRaw || []).reduce((m, o) => {
+      // Prefer rows already loaded for payment-review enrichment below.
+      const orderByIdRaw = {};
+      (ordersRaw || []).concat(recentPayOrders || []).forEach((row) => {
+        if (row?.id) orderByIdRaw[row.id] = row;
+      });
+      const ordersMerged = Object.keys(orderByIdRaw).map((k) => orderByIdRaw[k]);
+      const orderNoById = ordersMerged.reduce((m, o) => {
         m[o.id] = o.order_no || o.id;
         return m;
       }, {});
@@ -2245,7 +2269,33 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
           active.unreadCount = active.unread;
         }
       }
-      const orders = (ordersRaw || []).map((row) => safeOrder(row, profiles));
+      const orders = await (async () => {
+        const awaiting = (ordersMerged || []).filter((row) => row.status === "awaiting_payment");
+        let receiptByOrder = {};
+        let signedByOrder = {};
+        if (awaiting.length) {
+          try {
+            const pendingReceipts = await listPendingForCs({ orderIds: awaiting.map((r) => r.id) });
+            receiptByOrder = Object.fromEntries((pendingReceipts || []).map((r) => [r.order_id, r]));
+            const pairs = await Promise.all(
+              (pendingReceipts || []).map(async (receipt) => {
+                const url = await signedProofUrl(receipt).catch(() => "");
+                return [receipt.order_id, url || ""];
+              })
+            );
+            signedByOrder = Object.fromEntries(pairs);
+          } catch {
+            receiptByOrder = {};
+            signedByOrder = {};
+          }
+        }
+        return (ordersMerged || []).map((row) =>
+          safeOrder(row, profiles, {
+            paymentReceipt: receiptByOrder[row.id] || null,
+            paymentProofUrl: signedByOrder[row.id] || "",
+          })
+        );
+      })();
       return json(res, 200, {
         ok: true,
         data: {

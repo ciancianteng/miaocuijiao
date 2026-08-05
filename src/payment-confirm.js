@@ -128,12 +128,15 @@
       };
     }
     if (s === "awaiting_payment") {
+      var rejectReason = String((order && (order.paymentRejectReason || order.rejectReason)) || "").trim();
       return {
         title: "待付款",
-        reason: "订单已创建，尚未完成支付。",
+        reason: rejectReason ? "付款凭证已驳回：" + rejectReason : "订单已创建，尚未完成支付。",
         next: isWalletMethod(order || {})
           ? "请使用猫粮余额完成支付，支付成功后订单才会发送给陪玩确认。"
-          : "请上传付款截图并提交审核。",
+          : rejectReason
+            ? "请重新上传付款截图并提交审核。"
+            : "请上传付款截图并提交审核。",
         primary: "pay",
         primaryLabel: isWalletMethod(order || {}) ? "立即支付" : "前往支付",
         disabledHint: "",

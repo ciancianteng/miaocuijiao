@@ -1,20 +1,124 @@
 const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY"];
 const ADMIN_ROLES = new Set(["admin", "super_admin"]);
-const ZERO = { bosses: 0, companions: 0, customerServices: 0, todayOrders: 0, awaitingPayment: 0, pendingOrders: 0, inProgress: 0, completed: 0, refunds: 0, totalAmount: 0 };
-function json(res, status, data) { return res.status(status).json(data); }
-function hasDb() { return REQUIRED_ENV.every((key) => process.env[key]); }
-function restUrl(table, query = "") { return `${process.env.SUPABASE_URL}/rest/v1/${table}${query}`; }
-function authUrl(path) { return `${process.env.SUPABASE_URL}/auth/v1/${path}`; }
-function serviceHeaders(extra = {}) { return { apikey: process.env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`, "Content-Type": "application/json", Prefer: "return=representation", ...extra }; }
-function anonHeaders(extra = {}) { return { apikey: process.env.SUPABASE_ANON_KEY, "Content-Type": "application/json", ...extra }; }
+const ZERO = {
+  bosses: 0,
+  companions: 0,
+  customerServices: 0,
+  todayOrders: 0,
+  awaitingPayment: 0,
+  pendingOrders: 0,
+  inProgress: 0,
+  completed: 0,
+  refunds: 0,
+  totalAmount: 0,
+};
+function json(res, status, data) {
+  return res.status(status).json(data);
+}
+function hasDb() {
+  return REQUIRED_ENV.every((key) => process.env[key]);
+}
+function restUrl(table, query = "") {
+  return `${process.env.SUPABASE_URL}/rest/v1/${table}${query}`;
+}
+function authUrl(path) {
+  return `${process.env.SUPABASE_URL}/auth/v1/${path}`;
+}
+function serviceHeaders(extra = {}) {
+  return {
+    apikey: process.env.SUPABASE_SERVICE_ROLE_KEY,
+    Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+    "Content-Type": "application/json",
+    Prefer: "return=representation",
+    ...extra,
+  };
+}
+function anonHeaders(extra = {}) {
+  return { apikey: process.env.SUPABASE_ANON_KEY, "Content-Type": "application/json", ...extra };
+}
 function supabaseError(body, response) {
-  const parts = [body?.error_description, body?.msg, body?.message, body?.error, body?.hint, body?.details, typeof body === "string" ? body : ""].filter(Boolean);
+  const parts = [
+    body?.error_description,
+    body?.msg,
+    body?.message,
+    body?.error,
+    body?.hint,
+    body?.details,
+    typeof body === "string" ? body : "",
+  ].filter(Boolean);
   const base = parts[0] || "Supabase 请求失败";
   const code = body?.code ? ` [${body.code}]` : "";
   return `${base}${code} (HTTP ${response.status})`;
 }
-async function supabaseJson(url, init = {}) { const response = await fetch(url, init); const text = await response.text(); let body = null; try { body = text ? JSON.parse(text) : null; } catch { body = text; } if (!response.ok) throw Object.assign(new Error(supabaseError(body, response)), { status: response.status }); return body; }
-function tokenFrom(req) { return String(req.headers.authorization || req.headers["x-mcj-access-token"] || "").replace(/^Bearer\s+/i, "").trim(); }
-async function requireAdmin(req) { const token = tokenFrom(req); if (!token) throw Object.assign(new Error("请先使用管理员账号登录后台。"), { status: 401 }); const user = await supabaseJson(authUrl("user"), { headers: anonHeaders({ Authorization: `Bearer ${token}` }) }); const rows = await supabaseJson(restUrl("profiles", `?id=eq.${encodeURIComponent(user.id)}&limit=1`), { headers: serviceHeaders() }); const profile = rows[0]; if (!profile || !ADMIN_ROLES.has(profile.role)) throw Object.assign(new Error("无权访问后台。"), { status: 403 }); if (profile.status !== "active") throw Object.assign(new Error("管理员账号已停用。"), { status: 403 }); return profile; }
-function money(v) { const n = Number(String(v ?? "").replace(/[^\d.-]/g, "")); return Number.isFinite(n) ? n : 0; }
-export default async function handler(req, res) { if (!hasDb()) return json(res, 200, { ok: true, configured: false, stats: ZERO, message: "未配置 Supabase，后台首页只显示 0，不返回假统计。" }); try { await requireAdmin(req); const [profiles, orders] = await Promise.all([ supabaseJson(restUrl("profiles", "?limit=1000"), { headers: serviceHeaders() }), supabaseJson(restUrl("orders", "?order=created_at.desc&limit=1000"), { headers: serviceHeaders() }).catch(() => []) ]); const today = new Date().toISOString().slice(0, 10); const stats = { bosses: profiles.filter((p) => p.role === "boss").length, companions: profiles.filter((p) => p.role === "companion").length, customerServices: profiles.filter((p) => p.role === "customer_service").length, todayOrders: orders.filter((o) => String(o.created_at || "").slice(0, 10) === today).length, awaitingPayment: orders.filter((o) => o.status === "awaiting_payment").length, pendingOrders: orders.filter((o) => o.status === "pending").length, inProgress: orders.filter((o) => o.status === "in_progress").length, completed: orders.filter((o) => o.status === "completed").length, refunds: orders.filter((o) => o.status === "refund_requested" || o.status === "refunded").length, totalAmount: orders.reduce((sum, o) => sum + money(o.total_amount), 0) }; return json(res, 200, { ok: true, configured: true, stats }); } catch (error) { return json(res, error.status || 500, { ok: false, message: error.message || "后台统计接口异常。" }); } }
+async function supabaseJson(url, init = {}) {
+  const response = await fetch(url, init);
+  const text = await response.text();
+  let body = null;
+  try {
+    body = text ? JSON.parse(text) : null;
+  } catch {
+    body = text;
+  }
+  if (!response.ok) throw Object.assign(new Error(supabaseError(body, response)), { status: response.status });
+  return body;
+}
+function tokenFrom(req) {
+  return String(req.headers.authorization || req.headers["x-mcj-access-token"] || "")
+    .replace(/^Bearer\s+/i, "")
+    .trim();
+}
+async function requireAdmin(req) {
+  const token = tokenFrom(req);
+  if (!token) throw Object.assign(new Error("请先使用管理员账号登录后台。"), { status: 401 });
+  const user = await supabaseJson(authUrl("user"), { headers: anonHeaders({ Authorization: `Bearer ${token}` }) });
+  const rows = await supabaseJson(restUrl("profiles", `?id=eq.${encodeURIComponent(user.id)}&limit=1`), {
+    headers: serviceHeaders(),
+  });
+  const profile = rows[0];
+  if (!profile || !ADMIN_ROLES.has(profile.role)) throw Object.assign(new Error("无权访问后台。"), { status: 403 });
+  if (profile.status !== "active") throw Object.assign(new Error("管理员账号已停用。"), { status: 403 });
+  return profile;
+}
+function money(v) {
+  const n = Number(String(v ?? "").replace(/[^\d.-]/g, ""));
+  return Number.isFinite(n) ? n : 0;
+}
+/** Revenue only from paid/progress/completed — never awaiting_payment / unreviewed proofs. */
+function countsAsRevenue(order = {}) {
+  const s = String(order.status || "");
+  if (!s || s === "awaiting_payment" || s === "cancelled" || s === "expired") return false;
+  return true;
+}
+export default async function handler(req, res) {
+  if (!hasDb()) {
+    return json(res, 200, {
+      ok: true,
+      configured: false,
+      stats: ZERO,
+      message: "未配置 Supabase，后台首页只显示 0，不返回假统计。",
+    });
+  }
+  try {
+    await requireAdmin(req);
+    const [profiles, orders] = await Promise.all([
+      supabaseJson(restUrl("profiles", "?limit=1000"), { headers: serviceHeaders() }),
+      supabaseJson(restUrl("orders", "?order=created_at.desc&limit=1000"), { headers: serviceHeaders() }).catch(() => []),
+    ]);
+    const today = new Date().toISOString().slice(0, 10);
+    const stats = {
+      bosses: profiles.filter((p) => p.role === "boss").length,
+      companions: profiles.filter((p) => p.role === "companion").length,
+      customerServices: profiles.filter((p) => p.role === "customer_service").length,
+      todayOrders: orders.filter((o) => String(o.created_at || "").slice(0, 10) === today).length,
+      awaitingPayment: orders.filter((o) => o.status === "awaiting_payment").length,
+      pendingOrders: orders.filter((o) => o.status === "pending").length,
+      inProgress: orders.filter((o) => o.status === "in_progress").length,
+      completed: orders.filter((o) => o.status === "completed").length,
+      refunds: orders.filter((o) => o.status === "refund_requested" || o.status === "refunded").length,
+      totalAmount: orders.reduce((sum, o) => sum + (countsAsRevenue(o) ? money(o.total_amount) : 0), 0),
+    };
+    return json(res, 200, { ok: true, configured: true, stats });
+  } catch (error) {
+    return json(res, error.status || 500, { ok: false, message: error.message || "后台统计接口异常。" });
+  }
+}

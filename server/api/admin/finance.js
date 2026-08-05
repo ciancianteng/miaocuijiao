@@ -33,7 +33,7 @@ import {
   publicDisplayName,
   resolveCompanionPublicCode,
 } from "../_account-codes.js";
-import { exportCsv as exportPaymentReceiptsCsv, listPaidForAdmin, listPendingForAdmin, approveAndLedger, rejectProof } from "../_payment-receipts.js";
+import { exportCsv as exportPaymentReceiptsCsv, listPaidForAdmin, listPendingForAdmin, listRejectedForAdmin, enrichReceiptAudit, approveAndLedger, rejectProof } from "../_payment-receipts.js";
 
 const FINANCE_BUCKET = "finance-receipts";
 const FINANCE_ROLES = new Set(["admin", "super_admin", "finance_admin"]);
@@ -504,7 +504,7 @@ export default async function handler(req, res) {
 
     if (req.method === "GET" && action === "bootstrap") {
       const refundApi = await import("../_boss-refund-payout.js");
-      const [withdrawalsRaw, payrollsRaw, paymentsRaw, receiptsRaw, logsRaw, cfg, refundsList, paymentReceipts, pendingPaymentProofs] = await Promise.all([
+      const [withdrawalsRaw, payrollsRaw, paymentsRaw, receiptsRaw, logsRaw, cfg, refundsList, paymentReceiptsRaw, pendingPaymentProofsRaw, rejectedPaymentProofsRaw] = await Promise.all([
         companionDb("companion_withdrawals", "?order=submitted_at.desc&limit=300").catch((e) => (isMissingRelation(e) ? [] : Promise.reject(e))),
         companionDb("staff_payrolls", "?order=created_at.desc&limit=300").catch((e) => (isMissingRelation(e) ? [] : Promise.reject(e))),
         companionDb("finance_payments", "?order=created_at.desc&limit=300").catch((e) => (isMissingRelation(e) ? [] : Promise.reject(e))),
@@ -514,6 +514,12 @@ export default async function handler(req, res) {
         refundApi.listBossRefunds(companionDb, { limit: 300 }).catch(() => []),
         listPaidForAdmin().catch(() => []),
         listPendingForAdmin().catch(() => []),
+        listRejectedForAdmin({ limit: 200 }).catch(() => []),
+      ]);
+      const [paymentReceipts, pendingPaymentProofs, rejectedPaymentProofs] = await Promise.all([
+        enrichReceiptAudit(paymentReceiptsRaw || []).catch(() => paymentReceiptsRaw || []),
+        enrichReceiptAudit(pendingPaymentProofsRaw || []).catch(() => pendingPaymentProofsRaw || []),
+        enrichReceiptAudit(rejectedPaymentProofsRaw || []).catch(() => rejectedPaymentProofsRaw || []),
       ]);
       const withdrawals = (Array.isArray(withdrawalsRaw) ? withdrawalsRaw : []).filter((r) => resolveRowId(r));
       const payrolls = Array.isArray(payrollsRaw) ? payrollsRaw : [];
@@ -646,10 +652,22 @@ export default async function handler(req, res) {
         }),
         payoutLogs: payoutLogs.map((r) => viewPayoutLog(r)),
         paymentReceipts: paymentReceipts.map((row) => ({
-          id: row.id, orderId: row.order_id, receiptNo: row.receipt?.receipt_no || "",
-          amount: money(row.net_amount), paymentMethod: row.payment_method || "",
-          confirmedAt: row.confirmed_at || "", proofPath: row.receipt?.storage_path || "",
-          proofUrl: row.proofUrl || "", status: "approved", statusText: "已付款",
+          id: row.id,
+          orderId: row.order_id,
+          orderNo: row.orderNo || row.order_id || "",
+          receiptNo: row.receipt?.receipt_no || row.receiptNo || "",
+          bossName: row.bossName || "",
+          bossUid: row.bossUid || "",
+          amount: money(row.net_amount != null ? row.net_amount : row.amount),
+          paymentMethod: row.payment_method || row.paymentMethod || "",
+          confirmedAt: row.confirmed_at || row.reviewedAt || "",
+          reviewedAt: row.reviewedAt || row.confirmed_at || "",
+          reviewerName: row.reviewerName || "",
+          proofPath: row.receipt?.storage_path || row.proofPath || "",
+          proofUrl: row.proofUrl || "",
+          rejectReason: "",
+          status: "approved",
+          statusText: "已通过",
         })),
         pendingPaymentProofs: (pendingPaymentProofs || []).map((row) => ({
           id: row.id,
@@ -658,13 +676,37 @@ export default async function handler(req, res) {
           orderId: row.order_id || "",
           orderNo: row.orderNo || row.order?.order_no || row.order_id || "",
           bossId: row.boss_id || row.order?.boss_id || "",
+          bossName: row.bossName || "",
+          bossUid: row.bossUid || "",
           companionId: row.order?.companion_id || "",
           amount: money(row.amount),
           paymentMethod: row.payment_method || row.order?.payment_method || "",
           uploadedAt: row.uploaded_at || row.created_at || "",
           proofUrl: row.proofUrl || "",
+          reviewerName: "",
+          reviewedAt: "",
+          rejectReason: "",
           status: "pending",
           statusText: "待审核",
+        })),
+        rejectedPaymentProofs: (rejectedPaymentProofs || []).map((row) => ({
+          id: row.id,
+          receiptId: row.id,
+          receiptNo: row.receipt_no || "",
+          orderId: row.order_id || "",
+          orderNo: row.orderNo || row.order?.order_no || row.order_id || "",
+          bossId: row.boss_id || row.order?.boss_id || "",
+          bossName: row.bossName || "",
+          bossUid: row.bossUid || "",
+          amount: money(row.amount),
+          paymentMethod: row.payment_method || row.order?.payment_method || "",
+          uploadedAt: row.uploaded_at || row.created_at || "",
+          reviewedAt: row.reviewed_at || row.reviewedAt || "",
+          reviewerName: row.reviewerName || "",
+          rejectReason: row.reject_reason || row.rejectReason || "",
+          proofUrl: row.proofUrl || "",
+          status: "rejected",
+          statusText: "已拒绝",
         })),
         statusMaps: { withdraw: WITHDRAW_STATUS, payroll: PAYROLL_STATUS },
       });

@@ -128,14 +128,113 @@ export async function listPendingForAdmin() {
   );
 }
 
+export async function listRejectedForAdmin({ limit = 200 } = {}) {
+  const receipts = await companionDb(
+    "payment_receipts",
+    `?status=eq.rejected&order=reviewed_at.desc&limit=${Math.min(500, Number(limit) || 200)}`
+  ).catch(() => []);
+  const orderIds = [...new Set((receipts || []).map((row) => row.order_id).filter(Boolean))];
+  const reviewerIds = [...new Set((receipts || []).map((row) => row.reviewed_by).filter(Boolean))];
+  const bossIds = [...new Set((receipts || []).map((row) => row.boss_id).filter(Boolean))];
+  let orders = [];
+  let profiles = [];
+  if (orderIds.length) {
+    orders = await companionDb(
+      "orders",
+      `?id=in.(${orderIds.map(encodeURIComponent).join(",")})&select=id,order_no,boss_id,companion_id,total_amount,status,payment_method,note,description&limit=500`
+    ).catch(() => []);
+  }
+  const profileIds = [...new Set([...bossIds, ...reviewerIds])];
+  if (profileIds.length) {
+    profiles = await companionDb(
+      "profiles",
+      `?id=in.(${profileIds.map(encodeURIComponent).join(",")})&select=id,display_name,email,role,boss_uid&limit=500`
+    ).catch(() => []);
+  }
+  const orderMap = Object.fromEntries((orders || []).map((row) => [row.id, row]));
+  const profileMap = Object.fromEntries((profiles || []).map((row) => [row.id, row]));
+  return Promise.all(
+    (receipts || []).map(async (receipt) => {
+      const order = orderMap[receipt.order_id] || {};
+      const boss = profileMap[receipt.boss_id || order.boss_id] || {};
+      const reviewer = profileMap[receipt.reviewed_by] || {};
+      const proofUrl = await signedProofUrl(receipt).catch(() => "");
+      return {
+        ...receipt,
+        order,
+        orderNo: order.order_no || order.id || receipt.order_id || "",
+        bossName: String(boss.display_name || "").trim() || boss.email || receipt.boss_id || "",
+        bossUid: boss.boss_uid || "",
+        reviewerName: String(reviewer.display_name || "").trim() || reviewer.email || receipt.reviewed_by || "",
+        amount: money(receipt.amount != null ? receipt.amount : order.total_amount),
+        proofUrl: proofUrl || "",
+      };
+    })
+  );
+}
+
+/** Enrich pending/approved admin rows with boss + reviewer display names. */
+export async function enrichReceiptAudit(rows = []) {
+  const list = Array.isArray(rows) ? rows : [];
+  if (!list.length) return [];
+  const bossIds = [...new Set(list.map((r) => r.boss_id || r.bossId || r.order?.boss_id).filter(Boolean))];
+  const reviewerIds = [
+    ...new Set(list.flatMap((r) => [r.reviewed_by, r.confirmed_by, r.receipt?.reviewed_by, r.receipt?.confirmed_by]).filter(Boolean)),
+  ];
+  const profileIds = [...new Set([...bossIds, ...reviewerIds])];
+  const profiles = profileIds.length
+    ? await companionDb(
+        "profiles",
+        `?id=in.(${profileIds.map(encodeURIComponent).join(",")})&select=id,display_name,email,role,boss_uid&limit=800`
+      ).catch(() => [])
+    : [];
+  const profileMap = Object.fromEntries((profiles || []).map((row) => [row.id, row]));
+  return Promise.all(
+    list.map(async (row) => {
+      const receipt = row.receipt || row;
+      const bossId = row.boss_id || row.bossId || row.order?.boss_id || "";
+      const reviewerId = row.reviewed_by || row.confirmed_by || receipt.reviewed_by || receipt.confirmed_by || "";
+      const boss = profileMap[bossId] || {};
+      const reviewer = profileMap[reviewerId] || {};
+      const proofUrl = row.proofUrl || (await signedProofUrl(receipt).catch(() => "")) || "";
+      return {
+        ...row,
+        orderNo: row.orderNo || row.order?.order_no || row.order_id || row.orderId || "",
+        bossName: String(boss.display_name || "").trim() || boss.email || bossId || "",
+        bossUid: boss.boss_uid || "",
+        reviewerName: String(reviewer.display_name || "").trim() || reviewer.email || reviewerId || "",
+        reviewedAt: row.reviewed_at || row.confirmed_at || receipt.reviewed_at || receipt.confirmed_at || "",
+        rejectReason: row.reject_reason || receipt.reject_reason || "",
+        proofUrl,
+      };
+    })
+  );
+}
+
+export async function latestRejectedForOrders(orderIds = []) {
+  const ids = [...new Set((orderIds || []).filter(Boolean))];
+  if (!ids.length) return {};
+  const receipts = await companionDb(
+    "payment_receipts",
+    `?order_id=in.(${ids.map(encodeURIComponent).join(",")})&status=eq.rejected&order=reviewed_at.desc&limit=500`
+  ).catch(() => []);
+  const map = {};
+  for (const row of receipts || []) {
+    if (row?.order_id && !map[row.order_id]) map[row.order_id] = row;
+  }
+  return map;
+}
+
 export async function listPaidForAdmin({ year = "", month = "" } = {}) {
   const rows = await companionDb("payment_transactions", "?payment_status=eq.paid&order=confirmed_at.desc&limit=2000").catch(() => []);
   const receipts = await companionDb("payment_receipts", "?status=eq.approved&limit=2000").catch(() => []);
   const receiptMap = Object.fromEntries((receipts || []).map((row) => [row.id, row]));
-  const filtered = (rows || []).filter((row) => {
-    const date = String(row.confirmed_at || row.created_at || "");
-    return (!year || date.startsWith(year)) && (!month || date.slice(5, 7) === String(month).padStart(2, "0"));
-  }).map((row) => ({ ...row, receipt: receiptMap[row.receipt_id] || null }));
+  const filtered = (rows || [])
+    .filter((row) => {
+      const date = String(row.confirmed_at || row.created_at || "");
+      return (!year || date.startsWith(year)) && (!month || date.slice(5, 7) === String(month).padStart(2, "0"));
+    })
+    .map((row) => ({ ...row, receipt: receiptMap[row.receipt_id] || null }));
   return Promise.all(
     filtered.map(async (row) => {
       const proofUrl = row.receipt ? await signedProofUrl(row.receipt).catch(() => "") : "";

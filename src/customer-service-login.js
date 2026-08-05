@@ -26,12 +26,18 @@
   }
 
   // Already logged in → leave login page (after session restore/refresh).
+  // Guard also redirects; use a one-shot latch to avoid login↔dashboard bounce.
+  var redirected = false;
   function goDashboardIfLoggedIn() {
+    if (redirected) return true;
+    if (window.__MCJCsLoginRedirecting) return true;
     var existing = readSession();
     var has =
       (window.MCJServiceAuth && window.MCJServiceAuth.hasSession && window.MCJServiceAuth.hasSession()) ||
       (existing && (existing.token || existing.accessToken || existing.refreshToken));
     if (has) {
+      redirected = true;
+      window.__MCJCsLoginRedirecting = true;
       location.replace("/customer-service/dashboard/");
       return true;
     }

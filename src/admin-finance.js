@@ -14,6 +14,7 @@
     receipts: [],
     paymentReceipts: [],
     pendingPaymentProofs: [],
+    rejectedPaymentProofs: [],
     settings: {},
     weeklyRules: {},
     settlementSummary: {},
@@ -404,64 +405,110 @@
     );
   }
   function paymentProofsHtml() {
-    var pending = (state.pendingPaymentProofs || []).map(function (r) {
-      var img = r.proofUrl
-        ? '<a href="' + esc(r.proofUrl) + '" target="_blank" rel="noopener"><img src="' + esc(r.proofUrl) + '" alt="付款凭证" style="width:72px;height:72px;object-fit:cover;border-radius:8px"></a>'
-        : "无图";
+    function proofImg(url, big) {
+      if (!url) return "无图";
+      var size = big ? "72px" : "56px";
       return (
-        "<tr><td>" +
-        esc(r.receiptNo || r.id) +
-        "</td><td>" +
-        esc(r.orderNo || r.orderId) +
-        "</td><td>" +
-        esc(r.amount) +
-        "</td><td>" +
-        esc(r.paymentMethod || "-") +
-        "</td><td>" +
-        img +
-        "</td><td>待审核</td><td>" +
-        esc(r.uploadedAt || "-") +
-        '</td><td><button class="mini-btn primary-lite" type="button" data-fin-approve-proof="' +
-        esc(r.orderId) +
-        '" data-receipt-id="' +
-        esc(r.receiptId || r.id) +
-        '">通过</button> <button class="mini-btn" type="button" data-fin-reject-proof="' +
-        esc(r.orderId) +
-        '" data-receipt-id="' +
-        esc(r.receiptId || r.id) +
-        '">驳回</button></td></tr>'
+        '<button type="button" class="mini-btn" data-fin-proof-preview="' +
+        esc(url) +
+        '" style="padding:0;border:0;background:transparent;cursor:zoom-in" title="查看大图">' +
+        '<img src="' +
+        esc(url) +
+        '" alt="付款凭证" style="width:' +
+        size +
+        ";height:" +
+        size +
+        ';object-fit:cover;border-radius:8px;display:block">' +
+        "</button>"
       );
-    }).join("");
-    var paid = (state.paymentReceipts || []).map(function (r) {
-      var img = r.proofUrl
-        ? '<a href="' + esc(r.proofUrl) + '" target="_blank" rel="noopener"><img src="' + esc(r.proofUrl) + '" alt="付款凭证" style="width:56px;height:56px;object-fit:cover;border-radius:8px"></a>'
-        : esc(r.proofPath || "-");
-      return (
-        "<tr><td>" +
-        esc(r.receiptNo) +
-        "</td><td>" +
-        esc(r.orderId) +
-        "</td><td>" +
-        esc(r.amount) +
-        "</td><td>" +
-        esc(r.paymentMethod) +
-        "</td><td>" +
-        img +
-        "</td><td>已付款</td><td>" +
-        esc(r.confirmedAt) +
-        "</td><td>-</td></tr>"
-      );
-    }).join("");
+    }
+    var pending = (state.pendingPaymentProofs || [])
+      .map(function (r) {
+        return (
+          "<tr><td>" +
+          esc(r.orderNo || r.orderId) +
+          "</td><td>" +
+          esc(r.bossName || r.bossUid || r.bossId || "-") +
+          "</td><td>" +
+          esc(r.amount) +
+          "</td><td>" +
+          esc(r.paymentMethod || "-") +
+          "</td><td>" +
+          proofImg(r.proofUrl, true) +
+          "</td><td>" +
+          esc(r.reviewerName || "-") +
+          "</td><td>" +
+          esc(r.uploadedAt || "-") +
+          "</td><td>-</td><td><button class=\"mini-btn primary-lite\" type=\"button\" data-fin-approve-proof=\"" +
+          esc(r.orderId) +
+          '" data-receipt-id="' +
+          esc(r.receiptId || r.id) +
+          '">通过</button> <button class="mini-btn" type="button" data-fin-reject-proof="' +
+          esc(r.orderId) +
+          '" data-receipt-id="' +
+          esc(r.receiptId || r.id) +
+          '">驳回</button></td></tr>'
+        );
+      })
+      .join("");
+    var paid = (state.paymentReceipts || [])
+      .map(function (r) {
+        return (
+          "<tr><td>" +
+          esc(r.orderNo || r.orderId) +
+          "</td><td>" +
+          esc(r.bossName || r.bossUid || "-") +
+          "</td><td>" +
+          esc(r.amount) +
+          "</td><td>" +
+          esc(r.paymentMethod || "-") +
+          "</td><td>" +
+          proofImg(r.proofUrl, false) +
+          "</td><td>" +
+          esc(r.reviewerName || "-") +
+          "</td><td>" +
+          esc(r.reviewedAt || r.confirmedAt || "-") +
+          "</td><td>-</td></tr>"
+        );
+      })
+      .join("");
+    var rejected = (state.rejectedPaymentProofs || [])
+      .map(function (r) {
+        return (
+          "<tr><td>" +
+          esc(r.orderNo || r.orderId) +
+          "</td><td>" +
+          esc(r.bossName || r.bossUid || "-") +
+          "</td><td>" +
+          esc(r.amount) +
+          "</td><td>" +
+          esc(r.paymentMethod || "-") +
+          "</td><td>" +
+          proofImg(r.proofUrl, false) +
+          "</td><td>" +
+          esc(r.reviewerName || "-") +
+          "</td><td>" +
+          esc(r.reviewedAt || "-") +
+          "</td><td>" +
+          esc(r.rejectReason || "-") +
+          "</td></tr>"
+        );
+      })
+      .join("");
     return (
-      '<div class="admin-section-head compact"><div><h4>付款凭证中心</h4><p>待审核凭证通过后订单进入下一流程；已确认收款凭证长期保留。</p></div>' +
+      '<div class="admin-section-head compact"><div><h4>人工支付审核记录</h4><p>永久保存付款截图与审核客服、审核时间、拒绝原因。未审核订单不计入营业额。</p></div>' +
       '<button class="mini-btn primary-lite" type="button" data-payment-receipts-export>导出 CSV</button></div>' +
       "<h4>待审核</h4>" +
-      '<div class="table-wrap"><table><thead><tr><th>凭证编号</th><th>订单</th><th>金额</th><th>方式</th><th>截图</th><th>状态</th><th>上传时间</th><th>操作</th></tr></thead><tbody>' +
-      (pending || '<tr><td colspan="8">暂无待审核付款凭证</td></tr>') +
+      '<div class="table-wrap"><table><thead><tr><th>订单号</th><th>老板</th><th>金额</th><th>支付方式</th><th>付款截图</th><th>审核客服</th><th>上传/审核时间</th><th>拒绝原因</th><th>操作</th></tr></thead><tbody>' +
+      (pending || '<tr><td colspan="9">暂无待审核付款凭证</td></tr>') +
       "</tbody></table></div>" +
-      "<h4 style=\"margin-top:18px\">已确认收款</h4>" +
-      '<div class="table-wrap"><table><thead><tr><th>凭证编号</th><th>订单</th><th>金额</th><th>方式</th><th>截图</th><th>状态</th><th>确认时间</th><th>操作</th></tr></thead><tbody>' +
-      (paid || '<tr><td colspan="8">暂无已付款凭证</td></tr>') +
+      '<h4 style="margin-top:18px">已通过</h4>' +
+      '<div class="table-wrap"><table><thead><tr><th>订单号</th><th>老板</th><th>金额</th><th>支付方式</th><th>付款截图</th><th>审核客服</th><th>审核时间</th><th>拒绝原因</th></tr></thead><tbody>' +
+      (paid || '<tr><td colspan="8">暂无已通过记录</td></tr>') +
+      "</tbody></table></div>" +
+      '<h4 style="margin-top:18px">已拒绝</h4>' +
+      '<div class="table-wrap"><table><thead><tr><th>订单号</th><th>老板</th><th>金额</th><th>支付方式</th><th>付款截图</th><th>审核客服</th><th>审核时间</th><th>拒绝原因</th></tr></thead><tbody>' +
+      (rejected || '<tr><td colspan="8">暂无拒绝记录</td></tr>') +
       "</tbody></table></div>"
     );
   }
@@ -525,6 +572,7 @@
         state.receipts = res.receipts || [];
         state.paymentReceipts = res.paymentReceipts || [];
         state.pendingPaymentProofs = res.pendingPaymentProofs || [];
+        state.rejectedPaymentProofs = res.rejectedPaymentProofs || [];
         state.settings = res.settings || {};
         state.weeklyRules = res.weeklyRules || {};
         state.settlementSummary = res.settlementSummary || {};
@@ -1186,10 +1234,34 @@
         });
       return;
     }
+    var proofPreview = e.target.closest("[data-fin-proof-preview]");
+    if (proofPreview) {
+      var url = proofPreview.getAttribute("data-fin-proof-preview") || "";
+      if (!url) return;
+      var existing = document.getElementById("mcjFinProofLightbox");
+      if (existing) existing.remove();
+      var box = document.createElement("div");
+      box.id = "mcjFinProofLightbox";
+      box.setAttribute("role", "dialog");
+      box.style.cssText =
+        "position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.82);display:flex;align-items:center;justify-content:center;padding:20px;cursor:zoom-out";
+      box.innerHTML =
+        '<img src="' +
+        esc(url) +
+        '" alt="付款截图大图" style="max-width:min(96vw,1100px);max-height:92vh;object-fit:contain;border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,.5)">';
+      box.addEventListener("click", function () {
+        box.remove();
+      });
+      document.body.appendChild(box);
+      return;
+    }
     var rejectProofBtn = e.target.closest("[data-fin-reject-proof]");
     if (rejectProofBtn) {
-      var rejectReason = prompt("请输入驳回付款原因");
-      if (!rejectReason) return;
+      var rejectReason = String(prompt("请输入驳回付款原因") || "").trim();
+      if (!rejectReason) {
+        alert("驳回必须填写原因");
+        return;
+      }
       post("reject_payment_proof", {
         orderId: rejectProofBtn.dataset.finRejectProof,
         receiptId: rejectProofBtn.getAttribute("data-receipt-id") || "",

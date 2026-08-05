@@ -16,7 +16,7 @@ import {
 import { evaluatePublishGate } from "./_companion-publish-gate.js";
 import { allocateOrderNo, resolveOrderPublicNo } from "./_account-codes.js";
 import { companionDb } from "./_companion-media-store.js";
-import { listPendingForCs, signedProofUrl, uploadProof } from "./_payment-receipts.js";
+import { listPendingForCs, latestRejectedForOrders, signedProofUrl, uploadProof } from "./_payment-receipts.js";
 
 loadLocalEnv();
 
@@ -443,6 +443,9 @@ function viewOrder(row = {}) {
     paymentStatus: paymentStatusLabel(row),
     acceptStatus: acceptStatusLabel(row),
     paymentReview,
+    paymentProofUrl: row.paymentProofUrl || "",
+    paymentRejectReason: row.paymentRejectReason || "",
+    paymentReviewedAt: row.paymentReviewedAt || "",
     bossHint: bossHint(row),
     cancelReason: row.cancel_reason || "",
     note: row.note || "",
@@ -584,6 +587,7 @@ async function loadOrders(profile, id = "") {
   const grabLists = await Promise.all(orders.map((row) => grabsFor(row)));
   let receiptByOrder = {};
   let proofUrlByOrder = {};
+  let rejectedByOrder = {};
   const awaitingIds = orders.filter((row) => row.status === "awaiting_payment").map((row) => row.id).filter(Boolean);
   if (awaitingIds.length) {
     try {
@@ -593,9 +597,12 @@ async function loadOrders(profile, id = "") {
         (receipts || []).map(async (receipt) => [receipt.order_id, (await signedProofUrl(receipt).catch(() => "")) || ""])
       );
       proofUrlByOrder = Object.fromEntries(pairs);
+      const needReject = awaitingIds.filter((oid) => !receiptByOrder[oid]);
+      if (needReject.length) rejectedByOrder = await latestRejectedForOrders(needReject);
     } catch {
       receiptByOrder = {};
       proofUrlByOrder = {};
+      rejectedByOrder = {};
     }
   }
   return orders.map((row, index) => {
@@ -603,6 +610,7 @@ async function loadOrders(profile, id = "") {
     const grabs = grabLists[index] || [];
     const intent = parseBossIntent(row);
     const receipt = receiptByOrder[row.id] || null;
+    const rejected = rejectedByOrder[row.id] || null;
     const viewed = viewOrder({
       ...row,
       grabs,
@@ -617,8 +625,17 @@ async function loadOrders(profile, id = "") {
       review_content: rev?.content || "",
       paymentReceipt: receipt,
       paymentProofUrl: proofUrlByOrder[row.id] || "",
+      paymentRejectReason: rejected?.reject_reason || "",
+      paymentReviewedAt: rejected?.reviewed_at || "",
     });
     if (proofUrlByOrder[row.id]) viewed.paymentProofUrl = proofUrlByOrder[row.id];
+    if (rejected?.reject_reason) {
+      viewed.paymentRejectReason = rejected.reject_reason;
+      viewed.paymentReviewedAt = rejected.reviewed_at || "";
+      if (!receipt) {
+        viewed.bossHint = `付款凭证已驳回：${rejected.reject_reason}。请重新上传。`;
+      }
+    }
     return viewed;
   });
 }

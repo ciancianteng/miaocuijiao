@@ -321,7 +321,10 @@ export default async function handler(req, res) {
         inProgress: list.filter((x) => x.status === "in_progress").length,
         completed: list.filter((x) => x.status === "completed").length,
         afterSale: list.filter((x) => x.status === "refund_requested").length,
-        revenue: list.reduce((n, x) => n + x.amount, 0),
+        revenue: list.reduce((n, x) => {
+          if (x.status === "awaiting_payment" || x.status === "cancelled") return n;
+          return n + x.amount;
+        }, 0),
         profit: 0,
       };
       return json(res, 200, { ok: true, configured: true, orders: list, summary, orderStatuses: ORDER_STATUS_TEXT });

@@ -96,6 +96,7 @@
       function statusReason(o){
         var s=String(o.status||'');
         if(isPaymentReview(o)&&s==='awaiting_payment')return '付款凭证已提交，等待审核。';
+        if(o.paymentRejectReason&&s==='awaiting_payment')return '付款凭证已驳回：'+String(o.paymentRejectReason)+'。请重新上传。';
         if(o.bossHint)return o.bossHint;
         if(s==='awaiting_payment')return '待付款：请先完成支付并上传付款截图';
         if(s==='pending')return '待客服处理：付款已确认，等待客服派单或开放抢单';
