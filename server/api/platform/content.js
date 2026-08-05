@@ -189,7 +189,7 @@ async function loadAnnouncements(audience) {
   try {
     list = await rows(
       "announcements",
-      "?is_active=eq.true&order=is_pinned.desc,sort_order.asc.nullslast,published_at.desc.nullslast,created_at.desc&limit=80"
+      "?is_active=eq.true&order=is_pinned.desc,sort_order.asc.nullslast,published_at.asc.nullslast,created_at.asc&limit=80"
     );
   } catch {
     try {
