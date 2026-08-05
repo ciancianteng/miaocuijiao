@@ -1,0 +1,37 @@
+name: Point fixed Staging to footer SSM
+
+# Alias-only: does not create a new Vercel deployment (avoids hobby build rate limit).
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - staging
+      - cursor/point-staging-ssm-48a7
+    paths:
+      - ".github/workflows/point-staging-ssm.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  alias:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Alias existing SSM Preview to fixed Staging
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${VERCEL_TOKEN:-}" ]; then
+            echo "::error::VERCEL_TOKEN secret is not set on this repository"
+            exit 1
+          fi
+          npm i -g vercel@58.5.1
+          HOST="meow-cuijiao-homepage-bsdlmkiwt-ciancianteng-4581s-projects.vercel.app"
+          FIXED="meow-cuijiao-homepage-staging.vercel.app"
+          MIRROR="meow-cuijiao-homepage-staging-ciancianteng-4581s-projects.vercel.app"
+          echo "Aliasing $HOST -> $FIXED"
+          vercel alias set "$HOST" "$FIXED" --token "$VERCEL_TOKEN" --scope ciancianteng-4581s-projects
+          echo "Aliasing $HOST -> $MIRROR"
+          vercel alias set "$HOST" "$MIRROR" --token "$VERCEL_TOKEN" --scope ciancianteng-4581s-projects || true
+          echo "DONE https://$FIXED/"
