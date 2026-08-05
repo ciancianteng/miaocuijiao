@@ -2651,8 +2651,16 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       const receipt = receipts?.[0];
       if (!receipt) return json(res, 404, { ok: false, message: "未找到待审核付款凭证。" });
       await rejectProof({ receipt, reviewerId: service.profile.id, reason });
-      const nextNote = String(order.note || "").replace(/\n?\[\[PAYMENT_PROOF\]\][^\n]*/g, "").trim();
-      await patchOrder(order.id, { note: nextNote }).catch(() => null);
+      const stripProof = (text) =>
+        String(text || "")
+          .replace(/\n?\[\[PAYMENT_PROOF\]\][^\n]*/g, "")
+          .replace(/\n?\[\[PAYMENT_SUBMITTED\]\][^\n]*/g, "")
+          .trim();
+      const nextNote = stripProof(order.note);
+      const nextDescription = stripProof(order.description);
+      await patchOrder(order.id, { note: nextNote, description: nextDescription }).catch(() =>
+        patchOrder(order.id, { note: nextNote }).catch(() => null)
+      );
       const conversation = await ensureConversation({
         boss_id: order.boss_id, companion_id: order.companion_id, customer_service_id: service.profile.id, order_id: order.id,
       });

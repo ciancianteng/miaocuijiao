@@ -304,14 +304,9 @@ function bossHint(row = {}) {
   const status = row.status || "";
   const note = String(row.note || row.cancel_reason || "");
   if (status === "awaiting_payment") {
-    if (
-      row.paymentReceipt ||
-      row.payment_proof_url ||
-      row.paymentProofUrl ||
-      /\[\[PAYMENT_PROOF\]\]|\[\[PAYMENT_SUBMITTED\]\]/i.test(String(row.note || row.description || ""))
-    ) {
-      return "付款凭证已提交，等待审核。";
-    }
+    // Source of truth: pending payment_receipts row (not leftover note markers).
+    if (row.paymentReceipt) return "付款凭证已提交，等待审核。";
+    if (row.paymentRejectReason) return `付款凭证已驳回：${row.paymentRejectReason}。请重新上传。`;
     return "请尽快完成付款并上传凭证。";
   }
   if (status === "claimed") return "订单已付款，正在等待陪玩确认接单";
@@ -325,16 +320,7 @@ function bossHint(row = {}) {
 function paymentStatusLabel(row = {}) {
   const s = row.status || "";
   if (s === "awaiting_payment") {
-    const note = String(row.note || row.description || "");
-    if (
-      row.paymentReceipt ||
-      row.payment_proof_url ||
-      row.paymentProofUrl ||
-      /\[\[PAYMENT_PROOF\]\]|\[\[PAYMENT_SUBMITTED\]\]/i.test(note)
-    ) {
-      return "待审核";
-    }
-    return "待付款";
+    return row.paymentReceipt ? "待审核" : "待付款";
   }
   if (s === "cancelled") return "已取消";
   return "已付款";
@@ -394,16 +380,12 @@ function viewOrder(row = {}) {
       completed: "completed",
       cancelled: "cancelled",
     }[status] || status);
-  const paymentReview =
-    status === "awaiting_payment" &&
-    !!(
-      row.paymentReceipt ||
-      row.payment_proof_url ||
-      row.paymentProofUrl ||
-      /\[\[PAYMENT_PROOF\]\]|\[\[PAYMENT_SUBMITTED\]\]/i.test(String(row.note || row.description || ""))
-    );
+  // Pending receipt only — leftover [[PAYMENT_PROOF]] notes must not keep 待审核 after reject.
+  const paymentReview = status === "awaiting_payment" && !!row.paymentReceipt;
   if (paymentReview && status === "awaiting_payment") {
     statusText = "待审核";
+  } else if (status === "awaiting_payment" && row.paymentRejectReason) {
+    statusText = "待付款";
   }
   return {
     id: row.id,

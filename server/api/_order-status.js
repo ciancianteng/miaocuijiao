@@ -56,8 +56,11 @@ export function bossFacingStatusText(row = {}, grabCountOverride) {
         ? row.grabs.length
         : Number(row.grabCount != null ? row.grabCount : row.grab_count || 0) || 0;
   if (status === "awaiting_payment") {
+    // Prefer explicit pending-receipt flag from API; fall back to legacy note markers only
+    // when paymentReview/paymentReceipt is not provided (older clients).
+    if (row.paymentReceipt || row.paymentReview === true) return "待审核";
+    if (row.paymentReview === false || row.paymentRejectReason) return "待付款";
     if (
-      row.paymentReceipt ||
       row.payment_proof_url ||
       row.paymentProofUrl ||
       /\[\[PAYMENT_PROOF\]\]|\[\[PAYMENT_SUBMITTED\]\]|付款凭证|已上传付款/i.test(note)

@@ -26,14 +26,13 @@ export async function uploadProof({ order, bossId, dataUrl, paymentMethod: metho
     throw Object.assign(new Error("请上传 JPG、PNG 或 WEBP 格式的付款凭证"), { status: 400 });
   }
   if (decoded.buffer.length > 10 * 1024 * 1024) throw Object.assign(new Error("付款凭证不能超过 10MB"), { status: 413 });
-  // Boss re-upload: supersede any pending receipt instead of locking the order.
+  // Boss re-upload: supersede any pending receipt (do not mark as CS-rejected).
   const active = await companionDb("payment_receipts", `?order_id=eq.${encodeURIComponent(order.id)}&status=eq.pending&limit=1`).catch(() => []);
   if (active?.[0]) {
     await companionDb("payment_receipts", `?id=eq.${encodeURIComponent(active[0].id)}&status=eq.pending`, {
       method: "PATCH",
       body: JSON.stringify({
-        status: "rejected",
-        reject_reason: "老板重新上传付款凭证",
+        status: "superseded",
         reviewed_at: nowIso(),
       }),
     }).catch(() => {});
@@ -133,9 +132,10 @@ export async function listRejectedForAdmin({ limit = 200 } = {}) {
     "payment_receipts",
     `?status=eq.rejected&order=reviewed_at.desc&limit=${Math.min(500, Number(limit) || 200)}`
   ).catch(() => []);
-  const orderIds = [...new Set((receipts || []).map((row) => row.order_id).filter(Boolean))];
-  const reviewerIds = [...new Set((receipts || []).map((row) => row.reviewed_by).filter(Boolean))];
-  const bossIds = [...new Set((receipts || []).map((row) => row.boss_id).filter(Boolean))];
+  const filtered = (receipts || []).filter((row) => String(row.reject_reason || "") !== "老板重新上传付款凭证");
+  const orderIds = [...new Set(filtered.map((row) => row.order_id).filter(Boolean))];
+  const reviewerIds = [...new Set(filtered.map((row) => row.reviewed_by).filter(Boolean))];
+  const bossIds = [...new Set(filtered.map((row) => row.boss_id).filter(Boolean))];
   let orders = [];
   let profiles = [];
   if (orderIds.length) {
@@ -154,7 +154,7 @@ export async function listRejectedForAdmin({ limit = 200 } = {}) {
   const orderMap = Object.fromEntries((orders || []).map((row) => [row.id, row]));
   const profileMap = Object.fromEntries((profiles || []).map((row) => [row.id, row]));
   return Promise.all(
-    (receipts || []).map(async (receipt) => {
+    filtered.map(async (receipt) => {
       const order = orderMap[receipt.order_id] || {};
       const boss = profileMap[receipt.boss_id || order.boss_id] || {};
       const reviewer = profileMap[receipt.reviewed_by] || {};
@@ -220,7 +220,10 @@ export async function latestRejectedForOrders(orderIds = []) {
   ).catch(() => []);
   const map = {};
   for (const row of receipts || []) {
-    if (row?.order_id && !map[row.order_id]) map[row.order_id] = row;
+    if (!row?.order_id || map[row.order_id]) continue;
+    // Ignore legacy auto-reject rows created by older re-upload path.
+    if (String(row.reject_reason || "") === "老板重新上传付款凭证") continue;
+    map[row.order_id] = row;
   }
   return map;
 }

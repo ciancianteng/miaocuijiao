@@ -762,11 +762,22 @@ export default async function handler(req, res) {
           const reason = String(body.reason || body.reject_reason || "").trim();
           if (!reason) return json(res, 400, { ok: false, message: "请填写驳回付款原因。" });
           await rejectProof({ receipt, reviewerId: adminProfile.id, reason });
-          const nextNote = String(order.note || "").replace(/\n?\[\[PAYMENT_PROOF\]\][^\n]*/g, "").trim();
+          const stripProof = (text) =>
+            String(text || "")
+              .replace(/\n?\[\[PAYMENT_PROOF\]\][^\n]*/g, "")
+              .replace(/\n?\[\[PAYMENT_SUBMITTED\]\][^\n]*/g, "")
+              .trim();
+          const nextNote = stripProof(order.note);
+          const nextDescription = stripProof(order.description);
           await companionDb("orders", `?id=eq.${encodeURIComponent(order.id)}`, {
             method: "PATCH",
-            body: JSON.stringify({ note: nextNote }),
-          }).catch(() => null);
+            body: JSON.stringify({ note: nextNote, description: nextDescription }),
+          }).catch(() =>
+            companionDb("orders", `?id=eq.${encodeURIComponent(order.id)}`, {
+              method: "PATCH",
+              body: JSON.stringify({ note: nextNote }),
+            }).catch(() => null)
+          );
           await writeAdminLog({
             module: "finance",
             action,
