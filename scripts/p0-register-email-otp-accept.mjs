@@ -45,7 +45,8 @@ function tok(j) {
   const bossEmail = `${MARK}.boss@meow.test`;
   const send = await api("/api/auth", { action: "send_register_otp", email: bossEmail, role: "boss" });
   ok("boss send register otp", !!send.json?.ok, send.json?.message || "");
-  ok("boss otp ttl 10min", Number(send.json?.expiresInSec) === 600 || Number(send.json?.expiresInSec) === 900, `expiresInSec=${send.json?.expiresInSec}`);
+  ok("boss otp ttl 10min", Number(send.json?.expiresInSec) === 600, `expiresInSec=${send.json?.expiresInSec}`);
+  ok("boss otp resend cooldown hint", Number(send.json?.retryAfterSec) === 60 || send.json?.ok, `retryAfterSec=${send.json?.retryAfterSec}`);
   const code = send.json?.devCode;
   if (!code) {
     ok("boss verify+register", false, "no Staging devCode — configure ALLOW_STAGING_OTP / mail fail path");
