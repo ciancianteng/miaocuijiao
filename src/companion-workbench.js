@@ -1408,7 +1408,10 @@
       var badge=n[0]==='messages'&&unread?' <em class="pw-nav-badge">'+unread+'</em>':'';
       return '<button class="'+(state.route===n[0]||(n[0]==='account'&&(state.route==='mine'||state.route==='verification'))||(n[0]==='earnings'&&state.route==='wallet')?'active':'')+'" data-route="'+n[2]+'">'+n[1]+badge+'</button>';
     }).join('')+'</nav></aside><section class="pw-main"><header class="pw-top"><div><h1>'+title()+'</h1><p>'+subtitle+'</p></div><div class="pw-account"><button class="pw-avatar" data-account-toggle>'+esc(String(player.name||player.uid||'P').slice(0,1).toUpperCase())+'</button><div class="pw-menu">'+accountMenu+'</div></div></header>'+(isolated?'':(window.MCJCompanionAnnouncements&&window.MCJCompanionAnnouncements.hostHtml?window.MCJCompanionAnnouncements.hostHtml():'<div class="pw-announcement-host" data-pw-announcement-host hidden></div>'))+'<main class="pw-page">'+pageHtml()+'</main></section>'+bottomNavHtml()+'</div>'+noticeHtml()+settlementModalHtml();
-    if(!isolated&&window.MCJCompanionAnnouncements&&window.MCJCompanionAnnouncements.reload)window.MCJCompanionAnnouncements.reload();
+    if(!isolated&&window.MCJCompanionAnnouncements){
+      if(window.MCJCompanionAnnouncements.onShellPaint)window.MCJCompanionAnnouncements.onShellPaint();
+      else if(window.MCJCompanionAnnouncements.reload)window.MCJCompanionAnnouncements.reload();
+    }
     bindPwKeyboardInset();
     syncPwKeyboardInset();
     if(state.route==='profile')restoreProfileFocus();

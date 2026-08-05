@@ -504,63 +504,15 @@ a.pw-btn{display:inline-flex;align-items:center;justify-content:center;text-deco
   border-radius:12px;
 }
 
-/* Companion announcement ticker (classified announcements → audience=companion) */
+/* Companion announcement host — bar style comes from home-announcements.css */
 .pw-announcement-host{
   margin:0 16px 12px;
   min-width:0;
 }
 .pw-announcement-host[hidden]{display:none!important}
-.pw-announcement-bar{
-  display:flex;
-  align-items:center;
-  gap:10px;
-  min-height:40px;
-  padding:8px 12px;
-  border-radius:14px;
-  border:1px solid rgba(255,145,195,.28);
-  background:linear-gradient(90deg,rgba(28,16,34,.92),rgba(58,22,44,.62),rgba(12,8,16,.92));
-  overflow:hidden;
-}
-.pw-announcement-label{
-  flex:0 0 auto;
-  display:inline-flex;
-  align-items:center;
-  min-height:24px;
-  padding:0 10px;
-  border-radius:999px;
-  background:rgba(255,145,195,.18);
-  color:#ffe2ef;
-  font-size:12px;
-  font-weight:850;
-  white-space:nowrap;
-}
-.pw-announcement-track-wrap{
-  flex:1 1 auto;
-  min-width:0;
-  overflow:hidden;
-}
-.pw-announcement-static{
-  display:block;
-  color:#ffdceb;
-  font-size:13px;
-  font-weight:750;
-  white-space:nowrap;
-  overflow:hidden;
-  text-overflow:ellipsis;
-}
-.pw-announcement-track{
-  display:inline-flex;
-  gap:48px;
-  white-space:nowrap;
-  animation:pwAnnouncementScroll 18s linear infinite;
-  color:#ffdceb;
-  font-size:13px;
-  font-weight:750;
-}
-.pw-announcement-seg{display:inline-block}
-@keyframes pwAnnouncementScroll{
-  from{transform:translateX(0)}
-  to{transform:translateX(-50%)}
+.pw-announcement-host .home-announcement-bar{
+  margin:0 !important;
+  width:100% !important;
 }
 @media (max-width:820px){
   .pw-announcement-host{margin:0 12px 10px}
