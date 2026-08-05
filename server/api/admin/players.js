@@ -1,7 +1,6 @@
 import {
   PRIVATE_BUCKETS,
   companionDb,
-  companionServiceHeaders,
   createSignedUrl,
   hasCompanionDb,
   isMissingRelation,
@@ -108,12 +107,6 @@ function json(res, status, data) {
 
 function roleFrom(req) {
   return String(req.headers["x-mcj-admin-role"] || req.headers["x-user-role"] || "").trim();
-}
-
-function tokenFrom(req) {
-  return String(req.headers.authorization || req.headers["x-mcj-access-token"] || "")
-    .replace(/^Bearer\s+/i, "")
-    .trim();
 }
 
 async function requireAdmin(req) {
