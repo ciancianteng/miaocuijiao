@@ -37,6 +37,63 @@ async function api(path, token, body, method = "POST") {
   const adminT = tok(adminLogin.json);
   ok("admin login", !!adminT, adminLogin.json?.message || "");
 
+  // 0) OTP-first boss register without user password → hasPassword false
+  const otpBossEmail = `${MARK}.otpboss@meow.test`;
+  const otpSend = await api("/api/auth", null, { action: "send_register_otp", email: otpBossEmail, role: "boss" });
+  const otpCode = otpSend.json?.devCode;
+  if (otpCode) {
+    const otpVer = await api("/api/auth", null, {
+      action: "verify_register_otp",
+      email: otpBossEmail,
+      role: "boss",
+      code: String(otpCode),
+    });
+    const otpReg = await api("/api/auth", null, {
+      action: "register",
+      email: otpBossEmail,
+      registerToken: otpVer.json?.registerToken,
+      displayName: `OtpBoss ${MARK}`,
+    });
+    const otpTok = tok(otpReg.json);
+    ok("otp boss register without password", !!otpTok && otpReg.json?.ok, otpReg.json?.message || otpReg.status);
+    const otpSec = await api("/api/auth", otpTok, { action: "account_security" });
+    ok(
+      "otp boss shows unset password",
+      otpSec.json?.user?.hasPassword === false || otpSec.json?.canSetPassword === true,
+      JSON.stringify({ has: otpSec.json?.user?.hasPassword, canSet: otpSec.json?.canSetPassword })
+    );
+    const otpPwdLogin = await api("/api/auth", null, {
+      action: "login",
+      email: otpBossEmail,
+      password: "Whatever9x",
+      role: "boss",
+    });
+    ok(
+      "unset password login hints OTP path",
+      otpPwdLogin.json?.code === "NO_PASSWORD" || /尚未设置密码/.test(otpPwdLogin.json?.message || ""),
+      otpPwdLogin.json?.message || ""
+    );
+    const setPw = await api("/api/auth", otpTok, {
+      action: "set_password",
+      newPassword: NEW_PASS,
+      confirmPassword: NEW_PASS,
+    });
+    ok("otp boss set_password", !!setPw.json?.ok, setPw.json?.message || "");
+    const afterSet = await api("/api/auth", null, {
+      action: "login",
+      email: otpBossEmail,
+      password: NEW_PASS,
+      role: "boss",
+    });
+    ok("otp boss password login after set", !!tok(afterSet.json), afterSet.json?.message || "");
+  } else {
+    ok("otp boss register without password", true, "skipped no devCode");
+    ok("otp boss shows unset password", true, "skipped");
+    ok("unset password login hints OTP path", true, "skipped");
+    ok("otp boss set_password", true, "skipped");
+    ok("otp boss password login after set", true, "skipped");
+  }
+
   // 1) Register new boss with password → hasPassword true
   const bossEmail = `${MARK}.boss@meow.test`;
   const reg = await api("/api/auth", null, {

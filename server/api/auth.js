@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import crypto from "node:crypto";
 import { formatBossCode, parseBossCodeNumber, resolveBossPublicCode } from "./_account-codes.js";
 import {
   decodeDataUrl,
@@ -23,6 +24,7 @@ import {
   resolveMustChangePassword,
   securityPublicFields,
   stampPasswordSet,
+  stampPasswordUnset,
   markMustChangePassword,
   revokeUserSessions,
   touchLastLogin,
@@ -31,6 +33,11 @@ import {
   logSecurityAdminAction,
 } from "./_account-security.js";
 
+function opaqueSystemPassword() {
+  // Never shown to users/admins — only satisfies GoTrue's password requirement
+  // for OTP-first accounts that have not chosen a login password yet.
+  return `Mcj!${crypto.randomBytes(24).toString("base64url")}`;
+}
 const OTP_TTL_MS = 10 * 60 * 1000;
 const OTP_RESEND_COOLDOWN_MS = 60 * 1000;
 const OTP_MAX_FAILS = 8;
@@ -1220,7 +1227,7 @@ export default async function handler(req, res) {
       if (!profile) return json(res, 403, { ok: false, message: "账号未绑定平台资料。" });
       if (!canManagePassword(profile)) return json(res, 403, { ok: false, message: "账号已停用，无法设置密码。" });
       const hasPassword = await resolveHasPassword(profile, authUser, { probeAuth: true });
-      if (hasPassword) {
+      if (hasPassword === true) {
         return json(res, 400, { ok: false, message: "账号已设置密码，请使用「修改密码」。" });
       }
       const newPassword = String(body.newPassword || body.password || "");
@@ -1367,6 +1374,7 @@ export default async function handler(req, res) {
     if (requestedAction === "register") {
       const email = String(body.email || body.account || "").trim().toLowerCase();
       const password = String(body.password || "");
+      const registerToken = String(body.registerToken || body.emailOtpToken || body.otpToken || "").trim();
       const displayName = String(body.displayName || body.nickname || body.name || "").trim().slice(0, 40);
       const countryCode = normalizeCountryCode(body.countryCode || body.country_code || "MY");
       const dialCode = String(body.dialCode || body.dial_code || dialForCountry(countryCode)).trim() || dialForCountry(countryCode);
@@ -1377,9 +1385,25 @@ export default async function handler(req, res) {
       void body.phone;
       void body.phoneE164;
       void body.phone_e164;
-      if (!email || !password) return json(res, 400, { ok: false, message: "请输入邮箱和密码。" });
-      const policy = validatePassword(password);
-      if (!policy.ok) return json(res, 400, { ok: false, message: policy.message });
+      if (!email) return json(res, 400, { ok: false, message: "请输入邮箱和密码。" });
+      const wantsPassword = password.length > 0;
+      if (!wantsPassword && !registerToken) {
+        return json(res, 400, { ok: false, message: "请输入邮箱和密码。" });
+      }
+      if (wantsPassword) {
+        const policy = validatePassword(password, body.confirmPassword || body.confirm_password);
+        if (!policy.ok) return json(res, 400, { ok: false, message: policy.message });
+      } else {
+        try {
+          await consumeRegisterVerified(email, "boss", registerToken);
+        } catch (otpErr) {
+          return json(res, otpErr?.status || 400, {
+            ok: false,
+            message: otpErr?.message || "邮箱验证已失效，请重新获取验证码。",
+          });
+        }
+      }
+      const authPassword = wantsPassword ? password : opaqueSystemPassword();
       let created;
       try {
         created = await supabaseJson(authUrl("admin/users"), {
@@ -1387,14 +1411,14 @@ export default async function handler(req, res) {
           headers: headersWithServiceRole(),
           body: JSON.stringify({
             email,
-            password,
+            password: authPassword,
             email_confirm: true,
             user_metadata: {
               display_name: displayName || email.split("@")[0] || "老板",
-              has_password: true,
-              password_set_at: new Date().toISOString(),
+              has_password: wantsPassword,
+              ...(wantsPassword ? { password_set_at: new Date().toISOString() } : {}),
             },
-            app_metadata: { has_password: true },
+            app_metadata: { has_password: wantsPassword },
           }),
         });
       } catch (error) {
@@ -1488,22 +1512,33 @@ export default async function handler(req, res) {
           message: `老板资料创建失败：${error.message || "未知错误"}。Auth 账号已回滚，请重试。`,
         });
       }
-      const auth = await supabaseJson(authUrl("token?grant_type=password"), {
-        method: "POST",
-        headers: authHeaders(),
-        body: JSON.stringify({ email, password }),
-      });
-      const authUser = auth.user || { id: userId, email, user_metadata: { boss_uid: profile?.boss_uid } };
-      await stampPasswordSet(userId, { mustChangePassword: false });
+      let auth;
+      if (wantsPassword) {
+        auth = await supabaseJson(authUrl("token?grant_type=password"), {
+          method: "POST",
+          headers: authHeaders(),
+          body: JSON.stringify({ email, password: authPassword }),
+        });
+        await stampPasswordSet(userId, { mustChangePassword: false });
+      } else {
+        auth = await createSessionForUserId(userId, email);
+        await stampPasswordUnset(userId);
+      }
       await touchLastLogin(userId, clientIp(req));
-      const user = await enrichSafeProfile({ ...(profile || {}), has_password: true }, authUser);
+      const authUser = auth.user || { id: userId, email, user_metadata: { boss_uid: profile?.boss_uid, has_password: wantsPassword } };
+      const user = await enrichSafeProfile({ ...(profile || {}), has_password: wantsPassword }, authUser);
       const bossUidOut = user.bossUid || user.boss_uid || "";
       return json(res, 200, {
         ok: true,
-        message: bossUidOut
-          ? `注册成功。您的老板 UID：${bossUidOut}。建议前往账号安全确认密码。`
-          : "注册成功。建议前往账号安全确认密码。",
+        message: wantsPassword
+          ? bossUidOut
+            ? `注册成功。您的老板 UID：${bossUidOut}。建议前往账号安全确认密码。`
+            : "注册成功。建议前往账号安全确认密码。"
+          : bossUidOut
+            ? `注册成功。您的老板 UID：${bossUidOut}。建议前往账号安全设置密码（可不强制）。`
+            : "注册成功。建议前往账号安全设置密码（可不强制）。",
         bossUid: bossUidOut || undefined,
+        suggestSetPassword: !wantsPassword,
         session: {
           accessToken: auth.access_token,
           refreshToken: auth.refresh_token,

@@ -65,6 +65,9 @@ export async function authUserHasPassword(userId) {
       headers: serviceHeaders({ Prefer: "return=representation" }),
     });
     const user = raw?.user && typeof raw.user === "object" ? raw.user : raw;
+    if (user?.user_metadata?.has_password === false || user?.app_metadata?.has_password === false) {
+      return false;
+    }
     if (user?.user_metadata?.has_password === true || user?.app_metadata?.has_password === true) return true;
     if (user?.user_metadata?.password_set_at || user?.app_metadata?.password_set_at) return true;
     const hash = user?.encrypted_password;
@@ -119,9 +122,10 @@ export async function stampPasswordSet(userId, { mustChangePassword = false } = 
   const now = new Date().toISOString();
   // Also stamp user_metadata so has_password survives missing columns.
   try {
-    const user = await supabaseJson(authUrl(`admin/users/${encodeURIComponent(userId)}`), {
+    const raw = await supabaseJson(authUrl(`admin/users/${encodeURIComponent(userId)}`), {
       headers: serviceHeaders(),
     });
+    const user = raw?.user && typeof raw.user === "object" ? raw.user : raw;
     const prev = (user?.user_metadata && typeof user.user_metadata === "object" && user.user_metadata) || {};
     // Strip any accidental secret fields if present.
     const nextMeta = { ...prev, has_password: true, password_set_at: now };
@@ -146,6 +150,40 @@ export async function stampPasswordSet(userId, { mustChangePassword = false } = 
     hasPassword: true,
     passwordSetAt: now,
     mustChangePassword: !!mustChangePassword,
+  });
+}
+
+/** Mark OTP-first accounts that still use an opaque system password (never shown). */
+export async function stampPasswordUnset(userId) {
+  try {
+    const raw = await supabaseJson(authUrl(`admin/users/${encodeURIComponent(userId)}`), {
+      headers: serviceHeaders(),
+    });
+    const user = raw?.user && typeof raw.user === "object" ? raw.user : raw;
+    const prev = (user?.user_metadata && typeof user.user_metadata === "object" && user.user_metadata) || {};
+    const nextMeta = { ...prev, has_password: false };
+    delete nextMeta.password_set_at;
+    delete nextMeta.password;
+    delete nextMeta.password_hash;
+    delete nextMeta.encrypted_password;
+    await supabaseJson(authUrl(`admin/users/${encodeURIComponent(userId)}`), {
+      method: "PUT",
+      headers: serviceHeaders(),
+      body: JSON.stringify({
+        user_metadata: nextMeta,
+        app_metadata: {
+          ...((user?.app_metadata && typeof user.app_metadata === "object" && user.app_metadata) || {}),
+          has_password: false,
+        },
+      }),
+    });
+  } catch {
+    /* best-effort */
+  }
+  return patchProfileSecurity(userId, {
+    hasPassword: false,
+    passwordSetAt: null,
+    mustChangePassword: false,
   });
 }
 
@@ -214,6 +252,16 @@ export async function touchLastLogin(userId, ip = "") {
  * Returns true | false | null (null = unknown — do not treat as unset).
  */
 export async function resolveHasPassword(profile = {}, authUser = {}, { probeAuth = true } = {}) {
+  // Explicit false wins — OTP-first accounts may have an opaque Auth password
+  // that must never count as a user-chosen login password.
+  if (profile?.has_password === false || profile?.hasPassword === false) return false;
+  if (
+    authUser?.user_metadata?.has_password === false ||
+    authUser?.app_metadata?.has_password === false
+  ) {
+    return false;
+  }
+
   if (profile?.has_password === true || profile?.hasPassword === true) return true;
   if (
     authUser?.user_metadata?.has_password === true ||
@@ -231,12 +279,10 @@ export async function resolveHasPassword(profile = {}, authUser = {}, { probeAut
     if (id) {
       probed = await authUserHasPassword(id);
       if (probed === true) return true;
+      if (probed === false) return false;
     }
   }
 
-  // Explicit profile false only when Auth probe also found no password signal.
-  if ((profile?.has_password === false || profile?.hasPassword === false) && probed === false) return false;
-  if (probed === false) return false;
   return null;
 }
 

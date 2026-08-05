@@ -2455,9 +2455,16 @@ export default async function handler(req, res) {
       const registerToken = String(body.registerToken || body.emailOtpToken || body.otpToken || "").trim();
       if (!email || !/^\S+@\S+\.\S+$/.test(email)) return json(res,400,{ok:false,message:"请输入有效邮箱"});
       if (!registerToken) return json(res,400,{ok:false,message:"请先完成邮箱验证后再注册。"});
-      const { validatePassword } = await import("./_password-policy.js");
-      const policy = validatePassword(password, body.confirmPassword || body.confirm_password);
-      if (!policy.ok) return json(res,400,{ok:false,message:policy.message});
+      const wantsPassword = password.length > 0;
+      let authPassword = password;
+      if (wantsPassword) {
+        const { validatePassword } = await import("./_password-policy.js");
+        const policy = validatePassword(password, body.confirmPassword || body.confirm_password);
+        if (!policy.ok) return json(res,400,{ok:false,message:policy.message});
+      } else {
+        const crypto = await import("node:crypto");
+        authPassword = `Mcj!${crypto.randomBytes(24).toString("base64url")}`;
+      }
       if (!nickname) return json(res,400,{ok:false,message:"请输入陪玩昵称"});
       try {
         const { consumeRegisterVerified } = await import("./_otp-store.js");
@@ -2490,17 +2497,55 @@ export default async function handler(req, res) {
       } catch (uniqErr) {
         console.warn("[companion/register] uniqueness probe:", uniqErr?.message || uniqErr);
       }
-      const created = await supabaseJson(authUrl("admin/users"), { method:"POST", headers: serviceHeaders(), body: JSON.stringify({ email, password, email_confirm: true, user_metadata: { display_name: nickname, has_password: true } }) });
+      const created = await supabaseJson(authUrl("admin/users"), {
+        method:"POST",
+        headers: serviceHeaders(),
+        body: JSON.stringify({
+          email,
+          password: authPassword,
+          email_confirm: true,
+          user_metadata: {
+            display_name: nickname,
+            has_password: wantsPassword,
+            ...(wantsPassword ? { password_set_at: nowIso() } : {}),
+          },
+          app_metadata: { has_password: wantsPassword },
+        }),
+      });
       await supabaseJson(restUrl("profiles"), { method:"POST", headers: serviceHeaders(), body: JSON.stringify({ id: created.id, role: "companion", display_name: nickname, email, phone: "", status: "active", created_at: nowIso() }) });
       await supabaseJson(restUrl("companion_profiles"), { method:"POST", headers: serviceHeaders(), body: JSON.stringify({ user_id: created.id, nickname, contact_phone: "", verification_status: "pending", deposit_status: "pending", application_status: "draft", allow_orders: false, online_status: "offline", created_at: nowIso(), updated_at: nowIso() }) });
       try {
-        const { stampPasswordSet } = await import("./_account-security.js");
-        await stampPasswordSet(created.id, { mustChangePassword: false });
+        const { stampPasswordSet, stampPasswordUnset } = await import("./_account-security.js");
+        if (wantsPassword) await stampPasswordSet(created.id, { mustChangePassword: false });
+        else await stampPasswordUnset(created.id);
       } catch { /* optional columns */ }
-      const auth = await supabaseJson(authUrl("token?grant_type=password"), { method:"POST", headers: anonHeaders(), body: JSON.stringify({ email, password }) });
+      let auth;
+      if (wantsPassword) {
+        auth = await supabaseJson(authUrl("token?grant_type=password"), { method:"POST", headers: anonHeaders(), body: JSON.stringify({ email, password: authPassword }) });
+      } else {
+        // Session without revealing opaque system password.
+        const link = await supabaseJson(authUrl("admin/generate_link"), {
+          method: "POST",
+          headers: serviceHeaders(),
+          body: JSON.stringify({ type: "magiclink", email }),
+        });
+        const hashed = link?.hashed_token || link?.properties?.hashed_token || "";
+        auth = await supabaseJson(authUrl("verify"), {
+          method: "POST",
+          headers: anonHeaders(),
+          body: JSON.stringify({ type: "magiclink", token_hash: hashed }),
+        });
+      }
       const profile = await profileById(created.id);
       const companion = await companionProfile(created.id);
-      return json(res,200,{ok:true,message:"陪玩账号已创建，请继续填写资料。草稿不会出现在正式陪玩列表。",session:{token:auth.access_token,user:safePlayer(profile, companion || {}),remember:!!body.remember}});
+      return json(res,200,{
+        ok:true,
+        message: wantsPassword
+          ? "陪玩账号已创建，请继续填写资料。草稿不会出现在正式陪玩列表。"
+          : "陪玩账号已创建。建议前往账号安全设置密码（审核状态不影响密码设置）。",
+        suggestSetPassword: !wantsPassword,
+        session:{token:auth.access_token,accessToken:auth.access_token,refreshToken:auth.refresh_token||"",user:safePlayer(profile, companion || {}),remember:!!body.remember}
+      });
     }
     const auth = await requireCompanion(req);
     const companion = auth.companion || await companionProfile(auth.profile.id) || {};
