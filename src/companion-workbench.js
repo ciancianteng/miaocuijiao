@@ -60,11 +60,17 @@
   var MSG_READ_KEY='mcjCompanionMsgRead';
   var Auth=window.MCJAuthShell;
   var STATUS_META={
-    online:{emoji:'🟢',label:'在线接单',hint:'可以进入抢单大厅，也可以收到客服派单。'},
-    busy:{emoji:'🟡',label:'忙碌',hint:'已有订单，不再收到新订单。'},
+    online:{emoji:'🟢',label:'在线可接单',hint:'可以进入抢单大厅，也可以收到客服派单。'},
+    busy:{emoji:'🟡',label:'忙碌中',hint:'已有订单，不再收到新订单。'},
     paused:{emoji:'⏸',label:'暂停接单',hint:'暂时停止接单，但保留在线。'},
     offline:{emoji:'⚫',label:'离线',hint:'完全停止工作。'}
   };
+  // Align with shared presence labels when module is loaded.
+  if(window.MCJCompanionPresence&&window.MCJCompanionPresence.LABELS){
+    Object.keys(window.MCJCompanionPresence.LABELS).forEach(function(k){
+      if(STATUS_META[k])STATUS_META[k].label=window.MCJCompanionPresence.LABELS[k];
+    });
+  }
   var WD_STATUS_TEXT={
     pending:'已提交',pending_review:'待周五结算',pending_friday:'待周五结算',submitted:'已提交',reviewing:'审核中',
     approved:'审核通过待打款',approved_pending_pay:'审核通过待打款',pending_payment:'审核通过待打款',paying:'审核通过待打款',

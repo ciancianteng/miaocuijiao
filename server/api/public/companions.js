@@ -17,6 +17,30 @@ import {
   resolveCompanionCover,
 } from "../_companion-public-map.js";
 import { createSignedUrl, publicObjectUrl } from "../_companion-media-store.js";
+
+async function resolvePlayableUrl(raw) {
+  const s = String(raw || "").trim();
+  if (!s) return "";
+  if (/^https?:\/\//i.test(s) && !/\/storage\/v1\/object\/sign\//i.test(s)) return s;
+  if (/^storage:\/\//i.test(s)) {
+    const rest = s.replace(/^storage:\/\//i, "");
+    const slash = rest.indexOf("/");
+    if (slash <= 0) return "";
+    const bucket = rest.slice(0, slash);
+    const objectPath = rest.slice(slash + 1);
+    if (!bucket || !objectPath || bucket === "present") return "";
+    try {
+      if (bucket === "companion-public" || /public/i.test(bucket)) {
+        return publicObjectUrl(bucket, objectPath) || "";
+      }
+      return (await createSignedUrl(bucket, objectPath, 60 * 60 * 12)) || "";
+    } catch (err) {
+      console.warn("[public/companions] resolvePlayableUrl failed", bucket, objectPath, err?.message || err);
+      return "";
+    }
+  }
+  return "";
+}
 import {
   formatCompanionCode,
   isCompanionCode,
@@ -136,6 +160,13 @@ function publicCompanion(row = {}, profile = {}, levels = [], catalog = [], medi
     .map((s) => s.name || s.title)
     .filter(Boolean);
   const gameDisplay = serviceNames.length ? serviceNames.join("、") : row.game || "";
+  const voicePlayable =
+    pickStableMediaUrl(mediaExtras.voiceUrl) ||
+    (String(mediaExtras.voiceUrl || "").trim().startsWith("http") ? String(mediaExtras.voiceUrl).trim() : "") ||
+    "";
+  const gallery = Array.isArray(mediaExtras.gallery)
+    ? mediaExtras.gallery.filter((g) => g && g.url && /^https?:\/\//i.test(String(g.url)))
+    : [];
   return {
     id: row.user_id || row.id,
     uid: row.user_id || row.id,
@@ -163,14 +194,23 @@ function publicCompanion(row = {}, profile = {}, levels = [], catalog = [], medi
     availabilityStatus: avail,
     availabilityText: availabilityText(avail),
     onlineStatus: availabilityText(avail),
+    onlineStatusLabel: availabilityText(avail),
     status: availabilityText(avail),
     canOrderNow: avail === "online",
+    online: avail === "online" || avail === "busy",
     avatar,
     cover,
-    voiceUrl: pickStableMediaUrl(row.voice_url, mediaExtras.voiceUrl) || row.voice_url || "",
+    // Only expose playable http(s) voice URLs — never raw storage:// refs (breaks audio UI).
+    voiceUrl: voicePlayable,
+    hasVoice: !!voicePlayable,
     cardImageUrl: pickStableMediaUrl(row.card_image_url, cover) || "",
+    gallery,
+    videoUrl: pickStableMediaUrl(mediaExtras.videoUrl, mediaExtras.showcaseVideoUrl) || "",
+    showcaseVideoUrl: pickStableMediaUrl(mediaExtras.videoUrl, mediaExtras.showcaseVideoUrl) || "",
     desc: row.description || "",
     description: row.description || "",
+    gender: row.gender || "",
+    voiceType: row.voice_type || "",
     tags: stripGamePricesMarker(String(row.tags || ""))
       .replace(/\[\[MCJ_GALLERY:[\s\S]*?\]\]/g, "")
       .split(/[,，、]/)
@@ -191,6 +231,7 @@ function publicCompanion(row = {}, profile = {}, levels = [], catalog = [], medi
     reviewCount: 0,
     goodReviewCount: 0,
     goodRate: 0,
+    completedOrders: Number(row.completed_orders || row.total_orders || 0) || 0,
     reviews: [],
   };
 }
@@ -259,7 +300,7 @@ async function mediaExtrasByProfile(profileIds = []) {
     rows = await supabaseJson(
       restUrl(
         "companion_media",
-        `?companion_profile_id=in.(${ids.map(encodeURIComponent).join(",")})&media_type=in.(avatar,cover,gallery)&order=sort_order.asc&limit=2000&select=id,companion_profile_id,media_type,storage_bucket,storage_path,status`
+        `?companion_profile_id=in.(${ids.map(encodeURIComponent).join(",")})&media_type=in.(avatar,cover,gallery,voice)&order=sort_order.asc&limit=3000&select=id,companion_profile_id,media_type,storage_bucket,storage_path,status`
       ),
       { headers: headers() }
     );
@@ -271,7 +312,7 @@ async function mediaExtrasByProfile(profileIds = []) {
   for (const row of Array.isArray(rows) ? rows : []) {
     const pid = row.companion_profile_id;
     if (!pid) continue;
-    if (!byProfile[pid]) byProfile[pid] = { avatarUrl: "", coverUrl: "" };
+    if (!byProfile[pid]) byProfile[pid] = { avatarUrl: "", coverUrl: "", voiceUrl: "", gallery: [] };
     const bucket = String(row.storage_bucket || "").trim();
     const path = String(row.storage_path || "").trim();
     if (!bucket || !path) continue;
@@ -288,9 +329,12 @@ async function mediaExtrasByProfile(profileIds = []) {
     }
     if (!url || !/^https?:\/\//i.test(url)) continue;
     if (row.media_type === "avatar" && !byProfile[pid].avatarUrl) byProfile[pid].avatarUrl = url;
-    if ((row.media_type === "cover" || row.media_type === "gallery") && !byProfile[pid].coverUrl) {
-      byProfile[pid].coverUrl = url;
+    if (row.media_type === "cover" && !byProfile[pid].coverUrl) byProfile[pid].coverUrl = url;
+    if (row.media_type === "gallery") {
+      byProfile[pid].gallery.push({ id: row.id, url });
+      if (!byProfile[pid].coverUrl) byProfile[pid].coverUrl = url;
     }
+    if (row.media_type === "voice" && !byProfile[pid].voiceUrl) byProfile[pid].voiceUrl = url;
     if (row.media_type === "avatar" && !byProfile[pid].coverUrl) byProfile[pid].coverUrl = url;
   }
   return byProfile;
@@ -372,19 +416,40 @@ async function loadCompanions(id = "") {
   const catalog = Array.isArray(servicesBundle?.services) ? servicesBundle.services : [];
   const profileMap = Object.fromEntries((profiles || []).map((row) => [row.id, row]));
   const levelList = Array.isArray(levels) ? levels.map((l) => toPublicLevel(l)) : [];
-  const mapped = companions
-    .filter((row) => isAuditApprovedCompanion(row))
-    .filter((row) => profileMap[row.user_id])
-    .map((row) => {
-      const profile = profileMap[row.user_id];
-      const media = mediaMap[row.id] || {};
-      const gate = evaluatePublishGate(row, profile, media);
-      // Only hard-block non-approved / disabled / banned / rejected. Keep audit-approved real profiles.
-      if (!gate.adminApproved || !gate.accountEnabled) return null;
-      if (gate.blockReasons.some((r) => /封禁|停用|驳回|归档/.test(r))) return null;
-      return publicCompanion(row, profile, levelList, catalog, media);
-    })
-    .filter(Boolean);
+  const mapped = [];
+  for (const row of companions) {
+    if (!isAuditApprovedCompanion(row)) continue;
+    const profile = profileMap[row.user_id];
+    if (!profile) continue;
+    const media = { ...(mediaMap[row.id] || {}) };
+    if (!media.voiceUrl) {
+      media.voiceUrl = await resolvePlayableUrl(row.voice_url);
+    }
+    // Parse legacy gallery tags when companion_media has no gallery rows.
+    if (!Array.isArray(media.gallery) || !media.gallery.length) {
+      const tag = String(row.tags || "");
+      const m = tag.match(/\[\[MCJ_GALLERY:([\s\S]*?)\]\]/);
+      if (m) {
+        try {
+          const items = JSON.parse(m[1]);
+          const gallery = [];
+          for (const item of Array.isArray(items) ? items : []) {
+            const raw = typeof item === "string" ? item : item?.url || item?.path || "";
+            const url = await resolvePlayableUrl(raw);
+            if (url) gallery.push({ id: item?.id || url, url });
+          }
+          if (gallery.length) media.gallery = gallery;
+        } catch {
+          /* ignore bad gallery tag */
+        }
+      }
+    }
+    const gate = evaluatePublishGate(row, profile, media);
+    // Only hard-block non-approved / disabled / banned / rejected. Keep audit-approved real profiles.
+    if (!gate.adminApproved || !gate.accountEnabled) continue;
+    if (gate.blockReasons.some((r) => /封禁|停用|驳回|归档/.test(r))) continue;
+    mapped.push(publicCompanion(row, profile, levelList, catalog, media));
+  }
   return attachReviews(mapped);
 }
 

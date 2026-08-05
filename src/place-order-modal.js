@@ -271,11 +271,22 @@
       String(raw.service || raw.serviceType || raw.serviceName || raw.game || raw.mainGame || "陪玩").trim() ||
       "陪玩";
     var level = String(raw.level || raw.levelName || raw.rank || raw.tier || "").trim() || "认证陪玩";
-    var onlineRaw = raw.online != null ? raw.online : raw.isOnline != null ? raw.isOnline : raw.status;
-    var online =
-      onlineRaw === true ||
-      onlineRaw === 1 ||
-      /online|在线|busy|接单中/i.test(String(onlineRaw || ""));
+    var onlineRaw =
+      raw.availabilityStatus ||
+      raw.availability_status ||
+      raw.availabilityText ||
+      raw.onlineStatus ||
+      raw.online_status ||
+      raw.status;
+    var presence =
+      window.MCJCompanionPresence && window.MCJCompanionPresence.fromCompanion
+        ? window.MCJCompanionPresence.fromCompanion(raw)
+        : null;
+    var online = presence
+      ? presence.code === "online" || presence.code === "busy"
+      : onlineRaw === true ||
+        onlineRaw === 1 ||
+        /online|在线|busy|接单中|忙碌/i.test(String(onlineRaw || ""));
     return {
       companionId: id,
       companionName: name,
@@ -286,6 +297,8 @@
       publicId: raw.publicId || "",
       level: level,
       online: online,
+      availabilityStatus: presence ? presence.code : String(raw.availabilityStatus || "").toLowerCase() || "",
+      availabilityText: presence ? presence.label : raw.availabilityText || (online ? "在线可接单" : "离线"),
     };
   }
   function matchService(service) {
@@ -488,7 +501,7 @@
       '<span class="mcj-po-pill' +
       (c.online ? " online" : "") +
       '">' +
-      (c.online ? "在线" : "离线") +
+      esc(c.availabilityText || (c.online ? "在线可接单" : "离线")) +
       "</span>" +
       "</div></div></div>" +
       '<button type="button" class="mcj-po-close" data-po-close aria-label="关闭">×</button>' +

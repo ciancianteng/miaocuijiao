@@ -36,10 +36,25 @@
     return Number.isFinite(n) ? n : 0;
   }
   function statusClass(code) {
+    if (window.MCJCompanionPresence) {
+      return window.MCJCompanionPresence.fromCompanion({ availabilityStatus: code }).className;
+    }
     if (code === "online") return "is-online";
     if (code === "busy") return "is-busy";
     if (code === "paused") return "is-paused";
     return "is-offline";
+  }
+  function presenceLabel(item) {
+    if (window.MCJCompanionPresence) {
+      return window.MCJCompanionPresence.fromCompanion(item).label;
+    }
+    return item.availabilityText || item.status || item.onlineStatus || "离线";
+  }
+  function presenceCode(item) {
+    if (window.MCJCompanionPresence) {
+      return window.MCJCompanionPresence.fromCompanion(item).code;
+    }
+    return item.availabilityStatus || "offline";
   }
   function badge(rank) {
     if (rank === 1) return '<span class="pop-medal gold">冠军</span>';
@@ -80,9 +95,9 @@
       '">' +
       esc(item.level) +
       '</span><span class="mcj-status-dot ' +
-      statusClass(item.availabilityStatus) +
+      statusClass(presenceCode(item)) +
       '"><i></i>' +
-      esc(item.availabilityText) +
+      esc(presenceLabel(item)) +
       "</span></div>" +
       '<div class="pop-stats">' +
       (state.rules && state.rules.showScore !== false
@@ -113,7 +128,7 @@
       '" data-pop-status="' +
       esc(item.availabilityStatus || "") +
       '" data-pop-status-text="' +
-      esc(item.availabilityText || "") +
+      esc(presenceLabel(item) || item.availabilityText || "") +
       '">立即下单</button>' +
       "</article>"
     );
@@ -143,7 +158,7 @@
       '">' +
       esc(item.level) +
       "</span> · " +
-      esc(item.availabilityText || "") +
+      esc(presenceLabel(item)) +
       "</span><span>" +
       esc(item.mainService || item.game || "-") +
       " · " +
@@ -175,20 +190,24 @@
       '" data-pop-status="' +
       esc(item.availabilityStatus || "") +
       '" data-pop-status-text="' +
-      esc(item.availabilityText || "") +
+      esc(presenceLabel(item) || item.availabilityText || "") +
       '">下单</button></div></article>'
     );
   }
 
   function companionToRankItem(c, rank) {
+    var p =
+      window.MCJCompanionPresence && window.MCJCompanionPresence.fromCompanion
+        ? window.MCJCompanionPresence.fromCompanion(c)
+        : null;
     return {
       companionId: c.id || c.uid || "",
       publicId: c.publicId || "",
       nickname: c.nickname || c.name || "",
       avatar: avatarUrl(c.avatar || c.cover || ""),
       level: c.levelName || c.level || "",
-      availabilityStatus: c.availabilityStatus || "offline",
-      availabilityText: c.availabilityText || c.status || c.onlineStatus || "",
+      availabilityStatus: p ? p.code : c.availabilityStatus || "offline",
+      availabilityText: p ? p.label : c.availabilityText || c.status || c.onlineStatus || "",
       popularityScore: 0,
       completedOrders: 0,
       fiveStarReviews: 0,

@@ -43,23 +43,44 @@
     }
     return h;
   }
-  function statusClass(code) {
-    code = String(code || "offline");
-    if (code === "online" || /在线/.test(code)) return "is-online";
-    if (code === "busy" || /忙碌/.test(code)) return "is-busy";
-    if (code === "paused" || /暂停/.test(code)) return "is-paused";
-    return "is-offline";
-  }
   function statusHtml(c) {
-    var code = c.availabilityStatus || "";
-    var text = c.availabilityText || c.status || c.onlineStatus || "离线";
-    if (!code) {
-      if (/在线/.test(text)) code = "online";
-      else if (/忙碌/.test(text)) code = "busy";
-      else if (/暂停/.test(text)) code = "paused";
-      else code = "offline";
+    if (window.MCJCompanionPresence && typeof window.MCJCompanionPresence.statusDotHtml === "function") {
+      return window.MCJCompanionPresence.statusDotHtml(c, esc);
     }
-    return '<span class="mcj-status-dot ' + statusClass(code) + '"><i></i>' + esc(text) + "</span>";
+    var code = String((c && c.availabilityStatus) || "offline");
+    var text = (c && (c.availabilityText || c.status || c.onlineStatus)) || "离线";
+    var cls =
+      code === "online" || /在线/.test(text)
+        ? "is-online"
+        : code === "busy" || /忙碌/.test(text)
+          ? "is-busy"
+          : code === "paused" || /暂停/.test(text)
+            ? "is-paused"
+            : "is-offline";
+    return (
+      '<span class="mcj-status-dot ' +
+      cls +
+      '" data-online-status-label="' +
+      esc(text) +
+      '"><i></i>' +
+      esc(text) +
+      "</span>"
+    );
+  }
+  function syncPresence(c) {
+    if (window.MCJCompanionPresence && typeof window.MCJCompanionPresence.normalizeCompanionFields === "function") {
+      return window.MCJCompanionPresence.normalizeCompanionFields(c);
+    }
+    return c;
+  }
+  function plainEmptyMetric(n, whenPositive) {
+    var v = Number(n);
+    if (!Number.isFinite(v) || v <= 0) return "暂无数据";
+    return typeof whenPositive === "function" ? whenPositive(v) : String(v);
+  }
+  function isPlayableVoice(url) {
+    var s = String(url || "").trim();
+    return !!(s && /^https?:\/\//i.test(s) && !/^storage:\/\//i.test(s));
   }
   function idem() {
     return "idem-" + Date.now() + "-" + Math.random().toString(36).slice(2, 10);
@@ -103,13 +124,15 @@
   function rankText(rank) {
     var n = Number(rank || 0);
     if (n > 0) return "第 " + n + " 名";
-    return "暂无排名";
+    return "暂无数据";
   }
-  function metaRow(label, valueHtml) {
+  function metaRow(label, valueHtml, empty) {
     return (
       '<div class="pd-meta-row"><span class="pd-meta-label">' +
       esc(label) +
-      '</span><strong class="pd-meta-value">' +
+      '</span><strong class="pd-meta-value' +
+      (empty ? " is-empty" : "") +
+      '">' +
       valueHtml +
       "</strong></div>"
     );
@@ -173,6 +196,7 @@
     if (window.MCJCompanionLevels && window.MCJCompanionLevels.normalizeCompanion) {
       c = window.MCJCompanionLevels.normalizeCompanion(c);
     }
+    c = syncPresence(c);
     state.companion = c;
     var image =
       (window.MCJCompanionMedia && window.MCJCompanionMedia.resolveCover
@@ -190,12 +214,12 @@
     ) {
       image = "/default-avatar.png";
     }
-    var hasVoice = !!(c.voiceUrl && String(c.voiceUrl).trim() && /^https?:\/\//i.test(String(c.voiceUrl)));
-    var voice = hasVoice
+    var hasVoice = isPlayableVoice(c.voiceUrl);
+    var voiceBody = hasVoice
       ? '<div class="pd-voice-player"><audio controls preload="none" src="' +
         esc(c.voiceUrl) +
         '"></audio></div>'
-      : "";
+      : '<p class="pd-voice-empty">暂未上传语音介绍</p>';
     var videoUrl = String(c.videoUrl || c.showcaseVideoUrl || "").trim();
     var hasVideo = !!(videoUrl && /^https?:\/\//i.test(videoUrl));
     var videoHtml = hasVideo
@@ -216,7 +240,7 @@
           : "") ||
         "-"
     );
-    if (!rangeText || rangeText === "-") rangeText = "暂无价格区间";
+    if (!rangeText || rangeText === "-") rangeText = "暂无数据";
     var publicId = c.publicId || (c.companionUid ? "P" + c.companionUid : "");
     var identityApi = window.MCJCompanionIdentity;
     var tagsHtml = identityApi
@@ -284,12 +308,14 @@
       else if (wr > 0 && wr <= 10) popBadges += '<span class="pop-medal" style="background:rgba(255,150,200,.2);color:#ffd6e8">TOP ' + esc(wr) + "</span>";
       if (wr > 0 && wr <= 20) popBadges += '<span class="pop-medal" style="background:rgba(255,150,200,.12);color:#ffd0e4">热门陪玩</span>';
     }
-    var statusText = c.availabilityText || c.status || c.onlineStatus || "离线";
     var giftActions = token()
       ? '<div class="pd-info-actions"><button type="button" class="mcj-secondary" data-open-gift>送礼物</button><button type="button" data-open-tip>打赏猫粮</button></div>'
       : "";
 
     var reviewList = Array.isArray(c.reviews) ? c.reviews : [];
+    var reviewCount = Number(c.reviewCount != null ? c.reviewCount : reviewList.length) || 0;
+    var completedOrders = Number(c.completedOrders || c.orderCount || 0) || 0;
+    var isNewcomer = !(reviewCount > 0 || completedOrders > 0 || Number(weeklyRank) > 0 || Number(monthlyRank) > 0);
     var reviewHtml = reviewList.length
       ? reviewList
           .slice(0, 12)
@@ -345,12 +371,22 @@
             );
           })
           .join("")
-      : '<p class="muted pd-review-empty">暂无真实订单评价</p>';
-    var ratingText =
-      c.rating != null && Number(c.rating) > 0
-        ? Number(c.rating).toFixed(1) + "（" + (c.reviewCount || 0) + " 条）"
-        : "暂无评分";
-    var goodText = String(c.goodReviewCount != null ? c.goodReviewCount : 0);
+      : isNewcomer
+        ? '<p class="muted pd-review-empty">⭐ 新人陪玩 · 完成订单后将展示真实评价与排名</p>'
+        : '<p class="muted pd-review-empty">暂无真实订单评价</p>';
+    var hasRating = c.rating != null && Number(c.rating) > 0;
+    var ratingText = hasRating
+      ? Number(c.rating).toFixed(1) + "（" + reviewCount + " 条）"
+      : "暂无数据";
+    var goodCount = Number(c.goodReviewCount != null ? c.goodReviewCount : 0) || 0;
+    var goodText = plainEmptyMetric(goodCount);
+    var bioRaw = String(c.desc || c.description || "").trim();
+    var bioText = bioRaw || "该陪玩暂未填写个人介绍";
+    var bioEmpty = !bioRaw;
+    var weeklyRankText = rankText(weeklyRank);
+    var monthlyRankText = rankText(monthlyRank);
+    var popScoreText = plainEmptyMetric(popScore);
+    var newcomerBadge = isNewcomer ? '<span class="pd-newcomer-badge">⭐ 新人陪玩</span>' : "";
 
     s.setAttribute("data-companion-level", c.levelId || "");
     s.innerHTML =
@@ -366,10 +402,13 @@
       esc(c.name || c.nickname || "陪玩") +
       " " +
       statusHtml(c) +
+      (newcomerBadge ? " " + newcomerBadge : "") +
       '</h1><div class="profile-id">ID：' +
       esc(publicId || "待生成") +
-      '</div><p class="profile-bio">' +
-      esc(c.desc || c.description || "暂无介绍") +
+      '</div><p class="profile-bio' +
+      (bioEmpty ? " is-empty" : "") +
+      '">' +
+      esc(bioText) +
       '</p><div class="game-line">' +
       esc(c.game || "未设置游戏") +
       " · " +
@@ -378,11 +417,11 @@
       esc(ratingText) +
       "</div>" +
       (tagsHtml || "") +
-      (hasVoice
-        ? '<div class="detail-card price-card pd-voice-card pd-voice-in-hero"><div class="section-head"><h2>语音试听</h2></div><div class="pd-voice-body">' +
-          voice +
-          "</div></div>"
-        : "") +
+      '<div class="detail-card price-card pd-voice-card pd-voice-in-hero' +
+      (hasVoice ? "" : " is-empty") +
+      '"><div class="section-head"><h2>语音介绍</h2></div><div class="pd-voice-body">' +
+      voiceBody +
+      "</div></div>" +
       (hasVideo
         ? '<div class="detail-card pd-video-card"><div class="section-head"><h2>个人展示视频</h2></div>' + videoHtml + "</div>"
         : "") +
@@ -392,14 +431,35 @@
         "等级",
         '<span class="companion-level-pill" data-level-id="' + esc(c.levelId || "") + '">' + esc(levelText) + "</span>"
       ) +
-      metaRow("评分", esc(ratingText)) +
-      metaRow("好评数", esc(goodText)) +
-      metaRow("人气值", esc(popScore)) +
-      metaRow("在线状态", statusHtml(c) || esc(statusText)) +
-      metaRow("价格区间", esc(rangeText)) +
-      metaRow("本周排名", esc(rankText(weeklyRank))) +
-      metaRow("本月排名", esc(rankText(monthlyRank))) +
-      '</div>' +
+      metaRow("评分", esc(ratingText), !hasRating) +
+      metaRow("好评数", esc(goodText), !(goodCount > 0)) +
+      metaRow("人气值", esc(popScoreText), !(Number(popScore) > 0)) +
+      metaRow("在线状态", statusHtml(c)) +
+      metaRow("价格区间", esc(rangeText), rangeText === "暂无数据") +
+      metaRow("本周排名", esc(weeklyRankText), !(Number(weeklyRank) > 0)) +
+      metaRow("本月排名", esc(monthlyRankText), !(Number(monthlyRank) > 0)) +
+      '</div><div class="pd-stat-grid">' +
+      '<div class="pd-stat-cell"><span>评价</span><strong class="' +
+      (hasRating ? "" : "is-empty") +
+      '">' +
+      esc(ratingText) +
+      "</strong></div>" +
+      '<div class="pd-stat-cell"><span>人气值</span><strong class="' +
+      (Number(popScore) > 0 ? "" : "is-empty") +
+      '">' +
+      esc(popScoreText) +
+      "</strong></div>" +
+      '<div class="pd-stat-cell"><span>本周排名</span><strong class="' +
+      (Number(weeklyRank) > 0 ? "" : "is-empty") +
+      '">' +
+      esc(weeklyRankText) +
+      "</strong></div>" +
+      '<div class="pd-stat-cell"><span>完成订单</span><strong class="' +
+      (completedOrders > 0 ? "" : "is-empty") +
+      '">' +
+      esc(plainEmptyMetric(completedOrders)) +
+      "</strong></div>" +
+      "</div>" +
       giftActions +
       "</section>" +
       (galleryList.length
@@ -407,11 +467,11 @@
           galleryWall +
           "</div></section>"
         : "") +
-      '<section class="detail-card real-review-wall"><div class="section-head"><h2>真实订单评价</h2><span>好评 ' +
-      esc(goodText) +
-      " · 共 " +
-      esc(c.reviewCount || 0) +
-      ' 条</span></div><div class="review-list" id="realReviewList">' +
+      '<section class="detail-card real-review-wall"><div class="section-head"><h2>真实订单评价</h2><span>' +
+      (isNewcomer
+        ? "新人陪玩"
+        : "好评 " + esc(goodText) + " · 共 " + esc(reviewCount) + " 条") +
+      '</span></div><div class="review-list" id="realReviewList">' +
       reviewHtml +
       "</div></section>";
 
@@ -479,6 +539,11 @@
     }
     // Open immediately so 立即下单 never feels like a no-op; catalog upgrades price if它回来得及.
     try {
+      c = syncPresence(c);
+      var presence =
+        window.MCJCompanionPresence && window.MCJCompanionPresence.fromCompanion
+          ? window.MCJCompanionPresence.fromCompanion(c)
+          : null;
       window.MCJPlaceOrder.openFromCompanion(c, {
         companionId: c.id || c.uid,
         companionName: c.name || c.nickname,
@@ -490,13 +555,13 @@
         avatar: c.avatar || c.cover || c.cardImageUrl || "",
         publicId: c.publicId || "",
         pricingUnit: c.pricingUnit || "小时",
-        availabilityStatus: c.availabilityStatus || "",
-        availabilityText: c.availabilityText || c.status || c.onlineStatus || "",
-        online: c.online != null ? c.online : c.canOrderNow,
+        availabilityStatus: presence ? presence.code : c.availabilityStatus || "",
+        availabilityText: presence ? presence.label : c.availabilityText || c.status || c.onlineStatus || "",
+        online: presence ? presence.code === "online" || presence.code === "busy" : c.online != null ? c.online : c.canOrderNow,
         certTags: c.certTags || c.certificationTags || [],
         publishReady: c.publishReady,
         canAcceptOrders: c.canAcceptOrders,
-        canOrderNow: c.canOrderNow,
+        canOrderNow: presence ? presence.canOrderNow : c.canOrderNow,
         level: c.level || c.levelName || "",
       });
     } catch (err) {
@@ -805,7 +870,7 @@
         if (!settled) {
           settled = true;
           clearTimeout(failSafe);
-          render(c);
+          render(syncPresence(c));
         }
         var cid = c.id || c.uid || id;
         var popCtl = typeof AbortController !== "undefined" ? new AbortController() : null;
@@ -875,19 +940,36 @@
         .then(function (body) {
           var c = body && body.companions && body.companions[0];
           if (!c) return;
+          c = syncPresence(c);
           var prev = state.companion.availabilityStatus;
           var next = c.availabilityStatus;
           state.companion.availabilityStatus = c.availabilityStatus;
           state.companion.availabilityText = c.availabilityText || c.status;
           state.companion.onlineStatus = c.onlineStatus;
+          state.companion.onlineStatusLabel = c.onlineStatusLabel || c.availabilityText;
           state.companion.status = c.status;
           state.companion.online = c.online;
           state.companion.canOrderNow = c.canOrderNow;
           state.companion.certTags = c.certTags || c.certificationTags || state.companion.certTags;
+          state.companion.voiceUrl = c.voiceUrl || state.companion.voiceUrl;
+          state.companion.hasVoice = c.hasVoice;
+          state.companion.gallery = c.gallery || state.companion.gallery;
           if (prev !== next) render(state.companion);
           else {
-            var badge = document.querySelector(".status-badge, .pd-status, [data-online-status-label]");
-            if (badge && c.availabilityText) badge.textContent = c.availabilityText;
+            var p =
+              window.MCJCompanionPresence && window.MCJCompanionPresence.fromCompanion
+                ? window.MCJCompanionPresence.fromCompanion(state.companion)
+                : null;
+            document.querySelectorAll(".mcj-status-dot").forEach(function (el) {
+              if (!p) {
+                if (c.availabilityText) el.lastChild && (el.childNodes[el.childNodes.length - 1].textContent = c.availabilityText);
+                return;
+              }
+              el.className = "mcj-status-dot " + p.className;
+              el.setAttribute("data-online-status", p.code);
+              el.setAttribute("data-online-status-label", p.label);
+              el.innerHTML = "<i></i>" + esc(p.label);
+            });
           }
         })
         .catch(function () {});

@@ -78,6 +78,9 @@
     return "";
   }
   function normalizeStatus(value) {
+    if (window.MCJCompanionPresence) {
+      return window.MCJCompanionPresence.label(value);
+    }
     var text = String(value || "离线").trim();
     if (/^online$/i.test(text) || /在线可接单|在线/.test(text)) return "在线可接单";
     if (/^busy$/i.test(text) || /忙碌/.test(text)) return "忙碌中";
@@ -86,6 +89,9 @@
     return text || "离线";
   }
   function statusBadgeClass(status) {
+    if (window.MCJCompanionPresence) {
+      return window.MCJCompanionPresence.badgeClass({ availabilityText: status, status: status });
+    }
     if (status === "在线可接单") return " is-online";
     if (status === "忙碌中") return " is-busy";
     if (status === "暂停接单") return " is-paused";
