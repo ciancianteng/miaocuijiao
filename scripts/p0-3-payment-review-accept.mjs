@@ -61,16 +61,16 @@ function tinyPngDataUrl() {
   step("Admin audit records UI", /人工支付审核记录/.test(adminJs), "admin-finance section");
 
   const bossLogin = await api("/api/auth", null, { action: "login", email: BOSS, password: PASS, loginPortal: "boss" });
-  const bossToken = bossLogin.json?.session?.accessToken || bossLogin.json?.accessToken || "";
+  const bossToken = bossLogin.json?.session?.accessToken || bossLogin.json?.accessToken || bossLogin.json?.session?.token || "";
   step("Boss login", !!(bossLogin.json?.ok && bossToken), `ok=${bossLogin.json?.ok}`);
 
   const csLogin = await api("/api/customer-service", null, { action: "login", account: CS, password: PASS });
-  const csToken = csLogin.json?.session?.accessToken || csLogin.json?.token || csLogin.json?.accessToken || "";
+  const csToken = csLogin.json?.session?.token || csLogin.json?.session?.accessToken || csLogin.json?.token || csLogin.json?.accessToken || "";
   step("CS login", !!(csLogin.json?.ok && csToken), `ok=${csLogin.json?.ok}`);
 
-  const adminLogin = await api("/api/admin/auth", null, { action: "login", email: ADMIN, password: PASS });
-  const adminToken = adminLogin.json?.session?.accessToken || adminLogin.json?.accessToken || adminLogin.json?.token || "";
-  step("Admin login", !!(adminLogin.json?.ok && adminToken), `ok=${adminLogin.json?.ok}`);
+  const adminLogin = await api("/api/auth", null, { action: "login", email: ADMIN, password: PASS });
+  const adminToken = adminLogin.json?.session?.accessToken || adminLogin.json?.accessToken || adminLogin.json?.session?.token || "";
+  step("Admin login", !!(adminLogin.json?.ok && adminToken), `ok=${adminLogin.json?.ok} role=${adminLogin.json?.session?.user?.role || adminLogin.json?.user?.role}`);
 
   const companions = await api("/api/public/companions", null, null, "GET");
   const comp =
@@ -172,7 +172,13 @@ function tinyPngDataUrl() {
   const dash = await api("/api/admin/dashboard", adminToken, null, "GET");
   step("Dashboard revenue endpoint", dash.json?.ok !== false, `totalAmount=${dash.json?.stats?.totalAmount}`);
 
-  const otp = await api("/api/auth", null, { action: "send_code", email: CS, purpose: "forgot_password", portal: "customer_service" });
+  const otp = await api("/api/auth", null, {
+    action: "forgot_send_otp",
+    email: CS,
+    account: CS,
+    portal: "customer_service",
+    role: "customer_service",
+  });
   step(
     "CS forgot OTP path",
     !!(otp.json?.ok || otp.json?.devCode || /已发送|验证码/.test(String(otp.json?.message || ""))),
