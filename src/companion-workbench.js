@@ -1412,7 +1412,34 @@
     bindPwKeyboardInset();
     syncPwKeyboardInset();
     if(state.route==='profile')restoreProfileFocus();
-    if(isAccountRoute())restoreAccountFocus();
+    if(isAccountRoute()){
+      restoreAccountFocus();
+      mountCompanionAccountSecurity();
+    }
+  }
+  function mountCompanionAccountSecurity(){
+    var mount=document.getElementById('pwAccountSecurityMount');
+    if(!mount||!window.MCJAccountSecurity)return;
+    var token='';
+    try{token=sessionStorage.getItem('companionAuthToken')||localStorage.getItem('companionAuthToken')||'';}catch(e){}
+    var player=(state.data&&state.data.player)||(state.session&&state.session.user)||{};
+    function apply(user){
+      window.MCJAccountSecurity.mount(mount,user,{
+        role:'companion',
+        token:token,
+        onUpdated:function(){/* keep page; soft reload security only */}
+      });
+    }
+    fetch('/api/auth',{
+      method:'POST',
+      headers:{'Content-Type':'application/json',Accept:'application/json',Authorization:'Bearer '+token},
+      body:JSON.stringify({action:'account_security'})
+    }).then(function(r){return r.json().catch(function(){return {};});}).then(function(body){
+      if(body&&body.ok&&body.user)apply(body.user);
+      else apply({email:player.email||player.uid||'',hasPassword:false,role:'companion'});
+    }).catch(function(){
+      apply({email:player.email||player.uid||'',hasPassword:false,role:'companion'});
+    });
   }
   function pageHtml(){
     if(state.loading&&!state.data)return '<div class="pw-empty pw-skeleton"><div class="pw-skel-line"></div><div class="pw-skel-line short"></div><div class="pw-skel-cards"></div><span>加载中…</span></div>';
@@ -2439,14 +2466,7 @@
       '<button class="pw-btn primary" type="submit">保存联系方式</button></form>'+
       (verifyLocked?verifyView:verifyForm)+
       (depositLocked?depositView:depositForm)+
-      '<section class="pw-card pad pw-form-narrow" style="margin-top:14px"><h3>账号安全 / 登录设备 / 修改密码</h3>'+
-      '<div class="pw-info-list">'+
-      infoRow('登录账号',p.email||p.uid||'-')+
-      infoRow('最近资料更新',raw.updated_at||p.updatedAt||'-')+
-      infoRow('本机设备',navigator.userAgent?String(navigator.userAgent).slice(0,48)+'…':'未知')+
-      '</div>'+
-      '<p class="pw-note" style="margin-top:10px">修改密码：请到登录页使用「忘记密码」。后台通知请查看「消息中心」。</p>'+
-      '<div class="pw-actions" style="margin-top:12px"><button class="pw-btn" type="button" data-route="/companion/settings">打开设置</button><button class="pw-btn" type="button" data-route="/companion/rules">陪玩规则</button><button class="pw-btn danger" type="button" data-logout>退出登录</button></div></section>';
+      '<section class="pw-card pad pw-form-narrow" style="margin-top:14px" id="pwAccountSecurityMount"><h3>账号安全</h3><div class="pw-empty">加载中…</div></section>';
   }
   function rulesHtml(){
     var rules=state.workRules||[];

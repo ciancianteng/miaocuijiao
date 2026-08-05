@@ -64,7 +64,8 @@
     if (r === "cs" || r === "service" || r === "customer-service") return "customer_service";
     if (r === "player" || r === "pw") return "companion";
     if (r === "customer" || r === "owner" || r === "user") return "boss";
-    if (r === "companion" || r === "customer_service" || r === "boss") return r;
+    if (r === "super_admin" || r === "superadmin") return "admin";
+    if (r === "companion" || r === "customer_service" || r === "boss" || r === "admin") return r;
     return "boss";
   }
 
@@ -75,6 +76,7 @@
     var path = String(location.pathname || "");
     if (/\/customer-service\//i.test(path)) return "customer_service";
     if (/\/companion\//i.test(path)) return "companion";
+    if (/\/admin/i.test(path)) return "admin";
     return "boss";
   }
 

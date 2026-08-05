@@ -66,13 +66,16 @@
     if (!mount) return;
     mount.innerHTML =
       '<form class="admin-self-form" data-admin-password-form>' +
+      '<p style="margin:0 0 10px;color:rgba(255,255,255,.62);font-size:13px">密码至少 8 位，须同时包含字母和数字。其他管理员无法查看你的密码。</p>' +
       '<div class="form-grid">' +
       '<label><span>当前密码</span><input name="currentPassword" type="password" required autocomplete="current-password"></label>' +
-      '<label><span>新密码</span><input name="newPassword" type="password" required minlength="6" autocomplete="new-password"></label>' +
-      '<label><span>确认密码</span><input name="confirmPassword" type="password" required minlength="6" autocomplete="new-password"></label>' +
+      '<label><span>新密码</span><input name="newPassword" type="password" required minlength="8" autocomplete="new-password"></label>' +
+      '<label><span>确认密码</span><input name="confirmPassword" type="password" required minlength="8" autocomplete="new-password"></label>' +
       "</div>" +
-      '<div class="row" style="margin-top:14px;gap:12px;align-items:center">' +
+      '<div class="row" style="margin-top:14px;gap:12px;align-items:center;flex-wrap:wrap">' +
       '<button class="primary-btn" type="submit">保存</button>' +
+      '<button class="ghost-btn" type="button" data-admin-forgot-password>忘记密码</button>' +
+      '<button class="ghost-btn" type="button" data-admin-revoke-sessions>注销其他登录设备</button>' +
       '<span data-admin-password-msg></span>' +
       "</div>" +
       "</form>";
@@ -86,6 +89,39 @@
   }
 
   function bind() {
+    document.addEventListener("click", function (e) {
+      var forgot = e.target.closest("[data-admin-forgot-password]");
+      if (forgot) {
+        e.preventDefault();
+        function openForgot() {
+          if (window.MCJForgotPassword && window.MCJForgotPassword.open) {
+            window.MCJForgotPassword.open({ role: "admin" });
+            return;
+          }
+          alert("请到登录页使用忘记密码。");
+        }
+        if (!window.MCJForgotPassword) {
+          var s = document.createElement("script");
+          s.src = "/src/forgot-password.js?v=20260805acctSec1";
+          s.onload = openForgot;
+          document.head.appendChild(s);
+        } else openForgot();
+        return;
+      }
+      var revoke = e.target.closest("[data-admin-revoke-sessions]");
+      if (revoke) {
+        e.preventDefault();
+        if (!confirm("确认注销全部登录会话？当前设备也需要重新登录。")) return;
+        request("revoke_sessions", {})
+          .then(function (data) {
+            alert(data.message || "已注销全部会话");
+            location.href = "/admin/login/";
+          })
+          .catch(function (err) {
+            alert(err.message || "操作失败");
+          });
+      }
+    });
     document.addEventListener("submit", function (e) {
       var profileForm = e.target.closest("[data-admin-profile-form]");
       if (profileForm) {

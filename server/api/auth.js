@@ -17,6 +17,23 @@ import {
   consumeRegisterVerified,
   randomOtpCode as sharedRandomOtpCode,
 } from "./_otp-store.js";
+import { validatePassword, PASSWORD_RULE_HINT } from "./_password-policy.js";
+import {
+  resolveHasPassword,
+  resolveMustChangePassword,
+  securityPublicFields,
+  stampPasswordSet,
+  markMustChangePassword,
+  revokeUserSessions,
+  touchLastLogin,
+  NO_PASSWORD_LOGIN_MESSAGE,
+  RESET_EMAIL_GENERIC_MESSAGE,
+  logSecurityAdminAction,
+} from "./_account-security.js";
+
+const OTP_TTL_MS = 10 * 60 * 1000;
+const OTP_RESEND_COOLDOWN_MS = 60 * 1000;
+const OTP_MAX_FAILS = 8;
 
 const VALID_ROLES = new Set(["boss", "companion", "customer_service", "admin", "super_admin"]);
 const TABLES = ["profiles", "companion_profiles", "orders", "conversations", "messages", "transactions", "banners", "announcements", "customer_service_reports"];
@@ -184,7 +201,7 @@ function metaBossUid(authUser = {}) {
   return String(authUser?.user_metadata?.boss_uid || authUser?.app_metadata?.boss_uid || "").trim();
 }
 
-function safeProfile(profile = {}, authUser = {}) {
+function safeProfile(profile = {}, authUser = {}, security = null) {
   let role = String(profile.role || "").trim();
   const roleLower = role.toLowerCase();
   // Frontend historically used "customer" for the same boss account.
@@ -204,7 +221,7 @@ function safeProfile(profile = {}, authUser = {}) {
     avatarUrl: profile.avatar_url || "",
     status: profile.status || "pending",
     createdAt: profile.created_at || authUser.created_at || "",
-    lastSignInAt: authUser.last_sign_in_at || profile.last_sign_in_at || "",
+    lastSignInAt: authUser.last_sign_in_at || profile.last_sign_in_at || profile.last_login_at || "",
     countryCode,
     country_code: countryCode,
     phoneE164,
@@ -218,7 +235,72 @@ function safeProfile(profile = {}, authUser = {}) {
   }
   if (role === "customer_service" && !out.displayName) out.displayName = "客服";
   if ((role === "admin" || role === "super_admin") && !out.displayName) out.displayName = "管理员";
+  if (security && typeof security === "object") {
+    Object.assign(out, securityPublicFields(profile, authUser, !!security.hasPassword));
+  }
   return out;
+}
+
+async function enrichSafeProfile(profile = {}, authUser = {}) {
+  const hasPassword = await resolveHasPassword(profile, authUser, { probeAuth: true });
+  return safeProfile(profile, authUser, { hasPassword });
+}
+
+function canManagePassword(profile = {}) {
+  const st = String(profile.status || "").toLowerCase();
+  return st !== "disabled";
+}
+
+function canLoginWithStatus(profile = {}, role = "") {
+  const st = String(profile.status || "").toLowerCase();
+  if (st === "disabled") return false;
+  const r = String(role || profile.role || "").toLowerCase();
+  // Companion: pending/rejected may still manage account & login.
+  if (r === "companion") return st === "active" || st === "pending" || st === "rejected" || st === "";
+  return st === "active" || st === "";
+}
+
+function clientIp(req) {
+  return String(req.headers["x-forwarded-for"] || req.headers["x-real-ip"] || "")
+    .split(",")[0]
+    .trim()
+    .slice(0, 64);
+}
+
+function otpFailBucket() {
+  globalThis.__mcjOtpFails = globalThis.__mcjOtpFails || new Map();
+  return globalThis.__mcjOtpFails;
+}
+
+function assertOtpNotRateLimited(key) {
+  const row = otpFailBucket().get(key);
+  if (row && Number(row.fails || 0) >= OTP_MAX_FAILS && Date.now() - Number(row.at || 0) < OTP_TTL_MS) {
+    throw Object.assign(new Error("验证码错误次数过多，请稍后再试。"), { status: 429 });
+  }
+}
+
+function recordOtpFail(key) {
+  const map = otpFailBucket();
+  const prev = map.get(key) || { fails: 0, at: Date.now() };
+  map.set(key, { fails: Number(prev.fails || 0) + 1, at: Date.now() });
+}
+
+function clearOtpFails(key) {
+  otpFailBucket().delete(key);
+}
+
+async function assertOtpResendCooldown(accountKey, role, kind = "otp") {
+  const key = `${String(role || "").toLowerCase()}:${String(kind || "otp")}:${String(accountKey || "").toLowerCase()}`;
+  globalThis.__mcjOtpCooldown = globalThis.__mcjOtpCooldown || new Map();
+  const last = Number(globalThis.__mcjOtpCooldown.get(key) || 0);
+  const wait = OTP_RESEND_COOLDOWN_MS - (Date.now() - last);
+  if (last && wait > 0) {
+    throw Object.assign(new Error(`发送过于频繁，请 ${Math.ceil(wait / 1000)} 秒后再试。`), {
+      status: 429,
+      retryAfterSec: Math.ceil(wait / 1000),
+    });
+  }
+  globalThis.__mcjOtpCooldown.set(key, Date.now());
 }
 
 async function parseBody(req) {
@@ -287,7 +369,8 @@ function normalizeForgotRole(roleRaw) {
   if (role === "cs" || role === "service" || role === "customer-service") return "customer_service";
   if (role === "player" || role === "pw") return "companion";
   if (role === "customer" || role === "owner" || role === "user") return "boss";
-  if (role === "companion" || role === "customer_service" || role === "boss") return role;
+  if (role === "super_admin" || role === "superadmin") return "admin";
+  if (role === "companion" || role === "customer_service" || role === "boss" || role === "admin") return role;
   return "boss";
 }
 
@@ -295,6 +378,7 @@ function roleFilterSql(role) {
   if (role === "boss") return "or=(role.eq.boss,role.eq.customer,role.eq.owner,role.eq.user)";
   if (role === "companion") return "role=eq.companion";
   if (role === "customer_service") return "role=eq.customer_service";
+  if (role === "admin") return "or=(role.eq.admin,role.eq.super_admin)";
   return `role=eq.${encodeURIComponent(role)}`;
 }
 
@@ -305,6 +389,7 @@ async function profilesLookup(query) {
 function profileMatchesRole(profile, role) {
   const r = String(profile?.role || "").trim().toLowerCase();
   if (role === "boss") return r === "boss" || r === "customer" || r === "owner" || r === "user";
+  if (role === "admin") return r === "admin" || r === "super_admin";
   return r === role;
 }
 
@@ -338,7 +423,7 @@ function roleLabelOf(role) {
 }
 
 async function storeForgotOtp(accountKey, role, code, kind = "otp") {
-  return storeOtp({ accountKey, role, code, kind });
+  return storeOtp({ accountKey, role, code, kind, ttlMs: OTP_TTL_MS });
 }
 
 async function findForgotOtp(accountKey, role, kind = "otp") {
@@ -387,9 +472,9 @@ async function handleForgotSendOtp(body, res) {
   const account = String(body.email || body.account || body.phone || "").trim();
   const genericOk = {
     ok: true,
-    message: "如该邮箱已绑定账号，将收到验证码邮件。请查收后继续。",
+    message: RESET_EMAIL_GENERIC_MESSAGE,
     channel: "email",
-    expiresInSec: 900,
+    expiresInSec: Math.floor(OTP_TTL_MS / 1000),
   };
   if (!account) return json(res, 400, { ok: false, message: "请输入绑定邮箱。" });
   if (!/@/.test(account)) {
@@ -400,6 +485,15 @@ async function handleForgotSendOtp(body, res) {
   const profile = resolved.profile;
   const email = String(profile.email || account).trim().toLowerCase();
   if (!email || !/@/.test(email)) return json(res, 200, genericOk);
+  try {
+    await assertOtpResendCooldown(forgotAccountKey(profile), role, "otp");
+  } catch (err) {
+    return json(res, err.status || 429, {
+      ok: false,
+      message: err.message || "发送过于频繁，请稍后再试。",
+      retryAfterSec: err.retryAfterSec || 60,
+    });
+  }
   const code = randomOtpCode();
   const key = forgotAccountKey(profile);
   await storeForgotOtp(key, role, code, "otp");
@@ -422,11 +516,11 @@ async function handleForgotSendOtp(body, res) {
         ? mailStatus.resend
           ? `验证码邮件发送失败：${mailError || "Resend 错误"}。已生成 Staging 调试验证码（${maskEmailHint(email)}）。`
           : `邮件服务暂不可用（未读到 RESEND_API_KEY），已生成 Staging 调试验证码（${maskEmailHint(email)}）。`
-        : `如该邮箱已绑定账号，将收到验证码邮件。请查收后继续。`,
+        : RESET_EMAIL_GENERIC_MESSAGE,
     channel: "email",
     emailMasked: maskEmailHint(email),
     phoneMasked: "",
-    expiresInSec: 900,
+    expiresInSec: Math.floor(OTP_TTL_MS / 1000),
     role,
     mail: mailStatus,
   };
@@ -510,7 +604,7 @@ async function handleLoginWithOtp(body, res) {
   const resolved = await resolveForgotAccount(email, role);
   if (!resolved?.profile) return json(res, 400, { ok: false, message: "验证码无效或已过期" });
   const profile0 = resolved.profile;
-  if (profile0.status && profile0.status !== "active") {
+  if (!canLoginWithStatus(profile0, role)) {
     return json(res, 403, { ok: false, message: "账号未启用或正在审核。" });
   }
   const key = forgotAccountKey(profile0);
@@ -528,12 +622,13 @@ async function handleLoginWithOtp(body, res) {
       /* keep login usable */
     }
   }
-  const user = safeProfile(profile, {
+  await touchLastLogin(profile.id, "");
+  const user = await enrichSafeProfile(profile, {
     ...(auth.user || {}),
     user_metadata: { ...((auth.user && auth.user.user_metadata) || {}), boss_uid: profile.boss_uid || metaBossUid(auth.user) },
   });
   if (!VALID_ROLES.has(user.role)) return json(res, 403, { ok: false, message: "账号角色无效。" });
-  if (user.status !== "active") return json(res, 403, { ok: false, message: "账号未启用或正在审核。" });
+  if (!canLoginWithStatus(profile, user.role)) return json(res, 403, { ok: false, message: "账号未启用或正在审核。" });
   if (stored.id) {
     await supabaseJson(restUrl("password_reset_requests", `?id=eq.${encodeURIComponent(stored.id)}`), {
       method: "PATCH",
@@ -543,7 +638,8 @@ async function handleLoginWithOtp(body, res) {
   }
   return json(res, 200, {
     ok: true,
-    message: "登录成功",
+    message: user.hasPassword ? "登录成功" : "登录成功。建议前往账号安全设置密码。",
+    promptSetPassword: user.hasPassword !== true,
     session: {
       accessToken: auth.access_token,
       refreshToken: auth.refresh_token,
@@ -707,8 +803,15 @@ async function handleForgotVerifyOtp(body, res) {
   const resolved = await resolveForgotAccount(account, role);
   if (!resolved?.profile) return json(res, 400, { ok: false, message: "验证码无效或已过期" });
   const key = forgotAccountKey(resolved.profile);
+  const failKey = `forgot:${role}:${key}`;
+  try {
+    assertOtpNotRateLimited(failKey);
+  } catch (err) {
+    return json(res, err.status || 429, { ok: false, message: err.message });
+  }
   const stored = await findForgotOtp(key, role, "otp");
   if (stored && stored.code && String(stored.code) === code && Number(stored.exp) > Date.now()) {
+    clearOtpFails(failKey);
     const token = `mcj_${randomOtpCode()}${Date.now().toString(36)}`;
     await markForgotVerified(key, role, stored.id, token);
     return json(res, 200, {
@@ -719,6 +822,7 @@ async function handleForgotVerifyOtp(body, res) {
       phoneMasked: "",
     });
   }
+  recordOtpFail(failKey);
   return json(res, 400, { ok: false, message: "验证码无效或已过期" });
 }
 
@@ -726,10 +830,8 @@ async function handleForgotResetPassword(body, res) {
   const role = normalizeForgotRole(body.role);
   const newPassword = String(body.newPassword || body.password || "");
   const confirmPassword = String(body.confirmPassword || body.confirm_password || "");
-  if (!newPassword || newPassword.length < 8) return json(res, 400, { ok: false, message: "新密码至少 8 位" });
-  if (confirmPassword && confirmPassword !== newPassword) {
-    return json(res, 400, { ok: false, message: "两次输入的新密码不一致" });
-  }
+  const policy = validatePassword(newPassword, confirmPassword);
+  if (!policy.ok) return json(res, 400, { ok: false, message: policy.message });
   const resetToken = String(body.resetToken || body.token || "").trim();
   const account = String(body.email || body.account || body.phone || "").trim();
   if (!resetToken.startsWith("mcj_")) return json(res, 400, { ok: false, message: "请先完成验证码校验" });
@@ -745,6 +847,9 @@ async function handleForgotResetPassword(body, res) {
     headers: headersWithServiceRole(),
     body: JSON.stringify({ password: newPassword }),
   });
+  await stampPasswordSet(resolved.profile.id, { mustChangePassword: false });
+  await markMustChangePassword(resolved.profile.id, false);
+  await revokeUserSessions(resolved.profile.id);
   if (globalThis.__mcjForgotResets) {
     globalThis.__mcjForgotResets.delete(`${role}:otp:${key}`);
     globalThis.__mcjForgotResets.delete(`${role}:${key}`);
@@ -923,9 +1028,11 @@ export default async function handler(req, res) {
           /* keep session usable */
         }
       }
-      const user = safeProfile(profile, authUser);
+      const user = await enrichSafeProfile(profile, authUser);
       if (!VALID_ROLES.has(user.role)) return json(res, 403, { ok: false, message: "账号角色无效。" });
-      if (user.status !== "active") return json(res, 403, { ok: false, message: "账号未启用或正在审核。" });
+      if (!canLoginWithStatus(profile, user.role)) {
+        return json(res, 403, { ok: false, message: "账号未启用或正在审核。" });
+      }
       let pendingForced = [];
       let forcedAckRequired = false;
       if (["boss", "customer", "owner", "user"].includes(String(user.role || "").toLowerCase())) {
@@ -937,7 +1044,14 @@ export default async function handler(req, res) {
           /* optional */
         }
       }
-      return json(res, 200, { ok: true, user, redirect: redirectFor(user.role), pendingForced, forcedAckRequired });
+      return json(res, 200, {
+        ok: true,
+        user,
+        redirect: redirectFor(user.role),
+        pendingForced,
+        forcedAckRequired,
+        passwordHint: PASSWORD_RULE_HINT,
+      });
     }
 
     if (req.method === "GET" && action === "pending_forced") {
@@ -1108,32 +1222,132 @@ export default async function handler(req, res) {
       const saved = Array.isArray(savedRows) ? savedRows[0] : { ...profile, ...patch };
       return json(res, 200, { ok: true, message: "资料已保存", user: safeProfile(saved, authUser), redirect: redirectFor(saved.role) });
     }
+    if (requestedAction === "set_password") {
+      const token = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "");
+      if (!token) return json(res, 401, { ok: false, message: "未登录" });
+      const authUser = await userFromToken(token);
+      const profile = await profileFor(authUser.id);
+      if (!profile) return json(res, 403, { ok: false, message: "账号未绑定平台资料。" });
+      if (!canManagePassword(profile)) return json(res, 403, { ok: false, message: "账号已停用，无法设置密码。" });
+      const hasPassword = await resolveHasPassword(profile, authUser, { probeAuth: true });
+      if (hasPassword) {
+        return json(res, 400, { ok: false, message: "账号已设置密码，请使用「修改密码」。" });
+      }
+      const newPassword = String(body.newPassword || body.password || "");
+      const confirmPassword = String(body.confirmPassword || body.confirm_password || "");
+      const policy = validatePassword(newPassword, confirmPassword);
+      if (!policy.ok) return json(res, 400, { ok: false, message: policy.message });
+      await supabaseJson(authUrl(`admin/users/${encodeURIComponent(authUser.id)}`), {
+        method: "PUT",
+        headers: headersWithServiceRole(),
+        body: JSON.stringify({ password: newPassword }),
+      });
+      await stampPasswordSet(authUser.id, { mustChangePassword: false });
+      const email = String(profile.email || authUser.email || "").trim().toLowerCase();
+      let session = null;
+      if (email) {
+        try {
+          const auth = await supabaseJson(authUrl("token?grant_type=password"), {
+            method: "POST",
+            headers: authHeaders(),
+            body: JSON.stringify({ email, password: newPassword }),
+          });
+          session = {
+            accessToken: auth.access_token,
+            refreshToken: auth.refresh_token,
+            expiresAt: auth.expires_at,
+            user: await enrichSafeProfile(profile, auth.user || authUser),
+          };
+        } catch {
+          session = null;
+        }
+      }
+      return json(res, 200, {
+        ok: true,
+        message: "密码已设置，可用邮箱+密码登录。",
+        user: session?.user || (await enrichSafeProfile(profile, authUser)),
+        session,
+      });
+    }
     if (requestedAction === "change_password") {
       const token = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "");
       if (!token) return json(res, 401, { ok: false, message: "未登录" });
       const authUser = await userFromToken(token);
       const profile = await profileFor(authUser.id);
       if (!profile) return json(res, 403, { ok: false, message: "账号未绑定平台资料。" });
-      if (profile.status !== "active") return json(res, 403, { ok: false, message: "账号未启用。" });
+      if (!canManagePassword(profile)) return json(res, 403, { ok: false, message: "账号已停用，无法修改密码。" });
       const currentPassword = String(body.currentPassword || body.oldPassword || "");
       const newPassword = String(body.newPassword || body.password || "");
       const confirmPassword = String(body.confirmPassword || "");
       if (!currentPassword || !newPassword) return json(res, 400, { ok: false, message: "请填写当前密码和新密码。" });
-      if (confirmPassword && confirmPassword !== newPassword) return json(res, 400, { ok: false, message: "两次输入的新密码不一致。" });
-      if (newPassword.length < 6) return json(res, 400, { ok: false, message: "新密码至少 6 位。" });
+      const policy = validatePassword(newPassword, confirmPassword);
+      if (!policy.ok) return json(res, 400, { ok: false, message: policy.message });
       const email = String(profile.email || authUser.email || "").trim().toLowerCase();
       if (!email) return json(res, 400, { ok: false, message: "账号缺少邮箱，无法验证当前密码。" });
-      await supabaseJson(authUrl("token?grant_type=password"), {
-        method: "POST",
-        headers: authHeaders(),
-        body: JSON.stringify({ email, password: currentPassword }),
-      });
+      try {
+        await supabaseJson(authUrl("token?grant_type=password"), {
+          method: "POST",
+          headers: authHeaders(),
+          body: JSON.stringify({ email, password: currentPassword }),
+        });
+      } catch {
+        return json(res, 400, { ok: false, message: "当前密码不正确。" });
+      }
       await supabaseJson(authUrl("user"), {
         method: "PUT",
         headers: authHeaders({ Authorization: `Bearer ${token}` }),
         body: JSON.stringify({ password: newPassword }),
       });
-      return json(res, 200, { ok: true, message: "密码已更新" });
+      await stampPasswordSet(authUser.id, { mustChangePassword: false });
+      await markMustChangePassword(authUser.id, false);
+      await revokeUserSessions(authUser.id);
+      let session = null;
+      try {
+        const auth = await supabaseJson(authUrl("token?grant_type=password"), {
+          method: "POST",
+          headers: authHeaders(),
+          body: JSON.stringify({ email, password: newPassword }),
+        });
+        session = {
+          accessToken: auth.access_token,
+          refreshToken: auth.refresh_token,
+          expiresAt: auth.expires_at,
+          user: await enrichSafeProfile(profile, auth.user || authUser),
+        };
+      } catch {
+        session = null;
+      }
+      return json(res, 200, {
+        ok: true,
+        message: "密码已更新，其他设备已退出登录。",
+        session,
+        user: session?.user || (await enrichSafeProfile(profile, authUser)),
+      });
+    }
+    if (requestedAction === "revoke_sessions" || requestedAction === "logout_all_devices") {
+      const token = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "");
+      if (!token) return json(res, 401, { ok: false, message: "未登录" });
+      const authUser = await userFromToken(token);
+      const profile = await profileFor(authUser.id);
+      if (!profile) return json(res, 403, { ok: false, message: "账号未绑定平台资料。" });
+      await revokeUserSessions(authUser.id);
+      return json(res, 200, { ok: true, message: "已注销全部登录会话，请重新登录。" });
+    }
+    if (requestedAction === "account_security") {
+      const token = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "");
+      if (!token) return json(res, 401, { ok: false, message: "未登录" });
+      const authUser = await userFromToken(token);
+      const profile = await profileFor(authUser.id);
+      if (!profile) return json(res, 403, { ok: false, message: "账号未绑定平台资料。" });
+      if (!canManagePassword(profile)) return json(res, 403, { ok: false, message: "账号已停用。" });
+      const user = await enrichSafeProfile(profile, authUser);
+      return json(res, 200, {
+        ok: true,
+        user,
+        passwordHint: PASSWORD_RULE_HINT,
+        canSetPassword: user.hasPassword !== true,
+        canChangePassword: user.hasPassword === true,
+      });
     }
     if (requestedAction === "refresh") {
       const refreshToken = String(body.refreshToken || body.refresh_token || "").trim();
@@ -1146,9 +1360,9 @@ export default async function handler(req, res) {
       const authUser = auth.user || (auth.access_token ? await userFromToken(auth.access_token).catch(() => null) : null);
       const profile = authUser ? await profileFor(authUser.id) : null;
       if (!profile) return json(res, 403, { ok: false, message: "账号未绑定平台资料，请联系管理员。" });
-      const user = safeProfile(profile, authUser || {});
+      const user = await enrichSafeProfile(profile, authUser || {});
       if (!VALID_ROLES.has(user.role)) return json(res, 403, { ok: false, message: "账号角色无效。" });
-      if (user.status !== "active") return json(res, 403, { ok: false, message: "账号未启用或正在审核。" });
+      if (!canLoginWithStatus(profile, user.role)) return json(res, 403, { ok: false, message: "账号未启用或正在审核。" });
       return json(res, 200, {
         ok: true,
         session: {
@@ -1174,7 +1388,8 @@ export default async function handler(req, res) {
       void body.phoneE164;
       void body.phone_e164;
       if (!email || !password) return json(res, 400, { ok: false, message: "请输入邮箱和密码。" });
-      if (password.length < 6) return json(res, 400, { ok: false, message: "密码至少 6 位。" });
+      const policy = validatePassword(password);
+      if (!policy.ok) return json(res, 400, { ok: false, message: policy.message });
       let created;
       try {
         created = await supabaseJson(authUrl("admin/users"), {
@@ -1284,11 +1499,15 @@ export default async function handler(req, res) {
         body: JSON.stringify({ email, password }),
       });
       const authUser = auth.user || { id: userId, email, user_metadata: { boss_uid: profile?.boss_uid } };
-      const user = safeProfile(profile, authUser);
+      await stampPasswordSet(userId, { mustChangePassword: false });
+      await touchLastLogin(userId, clientIp(req));
+      const user = await enrichSafeProfile({ ...(profile || {}), has_password: true }, authUser);
       const bossUidOut = user.bossUid || user.boss_uid || "";
       return json(res, 200, {
         ok: true,
-        message: bossUidOut ? `注册成功。您的老板 UID：${bossUidOut}` : "注册成功。",
+        message: bossUidOut
+          ? `注册成功。您的老板 UID：${bossUidOut}。建议前往账号安全确认密码。`
+          : "注册成功。建议前往账号安全确认密码。",
         bossUid: bossUidOut || undefined,
         session: {
           accessToken: auth.access_token,
@@ -1374,6 +1593,19 @@ export default async function handler(req, res) {
     const password = String(body.password || "");
     if (!email || !password) return json(res, 400, { ok: false, message: "请输入邮箱和密码。" });
 
+    // Pre-check: if account exists without password, give a clear guidance (no enumeration of other emails beyond profile lookup).
+    const loginRole = normalizeForgotRole(body.role || body.loginPortal || body.portal || "boss");
+    const pre = await resolveForgotAccount(email, loginRole).catch(() => null);
+    if (pre?.profile) {
+      if (String(pre.profile.status || "").toLowerCase() === "disabled") {
+        return json(res, 403, { ok: false, message: "账号已停用，请联系客服。" });
+      }
+      const hasPwd = await resolveHasPassword(pre.profile, {}, { probeAuth: true });
+      if (!hasPwd) {
+        return json(res, 400, { ok: false, message: NO_PASSWORD_LOGIN_MESSAGE, code: "NO_PASSWORD" });
+      }
+    }
+
     const auth = await supabaseJson(authUrl("token?grant_type=password"), {
       method: "POST",
       headers: authHeaders(),
@@ -1389,9 +1621,27 @@ export default async function handler(req, res) {
         /* keep login usable even if UID backfill fails */
       }
     }
-    const user = safeProfile(profile, { ...authUser, user_metadata: { ...(authUser?.user_metadata || {}), boss_uid: profile.boss_uid || metaBossUid(authUser) } });
+    const user = await enrichSafeProfile(
+      { ...profile, has_password: true },
+      { ...authUser, user_metadata: { ...(authUser?.user_metadata || {}), boss_uid: profile.boss_uid || metaBossUid(authUser) } }
+    );
     if (!VALID_ROLES.has(user.role)) return json(res, 403, { ok: false, message: "账号角色无效。" });
-    if (user.status !== "active") return json(res, 403, { ok: false, message: "账号未启用或正在审核。" });
+    if (!canLoginWithStatus(profile, user.role)) return json(res, 403, { ok: false, message: "账号未启用或正在审核。" });
+    await touchLastLogin(profile.id, clientIp(req));
+    if (resolveMustChangePassword(profile, authUser)) {
+      return json(res, 200, {
+        ok: true,
+        mustChangePassword: true,
+        message: "管理员要求您修改密码后才能继续使用。",
+        session: {
+          accessToken: auth.access_token,
+          refreshToken: auth.refresh_token,
+          expiresAt: auth.expires_at,
+          user: { ...user, mustChangePassword: true, must_change_password: true },
+        },
+        redirect: redirectFor(user.role),
+      });
+    }
 
     return json(res, 200, {
       ok: true,
@@ -1411,10 +1661,24 @@ export default async function handler(req, res) {
     } else if (/invalid login credentials|invalid.*(email|password)|email not confirmed/i.test(message)) {
       message = "邮箱或密码错误。";
     }
-    if (action === "change_password" || action === "update_profile" || action === "upload_avatar") {
-      const status = /密码|password|credentials|invalid|邮箱或密码|格式|超过|4MB|jpg|png|webp/i.test(message) ? 400 : 401;
+    if (
+      action === "change_password" ||
+      action === "set_password" ||
+      action === "update_profile" ||
+      action === "upload_avatar" ||
+      action === "account_security" ||
+      action === "revoke_sessions" ||
+      action === "logout_all_devices"
+    ) {
+      const status = /密码|password|credentials|invalid|邮箱或密码|格式|超过|4MB|jpg|png|webp|不一致|至少/i.test(message)
+        ? 400
+        : 401;
       const fallback =
-        action === "change_password" ? "修改密码失败。" : action === "upload_avatar" ? "头像上传失败。" : "保存资料失败。";
+        action === "change_password" || action === "set_password"
+          ? "修改密码失败。"
+          : action === "upload_avatar"
+            ? "头像上传失败。"
+            : "保存资料失败。";
       return json(res, status, { ok: false, message: message || fallback });
     }
     const fallback = action === "refresh" ? "refreshToken 已失效，请重新登录。" : "邮箱或密码错误。";

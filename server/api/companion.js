@@ -2245,6 +2245,16 @@ export default async function handler(req, res) {
       if (!account || !password) return json(res,400,{ok:false,message:"请输入邮箱和密码"});
       const resolvedLogin = await resolveCompanionAuthEmail(account);
       const email = (resolvedLogin && resolvedLogin.email) || account.toLowerCase();
+      if (resolvedLogin?.profile) {
+        if (String(resolvedLogin.profile.status || "").toLowerCase() === "disabled") {
+          return json(res,403,{ok:false,message:"陪玩账号已停用"});
+        }
+        try {
+          const { resolveHasPassword, NO_PASSWORD_LOGIN_MESSAGE } = await import("./_account-security.js");
+          const hasPwd = await resolveHasPassword(resolvedLogin.profile, {}, { probeAuth: true });
+          if (!hasPwd) return json(res,400,{ok:false,message:NO_PASSWORD_LOGIN_MESSAGE,code:"NO_PASSWORD"});
+        } catch { /* continue to password grant */ }
+      }
       let auth;
       try {
         auth = await supabaseJson(authUrl("token?grant_type=password"), { method:"POST", headers: anonHeaders(), body: JSON.stringify({ email, password }) });
@@ -2255,6 +2265,10 @@ export default async function handler(req, res) {
       if (!profile || profile.role !== "companion") return json(res,403,{ok:false,message:"无权访问陪玩端"});
       if (profile.status === "disabled") return json(res,403,{ok:false,message:"陪玩账号已停用"});
       const companion = await companionProfile(profile.id);
+      try {
+        const { touchLastLogin } = await import("./_account-security.js");
+        await touchLastLogin(profile.id, "");
+      } catch { /* optional */ }
       return json(res,200,{ok:true,session:{
         token:auth.access_token,
         accessToken:auth.access_token,
@@ -2437,7 +2451,9 @@ export default async function handler(req, res) {
       const registerToken = String(body.registerToken || body.emailOtpToken || body.otpToken || "").trim();
       if (!email || !/^\S+@\S+\.\S+$/.test(email)) return json(res,400,{ok:false,message:"请输入有效邮箱"});
       if (!registerToken) return json(res,400,{ok:false,message:"请先完成邮箱验证后再注册。"});
-      if (!password || password.length < 8) return json(res,400,{ok:false,message:"密码至少 8 位"});
+      const { validatePassword } = await import("./_password-policy.js");
+      const policy = validatePassword(password, body.confirmPassword || body.confirm_password);
+      if (!policy.ok) return json(res,400,{ok:false,message:policy.message});
       if (!nickname) return json(res,400,{ok:false,message:"请输入陪玩昵称"});
       try {
         const { consumeRegisterVerified } = await import("./_otp-store.js");
@@ -2470,9 +2486,13 @@ export default async function handler(req, res) {
       } catch (uniqErr) {
         console.warn("[companion/register] uniqueness probe:", uniqErr?.message || uniqErr);
       }
-      const created = await supabaseJson(authUrl("admin/users"), { method:"POST", headers: serviceHeaders(), body: JSON.stringify({ email, password, email_confirm: true, user_metadata: { display_name: nickname } }) });
+      const created = await supabaseJson(authUrl("admin/users"), { method:"POST", headers: serviceHeaders(), body: JSON.stringify({ email, password, email_confirm: true, user_metadata: { display_name: nickname, has_password: true } }) });
       await supabaseJson(restUrl("profiles"), { method:"POST", headers: serviceHeaders(), body: JSON.stringify({ id: created.id, role: "companion", display_name: nickname, email, phone: "", status: "active", created_at: nowIso() }) });
       await supabaseJson(restUrl("companion_profiles"), { method:"POST", headers: serviceHeaders(), body: JSON.stringify({ user_id: created.id, nickname, contact_phone: "", verification_status: "pending", deposit_status: "pending", application_status: "draft", allow_orders: false, online_status: "offline", created_at: nowIso(), updated_at: nowIso() }) });
+      try {
+        const { stampPasswordSet } = await import("./_account-security.js");
+        await stampPasswordSet(created.id, { mustChangePassword: false });
+      } catch { /* optional columns */ }
       const auth = await supabaseJson(authUrl("token?grant_type=password"), { method:"POST", headers: anonHeaders(), body: JSON.stringify({ email, password }) });
       const profile = await profileById(created.id);
       const companion = await companionProfile(created.id);

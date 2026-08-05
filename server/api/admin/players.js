@@ -280,8 +280,16 @@ function mapListPlayer(row = {}, profile = {}) {
     created_at: row.created_at || profile.created_at,
     updated_at: row.updated_at,
     registered_at: row.created_at || profile.created_at,
-    last_login: row.last_login_at || "",
-    lastLogin: row.last_login_at || "",
+    last_login: profile.last_login_at || row.last_login_at || "",
+    lastLogin: profile.last_login_at || row.last_login_at || "",
+    last_login_ip: profile.last_login_ip || "",
+    lastLoginIp: profile.last_login_ip || "",
+    hasPassword: false,
+    has_password: false,
+    passwordSetAt: profile.password_set_at || "",
+    password_set_at: profile.password_set_at || "",
+    mustChangePassword: profile.must_change_password === true,
+    must_change_password: profile.must_change_password === true,
   };
 }
 
@@ -413,6 +421,27 @@ async function buildDetail(row, profile, opts = {}) {
     },
     profile
   );
+
+  let hasPassword = profile?.has_password === true;
+  let mustChangePassword = profile?.must_change_password === true;
+  try {
+    const { resolveHasPassword, resolveMustChangePassword } = await import("../_account-security.js");
+    hasPassword = await resolveHasPassword(profile || {}, {}, { probeAuth: true });
+    mustChangePassword = resolveMustChangePassword(profile || {}, {});
+  } catch {
+    /* keep defaults */
+  }
+  base.hasPassword = hasPassword;
+  base.has_password = hasPassword;
+  base.passwordSetAt = profile?.password_set_at || "";
+  base.password_set_at = profile?.password_set_at || "";
+  base.mustChangePassword = mustChangePassword;
+  base.must_change_password = mustChangePassword;
+  base.lastLogin = profile?.last_login_at || base.lastLogin || "";
+  base.last_login = base.lastLogin;
+  base.lastLoginIp = profile?.last_login_ip || "";
+  base.last_login_ip = base.lastLoginIp;
+  base.email = profile?.email || base.email || "";
 
   return {
     ...base,
@@ -1043,10 +1072,96 @@ export default async function handler(req, res) {
           method: "PATCH",
           body: JSON.stringify({ status: "disabled" }),
         });
+        try {
+          const { revokeUserSessions } = await import("../_account-security.js");
+          await revokeUserSessions(companion.user_id);
+        } catch { /* best-effort */ }
       }
       await logOperation(req, action, id, companion, { status: "disabled" }, payload.reason || "");
       const detail = await buildDetail(await getCompanion(id), await getProfile(companion.user_id));
       return json(res, 200, { ok: true, message: "账号已停用", player: detail });
+    }
+
+    if (
+      action === "send_password_reset" ||
+      action === "send_reset_email" ||
+      action === "send_password_reset_email"
+    ) {
+      const userId = companion.user_id;
+      if (!userId) return json(res, 400, { ok: false, message: "缺少用户 ID" });
+      const profile = await getProfile(userId);
+      if (!profile?.email) return json(res, 400, { ok: false, message: "该陪玩未绑定邮箱。" });
+      const { sendEmailOtp } = await import("../_mail.js");
+      const { storeOtp, randomOtpCode } = await import("../_otp-store.js");
+      const { logSecurityAdminAction, RESET_EMAIL_GENERIC_MESSAGE } = await import("../_account-security.js");
+      const code = randomOtpCode();
+      await storeOtp({ accountKey: userId, role: "companion", code, kind: "otp", ttlMs: 10 * 60 * 1000 });
+      let mailOk = false;
+      let mailError = "";
+      try {
+        await sendEmailOtp({ to: String(profile.email).toLowerCase(), code, purpose: "forgot", roleLabel: "陪玩端" });
+        mailOk = true;
+      } catch (err) {
+        mailError = String(err?.message || err || "");
+      }
+      await logOperation(req, "send_password_reset_email", id, companion, { mailOk }, payload.reason || mailError);
+      await logSecurityAdminAction({
+        operatorId: "",
+        targetId: userId,
+        targetType: "companion",
+        action: "send_password_reset_email",
+        result: mailOk ? "ok" : "mail_failed",
+        reason: mailError,
+      });
+      if (!mailOk) {
+        const staging =
+          String(process.env.ALLOW_STAGING_OTP || "") === "1" || String(process.env.MCJ_OTP_DEBUG || "") === "1";
+        if (staging) {
+          return json(res, 200, {
+            ok: true,
+            message: RESET_EMAIL_GENERIC_MESSAGE + "（Staging 已生成调试验证码）",
+            devCode: code,
+          });
+        }
+        return json(res, 502, { ok: false, message: mailError || "重置邮件发送失败" });
+      }
+      return json(res, 200, { ok: true, message: RESET_EMAIL_GENERIC_MESSAGE });
+    }
+
+    if (action === "force_change_password" || action === "require_password_change") {
+      const userId = companion.user_id;
+      if (!userId) return json(res, 400, { ok: false, message: "缺少用户 ID" });
+      const { markMustChangePassword } = await import("../_account-security.js");
+      await markMustChangePassword(userId, true);
+      await logOperation(req, "force_change_password", id, companion, { must_change_password: true }, payload.reason || "");
+      return json(res, 200, { ok: true, message: "已要求用户下次登录后修改密码。" });
+    }
+
+    if (action === "revoke_sessions" || action === "logout_all" || action === "enable" || action === "unfreeze") {
+      if (action === "enable" || action === "unfreeze") {
+        if (companion.user_id) {
+          await companionDb("profiles", `?id=eq.${encodeURIComponent(companion.user_id)}`, {
+            method: "PATCH",
+            body: JSON.stringify({ status: "active" }),
+          });
+        }
+        await logOperation(req, action, id, companion, { status: "active" }, payload.reason || "");
+        const detail = await buildDetail(await getCompanion(id), await getProfile(companion.user_id));
+        return json(res, 200, { ok: true, message: "账号已解封/启用", player: detail });
+      }
+      const userId = companion.user_id;
+      if (!userId) return json(res, 400, { ok: false, message: "缺少用户 ID" });
+      const { revokeUserSessions } = await import("../_account-security.js");
+      await revokeUserSessions(userId);
+      await logOperation(req, "revoke_sessions", id, companion, {}, payload.reason || "");
+      return json(res, 200, { ok: true, message: "已注销该账号全部登录会话。" });
+    }
+
+    if (action === "reset_password" || action === "reset-password") {
+      return json(res, 400, {
+        ok: false,
+        message: "禁止在后台直接设置用户明文密码。请使用「发送密码重置邮件」。",
+      });
     }
 
     // default save / edit / quick-edit

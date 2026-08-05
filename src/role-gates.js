@@ -162,6 +162,9 @@
     if (/invalid login credentials|invalid.*(email|password)|email not confirmed/i.test(msg)) {
       return "邮箱或密码错误。";
     }
+    if (/尚未设置密码|NO_PASSWORD/i.test(msg) || /请使用验证码登录后前往账号安全/i.test(msg)) {
+      return "该账号尚未设置密码，请使用验证码登录后前往账号安全设置密码。";
+    }
     if (/user already registered|already.*(registered|exists)|duplicate|邮箱.*已/i.test(msg)) {
       return "该邮箱已注册，请直接登录。";
     }

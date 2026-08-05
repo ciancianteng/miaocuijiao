@@ -175,6 +175,9 @@
       ["地区", d.region || "尚未填写"],
       ["注册时间", d.registered_at || d.created_at || "—"],
       ["最近登录", d.lastLogin || d.last_login || "暂无登录记录"],
+      ["是否已设置密码", d.hasPassword || d.has_password ? "是" : "否"],
+      ["最近密码重置", d.passwordSetAt || d.password_set_at || "—"],
+      ["最近登录 IP", d.lastLoginIp || d.last_login_ip || "—"],
     ]);
     if (edit) {
       basic +=
