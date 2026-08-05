@@ -1338,7 +1338,10 @@ export default async function handler(req, res) {
             })
           )?.[0];
         try {
-          await patchOrderNoteField({ restUrl, supabaseJson, serviceHeaders }, id, (text) => clearBossIntent(text));
+          const { stampClaimedAtNote } = await import("./_order-confirm-timeout.js");
+          await patchOrderNoteField({ restUrl, supabaseJson, serviceHeaders }, id, (text) =>
+            stampClaimedAtNote(clearBossIntent(text))
+          );
         } catch {
           /* ignore */
         }
