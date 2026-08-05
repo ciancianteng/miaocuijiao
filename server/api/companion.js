@@ -953,9 +953,9 @@ async function loadOrdersFor(profile, companion, transactions = []) {
   // Never surface unpaid designated orders (awaiting_payment) as actionable confirm tasks.
   // Assigned pending-confirm stays in 我的订单→待确认 only.
   const visibleMine = (myRows || []).filter((row) => row.status !== "awaiting_payment");
-  // 抢单大厅 ONLY: public + companion_id null + hall-open statuses.
+  // 抢单大厅 ONLY: public (or null assignment_type) + companion_id null + hall-open statuses.
   const openQueryWithType =
-    "?and=(assignment_type.eq.public,companion_id.is.null,or(status.eq.pending,status.eq.waiting_boss_confirm))&order=created_at.desc&limit=100";
+    "?and=(or(assignment_type.eq.public,assignment_type.is.null),companion_id.is.null,or(status.eq.pending,status.eq.waiting_boss_confirm))&order=created_at.desc&limit=100";
   const openQueryFallback =
     "?and=(companion_id.is.null,or(status.eq.pending,status.eq.waiting_boss_confirm))&order=created_at.desc&limit=100";
   let openRows = [];

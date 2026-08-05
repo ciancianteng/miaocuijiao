@@ -32,8 +32,10 @@ export function resolveAssignmentType(row = {}) {
 }
 
 export function isPublicHallEligible(row = {}) {
-  if (resolveAssignmentType(row) !== ASSIGNMENT_PUBLIC) return false;
   if (row.companion_id) return false;
+  const assignment = resolveAssignmentType(row);
+  // Treat missing assignment_type as public when companion_id is null (legacy / soft-patch rows).
+  if (assignment !== ASSIGNMENT_PUBLIC) return false;
   const status = String(row.status || "");
   return status === "pending" || status === "waiting_boss_confirm";
 }

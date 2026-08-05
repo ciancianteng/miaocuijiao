@@ -1346,6 +1346,13 @@ export default async function handler(req, res) {
           /* ignore */
         }
         const order = patched || { ...before, status: "claimed", companion_id: selectedId };
+        try {
+          const { createGrabListingHelpers } = await import("./_order-grab-listings.js");
+          const listingsApi = createGrabListingHelpers({ restUrl, supabaseJson, serviceHeaders });
+          await listingsApi.closeListing(id, "boss_selected");
+        } catch {
+          /* optional */
+        }
         await addSystemMessage(
           order,
           profile.id,

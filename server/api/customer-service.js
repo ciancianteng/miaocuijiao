@@ -389,7 +389,17 @@ function safeOrder(row, profiles = {}, extras = {}) {
     flowStatus,
     statusText: (() => {
       const gc = Number(extras.grabCount != null ? extras.grabCount : 0) || 0;
+      const assignment = String(row.assignment_type || extras.assignmentType || "").toLowerCase();
+      const isPublic =
+        assignment === "public" ||
+        assignment === "open" ||
+        assignment === "open_grab" ||
+        (!assignment && !row.companion_id);
       if (row.status === "awaiting_payment" && extras.paymentReceipt) return "待审核";
+      if (row.status === "claimed") return "待陪玩确认";
+      if ((row.status === "pending" || row.status === "waiting_boss_confirm") && isPublic && !row.companion_id) {
+        return gc > 0 ? `抢单中（${gc}人）` : "抢单中";
+      }
       if ((row.status === "pending" || row.status === "waiting_boss_confirm") && gc > 0) {
         return `已有 ${gc} 位陪玩抢单`;
       }
@@ -2619,6 +2629,14 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
             companion_id: null,
           }));
         order = patched || { ...order, status: "pending", assignment_type: "public", companion_id: null };
+        try {
+          const { createGrabListingHelpers } = await import("./_order-grab-listings.js");
+          const listingsApi = createGrabListingHelpers({ restUrl, supabaseJson, serviceHeaders });
+          await listingsApi.upsertListing(
+            { ...order, assignment_type: "public", companion_id: null, customer_service_id: service.profile.id },
+            { publishedByCsId: service.profile.id }
+          );
+        } catch (_) {}
         await addMessage(
           conversation,
           service.profile.id,
@@ -2629,7 +2647,7 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         );
         return json(res, 200, {
           ok: true,
-          message: "已发送至抢单大厅。",
+          message: "订单已发布到抢单大厅",
           order,
           sentToGrabHall: true,
         });
@@ -2670,14 +2688,70 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
     if (action === "confirm_payment" || action === "push_to_grab_hall" || action === "send_to_grab_hall") {
       const order = await orderById(String(body.id || body.order_id || ""));
       if (!order) return json(res, 404, { ok: false, message: "订单不存在。" });
-      if (order.status !== "awaiting_payment") return json(res, 400, { ok: false, message: "只有待付款确认订单可以确认付款 / 发送到抢单大厅。" });
+
+      const { createGrabListingHelpers } = await import("./_order-grab-listings.js");
+      const listingsApi = createGrabListingHelpers({ restUrl, supabaseJson, serviceHeaders });
+      const assignedCompanionId = String(order.companion_id || "").trim() || "";
+      const isAssignedPath = !!assignedCompanionId;
+      const hallOpenAlready =
+        !isAssignedPath &&
+        ["pending", "waiting_boss_confirm"].includes(String(order.status || "")) &&
+        String(order.assignment_type || "public").toLowerCase() !== "assigned";
+
+      // Already in grab hall → never re-publish / re-debit; refresh listing + return 抢单中.
+      if (hallOpenAlready) {
+        const listing = await listingsApi.upsertListing(
+          { ...order, assignment_type: order.assignment_type || "public", companion_id: null },
+          { publishedByCsId: service.profile.id }
+        );
+        const profiles = await profileMap([order.boss_id, order.customer_service_id, service.profile.id]);
+        const { createOrderGrabHelpers } = await import("./_order-grabs.js");
+        const grabsApi = createOrderGrabHelpers({ restUrl, supabaseJson, serviceHeaders });
+        const grabs = await grabsApi.listGrabs(order.id, order.note || order.description || "");
+        return json(res, 200, {
+          ok: true,
+          message: "订单已在抢单大厅（抢单中）。",
+          order: safeOrder(
+            {
+              ...order,
+              status: order.status,
+              assignment_type: order.assignment_type || "public",
+              companion_id: null,
+            },
+            profiles,
+            { grabCount: grabs.length, grabs }
+          ),
+          listing: listing.listing || null,
+          sentToGrabHall: true,
+          alreadyPublished: true,
+        });
+      }
+
+      if (order.status !== "awaiting_payment") {
+        return json(res, 400, {
+          ok: false,
+          message: "只有待付款确认订单可以确认付款 / 发送到抢单大厅。",
+        });
+      }
+
+      if ((action === "push_to_grab_hall" || action === "send_to_grab_hall") && isAssignedPath) {
+        return json(res, 400, {
+          ok: false,
+          message: "该订单已指定陪玩，不能发送到公开抢单大厅。请使用「确认收款并通知陪玩」进入待陪玩确认。",
+        });
+      }
+
       const amount = money(order.total_amount);
       if (!(amount > 0)) return json(res, 400, { ok: false, message: "订单金额无效，无法确认付款。" });
       const pendingReceipts = await listPendingForCs({ orderIds: [order.id] });
       const pendingReceipt = pendingReceipts?.[0] || null;
-      const existingManualPayment = (
-        await companionDb("payment_transactions", `?order_id=eq.${encodeURIComponent(order.id)}&payment_status=eq.paid&limit=1`).catch(() => [])
-      )?.[0] || null;
+      const existingManualPayment =
+        (
+          await companionDb(
+            "payment_transactions",
+            `?order_id=eq.${encodeURIComponent(order.id)}&payment_status=eq.paid&limit=1`
+          ).catch(() => [])
+        )?.[0] || null;
       // A submitted manual proof represents an off-wallet payment. Existing CS-only confirmation
       // retains its legacy wallet debit behavior for orders without a receipt.
       let walletSkipped = false;
@@ -2685,47 +2759,42 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         await approveAndLedger({ order, receipt: pendingReceipt, reviewerId: service.profile.id });
         walletSkipped = true;
       } else if (existingManualPayment) {
-        // Recover a retried transition after the receipt/ledger commit already succeeded.
         walletSkipped = true;
-      } else try {
-        const walletApi = await import("./_wallet.js");
-        await walletApi.debitWallet({
-          bossId: order.boss_id,
-          amount,
-          transactionType: "order_payment",
-          idempotencyKey: `order-pay:${order.order_no || order.id}`,
-          reason: `客服确认付款 ${order.order_no || order.id}`,
-          relatedOrderId: order.id,
-          operatorId: service.profile.id,
-        });
-      } catch (e) {
-        const msg = String(e?.message || e || "");
-        if (/insufficient|余额不足|not enough/i.test(msg)) {
-          walletSkipped = true;
-        } else if (/idempotency|duplicate|already/i.test(msg)) {
-          /* already debited — continue to status transition */
-        } else {
-          return json(res, e.status || 400, { ok: false, message: msg || "扣款失败，未确认付款。" });
-        }
-      }
-      /* 指定陪玩：claimed→陪玩接单（永不进大厅）；无陪玩：pending→抢单大厅 */
-      if (action === "push_to_grab_hall" || action === "send_to_grab_hall") {
-        if (order.companion_id) {
-          return json(res, 400, {
-            ok: false,
-            message: "该订单已指定陪玩，不能发送到公开抢单大厅。请使用「确认已付款」进入待陪玩确认。",
+      } else {
+        try {
+          const walletApi = await import("./_wallet.js");
+          await walletApi.debitWallet({
+            bossId: order.boss_id,
+            amount,
+            transactionType: "order_payment",
+            idempotencyKey: `order-pay:${order.order_no || order.id}`,
+            reason: `客服确认付款 ${order.order_no || order.id}`,
+            relatedOrderId: order.id,
+            operatorId: service.profile.id,
           });
+        } catch (e) {
+          const msg = String(e?.message || e || "");
+          if (/insufficient|余额不足|not enough/i.test(msg)) {
+            walletSkipped = true;
+          } else if (/idempotency|duplicate|already/i.test(msg)) {
+            /* already debited — continue to status transition */
+          } else {
+            return json(res, e.status || 400, { ok: false, message: msg || "扣款失败，未确认付款。" });
+          }
         }
       }
-      const next = order.companion_id ? "claimed" : "pending";
+
+      /* A 指定陪玩 → claimed（待陪玩确认，永不进大厅）；B 公开抢单 → pending + listing */
+      const next = isAssignedPath ? "claimed" : "pending";
       const { transitionOrderStatus } = await import("./_order-status.js");
       const basePatch = {
         customer_service_id: service.profile.id,
-        assignment_type: order.companion_id ? "assigned" : "public",
-        ...(order.companion_id
-          ? { order_type: order.order_type || "direct_companion", companion_id: order.companion_id }
+        assignment_type: isAssignedPath ? "assigned" : "public",
+        ...(isAssignedPath
+          ? { order_type: order.order_type || "direct_companion", companion_id: assignedCompanionId }
           : { order_type: order.order_type || "open_grab", companion_id: null }),
       };
+
       async function transitionWithOptionalPaidAt() {
         const tryPatch = async (patch) =>
           transitionOrderStatus(
@@ -2738,27 +2807,36 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
               patch,
               operatorRole: "customer_service",
               operatorId: service.profile.id,
-              note: pendingReceipt ? "cs approved manual payment proof" : walletSkipped ? "cs confirm_payment ops (no wallet debit)" : "cs confirm_payment with wallet debit",
+              note: pendingReceipt
+                ? "cs approved manual payment proof"
+                : walletSkipped
+                  ? "cs confirm_payment ops (no wallet debit)"
+                  : "cs confirm_payment with wallet debit",
             }
           );
         try {
           return await tryPatch({ ...basePatch, paid_at: nowIso() });
         } catch (err) {
           const msg = String(err?.message || err || "");
-          if (/paid_at|assignment_type|order_type|PGRST204|schema cache|column/i.test(msg)) {
-            const soft = { customer_service_id: service.profile.id };
-            if (order.companion_id) soft.companion_id = order.companion_id;
-            else soft.companion_id = null;
+          if (/paid_at|PGRST204|schema cache|column/i.test(msg)) {
+            // Never drop assignment_type / companion_id / order_type on soft retry.
             try {
-              return await tryPatch(soft);
+              return await tryPatch({ ...basePatch });
             } catch (err2) {
-              if (!/paid_at|PGRST204|schema cache/i.test(String(err2?.message || err2))) throw err2;
-              return tryPatch(soft);
+              if (/assignment_type|order_type|PGRST204|schema cache|column/i.test(String(err2?.message || err2))) {
+                const soft = {
+                  customer_service_id: service.profile.id,
+                  companion_id: isAssignedPath ? assignedCompanionId : null,
+                };
+                return tryPatch(soft);
+              }
+              throw err2;
             }
           }
           throw err;
         }
       }
+
       let patched = await transitionWithOptionalPaidAt();
       if (!patched) {
         try {
@@ -2766,6 +2844,12 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         } catch (err) {
           if (/paid_at|PGRST204|schema cache/i.test(String(err?.message || err))) {
             patched = await patchOrder(order.id, { status: next, ...basePatch });
+          } else if (/assignment_type|order_type|PGRST204|schema cache|column/i.test(String(err?.message || err))) {
+            patched = await patchOrder(order.id, {
+              status: next,
+              customer_service_id: service.profile.id,
+              companion_id: isAssignedPath ? assignedCompanionId : null,
+            });
           } else {
             throw err;
           }
@@ -2774,29 +2858,67 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       if (!patched || patched.status === "awaiting_payment") {
         return json(res, 409, { ok: false, message: "订单状态已变更，请刷新后重试。" });
       }
+
+      // Harden routing fields if soft path dropped them.
+      if (!isAssignedPath) {
+        const needFix =
+          String(patched.assignment_type || "").toLowerCase() !== "public" ||
+          patched.companion_id != null;
+        if (needFix) {
+          patched =
+            (await patchOrder(order.id, {
+              assignment_type: "public",
+              companion_id: null,
+              order_type: patched.order_type || order.order_type || "open_grab",
+              customer_service_id: service.profile.id,
+            }).catch(() => null)) || { ...patched, assignment_type: "public", companion_id: null };
+        }
+      }
+
       if (next === "claimed") {
         try {
           const { stampClaimedAtNote } = await import("./_order-confirm-timeout.js");
           const { patchOrderNoteField } = await import("./_order-flow.js");
-          await patchOrderNoteField({ restUrl, supabaseJson, serviceHeaders }, order.id, (text) => stampClaimedAtNote(text));
+          await patchOrderNoteField({ restUrl, supabaseJson, serviceHeaders }, order.id, (text) =>
+            stampClaimedAtNote(text)
+          );
         } catch {
           /* optional */
         }
       }
+
+      let listingResult = null;
+      if (!isAssignedPath) {
+        listingResult = await listingsApi.upsertListing(
+          {
+            ...order,
+            ...patched,
+            status: "pending",
+            assignment_type: "public",
+            companion_id: null,
+            customer_service_id: service.profile.id,
+          },
+          { publishedByCsId: service.profile.id, publishedAt: nowIso() }
+        );
+      } else {
+        await listingsApi.closeListing(order.id, "assigned_direct").catch(() => null);
+      }
+
       const conversation = await ensureConversation({
         boss_id: order.boss_id,
-        companion_id: order.companion_id,
+        companion_id: isAssignedPath ? assignedCompanionId : null,
         customer_service_id: service.profile.id,
         order_id: order.id,
       });
-      const sysMsg = order.companion_id
-        ? (walletSkipped
-            ? "客服已确认线下付款（未扣钱包余额），订单已支付，正在等待陪玩确认接单。"
-            : "客服已确认付款，订单已支付，正在等待陪玩确认接单。")
-        : (walletSkipped
-            ? "客服已确认线下付款（未扣钱包余额），订单已进入抢单大厅。"
-            : "客服已确认付款，订单已进入抢单大厅。");
+      const sysMsg = isAssignedPath
+        ? walletSkipped
+          ? "客服已确认线下付款（未扣钱包余额），订单已支付，正在等待陪玩确认接单。"
+          : "客服已确认付款，订单已支付，正在等待陪玩确认接单。"
+        : walletSkipped
+          ? "客服已确认线下付款（未扣钱包余额），订单已发布到抢单大厅。"
+          : "客服已确认付款，订单已发布到抢单大厅。";
       await addMessage(conversation, service.profile.id, "customer_service", sysMsg, "system", order.id);
+
       let reward = null;
       try {
         reward = await (await import("./_cs-commission-settle.js")).settleCsOrderIncome(
@@ -2804,13 +2926,87 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
           { source: "cs_confirm_payment", forceServiceId: service.profile.id }
         );
       } catch (_) {}
-      const hallMsg = "已发送至抢单大厅。";
+
+      const profiles = await profileMap([
+        order.boss_id,
+        isAssignedPath ? assignedCompanionId : null,
+        service.profile.id,
+      ]);
+      const { createOrderGrabHelpers } = await import("./_order-grabs.js");
+      const grabsApi = createOrderGrabHelpers({ restUrl, supabaseJson, serviceHeaders });
+      const grabs = isAssignedPath
+        ? []
+        : await grabsApi.listGrabs(order.id, patched.note || order.note || order.description || "");
+      const finalOrder = safeOrder(
+        {
+          ...order,
+          ...patched,
+          status: next,
+          assignment_type: isAssignedPath ? "assigned" : "public",
+          companion_id: isAssignedPath ? assignedCompanionId : null,
+          customer_service_id: service.profile.id,
+        },
+        profiles,
+        { grabCount: grabs.length, grabs }
+      );
+
       return json(res, 200, {
         ok: true,
-        message: order.companion_id ? "已确认付款，等待陪玩确认接单。" : hallMsg,
-        order: patched,
+        message: isAssignedPath
+          ? "已确认付款，订单进入待陪玩确认。"
+          : "订单已发布到抢单大厅",
+        order: finalOrder,
         reward,
-        sentToGrabHall: !order.companion_id,
+        listing: listingResult?.listing || null,
+        sentToGrabHall: !isAssignedPath,
+        path: isAssignedPath ? "assigned_confirm" : "grab_hall",
+      });
+    }
+    if (action === "cancel_grab_hall" || action === "cancel_open_grab") {
+      const order = await orderById(String(body.id || body.order_id || ""));
+      if (!order) return json(res, 404, { ok: false, message: "订单不存在。" });
+      if (order.companion_id) {
+        return json(res, 400, { ok: false, message: "已指定陪玩的订单不能取消抢单，请走取消订单 / 售后。" });
+      }
+      if (!["pending", "waiting_boss_confirm"].includes(String(order.status || ""))) {
+        return json(res, 400, { ok: false, message: "当前订单不在抢单大厅。" });
+      }
+      const { transitionOrderStatus } = await import("./_order-status.js");
+      const patched =
+        (await transitionOrderStatus(
+          { restUrl, supabaseJson, serviceHeaders },
+          {
+            orderId: order.id,
+            fromStatus: order.status,
+            toStatus: "cancelled",
+            patch: { cancelled_at: nowIso(), customer_service_id: service.profile.id, cancel_reason: String(body.reason || "客服取消抢单").slice(0, 200) },
+            operatorRole: "customer_service",
+            operatorId: service.profile.id,
+            note: "cs cancel_grab_hall",
+          }
+        ).catch(() => null)) ||
+        (await patchOrder(order.id, {
+          status: "cancelled",
+          cancelled_at: nowIso(),
+          customer_service_id: service.profile.id,
+          cancel_reason: String(body.reason || "客服取消抢单").slice(0, 200),
+        }));
+      try {
+        const { createGrabListingHelpers } = await import("./_order-grab-listings.js");
+        await createGrabListingHelpers({ restUrl, supabaseJson, serviceHeaders }).closeListing(order.id, "cs_cancelled");
+      } catch (_) {}
+      const conversation = await ensureConversation({
+        boss_id: order.boss_id,
+        companion_id: null,
+        customer_service_id: service.profile.id,
+        order_id: order.id,
+      });
+      await addMessage(conversation, service.profile.id, "customer_service", "客服已取消该订单的抢单发布。", "system", order.id);
+      const profiles = await profileMap([order.boss_id, service.profile.id]);
+      return json(res, 200, {
+        ok: true,
+        message: "已取消抢单，订单已关闭。",
+        order: safeOrder(patched || { ...order, status: "cancelled" }, profiles),
       });
     }
     if (action === "list_grabs" || action === "grab_applicants") {
@@ -3081,6 +3277,11 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
           "system",
           order.id
         );
+        try {
+          const { createGrabListingHelpers } = await import("./_order-grab-listings.js");
+          const listingsApi = createGrabListingHelpers({ restUrl, supabaseJson, serviceHeaders });
+          await listingsApi.closeListing(order.id, grabs.length ? "grab_assigned" : "direct_assigned");
+        } catch (_) {}
         const profiles = await profileMap([patched?.boss_id || order.boss_id, companionId, service.profile.id]);
         return json(res, 200, {
           ok: true,

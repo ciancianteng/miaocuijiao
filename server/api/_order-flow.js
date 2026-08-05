@@ -123,10 +123,9 @@ export function hallStateForOrder(order = {}, grabs = []) {
   if (order.companion_id && ["claimed", "confirmed", "in_progress", "completed"].includes(status)) {
     return "settled";
   }
-  if (status === "waiting_boss_confirm" || (status === "pending" && grabs.length > 0)) {
+  if (status === "waiting_boss_confirm" || status === "pending") {
     return "grabbing";
   }
-  if (status === "pending" || status === "waiting_boss_confirm") return "open";
   return status;
 }
 

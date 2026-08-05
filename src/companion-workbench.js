@@ -2270,7 +2270,7 @@
             ?'<em class="pw-hall-badge cancelled">已取消</em>'
             :hallState==='expired'
               ?'<em class="pw-hall-badge expired">已失效</em>'
-              :(grabCount>0?'<em class="pw-hall-badge grabbing">抢单中 · 已有 '+grabCount+' 人抢单</em>':'<em class="pw-hall-badge open">待抢单 · 已有 '+grabCount+' 人抢单</em>');
+              :(hallState==='grabbing'||grabCount>0?'<em class="pw-hall-badge grabbing">抢单中 · 已有 '+grabCount+' 人抢单</em>':'<em class="pw-hall-badge open">待抢单 · 已有 '+grabCount+' 人抢单</em>');
         var serviceText=String(o.serviceContent||'')
           .replace(/\[\[ORDER_GRABS\]\][\s\S]*$/g,'')
           .replace(/\[\[COMPLETION_PENDING\]\]/g,'')
