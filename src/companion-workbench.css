@@ -383,6 +383,11 @@ a.pw-btn{display:inline-flex;align-items:center;justify-content:center;text-deco
 .pw-check input{width:18px!important;height:18px!important;min-height:18px!important;min-width:18px!important;margin:0;flex:0 0 18px;accent-color:#ff8fc5;background:transparent!important;border-radius:5px}
 .mcj-auth-page,.mcj-auth-page::before,.mcj-auth-page::after{pointer-events:none}
 .mcj-auth-card,.mcj-auth-form{position:relative;z-index:10;pointer-events:auto}
+/* Companion login: one panel only — never let display:flex beat [hidden] */
+.pw-app .mcj-auth-form[hidden],
+.pw-app .mcj-auth-card [hidden]{display:none!important}
+.pw-app .mcj-auth-card{min-height:0;height:auto}
+.pw-app .mcj-auth-method-tabs{margin:20px 0 0}
 .mcj-auth-check input{width:18px!important;height:18px!important;min-height:18px!important;min-width:18px!important}
 
 /* Ops form controls — dark + pink (companion workbench only) */
