@@ -36,9 +36,10 @@
   }
   function footerHtml() {
     var isHome = /(^|\/)index\.html$|\/$/.test(location.pathname);
+    var ssm = '<div class="mcj-footer-ssm">SSM Registration No. 202603181917</div>';
     if (!isHome) {
       return '<footer class="mcj-site-footer" data-mcj-footer>' +
-        '<div class="mcj-footer-bottom"><span>© 2026 Meow Cui Jiao</span></div></footer>';
+        '<div class="mcj-footer-bottom"><span>© 2026 Meow Cui Jiao</span>' + ssm + '</div></footer>';
     }
     return '<footer class="mcj-site-footer" data-mcj-footer>' +
       '<div class="mcj-footer-inner compact">' +
@@ -50,7 +51,7 @@
       '<a class="mcj-footer-link" href="companion-apply.html">申请陪玩</a>' +
       '<button class="mcj-footer-link" type="button" data-open-discord>Discord 社群</button>' +
       '</div></section>' +
-      '</div><div class="mcj-footer-bottom"><span>© MEOW CUI JIAO ENTERPRISE. All rights reserved.</span></div></footer>';
+      '</div><div class="mcj-footer-bottom"><span>© MEOW CUI JIAO ENTERPRISE. All rights reserved.</span>' + ssm + '</div></footer>';
   }
   function modalHtml() {
     return '<div class="mcj-modal" id="mcjCoopModal" aria-hidden="true"><div class="mcj-modal-box"><div class="mcj-modal-head"><div><h3>商务合作申请</h3><p>欢迎与 Meow Cui Jiao 建立合作关系。</p></div><button class="mcj-close" style="width:36px;height:36px;min-width:36px;min-height:36px;max-width:36px;max-height:36px;padding:0" type="button" data-close-coop>×</button></div>' +
@@ -174,7 +175,7 @@
     if (!document.querySelector('link[href*="footer-system.css"]')) {
       var link = document.createElement("link");
       link.rel = "stylesheet";
-      link.href = "src/footer-system.css?v=20260731-footer-actions";
+      link.href = "src/footer-system.css?v=20260805ssm1";
       document.head.appendChild(link);
     }
     document.querySelectorAll("[data-mcj-footer], .site-footer, #mcjCoopModal").forEach(function (el) { el.remove(); });
