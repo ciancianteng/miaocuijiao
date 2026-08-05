@@ -246,6 +246,9 @@
       '<label><span>DuitNow ID</span><input name="duitnowId" value="' +
       esc(manual.duitnowId || "") +
       '"></label>' +
+      '<label class="wide"><span>收款二维码图片链接（仅支付页显示）</span><input name="qrUrl" value="' +
+      esc(manual.qrUrl || data.qrUrl || "") +
+      '" placeholder="https://.../duitnow-qr.png"></label>' +
       '<label class="wide"><span>收款说明</span><textarea name="instructions">' +
       esc(data.instructions || "") +
       "</textarea></label>" +
@@ -502,6 +505,7 @@
       bankAccount: String(fd.get("bankAccount") || "").trim(),
       phone: String(fd.get("phone") || "").trim(),
       duitnowId: String(fd.get("duitnowId") || "").trim(),
+      qrUrl: String(fd.get("qrUrl") || "").trim(),
     };
     var data = Object.assign({}, item.data || {}, {
       publicLabel: String(fd.get("publicLabel") || item.name || ""),

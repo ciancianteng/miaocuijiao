@@ -2074,7 +2074,7 @@
   function paymentStatusLabel(order){
     if(!order)return '-';
     var s=String(order.status||'');
-    if(s==='awaiting_payment')return '待付款';
+    if(s==='awaiting_payment')return order.paymentReview?'待人工审核':'待付款';
     if(s==='cancelled')return '已取消';
     if(s==='refunded')return '已退款';
     return '已付款';
@@ -2760,6 +2760,8 @@
     if(mode==='pay'){
       rows.push(['付款状态',paymentStatusLabel(o)]);
       rows.push(['支付时间',o.paidAt||o.acceptedAt||'-']);
+      rows.push(['审核人',o.paymentReviewedByName||o.serviceName||'-']);
+      rows.push(['审核时间',o.paymentReviewedAt||'-']);
     }
     if(mode==='review')rows.push(['评价',o.reviewText||o.rating||'暂无评价']);
     var proof=(mode==='pay'||mode==='refund')&&o.paymentProofUrl&&!/^proof:/i.test(String(o.paymentProofUrl||''))
@@ -2777,12 +2779,16 @@
     var proofBlock=(o.paymentReview&&o.paymentProofUrl&&!/^proof:/i.test(String(o.paymentProofUrl||'')))?('<div class="cs-proof-preview" style="margin:6px 0"><button type="button" class="cs-btn ghost" data-proof-lightbox="'+esc(o.paymentProofUrl)+'" style="padding:0;border:0;background:transparent;cursor:zoom-in" title="查看付款截图大图"><img src="'+esc(o.paymentProofUrl)+'" alt="付款凭证" style="max-width:120px;max-height:120px;border-radius:8px;object-fit:cover;border:1px solid rgba(255,255,255,.15);display:block"></button></div>'):'';
 
     if(st==='awaiting_payment'){
-      if(o.companionId){
-        actions.push('<button class="cs-btn primary" data-confirm-payment="'+esc(o.id)+'">确认收款并派单</button>');
+      if(o.paymentReview){
+        if(o.companionId){
+          actions.push('<button class="cs-btn primary" data-confirm-payment="'+esc(o.id)+'">确认收款</button>');
+        }else{
+          actions.push('<button class="cs-btn primary" data-confirm-payment="'+esc(o.id)+'" data-send-hall="1">确认收款</button>');
+        }
+        actions.push('<button class="cs-btn danger" data-reject-payment-proof="'+esc(o.id)+'">驳回付款</button>');
       }else{
-        actions.push('<button class="cs-btn primary" data-confirm-payment="'+esc(o.id)+'" data-send-hall="1">确认收款并派单</button>');
+        actions.push('<span class="cs-note">等待老板扫码付款并上传截图</span>');
       }
-      actions.push('<button class="cs-btn danger" data-reject-payment-proof="'+esc(o.id)+'">驳回付款</button>');
     }else if(inGrabHall){
       actions.push('<button class="cs-btn ghost" data-view-grabs="'+esc(o.id)+'">查看抢单人数('+(o.grabCount||0)+')</button>');
       actions.push('<button class="cs-btn primary" data-assign-order="'+esc(o.id)+'">指定陪玩</button>');
@@ -2828,7 +2834,7 @@
       else actions.push('<button class="cs-btn ghost" data-order-detail="'+esc(o.id)+'" data-detail-mode="detail">查看详情</button>');
     }
 
-    var statusLabel=o.paymentReview?'待付款确认':(inGrabHall?'抢单中':(st==='claimed'?'待陪玩确认':(o.statusText||st)));
+    var statusLabel=o.paymentReview?'待人工审核':(inGrabHall?'抢单中':(st==='claimed'?'待陪玩确认':(o.statusText||st)));
     var statusCell=esc(statusLabel)+(o.needsReassign?'<br><small style="color:#f59e0b">'+(esc(o.reassignHint||'待重新安排'))+'</small>':'')+(inGrabHall?'<br><small>抢单 '+(o.grabCount||0)+' 人</small>':'')+(o.preferredCompanionId?'<br><small style="color:#60a5fa">老板意向已提交</small>':'')+proofBlock;
     return '<tr'+(o.needsReassign?' style="background:rgba(245,158,11,.08)"':'')+(inGrabHall?' data-grab-hall="1"':'')+' data-order-status="'+esc(st)+'"><td>'+esc(o.orderNo)+'</td><td>'+esc(sanitizeBossLabel(o.bossName,publicBossCode(o)))+(publicBossCode(o)?'<br><small>'+esc(publicBossCode(o))+'</small>':'')+'</td><td>'+esc(o.companionName||'-')+'</td><td>'+esc(o.game||'-')+'</td><td>'+money(o.totalAmount)+'</td><td>'+statusCell+'</td><td>'+esc(o.createdAt||'-')+'</td><td><div class="cs-actions">'+actions.join('')+'</div></td></tr>';
   }
@@ -3380,7 +3386,7 @@
         });
       }).catch(function(err){
         pay.disabled=false;
-        pay.textContent=oldPayText||'确认收款并派单';
+        pay.textContent=oldPayText||'确认收款';
         toast(err.message||'确认付款失败');
       });
       return;

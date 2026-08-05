@@ -66,7 +66,52 @@
     );
   }
   function isReviewing(order) {
-    return !!(order && (order.paymentReview || /待审核/.test(String(order.paymentStatus || order.statusText || ""))));
+    return !!(
+      order &&
+      (order.paymentReview || /待审核|待人工审核/.test(String(order.paymentStatus || order.statusText || "")))
+    );
+  }
+
+  function qrPanelHtml(order) {
+    var st = String(order.status || "");
+    if (st !== "awaiting_payment") return "";
+    if (isWalletMethod(order)) return "";
+    if (isReviewing(order) && !(proofDraft.file || proofDraft.previewUrl)) return "";
+    var info = order.platformPayInfo || platformPayInfo || null;
+    var html = '<div class="pay-qr" data-pay-qr>';
+    html += "<h2>" + esc((info && info.title) || "OCBC OneCollect DuitNow QR") + "</h2>";
+    html +=
+      '<p class="pay-hint">' +
+      esc(
+        (info && info.instructions) ||
+          "请使用银行 App / DuitNow 扫描下方二维码完成付款。仅本支付页显示，首页不公开收款码。"
+      ) +
+      "</p>";
+    if (info && info.qrUrl) {
+      html +=
+        '<div class="pay-qr-frame"><img src="' +
+        esc(info.qrUrl) +
+        '" alt="平台收款二维码" referrerpolicy="no-referrer"></div>';
+    } else {
+      html +=
+        '<p class="pay-alert" role="status">收款二维码暂未配置，请联系客服获取付款方式，或稍后刷新本页。</p>';
+    }
+    html += '<div class="pay-qr-meta">';
+    if (info && info.receiverName) {
+      html += '<div class="pay-row"><span>收款人</span><strong>' + esc(info.receiverName) + "</strong></div>";
+    }
+    if (info && info.bankName) {
+      html += '<div class="pay-row"><span>银行</span><strong>' + esc(info.bankName) + "</strong></div>";
+    }
+    if (info && info.duitnowId) {
+      html += '<div class="pay-row"><span>DuitNow ID</span><strong>' + esc(info.duitnowId) + "</strong></div>";
+    }
+    html +=
+      '<div class="pay-row"><span>应付金额</span><strong>' +
+      esc(money(order.totalAmount || order.amount)) +
+      "</strong></div>";
+    html += "</div></div>";
+    return html;
   }
   function clearProofDraft(keepTip) {
     if (proofDraft.previewUrl && String(proofDraft.previewUrl).indexOf("blob:") === 0) {
@@ -95,7 +140,7 @@
 
   var STATUS_LABEL = (window.MCJOrderStatus && window.MCJOrderStatus.LABELS) || {
     awaiting_payment: "待付款",
-    payment_review: "待审核",
+    payment_review: "待人工审核",
     pending: "待客服处理",
     claimed: "等待陪玩确认",
     waiting_boss_confirm: "待我确认",
@@ -108,6 +153,8 @@
     refunded: "已退款",
   };
 
+  var platformPayInfo = null;
+
   function canShowTestPay() {
     if (allowTestPay === true) return true;
     if (allowTestPay === false) return false;
@@ -119,9 +166,9 @@
     var reviewing = isReviewing(order);
     if (s === "awaiting_payment" && reviewing) {
       return {
-        title: "待审核",
-        reason: "付款凭证已提交，正在等待审核。",
-        next: "审核通过后订单进入待客服处理；驳回后可重新上传凭证。",
+        title: "待人工审核",
+        reason: "付款凭证已提交，正在等待客服人工审核。",
+        next: "客服确认收款后订单才会进入接单流程；驳回后可重新上传凭证。",
         primary: "orders",
         primaryLabel: "查看我的订单",
         disabledHint: "",
@@ -131,12 +178,12 @@
       var rejectReason = String((order && (order.paymentRejectReason || order.rejectReason)) || "").trim();
       return {
         title: "待付款",
-        reason: rejectReason ? "付款凭证已驳回：" + rejectReason : "订单已创建，尚未完成支付。",
+        reason: rejectReason ? "付款凭证已驳回：" + rejectReason : "订单已创建，状态为待付款。",
         next: isWalletMethod(order || {})
           ? "请使用猫粮余额完成支付，支付成功后订单才会发送给陪玩确认。"
           : rejectReason
-            ? "请重新上传付款截图并提交审核。"
-            : "请上传付款截图并提交审核。",
+            ? "请重新扫码付款并上传截图，点击「我已付款」。"
+            : "请扫描平台收款二维码付款，上传付款截图后点击「我已付款」。",
         primary: "pay",
         primaryLabel: isWalletMethod(order || {}) ? "立即支付" : "前往支付",
         disabledHint: "",
@@ -266,9 +313,9 @@
     var html = '<div class="pay-proof" data-proof-panel>';
     html += "<h2>付款截图</h2>";
     if (reviewing && !hasLocal) {
-      html += '<p class="pay-hint">当前状态：待审核。可删除后重新上传，或进入下一步查看订单。</p>';
+      html += '<p class="pay-hint">当前状态：待人工审核。可删除后重新上传，或进入下一步查看订单。</p>';
     } else {
-      html += '<p class="pay-hint">请上传付款截图：支持 JPG / PNG / WEBP，提交后进入待审核。</p>';
+      html += '<p class="pay-hint">扫码付款后，请上传付款截图（JPG / PNG / WEBP），再点击「我已付款」。</p>';
     }
 
     if (preview) {
@@ -300,7 +347,7 @@
     if (proofDraft.successTip || (reviewing && !proofDraft.error)) {
       html +=
         '<p class="pay-success" role="status">' +
-        esc(proofDraft.successTip || "付款凭证已提交，当前状态：待审核") +
+        esc(proofDraft.successTip || "付款凭证已提交，当前状态：待人工审核") +
         "</p>";
     }
     if (proofDraft.error) {
@@ -315,13 +362,13 @@
         '"' +
         (proofDraft.uploading ? " disabled" : "") +
         ">" +
-        (proofDraft.uploading ? "上传中…" : "下一步：提交审核") +
+        (proofDraft.uploading ? "上传中…" : "我已付款") +
         "</button>";
     } else if (reviewing || proofDraft.uploaded) {
       html +=
         '<a class="pay-btn primary" href="orders.html?filter=payment_review&id=' +
         encodeURIComponent(order.id) +
-        '">下一步：查看待审核订单</a>';
+        '">下一步：查看待人工审核订单</a>';
       html +=
         '<label class="pay-btn">重新上传<input type="file" accept="image/png,image/jpeg,image/webp" data-payment-proof="' +
         esc(order.id) +
@@ -336,7 +383,7 @@
     var st = String(order.status || "");
     var guide = statusGuide(st, order);
     var reviewing = isReviewing(order);
-    var label = reviewing && st === "awaiting_payment" ? "待审核" : STATUS_LABEL[st] || order.statusText || st;
+    var label = reviewing && st === "awaiting_payment" ? "待人工审核" : STATUS_LABEL[st] || order.statusText || st;
     var csHref = "support.html?order=" + encodeURIComponent(order.id);
     var ordersHref = "orders.html?id=" + encodeURIComponent(order.id);
     var actions = '<div class="pay-actions">';
@@ -439,15 +486,16 @@
           ? '<p class="pay-alert">' +
             esc(
               reviewing
-                ? "付款凭证已提交，当前为待审核。审核通过后进入待客服处理。"
+                ? "付款凭证已提交，当前为待人工审核。客服确认收款前不会进入接单流程。"
                 : canShowTestPay()
-                  ? "Preview / 测试环境：可点「测试支付成功（TEST）」真实写入订单状态；正式环境请上传付款截图。"
+                  ? "请扫描下方收款二维码付款并上传截图。Preview / 测试环境另可点「测试支付成功（TEST）」。"
                   : isWalletMethod(order)
                     ? "支付成功后将进入“等待陪玩确认”。"
-                    : "请上传付款截图，提交审核后进入待审核。"
+                    : "请先扫描平台收款二维码付款，再上传截图并点击「我已付款」。"
             ) +
             "</p>"
           : "") +
+        qrPanelHtml(order) +
         proofPanelHtml(order) +
         actions +
         "</section>"
@@ -548,9 +596,11 @@
       proofDraft.uploading = false;
       proofDraft.uploaded = true;
       proofDraft.file = null;
-      proofDraft.successTip = "上传成功！付款凭证已提交，订单进入待审核。";
+      proofDraft.successTip = "上传成功！付款凭证已提交，订单进入待人工审核。";
       var nextOrder = body.order || current;
       nextOrder.paymentReview = true;
+      nextOrder.statusText = "待人工审核";
+      nextOrder.paymentStatus = "待人工审核";
       if (body.order && body.order.paymentProofUrl) {
         nextOrder.paymentProofUrl = body.order.paymentProofUrl;
       } else if (proofDraft.previewUrl) {
@@ -632,12 +682,15 @@
       });
       if (gen !== loadGen) return;
       if (typeof body.allowTestPay === "boolean") allowTestPay = body.allowTestPay;
+      if (body.platformPayInfo) platformPayInfo = body.platformPayInfo;
       if (!res.ok || body.ok === false) throw new Error(body.message || "订单读取失败");
       var order = pickOrder(body.orders, orderId);
       if (!order) {
         failUi("订单不存在，请到「我的订单」查看。");
         return;
       }
+      if (body.platformPayInfo) order.platformPayInfo = body.platformPayInfo;
+      else if (order.platformPayInfo) platformPayInfo = order.platformPayInfo;
       writeCache(orderId, order);
       if (!(proofDraft.uploading || proofDraft.file)) renderOrder(order);
     } catch (err) {

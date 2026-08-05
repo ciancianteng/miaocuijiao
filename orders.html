@@ -78,27 +78,27 @@
       var loadGen=0;
       var pollTimer=null;
       var state={loading:true,error:'',orders:[],filter:(function(){var f=new URLSearchParams(location.search).get('filter')||'all';var ok=['all','awaiting_payment','payment_review','arranging','waiting_companion','boss_confirm','active','completed','after_sale','cancelled'];return ok.indexOf(f)>=0?f:'all'})(),fromCache:false,syncing:false};
-      var tabs=[['all','全部'],['awaiting_payment','待付款'],['payment_review','待审核'],['arranging','待客服处理'],['waiting_companion','等待陪玩确认'],['boss_confirm','等待老板选择'],['active','进行中'],['completed','已完成'],['after_sale','售后'],['cancelled','已取消']];
-      var statusText=(window.MCJOrderStatus&&window.MCJOrderStatus.LABELS)||{awaiting_payment:'待付款',payment_review:'待审核',pending:'待客服处理',claimed:'等待陪玩确认',waiting_boss_confirm:'等待老板选择',confirmed:'进行中',in_progress:'进行中',completed:'已完成',reviewed:'已评价',cancelled:'已取消',refund_requested:'售后',refunded:'已退款'};
+      var tabs=[['all','全部'],['awaiting_payment','待付款'],['payment_review','待人工审核'],['arranging','待客服处理'],['waiting_companion','等待陪玩确认'],['boss_confirm','等待老板选择'],['active','进行中'],['completed','已完成'],['after_sale','售后'],['cancelled','已取消']];
+      var statusText=(window.MCJOrderStatus&&window.MCJOrderStatus.LABELS)||{awaiting_payment:'待付款',payment_review:'待人工审核',pending:'待客服处理',claimed:'等待陪玩确认',waiting_boss_confirm:'等待老板选择',confirmed:'进行中',in_progress:'进行中',completed:'已完成',reviewed:'已评价',cancelled:'已取消',refund_requested:'售后',refunded:'已退款'};
       function token(){return localStorage.getItem('mcjAuthAccessToken')||sessionStorage.getItem('mcjAuthAccessToken')||''}
       function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
       function money(v){if(window.MCJCurrency)return window.MCJCurrency.formatPlain(v);var n=Number(v||0);return (Number.isFinite(n)?n:0).toFixed(2).replace(/\.00$/,'')+' 猫粮'}
       function moneyEmoji(v){if(window.MCJCurrency)return window.MCJCurrency.formatAmount(v);return '🐱 '+money(v)}
       function date(v){if(!v)return '-';try{return new Date(v).toLocaleString('zh-CN',{hour12:false})}catch(e){return v}}
-      function isPaymentReview(o){return !!(o&&(o.paymentReview||o.paymentStatus==='待审核'||/待审核/.test(String(o.statusText||o.paymentStatus||''))))}
+      function isPaymentReview(o){return !!(o&&(o.paymentReview||o.paymentStatus==='待审核'||o.paymentStatus==='待人工审核'||/待审核|待人工审核/.test(String(o.statusText||o.paymentStatus||''))))}
       function orderLabel(o){
         if(o.reviewed||o.status==='reviewed')return '已评价';
         if(o.status==='in_progress'&&o.completionPending)return '陪玩已完成，待确认';
-        if(isPaymentReview(o)&&o.status==='awaiting_payment')return '待审核';
+        if(isPaymentReview(o)&&o.status==='awaiting_payment')return '待人工审核';
         return o.statusText||statusText[o.status]||o.status||'-';
       }
       function canReview(o){return !!(o.canReview||(o.status==='completed'&&!o.reviewed&&(o.companionId||(o.companion&&o.companion.id))))}
       function statusReason(o){
         var s=String(o.status||'');
-        if(isPaymentReview(o)&&s==='awaiting_payment')return '付款凭证已提交，等待审核。';
+        if(isPaymentReview(o)&&s==='awaiting_payment')return '付款凭证已提交，等待人工审核。';
         if(o.paymentRejectReason&&s==='awaiting_payment')return '付款凭证已驳回：'+String(o.paymentRejectReason)+'。请重新上传。';
         if(o.bossHint)return o.bossHint;
-        if(s==='awaiting_payment')return '待付款：请先完成支付并上传付款截图';
+        if(s==='awaiting_payment')return '待付款：请先扫码付款并上传付款截图';
         if(s==='pending')return '待客服处理：付款已确认，等待客服派单或开放抢单';
         if(s==='waiting_boss_confirm')return '等待老板选择：有陪玩抢单，请选择其中一位';
         if(s==='confirmed')return '进行中：陪玩已确认接单';
@@ -141,7 +141,7 @@
         return ['awaiting_payment','pending','claimed','waiting_boss_confirm','confirmed'].indexOf(s)>=0;
       }
       function timelineHtml(o){
-        var steps=['待付款','待审核','待客服处理','等待陪玩确认','进行中','已完成'];
+        var steps=['待付款','待人工审核','待客服处理','等待陪玩确认','进行中','已完成'];
         var s=String(o.status||'');
         var idx=-1;
         if(s==='awaiting_payment'&&isPaymentReview(o))idx=1;
@@ -252,9 +252,9 @@
       function statusPanelInner(o,openReview){
         var html='';
         if(o.status==='awaiting_payment'&&isPaymentReview(o)){
-          html='<div class="status-panel"><p>付款状态：待审核</p><p>订单金额：'+moneyEmoji(o.totalAmount||o.amount)+'</p><p class="order-hint">付款凭证已提交，等待审核通过后进入待客服处理。</p><div class="status-actions"><a class="order-btn primary" href="payment-confirm.html?order='+encodeURIComponent(o.id)+'">查看/重新上传凭证</a><a class="order-btn" href="support.html?order='+encodeURIComponent(o.id)+'">联系客服</a></div></div>';
+          html='<div class="status-panel"><p>付款状态：待人工审核</p><p>订单金额：'+moneyEmoji(o.totalAmount||o.amount)+'</p><p class="order-hint">付款凭证已提交，等待客服确认收款后才会进入接单流程。</p><div class="status-actions"><a class="order-btn primary" href="payment-confirm.html?order='+encodeURIComponent(o.id)+'">查看/重新上传凭证</a><a class="order-btn" href="support.html?order='+encodeURIComponent(o.id)+'">联系客服</a></div></div>';
         }else if(o.status==='awaiting_payment'){
-          html='<div class="status-panel"><p>订单金额：'+moneyEmoji(o.totalAmount||o.amount)+'</p><p>支付方式：'+esc(o.paymentMethod||o.payment_method||'待确认')+'</p><p class="order-hint">下一步：完成支付并上传付款截图，提交后进入“待审核”</p><div class="status-actions"><a class="order-btn primary" href="payment-confirm.html?order='+encodeURIComponent(o.id)+'">立即去支付</a></div></div>';
+          html='<div class="status-panel"><p>订单金额：'+moneyEmoji(o.totalAmount||o.amount)+'</p><p>支付方式：'+esc(o.paymentMethod||o.payment_method||'待确认')+'</p><p class="order-hint">下一步：进入支付页扫码付款并上传截图，点击「我已付款」后进入“待人工审核”</p><div class="status-actions"><a class="order-btn primary" href="payment-confirm.html?order='+encodeURIComponent(o.id)+'">立即去支付</a></div></div>';
         }else if(o.status==='claimed'){
           html='<div class="status-panel"><p>付款状态：已付款</p><p>接单状态：等待陪玩确认</p><p>陪玩：'+esc(companionName(o))+'</p><p class="order-hint">订单已支付，正在等待陪玩确认接单</p></div>';
         }else if(o.status==='pending'){

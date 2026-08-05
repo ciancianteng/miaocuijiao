@@ -17,6 +17,7 @@ import { evaluatePublishGate } from "./_companion-publish-gate.js";
 import { allocateOrderNo, resolveOrderPublicNo } from "./_account-codes.js";
 import { companionDb } from "./_companion-media-store.js";
 import { listPendingForCs, latestRejectedForOrders, signedProofUrl, uploadProof } from "./_payment-receipts.js";
+import { loadPlatformPayQr } from "./_platform-pay-qr.js";
 
 loadLocalEnv();
 
@@ -305,7 +306,7 @@ function bossHint(row = {}) {
   const note = String(row.note || row.cancel_reason || "");
   if (status === "awaiting_payment") {
     // Source of truth: pending payment_receipts row (not leftover note markers).
-    if (row.paymentReceipt) return "付款凭证已提交，等待审核。";
+    if (row.paymentReceipt) return "付款凭证已提交，等待人工审核。";
     if (row.paymentRejectReason) return `付款凭证已驳回：${row.paymentRejectReason}。请重新上传。`;
     return "请尽快完成付款并上传凭证。";
   }
@@ -320,7 +321,7 @@ function bossHint(row = {}) {
 function paymentStatusLabel(row = {}) {
   const s = row.status || "";
   if (s === "awaiting_payment") {
-    return row.paymentReceipt ? "待审核" : "待付款";
+    return row.paymentReceipt ? "待人工审核" : "待付款";
   }
   if (s === "cancelled") return "已取消";
   return "已付款";
@@ -380,10 +381,10 @@ function viewOrder(row = {}) {
       completed: "completed",
       cancelled: "cancelled",
     }[status] || status);
-  // Pending receipt only — leftover [[PAYMENT_PROOF]] notes must not keep 待审核 after reject.
+  // Pending receipt only — leftover [[PAYMENT_PROOF]] notes must not keep 待人工审核 after reject.
   const paymentReview = status === "awaiting_payment" && !!row.paymentReceipt;
   if (paymentReview && status === "awaiting_payment") {
-    statusText = "待审核";
+    statusText = "待人工审核";
   } else if (status === "awaiting_payment" && row.paymentRejectReason) {
     statusText = "待付款";
   }
@@ -428,6 +429,8 @@ function viewOrder(row = {}) {
     paymentProofUrl: row.paymentProofUrl || "",
     paymentRejectReason: row.paymentRejectReason || "",
     paymentReviewedAt: row.paymentReviewedAt || "",
+    paymentReviewedByName: row.paymentReviewedByName || "",
+    paidAt: row.paid_at || row.paidAt || "",
     bossHint: bossHint(row),
     cancelReason: row.cancel_reason || "",
     note: row.note || "",
@@ -753,10 +756,29 @@ export default async function handler(req, res) {
           fridayRefundNo: r.refundNo,
         };
       });
+      let platformPayInfo = null;
+      const singleId = String(req.query.id || "").trim();
+      if (singleId) {
+        const target = enriched.find((o) => String(o.id) === singleId || String(o.orderNo || o.order_no || "") === singleId);
+        if (target && String(target.status || "") === "awaiting_payment" && !isWalletMethod(target.paymentMethod || target.payment_method)) {
+          try {
+            platformPayInfo = await loadPlatformPayQr();
+          } catch (err) {
+            console.warn("[orders] platformPayInfo", String(err?.message || err).slice(0, 160));
+            platformPayInfo = null;
+          }
+        }
+      }
       return json(res, 200, {
         ok: true,
         configured: true,
-        orders: enriched,
+        orders: enriched.map((o) =>
+          platformPayInfo &&
+          (String(o.id) === singleId || String(o.orderNo || o.order_no || "") === singleId)
+            ? { ...o, platformPayInfo }
+            : o
+        ),
+        platformPayInfo,
         statusText: STATUS_TEXT,
         identity: profile._identity || null,
         allowTestPay: allowPreviewTestPay({
@@ -1047,16 +1069,18 @@ export default async function handler(req, res) {
         console.warn("[submit_payment_proof] note patch", String(err?.message || err).slice(0, 160));
         saved = { ...before, note, description, paymentReceipt: result.receipt };
       }
-      await addSystemMessage(saved, profile.id, "老板已上传付款凭证，等待客服审核。").catch(() => {});
+      await addSystemMessage(saved, profile.id, "老板已上传付款凭证，等待人工审核。").catch(() => {});
       const proofUrl = await signedProofUrl(result.receipt).catch(() => "");
       return json(res, 200, {
         ok: true,
-        message: "付款凭证已提交，等待审核。",
+        message: "付款凭证已提交，等待人工审核。",
         receipt: { id: result.receipt?.id, receiptNo: result.receipt?.receipt_no },
         order: {
           ...viewOrder({ ...saved, paymentReceipt: result.receipt, paymentProofUrl: proofUrl || "" }),
           paymentReview: true,
           paymentProofUrl: proofUrl || result.receipt?.storage_path || "",
+          statusText: "待人工审核",
+          paymentStatus: "待人工审核",
         },
       });
     }

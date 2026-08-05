@@ -405,7 +405,7 @@ function safeOrder(row, profiles = {}, extras = {}) {
         assignment === "open" ||
         assignment === "open_grab" ||
         (!assignment && !row.companion_id);
-      if (row.status === "awaiting_payment" && extras.paymentReceipt) return "待审核";
+      if (row.status === "awaiting_payment" && extras.paymentReceipt) return "待人工审核";
       if (row.status === "claimed") return "待陪玩确认";
       if ((row.status === "pending" || row.status === "waiting_boss_confirm") && isPublic && !row.companion_id) {
         return gc > 0 ? `抢单中（${gc}人）` : "抢单中";
@@ -422,6 +422,7 @@ function safeOrder(row, profiles = {}, extras = {}) {
     paymentRejectReason: extras.paymentRejectReason || "",
     paymentReviewedByName: extras.paymentReviewedByName || "",
     paymentReviewedAt: extras.paymentReviewedAt || "",
+    paidAt: row.paid_at || extras.paidAt || "",
     cancelReason: row.cancel_reason || "",
     needsReassign,
     reassignHint: needsReassign
@@ -3159,36 +3160,22 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
             `?order_id=eq.${encodeURIComponent(order.id)}&payment_status=eq.paid&limit=1`
           ).catch(() => [])
         )?.[0] || null;
-      // A submitted manual proof represents an off-wallet payment. Existing CS-only confirmation
-      // retains its legacy wallet debit behavior for orders without a receipt.
+      // Manual order flow: boss must upload payment screenshot before CS can confirm / dispatch.
+      // Do not debit wallet or enter grab/assign until proof is approved.
+      if (!pendingReceipt && !existingManualPayment) {
+        return json(res, 400, {
+          ok: false,
+          message: "老板尚未上传付款截图。请等待付款凭证进入「待人工审核」后再确认收款。",
+          code: "PAYMENT_PROOF_REQUIRED",
+        });
+      }
+      // A submitted manual proof represents an off-wallet payment.
       let walletSkipped = false;
       if (pendingReceipt) {
         await approveAndLedger({ order, receipt: pendingReceipt, reviewerId: service.profile.id });
         walletSkipped = true;
       } else if (existingManualPayment) {
         walletSkipped = true;
-      } else {
-        try {
-          const walletApi = await import("./_wallet.js");
-          await walletApi.debitWallet({
-            bossId: order.boss_id,
-            amount,
-            transactionType: "order_payment",
-            idempotencyKey: `order-pay:${order.order_no || order.id}`,
-            reason: `客服确认付款 ${order.order_no || order.id}`,
-            relatedOrderId: order.id,
-            operatorId: service.profile.id,
-          });
-        } catch (e) {
-          const msg = String(e?.message || e || "");
-          if (/insufficient|余额不足|not enough/i.test(msg)) {
-            walletSkipped = true;
-          } else if (/idempotency|duplicate|already/i.test(msg)) {
-            /* already debited — continue to status transition */
-          } else {
-            return json(res, e.status || 400, { ok: false, message: msg || "扣款失败，未确认付款。" });
-          }
-        }
       }
 
       /* A 指定陪玩 → claimed（待陪玩确认，永不进大厅）；B 公开抢单 → pending + listing */

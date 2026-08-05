@@ -5,7 +5,7 @@
 (function (global) {
   var LABELS = {
     awaiting_payment: "待付款",
-    payment_review: "待审核",
+    payment_review: "待人工审核",
     pending: "待客服处理",
     waiting_boss_confirm: "等待老板选择",
     claimed: "等待陪玩确认",

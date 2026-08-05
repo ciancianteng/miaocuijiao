@@ -19,7 +19,7 @@ export const ORDER_STATUSES = Object.freeze({
 /** Boss / shared Chinese labels (tabs + cards). Unified CN vocabulary. */
 export const ORDER_STATUS_LABELS = Object.freeze({
   awaiting_payment: "待付款",
-  payment_review: "待审核", // view-layer only (awaiting_payment + proof submitted)
+  payment_review: "待人工审核", // view-layer only (awaiting_payment + proof submitted)
   pending: "待客服处理",
   waiting_boss_confirm: "等待老板选择",
   claimed: "等待陪玩确认",
@@ -58,14 +58,14 @@ export function bossFacingStatusText(row = {}, grabCountOverride) {
   if (status === "awaiting_payment") {
     // Prefer explicit pending-receipt flag from API; fall back to legacy note markers only
     // when paymentReview/paymentReceipt is not provided (older clients).
-    if (row.paymentReceipt || row.paymentReview === true) return "待审核";
+    if (row.paymentReceipt || row.paymentReview === true) return "待人工审核";
     if (row.paymentReview === false || row.paymentRejectReason) return "待付款";
     if (
       row.payment_proof_url ||
       row.paymentProofUrl ||
       /\[\[PAYMENT_PROOF\]\]|\[\[PAYMENT_SUBMITTED\]\]|付款凭证|已上传付款/i.test(note)
     ) {
-      return "待审核";
+      return "待人工审核";
     }
     return "待付款";
   }
