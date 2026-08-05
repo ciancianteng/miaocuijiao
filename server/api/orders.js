@@ -305,7 +305,9 @@ function bossHint(row = {}) {
   const note = String(row.note || row.cancel_reason || "");
   if (status === "awaiting_payment") {
     if (
+      row.paymentReceipt ||
       row.payment_proof_url ||
+      row.paymentProofUrl ||
       /\[\[PAYMENT_PROOF\]\]|\[\[PAYMENT_SUBMITTED\]\]/i.test(String(row.note || row.description || ""))
     ) {
       return "付款凭证已提交，等待审核。";
@@ -324,7 +326,14 @@ function paymentStatusLabel(row = {}) {
   const s = row.status || "";
   if (s === "awaiting_payment") {
     const note = String(row.note || row.description || "");
-    if (row.payment_proof_url || /\[\[PAYMENT_PROOF\]\]|\[\[PAYMENT_SUBMITTED\]\]/i.test(note)) return "待审核";
+    if (
+      row.paymentReceipt ||
+      row.payment_proof_url ||
+      row.paymentProofUrl ||
+      /\[\[PAYMENT_PROOF\]\]|\[\[PAYMENT_SUBMITTED\]\]/i.test(note)
+    ) {
+      return "待审核";
+    }
     return "待付款";
   }
   if (s === "cancelled") return "已取消";
@@ -387,7 +396,15 @@ function viewOrder(row = {}) {
     }[status] || status);
   const paymentReview =
     status === "awaiting_payment" &&
-    !!(row.payment_proof_url || /\[\[PAYMENT_PROOF\]\]|\[\[PAYMENT_SUBMITTED\]\]/i.test(String(row.note || row.description || "")));
+    !!(
+      row.paymentReceipt ||
+      row.payment_proof_url ||
+      row.paymentProofUrl ||
+      /\[\[PAYMENT_PROOF\]\]|\[\[PAYMENT_SUBMITTED\]\]/i.test(String(row.note || row.description || ""))
+    );
+  if (paymentReview && status === "awaiting_payment") {
+    statusText = "待审核";
+  }
   return {
     id: row.id,
     orderNo: row.order_no || row.id,
@@ -565,20 +582,19 @@ async function loadOrders(profile, id = "") {
 
   // Parallelize grab enrichment so list GET stays under Preview cold-start budgets.
   const grabLists = await Promise.all(orders.map((row) => grabsFor(row)));
+  let receiptByOrder = {};
   let proofUrlByOrder = {};
-  const reviewOrders = orders.filter(
-    (row) =>
-      row.status === "awaiting_payment" &&
-      /\[\[PAYMENT_PROOF\]\]|\[\[PAYMENT_SUBMITTED\]\]/i.test(String(row.note || row.description || ""))
-  );
-  if (reviewOrders.length) {
+  const awaitingIds = orders.filter((row) => row.status === "awaiting_payment").map((row) => row.id).filter(Boolean);
+  if (awaitingIds.length) {
     try {
-      const receipts = await listPendingForCs({ orderIds: reviewOrders.map((r) => r.id) });
+      const receipts = await listPendingForCs({ orderIds: awaitingIds });
+      receiptByOrder = Object.fromEntries((receipts || []).map((receipt) => [receipt.order_id, receipt]));
       const pairs = await Promise.all(
         (receipts || []).map(async (receipt) => [receipt.order_id, (await signedProofUrl(receipt).catch(() => "")) || ""])
       );
       proofUrlByOrder = Object.fromEntries(pairs);
     } catch {
+      receiptByOrder = {};
       proofUrlByOrder = {};
     }
   }
@@ -586,6 +602,7 @@ async function loadOrders(profile, id = "") {
     const rev = reviewByOrder[row.id];
     const grabs = grabLists[index] || [];
     const intent = parseBossIntent(row);
+    const receipt = receiptByOrder[row.id] || null;
     const viewed = viewOrder({
       ...row,
       grabs,
@@ -598,6 +615,8 @@ async function loadOrders(profile, id = "") {
       review_id: rev?.id || "",
       review_rating: rev?.rating,
       review_content: rev?.content || "",
+      paymentReceipt: receipt,
+      paymentProofUrl: proofUrlByOrder[row.id] || "",
     });
     if (proofUrlByOrder[row.id]) viewed.paymentProofUrl = proofUrlByOrder[row.id];
     return viewed;
@@ -1015,21 +1034,28 @@ export default async function handler(req, res) {
       });
       const marker = `[[PAYMENT_PROOF]] bucket=${result.receipt?.storage_bucket || "companion-payment-proofs"} path=${result.receipt?.storage_path || ""}`;
       let saved = before;
-      if (!result.duplicate) {
-        const note = `${String(before.note || "").replace(/\[\[PAYMENT_PROOF\]\][^\n]*/g, "").trim()}\n${marker}`.trim();
+      const note = `${String(before.note || "").replace(/\[\[PAYMENT_PROOF\]\][^\n]*/g, "").trim()}\n${marker}`.trim();
+      const description = `${String(before.description || "").replace(/\[\[PAYMENT_PROOF\]\][^\n]*/g, "").trim()}\n${marker}`.trim();
+      try {
         const rows = await supabaseJson(restUrl(TABLE, `?id=eq.${encodeURIComponent(before.id)}&boss_id=eq.${encodeURIComponent(profile.id)}`), {
-          method: "PATCH", headers: serviceHeaders(), body: JSON.stringify({ note }),
+          method: "PATCH",
+          headers: serviceHeaders(),
+          body: JSON.stringify({ note, description }),
         });
-        saved = rows?.[0] || { ...before, note };
-        await addSystemMessage(saved, profile.id, "老板已上传付款凭证，等待客服审核。").catch(() => {});
+        saved = rows?.[0] || { ...before, note, description };
+      } catch (err) {
+        // note/description columns may be unavailable — receipt row remains source of truth.
+        console.warn("[submit_payment_proof] note patch", String(err?.message || err).slice(0, 160));
+        saved = { ...before, note, description, paymentReceipt: result.receipt };
       }
+      await addSystemMessage(saved, profile.id, "老板已上传付款凭证，等待客服审核。").catch(() => {});
       const proofUrl = await signedProofUrl(result.receipt).catch(() => "");
       return json(res, 200, {
         ok: true,
         message: "付款凭证已提交，等待审核。",
         receipt: { id: result.receipt?.id, receiptNo: result.receipt?.receipt_no },
         order: {
-          ...viewOrder(saved),
+          ...viewOrder({ ...saved, paymentReceipt: result.receipt, paymentProofUrl: proofUrl || "" }),
           paymentReview: true,
           paymentProofUrl: proofUrl || result.receipt?.storage_path || "",
         },

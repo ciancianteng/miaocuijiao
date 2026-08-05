@@ -57,6 +57,7 @@ export function bossFacingStatusText(row = {}, grabCountOverride) {
         : Number(row.grabCount != null ? row.grabCount : row.grab_count || 0) || 0;
   if (status === "awaiting_payment") {
     if (
+      row.paymentReceipt ||
       row.payment_proof_url ||
       row.paymentProofUrl ||
       /\[\[PAYMENT_PROOF\]\]|\[\[PAYMENT_SUBMITTED\]\]|付款凭证|已上传付款/i.test(note)
