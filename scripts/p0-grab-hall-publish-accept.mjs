@@ -60,9 +60,11 @@ async function login(role, email) {
   const token =
     res.session?.accessToken ||
     res.session?.access_token ||
+    res.session?.token ||
     res.accessToken ||
     res.token ||
     res.data?.session?.accessToken ||
+    res.data?.session?.token ||
     "";
   if (!token) throw new Error(`login missing token for ${role}`);
   return { token, session: res.session || res };
@@ -184,6 +186,60 @@ async function main() {
     { "x-mcj-service-token": cs.token }
   );
   ok("grab count >= 1", Number(grabs.grabCount || grabs.grabs?.length || 0) >= 1, String(grabs.grabCount || grabs.grabs?.length || 0));
+
+  const companionId =
+    companion.session?.user?.id ||
+    grab.grab?.companionId ||
+    grabs.grabs?.[0]?.companionId ||
+    "";
+  ok("resolved companion id for assign", !!companionId, companionId);
+
+  const assign = await api(
+    "/api/customer-service",
+    cs.token,
+    { action: "confirm_grab_assignment", id: oid, companion_id: companionId, from_grabs: true },
+    { "x-mcj-service-token": cs.token }
+  );
+  ok(
+    "CS assign from grabs → claimed",
+    assign.order?.status === "claimed" && String(assign.order?.companionId || "") === String(companionId),
+    `${assign.order?.status} / ${assign.order?.companionId || assign.message}`
+  );
+
+  const hallAfter = await fetch(`${BASE}/api/companion?action=bootstrap`, {
+    headers: {
+      Accept: "application/json",
+      Authorization: `Bearer ${companion.token}`,
+      "x-mcj-access-token": companion.token,
+    },
+  }).then((r) => r.json());
+  const openAfter = hallAfter.data?.openOrders || hallAfter.openOrders || [];
+  const stillOpen = openAfter.find((o) => o.id === oid || o.orderId === oid);
+  ok(
+    "order left open grab hall (or settled)",
+    !stillOpen || stillOpen.canGrab === false || stillOpen.hallState === "settled",
+    stillOpen ? `${stillOpen.hallState}/${stillOpen.canGrab}` : "removed"
+  );
+
+  const myOrders = hallAfter.data?.myOrders || hallAfter.myOrders || [];
+  const mine = myOrders.find((o) => o.id === oid || o.orderId === oid);
+  ok(
+    "selected companion has 待确认 order",
+    !!mine && (mine.status === "claimed" || mine.isDesignatedConfirm || /待.*确认|待陪玩/.test(String(mine.statusText || ""))),
+    mine ? `${mine.status}/${mine.statusText || ""}` : "missing in myOrders"
+  );
+
+  const grabAgain = await api(
+    "/api/companion",
+    companion.token,
+    { action: "accept_order", id: oid },
+    { "x-mcj-access-token": companion.token }
+  ).catch((err) => ({ ok: false, message: err.message }));
+  ok(
+    "cannot re-grab after assign",
+    grabAgain.ok === false || /不能|已|无法|不在|已指定|已结/.test(String(grabAgain.message || "")) || grabAgain.already === true,
+    grabAgain.message || "blocked"
+  );
 
   const failed = results.filter((r) => !r.pass);
   console.log(`\n${results.length - failed.length}/${results.length} passed`);

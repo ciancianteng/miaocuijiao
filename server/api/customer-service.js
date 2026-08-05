@@ -3121,7 +3121,9 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       const order = await orderById(String(body.id || body.order_id || ""));
       const companion = await resolveCompanion(String(body.companion_id || body.companionId || body.companion_uid || ""));
       if (!order || !companion || !isUuid(companion.id)) return json(res, 400, { ok: false, message: "订单或陪玩不存在。" });
-      // BOSS_PICK_LOCK: CS must not pick for public grabs or re-assign after boss bind.
+      // BOSS_PICK_LOCK: once companion is formally bound (claimed+), CS cannot steal/reassign.
+      // Public grab hall (pending / waiting_boss_confirm): CS MAY confirm from grab list
+      // (confirm_grab_assignment / from_grabs) — required for 查看抢单人 → 指定陪玩.
       {
         const st = String(order.status || "");
         const hasCompanion = !!String(order.companion_id || "").trim();
@@ -3131,25 +3133,6 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
             code: "BOSS_PICK_LOCK",
             message: "老板已选定陪玩，客服不可再次指定。如需更换，请等陪玩拒单或走售后。",
           });
-        }
-        if (st === "waiting_boss_confirm") {
-          return json(res, 409, {
-            ok: false,
-            code: "BOSS_MUST_PICK",
-            message: "公开抢单请由老板从抢单列表中选择陪玩，客服不可代选。",
-          });
-        }
-        if (st === "pending") {
-          const { createOrderGrabHelpers } = await import("./_order-grabs.js");
-          const grabsApi = createOrderGrabHelpers({ restUrl, supabaseJson, serviceHeaders });
-          const grabs = await grabsApi.listGrabs(order.id, order.note || order.description || "");
-          if (grabs.length) {
-            return json(res, 409, {
-              ok: false,
-              code: "BOSS_MUST_PICK",
-              message: "已有陪玩抢单，请等待老板选择。客服不可代选公开单陪玩。",
-            });
-          }
         }
       }
       const companionId = companion.id;

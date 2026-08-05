@@ -2704,7 +2704,6 @@
       }
     }
     var bossLocked=!!(o.companionId&&(o.status==='claimed'||o.status==='confirmed'||o.status==='in_progress'));
-    var bossMustPick=o.status==='waiting_boss_confirm'||(o.status==='pending'&&(o.grabCount||0)>0);
     var inGrabHall=isPublicHall&&(o.status==='pending'||o.status==='waiting_boss_confirm')&&!o.companionId;
     if(o.status==='claimed'){
       actions.push('<button class="cs-btn" data-status-order="'+esc(o.id)+'">查看订单</button>');
@@ -2712,13 +2711,11 @@
       actions.push('<button class="cs-btn" data-refund-order="'+esc(o.id)+'">取消订单</button>');
     }else if(inGrabHall){
       actions.push('<button class="cs-btn" data-view-grabs="'+esc(o.id)+'">查看抢单人('+(o.grabCount||0)+')</button>');
-      if(!bossMustPick)actions.push('<button class="cs-btn" data-assign-order="'+esc(o.id)+'">指定陪玩</button>');
-      else actions.push('<span class="cs-note">等待老板选择陪玩</span>');
+      actions.push('<button class="cs-btn" data-assign-order="'+esc(o.id)+'">指定陪玩</button>');
       actions.push('<button class="cs-btn" data-cancel-grab-hall="'+esc(o.id)+'">取消抢单</button>');
     }else{
       if(o.needsReassign&&!bossLocked)actions.push('<button class="cs-btn primary" data-assign-order="'+esc(o.id)+'">更换陪玩</button>');
-      else if(!bossLocked&&!bossMustPick&&(o.status==='pending'||o.status==='awaiting_payment'))actions.push('<button class="cs-btn" data-assign-order="'+esc(o.id)+'">指定陪玩</button>');
-      else if(bossMustPick)actions.push('<span class="cs-note">等待老板选择陪玩</span>');
+      else if(!bossLocked&&(o.status==='pending'||o.status==='awaiting_payment'||o.status==='waiting_boss_confirm'))actions.push('<button class="cs-btn" data-assign-order="'+esc(o.id)+'">指定陪玩</button>');
       else if(bossLocked)actions.push('<span class="cs-note">负责人陪玩已锁定</span>');
       if((o.grabCount||0)>0||o.status==='waiting_boss_confirm'||o.status==='pending')actions.push('<button class="cs-btn" data-view-grabs="'+esc(o.id)+'">查看抢单人('+(o.grabCount||0)+')</button>');
     }
@@ -3272,11 +3269,12 @@
         (c.voiceUrl?'<p style="margin:4px 0 0"><a href="'+esc(c.voiceUrl)+'" target="_blank" rel="noopener">试听录音</a></p>':'')+
         '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">'+
         '<a class="cs-btn" href="'+esc(c.detailUrl||('/profile.html?player='+encodeURIComponent(c.id||'')))+'" target="_blank" rel="noopener">查看详情</a>'+
+        '<button class="cs-btn primary" type="button" data-confirm-assign="'+esc(id)+'" data-companion-id="'+esc(g.companionId||c.id||'')+'">指定此陪玩</button>'+
         '<button class="cs-btn" type="button" data-push-to-boss="'+esc(id)+'" data-companion-id="'+esc(g.companionId||c.id||'')+'">推送给老板</button>'+
         '</div></div></div></article>';
     }
     var grabBlock=grabs.length
-      ?('<div><h4 style="margin:0 0 8px">已抢单陪玩（'+grabs.length+'）</h4><p class="cs-note">公开抢单由老板选择陪玩，客服可推送名片，不可代选。</p>'+grabs.map(grabCard).join('')+'</div>')
+      ?('<div><h4 style="margin:0 0 8px">已抢单陪玩（'+grabs.length+'）</h4><p class="cs-note">可从抢单人中指定；指定后订单离开抢单大厅，进入待陪玩确认。</p>'+grabs.map(grabCard).join('')+'</div>')
       :'<p class="cs-composer-hint">暂无抢单记录。可先刷新，或从下方全量列表指定（开放抢单订单建议只从抢单人中选）。</p>';
     var cs=(state.data&&state.data.companions)||[];
     var optsList=cs.length?cs.map(function(p){return '<option value="'+esc(p.id)+'">'+esc(p.name)+(p.companionCode||p.publicId?(' / '+(p.companionCode||p.publicId)):'')+' / '+esc(p.game||'-')+'</option>'}).join(''):'<option value="">暂无陪玩，请手动输入 UID</option>';
@@ -3317,10 +3315,11 @@
           '<p style="margin:4px 0 0;font-size:12px">标签：'+esc(c.tags||'-')+'</p>'+
           '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">'+
           '<a class="cs-btn" href="'+esc(c.detailUrl||('/profile.html?player='+encodeURIComponent(c.id||'')))+'" target="_blank" rel="noopener">资料详情</a>'+
-          '<button class="cs-btn primary" type="button" data-push-to-boss="'+esc(id)+'" data-companion-id="'+esc(g.companionId||c.id||'')+'">推送给老板</button>'+
+          '<button class="cs-btn primary" type="button" data-confirm-assign="'+esc(id)+'" data-companion-id="'+esc(g.companionId||c.id||'')+'">指定此陪玩</button>'+
+          '<button class="cs-btn" type="button" data-push-to-boss="'+esc(id)+'" data-companion-id="'+esc(g.companionId||c.id||'')+'">推送给老板</button>'+
           '</div></div></div>';
       }).join(''):'<p>暂无抢单人</p>';
-      modal('<div class="cs-dialog-head"><h3>抢单人列表</h3><button class="cs-btn" type="button" data-close-modal>关闭</button></div>'+(intent?'<p>老板意向：'+esc(intent.companionName||intent.companionId)+'</p>':'')+'<p class="cs-note">公开抢单由老板选择陪玩，客服仅可查看。</p>'+html);
+      modal('<div class="cs-dialog-head"><h3>抢单人列表</h3><button class="cs-btn" type="button" data-close-modal>关闭</button></div>'+(intent?'<p>老板意向：'+esc(intent.companionName||intent.companionId)+'</p>':'')+'<p class="cs-note">可查看抢单人资料并指定；指定后订单离开抢单大厅。</p>'+html);
     }).catch(function(err){toast(err.message||'加载失败')});
   }
   function openStatus(id){
@@ -3369,7 +3368,21 @@
     }
     var confirmAssign=e.target.closest('[data-confirm-assign]');
     if(confirmAssign){
-      toast('公开抢单请由老板选择陪玩，客服可推送名片，不可代选。');
+      var orderId=confirmAssign.dataset.confirmAssign;
+      var companionId=confirmAssign.dataset.companionId;
+      if(!orderId||!companionId){toast('缺少订单或陪玩');return;}
+      if(!confirm('确定指定该抢单陪玩？\n\n指定后订单离开抢单大厅，进入待陪玩确认；其他陪玩将无法再抢。'))return;
+      confirmAssign.disabled=true;
+      confirmAssign.textContent='指定中…';
+      api('confirm_grab_assignment',{id:orderId,companion_id:companionId,from_grabs:true}).then(function(res){
+        toast(res.message||'指定成功，订单已进入待陪玩确认');
+        var modalEl=confirmAssign.closest('.cs-modal');if(modalEl)modalEl.remove();
+        return softRefresh();
+      }).catch(function(err){
+        confirmAssign.disabled=false;
+        confirmAssign.textContent='指定此陪玩';
+        toast(err.message||'指定失败');
+      });
       return;
     }
     var a=e.target.closest('[data-do-assign]');if(a){
@@ -3381,7 +3394,10 @@
     if(!val){if(hint)hint.textContent='请选择或输入陪玩';toast('请选择或输入陪玩');return;}
     if(!confirm('确定指定该陪玩？\n\n指定后，其他抢单陪玩将无法再接此订单。'))return;
     state.assignBusy=true;a.disabled=true;a.textContent='保存中…';if(hint)hint.textContent='正在指定陪玩…';
-    api('assign_companion',{id:a.dataset.doAssign,companion_id:val,from_grabs:false}).then(function(res){
+    var order=((state.data&&state.data.orders)||[]).find(function(o){return o.id===a.dataset.doAssign})||{};
+    var grabs=order.grabs||[];
+    var fromGrabs=grabs.some(function(g){return String(g.companionId||'')===String(val);}) || order.status==='pending' || order.status==='waiting_boss_confirm';
+    api(fromGrabs?'confirm_grab_assignment':'assign_companion',{id:a.dataset.doAssign,companion_id:val,from_grabs:!!fromGrabs}).then(function(res){
       toast(res.message||'指定成功');
       var modalEl=a.closest('.cs-modal');if(modalEl)modalEl.remove();
       state.assignBusy=false;
