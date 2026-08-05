@@ -103,11 +103,15 @@ const tinyPng =
   step("cs login", !!(csLogin.json?.ok && csToken), `ok=${csLogin.json?.ok}`);
 
   const companions = await api("/api/public/companions", null, null, "GET");
+  const list = companions.json?.companions || [];
   const comp =
-    (companions.json?.companions || []).find((c) => /TEST|验收|final/i.test(String(c.name || ""))) ||
-    (companions.json?.companions || [])[0];
-  step("pick companion", !!comp?.id, `id=${comp?.id} name=${comp?.name}`);
+    list.find((c) => c.canOrderNow === true && Number(c.priceValue || c.price || 0) > 0) ||
+    list.find((c) => /在线可接单/.test(String(c.onlineStatus || c.availabilityText || "")) && Number(c.priceValue || c.price || 0) > 0) ||
+    list.find((c) => Number(c.priceValue || c.price || 0) > 0 && c.online === true) ||
+    list[0];
+  step("pick companion", !!comp?.id, `id=${comp?.id} name=${comp?.name} online=${comp?.onlineStatus || comp?.status || ""} canOrder=${comp?.canOrderNow}`);
 
+  const unit = Number(comp?.priceValue || comp?.price || 10);
   const place = await api("/api/orders", bossToken, {
     action: "place_order",
     companionId: comp?.id,
@@ -115,10 +119,10 @@ const tinyPng =
     serviceType: "陪玩",
     service: "陪玩",
     game: "VALORANT",
-    unitPrice: Number(comp?.priceValue || 10),
+    unitPrice: unit,
     hours: 1,
     quantity: 1,
-    totalAmount: Number(comp?.priceValue || 10),
+    totalAmount: unit,
     gameId: "PAY-QR-GID-" + Date.now(),
     paymentMethod: "tng",
     notes: "payment qr flow accept",
@@ -129,7 +133,7 @@ const tinyPng =
   step(
     "place_order awaiting_payment",
     !!(place.json?.ok && orderId && order.status === "awaiting_payment"),
-    `id=${orderId} status=${order.status} no=${order.orderNo || order.order_no}`
+    `id=${orderId} status=${order.status} no=${order.orderNo || order.order_no} msg=${place.json?.message || ""}`
   );
 
   const getOrder = await api(`/api/orders?id=${encodeURIComponent(orderId)}`, bossToken, null, "GET");
