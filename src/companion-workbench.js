@@ -1660,7 +1660,7 @@
     var filtered=rows.filter(function(o){
       if(filter==='waiting_selection')return o.grabStatus==='pending_customer_selection'||o.status==='waiting_boss_confirm';
       if(filter==='waiting_confirm')return o.status==='claimed';
-      if(filter==='waiting_start')return o.status==='confirmed';
+      if(filter==='waiting_start')return o.status==='confirmed'||o.status==='in_progress';
       if(filter==='running')return o.status==='in_progress'&&!o.completionPending;
       if(filter==='completed')return o.status==='completed'||o.completionPending||orderStatus(o)==='已完成';
       if(filter==='cancelled')return o.status==='cancelled';
@@ -2883,9 +2883,22 @@
       api('accept_order',{id:accept.dataset.acceptOrder}).then(function(x){
         playCue('grab');
         toast(x.message||'已抢单，等待老板选择。');
-        state.route='orders';
-        state.orderFilter='waiting_selection';
-        go('/companion/orders');
+        var oid=String(accept.dataset.acceptOrder||'');
+        // Keep PC on抢单大厅 so the same card immediately shows「已抢单」.
+        if(state.data&&Array.isArray(state.data.openOrders)){
+          state.data.openOrders=state.data.openOrders.map(function(o){
+            if(String(o.id)!==oid)return o;
+            return Object.assign({},o,{
+              alreadyGrabbed:true,
+              myGrab:o.myGrab||{companionId:(state.data.player&&state.data.player.id)||true,status:'pending_customer_selection'},
+              status:o.status==='pending'?'waiting_boss_confirm':o.status,
+              hallState:o.hallState||'open'
+            });
+          });
+        }
+        state.route='hall';
+        go('/companion/order-hall');
+        paint();
         return loadData();
       }).catch(function(err){toast(err.message)});
       return;
@@ -2913,9 +2926,9 @@
       if(act==='accept_direct_order'){
         if(!confirm('确认接受此订单吗？'))return;
         api(act,{id:oid}).then(function(x){
-          toast(x.message||'已确认接单');
+          toast(x.message||'已确认接单，订单进入进行中');
           state.route='orders';
-          state.orderFilter='waiting_start';
+          state.orderFilter='running';
           go('/companion/orders');
           return loadData();
         }).catch(function(err){toast(err.message)});

@@ -2774,6 +2774,15 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       if (!patched || patched.status === "awaiting_payment") {
         return json(res, 409, { ok: false, message: "订单状态已变更，请刷新后重试。" });
       }
+      if (next === "claimed") {
+        try {
+          const { stampClaimedAtNote } = await import("./_order-confirm-timeout.js");
+          const { patchOrderNoteField } = await import("./_order-flow.js");
+          await patchOrderNoteField({ restUrl, supabaseJson, serviceHeaders }, order.id, (text) => stampClaimedAtNote(text));
+        } catch {
+          /* optional */
+        }
+      }
       const conversation = await ensureConversation({
         boss_id: order.boss_id,
         companion_id: order.companion_id,
@@ -3045,7 +3054,12 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
           }
         }
         try {
-          await patchOrderNoteField({ restUrl, supabaseJson, serviceHeaders }, order.id, (text) => clearBossIntent(text));
+          const { stampClaimedAtNote } = await import("./_order-confirm-timeout.js");
+          await patchOrderNoteField({ restUrl, supabaseJson, serviceHeaders }, order.id, (text) => {
+            const cleared = clearBossIntent(text);
+            if (nextStatus !== "claimed") return cleared;
+            return stampClaimedAtNote(cleared);
+          });
         } catch {
           /* ignore */
         }
@@ -3070,7 +3084,7 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         const profiles = await profileMap([patched?.boss_id || order.boss_id, companionId, service.profile.id]);
         return json(res, 200, {
           ok: true,
-          message: "指定成功，其他抢单陪玩已标记为未选中。",
+          message: grabs.length ? "指定成功，其他抢单陪玩已标记为未选中。" : "指定成功",
           order: safeOrder(patched || { ...order, companion_id: companionId, status: nextStatus }, profiles, {
             grabCount: grabs.length,
           }),

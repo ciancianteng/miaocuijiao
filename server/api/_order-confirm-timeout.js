@@ -57,9 +57,26 @@ export function confirmDeadlineIso(fromIso) {
   return new Date(t + COMPANION_CONFIRM_TIMEOUT_MS).toISOString();
 }
 
+/** Stamp claim time into note so confirm SLA does not fall back to order created_at. */
+export function stampClaimedAtNote(note, atIso = nowIso()) {
+  const cleaned = String(note || "")
+    .replace(/\n?\[\[CLAIMED_AT\]\][^\n]*/g, "")
+    .trim();
+  return `${cleaned}\n[[CLAIMED_AT]]${atIso}`.trim();
+}
+
+export function claimedAtFromOrder(order = {}) {
+  const note = String(order.note || order.description || "");
+  const hit = note.match(/\[\[CLAIMED_AT\]\]\s*([^\n|]+)/i);
+  if (hit?.[1] && !Number.isNaN(Date.parse(hit[1].trim()))) return hit[1].trim();
+  if (order.paid_at && !Number.isNaN(Date.parse(order.paid_at))) return order.paid_at;
+  return "";
+}
+
 export function isCompanionConfirmTimedOut(order) {
   if (!order || order.status !== "claimed" || !order.companion_id) return false;
-  const anchor = order.accepted_at || order.created_at;
+  // Do NOT use created_at — assign/pay may happen long after order creation.
+  const anchor = claimedAtFromOrder(order) || order.accepted_at || "";
   if (!anchor) return false;
   return Date.now() - Date.parse(anchor) >= COMPANION_CONFIRM_TIMEOUT_MS;
 }
@@ -138,7 +155,6 @@ export async function expireCompanionConfirmTimeouts({ companionId = "", limit =
           status: "pending",
           accepted_at: null,
           note,
-          cancel_reason: "陪玩确认超时",
         }),
       });
       await addSystemMessage(

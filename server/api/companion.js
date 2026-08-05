@@ -1340,7 +1340,7 @@ function summaryFrom(myOrders, transactions, withdrawals = []) {
   return {
     todayOrders: myOrders.filter((o) => String(o.createdAt || "").slice(0,10) === today).length,
     waitingConfirm: myOrders.filter((o) => o.status === "claimed").length,
-    waitingStart: myOrders.filter((o) => o.status === "confirmed").length,
+    waitingStart: myOrders.filter((o) => o.status === "confirmed" || o.status === "in_progress").length,
     waitingComplete: myOrders.filter((o) => o.status === "waiting_boss_confirm" && o.startedAt).length,
     runningOrders: myOrders.filter((o) => o.status === "in_progress").length,
     completedOrders: myOrders.filter((o) => o.status === "completed").length,
@@ -2703,40 +2703,48 @@ export default async function handler(req, res) {
       const name = String(auth.profile.display_name || companion.nickname || "陪玩").trim() || "陪玩";
       const note = `陪玩无法接单|原因:${reason}|原陪玩:${auth.profile.id}|${nowIso()}`;
       // Reject designated → reopen as public hall for CS re-assign / public grab.
-      const rejectPatch = {
-        companion_id: null,
-        status: "pending",
-        accepted_at: null,
-        assignment_type: "public",
-        order_type: "open_grab",
-        cancel_reason: `陪玩无法接单：${reason}`,
-        note,
-      };
-      let rows;
-      try {
-        rows = await supabaseJson(
-          restUrl("orders", `?id=eq.${encodeURIComponent(id)}&companion_id=eq.${encodeURIComponent(auth.profile.id)}&status=eq.claimed`),
-          {
-            method: "PATCH",
-            headers: serviceHeaders(),
-            body: JSON.stringify(rejectPatch),
-          }
-        );
-      } catch (err) {
-        const { assignment_type: _a, order_type: _o, cancel_reason: _c, note: _n, ...rest } = rejectPatch;
-        const fallback = /assignment_type|order_type|PGRST204|schema cache|column/i.test(String(err?.message || err || ""))
-          ? { ...rest, cancel_reason: rejectPatch.cancel_reason, note }
-          : { companion_id: null, status: "pending", accepted_at: null };
-        rows = await supabaseJson(
-          restUrl("orders", `?id=eq.${encodeURIComponent(id)}&companion_id=eq.${encodeURIComponent(auth.profile.id)}&status=eq.claimed`),
-          {
-            method: "PATCH",
-            headers: serviceHeaders(),
-            body: JSON.stringify(fallback),
-          }
-        );
+      // Staging schema may lack cancel_reason / assignment_type / order_type — try progressively.
+      const rejectAttempts = [
+        {
+          companion_id: null,
+          status: "pending",
+          accepted_at: null,
+          assignment_type: "public",
+          order_type: "open_grab",
+          note,
+        },
+        {
+          companion_id: null,
+          status: "pending",
+          accepted_at: null,
+          note,
+        },
+        {
+          companion_id: null,
+          status: "pending",
+          accepted_at: null,
+        },
+      ];
+      let rows = null;
+      let lastErr = null;
+      for (const patch of rejectAttempts) {
+        try {
+          rows = await supabaseJson(
+            restUrl("orders", `?id=eq.${encodeURIComponent(id)}&companion_id=eq.${encodeURIComponent(auth.profile.id)}&status=eq.claimed`),
+            {
+              method: "PATCH",
+              headers: serviceHeaders(),
+              body: JSON.stringify(patch),
+            }
+          );
+          if (rows?.[0] || Array.isArray(rows)) break;
+        } catch (err) {
+          lastErr = err;
+          if (!/PGRST204|schema cache|column|Could not find/i.test(String(err?.message || err || ""))) throw err;
+        }
       }
-      const saved = rows?.[0] || { ...before, companion_id: null, status: "pending", assignment_type: "public", note, cancel_reason: `陪玩无法接单：${reason}` };
+      if (!rows?.[0] && lastErr) throw lastErr;
+      const saved = rows?.[0] || { ...before, companion_id: null, status: "pending", assignment_type: "public", note };
       await writeOrderStatusLog(
         { restUrl, supabaseJson, serviceHeaders },
         {
