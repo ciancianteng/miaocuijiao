@@ -1237,6 +1237,19 @@ async function loadBootstrap(serviceProfile) {
     })),
     orderStatuses: ORDER_STATUS_TEXT,
     workData: workData || null,
+    compensationPolicy: await (async () => {
+      try {
+        const settings = await (await import("./_wallet.js")).getWalletSettings();
+        return {
+          allowCsApply: settings.allow_cs_apply !== false,
+          maxPerRequest: money(settings.cs_max_per_request != null ? settings.cs_max_per_request : 100),
+          maxPerDay: money(settings.cs_max_per_day != null ? settings.cs_max_per_day : 300),
+          allowedOrderStatuses: ["in_progress", "confirmed", "completed"],
+        };
+      } catch (_) {
+        return { allowCsApply: true, allowedOrderStatuses: ["in_progress", "confirmed", "completed"] };
+      }
+    })(),
   };
 }
 async function orderById(id) { if (!isUuid(id)) return null; const rows = await tableRows("orders", `?id=eq.${encodeURIComponent(id)}&limit=1`); return rows[0] || null; }
@@ -4153,6 +4166,100 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       });
       return json(res, 200, { ok: true, message: "工资申诉已提交，等待管理员处理。", appeal: inserted[0] || null });
     }
+    if (action === "urge_companion" || action === "remind_companion") {
+      const order = await orderById(String(body.id || body.order_id || ""));
+      if (!order) return json(res, 404, { ok: false, message: "订单不存在。" });
+      try {
+        await assertOrderMutationAllowed(order, service.profile);
+      } catch (err) {
+        return json(res, err.status || 403, { ok: false, message: err.message || CS_LOCK_DENIED, code: err.code || "CS_SESSION_LOCKED" });
+      }
+      if (String(order.status || "") !== "claimed") {
+        return json(res, 400, { ok: false, message: "只有待陪玩确认的订单可以催单。" });
+      }
+      if (!order.companion_id) {
+        return json(res, 400, { ok: false, message: "当前订单尚未指定陪玩。" });
+      }
+      const conversation = await ensureConversation({
+        boss_id: order.boss_id,
+        companion_id: order.companion_id,
+        customer_service_id: service.profile.id,
+        order_id: order.id,
+      });
+      const nick = String(service.profile.display_name || "").trim() || "客服";
+      await addMessage(
+        conversation,
+        service.profile.id,
+        "customer_service",
+        `【催单提醒】客服 ${nick} 提醒陪玩尽快确认接单（订单 ${order.order_no || order.id}）。`,
+        "system",
+        order.id
+      );
+      await touchConversationActive({ restUrl, supabaseJson, serviceHeaders }, conversation?.id);
+      return json(res, 200, { ok: true, message: "已发送催单提醒。" });
+    }
+    if (action === "return_to_grab_hall" || action === "reopen_grab_hall") {
+      const order = await orderById(String(body.id || body.order_id || ""));
+      if (!order) return json(res, 404, { ok: false, message: "订单不存在。" });
+      try {
+        await assertOrderMutationAllowed(order, service.profile);
+      } catch (err) {
+        return json(res, err.status || 403, { ok: false, message: err.message || CS_LOCK_DENIED, code: err.code || "CS_SESSION_LOCKED" });
+      }
+      if (String(order.status || "") !== "claimed") {
+        return json(res, 400, { ok: false, message: "只有待陪玩确认的订单可以返回抢单大厅。" });
+      }
+      const { transitionOrderStatus } = await import("./_order-status.js");
+      const patch = {
+        companion_id: null,
+        assignment_type: "public",
+        order_type: order.order_type === "direct_companion" ? "open_grab" : order.order_type || "open_grab",
+        customer_service_id: service.profile.id,
+        accepted_at: null,
+      };
+      let patched =
+        (await transitionOrderStatus(
+          { restUrl, supabaseJson, serviceHeaders },
+          {
+            orderId: order.id,
+            fromStatus: "claimed",
+            toStatus: "pending",
+            patch,
+            operatorRole: "customer_service",
+            operatorId: service.profile.id,
+            note: "cs return_to_grab_hall",
+          }
+        ).catch(() => null)) ||
+        (await patchOrder(order.id, { status: "pending", ...patch }).catch(() => null));
+      if (!patched) return json(res, 409, { ok: false, message: "返回抢单大厅失败，请刷新后重试。" });
+      try {
+        const { createGrabListingHelpers } = await import("./_order-grab-listings.js");
+        await createGrabListingHelpers({ restUrl, supabaseJson, serviceHeaders }).upsertListing(
+          { ...order, ...patched, status: "pending", assignment_type: "public", companion_id: null },
+          { publishedByCsId: service.profile.id }
+        );
+      } catch (_) {}
+      const conversation = await ensureConversation({
+        boss_id: order.boss_id,
+        companion_id: null,
+        customer_service_id: service.profile.id,
+        order_id: order.id,
+      });
+      await addMessage(
+        conversation,
+        service.profile.id,
+        "customer_service",
+        "客服已将该订单返回抢单大厅，等待陪玩重新抢单。",
+        "system",
+        order.id
+      );
+      const profiles = await profileMap([order.boss_id, service.profile.id]);
+      return json(res, 200, {
+        ok: true,
+        message: "已返回抢单大厅。",
+        order: safeOrder({ ...order, ...patched, status: "pending", companion_id: null, assignment_type: "public" }, profiles),
+      });
+    }
     if (action === "apply_compensation") {
       try {
         const settings = await (await import("./_wallet.js")).getWalletSettings();
@@ -4175,6 +4282,14 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         const maxDay = money(settings.cs_max_per_day != null ? settings.cs_max_per_day : 300);
         if (todaySum + amount > maxDay) return json(res, 400, { ok: false, message: `今日申请额度不足（上限 ${maxDay}）。` });
         const relatedOrderId = String(body.related_order_id || body.relatedOrderId || body.order_id || "").trim();
+        if (isUuid(relatedOrderId)) {
+          const related = await orderById(relatedOrderId);
+          if (!related) return json(res, 400, { ok: false, message: "关联订单不存在。" });
+          const st = String(related.status || "");
+          if (!["in_progress", "confirmed", "completed"].includes(st)) {
+            return json(res, 400, { ok: false, message: "仅进行中或已完成的订单可申请补偿。" });
+          }
+        }
         const rows = await supabaseJson(restUrl("compensation_requests"), {
           method: "POST",
           headers: serviceHeaders(),
