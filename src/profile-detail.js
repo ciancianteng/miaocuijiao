@@ -489,6 +489,22 @@
         '<a class="pd-bottom-secondary" href="support.html?start=1">咨询客服</a>' +
         '<button type="button" class="order-now mcj-primary pd-bottom-primary" data-open-order>立即下单</button>';
     }
+
+    // Empty / corrupt voice files must not leave a dead 0:00/0:00 control.
+    s.querySelectorAll(".pd-voice-player audio").forEach(function (audio) {
+      var card = audio.closest(".pd-voice-card");
+      var body = audio.closest(".pd-voice-body");
+      function showVoiceEmpty() {
+        if (!body) return;
+        body.innerHTML = '<p class="pd-voice-empty">暂未上传语音介绍</p>';
+        if (card) card.classList.add("is-empty");
+      }
+      audio.addEventListener("error", showVoiceEmpty);
+      audio.addEventListener("loadedmetadata", function () {
+        var d = Number(audio.duration);
+        if (!Number.isFinite(d) || d <= 0.05) showVoiceEmpty();
+      });
+    });
   }
 
   function closeSheet() {

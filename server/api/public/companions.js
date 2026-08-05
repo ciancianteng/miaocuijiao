@@ -33,7 +33,17 @@ async function resolvePlayableUrl(raw) {
       if (bucket === "companion-public" || /public/i.test(bucket)) {
         return publicObjectUrl(bucket, objectPath) || "";
       }
-      return (await createSignedUrl(bucket, objectPath, 60 * 60 * 12)) || "";
+      const signed = (await createSignedUrl(bucket, objectPath, 60 * 60 * 12)) || "";
+      if (!signed) return "";
+      // Drop empty / header-only audio stubs (WAV header alone is 44 bytes).
+      try {
+        const head = await fetch(signed, { method: "HEAD" });
+        const len = Number(head.headers.get("content-length") || 0);
+        if (Number.isFinite(len) && len > 0 && len < 512) return "";
+      } catch {
+        /* keep signed URL if HEAD unavailable */
+      }
+      return signed;
     } catch (err) {
       console.warn("[public/companions] resolvePlayableUrl failed", bucket, objectPath, err?.message || err);
       return "";

@@ -1031,14 +1031,15 @@
   function openFromProfileCompanion(companion, extras) {
     extras = extras || {};
     var src = companion && typeof companion === "object" ? companion : {};
+    // Always open immediately with known payload — never leave 立即下单 looking dead.
+    openFromCanonicalCompanion(src, extras);
     var companionId = String(
       extras.companionId || src.companionId || src.companion_id || src.id || src.uid || ""
     ).trim();
     if (!companionId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(companionId)) {
-      openFromCanonicalCompanion(src, extras);
       return;
     }
-    // Re-read the same public companion record used by home / hall / detail.
+    // Soft refresh from the same public companion record used by home / hall / detail.
     fetch("/api/public/companions?id=" + encodeURIComponent(companionId), {
       headers: { Accept: "application/json" },
       cache: "no-store",
@@ -1055,9 +1056,7 @@
       .then(function (row) {
         openFromCanonicalCompanion(row, extras);
       })
-      .catch(function () {
-        openFromCanonicalCompanion(src, extras);
-      });
+      .catch(function () {});
   }
 
   window.MCJPlaceOrder = {
