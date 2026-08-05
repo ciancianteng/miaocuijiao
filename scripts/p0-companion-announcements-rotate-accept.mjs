@@ -66,15 +66,26 @@ function normalizeFeed(rows) {
 
   const html = await fetch(`${STAGING}/companion/`, { cache: "no-store" }).then((r) => r.text());
   ok("companion page loads announcement module", /companion-announcements\.js/.test(html), "");
-  ok("companion page loads home-announcements.css", /home-announcements\.css/.test(html), "needs deploy for CSS link");
-  const jsUrl = (html.match(/companion-announcements\.js[^"']*/) || [])[0] || "src/companion-announcements.js";
-  const js = await fetch(`${STAGING}/${jsUrl.replace(/^\//, "")}`, { cache: "no-store" }).then((r) => r.text()).catch(() => "");
+  // Vite may rewrite /src/home-announcements.css → /assets/home-announcements-*.css
+  ok(
+    "companion page loads home-announcements.css",
+    /home-announcements(?:-[A-Za-z0-9]+)?\.css/.test(html),
+    /assets\/home-announcements/.test(html) ? "vite hashed css" : "src css"
+  );
+  const jsSrcMatch = html.match(/(?:src=["'])([^"']*companion-announcements\.js[^"']*)/);
+  const jsUrl = (jsSrcMatch && jsSrcMatch[1]) || "/src/companion-announcements.js?v=20260805annUnify1";
+  const jsAbs = jsUrl.startsWith("http") ? jsUrl : `${STAGING}${jsUrl.startsWith("/") ? "" : "/"}${jsUrl}`;
+  const js = await fetch(jsAbs, { cache: "no-store" }).then((r) => r.text()).catch(() => "");
   const hasRotate =
     /advanceToNext|animationiteration|audience=home/.test(js) &&
     !/items\[0\].*陪玩公告/.test(js);
   const usesHomeStyle = /官方公告|home-announcement-bar/.test(js);
-  const excludesCompanionQuotes = /audience === "companion"|aud !== "companion"|isPlatformHomeAnn/.test(js);
-  ok("module rotates multi announcements", /advanceToNext/.test(js) || hasRotate, `len=${js.length}`);
+  const excludesCompanionQuotes =
+    /isPlatformHomeAnn/.test(js) ||
+    /aud === ["']companion["']/.test(js) ||
+    /audience === ["']companion["']/.test(js) ||
+    /aud !== ["']companion["']/.test(js);
+  ok("module rotates multi announcements", /advanceToNext/.test(js) || hasRotate, `len=${js.length} url=${jsUrl}`);
   ok("module uses 官方公告 / home bar classes", usesHomeStyle, "");
   ok("module excludes companion-only quotes", excludesCompanionQuotes || /audience=home/.test(js), "");
   // Fail clearly if still first-only tickerHtml(items[0]) without rotation
