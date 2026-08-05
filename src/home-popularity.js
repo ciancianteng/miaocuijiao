@@ -160,9 +160,6 @@
       esc(money(item.popularityScore)) +
       "</strong><span>人气值</span></div>" +
       '<div style="display:flex;gap:6px">' +
-      '<button type="button" class="pop-list-cta" data-fav-id="' +
-      esc(item.companionId) +
-      '">收藏</button>' +
       '<button type="button" class="pop-list-cta" data-pop-order="' +
       esc(item.companionId || "") +
       '" data-pop-name="' +
@@ -374,42 +371,5 @@
       }
       return;
     }
-    var fav = e.target.closest("[data-fav-id]");
-    if (!fav) return;
-    e.preventDefault();
-    var token = localStorage.getItem("mcjAuthAccessToken") || sessionStorage.getItem("mcjAuthAccessToken") || "";
-    if (!token) {
-      if (window.MCJAuthContinue && typeof window.MCJAuthContinue.requireLogin === "function") {
-        window.MCJAuthContinue.requireLogin(function () {
-          fav.click();
-        });
-        return;
-      }
-      if (window.MCJModal && typeof window.MCJModal.openLogin === "function") {
-        window.MCJModal.openLogin("login");
-        return;
-      }
-      alert("请先登录后再收藏");
-      return;
-    }
-    fetch("/api/popularity", {
-      method: "POST",
-      headers: {
-        Accept: "application/json",
-        "Content-Type": "application/json",
-        Authorization: "Bearer " + token,
-        "x-mcj-access-token": token,
-      },
-      body: JSON.stringify({ action: "favorite", companionId: fav.getAttribute("data-fav-id") }),
-    })
-      .then(function (res) {
-        return res.json().then(function (body) {
-          if (!res.ok || body.ok === false) throw new Error(body.message || "收藏失败");
-          alert(body.message || "已收藏");
-        });
-      })
-      .catch(function (err) {
-        alert(err.message || "收藏失败");
-      });
   });
 })();

@@ -767,9 +767,6 @@
       openTipSheet();
       return;
     }
-    if (e.target.closest("[data-fav]")) {
-      alert("已记录收藏意向（收藏列表将同步真实陪玩 ID）");
-    }
   });
 
   function load() {

@@ -26,8 +26,18 @@ export async function uploadProof({ order, bossId, dataUrl, paymentMethod: metho
     throw Object.assign(new Error("请上传 JPG、PNG 或 WEBP 格式的付款凭证"), { status: 400 });
   }
   if (decoded.buffer.length > 10 * 1024 * 1024) throw Object.assign(new Error("付款凭证不能超过 10MB"), { status: 413 });
+  // Boss re-upload: supersede any pending receipt instead of locking the order.
   const active = await companionDb("payment_receipts", `?order_id=eq.${encodeURIComponent(order.id)}&status=eq.pending&limit=1`).catch(() => []);
-  if (active?.[0]) return { receipt: active[0], duplicate: true };
+  if (active?.[0]) {
+    await companionDb("payment_receipts", `?id=eq.${encodeURIComponent(active[0].id)}&status=eq.pending`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        status: "rejected",
+        reject_reason: "老板重新上传付款凭证",
+        reviewed_at: nowIso(),
+      }),
+    }).catch(() => {});
+  }
   const previous = await companionDb("payment_receipts", `?order_id=eq.${encodeURIComponent(order.id)}&select=version&order=version.desc&limit=1`).catch(() => []);
   const version = Number(previous?.[0]?.version || 0) + 1;
   await ensurePrivateBucket(BUCKET, [...IMAGE_TYPES]);

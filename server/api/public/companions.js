@@ -24,6 +24,18 @@ import {
   parseCompanionCodeNumber,
   resolveCompanionPublicCode,
 } from "../_account-codes.js";
+import { evaluatePublishGate } from "../_companion-publish-gate.js";
+
+/** Boss-facing: only audit-approved companion applications (not draft/pending). */
+function isAuditApprovedCompanion(row = {}) {
+  const app = String(row.application_status || "").trim().toLowerCase();
+  if (/^(draft|archived|deleted)$/.test(app)) return false;
+  if (/rejected|resubmit|need_more/.test(app)) return false;
+  if (/approved|verified|passed/.test(app)) return true;
+  // Legacy: verification approved and no explicit draft application_status.
+  if (!app && /approved|verified|passed/i.test(String(row.verification_status || ""))) return true;
+  return false;
+}
 const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"];
 
 function json(res, status, data) {
@@ -359,8 +371,18 @@ async function loadCompanions(id = "") {
   const profileMap = Object.fromEntries((profiles || []).map((row) => [row.id, row]));
   const levelList = Array.isArray(levels) ? levels.map((l) => toPublicLevel(l)) : [];
   const mapped = companions
+    .filter((row) => isAuditApprovedCompanion(row))
     .filter((row) => profileMap[row.user_id])
-    .map((row) => publicCompanion(row, profileMap[row.user_id], levelList, catalog, mediaMap[row.id] || {}));
+    .map((row) => {
+      const profile = profileMap[row.user_id];
+      const media = mediaMap[row.id] || {};
+      const gate = evaluatePublishGate(row, profile, media);
+      // Only hard-block non-approved / disabled / banned / rejected. Keep audit-approved real profiles.
+      if (!gate.adminApproved || !gate.accountEnabled) return null;
+      if (gate.blockReasons.some((r) => /封禁|停用|驳回|归档/.test(r))) return null;
+      return publicCompanion(row, profile, levelList, catalog, media);
+    })
+    .filter(Boolean);
   return attachReviews(mapped);
 }
 

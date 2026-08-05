@@ -19,8 +19,8 @@ export const ORDER_STATUSES = Object.freeze({
 /** Boss / shared Chinese labels (tabs + cards). Unified CN vocabulary. */
 export const ORDER_STATUS_LABELS = Object.freeze({
   awaiting_payment: "待付款",
-  payment_review: "付款待审核", // view-layer only (awaiting_payment + proof submitted)
-  pending: "等待陪玩抢单",
+  payment_review: "待审核", // view-layer only (awaiting_payment + proof submitted)
+  pending: "待客服处理",
   waiting_boss_confirm: "等待老板选择",
   claimed: "等待陪玩确认",
   confirmed: "进行中", // legacy hop; new confirm path jumps to in_progress
@@ -61,13 +61,13 @@ export function bossFacingStatusText(row = {}, grabCountOverride) {
       row.paymentProofUrl ||
       /\[\[PAYMENT_PROOF\]\]|\[\[PAYMENT_SUBMITTED\]\]|付款凭证|已上传付款/i.test(note)
     ) {
-      return "付款待审核";
+      return "待审核";
     }
     return "待付款";
   }
   if (status === "pending" || status === "waiting_boss_confirm") {
     if (grabCount > 0) return `已有 ${grabCount} 位陪玩抢单`;
-    return status === "waiting_boss_confirm" ? "等待老板选择" : "等待陪玩抢单";
+    return status === "waiting_boss_confirm" ? "等待老板选择" : "待客服处理";
   }
   if (status === "claimed") return "等待陪玩确认";
   if (status === "confirmed" || status === "in_progress") {

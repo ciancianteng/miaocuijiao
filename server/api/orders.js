@@ -16,7 +16,7 @@ import {
 import { evaluatePublishGate } from "./_companion-publish-gate.js";
 import { allocateOrderNo, resolveOrderPublicNo } from "./_account-codes.js";
 import { companionDb } from "./_companion-media-store.js";
-import { uploadProof } from "./_payment-receipts.js";
+import { listPendingForCs, signedProofUrl, uploadProof } from "./_payment-receipts.js";
 
 loadLocalEnv();
 
@@ -303,11 +303,20 @@ async function profileFromToken(req) {
 function bossHint(row = {}) {
   const status = row.status || "";
   const note = String(row.note || row.cancel_reason || "");
+  if (status === "awaiting_payment") {
+    if (
+      row.payment_proof_url ||
+      /\[\[PAYMENT_PROOF\]\]|\[\[PAYMENT_SUBMITTED\]\]/i.test(String(row.note || row.description || ""))
+    ) {
+      return "付款凭证已提交，等待审核。";
+    }
+    return "请尽快完成付款并上传凭证。";
+  }
   if (status === "claimed") return "订单已付款，正在等待陪玩确认接单";
   if (status === "confirmed" || status === "in_progress") return "服务进行中";
   if (status === "pending" && /陪玩确认超时|确认超时/.test(note)) return "陪玩暂未响应，客服正在处理中";
   if (status === "pending" && /无法接单|拒单/.test(note)) return "陪玩暂时无法接单，订单已重新进入抢单大厅";
-  if (status === "pending") return "等待陪玩抢单";
+  if (status === "pending") return "付款已确认，待客服处理派单。";
   if (status === "waiting_boss_confirm") return "已有陪玩抢单，请选择一位";
   return "";
 }
@@ -315,7 +324,7 @@ function paymentStatusLabel(row = {}) {
   const s = row.status || "";
   if (s === "awaiting_payment") {
     const note = String(row.note || row.description || "");
-    if (row.payment_proof_url || /\[\[PAYMENT_PROOF\]\]|\[\[PAYMENT_SUBMITTED\]\]/i.test(note)) return "付款待审核";
+    if (row.payment_proof_url || /\[\[PAYMENT_PROOF\]\]|\[\[PAYMENT_SUBMITTED\]\]/i.test(note)) return "待审核";
     return "待付款";
   }
   if (s === "cancelled") return "已取消";
@@ -331,7 +340,7 @@ function acceptStatusLabel(row = {}) {
   if (s === "completed" || s === "reviewed") return "已完成";
   if (s === "pending" && /陪玩确认超时|确认超时/.test(note)) return "陪玩确认超时";
   if (s === "pending" && /无法接单|拒单/.test(note)) return "陪玩无法接单，等待重新安排";
-  if (s === "pending") return "等待陪玩抢单";
+  if (s === "pending") return "待客服处理";
   if (s === "cancelled") return "已取消";
   return bossFacingStatusText(row);
 }
@@ -556,11 +565,28 @@ async function loadOrders(profile, id = "") {
 
   // Parallelize grab enrichment so list GET stays under Preview cold-start budgets.
   const grabLists = await Promise.all(orders.map((row) => grabsFor(row)));
+  let proofUrlByOrder = {};
+  const reviewOrders = orders.filter(
+    (row) =>
+      row.status === "awaiting_payment" &&
+      /\[\[PAYMENT_PROOF\]\]|\[\[PAYMENT_SUBMITTED\]\]/i.test(String(row.note || row.description || ""))
+  );
+  if (reviewOrders.length) {
+    try {
+      const receipts = await listPendingForCs({ orderIds: reviewOrders.map((r) => r.id) });
+      const pairs = await Promise.all(
+        (receipts || []).map(async (receipt) => [receipt.order_id, (await signedProofUrl(receipt).catch(() => "")) || ""])
+      );
+      proofUrlByOrder = Object.fromEntries(pairs);
+    } catch {
+      proofUrlByOrder = {};
+    }
+  }
   return orders.map((row, index) => {
     const rev = reviewByOrder[row.id];
     const grabs = grabLists[index] || [];
     const intent = parseBossIntent(row);
-    return viewOrder({
+    const viewed = viewOrder({
       ...row,
       grabs,
       grabCount: grabs.length,
@@ -573,6 +599,8 @@ async function loadOrders(profile, id = "") {
       review_rating: rev?.rating,
       review_content: rev?.content || "",
     });
+    if (proofUrlByOrder[row.id]) viewed.paymentProofUrl = proofUrlByOrder[row.id];
+    return viewed;
   });
 }
 async function ensureConversation(order, bossId) {
@@ -995,11 +1023,16 @@ export default async function handler(req, res) {
         saved = rows?.[0] || { ...before, note };
         await addSystemMessage(saved, profile.id, "老板已上传付款凭证，等待客服审核。").catch(() => {});
       }
+      const proofUrl = await signedProofUrl(result.receipt).catch(() => "");
       return json(res, 200, {
         ok: true,
-        message: result.duplicate ? "付款凭证已提交，等待客服审核。" : "付款凭证已提交，等待客服审核。",
+        message: "付款凭证已提交，等待审核。",
         receipt: { id: result.receipt?.id, receiptNo: result.receipt?.receipt_no },
-        order: { ...viewOrder(saved), paymentReview: true, paymentProofUrl: result.receipt?.storage_path || "" },
+        order: {
+          ...viewOrder(saved),
+          paymentReview: true,
+          paymentProofUrl: proofUrl || result.receipt?.storage_path || "",
+        },
       });
     }
     if (action === "pay_order") {

@@ -774,7 +774,12 @@
         null
       );
     }
-    return list.find(function (c) { return !isClosedConversation(c); }) || list[0] || null;
+    // Without ?order=, never auto-pick an order-linked thread (prevents old order locking new chats).
+    return (
+      list.find(function (c) {
+        return !isClosedConversation(c) && !isOrderConversation(c);
+      }) || null
+    );
   }
   function orderSummaryHtml(order) {
     if (!order) return "";
