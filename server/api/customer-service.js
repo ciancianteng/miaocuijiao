@@ -23,6 +23,16 @@ import {
   TRANSFER_USER_TIP,
   isPendingTransferStatus,
 } from "./_conversation-lock.js";
+import {
+  CS_LOCK_DENIED,
+  CS_LOCK_VIEW_ONLY,
+  assertCanMutateOrder,
+  assertOwnsConversation,
+  isAdminLike,
+  lockStatusOf,
+  touchConversationActive,
+  writeLockLog,
+} from "./_cs-session-lock.js";
 const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY"];
 const ORDER_STATUS_TEXT = { ...ORDER_STATUS_LABELS };
 const SERVICE_ROLES = new Set(["customer_service"]);
@@ -461,25 +471,77 @@ function unreadRolesForConversation(conversation) {
   return isCompanionSupport ? ["companion"] : ["boss"];
 }
 function isAdminProfile(profile) {
-  return ADMIN_ROLES.has(String(profile?.role || ""));
+  return ADMIN_ROLES.has(String(profile?.role || "")) || isAdminLike(profile);
 }
 function conversationLockedByOther(conversation, serviceProfileId) {
   return lockOwnedByOther(conversation, serviceProfileId);
 }
+/** View is allowed for other CS; mutate is not. Kept for legacy callers. */
 async function lockMessageForConversation(conversation, serviceProfile) {
   if (!conversation?.customer_service_id || conversation.customer_service_id === serviceProfile.id) return null;
   if (isAdminProfile(serviceProfile)) return null;
   const other = await profileById(conversation.customer_service_id);
   const otherName = String(other?.display_name || "").trim() || "其他客服";
-  return `该会话已由 ${otherName} 接待`;
+  return CS_LOCK_VIEW_ONLY(otherName);
 }
 function withConversationLockFields(conv, serviceProfileId) {
   if (!conv || !serviceProfileId) return conv;
+  const raw = String(conv.rawStatus || conv.status || "").toLowerCase();
+  const statusForLock =
+    raw === "closed" || raw === "ended" || conv.status === "已结束"
+      ? "closed"
+      : raw === "pending_transfer" || conv.status === "待转接"
+        ? "pending_transfer"
+        : "open";
   const lockedByOther = conversationLockedByOther(
-    { customer_service_id: conv.currentServiceId, status: conv.rawStatus === "closed" || conv.rawStatus === "ended" ? "closed" : "open" },
+    {
+      customer_service_id: conv.currentServiceId || conv.assignedCsId || "",
+      status: statusForLock,
+      rawStatus: raw,
+    },
     serviceProfileId
   );
-  return Object.assign({}, conv, { lockedByOther });
+  const assignedCsId = String(conv.currentServiceId || conv.assignedCsId || "").trim();
+  return Object.assign({}, conv, {
+    lockedByOther,
+    assignedCsId,
+    assignedCsName: conv.currentServiceName || conv.assignedCsName || "",
+    assignedAt: conv.acceptedAt || conv.assignedAt || "",
+    lockStatus: lockStatusOf({
+      status: statusForLock,
+      customer_service_id: assignedCsId,
+      rawStatus: raw,
+    }),
+    lockBanner: lockedByOther
+      ? CS_LOCK_VIEW_ONLY(conv.currentServiceName || conv.assignedCsName || "其他客服")
+      : "",
+  });
+}
+async function loadOpenConversationByOrderId(orderId) {
+  if (!orderId) return null;
+  const rows = await maybeRows(
+    "conversations",
+    `?order_id=eq.${encodeURIComponent(orderId)}&status=not.in.(closed,ended)&order=updated_at.desc&limit=1`
+  );
+  return rows?.[0] || null;
+}
+async function assertOrderMutationAllowed(order, serviceProfile, { requireOwner = false } = {}) {
+  try {
+    return await assertCanMutateOrder({
+      order,
+      serviceProfile,
+      loadOpenConversation: loadOpenConversationByOrderId,
+      allowAdmin: true,
+      requireOwner,
+    });
+  } catch (err) {
+    err.status = err.status || 403;
+    err.message = err.message || CS_LOCK_DENIED;
+    throw err;
+  }
+}
+async function logSessionAction(payload) {
+  return writeLockLog({ restUrl, supabaseJson, serviceHeaders }, payload);
 }
 async function countUnreadBossMessages(conversationId, opts = {}) {
   const roles = Array.isArray(opts.roles) && opts.roles.length ? opts.roles : ["boss"];
@@ -973,6 +1035,11 @@ async function loadBootstrap(serviceProfile) {
     orderNo: (orders.find((o) => o.id === row.order_id) || {}).orderNo || "",
     currentServiceId: isClosed ? (row.customer_service_id || "") : (isTransfer ? "" : (row.customer_service_id || "")),
     currentServiceName: isTransfer ? "待转接" : (row.customer_service_id ? csDisplayName(service) : "待接待"),
+    assignedCsId: isClosed ? (row.customer_service_id || "") : (isTransfer ? "" : (row.customer_service_id || "")),
+    assignedCsName: isTransfer ? "待转接" : (row.customer_service_id ? csDisplayName(service) : ""),
+    assignedAt: row.accepted_at || "",
+    lockStatus: isClosed ? "ended" : isTransfer ? "pending_transfer" : (row.customer_service_id ? "assigned" : "waiting"),
+    lastActiveAt: row.last_active_at || row.updated_at || "",
     status: convStatusLabel,
     rawStatus: isClosed ? "closed" : (row.status || ""),
     lastMessage: last.content || "",
@@ -1302,6 +1369,17 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       // sender_role 必须是 enum 合法值；系统提示用 message_type=system。
       await addMessage(conversation, service.profile.id, "customer_service", `客服 ${nick} 已接待您。`, "system");
       await markConversationBossMessagesRead(id, { bossId: conversation.boss_id || existing.boss_id, conversation: conversation || existing });
+      await logSessionAction({
+        conversationId: id,
+        orderId: conversation.order_id || existing.order_id || null,
+        action: "claim",
+        fromCsId: null,
+        toCsId: service.profile.id,
+        operatorId: service.profile.id,
+        operatorRole: "customer_service",
+        detail: `开始接待 ${nick}`,
+      });
+      await touchConversationActive({ restUrl, supabaseJson, serviceHeaders }, id);
       return json(res, 200, {
         ok: true,
         message: "已接待该会话。",
@@ -1310,10 +1388,14 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
           status: conversation.status === "serving" ? "active" : (conversation.status || "active"),
           customer_service_id: service.profile.id,
           accepted_at: conversation.accepted_at || acceptedAt,
+          assignedCsId: service.profile.id,
+          assignedCsName: nick,
+          assignedAt: conversation.accepted_at || acceptedAt,
+          lockStatus: "assigned",
         },
       });
     }
-    if (action === "force_take_conversation") {
+    if (action === "force_take_conversation" || action === "admin_takeover") {
       if (!isAdminProfile(service.profile)) {
         return json(res, 403, { ok: false, message: "仅管理员可强制接管会话。" });
       }
@@ -1324,18 +1406,29 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       if (existing.status === "closed" || existing.status === "ended") {
         return json(res, 400, { ok: false, message: "会话已结束，无法接管。" });
       }
+      const targetId = String(body.target_cs_id || body.targetCsId || body.to_cs_id || service.profile.id).trim();
+      const targetProfile = targetId === service.profile.id ? service.profile : await profileById(targetId);
+      if (!targetProfile || (targetProfile.role !== "customer_service" && !isAdminProfile(targetProfile))) {
+        return json(res, 400, { ok: false, message: "目标客服不存在或不可用。" });
+      }
+      if (String(targetProfile.status || "active") !== "active" && !isAdminProfile(targetProfile)) {
+        return json(res, 400, { ok: false, message: "目标客服账号已停用。" });
+      }
       const acceptedAt = nowIso();
-      const nick = String(service.profile.display_name || "").trim() || "客服";
-      const prevOwner = existing.customer_service_id && existing.customer_service_id !== service.profile.id
-        ? await profileById(existing.customer_service_id)
-        : null;
-      const prevName = String(prevOwner?.display_name || "").trim() || "其他客服";
+      const adminNick = String(service.profile.display_name || "").trim() || "管理员";
+      const nextNick = String(targetProfile.display_name || "").trim() || "客服";
+      const prevOwner =
+        existing.customer_service_id && existing.customer_service_id !== targetProfile.id
+          ? await profileById(existing.customer_service_id)
+          : null;
+      const prevName = String(prevOwner?.display_name || "").trim() || "客服";
       let conversation = null;
       const forcePatch = {
-        customer_service_id: service.profile.id,
+        customer_service_id: targetProfile.id,
         status: "active",
         accepted_at: acceptedAt,
         updated_at: acceptedAt,
+        last_active_at: acceptedAt,
       };
       try {
         const rows = await supabaseJson(restUrl("conversations", `?id=eq.${encodeURIComponent(id)}`), {
@@ -1346,12 +1439,12 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         conversation = Array.isArray(rows) ? rows[0] : null;
       } catch (err) {
         const detail = String(err?.message || "");
-        if (/accepted_at|column|schema/i.test(detail)) {
+        if (/accepted_at|last_active_at|column|schema/i.test(detail)) {
           const rows = await supabaseJson(restUrl("conversations", `?id=eq.${encodeURIComponent(id)}`), {
             method: "PATCH",
             headers: serviceHeaders(),
             body: JSON.stringify({
-              customer_service_id: service.profile.id,
+              customer_service_id: targetProfile.id,
               status: "active",
               updated_at: acceptedAt,
             }),
@@ -1362,7 +1455,7 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
             method: "PATCH",
             headers: serviceHeaders(),
             body: JSON.stringify({
-              customer_service_id: service.profile.id,
+              customer_service_id: targetProfile.id,
               status: "serving",
               updated_at: acceptedAt,
             }),
@@ -1377,23 +1470,48 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       }
       if (conversation.order_id) {
         try {
-          await patchOrder(conversation.order_id, { customer_service_id: service.profile.id });
+          await patchOrder(conversation.order_id, { customer_service_id: targetProfile.id });
         } catch (_) {}
       }
       if (prevOwner?.id) {
-        await addMessage(conversation, service.profile.id, "customer_service", `管理员 ${nick} 已强制接管（原接待：${prevName}）。`, "system");
+        try {
+          await (await import("./_service-receptions.js")).endReceptionRecord(id, prevOwner.id);
+        } catch (_) {}
+        await addMessage(
+          conversation,
+          service.profile.id,
+          "customer_service",
+          `管理员已将该订单从【${prevName}】转交给【${nextNick}】。`,
+          "system"
+        );
       } else if (!existing.customer_service_id) {
-        await addMessage(conversation, service.profile.id, "customer_service", `客服 ${nick} 已接待您。`, "system");
+        await addMessage(conversation, service.profile.id, "customer_service", `客服 ${nextNick} 已接待您。`, "system");
       }
-      await markConversationBossMessagesRead(id, { bossId: conversation.boss_id || existing.boss_id, conversation });
+      try {
+        await (await import("./_service-receptions.js")).startReceptionRecord(conversation, targetProfile.id);
+      } catch (_) {}
+      await logSessionAction({
+        conversationId: id,
+        orderId: conversation.order_id || existing.order_id || null,
+        action: "admin_takeover",
+        fromCsId: prevOwner?.id || null,
+        toCsId: targetProfile.id,
+        operatorId: service.profile.id,
+        operatorRole: String(service.profile.role || "admin"),
+        detail: `管理员 ${adminNick} 接管 → ${nextNick}`,
+      });
       return json(res, 200, {
         ok: true,
         message: "已强制接管该会话。",
         conversation: {
           ...conversation,
           status: conversation.status === "serving" ? "active" : (conversation.status || "active"),
-          customer_service_id: service.profile.id,
+          customer_service_id: targetProfile.id,
           accepted_at: conversation.accepted_at || acceptedAt,
+          assignedCsId: targetProfile.id,
+          assignedCsName: nextNick,
+          assignedAt: conversation.accepted_at || acceptedAt,
+          lockStatus: "assigned",
         },
       });
     }
@@ -1908,25 +2026,157 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         return json(res, 400, { ok: false, message: "会话已结束，无法转接。" });
       }
       if (existing.customer_service_id && existing.customer_service_id !== service.profile.id && !isAdminProfile(service.profile)) {
-        return json(res, 403, { ok: false, message: "只有当前接待客服或管理员可将会话转回公共池。" });
+        return json(res, 403, { ok: false, message: CS_LOCK_DENIED });
       }
-      const result = await releaseConversationsToPool(service.profile, [id], "transfer");
-      if (!result.released) {
-        // Admin override when owner differs
-        if (isAdminProfile(service.profile) && existing.customer_service_id) {
+      // Prefer targeted transfer when target provided.
+      if (body.target_cs_id || body.targetCsId || body.to_cs_id) {
+        action = "transfer_to_cs";
+      } else {
+        // Pool release is only allowed for admin (ops). Regular CS must pick a target CS.
+        if (!isAdminProfile(service.profile)) {
+          return json(res, 400, {
+            ok: false,
+            message: "转交必须选择目标客服。不允许解除锁定后让所有客服同时回复。",
+            code: "TRANSFER_TARGET_REQUIRED",
+          });
+        }
+        const result = await releaseConversationsToPool(service.profile, [id], "admin");
+        if (!result.released && existing.customer_service_id) {
           const owner = await profileById(existing.customer_service_id);
-          const alt = await releaseConversationsToPool(owner || { id: existing.customer_service_id, display_name: "客服" }, [id], "admin");
+          const alt = await releaseConversationsToPool(
+            owner || { id: existing.customer_service_id, display_name: "客服" },
+            [id],
+            "admin"
+          );
           if (!alt.released) return json(res, 500, { ok: false, message: "转接失败，请重试。" });
+        }
+        await logSessionAction({
+          conversationId: id,
+          orderId: existing.order_id || null,
+          action: "transfer_pool",
+          fromCsId: existing.customer_service_id || null,
+          toCsId: null,
+          operatorId: service.profile.id,
+          operatorRole: String(service.profile.role || "admin"),
+          detail: "管理员转回公共池",
+        });
+        const again = (await tableRows("conversations", `?id=eq.${encodeURIComponent(id)}&limit=1`))[0] || existing;
+        return json(res, 200, {
+          ok: true,
+          message: "会话已转回公共池，其他在线客服可接待。",
+          conversation: again,
+          userTip: TRANSFER_USER_TIP,
+        });
+      }
+    }
+    if (action === "transfer_to_cs" || action === "transfer_conversation" || (action === "release_conversation" && (body.target_cs_id || body.targetCsId || body.to_cs_id))) {
+      const id = String(body.id || body.conversation_id || body.conversationId || "").trim();
+      const targetId = String(body.target_cs_id || body.targetCsId || body.to_cs_id || "").trim();
+      if (!id) return json(res, 400, { ok: false, message: "缺少会话 ID。" });
+      if (!targetId) return json(res, 400, { ok: false, message: "请选择目标客服。" });
+      const existing = (await tableRows("conversations", `?id=eq.${encodeURIComponent(id)}&limit=1`))[0];
+      if (!existing) return json(res, 404, { ok: false, message: "会话不存在。" });
+      if (existing.status === "closed" || existing.status === "ended") {
+        return json(res, 400, { ok: false, message: "会话已结束，无法转交。" });
+      }
+      const isOwner = existing.customer_service_id === service.profile.id;
+      if (!isOwner && !isAdminProfile(service.profile)) {
+        return json(res, 403, { ok: false, message: CS_LOCK_DENIED });
+      }
+      if (!existing.customer_service_id) {
+        return json(res, 400, { ok: false, message: "该会话尚无负责客服，请先接待。" });
+      }
+      if (targetId === existing.customer_service_id) {
+        return json(res, 200, { ok: true, message: "目标客服已是当前负责人。", conversation: existing, deduped: true });
+      }
+      const target = await profileById(targetId);
+      if (!target || target.role !== "customer_service") {
+        return json(res, 400, { ok: false, message: "目标客服不存在。" });
+      }
+      if (String(target.status || "active") !== "active") {
+        return json(res, 400, { ok: false, message: "目标客服账号已停用。" });
+      }
+      const fromProfile = await profileById(existing.customer_service_id);
+      const fromName = String(fromProfile?.display_name || "").trim() || "客服";
+      const toName = String(target.display_name || "").trim() || "客服";
+      const now = nowIso();
+      let conversation = null;
+      try {
+        const rows = await supabaseJson(
+          restUrl(
+            "conversations",
+            `?id=eq.${encodeURIComponent(id)}&customer_service_id=eq.${encodeURIComponent(existing.customer_service_id)}`
+          ),
+          {
+            method: "PATCH",
+            headers: serviceHeaders(),
+            body: JSON.stringify({
+              customer_service_id: target.id,
+              status: "active",
+              accepted_at: now,
+              updated_at: now,
+              last_active_at: now,
+            }),
+          }
+        );
+        conversation = Array.isArray(rows) ? rows[0] : null;
+      } catch (err) {
+        if (/accepted_at|last_active_at|column|schema|status|check/i.test(String(err?.message || ""))) {
+          const rows = await supabaseJson(restUrl("conversations", `?id=eq.${encodeURIComponent(id)}`), {
+            method: "PATCH",
+            headers: serviceHeaders(),
+            body: JSON.stringify({
+              customer_service_id: target.id,
+              status: "serving",
+              updated_at: now,
+            }),
+          });
+          conversation = Array.isArray(rows) ? rows[0] : null;
         } else {
-          return json(res, 500, { ok: false, message: "转接失败，请重试。" });
+          throw err;
         }
       }
-      const again = (await tableRows("conversations", `?id=eq.${encodeURIComponent(id)}&limit=1`))[0] || existing;
+      if (!conversation) {
+        return json(res, 409, { ok: false, message: "转交失败，会话归属可能已变更，请刷新后重试。" });
+      }
+      if (conversation.order_id) {
+        try {
+          await patchOrder(conversation.order_id, { customer_service_id: target.id });
+        } catch (_) {}
+      }
+      try {
+        await (await import("./_service-receptions.js")).endReceptionRecord(id, existing.customer_service_id);
+      } catch (_) {}
+      try {
+        await (await import("./_service-receptions.js")).startReceptionRecord(conversation, target.id);
+      } catch (_) {}
+      const sys =
+        isAdminProfile(service.profile) && !isOwner
+          ? `管理员已将该订单从【${fromName}】转交给【${toName}】。`
+          : `该订单已由【${fromName}】转交给【${toName}】。`;
+      await addMessage(conversation, service.profile.id, "customer_service", sys, "system");
+      await logSessionAction({
+        conversationId: id,
+        orderId: conversation.order_id || existing.order_id || null,
+        action: isAdminProfile(service.profile) && !isOwner ? "admin_transfer" : "transfer",
+        fromCsId: existing.customer_service_id,
+        toCsId: target.id,
+        operatorId: service.profile.id,
+        operatorRole: String(service.profile.role || "customer_service"),
+        detail: sys,
+      });
       return json(res, 200, {
         ok: true,
-        message: "会话已转回公共池，其他在线客服可接待。",
-        conversation: again,
-        userTip: TRANSFER_USER_TIP,
+        message: "转交成功。",
+        conversation: {
+          ...conversation,
+          assignedCsId: target.id,
+          assignedCsName: toName,
+          assignedAt: now,
+          lockStatus: "assigned",
+          currentServiceId: target.id,
+          currentServiceName: toName,
+        },
       });
     }
     if (action === "end_conversation") {
@@ -2032,6 +2282,16 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       }
       await markConversationBossMessagesRead(id, { bossId: existing.boss_id, conversation: existing });
       await addMessage(conversation || existing, service.profile.id, "customer_service", "客服已结束本次接待。", "system");
+      await logSessionAction({
+        conversationId: id,
+        orderId: existing.order_id || null,
+        action: "end",
+        fromCsId: service.profile.id,
+        toCsId: service.profile.id,
+        operatorId: service.profile.id,
+        operatorRole: "customer_service",
+        detail: "结束接待",
+      });
       await markConversationBossMessagesRead(id, { bossId: existing.boss_id, conversation: existing });
       const consultMsg =
         commissionEval?.consultation || commissionEval?.code === "CONSULTATION" || commissionEval?.code === "UNPAID"
@@ -2060,6 +2320,19 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       if (!id) return json(res, 400, { ok: false, message: "缺少会话 ID。" });
       const existing = (await tableRows("conversations", `?id=eq.${encodeURIComponent(id)}&limit=1`))[0];
       if (!existing) return json(res, 404, { ok: false, message: "会话不存在。" });
+      // Only the assigned CS (or admin) may clear unread. View-only CS must not wipe owner unread.
+      const ownerId = String(existing.customer_service_id || "").trim();
+      if (ownerId && ownerId !== service.profile.id && !isAdminProfile(service.profile)) {
+        const unread = await countUnreadBossMessages(id, { roles: unreadRolesForConversation(existing) });
+        return json(res, 200, {
+          ok: true,
+          message: "只读查看，未清除负责客服未读。",
+          skipped: true,
+          conversation: { ...existing, unread, unreadCount: unread },
+          unread,
+          unreadCount: unread,
+        });
+      }
       const roles = unreadRolesForConversation(existing);
       const marked = await markConversationBossMessagesRead(id, {
         bossId: existing.boss_id,
@@ -2085,27 +2358,28 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       if (!id) return json(res, 400, { ok: false, message: "缺少会话 ID。" });
       const existing = (await tableRows("conversations", `?id=eq.${encodeURIComponent(id)}&limit=1`))[0];
       if (!existing) return json(res, 404, { ok: false, message: "会话不存在。" });
-      const lockMsg = await lockMessageForConversation(existing, service.profile);
-      if (lockMsg) {
-        const other = await profileById(existing.customer_service_id);
-        return json(res, 403, {
-          ok: false,
-          message: lockMsg,
-          locked: true,
-          currentServiceId: existing.customer_service_id || "",
-          currentServiceName: String(other?.display_name || "").trim() || "其他客服",
-        });
-      }
+      // Other CS may VIEW messages; mutate endpoints still enforce ownership.
+      const lockBanner = await lockMessageForConversation(existing, service.profile);
       const rows = await maybeRows(
         "messages",
         `?conversation_id=eq.${encodeURIComponent(id)}&order=created_at.asc&limit=500`
       );
       const ids = [...new Set((rows || []).map((m) => m.sender_id).filter(Boolean))];
       const profiles = await profileMap(ids.concat([existing.boss_id, existing.companion_id, existing.customer_service_id]));
+      const other = existing.customer_service_id ? profiles[existing.customer_service_id] || (await profileById(existing.customer_service_id)) : null;
+      const lockedByOther = !!lockBanner;
       return json(res, 200, {
         ok: true,
         conversationId: id,
         messages: (rows || []).map((row) => safeMessage(row, profiles)),
+        locked: lockedByOther,
+        lockedByOther,
+        lockBanner: lockBanner || "",
+        currentServiceId: existing.customer_service_id || "",
+        currentServiceName: String(other?.display_name || "").trim() || "",
+        assignedCsId: existing.customer_service_id || "",
+        assignedCsName: String(other?.display_name || "").trim() || "",
+        canMutate: !lockedByOther && !!existing.customer_service_id && existing.customer_service_id === service.profile.id,
       });
     }
     if (action === "poll_updates" || action === "chat_poll") {
@@ -2230,13 +2504,9 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
           _unreadRoles: unreadRoles,
         };
       });
-      const lockedConvIds = new Set(
-        conversations.filter((c) => c.lockedByOther).map((c) => c.id)
-      );
       const messages = (msgRows || [])
         .slice()
         .sort((a, b) => String(a.created_at || "").localeCompare(String(b.created_at || "")))
-        .filter((row) => !lockedConvIds.has(row.conversation_id))
         .map((row) => safeMessage(row, profiles));
       // Light unread recount for listed conversations using last_read_at + recent messages sample.
       const byConv = messages.reduce((m, msg) => {
@@ -2245,9 +2515,21 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       }, {});
       for (const c of conversations) {
         if (c.lockedByOther) {
-          c.lastMessage = "该会话已由其他客服接待";
-          c.unread = 0;
-          c.unreadCount = 0;
+          const list = byConv[c.id] || [];
+          if (list.length) {
+            const last = list[list.length - 1];
+            c.lastMessage = last.content || c.lastMessage || "";
+            c.lastTime = last.createdAt || c.lastTime;
+          }
+          // Other CS can see that new messages exist, but must not clear owner unread via mark_read.
+          const roles = c._unreadRoles || ["boss"];
+          const peerNew = list.filter((m) => roles.includes(m.senderRole) && !m.readAt).length;
+          if (peerNew > 0) {
+            c.unread = Math.max(Number(c.unread || 0), peerNew);
+            c.unreadCount = c.unread;
+            c.hasNewMessages = true;
+          }
+          c.lockBanner = CS_LOCK_VIEW_ONLY(c.currentServiceName || "其他客服");
           delete c._unreadRoles;
           continue;
         }
@@ -2324,17 +2606,20 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         return json(res, 403, { ok: false, message: "会话已结束，无法继续发送消息。" });
       }
       if (!conversation.customer_service_id) {
-        return json(res, 403, { ok: false, message: "请先点击接待后再回复。" });
+        return json(res, 403, { ok: false, message: "请先点击「开始接待」后再回复。" });
       }
-      if (conversation.customer_service_id !== service.profile.id) {
+      if (conversation.customer_service_id !== service.profile.id && !isAdminProfile(service.profile)) {
         const other = await profileById(conversation.customer_service_id);
         const otherName = String(other?.display_name || "").trim() || "其他客服";
         return json(res, 403, {
           ok: false,
-          message: `该会话已由 ${otherName} 接待`,
+          message: CS_LOCK_DENIED,
+          lockBanner: CS_LOCK_VIEW_ONLY(otherName),
           locked: true,
           currentServiceId: conversation.customer_service_id || "",
           currentServiceName: otherName,
+          assignedCsId: conversation.customer_service_id || "",
+          assignedCsName: otherName,
         });
       }
       let messageType = String(body.messageType || body.message_type || "text").trim() || "text";
@@ -2355,6 +2640,7 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
           throw err;
         }
       }
+      await touchConversationActive({ restUrl, supabaseJson, serviceHeaders }, conversation.id);
       const messageRow = msg
         ? Object.assign({}, safeMessage(msg, { [service.profile.id]: service.profile }), {
             senderName: String(service.profile.display_name || "").trim() || "客服",
@@ -2379,12 +2665,9 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         return json(res, 500, { ok: false, message: "下班打卡未写入数据库，请重试。" });
       }
       let released = { released: 0, ids: [] };
+      // 下班不自动释放订单会话：避免其他客服误抢；必须走转交或管理员接管。
       if (action === "clock_out" && !result?.already) {
-        try {
-          released = await releaseConversationsToPool(service.profile, null, "off_duty");
-        } catch (_) {
-          released = { released: 0, ids: [] };
-        }
+        released = { released: 0, ids: [], retained: true };
       }
       const attendance = result.meta;
       const totalMs = Date.now() - t0;
@@ -2411,7 +2694,108 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         totalMs,
       });
     }
+    if (action === "list_cs_staff" || action === "list_transfer_targets") {
+      const rows = await maybeRows(
+        "profiles",
+        `?role=eq.customer_service&status=eq.active&select=id,display_name,email,status&order=display_name.asc&limit=200`
+      );
+      const staff = (rows || [])
+        .filter((p) => p?.id)
+        .map((p) => ({
+          id: p.id,
+          name: String(p.display_name || "").trim() || "客服",
+          email: p.email || "",
+          isSelf: p.id === service.profile.id,
+        }));
+      return json(res, 200, { ok: true, staff });
+    }
+    if (action === "create_after_sales_conversation" || action === "start_after_sales") {
+      const orderId = String(body.order_id || body.orderId || body.id || "").trim();
+      if (!orderId) return json(res, 400, { ok: false, message: "缺少订单 ID。" });
+      const order = await orderById(orderId);
+      if (!order) return json(res, 404, { ok: false, message: "订单不存在。" });
+      // Close any leftover open order thread so after-sales is independent.
+      try {
+        const openRows = await maybeRows(
+          "conversations",
+          `?order_id=eq.${encodeURIComponent(orderId)}&status=not.in.(closed,ended)&limit=20`
+        );
+        for (const row of openRows || []) {
+          if (row.customer_service_id && row.customer_service_id !== service.profile.id && !isAdminProfile(service.profile)) {
+            continue;
+          }
+          await supabaseJson(restUrl("conversations", `?id=eq.${encodeURIComponent(row.id)}`), {
+            method: "PATCH",
+            headers: serviceHeaders(),
+            body: JSON.stringify({ status: "ended", updated_at: nowIso(), closed_at: nowIso(), closed_by: service.profile.id }),
+          }).catch(() => null);
+        }
+      } catch (_) {}
+      const conversation = await ensureConversation({
+        boss_id: order.boss_id,
+        companion_id: order.companion_id || null,
+        customer_service_id: service.profile.id,
+        order_id: orderId,
+        consult_type: "refund",
+        forceNew: true,
+      });
+      if (!conversation) return json(res, 500, { ok: false, message: "创建售后会话失败。" });
+      // Ensure consult_type + claim
+      try {
+        await supabaseJson(restUrl("conversations", `?id=eq.${encodeURIComponent(conversation.id)}`), {
+          method: "PATCH",
+          headers: serviceHeaders(),
+          body: JSON.stringify({
+            consult_type: "refund",
+            conversation_type: "order_support",
+            customer_service_id: service.profile.id,
+            status: "active",
+            accepted_at: nowIso(),
+            updated_at: nowIso(),
+          }),
+        });
+      } catch (_) {}
+      await addMessage(
+        conversation,
+        service.profile.id,
+        "customer_service",
+        `售后会话已创建（订单 ${order.order_no || orderId}）。由客服 ${String(service.profile.display_name || "").trim() || "客服"} 负责。`,
+        "system",
+        orderId
+      );
+      await logSessionAction({
+        conversationId: conversation.id,
+        orderId,
+        action: "after_sales_create",
+        fromCsId: null,
+        toCsId: service.profile.id,
+        operatorId: service.profile.id,
+        operatorRole: "customer_service",
+        detail: "创建售后会话",
+      });
+      return json(res, 200, {
+        ok: true,
+        message: "已创建售后会话。",
+        conversationId: conversation.id,
+        conversation,
+      });
+    }
     if (action === "create_order") {
+      // If creating from a locked conversation, only the owner may mutate.
+      const ctxConvId = String(body.conversation_id || body.conversationId || "").trim();
+      if (ctxConvId) {
+        const ctx = (await tableRows("conversations", `?id=eq.${encodeURIComponent(ctxConvId)}&limit=1`))[0];
+        if (ctx) {
+          try {
+            await assertOwnsConversation({ conversation: ctx, serviceProfile: service.profile, allowUnassigned: true });
+          } catch (err) {
+            return json(res, err.status || 403, { ok: false, message: err.message || CS_LOCK_DENIED, code: err.code || "CS_SESSION_LOCKED" });
+          }
+          if (ctx.status === "closed" || ctx.status === "ended") {
+            return json(res, 403, { ok: false, message: "已结束会话中不能继续创建订单，请新建对话或售后会话。" });
+          }
+        }
+      }
       const o = body.order || body;
       const rawBossId = String(o.boss_id || o.bossId || o.boss || "").trim();
       const rawBossUid = String(o.boss_uid || o.bossUid || "").trim();
@@ -2663,6 +3047,11 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       const order = await orderById(String(body.id || body.order_id || ""));
       const reason = String(body.reason || body.reject_reason || "").trim();
       if (!order) return json(res, 404, { ok: false, message: "订单不存在。" });
+      try {
+        await assertOrderMutationAllowed(order, service.profile);
+      } catch (err) {
+        return json(res, err.status || 403, { ok: false, message: err.message || CS_LOCK_DENIED, code: err.code || "CS_SESSION_LOCKED" });
+      }
       if (order.status !== "awaiting_payment") return json(res, 409, { ok: false, message: "当前订单不在付款审核中。" });
       if (!reason) return json(res, 400, { ok: false, message: "请填写驳回付款原因。" });
       const receipts = await listPendingForCs({ orderIds: [order.id] });
@@ -2688,6 +3077,11 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
     if (action === "confirm_payment" || action === "push_to_grab_hall" || action === "send_to_grab_hall") {
       const order = await orderById(String(body.id || body.order_id || ""));
       if (!order) return json(res, 404, { ok: false, message: "订单不存在。" });
+      try {
+        await assertOrderMutationAllowed(order, service.profile);
+      } catch (err) {
+        return json(res, err.status || 403, { ok: false, message: err.message || CS_LOCK_DENIED, code: err.code || "CS_SESSION_LOCKED" });
+      }
 
       const { createGrabListingHelpers } = await import("./_order-grab-listings.js");
       const listingsApi = createGrabListingHelpers({ restUrl, supabaseJson, serviceHeaders });
@@ -2965,6 +3359,11 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
     if (action === "cancel_grab_hall" || action === "cancel_open_grab") {
       const order = await orderById(String(body.id || body.order_id || ""));
       if (!order) return json(res, 404, { ok: false, message: "订单不存在。" });
+      try {
+        await assertOrderMutationAllowed(order, service.profile);
+      } catch (err) {
+        return json(res, err.status || 403, { ok: false, message: err.message || CS_LOCK_DENIED, code: err.code || "CS_SESSION_LOCKED" });
+      }
       if (order.companion_id) {
         return json(res, 400, { ok: false, message: "已指定陪玩的订单不能取消抢单，请走取消订单 / 售后。" });
       }
@@ -3121,6 +3520,11 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       const order = await orderById(String(body.id || body.order_id || ""));
       const companion = await resolveCompanion(String(body.companion_id || body.companionId || body.companion_uid || ""));
       if (!order || !companion || !isUuid(companion.id)) return json(res, 400, { ok: false, message: "订单或陪玩不存在。" });
+      try {
+        await assertOrderMutationAllowed(order, service.profile);
+      } catch (err) {
+        return json(res, err.status || 403, { ok: false, message: err.message || CS_LOCK_DENIED, code: err.code || "CS_SESSION_LOCKED" });
+      }
       // BOSS_PICK_LOCK: once companion is formally bound (claimed+), CS cannot steal/reassign.
       // Public grab hall (pending / waiting_boss_confirm): CS MAY confirm from grab list
       // (confirm_grab_assignment / from_grabs) — required for 查看抢单人 → 指定陪玩.
@@ -3282,6 +3686,11 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       const status = String(body.status || "");
       const order = await orderById(id);
       if (!order) return json(res, 404, { ok: false, message: "订单不存在。" });
+      try {
+        await assertOrderMutationAllowed(order, service.profile);
+      } catch (err) {
+        return json(res, err.status || 403, { ok: false, message: err.message || CS_LOCK_DENIED, code: err.code || "CS_SESSION_LOCKED" });
+      }
       const { assertCsStatusTransition, transitionOrderStatus, CS_STATUS_ACTION_LABELS } = await import("./_order-status.js");
       let transition;
       try {
@@ -3350,6 +3759,11 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
     if (action === "refund_decision") {
       const order = await orderById(String(body.id || body.order_id || ""));
       if (!order || order.status !== "refund_requested") return json(res, 400, { ok: false, message: "只有退款申请中的订单可以处理退款。" });
+      try {
+        await assertOrderMutationAllowed(order, service.profile);
+      } catch (err) {
+        return json(res, err.status || 403, { ok: false, message: err.message || CS_LOCK_DENIED, code: err.code || "CS_SESSION_LOCKED" });
+      }
       const decision = String(body.decision || "");
       const note = String(body.note || "");
       if (!note) return json(res, 400, { ok: false, message: "退款处理必须填写备注。" });

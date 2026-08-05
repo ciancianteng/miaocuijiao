@@ -60,12 +60,12 @@
   }
   function lockPanelHtml(conv){
     if(!conv)return '';
-    var name=esc(conv.currentServiceName||'其他客服');
-    return '<div class="cs-lock-panel" data-cs-lock-panel>'+
-      '<div class="cs-lock-icon" aria-hidden="true">🔒</div>'+
-      '<h3>会话已锁定</h3>'+
-      '<p>该会话已由 <strong>'+name+'</strong> 接待</p>'+
-      '<p class="cs-lock-hint">你无法查看消息或回复，请等待该客服结束接待。</p>'+
+    var name=esc(conv.assignedCsName||conv.currentServiceName||'其他客服');
+    var at=esc(conv.assignedAt||conv.acceptedAt||'');
+    return '<div class="cs-lock-banner" data-cs-lock-panel style="margin:8px 12px;padding:10px 12px;border-radius:10px;background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.35);color:#fde68a">'+
+      '<strong>只读模式</strong>'+
+      '<p style="margin:6px 0 0">该订单正在由【'+name+'】处理中，当前仅可查看。</p>'+
+      (at?'<p style="margin:4px 0 0;opacity:.85;font-size:12px">接待开始：'+at+'</p>':'')+
       '</div>';
   }
   function convBucket(c){
@@ -718,6 +718,21 @@
       '客服'
     ).trim()||'客服';
   }
+  function isAdminSession(){
+    var role=String(
+      (state.session&&state.session.user&&state.session.user.role)||
+      (state.data&&state.data.staff&&state.data.staff.role)||
+      ''
+    ).toLowerCase();
+    return role==='admin'||role==='super_admin'||role==='finance_admin';
+  }
+  function canMutateActiveOrder(){
+    var active=activeConversation();
+    if(!active)return true;
+    if(isClosedConv(active))return false;
+    if(isLockedByOther(active))return false;
+    return composerCanReply(active)||!active.currentServiceId;
+  }
   function applyAcceptedLocally(cid, remoteConv){
     if(!cid||!state.data)return;
     remoteConv=remoteConv||{};
@@ -868,11 +883,11 @@
   function composerBlockReason(conv){
     if(!conv)return '请先选择会话';
     if(isClosedConv(conv))return '会话已结束，无法继续发送';
-    if(isLockedByOther(conv))return '该会话已由 '+(conv.currentServiceName||'其他客服')+' 接待';
+    if(isLockedByOther(conv))return '该订单正在由【'+(conv.assignedCsName||conv.currentServiceName||'其他客服')+'】处理中，当前仅可查看。';
     var mid=myServiceId();
-    if(conv.currentServiceId&&mid&&conv.currentServiceId!==mid&&conv.currentServiceId!=='local-self')return '该会话已由 '+(conv.currentServiceName||'其他客服')+' 接待';
+    if(conv.currentServiceId&&mid&&conv.currentServiceId!==mid&&conv.currentServiceId!=='local-self')return '该订单当前由其他客服负责，你没有操作权限。';
     if(state.acceptLock&&state.acceptLock.id===conv.id&&state.acceptLock.until>Date.now())return '';
-    if(!conv.currentServiceId)return '请先点击接待后再回复';
+    if(!conv.currentServiceId)return '请先点击「开始接待」后再回复';
     return '';
   }
   function clearUnreadLocally(cid){
@@ -916,10 +931,14 @@
   function markConversationRead(cid){
     var id=String(cid||'').trim();
     if(!id)return Promise.resolve();
+    var conv=((state.data&&state.data.conversations)||[]).find(function(c){return c.id===id});
+    // View-only CS must not clear the assigned CS unread state.
+    if(conv&&isLockedByOther(conv))return Promise.resolve();
     clearUnreadLocally(id);
     // Do not softRefresh after read — stale poll used to restore unread and freeze tab counts.
     syncPoolCounters();
     return api('mark_read',{id:id,conversation_id:id}).then(function(res){
+      if(res&&res.skipped)return;
       clearUnreadLocally(id);
       if(res&&(res.last_read_at||(res.conversation&&res.conversation.last_read_at))){
         var at=res.last_read_at||res.conversation.last_read_at;
@@ -1661,7 +1680,7 @@
     var lockedActive=isLockedByOther(active);
     var wasNearBottom=true;
     try{wasNearBottom=(box.scrollHeight-box.scrollTop-box.clientHeight)<80;}catch(e){}
-    box.innerHTML=lockedActive?lockPanelHtml(active):(msgs.length?msgs.map(messageHtml).join(''):'<div class="cs-empty">暂无消息</div>');
+    box.innerHTML=(lockedActive?lockPanelHtml(active):'')+(msgs.length?msgs.map(messageHtml).join(''):(lockedActive?'':'<div class="cs-empty">暂无消息</div>'));
     if(wasNearBottom){try{box.scrollTop=box.scrollHeight;}catch(e){}}
     if(listEl){
       var scroller=listEl.querySelector('[data-cs-virt-body]')||listEl;
@@ -1718,24 +1737,24 @@
       var actionBtn=headEl.querySelector('[data-take],[data-end]');
       var isClosed=isClosedConv(active);
       var takeHtml=isClosed
-        ?'<button class="cs-btn" type="button" disabled>会话已结束</button>'
+        ?'<button class="cs-btn" type="button" disabled>会话已结束</button>'+(active.orderId?'<button class="cs-btn" type="button" data-after-sales="'+esc(active.orderId)+'">创建售后会话</button>':'')
         :takenByOther
-        ?'<button class="cs-btn" type="button" disabled>该会话已由 '+esc(active.currentServiceName||'其他客服')+' 接待</button>'
+        ?'<button class="cs-btn" type="button" disabled>只读 · '+esc(active.assignedCsName||active.currentServiceName||'其他客服')+'</button>'+(isAdminSession()?'<button class="cs-btn primary" type="button" data-admin-takeover="'+esc(active.id)+'">管理员接管</button>':'')
         :(takenByMe
-          ?'<button class="cs-btn danger" type="button" data-end="'+esc(active.id)+'">结束接待</button>'
+          ?'<button class="cs-btn" type="button" data-transfer-cs="'+esc(active.id)+'">转交客服</button><button class="cs-btn danger" type="button" data-end="'+esc(active.id)+'">结束对话</button>'
           :(!active.currentServiceId
-            ?'<button class="cs-btn primary" type="button" data-take="'+esc(active.id)+'"'+(state.acceptingId===active.id?' disabled data-taking="1"':'')+'>'+(state.acceptingId===active.id?'接待中…':'接待')+'</button>'
+            ?'<button class="cs-btn primary" type="button" data-take="'+esc(active.id)+'"'+(state.acceptingId===active.id?' disabled data-taking="1"':'')+'>'+(state.acceptingId===active.id?'接待中…':'开始接待')+'</button>'
             :''));
       // Remove any stale take/end buttons (avoid 接待+结束接待 both showing).
-      headEl.querySelectorAll('[data-take],[data-end]').forEach(function(btn){btn.remove();});
+      headEl.querySelectorAll('[data-take],[data-end],[data-transfer-cs],[data-admin-takeover],[data-after-sales]').forEach(function(btn){btn.remove();});
       var disabledStatus=headEl.querySelectorAll('.cs-chat-head > .cs-btn:not(.cs-back-list)');
       disabledStatus.forEach(function(btn){
-        if(!btn.getAttribute('data-take')&&!btn.getAttribute('data-end')&&/已结束|已由客服|接待/.test(btn.textContent||''))btn.remove();
+        if(!btn.getAttribute('data-take')&&!btn.getAttribute('data-end')&&!btn.getAttribute('data-transfer-cs')&&!btn.getAttribute('data-admin-takeover')&&!btn.getAttribute('data-after-sales')&&/已结束|已由客服|接待|只读|转交|接管|售后|结束对话/.test(btn.textContent||''))btn.remove();
       });
       headEl.insertAdjacentHTML('beforeend',takeHtml);
       syncReceptionBanner(takenByOther?null:active);
       var composerWrap=root.querySelector('[data-cs-composer-wrap]');
-      if(composerWrap&&(isClosed||takenByOther))composerWrap.remove();
+      if(composerWrap&&isClosed)composerWrap.remove();
     } else if(headEl&&!active){
       // Return to list empty state handled by paint; patch only when layout exists with active.
     }
@@ -2538,12 +2557,16 @@
     var orderShort=shortOrderNo(c.orderNo||order.orderNo);
     var meta=orderShort?(game+' · '+orderShort):game;
     var kind=conversationStatusKind(c);
-    var tagText=kind==='ended'?'⚪ 已结束':(kind==='active'?'🟢 接待中':'🟡 待接待');
+    var locked=isLockedByOther(c);
+    var tagText=kind==='ended'?'⚪ 已结束':(kind==='active'?(locked?'🟠 对接中':'🟢 接待中'):'🟡 待接待');
     var preview=String(c.lastMessage||'暂无消息').replace(/\s+/g,' ').trim();
-    var unread=isLockedByOther(c)?0:(Number(c.unread||c.unreadCount||0)||0);
+    var unread=Number(c.unread||c.unreadCount||0)||0;
     var unreadText=unread>99?'99+':String(unread);
     var time=listTimeLabel(c.lastTime||c.updatedAt||c.createdAt);
-    return '<button type="button" class="cs-conversation'+(active&&active.id===c.id?' active':'')+' is-'+kind+'" data-conversation="'+esc(c.id)+'">'+
+    var ownerLine=kind==='active'
+      ?('<div class="cs-conv-row" style="font-size:11px;opacity:.8;margin-top:2px">负责：'+esc(c.assignedCsName||c.currentServiceName||'-')+(c.assignedAt||c.acceptedAt?(' · '+esc(listTimeLabel(c.assignedAt||c.acceptedAt))):'')+'</div>')
+      :'';
+    return '<button type="button" class="cs-conversation'+(active&&active.id===c.id?' active':'')+' is-'+kind+(locked?' is-locked':'')+'" data-conversation="'+esc(c.id)+'">'+
       '<div class="cs-conv-row cs-conv-row-top">'+
         '<strong class="cs-conv-name">'+esc(role+' · '+nick)+'</strong>'+
         (time?'<time class="cs-conv-time">'+esc(time)+'</time>':'')+
@@ -2552,6 +2575,7 @@
         '<span class="cs-conv-meta">'+esc(meta)+'</span>'+
         '<span class="cs-conv-tag '+kind+'">'+esc(tagText)+'</span>'+
       '</div>'+
+      ownerLine+
       '<div class="cs-conv-row cs-conv-row-bot">'+
         '<span class="cs-conv-preview">'+esc(preview)+'</span>'+
         (unread?'<b class="cs-conv-unread">'+esc(unreadText)+'</b>':'')+
@@ -2575,13 +2599,13 @@
     var isClosed=isClosedConv(active);
     var lockedActive=takenByOther;
     var takeBtn=active?(isClosed
-      ?'<button class="cs-btn" type="button" disabled>会话已结束</button>'
+      ?'<button class="cs-btn" type="button" disabled>会话已结束</button>'+(active.orderId?'<button class="cs-btn" type="button" data-after-sales="'+esc(active.orderId)+'">创建售后会话</button>':'')
       :takenByOther
-      ?'<button class="cs-btn" type="button" disabled>该会话已由 '+esc(active.currentServiceName||'其他客服')+' 接待</button>'
+      ?'<button class="cs-btn" type="button" disabled>只读 · '+esc(active.assignedCsName||active.currentServiceName||'其他客服')+'</button>'+(isAdminSession()?'<button class="cs-btn primary" type="button" data-admin-takeover="'+esc(active.id)+'">管理员接管</button>':'')
       :(takenByMe
-        ?'<button class="cs-btn danger" type="button" data-end="'+esc(active.id)+'">结束接待</button>'
+        ?'<button class="cs-btn" type="button" data-transfer-cs="'+esc(active.id)+'">转交客服</button><button class="cs-btn danger" type="button" data-end="'+esc(active.id)+'">结束对话</button>'
         :(!active.currentServiceId
-          ?'<button class="cs-btn primary" type="button" data-take="'+esc(active.id)+'"'+(state.acceptingId===active.id?' disabled data-taking="1"':'')+'>'+(state.acceptingId===active.id?'接待中…':'接待')+'</button>'
+          ?'<button class="cs-btn primary" type="button" data-take="'+esc(active.id)+'"'+(state.acceptingId===active.id?' disabled data-taking="1"':'')+'>'+(state.acceptingId===active.id?'接待中…':'开始接待')+'</button>'
           :''))):'';
     var bossLabel=active?((active.conversationType==='companion_support'||(!active.bossId&&active.companionId))?'':publicBossCode(active)):'';
     var activeTitle=active
@@ -2590,8 +2614,9 @@
         : sanitizeBossLabel(active.bossName,bossLabel))
       : '';
     var listOpen=!!state.showConversationList;
-    var composerHtml=(active&&!isClosed&&!lockedActive)
+    var composerHtml=(active&&!isClosed)
       ?('<div class="cs-chat-composer" data-cs-composer-wrap>'+
+        (lockedActive?lockPanelHtml(active):'')+
         '<p class="cs-composer-hint" data-cs-composer-hint'+(canReply?' hidden':'')+'>'+esc(canReply?'':blockReason)+'</p>'+
         '<form class="cs-chat-input" data-send-message action="#" method="post" autocomplete="off" onsubmit="return false;">'+
         '<div class="mcj-composer-tools">'+
@@ -2643,7 +2668,7 @@
           '<p>'+(bossLabel?'编号 '+esc(bossLabel)+' · ':'')+(active.orderNo?'订单 '+esc(active.orderNo)+' · ':'')+esc(isClosed?'已结束':(active.currentServiceId?(active.currentServiceName||'接待中'):'待接待'))+'</p></div></div>'+
           takeBtn+
           '</header>'+
-          '<div class="cs-chat-messages">'+(lockedActive?lockPanelHtml(active):(msgs.length?msgs.map(messageHtml).join(''):'<div class="cs-empty">暂无消息</div>'))+'</div>'+
+          '<div class="cs-chat-messages">'+(lockedActive?lockPanelHtml(active):'')+(msgs.length?msgs.map(messageHtml).join(''):'<div class="cs-empty">暂无消息</div>')+'</div>'+
           composerHtml)
         :'<div class="cs-empty cs-pick-session">请从左侧选择会话<button class="cs-btn primary" style="margin-top:12px" type="button" data-open-conv-list>打开会话列表</button></div>')+
       '</section>'+
@@ -2723,6 +2748,11 @@
     if(o.status!=='claimed'&&!inGrabHall)actions.push('<button class="cs-btn" data-status-order="'+esc(o.id)+'">改状态</button>');
     actions.push('<button class="cs-btn" data-route="/customer-service/compensation" type="button">申请补偿</button>');
     if((o.status==='refund_requested'||o.needsReassign)&&o.status!=='claimed')actions.push('<button class="cs-btn" data-refund-order="'+esc(o.id)+'">'+(o.needsReassign?'发起退款':'处理退款')+'</button>');
+    var orderConv=((state.data&&state.data.conversations)||[]).find(function(c){return c.orderId===o.id&&!isClosedConv(c);});
+    if(orderConv&&isLockedByOther(orderConv)){
+      actions=['<span class="cs-note">该订单正在由【'+esc(orderConv.assignedCsName||orderConv.currentServiceName||'其他客服')+'】处理中，当前仅可查看。</span>'];
+      if((o.grabCount||0)>0||o.status==='waiting_boss_confirm'||o.status==='pending')actions.push('<button class="cs-btn" data-view-grabs="'+esc(o.id)+'">查看抢单人('+(o.grabCount||0)+')</button>');
+    }
     var statusLabel=o.paymentReview?'待审核':o.statusText;
     var statusCell=esc(statusLabel)+(o.needsReassign?'<br><small style="color:#f59e0b">'+(esc(o.reassignHint||'待重新安排'))+'</small>':'')+(o.acceptedAt&&o.status==='confirmed'?'<br><small>确认：'+esc(o.acceptedAt)+'</small>':'')+(inGrabHall||o.status==='pending'||o.status==='waiting_boss_confirm'?'<br><small>抢单 '+(o.grabCount||0)+' 人</small>':'')+(o.preferredCompanionId?'<br><small style="color:#60a5fa">老板意向已提交</small>':'')+proofBlock;
     return '<tr'+(o.needsReassign?' style="background:rgba(245,158,11,.08)"':'')+(inGrabHall?' data-grab-hall="1"':'')+'><td>'+esc(o.orderNo)+'</td><td>'+esc(sanitizeBossLabel(o.bossName,publicBossCode(o)))+(publicBossCode(o)?'<br><small>'+esc(publicBossCode(o))+'</small>':'')+'</td><td>'+esc(o.companionName)+'</td><td>'+esc(o.game||'-')+'</td><td>'+money(o.totalAmount)+'</td><td>'+statusCell+'</td><td>'+esc(o.createdAt||'-')+'</td><td><div class="cs-actions">'+actions.join('')+'</div></td></tr>';
@@ -3153,7 +3183,7 @@
       // Switch filter tab to match selected conversation bucket.
       var picked=((state.data&&state.data.conversations)||[]).find(function(x){return x.id===cid});
       if(picked)state.convFilter=convBucket(picked);
-      clearUnreadLocally(cid);
+      if(picked&&!isLockedByOther(picked))clearUnreadLocally(cid);
       loadComposerDraftFor(cid);
       paint();
       markConversationRead(cid);
@@ -3173,16 +3203,16 @@
       }).catch(function(err){
         take.disabled=false;
         take.removeAttribute('data-taking');
-        take.textContent='接待';
+        take.textContent='开始接待';
         toast(err&&err.message?err.message:'接待失败');
         if(root.querySelector('.cs-chat-layout'))patchConversationMessages();
       });
       return;
-    }var endTake=e.target.closest('[data-end]');if(endTake){e.preventDefault();if(!confirm('确认结束本次接待吗？'))return;
+    }var endTake=e.target.closest('[data-end]');if(endTake){e.preventDefault();if(!confirm('确认结束本次对话吗？结束后会话只读，聊天记录保留。'))return;
       var endId=String(endTake.dataset.end||'').trim();
       api('end_conversation',{id:endId,conversation_id:endId}).then(function(res){
         var rewardMsg=(res.reward&&res.reward.message)||'';
-        var msg=rewardMsg||res.message||'已结束接待';
+        var msg=rewardMsg||res.message||'已结束对话';
         if(!rewardMsg&&/奖励已到账|已结算.*猫粮/i.test(String(res.message||''))){
           msg='本次仅为咨询，未产生有效订单，不结算猫粮。';
         }
@@ -3197,7 +3227,53 @@
         state.route='conversations';
         paint();
         syncPoolCounters();
-      }).catch(function(err){toast(err.message||'结束接待失败')});return}var proofLight=e.target.closest('[data-proof-lightbox]');if(proofLight){var pUrl=proofLight.getAttribute('data-proof-lightbox')||'';if(pUrl){var oldLb=document.getElementById('csProofLightbox');if(oldLb)oldLb.remove();var lb=document.createElement('div');lb.id='csProofLightbox';lb.className='cs-modal';lb.innerHTML='<div class="cs-dialog" style="max-width:min(96vw,920px);padding:12px;text-align:center"><img src="'+esc(pUrl)+'" alt="付款截图大图" style="max-width:100%;max-height:80vh;object-fit:contain;border-radius:12px"><div style="margin-top:10px"><button class="cs-btn" type="button" data-close-modal>关闭</button></div></div>';document.body.appendChild(lb);}return;}var pay=e.target.closest('[data-confirm-payment]');if(pay){
+      }).catch(function(err){toast(err.message||'结束对话失败')});return}
+    var transferBtn=e.target.closest('[data-transfer-cs]');
+    if(transferBtn){e.preventDefault();openTransferModal(String(transferBtn.dataset.transferCs||'').trim());return;}
+    var adminTake=e.target.closest('[data-admin-takeover]');
+    if(adminTake){
+      e.preventDefault();
+      var aid=String(adminTake.dataset.adminTakeover||'').trim();
+      if(!aid)return;
+      if(!confirm('确认强制接管该订单会话？原负责客服将立即失去输入和操作权限。'))return;
+      adminTake.disabled=true;
+      api('admin_takeover',{id:aid,conversation_id:aid}).then(function(res){
+        toast(res.message||'已接管');
+        return softRefresh().then(function(){state.activeConversation=aid;state.convFilter='active';paint();});
+      }).catch(function(err){adminTake.disabled=false;toast(err.message||'接管失败');});
+      return;
+    }
+    var afterSales=e.target.closest('[data-after-sales]');
+    if(afterSales){
+      e.preventDefault();
+      var oid=String(afterSales.dataset.afterSales||'').trim();
+      if(!oid)return;
+      if(!confirm('确认创建独立售后会话？将生成新会话并重新指定负责客服。'))return;
+      afterSales.disabled=true;
+      api('create_after_sales_conversation',{order_id:oid}).then(function(res){
+        toast(res.message||'已创建售后会话');
+        var nid=res.conversationId||(res.conversation&&res.conversation.id)||'';
+        return softRefresh().then(function(){if(nid){state.activeConversation=nid;state.convFilter='active';}paint();});
+      }).catch(function(err){afterSales.disabled=false;toast(err.message||'创建失败');});
+      return;
+    }
+    var doTransfer=e.target.closest('[data-do-transfer]');
+    if(doTransfer){
+      e.preventDefault();
+      var convId=String(doTransfer.dataset.doTransfer||'').trim();
+      var sel=document.querySelector('[data-transfer-target]');
+      var target=String((sel&&sel.value)||'').trim();
+      if(!target){toast('请选择目标客服');return;}
+      if(!confirm('确认转交？转交后你将立即变为只读，目标客服获得操作权限。'))return;
+      doTransfer.disabled=true;
+      api('transfer_to_cs',{id:convId,conversation_id:convId,target_cs_id:target}).then(function(res){
+        toast(res.message||'转交成功');
+        var modalEl=doTransfer.closest('.cs-modal');if(modalEl)modalEl.remove();
+        return softRefresh();
+      }).catch(function(err){doTransfer.disabled=false;toast(err.message||'转交失败');});
+      return;
+    }
+    var proofLight=e.target.closest('[data-proof-lightbox]');if(proofLight){var pUrl=proofLight.getAttribute('data-proof-lightbox')||'';if(pUrl){var oldLb=document.getElementById('csProofLightbox');if(oldLb)oldLb.remove();var lb=document.createElement('div');lb.id='csProofLightbox';lb.className='cs-modal';lb.innerHTML='<div class="cs-dialog" style="max-width:min(96vw,920px);padding:12px;text-align:center"><img src="'+esc(pUrl)+'" alt="付款截图大图" style="max-width:100%;max-height:80vh;object-fit:contain;border-radius:12px"><div style="margin-top:10px"><button class="cs-btn" type="button" data-close-modal>关闭</button></div></div>';document.body.appendChild(lb);}return;}var pay=e.target.closest('[data-confirm-payment]');if(pay){
       var sendHall=pay.getAttribute('data-send-hall')==='1';
       var payId=pay.dataset.confirmPayment||'';
       if(pay.disabled)return;
@@ -3237,6 +3313,31 @@
   function modal(html, dialogClass){
     var cls=String(dialogClass||'cs-form').trim()||'cs-form';
     document.body.insertAdjacentHTML('beforeend','<div class="cs-modal"><div class="cs-dialog '+cls+'">'+html+'</div></div>');
+  }
+  function openTransferModal(conversationId){
+    var id=String(conversationId||'').trim();
+    if(!id)return;
+    modal('<div class="cs-dialog-head"><h3>转交客服</h3><button class="cs-btn" type="button" data-close-modal>关闭</button></div>'+
+      '<p class="cs-note">转交后仅目标客服可回复与操作；聊天记录完整保留。</p>'+
+      '<label>目标客服<select data-transfer-target><option value="">加载中…</option></select></label>'+
+      '<button class="cs-btn primary" type="button" data-do-transfer="'+esc(id)+'" disabled>确认转交</button>');
+    api('list_cs_staff',{}).then(function(res){
+      var sel=document.querySelector('[data-transfer-target]');
+      var btn=document.querySelector('[data-do-transfer="'+id+'"]');
+      if(!sel)return;
+      var me=myServiceId();
+      var staff=(res.staff||[]).filter(function(s){return s.id&&s.id!==me;});
+      if(!staff.length){
+        sel.innerHTML='<option value="">暂无其他可转交客服</option>';
+        return;
+      }
+      sel.innerHTML='<option value="">请选择客服</option>'+staff.map(function(s){
+        return '<option value="'+esc(s.id)+'">'+esc(s.name)+(s.email?(' / '+s.email):'')+'</option>';
+      }).join('');
+      if(btn)btn.disabled=false;
+    }).catch(function(err){
+      toast(err.message||'加载客服列表失败');
+    });
   }
   function openAssign(id, opts){
     opts=opts||{};
