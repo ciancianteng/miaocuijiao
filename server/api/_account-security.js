@@ -63,9 +63,14 @@ export async function authUserHasPassword(userId) {
     const user = await supabaseJson(authUrl(`admin/users/${encodeURIComponent(userId)}`), {
       headers: serviceHeaders({ Prefer: "return=representation" }),
     });
+    if (user?.user_metadata?.has_password === true || user?.app_metadata?.has_password === true) return true;
+    if (user?.user_metadata?.password_set_at || user?.app_metadata?.password_set_at) return true;
     const hash = user?.encrypted_password;
     // Presence of a non-empty hash means a password identity exists.
-    return !!(hash && String(hash).length > 3);
+    if (hash && String(hash).length > 3) return true;
+    // Some GoTrue builds omit encrypted_password; email users created with a password
+    // still have identities — treat confirmation + metadata absence as unknown→false.
+    return false;
   } catch {
     return false;
   }

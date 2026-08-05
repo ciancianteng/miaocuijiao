@@ -2245,20 +2245,20 @@ export default async function handler(req, res) {
       if (!account || !password) return json(res,400,{ok:false,message:"请输入邮箱和密码"});
       const resolvedLogin = await resolveCompanionAuthEmail(account);
       const email = (resolvedLogin && resolvedLogin.email) || account.toLowerCase();
-      if (resolvedLogin?.profile) {
-        if (String(resolvedLogin.profile.status || "").toLowerCase() === "disabled") {
-          return json(res,403,{ok:false,message:"陪玩账号已停用"});
-        }
-        try {
-          const { resolveHasPassword, NO_PASSWORD_LOGIN_MESSAGE } = await import("./_account-security.js");
-          const hasPwd = await resolveHasPassword(resolvedLogin.profile, {}, { probeAuth: true });
-          if (!hasPwd) return json(res,400,{ok:false,message:NO_PASSWORD_LOGIN_MESSAGE,code:"NO_PASSWORD"});
-        } catch { /* continue to password grant */ }
+      if (resolvedLogin?.profile && String(resolvedLogin.profile.status || "").toLowerCase() === "disabled") {
+        return json(res,403,{ok:false,message:"陪玩账号已停用"});
       }
       let auth;
       try {
         auth = await supabaseJson(authUrl("token?grant_type=password"), { method:"POST", headers: anonHeaders(), body: JSON.stringify({ email, password }) });
       } catch {
+        if (resolvedLogin?.profile) {
+          try {
+            const { resolveHasPassword, NO_PASSWORD_LOGIN_MESSAGE } = await import("./_account-security.js");
+            const hasPwd = await resolveHasPassword(resolvedLogin.profile, {}, { probeAuth: true });
+            if (!hasPwd) return json(res,400,{ok:false,message:NO_PASSWORD_LOGIN_MESSAGE,code:"NO_PASSWORD"});
+          } catch { /* fall through */ }
+        }
         return json(res,401,{ok:false,message:"账号或密码错误"});
       }
       const profile = await profileById(auth.user.id);
@@ -2266,7 +2266,8 @@ export default async function handler(req, res) {
       if (profile.status === "disabled") return json(res,403,{ok:false,message:"陪玩账号已停用"});
       const companion = await companionProfile(profile.id);
       try {
-        const { touchLastLogin } = await import("./_account-security.js");
+        const { touchLastLogin, stampPasswordSet } = await import("./_account-security.js");
+        await stampPasswordSet(profile.id, { mustChangePassword: false }).catch(() => null);
         await touchLastLogin(profile.id, "");
       } catch { /* optional */ }
       return json(res,200,{ok:true,session:{

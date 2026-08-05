@@ -779,18 +779,8 @@ async function handleVerifyRegisterOtp(body, res) {
 }
 
 async function markForgotVerified(accountKey, role, rowId, token) {
-  const exp = Date.now() + 15 * 60 * 1000;
-  if (rowId) {
-    await supabaseJson(restUrl("password_reset_requests", `?id=eq.${encodeURIComponent(rowId)}`), {
-      method: "PATCH",
-      headers: headersWithServiceRole(),
-      body: JSON.stringify({ status: `verified:${token}:exp:${exp}` }),
-    }).catch(() => null);
-  }
-  globalThis.__mcjForgotResets = globalThis.__mcjForgotResets || new Map();
-  globalThis.__mcjForgotResets.set(`${role}:otp:${accountKey}`, { id: rowId || token, verifiedToken: token, exp, kind: "otp" });
-  globalThis.__mcjForgotResets.set(`${role}:${accountKey}`, { id: rowId || token, verifiedToken: token, exp, kind: "otp" });
-  return exp;
+  // Durable verify stamp (DB + platform_settings + memory) for serverless isolates.
+  return markOtpVerified(accountKey, role, "otp", rowId, token, 15 * 60 * 1000);
 }
 
 async function handleForgotVerifyOtp(body, res) {
@@ -1593,24 +1583,33 @@ export default async function handler(req, res) {
     const password = String(body.password || "");
     if (!email || !password) return json(res, 400, { ok: false, message: "请输入邮箱和密码。" });
 
-    // Pre-check: if account exists without password, give a clear guidance (no enumeration of other emails beyond profile lookup).
     const loginRole = normalizeForgotRole(body.role || body.loginPortal || body.portal || "boss");
     const pre = await resolveForgotAccount(email, loginRole).catch(() => null);
-    if (pre?.profile) {
-      if (String(pre.profile.status || "").toLowerCase() === "disabled") {
-        return json(res, 403, { ok: false, message: "账号已停用，请联系客服。" });
-      }
-      const hasPwd = await resolveHasPassword(pre.profile, {}, { probeAuth: true });
-      if (!hasPwd) {
-        return json(res, 400, { ok: false, message: NO_PASSWORD_LOGIN_MESSAGE, code: "NO_PASSWORD" });
-      }
+    if (pre?.profile && String(pre.profile.status || "").toLowerCase() === "disabled") {
+      return json(res, 403, { ok: false, message: "账号已停用，请联系客服。" });
     }
 
-    const auth = await supabaseJson(authUrl("token?grant_type=password"), {
-      method: "POST",
-      headers: authHeaders(),
-      body: JSON.stringify({ email, password }),
-    });
+    let auth;
+    try {
+      auth = await supabaseJson(authUrl("token?grant_type=password"), {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ email, password }),
+      });
+    } catch (loginErr) {
+      // Only after failed password grant: if account has no password, guide to OTP.
+      if (pre?.profile) {
+        const hasPwd = await resolveHasPassword(pre.profile, {}, { probeAuth: true });
+        if (!hasPwd) {
+          return json(res, 400, { ok: false, message: NO_PASSWORD_LOGIN_MESSAGE, code: "NO_PASSWORD" });
+        }
+      }
+      let message = String(loginErr?.message || "").trim();
+      if (/invalid login credentials|invalid.*(email|password)|email not confirmed/i.test(message)) {
+        message = "邮箱或密码错误。";
+      }
+      return json(res, 401, { ok: false, message: message || "邮箱或密码错误。" });
+    }
     const authUser = auth.user;
     let profile = await profileFor(authUser.id);
     if (!profile) return json(res, 403, { ok: false, message: "账号未绑定平台资料，请联系管理员。" });
@@ -1621,9 +1620,13 @@ export default async function handler(req, res) {
         /* keep login usable even if UID backfill fails */
       }
     }
+    // Successful password login proves password exists — stamp for future probes.
+    await stampPasswordSet(authUser.id, {
+      mustChangePassword: resolveMustChangePassword(profile, authUser),
+    }).catch(() => null);
     const user = await enrichSafeProfile(
       { ...profile, has_password: true },
-      { ...authUser, user_metadata: { ...(authUser?.user_metadata || {}), boss_uid: profile.boss_uid || metaBossUid(authUser) } }
+      { ...authUser, user_metadata: { ...(authUser?.user_metadata || {}), boss_uid: profile.boss_uid || metaBossUid(authUser), has_password: true } }
     );
     if (!VALID_ROLES.has(user.role)) return json(res, 403, { ok: false, message: "账号角色无效。" });
     if (!canLoginWithStatus(profile, user.role)) return json(res, 403, { ok: false, message: "账号未启用或正在审核。" });

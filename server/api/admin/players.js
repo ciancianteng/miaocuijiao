@@ -1115,7 +1115,9 @@ export default async function handler(req, res) {
       });
       if (!mailOk) {
         const staging =
-          String(process.env.ALLOW_STAGING_OTP || "") === "1" || String(process.env.MCJ_OTP_DEBUG || "") === "1";
+          String(process.env.ALLOW_STAGING_OTP || "") === "1" ||
+          String(process.env.MCJ_OTP_DEBUG || "") === "1" ||
+          String(process.env.VERCEL_ENV || "").toLowerCase() !== "production";
         if (staging) {
           return json(res, 200, {
             ok: true,
