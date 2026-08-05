@@ -452,7 +452,7 @@ export default async function handler(req, res) {
           button_link: "",
           is_active: true,
           sort_order: 100,
-          is_main: false,
+          is_main: true,
           crop_meta: normalizeCropMeta({}, DESKTOP_RATIO),
           mobile_crop_meta: normalizeCropMeta({}, MOBILE_RATIO),
         },
@@ -468,13 +468,20 @@ export default async function handler(req, res) {
         sort_order: meta.sort_order,
         crop_meta: meta.crop_meta,
         mobile_crop_meta: meta.mobile_crop_meta,
-        is_main: !!meta.is_main,
+        is_main: true,
         created_at: now,
         updated_at: now,
       };
-      if (meta.is_main) await clearOtherMain(null);
+      await clearOtherMain(null);
       const rows = await writeBannerRow("POST", restUrl("banners"), payload);
-      const banner = mapBanner(rows[0] || payload);
+      let banner = mapBanner(rows[0] || payload);
+      // Ensure homepage current pointer even if is_main column soft-fails.
+      try {
+        const promoted = await setMainBanner(banner.id, { ensureActive: true });
+        if (promoted) banner = mapBanner(promoted);
+      } catch {
+        /* best effort */
+      }
       const data = await listBanners();
       return json(res, 200, {
         ok: true,

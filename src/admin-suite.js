@@ -2250,21 +2250,14 @@
   }
   function initSuperAdmin(){
     var dash=document.getElementById('superStats');
+    // Real stats are owned by admin-final-v1 renderDashboard — do not overwrite with localStorage fake cards.
+    if(dash && !dash.getAttribute('data-admin-final-owned')){
+      dash.setAttribute('data-admin-final-owned','1');
+    }
     var orders=read('orders'), bosses=read('bosses'), players=read('players'), withdraws=read('withdraw_requests'), refunds=read('refunds'), logs=read('admin_logs'), tickets=read('customer_tickets');
     var today=new Date().toLocaleDateString('zh-CN');
     var todayOrders=orders.filter(function(o){return String(o.time||o.created_at||o.createdAt||'').indexOf(today)>-1});
     var completedToday=todayOrders.filter(function(o){return /完成|已完成/.test(String(o.status||''))});
-    var revenue=todayOrders.reduce(function(n,o){return n+Number(String(o.amount||0).replace(/[^\d.-]/g,''));},0);
-    if(dash)statCards(dash,[
-      {label:'今日订单',value:todayOrders.length},
-      {label:'今日营业额',value:'RM'+revenue.toFixed(2)},
-      {label:'平台利润',value:'RM0.00'},
-      {label:'新增老板',value:bosses.filter(function(x){return String(x.registered_at||x.createdAt||'').indexOf(today)>-1}).length},
-      {label:'新增陪玩',value:players.filter(function(x){return String(x.registered_at||x.createdAt||'').indexOf(today)>-1}).length},
-      {label:'待审核陪玩',value:players.filter(function(x){return /待|审核中/.test(String(x.audit||x.status||''))}).length},
-      {label:'待审核提现',value:withdraws.filter(function(x){return /待|审核中/.test(String(x.status||''))}).length},
-      {label:'进行中订单',value:orders.filter(function(x){return /进行中/.test(String(x.status||''))}).length}
-    ]);
     var pending=document.getElementById('dashboardPending');
     if(pending)pending.innerHTML='<div class="detail-list"><div><span>今日完成订单</span><strong>'+completedToday.length+'</strong></div><div><span>待审核提现</span><strong>'+withdraws.filter(function(x){return /待审核|审核中/.test(String(x.status||''))}).length+'</strong></div><div><span>待处理退款</span><strong>'+refunds.filter(function(x){return /待审核|退款中|处理中/.test(String(x.status||''))}).length+'</strong></div></div>';
     var tables={

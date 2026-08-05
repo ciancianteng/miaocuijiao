@@ -352,7 +352,9 @@ async function loadCompanions(id = "") {
     companions = await resolveCompanionProfileRows(id);
     if (!Array.isArray(companions)) companions = [];
   } else {
-    const rows = await fetchCompanionRows("?verification_status=eq.approved&order=updated_at.desc&limit=300");
+    const rows = await fetchCompanionRows(
+      "?or=(verification_status.eq.approved,application_status.eq.approved)&order=updated_at.desc&limit=300"
+    );
     companions = Array.isArray(rows) ? rows : [];
   }
   const userIds = [...new Set(companions.map((row) => row.user_id).filter(Boolean))];

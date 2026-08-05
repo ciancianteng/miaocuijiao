@@ -371,7 +371,13 @@ async function create(input) {
 async function update(id, input) { validate(input, true); const patch = { display_name: input.name, email: input.email, phone: input.phone, status: input.status }; await supabaseJson(authUrl(`admin/users/${encodeURIComponent(id)}`), { method: "PUT", headers: serviceHeaders(), body: JSON.stringify({ email: input.email, user_metadata: { display_name: input.name }, ...(input.password ? { password: input.password } : {}) }) }); const rows = await supabaseJson(restUrl("profiles", `?id=eq.${encodeURIComponent(id)}`), { method: "PATCH", headers: serviceHeaders(), body: JSON.stringify(patch) }); return safeStaff(rows[0] || { id, ...patch }); }
 async function resetPassword(id, password) { if (!password || password.length < 8) throw Object.assign(new Error("新密码至少 8 位。"), { status: 400 }); await supabaseJson(authUrl(`admin/users/${encodeURIComponent(id)}`), { method: "PUT", headers: serviceHeaders(), body: JSON.stringify({ password }) }); }
 async function toggle(id, status) { const next = String(status) === "停用" || String(status) === "disabled" ? "disabled" : "active"; await supabaseJson(restUrl("profiles", `?id=eq.${encodeURIComponent(id)}`), { method: "PATCH", headers: serviceHeaders(), body: JSON.stringify({ status: next }) }); }
-async function remove(id) { await supabaseJson(authUrl(`admin/users/${encodeURIComponent(id)}`), { method: "DELETE", headers: serviceHeaders() }); }
+async function remove(id) {
+  await supabaseJson(authUrl(`admin/users/${encodeURIComponent(id)}`), { method: "DELETE", headers: serviceHeaders() }).catch(() => null);
+  await supabaseJson(restUrl("profiles", `?id=eq.${encodeURIComponent(id)}`), {
+    method: "DELETE",
+    headers: serviceHeaders({ Prefer: "return=minimal" }),
+  }).catch(() => null);
+}
 export default async function handler(req, res) {
   if (!hasDb()) {
     return json(res, req.method === "GET" ? 200 : 503, {

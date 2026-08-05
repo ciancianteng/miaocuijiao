@@ -147,9 +147,27 @@ function safeOrder(row, profiles, extras = {}) {
 }
 async function addSystem(order, adminId, text) {
   try {
-    const rows = await supabaseJson(restUrl("conversations", `?order_id=eq.${encodeURIComponent(order.id)}&limit=1`), { headers: serviceHeaders() });
-    const conv = rows[0];
-    if (!conv) return;
+    let rows = await supabaseJson(restUrl("conversations", `?order_id=eq.${encodeURIComponent(order.id)}&limit=1`), {
+      headers: serviceHeaders(),
+    });
+    let conv = rows?.[0];
+    if (!conv) {
+      const created = await supabaseJson(restUrl("conversations"), {
+        method: "POST",
+        headers: serviceHeaders(),
+        body: JSON.stringify({
+          boss_id: order.boss_id || null,
+          companion_id: order.companion_id || null,
+          customer_service_id: order.customer_service_id || null,
+          order_id: order.id,
+          status: "open",
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }),
+      }).catch(() => null);
+      conv = Array.isArray(created) ? created[0] : created;
+    }
+    if (!conv?.id) return;
     await supabaseJson(restUrl("messages"), {
       method: "POST",
       headers: serviceHeaders(),
@@ -298,7 +316,7 @@ export default async function handler(req, res) {
           let grabCount = 0;
           let bossIntent = null;
           try {
-            if (["pending", "waiting_boss_confirm", "claimed", "confirmed"].includes(o.status)) {
+            if (["pending", "waiting_boss_confirm", "claimed", "confirmed", "in_progress", "cancelled", "completed"].includes(o.status)) {
               const grabs = await grabsApi.listGrabs(o.id, o.note || o.description || "");
               grabCount = grabs.length;
             }
@@ -409,30 +427,26 @@ export default async function handler(req, res) {
     } else if (action === "assign_companion" || action === "confirm_grab_assignment") {
       const companionId = String(body.companion_id || payload.companion_id || payload.player_id || "").trim();
       if (!companionId) return json(res, 400, { ok: false, message: "请指定陪玩 ID。" });
-      // BOSS_PICK_LOCK
-      if (before.companion_id && ["claimed", "confirmed", "in_progress"].includes(before.status)) {
+      // BOSS_PICK_LOCK — already locked after companion confirmed/started.
+      if (before.companion_id && ["confirmed", "in_progress"].includes(before.status)) {
         return json(res, 409, {
           ok: false,
           code: "BOSS_PICK_LOCK",
-          message: "老板已选定陪玩，后台不可再次指定。",
-        });
-      }
-      if (before.status === "waiting_boss_confirm") {
-        return json(res, 409, {
-          ok: false,
-          code: "BOSS_MUST_PICK",
-          message: "公开抢单请由老板选择陪玩，后台不可代选。",
+          message: "订单已在进行中，后台不可再次指定。",
         });
       }
       const fromGrabs = body.from_grabs === true || body.fromGrabs === true || action === "confirm_grab_assignment";
-      if (fromGrabs || ["pending", "waiting_boss_confirm"].includes(before.status)) {
+      // Admin may confirm from grab list even on waiting_boss_confirm (ops override).
+      {
         const { createOrderGrabHelpers } = await import("../_order-grabs.js");
         const grabsApi = createOrderGrabHelpers({ restUrl, supabaseJson, serviceHeaders });
         const grabs = await grabsApi.listGrabs(before.id, before.note || before.description || "");
-        if (grabs.length) {
-          const hit = grabs.find((g) => g.companionId === companionId);
-          if (!hit) return json(res, 409, { ok: false, message: "只能从已抢单陪玩中指定。" });
-          await grabsApi.finalizeGrabSelection(before, companionId);
+        if (fromGrabs || grabs.length) {
+          if (grabs.length) {
+            const hit = grabs.find((g) => g.companionId === companionId);
+            if (!hit && fromGrabs) return json(res, 409, { ok: false, message: "只能从已抢单陪玩中指定。" });
+            if (hit) await grabsApi.finalizeGrabSelection(before, companionId);
+          }
         }
       }
       patch.companion_id = companionId;
@@ -469,8 +483,18 @@ export default async function handler(req, res) {
     if (!Object.keys(patch).length) return json(res, 400, { ok: false, message: "未知订单操作。" });
     if (patch.status && patch.status !== before.status && (action === "update_status" || action === "cancel" || action === "refund" || action === "confirm_start" || action === "confirm_complete" || action === "push_hall" || action === "assign_companion" || action === "confirm_grab_assignment" || action === "unassign_companion" || action === "cancel_assign")) {
       try {
-        const { assertCsStatusTransition, writeOrderStatusLog } = await import("../_order-status.js");
-        if (action === "update_status") assertCsStatusTransition(before.status, patch.status);
+        const { writeOrderStatusLog, isCanonicalOrderStatus, normalizeOrderStatus } = await import("../_order-status.js");
+        if (action === "update_status") {
+          const to = normalizeOrderStatus(patch.status);
+          if (!isCanonicalOrderStatus(to) || to === "reviewed") {
+            return json(res, 400, { ok: false, message: `无效订单状态：${patch.status}` });
+          }
+          // Admin ops may jump for recovery; still block no-op and invalid enums.
+          if (normalizeOrderStatus(before.status) === to) {
+            return json(res, 400, { ok: false, message: "订单已是该状态。" });
+          }
+          patch.status = to;
+        }
         await writeOrderStatusLog(
           { restUrl, supabaseJson, serviceHeaders },
           {
@@ -484,6 +508,15 @@ export default async function handler(req, res) {
         );
       } catch (err) {
         if (action === "update_status") return json(res, err.status || 400, { ok: false, message: err.message || "非法状态跳转。" });
+      }
+    }
+    if (patch.status === "claimed" && before.status !== "claimed") {
+      try {
+        const { stampClaimedAtNote } = await import("../_order-confirm-timeout.js");
+        const { patchOrderNoteField } = await import("../_order-flow.js");
+        await patchOrderNoteField({ restUrl, supabaseJson, serviceHeaders }, id, (text) => stampClaimedAtNote(text));
+      } catch {
+        /* optional */
       }
     }
     const updated = await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(id)}`), {
@@ -500,9 +533,9 @@ export default async function handler(req, res) {
       m[p.id] = p;
       return m;
     }, {});
-    if (action === "assign_companion") {
+    if (action === "assign_companion" || action === "confirm_grab_assignment") {
       const name = map[after.companion_id]?.display_name || map[after.companion_id]?.email || "陪玩";
-      await addSystem(after, admin.id, `已推送陪玩：${name}，请陪玩尽快接单`);
+      await addSystem(after, admin.id, `后台已指定陪玩：${name}。订单进入等待陪玩确认。`);
       await logAdminOp(admin, action, id, { status: before.status }, { status: after.status, ...patch }, String(payload.reason || ""));
       return json(res, 200, { ok: true, message: "指定成功", order: safeOrder(after, map) });
     }

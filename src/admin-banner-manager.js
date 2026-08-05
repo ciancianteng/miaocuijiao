@@ -369,6 +369,8 @@
           action: "publish",
           image_data: dataUrl,
           filename: (state.draft.file && state.draft.file.name) || "homepage-banner.jpg",
+          is_main: true,
+          is_active: true,
         });
       })
       .then(function (res) {

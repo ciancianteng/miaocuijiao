@@ -105,17 +105,19 @@ export default async function handler(req, res) {
       supabaseJson(restUrl("orders", "?order=created_at.desc&limit=1000"), { headers: serviceHeaders() }).catch(() => []),
     ]);
     const today = new Date().toISOString().slice(0, 10);
+    const paidToday = orders.filter((o) => countsAsRevenue(o) && String(o.created_at || "").slice(0, 10) === today);
     const stats = {
       bosses: profiles.filter((p) => p.role === "boss").length,
       companions: profiles.filter((p) => p.role === "companion").length,
       customerServices: profiles.filter((p) => p.role === "customer_service").length,
-      todayOrders: orders.filter((o) => String(o.created_at || "").slice(0, 10) === today).length,
+      todayOrders: paidToday.length,
       awaitingPayment: orders.filter((o) => o.status === "awaiting_payment").length,
       pendingOrders: orders.filter((o) => o.status === "pending").length,
       inProgress: orders.filter((o) => o.status === "in_progress").length,
       completed: orders.filter((o) => o.status === "completed").length,
       refunds: orders.filter((o) => o.status === "refund_requested" || o.status === "refunded").length,
       totalAmount: orders.reduce((sum, o) => sum + (countsAsRevenue(o) ? money(o.total_amount) : 0), 0),
+      todayAmount: paidToday.reduce((sum, o) => sum + money(o.total_amount), 0),
     };
     return json(res, 200, { ok: true, configured: true, stats });
   } catch (error) {

@@ -74,7 +74,19 @@ const CHANNELS = [
 ];
 
 /** Selectable收款渠道 providers for the bank/e-wallet CRUD list (payment_bank_accounts). */
-const BANK_PROVIDERS = ["Maybank", "CIMB", "Public Bank", "Touch 'n Go", "支付宝", "微信支付", "USDT", "其他"];
+const BANK_PROVIDERS = [
+  "Maybank",
+  "CIMB",
+  "Public Bank",
+  "OCBC",
+  "RHB",
+  "Touch 'n Go",
+  "支付宝",
+  "微信支付",
+  "USDT",
+  "其他",
+];
+const PLATFORM_BANKS_KEY = "paymentBankAccounts";
 
 const TABLES = {
   channels: "payment_channels",
@@ -166,6 +178,36 @@ async function supabaseFetch(table, query = "", init = {}) {
 function isMissingTable(error) {
   const msg = String(error?.message || error?.body?.message || "");
   return /relation|does not exist|Could not find the table|schema cache/i.test(msg);
+}
+
+async function readPlatformBanks() {
+  try {
+    const rows = await supabaseFetch("platform_settings", "?id=eq.global&select=id,data&limit=1");
+    const data = Array.isArray(rows) ? rows[0]?.data : rows?.data;
+    const list = data?.[PLATFORM_BANKS_KEY];
+    return Array.isArray(list) ? list : [];
+  } catch {
+    return [];
+  }
+}
+
+async function writePlatformBanks(banks = []) {
+  const rows = await supabaseFetch("platform_settings", "?id=eq.global&select=id,data&limit=1").catch(() => []);
+  const current = Array.isArray(rows) ? rows[0] : null;
+  const data = { ...(current?.data && typeof current.data === "object" ? current.data : {}), [PLATFORM_BANKS_KEY]: banks };
+  if (current?.id) {
+    await supabaseFetch("platform_settings", `?id=eq.${encodeURIComponent(current.id)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ data, updated_at: new Date().toISOString() }),
+    });
+  } else {
+    await supabaseFetch("platform_settings", "", {
+      method: "POST",
+      headers: { Prefer: "resolution=merge-duplicates,return=representation" },
+      body: JSON.stringify([{ id: "global", data, updated_at: new Date().toISOString() }]),
+    });
+  }
+  return banks;
 }
 
 async function upsert(table, rows, onConflict = "id") {
@@ -494,32 +536,43 @@ async function loadState() {
     const [channels, credentials, banks, rates, webhooks, transactions, logs] = await Promise.all([
       supabaseFetch(TABLES.channels, "?order=sort.asc,updated_at.desc"),
       supabaseFetch(TABLES.credentials, "?select=id,channel_id,credential_status,credential_keys,updated_at"),
-      supabaseFetch(TABLES.banks, "?order=updated_at.desc").catch(() => []),
+      supabaseFetch(TABLES.banks, "?order=updated_at.desc").catch(() => null),
       supabaseFetch(TABLES.rates, "?order=updated_at.desc").catch(() => []),
       supabaseFetch(TABLES.webhooks, "?order=updated_at.desc").catch(() => []),
       supabaseFetch(TABLES.transactions, "?order=created_at.desc&limit=100").catch(() => []),
       supabaseFetch(TABLES.logs, "?order=created_at.desc&limit=100").catch(() => []),
     ]);
+    let bankRows = banks;
+    let bankSource = "table";
+    if (bankRows == null) {
+      bankRows = await readPlatformBanks();
+      bankSource = "platform_settings";
+    }
     return {
       channels: mergeChannels(channels, credentials),
-      banks: banks || [],
+      banks: bankRows || [],
       rates: rates || [],
       webhooks: webhooks || [],
       transactions: transactions || [],
       logs: logs || [],
       tablesReady: true,
+      bankSource,
     };
   } catch (error) {
     if (isMissingTable(error)) {
+      const banks = await readPlatformBanks();
       return {
         channels: defaults(),
-        banks: [],
+        banks,
         rates: [],
         webhooks: [],
         transactions: [],
         logs: [],
-        tablesReady: false,
-        message: "支付设置数据表未初始化。请先执行 supabase/migrations/20260731_payment_settings.sql。",
+        tablesReady: true,
+        bankSource: "platform_settings",
+        message: banks.length
+          ? "支付渠道表未建全；收款账户已使用 platform_settings 兜底存储。"
+          : "支付渠道表未建全；收款账户将写入 platform_settings 兜底存储。",
       };
     }
     throw error;
@@ -699,19 +752,25 @@ async function handler(req, res) {
     }
 
     if (action === "save_bank") {
-      const bank = body.bank || {};
+      const bank = body.bank || body || {};
       const id = String(bank.id || "").trim();
       let existing = null;
+      let usePlatform = false;
       if (id) {
-        const rows = await supabaseFetch(TABLES.banks, `?id=eq.${encodeURIComponent(id)}&limit=1`).catch(() => []);
-        existing = rows?.[0] || null;
+        try {
+          const rows = await supabaseFetch(TABLES.banks, `?id=eq.${encodeURIComponent(id)}&limit=1`);
+          existing = rows?.[0] || null;
+        } catch (error) {
+          if (isMissingTable(error)) usePlatform = true;
+          else throw error;
+        }
       }
-      const accountNumber = String(bank.accountNumber || "").trim();
+      const accountNumber = String(bank.accountNumber || bank.account_number || "").trim();
       const row = {
         id: id || `bank-${Date.now()}`,
-        bank_name: String(bank.bankName || bank.provider || (existing && existing.bank_name) || ""),
-        account_name: String(bank.accountName || ""),
-        enterprise_name: String(bank.enterpriseName || ""),
+        bank_name: String(bank.bankName || bank.bank_name || bank.provider || (existing && existing.bank_name) || ""),
+        account_name: String(bank.accountName || bank.account_name || ""),
+        enterprise_name: String(bank.enterpriseName || bank.enterprise_name || ""),
         account_number_mask: accountNumber
           ? accountNumber.replace(/\s+/g, "").replace(/^(.+)(.{4})$/, "**** $2")
           : String((existing && existing.account_number_mask) || ""),
@@ -720,19 +779,39 @@ async function handler(req, res) {
           : existing?.encrypted_payload || null,
         currency: String(bank.currency || "MYR"),
         usage: String(bank.usage || "充值收款"),
-        is_default: Boolean(bank.isDefault),
+        is_default: Boolean(bank.isDefault ?? bank.is_default),
         enabled: bank.enabled !== false,
         updated_at: new Date().toISOString(),
       };
-      const rows = await upsert(TABLES.banks, row);
-      await writeLog(req, "save_bank", row.id, existing, { ...row, encrypted_payload: "[encrypted]" });
-      return json(res, 200, { ok: true, message: "收款渠道已保存", bank: rows?.[0] || row });
+      if (!BANK_PROVIDERS.includes(row.bank_name) && row.bank_name !== "其他") {
+        // Allow custom but keep known providers first.
+      }
+      try {
+        if (usePlatform) throw Object.assign(new Error("Could not find the table"), { status: 404 });
+        const rows = await upsert(TABLES.banks, row);
+        await writeLog(req, "save_bank", row.id, existing, { ...row, encrypted_payload: "[encrypted]" });
+        return json(res, 200, { ok: true, message: "收款渠道已保存", bank: rows?.[0] || row });
+      } catch (error) {
+        if (!isMissingTable(error)) throw error;
+        const list = await readPlatformBanks();
+        const idx = list.findIndex((b) => String(b.id) === String(row.id));
+        const next = idx >= 0 ? list.map((b, i) => (i === idx ? row : b)) : [row, ...list];
+        await writePlatformBanks(next);
+        await writeLog(req, "save_bank", row.id, existing, { ...row, encrypted_payload: "[encrypted]", source: "platform_settings" });
+        return json(res, 200, { ok: true, message: "收款渠道已保存", bank: row, bankSource: "platform_settings" });
+      }
     }
 
     if (action === "delete_bank") {
       const id = String(body.id || "").trim();
       if (!id) return json(res, 400, { ok: false, message: "缺少收款渠道 ID" });
-      await supabaseFetch(TABLES.banks, `?id=eq.${encodeURIComponent(id)}`, { method: "DELETE" });
+      try {
+        await supabaseFetch(TABLES.banks, `?id=eq.${encodeURIComponent(id)}`, { method: "DELETE" });
+      } catch (error) {
+        if (!isMissingTable(error)) throw error;
+        const next = (await readPlatformBanks()).filter((b) => String(b.id) !== id);
+        await writePlatformBanks(next);
+      }
       await writeLog(req, "delete_bank", id, null, null);
       return json(res, 200, { ok: true, message: "收款渠道已删除" });
     }
@@ -741,12 +820,22 @@ async function handler(req, res) {
       const id = String(body.id || "").trim();
       if (!id) return json(res, 400, { ok: false, message: "缺少收款渠道 ID" });
       const enabled = Boolean(body.enabled);
-      const rows = await supabaseFetch(TABLES.banks, `?id=eq.${encodeURIComponent(id)}`, {
-        method: "PATCH",
-        body: JSON.stringify({ enabled, updated_at: new Date().toISOString() }),
-      });
-      await writeLog(req, enabled ? "enable_bank" : "disable_bank", id, null, { enabled });
-      return json(res, 200, { ok: true, message: enabled ? "收款渠道已启用" : "收款渠道已停用", bank: rows?.[0] || null });
+      try {
+        const rows = await supabaseFetch(TABLES.banks, `?id=eq.${encodeURIComponent(id)}`, {
+          method: "PATCH",
+          body: JSON.stringify({ enabled, updated_at: new Date().toISOString() }),
+        });
+        await writeLog(req, enabled ? "enable_bank" : "disable_bank", id, null, { enabled });
+        return json(res, 200, { ok: true, message: enabled ? "收款渠道已启用" : "收款渠道已停用", bank: rows?.[0] || null });
+      } catch (error) {
+        if (!isMissingTable(error)) throw error;
+        const list = await readPlatformBanks();
+        const next = list.map((b) => (String(b.id) === id ? { ...b, enabled, updated_at: new Date().toISOString() } : b));
+        await writePlatformBanks(next);
+        const bank = next.find((b) => String(b.id) === id) || null;
+        await writeLog(req, enabled ? "enable_bank" : "disable_bank", id, null, { enabled, source: "platform_settings" });
+        return json(res, 200, { ok: true, message: enabled ? "收款渠道已启用" : "收款渠道已停用", bank });
+      }
     }
 
     return json(res, 400, { ok: false, message: "未知支付设置操作" });

@@ -787,36 +787,43 @@ async function reviewApplication(req, companion, payload) {
   if ((status === "rejected" || status === "resubmit") && !reason) {
     throw Object.assign(new Error("驳回或要求补资料时必须填写原因。"), { status: 400 });
   }
-  const patch = {
-    application_status: status,
-    application_reject_reason: reason,
-    updated_at: new Date().toISOString(),
-  };
+  const { approveListingPatchForRow, unlistListingPatch } = await import("../_companion-listing-sync.js");
+  let patch;
   if (status === "approved") {
-    // 申请通过 ≠ 身份/押金通过：默认离线，须完成认证与押金后才可接单
-    patch.online_status = "offline";
+    const extras = {
+      online_status: "offline",
+      application_reject_reason: "",
+    };
     if (payload.levelId != null || payload.level_id != null) {
-      patch.level_id = String(payload.levelId || payload.level_id || "").trim();
+      extras.level_id = String(payload.levelId || payload.level_id || "").trim();
     }
     if (payload.levelName != null || payload.level_name != null) {
-      patch.level_name = String(payload.levelName || payload.level_name || "").trim();
+      extras.level_name = String(payload.levelName || payload.level_name || "").trim();
     }
     const orderRate = percent(payload.orderCommissionRate ?? payload.commission_rate ?? payload.commissionRate);
-    if (orderRate !== undefined) patch.commission_rate = orderRate;
+    if (orderRate !== undefined) extras.commission_rate = orderRate;
     const giftRate = percent(payload.giftCommissionRate ?? payload.gift_commission_rate);
-    if (giftRate !== undefined) patch.gift_commission_rate = giftRate;
+    if (giftRate !== undefined) extras.gift_commission_rate = giftRate;
     const rebate = percent(payload.directRebateRate ?? payload.direct_rebate_rate);
-    if (rebate !== undefined) patch.direct_rebate_rate = rebate;
-    if (payload.price != null) patch.price = money(payload.price);
+    if (rebate !== undefined) extras.direct_rebate_rate = rebate;
+    if (payload.price != null) extras.price = money(payload.price);
     if (payload.minPrice != null || payload.price_min != null) {
-      patch.price_min = money(payload.minPrice ?? payload.price_min);
+      extras.price_min = money(payload.minPrice ?? payload.price_min);
     }
     if (payload.maxPrice != null || payload.price_max != null) {
-      patch.price_max = money(payload.maxPrice ?? payload.price_max);
+      extras.price_max = money(payload.maxPrice ?? payload.price_max);
     }
     if (payload.allowOrders != null || payload.allow_orders != null) {
-      patch.allow_orders = bool(payload.allowOrders ?? payload.allow_orders, true);
+      extras.allow_orders = bool(payload.allowOrders ?? payload.allow_orders, true);
     }
+    // Must set verification_status=approved so /api/public/companions (filters by it) publishes the companion.
+    patch = approveListingPatchForRow(companion, extras);
+  } else {
+    patch = unlistListingPatch({ status, reason });
+    // Drop undefined verification_status from unlist when archived
+    Object.keys(patch).forEach((k) => {
+      if (patch[k] === undefined) delete patch[k];
+    });
   }
   const after = await companionDb(PLAYER_TABLE, `?id=eq.${encodeURIComponent(companion.id)}`, {
     method: "PATCH",

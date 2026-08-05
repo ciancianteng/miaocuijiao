@@ -303,6 +303,124 @@
   function commissionBodyHtml() {
     return '<div id="csCommissionMount"><div class="empty">Loading… 正在加载佣金设置...</div></div>';
   }
+  var commissionState = { loading: false, saving: false, error: "", message: "", config: null };
+  function commissionField(label, name, value, hint) {
+    return (
+      '<label style="display:flex;flex-direction:column;gap:4px;min-width:140px;flex:1"><span>' +
+      esc(label) +
+      '</span><input type="number" step="0.01" name="' +
+      esc(name) +
+      '" value="' +
+      esc(value == null ? "" : value) +
+      '">' +
+      (hint ? '<small class="muted">' + esc(hint) + "</small>" : "") +
+      "</label>"
+    );
+  }
+  function renderCsCommission() {
+    var mount = document.getElementById("csCommissionMount");
+    if (!mount) return;
+    if (commissionState.loading && !commissionState.config) {
+      mount.innerHTML = '<div class="empty">Loading… 正在加载佣金设置...</div>';
+      return;
+    }
+    if (commissionState.error && !commissionState.config) {
+      mount.innerHTML =
+        '<div class="admin-sync-note error">' +
+        esc(commissionState.error) +
+        ' <button class="mini-btn" type="button" data-cs-commission-reload>重试</button></div>';
+      return;
+    }
+    var c = commissionState.config || {};
+    mount.innerHTML =
+      (commissionState.message ? '<div class="admin-sync-note">' + esc(commissionState.message) + "</div>" : "") +
+      (commissionState.error ? '<div class="admin-sync-note error">' + esc(commissionState.error) + "</div>" : "") +
+      '<form data-cs-commission-form style="display:flex;flex-direction:column;gap:12px">' +
+      '<div style="display:flex;flex-wrap:wrap;gap:12px">' +
+      commissionField("底薪 (RM)", "baseSalary", c.baseSalary, "") +
+      commissionField("全勤奖励", "attendanceBonus", c.attendanceBonus, "") +
+      commissionField("接待奖励", "receptionBonus", c.receptionBonus, "") +
+      commissionField("每单提成 (RM)", "orderCommission", c.orderCommission, "") +
+      commissionField("提成比例 %", "commissionPercent", c.commissionPercent, "") +
+      "</div>" +
+      '<div style="display:flex;flex-wrap:wrap;gap:12px">' +
+      commissionField("夜班补贴", "nightShiftAllowance", c.nightShiftAllowance, "") +
+      commissionField("加班补贴", "overtimeAllowance", c.overtimeAllowance, "") +
+      commissionField("其他调整", "otherAdjustment", c.otherAdjustment, "") +
+      commissionField("标准出勤天数", "standardDays", c.standardDays, "") +
+      commissionField("迟到宽限(分)", "graceMinutes", c.graceMinutes, "") +
+      "</div>" +
+      '<div style="display:flex;gap:16px;flex-wrap:wrap">' +
+      '<label><input type="checkbox" name="settleOnOrderComplete" ' +
+      (c.settleOnOrderComplete !== false ? "checked" : "") +
+      "> 订单完成后结算提成</label>" +
+      '<label><input type="checkbox" name="settleOnPayment" ' +
+      (c.settleOnPayment ? "checked" : "") +
+      "> 确认付款时结算</label>" +
+      '<label><input type="checkbox" name="clawbackOnRefund" ' +
+      (c.clawbackOnRefund !== false ? "checked" : "") +
+      "> 退款时收回提成</label>" +
+      "</div>" +
+      '<div><button class="primary-btn" type="submit"' +
+      (commissionState.saving ? " disabled" : "") +
+      ">" +
+      (commissionState.saving ? "保存中…" : "保存佣金设置") +
+      "</button></div></form>";
+  }
+  function loadCsCommission() {
+    commissionState.loading = true;
+    commissionState.error = "";
+    renderCsCommission();
+    api("commission_config", null, "GET")
+      .then(function (res) {
+        commissionState.loading = false;
+        commissionState.config = res.config || {};
+        renderCsCommission();
+      })
+      .catch(function (err) {
+        commissionState.loading = false;
+        commissionState.error = err.message || "佣金设置加载失败";
+        renderCsCommission();
+      });
+  }
+  function saveCsCommission(form) {
+    var fd = new FormData(form);
+    var payload = {
+      baseSalary: fd.get("baseSalary"),
+      attendanceBonus: fd.get("attendanceBonus"),
+      receptionBonus: fd.get("receptionBonus"),
+      orderCommission: fd.get("orderCommission"),
+      commissionPercent: fd.get("commissionPercent"),
+      nightShiftAllowance: fd.get("nightShiftAllowance"),
+      overtimeAllowance: fd.get("overtimeAllowance"),
+      otherAdjustment: fd.get("otherAdjustment"),
+      standardDays: fd.get("standardDays"),
+      graceMinutes: fd.get("graceMinutes"),
+      settleOnOrderComplete: !!(form.querySelector('[name="settleOnOrderComplete"]') || {}).checked,
+      settleOnPayment: !!(form.querySelector('[name="settleOnPayment"]') || {}).checked,
+      clawbackOnRefund: !!(form.querySelector('[name="clawbackOnRefund"]') || {}).checked,
+    };
+    commissionState.saving = true;
+    commissionState.message = "";
+    commissionState.error = "";
+    renderCsCommission();
+    api("save_commission_config", payload)
+      .then(function (res) {
+        commissionState.saving = false;
+        commissionState.config = res.config || payload;
+        commissionState.message = res.message || "佣金设置已保存";
+        renderCsCommission();
+      })
+      .catch(function (err) {
+        commissionState.saving = false;
+        commissionState.error = err.message || "保存失败";
+        renderCsCommission();
+      });
+  }
+  window.__MCJRenderCsCommission = function () {
+    if (!commissionState.config && !commissionState.loading) loadCsCommission();
+    else renderCsCommission();
+  };
   function wageStatusLabel(row) {
     var d = (row && row.wageDetail) || {};
     var raw = String((row && (row.wageStatus || row.salaryStatus)) || d.status || "pending").toLowerCase();
@@ -908,6 +1026,15 @@
     if (e.target.matches("[data-service-account-form]")) {
       e.preventDefault();
       submit(e.target);
+    }
+    if (e.target.matches("[data-cs-commission-form]")) {
+      e.preventDefault();
+      saveCsCommission(e.target);
+    }
+  });
+  document.addEventListener("click", function (e) {
+    if (e.target.closest("[data-cs-commission-reload]")) {
+      loadCsCommission();
     }
   });
   function boot() {
