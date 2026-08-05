@@ -11,11 +11,11 @@ import {
 import { readLocalLevels } from "../_companion-levels-store.js";
 import { resolvePlatformCommission } from "../_commission-rates.js";
 import { resolveCompanionAvatar, resolveCompanionCover } from "../_companion-public-map.js";
+import { requireAdmin as requireAdminJwt, ADMIN_ROLES as SHARED_ADMIN_ROLES } from "../_admin-auth.js";
 
-const ADMIN_ROLES = new Set(["super_admin", "admin"]);
+const ADMIN_ROLES = SHARED_ADMIN_ROLES;
 const PLAYER_TABLE = "companion_profiles";
 const SIGN_TTL = 300;
-const ANON_KEY = () => process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || "";
 
 const ACCOUNT_LABEL = { active: "正常", disabled: "冻结", pending: "待审核" };
 const STATUS_LABEL = {
@@ -117,30 +117,8 @@ function tokenFrom(req) {
 }
 
 async function requireAdmin(req) {
-  const token = tokenFrom(req);
-  if (!token || !ANON_KEY()) {
-    throw Object.assign(new Error("请先登录管理员账号。"), { status: 401 });
-  }
-  const authRes = await fetch(`${process.env.SUPABASE_URL}/auth/v1/user`, {
-    headers: {
-      apikey: ANON_KEY(),
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-  });
-  const authText = await authRes.text();
-  let authUser = null;
-  try {
-    authUser = authText ? JSON.parse(authText) : null;
-  } catch {
-    authUser = null;
-  }
-  if (!authRes.ok || !authUser?.id) throw Object.assign(new Error("请先登录管理员账号。"), { status: 401 });
-  const profiles = await companionDb("profiles", `?id=eq.${encodeURIComponent(authUser.id)}&limit=1`);
-  const profile = profiles?.[0];
-  if (!profile || !ADMIN_ROLES.has(profile.role)) throw Object.assign(new Error("没有陪玩管理权限"), { status: 403 });
-  if (profile.status !== "active") throw Object.assign(new Error("管理员账号未启用"), { status: 403 });
-  return profile;
+  // Same auth source as bosses / finance / settings — list and detail share this path.
+  return requireAdminJwt(req, { allowRoles: ADMIN_ROLES, module: "players" });
 }
 
 function labelStatus(value, fallback = "待审核") {
@@ -594,7 +572,12 @@ async function buildDetail(row, profile, opts = {}) {
 }
 
 async function getCompanion(id) {
-  const rows = await companionDb(PLAYER_TABLE, `?id=eq.${encodeURIComponent(id)}&limit=1`);
+  const key = String(id || "").trim();
+  if (!key) return null;
+  let rows = await companionDb(PLAYER_TABLE, `?id=eq.${encodeURIComponent(key)}&limit=1`);
+  if (rows?.[0]) return rows[0];
+  // Accept user_id / profile id from older UI rows.
+  rows = await companionDb(PLAYER_TABLE, `?user_id=eq.${encodeURIComponent(key)}&limit=1`);
   return rows?.[0] || null;
 }
 

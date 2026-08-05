@@ -50,12 +50,16 @@
   }
 
   function getAccessToken() {
-    return (
+    var adminTok =
       readItem(ADMIN_ACCESS) ||
-      (hasAdminSoftSession() ? readItem(LEGACY_ACCESS) : "") ||
-      readItem(LEGACY_ACCESS) ||
-      ""
-    );
+      "";
+    if (adminTok) return adminTok;
+    // Only fall back to legacy shared JWT when an admin soft session is present.
+    // Never silently use a leftover boss JWT for admin APIs.
+    if (hasAdminSoftSession()) {
+      return readItem(LEGACY_ACCESS) || "";
+    }
+    return "";
   }
 
   function getRefreshToken() {

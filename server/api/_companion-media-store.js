@@ -39,15 +39,17 @@ export function hasCompanionDb() {
 
 export function companionServiceHeaders(extra = {}) {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  const base = {
+  // Always send both apikey + Authorization. Omitting Bearer for sb_secret_
+  // keys caused PostgREST to run as anon → empty profile rows → false 403s
+  // like「没有陪玩管理权限」on admin detail while list looked fine in UI.
+  return {
     apikey: key,
+    Authorization: `Bearer ${key}`,
     "Content-Type": "application/json",
     Prefer: "return=representation",
     "User-Agent": "MCJ-Server/1.0",
     ...extra,
   };
-  if (!String(key || "").startsWith("sb_secret_")) base.Authorization = `Bearer ${key}`;
-  return base;
 }
 
 export function companionRestUrl(table, query = "") {

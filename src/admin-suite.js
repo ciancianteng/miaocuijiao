@@ -31,13 +31,19 @@
     var user=readJsonKey('adminUser');
     var perms=Array.isArray(user.permissions)?user.permissions:[];
     var role=String(user.adminRole||user.role||'');
-    if(String(token).indexOf('admin_session_')!==0)return '';
+    var softOk=String(token).indexOf('admin_session_')===0;
+    var jwtOk=!!authAccessToken();
+    // Soft session OR live admin JWT both count — JWT alone must not collapse to「user」.
+    if(!softOk&&!jwtOk)return '';
     if(role==='super_admin'||perms.indexOf('super_admin')>-1)return 'super_admin';
     if(role==='finance_admin'||perms.indexOf('finance_admin')>-1)return 'finance_admin';
     if(role==='admin'||perms.indexOf('admin')>-1)return 'admin';
+    // Live JWT present but adminUser stale: treat as admin until /me refresh finishes.
+    if(jwtOk&&softOk)return 'admin';
+    if(jwtOk)return 'admin';
     return '';
   }
-  function getRole(){var adminRole=adminPermissionRole();if(adminRole)return adminRole;var role=readStorageItem('mcjRole')||'user';if(role==='super_admin'||role==='admin')return 'user';return role}
+  function getRole(){var adminRole=adminPermissionRole();if(adminRole)return adminRole;var role=readStorageItem('mcjRole')||'user';if(role==='super_admin'||role==='admin')return role;return role}
   function authAccessToken(){return window.MCJAdminAuthFetch?window.MCJAdminAuthFetch.getAccessToken():readStorageItem('mcjAuthAccessToken')}
   function adminFetch(url,init){return window.MCJAdminAuthFetch?window.MCJAdminAuthFetch.fetch(url,init||{}):fetch(url,init||{})}
   function adminApiHeaders(extra){
@@ -2332,13 +2338,60 @@
   }
   function initClubAdmin(){var dash=document.getElementById('clubStats');if(dash)statCards(dash,[{label:'今日营业额',value:'RM3,820'},{label:'今日订单',value:'42'},{label:'本月营业额',value:'RM86,500'},{label:'陪玩人数',value:'36'},{label:'待处理订单',value:'9'},{label:'可提现余额',value:'RM12,800'}]);var clubPlayers=read('players').filter(function(p){return p.club==='妙脆角主俱乐部'});var target=document.getElementById('clubPlayers');if(target)target.innerHTML=table(['头像','昵称','游戏','建议价','评分','状态','操作'],clubPlayers.map(function(p){return '<tr><td><img class="avatar" src="'+esc(p.avatar)+'"></td><td>'+esc(p.name)+'</td><td>'+esc(p.game)+'</td><td>'+esc(p.price)+'</td><td>'+esc(p.rating)+'</td><td>'+statusChip(p.status)+'</td><td>'+actionButtons(p.id)+'</td></tr>'}));var orders=read('orders').filter(function(o){return o.club==='妙脆角主俱乐部'});var ot=document.getElementById('clubOrders');if(ot)ot.innerHTML=table(['订单','老板','陪玩','游戏','金额','状态','时间','操作'],orders.map(function(o){return '<tr><td>'+o.id+'</td><td>'+o.boss+'</td><td>'+o.player+'</td><td>'+o.game+'</td><td>'+o.amount+'</td><td>'+statusChip(o.status)+'</td><td>'+o.time+'</td><td>'+actionButtons(o.id)+'</td></tr>'}))}
   function initPlayerAdmin(){var dash=document.getElementById('playerStats');if(dash)statCards(dash,[{label:'今日订单',value:'6'},{label:'本月订单',value:'84'},{label:'收入',value:'RM3,260'},{label:'评分',value:'5.0'},{label:'完成率',value:'99%'},{label:'可提现余额',value:'RM860'}]);var myOrders=read('orders').filter(function(o){return o.player==='MOMO'});var ot=document.getElementById('playerOrders');if(ot)ot.innerHTML=table(['订单','老板','游戏','金额','状态','时间','接单操作'],myOrders.map(function(o){return '<tr><td>'+o.id+'</td><td>'+o.boss+'</td><td>'+o.game+'</td><td>'+o.amount+'</td><td>'+statusChip(o.status)+'</td><td>'+o.time+'</td><td><div class="row"><button class="btn small primary" data-action="accept" data-id="'+o.id+'">接受</button><button class="btn small danger" data-action="reject" data-id="'+o.id+'">拒绝</button><button class="btn small" data-action="complete" data-id="'+o.id+'">完成</button></div></td></tr>'}));var reviews=read('reviews').filter(function(r){return r.player==='MOMO'});var rt=document.getElementById('playerReviews');if(rt)rt.innerHTML=table(['订单','评分','评价','状态'],reviews.map(function(r){return '<tr><td>'+r.order_id+'</td><td>'+r.rating+'</td><td>'+r.content+'</td><td>'+statusChip(r.status)+'</td></tr>'}))}
+  function refreshAdminIdentityFromServer(){
+    var Auth=window.MCJAdminAuthFetch;
+    if(!Auth||!Auth.getAccessToken||!Auth.getAccessToken())return Promise.resolve(null);
+    var headers=Auth.getAuthHeaders?Auth.getAuthHeaders({Accept:'application/json'}):{Accept:'application/json'};
+    return (Auth.fetch?Auth.fetch('/api/auth?action=me',{headers:headers}):fetch('/api/auth?action=me',{headers:headers}))
+      .then(function(res){return res.json().catch(function(){return {}})})
+      .then(function(body){
+        var user=body&&(body.user||(body.session&&body.session.user));
+        if(!user||!user.role)return null;
+        var role=String(user.role||'');
+        if(role!=='admin'&&role!=='super_admin'){
+          // Database says not admin — do not keep stale local admin soft role.
+          return {denied:true,user:user};
+        }
+        var store=localStorage.getItem('adminAuthToken')?localStorage:sessionStorage;
+        var prev={};
+        try{prev=JSON.parse(store.getItem('adminUser')||localStorage.getItem('adminUser')||sessionStorage.getItem('adminUser')||'{}')||{}}catch(e){prev={}}
+        var next={
+          id:user.id||prev.id||'',
+          uid:user.uid||user.id||prev.uid||'',
+          account:user.email||prev.account||'',
+          email:user.email||prev.email||'',
+          name:user.displayName||user.email||prev.name||'管理员',
+          nickname:user.displayName||prev.nickname||'',
+          role:role,
+          adminRole:role==='super_admin'?'super_admin':'admin',
+          status:user.status||'active',
+          permissions:[role==='super_admin'?'super_admin':'admin']
+        };
+        try{
+          store.setItem('adminUser',JSON.stringify(next));
+          store.setItem('mcjRole',role);
+          window.MCJAdminRole=next.adminRole;
+        }catch(e){}
+        return next;
+      })
+      .catch(function(){return null});
+  }
   document.addEventListener('DOMContentLoaded',function(){
     function boot(){if(enforceRole()===false)return;initTabs();bindGlobal();bindPaymentAdmin();initForms();initSuperAdmin();renderHomeEntryManager();initClubAdmin();initPlayerAdmin();initTableSearch();bindV1AccountManagement();}
+    function start(){
+      refreshAdminIdentityFromServer().then(function(identity){
+        if(identity&&identity.denied){
+          renderAdminAccessDenied();
+          return;
+        }
+        boot();
+      });
+    }
     if(window.MCJAdminAuthFetch&&window.MCJAdminAuthFetch.getAccessToken()){
-      window.MCJAdminAuthFetch.ensureValidToken().then(boot).catch(function(){});
+      window.MCJAdminAuthFetch.ensureValidToken().then(start).catch(function(){boot()});
       return;
     }
-    boot();
+    start();
   });
   window.MCJAdmin={read:read,write:write,routeByRole:routeByRole};
 })();

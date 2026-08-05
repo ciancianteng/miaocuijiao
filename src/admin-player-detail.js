@@ -1,7 +1,10 @@
 (function () {
   "use strict";
 
-  var Auth = window.MCJAdminAuthFetch;
+  function authApi() {
+    return window.MCJAdminAuthFetch || null;
+  }
+
   var saving = false;
 
   function esc(v) {
@@ -491,6 +494,7 @@
   }
 
   function apiPost(body) {
+    var Auth = authApi();
     var headers = { "x-mcj-admin-role": (window.MCJAdminRole || localStorage.getItem("mcjAdminRole") || "admin") };
     if (Auth && Auth.post) return Auth.post("/api/admin/players", body, headers);
     return fetch("/api/admin/players", {
@@ -506,8 +510,17 @@
   }
 
   function apiGetDetail(id) {
-    var url = "/api/admin/players?id=" + encodeURIComponent(id);
+    var Auth = authApi();
     var headers = { "x-mcj-admin-role": (window.MCJAdminRole || localStorage.getItem("mcjAdminRole") || "admin") };
+    // Prefer POST detail — same auth path as list mutations; avoids GET query rewrite quirks.
+    if (Auth && Auth.post) {
+      return Auth.post("/api/admin/players", { action: "detail", id: id }, headers).catch(function (err) {
+        var url = "/api/admin/players?id=" + encodeURIComponent(id);
+        if (Auth.get) return Auth.get(url, headers);
+        throw err;
+      });
+    }
+    var url = "/api/admin/players?id=" + encodeURIComponent(id);
     if (Auth && Auth.get) return Auth.get(url, headers);
     return fetch(url, { headers: Object.assign({ Accept: "application/json" }, headers) }).then(function (res) {
       return res.json().then(function (data) {
