@@ -21,8 +21,10 @@ import { createSignedUrl, publicObjectUrl } from "../_companion-media-store.js";
 async function resolvePlayableUrl(raw) {
   const s = String(raw || "").trim();
   if (!s) return "";
-  if (/^https?:\/\//i.test(s) && !/\/storage\/v1\/object\/sign\//i.test(s)) return s;
-  if (/^storage:\/\//i.test(s)) {
+  let url = "";
+  if (/^https?:\/\//i.test(s) && !/\/storage\/v1\/object\/sign\//i.test(s)) {
+    url = s;
+  } else if (/^storage:\/\//i.test(s)) {
     const rest = s.replace(/^storage:\/\//i, "");
     const slash = rest.indexOf("/");
     if (slash <= 0) return "";
@@ -31,25 +33,28 @@ async function resolvePlayableUrl(raw) {
     if (!bucket || !objectPath || bucket === "present") return "";
     try {
       if (bucket === "companion-public" || /public/i.test(bucket)) {
-        return publicObjectUrl(bucket, objectPath) || "";
+        url = publicObjectUrl(bucket, objectPath) || "";
+      } else {
+        url = (await createSignedUrl(bucket, objectPath, 60 * 60 * 12)) || "";
       }
-      const signed = (await createSignedUrl(bucket, objectPath, 60 * 60 * 12)) || "";
-      if (!signed) return "";
-      // Drop empty / header-only audio stubs (WAV header alone is 44 bytes).
-      try {
-        const head = await fetch(signed, { method: "HEAD" });
-        const len = Number(head.headers.get("content-length") || 0);
-        if (Number.isFinite(len) && len > 0 && len < 512) return "";
-      } catch {
-        /* keep signed URL if HEAD unavailable */
-      }
-      return signed;
     } catch (err) {
       console.warn("[public/companions] resolvePlayableUrl failed", bucket, objectPath, err?.message || err);
       return "";
     }
+  } else if (/^https?:\/\//i.test(s)) {
+    // Fresh signed URLs from companion_media are allowed through size gate below.
+    url = s;
   }
-  return "";
+  if (!url) return "";
+  // Drop empty / header-only audio stubs (WAV header alone is 44 bytes).
+  try {
+    const head = await fetch(url, { method: "HEAD" });
+    const len = Number(head.headers.get("content-length") || 0);
+    if (Number.isFinite(len) && len > 0 && len < 512) return "";
+  } catch {
+    /* keep URL if HEAD unavailable */
+  }
+  return url;
 }
 import {
   formatCompanionCode,
@@ -432,9 +437,8 @@ async function loadCompanions(id = "") {
     const profile = profileMap[row.user_id];
     if (!profile) continue;
     const media = { ...(mediaMap[row.id] || {}) };
-    if (!media.voiceUrl) {
-      media.voiceUrl = await resolvePlayableUrl(row.voice_url);
-    }
+    // Prefer companion_media voice, else durable storage:// / legacy URL — always size-gate.
+    media.voiceUrl = await resolvePlayableUrl(media.voiceUrl || row.voice_url);
     // Parse legacy gallery tags when companion_media has no gallery rows.
     if (!Array.isArray(media.gallery) || !media.gallery.length) {
       const tag = String(row.tags || "");
