@@ -37,11 +37,7 @@
   function cfgFor(role) { return routes[storageRole(role)] || routes[role]; }
   function readUser(role) {
     var cfg = cfgFor(role);
-    var isBoss = storageRole(role) === "customer" || role === "boss";
     try {
-      if (isBoss) {
-        return JSON.parse(sessionStorage.getItem(cfg.user) || "{}");
-      }
       return JSON.parse(localStorage.getItem(cfg.user) || sessionStorage.getItem(cfg.user) || "{}");
     } catch (e) {
       return {};
@@ -49,8 +45,6 @@
   }
   function readToken(role) {
     var cfg = cfgFor(role);
-    var isBoss = storageRole(role) === "customer" || role === "boss";
-    if (isBoss) return sessionStorage.getItem(cfg.token) || "";
     return localStorage.getItem(cfg.token) || sessionStorage.getItem(cfg.token) || "";
   }
   function isAllowed(role) { var cfg = cfgFor(role); if (!cfg) return true; return cfg.allowed.some(function (rule) { return rule.test(path()); }); }
@@ -64,25 +58,15 @@
   }
 
   function readAccessToken() {
-    // Boss: sessionStorage only — never revive localStorage leftovers.
-    // Keep shared JWT in localStorage when admin soft session is active (admin APIs).
-    if (!hasAdminSoftSession()) {
-      try {
-        localStorage.removeItem("mcjAuthAccessToken");
-        localStorage.removeItem("mcjAuthRefreshToken");
-        localStorage.removeItem("mcjAuthExpiresAt");
-        localStorage.removeItem("customerAuthToken");
-        localStorage.removeItem("customerUser");
-        localStorage.removeItem("mcjCurrentUser");
-      } catch (e) {}
-    } else {
-      try {
-        localStorage.removeItem("customerAuthToken");
-        localStorage.removeItem("customerUser");
-        localStorage.removeItem("mcjCurrentUser");
-      } catch (e2) {}
+    try {
+      return (
+        sessionStorage.getItem("mcjAuthAccessToken") ||
+        localStorage.getItem("mcjAuthAccessToken") ||
+        ""
+      );
+    } catch (e) {
+      return "";
     }
-    return sessionStorage.getItem("mcjAuthAccessToken") || "";
   }
 
   function looksLikeJwt(token) {
@@ -110,7 +94,7 @@
     if (!looksLikeJwt(access)) return false;
     var expRaw = "";
     try {
-      expRaw = sessionStorage.getItem("mcjAuthExpiresAt") || "";
+      expRaw = sessionStorage.getItem("mcjAuthExpiresAt") || localStorage.getItem("mcjAuthExpiresAt") || "";
     } catch (e) {}
     var exp = 0;
     if (expRaw) {
@@ -185,16 +169,34 @@
   }
 
   function setLoginMessage(anchor, message) {
-    var box = document.getElementById("loginState") || document.querySelector("[data-login-error]");
+    var root =
+      (anchor && anchor.closest && (anchor.closest(".boss-login-modal") || anchor.closest("[data-auth-mode]"))) ||
+      document;
+    var box =
+      (root.querySelector && (root.querySelector("#loginState") || root.querySelector("[data-login-error]"))) ||
+      document.getElementById("loginState") ||
+      document.querySelector("[data-login-error]");
     if (!box && anchor && anchor.parentNode) {
       box = document.createElement("p");
+      box.id = "loginState";
       box.setAttribute("data-login-error", "true");
       box.style.margin = "10px 0 0";
       box.style.color = "#ff8fc5";
       box.style.fontSize = "13px";
+      box.style.fontWeight = "700";
       anchor.parentNode.insertBefore(box, anchor.nextSibling);
     }
-    if (box) box.textContent = message;
+    if (box) {
+      box.textContent = message || "";
+      box.hidden = !message;
+      try {
+        box.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      } catch (e) {}
+    } else if (message) {
+      try {
+        window.alert(message);
+      } catch (e2) {}
+    }
   }
 
   function fieldValue(ids) { for (var i = 0; i < ids.length; i += 1) { var el = document.getElementById(ids[i]); if (el) return el.value || ""; } return ""; }
@@ -223,9 +225,8 @@
     var role = storageRole(userData.role || "boss");
     var cfg = cfgFor(role);
     if (!cfg) return null;
-    var isBoss = role === "customer" || role === "boss";
-    // Boss portal: tab-scoped session only. Never persist acceptance JWT in localStorage.
-    var store = isBoss ? sessionStorage : remember === false ? sessionStorage : localStorage;
+    // Persist login across refresh by default; only skip when remember === false.
+    var store = remember === false ? sessionStorage : localStorage;
     var otherStore = store === localStorage ? sessionStorage : localStorage;
     var token = role + "_session_" + SESSION_VERSION + "_" + Date.now();
     var adminOk = isAdminRole(userData.role);
@@ -253,17 +254,6 @@
     otherStore.removeItem("mcjAuthRefreshToken");
     otherStore.removeItem("mcjAuthExpiresAt");
     otherStore.removeItem("mcjCurrentUser");
-    if (isBoss) {
-      try {
-        localStorage.removeItem(cfg.token);
-        localStorage.removeItem(cfg.user);
-        localStorage.removeItem("mcjRole");
-        localStorage.removeItem("mcjAuthAccessToken");
-        localStorage.removeItem("mcjAuthRefreshToken");
-        localStorage.removeItem("mcjAuthExpiresAt");
-        localStorage.removeItem("mcjCurrentUser");
-      } catch (e) {}
-    }
     store.setItem(cfg.token, token);
     store.setItem(cfg.user, JSON.stringify(user));
     store.setItem("mcjRole", userData.role || role);
@@ -278,6 +268,11 @@
       if (window.MCJAdminAuthFetch && typeof window.MCJAdminAuthFetch.saveTokens === "function") {
         window.MCJAdminAuthFetch.saveTokens(session);
       }
+    }
+    if (window.MCJBossAuth && typeof window.MCJBossAuth.saveSession === "function" && (role === "customer" || role === "boss")) {
+      try {
+        window.MCJBossAuth.saveSession(session, remember !== false);
+      } catch (e) {}
     }
     ["customer", "companion", "customer_service", "admin"].forEach(function (other) {
       if (other === role) return;
@@ -390,12 +385,18 @@
     var redirect = profileRole(role) === "boss" && pending ? pending : roleHome;
     var here = String(location.pathname || "").replace(/\/+$/, "") || "/";
     var dest = String(redirect || "/").replace(/\/+$/, "") || "/";
+    // Never reopen login/register after success (clear #login / #register).
+    try {
+      if (/^#(login|register)$/i.test(location.hash || "")) {
+        history.replaceState(null, "", location.pathname + location.search);
+      }
+    } catch (e) {}
     if (dest !== here && dest + ".html" !== here && here + "/" !== dest) {
-      location.href = redirect;
+      location.href = String(redirect || "/").replace(/#(login|register)$/i, "");
       return;
     }
     if (profileRole(role) === "boss") {
-      location.reload();
+      location.replace((location.pathname || "/") + (location.search || ""));
     }
   }
 

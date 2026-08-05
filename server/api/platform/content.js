@@ -177,9 +177,8 @@ function isPublicAnnouncementRow(row) {
   const content = String(row?.content || "");
   const blob = `${title}\n${content}`;
   const audience = String(row?.audience || "").toLowerCase();
-  const kind = String(row?.kind || "normal").toLowerCase();
   if (audience === "system_internal" || audience === "internal") return false;
-  if (kind === "forced") return false;
+  // Include forced announcements so homepage can popup; ticker clients filter kind.
   if (title.includes("[MCJ_GP]") || title.startsWith("[MCJ_PC]") || blob.includes("MCJ_CS_DOCK")) return false;
   if (/^\s*[{\[]/.test(content) && /"type"\s*:|"slug"\s*:|"draft"\s*:/i.test(content)) return false;
   return true;

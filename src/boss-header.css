@@ -155,6 +155,7 @@ header.mcj-boss-header .mcj-mnav {
 }
 
 header.mcj-boss-header .mcj-desk-nav > a,
+header.mcj-boss-header .mcj-desk-nav > .mcj-desk-logout,
 header.mcj-boss-header .mcj-mnav-drawer a,
 header.mcj-boss-header .mcj-mnav-drawer .mcj-mnav-logout,
 header.mcj-boss-header .mcj-mnav-toggle {
@@ -181,6 +182,7 @@ header.mcj-boss-header .mcj-mnav-toggle {
 }
 
 header.mcj-boss-header .mcj-desk-nav > a,
+header.mcj-boss-header .mcj-desk-nav > .mcj-desk-logout,
 header.mcj-boss-header .mcj-mnav-drawer a,
 header.mcj-boss-header .mcj-mnav-drawer .mcj-mnav-logout {
   display: flex;
@@ -207,12 +209,20 @@ header.mcj-boss-header .mcj-mnav-drawer a::after {
 }
 
 header.mcj-boss-header .mcj-desk-nav > a:hover,
+header.mcj-boss-header .mcj-desk-nav > .mcj-desk-logout:hover,
 header.mcj-boss-header .mcj-mnav-drawer a:hover,
 header.mcj-boss-header .mcj-mnav-drawer .mcj-mnav-logout:hover,
 header.mcj-boss-header .mcj-mnav-toggle:hover {
   background: var(--mcj-nav-glass-hover);
   border-color: rgba(255, 180, 220, 0.55);
   box-shadow: none;
+}
+
+header.mcj-boss-header .mcj-desk-nav > .mcj-desk-logout {
+  appearance: none;
+  -webkit-appearance: none;
+  font-family: inherit;
+  margin: 0;
 }
 
 header.mcj-boss-header .mcj-desk-nav > a.active,
@@ -279,7 +289,8 @@ header.mcj-boss-header .mcj-mnav-toggle:focus-visible {
     order: 2;
   }
 
-  header.mcj-boss-header .mcj-desk-nav > a {
+  header.mcj-boss-header .mcj-desk-nav > a,
+  header.mcj-boss-header .mcj-desk-nav > .mcj-desk-logout {
     flex: 0 0 auto;
     min-width: 0;
     width: auto;
@@ -356,12 +367,18 @@ header.mcj-boss-header .mcj-mnav-toggle:focus-visible {
   }
 
   @media (max-width: 520px) {
+    /* Keep English brand visible on mobile (Meow Cui Jiao) */
     header.mcj-boss-header .mcj-header-brand-en {
-      display: none;
+      display: block;
+      font-size: 11px;
+      font-weight: 900;
+      letter-spacing: 0.04em;
+      line-height: 1.1;
+      max-width: 11em;
     }
 
     header.mcj-boss-header .mcj-header-brand-zh {
-      font-size: 16px;
+      font-size: 14px;
       font-weight: 950;
       color: #fff7fb;
       letter-spacing: 0.02em;

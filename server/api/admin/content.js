@@ -146,9 +146,7 @@ function isAdminManagedAnnouncement(row = {}) {
   const content = String(row.content || "");
   const blob = `${title}\n${content}`;
   const audience = String(row.audience || "").trim().toLowerCase();
-  const kind = String(row.kind || "normal").trim().toLowerCase();
   if (audience === "system_internal" || audience === "internal") return false;
-  if (kind === "forced") return false;
   if (title.startsWith("[MCJ_PC]") || title.includes("[MCJ_GP]") || blob.includes("MCJ_CS_DOCK")) return false;
   if (/^\s*[{\[]/.test(content) && /"type"\s*:|"slug"\s*:|"draft"\s*:|gameplay|ad_slots|reward/i.test(content)) {
     return false;
@@ -203,8 +201,8 @@ function announcementPayload(input = {}, previous = null) {
     throw Object.assign(new Error("系统内部配置不可写入公告管理。"), { status: 400 });
   }
   const sortOrder = Number(input.sort_order ?? input.sortOrder ?? input.sort ?? 100);
-  // 公告管理 only creates normal announcements; forced rules live in 制度与等级.
-  const kind = "normal";
+  const kindRaw = String(input.kind || previous?.kind || "normal").trim().toLowerCase();
+  const kind = kindRaw === "forced" || truthy(input.requires_ack ?? input.requiresAck, false) ? "forced" : "normal";
   let contentVersion = Number(input.content_version ?? input.contentVersion ?? previous?.content_version ?? 1) || 1;
   if (previous && (String(previous.content || "") !== content || String(previous.title || "") !== title)) {
     contentVersion = (Number(previous.content_version) || 1) + 1;
@@ -223,7 +221,7 @@ function announcementPayload(input = {}, previous = null) {
     audience,
     kind,
     content_version: contentVersion,
-    requires_ack: false,
+    requires_ack: kind === "forced",
     start_at: startAt,
     end_at: endAt,
     is_scrolling: truthy(input.is_scrolling ?? input.isScrolling ?? input.scroll, true),

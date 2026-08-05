@@ -953,9 +953,9 @@
     }
   }
 
-  function openFromProfileCompanion(companion, extras) {
+  function openFromCanonicalCompanion(src, extras) {
     extras = extras || {};
-    var src = companion && typeof companion === "object" ? companion : {};
+    src = src && typeof src === "object" ? src : {};
     var companionId = String(
       extras.companionId || src.companionId || src.companion_id || src.id || src.uid || ""
     ).trim();
@@ -979,7 +979,9 @@
       var nextPrice = money(unitPrice);
       if (nextPrice > 0) state.companion.unitPrice = nextPrice;
       if (companionName) state.companion.companionName = companionName;
-      if (extras.avatar || src.avatar) state.companion.avatar = extras.avatar || src.avatar || state.companion.avatar;
+      if (extras.avatar || src.avatar || src.cover) {
+        state.companion.avatar = extras.avatar || src.avatar || src.cover || state.companion.avatar;
+      }
       if (extras.publicId || src.publicId) state.companion.publicId = extras.publicId || src.publicId || state.companion.publicId;
       if (extras.pricingUnit || src.pricingUnit) {
         state.companion.pricingUnit = extras.pricingUnit || src.pricingUnit || state.companion.pricingUnit;
@@ -1011,6 +1013,38 @@
       level: extras.level || src.level || src.levelName || "",
       online: extras.online != null ? extras.online : src.online != null ? src.online : src.isOnline,
     });
+  }
+
+  function openFromProfileCompanion(companion, extras) {
+    extras = extras || {};
+    var src = companion && typeof companion === "object" ? companion : {};
+    var companionId = String(
+      extras.companionId || src.companionId || src.companion_id || src.id || src.uid || ""
+    ).trim();
+    if (!companionId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(companionId)) {
+      openFromCanonicalCompanion(src, extras);
+      return;
+    }
+    // Re-read the same public companion record used by home / hall / detail.
+    fetch("/api/public/companions?id=" + encodeURIComponent(companionId), {
+      headers: { Accept: "application/json" },
+      cache: "no-store",
+    })
+      .then(function (res) {
+        return res.json().then(function (body) {
+          if (!res.ok || !body || body.ok === false) throw new Error((body && body.message) || "陪玩资料读取失败");
+          var list = Array.isArray(body.companions) ? body.companions : body.companion ? [body.companion] : [];
+          var row = list[0] || null;
+          if (!row) throw new Error("陪玩资料不存在");
+          return row;
+        });
+      })
+      .then(function (row) {
+        openFromCanonicalCompanion(row, extras);
+      })
+      .catch(function () {
+        openFromCanonicalCompanion(src, extras);
+      });
   }
 
   window.MCJPlaceOrder = {

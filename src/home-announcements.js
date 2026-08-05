@@ -5,8 +5,10 @@
 
   var state = {
     items: [],
+    forced: [],
     loaded: false,
     activeId: "",
+    forcedOpen: false,
   };
 
   function esc(v) {
@@ -43,6 +45,8 @@
 
   function normalize(item) {
     item = item || {};
+    var kind = String(item.kind || "normal").toLowerCase() === "forced" ? "forced" : "normal";
+    var requiresAck = kind === "forced" || item.requiresAck === true || item.requires_ack === true;
     return {
       id: String(item.id || ""),
       title: String(item.title || "").trim(),
@@ -53,6 +57,9 @@
       sort: Number(item.sort || item.sort_order || 100),
       category: String(item.category || "home").toLowerCase() === "companion" ? "companion" : "home",
       audience: String(item.audience || "home").toLowerCase(),
+      kind: kind,
+      requiresAck: requiresAck,
+      contentVersion: String(item.contentVersion || item.content_version || 1),
       startAt: item.startAt || item.start_at || "",
       endAt: item.endAt || item.end_at || "",
       scroll: item.scroll !== false && item.is_scrolling !== false,
@@ -102,13 +109,25 @@
     return modal;
   }
 
-  function openDetail(item) {
+  function openDetail(item, opts) {
     if (!item) return;
+    opts = opts || {};
     var modal = ensureModal();
     state.activeId = item.id;
+    state.forcedOpen = !!opts.forced;
     modal.querySelector("#homeAnnouncementModalTitle").textContent = item.title || "官方公告";
-    modal.querySelector(".home-announcement-time").textContent = "发布时间：" + formatTime(item.publishedAt);
+    modal.querySelector(".home-announcement-time").textContent =
+      (item.kind === "forced" ? "强制公告 · " : "") + "发布时间：" + formatTime(item.publishedAt);
     modal.querySelector(".home-announcement-body").textContent = item.content || item.title || "暂无最新公告。";
+    var closeBtn = modal.querySelector(".home-announcement-close");
+    var okBtn = modal.querySelector(".home-announcement-ok");
+    if (item.kind === "forced" && opts.forced) {
+      if (closeBtn) closeBtn.hidden = true;
+      if (okBtn) okBtn.textContent = "我已阅读";
+    } else {
+      if (closeBtn) closeBtn.hidden = false;
+      if (okBtn) okBtn.textContent = "关闭";
+    }
     modal.hidden = false;
     document.body.style.overflow = "hidden";
   }
@@ -118,12 +137,88 @@
     return state.items[0];
   }
 
+  function guestForcedKey(item) {
+    return "mcjHomeForcedSeen:" + String(item.id || "") + ":" + String(item.contentVersion || "1");
+  }
+
+  function markForcedSeen(item) {
+    try {
+      sessionStorage.setItem(guestForcedKey(item), "1");
+    } catch (e) {}
+  }
+
+  function wasForcedSeen(item) {
+    try {
+      return sessionStorage.getItem(guestForcedKey(item)) === "1";
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function bossAccessToken() {
+    try {
+      return (
+        sessionStorage.getItem("mcjAuthAccessToken") ||
+        localStorage.getItem("mcjAuthAccessToken") ||
+        ""
+      );
+    } catch (e) {
+      return "";
+    }
+  }
+
+  function acknowledgeForced(item) {
+    var token = bossAccessToken();
+    if (!token || !item || !item.id) {
+      markForcedSeen(item);
+      return Promise.resolve();
+    }
+    return fetch("/api/auth", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        Authorization: "Bearer " + token,
+      },
+      body: JSON.stringify({
+        action: "acknowledge_forced",
+        content_id: item.id,
+        content_version: item.contentVersion || "1",
+        content_type: "announcement",
+      }),
+    })
+      .then(function (r) {
+        return r.json().catch(function () {
+          return {};
+        });
+      })
+      .then(function () {
+        markForcedSeen(item);
+      })
+      .catch(function () {
+        markForcedSeen(item);
+      });
+  }
+
   function closeDetail() {
     var modal = document.getElementById("homeAnnouncementModal");
     if (!modal) return;
+    var closingForced = state.forcedOpen;
+    var active = null;
+    if (closingForced) {
+      active = state.forced.find(function (it) {
+        return String(it.id) === String(state.activeId);
+      }) || state.forced[0];
+    }
     modal.hidden = true;
     state.activeId = "";
+    state.forcedOpen = false;
     document.body.style.overflow = "";
+    if (closingForced && active) {
+      acknowledgeForced(active).finally(function () {
+        maybeOpenForced();
+      });
+    }
   }
 
   function bindPause(bar, track) {
@@ -148,12 +243,25 @@
   }
 
   function preferEllipsis(item) {
-    if (item && item.scroll === false) return true;
-    try {
-      return window.matchMedia && window.matchMedia("(max-width: 899px)").matches;
-    } catch (e) {
-      return typeof window !== "undefined" && window.innerWidth <= 899;
+    // Only stop scrolling when admin explicitly disabled it.
+    return !!(item && item.scroll === false);
+  }
+
+  function maybeOpenForced() {
+    if (state.forcedOpen) return;
+    var next = null;
+    for (var i = 0; i < state.forced.length; i += 1) {
+      if (!wasForcedSeen(state.forced[i])) {
+        next = state.forced[i];
+        break;
+      }
     }
+    if (!next) return;
+    // Prefer dedicated ack modal for logged-in boss when available.
+    if (bossAccessToken() && window.MCJBossForcedAck && typeof window.MCJBossForcedAck.refresh === "function") {
+      window.MCJBossForcedAck.refresh();
+    }
+    openDetail(next, { forced: true });
   }
 
   function render() {
@@ -238,16 +346,24 @@
           });
       })
       .then(function (rows) {
-        state.items = sortItems(
+        var all = sortItems(
           (rows || []).map(normalize).filter(function (item) {
             return item.enabled !== false && (item.title || item.content) && inSchedule(item);
           })
         );
+        state.forced = all.filter(function (item) {
+          return item.kind === "forced" || item.requiresAck;
+        });
+        state.items = all.filter(function (item) {
+          return item.kind !== "forced" && !item.requiresAck;
+        });
         state.loaded = true;
         render();
+        maybeOpenForced();
       })
       .catch(function () {
         state.items = [];
+        state.forced = [];
         state.loaded = true;
         render();
       });
@@ -269,6 +385,9 @@
     reload: load,
     items: function () {
       return state.items.slice();
+    },
+    forced: function () {
+      return state.forced.slice();
     },
   };
 })();

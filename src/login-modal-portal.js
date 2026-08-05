@@ -75,10 +75,36 @@
     unlockBodyScroll();
   }
 
+  function isBossLoggedIn() {
+    try {
+      if (window.MCJRoleGate && typeof window.MCJRoleGate.isLogged === "function") {
+        if (window.MCJRoleGate.isLogged("boss") || window.MCJRoleGate.isLogged("customer")) return true;
+      }
+      if (window.MCJBossAuth && typeof window.MCJBossAuth.hasValidAccessToken === "function") {
+        return !!window.MCJBossAuth.hasValidAccessToken();
+      }
+      var token =
+        sessionStorage.getItem("mcjAuthAccessToken") || localStorage.getItem("mcjAuthAccessToken") || "";
+      return String(token).split(".").length === 3 && token.length > 20;
+    } catch (e) {
+      return false;
+    }
+  }
+
   function openLogin(mode) {
+    if (isBossLoggedIn()) {
+      closeModal();
+      try {
+        if (/^#(login|register)$/i.test(location.hash || "")) {
+          history.replaceState(null, "", location.pathname + location.search);
+        }
+      } catch (e) {}
+      return null;
+    }
+    var want = mode === "register" ? "register" : "login";
     var html =
       typeof window.bossLoginHtml === "function"
-        ? window.bossLoginHtml(mode === "register" ? "register" : "login")
+        ? window.bossLoginHtml(want)
         : '<div class="boss-login-modal"><h2>登录 MEOW CUI JIAO</h2><button class="login-submit" type="button" data-login-confirm>登录</button></div>';
     return openModal(html, { auth: true });
   }
@@ -88,6 +114,12 @@
       .replace(/^#/, "")
       .toLowerCase();
     if (hash !== "login" && hash !== "register") return;
+    if (isBossLoggedIn()) {
+      try {
+        history.replaceState(null, "", location.pathname + location.search);
+      } catch (e) {}
+      return;
+    }
     var y = window.scrollY || window.pageYOffset || 0;
     openLogin(hash === "register" ? "register" : "login");
     window.scrollTo(0, y);

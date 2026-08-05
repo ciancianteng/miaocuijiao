@@ -118,14 +118,14 @@
 
   function accessToken() {
     try {
-      localStorage.removeItem("mcjAuthAccessToken");
-      localStorage.removeItem("mcjAuthRefreshToken");
-      localStorage.removeItem("mcjAuthExpiresAt");
-      localStorage.removeItem("customerAuthToken");
-      localStorage.removeItem("customerUser");
-      localStorage.removeItem("mcjCurrentUser");
-    } catch (e) {}
-    return sessionStorage.getItem("mcjAuthAccessToken") || "";
+      return (
+        sessionStorage.getItem("mcjAuthAccessToken") ||
+        localStorage.getItem("mcjAuthAccessToken") ||
+        ""
+      );
+    } catch (e) {
+      return "";
+    }
   }
 
   function looksLikeJwt(token) {
@@ -162,7 +162,10 @@
     }
     var token = accessToken();
     if (!looksLikeJwt(token)) return false;
-    var expRaw = sessionStorage.getItem("mcjAuthExpiresAt") || "";
+    var expRaw = "";
+    try {
+      expRaw = sessionStorage.getItem("mcjAuthExpiresAt") || localStorage.getItem("mcjAuthExpiresAt") || "";
+    } catch (e3) {}
     var exp = 0;
     if (expRaw) {
       var n = Number(expRaw);
@@ -174,20 +177,7 @@
   }
 
   function purgeGuestAuthArtifacts() {
-    // Always strip localStorage boss identity (acceptance leftovers).
-    [
-      "customerAuthToken",
-      "customerUser",
-      "mcjCurrentUser",
-      "mcjAuthAccessToken",
-      "mcjAuthRefreshToken",
-      "mcjAuthExpiresAt",
-      "mcjRole",
-    ].forEach(function (key) {
-      try {
-        localStorage.removeItem(key);
-      } catch (e) {}
-    });
+    // Keep persisted login across refresh; only clear when no valid JWT remains.
     if (hasValidBossJwt()) return;
     [
       "customerAuthToken",
@@ -199,8 +189,9 @@
       "mcjRole",
     ].forEach(function (key) {
       try {
+        localStorage.removeItem(key);
         sessionStorage.removeItem(key);
-      } catch (e2) {}
+      } catch (e) {}
     });
     if (window.MCJBossAuth && typeof window.MCJBossAuth.clearSession === "function") {
       try { window.MCJBossAuth.clearSession(); } catch (e3) {}
@@ -217,7 +208,10 @@
 
   function deskAuthLinkHtml() {
     if (isLoggedIn()) {
-      return navLink("mine.html", "个人中心");
+      return (
+        navLink("mine.html", "个人中心") +
+        '<button type="button" class="mcj-desk-logout" data-mcj-boss-logout>退出登录</button>'
+      );
     }
     return (
       '<a href="login.html" data-mcj-boss-login' +
@@ -333,7 +327,7 @@
       '<a class="mcj-header-brand" href="/" aria-label="MEOW CUI JIAO 妙脆角 首页">' +
       '<img class="mcj-header-brand-logo" src="/src/assets/meow-cuijiao-brand.jpg" alt="MEOW CUI JIAO" width="40" height="40" decoding="async" data-mcj-brand-logo="1">' +
       '<span class="mcj-header-brand-text">' +
-      '<span class="mcj-header-brand-en">MEOW CUI JIAO</span>' +
+      '<span class="mcj-header-brand-en">Meow Cui Jiao</span>' +
       '<span class="mcj-header-brand-zh">妙脆角</span>' +
       "</span></a>"
     );

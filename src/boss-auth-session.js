@@ -27,34 +27,30 @@
     }
   }
 
-  /** Boss sessions must NOT persist in localStorage across browser restarts. */
+  /** Clear boss auth from both stores (logout / expired). Keep admin JWT keys. */
   function wipeLocalBossAuth() {
-    // Never delete dedicated admin JWT keys. If admin soft session is active,
-    // also leave shared mcjAuth* alone so admin APIs keep working after visiting boss pages.
     var preserveSharedAuth = hasAdminSoftSession();
     BOSS_KEYS.forEach(function (key) {
       if (preserveSharedAuth && /^mcjAuth(AccessToken|RefreshToken|ExpiresAt)$/.test(key)) return;
       if (/^mcjAdmin/.test(key)) return;
       try {
         localStorage.removeItem(key);
+        sessionStorage.removeItem(key);
       } catch (e) {}
     });
   }
 
-  // Run immediately — kill leftover acceptance JWT / soft tokens from prior visits.
-  wipeLocalBossAuth();
-
   function readItem(key) {
-    // Boss portal: sessionStorage only (tab lifetime). Never revive localStorage.
+    // Persist across refresh: prefer session tab copy, then localStorage.
     try {
-      return sessionStorage.getItem(key) || "";
+      return sessionStorage.getItem(key) || localStorage.getItem(key) || "";
     } catch (e) {
       return "";
     }
   }
 
-  function authStore() {
-    return sessionStorage;
+  function authStore(persist) {
+    return persist === false ? sessionStorage : localStorage;
   }
 
   function getAccessToken() {
@@ -95,7 +91,6 @@
   }
 
   function hasValidAccessToken() {
-    wipeLocalBossAuth();
     var access = getAccessToken();
     if (!looksLikeJwt(access)) return false;
     var exp = getExpiresAtMs();
@@ -113,10 +108,15 @@
     return Date.now() >= exp - REFRESH_BUFFER_MS;
   }
 
-  function saveSession(session) {
+  function saveSession(session, persist) {
     if (!session) return;
-    wipeLocalBossAuth();
-    var store = authStore();
+    var store = authStore(persist !== false);
+    var other = store === localStorage ? sessionStorage : localStorage;
+    ["mcjAuthAccessToken", "mcjAuthRefreshToken", "mcjAuthExpiresAt"].forEach(function (key) {
+      try {
+        other.removeItem(key);
+      } catch (e) {}
+    });
     if (session.accessToken) store.setItem("mcjAuthAccessToken", session.accessToken);
     if (session.refreshToken) store.setItem("mcjAuthRefreshToken", session.refreshToken);
     if (session.expiresAt != null && session.expiresAt !== "") {
@@ -126,11 +126,6 @@
 
   function clearSession() {
     wipeLocalBossAuth();
-    BOSS_KEYS.forEach(function (key) {
-      try {
-        sessionStorage.removeItem(key);
-      } catch (e) {}
-    });
     try {
       window.dispatchEvent(new CustomEvent("mcj:auth-expired"));
     } catch (e2) {}
@@ -164,6 +159,10 @@
       clearSession();
       return Promise.reject(new Error(EXPIRED_MESSAGE));
     }
+    var persistRefresh = false;
+    try {
+      persistRefresh = !!localStorage.getItem("mcjAuthRefreshToken");
+    } catch (e) {}
     refreshPromise = fetch("/api/auth", {
       method: "POST",
       headers: { Accept: "application/json", "Content-Type": "application/json" },
@@ -176,7 +175,7 @@
             clearSession();
             throw new Error((body && body.message) || EXPIRED_MESSAGE);
           }
-          saveSession(body.session);
+          saveSession(body.session, persistRefresh);
           return { data: { session: { expires_at: body.session.expiresAt || null } }, error: null };
         });
       })
@@ -272,6 +271,7 @@
     ensureSession: ensureSession,
     authFetch: authFetch,
     authHeaders: authHeaders,
+    saveSession: saveSession,
     clearSession: clearSession,
     wipeLocalBossAuth: wipeLocalBossAuth,
     hasSession: hasSession,

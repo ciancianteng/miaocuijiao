@@ -3467,21 +3467,22 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
   <link rel="stylesheet" href="src/gameplay-flow.css">
   <link rel="stylesheet" href="src/design-system.css">
   <link rel="stylesheet" href="src/home-banner.css">
-  <link rel="stylesheet" href="src/home-announcements.css?v=20260804annScroll7">
+  <link rel="stylesheet" href="src/home-announcements.css?v=20260805p0home1">
   <link rel="stylesheet" href="src/home-popularity.css">
   <link rel="stylesheet" href="src/home-desktop.css">
-  <link rel="stylesheet" href="src/login-modal.css">
+  <link rel="stylesheet" href="src/login-modal.css?v=20260805p0home1">
   <link rel="stylesheet" href="src/place-order-modal.css">
   <link rel="stylesheet" href="src/notify-system.css">
-  <script type="module" src="src/role-gates.js"></script>
-  <script type="module" src="src/forgot-password.js?v=20260804emailMvp1"></script>
+  <script type="module" src="src/role-gates.js?v=20260805p0home1"></script>
+  <script type="module" src="src/boss-auth-session.js?v=20260805p0home1"></script>
+  <script type="module" src="src/forgot-password.js?v=20260805p0home1"></script>
   <script type="module" src="src/avatar-fallback.js"></script>
   <script type="module" src="src/companion-media.js?v=20260802mediaSync"></script>
   <script type="module" src="src/launch-feature-freeze.js"></script>
   <script type="module" src="src/notify-system.js" defer></script>
-  <script type="module" src="src/boss-header.js?v=20260804authP0boss4" defer></script>
-  <script type="module" src="src/boss-forced-ack.js?v=20260803rules1" defer></script>
-  <link rel="stylesheet" href="src/boss-header.css?v=20260804navAuth4">
+  <script type="module" src="src/boss-header.js?v=20260805p0home1" defer></script>
+  <script type="module" src="src/boss-forced-ack.js?v=20260805p0home1" defer></script>
+  <link rel="stylesheet" href="src/boss-header.css?v=20260805p0home1">
   <link rel="stylesheet" href="/src/mcj-safe-area.css?v=20260802mobileP0c">
   <link rel="stylesheet" href="src/home-mobile.css?v=20260804annMarquee3">
 </head>
@@ -3492,7 +3493,7 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
       <a class="mcj-header-brand" href="/" aria-label="MEOW CUI JIAO 妙脆角 首页">
         <img class="mcj-header-brand-logo" src="/src/assets/meow-cuijiao-brand.jpg" alt="MEOW CUI JIAO" width="40" height="40" decoding="async" data-mcj-brand-logo="1">
         <span class="mcj-header-brand-text">
-          <span class="mcj-header-brand-en">MEOW CUI JIAO</span>
+          <span class="mcj-header-brand-en">Meow Cui Jiao</span>
           <span class="mcj-header-brand-zh">妙脆角</span>
         </span>
       </a>
@@ -3629,7 +3630,7 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
   <script type="module" src="src/commission-engine.js"></script>
   <script type="module" src="src/unified-api.js"></script>
   <script type="module" src="src/currency.js"></script>
-  <script type="module" src="src/login-modal-portal.js"></script>
+  <script type="module" src="src/login-modal-portal.js?v=20260805p0home1"></script>
   <script>
     const modal=document.getElementById('modal');const modalBody=document.getElementById('modalBody');
     function isLoggedIn(){return window.MCJRoleGate ? !!(window.MCJRoleGate.isLogged('customer')||window.MCJRoleGate.isLogged('boss')) : !!(function(){var t=localStorage.getItem('mcjAuthAccessToken')||sessionStorage.getItem('mcjAuthAccessToken')||'';return t&&t.split('.').length===3;})()}
@@ -3891,9 +3892,9 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
   </script>
   <script type="module" src="src/site-data.js?v=20260804profileUuid1"></script>
   <script type="module" src="src/home-banner.js"></script>
-  <script type="module" src="src/home-announcements.js?v=20260804annScroll7"></script>
+  <script type="module" src="src/home-announcements.js?v=20260805p0home1"></script>
   <script type="module" src="src/home-daily-stats.js?v=20260802mobileP0c"></script>
-  <script type="module" src="src/place-order-modal.js?v=20260804profileUuid1"></script>
+  <script type="module" src="src/place-order-modal.js?v=20260805p0home1"></script>
   <script type="module" src="src/home-popularity.js?v=20260804profileUuid1"></script>
   <script type="module" src="src/home-services.js"></script>
   <script type="module" src="src/companion-application.js"></script>
@@ -4244,9 +4245,21 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
       }
       var hash = String(location.hash || '').replace(/^#/, '').toLowerCase();
       if ((hash === 'login' || hash === 'register') && window.MCJModal && window.MCJModal.openLogin) {
-        var y = window.scrollY || 0;
-        window.MCJModal.openLogin(hash === 'register' ? 'register' : 'login');
-        window.scrollTo(0, y);
+        var logged = false;
+        try {
+          logged = !!(window.MCJRoleGate && window.MCJRoleGate.isLogged && (window.MCJRoleGate.isLogged('boss') || window.MCJRoleGate.isLogged('customer')));
+          if (!logged) {
+            var tok = sessionStorage.getItem('mcjAuthAccessToken') || localStorage.getItem('mcjAuthAccessToken') || '';
+            logged = tok.split('.').length === 3 && tok.length > 20;
+          }
+        } catch (e) {}
+        if (logged) {
+          try { history.replaceState(null, '', location.pathname + location.search); } catch (e2) {}
+        } else {
+          var y = window.scrollY || 0;
+          window.MCJModal.openLogin(hash === 'register' ? 'register' : 'login');
+          window.scrollTo(0, y);
+        }
       }
       document.addEventListener('click', function(e){
         var switchBtn = e.target.closest && e.target.closest('[data-switch-auth]');

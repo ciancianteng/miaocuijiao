@@ -244,10 +244,10 @@ body > #modal.open {
 }
 
 @media (max-width: 560px) {
-  /* Overlay: do not double-lock scroll — let the auth dialog scroll inside. */
+  /* Overlay: vertically center auth dialog on mobile. */
   #modal.modal,
   body > #modal {
-    align-items: flex-start !important;
+    align-items: center !important;
     justify-content: center !important;
     padding: max(8px, env(safe-area-inset-top, 0px)) 12px max(8px, env(safe-area-inset-bottom, 0px)) !important;
     overflow-x: hidden !important;
@@ -257,7 +257,7 @@ body > #modal.open {
 
   #modal.modal.open,
   body > #modal.open {
-    align-items: flex-start !important;
+    align-items: center !important;
     justify-content: center !important;
   }
 
@@ -267,13 +267,13 @@ body > #modal.open {
     max-width: calc(100vw - 24px) !important;
     max-height: 90dvh !important;
     max-height: 90vh !important; /* fallback */
-    margin: 8px auto !important;
+    margin: auto !important;
     padding: 28px 20px calc(24px + env(safe-area-inset-bottom, 0px)) !important;
     overflow-x: hidden !important;
     overflow-y: auto !important;
     -webkit-overflow-scrolling: touch;
     overscroll-behavior: contain;
-    align-self: flex-start !important;
+    align-self: center !important;
   }
 
   #modal .boss-login-modal {
