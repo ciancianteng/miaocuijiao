@@ -103,6 +103,10 @@
   }
 
   bindPasswordToggle();
+  if (window.MCJAuthShell && typeof window.MCJAuthShell.prepareAuthForm === "function") {
+    window.MCJAuthShell.prepareAuthForm(form, { clearAccount: false });
+    draft.password = "";
+  }
 
   form.addEventListener(
     "input",

@@ -41,21 +41,21 @@
     css.textContent =
       ".mcj-forgot-host{position:fixed;inset:0;z-index:12000;display:flex;align-items:center;justify-content:center;padding:max(12px,env(safe-area-inset-top)) 16px max(12px,env(safe-area-inset-bottom));background:rgba(4,4,8,.72);-webkit-overflow-scrolling:touch;overflow:auto}" +
       ".mcj-forgot-host[hidden]{display:none!important}" +
-      ".mcj-forgot-card{width:min(420px,100%);max-height:min(92dvh,920px);overflow:auto;margin:auto;padding:22px 20px 20px;border-radius:18px;border:1px solid rgba(255,160,200,.28);background:linear-gradient(165deg,rgba(36,20,32,.98),rgba(12,10,16,.98));box-shadow:0 18px 48px rgba(0,0,0,.45);color:#f7f7fb;font-family:Segoe UI,PingFang SC,Microsoft YaHei,sans-serif}" +
-      ".mcj-forgot-card h2{margin:0 0 6px;font-size:1.2rem;font-weight:800;color:#ffe6f1}" +
-      ".mcj-forgot-card .mcj-forgot-desc{margin:0 0 14px;font-size:13px;line-height:1.45;color:rgba(255,220,235,.78)}" +
-      ".mcj-forgot-card label{display:flex;flex-direction:column;gap:6px;margin:0 0 12px;font-size:13px;font-weight:700;color:#ffd6e7}" +
-      ".mcj-forgot-card input{appearance:none;width:100%;box-sizing:border-box;min-height:44px;padding:10px 12px;border-radius:12px;border:1px solid rgba(255,160,200,.28);background:rgba(8,8,12,.75);color:#fff;font-size:15px;font-family:inherit}" +
+      ".mcj-forgot-card{width:min(460px,100%);min-height:min(420px,88dvh);max-height:min(92dvh,920px);overflow:auto;margin:auto;padding:28px 24px 24px;border-radius:20px;border:1px solid rgba(255,160,200,.28);background:linear-gradient(165deg,rgba(36,20,32,.98),rgba(12,10,16,.98));box-shadow:0 18px 48px rgba(0,0,0,.45);color:#f7f7fb;font-family:Segoe UI,PingFang SC,Microsoft YaHei,sans-serif}" +
+      ".mcj-forgot-card h2{margin:0 0 8px;font-size:1.35rem;font-weight:800;color:#ffe6f1}" +
+      ".mcj-forgot-card .mcj-forgot-desc{margin:0 0 20px;font-size:14px;line-height:1.5;color:rgba(255,220,235,.78)}" +
+      ".mcj-forgot-card label{display:flex;flex-direction:column;gap:8px;margin:0 0 18px;font-size:13px;font-weight:700;color:#ffd6e7}" +
+      ".mcj-forgot-card input{appearance:none;width:100%;box-sizing:border-box;min-height:52px;padding:10px 14px;border-radius:14px;border:1px solid rgba(255,160,200,.28);background:rgba(8,8,12,.75);color:#fff;font-size:15px;font-family:inherit}" +
       ".mcj-forgot-card input:focus{outline:none;border-color:rgba(255,143,197,.75);box-shadow:0 0 0 2px rgba(255,143,197,.22)}" +
-      ".mcj-forgot-actions{display:flex;flex-direction:column;gap:8px;margin-top:4px}" +
-      ".mcj-forgot-btn{appearance:none;min-height:44px;border-radius:12px;border:0;font-size:15px;font-weight:800;font-family:inherit;cursor:pointer}" +
+      ".mcj-forgot-actions{display:flex;flex-direction:column;gap:10px;margin-top:6px}" +
+      ".mcj-forgot-btn{appearance:none;min-height:52px;border-radius:14px;border:0;font-size:15px;font-weight:800;font-family:inherit;cursor:pointer}" +
       ".mcj-forgot-btn.primary{background:linear-gradient(135deg,#ff8fc5,#ff6aa8);color:#1a0812}" +
       ".mcj-forgot-btn.ghost{background:transparent;color:#ffdceb;border:1px solid rgba(255,160,200,.35)}" +
       ".mcj-forgot-btn:disabled{opacity:.55;cursor:not-allowed}" +
-      ".mcj-forgot-msg{min-height:1.2em;margin:8px 0 0;font-size:13px;font-weight:700;color:#ff8fc5;line-height:1.35}" +
+      ".mcj-forgot-msg{min-height:1.2em;margin:10px 0 0;font-size:13px;font-weight:700;color:#ff8fc5;line-height:1.35}" +
       ".mcj-forgot-msg.is-ok{color:#9dffc2}" +
       ".mcj-forgot-toast{position:fixed;left:50%;bottom:max(28px,env(safe-area-inset-bottom));transform:translateX(-50%);z-index:13000;padding:12px 18px;border-radius:999px;background:rgba(20,12,18,.94);border:1px solid rgba(255,160,200,.4);color:#ffe6f1;font-size:14px;font-weight:800;box-shadow:0 10px 28px rgba(0,0,0,.4);pointer-events:none}" +
-      "@media (max-width:560px){.mcj-forgot-card{padding:20px 16px 18px;border-radius:16px}}";
+      "@media (max-width:560px){.mcj-forgot-card{min-height:0;padding:24px 18px 20px;border-radius:18px}}";
     document.head.appendChild(css);
   }
 
@@ -196,7 +196,7 @@
         '<p class="mcj-forgot-desc">验证码已发送至 ' +
         esc(state.emailMasked || state.email) +
         "。请输入 6 位验证码。</p>" +
-        '<label>验证码<input name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" placeholder="000000" required></label>' +
+        '<label>验证码<input name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" data-auth-code="1" data-auth-sensitive="1" placeholder="000000" required value=""></label>' +
         '<div class="mcj-forgot-actions">' +
         '<button class="mcj-forgot-btn primary" type="submit" data-forgot-submit' +
         (busy ? " disabled" : "") +
@@ -280,6 +280,9 @@
     host.removeAttribute("hidden");
     host.style.display = "";
     paint();
+    if (window.MCJAuthShell && typeof window.MCJAuthShell.prepareAuthForm === "function") {
+      window.MCJAuthShell.prepareAuthForm(host, { clearAccount: !state.email, keepErrors: false });
+    }
     setTimeout(function () {
       var input = state.host && state.host.querySelector("input");
       if (input) input.focus();

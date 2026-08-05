@@ -304,7 +304,7 @@
       "</div></label></div>" +
       '<label class="form-field full">邮箱验证码' +
       '<div class="apply-auth-inline">' +
-      '<input name="authRegisterCode" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6 位验证码"' + (verified ? " disabled" : "") + ">" +
+      '<input name="authRegisterCode" type="text" inputmode="numeric" autocomplete="one-time-code" data-auth-code="1" data-auth-sensitive="1" maxlength="6" placeholder="6 位验证码" value=""' + (verified ? " disabled" : "") + ">" +
       '<button class="apply-btn" type="button" data-apply-verify-register-otp' + (verified || authUi.busy ? " disabled" : "") + ">验证邮箱</button>" +
       "</div></label>" +
       (verified
@@ -327,7 +327,7 @@
     var loginPwd =
       '<form class="apply-auth-form" data-apply-auth-form="login-password" data-apply-auth-panel="login-password"' + (mode === "login" && loginMethod === "password" ? "" : " hidden") + ' autocomplete="on">' +
       '<label class="form-field full">邮箱<input name="authEmail" type="email" inputmode="email" autocomplete="username" placeholder="name@example.com" required value="' + esc(authUi.loginEmail || "") + '"></label>' +
-      '<label class="form-field full">密码<input name="authPassword" type="password" autocomplete="current-password" required></label>' +
+      '<label class="form-field full">密码<input name="authPassword" type="password" autocomplete="current-password" data-auth-sensitive="1" required value=""></label>' +
       '<div class="apply-actions apply-auth-actions full"><button class="apply-btn primary" type="button" data-apply-login-password' + (authUi.busy ? " disabled" : "") + ">登录并继续申请</button></div>" +
       "</form>";
 
@@ -341,7 +341,7 @@
       (loginCooldown > 0 ? loginCooldown + "s" : "发送验证码") +
       "</button>" +
       "</div></label></div>" +
-      '<label class="form-field full">邮箱验证码<input name="authLoginCode" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6 位验证码" required></label>' +
+      '<label class="form-field full">邮箱验证码<input name="authLoginCode" type="text" inputmode="numeric" autocomplete="one-time-code" data-auth-code="1" data-auth-sensitive="1" maxlength="6" placeholder="6 位验证码" required value=""></label>' +
       '<div class="apply-actions apply-auth-actions full"><button class="apply-btn primary" type="button" data-apply-login-otp' + (authUi.busy ? " disabled" : "") + ">验证码登录</button></div>" +
       "</form>";
 
@@ -1639,6 +1639,9 @@
         authUi.mode = authModeBtn.getAttribute("data-apply-auth-mode") === "login" ? "login" : "register";
         setAuthMessage("");
         render(Number(root.dataset.step || 0));
+        if (window.MCJAuthShell && window.MCJAuthShell.clearAuthFields) {
+          window.MCJAuthShell.clearAuthFields(root, { clearCode: true, clearPassword: true, clearAccount: false });
+        }
         return;
       }
       var loginMethodBtn = e.target.closest("[data-apply-login-method]");
@@ -1647,6 +1650,9 @@
         authUi.loginMethod = loginMethodBtn.getAttribute("data-apply-login-method") === "otp" ? "otp" : "password";
         setAuthMessage("");
         render(Number(root.dataset.step || 0));
+        if (window.MCJAuthShell && window.MCJAuthShell.clearAuthFields) {
+          window.MCJAuthShell.clearAuthFields(root, { clearCode: true, clearPassword: true, clearAccount: false });
+        }
         return;
       }
 

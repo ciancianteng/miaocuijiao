@@ -46,6 +46,39 @@
     window.scrollTo(0, scrollY);
   }
 
+  function authShell() {
+    return window.MCJAuthShell || null;
+  }
+
+  function prepareAuthSurface(root, opts) {
+    var shell = authShell();
+    if (shell && typeof shell.prepareAuthForm === "function") {
+      shell.prepareAuthForm(root, opts || { clearAccount: true });
+      return;
+    }
+    if (!root || !root.querySelectorAll) return;
+    root.querySelectorAll("input[type='password'], input[autocomplete='one-time-code'], [data-auth-code], #loginOtpCode, #loginGmailCode, #loginCode").forEach(function (el) {
+      try {
+        el.value = "";
+        el.defaultValue = "";
+        el.removeAttribute("value");
+      } catch (e) {}
+    });
+  }
+
+  function clearAuthSurface(root) {
+    var shell = authShell();
+    if (shell && typeof shell.clearAuthFields === "function") {
+      shell.clearAuthFields(root || document.getElementById("modalBody"), {
+        clearCode: true,
+        clearPassword: true,
+        clearAccount: true,
+      });
+      return;
+    }
+    prepareAuthSurface(root, { clearAccount: true });
+  }
+
   function openModal(html, options) {
     options = options || {};
     var modal = ensurePortal();
@@ -66,12 +99,24 @@
     if (body) body.scrollTop = 0;
     modal.classList.add("open");
     lockBodyScroll();
+    if (isAuth && body) {
+      prepareAuthSurface(body.querySelector(".boss-login-modal") || body, { clearAccount: true });
+    }
     return modal;
   }
 
   function closeModal() {
     var modal = document.getElementById("modal");
-    if (modal) modal.classList.remove("open");
+    var body = document.getElementById("modalBody");
+    if (body && body.querySelector && body.querySelector(".boss-login-modal")) {
+      clearAuthSurface(body);
+      body.innerHTML = "";
+    }
+    if (modal) {
+      var dialog = modal.querySelector(".dialog");
+      if (dialog) dialog.classList.remove("is-auth-dialog");
+      modal.classList.remove("open");
+    }
     unlockBodyScroll();
   }
 
@@ -105,7 +150,7 @@
     var html =
       typeof window.bossLoginHtml === "function"
         ? window.bossLoginHtml(want)
-        : '<div class="boss-login-modal"><h2>登录 MEOW CUI JIAO</h2><button class="login-submit" type="button" data-login-confirm>登录</button></div>';
+        : '<div class="boss-login-modal" data-auth-mode="login"><h2>登录 MEOW CUI JIAO</h2><p class="muted">邮箱验证码登录（也可使用密码）。</p><div class="login-tabs"><button class="login-tab active" type="button" data-login-tab="otp">验证码登录</button><button class="login-tab" type="button" data-login-tab="email">密码登录</button></div><div class="login-panel active" data-login-panel="otp"><label class="wide">邮箱<input id="loginOtpEmail" type="email" autocomplete="username" placeholder="请输入邮箱" value=""></label><label class="wide">验证码<div class="login-code-row"><input id="loginOtpCode" name="otp" inputmode="numeric" autocomplete="one-time-code" data-auth-code="1" data-auth-sensitive="1" placeholder="6 位验证码" maxlength="6" value=""><button class="login-small-btn" type="button" data-send-login-otp data-login-role="boss">获取验证码</button></div></label><button class="login-submit" type="button" data-login-confirm data-login-method="otp">验证码登录</button></div><div class="login-panel" data-login-panel="email"><label class="wide">邮箱<input id="loginGmail" type="email" autocomplete="username" placeholder="请输入邮箱" value=""></label><label class="wide">密码<input id="loginGmailCode" type="password" autocomplete="current-password" data-auth-sensitive="1" placeholder="请输入密码" value=""></label><button class="login-submit" type="button" data-login-confirm data-login-method="email">密码登录</button></div><p id="loginState" data-login-error></p></div>';
     return openModal(html, { auth: true });
   }
 
@@ -132,6 +177,8 @@
     openLogin: openLogin,
     lockBodyScroll: lockBodyScroll,
     unlockBodyScroll: unlockBodyScroll,
+    prepareAuthSurface: prepareAuthSurface,
+    clearAuthSurface: clearAuthSurface,
   };
 
   function boot() {

@@ -616,6 +616,11 @@
         if (body && typeof window.bossLoginHtml === "function") {
           event.preventDefault();
           body.innerHTML = window.bossLoginHtml(mode);
+          if (window.MCJAuthShell && typeof window.MCJAuthShell.prepareAuthForm === "function") {
+            window.MCJAuthShell.prepareAuthForm(body.querySelector(".boss-login-modal") || body, { clearAccount: true });
+          } else if (window.MCJModal && typeof window.MCJModal.prepareAuthSurface === "function") {
+            window.MCJModal.prepareAuthSurface(body.querySelector(".boss-login-modal") || body, { clearAccount: true });
+          }
         }
         return;
       }
@@ -633,6 +638,25 @@
           if (key === "register") return;
           panel.classList.toggle("active", key === tab);
         });
+        // Always wipe OTP / password residual when switching login method.
+        if (window.MCJAuthShell && typeof window.MCJAuthShell.clearAuthFields === "function") {
+          window.MCJAuthShell.clearAuthFields(modal, {
+            clearCode: true,
+            clearPassword: true,
+            clearAccount: false,
+          });
+        } else {
+          modal.querySelectorAll("#loginOtpCode, #loginCode, #loginGmailCode, [data-auth-code], input[autocomplete='one-time-code'], input[type='password']").forEach(function (el) {
+            try {
+              el.value = "";
+              el.defaultValue = "";
+              el.removeAttribute("value");
+            } catch (e) {}
+          });
+          modal.querySelectorAll("[data-login-error], #loginState").forEach(function (box) {
+            box.textContent = "";
+          });
+        }
         return;
       }
 

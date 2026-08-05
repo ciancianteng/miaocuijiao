@@ -38,7 +38,7 @@
     .feature-row{grid-template-columns:repeat(4,1fr)}.feature-card{min-height:190px;padding:26px;display:flex;flex-direction:column;justify-content:space-between}.feature-head{position:relative;z-index:1;display:flex;align-items:flex-start;gap:16px}.feature-icon{width:58px;height:58px;border-radius:20px;display:grid;place-items:center;background:rgba(255,220,235,.12);border:1px solid rgba(243,168,203,.28);font-size:28px}.feature-card h3{margin:0;font-size:25px}.feature-card p{margin:7px 0 0;color:var(--muted);font-weight:850}.feature-card .btn{position:relative;z-index:1;width:max-content;min-height:42px;padding:0 17px;border:0;border-radius:999px;background:linear-gradient(180deg,#ffe2ef,#e9a0c6);color:#1b0712;font-weight:1000;cursor:pointer}
     .section-title{display:flex;align-items:end;justify-content:space-between;gap:16px;margin-bottom:18px}.section-title h2{margin:0;font-size:28px}.section-title p{margin:5px 0 0;color:var(--muted)}
     .order-strip{display:flex;gap:20px;overflow-x:auto;padding:4px 2px 18px;scroll-snap-type:x mandatory}.order-strip::-webkit-scrollbar{height:8px}.order-strip::-webkit-scrollbar-thumb{background:rgba(243,168,203,.36);border-radius:99px}.companion-card{flex:0 0 238px;scroll-snap-align:start;padding:12px}.avatar{position:relative;height:190px;border-radius:20px;overflow:hidden;border:1px solid rgba(243,168,203,.28);background:#120d15}.avatar img{width:100%;height:100%;object-fit:cover}.online-dot{position:absolute;right:12px;top:12px;width:13px;height:13px;border-radius:50%;background:#72efb4;box-shadow:0 0 12px #72efb4}.companion-info{position:relative;z-index:1;padding:13px 4px 2px}.row{display:flex;align-items:center;justify-content:space-between;gap:8px}.companion-info h3{margin:0;font-size:19px}.price{font-weight:1000;color:var(--pink-soft)}.muted{color:var(--muted)}.mini{margin:8px 0 12px;color:var(--muted);font-size:13px}.order-btn{width:100%;height:40px;border:0;border-radius:999px;background:linear-gradient(180deg,#ffe2ef,#e9a0c6);color:#1b0712;font-weight:1000;cursor:pointer;transition:.2s ease}.order-btn:hover{transform:translateY(-2px);box-shadow:0 0 20px rgba(243,168,203,.24)}
-    .modal{position:fixed;inset:0;z-index:99999;display:none;align-items:center;justify-content:center;background:rgba(2,1,4,.76);backdrop-filter:blur(12px);padding:16px;overflow:hidden;width:100vw;height:100dvh;margin:0;transform:none}.modal.open{display:flex}.dialog{position:relative;width:min(680px,100%);max-height:calc(100dvh - 32px);overflow:auto;border:1px solid rgba(243,168,203,.34);border-radius:24px;background:linear-gradient(180deg,rgba(30,24,36,.96),rgba(9,8,13,.98));box-shadow:0 24px 90px rgba(0,0,0,.62);padding:22px;margin:0;transform:none}.close{position:absolute;right:12px;top:12px;z-index:3;float:none;width:36px;height:36px;border-radius:50%;border:1px solid rgba(243,168,203,.28);background:rgba(0,0,0,.25);color:#ffe1ef;font-size:22px;line-height:1;cursor:pointer;display:grid;place-items:center}.dialog:has(.boss-login-modal),.dialog.is-auth-dialog{width:460px;max-width:min(480px,calc(100vw - 32px));height:auto;min-height:unset;max-height:calc(100dvh - 32px);overflow:hidden;padding:32px 28px 24px}
+    .modal{position:fixed;inset:0;z-index:99999;display:none;align-items:center;justify-content:center;background:rgba(2,1,4,.76);backdrop-filter:blur(12px);padding:16px;overflow:hidden;width:100vw;height:100dvh;margin:0;transform:none}.modal.open{display:flex}.dialog{position:relative;width:min(680px,100%);max-height:calc(100dvh - 32px);overflow:auto;border:1px solid rgba(243,168,203,.34);border-radius:24px;background:linear-gradient(180deg,rgba(30,24,36,.96),rgba(9,8,13,.98));box-shadow:0 24px 90px rgba(0,0,0,.62);padding:22px;margin:0;transform:none}.close{position:absolute;right:12px;top:12px;z-index:3;float:none;width:36px;height:36px;border-radius:50%;border:1px solid rgba(243,168,203,.28);background:rgba(0,0,0,.25);color:#ffe1ef;font-size:22px;line-height:1;cursor:pointer;display:grid;place-items:center}.dialog:has(.boss-login-modal),.dialog.is-auth-dialog{width:460px;max-width:min(480px,calc(100vw - 32px));height:auto;min-height:560px;max-height:calc(100dvh - 32px);overflow:auto;padding:36px 28px 28px}
     .team-lobby-card .feature-icon{box-shadow:0 0 22px rgba(243,168,203,.22);background:radial-gradient(circle at 50% 40%,rgba(255,220,235,.22),rgba(243,168,203,.09))}.team-lobby-card .btn{box-shadow:0 0 20px rgba(243,168,203,.22)}@media(max-width:980px){.live-stats{grid-template-columns:repeat(2,1fr)}.feature-row{grid-template-columns:1fr}.container{padding:20px}.main-nav{justify-content:flex-start;overflow-x:auto;flex-wrap:nowrap;padding-bottom:4px}.main-nav a,.main-nav button{white-space:nowrap}.brand span{display:block}}
     @media(max-width:560px){.header-inner{padding:0 16px}.top-actions{gap:10px}.top-actions button{padding:0 12px}.container{padding:16px}.notice-bar{margin-bottom:20px}.banner{height:clamp(180px,28vh,220px);margin-bottom:18px}.live-stats{grid-template-columns:1fr}.stat-card{min-height:118px}.stat-card strong{font-size:38px}.feature-card{min-height:168px}.section{margin-bottom:34px}.section-title{align-items:flex-start;flex-direction:column}.companion-card{flex-basis:220px}.avatar{height:176px}}
     .mobile-bottom-nav{display:none}
@@ -297,7 +297,7 @@ img,video,canvas,svg{max-width:100%}
 }
 @media(max-width:560px){.banner img{border-radius:17px!important;transform:translateY(-4px) scale(1.02)!important;outline-offset:3px!important}.banner:after{left:14%;right:14%;bottom:-10px;height:18px!important}}
   /* boss-login-modal-v3 — auth density; final polish in src/login-modal.css */
-.boss-login-modal{display:grid;gap:0;clear:both}.boss-login-modal h2{margin:0;color:#fff5fa;font-size:32px;font-weight:700;line-height:1.2}.boss-login-modal>.muted{margin:8px 0 0;font-size:16px;line-height:1.45;color:rgba(255,255,255,.72);font-weight:500;text-transform:none;letter-spacing:0}.login-tabs{display:grid;grid-template-columns:1fr 1fr;gap:10px}.login-tab{height:42px;border-radius:999px;border:1px solid rgba(243,168,203,.24);background:rgba(255,255,255,.045);color:#ffe1ef;font-weight:1000;cursor:pointer}.login-tab.active{border:0;background:linear-gradient(180deg,#ffe2ef,#e7a0c4);color:#1b0712}.login-panel{display:none;grid-template-columns:1fr;gap:16px}.login-panel.active{display:grid;margin-top:20px}.login-panel label{display:grid;gap:8px;color:#ffdceb;font-weight:700;font-size:13px}.login-panel input,.login-panel select{height:52px;border-radius:14px;border:1.5px solid rgba(255,120,180,.35);background:rgba(255,255,255,.055);color:#fff;padding:0 16px;outline:0;box-sizing:border-box}.login-panel .wide{grid-column:1/-1}.login-code-row{display:grid;grid-template-columns:1fr 132px;gap:10px}.login-small-btn{height:52px;border-radius:14px;border:1px solid rgba(243,168,203,.24);background:rgba(255,255,255,.045);color:#ffe1ef;font-weight:1000;cursor:pointer}.login-submit{grid-column:1/-1;height:52px;border:0;border-radius:14px;background:linear-gradient(180deg,#ffe2ef,#e7a0c4);color:#1b0712;font-weight:800;cursor:pointer;box-shadow:0 10px 28px rgba(0,0,0,.35),0 0 22px rgba(243,168,203,.28)}.boss-login-modal [data-login-error],.boss-login-modal #loginState{margin:10px 0 0;min-height:0;color:#ff8fc5;font-size:13px;font-weight:700;line-height:1.35}.login-links{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:nowrap;height:40px;margin-top:12px}.login-links a,.login-links button.linkish{appearance:none;border:0;background:none;padding:0;color:#ffdceb;font-size:13px;font-weight:700;text-decoration:none;cursor:pointer;font-family:inherit;white-space:nowrap;line-height:40px}.login-links a:hover,.login-links button.linkish:hover{text-decoration:underline}.boss-login-modal[data-auth-mode="register"] .login-links{justify-content:center}@media(max-width:560px){.dialog:has(.boss-login-modal),.dialog.is-auth-dialog{width:calc(100vw - 32px);max-width:calc(100vw - 32px)}.boss-login-modal h2{font-size:26px}.boss-login-modal>.muted{font-size:14px}}
+.boss-login-modal{display:grid;gap:0;clear:both}.boss-login-modal h2{margin:0;color:#fff5fa;font-size:32px;font-weight:700;line-height:1.2}.boss-login-modal>.muted{margin:10px 0 0;font-size:16px;line-height:1.45;color:rgba(255,255,255,.72);font-weight:500;text-transform:none;letter-spacing:0}.login-tabs{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:28px 0 0}.login-tab{height:44px;border-radius:999px;border:1px solid rgba(243,168,203,.24);background:rgba(255,255,255,.045);color:#ffe1ef;font-weight:800;cursor:pointer}.login-tab.active{border:0;background:linear-gradient(180deg,#ffe2ef,#e7a0c4);color:#1b0712}.login-panel{display:none;grid-template-columns:1fr;gap:18px}.login-panel.active{display:grid;margin-top:22px}.login-panel label{display:grid;gap:8px;color:#ffdceb;font-weight:700;font-size:13px}.login-panel input,.login-panel select{height:52px;border-radius:14px;border:1.5px solid rgba(255,120,180,.35);background:rgba(255,255,255,.055);color:#fff;padding:0 16px;outline:0;box-sizing:border-box}.login-panel .wide{grid-column:1/-1}.login-code-row{display:grid;grid-template-columns:1fr 132px;gap:10px;align-items:stretch}.login-small-btn{height:52px;border-radius:14px;border:1px solid rgba(243,168,203,.24);background:rgba(255,255,255,.045);color:#ffe1ef;font-weight:800;cursor:pointer}.login-submit{grid-column:1/-1;height:52px;border:0;border-radius:14px;background:linear-gradient(180deg,#ffe2ef,#e7a0c4);color:#1b0712;font-weight:800;cursor:pointer;box-shadow:0 10px 28px rgba(0,0,0,.35),0 0 22px rgba(243,168,203,.28)}.boss-login-modal [data-login-error],.boss-login-modal #loginState{margin:10px 0 0;min-height:0;color:#ff8fc5;font-size:13px;font-weight:700;line-height:1.35}.login-links{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:nowrap;height:40px;margin-top:14px}.login-links a,.login-links button.linkish{appearance:none;border:0;background:none;padding:0;color:#ffdceb;font-size:13px;font-weight:700;text-decoration:none;cursor:pointer;font-family:inherit;white-space:nowrap;line-height:40px}.login-links a:hover,.login-links button.linkish:hover{text-decoration:underline}.boss-login-modal[data-auth-mode="register"] .login-links{justify-content:center}@media(max-width:560px){.dialog:has(.boss-login-modal),.dialog.is-auth-dialog{width:calc(100vw - 32px);max-width:calc(100vw - 32px);min-height:min(520px,86dvh)}.boss-login-modal h2{font-size:26px}.boss-login-modal>.muted{font-size:14px}.login-tabs{margin-top:24px}.login-panel.active{margin-top:20px;gap:16px}}
 
   /* auth-visibility-fix-v1 */
 .top-actions .user-chip.auth-only{display:none!important}
@@ -3470,7 +3470,7 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
   <link rel="stylesheet" href="src/home-announcements.css?v=20260805p0home1">
   <link rel="stylesheet" href="src/home-popularity.css">
   <link rel="stylesheet" href="src/home-desktop.css">
-  <link rel="stylesheet" href="src/login-modal.css?v=20260805p0home1">
+  <link rel="stylesheet" href="src/login-modal.css?v=20260805loginUi1">
   <link rel="stylesheet" href="src/place-order-modal.css">
   <link rel="stylesheet" href="src/notify-system.css">
   <script type="module" src="src/role-gates.js?v=20260805p0home1"></script>
@@ -3630,7 +3630,8 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
   <script type="module" src="src/commission-engine.js"></script>
   <script type="module" src="src/unified-api.js"></script>
   <script type="module" src="src/currency.js"></script>
-  <script type="module" src="src/login-modal-portal.js?v=20260805p0home1"></script>
+  <script src="src/auth-shell.js?v=20260805loginUi1"></script>
+  <script type="module" src="src/login-modal-portal.js?v=20260805loginUi1"></script>
   <script>
     const modal=document.getElementById('modal');const modalBody=document.getElementById('modalBody');
     function isLoggedIn(){return window.MCJRoleGate ? !!(window.MCJRoleGate.isLogged('customer')||window.MCJRoleGate.isLogged('boss')) : !!(function(){var t=localStorage.getItem('mcjAuthAccessToken')||sessionStorage.getItem('mcjAuthAccessToken')||'';return t&&t.split('.').length===3;})()}
@@ -3653,13 +3654,26 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
       if(modal.parentNode!==document.body) document.body.appendChild(modal);
       modalBody.innerHTML=html;
       var dialog=modal.querySelector('.dialog');
-      if(dialog){dialog.classList.toggle('is-auth-dialog', /boss-login-modal/.test(String(html||'')));dialog.scrollTop=0;}
+      var isAuth=/boss-login-modal/.test(String(html||''));
+      if(dialog){dialog.classList.toggle('is-auth-dialog', isAuth);dialog.scrollTop=0;}
       modal.scrollTop=0;
       modal.classList.add('open');
       document.body.style.overflow='hidden';
+      if(isAuth&&modalBody&&window.MCJAuthShell&&window.MCJAuthShell.prepareAuthForm){
+        window.MCJAuthShell.prepareAuthForm(modalBody.querySelector('.boss-login-modal')||modalBody,{clearAccount:true});
+      }
     }
     function closeModal(){
       if(window.MCJModal&&typeof window.MCJModal.close==='function'){window.MCJModal.close();return;}
+      var body=document.getElementById('modalBody');
+      if(body&&body.querySelector&&body.querySelector('.boss-login-modal')){
+        if(window.MCJAuthShell&&window.MCJAuthShell.clearAuthFields){
+          window.MCJAuthShell.clearAuthFields(body,{clearCode:true,clearPassword:true,clearAccount:true});
+        }
+        body.innerHTML='';
+      }
+      var dialog=modal&&modal.querySelector('.dialog');
+      if(dialog)dialog.classList.remove('is-auth-dialog');
       modal.classList.remove('open');
       document.body.style.overflow='';
     }
@@ -3687,26 +3701,26 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
       mode = mode === 'register' ? 'register' : 'login';
       var otpPanel =
         '<div class="login-panel'+(mode==='login'?' active':'')+'" data-login-panel="otp" data-auth-panel="login-otp">'+
-        '<label class="wide">邮箱<input id="loginOtpEmail" type="email" autocomplete="username" placeholder="请输入邮箱"></label>'+
-        '<label class="wide">验证码<div class="login-code-row" style="display:flex;gap:8px;align-items:center">'+
-        '<input id="loginOtpCode" inputmode="numeric" autocomplete="one-time-code" placeholder="6 位验证码" maxlength="6" style="flex:1">'+
+        '<label class="wide">邮箱<input id="loginOtpEmail" type="email" autocomplete="username" placeholder="请输入邮箱" value=""></label>'+
+        '<label class="wide">验证码<div class="login-code-row">'+
+        '<input id="loginOtpCode" name="otp" inputmode="numeric" autocomplete="one-time-code" data-auth-code="1" data-auth-sensitive="1" placeholder="6 位验证码" maxlength="6" value="">'+
         '<button class="login-small-btn" type="button" data-send-login-otp data-login-role="boss">获取验证码</button>'+
         '</div></label>'+
         '<button class="login-submit" type="button" data-login-confirm data-login-method="otp">验证码登录</button>'+
         '</div>';
       var passPanel =
         '<div class="login-panel" data-login-panel="email" data-auth-panel="login-pass">'+
-        '<label class="wide">邮箱<input id="loginGmail" type="email" autocomplete="username" placeholder="请输入邮箱"></label>'+
-        '<label class="wide">密码<input id="loginGmailCode" type="password" autocomplete="current-password" placeholder="请输入密码"></label>'+
+        '<label class="wide">邮箱<input id="loginGmail" type="email" autocomplete="username" placeholder="请输入邮箱" value=""></label>'+
+        '<label class="wide">密码<input id="loginGmailCode" type="password" autocomplete="current-password" data-auth-sensitive="1" placeholder="请输入密码" value=""></label>'+
         '<button class="login-submit" type="button" data-login-confirm data-login-method="email">密码登录</button>'+
         '</div>';
       var loginPanel = mode==='login'
-        ? ('<div class="login-tabs" style="display:flex;gap:8px;margin:0 0 12px">'+
+        ? ('<div class="login-tabs">'+
           '<button class="login-tab active" type="button" data-login-tab="otp">验证码登录</button>'+
           '<button class="login-tab" type="button" data-login-tab="email">密码登录</button></div>'+
           otpPanel+passPanel)
         : '';
-      var registerPanel = '<div class="login-panel'+(mode==='register'?' active':'')+'" data-login-panel="register" data-auth-panel="register"><label class="wide">昵称<input id="registerNickname" type="text" autocomplete="nickname" placeholder="请输入昵称" maxlength="40"></label><label class="wide">邮箱<input id="registerEmail" type="email" autocomplete="email" placeholder="请输入邮箱"></label><label class="wide">密码<input id="registerPassword" type="password" autocomplete="new-password" placeholder="至少 6 位密码"></label><label class="wide">确认密码<input id="registerPasswordConfirm" type="password" autocomplete="new-password" placeholder="再次输入密码"></label><button class="login-submit" type="button" data-register-confirm>注册</button></div>';
+      var registerPanel = '<div class="login-panel'+(mode==='register'?' active':'')+'" data-login-panel="register" data-auth-panel="register"><label class="wide">昵称<input id="registerNickname" type="text" autocomplete="nickname" placeholder="请输入昵称" maxlength="40" value=""></label><label class="wide">邮箱<input id="registerEmail" type="email" autocomplete="email" placeholder="请输入邮箱" value=""></label><label class="wide">密码<input id="registerPassword" type="password" autocomplete="new-password" data-auth-sensitive="1" placeholder="至少 6 位密码" value=""></label><label class="wide">确认密码<input id="registerPasswordConfirm" type="password" autocomplete="new-password" data-auth-sensitive="1" placeholder="再次输入密码" value=""></label><button class="login-submit" type="button" data-register-confirm>注册</button></div>';
       var links = mode === 'register'
         ? '<div class="login-links"><button class="linkish" type="button" data-switch-auth="login">已有账号？立即登录</button></div>'
         : '<div class="login-links"><button class="linkish" type="button" data-forgot-password data-forgot-role="boss">忘记密码</button><button class="linkish" type="button" data-switch-auth="register">还没有账号？立即注册</button></div>';
@@ -4268,7 +4282,12 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
           e.preventDefault();
           var mode = switchBtn.getAttribute('data-switch-auth') === 'register' ? 'register' : 'login';
           var body = document.getElementById('modalBody');
-          if (body && typeof bossLoginHtml === 'function') body.innerHTML = bossLoginHtml(mode);
+          if (body && typeof bossLoginHtml === 'function') {
+            body.innerHTML = bossLoginHtml(mode);
+            if (window.MCJAuthShell && window.MCJAuthShell.prepareAuthForm) {
+              window.MCJAuthShell.prepareAuthForm(body.querySelector('.boss-login-modal') || body, { clearAccount: true });
+            }
+          }
           return;
         }
         var tab = e.target.closest && e.target.closest('[data-login-tab]');
@@ -4276,7 +4295,19 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
           var box = tab.closest('.boss-login-modal');
           if (!box) return;
           box.querySelectorAll('[data-login-tab]').forEach(function(btn){btn.classList.toggle('active', btn === tab);});
-          box.querySelectorAll('[data-login-panel]').forEach(function(panel){panel.classList.toggle('active', panel.getAttribute('data-login-panel') === tab.getAttribute('data-login-tab'));});
+          box.querySelectorAll('[data-login-panel]').forEach(function(panel){
+            var key = panel.getAttribute('data-login-panel');
+            if (key === 'register') return;
+            panel.classList.toggle('active', key === tab.getAttribute('data-login-tab'));
+          });
+          if (window.MCJAuthShell && window.MCJAuthShell.clearAuthFields) {
+            window.MCJAuthShell.clearAuthFields(box, { clearCode: true, clearPassword: true, clearAccount: false });
+          } else {
+            box.querySelectorAll('#loginOtpCode,#loginCode,#loginGmailCode,[data-auth-code],input[type="password"]').forEach(function(el){
+              try { el.value=''; el.defaultValue=''; el.removeAttribute('value'); } catch (err) {}
+            });
+            box.querySelectorAll('[data-login-error],#loginState').forEach(function(el){ el.textContent=''; });
+          }
           return;
         }
         if (e.target.closest && e.target.closest('[data-send-code]')) {
