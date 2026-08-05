@@ -49,8 +49,12 @@ function tok(j) {
   ok("role-gates dual-writes session+local", /stores = rememberMe \? \[sessionStorage, localStorage\]/.test(roleJs), "");
   ok("afterAuthSuccess waits for sessionReadable", /sessionReadable\(/.test(roleJs) && /正在登录/.test(roleJs), "");
 
-  const bossAuthJs = await fetch(`${STAGING}/src/boss-auth-session.js`, { cache: "no-store" }).then((r) => r.text());
-  ok("boss-auth-session dual-write", /Dual-write when remember/.test(bossAuthJs) || /\[sessionStorage, localStorage\]/.test(bossAuthJs), "");
+  const bossAuthJs = await fetch(`${STAGING}/src/boss-auth-session.js?v=20260805bossSessionDual1`, { cache: "no-store" }).then((r) => r.text());
+  ok(
+    "boss-auth-session dual-write",
+    /Dual-write when remember/.test(bossAuthJs) || /stores = persist === false \? \[sessionStorage\] : \[sessionStorage, localStorage\]/.test(bossAuthJs),
+    `len=${bossAuthJs.length}`
+  );
 
   // Fresh register → me → protected page gate HTML still loads (not login bounce for API)
   const email = `${MARK}@meow.test`;
@@ -92,11 +96,12 @@ function tok(j) {
   ok("mine.html not server-redirected to login", mine.status < 300 || mine.status === 200, `status=${mine.status} loc=${mine.loc}`);
   ok("mine.html loads new early-gate", /portal-early-gate\.js\?v=20260805bossSessionDual1/.test(mine.text), "");
 
-  // Companion dual-write soft tokens
-  const pwJs = await fetch(`${STAGING}/src/companion-workbench.js`, { cache: "no-store" }).then((r) => r.text());
+  // Companion dual-write soft tokens (clearSession may still removeItem — that's OK)
+  const pwJs = await fetch(`${STAGING}/src/companion-workbench.js?v=20260805bossSessionDual1`, { cache: "no-store" }).then((r) => r.text());
   ok(
     "companion mirrors soft auth into sessionStorage",
-    /sessionStorage\.setItem\('companionAuthToken'/.test(pwJs) && !/sessionStorage\.removeItem\('companionAuthToken'\)/.test(pwJs),
+    /sessionStorage\.setItem\(['"]companionAuthToken['"]/.test(pwJs) &&
+      /sessionStorage\.setItem\(['"]mcjAuthAccessToken['"]/.test(pwJs),
     ""
   );
 
