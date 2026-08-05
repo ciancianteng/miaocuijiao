@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-  <script src="/portal-early-gate.js?v=20260804adminAuthP0"></script>
+  <script src="/portal-early-gate.js?v=20260805bossSessionDual1"></script>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>我的账号 - MEOW CUI JIAO</title>
@@ -43,7 +43,7 @@
       function statusText(s){return {active:'正常',disabled:'停用',pending:'待审核'}[s]||s||'-'}
       function paint(){
         if(!token()){root.innerHTML='<section class="empty-card"><h1>请先登录</h1><p style="color:#9ca3af">登录后可以查看账号资料、订单和在线客服。</p><a class="boss-btn" href="index.html">返回首页登录</a></section>';return}
-        if(state.loading){root.innerHTML='<section class="empty-card">正在读取账号资料...</section>';return}
+        if(state.loading){root.innerHTML='<section class="empty-card">正在登录…</section>';return}
         if(state.error){root.innerHTML='<section class="empty-card"><h1>账号资料读取失败</h1><p style="color:#ffb9d6">'+esc(state.error)+'</p><button class="boss-btn" data-refresh>重试</button></section>';return}
         var u=state.user||{};
         var publicUid=u.bossUid||u.boss_uid||u.uid||'-';
@@ -80,7 +80,17 @@ function load(){
             if(sec.ok&&secBody.ok&&secBody.user){state.user=Object.assign({},state.user,secBody.user);state.passwordHint=secBody.passwordHint||state.passwordHint;}
           }catch(e){}
           try{var wr=await fetch('/api/recharge',{headers:{Authorization:'Bearer '+token(),Accept:'application/json'}});var wb=await wr.json().catch(function(){return {}});if(wr.ok&&wb.ok)state.wallet=wb.wallet||wb.summary||null;}catch(e){state.wallet=null}
-        }catch(err){state.error=err.message||'账号资料读取失败'}finally{state.loading=false;paint()}
+        }catch(err){
+          var msg=String(err&&err.message||'账号资料读取失败');
+          // Keep valid session on profile init failure — never treat as logged out.
+          if(/账号初始化失败|PROFILE_INIT_FAILED|未绑定平台资料/.test(msg)){
+            state.error='账号初始化失败，请刷新重试或联系客服。';
+          }else if(/未登录|登录已过期|401/.test(msg) && !token()){
+            state.error='请先登录';
+          }else{
+            state.error=msg;
+          }
+        }finally{state.loading=false;paint()}
       }
       document.addEventListener('click',async function(e){
         var sendBtn=e.target.closest('[data-mine-send-register-otp]');

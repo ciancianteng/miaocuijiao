@@ -228,9 +228,11 @@
     var role = storageRole(userData.role || "boss");
     var cfg = cfgFor(role);
     if (!cfg) return null;
-    // Persist login across refresh by default; only skip when remember === false.
-    var store = remember === false ? sessionStorage : localStorage;
-    var otherStore = store === localStorage ? sessionStorage : localStorage;
+    // Persist across refresh by default. Always mirror into sessionStorage for the
+    // current tab so portal-early-gate can read JWT immediately after login/register.
+    // remember === false → sessionStorage only (tab session).
+    var rememberMe = remember !== false;
+    var stores = rememberMe ? [sessionStorage, localStorage] : [sessionStorage];
     var token = role + "_session_" + SESSION_VERSION + "_" + Date.now();
     var adminOk = isAdminRole(userData.role);
     var user = {
@@ -250,31 +252,39 @@
       adminRole: adminOk ? (userData.role === "super_admin" ? "super_admin" : "admin") : "",
       permissions: adminOk ? [userData.role === "super_admin" ? "super_admin" : "admin"] : []
     };
-    otherStore.removeItem(cfg.token);
-    otherStore.removeItem(cfg.user);
-    otherStore.removeItem("mcjRole");
-    otherStore.removeItem("mcjAuthAccessToken");
-    otherStore.removeItem("mcjAuthRefreshToken");
-    otherStore.removeItem("mcjAuthExpiresAt");
-    otherStore.removeItem("mcjCurrentUser");
-    store.setItem(cfg.token, token);
-    store.setItem(cfg.user, JSON.stringify(user));
-    store.setItem("mcjRole", userData.role || role);
-    if (session.accessToken) store.setItem("mcjAuthAccessToken", session.accessToken);
-    if (session.refreshToken) store.setItem("mcjAuthRefreshToken", session.refreshToken);
-    if (session.expiresAt) store.setItem("mcjAuthExpiresAt", String(session.expiresAt));
-    // Admin JWT must live in dedicated keys so boss wipe never deletes them.
-    if (adminOk) {
-      if (session.accessToken) store.setItem("mcjAdminAccessToken", session.accessToken);
-      if (session.refreshToken) store.setItem("mcjAdminRefreshToken", session.refreshToken);
-      if (session.expiresAt) store.setItem("mcjAdminExpiresAt", String(session.expiresAt));
-      if (window.MCJAdminAuthFetch && typeof window.MCJAdminAuthFetch.saveTokens === "function") {
-        window.MCJAdminAuthFetch.saveTokens(session);
-      }
+    stores.forEach(function (store) {
+      try {
+        store.setItem(cfg.token, token);
+        store.setItem(cfg.user, JSON.stringify(user));
+        store.setItem("mcjRole", userData.role || role);
+        store.setItem("mcjCurrentUser", JSON.stringify(user));
+        if (session.accessToken) store.setItem("mcjAuthAccessToken", session.accessToken);
+        if (session.refreshToken) store.setItem("mcjAuthRefreshToken", session.refreshToken);
+        if (session.expiresAt) store.setItem("mcjAuthExpiresAt", String(session.expiresAt));
+        if (adminOk) {
+          if (session.accessToken) store.setItem("mcjAdminAccessToken", session.accessToken);
+          if (session.refreshToken) store.setItem("mcjAdminRefreshToken", session.refreshToken);
+          if (session.expiresAt) store.setItem("mcjAdminExpiresAt", String(session.expiresAt));
+        }
+      } catch (e) {}
+    });
+    if (!rememberMe) {
+      try {
+        localStorage.removeItem(cfg.token);
+        localStorage.removeItem(cfg.user);
+        localStorage.removeItem("mcjRole");
+        localStorage.removeItem("mcjAuthAccessToken");
+        localStorage.removeItem("mcjAuthRefreshToken");
+        localStorage.removeItem("mcjAuthExpiresAt");
+        localStorage.removeItem("mcjCurrentUser");
+      } catch (e2) {}
+    }
+    if (adminOk && window.MCJAdminAuthFetch && typeof window.MCJAdminAuthFetch.saveTokens === "function") {
+      window.MCJAdminAuthFetch.saveTokens(session);
     }
     if (window.MCJBossAuth && typeof window.MCJBossAuth.saveSession === "function" && (role === "customer" || role === "boss")) {
       try {
-        window.MCJBossAuth.saveSession(session, remember !== false);
+        window.MCJBossAuth.saveSession(session, rememberMe);
       } catch (e) {}
     }
     ["customer", "companion", "customer_service", "admin"].forEach(function (other) {
@@ -372,8 +382,63 @@
     }
   }
 
+  function showAuthBootOverlay(message) {
+    try {
+      var existing = document.getElementById("mcjAuthBootOverlay");
+      if (existing) {
+        var msg = existing.querySelector("[data-mcj-auth-boot-msg]");
+        if (msg) msg.textContent = message || "正在登录…";
+        return existing;
+      }
+      var el = document.createElement("div");
+      el.id = "mcjAuthBootOverlay";
+      el.setAttribute("role", "status");
+      el.style.cssText =
+        "position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;" +
+        "background:rgba(18,10,16,.72);color:#fff;font:600 15px/1.4 system-ui,sans-serif;backdrop-filter:blur(2px)";
+      el.innerHTML = '<div data-mcj-auth-boot-msg style="padding:14px 18px;border-radius:12px;background:rgba(0,0,0,.45)">' +
+        String(message || "正在登录…").replace(/[<>]/g, "") +
+        "</div>";
+      (document.body || document.documentElement).appendChild(el);
+      return el;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function hideAuthBootOverlay() {
+    try {
+      var el = document.getElementById("mcjAuthBootOverlay");
+      if (el && el.parentNode) el.parentNode.removeChild(el);
+    } catch (e) {}
+  }
+
+  function sessionReadable() {
+    try {
+      var a =
+        sessionStorage.getItem("mcjAuthAccessToken") ||
+        localStorage.getItem("mcjAuthAccessToken") ||
+        "";
+      return !!(a && a.split(".").length === 3);
+    } catch (e) {
+      return false;
+    }
+  }
+
   function afterAuthSuccess(result, options) {
     options = options || {};
+    showAuthBootOverlay("正在登录…");
+    // Session must already be saved by caller; re-confirm dual-write before navigate.
+    if (result && result.session) {
+      try {
+        saveSession(result.session, options.remember !== false);
+      } catch (e) {}
+    }
+    if (!sessionReadable()) {
+      hideAuthBootOverlay();
+      setLoginMessage(document.body, "登录态保存失败，请重试。");
+      return;
+    }
     closeLoginModal();
     refreshAuthUi();
     if (window.MCJBossHeader && typeof window.MCJBossHeader.sync === "function") {
@@ -384,8 +449,11 @@
     }
     var role = (result.session && result.session.user && result.session.user.role) || "boss";
     syncPortalSessions(result.session, options.remember !== false);
-    var pending = sessionStorage.getItem("mcjAfterLoginRedirect");
-    sessionStorage.removeItem("mcjAfterLoginRedirect");
+    var pending = sessionStorage.getItem("mcjAfterLoginRedirect") || localStorage.getItem("mcjAfterLoginRedirect");
+    try {
+      sessionStorage.removeItem("mcjAfterLoginRedirect");
+      localStorage.removeItem("mcjAfterLoginRedirect");
+    } catch (e2) {}
     var roleHome = result.redirect || routeFor(role);
     // Boss may resume a pending page; other roles always land on their portal.
     var redirect = profileRole(role) === "boss" && pending ? pending : roleHome;
@@ -397,12 +465,29 @@
         history.replaceState(null, "", location.pathname + location.search);
       }
     } catch (e) {}
-    if (dest !== here && dest + ".html" !== here && here + "/" !== dest) {
-      location.href = String(redirect || "/").replace(/#(login|register)$/i, "");
-      return;
-    }
-    if (profileRole(role) === "boss") {
-      location.replace((location.pathname || "/") + (location.search || ""));
+    // Yield one frame so storage flush is visible to the next document before navigate.
+    var go = function () {
+      if (!sessionReadable()) {
+        hideAuthBootOverlay();
+        setLoginMessage(document.body, "登录态保存失败，请重试。");
+        return;
+      }
+      if (dest !== here && dest + ".html" !== here && here + "/" !== dest) {
+        location.href = String(redirect || "/").replace(/#(login|register)$/i, "");
+        return;
+      }
+      if (profileRole(role) === "boss") {
+        location.replace((location.pathname || "/") + (location.search || ""));
+        return;
+      }
+      hideAuthBootOverlay();
+    };
+    if (typeof requestAnimationFrame === "function") {
+      requestAnimationFrame(function () {
+        setTimeout(go, 0);
+      });
+    } else {
+      setTimeout(go, 0);
     }
   }
 

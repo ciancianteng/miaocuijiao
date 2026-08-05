@@ -1042,6 +1042,89 @@ async function ensureBossUid(profile, authUser = null) {
   throw new Error(lastError?.message || "老板编号生成失败，请稍后重试。");
 }
 
+/**
+ * If Auth user has no profiles row yet (race / partial register), create a default boss profile
+ * instead of treating the user as logged-out. Never sign the user out for missing profile.
+ */
+async function ensureBossProfileForAuthUser(authUser = {}) {
+  const userId = String(authUser.id || "").trim();
+  if (!userId) return null;
+  let profile = await profileFor(userId);
+  if (profile) return profile;
+
+  const email = String(authUser.email || "").trim().toLowerCase();
+  const displayName =
+    String(authUser.user_metadata?.display_name || authUser.user_metadata?.nickname || "").trim() ||
+    (email ? email.split("@")[0] : "") ||
+    "老板";
+  const baseProfile = {
+    id: userId,
+    role: "boss",
+    display_name: displayName.slice(0, 40),
+    email,
+    phone: "",
+    avatar_url: "",
+    status: "active",
+    created_at: new Date().toISOString(),
+    email_verified: true,
+    email_verified_at: new Date().toISOString(),
+  };
+  let bossUid = "";
+  try {
+    bossUid = await allocateBossUid();
+  } catch {
+    bossUid = "";
+  }
+  async function insertProfile(payload) {
+    return supabaseJson(restUrl("profiles"), {
+      method: "POST",
+      headers: headersWithServiceRole({ Prefer: "return=representation" }),
+      body: JSON.stringify(payload),
+    });
+  }
+  let rows;
+  try {
+    rows = await insertProfile(bossUid ? { ...baseProfile, boss_uid: bossUid } : baseProfile);
+  } catch (err) {
+    const detail = String(err?.message || "");
+    if (isMissingColumnError(err) || /email_verified|boss_uid|schema cache/i.test(detail)) {
+      const slim = {
+        id: userId,
+        role: "boss",
+        display_name: baseProfile.display_name,
+        email,
+        phone: "",
+        avatar_url: "",
+        status: "active",
+        created_at: baseProfile.created_at,
+      };
+      try {
+        rows = await insertProfile(bossUid ? { ...slim, boss_uid: bossUid } : slim);
+      } catch (err2) {
+        if (/boss_uid|schema cache/i.test(String(err2?.message || "")) && bossUid) {
+          rows = await insertProfile(slim);
+        } else if (/duplicate|unique|already exists/i.test(String(err2?.message || ""))) {
+          return profileFor(userId);
+        } else {
+          throw err2;
+        }
+      }
+    } else if (/duplicate|unique|already exists/i.test(detail)) {
+      return profileFor(userId);
+    } else {
+      throw err;
+    }
+  }
+  profile = Array.isArray(rows) ? rows[0] : rows;
+  try {
+    profile = await ensureBossUid(profile || baseProfile, authUser);
+  } catch (uidErr) {
+    console.error("[auth/me] ensureBossUid after auto-create failed", uidErr?.message || uidErr);
+    profile = { ...(profile || baseProfile), boss_uid: profile?.boss_uid || bossUid || "" };
+  }
+  return profile;
+}
+
 async function userFromToken(token) {
   return supabaseJson(authUrl("user"), {
     headers: authHeaders({ Authorization: `Bearer ${token}` }),
@@ -1076,7 +1159,25 @@ export default async function handler(req, res) {
       if (!token) return json(res, 401, { ok: false, message: "未登录" });
       const authUser = await userFromToken(token);
       let profile = await profileFor(authUser.id);
-      if (!profile) return json(res, 403, { ok: false, message: "账号未绑定平台资料，请联系管理员。" });
+      if (!profile) {
+        try {
+          profile = await ensureBossProfileForAuthUser(authUser);
+        } catch (initErr) {
+          console.error("[auth/me] profile auto-init failed", initErr?.message || initErr);
+          return json(res, 503, {
+            ok: false,
+            message: "账号初始化失败，请刷新重试或联系客服。",
+            code: "PROFILE_INIT_FAILED",
+          });
+        }
+      }
+      if (!profile) {
+        return json(res, 503, {
+          ok: false,
+          message: "账号初始化失败，请刷新重试或联系客服。",
+          code: "PROFILE_INIT_FAILED",
+        });
+      }
       if (["boss", "customer", "owner", "user"].includes(String(profile.role || "").trim().toLowerCase())) {
         try {
           profile = await ensureBossUid({ ...profile, role: "boss" }, authUser);

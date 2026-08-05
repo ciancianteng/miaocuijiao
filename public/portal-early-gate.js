@@ -1,14 +1,14 @@
 /**
  * Sync early gate (classic script, NOT type=module).
  * Soft localStorage tokens alone NEVER unlock a portal — require non-expired access JWT.
- * Refresh-only leftovers NEVER unlock boss private pages (prevents auto re-entry).
+ * Boss JWT may live in sessionStorage and/or localStorage (remember-me dual-write).
  * Full role verify still runs in role-gates.js after modules load.
  * Also re-checks on pageshow (bfcache / back-button after logout).
  */
 (function () {
   "use strict";
 
-  var GATE_VERSION = "20260804profilePublic1";
+  var GATE_VERSION = "20260805bossSessionDual1";
 
   function pathNow() {
     return String(location.pathname || "/").replace(/\\/g, "/");
@@ -23,19 +23,12 @@
   }
 
   function bossItem(key) {
-    // Boss private pages: sessionStorage only — never revive localStorage JWT.
-    // Exception: preserve shared mcjAuth* in localStorage while admin soft session is live
-    // (admin APIs still read those / dedicated mcjAdmin* keys).
-    var preserveSharedAuth =
-      hasAdminSoftSession && hasAdminSoftSession() && /^mcjAuth(AccessToken|RefreshToken|ExpiresAt)$/.test(key);
-    if (!preserveSharedAuth && !/^mcjAdmin/.test(key)) {
-      try {
-        localStorage.removeItem(key);
-      } catch (e) {}
-    }
+    // Boss private pages: accept JWT from either store.
+    // Remember-me writes localStorage; current-tab also mirrors to sessionStorage.
+    // NEVER delete localStorage here — that kicked remembered sessions after login.
     try {
-      return sessionStorage.getItem(key) || "";
-    } catch (e2) {
+      return sessionStorage.getItem(key) || localStorage.getItem(key) || "";
+    } catch (e) {
       return "";
     }
   }
@@ -71,7 +64,10 @@
     if (!looksLikeJwt(access)) return false;
     var expRaw = "";
     try {
-      expRaw = sessionStorage.getItem("mcjAuthExpiresAt") || "";
+      expRaw =
+        sessionStorage.getItem("mcjAuthExpiresAt") ||
+        localStorage.getItem("mcjAuthExpiresAt") ||
+        "";
     } catch (e) {}
     var exp = 0;
     if (expRaw) {

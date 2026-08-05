@@ -622,17 +622,24 @@
     try{
       var soft='companion_session_v4_'+Date.now();
       localStorage.setItem('companionAuthToken',soft);
-      localStorage.setItem('companionUser',JSON.stringify(Object.assign({},normalized.user||{},{role:(normalized.user&&normalized.user.role)||'companion'})));
+      sessionStorage.setItem('companionAuthToken',soft);
+      var userPayload=JSON.stringify(Object.assign({},normalized.user||{},{role:(normalized.user&&normalized.user.role)||'companion'}));
+      localStorage.setItem('companionUser',userPayload);
+      sessionStorage.setItem('companionUser',userPayload);
       localStorage.setItem('mcjRole','companion');
-      if(normalized.token)localStorage.setItem('mcjAuthAccessToken',normalized.token);
-      if(normalized.refreshToken)localStorage.setItem('mcjAuthRefreshToken',normalized.refreshToken);
-      if(normalized.expiresAt!==''&&normalized.expiresAt!=null)localStorage.setItem('mcjAuthExpiresAt',String(normalized.expiresAt));
-      sessionStorage.removeItem('companionAuthToken');
-      sessionStorage.removeItem('companionUser');
-      sessionStorage.removeItem('mcjRole');
-      sessionStorage.removeItem('mcjAuthAccessToken');
-      sessionStorage.removeItem('mcjAuthRefreshToken');
-      sessionStorage.removeItem('mcjAuthExpiresAt');
+      sessionStorage.setItem('mcjRole','companion');
+      if(normalized.token){
+        localStorage.setItem('mcjAuthAccessToken',normalized.token);
+        sessionStorage.setItem('mcjAuthAccessToken',normalized.token);
+      }
+      if(normalized.refreshToken){
+        localStorage.setItem('mcjAuthRefreshToken',normalized.refreshToken);
+        sessionStorage.setItem('mcjAuthRefreshToken',normalized.refreshToken);
+      }
+      if(normalized.expiresAt!==''&&normalized.expiresAt!=null){
+        localStorage.setItem('mcjAuthExpiresAt',String(normalized.expiresAt));
+        sessionStorage.setItem('mcjAuthExpiresAt',String(normalized.expiresAt));
+      }
     }catch(e){}
     state.session=normalized;
   }
@@ -663,6 +670,7 @@
   function isAuthExpiredError(err){
     var msg=String((err&&err.message)||err||'');
     var status=Number(err&&err.status)||0;
+    if(/账号初始化失败|PROFILE_INIT_FAILED|未绑定平台资料|资料读取失败|数据读取失败/.test(msg))return false;
     return status===401||/登录已过期|请先登录|登录态无效|jwt|token is expired|invalid jwt|unauthorized/i.test(msg);
   }
   var refreshPromise=null;

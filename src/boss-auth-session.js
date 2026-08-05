@@ -110,17 +110,24 @@
 
   function saveSession(session, persist) {
     if (!session) return;
-    var store = authStore(persist !== false);
-    var other = store === localStorage ? sessionStorage : localStorage;
-    ["mcjAuthAccessToken", "mcjAuthRefreshToken", "mcjAuthExpiresAt"].forEach(function (key) {
+    // Dual-write when remember/persist: current tab (sessionStorage) + durable (localStorage).
+    // Tab-only login (persist === false) keeps sessionStorage only.
+    var stores = persist === false ? [sessionStorage] : [sessionStorage, localStorage];
+    stores.forEach(function (store) {
       try {
-        other.removeItem(key);
+        if (session.accessToken) store.setItem("mcjAuthAccessToken", session.accessToken);
+        if (session.refreshToken) store.setItem("mcjAuthRefreshToken", session.refreshToken);
+        if (session.expiresAt != null && session.expiresAt !== "") {
+          store.setItem("mcjAuthExpiresAt", String(session.expiresAt));
+        }
       } catch (e) {}
     });
-    if (session.accessToken) store.setItem("mcjAuthAccessToken", session.accessToken);
-    if (session.refreshToken) store.setItem("mcjAuthRefreshToken", session.refreshToken);
-    if (session.expiresAt != null && session.expiresAt !== "") {
-      store.setItem("mcjAuthExpiresAt", String(session.expiresAt));
+    if (persist === false) {
+      try {
+        localStorage.removeItem("mcjAuthAccessToken");
+        localStorage.removeItem("mcjAuthRefreshToken");
+        localStorage.removeItem("mcjAuthExpiresAt");
+      } catch (e2) {}
     }
   }
 
