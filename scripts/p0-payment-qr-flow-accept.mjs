@@ -145,6 +145,7 @@ const tinyPng =
     !!(payInfo && /OCBC|DuitNow|收款/i.test(String(payInfo.title || ""))),
     `title=${payInfo?.title || ""}`
   );
+  step("pay info includes QR image", !!(payInfo && payInfo.qrUrl), `hasQr=${!!payInfo?.qrUrl}`);
 
   const denyConfirm = await api("/api/customer-service", csToken, { action: "confirm_payment", id: orderId });
   step(
