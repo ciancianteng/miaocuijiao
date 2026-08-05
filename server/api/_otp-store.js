@@ -61,7 +61,7 @@ export function randomOtpCode() {
   return String(randomInt(100000, 1000000));
 }
 
-export async function storeOtp({ accountKey, role, code, kind = "otp", ttlMs = 15 * 60 * 1000 } = {}) {
+export async function storeOtp({ accountKey, role, code, kind = "otp", ttlMs = 10 * 60 * 1000 } = {}) {
   const id = `fpr_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
   const exp = Date.now() + ttlMs;
   const status = `${kind}:${code}:exp:${exp}`;

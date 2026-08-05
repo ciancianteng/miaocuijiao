@@ -200,6 +200,10 @@ function mapListPlayer(row = {}, profile = {}) {
     nickname: row.nickname || profile.display_name || "-",
     name: row.nickname || profile.display_name || "-",
     email: profile.email || "",
+    emailVerified: profile.email_verified !== false,
+    email_verified: profile.email_verified !== false,
+    emailVerifiedLabel: profile.email_verified === false ? "❌ 未验证" : "✅ 已验证",
+    email_verified_label: profile.email_verified === false ? "❌ 未验证" : "✅ 已验证",
     phone: row.contact_phone || profile.phone || "",
     avatar: resolveCompanionAvatar(profile, row),
     avatar_url: resolveCompanionAvatar(profile, row),
@@ -395,15 +399,25 @@ async function buildDetail(row, profile, opts = {}) {
 
   let hasPassword = profile?.has_password === true;
   let mustChangePassword = profile?.must_change_password === true;
+  let emailVerified = profile?.email_verified !== false;
   try {
-    const { resolveHasPassword, resolveMustChangePassword } = await import("../_account-security.js");
+    const { resolveHasPassword, resolveMustChangePassword, resolveEmailVerified, emailVerifiedLabel } = await import("../_account-security.js");
     hasPassword = await resolveHasPassword(profile || {}, {}, { probeAuth: true });
     mustChangePassword = resolveMustChangePassword(profile || {}, {});
+    emailVerified = resolveEmailVerified(profile || {}, {});
+    base.emailVerifiedLabel = emailVerifiedLabel(emailVerified);
+    base.email_verified_label = base.emailVerifiedLabel;
   } catch {
     /* keep defaults */
   }
   base.hasPassword = hasPassword;
   base.has_password = hasPassword;
+  base.emailVerified = emailVerified;
+  base.email_verified = emailVerified;
+  if (!base.emailVerifiedLabel) {
+    base.emailVerifiedLabel = emailVerified ? "✅ 已验证" : "❌ 未验证";
+    base.email_verified_label = base.emailVerifiedLabel;
+  }
   base.passwordSetAt = profile?.password_set_at || "";
   base.password_set_at = profile?.password_set_at || "";
   base.mustChangePassword = mustChangePassword;

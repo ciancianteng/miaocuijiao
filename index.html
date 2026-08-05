@@ -3720,11 +3720,25 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
           '<button class="login-tab" type="button" data-login-tab="email">密码登录</button></div>'+
           otpPanel+passPanel)
         : '';
-      var registerPanel = '<div class="login-panel'+(mode==='register'?' active':'')+'" data-login-panel="register" data-auth-panel="register"><label class="wide">昵称<input id="registerNickname" type="text" autocomplete="nickname" placeholder="请输入昵称" maxlength="40" value=""></label><label class="wide">邮箱<input id="registerEmail" type="email" autocomplete="email" placeholder="请输入邮箱" value=""></label><label class="wide">密码<input id="registerPassword" type="password" autocomplete="new-password" data-auth-sensitive="1" placeholder="至少 6 位密码" value=""></label><label class="wide">确认密码<input id="registerPasswordConfirm" type="password" autocomplete="new-password" data-auth-sensitive="1" placeholder="再次输入密码" value=""></label><button class="login-submit" type="button" data-register-confirm>注册</button></div>';
+      var registerPanel = '<div class="login-panel'+(mode==='register'?' active':'')+'" data-login-panel="register" data-auth-panel="register">'+
+        '<label class="wide">昵称<input id="registerNickname" type="text" autocomplete="nickname" placeholder="请输入昵称" maxlength="40" value=""></label>'+
+        '<label class="wide">邮箱<div class="login-code-row">'+
+        '<input id="registerEmail" type="email" autocomplete="email" placeholder="请输入邮箱" value="">'+
+        '<button class="login-small-btn" type="button" data-send-register-otp data-register-role="boss">获取验证码</button>'+
+        '</div></label>'+
+        '<label class="wide">邮箱验证码<div class="login-code-row">'+
+        '<input id="registerOtpCode" name="registerOtp" inputmode="numeric" autocomplete="one-time-code" data-auth-code="1" data-auth-sensitive="1" placeholder="6 位验证码" maxlength="6" value="">'+
+        '<button class="login-small-btn" type="button" data-verify-register-otp data-register-role="boss">验证邮箱</button>'+
+        '</div></label>'+
+        '<p class="muted" data-register-verified-hint style="margin:0 0 8px">请先完成邮箱验证，验证成功后才能注册。</p>'+
+        '<input type="hidden" id="registerEmailToken" value="">'+
+        '<label class="wide">密码<input id="registerPassword" type="password" autocomplete="new-password" data-auth-sensitive="1" placeholder="至少 8 位，含字母和数字" value=""></label>'+
+        '<label class="wide">确认密码<input id="registerPasswordConfirm" type="password" autocomplete="new-password" data-auth-sensitive="1" placeholder="再次输入密码" value=""></label>'+
+        '<button class="login-submit" type="button" data-register-confirm disabled>注册</button></div>';
       var links = mode === 'register'
         ? '<div class="login-links"><button class="linkish" type="button" data-switch-auth="login">已有账号？立即登录</button></div>'
         : '<div class="login-links"><button class="linkish" type="button" data-forgot-password data-forgot-role="boss">忘记密码</button><button class="linkish" type="button" data-switch-auth="register">还没有账号？立即注册</button></div>';
-      return '<div class="boss-login-modal" data-auth-mode="'+mode+'"><h2>'+(mode==='register'?'注册老板账号':'登录 MEOW CUI JIAO')+'</h2><p class="muted">'+(mode==='register'?'使用邮箱注册，成功后自动登录并生成老板 UID。':'邮箱验证码登录（也可使用密码）。')+'</p>'+loginPanel+registerPanel+'<p id="loginState" data-login-error></p>'+links+'</div>';
+      return '<div class="boss-login-modal" data-auth-mode="'+mode+'"><h2>'+(mode==='register'?'注册老板账号':'登录 MEOW CUI JIAO')+'</h2><p class="muted">'+(mode==='register'?'邮箱验证码验证通过后才能注册，成功后自动登录并生成老板 UID。':'邮箱验证码登录（也可使用密码）。')+'</p>'+loginPanel+registerPanel+'<p id="loginState" data-login-error></p>'+links+'</div>';
     }
     window.bossLoginHtml = bossLoginHtml;
     function loginRequiredModal(){

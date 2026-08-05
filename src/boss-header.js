@@ -300,21 +300,28 @@
   }
 
   function mobileAuthLinkHtml() {
-    return deskAuthLinkHtml();
+    if (isLoggedIn()) {
+      return (
+        navLink("mine.html", "个人中心") +
+        '<button type="button" class="mcj-mnav-logout" data-mcj-boss-logout>退出登录</button>'
+      );
+    }
+    return (
+      '<a href="login.html" data-mcj-boss-login' +
+      (activeHref("login.html") ? ' class="active"' : "") +
+      ">登录</a>"
+    );
   }
 
   function mobileDrawerLinksHtml() {
-    var html =
+    // mobileAuthLinkHtml already includes one logout when logged in — do not append a second.
+    return (
       navLink("index.html", "首页") +
       navLink("companion-center.html", "大厅") +
       navLink("orders.html", "订单") +
       navLink("support.html?start=1", "客服") +
-      mobileAuthLinkHtml();
-    if (isLoggedIn()) {
-      html +=
-        '<button type="button" class="mcj-mnav-logout" data-mcj-boss-logout>退出登录</button>';
-    }
-    return html;
+      mobileAuthLinkHtml()
+    );
   }
 
   function fillMobileDrawerLinks() {

@@ -22,6 +22,7 @@ import { validatePassword, PASSWORD_RULE_HINT } from "./_password-policy.js";
 import {
   resolveHasPassword,
   resolveMustChangePassword,
+  resolveEmailVerified,
   securityPublicFields,
   stampPasswordSet,
   stampPasswordUnset,
@@ -265,6 +266,11 @@ function canLoginWithStatus(profile = {}, role = "") {
   // Companion: pending/rejected may still manage account & login.
   if (r === "companion") return st === "active" || st === "pending" || st === "rejected" || st === "";
   return st === "active" || st === "";
+}
+
+function assertEmailVerifiedOrThrow(profile = {}, authUser = {}) {
+  if (resolveEmailVerified(profile, authUser)) return;
+  throw Object.assign(new Error("请先完成邮箱验证。"), { status: 403, code: "EMAIL_NOT_VERIFIED" });
 }
 
 function clientIp(req) {
@@ -551,11 +557,23 @@ async function handleLoginSendOtp(body, res) {
     ok: true,
     message: "如该邮箱已注册，将收到登录验证码。",
     channel: "email",
-    expiresInSec: 900,
+    expiresInSec: Math.floor(OTP_TTL_MS / 1000),
   };
   const resolved = await resolveForgotAccount(email, role);
   if (!resolved?.profile || resolved.profile.status === "disabled") return json(res, 200, generic);
+  if (!resolveEmailVerified(resolved.profile, {})) {
+    return json(res, 403, { ok: false, message: "请先完成邮箱验证。", code: "EMAIL_NOT_VERIFIED" });
+  }
   const profile = resolved.profile;
+  try {
+    await assertOtpResendCooldown(forgotAccountKey(profile), role, "login_otp");
+  } catch (err) {
+    return json(res, err.status || 429, {
+      ok: false,
+      message: err.message || "发送过于频繁，请稍后再试。",
+      retryAfterSec: err.retryAfterSec || 60,
+    });
+  }
   const code = randomOtpCode();
   const key = forgotAccountKey(profile);
   try {
@@ -588,7 +606,7 @@ async function handleLoginSendOtp(body, res) {
         : generic.message,
     channel: "email",
     emailMasked: maskEmailHint(profile.email || email),
-    expiresInSec: 900,
+    expiresInSec: Math.floor(OTP_TTL_MS / 1000),
     role,
     mail: mailStatus,
   };
@@ -613,6 +631,11 @@ async function handleLoginWithOtp(body, res) {
   const profile0 = resolved.profile;
   if (!canLoginWithStatus(profile0, role)) {
     return json(res, 403, { ok: false, message: "账号未启用或正在审核。" });
+  }
+  try {
+    assertEmailVerifiedOrThrow(profile0, {});
+  } catch (err) {
+    return json(res, err.status || 403, { ok: false, message: err.message || "请先完成邮箱验证。", code: "EMAIL_NOT_VERIFIED" });
   }
   const key = forgotAccountKey(profile0);
   const stored = await findForgotOtp(key, role, "login_otp");
@@ -701,19 +724,45 @@ async function handleSendRegisterOtp(body, res) {
   if (!email || !/^\S+@\S+\.\S+$/.test(email)) {
     return json(res, 400, { ok: false, message: "请输入有效邮箱。" });
   }
+  try {
+    await assertOtpResendCooldown(email, role, "register_otp");
+  } catch (err) {
+    return json(res, err.status || 429, {
+      ok: false,
+      message: err.message || "发送过于频繁，请稍后再试。",
+      retryAfterSec: err.retryAfterSec || 60,
+    });
+  }
   const existing = await profilesLookup(
     `?email=eq.${encodeURIComponent(email)}&select=id,email,role,status&limit=5`
   ).catch(() => []);
-  const companionHit = (existing || []).find((row) => String(row.role || "").toLowerCase() === "companion");
-  if (companionHit) {
-    return json(res, 409, { ok: false, message: "该邮箱已有陪玩账号，请切换到「已有账号登录」。" });
-  }
-  const otherHit = (existing || []).find((row) => String(row.role || "").toLowerCase() !== "companion");
-  if (otherHit) {
-    return json(res, 409, {
-      ok: false,
-      message: "该邮箱已被其他角色占用，请更换邮箱后再注册陪玩。",
-    });
+  const roleOf = (row) => String(row?.role || "").toLowerCase();
+  const companionHit = (existing || []).find((row) => roleOf(row) === "companion");
+  const bossHit = (existing || []).find((row) => ["boss", "customer", "owner", "user"].includes(roleOf(row)));
+  const otherHit = (existing || []).find((row) => {
+    const r = roleOf(row);
+    return r && r !== "companion" && !["boss", "customer", "owner", "user"].includes(r);
+  });
+  if (role === "boss") {
+    if (bossHit) {
+      return json(res, 409, { ok: false, message: "该邮箱已注册，请直接登录。" });
+    }
+    if (companionHit) {
+      return json(res, 409, { ok: false, message: "该邮箱已被陪玩账号占用，请更换邮箱。" });
+    }
+    if (otherHit) {
+      return json(res, 409, { ok: false, message: "该邮箱已被其他角色占用，请更换邮箱。" });
+    }
+  } else {
+    if (companionHit) {
+      return json(res, 409, { ok: false, message: "该邮箱已有陪玩账号，请切换到「已有账号登录」。" });
+    }
+    if (bossHit || otherHit) {
+      return json(res, 409, {
+        ok: false,
+        message: "该邮箱已被其他角色占用，请更换邮箱后再注册陪玩。",
+      });
+    }
   }
   const code = randomOtpCode();
   try {
@@ -745,7 +794,8 @@ async function handleSendRegisterOtp(body, res) {
         : "如邮箱可用，将收到注册验证码，请查收后继续。",
     channel: "email",
     emailMasked: maskEmailHint(email),
-    expiresInSec: 900,
+    expiresInSec: Math.floor(OTP_TTL_MS / 1000),
+    retryAfterSec: Math.floor(OTP_RESEND_COOLDOWN_MS / 1000),
     role,
     mail: mailStatus,
   };
@@ -765,13 +815,22 @@ async function handleVerifyRegisterOtp(body, res) {
   if (!/^\d{6}$/.test(code)) {
     return json(res, 400, { ok: false, message: "请输入 6 位邮箱验证码。" });
   }
+  const failKey = `register:${role}:${email}`;
+  try {
+    assertOtpNotRateLimited(failKey);
+  } catch (err) {
+    return json(res, err.status || 429, { ok: false, message: err.message });
+  }
   const stored = await findForgotOtp(email, role, "register_otp");
   if (!stored?.code || String(stored.code) !== code) {
+    recordOtpFail(failKey);
     return json(res, 400, { ok: false, message: "验证码错误，请重新输入。" });
   }
   if (Number(stored.exp) <= Date.now()) {
+    recordOtpFail(failKey);
     return json(res, 400, { ok: false, message: "验证码已过期，请重新发送。" });
   }
+  clearOtpFails(failKey);
   const token = `reg_${randomOtpCode()}${Date.now().toString(36)}`;
   await markRegisterVerified(email, role, stored.id, token);
   return json(res, 200, {
@@ -1385,25 +1444,26 @@ export default async function handler(req, res) {
       void body.phone;
       void body.phoneE164;
       void body.phone_e164;
-      if (!email) return json(res, 400, { ok: false, message: "请输入邮箱和密码。" });
+      if (!email) return json(res, 400, { ok: false, message: "请输入邮箱。" });
+      if (!registerToken) {
+        return json(res, 400, { ok: false, message: "请先完成邮箱验证。" });
+      }
+      try {
+        await consumeRegisterVerified(email, "boss", registerToken);
+      } catch (otpErr) {
+        return json(res, otpErr?.status || 400, {
+          ok: false,
+          message: otpErr?.message || "请先完成邮箱验证。",
+        });
+      }
       const wantsPassword = password.length > 0;
-      if (!wantsPassword && !registerToken) {
-        return json(res, 400, { ok: false, message: "请输入邮箱和密码。" });
+      if (!wantsPassword) {
+        return json(res, 400, { ok: false, message: "请设置登录密码。" });
       }
-      if (wantsPassword) {
-        const policy = validatePassword(password, body.confirmPassword || body.confirm_password);
-        if (!policy.ok) return json(res, 400, { ok: false, message: policy.message });
-      } else {
-        try {
-          await consumeRegisterVerified(email, "boss", registerToken);
-        } catch (otpErr) {
-          return json(res, otpErr?.status || 400, {
-            ok: false,
-            message: otpErr?.message || "邮箱验证已失效，请重新获取验证码。",
-          });
-        }
-      }
-      const authPassword = wantsPassword ? password : opaqueSystemPassword();
+      const policy = validatePassword(password, body.confirmPassword || body.confirm_password);
+      if (!policy.ok) return json(res, 400, { ok: false, message: policy.message });
+      const authPassword = password;
+      const verifiedAt = new Date().toISOString();
       let created;
       try {
         created = await supabaseJson(authUrl("admin/users"), {
@@ -1415,10 +1475,12 @@ export default async function handler(req, res) {
             email_confirm: true,
             user_metadata: {
               display_name: displayName || email.split("@")[0] || "老板",
-              has_password: wantsPassword,
-              ...(wantsPassword ? { password_set_at: new Date().toISOString() } : {}),
+              has_password: true,
+              password_set_at: verifiedAt,
+              email_verified: true,
+              email_verified_at: verifiedAt,
             },
-            app_metadata: { has_password: wantsPassword },
+            app_metadata: { has_password: true, email_verified: true },
           }),
         });
       } catch (error) {
@@ -1446,6 +1508,8 @@ export default async function handler(req, res) {
           ...baseProfile,
           country_code: countryCode,
           phone_e164: phoneE164 || "",
+          email_verified: true,
+          email_verified_at: verifiedAt,
         };
         let bossUid = "";
         try {
@@ -1465,21 +1529,34 @@ export default async function handler(req, res) {
           rows = await insertProfile(bossUid ? { ...intlProfile, boss_uid: bossUid } : intlProfile);
         } catch (insertError) {
           const detail = String(insertError.message || "");
-          if (isMissingColumnError(insertError)) {
+          if (isMissingColumnError(insertError) || /email_verified/i.test(detail)) {
+            const withoutVerified = { ...intlProfile };
+            delete withoutVerified.email_verified;
+            delete withoutVerified.email_verified_at;
             try {
-              rows = await insertProfile(bossUid ? { ...baseProfile, boss_uid: bossUid } : baseProfile);
-            } catch (retryError) {
-              if (/boss_uid|schema cache/i.test(String(retryError.message || "")) && bossUid) {
+              rows = await insertProfile(bossUid ? { ...withoutVerified, boss_uid: bossUid } : withoutVerified);
+            } catch (retryMissing) {
+              if (isMissingColumnError(retryMissing)) {
+                try {
+                  rows = await insertProfile(bossUid ? { ...baseProfile, boss_uid: bossUid } : baseProfile);
+                } catch (retryError) {
+                  if (/boss_uid|schema cache/i.test(String(retryError.message || "")) && bossUid) {
+                    rows = await insertProfile(baseProfile);
+                  } else {
+                    throw retryError;
+                  }
+                }
+              } else if (/boss_uid|schema cache/i.test(String(retryMissing.message || "")) && bossUid) {
                 rows = await insertProfile(baseProfile);
               } else {
-                throw retryError;
+                throw retryMissing;
               }
             }
           } else if (/boss_uid|schema cache/i.test(detail) && bossUid) {
             try {
               rows = await insertProfile(intlProfile);
             } catch (retryIntl) {
-              if (isMissingColumnError(retryIntl)) {
+              if (isMissingColumnError(retryIntl) || /email_verified/i.test(String(retryIntl.message || ""))) {
                 rows = await insertProfile(baseProfile);
               } else {
                 throw retryIntl;
@@ -1490,6 +1567,7 @@ export default async function handler(req, res) {
           }
         }
         profile = Array.isArray(rows) ? rows[0] : rows;
+        profile = { ...(profile || baseProfile), email_verified: true, email_verified_at: verifiedAt };
         try {
           profile = await ensureBossUid(profile, created?.user || created || { id: userId, user_metadata: { display_name: displayName } });
         } catch (uidError) {
@@ -1513,32 +1591,31 @@ export default async function handler(req, res) {
         });
       }
       let auth;
-      if (wantsPassword) {
-        auth = await supabaseJson(authUrl("token?grant_type=password"), {
-          method: "POST",
-          headers: authHeaders(),
-          body: JSON.stringify({ email, password: authPassword }),
-        });
-        await stampPasswordSet(userId, { mustChangePassword: false });
-      } else {
-        auth = await createSessionForUserId(userId, email);
-        await stampPasswordUnset(userId);
-      }
+      auth = await supabaseJson(authUrl("token?grant_type=password"), {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ email, password: authPassword }),
+      });
+      await stampPasswordSet(userId, { mustChangePassword: false });
       await touchLastLogin(userId, clientIp(req));
-      const authUser = auth.user || { id: userId, email, user_metadata: { boss_uid: profile?.boss_uid, has_password: wantsPassword } };
-      const user = await enrichSafeProfile({ ...(profile || {}), has_password: wantsPassword }, authUser);
+      const authUser = auth.user || {
+        id: userId,
+        email,
+        email_confirmed_at: verifiedAt,
+        user_metadata: { boss_uid: profile?.boss_uid, has_password: true, email_verified: true, email_verified_at: verifiedAt },
+      };
+      const user = await enrichSafeProfile(
+        { ...(profile || {}), has_password: true, email_verified: true, email_verified_at: verifiedAt },
+        authUser
+      );
       const bossUidOut = user.bossUid || user.boss_uid || "";
       return json(res, 200, {
         ok: true,
-        message: wantsPassword
-          ? bossUidOut
-            ? `注册成功。您的老板 UID：${bossUidOut}。建议前往账号安全确认密码。`
-            : "注册成功。建议前往账号安全确认密码。"
-          : bossUidOut
-            ? `注册成功。您的老板 UID：${bossUidOut}。建议前往账号安全设置密码（可不强制）。`
-            : "注册成功。建议前往账号安全设置密码（可不强制）。",
+        message: bossUidOut
+          ? `注册成功。您的老板 UID：${bossUidOut}。`
+          : "注册成功。",
         bossUid: bossUidOut || undefined,
-        suggestSetPassword: !wantsPassword,
+        emailVerified: true,
         session: {
           accessToken: auth.access_token,
           refreshToken: auth.refresh_token,
@@ -1658,6 +1735,15 @@ export default async function handler(req, res) {
     const authUser = auth.user;
     let profile = await profileFor(authUser.id);
     if (!profile) return json(res, 403, { ok: false, message: "账号未绑定平台资料，请联系管理员。" });
+    try {
+      assertEmailVerifiedOrThrow(profile, authUser);
+    } catch (err) {
+      return json(res, err.status || 403, {
+        ok: false,
+        message: err.message || "请先完成邮箱验证。",
+        code: "EMAIL_NOT_VERIFIED",
+      });
+    }
     if (["boss", "customer", "owner", "user"].includes(String(profile.role || "").trim().toLowerCase())) {
       try {
         profile = await ensureBossUid({ ...profile, role: "boss" }, authUser);

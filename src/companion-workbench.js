@@ -54,7 +54,7 @@
   };
   var COMPANION_ISOLATION_MSG='您的陪玩认证尚未通过，目前只能查看审核进度。';
   var HIDDEN_MVP_ROUTES={};
-  var state={route:'dashboard',session:null,data:null,notice:'',loading:false,error:'',walletWarning:'',authTab:'login',loginMethod:'otp',loginError:'',loginBusy:false,forgotStep:'',forgotAccount:'',forgotBusy:false,forgotMsg:'',forgotResetToken:'',profileServices:[],profileVoiceTypes:[],profileCompanionTags:[],profileErrors:{},profileDraft:null,accountDraft:null,uploadBusy:'',statusBusy:false,pendingOnlineStatus:null,settlement:null,orderFilter:'all',pollTimer:null,rulesPollTimer:null,ordersCacheAt:0,msgFilter:'all',settings:null,earningsTab:'overview',chatSession:'cs',chatConversationId:'',chatBusy:false,withdrawBusy:false,inbox:null,inboxError:'',hallOrderType:'all',hallGame:'all',_prevDesignated:null,_prevAuditLocked:null,_toastTimer:null};
+  var state={route:'dashboard',session:null,data:null,notice:'',loading:false,error:'',walletWarning:'',authTab:'login',loginMethod:'otp',loginError:'',loginBusy:false,registerToken:'',registerVerifiedEmail:'',registerCooldownUntil:0,registerBusy:false,forgotStep:'',forgotAccount:'',forgotBusy:false,forgotMsg:'',forgotResetToken:'',profileServices:[],profileVoiceTypes:[],profileCompanionTags:[],profileErrors:{},profileDraft:null,accountDraft:null,uploadBusy:'',statusBusy:false,pendingOnlineStatus:null,settlement:null,orderFilter:'all',pollTimer:null,rulesPollTimer:null,ordersCacheAt:0,msgFilter:'all',settings:null,earningsTab:'overview',chatSession:'cs',chatConversationId:'',chatBusy:false,withdrawBusy:false,inbox:null,inboxError:'',hallOrderType:'all',hallGame:'all',_prevDesignated:null,_prevAuditLocked:null,_toastTimer:null};
   var SESSION_KEY='mcjCompanionSession';
   var SETTINGS_KEY='mcjCompanionSettings';
   var MSG_READ_KEY='mcjCompanionMsgRead';
@@ -1291,15 +1291,22 @@
     // forms in the DOM with [hidden] — .mcj-auth-form { display:flex } overrides [hidden].
     var bodyHtml='';
     if(tab==='register'){
+      var verified=!!state.registerToken;
+      var cool=Math.max(0,Math.ceil((Number(state.registerCooldownUntil||0)-Date.now())/1000));
       bodyHtml=
         '<form class="mcj-auth-form" data-register data-auth-panel="register" autocomplete="on">'+
-        '<label class="mcj-auth-field">邮箱<input name="email" type="email" autocomplete="email" required value=""></label>'+
-        '<label class="mcj-auth-field">陪玩昵称<input name="nickname" required value=""></label>'+
+        '<label class="mcj-auth-field">陪玩昵称<input name="nickname" required maxlength="40" value=""'+(verified?'':'')+'></label>'+
+        '<label class="mcj-auth-field">邮箱<div class="mcj-auth-code-row"><input name="email" type="email" autocomplete="email" required value="'+esc(state.registerVerifiedEmail||'')+'"'+(verified?' readonly':'')+'><button class="mcj-auth-btn ghost" type="button" data-send-register-otp data-register-role="companion"'+(cool>0||verified||state.registerBusy?' disabled':'')+'>'+(verified?'已验证':cool>0?cool+'s':'获取验证码')+'</button></div></label>'+
+        '<label class="mcj-auth-field">邮箱验证码<div class="mcj-auth-code-row"><input name="register_code" inputmode="numeric" autocomplete="one-time-code" data-auth-code="1" data-auth-sensitive="1" maxlength="6" placeholder="6 位验证码" value=""'+(verified?' disabled':'')+'><button class="mcj-auth-btn ghost" type="button" data-verify-register-otp data-register-role="companion"'+(verified||state.registerBusy?' disabled':'')+'>验证邮箱</button></div></label>'+
+        (verified
+          ? '<p class="mcj-auth-note">邮箱已验证 · '+esc(state.registerVerifiedEmail)+'，请设置密码并注册。</p>'
+          : '<p class="mcj-auth-note">请先完成邮箱验证，验证成功后才能注册。</p>')+
+        '<input type="hidden" name="registerToken" value="'+esc(state.registerToken||'')+'">'+
         regPwd+regConfirm+
         '<label class="mcj-auth-check"><input name="agree" type="checkbox" required> 我已阅读并同意服务条款</label>'+
         '<label class="mcj-auth-check"><input name="remember" type="checkbox" checked> 注册后保持登录</label>'+
-        '<button class="mcj-auth-btn primary" type="submit">注册并提交资料</button>'+
-        '<p class="mcj-auth-error" data-auth-error></p>'+
+        '<button class="mcj-auth-btn primary" type="submit"'+(verified&&!state.registerBusy?'':' disabled')+'>注册并提交资料</button>'+
+        '<p class="mcj-auth-error" data-auth-error>'+esc(state.loginError||'')+'</p>'+
         '</form>';
     }else{
       var methodTabs=
@@ -2808,6 +2815,61 @@
       paint();
       return;
     }
+    var sendRegOtp=e.target.closest('[data-send-register-otp]');
+    if(sendRegOtp){
+      e.preventDefault();
+      if(sendRegOtp.disabled||state.registerBusy)return;
+      var form=sendRegOtp.closest('form')||document.querySelector('[data-register]');
+      var email=String((form&&form.email&&form.email.value)||'').trim().toLowerCase();
+      if(!email||!/^\S+@\S+\.\S+$/.test(email)){state.loginError='请输入有效邮箱。';paint();return}
+      state.registerBusy=true;state.registerToken='';state.registerVerifiedEmail='';state.loginError='正在发送验证码…';paint();
+      fetch('/api/auth',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify({action:'send_register_otp',email:email,role:'companion'})})
+        .then(function(r){return r.json().then(function(j){if(!r.ok||j.ok===false)throw new Error((j&&j.message)||'发送失败');return j;});})
+        .then(function(j){
+          state.registerBusy=false;
+          var tip=j.message||'验证码已发送';
+          if(j.devCode)tip+='（测试 '+j.devCode+'）';
+          state.loginError=tip;
+          state.registerCooldownUntil=Date.now()+(Number(j.retryAfterSec)||60)*1000;
+          paint();
+          var left=Number(j.retryAfterSec)||60;
+          var timer=setInterval(function(){
+            left-=1;
+            if(left<=0){clearInterval(timer);state.registerCooldownUntil=0;if(state.authTab==='register')paint();}
+            else if(state.authTab==='register')paint();
+          },1000);
+        })
+        .catch(function(err){state.registerBusy=false;state.loginError=err.message||'发送失败';paint();});
+      return;
+    }
+    var verifyRegOtp=e.target.closest('[data-verify-register-otp]');
+    if(verifyRegOtp){
+      e.preventDefault();
+      if(verifyRegOtp.disabled||state.registerBusy)return;
+      var vform=verifyRegOtp.closest('form')||document.querySelector('[data-register]');
+      var vemail=String((vform&&vform.email&&vform.email.value)||'').trim().toLowerCase();
+      var vcode=String((vform&&vform.register_code&&vform.register_code.value)||'').trim();
+      if(!vemail||!/^\S+@\S+\.\S+$/.test(vemail)){state.loginError='请输入有效邮箱。';paint();return}
+      if(!/^\d{6}$/.test(vcode)){state.loginError='请输入 6 位邮箱验证码。';paint();return}
+      state.registerBusy=true;state.loginError='正在验证…';paint();
+      fetch('/api/auth',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify({action:'verify_register_otp',email:vemail,code:vcode,role:'companion'})})
+        .then(function(r){return r.json().then(function(j){if(!r.ok||j.ok===false)throw new Error((j&&j.message)||'验证失败');return j;});})
+        .then(function(j){
+          state.registerBusy=false;
+          state.registerToken=j.registerToken||'';
+          state.registerVerifiedEmail=vemail;
+          state.loginError=j.message||'邮箱已验证';
+          paint();
+        })
+        .catch(function(err){
+          state.registerBusy=false;
+          state.registerToken='';
+          state.registerVerifiedEmail='';
+          state.loginError=err.message||'验证失败';
+          paint();
+        });
+      return;
+    }
     if(e.target.closest('[data-enter-hall]')){
       if(isIsolationMode()){toast(isolationHint());go('/companion/review-status');return}
       if(isAuditLocked()){toast(auditHint());return}
@@ -3308,9 +3370,32 @@
       e.preventDefault();
       var rf=e.target;var rd=new FormData(rf);
       var password=String(rd.get('password')||'');var confirm=String(rd.get('confirm_password')||'');
+      var registerToken=String(rd.get('registerToken')||state.registerToken||'').trim();
       if(!rd.get('agree')){toast('请先同意服务条款');return}
+      if(!registerToken){toast('请先完成邮箱验证。');return}
       if(password!==confirm){toast('两次输入的密码不一致');return}
-      api('register',{email:String(rd.get('email')||'').trim(),nickname:String(rd.get('nickname')||'').trim(),password:password,remember:!!rd.get('remember')}).then(function(res){saveSession(res.session,!!rd.get('remember'));go('/companion/profile');return loadData()}).catch(function(err){toast(err.message)});
+      if(password.length<8||!/[A-Za-z]/.test(password)||!/\d/.test(password)){toast('密码至少 8 位，且需同时包含字母和数字');return}
+      state.registerBusy=true;state.loginError='';paint();
+      api('register',{
+        email:String(rd.get('email')||state.registerVerifiedEmail||'').trim(),
+        nickname:String(rd.get('nickname')||'').trim(),
+        password:password,
+        confirmPassword:confirm,
+        registerToken:registerToken,
+        remember:!!rd.get('remember')
+      }).then(function(res){
+        state.registerBusy=false;
+        state.registerToken='';
+        state.registerVerifiedEmail='';
+        saveSession(res.session,!!rd.get('remember'));
+        go('/companion/profile');
+        return loadData();
+      }).catch(function(err){
+        state.registerBusy=false;
+        state.loginError=err.message||'注册失败';
+        toast(err.message);
+        paint();
+      });
       return;
     }
     if(e.target.matches('[data-profile-form]')){

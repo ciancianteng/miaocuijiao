@@ -294,12 +294,13 @@
 
     var registerPanel =
       '<form class="apply-auth-form" data-apply-auth-form="register" data-apply-auth-panel="register"' + (mode === "register" ? "" : " hidden") + ' autocomplete="on">' +
+      '<label class="form-field">昵称<input name="authNickname" type="text" autocomplete="nickname" maxlength="40" placeholder="陪玩昵称" required></label>' +
       '<div class="apply-auth-email-row form-field full">' +
       "<label>邮箱" +
       '<div class="apply-auth-inline">' +
       '<input name="authEmail" type="email" inputmode="email" autocomplete="email" placeholder="name@example.com" required value="' + esc(authUi.verifiedEmail || authUi.draftEmail || "") + '"' + (verified ? " readonly" : "") + ">" +
       '<button class="apply-btn apply-auth-send" type="button" data-apply-send-register-otp' + (regCooldown > 0 || verified || authUi.busy ? " disabled" : "") + ">" +
-      (verified ? "已验证" : regCooldown > 0 ? regCooldown + "s" : "发送验证码") +
+      (verified ? "已验证" : regCooldown > 0 ? regCooldown + "s" : "获取验证码") +
       "</button>" +
       "</div></label></div>" +
       '<label class="form-field full">邮箱验证码' +
@@ -311,7 +312,7 @@
         ? '<p class="apply-auth-verified" data-apply-email-verified>邮箱已验证 · ' + esc(authUi.verifiedEmail) + "</p>"
         : '<p class="apply-note full">请先验证邮箱，验证成功后才能设置密码并注册。</p>') +
       '<label class="form-field">密码（至少 8 位）<input name="authPassword" type="password" autocomplete="new-password" minlength="8" required' + (verified ? "" : " disabled") + "></label>" +
-      '<label class="form-field">昵称<input name="authNickname" type="text" autocomplete="nickname" maxlength="40" placeholder="陪玩昵称" required' + (verified ? "" : " disabled") + "></label>" +
+      '<label class="form-field">确认密码<input name="authPasswordConfirm" type="password" autocomplete="new-password" minlength="8" required' + (verified ? "" : " disabled") + "></label>" +
       '<div class="apply-actions apply-auth-actions full">' +
       '<button class="apply-btn primary" type="button" data-apply-register' + (!verified || authUi.busy ? " disabled" : "") + ">注册并继续申请</button>" +
       "</div>" +
@@ -1763,9 +1764,10 @@
         if (!rForm) return;
         var rEmail = (authUi.verifiedEmail || authFormValue(rForm, "authEmail")).toLowerCase();
         var rPassword = authFormValue(rForm, "authPassword");
+        var rConfirm = authFormValue(rForm, "authPasswordConfirm");
         var rNickname = authFormValue(rForm, "authNickname");
         if (!authUi.emailVerified || !authUi.registerToken) {
-          setAuthMessage("请先完成邮箱验证，再注册。");
+          setAuthMessage("请先完成邮箱验证。");
           render(Number(root.dataset.step || 0));
           return;
         }
@@ -1774,8 +1776,13 @@
           render(Number(root.dataset.step || 0));
           return;
         }
-        if (!rPassword || rPassword.length < 8) {
-          setAuthMessage("密码至少 8 位。");
+        if (!rPassword || rPassword.length < 8 || !/[A-Za-z]/.test(rPassword) || !/\d/.test(rPassword)) {
+          setAuthMessage("密码至少 8 位，且需同时包含字母和数字。");
+          render(Number(root.dataset.step || 0));
+          return;
+        }
+        if (rPassword !== rConfirm) {
+          setAuthMessage("两次输入的密码不一致。");
           render(Number(root.dataset.step || 0));
           return;
         }
@@ -1796,6 +1803,7 @@
               email: rEmail,
               account: rEmail,
               password: rPassword,
+              confirmPassword: rConfirm,
               nickname: rNickname,
               registerToken: authUi.registerToken,
               remember: true,

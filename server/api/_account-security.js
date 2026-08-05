@@ -293,10 +293,51 @@ export function resolveMustChangePassword(profile = {}, authUser = {}) {
   return false;
 }
 
+/** True when register OTP completed (or legacy account already confirmed). */
+export function resolveEmailVerified(profile = {}, authUser = {}) {
+  if (profile?.email_verified === false || profile?.email_verified === 0 || profile?.emailVerified === false) {
+    return false;
+  }
+  if (authUser?.user_metadata?.email_verified === false || authUser?.app_metadata?.email_verified === false) {
+    return false;
+  }
+  if (profile?.email_verified === true || profile?.email_verified === 1 || profile?.emailVerified === true) {
+    return true;
+  }
+  if (authUser?.user_metadata?.email_verified === true || authUser?.app_metadata?.email_verified === true) {
+    return true;
+  }
+  if (authUser?.email_confirmed_at || authUser?.confirmed_at) return true;
+  // Legacy accounts created before OTP-gated register: treat as verified.
+  if (profile?.id) return true;
+  return false;
+}
+
+export function emailVerifiedLabel(verified) {
+  return verified ? "✅ 已验证" : "❌ 未验证";
+}
+
 export function securityPublicFields(profile = {}, authUser = {}, hasPassword = false) {
+  const emailVerified = resolveEmailVerified(profile, authUser);
   return {
     hasPassword: !!hasPassword,
     has_password: !!hasPassword,
+    emailVerified,
+    email_verified: emailVerified,
+    emailVerifiedLabel: emailVerifiedLabel(emailVerified),
+    email_verified_label: emailVerifiedLabel(emailVerified),
+    emailVerifiedAt:
+      profile.email_verified_at ||
+      profile.emailVerifiedAt ||
+      authUser?.user_metadata?.email_verified_at ||
+      authUser?.email_confirmed_at ||
+      "",
+    email_verified_at:
+      profile.email_verified_at ||
+      profile.emailVerifiedAt ||
+      authUser?.user_metadata?.email_verified_at ||
+      authUser?.email_confirmed_at ||
+      "",
     passwordSetAt: profile.password_set_at || profile.passwordSetAt || authUser?.user_metadata?.password_set_at || "",
     password_set_at: profile.password_set_at || profile.passwordSetAt || authUser?.user_metadata?.password_set_at || "",
     mustChangePassword: resolveMustChangePassword(profile, authUser),

@@ -166,14 +166,14 @@ export async function sendEmailOtp({ to, code, purpose = "otp", roleLabel = "" }
   const title = roleLabel ? `妙脆角${roleLabel} · ${purposeText}` : `妙脆角 · ${purposeText}`;
   const text =
     `你的验证码是：${code}\n\n` +
-    `有效期 15 分钟。如非本人操作请忽略本邮件。\n\n` +
+    `有效期 10 分钟，使用一次后立即失效。如非本人操作请忽略本邮件。\n\n` +
     `MEOW CUI JIAO`;
   const html =
     `<div style="font-family:Segoe UI,PingFang SC,sans-serif;line-height:1.6;color:#221018">` +
     `<p style="font-size:16px;margin:0 0 12px">${title}</p>` +
     `<p style="margin:0 0 8px">你的验证码是：</p>` +
     `<p style="font-size:28px;font-weight:800;letter-spacing:6px;margin:0 0 16px;color:#d9488a">${code}</p>` +
-    `<p style="margin:0;color:#666;font-size:13px">有效期 15 分钟。如非本人操作请忽略本邮件。</p>` +
+    `<p style="margin:0;color:#666;font-size:13px">有效期 10 分钟，使用一次后立即失效。如非本人操作请忽略本邮件。</p>` +
     `</div>`;
   return sendMail({ to, subject: title, text, html, purpose });
 }

@@ -319,8 +319,11 @@
       action: "register",
       email: payload.email,
       password: payload.password,
+      confirmPassword: payload.confirmPassword || payload.confirm_password || "",
       displayName: payload.displayName || payload.nickname || "",
       phone: payload.phone || "",
+      registerToken: payload.registerToken || payload.emailOtpToken || "",
+      role: "boss",
     });
     saveSession(body.session, remember !== false);
     return body;
@@ -692,7 +695,7 @@
             var tip = j.message || "验证码已发送";
             if (j.devCode) tip += "（测试 " + j.devCode + "）";
             setLoginMessage(sendOtpBtn, tip);
-            var left = 60;
+            var left = Number(j.retryAfterSec) || 60;
             sendOtpBtn.textContent = left + "s";
             var timer = setInterval(function () {
               left -= 1;
@@ -713,6 +716,120 @@
         return;
       }
 
+      var sendRegOtpBtn = event.target && event.target.closest && event.target.closest("[data-send-register-otp]");
+      if (sendRegOtpBtn) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (sendRegOtpBtn.disabled) return;
+        var regEmail = fieldValue(["registerEmail", "loginGmail", "loginEmail", "email"]).trim().toLowerCase();
+        if (!regEmail || !/^\S+@\S+\.\S+$/.test(regEmail)) {
+          setLoginMessage(sendRegOtpBtn, "请输入有效邮箱。");
+          return;
+        }
+        var regRole = sendRegOtpBtn.getAttribute("data-register-role") || "boss";
+        sendRegOtpBtn.disabled = true;
+        var oldRegSend = sendRegOtpBtn.textContent;
+        sendRegOtpBtn.textContent = "发送中…";
+        // Changing email invalidates prior verification.
+        var tokenEl = document.getElementById("registerEmailToken");
+        if (tokenEl) tokenEl.value = "";
+        var regBtnGate = document.querySelector("[data-register-confirm]");
+        if (regBtnGate) regBtnGate.disabled = true;
+        var hint = document.querySelector("[data-register-verified-hint]");
+        if (hint) hint.textContent = "请先完成邮箱验证，验证成功后才能注册。";
+        fetch("/api/auth", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({ action: "send_register_otp", email: regEmail, role: regRole }),
+        })
+          .then(function (r) {
+            return r.json().then(function (j) {
+              if (!r.ok || j.ok === false) throw new Error((j && j.message) || "发送失败");
+              return j;
+            });
+          })
+          .then(function (j) {
+            var tip = j.message || "验证码已发送";
+            if (j.devCode) tip += "（测试 " + j.devCode + "）";
+            setLoginMessage(sendRegOtpBtn, tip);
+            var left = Number(j.retryAfterSec) || 60;
+            sendRegOtpBtn.textContent = left + "s";
+            var timer = setInterval(function () {
+              left -= 1;
+              if (left <= 0) {
+                clearInterval(timer);
+                sendRegOtpBtn.disabled = false;
+                sendRegOtpBtn.textContent = oldRegSend || "获取验证码";
+              } else {
+                sendRegOtpBtn.textContent = left + "s";
+              }
+            }, 1000);
+          })
+          .catch(function (err) {
+            sendRegOtpBtn.disabled = false;
+            sendRegOtpBtn.textContent = oldRegSend || "获取验证码";
+            setLoginMessage(sendRegOtpBtn, humanizeAuthError(err));
+          });
+        return;
+      }
+
+      var verifyRegOtpBtn = event.target && event.target.closest && event.target.closest("[data-verify-register-otp]");
+      if (verifyRegOtpBtn) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (verifyRegOtpBtn.disabled) return;
+        var vEmail = fieldValue(["registerEmail", "loginGmail", "loginEmail", "email"]).trim().toLowerCase();
+        var vCode = fieldValue(["registerOtpCode", "otp", "code"]);
+        if (!vEmail || !/^\S+@\S+\.\S+$/.test(vEmail)) {
+          setLoginMessage(verifyRegOtpBtn, "请输入有效邮箱。");
+          return;
+        }
+        if (!/^\d{6}$/.test(String(vCode || "").trim())) {
+          setLoginMessage(verifyRegOtpBtn, "请输入 6 位邮箱验证码。");
+          return;
+        }
+        var vRole = verifyRegOtpBtn.getAttribute("data-register-role") || "boss";
+        verifyRegOtpBtn.disabled = true;
+        var oldVerify = verifyRegOtpBtn.textContent;
+        verifyRegOtpBtn.textContent = "验证中…";
+        fetch("/api/auth", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({ action: "verify_register_otp", email: vEmail, code: String(vCode).trim(), role: vRole }),
+        })
+          .then(function (r) {
+            return r.json().then(function (j) {
+              if (!r.ok || j.ok === false) throw new Error((j && j.message) || "验证失败");
+              return j;
+            });
+          })
+          .then(function (j) {
+            var tok = document.getElementById("registerEmailToken");
+            if (tok) tok.value = j.registerToken || "";
+            var regConfirm = document.querySelector("[data-register-confirm]");
+            if (regConfirm) regConfirm.disabled = !(j.registerToken);
+            var verifiedHint = document.querySelector("[data-register-verified-hint]");
+            if (verifiedHint) verifiedHint.textContent = "邮箱已验证 · " + (j.emailMasked || vEmail) + "，请设置密码并注册。";
+            var codeInput = document.getElementById("registerOtpCode");
+            if (codeInput) {
+              try { codeInput.value = ""; } catch (e) {}
+            }
+            setLoginMessage(verifyRegOtpBtn, j.message || "邮箱已验证");
+            verifyRegOtpBtn.disabled = false;
+            verifyRegOtpBtn.textContent = oldVerify || "验证邮箱";
+          })
+          .catch(function (err) {
+            var tokFail = document.getElementById("registerEmailToken");
+            if (tokFail) tokFail.value = "";
+            var regFail = document.querySelector("[data-register-confirm]");
+            if (regFail) regFail.disabled = true;
+            verifyRegOtpBtn.disabled = false;
+            verifyRegOtpBtn.textContent = oldVerify || "验证邮箱";
+            setLoginMessage(verifyRegOtpBtn, humanizeAuthError(err));
+          });
+        return;
+      }
+
       var registerBtn = event.target && event.target.closest && event.target.closest("[data-register-confirm]");
       if (registerBtn) {
         event.preventDefault();
@@ -722,24 +839,40 @@
         var email = fieldValue(["registerEmail", "loginGmail", "loginEmail", "email"]).trim();
         var password = fieldValue(["registerPassword", "loginGmailCode", "loginPassword", "password"]);
         var confirmPassword = fieldValue(["registerPasswordConfirm", "confirmPassword"]);
+        var registerToken = fieldValue(["registerEmailToken", "registerToken"]);
         if (!nickname) { setLoginMessage(registerBtn, "请输入昵称。"); return; }
-        if (!email || !password) { setLoginMessage(registerBtn, "请输入邮箱和密码。"); return; }
-        if (password.length < 6) { setLoginMessage(registerBtn, "密码至少 6 位。"); return; }
+        if (!email) { setLoginMessage(registerBtn, "请输入邮箱。"); return; }
+        if (!registerToken) { setLoginMessage(registerBtn, "请先完成邮箱验证。"); return; }
+        if (!password) { setLoginMessage(registerBtn, "请设置登录密码。"); return; }
+        if (password.length < 8 || !/[A-Za-z]/.test(password) || !/\d/.test(password)) {
+          setLoginMessage(registerBtn, "密码至少 8 位，且需同时包含字母和数字。");
+          return;
+        }
         if (password !== confirmPassword) { setLoginMessage(registerBtn, "两次输入的密码不一致。"); return; }
         if (registerBtn.disabled) return;
         registerBtn.disabled = true;
         var oldReg = registerBtn.textContent;
         registerBtn.textContent = "注册中...";
-        registerWithDatabase({ email: email, password: password, displayName: nickname }, true)
+        registerWithDatabase({
+          email: email,
+          password: password,
+          confirmPassword: confirmPassword,
+          displayName: nickname,
+          registerToken: registerToken,
+        }, true)
           .then(function (result) {
             afterAuthSuccess(result, { remember: true });
           })
           .catch(function (error) {
             setLoginMessage(registerBtn, humanizeAuthError(error));
-          })
-          .finally(function () {
             registerBtn.disabled = false;
             registerBtn.textContent = oldReg || "注册";
+          })
+          .finally(function () {
+            /* keep disabled on success (modal closes); restore on failure above */
+            if (document.querySelector("[data-register-confirm]") === registerBtn && registerBtn.isConnected) {
+              /* no-op: failure path already restored */
+            }
           });
         return;
       }

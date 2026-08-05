@@ -136,6 +136,10 @@ function mapBoss(row, wallet, extras = {}) {
     displayName: String(row.display_name || "").trim() || safeName,
     email: isDevLogin(row.email) ? "" : row.email || "",
     rawEmail: row.email || "",
+    emailVerified: extras.emailVerified !== false && (extras.emailVerified === true || row.email_verified === true || row.email_verified == null),
+    email_verified: extras.emailVerified !== false && (extras.emailVerified === true || row.email_verified === true || row.email_verified == null),
+    emailVerifiedLabel: extras.emailVerifiedLabel || (extras.emailVerified === false || row.email_verified === false ? "❌ 未验证" : "✅ 已验证"),
+    email_verified_label: extras.emailVerifiedLabel || (extras.emailVerified === false || row.email_verified === false ? "❌ 未验证" : "✅ 已验证"),
     phone: row.phone || "",
     countryCode,
     country_code: countryCode,
@@ -360,10 +364,14 @@ async function loadBossDetail(bossId) {
   const invites = await loadBossInvites(id, profile.boss_uid);
   let hasPassword = profile.has_password === true;
   let mustChangePassword = profile.must_change_password === true;
+  let emailVerified = profile.email_verified !== false;
+  let emailVerifiedLabel = "✅ 已验证";
   try {
-    const { resolveHasPassword, resolveMustChangePassword } = await import("../_account-security.js");
+    const { resolveHasPassword, resolveMustChangePassword, resolveEmailVerified, emailVerifiedLabel: labelOf } = await import("../_account-security.js");
     hasPassword = await resolveHasPassword(profile, {}, { probeAuth: true });
     mustChangePassword = resolveMustChangePassword(profile, {});
+    emailVerified = resolveEmailVerified(profile, {});
+    emailVerifiedLabel = labelOf(emailVerified);
   } catch {
     /* keep flags */
   }
@@ -375,6 +383,8 @@ async function loadBossDetail(bossId) {
     hasPassword,
     mustChangePassword,
     passwordSetAt: profile.password_set_at || "",
+    emailVerified,
+    emailVerifiedLabel,
   });
 
   return {
