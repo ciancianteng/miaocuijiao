@@ -53,7 +53,8 @@ async function api(path, token, body, method = "POST") {
     email: me1.json?.user?.email,
   }));
 
-  // 2) Password login works
+  // 2) Password login works (brief settle for Auth after admin create)
+  await new Promise((r) => setTimeout(r, 800));
   const login1 = await api("/api/auth", null, { action: "login", email: bossEmail, password: NEW_PASS, role: "boss" });
   ok("boss password login", !!tok(login1.json), login1.json?.message || login1.status);
 
@@ -218,17 +219,24 @@ async function api(path, token, body, method = "POST") {
   }).then((r) => r.json());
   ok("auth API reachable", apiSrcHint?.ok !== false, JSON.stringify(apiSrcHint?.mail || apiSrcHint || {}).slice(0, 120));
 
-  // Policy rejects weak password
-  if (bossT2) {
-    const weak = await api("/api/auth", bossT2, {
+  // Policy rejects weak password (use fresh session after password ops)
+  const fresh = await api("/api/auth", null, {
+    action: "login",
+    email: bossEmail,
+    password: code ? "SecPass7z" : NEW_PASS2,
+    role: "boss",
+  });
+  const freshT = tok(fresh.json);
+  if (freshT) {
+    const weak = await api("/api/auth", freshT, {
       action: "change_password",
-      currentPassword: NEW_PASS2,
+      currentPassword: code ? "SecPass7z" : NEW_PASS2,
       newPassword: "short",
       confirmPassword: "short",
     });
     ok("weak password rejected", !weak.json?.ok, weak.json?.message || "");
   } else {
-    ok("weak password rejected", true, "skipped");
+    ok("weak password rejected", true, "skipped (no fresh session)");
   }
 
   const failed = results.filter((r) => !r.pass);

@@ -57,22 +57,26 @@ function isMissingColumnError(error) {
  * Detect whether Auth user has a password — returns boolean only.
  * Never return encrypted_password / hash to callers for client use.
  */
+/** @returns {true|false|null} null = probe failed / inconclusive */
 export async function authUserHasPassword(userId) {
-  if (!userId) return false;
+  if (!userId) return null;
   try {
-    const user = await supabaseJson(authUrl(`admin/users/${encodeURIComponent(userId)}`), {
+    const raw = await supabaseJson(authUrl(`admin/users/${encodeURIComponent(userId)}`), {
       headers: serviceHeaders({ Prefer: "return=representation" }),
     });
+    const user = raw?.user && typeof raw.user === "object" ? raw.user : raw;
     if (user?.user_metadata?.has_password === true || user?.app_metadata?.has_password === true) return true;
     if (user?.user_metadata?.password_set_at || user?.app_metadata?.password_set_at) return true;
     const hash = user?.encrypted_password;
     // Presence of a non-empty hash means a password identity exists.
     if (hash && String(hash).length > 3) return true;
-    // Some GoTrue builds omit encrypted_password; email users created with a password
-    // still have identities — treat confirmation + metadata absence as unknown→false.
+    // GoTrue sometimes omits encrypted_password in admin payloads — inconclusive.
+    if (hash == null && Object.prototype.hasOwnProperty.call(user || {}, "encrypted_password") === false) {
+      return null;
+    }
     return false;
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -207,24 +211,33 @@ export async function touchLastLogin(userId, ip = "") {
 
 /**
  * Resolve hasPassword without ever leaking hash.
- * Priority: profiles.has_password → metadata → Auth encrypted_password presence.
+ * Returns true | false | null (null = unknown — do not treat as unset).
  */
 export async function resolveHasPassword(profile = {}, authUser = {}, { probeAuth = true } = {}) {
   if (profile?.has_password === true || profile?.hasPassword === true) return true;
-  if (profile?.has_password === false || profile?.hasPassword === false) {
-    // Explicit false still probe Auth once for backfill when probeAuth.
-  }
-  const meta =
+  if (
     authUser?.user_metadata?.has_password === true ||
     authUser?.app_metadata?.has_password === true ||
     authUser?.user_metadata?.password_set_at ||
-    authUser?.app_metadata?.password_set_at;
-  if (meta) return true;
+    authUser?.app_metadata?.password_set_at
+  ) {
+    return true;
+  }
   if (profile?.password_set_at || profile?.passwordSetAt) return true;
-  if (!probeAuth) return false;
-  const id = profile?.id || authUser?.id;
-  if (!id) return false;
-  return authUserHasPassword(id);
+
+  let probed = null;
+  if (probeAuth) {
+    const id = profile?.id || authUser?.id;
+    if (id) {
+      probed = await authUserHasPassword(id);
+      if (probed === true) return true;
+    }
+  }
+
+  // Explicit profile false only when Auth probe also found no password signal.
+  if ((profile?.has_password === false || profile?.hasPassword === false) && probed === false) return false;
+  if (probed === false) return false;
+  return null;
 }
 
 export function resolveMustChangePassword(profile = {}, authUser = {}) {

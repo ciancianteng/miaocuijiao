@@ -2251,12 +2251,15 @@ export default async function handler(req, res) {
       let auth;
       try {
         auth = await supabaseJson(authUrl("token?grant_type=password"), { method:"POST", headers: anonHeaders(), body: JSON.stringify({ email, password }) });
-      } catch {
-        if (resolvedLogin?.profile) {
+      } catch (loginErr) {
+        const raw = String(loginErr?.message || "").trim();
+        const looksLikeBadPassword =
+          /invalid login credentials|invalid.*(email|password)|wrong password|invalid email or password/i.test(raw);
+        if (looksLikeBadPassword && resolvedLogin?.profile) {
           try {
             const { resolveHasPassword, NO_PASSWORD_LOGIN_MESSAGE } = await import("./_account-security.js");
             const hasPwd = await resolveHasPassword(resolvedLogin.profile, {}, { probeAuth: true });
-            if (!hasPwd) return json(res,400,{ok:false,message:NO_PASSWORD_LOGIN_MESSAGE,code:"NO_PASSWORD"});
+            if (hasPwd === false) return json(res,400,{ok:false,message:NO_PASSWORD_LOGIN_MESSAGE,code:"NO_PASSWORD"});
           } catch { /* fall through */ }
         }
         return json(res,401,{ok:false,message:"账号或密码错误"});

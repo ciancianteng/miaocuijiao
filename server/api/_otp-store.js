@@ -201,6 +201,9 @@ export async function markOtpVerified(accountKey, role, kind, rowId, token, ttlM
   const statusPrefix = k === "register_otp" ? "register_verified" : "verified";
   const status = `${statusPrefix}:${token}:exp:${exp}`;
   memMap().set(`${r}:${statusPrefix}:${key}`, { id: rowId || token, verifiedToken: token, exp, kind: statusPrefix });
+  // Keep kind-keyed slot updated so findOtp(account, role, "otp") can resolve verified tokens from memory.
+  memMap().set(`${r}:${k}:${key}`, { id: rowId || token, verifiedToken: token, exp, kind: k });
+  memMap().set(`${r}:${key}`, { id: rowId || token, verifiedToken: token, exp, kind: k });
 
   let wrote = false;
   if (rowId && !String(rowId).startsWith("mcj_otp_")) {

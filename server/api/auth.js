@@ -1389,7 +1389,12 @@ export default async function handler(req, res) {
             email,
             password,
             email_confirm: true,
-            user_metadata: { display_name: displayName || email.split("@")[0] || "老板" },
+            user_metadata: {
+              display_name: displayName || email.split("@")[0] || "老板",
+              has_password: true,
+              password_set_at: new Date().toISOString(),
+            },
+            app_metadata: { has_password: true },
           }),
         });
       } catch (error) {
@@ -1597,14 +1602,19 @@ export default async function handler(req, res) {
         body: JSON.stringify({ email, password }),
       });
     } catch (loginErr) {
-      // Only after failed password grant: if account has no password, guide to OTP.
-      if (pre?.profile) {
+      const raw = String(loginErr?.message || "").trim();
+      const looksLikeBadPassword =
+        /invalid login credentials|invalid.*(email|password)|wrong password|invalid email or password/i.test(raw);
+      // Only map to NO_PASSWORD for credential failures when we positively know
+      // the account never set a password. Rate limits / email-not-confirmed / etc.
+      // must keep their own messages.
+      if (looksLikeBadPassword && pre?.profile) {
         const hasPwd = await resolveHasPassword(pre.profile, {}, { probeAuth: true });
-        if (!hasPwd) {
+        if (hasPwd === false) {
           return json(res, 400, { ok: false, message: NO_PASSWORD_LOGIN_MESSAGE, code: "NO_PASSWORD" });
         }
       }
-      let message = String(loginErr?.message || "").trim();
+      let message = raw;
       if (/invalid login credentials|invalid.*(email|password)|email not confirmed/i.test(message)) {
         message = "邮箱或密码错误。";
       }
