@@ -240,8 +240,26 @@
     var access = String(blob.token || blob.accessToken || blob.access_token || "").trim();
     var refresh = String(blob.refreshToken || blob.refresh_token || "").trim();
     if (!looksLikeJwt(access) && !refresh) return false;
+    if (!hasCsRoleHint()) {
+      var softHint = readItem("customerServiceAuthToken");
+      if (String(softHint).indexOf("customer_service_session_") !== 0) return false;
+    }
+    // Keep soft portal token in sync with early-gate (missing soft ⇒ login↔dashboard bounce).
     var soft = readItem("customerServiceAuthToken");
-    if (String(soft).indexOf("customer_service_session_") !== 0 && !hasCsRoleHint()) return false;
+    if (String(soft).indexOf("customer_service_session_") !== 0) {
+      try {
+        persistAuthMirrors(
+          normalizeSession(blob, true) || {
+            token: access,
+            refreshToken: refresh,
+            expiresAt: (blob && (blob.expiresAt != null ? blob.expiresAt : blob.expires_at)) || "",
+            user: (blob && blob.user) || {},
+          }
+        );
+      } catch (e) {}
+      soft = readItem("customerServiceAuthToken");
+      if (String(soft).indexOf("customer_service_session_") !== 0) return false;
+    }
     return true;
   }
 
@@ -250,8 +268,10 @@
     var refresh = getRefreshToken();
     if (!access && refresh) return true;
     if (!access) return false;
+    // Unparseable / non-expiring access token with a refresh token must be rotated
+    // (avoids treating garbage JWT as a valid logged-in session).
     var exp = getExpiresAtMs();
-    if (!exp) return false;
+    if (!exp) return !!refresh;
     return Date.now() >= exp - REFRESH_BUFFER_MS;
   }
 

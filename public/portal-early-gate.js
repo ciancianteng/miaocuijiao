@@ -8,7 +8,7 @@
 (function () {
   "use strict";
 
-  var GATE_VERSION = "20260805bossSessionDual1";
+  var GATE_VERSION = "20260806csLoginFlicker1";
 
   function pathNow() {
     return String(location.pathname || "/").replace(/\\/g, "/");
@@ -263,9 +263,28 @@
         isCsRole(csShared) ||
         (csSoftOk && !csShared);
       if (!csSoftOk || !hasJwtOrRefresh(csAccess, csRefresh) || !csRoleOk) {
+        // Wipe half-sessions so login page does not immediately bounce back to dashboard.
+        [
+          "mcjServiceSession",
+          "customerServiceAuthToken",
+          "customerServiceUser",
+          "mcjAuthAccessToken",
+          "mcjAuthRefreshToken",
+          "mcjAuthExpiresAt",
+        ].forEach(removeItem);
+        if (isCsRole(csShared)) removeItem("mcjRole");
         return deny("/customer-service/login/");
       }
       if (csShared && !isCsRole(csShared)) {
+        [
+          "mcjServiceSession",
+          "customerServiceAuthToken",
+          "customerServiceUser",
+          "mcjAuthAccessToken",
+          "mcjAuthRefreshToken",
+          "mcjAuthExpiresAt",
+          "mcjRole",
+        ].forEach(removeItem);
         return deny("/customer-service/login/");
       }
       revealShell();

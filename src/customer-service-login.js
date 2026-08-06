@@ -4,7 +4,6 @@
   if (window.__MCJCsLoginOnly) return;
   window.__MCJCsLoginOnly = true;
 
-  var SESSION_KEY = "mcjServiceSession";
   var root = document.getElementById("serviceApp");
   var form = root && root.querySelector("form[data-login]");
   if (!form) return;
@@ -15,26 +14,17 @@
     remember: !!(form.elements.remember && form.elements.remember.checked),
   };
 
-  function readSession() {
-    try {
-      return JSON.parse(
-        localStorage.getItem(SESSION_KEY) || sessionStorage.getItem(SESSION_KEY) || "null"
-      );
-    } catch (e) {
-      return null;
-    }
-  }
-
   // Already logged in → leave login page (after session restore/refresh).
-  // Guard also redirects; use a one-shot latch to avoid login↔dashboard bounce.
+  // Only trust MCJServiceAuth.hasSession() — never bounce on a stale token blob alone
+  // (that caused login ↔ dashboard flicker when soft portal keys were missing).
   var redirected = false;
   function goDashboardIfLoggedIn() {
     if (redirected) return true;
     if (window.__MCJCsLoginRedirecting) return true;
-    var existing = readSession();
     var has =
-      (window.MCJServiceAuth && window.MCJServiceAuth.hasSession && window.MCJServiceAuth.hasSession()) ||
-      (existing && (existing.token || existing.accessToken || existing.refreshToken));
+      window.MCJServiceAuth &&
+      typeof window.MCJServiceAuth.hasSession === "function" &&
+      window.MCJServiceAuth.hasSession();
     if (has) {
       redirected = true;
       window.__MCJCsLoginRedirecting = true;
@@ -44,11 +34,20 @@
     return false;
   }
   if (window.MCJServiceAuth && typeof window.MCJServiceAuth.ensureSession === "function") {
-    window.MCJServiceAuth.ensureSession().then(function () {
-      goDashboardIfLoggedIn();
-    }).catch(function () {
-      goDashboardIfLoggedIn();
-    });
+    window.MCJServiceAuth.ensureSession()
+      .then(function () {
+        goDashboardIfLoggedIn();
+      })
+      .catch(function () {
+        // Refresh failed / session wiped — stay on login, never force-redirect.
+        try {
+          if (window.MCJServiceAuth && typeof window.MCJServiceAuth.clearSession === "function") {
+            if (!window.MCJServiceAuth.hasSession()) {
+              /* already clear */
+            }
+          }
+        } catch (e) {}
+      });
   } else if (goDashboardIfLoggedIn()) {
     return;
   }
