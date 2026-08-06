@@ -162,7 +162,30 @@ async function getOrCreateConversation(profile, orderId = "", meta = {}) {
       ? `?boss_id=eq.${encodeURIComponent(profile.id)}&order_id=eq.${encodeURIComponent(orderId)}&status=not.in.(closed,ended)&order=updated_at.desc&limit=1`
       : `?boss_id=eq.${encodeURIComponent(profile.id)}&order_id=is.null&status=not.in.(closed,ended)&order=updated_at.desc&limit=1`;
     const active = await supabaseJson(restUrl("conversations", activeQuery), { headers: serviceHeaders() }).catch(() => []);
-    if (active?.[0]) return { conversation: active[0], created: false, order: null };
+    if (active?.[0]) {
+      let conversation = active[0];
+      if (orderId) {
+        const orders = await supabaseJson(
+          restUrl("orders", `?id=eq.${encodeURIComponent(orderId)}&select=id,companion_id,customer_service_id&limit=1`),
+          { headers: serviceHeaders() }
+        ).catch(() => []);
+        const orderRow = orders?.[0] || null;
+        const patch = {};
+        if (orderRow?.companion_id && String(conversation.companion_id || "") !== String(orderRow.companion_id)) {
+          patch.companion_id = orderRow.companion_id;
+        }
+        if (Object.keys(patch).length) {
+          patch.updated_at = nowIso();
+          await supabaseJson(restUrl("conversations", `?id=eq.${encodeURIComponent(conversation.id)}`), {
+            method: "PATCH",
+            headers: serviceHeaders(),
+            body: JSON.stringify(patch),
+          }).catch(() => null);
+          conversation = { ...conversation, ...patch };
+        }
+      }
+      return { conversation, created: false, order: null };
+    }
   }
 
   let order = null;

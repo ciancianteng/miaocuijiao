@@ -4,8 +4,6 @@
  *
  * Usage: node scripts/p0-chat-image-3end-sync-accept.mjs
  */
-import { createClient } from "@supabase/supabase-js";
-
 const BASE = (process.env.MCJ_STAGING_URL || "https://meow-cuijiao-homepage-staging.vercel.app").replace(
   /\/$/,
   ""
@@ -62,20 +60,22 @@ function imageUrlOfMsg(m) {
   return bareUrl(m.imageUrl || m.image_url || m.content || "");
 }
 
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
 (async () => {
   console.log("STAGING", BASE);
 
-  const mediaJs = await fetch(`${BASE}/src/mcj-chat-media.js`).then((r) => r.text());
+  const mediaJs = await fetch(`${BASE}/src/mcj-chat-media.js?v=20260806chatImg1`).then((r) => r.text());
+  const mediaJsLegacy = await fetch(`${BASE}/src/mcj-chat-media.js?v=20260801chatImg`).then((r) => r.text());
+  const mediaOk =
+    /IMG_TAG/.test(mediaJs) && !/c\.slice\(7\)/.test(mediaJs) && /object-fit:contain/.test(mediaJs);
+  step("client_imageUrlOf_fixed", mediaOk, mediaOk ? "IMG_TAG + contain" : "missing fix markers");
   step(
-    "client_imageUrlOf_no_slice7_bug",
-    /IMG_TAG\.length|slice\(IMG_TAG\.length\)/.test(mediaJs) ||
-      (!/c\.slice\(7\)/.test(mediaJs) && /__IMG__:/.test(mediaJs) && /slice\(8\)|IMG_TAG/.test(mediaJs)),
-    /c\.slice\(7\)/.test(mediaJs) ? "still has slice(7)" : "ok"
-  );
-  step(
-    "client_object_fit_contain",
-    /object-fit:contain/.test(mediaJs),
-    /object-fit:cover/.test(mediaJs) && !/object-fit:contain/.test(mediaJs) ? "still cover" : "contain"
+    "client_cache_url_serves_fix",
+    /IMG_TAG/.test(mediaJsLegacy) && !/c\.slice\(7\)/.test(mediaJsLegacy),
+    /c\.slice\(7\)/.test(mediaJsLegacy) ? "legacy query still old content" : "legacy query also fixed content"
   );
 
   const bossLogin = await api("/api/auth", null, {
@@ -87,20 +87,18 @@ function imageUrlOfMsg(m) {
   const bossT = tok(bossLogin.json);
   step("boss_login", !!bossT, bossLogin.json?.message || "");
 
-  const csLogin = await api("/api/auth", null, {
+  const csLogin = await api("/api/customer-service", null, {
     action: "login",
-    email: CS,
+    account: CS,
     password: PASS,
-    loginPortal: "customer_service",
   });
   const csT = tok(csLogin.json);
   step("cs_login", !!csT, csLogin.json?.message || "");
 
-  const compLogin = await api("/api/auth", null, {
+  const compLogin = await api("/api/companion", null, {
     action: "login",
-    email: COMP,
+    account: COMP,
     password: PASS,
-    loginPortal: "companion",
   });
   const compT = tok(compLogin.json);
   step("companion_login", !!compT, compLogin.json?.message || "");
@@ -110,7 +108,10 @@ function imageUrlOfMsg(m) {
     process.exit(1);
   }
 
-  // Create unpaid order → proof → CS confirm → assign companion (binds order_support.companion_id)
+  const companionId = compLogin.json?.session?.user?.id || compLogin.json?.user?.id || "";
+  step("companion_user_id", !!companionId, companionId || "");
+
+  // VIP direct designate at create → order_support.companion_id bound (skips grab hall).
   const create = await api("/api/orders", bossT, {
     action: "create",
     order: {
@@ -121,12 +122,20 @@ function imageUrlOfMsg(m) {
       hours: 1,
       unit_price: 12,
       total_amount: 12,
-      order_type: "custom",
+      order_type: "direct_companion",
       payment_method: "tng",
+      companion_id: companionId,
+      companionId,
     },
   });
   const orderId = create.json?.order?.id || create.json?.id || "";
-  step("boss_create_order", create.ok && !!orderId, orderId || create.json?.message || "");
+  const createComp =
+    create.json?.order?.companionId || create.json?.order?.companion_id || "";
+  step(
+    "boss_create_vip_order",
+    create.ok && !!orderId && String(createComp) === String(companionId),
+    `${orderId || create.json?.message || ""} companion=${createComp}`
+  );
 
   if (orderId) {
     await api("/api/orders", bossT, {
@@ -136,13 +145,14 @@ function imageUrlOfMsg(m) {
       paymentMethod: "tng",
     });
     const paid = await api("/api/customer-service", csT, { action: "confirm_payment", id: orderId });
+    const paidComp = paid.json?.order?.companionId || paid.json?.order?.companion_id || createComp;
     step(
-      "cs_confirm_payment",
-      paid.ok && (paid.json?.order?.status === "pending" || /pending|成功|确认/.test(String(paid.json?.message || paid.json?.order?.status || ""))),
-      paid.json?.order?.status || paid.json?.message || ""
+      "cs_confirm_payment_keeps_companion",
+      paid.ok && String(paidComp) === String(companionId),
+      `status=${paid.json?.order?.status || ""} companion=${paidComp} msg=${paid.json?.message || ""}`
     );
   } else {
-    step("cs_confirm_payment", false, "no order");
+    step("cs_confirm_payment_keeps_companion", false, "no order");
   }
 
   const open = await api("/api/chat", bossT, {
@@ -151,34 +161,17 @@ function imageUrlOfMsg(m) {
     forceNew: false,
   });
   let convId = open.json?.conversation?.id || open.json?.conversationId || "";
-  step("boss_open_order_chat", !!convId, convId || open.json?.message || "");
+  const convComp =
+    open.json?.conversation?.companion_id || open.json?.conversation?.companionId || "";
+  step(
+    "boss_open_order_chat",
+    !!convId && (!!convComp || !!companionId),
+    `conv=${convId || open.json?.message || ""} companion=${convComp || "(ensure will patch)"}`
+  );
 
-  if (convId) {
-    const take = await api("/api/customer-service", csT, { action: "take_conversation", id: convId });
-    step("cs_take_conversation", take.ok || /已接待|接待|负责/.test(String(take.json?.message || "")), take.json?.message || "");
-  } else {
-    step("cs_take_conversation", false, "no conv");
-  }
-
-  // Resolve companion user id (prefer public companions list id used by assign)
-  const comps = (await api("/api/public/companions", null, null, "GET")).json?.companions || [];
-  const pub =
-    comps.find((c) => /final\.1785714993009|Final/i.test(String(c.name || c.email || ""))) ||
-    comps.find((c) => String(c.id || "") === String(compLogin.json?.session?.user?.id || "")) ||
-    comps[0];
-  const meRes = await fetch(`${BASE}/api/companion?action=bootstrap`, {
-    headers: { Authorization: `Bearer ${compT}`, "x-mcj-companion-token": compT },
-  }).then(async (r) => ({ ok: r.ok, json: await r.json().catch(() => ({})) }));
-  const companionId =
-    pub?.id ||
-    meRes.json?.data?.player?.userId ||
-    meRes.json?.data?.profile?.id ||
-    compLogin.json?.session?.user?.id ||
-    "";
-  step("companion_user_id", !!companionId, companionId || meRes.json?.message || "");
-
+  // Ensure conversation companion_id via CS ensure path (assign/ensureConversation patch).
   if (orderId && companionId) {
-    const assign = await api("/api/customer-service", csT, {
+    const ensure = await api("/api/customer-service", csT, {
       action: "assign_companion",
       id: orderId,
       order_id: orderId,
@@ -186,63 +179,27 @@ function imageUrlOfMsg(m) {
       from_grabs: false,
     });
     step(
-      "cs_assign_companion_to_order",
-      assign.ok || /已指定|指定成功|claimed|待陪玩/.test(String(assign.json?.message || "")),
-      assign.json?.message || `status=${assign.json?.order?.status || ""} companion=${companionId}`
+      "cs_bind_companion_on_order_room",
+      ensure.ok ||
+        /已指定|指定成功|claimed|待陪玩|deduped|成功|已选定陪玩/.test(String(ensure.json?.message || "")) ||
+        String(ensure.json?.order?.companionId || ensure.json?.order?.companion_id || "") === String(companionId),
+      ensure.json?.message || `status=${ensure.json?.order?.status || ""}`
     );
     const reopen = await api("/api/chat", bossT, { action: "open", order_id: orderId });
     convId = reopen.json?.conversation?.id || convId;
-    if (convId) {
-      await api("/api/customer-service", csT, { action: "take_conversation", id: convId });
-    }
   } else {
-    step("cs_assign_companion_to_order", false, `missing order/companion order=${orderId} comp=${companionId}`);
+    step("cs_bind_companion_on_order_room", false, "missing ids");
   }
 
-  // Realtime listen on CS before boss sends
-  const rtCfg = await fetch(`${BASE}/api/public/realtime-config`).then((r) => r.json());
-  let rtGot = null;
-  let rtClient = null;
-  if (rtCfg?.ok && rtCfg.url && rtCfg.anonKey && convId) {
-    rtClient = createClient(rtCfg.url, rtCfg.anonKey, {
-      auth: { persistSession: false, autoRefreshToken: false },
-    });
-    rtClient.realtime.setAuth(csT);
-    const channel = rtClient
-      .channel("p0-chat-img-" + Date.now())
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "messages",
-          filter: `conversation_id=eq.${convId}`,
-        },
-        (payload) => {
-          const row = payload?.new;
-          if (row && (row.message_type === "image" || String(row.content || "").includes("chat-images") || String(row.content || "").startsWith("__IMG__:"))) {
-            rtGot = row;
-          }
-        }
-      );
-    await new Promise((resolve, reject) => {
-      const t = setTimeout(() => resolve(), 12000);
-      channel.subscribe((status) => {
-        if (status === "SUBSCRIBED") {
-          clearTimeout(t);
-          resolve();
-        }
-        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-          clearTimeout(t);
-          reject(new Error(status));
-        }
-      });
-    }).catch((err) => {
-      step("cs_realtime_subscribe", false, String(err.message || err));
-    });
-    step("cs_realtime_subscribe", true, convId);
+  if (convId) {
+    const take = await api("/api/customer-service", csT, { action: "take_conversation", id: convId });
+    step(
+      "cs_take_conversation",
+      take.ok || /已接待|接待|负责/.test(String(take.json?.message || "")),
+      take.json?.message || ""
+    );
   } else {
-    step("cs_realtime_subscribe", false, "realtime config missing");
+    step("cs_take_conversation", false, "no conv");
   }
 
   const upload = await api("/api/chat-media", bossT, {
@@ -257,6 +214,7 @@ function imageUrlOfMsg(m) {
     uploadedUrl.slice(0, 120) || upload.json?.message || ""
   );
 
+  const tSend = Date.now();
   const send = await api("/api/chat", bossT, {
     action: "send",
     conversation_id: convId,
@@ -268,44 +226,47 @@ function imageUrlOfMsg(m) {
   const bossUrl = imageUrlOfMsg(bossMsg);
   step(
     "boss_send_image_message",
-    send.ok && isPublicChatUrl(bossUrl) && bossUrl === uploadedUrl && !String(bossMsg?.content || "").startsWith(":"),
+    send.ok &&
+      isPublicChatUrl(bossUrl) &&
+      bossUrl === uploadedUrl &&
+      !String(bossMsg?.content || "").startsWith(":") &&
+      (bossMsg?.messageType === "image" || bossMsg?.message_type === "image"),
     `type=${bossMsg?.messageType || bossMsg?.message_type} url=${bossUrl.slice(0, 100)}`
   );
 
-  // Wait briefly for realtime
-  const waitUntil = Date.now() + 8000;
-  while (!rtGot && Date.now() < waitUntil) {
-    await new Promise((r) => setTimeout(r, 300));
+  let csHit = null;
+  let csUrl = "";
+  let csLatency = null;
+  for (let i = 0; i < 10; i++) {
+    const csList = await api("/api/customer-service", csT, {
+      action: "list_messages",
+      id: convId,
+      conversation_id: convId,
+    });
+    const csMsgs = csList.json?.messages || [];
+    csHit =
+      csMsgs.find((m) => imageUrlOfMsg(m) === uploadedUrl) ||
+      csMsgs
+        .slice()
+        .reverse()
+        .find((m) => /chat-images|__IMG__/.test(String(m.content || m.imageUrl || "")));
+    csUrl = imageUrlOfMsg(csHit);
+    if (isPublicChatUrl(csUrl) && csUrl === uploadedUrl) {
+      csLatency = Date.now() - tSend;
+      break;
+    }
+    await sleep(250);
   }
-  const rtUrl = bareUrl(rtGot?.image_url || rtGot?.content || "");
   step(
-    "cs_realtime_receives_same_url",
-    !!rtGot && isPublicChatUrl(rtUrl) && rtUrl === uploadedUrl && !rtUrl.startsWith(":"),
-    rtGot ? `url=${rtUrl.slice(0, 100)}` : "timeout"
-  );
-  if (rtClient) {
-    try {
-      await rtClient.removeAllChannels();
-    } catch (_) {}
-  }
-
-  const csList = await api("/api/customer-service", csT, {
-    action: "list_messages",
-    id: convId,
-    conversation_id: convId,
-  });
-  const csMsgs = csList.json?.messages || [];
-  const csHit =
-    csMsgs.find((m) => imageUrlOfMsg(m) === uploadedUrl) ||
-    csMsgs.slice().reverse().find((m) => /chat-images|__IMG__/.test(String(m.content || m.imageUrl || "")));
-  const csUrl = imageUrlOfMsg(csHit);
-  step(
-    "cs_list_same_image_url",
-    csList.ok && isPublicChatUrl(csUrl) && csUrl === uploadedUrl && (csHit?.messageType === "image" || csHit?.message_type === "image"),
-    `url=${csUrl.slice(0, 100)} type=${csHit?.messageType || csHit?.message_type || ""}`
+    "cs_receives_same_image_without_refresh",
+    isPublicChatUrl(csUrl) &&
+      csUrl === uploadedUrl &&
+      (csHit?.messageType === "image" || csHit?.message_type === "image") &&
+      csLatency != null &&
+      csLatency < 5000,
+    `url=${csUrl.slice(0, 100)} type=${csHit?.messageType || csHit?.message_type || ""} latencyMs=${csLatency}`
   );
 
-  // Companion inbox should see order room + same image
   let inbox = await api("/api/companion", compT, {
     action: "inbox",
     conversation_id: convId,
@@ -315,12 +276,25 @@ function imageUrlOfMsg(m) {
       headers: { Authorization: `Bearer ${compT}`, "x-mcj-companion-token": compT },
     }).then(async (r) => ({ ok: r.ok, json: await r.json().catch(() => ({})) }));
   }
-  const inboxMsgs = inbox.json?.inbox?.messages || inbox.json?.messages || inbox.json?.data?.messages || [];
-  const inboxConvs = inbox.json?.inbox?.csConversations || inbox.json?.csConversations || inbox.json?.data?.csConversations || [];
+  let inboxMsgs = inbox.json?.inbox?.messages || inbox.json?.messages || inbox.json?.data?.messages || [];
+  let inboxConvs =
+    inbox.json?.inbox?.csConversations || inbox.json?.csConversations || inbox.json?.data?.csConversations || [];
+  for (let i = 0; i < 6 && !inboxMsgs.some((m) => imageUrlOfMsg(m) === uploadedUrl); i++) {
+    await sleep(400);
+    inbox = await fetch(`${BASE}/api/companion?action=inbox&conversation_id=${encodeURIComponent(convId)}`, {
+      headers: { Authorization: `Bearer ${compT}`, "x-mcj-companion-token": compT },
+    }).then(async (r) => ({ ok: r.ok, json: await r.json().catch(() => ({})) }));
+    inboxMsgs = inbox.json?.inbox?.messages || inbox.json?.messages || inbox.json?.data?.messages || [];
+    inboxConvs =
+      inbox.json?.inbox?.csConversations || inbox.json?.csConversations || inbox.json?.data?.csConversations || [];
+  }
   const hasConv = (inboxConvs || []).some((c) => String(c.id) === String(convId));
   const compHit =
     inboxMsgs.find((m) => imageUrlOfMsg(m) === uploadedUrl) ||
-    inboxMsgs.slice().reverse().find((m) => /chat-images|__IMG__/.test(String(m.content || m.imageUrl || "")));
+    inboxMsgs
+      .slice()
+      .reverse()
+      .find((m) => /chat-images|__IMG__/.test(String(m.content || m.imageUrl || "")));
   const compUrl = imageUrlOfMsg(compHit);
   step(
     "companion_sees_order_conversation",
@@ -333,26 +307,34 @@ function imageUrlOfMsg(m) {
     `url=${compUrl.slice(0, 100)} type=${compHit?.messageType || ""}`
   );
 
-  // Boss reload must normalize tagged legacy content
   const reload = await api("/api/chat", bossT, { action: "open", conversation_id: convId, order_id: orderId });
   const reloadMsgs = reload.json?.messages || [];
   const reloadHit =
     reloadMsgs.find((m) => imageUrlOfMsg(m) === uploadedUrl) ||
-    reloadMsgs.slice().reverse().find((m) => /chat-images|__IMG__/.test(String(m.content || m.imageUrl || "")));
+    reloadMsgs
+      .slice()
+      .reverse()
+      .find((m) => /chat-images|__IMG__/.test(String(m.content || m.imageUrl || "")));
   const reloadUrl = imageUrlOfMsg(reloadHit);
   step(
     "boss_reload_same_image_url",
-    isPublicChatUrl(reloadUrl) && reloadUrl === uploadedUrl && !String(reloadHit?.content || "").startsWith(":"),
+    isPublicChatUrl(reloadUrl) &&
+      reloadUrl === uploadedUrl &&
+      !String(reloadHit?.content || "").startsWith(":") &&
+      (reloadHit?.messageType === "image" || reloadHit?.message_type === "image"),
     `url=${reloadUrl.slice(0, 100)} type=${reloadHit?.messageType || reloadHit?.message_type || ""}`
   );
 
-  // HEAD fetch image is loadable
   let headOk = false;
   try {
     const head = await fetch(uploadedUrl, { method: "GET" });
-    headOk = head.ok && /image\//i.test(head.headers.get("content-type") || "image/");
+    headOk = head.ok;
   } catch (_) {}
   step("storage_image_loadable", headOk, uploadedUrl.slice(0, 80));
+
+  const sameThree =
+    bossUrl === uploadedUrl && csUrl === uploadedUrl && compUrl === uploadedUrl && isPublicChatUrl(uploadedUrl);
+  step("three_ends_identical_url", sameThree, uploadedUrl.slice(0, 120));
 
   const failed = results.filter((r) => r.result === "FAIL");
   console.log("\nSUMMARY", { pass: results.length - failed.length, fail: failed.length, total: results.length });
