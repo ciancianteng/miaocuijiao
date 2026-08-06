@@ -81,10 +81,15 @@ function buildDnsPlan(domainObj, domain) {
   return mapped;
 }
 
-async function ensureDomain(domain) {
+async function listDomains() {
   const listed = await resend("/domains");
   const rows = listed?.data || listed || [];
-  let found = (Array.isArray(rows) ? rows : []).find((d) => d.name === domain);
+  return Array.isArray(rows) ? rows : [];
+}
+
+async function ensureDomain(domain) {
+  const rows = await listDomains();
+  let found = rows.find((d) => d.name === domain);
   if (!found) {
     try {
       found = await resend("/domains", {
@@ -92,7 +97,16 @@ async function ensureDomain(domain) {
         body: { name: domain, region: env("RESEND_REGION") || "ap-northeast-1" },
       });
     } catch (err) {
-      // region may be unsupported on some plans
+      const msg = String(err?.message || err || "");
+      if (/1 domain|upgrade to add more|already exists/i.test(msg)) {
+        // Plan limit — return existing domains so operator can delete/replace in dashboard.
+        const err2 = new Error(
+          `${msg} 当前账号已有域名：${rows.map((d) => `${d.name}(${d.status})`).join(", ") || "(无)"}。请在 Resend 删除旧域名或升级后再添加 meowcuijiao.com。`
+        );
+        err2.status = err.status || 409;
+        err2.body = { existing: rows, original: err.body };
+        throw err2;
+      }
       found = await resend("/domains", { method: "POST", body: { name: domain } });
     }
   }
@@ -121,11 +135,21 @@ export default async function handler(req, res) {
       let domainInfo = null;
       let dnsRecords = [];
       let resendError = "";
+      let existingDomains = [];
       try {
+        existingDomains = await listDomains();
         domainInfo = await ensureDomain(domain);
         dnsRecords = buildDnsPlan(domainInfo, domain);
       } catch (err) {
         resendError = err.message || String(err);
+        if (err.body?.existing) existingDomains = err.body.existing;
+        else {
+          try {
+            existingDomains = await listDomains();
+          } catch {
+            /* ignore */
+          }
+        }
       }
       return json(res, 200, {
         ok: true,
@@ -144,12 +168,19 @@ export default async function handler(req, res) {
               createdAt: domainInfo.created_at,
             }
           : { name: domain, status: "unavailable", error: resendError },
+        existingDomains: (existingDomains || []).map((d) => ({
+          id: d.id,
+          name: d.name,
+          status: d.status,
+          region: d.region,
+        })),
         dnsRecords,
         recommendedFrom: `Meow Cui Jiao <orders@${domain}>`,
         notes: [
           "先把 dnsRecords 全部写入 DNS（建议 Vercel DNS），再切 Nameserver。",
           "切 NS 前必须先完成 Namecheap WHOIS 验证（当前 NS 若为 verify-contact-details / failed-whois-verification 则无法生效）。",
           "DMARC 记录为建议值（p=none），可后续加强。",
+          "若 Resend 免费额度仅 1 个域名，需先删除旧测试域名再添加 meowcuijiao.com。",
         ],
         adminId: admin.id,
       });
@@ -216,6 +247,50 @@ export default async function handler(req, res) {
           fromTried: from || mailProviderStatus().from,
         });
       }
+    }
+
+    if (action === "delete_domain") {
+      const id = String(body.id || "").trim();
+      if (!id) return json(res, 400, { ok: false, message: "缺少 domain id" });
+      const rows = await listDomains();
+      const hit = rows.find((d) => d.id === id);
+      if (!hit) return json(res, 404, { ok: false, message: "域名不存在" });
+      if (String(hit.name).toLowerCase() === domain && body.force !== true) {
+        return json(res, 400, {
+          ok: false,
+          message: "拒绝删除目标业务域名，除非 force=true",
+        });
+      }
+      await resend(`/domains/${id}`, { method: "DELETE" });
+      return json(res, 200, {
+        ok: true,
+        message: `已删除 Resend 域名 ${hit.name}`,
+        deleted: { id: hit.id, name: hit.name },
+      });
+    }
+
+    if (action === "replace_with_meow") {
+      // Delete non-target domains (plan limit 1), then ensure meowcuijiao.com.
+      const rows = await listDomains();
+      const deleted = [];
+      for (const d of rows) {
+        if (String(d.name).toLowerCase() === domain) continue;
+        await resend(`/domains/${d.id}`, { method: "DELETE" });
+        deleted.push({ id: d.id, name: d.name });
+      }
+      const domainInfo = await ensureDomain(domain);
+      return json(res, 200, {
+        ok: true,
+        message: deleted.length ? `已移除旧域名并添加 ${domain}` : `已确保 ${domain}`,
+        deleted,
+        domain: {
+          id: domainInfo.id,
+          name: domainInfo.name,
+          status: domainInfo.status,
+          region: domainInfo.region,
+        },
+        dnsRecords: buildDnsPlan(domainInfo, domain),
+      });
     }
 
     return json(res, 400, { ok: false, message: "未知操作" });
