@@ -723,12 +723,31 @@ export async function retryFailedCompanionOrderEmails({ limit = 10 } = {}) {
       { headers: serviceHeaders() }
     );
   } catch {
-    return { ok: false, retried: 0 };
+    rows = [];
+  }
+  if (!rows?.length) {
+    // Fallback source when email table is missing.
+    const mapped = await listCompanionNotificationEmails({ limit: Math.min(40, Number(limit) || 10) });
+    rows = (mapped || [])
+      .filter((x) => /failed|email_pending/i.test(String(x.status || "")))
+      .map((x) => ({
+        id: x.id,
+        companion_id: x.companionId,
+        notice_key: x.notificationKey,
+        notification_key: x.notificationKey,
+        email: x.recipient,
+        order_id: x.orderId,
+        order_no: x.orderNo,
+        mail_type: x.mailType,
+        email_status: x.status,
+        retry_count: x.retryCount,
+        _fallback: x.source === "notifications_fallback",
+      }));
   }
   const out = [];
   for (const row of rows || []) {
-    if (!row?.order_id && !/^[0-9a-f-]{36}:/i.test(String(row.notice_key || ""))) continue;
-    const parts = String(row.notice_key || row.notification_key || "").split(":");
+    if (!row?.order_id && !/^[0-9a-f-]{36}:/i.test(String(row.notice_key || row.notification_key || ""))) continue;
+    const parts = String(row.notice_key || row.notification_key || "").replace(/^mail:/, "").split(":");
     const orderId = row.order_id || parts[0] || "";
     const companionId = row.companion_id || parts[1] || "";
     const eventType = parts[2] || row.mail_type || "assign";
