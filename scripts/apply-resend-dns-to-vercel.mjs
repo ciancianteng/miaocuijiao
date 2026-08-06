@@ -1,9 +1,12 @@
 /**
  * Add Resend/DMARC DNS records into Vercel DNS for meowcuijiao.com.
- * Reads plan from /tmp/resend-dns-plan.json (or --plan=path).
+ * Reads plan JSON from --plan= path (default /tmp/resend-dns-plan.json).
  *
  * Usage:
  *   node scripts/apply-resend-dns-to-vercel.mjs --plan=/tmp/resend-dns-plan.json
+ *
+ * MX syntax (Vercel CLI):
+ *   vercel dns add <domain> <name> MX <value> <priority>
  */
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -24,35 +27,30 @@ function run(args) {
 }
 
 function listExisting() {
-  const res = run(["dns", "ls", DOMAIN]);
-  return res.out;
+  return run(["dns", "ls", DOMAIN]).out;
+}
+
+function normalizeDkim(value) {
+  const v = String(value || "").trim();
+  if (!v) return v;
+  if (/^v=DKIM1/i.test(v)) return v;
+  if (/^p=/i.test(v)) return `v=DKIM1; k=rsa; ${v}`;
+  return v;
 }
 
 function addRecord(rec) {
   const type = String(rec.type || "").toUpperCase();
   const name = rec.name === "@" ? "" : String(rec.name || "");
-  const value = String(rec.value || "");
+  let value = String(rec.value || "");
   if (!type || !value) return { skipped: true, reason: "missing type/value" };
+  if (type === "TXT" && /domainkey/i.test(name || "")) value = normalizeDkim(value);
 
-  // vercel dns add domain [name] type value
-  // MX: vercel dns add domain name MX "priority value" OR separate?
-  // Docs: vercel dns add <domain> <name> <type> <value>
-  // For MX, value often "10 feedback-smtp...."
   let args;
   if (type === "MX") {
     const pri = rec.priority == null ? 10 : Number(rec.priority);
-    const host = name || "send";
-    args = ["dns", "add", DOMAIN, host, "MX", String(pri), value];
+    args = ["dns", "add", DOMAIN, name || "send", "MX", value, String(pri)];
   } else if (type === "TXT") {
-    const host = name || "@";
-    // Quote TXT value
-    args = ["dns", "add", DOMAIN, host === "@" ? "" : host, "TXT", value].filter((x, i, arr) => {
-      // keep empty name as explicit ""
-      return true;
-    });
-    // Rebuild carefully: empty name means apex
-    if (!name) args = ["dns", "add", DOMAIN, "@", "TXT", value];
-    else args = ["dns", "add", DOMAIN, name, "TXT", value];
+    args = ["dns", "add", DOMAIN, name || "@", "TXT", value];
   } else if (type === "CNAME") {
     args = ["dns", "add", DOMAIN, name || "www", "CNAME", value.replace(/\.$/, "")];
   } else {
