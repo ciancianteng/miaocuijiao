@@ -177,10 +177,12 @@ export default async function handler(req, res) {
         dnsRecords,
         recommendedFrom: `Meow Cui Jiao <orders@${domain}>`,
         notes: [
-          "先把 dnsRecords 全部写入 DNS（建议 Vercel DNS），再切 Nameserver。",
-          "切 NS 前必须先完成 Namecheap WHOIS 验证（当前 NS 若为 verify-contact-details / failed-whois-verification 则无法生效）。",
-          "DMARC 记录为建议值（p=none），可后续加强。",
-          "若 Resend 免费额度仅 1 个域名，需先删除旧测试域名再添加 meowcuijiao.com。",
+          "若公网 NS 为 failed-whois-verification / verify-contact-details.namecheap.com：必须先完成 Namecheap WHOIS 联系人验证，否则任何 DNS 记录都无法生效。",
+          "推荐（不影响把 NS 交给 Vercel）：WHOIS 解锁后恢复 Namecheap BasicDNS，在 Advanced DNS 写入网站 A/CNAME + 下方 dnsRecords（DKIM/SPF/MX）与 DMARC。",
+          "备选：WHOIS 解锁后把 NS 切到 ns1/ns2.vercel-dns.com（Vercel DNS 已预写 Resend 记录）。",
+          "网站指向 Vercel：A @ → 76.76.21.21；CNAME www → cname.vercel-dns.com.",
+          "DMARC 为建议起步策略（p=none），可后续加强。",
+          "RESEND_API_KEY / RESEND_FROM 已在 Vercel Preview+Production 配置；域名 Verified 前无法用 @meowcuijiao.com 发信。",
         ],
         adminId: admin.id,
       });
