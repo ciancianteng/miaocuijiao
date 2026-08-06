@@ -506,15 +506,31 @@ async function sendOrderMailOnce({
   }
 
   try {
-    const from = env("RESEND_ORDERS_FROM") || "Meow Cui Jiao <orders@meowcuijiao.com>";
-    await sendMail({
-      to,
-      subject,
-      text,
-      html,
-      purpose: `companion_order_${mailType}`,
-      from,
-    });
+    const preferredFrom = env("RESEND_ORDERS_FROM") || "Meow Cui Jiao <orders@meowcuijiao.com>";
+    try {
+      await sendMail({
+        to,
+        subject,
+        text,
+        html,
+        purpose: `companion_order_${mailType}`,
+        from: preferredFrom,
+      });
+    } catch (err) {
+      const msg = String(err?.message || err || "");
+      if (/domain is not verified|not verified/i.test(msg) && preferredFrom) {
+        // Staging / unverified custom domain → fall back to configured RESEND_FROM.
+        await sendMail({
+          to,
+          subject,
+          text,
+          html,
+          purpose: `companion_order_${mailType}`,
+        });
+      } else {
+        throw err;
+      }
+    }
     await patchEmailLog(logId, {
       email_status: "sent",
       detail: "sent",
