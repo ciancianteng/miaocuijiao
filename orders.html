@@ -88,21 +88,35 @@
       function isPaymentReview(o){return !!(o&&(o.paymentReview||o.paymentStatus==='待审核'||o.paymentStatus==='待人工审核'||/待审核|待人工审核/.test(String(o.statusText||o.paymentStatus||''))))}
       function orderLabel(o){
         if(o.reviewed||o.status==='reviewed')return '已评价';
-        if(o.status==='in_progress'&&o.completionPending)return '陪玩已完成，待确认';
+        if(o.status==='in_progress'&&o.completionPending)return o.autoConfirmPaused?'等待处理订单问题':'等待您确认完成';
         if(isPaymentReview(o)&&o.status==='awaiting_payment')return '待人工审核';
         return o.statusText||statusText[o.status]||o.status||'-';
       }
       function canReview(o){return !!(o.canReview||(o.status==='completed'&&!o.reviewed&&(o.companionId||(o.companion&&o.companion.id))))}
+      function remainingLabel(o){
+        if(o.autoConfirmRemainingLabel)return o.autoConfirmRemainingLabel;
+        var ms=Number(o.autoConfirmRemainingMs);
+        if(!Number.isFinite(ms)||ms<0)return '';
+        var totalMin=Math.max(0,Math.ceil(ms/60000));
+        var h=Math.floor(totalMin/60),m=totalMin%60;
+        return h<=0?(m+'分钟'):(h+'小时'+m+'分钟');
+      }
       function statusReason(o){
         var s=String(o.status||'');
         if(isPaymentReview(o)&&s==='awaiting_payment')return '付款凭证已提交，等待人工审核。';
         if(o.paymentRejectReason&&s==='awaiting_payment')return '付款凭证已驳回：'+String(o.paymentRejectReason)+'。请重新上传。';
+        if(s==='in_progress'&&o.completionPending){
+          if(o.autoConfirmPaused)return o.autoConfirmPausedReason||'订单问题处理中，自动确认已暂停，请等待客服或后台处理。';
+          var left=remainingLabel(o);
+          return left
+            ?('陪玩已申请完成，请确认本次服务。若订单没有问题，系统将在 '+left+' 后自动确认完成。')
+            :'陪玩已申请完成，请确认本次服务。';
+        }
         if(o.bossHint)return o.bossHint;
         if(s==='awaiting_payment')return '待付款：请先扫码付款并上传付款截图';
         if(s==='pending')return '待客服处理：付款已确认，等待客服派单或开放抢单';
         if(s==='waiting_boss_confirm')return '等待老板选择：有陪玩抢单，请选择其中一位';
         if(s==='confirmed')return '进行中：陪玩已确认接单';
-        if(s==='in_progress'&&o.completionPending)return '陪玩已完成服务，请确认订单';
         if(s==='in_progress')return '进行中';
         if(s==='claimed')return '等待陪玩确认：订单已付款，正在等待陪玩确认接单';
         if(s==='completed')return canReview(o)?'服务已完成，可立即评价':'服务已完成';
@@ -189,13 +203,15 @@
         }else if(s==='in_progress'){
           if(o.completionPending){
             out.push('<button class="order-btn primary" data-action="confirm_completion" data-id="'+esc(o.id)+'">确认完成订单</button>');
-            out.push('<button class="order-btn" data-action="request_refund" data-id="'+esc(o.id)+'">申请售后</button>');
+            out.push('<button class="order-btn" data-action="report_order_problem" data-id="'+esc(o.id)+'">订单有问题，联系客服</button>');
           }else{
             out.push('<a class="order-btn primary" href="support.html?order='+encodeURIComponent(o.id)+'">联系客服</a>');
-            out.push('<button class="order-btn" data-action="request_refund" data-id="'+esc(o.id)+'">申请售后</button>');
           }
         }else if(canReview(o)){
           out.push('<button class="order-btn primary" data-detail="'+esc(o.id)+'" data-open-review="1" type="button">立即评价</button>');
+          out.push('<button class="order-btn" data-action="request_refund" data-id="'+esc(o.id)+'">申请售后</button>');
+        }else if(s==='completed'||s==='reviewed'||o.reviewed){
+          out.push('<button class="order-btn" data-action="request_refund" data-id="'+esc(o.id)+'">申请售后</button>');
         }else if(s==='cancelled'){
           out.push('<button class="order-btn is-disabled" type="button" disabled aria-disabled="true">已取消</button>');
         }
@@ -243,11 +259,17 @@
         var footer='';
         if(o.status==='in_progress'&&o.completionPending){
           footer+='<button class="order-btn primary" type="button" data-action="confirm_completion" data-id="'+esc(o.id)+'">确认完成订单</button>';
+          footer+='<button class="order-btn" type="button" data-action="report_order_problem" data-id="'+esc(o.id)+'">订单有问题，联系客服</button>';
+        }else if(o.status==='in_progress'||o.status==='confirmed'){
+          footer+='<a class="order-btn primary" href="support.html?order='+encodeURIComponent(o.id)+'">联系客服</a>';
+        }else if(canReview(o)||o.status==='completed'||o.status==='reviewed'||o.reviewed){
+          if(canReview(o))footer+='<button class="order-btn primary" type="button" data-show-review="'+esc(o.id)+'">立即评价</button>';
           footer+='<button class="order-btn" type="button" data-action="request_refund" data-id="'+esc(o.id)+'">申请售后</button>';
+          footer+='<a class="order-btn" href="support.html?order='+encodeURIComponent(o.id)+'">联系客服</a>';
+        }else{
+          footer+='<a class="order-btn" href="support.html?order='+encodeURIComponent(o.id)+'">联系客服</a>';
         }
-        footer+=
-          '<a class="order-btn" href="support.html?order='+encodeURIComponent(o.id)+'">联系客服</a>'+
-          '<button class="order-btn" type="button" data-close>返回</button>';
+        footer+='<button class="order-btn" type="button" data-close>返回</button>';
         if(canCancelOrder(o)){
           footer+='<button class="order-btn" type="button" data-action="cancel_order" data-id="'+esc(o.id)+'">取消订单</button>';
         }
@@ -274,18 +296,34 @@
           var intentId=(o.bossIntent&&o.bossIntent.companionId)||o.preferredCompanionId||'';
           html='<div class="status-panel"><h4 style="margin:0 0 8px">抢单陪玩（已有 '+grabs.length+' 位）</h4><p class="order-hint">选择后立即派单给该陪玩，订单进入等待陪玩确认；其他抢单陪玩将无法再接此单。</p>'+(grabs.length?grabs.map(function(g){var c=g.companion||{};var name=c.nickname||'陪玩';var avatar=c.avatarUrl||c.cardImageUrl?'<img class="companion-avatar" src="'+esc(c.avatarUrl||c.cardImageUrl)+'" alt="">':'<div class="companion-avatar">'+esc(name.slice(0,1))+'</div>';return '<div class="companion-pick" style="margin-bottom:10px">'+avatar+'<div><strong>'+esc(name)+'</strong><p>等级：'+esc(c.level||'-')+' · 段位/主接：'+esc(c.mainGame||c.game||o.game||'-')+' · 在线：'+esc(c.onlineStatusLabel||c.onlineStatus||'-')+'</p><p>单价：'+money(c.price||o.unitPrice)+' · 评价：'+esc(c.rating||'-')+'</p>'+(c.voiceUrl?'<p><a href="'+esc(c.voiceUrl)+'" target="_blank" rel="noopener">录音试听</a></p>':'')+'<div class="status-actions"><button class="order-btn primary" data-action="confirm_companion" data-id="'+esc(o.id)+'" data-companion-id="'+esc(g.companionId||c.id||'')+'">选择这位陪玩</button><a class="order-btn" href="player.html?id='+encodeURIComponent(g.companionId||'')+'">陪玩详情</a></div></div></div>'}).join(''):'<p class="order-hint">暂无陪玩抢单，请稍候刷新</p>')+'</div>';
         }else if(o.status==='confirmed'){
-          html='<div class="status-panel"><p>当前陪玩：'+esc(companionName(o))+'</p><p>付款状态：已付款</p><p>接单状态：进行中</p><p class="order-hint">陪玩已确认接单，服务进行中</p><div class="status-actions"><button class="order-btn" data-action="request_refund" data-id="'+esc(o.id)+'">申请售后</button></div></div>';
+          html='<div class="status-panel"><p>当前陪玩：'+esc(companionName(o))+'</p><p>付款状态：已付款</p><p>接单状态：进行中</p><p class="order-hint">陪玩已确认接单，服务进行中</p><div class="status-actions"><a class="order-btn primary" href="support.html?order='+encodeURIComponent(o.id)+'">联系客服</a></div></div>';
         }else if(o.status==='in_progress'){
-          html='<div class="status-panel"><p>当前陪玩：'+esc(companionName(o))+'</p><p>开始时间：'+esc(date(o.startedAt||o.started_at))+'</p><p>订单时长：'+esc(o.hours||'-')+' 小时</p><p class="order-hint">'+(o.completionPending?'陪玩已申请完成，请确认订单后进入已完成并开放评价。':'服务进行中。陪玩申请完成后，这里会出现「确认完成订单」。')+'</p><div class="status-actions">'+(o.completionPending?'<button class="order-btn primary" data-action="confirm_completion" data-id="'+esc(o.id)+'">确认完成订单</button><button class="order-btn" data-action="request_refund" data-id="'+esc(o.id)+'">申请售后</button>':'<button class="order-btn" data-action="request_refund" data-id="'+esc(o.id)+'">申请售后</button>')+'</div></div>';
+          if(o.completionPending){
+            var left=remainingLabel(o);
+            var hint=o.autoConfirmPaused
+              ?(o.autoConfirmPausedReason||'订单问题处理中，自动确认已暂停，请等待客服或后台处理。')
+              :(left
+                ?('陪玩已申请完成，请确认本次服务。若订单没有问题，系统将在 '+left+' 后自动确认完成。')
+                :'陪玩已申请完成，请确认本次服务。');
+            html='<div class="status-panel"><p><strong>等待您确认完成</strong></p><p>当前陪玩：'+esc(companionName(o))+'</p><p>开始时间：'+esc(date(o.startedAt||o.started_at))+'</p><p>订单时长：'+esc(o.hours||'-')+' 小时</p><p class="order-hint">'+esc(hint)+'</p><div class="status-actions"><button class="order-btn primary" data-action="confirm_completion" data-id="'+esc(o.id)+'">确认完成订单</button><button class="order-btn" data-action="report_order_problem" data-id="'+esc(o.id)+'">订单有问题，联系客服</button></div></div>';
+          }else{
+            html='<div class="status-panel"><p>当前陪玩：'+esc(companionName(o))+'</p><p>开始时间：'+esc(date(o.startedAt||o.started_at))+'</p><p>订单时长：'+esc(o.hours||'-')+' 小时</p><p class="order-hint">服务进行中。陪玩申请完成后，这里会出现「确认完成订单」。</p><div class="status-actions"><a class="order-btn primary" href="support.html?order='+encodeURIComponent(o.id)+'">联系客服</a></div></div>';
+          }
         }else if(o.status==='completed'||o.status==='reviewed'||o.reviewed){
           html='<div class="status-panel"><p>完成时间：'+esc(date(o.completedAt||o.completed_at))+'</p>';
+          if(o.completionMethod){
+            html+='<p>完成方式：'+esc(o.completionMethod==='system_auto_24h'?'24小时系统自动确认':(o.completionMethod==='admin_force'?'后台确认':'老板手动确认'))+'</p>';
+          }
           if(o.reviewed||o.status==='reviewed'){
             html+='<p>评分：'+esc('★★★★★'.slice(0,Number(o.reviewRating||0)||0)+(o.reviewRating?(' '+o.reviewRating+' 星'):'已评价'))+'</p><p>评价：'+esc(o.reviewContent||'-')+'</p>';
           }else{
-            html+='<div class="status-actions"><button class="order-btn primary" type="button" data-show-review="'+esc(o.id)+'">立即评价</button></div>';
+            html+='<div class="status-actions"><button class="order-btn primary" type="button" data-show-review="'+esc(o.id)+'">立即评价</button><button class="order-btn" data-action="request_refund" data-id="'+esc(o.id)+'">申请售后</button></div>';
             if(openReview){
               html+='<div data-review-form="'+esc(o.id)+'" style="display:grid;gap:10px;margin-top:10px"><label>评分<select name="rating"><option value="5">★★★★★</option><option value="4">★★★★</option><option value="3">★★★</option><option value="2">★★</option><option value="1">★</option></select></label><label>文字评价<textarea name="content" rows="3" maxlength="500" placeholder="写下你的评价"></textarea></label><button class="order-btn primary" type="button" data-submit-review="'+esc(o.id)+'">提交</button></div>';
             }
+          }
+          if(o.reviewed||o.status==='reviewed'){
+            html+='<div class="status-actions" style="margin-top:10px"><button class="order-btn" data-action="request_refund" data-id="'+esc(o.id)+'">申请售后</button></div>';
           }
           html+='</div>';
         }else if(o.status==='refund_requested'||o.status==='refunded'){
@@ -360,7 +398,7 @@
           }else paint();
         }
       }
-      async function submit(action,id,extra){try{var payload=Object.assign({action:action,id:id},extra||{});if(action==='confirm_companion'||action==='confirm_completion'){if(!confirm(action==='confirm_completion'?'确认完成本次服务？确认后订单将变为已完成，并开放评价与结算。':'确认选择这位陪玩？系统将立即派单，订单进入等待陪玩确认。'))return}var res=await fetch('/api/orders',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token()},body:JSON.stringify(payload)});var body=await res.json().catch(function(){return {}});if(!res.ok||body.ok===false)throw new Error(body.message||'操作失败');await load();if(action==='confirm_completion'&&body.order){var done=state.orders.find(function(x){return x.id===id})||body.order;if(done)detail(done,!!done.canReview);alert(body.message||'已确认完成，订单已完成。')}else if(modal.classList.contains('open')){var cur=state.orders.find(function(x){return x.id===id});if(cur)detail(cur)}}catch(err){alert(err.message||'操作失败')}}
+      async function submit(action,id,extra){try{var payload=Object.assign({action:action,id:id},extra||{});if(action==='confirm_companion'||action==='confirm_completion'){if(!confirm(action==='confirm_completion'?'确认完成本次服务？确认后订单将变为已完成，并开放评价与结算。':'确认选择这位陪玩？系统将立即派单，订单进入等待陪玩确认。'))return}if(action==='report_order_problem'){if(!confirm('确认提交订单问题？系统将暂停 24 小时自动确认，并请你联系客服处理。'))return}var res=await fetch('/api/orders',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token()},body:JSON.stringify(payload)});var body=await res.json().catch(function(){return {}});if(!res.ok||body.ok===false)throw new Error(body.message||'操作失败');await load();if(action==='report_order_problem'){alert(body.message||'已暂停自动确认，请联系客服。');location.href=body.supportUrl||('support.html?order='+encodeURIComponent(id));return}if(action==='confirm_completion'&&body.order){var done=state.orders.find(function(x){return x.id===id})||body.order;if(done)detail(done,!!done.canReview);alert(body.message||'已确认完成，订单已完成。')}else if(modal.classList.contains('open')){var cur=state.orders.find(function(x){return x.id===id});if(cur)detail(cur)}}catch(err){alert(err.message||'操作失败')}}
       async function submitReview(id){var box=detailBody.querySelector('[data-review-form="'+id+'"]');if(!box)return;var rating=box.querySelector('[name="rating"]').value;var content=box.querySelector('[name="content"]').value;try{var res=await fetch('/api/orders',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token()},body:JSON.stringify({action:'submit_review',id:id,rating:Number(rating),content:content})});var body=await res.json().catch(function(){return {}});if(!res.ok||body.ok===false)throw new Error(body.message||'评价失败');await load();var o=state.orders.find(function(x){return x.id===id});if(o)detail(o);else modal.classList.remove('open');alert(body.message||'评价已提交')}catch(err){alert(err.message||'评价失败')}}
       document.addEventListener('click',function(e){var f=e.target.closest('[data-filter]');if(f){state.filter=f.dataset.filter;paint();return}if(e.target.closest('[data-refresh]')){load();return}var d=e.target.closest('[data-detail]');if(d){(async function(){var o=state.orders.find(function(x){return x.id===d.dataset.detail});if(!o)return;try{var freshRes=await fetch('/api/orders?id='+encodeURIComponent(o.id),{headers:{Accept:'application/json',Authorization:'Bearer '+token()},cache:'no-store'});var freshBody=await freshRes.json().catch(function(){return{}});if(freshRes.ok&&freshBody.ok!==false){var fresh=(Array.isArray(freshBody.orders)?freshBody.orders[0]:null)||freshBody.order;if(fresh&&fresh.id){o=Object.assign({},o,fresh);var ix=state.orders.findIndex(function(x){return x.id===o.id});if(ix>=0)state.orders[ix]=o;writeCache(state.orders);paint()}}}catch(errFresh){}if((o.status==='waiting_boss_confirm'||o.status==='pending')&&!(o.grabs&&o.grabs.length)){try{var res=await fetch('/api/orders',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token()},body:JSON.stringify({action:'list_grabs',id:o.id})});var body=await res.json().catch(function(){return{}});if(res.ok&&body.ok!==false&&Array.isArray(body.grabs)){o.grabs=body.grabs;var idx=state.orders.findIndex(function(x){return x.id===o.id});if(idx>=0)state.orders[idx]=o}}catch(err){}}detail(o,d.getAttribute('data-open-review')==='1'||canReview(o))})();return}var showRev=e.target.closest('[data-show-review]');if(showRev){var o2=state.orders.find(function(x){return x.id===showRev.getAttribute('data-show-review')});if(o2)detail(o2,true);return}var sr=e.target.closest('[data-submit-review]');if(sr){submitReview(sr.getAttribute('data-submit-review'));return}var a=e.target.closest('[data-action]');if(a){submit(a.dataset.action,a.dataset.id,{companion_id:a.getAttribute('data-companion-id')||''});return}if(e.target.closest('[data-close]')||e.target===modal){modal.classList.remove('open');modal.setAttribute('aria-hidden','true');return}if(e.target.closest('[data-logout]')){if(window.MCJRoleGate){window.MCJRoleGate.logout('boss');window.MCJRoleGate.logout('customer')}localStorage.removeItem('mcjAuthAccessToken');localStorage.removeItem('mcjAuthRefreshToken');sessionStorage.removeItem('mcjAuthAccessToken');sessionStorage.removeItem('mcjAuthRefreshToken');location.href='index.html';return}});
       document.addEventListener('visibilitychange',function(){if(!document.hidden)load({silent:true})});

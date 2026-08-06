@@ -79,7 +79,14 @@ export function bossFacingStatusText(row = {}, grabCountOverride) {
       String(row.note || "").includes("[[COMPLETION_PENDING]]") ||
       String(row.description || "").includes("[[COMPLETION_PENDING]]")
     ) {
-      return "陪玩已完成，待确认";
+      if (
+        /\[\[ORDER_FROZEN\]\]|\[\[ORDER_DISPUTE\]\]|\[\[COMPLETION_AUTO_PAUSED\]\]/i.test(
+          String(row.note || "") + String(row.description || "")
+        )
+      ) {
+        return "等待处理订单问题";
+      }
+      return "等待您确认完成";
     }
     return "进行中";
   }

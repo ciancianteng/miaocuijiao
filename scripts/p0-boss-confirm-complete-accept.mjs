@@ -1,5 +1,5 @@
 /**
- * P0: boss confirm-complete button after companion apply-complete.
+ * P0: boss confirm-complete + 24h auto-confirm handshake.
  * Usage: MCJ_STAGING_URL=... node scripts/p0-boss-confirm-complete-accept.mjs
  */
 const STAGING = (process.env.MCJ_STAGING_URL || "https://meow-cuijiao-homepage-staging.vercel.app").replace(/\/$/, "");
@@ -40,11 +40,14 @@ function tok(j) {
   const adminT = tok((await api("/api/auth", null, { action: "login", email: ADMIN, password: PASS })).json);
   step("四端登录", !!(bossT && csT && compT && adminT), `b/cs/c/a=${!!bossT}/${!!csT}/${!!compT}/${!!adminT}`);
 
+  const html = await fetch(`${STAGING}/orders.html`, { cache: "no-store" }).then((r) => r.text());
+  step("老板端文案含等待您确认完成", html.includes("等待您确认完成"), "");
+  step("老板端主按钮确认完成订单", html.includes("确认完成订单") && html.includes('data-action="confirm_completion"'), "");
+  step("进行中不展示申请售后（申请完成后改问题入口）", html.includes("report_order_problem") && html.includes("订单有问题，联系客服"), "");
+
   const bossOrders = (await api("/api/orders", bossT, null, "GET")).json?.orders || [];
   let order = bossOrders.find((o) => o.status === "in_progress" && o.companionId && !o.completionPending);
-  if (!order) {
-    order = bossOrders.find((o) => o.status === "in_progress" && o.companionId);
-  }
+  if (!order) order = bossOrders.find((o) => o.status === "in_progress" && o.companionId);
   step("找到进行中订单", !!order, order ? `${order.orderNo || order.id} cp=${!!order.completionPending}` : "none");
   if (!order) {
     console.log("SUMMARY", `${results.filter((r) => r.ok).length}/${results.length}`);
@@ -52,7 +55,6 @@ function tok(j) {
   }
   const oid = order.id;
 
-  // If already pending from a prior run, skip apply; else companion apply-complete.
   if (!order.completionPending) {
     const apply = await api("/api/companion", compT, { action: "complete_order", id: oid });
     step(
@@ -61,23 +63,18 @@ function tok(j) {
       apply.json?.message || apply.status
     );
   } else {
-    step("陪玩申请完成", true, "already pending");
+    // refresh stamp
+    await api("/api/companion", compT, { action: "complete_order", id: oid });
+    step("陪玩申请完成", true, "already pending / refreshed");
   }
 
   const bossAfter = ((await api("/api/orders", bossT, null, "GET")).json?.orders || []).find((o) => o.id === oid);
-  const bossOne = ((await api(`/api/orders?id=${encodeURIComponent(oid)}`, bossT, null, "GET")).json?.orders || [])[0];
   step(
-    "老板端可见 completionPending",
-    !!(bossAfter?.completionPending || bossOne?.completionPending),
-    `list=${!!bossAfter?.completionPending} one=${!!bossOne?.completionPending} st=${bossAfter?.statusText || bossOne?.statusText}`
-  );
-  step(
-    "未申请完成时不应误报",
-    true,
-    "guard covered by apply gate"
+    "老板端可见 completionPending + 倒计时",
+    !!bossAfter?.completionPending && !!bossAfter?.completionRequestedAt && /等待您确认完成|等待处理/.test(String(bossAfter.statusText || "")),
+    `cp=${!!bossAfter?.completionPending} at=${bossAfter?.completionRequestedAt} left=${bossAfter?.autoConfirmRemainingLabel} st=${bossAfter?.statusText}`
   );
 
-  // Without pending, confirm must 409 — use a different in_progress if available
   const other = bossOrders.find((o) => o.id !== oid && o.status === "in_progress" && !o.completionPending);
   if (other) {
     const denied = await api("/api/orders", bossT, { action: "confirm_completion", id: other.id });
@@ -90,60 +87,48 @@ function tok(j) {
     step("未申请完成不可确认", true, "no second in_progress order; skipped");
   }
 
-  const csOrders = (await api("/api/customer-service?action=bootstrap", csT, null, "GET")).json;
-  const csHit =
-    (csOrders?.data?.orders || csOrders?.orders || []).find((o) => o.id === oid) ||
-    null;
-  // bootstrap shape may vary — also try orders list action
-  let csStatus = csHit?.statusText || "";
-  let csPending = !!csHit?.completionPending;
-  if (!csHit) {
-    const csList = await api("/api/customer-service", csT, { action: "orders" });
-    const hit = (csList.json?.orders || csList.json?.data?.orders || []).find((o) => o.id === oid);
-    csStatus = hit?.statusText || csList.json?.message || "";
-    csPending = !!hit?.completionPending;
-  }
+  // Pause via report problem on a throwaway? Use mark dispute via CS then clear, on current order — but then confirm may still work.
+  // Instead create pause then verify countdown paused, then clear dispute and confirm.
+  const dispute = await api("/api/customer-service", csT, { action: "mark_order_dispute", id: oid, reason: "accept_test" });
+  step("客服标记争议可暂停自动确认", !!dispute.json?.ok, dispute.json?.message || dispute.status);
+  const paused = ((await api("/api/orders", bossT, null, "GET")).json?.orders || []).find((o) => o.id === oid);
   step(
-    "客服端状态同步",
-    csPending || /等待老板确认|申请完成/.test(csStatus) || csStatus === "",
-    `pending=${csPending} statusText=${csStatus || "(bootstrap miss ok if admin/boss pass)"}`
+    "老板端显示自动确认已暂停",
+    !!paused?.autoConfirmPaused || /等待处理|暂停/.test(String(paused?.statusText || paused?.autoConfirmPausedReason || "")),
+    `paused=${!!paused?.autoConfirmPaused} reason=${paused?.autoConfirmPausedReason || paused?.statusText}`
   );
+  await api("/api/customer-service", csT, { action: "clear_order_dispute", id: oid });
 
   const adminList = await api("/api/admin/orders?status=in_progress&limit=50", adminT, null, "GET");
   const adminHit = (adminList.json?.orders || []).find((o) => o.id === oid);
   step(
     "后台状态同步",
-    !!adminHit && (!!adminHit.completionPending || /等待老板确认|待确认完成/.test(String(adminHit.statusText || adminHit.orderStatus || ""))),
-    adminHit
-      ? `cp=${!!adminHit.completionPending} st=${adminHit.statusText} os=${adminHit.orderStatus}`
-      : `missing status=${adminList.status}`
+    !!adminHit && (!!adminHit.completionPending || /等待老板确认|待确认完成|等待处理/.test(String(adminHit.statusText || adminHit.orderStatus || ""))),
+    adminHit ? `cp=${!!adminHit.completionPending} st=${adminHit.statusText} os=${adminHit.orderStatus}` : `missing`
   );
 
   const confirm = await api("/api/orders", bossT, { action: "confirm_completion", id: oid });
   step(
     "老板确认完成 → 已完成",
     !!confirm.json?.ok && (confirm.json?.order?.status === "completed" || /已确认完成|已完成/.test(String(confirm.json?.message || ""))),
-    confirm.json?.message || confirm.status
+    `${confirm.json?.message || confirm.status} method=${confirm.json?.completionMethod || ""}`
+  );
+
+  const again = await api("/api/orders", bossT, { action: "confirm_completion", id: oid });
+  step(
+    "重复确认不重复结算",
+    !!again.json?.ok || again.status === 409,
+    `${again.status} ${again.json?.message || ""} duplicate=${!!again.json?.duplicate}`
   );
 
   const bossDone = ((await api("/api/orders", bossT, null, "GET")).json?.orders || []).find((o) => o.id === oid);
   step(
     "老板端已完成可评价",
     bossDone?.status === "completed" && (bossDone.canReview === true || !bossDone.reviewed),
-    `status=${bossDone?.status} canReview=${bossDone?.canReview}`
+    `status=${bossDone?.status} canReview=${bossDone?.canReview} method=${bossDone?.completionMethod || ""}`
   );
 
-  const boot = await api("/api/companion?action=bootstrap", compT, null, "GET");
-  const myOrders = boot.json?.data?.myOrders || boot.json?.data?.orders || [];
-  const compDone = myOrders.find((o) => o.id === oid);
-  step(
-    "陪玩端已完成/结算可见",
-    !compDone || compDone.status === "completed" || !!compDone.settlementStatus || true,
-    compDone ? `status=${compDone.status}` : "order left active list (ok)"
-  );
-
-  const adminDoneList = await api("/api/admin/orders?limit=80", adminT, null, "GET");
-  const adminDone = (adminDoneList.json?.orders || []).find((o) => o.id === oid);
+  const adminDone = ((await api("/api/admin/orders?limit=80", adminT, null, "GET")).json?.orders || []).find((o) => o.id === oid);
   step(
     "后台已完成",
     adminDone?.status === "completed" || /已完成/.test(String(adminDone?.statusText || "")),

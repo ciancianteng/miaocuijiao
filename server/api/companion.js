@@ -19,6 +19,11 @@ import { readLocalLevels, toPublicLevel } from "./_companion-levels-store.js";
 import { resolvePlatformCommission } from "./_commission-rates.js";
 import { writeOrderStatusLog, COMPANION_STATUS_LABELS } from "./_order-status.js";
 import {
+  completionCountdown,
+  formatRemainingLabel,
+  parseCompletionMethod,
+} from "./_order-complete.js";
+import {
   readGamePrices,
   writeGamePricesMarker,
   stripGamePricesMarker,
@@ -880,6 +885,7 @@ function viewOrder(row = {}, boss = {}, settlement = null) {
   if (row.status === "in_progress" && completionPending) statusText = "待老板确认完成";
   if (row._grabStatus === "pending_customer_selection") statusText = "等待老板选择";
   if (row._grabStatus === "not_selected") statusText = "该订单已由其他陪玩接单。";
+  const countdown = completionCountdown(row);
   const serviceContent =
     description ||
     stripOrderFacingText(row.title || "") ||
@@ -924,6 +930,13 @@ function viewOrder(row = {}, boss = {}, settlement = null) {
     statusText,
     grabStatus: row._grabStatus || "",
     completionPending,
+    completionRequestedAt: countdown.completionRequestedAt || "",
+    autoConfirmAt: countdown.autoConfirmAt || "",
+    autoConfirmRemainingMs: countdown.autoConfirmRemainingMs,
+    autoConfirmRemainingLabel: formatRemainingLabel(countdown.autoConfirmRemainingMs),
+    autoConfirmPaused: !!countdown.autoConfirmPaused,
+    autoConfirmPausedReason: countdown.autoConfirmPausedReason || "",
+    completionMethod: parseCompletionMethod(row) || "",
     appointmentAt: row.created_at || "",
     createdAt: row.created_at || "",
     completedAt: row.completed_at || parsed?.completedAt || "",
@@ -948,6 +961,22 @@ async function loadOrdersFor(profile, companion, transactions = []) {
     await expireCompanionConfirmTimeouts({ companionId: profile.id, limit: 40 });
   } catch {
     /* best-effort */
+  }
+  try {
+    const { createOrderCompleteHelpers } = await import("./_order-complete.js");
+    const helpers = createOrderCompleteHelpers({
+      restUrl,
+      supabaseJson,
+      serviceHeaders,
+      addSystemMessage: async (order, actorId, content) =>
+        addSystemMessage(order, actorId || order.boss_id, "system", content),
+    });
+    await Promise.race([
+      helpers.expireCompletionAutoConfirms({ limit: 15 }),
+      new Promise((resolve) => setTimeout(resolve, 1500)),
+    ]);
+  } catch {
+    /* best-effort auto-complete */
   }
   const myRows = await supabaseJson(restUrl("orders", `?companion_id=eq.${encodeURIComponent(profile.id)}&order=created_at.desc&limit=200`), { headers: serviceHeaders() });
   // Never surface unpaid designated orders (awaiting_payment) as actionable confirm tasks.
@@ -2965,10 +2994,18 @@ export default async function handler(req, res) {
       const { createOrderGrabHelpers } = await import("./_order-grabs.js");
       const grabsApi = createOrderGrabHelpers({ restUrl, supabaseJson, serviceHeaders });
       if (grabsApi.orderHasCompletionPending(before)) {
+        // Backfill request timestamp for legacy pending rows (required for 24h auto-confirm).
+        await grabsApi.markCompletionPending(before);
+        const refreshed = (
+          await supabaseJson(
+            restUrl("orders", `?id=eq.${encodeURIComponent(orderId)}&companion_id=eq.${encodeURIComponent(auth.profile.id)}&limit=1`),
+            { headers: serviceHeaders() }
+          )
+        )?.[0] || before;
         return json(res, 200, {
           ok: true,
           message: "已申请完成，等待老板确认。",
-          order: viewOrder(before),
+          order: viewOrder(refreshed),
           awaitingBossConfirm: true,
         });
       }
@@ -2978,7 +3015,7 @@ export default async function handler(req, res) {
         { headers: serviceHeaders() }
       );
       const saved = afterRows?.[0] || before;
-      await addSystemMessage(saved, auth.profile.id, "companion", "陪玩已完成服务，请确认订单。");
+      await addSystemMessage(saved, auth.profile.id, "companion", "陪玩已完成服务，请确认订单。若老板 24 小时内未确认且无售后/争议，系统将自动确认完成。");
       return json(res, 200, {
         ok: true,
         message: "已提交完成申请，等待老板确认后结算。",

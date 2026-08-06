@@ -19,6 +19,12 @@ import { companionDb } from "./_companion-media-store.js";
 import { listPendingForCs, latestRejectedForOrders, signedProofUrl, uploadProof } from "./_payment-receipts.js";
 import { loadPlatformPayQr } from "./_platform-pay-qr.js";
 import { stripInternalOrderMarkers } from "./_order-grabs.js";
+import {
+  completionCountdown,
+  formatRemainingLabel,
+  parseCompletionMethod,
+  createOrderCompleteHelpers,
+} from "./_order-complete.js";
 
 loadLocalEnv();
 
@@ -312,7 +318,20 @@ function bossHint(row = {}) {
     return "请尽快完成付款并上传凭证。";
   }
   if (status === "claimed") return "订单已付款，正在等待陪玩确认接单";
-  if (status === "confirmed" || status === "in_progress") return "服务进行中";
+  if (status === "confirmed" || status === "in_progress") {
+    if (
+      String(row.note || "").includes("[[COMPLETION_PENDING]]") ||
+      String(row.description || "").includes("[[COMPLETION_PENDING]]")
+    ) {
+      const cd = completionCountdown(row);
+      if (cd.autoConfirmPaused) return cd.autoConfirmPausedReason || "订单问题处理中，自动确认已暂停。";
+      const left = formatRemainingLabel(cd.autoConfirmRemainingMs);
+      return left
+        ? `陪玩已申请完成，请确认本次服务。若没有问题，系统将在 ${left} 后自动确认完成。`
+        : "陪玩已申请完成，请确认本次服务。";
+    }
+    return "服务进行中";
+  }
   if (status === "pending" && /陪玩确认超时|确认超时/.test(note)) return "陪玩暂未响应，客服正在处理中";
   if (status === "pending" && /无法接单|拒单/.test(note)) return "陪玩暂时无法接单，订单已重新进入抢单大厅";
   if (status === "pending") return "付款已确认，待客服处理派单。";
@@ -362,12 +381,13 @@ function viewOrder(row = {}) {
   const completionPending =
     String(row.note || "").includes("[[COMPLETION_PENDING]]") ||
     String(row.description || "").includes("[[COMPLETION_PENDING]]");
+  const countdown = completionCountdown(row);
   const grabCount = Array.isArray(row.grabs)
     ? row.grabs.length
     : Number(row.grabCount != null ? row.grabCount : row.grab_count || 0) || 0;
   let statusText = bossFacingStatusText({ ...row, status, grabs: row.grabs }, grabCount);
   if (status === "in_progress" && completionPending) {
-    statusText = "陪玩已完成，待确认";
+    statusText = countdown.autoConfirmPaused ? "等待处理订单问题" : "等待您确认完成";
   }
   if ((status === "pending" || status === "waiting_boss_confirm") && grabCount > 0) {
     statusText = `已有 ${grabCount} 位陪玩抢单（点击查看）`;
@@ -425,6 +445,13 @@ function viewOrder(row = {}) {
     flowStatus,
     statusText,
     completionPending,
+    completionRequestedAt: countdown.completionRequestedAt || "",
+    autoConfirmAt: countdown.autoConfirmAt || "",
+    autoConfirmRemainingMs: countdown.autoConfirmRemainingMs,
+    autoConfirmRemainingLabel: formatRemainingLabel(countdown.autoConfirmRemainingMs),
+    autoConfirmPaused: !!countdown.autoConfirmPaused,
+    autoConfirmPausedReason: countdown.autoConfirmPausedReason || "",
+    completionMethod: parseCompletionMethod(row) || "",
     grabs: row.grabs || [],
     grabCount,
     bossIntent,
@@ -467,6 +494,20 @@ async function loadOrders(profile, id = "") {
     ]);
   } catch {
     /* best-effort SLA — never block boss list */
+  }
+  try {
+    const helpers = createOrderCompleteHelpers({
+      restUrl,
+      supabaseJson,
+      serviceHeaders,
+      addSystemMessage: async (order, actorId, content) => addSystemMessage(order, actorId || order.boss_id, content),
+    });
+    await Promise.race([
+      helpers.expireCompletionAutoConfirms({ limit: 20 }),
+      new Promise((resolve) => setTimeout(resolve, 2000)),
+    ]);
+  } catch {
+    /* best-effort auto-complete */
   }
   // Core columns always include description (completion-pending marker dual-writes here).
   // note is preferred for markers; cancel_reason is optional — never drop note when cancel_reason is missing.
@@ -1489,118 +1530,67 @@ export default async function handler(req, res) {
       const beforeRows = await supabaseJson(restUrl(TABLE, `?id=eq.${encodeURIComponent(id)}&boss_id=eq.${encodeURIComponent(profile.id)}&limit=1`), { headers: serviceHeaders() });
       const before = Array.isArray(beforeRows) ? beforeRows[0] : null;
       if (!before) return json(res, 404, { ok: false, message: "订单不存在。" });
-      if (before.status !== "in_progress") {
-        return json(res, 409, { ok: false, message: "当前订单不能确认完成。" });
-      }
-      if (/refunded|refund_requested|cancelled/.test(String(before.status || ""))) {
-        return json(res, 409, { ok: false, message: "订单已退款或取消，不能结算。" });
-      }
-      if (String(before.settlement_status || "") === "settled") {
+      const helpers = createOrderCompleteHelpers({
+        restUrl,
+        supabaseJson,
+        serviceHeaders,
+        addSystemMessage: async (order, actorId, content) => addSystemMessage(order, actorId || profile.id, content),
+      });
+      try {
+        const out = await helpers.finalizeOrderCompletion(before, {
+          method: "boss_manual",
+          actorId: profile.id,
+          message: "老板已确认完成订单。",
+        });
         return json(res, 200, {
           ok: true,
-          message: "订单已结算，无需重复结算。",
-          order: viewOrder(before),
-          duplicate: true,
+          message: out.message || "已确认完成，订单已完成。",
+          order: viewOrder(out.order || before),
+          reward: out.reward || null,
+          settlement: out.settlement || null,
+          completionMethod: out.completionMethod || "boss_manual",
+          duplicate: !!out.duplicate,
+        });
+      } catch (err) {
+        const status = Number(err?.status) || 500;
+        return json(res, status >= 400 && status < 600 ? status : 500, {
+          ok: false,
+          message: err?.message || "确认完成失败。",
         });
       }
-      const { createOrderGrabHelpers } = await import("./_order-grabs.js");
-      const grabsApi = createOrderGrabHelpers({ restUrl, supabaseJson, serviceHeaders });
-      if (!grabsApi.orderHasCompletionPending(before)) {
-        return json(res, 409, { ok: false, message: "陪玩尚未申请完成服务。" });
+    }
+    if (action === "report_order_problem" || action === "pause_auto_confirm") {
+      const beforeRows = await supabaseJson(
+        restUrl(TABLE, `?id=eq.${encodeURIComponent(id)}&boss_id=eq.${encodeURIComponent(profile.id)}&limit=1`),
+        { headers: serviceHeaders() }
+      );
+      const before = Array.isArray(beforeRows) ? beforeRows[0] : null;
+      if (!before) return json(res, 404, { ok: false, message: "订单不存在。" });
+      if (before.status !== "in_progress") {
+        return json(res, 409, { ok: false, message: "当前订单状态不能提交问题。" });
       }
-      const completedAt = nowIso();
-      await grabsApi.clearCompletionPending(before);
-      let rows;
-      try {
-        rows = await supabaseJson(
-          restUrl(TABLE, `?id=eq.${encodeURIComponent(id)}&boss_id=eq.${encodeURIComponent(profile.id)}&status=eq.in_progress`),
-          { method: "PATCH", headers: serviceHeaders(), body: JSON.stringify({ status: "completed", completed_at: completedAt }) }
-        );
-      } catch (err) {
-        throw err;
+      const helpers = createOrderCompleteHelpers({
+        restUrl,
+        supabaseJson,
+        serviceHeaders,
+        addSystemMessage: async (order, actorId, content) => addSystemMessage(order, actorId || profile.id, content),
+      });
+      if (!helpers.orderHasCompletionPending(before)) {
+        return json(res, 409, { ok: false, message: "陪玩尚未申请完成，请直接联系客服。" });
       }
-      const saved = rows?.[0] || { ...before, status: "completed", completed_at: completedAt };
-      await addSystemMessage(saved, profile.id, "老板已确认完成订单。");
-      if (saved.companion_id) {
-        try {
-          const existingTx = await supabaseJson(
-            restUrl(
-              "transactions",
-              `?order_id=eq.${encodeURIComponent(saved.id)}&user_id=eq.${encodeURIComponent(saved.companion_id)}&transaction_type=eq.companion_income&limit=1`
-            ),
-            { headers: serviceHeaders() }
-          ).catch(() => []);
-          if (!existingTx?.[0]) {
-            const cp = (
-              await supabaseJson(
-                restUrl("companion_profiles", `?user_id=eq.${encodeURIComponent(saved.companion_id)}&limit=1`),
-                { headers: serviceHeaders() }
-              ).catch(() => [])
-            )?.[0] || {};
-            const amount = money(saved.total_amount);
-            const levels = await readLocalLevels().catch(() => []);
-            const levelMeta =
-              (levels || []).find(
-                (l) =>
-                  String(l.id) === String(cp.level_id || "") ||
-                  String(l.code) === String(cp.level_id || "") ||
-                  String(l.name) === String(cp.level_name || "")
-              ) || null;
-            const { platformRate, companionShareRate } = resolvePlatformCommission(
-              cp.commission_rate,
-              levelMeta?.commissionRate ?? 20
-            );
-            const companionNet = Math.round((amount * companionShareRate) / 100 * 100) / 100;
-            const platformFee = Math.round((amount - companionNet) * 100) / 100;
-            const settlement = {
-              orderId: saved.id,
-              orderNo: saved.order_no,
-              companionNetCatFood: companionNet,
-              platformCommissionCatFood: platformFee,
-              platformCommissionRate: platformRate,
-              companionShareRate,
-              completedAt,
-            };
-            await supabaseJson(restUrl("transactions"), {
-              method: "POST",
-              headers: serviceHeaders(),
-              body: JSON.stringify({
-                user_id: saved.companion_id,
-                order_id: saved.id,
-                transaction_type: "companion_income",
-                amount: companionNet,
-                status: "completed",
-                note: `MCJ_SETTLEMENT:${JSON.stringify(settlement)}`,
-                created_at: completedAt,
-              }),
-            });
-            try {
-              await supabaseJson(restUrl(TABLE, `?id=eq.${encodeURIComponent(saved.id)}`), {
-                method: "PATCH",
-                headers: serviceHeaders(),
-                body: JSON.stringify({
-                  settlement_note: `MCJ_SETTLEMENT:${JSON.stringify(settlement)}`,
-                  companion_income: companionNet,
-                  platform_fee: platformFee,
-                  settlement_status: "settled",
-                }),
-              });
-            } catch (_) {}
-          }
-        } catch (_) {}
-      }
-      let reward = null;
-      try {
-        reward = await (await import("./_cs-commission-settle.js")).settleCsOrderIncome(
-          { ...saved, status: "completed" },
-          { source: "boss_confirm_complete" }
-        );
-      } catch (_) {}
+      await helpers.stampAutoPaused(before, String(body.reason || "boss_problem").slice(0, 80));
+      await addSystemMessage(before, profile.id, "老板反馈订单有问题，已暂停 24 小时自动确认，请客服处理。");
+      const fresh = (
+        await supabaseJson(
+          restUrl(TABLE, `?id=eq.${encodeURIComponent(id)}&boss_id=eq.${encodeURIComponent(profile.id)}&limit=1`),
+          { headers: serviceHeaders() }
+        )
+      )?.[0] || before;
       return json(res, 200, {
         ok: true,
-        message: "已确认完成，订单已完成。",
-        order: viewOrder(saved),
-        reward,
+        message: "已记录订单问题并暂停自动确认，请联系客服继续处理。",
+        order: viewOrder(fresh),
+        supportUrl: `/support.html?order=${encodeURIComponent(id)}`,
       });
     }
     if (action === "cancel_order") {

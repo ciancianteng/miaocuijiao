@@ -410,7 +410,16 @@ function safeOrder(row, profiles = {}, extras = {}) {
         String(row.description || "").includes("[[COMPLETION_PENDING]]");
       if (row.status === "awaiting_payment" && extras.paymentReceipt) return "待人工审核";
       if (row.status === "claimed") return "待陪玩确认";
-      if (row.status === "in_progress" && completionPending) return "已申请完成，等待老板确认";
+      if (row.status === "in_progress" && completionPending) {
+        if (
+          /\[\[ORDER_FROZEN\]\]|\[\[ORDER_DISPUTE\]\]|\[\[COMPLETION_AUTO_PAUSED\]\]/i.test(
+            String(row.note || "") + String(row.description || "")
+          )
+        ) {
+          return "等待处理订单问题";
+        }
+        return "已申请完成，等待老板确认";
+      }
       if ((row.status === "pending" || row.status === "waiting_boss_confirm") && isPublic && !row.companion_id) {
         return gc > 0 ? `抢单中（${gc}人）` : "抢单中";
       }
@@ -914,6 +923,21 @@ async function loadBootstrap(serviceProfile) {
   try {
     const { expireCompanionConfirmTimeouts } = await import("./_order-confirm-timeout.js");
     await expireCompanionConfirmTimeouts({ limit: 50 });
+  } catch {
+    /* best-effort */
+  }
+  try {
+    const { createOrderCompleteHelpers } = await import("./_order-complete.js");
+    const helpers = createOrderCompleteHelpers({
+      restUrl,
+      supabaseJson,
+      serviceHeaders,
+      addSystemMessage: async () => {},
+    });
+    await Promise.race([
+      helpers.expireCompletionAutoConfirms({ limit: 20 }),
+      new Promise((resolve) => setTimeout(resolve, 1500)),
+    ]);
   } catch {
     /* best-effort */
   }
@@ -3754,6 +3778,50 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         }
       } catch (_) {}
       return json(res, 200, { ok: true, message: "订单状态已更新。", order: patched, reward });
+    }
+    if (action === "mark_order_dispute" || action === "mark_dispute") {
+      const id = String(body.id || body.order_id || "");
+      const order = await orderById(id);
+      if (!order) return json(res, 404, { ok: false, message: "订单不存在。" });
+      try {
+        await assertOrderMutationAllowed(order, service.profile);
+      } catch (err) {
+        return json(res, err.status || 403, { ok: false, message: err.message || CS_LOCK_DENIED, code: err.code || "CS_SESSION_LOCKED" });
+      }
+      const { createOrderCompleteHelpers } = await import("./_order-complete.js");
+      const helpers = createOrderCompleteHelpers({ restUrl, supabaseJson, serviceHeaders, addSystemMessage: async () => {} });
+      await helpers.stampDispute(order, String(body.reason || body.note || "cs_dispute").slice(0, 80));
+      const conversation = await ensureConversation({
+        boss_id: order.boss_id,
+        companion_id: order.companion_id,
+        customer_service_id: service.profile.id,
+        order_id: order.id,
+      });
+      await addMessage(conversation, service.profile.id, "customer_service", "客服已标记订单争议，24 小时自动确认已暂停。", "system", id);
+      const fresh = await orderById(id);
+      return json(res, 200, { ok: true, message: "已标记争议并暂停自动确认。", order: safeOrder(fresh || order, await profileMap([order.boss_id, order.companion_id, order.customer_service_id])) });
+    }
+    if (action === "clear_order_dispute" || action === "clear_dispute") {
+      const id = String(body.id || body.order_id || "");
+      const order = await orderById(id);
+      if (!order) return json(res, 404, { ok: false, message: "订单不存在。" });
+      try {
+        await assertOrderMutationAllowed(order, service.profile);
+      } catch (err) {
+        return json(res, err.status || 403, { ok: false, message: err.message || CS_LOCK_DENIED, code: err.code || "CS_SESSION_LOCKED" });
+      }
+      const { createOrderCompleteHelpers } = await import("./_order-complete.js");
+      const helpers = createOrderCompleteHelpers({ restUrl, supabaseJson, serviceHeaders, addSystemMessage: async () => {} });
+      await helpers.clearDispute(order);
+      const conversation = await ensureConversation({
+        boss_id: order.boss_id,
+        companion_id: order.companion_id,
+        customer_service_id: service.profile.id,
+        order_id: order.id,
+      });
+      await addMessage(conversation, service.profile.id, "customer_service", "客服已解除订单争议标记。", "system", id);
+      const fresh = await orderById(id);
+      return json(res, 200, { ok: true, message: "已解除争议标记。", order: safeOrder(fresh || order, await profileMap([order.boss_id, order.companion_id, order.customer_service_id])) });
     }
     if (action === "allowed_order_statuses") {
       const id = String(body.id || body.order_id || req.query?.id || "").trim();

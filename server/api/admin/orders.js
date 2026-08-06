@@ -1,4 +1,9 @@
 import { ORDER_STATUS_LABELS } from "../_order-status.js";
+import {
+  completionCountdown,
+  formatRemainingLabel,
+  parseCompletionMethod,
+} from "../_order-complete.js";
 const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY"];
 const ADMIN_ROLES = new Set(["admin", "super_admin"]);
 const ORDER_STATUS_TEXT = { ...ORDER_STATUS_LABELS };
@@ -13,6 +18,10 @@ const UI_ACTION_MAP = {
   "confirm-start": "confirm_start",
   "confirm-complete": "confirm_complete",
   "early-end": "confirm_complete",
+  freeze: "freeze_order",
+  "freeze-order": "freeze_order",
+  unfreeze: "unfreeze_order",
+  "unfreeze-order": "unfreeze_order",
   update_status: "update_status",
   assign_service: "assign_service",
   assign_companion: "assign_companion",
@@ -101,10 +110,11 @@ function safeOrder(row, profiles, extras = {}) {
   const completionPending =
     String(row.note || "").includes("[[COMPLETION_PENDING]]") ||
     String(row.description || "").includes("[[COMPLETION_PENDING]]");
+  const countdown = completionCountdown(row);
   let statusText = ORDER_STATUS_TEXT[status] || status || "-";
   let orderStatus = statusText;
   if (status === "in_progress" && completionPending) {
-    statusText = "已申请完成，等待老板确认";
+    statusText = countdown.autoConfirmPaused ? "等待处理订单问题" : "已申请完成，等待老板确认";
     orderStatus = "待确认完成";
   }
   const paid = !["awaiting_payment", "cancelled"].includes(status);
@@ -141,6 +151,13 @@ function safeOrder(row, profiles, extras = {}) {
     flowStatus,
     statusText,
     completionPending,
+    completionRequestedAt: countdown.completionRequestedAt || "",
+    autoConfirmAt: countdown.autoConfirmAt || "",
+    autoConfirmRemainingMs: countdown.autoConfirmRemainingMs,
+    autoConfirmRemainingLabel: formatRemainingLabel(countdown.autoConfirmRemainingMs),
+    autoConfirmPaused: !!countdown.autoConfirmPaused,
+    autoConfirmPausedReason: countdown.autoConfirmPausedReason || "",
+    completionMethod: parseCompletionMethod(row) || "",
     grabCount: Number(extras.grabCount != null ? extras.grabCount : 0) || 0,
     grabs: extras.grabs || [],
     bossIntent: extras.bossIntent || null,
@@ -476,8 +493,69 @@ export default async function handler(req, res) {
       patch.status = "in_progress";
       patch.started_at = new Date().toISOString();
     } else if (action === "confirm_complete") {
-      patch.status = "completed";
-      patch.completed_at = new Date().toISOString();
+      try {
+        const { createOrderCompleteHelpers } = await import("../_order-complete.js");
+        const helpers = createOrderCompleteHelpers({
+          restUrl,
+          supabaseJson,
+          serviceHeaders,
+          addSystemMessage: async (order, actorId, content) => addSystem(order, actorId || admin.id, content),
+        });
+        // Admin may force-complete even without companion apply.
+        if (!helpers.orderHasCompletionPending(before)) {
+          await helpers.markCompletionPending(before);
+          const refreshed = (
+            await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(id)}&limit=1`), {
+              headers: serviceHeaders(),
+            })
+          )?.[0] || before;
+          const out = await helpers.finalizeOrderCompletion(refreshed, {
+            method: "admin_force",
+            actorId: admin.id,
+            message: String(payload.reason || body.reason || "后台确认完成订单"),
+          });
+          return json(res, 200, {
+            ok: true,
+            message: out.message || "订单已完成。",
+            order: safeOrder(out.order || refreshed, await (async () => {
+              const ids = [out.order?.boss_id || refreshed.boss_id, out.order?.companion_id || refreshed.companion_id, out.order?.customer_service_id || refreshed.customer_service_id].filter(Boolean);
+              const rows = ids.length
+                ? await supabaseJson(
+                    restUrl("profiles", `?id=in.(${ids.map(encodeURIComponent).join(",")})&select=id,display_name,email,boss_uid`),
+                    { headers: serviceHeaders() }
+                  ).catch(() => [])
+                : [];
+              return Object.fromEntries((rows || []).map((p) => [p.id, p]));
+            })()),
+            completionMethod: out.completionMethod || "admin_force",
+          });
+        }
+        const out = await helpers.finalizeOrderCompletion(before, {
+          method: "admin_force",
+          actorId: admin.id,
+          message: String(payload.reason || body.reason || "后台确认完成订单"),
+        });
+        return json(res, 200, {
+          ok: true,
+          message: out.message || "订单已完成。",
+          order: safeOrder(out.order || before, {}),
+          completionMethod: out.completionMethod || "admin_force",
+        });
+      } catch (err) {
+        return json(res, err.status || 500, { ok: false, message: err.message || "确认完成失败" });
+      }
+    } else if (action === "freeze_order" || action === "freeze") {
+      const { createOrderCompleteHelpers } = await import("../_order-complete.js");
+      const helpers = createOrderCompleteHelpers({ restUrl, supabaseJson, serviceHeaders, addSystemMessage: async () => {} });
+      await helpers.stampFrozen(before, String(payload.reason || body.reason || "admin_freeze").slice(0, 80));
+      await addSystem(before, admin.id, "后台已冻结订单，暂停自动确认完成。");
+      return json(res, 200, { ok: true, message: "订单已冻结，自动确认已暂停。" });
+    } else if (action === "unfreeze_order" || action === "unfreeze") {
+      const { createOrderCompleteHelpers } = await import("../_order-complete.js");
+      const helpers = createOrderCompleteHelpers({ restUrl, supabaseJson, serviceHeaders, addSystemMessage: async () => {} });
+      await helpers.clearFrozen(before);
+      await addSystem(before, admin.id, "后台已解除订单冻结。");
+      return json(res, 200, { ok: true, message: "已解除冻结。" });
     } else if (action === "cancel") {
       patch.status = "cancelled";
       patch.cancelled_at = new Date().toISOString();
