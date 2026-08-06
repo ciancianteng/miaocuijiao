@@ -14,43 +14,48 @@
     remember: !!(form.elements.remember && form.elements.remember.checked),
   };
 
-  // Already logged in → leave login page (after session restore/refresh).
-  // Only trust MCJServiceAuth.hasSession() — never bounce on a stale token blob alone
-  // (that caused login ↔ dashboard flicker when soft portal keys were missing).
+  // Do NOT auto-redirect away from the login page on load.
+  // Previous ensureSession/hasSession auto-bounce raced with role-gates and
+  // early-gate, producing login ↔ dashboard flicker. Stay on this form until
+  // the user submits a successful login (or an explicit validated session probe).
   var redirected = false;
-  function goDashboardIfLoggedIn() {
-    if (redirected) return true;
-    if (window.__MCJCsLoginRedirecting) return true;
-    var has =
-      window.MCJServiceAuth &&
-      typeof window.MCJServiceAuth.hasSession === "function" &&
-      window.MCJServiceAuth.hasSession();
-    if (has) {
-      redirected = true;
-      window.__MCJCsLoginRedirecting = true;
-      location.replace("/customer-service/dashboard/");
-      return true;
-    }
-    return false;
+  function goDashboardOnce() {
+    if (redirected || window.__MCJCsLoginRedirecting) return;
+    redirected = true;
+    window.__MCJCsLoginRedirecting = true;
+    location.assign("/customer-service/dashboard/");
   }
-  if (window.MCJServiceAuth && typeof window.MCJServiceAuth.ensureSession === "function") {
-    window.MCJServiceAuth.ensureSession()
-      .then(function () {
-        goDashboardIfLoggedIn();
+
+  // Optional soft resume: only leave login if /api/customer-service accepts the token.
+  // Failed/half sessions stay on the form — never hard-replace in a loop.
+  function maybeResumeExistingSession() {
+    if (window.__MCJCsLoginRedirecting || redirected) return;
+    if (!(window.MCJServiceAuth && typeof window.MCJServiceAuth.hasSession === "function")) return;
+    if (!window.MCJServiceAuth.hasSession()) return;
+    var headers =
+      (window.MCJServiceAuth.authHeaders && window.MCJServiceAuth.authHeaders()) || {};
+    fetch("/api/customer-service", {
+      method: "GET",
+      headers: Object.assign({ Accept: "application/json" }, headers),
+      cache: "no-store",
+    })
+      .then(function (res) {
+        return res.json().then(function (body) {
+          return { res: res, body: body || {} };
+        });
+      })
+      .then(function (out) {
+        if (out.res.ok && out.body && out.body.ok !== false) {
+          goDashboardOnce();
+          return;
+        }
+        if (window.MCJServiceAuth.clearSession) window.MCJServiceAuth.clearSession("login_probe_rejected");
       })
       .catch(function () {
-        // Refresh failed / session wiped — stay on login, never force-redirect.
-        try {
-          if (window.MCJServiceAuth && typeof window.MCJServiceAuth.clearSession === "function") {
-            if (!window.MCJServiceAuth.hasSession()) {
-              /* already clear */
-            }
-          }
-        } catch (e) {}
+        if (window.MCJServiceAuth.clearSession) window.MCJServiceAuth.clearSession("login_probe_failed");
       });
-  } else if (goDashboardIfLoggedIn()) {
-    return;
   }
+  maybeResumeExistingSession();
 
   function captureDraft() {
     if (!form) return;
@@ -240,7 +245,7 @@
         if (window.MCJServiceAuth && typeof window.MCJServiceAuth.saveSession === "function" && body && body.session) {
           window.MCJServiceAuth.saveSession(body.session, remember !== false);
         }
-        location.assign("/customer-service/dashboard/");
+        goDashboardOnce();
       })
       .catch(function (err) {
         var msg = (window.MCJRoleGate && window.MCJRoleGate.humanizeAuthError)

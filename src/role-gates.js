@@ -616,10 +616,12 @@
     var p = path();
     if (isAdminLoginPath()) return true;
     if (/\/customer-service\/login/i.test(p)) {
-      // Login page: shared CS auth decides whether to bounce to dashboard after restore.
-      if (window.MCJServiceAuth && typeof window.MCJServiceAuth.guardCustomerServicePages === "function") {
-        window.MCJServiceAuth.guardCustomerServicePages();
-      }
+      // Login page must not enter redirect races. Only reveal; login script owns submit→dashboard.
+      try {
+        document.documentElement.removeAttribute("data-mcj-auth-gate");
+        document.documentElement.style.visibility = "";
+        document.documentElement.setAttribute("data-mcj-service-auth", "ready");
+      } catch (e) {}
       return true;
     }
     if (/\/companion\/login/i.test(p)) return true;

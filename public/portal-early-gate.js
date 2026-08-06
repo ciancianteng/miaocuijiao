@@ -8,7 +8,7 @@
 (function () {
   "use strict";
 
-  var GATE_VERSION = "20260806csLoginFlicker1";
+  var GATE_VERSION = "20260806csLoginFlicker2";
 
   function pathNow() {
     return String(location.pathname || "/").replace(/\\/g, "/");

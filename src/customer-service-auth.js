@@ -475,18 +475,14 @@
     var path = String(location.pathname || "").replace(/\\/g, "/");
     if (!/\/customer-service(\/|$)/i.test(path)) return Promise.resolve(true);
     if (/\/customer-service\/login/i.test(path)) {
-      if (window.__MCJCsLoginRedirecting) return Promise.resolve(false);
-      guardPromise = ensureSession()
+      // Login surface must stay put — never auto-bounce to dashboard here.
+      // (Dual redirects from role-gates + login script caused infinite flicker.)
+      if (window.__MCJCsLoginRedirecting) {
+        revealCsPage();
+        return Promise.resolve(false);
+      }
+      guardPromise = Promise.resolve()
         .then(function () {
-          if (hasSession()) {
-            window.__MCJCsLoginRedirecting = true;
-            location.replace("/customer-service/dashboard/");
-            return false;
-          }
-          revealCsPage();
-          return true;
-        })
-        .catch(function () {
           revealCsPage();
           return true;
         })
