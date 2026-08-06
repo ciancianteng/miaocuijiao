@@ -610,10 +610,10 @@
       var body = { action: "save_payments_public", paymentChannelsPublic: pub };
       var req =
         Auth && Auth.post
-          ? Auth.post("/api/admin/platform-settings", body, { "x-mcj-admin-role": role() })
+          ? Auth.post("/api/admin/platform-settings", body, { "x-mcj-admin-role": adminRole() })
           : fetch("/api/admin/platform-settings", {
               method: "POST",
-              headers: { "Content-Type": "application/json", Accept: "application/json", "x-mcj-admin-role": role() },
+              headers: { "Content-Type": "application/json", Accept: "application/json", "x-mcj-admin-role": adminRole() },
               body: JSON.stringify(body),
             }).then(function (res) {
               return res.json().then(function (j) {
