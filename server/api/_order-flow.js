@@ -185,8 +185,11 @@ export async function enrichGrabCompanions({ restUrl, supabaseJson, serviceHeade
         voice_type: row.voice_type || "",
         game: row.game || "",
         mainGame: row.game || "",
+        gameRank: row.game_rank || row.rank || "",
+        rank: row.game_rank || row.rank || "",
         tags: row.tags || "",
         price: Number(row.price || 0) || 0,
+        unitPrice: Number(row.price || 0) || 0,
         onlineStatus: onlineCode,
         onlineStatusLabel: mapped.availabilityText || onlineCode,
         rating: Number(row.rating || 0) || 0,
@@ -194,6 +197,7 @@ export async function enrichGrabCompanions({ restUrl, supabaseJson, serviceHeade
         voiceUrl: mapped.voiceUrl || row.voice_url || "",
         detailUrl: `/profile.html?player=${encodeURIComponent(cid)}`,
         bossPreferred: false,
+        grabbedAt: g.grabbedAt || g.grabbed_at || "",
         // Keep internal id off ops-facing labels; actions still use companionId.
       },
     };

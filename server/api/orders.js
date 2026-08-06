@@ -1276,6 +1276,32 @@ export default async function handler(req, res) {
       } catch (_) {
         /* chat soft-fail — status already persisted */
       }
+      if (nextStatus === "pending" && !before.companion_id) {
+        try {
+          const { createGrabListingHelpers } = await import("./_order-grab-listings.js");
+          const listingsApi = createGrabListingHelpers({ restUrl, supabaseJson, serviceHeaders });
+          await listingsApi.upsertListing(saved || before, {
+            publishedByCsId: null,
+            reason: usedTestPay ? "boss_test_pay_open_grab" : "boss_pay_open_grab",
+          });
+        } catch (err) {
+          console.warn("[orders/pay_order] upsertListing", err?.message || err);
+        }
+      }
+      if (nextStatus === "claimed" && before.companion_id) {
+        try {
+          const { notifyCompanionOrderAssigned } = await import("./_companion-order-notify.js");
+          await Promise.race([
+            notifyCompanionOrderAssigned(saved || { ...before, status: "claimed" }, {
+              eventType: "assign",
+              email: "",
+            }).catch((err) => console.warn("[orders/pay_order] companion notify", err?.message || err)),
+            new Promise((resolve) => setTimeout(resolve, 3500)),
+          ]);
+        } catch (err) {
+          console.warn("[orders/pay_order] companion notify import", err?.message || err);
+        }
+      }
       let reward = null;
       try {
         reward = await (await import("./_cs-commission-settle.js")).settleCsOrderIncome(saved, {
@@ -1302,46 +1328,29 @@ export default async function handler(req, res) {
       const before = Array.isArray(beforeRows) ? beforeRows[0] : null;
       if (!before) return json(res, 404, { ok: false, message: "订单不存在。" });
       const { createOrderGrabHelpers } = await import("./_order-grabs.js");
+      const { enrichGrabCompanions, parseBossIntent } = await import("./_order-flow.js");
       const grabsApi = createOrderGrabHelpers({ restUrl, supabaseJson, serviceHeaders });
       const grabs = await grabsApi.listGrabs(before.id, before.note || before.description || "");
-      const companionIds = [...new Set(grabs.map((g) => g.companionId).filter(Boolean))];
-      let companions = [];
-      if (companionIds.length) {
-        const profiles = await supabaseJson(
-          restUrl("profiles", `?id=in.(${companionIds.map(encodeURIComponent).join(",")})&select=id,display_name,email,avatar_url`),
-          { headers: serviceHeaders() }
-        ).catch(() => []);
-        const cps = await supabaseJson(
-          restUrl("companion_profiles", `?user_id=in.(${companionIds.map(encodeURIComponent).join(",")})`),
-          { headers: serviceHeaders() }
-        ).catch(() => []);
-        const pMap = Object.fromEntries((profiles || []).map((p) => [p.id, p]));
-        const cMap = Object.fromEntries((cps || []).map((c) => [c.user_id, c]));
-        companions = companionIds.map((cid) => {
-          const p = pMap[cid] || {};
-          const c = cMap[cid] || {};
-          return {
-            id: cid,
-            nickname: c.nickname || p.display_name || p.email || "陪玩",
-            avatarUrl: c.avatar_url || p.avatar_url || "",
-            level: c.level_name || "",
-            onlineStatus: c.online_status || "offline",
-            price: money(c.price),
-            tags: c.tags || c.tag_list || "",
-            mainGame: c.game || c.main_game || "",
-            rating: money(c.rating || c.score || 0),
-            completedOrders: Number(c.completed_orders || c.order_count || 0) || 0,
-            voiceUrl: c.voice_url || c.voice_sample_url || "",
-          };
-        });
-      }
+      const intent = parseBossIntent(before);
+      const enriched = await enrichGrabCompanions({ restUrl, supabaseJson, serviceHeaders }, grabs);
+      const marked = enriched.map((g) => ({
+        ...g,
+        bossPreferred: !!(intent && intent.companionId === g.companionId),
+        companion: g.companion
+          ? { ...g.companion, bossPreferred: !!(intent && intent.companionId === g.companionId) }
+          : null,
+      }));
       return json(res, 200, {
         ok: true,
-        grabs: grabs.map((g) => ({
-          ...g,
-          companion: companions.find((c) => c.id === g.companionId) || null,
-        })),
-        order: viewOrder(before),
+        grabCount: marked.length,
+        bossIntent: intent,
+        grabs: marked,
+        order: viewOrder({
+          ...before,
+          grabs: marked,
+          grabCount: marked.length,
+          bossIntent: intent,
+        }),
       });
     }
     if (action === "confirm_companion" || action === "select_grabber" || action === "set_boss_intent" || action === "want_him" || action === "select_and_bind") {
@@ -1377,14 +1386,13 @@ export default async function handler(req, res) {
       if (!grabs.length) {
         return json(res, 409, { ok: false, message: "暂无陪玩抢单，请等待陪玩申请后再选择。" });
       }
-      // Unified lock: boss pick binds immediately → waiting companion confirm (claimed).
-      // Opt-out only with explicit intentOnly (legacy); never the default.
-      const intentOnly =
-        body.intentOnly === true ||
-        body.intent_only === true ||
-        body.intentOnly === "true" ||
-        String(body.mode || "").toLowerCase() === "intent";
-      const bindNow = !intentOnly;
+      // Product path: boss 「我要她」= intent only → CS 「确认指定」 locks companion.
+      // Only explicit select_and_bind may still bind immediately (legacy escape hatch).
+      const bindNow =
+        action === "select_and_bind" &&
+        body.intentOnly !== true &&
+        body.intent_only !== true &&
+        String(body.mode || "").toLowerCase() !== "intent";
       const enriched = await enrichGrabCompanions({ restUrl, supabaseJson, serviceHeaders }, grabs);
       const pick = enriched.find((g) => g.companionId === selectedId);
       const pickName = pick?.companion?.nickname || "陪玩";

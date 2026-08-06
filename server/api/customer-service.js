@@ -3612,12 +3612,21 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         const { clearBossIntent, parseBossIntent, patchOrderNoteField } = await import("./_order-flow.js");
         const grabsApi = createOrderGrabHelpers({ restUrl, supabaseJson, serviceHeaders });
         const grabs = await grabsApi.listGrabs(order.id, order.note || order.description || "");
+        const isPublicHall = ["pending", "waiting_boss_confirm"].includes(order.status) && !String(order.companion_id || "").trim();
         const fromGrabs =
           body.from_grabs === true ||
           body.fromGrabs === true ||
           action === "confirm_grab_assignment" ||
-          ["pending", "waiting_boss_confirm"].includes(order.status);
-        if (fromGrabs && grabs.length) {
+          isPublicHall;
+        // Public grab hall: CS may only confirm from grab applicants (never free-pick any companion).
+        if (isPublicHall || fromGrabs) {
+          if (!grabs.length) {
+            return json(res, 409, {
+              ok: false,
+              code: "NO_GRABBERS",
+              message: "暂无陪玩抢单。请等待陪玩抢单后，再由老板提交意向并确认指定。",
+            });
+          }
           const hit = grabs.find((g) => g.companionId === companionId);
           if (!hit) {
             return json(res, 409, { ok: false, message: "只能从已抢单陪玩中指定。请先查看抢单人列表。" });

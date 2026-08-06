@@ -482,7 +482,7 @@
         esc(companionCard.orderId || "") +
         '" data-companion-id="' +
         esc(companionCard.companionId || "") +
-        '">我要他</button>' +
+        '">我要她</button>' +
         "</div><small>" +
         esc(shortTime(m.created_at || "")) +
         "</small></div></div></div>"
@@ -1535,7 +1535,7 @@
         alert('缺少订单或陪玩信息');
         return;
       }
-      if (!confirm('确认选择该陪玩？系统将立即派单，订单进入等待陪玩确认。')) return;
+      if (!confirm('确认选择该陪玩？将提交「我要她」意向，请客服确认指定后才会正式派单。')) return;
       want.disabled = true;
       var prev = want.textContent;
       want.textContent = '处理中…';
@@ -1549,7 +1549,7 @@
           'Content-Type': 'application/json',
           Authorization: 'Bearer ' + token,
         },
-        body: JSON.stringify({ action: 'want_him', id: oid, companion_id: cid, bind: true }),
+        body: JSON.stringify({ action: 'want_him', id: oid, companion_id: cid, intentOnly: true }),
       })
         .then(function (res) {
           return res.json().then(function (body) {
@@ -1558,12 +1558,12 @@
         })
         .then(function (x) {
           if (!x.res.ok || x.body.ok === false) throw new Error(x.body.message || '选择失败');
-          alert(x.body.message || '已选择陪玩，等待陪玩确认。');
-          want.textContent = '已选择';
+          alert(x.body.message || '已提交意向，等待客服确认指定。');
+          want.textContent = '已提交意向';
         })
         .catch(function (err) {
           want.disabled = false;
-          want.textContent = prev || '我要他';
+          want.textContent = prev || '我要她';
           alert(err.message || '选择失败');
         });
       return;

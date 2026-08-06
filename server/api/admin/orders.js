@@ -462,17 +462,23 @@ export default async function handler(req, res) {
         });
       }
       const fromGrabs = body.from_grabs === true || body.fromGrabs === true || action === "confirm_grab_assignment";
-      // Admin may confirm from grab list even on waiting_boss_confirm (ops override).
+      // Public grab hall: admin may only confirm from grab applicants (same as CS).
       {
         const { createOrderGrabHelpers } = await import("../_order-grabs.js");
         const grabsApi = createOrderGrabHelpers({ restUrl, supabaseJson, serviceHeaders });
         const grabs = await grabsApi.listGrabs(before.id, before.note || before.description || "");
-        if (fromGrabs || grabs.length) {
-          if (grabs.length) {
-            const hit = grabs.find((g) => g.companionId === companionId);
-            if (!hit && fromGrabs) return json(res, 409, { ok: false, message: "只能从已抢单陪玩中指定。" });
-            if (hit) await grabsApi.finalizeGrabSelection(before, companionId);
+        const isPublicHall =
+          ["pending", "waiting_boss_confirm"].includes(before.status) && !String(before.companion_id || "").trim();
+        if (isPublicHall || fromGrabs) {
+          if (!grabs.length) {
+            return json(res, 409, { ok: false, message: "暂无陪玩抢单，不能直接指定。请等待抢单或走 VIP 指定下单。" });
           }
+          const hit = grabs.find((g) => g.companionId === companionId);
+          if (!hit) return json(res, 409, { ok: false, message: "只能从已抢单陪玩中指定。" });
+          await grabsApi.finalizeGrabSelection(before, companionId);
+        } else if (grabs.length) {
+          const hit = grabs.find((g) => g.companionId === companionId);
+          if (hit) await grabsApi.finalizeGrabSelection(before, companionId);
         }
       }
       patch.companion_id = companionId;
