@@ -2,7 +2,7 @@
   "crons": [
     {
       "path": "/api/cron/order-auto-complete",
-      "schedule": "*/15 * * * *"
+      "schedule": "0 4 * * *"
     }
   ],
   "rewrites": [
