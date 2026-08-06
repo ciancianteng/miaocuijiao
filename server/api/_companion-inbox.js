@@ -190,22 +190,25 @@ export async function loadCompanionNotifications(companionUserId) {
     ),
     { headers: serviceHeaders() }
   ).catch(() => []);
-  return (Array.isArray(rows) ? rows : []).map((row) => {
-    const key = String(row.notice_key || row.id || "");
-    const category = String(row.category || "system");
-    return {
-      id: key,
-      key,
-      dbId: row.id || "",
-      category,
-      categoryLabel: CATEGORY_LABEL_CN[category] || "系统通知",
-      title: row.title || "系统通知",
-      body: row.body || "",
-      at: row.created_at || "",
-      href: row.href || "/companion/account",
-      fromDb: true,
-    };
-  });
+  return (Array.isArray(rows) ? rows : [])
+    .map((row) => {
+      const key = String(row.notice_key || row.id || "");
+      const category = String(row.category || "system");
+      if (category === "email_log") return null;
+      return {
+        id: key,
+        key,
+        dbId: row.id || "",
+        category,
+        categoryLabel: CATEGORY_LABEL_CN[category] || "系统通知",
+        title: row.title || "系统通知",
+        body: row.body || "",
+        at: row.created_at || "",
+        href: row.href || "/companion/account",
+        fromDb: true,
+      };
+    })
+    .filter(Boolean);
 }
 
 /** Derived notices from live order/withdraw rows. Audit notices come from companion_notifications. */

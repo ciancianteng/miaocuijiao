@@ -113,16 +113,82 @@ async function findEmailLogByKey(notificationKey) {
       { headers: serviceHeaders() }
     );
     if (byNotice?.[0]) return byNotice[0];
-  } catch {
-    /* ignore */
+  } catch (err) {
+    if (/Could not find the table|schema cache|PGRST/i.test(String(err?.message || err || ""))) {
+      // fall through to notifications fallback
+    } else {
+      /* ignore other */
+    }
   }
   try {
     const byNotif = await supabaseJson(
       restUrl("companion_notification_emails", `?notification_key=eq.${encodeURIComponent(key)}&select=*&limit=1`),
       { headers: serviceHeaders() }
     );
-    return byNotif?.[0] || null;
+    if (byNotif?.[0]) return byNotif[0];
   } catch {
+    /* ignore */
+  }
+  try {
+    const fallback = await supabaseJson(
+      restUrl(
+        "companion_notifications",
+        `?notice_key=eq.${encodeURIComponent(key)}&category=eq.email_log&select=*&limit=1`
+      ),
+      { headers: serviceHeaders() }
+    );
+    if (fallback?.[0]) {
+      let meta = {};
+      try {
+        meta = JSON.parse(fallback[0].body || "{}");
+      } catch {
+        meta = {};
+      }
+      return {
+        id: fallback[0].id,
+        notice_key: key,
+        notification_key: key,
+        email_status: meta.emailStatus || "email_pending",
+        detail: meta.detail || "",
+        email: meta.email || "",
+        retry_count: Number(meta.retryCount || 0) || 0,
+        _fallback: true,
+        _fallbackRow: fallback[0],
+        _meta: meta,
+      };
+    }
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
+async function persistEmailLogFallback(row) {
+  const notificationKey = row.notificationKey;
+  const body = JSON.stringify({
+    email: row.email || "",
+    subject: row.subject || "",
+    emailStatus: row.emailStatus || "email_pending",
+    detail: row.detail || "",
+    mailType: row.mailType || "assign",
+    orderId: row.orderId || "",
+    orderNo: row.orderNo || "",
+    retryCount: Number(row.retryCount || 0) || 0,
+    sentAt: row.emailStatus === "sent" ? nowIso() : "",
+  });
+  try {
+    await insertCompanionNotification({
+      companionUserId: row.companionId,
+      category: "email_log",
+      title: row.subject || "邮件通知记录",
+      body,
+      href: "/companion/orders",
+      noticeKey: notificationKey,
+      notificationType: "email_log",
+    });
+    return { id: notificationKey, notice_key: notificationKey, _fallback: true };
+  } catch (err) {
+    console.warn("[companion-order-notify] fallback email log failed", err?.message || err);
     return null;
   }
 }
@@ -154,36 +220,38 @@ async function persistEmailLog(row) {
     });
     return created?.[0] || payload;
   } catch (err) {
-    // Columns may be missing before migration — fall back to lean row.
-    if (/column|PGRST204|schema cache/i.test(String(err?.message || err || ""))) {
-      try {
-        const lean = {
-          companion_id: payload.companion_id,
-          notice_key: payload.notice_key,
-          email: payload.email,
-          subject: payload.subject,
-          body: payload.body,
-          email_status: payload.email_status,
-          detail: payload.detail,
-          created_at: payload.created_at,
-        };
-        await supabaseJson(restUrl("companion_notification_emails", ""), {
-          method: "POST",
-          headers: serviceHeaders({ Prefer: "resolution=ignore-duplicates,return=representation" }),
-          body: JSON.stringify(lean),
-        });
-        return lean;
-      } catch (err2) {
-        console.warn("[companion-order-notify] persist email log failed", err2?.message || err2);
-        return null;
+    const msg = String(err?.message || err || "");
+    if (/Could not find the table|schema cache|PGRST205/i.test(msg) || /column|PGRST204/i.test(msg)) {
+      // Columns may be missing before migration — try lean row, then notifications fallback.
+      if (!/Could not find the table|PGRST205/i.test(msg)) {
+        try {
+          const lean = {
+            companion_id: payload.companion_id,
+            notice_key: payload.notice_key,
+            email: payload.email,
+            subject: payload.subject,
+            body: payload.body,
+            email_status: payload.email_status,
+            detail: payload.detail,
+            created_at: payload.created_at,
+          };
+          const created = await supabaseJson(restUrl("companion_notification_emails", ""), {
+            method: "POST",
+            headers: serviceHeaders({ Prefer: "resolution=ignore-duplicates,return=representation" }),
+            body: JSON.stringify(lean),
+          });
+          return created?.[0] || lean;
+        } catch {
+          /* fall through */
+        }
       }
+      return persistEmailLogFallback(row);
     }
-    // Unique violation = already logged (idempotent).
-    if (/duplicate|unique|23505/i.test(String(err?.message || err || ""))) {
+    if (/duplicate|unique|23505/i.test(msg)) {
       return findEmailLogByKey(row.notificationKey);
     }
-    console.warn("[companion-order-notify] persist email log failed", err?.message || err);
-    return null;
+    console.warn("[companion-order-notify] persist email log failed", msg);
+    return persistEmailLogFallback(row);
   }
 }
 
@@ -195,6 +263,30 @@ async function patchEmailLog(id, patch) {
       headers: serviceHeaders(),
       body: JSON.stringify({ ...patch, last_attempt_at: nowIso() }),
     });
+    return;
+  } catch {
+    /* try fallback notice_key patch */
+  }
+  try {
+    const existing = await findEmailLogByKey(String(id));
+    const meta = {
+      ...(existing?._meta || {}),
+      emailStatus: patch.email_status || existing?._meta?.emailStatus,
+      detail: patch.detail || existing?._meta?.detail || "",
+      retryCount: patch.retry_count != null ? patch.retry_count : existing?._meta?.retryCount || 0,
+      email: patch.email || existing?._meta?.email || "",
+      subject: patch.subject || existing?._meta?.subject || "",
+      sentAt: patch.sent_at || (patch.email_status === "sent" ? nowIso() : existing?._meta?.sentAt || ""),
+    };
+    const key = existing?.notice_key || String(id);
+    await supabaseJson(
+      restUrl("companion_notifications", `?notice_key=eq.${encodeURIComponent(key)}&category=eq.email_log`),
+      {
+        method: "PATCH",
+        headers: serviceHeaders(),
+        body: JSON.stringify({ body: JSON.stringify(meta), title: meta.subject || "邮件通知记录" }),
+      }
+    );
   } catch {
     /* optional */
   }
@@ -647,24 +739,67 @@ export async function listCompanionNotificationEmails({ limit = 100, status = ""
   const lim = Math.min(200, Math.max(1, Number(limit) || 100));
   let q = `?select=*&order=created_at.desc&limit=${lim}`;
   if (status) q = `?email_status=eq.${encodeURIComponent(status)}&select=*&order=created_at.desc&limit=${lim}`;
-  const rows = await supabaseJson(restUrl("companion_notification_emails", q), { headers: serviceHeaders() });
-  return (rows || []).map((row) => ({
-    id: row.id,
-    recipient: row.email || "",
-    orderNo: row.order_no || "",
-    orderId: row.order_id || "",
-    mailType: row.mail_type || MAIL_TYPE_LABEL[String(row.notice_key || "").split(":")[2]] || "generic",
-    mailTypeLabel: MAIL_TYPE_LABEL[row.mail_type] || MAIL_TYPE_LABEL[String(row.notice_key || "").split(":")[2]] || row.mail_type || "通知",
-    notificationKey: row.notification_key || row.notice_key || "",
-    createdAt: row.created_at || "",
-    sentAt: row.sent_at || "",
-    status: row.email_status || "",
-    success: String(row.email_status || "") === "sent",
-    failReason: String(row.email_status || "") === "sent" ? "" : row.detail || "",
-    retryCount: Number(row.retry_count || 0) || 0,
-    subject: row.subject || "",
-    companionId: row.companion_id || "",
-  }));
+  try {
+    const rows = await supabaseJson(restUrl("companion_notification_emails", q), { headers: serviceHeaders() });
+    return (rows || []).map((row) => ({
+      id: row.id,
+      recipient: row.email || "",
+      orderNo: row.order_no || "",
+      orderId: row.order_id || "",
+      mailType: row.mail_type || MAIL_TYPE_LABEL[String(row.notice_key || "").split(":")[2]] || "generic",
+      mailTypeLabel: MAIL_TYPE_LABEL[row.mail_type] || MAIL_TYPE_LABEL[String(row.notice_key || "").split(":")[2]] || row.mail_type || "通知",
+      notificationKey: row.notification_key || row.notice_key || "",
+      createdAt: row.created_at || "",
+      sentAt: row.sent_at || "",
+      status: row.email_status || "",
+      success: String(row.email_status || "") === "sent",
+      failReason: String(row.email_status || "") === "sent" ? "" : row.detail || "",
+      retryCount: Number(row.retry_count || 0) || 0,
+      subject: row.subject || "",
+      companionId: row.companion_id || "",
+      source: "email_table",
+    }));
+  } catch (err) {
+    // Table may be missing before migration — fall back to companion_notifications mail_log rows.
+    console.warn("[companion-order-notify] email table list fallback", err?.message || err);
+    try {
+      const notices = await supabaseJson(
+        restUrl(
+          "companion_notifications",
+          `?category=eq.email_log&order=created_at.desc&limit=${lim}`
+        ),
+        { headers: serviceHeaders() }
+      );
+      return (notices || []).map((row) => {
+        let meta = {};
+        try {
+          meta = JSON.parse(row.body || "{}");
+        } catch {
+          meta = { detail: row.body || "" };
+        }
+        return {
+          id: row.id || row.notice_key,
+          recipient: meta.email || "",
+          orderNo: meta.orderNo || "",
+          orderId: meta.orderId || "",
+          mailType: meta.mailType || "generic",
+          mailTypeLabel: MAIL_TYPE_LABEL[meta.mailType] || meta.mailType || "通知",
+          notificationKey: row.notice_key || "",
+          createdAt: row.created_at || "",
+          sentAt: meta.sentAt || "",
+          status: meta.emailStatus || "",
+          success: String(meta.emailStatus || "") === "sent",
+          failReason: String(meta.emailStatus || "") === "sent" ? "" : meta.detail || "",
+          retryCount: Number(meta.retryCount || 0) || 0,
+          subject: meta.subject || row.title || "",
+          companionId: row.companion_id || "",
+          source: "notifications_fallback",
+        };
+      });
+    } catch {
+      return [];
+    }
+  }
 }
 
 export { buildNotificationKey, MAIL_TYPE_LABEL };

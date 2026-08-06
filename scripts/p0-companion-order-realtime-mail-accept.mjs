@@ -24,7 +24,7 @@ async function api(path, token, body, method = "POST") {
       Accept: "application/json",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
-    body: body == null ? undefined : JSON.stringify(body),
+    body: method === "GET" || method === "HEAD" || body == null ? undefined : JSON.stringify(body),
   });
   const json = await res.json().catch(() => ({}));
   return { res, json };
