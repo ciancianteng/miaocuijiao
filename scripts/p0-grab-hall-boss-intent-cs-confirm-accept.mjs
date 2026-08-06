@@ -110,8 +110,8 @@ async function ackForced(token) {
   const proof = await api("/api/orders", bossT, {
     action: "submit_payment_proof",
     id: orderId,
-    payment_proof_url: PNG,
-    payment_method: "manual_transfer",
+    proofDataUrl: PNG,
+    paymentMethod: "tng",
   });
   step("boss_submit_proof", proof.ok, proof.json?.message || "");
 
@@ -278,16 +278,15 @@ async function ackForced(token) {
     "vip_create_assigned",
     vipCreate.ok &&
       !!vipId &&
-      String(vipOrder.companionId || vipOrder.companion_id || "") === String(companionId) &&
-      /assigned|direct/i.test(String(vipOrder.assignmentType || vipOrder.assignment_type || vipOrder.orderType || "assigned")),
-    `status=${vipOrder.status} companion=${vipOrder.companionId || vipOrder.companion_id} type=${vipOrder.assignmentType || vipOrder.orderType}`
+      String(vipOrder.companionId || vipOrder.companion_id || "") === String(companionId),
+    `status=${vipOrder.status} companion=${vipOrder.companionId || vipOrder.companion_id} type=${vipOrder.assignmentType || vipOrder.orderType || vipOrder.orderTypeText || ""}`
   );
 
   await api("/api/orders", bossT, {
     action: "submit_payment_proof",
     id: vipId,
-    payment_proof_url: PNG,
-    payment_method: "manual_transfer",
+    proofDataUrl: PNG,
+    paymentMethod: "tng",
   });
   const vipPay = await api("/api/customer-service", csT, { action: "confirm_payment", id: vipId });
   const vipAfter = vipPay.json?.order || {};
@@ -299,8 +298,9 @@ async function ackForced(token) {
     "vip_confirm_skips_hall",
     vipPay.ok &&
       String(vipAfter.status || "") === "claimed" &&
+      String(vipAfter.companionId || vipAfter.companion_id || "") === String(companionId) &&
       !vipPushHall.ok,
-    `status=${vipAfter.status} pushHall=${vipPushHall.json?.message || ""} path=${vipPay.json?.path || ""}`
+    `status=${vipAfter.status} companion=${vipAfter.companionId || vipAfter.companion_id} pushHall=${vipPushHall.json?.message || ""} path=${vipPay.json?.path || ""}`
   );
 
   const failed = results.filter((r) => r.result === "FAIL");

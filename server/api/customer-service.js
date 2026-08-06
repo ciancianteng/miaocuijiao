@@ -3602,6 +3602,23 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         }
       }
       const companionId = companion.id;
+      // Public unpaid orders must go through grab hall after payment — CS cannot convert them into VIP assigned here.
+      {
+        const st = String(order.status || "");
+        const assignment = String(order.assignment_type || order.assignmentType || "").toLowerCase();
+        const alreadyAssigned =
+          !!String(order.companion_id || "").trim() ||
+          assignment === "assigned" ||
+          assignment === "direct" ||
+          assignment === "direct_companion";
+        if (st === "awaiting_payment" && !alreadyAssigned) {
+          return json(res, 409, {
+            ok: false,
+            code: "USE_GRAB_HALL",
+            message: "公开抢单订单请先确认收款并发布到抢单大厅；VIP 指定请在下单时选择陪玩。",
+          });
+        }
+      }
       const lockKey = `${order.id}:${companionId}`;
       if (ASSIGN_LOCKS.get(lockKey) && Date.now() - ASSIGN_LOCKS.get(lockKey) < 8000) {
         return json(res, 409, { ok: false, message: "指定请求处理中，请勿重复点击。" });
