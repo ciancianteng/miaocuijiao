@@ -210,6 +210,137 @@ async function writePlatformBanks(banks = []) {
   return banks;
 }
 
+const PLATFORM_PAYMENT_BUCKET = "platform-payment";
+
+async function syncChannelQrToPlatformSettings(channelId, qrUrl, extras = {}) {
+  const rows = await supabaseFetch("platform_settings", "?id=eq.global&select=id,data&limit=1").catch(() => []);
+  const current = Array.isArray(rows) ? rows[0] : null;
+  const data = current?.data && typeof current.data === "object" ? { ...current.data } : {};
+  const publicMap =
+    data.paymentChannelsPublic && typeof data.paymentChannelsPublic === "object"
+      ? { ...data.paymentChannelsPublic }
+      : {};
+  const prev = publicMap[channelId] && typeof publicMap[channelId] === "object" ? publicMap[channelId] : {};
+  publicMap[channelId] = {
+    ...prev,
+    ...extras,
+    qrUrl: String(qrUrl || "").trim(),
+  };
+  data.paymentChannelsPublic = publicMap;
+  const payload = { id: "global", data, updated_at: new Date().toISOString() };
+  if (current?.id) {
+    await supabaseFetch("platform_settings", `?id=eq.${encodeURIComponent(current.id)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ data: payload.data, updated_at: payload.updated_at }),
+    });
+  } else {
+    await supabaseFetch("platform_settings", "", {
+      method: "POST",
+      headers: { Prefer: "resolution=merge-duplicates,return=representation" },
+      body: JSON.stringify([payload]),
+    });
+  }
+  return publicMap[channelId];
+}
+
+async function uploadPlatformPayQrImage(dataUrl, channelId) {
+  const {
+    decodeDataUrl,
+    assertImageUpload,
+    ensurePublicBucket,
+    publicObjectUrl,
+  } = await import("../_companion-media-store.js");
+  const decoded = assertImageUpload(decodeDataUrl(dataUrl));
+  await ensurePublicBucket(PLATFORM_PAYMENT_BUCKET, ["image/jpeg", "image/png", "image/webp"]);
+  const mime = String(decoded.contentType || "image/png").toLowerCase();
+  const ext = mime.includes("webp") ? "webp" : mime.includes("png") ? "png" : "jpg";
+  const safeId = String(channelId || "duitnow")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "duitnow";
+  // Fixed path so re-upload overwrites the previous QR for this channel.
+  const objectPath = `qr/${safeId}.${ext}`;
+  const response = await fetch(
+    `${process.env.SUPABASE_URL}/storage/v1/object/${PLATFORM_PAYMENT_BUCKET}/${objectPath}`,
+    {
+      method: "POST",
+      headers: {
+        apikey: process.env.SUPABASE_SERVICE_ROLE_KEY,
+        Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+        "Content-Type": decoded.contentType || "image/png",
+        "x-upsert": "true",
+      },
+      body: decoded.buffer,
+    }
+  );
+  if (!response.ok) {
+    const text = await response.text();
+    throw Object.assign(new Error(`二维码上传失败：${text || response.status}`), { status: 502 });
+  }
+  // Cache-bust so payment page refreshes immediately after overwrite.
+  const base = publicObjectUrl(PLATFORM_PAYMENT_BUCKET, objectPath);
+  return `${base}${base.includes("?") ? "&" : "?"}v=${Date.now()}`;
+}
+
+async function persistChannelQrUrl(channelId, qrUrl) {
+  const tpl = channelTemplate(channelId);
+  let existing = null;
+  try {
+    const rows = await supabaseFetch(
+      TABLES.channels,
+      `?channel_id=eq.${encodeURIComponent(tpl.id)}&select=*&limit=1`
+    );
+    existing = Array.isArray(rows) ? rows[0] : null;
+  } catch (error) {
+    if (!isMissingTable(error)) throw error;
+  }
+  const prevData = existing?.data && typeof existing.data === "object" ? existing.data : {};
+  const prevManual = prevData.manual && typeof prevData.manual === "object" ? prevData.manual : {};
+  const nextData = {
+    ...prevData,
+    qrUrl,
+    manual: { ...prevManual, qrUrl },
+  };
+  const row = {
+    id: tpl.id,
+    channel_id: tpl.id,
+    name: existing?.name || tpl.name,
+    icon: existing?.icon || tpl.icon,
+    payment_type: existing?.payment_type || tpl.paymentType,
+    category: existing?.category || tpl.category,
+    currencies: existing?.currencies || tpl.currencies,
+    mode: existing?.mode === "live" ? "live" : "test",
+    enabled: existing ? existing.enabled !== false : true,
+    visible: existing ? existing.visible !== false : true,
+    sort: existing?.sort != null ? Number(existing.sort) : CHANNELS.findIndex((c) => c.id === tpl.id) + 1,
+    data: nextData,
+    config_status: existing?.config_status || "已配置",
+    updated_at: new Date().toISOString(),
+  };
+  try {
+    await upsert(TABLES.channels, channelDbRow(row));
+  } catch (error) {
+    if (isMissingTable(error)) {
+      // Fall back to platform_settings only.
+      await syncChannelQrToPlatformSettings(tpl.id, qrUrl, {
+        enabled: true,
+        publicLabel: tpl.name,
+      });
+      return { channel: null, qrUrl, source: "platform_settings" };
+    }
+    throw error;
+  }
+  await syncChannelQrToPlatformSettings(tpl.id, qrUrl, {
+    enabled: row.enabled !== false,
+    publicLabel: nextData.publicLabel || tpl.name,
+    bankName: nextData.manual?.bankName || "",
+    accountName: nextData.manual?.receiverName || "",
+    duitnowId: nextData.manual?.duitnowId || "",
+  });
+  return { channel: row, qrUrl, source: "payment_channels" };
+}
+
 async function upsert(table, rows, onConflict = "id") {
   return supabaseFetch(table, `?on_conflict=${encodeURIComponent(onConflict)}`, {
     method: "POST",
@@ -619,6 +750,28 @@ async function handler(req, res) {
     const body = await readBody(req);
     const action = String(body.action || "");
 
+    if (action === "upload_qr" || action === "upload_pay_qr") {
+      const channelId = String(body.channelId || body.channel_id || body.id || "duitnow").trim() || "duitnow";
+      const dataUrl = String(body.dataUrl || body.data_url || body.imageData || body.fileDataUrl || "").trim();
+      if (!dataUrl) return json(res, 400, { ok: false, message: "请先选择二维码图片（PNG / JPG / WEBP）。" });
+      let qrUrl = "";
+      try {
+        qrUrl = await uploadPlatformPayQrImage(dataUrl, channelId);
+      } catch (err) {
+        return json(res, err.status || 400, { ok: false, message: err.message || "二维码上传失败" });
+      }
+      const saved = await persistChannelQrUrl(channelId, qrUrl);
+      await writeLog(req, "upload_qr", channelId, null, { qrUrl, source: saved.source });
+      return json(res, 200, {
+        ok: true,
+        message: "二维码已上传并写入支付配置",
+        channelId,
+        qrUrl,
+        source: saved.source,
+        channel: saved.channel,
+      });
+    }
+
     if (action === "save_channel") {
       const input = body.channel || {};
       const tpl = channelTemplate(input.channel_id || input.id);
@@ -631,6 +784,27 @@ async function handler(req, res) {
         if (value) mergedCreds[key] = value;
       });
       const credentialKeys = safeKeys(mergedCreds);
+      const incomingData = input.data && typeof input.data === "object" ? input.data : {};
+      const incomingManual =
+        incomingData.manual && typeof incomingData.manual === "object" ? incomingData.manual : {};
+      // Preserve existing QR URL when admin leaves upload field empty (no more manual https paste).
+      let existingQr = "";
+      try {
+        const prevRows = await supabaseFetch(
+          TABLES.channels,
+          `?channel_id=eq.${encodeURIComponent(tpl.id)}&select=data&limit=1`
+        );
+        const prev = Array.isArray(prevRows) ? prevRows[0] : null;
+        existingQr = String(prev?.data?.manual?.qrUrl || prev?.data?.qrUrl || "").trim();
+      } catch {
+        existingQr = "";
+      }
+      const qrUrl = String(incomingManual.qrUrl || incomingData.qrUrl || "").trim() || existingQr;
+      const data = {
+        ...incomingData,
+        qrUrl,
+        manual: { ...incomingManual, qrUrl },
+      };
       const channel = {
         id: tpl.id,
         channel_id: tpl.id,
@@ -643,7 +817,7 @@ async function handler(req, res) {
         enabled: Boolean(input.enabled),
         visible: Boolean(input.visible ?? input.enabled),
         sort: Number(input.sort || CHANNELS.findIndex((c) => c.id === tpl.id) + 1),
-        data: input.data || {},
+        data,
         updated_at: new Date().toISOString(),
       };
       channel.config_status = computeStatus(channel, credentialKeys);
@@ -670,6 +844,19 @@ async function handler(req, res) {
         });
       }
       await syncPaymentMethod(channel, mergedCreds);
+      if (qrUrl) {
+        try {
+          await syncChannelQrToPlatformSettings(tpl.id, qrUrl, {
+            enabled: channel.enabled !== false,
+            publicLabel: data.publicLabel || channel.name,
+            bankName: data.manual?.bankName || "",
+            accountName: data.manual?.receiverName || "",
+            duitnowId: data.manual?.duitnowId || "",
+          });
+        } catch {
+          /* soft-fail public mirror */
+        }
+      }
       await writeLog(req, "save_channel", tpl.id, null, { ...channel, credentials: credentialKeys });
       return json(res, 200, { ok: true, message: "支付渠道配置已保存", channel: rows?.[0] || channel });
     }
