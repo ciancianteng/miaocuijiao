@@ -73,9 +73,9 @@ async function api(path, token, body, method = "POST") {
   const duitnow = (settings.json?.channels || []).find((c) => (c.channel_id || c.id) === "duitnow") || {};
   const savedQr = String(duitnow?.data?.manual?.qrUrl || duitnow?.data?.qrUrl || "").trim();
   step(
-    "channel_db_has_qr",
+    "channel_config_has_qr",
     settings.ok && /^https?:\/\//i.test(savedQr),
-    `saved=${savedQr.slice(0, 120)}`
+    `saved=${savedQr.slice(0, 120)} fallbackMsg=${settings.json?.message || ""}`
   );
 
   // UI source should not require manual https input label

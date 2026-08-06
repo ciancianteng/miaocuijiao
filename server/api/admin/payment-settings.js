@@ -402,6 +402,46 @@ function mergeChannels(rows = [], credentials = []) {
   });
 }
 
+async function readPaymentChannelsPublic() {
+  try {
+    const rows = await supabaseFetch("platform_settings", "?id=eq.global&select=id,data&limit=1");
+    const data = Array.isArray(rows) ? rows[0]?.data : rows?.data;
+    const map = data?.paymentChannelsPublic;
+    return map && typeof map === "object" ? map : {};
+  } catch {
+    return {};
+  }
+}
+
+/** Overlay QR / manual fields from platform_settings when payment_channels table is incomplete. */
+function applyPublicPayOverlay(channels = [], publicMap = {}) {
+  return (channels || []).map((ch) => {
+    const id = ch.channel_id || ch.id;
+    const pub = publicMap[id];
+    if (!pub || typeof pub !== "object") return ch;
+    const data = ch.data && typeof ch.data === "object" ? { ...ch.data } : {};
+    const manual = data.manual && typeof data.manual === "object" ? { ...data.manual } : {};
+    const qrUrl = String(manual.qrUrl || data.qrUrl || pub.qrUrl || "").trim();
+    if (qrUrl) {
+      manual.qrUrl = qrUrl;
+      data.qrUrl = qrUrl;
+    }
+    if (pub.bankName && !manual.bankName) manual.bankName = pub.bankName;
+    if (pub.accountName && !manual.receiverName) manual.receiverName = pub.accountName;
+    if (pub.duitnowId && !manual.duitnowId) manual.duitnowId = pub.duitnowId;
+    if (pub.publicLabel && !data.publicLabel) data.publicLabel = pub.publicLabel;
+    data.manual = manual;
+    const enabled = pub.enabled != null ? !!pub.enabled : ch.enabled;
+    return {
+      ...ch,
+      enabled,
+      visible: pub.enabled != null ? !!pub.enabled : ch.visible,
+      data,
+      config_status: qrUrl || ch.config_status === "已启用" ? (enabled ? "已启用" : "已配置") : ch.config_status,
+    };
+  });
+}
+
 /** Strip UI-only fields before writing payment_channels. */
 function channelDbRow(channel) {
   return {
@@ -664,7 +704,7 @@ async function syncPaymentMethod(channel, credentials = {}) {
 
 async function loadState() {
   try {
-    const [channels, credentials, banks, rates, webhooks, transactions, logs] = await Promise.all([
+    const [channels, credentials, banks, rates, webhooks, transactions, logs, publicMap] = await Promise.all([
       supabaseFetch(TABLES.channels, "?order=sort.asc,updated_at.desc"),
       supabaseFetch(TABLES.credentials, "?select=id,channel_id,credential_status,credential_keys,updated_at"),
       supabaseFetch(TABLES.banks, "?order=updated_at.desc").catch(() => null),
@@ -672,6 +712,7 @@ async function loadState() {
       supabaseFetch(TABLES.webhooks, "?order=updated_at.desc").catch(() => []),
       supabaseFetch(TABLES.transactions, "?order=created_at.desc&limit=100").catch(() => []),
       supabaseFetch(TABLES.logs, "?order=created_at.desc&limit=100").catch(() => []),
+      readPaymentChannelsPublic(),
     ]);
     let bankRows = banks;
     let bankSource = "table";
@@ -680,7 +721,7 @@ async function loadState() {
       bankSource = "platform_settings";
     }
     return {
-      channels: mergeChannels(channels, credentials),
+      channels: applyPublicPayOverlay(mergeChannels(channels, credentials), publicMap),
       banks: bankRows || [],
       rates: rates || [],
       webhooks: webhooks || [],
@@ -691,9 +732,9 @@ async function loadState() {
     };
   } catch (error) {
     if (isMissingTable(error)) {
-      const banks = await readPlatformBanks();
+      const [banks, publicMap] = await Promise.all([readPlatformBanks(), readPaymentChannelsPublic()]);
       return {
-        channels: defaults(),
+        channels: applyPublicPayOverlay(defaults(), publicMap),
         banks,
         rates: [],
         webhooks: [],
@@ -702,8 +743,8 @@ async function loadState() {
         tablesReady: true,
         bankSource: "platform_settings",
         message: banks.length
-          ? "支付渠道表未建全；收款账户已使用 platform_settings 兜底存储。"
-          : "支付渠道表未建全；收款账户将写入 platform_settings 兜底存储。",
+          ? "支付渠道表未建全；收款账户 / 二维码已使用 platform_settings 兜底存储。"
+          : "支付渠道表未建全；收款账户 / 二维码将写入 platform_settings 兜底存储。",
       };
     }
     throw error;
