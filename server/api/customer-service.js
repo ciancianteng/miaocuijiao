@@ -33,6 +33,13 @@ import {
   touchConversationActive,
   writeLockLog,
 } from "./_cs-session-lock.js";
+import {
+  decorateChatMessage,
+  messagePreviewText,
+  normalizeImageUrl,
+  persistImageMessage,
+  isImageEnumError,
+} from "./_chat-message.js";
 const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY"];
 const ORDER_STATUS_TEXT = { ...ORDER_STATUS_LABELS };
 const SERVICE_ROLES = new Set(["customer_service"]);
@@ -468,18 +475,7 @@ function safeMessage(row, profiles = {}) {
   } else if (row.sender_role === "companion") {
     senderName = String(sender.display_name || "").trim() || "陪玩";
   }
-  return {
-    id: row.id,
-    conversationId: row.conversation_id,
-    senderId: row.sender_id,
-    senderRole: row.sender_role,
-    senderName,
-    messageType: row.message_type || row.type || "text",
-    content: row.content || "",
-    orderId: row.order_id || "",
-    createdAt: row.created_at || "",
-    readAt: row.read_at || "",
-  };
+  return decorateChatMessage(row, { senderName });
 }
 function unreadRolesForConversation(conversation) {
   const isCompanionSupport =
@@ -696,14 +692,21 @@ async function ensureConversation({
     }
   }
   if (rows[0]) {
+    const patch = { updated_at: nowIso() };
+    if (companion_id && String(rows[0].companion_id || "") !== String(companion_id)) {
+      patch.companion_id = companion_id;
+    }
+    if (customer_service_id && !rows[0].customer_service_id) {
+      patch.customer_service_id = customer_service_id;
+    }
     try {
       await supabaseJson(restUrl("conversations", `?id=eq.${encodeURIComponent(rows[0].id)}`), {
         method: "PATCH",
         headers: serviceHeaders(),
-        body: JSON.stringify({ updated_at: nowIso() }),
+        body: JSON.stringify(patch),
       });
     } catch (_) {}
-    return rows[0];
+    return { ...rows[0], ...patch };
   }
   const base = {
     boss_id,
@@ -820,35 +823,42 @@ async function releaseConversationsToPool(serviceProfile, conversationIds = null
 }
 async function addMessage(conversation, sender, senderRole, content, messageType = "system", orderId = null) {
   if (!conversation) return null;
-  const payload = {
+  const basePayload = {
     conversation_id: conversation.id,
     sender_id: sender,
     sender_role: senderRole,
-    message_type: messageType,
-    content: String(content || ""),
     order_id: orderId || conversation.order_id || null,
     created_at: nowIso(),
   };
-  let rows;
-  try {
-    rows = await supabaseJson(restUrl("messages"), {
+  const insertFn = (payload) =>
+    supabaseJson(restUrl("messages"), {
       method: "POST",
       headers: serviceHeaders(),
       body: JSON.stringify(payload),
     });
-  } catch (err) {
-    // Enum may lag migrations — persist card payload as text so boss still receives it.
-    if (
-      (messageType === "companion_card" || messageType === "product_card" || messageType === "image") &&
-      /enum|invalid input|message_type/i.test(String(err?.message || ""))
-    ) {
-      rows = await supabaseJson(restUrl("messages"), {
-        method: "POST",
-        headers: serviceHeaders(),
-        body: JSON.stringify({ ...payload, message_type: "text" }),
-      });
-    } else {
-      throw err;
+
+  let rows;
+  if (String(messageType || "") === "image") {
+    const saved = await persistImageMessage(insertFn, basePayload, content);
+    rows = saved.row ? [saved.row] : [];
+  } else {
+    const payload = {
+      ...basePayload,
+      message_type: messageType,
+      content: String(content || ""),
+    };
+    try {
+      rows = await insertFn(payload);
+    } catch (err) {
+      // Enum may lag migrations — persist card payload as text so boss still receives it.
+      if (
+        (messageType === "companion_card" || messageType === "product_card") &&
+        isImageEnumError(err)
+      ) {
+        rows = await insertFn({ ...payload, message_type: "text" });
+      } else {
+        throw err;
+      }
     }
   }
   await supabaseJson(restUrl("conversations", `?id=eq.${encodeURIComponent(conversation.id)}`), {
@@ -856,7 +866,7 @@ async function addMessage(conversation, sender, senderRole, content, messageType
     headers: serviceHeaders(),
     body: JSON.stringify({ updated_at: nowIso() }),
   });
-  return rows[0] || null;
+  return (Array.isArray(rows) ? rows[0] : rows) || null;
 }
 
 /** Find boss↔CS conversation for card push (prefer live reception, else order thread). */
@@ -1074,7 +1084,7 @@ async function loadBootstrap(serviceProfile) {
     lastActiveAt: row.last_active_at || row.updated_at || "",
     status: convStatusLabel,
     rawStatus: isClosed ? "closed" : (row.status || ""),
-    lastMessage: last.content || "",
+    lastMessage: messagePreviewText(last),
     lastTime: last.created_at || row.updated_at || "",
     createdAt: row.created_at || "",
     unread: unreadBoss.length,
@@ -2670,26 +2680,14 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       let messageType = String(body.messageType || body.message_type || "text").trim() || "text";
       let content = String(body.content || "").trim();
       if (!content) return json(res, 400, { ok: false, message: "请输入消息内容。" });
-      if (messageType === "image" && !(/^https?:\/\//i.test(content) || content.startsWith("__IMG__:"))) {
+      if (messageType === "image" && !normalizeImageUrl(content)) {
         return json(res, 400, { ok: false, message: "图片消息内容无效。" });
       }
-      let msg = null;
-      try {
-        msg = await addMessage(conversation, service.profile.id, "customer_service", content, messageType);
-      } catch (err) {
-        if (messageType === "image" && /enum|invalid input|message_type/i.test(String(err.message || ""))) {
-          content = content.startsWith("__IMG__:") ? content : `__IMG__:${content}`;
-          msg = await addMessage(conversation, service.profile.id, "customer_service", content, "text");
-          messageType = "text";
-        } else {
-          throw err;
-        }
-      }
+      const msg = await addMessage(conversation, service.profile.id, "customer_service", content, messageType);
       await touchConversationActive({ restUrl, supabaseJson, serviceHeaders }, conversation.id);
       const messageRow = msg
         ? Object.assign({}, safeMessage(msg, { [service.profile.id]: service.profile }), {
             senderName: String(service.profile.display_name || "").trim() || "客服",
-            messageType: msg.message_type || messageType,
           })
         : null;
       return json(res, 200, { ok: true, message: "消息已发送。", messageRow });

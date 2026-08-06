@@ -9,6 +9,12 @@ import {
   isClosedConversationStatus,
   conversationStatusLabel,
 } from "./_conversation-lock.js";
+import {
+  decorateChatMessage,
+  normalizeImageUrl,
+  persistImageMessage,
+  messagePreviewText,
+} from "./_chat-message.js";
 
 function nowIso() {
   return new Date().toISOString();
@@ -531,45 +537,38 @@ export async function sendCompanionChatMessage(conversation, companionUserId, co
   if (conversation.status === "closed" || conversation.status === "ended") {
     throw Object.assign(new Error("会话已结束，无法继续发送"), { status: 403 });
   }
-  if (type === "image" && !(/^https?:\/\//i.test(text) || text.startsWith("__IMG__:"))) {
-    throw Object.assign(new Error("图片消息内容无效"), { status: 400 });
-  }
-  const payload = {
+  const basePayload = {
     conversation_id: conversation.id,
     sender_id: companionUserId,
     sender_role: "companion",
-    message_type: type,
-    content: text,
     order_id: conversation.order_id || null,
     read_at: null,
     created_at: nowIso(),
   };
-  let rows;
-  try {
-    rows = await supabaseJson(restUrl("messages"), {
+  const insertFn = (payload) =>
+    supabaseJson(restUrl("messages"), {
       method: "POST",
       headers: serviceHeaders(),
       body: JSON.stringify(payload),
     });
-  } catch (err) {
-    if (type === "image" && /enum|invalid input|message_type/i.test(String(err.message || ""))) {
-      payload.message_type = "text";
-      payload.content = text.startsWith("__IMG__:") ? text : `__IMG__:${text}`;
-      rows = await supabaseJson(restUrl("messages"), {
-        method: "POST",
-        headers: serviceHeaders(),
-        body: JSON.stringify(payload),
-      });
-    } else {
-      throw err;
+
+  let row = null;
+  if (type === "image") {
+    if (!normalizeImageUrl(text)) {
+      throw Object.assign(new Error("图片消息内容无效"), { status: 400 });
     }
+    const saved = await persistImageMessage(insertFn, basePayload, text);
+    row = saved.row;
+  } else {
+    const rows = await insertFn({ ...basePayload, message_type: type, content: text });
+    row = Array.isArray(rows) ? rows[0] : rows;
   }
   await supabaseJson(restUrl("conversations", `?id=eq.${encodeURIComponent(conversation.id)}`), {
     method: "PATCH",
     headers: serviceHeaders(),
     body: JSON.stringify({ updated_at: nowIso(), last_message_at: nowIso() }),
   }).catch(() => null);
-  return rows?.[0] || null;
+  return row || null;
 }
 
 export async function markConversationMessagesRead(conversationId, { companionUserId } = {}) {
@@ -601,17 +600,29 @@ export async function markConversationMessagesRead(conversationId, { companionUs
 
 export function viewMessage(row = {}) {
   const role = String(row.sender_role || "");
+  const decorated = decorateChatMessage(row, {
+    senderName:
+      role === "companion"
+        ? "我"
+        : role === "customer_service"
+          ? "客服"
+          : role === "system" || row.message_type === "system"
+            ? "系统"
+            : "对方",
+  });
   return {
-    id: row.id,
-    conversationId: row.conversation_id,
-    senderId: row.sender_id,
+    id: decorated.id,
+    conversationId: decorated.conversationId,
+    senderId: decorated.senderId,
     senderRole: role,
-    senderLabel: role === "companion" ? "我" : role === "customer_service" ? "客服" : role === "system" || row.message_type === "system" ? "系统" : "对方",
+    senderLabel: decorated.senderName,
     side: role === "companion" ? "right" : "left",
-    messageType: row.message_type || "text",
-    content: row.content || "",
-    createdAt: row.created_at || "",
-    readAt: row.read_at || "",
+    messageType: decorated.messageType,
+    content: decorated.content,
+    imageUrl: decorated.imageUrl,
+    image_url: decorated.image_url,
+    createdAt: decorated.createdAt,
+    readAt: decorated.readAt,
   };
 }
 
@@ -628,23 +639,32 @@ function conversationUnreadCount(messages, companionUserId) {
 async function loadCompanionSupportConversations(companionUserId) {
   const uid = String(companionUserId || "").trim();
   if (!uid) return [];
+  // Include companion_support AND order_support threads this companion is on,
+  // so boss/CS image messages on the order room sync to the companion end.
+  const select =
+    "id,companion_id,boss_id,customer_service_id,order_id,consult_type,status,conversation_type,created_at,updated_at,last_message_at,closed_at,ended_at,closed_by,accepted_at,title";
   const rows = await supabaseJson(
     restUrl(
       "conversations",
-      `?companion_id=eq.${encodeURIComponent(uid)}&conversation_type=eq.companion_support&order=updated_at.desc&limit=80&select=id,companion_id,customer_service_id,order_id,consult_type,status,created_at,updated_at,last_message_at,closed_at,ended_at,closed_by,accepted_at,title`
+      `?companion_id=eq.${encodeURIComponent(uid)}&order=updated_at.desc&limit=100&select=${select}`
     ),
     { headers: serviceHeaders() }
   ).catch(async (err) => {
-    if (!/consult_type|closed_at|ended_at|closed_by|column|schema/i.test(String(err?.message || ""))) return [];
+    if (!/consult_type|closed_at|ended_at|closed_by|boss_id|conversation_type|column|schema/i.test(String(err?.message || ""))) {
+      return [];
+    }
     return supabaseJson(
-      restUrl(
-        "conversations",
-        `?companion_id=eq.${encodeURIComponent(uid)}&conversation_type=eq.companion_support&order=updated_at.desc&limit=80`
-      ),
+      restUrl("conversations", `?companion_id=eq.${encodeURIComponent(uid)}&order=updated_at.desc&limit=100`),
       { headers: serviceHeaders() }
     ).catch(() => []);
   });
-  return Array.isArray(rows) ? rows : [];
+  const list = Array.isArray(rows) ? rows : [];
+  // Prefer support + order rooms; drop accidental unrelated rows without type if any.
+  return list.filter((row) => {
+    const t = String(row.conversation_type || "");
+    if (!t) return true;
+    return t === "companion_support" || t === "order_support" || t === "general_support";
+  });
 }
 
 async function resolveOrderNos(orderIds = []) {
@@ -679,8 +699,12 @@ async function resolveCsDisplayNames(csIds = []) {
 function viewCompanionCsConversation(row = {}, { orderNo = "", csName = "", lastMessage = "", unread = 0 } = {}) {
   const closed = isClosedConversationStatus(row.status);
   const transferring = isPendingTransferStatus(row.status);
-  const consultKey = normalizeCompanionConsultType(row.consult_type, { orderId: row.order_id || "" });
-  const consultLabel = consultTypeLabel("companion", consultKey);
+  const convType = String(row.conversation_type || "");
+  const isOrderRoom = convType === "order_support" || (!!row.order_id && convType !== "companion_support");
+  const consultKey = isOrderRoom
+    ? "order_dock"
+    : normalizeCompanionConsultType(row.consult_type, { orderId: row.order_id || "" });
+  const consultLabel = isOrderRoom ? "订单沟通" : consultTypeLabel("companion", consultKey);
   const orderLabel = row.order_id ? orderNo || String(row.order_id).slice(0, 8) : "非订单咨询";
   const statusLabel = conversationStatusLabel(row);
   const subtitle = transferring
@@ -692,6 +716,7 @@ function viewCompanionCsConversation(row = {}, { orderNo = "", csName = "", last
     id: row.id,
     key: row.id,
     type: "cs",
+    conversationType: convType || (isOrderRoom ? "order_support" : "companion_support"),
     title: consultLabel,
     subtitle,
     status: closed ? "ended" : transferring ? "pending_transfer" : row.customer_service_id ? "active" : "waiting",
@@ -792,7 +817,7 @@ export async function buildCompanionInbox(profile, companion, bootstrapSlice = {
       const last = [...messages].reverse().find((m) => m.message_type !== "system") || messages[messages.length - 1];
       threadMeta[row.id] = {
         messages,
-        lastMessage: last?.content || "",
+        lastMessage: messagePreviewText(last || {}),
         lastTime: last?.created_at || row.updated_at || "",
         unread: conversationUnreadCount(messages, profile.id),
       };

@@ -511,7 +511,7 @@
     var Media = window.MCJChatMedia;
     var isImg = Media && Media.isImageMessage(m);
     var bodyHtml = isImg
-      ? Media.imageBubbleHtml(Media.imageUrlOf(m), esc)
+      ? Media.imageBubbleHtml(Media.imageUrlOf(m), esc, { createdAt: m.created_at || m.createdAt })
       : "<p>" + esc(m.content || "") + "</p>";
     return (
       '<div class="support-msg ' +
@@ -549,12 +549,23 @@
     RT.subscribeMessages(cid, authAccessToken(), function (row) {
       if (!row || !row.id) return;
       if (state.messages.some(function (m) { return m.id === row.id; })) return;
+      var Media = window.MCJChatMedia;
+      var normalized = Object.assign({}, row);
+      if (Media && Media.isImageMessage(normalized)) {
+        normalized.message_type = "image";
+        normalized.messageType = "image";
+        normalized.imageUrl = Media.imageUrlOf(normalized);
+        normalized.content = normalized.imageUrl || normalized.content;
+      }
       // Drop matching optimistic pending/failed of same content within 2 minutes.
       state.messages = state.messages.filter(function (m) {
         if (!(m._pending || m._failed)) return true;
-        return !(m.content === row.content && m.sender_role === "boss");
+        var sameUrl =
+          (Media && Media.isImageMessage(m) && Media.isImageMessage(normalized) && Media.imageUrlOf(m) === Media.imageUrlOf(normalized)) ||
+          m.content === row.content;
+        return !(sameUrl && m.sender_role === "boss");
       });
-      state.messages = state.messages.concat([row]);
+      state.messages = state.messages.concat([normalized]);
       if (root.querySelector("[data-messages]")) patchMessages({ keepScroll: false });
       else softUpdate({ keepScroll: false });
     }).then(function () {

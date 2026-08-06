@@ -681,15 +681,21 @@ async function loadOrders(profile, id = "") {
 async function ensureConversation(order, bossId) {
   const existing = await supabaseJson(restUrl("conversations", `?order_id=eq.${encodeURIComponent(order.id)}&limit=1`), { headers: serviceHeaders() });
   if (existing?.[0]) {
-    // Keep 1:1 order_id binding; refresh updated_at so CS list sorts correctly.
+    const patch = { updated_at: nowIso() };
+    if (order.companion_id && String(existing[0].companion_id || "") !== String(order.companion_id)) {
+      patch.companion_id = order.companion_id;
+    }
+    if (order.customer_service_id && !existing[0].customer_service_id) {
+      patch.customer_service_id = order.customer_service_id;
+    }
     try {
       await supabaseJson(restUrl("conversations", `?id=eq.${encodeURIComponent(existing[0].id)}`), {
         method: "PATCH",
         headers: serviceHeaders(),
-        body: JSON.stringify({ updated_at: nowIso() }),
+        body: JSON.stringify(patch),
       });
     } catch (_) {}
-    return existing[0];
+    return { ...existing[0], ...patch };
   }
   const base = {
     boss_id: bossId,

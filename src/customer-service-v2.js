@@ -649,7 +649,11 @@
           if(state.activeConversation!==cid&&fromPeer)unread+=1;
           else if(state.activeConversation===cid)unread=0;
           list[idx]=Object.assign({},list[idx],{
-            lastMessage:row.content||list[idx].lastMessage,
+            lastMessage:(function(){
+              var Media=window.MCJChatMedia;
+              if(Media&&Media.isImageMessage({message_type:row.message_type,content:row.content,image_url:row.image_url}))return '[图片]';
+              return row.content||list[idx].lastMessage;
+            })(),
             lastTime:row.created_at||list[idx].lastTime,
             updatedAt:row.created_at||list[idx].updatedAt,
             unread:unread,
@@ -976,7 +980,11 @@
       var active=state.activeConversation===msg.conversationId;
       var nextUnread=active?0:(Number(list[idx].unread||0)||0)+(bump?1:0);
       list[idx]=Object.assign({},list[idx],{
-        lastMessage:msg.content||list[idx].lastMessage,
+        lastMessage:(function(){
+          var Media=window.MCJChatMedia;
+          if(Media&&Media.isImageMessage(msg))return '[图片]';
+          return msg.content||list[idx].lastMessage;
+        })(),
         lastTime:msg.createdAt||list[idx].lastTime,
         unread:nextUnread,
         unreadCount:nextUnread
@@ -988,19 +996,28 @@
   }
   function mapDbMessage(row){
     if(!row)return null;
-    return {
+    var Media=window.MCJChatMedia;
+    var mapped={
       id:row.id,
       conversationId:row.conversation_id||row.conversationId||'',
       senderId:row.sender_id||row.senderId||'',
       senderRole:row.sender_role||row.senderRole||'',
-      senderName:row.senderName||'',
+      senderName:row.senderName||row.sender_name||'',
       content:row.content||'',
       messageType:row.message_type||row.messageType||'text',
+      imageUrl:row.imageUrl||row.image_url||'',
       orderId:row.order_id||row.orderId||'',
       createdAt:row.created_at||row.createdAt||'',
       readAt:row.read_at||row.readAt||'',
       sendStatus:row.sendStatus||'sent'
     };
+    if(Media&&Media.isImageMessage(mapped)){
+      mapped.messageType='image';
+      mapped.message_type='image';
+      mapped.imageUrl=Media.imageUrlOf(mapped);
+      mapped.content=mapped.imageUrl||mapped.content;
+    }
+    return mapped;
   }
   function loadActiveConversationMessages(cid){
     var id=String(cid||state.activeConversation||'').trim();
@@ -2696,7 +2713,7 @@
     var who=mine?(m.senderName||m.sender_name||'客服'):(system?'':(m.senderName||m.sender_name||(senderRole==='boss'?'老板':(senderRole==='companion'?'陪玩':''))));
     var Media=window.MCJChatMedia;
     var isImg=Media&&Media.isImageMessage(m);
-    var body=isImg?Media.imageBubbleHtml(Media.imageUrlOf(m),esc):('<p>'+esc(m.content||'')+'</p>');
+    var body=isImg?Media.imageBubbleHtml(Media.imageUrlOf(m),esc,{createdAt:m.createdAt||m.created_at}):('<p>'+esc(m.content||'')+'</p>');
     var isImgPending=(m.messageType==='image'||m.message_type==='image');
     var pending=m._pending?(isImgPending?' · 上传中…':' · 发送中…'):'';
     var failed=m._failed?' · 发送失败 <button type="button" class="cs-link" data-retry-img="'+esc(m._localId||m.id||'')+'">重试</button>':'';

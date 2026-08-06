@@ -1304,17 +1304,25 @@
       var list=state.inbox.messages=Array.isArray(state.inbox.messages)?state.inbox.messages:[];
       if(list.some(function(m){return String(m.id)===String(row.id)}))return;
       var role=String(row.sender_role||'');
+      var Media=window.MCJChatMedia;
       var view={
         id:row.id,
         conversationId:row.conversation_id||cid,
         content:row.content||'',
         senderRole:role,
-        senderLabel:role==='companion'?'我':(role==='customer_service'?'客服':'系统'),
+        senderLabel:role==='companion'?'我':(role==='customer_service'?'客服':(role==='boss'?'老板':'系统')),
         side:role==='companion'?'right':'left',
         createdAt:row.created_at||new Date().toISOString(),
         messageType:row.message_type||'text',
-        mediaUrl:row.media_url||row.image_url||''
+        imageUrl:row.image_url||row.imageUrl||'',
+        mediaUrl:row.media_url||row.image_url||row.imageUrl||''
       };
+      if(Media&&Media.isImageMessage(view)){
+        view.messageType='image';
+        view.message_type='image';
+        view.imageUrl=Media.imageUrlOf(view);
+        view.content=view.imageUrl||view.content;
+      }
       state.inbox.messages=list.filter(function(m){
         if(!(m._pending||m._failed))return true;
         return !(m.content===view.content&&(m.senderRole==='companion'||m.side==='right'));
@@ -2070,7 +2078,7 @@
         var side=m.side||(m.senderRole==='companion'?'right':'left');
         var Media=window.MCJChatMedia;
         var isImg=Media&&Media.isImageMessage(m);
-        var bubble=isImg?Media.imageBubbleHtml(Media.imageUrlOf(m),esc):('<div class="pw-bubble">'+esc(m.content)+'</div>');
+        var bubble=isImg?Media.imageBubbleHtml(Media.imageUrlOf(m),esc,{createdAt:m.createdAt||m.created_at}):('<div class="pw-bubble">'+esc(m.content)+'</div>');
         var pending=m._pending?' · 上传中…':'';
         var failed=m._failed?' · 发送失败':'';
         return '<div class="pw-msg '+esc(side)+'" data-msg-id="'+esc(m.id||m._localId||'')+'">'+bubble+'<small>'+esc(m.senderLabel||'')+' · '+esc(fmtTime(m.createdAt))+pending+failed+'</small></div>';
