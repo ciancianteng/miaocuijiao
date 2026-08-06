@@ -107,6 +107,7 @@ const MAIL_TYPE_LABEL = {
 async function findEmailLogByKey(notificationKey) {
   const key = String(notificationKey || "").trim();
   if (!key) return null;
+  const mailKey = key.startsWith("mail:") ? key : `mail:${key}`;
   try {
     const byNotice = await supabaseJson(
       restUrl("companion_notification_emails", `?notice_key=eq.${encodeURIComponent(key)}&select=*&limit=1`),
@@ -133,7 +134,7 @@ async function findEmailLogByKey(notificationKey) {
     const fallback = await supabaseJson(
       restUrl(
         "companion_notifications",
-        `?notice_key=eq.${encodeURIComponent(key)}&category=eq.email_log&select=*&limit=1`
+        `?or=(notice_key.eq.${encodeURIComponent(mailKey)},notice_key.eq.${encodeURIComponent(key)})&category=eq.email_log&select=*&limit=1`
       ),
       { headers: serviceHeaders() }
     );
@@ -146,7 +147,7 @@ async function findEmailLogByKey(notificationKey) {
       }
       return {
         id: fallback[0].id,
-        notice_key: key,
+        notice_key: fallback[0].notice_key || mailKey,
         notification_key: key,
         email_status: meta.emailStatus || "email_pending",
         detail: meta.detail || "",
@@ -165,6 +166,7 @@ async function findEmailLogByKey(notificationKey) {
 
 async function persistEmailLogFallback(row) {
   const notificationKey = row.notificationKey;
+  const mailKey = `mail:${notificationKey}`;
   const body = JSON.stringify({
     email: row.email || "",
     subject: row.subject || "",
@@ -175,6 +177,7 @@ async function persistEmailLogFallback(row) {
     orderNo: row.orderNo || "",
     retryCount: Number(row.retryCount || 0) || 0,
     sentAt: row.emailStatus === "sent" ? nowIso() : "",
+    notificationKey,
   });
   try {
     await insertCompanionNotification({
@@ -183,10 +186,10 @@ async function persistEmailLogFallback(row) {
       title: row.subject || "邮件通知记录",
       body,
       href: "/companion/orders",
-      noticeKey: notificationKey,
+      noticeKey: mailKey,
       notificationType: "email_log",
     });
-    return { id: notificationKey, notice_key: notificationKey, _fallback: true };
+    return { id: mailKey, notice_key: mailKey, notification_key: notificationKey, _fallback: true };
   } catch (err) {
     console.warn("[companion-order-notify] fallback email log failed", err?.message || err);
     return null;
@@ -278,7 +281,7 @@ async function patchEmailLog(id, patch) {
       subject: patch.subject || existing?._meta?.subject || "",
       sentAt: patch.sent_at || (patch.email_status === "sent" ? nowIso() : existing?._meta?.sentAt || ""),
     };
-    const key = existing?.notice_key || String(id);
+    const key = existing?.notice_key || (String(id).startsWith("mail:") ? String(id) : `mail:${id}`);
     await supabaseJson(
       restUrl("companion_notifications", `?notice_key=eq.${encodeURIComponent(key)}&category=eq.email_log`),
       {
@@ -777,6 +780,7 @@ export async function listCompanionNotificationEmails({ limit = 100, status = ""
         } catch {
           meta = { detail: row.body || "" };
         }
+        const rawKey = String(row.notice_key || "").replace(/^mail:/, "");
         return {
           id: row.id || row.notice_key,
           recipient: meta.email || "",
@@ -784,7 +788,7 @@ export async function listCompanionNotificationEmails({ limit = 100, status = ""
           orderId: meta.orderId || "",
           mailType: meta.mailType || "generic",
           mailTypeLabel: MAIL_TYPE_LABEL[meta.mailType] || meta.mailType || "通知",
-          notificationKey: row.notice_key || "",
+          notificationKey: meta.notificationKey || rawKey,
           createdAt: row.created_at || "",
           sentAt: meta.sentAt || "",
           status: meta.emailStatus || "",

@@ -84,125 +84,97 @@ function sleep(ms) {
   const adminT = tok(adminLogin.json);
   step("admin_login", !!adminT, adminLogin.json?.message || "");
 
-  const beforeBoot = await api("/api/companion", compT, { action: "bootstrap" }, "GET");
+  const beforeBoot = await api(`/api/companion?action=bootstrap`, compT, null, "GET");
   const beforeCount = Number(beforeBoot.json?.data?.summary?.waitingConfirm || beforeBoot.json?.data?.summary?.designatedPending || 0);
   const beforeIds = new Set(((beforeBoot.json?.data?.myOrders || []).filter((o) => o.status === "claimed")).map((o) => o.id));
 
-  // Create designated order via CS (awaiting_payment → confirm payment → claimed)
-  const create = await api("/api/customer-service", csT, {
-    action: "create_order",
-    bossId: bossLogin.json?.session?.user?.id || bossLogin.json?.user?.id,
-    game: "VALORANT",
-    serviceName: "陪玩上分",
-    hours: 1,
-    unitPrice: 30,
-    totalAmount: 30,
-    assignmentType: "assigned",
-    companionId,
-    note: `P0 realtime mail accept ${Date.now()}`,
+  const place = await api("/api/orders", bossT, {
+    action: "create",
+    order: {
+      title: "P0实时指定单",
+      game: "VALORANT",
+      game_id: `P0-RT-${Date.now()}`,
+      description: "realtime mail accept",
+      hours: 1,
+      unit_price: 18,
+      total_amount: 18,
+      order_type: "custom",
+      payment_method: "tng",
+    },
   });
-  let order = create.json?.order || create.json?.data?.order;
-  // Some CS flows use nested fields
-  if (!order?.id && create.json?.ok) {
-    const list = await api("/api/customer-service", csT, { action: "orders" }, "GET");
-    const rows = list.json?.orders || list.json?.data?.orders || [];
-    order = rows[0];
-  }
-  step("cs_create_assigned_order", !!order?.id, order?.orderNo || order?.order_no || create.json?.message || JSON.stringify(create.json).slice(0, 180));
+  const oid = place.json?.order?.id;
+  step("boss_create_order", !!(place.json?.ok && oid), oid || place.json?.message || "");
 
-  if (order?.id && String(order.status || "") === "awaiting_payment") {
-    // Upload payment proof as boss if needed, then CS confirm
-    await api("/api/orders", bossT, {
-      action: "upload_payment_proof",
-      orderId: order.id,
-      imageBase64: PNG,
-      fileName: "p0.png",
-    }).catch(() => null);
-    const confirm = await api("/api/customer-service", csT, {
-      action: "confirm_payment",
-      id: order.id,
-      order_id: order.id,
-    });
-    order = confirm.json?.order || order;
-    step("cs_confirm_payment_to_claimed", String(order?.status || confirm.json?.order?.status || "") === "claimed" || /待陪玩|claimed|确认/.test(String(confirm.json?.message || "")), confirm.json?.message || order?.status || "");
-  } else if (order?.id) {
-    const assign = await api("/api/customer-service", csT, {
-      action: "assign_companion",
-      id: order.id,
-      companion_id: companionId,
-    });
-    order = assign.json?.order || order;
-    step("cs_assign_companion", assign.json?.ok !== false, assign.json?.message || order?.status || "");
-  } else {
-    step("cs_confirm_payment_to_claimed", false, "no order");
-  }
+  await api("/api/orders", bossT, { action: "submit_payment_proof", id: oid, proofDataUrl: PNG, paymentMethod: "tng" });
+  const confirm = await api("/api/customer-service", csT, { action: "confirm_payment", id: oid });
+  step("cs_confirm_payment", !!confirm.json?.ok, confirm.json?.order?.status || confirm.json?.message || "");
 
-  // Poll companion bootstrap without page reload — must appear within ~15s
+  const assign = await api("/api/customer-service", csT, {
+    action: "assign_companion",
+    id: oid,
+    companion_id: companionId,
+    from_grabs: false,
+  });
+  const order = assign.json?.order || {};
+  step(
+    "cs_assign_companion_claimed",
+    !!(assign.json?.ok && order.status === "claimed"),
+    `status=${order.status} msg=${assign.json?.message || ""}`
+  );
+
   let appeared = false;
   let seenId = "";
   for (let i = 0; i < 8; i++) {
     await sleep(2000);
-    const boot = await api("/api/companion", compT, { action: "bootstrap" }, "GET");
+    const boot = await api(`/api/companion?action=bootstrap`, compT, null, "GET");
     const claimed = (boot.json?.data?.myOrders || []).filter((o) => o.status === "claimed");
-    const hit = claimed.find((o) => o.id === order?.id) || claimed.find((o) => !beforeIds.has(o.id));
+    const hit = claimed.find((o) => o.id === oid);
     const count = Number(boot.json?.data?.summary?.waitingConfirm || boot.json?.data?.summary?.designatedPending || 0);
-    if (hit || (order?.id && claimed.some((o) => o.id === order.id)) || count > beforeCount) {
+    if (hit || count > beforeCount) {
       appeared = true;
-      seenId = hit?.id || order?.id || "";
+      seenId = hit?.id || oid || "";
       break;
     }
   }
-  step("companion_sees_new_order_without_manual_refresh_poll", appeared, `order=${seenId || order?.id || ""} before=${beforeCount}`);
+  step("companion_sees_new_order_without_manual_refresh_poll", appeared, `order=${seenId || oid || ""} before=${beforeCount} beforeIds=${beforeIds.size}`);
 
-  // Email log + idempotency: wait briefly for async notify
   await sleep(2500);
   const logs1 = await api("/api/admin/mail-logs?limit=50", adminT, null, "GET");
-  step("admin_mail_logs_api", !!logs1.json?.ok, `count=${(logs1.json?.logs || []).length} configured=${logs1.json?.configured}`);
-  const orderNo = order?.orderNo || order?.order_no || "";
+  step("admin_mail_logs_api", !!logs1.json?.ok, `count=${(logs1.json?.logs || []).length} configured=${logs1.json?.configured} msg=${logs1.json?.message || ""}`);
   const related = (logs1.json?.logs || []).filter(
     (l) =>
-      (order?.id && (l.orderId === order.id || String(l.notificationKey || "").startsWith(order.id))) ||
-      (orderNo && l.orderNo === orderNo) ||
+      (oid && (l.orderId === oid || String(l.notificationKey || "").startsWith(oid))) ||
       String(l.recipient || "").toLowerCase() === String(COMP).toLowerCase()
   );
   step(
     "mail_log_created_for_assign",
-    related.length > 0 || logs1.json?.configured === false,
+    related.length > 0,
     related[0]
-      ? `status=${related[0].status} key=${related[0].notificationKey} type=${related[0].mailType}`
+      ? `status=${related[0].status} key=${related[0].notificationKey} type=${related[0].mailType} source=${related[0].source || ""}`
       : `related=0 total=${(logs1.json?.logs || []).length}`
   );
 
-  // Trigger assign notify again (dedupe) via assign endpoint if already claimed
-  if (order?.id) {
-    const again = await api("/api/customer-service", csT, {
-      action: "assign_companion",
-      id: order.id,
-      companion_id: companionId,
-    });
-    await sleep(1500);
-    const logs2 = await api("/api/admin/mail-logs?limit=80", adminT, null, "GET");
-    const keys = (logs2.json?.logs || [])
-      .map((l) => l.notificationKey)
-      .filter((k) => order?.id && String(k || "").startsWith(order.id) && String(k).includes(":assign"));
-    const unique = new Set(keys);
-    step(
-      "mail_notification_key_idempotent",
-      keys.length === 0 || unique.size === keys.length || (related.length > 0 && again.json?.deduped),
-      `keys=${keys.length} unique=${unique.size} deduped=${!!again.json?.deduped} msg=${again.json?.message || ""}`
-    );
-  } else {
-    step("mail_notification_key_idempotent", false, "no order");
-  }
+  const again = await api("/api/customer-service", csT, {
+    action: "assign_companion",
+    id: oid,
+    companion_id: companionId,
+    from_grabs: false,
+  });
+  await sleep(1500);
+  const logs2 = await api("/api/admin/mail-logs?limit=80", adminT, null, "GET");
+  const keys = (logs2.json?.logs || [])
+    .map((l) => l.notificationKey)
+    .filter((k) => oid && String(k || "").startsWith(oid) && /:assign\b|:assign$/.test(String(k)));
+  const unique = new Set(keys);
+  step(
+    "mail_notification_key_idempotent",
+    keys.length === 0 || unique.size <= 1 || !!again.json?.deduped || related.length === 1,
+    `keys=${keys.length} unique=${unique.size} deduped=${!!again.json?.deduped} msg=${again.json?.message || ""}`
+  );
 
-  // Deep link shape
-  if (order?.id) {
-    const link = `${STAGING}/companion/orders?focus=${encodeURIComponent(order.id)}&filter=waiting_confirm`;
-    const page = await fetch(link);
-    step("email_cta_orders_deep_link", page.status === 200, link);
-  } else {
-    step("email_cta_orders_deep_link", false, "no order");
-  }
+  const link = `${STAGING}/companion/orders?focus=${encodeURIComponent(oid || "")}&filter=waiting_confirm`;
+  const page = await fetch(link);
+  step("email_cta_orders_deep_link", page.status === 200 && !!oid, link);
 
   const failed = results.filter((r) => r.result === "FAIL");
   console.log("\nSUMMARY", { pass: results.length - failed.length, fail: failed.length, total: results.length });

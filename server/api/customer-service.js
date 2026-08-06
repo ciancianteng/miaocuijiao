@@ -3394,10 +3394,13 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
             companion_id: assignedCompanionId,
             assignment_type: "assigned",
           };
-          notifyCompanionOrderAssigned(notifyOrder, {
-            eventType: "assign",
-            email: profiles[assignedCompanionId]?.email || "",
-          }).catch((err) => console.warn("[cs/confirm_payment] companion notify", err?.message || err));
+          await Promise.race([
+            notifyCompanionOrderAssigned(notifyOrder, {
+              eventType: "assign",
+              email: profiles[assignedCompanionId]?.email || "",
+            }).catch((err) => console.warn("[cs/confirm_payment] companion notify", err?.message || err)),
+            new Promise((resolve) => setTimeout(resolve, 3500)),
+          ]);
         } catch (err) {
           console.warn("[cs/confirm_payment] companion notify import", err?.message || err);
         }
@@ -3730,15 +3733,18 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         } catch (_) {}
         const profiles = await profileMap([patched?.boss_id || order.boss_id, companionId, service.profile.id]);
         const outOrder = patched || { ...order, companion_id: companionId, status: nextStatus };
-        // Fire-and-forget: companion realtime + email (idempotent). Never block assign success.
+        // Await briefly so Vercel doesn't freeze before inbox/email/broadcast flush.
         try {
           const { notifyCompanionOrderAssigned } = await import("./_companion-order-notify.js");
           const prevCompanion = String(order.companion_id || "").trim();
-          notifyCompanionOrderAssigned(outOrder, {
-            eventType: prevCompanion && prevCompanion !== companionId ? "reassign" : "assign",
-            previousCompanionId: prevCompanion,
-            email: companion.email || "",
-          }).catch((err) => console.warn("[cs/assign] companion notify", err?.message || err));
+          await Promise.race([
+            notifyCompanionOrderAssigned(outOrder, {
+              eventType: prevCompanion && prevCompanion !== companionId ? "reassign" : "assign",
+              previousCompanionId: prevCompanion,
+              email: companion.email || profiles[companionId]?.email || "",
+            }).catch((err) => console.warn("[cs/assign] companion notify", err?.message || err)),
+            new Promise((resolve) => setTimeout(resolve, 3500)),
+          ]);
         } catch (err) {
           console.warn("[cs/assign] companion notify import", err?.message || err);
         }

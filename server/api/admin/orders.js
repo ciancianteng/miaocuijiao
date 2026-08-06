@@ -627,11 +627,14 @@ export default async function handler(req, res) {
       try {
         const { notifyCompanionOrderAssigned } = await import("../_companion-order-notify.js");
         const prevCompanion = String(before.companion_id || "").trim();
-        notifyCompanionOrderAssigned(after, {
-          eventType: prevCompanion && prevCompanion !== String(after.companion_id || "") ? "reassign" : "assign",
-          previousCompanionId: prevCompanion,
-          email: map[after.companion_id]?.email || "",
-        }).catch((err) => console.warn("[admin/assign] companion notify", err?.message || err));
+        await Promise.race([
+          notifyCompanionOrderAssigned(after, {
+            eventType: prevCompanion && prevCompanion !== String(after.companion_id || "") ? "reassign" : "assign",
+            previousCompanionId: prevCompanion,
+            email: map[after.companion_id]?.email || "",
+          }).catch((err) => console.warn("[admin/assign] companion notify", err?.message || err)),
+          new Promise((resolve) => setTimeout(resolve, 3500)),
+        ]);
       } catch (err) {
         console.warn("[admin/assign] companion notify import", err?.message || err);
       }
