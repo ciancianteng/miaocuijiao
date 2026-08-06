@@ -53,11 +53,15 @@ async function main() {
       });
       navigations.length = 0;
       await page.goto(LOGIN, { waitUntil: "networkidle", timeout: 60000 });
-      await page.waitForTimeout(3500);
-      const bounce = navigations.filter((u) => /customer-service\/(login|dashboard)/i.test(u)).length;
+      await page.waitForTimeout(4000);
+      const dashHits = navigations.filter((u) => /customer-service\/dashboard/i.test(u)).length;
       const onLogin = /\/customer-service\/login/i.test(page.url());
       const accountVisible = await page.locator('input[name="account"]').isVisible().catch(() => false);
-      step(`${mode} no redirect loop after half-session`, onLogin && bounce <= 2, `url=${page.url()} navs=${bounce}`);
+      step(
+        `${mode} no redirect loop after half-session`,
+        onLogin && dashHits === 0,
+        `url=${page.url()} dashHits=${dashHits} navs=${navigations.length}`
+      );
       step(`${mode} login form visible`, accountVisible, `visible=${accountVisible}`);
 
       // Clear and type credentials.
