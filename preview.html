@@ -90,7 +90,7 @@
       if(e.target.matches('[data-close]')||e.target===modal)closeModal();
       if(e.target.closest('[data-book]')) location.href='companion-detail.html';
       const target=e.target.closest('[data-modal]');
-      if(target){const map={login:'<h2>登录</h2><p class="muted">手机号 + 验证码登录。</p><button class="order-btn">获取验证码</button>',messages:'<h2>消息</h2><p class="muted">订单通知、系统通知和客服消息都在这里。</p><div class="grid"><a class="neon-card feature-card" href="messages.html"><h3>消息中心</h3><p>查看通知</p></a><a class="neon-card feature-card" href="orders.html"><h3>我的订单</h3><p>订单入口</p></a></div>',order:'<h2>快速下单</h2><p class="muted">选择服务、人数、预算后，客服会快速帮你匹配陪玩。</p><a class="order-btn" href="companion-center.html">进入陪玩大厅</a>',join:'<h2>加入陪玩</h2><p class="muted">提交资料后，后台中心可审核入职申请。</p><button class="order-btn">立即申请</button>',guide:'<h2>下单教学</h2><p>1. 点击找陪玩。<br>2. 选择游戏和陪玩。<br>3. 点击立即下单。<br>4. 客服确认后开始服务。</p>'};openModal(map[target.dataset.modal]||'')}
+      if(target){const map={login:'<h2>登录</h2><p class="muted">使用邮箱验证码或密码登录。</p><a class="order-btn" href="index.html">前往首页登录</a>',messages:'<h2>消息</h2><p class="muted">订单通知、系统通知和客服消息都在这里。</p><div class="grid"><a class="neon-card feature-card" href="messages.html"><h3>消息中心</h3><p>查看通知</p></a><a class="neon-card feature-card" href="orders.html"><h3>我的订单</h3><p>订单入口</p></a></div>',order:'<h2>快速下单</h2><p class="muted">选择服务、人数、预算后，客服会快速帮你匹配陪玩。</p><a class="order-btn" href="companion-center.html">进入陪玩大厅</a>',join:'<h2>加入陪玩</h2><p class="muted">提交资料后，后台中心可审核入职申请。</p><button class="order-btn">立即申请</button>',guide:'<h2>下单教学</h2><p>1. 点击找陪玩。<br>2. 选择游戏和陪玩。<br>3. 点击立即下单。<br>4. 客服确认后开始服务。</p>'};openModal(map[target.dataset.modal]||'')}
     });
     document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal()});
   </script>

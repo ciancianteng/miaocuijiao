@@ -1,4 +1,11 @@
 {
+  "regions": ["hkg1"],
+  "crons": [
+    {
+      "path": "/api/cron/order-auto-complete",
+      "schedule": "0 4 * * *"
+    }
+  ],
   "rewrites": [
     { "source": "/ranking", "destination": "/ranking.html" },
     { "source": "/leaderboard", "destination": "/ranking.html" },
@@ -17,10 +24,16 @@
     { "source": "/club-levels", "destination": "/club-levels.html" },
     { "source": "/club-levels/", "destination": "/club-levels.html" },
     { "source": "/companion/login", "destination": "/companion/login/index.html" },
+    { "source": "/companion/login/", "destination": "/companion/login/index.html" },
     { "source": "/companion", "destination": "/companion/index.html" },
+    { "source": "/companion/", "destination": "/companion/index.html" },
     { "source": "/companion/:path*", "destination": "/companion/index.html" },
     { "source": "/customer-service/login", "destination": "/customer-service/login/index.html" },
     { "source": "/customer-service/login/", "destination": "/customer-service/login/index.html" },
+    { "source": "/customer-service/conversations", "destination": "/customer-service/conversations/index.html" },
+    { "source": "/customer-service/conversations/", "destination": "/customer-service/conversations/index.html" },
+    { "source": "/customer-service/chats", "destination": "/customer-service/conversations/index.html" },
+    { "source": "/customer-service/chats/", "destination": "/customer-service/conversations/index.html" },
     { "source": "/customer-service", "destination": "/customer-service/index.html" },
     { "source": "/customer-service/", "destination": "/customer-service/index.html" },
     { "source": "/customer-service/:path*", "destination": "/customer-service/index.html" },

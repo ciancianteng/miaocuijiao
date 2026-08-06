@@ -60,13 +60,41 @@
     };
   }
 
+  function tagFormTitle() {
+    return state.editing && state.editing.id ? "编辑标签" : "新增标签";
+  }
+  function openFormOverlay() {
+    if (!state.formOpen || !state.editing) return false;
+    if (window.MCJAdminOverlay) {
+      window.MCJAdminOverlay.open({
+        title: tagFormTitle(),
+        html: formHtml(state.editing),
+        onClose: function () {
+          state.formOpen = false;
+          state.editing = null;
+        },
+      });
+      return true;
+    }
+    return false;
+  }
+  function closeFormOverlay() {
+    if (window.MCJAdminOverlay && window.MCJAdminOverlay.isOpen && window.MCJAdminOverlay.isOpen()) {
+      window.MCJAdminOverlay.close();
+      return;
+    }
+    state.formOpen = false;
+    state.editing = null;
+    render();
+  }
+
   function formHtml(row) {
     row = row || blank();
     return (
       '<form class="admin-self-form" data-tag-form>' +
         '<input type="hidden" name="id" value="' + esc(row.id || "") + '">' +
         '<div class="form-grid">' +
-          '<label><span>标签名称</span><input name="name" required value="' + esc(row.name || "") + '" placeholder="甜妹 / 御姐 / 搞笑"></label>' +
+          '<label><span>标签名称</span><input name="name" required value="' + esc(row.name || "") + '" placeholder="随和 / 技术流 / 话多"></label>' +
           '<label><span>分组</span><input name="group" value="' + esc(row.group || "风格") + '"></label>' +
           '<label><span>排序</span><input name="sort" type="number" value="' + esc(row.sort || 100) + '"></label>' +
           '<label><span>陪玩可多选</span><select name="selfSelectable" data-admin-control="switch"><option value="true"' + (row.selfSelectable !== false ? " selected" : "") + '>是</option><option value="false"' + (row.selfSelectable === false ? " selected" : "") + '>否</option></select></label>' +
@@ -85,7 +113,7 @@
 
   function rowsHtml() {
     if (!state.tags.length) {
-      return '<tr><td colspan="8"><div class="empty">暂无标签。点击新增，添加甜妹、御姐、搞笑等普通标签。</div></td></tr>';
+      return '<tr><td colspan="8"><div class="empty">暂无标签。点击新增，添加随和、技术流、话多等普通标签（声线请到「声线管理」）。</div></td></tr>';
     }
     return state.tags.map(function (tag) {
       return (
@@ -108,10 +136,10 @@
   function pageHtml() {
     if (state.loading) return '<div class="content-loading">正在读取陪玩标签...</div>';
     return (
-      '<div class="content-admin-head"><div><h3>陪玩标签管理</h3><p>这里管理普通标签（甜妹、御姐、搞笑等）。陪玩可多选；与「陪玩等级」完全分开。</p></div>' +
+      '<div class="content-admin-head"><div><h3>陪玩标签管理</h3><p>这里管理普通标签（随和、技术流、话多等）。声线（甜妹/御姐等）请在下方「声线管理」维护，禁止混用。</p></div>' +
         '<div class="content-version-meta"><span>' + esc(state.tags.length) + " 个标签</span><span>" + esc(state.message || state.error || "保存后同步申请页与大厅筛选") + "</span></div></div>" +
       '<div class="content-admin-toolbar compact"><button class="btn primary" type="button" data-tag-new>新增标签</button><button class="btn" type="button" data-tag-reload>刷新</button></div>' +
-      (state.formOpen ? '<div class="panel" style="margin-bottom:14px">' + formHtml(state.editing) + "</div>" : "") +
+      (!window.MCJAdminOverlay && state.formOpen ? '<div class="panel" style="margin-bottom:14px">' + formHtml(state.editing) + "</div>" : "") +
       '<div class="table-wrap"><table><thead><tr><th>标签名称</th><th>分组</th><th>陪玩可选</th><th>大厅展示</th><th>支持筛选</th><th>排序</th><th>状态</th><th>操作</th></tr></thead><tbody>' +
         rowsHtml() +
       "</tbody></table></div>"
@@ -169,13 +197,11 @@
       if (e.target.closest("[data-tag-new]")) {
         state.editing = blank();
         state.formOpen = true;
-        render();
+        if (!openFormOverlay()) render();
         return;
       }
       if (e.target.closest("[data-tag-cancel]")) {
-        state.formOpen = false;
-        state.editing = null;
-        render();
+        closeFormOverlay();
         return;
       }
       if (e.target.closest("[data-tag-reload]")) {
@@ -186,7 +212,7 @@
       if (edit) {
         state.editing = state.tags.find(function (item) { return String(item.id) === String(edit.getAttribute("data-tag-edit")); }) || blank();
         state.formOpen = true;
-        render();
+        if (!openFormOverlay()) render();
         return;
       }
       var tog = e.target.closest("[data-tag-toggle]");
@@ -226,9 +252,17 @@
         },
       })
         .then(function () {
-          state.formOpen = false;
-          state.editing = null;
+          if (window.MCJAdminOverlay && window.MCJAdminOverlay.isOpen && window.MCJAdminOverlay.isOpen()) {
+            window.MCJAdminOverlay.close();
+          } else {
+            state.formOpen = false;
+            state.editing = null;
+          }
           load();
+          if (window.MCJTaxonomy) {
+            if (window.MCJTaxonomy.notifyChanged) window.MCJTaxonomy.notifyChanged();
+            else if (window.MCJTaxonomy.reload) window.MCJTaxonomy.reload();
+          }
         })
         .catch(function (err) {
           alert(err.message || "保存失败");

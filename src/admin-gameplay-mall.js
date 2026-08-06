@@ -1,7 +1,9 @@
 (function () {
   "use strict";
 
-  var Auth = window.MCJAdminAuthFetch;
+  function Auth() {
+    return window.MCJAdminAuthFetch || null;
+  }
   var TARGET_ID = "table-gameplays";
   var CATEGORIES = ["护航", "跑刀", "上分", "代练", "陪练", "语音", "娱乐", "其他"];
   var UNITS = ["每局", "每小时", "每单", "每次", "每天", "自定义"];
@@ -31,28 +33,15 @@
   }
 
   function apiGet() {
-    if (Auth && Auth.get) return Auth.get("/api/admin/gameplay-products");
-    return fetch("/api/admin/gameplay-products", { headers: { Accept: "application/json", "x-mcj-admin-role": "admin" } })
-      .then(function (res) {
-        return res.json().then(function (body) {
-          if (!res.ok || body.ok === false) throw new Error(body.message || "读取失败");
-          return body;
-        });
-      });
+    var auth = Auth();
+    if (auth && auth.get) return auth.get("/api/admin/gameplay-products");
+    throw new Error("管理员登录态未就绪，请重新登录后台后再管理更多玩法商品。");
   }
 
   function apiPost(body) {
-    if (Auth && Auth.post) return Auth.post("/api/admin/gameplay-products", body);
-    return fetch("/api/admin/gameplay-products", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-mcj-admin-role": "admin" },
-      body: JSON.stringify(body),
-    }).then(function (res) {
-      return res.json().then(function (data) {
-        if (!res.ok || data.ok === false) throw new Error(data.message || "保存失败");
-        return data;
-      });
-    });
+    var auth = Auth();
+    if (auth && auth.post) return auth.post("/api/admin/gameplay-products", body);
+    throw new Error("管理员登录态未就绪，请重新登录后台后再管理更多玩法商品。");
   }
 
   function formatTime(value) {
@@ -108,6 +97,39 @@
     );
   }
 
+  function formTitle() {
+    return state.editing && state.editing.id ? "编辑玩法商品" : "新增玩法商品";
+  }
+  function openFormOverlay() {
+    if (!state.formOpen || !state.editing) return false;
+    if (window.MCJAdminOverlay) {
+      window.MCJAdminOverlay.open({
+        title: formTitle(),
+        html: formHtml(state.editing),
+        onClose: function () {
+          state.formOpen = false;
+          state.editing = null;
+        },
+      });
+      return true;
+    }
+    return false;
+  }
+  function closeFormOverlay() {
+    if (window.MCJAdminOverlay && window.MCJAdminOverlay.isOpen && window.MCJAdminOverlay.isOpen()) {
+      window.MCJAdminOverlay.close();
+      return;
+    }
+    state.formOpen = false;
+    state.editing = null;
+    render();
+  }
+  function syncFormOverlay() {
+    if (!state.formOpen || !state.editing || !window.MCJAdminOverlay) return;
+    var html = formHtml(state.editing);
+    if (window.MCJAdminOverlay.isOpen && window.MCJAdminOverlay.isOpen()) window.MCJAdminOverlay.setBody(html);
+    else openFormOverlay();
+  }
   function formHtml(row) {
     row = row || blank();
     var Forms = window.MCJAdminForms;
@@ -141,7 +163,8 @@
             '<label class="wide"><span>商品名称</span><input name="name" required maxlength="40" value="' + esc(row.name || "") + '" placeholder="例如：三角洲跑刀 / APEX 上分护航"></label>' +
             categoryField +
             unitField +
-            '<label><span>售价 RM</span><input name="price" type="number" min="0" step="0.01" value="' + esc(row.price || 0) + '"></label>' +
+            '<label><span>售价（猫粮）</span><input name="price" type="number" min="0" step="0.01" value="' + esc(row.price || 0) + '"></label>' +
+            '<label><span>商品抽成 %</span><input name="commissionRate" type="number" min="0" max="100" step="0.1" value="' + esc(row.commissionRate != null ? row.commissionRate : 0) + '" placeholder="平台抽成百分比"></label>' +
             '<label><span>排序</span><input name="sortOrder" type="number" value="' + esc(row.sortOrder || 100) + '"></label>' +
             '<label class="wide"><span>适用游戏（可多选）</span><div class="gp-check-grid">' + gameChecks + "</div></label>" +
             '<label class="wide"><span>商品封面</span>' + coverUploader(row.coverUrl || "") + "</label>" +
@@ -174,7 +197,7 @@
   function rowsHtml() {
     var rows = filtered();
     if (!rows.length) {
-      return '<tr><td colspan="12"><div class="empty">暂无玩法商品。点击「新增玩法商品」创建商城商品。</div></td></tr>';
+      return '<tr><td colspan="13"><div class="empty">暂无玩法商品。点击「新增玩法商品」创建商城商品。</div></td></tr>';
     }
     return rows.map(function (item) {
       var cover = item.coverUrl
@@ -187,6 +210,7 @@
           "<td>" + esc(item.category || "-") + "</td>" +
           "<td>" + esc(item.gamesText || "-") + "</td>" +
           "<td>" + esc(priceText(item)) + "</td>" +
+          "<td>" + esc(item.commissionRate != null ? item.commissionRate + "%" : "0%") + "</td>" +
           "<td>" + esc(item.pricingUnit || "-") + "</td>" +
           '<td><span class="status ' + (item.status === "published" ? "ok" : "wait") + '">' + esc(statusLabel(item.status)) + "</span></td>" +
           "<td>" + (item.featured ? "推荐" : "否") + "</td>" +
@@ -238,9 +262,9 @@
           '<button class="btn primary" type="button" data-gp-new>新增玩法商品</button>' +
           '<button class="btn" type="button" data-gp-reload>刷新</button>' +
         "</div>" +
-        (state.formOpen ? formHtml(state.editing) : "") +
+        (!window.MCJAdminOverlay && state.formOpen ? formHtml(state.editing) : "") +
         '<div class="table-wrap"><table class="data-table"><thead><tr>' +
-          "<th>封面</th><th>商品名称</th><th>分类</th><th>适用游戏</th><th>售价</th><th>计价单位</th><th>销售状态</th><th>推荐</th><th>已售</th><th>排序</th><th>更新时间</th><th>操作</th>" +
+          "<th>封面</th><th>商品名称</th><th>分类</th><th>适用游戏</th><th>售价</th><th>抽成%</th><th>计价单位</th><th>销售状态</th><th>推荐</th><th>已售</th><th>排序</th><th>更新时间</th><th>操作</th>" +
         "</tr></thead><tbody>" + rowsHtml() + "</tbody></table></div>" +
       "</div>"
     );
@@ -253,6 +277,7 @@
     if (window.MCJAdminForms && window.MCJAdminForms.enhance) window.MCJAdminForms.enhance(el);
     bindOnce();
     syncFilterWidgets();
+    syncFormOverlay();
   }
 
   function syncFilterWidgets() {
@@ -281,6 +306,7 @@
       shortDescription: String(fd.get("shortDescription") || "").trim().slice(0, 40),
       description: String(fd.get("description") || "").trim(),
       price: Number(fd.get("price") || 0),
+      commissionRate: Number(fd.get("commissionRate") || 0),
       pricingUnit: String(fd.get("pricingUnit") || "每单").trim(),
       fixedPrice: String(fd.get("fixedPrice")) !== "false",
       status: status,
@@ -304,18 +330,10 @@
           mimeType: file.type,
           base64: reader.result,
         };
-        var req = Auth && Auth.post
-          ? Auth.post("/api/admin/platform-content-upload", payload)
-          : fetch("/api/admin/platform-content-upload", {
-              method: "POST",
-              headers: { "Content-Type": "application/json", "x-mcj-admin-role": "admin" },
-              body: JSON.stringify(payload),
-            }).then(function (res) {
-              return res.json().then(function (body) {
-                if (!res.ok || body.ok === false) throw new Error(body.message || "上传失败");
-                return body;
-              });
-            });
+        var auth = Auth();
+        var req = auth && auth.post
+          ? auth.post("/api/admin/platform-content-upload", payload)
+          : Promise.reject(new Error("管理员登录态未就绪，请重新登录后台后再上传封面。"));
         req.then(function (body) {
           var url = body.url || reader.result;
           var hidden = form.querySelector('[name="coverUrl"]');
@@ -366,9 +384,13 @@
     render();
     apiPost({ action: "save", id: payload.id, product: payload })
       .then(function () {
-        state.formOpen = false;
-        state.editing = null;
         state.saving = false;
+        if (window.MCJAdminOverlay && window.MCJAdminOverlay.isOpen && window.MCJAdminOverlay.isOpen()) {
+          window.MCJAdminOverlay.close();
+        } else {
+          state.formOpen = false;
+          state.editing = null;
+        }
         return load();
       })
       .catch(function (err) {
@@ -387,13 +409,11 @@
       if (e.target.closest("[data-gp-new]")) {
         state.editing = blank();
         state.formOpen = true;
-        render();
+        if (!openFormOverlay()) render();
         return;
       }
       if (e.target.closest("[data-gp-cancel]")) {
-        state.formOpen = false;
-        state.editing = null;
-        render();
+        closeFormOverlay();
         return;
       }
       if (e.target.closest("[data-gp-reload]")) {
@@ -409,7 +429,7 @@
       if (edit) {
         state.editing = state.products.find(function (item) { return String(item.id) === String(edit.getAttribute("data-gp-edit")); }) || blank();
         state.formOpen = true;
-        render();
+        if (!openFormOverlay()) render();
         return;
       }
       var pub = e.target.closest("[data-gp-publish]");

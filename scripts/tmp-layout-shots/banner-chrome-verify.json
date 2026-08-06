@@ -1,0 +1,107 @@
+[
+  {
+    "viewport": "1920",
+    "heroW": 1376,
+    "heroH": 450,
+    "arrowHit": {
+      "w": 48,
+      "h": 48
+    },
+    "arrowVisual": {
+      "w": 44,
+      "h": 44
+    },
+    "arrowBg": "rgba(0, 0, 0, 0.42)",
+    "arrowBorder": "rgba(255, 212, 230, 0.42)",
+    "arrowLeft": 14,
+    "arrowRight": 14,
+    "arrowDisplay": "grid",
+    "dotsCount": 2,
+    "dotSize": {
+      "w": 8,
+      "h": 8
+    },
+    "activeDot": {
+      "w": 8,
+      "h": 8,
+      "bg": "rgb(255, 193, 217)"
+    },
+    "dotsBottom": 18,
+    "announceGap": true,
+    "announceOverlap": false,
+    "labelText": "📢\n官方公告",
+    "trackOverflow": "hidden",
+    "barGap": "16px",
+    "shot": "scripts/tmp-layout-shots/banner-chrome-1920.png"
+  },
+  {
+    "viewport": "1366",
+    "heroW": 1302,
+    "heroH": 450,
+    "arrowHit": {
+      "w": 48,
+      "h": 48
+    },
+    "arrowVisual": {
+      "w": 44,
+      "h": 44
+    },
+    "arrowBg": "rgba(0, 0, 0, 0.42)",
+    "arrowBorder": "rgba(255, 212, 230, 0.42)",
+    "arrowLeft": 14,
+    "arrowRight": 14,
+    "arrowDisplay": "grid",
+    "dotsCount": 2,
+    "dotSize": {
+      "w": 8,
+      "h": 8
+    },
+    "activeDot": {
+      "w": 8,
+      "h": 8,
+      "bg": "rgb(255, 193, 217)"
+    },
+    "dotsBottom": 18,
+    "announceGap": true,
+    "announceOverlap": false,
+    "labelText": "📢\n官方公告",
+    "trackOverflow": "hidden",
+    "barGap": "16px",
+    "shot": "scripts/tmp-layout-shots/banner-chrome-1366.png"
+  },
+  {
+    "viewport": "390",
+    "heroW": 358,
+    "heroH": 179.390625,
+    "arrowHit": {
+      "w": 48,
+      "h": 48
+    },
+    "arrowVisual": {
+      "w": 40,
+      "h": 40
+    },
+    "arrowBg": "rgba(0, 0, 0, 0.42)",
+    "arrowBorder": "rgba(255, 212, 230, 0.42)",
+    "arrowLeft": 8,
+    "arrowRight": 8,
+    "arrowDisplay": "grid",
+    "dotsCount": 2,
+    "dotSize": {
+      "w": 8,
+      "h": 8
+    },
+    "activeDot": {
+      "w": 8,
+      "h": 8,
+      "bg": "rgb(255, 193, 217)"
+    },
+    "dotsBottom": 12,
+    "announceGap": true,
+    "announceOverlap": false,
+    "labelText": "官方公告",
+    "trackOverflow": "hidden",
+    "barGap": "16px",
+    "shot": "scripts/tmp-layout-shots/banner-chrome-390.png"
+  }
+]

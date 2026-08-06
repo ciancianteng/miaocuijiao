@@ -1,3 +1,5 @@
+import { resolveBossPublicCode, publicDisplayName, isDevLogin, isDbUuid } from "../_account-codes.js";
+
 const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"];
 const RESERVED_BOSS_IDS = ["admin", "system", "official", "root", "support", "service"];
 
@@ -107,17 +109,45 @@ function mapBoss(row, wallet, extras = {}) {
   const bossUid = row.boss_uid || "";
   const w = wallet || {};
   const statusKey = row.status || "active";
+  const countryCode = String(row.country_code || row.countryCode || "MY").toUpperCase() || "MY";
+  const dialMap = {
+    MY: "+60", CN: "+86", SG: "+65", TW: "+886", HK: "+852",
+    JP: "+81", KR: "+82", TH: "+66", ID: "+62", PH: "+63", VN: "+84",
+    US: "+1", GB: "+44", AU: "+61", CA: "+1", DE: "+49", FR: "+33",
+  };
+  const labelMap = {
+    MY: "🇲🇾 马来西亚", CN: "🇨🇳 中国", SG: "🇸🇬 新加坡", TW: "🇹🇼 台湾", HK: "🇭🇰 香港",
+    JP: "🇯🇵 日本", KR: "🇰🇷 韩国", TH: "🇹🇭 泰国", ID: "🇮🇩 印尼", PH: "🇵🇭 菲律宾", VN: "🇻🇳 越南",
+    US: "🇺🇸 美国", GB: "🇬🇧 英国", AU: "🇦🇺 澳大利亚", CA: "🇨🇦 加拿大", DE: "🇩🇪 德国", FR: "🇫🇷 法国",
+  };
+  const dial = dialMap[countryCode] || "+60";
+  const phoneLocal = String(row.phone || "").replace(/\D+/g, "");
+  const phoneE164 = String(row.phone_e164 || row.phoneE164 || "").trim() || (phoneLocal ? dial + phoneLocal : "");
+  const phoneDisplay = phoneE164 || (phoneLocal ? `${dial} ${phoneLocal}` : "") || row.phone || "";
+  const safeName = publicDisplayName(row, bossUid || "未命名老板");
   return {
     id: row.id,
-    uid: bossUid || row.id,
+    uid: bossUid || "",
     boss_uid: bossUid,
     bossUid: bossUid,
-    bossId: bossUid || row.id,
-    nickname: row.display_name || row.email || "-",
-    name: row.display_name || row.email || "-",
-    displayName: row.display_name || "",
-    email: row.email || "",
+    bossId: bossUid || "",
+    nickname: safeName,
+    name: safeName,
+    displayName: String(row.display_name || "").trim() || safeName,
+    email: isDevLogin(row.email) ? "" : row.email || "",
+    rawEmail: row.email || "",
+    emailVerified: extras.emailVerified !== false && (extras.emailVerified === true || row.email_verified === true || row.email_verified == null),
+    email_verified: extras.emailVerified !== false && (extras.emailVerified === true || row.email_verified === true || row.email_verified == null),
+    emailVerifiedLabel: extras.emailVerifiedLabel || (extras.emailVerified === false || row.email_verified === false ? "❌ 未验证" : "✅ 已验证"),
+    email_verified_label: extras.emailVerifiedLabel || (extras.emailVerified === false || row.email_verified === false ? "❌ 未验证" : "✅ 已验证"),
     phone: row.phone || "",
+    countryCode,
+    country_code: countryCode,
+    countryLabel: labelMap[countryCode] || countryCode,
+    phoneE164,
+    phone_e164: phoneE164,
+    phoneDisplay,
+    dialCode: dial,
     avatar: row.avatar_url || "",
     avatar_url: row.avatar_url || "",
     status: STATUS_LABEL[statusKey] || statusKey || "正常",
@@ -127,6 +157,14 @@ function mapBoss(row, wallet, extras = {}) {
     registered_at: row.created_at,
     lastLoginAt: row.last_login_at || extras.lastLoginAt || "",
     last_login_at: row.last_login_at || extras.lastLoginAt || "",
+    lastLoginIp: row.last_login_ip || extras.lastLoginIp || "",
+    last_login_ip: row.last_login_ip || extras.lastLoginIp || "",
+    hasPassword: extras.hasPassword === true,
+    has_password: extras.hasPassword === true,
+    passwordSetAt: row.password_set_at || extras.passwordSetAt || "",
+    password_set_at: row.password_set_at || extras.passwordSetAt || "",
+    mustChangePassword: extras.mustChangePassword === true || row.must_change_password === true,
+    must_change_password: extras.mustChangePassword === true || row.must_change_password === true,
     role: row.role,
     vip: extras.vip || "VIP0",
     vipLevel: extras.vip || "VIP0",
@@ -324,10 +362,29 @@ async function loadBossDetail(bossId) {
 
   const vip = computeVip(wallet?.total_spent, vipLevelRows);
   const invites = await loadBossInvites(id, profile.boss_uid);
+  let hasPassword = profile.has_password === true;
+  let mustChangePassword = profile.must_change_password === true;
+  let emailVerified = profile.email_verified !== false;
+  let emailVerifiedLabel = "✅ 已验证";
+  try {
+    const { resolveHasPassword, resolveMustChangePassword, resolveEmailVerified, emailVerifiedLabel: labelOf } = await import("../_account-security.js");
+    hasPassword = await resolveHasPassword(profile, {}, { probeAuth: true });
+    mustChangePassword = resolveMustChangePassword(profile, {});
+    emailVerified = resolveEmailVerified(profile, {});
+    emailVerifiedLabel = labelOf(emailVerified);
+  } catch {
+    /* keep flags */
+  }
   const boss = mapBoss(profile, wallet, {
     vip: vip.current,
     totalOrders: orderViews.length,
     lastLoginAt: loginViews[0]?.createdAt || profile.last_login_at || "",
+    lastLoginIp: profile.last_login_ip || loginViews[0]?.ip || "",
+    hasPassword,
+    mustChangePassword,
+    passwordSetAt: profile.password_set_at || "",
+    emailVerified,
+    emailVerifiedLabel,
   });
 
   return {
@@ -374,6 +431,27 @@ async function patchBossStatus(id, status, freezeWallet) {
   return rows?.[0] || null;
 }
 
+async function patchBossDisplayName(id, displayName) {
+  const name = String(displayName || "").trim();
+  if (!name) throw Object.assign(new Error("显示名称不能为空"), { status: 400 });
+  if (/^草稿保留/i.test(name)) throw Object.assign(new Error("显示名称不能使用草稿保留前缀"), { status: 400 });
+  const rows = await supabaseJson(restUrl("profiles", `?id=eq.${encodeURIComponent(id)}`), {
+    method: "PATCH",
+    headers: serviceHeaders(),
+    body: JSON.stringify({ display_name: name, updated_at: new Date().toISOString() }),
+  });
+  try {
+    await supabaseJson(`${process.env.SUPABASE_URL}/auth/v1/admin/users/${encodeURIComponent(id)}`, {
+      method: "PUT",
+      headers: serviceHeaders(),
+      body: JSON.stringify({ user_metadata: { display_name: name } }),
+    });
+  } catch {
+    /* best effort */
+  }
+  return rows?.[0] || null;
+}
+
 async function patchBossRemark(id, remark) {
   try {
     const rows = await supabaseJson(restUrl("profiles", `?id=eq.${encodeURIComponent(id)}`), {
@@ -390,14 +468,61 @@ async function patchBossRemark(id, remark) {
   }
 }
 
-async function resetBossPassword(id, password) {
-  const pwd = String(password || "").trim();
-  if (pwd.length < 8) throw Object.assign(new Error("新密码至少 8 位"), { status: 400 });
-  await supabaseJson(`${process.env.SUPABASE_URL}/auth/v1/admin/users/${encodeURIComponent(id)}`, {
-    method: "PUT",
+async function sendBossPasswordResetEmail(id, operator = {}) {
+  const rows = await supabaseJson(restUrl("profiles", `?id=eq.${encodeURIComponent(id)}&select=id,email,role,status&limit=1`), {
     headers: serviceHeaders(),
-    body: JSON.stringify({ password: pwd }),
   });
+  const profile = Array.isArray(rows) ? rows[0] : null;
+  if (!profile?.email) throw Object.assign(new Error("该老板未绑定邮箱，无法发送重置邮件。"), { status: 400 });
+  if (String(profile.status || "").toLowerCase() === "disabled") {
+    throw Object.assign(new Error("账号已停用，无法发送重置邮件。"), { status: 400 });
+  }
+  // Reuse public forgot OTP sender (anti-enumeration friendly message).
+  const { sendEmailOtp } = await import("../_mail.js");
+  const { storeOtp, randomOtpCode } = await import("../_otp-store.js");
+  const { logSecurityAdminAction, RESET_EMAIL_GENERIC_MESSAGE } = await import("../_account-security.js");
+  const code = randomOtpCode();
+  await storeOtp({ accountKey: profile.id, role: "boss", code, kind: "otp", ttlMs: 10 * 60 * 1000 });
+  let mailOk = false;
+  let mailError = "";
+  try {
+    await sendEmailOtp({ to: String(profile.email).toLowerCase(), code, purpose: "forgot", roleLabel: "老板端" });
+    mailOk = true;
+  } catch (err) {
+    mailError = String(err?.message || err || "");
+  }
+  await logSecurityAdminAction({
+    operatorId: operator.id || operator.userId || "",
+    operatorRole: operator.role || "admin",
+    targetId: id,
+    targetType: "boss",
+    action: "send_password_reset_email",
+    result: mailOk ? "ok" : "mail_failed",
+    reason: mailOk ? "reset email sent" : mailError,
+    after: { emailMasked: String(profile.email).replace(/(^.).*(@.*$)/, "$1***$2") },
+  });
+  if (!mailOk) {
+    const staging =
+      String(process.env.ALLOW_STAGING_OTP || "") === "1" ||
+      String(process.env.MCJ_OTP_DEBUG || "") === "1" ||
+      String(process.env.VERCEL_ENV || "").toLowerCase() !== "production";
+    if (staging) {
+      return {
+        ok: true,
+        message: RESET_EMAIL_GENERIC_MESSAGE + "（Staging 已生成调试验证码）",
+        devCode: code,
+      };
+    }
+    throw Object.assign(new Error(mailError || "重置邮件发送失败"), { status: 502 });
+  }
+  return { ok: true, message: RESET_EMAIL_GENERIC_MESSAGE };
+}
+
+async function resetBossPassword() {
+  throw Object.assign(
+    new Error("禁止在后台直接设置用户明文密码。请使用「发送密码重置邮件」，由用户自行验证后设置。"),
+    { status: 400 }
+  );
 }
 
 async function unbindBoss(id) {
@@ -598,31 +723,91 @@ export default async function handler(req, res) {
 
     if (!id) return json(res, 400, { ok: false, message: "缺少老板 ID" });
 
-    if (action === "freeze") {
+    if (action === "freeze" || action === "ban" || action === "blacklist") {
       await patchBossStatus(id, "disabled", true);
-      return json(res, 200, { ok: true, message: "账号已冻结" });
-    }
-    if (action === "blacklist") {
-      await patchBossStatus(id, "disabled", true);
-      return json(res, 200, { ok: true, message: "已按黑名单处理（账号停用并冻结钱包）" });
+      try {
+        const { revokeUserSessions } = await import("../_account-security.js");
+        await revokeUserSessions(id);
+      } catch { /* best-effort */ }
+      const msg =
+        action === "ban"
+          ? "账号已封禁"
+          : action === "blacklist"
+            ? "已按黑名单处理（账号停用并冻结钱包）"
+            : "账号已冻结";
+      return json(res, 200, { ok: true, message: msg });
     }
     if (action === "unban" || action === "enable" || action === "unfreeze") {
       await patchBossStatus(id, "active", false);
       return json(res, 200, { ok: true, message: "账号已解封/启用" });
-    }
-    if (action === "ban") {
-      await patchBossStatus(id, "disabled", true);
-      return json(res, 200, { ok: true, message: "账号已封禁" });
     }
     if (action === "remark" || action === "save_remark") {
       const remark = String(body.payload?.remark ?? body.remark ?? "").trim();
       await patchBossRemark(id, remark);
       return json(res, 200, { ok: true, message: "备注已保存", remark });
     }
+    if (
+      action === "set_display_name" ||
+      action === "edit_display_name" ||
+      action === "rename" ||
+      action === "edit_name"
+    ) {
+      const name = String(
+        body.payload?.displayName ??
+          body.payload?.display_name ??
+          body.payload?.nickname ??
+          body.displayName ??
+          body.display_name ??
+          body.nickname ??
+          ""
+      ).trim();
+      const row = await patchBossDisplayName(id, name);
+      return json(res, 200, {
+        ok: true,
+        message: "显示名称已更新（编号不变，历史订单仍关联同一账号）",
+        boss: mapBoss(row || { id, display_name: name }),
+      });
+    }
     if (action === "reset_password" || action === "reset-password") {
-      const password = String(body.payload?.password || body.password || "").trim();
-      await resetBossPassword(id, password);
-      return json(res, 200, { ok: true, message: "密码已重置" });
+      await resetBossPassword();
+      return json(res, 400, { ok: false, message: "禁止直接设置明文密码" });
+    }
+    if (
+      action === "send_password_reset" ||
+      action === "send_reset_email" ||
+      action === "send_password_reset_email"
+    ) {
+      const admin = await assertBossAdmin(req).catch(() => ({}));
+      const result = await sendBossPasswordResetEmail(id, admin?.user || admin || {});
+      return json(res, 200, result);
+    }
+    if (action === "force_change_password" || action === "require_password_change") {
+      const { markMustChangePassword, logSecurityAdminAction } = await import("../_account-security.js");
+      await markMustChangePassword(id, true);
+      const admin = await assertBossAdmin(req).catch(() => ({}));
+      await logSecurityAdminAction({
+        operatorId: admin?.user?.id || admin?.id || "",
+        operatorRole: admin?.user?.role || admin?.role || "admin",
+        targetId: id,
+        targetType: "boss",
+        action: "force_change_password",
+        result: "ok",
+      });
+      return json(res, 200, { ok: true, message: "已要求用户下次登录后修改密码。" });
+    }
+    if (action === "revoke_sessions" || action === "logout_all") {
+      const { revokeUserSessions, logSecurityAdminAction } = await import("../_account-security.js");
+      await revokeUserSessions(id);
+      const admin = await assertBossAdmin(req).catch(() => ({}));
+      await logSecurityAdminAction({
+        operatorId: admin?.user?.id || admin?.id || "",
+        operatorRole: admin?.user?.role || admin?.role || "admin",
+        targetId: id,
+        targetType: "boss",
+        action: "revoke_sessions",
+        result: "ok",
+      });
+      return json(res, 200, { ok: true, message: "已注销该账号全部登录会话。" });
     }
     if (action === "unbind") {
       await unbindBoss(id);

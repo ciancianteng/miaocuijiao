@@ -89,7 +89,7 @@
       if (/\/admin(\/|\.html|$)/i.test(p) || /\/companion\//i.test(p) || /\/customer-service(\/|\.html|$)/i.test(p)) return;
       window.__MCJBossHeaderScript = true;
       var s = document.createElement("script");
-      s.src = "/src/boss-header.js?v=20260802mobileP0c";
+      s.src = "/src/boss-header.js?v=20260803overlayP0";
       s.defer = true;
       document.head.appendChild(s);
     })();

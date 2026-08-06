@@ -1,4 +1,4 @@
-﻿(function () {
+(function () {
   "use strict";
 
   var state = { items: [], rules: null, loading: true, error: "" };
@@ -36,10 +36,25 @@
     return Number.isFinite(n) ? n : 0;
   }
   function statusClass(code) {
+    if (window.MCJCompanionPresence) {
+      return window.MCJCompanionPresence.fromCompanion({ availabilityStatus: code }).className;
+    }
     if (code === "online") return "is-online";
     if (code === "busy") return "is-busy";
     if (code === "paused") return "is-paused";
     return "is-offline";
+  }
+  function presenceLabel(item) {
+    if (window.MCJCompanionPresence) {
+      return window.MCJCompanionPresence.fromCompanion(item).label;
+    }
+    return item.availabilityText || item.status || item.onlineStatus || "离线";
+  }
+  function presenceCode(item) {
+    if (window.MCJCompanionPresence) {
+      return window.MCJCompanionPresence.fromCompanion(item).code;
+    }
+    return item.availabilityStatus || "offline";
   }
   function badge(rank) {
     if (rank === 1) return '<span class="pop-medal gold">冠军</span>';
@@ -48,10 +63,14 @@
     return '<span class="pop-rank-num">' + esc(rank) + "</span>";
   }
   function profileHref(item) {
-    return "profile.html?id=" + encodeURIComponent(item.companionId || item.publicId || "");
+    var uuid = String(item.companionId || item.id || item.uid || "").trim();
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(uuid)) return "companion-center.html";
+    return "profile.html?id=" + encodeURIComponent(uuid);
   }
   function orderHref(item) {
-    return "profile.html?id=" + encodeURIComponent(item.companionId || "") + "&open_order=1";
+    var uuid = String(item.companionId || item.id || item.uid || "").trim();
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(uuid)) return "companion-center.html";
+    return "profile.html?id=" + encodeURIComponent(uuid) + "&open_order=1";
   }
 
   function podiumCard(item) {
@@ -71,12 +90,14 @@
       "<h3>" +
       esc(displayName(item)) +
       "</h3>" +
-      '<div class="pop-meta"><span class="companion-level-pill">' +
+      '<div class="pop-meta"><span class="companion-level-pill" data-level-id="' +
+      esc(item.levelId || "") +
+      '">' +
       esc(item.level) +
       '</span><span class="mcj-status-dot ' +
-      statusClass(item.availabilityStatus) +
+      statusClass(presenceCode(item)) +
       '"><i></i>' +
-      esc(item.availabilityText) +
+      esc(presenceLabel(item)) +
       "</span></div>" +
       '<div class="pop-stats">' +
       (state.rules && state.rules.showScore !== false
@@ -104,6 +125,10 @@
       esc(avatarUrl(item.avatar)) +
       '" data-pop-public-id="' +
       esc(item.publicId || "") +
+      '" data-pop-status="' +
+      esc(item.availabilityStatus || "") +
+      '" data-pop-status-text="' +
+      esc(presenceLabel(item) || item.availabilityText || "") +
       '">立即下单</button>' +
       "</article>"
     );
@@ -128,10 +153,12 @@
       esc(displayName(item)) +
       "</strong><span>" +
       esc(item.publicId || "") +
-      ' · <span class="companion-level-pill">' +
+      ' · <span class="companion-level-pill" data-level-id="' +
+      esc(item.levelId || "") +
+      '">' +
       esc(item.level) +
       "</span> · " +
-      esc(item.availabilityText || "") +
+      esc(presenceLabel(item)) +
       "</span><span>" +
       esc(item.mainService || item.game || "-") +
       " · " +
@@ -148,9 +175,6 @@
       esc(money(item.popularityScore)) +
       "</strong><span>人气值</span></div>" +
       '<div style="display:flex;gap:6px">' +
-      '<button type="button" class="pop-list-cta" data-fav-id="' +
-      esc(item.companionId) +
-      '">收藏</button>' +
       '<button type="button" class="pop-list-cta" data-pop-order="' +
       esc(item.companionId || "") +
       '" data-pop-name="' +
@@ -163,19 +187,27 @@
       esc(avatarUrl(item.avatar)) +
       '" data-pop-public-id="' +
       esc(item.publicId || "") +
+      '" data-pop-status="' +
+      esc(item.availabilityStatus || "") +
+      '" data-pop-status-text="' +
+      esc(presenceLabel(item) || item.availabilityText || "") +
       '">下单</button></div></article>'
     );
   }
 
   function companionToRankItem(c, rank) {
+    var p =
+      window.MCJCompanionPresence && window.MCJCompanionPresence.fromCompanion
+        ? window.MCJCompanionPresence.fromCompanion(c)
+        : null;
     return {
       companionId: c.id || c.uid || "",
       publicId: c.publicId || "",
       nickname: c.nickname || c.name || "",
       avatar: avatarUrl(c.avatar || c.cover || ""),
       level: c.levelName || c.level || "",
-      availabilityStatus: c.availabilityStatus || "offline",
-      availabilityText: c.availabilityText || c.status || c.onlineStatus || "",
+      availabilityStatus: p ? p.code : c.availabilityStatus || "offline",
+      availabilityText: p ? p.label : c.availabilityText || c.status || c.onlineStatus || "",
       popularityScore: 0,
       completedOrders: 0,
       fiveStarReviews: 0,
@@ -345,6 +377,10 @@
           avatar: orderBtn.getAttribute("data-pop-avatar") || "",
           publicId: orderBtn.getAttribute("data-pop-public-id") || "",
           pricingUnit: "小时",
+          availabilityStatus: orderBtn.getAttribute("data-pop-status") || "",
+          availabilityText: orderBtn.getAttribute("data-pop-status-text") || "",
+          status: orderBtn.getAttribute("data-pop-status-text") || "",
+          publishReady: true,
         });
       } catch (err) {
         if (window.MCJPlaceOrder && typeof window.MCJPlaceOrder.close === "function") {
@@ -354,32 +390,5 @@
       }
       return;
     }
-    var fav = e.target.closest("[data-fav-id]");
-    if (!fav) return;
-    e.preventDefault();
-    var token = localStorage.getItem("mcjAuthAccessToken") || sessionStorage.getItem("mcjAuthAccessToken") || "";
-    if (!token) {
-      alert("请先登录后再收藏");
-      return;
-    }
-    fetch("/api/popularity", {
-      method: "POST",
-      headers: {
-        Accept: "application/json",
-        "Content-Type": "application/json",
-        Authorization: "Bearer " + token,
-        "x-mcj-access-token": token,
-      },
-      body: JSON.stringify({ action: "favorite", companionId: fav.getAttribute("data-fav-id") }),
-    })
-      .then(function (res) {
-        return res.json().then(function (body) {
-          if (!res.ok || body.ok === false) throw new Error(body.message || "收藏失败");
-          alert(body.message || "已收藏");
-        });
-      })
-      .catch(function (err) {
-        alert(err.message || "收藏失败");
-      });
   });
 })();

@@ -271,11 +271,22 @@
       String(raw.service || raw.serviceType || raw.serviceName || raw.game || raw.mainGame || "陪玩").trim() ||
       "陪玩";
     var level = String(raw.level || raw.levelName || raw.rank || raw.tier || "").trim() || "认证陪玩";
-    var onlineRaw = raw.online != null ? raw.online : raw.isOnline != null ? raw.isOnline : raw.status;
-    var online =
-      onlineRaw === true ||
-      onlineRaw === 1 ||
-      /online|在线|busy|接单中/i.test(String(onlineRaw || ""));
+    var onlineRaw =
+      raw.availabilityStatus ||
+      raw.availability_status ||
+      raw.availabilityText ||
+      raw.onlineStatus ||
+      raw.online_status ||
+      raw.status;
+    var presence =
+      window.MCJCompanionPresence && window.MCJCompanionPresence.fromCompanion
+        ? window.MCJCompanionPresence.fromCompanion(raw)
+        : null;
+    var online = presence
+      ? presence.code === "online" || presence.code === "busy"
+      : onlineRaw === true ||
+        onlineRaw === 1 ||
+        /online|在线|busy|接单中|忙碌/i.test(String(onlineRaw || ""));
     return {
       companionId: id,
       companionName: name,
@@ -286,6 +297,8 @@
       publicId: raw.publicId || "",
       level: level,
       online: online,
+      availabilityStatus: presence ? presence.code : String(raw.availabilityStatus || "").toLowerCase() || "",
+      availabilityText: presence ? presence.label : raw.availabilityText || (online ? "在线可接单" : "离线"),
     };
   }
   function matchService(service) {
@@ -322,7 +335,7 @@
     try {
       var cid = state.companion && state.companion.companionId;
       var back = cid
-        ? "profile.html?player=" + encodeURIComponent(cid) + "&open_order=1"
+        ? "profile.html?id=" + encodeURIComponent(cid) + "&open_order=1"
         : location.href;
       sessionStorage.setItem("mcjAfterLoginRedirect", back);
     } catch (e) {}
@@ -488,7 +501,7 @@
       '<span class="mcj-po-pill' +
       (c.online ? " online" : "") +
       '">' +
-      (c.online ? "在线" : "离线") +
+      esc(c.availabilityText || (c.online ? "在线可接单" : "离线")) +
       "</span>" +
       "</div></div></div>" +
       '<button type="button" class="mcj-po-close" data-po-close aria-label="关闭">×</button>' +
@@ -953,9 +966,9 @@
     }
   }
 
-  function openFromProfileCompanion(companion, extras) {
+  function openFromCanonicalCompanion(src, extras) {
     extras = extras || {};
-    var src = companion && typeof companion === "object" ? companion : {};
+    src = src && typeof src === "object" ? src : {};
     var companionId = String(
       extras.companionId || src.companionId || src.companion_id || src.id || src.uid || ""
     ).trim();
@@ -979,7 +992,9 @@
       var nextPrice = money(unitPrice);
       if (nextPrice > 0) state.companion.unitPrice = nextPrice;
       if (companionName) state.companion.companionName = companionName;
-      if (extras.avatar || src.avatar) state.companion.avatar = extras.avatar || src.avatar || state.companion.avatar;
+      if (extras.avatar || src.avatar || src.cover) {
+        state.companion.avatar = extras.avatar || src.avatar || src.cover || state.companion.avatar;
+      }
       if (extras.publicId || src.publicId) state.companion.publicId = extras.publicId || src.publicId || state.companion.publicId;
       if (extras.pricingUnit || src.pricingUnit) {
         state.companion.pricingUnit = extras.pricingUnit || src.pricingUnit || state.companion.pricingUnit;
@@ -1011,6 +1026,37 @@
       level: extras.level || src.level || src.levelName || "",
       online: extras.online != null ? extras.online : src.online != null ? src.online : src.isOnline,
     });
+  }
+
+  function openFromProfileCompanion(companion, extras) {
+    extras = extras || {};
+    var src = companion && typeof companion === "object" ? companion : {};
+    // Always open immediately with known payload — never leave 立即下单 looking dead.
+    openFromCanonicalCompanion(src, extras);
+    var companionId = String(
+      extras.companionId || src.companionId || src.companion_id || src.id || src.uid || ""
+    ).trim();
+    if (!companionId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(companionId)) {
+      return;
+    }
+    // Soft refresh from the same public companion record used by home / hall / detail.
+    fetch("/api/public/companions?id=" + encodeURIComponent(companionId), {
+      headers: { Accept: "application/json" },
+      cache: "no-store",
+    })
+      .then(function (res) {
+        return res.json().then(function (body) {
+          if (!res.ok || !body || body.ok === false) throw new Error((body && body.message) || "陪玩资料读取失败");
+          var list = Array.isArray(body.companions) ? body.companions : body.companion ? [body.companion] : [];
+          var row = list[0] || null;
+          if (!row) throw new Error("陪玩资料不存在");
+          return row;
+        });
+      })
+      .then(function (row) {
+        openFromCanonicalCompanion(row, extras);
+      })
+      .catch(function () {});
   }
 
   window.MCJPlaceOrder = {

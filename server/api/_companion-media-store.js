@@ -39,15 +39,17 @@ export function hasCompanionDb() {
 
 export function companionServiceHeaders(extra = {}) {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  const base = {
+  // Always send both apikey + Authorization. Omitting Bearer for sb_secret_
+  // keys caused PostgREST to run as anon → empty profile rows → false 403s
+  // like「没有陪玩管理权限」on admin detail while list looked fine in UI.
+  return {
     apikey: key,
+    Authorization: `Bearer ${key}`,
     "Content-Type": "application/json",
     Prefer: "return=representation",
     "User-Agent": "MCJ-Server/1.0",
     ...extra,
   };
-  if (!String(key || "").startsWith("sb_secret_")) base.Authorization = `Bearer ${key}`;
-  return base;
 }
 
 export function companionRestUrl(table, query = "") {
@@ -193,6 +195,37 @@ export function assertImageUpload(decoded) {
     throw Object.assign(new Error("单张图片不能超过 10MB"), { status: 413 });
   }
   return { ...decoded, contentType: normalized === "image/jpg" ? "image/jpeg" : normalized || "image/jpeg" };
+}
+
+const MAX_AUDIO_BYTES = 8 * 1024 * 1024;
+const ALLOWED_AUDIO_MIME = new Set([
+  "audio/webm",
+  "audio/mpeg",
+  "audio/mp3",
+  "audio/mp4",
+  "audio/wav",
+  "audio/x-wav",
+  "audio/ogg",
+  "audio/aac",
+  "application/octet-stream",
+]);
+
+export function assertAudioUpload(decoded) {
+  if (!decoded || !decoded.buffer) {
+    throw Object.assign(new Error("文件格式无效，请选择语音文件（webm / mp3 / wav）"), { status: 400 });
+  }
+  const mime = String(decoded.contentType || "").toLowerCase() || "audio/webm";
+  const ok =
+    ALLOWED_AUDIO_MIME.has(mime) ||
+    /^audio\//.test(mime) ||
+    mime === "application/octet-stream";
+  if (!ok) {
+    throw Object.assign(new Error("仅支持 webm / mp3 / wav / ogg / aac 语音格式"), { status: 400 });
+  }
+  if (decoded.buffer.length > MAX_AUDIO_BYTES) {
+    throw Object.assign(new Error("语音文件不能超过 8MB"), { status: 413 });
+  }
+  return { ...decoded, contentType: mime.startsWith("audio/") ? mime : "audio/webm" };
 }
 
 export async function deleteStorageObject(bucket, objectPath) {

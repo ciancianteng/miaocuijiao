@@ -117,34 +117,106 @@
   }
 
   function accessToken() {
-    return (
-      localStorage.getItem("mcjAuthAccessToken") ||
-      sessionStorage.getItem("mcjAuthAccessToken") ||
-      ""
-    );
+    try {
+      return (
+        sessionStorage.getItem("mcjAuthAccessToken") ||
+        localStorage.getItem("mcjAuthAccessToken") ||
+        ""
+      );
+    } catch (e) {
+      return "";
+    }
+  }
+
+  function looksLikeJwt(token) {
+    var t = String(token || "").trim();
+    if (!t || t.length < 20) return false;
+    var parts = t.split(".");
+    return parts.length === 3 && parts.every(function (part) {
+      return part.length > 0;
+    });
+  }
+
+  function decodeJwtExpMs(raw) {
+    try {
+      var parts = String(raw || "").split(".");
+      if (parts.length < 2) return 0;
+      var payload = JSON.parse(atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")));
+      return payload.exp ? Number(payload.exp) * 1000 : 0;
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  function hasValidBossJwt() {
+    if (window.MCJBossAuth && typeof window.MCJBossAuth.hasValidAccessToken === "function") {
+      try {
+        if (window.MCJBossAuth.hasValidAccessToken()) return true;
+        return false;
+      } catch (e) {}
+    }
+    if (window.MCJBossAuth && typeof window.MCJBossAuth.hasSession === "function") {
+      try {
+        if (window.MCJBossAuth.hasSession()) return true;
+      } catch (e2) {}
+    }
+    var token = accessToken();
+    if (!looksLikeJwt(token)) return false;
+    var expRaw = "";
+    try {
+      expRaw = sessionStorage.getItem("mcjAuthExpiresAt") || localStorage.getItem("mcjAuthExpiresAt") || "";
+    } catch (e3) {}
+    var exp = 0;
+    if (expRaw) {
+      var n = Number(expRaw);
+      if (Number.isFinite(n) && n > 0) exp = n < 1e12 ? n * 1000 : n;
+    }
+    if (!exp) exp = decodeJwtExpMs(token);
+    if (exp && Date.now() >= exp) return false;
+    return true;
+  }
+
+  function purgeGuestAuthArtifacts() {
+    // Keep persisted login across refresh; only clear when no valid JWT remains.
+    if (hasValidBossJwt()) return;
+    [
+      "customerAuthToken",
+      "customerUser",
+      "mcjCurrentUser",
+      "mcjAuthAccessToken",
+      "mcjAuthRefreshToken",
+      "mcjAuthExpiresAt",
+      "mcjRole",
+    ].forEach(function (key) {
+      try {
+        localStorage.removeItem(key);
+        sessionStorage.removeItem(key);
+      } catch (e) {}
+    });
+    if (window.MCJBossAuth && typeof window.MCJBossAuth.clearSession === "function") {
+      try { window.MCJBossAuth.clearSession(); } catch (e3) {}
+    }
   }
 
   function hasAuthSession() {
-    if (window.MCJBossAuth && typeof window.MCJBossAuth.hasSession === "function") {
-      return !!window.MCJBossAuth.hasSession();
-    }
-    return !!(
-      accessToken() ||
-      localStorage.getItem("customerAuthToken") ||
-      sessionStorage.getItem("customerAuthToken")
-    );
+    return hasValidBossJwt();
   }
 
   function isLoggedIn() {
-    var gateOk = false;
-    if (window.MCJRoleGate && typeof window.MCJRoleGate.isLogged === "function") {
-      gateOk = !!(window.MCJRoleGate.isLogged("customer") || window.MCJRoleGate.isLogged("boss"));
+    return hasValidBossJwt();
+  }
+
+  function deskAuthLinkHtml() {
+    if (isLoggedIn()) {
+      return (
+        navLink("mine.html", "个人中心") +
+        '<button type="button" class="mcj-desk-logout" data-mcj-boss-logout>退出登录</button>'
+      );
     }
-    if (gateOk) return true;
-    return !!(
-      accessToken() ||
-      localStorage.getItem("customerAuthToken") ||
-      sessionStorage.getItem("customerAuthToken")
+    return (
+      '<a href="login.html" data-mcj-boss-login' +
+      (activeHref("login.html") ? ' class="active"' : "") +
+      ">登录</a>"
     );
   }
 
@@ -191,7 +263,8 @@
           navLink("index.html", "首页") +
           navLink("companion-center.html", "大厅") +
           navLink("orders.html", "订单") +
-          navLink("support.html?start=1", "客服");
+          navLink("support.html?start=1", "客服") +
+          deskAuthLinkHtml();
       }
       fillMobileDrawerLinks();
     }
@@ -228,7 +301,10 @@
 
   function mobileAuthLinkHtml() {
     if (isLoggedIn()) {
-      return navLink("mine.html", "个人中心");
+      return (
+        navLink("mine.html", "个人中心") +
+        '<button type="button" class="mcj-mnav-logout" data-mcj-boss-logout>退出登录</button>'
+      );
     }
     return (
       '<a href="login.html" data-mcj-boss-login' +
@@ -238,9 +314,10 @@
   }
 
   function mobileDrawerLinksHtml() {
+    // mobileAuthLinkHtml already includes one logout when logged in — do not append a second.
     return (
       navLink("index.html", "首页") +
-      navLink("companion-center.html", "陪玩大厅") +
+      navLink("companion-center.html", "大厅") +
       navLink("orders.html", "订单") +
       navLink("support.html?start=1", "客服") +
       mobileAuthLinkHtml()
@@ -257,7 +334,7 @@
       '<a class="mcj-header-brand" href="/" aria-label="MEOW CUI JIAO 妙脆角 首页">' +
       '<img class="mcj-header-brand-logo" src="/src/assets/meow-cuijiao-brand.jpg" alt="MEOW CUI JIAO" width="40" height="40" decoding="async" data-mcj-brand-logo="1">' +
       '<span class="mcj-header-brand-text">' +
-      '<span class="mcj-header-brand-en">MEOW CUI JIAO</span>' +
+      '<span class="mcj-header-brand-en">Meow Cui Jiao</span>' +
       '<span class="mcj-header-brand-zh">妙脆角</span>' +
       "</span></a>"
     );
@@ -266,16 +343,17 @@
   function headerHtml() {
     return (
       '<div class="mcj-boss-header-inner header-inner">' +
-      '<div class="mcj-mnav">' +
-      '<button type="button" class="mcj-mnav-toggle" data-mcj-mnav-toggle aria-controls="mcjMnavSheet" aria-expanded="false" aria-label="打开菜单">☰</button>' +
-      "</div>" +
       brandHtml() +
       '<nav class="mcj-desk-nav" aria-label="桌面主导航">' +
       navLink("index.html", "首页") +
       navLink("companion-center.html", "大厅") +
       navLink("orders.html", "订单") +
       navLink("support.html?start=1", "客服") +
-      "</nav></div>"
+      deskAuthLinkHtml() +
+      "</nav>" +
+      '<div class="mcj-mnav">' +
+      '<button type="button" class="mcj-mnav-toggle" data-mcj-mnav-toggle aria-controls="mcjMnavSheet" aria-expanded="false" aria-label="打开菜单">☰</button>' +
+      "</div></div>"
     );
   }
 
@@ -487,10 +565,11 @@
   function mount() {
     if (!isBossPublicPage() || !document.body) return;
     // Always rebuild header markup for tab-nav-only layout
-    ensureCss("/src/boss-header.css?v=20260802mobileP0c", "data-mcj-boss-header-css");
+    ensureCss("/src/boss-header.css?v=20260804navAuth4", "data-mcj-boss-header-css");
     ensureCss("/src/mcj-safe-area.css?v=20260802mobileP0c", "data-mcj-safe-area-css");
     ensureCss("/src/home-mobile.css?v=20260802mobileP0c", "data-mcj-home-mobile-css");
     document.body.classList.add("mcj-boss-shell");
+    purgeGuestAuthArtifacts();
 
     var existing = findExistingHeader();
     var header;
@@ -530,14 +609,19 @@
     [
       "customerAuthToken",
       "customerUser",
+      "mcjCurrentUser",
       "mcjAuthAccessToken",
       "mcjAuthRefreshToken",
       "mcjAuthExpiresAt",
       "mcjRole",
+      "mcjAfterLoginRedirect",
     ].forEach(function (key) {
       localStorage.removeItem(key);
       sessionStorage.removeItem(key);
     });
+    if (window.MCJBossAuth && typeof window.MCJBossAuth.clearSession === "function") {
+      try { window.MCJBossAuth.clearSession(); } catch (e) {}
+    }
     notifyState.items = [];
     notifyState.unread = 0;
     notifyState.open = false;
@@ -753,7 +837,7 @@
     if (window.__MCJAvatarFallback) return;
     if (document.querySelector('script[data-mcj-avatar-fallback],script[src*="avatar-fallback.js"]')) return;
     var s = document.createElement("script");
-    s.src = "/src/avatar-fallback.js";
+    s.src = "/src/avatar-fallback.js?v=20260806paySave1";
     s.setAttribute("data-mcj-avatar-fallback", "1");
     document.head.appendChild(s);
   }

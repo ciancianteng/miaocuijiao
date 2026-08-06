@@ -118,6 +118,7 @@ create table if not exists public.banners (
   button_link text not null default '',
   is_active boolean not null default true,
   sort_order integer not null default 100,
+  crop_meta jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );

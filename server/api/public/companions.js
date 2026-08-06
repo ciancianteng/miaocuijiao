@@ -17,6 +17,64 @@ import {
   resolveCompanionCover,
 } from "../_companion-public-map.js";
 import { createSignedUrl, publicObjectUrl } from "../_companion-media-store.js";
+
+async function resolvePlayableUrl(raw) {
+  const s = String(raw || "").trim();
+  if (!s) return "";
+  let url = "";
+  if (/^https?:\/\//i.test(s) && !/\/storage\/v1\/object\/sign\//i.test(s)) {
+    url = s;
+  } else if (/^storage:\/\//i.test(s)) {
+    const rest = s.replace(/^storage:\/\//i, "");
+    const slash = rest.indexOf("/");
+    if (slash <= 0) return "";
+    const bucket = rest.slice(0, slash);
+    const objectPath = rest.slice(slash + 1);
+    if (!bucket || !objectPath || bucket === "present") return "";
+    try {
+      if (bucket === "companion-public" || /public/i.test(bucket)) {
+        url = publicObjectUrl(bucket, objectPath) || "";
+      } else {
+        url = (await createSignedUrl(bucket, objectPath, 60 * 60 * 12)) || "";
+      }
+    } catch (err) {
+      console.warn("[public/companions] resolvePlayableUrl failed", bucket, objectPath, err?.message || err);
+      return "";
+    }
+  } else if (/^https?:\/\//i.test(s)) {
+    // Fresh signed URLs from companion_media are allowed through size gate below.
+    url = s;
+  }
+  if (!url) return "";
+  // Drop empty / header-only audio stubs (WAV header alone is 44 bytes).
+  try {
+    const head = await fetch(url, { method: "HEAD" });
+    const len = Number(head.headers.get("content-length") || 0);
+    if (Number.isFinite(len) && len > 0 && len < 512) return "";
+  } catch {
+    /* keep URL if HEAD unavailable */
+  }
+  return url;
+}
+import {
+  formatCompanionCode,
+  isCompanionCode,
+  isDbUuid,
+  parseCompanionCodeNumber,
+  resolveCompanionPublicCode,
+} from "../_account-codes.js";
+import { evaluatePublishGate } from "../_companion-publish-gate.js";
+
+/** Boss-facing: only audit-approved companion applications (not draft/pending). */
+function isAuditApprovedCompanion(row = {}) {
+  const app = String(row.application_status || "").trim().toLowerCase();
+  if (/^(draft|archived|deleted)$/.test(app)) return false;
+  if (/rejected|resubmit|need_more/.test(app)) return false;
+  if (/approved|verified|passed/.test(app)) return true;
+  // Legacy: verification approved and no explicit draft application_status.
+  if (!app && /approved|verified|passed/i.test(String(row.verification_status || ""))) return true;
+  return false;
+}
 const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"];
 
 function json(res, status, data) {
@@ -117,6 +175,13 @@ function publicCompanion(row = {}, profile = {}, levels = [], catalog = [], medi
     .map((s) => s.name || s.title)
     .filter(Boolean);
   const gameDisplay = serviceNames.length ? serviceNames.join("、") : row.game || "";
+  const voicePlayable =
+    pickStableMediaUrl(mediaExtras.voiceUrl) ||
+    (String(mediaExtras.voiceUrl || "").trim().startsWith("http") ? String(mediaExtras.voiceUrl).trim() : "") ||
+    "";
+  const gallery = Array.isArray(mediaExtras.gallery)
+    ? mediaExtras.gallery.filter((g) => g && g.url && /^https?:\/\//i.test(String(g.url)))
+    : [];
   return {
     id: row.user_id || row.id,
     uid: row.user_id || row.id,
@@ -144,14 +209,23 @@ function publicCompanion(row = {}, profile = {}, levels = [], catalog = [], medi
     availabilityStatus: avail,
     availabilityText: availabilityText(avail),
     onlineStatus: availabilityText(avail),
+    onlineStatusLabel: availabilityText(avail),
     status: availabilityText(avail),
     canOrderNow: avail === "online",
+    online: avail === "online" || avail === "busy",
     avatar,
     cover,
-    voiceUrl: pickStableMediaUrl(row.voice_url, mediaExtras.voiceUrl) || row.voice_url || "",
+    // Only expose playable http(s) voice URLs — never raw storage:// refs (breaks audio UI).
+    voiceUrl: voicePlayable,
+    hasVoice: !!voicePlayable,
     cardImageUrl: pickStableMediaUrl(row.card_image_url, cover) || "",
+    gallery,
+    videoUrl: pickStableMediaUrl(mediaExtras.videoUrl, mediaExtras.showcaseVideoUrl) || "",
+    showcaseVideoUrl: pickStableMediaUrl(mediaExtras.videoUrl, mediaExtras.showcaseVideoUrl) || "",
     desc: row.description || "",
     description: row.description || "",
+    gender: row.gender || "",
+    voiceType: row.voice_type || "",
     tags: stripGamePricesMarker(String(row.tags || ""))
       .replace(/\[\[MCJ_GALLERY:[\s\S]*?\]\]/g, "")
       .split(/[,，、]/)
@@ -172,6 +246,7 @@ function publicCompanion(row = {}, profile = {}, levels = [], catalog = [], medi
     reviewCount: 0,
     goodReviewCount: 0,
     goodRate: 0,
+    completedOrders: Number(row.completed_orders || row.total_orders || 0) || 0,
     reviews: [],
   };
 }
@@ -240,7 +315,7 @@ async function mediaExtrasByProfile(profileIds = []) {
     rows = await supabaseJson(
       restUrl(
         "companion_media",
-        `?companion_profile_id=in.(${ids.map(encodeURIComponent).join(",")})&media_type=in.(avatar,cover,gallery)&order=sort_order.asc&limit=2000&select=id,companion_profile_id,media_type,storage_bucket,storage_path,status`
+        `?companion_profile_id=in.(${ids.map(encodeURIComponent).join(",")})&media_type=in.(avatar,cover,gallery,voice)&order=sort_order.asc&limit=3000&select=id,companion_profile_id,media_type,storage_bucket,storage_path,status`
       ),
       { headers: headers() }
     );
@@ -252,7 +327,7 @@ async function mediaExtrasByProfile(profileIds = []) {
   for (const row of Array.isArray(rows) ? rows : []) {
     const pid = row.companion_profile_id;
     if (!pid) continue;
-    if (!byProfile[pid]) byProfile[pid] = { avatarUrl: "", coverUrl: "" };
+    if (!byProfile[pid]) byProfile[pid] = { avatarUrl: "", coverUrl: "", voiceUrl: "", gallery: [] };
     const bucket = String(row.storage_bucket || "").trim();
     const path = String(row.storage_path || "").trim();
     if (!bucket || !path) continue;
@@ -269,30 +344,78 @@ async function mediaExtrasByProfile(profileIds = []) {
     }
     if (!url || !/^https?:\/\//i.test(url)) continue;
     if (row.media_type === "avatar" && !byProfile[pid].avatarUrl) byProfile[pid].avatarUrl = url;
-    if ((row.media_type === "cover" || row.media_type === "gallery") && !byProfile[pid].coverUrl) {
-      byProfile[pid].coverUrl = url;
+    if (row.media_type === "cover" && !byProfile[pid].coverUrl) byProfile[pid].coverUrl = url;
+    if (row.media_type === "gallery") {
+      byProfile[pid].gallery.push({ id: row.id, url });
+      if (!byProfile[pid].coverUrl) byProfile[pid].coverUrl = url;
     }
+    if (row.media_type === "voice" && !byProfile[pid].voiceUrl) byProfile[pid].voiceUrl = url;
     if (row.media_type === "avatar" && !byProfile[pid].coverUrl) byProfile[pid].coverUrl = url;
   }
   return byProfile;
 }
 
-async function loadCompanions(id = "") {
-  let query = id
-    ? `?or=(user_id.eq.${encodeURIComponent(id)},companion_uid.eq.${encodeURIComponent(String(id).replace(/^P/i, ""))})&verification_status=eq.approved&limit=1`
-    : "?verification_status=eq.approved&order=updated_at.desc&limit=300";
-  let rows;
-  try {
-    rows = await supabaseJson(restUrl("companion_profiles", query), { headers: headers() });
-  } catch (e) {
-    if (id && /companion_uid|column/i.test(String(e.message || ""))) {
-      rows = await supabaseJson(
-        restUrl("companion_profiles", `?user_id=eq.${encodeURIComponent(id)}&verification_status=eq.approved&limit=1`),
-        { headers: headers() }
-      );
-    } else throw e;
+async function fetchCompanionRows(query) {
+  return supabaseJson(restUrl("companion_profiles", query), { headers: headers() }).catch(() => []);
+}
+
+/**
+ * Resolve one companion profile row by internal UUID or public PW/P code.
+ * Never pass a non-UUID value into a UUID column filter.
+ */
+async function resolveCompanionProfileRows(idRaw = "") {
+  const id = String(idRaw || "").trim();
+  if (!id) return null;
+
+  if (isDbUuid(id)) {
+    const byUser = await fetchCompanionRows(
+      `?user_id=eq.${encodeURIComponent(id)}&verification_status=eq.approved&limit=1`
+    );
+    if (byUser?.[0]) return byUser;
+    // Some callers may pass companion_profiles.id
+    return fetchCompanionRows(
+      `?id=eq.${encodeURIComponent(id)}&verification_status=eq.approved&limit=1`
+    );
   }
-  const companions = Array.isArray(rows) ? rows : [];
+
+  if (isCompanionCode(id)) {
+    const seq = parseCompanionCodeNumber(id);
+    const code = formatCompanionCode(seq);
+    const byCode = await fetchCompanionRows(
+      `?companion_code=eq.${encodeURIComponent(code)}&verification_status=eq.approved&limit=1`
+    );
+    if (byCode?.[0]) return byCode;
+
+    for (const uid of [seq, seq + 100000]) {
+      const byUid = await fetchCompanionRows(
+        `?companion_uid=eq.${encodeURIComponent(uid)}&verification_status=eq.approved&limit=1`
+      );
+      if (byUid?.[0]) return byUid;
+    }
+
+    // Scan fallback for rows with missing companion_code but resolvable public code.
+    const pool = await fetchCompanionRows(
+      "?verification_status=eq.approved&select=*&order=updated_at.desc&limit=500"
+    );
+    const hit = (Array.isArray(pool) ? pool : []).find((row) => resolveCompanionPublicCode(row) === code);
+    return hit ? [hit] : [];
+  }
+
+  // Unknown non-UUID / non-code lookup — do not hit UUID columns.
+  return [];
+}
+
+async function loadCompanions(id = "") {
+  let companions;
+  if (id) {
+    companions = await resolveCompanionProfileRows(id);
+    if (!Array.isArray(companions)) companions = [];
+  } else {
+    const rows = await fetchCompanionRows(
+      "?or=(verification_status.eq.approved,application_status.eq.approved)&order=updated_at.desc&limit=300"
+    );
+    companions = Array.isArray(rows) ? rows : [];
+  }
   const userIds = [...new Set(companions.map((row) => row.user_id).filter(Boolean))];
   if (!userIds.length) return [];
   const profileIds = companions.map((row) => row.id).filter(Boolean);
@@ -308,9 +431,39 @@ async function loadCompanions(id = "") {
   const catalog = Array.isArray(servicesBundle?.services) ? servicesBundle.services : [];
   const profileMap = Object.fromEntries((profiles || []).map((row) => [row.id, row]));
   const levelList = Array.isArray(levels) ? levels.map((l) => toPublicLevel(l)) : [];
-  const mapped = companions
-    .filter((row) => profileMap[row.user_id])
-    .map((row) => publicCompanion(row, profileMap[row.user_id], levelList, catalog, mediaMap[row.id] || {}));
+  const mapped = [];
+  for (const row of companions) {
+    if (!isAuditApprovedCompanion(row)) continue;
+    const profile = profileMap[row.user_id];
+    if (!profile) continue;
+    const media = { ...(mediaMap[row.id] || {}) };
+    // Prefer companion_media voice, else durable storage:// / legacy URL — always size-gate.
+    media.voiceUrl = await resolvePlayableUrl(media.voiceUrl || row.voice_url);
+    // Parse legacy gallery tags when companion_media has no gallery rows.
+    if (!Array.isArray(media.gallery) || !media.gallery.length) {
+      const tag = String(row.tags || "");
+      const m = tag.match(/\[\[MCJ_GALLERY:([\s\S]*?)\]\]/);
+      if (m) {
+        try {
+          const items = JSON.parse(m[1]);
+          const gallery = [];
+          for (const item of Array.isArray(items) ? items : []) {
+            const raw = typeof item === "string" ? item : item?.url || item?.path || "";
+            const url = await resolvePlayableUrl(raw);
+            if (url) gallery.push({ id: item?.id || url, url });
+          }
+          if (gallery.length) media.gallery = gallery;
+        } catch {
+          /* ignore bad gallery tag */
+        }
+      }
+    }
+    const gate = evaluatePublishGate(row, profile, media);
+    // Only hard-block non-approved / disabled / banned / rejected. Keep audit-approved real profiles.
+    if (!gate.adminApproved || !gate.accountEnabled) continue;
+    if (gate.blockReasons.some((r) => /封禁|停用|驳回|归档/.test(r))) continue;
+    mapped.push(publicCompanion(row, profile, levelList, catalog, media));
+  }
   return attachReviews(mapped);
 }
 
@@ -324,9 +477,15 @@ export default async function handler(req, res) {
     return json(res, 200, { ok: true, configured: false, companions: [], message: "未配置 Supabase，陪玩大厅不返回假数据。" });
   }
   try {
-    const companions = await loadCompanions(String(req.query.id || req.query.uid || req.query.player || ""));
+    const lookup = String(req.query.id || req.query.uid || req.query.player || "").trim();
+    const companions = await loadCompanions(lookup);
     return json(res, 200, { ok: true, configured: true, companions });
   } catch (error) {
-    return json(res, 500, { ok: false, message: error.message || "陪玩列表接口异常" });
+    const msg = String(error?.message || error || "陪玩列表接口异常");
+    // Never surface raw Postgres UUID parse errors to the boss-facing UI.
+    if (/invalid input syntax for type uuid/i.test(msg)) {
+      return json(res, 200, { ok: true, configured: true, companions: [] });
+    }
+    return json(res, 500, { ok: false, message: msg });
   }
 }

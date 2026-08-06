@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 const DB_ENV = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"];
 const TABLE = "platform_content_items";
 const ADMIN_ROLES = new Set(["super_admin", "admin", "content_admin"]);
@@ -37,6 +39,10 @@ function sanitizeType(type) {
   return String(type || "platform-content").replace(/[^a-z0-9_-]/gi, "");
 }
 
+function contentBucket() {
+  return String(process.env.SUPABASE_CONTENT_BUCKET || process.env.SUPABASE_BANNER_BUCKET || "banners").trim() || "banners";
+}
+
 function parseUpload(body) {
   const raw = String(body.base64 || "");
   const match = raw.match(/^data:([^;]+);base64,(.+)$/);
@@ -58,10 +64,9 @@ async function supabaseFetch(path, init = {}) {
 }
 
 async function uploadToStorage({ type, fileName, mimeType, buffer }) {
-  const bucket = process.env.SUPABASE_CONTENT_BUCKET;
-  if (!bucket) return null;
-  const path = `${type}/${Date.now()}-${safeName(fileName)}`;
-  const response = await fetch(`${process.env.SUPABASE_URL}/storage/v1/object/${bucket}/${path}`, {
+  const bucket = contentBucket();
+  const objectPath = `${type || "uploads"}/${Date.now()}-${safeName(fileName)}`;
+  const response = await fetch(`${process.env.SUPABASE_URL}/storage/v1/object/${bucket}/${objectPath}`, {
     method: "POST",
     headers: {
       apikey: process.env.SUPABASE_SERVICE_ROLE_KEY,
@@ -78,15 +83,17 @@ async function uploadToStorage({ type, fileName, mimeType, buffer }) {
     throw new Error(detail || "上传到存储桶失败");
   }
   return {
-    url: `${process.env.SUPABASE_URL}/storage/v1/object/public/${bucket}/${path}`,
-    path,
+    url: `${process.env.SUPABASE_URL}/storage/v1/object/public/${bucket}/${objectPath}`,
+    path: objectPath,
     storage: "supabase_storage"
   };
 }
 
 async function uploadToDatabaseAsset({ type, fileName, mimeType, base64, size }) {
   const dataUrl = `data:${mimeType};base64,${base64}`;
+  const id = randomUUID();
   const payload = {
+    id,
     type: "content_assets",
     slug: `asset-${Date.now()}-${safeName(fileName)}`,
     title: safeName(fileName),
@@ -105,9 +112,10 @@ async function uploadToDatabaseAsset({ type, fileName, mimeType, base64, size })
   };
   const rows = await supabaseFetch("", { method: "POST", body: JSON.stringify(payload) });
   const row = Array.isArray(rows) ? rows[0] : rows;
+  const rowId = row?.id || id;
   return {
-    url: `/api/platform/content-asset?id=${encodeURIComponent(row.id)}`,
-    path: String(row.id),
+    url: `/api/platform/content-asset?id=${encodeURIComponent(rowId)}`,
+    path: String(rowId),
     storage: "database_asset"
   };
 }
@@ -125,7 +133,7 @@ export default async function handler(req, res) {
   if (!hasDatabaseConfig()) {
     return json(res, 503, {
       ok: false,
-      message: "未配置 SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY，Banner 文件不能保存到数据库或存储桶。"
+      message: "未配置 SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY，文件不能保存到数据库或存储桶。"
     });
   }
 
@@ -141,8 +149,22 @@ export default async function handler(req, res) {
     }
 
     const type = sanitizeType(body.type || "banners");
-    const stored = await uploadToStorage({ type, fileName: body.fileName, mimeType: parsed.mimeType, buffer: parsed.buffer })
-      || await uploadToDatabaseAsset({ type, fileName: body.fileName, mimeType: parsed.mimeType, base64: parsed.base64, size: parsed.buffer.length });
+    let stored = null;
+    try {
+      stored = await uploadToStorage({ type, fileName: body.fileName, mimeType: parsed.mimeType, buffer: parsed.buffer });
+    } catch (storageError) {
+      try {
+        stored = await uploadToDatabaseAsset({
+          type,
+          fileName: body.fileName,
+          mimeType: parsed.mimeType,
+          base64: parsed.base64,
+          size: parsed.buffer.length,
+        });
+      } catch {
+        throw storageError;
+      }
+    }
 
     return json(res, 200, { ok: true, url: stored.url, path: stored.path, storage: stored.storage, mimeType: parsed.mimeType, size: parsed.buffer.length });
   } catch (error) {

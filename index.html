@@ -38,7 +38,7 @@
     .feature-row{grid-template-columns:repeat(4,1fr)}.feature-card{min-height:190px;padding:26px;display:flex;flex-direction:column;justify-content:space-between}.feature-head{position:relative;z-index:1;display:flex;align-items:flex-start;gap:16px}.feature-icon{width:58px;height:58px;border-radius:20px;display:grid;place-items:center;background:rgba(255,220,235,.12);border:1px solid rgba(243,168,203,.28);font-size:28px}.feature-card h3{margin:0;font-size:25px}.feature-card p{margin:7px 0 0;color:var(--muted);font-weight:850}.feature-card .btn{position:relative;z-index:1;width:max-content;min-height:42px;padding:0 17px;border:0;border-radius:999px;background:linear-gradient(180deg,#ffe2ef,#e9a0c6);color:#1b0712;font-weight:1000;cursor:pointer}
     .section-title{display:flex;align-items:end;justify-content:space-between;gap:16px;margin-bottom:18px}.section-title h2{margin:0;font-size:28px}.section-title p{margin:5px 0 0;color:var(--muted)}
     .order-strip{display:flex;gap:20px;overflow-x:auto;padding:4px 2px 18px;scroll-snap-type:x mandatory}.order-strip::-webkit-scrollbar{height:8px}.order-strip::-webkit-scrollbar-thumb{background:rgba(243,168,203,.36);border-radius:99px}.companion-card{flex:0 0 238px;scroll-snap-align:start;padding:12px}.avatar{position:relative;height:190px;border-radius:20px;overflow:hidden;border:1px solid rgba(243,168,203,.28);background:#120d15}.avatar img{width:100%;height:100%;object-fit:cover}.online-dot{position:absolute;right:12px;top:12px;width:13px;height:13px;border-radius:50%;background:#72efb4;box-shadow:0 0 12px #72efb4}.companion-info{position:relative;z-index:1;padding:13px 4px 2px}.row{display:flex;align-items:center;justify-content:space-between;gap:8px}.companion-info h3{margin:0;font-size:19px}.price{font-weight:1000;color:var(--pink-soft)}.muted{color:var(--muted)}.mini{margin:8px 0 12px;color:var(--muted);font-size:13px}.order-btn{width:100%;height:40px;border:0;border-radius:999px;background:linear-gradient(180deg,#ffe2ef,#e9a0c6);color:#1b0712;font-weight:1000;cursor:pointer;transition:.2s ease}.order-btn:hover{transform:translateY(-2px);box-shadow:0 0 20px rgba(243,168,203,.24)}
-    .modal{position:fixed;inset:0;z-index:99999;display:none;align-items:center;justify-content:center;background:rgba(2,1,4,.76);backdrop-filter:blur(12px);padding:16px;overflow:hidden;width:100vw;height:100dvh;margin:0;transform:none}.modal.open{display:flex}.dialog{position:relative;width:min(680px,100%);max-height:calc(100dvh - 32px);overflow:auto;border:1px solid rgba(243,168,203,.34);border-radius:24px;background:linear-gradient(180deg,rgba(30,24,36,.96),rgba(9,8,13,.98));box-shadow:0 24px 90px rgba(0,0,0,.62);padding:22px;margin:0;transform:none}.close{position:absolute;right:12px;top:12px;z-index:3;float:none;width:36px;height:36px;border-radius:50%;border:1px solid rgba(243,168,203,.28);background:rgba(0,0,0,.25);color:#ffe1ef;font-size:22px;line-height:1;cursor:pointer;display:grid;place-items:center}.dialog:has(.boss-login-modal),.dialog.is-auth-dialog{width:460px;max-width:min(480px,calc(100vw - 32px));height:auto;min-height:unset;max-height:calc(100dvh - 32px);overflow:hidden;padding:32px 28px 24px}
+    .modal{position:fixed;inset:0;z-index:99999;display:none;align-items:center;justify-content:center;background:rgba(2,1,4,.76);backdrop-filter:blur(12px);padding:16px;overflow:hidden;width:100vw;height:100dvh;margin:0;transform:none}.modal.open{display:flex}.dialog{position:relative;width:min(680px,100%);max-height:calc(100dvh - 32px);overflow:auto;border:1px solid rgba(243,168,203,.34);border-radius:24px;background:linear-gradient(180deg,rgba(30,24,36,.96),rgba(9,8,13,.98));box-shadow:0 24px 90px rgba(0,0,0,.62);padding:22px;margin:0;transform:none}.close{position:absolute;right:12px;top:12px;z-index:3;float:none;width:36px;height:36px;border-radius:50%;border:1px solid rgba(243,168,203,.28);background:rgba(0,0,0,.25);color:#ffe1ef;font-size:22px;line-height:1;cursor:pointer;display:grid;place-items:center}.dialog:has(.boss-login-modal),.dialog.is-auth-dialog{width:460px;max-width:min(480px,calc(100vw - 32px));height:auto;min-height:560px;max-height:calc(100dvh - 32px);overflow:auto;padding:36px 28px 28px}
     .team-lobby-card .feature-icon{box-shadow:0 0 22px rgba(243,168,203,.22);background:radial-gradient(circle at 50% 40%,rgba(255,220,235,.22),rgba(243,168,203,.09))}.team-lobby-card .btn{box-shadow:0 0 20px rgba(243,168,203,.22)}@media(max-width:980px){.live-stats{grid-template-columns:repeat(2,1fr)}.feature-row{grid-template-columns:1fr}.container{padding:20px}.main-nav{justify-content:flex-start;overflow-x:auto;flex-wrap:nowrap;padding-bottom:4px}.main-nav a,.main-nav button{white-space:nowrap}.brand span{display:block}}
     @media(max-width:560px){.header-inner{padding:0 16px}.top-actions{gap:10px}.top-actions button{padding:0 12px}.container{padding:16px}.notice-bar{margin-bottom:20px}.banner{height:clamp(180px,28vh,220px);margin-bottom:18px}.live-stats{grid-template-columns:1fr}.stat-card{min-height:118px}.stat-card strong{font-size:38px}.feature-card{min-height:168px}.section{margin-bottom:34px}.section-title{align-items:flex-start;flex-direction:column}.companion-card{flex-basis:220px}.avatar{height:176px}}
     .mobile-bottom-nav{display:none}
@@ -297,7 +297,7 @@ img,video,canvas,svg{max-width:100%}
 }
 @media(max-width:560px){.banner img{border-radius:17px!important;transform:translateY(-4px) scale(1.02)!important;outline-offset:3px!important}.banner:after{left:14%;right:14%;bottom:-10px;height:18px!important}}
   /* boss-login-modal-v3 — auth density; final polish in src/login-modal.css */
-.boss-login-modal{display:grid;gap:0;clear:both}.boss-login-modal h2{margin:0;color:#fff5fa;font-size:32px;font-weight:700;line-height:1.2}.boss-login-modal>.muted{margin:8px 0 0;font-size:16px;line-height:1.45;color:rgba(255,255,255,.72);font-weight:500;text-transform:none;letter-spacing:0}.login-tabs{display:grid;grid-template-columns:1fr 1fr;gap:10px}.login-tab{height:42px;border-radius:999px;border:1px solid rgba(243,168,203,.24);background:rgba(255,255,255,.045);color:#ffe1ef;font-weight:1000;cursor:pointer}.login-tab.active{border:0;background:linear-gradient(180deg,#ffe2ef,#e7a0c4);color:#1b0712}.login-panel{display:none;grid-template-columns:1fr;gap:16px}.login-panel.active{display:grid;margin-top:20px}.login-panel label{display:grid;gap:8px;color:#ffdceb;font-weight:700;font-size:13px}.login-panel input,.login-panel select{height:52px;border-radius:14px;border:1.5px solid rgba(255,120,180,.35);background:rgba(255,255,255,.055);color:#fff;padding:0 16px;outline:0;box-sizing:border-box}.login-panel .wide{grid-column:1/-1}.login-code-row{display:grid;grid-template-columns:1fr 132px;gap:10px}.login-small-btn{height:52px;border-radius:14px;border:1px solid rgba(243,168,203,.24);background:rgba(255,255,255,.045);color:#ffe1ef;font-weight:1000;cursor:pointer}.login-submit{grid-column:1/-1;height:52px;border:0;border-radius:14px;background:linear-gradient(180deg,#ffe2ef,#e7a0c4);color:#1b0712;font-weight:800;cursor:pointer;box-shadow:0 10px 28px rgba(0,0,0,.35),0 0 22px rgba(243,168,203,.28)}.boss-login-modal [data-login-error],.boss-login-modal #loginState{margin:10px 0 0;min-height:0;color:#ff8fc5;font-size:13px;font-weight:700;line-height:1.35}.login-links{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:nowrap;height:40px;margin-top:12px}.login-links a,.login-links button.linkish{appearance:none;border:0;background:none;padding:0;color:#ffdceb;font-size:13px;font-weight:700;text-decoration:none;cursor:pointer;font-family:inherit;white-space:nowrap;line-height:40px}.login-links a:hover,.login-links button.linkish:hover{text-decoration:underline}.boss-login-modal[data-auth-mode="register"] .login-links{justify-content:center}@media(max-width:560px){.dialog:has(.boss-login-modal),.dialog.is-auth-dialog{width:calc(100vw - 32px);max-width:calc(100vw - 32px)}.boss-login-modal h2{font-size:26px}.boss-login-modal>.muted{font-size:14px}}
+.boss-login-modal{display:grid;gap:0;clear:both}.boss-login-modal h2{margin:0;color:#fff5fa;font-size:32px;font-weight:700;line-height:1.2}.boss-login-modal>.muted{margin:10px 0 0;font-size:16px;line-height:1.45;color:rgba(255,255,255,.72);font-weight:500;text-transform:none;letter-spacing:0}.login-tabs{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:28px 0 0}.login-tab{height:44px;border-radius:999px;border:1px solid rgba(243,168,203,.24);background:rgba(255,255,255,.045);color:#ffe1ef;font-weight:800;cursor:pointer}.login-tab.active{border:0;background:linear-gradient(180deg,#ffe2ef,#e7a0c4);color:#1b0712}.login-panel{display:none;grid-template-columns:1fr;gap:18px}.login-panel.active{display:grid;margin-top:22px}.login-panel label{display:grid;gap:8px;color:#ffdceb;font-weight:700;font-size:13px}.login-panel input,.login-panel select{height:52px;border-radius:14px;border:1.5px solid rgba(255,120,180,.35);background:rgba(255,255,255,.055);color:#fff;padding:0 16px;outline:0;box-sizing:border-box}.login-panel .wide{grid-column:1/-1}.login-code-row{display:grid;grid-template-columns:1fr 132px;gap:10px;align-items:stretch}.login-small-btn{height:52px;border-radius:14px;border:1px solid rgba(243,168,203,.24);background:rgba(255,255,255,.045);color:#ffe1ef;font-weight:800;cursor:pointer}.login-submit{grid-column:1/-1;height:52px;border:0;border-radius:14px;background:linear-gradient(180deg,#ffe2ef,#e7a0c4);color:#1b0712;font-weight:800;cursor:pointer;box-shadow:0 10px 28px rgba(0,0,0,.35),0 0 22px rgba(243,168,203,.28)}.boss-login-modal [data-login-error],.boss-login-modal #loginState{margin:10px 0 0;min-height:0;color:#ff8fc5;font-size:13px;font-weight:700;line-height:1.35}.login-links{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:nowrap;height:40px;margin-top:14px}.login-links a,.login-links button.linkish{appearance:none;border:0;background:none;padding:0;color:#ffdceb;font-size:13px;font-weight:700;text-decoration:none;cursor:pointer;font-family:inherit;white-space:nowrap;line-height:40px}.login-links a:hover,.login-links button.linkish:hover{text-decoration:underline}.boss-login-modal[data-auth-mode="register"] .login-links{justify-content:center}@media(max-width:560px){.dialog:has(.boss-login-modal),.dialog.is-auth-dialog{width:calc(100vw - 32px);max-width:calc(100vw - 32px);min-height:min(520px,86dvh)}.boss-login-modal h2{font-size:26px}.boss-login-modal>.muted{font-size:14px}.login-tabs{margin-top:24px}.login-panel.active{margin-top:20px;gap:16px}}
 
   /* auth-visibility-fix-v1 */
 .top-actions .user-chip.auth-only{display:none!important}
@@ -1412,7 +1412,9 @@ label{
 .companion-track .hot-cover{
   position:relative!important;
   width:100%!important;
-  height:138px!important;
+  height:auto!important;
+  aspect-ratio:4 / 5!important;
+  min-height:220px!important;
   border-radius:18px!important;
   overflow:hidden!important;
   border:1px solid rgba(255,180,218,.26)!important;
@@ -1424,22 +1426,25 @@ label{
   position:absolute;
   inset:0;
   pointer-events:none;
-  background:linear-gradient(180deg,transparent 48%,rgba(6,3,8,.58));
+  background:linear-gradient(180deg,transparent 62%,rgba(6,3,8,.52));
+  z-index:1;
 }
 .companion-track .hot-cover img{
   width:100%!important;
   height:100%!important;
   object-fit:cover!important;
-  transition:transform .35s ease,filter .35s ease!important;
+  object-position:center 25%!important;
+  transition:filter .35s ease!important;
+  transform:none!important;
 }
 .companion-track .companion-card:hover .hot-cover img{
-  transform:scale(1.04)!important;
-  filter:saturate(1.08) contrast(1.04)!important;
+  transform:none!important;
+  filter:saturate(1.04) contrast(1.02)!important;
 }
 .companion-track .hot-info{
   position:relative!important;
   z-index:2!important;
-  padding:13px 2px 0!important;
+  padding:4px 2px 0!important;
 }
 .companion-track .hot-info h3{
   margin:0!important;
@@ -1454,7 +1459,7 @@ label{
   text-shadow:none!important;
 }
 .companion-track .hot-info > p{
-  margin:9px 0 7px!important;
+  margin:2px 0 1px!important;
   color:#ffafd5!important;
   font-size:12px!important;
   font-weight:950!important;
@@ -1469,7 +1474,7 @@ label{
   align-items:center!important;
   justify-content:space-between!important;
   gap:8px!important;
-  margin:0 0 8px!important;
+  margin:0 0 2px!important;
 }
 .companion-track .hot-meta span{
   min-width:0!important;
@@ -1481,7 +1486,7 @@ label{
   text-overflow:ellipsis!important;
 }
 .companion-track .hot-orders{
-  margin:0 0 10px!important;
+  margin:0 0 2px!important;
   color:rgba(230,210,222,.72)!important;
   font-size:12px!important;
   line-height:1.25!important;
@@ -1492,10 +1497,12 @@ label{
 }
 .companion-track .hot-tags{
   display:flex!important;
-  gap:6px!important;
-  flex-wrap:nowrap!important;
-  margin:0 0 12px!important;
+  gap:3px!important;
+  flex-wrap:wrap!important;
+  margin:0 0 2px!important;
+  max-height:40px!important;
   overflow:hidden!important;
+  align-content:flex-start!important;
 }
 .companion-track .hot-tags span{
   max-width:84px!important;
@@ -1508,7 +1515,7 @@ label{
   border-radius:999px!important;
   font-size:11px!important;
   font-weight:900!important;
-  padding:5px 8px!important;
+  padding:2px 8px!important;
 }
 .companion-track .mini-order{
   width:100%!important;
@@ -1546,25 +1553,25 @@ label{
   box-shadow:none!important;
 }
 @media(max-width:900px){
-  .companion-track .hot-cover{height:124px!important}
+  .companion-track .hot-cover{height:auto!important;min-height:200px!important;aspect-ratio:4 / 5!important}
   .companion-track .hot-info h3{font-size:17px!important}
   .companion-track .mini-order{height:36px!important;font-size:12px!important}
 }
 
 
-/* hot-recommend-top3-badges-v1 */
-#hotCompanionTrack .companion-card:nth-child(1),
-#hotCompanionTrack .companion-card:nth-child(2),
-#hotCompanionTrack .companion-card:nth-child(3){
+/* companion-card-freeze-top-badges-v1 — 标准=最近下单：左上角小粉胶囊（禁止改） */
+#hotCompanionTrack .companion-card:nth-child(1):not(.hot-more-card),
+#hotCompanionTrack .companion-card:nth-child(2):not(.hot-more-card),
+#hotCompanionTrack .companion-card:nth-child(3):not(.hot-more-card){
   position:relative!important;
 }
-#hotCompanionTrack .companion-card:nth-child(1)::after,
-#hotCompanionTrack .companion-card:nth-child(2)::after,
-#hotCompanionTrack .companion-card:nth-child(3)::after{
+#hotCompanionTrack .companion-card:nth-child(1):not(.hot-more-card)::after,
+#hotCompanionTrack .companion-card:nth-child(2):not(.hot-more-card)::after,
+#hotCompanionTrack .companion-card:nth-child(3):not(.hot-more-card)::after{
   position:absolute;
-  left:18px;
-  top:18px;
+  left:18px;right:auto;top:18px;
   z-index:5;
+  width:auto;max-width:none;
   height:28px;
   padding:0 10px;
   border-radius:999px;
@@ -1578,13 +1585,14 @@ label{
   font-weight:1000;
   letter-spacing:.06em;
   box-shadow:0 8px 18px rgba(0,0,0,.28);
+  white-space:nowrap;
 }
-#hotCompanionTrack .companion-card:nth-child(1)::after{content:"TOP 1"}
-#hotCompanionTrack .companion-card:nth-child(2)::after{content:"TOP 2"}
-#hotCompanionTrack .companion-card:nth-child(3)::after{content:"TOP 3"}
-#hotCompanionTrack .companion-card:nth-child(1){border-color:rgba(255,215,235,.46)!important}
-#hotCompanionTrack .companion-card:nth-child(2){border-color:rgba(255,184,220,.36)!important}
-#hotCompanionTrack .companion-card:nth-child(3){border-color:rgba(255,160,208,.32)!important}
+#hotCompanionTrack .companion-card:nth-child(1):not(.hot-more-card)::after{content:"TOP 1"}
+#hotCompanionTrack .companion-card:nth-child(2):not(.hot-more-card)::after{content:"TOP 2"}
+#hotCompanionTrack .companion-card:nth-child(3):not(.hot-more-card)::after{content:"TOP 3"}
+#hotCompanionTrack .companion-card:nth-child(1):not(.hot-more-card){border-color:rgba(255,215,235,.46)!important}
+#hotCompanionTrack .companion-card:nth-child(2):not(.hot-more-card){border-color:rgba(255,184,220,.36)!important}
+#hotCompanionTrack .companion-card:nth-child(3):not(.hot-more-card){border-color:rgba(255,160,208,.32)!important}
 
 
 /* hot-recommend-top3-only-more-v1 */
@@ -1686,10 +1694,10 @@ label{
 .hot-recommend-section .auto-carousel::-webkit-scrollbar{display:none!important}
 #hotCompanionTrack{
   display:grid!important;
-  grid-template-columns:repeat(4,minmax(236px,1fr))!important;
+  grid-template-columns:repeat(auto-fit,minmax(220px,1fr))!important;
   gap:18px!important;
   width:100%!important;
-  min-width:1016px!important;
+  min-width:0!important;
   align-items:stretch!important;
 }
 #hotCompanionTrack .companion-card{
@@ -1697,32 +1705,36 @@ label{
   min-width:0!important;
   max-width:none!important;
   flex:none!important;
-  min-height:342px!important;
+  min-height:286px!important;
   height:100%!important;
-  padding:14px!important;
+  padding:14px 14px 6px!important;
+  display:flex!important;
+  flex-direction:column!important;
 }
 #hotCompanionTrack .hot-cover{
-  height:166px!important;
+  height:auto!important;
+  min-height:240px!important;
+  aspect-ratio:4 / 5!important;
   border-radius:18px!important;
 }
 #hotCompanionTrack .hot-info{
-  min-height:148px!important;
+  min-height:0!important;
   display:flex!important;
   flex-direction:column!important;
-  padding:13px 2px 2px!important;
+  padding:4px 2px 0!important;
 }
 #hotCompanionTrack .hot-info h3{
   font-size:21px!important;
   line-height:1.1!important;
 }
 #hotCompanionTrack .hot-tags{
-  min-height:28px!important;
+  min-height:0!important;
 }
 #hotCompanionTrack .mini-order{
   margin-top:auto!important;
 }
 #hotCompanionTrack .hot-more-card{
-  min-height:342px!important;
+  min-height:312px!important;
   height:100%!important;
 }
 #hotCompanionTrack .hot-more-inner{
@@ -1742,8 +1754,8 @@ label{
   font-size:14px!important;
 }
 @media(min-width:1180px){
-  #hotCompanionTrack{min-width:0!important;grid-template-columns:repeat(4,minmax(0,1fr))!important}
-  #hotCompanionTrack .hot-cover{height:176px!important}
+  #hotCompanionTrack{min-width:0!important;grid-template-columns:repeat(auto-fit,minmax(0,1fr))!important}
+  #hotCompanionTrack .hot-cover{height:auto!important;min-height:260px!important;aspect-ratio:4 / 5!important}
 }
 
 /* companion-top3-sections-unified-v1 */
@@ -1752,10 +1764,10 @@ label{
 #gameCompanionTrack,
 #reviewCompanionTrack{
   display:grid!important;
-  grid-template-columns:repeat(4,minmax(236px,1fr))!important;
+  grid-template-columns:repeat(auto-fit,minmax(220px,1fr))!important;
   gap:18px!important;
   width:100%!important;
-  min-width:1016px!important;
+  min-width:0!important;
   align-items:stretch!important;
 }
 .hot-recommend-section .auto-carousel,
@@ -1781,25 +1793,29 @@ label{
   min-width:0!important;
   max-width:none!important;
   flex:none!important;
-  min-height:342px!important;
+  min-height:286px!important;
   height:100%!important;
-  padding:14px!important;
+  padding:14px 14px 6px!important;
+  display:flex!important;
+  flex-direction:column!important;
 }
 #hotCompanionTrack .hot-cover,
 #recentCompanionTrack .hot-cover,
 #gameCompanionTrack .hot-cover,
 #reviewCompanionTrack .hot-cover{
-  height:166px!important;
+  height:auto!important;
+  min-height:240px!important;
+  aspect-ratio:4 / 5!important;
   border-radius:18px!important;
 }
 #hotCompanionTrack .hot-info,
 #recentCompanionTrack .hot-info,
 #gameCompanionTrack .hot-info,
 #reviewCompanionTrack .hot-info{
-  min-height:148px!important;
+  min-height:0!important;
   display:flex!important;
   flex-direction:column!important;
-  padding:13px 2px 2px!important;
+  padding:4px 2px 0!important;
 }
 #hotCompanionTrack .hot-info h3,
 #recentCompanionTrack .hot-info h3,
@@ -1812,7 +1828,7 @@ label{
 #recentCompanionTrack .hot-tags,
 #gameCompanionTrack .hot-tags,
 #reviewCompanionTrack .hot-tags{
-  min-height:28px!important;
+  min-height:0!important;
 }
 #hotCompanionTrack .mini-order,
 #recentCompanionTrack .mini-order,
@@ -1820,34 +1836,38 @@ label{
 #reviewCompanionTrack .mini-order{
   margin-top:auto!important;
 }
-#hotCompanionTrack .companion-card:nth-child(1),
-#hotCompanionTrack .companion-card:nth-child(2),
-#hotCompanionTrack .companion-card:nth-child(3),
-#recentCompanionTrack .companion-card:nth-child(1),
-#recentCompanionTrack .companion-card:nth-child(2),
-#recentCompanionTrack .companion-card:nth-child(3),
-#gameCompanionTrack .companion-card:nth-child(1),
-#gameCompanionTrack .companion-card:nth-child(2),
-#gameCompanionTrack .companion-card:nth-child(3),
-#reviewCompanionTrack .companion-card:nth-child(1),
-#reviewCompanionTrack .companion-card:nth-child(2),
-#reviewCompanionTrack .companion-card:nth-child(3){position:relative!important}
-#hotCompanionTrack .companion-card:nth-child(1)::after,
-#hotCompanionTrack .companion-card:nth-child(2)::after,
-#hotCompanionTrack .companion-card:nth-child(3)::after,
-#recentCompanionTrack .companion-card:nth-child(1)::after,
-#recentCompanionTrack .companion-card:nth-child(2)::after,
-#recentCompanionTrack .companion-card:nth-child(3)::after,
-#gameCompanionTrack .companion-card:nth-child(1)::after,
-#gameCompanionTrack .companion-card:nth-child(2)::after,
-#gameCompanionTrack .companion-card:nth-child(3)::after,
-#reviewCompanionTrack .companion-card:nth-child(1)::after,
-#reviewCompanionTrack .companion-card:nth-child(2)::after,
-#reviewCompanionTrack .companion-card:nth-child(3)::after{
+/* companion-card-freeze-unified-v1 — 热门/最近/游戏/好评共用「最近下单」版型；TOP=左上角小粉胶囊 */
+#hotCompanionTrack .companion-card:nth-child(1):not(.hot-more-card),
+#hotCompanionTrack .companion-card:nth-child(2):not(.hot-more-card),
+#hotCompanionTrack .companion-card:nth-child(3):not(.hot-more-card),
+#recentCompanionTrack .companion-card:nth-child(1):not(.hot-more-card),
+#recentCompanionTrack .companion-card:nth-child(2):not(.hot-more-card),
+#recentCompanionTrack .companion-card:nth-child(3):not(.hot-more-card),
+#gameCompanionTrack .companion-card:nth-child(1):not(.hot-more-card),
+#gameCompanionTrack .companion-card:nth-child(2):not(.hot-more-card),
+#gameCompanionTrack .companion-card:nth-child(3):not(.hot-more-card),
+#reviewCompanionTrack .companion-card:nth-child(1):not(.hot-more-card),
+#reviewCompanionTrack .companion-card:nth-child(2):not(.hot-more-card),
+#reviewCompanionTrack .companion-card:nth-child(3):not(.hot-more-card){position:relative!important}
+#hotCompanionTrack .companion-card:nth-child(1):not(.hot-more-card)::after,
+#hotCompanionTrack .companion-card:nth-child(2):not(.hot-more-card)::after,
+#hotCompanionTrack .companion-card:nth-child(3):not(.hot-more-card)::after,
+#recentCompanionTrack .companion-card:nth-child(1):not(.hot-more-card)::after,
+#recentCompanionTrack .companion-card:nth-child(2):not(.hot-more-card)::after,
+#recentCompanionTrack .companion-card:nth-child(3):not(.hot-more-card)::after,
+#gameCompanionTrack .companion-card:nth-child(1):not(.hot-more-card)::after,
+#gameCompanionTrack .companion-card:nth-child(2):not(.hot-more-card)::after,
+#gameCompanionTrack .companion-card:nth-child(3):not(.hot-more-card)::after,
+#reviewCompanionTrack .companion-card:nth-child(1):not(.hot-more-card)::after,
+#reviewCompanionTrack .companion-card:nth-child(2):not(.hot-more-card)::after,
+#reviewCompanionTrack .companion-card:nth-child(3):not(.hot-more-card)::after{
   position:absolute!important;
   left:18px!important;
+  right:auto!important;
   top:18px!important;
   z-index:5!important;
+  width:auto!important;
+  max-width:none!important;
   height:28px!important;
   padding:0 10px!important;
   border-radius:999px!important;
@@ -1861,10 +1881,11 @@ label{
   font-weight:1000!important;
   letter-spacing:.06em!important;
   box-shadow:0 8px 18px rgba(0,0,0,.28)!important;
+  white-space:nowrap!important;
 }
-#hotCompanionTrack .companion-card:nth-child(1)::after,#recentCompanionTrack .companion-card:nth-child(1)::after,#gameCompanionTrack .companion-card:nth-child(1)::after,#reviewCompanionTrack .companion-card:nth-child(1)::after{content:"TOP 1"!important}
-#hotCompanionTrack .companion-card:nth-child(2)::after,#recentCompanionTrack .companion-card:nth-child(2)::after,#gameCompanionTrack .companion-card:nth-child(2)::after,#reviewCompanionTrack .companion-card:nth-child(2)::after{content:"TOP 2"!important}
-#hotCompanionTrack .companion-card:nth-child(3)::after,#recentCompanionTrack .companion-card:nth-child(3)::after,#gameCompanionTrack .companion-card:nth-child(3)::after,#reviewCompanionTrack .companion-card:nth-child(3)::after{content:"TOP 3"!important}
+#hotCompanionTrack .companion-card:nth-child(1):not(.hot-more-card)::after,#recentCompanionTrack .companion-card:nth-child(1):not(.hot-more-card)::after,#gameCompanionTrack .companion-card:nth-child(1):not(.hot-more-card)::after,#reviewCompanionTrack .companion-card:nth-child(1):not(.hot-more-card)::after{content:"TOP 1"!important}
+#hotCompanionTrack .companion-card:nth-child(2):not(.hot-more-card)::after,#recentCompanionTrack .companion-card:nth-child(2):not(.hot-more-card)::after,#gameCompanionTrack .companion-card:nth-child(2):not(.hot-more-card)::after,#reviewCompanionTrack .companion-card:nth-child(2):not(.hot-more-card)::after{content:"TOP 2"!important}
+#hotCompanionTrack .companion-card:nth-child(3):not(.hot-more-card)::after,#recentCompanionTrack .companion-card:nth-child(3):not(.hot-more-card)::after,#gameCompanionTrack .companion-card:nth-child(3):not(.hot-more-card)::after,#reviewCompanionTrack .companion-card:nth-child(3):not(.hot-more-card)::after{content:"TOP 3"!important}
 #hotCompanionTrack .hot-more-card,
 #recentCompanionTrack .hot-more-card,
 #gameCompanionTrack .hot-more-card,
@@ -1874,7 +1895,7 @@ label{
   justify-content:center!important;
   cursor:pointer!important;
   text-align:center!important;
-  min-height:342px!important;
+  min-height:286px!important;
   height:100%!important;
   border-color:rgba(255,184,220,.34)!important;
   background:radial-gradient(circle at 50% 8%,rgba(255,133,197,.22),transparent 42%),linear-gradient(155deg,rgba(34,13,31,.92),rgba(10,7,14,.98))!important;
@@ -1935,8 +1956,8 @@ label{
 #gameCompanionTrack .hot-more-inner p,
 #reviewCompanionTrack .hot-more-inner p{margin:0!important;color:rgba(255,221,239,.68)!important;font-size:14px!important;font-weight:800!important}
 @media(min-width:1180px){
-  #hotCompanionTrack,#recentCompanionTrack,#gameCompanionTrack,#reviewCompanionTrack{min-width:0!important;grid-template-columns:repeat(4,minmax(0,1fr))!important}
-  #hotCompanionTrack .hot-cover,#recentCompanionTrack .hot-cover,#gameCompanionTrack .hot-cover,#reviewCompanionTrack .hot-cover{height:176px!important}
+  #hotCompanionTrack,#recentCompanionTrack,#gameCompanionTrack,#reviewCompanionTrack{min-width:0!important;grid-template-columns:repeat(auto-fit,minmax(0,1fr))!important}
+  #hotCompanionTrack .hot-cover,#recentCompanionTrack .hot-cover,#gameCompanionTrack .hot-cover,#reviewCompanionTrack .hot-cover{height:auto!important;min-height:260px!important;aspect-ratio:4 / 5!important}
 }
 
 
@@ -3061,7 +3082,11 @@ header.mcj-boss-header .header-inner{justify-content:flex-start!important}
 .quick-entry-grid .quick-entry-card i img{display:block!important;width:18px!important;height:18px!important;min-width:18px!important;min-height:18px!important;object-fit:contain!important;filter:none!important}
 .quick-entry-grid .quick-entry-card strong{font-size:17px!important;font-weight:900!important;color:#fff5fa!important;-webkit-text-fill-color:#fff5fa!important;letter-spacing:0!important}
 .quick-entry-grid .quick-entry-card span{font-size:12px!important;color:rgba(255,226,239,.72)!important;line-height:1.38!important}
-#hotCompanionTrack .companion-card::after,#recentCompanionTrack .companion-card::after,#gameCompanionTrack .companion-card::after,#reviewCompanionTrack .companion-card::after{content:none!important;display:none!important}
+/* companion-card-freeze: keep TOP capsules via higher-specificity nth-child rules; do not blank them here */
+#hotCompanionTrack .companion-card.hot-more-card::after,
+#recentCompanionTrack .companion-card.hot-more-card::after,
+#gameCompanionTrack .companion-card.hot-more-card::after,
+#reviewCompanionTrack .companion-card.hot-more-card::after{content:none!important;display:none!important}
 @media(max-width:980px){.home-daily-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.quick-entry-grid{grid-template-columns:repeat(3,minmax(0,1fr))!important}.container>.mcj-home-hero{height:clamp(220px,22vw,240px)!important;max-height:240px!important}}
 @media(max-width:767px){.quick-entry-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}.quick-entry-grid .quick-entry-card{min-height:92px!important;height:92px!important;max-height:100px!important;padding:14px!important}}
 @media(max-width:640px){.home-daily-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.home-daily-card{min-height:86px;padding:14px 12px}.home-daily-card strong{font-size:21px}.container>.mcj-home-hero{height:clamp(170px,46vw,210px)!important;max-height:210px!important;border-radius:18px!important}}
@@ -3359,13 +3384,38 @@ header.mcj-boss-header .header-star,
 header.mcj-boss-header .mcj-mnav-brand{display:none!important}
 @media(min-width:900px){
   header.mcj-boss-header .mcj-mnav{display:none!important}
-  header.mcj-boss-header .mcj-desk-nav{display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr))!important;gap:10px!important}
+  header.mcj-boss-header .mcj-desk-nav{
+    display:flex!important;
+    flex-wrap:nowrap!important;
+    align-items:center!important;
+    justify-content:flex-end!important;
+    gap:6px!important;
+    max-width:none!important
+  }
+  header.mcj-boss-header .mcj-desk-nav>a{
+    flex:0 0 auto!important;
+    min-width:0!important;
+    max-width:none!important;
+    height:40px!important;
+    padding:0 11px!important;
+    font-size:13px!important;
+    font-weight:750!important;
+    border-radius:10px!important;
+    white-space:nowrap!important;
+    box-shadow:none!important
+  }
 }
 @media(max-width:899px){
   header.mcj-boss-header .mcj-desk-nav,
   header.mcj-boss-header .header-nav:not(.mcj-desk-nav),
   header.mcj-boss-header .mcj-boss-nav:not(.mcj-desk-nav){display:none!important}
-  /* ☰ shrink-wrap only — NEVER width:100% (that shoved Logo off-screen) */
+  header.mcj-boss-header .mcj-header-brand{
+    display:flex!important;
+    flex:1 1 auto!important;
+    order:0!important;
+    min-width:0!important;
+    max-width:none!important
+  }
   header.mcj-boss-header .mcj-mnav{
     display:flex!important;
     align-items:center!important;
@@ -3373,19 +3423,42 @@ header.mcj-boss-header .mcj-mnav-brand{display:none!important}
     flex:0 0 auto!important;
     width:auto!important;
     max-width:48px!important;
-    margin:0!important;
-    order:0!important;
-  }
-  header.mcj-boss-header .mcj-header-brand{
-    display:flex!important;
-    flex:1 1 auto!important;
-    order:1!important;
-    min-width:0!important;
-    max-width:none!important;
+    margin:0 0 0 auto!important;
+    order:2!important
   }
   header.mcj-boss-header .mcj-mnav-toggle{display:inline-flex!important}
 }
 html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!important}
+
+
+/* companion-card-cover-focal-v2 — crop focus only; do NOT change cover/card size */
+.companion-track .hot-cover img{
+  object-position:var(--mcj-cover-pos, center 25%)!important;
+}
+/* Mobile: keep existing crop defaults — do not apply desktop focal overrides */
+@media(max-width:980px){
+  .companion-track .hot-cover img{
+    --mcj-cover-pos:center 25%;
+    object-position:center 25%!important;
+  }
+}
+/* Desktop only: keep frozen cover size, retarget face crop for known companions */
+@media(min-width:981px){
+  #hotCompanionTrack .companion-card[data-public-id="PW00002"] .hot-cover img,
+  #recentCompanionTrack .companion-card[data-public-id="PW00002"] .hot-cover img,
+  #gameCompanionTrack .companion-card[data-public-id="PW00002"] .hot-cover img,
+  #reviewCompanionTrack .companion-card[data-public-id="PW00002"] .hot-cover img{
+    --mcj-cover-pos:50% 22%;
+    object-position:50% 22%!important;
+  }
+  #hotCompanionTrack .companion-card[data-public-id="PW00004"] .hot-cover img,
+  #recentCompanionTrack .companion-card[data-public-id="PW00004"] .hot-cover img,
+  #gameCompanionTrack .companion-card[data-public-id="PW00004"] .hot-cover img,
+  #reviewCompanionTrack .companion-card[data-public-id="PW00004"] .hot-cover img{
+    --mcj-cover-pos:50% 40%;
+    object-position:50% 40%!important;
+  }
+}
 
 </style>
   <link rel="stylesheet" href="src/certification-system.css">
@@ -3394,34 +3467,33 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
   <link rel="stylesheet" href="src/gameplay-flow.css">
   <link rel="stylesheet" href="src/design-system.css">
   <link rel="stylesheet" href="src/home-banner.css">
-  <link rel="stylesheet" href="src/home-announcements.css">
+  <link rel="stylesheet" href="src/home-announcements.css?v=20260805annRotate1">
   <link rel="stylesheet" href="src/home-popularity.css">
   <link rel="stylesheet" href="src/home-desktop.css">
-  <link rel="stylesheet" href="src/login-modal.css">
+  <link rel="stylesheet" href="src/login-modal.css?v=20260805loginUi1">
   <link rel="stylesheet" href="src/place-order-modal.css">
   <link rel="stylesheet" href="src/notify-system.css">
-  <script src="src/role-gates.js"></script>
-  <script src="src/avatar-fallback.js"></script>
-  <script src="src/companion-media.js?v=20260802mediaSync"></script>
-  <script src="src/launch-feature-freeze.js"></script>
-  <script src="src/notify-system.js" defer></script>
-  <script src="src/boss-header.js?v=20260802mobileP0c" defer></script>
-  <script src="src/boss-forced-ack.js?v=20260803rules1" defer></script>
-  <link rel="stylesheet" href="src/boss-header.css?v=20260802mobileP0c">
+  <script type="module" src="src/role-gates.js?v=20260805p0home1"></script>
+  <script type="module" src="src/boss-auth-session.js?v=20260805p0home1"></script>
+  <script type="module" src="src/forgot-password.js?v=20260806forgotP0"></script>
+  <script type="module" src="src/avatar-fallback.js"></script>
+  <script type="module" src="src/companion-media.js?v=20260802mediaSync"></script>
+  <script type="module" src="src/launch-feature-freeze.js"></script>
+  <script type="module" src="src/notify-system.js" defer></script>
+  <script type="module" src="src/boss-header.js?v=20260805p0home1" defer></script>
+  <script type="module" src="src/boss-forced-ack.js?v=20260805p0home1" defer></script>
+  <link rel="stylesheet" href="src/boss-header.css?v=20260805p0home1">
   <link rel="stylesheet" href="/src/mcj-safe-area.css?v=20260802mobileP0c">
-  <link rel="stylesheet" href="src/home-mobile.css?v=20260802mobileP0c">
+  <link rel="stylesheet" href="src/home-mobile.css?v=20260804annMarquee3">
 </head>
 <body>
   <div class="ambient-layer" aria-hidden="true"></div>
   <header class="site-header mcj-boss-header" data-mcj-boss-header="1" aria-label="顶部导航">
     <div class="mcj-boss-header-inner header-inner">
-      <div class="mcj-mnav">
-        <button type="button" class="mcj-mnav-toggle" data-mcj-mnav-toggle aria-controls="mcjMnavSheet" aria-expanded="false" aria-label="打开菜单">☰</button>
-      </div>
       <a class="mcj-header-brand" href="/" aria-label="MEOW CUI JIAO 妙脆角 首页">
         <img class="mcj-header-brand-logo" src="/src/assets/meow-cuijiao-brand.jpg" alt="MEOW CUI JIAO" width="40" height="40" decoding="async" data-mcj-brand-logo="1">
         <span class="mcj-header-brand-text">
-          <span class="mcj-header-brand-en">MEOW CUI JIAO</span>
+          <span class="mcj-header-brand-en">Meow Cui Jiao</span>
           <span class="mcj-header-brand-zh">妙脆角</span>
         </span>
       </a>
@@ -3430,7 +3502,11 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
         <a href="companion-center.html">大厅</a>
         <a href="orders.html">订单</a>
         <a href="support.html?start=1">客服</a>
+        <a href="login.html" data-mcj-boss-login>登录</a>
       </nav>
+      <div class="mcj-mnav">
+        <button type="button" class="mcj-mnav-toggle" data-mcj-mnav-toggle aria-controls="mcjMnavSheet" aria-expanded="false" aria-label="打开菜单">☰</button>
+      </div>
     </div>
   </header>
   <main class="container">
@@ -3536,7 +3612,7 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
           </div>
         </section>
 
-    <footer class="site-footer"><strong>MEOW CUI JIAO ENTERPRISE</strong><br><span>✓ Registered Malaysian Enterprise</span><br><small>© MEOW CUI JIAO ENTERPRISE. All rights reserved.</small></footer>
+    <footer class="site-footer"><strong>MEOW CUI JIAO ENTERPRISE</strong><br><span>✓ Registered Malaysian Enterprise</span><br><small>© MEOW CUI JIAO ENTERPRISE. All rights reserved.</small><br><small class="mcj-footer-ssm" style="display:inline-block;margin-top:4px;font-size:11px;line-height:1.35;opacity:.85">SSM Registration No. 202603181917</small></footer>
   </main>
   <nav class="mobile-bottom-nav" aria-label="底部导航">
     <a class="active" href="index.html">首页</a>
@@ -3549,15 +3625,16 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
   <div class="modal" id="modal"><div class="dialog"><button class="close" data-close>×</button><div id="modalBody"></div></div></div>
   
 
-  <script src="src/platform-contract.js"></script>
-  <script src="src/unified-config.js"></script>
-  <script src="src/commission-engine.js"></script>
-  <script src="src/unified-api.js"></script>
-  <script src="src/currency.js"></script>
-  <script src="src/login-modal-portal.js"></script>
+  <script type="module" src="src/platform-contract.js"></script>
+  <script type="module" src="src/unified-config.js"></script>
+  <script type="module" src="src/commission-engine.js"></script>
+  <script type="module" src="src/unified-api.js"></script>
+  <script type="module" src="src/currency.js"></script>
+  <script src="src/auth-shell.js?v=20260806emailKeyboard1"></script>
+  <script type="module" src="src/login-modal-portal.js?v=20260805loginUi1"></script>
   <script>
     const modal=document.getElementById('modal');const modalBody=document.getElementById('modalBody');
-    function isLoggedIn(){return window.MCJRoleGate ? !!(window.MCJRoleGate.isLogged('customer')||window.MCJRoleGate.isLogged('boss')) : !!(localStorage.getItem('mcjAuthAccessToken')||sessionStorage.getItem('mcjAuthAccessToken'))}
+    function isLoggedIn(){return window.MCJRoleGate ? !!(window.MCJRoleGate.isLogged('customer')||window.MCJRoleGate.isLogged('boss')) : !!(function(){var t=localStorage.getItem('mcjAuthAccessToken')||sessionStorage.getItem('mcjAuthAccessToken')||'';return t&&t.split('.').length===3;})()}
     function refreshAuthUI(){document.body.classList.toggle('is-logged-in',isLoggedIn());window.dispatchEvent(new CustomEvent('mcj:auth-updated'));}
     function getDiscordInviteUrl(){
       var direct=(localStorage.getItem('discordInviteUrl')||'').trim();
@@ -3577,13 +3654,26 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
       if(modal.parentNode!==document.body) document.body.appendChild(modal);
       modalBody.innerHTML=html;
       var dialog=modal.querySelector('.dialog');
-      if(dialog){dialog.classList.toggle('is-auth-dialog', /boss-login-modal/.test(String(html||'')));dialog.scrollTop=0;}
+      var isAuth=/boss-login-modal/.test(String(html||''));
+      if(dialog){dialog.classList.toggle('is-auth-dialog', isAuth);dialog.scrollTop=0;}
       modal.scrollTop=0;
       modal.classList.add('open');
       document.body.style.overflow='hidden';
+      if(isAuth&&modalBody&&window.MCJAuthShell&&window.MCJAuthShell.prepareAuthForm){
+        window.MCJAuthShell.prepareAuthForm(modalBody.querySelector('.boss-login-modal')||modalBody,{clearAccount:true});
+      }
     }
     function closeModal(){
       if(window.MCJModal&&typeof window.MCJModal.close==='function'){window.MCJModal.close();return;}
+      var body=document.getElementById('modalBody');
+      if(body&&body.querySelector&&body.querySelector('.boss-login-modal')){
+        if(window.MCJAuthShell&&window.MCJAuthShell.clearAuthFields){
+          window.MCJAuthShell.clearAuthFields(body,{clearCode:true,clearPassword:true,clearAccount:true});
+        }
+        body.innerHTML='';
+      }
+      var dialog=modal&&modal.querySelector('.dialog');
+      if(dialog)dialog.classList.remove('is-auth-dialog');
       modal.classList.remove('open');
       document.body.style.overflow='';
     }
@@ -3609,12 +3699,46 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
     function numericPrice(price){var m=String(price||'').match(/[\d.]+/);return m?Number(m[0]):0}
     function bossLoginHtml(mode){
       mode = mode === 'register' ? 'register' : 'login';
-      var loginPanel = '<div class="login-panel'+(mode==='login'?' active':'')+'" data-login-panel="email" data-auth-panel="login"><label class="wide">邮箱<input id="loginGmail" type="email" autocomplete="username" placeholder="请输入邮箱"></label><label class="wide">密码<input id="loginGmailCode" type="password" autocomplete="current-password" placeholder="请输入密码"></label><button class="login-submit" type="button" data-login-confirm data-login-method="email">登录</button></div>';
-      var registerPanel = '<div class="login-panel'+(mode==='register'?' active':'')+'" data-login-panel="register" data-auth-panel="register"><label class="wide">昵称<input id="registerNickname" type="text" autocomplete="nickname" placeholder="请输入昵称" maxlength="40"></label><label class="wide">邮箱<input id="registerEmail" type="email" autocomplete="email" placeholder="请输入邮箱"></label><label class="wide">密码<input id="registerPassword" type="password" autocomplete="new-password" placeholder="至少 6 位密码"></label><label class="wide">确认密码<input id="registerPasswordConfirm" type="password" autocomplete="new-password" placeholder="再次输入密码"></label><button class="login-submit" type="button" data-register-confirm>注册</button></div>';
+      var otpPanel =
+        '<div class="login-panel'+(mode==='login'?' active':'')+'" data-login-panel="otp" data-auth-panel="login-otp">'+
+        '<label class="wide">邮箱<input id="loginOtpEmail" type="email" inputmode="email" autocomplete="email" placeholder="请输入邮箱" value=""></label>'+
+        '<label class="wide">验证码<div class="login-code-row">'+
+        '<input id="loginOtpCode" name="otp" type="text" inputmode="numeric" autocomplete="one-time-code" data-auth-code="1" data-auth-sensitive="1" placeholder="6 位验证码" maxlength="6" value="">'+
+        '<button class="login-small-btn" type="button" data-send-login-otp data-login-role="boss">获取验证码</button>'+
+        '</div></label>'+
+        '<button class="login-submit" type="button" data-login-confirm data-login-method="otp">验证码登录</button>'+
+        '</div>';
+      var passPanel =
+        '<div class="login-panel" data-login-panel="email" data-auth-panel="login-pass">'+
+        '<label class="wide">邮箱<input id="loginGmail" type="email" inputmode="email" autocomplete="email" placeholder="请输入邮箱" value=""></label>'+
+        '<label class="wide">密码<input id="loginGmailCode" type="password" autocomplete="current-password" data-auth-sensitive="1" placeholder="请输入密码" value=""></label>'+
+        '<button class="login-submit" type="button" data-login-confirm data-login-method="email">密码登录</button>'+
+        '</div>';
+      var loginPanel = mode==='login'
+        ? ('<div class="login-tabs">'+
+          '<button class="login-tab active" type="button" data-login-tab="otp">验证码登录</button>'+
+          '<button class="login-tab" type="button" data-login-tab="email">密码登录</button></div>'+
+          otpPanel+passPanel)
+        : '';
+      var registerPanel = '<div class="login-panel'+(mode==='register'?' active':'')+'" data-login-panel="register" data-auth-panel="register">'+
+        '<label class="wide">昵称<input id="registerNickname" type="text" autocomplete="nickname" placeholder="请输入昵称" maxlength="40" value=""></label>'+
+        '<label class="wide">邮箱<div class="login-code-row">'+
+        '<input id="registerEmail" type="email" inputmode="email" autocomplete="email" placeholder="请输入邮箱" value="">'+
+        '<button class="login-small-btn" type="button" data-send-register-otp data-register-role="boss">获取验证码</button>'+
+        '</div></label>'+
+        '<label class="wide">邮箱验证码<div class="login-code-row">'+
+        '<input id="registerOtpCode" name="registerOtp" type="text" inputmode="numeric" autocomplete="one-time-code" data-auth-code="1" data-auth-sensitive="1" placeholder="6 位验证码" maxlength="6" value="">'+
+        '<button class="login-small-btn" type="button" data-verify-register-otp data-register-role="boss">验证邮箱</button>'+
+        '</div></label>'+
+        '<p class="muted" data-register-verified-hint style="margin:0 0 8px">请先完成邮箱验证，验证成功后才能注册。</p>'+
+        '<input type="hidden" id="registerEmailToken" value="">'+
+        '<label class="wide">密码<input id="registerPassword" type="password" autocomplete="new-password" data-auth-sensitive="1" placeholder="至少 8 位，含字母和数字" value=""></label>'+
+        '<label class="wide">确认密码<input id="registerPasswordConfirm" type="password" autocomplete="new-password" data-auth-sensitive="1" placeholder="再次输入密码" value=""></label>'+
+        '<button class="login-submit" type="button" data-register-confirm disabled>注册</button></div>';
       var links = mode === 'register'
         ? '<div class="login-links"><button class="linkish" type="button" data-switch-auth="login">已有账号？立即登录</button></div>'
-        : '<div class="login-links"><a href="mine.html?forgot=1">忘记密码</a><button class="linkish" type="button" data-switch-auth="register">还没有账号？立即注册</button></div>';
-      return '<div class="boss-login-modal" data-auth-mode="'+mode+'"><h2>'+(mode==='register'?'注册老板账号':'登录 MEOW CUI JIAO')+'</h2><p class="muted">'+(mode==='register'?'注册成功后将自动登录，并生成唯一老板 UID。':'邮箱密码登录，支持注册新账号。')+'</p>'+loginPanel+registerPanel+'<p id="loginState" data-login-error></p>'+links+'</div>';
+        : '<div class="login-links"><button class="linkish" type="button" data-forgot-password data-forgot-role="boss">忘记密码</button><button class="linkish" type="button" data-switch-auth="register">还没有账号？立即注册</button></div>';
+      return '<div class="boss-login-modal" data-auth-mode="'+mode+'"><h2>'+(mode==='register'?'注册老板账号':'登录 MEOW CUI JIAO')+'</h2><p class="muted">'+(mode==='register'?'邮箱验证码验证通过后才能注册，成功后自动登录并生成老板 UID。':'邮箱验证码登录（也可使用密码）。')+'</p>'+loginPanel+registerPanel+'<p id="loginState" data-login-error></p>'+links+'</div>';
     }
     window.bossLoginHtml = bossLoginHtml;
     function loginRequiredModal(){
@@ -3794,14 +3918,15 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
     });
     document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal()});
   </script>
-  <script src="src/site-data.js?v=20260730home4"></script>
-  <script src="src/home-banner.js"></script>
-  <script src="src/home-announcements.js?v=20260802launchSafe"></script>
-  <script src="src/home-daily-stats.js?v=20260802mobileP0c"></script>
-  <script src="src/place-order-modal.js"></script>
-  <script src="src/home-popularity.js"></script>
-  <script src="src/home-services.js"></script>
-  <script src="src/companion-application.js"></script>
+  <script type="module" src="src/site-data.js?v=20260804profileUuid1"></script>
+  <script type="module" src="src/home-banner.js"></script>
+  <script type="module" src="src/home-announcements.js?v=20260805annRotate1"></script>
+  <script type="module" src="src/home-daily-stats.js?v=20260802mobileP0c"></script>
+  <script src="src/companion-presence.js?v=20260805profileLock1"></script>
+  <script type="module" src="src/place-order-modal.js?v=20260805profileLock1"></script>
+  <script type="module" src="src/home-popularity.js?v=20260805profileLock1"></script>
+  <script type="module" src="src/home-services.js"></script>
+  <script type="module" src="src/companion-application.js"></script>
   <script>
     (function(){
       function safeText(text){return String(text||'').replace(/[&<>"']/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]})}
@@ -4149,9 +4274,21 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
       }
       var hash = String(location.hash || '').replace(/^#/, '').toLowerCase();
       if ((hash === 'login' || hash === 'register') && window.MCJModal && window.MCJModal.openLogin) {
-        var y = window.scrollY || 0;
-        window.MCJModal.openLogin(hash === 'register' ? 'register' : 'login');
-        window.scrollTo(0, y);
+        var logged = false;
+        try {
+          logged = !!(window.MCJRoleGate && window.MCJRoleGate.isLogged && (window.MCJRoleGate.isLogged('boss') || window.MCJRoleGate.isLogged('customer')));
+          if (!logged) {
+            var tok = sessionStorage.getItem('mcjAuthAccessToken') || localStorage.getItem('mcjAuthAccessToken') || '';
+            logged = tok.split('.').length === 3 && tok.length > 20;
+          }
+        } catch (e) {}
+        if (logged) {
+          try { history.replaceState(null, '', location.pathname + location.search); } catch (e2) {}
+        } else {
+          var y = window.scrollY || 0;
+          window.MCJModal.openLogin(hash === 'register' ? 'register' : 'login');
+          window.scrollTo(0, y);
+        }
       }
       document.addEventListener('click', function(e){
         var switchBtn = e.target.closest && e.target.closest('[data-switch-auth]');
@@ -4159,7 +4296,12 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
           e.preventDefault();
           var mode = switchBtn.getAttribute('data-switch-auth') === 'register' ? 'register' : 'login';
           var body = document.getElementById('modalBody');
-          if (body && typeof bossLoginHtml === 'function') body.innerHTML = bossLoginHtml(mode);
+          if (body && typeof bossLoginHtml === 'function') {
+            body.innerHTML = bossLoginHtml(mode);
+            if (window.MCJAuthShell && window.MCJAuthShell.prepareAuthForm) {
+              window.MCJAuthShell.prepareAuthForm(body.querySelector('.boss-login-modal') || body, { clearAccount: true });
+            }
+          }
           return;
         }
         var tab = e.target.closest && e.target.closest('[data-login-tab]');
@@ -4167,7 +4309,19 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
           var box = tab.closest('.boss-login-modal');
           if (!box) return;
           box.querySelectorAll('[data-login-tab]').forEach(function(btn){btn.classList.toggle('active', btn === tab);});
-          box.querySelectorAll('[data-login-panel]').forEach(function(panel){panel.classList.toggle('active', panel.getAttribute('data-login-panel') === tab.getAttribute('data-login-tab'));});
+          box.querySelectorAll('[data-login-panel]').forEach(function(panel){
+            var key = panel.getAttribute('data-login-panel');
+            if (key === 'register') return;
+            panel.classList.toggle('active', key === tab.getAttribute('data-login-tab'));
+          });
+          if (window.MCJAuthShell && window.MCJAuthShell.clearAuthFields) {
+            window.MCJAuthShell.clearAuthFields(box, { clearCode: true, clearPassword: true, clearAccount: false });
+          } else {
+            box.querySelectorAll('#loginOtpCode,#loginCode,#loginGmailCode,[data-auth-code],input[type="password"]').forEach(function(el){
+              try { el.value=''; el.defaultValue=''; el.removeAttribute('value'); } catch (err) {}
+            });
+            box.querySelectorAll('[data-login-error],#loginState').forEach(function(el){ el.textContent=''; });
+          }
           return;
         }
         if (e.target.closest && e.target.closest('[data-send-code]')) {
@@ -4244,11 +4398,11 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
       }, true);
     })();
   </script>
-  <script src="src/dropdown-system.js" defer></script>
-  <script src="src/real-data-admin.js" defer></script>
-  <script src="src/footer-system.js?v=20260731-footer-actions" defer></script>
-  <script src="src/text-guard.js?v=20260730home4" defer></script>
-  <script src="src/design-system.js" defer></script>
+  <script type="module" src="src/dropdown-system.js" defer></script>
+  <script type="module" src="src/real-data-admin.js" defer></script>
+  <script type="module" src="src/footer-system.js?v=20260805ssm1" defer></script>
+  <script type="module" src="src/text-guard.js?v=20260730home4" defer></script>
+  <script type="module" src="src/design-system.js" defer></script>
 <script id="mcjBossLogoutHandler">
   document.addEventListener('click', function(event) {
     var btn = event.target && event.target.closest && event.target.closest('[data-boss-logout]');
@@ -4293,19 +4447,194 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
     }
   }
 </style>
+<style id="mcj-companion-card-freeze-v1">
+/* Companion Card Freeze — source of truth = #recentCompanionTrack / 「最近下单陪玩」
+   Locked: card size, cover ratio, radius, padding, button, TOP capsule (left pink).
+   Allowed later: data/API/object-fit/object-position/severe bugs only.
+   Final compact metrics: see #mcj-companion-card-freeze-final-v3 below. */
+#hotCompanionTrack,
+#recentCompanionTrack,
+#gameCompanionTrack,
+#reviewCompanionTrack{
+  display:grid!important;
+  grid-template-columns:repeat(auto-fit,minmax(220px,1fr))!important;
+  gap:18px!important;
+  width:100%!important;
+  align-items:stretch!important;
+}
+#hotCompanionTrack .companion-card,
+#recentCompanionTrack .companion-card,
+#gameCompanionTrack .companion-card,
+#reviewCompanionTrack .companion-card{
+  min-height:286px!important;
+  height:100%!important;
+  padding:14px 14px 6px!important;
+  display:flex!important;
+  flex-direction:column!important;
+  box-sizing:border-box!important;
+}
+#hotCompanionTrack .hot-cover,
+#recentCompanionTrack .hot-cover,
+#gameCompanionTrack .hot-cover,
+#reviewCompanionTrack .hot-cover{
+  height:auto!important;
+  min-height:240px!important;
+  aspect-ratio:4 / 5!important;
+  border-radius:18px!important;
+  flex:0 0 auto!important;
+}
+#hotCompanionTrack .companion-card:nth-child(1):not(.hot-more-card)::after,
+#hotCompanionTrack .companion-card:nth-child(2):not(.hot-more-card)::after,
+#hotCompanionTrack .companion-card:nth-child(3):not(.hot-more-card)::after,
+#recentCompanionTrack .companion-card:nth-child(1):not(.hot-more-card)::after,
+#recentCompanionTrack .companion-card:nth-child(2):not(.hot-more-card)::after,
+#recentCompanionTrack .companion-card:nth-child(3):not(.hot-more-card)::after,
+#gameCompanionTrack .companion-card:nth-child(1):not(.hot-more-card)::after,
+#gameCompanionTrack .companion-card:nth-child(2):not(.hot-more-card)::after,
+#gameCompanionTrack .companion-card:nth-child(3):not(.hot-more-card)::after,
+#reviewCompanionTrack .companion-card:nth-child(1):not(.hot-more-card)::after,
+#reviewCompanionTrack .companion-card:nth-child(2):not(.hot-more-card)::after,
+#reviewCompanionTrack .companion-card:nth-child(3):not(.hot-more-card)::after{
+  position:absolute!important;
+  left:18px!important;
+  right:auto!important;
+  top:18px!important;
+  z-index:5!important;
+  width:auto!important;
+  height:28px!important;
+  padding:0 10px!important;
+  border-radius:999px!important;
+  display:inline-flex!important;
+  align-items:center!important;
+  justify-content:center!important;
+  background:linear-gradient(145deg,rgba(255,222,238,.92),rgba(255,126,194,.82))!important;
+  border:1px solid rgba(255,235,246,.72)!important;
+  color:#180711!important;
+  font-size:12px!important;
+  font-weight:1000!important;
+  letter-spacing:.06em!important;
+  box-shadow:0 8px 18px rgba(0,0,0,.28)!important;
+  white-space:nowrap!important;
+}
+#hotCompanionTrack .companion-card:nth-child(1):not(.hot-more-card)::after,
+#recentCompanionTrack .companion-card:nth-child(1):not(.hot-more-card)::after,
+#gameCompanionTrack .companion-card:nth-child(1):not(.hot-more-card)::after,
+#reviewCompanionTrack .companion-card:nth-child(1):not(.hot-more-card)::after{content:"TOP 1"!important}
+#hotCompanionTrack .companion-card:nth-child(2):not(.hot-more-card)::after,
+#recentCompanionTrack .companion-card:nth-child(2):not(.hot-more-card)::after,
+#gameCompanionTrack .companion-card:nth-child(2):not(.hot-more-card)::after,
+#reviewCompanionTrack .companion-card:nth-child(2):not(.hot-more-card)::after{content:"TOP 2"!important}
+#hotCompanionTrack .companion-card:nth-child(3):not(.hot-more-card)::after,
+#recentCompanionTrack .companion-card:nth-child(3):not(.hot-more-card)::after,
+#gameCompanionTrack .companion-card:nth-child(3):not(.hot-more-card)::after,
+#reviewCompanionTrack .companion-card:nth-child(3):not(.hot-more-card)::after{content:"TOP 3"!important}
+#hotCompanionTrack .companion-card.hot-more-card::after,
+#recentCompanionTrack .companion-card.hot-more-card::after,
+#gameCompanionTrack .companion-card.hot-more-card::after,
+#reviewCompanionTrack .companion-card.hot-more-card::after{content:none!important;display:none!important}
+</style>
+<style id="mcj-companion-card-freeze-final-v3">
+/* Companion Card Freeze Final v3 (2026-08-04) — info whitespace only (−8~10% card height).
+   LOCKED forever unless user explicitly requests redesign:
+   cover height/ratio, card width, fonts, button size, TOP/online badges, colors, radii, shadows.
+   ONLY .hot-info vertical rhythm was compressed; photos untouched. */
+#hotCompanionTrack .companion-card,
+#recentCompanionTrack .companion-card,
+#gameCompanionTrack .companion-card,
+#reviewCompanionTrack .companion-card,
+#hotCompanionTrack .hot-more-card,
+#recentCompanionTrack .hot-more-card,
+#gameCompanionTrack .hot-more-card,
+#reviewCompanionTrack .hot-more-card{
+  min-height:286px!important;
+  height:100%!important;
+  padding:14px 14px 6px!important;
+  display:flex!important;
+  flex-direction:column!important;
+  box-sizing:border-box!important;
+}
+/* Cover metrics FROZEN — do not change height / ratio / crop */
+#hotCompanionTrack .hot-cover,
+#recentCompanionTrack .hot-cover,
+#gameCompanionTrack .hot-cover,
+#reviewCompanionTrack .hot-cover{
+  height:auto!important;
+  min-height:240px!important;
+  aspect-ratio:4 / 5!important;
+  border-radius:18px!important;
+  flex:0 0 auto!important;
+}
+#hotCompanionTrack .hot-info,
+#recentCompanionTrack .hot-info,
+#gameCompanionTrack .hot-info,
+#reviewCompanionTrack .hot-info{
+  min-height:0!important;
+  flex:1 1 auto!important;
+  display:flex!important;
+  flex-direction:column!important;
+  padding:4px 2px 0!important;
+  gap:0!important;
+}
+#hotCompanionTrack .hot-info h3,
+#recentCompanionTrack .hot-info h3,
+#gameCompanionTrack .hot-info h3,
+#reviewCompanionTrack .hot-info h3{
+  margin:0!important;
+}
+#hotCompanionTrack .hot-info > p,
+#recentCompanionTrack .hot-info > p,
+#gameCompanionTrack .hot-info > p,
+#reviewCompanionTrack .hot-info > p,
+.companion-track .hot-info > p{
+  margin:2px 0 1px!important;
+}
+#hotCompanionTrack .hot-meta,
+#recentCompanionTrack .hot-meta,
+#gameCompanionTrack .hot-meta,
+#reviewCompanionTrack .hot-meta,
+.companion-track .hot-meta{
+  margin:0 0 2px!important;
+}
+#hotCompanionTrack .hot-orders,
+#recentCompanionTrack .hot-orders,
+#gameCompanionTrack .hot-orders,
+#reviewCompanionTrack .hot-orders,
+.companion-track .hot-orders{
+  margin:0 0 2px!important;
+}
+#hotCompanionTrack .hot-tags,
+#recentCompanionTrack .hot-tags,
+#gameCompanionTrack .hot-tags,
+#reviewCompanionTrack .hot-tags,
+.companion-track .hot-tags{
+  display:flex!important;
+  flex-wrap:wrap!important;
+  align-content:flex-start!important;
+  gap:3px!important;
+  margin:0 0 2px!important;
+  min-height:0!important;
+  max-height:40px!important;
+  overflow:hidden!important;
+  flex:0 0 auto!important;
+}
+#hotCompanionTrack .hot-tags span,
+#recentCompanionTrack .hot-tags span,
+#gameCompanionTrack .hot-tags span,
+#reviewCompanionTrack .hot-tags span,
+.companion-track .hot-tags span{
+  padding:2px 8px!important;
+}
+#hotCompanionTrack .mini-order,
+#recentCompanionTrack .mini-order,
+#gameCompanionTrack .mini-order,
+#reviewCompanionTrack .mini-order{
+  margin-top:auto!important;
+  flex:0 0 auto!important;
+  height:38px!important;
+}
+</style>
 </body>
 </html>
-
-
-
-
-
-
-
-
-
-
-
 
 
 

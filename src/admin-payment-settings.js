@@ -6,7 +6,7 @@
   "use strict";
   if (window.MCJAdminPaymentSettings) return;
 
-  var BANK_PROVIDERS = ["Maybank", "CIMB", "Public Bank", "RHB", "OCBC", "Touch 'n Go", "支付宝", "微信支付", "USDT", "其他"];
+  var BANK_PROVIDERS = ["Maybank", "CIMB", "Public Bank", "OCBC", "RHB", "Touch 'n Go", "支付宝", "微信支付", "USDT", "其他"];
 
   var state = {
     loading: false,
@@ -229,6 +229,7 @@
         '</div><p class="payment-safe-copy">密钥只提交到服务端加密存储，不会写入浏览器本地。</p></section>'
       : "";
 
+    var qrUrl = String(manual.qrUrl || data.qrUrl || "").trim();
     var manualHtml =
       '<section class="panel"><h2>收款资料</h2><div class="payment-field-grid">' +
       '<label><span>收款人姓名</span><input name="receiverName" value="' +
@@ -246,6 +247,22 @@
       '<label><span>DuitNow ID</span><input name="duitnowId" value="' +
       esc(manual.duitnowId || "") +
       '"></label>' +
+      '<div class="wide payment-qr-preview">' +
+      "<span>收款二维码（仅支付页显示）</span>" +
+      (qrUrl
+        ? '<div style="margin:8px 0"><img src="' +
+          esc(qrUrl) +
+          '" alt="收款二维码预览" data-mcj-pay-qr="1" style="max-width:220px;max-height:220px;border-radius:12px;border:1px solid rgba(255,255,255,.12);background:#fff;padding:8px"></div>'
+        : '<p class="muted" style="margin:8px 0">尚未上传。上传后自动保存到 Storage 并写入支付配置。</p>') +
+      '<input type="hidden" name="qrUrl" value="' +
+      esc(qrUrl) +
+      '">' +
+      '<label style="display:block;margin-top:8px"><span>上传二维码图片（PNG / JPG / WEBP）</span>' +
+      '<input type="file" accept="image/png,image/jpeg,image/jpg,image/webp" data-pay-qr-upload="' +
+      esc(id) +
+      '"></label>' +
+      '<p class="muted" style="margin:6px 0 0">管理员无需填写任何链接。重新上传即可覆盖旧二维码。</p>' +
+      "</div>" +
       '<label class="wide"><span>收款说明</span><textarea name="instructions">' +
       esc(data.instructions || "") +
       "</textarea></label>" +
@@ -502,6 +519,8 @@
       bankAccount: String(fd.get("bankAccount") || "").trim(),
       phone: String(fd.get("phone") || "").trim(),
       duitnowId: String(fd.get("duitnowId") || "").trim(),
+      // Hidden field set by upload; empty means keep existing server-side.
+      qrUrl: String(fd.get("qrUrl") || "").trim() || String((item.data && item.data.manual && item.data.manual.qrUrl) || (item.data && item.data.qrUrl) || "").trim(),
     };
     var data = Object.assign({}, item.data || {}, {
       publicLabel: String(fd.get("publicLabel") || item.name || ""),
@@ -559,17 +578,70 @@
       btn.disabled = true;
       btn.textContent = "保存中…";
     }
+    function finishOk(result) {
+      alert((result && result.message) || "已保存");
+      state.editId = "";
+      return load();
+    }
+    function saveViaPlatformSettings() {
+      var ch = payload.channel || {};
+      var data = ch.data || {};
+      var manual = data.manual || {};
+      var id = ch.channel_id || ch.id;
+      var pub = {};
+      pub[id] = {
+        enabled: ch.enabled !== false,
+        visible: ch.visible !== false,
+        publicLabel: data.publicLabel || ch.name || "",
+        bankName: manual.bankName || "",
+        accountName: manual.receiverName || "",
+        receiverName: manual.receiverName || "",
+        bankAccount: manual.bankAccount || "",
+        phone: manual.phone || "",
+        duitnowId: manual.duitnowId || "",
+        qrUrl: manual.qrUrl || data.qrUrl || "",
+        instructions: data.instructions || "",
+        minAmount: data.minAmount,
+        maxAmount: data.maxAmount,
+        mode: ch.mode || "test",
+        manual: manual,
+      };
+      var Auth = window.MCJAdminAuthFetch;
+      var body = { action: "save_payments_public", paymentChannelsPublic: pub };
+      var req =
+        Auth && Auth.post
+          ? Auth.post("/api/admin/platform-settings", body, { "x-mcj-admin-role": adminRole() })
+          : fetch("/api/admin/platform-settings", {
+              method: "POST",
+              headers: { "Content-Type": "application/json", Accept: "application/json", "x-mcj-admin-role": adminRole() },
+              body: JSON.stringify(body),
+            }).then(function (res) {
+              return res.json().then(function (j) {
+                if (!res.ok || j.ok === false) throw new Error(j.message || "保存失败");
+                return j;
+              });
+            });
+      return req.then(function (result) {
+        return finishOk({
+          message: (result && result.message) || "支付设置已保存（已同步到支付页）",
+        });
+      });
+    }
     fetchApi({
       method: "POST",
       body: JSON.stringify({ action: "save_channel", channel: payload.channel }),
     })
       .then(function (result) {
-        alert(result.message || "已保存");
-        state.editId = "";
-        return load();
+        return finishOk(result);
       })
       .catch(function (err) {
-        alert("保存失败：" + (err.message || "未知错误"));
+        var msg = String((err && err.message) || "");
+        if (/未初始化|payment_channels|payment_settings|PGRST205|schema cache/i.test(msg)) {
+          return saveViaPlatformSettings().catch(function (err2) {
+            alert("保存失败：" + ((err2 && err2.message) || msg || "未知错误"));
+          });
+        }
+        alert("保存失败：" + (msg || "未知错误"));
       })
       .finally(function () {
         if (btn) {
@@ -607,9 +679,63 @@
       });
   }
 
+  function uploadQr(channelId, file) {
+    if (!file) return;
+    var name = String(file.name || "").toLowerCase();
+    var type = String(file.type || "").toLowerCase();
+    var okType =
+      /image\/(png|jpeg|jpg|webp)/.test(type) ||
+      /\.(png|jpe?g|webp)$/.test(name);
+    if (!okType) {
+      alert("仅支持 PNG / JPG / WEBP 图片");
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      alert("图片不能超过 8MB");
+      return;
+    }
+    var reader = new FileReader();
+    reader.onload = function () {
+      var dataUrl = String(reader.result || "");
+      state.message = "正在上传二维码…";
+      render();
+      fetchApi({
+        method: "POST",
+        body: JSON.stringify({
+          action: "upload_qr",
+          channelId: channelId,
+          dataUrl: dataUrl,
+          filename: file.name || "pay-qr.png",
+        }),
+      })
+        .then(function (result) {
+          state.message = result.message || "二维码已上传";
+          state.editId = channelId;
+          return load();
+        })
+        .catch(function (err) {
+          state.message = "";
+          alert("上传失败：" + (err.message || "未知错误"));
+          render();
+        });
+    };
+    reader.onerror = function () {
+      alert("读取图片失败，请重试");
+    };
+    reader.readAsDataURL(file);
+  }
+
   function bind() {
     if (window.__MCJPaySettingsBound) return;
     window.__MCJPaySettingsBound = true;
+    document.addEventListener("change", function (e) {
+      var input = e.target.closest("[data-pay-qr-upload]");
+      if (!input) return;
+      var channelId = input.getAttribute("data-pay-qr-upload") || "";
+      var file = input.files && input.files[0];
+      uploadQr(channelId, file);
+      input.value = "";
+    });
     document.addEventListener("click", function (e) {
       var tab = e.target.closest("[data-pay-tab]");
       if (tab) {

@@ -171,6 +171,10 @@ export async function readLocalTags() {
   return seeded;
 }
 
+function isServerlessFs() {
+  return !!(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.NOW_REGION);
+}
+
 export async function writeLocalTags(rows) {
   const list = (Array.isArray(rows) ? rows : []).map((row, index) => normalizeTagRow(row, index)).filter((row) => row.name)
     .sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name, "zh"));
@@ -178,10 +182,23 @@ export async function writeLocalTags(rows) {
     const saved = await writeDbTags(list);
     if (Array.isArray(saved)) return saved.sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name, "zh"));
   } catch (error) {
-    if (!isMissingTable(error)) console.error("[companion-tags] DB write failed, fallback local", error.message || error);
+    if (!isMissingTable(error)) {
+      console.error("[companion-tags] DB write failed", error.message || error);
+      throw Object.assign(new Error(`标签保存失败：${error.message || error}`), { status: 503 });
+    }
   }
-  await ensureDir();
-  await fs.writeFile(DATA_FILE, JSON.stringify(list, null, 2), "utf8");
+  if (isServerlessFs()) {
+    throw Object.assign(
+      new Error("标签表未就绪，无法在 Staging 写入本地文件。请执行 supabase/companion-tags.sql 后重试。"),
+      { status: 503 }
+    );
+  }
+  try {
+    await ensureDir();
+    await fs.writeFile(DATA_FILE, JSON.stringify(list, null, 2), "utf8");
+  } catch (error) {
+    throw Object.assign(new Error(`标签本地保存失败：${error.message || error}`), { status: 500 });
+  }
   return list;
 }
 

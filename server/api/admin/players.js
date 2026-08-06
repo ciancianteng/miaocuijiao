@@ -1,7 +1,6 @@
 import {
   PRIVATE_BUCKETS,
   companionDb,
-  companionServiceHeaders,
   createSignedUrl,
   hasCompanionDb,
   isMissingRelation,
@@ -11,11 +10,11 @@ import {
 import { readLocalLevels } from "../_companion-levels-store.js";
 import { resolvePlatformCommission } from "../_commission-rates.js";
 import { resolveCompanionAvatar, resolveCompanionCover } from "../_companion-public-map.js";
+import { requireAdmin as requireAdminJwt, ADMIN_ROLES as SHARED_ADMIN_ROLES } from "../_admin-auth.js";
 
-const ADMIN_ROLES = new Set(["super_admin", "admin"]);
+const ADMIN_ROLES = SHARED_ADMIN_ROLES;
 const PLAYER_TABLE = "companion_profiles";
 const SIGN_TTL = 300;
-const ANON_KEY = () => process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || "";
 
 const ACCOUNT_LABEL = { active: "正常", disabled: "冻结", pending: "待审核" };
 const STATUS_LABEL = {
@@ -110,37 +109,9 @@ function roleFrom(req) {
   return String(req.headers["x-mcj-admin-role"] || req.headers["x-user-role"] || "").trim();
 }
 
-function tokenFrom(req) {
-  return String(req.headers.authorization || req.headers["x-mcj-access-token"] || "")
-    .replace(/^Bearer\s+/i, "")
-    .trim();
-}
-
 async function requireAdmin(req) {
-  const token = tokenFrom(req);
-  if (!token || !ANON_KEY()) {
-    throw Object.assign(new Error("请先登录管理员账号。"), { status: 401 });
-  }
-  const authRes = await fetch(`${process.env.SUPABASE_URL}/auth/v1/user`, {
-    headers: {
-      apikey: ANON_KEY(),
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-  });
-  const authText = await authRes.text();
-  let authUser = null;
-  try {
-    authUser = authText ? JSON.parse(authText) : null;
-  } catch {
-    authUser = null;
-  }
-  if (!authRes.ok || !authUser?.id) throw Object.assign(new Error("请先登录管理员账号。"), { status: 401 });
-  const profiles = await companionDb("profiles", `?id=eq.${encodeURIComponent(authUser.id)}&limit=1`);
-  const profile = profiles?.[0];
-  if (!profile || !ADMIN_ROLES.has(profile.role)) throw Object.assign(new Error("没有陪玩管理权限"), { status: 403 });
-  if (profile.status !== "active") throw Object.assign(new Error("管理员账号未启用"), { status: 403 });
-  return profile;
+  // Same auth source as bosses / finance / settings — list and detail share this path.
+  return requireAdminJwt(req, { allowRoles: ADMIN_ROLES, module: "players" });
 }
 
 function labelStatus(value, fallback = "待审核") {
@@ -229,6 +200,10 @@ function mapListPlayer(row = {}, profile = {}) {
     nickname: row.nickname || profile.display_name || "-",
     name: row.nickname || profile.display_name || "-",
     email: profile.email || "",
+    emailVerified: profile.email_verified !== false,
+    email_verified: profile.email_verified !== false,
+    emailVerifiedLabel: profile.email_verified === false ? "❌ 未验证" : "✅ 已验证",
+    email_verified_label: profile.email_verified === false ? "❌ 未验证" : "✅ 已验证",
     phone: row.contact_phone || profile.phone || "",
     avatar: resolveCompanionAvatar(profile, row),
     avatar_url: resolveCompanionAvatar(profile, row),
@@ -280,8 +255,16 @@ function mapListPlayer(row = {}, profile = {}) {
     created_at: row.created_at || profile.created_at,
     updated_at: row.updated_at,
     registered_at: row.created_at || profile.created_at,
-    last_login: row.last_login_at || "",
-    lastLogin: row.last_login_at || "",
+    last_login: profile.last_login_at || row.last_login_at || "",
+    lastLogin: profile.last_login_at || row.last_login_at || "",
+    last_login_ip: profile.last_login_ip || "",
+    lastLoginIp: profile.last_login_ip || "",
+    hasPassword: false,
+    has_password: false,
+    passwordSetAt: profile.password_set_at || "",
+    password_set_at: profile.password_set_at || "",
+    mustChangePassword: profile.must_change_password === true,
+    must_change_password: profile.must_change_password === true,
   };
 }
 
@@ -381,11 +364,16 @@ async function buildDetail(row, profile, opts = {}) {
       uploadedAt: item.uploaded_at || item.created_at,
       url,
       contentType: item.content_type || "",
+      sortOrder: Number(item.sort_order || 0) || 0,
     });
   }
 
   const avatarMedia = mediaSigned.find((m) => m.mediaType === "avatar");
-  const gallery = mediaSigned.filter((m) => m.mediaType === "gallery");
+  const coverMedia =
+    mediaSigned.find((m) => m.mediaType === "cover") ||
+    mediaSigned.find((m) => m.mediaType === "gallery" && Number(m.sortOrder || 0) === 1) ||
+    null;
+  const gallery = mediaSigned.filter((m) => m.mediaType === "gallery" || m.mediaType === "cover");
   const voices = mediaSigned.filter((m) => m.mediaType === "voice");
 
   const completed = related.orders.filter((o) => o.status === "completed").length;
@@ -408,6 +396,37 @@ async function buildDetail(row, profile, opts = {}) {
     },
     profile
   );
+
+  let hasPassword = profile?.has_password === true;
+  let mustChangePassword = profile?.must_change_password === true;
+  let emailVerified = profile?.email_verified !== false;
+  try {
+    const { resolveHasPassword, resolveMustChangePassword, resolveEmailVerified, emailVerifiedLabel } = await import("../_account-security.js");
+    hasPassword = await resolveHasPassword(profile || {}, {}, { probeAuth: true });
+    mustChangePassword = resolveMustChangePassword(profile || {}, {});
+    emailVerified = resolveEmailVerified(profile || {}, {});
+    base.emailVerifiedLabel = emailVerifiedLabel(emailVerified);
+    base.email_verified_label = base.emailVerifiedLabel;
+  } catch {
+    /* keep defaults */
+  }
+  base.hasPassword = hasPassword;
+  base.has_password = hasPassword;
+  base.emailVerified = emailVerified;
+  base.email_verified = emailVerified;
+  if (!base.emailVerifiedLabel) {
+    base.emailVerifiedLabel = emailVerified ? "✅ 已验证" : "❌ 未验证";
+    base.email_verified_label = base.emailVerifiedLabel;
+  }
+  base.passwordSetAt = profile?.password_set_at || "";
+  base.password_set_at = profile?.password_set_at || "";
+  base.mustChangePassword = mustChangePassword;
+  base.must_change_password = mustChangePassword;
+  base.lastLogin = profile?.last_login_at || base.lastLogin || "";
+  base.last_login = base.lastLogin;
+  base.lastLoginIp = profile?.last_login_ip || "";
+  base.last_login_ip = base.lastLoginIp;
+  base.email = profile?.email || base.email || "";
 
   return {
     ...base,
@@ -484,12 +503,13 @@ async function buildDetail(row, profile, opts = {}) {
       : { empty: true, statusLabel: "尚未填写结款账户" },
     media: {
       avatarUrl: avatarMedia?.url || profile.avatar_url || row.card_image_url || "",
+      coverUrl: coverMedia?.url || row.card_image_url || resolveCompanionCover(profile, row) || "",
       gallery,
       voices,
       status: row.media_status || "pending",
       statusLabel: labelStatus(row.media_status || "pending"),
       rejectReason: row.media_reject_reason || "",
-      empty: !avatarMedia && !gallery.length && !voices.length && !row.card_image_url && !row.voice_url,
+      empty: !avatarMedia && !coverMedia && !gallery.length && !voices.length && !row.card_image_url && !row.voice_url,
     },
     deposit: deposit
       ? {
@@ -559,7 +579,12 @@ async function buildDetail(row, profile, opts = {}) {
 }
 
 async function getCompanion(id) {
-  const rows = await companionDb(PLAYER_TABLE, `?id=eq.${encodeURIComponent(id)}&limit=1`);
+  const key = String(id || "").trim();
+  if (!key) return null;
+  let rows = await companionDb(PLAYER_TABLE, `?id=eq.${encodeURIComponent(key)}&limit=1`);
+  if (rows?.[0]) return rows[0];
+  // Accept user_id / profile id from older UI rows.
+  rows = await companionDb(PLAYER_TABLE, `?user_id=eq.${encodeURIComponent(key)}&limit=1`);
   return rows?.[0] || null;
 }
 
@@ -781,36 +806,43 @@ async function reviewApplication(req, companion, payload) {
   if ((status === "rejected" || status === "resubmit") && !reason) {
     throw Object.assign(new Error("驳回或要求补资料时必须填写原因。"), { status: 400 });
   }
-  const patch = {
-    application_status: status,
-    application_reject_reason: reason,
-    updated_at: new Date().toISOString(),
-  };
+  const { approveListingPatchForRow, unlistListingPatch } = await import("../_companion-listing-sync.js");
+  let patch;
   if (status === "approved") {
-    // 申请通过 ≠ 身份/押金通过：默认离线，须完成认证与押金后才可接单
-    patch.online_status = "offline";
+    const extras = {
+      online_status: "offline",
+      application_reject_reason: "",
+    };
     if (payload.levelId != null || payload.level_id != null) {
-      patch.level_id = String(payload.levelId || payload.level_id || "").trim();
+      extras.level_id = String(payload.levelId || payload.level_id || "").trim();
     }
     if (payload.levelName != null || payload.level_name != null) {
-      patch.level_name = String(payload.levelName || payload.level_name || "").trim();
+      extras.level_name = String(payload.levelName || payload.level_name || "").trim();
     }
     const orderRate = percent(payload.orderCommissionRate ?? payload.commission_rate ?? payload.commissionRate);
-    if (orderRate !== undefined) patch.commission_rate = orderRate;
+    if (orderRate !== undefined) extras.commission_rate = orderRate;
     const giftRate = percent(payload.giftCommissionRate ?? payload.gift_commission_rate);
-    if (giftRate !== undefined) patch.gift_commission_rate = giftRate;
+    if (giftRate !== undefined) extras.gift_commission_rate = giftRate;
     const rebate = percent(payload.directRebateRate ?? payload.direct_rebate_rate);
-    if (rebate !== undefined) patch.direct_rebate_rate = rebate;
-    if (payload.price != null) patch.price = money(payload.price);
+    if (rebate !== undefined) extras.direct_rebate_rate = rebate;
+    if (payload.price != null) extras.price = money(payload.price);
     if (payload.minPrice != null || payload.price_min != null) {
-      patch.price_min = money(payload.minPrice ?? payload.price_min);
+      extras.price_min = money(payload.minPrice ?? payload.price_min);
     }
     if (payload.maxPrice != null || payload.price_max != null) {
-      patch.price_max = money(payload.maxPrice ?? payload.price_max);
+      extras.price_max = money(payload.maxPrice ?? payload.price_max);
     }
     if (payload.allowOrders != null || payload.allow_orders != null) {
-      patch.allow_orders = bool(payload.allowOrders ?? payload.allow_orders, true);
+      extras.allow_orders = bool(payload.allowOrders ?? payload.allow_orders, true);
     }
+    // Must set verification_status=approved so /api/public/companions (filters by it) publishes the companion.
+    patch = approveListingPatchForRow(companion, extras);
+  } else {
+    patch = unlistListingPatch({ status, reason });
+    // Drop undefined verification_status from unlist when archived
+    Object.keys(patch).forEach((k) => {
+      if (patch[k] === undefined) delete patch[k];
+    });
   }
   const after = await companionDb(PLAYER_TABLE, `?id=eq.${encodeURIComponent(companion.id)}`, {
     method: "PATCH",
@@ -831,6 +863,19 @@ async function reviewApplication(req, companion, payload) {
     }
   }
   await logOperation(req, "review_application", companion.id, companion, after?.[0], reason);
+  if (companion.user_id) {
+    try {
+      const { notifyCompanionReviewResult } = await import("../_companion-inbox.js");
+      await notifyCompanionReviewResult(companion.user_id, {
+        kind: "application",
+        status,
+        reason,
+        companionId: companion.id,
+      });
+    } catch (err) {
+      console.error("[players] review notify failed", err?.message || err);
+    }
+  }
   return after?.[0];
 }
 
@@ -1030,10 +1075,98 @@ export default async function handler(req, res) {
           method: "PATCH",
           body: JSON.stringify({ status: "disabled" }),
         });
+        try {
+          const { revokeUserSessions } = await import("../_account-security.js");
+          await revokeUserSessions(companion.user_id);
+        } catch { /* best-effort */ }
       }
       await logOperation(req, action, id, companion, { status: "disabled" }, payload.reason || "");
       const detail = await buildDetail(await getCompanion(id), await getProfile(companion.user_id));
       return json(res, 200, { ok: true, message: "账号已停用", player: detail });
+    }
+
+    if (
+      action === "send_password_reset" ||
+      action === "send_reset_email" ||
+      action === "send_password_reset_email"
+    ) {
+      const userId = companion.user_id;
+      if (!userId) return json(res, 400, { ok: false, message: "缺少用户 ID" });
+      const profile = await getProfile(userId);
+      if (!profile?.email) return json(res, 400, { ok: false, message: "该陪玩未绑定邮箱。" });
+      const { sendEmailOtp } = await import("../_mail.js");
+      const { storeOtp, randomOtpCode } = await import("../_otp-store.js");
+      const { logSecurityAdminAction, RESET_EMAIL_GENERIC_MESSAGE } = await import("../_account-security.js");
+      const code = randomOtpCode();
+      await storeOtp({ accountKey: userId, role: "companion", code, kind: "otp", ttlMs: 10 * 60 * 1000 });
+      let mailOk = false;
+      let mailError = "";
+      try {
+        await sendEmailOtp({ to: String(profile.email).toLowerCase(), code, purpose: "forgot", roleLabel: "陪玩端" });
+        mailOk = true;
+      } catch (err) {
+        mailError = String(err?.message || err || "");
+      }
+      await logOperation(req, "send_password_reset_email", id, companion, { mailOk }, payload.reason || mailError);
+      await logSecurityAdminAction({
+        operatorId: "",
+        targetId: userId,
+        targetType: "companion",
+        action: "send_password_reset_email",
+        result: mailOk ? "ok" : "mail_failed",
+        reason: mailError,
+      });
+      if (!mailOk) {
+        const staging =
+          String(process.env.ALLOW_STAGING_OTP || "") === "1" ||
+          String(process.env.MCJ_OTP_DEBUG || "") === "1" ||
+          String(process.env.VERCEL_ENV || "").toLowerCase() !== "production";
+        if (staging) {
+          return json(res, 200, {
+            ok: true,
+            message: RESET_EMAIL_GENERIC_MESSAGE + "（Staging 已生成调试验证码）",
+            devCode: code,
+          });
+        }
+        return json(res, 502, { ok: false, message: mailError || "重置邮件发送失败" });
+      }
+      return json(res, 200, { ok: true, message: RESET_EMAIL_GENERIC_MESSAGE });
+    }
+
+    if (action === "force_change_password" || action === "require_password_change") {
+      const userId = companion.user_id;
+      if (!userId) return json(res, 400, { ok: false, message: "缺少用户 ID" });
+      const { markMustChangePassword } = await import("../_account-security.js");
+      await markMustChangePassword(userId, true);
+      await logOperation(req, "force_change_password", id, companion, { must_change_password: true }, payload.reason || "");
+      return json(res, 200, { ok: true, message: "已要求用户下次登录后修改密码。" });
+    }
+
+    if (action === "revoke_sessions" || action === "logout_all" || action === "enable" || action === "unfreeze") {
+      if (action === "enable" || action === "unfreeze") {
+        if (companion.user_id) {
+          await companionDb("profiles", `?id=eq.${encodeURIComponent(companion.user_id)}`, {
+            method: "PATCH",
+            body: JSON.stringify({ status: "active" }),
+          });
+        }
+        await logOperation(req, action, id, companion, { status: "active" }, payload.reason || "");
+        const detail = await buildDetail(await getCompanion(id), await getProfile(companion.user_id));
+        return json(res, 200, { ok: true, message: "账号已解封/启用", player: detail });
+      }
+      const userId = companion.user_id;
+      if (!userId) return json(res, 400, { ok: false, message: "缺少用户 ID" });
+      const { revokeUserSessions } = await import("../_account-security.js");
+      await revokeUserSessions(userId);
+      await logOperation(req, "revoke_sessions", id, companion, {}, payload.reason || "");
+      return json(res, 200, { ok: true, message: "已注销该账号全部登录会话。" });
+    }
+
+    if (action === "reset_password" || action === "reset-password") {
+      return json(res, 400, {
+        ok: false,
+        message: "禁止在后台直接设置用户明文密码。请使用「发送密码重置邮件」。",
+      });
     }
 
     // default save / edit / quick-edit

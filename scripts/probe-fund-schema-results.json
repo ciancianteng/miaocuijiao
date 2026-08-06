@@ -1,0 +1,32 @@
+{
+  "wallets": {
+    "status": 200,
+    "missing": false,
+    "text": "[]"
+  },
+  "wallet_tx": {
+    "status": 200,
+    "missing": false,
+    "text": "[]"
+  },
+  "credit_rpc": {
+    "status": 400,
+    "missing": false,
+    "text": "{\"code\":\"P0001\",\"details\":null,\"hint\":null,\"message\":\"payment order not found\"}"
+  },
+  "debit_rpc": {
+    "status": 409,
+    "missing": false,
+    "text": "{\"code\":\"23503\",\"details\":\"Key (boss_id)=(00000000-0000-0000-0000-000000000001) is not present in table \\\"profiles\\\".\",\"hint\":null,\"message\":\"insert or update on table \\\"wallets\\\" violates foreign key constraint \\\"wallets_boss_id_fkey\\\"\"}"
+  },
+  "wd_cols": {
+    "status": 200,
+    "missing": false,
+    "text": "[{\"id\":\"57e36b7b-c171-44c6-b7d8-841bd2eaf8f6\",\"bank_reference\":null,\"payment_remark\":null,\"receipt_url\":null}]"
+  },
+  "admin_role": {
+    "status": 200,
+    "missing": false,
+    "text": "[{\"id\":\"6f31b706-11e7-42df-8db1-d2caccd796de\",\"role\":\"admin\",\"email\":\"admin@meow.test\",\"status\":\"active\"}]"
+  }
+}

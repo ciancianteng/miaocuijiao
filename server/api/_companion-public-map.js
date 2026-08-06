@@ -102,12 +102,12 @@ export function isGarbledName(value) {
 }
 
 export function resolveCompanionName(row = {}, profile = {}) {
-  const candidates = [row.nickname, profile.display_name, profile.email];
+  const candidates = [row.nickname, profile.display_name];
   for (const c of candidates) {
     const s = String(c == null ? "" : c).trim();
     if (!s) continue;
     if (isGarbledName(s)) continue;
-    if (/@/.test(s)) return s.split("@")[0] || s;
+    if (/@/.test(s)) continue;
     return s;
   }
   return "";
@@ -121,11 +121,29 @@ export function mapCompanionPublicFields(row = {}, profile = {}, extras = {}) {
   const name = resolveCompanionName(row, profile) || "未命名陪玩";
   const avatar = resolveCompanionAvatar(profile, row, extras);
   const cover = resolveCompanionCover(profile, row, extras);
-  const publicId = row.companion_uid ? `P${row.companion_uid}` : extras.publicId || "";
+  let publicId = "";
+  try {
+    // Dynamic import avoided — inline PW formatting to keep this file dependency-light for browsers if bundled.
+    const code = String(row.companion_code || extras.companionCode || extras.publicId || "").trim();
+    if (/^PW\d+$/i.test(code)) publicId = code.toUpperCase().replace(/^pw/i, "PW");
+    else if (/^P\d+$/i.test(code)) {
+      const n = Number(String(code).replace(/^P/i, ""));
+      const seq = n >= 100001 ? n - 100000 : n;
+      if (seq > 0) publicId = "PW" + String(seq).padStart(5, "0");
+    } else if (row.companion_uid) {
+      const n = Number(row.companion_uid);
+      const seq = n >= 100001 ? n - 100000 : n;
+      if (seq > 0) publicId = "PW" + String(seq).padStart(5, "0");
+    }
+  } catch {
+    publicId = row.companion_code || "";
+  }
   return {
     id: row.user_id || row.id || extras.id || "",
     uid: row.user_id || row.id || extras.id || "",
     publicId,
+    companionCode: publicId,
+    companion_code: publicId,
     companionUid: row.companion_uid || null,
     companionProfileId: row.id || extras.companionProfileId || "",
     name,
@@ -135,6 +153,8 @@ export function mapCompanionPublicFields(row = {}, profile = {}, extras = {}) {
     cover,
     cardImageUrl: pickStableMediaUrl(row.card_image_url, cover) || "",
     voiceUrl: pickStableMediaUrl(row.voice_url, extras.voiceUrl) || row.voice_url || "",
+    videoUrl: pickStableMediaUrl(extras.videoUrl, extras.showcaseVideoUrl) || "",
+    showcaseVideoUrl: pickStableMediaUrl(extras.videoUrl, extras.showcaseVideoUrl) || "",
     availabilityStatus: avail,
     availabilityText: availabilityText(avail),
     onlineStatus: availabilityText(avail),

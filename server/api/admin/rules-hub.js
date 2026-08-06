@@ -6,31 +6,34 @@ import {
   saveClubLevelGuide,
 } from "../_companion-work-rules.js";
 import { listAckRecords, companionsNeedingAck, listActiveForcedAnnouncements } from "../_content-acks.js";
+import { requireAdmin, ADMIN_ROLES } from "../_admin-auth.js";
 
 const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY"];
-const ADMIN_ROLES = new Set(["admin", "super_admin"]);
+const RULES_HUB_ROLES = new Set(["admin", "super_admin", "content_admin"]);
 
 function json(res, status, data) {
   return res.status(status).json(data);
 }
 function hasDb() {
-  return REQUIRED_ENV.every((k) => process.env[k]);
+  return REQUIRED_ENV.every((k) => process.env[k] || process.env[`VITE_${k}`]);
+}
+function env(key) {
+  return process.env[key] || process.env[`VITE_${key}`] || "";
 }
 function rest(table, query = "") {
-  return `${process.env.SUPABASE_URL}/rest/v1/${table}${query}`;
-}
-function authUrl(path) {
-  return `${process.env.SUPABASE_URL}/auth/v1/${path}`;
+  return `${env("SUPABASE_URL")}/rest/v1/${table}${query}`;
 }
 function serviceHeaders() {
-  return {
-    apikey: process.env.SUPABASE_SERVICE_ROLE_KEY,
-    Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+  const key = env("SUPABASE_SERVICE_ROLE_KEY");
+  const base = {
+    apikey: key,
     "Content-Type": "application/json",
   };
-}
-function anonHeaders(extra = {}) {
-  return { apikey: process.env.SUPABASE_ANON_KEY, "Content-Type": "application/json", ...extra };
+  // New sb_secret_ keys are not JWTs — Authorization Bearer would be rejected.
+  if (key && !String(key).startsWith("sb_secret_")) {
+    base.Authorization = `Bearer ${key}`;
+  }
+  return base;
 }
 async function sb(url, init = {}) {
   const response = await fetch(url, init);
@@ -44,11 +47,6 @@ async function sb(url, init = {}) {
   if (!response.ok) throw Object.assign(new Error(body?.message || `HTTP ${response.status}`), { status: response.status });
   return body;
 }
-function tokenFrom(req) {
-  return String(req.headers.authorization || req.headers["x-mcj-access-token"] || "")
-    .replace(/^Bearer\s+/i, "")
-    .trim();
-}
 async function parseBody(req) {
   if (req.body && typeof req.body === "object") return req.body;
   const chunks = [];
@@ -58,15 +56,6 @@ async function parseBody(req) {
   } catch {
     return {};
   }
-}
-async function requireAdmin(req) {
-  const token = tokenFrom(req);
-  if (!token) throw Object.assign(new Error("请先登录后台"), { status: 401 });
-  const user = await sb(authUrl("user"), { headers: anonHeaders({ Authorization: `Bearer ${token}` }) });
-  const rows = await sb(rest("profiles", `?id=eq.${encodeURIComponent(user.id)}&limit=1`), { headers: serviceHeaders() });
-  const profile = Array.isArray(rows) ? rows[0] : null;
-  if (!profile || !ADMIN_ROLES.has(profile.role)) throw Object.assign(new Error("无权限"), { status: 403 });
-  return profile;
 }
 async function profileMap(ids) {
   const unique = [...new Set((ids || []).filter(Boolean))];
@@ -85,7 +74,8 @@ async function profileMap(ids) {
 export default async function handler(req, res) {
   if (!hasDb()) return json(res, 503, { ok: false, message: "未配置数据库" });
   try {
-    const admin = await requireAdmin(req);
+    const allowRoles = RULES_HUB_ROLES.size ? RULES_HUB_ROLES : ADMIN_ROLES;
+    const admin = await requireAdmin(req, { allowRoles });
     const body = req.method === "GET" ? {} : await parseBody(req);
     const action = String(req.query?.action || body.action || "bootstrap").trim();
 
@@ -102,6 +92,7 @@ export default async function handler(req, res) {
         workRules: rules,
         forcedAnnouncements: forced,
         pendingAckCount: (ackBundle.pendingPairs || []).length,
+        adminRole: admin.role,
       });
     }
 
@@ -119,7 +110,7 @@ export default async function handler(req, res) {
     }
     if (action === "save_work_rule") {
       const saved = await saveWorkRule(body.rule || body.payload || body, admin.id);
-      return json(res, 200, { ok: true, message: "陪玩规则已保存", rule: saved });
+      return json(res, 200, { ok: true, message: "陪玩端分类规则已保存", rule: saved });
     }
 
     if (action === "ack_records" || action === "reading_records") {

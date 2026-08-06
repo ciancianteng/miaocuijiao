@@ -168,6 +168,7 @@ a.pw-btn{display:inline-flex;align-items:center;justify-content:center;text-deco
 .pw-alert.designated{border-color:rgba(255,180,80,.45);background:rgba(255,160,60,.12)}
 .pw-order-banner{margin:0 0 10px;padding:8px 10px;border-radius:10px;background:rgba(255,160,60,.16);color:#ffd9a8;font-weight:700;font-size:13px}
 .pw-order-card.is-designated{border-color:rgba(255,160,60,.35)}
+.pw-order-card.is-focus{outline:2px solid rgba(217,72,138,.75);box-shadow:0 0 0 4px rgba(217,72,138,.18)}
 .pw-order-actions{display:flex;flex-wrap:wrap;gap:10px;width:100%}
 .pw-order-actions .pw-btn{flex:1 1 calc(50% - 8px);min-height:44px}
 .pw-btn.danger{border-color:rgba(255,120,120,.45);background:rgba(255,80,80,.16);color:#ffd0d0}
@@ -383,6 +384,11 @@ a.pw-btn{display:inline-flex;align-items:center;justify-content:center;text-deco
 .pw-check input{width:18px!important;height:18px!important;min-height:18px!important;min-width:18px!important;margin:0;flex:0 0 18px;accent-color:#ff8fc5;background:transparent!important;border-radius:5px}
 .mcj-auth-page,.mcj-auth-page::before,.mcj-auth-page::after{pointer-events:none}
 .mcj-auth-card,.mcj-auth-form{position:relative;z-index:10;pointer-events:auto}
+/* Companion login: one panel only — never let display:flex beat [hidden] */
+.pw-app .mcj-auth-form[hidden],
+.pw-app .mcj-auth-card [hidden]{display:none!important}
+.pw-app .mcj-auth-card{min-height:0;height:auto}
+.pw-app .mcj-auth-method-tabs{margin:20px 0 0}
 .mcj-auth-check input{width:18px!important;height:18px!important;min-height:18px!important;min-width:18px!important}
 
 /* Ops form controls — dark + pink (companion workbench only) */
@@ -499,63 +505,15 @@ a.pw-btn{display:inline-flex;align-items:center;justify-content:center;text-deco
   border-radius:12px;
 }
 
-/* Companion announcement ticker (classified announcements → audience=companion) */
+/* Companion announcement host — bar style comes from home-announcements.css */
 .pw-announcement-host{
   margin:0 16px 12px;
   min-width:0;
 }
 .pw-announcement-host[hidden]{display:none!important}
-.pw-announcement-bar{
-  display:flex;
-  align-items:center;
-  gap:10px;
-  min-height:40px;
-  padding:8px 12px;
-  border-radius:14px;
-  border:1px solid rgba(255,145,195,.28);
-  background:linear-gradient(90deg,rgba(28,16,34,.92),rgba(58,22,44,.62),rgba(12,8,16,.92));
-  overflow:hidden;
-}
-.pw-announcement-label{
-  flex:0 0 auto;
-  display:inline-flex;
-  align-items:center;
-  min-height:24px;
-  padding:0 10px;
-  border-radius:999px;
-  background:rgba(255,145,195,.18);
-  color:#ffe2ef;
-  font-size:12px;
-  font-weight:850;
-  white-space:nowrap;
-}
-.pw-announcement-track-wrap{
-  flex:1 1 auto;
-  min-width:0;
-  overflow:hidden;
-}
-.pw-announcement-static{
-  display:block;
-  color:#ffdceb;
-  font-size:13px;
-  font-weight:750;
-  white-space:nowrap;
-  overflow:hidden;
-  text-overflow:ellipsis;
-}
-.pw-announcement-track{
-  display:inline-flex;
-  gap:48px;
-  white-space:nowrap;
-  animation:pwAnnouncementScroll 18s linear infinite;
-  color:#ffdceb;
-  font-size:13px;
-  font-weight:750;
-}
-.pw-announcement-seg{display:inline-block}
-@keyframes pwAnnouncementScroll{
-  from{transform:translateX(0)}
-  to{transform:translateX(-50%)}
+.pw-announcement-host .home-announcement-bar{
+  margin:0 !important;
+  width:100% !important;
 }
 @media (max-width:820px){
   .pw-announcement-host{margin:0 12px 10px}

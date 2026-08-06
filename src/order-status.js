@@ -5,10 +5,11 @@
 (function (global) {
   var LABELS = {
     awaiting_payment: "待付款",
-    pending: "待接单",
-    waiting_boss_confirm: "选择陪玩中",
-    claimed: "待陪玩确认",
-    confirmed: "待开始",
+    payment_review: "待人工审核",
+    pending: "待客服处理",
+    waiting_boss_confirm: "等待老板选择",
+    claimed: "等待陪玩确认",
+    confirmed: "进行中",
     in_progress: "进行中",
     completed: "已完成",
     reviewed: "已评价",

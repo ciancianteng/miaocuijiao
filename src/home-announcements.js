@@ -5,9 +5,20 @@
 
   var state = {
     items: [],
+    forced: [],
     loaded: false,
     activeId: "",
+    forcedOpen: false,
+    index: 0,
+    currentId: "",
+    itemsSig: "",
+    rotateTimer: null,
   };
+
+  var PX_PER_SEC = 50;
+  var MIN_SCROLL_SEC = 8;
+  var STATIC_DWELL_MS = 5000;
+  var GAP_PX = 100;
 
   function esc(v) {
     return String(v == null ? "" : v).replace(/[&<>"']/g, function (c) {
@@ -43,6 +54,8 @@
 
   function normalize(item) {
     item = item || {};
+    var kind = String(item.kind || "normal").toLowerCase() === "forced" ? "forced" : "normal";
+    var requiresAck = kind === "forced" || item.requiresAck === true || item.requires_ack === true;
     return {
       id: String(item.id || ""),
       title: String(item.title || "").trim(),
@@ -53,6 +66,9 @@
       sort: Number(item.sort || item.sort_order || 100),
       category: String(item.category || "home").toLowerCase() === "companion" ? "companion" : "home",
       audience: String(item.audience || "home").toLowerCase(),
+      kind: kind,
+      requiresAck: requiresAck,
+      contentVersion: String(item.contentVersion || item.content_version || 1),
       startAt: item.startAt || item.start_at || "",
       endAt: item.endAt || item.end_at || "",
       scroll: item.scroll !== false && item.is_scrolling !== false,
@@ -60,24 +76,79 @@
   }
 
   function sortItems(list) {
+    // sort_order asc → publishedAt old→new → id
     return (list || []).slice().sort(function (a, b) {
       if (!!b.pinned !== !!a.pinned) return b.pinned ? 1 : -1;
       var sa = Number(a.sort || 100);
       var sb = Number(b.sort || 100);
       if (sa !== sb) return sa - sb;
-      var tb = Date.parse(b.publishedAt || 0) || 0;
       var ta = Date.parse(a.publishedAt || 0) || 0;
-      return tb - ta;
+      var tb = Date.parse(b.publishedAt || 0) || 0;
+      if (ta !== tb) return ta - tb;
+      return String(a.id || "").localeCompare(String(b.id || ""));
     });
   }
 
-  function tickerText(items) {
-    if (!items.length) return "暂无最新公告。";
-    var item = items[0];
+  function itemLine(item) {
+    if (!item) return "暂无最新公告。";
     var title = item.title || "官方公告";
     var body = item.content || "";
     var line = body && body !== title ? title + "：" + body : title;
-    return String(line).replace(/\s+/g, " ").trim();
+    return String(line).replace(/\s+/g, " ").trim() || "暂无最新公告。";
+  }
+
+  function itemsSignature(items) {
+    return (items || [])
+      .map(function (it) {
+        return [it.id, it.title, it.content, it.sort, it.scroll ? 1 : 0, it.pinned ? 1 : 0].join("\u0001");
+      })
+      .join("\u0002");
+  }
+
+  function clearRotateTimer() {
+    if (state.rotateTimer) {
+      clearTimeout(state.rotateTimer);
+      state.rotateTimer = null;
+    }
+  }
+
+  function currentItem() {
+    if (!state.items.length) return null;
+    var idx = state.index % state.items.length;
+    if (idx < 0) idx = 0;
+    return state.items[idx] || null;
+  }
+
+  function syncIndexToCurrentId() {
+    if (!state.items.length) {
+      state.index = 0;
+      state.currentId = "";
+      return;
+    }
+    var found = -1;
+    if (state.currentId) {
+      found = state.items.findIndex(function (it) {
+        return String(it.id) === String(state.currentId);
+      });
+    }
+    if (found < 0) {
+      found = Math.min(Math.max(0, state.index), state.items.length - 1);
+    }
+    state.index = found;
+    state.currentId = state.items[found].id;
+  }
+
+  function advanceToNext() {
+    if (!state.items.length) return;
+    if (state.items.length === 1) {
+      // Keep looping the same announcement without DOM reset flicker.
+      state.currentId = state.items[0].id;
+      state.index = 0;
+      return;
+    }
+    state.index = (state.index + 1) % state.items.length;
+    state.currentId = state.items[state.index].id;
+    render(true);
   }
 
   function ensureModal() {
@@ -102,38 +173,131 @@
     return modal;
   }
 
-  function openDetail(item) {
+  function openDetail(item, opts) {
     if (!item) return;
+    opts = opts || {};
     var modal = ensureModal();
     state.activeId = item.id;
+    state.forcedOpen = !!opts.forced;
     modal.querySelector("#homeAnnouncementModalTitle").textContent = item.title || "官方公告";
-    modal.querySelector(".home-announcement-time").textContent = "发布时间：" + formatTime(item.publishedAt);
+    modal.querySelector(".home-announcement-time").textContent =
+      (item.kind === "forced" ? "强制公告 · " : "") + "发布时间：" + formatTime(item.publishedAt);
     modal.querySelector(".home-announcement-body").textContent = item.content || item.title || "暂无最新公告。";
+    var closeBtn = modal.querySelector(".home-announcement-close");
+    var okBtn = modal.querySelector(".home-announcement-ok");
+    if (item.kind === "forced" && opts.forced) {
+      if (closeBtn) closeBtn.hidden = true;
+      if (okBtn) okBtn.textContent = "我已阅读";
+    } else {
+      if (closeBtn) closeBtn.hidden = false;
+      if (okBtn) okBtn.textContent = "关闭";
+    }
     modal.hidden = false;
     document.body.style.overflow = "hidden";
   }
 
   function pickDetailItem() {
-    if (!state.items.length) return null;
-    return state.items[0];
+    return currentItem();
+  }
+
+  function guestForcedKey(item) {
+    return "mcjHomeForcedSeen:" + String(item.id || "") + ":" + String(item.contentVersion || "1");
+  }
+
+  function markForcedSeen(item) {
+    try {
+      sessionStorage.setItem(guestForcedKey(item), "1");
+    } catch (e) {}
+  }
+
+  function wasForcedSeen(item) {
+    try {
+      return sessionStorage.getItem(guestForcedKey(item)) === "1";
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function bossAccessToken() {
+    try {
+      return (
+        sessionStorage.getItem("mcjAuthAccessToken") ||
+        localStorage.getItem("mcjAuthAccessToken") ||
+        ""
+      );
+    } catch (e) {
+      return "";
+    }
+  }
+
+  function acknowledgeForced(item) {
+    var token = bossAccessToken();
+    if (!token || !item || !item.id) {
+      markForcedSeen(item);
+      return Promise.resolve();
+    }
+    return fetch("/api/auth", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        Authorization: "Bearer " + token,
+      },
+      body: JSON.stringify({
+        action: "acknowledge_forced",
+        content_id: item.id,
+        content_version: item.contentVersion || "1",
+        content_type: "announcement",
+      }),
+    })
+      .then(function (r) {
+        return r.json().catch(function () {
+          return {};
+        });
+      })
+      .then(function () {
+        markForcedSeen(item);
+      })
+      .catch(function () {
+        markForcedSeen(item);
+      });
   }
 
   function closeDetail() {
     var modal = document.getElementById("homeAnnouncementModal");
     if (!modal) return;
+    var closingForced = state.forcedOpen;
+    var active = null;
+    if (closingForced) {
+      active =
+        state.forced.find(function (it) {
+          return String(it.id) === String(state.activeId);
+        }) || state.forced[0];
+    }
     modal.hidden = true;
     state.activeId = "";
+    state.forcedOpen = false;
     document.body.style.overflow = "";
+    if (closingForced && active) {
+      acknowledgeForced(active).finally(function () {
+        maybeOpenForced();
+      });
+    }
   }
 
-  function bindPause(bar, track) {
-    if (!bar || !track || bar.dataset.pauseBound === "1") return;
+  function bindPause(bar) {
+    if (!bar || bar.dataset.pauseBound === "1") return;
     bar.dataset.pauseBound = "1";
+    function currentTrack() {
+      return bar.querySelector(".home-announcement-track");
+    }
     function pause() {
-      track.style.animationPlayState = "paused";
+      var track = currentTrack();
+      if (track) track.style.animationPlayState = "paused";
     }
     function resume() {
-      track.style.animationPlayState = "running";
+      var track = currentTrack();
+      if (track) track.style.animationPlayState = "running";
     }
     bar.addEventListener("mouseenter", pause);
     bar.addEventListener("mouseleave", resume);
@@ -148,24 +312,80 @@
   }
 
   function preferEllipsis(item) {
-    if (item && item.scroll === false) return true;
-    try {
-      return window.matchMedia && window.matchMedia("(max-width: 899px)").matches;
-    } catch (e) {
-      return typeof window !== "undefined" && window.innerWidth <= 899;
-    }
+    return !!(item && item.scroll === false);
   }
 
-  function render() {
+  function maybeOpenForced() {
+    if (state.forcedOpen) return;
+    var next = null;
+    for (var i = 0; i < state.forced.length; i += 1) {
+      if (!wasForcedSeen(state.forced[i])) {
+        next = state.forced[i];
+        break;
+      }
+    }
+    if (!next) return;
+    if (bossAccessToken() && window.MCJBossForcedAck && typeof window.MCJBossForcedAck.refresh === "function") {
+      window.MCJBossForcedAck.refresh();
+    }
+    openDetail(next, { forced: true });
+  }
+
+  function applyMarqueeMetrics(bar, track) {
+    if (!bar || !track) return;
+    var wrap = bar.querySelector(".home-announcement-track-wrap");
+    var seg = track.querySelector(".home-announcement-seg");
+    if (!wrap || !seg) return;
+    var segs = track.querySelectorAll(".home-announcement-seg");
+    for (var i = 0; i < segs.length; i += 1) {
+      segs[i].style.paddingRight = GAP_PX + "px";
+    }
+    var segW = seg.getBoundingClientRect().width || seg.offsetWidth || 0;
+    var groupW = Math.max(1, segW);
+    var duration = Math.max(MIN_SCROLL_SEC, groupW / PX_PER_SEC);
+    track.style.setProperty("--marquee-duration", duration.toFixed(2) + "s");
+    track.setAttribute("data-scroll", "1");
+  }
+
+  function bindCarousel(track) {
+    if (!track || track.dataset.carouselBound === "1") return;
+    track.dataset.carouselBound = "1";
+    track.addEventListener("animationiteration", function () {
+      if (document.visibilityState === "hidden") return;
+      if (state.items.length <= 1) return;
+      clearRotateTimer();
+      advanceToNext();
+    });
+  }
+
+  function scheduleStaticAdvance() {
+    clearRotateTimer();
+    if (state.items.length <= 1) return;
+    if (document.visibilityState === "hidden") return;
+    state.rotateTimer = setTimeout(function () {
+      advanceToNext();
+    }, STATIC_DWELL_MS);
+  }
+
+  function render(forceRotate) {
     var bar = strip();
     if (!bar) return;
+    clearRotateTimer();
+    syncIndexToCurrentId();
     var items = state.items;
-    var text = tickerText(items);
+    var item = currentItem();
     var empty = !items.length;
-    var useEllipsis = preferEllipsis(items[0]);
+    var text = empty ? "暂无最新公告。" : itemLine(item);
+    var useEllipsis = !empty && preferEllipsis(item);
+
     bar.hidden = false;
     bar.classList.add("home-announcement-bar", "announcement-strip");
     bar.setAttribute("aria-label", "官方公告");
+    bar.dataset.announcementCount = String(items.length);
+    bar.dataset.announcementIndex = String(empty ? 0 : state.index);
+    if (item && item.id) bar.dataset.announcementId = String(item.id);
+    else delete bar.dataset.announcementId;
+
     bar.innerHTML =
       '<div class="home-announcement-label"><span aria-hidden="true">📢</span><strong>官方公告</strong></div>' +
       '<div class="home-announcement-track-wrap" data-announcement-open' +
@@ -175,7 +395,7 @@
       '">' +
       (empty || useEllipsis
         ? '<span class="home-announcement-static">' + esc(text) + "</span>"
-        : '<span class="home-announcement-track">' +
+        : '<span class="home-announcement-track" data-scroll="1">' +
           '<span class="home-announcement-seg">' +
           esc(text) +
           "</span>" +
@@ -186,7 +406,19 @@
       "</div>";
 
     var track = bar.querySelector(".home-announcement-track");
-    if (track) bindPause(bar, track);
+    if (track) {
+      applyMarqueeMetrics(bar, track);
+      bindPause(bar);
+      bindCarousel(track);
+      // Restart animation cleanly when rotating to next item
+      if (forceRotate) {
+        track.style.animation = "none";
+        void track.offsetWidth;
+        track.style.animation = "";
+      }
+    } else if (!empty) {
+      scheduleStaticAdvance();
+    }
 
     if (bar.dataset.clickBound !== "1") {
       bar.dataset.clickBound = "1";
@@ -205,9 +437,40 @@
     }
   }
 
+  function applyRows(rows) {
+    var all = sortItems(
+      (rows || []).map(normalize).filter(function (item) {
+        return item.enabled !== false && (item.title || item.content) && inSchedule(item);
+      })
+    );
+    state.forced = all.filter(function (item) {
+      return item.kind === "forced" || item.requiresAck;
+    });
+    var nextItems = all.filter(function (item) {
+      return item.kind !== "forced" && !item.requiresAck;
+    });
+    var sig = itemsSignature(nextItems);
+    var changed = sig !== state.itemsSig;
+    state.items = nextItems;
+    state.itemsSig = sig;
+    state.loaded = true;
+    syncIndexToCurrentId();
+    if (changed || !strip() || !strip().querySelector(".home-announcement-track, .home-announcement-static")) {
+      render(false);
+    } else {
+      // Keep current marquee running; only refresh metadata attributes.
+      var bar = strip();
+      if (bar) {
+        bar.dataset.announcementCount = String(state.items.length);
+        bar.dataset.announcementIndex = String(state.items.length ? state.index : 0);
+        if (state.currentId) bar.dataset.announcementId = String(state.currentId);
+      }
+    }
+    maybeOpenForced();
+  }
+
   function load() {
-    // Launch-safe: prefer audience=home; if empty (schema/filter drift), fall back to unfiltered list
-    // and keep only non-companion items client-side so homepage never goes blank silently.
+    // Prefer audience=home; fallback keeps homepage from going blank on schema drift.
     return fetch("/api/platform/content?types=announcements&audience=home", {
       headers: { Accept: "application/json" },
       cache: "no-store",
@@ -238,27 +501,29 @@
           });
       })
       .then(function (rows) {
-        state.items = sortItems(
-          (rows || []).map(normalize).filter(function (item) {
-            return item.enabled !== false && (item.title || item.content) && inSchedule(item);
-          })
-        );
-        state.loaded = true;
-        render();
+        applyRows(rows);
       })
       .catch(function () {
         state.items = [];
+        state.forced = [];
+        state.itemsSig = "";
         state.loaded = true;
-        render();
+        state.index = 0;
+        state.currentId = "";
+        render(false);
       });
   }
 
   function boot() {
-    render();
+    render(false);
     load();
     setInterval(load, 30000);
     document.addEventListener("visibilitychange", function () {
-      if (document.visibilityState === "visible") load();
+      if (document.visibilityState === "visible") {
+        load();
+      } else {
+        clearRotateTimer();
+      }
     });
   }
 
@@ -269,6 +534,15 @@
     reload: load,
     items: function () {
       return state.items.slice();
+    },
+    forced: function () {
+      return state.forced.slice();
+    },
+    index: function () {
+      return state.index;
+    },
+    current: function () {
+      return currentItem();
     },
   };
 })();

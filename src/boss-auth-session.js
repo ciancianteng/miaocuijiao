@@ -8,14 +8,49 @@
   var refreshPromise = null;
   var sessionReadyPromise = null;
 
-  function readItem(key) {
-    return localStorage.getItem(key) || sessionStorage.getItem(key) || "";
+  var BOSS_KEYS = [
+    "mcjAuthAccessToken",
+    "mcjAuthRefreshToken",
+    "mcjAuthExpiresAt",
+    "customerAuthToken",
+    "customerUser",
+    "mcjCurrentUser",
+    "mcjRole",
+  ];
+
+  function hasAdminSoftSession() {
+    try {
+      var soft = localStorage.getItem("adminAuthToken") || sessionStorage.getItem("adminAuthToken") || "";
+      return String(soft).indexOf("admin_session_") === 0;
+    } catch (e) {
+      return false;
+    }
   }
 
-  function authStore() {
-    if (localStorage.getItem("mcjAuthAccessToken")) return localStorage;
-    if (sessionStorage.getItem("mcjAuthAccessToken")) return sessionStorage;
-    return localStorage;
+  /** Clear boss auth from both stores (logout / expired). Keep admin JWT keys. */
+  function wipeLocalBossAuth() {
+    var preserveSharedAuth = hasAdminSoftSession();
+    BOSS_KEYS.forEach(function (key) {
+      if (preserveSharedAuth && /^mcjAuth(AccessToken|RefreshToken|ExpiresAt)$/.test(key)) return;
+      if (/^mcjAdmin/.test(key)) return;
+      try {
+        localStorage.removeItem(key);
+        sessionStorage.removeItem(key);
+      } catch (e) {}
+    });
+  }
+
+  function readItem(key) {
+    // Persist across refresh: prefer session tab copy, then localStorage.
+    try {
+      return sessionStorage.getItem(key) || localStorage.getItem(key) || "";
+    } catch (e) {
+      return "";
+    }
+  }
+
+  function authStore(persist) {
+    return persist === false ? sessionStorage : localStorage;
   }
 
   function getAccessToken() {
@@ -46,45 +81,67 @@
     return decodeJwtExpMs(getAccessToken());
   }
 
+  function looksLikeJwt(token) {
+    var t = String(token || "").trim();
+    if (!t || t.length < 20) return false;
+    var parts = t.split(".");
+    return parts.length === 3 && parts.every(function (part) {
+      return part.length > 0;
+    });
+  }
+
+  function hasValidAccessToken() {
+    var access = getAccessToken();
+    if (!looksLikeJwt(access)) return false;
+    var exp = getExpiresAtMs();
+    if (exp && Date.now() >= exp) return false;
+    return true;
+  }
+
   function needsRefresh() {
     var access = getAccessToken();
     var refresh = getRefreshToken();
     if (!access && refresh) return true;
-    if (!access) return false;
+    if (!looksLikeJwt(access)) return !!refresh;
     var exp = getExpiresAtMs();
     if (!exp) return false;
     return Date.now() >= exp - REFRESH_BUFFER_MS;
   }
 
-  function saveSession(session) {
+  function saveSession(session, persist) {
     if (!session) return;
-    var store = authStore();
-    if (session.accessToken) store.setItem("mcjAuthAccessToken", session.accessToken);
-    if (session.refreshToken) store.setItem("mcjAuthRefreshToken", session.refreshToken);
-    if (session.expiresAt != null && session.expiresAt !== "") {
-      store.setItem("mcjAuthExpiresAt", String(session.expiresAt));
+    // Dual-write when remember/persist: current tab (sessionStorage) + durable (localStorage).
+    // Tab-only login (persist === false) keeps sessionStorage only.
+    var stores = persist === false ? [sessionStorage] : [sessionStorage, localStorage];
+    stores.forEach(function (store) {
+      try {
+        if (session.accessToken) store.setItem("mcjAuthAccessToken", session.accessToken);
+        if (session.refreshToken) store.setItem("mcjAuthRefreshToken", session.refreshToken);
+        if (session.expiresAt != null && session.expiresAt !== "") {
+          store.setItem("mcjAuthExpiresAt", String(session.expiresAt));
+        }
+      } catch (e) {}
+    });
+    if (persist === false) {
+      try {
+        localStorage.removeItem("mcjAuthAccessToken");
+        localStorage.removeItem("mcjAuthRefreshToken");
+        localStorage.removeItem("mcjAuthExpiresAt");
+      } catch (e2) {}
     }
   }
 
   function clearSession() {
-    [
-      "mcjAuthAccessToken",
-      "mcjAuthRefreshToken",
-      "mcjAuthExpiresAt",
-    ].forEach(function (key) {
-      localStorage.removeItem(key);
-      sessionStorage.removeItem(key);
-    });
+    wipeLocalBossAuth();
     try {
       window.dispatchEvent(new CustomEvent("mcj:auth-expired"));
-    } catch (e) {}
+    } catch (e2) {}
   }
 
   function hasSession() {
-    return !!(getAccessToken() || getRefreshToken());
+    return hasValidAccessToken();
   }
 
-  /** Equivalent to supabase.auth.getSession() via local /api auth session. */
   function getSession() {
     return Promise.resolve().then(function () {
       if (!hasSession()) {
@@ -102,7 +159,6 @@
     });
   }
 
-  /** Equivalent to supabase.auth.refreshSession() via /api/auth. */
   function refreshSession() {
     if (refreshPromise) return refreshPromise;
     var refreshToken = getRefreshToken();
@@ -110,6 +166,10 @@
       clearSession();
       return Promise.reject(new Error(EXPIRED_MESSAGE));
     }
+    var persistRefresh = false;
+    try {
+      persistRefresh = !!localStorage.getItem("mcjAuthRefreshToken");
+    } catch (e) {}
     refreshPromise = fetch("/api/auth", {
       method: "POST",
       headers: { Accept: "application/json", "Content-Type": "application/json" },
@@ -122,11 +182,11 @@
             clearSession();
             throw new Error((body && body.message) || EXPIRED_MESSAGE);
           }
-          saveSession(body.session);
+          saveSession(body.session, persistRefresh);
           return { data: { session: { expires_at: body.session.expiresAt || null } }, error: null };
         });
       })
-      .catch(function (err) {
+      .catch(function () {
         clearSession();
         throw new Error(EXPIRED_MESSAGE);
       })
@@ -136,11 +196,16 @@
     return refreshPromise;
   }
 
-  /** Wait for getSession, then refreshSession when near expiry. */
   function ensureSession() {
     sessionReadyPromise = getSession().then(function (result) {
-      if (!hasSession()) return result;
-      if (!needsRefresh()) return result;
+      var access = getAccessToken();
+      var refresh = getRefreshToken();
+      if (!access && !refresh) return result;
+      if (hasValidAccessToken() && !needsRefresh()) return result;
+      if (!refresh) {
+        clearSession();
+        return { data: { session: null }, error: null };
+      }
       return refreshSession().then(function () {
         return getSession();
       });
@@ -213,8 +278,12 @@
     ensureSession: ensureSession,
     authFetch: authFetch,
     authHeaders: authHeaders,
+    saveSession: saveSession,
     clearSession: clearSession,
+    wipeLocalBossAuth: wipeLocalBossAuth,
     hasSession: hasSession,
+    hasValidAccessToken: hasValidAccessToken,
+    looksLikeJwt: looksLikeJwt,
     expiredMessage: EXPIRED_MESSAGE,
   };
 })();

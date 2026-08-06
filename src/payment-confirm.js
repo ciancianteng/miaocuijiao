@@ -12,6 +12,16 @@
   var loadGen = 0;
   var paying = false;
   var allowTestPay = null;
+  var proofDraft = {
+    orderId: "",
+    file: null,
+    previewUrl: "",
+    progress: 0,
+    uploading: false,
+    uploaded: false,
+    successTip: "",
+    error: "",
+  };
 
   function esc(v) {
     return String(v == null ? "" : v).replace(/[&<>"']/g, function (c) {
@@ -40,6 +50,24 @@
   }
   function paint(html) {
     root.innerHTML = html;
+    bindPayQrFallback();
+  }
+  function bindPayQrFallback() {
+    root.querySelectorAll("[data-mcj-pay-qr],[data-pay-qr-img]").forEach(function (img) {
+      if (img.getAttribute("data-bound-pay-qr") === "1") return;
+      img.setAttribute("data-bound-pay-qr", "1");
+      img.addEventListener("error", function () {
+        var frame = img.parentNode;
+        img.style.display = "none";
+        if (frame && !frame.querySelector(".pay-alert")) {
+          var p = document.createElement("p");
+          p.className = "pay-alert";
+          p.setAttribute("role", "status");
+          p.textContent = "平台暂未配置收款二维码，请联系客服";
+          frame.appendChild(p);
+        }
+      });
+    });
   }
   function parseGameId(order) {
     if (order.gameId || order.game_id) return order.gameId || order.game_id;
@@ -55,13 +83,92 @@
       "待安排"
     );
   }
+  function isReviewing(order) {
+    return !!(
+      order &&
+      (order.paymentReview || /待审核|待人工审核/.test(String(order.paymentStatus || order.statusText || "")))
+    );
+  }
+
+  function qrPanelHtml(order) {
+    var st = String(order.status || "");
+    if (st !== "awaiting_payment") return "";
+    if (isWalletMethod(order)) return "";
+    if (isReviewing(order) && !(proofDraft.file || proofDraft.previewUrl)) return "";
+    var info = order.platformPayInfo || platformPayInfo || null;
+    var html = '<div class="pay-qr" data-pay-qr>';
+    html += "<h2>" + esc((info && info.title) || "平台收款") + "</h2>";
+    html +=
+      '<p class="pay-hint">' +
+      esc(
+        (info && info.instructions) ||
+          "请使用银行 App / DuitNow 扫描下方二维码完成付款。仅本支付页显示，首页不公开收款码。"
+      ) +
+      "</p>";
+    if (info && info.qrUrl) {
+      html +=
+        '<div class="pay-qr-frame"><img src="' +
+        esc(info.qrUrl) +
+        '" alt="平台收款二维码" data-mcj-pay-qr="1" referrerpolicy="no-referrer" data-pay-qr-img="1"></div>';
+    } else {
+      html +=
+        '<p class="pay-alert" role="status">平台暂未配置收款二维码，请联系客服</p>';
+    }
+    html += '<div class="pay-qr-meta">';
+    if (info && info.receiverName) {
+      html += '<div class="pay-row"><span>收款人</span><strong>' + esc(info.receiverName) + "</strong></div>";
+    }
+    if (info && info.bankName) {
+      html += '<div class="pay-row"><span>银行</span><strong>' + esc(info.bankName) + "</strong></div>";
+    }
+    if (info && info.bankAccount) {
+      html += '<div class="pay-row"><span>银行账号</span><strong>' + esc(info.bankAccount) + "</strong></div>";
+    }
+    if (info && info.phone) {
+      html += '<div class="pay-row"><span>TNG 手机号</span><strong>' + esc(info.phone) + "</strong></div>";
+    }
+    if (info && info.duitnowId) {
+      html += '<div class="pay-row"><span>DuitNow ID</span><strong>' + esc(info.duitnowId) + "</strong></div>";
+    }
+    html +=
+      '<div class="pay-row"><span>应付金额</span><strong>' +
+      esc(money(order.totalAmount || order.amount)) +
+      "</strong></div>";
+    html += "</div></div>";
+    return html;
+  }
+  function clearProofDraft(keepTip) {
+    if (proofDraft.previewUrl && String(proofDraft.previewUrl).indexOf("blob:") === 0) {
+      try {
+        URL.revokeObjectURL(proofDraft.previewUrl);
+      } catch (e) {}
+    }
+    proofDraft.file = null;
+    proofDraft.previewUrl = "";
+    proofDraft.progress = 0;
+    proofDraft.uploading = false;
+    proofDraft.uploaded = false;
+    proofDraft.error = "";
+    if (!keepTip) proofDraft.successTip = "";
+  }
+  function setProofFile(orderId, file) {
+    clearProofDraft();
+    proofDraft.orderId = orderId;
+    proofDraft.file = file;
+    try {
+      proofDraft.previewUrl = URL.createObjectURL(file);
+    } catch (e) {
+      proofDraft.previewUrl = "";
+    }
+  }
 
   var STATUS_LABEL = (window.MCJOrderStatus && window.MCJOrderStatus.LABELS) || {
     awaiting_payment: "待付款",
-    pending: "待客服安排",
+    payment_review: "待人工审核",
+    pending: "待客服处理",
     claimed: "等待陪玩确认",
     waiting_boss_confirm: "待我确认",
-    confirmed: "已接单待开始",
+    confirmed: "进行中",
     in_progress: "进行中",
     completed: "已完成",
     reviewed: "已评价",
@@ -69,6 +176,8 @@
     refund_requested: "售后",
     refunded: "已退款",
   };
+
+  var platformPayInfo = null;
 
   function canShowTestPay() {
     if (allowTestPay === true) return true;
@@ -78,13 +187,29 @@
 
   function statusGuide(status, order) {
     var s = String(status || "");
+    var reviewing = isReviewing(order);
+    if (s === "awaiting_payment" && reviewing) {
+      return {
+        title: "待人工审核",
+        reason: "付款凭证已提交，正在等待客服人工审核。",
+        next: "客服确认收款后订单才会进入接单流程；驳回后可重新上传凭证。",
+        primary: "orders",
+        primaryLabel: "查看我的订单",
+        disabledHint: "",
+      };
+    }
     if (s === "awaiting_payment") {
+      var rejectReason = String((order && (order.paymentRejectReason || order.rejectReason)) || "").trim();
       return {
         title: "待付款",
-        reason: "订单已创建，尚未完成支付。",
-        next: isWalletMethod(order || {}) ? "请使用猫粮余额完成支付，支付成功后订单才会发送给陪玩确认。" : "请完成支付，支付成功后订单才会发送给陪玩确认。",
+        reason: rejectReason ? "付款凭证已驳回：" + rejectReason : "订单已创建，状态为待付款。",
+        next: isWalletMethod(order || {})
+          ? "请使用猫粮余额完成支付，支付成功后订单才会发送给陪玩确认。"
+          : rejectReason
+            ? "请重新扫码付款并上传截图，点击「我已付款」。"
+            : "请扫描平台收款二维码付款，上传付款截图后点击「我已付款」。",
         primary: "pay",
-        primaryLabel: isWalletMethod(arguments[1] || {}) ? "立即支付" : "前往支付",
+        primaryLabel: isWalletMethod(order || {}) ? "立即支付" : "前往支付",
         disabledHint: "",
       };
     }
@@ -100,8 +225,8 @@
     }
     if (s === "pending") {
       return {
-        title: "待客服安排",
-        reason: "正在等待客服重新安排陪玩",
+        title: "待客服处理",
+        reason: "付款已确认，正在等待客服处理派单",
         next: "可联系客服催进度；订单不会自动消失。",
         primary: "contact_cs",
         primaryLabel: "联系客服催进度",
@@ -120,7 +245,7 @@
     }
     if (s === "confirmed") {
       return {
-        title: "已接单待开始",
+        title: "进行中",
         reason: "陪玩已确认接单",
         next: "陪玩开始服务后订单将进入进行中。",
         primary: "orders",
@@ -201,34 +326,140 @@
     );
   }
 
+  function proofPanelHtml(order) {
+    var reviewing = isReviewing(order);
+    var preview = proofDraft.previewUrl || order.paymentProofUrl || "";
+    var hasLocal = !!(proofDraft.file || proofDraft.previewUrl);
+    var showUpload = String(order.status || "") === "awaiting_payment" && (!reviewing || hasLocal || !preview);
+    if (String(order.status || "") !== "awaiting_payment") return "";
+    if (isWalletMethod(order) && !reviewing && !hasLocal) return "";
+
+    var html = '<div class="pay-proof" data-proof-panel>';
+    html += "<h2>付款截图</h2>";
+    if (reviewing && !hasLocal) {
+      html += '<p class="pay-hint">当前状态：待人工审核。可删除后重新上传，或进入下一步查看订单。</p>';
+    } else {
+      html += '<p class="pay-hint">扫码付款后，请上传付款截图（JPG / PNG / WEBP），再点击「我已付款」。</p>';
+    }
+
+    if (preview) {
+      html +=
+        '<div class="pay-proof-preview"><img src="' +
+        esc(preview) +
+        '" alt="付款截图预览"><div class="pay-proof-preview-actions">' +
+        '<button type="button" class="pay-btn" data-proof-delete>删除</button>' +
+        '<label class="pay-btn">重新上传<input type="file" accept="image/png,image/jpeg,image/webp" data-payment-proof="' +
+        esc(order.id) +
+        '" hidden></label></div></div>';
+    } else {
+      html +=
+        '<label class="pay-btn primary pay-proof-pick">选择付款截图<input type="file" accept="image/png,image/jpeg,image/webp" data-payment-proof="' +
+        esc(order.id) +
+        '" hidden></label>';
+    }
+
+    if (proofDraft.uploading || proofDraft.progress > 0) {
+      html +=
+        '<div class="pay-progress" role="progressbar" aria-valuenow="' +
+        esc(proofDraft.progress) +
+        '" aria-valuemin="0" aria-valuemax="100"><div class="pay-progress-bar" style="width:' +
+        esc(proofDraft.progress) +
+        '%"></div><span>' +
+        esc(proofDraft.progress) +
+        "%</span></div>";
+    }
+    if (proofDraft.successTip || (reviewing && !proofDraft.error)) {
+      html +=
+        '<p class="pay-success" role="status">' +
+        esc(proofDraft.successTip || "付款凭证已提交，当前状态：待人工审核") +
+        "</p>";
+    }
+    if (proofDraft.error) {
+      html += '<p class="pay-alert" role="alert">' + esc(proofDraft.error) + "</p>";
+    }
+
+    html += '<div class="pay-actions pay-proof-actions">';
+    if (proofDraft.file && !proofDraft.uploaded) {
+      html +=
+        '<button type="button" class="pay-btn primary" data-proof-submit="' +
+        esc(order.id) +
+        '"' +
+        (proofDraft.uploading ? " disabled" : "") +
+        ">" +
+        (proofDraft.uploading ? "上传中…" : "我已付款") +
+        "</button>";
+    } else if (reviewing || proofDraft.uploaded) {
+      html +=
+        '<a class="pay-btn primary" href="orders.html?filter=payment_review&id=' +
+        encodeURIComponent(order.id) +
+        '">下一步：查看待人工审核订单</a>';
+      html +=
+        '<label class="pay-btn">重新上传<input type="file" accept="image/png,image/jpeg,image/webp" data-payment-proof="' +
+        esc(order.id) +
+        '" hidden></label>';
+    }
+    html += "</div></div>";
+    return html;
+  }
+
   function renderOrder(order, opts) {
     opts = opts || {};
     var st = String(order.status || "");
     var guide = statusGuide(st, order);
-    var label = STATUS_LABEL[st] || order.statusText || st;
+    var reviewing = isReviewing(order);
+    var label = reviewing && st === "awaiting_payment" ? "待人工审核" : STATUS_LABEL[st] || order.statusText || st;
     var csHref = "support.html?order=" + encodeURIComponent(order.id);
     var ordersHref = "orders.html?id=" + encodeURIComponent(order.id);
     var actions = '<div class="pay-actions">';
-    if (guide.primary === "pay" && st === "awaiting_payment") {
-      if (isWalletMethod(order)) {
-        actions += '<button type="button" class="pay-btn primary" data-pay-order="' + esc(order.id) + '">' + esc(guide.primaryLabel + " " + money(order.totalAmount || order.amount)) + "</button>";
-      }
+    var needsManualProof = st === "awaiting_payment" && !isWalletMethod(order);
+
+    if (guide.primary === "pay" && st === "awaiting_payment" && !reviewing && isWalletMethod(order)) {
+      actions +=
+        '<button type="button" class="pay-btn primary" data-pay-order="' +
+        esc(order.id) +
+        '">' +
+        esc(guide.primaryLabel + " " + money(order.totalAmount || order.amount)) +
+        "</button>";
       if (canShowTestPay()) {
-        actions += '<button type="button" class="pay-btn primary" data-preview-pay="' + esc(order.id) + '">' + esc("测试支付成功（TEST）") + "</button>";
-      } else if (!isWalletMethod(order) && isPreviewTestMethod(order)) {
-        actions += '<button type="button" class="pay-btn primary" data-preview-pay="' + esc(order.id) + '">' + esc("测试支付，仅用于 Preview 验收") + "</button>";
-      } else if (!isWalletMethod(order)) {
-        actions += '<a class="pay-btn primary" href="' + csHref + '">联系客服确认付款</a>';
+        actions +=
+          '<button type="button" class="pay-btn primary" data-preview-pay="' +
+          esc(order.id) +
+          '">' +
+          esc("测试支付成功（TEST）") +
+          "</button>";
       }
       actions += '<a class="pay-btn" href="' + ordersHref + '">查看我的订单</a>';
-    } else {
+    } else if (st === "awaiting_payment" && !needsManualProof && !reviewing) {
+      if (canShowTestPay()) {
+        actions +=
+          '<button type="button" class="pay-btn primary" data-preview-pay="' +
+          esc(order.id) +
+          '">' +
+          esc("测试支付成功（TEST）") +
+          "</button>";
+      } else if (isPreviewTestMethod(order)) {
+        actions +=
+          '<button type="button" class="pay-btn primary" data-preview-pay="' +
+          esc(order.id) +
+          '">' +
+          esc("测试支付，仅用于 Preview 验收") +
+          "</button>";
+      }
+      actions += '<a class="pay-btn" href="' + ordersHref + '">查看我的订单</a>';
+    } else if (st !== "awaiting_payment") {
       var primaryHref = guide.primary === "contact_cs" ? csHref : guide.primary === "lobby" ? "companion-center.html" : ordersHref;
       actions += '<a class="pay-btn primary" href="' + primaryHref + '">' + esc(guide.primaryLabel) + "</a>";
-      actions += guide.primary !== "orders" ? '<a class="pay-btn" href="' + ordersHref + '">查看我的订单</a>' : '<a class="pay-btn" href="' + csHref + '">联系客服</a>';
+      actions +=
+        guide.primary !== "orders"
+          ? '<a class="pay-btn" href="' + ordersHref + '">查看我的订单</a>'
+          : '<a class="pay-btn" href="' + csHref + '">联系客服</a>';
+    } else {
+      actions += '<a class="pay-btn" href="' + ordersHref + '">查看我的订单</a>';
+      actions += '<a class="pay-btn" href="' + csHref + '">联系客服</a>';
     }
     actions += '<a class="pay-btn" href="companion-center.html">继续浏览陪玩</a></div>';
 
-    if (guide.disabledHint) {
+    if (guide.disabledHint && st !== "awaiting_payment") {
       actions +=
         '<p class="pay-hint" role="status"><strong>当前不可用说明：</strong>' +
         esc(guide.disabledHint) +
@@ -278,14 +509,18 @@
         (st === "awaiting_payment"
           ? '<p class="pay-alert">' +
             esc(
-              canShowTestPay()
-                ? "Preview / 测试环境：可点「测试支付成功（TEST）」真实写入订单状态；正式环境无此入口。"
-                : isWalletMethod(order)
-                  ? "支付成功后将进入“等待陪玩确认”。"
-                  : "该支付方式当前需联系客服确认到账。"
+              reviewing
+                ? "付款凭证已提交，当前为待人工审核。客服确认收款前不会进入接单流程。"
+                : canShowTestPay()
+                  ? "请扫描下方收款二维码付款并上传截图。Preview / 测试环境另可点「测试支付成功（TEST）」。"
+                  : isWalletMethod(order)
+                    ? "支付成功后将进入“等待陪玩确认”。"
+                    : "请先扫描平台收款二维码付款，再上传截图并点击「我已付款」。"
             ) +
             "</p>"
           : "") +
+        qrPanelHtml(order) +
+        proofPanelHtml(order) +
         actions +
         "</section>"
     );
@@ -319,7 +554,6 @@
         throw new Error(body.message || "支付失败");
       }
       if (body.order) writeCache(orderId, body.order);
-      // Real DB status updated — jump to boss list on 等待陪玩确认 tab.
       var next =
         "orders.html?filter=waiting_companion&id=" +
         encodeURIComponent(orderId) +
@@ -327,6 +561,82 @@
       location.replace(next);
     } catch (err) {
       failUi(err.message || "支付失败，请重试");
+    } finally {
+      paying = false;
+    }
+  }
+
+  function tickProgress(target, done) {
+    proofDraft.progress = Math.max(proofDraft.progress, target);
+    if (typeof done === "function") done();
+  }
+
+  async function submitProof(orderId) {
+    var file = proofDraft.file;
+    if (!file || paying || proofDraft.uploading) return;
+    if (!/^image\/(png|jpeg|webp)$/.test(file.type || "")) {
+      proofDraft.error = "仅支持 JPG、PNG、WEBP 图片";
+      renderOrder(readCache(orderId) || { id: orderId, status: "awaiting_payment" });
+      return;
+    }
+    paying = true;
+    proofDraft.uploading = true;
+    proofDraft.progress = 8;
+    proofDraft.error = "";
+    proofDraft.successTip = "";
+    var current = readCache(orderId) || { id: orderId, status: "awaiting_payment" };
+    renderOrder(current);
+    try {
+      tickProgress(25);
+      renderOrder(current);
+      var dataUrl = await new Promise(function (resolve, reject) {
+        var reader = new FileReader();
+        reader.onprogress = function (ev) {
+          if (ev.lengthComputable && ev.total) {
+            proofDraft.progress = Math.min(70, 25 + Math.round((ev.loaded / ev.total) * 40));
+            renderOrder(current);
+          }
+        };
+        reader.onload = function () {
+          resolve(reader.result);
+        };
+        reader.onerror = function () {
+          reject(new Error("读取图片失败"));
+        };
+        reader.readAsDataURL(file);
+      });
+      tickProgress(78);
+      renderOrder(current);
+      var res = await fetch("/api/orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer " + token() },
+        body: JSON.stringify({ action: "submit_payment_proof", id: orderId, proofDataUrl: dataUrl }),
+      });
+      var body = await res.json().catch(function () {
+        return {};
+      });
+      if (!res.ok || body.ok === false) throw new Error(body.message || "付款凭证提交失败");
+      tickProgress(100);
+      proofDraft.uploading = false;
+      proofDraft.uploaded = true;
+      proofDraft.file = null;
+      proofDraft.successTip = "上传成功！付款凭证已提交，订单进入待人工审核。";
+      var nextOrder = body.order || current;
+      nextOrder.paymentReview = true;
+      nextOrder.statusText = "待人工审核";
+      nextOrder.paymentStatus = "待人工审核";
+      if (body.order && body.order.paymentProofUrl) {
+        nextOrder.paymentProofUrl = body.order.paymentProofUrl;
+      } else if (proofDraft.previewUrl) {
+        nextOrder.paymentProofUrl = proofDraft.previewUrl;
+      }
+      writeCache(orderId, nextOrder);
+      renderOrder(nextOrder);
+    } catch (err) {
+      proofDraft.uploading = false;
+      proofDraft.progress = 0;
+      proofDraft.error = err.message || "付款凭证提交失败";
+      renderOrder(current);
     } finally {
       paying = false;
     }
@@ -352,7 +662,9 @@
     return (
       (list || []).find(function (o) {
         return String(o.id) === String(id) || String(o.orderNo || o.order_no || "") === String(id);
-      }) || (list && list[0]) || null
+      }) ||
+      (list && list[0]) ||
+      null
     );
   }
 
@@ -383,7 +695,6 @@
       );
     }
 
-    var settled = false;
     try {
       var res = await fetch("/api/orders?id=" + encodeURIComponent(orderId), {
         headers: { Accept: "application/json", Authorization: "Bearer " + token() },
@@ -395,15 +706,17 @@
       });
       if (gen !== loadGen) return;
       if (typeof body.allowTestPay === "boolean") allowTestPay = body.allowTestPay;
+      if (body.platformPayInfo) platformPayInfo = body.platformPayInfo;
       if (!res.ok || body.ok === false) throw new Error(body.message || "订单读取失败");
-      settled = true;
       var order = pickOrder(body.orders, orderId);
       if (!order) {
         failUi("订单不存在，请到「我的订单」查看。");
         return;
       }
+      if (body.platformPayInfo) order.platformPayInfo = body.platformPayInfo;
+      else if (order.platformPayInfo) platformPayInfo = order.platformPayInfo;
       writeCache(orderId, order);
-      renderOrder(order);
+      if (!(proofDraft.uploading || proofDraft.file)) renderOrder(order);
     } catch (err) {
       if (gen !== loadGen) return;
       if (err && err.name === "AbortError") return;
@@ -415,7 +728,7 @@
   function startPoll() {
     if (pollTimer) clearInterval(pollTimer);
     pollTimer = setInterval(function () {
-      if (document.hidden) return;
+      if (document.hidden || proofDraft.uploading) return;
       loadOrder({ silent: true });
     }, POLL_MS);
   }
@@ -425,6 +738,23 @@
     if (btn) {
       e.preventDefault();
       loadOrder();
+      return;
+    }
+    var del = e.target.closest("[data-proof-delete]");
+    if (del) {
+      e.preventDefault();
+      clearProofDraft();
+      var oid = q("order") || q("id");
+      var order = readCache(oid) || { id: oid, status: "awaiting_payment" };
+      // Local delete: allow re-upload even if server still shows reviewing.
+      order = Object.assign({}, order, { paymentProofUrl: "" });
+      renderOrder(order);
+      return;
+    }
+    var submitBtn = e.target.closest("[data-proof-submit]");
+    if (submitBtn) {
+      e.preventDefault();
+      submitProof(submitBtn.getAttribute("data-proof-submit"));
       return;
     }
     var payBtn = e.target.closest("[data-pay-order]");
@@ -439,6 +769,22 @@
       submitPay(previewBtn.getAttribute("data-preview-pay"), true);
     }
   });
+  root.addEventListener("change", function (e) {
+    var input = e.target.closest("[data-payment-proof]");
+    if (!input || !input.files || !input.files[0]) return;
+    var orderId = input.getAttribute("data-payment-proof");
+    var file = input.files[0];
+    if (!/^image\/(png|jpeg|webp)$/.test(file.type || "")) {
+      proofDraft.error = "仅支持 JPG、PNG、WEBP 图片";
+      renderOrder(readCache(orderId) || { id: orderId, status: "awaiting_payment" });
+      return;
+    }
+    setProofFile(orderId, file);
+    proofDraft.error = "";
+    proofDraft.successTip = "";
+    proofDraft.uploaded = false;
+    renderOrder(readCache(orderId) || { id: orderId, status: "awaiting_payment" });
+  });
 
   document.addEventListener("visibilitychange", function () {
     if (!document.hidden) loadOrder({ silent: true });
@@ -447,6 +793,7 @@
   window.addEventListener("pagehide", function () {
     if (abortCtrl) abortCtrl.abort();
     if (pollTimer) clearInterval(pollTimer);
+    clearProofDraft();
   });
 
   loadOrder();

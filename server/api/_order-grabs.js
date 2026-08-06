@@ -3,6 +3,7 @@
 const GRAB_NOTE_START = "[[ORDER_GRABS]]";
 const GRAB_NOTE_END = "[[/ORDER_GRABS]]";
 const COMPLETION_PENDING_MARKER = "[[COMPLETION_PENDING]]";
+const COMPLETION_REQUESTED_AT_MARKER = "[[COMPLETION_REQUESTED_AT]]";
 
 function nowIso() {
   return new Date().toISOString();
@@ -49,16 +50,22 @@ function hasCompletionPending(text = "") {
   return String(text || "").includes(COMPLETION_PENDING_MARKER);
 }
 
-function withCompletionPending(text = "") {
-  const raw = String(text || "");
-  if (raw.includes(COMPLETION_PENDING_MARKER)) return raw;
-  return raw ? `${raw}\n${COMPLETION_PENDING_MARKER}` : COMPLETION_PENDING_MARKER;
+function parseCompletionRequestedAtText(text = "") {
+  const hit = String(text || "").match(/\[\[COMPLETION_REQUESTED_AT\]\]\s*([^\n|]+)/i);
+  if (hit?.[1] && !Number.isNaN(Date.parse(hit[1].trim()))) return hit[1].trim();
+  return "";
+}
+
+function withCompletionPending(text = "", atIso = nowIso()) {
+  let raw = withoutCompletionPending(String(text || ""));
+  const block = `${COMPLETION_PENDING_MARKER}\n${COMPLETION_REQUESTED_AT_MARKER}${atIso}`;
+  return raw ? `${raw}\n${block}` : block;
 }
 
 function withoutCompletionPending(text = "") {
   return String(text || "")
-    .split(COMPLETION_PENDING_MARKER)
-    .join("")
+    .replace(/\[\[COMPLETION_PENDING(?::[^\]]*)?\]\]/gi, "")
+    .replace(/\[\[COMPLETION_REQUESTED_AT\]\][^\n]*/gi, "")
     .replace(/\n{2,}/g, "\n")
     .trim();
 }
@@ -70,6 +77,11 @@ export function stripInternalOrderMarkers(text = "") {
   raw = raw.replace(/\[\[ORDER_GRABS\]\][\s\S]*?\[\[\/ORDER_GRABS\]\]/g, "");
   raw = raw.replace(/\[\[ORDER_GRABS\]\][\s\S]*$/g, "");
   raw = withoutCompletionPending(raw);
+  raw = raw
+    .replace(/\[\[COMPLETION_METHOD\]\][^\n]*/gi, "")
+    .replace(/\[\[COMPLETION_AUTO_PAUSED\]\][^\n]*/gi, "")
+    .replace(/\[\[ORDER_DISPUTE\]\][^\n]*/gi, "")
+    .replace(/\[\[ORDER_FROZEN\]\][^\n]*/gi, "");
   return raw.replace(/\n{2,}/g, "\n").trim();
 }
 
@@ -319,30 +331,40 @@ export function createOrderGrabHelpers({ restUrl, supabaseJson, serviceHeaders }
   }
 
   async function markCompletionPending(order) {
-    if (orderHasCompletionPending(order)) {
+    const existingAt =
+      parseCompletionRequestedAtText(String(order.note || "")) ||
+      parseCompletionRequestedAtText(String(order.description || ""));
+    if (orderHasCompletionPending(order) && existingAt) {
       return orderBlobSource(order);
     }
-    // Prefer appending marker onto note (pay already uses note); fall back to description.
+    const atIso = nowIso();
+    // Dual-write marker to BOTH note and description.
+    // Boss order list sometimes falls back to a select without `note`; description is always selected,
+    // so the boss UI must still see completionPending=true after companion applies.
     const noteBase = String(order.note || "");
     const descBase = String(order.description || "");
-    try {
-      const nextNote = withCompletionPending(noteBase);
-      await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(order.id)}`), {
-        method: "PATCH",
-        headers: serviceHeaders(),
-        body: JSON.stringify({ note: nextNote }),
-      });
-      return nextNote;
-    } catch (err) {
-      if (!/note|column|schema cache|PGRST/i.test(String(err?.message || ""))) throw err;
-      const nextDesc = withCompletionPending(descBase);
-      await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(order.id)}`), {
-        method: "PATCH",
-        headers: serviceHeaders(),
-        body: JSON.stringify({ description: nextDesc }),
-      });
-      return nextDesc;
+    const nextNote = withCompletionPending(noteBase, atIso);
+    const nextDesc = withCompletionPending(descBase, atIso);
+    const attempts = [
+      { note: nextNote, description: nextDesc },
+      { description: nextDesc },
+      { note: nextNote },
+    ];
+    let lastErr = null;
+    for (const body of attempts) {
+      try {
+        await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(order.id)}`), {
+          method: "PATCH",
+          headers: serviceHeaders(),
+          body: JSON.stringify(body),
+        });
+        return orderBlobSource({ note: nextNote, description: nextDesc });
+      } catch (err) {
+        lastErr = err;
+        if (!/column|schema cache|PGRST|note|description/i.test(String(err?.message || ""))) throw err;
+      }
     }
+    throw lastErr || new Error("无法写入完成申请标记");
   }
 
   async function clearCompletionPending(order) {

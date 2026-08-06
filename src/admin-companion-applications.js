@@ -1,7 +1,7 @@
 (function () {
   "use strict";
   var Auth = window.MCJAdminAuthFetch;
-  var TARGET = "companionApplicationsMount";
+  var TARGET = "table-companion_applications";
   var state = { loading: true, error: "", rows: [], filter: "pending", message: "" };
 
   function esc(v) {
@@ -238,7 +238,11 @@
   function maybeLoad() {
     if (document.getElementById(TARGET)) load();
   }
-  document.addEventListener("DOMContentLoaded", maybeLoad);
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", maybeLoad);
+  } else {
+    maybeLoad();
+  }
   window.addEventListener("hashchange", function () {
     if ((location.hash || "").replace("#", "") === "companion-applications") load();
   });

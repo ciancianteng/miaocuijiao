@@ -15,7 +15,15 @@
   }
 
   function token() {
-    return localStorage.getItem("mcjAuthAccessToken") || sessionStorage.getItem("mcjAuthAccessToken") || "";
+    try {
+      return (
+        sessionStorage.getItem("mcjAuthAccessToken") ||
+        localStorage.getItem("mcjAuthAccessToken") ||
+        ""
+      );
+    } catch (e) {
+      return "";
+    }
   }
 
   function ensureCss() {

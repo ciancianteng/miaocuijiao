@@ -70,7 +70,7 @@ body.support-page > .topbar {
   width: 100%;
   max-width: 100%;
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr) 300px;
+  grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
   gap: 0;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 18px;
@@ -81,8 +81,7 @@ body.support-page > .topbar {
 }
 
 .support-aside,
-.support-main,
-.support-rail {
+.support-main {
   position: relative;
   z-index: 1;
   min-width: 0;
@@ -92,6 +91,10 @@ body.support-page > .topbar {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+.support-rail {
+  display: none !important;
 }
 
 .support-aside {
@@ -205,21 +208,75 @@ body.support-page > .topbar {
   font-size: 12px;
 }
 
+.support-session {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 12px 12px;
+  border: 1px solid rgba(255, 158, 207, 0.14);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #f7f0f4;
+  text-align: left;
+  cursor: pointer;
+}
+
+.support-session.active {
+  border-color: rgba(255, 180, 220, 0.45);
+  background: rgba(255, 120, 180, 0.1);
+}
+
 .support-session-main {
   display: grid;
   gap: 4px;
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
-.support-general {
+.support-session-main strong {
+  font-size: 14px;
+  color: #fff7fb;
+}
+
+.support-session-main span {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.62);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.support-session small {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.45);
+  white-space: nowrap;
+}
+
+.support-general,
+.support-session-order,
+.support-session-general {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 10px;
 }
 
+/* Legacy order-card wall styles — keep inert / dark if any leftover DOM */
 .support-order-card {
-  display: grid;
-  gap: 8px;
+  display: none !important;
+}
+
+.support-order-summary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  grid-column: 1 / -1;
+  margin-top: 4px;
 }
 
 .support-order-top,
@@ -719,13 +776,13 @@ button.support-send-btn[type="submit"]:disabled {
 
 @media (max-width: 1440px) {
   .support-layout {
-    grid-template-columns: 260px minmax(0, 1fr) 280px;
+    grid-template-columns: minmax(220px, 300px) minmax(0, 1fr);
   }
 }
 
 @media (max-width: 1366px) {
   .support-layout {
-    grid-template-columns: 240px minmax(0, 1fr) 260px;
+    grid-template-columns: minmax(210px, 280px) minmax(0, 1fr);
   }
 
   .support-shell {
@@ -735,13 +792,13 @@ button.support-send-btn[type="submit"]:disabled {
 
 @media (max-width: 1100px) {
   .support-layout {
-    grid-template-columns: 240px minmax(0, 1fr) 240px;
+    grid-template-columns: minmax(200px, 260px) minmax(0, 1fr);
   }
 }
 
 @media (max-width: 960px) {
   .support-layout {
-    grid-template-columns: 260px minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .support-rail {

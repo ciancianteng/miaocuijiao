@@ -1,12 +1,20 @@
-﻿import { loadPublicServices } from "./services.js";
+import { loadPublicServices } from "./services.js";
 import { readLocalLevels, toPublicLevel } from "../_companion-levels-store.js";
 import { readLocalTags, toPublicTag } from "../_companion-tags-store.js";
+import { readVoiceTypes, toPublicVoiceType } from "../_companion-voice-types-store.js";
 
 const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"];
 
 function hasDatabaseConfig() { return REQUIRED_ENV.every((key) => process.env[key]); }
 function json(res, status, data) { res.status(status).json(data); }
-function headers() { return { apikey: process.env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}` }; }
+function headers() {
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const base = { apikey: key };
+  if (key && !String(key).startsWith("sb_secret_")) {
+    base.Authorization = `Bearer ${key}`;
+  }
+  return base;
+}
 function restUrl(table, query = "") { return `${process.env.SUPABASE_URL}/rest/v1/${table}${query}`; }
 async function rows(table, query) {
   const response = await fetch(restUrl(table, query), { headers: headers() });
@@ -25,7 +33,33 @@ function stripMcjMarker(text) {
 }
 function bannerItem(row) {
   const image = row.image_url || "";
+  const mobileImage = String(row.mobile_image_url || "").trim();
   const title = stripMcjMarker(row.title || "");
+  const isMain = row.is_main === true;
+  const cropRaw = row.crop_meta || row.crop || {};
+  const mobileCropRaw = row.mobile_crop_meta || row.mobile_crop || {};
+  const crop =
+    cropRaw && typeof cropRaw === "object" && !Array.isArray(cropRaw)
+      ? {
+          zoom: Number(cropRaw.zoom ?? cropRaw.scale ?? 1) || 1,
+          x: Number(cropRaw.x ?? cropRaw.offsetX ?? cropRaw.nx ?? 0) || 0,
+          y: Number(cropRaw.y ?? cropRaw.offsetY ?? cropRaw.ny ?? 0) || 0,
+          ratioW: Number(cropRaw.ratioW ?? cropRaw.ratio_w ?? 1920) || 1920,
+          ratioH: Number(cropRaw.ratioH ?? cropRaw.ratio_h ?? 700) || 700,
+          ratio: String(cropRaw.ratio || `${cropRaw.ratioW || 1920}:${cropRaw.ratioH || 700}`),
+        }
+      : { zoom: 1, x: 0, y: 0, ratioW: 1920, ratioH: 700, ratio: "1920:700" };
+  const mobileCrop =
+    mobileCropRaw && typeof mobileCropRaw === "object" && !Array.isArray(mobileCropRaw)
+      ? {
+          zoom: Number(mobileCropRaw.zoom ?? mobileCropRaw.scale ?? 1) || 1,
+          x: Number(mobileCropRaw.x ?? mobileCropRaw.offsetX ?? mobileCropRaw.nx ?? 0) || 0,
+          y: Number(mobileCropRaw.y ?? mobileCropRaw.offsetY ?? mobileCropRaw.ny ?? 0) || 0,
+          ratioW: Number(mobileCropRaw.ratioW ?? mobileCropRaw.ratio_w ?? 1080) || 1080,
+          ratioH: Number(mobileCropRaw.ratioH ?? mobileCropRaw.ratio_h ?? 1350) || 1350,
+          ratio: String(mobileCropRaw.ratio || `${mobileCropRaw.ratioW || 1080}:${mobileCropRaw.ratioH || 1350}`),
+        }
+      : { zoom: 1, x: 0, y: 0, ratioW: 1080, ratioH: 1350, ratio: "1080:1350" };
   return {
     id: row.id,
     title: title,
@@ -34,26 +68,45 @@ function bannerItem(row) {
     image: image,
     image_url: image,
     desktopImage: image,
-    mobileImage: row.mobile_image_url || image,
+    mobileImage: mobileImage || image,
+    mobile_image_url: mobileImage,
+    hasDedicatedMobile: !!mobileImage,
     buttonText: row.button_text || "",
     button_text: row.button_text || "",
     link: row.button_link || "",
     href: row.button_link || "",
     button_link: row.button_link || "",
     sort: row.sort_order == null ? 100 : row.sort_order,
+    sort_order: row.sort_order == null ? 100 : row.sort_order,
+    isMain,
+    is_main: isMain,
     enabled: row.is_active === true,
     published: true,
-    fitMode: "cover"
+    fitMode: "cover",
+    crop,
+    crop_meta: crop,
+    mobileCrop,
+    mobile_crop: mobileCrop,
+    mobile_crop_meta: mobileCrop,
+    objectPosition: `${50 + crop.x * 50}% ${50 + crop.y * 50}%`,
   };
 }
 function announcementItem(row) {
   const title = stripMcjMarker(row.title || "");
-  const category = String(row.category || "").trim().toLowerCase() === "companion" ? "companion" : "home";
+  const rawCat = String(row.category || "").trim().toLowerCase();
+  let category = "home";
+  if (rawCat === "companion" || rawCat === "player") category = "companion";
+  else if (rawCat === "customer_service" || rawCat === "cs" || rawCat === "service") category = "customer_service";
   let audience = String(row.audience || "").trim().toLowerCase();
   if (audience === "homepage" || audience === "index") audience = "home";
   if (audience === "cs" || audience === "service") audience = "customer_service";
   if (audience === "player") audience = "companion";
-  if (!audience) audience = category === "companion" ? "companion" : "home";
+  if (audience === "system_internal" || audience === "internal") audience = "system_internal";
+  if (!audience) {
+    if (category === "companion") audience = "companion";
+    else if (category === "customer_service") audience = "customer_service";
+    else audience = "home";
+  }
   const kind = String(row.kind || "normal").toLowerCase() === "forced" ? "forced" : "normal";
   return {
     id: row.id,
@@ -103,20 +156,32 @@ function matchesAnnouncementAudience(item, audience) {
   if (!want || want === "all") return true;
   const itemAudience = String(item.audience || "").toLowerCase();
   const category = String(item.category || "").toLowerCase();
+  if (itemAudience === "system_internal" || itemAudience === "internal") return false;
   if (itemAudience === "all") return true;
   if (want === "home" || want === "homepage" || want === "boss") {
-    // Homepage / boss: home category, or audience home/boss/all; legacy empty = home
-    if (category === "companion" && itemAudience !== "all" && itemAudience !== "home" && itemAudience !== "boss") return false;
+    // 首页公告 only — exclude companion / CS categories
+    if (category === "companion" || category === "customer_service") return false;
     if (itemAudience === "companion" || itemAudience === "customer_service") return false;
-    return category !== "companion" || itemAudience === "home" || itemAudience === "boss" || itemAudience === "all" || !itemAudience;
+    return true;
   }
   if (want === "companion" || want === "player") {
-    return category === "companion" || itemAudience === "companion" || itemAudience === "all";
+    return category === "companion" || itemAudience === "companion";
   }
   if (want === "customer_service" || want === "cs") {
-    return itemAudience === "customer_service" || itemAudience === "all";
+    return category === "customer_service" || itemAudience === "customer_service";
   }
   return itemAudience === want || category === want;
+}
+function isPublicAnnouncementRow(row) {
+  const title = String(row?.title || "");
+  const content = String(row?.content || "");
+  const blob = `${title}\n${content}`;
+  const audience = String(row?.audience || "").toLowerCase();
+  if (audience === "system_internal" || audience === "internal") return false;
+  // Include forced announcements so homepage can popup; ticker clients filter kind.
+  if (title.includes("[MCJ_GP]") || title.startsWith("[MCJ_PC]") || blob.includes("MCJ_CS_DOCK")) return false;
+  if (/^\s*[{\[]/.test(content) && /"type"\s*:|"slug"\s*:|"draft"\s*:/i.test(content)) return false;
+  return true;
 }
 async function loadAnnouncements(audience) {
   const now = Date.now();
@@ -124,7 +189,7 @@ async function loadAnnouncements(audience) {
   try {
     list = await rows(
       "announcements",
-      "?is_active=eq.true&order=is_pinned.desc,sort_order.asc.nullslast,published_at.desc.nullslast,created_at.desc&limit=80"
+      "?is_active=eq.true&order=is_pinned.desc,sort_order.asc.nullslast,published_at.asc.nullslast,created_at.asc&limit=80"
     );
   } catch {
     try {
@@ -134,13 +199,9 @@ async function loadAnnouncements(audience) {
     }
   }
   return list
-    .filter((row) => !String(row.title || "").includes("[MCJ_GP]") && !String(row.title || "").startsWith("[MCJ_PC]"))
+    .filter(isPublicAnnouncementRow)
     .filter((row) => inAnnouncementSchedule(row, now))
     .map(announcementItem)
-    .filter((item) => {
-      const blob = `${item?.title || ""} ${item?.content || ""} ${item?.body || ""}`;
-      return !blob.includes("[MCJ_CS_DOCK_REWARD_SETTINGS]");
-    })
     .filter((item) => matchesAnnouncementAudience(item, audience));
 }
 function serviceTaxonomyItem(service) {
@@ -174,13 +235,20 @@ function teamLobbyItem(row = {}) {
   const data = (row.published && typeof row.published === "object" ? row.published : null)
     || (row.draft && typeof row.draft === "object" ? row.draft : {})
     || {};
-  const enabled = row.enabled !== false && String(row.status || "").toLowerCase() === "published";
+  const status = String(row.status || data.status || "").toLowerCase();
+  const published =
+    !status ||
+    status === "published" ||
+    status.includes("发布") ||
+    status === "已发布";
+  const enabled = row.enabled !== false && published && data.enabled !== false && data.visible !== false;
+  const showOnHome = data.showOnHome !== false && data.showOnHome !== "false";
   return {
     id: row.id,
     type: "team_lobby_channels",
     title: data.name || row.title || "未命名频道",
     name: data.name || row.title || "未命名频道",
-    status: row.status === "published" ? "已发布" : row.status || "",
+    status: published ? "已发布" : row.status || "",
     enabled,
     sort: Number(row.sort ?? data.sort ?? 100),
     draft: {
@@ -189,7 +257,8 @@ function teamLobbyItem(row = {}) {
       description: data.description || data.intro || "",
       discordUrl: data.discordUrl || data.discordLink || data.link || "",
       sort: Number(data.sort ?? row.sort ?? 100),
-      enabled
+      enabled,
+      showOnHome
     },
     published: {
       image: data.image || data.cover || "",
@@ -197,7 +266,8 @@ function teamLobbyItem(row = {}) {
       description: data.description || data.intro || "",
       discordUrl: data.discordUrl || data.discordLink || data.link || "",
       sort: Number(data.sort ?? row.sort ?? 100),
-      enabled
+      enabled,
+      showOnHome
     }
   };
 }
@@ -210,6 +280,7 @@ function playerRuleItem(row = {}) {
   return {
     id: row.id,
     type: "player_rules",
+    slug: row.slug || data.slug || "",
     title: data.title || row.title || "陪玩制度",
     status: row.status || (enabled ? "published" : "draft"),
     enabled,
@@ -227,6 +298,8 @@ function playerRuleItem(row = {}) {
       penaltyRules: data.penaltyRules || "",
       depositRules: data.depositRules || "",
       sort: Number(data.sort ?? row.sort ?? 100),
+      forceConfirm: data.forceConfirm === true || data.requiresAck === true,
+      slug: row.slug || data.slug || "",
     },
     published: {
       title: data.title || row.title || "陪玩制度",
@@ -239,6 +312,8 @@ function playerRuleItem(row = {}) {
       penaltyRules: data.penaltyRules || "",
       depositRules: data.depositRules || "",
       sort: Number(data.sort ?? row.sort ?? 100),
+      forceConfirm: data.forceConfirm === true || data.requiresAck === true,
+      slug: row.slug || data.slug || "",
     },
     body,
     content: body,
@@ -246,6 +321,7 @@ function playerRuleItem(row = {}) {
     notes: data.notes || "",
     penaltyRules: data.penaltyRules || "",
     depositRules: data.depositRules || "",
+    forceConfirm: data.forceConfirm === true || data.requiresAck === true,
   };
 }
 
@@ -319,6 +395,7 @@ async function loadTeamLobbyChannels() {
             discordUrl: row.button_link || "",
             sort: row.sort_order || 1,
             enabled: true,
+            showOnHome: true,
           },
           published: {
             image: row.image_url || "",
@@ -327,6 +404,7 @@ async function loadTeamLobbyChannels() {
             discordUrl: row.button_link || "",
             sort: row.sort_order || 1,
             enabled: true,
+            showOnHome: true,
           },
         })
       )
@@ -347,6 +425,7 @@ export default async function handler(req, res) {
     const needServices = types.includes("services") || types.includes("games") || types.includes("service_types") || types.includes("hot_games");
     const needLevels = types.includes("companion_levels");
     const needTags = types.includes("companion_tags");
+    const needVoiceTypes = types.includes("voice_types");
     const needTeamLobby = types.includes("team_lobby_channels");
     const needPlayerRules = types.includes("player_rules");
     const needWorkRules = types.includes("companion_work_rules");
@@ -354,9 +433,23 @@ export default async function handler(req, res) {
 
     if (hasDatabaseConfig()) {
       if (needBanners) {
-        byType.banners = (await rows("banners", "?is_active=eq.true&order=sort_order.asc,updated_at.desc&limit=20"))
+        let bannerRows = [];
+        try {
+          bannerRows = await rows(
+            "banners",
+            "?is_active=eq.true&order=is_main.desc,sort_order.asc.nullslast,updated_at.desc&limit=100"
+          );
+        } catch {
+          bannerRows = await rows("banners", "?is_active=eq.true&order=sort_order.asc,updated_at.desc&limit=100");
+        }
+        byType.banners = bannerRows
           .filter((row) => !/__team_lobby__/i.test(String(row.subtitle || "")))
-          .map(bannerItem);
+          .map(bannerItem)
+          .sort((a, b) => {
+            const mainDiff = Number(!!b.isMain) - Number(!!a.isMain);
+            if (mainDiff) return mainDiff;
+            return Number(a.sort || 100) - Number(b.sort || 100);
+          });
       }
       if (needAnnouncements) {
         const audience = String(req.query.audience || req.query.target || "").trim();
@@ -421,6 +514,11 @@ export default async function handler(req, res) {
     if (needTags) {
       const tags = await readLocalTags();
       byType.companion_tags = tags.filter((item) => item.enabled !== false).map(toPublicTag);
+    }
+
+    if (needVoiceTypes) {
+      const voices = await readVoiceTypes();
+      byType.voice_types = voices.filter((item) => item.enabled !== false).map(toPublicVoiceType);
     }
 
     const items = Object.keys(byType).flatMap((type) => byType[type].map((item) => ({ id: item.id, type, title: item.title || item.name, sort: item.sort, enabled: item.enabled, data: item })));

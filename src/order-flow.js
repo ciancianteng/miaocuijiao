@@ -164,10 +164,10 @@
     var user = null;
     try { user = JSON.parse(localStorage.getItem("mcjCurrentUser") || "null"); } catch (e) {}
     if (!user) {
-      user = { user_id: "user_demo_001", name: "Demo Boss" };
-      localStorage.setItem("mcjCurrentUser", JSON.stringify(user));
+      try { user = JSON.parse(localStorage.getItem("customerUser") || "null"); } catch (e2) {}
     }
-    return user;
+    // Never invent a demo / acceptance identity.
+    return user || null;
   }
 
   function createOrder() {
@@ -176,9 +176,14 @@
     var unit = numericPrice(data.price);
     var remark = (document.getElementById("mcjOrderRemark") || {}).value || "";
     var user = currentUser();
+    if (!user) {
+      if (typeof window.loginRequiredModal === "function") window.loginRequiredModal();
+      else location.href = "/login.html";
+      return;
+    }
     var order = {
       order_id: "MCJ-" + Date.now(),
-      user_id: user.user_id,
+      user_id: user.user_id || user.id || "",
       player_id: data.playerId,
       player_name: data.name,
       player_avatar: data.img,

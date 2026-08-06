@@ -4,7 +4,6 @@
   if (window.__MCJCsLoginOnly) return;
   window.__MCJCsLoginOnly = true;
 
-  var SESSION_KEY = "mcjServiceSession";
   var root = document.getElementById("serviceApp");
   var form = root && root.querySelector("form[data-login]");
   if (!form) return;
@@ -15,37 +14,48 @@
     remember: !!(form.elements.remember && form.elements.remember.checked),
   };
 
-  function readSession() {
-    try {
-      return JSON.parse(
-        localStorage.getItem(SESSION_KEY) || sessionStorage.getItem(SESSION_KEY) || "null"
-      );
-    } catch (e) {
-      return null;
-    }
+  // Do NOT auto-redirect away from the login page on load.
+  // Previous ensureSession/hasSession auto-bounce raced with role-gates and
+  // early-gate, producing login ↔ dashboard flicker. Stay on this form until
+  // the user submits a successful login (or an explicit validated session probe).
+  var redirected = false;
+  function goDashboardOnce() {
+    if (redirected || window.__MCJCsLoginRedirecting) return;
+    redirected = true;
+    window.__MCJCsLoginRedirecting = true;
+    location.assign("/customer-service/dashboard/");
   }
 
-  // Already logged in → leave login page (after session restore/refresh).
-  function goDashboardIfLoggedIn() {
-    var existing = readSession();
-    var has =
-      (window.MCJServiceAuth && window.MCJServiceAuth.hasSession && window.MCJServiceAuth.hasSession()) ||
-      (existing && (existing.token || existing.accessToken || existing.refreshToken));
-    if (has) {
-      location.replace("/customer-service/dashboard/");
-      return true;
-    }
-    return false;
+  // Optional soft resume: only leave login if /api/customer-service accepts the token.
+  // Failed/half sessions stay on the form — never hard-replace in a loop.
+  function maybeResumeExistingSession() {
+    if (window.__MCJCsLoginRedirecting || redirected) return;
+    if (!(window.MCJServiceAuth && typeof window.MCJServiceAuth.hasSession === "function")) return;
+    if (!window.MCJServiceAuth.hasSession()) return;
+    var headers =
+      (window.MCJServiceAuth.authHeaders && window.MCJServiceAuth.authHeaders()) || {};
+    fetch("/api/customer-service", {
+      method: "GET",
+      headers: Object.assign({ Accept: "application/json" }, headers),
+      cache: "no-store",
+    })
+      .then(function (res) {
+        return res.json().then(function (body) {
+          return { res: res, body: body || {} };
+        });
+      })
+      .then(function (out) {
+        if (out.res.ok && out.body && out.body.ok !== false) {
+          goDashboardOnce();
+          return;
+        }
+        if (window.MCJServiceAuth.clearSession) window.MCJServiceAuth.clearSession("login_probe_rejected");
+      })
+      .catch(function () {
+        if (window.MCJServiceAuth.clearSession) window.MCJServiceAuth.clearSession("login_probe_failed");
+      });
   }
-  if (window.MCJServiceAuth && typeof window.MCJServiceAuth.ensureSession === "function") {
-    window.MCJServiceAuth.ensureSession().then(function () {
-      goDashboardIfLoggedIn();
-    }).catch(function () {
-      goDashboardIfLoggedIn();
-    });
-  } else if (goDashboardIfLoggedIn()) {
-    return;
-  }
+  maybeResumeExistingSession();
 
   function captureDraft() {
     if (!form) return;
@@ -97,6 +107,10 @@
   }
 
   bindPasswordToggle();
+  if (window.MCJAuthShell && typeof window.MCJAuthShell.prepareAuthForm === "function") {
+    window.MCJAuthShell.prepareAuthForm(form, { clearAccount: false });
+    draft.password = "";
+  }
 
   form.addEventListener(
     "input",
@@ -231,7 +245,7 @@
         if (window.MCJServiceAuth && typeof window.MCJServiceAuth.saveSession === "function" && body && body.session) {
           window.MCJServiceAuth.saveSession(body.session, remember !== false);
         }
-        location.assign("/customer-service/dashboard/");
+        goDashboardOnce();
       })
       .catch(function (err) {
         var msg = (window.MCJRoleGate && window.MCJRoleGate.humanizeAuthError)

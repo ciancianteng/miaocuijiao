@@ -1,7 +1,7 @@
 (function () {
   "use strict";
 
-  var TYPES = ["services", "games", "service_types", "companion_tags", "companion_levels", "hot_games", "featured_players", "profile_services"];
+  var TYPES = ["services", "games", "service_types", "companion_tags", "voice_types", "companion_levels", "hot_games", "featured_players", "profile_services"];
   var state = { loaded: false, loading: null, byType: {} };
   TYPES.forEach(function (type) { state.byType[type] = []; });
 
@@ -70,12 +70,24 @@
         return state;
       });
   }
-  function load() {
+  var TAXONOMY_CHANNEL = "mcj-taxonomy-reload";
+  var loadedAt = 0;
+  var TTL_MS = 60 * 1000;
+
+  function load(force) {
+    var stale = loadedAt && Date.now() - loadedAt > TTL_MS;
+    if (force || stale) {
+      state.loaded = false;
+      state.loading = null;
+    }
     if (state.loaded) return Promise.resolve(state);
     if (state.loading) return state.loading;
     state.loading = loadFromServicesApi()
       .then(function () {
-        return fetch("/api/platform/content?types=" + encodeURIComponent(["companion_tags", "companion_levels", "featured_players"].join(",")), { headers: { Accept: "application/json" } })
+        return fetch("/api/platform/content?types=" + encodeURIComponent(["companion_tags", "voice_types", "companion_levels", "featured_players"].join(",")), {
+          headers: { Accept: "application/json" },
+          cache: "no-store"
+        })
           .then(function (res) {
             return res.text().then(function (raw) {
               var body = {};
@@ -88,22 +100,52 @@
       })
       .then(function (body) {
         var byType = (body && body.byType) || {};
-        ["companion_tags", "companion_levels", "featured_players"].forEach(function (type) {
+        ["companion_tags", "voice_types", "companion_levels", "featured_players"].forEach(function (type) {
           state.byType[type] = sortItems((Array.isArray(byType[type]) ? byType[type] : []).map(normalize).filter(isEnabled));
+        });
+        // Hall filter tags: only those marked supportsFilter / showInHall
+        state.byType.companion_tags = state.byType.companion_tags.filter(function (item) {
+          return item.supportsFilter !== false && item.showInHall !== false;
         });
         if (window.MCJCompanionLevels && window.MCJCompanionLevels.hydrateFromList && state.byType.companion_levels.length) {
           window.MCJCompanionLevels.hydrateFromList(state.byType.companion_levels);
         }
         state.loaded = true;
+        loadedAt = Date.now();
+        state.loading = null;
         return state;
       })
       .catch(function (err) {
         console.error("[平台配置] 读取失败", err);
         state.loaded = true;
+        loadedAt = Date.now();
+        state.loading = null;
         return state;
       });
     return state.loading;
   }
+  function reload() { return load(true); }
+  function notifyChanged() {
+    try {
+      if (typeof BroadcastChannel !== "undefined") {
+        var ch = new BroadcastChannel(TAXONOMY_CHANNEL);
+        ch.postMessage({ type: "reload", at: Date.now() });
+        ch.close();
+      }
+    } catch (e) { /* ignore */ }
+    try { localStorage.setItem(TAXONOMY_CHANNEL, String(Date.now())); } catch (e2) { /* ignore */ }
+  }
+  try {
+    if (typeof BroadcastChannel !== "undefined") {
+      var taxonomyCh = new BroadcastChannel(TAXONOMY_CHANNEL);
+      taxonomyCh.onmessage = function () { reload(); };
+    }
+  } catch (e3) { /* ignore */ }
+  try {
+    window.addEventListener("storage", function (ev) {
+      if (ev && ev.key === TAXONOMY_CHANNEL) reload();
+    });
+  } catch (e4) { /* ignore */ }
   function items(type) { return state.byType[type] || []; }
   function label(item) { return text(item && (item.name || item.title || item.game || item.code)); }
   function value(item) { return text(item && (item.slug || item.code || item.id || item.name || item.title || item.game)); }
@@ -122,6 +164,8 @@
 
   window.MCJTaxonomy = {
     load: load,
+    reload: reload,
+    notifyChanged: notifyChanged,
     items: items,
     enabled: items,
     label: label,

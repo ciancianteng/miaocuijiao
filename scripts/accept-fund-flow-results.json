@@ -1,0 +1,105 @@
+{
+  "meta": {
+    "base": "https://meow-cuijiao-homepage-rkpaabz4f-ciancianteng-4581s-projects.vercel.app",
+    "startedAt": "2026-08-02T18:49:05.551Z",
+    "accounts": {
+      "boss": "boss@meow.test",
+      "companion": "companion@meow.test",
+      "service": "service@meow.test",
+      "admin": "admin@meow.test",
+      "password": "McjTest@12345678"
+    },
+    "settleOrderId": "cf09f480-d5f9-4466-b59b-1ca352b3c048",
+    "settleOrderNo": "MCJ-1785696579183-CVCA",
+    "settlement": {
+      "orderId": "cf09f480-d5f9-4466-b59b-1ca352b3c048",
+      "orderNo": "MCJ-1785696579183-CVCA",
+      "companionNetCatFood": 64,
+      "platformCommissionCatFood": 16,
+      "platformCommissionRate": 20,
+      "companionShareRate": 80,
+      "completedAt": "2026-08-02T18:50:24.949Z"
+    },
+    "refundOrderId": "ba8c0eb0-6e2f-4744-ac71-dccd80a06466",
+    "withdrawId": "5ae3eb4e-8c25-4bcc-aab6-536ae815e33a",
+    "rejectWithdrawId": "22fefe3b-4048-4ed0-ab58-691f40d75fd1",
+    "finishedAt": "2026-08-02T18:52:37.005Z",
+    "pass": 12,
+    "fail": 0
+  },
+  "results": [
+    {
+      "id": "A00",
+      "name": "四端测试账号可登录",
+      "ok": true,
+      "detail": "boss/companion/service/admin @ McjTest@12345678"
+    },
+    {
+      "id": "F01",
+      "name": "1. 充值只到账一次并区分实付/赠送",
+      "ok": true,
+      "detail": "paidΔ=50 bonusΔ=10 totalΔ=60 expect 50/10/60; sim=模拟支付成功，猫粮已入账; before=140 after=200"
+    },
+    {
+      "id": "F01b",
+      "name": "1b. 重复模拟到账不二次入账",
+      "ok": true,
+      "detail": "total 200->200; 已到账（重复模拟被忽略）"
+    },
+    {
+      "id": "F02a",
+      "name": "2a. 支付失败不扣款",
+      "ok": true,
+      "detail": "payOk=false code=USE_TEST_PAY status=awaiting_payment bal 200->200 msg=猫粮支付不可用或余额不足。Preview 请点击「测试支付成功（TEST）」完成状态流转。"
+    },
+    {
+      "id": "F02",
+      "name": "2. 老板下单只扣款一次；重复支付不二次扣款",
+      "ok": true,
+      "detail": "usedWallet=true amt=40 status=pending bal 400->360->360 payMsg=支付成功，订单已进入待客服安排。 rePay=当前订单无需再次支付。"
+    },
+    {
+      "id": "F03",
+      "name": "3. 订单完成只结算一次并按抽成计算",
+      "ok": true,
+      "detail": "order=MCJ-1785696579183-CVCA status=completed income=64 count=1 share=80% platform=20% net=64 fee=16 re=当前订单不能确认完成。 stageFail="
+    },
+    {
+      "id": "F03b",
+      "name": "3b. 客服对接奖励已结算",
+      "ok": true,
+      "detail": "reward=7 status=settled reception=true conv=9a763346-f5d0-4a27-9797-8b47a7a1b5ed msg=本次对接成功，已结算 7 猫粮。"
+    },
+    {
+      "id": "F04",
+      "name": "4. 退款后资金回退且禁止再结算",
+      "ok": true,
+      "detail": "status=refunded bal 230->280 amt=50 req=退款申请已提交。 cs=退款已批准。 settleAfter=当前订单不能确认完成。 incomeN=0"
+    },
+    {
+      "id": "F06",
+      "name": "6. 拒绝提现释放冻结余额",
+      "ok": true,
+      "detail": "whileFrozen=1680 afterReject=1730 amt=50 rej=已拒绝，冻结余额已退回可用余额 id=22fefe3b-4048-4ed0-ab58-691f40d75fd1"
+    },
+    {
+      "id": "F05",
+      "name": "5. 提现：申请→冻结→待审核→待打款→上传收据→确认已打款→完成",
+      "ok": true,
+      "detail": "pend=pending_review apr=approved_pending_pay paidDb=completed paidApi=completed ref=ACC-TX-1785696556641 companion=completed receiptLib=true create=提现申请已提交，等待后台审核 aprMsg=已审核通过，进入待打款（需线下汇款并上传收据后确认） paidMsg=已上传收据并确认打款，提现状态为已完成"
+    },
+    {
+      "id": "F07",
+      "name": "7. 禁止重复提现与重复确认打款",
+      "ok": true,
+      "detail": "dupCreateBlocked=true (已达本月提现次数上限) reConfirm dup=true msg=该提现已完成，无需重复确认"
+    },
+    {
+      "id": "F08",
+      "name": "8. 后台/老板/陪玩余额与订单状态一致",
+      "ok": true,
+      "detail": "id=cf09f480-d5f9-4466-b59b-1ca352b3c048 db=completed/80 boss=completed/80 admin=completed companion=completed"
+    }
+  ],
+  "allPass": true
+}

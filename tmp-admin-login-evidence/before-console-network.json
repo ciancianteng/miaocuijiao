@@ -1,0 +1,39 @@
+{
+  "capturedAt": "pre-fix staging probe",
+  "url": "https://meow-cuijiao-homepage-staging.vercel.app/admin/login/",
+  "probe": {
+    "hasForm": false,
+    "formVisible": false,
+    "rootHTMLLength": 0,
+    "hasAuth": true,
+    "hasGate": true,
+    "hasBootGuard": false,
+    "bodyBg": "rgb(7, 7, 10)",
+    "h1": null
+  },
+  "consoleLogs": [],
+  "failed": [],
+  "responses": [
+    {
+      "status": 200,
+      "url": ".../admin/login/"
+    },
+    {
+      "status": 200,
+      "url": ".../assets/modulepreload-polyfill-*.js"
+    },
+    {
+      "status": 200,
+      "url": ".../assets/auth-shell-*.js"
+    },
+    {
+      "status": 200,
+      "url": ".../assets/role-gates-*.js"
+    },
+    {
+      "status": 200,
+      "url": ".../assets/index-*.css"
+    }
+  ],
+  "rootCause": "Classic inline <script> ran before deferred type=module scripts; if (!Auth || !Gate) return left #adminLoginApp empty. No console error (silent early return)."
+}

@@ -5,12 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>玩法详情 - MEOW CUI JIAO</title>
   <link rel="stylesheet" href="src/style.css">
-  <link rel="stylesheet" href="src/gameplay-mall.css?v=20260730-detail-fix1">
+  <link rel="stylesheet" href="src/gameplay-mall.css?v=20260804p0fix">
+  <link rel="stylesheet" href="src/gameplay-product.css?v=20260804p0fix">
   <link rel="stylesheet" href="src/boss-header.css">
-  <script src="src/role-gates.js"></script>
-  <script src="src/boss-header.js" defer></script>
+  <script type="module" src="src/role-gates.js"></script>
+  <script type="module" src="src/boss-header.js" defer></script>
 </head>
-<body class="gp-mall-body">
+<body class="gp-mall-body gameplay-product-page">
   <header class="topbar">
     <a class="brand" href="index.html"><img src="assets/meow-cuijiao-brand.jpg" alt="MEOW CUI JIAO"><span>MEOW CUI JIAO</span></a>
     <nav class="boss-nav">
@@ -24,11 +25,11 @@
     </nav>
   </header>
 
-  <main class="gp-detail-shell" id="gpDetail"><div class="gp-empty">正在读取商品详情...</div></main>
+  <main class="gp-detail-shell gameplay-product-shell" id="gpDetail">
+    <div class="gameplay-product-empty"><strong>正在读取商品详情…</strong><p>正在为你准备玩法详情页</p></div>
+  </main>
 
-  <div class="gp-detail-actions" id="gpActions" hidden></div>
-
-  <script src="src/currency.js"></script>
-  <script src="src/gameplay-product.js?v=20260730-detail-fix1"></script>
+  <script type="module" src="src/currency.js"></script>
+  <script type="module" src="src/gameplay-product.js?v=20260804p0fix"></script>
 </body>
 </html>

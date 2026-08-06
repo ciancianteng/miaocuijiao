@@ -112,16 +112,20 @@ function toIsoDateTime(value) {
   if (Number.isNaN(parsed.getTime())) return new Date().toISOString();
   return parsed.toISOString();
 }
-const ANNOUNCEMENT_CATEGORIES = new Set(["home", "companion"]);
+const ANNOUNCEMENT_CATEGORIES = new Set(["home", "companion", "customer_service"]);
 const ANNOUNCEMENT_AUDIENCES = new Set(["home", "boss", "companion", "customer_service", "all"]);
 
 function normalizeCategory(value, audience) {
   const raw = String(value || "").trim().toLowerCase();
   if (raw === "homepage" || raw === "boss" || raw === "index") return "home";
   if (raw === "player" || raw === "陪玩" || raw === "companion") return "companion";
+  if (raw === "cs" || raw === "service" || raw === "customer-service" || raw === "客服" || raw === "客服公告") {
+    return "customer_service";
+  }
   if (ANNOUNCEMENT_CATEGORIES.has(raw)) return raw;
   const aud = String(audience || "").trim().toLowerCase();
   if (aud === "companion") return "companion";
+  if (aud === "customer_service" || aud === "cs") return "customer_service";
   return "home";
 }
 function normalizeAudience(value, category) {
@@ -129,8 +133,25 @@ function normalizeAudience(value, category) {
   if (raw === "homepage" || raw === "index") return "home";
   if (raw === "cs" || raw === "service" || raw === "customer-service") return "customer_service";
   if (raw === "player") return "companion";
+  if (raw === "system_internal" || raw === "internal") return "system_internal";
   if (ANNOUNCEMENT_AUDIENCES.has(raw)) return raw;
-  return normalizeCategory(category) === "companion" ? "companion" : "home";
+  const cat = normalizeCategory(category);
+  if (cat === "companion") return "companion";
+  if (cat === "customer_service") return "customer_service";
+  return "home";
+}
+/** Real admin-published announcements only — exclude configs / forced / stubs. */
+function isAdminManagedAnnouncement(row = {}) {
+  const title = String(row.title || "");
+  const content = String(row.content || "");
+  const blob = `${title}\n${content}`;
+  const audience = String(row.audience || "").trim().toLowerCase();
+  if (audience === "system_internal" || audience === "internal") return false;
+  if (title.startsWith("[MCJ_PC]") || title.includes("[MCJ_GP]") || blob.includes("MCJ_CS_DOCK")) return false;
+  if (/^\s*[{\[]/.test(content) && /"type"\s*:|"slug"\s*:|"draft"\s*:|gameplay|ad_slots|reward/i.test(content)) {
+    return false;
+  }
+  return true;
 }
 function optionalIsoDateTime(value) {
   if (value === undefined || value === null || String(value).trim() === "") return null;
@@ -167,16 +188,32 @@ function announcementPayload(input = {}, previous = null) {
   const content = String(input.content || "").trim();
   if (!title) throw Object.assign(new Error("请填写公告标题。"), { status: 400 });
   if (!content) throw Object.assign(new Error("请填写公告内容。"), { status: 400 });
+  if (title.startsWith("[MCJ_PC]") || title.includes("[MCJ_GP]") || content.includes("MCJ_CS_DOCK")) {
+    throw Object.assign(new Error("公告管理仅允许发布真实公告，不可写入系统配置 JSON。"), { status: 400 });
+  }
   const category = normalizeCategory(input.category || input.announcement_category, input.audience);
-  const audience = normalizeAudience(input.audience || input.target || input.publish_to, category);
+  let audience = normalizeAudience(input.audience || input.target || input.publish_to, category);
+  // Category owns routing for admin-published announcements.
+  if (category === "companion") audience = "companion";
+  else if (category === "customer_service") audience = "customer_service";
+  else if (audience === "companion" || audience === "customer_service") audience = "home";
+  if (audience === "system_internal") {
+    throw Object.assign(new Error("系统内部配置不可写入公告管理。"), { status: 400 });
+  }
   const sortOrder = Number(input.sort_order ?? input.sortOrder ?? input.sort ?? 100);
-  const kindRaw = String(input.kind || input.announcement_kind || input.type || "normal").toLowerCase();
-  const kind = kindRaw === "forced" || kindRaw === "强制" || kindRaw === "强制阅读公告" ? "forced" : "normal";
+  const kindRaw = String(input.kind || previous?.kind || "normal").trim().toLowerCase();
+  const kind = kindRaw === "forced" || truthy(input.requires_ack ?? input.requiresAck, false) ? "forced" : "normal";
   let contentVersion = Number(input.content_version ?? input.contentVersion ?? previous?.content_version ?? 1) || 1;
   if (previous && (String(previous.content || "") !== content || String(previous.title || "") !== title)) {
     contentVersion = (Number(previous.content_version) || 1) + 1;
   }
-  if (!previous && kind === "forced") contentVersion = Math.max(1, contentVersion);
+  const clearSchedule = truthy(input.clear_schedule ?? input.clearSchedule, false);
+  const startAt = clearSchedule ? null : optionalIsoDateTime(input.start_at || input.startAt);
+  const endAt = clearSchedule ? null : optionalIsoDateTime(input.end_at || input.endAt);
+  const publishedAt =
+    optionalIsoDateTime(input.published_at || input.publishedAt || input.publish_time) ||
+    previous?.published_at ||
+    new Date().toISOString();
   return {
     title,
     content,
@@ -184,14 +221,14 @@ function announcementPayload(input = {}, previous = null) {
     audience,
     kind,
     content_version: contentVersion,
-    requires_ack: kind === "forced" || truthy(input.requires_ack ?? input.requiresAck, kind === "forced"),
-    start_at: optionalIsoDateTime(input.start_at || input.startAt),
-    end_at: optionalIsoDateTime(input.end_at || input.endAt),
+    requires_ack: kind === "forced",
+    start_at: startAt,
+    end_at: endAt,
     is_scrolling: truthy(input.is_scrolling ?? input.isScrolling ?? input.scroll, true),
     sort_order: Number.isFinite(sortOrder) ? Math.max(0, Math.round(sortOrder)) : 100,
     is_active: truthy(input.is_active ?? input.isActive ?? input.visible, true),
     is_pinned: truthy(input.is_pinned ?? input.isPinned ?? input.pinned, false),
-    published_at: toIsoDateTime(input.published_at || input.publishedAt || input.publish_time || input.start_at || input.startAt),
+    published_at: publishedAt,
     updated_at: new Date().toISOString(),
   };
 }
@@ -256,24 +293,23 @@ function payloadFallbacks(payload) {
   ];
 }
 async function listAnnouncements() {
+  let rows = [];
   try {
-    const rows = await supabaseJson(
+    rows = await supabaseJson(
       restUrl("announcements", "?order=category.asc,is_pinned.desc,sort_order.asc.nullslast,published_at.desc.nullslast,created_at.desc&limit=200"),
       { headers: serviceHeaders() }
     );
-    return (Array.isArray(rows) ? rows : []).map(mapAnnouncement);
   } catch {
     try {
-      const rows = await supabaseJson(
+      rows = await supabaseJson(
         restUrl("announcements", "?order=is_pinned.desc,published_at.desc.nullslast,created_at.desc&limit=200"),
         { headers: serviceHeaders() }
       );
-      return (Array.isArray(rows) ? rows : []).map(mapAnnouncement);
     } catch {
-      const rows = await supabaseJson(restUrl("announcements", "?order=created_at.desc&limit=200"), { headers: serviceHeaders() });
-      return (Array.isArray(rows) ? rows : []).map(mapAnnouncement);
+      rows = await supabaseJson(restUrl("announcements", "?order=created_at.desc&limit=200"), { headers: serviceHeaders() });
     }
   }
+  return (Array.isArray(rows) ? rows : []).filter(isAdminManagedAnnouncement).map(mapAnnouncement);
 }
 async function saveAnnouncement(input = {}) {
   const id = String(input.id || "").trim();

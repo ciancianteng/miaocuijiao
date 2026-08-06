@@ -1,0 +1,84 @@
+{
+  "base": "https://meow-cuijiao-homepage-staging.vercel.app",
+  "at": "2026-08-03T15:38:32.495Z",
+  "steps": [
+    {
+      "step": "api:boss",
+      "pass": true,
+      "role": "boss",
+      "email": "boss.final.1785714993009@meow.test"
+    },
+    {
+      "step": "api:customer_service",
+      "pass": true,
+      "role": "customer_service",
+      "email": "service.final.1785714993009@meow.test"
+    },
+    {
+      "step": "api:companion",
+      "pass": true,
+      "role": "companion",
+      "email": "companion.idcard.1785715257525@meow.test"
+    },
+    {
+      "step": "api:admin",
+      "pass": true,
+      "role": "admin",
+      "email": "admin@meow.test"
+    },
+    {
+      "step": "vm:cs-stale-then-boss",
+      "pass": true,
+      "issues": [],
+      "snap": {
+        "customerAuthToken": "customer_session_v4_1785771522539",
+        "customerUser": "{\"id\":\"a7ed815b-ae97-4619-9be7-3fda611bfb88\",\"uid\":\"MCJ00001\",\"bossUid\":\"MCJ00001\",\"boss_uid\":\"MCJ00001\",\"account\":\"boss.final.1785714993009@meow.test\",\"user_id\":\"a7ed815b-ae97-4619-9be7-3fda611bfb88\",\"name\":\"boss.final.1785714993009\",\"nickname\":\"boss.final.1785714993009\",\"email\":\"boss.final.1785714993009@meow.test\",\"phone\":\"\",\"avatarUrl\":\"\",\"role\":\"boss\",\"status\":\"active\",\"adminRole\":\"\",\"permissions\":[]}",
+        "customerServiceAuthToken": null,
+        "customerServiceUser": null,
+        "mcjServiceSession": null,
+        "companionAuthToken": null,
+        "companionUser": null,
+        "mcjCompanionSession": null,
+        "adminAuthToken": null,
+        "adminUser": null,
+        "mcjAuthAccessToken": "eyJhbGciOiJFUzI1NiIsImtpZCI6IjkwZDkwZjA5LTkwZDctNDZjZS1hNTcyLWViZTRmNTllYzUxMSIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJodHRwczovL2pxZmFrbnBtY25xd3F2YXRyd2dvLnN1cGFiYXNlLmNvL2F1dGgvdjEiLCJzdWIiOiJhN2VkODE1Yi1hZTk3LTQ2MTktOWJlNy0zZmRhNjExYmZiODgiLCJhdWQiOiJhdXRoZW50aWNhdGVkIiwiZXhwIjoxNzg1Nzc1MTIzLCJpYXQiOjE3ODU3NzE1MjMsImVtYWlsIjoiYm9zcy5maW5hbC4xNzg1NzE0OTkzMDA5QG1lb3cudGVzdCIsInBob25lIjoiIiwiYXBwX21ldGFkYXRhIjp7InByb3ZpZGVyIjoiZW1haWwiLCJwcm92aWRlcnMiOlsiZW1haWwiXX0sInVzZXJfbWV0YWRhdGEiOnsiZGlzcGxheV9uYW1lIjoiYm9zcy5maW5hbC4xNzg1NzE0OTkzMDA5IiwiZW1haWxfdmVyaWZpZWQiOnRydWV9LCJyb2xlIjoiYXV0aGVudGljYXRlZCIsImFhbCI6ImFhbDEiLCJhbXIiOlt7Im1ldGhvZCI6InBhc3N3b3JkIiwidGltZXN0YW1wIjoxNzg1NzcxNTIzfV0sInNlc3Npb25faWQiOiI3NzQ2M2I5ZS1iN2Q4LTQ1NzEtYTIzZS04OGRhZjg1ZmE1OTEiLCJpc19hbm9ueW1vdXMiOmZhbHNlfQ.hm2JgQeQzE6mRdfX7WEy8nXigwU7E9n06PSz_QoVppiXFUIxsPLzo7dbNpjMOd93CcIHAS3KUkNG4mTKe0Gp_g",
+        "mcjRole": "boss"
+      }
+    },
+    {
+      "step": "vm:boss-then-cs",
+      "pass": true,
+      "issues": []
+    },
+    {
+      "step": "vm:exclusive:boss",
+      "pass": true,
+      "issues": [],
+      "meRole": "boss"
+    },
+    {
+      "step": "vm:exclusive:customer_service",
+      "pass": true,
+      "issues": [],
+      "meRole": "customer_service"
+    },
+    {
+      "step": "vm:exclusive:companion",
+      "pass": true,
+      "issues": [],
+      "meRole": "companion"
+    },
+    {
+      "step": "vm:exclusive:admin",
+      "pass": true,
+      "issues": [],
+      "meRole": "admin"
+    },
+    {
+      "step": "vm:logout-boss",
+      "pass": true,
+      "issues": []
+    }
+  ],
+  "ok": true
+}

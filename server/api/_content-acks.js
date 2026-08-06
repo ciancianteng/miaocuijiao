@@ -57,7 +57,22 @@ export async function listActiveForcedAnnouncements({ audience = "companion" } =
       if (!inWindow(row)) return false;
       const aud = String(row.audience || row.category || "companion").toLowerCase();
       if (audience === "all") return true;
-      return aud === audience || aud === "all" || (audience === "companion" && aud === "companion");
+      if (audience === "boss" || audience === "home" || audience === "homepage") {
+        return (
+          aud === "boss" ||
+          aud === "home" ||
+          aud === "homepage" ||
+          aud === "all" ||
+          aud === "customer"
+        );
+      }
+      if (audience === "companion" || audience === "player") {
+        return aud === "companion" || aud === "player" || aud === "all";
+      }
+      if (audience === "customer_service" || audience === "cs") {
+        return aud === "customer_service" || aud === "cs" || aud === "all";
+      }
+      return aud === audience || aud === "all";
     });
   } catch (err) {
     if (missing(err)) return [];

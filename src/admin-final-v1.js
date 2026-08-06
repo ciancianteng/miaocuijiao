@@ -6,7 +6,7 @@
     var n=Number(v||0);return (Number.isFinite(n)?n:0).toFixed(2).replace(/\.00$/,'')+' 猫粮'
   }
   function note(text){return '<div class="admin-final-note">'+esc(text)+'</div>'}
-  function statusText(s){return ({awaiting_payment:'待付款',pending:'待接单',claimed:'待陪玩确认',waiting_boss_confirm:'选择陪玩中',confirmed:'待开始',in_progress:'进行中',completed:'已完成',cancelled:'已取消',refund_requested:'售后',refunded:'已退款',after_sale:'售后',reviewed:'已评价'})[s]||s||'-'}
+  function statusText(s){return ({awaiting_payment:'待付款',pending:'等待陪玩抢单',claimed:'等待陪玩确认',waiting_boss_confirm:'等待老板选择',confirmed:'进行中',in_progress:'进行中',completed:'已完成',cancelled:'已取消',refund_requested:'售后',refunded:'已退款',after_sale:'售后',reviewed:'已评价'})[s]||s||'-'}
   function get(url){return Auth.get(url)}
   function post(url,body){return Auth.post(url,body)}
   function renderDashboard(){
@@ -20,7 +20,7 @@
       }
       var s=res.stats||{};
       target.innerHTML=(res.message?note(res.message):'')+'<div class="admin-final-grid">'+[
-        ['老板总数',s.bosses||0],['陪玩总数',s.companions||0],['客服总数',s.customerServices||0],['今日订单',s.todayOrders||0],['待付款订单',s.awaitingPayment||0],['待接单订单',s.pendingOrders||0],['进行中订单',s.inProgress||0],['已完成订单',s.completed||0],['退款订单',s.refunds||0],['订单总金额',money(s.totalAmount||0)]
+        ['老板总数',s.bosses||0],['陪玩总数',s.companions||0],['客服总数',s.customerServices||0],['今日订单',s.todayOrders||0],['待付款订单',s.awaitingPayment||0],['等待抢单',s.pendingOrders||0],['进行中订单',s.inProgress||0],['已完成订单',s.completed||0],['退款订单',s.refunds||0],['订单总金额',money(s.totalAmount||0)]
       ].map(function(item){return '<article class="admin-final-stat"><span>'+esc(item[0])+'</span><strong>'+esc(item[1])+'</strong></article>'}).join('')+'</div>';
     }).catch(function(err){
       target.innerHTML=note(err.message||'数据加载失败')+'<button class="mini-btn" type="button" data-admin-final-refresh="dashboard">重试</button>';
@@ -28,10 +28,10 @@
   }
   var ORDER_STATUS_OPTIONS=[
     ['awaiting_payment','待付款'],
-    ['pending','待接单'],
-    ['waiting_boss_confirm','选择陪玩中'],
-    ['claimed','待陪玩确认'],
-    ['confirmed','待开始'],
+    ['pending','等待陪玩抢单'],
+    ['waiting_boss_confirm','等待老板选择'],
+    ['claimed','等待陪玩确认'],
+    ['confirmed','进行中'],
     ['in_progress','进行中'],
     ['completed','已完成'],
     ['refund_requested','售后'],

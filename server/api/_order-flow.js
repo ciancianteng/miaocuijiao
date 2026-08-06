@@ -35,11 +35,11 @@ export const DB_TO_FLOW = Object.freeze({
 });
 
 export const FLOW_STATUS_LABELS = Object.freeze({
-  draft: "草稿",
-  pending_grab: "待抢单",
-  selecting: "选择陪玩中",
-  pending_companion_confirm: "待陪玩确认",
-  confirmed: "已确认",
+  draft: "待付款",
+  pending_grab: "等待陪玩抢单",
+  selecting: "等待老板选择",
+  pending_companion_confirm: "等待陪玩确认",
+  confirmed: "进行中",
   in_progress: "进行中",
   completed: "已完成",
   cancelled: "已取消",
@@ -115,13 +115,17 @@ export function hallStateForOrder(order = {}, grabs = []) {
   if (isOrderExpired(order) || status === "cancelled") {
     return isOrderExpired(order) ? "expired" : "cancelled";
   }
+  // Assigned / 指定陪玩 never participates in public hall state machine.
+  const assignment = String(order.assignment_type || order.assignmentType || "").toLowerCase();
+  if (assignment === "assigned" || assignment === "direct" || assignment === "direct_companion") {
+    return "settled";
+  }
   if (order.companion_id && ["claimed", "confirmed", "in_progress", "completed"].includes(status)) {
     return "settled";
   }
-  if (status === "waiting_boss_confirm" || (status === "pending" && grabs.length > 0)) {
+  if (status === "waiting_boss_confirm" || status === "pending") {
     return "grabbing";
   }
-  if (status === "pending" || status === "waiting_boss_confirm") return "open";
   return status;
 }
 
@@ -166,24 +170,39 @@ export async function enrichGrabCompanions({ restUrl, supabaseJson, serviceHeade
       companion: {
         id: cid,
         companionId: cid,
-        companionUid: mapped.publicId || profile.boss_uid || cid,
+        companionUid: mapped.publicId || "",
+        companionCode: mapped.publicId || mapped.companionCode || "",
+        publicId: mapped.publicId || "",
         nickname: mapped.nickname || profile.display_name || "陪玩",
         name: mapped.nickname || profile.display_name || "陪玩",
         avatarUrl: mapped.avatar || mapped.avatarUrl || "",
         cardImageUrl: mapped.cardImageUrl || mapped.cover || mapped.avatar || "",
         coverUrl: mapped.cover || "",
         level: row.level_name || "",
+        levelId: row.level_id || "",
+        gender: row.gender || "",
+        voiceType: row.voice_type || "",
+        voice_type: row.voice_type || "",
         game: row.game || "",
         mainGame: row.game || "",
-        tags: row.tags || "",
+        gameRank: row.game_rank || row.rank || "",
+        rank: row.game_rank || row.rank || "",
+        tags: String(row.tags || "")
+          .replace(/\[\[MCJ_PRICES:[^\]]*\]\]/g, "")
+          .replace(/,\s*,/g, ",")
+          .replace(/^,|,$/g, "")
+          .trim(),
         price: Number(row.price || 0) || 0,
+        unitPrice: Number(row.price || 0) || 0,
         onlineStatus: onlineCode,
         onlineStatusLabel: mapped.availabilityText || onlineCode,
         rating: Number(row.rating || 0) || 0,
         completedOrders: Number(row.completed_orders || 0) || 0,
         voiceUrl: mapped.voiceUrl || row.voice_url || "",
-        detailUrl: `/player.html?id=${encodeURIComponent(cid)}`,
+        detailUrl: `/profile.html?player=${encodeURIComponent(cid)}`,
         bossPreferred: false,
+        grabbedAt: g.grabbedAt || g.grabbed_at || "",
+        // Keep internal id off ops-facing labels; actions still use companionId.
       },
     };
   });

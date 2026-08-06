@@ -1,6 +1,11 @@
 ﻿import fs from "node:fs";
 import path from "node:path";
 import { assertBossProfile, identityView } from "./_boss-identity.js";
+import {
+  decorateChatMessage,
+  normalizeImageUrl,
+  persistImageMessage,
+} from "./_chat-message.js";
 
 const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY"];
 
@@ -140,11 +145,15 @@ async function getOrCreateConversation(profile, orderId = "", meta = {}) {
   const conversationType = orderId ? "order_support" : "general_support";
   const forceNew = !!(meta && (meta.forceNew || meta.force_new || meta.reopen));
   if (orderId) {
-    const owned = await supabaseJson(
-      restUrl("orders", `?id=eq.${encodeURIComponent(orderId)}&boss_id=eq.${encodeURIComponent(profile.id)}&limit=1`),
+    const probe = await supabaseJson(
+      restUrl("orders", `?id=eq.${encodeURIComponent(orderId)}&select=id,boss_id&limit=1`),
       { headers: serviceHeaders() }
     ).catch(() => []);
-    if (!owned?.[0]) throw Object.assign(new Error("订单不存在或不属于当前账号。"), { status: 404 });
+    const hit = Array.isArray(probe) ? probe[0] : null;
+    if (!hit) throw Object.assign(new Error("订单不存在。"), { status: 404, code: "ORDER_NOT_FOUND" });
+    if (String(hit.boss_id || "") !== String(profile.id || "")) {
+      throw Object.assign(new Error("无权限查看该订单。"), { status: 403, code: "FORBIDDEN_ORDER" });
+    }
   }
 
   // Prefer an active (non-closed) thread. Closed threads stay read-only history.
@@ -153,7 +162,30 @@ async function getOrCreateConversation(profile, orderId = "", meta = {}) {
       ? `?boss_id=eq.${encodeURIComponent(profile.id)}&order_id=eq.${encodeURIComponent(orderId)}&status=not.in.(closed,ended)&order=updated_at.desc&limit=1`
       : `?boss_id=eq.${encodeURIComponent(profile.id)}&order_id=is.null&status=not.in.(closed,ended)&order=updated_at.desc&limit=1`;
     const active = await supabaseJson(restUrl("conversations", activeQuery), { headers: serviceHeaders() }).catch(() => []);
-    if (active?.[0]) return { conversation: active[0], created: false, order: null };
+    if (active?.[0]) {
+      let conversation = active[0];
+      if (orderId) {
+        const orders = await supabaseJson(
+          restUrl("orders", `?id=eq.${encodeURIComponent(orderId)}&select=id,companion_id,customer_service_id&limit=1`),
+          { headers: serviceHeaders() }
+        ).catch(() => []);
+        const orderRow = orders?.[0] || null;
+        const patch = {};
+        if (orderRow?.companion_id && String(conversation.companion_id || "") !== String(orderRow.companion_id)) {
+          patch.companion_id = orderRow.companion_id;
+        }
+        if (Object.keys(patch).length) {
+          patch.updated_at = nowIso();
+          await supabaseJson(restUrl("conversations", `?id=eq.${encodeURIComponent(conversation.id)}`), {
+            method: "PATCH",
+            headers: serviceHeaders(),
+            body: JSON.stringify(patch),
+          }).catch(() => null);
+          conversation = { ...conversation, ...patch };
+        }
+      }
+      return { conversation, created: false, order: null };
+    }
   }
 
   let order = null;
@@ -239,13 +271,15 @@ async function getOrCreateConversation(profile, orderId = "", meta = {}) {
 async function conversationByIdForBoss(profile, conversationId) {
   if (!conversationId) return null;
   const rows = await supabaseJson(
-    restUrl(
-      "conversations",
-      `?id=eq.${encodeURIComponent(conversationId)}&boss_id=eq.${encodeURIComponent(profile.id)}&limit=1`
-    ),
+    restUrl("conversations", `?id=eq.${encodeURIComponent(conversationId)}&limit=1`),
     { headers: serviceHeaders() }
   );
-  return Array.isArray(rows) ? rows[0] : null;
+  const row = Array.isArray(rows) ? rows[0] : null;
+  if (!row) return null;
+  if (String(row.boss_id || "") !== String(profile.id || "")) {
+    throw Object.assign(new Error("无权限查看该会话。"), { status: 403, code: "FORBIDDEN_CONVERSATION" });
+  }
+  return row;
 }
 
 async function servicePresence() {
@@ -323,7 +357,8 @@ async function loadMessages(conversationId) {
     let senderName = "";
     if (row.sender_role === "customer_service") senderName = staffDisplayName(sender);
     else if (row.sender_role === "boss") senderName = String(sender.display_name || "").trim() || "老板";
-    return Object.assign({}, row, { sender_name: senderName, senderName });
+    else if (row.sender_role === "companion") senderName = String(sender.display_name || "").trim() || "陪玩";
+    return decorateChatMessage(row, { senderName });
   });
 }
 
@@ -626,52 +661,37 @@ export default async function handler(req, res) {
     const content = String(body.content || "").trim();
     if (!content) return json(res, 400, { ok: false, message: "请输入消息内容。" });
     let messageType = String(body.messageType || body.message_type || "text").trim() || "text";
-    if (messageType === "image") {
-      const looksUrl = /^https?:\/\//i.test(content) || content.startsWith("__IMG__:");
-      if (!looksUrl) return json(res, 400, { ok: false, message: "图片消息内容无效。" });
-    }
     const linkedOrderId = conversation.order_id || orderId || null;
     const createdAt = nowIso();
-    // Fast path: insert first, skip presence/decorate/reload (those made send 10s+).
-    let rows;
-    try {
-      rows = await supabaseJson(restUrl("messages"), {
+    const senderName = String(profile.display_name || "").trim() || "老板";
+    const basePayload = {
+      conversation_id: conversation.id,
+      sender_id: profile.id,
+      sender_role: "boss",
+      order_id: linkedOrderId,
+      read_at: null,
+      created_at: createdAt,
+    };
+    const insertFn = (payload) =>
+      supabaseJson(restUrl("messages"), {
         method: "POST",
         headers: serviceHeaders(),
-        body: JSON.stringify({
-          conversation_id: conversation.id,
-          sender_id: profile.id,
-          sender_role: "boss",
-          message_type: messageType,
-          content,
-          order_id: linkedOrderId,
-          read_at: null,
-          created_at: createdAt,
-        }),
+        body: JSON.stringify(payload),
       });
-    } catch (err) {
-      // Enum may not include image yet — persist as tagged text.
-      if (messageType === "image" && /enum|invalid input|message_type/i.test(String(err.message || ""))) {
-        messageType = "text";
-        const tagged = content.startsWith("__IMG__:") ? content : `__IMG__:${content}`;
-        rows = await supabaseJson(restUrl("messages"), {
-          method: "POST",
-          headers: serviceHeaders(),
-          body: JSON.stringify({
-            conversation_id: conversation.id,
-            sender_id: profile.id,
-            sender_role: "boss",
-            message_type: "text",
-            content: tagged,
-            order_id: linkedOrderId,
-            read_at: null,
-            created_at: createdAt,
-          }),
-        });
-      } else {
-        throw err;
+
+    let row;
+    if (messageType === "image") {
+      if (!normalizeImageUrl(content)) {
+        return json(res, 400, { ok: false, message: "图片消息内容无效。" });
       }
+      const saved = await persistImageMessage(insertFn, basePayload, content);
+      row = saved.row;
+      messageType = "image";
+    } else {
+      const rows = await insertFn({ ...basePayload, message_type: messageType, content });
+      row = Array.isArray(rows) ? rows[0] : rows;
     }
+
     supabaseJson(restUrl("conversations", `?id=eq.${encodeURIComponent(conversation.id)}`), {
       method: "PATCH",
       headers: serviceHeaders(),
@@ -681,16 +701,14 @@ export default async function handler(req, res) {
       }),
     }).catch(() => {});
 
-    const row = Array.isArray(rows) ? rows[0] : rows;
-    const message = Object.assign({}, row || {}, {
-      id: (row && row.id) || "",
-      sender_name: String(profile.display_name || "").trim() || "老板",
-      senderName: String(profile.display_name || "").trim() || "老板",
-      content,
-      message_type: messageType,
-      sender_role: "boss",
-      conversation_id: conversation.id,
-      created_at: (row && row.created_at) || createdAt,
+    const message = decorateChatMessage(row || {}, {
+      conversationId: conversation.id,
+      senderId: profile.id,
+      senderRole: "boss",
+      senderName,
+      messageType,
+      createdAt,
+      orderId: linkedOrderId,
     });
 
     return json(res, 200, {

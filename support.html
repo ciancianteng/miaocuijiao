@@ -1,63 +1,36 @@
 <!doctype html>
 <html lang="zh-CN" class="support-page">
 <head>
+  <script src="/portal-early-gate.js?v=20260805bossSessionDual1"></script>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>在线客服 - MEOW CUI JIAO</title>
-  <link rel="stylesheet" href="src/style.css">
-  <link rel="stylesheet" href="src/boss-header.css">
-  <link rel="stylesheet" href="src/support-chat.css?v=20260802chatFix4">
   <style>
     html.support-page, body.support-page {
       overflow: hidden !important;
       max-width: 100%;
       height: 100%;
       margin: 0;
+      background: #08070a;
+      color: #fff;
     }
+    /* No business shell before auth — prevent order/session flash */
+    #supportApp { min-height: 100%; }
   </style>
+  <link rel="stylesheet" crossorigin href="/src/support-chat.css?v=20260804p0fix">
+  <link rel="stylesheet" crossorigin href="/src/style.css">
+  <link rel="stylesheet" crossorigin href="/src/boss-header.css?v=20260804navAuth4">
 </head>
-<body class="support-page" style="background:#08070a;color:#fff">
-  <header class="topbar"><a class="brand" href="index.html"><img src="assets/meow-cuijiao-brand.jpg" alt="MEOW CUI JIAO"><span>MEOW CUI JIAO</span></a><nav class="navlinks"><a href="index.html">首页</a><a href="companion-center.html">大厅</a><a href="orders.html">我的订单</a><a href="support.html">在线客服</a></nav></header>
-
-  <!-- Static shell: never leave support.html as a blank page before JS runs -->
-  <main class="support-shell" id="supportApp">
-    <section class="support-layout" aria-label="在线客服">
-      <aside class="support-aside">
-        <div class="support-aside-head">
-          <div>
-            <h1>在线客服</h1>
-            <p>会话列表</p>
-          </div>
-        </div>
-        <div class="support-session-list">
-          <div class="support-list-empty">正在加载…</div>
-        </div>
-      </aside>
-      <div class="support-main">
-        <div class="support-empty-panel">
-          <strong>客服聊天</strong>
-          <span>正在准备会话界面…</span>
-        </div>
-      </div>
-      <aside class="support-rail">
-        <div class="support-rail-head">
-          <div>
-            <h2>订单信息</h2>
-            <p>加载中</p>
-          </div>
-        </div>
-        <div class="support-rail-empty">正在准备订单栏…</div>
-      </aside>
-    </section>
-  </main>
+<body class="support-page">
+  <main class="support-shell" id="supportApp" aria-busy="true"></main>
 
   <script src="src/currency.js"></script>
-  <script src="src/role-gates.js"></script>
+  <script src="src/role-gates.js?v=20260804authP0boss4"></script>
   <script src="src/boss-auth-session.js"></script>
-  <script src="src/boss-header.js" defer></script>
-  <script src="src/mcj-chat-media.js?v=20260801chatImg"></script>
-  <script src="src/mcj-chat-realtime.js?v=20260801chatImg"></script>
-  <script src="src/support-chat.js?v=20260802perf1"></script>
+  <script src="src/boss-header.js?v=20260804authP0boss4" defer></script>
+  <script src="src/mcj-chat-media.js?v=20260806p0final1"></script>
+  <script src="src/mcj-chat-realtime.js?v=20260804p0fix"></script>
+  <script src="src/support-chat.js?v=20260806p0final1"></script>
 <script id="mcjBossLogoutHandler">
   document.addEventListener('click', function(event) {
     var btn = event.target && event.target.closest && event.target.closest('[data-boss-logout]');
@@ -70,6 +43,8 @@
     localStorage.removeItem('mcjAuthRefreshToken');
     sessionStorage.removeItem('mcjAuthAccessToken');
     sessionStorage.removeItem('mcjAuthRefreshToken');
+    localStorage.removeItem('customerAuthToken');
+    sessionStorage.removeItem('customerAuthToken');
     location.href = 'index.html';
   });
 </script>

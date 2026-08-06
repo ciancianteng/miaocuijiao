@@ -31,13 +31,19 @@
     var user=readJsonKey('adminUser');
     var perms=Array.isArray(user.permissions)?user.permissions:[];
     var role=String(user.adminRole||user.role||'');
-    if(String(token).indexOf('admin_session_')!==0)return '';
+    var softOk=String(token).indexOf('admin_session_')===0;
+    var jwtOk=!!authAccessToken();
+    // Soft session OR live admin JWT both count — JWT alone must not collapse to「user」.
+    if(!softOk&&!jwtOk)return '';
     if(role==='super_admin'||perms.indexOf('super_admin')>-1)return 'super_admin';
     if(role==='finance_admin'||perms.indexOf('finance_admin')>-1)return 'finance_admin';
     if(role==='admin'||perms.indexOf('admin')>-1)return 'admin';
+    // Live JWT present but adminUser stale: treat as admin until /me refresh finishes.
+    if(jwtOk&&softOk)return 'admin';
+    if(jwtOk)return 'admin';
     return '';
   }
-  function getRole(){var adminRole=adminPermissionRole();if(adminRole)return adminRole;var role=readStorageItem('mcjRole')||'user';if(role==='super_admin'||role==='admin')return 'user';return role}
+  function getRole(){var adminRole=adminPermissionRole();if(adminRole)return adminRole;var role=readStorageItem('mcjRole')||'user';if(role==='super_admin'||role==='admin')return role;return role}
   function authAccessToken(){return window.MCJAdminAuthFetch?window.MCJAdminAuthFetch.getAccessToken():readStorageItem('mcjAuthAccessToken')}
   function adminFetch(url,init){return window.MCJAdminAuthFetch?window.MCJAdminAuthFetch.fetch(url,init||{}):fetch(url,init||{})}
   function adminApiHeaders(extra){
@@ -411,12 +417,15 @@
             '<div><span>老板 UID</span><strong>'+esc(item.uid)+'</strong></div>'+
             '<div><span>手机号</span><strong>'+esc(item.phone)+'</strong></div>'+
             '<div><span>邮箱</span><strong>'+esc(item.email)+'</strong></div>'+
+            '<div><span>邮箱验证状态</span><strong data-boss-email-verified>'+esc(item.emailVerifiedLabel||item.email_verified_label||((item.emailVerified===false||item.email_verified===false)?'❌ 未验证':'✅ 已验证'))+'</strong></div>'+
             '<div><span>注册时间</span><strong>'+esc(item.registered)+'</strong></div>'+
             '<div><span>最后登录</span><strong data-boss-last-login>'+esc(item.lastLogin)+'</strong></div>'+
+            '<div><span>是否已设置密码</span><strong data-boss-has-password>'+esc(item.hasPassword?'是':'否')+'</strong></div>'+
+            '<div><span>最近密码重置</span><strong data-boss-password-set>'+esc(item.passwordSetAt||'-')+'</strong></div>'+
             '<div><span>账号状态</span><strong data-boss-status-text>'+esc(item.status)+'</strong></div>'+
             '<div><span>VIP</span><strong data-boss-vip-text>'+esc(item.vip)+'</strong></div>'+
             '<div><span>备注</span><strong data-boss-remark-text>'+esc(item.remark||'-')+'</strong></div>'+
-          '</div><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><button class="mini-btn" type="button" data-boss-action="remark" data-boss-id="'+esc(item.id)+'">编辑备注</button><button class="mini-btn" type="button" data-boss-action="reset_password" data-boss-id="'+esc(item.id)+'">重置密码</button><button class="mini-btn" type="button" data-boss-action="unbind" data-boss-id="'+esc(item.id)+'">解绑手机</button></div></section>'+
+          '</div><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><button class="mini-btn" type="button" data-boss-action="remark" data-boss-id="'+esc(item.id)+'">编辑备注</button><button class="mini-btn" type="button" data-boss-action="send_password_reset" data-boss-id="'+esc(item.id)+'">发送密码重置邮件</button><button class="mini-btn" type="button" data-boss-action="force_change_password" data-boss-id="'+esc(item.id)+'">强制下次改密</button><button class="mini-btn" type="button" data-boss-action="revoke_sessions" data-boss-id="'+esc(item.id)+'">注销全部会话</button><button class="mini-btn" type="button" data-boss-action="unbind" data-boss-id="'+esc(item.id)+'">解绑手机</button></div></section>'+
           '<section><h3>资金信息</h3><div class="detail-list" data-boss-wallet-list>'+
             '<div><span>总猫粮</span><strong>'+esc(item.balance)+'</strong></div>'+
             '<div><span>充值猫粮</span><strong>'+esc(item.paidBalance)+'</strong></div>'+
@@ -468,6 +477,12 @@
     detail.querySelectorAll('[data-boss-remark-text]').forEach(function(el){el.textContent=boss.remark||'-'});
     var lastLogin=detail.querySelector('[data-boss-last-login]');
     if(lastLogin)lastLogin.textContent=boss.lastLoginAt||boss.last_login_at||'-';
+    var hasPwdEl=detail.querySelector('[data-boss-has-password]');
+    if(hasPwdEl)hasPwdEl.textContent=boss.hasPassword||boss.has_password?'是':'否';
+    var emailVerEl=detail.querySelector('[data-boss-email-verified]');
+    if(emailVerEl)emailVerEl.textContent=boss.emailVerifiedLabel||boss.email_verified_label||((boss.emailVerified===false||boss.email_verified===false)?'❌ 未验证':'✅ 已验证');
+    var pwdSetEl=detail.querySelector('[data-boss-password-set]');
+    if(pwdSetEl)pwdSetEl.textContent=boss.passwordSetAt||boss.password_set_at||'-';
 
     var orders=data.orders||[];
     var orderBody=detail.querySelector('[data-boss-panel-body="orders"]');
@@ -596,7 +611,7 @@
     order=order||{};
     var statusText=orderValue(order,['orderStatus','order_status','statusText','status_text'],'');
     var rawStatus=orderValue(order,['status'],'');
-    var STATUS_CN={awaiting_payment:'待付款',pending:'待接单',claimed:'待陪玩确认',waiting_boss_confirm:'选择陪玩中',confirmed:'待开始',in_progress:'进行中',completed:'已完成',cancelled:'已取消',refund_requested:'售后',refunded:'已退款',after_sale:'售后',reviewed:'已评价'};
+    var STATUS_CN={awaiting_payment:'待付款',pending:'等待陪玩抢单',claimed:'等待陪玩确认',waiting_boss_confirm:'等待老板选择',confirmed:'进行中',in_progress:'进行中',completed:'已完成',cancelled:'已取消',refund_requested:'售后',refunded:'已退款',after_sale:'售后',reviewed:'已评价'};
     if(!statusText||STATUS_CN[statusText])statusText=STATUS_CN[rawStatus]||STATUS_CN[statusText]||statusText||rawStatus||'待付款';
     return Object.assign({},order,{
       id:orderValue(order,['orderNo','order_no','id'],'-'),
@@ -925,7 +940,7 @@
     var income=playerDetailRows([['完成订单数',item.totalOrders],['退款订单',item.refundOrders],['总收入',item.totalIncome],['平台抽成',item.platformShare],['可提现余额',item.withdrawable],['已提现金额',item.withdrawn]])+playerRecordTable(['订单号','服务','金额','状态','时间'],playerOrdersRows(item),'暂无真实历史订单')+playerRecordTable(['流水号','类型','金额','状态','时间'],playerIncomeRows(item),'暂无真实收入流水');
     var withdraw=playerDetailRows([['收款账户',item.bank],['最近提现状态',item.withdrawStatus],['可提现余额',item.withdrawable]])+playerRecordTable(['提现单号','收款账户','申请金额','审核状态','拒绝原因'],playerWithdrawRows(item),'暂无真实提现申请')+(edit?'<div class="player-edit-grid">'+playerSelectField('提现审核状态','withdrawStatus','<option '+(item.withdrawStatus==='无提现'?'selected':'')+'>无提现</option><option '+(item.withdrawStatus==='待审核'?'selected':'')+'>待审核</option><option '+(item.withdrawStatus==='已通过'?'selected':'')+'>已通过</option><option '+(item.withdrawStatus==='已拒绝'?'selected':'')+'>已拒绝</option>')+playerFormField('拒绝原因','withdrawRejectReason','')+'</div>':'');
     var complaints=playerDetailRows([['退款记录',playerValue(raw,['refundCount','refund_count','refundOrders'],item.refundOrders||'0')],['投诉记录',playerValue(raw,['complaintCount','complaint_count','complaints'],'暂无')]]);
-    var account=playerDetailRows([['当前在线状态',item.online],['账号状态',item.account]])+(edit?'<div class="player-edit-grid">'+playerSelectField('账号状态','accountStatus',playerAccountOptions(item.account))+'</div>':'')+'<div class="admin-sync-note">在线/接单状态由陪玩端实时维护，后台只读；后台这里只处理正常、暂停接单、封禁和解封等账号管理。</div>';
+    var account=playerDetailRows([['当前在线状态',item.online],['账号状态',item.account],['是否已设置密码',(item.raw&&(item.raw.hasPassword||item.raw.has_password))?'是':'否'],['注册邮箱',item.email||'-'],['邮箱验证状态',(item.raw&&(item.raw.emailVerifiedLabel||item.raw.email_verified_label))||((item.raw&&(item.raw.emailVerified===false||item.raw.email_verified===false))?'❌ 未验证':'✅ 已验证')],['最近密码重置',(item.raw&&(item.raw.passwordSetAt||item.raw.password_set_at))||'-']])+(edit?'<div class="player-edit-grid">'+playerSelectField('账号状态','accountStatus',playerAccountOptions(item.account))+'</div>':'')+'<div class="player-edit-grid" style="margin-top:10px"><button class="mini-btn" type="button" data-player-sec="send_password_reset" data-player-id="'+esc(item.id)+'">发送密码重置邮件</button><button class="mini-btn" type="button" data-player-sec="force_change_password" data-player-id="'+esc(item.id)+'">强制下次改密</button><button class="mini-btn" type="button" data-player-sec="revoke_sessions" data-player-id="'+esc(item.id)+'">注销全部会话</button><button class="mini-btn" type="button" data-player-sec="enable" data-player-id="'+esc(item.id)+'">解封账号</button></div><div class="admin-sync-note">后台不可查看真实密码或哈希；重置仅发送邮箱验证码由用户自行设置。邮箱验证状态来自注册验证码流程。</div>';
     return '<div class="player-drawer-head"><div><h2>'+esc(edit?'编辑陪玩':'陪玩详情')+'</h2><p>'+esc(item.name)+' · '+esc(item.playerId)+'</p></div><button class="mini-btn" type="button" data-player-drawer-close>关闭</button></div><form data-player-detail-form data-player-id="'+esc(item.id)+'"><div class="player-detail-hero"><img src="'+esc(playerAvatarSrc(item))+'" alt="" onerror="this.onerror=null;this.src=\'/assets/meow-cuijiao-brand.jpg\'"><div><strong>'+esc(item.name)+'</strong><span>'+esc(item.levelText)+' · '+esc(item.mainGame)+'</span></div>'+statusChip(item.account)+'</div>'+playerDetailSection('basic','基本资料',basic)+playerDetailSection('verify','资料与认证',verify)+playerDetailSection('split','等级与分成',split)+playerDetailSection('deposit','押金',deposit)+playerDetailSection('income','订单与收入',income)+playerDetailSection('withdraw','提现',withdraw)+playerDetailSection('complaints','退款和投诉',complaints)+playerDetailSection('account','账号管理',account)+'<div class="player-drawer-actions"><button class="btn primary" type="button" data-player-action="save-detail" data-player-id="'+esc(item.id)+'">保存修改</button><button class="btn" type="button" data-player-drawer-close>取消</button></div></form>';
   }
   function openPlayerDetail(playerId,mode,focus){
@@ -1271,7 +1286,7 @@
     'companion-levels':{target:'companionLevelSettings',title:'陪玩等级管理',type:'companion_levels',desc:'已迁移至专用陪玩等级管理模块。',fields:['code','name','minPrice','maxPrice','icon','cardStyle','description','commissionRate','sort'],disabled:true},
     'featured-players':{target:'featuredPlayerManagement',title:'推荐陪玩管理',type:'featured_players',desc:'选择首页展示的推荐陪玩，控制排序、推荐理由和显示状态。',fields:['companionUid','nickname','reason','showOnHome','sort']},
     'hot-games':{target:'hotGameManagement',title:'热门游戏管理',type:'hot_games',desc:'管理首页热门游戏入口，支持新增、编辑、删除、排序和启用/停用。',fields:['name','game','icon','cover','description','showOnHome','sort']},
-    banners:{target:'crud-banners',title:'Banner 管理',type:'banners',desc:'直接同步首页 Banner，支持电脑端与手机端图片、跳转、排期、排序和发布。',fields:['title','desktopImage','mobileImage','link','linkTarget','sort','startAt','endAt','autoPlay','intervalSeconds']},
+    banners:{target:'crud-banners',title:'Banner 管理',type:'banners',desc:'已迁移至专用 Banner 上传管理模块。',fields:['title','desktopImage','mobileImage','link','linkTarget','sort','startAt','endAt','autoPlay','intervalSeconds'],disabled:true},
     announcements:{target:'table-announcements',title:'公告管理',type:'announcements',desc:'对应首页 Banner 下方公告，前台按后台排序和时间播放。',fields:['content','link','sort','startAt','endAt','displayMode']},
     ads:{target:'crud-ads',title:'广告位管理',type:'ad_slots',desc:'同步首页、陪玩大厅、组队大厅、充值中心等广告位。',fields:['title','subtitle','image','link','position','sort','startAt','endAt','carousel','official']},
     'team-lobby-links':{target:'teamLobbySettings',title:'组队大厅设置',type:'team_lobby_channels',desc:'管理组队大厅 Discord 频道卡片，前台按排序和显示状态读取。',fields:['image','name','description','discordUrl','sort']},
@@ -1747,6 +1762,7 @@
     permissions:['权限系统','角色权限和访问边界'],
     vip:['VIP 设置','VIP 等级、门槛和权益'],
     payment:['支付设置','支付渠道、收款资料和启用状态'],
+    'mail-logs':['邮件通知记录','指定订单与状态变更邮件发送日志'],
     gifts:['礼物管理','礼物商城配置、猫粮价格与启用状态'],
     popularity:['人气榜设置','综合计分规则、防刷、历史榜与奖励审核'],
     settings:['系统设置','平台基础配置'],
@@ -1892,7 +1908,7 @@
       });
     });
   }
-  function bindGlobal(){document.addEventListener('click',function(e){var role=e.target.closest('[data-role-login]');if(role){localStorage.setItem('mcjRole',role.dataset.roleLogin);routeByRole(role.dataset.roleLogin);return;}var logout=e.target.closest('[data-admin-logout]');if(logout){localStorage.removeItem('mcjRole');localStorage.removeItem('adminAuthToken');localStorage.removeItem('adminUser');sessionStorage.removeItem('adminAuthToken');sessionStorage.removeItem('adminUser');if(window.MCJRoleGate&&window.MCJRoleGate.logout)window.MCJRoleGate.logout('admin');location.href='/admin/login';return;}var preview=e.target.closest('[data-preview-home]');if(preview){location.href='index.html';return;}var saveLevels=e.target.closest('[data-save-companion-levels]');if(saveLevels&&levelApi()){levelApi().save(collectCompanionLevels());log('保存陪玩等级与价格设置');alert('已保存陪玩等级与价格设置');renderCompanionLevels();return;}var deleteLevel=e.target.closest('[data-delete-companion-level]');if(deleteLevel&&levelApi()){var levels=getLevels();var level=levelApi().find(deleteLevel.dataset.deleteCompanionLevel);if(playerLevelCount(level)>0){alert('该等级已有陪玩，不能直接删除。请先停用该等级或迁移陪玩等级。');return;}if(confirm('确认删除 '+levelLabel(level.id)+'？')){levelApi().save(levels.filter(function(item){return item.id!==level.id}));log('删除陪玩等级 '+levelLabel(level.id));renderCompanionLevels();}return;}var action=e.target.closest('[data-action]');if(action){alert('已执行：'+action.dataset.action+' / '+(action.dataset.id||''));log('执行 '+action.dataset.action);return;}var del=e.target.closest('[data-delete]');if(del){var arr=read(del.dataset.delete);arr.splice(Number(del.dataset.index),1);write(del.dataset.delete,arr);location.reload();return;}})}
+  function bindGlobal(){document.addEventListener('click',function(e){var role=e.target.closest('[data-role-login]');if(role){localStorage.setItem('mcjRole',role.dataset.roleLogin);routeByRole(role.dataset.roleLogin);return;}var logout=e.target.closest('[data-admin-logout]');if(logout){localStorage.removeItem('mcjRole');localStorage.removeItem('adminAuthToken');localStorage.removeItem('adminUser');sessionStorage.removeItem('adminAuthToken');sessionStorage.removeItem('adminUser');['mcjAdminAccessToken','mcjAdminRefreshToken','mcjAdminExpiresAt','mcjAuthAccessToken','mcjAuthRefreshToken','mcjAuthExpiresAt'].forEach(function(k){localStorage.removeItem(k);sessionStorage.removeItem(k);});if(window.MCJRoleGate&&window.MCJRoleGate.logout)window.MCJRoleGate.logout('admin');location.href='/admin/login';return;}var preview=e.target.closest('[data-preview-home]');if(preview){location.href='index.html';return;}var saveLevels=e.target.closest('[data-save-companion-levels]');if(saveLevels&&levelApi()){levelApi().save(collectCompanionLevels());log('保存陪玩等级与价格设置');alert('已保存陪玩等级与价格设置');renderCompanionLevels();return;}var deleteLevel=e.target.closest('[data-delete-companion-level]');if(deleteLevel&&levelApi()){var levels=getLevels();var level=levelApi().find(deleteLevel.dataset.deleteCompanionLevel);if(playerLevelCount(level)>0){alert('该等级已有陪玩，不能直接删除。请先停用该等级或迁移陪玩等级。');return;}if(confirm('确认删除 '+levelLabel(level.id)+'？')){levelApi().save(levels.filter(function(item){return item.id!==level.id}));log('删除陪玩等级 '+levelLabel(level.id));renderCompanionLevels();}return;}var action=e.target.closest('[data-action]');if(action){alert('已执行：'+action.dataset.action+' / '+(action.dataset.id||''));log('执行 '+action.dataset.action);return;}var del=e.target.closest('[data-delete]');if(del){var arr=read(del.dataset.delete);arr.splice(Number(del.dataset.index),1);write(del.dataset.delete,arr);location.reload();return;}})}
   function initForms(){document.querySelectorAll('[data-save-settings]').forEach(function(btn){btn.addEventListener('click',function(){var settings={siteName:val('siteName'),logoUrl:val('logoUrl'),customerServiceUrl:val('customerServiceUrl'),discordInviteUrl:val('discordInviteUrl'),whatsappUrl:val('whatsappUrl'),maintenanceMode:val('maintenanceMode'),registerOpen:val('registerOpen'),seoTitle:val('seoTitle')};localStorage.setItem('mcj_siteSettings',JSON.stringify(settings));log('保存平台设置');alert('已保存平台设置');})});document.querySelectorAll('[data-add-row]').forEach(function(btn){btn.addEventListener('click',function(){var key=btn.dataset.addRow;var arr=read(key);arr.unshift({id:key.toUpperCase().slice(0,2)+Date.now(),title:val('crudTitle'),name:val('crudTitle'),content:val('crudDesc'),description:val('crudDesc'),image:val('crudImage')||'assets/meow-cuijiao-brand.jpg',status:'开启',sort:arr.length+1});write(key,arr);alert('已新增');location.reload();})})}
   function bindPaymentAdmin(){
     document.addEventListener('click',function(e){
@@ -1927,7 +1943,7 @@
       var bossExport=e.target.closest('[data-boss-export]');if(bossExport){exportBossRows();return;}
       var bossPage=e.target.closest('[data-boss-page]');if(bossPage){closeBossMoreMenu();bossAdminState.page+=bossPage.dataset.bossPage==='next'?1:-1;renderBossTableRows();return;}
       var bossPageGo=e.target.closest('[data-boss-page-go]');if(bossPageGo){closeBossMoreMenu();var bj=document.querySelector('[data-boss-page-jump]');var bt=visibleBossRows().length;var bp=Math.max(1,Math.ceil(bt/bossAdminState.pageSize));bossAdminState.page=Math.min(Math.max(1,Number(bj&&bj.value)||1),bp);renderBossTableRows();return;}
-      var bossAction=e.target.closest('[data-boss-action]');if(bossAction){var bossAct=bossAction.dataset.bossAction,bossId=bossAction.dataset.bossId;closeBossMoreMenu();if(/view|orders|recharge|consume|refunds|coupon|chat|login|vip|invite|ban/.test(bossAct)){openBossDetail(bossId,bossAct);return;}if(bossAct==='remark'){var remark=prompt('编辑老板备注',((bossAdminState.rows||[]).find(function(r){return String(r.id)===String(bossId)})||{}).remark||'');if(remark==null)return;submitBossSecure('remark',bossId,{remark:remark});return;}if(bossAct==='reset_password'){var pwd=prompt('输入新密码（至少 8 位）','');if(!pwd)return;if(!confirm('确认重置该老板密码？'))return;submitBossSecure('reset_password',bossId,{password:pwd});return;}if(bossAct==='unbind'){if(!confirm('确认解绑该老板手机号？'))return;submitBossSecure('unbind',bossId,{});return;}if(/freeze|blacklist|unban|ban/.test(bossAct)&&!confirm('确认执行该老板账号操作？'))return;submitBossSecure(bossAct,bossId,{});return;}
+      var bossAction=e.target.closest('[data-boss-action]');if(bossAction){var bossAct=bossAction.dataset.bossAction,bossId=bossAction.dataset.bossId;closeBossMoreMenu();if(/view|orders|recharge|consume|refunds|coupon|chat|login|vip|invite|ban/.test(bossAct)){openBossDetail(bossId,bossAct);return;}if(bossAct==='remark'){var remark=prompt('编辑老板备注',((bossAdminState.rows||[]).find(function(r){return String(r.id)===String(bossId)})||{}).remark||'');if(remark==null)return;submitBossSecure('remark',bossId,{remark:remark});return;}if(bossAct==='reset_password'){toast('禁止在后台设置明文密码，请使用「发送密码重置邮件」。','error');return;}if(bossAct==='send_password_reset'||bossAct==='send_reset_email'){if(!confirm('向该老板注册邮箱发送密码重置验证码？管理员无法查看新密码。'))return;submitBossSecure('send_password_reset',bossId,{});return;}if(bossAct==='force_change_password'){if(!confirm('强制该老板下次登录后修改密码？'))return;submitBossSecure('force_change_password',bossId,{});return;}if(bossAct==='revoke_sessions'){if(!confirm('注销该老板全部登录会话？'))return;submitBossSecure('revoke_sessions',bossId,{});return;}if(bossAct==='unbind'){if(!confirm('确认解绑该老板手机号？'))return;submitBossSecure('unbind',bossId,{});return;}if(/freeze|blacklist|unban|ban/.test(bossAct)&&!confirm('确认执行该老板账号操作？'))return;submitBossSecure(bossAct,bossId,{});return;}
       var bossTab=e.target.closest('[data-boss-tab]');if(bossTab){switchBossDetailTab(bossTab.dataset.bossTab);return;}
       var bossOpen=e.target.closest('[data-boss-open]');if(bossOpen&&!e.target.closest('button,a,input,select')){openBossDetail(bossOpen.dataset.bossOpen);return;}
       var bossGrant=e.target.closest('[data-boss-wallet-grant]');if(bossGrant){submitBossWalletAction('grant',bossGrant.dataset.bossWalletGrant);return;}
@@ -1961,6 +1977,7 @@
       var playerPage=e.target.closest('[data-player-page]');if(playerPage){playerAdminState.page+=playerPage.dataset.playerPage==='next'?1:-1;renderPlayerTableRows();return;}
       var playerPageGo=e.target.closest('[data-player-page-go]');if(playerPageGo){var jump=document.querySelector('[data-player-page-jump]');var total=visiblePlayerRows().length;var pages=Math.max(1,Math.ceil(total/playerAdminState.pageSize));playerAdminState.page=Math.min(Math.max(1,Number(jump&&jump.value)||1),pages);renderPlayerTableRows();return;}
       var playerClose=e.target.closest('[data-player-drawer-close]');if(playerClose){closePlayerDrawer();return;}
+      var playerSec=e.target.closest('[data-player-sec]');if(playerSec){var secAct=playerSec.dataset.playerSec,secId=playerSec.dataset.playerId;var labels={send_password_reset:'向该陪玩发送密码重置邮件？管理员无法查看新密码。',force_change_password:'强制该陪玩下次登录后修改密码？',revoke_sessions:'注销该陪玩全部登录会话？',enable:'解封该陪玩账号？'};if(!confirm(labels[secAct]||'确认执行该操作？'))return;submitPlayerSecure(secAct,secId,{});return;}
       var playerAction=e.target.closest('[data-player-action]');if(playerAction){var action=playerAction.dataset.playerAction,id=playerAction.dataset.playerId,focus=playerAction.dataset.playerSection||'';if(action==='view'||action==='edit'){openPlayerDetail(id,action,focus);return;}if(action==='save-detail'){var detailForm=document.querySelector('[data-player-detail-form]');var payload=collectPlayerEditForm(detailForm);if(window.MCJAdminPlayerDetail&&window.MCJAdminPlayerDetail.isSaving&&window.MCJAdminPlayerDetail.isSaving())return;savePlayerAdminChanges('edit',id,payload,function(result){alert((result&&result.message)||'修改已保存');openPlayerDetail(id,'view',focus);});return;}if(action==='save-edit'){submitPlayerSecure('edit',id,collectPlayerEditForm(document.querySelector('[data-player-edit-form]')));return;}if(/freeze|ban-order/.test(action)&&!confirm('确认执行该陪玩账号操作？'))return;submitPlayerSecure(action,id,{});return;}var playerOpen=e.target.closest('[data-player-open]');if(playerOpen&&!e.target.closest('button,a,input,select')){openPlayerDetail(playerOpen.dataset.playerOpen,'view');return;}
       var playerBulk=e.target.closest('[data-player-bulk]');if(playerBulk){submitPlayerSecure('bulk-'+playerBulk.dataset.playerBulk,'selected',{});return;}
       var ptab=e.target.closest('[data-payment-tab]');if(ptab){renderPaymentSettings(ptab.dataset.paymentTab);return;}var couponNew=e.target.closest('[data-coupon-new]');if(couponNew){openCouponEditor('');return;}var couponEdit=e.target.closest('[data-coupon-edit]');if(couponEdit){openCouponEditor(couponEdit.dataset.couponEdit);return;}var couponCancel=e.target.closest('[data-coupon-cancel]');if(couponCancel){var ce=document.querySelector('[data-coupon-editor]');if(ce){ce.hidden=true;ce.innerHTML='';}return;}var couponToggle=e.target.closest('[data-coupon-toggle]');if(couponToggle){var enabled=couponToggle.dataset.couponEnabled==='true';if(!enabled&&!confirm('确认停用该优惠券？'))return;toggleCoupon(couponToggle.dataset.couponToggle,enabled);return;}
@@ -2250,21 +2267,14 @@
   }
   function initSuperAdmin(){
     var dash=document.getElementById('superStats');
+    // Real stats are owned by admin-final-v1 renderDashboard — do not overwrite with localStorage fake cards.
+    if(dash && !dash.getAttribute('data-admin-final-owned')){
+      dash.setAttribute('data-admin-final-owned','1');
+    }
     var orders=read('orders'), bosses=read('bosses'), players=read('players'), withdraws=read('withdraw_requests'), refunds=read('refunds'), logs=read('admin_logs'), tickets=read('customer_tickets');
     var today=new Date().toLocaleDateString('zh-CN');
     var todayOrders=orders.filter(function(o){return String(o.time||o.created_at||o.createdAt||'').indexOf(today)>-1});
     var completedToday=todayOrders.filter(function(o){return /完成|已完成/.test(String(o.status||''))});
-    var revenue=todayOrders.reduce(function(n,o){return n+Number(String(o.amount||0).replace(/[^\d.-]/g,''));},0);
-    if(dash)statCards(dash,[
-      {label:'今日订单',value:todayOrders.length},
-      {label:'今日营业额',value:'RM'+revenue.toFixed(2)},
-      {label:'平台利润',value:'RM0.00'},
-      {label:'新增老板',value:bosses.filter(function(x){return String(x.registered_at||x.createdAt||'').indexOf(today)>-1}).length},
-      {label:'新增陪玩',value:players.filter(function(x){return String(x.registered_at||x.createdAt||'').indexOf(today)>-1}).length},
-      {label:'待审核陪玩',value:players.filter(function(x){return /待|审核中/.test(String(x.audit||x.status||''))}).length},
-      {label:'待审核提现',value:withdraws.filter(function(x){return /待|审核中/.test(String(x.status||''))}).length},
-      {label:'进行中订单',value:orders.filter(function(x){return /进行中/.test(String(x.status||''))}).length}
-    ]);
     var pending=document.getElementById('dashboardPending');
     if(pending)pending.innerHTML='<div class="detail-list"><div><span>今日完成订单</span><strong>'+completedToday.length+'</strong></div><div><span>待审核提现</span><strong>'+withdraws.filter(function(x){return /待审核|审核中/.test(String(x.status||''))}).length+'</strong></div><div><span>待处理退款</span><strong>'+refunds.filter(function(x){return /待审核|退款中|处理中/.test(String(x.status||''))}).length+'</strong></div></div>';
     var tables={
@@ -2315,7 +2325,6 @@
       ['table-companion_rules','暂无陪玩制度内容'],
       ['table-voice_types','暂无声音类型数据'],
       ['table-companion_deposit','暂无押金设置'],
-      ['table-companion_applications','暂无陪玩申请'],
       ['statisticsPanel','暂无统计数据'],
       ['table-vip_settings','暂无 VIP 设置'],
       ['paymentSettings','']
@@ -2332,13 +2341,60 @@
   }
   function initClubAdmin(){var dash=document.getElementById('clubStats');if(dash)statCards(dash,[{label:'今日营业额',value:'RM3,820'},{label:'今日订单',value:'42'},{label:'本月营业额',value:'RM86,500'},{label:'陪玩人数',value:'36'},{label:'待处理订单',value:'9'},{label:'可提现余额',value:'RM12,800'}]);var clubPlayers=read('players').filter(function(p){return p.club==='妙脆角主俱乐部'});var target=document.getElementById('clubPlayers');if(target)target.innerHTML=table(['头像','昵称','游戏','建议价','评分','状态','操作'],clubPlayers.map(function(p){return '<tr><td><img class="avatar" src="'+esc(p.avatar)+'"></td><td>'+esc(p.name)+'</td><td>'+esc(p.game)+'</td><td>'+esc(p.price)+'</td><td>'+esc(p.rating)+'</td><td>'+statusChip(p.status)+'</td><td>'+actionButtons(p.id)+'</td></tr>'}));var orders=read('orders').filter(function(o){return o.club==='妙脆角主俱乐部'});var ot=document.getElementById('clubOrders');if(ot)ot.innerHTML=table(['订单','老板','陪玩','游戏','金额','状态','时间','操作'],orders.map(function(o){return '<tr><td>'+o.id+'</td><td>'+o.boss+'</td><td>'+o.player+'</td><td>'+o.game+'</td><td>'+o.amount+'</td><td>'+statusChip(o.status)+'</td><td>'+o.time+'</td><td>'+actionButtons(o.id)+'</td></tr>'}))}
   function initPlayerAdmin(){var dash=document.getElementById('playerStats');if(dash)statCards(dash,[{label:'今日订单',value:'6'},{label:'本月订单',value:'84'},{label:'收入',value:'RM3,260'},{label:'评分',value:'5.0'},{label:'完成率',value:'99%'},{label:'可提现余额',value:'RM860'}]);var myOrders=read('orders').filter(function(o){return o.player==='MOMO'});var ot=document.getElementById('playerOrders');if(ot)ot.innerHTML=table(['订单','老板','游戏','金额','状态','时间','接单操作'],myOrders.map(function(o){return '<tr><td>'+o.id+'</td><td>'+o.boss+'</td><td>'+o.game+'</td><td>'+o.amount+'</td><td>'+statusChip(o.status)+'</td><td>'+o.time+'</td><td><div class="row"><button class="btn small primary" data-action="accept" data-id="'+o.id+'">接受</button><button class="btn small danger" data-action="reject" data-id="'+o.id+'">拒绝</button><button class="btn small" data-action="complete" data-id="'+o.id+'">完成</button></div></td></tr>'}));var reviews=read('reviews').filter(function(r){return r.player==='MOMO'});var rt=document.getElementById('playerReviews');if(rt)rt.innerHTML=table(['订单','评分','评价','状态'],reviews.map(function(r){return '<tr><td>'+r.order_id+'</td><td>'+r.rating+'</td><td>'+r.content+'</td><td>'+statusChip(r.status)+'</td></tr>'}))}
+  function refreshAdminIdentityFromServer(){
+    var Auth=window.MCJAdminAuthFetch;
+    if(!Auth||!Auth.getAccessToken||!Auth.getAccessToken())return Promise.resolve(null);
+    var headers=Auth.getAuthHeaders?Auth.getAuthHeaders({Accept:'application/json'}):{Accept:'application/json'};
+    return (Auth.fetch?Auth.fetch('/api/auth?action=me',{headers:headers}):fetch('/api/auth?action=me',{headers:headers}))
+      .then(function(res){return res.json().catch(function(){return {}})})
+      .then(function(body){
+        var user=body&&(body.user||(body.session&&body.session.user));
+        if(!user||!user.role)return null;
+        var role=String(user.role||'');
+        if(role!=='admin'&&role!=='super_admin'){
+          // Database says not admin — do not keep stale local admin soft role.
+          return {denied:true,user:user};
+        }
+        var store=localStorage.getItem('adminAuthToken')?localStorage:sessionStorage;
+        var prev={};
+        try{prev=JSON.parse(store.getItem('adminUser')||localStorage.getItem('adminUser')||sessionStorage.getItem('adminUser')||'{}')||{}}catch(e){prev={}}
+        var next={
+          id:user.id||prev.id||'',
+          uid:user.uid||user.id||prev.uid||'',
+          account:user.email||prev.account||'',
+          email:user.email||prev.email||'',
+          name:user.displayName||user.email||prev.name||'管理员',
+          nickname:user.displayName||prev.nickname||'',
+          role:role,
+          adminRole:role==='super_admin'?'super_admin':'admin',
+          status:user.status||'active',
+          permissions:[role==='super_admin'?'super_admin':'admin']
+        };
+        try{
+          store.setItem('adminUser',JSON.stringify(next));
+          store.setItem('mcjRole',role);
+          window.MCJAdminRole=next.adminRole;
+        }catch(e){}
+        return next;
+      })
+      .catch(function(){return null});
+  }
   document.addEventListener('DOMContentLoaded',function(){
     function boot(){if(enforceRole()===false)return;initTabs();bindGlobal();bindPaymentAdmin();initForms();initSuperAdmin();renderHomeEntryManager();initClubAdmin();initPlayerAdmin();initTableSearch();bindV1AccountManagement();}
+    function start(){
+      refreshAdminIdentityFromServer().then(function(identity){
+        if(identity&&identity.denied){
+          renderAdminAccessDenied();
+          return;
+        }
+        boot();
+      });
+    }
     if(window.MCJAdminAuthFetch&&window.MCJAdminAuthFetch.getAccessToken()){
-      window.MCJAdminAuthFetch.ensureValidToken().then(boot).catch(function(){});
+      window.MCJAdminAuthFetch.ensureValidToken().then(start).catch(function(){boot()});
       return;
     }
-    boot();
+    start();
   });
   window.MCJAdmin={read:read,write:write,routeByRole:routeByRole};
 })();

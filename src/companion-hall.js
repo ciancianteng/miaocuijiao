@@ -68,7 +68,19 @@
     if (window.MCJCurrency) return window.MCJCurrency.formatRate(value, "小时");
     return priceNumber(value) + " 猫粮/小时";
   }
+  function formatHourlyPriceFx(value) {
+    if (window.MCJCurrency && typeof window.MCJCurrency.formatCatFoodWithFx === "function") {
+      return window.MCJCurrency.formatCatFoodWithFx(value);
+    }
+    if (window.MCJCurrency && typeof window.MCJCurrency.formatRmWithFx === "function") {
+      return "≈ " + window.MCJCurrency.formatRmWithFx(value);
+    }
+    return "";
+  }
   function normalizeStatus(value) {
+    if (window.MCJCompanionPresence) {
+      return window.MCJCompanionPresence.label(value);
+    }
     var text = String(value || "离线").trim();
     if (/^online$/i.test(text) || /在线可接单|在线/.test(text)) return "在线可接单";
     if (/^busy$/i.test(text) || /忙碌/.test(text)) return "忙碌中";
@@ -77,6 +89,9 @@
     return text || "离线";
   }
   function statusBadgeClass(status) {
+    if (window.MCJCompanionPresence) {
+      return window.MCJCompanionPresence.badgeClass({ availabilityText: status, status: status });
+    }
     if (status === "在线可接单") return " is-online";
     if (status === "忙碌中") return " is-busy";
     if (status === "暂停接单") return " is-paused";
@@ -103,7 +118,7 @@
       var apiPrice = priceNumber(item.priceValue != null ? item.priceValue : item.price || item.hourlyPrice || item.servicePrice);
       var priceValue = apiPrice > 0 ? apiPrice : (normalized.priceValue || priceNumber(normalized.price || normalized.servicePrice || normalized.hourlyPrice));
       return {
-        id: normalized.uid || normalized.companionId || normalized.id || normalized.name || "",
+        id: normalized.uid || normalized.companionId || normalized.id || "",
         name: normalized.name || normalized.nickname || "未命名陪玩",
         game: normalized.game || normalized.mainGame || "未设置游戏",
         price: formatHourlyPrice(priceValue || normalized.price || normalized.servicePrice || normalized.hourlyPrice),
@@ -113,6 +128,7 @@
         levelId: levelId,
         levelNumber: normalized.levelNumber || Number(String(levelId).replace("lv", "")) || 0,
         gender: normalized.gender || "保密",
+        voiceType: normalized.voiceType || normalized.voice_type || "",
         serviceType: (Array.isArray(normalized.serviceTypes) && normalized.serviceTypes[0])
           || normalized.serviceType
           || normalized.service_type
@@ -129,13 +145,23 @@
             ? normalized.service_ids.map(function (id) { return String(id); })
             : [],
         status: normalizeStatus(normalized.availabilityStatus || normalized.availabilityText || normalized.status || normalized.onlineStatus),
+        availabilityStatus: String(normalized.availabilityStatus || "").toLowerCase() || "",
         publicId: normalized.publicId || "",
         avatar: avatarUrl(normalized.avatar || normalized.cover || normalized.image),
         cover: cardImage(normalized),
         image: cardImage(normalized),
+        objectPositionX: normalized.objectPositionX != null ? normalized.objectPositionX : normalized.object_position_x,
+        objectPositionY: normalized.objectPositionY != null ? normalized.objectPositionY : normalized.object_position_y,
         tags: Array.isArray(normalized.tags) ? normalized.tags : String(normalized.tags || normalized.serviceTags || "").split(/[,，、\s]+/).filter(Boolean),
+        certTags: Array.isArray(normalized.certTags)
+          ? normalized.certTags
+          : Array.isArray(normalized.certificationTags)
+            ? normalized.certificationTags
+            : [],
         desc: normalized.desc || normalized.description || ""
       };
+    }).filter(function (item) {
+      return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(item.id || ""));
     });
   }  function setOptions(id, options, allLabel) {
     var el = document.getElementById(id);
@@ -261,18 +287,78 @@
     });
     return items;
   }
+  function gameChips(item) {
+    var raw = item.game || item.mainGame || "";
+    var list = Array.isArray(raw)
+      ? raw
+      : String(raw)
+          .split(/[,，、/|]+/)
+          .map(function (part) { return String(part || "").trim(); })
+          .filter(Boolean);
+    if (!list.length) list = ["未设置游戏"];
+    return list.slice(0, 4).map(function (game) {
+      return '<span class="mcj-service-tag companion-game-chip">' + esc(game) + "</span>";
+    }).join("");
+  }
   function card(item) {
-    var tags = item.tags.slice(0, 3).map(function (tag) { return '<span>' + esc(tag) + '</span>'; }).join("");
+    var identityApi = window.MCJCompanionIdentity;
+    var identityRow = identityApi
+      ? identityApi.renderTags({
+          levelId: item.levelId || "",
+          levelLabel: item.level,
+          gender: item.gender,
+          voiceType: item.voiceType || "",
+          certTags: item.certTags || [],
+          tags: item.tags || [],
+          className: "companion-identity-row companion-tags",
+          includeLevel: true,
+          includeGender: true,
+          serviceLimit: 3,
+          certLimit: 2,
+        })
+      : (function () {
+          var level = item.level
+            ? '<span class="companion-level-pill mcj-level-tag" data-level-id="' + esc(item.levelId || "") + '">' + esc(item.level) + "</span>"
+            : "";
+          var gender = item.gender && !/^(保密|不公开|未知|-|—)$/.test(String(item.gender))
+            ? '<span class="mcj-gender-tag">' + esc(item.gender) + "</span>"
+            : "";
+          var styleTags = (item.tags || []).slice(0, 3).map(function (tag) {
+            return '<span class="mcj-service-tag">' + esc(tag) + "</span>";
+          }).join("");
+          var voice = String(item.voiceType || "").trim().replace(/^声线\s*[:：]\s*/, "");
+          var voiceHtml =
+            '<span class="mcj-voice-tag' +
+            (voice ? "" : " is-unset") +
+            '"><span class="mcj-voice-label">声线：</span>' +
+            esc(voice || "未设置") +
+            "</span>";
+          return '<div class="mcj-id-tags companion-identity-row companion-tags">' + level + gender + voiceHtml + styleTags + "</div>";
+        })();
+    var gamesRow = '<div class="mcj-id-tags companion-games-row companion-tags">' + gameChips(item) + "</div>";
+    var fx = formatHourlyPriceFx(item.priceValue);
+    var priceHtml =
+      '<div class="price companion-price">' +
+      esc(item.price) +
+      (fx ? ' <span class="price-fx-approx">' + esc(fx) + "</span>" : "") +
+      "</div>";
     var badgeClass = statusBadgeClass(item.status);
-    var publicId = item.publicId || item.id || "未生成";
-    return '<article class="card player-card" data-player data-level-id="' + esc(item.levelId || "") + '" data-companion-level="' + esc(item.levelId || "") + '" data-name="' + esc(item.name) + '" data-game="' + esc(item.game) + '" data-tags="' + esc(item.tags.join(",")) + '" data-price="' + esc(item.priceValue) + '" data-online="' + esc(item.status) + '" data-score="' + esc(item.rating) + '" data-gender="' + esc(item.gender) + '">' +
-      '<div class="companion-card-media"><img src="' + esc(item.image) + '" alt="' + esc(item.name) + '" loading="lazy" decoding="async" onerror="this.onerror=null;this.src=\'' + DEFAULT_AVATAR + '\'"><span class="companion-online-badge' + badgeClass + '">' + esc(item.status) + '</span></div>' +
+    var publicId = item.publicId || "未生成";
+    var uuid = String(item.id || "").trim();
+    var detailHref = uuid ? ("profile.html?id=" + encodeURIComponent(uuid)) : "#";
+    var focusX = item.objectPositionX != null ? item.objectPositionX : 50;
+    var focusY = item.objectPositionY != null ? item.objectPositionY : 25;
+    var pos = Number(focusX) + "% " + Number(focusY) + "%";
+    return '<article class="card player-card" data-player data-public-id="' + esc(String(publicId).toUpperCase()) + '" data-level-id="' + esc(item.levelId || "") + '" data-companion-level="' + esc(item.levelId || "") + '" data-companion-id="' + esc(uuid) + '" data-name="' + esc(item.name) + '" data-game="' + esc(item.game) + '" data-tags="' + esc(item.tags.join(",")) + '" data-price="' + esc(item.priceValue) + '" data-online="' + esc(item.status) + '" data-score="' + esc(item.rating) + '" data-gender="' + esc(item.gender) + '">' +
+      '<div class="companion-card-media"><img src="' + esc(item.image) + '" alt="' + esc(item.name) + '" loading="lazy" decoding="async" style="object-position:' + esc(pos) + ';--mcj-cover-pos:' + esc(pos) + '" onerror="this.onerror=null;this.src=\'' + DEFAULT_AVATAR + '\'"><span class="companion-online-badge' + badgeClass + '">' + esc(item.status) + '</span></div>' +
       '<div class="companion-card-body">' +
-        '<div class="row companion-card-head"><h3>' + esc(item.name) + '</h3><span class="price companion-price">' + esc(item.price) + '</span></div>' +
-        '<p class="muted companion-id" style="display:block!important;opacity:.7;font-size:12px;margin:4px 0 0">陪玩 ID：' + esc(publicId) + '</p>' +
-        '<div class="companion-meta"><span class="companion-level-pill" data-level-id="' + esc(item.levelId || "") + '">' + esc(item.level) + '</span><span>' + esc(item.game) + '</span></div>' +
-        '<div class="tag-row companion-tags">' + tags + '</div>' +
-        '<div class="companion-card-actions"><a class="companion-card-action" href="profile.html?player=' + encodeURIComponent(item.id || item.name || "") + '">查看详情</a><button type="button" class="companion-card-action primary" data-hall-order="' + esc(item.id || "") + '" data-hall-name="' + esc(item.name || "") + '" data-hall-price="' + esc(item.priceValue || "") + '" data-hall-game="' + esc(item.game || "") + '" data-hall-avatar="' + esc(item.image || "") + '" data-hall-public-id="' + esc(publicId || "") + '">立即下单</button></div>' +
+        '<div class="row companion-card-head companion-card-title-row"><h3>' + esc(item.name) + '</h3><span class="companion-status-inline' + badgeClass + '">' + esc(item.status) + '</span></div>' +
+        '<p class="muted companion-id">陪玩 ID：' + esc(publicId) + '</p>' +
+        '<div class="companion-meta companion-meta-desktop"><span class="companion-level-pill mcj-level-tag" data-level-id="' + esc(item.levelId || "") + '">' + esc(item.level) + '</span><span class="companion-game-text">' + esc(item.game) + '</span></div>' +
+        identityRow +
+        gamesRow +
+        priceHtml +
+        '<div class="companion-card-actions"><a class="companion-card-action" href="' + esc(detailHref) + '">查看详情</a><button type="button" class="companion-card-action primary" data-hall-order="' + esc(uuid) + '" data-hall-name="' + esc(item.name || "") + '" data-hall-price="' + esc(item.priceValue || "") + '" data-hall-level="' + esc(item.levelId || "") + '" data-hall-game="' + esc(item.game || "") + '" data-hall-avatar="' + esc(item.image || "") + '" data-hall-public-id="' + esc(publicId || "") + '" data-hall-status="' + esc(item.availabilityStatus || "") + '" data-hall-status-text="' + esc(item.status || "") + '">立即下单</button></div>' +
       '</div>' +
     '</article>';
   }
@@ -319,7 +405,7 @@
       var id = orderBtn.getAttribute("data-hall-order") || "";
       if (!id) return;
       if (!window.MCJPlaceOrder || typeof window.MCJPlaceOrder.openFromCompanion !== "function") {
-        location.href = "profile.html?player=" + encodeURIComponent(id) + "&open_order=1";
+        location.href = "profile.html?id=" + encodeURIComponent(id) + "&open_order=1";
         return;
       }
       window.MCJPlaceOrder.openFromCompanion({

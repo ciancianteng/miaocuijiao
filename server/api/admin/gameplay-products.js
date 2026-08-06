@@ -189,7 +189,29 @@ async function saveProduct(body) {
       });
       return { product: toPublicProduct(fromDbRow(rows?.[0] || dbPayload), { admin: true }), source: "supabase" };
     } catch (error) {
-      if (!isMissingTable(error)) throw error;
+      if (/commission_rate|column|schema|PGRST204|42703/i.test(String(error?.message || ""))) {
+        const { commission_rate: _c, ...rest } = dbPayload;
+        try {
+          if (id) {
+            const rows = await supabaseJson(restUrl("gameplay_products", `?id=eq.${encodeURIComponent(id)}`), {
+              method: "PATCH",
+              headers: serviceHeaders(),
+              body: JSON.stringify(rest),
+            });
+            return { product: toPublicProduct(fromDbRow(rows?.[0] || rest), { admin: true }), source: "supabase" };
+          }
+          const rows = await supabaseJson(restUrl("gameplay_products"), {
+            method: "POST",
+            headers: serviceHeaders(),
+            body: JSON.stringify({ ...rest, id: product.id, created_at: new Date().toISOString() }),
+          });
+          return { product: toPublicProduct(fromDbRow(rows?.[0] || rest), { admin: true }), source: "supabase" };
+        } catch (err2) {
+          if (!isMissingTable(err2)) throw err2;
+        }
+      } else if (!isMissingTable(error)) {
+        throw error;
+      }
     }
   }
 

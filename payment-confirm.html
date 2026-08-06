@@ -1,6 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
+  <script src="/portal-early-gate.js?v=20260805bossSessionDual1"></script>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>支付确认 | MEOW CUI JIAO</title>
@@ -27,6 +28,21 @@
     .pay-skel{display:grid;gap:10px;margin:16px 0}
     .pay-skel-line{height:14px;border-radius:8px;background:linear-gradient(90deg,rgba(255,255,255,.06),rgba(255,255,255,.14),rgba(255,255,255,.06));background-size:200% 100%;animation:payShimmer 1.2s linear infinite}
     .pay-skel-line.short{width:55%}
+    .pay-proof{margin-top:18px;border:1px solid rgba(255,143,197,.28);border-radius:14px;background:rgba(255,143,197,.08);padding:14px}
+    .pay-proof h2{margin:0 0 8px;font-size:16px;color:#ffd6e7}
+    .pay-qr{margin-top:18px;border:1px solid rgba(255,143,197,.28);border-radius:14px;background:rgba(255,143,197,.08);padding:14px}
+    .pay-qr h2{margin:0 0 8px;font-size:16px;color:#ffd6e7}
+    .pay-qr-frame{margin-top:12px;display:grid;place-items:center;padding:12px;border-radius:12px;background:rgba(255,255,255,.92)}
+    .pay-qr-frame img{width:min(100%,260px);height:auto;aspect-ratio:1;object-fit:contain;display:block}
+    .pay-qr-meta{display:grid;gap:8px;margin-top:12px}
+    .pay-proof-pick{margin-top:8px}
+    .pay-proof-preview{margin-top:10px;display:grid;gap:10px}
+    .pay-proof-preview img{width:min(100%,320px);max-height:240px;object-fit:contain;border-radius:12px;border:1px solid rgba(255,255,255,.14);background:rgba(0,0,0,.24)}
+    .pay-proof-preview-actions,.pay-proof-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+    .pay-progress{position:relative;margin-top:12px;height:22px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden}
+    .pay-progress-bar{height:100%;background:linear-gradient(90deg,rgba(255,143,197,.55),rgba(255,143,197,.95));transition:width .2s ease}
+    .pay-progress span{position:absolute;inset:0;display:grid;place-items:center;font-size:12px;color:#fff;font-weight:700}
+    .pay-success{margin:10px 0 0;color:#9dffc1;font-weight:700}
     @keyframes payShimmer{0%{background-position:100% 0}100%{background-position:-100% 0}}
     @media(max-width:560px){.pay-actions{display:grid}.pay-btn{width:100%;justify-content:center}}
   </style>
@@ -38,6 +54,6 @@
   <script src="src/boss-header.js" defer></script>
   <script src="src/currency.js"></script>
   <script src="src/order-status.js"></script>
-  <script src="src/payment-confirm.js"></script>
+  <script src="src/payment-confirm.js?v=20260806paySave1"></script>
 </body>
 </html>
