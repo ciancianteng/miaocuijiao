@@ -624,6 +624,17 @@ export default async function handler(req, res) {
       const name = map[after.companion_id]?.display_name || map[after.companion_id]?.email || "陪玩";
       await addSystem(after, admin.id, `后台已指定陪玩：${name}。订单进入等待陪玩确认。`);
       await logAdminOp(admin, action, id, { status: before.status }, { status: after.status, ...patch }, String(payload.reason || ""));
+      try {
+        const { notifyCompanionOrderAssigned } = await import("../_companion-order-notify.js");
+        const prevCompanion = String(before.companion_id || "").trim();
+        notifyCompanionOrderAssigned(after, {
+          eventType: prevCompanion && prevCompanion !== String(after.companion_id || "") ? "reassign" : "assign",
+          previousCompanionId: prevCompanion,
+          email: map[after.companion_id]?.email || "",
+        }).catch((err) => console.warn("[admin/assign] companion notify", err?.message || err));
+      } catch (err) {
+        console.warn("[admin/assign] companion notify import", err?.message || err);
+      }
       return json(res, 200, { ok: true, message: "指定成功", order: safeOrder(after, map) });
     }
     await addSystem(after, admin.id, `后台更新订单：${ORDER_STATUS_TEXT[patch.status] || patch.status || action}`);

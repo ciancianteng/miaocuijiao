@@ -979,6 +979,18 @@ async function loadOrdersFor(profile, companion, transactions = []) {
     /* best-effort auto-complete */
   }
   const myRows = await supabaseJson(restUrl("orders", `?companion_id=eq.${encodeURIComponent(profile.id)}&order=created_at.desc&limit=200`), { headers: serviceHeaders() });
+  // Best-effort: warn near confirm timeout (idempotent email/inbox).
+  try {
+    const { maybeNotifyConfirmDeadlineWarning } = await import("./_companion-order-notify.js");
+    const claimed = (myRows || []).filter((row) => row.status === "claimed").slice(0, 8);
+    await Promise.all(
+      claimed.map((row) =>
+        maybeNotifyConfirmDeadlineWarning(row).catch(() => null)
+      )
+    );
+  } catch {
+    /* ignore */
+  }
   // Never surface unpaid designated orders (awaiting_payment) as actionable confirm tasks.
   // Assigned pending-confirm stays in 我的订单→待确认 only.
   const visibleMine = (myRows || []).filter((row) => row.status !== "awaiting_payment");

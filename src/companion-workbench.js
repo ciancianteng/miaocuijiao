@@ -54,7 +54,7 @@
   };
   var COMPANION_ISOLATION_MSG='您的陪玩认证尚未通过，目前只能查看审核进度。';
   var HIDDEN_MVP_ROUTES={};
-  var state={route:'dashboard',session:null,data:null,notice:'',loading:false,error:'',walletWarning:'',authTab:'login',loginMethod:'otp',loginError:'',loginBusy:false,registerToken:'',registerVerifiedEmail:'',registerCooldownUntil:0,registerBusy:false,forgotStep:'',forgotAccount:'',forgotBusy:false,forgotMsg:'',forgotResetToken:'',profileServices:[],profileVoiceTypes:[],profileCompanionTags:[],profileErrors:{},profileDraft:null,accountDraft:null,uploadBusy:'',statusBusy:false,pendingOnlineStatus:null,settlement:null,orderFilter:'all',pollTimer:null,rulesPollTimer:null,ordersCacheAt:0,msgFilter:'all',settings:null,earningsTab:'overview',chatSession:'cs',chatConversationId:'',chatBusy:false,withdrawBusy:false,inbox:null,inboxError:'',hallOrderType:'all',hallGame:'all',_prevDesignated:null,_prevAuditLocked:null,_toastTimer:null};
+  var state={route:'dashboard',session:null,data:null,notice:'',loading:false,error:'',walletWarning:'',authTab:'login',loginMethod:'otp',loginError:'',loginBusy:false,registerToken:'',registerVerifiedEmail:'',registerCooldownUntil:0,registerBusy:false,forgotStep:'',forgotAccount:'',forgotBusy:false,forgotMsg:'',forgotResetToken:'',profileServices:[],profileVoiceTypes:[],profileCompanionTags:[],profileErrors:{},profileDraft:null,accountDraft:null,uploadBusy:'',statusBusy:false,pendingOnlineStatus:null,settlement:null,orderFilter:'all',pollTimer:null,rulesPollTimer:null,ordersCacheAt:0,msgFilter:'all',settings:null,earningsTab:'overview',chatSession:'cs',chatConversationId:'',chatBusy:false,withdrawBusy:false,inbox:null,inboxError:'',hallOrderType:'all',hallGame:'all',_prevDesignated:null,_prevAuditLocked:null,_toastTimer:null,_ordersRtReady:false,_alertedOrderIds:null,_baseDocTitle:'',_focusOrderId:''};
   var SESSION_KEY='mcjCompanionSession';
   var SETTINGS_KEY='mcjCompanionSettings';
   var MSG_READ_KEY='mcjCompanionMsgRead';
@@ -207,6 +207,71 @@
         osc.frequency.setValueAtTime(660,now+0.15);
         osc.frequency.setValueAtTime(880,now+0.3);
         osc.start(now);osc.stop(now+0.48);
+      }
+    }catch(e){}
+  }
+  function alertedOrderSet(){
+    if(state._alertedOrderIds)return state._alertedOrderIds;
+    var set={};
+    try{
+      var raw=sessionStorage.getItem('mcj_pw_alerted_orders')||'[]';
+      var arr=JSON.parse(raw);
+      if(Array.isArray(arr))arr.forEach(function(id){if(id)set[String(id)]=1});
+    }catch(e){}
+    state._alertedOrderIds=set;
+    return set;
+  }
+  function rememberAlertedOrder(orderId){
+    var id=String(orderId||'').trim();
+    if(!id)return;
+    var set=alertedOrderSet();
+    set[id]=1;
+    try{
+      sessionStorage.setItem('mcj_pw_alerted_orders',JSON.stringify(Object.keys(set).slice(-80)));
+    }catch(e){}
+  }
+  function updateTabBadge(designatedCount){
+    if(!state._baseDocTitle)state._baseDocTitle=document.title||'陪玩端| MEOW CUI JIAO';
+    var n=num(designatedCount);
+    var unread=0;
+    try{unread=num((state.inbox&&state.inbox.unreadTotal)||((state.data||{}).summary||{}).unreadMessages)}catch(e){}
+    var badge=n+unread;
+    document.title=badge>0?('('+badge+') '+state._baseDocTitle):state._baseDocTitle;
+  }
+  function notifyNewDesignatedOrder(orderId,opts){
+    opts=opts||{};
+    var id=String(orderId||'').trim();
+    var set=alertedOrderSet();
+    if(id&&set[id]&&!opts.force)return false;
+    if(id)rememberAlertedOrder(id);
+    toast('你有新的指定订单');
+    playCue('order');
+    try{
+      if(navigator.vibrate)navigator.vibrate([120,60,120]);
+    }catch(e){}
+    try{
+      if(typeof Notification==='function'&&Notification.permission==='granted'){
+        new Notification('妙脆角陪玩',{body:'你有新的指定订单',tag:id||'designated-order'});
+      }else if(typeof Notification==='function'&&Notification.permission==='default'){
+        Notification.requestPermission().catch(function(){});
+      }
+    }catch(e){}
+    var s=(state.data||{}).summary||{};
+    updateTabBadge(num(s.waitingConfirm||s.designatedPending)||1);
+    return true;
+  }
+  function applyFocusOrderFromQuery(){
+    try{
+      var q=new URLSearchParams(location.search||'');
+      var focus=String(q.get('focus')||q.get('order')||'').trim();
+      var filter=String(q.get('filter')||'').trim();
+      if(filter)state.orderFilter=filter;
+      if(focus){
+        state._focusOrderId=focus;
+        if(state.route!=='orders'){
+          try{history.replaceState(null,'','/companion/orders?focus='+encodeURIComponent(focus)+(filter?('&filter='+encodeURIComponent(filter)):''))}catch(e){}
+          state.route='orders';
+        }
       }
     }catch(e){}
   }
@@ -1071,10 +1136,19 @@
       paint({preserveScroll:!!opts.preserveScroll||!!opts.forcePaint||isEditingLiveForm()});
       if(state.route==='messages')markActiveChatSessionRead();
       bindCompanionChatRealtime();
+      bindCompanionOrdersRealtime();
+      if(state._focusOrderId){
+        setTimeout(function(){
+          var el=document.querySelector('[data-order-focus="1"]')||document.getElementById('order-'+state._focusOrderId);
+          if(el&&el.scrollIntoView)el.scrollIntoView({behavior:'smooth',block:'center'});
+        },80);
+      }
     });
   }
   function startPoll(){
     if(state.pollTimer)clearInterval(state.pollTimer);
+    // 12s polling backup when realtime is up; 8s when realtime not ready.
+    var intervalMs=state._ordersRtReady?12000:8000;
     state.pollTimer=setInterval(function(){
       if(!state.session||!state.session.token||document.hidden||state.statusBusy)return;
       if(isIsolationMode()){
@@ -1132,8 +1206,13 @@
         state.error='';
         var s=(state.data||{}).summary||{};
         var designated=num(s.waitingConfirm||s.designatedPending);
-        if(state._prevDesignated!=null&&designated>state._prevDesignated)playCue('order');
+        if(state._prevDesignated!=null&&designated>state._prevDesignated){
+          var claimed=((state.data&&state.data.myOrders)||[]).filter(function(o){return o&&o.status==='claimed'});
+          var newest=claimed[0];
+          notifyNewDesignatedOrder(newest&&(newest.id||newest.orderId)||('count-'+designated));
+        }
         state._prevDesignated=designated;
+        updateTabBadge(designated);
         if(editingLive||isEditingLiveForm())return;
         if(state.route==='messages'){
           return api('inbox',inboxQueryParams(),'GET').then(function(res){
@@ -1151,13 +1230,64 @@
         }
         paint({preserveScroll:true});
       }).catch(function(){});
-    },8000);
+    },intervalMs);
   }
   function companionCsConversationId(){
     if(state.chatConversationId)return String(state.chatConversationId);
     if(state.inbox&&state.inbox.csConversationId)return String(state.inbox.csConversationId);
     var active=activeCsConversation(state.inbox);
     return active&&active.id?String(active.id):'';
+  }
+  function companionUserId(){
+    var s=state.session||{};
+    return String((s.user&&s.user.id)||s.userId||s.uid||(state.data&&state.data.player&&state.data.player.id)||'').trim();
+  }
+  function refreshOrdersFromRealtime(hint){
+    if(state._rtRefreshBusy)return;
+    state._rtRefreshBusy=true;
+    var orderId=hint&&(hint.orderId||hint.id||hint.order_id)||'';
+    loadData({soft:true,preserveScroll:true}).then(function(){
+      var s=(state.data||{}).summary||{};
+      var designated=num(s.waitingConfirm||s.designatedPending);
+      if(hint&&(hint.eventType==='order_assigned'||hint.event==='order_assigned'||String(hint.status||'')==='claimed'||!hint.status)){
+        notifyNewDesignatedOrder(orderId||('rt-'+Date.now()));
+      }else if(state._prevDesignated!=null&&designated>state._prevDesignated){
+        notifyNewDesignatedOrder(orderId||('rt-count-'+designated));
+      }
+      state._prevDesignated=designated;
+      updateTabBadge(designated);
+    }).catch(function(){}).then(function(){state._rtRefreshBusy=false});
+  }
+  function bindCompanionOrdersRealtime(){
+    var RT=window.MCJChatRealtime;
+    var token=state.session&&state.session.token;
+    var uid=companionUserId();
+    if(!RT||!token||!uid||typeof RT.subscribeCompanionOrders!=='function')return;
+    if(state._rtBoundOrdersUid===uid)return;
+    state._rtBoundOrdersUid=uid;
+    RT.subscribeCompanionOrders(uid,token,{
+      onReady:function(){
+        state._ordersRtReady=true;
+        startPoll();
+      },
+      onError:function(){
+        state._ordersRtReady=false;
+        startPoll();
+      },
+      onAssigned:function(body){
+        refreshOrdersFromRealtime(Object.assign({eventType:'order_assigned'},body||{}));
+      },
+      onChange:function(row,eventType){
+        var status=row&&row.status;
+        if(eventType==='INSERT'||status==='claimed'||eventType==='UPDATE'||eventType==='BROADCAST'){
+          refreshOrdersFromRealtime(Object.assign({},row||{},{eventType:eventType,status:status}));
+        }
+      }
+    }).catch(function(){
+      state._rtBoundOrdersUid='';
+      state._ordersRtReady=false;
+      startPoll();
+    });
   }
   function bindCompanionChatRealtime(){
     var RT=window.MCJChatRealtime;
@@ -1166,7 +1296,8 @@
     if(!RT||!cid||!token)return;
     if(state._rtBoundCid===cid)return;
     state._rtBoundCid=cid;
-    if(typeof RT.unsubscribeAll==='function')RT.unsubscribeAll();
+    // Do NOT unsubscribeAll — preserve companion order realtime channel.
+    if(typeof RT.unsubscribe==='function')RT.unsubscribe(cid);
     RT.subscribeMessages(cid,token,function(row){
       if(!row||!row.id)return;
       if(!state.inbox)state.inbox={messages:[],conversations:[]};
@@ -1189,6 +1320,12 @@
         return !(m.content===view.content&&(m.senderRole==='companion'||m.side==='right'));
       }).concat([view]);
       if(role!=='companion')playCue('message');
+      try{
+        if(state.data&&state.data.summary){
+          state.data.summary.unreadMessages=num(state.data.summary.unreadMessages)+1;
+          updateTabBadge(state.data.summary.waitingConfirm||state.data.summary.designatedPending);
+        }
+      }catch(e){}
       if(state.route==='messages')paint();
     }).catch(function(){ state._rtBoundCid=''; });
   }
@@ -1196,6 +1333,7 @@
     state.settings=readSettings();
     state.session=readSession();
     state.route=route();
+    applyFocusOrderFromQuery();
     if(!state.session&&state.route!=='login'){go('/companion/login');return}
     if(state.session&&state.route==='login'){
       try{history.replaceState(null,'','/companion/review-status')}catch(e){}
@@ -1203,7 +1341,13 @@
     }
     if(state.session){
       if(window.MCJCompanionAnnouncements&&window.MCJCompanionAnnouncements.start)window.MCJCompanionAnnouncements.start();
-      loadData().then(function(){startPoll();bindCompanionChatRealtime();});
+      loadData().then(function(){
+        startPoll();
+        bindCompanionChatRealtime();
+        bindCompanionOrdersRealtime();
+        var s=(state.data||{}).summary||{};
+        updateTabBadge(s.waitingConfirm||s.designatedPending);
+      });
     }else paint();
   }
   window.addEventListener('popstate',init);
@@ -1702,7 +1846,8 @@
   }
   function designatedOrderCard(o){
     var banner=o.status==='claimed'?'<div class="pw-order-banner">你有新的指定订单</div>':'';
-    return '<article class="pw-order-card'+(o.status==='claimed'?' is-designated':'')+'">'+banner+
+    var focused=state._focusOrderId&&String(o.id)===String(state._focusOrderId);
+    return '<article id="order-'+esc(o.id)+'" class="pw-order-card'+(o.status==='claimed'?' is-designated':'')+(focused?' is-focus':'')+'"'+(focused?' data-order-focus="1"':'')+'>'+banner+
       '<header><div><h3>'+esc(humanOrderNo(o))+'</h3><p>'+esc(o.game||o.serviceName||'-')+' / '+esc(o.serviceName||o.serviceContent||'-')+'</p></div><span class="pw-status info">'+esc(orderStatus(o))+'</span></header>'+
       '<div class="pw-order-meta">'+
       '<div><span>老板昵称/编号</span><strong>'+esc((o.bossName||'-')+(o.bossUid?' / '+o.bossUid:''))+'</strong></div>'+

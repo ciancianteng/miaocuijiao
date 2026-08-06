@@ -3384,6 +3384,25 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         }
       );
 
+      if (isAssignedPath && assignedCompanionId) {
+        try {
+          const { notifyCompanionOrderAssigned } = await import("./_companion-order-notify.js");
+          const notifyOrder = {
+            ...order,
+            ...patched,
+            status: next,
+            companion_id: assignedCompanionId,
+            assignment_type: "assigned",
+          };
+          notifyCompanionOrderAssigned(notifyOrder, {
+            eventType: "assign",
+            email: profiles[assignedCompanionId]?.email || "",
+          }).catch((err) => console.warn("[cs/confirm_payment] companion notify", err?.message || err));
+        } catch (err) {
+          console.warn("[cs/confirm_payment] companion notify import", err?.message || err);
+        }
+      }
+
       return json(res, 200, {
         ok: true,
         message: isAssignedPath
@@ -3710,10 +3729,23 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
           await listingsApi.closeListing(order.id, grabs.length ? "grab_assigned" : "direct_assigned");
         } catch (_) {}
         const profiles = await profileMap([patched?.boss_id || order.boss_id, companionId, service.profile.id]);
+        const outOrder = patched || { ...order, companion_id: companionId, status: nextStatus };
+        // Fire-and-forget: companion realtime + email (idempotent). Never block assign success.
+        try {
+          const { notifyCompanionOrderAssigned } = await import("./_companion-order-notify.js");
+          const prevCompanion = String(order.companion_id || "").trim();
+          notifyCompanionOrderAssigned(outOrder, {
+            eventType: prevCompanion && prevCompanion !== companionId ? "reassign" : "assign",
+            previousCompanionId: prevCompanion,
+            email: companion.email || "",
+          }).catch((err) => console.warn("[cs/assign] companion notify", err?.message || err));
+        } catch (err) {
+          console.warn("[cs/assign] companion notify import", err?.message || err);
+        }
         return json(res, 200, {
           ok: true,
           message: grabs.length ? "指定成功，其他抢单陪玩已标记为未选中。" : "指定成功",
-          order: safeOrder(patched || { ...order, companion_id: companionId, status: nextStatus }, profiles, {
+          order: safeOrder(outOrder, profiles, {
             grabCount: grabs.length,
           }),
         });
@@ -3775,6 +3807,13 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
             source: "cs_status_update",
             forceServiceId: service.profile.id,
           });
+        }
+      } catch (_) {}
+      try {
+        const { notifyCompanionOrderStatusChange } = await import("./_companion-order-notify.js");
+        const out = patched || { ...order, status: transition.to };
+        if (out.companion_id) {
+          notifyCompanionOrderStatusChange(out, { status: transition.to }).catch(() => {});
         }
       } catch (_) {}
       return json(res, 200, { ok: true, message: "订单状态已更新。", order: patched, reward });

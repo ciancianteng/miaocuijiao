@@ -226,9 +226,93 @@
           jobs.push(subscribeConversations(token, h));
         } else if (k.indexOf("mcj-msg:") === 0 && typeof h.onInsert === "function") {
           jobs.push(subscribeMessages(k.slice("mcj-msg:".length), token, h.onInsert));
+        } else if (k.indexOf("mcj-companion-orders:") === 0) {
+          jobs.push(subscribeCompanionOrders(k.slice("mcj-companion-orders:".length), token, h));
+        } else if (k.indexOf("mcj-orders:") === 0) {
+          jobs.push(subscribeCompanionOrders(k.slice("mcj-orders:".length), token, h));
         }
       });
       return Promise.all(jobs);
+    });
+  }
+
+  /**
+   * Companion-scoped order sync:
+   * - postgres_changes on public.orders filtered by companion_id (needs publication)
+   * - broadcast topic mcj-companion-orders:{uid} as fallback when server fires assign
+   */
+  function subscribeCompanionOrders(companionId, accessToken, handlers) {
+    var uid = String(companionId || "").trim();
+    if (!uid || !handlers) return Promise.resolve(null);
+    var key = "mcj-companion-orders:" + uid;
+    state.handlers[key] = handlers;
+    removeChannel(key);
+    return ensureClient(accessToken).then(function (client) {
+      var retries = 0;
+      function attach() {
+        // Channel topic must match server broadcast topic `mcj-companion-orders:{uid}`.
+        // Keep topic stable across reconnects (no :rN suffix) so broadcast still arrives.
+        var channel = client.channel(key, {
+          config: { broadcast: { self: false } },
+        });
+        channel.on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "orders",
+            filter: "companion_id=eq." + uid,
+          },
+          function (payload) {
+            var row = (payload && payload.new) || (payload && payload.old) || null;
+            var eventType = (payload && payload.eventType) || "";
+            try {
+              var h = state.handlers[key] || handlers;
+              if (typeof h.onChange === "function") h.onChange(row, eventType, payload);
+            } catch (e) {}
+          }
+        );
+        channel.on("broadcast", { event: "order_assigned" }, function (payload) {
+          try {
+            var h = state.handlers[key] || handlers;
+            var body = (payload && payload.payload) || payload || {};
+            if (typeof h.onAssigned === "function") h.onAssigned(body);
+            else if (typeof h.onChange === "function") h.onChange(body, "BROADCAST", payload);
+          } catch (e) {}
+        });
+        channel.on("broadcast", { event: "order_changed" }, function (payload) {
+          try {
+            var h = state.handlers[key] || handlers;
+            var body = (payload && payload.payload) || payload || {};
+            if (typeof h.onChange === "function") h.onChange(body, "BROADCAST", payload);
+          } catch (e) {}
+        });
+        channel.subscribe(function (status) {
+          if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+            try {
+              var hErr = state.handlers[key] || handlers;
+              if (typeof hErr.onError === "function") hErr.onError(status);
+            } catch (e) {}
+            if (retries >= 6) return;
+            retries += 1;
+            removeChannel(key);
+            setTimeout(function () {
+              if (state.channels[key]) return;
+              if (!state.handlers[key]) return;
+              attach();
+            }, 1200 * retries);
+          } else if (status === "SUBSCRIBED") {
+            retries = 0;
+            try {
+              var hOk = state.handlers[key] || handlers;
+              if (typeof hOk.onReady === "function") hOk.onReady();
+            } catch (e) {}
+          }
+        });
+        state.channels[key] = channel;
+        return channel;
+      }
+      return attach();
     });
   }
 
@@ -245,6 +329,7 @@
     ensureClient: ensureClient,
     subscribeMessages: subscribeMessages,
     subscribeConversations: subscribeConversations,
+    subscribeCompanionOrders: subscribeCompanionOrders,
     unsubscribe: unsubscribe,
     unsubscribeAll: unsubscribeAll,
     reconnect: reconnect,
