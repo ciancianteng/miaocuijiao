@@ -262,7 +262,8 @@
         isCsRole(roleOf(csUser)) ||
         isCsRole(csShared) ||
         (csSoftOk && !csShared);
-      if (!csSoftOk || !hasJwtOrRefresh(csAccess, csRefresh) || !csRoleOk) {
+      var csCredOk = hasValidAccessJwt(csAccess) || !!String(csRefresh || "").trim();
+      if (!csSoftOk || !csCredOk || !csRoleOk) {
         // Wipe half-sessions so login page does not immediately bounce back to dashboard.
         [
           "mcjServiceSession",
