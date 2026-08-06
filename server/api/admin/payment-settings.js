@@ -212,7 +212,7 @@ async function writePlatformBanks(banks = []) {
 
 const PLATFORM_PAYMENT_BUCKET = "platform-payment";
 
-async function syncChannelQrToPlatformSettings(channelId, qrUrl, extras = {}) {
+async function syncChannelPublicConfig(channelId, patch = {}) {
   const rows = await supabaseFetch("platform_settings", "?id=eq.global&select=id,data&limit=1").catch(() => []);
   const current = Array.isArray(rows) ? rows[0] : null;
   const data = current?.data && typeof current.data === "object" ? { ...current.data } : {};
@@ -221,11 +221,15 @@ async function syncChannelQrToPlatformSettings(channelId, qrUrl, extras = {}) {
       ? { ...data.paymentChannelsPublic }
       : {};
   const prev = publicMap[channelId] && typeof publicMap[channelId] === "object" ? publicMap[channelId] : {};
-  publicMap[channelId] = {
+  const next = {
     ...prev,
-    ...extras,
-    qrUrl: String(qrUrl || "").trim(),
+    ...patch,
   };
+  if (patch.qrUrl !== undefined) next.qrUrl = String(patch.qrUrl || "").trim();
+  if (patch.manual && typeof patch.manual === "object") {
+    next.manual = { ...(prev.manual && typeof prev.manual === "object" ? prev.manual : {}), ...patch.manual };
+  }
+  publicMap[channelId] = next;
   data.paymentChannelsPublic = publicMap;
   const payload = { id: "global", data, updated_at: new Date().toISOString() };
   if (current?.id) {
@@ -241,6 +245,39 @@ async function syncChannelQrToPlatformSettings(channelId, qrUrl, extras = {}) {
     });
   }
   return publicMap[channelId];
+}
+
+/** @deprecated use syncChannelPublicConfig */
+async function syncChannelQrToPlatformSettings(channelId, qrUrl, extras = {}) {
+  return syncChannelPublicConfig(channelId, { ...extras, qrUrl: String(qrUrl || "").trim() });
+}
+
+function publicConfigFromChannel(channel = {}, data = {}, qrUrl = "") {
+  const manual = data.manual && typeof data.manual === "object" ? data.manual : {};
+  return {
+    enabled: channel.enabled !== false,
+    visible: channel.visible !== false,
+    publicLabel: data.publicLabel || channel.name || "",
+    bankName: manual.bankName || "",
+    accountName: manual.receiverName || "",
+    receiverName: manual.receiverName || "",
+    bankAccount: manual.bankAccount || "",
+    phone: manual.phone || "",
+    duitnowId: manual.duitnowId || "",
+    qrUrl: String(qrUrl || manual.qrUrl || data.qrUrl || "").trim(),
+    instructions: data.instructions || "",
+    minAmount: data.minAmount,
+    maxAmount: data.maxAmount,
+    mode: channel.mode || "test",
+    manual: {
+      receiverName: manual.receiverName || "",
+      bankName: manual.bankName || "",
+      bankAccount: manual.bankAccount || "",
+      phone: manual.phone || "",
+      duitnowId: manual.duitnowId || "",
+      qrUrl: String(qrUrl || manual.qrUrl || data.qrUrl || "").trim(),
+    },
+  };
 }
 
 async function uploadPlatformPayQrImage(dataUrl, channelId) {
@@ -323,20 +360,21 @@ async function persistChannelQrUrl(channelId, qrUrl) {
   } catch (error) {
     if (isMissingTable(error)) {
       // Fall back to platform_settings only.
-      await syncChannelQrToPlatformSettings(tpl.id, qrUrl, {
+      await syncChannelPublicConfig(tpl.id, {
         enabled: true,
+        visible: true,
         publicLabel: tpl.name,
+        qrUrl,
+        manual: { qrUrl },
       });
       return { channel: null, qrUrl, source: "platform_settings" };
     }
     throw error;
   }
-  await syncChannelQrToPlatformSettings(tpl.id, qrUrl, {
+  await syncChannelPublicConfig(tpl.id, {
+    ...publicConfigFromChannel(row, nextData, qrUrl),
     enabled: row.enabled !== false,
     publicLabel: nextData.publicLabel || tpl.name,
-    bankName: nextData.manual?.bankName || "",
-    accountName: nextData.manual?.receiverName || "",
-    duitnowId: nextData.manual?.duitnowId || "",
   });
   return { channel: row, qrUrl, source: "payment_channels" };
 }
@@ -421,23 +459,36 @@ function applyPublicPayOverlay(channels = [], publicMap = {}) {
     if (!pub || typeof pub !== "object") return ch;
     const data = ch.data && typeof ch.data === "object" ? { ...ch.data } : {};
     const manual = data.manual && typeof data.manual === "object" ? { ...data.manual } : {};
-    const qrUrl = String(manual.qrUrl || data.qrUrl || pub.qrUrl || "").trim();
+    const pubManual = pub.manual && typeof pub.manual === "object" ? pub.manual : {};
+    const qrUrl = String(manual.qrUrl || data.qrUrl || pubManual.qrUrl || pub.qrUrl || "").trim();
     if (qrUrl) {
       manual.qrUrl = qrUrl;
       data.qrUrl = qrUrl;
     }
-    if (pub.bankName && !manual.bankName) manual.bankName = pub.bankName;
-    if (pub.accountName && !manual.receiverName) manual.receiverName = pub.accountName;
-    if (pub.duitnowId && !manual.duitnowId) manual.duitnowId = pub.duitnowId;
+    const receiverName = manual.receiverName || pubManual.receiverName || pub.accountName || pub.receiverName || "";
+    const bankName = manual.bankName || pubManual.bankName || pub.bankName || "";
+    const bankAccount = manual.bankAccount || pubManual.bankAccount || pub.bankAccount || "";
+    const phone = manual.phone || pubManual.phone || pub.phone || "";
+    const duitnowId = manual.duitnowId || pubManual.duitnowId || pub.duitnowId || "";
+    if (receiverName) manual.receiverName = receiverName;
+    if (bankName) manual.bankName = bankName;
+    if (bankAccount) manual.bankAccount = bankAccount;
+    if (phone) manual.phone = phone;
+    if (duitnowId) manual.duitnowId = duitnowId;
     if (pub.publicLabel && !data.publicLabel) data.publicLabel = pub.publicLabel;
+    if (pub.instructions != null && pub.instructions !== "" && !data.instructions) data.instructions = pub.instructions;
+    if (pub.minAmount != null && data.minAmount == null) data.minAmount = pub.minAmount;
+    if (pub.maxAmount != null && data.maxAmount == null) data.maxAmount = pub.maxAmount;
     data.manual = manual;
     const enabled = pub.enabled != null ? !!pub.enabled : ch.enabled;
+    const configured = !!(qrUrl || receiverName || bankName || bankAccount || duitnowId || phone);
     return {
       ...ch,
       enabled,
-      visible: pub.enabled != null ? !!pub.enabled : ch.visible,
+      visible: pub.visible != null ? !!pub.visible : pub.enabled != null ? !!pub.enabled : ch.visible,
+      mode: pub.mode || ch.mode,
       data,
-      config_status: qrUrl || ch.config_status === "已启用" ? (enabled ? "已启用" : "已配置") : ch.config_status,
+      config_status: configured ? (enabled ? "已启用" : "已配置") : ch.config_status,
     };
   });
 }
@@ -791,6 +842,75 @@ async function handler(req, res) {
     const body = await readBody(req);
     const action = String(body.action || "");
 
+    if (action === "ensure_schema" || action === "apply_migration") {
+      // Probe payment_channels; optionally apply SQL when DATABASE_URL is present on the server.
+      let tableReady = false;
+      let probeError = "";
+      try {
+        await supabaseFetch(TABLES.channels, "?select=id&limit=1");
+        tableReady = true;
+      } catch (error) {
+        tableReady = !isMissingTable(error);
+        if (!tableReady) probeError = String(error?.message || error).slice(0, 240);
+        else throw error;
+      }
+      if (tableReady) {
+        return json(res, 200, {
+          ok: true,
+          tableReady: true,
+          message: "payment_channels 已就绪",
+          migration: "supabase/migrations/20260731_payment_settings.sql",
+        });
+      }
+      const dbUrl =
+        process.env.DATABASE_URL ||
+        process.env.SUPABASE_DB_URL ||
+        process.env.POSTGRES_URL ||
+        process.env.DIRECT_URL ||
+        "";
+      if (!dbUrl) {
+        return json(res, 200, {
+          ok: true,
+          tableReady: false,
+          applied: false,
+          message:
+            "payment_channels 尚未创建。服务端未配置 DATABASE_URL，无法自动执行 DDL。请在 Supabase SQL Editor 执行 supabase/migrations/20260731_payment_settings.sql。保存接口已可写入 platform_settings 兜底。",
+          migration: "supabase/migrations/20260731_payment_settings.sql",
+          probeError,
+        });
+      }
+      try {
+        const { readFileSync } = await import("node:fs");
+        const { resolve } = await import("node:path");
+        const pg = await import("pg");
+        const sqlPath = resolve(process.cwd(), "supabase/migrations/20260731_payment_settings.sql");
+        const sql = readFileSync(sqlPath, "utf8");
+        const client = new pg.default.Client({ connectionString: dbUrl, ssl: { rejectUnauthorized: false } });
+        await client.connect();
+        try {
+          await client.query(sql);
+        } finally {
+          await client.end();
+        }
+        await supabaseFetch(TABLES.channels, "?select=id&limit=1");
+        return json(res, 200, {
+          ok: true,
+          tableReady: true,
+          applied: true,
+          message: "已执行 payment_settings 迁移，payment_channels 可用",
+          migration: "supabase/migrations/20260731_payment_settings.sql",
+        });
+      } catch (error) {
+        return json(res, 503, {
+          ok: false,
+          tableReady: false,
+          applied: false,
+          message: `自动迁移失败：${error.message || error}`,
+          migration: "supabase/migrations/20260731_payment_settings.sql",
+        });
+      }
+    }
+
     if (action === "upload_qr" || action === "upload_pay_qr") {
       const channelId = String(body.channelId || body.channel_id || body.id || "duitnow").trim() || "duitnow";
       const dataUrl = String(body.dataUrl || body.data_url || body.imageData || body.fileDataUrl || "").trim();
@@ -840,6 +960,15 @@ async function handler(req, res) {
       } catch {
         existingQr = "";
       }
+      if (!existingQr) {
+        try {
+          const publicMap = await readPaymentChannelsPublic();
+          const pub = publicMap[tpl.id] || {};
+          existingQr = String(pub.qrUrl || pub.manual?.qrUrl || "").trim();
+        } catch {
+          /* ignore */
+        }
+      }
       const qrUrl = String(incomingManual.qrUrl || incomingData.qrUrl || "").trim() || existingQr;
       const data = {
         ...incomingData,
@@ -863,13 +992,38 @@ async function handler(req, res) {
       };
       channel.config_status = computeStatus(channel, credentialKeys);
       let rows;
+      let saveSource = "payment_channels";
       try {
         rows = await upsert(TABLES.channels, channelDbRow(channel));
       } catch (error) {
         if (isMissingTable(error)) {
-          return json(res, 503, {
-            ok: false,
-            message: "支付设置数据表未初始化。请先执行 supabase/migrations/20260731_payment_settings.sql。",
+          // Table missing: still persist full manual config so payment page can read it.
+          saveSource = "platform_settings";
+          try {
+            await syncChannelPublicConfig(tpl.id, publicConfigFromChannel(channel, data, qrUrl));
+          } catch (syncErr) {
+            return json(res, 503, {
+              ok: false,
+              message:
+                "支付设置数据表未初始化，且兜底写入失败。请先执行 supabase/migrations/20260731_payment_settings.sql。",
+              detail: String(syncErr?.message || syncErr).slice(0, 200),
+            });
+          }
+          if (credentialKeys.length) {
+            /* credentials table likely missing too — skip soft */
+          }
+          await writeLog(req, "save_channel", tpl.id, null, {
+            ...channel,
+            credentials: credentialKeys,
+            source: saveSource,
+          });
+          return json(res, 200, {
+            ok: true,
+            message:
+              "支付渠道配置已保存（payment_channels 表未初始化，已写入 platform_settings；请尽快执行 supabase/migrations/20260731_payment_settings.sql）",
+            channel,
+            source: saveSource,
+            migration: "supabase/migrations/20260731_payment_settings.sql",
           });
         }
         throw error;
@@ -885,21 +1039,13 @@ async function handler(req, res) {
         });
       }
       await syncPaymentMethod(channel, mergedCreds);
-      if (qrUrl) {
-        try {
-          await syncChannelQrToPlatformSettings(tpl.id, qrUrl, {
-            enabled: channel.enabled !== false,
-            publicLabel: data.publicLabel || channel.name,
-            bankName: data.manual?.bankName || "",
-            accountName: data.manual?.receiverName || "",
-            duitnowId: data.manual?.duitnowId || "",
-          });
-        } catch {
-          /* soft-fail public mirror */
-        }
+      try {
+        await syncChannelPublicConfig(tpl.id, publicConfigFromChannel(channel, data, qrUrl));
+      } catch {
+        /* soft-fail public mirror */
       }
-      await writeLog(req, "save_channel", tpl.id, null, { ...channel, credentials: credentialKeys });
-      return json(res, 200, { ok: true, message: "支付渠道配置已保存", channel: rows?.[0] || channel });
+      await writeLog(req, "save_channel", tpl.id, null, { ...channel, credentials: credentialKeys, source: saveSource });
+      return json(res, 200, { ok: true, message: "支付渠道配置已保存", channel: rows?.[0] || channel, source: saveSource });
     }
 
     if (action === "test_channel") {

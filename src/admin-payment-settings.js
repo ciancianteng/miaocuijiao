@@ -252,7 +252,7 @@
       (qrUrl
         ? '<div style="margin:8px 0"><img src="' +
           esc(qrUrl) +
-          '" alt="收款二维码预览" style="max-width:220px;max-height:220px;border-radius:12px;border:1px solid rgba(255,255,255,.12);background:#fff;padding:8px"></div>'
+          '" alt="收款二维码预览" data-mcj-pay-qr="1" style="max-width:220px;max-height:220px;border-radius:12px;border:1px solid rgba(255,255,255,.12);background:#fff;padding:8px"></div>'
         : '<p class="muted" style="margin:8px 0">尚未上传。上传后自动保存到 Storage 并写入支付配置。</p>') +
       '<input type="hidden" name="qrUrl" value="' +
       esc(qrUrl) +

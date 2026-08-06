@@ -837,7 +837,7 @@
     if (window.__MCJAvatarFallback) return;
     if (document.querySelector('script[data-mcj-avatar-fallback],script[src*="avatar-fallback.js"]')) return;
     var s = document.createElement("script");
-    s.src = "/src/avatar-fallback.js";
+    s.src = "/src/avatar-fallback.js?v=20260806paySave1";
     s.setAttribute("data-mcj-avatar-fallback", "1");
     document.head.appendChild(s);
   }

@@ -79,7 +79,7 @@
     if (isReviewing(order) && !(proofDraft.file || proofDraft.previewUrl)) return "";
     var info = order.platformPayInfo || platformPayInfo || null;
     var html = '<div class="pay-qr" data-pay-qr>';
-    html += "<h2>" + esc((info && info.title) || "OCBC OneCollect DuitNow QR") + "</h2>";
+    html += "<h2>" + esc((info && info.title) || "平台收款") + "</h2>";
     html +=
       '<p class="pay-hint">' +
       esc(
@@ -91,10 +91,10 @@
       html +=
         '<div class="pay-qr-frame"><img src="' +
         esc(info.qrUrl) +
-        '" alt="平台收款二维码" referrerpolicy="no-referrer"></div>';
+        '" alt="平台收款二维码" data-mcj-pay-qr="1" referrerpolicy="no-referrer" data-pay-qr-img="1"></div>';
     } else {
       html +=
-        '<p class="pay-alert" role="status">收款二维码暂未配置，请联系客服获取付款方式，或稍后刷新本页。</p>';
+        '<p class="pay-alert" role="status">平台暂未配置收款二维码，请联系客服</p>';
     }
     html += '<div class="pay-qr-meta">';
     if (info && info.receiverName) {
@@ -102,6 +102,12 @@
     }
     if (info && info.bankName) {
       html += '<div class="pay-row"><span>银行</span><strong>' + esc(info.bankName) + "</strong></div>";
+    }
+    if (info && info.bankAccount) {
+      html += '<div class="pay-row"><span>银行账号</span><strong>' + esc(info.bankAccount) + "</strong></div>";
+    }
+    if (info && info.phone) {
+      html += '<div class="pay-row"><span>TNG 手机号</span><strong>' + esc(info.phone) + "</strong></div>";
     }
     if (info && info.duitnowId) {
       html += '<div class="pay-row"><span>DuitNow ID</span><strong>' + esc(info.duitnowId) + "</strong></div>";
