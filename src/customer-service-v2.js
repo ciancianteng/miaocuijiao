@@ -663,7 +663,7 @@
           var item=list.splice(idx,1)[0];
           list.unshift(item);
           state.data.conversations=list;
-          if(fromPeer&&state.route==='conversations'){
+          if(fromPeer&&state.route==='conversations'&&!state.activeConversation){
             state.convFilter=convBucket(item);
           }
         }else if(fromPeer||row.sender_role==='customer_service'||row.sender_role==='system'){
@@ -687,7 +687,7 @@
           };
           list.unshift(stub);
           state.data.conversations=list;
-          if(fromPeer&&state.route==='conversations')state.convFilter='waiting';
+          if(fromPeer&&state.route==='conversations'&&!state.activeConversation)state.convFilter='waiting';
           // Hydrate name/assignment from server without wiping composer.
           softRefresh();
         }
@@ -1430,11 +1430,10 @@
       healSessionStaff(next);
       applyReadCursors(state.data);
       recomputeSummaryFromConversations();
+      // Keep pinned conversation even if list lags (same sticky rule as softRefresh).
+      // Do not clear activeConversation just because the poll payload omitted it.
       if(state.suppressAutoSelect){
         state.activeConversation='';
-      }else if(state.activeConversation){
-        var still=(state.data.conversations||[]).some(function(c){return c.id===state.activeConversation});
-        if(!still)state.activeConversation='';
       }
       if(!state.createOrderErrors)state.createOrderErrors={bosses:'',companions:'',services:''};
       if(bootFailed){
@@ -1586,11 +1585,12 @@
       }
       state.data=remote;
       // Keep focus sticky: never jump to conversations[0] on poll/refresh.
+      // Prefer the live selection (user may have switched mid-flight) over captured keepConv.
+      var liveConv=String(state.activeConversation||keepConv||'').trim();
       if(state.suppressAutoSelect){
         state.activeConversation='';
-      }else if(keepConv){
-        var stillThere=(state.data.conversations||[]).some(function(c){return c.id===keepConv});
-        state.activeConversation=stillThere?keepConv:'';
+      }else if(liveConv){
+        state.activeConversation=liveConv;
       }else{
         state.activeConversation='';
       }
@@ -1645,9 +1645,8 @@
       state.lastPollAt=new Date().toISOString();
       if(state.suppressAutoSelect){
         state.activeConversation='';
-      }else if(keepConv){
-        var stillThere=(state.data.conversations||[]).some(function(c){return c.id===keepConv});
-        state.activeConversation=stillThere?keepConv:'';
+      }else if(keepConv||state.activeConversation){
+        state.activeConversation=String(state.activeConversation||keepConv||'');
       }
       if(keepRoute)state.route=keepRoute;
       recomputeSummaryFromConversations();
@@ -3274,6 +3273,7 @@
         var pending=String((state.composerDrafts&&state.composerDrafts[prev])||state.composerDraft||'').trim();
         if(pending&&!confirm('当前会话有未发送内容，切换后将为你保留草稿。确定切换？'))return;
       }
+      softRefreshSeq+=1;
       state.suppressAutoSelect=false;
       state.activeConversation=cid;
       state.showConversationList=false;

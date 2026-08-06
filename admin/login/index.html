@@ -31,11 +31,13 @@
         </label>
         <label class="mcj-auth-check"><input name="remember" type="checkbox" checked> 记住登录</label>
         <button class="mcj-auth-btn primary" type="submit">登录</button>
+        <button class="mcj-auth-btn ghost" type="button" data-forgot-password data-forgot-role="admin">忘记密码</button>
         <p class="mcj-auth-error" data-auth-error></p>
         <p class="mcj-auth-note">后台中心不提供注册入口，仅管理员可登录。</p>
       </form>
     </section>
   </main>
+  <script type="module" src="/src/forgot-password.js?v=20260806forgotP0"></script>
   <script type="module">
     // Runs after deferred head modules; never depends on platform_settings / business APIs.
     function waitFor(getter, tries) {

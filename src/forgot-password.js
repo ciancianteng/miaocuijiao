@@ -238,7 +238,8 @@
       "</form>";
   }
 
-  function close() {
+  function close(opts) {
+    opts = opts || {};
     stopCountdown();
     state.open = false;
     state.busy = false;
@@ -256,7 +257,7 @@
     }
     var done = state.onDone;
     state.onDone = null;
-    if (typeof done === "function") {
+    if (opts.ok && typeof done === "function") {
       try {
         done();
       } catch (e) {}
@@ -391,7 +392,7 @@
         .then(function (res) {
           state.busy = false;
           toast(res.message || SUCCESS_TOAST);
-          close();
+          close({ ok: true });
         })
         .catch(function (err) {
           state.busy = false;
@@ -416,5 +417,6 @@
   window.MCJForgotPassword = {
     open: open,
     close: close,
+    SUCCESS_TOAST: SUCCESS_TOAST,
   };
 })();

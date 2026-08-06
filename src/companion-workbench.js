@@ -153,13 +153,17 @@
     var cid=String(state.chatConversationId||'').trim();
     if(cid){
       var hit=list.find(function(c){return String(c.id)===cid});
+      // Stay pinned even if the list briefly lags — never auto-jump to another thread.
       if(hit)return hit;
+      return {id:cid,ended:false,title:'订单沟通',subtitle:'同步中…',consultTypeLabel:'订单沟通'};
     }
+    // First open only: adopt server active once, then pin.
     if(inbox&&inbox.csConversationId){
+      state.chatConversationId=String(inbox.csConversationId);
       var byInbox=list.find(function(c){return String(c.id)===String(inbox.csConversationId)});
       if(byInbox)return byInbox;
     }
-    return list.find(function(c){return !c.ended})||list[0]||null;
+    return null;
   }
   function inboxQueryParams(){
     var q={};
@@ -1158,7 +1162,9 @@
         if(tickIso%3!==0){
           api('inbox',inboxQueryParams(),'GET').then(function(res){
             if(res&&res.ok){
+              var pin=String(state.chatConversationId||'').trim();
               state.inbox=res.data||res.inbox||null;
+              if(pin)state.chatConversationId=pin;
               if(!isEditingLiveForm())paint({preserveScroll:true});
             }
           }).catch(function(){});
@@ -1191,7 +1197,9 @@
         if(state.route==='messages'){
           api('inbox',inboxQueryParams(),'GET').then(function(res){
             if(res&&res.ok){
+              var pin=String(state.chatConversationId||'').trim();
               state.inbox=res.data||res.inbox||null;
+              if(pin)state.chatConversationId=pin;
               if(state.data&&state.data.summary&&state.inbox)state.data.summary.unreadMessages=num(state.inbox.unreadTotal);
               bindCompanionChatRealtime();
             }
@@ -1217,7 +1225,9 @@
         if(state.route==='messages'){
           return api('inbox',inboxQueryParams(),'GET').then(function(res){
             if(res&&res.ok){
+              var pin=String(state.chatConversationId||'').trim();
               state.inbox=res.data||res.inbox||null;
+              if(pin)state.chatConversationId=pin;
               if(state.data&&state.data.summary&&state.inbox)state.data.summary.unreadMessages=num(state.inbox.unreadTotal);
               bindCompanionChatRealtime();
             }
@@ -3141,7 +3151,7 @@
         return;
       }
       var s=document.createElement('script');
-      s.src='/src/forgot-password.js?v=20260804forgotP0b';
+      s.src='/src/forgot-password.js?v=20260806forgotP0';
       s.onload=function(){ if(window.MCJForgotPassword) openForgot(); };
       document.head.appendChild(s);
       return;

@@ -1,4 +1,10 @@
 {
+  "crons": [
+    {
+      "path": "/api/cron/order-auto-complete",
+      "schedule": "*/15 * * * *"
+    }
+  ],
   "rewrites": [
     { "source": "/ranking", "destination": "/ranking.html" },
     { "source": "/leaderboard", "destination": "/ranking.html" },

@@ -691,9 +691,10 @@
   function loadThread(conversationId, silent) {
     var cid = conversationId || (state.conversation && state.conversation.id) || conversationParam();
     if (!cid) return Promise.resolve(null);
+    var requestedId = String(cid);
     return fetchJson("/api/chat?conversation_id=" + encodeURIComponent(cid))
       .then(function (body) {
-        applyPayload(body, { keepScroll: !!silent });
+        applyPayload(body, { keepScroll: !!silent, pinConversationId: requestedId });
         return loadOrders().then(function () {
           softUpdate({ keepScroll: !!silent });
           return body;
@@ -1057,21 +1058,33 @@
     opts = opts || {};
     if (Array.isArray(body.conversations)) state.conversations = body.conversations;
     var prevCid = state.conversation && state.conversation.id;
-    if (body.conversation) {
-      state.conversation = body.conversation;
-      state.mobileDetail = true;
-      syncUrl(body.conversation);
+    var pinCid = String(opts.pinConversationId || prevCid || "").trim();
+    var incomingConv = body.conversation || null;
+    var incomingCid = incomingConv && incomingConv.id ? String(incomingConv.id) : "";
+    // Never steal focus: ignore stale poll/open responses for another conversation.
+    if (incomingConv) {
+      if (pinCid && incomingCid && incomingCid !== pinCid) {
+        incomingConv = null;
+      } else {
+        state.conversation = incomingConv;
+        state.mobileDetail = true;
+        syncUrl(incomingConv);
+      }
     }
     if (Array.isArray(body.messages)) {
-      // Preserve failed local drafts across silent polls.
-      var failedLocals = (state.messages || []).filter(function (m) { return m._failed || m._pending; });
-      var remote = body.messages.slice();
-      failedLocals.forEach(function (local) {
-        if (!remote.some(function (m) { return m.content === local.content && m.sender_role === "boss"; })) {
-          remote.push(local);
-        }
-      });
-      state.messages = remote;
+      var activeCid = String((state.conversation && state.conversation.id) || pinCid || "").trim();
+      var msgConv = incomingCid || activeCid;
+      if (!pinCid || !msgConv || msgConv === pinCid || msgConv === activeCid) {
+        // Preserve failed local drafts across silent polls.
+        var failedLocals = (state.messages || []).filter(function (m) { return m._failed || m._pending; });
+        var remote = body.messages.slice();
+        failedLocals.forEach(function (local) {
+          if (!remote.some(function (m) { return m.content === local.content && m.sender_role === "boss"; })) {
+            remote.push(local);
+          }
+        });
+        state.messages = remote;
+      }
     } else if (body.appended || body.row) {
       var added = body.appended || body.row;
       if (added && added.content) {

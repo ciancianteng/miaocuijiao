@@ -863,6 +863,19 @@ async function reviewApplication(req, companion, payload) {
     }
   }
   await logOperation(req, "review_application", companion.id, companion, after?.[0], reason);
+  if (companion.user_id) {
+    try {
+      const { notifyCompanionReviewResult } = await import("../_companion-inbox.js");
+      await notifyCompanionReviewResult(companion.user_id, {
+        kind: "application",
+        status,
+        reason,
+        companionId: companion.id,
+      });
+    } catch (err) {
+      console.error("[players] review notify failed", err?.message || err);
+    }
+  }
   return after?.[0];
 }
 

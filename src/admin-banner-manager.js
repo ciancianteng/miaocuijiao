@@ -174,7 +174,25 @@
             "</span>" +
             (active ? '<span class="banner-ops-badge live">使用中</span>' : "") +
             "</div>" +
+            '<label class="banner-ops-sort">标题 <input type="text" maxlength="80" value="' +
+            esc(item.title || "") +
+            '" data-banner-title="' +
+            esc(item.id) +
+            '" placeholder="可选标题" style="width:140px"></label>' +
+            '<label class="banner-ops-sort">链接 <input type="text" maxlength="240" value="' +
+            esc(item.button_link || item.link || "") +
+            '" data-banner-link="' +
+            esc(item.id) +
+            '" placeholder="可选跳转" style="width:160px"></label>' +
             '<div class="banner-ops-card-actions">' +
+            '<label class="banner-ops-sort">排序 <input type="number" min="0" step="1" value="' +
+            esc(item.sort_order != null ? item.sort_order : 100) +
+            '" data-banner-sort="' +
+            esc(item.id) +
+            '" style="width:72px"></label>' +
+            '<button class="mini-btn" type="button" data-banner-save-meta="' +
+            esc(item.id) +
+            '">保存编辑</button>' +
             (active
               ? ""
               : '<button class="mini-btn primary-lite" type="button" data-banner-set="' +
@@ -438,6 +456,49 @@
     document.querySelectorAll("[data-banner-delete]").forEach(function (btn) {
       btn.onclick = function () {
         removeBanner(btn.getAttribute("data-banner-delete"));
+      };
+    });
+    document.querySelectorAll("[data-banner-save-meta]").forEach(function (btn) {
+      btn.onclick = function () {
+        var id = btn.getAttribute("data-banner-save-meta");
+        var card = btn.closest("[data-banner-id]");
+        var titleInput = card && card.querySelector('[data-banner-title="' + id + '"]');
+        var linkInput = card && card.querySelector('[data-banner-link="' + id + '"]');
+        var sortInput = card && card.querySelector('[data-banner-sort="' + id + '"]');
+        var sortOrder = Number(sortInput && sortInput.value != null ? sortInput.value : 100);
+        apiPost({
+          action: "update",
+          id: id,
+          title: titleInput ? titleInput.value : "",
+          link: linkInput ? linkInput.value : "",
+          button_link: linkInput ? linkInput.value : "",
+          sort_order: sortOrder,
+        })
+          .then(function (res) {
+            alert(res.message || "Banner 已保存");
+            try {
+              localStorage.setItem("mcj_banner_published_at", String(Date.now()));
+              window.dispatchEvent(new Event("mcj:platform-data-updated"));
+            } catch (e) {}
+            return load();
+          })
+          .catch(function (err) {
+            alert(err.message || "保存失败");
+          });
+      };
+    });
+    document.querySelectorAll("[data-banner-sort]").forEach(function (input) {
+      input.onchange = function () {
+        var id = input.getAttribute("data-banner-sort");
+        var sortOrder = Number(input.value || 100);
+        apiPost({ action: "update", id: id, sort_order: sortOrder })
+          .then(function (res) {
+            alert(res.message || "排序已保存");
+            return load();
+          })
+          .catch(function (err) {
+            alert(err.message || "排序保存失败");
+          });
       };
     });
     document.querySelectorAll("[data-banner-preview]").forEach(function (btn) {

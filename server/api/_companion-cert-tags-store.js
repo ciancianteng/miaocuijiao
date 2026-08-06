@@ -194,6 +194,10 @@ export async function readCertTags() {
   return seeded;
 }
 
+function isServerlessFs() {
+  return !!(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.NOW_REGION);
+}
+
 export async function writeCertTags(rows) {
   const list = (Array.isArray(rows) ? rows : [])
     .map((r, i) => normalizeCertTag(r, i))
@@ -203,7 +207,16 @@ export async function writeCertTags(rows) {
     const saved = await writeDbTags(list);
     if (Array.isArray(saved)) return saved;
   } catch (error) {
-    if (!isMissingTable(error)) console.error("[cert-tags] DB write failed", error.message || error);
+    if (!isMissingTable(error)) {
+      console.error("[cert-tags] DB write failed", error.message || error);
+      throw Object.assign(new Error(`认证标签保存失败：${error.message || error}`), { status: 503 });
+    }
+  }
+  if (isServerlessFs()) {
+    throw Object.assign(
+      new Error("认证标签表未就绪，无法在 Staging 写入本地文件。请执行 companion_cert_tags 迁移后重试。"),
+      { status: 503 }
+    );
   }
   await writeJsonFile(TAGS_FILE, list);
   return list;

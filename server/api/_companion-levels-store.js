@@ -316,6 +316,10 @@ export async function readLocalLevels() {
   return DEFAULT_LEVELS.map((row, index) => normalizeLevelRow(row, index));
 }
 
+function isServerlessFs() {
+  return !!(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.NOW_REGION);
+}
+
 export async function writeLocalLevels(rows) {
   const list = (Array.isArray(rows) ? rows : []).map((row, index) => normalizeLevelRow(row, index))
     .sort((a, b) => a.sort - b.sort || a.level - b.level);
@@ -323,13 +327,22 @@ export async function writeLocalLevels(rows) {
     const saved = await writeDbLevels(list);
     if (Array.isArray(saved)) return saved.sort((a, b) => a.sort - b.sort || a.level - b.level);
   } catch (error) {
-    if (!isMissingTable(error)) console.error("[companion-levels] DB write failed, fallback local", error.message || error);
+    if (!isMissingTable(error)) {
+      console.error("[companion-levels] DB write failed", error.message || error);
+      throw Object.assign(new Error(`等级保存失败：${error.message || error}`), { status: 503 });
+    }
+  }
+  if (isServerlessFs()) {
+    throw Object.assign(
+      new Error("等级表未就绪，无法在 Staging 写入本地文件。请执行 companion_levels 迁移后重试。"),
+      { status: 503 }
+    );
   }
   try {
     await ensureDir();
     await fs.writeFile(DATA_FILE, JSON.stringify(list, null, 2), "utf8");
-  } catch {
-    /* Preview/serverless may be read-only; still return levels for this request */
+  } catch (error) {
+    throw Object.assign(new Error(`等级本地保存失败：${error.message || error}`), { status: 500 });
   }
   return list;
 }

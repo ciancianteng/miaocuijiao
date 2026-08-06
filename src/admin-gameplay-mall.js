@@ -163,7 +163,8 @@
             '<label class="wide"><span>商品名称</span><input name="name" required maxlength="40" value="' + esc(row.name || "") + '" placeholder="例如：三角洲跑刀 / APEX 上分护航"></label>' +
             categoryField +
             unitField +
-            '<label><span>售价 RM</span><input name="price" type="number" min="0" step="0.01" value="' + esc(row.price || 0) + '"></label>' +
+            '<label><span>售价（猫粮）</span><input name="price" type="number" min="0" step="0.01" value="' + esc(row.price || 0) + '"></label>' +
+            '<label><span>商品抽成 %</span><input name="commissionRate" type="number" min="0" max="100" step="0.1" value="' + esc(row.commissionRate != null ? row.commissionRate : 0) + '" placeholder="平台抽成百分比"></label>' +
             '<label><span>排序</span><input name="sortOrder" type="number" value="' + esc(row.sortOrder || 100) + '"></label>' +
             '<label class="wide"><span>适用游戏（可多选）</span><div class="gp-check-grid">' + gameChecks + "</div></label>" +
             '<label class="wide"><span>商品封面</span>' + coverUploader(row.coverUrl || "") + "</label>" +
@@ -196,7 +197,7 @@
   function rowsHtml() {
     var rows = filtered();
     if (!rows.length) {
-      return '<tr><td colspan="12"><div class="empty">暂无玩法商品。点击「新增玩法商品」创建商城商品。</div></td></tr>';
+      return '<tr><td colspan="13"><div class="empty">暂无玩法商品。点击「新增玩法商品」创建商城商品。</div></td></tr>';
     }
     return rows.map(function (item) {
       var cover = item.coverUrl
@@ -209,6 +210,7 @@
           "<td>" + esc(item.category || "-") + "</td>" +
           "<td>" + esc(item.gamesText || "-") + "</td>" +
           "<td>" + esc(priceText(item)) + "</td>" +
+          "<td>" + esc(item.commissionRate != null ? item.commissionRate + "%" : "0%") + "</td>" +
           "<td>" + esc(item.pricingUnit || "-") + "</td>" +
           '<td><span class="status ' + (item.status === "published" ? "ok" : "wait") + '">' + esc(statusLabel(item.status)) + "</span></td>" +
           "<td>" + (item.featured ? "推荐" : "否") + "</td>" +
@@ -262,7 +264,7 @@
         "</div>" +
         (!window.MCJAdminOverlay && state.formOpen ? formHtml(state.editing) : "") +
         '<div class="table-wrap"><table class="data-table"><thead><tr>' +
-          "<th>封面</th><th>商品名称</th><th>分类</th><th>适用游戏</th><th>售价</th><th>计价单位</th><th>销售状态</th><th>推荐</th><th>已售</th><th>排序</th><th>更新时间</th><th>操作</th>" +
+          "<th>封面</th><th>商品名称</th><th>分类</th><th>适用游戏</th><th>售价</th><th>抽成%</th><th>计价单位</th><th>销售状态</th><th>推荐</th><th>已售</th><th>排序</th><th>更新时间</th><th>操作</th>" +
         "</tr></thead><tbody>" + rowsHtml() + "</tbody></table></div>" +
       "</div>"
     );
@@ -304,6 +306,7 @@
       shortDescription: String(fd.get("shortDescription") || "").trim().slice(0, 40),
       description: String(fd.get("description") || "").trim(),
       price: Number(fd.get("price") || 0),
+      commissionRate: Number(fd.get("commissionRate") || 0),
       pricingUnit: String(fd.get("pricingUnit") || "每单").trim(),
       fixedPrice: String(fd.get("fixedPrice")) !== "false",
       status: status,

@@ -204,6 +204,10 @@ export async function readVoiceTypes() {
   return seeded;
 }
 
+function isServerlessFs() {
+  return !!(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.NOW_REGION);
+}
+
 export async function writeVoiceTypes(rows) {
   const list = (Array.isArray(rows) ? rows : [])
     .map((row, index) => normalizeVoiceType(row, index))
@@ -213,7 +217,16 @@ export async function writeVoiceTypes(rows) {
     const saved = await writeDbRows(list);
     if (Array.isArray(saved)) return saved.sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name, "zh"));
   } catch (error) {
-    if (!isMissingTable(error)) console.error("[voice-types] DB write failed, fallback local", error.message || error);
+    if (!isMissingTable(error)) {
+      console.error("[voice-types] DB write failed", error.message || error);
+      throw Object.assign(new Error(`声线保存失败：${error.message || error}`), { status: 503 });
+    }
+  }
+  if (isServerlessFs()) {
+    throw Object.assign(
+      new Error("声线表未就绪，无法在 Staging 写入本地文件。请执行 companion_voice_types 迁移后重试。"),
+      { status: 503 }
+    );
   }
   await ensureDir();
   await fs.writeFile(DATA_FILE, JSON.stringify(list, null, 2), "utf8");

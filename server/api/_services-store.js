@@ -89,8 +89,11 @@ export async function readLocalServices() {
 }
 
 export async function writeLocalServices(rows) {
-  await ensureDir();
   const list = (Array.isArray(rows) ? rows : []).map(normalizeServiceRow);
+  if (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME) {
+    throw Object.assign(new Error("服务分类必须写入数据库，请确认 services 表已迁移。"), { status: 503 });
+  }
+  await ensureDir();
   await fs.writeFile(DATA_FILE, JSON.stringify(list, null, 2), "utf8");
   return list;
 }
@@ -117,10 +120,13 @@ export async function readLocalCategories() {
 }
 
 export async function writeLocalCategories(rows) {
-  await ensureDir();
   const list = Array.from(
     new Set((Array.isArray(rows) ? rows : []).map((name) => String(name || "").trim()).filter(Boolean))
   );
+  if (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME) {
+    throw Object.assign(new Error("服务分类必须写入数据库，请确认 service_categories 表已迁移。"), { status: 503 });
+  }
+  await ensureDir();
   await fs.writeFile(CATEGORY_FILE, JSON.stringify(list, null, 2), "utf8");
   return list;
 }

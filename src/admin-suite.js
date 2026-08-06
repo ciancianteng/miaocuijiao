@@ -1286,7 +1286,7 @@
     'companion-levels':{target:'companionLevelSettings',title:'陪玩等级管理',type:'companion_levels',desc:'已迁移至专用陪玩等级管理模块。',fields:['code','name','minPrice','maxPrice','icon','cardStyle','description','commissionRate','sort'],disabled:true},
     'featured-players':{target:'featuredPlayerManagement',title:'推荐陪玩管理',type:'featured_players',desc:'选择首页展示的推荐陪玩，控制排序、推荐理由和显示状态。',fields:['companionUid','nickname','reason','showOnHome','sort']},
     'hot-games':{target:'hotGameManagement',title:'热门游戏管理',type:'hot_games',desc:'管理首页热门游戏入口，支持新增、编辑、删除、排序和启用/停用。',fields:['name','game','icon','cover','description','showOnHome','sort']},
-    banners:{target:'crud-banners',title:'Banner 管理',type:'banners',desc:'直接同步首页 Banner，支持电脑端与手机端图片、跳转、排期、排序和发布。',fields:['title','desktopImage','mobileImage','link','linkTarget','sort','startAt','endAt','autoPlay','intervalSeconds']},
+    banners:{target:'crud-banners',title:'Banner 管理',type:'banners',desc:'已迁移至专用 Banner 上传管理模块。',fields:['title','desktopImage','mobileImage','link','linkTarget','sort','startAt','endAt','autoPlay','intervalSeconds'],disabled:true},
     announcements:{target:'table-announcements',title:'公告管理',type:'announcements',desc:'对应首页 Banner 下方公告，前台按后台排序和时间播放。',fields:['content','link','sort','startAt','endAt','displayMode']},
     ads:{target:'crud-ads',title:'广告位管理',type:'ad_slots',desc:'同步首页、陪玩大厅、组队大厅、充值中心等广告位。',fields:['title','subtitle','image','link','position','sort','startAt','endAt','carousel','official']},
     'team-lobby-links':{target:'teamLobbySettings',title:'组队大厅设置',type:'team_lobby_channels',desc:'管理组队大厅 Discord 频道卡片，前台按排序和显示状态读取。',fields:['image','name','description','discordUrl','sort']},
@@ -2325,7 +2325,6 @@
       ['table-companion_rules','暂无陪玩制度内容'],
       ['table-voice_types','暂无声音类型数据'],
       ['table-companion_deposit','暂无押金设置'],
-      ['table-companion_applications','暂无陪玩申请'],
       ['statisticsPanel','暂无统计数据'],
       ['table-vip_settings','暂无 VIP 设置'],
       ['paymentSettings','']
