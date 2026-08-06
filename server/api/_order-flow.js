@@ -187,7 +187,11 @@ export async function enrichGrabCompanions({ restUrl, supabaseJson, serviceHeade
         mainGame: row.game || "",
         gameRank: row.game_rank || row.rank || "",
         rank: row.game_rank || row.rank || "",
-        tags: row.tags || "",
+        tags: String(row.tags || "")
+          .replace(/\[\[MCJ_PRICES:[^\]]*\]\]/g, "")
+          .replace(/,\s*,/g, ",")
+          .replace(/^,|,$/g, "")
+          .trim(),
         price: Number(row.price || 0) || 0,
         unitPrice: Number(row.price || 0) || 0,
         onlineStatus: onlineCode,
