@@ -3331,17 +3331,26 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       const grabs = isAssignedPath
         ? []
         : await grabsApi.listGrabs(order.id, patched.note || order.note || order.description || "");
+      const paidAtIso = patched.paid_at || nowIso();
       const finalOrder = safeOrder(
         {
           ...order,
           ...patched,
           status: next,
+          paid_at: paidAtIso,
           assignment_type: isAssignedPath ? "assigned" : "public",
           companion_id: isAssignedPath ? assignedCompanionId : null,
           customer_service_id: service.profile.id,
         },
         profiles,
-        { grabCount: grabs.length, grabs }
+        {
+          grabCount: grabs.length,
+          grabs,
+          paidAt: paidAtIso,
+          paymentReviewedByName: csDisplayName(service.profile) || service.profile.display_name || "",
+          paymentReviewedAt: paidAtIso,
+          paymentProofUrl: pendingReceipt ? (await signedProofUrl(pendingReceipt).catch(() => "")) || "" : "",
+        }
       );
 
       return json(res, 200, {
