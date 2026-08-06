@@ -1304,8 +1304,8 @@
       bodyHtml=
         '<form class="mcj-auth-form" data-register data-auth-panel="register" autocomplete="on">'+
         '<label class="mcj-auth-field">陪玩昵称<input name="nickname" required maxlength="40" value=""'+(verified?'':'')+'></label>'+
-        '<label class="mcj-auth-field">邮箱<div class="mcj-auth-code-row"><input name="email" type="email" autocomplete="email" required value="'+esc(state.registerVerifiedEmail||'')+'"'+(verified?' readonly':'')+'><button class="mcj-auth-btn ghost" type="button" data-send-register-otp data-register-role="companion"'+(cool>0||verified||state.registerBusy?' disabled':'')+'>'+(verified?'已验证':cool>0?cool+'s':'获取验证码')+'</button></div></label>'+
-        '<label class="mcj-auth-field">邮箱验证码<div class="mcj-auth-code-row"><input name="register_code" inputmode="numeric" autocomplete="one-time-code" data-auth-code="1" data-auth-sensitive="1" maxlength="6" placeholder="6 位验证码" value=""'+(verified?' disabled':'')+'><button class="mcj-auth-btn ghost" type="button" data-verify-register-otp data-register-role="companion"'+(verified||state.registerBusy?' disabled':'')+'>验证邮箱</button></div></label>'+
+        '<label class="mcj-auth-field">邮箱<div class="mcj-auth-code-row"><input name="email" type="email" inputmode="email" autocomplete="email" required value="'+esc(state.registerVerifiedEmail||'')+'"'+(verified?' readonly':'')+'><button class="mcj-auth-btn ghost" type="button" data-send-register-otp data-register-role="companion"'+(cool>0||verified||state.registerBusy?' disabled':'')+'>'+(verified?'已验证':cool>0?cool+'s':'获取验证码')+'</button></div></label>'+
+        '<label class="mcj-auth-field">邮箱验证码<div class="mcj-auth-code-row"><input name="register_code" type="text" inputmode="numeric" autocomplete="one-time-code" data-auth-code="1" data-auth-sensitive="1" maxlength="6" placeholder="6 位验证码" value=""'+(verified?' disabled':'')+'><button class="mcj-auth-btn ghost" type="button" data-verify-register-otp data-register-role="companion"'+(verified||state.registerBusy?' disabled':'')+'>验证邮箱</button></div></label>'+
         (verified
           ? '<p class="mcj-auth-note">邮箱已验证 · '+esc(state.registerVerifiedEmail)+'，请设置密码并注册。</p>'
           : '<p class="mcj-auth-note">请先完成邮箱验证，验证成功后才能注册。</p>')+
@@ -1326,7 +1326,7 @@
         bodyHtml=methodTabs+
           '<form class="mcj-auth-form" data-login data-login-method="password" data-auth-panel="login-password" autocomplete="on">'+
           '<input type="hidden" name="remember" value="1">'+
-          '<label class="mcj-auth-field">邮箱<input name="account" type="email" autocomplete="username" required placeholder="name@example.com" value=""></label>'+
+          '<label class="mcj-auth-field">邮箱<input name="account" type="email" inputmode="email" autocomplete="email" required placeholder="name@example.com" value=""></label>'+
           loginPwd+
           '<button class="mcj-auth-btn primary" type="submit"'+(state.loginBusy?' disabled':'')+'>'+(state.loginBusy?'登录中…':'密码登录')+'</button>'+
           '<button class="mcj-auth-btn ghost" type="button" data-forgot-password data-forgot-role="companion">忘记密码</button>'+
@@ -1336,8 +1336,8 @@
         bodyHtml=methodTabs+
           '<form class="mcj-auth-form" data-login data-login-method="otp" data-auth-panel="login-otp" autocomplete="on">'+
           '<input type="hidden" name="remember" value="1">'+
-          '<label class="mcj-auth-field">邮箱<input id="loginOtpEmail" name="account" type="email" autocomplete="username" required placeholder="name@example.com" value=""></label>'+
-          '<label class="mcj-auth-field">验证码<div class="mcj-auth-code-row"><input id="loginOtpCode" name="code" inputmode="numeric" autocomplete="one-time-code" data-auth-code="1" data-auth-sensitive="1" maxlength="6" placeholder="6 位验证码" required value=""><button class="mcj-auth-btn ghost" type="button" data-send-login-otp data-login-role="companion">获取验证码</button></div></label>'+
+          '<label class="mcj-auth-field">邮箱<input id="loginOtpEmail" name="account" type="email" inputmode="email" autocomplete="email" required placeholder="name@example.com" value=""></label>'+
+          '<label class="mcj-auth-field">验证码<div class="mcj-auth-code-row"><input id="loginOtpCode" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" data-auth-code="1" data-auth-sensitive="1" maxlength="6" placeholder="6 位验证码" required value=""><button class="mcj-auth-btn ghost" type="button" data-send-login-otp data-login-role="companion">获取验证码</button></div></label>'+
           '<button class="mcj-auth-btn primary" type="submit"'+(state.loginBusy?' disabled':'')+'>'+(state.loginBusy?'登录中…':'验证码登录')+'</button>'+
           '<button class="mcj-auth-btn ghost" type="button" data-forgot-password data-forgot-role="companion">忘记密码</button>'+
           '<p class="mcj-auth-error" data-auth-error data-login-error>'+esc(state.loginError||'')+'</p>'+

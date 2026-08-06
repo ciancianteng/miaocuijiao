@@ -327,7 +327,7 @@
 
     var loginPwd =
       '<form class="apply-auth-form" data-apply-auth-form="login-password" data-apply-auth-panel="login-password"' + (mode === "login" && loginMethod === "password" ? "" : " hidden") + ' autocomplete="on">' +
-      '<label class="form-field full">邮箱<input name="authEmail" type="email" inputmode="email" autocomplete="username" placeholder="name@example.com" required value="' + esc(authUi.loginEmail || "") + '"></label>' +
+      '<label class="form-field full">邮箱<input name="authEmail" type="email" inputmode="email" autocomplete="email" placeholder="name@example.com" required value="' + esc(authUi.loginEmail || "") + '"></label>' +
       '<label class="form-field full">密码<input name="authPassword" type="password" autocomplete="current-password" data-auth-sensitive="1" required value=""></label>' +
       '<div class="apply-actions apply-auth-actions full"><button class="apply-btn primary" type="button" data-apply-login-password' + (authUi.busy ? " disabled" : "") + ">登录并继续申请</button></div>" +
       "</form>";
@@ -337,7 +337,7 @@
       '<div class="apply-auth-email-row form-field full">' +
       "<label>邮箱" +
       '<div class="apply-auth-inline">' +
-      '<input name="authEmail" type="email" inputmode="email" autocomplete="username" placeholder="name@example.com" required value="' + esc(authUi.loginEmail || "") + '">' +
+      '<input name="authEmail" type="email" inputmode="email" autocomplete="email" placeholder="name@example.com" required value="' + esc(authUi.loginEmail || "") + '">' +
       '<button class="apply-btn apply-auth-send" type="button" data-apply-send-login-otp' + (loginCooldown > 0 || authUi.busy ? " disabled" : "") + ">" +
       (loginCooldown > 0 ? loginCooldown + "s" : "发送验证码") +
       "</button>" +

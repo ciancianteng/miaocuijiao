@@ -72,13 +72,43 @@
     return String((el && (el.name || el.id || el.getAttribute("autocomplete") || "")) || "").toLowerCase();
   }
 
+  function looksLikeAccountKey(key) {
+    key = String(key || "");
+    // loginOtpEmail / registerEmail / loginGmail must never be treated as OTP.
+    if (/(email|gmail|account|username|nickname|phone|dial|password|passwd|pwd)$/.test(key)) return true;
+    if (/(^|[_-])(email|gmail|account|username|nickname|phone|dial|password|passwd|pwd)([_-]|$)/.test(key)) return true;
+    return false;
+  }
+
   function isCodeInput(el) {
     if (!el || el.tagName !== "INPUT") return false;
-    if (el.hasAttribute("data-auth-code") || el.hasAttribute("data-auth-sensitive")) return true;
+    var type = String(el.type || "").toLowerCase();
+    // Email / password / tel keyboards must never be coerced to numeric OTP.
+    if (type === "email" || type === "password" || type === "tel" || type === "hidden" || type === "checkbox") {
+      return false;
+    }
+    // data-auth-sensitive is also used on password fields — only data-auth-code means OTP.
+    if (el.hasAttribute("data-auth-code")) return true;
     var ac = String(el.getAttribute("autocomplete") || "").toLowerCase();
     if (ac === "one-time-code") return true;
+    if (
+      ac === "email" ||
+      ac === "username" ||
+      ac === "tel" ||
+      ac === "current-password" ||
+      ac === "new-password" ||
+      ac === "nickname"
+    ) {
+      return false;
+    }
     var key = inputKey(el);
-    return /(^|[_-])(otp|code|verify|verification)([_-]|$)/.test(key) || /otp|logincode|registercode|authlogincode|authregistercode/.test(key);
+    if (looksLikeAccountKey(key)) return false;
+    // Require otp/code as a token / suffix — never bare substring (loginOtpEmail contains "otp").
+    return (
+      /(^|[_-])(otp|code|verify|verification)([_-]|$)/.test(key) ||
+      /(otpcode|logincode|registercode|authlogincode|authregistercode|registerotp|^otp$|^code$)/.test(key) ||
+      /(otp|code)$/.test(key)
+    );
   }
 
   function isPasswordInput(el) {
@@ -87,16 +117,53 @@
     var ac = String(el.getAttribute("autocomplete") || "").toLowerCase();
     if (ac === "current-password" || ac === "new-password") return true;
     var key = inputKey(el);
+    if (isCodeInput(el)) return false;
     return /password|passwd|pwd/.test(key);
   }
 
   function isAccountInput(el) {
     if (!el || el.tagName !== "INPUT") return false;
-    if (String(el.type || "").toLowerCase() === "email") return true;
+    var type = String(el.type || "").toLowerCase();
+    if (type === "password" || type === "hidden" || type === "checkbox") return false;
+    if (isCodeInput(el)) return false;
+    if (type === "email") return true;
     var ac = String(el.getAttribute("autocomplete") || "").toLowerCase();
     if (ac === "username" || ac === "email" || ac === "tel") return true;
     var key = inputKey(el);
     return /email|account|username|gmail|phone|dial/.test(key);
+  }
+
+  function ensureEmailKeyboard(el) {
+    if (!el) return;
+    var type = String(el.type || "").toLowerCase();
+    if (type === "password" || type === "hidden" || type === "checkbox") return;
+    try {
+      if (type !== "email") el.type = "email";
+    } catch (e) {}
+    el.setAttribute("type", "email");
+    el.setAttribute("inputmode", "email");
+    el.setAttribute("autocomplete", "email");
+    el.setAttribute("spellcheck", "false");
+    var pattern = String(el.getAttribute("pattern") || "");
+    // Never keep numeric-only patterns on email fields (forces digit keypad on iOS).
+    if (!pattern || /\[0-9\]|\\d/.test(pattern)) {
+      try {
+        el.removeAttribute("pattern");
+      } catch (e2) {}
+    }
+  }
+
+  function ensureOtpKeyboard(el) {
+    if (!el) return;
+    try {
+      var t = String(el.type || "").toLowerCase();
+      if (t !== "text" && t !== "tel") el.type = "text";
+    } catch (e) {}
+    el.setAttribute("type", "text");
+    el.setAttribute("inputmode", "numeric");
+    el.setAttribute("autocomplete", "one-time-code");
+    if (!el.getAttribute("maxlength")) el.setAttribute("maxlength", "6");
+    el.setAttribute("spellcheck", "false");
   }
 
   function wipeInput(el) {
@@ -154,9 +221,7 @@
   function guardOtpAutofill(el) {
     if (!el || el.dataset.mcjOtpGuard === "1") return;
     el.dataset.mcjOtpGuard = "1";
-    el.setAttribute("autocomplete", "one-time-code");
-    el.setAttribute("inputmode", el.getAttribute("inputmode") || "numeric");
-    el.setAttribute("spellcheck", "false");
+    ensureOtpKeyboard(el);
     // Discourage password-manager dump into OTP until the user focuses.
     if (!el.hasAttribute("readonly")) el.setAttribute("readonly", "readonly");
     function unlock() {
@@ -190,13 +255,18 @@
         guarded.push(el);
       } else if (isPasswordInput(el)) {
         el.setAttribute("data-auth-sensitive", "1");
+        // Ensure password tab never inherits numeric / OTP keyboard attrs.
+        try {
+          el.removeAttribute("inputmode");
+        } catch (ePwdMode) {}
+        if (String(el.getAttribute("autocomplete") || "").toLowerCase() === "one-time-code") {
+          el.setAttribute("autocomplete", "current-password");
+        }
         wipeInput(el);
         if (!el.getAttribute("autocomplete")) el.setAttribute("autocomplete", "current-password");
         guarded.push(el);
       } else if (isAccountInput(el)) {
-        if (!el.getAttribute("autocomplete")) {
-          el.setAttribute("autocomplete", el.type === "email" ? "username" : "username");
-        }
+        ensureEmailKeyboard(el);
         if (options.clearAccount) wipeInput(el);
       }
       if (!el.dataset.mcjAuthTouchBound) {
@@ -240,5 +310,8 @@
     prepareAuthForm: prepareAuthForm,
     isCodeInput: isCodeInput,
     isPasswordInput: isPasswordInput,
+    isAccountInput: isAccountInput,
+    ensureEmailKeyboard: ensureEmailKeyboard,
+    ensureOtpKeyboard: ensureOtpKeyboard,
   };
 })(window);

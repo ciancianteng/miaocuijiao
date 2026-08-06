@@ -1921,7 +1921,7 @@
       '<main class="mcj-auth-page">'+
       '<section class="mcj-auth-card">'+header+
       '<form class="mcj-auth-form" data-login autocomplete="on">'+
-      '<label class="mcj-auth-field">邮箱<input name="account" type="text" inputmode="email" autocomplete="username" required placeholder="请输入客服邮箱"></label>'+
+      '<label class="mcj-auth-field">邮箱<input name="account" type="email" inputmode="email" autocomplete="email" required placeholder="请输入客服邮箱"></label>'+
       pwd+
       '<label class="mcj-auth-check"><input name="remember" type="checkbox" checked> 记住登录</label>'+
       '<button class="mcj-auth-btn primary" type="submit"'+(state.loginBusy?' disabled':'')+'>'+(state.loginBusy?'登录中…':'登录')+'</button>'+

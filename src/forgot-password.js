@@ -198,7 +198,7 @@
         '<p class="mcj-forgot-desc">验证码已发送至 ' +
         esc(state.emailMasked || state.email) +
         "。请输入 6 位验证码。</p>" +
-        '<label>验证码<input name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" data-auth-code="1" data-auth-sensitive="1" placeholder="000000" required value=""></label>' +
+        '<label>验证码<input name="code" type="text" inputmode="numeric" maxlength="6" autocomplete="one-time-code" data-auth-code="1" data-auth-sensitive="1" placeholder="000000" required value=""></label>' +
         '<div class="mcj-forgot-actions">' +
         '<button class="mcj-forgot-btn primary" type="submit" data-forgot-submit' +
         (busy ? " disabled" : "") +
