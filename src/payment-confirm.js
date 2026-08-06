@@ -50,6 +50,24 @@
   }
   function paint(html) {
     root.innerHTML = html;
+    bindPayQrFallback();
+  }
+  function bindPayQrFallback() {
+    root.querySelectorAll("[data-mcj-pay-qr],[data-pay-qr-img]").forEach(function (img) {
+      if (img.getAttribute("data-bound-pay-qr") === "1") return;
+      img.setAttribute("data-bound-pay-qr", "1");
+      img.addEventListener("error", function () {
+        var frame = img.parentNode;
+        img.style.display = "none";
+        if (frame && !frame.querySelector(".pay-alert")) {
+          var p = document.createElement("p");
+          p.className = "pay-alert";
+          p.setAttribute("role", "status");
+          p.textContent = "平台暂未配置收款二维码，请联系客服";
+          frame.appendChild(p);
+        }
+      });
+    });
   }
   function parseGameId(order) {
     if (order.gameId || order.game_id) return order.gameId || order.game_id;

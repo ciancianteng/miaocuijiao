@@ -578,17 +578,70 @@
       btn.disabled = true;
       btn.textContent = "保存中…";
     }
+    function finishOk(result) {
+      alert((result && result.message) || "已保存");
+      state.editId = "";
+      return load();
+    }
+    function saveViaPlatformSettings() {
+      var ch = payload.channel || {};
+      var data = ch.data || {};
+      var manual = data.manual || {};
+      var id = ch.channel_id || ch.id;
+      var pub = {};
+      pub[id] = {
+        enabled: ch.enabled !== false,
+        visible: ch.visible !== false,
+        publicLabel: data.publicLabel || ch.name || "",
+        bankName: manual.bankName || "",
+        accountName: manual.receiverName || "",
+        receiverName: manual.receiverName || "",
+        bankAccount: manual.bankAccount || "",
+        phone: manual.phone || "",
+        duitnowId: manual.duitnowId || "",
+        qrUrl: manual.qrUrl || data.qrUrl || "",
+        instructions: data.instructions || "",
+        minAmount: data.minAmount,
+        maxAmount: data.maxAmount,
+        mode: ch.mode || "test",
+        manual: manual,
+      };
+      var Auth = window.MCJAdminAuthFetch;
+      var body = { action: "save_payments_public", paymentChannelsPublic: pub };
+      var req =
+        Auth && Auth.post
+          ? Auth.post("/api/admin/platform-settings", body, { "x-mcj-admin-role": role() })
+          : fetch("/api/admin/platform-settings", {
+              method: "POST",
+              headers: { "Content-Type": "application/json", Accept: "application/json", "x-mcj-admin-role": role() },
+              body: JSON.stringify(body),
+            }).then(function (res) {
+              return res.json().then(function (j) {
+                if (!res.ok || j.ok === false) throw new Error(j.message || "保存失败");
+                return j;
+              });
+            });
+      return req.then(function (result) {
+        return finishOk({
+          message: (result && result.message) || "支付设置已保存（已同步到支付页）",
+        });
+      });
+    }
     fetchApi({
       method: "POST",
       body: JSON.stringify({ action: "save_channel", channel: payload.channel }),
     })
       .then(function (result) {
-        alert(result.message || "已保存");
-        state.editId = "";
-        return load();
+        return finishOk(result);
       })
       .catch(function (err) {
-        alert("保存失败：" + (err.message || "未知错误"));
+        var msg = String((err && err.message) || "");
+        if (/未初始化|payment_channels|payment_settings|PGRST205|schema cache/i.test(msg)) {
+          return saveViaPlatformSettings().catch(function (err2) {
+            alert("保存失败：" + ((err2 && err2.message) || msg || "未知错误"));
+          });
+        }
+        alert("保存失败：" + (msg || "未知错误"));
       })
       .finally(function () {
         if (btn) {
