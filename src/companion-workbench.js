@@ -1693,7 +1693,7 @@
         '</div>');
     }
     if(raw==='confirmed'||s==='已接单待开始'||s==='待开始')out.push('<button class="pw-btn primary" data-order-action="start_order" data-order-id="'+id+'">开始服务</button>');
-    if((s==='进行中'||raw==='in_progress')&&!o.completionPending)out.push('<button class="pw-btn primary" data-order-action="complete_order" data-order-id="'+id+'">完成订单</button>');
+    if((s==='进行中'||raw==='in_progress')&&!o.completionPending)out.push('<button class="pw-btn primary" data-order-action="complete_order" data-order-id="'+id+'">申请完成</button>');
     if(o.completionPending&&raw==='in_progress')out.push('<span class="pw-note">已申请完成，等待老板确认</span>');
     if(raw==='completed'||s==='已完成'){
       out.push('<button class="pw-btn" type="button" data-view-settlement="'+id+'">查看结算详情</button>');

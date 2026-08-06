@@ -2063,6 +2063,7 @@
     if(s==='awaiting_payment')return '尚未付款';
     if(s==='claimed')return '等待陪玩确认';
     if(s==='confirmed')return '进行中';
+    if(s==='in_progress'&&order.completionPending)return '已申请完成，等待老板确认';
     if(s==='in_progress')return '进行中';
     if(s==='pending'&&(/无法接单|拒单/.test(note)||order.needsReassign))return '需要重新安排';
     if(s==='pending'&&/确认超时/.test(note))return '需要重新安排';

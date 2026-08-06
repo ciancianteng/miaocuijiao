@@ -405,8 +405,12 @@ function safeOrder(row, profiles = {}, extras = {}) {
         assignment === "open" ||
         assignment === "open_grab" ||
         (!assignment && !row.companion_id);
+      const completionPending =
+        String(row.note || "").includes("[[COMPLETION_PENDING]]") ||
+        String(row.description || "").includes("[[COMPLETION_PENDING]]");
       if (row.status === "awaiting_payment" && extras.paymentReceipt) return "待人工审核";
       if (row.status === "claimed") return "待陪玩确认";
+      if (row.status === "in_progress" && completionPending) return "已申请完成，等待老板确认";
       if ((row.status === "pending" || row.status === "waiting_boss_confirm") && isPublic && !row.companion_id) {
         return gc > 0 ? `抢单中（${gc}人）` : "抢单中";
       }
@@ -415,6 +419,9 @@ function safeOrder(row, profiles = {}, extras = {}) {
       }
       return ORDER_STATUS_TEXT[row.status] || row.status || "-";
     })(),
+    completionPending:
+      String(row.note || "").includes("[[COMPLETION_PENDING]]") ||
+      String(row.description || "").includes("[[COMPLETION_PENDING]]"),
     note,
     paymentReview: !!extras.paymentReceipt,
     paymentProofUrl: extras.paymentProofUrl || "",

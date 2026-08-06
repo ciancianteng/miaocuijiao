@@ -98,7 +98,15 @@ function safeOrder(row, profiles, extras = {}) {
   const companion = profiles[row.companion_id] || {};
   const service = profiles[row.customer_service_id] || {};
   const status = row.status || "";
-  const statusText = ORDER_STATUS_TEXT[status] || status || "-";
+  const completionPending =
+    String(row.note || "").includes("[[COMPLETION_PENDING]]") ||
+    String(row.description || "").includes("[[COMPLETION_PENDING]]");
+  let statusText = ORDER_STATUS_TEXT[status] || status || "-";
+  let orderStatus = statusText;
+  if (status === "in_progress" && completionPending) {
+    statusText = "已申请完成，等待老板确认";
+    orderStatus = "待确认完成";
+  }
   const paid = !["awaiting_payment", "cancelled"].includes(status);
   const flowStatus =
     extras.flowStatus ||
@@ -128,10 +136,11 @@ function safeOrder(row, profiles, extras = {}) {
     amount: money(row.total_amount),
     totalAmount: money(row.total_amount),
     paymentStatus: paid ? "已支付" : "未支付",
-    orderStatus: statusText,
+    orderStatus,
     status,
     flowStatus,
     statusText,
+    completionPending,
     grabCount: Number(extras.grabCount != null ? extras.grabCount : 0) || 0,
     grabs: extras.grabs || [],
     bossIntent: extras.bossIntent || null,

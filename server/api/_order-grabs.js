@@ -322,27 +322,33 @@ export function createOrderGrabHelpers({ restUrl, supabaseJson, serviceHeaders }
     if (orderHasCompletionPending(order)) {
       return orderBlobSource(order);
     }
-    // Prefer appending marker onto note (pay already uses note); fall back to description.
+    // Dual-write marker to BOTH note and description.
+    // Boss order list sometimes falls back to a select without `note`; description is always selected,
+    // so the boss UI must still see completionPending=true after companion applies.
     const noteBase = String(order.note || "");
     const descBase = String(order.description || "");
-    try {
-      const nextNote = withCompletionPending(noteBase);
-      await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(order.id)}`), {
-        method: "PATCH",
-        headers: serviceHeaders(),
-        body: JSON.stringify({ note: nextNote }),
-      });
-      return nextNote;
-    } catch (err) {
-      if (!/note|column|schema cache|PGRST/i.test(String(err?.message || ""))) throw err;
-      const nextDesc = withCompletionPending(descBase);
-      await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(order.id)}`), {
-        method: "PATCH",
-        headers: serviceHeaders(),
-        body: JSON.stringify({ description: nextDesc }),
-      });
-      return nextDesc;
+    const nextNote = withCompletionPending(noteBase);
+    const nextDesc = withCompletionPending(descBase);
+    const attempts = [
+      { note: nextNote, description: nextDesc },
+      { description: nextDesc },
+      { note: nextNote },
+    ];
+    let lastErr = null;
+    for (const body of attempts) {
+      try {
+        await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(order.id)}`), {
+          method: "PATCH",
+          headers: serviceHeaders(),
+          body: JSON.stringify(body),
+        });
+        return orderBlobSource({ note: nextNote, description: nextDesc });
+      } catch (err) {
+        lastErr = err;
+        if (!/column|schema cache|PGRST|note|description/i.test(String(err?.message || ""))) throw err;
+      }
     }
+    throw lastErr || new Error("无法写入完成申请标记");
   }
 
   async function clearCompletionPending(order) {

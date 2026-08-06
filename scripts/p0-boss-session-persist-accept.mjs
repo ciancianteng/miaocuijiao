@@ -97,7 +97,7 @@ function tok(j) {
   ok("mine.html loads new early-gate", /portal-early-gate\.js\?v=20260805bossSessionDual1/.test(mine.text), "");
 
   // Companion dual-write soft tokens (clearSession may still removeItem — that's OK)
-  const pwJs = await fetch(`${STAGING}/src/companion-workbench.js?v=20260805bossSessionDual1`, { cache: "no-store" }).then((r) => r.text());
+  const pwJs = await fetch(`${STAGING}/src/companion-workbench.js?v=20260806confirmComplete1`, { cache: "no-store" }).then((r) => r.text());
   ok(
     "companion mirrors soft auth into sessionStorage",
     /sessionStorage\.setItem\(['"]companionAuthToken['"]/.test(pwJs) &&

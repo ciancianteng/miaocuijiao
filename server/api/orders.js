@@ -18,6 +18,7 @@ import { allocateOrderNo, resolveOrderPublicNo } from "./_account-codes.js";
 import { companionDb } from "./_companion-media-store.js";
 import { listPendingForCs, latestRejectedForOrders, signedProofUrl, uploadProof } from "./_payment-receipts.js";
 import { loadPlatformPayQr } from "./_platform-pay-qr.js";
+import { stripInternalOrderMarkers } from "./_order-grabs.js";
 
 loadLocalEnv();
 
@@ -365,6 +366,9 @@ function viewOrder(row = {}) {
     ? row.grabs.length
     : Number(row.grabCount != null ? row.grabCount : row.grab_count || 0) || 0;
   let statusText = bossFacingStatusText({ ...row, status, grabs: row.grabs }, grabCount);
+  if (status === "in_progress" && completionPending) {
+    statusText = "陪玩已完成，待确认";
+  }
   if ((status === "pending" || status === "waiting_boss_confirm") && grabCount > 0) {
     statusText = `已有 ${grabCount} 位陪玩抢单（点击查看）`;
   }
@@ -388,6 +392,8 @@ function viewOrder(row = {}) {
   } else if (status === "awaiting_payment" && row.paymentRejectReason) {
     statusText = "待付款";
   }
+  const cleanDescription = stripInternalOrderMarkers(description);
+  const cleanNote = stripInternalOrderMarkers(String(row.note || ""));
   return {
     id: row.id,
     orderNo: row.order_no || row.id,
@@ -400,7 +406,7 @@ function viewOrder(row = {}) {
     orderTypeKey: row.order_type || "custom",
     game: row.game || "",
     title: row.title || "",
-    description,
+    description: cleanDescription,
     notes: bossNotes,
     bossNotes,
     serviceType: serviceName || row.game || "",
@@ -433,7 +439,7 @@ function viewOrder(row = {}) {
     paidAt: row.paid_at || row.paidAt || "",
     bossHint: bossHint(row),
     cancelReason: row.cancel_reason || "",
-    note: row.note || "",
+    note: cleanNote,
     reviewed,
     reviewId: row.review_id || row.reviewId || "",
     reviewRating: row.review_rating != null ? Number(row.review_rating) : null,
@@ -462,10 +468,12 @@ async function loadOrders(profile, id = "") {
   } catch {
     /* best-effort SLA — never block boss list */
   }
-  // Core columns + note when available (boss intent / grab markers).
+  // Core columns always include description (completion-pending marker dual-writes here).
+  // note is preferred for markers; cancel_reason is optional — never drop note when cancel_reason is missing.
   const selectCore =
     "id,order_no,boss_id,companion_id,customer_service_id,order_type,game,title,description,hours,unit_price,total_amount,status,created_at,accepted_at,started_at,completed_at,cancelled_at";
-  const selectRich = selectCore + ",note,cancel_reason";
+  const selectWithNote = selectCore + ",note";
+  const selectRich = selectWithNote + ",cancel_reason";
   if (id) {
     // Ownership check first — foreign order id must not leak existence details as 200 empty.
     let probe;
@@ -494,7 +502,12 @@ async function loadOrders(profile, id = "") {
     rows = await supabaseJson(restUrl(TABLE, queryOf(selectRich)), { headers: serviceHeaders() });
   } catch (err) {
     if (!/column|schema cache|PGRST/i.test(String(err?.message || ""))) throw err;
-    rows = await supabaseJson(restUrl(TABLE, queryOf(selectCore)), { headers: serviceHeaders() });
+    try {
+      rows = await supabaseJson(restUrl(TABLE, queryOf(selectWithNote)), { headers: serviceHeaders() });
+    } catch (err2) {
+      if (!/column|schema cache|PGRST/i.test(String(err2?.message || ""))) throw err2;
+      rows = await supabaseJson(restUrl(TABLE, queryOf(selectCore)), { headers: serviceHeaders() });
+    }
   }
   const orders = Array.isArray(rows) ? rows : [];
   const companionIds = [...new Set(orders.map((row) => row.companion_id).filter(Boolean))];

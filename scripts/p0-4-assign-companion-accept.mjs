@@ -178,7 +178,7 @@ function tok(j) {
     `ok=${wd.json?.ok} msg=${wd.json?.message}`
   );
 
-  const js = await fetch(`${STAGING}/src/companion-workbench.js?v=20260805p04c1`).then((r) => r.text());
+  const js = await fetch(`${STAGING}/src/companion-workbench.js?v=20260806confirmComplete1`).then((r) => r.text());
   step("PC grab UI stays on hall", /已抢单，等待老板选择/.test(js) && /go\('\/companion\/order-hall'\)/.test(js), "workbench asset");
 
   console.log("\n=== P0-4 ASSIGN / COMPANION SUMMARY ===");
