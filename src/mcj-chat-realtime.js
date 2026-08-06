@@ -3,6 +3,7 @@
  * Loads @supabase/supabase-js from CDN once; dedupes channels by conversation id.
  */
 (function (global) {
+  var LOCAL = "/vendor/supabase.js";
   var CDN = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.8/dist/umd/supabase.js";
   var state = {
     loading: null,
@@ -17,17 +18,23 @@
     if (global.supabase && global.supabase.createClient) return Promise.resolve(global.supabase);
     if (state.loading) return state.loading;
     state.loading = new Promise(function (resolve, reject) {
-      var s = document.createElement("script");
-      s.src = CDN;
-      s.async = true;
-      s.onload = function () {
-        if (global.supabase && global.supabase.createClient) resolve(global.supabase);
-        else reject(new Error("Supabase SDK 加载失败"));
-      };
-      s.onerror = function () {
-        reject(new Error("Supabase SDK 网络加载失败"));
-      };
-      document.head.appendChild(s);
+      function attach(src, isFallback) {
+        var s = document.createElement("script");
+        s.src = src;
+        s.async = true;
+        s.onload = function () {
+          if (global.supabase && global.supabase.createClient) resolve(global.supabase);
+          else if (!isFallback) attach(CDN, true);
+          else reject(new Error("Supabase SDK 加载失败"));
+        };
+        s.onerror = function () {
+          if (!isFallback) attach(CDN, true);
+          else reject(new Error("Supabase SDK 网络加载失败"));
+        };
+        document.head.appendChild(s);
+      }
+      // Prefer same-origin vendor copy (stable in CN); fall back to jsDelivr.
+      attach(LOCAL, false);
     });
     return state.loading;
   }
