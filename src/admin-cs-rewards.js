@@ -76,14 +76,26 @@
   function mount() {
     var host = document.getElementById("serviceAccountManagement");
     if (!host || !host.parentNode) return null;
-    var box = document.getElementById("csDockRewardMount");
+    // Prefer the single mount inside 客服账号 accordion; remove orphan duplicates.
+    var boxes = Array.prototype.slice.call(document.querySelectorAll("#csDockRewardMount"));
+    var inner = host.querySelector("#csDockRewardMount");
+    boxes.forEach(function (node) {
+      if (inner && node !== inner) {
+        try { node.remove(); } catch (e) {}
+      }
+    });
+    var box = inner || document.getElementById("csDockRewardMount");
     if (!box) {
       box = document.createElement("div");
       box.id = "csDockRewardMount";
       box.style.marginTop = "24px";
-      // Sibling after accounts root so account re-render won't wipe settings UI.
-      if (host.nextSibling) host.parentNode.insertBefore(box, host.nextSibling);
-      else host.parentNode.appendChild(box);
+      // Only create when accounts panel is open (inner placeholder missing).
+      var accBody = host.querySelector('.cs-acc-item[data-cs-acc="accounts"] .cs-acc-body');
+      if (accBody) accBody.appendChild(box);
+      else {
+        if (host.nextSibling) host.parentNode.insertBefore(box, host.nextSibling);
+        else host.parentNode.appendChild(box);
+      }
     }
     return box;
   }
@@ -274,7 +286,15 @@
     Promise.all([api("settings", {}, "GET"), api("records", {}, "GET")])
       .then(function (pair) {
         state.settings = (pair[0] && pair[0].settings) || null;
-        state.records = (pair[1] && pair[1].records) || [];
+        var raw = (pair[1] && pair[1].records) || [];
+        var seen = Object.create(null);
+        state.records = raw.filter(function (r) {
+          var key = String((r && (r.orderId || r.order_id || r.id)) || "");
+          if (!key) return true;
+          if (seen[key]) return false;
+          seen[key] = 1;
+          return true;
+        });
         state.loaded = true;
       })
       .catch(function (err) {

@@ -112,11 +112,12 @@ function toIsoDateTime(value) {
   if (Number.isNaN(parsed.getTime())) return new Date().toISOString();
   return parsed.toISOString();
 }
-const ANNOUNCEMENT_CATEGORIES = new Set(["home", "companion", "customer_service"]);
+const ANNOUNCEMENT_CATEGORIES = new Set(["home", "homepage_only", "companion", "customer_service"]);
 const ANNOUNCEMENT_AUDIENCES = new Set(["home", "boss", "companion", "customer_service", "all"]);
 
 function normalizeCategory(value, audience) {
   const raw = String(value || "").trim().toLowerCase();
+  if (raw === "homepage_only" || raw === "home_only" || raw === "仅首页" || raw === "only_home") return "homepage_only";
   if (raw === "homepage" || raw === "boss" || raw === "index") return "home";
   if (raw === "player" || raw === "陪玩" || raw === "companion") return "companion";
   if (raw === "cs" || raw === "service" || raw === "customer-service" || raw === "客服" || raw === "客服公告") {
@@ -138,6 +139,7 @@ function normalizeAudience(value, category) {
   const cat = normalizeCategory(category);
   if (cat === "companion") return "companion";
   if (cat === "customer_service") return "customer_service";
+  if (cat === "homepage_only") return "home";
   return "home";
 }
 /** Real admin-published announcements only — exclude configs / forced / stubs. */

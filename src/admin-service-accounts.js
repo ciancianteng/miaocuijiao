@@ -39,6 +39,19 @@
     if (!s || isDevLogin(s)) return "未绑定邮箱";
     return s;
   }
+  function dedupeServiceRows(rows) {
+    var seen = Object.create(null);
+    var out = [];
+    (rows || []).forEach(function (row) {
+      if (!row) return;
+      var key = String(row.id || row.uid || row.email || row.loginEmail || "");
+      if (!key) { out.push(row); return; }
+      if (seen[key]) return;
+      seen[key] = 1;
+      out.push(row);
+    });
+    return out;
+  }
   function formatCsCode(row) {
     var direct = String((row && (row.csCode || row.cs_code || row.staffCode || row.staff_code)) || "").trim();
     if (/^CS\d+$/i.test(direct)) return direct.toUpperCase();
@@ -616,7 +629,7 @@
     render();
     api("list", {}, "GET")
       .then(function (res) {
-        state.rows = res.accounts || [];
+        state.rows = dedupeServiceRows(res.accounts || []);
         state.storage = res.storage || "";
         state.error = "";
         if (res.message) state.message = res.message;
@@ -639,7 +652,14 @@
     render();
     api("attendance_history", {}, "GET")
       .then(function (res) {
-        state.attendanceHistory = res.history || [];
+        var hist = res.history || [];
+        var seenH = Object.create(null);
+        state.attendanceHistory = hist.filter(function (h) {
+          var key = [h.staffId||h.customerServiceId||h.name||'', h.date||'', h.clockInAt||h.clockInText||'', h.clockOutAt||h.clockOutText||''].join('|');
+          if (seenH[key]) return false;
+          seenH[key] = 1;
+          return true;
+        });
         state.attendanceError = "";
         state.attendanceLoaded = true;
       })

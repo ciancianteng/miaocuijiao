@@ -11,9 +11,12 @@
     current: null,
     history: [],
     draft: null,
+    editingId: "",
+    editMeta: { title: "", link: "", sort_order: 100 },
     crop: { scale: 1, offsetX: 0, offsetY: 0 },
     natural: { width: 0, height: 0 },
   };
+  var DESKTOP_RATIO = 1920 / 700;
 
   function esc(v) {
     return String(v == null ? "" : v).replace(/[&<>"']/g, function (c) {
@@ -58,13 +61,17 @@
         bind();
       });
   }
-  function resetDraft() {
+  function resetDraft(keepEditing) {
     if (state.draft && state.draft.url && state.draft.url.indexOf("blob:") === 0) {
       URL.revokeObjectURL(state.draft.url);
     }
     state.draft = null;
     state.crop = { scale: 1, offsetX: 0, offsetY: 0 };
     state.natural = { width: 0, height: 0 };
+    if (!keepEditing) {
+      state.editingId = "";
+      state.editMeta = { title: "", link: "", sort_order: 100 };
+    }
   }
   function acceptFile(file) {
     if (!file) return;
@@ -72,13 +79,17 @@
       alert("仅支持 JPG、PNG、WEBP 图片。");
       return;
     }
-    resetDraft();
+    var keepEditing = !!state.editingId;
+    resetDraft(keepEditing);
+    if (keepEditing) {
+      /* preserve editingId/editMeta */
+    }
     var url = URL.createObjectURL(file);
     var img = new Image();
     img.onload = function () {
       state.draft = { file: file, url: url };
       state.natural = { width: img.naturalWidth, height: img.naturalHeight };
-      var frameRatio = 16 / 9;
+      var frameRatio = DESKTOP_RATIO;
       var imageRatio = img.naturalWidth / Math.max(1, img.naturalHeight);
       state.crop.scale = imageRatio > frameRatio ? 1 : frameRatio / imageRatio;
       state.crop.offsetX = 0;
@@ -126,7 +137,7 @@
         state.crop.offsetY +
         '"></label>' +
         "</div>" +
-        '<p class="admin-sync-note">拖动图片或调整滑杆，确认 16:9 预览正确后点击发布。也可重新拖入图片更换。</p>' +
+        '<p class="admin-sync-note">拖动图片或调整滑杆，确认宽屏预览正确后点击保存。也可重新拖入图片更换。</p>' +
         '<div class="banner-ops-upload banner-ops-upload-replace" data-banner-upload-zone>' +
         '<input class="banner-ops-file" type="file" accept="image/jpeg,image/png,image/webp" data-banner-file tabindex="-1" aria-hidden="true">' +
         '<div class="banner-ops-upload-inner">' +
@@ -155,15 +166,15 @@
       state.history
         .map(function (item) {
           var active = item.is_active || (state.current && state.current.id === item.id);
+          var editing = state.editingId && String(state.editingId) === String(item.id);
           return (
             '<article class="banner-ops-card' +
             (active ? " is-active" : "") +
+            (editing ? " is-editing" : "") +
             '" data-banner-id="' +
             esc(item.id) +
             '">' +
-            '<div class="banner-ops-card-thumb" data-banner-preview="' +
-            esc(item.id) +
-            '" title="点击预览">' +
+            '<div class="banner-ops-card-thumb">' +
             (item.image_url
               ? '<img src="' + esc(item.image_url) + '" alt="">'
               : '<div class="banner-ops-preview-empty">无图片</div>') +
@@ -173,6 +184,7 @@
             esc(formatTime(item.created_at)) +
             "</span>" +
             (active ? '<span class="banner-ops-badge live">使用中</span>' : "") +
+            (editing ? '<span class="banner-ops-badge live">编辑中</span>' : "") +
             "</div>" +
             '<label class="banner-ops-sort">标题 <input type="text" maxlength="80" value="' +
             esc(item.title || "") +
@@ -190,12 +202,15 @@
             '" data-banner-sort="' +
             esc(item.id) +
             '" style="width:72px"></label>' +
+            '<button class="mini-btn primary-lite" type="button" data-banner-edit="' +
+            esc(item.id) +
+            '">编辑图片</button>' +
             '<button class="mini-btn" type="button" data-banner-save-meta="' +
             esc(item.id) +
-            '">保存编辑</button>' +
+            '">保存标题/链接</button>' +
             (active
               ? ""
-              : '<button class="mini-btn primary-lite" type="button" data-banner-set="' +
+              : '<button class="mini-btn" type="button" data-banner-set="' +
                 esc(item.id) +
                 '">设为当前</button>') +
             '<button class="mini-btn danger" type="button" data-banner-delete="' +
@@ -217,33 +232,48 @@
     }
     var previewUrl =
       (state.draft && state.draft.url) || (state.current && state.current.image_url) || "";
+    var editing = !!state.editingId;
+    var publishLabel = state.publishing
+      ? (editing ? "保存中…" : "发布中…")
+      : editing
+        ? "保存编辑并发布"
+        : "保存并发布";
     box.innerHTML =
       (state.error ? '<div class="admin-sync-note">' + esc(state.error) + "</div>" : "") +
       (state.message && !state.error ? '<div class="admin-sync-note">' + esc(state.message) + "</div>" : "") +
       '<div class="banner-ops">' +
       '<section class="banner-ops-section">' +
       "<h3>首页 Banner 实时预览</h3>" +
-      "<p>16:9 宽屏比例。发布成功后首页会读取当前启用 Banner。</p>" +
+      "<p>宽屏比例（约 1920×700）。保存成功后首页会读取当前启用 Banner。</p>" +
       '<div class="banner-ops-preview" data-banner-live-preview>' +
       (previewUrl
-        ? '<img src="' + esc(previewUrl) + '" alt="当前 Banner">'
+        ? '<img src="' + esc(previewUrl) + '" alt="当前 Banner" style="transform:' + esc(state.draft ? cropTransformStyle() : "none") + '">'
         : '<div class="banner-ops-preview-empty">暂无 Banner，请上传并发布</div>') +
       "</div></section>" +
       '<section class="banner-ops-section">' +
-      "<h3>上传 / 裁剪 / 发布</h3>" +
-      "<p>上传后可裁剪，再点击保存并发布到首页。</p>" +
+      "<h3>" + (editing ? "编辑 Banner（上传 / 裁剪 / 保存）" : "上传 / 裁剪 / 发布") + "</h3>" +
+      "<p>" + (editing
+        ? "正在编辑历史 Banner。可直接更换图片、裁剪预览后保存；保存后仍会更新首页当前图。"
+        : "上传后可裁剪，再点击保存并发布到首页。也可从下方历史记录点「编辑图片」。") + "</p>" +
+      (editing
+        ? '<div class="admin-sync-note">编辑中：' + esc(state.editingId) +
+          ' · 标题/链接可在下方历史卡片修改，或保存图片时一并带上当前草稿。</div>'
+        : "") +
       renderUploadZone() +
       (state.draft
-        ? '<div class="admin-sync-note">图片已选择，请调整裁剪后点击下方「保存并发布」，否则首页不会更新。</div>'
+        ? '<div class="admin-sync-note">图片已选择，请调整裁剪后点击下方「' + (editing ? "保存编辑并发布" : "保存并发布") + '」，否则首页不会更新。</div>'
         : "") +
       '<div class="banner-ops-actions">' +
       '<button class="primary-btn" type="button" data-banner-publish ' +
       (state.publishing || !state.draft ? "disabled" : "") +
-      ">" + (state.publishing ? "发布中…" : "保存并发布") + "</button>" +
+      ">" + publishLabel + "</button>" +
+      (editing
+        ? '<button class="mini-btn" type="button" data-banner-cancel-edit">取消编辑</button>'
+        : "") +
       "</div></section>" +
       '<section class="banner-ops-section">' +
       "<h3>历史 Banner</h3>" +
-      "<p>点击「设为当前」会立刻切换首页 Banner。</p>" +
+      "<p>点「编辑图片」进入上方编辑区（上传 / 预览 / 裁剪 / 保存）。「设为当前」会立刻切换首页 Banner。</p>" +
       renderHistory() +
       "</section></div>";
   }
@@ -353,7 +383,7 @@
         }
         var canvas = document.createElement("canvas");
         var outW = 1920;
-        var outH = 1080;
+        var outH = 700;
         canvas.width = outW;
         canvas.height = outH;
         var ctx = canvas.getContext("2d");
@@ -377,12 +407,91 @@
       img.src = state.draft.url;
     });
   }
+  function applyDraftImage(file, url) {
+    var img = new Image();
+    img.onload = function () {
+      state.draft = { file: file || null, url: url };
+      state.natural = { width: img.naturalWidth, height: img.naturalHeight };
+      var imageRatio = img.naturalWidth / Math.max(1, img.naturalHeight);
+      state.crop.scale = imageRatio > DESKTOP_RATIO ? 1 : DESKTOP_RATIO / imageRatio;
+      state.crop.offsetX = 0;
+      state.crop.offsetY = 0;
+      render();
+      bind();
+      var stage = document.querySelector("[data-banner-crop-stage]");
+      if (stage) stage.scrollIntoView({ behavior: "smooth", block: "center" });
+    };
+    img.onerror = function () {
+      alert("图片加载失败，请重新上传。");
+      if (url && url.indexOf("blob:") === 0) URL.revokeObjectURL(url);
+      resetDraft(false);
+      render();
+      bind();
+    };
+    img.src = url;
+  }
+  function openEdit(id) {
+    var item = state.history.find(function (row) {
+      return String(row.id) === String(id);
+    });
+    if (!item || !item.image_url) {
+      alert("该 Banner 没有可编辑的图片。");
+      return;
+    }
+    resetDraft(false);
+    state.editingId = String(item.id);
+    state.editMeta = {
+      title: item.title || "",
+      link: item.button_link || item.link || "",
+      sort_order: item.sort_order != null ? item.sort_order : 100,
+    };
+    var remote = item.image_url;
+    // Prefer blob so canvas export is not CORS-tainted.
+    fetch(remote, { mode: "cors", credentials: "omit" })
+      .then(function (res) {
+        if (!res.ok) throw new Error("fetch failed");
+        return res.blob();
+      })
+      .then(function (blob) {
+        var type = blob.type || "image/jpeg";
+        var file = new File([blob], "banner-edit.jpg", { type: type });
+        applyDraftImage(file, URL.createObjectURL(blob));
+      })
+      .catch(function () {
+        // Fallback: show remote image; user can replace if canvas export fails.
+        applyDraftImage(null, remote);
+      });
+  }
+  function cancelEdit() {
+    resetDraft(false);
+    render();
+    bind();
+  }
   function publish() {
     if (!state.draft || state.publishing) return;
     state.publishing = true;
     render();
     exportCoverDataUrl()
       .then(function (dataUrl) {
+        var editingId = state.editingId;
+        if (editingId) {
+          var card = document.querySelector('[data-banner-id="' + editingId + '"]');
+          var titleInput = card && card.querySelector('[data-banner-title="' + editingId + '"]');
+          var linkInput = card && card.querySelector('[data-banner-link="' + editingId + '"]');
+          var sortInput = card && card.querySelector('[data-banner-sort="' + editingId + '"]');
+          return apiPost({
+            action: "update",
+            id: editingId,
+            image_data: dataUrl,
+            filename: (state.draft.file && state.draft.file.name) || "homepage-banner.jpg",
+            title: titleInput ? titleInput.value : state.editMeta.title,
+            link: linkInput ? linkInput.value : state.editMeta.link,
+            button_link: linkInput ? linkInput.value : state.editMeta.link,
+            sort_order: Number(sortInput && sortInput.value != null ? sortInput.value : state.editMeta.sort_order),
+            is_main: true,
+            is_active: true,
+          });
+        }
         return apiPost({
           action: "publish",
           image_data: dataUrl,
@@ -392,8 +501,8 @@
         });
       })
       .then(function (res) {
-        alert(res.message || "Banner 发布成功");
-        resetDraft();
+        alert(res.message || (state.editingId ? "Banner 已保存" : "Banner 发布成功"));
+        resetDraft(false);
         state.current = res.banner || state.current;
         state.publishing = false;
         try {
@@ -403,7 +512,7 @@
         return load();
       })
       .catch(function (err) {
-        alert(err.message || "发布失败");
+        alert(err.message || "保存失败");
         state.publishing = false;
         render();
         bind();
@@ -448,6 +557,13 @@
     bindCropControls();
     var publishBtn = document.querySelector("[data-banner-publish]");
     if (publishBtn) publishBtn.onclick = publish;
+    var cancelBtn = document.querySelector("[data-banner-cancel-edit]");
+    if (cancelBtn) cancelBtn.onclick = cancelEdit;
+    document.querySelectorAll("[data-banner-edit]").forEach(function (btn) {
+      btn.onclick = function () {
+        openEdit(btn.getAttribute("data-banner-edit"));
+      };
+    });
     document.querySelectorAll("[data-banner-set]").forEach(function (btn) {
       btn.onclick = function () {
         setCurrent(btn.getAttribute("data-banner-set"));
@@ -499,20 +615,6 @@
           .catch(function (err) {
             alert(err.message || "排序保存失败");
           });
-      };
-    });
-    document.querySelectorAll("[data-banner-preview]").forEach(function (btn) {
-      btn.onclick = function () {
-        var id = btn.getAttribute("data-banner-preview");
-        var item = state.history.find(function (row) {
-          return String(row.id) === String(id);
-        });
-        if (!item) return;
-        if (item.is_active || (state.current && state.current.id === item.id)) {
-          previewHistory(id);
-          return;
-        }
-        setCurrent(id);
       };
     });
   }

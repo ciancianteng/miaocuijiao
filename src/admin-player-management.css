@@ -311,3 +311,14 @@
     max-height: none !important;
   }
 }
+
+
+#playerManagement .player-more-menu.is-portal-open {
+  display: grid !important;
+  position: fixed;
+  z-index: 200;
+}
+#playerManagement .player-action-cell,
+#playerManagement .player-more-wrap {
+  overflow: visible !important;
+}

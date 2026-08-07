@@ -1976,3 +1976,16 @@ body[data-admin-section="service-reports"] #section-service-reports > .panel{
   font-size:11px;
   color:#d7cfd6;
 }
+
+
+/* Fix: 陪玩「更多」菜单不被表格 overflow 裁切；操作列粘性对齐到最后一列 */
+body[data-admin-section="players"] .player-data-table th.player-action-cell,
+body[data-admin-section="players"] .player-data-table td.player-action-cell,
+body[data-admin-section="players"] .player-data-table th:last-child,
+body[data-admin-section="players"] .player-data-table td:last-child{
+  position:sticky!important;right:0!important;z-index:6!important;overflow:visible!important;background:#111116!important;box-shadow:-1px 0 0 rgba(255,255,255,.08)!important;
+}
+body[data-admin-section="players"] .player-data-table th:last-child{z-index:8!important;background:#17171d!important;}
+body[data-admin-section="players"] .player-action-cell .player-ops,
+body[data-admin-section="players"] .player-more-wrap{overflow:visible!important;}
+.player-more-menu.is-portal-open{display:grid!important;}

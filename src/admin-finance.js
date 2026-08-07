@@ -185,6 +185,29 @@
       "</tbody></table></div>"
     );
   }
+  function withdrawPayeeCard(w) {
+    return (
+      '<div class="fin-payee-card" style="display:grid;gap:6px;min-width:220px;padding:10px 12px;border:1px solid rgba(255,255,255,.10);border-radius:12px;background:rgba(255,255,255,.03);text-align:left">' +
+      '<div style="display:flex;justify-content:space-between;gap:8px"><span style="color:#9ca3af;font-size:12px">银行</span><strong style="font-size:13px">' +
+      esc(w.bankName || "-") +
+      "</strong></div>" +
+      '<div style="display:flex;justify-content:space-between;gap:8px"><span style="color:#9ca3af;font-size:12px">户名</span><strong style="font-size:13px">' +
+      esc(w.accountHolder || "-") +
+      "</strong></div>" +
+      '<div style="display:flex;justify-content:space-between;gap:8px"><span style="color:#9ca3af;font-size:12px">账号后四位</span><strong style="font-size:13px;letter-spacing:.08em">****' +
+      esc(w.accountLast4 || "----") +
+      "</strong></div>" +
+      (w.paymentAccountId
+        ? '<button class="mini-btn" type="button" data-fin-reveal="' +
+          esc(w.paymentAccountId) +
+          '" style="margin-top:4px">查看完整账号</button>'
+        : "") +
+      '<button class="mini-btn" type="button" data-fin-view-wd="' +
+      esc(w.id) +
+      '">打款信息详情</button>' +
+      "</div>"
+    );
+  }
   function withdrawalsHtml() {
     var rows = (state.withdrawals || [])
       .map(function (w) {
@@ -200,11 +223,7 @@
           "</td><td>" +
           esc(w.netAmountRm) +
           "</td><td>" +
-          esc(w.bankName) +
-          " / " +
-          esc(w.accountHolder) +
-          " ****" +
-          esc(w.accountLast4) +
+          withdrawPayeeCard(w) +
           "</td><td>" +
           esc(w.statusText) +
           "</td><td>" +
@@ -234,16 +253,13 @@
               esc(w.id) +
               '">打款失败</button>'
             : "") +
-          (w.paymentAccountId
-            ? ' <button class="mini-btn" type="button" data-fin-reveal="' + esc(w.paymentAccountId) + '">查看账号</button>'
-            : "") +
           "</td></tr>"
         );
       })
       .join("");
     return (
-      '<div class="admin-sync-note">陪玩提现进入周五批次；审核通过后须上传收据才能完成。无凭证不可标记完成。</div>' +
-      '<div class="table-wrap"><table><thead><tr><th>提现单号</th><th>陪玩</th><th>提现猫粮</th><th>应付 RM</th><th>银行账户</th><th>状态</th><th>提交时间</th><th>操作</th></tr></thead><tbody>' +
+      '<div class="admin-sync-note">陪玩提现进入周五批次；审核通过后须上传收据才能完成。无凭证不可标记完成。打款信息已拆分为银行 / 户名 / 后四位，避免挤在一行误读。</div>' +
+      '<div class="table-wrap"><table><thead><tr><th>提现单号</th><th>陪玩</th><th>提现猫粮</th><th>应付 RM</th><th>打款信息</th><th>状态</th><th>提交时间</th><th>操作</th></tr></thead><tbody>' +
       (rows || '<tr><td colspan="8">暂无提现申请</td></tr>') +
       "</tbody></table></div>"
     );
@@ -1106,20 +1122,106 @@
       openReceiptUploader(payReceipt.dataset.finPayReceipt, payReceipt.dataset.amount);
       return;
     }
+    var viewWd = e.target.closest("[data-fin-view-wd]");
+    if (viewWd) {
+      post("view_withdraw_detail", { id: viewWd.dataset.finViewWd })
+        .then(function (res) {
+          var w = res.item || res.withdrawal || res.detail || res || {};
+          var a = res.account || w.paymentAccount || {};
+          var html =
+            '<div style="display:grid;gap:10px;text-align:left">' +
+            "<div><span style=\"color:#9ca3af\">提现单号</span><br><strong>" +
+            esc(w.withdrawalNo || w.id || viewWd.dataset.finViewWd) +
+            "</strong></div>" +
+            "<div><span style=\"color:#9ca3af\">陪玩</span><br><strong>" +
+            esc(w.companionName || "-") +
+            " / " +
+            esc(w.companionUid || "-") +
+            "</strong></div>" +
+            "<div><span style=\"color:#9ca3af\">应付金额</span><br><strong>RM " +
+            esc(w.netAmountRm != null ? w.netAmountRm : w.amountRm || "-") +
+            "（" +
+            esc(w.catFoodAmount != null ? w.catFoodAmount : "-") +
+            " 猫粮）</strong></div>" +
+            '<div style="padding:12px;border:1px solid rgba(255,255,255,.12);border-radius:12px;background:rgba(255,255,255,.03)">' +
+            "<div style=\"margin-bottom:8px;font-weight:700\">打款信息</div>" +
+            "<div>银行：<strong>" +
+            esc(a.bankName || w.bankName || "-") +
+            "</strong></div>" +
+            "<div>户名：<strong>" +
+            esc(a.accountHolder || w.accountHolder || "-") +
+            "</strong></div>" +
+            "<div>账号：<strong>" +
+            esc(a.accountNumber || (w.accountLast4 ? "****" + w.accountLast4 : "-")) +
+            "</strong></div>" +
+            "</div>" +
+            "<div><span style=\"color:#9ca3af\">状态</span><br><strong>" +
+            esc(w.statusText || w.status || "-") +
+            "</strong></div></div>";
+          if (window.MCJAdminModal && window.MCJAdminModal.open) {
+            window.MCJAdminModal.open("打款信息详情", html);
+          } else {
+            var modal = document.getElementById("adminModal");
+            if (modal) {
+              modal.classList.add("show");
+              modal.hidden = false;
+              var body = modal.querySelector("[data-admin-modal-body], .modal-body, .admin-modal-body") || modal;
+              var title = modal.querySelector("h3, .modal-title");
+              if (title) title.textContent = "打款信息详情";
+              if (body) body.innerHTML = html;
+            } else {
+              alert(
+                "银行：" +
+                  (a.bankName || w.bankName || "") +
+                  "\n户名：" +
+                  (a.accountHolder || w.accountHolder || "") +
+                  "\n账号：" +
+                  (a.accountNumber || "****" + (w.accountLast4 || ""))
+              );
+            }
+          }
+        })
+        .catch(function (err) {
+          // Fallback: use list row fields when detail API unavailable
+          var w = (state.withdrawals || []).find(function (x) {
+            return String(x.id) === String(viewWd.dataset.finViewWd);
+          }) || {};
+          alert(
+            "银行：" +
+              (w.bankName || "") +
+              "\n户名：" +
+              (w.accountHolder || "") +
+              "\n账号后四位：****" +
+              (w.accountLast4 || "") +
+              (err && err.message ? "\n(" + err.message + ")" : "")
+          );
+        });
+      return;
+    }
     var reveal = e.target.closest("[data-fin-reveal]");
     if (reveal) {
       post("reveal_account", { paymentAccountId: reveal.dataset.finReveal, reason: "财务查看完整银行账号" })
         .then(function (res) {
           var a = res.account || {};
-          alert(
-            "银行：" +
-              (a.bankName || "") +
-              "\n户名：" +
-              (a.accountHolder || "") +
-              "\n账号：" +
-              (a.accountNumber || "") +
-              "\n（已写入操作日志）"
-          );
+          var html =
+            '<div style="display:grid;gap:8px;text-align:left"><div>银行：<strong>' +
+            esc(a.bankName || "") +
+            "</strong></div><div>户名：<strong>" +
+            esc(a.accountHolder || "") +
+            "</strong></div><div>账号：<strong>" +
+            esc(a.accountNumber || "") +
+            "</strong></div><div class=\"admin-sync-note\">已写入操作日志</div></div>";
+          if (window.MCJAdminModal && window.MCJAdminModal.open) window.MCJAdminModal.open("完整银行账号", html);
+          else
+            alert(
+              "银行：" +
+                (a.bankName || "") +
+                "\n户名：" +
+                (a.accountHolder || "") +
+                "\n账号：" +
+                (a.accountNumber || "") +
+                "\n（已写入操作日志）"
+            );
         })
         .catch(function (err) {
           alert(err.message);

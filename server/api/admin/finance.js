@@ -840,6 +840,29 @@ export default async function handler(req, res) {
         if (!patched || patched.status === "awaiting_payment") {
           return json(res, 409, { ok: false, message: "订单状态已变更，请刷新后重试。" });
         }
+        // Best-effort enrichment (optional columns / notifications must not fail the approve).
+        try {
+          await companionDb("orders", `?id=eq.${encodeURIComponent(order.id)}`, {
+            method: "PATCH",
+            body: JSON.stringify({
+              paid_at: nowIso(),
+              assignment_type: order.companion_id ? order.assignment_type || "assigned" : order.assignment_type || "public",
+              updated_at: nowIso(),
+            }),
+          });
+        } catch (_) {}
+        try {
+          if (order.companion_id) {
+            await insertCompanionNotification({
+              companionUserId: order.companion_id,
+              category: "order",
+              title: "付款已确认",
+              body: `订单 ${order.order_no || order.id} 付款已由后台审核通过，请及时确认接单。`,
+              href: "/companion/orders/",
+              noticeKey: `pay-approved-${order.id}`,
+            });
+          }
+        } catch (_) {}
         await writeAdminLog({
           module: "finance",
           action,

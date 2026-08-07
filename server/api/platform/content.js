@@ -159,10 +159,14 @@ function matchesAnnouncementAudience(item, audience) {
   if (itemAudience === "system_internal" || itemAudience === "internal") return false;
   if (itemAudience === "all") return true;
   if (want === "home" || want === "homepage" || want === "boss") {
-    // 首页公告 only — exclude companion / CS categories
+    // Homepage ticker: home + homepage_only. Boss strip: home only (not homepage_only).
     if (category === "companion" || category === "customer_service") return false;
     if (itemAudience === "companion" || itemAudience === "customer_service") return false;
-    return true;
+    if (want === "boss" && category === "homepage_only") return false;
+    return category === "home" || category === "homepage_only" || !category || itemAudience === "home" || itemAudience === "all" || itemAudience === "boss";
+  }
+  if (want === "homepage_only" || want === "home_only") {
+    return category === "homepage_only";
   }
   if (want === "companion" || want === "player") {
     return category === "companion" || itemAudience === "companion";

@@ -174,7 +174,15 @@ async function rows() {
   }
   // Single global config + already-fetched rows — no N× loadServiceWorkData (was hanging create/list).
   const staffConfig = workApi ? workApi.mergeServiceConfig(globalConfig, {}) : globalConfig;
-  return staff.map((row) => {
+  const seenStaff = new Set();
+  const uniqueStaff = (staff || []).filter((row) => {
+    const id = String(row?.id || "");
+    if (!id) return true;
+    if (seenStaff.has(id)) return false;
+    seenStaff.add(id);
+    return true;
+  });
+  return uniqueStaff.map((row) => {
     const ownOrders = orders.filter((o) => o.customer_service_id === row.id);
     const ownReceptions = (receptions || []).filter((r) => r.customer_service_id === row.id);
     const ownReports = (reports || []).filter((r) => r.customer_service_id === row.id && r.report_date !== "1970-01-01");

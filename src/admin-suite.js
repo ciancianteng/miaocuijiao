@@ -1969,7 +1969,33 @@
       var chatTool=e.target.closest('[data-chat-tool]');if(chatTool){submitAdminChatAction('tool_'+chatTool.dataset.chatTool,adminMessageState.activeId,{});return;}
       var chatMessageAction=e.target.closest('[data-chat-message-action]');if(chatMessageAction){var msg=chatMessageAction.closest('[data-message-id]');submitAdminChatAction(chatMessageAction.dataset.chatMessageAction,adminMessageState.activeId,{messageId:msg?msg.dataset.messageId:''});return;}
       var homeReload=e.target.closest('[data-home-entry-reload]');if(homeReload){renderHomeEntryManager();return;}var homeEdit=e.target.closest('[data-home-entry-edit]');if(homeEdit){openHomeEntryEditor(homeEdit.dataset.homeEntryEdit);return;}var homeClose=e.target.closest('[data-home-entry-close]');if(homeClose){var drawer=document.querySelector('[data-home-entry-drawer]');if(drawer){drawer.hidden=true;drawer.innerHTML='';}return;}var bannerClear=e.target.closest('[data-banner-clear-image]');if(bannerClear){var form=bannerClear.closest('[data-content-form]');var field=bannerClear.dataset.bannerClearImage;var target=form&&form.querySelector('[name="'+field+'"]');if(target)target.value='';if(form)refreshBannerSimplePreview(form);return;}var contentAction=e.target.closest('[data-content-action]');if(contentAction){var ctype=contentAction.dataset.contentType,cid=contentAction.dataset.contentId,act=contentAction.dataset.contentAction;if(act==='new'){openPlatformContentEditor(ctype,'');return;}if(act==='edit'){openPlatformContentEditor(ctype,cid);return;}if(act==='cancel'){var editor=document.querySelector('[data-content-editor="'+ctype+'"]');if(editor){editor.hidden=true;editor.innerHTML='';}return;}if(act==='reload'){var cfg=platformContentConfig(ctype);if(cfg)loadPlatformContent(cfg);return;}if(act==='preview'){var form=document.querySelector('[data-content-form="'+ctype+'"]');if(form){var cfgp=platformContentConfig(ctype);var box=form.querySelector('.content-preview-box');if(box)box.innerHTML=renderContentPreview(cfgp,collectPlatformContentForm(form).draft);}return;}if(act==='delete'&&isProtectedBaseData(ctype)){alert('该数据已被业务使用时不能直接删除。请先停用，避免破坏历史订单和资料。');return;}if(/delete|unpublish|disable/.test(act)&&!confirm('确认执行该内容操作？'))return;if(act==='save'){var editForm=document.querySelector('[data-content-form="'+ctype+'"][data-content-id="'+cid+'"]');submitPlatformContent('save',ctype,cid,editForm?collectPlatformContentForm(editForm):{});return;}submitPlatformContent(act,ctype,cid,{});return;}
-      var playerMore=e.target.closest('[data-player-more]');if(playerMore){document.querySelectorAll('.player-more-menu').forEach(function(menu){if(menu!==playerMore.parentElement.querySelector('.player-more-menu'))menu.hidden=true;});var menu=playerMore.parentElement.querySelector('.player-more-menu');if(menu)menu.hidden=!menu.hidden;return;}
+      var playerMore=e.target.closest('[data-player-more]');if(playerMore){
+        e.preventDefault();e.stopPropagation();
+        var wrap=playerMore.closest('.player-more-wrap')||playerMore.parentElement;
+        var menu=wrap&&wrap.querySelector('.player-more-menu');
+        document.querySelectorAll('.player-more-menu').forEach(function(m){if(m!==menu){m.hidden=true;m.classList.remove('is-portal-open');}});
+        if(!menu)return;
+        var willOpen=!!menu.hidden;
+        if(!willOpen){menu.hidden=true;menu.classList.remove('is-portal-open');menu.style.position='';menu.style.top='';menu.style.left='';menu.style.right='';menu.style.bottom='';return;}
+        menu.hidden=false;menu.classList.add('is-portal-open');
+        var rect=playerMore.getBoundingClientRect();
+        var menuW=Math.max(148,menu.offsetWidth||148);
+        var left=Math.min(window.innerWidth-menuW-8,Math.max(8,rect.right-menuW));
+        var top=rect.bottom+4;
+        if(top+160>window.innerHeight)top=Math.max(8,rect.top-164);
+        menu.style.position='fixed';
+        menu.style.zIndex='200';
+        menu.style.left=left+'px';
+        menu.style.top=top+'px';
+        menu.style.right='auto';
+        menu.style.bottom='auto';
+        return;
+      }
+      if(!e.target.closest('.player-more-wrap')&&!e.target.closest('.player-more-menu')){
+        document.querySelectorAll('.player-more-menu.is-portal-open,.player-more-menu:not([hidden])').forEach(function(m){
+          if(m.classList.contains('is-portal-open')||!m.hidden){m.hidden=true;m.classList.remove('is-portal-open');m.style.position='';m.style.top='';m.style.left='';m.style.right='';m.style.bottom='';}
+        });
+      }
       var playerJump=e.target.closest('[data-player-jump]');if(playerJump){var nav=document.querySelector('.side-nav [data-section="'+playerJump.dataset.playerJump+'"]');if(nav)nav.click();return;}
       var playerSearchBtn=e.target.closest('[data-player-search-button]');if(playerSearchBtn){filterPlayerManagement();return;}
       var playerExport=e.target.closest('[data-player-export]');if(playerExport){exportPlayerRows();return;}

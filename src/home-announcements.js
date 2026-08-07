@@ -64,7 +64,7 @@
       pinned: item.pinned === true || item.is_pinned === true || item.isPinned === true,
       enabled: item.enabled !== false && item.is_active !== false,
       sort: Number(item.sort || item.sort_order || 100),
-      category: String(item.category || "home").toLowerCase() === "companion" ? "companion" : "home",
+      category: (function(c){c=String(c||"home").toLowerCase();if(c==="companion")return"companion";if(c==="homepage_only"||c==="home_only")return"homepage_only";if(c==="customer_service")return"customer_service";return"home";})(item.category),
       audience: String(item.audience || "home").toLowerCase(),
       kind: kind,
       requiresAck: requiresAck,
