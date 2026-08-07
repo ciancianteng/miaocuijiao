@@ -418,8 +418,7 @@
     state.customService = "";
     state.selectedServiceId = svc.serviceId || svc.id || "";
     if (state.companion) {
-      var p = money(svc.price);
-      if (p > 0) state.companion.unitPrice = p;
+      if (money(svc.price) > 0) state.companion.unitPrice = money(svc.price);
       if (svc.pricingUnit) state.companion.pricingUnit = svc.pricingUnit;
       state.companion.service = svc.name;
     }
