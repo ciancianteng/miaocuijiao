@@ -1260,6 +1260,14 @@ async function loadBootstrap(serviceProfile) {
     settlementStatus: r.settlementStatus || r.status,
     settledAt: r.settledAt || "",
   }));
+  let pendingRecharges = [];
+  try {
+    const { listRechargeOrders } = await import("./_recharge-manual.js");
+    pendingRecharges = await listRechargeOrders({ status: "queue", limit: 100 });
+  } catch {
+    pendingRecharges = [];
+  }
+  summary.pendingRecharges = pendingRecharges.length;
   return {
     staff: safeProfile(serviceProfile),
     summary,
@@ -1287,6 +1295,7 @@ async function loadBootstrap(serviceProfile) {
       clawbackAt: r.clawback_at || "",
     })),
     commissionSettlements,
+    pendingRecharges,
     notifications: (staffNotifications || []).map((n) => ({
       id: n.id,
       key: n.notice_key,
@@ -4499,6 +4508,84 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         message: "已返回抢单大厅。",
         order: safeOrder({ ...order, ...patched, status: "pending", companion_id: null, assignment_type: "public" }, profiles),
       });
+    }
+    if (action === "list_pending_recharges" || action === "pending_recharges" || action === "list_recharge_reviews") {
+      try {
+        const { listRechargeOrders } = await import("./_recharge-manual.js");
+        const status = String(body.status || body.filter || "queue").trim() || "queue";
+        const items = await listRechargeOrders({ status, limit: Number(body.limit) || 200 });
+        return json(res, 200, { ok: true, items, pendingCount: items.filter((i) => i.status === "pending_review").length });
+      } catch (error) {
+        return json(res, error.status || 500, { ok: false, message: error.message || "读取充值审核队列失败", items: [] });
+      }
+    }
+    if (action === "confirm_manual_recharge" || action === "approve_recharge" || action === "confirm_recharge") {
+      try {
+        const { confirmManualRecharge } = await import("./_recharge-manual.js");
+        const paymentNo = String(body.paymentNo || body.payment_no || body.id || "").trim();
+        if (!paymentNo) return json(res, 400, { ok: false, message: "缺少充值单号。" });
+        const outcome = await confirmManualRecharge({
+          paymentNo,
+          operatorId: service.profile.id,
+          operatorRole: "customer_service",
+          reason: String(body.reason || "客服确认线下转账到账"),
+        });
+        try {
+          const { notifyBoss } = await import("./_wallet.js");
+          await notifyBoss(
+            outcome.order?.boss_id,
+            "充值已到账",
+            `客服已确认您的充值 ${outcome.paymentNo}，猫粮已入账。`,
+            "wallet",
+            outcome.paymentNo
+          );
+        } catch {
+          /* optional */
+        }
+        return json(res, 200, {
+          ok: true,
+          message: outcome.message,
+          paymentNo: outcome.paymentNo,
+          duplicate: outcome.duplicate,
+          result: outcome.result,
+        });
+      } catch (error) {
+        return json(res, error.status || 500, { ok: false, message: error.message || "审核通过失败" });
+      }
+    }
+    if (action === "reject_manual_recharge" || action === "reject_recharge") {
+      try {
+        const { rejectManualRecharge } = await import("./_recharge-manual.js");
+        const paymentNo = String(body.paymentNo || body.payment_no || body.id || "").trim();
+        const reason = String(body.reason || body.rejectReason || "").trim();
+        if (!paymentNo) return json(res, 400, { ok: false, message: "缺少充值单号。" });
+        const outcome = await rejectManualRecharge({
+          paymentNo,
+          operatorId: service.profile.id,
+          operatorRole: "customer_service",
+          reason,
+        });
+        try {
+          const { notifyBoss } = await import("./_wallet.js");
+          await notifyBoss(
+            outcome.order?.boss_id,
+            "充值审核未通过",
+            `您的充值 ${outcome.paymentNo} 未通过审核：${reason}`,
+            "wallet",
+            outcome.paymentNo
+          );
+        } catch {
+          /* optional */
+        }
+        return json(res, 200, {
+          ok: true,
+          message: outcome.message,
+          paymentNo: outcome.paymentNo,
+          rejectReason: reason,
+        });
+      } catch (error) {
+        return json(res, error.status || 500, { ok: false, message: error.message || "拒绝失败" });
+      }
     }
     if (action === "apply_compensation") {
       try {

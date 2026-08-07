@@ -33,23 +33,25 @@
   }
   function statusLabel(s) {
     var m = {
-      pending_payment: "待确认到账",
-      pending_review: "待人工审核",
-      pending: "待确认到账",
-      paid: "已到账",
-      credited: "已到账",
-      failed: "失败",
+      pending_payment: "待支付",
+      pending: "待支付",
+      pending_review: "待审核",
+      paid: "已完成",
+      credited: "已完成",
+      rejected: "审核拒绝",
       cancelled: "已取消",
+      expired: "已过期",
+      failed: "失败",
     };
     return m[String(s || "").toLowerCase()] || s || "-";
   }
-  function rowsHtml(list, withConfirm) {
+  function rowsHtml(list, withActions) {
     if (!(list || []).length) {
-      return '<div class="admin-empty" style="padding:18px;color:#9ca3af">暂无' + (withConfirm ? "待确认" : "") + "充值单</div>";
+      return '<div class="admin-empty" style="padding:18px;color:#9ca3af">暂无' + (withActions ? "待审核" : "") + "充值单</div>";
     }
     return (
       '<div class="table-wrap"><table class="admin-table"><thead><tr>' +
-      "<th>充值单号</th><th>老板</th><th>金额 RM</th><th>猫粮</th><th>支付方式</th><th>付款截图</th><th>状态</th><th>创建时间</th><th>操作</th>" +
+      "<th>充值单号</th><th>老板</th><th>金额 RM</th><th>猫粮</th><th>支付方式</th><th>付款截图</th><th>状态</th><th>提交时间</th><th>操作</th>" +
       "</tr></thead><tbody>" +
       list
         .map(function (r) {
@@ -58,11 +60,16 @@
             : r.hasProof
               ? "已上传"
               : "-";
-          var actions = withConfirm
-            ? '<button type="button" class="mini-btn primary-lite" data-confirm-recharge="' +
+          var actions = "-";
+          if (withActions) {
+            actions =
+              '<button type="button" class="mini-btn primary-lite" data-confirm-recharge="' +
               esc(r.paymentNo) +
-              '">确认到账</button>'
-            : "-";
+              '">审核通过</button> ' +
+              '<button type="button" class="mini-btn" data-reject-recharge="' +
+              esc(r.paymentNo) +
+              '">拒绝</button>';
+          }
           return (
             "<tr>" +
             "<td><strong>" +
@@ -76,7 +83,7 @@
             "</td>" +
             "<td>" +
             esc(r.catFoodAmount) +
-            (r.bonusCatFood ? " +" + esc(r.bonusCatFood) : "") +
+            (r.bonusCatFood ? " (基础 " + esc(r.paidCatFood || r.catFoodAmount - (r.bonusCatFood || 0)) + " +赠 " + esc(r.bonusCatFood) + ")" : "") +
             "</td>" +
             "<td>" +
             esc(r.paymentMethod) +
@@ -85,10 +92,11 @@
             proofCell +
             "</td>" +
             "<td>" +
-            esc(statusLabel(r.status)) +
+            esc(r.statusText || statusLabel(r.status)) +
+            (r.rejectReason ? "<div class=\"muted\">原因：" + esc(r.rejectReason) + "</div>" : "") +
             "</td>" +
             "<td>" +
-            esc(String(r.createdAt || "").replace("T", " ").slice(0, 19)) +
+            esc(String(r.proofUploadedAt || r.createdAt || "").replace("T", " ").slice(0, 19)) +
             "</td>" +
             "<td>" +
             actions +
@@ -116,13 +124,13 @@
     }
     box.innerHTML =
       '<div class="admin-section-head compact" style="margin-bottom:10px">' +
-      "<div><p class=\"muted\" style=\"margin:0\">线下 / 手动充值待确认到账；确认后猫粮立即入账。陪玩提现与客服工资请到「周结算」。</p></div>" +
+      '<div><p class="muted" style="margin:0">仅「待审核」可审核通过。通过后才增加猫粮；拒绝须填原因，老板可重新上传截图。</p></div>' +
       '<div style="display:flex;gap:8px;align-items:center">' +
       (state.message ? '<span class="muted">' + esc(state.message) + "</span>" : "") +
-      '<button type="button" class="mini-btn" data-recharge-tab="pending">待确认 (' +
+      '<button type="button" class="mini-btn" data-recharge-tab="pending">待审核 (' +
       (state.pending || []).length +
       ")</button>" +
-      '<button type="button" class="mini-btn" data-recharge-tab="recent">最近已到账</button>' +
+      '<button type="button" class="mini-btn" data-recharge-tab="recent">最近已完成</button>' +
       '<button type="button" class="mini-btn" data-recharge-reload>刷新</button>' +
       "</div></div>" +
       (state.tab === "recent" ? rowsHtml(state.recent, false) : rowsHtml(state.pending, true));
@@ -130,7 +138,7 @@
     var alt = document.getElementById(ALT);
     if (alt && alt !== box) {
       alt.innerHTML =
-        '<p class="muted" style="margin:0 0 8px">最近已到账充值（真实 payment_orders）</p>' + rowsHtml(state.recent, false);
+        '<p class="muted" style="margin:0 0 8px">最近已完成充值（真实 payment_orders）</p>' + rowsHtml(state.recent, false);
     }
   }
   function load() {
@@ -138,7 +146,7 @@
     state.error = "";
     paint();
     return Promise.all([
-      api("/api/admin/wallet?action=pending_recharges&status=pending_payment"),
+      api("/api/admin/wallet?action=pending_recharges&status=queue"),
       api("/api/admin/wallet?action=pending_recharges&status=paid"),
     ])
       .then(function (results) {
@@ -169,6 +177,28 @@
         alert(err.message || "确认失败");
       });
   }
+  function rejectPaid(paymentNo) {
+    if (!paymentNo) return;
+    var reason = prompt("请填写拒绝原因（将展示给老板）：", "");
+    if (reason == null) return;
+    reason = String(reason || "").trim();
+    if (!reason) {
+      alert("必须填写拒绝原因");
+      return;
+    }
+    api("/api/admin/wallet", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "reject_manual_recharge", paymentNo: paymentNo, reason: reason }),
+    })
+      .then(function (res) {
+        state.message = res.message || "已拒绝";
+        return load();
+      })
+      .catch(function (err) {
+        alert(err.message || "拒绝失败");
+      });
+  }
   function bind() {
     document.addEventListener("click", function (e) {
       var reload = e.target.closest("[data-recharge-reload]");
@@ -184,6 +214,8 @@
       }
       var btn = e.target.closest("[data-confirm-recharge]");
       if (btn) confirmPaid(btn.getAttribute("data-confirm-recharge"));
+      var reject = e.target.closest("[data-reject-recharge]");
+      if (reject) rejectPaid(reject.getAttribute("data-reject-recharge"));
     });
   }
 

@@ -17,12 +17,10 @@ import {
   normalizePaymentChannelId,
 } from "./_platform-pay-qr.js";
 import {
-  buildObjectPath,
-  createSignedUrl,
-  decodeDataUrl,
-  ensurePrivateBucket,
-  uploadPrivateObject,
-} from "./_companion-media-store.js";
+  normalizeRechargeStatus,
+  submitRechargeProof,
+  viewRechargeRecord,
+} from "./_recharge-manual.js";
 
 loadLocalEnv();
 
@@ -32,8 +30,6 @@ const DEFAULT_METHODS = CANONICAL_PAYMENT_CHANNELS.map((item) => ({
   name: item.name,
   category: item.category,
 }));
-const RECHARGE_PROOF_BUCKET = "companion-payment-proofs";
-const PROOF_IMAGE_TYPES = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp"]);
 
 function loadLocalEnv() {
   const envPath = path.resolve(process.cwd(), ".env.local");
@@ -232,51 +228,8 @@ function safePayInfo(info) {
   };
 }
 
-async function uploadRechargeProof({ paymentOrder, bossId, dataUrl }) {
-  const decoded = decodeDataUrl(dataUrl);
-  if (!decoded?.buffer?.length || !PROOF_IMAGE_TYPES.has(String(decoded.contentType || "").toLowerCase())) {
-    throw Object.assign(new Error("请上传 JPG、PNG 或 WEBP 格式的付款截图"), { status: 400 });
-  }
-  if (decoded.buffer.length > 10 * 1024 * 1024) {
-    throw Object.assign(new Error("付款截图不能超过 10MB"), { status: 413 });
-  }
-  await ensurePrivateBucket(RECHARGE_PROOF_BUCKET, [...PROOF_IMAGE_TYPES]);
-  const ext = String(decoded.contentType).includes("png") ? "png" : String(decoded.contentType).includes("webp") ? "webp" : "jpg";
-  const paymentNo = String(paymentOrder.payment_no || paymentOrder.id);
-  const storagePath = buildObjectPath(bossId, `recharge-proofs/${paymentNo}`, `proof-${Date.now()}.${ext}`);
-  await uploadPrivateObject(RECHARGE_PROOF_BUCKET, storagePath, decoded.buffer, decoded.contentType);
-  return { bucket: RECHARGE_PROOF_BUCKET, path: storagePath, uploadedAt: new Date().toISOString() };
-}
-
-async function signedRechargeProofUrl(proof) {
-  if (!proof?.bucket || !proof?.path) return "";
-  try {
-    return (await createSignedUrl(proof.bucket, proof.path, 60 * 30)) || "";
-  } catch {
-    return "";
-  }
-}
-
 function recordView(row, extras = {}) {
-  const raw = row.raw_response && typeof row.raw_response === "object" ? row.raw_response : {};
-  const proof = raw.proof || null;
-  return {
-    id: row.id,
-    paymentNo: row.payment_no || row.id,
-    amount: money(row.amount),
-    catFoodAmount: money(row.cat_food_amount),
-    paidCatFood: money(row.paid_cat_food || row.cat_food_amount),
-    bonusCatFood: money(row.bonus_cat_food),
-    campaignId: row.campaign_id || "",
-    paymentMethod: normalizePaymentChannelId(row.payment_method) || row.payment_method || "",
-    status: row.status || "pending",
-    paymentUrl: row.payment_url || "",
-    creditedAt: row.credited_at || "",
-    createdAt: row.created_at || "",
-    hasProof: Boolean(proof?.path),
-    proofUploadedAt: proof?.uploadedAt || "",
-    ...extras,
-  };
+  return viewRechargeRecord(row, extras);
 }
 
 async function loadPaymentOrders(profileId) {
@@ -342,7 +295,7 @@ async function createPaymentOrder(profile, method, amount, campaign) {
         bonus_cat_food: bonus,
         campaign_id: campaign?.id || null,
         payment_method: method.code,
-        status: methodConfigured(method) ? "pending" : "unavailable",
+        status: methodConfigured(method) ? "pending_payment" : "unavailable",
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }),
@@ -475,41 +428,58 @@ export default async function handler(req, res) {
       const rows = await supabaseJson(restUrl("payment_orders", orderQuery), { headers: serviceHeaders() });
       const order = rows?.[0];
       if (!order) return json(res, 404, { ok: false, message: "充值订单不存在。" });
-      const st = String(order.status || "").toLowerCase();
-      if (/paid|credited|cancelled|failed/.test(st)) {
-        return json(res, 409, { ok: false, message: "当前充值单状态不可再提交付款截图。", paymentOrder: recordView(order) });
-      }
       const channelCode = normalizePaymentChannelId(order.payment_method) || order.payment_method;
       const payInfo = safePayInfo(await loadChannelPayInfo(channelCode));
-      if (!payInfo) {
+      if (!payInfo && normalizeRechargeStatus(order.status) !== "rejected") {
+        // Rejected re-upload still allowed even if channel later disabled? Prefer block if disabled.
         return json(res, 409, {
           ok: false,
           message: "该支付方式暂未开放",
           paymentOrder: recordView(order),
         });
       }
-      const proof = await uploadRechargeProof({
-        paymentOrder: order,
-        bossId: profile.id,
-        dataUrl: body.proofDataUrl || body.paymentProof || body.fileDataUrl || body.file || "",
-      });
-      const prevRaw = order.raw_response && typeof order.raw_response === "object" ? order.raw_response : {};
+      try {
+        const saved = await submitRechargeProof({
+          paymentOrder: order,
+          bossId: profile.id,
+          dataUrl: body.proofDataUrl || body.paymentProof || body.fileDataUrl || body.file || "",
+        });
+        return json(res, 200, {
+          ok: true,
+          message: "付款截图已提交，状态：待审核。审核通过后猫粮到账。",
+          paymentOrder: recordView(saved || order),
+          payInfo: payInfo || safePayInfo(await loadChannelPayInfo(channelCode)),
+        });
+      } catch (err) {
+        return json(res, err.status || 500, { ok: false, message: err.message || "提交失败", paymentOrder: recordView(order) });
+      }
+    }
+
+    if (action === "cancel_recharge" || action === "cancel") {
+      const paymentNo = String(body.paymentNo || body.payment_no || body.id || "").trim();
+      if (!paymentNo) return json(res, 400, { ok: false, message: "缺少充值单号。" });
+      const rows = await supabaseJson(
+        restUrl(
+          "payment_orders",
+          `?boss_id=eq.${encodeURIComponent(profile.id)}&payment_no=eq.${encodeURIComponent(paymentNo)}&limit=1`
+        ),
+        { headers: serviceHeaders() }
+      );
+      const order = rows?.[0];
+      if (!order) return json(res, 404, { ok: false, message: "充值订单不存在。" });
+      const st = normalizeRechargeStatus(order.status);
+      if (st !== "pending_payment") {
+        return json(res, 409, { ok: false, message: "仅待支付订单可取消。", paymentOrder: recordView(order) });
+      }
       const saved = await updatePaymentOrder(order.id, {
-        status: "pending_review",
+        status: "cancelled",
         raw_response: {
-          ...prevRaw,
-          mode: "manual",
-          message: "老板已上传付款截图，等待人工审核。",
-          proof,
-          submittedAt: new Date().toISOString(),
+          ...(order.raw_response && typeof order.raw_response === "object" ? order.raw_response : {}),
+          cancelledAt: new Date().toISOString(),
+          message: "老板取消充值。",
         },
       });
-      return json(res, 200, {
-        ok: true,
-        message: "付款截图已提交，状态：待人工审核。审核通过后猫粮到账。",
-        paymentOrder: recordView(saved || order),
-        payInfo,
-      });
+      return json(res, 200, { ok: true, message: "充值订单已取消。", paymentOrder: recordView(saved || order) });
     }
 
     const methodCodeRaw = String(body.paymentMethod || body.method || "").trim();
@@ -580,14 +550,13 @@ export default async function handler(req, res) {
         raw_response: {
           mode: "manual",
           channelId: method.code,
-          message: "请按收款指引完成付款并上传截图，人工审核通过后猫粮到账。",
+          message: "请按收款指引完成付款并上传截图，提交后进入待审核。",
         },
       });
       return json(res, 200, {
         ok: true,
         manual: true,
-        message: "请扫码付款并上传截图提交审核。",
-        // Do not auto-navigate away; frontend opens pay modal with this payInfo.
+        message: "充值订单已创建（待支付）。请扫码付款并上传截图提交审核。",
         paymentUrl: "",
         payInfo,
         paymentOrder: recordView(saved || paymentOrder),

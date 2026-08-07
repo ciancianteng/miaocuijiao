@@ -38,7 +38,15 @@
     .primary-btn:disabled{opacity:.55;cursor:not-allowed}
     .ghost-btn{padding:0 12px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.055);color:#fff}
     .message{display:none;border-radius:12px;padding:12px;margin-top:12px;line-height:1.55}.message.show{display:block}.message.ok{border:1px solid rgba(143,240,189,.24);background:rgba(143,240,189,.09);color:#8ff0bd}.message.warn{border:1px solid rgba(255,210,122,.22);background:rgba(255,210,122,.08);color:#ffd27a}.message.bad{border:1px solid rgba(255,113,145,.24);background:rgba(255,113,145,.08);color:#ff9db7}
-    .records,.ledger{display:grid;gap:8px}.record,.tx{display:grid;grid-template-columns:1.2fr .8fr .8fr .9fr;gap:10px;align-items:center;border:1px solid rgba(255,255,255,.08);border-radius:12px;background:rgba(0,0,0,.18);padding:11px}.record span,.tx span{color:#9ca3af}.empty{padding:20px;text-align:center;color:#9ca3af}
+    .record,.tx{display:grid;grid-template-columns:1.1fr .7fr .7fr .7fr .9fr .9fr;gap:10px;align-items:center;border:1px solid rgba(255,255,255,.08);border-radius:12px;background:rgba(0,0,0,.18);padding:11px}.record span,.tx span{color:#9ca3af}.empty{padding:20px;text-align:center;color:#9ca3af}
+    .record-head{display:grid;grid-template-columns:1.1fr .7fr .7fr .7fr .9fr .9fr;gap:10px;padding:0 11px 8px;color:#9ca3af;font-size:12px}
+    .status-pill{display:inline-flex;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:800}
+    .status-pill.wait{background:rgba(255,210,122,.12);color:#ffd27a}
+    .status-pill.review{background:rgba(143,180,255,.14);color:#9ec1ff}
+    .status-pill.done{background:rgba(143,240,189,.12);color:#8ff0bd}
+    .status-pill.reject{background:rgba(255,113,145,.12);color:#ff9db7}
+    .status-pill.muted{background:rgba(255,255,255,.06);color:#9ca3af}
+    .reject-box{margin-top:8px;padding:10px 12px;border-radius:10px;border:1px solid rgba(255,113,145,.24);background:rgba(255,113,145,.08);color:#ff9db7;font-size:13px;line-height:1.5}
     .pay-modal{position:fixed;inset:0;z-index:10040;display:none;place-items:center;padding:18px;background:rgba(0,0,0,.72)}
     .pay-modal.show{display:grid}
     .pay-card{width:min(440px,100%);max-height:min(92vh,860px);overflow:auto;border-radius:18px;border:1px solid rgba(255,255,255,.12);background:#121018;padding:18px;box-shadow:0 24px 60px rgba(0,0,0,.55)}
@@ -90,7 +98,12 @@
       function methodName(code){var m=state.methods.find(function(x){return x.code===code});return m?m.name:'-'}
       function selectedMethod(){return (state.methods||[]).find(function(m){return m.code===state.method})||null}
       function methodOpen(m){return !!(m&&m.enabled&&m.configured&&m.statusText==='可用')}
-      function statusText(s){return {pending:'待支付',pending_payment:'待支付',pending_review:'待人工审核',unavailable:'暂未开放',failed:'失败',paid:'已支付',cancelled:'已取消'}[s]||s||'-'}
+      function statusText(s){return {pending:'待支付',pending_payment:'待支付',pending_review:'待审核',unavailable:'暂未开放',failed:'失败',paid:'已完成',credited:'已完成',rejected:'审核拒绝',cancelled:'已取消',expired:'已过期'}[s]||s||'-'}
+      function statusPill(s){
+        var t=statusText(s);
+        var cls=/待支付/.test(t)?'wait':/待审核/.test(t)?'review':/已完成/.test(t)?'done':/拒绝/.test(t)?'reject':'muted';
+        return '<span class="status-pill '+cls+'">'+esc(t)+'</span>';
+      }
       function selectedCampaign(){return (state.campaigns||[]).find(function(c){return c.id===state.campaignId})||null}
       function messageHtml(){if(!state.message)return '';return '<div class="message show '+state.messageType+'">'+esc(state.message)+'</div>'}
       function qPaymentNo(){try{return new URLSearchParams(location.search).get('paymentNo')||''}catch(e){return ''}}
@@ -100,19 +113,32 @@
         if(state.error){root.innerHTML='<section class="page-head"><div><h1>充值中心</h1><p class="muted">'+esc(state.error)+'</p></div><button class="ghost-btn" data-refresh type="button">重试</button></section>';return}
         var c=selectedCampaign();
         var m=selectedMethod();
-        var canPay=!!(c&&methodOpen(m)&&!state.submitting);
-        root.innerHTML='<section class="page-head"><div><h1>充值中心</h1><p>支付方式与后台「支付设置」实时同步。停用通道会立即显示暂未开放。</p></div><button class="ghost-btn" data-refresh type="button">刷新</button></section>'
+        root.innerHTML='<section class="page-head"><div><h1>充值中心</h1><p>立即充值 → 扫码付款 → 上传截图 → 客服审核通过后，猫粮才到账。</p></div><button class="ghost-btn" data-refresh type="button">刷新</button></section>'
           +'<section class="stats"><article class="stat"><span>猫粮余额</span><strong>'+esc(state.summary.balance||0)+' 猫粮</strong></article><article class="stat"><span>充值猫粮</span><strong>'+esc(state.summary.paidBalance||0)+' 猫粮</strong></article><article class="stat"><span>赠送猫粮</span><strong>'+esc(state.summary.bonusBalance||0)+' 猫粮</strong></article></section>'
-          +'<section class="layout"><div class="panel"><h2>充值活动档位</h2>'+(state.campaigns.length?'<div class="campaigns">'+state.campaigns.map(function(item){return '<button class="campaign '+(state.campaignId===item.id?'active':'')+'" data-campaign="'+esc(item.id)+'" type="button"><strong>'+esc(item.name)+'</strong><small>购买 '+esc(item.totalCatFood)+' 猫粮<br>需支付 '+money(item.payAmountRm)+'<br>基础 '+esc(item.baseCatFood)+' · 赠送 '+esc(item.bonusCatFood)+'</small><span class="tag">活动</span></button>'}).join('')+'</div>':'<div class="empty">暂无启用中的充值活动，请联系管理员在后台配置。</div>')+'<p class="hint">到账以人工审核 / 支付回调为准，前端成功页不会直接加余额。</p></div>'
+          +'<section class="layout"><div class="panel"><h2>充值活动档位</h2>'+(state.campaigns.length?'<div class="campaigns">'+state.campaigns.map(function(item){return '<button class="campaign '+(state.campaignId===item.id?'active':'')+'" data-campaign="'+esc(item.id)+'" type="button"><strong>'+esc(item.name)+'</strong><small>购买 '+esc(item.totalCatFood)+' 猫粮<br>需支付 '+money(item.payAmountRm)+'<br>基础 '+esc(item.baseCatFood)+' · 赠送 '+esc(item.bonusCatFood)+'</small><span class="tag">活动</span></button>'}).join('')+'</div>':'<div class="empty">暂无启用中的充值活动，请联系管理员在后台配置。</div>')+'<p class="hint">创建订单不会立即加余额；只有客服审核通过后才会入账，同一单号不会重复到账。</p></div>'
           +'<aside class="panel"><h2>确认支付</h2><div class="methods">'+state.methods.map(function(item){return '<button class="method '+(state.method===item.code?'active ':'')+(methodOpen(item)?'open':'closed')+'" data-method="'+esc(item.code)+'" type="button"><span>'+esc(item.name)+'</span><small>'+esc(item.statusText||'暂未开放')+'</small></button>'}).join('')+'</div>'
           +'<div class="summary-line"><span>购买猫粮</span><strong>'+esc(c?c.totalCatFood:'-')+' 猫粮</strong></div><div class="summary-line"><span>需支付</span><strong>'+(c?money(c.payAmountRm):'-')+'</strong></div><div class="summary-line"><span>基础猫粮</span><strong>'+esc(c?c.baseCatFood:'-')+' 猫粮</strong></div><div class="summary-line"><span>赠送猫粮</span><strong>'+esc(c?c.bonusCatFood:'-')+' 猫粮</strong></div><div class="summary-line"><span>支付方式</span><strong>'+esc(methodName(state.method))+'</strong></div>'
           +'<button class="primary-btn" data-submit type="button" '+(state.submitting||!c?'disabled':'')+'>'+(state.submitting?'正在创建...':'立即充值')+'</button>'+messageHtml()+'</aside></section>'
-          +'<section class="panel"><h2>钱包流水</h2>'+ledgerHtml()+'</section>'
-          +'<section class="panel"><h2>充值订单</h2>'+recordsHtml()+'</section>';
+          +'<section class="panel"><h2>充值订单</h2>'+recordsHtml()+'</section>'
+          +'<section class="panel"><h2>钱包流水</h2><p class="hint" style="margin-top:0">仅审核通过并实际到账后才会出现在流水中。</p>'+ledgerHtml()+'</section>';
         paintModal();
       }
       function ledgerHtml(){if(!state.transactions.length)return '<div class="empty">暂无钱包流水</div>';return '<div class="ledger">'+state.transactions.map(function(t){return '<div class="tx"><strong>'+esc(t.typeText)+'</strong><span>'+(t.signedAmount>0?'+':'')+esc(t.signedAmount)+' 猫粮 · '+esc(t.balanceTypeText)+'</span><span>'+esc(t.reason||'-')+'</span><span>'+esc(date(t.createdAt))+'</span></div>'}).join('')+'</div>'}
-      function recordsHtml(){if(!state.records.length)return '<div class="empty">暂无充值记录</div>';return '<div class="records">'+state.records.map(function(r){return '<div class="record"><strong>'+esc(r.paymentNo)+'</strong><span>'+money(r.amount)+'</span><span>'+esc(statusText(r.status))+'</span><span>'+esc(date(r.createdAt))+'</span></div>'}).join('')+'</div>'}
+      function recordsHtml(){
+        if(!state.records.length)return '<div class="empty">暂无充值记录</div>';
+        return '<div class="record-head"><span>订单号</span><span>金额</span><span>猫粮</span><span>支付方式</span><span>创建时间</span><span>状态</span></div><div class="records">'+state.records.map(function(r){
+          var st=r.statusText||statusText(r.status);
+          var actions='';
+          if(r.status==='pending_payment'||r.status==='pending'){
+            actions='<div style="grid-column:1/-1;display:flex;gap:8px;margin-top:6px"><button class="ghost-btn" type="button" data-open-pay="'+esc(r.paymentNo)+'">继续付款</button></div>';
+          }else if(r.status==='rejected'){
+            actions='<div class="reject-box" style="grid-column:1/-1">审核拒绝：'+esc(r.rejectReason||'未说明原因')+' <button class="ghost-btn" type="button" data-open-pay="'+esc(r.paymentNo)+'" style="margin-left:8px">重新上传凭证</button></div>';
+          }else if(r.status==='pending_review'){
+            actions='<div class="hint" style="grid-column:1/-1;margin:6px 0 0">已提交付款截图，等待客服审核。审核通过前猫粮不会到账。</div>';
+          }
+          return '<div class="record"><strong>'+esc(r.paymentNo)+'</strong><span>'+money(r.amount)+'</span><span>'+esc(r.catFoodAmount)+' 猫粮</span><span>'+esc(methodName(r.paymentMethod)||r.paymentMethod||'-')+'</span><span>'+esc(date(r.createdAt))+'</span><span>'+statusPill(r.status)+'</span>'+actions+'</div>';
+        }).join('')+'</div>';
+      }
       function paintModal(){
         if(!modal)return;
         var session=state.paySession;
@@ -121,21 +147,28 @@
         var order=session.paymentOrder||{};
         var campaign=session.campaign||selectedCampaign()||{};
         var hasQr=!!(info.qrUrl&&info.enabled!==false);
+        var base=order.paidCatFood!=null?order.paidCatFood:(campaign.baseCatFood!=null?campaign.baseCatFood:'-');
+        var bonus=order.bonusCatFood!=null?order.bonusCatFood:(campaign.bonusCatFood!=null?campaign.bonusCatFood:0);
+        var total=order.catFoodAmount!=null?order.catFoodAmount:(campaign.totalCatFood!=null?campaign.totalCatFood:'-');
         var html='<div class="pay-card" role="dialog" aria-modal="true"><div style="display:flex;justify-content:space-between;gap:12px;align-items:start"><h2>'+esc(info.title||methodName(order.paymentMethod)||'付款')+'</h2><button class="ghost-btn" type="button" data-pay-close>关闭</button></div>';
-        html+='<p class="pay-hint">'+esc(info.instructions||'请完成付款后上传截图提交审核。')+'</p>';
+        if(order.rejectReason){html+='<div class="reject-box">上次审核拒绝：'+esc(order.rejectReason)+'。请重新上传有效付款截图。</div>';}
+        html+='<p class="pay-hint">'+esc(info.instructions||'请完成付款后上传截图，点击「提交付款审核」。审核通过前不会增加猫粮。')+'</p>';
         if(hasQr){html+='<div class="pay-qr-frame"><img src="'+esc(info.qrUrl)+'" alt="收款二维码" referrerpolicy="no-referrer"></div>'}
         else{html+='<p class="message show warn">当前通道暂无可用二维码，请核对收款信息或联系客服。</p>'}
+        html+='<div class="pay-row"><span>订单号</span><strong>'+esc(order.paymentNo||'-')+'</strong></div>';
+        html+='<div class="pay-row"><span>应付金额</span><strong>'+money(order.amount||campaign.payAmountRm)+'</strong></div>';
+        html+='<div class="pay-row"><span>购买猫粮</span><strong>'+esc(total)+' 猫粮</strong></div>';
+        html+='<div class="pay-row"><span>基础猫粮</span><strong>'+esc(base)+' 猫粮</strong></div>';
+        html+='<div class="pay-row"><span>赠送猫粮</span><strong>'+esc(bonus)+' 猫粮</strong></div>';
+        html+='<div class="pay-row"><span>支付方式</span><strong>'+esc(methodName(order.paymentMethod)||order.paymentMethod||info.title||'-')+'</strong></div>';
         html+='<div class="pay-row"><span>收款人</span><strong>'+esc(info.receiverName||'MEOW CUI JIAO ENTERPRISE')+'</strong></div>';
         if(info.bankName)html+='<div class="pay-row"><span>银行</span><strong>'+esc(info.bankName)+'</strong></div>';
         if(info.bankAccount)html+='<div class="pay-row"><span>账号</span><strong>'+esc(info.bankAccount)+'</strong></div>';
         if(info.phone)html+='<div class="pay-row"><span>TNG 手机号</span><strong>'+esc(info.phone)+'</strong></div>';
         if(info.duitnowId)html+='<div class="pay-row"><span>DuitNow ID</span><strong>'+esc(info.duitnowId)+'</strong></div>';
-        html+='<div class="pay-row"><span>本次充值金额</span><strong>'+money(order.amount||campaign.payAmountRm)+'</strong></div>';
-        html+='<div class="pay-row"><span>应到账猫粮</span><strong>'+esc(order.catFoodAmount||campaign.totalCatFood||'-')+' 猫粮</strong></div>';
-        html+='<div class="pay-row"><span>充值单号</span><strong>'+esc(order.paymentNo||'-')+'</strong></div>';
         html+='<div class="pay-actions"><label class="ghost-btn file-btn" style="width:100%;position:relative">上传付款截图<input type="file" accept="image/png,image/jpeg,image/jpg,image/webp" data-pay-proof></label>';
         if(state.proofPreview)html+='<div class="pay-preview"><img src="'+esc(state.proofPreview)+'" alt="付款截图预览"></div>';
-        html+='<button class="primary-btn" type="button" data-pay-submit '+(state.uploading||!state.proofFile?'disabled':'')+'>'+(state.uploading?'提交中...':'我已付款 / 提交审核')+'</button>';
+        html+='<button class="primary-btn" type="button" data-pay-submit '+(state.uploading||!state.proofFile?'disabled':'')+'>'+(state.uploading?'提交中...':'提交付款审核')+'</button>';
         html+='<button class="ghost-btn" type="button" data-pay-close style="width:100%">稍后再传</button></div></div>';
         modal.innerHTML=html;
         modal.classList.add('show');
@@ -180,8 +213,8 @@
             state.method=openMethods[0]?openMethods[0].code:(state.methods[0]?state.methods[0].code:'');
           }
           if(body.message){state.message=body.message;state.messageType='warn'}else if(!state.message||state.messageType==='warn'){state.message=''}
-          if(body.activePayment&&body.activePayment.payInfo&&/pending_payment|pending_review|pending/.test(String(body.activePayment.status||''))){
-            openPaySession({payInfo:body.activePayment.payInfo,paymentOrder:body.activePayment,campaign:body.activePayment.campaign});
+          if(body.activePayment&&/pending_payment|pending_review|pending|rejected/.test(String(body.activePayment.status||''))){
+            openPaySession({payInfo:body.activePayment.payInfo||null,paymentOrder:body.activePayment,campaign:body.activePayment.campaign});
           }
         }catch(err){state.error=err.message||'充值数据读取失败'}finally{state.loading=false;paint()}
       }
@@ -237,11 +270,34 @@
           var res=await fetch('/api/recharge',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token()},body:JSON.stringify({action:'submit_recharge_proof',paymentNo:state.paySession.paymentOrder.paymentNo,proofDataUrl:dataUrl})});
           var body=await res.json().catch(function(){return {}});
           if(!res.ok||body.ok===false)throw new Error(body.message||'提交失败');
-          state.message=body.message||'已提交，待人工审核';
+          state.message=body.message||'已提交付款审核，状态：待审核';
           state.messageType='ok';
           closePayModal(true);
           await load();
         }catch(err){state.message=err.message||'提交失败';state.messageType='bad';paint()}finally{state.uploading=false;paint()}
+      }
+      async function reopenPay(paymentNo){
+        var no=String(paymentNo||'').trim();
+        if(!no)return;
+        state.message='正在打开付款页…';state.messageType='warn';paint();
+        try{
+          var res=await fetch('/api/recharge?paymentNo='+encodeURIComponent(no),{headers:{Accept:'application/json',Authorization:'Bearer '+token()}});
+          var body=await res.json().catch(function(){return {}});
+          if(!res.ok||body.ok===false)throw new Error(body.message||'打开失败');
+          state.summary=body.summary||state.summary;
+          state.records=body.records||state.records;
+          state.transactions=body.transactions||state.transactions;
+          state.methods=Array.isArray(body.methods)?body.methods:state.methods;
+          if(!body.activePayment)throw new Error('充值订单不存在');
+          if(!/pending_payment|pending|rejected/.test(String(body.activePayment.status||''))){
+            state.message='当前状态：'+(body.activePayment.statusText||body.activePayment.status)+'，无需再上传截图。';
+            state.messageType='warn';
+            paint();
+            return;
+          }
+          openPaySession({payInfo:body.activePayment.payInfo||null,paymentOrder:body.activePayment,campaign:body.activePayment.campaign});
+          state.message='';
+        }catch(err){state.message=err.message||'打开付款页失败';state.messageType='bad';paint()}
       }
       document.addEventListener('click',function(e){
         var camp=e.target.closest('[data-campaign]');if(camp){state.campaignId=camp.dataset.campaign;paint();return}
@@ -255,6 +311,8 @@
           paint();
           return;
         }
+        var openPayBtn=e.target.closest('[data-open-pay]');
+        if(openPayBtn){reopenPay(openPayBtn.getAttribute('data-open-pay'));return}
         if(e.target.closest('[data-submit]')){submit();return}
         if(e.target.closest('[data-refresh]')){load();return}
         if(e.target.closest('[data-pay-close]')){closePayModal(true);return}

@@ -6,14 +6,14 @@
     return;
   }
   var SESSION_KEY='mcjServiceSession';
-  var ROUTES={'/customer-service/':'dashboard','/customer-service':'dashboard','/customer-service/login':'login','/customer-service/dashboard':'dashboard','/customer-service/conversations':'conversations','/customer-service/chats':'conversations','/customer-service/orders':'orders','/customer-service/create-order':'createOrder','/customer-service/compensation':'compensation','/customer-service/reports':'reports','/customer-service/profile':'profile'};
-  var NAV=[['dashboard','工作台','/customer-service/dashboard'],['conversations','统一会话池','/customer-service/conversations'],['orders','订单处理','/customer-service/orders'],['compensation','申请补偿','/customer-service/compensation'],['reports','工资中心','/customer-service/reports'],['createOrder','客服代下单','/customer-service/create-order'],['profile','我的资料','/customer-service/profile'],['logout','退出登录','logout']];
+  var ROUTES={'/customer-service/':'dashboard','/customer-service':'dashboard','/customer-service/login':'login','/customer-service/dashboard':'dashboard','/customer-service/conversations':'conversations','/customer-service/chats':'conversations','/customer-service/orders':'orders','/customer-service/create-order':'createOrder','/customer-service/compensation':'compensation','/customer-service/recharge-review':'rechargeReview','/customer-service/reports':'reports','/customer-service/profile':'profile'};
+  var NAV=[['dashboard','工作台','/customer-service/dashboard'],['conversations','统一会话池','/customer-service/conversations'],['orders','订单处理','/customer-service/orders'],['rechargeReview','充值审核','/customer-service/recharge-review'],['compensation','申请补偿','/customer-service/compensation'],['reports','工资中心','/customer-service/reports'],['createOrder','客服代下单','/customer-service/create-order'],['profile','我的资料','/customer-service/profile'],['logout','退出登录','logout']];
   var HIDDEN_MVP_ROUTES={};
   var Auth=window.MCJAuthShell;
   var softRefreshSeq=0;
   var toastTimer=null;
   var COMPOSER_SEL='[data-cs-composer], form[data-send-message] textarea[name="content"], form[data-send-message] input[name="content"]';
-  var state={route:'dashboard',session:null,data:null,services:[],servicesError:'',servicesSource:'',createOrderErrors:{bosses:'',companions:'',services:''},loading:false,error:'',notice:'',activeConversation:'',orderFilter:'',convFilter:'waiting',suppressAutoSelect:false,loginError:'',loginBusy:false,loginDraft:{account:'',password:'',remember:false},composerDraft:'',composerDrafts:{},composerFocused:false,sendingChat:false,showConversationList:false,acceptLock:null,readCursors:{},acceptingId:'',clockBusy:false,assignBusy:false,realtimeReady:false,hoursTimer:null,lastPollAt:'',listScrollTop:0,pageScrollTop:0,tableScrollTop:0,tableScrollLeft:0,poolRealtimeBound:false,virtStart:0,attPage:0};
+  var state={route:'dashboard',session:null,data:null,services:[],servicesError:'',servicesSource:'',createOrderErrors:{bosses:'',companions:'',services:''},loading:false,error:'',notice:'',activeConversation:'',orderFilter:'',convFilter:'waiting',suppressAutoSelect:false,loginError:'',loginBusy:false,loginDraft:{account:'',password:'',remember:false},composerDraft:'',composerDrafts:{},composerFocused:false,sendingChat:false,showConversationList:false,acceptLock:null,readCursors:{},acceptingId:'',clockBusy:false,assignBusy:false,realtimeReady:false,hoursTimer:null,lastPollAt:'',listScrollTop:0,pageScrollTop:0,tableScrollTop:0,tableScrollLeft:0,poolRealtimeBound:false,virtStart:0,attPage:0,rechargeBusy:'',rechargeTab:'pending'};
   var CONV_ROW_H=92;
   var CONV_OVERSCAN=6;
   var ATT_PAGE_SIZE=10;
@@ -1169,11 +1169,15 @@
     if(next==='dashboard')url='/customer-service/dashboard/';
     else if(next==='conversations')url='/customer-service/conversations';
     else if(next==='orders')url='/customer-service/orders';
+    else if(next==='rechargeReview')url='/customer-service/recharge-review';
     else if(next==='profile')url='/customer-service/profile';
     history.pushState(null,'',url);
     state.route=next;
     // Defer remount so the same click cannot "ghost click" 工作台 after buttons regenerate.
-    setTimeout(function(){ paint(); }, 0);
+    setTimeout(function(){
+      paint();
+      if(next==='rechargeReview')loadRechargeReviews();
+    }, 0);
   }
   function readSession(){
     if(window.MCJServiceAuth&&typeof window.MCJServiceAuth.hasSession==='function'){
@@ -2002,14 +2006,15 @@
       });
     }
   }
-  function title(){return ({dashboard:'客服工作台',conversations:'统一会话池',orders:'订单处理',createOrder:'客服代下单',compensation:'申请补偿',reports:'工资中心',profile:'我的资料'})[state.route]||'客服端'}
+  function title(){return ({dashboard:'客服工作台',conversations:'统一会话池',orders:'订单处理',createOrder:'客服代下单',rechargeReview:'充值审核',compensation:'申请补偿',reports:'工资中心',profile:'我的资料'})[state.route]||'客服端'}
   function renderShell(){
     var staff=(state.data&&state.data.staff)||(state.session&&state.session.user)||{};
     recomputeSummaryFromConversations();
     var unread=Number((state.data&&state.data.summary&&state.data.summary.unreadMessages)||0)||0;
+    var pendingRechargeNav=Number((state.data&&state.data.summary&&state.data.summary.pendingRecharges)||0)||0;
     root.innerHTML='<div class="cs-shell"><aside class="cs-side"><div class="cs-brand"><strong>MEOW CUI JIAO</strong><span>Customer Service</span></div><nav class="cs-nav">'+NAV.map(function(n){
       if(n[0]==='logout')return '<button type="button" data-logout>'+n[1]+'</button>';
-      var badge=n[0]==='conversations'?('<b class="cs-nav-unread" data-nav-unread'+(unread?'':' hidden')+'>'+(unread>99?'99+':String(unread||''))+'</b>'):'';
+      var badge=n[0]==='conversations'?('<b class="cs-nav-unread" data-nav-unread'+(unread?'':' hidden')+'>'+(unread>99?'99+':String(unread||''))+'</b>'):(n[0]==='rechargeReview'&&pendingRechargeNav?'<b class="cs-nav-unread">'+esc(pendingRechargeNav>99?'99+':pendingRechargeNav)+'</b>':'');
       return '<button type="button" class="'+(state.route===n[0]?'active':'')+'" data-route="'+n[2]+'">'+n[1]+badge+'</button>';
     }).join('')+'</nav></aside><section class="cs-main"><header class="cs-top"><div><h1>'+title()+'</h1><p>客服端只处理会话与订单主流程。</p></div><div class="cs-account"><span>'+esc(staff.name||staff.email||'客服')+'</span></div></header><main class="cs-page" data-route="'+esc(state.route||'dashboard')+'">'+pageHtml()+'</main></section></div>'+noticeHtml();
   }
@@ -2022,6 +2027,7 @@
     if(HIDDEN_MVP_ROUTES[state.route])return note+maintenanceHtml(title());
     if(state.route==='conversations')return note+conversationsHtml();
     if(state.route==='orders')return note+ordersHtml();
+    if(state.route==='rechargeReview')return note+rechargeReviewHtml();
     if(state.route==='compensation')return note+compensationHtml();
     if(state.route==='reports')return note+reportsHtml();
     if(state.route==='createOrder')return (state.loading?note:'')+createOrderHtml();
@@ -2045,7 +2051,7 @@
     var clockOutLabel=state.clockBusy?'处理中…':(canOut?'下班打卡':'已下班');
     recomputeSummaryFromConversations();
     s=(state.data&&state.data.summary)||s;
-    return '<div class="cs-page-head"><div><h2>工作台</h2><p>主流程：接待会话、确认付款、推进订单。</p></div><div class="cs-actions"><button class="cs-btn primary" type="button" data-route="/customer-service/conversations">进入会话池</button><button class="cs-btn" type="button" data-route="/customer-service/orders">订单处理</button></div></div>'+
+    return '<div class="cs-page-head"><div><h2>工作台</h2><p>主流程：接待会话、确认付款、推进订单、审核老板充值。</p></div><div class="cs-actions"><button class="cs-btn primary" type="button" data-route="/customer-service/conversations">进入会话池</button><button class="cs-btn" type="button" data-route="/customer-service/orders">订单处理</button><button class="cs-btn" type="button" data-route="/customer-service/recharge-review">充值审核'+(s.pendingRecharges?' ('+esc(s.pendingRecharges)+')':'')+'</button></div></div>'+
       '<section class="cs-card" style="margin-bottom:14px" data-clock-panel><h3>今日打卡</h3><div class="cs-info-list">'+
       '<div><span>当前状态</span><strong data-clock-status>'+esc(att.attendanceStatus||'未打卡')+'</strong></div>'+
       '<div><span>本班上班</span><strong data-clock-in-at>'+esc(fmtAttDateTime(att.clockInText,att.clockInAt)||'-')+'</strong></div>'+
@@ -2075,6 +2081,7 @@
       metric('累计收入',money(s.incomeTotal||0))+
       metric('可申请工资',money(s.withdrawableSalary!=null?s.withdrawableSalary:s.estimatedSalary||0))+
       metric('待重新安排',reassign)+
+      metric('待审核充值',s.pendingRecharges||0)+
       metric('今日处理订单数',s.todayHandled||0)+
       '</section>';
   }
@@ -2763,6 +2770,54 @@
     var statuses=(state.data&&state.data.orderStatuses)||{};
     return '<div class="cs-page-head"><div><h2>订单处理</h2><p>确认付款、指派陪玩、处理退款，所有操作写入真实订单表。</p></div><div class="cs-actions"><button class="cs-btn primary" data-route="/customer-service/create-order">客服代下单</button></div></div><div class="cs-toolbar"><select data-order-filter><option value="">全部状态</option>'+Object.keys(statuses).map(function(k){return '<option value="'+esc(k)+'" '+(state.orderFilter===k?'selected':'')+'>'+esc(statuses[k])+'</option>'}).join('')+'</select><button class="cs-btn" data-refresh>刷新</button></div><section class="cs-table-wrap"><table class="cs-table"><thead><tr><th>订单编号</th><th>老板</th><th>陪玩</th><th>游戏</th><th>金额</th><th>状态</th><th>创建时间</th><th>操作</th></tr></thead><tbody>'+(rows.length?rows.map(orderRow).join(''):'<tr><td colspan="8"><div class="cs-empty">暂无订单</div></td></tr>')+'</tbody></table></section>';
   }
+  function rechargeReviewHtml(){
+    var pending=((state.data&&state.data.pendingRecharges)||[]).filter(function(r){return r.status==='pending_review'});
+    var recent=((state.data&&state.data.recentRecharges)||[]);
+    var tab=state.rechargeTab==='recent'?'recent':'pending';
+    var list=tab==='recent'?recent:pending;
+    var rows=list.length?list.map(function(r){
+      var proof=r.proofUrl?'<a href="'+esc(r.proofUrl)+'" target="_blank" rel="noopener">查看截图</a>':(r.hasProof?'已上传':'-');
+      var amt=Number(r.amountRm!=null?r.amountRm:r.amount||0);
+      var amtText='RM '+(Number.isFinite(amt)?amt.toFixed(2):'0.00');
+      var actions='-';
+      if(tab==='pending'){
+        actions='<div class="cs-actions" style="flex-wrap:wrap">'+
+          '<button class="cs-btn primary" type="button" data-approve-recharge="'+esc(r.paymentNo)+'" '+(state.rechargeBusy===r.paymentNo?'disabled':'')+'>审核通过</button>'+
+          '<button class="cs-btn warn" type="button" data-reject-recharge="'+esc(r.paymentNo)+'" '+(state.rechargeBusy===r.paymentNo?'disabled':'')+'>拒绝</button>'+
+          '</div>';
+      }
+      return '<tr>'+
+        '<td><strong>'+esc(r.paymentNo)+'</strong></td>'+
+        '<td>'+esc(r.bossName||'-')+'<div class="muted" style="font-size:12px">'+esc(r.bossEmail||'')+'</div></td>'+
+        '<td>'+esc(amtText)+'</td>'+
+        '<td>'+esc(r.catFoodAmount)+' 猫粮'+(r.bonusCatFood?'<div class="muted" style="font-size:12px">基础 '+(Number(r.paidCatFood||0)||Math.max(0,Number(r.catFoodAmount||0)-Number(r.bonusCatFood||0)))+' +赠 '+esc(r.bonusCatFood)+'</div>':'')+'</td>'+
+        '<td>'+esc(r.paymentMethod||'-')+'</td>'+
+        '<td>'+proof+'</td>'+
+        '<td>'+esc(r.statusText||r.status)+'</td>'+
+        '<td>'+esc(String(r.proofUploadedAt||r.createdAt||'').replace('T',' ').slice(0,19))+'</td>'+
+        '<td>'+actions+'</td>'+
+        '</tr>';
+    }).join(''):'<tr><td colspan="9"><div class="cs-empty">'+(tab==='pending'?'暂无待审核充值单':'暂无已完成记录')+'</div></td></tr>';
+    return '<div class="cs-page-head"><div><h2>充值审核</h2><p>老板上传付款截图后进入待审核。审核通过后才增加猫粮；拒绝须填写原因。</p></div><div class="cs-actions">'+
+      '<button class="cs-btn '+(tab==='pending'?'primary':'')+'" type="button" data-recharge-tab="pending">待审核 ('+esc(pending.length)+')</button>'+
+      '<button class="cs-btn '+(tab==='recent'?'primary':'')+'" type="button" data-recharge-tab="recent">最近已完成</button>'+
+      '<button class="cs-btn" type="button" data-refresh-recharges>刷新</button></div></div>'+
+      '<section class="cs-table-wrap"><table class="cs-table"><thead><tr><th>payment_no</th><th>老板</th><th>金额</th><th>购买猫粮</th><th>支付方式</th><th>付款截图</th><th>状态</th><th>提交时间</th><th>操作</th></tr></thead><tbody>'+rows+'</tbody></table></section>';
+  }
+  function loadRechargeReviews(){
+    return Promise.all([
+      api('list_pending_recharges',{status:'queue'}),
+      api('list_pending_recharges',{status:'paid'})
+    ]).then(function(results){
+      if(!state.data)state.data={};
+      state.data.pendingRecharges=(results[0]&&results[0].items)||[];
+      state.data.recentRecharges=((results[1]&&results[1].items)||[]).slice(0,50);
+      if(state.data.summary)state.data.summary.pendingRecharges=state.data.pendingRecharges.filter(function(r){return r.status==='pending_review'}).length;
+      if(state.route==='rechargeReview'||state.route==='dashboard')paint();
+    }).catch(function(err){
+      toast(err.message||'读取充值审核失败');
+    });
+  }
   function compensationHtml(){
     var bosses=(state.data&&state.data.bosses)||[];
     var policy=(state.data&&state.data.compensationPolicy)||{};
@@ -3285,6 +3340,52 @@
     return;
   }
   if(e.target.closest('[data-refresh]')){hardRefresh();return}
+  if(e.target.closest('[data-refresh-recharges]')){loadRechargeReviews();return}
+  var rechargeTabBtn=e.target.closest('[data-recharge-tab]');
+  if(rechargeTabBtn){
+    state.rechargeTab=rechargeTabBtn.getAttribute('data-recharge-tab')||'pending';
+    if(state.route==='rechargeReview')paint();
+    return;
+  }
+  var approveRecharge=e.target.closest('[data-approve-recharge]');
+  if(approveRecharge){
+    e.preventDefault();
+    var payNo=approveRecharge.getAttribute('data-approve-recharge');
+    if(!payNo||state.rechargeBusy)return;
+    if(!confirm('确认该充值已真实到账并给老板入账猫粮？\n单号：'+payNo))return;
+    state.rechargeBusy=payNo;paint();
+    api('confirm_manual_recharge',{paymentNo:payNo}).then(function(res){
+      toast(res.message||'已审核通过，猫粮已入账');
+      state.rechargeBusy='';
+      return loadRechargeReviews();
+    }).catch(function(err){
+      state.rechargeBusy='';
+      paint();
+      toast(err.message||'审核通过失败');
+    });
+    return;
+  }
+  var rejectRecharge=e.target.closest('[data-reject-recharge]');
+  if(rejectRecharge){
+    e.preventDefault();
+    var rejectNo=rejectRecharge.getAttribute('data-reject-recharge');
+    if(!rejectNo||state.rechargeBusy)return;
+    var why=prompt('请填写拒绝原因（将展示给老板）：','');
+    if(why==null)return;
+    why=String(why||'').trim();
+    if(!why){toast('必须填写拒绝原因');return}
+    state.rechargeBusy=rejectNo;paint();
+    api('reject_manual_recharge',{paymentNo:rejectNo,reason:why}).then(function(res){
+      toast(res.message||'已拒绝');
+      state.rechargeBusy='';
+      return loadRechargeReviews();
+    }).catch(function(err){
+      state.rechargeBusy='';
+      paint();
+      toast(err.message||'拒绝失败');
+    });
+    return;
+  }
   var attPageBtn=e.target.closest('[data-att-page]');
   if(attPageBtn){
     e.preventDefault();
