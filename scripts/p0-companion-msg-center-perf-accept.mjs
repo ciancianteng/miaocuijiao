@@ -25,7 +25,13 @@ async function login() {
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok || body.ok === false) throw new Error(body.message || `login HTTP ${res.status}`);
-  const token = body.token || body.accessToken || body.session?.token || body.data?.token;
+  const token =
+    body.token ||
+    body.accessToken ||
+    body.session?.accessToken ||
+    body.session?.token ||
+    body.data?.token ||
+    body.data?.accessToken;
   if (!token) throw new Error("login missing token");
   return token;
 }
