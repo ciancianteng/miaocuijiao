@@ -1975,9 +1975,19 @@
     var e=(state.data&&state.data.earnings)||{},rules=(state.data&&state.data.withdrawalRules)||{},perm=(state.data&&state.data.permissions)||{};
     var can=!!perm.canWithdraw&&!state.withdrawBusy;
     var available=e.available!=null?e.available:e.withdrawable;
-    return (!perm.canWithdraw&&perm.withdrawLockReason?'<div class="pw-empty" style="margin-bottom:12px"><strong>暂不可提现</strong><span>'+esc(perm.withdrawLockReason)+'</span></div>':'')+
-      '<div class="pw-empty" style="margin-bottom:12px"><strong>每周五统一发放</strong><span>'+esc((rules.weeklyBanner&&rules.weeklyBanner.bannerBody)||rules.settlementHint||'周四 23:59 前提交 → 本周五发放；截止后提交 → 下周五发放。')+'</span></div>'+
-      '<div class="pw-empty" style="margin-bottom:12px"><strong>退款冲减</strong><span>若订单进入待周五退款队列，相关收入会被冲减或锁定，暂不可提现；已入批次未打款将重算，已打款后退款记入下期负向调整。</span></div>'+
+    var weeklyBody=(rules.weeklyBanner&&rules.weeklyBanner.bannerBody)||rules.settlementHint||'周四 23:59 前提交 → 本周五发放；截止后提交 → 下周五发放。';
+    var weeklyTitle=(rules.weeklyBanner&&(rules.weeklyBanner.bannerTitle||rules.weeklyBanner.companionTitle))||'每周五统一发放';
+    var lockBanner=!perm.canWithdraw&&perm.withdrawLockReason
+      ?'<div class="pw-alert" style="margin-bottom:12px"><strong>暂不可提现</strong><span>'+esc(perm.withdrawLockReason)+'</span></div>'
+      :'';
+    var rulesAccordion=
+      '<details class="pw-card pad pw-rules-accordion">'+
+      '<summary><span class="pw-rules-summary-text">📋 提现规则<span class="pw-rules-hint-closed">（点击展开）</span><span class="pw-rules-hint-open">（点击收起）</span></span></summary>'+
+      '<div class="pw-rules-body">'+
+      '<div class="pw-rule-item"><strong>'+esc(weeklyTitle)+'</strong><p>'+esc(weeklyBody)+'</p></div>'+
+      '<div class="pw-rule-item"><strong>退款冲减</strong><p>若订单进入待周五退款队列，相关收入会被冲减或锁定，暂不可提现；已入批次未打款将重算，已打款后退款记入下期负向调整。</p></div>'+
+      '</div></details>';
+    return lockBanner+
       '<form class="pw-card pad pw-form" data-withdraw-form novalidate>'+
       '<div class="pw-info-list" style="margin-bottom:14px">'+
       infoRow('可提现余额',money(num(available)))+
@@ -1990,6 +2000,7 @@
       '<label>备注（可选）<input name="remark" placeholder="可选" '+(can?'':'disabled')+'></label>'+
       '<button class="pw-btn primary" type="submit" '+(can?'':'disabled')+'>'+(state.withdrawBusy?'提交中…':'提交提现申请')+'</button>'+
       '</form>'+
+      rulesAccordion+
       '<section class="pw-card pad" style="margin-top:14px"><h3>提现记录</h3>'+withdrawalRecordsListHtml()+'</section>';
   }
   function withdrawalRecordsListHtml(){
