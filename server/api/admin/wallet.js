@@ -421,13 +421,11 @@ export default async function handler(req, res) {
     if (action === "confirm_manual_recharge") {
       const paymentNo = String(body.paymentNo || body.payment_no || body.id || "").trim();
       if (!paymentNo) return json(res, 400, { ok: false, message: "缺少 paymentNo" });
-      const orderRows = await supabaseJson(
-        restUrl(
-          "payment_orders",
-          `?or=(payment_no.eq.${encodeURIComponent(paymentNo)},id.eq.${encodeURIComponent(paymentNo)})&limit=1`
-        ),
-        { headers: serviceHeaders() }
-      );
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(paymentNo);
+      const orderQuery = isUuid
+        ? `?or=(payment_no.eq.${encodeURIComponent(paymentNo)},id.eq.${encodeURIComponent(paymentNo)})&limit=1`
+        : `?payment_no.eq.${encodeURIComponent(paymentNo)}&limit=1`;
+      const orderRows = await supabaseJson(restUrl("payment_orders", orderQuery), { headers: serviceHeaders() });
       const order = orderRows?.[0];
       if (!order) return json(res, 404, { ok: false, message: "充值订单不存在" });
       const st = String(order.status || "").toLowerCase();
