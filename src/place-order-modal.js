@@ -9,6 +9,7 @@
     { id: "custom", label: "自定义", value: 0, custom: true },
   ];
   var PAYMENTS = [
+    { id: "duitnow", label: "DuitNow" },
     { id: "tng", label: "TNG" },
     { id: "bank", label: "银行卡" },
     { id: "alipay", label: "支付宝" },
@@ -28,7 +29,7 @@
     hours: 1,
     quantity: 1,
     couponCode: "",
-    payment: "tng",
+    payment: "duitnow",
     submitting: false,
     submitStartedAt: 0,
     walletBalance: null,
@@ -181,11 +182,11 @@
         '</span><span class="mcj-po-pay-check" aria-hidden="true"></span></button>'
       );
     }).join("");
-    if (state.payment === "catfood" && catInsufficient) state.payment = "tng";
+    if (state.payment === "catfood" && catInsufficient) state.payment = "duitnow";
     grid.querySelectorAll("[data-po-pay]").forEach(function (btn) {
       btn.addEventListener("click", function () {
         if (btn.disabled) return;
-        state.payment = btn.getAttribute("data-po-pay") || "tng";
+        state.payment = btn.getAttribute("data-po-pay") || "duitnow";
         setExclusiveActive(grid.querySelectorAll("[data-po-pay]"), btn);
       });
     });
@@ -911,7 +912,7 @@
     mask.querySelectorAll("[data-po-pay]").forEach(function (btn) {
       btn.addEventListener("click", function () {
         if (btn.disabled) return;
-        state.payment = btn.getAttribute("data-po-pay") || "tng";
+        state.payment = btn.getAttribute("data-po-pay") || "duitnow";
         setExclusiveActive(mask.querySelectorAll("[data-po-pay]"), btn);
       });
     });
@@ -1218,7 +1219,7 @@
     state.hours = 1;
     state.quantity = 1;
     state.couponCode = "";
-    state.payment = "tng";
+    state.payment = "duitnow";
     state.submitting = false;
     state.submitStartedAt = 0;
     try {

@@ -233,9 +233,12 @@ async function nextOrderNo() {
 }
 function paymentMethodLabel(method) {
   const key = String(method || "").toLowerCase();
+  if (/duitnow/.test(key)) return "DuitNow";
   if (/tng/.test(key)) return "TNG";
   if (/bank|银行/.test(key)) return "银行卡";
   if (/alipay|支付宝/.test(key)) return "支付宝";
+  if (/stripe/.test(key)) return "Stripe";
+  if (/hitpay/.test(key)) return "HitPay";
   if (/cat.?food|wallet|猫粮|余额/.test(key)) return "猫粮余额";
   return method || "猫粮余额";
 }
@@ -243,7 +246,7 @@ function isWalletMethod(method) {
   return /cat.?food|wallet|猫粮|余额/.test(String(method || "").toLowerCase());
 }
 function isPreviewTestMethod(method) {
-  return /tng|bank|银行|card|银行卡|alipay|支付宝/.test(String(method || "").toLowerCase());
+  return /tng|duitnow|bank|银行|card|银行卡|alipay|支付宝/.test(String(method || "").toLowerCase());
 }
 
 async function parseBody(req) {
@@ -822,15 +825,21 @@ export default async function handler(req, res) {
         const target = enriched.find((o) => String(o.id) === singleId || String(o.orderNo || o.order_no || "") === singleId);
         if (target && String(target.status || "") === "awaiting_payment" && !isWalletMethod(target.paymentMethod || target.payment_method)) {
           try {
-            platformPayInfo = await loadPlatformPayQr();
+            // Bind QR strictly to this order's selected payment_method — never cross-fallback.
+            platformPayInfo = await loadPlatformPayQr(target.paymentMethod || target.payment_method || "");
           } catch (err) {
             console.warn("[orders] platformPayInfo", String(err?.message || err).slice(0, 160));
+            const methodHint = String(target.paymentMethod || target.payment_method || "").trim();
             platformPayInfo = {
               channelId: "",
-              title: "平台收款",
+              requestedMethod: methodHint,
+              title: methodHint || "平台收款",
               qrUrl: "",
-              instructions: "支付通道暂不可用",
+              instructions: methodHint
+                ? `${paymentMethodLabel(methodHint)} 暂未开放，请选择其他支付方式`
+                : "支付通道暂不可用",
               enabled: false,
+              unavailable: true,
               source: "error",
             };
           }

@@ -2,6 +2,9 @@
  * Platform collection QR for order payment page only.
  * Never expose via public /api/platform/settings or homepage.
  * Admin payment settings (Storage + payment_channels) is the single source of truth.
+ *
+ * Rule: selected payment_method → that channel only.
+ * Never cross-fallback (TNG ↛ DuitNow, Stripe ↛ DuitNow, etc.).
  */
 import { companionDb } from "./_companion-media-store.js";
 
@@ -11,6 +14,75 @@ function moneySafe(v) {
 
 const EMPTY_INSTRUCTIONS = "支付通道暂不可用";
 
+const CHANNEL_LABELS = {
+  tng: "TNG",
+  duitnow: "DuitNow",
+  "bank-transfer": "银行卡",
+  "bank-my": "银行卡",
+  bank: "银行卡",
+  alipay: "支付宝",
+  stripe: "Stripe",
+  hitpay: "HitPay",
+  toyyibpay: "ToyyibPay",
+};
+
+/**
+ * Map boss-facing payment_method / labels to payment_channels ids.
+ * Returns an ordered list of aliases for the SAME logical channel only
+ * (e.g. bank → bank-transfer / bank-my). Never mixes TNG with DuitNow.
+ */
+export function resolvePayChannelIds(method) {
+  const raw = moneySafe(method);
+  const key = raw.toLowerCase();
+  if (!key) return [];
+  if (/cat.?food|wallet|猫粮|余额/.test(key)) return [];
+
+  if (/^(tng|touch\s*'?n\s*go)$/i.test(key) || key === "tng" || /^tng\b/.test(key)) {
+    return ["tng"];
+  }
+  if (/duitnow/.test(key)) return ["duitnow"];
+  if (/alipay|支付宝/.test(key)) return ["alipay"];
+  if (/stripe/.test(key)) return ["stripe"];
+  if (/hitpay/.test(key)) return ["hitpay"];
+  if (/toyyib/.test(key)) return ["toyyibpay"];
+  if (/bank-transfer|bank-my|bank|银行|card|银行卡|manual_transfer|线下/.test(key)) {
+    return ["bank-transfer", "bank-my"];
+  }
+  // Passthrough exact channel ids / unknown codes — still no cross-channel fallback.
+  return [key];
+}
+
+export function channelDisplayName(channelId, methodHint = "") {
+  const id = moneySafe(channelId).toLowerCase();
+  if (CHANNEL_LABELS[id]) return CHANNEL_LABELS[id];
+  const fromMethod = resolvePayChannelIds(methodHint)[0];
+  if (fromMethod && CHANNEL_LABELS[fromMethod]) return CHANNEL_LABELS[fromMethod];
+  const hint = moneySafe(methodHint);
+  if (hint) return hint;
+  return "该支付方式";
+}
+
+function unavailablePayInfo(channelId, methodHint = "") {
+  const id = moneySafe(channelId) || resolvePayChannelIds(methodHint)[0] || "";
+  const label = channelDisplayName(id, methodHint);
+  return {
+    channelId: id,
+    requestedMethod: moneySafe(methodHint),
+    title: label,
+    qrUrl: "",
+    duitnowId: "",
+    receiverName: "",
+    bankName: "",
+    bankAccount: "",
+    phone: "",
+    accountLast4: "",
+    instructions: `${label} 暂未开放，请选择其他支付方式`,
+    enabled: false,
+    unavailable: true,
+    source: "unavailable",
+  };
+}
+
 function channelIsEnabled(channelRow, pub = {}) {
   // Prefer DB channel row as SoT; public mirror is secondary.
   if (channelRow) {
@@ -18,6 +90,22 @@ function channelIsEnabled(channelRow, pub = {}) {
   }
   if (pub && pub.enabled != null) return !!pub.enabled;
   return false;
+}
+
+function defaultInstructions(channelId) {
+  if (channelId === "tng") {
+    return "请使用 Touch 'n Go 扫描下方二维码完成付款，付款后上传截图并点击「我已付款」。";
+  }
+  if (channelId === "duitnow") {
+    return "请使用银行 App / DuitNow 扫描下方二维码完成付款，付款后上传截图并点击「我已付款」。";
+  }
+  if (channelId === "alipay") {
+    return "请使用支付宝扫描下方二维码完成付款，付款后上传截图并点击「我已付款」。";
+  }
+  if (channelId === "bank-transfer" || channelId === "bank-my") {
+    return "请按下方收款信息完成银行转账，付款后上传截图并点击「我已付款」。";
+  }
+  return "请扫描下方收款二维码完成付款，付款后上传截图并点击「我已付款」。";
 }
 
 function pickChannelPayInfo(channelId, channelRow, publicMap = {}) {
@@ -40,7 +128,7 @@ function pickChannelPayInfo(channelId, channelRow, publicMap = {}) {
   const publicLabel = moneySafe(data.publicLabel || pub.publicLabel || channelRow?.name);
   return {
     channelId,
-    title: publicLabel || (channelId === "duitnow" ? "DuitNow 收款" : "平台收款二维码"),
+    title: publicLabel || channelDisplayName(channelId) || "平台收款二维码",
     qrUrl,
     duitnowId,
     receiverName,
@@ -50,16 +138,17 @@ function pickChannelPayInfo(channelId, channelRow, publicMap = {}) {
     accountLast4: moneySafe(pub.accountLast4 || bankAccount).slice(-4),
     minAmount: data.minAmount != null ? data.minAmount : pub.minAmount,
     maxAmount: data.maxAmount != null ? data.maxAmount : pub.maxAmount,
-    instructions:
-      instructions ||
-      "请使用银行 App / DuitNow 扫描下方二维码完成付款，付款后上传截图并点击「我已付款」。",
+    instructions: instructions || defaultInstructions(channelId),
     enabled: true,
+    unavailable: false,
   };
 }
 
-function emptyPayInfo() {
+function emptyPayInfo(methodHint = "") {
+  if (moneySafe(methodHint)) return unavailablePayInfo("", methodHint);
   return {
     channelId: "",
+    requestedMethod: "",
     title: "平台收款",
     qrUrl: "",
     duitnowId: "",
@@ -70,16 +159,12 @@ function emptyPayInfo() {
     accountLast4: "",
     instructions: EMPTY_INSTRUCTIONS,
     enabled: false,
+    unavailable: true,
     source: "empty",
   };
 }
 
-/**
- * Resolve platform pay QR for authenticated boss payment page.
- * Prefer DuitNow; fall back to bank-transfer / tng with an enabled QR.
- * Never invent hardcoded accounts or fall back to static/env images by default.
- */
-export async function loadPlatformPayQr() {
+async function loadChannelMaps() {
   let publicMap = {};
   try {
     const rows = await companionDb("platform_settings", "?id=eq.global&select=id,data&limit=1");
@@ -104,44 +189,62 @@ export async function loadPlatformPayQr() {
     m[r.channel_id || r.id] = r;
     return m;
   }, {});
+  return { publicMap, channelRows: channelRows || [], byId };
+}
 
-  const prefer = ["duitnow", "bank-transfer", "bank-my", "tng"];
-  for (const id of prefer) {
+/**
+ * Resolve platform pay QR for authenticated boss payment page.
+ * @param {string} [preferredMethod] order.payment_method / paymentMethod — required for correct routing.
+ * Never invent hardcoded accounts. Never substitute another channel's QR.
+ */
+export async function loadPlatformPayQr(preferredMethod = "") {
+  const method = moneySafe(preferredMethod);
+  const channelIds = resolvePayChannelIds(method);
+
+  // No method / wallet → no QR (caller should skip wallet orders anyway).
+  if (!channelIds.length) {
+    return emptyPayInfo(method);
+  }
+
+  const { publicMap, byId } = await loadChannelMaps();
+
+  for (const id of channelIds) {
     const info = pickChannelPayInfo(id, byId[id], publicMap);
     if (info && info.qrUrl) {
-      return { ...info, source: byId[id] ? "payment_channels" : "platform_settings" };
+      return {
+        ...info,
+        requestedMethod: method,
+        source: byId[id] ? "payment_channels" : "platform_settings",
+      };
     }
   }
 
-  // Any other enabled channel with a QR.
-  for (const row of channelRows || []) {
-    const id = row.channel_id || row.id;
-    if (prefer.includes(String(id))) continue;
-    const info = pickChannelPayInfo(id, row, publicMap);
-    if (info?.qrUrl) return { ...info, source: "payment_channels" };
+  // Env QR only when the requested channel itself is DuitNow (still no cross-channel swap).
+  const primaryId = channelIds[0];
+  if (primaryId === "duitnow") {
+    const allowEnv = String(process.env.MCJ_ALLOW_ENV_PAY_QR || "").trim() === "1";
+    const envQr = moneySafe(process.env.MCJ_PLATFORM_DUITNOW_QR_URL || process.env.MCJ_PLATFORM_PAY_QR_URL || "");
+    if (allowEnv && envQr) {
+      return {
+        channelId: "duitnow",
+        requestedMethod: method,
+        title: "DuitNow 收款",
+        qrUrl: envQr,
+        duitnowId: "",
+        receiverName: "",
+        bankName: "",
+        bankAccount: "",
+        phone: "",
+        accountLast4: "",
+        instructions: defaultInstructions("duitnow"),
+        enabled: true,
+        unavailable: false,
+        source: "env",
+      };
+    }
   }
 
-  // Explicit opt-in only — never silently serve a stale env QR in production acceptance.
-  const allowEnv = String(process.env.MCJ_ALLOW_ENV_PAY_QR || "").trim() === "1";
-  const envQr = moneySafe(process.env.MCJ_PLATFORM_DUITNOW_QR_URL || process.env.MCJ_PLATFORM_PAY_QR_URL || "");
-  if (allowEnv && envQr) {
-    return {
-      channelId: "duitnow",
-      title: "平台收款二维码",
-      qrUrl: envQr,
-      duitnowId: "",
-      receiverName: "",
-      bankName: "",
-      bankAccount: "",
-      phone: "",
-      accountLast4: "",
-      instructions: "请扫描下方收款二维码完成付款，付款后上传截图并点击「我已付款」。",
-      enabled: true,
-      source: "env",
-    };
-  }
-
-  return emptyPayInfo();
+  return unavailablePayInfo(primaryId, method);
 }
 
 /** Keys that must never appear on public platform settings responses. */

@@ -9,6 +9,7 @@
     { id: "custom", label: "自定义", value: 0, custom: true },
   ];
   var PAYMENTS = [
+    { id: "duitnow", label: "DuitNow" },
     { id: "tng", label: "TNG" },
     { id: "bank", label: "银行卡" },
     { id: "alipay", label: "支付宝" },
@@ -27,7 +28,7 @@
     hours: 1,
     quantity: 1,
     couponCode: "",
-    payment: "tng",
+    payment: "duitnow",
     submitting: false,
   };
 
@@ -422,7 +423,7 @@
     }
     root.querySelectorAll("[data-po-pay]").forEach(function (btn) {
       btn.addEventListener("click", function () {
-        state.payment = btn.getAttribute("data-po-pay") || "tng";
+        state.payment = btn.getAttribute("data-po-pay") || "duitnow";
         root.querySelectorAll("[data-po-pay]").forEach(function (b) {
           b.classList.toggle("active", b === btn);
         });

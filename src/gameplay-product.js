@@ -403,7 +403,7 @@
           packageName: pkg && pkg.name,
           couponCode: state.couponCode,
           discountAmount: discount(),
-          paymentMethod: "tng",
+          paymentMethod: "duitnow",
           startTime: state.startTime,
         },
       }),

@@ -124,7 +124,7 @@ const tinyPng =
     quantity: 1,
     totalAmount: unit,
     gameId: "PAY-QR-GID-" + Date.now(),
-    paymentMethod: "tng",
+    paymentMethod: "duitnow",
     notes: "payment qr flow accept",
     idempotencyKey: "pay-qr-" + Date.now(),
   });
@@ -141,11 +141,45 @@ const tinyPng =
   const payInfo = getOrder.json?.platformPayInfo || loaded.platformPayInfo || null;
   step("payment page API returns pay info", !!(getOrder.ok && payInfo), `source=${payInfo?.source || "none"} title=${payInfo?.title || ""}`);
   step(
-    "pay info is OCBC/DuitNow oriented",
-    !!(payInfo && /OCBC|DuitNow|收款/i.test(String(payInfo.title || ""))),
-    `title=${payInfo?.title || ""}`
+    "duitnow order returns duitnow channel QR",
+    !!(payInfo && payInfo.qrUrl && String(payInfo.channelId || "") === "duitnow" && payInfo.enabled !== false),
+    `channel=${payInfo?.channelId || ""} title=${payInfo?.title || ""} hasQr=${!!payInfo?.qrUrl}`
   );
   step("pay info includes QR image", !!(payInfo && payInfo.qrUrl), `hasQr=${!!payInfo?.qrUrl}`);
+
+  // TNG must NOT fall back to DuitNow QR
+  const placeTng = await api("/api/orders", bossToken, {
+    action: "place_order",
+    companionId: comp?.id,
+    companionName: comp?.name || "陪玩",
+    serviceType: "陪玩",
+    service: "陪玩",
+    game: "VALORANT",
+    unitPrice: unit,
+    hours: 1,
+    quantity: 1,
+    totalAmount: unit,
+    gameId: "PAY-TNG-" + Date.now(),
+    paymentMethod: "tng",
+    notes: "payment tng no-fallback accept",
+    idempotencyKey: "pay-tng-" + Date.now(),
+  });
+  const tngOrder = placeTng.json?.order || {};
+  const tngId = tngOrder.id;
+  step("place_order tng", !!(placeTng.json?.ok && tngId), `id=${tngId}`);
+  const getTng = await api(`/api/orders?id=${encodeURIComponent(tngId)}`, bossToken, null, "GET");
+  const tngInfo = getTng.json?.platformPayInfo || {};
+  const tngHasForeignQr =
+    !!String(tngInfo.qrUrl || "").trim() && String(tngInfo.channelId || "").toLowerCase() === "duitnow";
+  const tngUnavailableOk =
+    !String(tngInfo.qrUrl || "").trim() &&
+    (/暂未开放/.test(String(tngInfo.instructions || "")) || tngInfo.unavailable === true || tngInfo.enabled === false);
+  const tngOwnQrOk = String(tngInfo.channelId || "").toLowerCase() === "tng" && !!tngInfo.qrUrl;
+  step(
+    "tng never falls back to duitnow QR",
+    !tngHasForeignQr && (tngUnavailableOk || tngOwnQrOk),
+    `channel=${tngInfo.channelId || ""} qr=${!!tngInfo.qrUrl} instructions=${String(tngInfo.instructions || "").slice(0, 80)}`
+  );
 
   const denyConfirm = await api("/api/customer-service", csToken, { action: "confirm_payment", id: orderId });
   step(
@@ -158,7 +192,7 @@ const tinyPng =
     action: "submit_payment_proof",
     id: orderId,
     proofDataUrl: tinyPng,
-    paymentMethod: "tng",
+    paymentMethod: "duitnow",
   });
   step(
     "submit proof → 待人工审核",

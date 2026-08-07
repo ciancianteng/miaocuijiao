@@ -121,7 +121,7 @@ async function api(path, token, body, method = "POST", extraHeaders = {}) {
       hours: 1,
       unit_price: 10,
       total_amount: 10,
-      payment_method: "manual_transfer",
+      payment_method: "duitnow",
       description: "live qr sync accept",
     },
   });
@@ -133,8 +133,8 @@ async function api(path, token, body, method = "POST", extraHeaders = {}) {
   const payQr = String(payInfo.qrUrl || "").trim();
   step(
     "boss_reads_latest_qr",
-    bossOrders.ok && payQr === qr2 && payInfo.enabled !== false,
-    `payQr=${payQr.slice(0, 140)} source=${payInfo.source || ""}`
+    bossOrders.ok && payQr === qr2 && payInfo.enabled !== false && String(payInfo.channelId || "") === "duitnow",
+    `payQr=${payQr.slice(0, 140)} channel=${payInfo.channelId || ""} source=${payInfo.source || ""}`
   );
   step("boss_not_old_qr", !!payQr && payQr !== qr1, `old=${qr1.slice(-30)} new=${payQr.slice(-30)}`);
 
@@ -159,8 +159,10 @@ async function api(path, token, body, method = "POST", extraHeaders = {}) {
   const emptyInfo = afterDisable.json?.platformPayInfo || {};
   step(
     "boss_empty_when_disabled",
-    afterDisable.ok && !String(emptyInfo.qrUrl || "").trim() && /支付通道暂不可用/.test(String(emptyInfo.instructions || "")),
-    JSON.stringify({ qrUrl: emptyInfo.qrUrl, instructions: emptyInfo.instructions, enabled: emptyInfo.enabled }).slice(0, 220)
+    afterDisable.ok &&
+      !String(emptyInfo.qrUrl || "").trim() &&
+      (/支付通道暂不可用|暂未开放/.test(String(emptyInfo.instructions || "")) || emptyInfo.unavailable === true),
+    JSON.stringify({ qrUrl: emptyInfo.qrUrl, instructions: emptyInfo.instructions, enabled: emptyInfo.enabled, channelId: emptyInfo.channelId }).slice(0, 220)
   );
 
   // Re-enable DuitNow with latest QR for staging continuity

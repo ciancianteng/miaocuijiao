@@ -37,11 +37,23 @@
   function methodCode(order) {
     return String(order.paymentMethod || order.payment_method || "").toLowerCase();
   }
+  function methodLabel(order) {
+    var raw = String(order.paymentMethod || order.payment_method || "").trim();
+    if (!raw) return "该支付方式";
+    var key = raw.toLowerCase();
+    if (/duitnow/.test(key)) return "DuitNow";
+    if (/tng/.test(key)) return "TNG";
+    if (/bank|银行/.test(key)) return "银行卡";
+    if (/alipay|支付宝/.test(key)) return "支付宝";
+    if (/stripe/.test(key)) return "Stripe";
+    if (/hitpay/.test(key)) return "HitPay";
+    return raw;
+  }
   function isWalletMethod(order) {
     return /cat.?food|wallet|猫粮|余额/.test(methodCode(order));
   }
   function isPreviewTestMethod(order) {
-    return /tng|bank|银行|card|银行卡|alipay|支付宝/.test(methodCode(order));
+    return /tng|duitnow|bank|银行|card|银行卡|alipay|支付宝/.test(methodCode(order));
   }
   function token() {
     return localStorage.getItem("mcjAuthAccessToken") || sessionStorage.getItem("mcjAuthAccessToken") || "";
@@ -101,26 +113,44 @@
     if (order && order.platformPayInfo && order.platformPayInfo.__live === true) {
       info = order.platformPayInfo;
     }
-    var html = '<div class="pay-qr" data-pay-qr>';
-    html += "<h2>" + esc((info && info.title) || "平台收款") + "</h2>";
-    var hasQr = !!(info && info.qrUrl && info.enabled !== false);
+    var payLabel = methodLabel(order);
+    var channelId = String((info && info.channelId) || "").toLowerCase();
+    var html = '<div class="pay-qr" data-pay-qr data-pay-channel="' + esc(channelId || methodCode(order)) + '">';
+    html += "<h2>" + esc((info && info.title) || payLabel || "平台收款") + "</h2>";
+    // Only show QR when it belongs to the order's selected channel (server already enforces; guard UI too).
+    var hasQr = !!(info && info.qrUrl && info.enabled !== false && info.unavailable !== true);
+    if (hasQr && channelId && /tng|duitnow|alipay|bank|stripe|hitpay/.test(methodCode(order))) {
+      var methodKey = methodCode(order);
+      var mismatch =
+        (/tng/.test(methodKey) && channelId !== "tng") ||
+        (/duitnow/.test(methodKey) && channelId !== "duitnow") ||
+        (/alipay|支付宝/.test(methodKey) && channelId !== "alipay") ||
+        (/stripe/.test(methodKey) && channelId !== "stripe") ||
+        (/hitpay/.test(methodKey) && channelId !== "hitpay") ||
+        (/bank|银行/.test(methodKey) && channelId !== "bank-transfer" && channelId !== "bank-my" && channelId !== "bank");
+      if (mismatch) hasQr = false;
+    }
     if (hasQr) {
       html +=
         '<p class="pay-hint">' +
         esc(
           (info && info.instructions) ||
-            "请使用银行 App / DuitNow 扫描下方二维码完成付款。仅本支付页显示，首页不公开收款码。"
+            "请扫描下方收款二维码完成付款。仅本支付页显示，首页不公开收款码。"
         ) +
         "</p>";
       html +=
         '<div class="pay-qr-frame"><img src="' +
         esc(info.qrUrl) +
-        '" alt="平台收款二维码" data-mcj-pay-qr="1" referrerpolicy="no-referrer" data-pay-qr-img="1"></div>';
+        '" alt="' +
+        esc(payLabel + " 收款二维码") +
+        '" data-mcj-pay-qr="1" referrerpolicy="no-referrer" data-pay-qr-img="1"></div>';
     } else {
+      var closedMsg =
+        (info && info.instructions) ||
+        payLabel + " 暂未开放，请选择其他支付方式";
+      html += '<p class="pay-alert" role="status" data-pay-unavailable="1">' + esc(closedMsg) + "</p>";
       html +=
-        '<p class="pay-alert" role="status">支付通道暂不可用</p>';
-      html +=
-        '<p class="pay-hint">后台尚未配置有效收款二维码，或通道已停用。请稍后再试或联系客服。</p>';
+        '<p class="pay-hint">不会自动切换到其他支付通道的二维码。请返回重新选择已开放的支付方式，或联系客服。</p>';
     }
     html += '<div class="pay-qr-meta">';
     if (hasQr && info && info.receiverName) {
@@ -132,10 +162,10 @@
     if (hasQr && info && info.bankAccount) {
       html += '<div class="pay-row"><span>银行账号</span><strong>' + esc(info.bankAccount) + "</strong></div>";
     }
-    if (hasQr && info && info.phone) {
+    if (hasQr && info && info.phone && channelId === "tng") {
       html += '<div class="pay-row"><span>TNG 手机号</span><strong>' + esc(info.phone) + "</strong></div>";
     }
-    if (hasQr && info && info.duitnowId) {
+    if (hasQr && info && info.duitnowId && channelId === "duitnow") {
       html += '<div class="pay-row"><span>DuitNow ID</span><strong>' + esc(info.duitnowId) + "</strong></div>";
     }
     html +=
@@ -224,8 +254,8 @@
         next: isWalletMethod(order || {})
           ? "请使用猫粮余额完成支付，支付成功后订单才会发送给陪玩确认。"
           : rejectReason
-            ? "请重新扫码付款并上传截图，点击「我已付款」。"
-            : "请扫描平台收款二维码付款，上传付款截图后点击「我已付款」。",
+            ? "请重新按所选支付方式付款并上传截图，点击「我已付款」。"
+            : "请按本单所选支付方式完成付款，上传付款截图后点击「我已付款」。",
         primary: "pay",
         primaryLabel: isWalletMethod(order || {}) ? "立即支付" : "前往支付",
         disabledHint: "",
@@ -351,6 +381,17 @@
     var showUpload = String(order.status || "") === "awaiting_payment" && (!reviewing || hasLocal || !preview);
     if (String(order.status || "") !== "awaiting_payment") return "";
     if (isWalletMethod(order) && !reviewing && !hasLocal) return "";
+
+    // Channel not open → do not invite proof upload (would imply payment was possible).
+    var info = platformPayInfo || (order && order.platformPayInfo) || null;
+    var channelClosed =
+      !isWalletMethod(order) &&
+      !reviewing &&
+      !hasLocal &&
+      info &&
+      info.__live === true &&
+      (!info.qrUrl || info.enabled === false || info.unavailable === true);
+    if (channelClosed) return "";
 
     var html = '<div class="pay-proof" data-proof-panel>';
     html += "<h2>付款截图</h2>";
@@ -539,10 +580,10 @@
               reviewing
                 ? "付款凭证已提交，当前为待人工审核。客服确认收款前不会进入接单流程。"
                 : canShowTestPay()
-                  ? "请扫描下方收款二维码付款并上传截图。Preview / 测试环境另可点「测试支付成功（TEST）」。"
+                  ? "请按所选支付方式付款并上传截图。Preview / 测试环境另可点「测试支付成功（TEST）」。"
                   : isWalletMethod(order)
                     ? "支付成功后将进入“等待陪玩确认”。"
-                    : "请先扫描平台收款二维码付款，再上传截图并点击「我已付款」。"
+                    : "请先按本单支付方式完成付款，再上传截图并点击「我已付款」。"
             ) +
             "</p>"
           : "") +
