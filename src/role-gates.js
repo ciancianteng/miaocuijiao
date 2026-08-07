@@ -133,9 +133,75 @@
     return key === "customer" || key === "boss";
   }
 
+  function hasValidAdminAccessToken() {
+    var access = "";
+    try {
+      access =
+        sessionStorage.getItem("mcjAdminAccessToken") ||
+        localStorage.getItem("mcjAdminAccessToken") ||
+        "";
+      if (!access && hasAdminSoftSession()) {
+        access =
+          sessionStorage.getItem("mcjAuthAccessToken") ||
+          localStorage.getItem("mcjAuthAccessToken") ||
+          "";
+      }
+    } catch (e) {
+      access = "";
+    }
+    if (!looksLikeJwt(access)) return false;
+    var expRaw = "";
+    try {
+      expRaw =
+        sessionStorage.getItem("mcjAdminExpiresAt") ||
+        localStorage.getItem("mcjAdminExpiresAt") ||
+        sessionStorage.getItem("mcjAuthExpiresAt") ||
+        localStorage.getItem("mcjAuthExpiresAt") ||
+        "";
+    } catch (e2) {}
+    var exp = 0;
+    if (expRaw) {
+      var n = Number(expRaw);
+      if (Number.isFinite(n) && n > 0) exp = n < 1e12 ? n * 1000 : n;
+    }
+    if (!exp) exp = decodeJwtExpMs(access);
+    if (exp && Date.now() >= exp) return false;
+    return true;
+  }
+
+  function clearAdminClientSession() {
+    [
+      "adminAuthToken",
+      "adminUser",
+      "mcjAdminAccessToken",
+      "mcjAdminRefreshToken",
+      "mcjAdminExpiresAt",
+      "mcjAuthAccessToken",
+      "mcjAuthRefreshToken",
+      "mcjAuthExpiresAt",
+      "mcjRole",
+      "mcjCurrentUser",
+    ].forEach(function (key) {
+      try {
+        localStorage.removeItem(key);
+        sessionStorage.removeItem(key);
+      } catch (e) {}
+    });
+  }
+
   function isLogged(role) {
     var key = storageRole(role);
     var u = readUser(role);
+    // Admin: soft session alone NEVER counts — require live admin JWT + admin role.
+    if (key === "admin") {
+      if (!hasValidAdminAccessToken()) return false;
+      if (!hasAdminSoftSession()) return false;
+      if (u && (u.role || u.adminRole)) {
+        return isAdminRole(u.role) || isAdminRole(u.adminRole);
+      }
+      // JWT + soft present; identity refresh will confirm role before rendering.
+      return true;
+    }
     // Boss / customer: soft session alone NEVER counts — require live access JWT.
     if (isBossSurfaceRole(role)) {
       if (!hasValidBossAccessToken()) return false;
@@ -627,8 +693,11 @@
     if (/\/companion\/login/i.test(p)) return true;
     if (/^\/?$|\/index\.html$/i.test(p) || /\/login\.html$/i.test(p)) return true;
 
-    if (/\/admin\.html$/i.test(p) || (/\/admin(\/|$)/i.test(p) && !isAdminLoginPath())) {
-      if (!isLogged("admin")) return denyUnauthed("/admin/login/", returnPath());
+    if (/\/admin\.html$/i.test(p) || /\/admin-(dashboard|center|audit)\.html$/i.test(p) || (/\/admin(\/|$)/i.test(p) && !isAdminLoginPath())) {
+      if (!isLogged("admin")) {
+        clearAdminClientSession();
+        return denyUnauthed("/admin/login/", returnPath());
+      }
       return true;
     }
 
@@ -664,8 +733,16 @@
     if (!cfg) return true;
     if (storageRole(role) === "admin") {
       if (isAdminLoginPath()) return true;
-      if (!isLogged("admin")) {
-        return denyUnauthed(cfg.login || "/admin/login/", returnPath());
+      var p = path();
+      if (
+        /\/admin\.html$/i.test(p) ||
+        /\/admin-(dashboard|center|audit)\.html$/i.test(p) ||
+        (/\/admin(\/|$)/i.test(p) && !isAdminLoginPath())
+      ) {
+        if (!isLogged("admin")) {
+          clearAdminClientSession();
+          return denyUnauthed(cfg.login || "/admin/login/", returnPath());
+        }
       }
       return true;
     }

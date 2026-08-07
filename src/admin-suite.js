@@ -33,15 +33,13 @@
     var role=String(user.adminRole||user.role||'');
     var softOk=String(token).indexOf('admin_session_')===0;
     var jwtOk=!!authAccessToken();
-    // Soft session OR live admin JWT both count — JWT alone must not collapse to「user」.
-    if(!softOk&&!jwtOk)return '';
+    // Soft session alone NEVER grants admin — require live JWT.
+    if(!softOk||!jwtOk)return '';
     if(role==='super_admin'||perms.indexOf('super_admin')>-1)return 'super_admin';
     if(role==='finance_admin'||perms.indexOf('finance_admin')>-1)return 'finance_admin';
     if(role==='admin'||perms.indexOf('admin')>-1)return 'admin';
-    // Live JWT present but adminUser stale: treat as admin until /me refresh finishes.
-    if(jwtOk&&softOk)return 'admin';
-    if(jwtOk)return 'admin';
-    return '';
+    // Soft+JWT present but adminUser stale: provisional until /me confirms.
+    return 'admin';
   }
   function getRole(){var adminRole=adminPermissionRole();if(adminRole)return adminRole;var role=readStorageItem('mcjRole')||'user';if(role==='super_admin'||role==='admin')return role;return role}
   function authAccessToken(){return window.MCJAdminAuthFetch?window.MCJAdminAuthFetch.getAccessToken():readStorageItem('mcjAuthAccessToken')}
@@ -103,15 +101,18 @@
     if(adminOnly){
       renderAdminAuthLoading();
       var gate=window.MCJRoleGate;
-      var token=readStorageItem('adminAuthToken');
-      var logged=gate?gate.isLogged('admin'):(String(token).indexOf('admin_session_')===0);
-      // Unauthenticated → login (never flash "无权限" while session missing)
-      if(!token||!logged){
-        location.replace((gate&&gate.routes&&gate.routes.admin&&gate.routes.admin.login)||'/admin/login');
+      var Auth=window.MCJAdminAuthFetch;
+      var jwt=Auth&&Auth.getAccessToken?Auth.getAccessToken():authAccessToken();
+      var logged=gate?gate.isLogged('admin'):false;
+      // Unauthenticated / soft-only → login (never flash shell or "无权限")
+      if(!jwt||!logged){
+        if(gate&&gate.logout)gate.logout('admin');
+        location.replace((gate&&gate.routes&&gate.routes.admin&&gate.routes.admin.login)||'/admin/login/');
         return false;
       }
       if(hasAdminPermissionFor('admin')){
         clearAdminAuthLoading();
+        revealAdminShell();
         return true;
       }
       // Authenticated session exists but role is not admin/super_admin
@@ -121,6 +122,25 @@
     var current=getRole();
     if(allowed.indexOf(current)<0){routeByRole(current);return false;}
     return true;
+  }
+  function revealAdminShell(){
+    try{
+      document.documentElement.removeAttribute('data-mcj-auth-gate');
+      document.documentElement.style.visibility='';
+      var shell=document.querySelector('[data-admin-shell], .admin-shell');
+      if(shell)shell.hidden=false;
+    }catch(e){}
+  }
+  function denyAdminToLogin(message){
+    try{
+      if(message)sessionStorage.setItem('mcjAdminLoginNotice',String(message));
+    }catch(e){}
+    if(window.MCJRoleGate&&window.MCJRoleGate.logout)window.MCJRoleGate.logout('admin');
+    [
+      'adminAuthToken','adminUser','mcjAdminAccessToken','mcjAdminRefreshToken','mcjAdminExpiresAt',
+      'mcjAuthAccessToken','mcjAuthRefreshToken','mcjAuthExpiresAt','mcjRole','mcjCurrentUser'
+    ].forEach(function(k){try{localStorage.removeItem(k);sessionStorage.removeItem(k)}catch(e){}});
+    location.replace('/admin/login/');
   }
   function statusChip(text){var t=String(text||'');var cls=/通过|完成|成功|在线|正常|开启|显示/.test(t)?'ok':/拒绝|冻结|异常|取消|离线|关闭|隐藏/.test(t)?'bad':'wait';return '<span class="chip '+cls+'">'+esc(t)+'</span>'}
   function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
@@ -1908,7 +1928,7 @@
       });
     });
   }
-  function bindGlobal(){document.addEventListener('click',function(e){var role=e.target.closest('[data-role-login]');if(role){localStorage.setItem('mcjRole',role.dataset.roleLogin);routeByRole(role.dataset.roleLogin);return;}var logout=e.target.closest('[data-admin-logout]');if(logout){localStorage.removeItem('mcjRole');localStorage.removeItem('adminAuthToken');localStorage.removeItem('adminUser');sessionStorage.removeItem('adminAuthToken');sessionStorage.removeItem('adminUser');['mcjAdminAccessToken','mcjAdminRefreshToken','mcjAdminExpiresAt','mcjAuthAccessToken','mcjAuthRefreshToken','mcjAuthExpiresAt'].forEach(function(k){localStorage.removeItem(k);sessionStorage.removeItem(k);});if(window.MCJRoleGate&&window.MCJRoleGate.logout)window.MCJRoleGate.logout('admin');location.href='/admin/login';return;}var preview=e.target.closest('[data-preview-home]');if(preview){location.href='index.html';return;}var saveLevels=e.target.closest('[data-save-companion-levels]');if(saveLevels&&levelApi()){levelApi().save(collectCompanionLevels());log('保存陪玩等级与价格设置');alert('已保存陪玩等级与价格设置');renderCompanionLevels();return;}var deleteLevel=e.target.closest('[data-delete-companion-level]');if(deleteLevel&&levelApi()){var levels=getLevels();var level=levelApi().find(deleteLevel.dataset.deleteCompanionLevel);if(playerLevelCount(level)>0){alert('该等级已有陪玩，不能直接删除。请先停用该等级或迁移陪玩等级。');return;}if(confirm('确认删除 '+levelLabel(level.id)+'？')){levelApi().save(levels.filter(function(item){return item.id!==level.id}));log('删除陪玩等级 '+levelLabel(level.id));renderCompanionLevels();}return;}var action=e.target.closest('[data-action]');if(action){alert('已执行：'+action.dataset.action+' / '+(action.dataset.id||''));log('执行 '+action.dataset.action);return;}var del=e.target.closest('[data-delete]');if(del){var arr=read(del.dataset.delete);arr.splice(Number(del.dataset.index),1);write(del.dataset.delete,arr);location.reload();return;}})}
+  function bindGlobal(){document.addEventListener('click',function(e){var role=e.target.closest('[data-role-login]');if(role){localStorage.setItem('mcjRole',role.dataset.roleLogin);routeByRole(role.dataset.roleLogin);return;}var logout=e.target.closest('[data-admin-logout]');if(logout){e.preventDefault();denyAdminToLogin('已退出后台登录');return;}var preview=e.target.closest('[data-preview-home]');if(preview){location.href='index.html';return;}var saveLevels=e.target.closest('[data-save-companion-levels]');if(saveLevels&&levelApi()){levelApi().save(collectCompanionLevels());log('保存陪玩等级与价格设置');alert('已保存陪玩等级与价格设置');renderCompanionLevels();return;}var deleteLevel=e.target.closest('[data-delete-companion-level]');if(deleteLevel&&levelApi()){var levels=getLevels();var level=levelApi().find(deleteLevel.dataset.deleteCompanionLevel);if(playerLevelCount(level)>0){alert('该等级已有陪玩，不能直接删除。请先停用该等级或迁移陪玩等级。');return;}if(confirm('确认删除 '+levelLabel(level.id)+'？')){levelApi().save(levels.filter(function(item){return item.id!==level.id}));log('删除陪玩等级 '+levelLabel(level.id));renderCompanionLevels();}return;}var action=e.target.closest('[data-action]');if(action){alert('已执行：'+action.dataset.action+' / '+(action.dataset.id||''));log('执行 '+action.dataset.action);return;}var del=e.target.closest('[data-delete]');if(del){var arr=read(del.dataset.delete);arr.splice(Number(del.dataset.index),1);write(del.dataset.delete,arr);location.reload();return;}})}
   function initForms(){document.querySelectorAll('[data-save-settings]').forEach(function(btn){btn.addEventListener('click',function(){var settings={siteName:val('siteName'),logoUrl:val('logoUrl'),customerServiceUrl:val('customerServiceUrl'),discordInviteUrl:val('discordInviteUrl'),whatsappUrl:val('whatsappUrl'),maintenanceMode:val('maintenanceMode'),registerOpen:val('registerOpen'),seoTitle:val('seoTitle')};localStorage.setItem('mcj_siteSettings',JSON.stringify(settings));log('保存平台设置');alert('已保存平台设置');})});document.querySelectorAll('[data-add-row]').forEach(function(btn){btn.addEventListener('click',function(){var key=btn.dataset.addRow;var arr=read(key);arr.unshift({id:key.toUpperCase().slice(0,2)+Date.now(),title:val('crudTitle'),name:val('crudTitle'),content:val('crudDesc'),description:val('crudDesc'),image:val('crudImage')||'assets/meow-cuijiao-brand.jpg',status:'开启',sort:arr.length+1});write(key,arr);alert('已新增');location.reload();})})}
   function bindPaymentAdmin(){
     document.addEventListener('click',function(e){
@@ -2407,20 +2427,41 @@
   }
   document.addEventListener('DOMContentLoaded',function(){
     function boot(){if(enforceRole()===false)return;initTabs();bindGlobal();bindPaymentAdmin();initForms();initSuperAdmin();renderHomeEntryManager();initClubAdmin();initPlayerAdmin();initTableSearch();bindV1AccountManagement();}
-    function start(){
+    function startVerified(){
       refreshAdminIdentityFromServer().then(function(identity){
-        if(identity&&identity.denied){
-          renderAdminAccessDenied();
+        if(!identity){
+          denyAdminToLogin('登录已失效，请重新登录后台。');
+          return;
+        }
+        if(identity.denied){
+          denyAdminToLogin('非管理员账号不得进入后台中心。');
           return;
         }
         boot();
+      }).catch(function(){
+        denyAdminToLogin('登录已失效，请重新登录后台。');
       });
     }
-    if(window.MCJAdminAuthFetch&&window.MCJAdminAuthFetch.getAccessToken()){
-      window.MCJAdminAuthFetch.ensureValidToken().then(start).catch(function(){boot()});
+    var Auth=window.MCJAdminAuthFetch;
+    if(!Auth||!Auth.getAccessToken||!Auth.getAccessToken()){
+      denyAdminToLogin('请先使用管理员账号登录后台。');
       return;
     }
-    start();
+    Auth.ensureValidToken().then(startVerified).catch(function(){
+      denyAdminToLogin('登录已失效，请重新登录后台。');
+    });
+  });
+  // Back-forward cache: after logout, never show cached admin shell.
+  window.addEventListener('pageshow',function(ev){
+    var Auth=window.MCJAdminAuthFetch;
+    var gate=window.MCJRoleGate;
+    var ok=gate&&gate.isLogged?gate.isLogged('admin'):false;
+    var jwt=Auth&&Auth.getAccessToken?Auth.getAccessToken():'';
+    if(!ok||!jwt){
+      if(ev&&ev.persisted){
+        denyAdminToLogin('登录已失效，请重新登录后台。');
+      }
+    }
   });
   window.MCJAdmin={read:read,write:write,routeByRole:routeByRole};
 })();

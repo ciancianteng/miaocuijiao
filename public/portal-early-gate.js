@@ -8,7 +8,7 @@
 (function () {
   "use strict";
 
-  var GATE_VERSION = "20260806csLoginFlicker2";
+  var GATE_VERSION = "20260807adminAuthP0";
 
   function pathNow() {
     return String(location.pathname || "/").replace(/\\/g, "/");
@@ -65,6 +65,8 @@
     var expRaw = "";
     try {
       expRaw =
+        sessionStorage.getItem("mcjAdminExpiresAt") ||
+        localStorage.getItem("mcjAdminExpiresAt") ||
         sessionStorage.getItem("mcjAuthExpiresAt") ||
         localStorage.getItem("mcjAuthExpiresAt") ||
         "";
@@ -215,9 +217,18 @@
       var sharedRole = String(item("mcjRole") || "").toLowerCase();
       var adminRoleOk =
         isAdminRole(roleOf(adminUser)) || isAdminRole(sharedRole) || isAdminRole(adminUser.adminRole);
-      var adminAccess = item("mcjAdminAccessToken") || item("mcjAuthAccessToken");
-      var adminRefresh = item("mcjAdminRefreshToken") || item("mcjAuthRefreshToken");
+      var adminAccess = item("mcjAdminAccessToken") || (adminOkSoft ? item("mcjAuthAccessToken") : "");
+      var adminRefresh = item("mcjAdminRefreshToken") || (adminOkSoft ? item("mcjAuthRefreshToken") : "");
+      // Soft session alone NEVER unlocks admin. Require admin-role marker + live JWT/refresh.
+      // Never accept boss/companion/CS roles via shared mcjRole.
+      if (sharedRole && !isAdminRole(sharedRole) && !adminOkSoft) {
+        return deny("/admin/login/");
+      }
       if (!adminOkSoft || !adminRoleOk || !hasJwtOrRefresh(adminAccess, adminRefresh)) {
+        return deny("/admin/login/");
+      }
+      // Expired access JWT without refresh → login.
+      if (looksLikeJwt(adminAccess) && !hasValidAccessJwt(adminAccess) && !String(adminRefresh || "").trim()) {
         return deny("/admin/login/");
       }
       revealShell();
