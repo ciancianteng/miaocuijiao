@@ -1877,7 +1877,7 @@
       '<div><span>游戏 ID</span><strong>'+esc(o.gameId||'-')+'</strong></div>'+
       '<div><span>老板备注</span><strong>'+esc(o.bossNotes||'-')+'</strong></div>'+
       '<div><span>下单时间</span><strong>'+esc(fmtTime(o.createdAt))+'</strong></div>'+
-      '<div><span>最迟确认时间</span><strong>'+esc(fmtTime(o.confirmDeadline))+'</strong></div>'+
+      (o.confirmDeadline?'<div><span>最迟确认时间</span><strong>'+esc(fmtTime(o.confirmDeadline))+'</strong></div>':'')+
       '</div><footer class="pw-actions">'+orderActions(o)+'</footer></article>';
   }
   function ordersHtml(){

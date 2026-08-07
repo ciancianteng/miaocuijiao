@@ -874,9 +874,11 @@ function viewOrder(row = {}, boss = {}, settlement = null) {
   const gameId = String(row.game_id_value || row.game_id || gameIdFromDesc || "").trim();
   const unitPrice = money(row.unit_price);
   const confirmAnchor = row.accepted_at || row.created_at || "";
-  const confirmDeadline = confirmAnchor
-    ? new Date(Date.parse(confirmAnchor) + COMPANION_CONFIRM_TIMEOUT_MS).toISOString()
-    : "";
+  // Companion confirm timeout cancelled — no deadline countdown.
+  const confirmDeadline =
+    COMPANION_CONFIRM_TIMEOUT_MS > 0 && confirmAnchor
+      ? new Date(Date.parse(confirmAnchor) + COMPANION_CONFIRM_TIMEOUT_MS).toISOString()
+      : "";
   const orderTypeKey = row.order_type || "custom";
   const completionPending =
     String(row.note || "").includes("[[COMPLETION_PENDING]]") ||

@@ -83,22 +83,30 @@ function tok(j) {
   const svc = await api("/api/admin/service-accounts", adminT, null, "GET");
   step("CS management list", !!svc.json?.ok && Array.isArray(svc.json?.accounts), `n=${(svc.json?.accounts || []).length}`);
 
-  // Full lifecycle
+  // Full lifecycle — place to the logged-in companion (not an unrelated public listing)
+  const bootMe = await api("/api/companion?action=bootstrap", compT, null, "GET");
+  const meId = bootMe.json?.data?.player?.id || "";
   const comps = (await api("/api/public/companions", null, null, "GET")).json?.companions || [];
-  const c1 = comps.find((c) => /Final/i.test(c.name || "")) || comps[0];
-  step("Public companions published", !!c1?.id, `${c1?.name}`);
+  const c1 = comps.find((c) => String(c.id) === String(meId)) || comps.find((c) => /Final|1717/i.test(c.name || "")) || comps[0];
+  step("Public companions published", !!c1?.id && String(c1.id) === String(meId || c1.id), `${c1?.name} id=${c1?.id} me=${meId}`);
 
+  const unit = Number(
+    (Array.isArray(c1.services) && c1.services[0] && (c1.services[0].price ?? c1.services[0].unitPrice)) ||
+      c1.priceValue ||
+      c1.price ||
+      75
+  );
   const place = await api("/api/orders", bossT, {
     action: "place_order",
     companionId: c1.id,
     companionName: c1.name,
-    serviceType: "陪玩",
-    service: "陪玩",
-    game: "VALORANT",
-    unitPrice: Number(c1.priceValue || 20),
+    serviceType: (c1.services && c1.services[0] && (c1.services[0].name || c1.services[0].title)) || "VALORANT",
+    service: (c1.services && c1.services[0] && (c1.services[0].name || c1.services[0].title)) || "VALORANT",
+    game: c1.game || (c1.services && c1.services[0] && c1.services[0].name) || "VALORANT",
+    unitPrice: unit,
     hours: 1,
     quantity: 1,
-    totalAmount: Number(c1.priceValue || 20),
+    totalAmount: unit,
     gameId: "P05-FULL",
     paymentMethod: "tng",
     notes: "P0-5 full lifecycle",

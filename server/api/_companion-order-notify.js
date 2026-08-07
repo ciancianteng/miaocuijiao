@@ -307,8 +307,8 @@ function orderEmailHtml({ order, income, confirmDeadline, viewUrl, eventType }) 
     ["订单金额", `${amount} 猫粮`],
     ["预计陪玩收益", `${Number(income).toFixed(2)} 猫粮`],
     ["下单时间", formatTime(order.created_at || order.createdAt)],
-    ["最迟确认时间", formatTime(confirmDeadline)],
   ];
+  if (confirmDeadline) rows.push(["最迟确认时间", formatTime(confirmDeadline)]);
   const title =
     eventType === "timeout_warn"
       ? "订单即将超时，请尽快确认"
@@ -352,8 +352,8 @@ function orderEmailText({ order, income, confirmDeadline, viewUrl, eventType }) 
     `订单金额：${money(order.total_amount ?? order.amount).toFixed(2)} 猫粮\n` +
     `预计陪玩收益：${Number(income).toFixed(2)} 猫粮\n` +
     `下单时间：${formatTime(order.created_at)}\n` +
-    `最迟确认时间：${formatTime(confirmDeadline)}\n\n` +
-    `立即查看订单：${viewUrl}\n`
+    (confirmDeadline ? `最迟确认时间：${formatTime(confirmDeadline)}\n` : "") +
+    `\n立即查看订单：${viewUrl}\n`
   );
 }
 
@@ -677,6 +677,10 @@ export async function notifyCompanionOrderStatusChange(order, { status, email = 
  * Default: ≤90s remaining (SLA = COMPANION_CONFIRM_TIMEOUT_MS).
  */
 export async function maybeNotifyConfirmDeadlineWarning(order, { email = "" } = {}) {
+  // Confirm timeout cancelled — never send near-timeout warnings.
+  if (!COMPANION_CONFIRM_TIMEOUT_MS || COMPANION_CONFIRM_TIMEOUT_MS <= 0) {
+    return { ok: false, skipped: true, reason: "timeout_disabled" };
+  }
   if (!order || order.status !== "claimed" || !order.companion_id) return { ok: false, skipped: true };
   const anchor = claimedAtFromOrder(order) || order.accepted_at || "";
   if (!anchor) return { ok: false, skipped: true, reason: "no_anchor" };
