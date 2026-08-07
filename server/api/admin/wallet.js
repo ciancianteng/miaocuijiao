@@ -80,7 +80,11 @@ export default async function handler(req, res) {
       if (action === "pending_recharges" || action === "list_pending_recharges") {
         const statusFilter = String(req.query.status || "pending_payment").trim();
         let query = "?order=created_at.desc&limit=200";
-        if (statusFilter && statusFilter !== "all") {
+        if (statusFilter === "pending_payment" || statusFilter === "pending") {
+          // Include screenshot-submitted manual recharges awaiting admin confirm.
+          query =
+            "?status=in.(pending_payment,pending_review,pending)&order=created_at.desc&limit=200";
+        } else if (statusFilter && statusFilter !== "all") {
           query = `?status=eq.${encodeURIComponent(statusFilter)}&order=created_at.desc&limit=200`;
         }
         const rows = await supabaseJson(restUrl("payment_orders", query), { headers: serviceHeaders() }).catch((e) => {
@@ -102,23 +106,39 @@ export default async function handler(req, res) {
             }
           })
         );
-        const items = list.map((row) => {
-          const p = profileMap[row.boss_id] || {};
-          return {
-            id: row.id,
-            paymentNo: row.payment_no || row.id,
-            bossId: row.boss_id || "",
-            bossName: p.display_name || p.nickname || p.email || "老板",
-            amountRm: money(row.amount),
-            catFoodAmount: money(row.cat_food_amount || row.paid_cat_food),
-            bonusCatFood: money(row.bonus_cat_food),
-            paymentMethod: row.payment_method || "",
-            status: row.status || "pending_payment",
-            paymentUrl: row.payment_url || "",
-            createdAt: row.created_at || "",
-            creditedAt: row.credited_at || "",
-          };
-        });
+        const { createSignedUrl } = await import("../_companion-media-store.js");
+        const items = await Promise.all(
+          list.map(async (row) => {
+            const p = profileMap[row.boss_id] || {};
+            const raw = row.raw_response && typeof row.raw_response === "object" ? row.raw_response : {};
+            const proof = raw.proof || null;
+            let proofUrl = "";
+            if (proof?.bucket && proof?.path) {
+              try {
+                proofUrl = (await createSignedUrl(proof.bucket, proof.path, 60 * 30)) || "";
+              } catch {
+                proofUrl = "";
+              }
+            }
+            return {
+              id: row.id,
+              paymentNo: row.payment_no || row.id,
+              bossId: row.boss_id || "",
+              bossName: p.display_name || p.nickname || p.email || "老板",
+              amountRm: money(row.amount),
+              catFoodAmount: money(row.cat_food_amount || row.paid_cat_food),
+              bonusCatFood: money(row.bonus_cat_food),
+              paymentMethod: row.payment_method || "",
+              status: row.status || "pending_payment",
+              paymentUrl: row.payment_url || "",
+              createdAt: row.created_at || "",
+              creditedAt: row.credited_at || "",
+              hasProof: Boolean(proof?.path),
+              proofUrl,
+              proofUploadedAt: proof?.uploadedAt || "",
+            };
+          })
+        );
         return json(res, 200, { ok: true, items });
       }
       if (!bossId) return json(res, 400, { ok: false, message: "缺少 bossId" });
@@ -401,20 +421,18 @@ export default async function handler(req, res) {
     if (action === "confirm_manual_recharge") {
       const paymentNo = String(body.paymentNo || body.payment_no || body.id || "").trim();
       if (!paymentNo) return json(res, 400, { ok: false, message: "缺少 paymentNo" });
-      const orderRows = await supabaseJson(
-        restUrl(
-          "payment_orders",
-          `?or=(payment_no.eq.${encodeURIComponent(paymentNo)},id.eq.${encodeURIComponent(paymentNo)})&limit=1`
-        ),
-        { headers: serviceHeaders() }
-      );
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(paymentNo);
+      const orderQuery = isUuid
+        ? `?or=(payment_no.eq.${encodeURIComponent(paymentNo)},id.eq.${encodeURIComponent(paymentNo)})&limit=1`
+        : `?payment_no=eq.${encodeURIComponent(paymentNo)}&limit=1`;
+      const orderRows = await supabaseJson(restUrl("payment_orders", orderQuery), { headers: serviceHeaders() });
       const order = orderRows?.[0];
       if (!order) return json(res, 404, { ok: false, message: "充值订单不存在" });
       const st = String(order.status || "").toLowerCase();
       if (st === "paid" || st === "credited") {
         return json(res, 200, { ok: true, message: "该充值单已到账", paymentNo: order.payment_no, duplicate: true });
       }
-      if (!/pending|pending_payment|awaiting|unpaid|manual/i.test(st)) {
+      if (!/pending|pending_payment|pending_review|awaiting|unpaid|manual/i.test(st)) {
         return json(res, 400, { ok: false, message: `当前状态不可确认到账：${order.status || "-"}` });
       }
       const tradeNo = String(body.tradeNo || body.trade_no || body.providerTradeNo || `MANUAL-${Date.now()}`).trim();

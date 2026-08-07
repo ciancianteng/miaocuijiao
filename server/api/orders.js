@@ -17,7 +17,6 @@ import { evaluatePublishGate } from "./_companion-publish-gate.js";
 import { allocateOrderNo, resolveOrderPublicNo } from "./_account-codes.js";
 import { companionDb } from "./_companion-media-store.js";
 import { listPendingForCs, latestRejectedForOrders, signedProofUrl, uploadProof } from "./_payment-receipts.js";
-import { loadPlatformPayQr } from "./_platform-pay-qr.js";
 import { stripInternalOrderMarkers } from "./_order-grabs.js";
 import {
   completionCountdown,
@@ -822,7 +821,20 @@ export default async function handler(req, res) {
         const target = enriched.find((o) => String(o.id) === singleId || String(o.orderNo || o.order_no || "") === singleId);
         if (target && String(target.status || "") === "awaiting_payment" && !isWalletMethod(target.paymentMethod || target.payment_method)) {
           try {
-            platformPayInfo = await loadPlatformPayQr();
+            const { loadChannelPayInfo, normalizePaymentChannelId } = await import("./_platform-pay-qr.js");
+            const channelId = normalizePaymentChannelId(target.paymentMethod || target.payment_method);
+            // Strict: selected channel only — never fall back to DuitNow when TNG/bank is disabled.
+            platformPayInfo = channelId
+              ? await loadChannelPayInfo(channelId)
+              : {
+                  channelId: "",
+                  title: "平台收款",
+                  qrUrl: "",
+                  instructions: "支付通道暂不可用",
+                  enabled: false,
+                  source: "empty",
+                };
+            if (platformPayInfo) platformPayInfo.__live = true;
           } catch (err) {
             console.warn("[orders] platformPayInfo", String(err?.message || err).slice(0, 160));
             platformPayInfo = {
@@ -832,6 +844,7 @@ export default async function handler(req, res) {
               instructions: "支付通道暂不可用",
               enabled: false,
               source: "error",
+              __live: true,
             };
           }
         }
