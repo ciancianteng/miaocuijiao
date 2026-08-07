@@ -1177,15 +1177,27 @@ async function handler(req, res) {
         config_status: enabled ? "已启用" : "已停用",
         updated_at: new Date().toISOString(),
       };
-      await upsert(TABLES.channels, channelDbRow(next));
-      const creds = await loadCredentialPayload(id);
-      await syncPaymentMethod(next, creds);
+      try {
+        await upsert(TABLES.channels, channelDbRow(next));
+      } catch (error) {
+        if (!isMissingTable(error)) throw error;
+        // No payment_channels table: enabled flag lives in platform_settings public mirror.
+      }
+      try {
+        const creds = await loadCredentialPayload(id);
+        await syncPaymentMethod(next, creds);
+      } catch {
+        /* soft-fail payment_methods when schema incomplete */
+      }
       // Enable/disable must sync public mirror so boss payment page updates without redeploy.
       try {
         const qrUrl = String(next.data?.manual?.qrUrl || next.data?.qrUrl || "").trim();
         await syncChannelPublicConfig(id, publicConfigFromChannel(next, next.data || {}, qrUrl));
-      } catch {
-        /* soft-fail public mirror */
+      } catch (syncErr) {
+        return json(res, 503, {
+          ok: false,
+          message: `启用状态同步失败：${String(syncErr?.message || syncErr).slice(0, 160)}`,
+        });
       }
       await writeLog(req, enabled ? "enable_channel" : "disable_channel", id, channel, next);
       const activePublicQr = await resolveActivePublicQr();
