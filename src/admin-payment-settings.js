@@ -20,6 +20,7 @@
     bankEditId: "",
     bankFormOpen: false,
     tab: "channels",
+    activePublicQr: null,
   };
 
   function esc(s) {
@@ -141,6 +142,32 @@
       "</div>";
   }
 
+  function renderActivePublicQr() {
+    var info = state.activePublicQr || null;
+    var available = !!(info && info.available && info.qrUrl);
+    return (
+      '<section class="panel" data-active-public-qr="1" style="margin-bottom:16px">' +
+      "<h2>当前支付页生效二维码</h2>" +
+      '<p class="muted">老板端支付页唯一数据源。更换并保存后，刷新支付页即可看到新图（无需重新部署）。</p>' +
+      (available
+        ? '<div class="payment-qr-preview" style="margin-top:10px">' +
+          '<img src="' +
+          esc(info.qrUrl) +
+          '" alt="当前启用收款二维码" data-mcj-pay-qr="1" style="max-width:220px;max-height:220px;border-radius:12px;border:1px solid rgba(255,255,255,.12);background:#fff;padding:8px">' +
+          '<p style="margin:8px 0 0">通道：<strong>' +
+          esc(info.channelId || "-") +
+          "</strong> · " +
+          esc(info.title || "平台收款") +
+          (info.receiverName ? " · 收款人 " + esc(info.receiverName) : "") +
+          "</p>" +
+          '<p class="muted" style="margin:4px 0 0">' +
+          esc(info.updatedHint || "已启用，老板支付页可读到此二维码") +
+          "</p></div>"
+        : '<p class="admin-sync-note" style="color:#ff8aa0;margin-top:10px">支付通道暂不可用 — 尚未启用带二维码的收款通道。老板支付页将显示「支付通道暂不可用」，不会展示旧图。</p>') +
+      "</section>"
+    );
+  }
+
   function renderChannels() {
     var cards = (state.channels || [])
       .map(function (item) {
@@ -188,6 +215,7 @@
 
     var editor = state.editId ? renderEditor(channelById(state.editId)) : "";
     return (
+      renderActivePublicQr() +
       '<div class="payment-channel-grid">' +
       (cards || '<div class="empty">暂无支付渠道</div>') +
       "</div>" +
@@ -560,6 +588,7 @@
         state.bankProviders = result.bankProviders && result.bankProviders.length ? result.bankProviders : BANK_PROVIDERS;
         state.tablesReady = result.tablesReady !== false;
         state.message = result.message || "";
+        state.activePublicQr = result.activePublicQr || null;
         state.loading = false;
         render();
       })
@@ -567,6 +596,7 @@
         state.loading = false;
         state.error = err.message || "读取支付设置失败";
         state.channels = state.channels || [];
+        state.activePublicQr = null;
         render();
       });
   }
@@ -579,6 +609,7 @@
       btn.textContent = "保存中…";
     }
     function finishOk(result) {
+      if (result && result.activePublicQr) state.activePublicQr = result.activePublicQr;
       alert((result && result.message) || "已保存");
       state.editId = "";
       return load();
@@ -671,6 +702,7 @@
       body: JSON.stringify({ action: "toggle_channel", channelId: id, enabled: enabled }),
     })
       .then(function (result) {
+        if (result && result.activePublicQr) state.activePublicQr = result.activePublicQr;
         alert(result.message || "已更新");
         return load();
       })
@@ -710,6 +742,7 @@
       })
         .then(function (result) {
           state.message = result.message || "二维码已上传";
+          if (result.activePublicQr) state.activePublicQr = result.activePublicQr;
           state.editId = channelId;
           return load();
         })

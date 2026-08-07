@@ -320,6 +320,45 @@ async function uploadPlatformPayQrImage(dataUrl, channelId) {
   return `${base}${base.includes("?") ? "&" : "?"}v=${Date.now()}`;
 }
 
+/** Current QR actually served on boss payment page (enabled + qrUrl). */
+async function resolveActivePublicQr() {
+  try {
+    const { loadPlatformPayQr } = await import("../_platform-pay-qr.js");
+    const info = await loadPlatformPayQr();
+    if (!info || !info.qrUrl || info.enabled === false) {
+      return {
+        available: false,
+        qrUrl: "",
+        channelId: "",
+        title: "平台收款",
+        instructions: "支付通道暂不可用",
+        source: info?.source || "empty",
+      };
+    }
+    return {
+      available: true,
+      qrUrl: info.qrUrl,
+      channelId: info.channelId || "",
+      title: info.title || "平台收款",
+      receiverName: info.receiverName || "",
+      bankName: info.bankName || "",
+      instructions: info.instructions || "",
+      source: info.source || "payment_channels",
+      updatedHint: "老板支付页刷新后立即使用此二维码（无需重新部署）",
+    };
+  } catch (err) {
+    return {
+      available: false,
+      qrUrl: "",
+      channelId: "",
+      title: "平台收款",
+      instructions: "支付通道暂不可用",
+      source: "error",
+      error: String(err?.message || err).slice(0, 160),
+    };
+  }
+}
+
 async function persistChannelQrUrl(channelId, qrUrl) {
   const tpl = channelTemplate(channelId);
   let existing = null;
@@ -348,11 +387,12 @@ async function persistChannelQrUrl(channelId, qrUrl) {
     category: existing?.category || tpl.category,
     currencies: existing?.currencies || tpl.currencies,
     mode: existing?.mode === "live" ? "live" : "test",
-    enabled: existing ? existing.enabled !== false : true,
-    visible: existing ? existing.visible !== false : true,
+    // Uploading a live QR implies this channel should be the active payment source.
+    enabled: true,
+    visible: true,
     sort: existing?.sort != null ? Number(existing.sort) : CHANNELS.findIndex((c) => c.id === tpl.id) + 1,
     data: nextData,
-    config_status: existing?.config_status || "已配置",
+    config_status: "已启用",
     updated_at: new Date().toISOString(),
   };
   try {
@@ -831,7 +871,15 @@ async function handler(req, res) {
   try {
     if (req.method === "GET") {
       const state = await loadState();
-      return json(res, 200, { ok: true, configured: true, ...state, templates: CHANNELS, bankProviders: BANK_PROVIDERS });
+      const activePublicQr = await resolveActivePublicQr();
+      return json(res, 200, {
+        ok: true,
+        configured: true,
+        ...state,
+        activePublicQr,
+        templates: CHANNELS,
+        bankProviders: BANK_PROVIDERS,
+      });
     }
 
     if (req.method !== "POST") {
@@ -923,13 +971,15 @@ async function handler(req, res) {
       }
       const saved = await persistChannelQrUrl(channelId, qrUrl);
       await writeLog(req, "upload_qr", channelId, null, { qrUrl, source: saved.source });
+      const activePublicQr = await resolveActivePublicQr();
       return json(res, 200, {
         ok: true,
-        message: "二维码已上传并写入支付配置",
+        message: "二维码已上传并写入支付配置；老板支付页刷新即可看到最新二维码",
         channelId,
         qrUrl,
         source: saved.source,
         channel: saved.channel,
+        activePublicQr,
       });
     }
 
@@ -1017,6 +1067,7 @@ async function handler(req, res) {
             credentials: credentialKeys,
             source: saveSource,
           });
+          const activePublicQrFallback = await resolveActivePublicQr();
           return json(res, 200, {
             ok: true,
             message:
@@ -1024,6 +1075,7 @@ async function handler(req, res) {
             channel,
             source: saveSource,
             migration: "supabase/migrations/20260731_payment_settings.sql",
+            activePublicQr: activePublicQrFallback,
           });
         }
         throw error;
@@ -1045,7 +1097,14 @@ async function handler(req, res) {
         /* soft-fail public mirror */
       }
       await writeLog(req, "save_channel", tpl.id, null, { ...channel, credentials: credentialKeys, source: saveSource });
-      return json(res, 200, { ok: true, message: "支付渠道配置已保存", channel: rows?.[0] || channel, source: saveSource });
+      const activePublicQr = await resolveActivePublicQr();
+      return json(res, 200, {
+        ok: true,
+        message: "支付渠道配置已保存；老板支付页将立即读取最新启用二维码",
+        channel: rows?.[0] || channel,
+        source: saveSource,
+        activePublicQr,
+      });
     }
 
     if (action === "test_channel") {
@@ -1121,8 +1180,21 @@ async function handler(req, res) {
       await upsert(TABLES.channels, channelDbRow(next));
       const creds = await loadCredentialPayload(id);
       await syncPaymentMethod(next, creds);
+      // Enable/disable must sync public mirror so boss payment page updates without redeploy.
+      try {
+        const qrUrl = String(next.data?.manual?.qrUrl || next.data?.qrUrl || "").trim();
+        await syncChannelPublicConfig(id, publicConfigFromChannel(next, next.data || {}, qrUrl));
+      } catch {
+        /* soft-fail public mirror */
+      }
       await writeLog(req, enabled ? "enable_channel" : "disable_channel", id, channel, next);
-      return json(res, 200, { ok: true, message: enabled ? "支付渠道已启用" : "支付渠道已停用", channel: next });
+      const activePublicQr = await resolveActivePublicQr();
+      return json(res, 200, {
+        ok: true,
+        message: enabled ? "支付渠道已启用" : "支付渠道已停用",
+        channel: next,
+        activePublicQr,
+      });
     }
 
     if (action === "save_bank") {

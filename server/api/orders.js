@@ -825,10 +825,18 @@ export default async function handler(req, res) {
             platformPayInfo = await loadPlatformPayQr();
           } catch (err) {
             console.warn("[orders] platformPayInfo", String(err?.message || err).slice(0, 160));
-            platformPayInfo = null;
+            platformPayInfo = {
+              channelId: "",
+              title: "平台收款",
+              qrUrl: "",
+              instructions: "支付通道暂不可用",
+              enabled: false,
+              source: "error",
+            };
           }
         }
       }
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
       return json(res, 200, {
         ok: true,
         configured: true,

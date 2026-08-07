@@ -96,39 +96,46 @@
     if (st !== "awaiting_payment") return "";
     if (isWalletMethod(order)) return "";
     if (isReviewing(order) && !(proofDraft.file || proofDraft.previewUrl)) return "";
-    var info = order.platformPayInfo || platformPayInfo || null;
+    // Live network payload only — never fall back to a cached/old QR image.
+    var info = platformPayInfo || null;
+    if (order && order.platformPayInfo && order.platformPayInfo.__live === true) {
+      info = order.platformPayInfo;
+    }
     var html = '<div class="pay-qr" data-pay-qr>';
     html += "<h2>" + esc((info && info.title) || "平台收款") + "</h2>";
-    html +=
-      '<p class="pay-hint">' +
-      esc(
-        (info && info.instructions) ||
-          "请使用银行 App / DuitNow 扫描下方二维码完成付款。仅本支付页显示，首页不公开收款码。"
-      ) +
-      "</p>";
-    if (info && info.qrUrl) {
+    var hasQr = !!(info && info.qrUrl && info.enabled !== false);
+    if (hasQr) {
+      html +=
+        '<p class="pay-hint">' +
+        esc(
+          (info && info.instructions) ||
+            "请使用银行 App / DuitNow 扫描下方二维码完成付款。仅本支付页显示，首页不公开收款码。"
+        ) +
+        "</p>";
       html +=
         '<div class="pay-qr-frame"><img src="' +
         esc(info.qrUrl) +
         '" alt="平台收款二维码" data-mcj-pay-qr="1" referrerpolicy="no-referrer" data-pay-qr-img="1"></div>';
     } else {
       html +=
-        '<p class="pay-alert" role="status">平台暂未配置收款二维码，请联系客服</p>';
+        '<p class="pay-alert" role="status">支付通道暂不可用</p>';
+      html +=
+        '<p class="pay-hint">后台尚未配置有效收款二维码，或通道已停用。请稍后再试或联系客服。</p>';
     }
     html += '<div class="pay-qr-meta">';
-    if (info && info.receiverName) {
+    if (hasQr && info && info.receiverName) {
       html += '<div class="pay-row"><span>收款人</span><strong>' + esc(info.receiverName) + "</strong></div>";
     }
-    if (info && info.bankName) {
+    if (hasQr && info && info.bankName) {
       html += '<div class="pay-row"><span>银行</span><strong>' + esc(info.bankName) + "</strong></div>";
     }
-    if (info && info.bankAccount) {
+    if (hasQr && info && info.bankAccount) {
       html += '<div class="pay-row"><span>银行账号</span><strong>' + esc(info.bankAccount) + "</strong></div>";
     }
-    if (info && info.phone) {
+    if (hasQr && info && info.phone) {
       html += '<div class="pay-row"><span>TNG 手机号</span><strong>' + esc(info.phone) + "</strong></div>";
     }
-    if (info && info.duitnowId) {
+    if (hasQr && info && info.duitnowId) {
       html += '<div class="pay-row"><span>DuitNow ID</span><strong>' + esc(info.duitnowId) + "</strong></div>";
     }
     html +=
@@ -677,6 +684,8 @@
       if (!raw) return null;
       var parsed = JSON.parse(raw);
       if (parsed && !parsed.status) parsed.status = "awaiting_payment";
+      // Never reuse a cached QR — admin may have rotated it.
+      if (parsed && parsed.platformPayInfo) delete parsed.platformPayInfo;
       return parsed;
     } catch (e) {
       return null;
@@ -685,7 +694,9 @@
 
   function writeCache(id, order) {
     try {
-      var payload = JSON.stringify(order);
+      var safe = order && typeof order === "object" ? Object.assign({}, order) : order;
+      if (safe && safe.platformPayInfo) delete safe.platformPayInfo;
+      var payload = JSON.stringify(safe);
       localStorage.setItem(cacheKey + id, payload);
       sessionStorage.setItem(cacheKey + id, payload);
     } catch (e) {}
@@ -739,15 +750,25 @@
       });
       if (gen !== loadGen) return;
       if (typeof body.allowTestPay === "boolean") allowTestPay = body.allowTestPay;
-      if (body.platformPayInfo) platformPayInfo = body.platformPayInfo;
+      if (body.platformPayInfo && typeof body.platformPayInfo === "object") {
+        platformPayInfo = Object.assign({}, body.platformPayInfo, { __live: true });
+      } else {
+        // Explicit empty — do not keep a previous page session QR.
+        platformPayInfo = {
+          qrUrl: "",
+          enabled: false,
+          instructions: "支付通道暂不可用",
+          title: "平台收款",
+          __live: true,
+        };
+      }
       if (!res.ok || body.ok === false) throw new Error(body.message || "订单读取失败");
       var order = pickOrder(body.orders, orderId);
       if (!order) {
         failUi("订单不存在，请到「我的订单」查看。");
         return;
       }
-      if (body.platformPayInfo) order.platformPayInfo = body.platformPayInfo;
-      else if (order.platformPayInfo) platformPayInfo = order.platformPayInfo;
+      order.platformPayInfo = platformPayInfo;
       writeCache(orderId, order);
       if (!(proofDraft.uploading || proofDraft.file)) renderOrder(order);
     } catch (err) {
