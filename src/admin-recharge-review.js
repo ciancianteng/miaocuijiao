@@ -34,6 +34,7 @@
   function statusLabel(s) {
     var m = {
       pending_payment: "待确认到账",
+      pending_review: "待人工审核",
       pending: "待确认到账",
       paid: "已到账",
       credited: "已到账",
@@ -48,10 +49,15 @@
     }
     return (
       '<div class="table-wrap"><table class="admin-table"><thead><tr>' +
-      "<th>充值单号</th><th>老板</th><th>金额 RM</th><th>猫粮</th><th>支付方式</th><th>状态</th><th>创建时间</th><th>操作</th>" +
+      "<th>充值单号</th><th>老板</th><th>金额 RM</th><th>猫粮</th><th>支付方式</th><th>付款截图</th><th>状态</th><th>创建时间</th><th>操作</th>" +
       "</tr></thead><tbody>" +
       list
         .map(function (r) {
+          var proofCell = r.proofUrl
+            ? '<a href="' + esc(r.proofUrl) + '" target="_blank" rel="noopener">查看截图</a>'
+            : r.hasProof
+              ? "已上传"
+              : "-";
           var actions = withConfirm
             ? '<button type="button" class="mini-btn primary-lite" data-confirm-recharge="' +
               esc(r.paymentNo) +
@@ -74,6 +80,9 @@
             "</td>" +
             "<td>" +
             esc(r.paymentMethod) +
+            "</td>" +
+            "<td>" +
+            proofCell +
             "</td>" +
             "<td>" +
             esc(statusLabel(r.status)) +

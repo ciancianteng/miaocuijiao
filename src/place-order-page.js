@@ -8,12 +8,7 @@
     { id: "3", label: "3 小时", value: 3 },
     { id: "custom", label: "自定义", value: 0, custom: true },
   ];
-  var PAYMENTS = [
-    { id: "tng", label: "TNG" },
-    { id: "bank", label: "银行卡" },
-    { id: "alipay", label: "支付宝" },
-    { id: "catfood", label: "猫粮余额" },
-  ];
+  var PAYMENTS = [{ id: "catfood", label: "猫粮余额", open: true, statusText: "可用" }];
   var DEFAULT_AVATAR = "/default-avatar.png";
   var root = document.getElementById("placeOrderPage");
   if (!root) return;
@@ -27,8 +22,9 @@
     hours: 1,
     quantity: 1,
     couponCode: "",
-    payment: "tng",
+    payment: "catfood",
     submitting: false,
+    payMethods: PAYMENTS.slice(),
   };
 
   function esc(v) {
@@ -276,7 +272,19 @@
         "</button>"
       );
     }).join("");
-    var payCards = PAYMENTS.map(function (p) {
+    var payList = state.payMethods && state.payMethods.length ? state.payMethods : PAYMENTS;
+    var payCards = payList.map(function (p) {
+      var closed = p.open === false;
+      if (closed) {
+        return (
+          '<button type="button" class="mcj-po-pay-card is-maintenance" disabled aria-disabled="true">' +
+          '<span class="mcj-po-pay-title">' +
+          esc(p.label) +
+          '</span><span class="mcj-po-pay-check">' +
+          esc(p.statusText || "暂未开放") +
+          "</span></button>"
+        );
+      }
       return (
         '<button type="button" class="mcj-po-pay-card' +
         (state.payment === p.id ? " active" : "") +
@@ -607,6 +615,29 @@
     };
     state.service = service;
     paint();
+
+    // Load payment channels from admin SoT (same as recharge center).
+    if (token()) {
+      fetch("/api/recharge", { headers: { Accept: "application/json", Authorization: "Bearer " + token() }, cache: "no-store" })
+        .then(function (res) {
+          return res.json().then(function (body) {
+            if (!res.ok || body.ok === false) return;
+            var channelPays = (body.methods || [])
+              .filter(function (m) { return m && m.code && m.code !== "catfood"; })
+              .map(function (m) {
+                var open = !!(m.enabled && m.configured && m.statusText === "可用");
+                return { id: m.code, label: m.name || m.code, open: open, statusText: m.statusText || (open ? "可用" : "暂未开放") };
+              });
+            state.payMethods = channelPays.concat([{ id: "catfood", label: "猫粮余额", open: true, statusText: "可用" }]);
+            var firstOpen = state.payMethods.find(function (p) { return p.open; });
+            if (!state.payMethods.some(function (p) { return p.id === state.payment && p.open !== false; })) {
+              state.payment = firstOpen ? firstOpen.id : "catfood";
+            }
+            paint();
+          });
+        })
+        .catch(function () {});
+    }
 
     // Same public + catalog sources as home / detail / modal.
     Promise.all([
