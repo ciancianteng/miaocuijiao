@@ -874,3 +874,5 @@ button.support-send-btn[type="submit"]:disabled {
     width: 72px;
   }
 }
+
+.support-unread-total{margin-left:8px;vertical-align:middle}

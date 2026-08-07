@@ -407,8 +407,8 @@ async function listConversations(profile) {
   const orderIds = [...new Set(conversations.map((c) => c.order_id).filter(Boolean))];
   const conversationIds = conversations.map((c) => c.id).filter(Boolean);
 
-  // Batch last-message + orders (avoid N+1 so /api/chat?action=conversations finishes in <3s).
-  const [orders, messagesDesc] = await Promise.all([
+  // Batch last-message + orders + unread CS messages (avoid N+1 so /api/chat?action=conversations finishes in <3s).
+  const [orders, messagesDesc, unreadRows] = await Promise.all([
     orderIds.length
       ? supabaseJson(
           restUrl(
@@ -427,6 +427,15 @@ async function listConversations(profile) {
           { headers: serviceHeaders() }
         ).catch(() => [])
       : Promise.resolve([]),
+    conversationIds.length
+      ? supabaseJson(
+          restUrl(
+            "messages",
+            `?conversation_id=in.(${conversationIds.map(encodeURIComponent).join(",")})&sender_role=in.(customer_service,service,system,admin)&read_at=is.null&select=id,conversation_id&limit=2000`
+          ),
+          { headers: serviceHeaders() }
+        ).catch(() => [])
+      : Promise.resolve([]),
   ]);
 
   const orderMap = Object.fromEntries((Array.isArray(orders) ? orders : []).map((o) => [o.id, o]));
@@ -434,6 +443,12 @@ async function listConversations(profile) {
   for (const msg of Array.isArray(messagesDesc) ? messagesDesc : []) {
     const cid = msg?.conversation_id;
     if (cid && !lastByConv[cid]) lastByConv[cid] = msg;
+  }
+  const unreadByConv = {};
+  for (const row of Array.isArray(unreadRows) ? unreadRows : []) {
+    const cid = row?.conversation_id;
+    if (!cid) continue;
+    unreadByConv[cid] = (unreadByConv[cid] || 0) + 1;
   }
 
   return conversations.map((row) => {
@@ -456,9 +471,36 @@ async function listConversations(profile) {
       lastMessage: last?.content || "",
       lastMessageAt: last?.created_at || row.updated_at || "",
       lastSenderRole: last?.sender_role || "",
-      unreadCount: 0,
+      unreadCount: Number(unreadByConv[row.id] || 0),
+      unread: Number(unreadByConv[row.id] || 0),
     };
   });
+}
+
+async function countBossUnreadFromCs(conversationId) {
+  const rows = await supabaseJson(
+    restUrl(
+      "messages",
+      `?conversation_id=eq.${encodeURIComponent(conversationId)}&sender_role=in.(customer_service,service,system,admin)&read_at=is.null&select=id&limit=1000`
+    ),
+    { headers: serviceHeaders() }
+  ).catch(() => []);
+  return Array.isArray(rows) ? rows.length : 0;
+}
+
+async function markBossReadCsMessages(conversationId) {
+  const readAt = nowIso();
+  try {
+    await supabaseJson(
+      restUrl(
+        "messages",
+        `?conversation_id=eq.${encodeURIComponent(conversationId)}&sender_role=in.(customer_service,service,system,admin)&read_at=is.null`
+      ),
+      { method: "PATCH", headers: serviceHeaders(), body: JSON.stringify({ read_at: readAt }) }
+    );
+  } catch (_) {}
+  const remaining = await countBossUnreadFromCs(conversationId);
+  return { readAt, unread: remaining };
 }
 
 async function resolveConversation(profile, { conversationId = "", orderId = "", create = true, forceNew = false } = {}) {
@@ -571,12 +613,38 @@ export default async function handler(req, res) {
 
     if (req.method === "GET" && (action === "conversations" || action === "list_conversations")) {
       const [presence, conversations] = await Promise.all([servicePresence(), listConversations(profile)]);
+      const totalUnread = conversations.reduce((sum, c) => sum + Number(c.unreadCount || 0), 0);
       return json(res, 200, {
         ok: true,
         conversations,
+        unread: totalUnread,
+        unreadCount: totalUnread,
         identity: profile._identity || identityView(profile, profile._authUser || {}),
         serviceOnline: !!presence.online,
         serviceStatus: presence.online ? "等待客服接待" : "客服暂时离线",
+      });
+    }
+
+    if (req.method === "POST" && (action === "mark_read" || action === "read_conversation")) {
+      const targetId = String(conversationId || body.conversation_id || body.conversationId || body.id || "").trim();
+      if (!targetId) return json(res, 400, { ok: false, message: "缺少会话 ID。" });
+      const existing = await conversationByIdForBoss(profile, targetId);
+      if (!existing) return json(res, 404, { ok: false, message: "会话不存在或不属于当前账号。" });
+      const marked = await markBossReadCsMessages(existing.id);
+      const conversations = await listConversations(profile);
+      const totalUnread = conversations.reduce((sum, c) => sum + Number(c.unreadCount || 0), 0);
+      const current = conversations.find((c) => c.id === existing.id) || {
+        id: existing.id,
+        unreadCount: marked.unread,
+        unread: marked.unread,
+      };
+      return json(res, 200, {
+        ok: true,
+        conversation: current,
+        conversations,
+        unread: totalUnread,
+        unreadCount: totalUnread,
+        last_read_at: marked.readAt,
       });
     }
 

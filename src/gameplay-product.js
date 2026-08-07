@@ -431,11 +431,15 @@
     var pkgBtn = e.target.closest("[data-gp-package]");
     if (pkgBtn) {
       e.preventDefault();
-      state.packageId = pkgBtn.getAttribute("data-gp-package") || "";
+      var nextPkg = pkgBtn.getAttribute("data-gp-package") || "";
       state.couponDiscount = 0;
       state.couponHint = state.couponCode ? "套餐已变更，请重新确认优惠码" : "";
       var form = document.querySelector("[data-gp-order-form]");
+      // collectForm 会读到旧的 hidden packageId；先同步其它字段，再强制套用点击的套餐。
       if (form) collectForm(form);
+      state.packageId = nextPkg;
+      var hiddenPkg = form && form.querySelector('input[name="packageId"]');
+      if (hiddenPkg) hiddenPkg.value = nextPkg;
       render();
       return;
     }

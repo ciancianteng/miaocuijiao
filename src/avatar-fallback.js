@@ -43,8 +43,22 @@
     return false;
   }
 
+  /** Boss payment proof preview / CS lightbox — never swap to default avatar. */
+  function isPaymentProof(img) {
+    if (!img || img.tagName !== "IMG") return false;
+    if (img.getAttribute("data-mcj-pay-proof") === "1") return true;
+    var alt = String(img.getAttribute("alt") || "");
+    if (/付款截图|付款凭证|payment.?proof/i.test(alt)) return true;
+    if (typeof img.closest === "function" && img.closest(".pay-proof, .pay-proof-preview, [data-proof-panel], [data-proof-lightbox]")) {
+      return true;
+    }
+    var src = String(img.getAttribute("src") || img.src || "");
+    if (/companion-payment-proofs|payment-proofs/i.test(src)) return true;
+    return false;
+  }
+
   function shouldSkip(img) {
-    return isBrandLogo(img) || isProductCover(img) || isPayQr(img);
+    return isBrandLogo(img) || isProductCover(img) || isPayQr(img) || isPaymentProof(img);
   }
 
   function isBadUrl(src) {

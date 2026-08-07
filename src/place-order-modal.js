@@ -740,6 +740,23 @@
     close();
     toast("下单成功");
     if (oid) {
+      try {
+        var list = [];
+        try {
+          list = JSON.parse(localStorage.getItem("mcjBossOrdersCache") || "[]");
+          if (!Array.isArray(list)) list = [];
+        } catch (eList) {
+          list = [];
+        }
+        var row = Object.assign({}, order || {}, {
+          id: oid,
+          status: order && order.status ? order.status : "awaiting_payment",
+          statusText: (order && order.statusText) || "待付款",
+          createdAt: (order && (order.createdAt || order.created_at)) || new Date().toISOString(),
+        });
+        list = [row].concat(list.filter(function (x) { return String(x.id) !== String(oid); }));
+        localStorage.setItem("mcjBossOrdersCache", JSON.stringify(list.slice(0, 80)));
+      } catch (eCache) {}
       location.href = "orders.html?id=" + encodeURIComponent(oid);
       return;
     }
@@ -751,14 +768,16 @@
     close();
     if (oid) {
       try {
-        sessionStorage.setItem(
-          "mcjOrderCache:" + oid,
-          JSON.stringify({
-            id: oid,
-            paymentMethod: state.payment,
-            totalAmount: order.totalAmount || totalAmount(),
-          })
-        );
+        var cachePayload = JSON.stringify({
+          id: oid,
+          status: "awaiting_payment",
+          paymentMethod: state.payment,
+          totalAmount: order.totalAmount || totalAmount(),
+        });
+        try {
+          localStorage.setItem("mcjOrderCache:" + oid, cachePayload);
+        } catch (e2) {}
+        sessionStorage.setItem("mcjOrderCache:" + oid, cachePayload);
       } catch (e) {}
       location.href = "payment-confirm.html?order=" + encodeURIComponent(oid);
       return;

@@ -390,7 +390,17 @@
             writeCache(state.orders);
             paint();
             var focusId=new URLSearchParams(location.search).get('id')||'';
-            if(focusId&&!opts.silent){var el=document.querySelector('[data-order-id="'+String(focusId).replace(/"/g,'')+'"]');if(el)el.scrollIntoView({behavior:'smooth',block:'center'})}
+            if(focusId&&!opts.silent){
+              var focusOrder=state.orders.find(function(x){return String(x.id)===String(focusId)||String(x.orderNo||x.order_no||'')===String(focusId)});
+              if(focusOrder){
+                try{detail(focusOrder)}catch(eDetail){}
+                var el=document.querySelector('[data-order-id="'+String(focusOrder.id).replace(/"/g,'')+'"]');
+                if(el)el.scrollIntoView({behavior:'smooth',block:'center'});
+              }else{
+                var el2=document.querySelector('[data-order-id="'+String(focusId).replace(/"/g,'')+'"]');
+                if(el2)el2.scrollIntoView({behavior:'smooth',block:'center'});
+              }
+            }
             return;
           }
           // Failed response: only hard-fail UI for 5xx / network-class statuses.

@@ -15,6 +15,7 @@
   var proofDraft = {
     orderId: "",
     file: null,
+    fileName: "",
     previewUrl: "",
     progress: 0,
     uploading: false,
@@ -144,6 +145,7 @@
       } catch (e) {}
     }
     proofDraft.file = null;
+    proofDraft.fileName = "";
     proofDraft.previewUrl = "";
     proofDraft.progress = 0;
     proofDraft.uploading = false;
@@ -151,10 +153,19 @@
     proofDraft.error = "";
     if (!keepTip) proofDraft.successTip = "";
   }
+  function isAllowedProofFile(file) {
+    if (!file) return false;
+    var type = String(file.type || "").toLowerCase();
+    if (/^image\/(png|jpeg|jpg|webp)$/.test(type)) return true;
+    // iOS / 部分 Android 相册可能给出空 MIME，按扩展名兜底。
+    var name = String(file.name || "").toLowerCase();
+    return /\.(png|jpe?g|webp)$/.test(name);
+  }
   function setProofFile(orderId, file) {
     clearProofDraft();
     proofDraft.orderId = orderId;
     proofDraft.file = file;
+    proofDraft.fileName = String((file && file.name) || "付款截图").trim();
     try {
       proofDraft.previewUrl = URL.createObjectURL(file);
     } catch (e) {
@@ -346,14 +357,18 @@
       html +=
         '<div class="pay-proof-preview"><img src="' +
         esc(preview) +
-        '" alt="付款截图预览"><div class="pay-proof-preview-actions">' +
+        '" alt="付款截图预览" data-mcj-pay-proof="1">' +
+        (proofDraft.fileName
+          ? '<p class="pay-proof-name">已选择：' + esc(proofDraft.fileName) + "</p>"
+          : "") +
+        '<div class="pay-proof-preview-actions">' +
         '<button type="button" class="pay-btn" data-proof-delete>删除</button>' +
-        '<label class="pay-btn">重新上传<input type="file" accept="image/png,image/jpeg,image/webp" data-payment-proof="' +
+        '<label class="pay-btn">重新上传<input type="file" accept="image/png,image/jpeg,image/webp,image/jpg,.png,.jpg,.jpeg,.webp" data-payment-proof="' +
         esc(order.id) +
         '" hidden></label></div></div>';
     } else {
       html +=
-        '<label class="pay-btn primary pay-proof-pick">选择付款截图<input type="file" accept="image/png,image/jpeg,image/webp" data-payment-proof="' +
+        '<label class="pay-btn primary pay-proof-pick">选择付款截图<input type="file" accept="image/png,image/jpeg,image/webp,image/jpg,.png,.jpg,.jpeg,.webp" data-payment-proof="' +
         esc(order.id) +
         '" hidden></label>';
     }
@@ -368,7 +383,7 @@
         esc(proofDraft.progress) +
         "%</span></div>";
     }
-    if (proofDraft.successTip || (reviewing && !proofDraft.error)) {
+    if (proofDraft.successTip || (reviewing && !proofDraft.error && !proofDraft.file)) {
       html +=
         '<p class="pay-success" role="status">' +
         esc(proofDraft.successTip || "付款凭证已提交，当前状态：待人工审核") +
@@ -388,6 +403,11 @@
         ">" +
         (proofDraft.uploading ? "上传中…" : "我已付款") +
         "</button>";
+    } else if (!reviewing && !proofDraft.uploaded) {
+      html +=
+        '<button type="button" class="pay-btn primary" data-proof-submit="' +
+        esc(order.id) +
+        '">我已付款</button>';
     } else if (reviewing || proofDraft.uploaded) {
       html +=
         '<a class="pay-btn primary" href="orders.html?filter=payment_review&id=' +
@@ -573,18 +593,27 @@
 
   async function submitProof(orderId) {
     var file = proofDraft.file;
-    if (!file || paying || proofDraft.uploading) return;
-    if (!/^image\/(png|jpeg|webp)$/.test(file.type || "")) {
+    var current = readCache(orderId) || { id: orderId, status: "awaiting_payment" };
+    if (paying || proofDraft.uploading) {
+      proofDraft.error = "正在上传中，请稍候…";
+      renderOrder(current);
+      return;
+    }
+    if (!file) {
+      proofDraft.error = "请先选择付款截图，再点击「我已付款」";
+      renderOrder(current);
+      return;
+    }
+    if (!isAllowedProofFile(file)) {
       proofDraft.error = "仅支持 JPG、PNG、WEBP 图片";
-      renderOrder(readCache(orderId) || { id: orderId, status: "awaiting_payment" });
+      renderOrder(current);
       return;
     }
     paying = true;
     proofDraft.uploading = true;
     proofDraft.progress = 8;
     proofDraft.error = "";
-    proofDraft.successTip = "";
-    var current = readCache(orderId) || { id: orderId, status: "awaiting_payment" };
+    proofDraft.successTip = "正在上传付款截图…";
     renderOrder(current);
     try {
       tickProgress(25);
@@ -644,9 +673,11 @@
 
   function readCache(id) {
     try {
-      var raw = localStorage.getItem(cacheKey + id);
+      var raw = localStorage.getItem(cacheKey + id) || sessionStorage.getItem(cacheKey + id);
       if (!raw) return null;
-      return JSON.parse(raw);
+      var parsed = JSON.parse(raw);
+      if (parsed && !parsed.status) parsed.status = "awaiting_payment";
+      return parsed;
     } catch (e) {
       return null;
     }
@@ -654,7 +685,9 @@
 
   function writeCache(id, order) {
     try {
-      localStorage.setItem(cacheKey + id, JSON.stringify(order));
+      var payload = JSON.stringify(order);
+      localStorage.setItem(cacheKey + id, payload);
+      sessionStorage.setItem(cacheKey + id, payload);
     } catch (e) {}
   }
 
@@ -774,15 +807,16 @@
     if (!input || !input.files || !input.files[0]) return;
     var orderId = input.getAttribute("data-payment-proof");
     var file = input.files[0];
-    if (!/^image\/(png|jpeg|webp)$/.test(file.type || "")) {
+    if (!isAllowedProofFile(file)) {
       proofDraft.error = "仅支持 JPG、PNG、WEBP 图片";
+      proofDraft.successTip = "";
       renderOrder(readCache(orderId) || { id: orderId, status: "awaiting_payment" });
       return;
     }
     setProofFile(orderId, file);
     proofDraft.error = "";
-    proofDraft.successTip = "";
     proofDraft.uploaded = false;
+    proofDraft.successTip = "已选择：" + (proofDraft.fileName || file.name || "付款截图") + "，请点击「我已付款」提交";
     renderOrder(readCache(orderId) || { id: orderId, status: "awaiting_payment" });
   });
 

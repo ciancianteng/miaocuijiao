@@ -12,6 +12,7 @@
     open: false,
     pollTimer: null,
   };
+  var chatUnreadState = { unread: 0, pollTimer: null };
 
   function path() {
     return String(location.pathname || "").replace(/\\/g, "/");
@@ -263,11 +264,12 @@
           navLink("index.html", "首页") +
           navLink("companion-center.html", "大厅") +
           navLink("orders.html", "订单") +
-          navLink("support.html?start=1", "客服") +
+          supportNavLink() +
           deskAuthLinkHtml();
       }
       fillMobileDrawerLinks();
     }
+    setChatUnread(chatUnreadState.unread);
   }
 
   function scheduleAuthVisibility() {
@@ -284,6 +286,72 @@
   function navLink(href, label) {
     var active = activeHref(href) ? ' class="active"' : "";
     return '<a href="' + href + '"' + active + ">" + label + "</a>";
+  }
+
+  function supportNavLink() {
+    var active = activeHref("support.html") ? ' class="active"' : "";
+    var n = Number(chatUnreadState.unread || 0);
+    var badge =
+      n > 0
+        ? '<em class="mcj-chat-unread-badge" data-mcj-chat-unread-badge>' +
+          esc(unreadLabel(n)) +
+          "</em>"
+        : '<em class="mcj-chat-unread-badge" data-mcj-chat-unread-badge hidden></em>';
+    return '<a href="support.html?start=1"' + active + ">客服" + badge + "</a>";
+  }
+
+  function setChatUnread(n) {
+    chatUnreadState.unread = Math.max(0, Number(n || 0));
+    document.querySelectorAll("[data-mcj-chat-unread-badge]").forEach(function (badge) {
+      var label = unreadLabel(chatUnreadState.unread);
+      if (label) {
+        badge.hidden = false;
+        badge.textContent = label;
+      } else {
+        badge.hidden = true;
+        badge.textContent = "";
+      }
+    });
+  }
+
+  function refreshChatUnread() {
+    if (!isLoggedIn()) {
+      setChatUnread(0);
+      return Promise.resolve(0);
+    }
+    var token =
+      localStorage.getItem("mcjAuthAccessToken") ||
+      sessionStorage.getItem("mcjAuthAccessToken") ||
+      "";
+    if (!token) {
+      setChatUnread(0);
+      return Promise.resolve(0);
+    }
+    return fetch("/api/chat?action=conversations", {
+      headers: { Accept: "application/json", Authorization: "Bearer " + token },
+      cache: "no-store",
+    })
+      .then(function (res) {
+        return res.json().catch(function () {
+          return {};
+        });
+      })
+      .then(function (body) {
+        if (!body || body.ok === false) return chatUnreadState.unread;
+        var total =
+          body.unreadCount != null
+            ? Number(body.unreadCount)
+            : body.unread != null
+              ? Number(body.unread)
+              : (body.conversations || []).reduce(function (sum, c) {
+                  return sum + Number(c.unreadCount || c.unread || 0);
+                }, 0);
+        setChatUnread(total);
+        return total;
+      })
+      .catch(function () {
+        return chatUnreadState.unread;
+      });
   }
 
   function unreadLabel(n) {
@@ -319,7 +387,7 @@
       navLink("index.html", "首页") +
       navLink("companion-center.html", "大厅") +
       navLink("orders.html", "订单") +
-      navLink("support.html?start=1", "客服") +
+      supportNavLink() +
       mobileAuthLinkHtml()
     );
   }
@@ -348,7 +416,7 @@
       navLink("index.html", "首页") +
       navLink("companion-center.html", "大厅") +
       navLink("orders.html", "订单") +
-      navLink("support.html?start=1", "客服") +
+      supportNavLink() +
       deskAuthLinkHtml() +
       "</nav>" +
       '<div class="mcj-mnav">' +
@@ -910,7 +978,18 @@
     bind();
     scheduleAuthVisibility();
     ensureMeowButler();
-    if (isLoggedIn()) startNotifyPoll();
+    if (isLoggedIn()) {
+      startNotifyPoll();
+      refreshChatUnread();
+      if (chatUnreadState.pollTimer) clearInterval(chatUnreadState.pollTimer);
+      chatUnreadState.pollTimer = setInterval(function () {
+        if (!document.hidden && isLoggedIn()) refreshChatUnread();
+      }, 20000);
+    }
+    window.addEventListener("mcj-boss-chat-unread", function (ev) {
+      var n = ev && ev.detail ? ev.detail.unread : 0;
+      setChatUnread(n);
+    });
   }
 
   window.MCJBossHeader = {
@@ -918,6 +997,8 @@
     sync: scheduleAuthVisibility,
     clearSession: clearBossSession,
     openLogin: openLogin,
+    setChatUnread: setChatUnread,
+    refreshChatUnread: refreshChatUnread,
     refreshNotifications: function () {
       return loadNotifications({ silent: true });
     },

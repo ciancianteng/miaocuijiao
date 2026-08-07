@@ -31,6 +31,7 @@
     orderCardOpen: false,
     emojiOpen: false,
     realtimeReady: false,
+    totalUnread: 0,
   };
 
   var COMPOSER_SEL = '[data-send] [name="content"]';
@@ -566,6 +567,25 @@
         return !(sameUrl && m.sender_role === "boss");
       });
       state.messages = state.messages.concat([normalized]);
+      var role = String(row.sender_role || row.senderRole || "").toLowerCase();
+      var activeId = state.conversation && state.conversation.id;
+      var fromCs = /customer_service|service|system|admin/.test(role);
+      if (fromCs) {
+        if (activeId && String(activeId) === String(cid) && state.mobileDetail !== false) {
+          markConversationRead(cid);
+        } else {
+          state.conversations = (state.conversations || []).map(function (c) {
+            if (String(c.id) === String(cid)) {
+              c.unreadCount = Number(c.unreadCount || 0) + 1;
+              c.unread = c.unreadCount;
+              c.lastMessage = row.content || c.lastMessage;
+              c.lastMessageAt = row.created_at || c.lastMessageAt;
+            }
+            return c;
+          });
+          syncTotalUnread(state.conversations);
+        }
+      }
       if (root.querySelector("[data-messages]")) patchMessages({ keepScroll: false });
       else softUpdate({ keepScroll: false });
     }).then(function () {
@@ -630,6 +650,57 @@
       });
     });
   }
+  function totalUnreadCount(list) {
+    return (list || state.conversations || []).reduce(function (sum, c) {
+      return sum + Number(c.unreadCount || c.unread || 0);
+    }, 0);
+  }
+  function syncTotalUnread(list) {
+    state.totalUnread = totalUnreadCount(list || state.conversations);
+    try {
+      if (window.MCJBossHeader && typeof window.MCJBossHeader.setChatUnread === "function") {
+        window.MCJBossHeader.setChatUnread(state.totalUnread);
+      }
+      window.dispatchEvent(new CustomEvent("mcj-boss-chat-unread", { detail: { unread: state.totalUnread } }));
+    } catch (e) {}
+  }
+  function markConversationRead(conversationId) {
+    var cid = String(conversationId || (state.conversation && state.conversation.id) || "").trim();
+    if (!cid) return Promise.resolve(null);
+    return fetchJson("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "mark_read", conversation_id: cid }),
+      _mcjTimeoutMs: 8000,
+    })
+      .then(function (body) {
+        if (body && Array.isArray(body.conversations)) {
+          state.conversations = body.conversations.map(function (c) {
+            c.conversationType = c.conversationType || (c.orderId || c.order_id ? "order_support" : "general_support");
+            c.unreadCount = Number(c.unreadCount || c.unread_count || 0);
+            return c;
+          });
+        } else {
+          state.conversations = (state.conversations || []).map(function (c) {
+            if (String(c.id) === String(cid)) {
+              c.unreadCount = 0;
+              c.unread = 0;
+            }
+            return c;
+          });
+        }
+        if (state.conversation && String(state.conversation.id) === String(cid)) {
+          state.conversation.unreadCount = 0;
+          state.conversation.unread = 0;
+        }
+        syncTotalUnread(state.conversations);
+        softUpdate({ keepScroll: true });
+        return body;
+      })
+      .catch(function () {
+        return null;
+      });
+  }
   function fetchJson(url, init) {
     var auth = Auth();
     if (!auth || typeof auth.authFetch !== "function") return Promise.reject(new Error("鉴权模块未加载"));
@@ -645,6 +716,10 @@
         c.unreadCount = Number(c.unreadCount || c.unread_count || 0);
         return c;
       });
+      if (typeof body.unreadCount === "number") state.totalUnread = Number(body.unreadCount);
+      else if (typeof body.unread === "number") state.totalUnread = Number(body.unread);
+      else syncTotalUnread(state.conversations);
+      syncTotalUnread(state.conversations);
       if (body.identity) {
         state.identity = Object.assign({}, state.identity || {}, body.identity);
         try {
@@ -695,9 +770,11 @@
     return fetchJson("/api/chat?conversation_id=" + encodeURIComponent(cid))
       .then(function (body) {
         applyPayload(body, { keepScroll: !!silent, pinConversationId: requestedId });
-        return loadOrders().then(function () {
-          softUpdate({ keepScroll: !!silent });
-          return body;
+        return markConversationRead(requestedId).then(function () {
+          return loadOrders().then(function () {
+            softUpdate({ keepScroll: !!silent });
+            return body;
+          });
         });
       })
       .catch(function (err) {
@@ -1039,7 +1116,13 @@
       '<section class="support-layout' +
       (state.mobileDetail ? " mobile-detail" : "") +
       '" aria-label="我的客服会话">' +
-      '<aside class="support-aside"><div class="support-aside-head"><div><h1>我的客服会话</h1><p>仅显示本人会话</p></div></div><div class="support-session-list">' +
+      '<aside class="support-aside"><div class="support-aside-head"><div><h1>我的客服会话' +
+      (Number(state.totalUnread || 0) > 0
+        ? '<em class="support-unread support-unread-total">' +
+          esc(Number(state.totalUnread) > 99 ? "99+" : state.totalUnread) +
+          "</em>"
+        : "") +
+      '</h1><p>仅显示本人会话</p></div></div><div class="support-session-list">' +
       listHtml() +
       "</div></aside>" +
       '<div class="support-main">' +
