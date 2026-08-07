@@ -165,9 +165,11 @@
     }
     return null;
   }
-  function inboxQueryParams(){
-    var q={};
+  function inboxQueryParams(extra){
+    var q=Object.assign({},extra||{});
     if(state.chatConversationId)q.conversation_id=state.chatConversationId;
+    if(q.light==null)q.light='1';
+    if(q.include_messages==null)q.include_messages='0';
     return q;
   }
   var HALL_TYPE_FILTERS=[['all','全部'],['fixed','固定单'],['custom','自定义单']];
@@ -929,38 +931,129 @@
       return String(b.submittedAt||b.createdAt||'').localeCompare(String(a.submittedAt||a.createdAt||''));
     });
   }
-  function reloadInbox(){
+  function applyInboxPayload(data,opts){
+    opts=opts||{};
+    var pin=String(state.chatConversationId||'').trim();
+    var prevMessages=(state.inbox&&Array.isArray(state.inbox.messages))?state.inbox.messages.slice():[];
+    var prevNotices=(state.inbox&&Array.isArray(state.inbox.systemNotices))?state.inbox.systemNotices.slice():[];
+    var next=data||emptyInboxShell();
+    // Light list responses intentionally omit thread bodies / derived notices — keep local state.
+    if((!Array.isArray(next.messages)||!next.messages.length)&&prevMessages.length&&!opts.replaceMessages){
+      next.messages=prevMessages;
+    }
+    if((!Array.isArray(next.systemNotices)||!next.systemNotices.length)&&prevNotices.length){
+      next.systemNotices=prevNotices;
+    }
+    state.inbox=next;
+    if(pin)state.chatConversationId=pin;
+    else if(!state.chatConversationId&&state.inbox.csConversationId){
+      state.chatConversationId=String(state.inbox.csConversationId);
+    }
+    if(state.data&&state.data.summary&&state.inbox){
+      state.data.summary.unreadMessages=num(state.inbox.unreadTotal);
+    }
+  }
+  function cacheThreadMessages(cid,messages){
+    if(!cid)return;
+    if(!state._threadCache)state._threadCache={};
+    state._threadCache[String(cid)]=(messages||[]).slice();
+  }
+  function reloadInbox(opts){
     if(!state.session||!state.session.token)return Promise.resolve();
-    state.inboxError='';
-    return api('inbox',inboxQueryParams(),'GET').then(function(res){
+    opts=opts||{};
+    // List refresh must stay light — never re-fan-out full histories on every tick/switch.
+    var q=inboxQueryParams({
+      light:opts.light===false?'0':'1',
+      include_messages:opts.includeMessages?'1':'0'
+    });
+    return api('inbox',q,'GET').then(function(res){
       if(res&&res.ok){
         var data=res.data||res.inbox||emptyInboxShell();
         if(data.connectError&&!data.csConversationId&&!csConvList(data).length){
           state.inbox=Object.assign(emptyInboxShell(),data,{_placeholder:true});
           state.inboxError=data.connectError;
         }else{
-          state.inbox=data;
-          state.inboxError=data.connectError||'';
-        }
-        if(!state.chatConversationId&&state.inbox.csConversationId){
-          state.chatConversationId=String(state.inbox.csConversationId);
+          applyInboxPayload(data,{replaceMessages:!!opts.includeMessages});
+          // Don't overwrite a healthy thread with list-level connect noise.
+          if(data.connectError&&!(state.inbox.messages||[]).length)state.inboxError=data.connectError;
+          else if(!data.connectError)state.inboxError='';
         }
         if(data.csTransferring||(data.conversations||[]).some(function(c){return /更换客服/.test(String(c.subtitle||c.lastMessage||''));})){
           toast('正在为你更换客服。');
         }
-        if(state.data&&state.data.summary&&state.inbox){
-          state.data.summary.unreadMessages=num(state.inbox.unreadTotal);
-        }
       }else{
-        state.inboxError=(res&&res.message)||'客服连接失败';
+        if(!(state.inbox&&(state.inbox.messages||[]).length)){
+          state.inboxError=(res&&res.message)||'客服连接失败';
+        }
         if(!state.inbox)state.inbox=emptyInboxShell();
       }
     }).catch(function(err){
-      state.inboxError=(err&&err.message)||'客服连接失败，请重试';
+      // Isolate list failures — keep current chat usable.
+      if(!(state.inbox&&(state.inbox.messages||[]).length)){
+        state.inboxError=(err&&err.message)||'客服连接失败，请重试';
+      }
       if(!state.inbox)state.inbox=emptyInboxShell();
     }).then(function(){
-      paint({preserveScroll:true});
+      if(opts.paint!==false)paint({preserveScroll:true});
       bindCompanionChatRealtime();
+    });
+  }
+  function loadActiveThread(opts){
+    opts=opts||{};
+    if(!state.session||!state.session.token)return Promise.resolve();
+    var cid=String(opts.conversationId||companionCsConversationId()||'').trim();
+    if(!cid){
+      if(state.inbox)state.inbox.messages=[];
+      return Promise.resolve();
+    }
+    var seq=Number(state._threadReqSeq||0)+1;
+    state._threadReqSeq=seq;
+    state.chatThreadLoading=true;
+    state.chatThreadError='';
+    if(state._threadCache&&state._threadCache[cid]&&!opts.force){
+      if(state.inbox)state.inbox.messages=state._threadCache[cid].slice();
+      if(opts.paint!==false)paint({preserveScroll:true});
+    }else if(opts.clear!==false){
+      if(state.inbox)state.inbox.messages=[];
+      if(opts.paint!==false)paint({preserveScroll:true});
+    }
+    return api('thread',{conversation_id:cid},'GET').then(function(res){
+      if(seq!==state._threadReqSeq)return;
+      var messages=(res&&res.data&&res.data.messages)||(res&&res.messages)||[];
+      if(!Array.isArray(messages))messages=[];
+      cacheThreadMessages(cid,messages);
+      if(String(companionCsConversationId())!==cid)return;
+      if(!state.inbox)state.inbox=emptyInboxShell();
+      state.inbox.messages=messages;
+      state.inbox.csConversationId=cid;
+      state.chatThreadLoading=false;
+      state.chatThreadError='';
+      state.inboxError='';
+      if(opts.paint!==false)paint({preserveScroll:true});
+      bindCompanionChatRealtime();
+    }).catch(function(err){
+      if(seq!==state._threadReqSeq)return;
+      state.chatThreadLoading=false;
+      state.chatThreadError=(err&&err.message)||'会话同步失败，请重试';
+      if(opts.paint!==false)paint({preserveScroll:true});
+    });
+  }
+  function switchCsConversation(convId){
+    var cid=String(convId||'').trim();
+    if(!cid)return Promise.resolve();
+    state.chatSession='cs';
+    state.chatConversationId=cid;
+    state.chatThreadError='';
+    state.inboxError='';
+    if(!state.inbox)state.inbox=emptyInboxShell();
+    state.inbox.csConversationId=cid;
+    var cached=state._threadCache&&state._threadCache[cid];
+    state.inbox.messages=cached?cached.slice():[];
+    // Instant UI switch — do not wait for network.
+    paint({preserveScroll:true});
+    bindCompanionChatRealtime();
+    return loadActiveThread({conversationId:cid,clear:false,paint:true}).then(function(){
+      return markActiveChatSessionRead({skipReload:true});
     });
   }
   function emptyInboxShell(){
@@ -1000,15 +1093,22 @@
     state.inbox.unreadMessages=state.inbox.unreadTotal;
     if(state.data&&state.data.summary)state.data.summary.unreadMessages=state.inbox.unreadTotal;
   }
-  function markActiveChatSessionRead(){
+  function markActiveChatSessionRead(opts){
     if(!state.session||!state.session.token)return Promise.resolve();
     if(state.route!=='messages')return Promise.resolve();
+    opts=opts||{};
     var session=state.chatSession==='system'?'system':'cs';
     optimisticClearSessionUnread(session);
-    paint();
+    if(opts.paint!==false)paint({preserveScroll:true});
     if(session==='cs'){
       var readCid=companionCsConversationId();
-      return api('mark_cs_read',readCid?{conversation_id:readCid}:{}).then(function(){return reloadInbox()}).catch(function(){return reloadInbox()});
+      return api('mark_cs_read',readCid?{conversation_id:readCid}:{}).then(function(){
+        if(opts.skipReload)return;
+        return reloadInbox({paint:opts.paint!==false});
+      }).catch(function(){
+        if(opts.skipReload)return;
+        return reloadInbox({paint:opts.paint!==false});
+      });
     }
     var keys=[];
     if(state.inbox&&Array.isArray(state.inbox.systemNotices)){
@@ -1017,8 +1117,17 @@
       keys=buildInbox().map(function(m){return m.id});
     }
     keys.forEach(function(k){markMsgRead(k)});
-    if(!keys.length)return reloadInbox();
-    return api('mark_notices_read',{keys:keys}).then(function(){return reloadInbox()}).catch(function(){return reloadInbox()});
+    if(!keys.length){
+      if(opts.skipReload)return Promise.resolve();
+      return reloadInbox({paint:opts.paint!==false});
+    }
+    return api('mark_notices_read',{keys:keys}).then(function(){
+      if(opts.skipReload)return;
+      return reloadInbox({paint:opts.paint!==false});
+    }).catch(function(){
+      if(opts.skipReload)return;
+      return reloadInbox({paint:opts.paint!==false});
+    });
   }
   function loadData(opts){
     opts=opts||{};
@@ -1034,7 +1143,7 @@
           return null;
         })
       : Promise.resolve(null);
-    var inboxReq=api('inbox',inboxQueryParams(),'GET').catch(function(){return null});
+    var inboxReq=api('inbox',inboxQueryParams({light:'1',include_messages:'0'}),'GET').catch(function(){return null});
     return Promise.all([boot,loadProfileServices(),loadProfileVoiceTypes(),walletReq,inboxReq]).then(function(results){
       var result=results[0]||{};
       var walletResult=results[3];
@@ -1042,7 +1151,7 @@
       state.data=Object.assign({},state.data||{},result.data||{});
       state.ordersCacheAt=Date.now();
       if(inboxResult&&inboxResult.ok){
-        state.inbox=inboxResult.data||inboxResult.inbox||emptyInboxShell();
+        applyInboxPayload(inboxResult.data||inboxResult.inbox||emptyInboxShell());
         state.inboxError='';
       }else if(!state.inbox){
         state.inbox=emptyInboxShell();
@@ -1133,12 +1242,16 @@
       state.loading=false;
       // Keep in-progress public/privacy form edits while soft-syncing in background.
       if(opts.soft&&isEditingLiveForm()&&!opts.forcePaint){
-        if(state.route==='messages')markActiveChatSessionRead();
+        if(state.route==='messages'){
+          loadActiveThread({clear:false}).then(function(){return markActiveChatSessionRead({skipReload:true});});
+        }
         bindCompanionChatRealtime();
         return;
       }
       paint({preserveScroll:!!opts.preserveScroll||!!opts.forcePaint||isEditingLiveForm()});
-      if(state.route==='messages')markActiveChatSessionRead();
+      if(state.route==='messages'){
+        loadActiveThread({clear:false}).then(function(){return markActiveChatSessionRead({skipReload:true});});
+      }
       bindCompanionChatRealtime();
       bindCompanionOrdersRealtime();
       if(state._focusOrderId){
@@ -1160,11 +1273,9 @@
         var tickIso=Number(state._pollTick||0)+1;
         state._pollTick=tickIso;
         if(tickIso%3!==0){
-          api('inbox',inboxQueryParams(),'GET').then(function(res){
+          api('inbox',inboxQueryParams({light:'1',include_messages:'0'}),'GET').then(function(res){
             if(res&&res.ok){
-              var pin=String(state.chatConversationId||'').trim();
-              state.inbox=res.data||res.inbox||null;
-              if(pin)state.chatConversationId=pin;
+              applyInboxPayload(res.data||res.inbox||null);
               if(!isEditingLiveForm())paint({preserveScroll:true});
             }
           }).catch(function(){});
@@ -1195,11 +1306,9 @@
       state._pollTick=tick;
       if(!heavy&&tick%3!==0){
         if(state.route==='messages'){
-          api('inbox',inboxQueryParams(),'GET').then(function(res){
+          api('inbox',inboxQueryParams({light:'1',include_messages:'0'}),'GET').then(function(res){
             if(res&&res.ok){
-              var pin=String(state.chatConversationId||'').trim();
-              state.inbox=res.data||res.inbox||null;
-              if(pin)state.chatConversationId=pin;
+              applyInboxPayload(res.data||res.inbox||null);
               if(state.data&&state.data.summary&&state.inbox)state.data.summary.unreadMessages=num(state.inbox.unreadTotal);
               bindCompanionChatRealtime();
             }
@@ -1223,11 +1332,9 @@
         updateTabBadge(designated);
         if(editingLive||isEditingLiveForm())return;
         if(state.route==='messages'){
-          return api('inbox',inboxQueryParams(),'GET').then(function(res){
+          return api('inbox',inboxQueryParams({light:'1',include_messages:'0'}),'GET').then(function(res){
             if(res&&res.ok){
-              var pin=String(state.chatConversationId||'').trim();
-              state.inbox=res.data||res.inbox||null;
-              if(pin)state.chatConversationId=pin;
+              applyInboxPayload(res.data||res.inbox||null);
               if(state.data&&state.data.summary&&state.inbox)state.data.summary.unreadMessages=num(state.inbox.unreadTotal);
               bindCompanionChatRealtime();
             }
@@ -1235,7 +1342,7 @@
             var csUnread=session==='cs'?num((activeCsConversation(state.inbox)||{}).unread):0;
             var needMark=session==='cs'?csUnread>0:((state.inbox&&state.inbox.systemNotices)||[]).some(function(n){return n.unread});
             paint({preserveScroll:true});
-            if(needMark)return markActiveChatSessionRead();
+            if(needMark)return markActiveChatSessionRead({skipReload:true});
           }).catch(function(){paint({preserveScroll:true})});
         }
         paint({preserveScroll:true});
@@ -1337,6 +1444,23 @@
         if(!(m._pending||m._failed))return true;
         return !(m.content===view.content&&(m.senderRole==='companion'||m.side==='right'));
       }).concat([view]);
+      cacheThreadMessages(cid,state.inbox.messages);
+      // Refresh list preview/unread without full fan-out.
+      try{
+        var convs=csConvList(state.inbox);
+        for(var i=0;i<convs.length;i++){
+          if(String(convs[i].id)!==String(cid))continue;
+          var MediaPrev=window.MCJChatMedia;
+          convs[i].lastMessage=(MediaPrev&&MediaPrev.isImageMessage(view))?'[图片]':String(view.content||'').slice(0,80);
+          convs[i].lastTime=view.createdAt||'';
+          if(role!=='companion'&&state.route==='messages'&&state.chatSession==='cs'){
+            /* active thread is open — unread stays 0 via mark read */
+          }else if(role!=='companion'){
+            convs[i].unread=num(convs[i].unread)+1;
+          }
+          break;
+        }
+      }catch(e){}
       if(role!=='companion')playCue('message');
       try{
         if(state.data&&state.data.summary){
@@ -2089,17 +2213,42 @@
   }
   function renderChatMessagesHtml(messages){
     var body;
-    if(!messages.length){
+    var Media=window.MCJChatMedia;
+    function fallbackIsImg(m){
+      if(Media&&Media.isImageMessage(m))return true;
+      var t=String(m.messageType||m.message_type||'').toLowerCase();
+      if(t==='image')return true;
+      var c=String(m.content||m.imageUrl||m.image_url||'');
+      if(/^__IMG__:/i.test(c))return true;
+      if(/\/storage\/v1\/object\/public\/chat-images\//i.test(c))return true;
+      if(/^https?:\/\//i.test(c)&&/\.(jpg|jpeg|png|webp)(\?|#|$)/i.test(c))return true;
+      return false;
+    }
+    function fallbackImgUrl(m){
+      if(Media&&Media.imageUrlOf)return Media.imageUrlOf(m);
+      var raw=String(m.imageUrl||m.image_url||m.mediaUrl||m.content||'').trim();
+      if(/^__IMG__:/i.test(raw))raw=raw.replace(/^__IMG__:/i,'').trim();
+      if(raw.charAt(0)===':'&&/^:https?:\/\//i.test(raw))raw=raw.slice(1);
+      return /^https?:\/\//i.test(raw)?raw:'';
+    }
+    function imgBubble(url,createdAt){
+      if(Media&&Media.imageBubbleHtml)return Media.imageBubbleHtml(url,esc,{createdAt:createdAt});
+      var src=esc(url);
+      return '<a class="mcj-chat-img-wrap" href="'+src+'" data-chat-image="'+src+'" title="点击放大"><img class="mcj-chat-img" src="'+src+'" alt="图片" loading="lazy" decoding="async" referrerpolicy="no-referrer" /></a>';
+    }
+    if(state.chatThreadLoading&&!(messages&&messages.length)){
+      body='<div class="pw-empty"><strong>加载中…</strong><span>正在读取当前会话消息。</span></div>';
+    }else if(!messages.length){
       body='<div class="pw-empty"><strong>暂无消息</strong><span>发送消息即可联系官方客服。</span></div>';
     }else{
       body=messages.filter(function(m){
         var c=String(m.content||'');
+        if(fallbackIsImg(m))return true;
         return !/^(CHAT-|E2E-MSG-|CS-LINK-|SVC-|MSG-|ORDER-CHAT-)/i.test(c.trim());
       }).map(function(m){
         var side=m.side||(m.senderRole==='companion'?'right':'left');
-        var Media=window.MCJChatMedia;
-        var isImg=Media&&Media.isImageMessage(m);
-        var bubble=isImg?Media.imageBubbleHtml(Media.imageUrlOf(m),esc,{createdAt:m.createdAt||m.created_at}):('<div class="pw-bubble">'+esc(m.content)+'</div>');
+        var isImg=fallbackIsImg(m);
+        var bubble=isImg?imgBubble(fallbackImgUrl(m),m.createdAt||m.created_at):('<div class="pw-bubble">'+esc(m.content)+'</div>');
         var pending=m._pending?' · 上传中…':'';
         var failed=m._failed?' · 发送失败':'';
         return '<div class="pw-msg '+esc(side)+'" data-msg-id="'+esc(m.id||m._localId||'')+'">'+bubble+'<small>'+esc(m.senderLabel||'')+' · '+esc(fmtTime(m.createdAt))+pending+failed+'</small></div>';
@@ -2111,6 +2260,14 @@
   function chatCsPanelHtml(inbox){
     var conv=activeCsConversation(inbox);
     var messages=(inbox&&inbox.messages)||[];
+    // Guard against stale cache from another conversation.
+    var activeCid=String((conv&&conv.id)||state.chatConversationId||'');
+    if(activeCid&&messages.length){
+      messages=messages.filter(function(m){
+        var mid=String(m.conversationId||m.conversation_id||'');
+        return !mid||mid===activeCid;
+      });
+    }
     var busy=!!state.chatBusy;
     var ended=!!(conv&&conv.ended)||!!(inbox&&inbox.csEnded);
     var connecting=!inbox||!!inbox._placeholder;
@@ -2127,15 +2284,19 @@
         '<label class="pw-consult-type">咨询类型 <select data-cs-consult-type>'+consultTypeOptionsHtml('other')+'</select></label>'+
         '<button class="pw-btn primary" type="button" data-start-cs-consult>发起新咨询</button></div></div>';
     }
-    var title=conv.consultTypeLabel||consultTypeLabel(conv.consultType)||'官方客服';
-    var meta=[conv.statusLabel||'',conv.assignedServiceName||'',conv.orderLabel||''].filter(Boolean).join(' · ');
+    var peer=conv.peerName||conv.bossName||conv.assignedServiceName||'';
+    var title=peer||conv.consultTypeLabel||consultTypeLabel(conv.consultType)||'官方客服';
+    var orderBit=conv.orderNo?('订单 '+conv.orderNo):(conv.orderLabel||'');
+    var meta=[conv.statusLabel||'',orderBit,conv.peerCode||''].filter(Boolean).join(' · ');
     var head='<div class="pw-chat-head"><div><h3>'+esc(title)+'</h3><p>'+esc(meta||conv.subtitle||'工作时间 9:00–24:00')+'</p></div>'+
       '<div class="pw-actions" style="gap:8px;flex-wrap:wrap">'+
       (!ended?'<button class="pw-btn" type="button" data-end-cs-chat="'+esc(conv.id)+'">结束对话</button>':'')+
       '<label class="pw-consult-type" style="font-size:12px">新咨询 <select data-cs-consult-type>'+consultTypeOptionsHtml()+'</select></label>'+
       '<button class="pw-btn primary" type="button" data-start-cs-consult>发起新咨询</button></div></div>';
     var body=renderChatMessagesHtml(messages);
-    if(state.inboxError&&messages.length){
+    if(state.chatThreadError){
+      body='<div class="pw-alert" style="margin:8px 12px"><strong>会话同步失败</strong><span>'+esc(state.chatThreadError)+'</span><button class="pw-btn" type="button" data-reload-thread>重试当前会话</button></div>'+body;
+    }else if(state.inboxError&&!(messages&&messages.length)&&!state.chatThreadLoading){
       body='<div class="pw-alert" style="margin:8px 12px"><strong>同步异常</strong><span>'+esc(state.inboxError)+'</span><button class="pw-btn" type="button" data-reload-inbox>重新连接</button></div>'+body;
     }
     var composer;
@@ -2153,7 +2314,7 @@
         '<div class="pw-send-line"><span class="mcj-upload-status" data-pw-upload-status>'+(busy?'发送中…':'')+'</span><button class="pw-btn primary" type="submit" '+(busy?'disabled':'')+'>发送</button></div>'+
         '</form>';
     }
-    return '<div class="pw-chat-main">'+head+'<div class="pw-messages">'+body+'</div>'+composer+'</div>';
+    return '<div class="pw-chat-main">'+head+'<div class="pw-messages" data-pw-messages>'+body+'</div>'+composer+'</div>';
   }
   function chatSystemPanelHtml(notices){
     var unread=notices.filter(function(n){return n.unread}).length;
@@ -2165,6 +2326,17 @@
     }).join('')+'</div>':'<div class="pw-empty"><strong>暂无通知</strong><span>订单 / 审核 / 提现 / 活动通知会出现在这里。</span></div>';
     return '<div class="pw-chat-main pw-chat-main-notices">'+head+body+'</div>';
   }
+  function fmtSessionTime(v){
+    if(!v)return '';
+    try{
+      var d=new Date(v);
+      if(isNaN(d.getTime()))return '';
+      var now=new Date();
+      var sameDay=d.toDateString()===now.toDateString();
+      if(sameDay)return d.toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit',hour12:false});
+      return d.toLocaleDateString('zh-CN',{month:'2-digit',day:'2-digit'})+' '+d.toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit',hour12:false});
+    }catch(e){return ''}
+  }
   function messagesHtml(){
     var inbox=state.inbox;
     var session=state.chatSession==='system'?'system':'cs';
@@ -2172,27 +2344,46 @@
     var systemNotices=(inbox&&inbox.systemNotices)?inbox.systemNotices:localInbox.map(function(m){
       return {id:m.id,key:m.id,title:m.title,body:m.body,at:m.at,category:m.category,unread:m.unread};
     });
-    var csList=csConvList(inbox);
+    var csList=csConvList(inbox).slice().sort(function(a,b){
+      return String(b.lastTime||'').localeCompare(String(a.lastTime||''));
+    });
     var activeConv=activeCsConversation(inbox);
     var activeId=String(state.chatConversationId||inbox&&inbox.csConversationId||activeConv&&activeConv.id||'');
     var csUnread=csList.reduce(function(sum,c){return sum+num(c.unread)},0);
     var sysUnread=systemNotices.filter(function(n){return n.unread}).length;
-    var csRows=csList.map(function(c){
+    var openList=csList.filter(function(c){return !c.ended});
+    var historyList=csList.filter(function(c){return !!c.ended});
+    function sessionRow(c){
       var isActive=session==='cs'&&activeId&&String(c.id)===activeId;
-      var label=c.consultTypeLabel||consultTypeLabel(c.consultType);
-      var meta=[c.statusLabel||'',c.assignedServiceName||'',c.orderLabel||''].filter(Boolean).join(' · ');
+      var peer=c.peerName||c.bossName||c.assignedServiceName||(c.orderId?'老板':'客服');
+      if(c.peerCode&&String(peer).indexOf(c.peerCode)<0)peer=peer+' · '+c.peerCode;
+      var orderBit=c.orderNo?('订单 '+c.orderNo):(c.orderLabel&&c.orderLabel!=='非订单咨询'?c.orderLabel:'');
+      var preview=c.lastMessage||'';
+      var time=fmtSessionTime(c.lastTime);
       return '<button type="button" class="pw-session'+(isActive?' active':'')+(c.ended?' is-ended':'')+'" data-chat-session="cs" data-cs-conversation="'+esc(c.id)+'">'+
-        '<span class="pw-session-avatar" aria-hidden="true">🎧</span>'+
-        '<span><b>'+esc(label)+'</b><span>'+esc(meta)+'</span><span>'+esc(c.lastMessage||'')+'</span></span>'+
+        '<span class="pw-session-avatar" aria-hidden="true">'+(c.orderId?'💬':'🎧')+'</span>'+
+        '<span class="pw-session-body">'+
+          '<span class="pw-session-top"><b>'+esc(peer)+'</b><time>'+esc(time)+'</time></span>'+
+          (orderBit?'<span class="pw-session-order">'+esc(orderBit)+'</span>':'')+
+          '<span class="pw-session-preview">'+esc(preview)+'</span>'+
+        '</span>'+
         (c.unread?'<em class="pw-unread">'+esc(c.unread)+'</em>':'')+
       '</button>';
-    }).join('');
+    }
+    var csRows='';
+    if(openList.length){
+      csRows+='<div class="pw-session-group"><div class="pw-session-group-title">进行中</div>'+openList.map(sessionRow).join('')+'</div>';
+    }
+    if(historyList.length){
+      csRows+='<div class="pw-session-group"><div class="pw-session-group-title">历史会话</div>'+historyList.map(sessionRow).join('')+'</div>';
+    }
+    if(!csRows)csRows='<div class="pw-empty" style="padding:12px"><span>暂无客服会话，可在右侧发起新咨询。</span></div>';
     var systemRow='<button type="button" class="pw-session'+(session==='system'?' active':'')+'" data-chat-session="system">'+
       '<span class="pw-session-avatar" aria-hidden="true">🔔</span>'+
-      '<span><b>系统通知</b><span>'+esc((systemNotices[0]&&systemNotices[0].title)||'暂无通知')+'</span></span>'+
+      '<span class="pw-session-body"><span class="pw-session-top"><b>系统通知</b></span><span class="pw-session-preview">'+esc((systemNotices[0]&&systemNotices[0].title)||'暂无通知')+'</span></span>'+
       (sysUnread?'<em class="pw-unread">'+esc(sysUnread)+'</em>':'')+
     '</button>';
-    var listHtml=(csRows||'<div class="pw-empty" style="padding:12px"><span>暂无客服会话，可在右侧发起新咨询。</span></div>')+systemRow;
+    var listHtml=csRows+systemRow;
     var rightHtml=session==='cs'?chatCsPanelHtml(inbox):chatSystemPanelHtml(systemNotices);
     return '<div class="pw-page-head"><div><h2>消息中心</h2><p>官方客服与系统通知，未读共 '+esc(csUnread+sysUnread)+' 条。</p></div></div>'+
       '<div class="pw-chat"><div class="pw-chat-list"><div class="pw-session-list">'+listHtml+'</div></div>'+rightHtml+'</div>';
@@ -3049,7 +3240,7 @@
         state.chatSession='cs';
         if(newId)state.chatConversationId=String(newId);
         toast((res&&res.message)||'已连接客服，可在下方继续咨询审核问题');
-        return reloadInbox().then(function(){paint({preserveScroll:true});});
+        return reloadInbox().then(function(){return loadActiveThread({force:true,clear:false});});
       }).catch(function(err){toast(err.message||'客服连接失败')});
       return;
     }
@@ -3079,7 +3270,11 @@
       if(/\/rules/.test(r.dataset.route||''))loadWorkRules();
       if(/\/(wallet|earnings|withdraw|account|mine)/.test(r.dataset.route||''))loadData({soft:true});
       if(/\/messages/.test(r.dataset.route||'')){
-        loadData({soft:true}).then(function(){return markActiveChatSessionRead()});
+        loadData({soft:true}).then(function(){
+          return loadActiveThread({clear:false}).then(function(){
+            return markActiveChatSessionRead({skipReload:true});
+          });
+        });
       }
       return;
     }
@@ -3090,12 +3285,17 @@
       var sess=chatSess.dataset.chatSession;
       if(sess==='system'){
         state.chatSession='system';
+        paint({preserveScroll:true});
+        markActiveChatSessionRead({skipReload:true});
       }else{
-        state.chatSession='cs';
         var convId=chatSess.dataset.csConversation||'';
-        if(convId)state.chatConversationId=String(convId);
+        if(convId)switchCsConversation(convId);
+        else{
+          state.chatSession='cs';
+          paint({preserveScroll:true});
+          loadActiveThread({clear:false}).then(function(){return markActiveChatSessionRead({skipReload:true});});
+        }
       }
-      reloadInbox().then(function(){return markActiveChatSessionRead()});
       return;
     }
     var endCsBtn=e.target.closest('[data-end-cs-chat]');
@@ -3104,7 +3304,7 @@
       if(!endCid){toast('会话无效');return}
       api('end_cs_conversation',{conversation_id:endCid,id:endCid}).then(function(res){
         toast((res&&res.message)||'对话已结束');
-        return reloadInbox();
+        return reloadInbox().then(function(){return loadActiveThread({force:true});});
       }).catch(function(err){toast(err.message||'结束失败')});
       return;
     }
@@ -3116,8 +3316,9 @@
         var newId=res.conversationId||res.conversation_id||(res.data&&res.data.conversationId)||'';
         state.chatSession='cs';
         if(newId)state.chatConversationId=String(newId);
+        if(res.data||res.inbox)applyInboxPayload(res.data||res.inbox,{replaceMessages:true});
         toast((res&&res.message)||'已发起咨询');
-        return reloadInbox();
+        return loadActiveThread({force:true,conversationId:newId||undefined});
       }).catch(function(err){toast(err.message||'发起失败')});
       return;
     }
@@ -3126,7 +3327,8 @@
     if(e.target.closest('[data-hall-refresh]')){loadData({soft:true});return}
     if(e.target.closest('[data-account-toggle]')){e.target.closest('.pw-account').classList.toggle('open');return}
     if(e.target.closest('[data-logout]')){clearSession();location.replace('/companion/login/');return}
-    if(e.target.closest('[data-reload-inbox]')){reloadInbox();return}
+    if(e.target.closest('[data-reload-inbox]')){reloadInbox().then(function(){return loadActiveThread({force:true});});return}
+    if(e.target.closest('[data-reload-thread]')){loadActiveThread({force:true,clear:false});return}
     if(e.target.closest('[data-forgot-dialog] [data-forgot-close]')|| (e.target.closest('[data-forgot-close]')&&!e.target.closest('[data-forgot-dialog]'))){
       state.forgotStep='';state.forgotAccount='';state.forgotMsg='';state.forgotResetToken='';state.forgotBusy=false;paint();return;
     }
@@ -3727,7 +3929,7 @@
       paint({preserveScroll:true});
       api('send_cs_message',{content:isoContent,consult_type:'profile_audit',conversation_id:isoCid}).then(function(){
         e.target.reset();
-        return reloadInbox();
+        return loadActiveThread({force:true,clear:false}).then(function(){return reloadInbox({paint:false});});
       }).then(function(){
         state.chatBusy=false;
         paint({preserveScroll:true});
@@ -3765,7 +3967,7 @@
       paint({preserveScroll:true});
       api('send_cs_message',{content:content,consult_type:consultType,conversation_id:cid,forceNew:forceNew}).then(function(){
         state.chatBusy=false;
-        return reloadInbox();
+        return loadActiveThread({force:true,clear:false,paint:false}).then(function(){return reloadInbox({paint:true});});
       }).catch(function(err){
         state.chatBusy=false;
         if(state.inbox&&state.inbox.messages){
@@ -3839,7 +4041,7 @@
           var cidImg=companionCsConversationId();
           return api('send_cs_message',{content:url,message_type:'image',consult_type:consultType,conversation_id:cidImg,forceNew:forceNew}).then(function(){
             state.chatBusy=false;
-            return reloadInbox();
+            return loadActiveThread({force:true,clear:false,paint:false}).then(function(){return reloadInbox({paint:true});});
           }).catch(function(err){
             state.chatBusy=false;
             toast(err.message||'图片发送失败');
@@ -3851,6 +4053,18 @@
     }
   });
   if(window.MCJChatMedia)window.MCJChatMedia.bindLightboxClicks(root);
+  else{
+    // Fallback lightbox bind when media script arrives after boot (messages page).
+    document.addEventListener('click',function(e){
+      var a=e.target.closest&&e.target.closest('[data-chat-image]');
+      if(!a||!root.contains(a))return;
+      if(window.MCJChatMedia&&window.MCJChatMedia.bindLightboxClicks){
+        window.MCJChatMedia.bindLightboxClicks(root);
+        e.preventDefault();
+        a.click();
+      }
+    },true);
+  }
   window.MCJCompanionApi=api;
   window.__MCJCompanionAfterForcedAck=function(){loadData({soft:true}).then(function(){paint()});};
   init();

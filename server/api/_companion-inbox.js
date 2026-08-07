@@ -15,6 +15,11 @@ import {
   persistImageMessage,
   messagePreviewText,
 } from "./_chat-message.js";
+import {
+  anonymousBossLabel,
+  publicDisplayName,
+  resolveBossPublicCode,
+} from "./_account-codes.js";
 
 function nowIso() {
   return new Date().toISOString();
@@ -667,16 +672,25 @@ async function loadCompanionSupportConversations(companionUserId) {
   });
 }
 
-async function resolveOrderNos(orderIds = []) {
+async function resolveOrderMeta(orderIds = []) {
   const ids = [...new Set((orderIds || []).map((id) => String(id || "").trim()).filter(Boolean))];
   if (!ids.length) return {};
   const rows = await supabaseJson(
-    restUrl("orders", `?id=in.(${ids.map(encodeURIComponent).join(",")})&select=id,order_no`),
+    restUrl("orders", `?id=in.(${ids.map(encodeURIComponent).join(",")})&select=id,order_no,boss_id`),
     { headers: serviceHeaders() }
-  ).catch(() => []);
+  ).catch(() =>
+    supabaseJson(
+      restUrl("orders", `?id=in.(${ids.map(encodeURIComponent).join(",")})&select=id,order_no`),
+      { headers: serviceHeaders() }
+    ).catch(() => [])
+  );
   const map = {};
   (Array.isArray(rows) ? rows : []).forEach((row) => {
-    if (row?.id) map[String(row.id)] = String(row.order_no || "").trim();
+    if (!row?.id) return;
+    map[String(row.id)] = {
+      orderNo: String(row.order_no || "").trim(),
+      bossId: String(row.boss_id || "").trim(),
+    };
   });
   return map;
 }
@@ -696,7 +710,94 @@ async function resolveCsDisplayNames(csIds = []) {
   return map;
 }
 
-function viewCompanionCsConversation(row = {}, { orderNo = "", csName = "", lastMessage = "", unread = 0 } = {}) {
+async function resolveBossPeers(bossIds = []) {
+  const ids = [...new Set((bossIds || []).map((id) => String(id || "").trim()).filter(Boolean))];
+  if (!ids.length) return {};
+  const rows = await supabaseJson(
+    restUrl(
+      "profiles",
+      `?id=in.(${ids.map(encodeURIComponent).join(",")})&select=id,display_name,nickname,email,boss_uid`
+    ),
+    { headers: serviceHeaders() }
+  ).catch(() =>
+    supabaseJson(
+      restUrl("profiles", `?id=in.(${ids.map(encodeURIComponent).join(",")})&select=id,display_name,email`),
+      { headers: serviceHeaders() }
+    ).catch(() => [])
+  );
+  const map = {};
+  (Array.isArray(rows) ? rows : []).forEach((row) => {
+    if (!row?.id) return;
+    const code = resolveBossPublicCode(row);
+    const nick = publicDisplayName(row, "");
+    map[String(row.id)] = {
+      name: nick || anonymousBossLabel(row) || "老板",
+      code: code || "",
+      label: nick || anonymousBossLabel(row) || "老板",
+    };
+  });
+  return map;
+}
+
+/**
+ * Batch last-message + unread for conversation list (no N×full-history fan-out).
+ */
+async function loadConversationListMeta(conversationIds = [], companionUserId = "") {
+  const ids = [...new Set((conversationIds || []).map((id) => String(id || "").trim()).filter(Boolean))];
+  const meta = {};
+  ids.forEach((id) => {
+    meta[id] = { lastMessage: "", lastTime: "", unread: 0 };
+  });
+  if (!ids.length) return meta;
+
+  const inList = ids.map(encodeURIComponent).join(",");
+  const [messagesDesc, unreadRows] = await Promise.all([
+    supabaseJson(
+      restUrl(
+        "messages",
+        `?conversation_id=in.(${inList})&select=conversation_id,content,created_at,sender_role,message_type,image_url&order=created_at.desc&limit=400`
+      ),
+      { headers: serviceHeaders() }
+    ).catch(() => []),
+    supabaseJson(
+      restUrl(
+        "messages",
+        `?conversation_id=in.(${inList})&sender_role=neq.companion&read_at=is.null&message_type=neq.system&select=id,conversation_id,sender_id,sender_role&limit=2000`
+      ),
+      { headers: serviceHeaders() }
+    ).catch(() => []),
+  ]);
+
+  const lastByConv = {};
+  for (const msg of Array.isArray(messagesDesc) ? messagesDesc : []) {
+    const cid = String(msg?.conversation_id || "");
+    if (!cid || lastByConv[cid]) continue;
+    lastByConv[cid] = msg;
+  }
+  const unreadByConv = {};
+  for (const row of Array.isArray(unreadRows) ? unreadRows : []) {
+    const cid = String(row?.conversation_id || "");
+    if (!cid) continue;
+    if (companionUserId && String(row.sender_id || "") === String(companionUserId)) continue;
+    if (String(row.sender_role || "") === "companion") continue;
+    unreadByConv[cid] = (unreadByConv[cid] || 0) + 1;
+  }
+
+  ids.forEach((id) => {
+    const last = lastByConv[id] || null;
+    meta[id] = {
+      lastMessage: last ? messagePreviewText(last) : "",
+      lastTime: last?.created_at || "",
+      unread: Number(unreadByConv[id] || 0),
+    };
+  });
+  return meta;
+}
+
+function viewCompanionCsConversation(
+  row = {},
+  { orderNo = "", csName = "", lastMessage = "", lastTime = "", unread = 0, bossPeer = null } = {}
+) {
   const closed = isClosedConversationStatus(row.status);
   const transferring = isPendingTransferStatus(row.status);
   const convType = String(row.conversation_type || "");
@@ -707,11 +808,15 @@ function viewCompanionCsConversation(row = {}, { orderNo = "", csName = "", last
   const consultLabel = isOrderRoom ? "订单沟通" : consultTypeLabel("companion", consultKey);
   const orderLabel = row.order_id ? orderNo || String(row.order_id).slice(0, 8) : "非订单咨询";
   const statusLabel = conversationStatusLabel(row);
+  const peerName = isOrderRoom
+    ? String(bossPeer?.label || bossPeer?.name || "老板")
+    : String(csName || (row.customer_service_id ? "客服" : "官方客服"));
+  const peerCode = isOrderRoom ? String(bossPeer?.code || "") : "";
   const subtitle = transferring
     ? TRANSFER_USER_TIP
     : closed
       ? `已结束 · ${orderLabel}`
-      : `${statusLabel} · ${csName || (row.customer_service_id ? "客服接待中" : "等待客服")} · ${orderLabel}`;
+      : `${statusLabel} · ${peerName}${peerCode && peerName.indexOf(peerCode) < 0 ? ` · ${peerCode}` : ""} · ${orderLabel}`;
   return {
     id: row.id,
     key: row.id,
@@ -723,13 +828,17 @@ function viewCompanionCsConversation(row = {}, { orderNo = "", csName = "", last
     statusLabel,
     assignedServiceId: row.customer_service_id || "",
     assignedServiceName: csName || "",
+    peerName,
+    peerCode,
+    bossName: isOrderRoom ? peerName : "",
+    bossCode: peerCode,
     orderId: row.order_id || "",
     orderNo: orderNo || "",
     orderLabel,
     consultType: consultKey,
     consultTypeLabel: consultLabel,
     lastMessage: transferring ? TRANSFER_USER_TIP : lastMessage || (closed ? "会话已结束" : "发送消息开始咨询"),
-    lastTime: row.last_message_at || row.updated_at || row.created_at || "",
+    lastTime: lastTime || row.last_message_at || row.updated_at || row.created_at || "",
     endedAt: row.ended_at || row.closed_at || "",
     endedBy: row.closed_by || "",
     unread: closed ? 0 : unread,
@@ -793,8 +902,32 @@ export async function endCompanionSupportConversation(companionUserId, conversat
   return updated || { ...existing, status: "ended", closed_at: closedAt, ended_at: closedAt, closed_by: uid };
 }
 
+export async function loadCompanionThreadMessages(profile, conversationId) {
+  const uid = String(profile?.id || "").trim();
+  const cid = String(conversationId || "").trim();
+  if (!uid || !cid) throw Object.assign(new Error("会话无效"), { status: 400 });
+  const rows = await supabaseJson(
+    restUrl("conversations", `?id=eq.${encodeURIComponent(cid)}&companion_id=eq.${encodeURIComponent(uid)}&limit=1`),
+    { headers: serviceHeaders() }
+  ).catch(() => []);
+  const conversation = rows?.[0] || null;
+  if (!conversation) throw Object.assign(new Error("会话不存在或无权访问"), { status: 404 });
+  const messages = await loadConversationMessages(cid).catch(() => []);
+  return {
+    conversationId: cid,
+    conversation: viewCompanionCsConversation(conversation, {
+      orderNo: "",
+      lastMessage: "",
+      unread: 0,
+    }),
+    messages: (messages || []).map(viewMessage),
+  };
+}
+
 export async function buildCompanionInbox(profile, companion, bootstrapSlice = {}) {
   const activeId = String(bootstrapSlice.activeConversationId || bootstrapSlice.conversationId || "").trim();
+  const includeActiveMessages = bootstrapSlice.includeActiveMessages !== false;
+  const skipDerivedNotices = !!bootstrapSlice.light || !!bootstrapSlice.skipDerivedNotices;
   let rows = [];
   try {
     rows = await loadCompanionSupportConversations(profile.id);
@@ -805,32 +938,31 @@ export async function buildCompanionInbox(profile, companion, bootstrapSlice = {
   // Never auto-create a dump “官方客服” session on inbox load.
   // New sessions are created only via send / 发起新咨询 with consult_type (+ optional order_id).
 
-  const orderNos = await resolveOrderNos(rows.map((r) => r.order_id));
-  const csNames = await resolveCsDisplayNames(rows.map((r) => r.customer_service_id));
+  const listed = rows.slice(0, 60);
+  const orderMeta = await resolveOrderMeta(listed.map((r) => r.order_id));
+  const bossIds = listed
+    .map((r) => String(r.boss_id || orderMeta[String(r.order_id || "")]?.bossId || "").trim())
+    .filter(Boolean);
+  const [csNames, bossPeers, threadMeta] = await Promise.all([
+    resolveCsDisplayNames(listed.map((r) => r.customer_service_id)),
+    resolveBossPeers(bossIds),
+    loadConversationListMeta(
+      listed.map((r) => r.id).filter(Boolean),
+      profile.id
+    ),
+  ]);
 
-  // Prefetch last messages + unread for listed threads (cap concurrent).
-  const threadMeta = {};
-  await Promise.all(
-    rows.slice(0, 40).map(async (row) => {
-      if (!row?.id) return;
-      const messages = await loadConversationMessages(row.id).catch(() => []);
-      const last = [...messages].reverse().find((m) => m.message_type !== "system") || messages[messages.length - 1];
-      threadMeta[row.id] = {
-        messages,
-        lastMessage: messagePreviewText(last || {}),
-        lastTime: last?.created_at || row.updated_at || "",
-        unread: conversationUnreadCount(messages, profile.id),
-      };
-    })
-  );
-
-  const csConversations = rows.map((row) => {
+  const csConversations = listed.map((row) => {
     const meta = threadMeta[row.id] || {};
+    const oMeta = orderMeta[String(row.order_id || "")] || {};
+    const bossId = String(row.boss_id || oMeta.bossId || "").trim();
     return viewCompanionCsConversation(row, {
-      orderNo: orderNos[String(row.order_id || "")] || "",
+      orderNo: oMeta.orderNo || "",
       csName: csNames[String(row.customer_service_id || "")] || "",
       lastMessage: meta.lastMessage || "",
+      lastTime: meta.lastTime || "",
       unread: meta.unread || 0,
+      bossPeer: bossPeers[bossId] || null,
     });
   });
 
@@ -840,38 +972,47 @@ export async function buildCompanionInbox(profile, companion, bootstrapSlice = {
     csConversations[0] ||
     null;
 
-  const activeMessages = active?.id ? threadMeta[active.id]?.messages || (await loadConversationMessages(active.id).catch(() => [])) : [];
+  let activeMessages = [];
+  if (includeActiveMessages && active?.id) {
+    activeMessages = await loadConversationMessages(active.id).catch(() => []);
+  }
   const csUnreadTotal = csConversations.reduce((sum, c) => sum + Number(c.unread || 0), 0);
 
-  const [dbNotices, derivedNotices, readKeys] = await Promise.all([
-    loadCompanionNotifications(profile.id).catch(() => []),
-    Promise.resolve(
-      buildSystemNotices({
-        companionUserId: profile.id,
-        player: bootstrapSlice.player,
-        verification: bootstrapSlice.verification,
-        deposit: bootstrapSlice.deposit,
-        orders: bootstrapSlice.myOrders || bootstrapSlice.orders,
-        withdrawals: bootstrapSlice.withdrawals,
-        popularity: bootstrapSlice.popularity,
-        auditLocked: bootstrapSlice.auditLocked,
-        auditHint: bootstrapSlice.auditHint,
-      })
-    ),
-    loadReadKeys(profile.id).catch(() => new Set()),
-  ]);
-  const seen = new Set();
-  const notices = [...(dbNotices || []), ...(derivedNotices || [])].filter((n) => {
-    const k = String(n.key || n.id || "");
-    if (!k || seen.has(k)) return false;
-    seen.add(k);
-    return true;
-  });
-  const systemNotices = notices.map((n) => ({
-    ...n,
-    unread: !readKeys.has(n.key),
-  }));
-  const systemUnread = systemNotices.filter((n) => n.unread).length;
+  let systemNotices = [];
+  let systemUnread = 0;
+  if (!bootstrapSlice.skipNotices) {
+    const [dbNotices, derivedNotices, readKeys] = await Promise.all([
+      loadCompanionNotifications(profile.id).catch(() => []),
+      skipDerivedNotices
+        ? Promise.resolve([])
+        : Promise.resolve(
+            buildSystemNotices({
+              companionUserId: profile.id,
+              player: bootstrapSlice.player,
+              verification: bootstrapSlice.verification,
+              deposit: bootstrapSlice.deposit,
+              orders: bootstrapSlice.myOrders || bootstrapSlice.orders,
+              withdrawals: bootstrapSlice.withdrawals,
+              popularity: bootstrapSlice.popularity,
+              auditLocked: bootstrapSlice.auditLocked,
+              auditHint: bootstrapSlice.auditHint,
+            })
+          ),
+      loadReadKeys(profile.id).catch(() => new Set()),
+    ]);
+    const seen = new Set();
+    const notices = [...(dbNotices || []), ...(derivedNotices || [])].filter((n) => {
+      const k = String(n.key || n.id || "");
+      if (!k || seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+    systemNotices = notices.map((n) => ({
+      ...n,
+      unread: !readKeys.has(n.key),
+    }));
+    systemUnread = systemNotices.filter((n) => n.unread).length;
+  }
   const transferring = active ? isPendingTransferStatus(active.status === "pending_transfer" ? "pending_transfer" : "") : false;
   const consultKey = active?.consultType || "other";
 
@@ -898,9 +1039,10 @@ export async function buildCompanionInbox(profile, companion, bootstrapSlice = {
     csStatusLabel: active?.statusLabel || "",
     csEnded: !!(active && active.ended),
     csTransferring: transferring || !!(active && /更换客服/.test(String(active.subtitle || ""))),
-    messages: activeMessages.map(viewMessage),
+    messages: includeActiveMessages ? activeMessages.map(viewMessage) : [],
     systemNotices,
     unreadTotal: csUnreadTotal + systemUnread,
     unreadMessages: csUnreadTotal + systemUnread,
+    light: !!bootstrapSlice.light,
   };
 }

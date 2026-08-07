@@ -52,6 +52,7 @@ import {
   markConversationMessagesRead,
   markNoticesRead,
   loadConversationMessages,
+  loadCompanionThreadMessages,
   viewMessage,
   buildSystemNotices,
   loadCompanionNotifications,
@@ -679,6 +680,8 @@ const COMPANION_ISOLATION_MSG = "您的陪玩认证尚未通过，目前只能�
 const COMPANION_ISOLATION_ALLOWED_ACTIONS = new Set([
   "bootstrap",
   "inbox",
+  "thread",
+  "conversation_messages",
   "update_profile",
   "submit_application",
   "submit_verification",
@@ -2632,19 +2635,33 @@ export default async function handler(req, res) {
     if (req.method === "GET" && action === "bootstrap") return json(res,200,{ok:true,data:await bootstrapData(auth.profile, companion)});
     if (req.method === "GET" && action === "inbox") {
       const activeConversationId = String(req.query.conversation_id || req.query.conversationId || "").trim();
+      const light =
+        String(req.query.light || "").trim() === "1" ||
+        String(req.query.mode || "").trim().toLowerCase() === "light";
+      const includeActiveMessages =
+        String(req.query.include_messages || req.query.includeMessages || (light ? "0" : "1")).trim() !== "0";
       try {
-        const data = await bootstrapData(auth.profile, companion).catch(() => ({}));
-        const inbox = await buildCompanionInbox(auth.profile, companion, {
-          player: data.player,
-          verification: data.verification,
-          deposit: data.deposit,
-          myOrders: data.permissions?.isolationMode ? [] : data.myOrders,
-          withdrawals: data.permissions?.isolationMode ? [] : data.withdrawals,
-          popularity: data.permissions?.isolationMode ? null : data.popularity,
-          auditLocked: !data.permissions?.canWork || !!data.permissions?.isolationMode,
-          auditHint: data.permissions?.isolationMessage || data.permissions?.lockReason || "",
+        let slice = {
+          light,
+          includeActiveMessages,
           activeConversationId,
-        });
+          skipDerivedNotices: light,
+        };
+        if (!light) {
+          const data = await bootstrapData(auth.profile, companion).catch(() => ({}));
+          slice = {
+            ...slice,
+            player: data.player,
+            verification: data.verification,
+            deposit: data.deposit,
+            myOrders: data.permissions?.isolationMode ? [] : data.myOrders,
+            withdrawals: data.permissions?.isolationMode ? [] : data.withdrawals,
+            popularity: data.permissions?.isolationMode ? null : data.popularity,
+            auditLocked: !data.permissions?.canWork || !!data.permissions?.isolationMode,
+            auditHint: data.permissions?.isolationMessage || data.permissions?.lockReason || "",
+          };
+        }
+        const inbox = await buildCompanionInbox(auth.profile, companion, slice);
         return json(res, 200, { ok: true, data: inbox, inbox });
       } catch (err) {
         return json(res, 200, {
@@ -2662,6 +2679,19 @@ export default async function handler(req, res) {
             connectError: err.message || "客服连接失败",
           },
           message: err.message || "客服连接失败",
+        });
+      }
+    }
+    if (req.method === "GET" && (action === "thread" || action === "conversation_messages")) {
+      const conversationId = String(req.query.conversation_id || req.query.conversationId || "").trim();
+      try {
+        const thread = await loadCompanionThreadMessages(auth.profile, conversationId);
+        return json(res, 200, { ok: true, data: thread, messages: thread.messages, conversationId: thread.conversationId });
+      } catch (err) {
+        const status = Number(err?.status) || 500;
+        return json(res, status >= 400 && status < 600 ? status : 500, {
+          ok: false,
+          message: err.message || "会话消息加载失败",
         });
       }
     }
@@ -4333,16 +4363,10 @@ export default async function handler(req, res) {
         forceNew,
       });
       const activeConversationId = String(conversation?.id || "").trim();
-      const data = await bootstrapData(auth.profile, companion);
       const inbox = await buildCompanionInbox(auth.profile, companion, {
-        player: data.player,
-        verification: data.verification,
-        deposit: data.deposit,
-        myOrders: data.myOrders,
-        withdrawals: data.withdrawals,
-        popularity: data.popularity,
-        auditLocked: !data.permissions?.canWork,
-        auditHint: data.permissions?.lockReason || "",
+        light: true,
+        includeActiveMessages: true,
+        skipDerivedNotices: true,
         activeConversationId,
       });
       return json(res, 200, {
@@ -4358,16 +4382,10 @@ export default async function handler(req, res) {
     if (action === "end_cs_conversation" || action === "end_conversation") {
       const conversationId = String(body.conversation_id || body.conversationId || body.id || "").trim();
       await endCompanionSupportConversation(auth.profile.id, conversationId);
-      const data = await bootstrapData(auth.profile, companion);
       const inbox = await buildCompanionInbox(auth.profile, companion, {
-        player: data.player,
-        verification: data.verification,
-        deposit: data.deposit,
-        myOrders: data.myOrders,
-        withdrawals: data.withdrawals,
-        popularity: data.popularity,
-        auditLocked: !data.permissions?.canWork,
-        auditHint: data.permissions?.lockReason || "",
+        light: true,
+        includeActiveMessages: false,
+        skipDerivedNotices: true,
         activeConversationId: conversationId,
       });
       return json(res, 200, {
