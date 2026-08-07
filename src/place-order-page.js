@@ -1,7 +1,7 @@
 (function () {
   "use strict";
 
-  var SERVICES = ["陪玩", "护航", "跑刀", "代肝", "自定义"];
+  var LEGACY_SERVICE_NAMES = { "陪玩": 1, "护航": 1, "跑刀": 1, "代肝": 1, "自定义": 1, "陪玩服务": 1, "陪聊服务": 1 };
   var HOURS = [
     { id: "1", label: "1 小时", value: 1 },
     { id: "2", label: "2 小时", value: 2 },
@@ -20,8 +20,9 @@
 
   var state = {
     companion: null,
-    service: "陪玩",
+    service: "",
     customService: "",
+    selectedServiceId: "",
     hoursMode: "1",
     hours: 1,
     quantity: 1,
@@ -76,31 +77,123 @@
     return Math.max(1, Math.floor(money(state.quantity) || 1));
   }
   function currentServiceLabel() {
-    if (state.service === "自定义") return String(state.customService || "").trim() || "自定义";
-    return state.service;
+    return String(state.service || "").trim() || "未选择服务";
   }
   function totalAmount() {
     var c = state.companion;
     if (!c) return 0;
     return Math.round(money(c.unitPrice) * currentHours() * currentQuantity() * 100) / 100;
   }
-  function matchService(service) {
-    var s = String(service || "").trim();
-    if (!s) return { service: "陪玩", custom: "" };
-    for (var i = 0; i < SERVICES.length; i++) {
-      if (SERVICES[i] === "自定义") continue;
-      if (s === SERVICES[i] || s.indexOf(SERVICES[i]) !== -1) return { service: SERVICES[i], custom: "" };
+  function splitGameNames(value) {
+    return String(value || "")
+      .split(/[,，、\/|]+/)
+      .map(function (s) {
+        return String(s || "").trim();
+      })
+      .filter(function (s) {
+        return s && !LEGACY_SERVICE_NAMES[s];
+      });
+  }
+  function normalizeServiceItem(s, idx) {
+    if (s == null) return null;
+    if (typeof s === "string") {
+      var n = String(s).trim();
+      if (!n || LEGACY_SERVICE_NAMES[n]) return null;
+      return { id: "name:" + n, serviceId: "", name: n, price: 0, pricingUnit: "小时", sort: idx || 0 };
     }
-    return { service: "自定义", custom: s };
+    if (typeof s !== "object") return null;
+    var name = String(s.name || s.title || s.serviceName || s.game || "").trim();
+    if (!name || LEGACY_SERVICE_NAMES[name]) return null;
+    return {
+      id: String(s.id || s.serviceId || s.service_id || "name:" + name),
+      serviceId: String(s.serviceId || s.service_id || (/^[0-9a-f-]{36}$/i.test(String(s.id || "")) ? s.id : "") || ""),
+      name: name,
+      price: money(s.price != null ? s.price : s.unitPrice != null ? s.unitPrice : 0),
+      pricingUnit: String(s.pricingUnit || s.pricing_unit || "小时"),
+      sort: s.sort != null ? Number(s.sort) : idx || 0,
+    };
+  }
+  function resolveServices(companion) {
+    companion = companion || {};
+    var out = [];
+    var seen = Object.create(null);
+    function push(item) {
+      if (!item || !item.name || LEGACY_SERVICE_NAMES[item.name]) return;
+      var key = String(item.serviceId || item.id || item.name).toLowerCase();
+      if (seen[key] || seen["n:" + item.name]) return;
+      seen[key] = 1;
+      seen["n:" + item.name] = 1;
+      out.push(item);
+    }
+    if (Array.isArray(companion.services)) {
+      companion.services.forEach(function (s, i) {
+        push(normalizeServiceItem(s, i));
+      });
+    }
+    var prices = companion.gamePrices && typeof companion.gamePrices === "object" ? companion.gamePrices : {};
+    var games = splitGameNames(companion.game || companion.mainGame || "");
+    if (!out.length && Array.isArray(companion.serviceIds) && companion.serviceIds.length) {
+      companion.serviceIds.forEach(function (id, i) {
+        var sid = String(id || "").trim();
+        if (!sid) return;
+        var named =
+          games[i] ||
+          (!/^[0-9a-f-]{36}$/i.test(sid) ? sid : "") ||
+          Object.keys(prices).find(function (k) {
+            return !/^[0-9a-f-]{36}$/i.test(k) && money(prices[k]) > 0;
+          }) ||
+          "";
+        if (!named || LEGACY_SERVICE_NAMES[named]) return;
+        push({
+          id: sid,
+          serviceId: sid,
+          name: named,
+          price: money(prices[sid] != null ? prices[sid] : prices[named] != null ? prices[named] : companion.unitPrice),
+          pricingUnit: companion.pricingUnit || "小时",
+          sort: i,
+        });
+      });
+    }
+    if (!out.length && games.length) {
+      games.forEach(function (g, i) {
+        push({
+          id: "name:" + g,
+          serviceId: "",
+          name: g,
+          price: money(prices[g] != null ? prices[g] : companion.unitPrice),
+          pricingUnit: companion.pricingUnit || "小时",
+          sort: i,
+        });
+      });
+    }
+    out.forEach(function (s) {
+      if (!(s.price > 0)) {
+        s.price = money(prices[s.name] || prices[s.serviceId] || companion.unitPrice || 0);
+      }
+    });
+    return out;
+  }
+  function applySelectedService(svc) {
+    if (!svc || !svc.name) return;
+    state.service = svc.name;
+    state.customService = "";
+    state.selectedServiceId = svc.serviceId || svc.id || "";
+    if (state.companion) {
+      var p = money(svc.price);
+      if (p > 0) state.companion.unitPrice = p;
+      if (svc.pricingUnit) state.companion.pricingUnit = svc.pricingUnit;
+      state.companion.service = svc.name;
+    }
+    refreshTotals();
+    paint();
   }
   function requireLogin() {
     if (token()) return true;
     try {
       sessionStorage.setItem("mcjAfterLoginRedirect", location.href);
     } catch (e) {}
-    alert("请先登录老板账号后再下单");
-    if (window.MCJBossHeader && typeof window.MCJBossHeader.openLogin === "function") {
-      window.MCJBossHeader.openLogin();
+    if (typeof window.loginRequiredModal === "function") {
+      window.loginRequiredModal();
       return false;
     }
     location.href = "index.html#login";
@@ -108,33 +201,15 @@
   }
   function setError(msg) {
     var el = root.querySelector("[data-po-error]");
-    if (el) el.textContent = msg || "";
-    if (!msg) return;
-    var t = document.querySelector("[data-mcj-po-toast]");
-    if (!t) {
-      t = document.createElement("div");
-      t.className = "mcj-po-toast";
-      t.setAttribute("data-mcj-po-toast", "1");
-      document.body.appendChild(t);
+    if (!el) return;
+    if (!msg) {
+      el.hidden = true;
+      el.textContent = "";
+      return;
     }
-    t.textContent = msg;
-    t.classList.add("show");
+    el.hidden = false;
+    el.textContent = msg;
   }
-  function refreshTotals() {
-    var total = moneyText(totalAmount());
-    var footerTotal = root.querySelector("[data-po-footer-total]");
-    var hoursEl = root.querySelector("[data-po-hours-label]");
-    if (footerTotal) footerTotal.textContent = total;
-    if (hoursEl) hoursEl.textContent = currentHours() + " 小时 × " + currentQuantity();
-  }
-  function setExclusiveActive(buttons, activeBtn) {
-    (buttons || []).forEach(function (b) {
-      var on = b === activeBtn;
-      b.classList.toggle("active", on);
-      b.setAttribute("aria-pressed", on ? "true" : "false");
-    });
-  }
-
   function fail(msg) {
     root.innerHTML =
       '<a class="po-back" href="index.html">← 返回首页</a>' +
@@ -143,23 +218,51 @@
       "</p></div>" +
       '<p><a class="po-back" href="companion-center.html">去陪玩大厅</a></p>';
   }
+  function refreshTotals() {
+    var c = state.companion;
+    if (!c) return;
+    var unit = root.querySelector("[data-po-footer-unit]");
+    var qty = root.querySelector("[data-po-footer-qty]");
+    var total = root.querySelector("[data-po-footer-total]");
+    var hero = root.querySelector("[data-po-price-hero]");
+    if (unit) unit.textContent = moneyText(c.unitPrice);
+    if (qty) qty.textContent = currentHours() + " × " + currentQuantity();
+    if (total) total.textContent = moneyText(totalAmount());
+    if (hero) hero.textContent = moneyText(c.unitPrice);
+    var preview = root.querySelector("[data-po-service-preview]");
+    if (preview) preview.textContent = currentServiceLabel();
+  }
 
   function paint() {
     var c = state.companion;
     if (!c) return fail("缺少陪玩信息");
-    var serviceChips = SERVICES.map(function (s) {
-      return (
-        '<button type="button" data-po-service="' +
-        esc(s) +
-        '" class="mcj-po-chip' +
-        (state.service === s ? " active" : "") +
-        '" aria-pressed="' +
-        (state.service === s ? "true" : "false") +
-        '">' +
-        esc(s) +
-        "</button>"
-      );
-    }).join("");
+    var companionServices = resolveServices(c);
+    if (companionServices.length && !companionServices.some(function (s) { return s.name === state.service; })) {
+      state.service = companionServices[0].name;
+      state.selectedServiceId = companionServices[0].serviceId || companionServices[0].id || "";
+      if (companionServices[0].price > 0) c.unitPrice = companionServices[0].price;
+    }
+    var serviceChips = companionServices.length
+      ? companionServices
+          .map(function (s) {
+            return (
+              '<button type="button" data-po-service="' +
+              esc(s.name) +
+              '" data-po-service-id="' +
+              esc(s.serviceId || s.id || "") +
+              '" data-po-service-price="' +
+              esc(s.price) +
+              '" class="mcj-po-chip' +
+              (state.service === s.name ? " active" : "") +
+              '" aria-pressed="' +
+              (state.service === s.name ? "true" : "false") +
+              '">' +
+              esc(s.name) +
+              "</button>"
+            );
+          })
+          .join("")
+      : '<span style="color:#9ca3af;font-size:13px">该陪玩暂无可下单服务项目</span>';
     var hourChips = HOURS.map(function (h) {
       return (
         '<button type="button" data-po-hours="' +
@@ -174,14 +277,6 @@
       );
     }).join("");
     var payCards = PAYMENTS.map(function (p) {
-      if (p.maintenance) {
-        return (
-          '<button type="button" class="mcj-po-pay-card is-maintenance" disabled aria-disabled="true">' +
-          '<span class="mcj-po-pay-title">' +
-          esc(p.label) +
-          '</span><span class="mcj-po-pay-check">暂不可用</span></button>'
-        );
-      }
       return (
         '<button type="button" class="mcj-po-pay-card' +
         (state.payment === p.id ? " active" : "") +
@@ -212,76 +307,84 @@
       "</strong>" +
       (c.publicId ? " · " + esc(c.publicId) : "") +
       "</div>" +
-      '<div class="mcj-po-price-row"><span>单价</span><span class="mcj-po-price-hero">' +
+      '<div class="mcj-po-price-row"><span>单价</span><span class="mcj-po-price-hero" data-po-price-hero>' +
       esc(moneyText(c.unitPrice)) +
       "</span><small>/ " +
       esc(c.pricingUnit || "小时") +
       "</small></div>" +
-      "<div>游戏/服务：<strong data-po-service-preview>" +
+      "<div>当前服务：<strong data-po-service-preview>" +
       esc(currentServiceLabel()) +
       "</strong></div></div>" +
-      '<div class="mcj-po-field"><span class="mcj-po-label">游戏/服务项目</span><div class="mcj-po-chips">' +
+      '<div class="mcj-po-field"><span class="mcj-po-label">游戏/服务项目</span><div class="mcj-po-chips" role="group">' +
       serviceChips +
       "</div></div>" +
-      '<div class="mcj-po-custom-service' +
-      (state.service === "自定义" ? " show" : "") +
-      '" data-po-custom-service><label>自定义服务<input data-po-custom-service-input value="' +
-      esc(state.customService) +
-      '" placeholder="例如：双排陪练"></label></div>' +
-      '<div class="mcj-po-field"><span class="mcj-po-label">数量或时长</span><div class="mcj-po-chips">' +
+      '<div class="mcj-po-field"><span class="mcj-po-label">数量或时长</span><div class="mcj-po-chips" role="radiogroup">' +
       hourChips +
       "</div>" +
       '<div class="mcj-po-custom-hours' +
       (state.hoursMode === "custom" ? " show" : "") +
       '" data-po-custom-hours><input type="number" min="0.5" step="0.5" data-po-custom-hours-input value="' +
       esc(state.hours) +
-      '"></div></div>' +
+      '" placeholder="小时数"></div></div>' +
       '<label>数量<input type="number" min="1" step="1" data-po-quantity value="' +
       esc(state.quantity) +
       '"></label>' +
       '<label>游戏 ID *<input data-po-game-id required placeholder="必填，用于开局" autocomplete="off"></label>' +
-      '<label>联系方式<input data-po-contact placeholder="手机号 / WhatsApp / Discord" autocomplete="tel"></label>' +
-      '<label>备注（可选）<textarea data-po-notes rows="2" placeholder="特殊要求、开局时间等"></textarea></label>' +
+      '<label>区服<input data-po-region placeholder="例如：亚服 / 国服 / 欧服"></label>' +
+      '<label>联系方式<input data-po-contact placeholder="手机号 / WhatsApp / Discord"></label>' +
+      '<label>服务时间<input data-po-schedule placeholder="例如：今晚 9 点后"></label>' +
+      '<label>订单备注<textarea data-po-notes rows="3" placeholder="特殊要求、开局说明等"></textarea></label>' +
       '<label>优惠码<input data-po-coupon placeholder="可选" value="' +
       esc(state.couponCode) +
       '"></label>' +
       '<div class="mcj-po-pay-block"><div class="mcj-po-pay-label">支付方式</div><div class="mcj-po-pay-grid">' +
       payCards +
       "</div></div>" +
-      '<p class="mcj-po-error" data-po-error></p>' +
+      '<p class="mcj-po-error" data-po-error hidden></p>' +
       "</div>" +
-      '<div class="po-page-footer">' +
-      '<div class="mcj-po-footer-sum"><span>订单总额</span><strong data-po-footer-total>' +
+      '<div class="mcj-po-footer">' +
+      '<div class="mcj-po-footer-breakdown">' +
+      "<div>单价 <strong data-po-footer-unit>" +
+      esc(moneyText(c.unitPrice)) +
+      "</strong></div>" +
+      "<div>数量 <strong data-po-footer-qty>" +
+      esc(currentHours() + " × " + currentQuantity()) +
+      "</strong></div>" +
+      "<div>合计 <strong data-po-footer-total>" +
       esc(moneyText(totalAmount())) +
-      '</strong><small data-po-hours-label>' +
-      esc(currentHours() + " 小时 × " + currentQuantity()) +
-      "</small></div>" +
+      "</strong></div></div>" +
       '<button type="button" class="mcj-po-submit" data-po-submit>确认订单并付款</button>' +
       "</div></section>";
 
     bind();
   }
 
+  function setExclusiveActive(buttons, activeBtn) {
+    (buttons || []).forEach(function (b) {
+      var on = b === activeBtn;
+      b.classList.toggle("active", on);
+      b.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+  }
+
   function bind() {
     root.querySelectorAll("[data-po-service]").forEach(function (btn) {
       btn.addEventListener("click", function (ev) {
         ev.preventDefault();
-        state.service = btn.getAttribute("data-po-service") || "陪玩";
-        setExclusiveActive(root.querySelectorAll("[data-po-service]"), btn);
-        var wrap = root.querySelector("[data-po-custom-service]");
-        if (wrap) wrap.classList.toggle("show", state.service === "自定义");
-        var preview = root.querySelector("[data-po-service-preview]");
-        if (preview) preview.textContent = currentServiceLabel();
+        var name = btn.getAttribute("data-po-service") || "";
+        var list = resolveServices(state.companion);
+        var svc =
+          list.find(function (s) {
+            return s.name === name;
+          }) || {
+            name: name,
+            serviceId: btn.getAttribute("data-po-service-id") || "",
+            price: money(btn.getAttribute("data-po-service-price")),
+            pricingUnit: (state.companion && state.companion.pricingUnit) || "小时",
+          };
+        applySelectedService(svc);
       });
     });
-    var customServiceInput = root.querySelector("[data-po-custom-service-input]");
-    if (customServiceInput) {
-      customServiceInput.addEventListener("input", function () {
-        state.customService = customServiceInput.value;
-        var preview = root.querySelector("[data-po-service-preview]");
-        if (preview) preview.textContent = currentServiceLabel();
-      });
-    }
     root.querySelectorAll("[data-po-hours]").forEach(function (btn) {
       btn.addEventListener("click", function (ev) {
         ev.preventDefault();
@@ -314,89 +417,114 @@
     var couponInput = root.querySelector("[data-po-coupon]");
     if (couponInput) {
       couponInput.addEventListener("input", function () {
-        state.couponCode = String(couponInput.value || "").trim();
+        state.couponCode = couponInput.value;
       });
     }
     root.querySelectorAll("[data-po-pay]").forEach(function (btn) {
       btn.addEventListener("click", function () {
-        if (btn.disabled) return;
         state.payment = btn.getAttribute("data-po-pay") || "tng";
-        setExclusiveActive(root.querySelectorAll("[data-po-pay]"), btn);
+        root.querySelectorAll("[data-po-pay]").forEach(function (b) {
+          b.classList.toggle("active", b === btn);
+        });
       });
     });
-    var submit = root.querySelector("[data-po-submit]");
-    if (submit) submit.addEventListener("click", submitOrder);
+    var submitBtn = root.querySelector("[data-po-submit]");
+    if (submitBtn) submitBtn.addEventListener("click", submitOrder);
+  }
+
+  function hydrateFromCatalog(companionId) {
+    return fetch("/api/boss/marketplace?action=catalog&companionId=" + encodeURIComponent(companionId), {
+      headers: authHeaders(),
+      cache: "no-store",
+    })
+      .then(function (res) {
+        return res.json().then(function (body) {
+          if (!res.ok || (body && body.ok === false)) throw new Error((body && body.message) || "服务目录读取失败");
+          return body;
+        });
+      })
+      .then(function (body) {
+        if (!state.companion) return body;
+        var services = Array.isArray(body.services) ? body.services : [];
+        var catC = body.companion || {};
+        state.companion.services = services;
+        if (catC.gamePrices || catC.game_prices) state.companion.gamePrices = catC.gamePrices || catC.game_prices;
+        if (catC.serviceIds || catC.service_ids) state.companion.serviceIds = catC.serviceIds || catC.service_ids;
+        if (catC.game || catC.mainGame) {
+          state.companion.game = catC.game || catC.mainGame;
+          state.companion.mainGame = state.companion.game;
+        }
+        var list = resolveServices(state.companion);
+        var cur =
+          list.find(function (s) {
+            return s.name === state.service;
+          }) || list[0];
+        if (cur) {
+          state.service = cur.name;
+          state.selectedServiceId = cur.serviceId || cur.id || "";
+          if (cur.price > 0) state.companion.unitPrice = cur.price;
+        }
+        paint();
+        return body;
+      })
+      .catch(function () {
+        return null;
+      });
   }
 
   function submitOrder() {
-    if (state.submitting) {
-      setError("订单提交中，请稍候…");
-      return;
-    }
+    if (state.submitting) return;
     if (!requireLogin()) return;
     var c = state.companion;
     if (!c || !c.companionId) {
       setError("缺少陪玩信息，无法下单");
       return;
     }
+    var svcList = resolveServices(c);
+    if (!svcList.length || !state.service || !svcList.some(function (s) { return s.name === state.service; })) {
+      setError("请选择游戏/服务项目");
+      return;
+    }
+    if (!(money(c.unitPrice) > 0)) {
+      setError("当前单价无效，请刷新页面后重试");
+      return;
+    }
     var gameIdEl = root.querySelector("[data-po-game-id]");
-    var notesEl = root.querySelector("[data-po-notes]");
-    var contactEl = root.querySelector("[data-po-contact]");
-    var qtyEl = root.querySelector("[data-po-quantity]");
-    var couponEl = root.querySelector("[data-po-coupon]");
     var gameId = gameIdEl ? String(gameIdEl.value || "").trim() : "";
-    var contact = contactEl ? String(contactEl.value || "").trim() : "";
     if (!gameId) {
-      setError("游戏ID不能为空");
-      if (gameIdEl) gameIdEl.focus();
+      setError("请填写游戏 ID");
       return;
     }
-    if (!String(state.payment || "").trim()) {
-      setError("支付方式不能为空");
-      return;
-    }
-    if (state.service === "自定义" && !String(state.customService || "").trim()) {
-      setError("请填写自定义服务内容");
-      return;
-    }
-    if (qtyEl) state.quantity = Math.max(1, Math.floor(money(qtyEl.value) || 1));
-    if (couponEl) state.couponCode = String(couponEl.value || "").trim();
-    var total = totalAmount();
-    if (!(total > 0)) {
-      setError("订单金额无效");
-      return;
-    }
-
+    var notesEl = root.querySelector("[data-po-notes]");
+    var regionEl = root.querySelector("[data-po-region]");
+    var contactEl = root.querySelector("[data-po-contact]");
+    var scheduleEl = root.querySelector("[data-po-schedule]");
+    var btn = root.querySelector("[data-po-submit]");
     state.submitting = true;
     setError("");
-    var btn = root.querySelector("[data-po-submit]");
     if (btn) {
       btn.disabled = true;
       btn.textContent = "提交中…";
     }
-
-    var noteParts = [];
-    if (notesEl && String(notesEl.value || "").trim()) noteParts.push(String(notesEl.value || "").trim());
-    if (contact) noteParts.push("联系方式：" + contact);
-
     fetch("/api/orders", {
       method: "POST",
       headers: authHeaders(),
       body: JSON.stringify({
-        action: "place_order",
+        action: "create_order",
         companionId: c.companionId,
-        companionName: c.companionName,
         serviceType: currentServiceLabel(),
         service: currentServiceLabel(),
         game: currentServiceLabel(),
-        unitPrice: money(c.unitPrice),
         hours: currentHours(),
         quantity: currentQuantity(),
-        totalAmount: total,
+        unitPrice: c.unitPrice,
+        totalAmount: totalAmount(),
         gameId: gameId,
-        couponCode: state.couponCode || "",
-        contact: contact,
-        notes: noteParts.join("；"),
+        region: regionEl ? regionEl.value : "",
+        contact: contactEl ? contactEl.value : "",
+        schedule: scheduleEl ? scheduleEl.value : "",
+        notes: notesEl ? notesEl.value : "",
+        couponCode: state.couponCode,
         paymentMethod: state.payment,
         idempotencyKey: "po-page-" + c.companionId + "-" + Date.now(),
       }),
@@ -448,16 +576,13 @@
     var companionId = String(q.get("companionId") || q.get("id") || "").trim();
     var unitPrice = money(q.get("price") || q.get("unitPrice"));
     var name = String(q.get("name") || q.get("companionName") || "陪玩").trim() || "陪玩";
-    var service = String(q.get("service") || q.get("game") || "陪玩").trim() || "陪玩";
+    var service = String(q.get("service") || q.get("game") || "").trim();
+    if (LEGACY_SERVICE_NAMES[service]) service = "";
     var avatar = String(q.get("avatar") || "").trim();
     var publicId = String(q.get("publicId") || "").trim();
 
     if (!companionId) {
       fail("缺少陪玩 ID，请从首页或陪玩大厅重新点击「立即下单」");
-      return;
-    }
-    if (!(unitPrice > 0)) {
-      fail("该陪玩暂无有效单价，暂不可下单");
       return;
     }
     if (!token()) {
@@ -471,14 +596,63 @@
       companionName: name,
       unitPrice: unitPrice,
       service: service,
+      game: service,
+      mainGame: service,
+      services: [],
+      serviceIds: [],
+      gamePrices: {},
       pricingUnit: "小时",
       avatar: avatarSrc(avatar),
       publicId: publicId,
     };
-    var matched = matchService(service);
-    state.service = matched.service;
-    state.customService = matched.custom;
+    state.service = service;
     paint();
+
+    // Same public + catalog sources as home / detail / modal.
+    Promise.all([
+      fetch("/api/public/companions?id=" + encodeURIComponent(companionId), {
+        headers: { Accept: "application/json" },
+        cache: "no-store",
+      }).then(function (res) {
+        return res.json().then(function (body) {
+          if (!res.ok || body.ok === false) throw new Error((body && body.message) || "陪玩资料读取失败");
+          var list = Array.isArray(body.companions) ? body.companions : body.companion ? [body.companion] : [];
+          return list[0] || null;
+        });
+      }),
+      hydrateFromCatalog(companionId),
+    ])
+      .then(function (pair) {
+        var row = pair[0];
+        if (!row || !state.companion) return;
+        state.companion.companionName = row.name || row.nickname || state.companion.companionName;
+        state.companion.avatar = avatarSrc(row.avatar || row.cover || state.companion.avatar);
+        state.companion.publicId = row.publicId || state.companion.publicId;
+        state.companion.game = row.game || row.mainGame || state.companion.game;
+        state.companion.mainGame = state.companion.game;
+        state.companion.services = row.services || state.companion.services || [];
+        state.companion.serviceIds = row.serviceIds || row.service_ids || state.companion.serviceIds || [];
+        state.companion.gamePrices = row.gamePrices || row.game_prices || state.companion.gamePrices || {};
+        if (!(state.companion.unitPrice > 0)) {
+          state.companion.unitPrice = money(row.priceValue != null ? row.priceValue : row.price);
+        }
+        var list = resolveServices(state.companion);
+        var cur =
+          list.find(function (s) {
+            return s.name === state.service;
+          }) || list[0];
+        if (cur) {
+          state.service = cur.name;
+          state.selectedServiceId = cur.serviceId || cur.id || "";
+          if (cur.price > 0) state.companion.unitPrice = cur.price;
+        }
+        if (!(state.companion.unitPrice > 0) && !list.length) {
+          fail("该陪玩暂无有效单价或服务项目，暂不可下单");
+          return;
+        }
+        paint();
+      })
+      .catch(function () {});
   }
 
   boot();

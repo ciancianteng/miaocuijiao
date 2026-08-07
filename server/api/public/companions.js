@@ -7,6 +7,7 @@ import {
   parseServiceIds,
   parseServiceTypes,
   splitGames,
+  servicesFromGamePrices,
 } from "../_game-prices.js";
 import { loadPublicServices } from "../platform/services.js";
 import {
@@ -198,6 +199,17 @@ function publicCompanion(row = {}, profile = {}, levels = [], catalog = [], medi
     serviceTypes,
     service_ids: serviceIds,
     serviceIds,
+    services: servicesFromGamePrices(
+      {
+        ...row,
+        service_ids: serviceIds,
+        game: gameDisplay || row.game || "",
+        main_service: gameDisplay || row.game || "",
+        price: row.price,
+        pricing_unit: row.pricing_unit || "小时",
+      },
+      catalog
+    ).filter((s) => s && s.name && !/^(陪玩|护航|跑刀|代肝|自定义)$/.test(String(s.name))),
     level: levelName,
     levelName,
     levelId: level?.id || row.level_id || "",

@@ -188,11 +188,16 @@ export function servicesFromGamePrices(companion = {}, catalog = []) {
     (g) => prices[g] > 0 || money(companion.price) > 0
   );
   if (!list.length) {
+    // Do NOT invent legacy defaults (陪玩/护航/代肝). Empty means companion has no configured games.
+    const fallbackName = String(companion.game || companion.main_service || "").trim();
+    if (!fallbackName || /^(陪玩|护航|跑刀|代肝|自定义|陪玩服务|陪聊服务)$/.test(fallbackName)) {
+      return [];
+    }
     return [
       {
         id: "default",
         serviceId: "",
-        name: companion.game || companion.main_service || "陪玩服务",
+        name: fallbackName,
         price: money(companion.price),
         pricingUnit: unit,
       },
