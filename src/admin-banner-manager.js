@@ -234,7 +234,7 @@
       (state.draft && state.draft.url) || (state.current && state.current.image_url) || "";
     var editing = !!state.editingId;
     var publishLabel = state.publishing
-      ? (editing ? "上传中/发布中…" : "上传中/发布中…")
+      ? "上传中/发布中…"
       : editing
         ? "保存编辑并发布"
         : "保存并发布";
