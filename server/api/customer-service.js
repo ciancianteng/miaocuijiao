@@ -876,28 +876,37 @@ async function addMessage(conversation, sender, senderRole, content, messageType
   return (Array.isArray(rows) ? rows[0] : rows) || null;
 }
 
-/** Find boss↔CS conversation for card push (prefer live reception, else order thread). */
+/** Find boss↔CS conversation for card push — always prefer THIS order's thread. */
 async function resolveBossCsConversation(order, serviceProfile) {
   const bossId = order.boss_id;
   if (!bossId) return null;
-  const openRows = await maybeRows(
+  const orderThreads = await maybeRows(
     "conversations",
-    `?boss_id=eq.${encodeURIComponent(bossId)}&status=not.in.(closed,ended)&order=updated_at.desc&limit=20`
+    `?boss_id=eq.${encodeURIComponent(bossId)}&order_id=eq.${encodeURIComponent(order.id)}&status=not.in.(closed,ended)&order=updated_at.desc&limit=5`
   );
-  const live =
-    (openRows || []).find(
-      (c) =>
-        c.customer_service_id === serviceProfile.id &&
-        String(c.conversation_type || "") !== "companion_support" &&
-        !(!c.boss_id && c.companion_id)
-    ) ||
-    (openRows || []).find(
-      (c) =>
-        String(c.conversation_type || "") !== "companion_support" &&
-        !(!c.boss_id && c.companion_id) &&
-        (c.order_id === order.id || !c.companion_id)
-    );
-  if (live) return live;
+  if (orderThreads?.[0]) {
+    const live = orderThreads[0];
+    if (
+      serviceProfile?.id &&
+      String(live.customer_service_id || "") &&
+      String(live.customer_service_id) !== String(serviceProfile.id)
+    ) {
+      // Keep existing reception lock; still deliver card on the order thread.
+      return live;
+    }
+    if (serviceProfile?.id && !live.customer_service_id) {
+      await supabaseJson(restUrl("conversations", `?id=eq.${encodeURIComponent(live.id)}`), {
+        method: "PATCH",
+        headers: serviceHeaders(),
+        body: JSON.stringify({
+          customer_service_id: serviceProfile.id,
+          updated_at: nowIso(),
+        }),
+      }).catch(() => null);
+      return { ...live, customer_service_id: serviceProfile.id };
+    }
+    return live;
+  }
   return ensureConversation({
     boss_id: bossId,
     companion_id: null,

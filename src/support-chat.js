@@ -328,6 +328,97 @@
     if (diff === 1) return "昨天 " + hhmm;
     return d.getMonth() + 1 + "月" + d.getDate() + "日 " + hhmm;
   }
+  function previewMessage(raw, messageType) {
+    var type = String(messageType || "").toLowerCase();
+    var content = "";
+    if (raw && typeof raw === "object") {
+      type = String(type || raw.message_type || raw.messageType || "").toLowerCase();
+      content = String(raw.content || raw.lastMessage || "");
+    } else {
+      content = String(raw || "");
+    }
+    if (type === "companion_card" || type === "player_card") return "客服向您推荐了陪玩";
+    if (type === "product_card") return "客服已发送商品资料";
+    if (type === "order_card") return "订单消息";
+    if (type === "image" || /^https?:\/\//i.test(content) && /\.(png|jpe?g|webp|gif)(\?|$)/i.test(content)) return "[图片]";
+    var trimmed = content.trim();
+    if (!trimmed) return "暂无消息";
+    if (trimmed.charAt(0) === "{" || trimmed.charAt(0) === "[") {
+      try {
+        var parsed = JSON.parse(trimmed);
+        if (parsed && typeof parsed === "object") {
+          var cardType = String(parsed.type || "").toLowerCase();
+          if (cardType === "companion_card" || parsed.companionId || parsed.companion_id) return "客服向您推荐了陪玩";
+          if (cardType === "product_card" || parsed.productId) return "客服已发送商品资料";
+          if (cardType === "order_card" || parsed.orderId) return "订单消息";
+          return "系统消息";
+        }
+      } catch (e) {
+        return "系统消息";
+      }
+    }
+    if (/客服向您推荐陪玩|推荐陪玩|陪玩名片|推送陪玩/.test(trimmed)) return "客服向您推荐了陪玩";
+    if (/已发送陪玩资料|陪玩资料/.test(trimmed)) return "客服已发送陪玩资料";
+    if (/抢单/.test(trimmed) && /(等待|选择|老板)/.test(trimmed)) return "陪玩已抢单，等待您的选择";
+    if (/已确认(线下)?付款|确认收款|发布到抢单大厅/.test(trimmed)) return "客服已确认付款";
+    if (/\[\[[^\]]+\]\]/.test(trimmed)) {
+      trimmed = trimmed.replace(/\[\[[^\]]+\]\]/g, " ").replace(/\s+/g, " ").trim();
+    }
+    if (!trimmed || trimmed.charAt(0) === "{" || trimmed.charAt(0) === "[") return "系统消息";
+    return trimmed.length > 42 ? trimmed.slice(0, 42) + "…" : trimmed;
+  }
+  function normalizeConversations(list) {
+    var rows = (Array.isArray(list) ? list : []).map(function (c) {
+      var row = Object.assign({}, c);
+      row.conversationType = row.conversationType || (row.orderId || row.order_id ? "order_support" : "general_support");
+      row.orderId = row.orderId || row.order_id || "";
+      row.unreadCount = Number(row.unreadCount || row.unread_count || row.unread || 0);
+      row.unread = row.unreadCount;
+      row.lastMessage = previewMessage(row.lastMessage || "", row.lastMessageType || row.last_message_type || "");
+      return row;
+    });
+    var byKey = {};
+    rows.forEach(function (item) {
+      var orderId = String(item.orderId || "").trim();
+      var key = orderId ? "order:" + orderId : "id:" + item.id;
+      var prev = byKey[key];
+      if (!prev) {
+        byKey[key] = item;
+        return;
+      }
+      var prevClosed = /^(closed|ended)$/i.test(String(prev.status || ""));
+      var curClosed = /^(closed|ended)$/i.test(String(item.status || ""));
+      var keep = item;
+      var drop = prev;
+      if (prevClosed && !curClosed) {
+        keep = item;
+        drop = prev;
+      } else if (!prevClosed && curClosed) {
+        keep = prev;
+        drop = item;
+      } else {
+        var prevT = Date.parse(prev.lastMessageAt || prev.updatedAt || "") || 0;
+        var curT = Date.parse(item.lastMessageAt || item.updatedAt || "") || 0;
+        if (curT >= prevT) {
+          keep = item;
+          drop = prev;
+        } else {
+          keep = prev;
+          drop = item;
+        }
+      }
+      keep.unreadCount = Number(keep.unreadCount || 0) + Number(drop.unreadCount || 0);
+      keep.unread = keep.unreadCount;
+      byKey[key] = keep;
+    });
+    return Object.keys(byKey)
+      .map(function (k) {
+        return byKey[k];
+      })
+      .sort(function (a, b) {
+        return String(b.lastMessageAt || b.updatedAt || "").localeCompare(String(a.lastMessageAt || a.updatedAt || ""));
+      });
+  }
   function toast(msg) {
     var text = String(msg || "").trim();
     if (!text) return;
@@ -578,11 +669,12 @@
             if (String(c.id) === String(cid)) {
               c.unreadCount = Number(c.unreadCount || 0) + 1;
               c.unread = c.unreadCount;
-              c.lastMessage = row.content || c.lastMessage;
+              c.lastMessage = previewMessage(row.content || c.lastMessage, row.message_type || row.messageType || "");
               c.lastMessageAt = row.created_at || c.lastMessageAt;
             }
             return c;
           });
+          state.conversations = normalizeConversations(state.conversations);
           syncTotalUnread(state.conversations);
         }
       }
@@ -675,11 +767,7 @@
     })
       .then(function (body) {
         if (body && Array.isArray(body.conversations)) {
-          state.conversations = body.conversations.map(function (c) {
-            c.conversationType = c.conversationType || (c.orderId || c.order_id ? "order_support" : "general_support");
-            c.unreadCount = Number(c.unreadCount || c.unread_count || 0);
-            return c;
-          });
+          state.conversations = normalizeConversations(body.conversations);
         } else {
           state.conversations = (state.conversations || []).map(function (c) {
             if (String(c.id) === String(cid)) {
@@ -711,11 +799,7 @@
   }
   function loadList() {
     return fetchJson("/api/chat?action=conversations").then(function (body) {
-      state.conversations = (body.conversations || []).map(function (c) {
-        c.conversationType = c.conversationType || (c.orderId || c.order_id ? "order_support" : "general_support");
-        c.unreadCount = Number(c.unreadCount || c.unread_count || 0);
-        return c;
-      });
+      state.conversations = normalizeConversations(body.conversations || []);
       if (typeof body.unreadCount === "number") state.totalUnread = Number(body.unreadCount);
       else if (typeof body.unread === "number") state.totalUnread = Number(body.unread);
       else syncTotalUnread(state.conversations);
@@ -959,7 +1043,7 @@
             '"><div class="support-session-main"><strong>' +
             esc(title) +
             "</strong><span>" +
-            esc(isClosedConversation(c) ? "会话已结束 · 可重新发起" : c.lastMessage || "暂无消息") +
+            esc(isClosedConversation(c) ? "会话已结束 · 可重新发起" : previewMessage(c.lastMessage || "暂无消息")) +
             "</span></div><small>" +
             esc(shortTime(c.lastMessageAt || c.updatedAt || "")) +
             "</small>" +
@@ -1139,7 +1223,7 @@
   }
   function applyPayload(body, opts) {
     opts = opts || {};
-    if (Array.isArray(body.conversations)) state.conversations = body.conversations;
+    if (Array.isArray(body.conversations)) state.conversations = normalizeConversations(body.conversations);
     var prevCid = state.conversation && state.conversation.id;
     var pinCid = String(opts.pinConversationId || prevCid || "").trim();
     var incomingConv = body.conversation || null;

@@ -106,7 +106,15 @@ export function decorateChatMessage(row = {}, extras = {}) {
 }
 
 export function messagePreviewText(rowOrContent, messageType) {
+  let type = String(messageType || "").trim().toLowerCase();
+  let content = "";
+  let senderRole = "";
   if (rowOrContent && typeof rowOrContent === "object") {
+    type = String(type || rowOrContent.message_type || rowOrContent.messageType || "")
+      .trim()
+      .toLowerCase();
+    content = String(rowOrContent.content || "");
+    senderRole = String(rowOrContent.sender_role || rowOrContent.senderRole || "").toLowerCase();
     if (
       looksLikeImageMessage(rowOrContent) ||
       looksLikeImageMessage({
@@ -117,10 +125,56 @@ export function messagePreviewText(rowOrContent, messageType) {
     ) {
       return "[图片]";
     }
-    return String(rowOrContent.content || "");
+  } else {
+    content = String(rowOrContent || "");
+    if (looksLikeImageMessage({ messageType: type, content })) return "[图片]";
   }
-  if (looksLikeImageMessage({ messageType, content: rowOrContent })) return "[图片]";
-  return String(rowOrContent || "");
+
+  if (type === "companion_card" || type === "player_card") return "客服向您推荐了陪玩";
+  if (type === "product_card") return "客服已发送商品资料";
+  if (type === "order_card") return "订单消息";
+
+  const trimmed = content.trim();
+  if (!trimmed) return "暂无消息";
+
+  // Never leak raw JSON / program payloads into conversation list previews.
+  if (trimmed.charAt(0) === "{" || trimmed.charAt(0) === "[") {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (parsed && typeof parsed === "object") {
+        const cardType = String(parsed.type || "").toLowerCase();
+        if (cardType === "companion_card" || parsed.companionId || parsed.companion_id) {
+          return "客服向您推荐了陪玩";
+        }
+        if (cardType === "product_card" || parsed.productId || parsed.product_id) {
+          return "客服已发送商品资料";
+        }
+        if (cardType === "order_card" || parsed.orderId || parsed.order_id) {
+          return "订单消息";
+        }
+        return "系统消息";
+      }
+    } catch {
+      return "系统消息";
+    }
+  }
+
+  if (/客服向您推荐陪玩|推荐陪玩|陪玩名片|推送陪玩/.test(trimmed)) return "客服向您推荐了陪玩";
+  if (/已发送陪玩资料|陪玩资料/.test(trimmed)) return "客服已发送陪玩资料";
+  if (/抢单/.test(trimmed) && /(等待|选择|老板)/.test(trimmed)) return "陪玩已抢单，等待您的选择";
+  if (/已确认(线下)?付款|确认收款|发布到抢单大厅|付款凭证已/.test(trimmed)) return "客服已确认付款";
+  if (/已选择陪玩|老板已选择|正式指定/.test(trimmed)) return "您已选择陪玩";
+  if (/待陪玩确认|等待陪玩确认/.test(trimmed)) return "已指定陪玩，等待确认接单";
+  if (/付款凭证|上传付款|待人工审核/.test(trimmed)) return "付款凭证相关消息";
+
+  // Strip internal markers that sometimes leak into note-derived system text.
+  const cleaned = trimmed
+    .replace(/\[\[[^\]]+\]\]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!cleaned) return senderRole === "system" ? "系统消息" : "新消息";
+  if (cleaned.charAt(0) === "{" || cleaned.charAt(0) === "[") return "系统消息";
+  return cleaned.length > 60 ? `${cleaned.slice(0, 60)}…` : cleaned;
 }
 
 /**

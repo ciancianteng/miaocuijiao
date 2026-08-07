@@ -3,6 +3,7 @@ import path from "node:path";
 import { assertBossProfile, identityView } from "./_boss-identity.js";
 import {
   decorateChatMessage,
+  messagePreviewText,
   normalizeImageUrl,
   persistImageMessage,
 } from "./_chat-message.js";
@@ -185,6 +186,54 @@ async function getOrCreateConversation(profile, orderId = "", meta = {}) {
         }
       }
       return { conversation, created: false, order: null };
+    }
+  }
+
+  // One order → one conversation: reopen the latest closed order thread instead of creating another.
+  if (orderId) {
+    const closedRows = await supabaseJson(
+      restUrl(
+        "conversations",
+        `?boss_id=eq.${encodeURIComponent(profile.id)}&order_id=eq.${encodeURIComponent(orderId)}&order=updated_at.desc&limit=1`
+      ),
+      { headers: serviceHeaders() }
+    ).catch(() => []);
+    const existing = Array.isArray(closedRows) ? closedRows[0] : null;
+    if (existing?.id) {
+      const reopenPatch = {
+        status: "waiting_service",
+        customer_service_id: null,
+        closed_at: null,
+        closed_by: null,
+        updated_at: nowIso(),
+      };
+      const orders = await supabaseJson(
+        restUrl("orders", `?id=eq.${encodeURIComponent(orderId)}&select=id,companion_id&limit=1`),
+        { headers: serviceHeaders() }
+      ).catch(() => []);
+      if (orders?.[0]?.companion_id) reopenPatch.companion_id = orders[0].companion_id;
+      const updated = await supabaseJson(restUrl("conversations", `?id=eq.${encodeURIComponent(existing.id)}`), {
+        method: "PATCH",
+        headers: serviceHeaders(),
+        body: JSON.stringify(reopenPatch),
+      }).catch(() => null);
+      const conversation = (Array.isArray(updated) ? updated[0] : updated) || { ...existing, ...reopenPatch };
+      await supabaseJson(restUrl("messages"), {
+        method: "POST",
+        headers: serviceHeaders(),
+        body: JSON.stringify({
+          conversation_id: conversation.id,
+          sender_id: profile.id,
+          sender_role: "system",
+          message_type: "system",
+          content: forceNew
+            ? `老板重新发起订单咨询（订单 ${orders?.[0]?.order_no || orderId}）。`
+            : `老板继续订单咨询（订单 ${orders?.[0]?.order_no || orderId}）。`,
+          order_id: orderId,
+          created_at: nowIso(),
+        }),
+      }).catch(() => null);
+      return { conversation, created: false, order: orders?.[0] || null, reopened: true };
     }
   }
 
@@ -422,7 +471,7 @@ async function listConversations(profile) {
       ? supabaseJson(
           restUrl(
             "messages",
-            `?conversation_id=in.(${conversationIds.map(encodeURIComponent).join(",")})&select=conversation_id,content,created_at,sender_role&order=created_at.desc&limit=300`
+            `?conversation_id=in.(${conversationIds.map(encodeURIComponent).join(",")})&select=conversation_id,content,created_at,sender_role,message_type&order=created_at.desc&limit=400`
           ),
           { headers: serviceHeaders() }
         ).catch(() => [])
@@ -451,7 +500,7 @@ async function listConversations(profile) {
     unreadByConv[cid] = (unreadByConv[cid] || 0) + 1;
   }
 
-  return conversations.map((row) => {
+  const mapped = conversations.map((row) => {
     const last = lastByConv[row.id] || null;
     const order = row.order_id ? orderMap[row.order_id] : null;
     return {
@@ -468,13 +517,56 @@ async function listConversations(profile) {
       customerServiceId: row.customer_service_id || "",
       assignedCustomerServiceId: row.customer_service_id || "",
       updatedAt: row.updated_at || row.created_at || "",
-      lastMessage: last?.content || "",
+      lastMessage: messagePreviewText(last || { content: "" }),
       lastMessageAt: last?.created_at || row.updated_at || "",
       lastSenderRole: last?.sender_role || "",
       unreadCount: Number(unreadByConv[row.id] || 0),
       unread: Number(unreadByConv[row.id] || 0),
     };
   });
+
+  // One order → one chat thread in the boss list (keep newest / open).
+  return dedupeBossConversationsByOrder(mapped);
+}
+
+function dedupeBossConversationsByOrder(list = []) {
+  const byKey = new Map();
+  for (const item of list) {
+    const orderId = String(item?.orderId || "").trim();
+    const key = orderId ? `order:${orderId}` : `id:${item.id}`;
+    const prev = byKey.get(key);
+    if (!prev) {
+      byKey.set(key, item);
+      continue;
+    }
+    const prevClosed = /^(closed|ended)$/i.test(String(prev.status || ""));
+    const curClosed = /^(closed|ended)$/i.test(String(item.status || ""));
+    let keep = item;
+    let drop = prev;
+    if (prevClosed && !curClosed) {
+      keep = item;
+      drop = prev;
+    } else if (!prevClosed && curClosed) {
+      keep = prev;
+      drop = item;
+    } else {
+      const prevT = Date.parse(prev.lastMessageAt || prev.updatedAt || "") || 0;
+      const curT = Date.parse(item.lastMessageAt || item.updatedAt || "") || 0;
+      if (curT >= prevT) {
+        keep = item;
+        drop = prev;
+      } else {
+        keep = prev;
+        drop = item;
+      }
+    }
+    keep.unreadCount = Number(keep.unreadCount || 0) + Number(drop.unreadCount || 0);
+    keep.unread = keep.unreadCount;
+    byKey.set(key, keep);
+  }
+  return [...byKey.values()].sort((a, b) =>
+    String(b.lastMessageAt || b.updatedAt || "").localeCompare(String(a.lastMessageAt || a.updatedAt || ""))
+  );
 }
 
 async function countBossUnreadFromCs(conversationId) {
