@@ -1717,7 +1717,7 @@ export default async function handler(req, res) {
         if (cpId) {
           const cpRows = await companionDb(
             "companion_profiles",
-            `?id=eq.${encodeURIComponent(cpId)}&select=id,user_id,nickname&limit=1`
+            `?id=eq.${encodeURIComponent(cpId)}&select=id,user_id,companion_code,companion_uid,nickname&limit=1`
           ).catch(() => []);
           companionId = String(cpRows?.[0]?.user_id || "").trim();
         }
@@ -1728,11 +1728,14 @@ export default async function handler(req, res) {
         const cp = (
           await companionDb(
             "companion_profiles",
-            `?user_id=eq.${encodeURIComponent(companionId)}&select=user_id,nickname&limit=1`
+            `?user_id=eq.${encodeURIComponent(companionId)}&select=user_id,companion_code,companion_uid,nickname&limit=1`
           ).catch(() => [])
         )?.[0];
-        companionName = String(cp?.nickname || profile.display_name || profile.email || "").trim();
-        companionCode = resolveCompanionPublicCode(cp || {}, profile) || profile.boss_uid || "";
+        companionCode = resolveCompanionPublicCode(cp || {}, profile) || "";
+        companionName = publicDisplayName(
+          { display_name: cp?.nickname || profile.display_name, email: profile.email },
+          companionCode || "-"
+        );
       }
 
       await writeAdminLog({
