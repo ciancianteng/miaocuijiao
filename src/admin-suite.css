@@ -1988,4 +1988,4 @@ body[data-admin-section="players"] .player-data-table td:last-child{
 body[data-admin-section="players"] .player-data-table th:last-child{z-index:8!important;background:#17171d!important;}
 body[data-admin-section="players"] .player-action-cell .player-ops,
 body[data-admin-section="players"] .player-more-wrap{overflow:visible!important;}
-.player-more-menu.is-portal-open{display:grid!important;}
+.player-more-menu.is-portal-open{display:grid!important;position:fixed!important;right:auto!important;bottom:auto!important;z-index:10050!important;}
