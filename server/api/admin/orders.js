@@ -138,6 +138,7 @@ function safeOrder(row, profiles, extras = {}) {
     bossName: boss.display_name || boss.email || boss.boss_uid || "-",
     playerName: companion.display_name || companion.email || "待分配",
     companionName: companion.display_name || companion.email || "-",
+    companionCode: companion.boss_uid || "",
     playerUid: companion.boss_uid || companion.id || "-",
     serviceStaff: service.display_name || service.email || "-",
     serviceName: service.display_name || service.email || "-",
@@ -337,6 +338,20 @@ export default async function handler(req, res) {
       const { createOrderGrabHelpers } = await import("../_order-grabs.js");
       const { parseBossIntent, toFlowStatus } = await import("../_order-flow.js");
       const grabsApi = createOrderGrabHelpers({ restUrl, supabaseJson, serviceHeaders });
+      const companionIds = [...new Set((orders || []).map((o) => o.companion_id).filter(Boolean))];
+      const companionProfiles = companionIds.length
+        ? await supabaseJson(
+            restUrl(
+              "companion_profiles",
+              `?user_id=in.(${companionIds.map(encodeURIComponent).join(",")})&select=user_id,nickname,level_name`
+            ),
+            { headers: serviceHeaders() }
+          ).catch(() => [])
+        : [];
+      const cpNameMap = (companionProfiles || []).reduce((m, row) => {
+        if (row?.user_id) m[row.user_id] = row;
+        return m;
+      }, {});
       const list = await Promise.all(
         (orders || []).slice(0, 200).map(async (o) => {
           let grabCount = 0;
@@ -350,11 +365,17 @@ export default async function handler(req, res) {
           } catch {
             /* ignore */
           }
-          return safeOrder(o, map, {
+          const viewed = safeOrder(o, map, {
             grabCount,
             bossIntent,
             flowStatus: toFlowStatus(o.status),
           });
+          const cp = o.companion_id ? cpNameMap[o.companion_id] : null;
+          if (cp?.nickname) {
+            viewed.companionName = cp.nickname;
+            viewed.playerName = cp.nickname;
+          }
+          return viewed;
         })
       );
       const summary = {
@@ -462,26 +483,52 @@ export default async function handler(req, res) {
         });
       }
       const fromGrabs = body.from_grabs === true || body.fromGrabs === true || action === "confirm_grab_assignment";
-      // Public grab hall: admin may only confirm from grab applicants (same as CS).
+      const freeAssign = body.free_assign === true || body.freeAssign === true;
+      // Resolve companion_profiles.id → profiles.id when admin picks from players list.
+      let resolvedCompanionId = companionId;
+      try {
+        const byProfile = await supabaseJson(
+          restUrl("profiles", `?id=eq.${encodeURIComponent(companionId)}&select=id&limit=1`),
+          { headers: serviceHeaders() }
+        ).catch(() => []);
+        if (!byProfile?.[0]) {
+          const byCp = await supabaseJson(
+            restUrl("companion_profiles", `?id=eq.${encodeURIComponent(companionId)}&select=id,user_id&limit=1`),
+            { headers: serviceHeaders() }
+          ).catch(() => []);
+          if (byCp?.[0]?.user_id) resolvedCompanionId = String(byCp[0].user_id);
+          else {
+            const byCode = await supabaseJson(
+              restUrl("profiles", `?boss_uid=eq.${encodeURIComponent(companionId)}&role=eq.companion&select=id&limit=1`),
+              { headers: serviceHeaders() }
+            ).catch(() => []);
+            if (byCode?.[0]?.id) resolvedCompanionId = String(byCode[0].id);
+          }
+        }
+      } catch {
+        /* keep original */
+      }
       {
         const { createOrderGrabHelpers } = await import("../_order-grabs.js");
         const grabsApi = createOrderGrabHelpers({ restUrl, supabaseJson, serviceHeaders });
         const grabs = await grabsApi.listGrabs(before.id, before.note || before.description || "");
         const isPublicHall =
           ["pending", "waiting_boss_confirm"].includes(before.status) && !String(before.companion_id || "").trim();
-        if (isPublicHall || fromGrabs) {
+        if ((isPublicHall || fromGrabs) && !freeAssign) {
           if (!grabs.length) {
-            return json(res, 409, { ok: false, message: "暂无陪玩抢单，不能直接指定。请等待抢单或走 VIP 指定下单。" });
+            return json(res, 409, { ok: false, message: "暂无陪玩抢单，不能直接指定。请等待抢单，或使用「指定陪玩」自由选择。" });
           }
-          const hit = grabs.find((g) => g.companionId === companionId);
-          if (!hit) return json(res, 409, { ok: false, message: "只能从已抢单陪玩中指定。" });
-          await grabsApi.finalizeGrabSelection(before, companionId);
-        } else if (grabs.length) {
-          const hit = grabs.find((g) => g.companionId === companionId);
-          if (hit) await grabsApi.finalizeGrabSelection(before, companionId);
+          const hit = grabs.find((g) => g.companionId === resolvedCompanionId);
+          if (!hit) return json(res, 409, { ok: false, message: "只能从已抢单陪玩中指定。如需指定其他人，请使用自由指定。" });
+          await grabsApi.finalizeGrabSelection(before, resolvedCompanionId);
+        } else {
+          // Admin free-assign (or non-hall path): always persist companion_id; sync grab rows when present.
+          if (grabs.length) {
+            await grabsApi.finalizeGrabSelection(before, resolvedCompanionId).catch(() => null);
+          }
         }
       }
-      patch.companion_id = companionId;
+      patch.companion_id = resolvedCompanionId;
       // Align with CS push: paid → claimed (waiting companion confirm); unpaid stay awaiting_payment.
       patch.status = before.status === "awaiting_payment" ? "awaiting_payment" : "claimed";
       patch.accepted_at = null;
@@ -627,7 +674,16 @@ export default async function handler(req, res) {
       return m;
     }, {});
     if (action === "assign_companion" || action === "confirm_grab_assignment") {
-      const name = map[after.companion_id]?.display_name || map[after.companion_id]?.email || "陪玩";
+      let name = map[after.companion_id]?.display_name || map[after.companion_id]?.email || "陪玩";
+      try {
+        const cpRows = await supabaseJson(
+          restUrl("companion_profiles", `?user_id=eq.${encodeURIComponent(after.companion_id)}&select=nickname,level_name&limit=1`),
+          { headers: serviceHeaders() }
+        ).catch(() => []);
+        if (cpRows?.[0]?.nickname) name = cpRows[0].nickname;
+      } catch {
+        /* keep */
+      }
       await addSystem(after, admin.id, `后台已指定陪玩：${name}。订单进入等待陪玩确认。`);
       await logAdminOp(admin, action, id, { status: before.status }, { status: after.status, ...patch }, String(payload.reason || ""));
       try {
@@ -644,7 +700,10 @@ export default async function handler(req, res) {
       } catch (err) {
         console.warn("[admin/assign] companion notify import", err?.message || err);
       }
-      return json(res, 200, { ok: true, message: "指定成功", order: safeOrder(after, map) });
+      const viewed = safeOrder(after, map);
+      viewed.companionName = name;
+      viewed.playerName = name;
+      return json(res, 200, { ok: true, message: "指定成功", order: viewed });
     }
     await addSystem(after, admin.id, `后台更新订单：${ORDER_STATUS_TEXT[patch.status] || patch.status || action}`);
     await logAdminOp(admin, action, id, { status: before.status }, { status: after.status, ...patch }, String(payload.reason || ""));
