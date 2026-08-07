@@ -8,12 +8,7 @@
     { id: "3", label: "3 小时", value: 3 },
     { id: "custom", label: "自定义", value: 0, custom: true },
   ];
-  var PAYMENTS = [
-    { id: "tng", label: "TNG" },
-    { id: "bank", label: "银行卡" },
-    { id: "alipay", label: "支付宝" },
-    { id: "catfood", label: "猫粮余额" },
-  ];
+  var PAYMENTS = [{ id: "catfood", label: "猫粮余额" }];
 
   var DEFAULT_AVATAR = "/default-avatar.png";
   var toastTimer = null;
@@ -28,10 +23,11 @@
     hours: 1,
     quantity: 1,
     couponCode: "",
-    payment: "tng",
+    payment: "catfood",
     submitting: false,
     submitStartedAt: 0,
     walletBalance: null,
+    payMethods: PAYMENTS.slice(),
   };
 
   function esc(v) {
@@ -145,6 +141,24 @@
                 ? body.wallet.totalBalance
                 : null;
           state.walletBalance = bal == null ? null : money(bal);
+          var channelPays = (body.methods || [])
+            .filter(function (m) {
+              return m && m.code && m.code !== "catfood";
+            })
+            .map(function (m) {
+              var open = !!(m.enabled && m.configured && m.statusText === "可用");
+              return {
+                id: m.code,
+                label: m.name || m.code,
+                open: open,
+                statusText: m.statusText || (open ? "可用" : "暂未开放"),
+              };
+            });
+          state.payMethods = channelPays.concat([{ id: "catfood", label: "猫粮余额", open: true, statusText: "可用" }]);
+          if (!state.payMethods.some(function (p) { return p.id === state.payment && (p.open || p.id === "catfood"); })) {
+            var firstOpen = state.payMethods.find(function (p) { return p.open; });
+            state.payment = firstOpen ? firstOpen.id : "catfood";
+          }
           return state.walletBalance;
         });
       })
@@ -161,14 +175,18 @@
     var total = totalAmount();
     var bal = state.walletBalance;
     var catInsufficient = bal != null && !(bal + 1e-9 >= total);
-    grid.innerHTML = PAYMENTS.map(function (p) {
+    var list = state.payMethods && state.payMethods.length ? state.payMethods : PAYMENTS;
+    grid.innerHTML = list.map(function (p) {
       var insufficient = p.id === "catfood" && catInsufficient;
-      if (insufficient) {
+      var closed = p.open === false;
+      if (insufficient || closed) {
         return (
           '<button type="button" class="mcj-po-pay-card is-maintenance" disabled aria-disabled="true">' +
           '<span class="mcj-po-pay-title">' +
           esc(p.label) +
-          '</span><span class="mcj-po-pay-check">余额不足</span></button>'
+          '</span><span class="mcj-po-pay-check">' +
+          esc(insufficient ? "余额不足" : p.statusText || "暂未开放") +
+          "</span></button>"
         );
       }
       return (
@@ -181,11 +199,14 @@
         '</span><span class="mcj-po-pay-check" aria-hidden="true"></span></button>'
       );
     }).join("");
-    if (state.payment === "catfood" && catInsufficient) state.payment = "tng";
+    if (state.payment === "catfood" && catInsufficient) {
+      var alt = list.find(function (p) { return p.id !== "catfood" && p.open !== false; });
+      state.payment = alt ? alt.id : "catfood";
+    }
     grid.querySelectorAll("[data-po-pay]").forEach(function (btn) {
       btn.addEventListener("click", function () {
         if (btn.disabled) return;
-        state.payment = btn.getAttribute("data-po-pay") || "tng";
+        state.payment = btn.getAttribute("data-po-pay") || "catfood";
         setExclusiveActive(grid.querySelectorAll("[data-po-pay]"), btn);
       });
     });
@@ -693,7 +714,18 @@
         "</button>"
       );
     }).join("");
-    var payCards = PAYMENTS.map(function (p) {
+    var payCards = (state.payMethods && state.payMethods.length ? state.payMethods : PAYMENTS).map(function (p) {
+      var closed = p.open === false;
+      if (closed) {
+        return (
+          '<button type="button" class="mcj-po-pay-card is-maintenance" disabled aria-disabled="true">' +
+          '<span class="mcj-po-pay-title">' +
+          esc(p.label) +
+          '</span><span class="mcj-po-pay-check">' +
+          esc(p.statusText || "暂未开放") +
+          "</span></button>"
+        );
+      }
       return (
         '<button type="button" class="mcj-po-pay-card' +
         (state.payment === p.id ? " active" : "") +

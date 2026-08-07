@@ -788,6 +788,38 @@ async function syncPaymentMethod(channel, credentials = {}) {
   };
   try {
     await upsert(TABLES.methods, row, "code");
+    // Disable legacy duplicate TNG / bank aliases so boss recharge never shows two TNG entries.
+    if (tpl.id === "tng") {
+      for (const alias of ["manual_tng"]) {
+        try {
+          await supabaseFetch(TABLES.methods, `?code=eq.${encodeURIComponent(alias)}`, {
+            method: "PATCH",
+            body: JSON.stringify({
+              is_enabled: false,
+              name: "TNG (legacy alias — disabled)",
+              updated_at: new Date().toISOString(),
+            }),
+          });
+        } catch {
+          /* ignore missing alias */
+        }
+      }
+    }
+    if (tpl.id === "bank-transfer") {
+      for (const alias of ["bank", "bank-my"]) {
+        try {
+          await supabaseFetch(TABLES.methods, `?code=eq.${encodeURIComponent(alias)}`, {
+            method: "PATCH",
+            body: JSON.stringify({
+              is_enabled: false,
+              updated_at: new Date().toISOString(),
+            }),
+          });
+        } catch {
+          /* ignore */
+        }
+      }
+    }
   } catch (error) {
     if (!isMissingTable(error)) throw error;
   }

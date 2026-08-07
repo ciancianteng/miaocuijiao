@@ -252,36 +252,21 @@
     if (!/mine\.html$/.test(location.pathname)) return;
     setTimeout(function () {
       var warn = document.querySelector("#panel-recharge .state-warn");
-      if (warn) warn.textContent = "请选择金额和支付渠道，上传付款凭证后提交后台审核；审核通过后猫粮到账。";
+      if (warn) warn.textContent = "请前往「充值中心」选择活动档位与后台已启用的支付方式；上传付款截图后进入人工审核。";
       var panel = document.getElementById("panel-recharge");
-      if (panel && !panel.querySelector("[data-recharge-proof]")) {
+      if (panel && !panel.querySelector("[data-recharge-go-center]")) {
         var box = document.createElement("div");
         box.className = "msg-item";
         box.style.marginTop = "12px";
-        box.innerHTML = '<strong>上传付款凭证</strong><div class="form-grid" style="margin-top:10px"><label>选择支付渠道<select data-recharge-channel><option>TNG</option><option>支付宝</option></select></label><label>付款凭证<input data-recharge-proof type="file" accept="image/*"></label><label class="wide">备注<textarea data-recharge-note placeholder="填写付款账号、付款时间或其他说明"></textarea></label><button class="primary-btn wide" type="button" data-submit-recharge>提交审核</button></div><p class="muted">提交后会进入后台充值审核，不会自动伪造到账。</p>';
+        box.innerHTML =
+          '<strong>正式充值入口</strong><p class="muted" style="margin:8px 0 12px">支付方式与后台「支付设置」实时同步，不再使用本页旧版 TNG / 支付宝硬编码入口。</p><a class="primary-btn wide" href="recharge.html" data-recharge-go-center>打开充值中心</a>';
         panel.appendChild(box);
       }
     }, 300);
   }
 
   function bindFormalSubmitStates() {
-    document.addEventListener("click", function (event) {
-      var submit = event.target.closest && event.target.closest("[data-submit-recharge]");
-      if (!submit) return;
-      if (submit.disabled) return;
-      var proof = document.querySelector("[data-recharge-proof]");
-      if (!proof || !proof.files || !proof.files[0]) {
-        alert("请先上传付款凭证");
-        return;
-      }
-      submit.disabled = true;
-      submit.textContent = "正在提交...";
-      setTimeout(function () {
-        submit.disabled = false;
-        submit.textContent = "提交审核";
-        alert("猫粮充值申请已提交后台审核");
-      }, 500);
-    }, true);
+    /* Fake mine.html recharge submit removed — real flow is recharge.html → /api/recharge. */
   }
 
   function init() {

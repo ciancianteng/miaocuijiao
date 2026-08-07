@@ -83,23 +83,23 @@ if (!existing.rowCount) {
     insert into public.payment_methods
       (code, name, is_enabled, sort_order, mode, category, redirect_url)
     values
-      ('manual_tng', 'Touch n Go / 人工确认', true, 1, 'live', 'manual', '/recharge.html')
+      ('duitnow', 'DuitNow', false, 4, 'live', 'manual', '/recharge.html'),
+      ('tng', 'TNG', false, 5, 'live', 'manual', '/recharge.html'),
+      ('bank-transfer', '银行转账', false, 6, 'live', 'manual', '/recharge.html')
     returning code, name, is_enabled, category
   `);
-  report.actions.push({ inserted: ins.rows[0] });
+  report.actions.push({ inserted: ins.rows });
 } else {
-  const enabled = existing.rows.filter((r) => r.is_enabled);
-  if (!enabled.length) {
-    const upd = await c.query(`
-      update public.payment_methods
-      set is_enabled = true, updated_at = now()
-      where code = $1
-      returning code, name, is_enabled
-    `, [existing.rows[0].code]);
-    report.actions.push({ enabledExisting: upd.rows[0] });
-  } else {
-    report.actions.push({ ok_existing_enabled: enabled.map((r) => r.code) });
-  }
+  // Disable legacy duplicate TNG alias if present.
+  await c.query(`
+    update public.payment_methods
+    set is_enabled = false, updated_at = now(),
+        name = case when code = 'manual_tng' then 'TNG (legacy alias — disabled)' else name end
+    where code in ('manual_tng')
+  `);
+  report.actions.push({ disabled_legacy_aliases: ["manual_tng"] });
+  const enabled = existing.rows.filter((r) => r.is_enabled && r.code !== "manual_tng");
+  report.actions.push({ existing_enabled: enabled.map((r) => r.code) });
 }
 
 const campaigns = await c.query(`select id, name, enabled, pay_amount_rm, base_cat_food from public.recharge_campaigns where enabled=true`);
