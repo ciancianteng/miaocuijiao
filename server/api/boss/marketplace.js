@@ -181,15 +181,77 @@ function defaultSpecs(unit) {
   ];
 }
 
-async function giftCommissionRate(companionRow) {
+async function giftCommissionRate(companionRow, giftRow) {
+  const fromGift = money(giftRow?.commission_rate ?? giftRow?.commissionRate);
+  if (fromGift > 0) return fromGift;
   const fromCompanion = money(companionRow?.gift_commission_rate);
   if (fromCompanion > 0) return fromCompanion;
   try {
-    const rows = await companionDb("gift_settings", "?id=eq.1&limit=1");
-    return money(rows?.[0]?.commission_rate ?? 20);
+    const { loadGiftCommissionRate } = await import("../admin/gifts.js");
+    return await loadGiftCommissionRate(companionRow);
   } catch {
-    return 20;
+    try {
+      const rows = await companionDb("gift_settings", "?id=eq.1&limit=1");
+      return money(rows?.[0]?.commission_rate ?? 20);
+    } catch {
+      return 20;
+    }
   }
+}
+
+async function listBossGifts() {
+  try {
+    const rows = await companionDb("gifts", "?enabled=eq.true&deleted_at=is.null&order=sort_order.asc&limit=100");
+    return (rows || []).map((g) => ({
+      id: g.id,
+      name: g.name,
+      iconUrl: g.icon_url || "",
+      catFoodPrice: money(g.cat_food_price),
+      featured: !!g.featured,
+      animationLevel: g.animation_level || "normal",
+      commissionRate: g.commission_rate == null ? null : money(g.commission_rate),
+      _raw: g,
+    }));
+  } catch (e) {
+    if (!isMissingRelation(e)) throw e;
+  }
+  try {
+    const { listEnabledGiftsForBoss } = await import("../admin/gifts.js");
+    const gifts = await listEnabledGiftsForBoss();
+    return (gifts || []).map((g) => ({
+      id: g.id,
+      name: g.name,
+      iconUrl: g.iconUrl || "",
+      catFoodPrice: money(g.catFoodPrice),
+      featured: !!g.featured,
+      animationLevel: g.animationLevel || "normal",
+      commissionRate: g.commissionRate,
+      _raw: {
+        id: g.id,
+        name: g.name,
+        icon_url: g.iconUrl,
+        cat_food_price: g.catFoodPrice,
+        commission_rate: g.commissionRate,
+      },
+    }));
+  } catch {
+    return [];
+  }
+}
+
+async function loadGiftById(giftId) {
+  try {
+    const gifts = await companionDb(
+      "gifts",
+      `?id=eq.${encodeURIComponent(giftId)}&enabled=eq.true&deleted_at=is.null&limit=1`
+    );
+    if (gifts?.[0]) return gifts[0];
+  } catch (e) {
+    if (!isMissingRelation(e)) throw e;
+  }
+  const listed = await listBossGifts();
+  const hit = listed.find((g) => String(g.id) === String(giftId));
+  return hit?._raw || null;
 }
 
 async function creditCompanionIncome(companionId, amount, note, relatedId) {
@@ -231,12 +293,7 @@ export default async function handler(req, res) {
         profile = null;
       }
       const services = await loadCompanionServices(companionId, companion);
-      let gifts = [];
-      try {
-        gifts = await companionDb("gifts", "?enabled=eq.true&deleted_at=is.null&order=sort_order.asc&limit=100");
-      } catch (e) {
-        if (!isMissingRelation(e)) throw e;
-      }
+      const gifts = await listBossGifts();
       const avail = availabilityOf(companion);
       const rate = await giftCommissionRate(companion);
       return json(res, 200, {
@@ -262,10 +319,10 @@ export default async function handler(req, res) {
         gifts: (gifts || []).map((g) => ({
           id: g.id,
           name: g.name,
-          iconUrl: g.icon_url || "",
-          catFoodPrice: money(g.cat_food_price),
+          iconUrl: g.iconUrl || "",
+          catFoodPrice: money(g.catFoodPrice),
           featured: !!g.featured,
-          animationLevel: g.animation_level || "normal",
+          animationLevel: g.animationLevel || "normal",
         })),
       });
     }
@@ -491,23 +548,21 @@ export default async function handler(req, res) {
 
       const companion = await loadCompanion(companionId);
       if (!companion) return json(res, 404, { ok: false, message: "陪玩不存在" });
-      const rate = await giftCommissionRate(companion);
+      let rate = await giftCommissionRate(companion);
       let gross = 0;
       let giftName = "打赏";
       let giftId = null;
       let quantity = 1;
+      let giftRow = null;
 
       if (action === "send_gift") {
         giftId = String(body.giftId || body.gift_id || "").trim();
         quantity = Math.max(1, Math.floor(Number(body.quantity || 1)));
-        const gifts = await companionDb("gifts", `?id=eq.${encodeURIComponent(giftId)}&enabled=eq.true&limit=1`).catch((e) => {
-          if (isMissingRelation(e)) return [];
-          throw e;
-        });
-        const gift = gifts?.[0];
-        if (!gift) return json(res, 400, { ok: false, message: "礼物不存在或已下架" });
-        giftName = gift.name;
-        gross = money(gift.cat_food_price) * quantity;
+        giftRow = await loadGiftById(giftId);
+        if (!giftRow) return json(res, 400, { ok: false, message: "礼物不存在或已下架" });
+        giftName = giftRow.name;
+        gross = money(giftRow.cat_food_price ?? giftRow.catFoodPrice) * quantity;
+        rate = await giftCommissionRate(companion, giftRow);
       } else {
         gross = money(body.amount || body.catFood || body.cat_food);
         quantity = 1;
@@ -563,30 +618,73 @@ export default async function handler(req, res) {
       await creditCompanionIncome(companionId, companionIncome, `${giftName}收益`, null);
 
       let tx = null;
+      const txNo = no("GIFT");
+      const txPayload = {
+        tx_no: txNo,
+        sender_boss_id: boss.id,
+        receiver_companion_id: companionId,
+        gift_id: giftId && /^[0-9a-f-]{36}$/i.test(String(giftId)) ? giftId : null,
+        gift_name: giftName,
+        quantity,
+        gross_cat_food: gross,
+        platform_commission_rate: rate,
+        platform_commission_amount: commissionAmount,
+        companion_income: companionIncome,
+        message,
+        related_order_id: body.relatedOrderId || null,
+        kind: action === "send_gift" ? "gift" : "tip",
+        idempotency_key: idempotencyKey,
+        created_at: nowIso(),
+      };
       try {
         const rows = await companionDb("gift_transactions", "", {
           method: "POST",
-          body: JSON.stringify({
-            tx_no: no("GIFT"),
-            sender_boss_id: boss.id,
-            receiver_companion_id: companionId,
-            gift_id: giftId,
-            gift_name: giftName,
-            quantity,
-            gross_cat_food: gross,
-            platform_commission_rate: rate,
-            platform_commission_amount: commissionAmount,
-            companion_income: companionIncome,
-            message,
-            related_order_id: body.relatedOrderId || null,
-            kind: action === "send_gift" ? "gift" : "tip",
-            idempotency_key: idempotencyKey,
-            created_at: nowIso(),
-          }),
+          body: JSON.stringify(txPayload),
         });
         tx = rows?.[0] || null;
       } catch (e) {
-        if (!isMissingRelation(e)) throw e;
+        if (!isMissingRelation(e) && !/foreign key|invalid input syntax|22P02|23503/i.test(String(e.message || ""))) {
+          throw e;
+        }
+        // Persist ledger into platform_content_items when gift_transactions is unavailable.
+        try {
+          const contentId = `gift_tx_${String(idempotencyKey).replace(/[^a-zA-Z0-9]/g, "").slice(0, 24) || Date.now()}`;
+          const draft = {
+            txNo,
+            giftId: giftId || "",
+            giftName,
+            quantity,
+            grossCatFood: gross,
+            commissionRate: rate,
+            commissionAmount,
+            companionIncome,
+            bossId: boss.id,
+            companionId,
+            kind: action === "send_gift" ? "gift" : "tip",
+            message,
+            idempotencyKey,
+          };
+          const rows = await companionDb("platform_content_items", "", {
+            method: "POST",
+            body: JSON.stringify({
+              id: contentId,
+              type: "gift_tx",
+              slug: contentId,
+              title: `${giftName} x${quantity}`,
+              status: "published",
+              enabled: true,
+              sort: 0,
+              draft,
+              published: draft,
+              created_at: nowIso(),
+              updated_at: nowIso(),
+              published_at: nowIso(),
+            }),
+          });
+          tx = rows?.[0] || { id: contentId, ...draft };
+        } catch {
+          tx = { tx_no: txNo, ...txPayload };
+        }
       }
 
       scheduleRecomputeSoft();
