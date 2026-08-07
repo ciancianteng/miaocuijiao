@@ -138,15 +138,23 @@ async function api(path, token, body, method = "POST", extraHeaders = {}) {
   );
   step("boss_not_old_qr", !!payQr && payQr !== qr1, `old=${qr1.slice(-30)} new=${payQr.slice(-30)}`);
 
-  // Disable channel → boss must not see QR / must get unavailable copy
-  const disable = await api(
-    "/api/admin/payment-settings",
-    adminT,
-    { action: "toggle_channel", channelId: "duitnow", enabled: false },
-    "POST",
-    { "x-mcj-admin-role": "super_admin" }
-  );
-  step("disable_channel", disable.ok, disable.json?.message || "");
+  // Disable all manual QR channels → boss must not see any QR / must get unavailable copy
+  const manualIds = ["duitnow", "bank-transfer", "bank-my", "tng"];
+  for (const cid of manualIds) {
+    const disable = await api(
+      "/api/admin/payment-settings",
+      adminT,
+      { action: "toggle_channel", channelId: cid, enabled: false },
+      "POST",
+      { "x-mcj-admin-role": "super_admin" }
+    );
+    const missing = /不存在/.test(String(disable.json?.message || ""));
+    step(
+      `disable_${cid}`,
+      disable.ok || missing,
+      disable.json?.message || JSON.stringify(disable.json || {}).slice(0, 120)
+    );
+  }
   const afterDisable = await api(`/api/orders?id=${encodeURIComponent(oid)}`, bossT, null, "GET");
   const emptyInfo = afterDisable.json?.platformPayInfo || {};
   step(
@@ -155,7 +163,7 @@ async function api(path, token, body, method = "POST", extraHeaders = {}) {
     JSON.stringify({ qrUrl: emptyInfo.qrUrl, instructions: emptyInfo.instructions, enabled: emptyInfo.enabled }).slice(0, 220)
   );
 
-  // Re-enable with latest QR for staging continuity
+  // Re-enable DuitNow with latest QR for staging continuity
   const enable = await api(
     "/api/admin/payment-settings",
     adminT,
