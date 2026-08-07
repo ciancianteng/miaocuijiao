@@ -619,7 +619,12 @@
 }
 
 /* Attendance history: table on desktop, cards on mobile; never widen the page */
-.cs-app,.cs-shell,.cs-main,.cs-page{max-width:100%;overflow-x:hidden}
+/* Single scroll owner: .cs-page (PC+mobile). Avoid overflow-x:hidden on .cs-main
+   which forces overflow-y:auto and creates nested scroll / jump-to-top. */
+.cs-app,.cs-shell{max-width:100%;overflow-x:clip}
+.cs-main{max-width:100%;overflow:hidden;min-height:0}
+.cs-page{max-width:100%;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;scroll-behavior:auto}
+.cs-table-wrap{overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
 .cs-att-section{border:1px solid var(--line);border-radius:16px;background:var(--panel);padding:14px 14px 10px;min-width:0}
 .cs-att-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:10px;flex-wrap:wrap}
 .cs-att-head h3{margin:0;font-size:16px}

@@ -11,7 +11,14 @@ import {
   resolveCompanionPublicCode,
 } from "./_account-codes.js";
 import { companionDb } from "./_companion-media-store.js";
-import { approveAndLedger, listPendingForCs, rejectProof, signedProofUrl } from "./_payment-receipts.js";
+import {
+  approveAndLedger,
+  latestReceiptForOrder,
+  listPendingForCs,
+  recoverApprovedWithoutTx,
+  rejectProof,
+  signedProofUrl,
+} from "./_payment-receipts.js";
 import { bossForCs } from "./_privacy.js";
 import { sendEmailOtp, mailProviderStatus } from "./_mail.js";
 import {
@@ -1026,7 +1033,10 @@ async function loadBootstrap(serviceProfile) {
   const receiptByOrder = Object.fromEntries((pendingReceipts || []).map((receipt) => [receipt.order_id, receipt]));
   const signedPairs = await Promise.all(
     (pendingReceipts || []).map(async (receipt) => {
-      const url = await signedProofUrl(receipt).catch(() => "");
+      const url = await signedProofUrl(receipt).catch((err) => {
+        console.warn("[cs/bootstrap] signedProofUrl", receipt?.id, err?.message || err);
+        return "";
+      });
       return [receipt.order_id, url || ""];
     })
   );
@@ -2626,7 +2636,10 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
             receiptByOrder = Object.fromEntries((pendingReceipts || []).map((r) => [r.order_id, r]));
             const pairs = await Promise.all(
               (pendingReceipts || []).map(async (receipt) => {
-                const url = await signedProofUrl(receipt).catch(() => "");
+                const url = await signedProofUrl(receipt).catch((err) => {
+                  console.warn("[cs/poll] signedProofUrl", receipt?.id, err?.message || err);
+                  return "";
+                });
                 return [receipt.order_id, url || ""];
               })
             );
@@ -3086,6 +3099,40 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         needsSendToHall: !companionId,
       });
     }
+    if (action === "get_payment_proof" || action === "payment_proof_url" || action === "view_payment_proof") {
+      const orderId = String(body.id || body.order_id || body.orderId || "").trim();
+      if (!orderId) return json(res, 400, { ok: false, message: "缺少订单 ID。" });
+      const order = await orderById(orderId);
+      if (!order) return json(res, 404, { ok: false, message: "订单不存在。" });
+      const receiptId = String(body.receipt_id || body.receiptId || "").trim();
+      let receipt = null;
+      if (receiptId) {
+        const rows = await companionDb(
+          "payment_receipts",
+          `?id=eq.${encodeURIComponent(receiptId)}&order_id=eq.${encodeURIComponent(orderId)}&limit=1`
+        ).catch(() => []);
+        receipt = rows?.[0] || null;
+      }
+      if (!receipt) {
+        const pending = await listPendingForCs({ orderIds: [orderId] });
+        receipt = pending?.[0] || (await latestReceiptForOrder(orderId));
+      }
+      if (!receipt) return json(res, 404, { ok: false, message: "未找到付款凭证。" });
+      let url = "";
+      try {
+        url = (await signedProofUrl(receipt, 3600)) || "";
+      } catch (err) {
+        console.warn("[cs/get_payment_proof] signedProofUrl", receipt?.id, err?.message || err);
+        return json(res, 502, { ok: false, message: "付款截图暂时无法打开，请稍后重试。" });
+      }
+      if (!url) return json(res, 404, { ok: false, message: "付款截图文件不存在或无法访问。" });
+      return json(res, 200, {
+        ok: true,
+        paymentProofUrl: url,
+        paymentReceiptId: receipt.id || "",
+        orderId,
+      });
+    }
     if (action === "reject_payment_proof") {
       const order = await orderById(String(body.id || body.order_id || ""));
       const reason = String(body.reason || body.reject_reason || "").trim();
@@ -3192,18 +3239,45 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       // Manual order flow: boss must upload payment screenshot before CS can confirm / dispatch.
       // Do not debit wallet or enter grab/assign until proof is approved.
       if (!pendingReceipt && !existingManualPayment) {
-        return json(res, 400, {
-          ok: false,
-          message: "老板尚未上传付款截图。请等待付款凭证进入「待人工审核」后再确认收款。",
-          code: "PAYMENT_PROOF_REQUIRED",
+        // Half-commit recovery: receipt already approved but TX never landed.
+        const recovered = await recoverApprovedWithoutTx({
+          order,
+          reviewerId: service.profile.id,
+        }).catch((err) => {
+          console.warn("[cs/confirm_payment] recoverApprovedWithoutTx", err?.message || err);
+          return null;
         });
+        if (!recovered?.transaction) {
+          return json(res, 400, {
+            ok: false,
+            message: "老板尚未上传付款截图。请等待付款凭证进入「待人工审核」后再确认收款。",
+            code: "PAYMENT_PROOF_REQUIRED",
+          });
+        }
       }
       // A submitted manual proof represents an off-wallet payment.
       let walletSkipped = false;
       if (pendingReceipt) {
-        await approveAndLedger({ order, receipt: pendingReceipt, reviewerId: service.profile.id });
+        try {
+          await approveAndLedger({ order, receipt: pendingReceipt, reviewerId: service.profile.id });
+        } catch (err) {
+          // If approve succeeded but TX failed, try recovery once before aborting.
+          const recovered = await recoverApprovedWithoutTx({
+            order,
+            reviewerId: service.profile.id,
+          }).catch(() => null);
+          if (!recovered?.transaction) {
+            return json(res, err.status || 500, {
+              ok: false,
+              message: err.message || "确认付款失败，请刷新后重试。",
+              code: err.code || "PAYMENT_LEDGER_FAILED",
+            });
+          }
+        }
         walletSkipped = true;
       } else if (existingManualPayment) {
+        walletSkipped = true;
+      } else {
         walletSkipped = true;
       }
 

@@ -13,7 +13,7 @@
   var softRefreshSeq=0;
   var toastTimer=null;
   var COMPOSER_SEL='[data-cs-composer], form[data-send-message] textarea[name="content"], form[data-send-message] input[name="content"]';
-  var state={route:'dashboard',session:null,data:null,services:[],servicesError:'',servicesSource:'',createOrderErrors:{bosses:'',companions:'',services:''},loading:false,error:'',notice:'',activeConversation:'',orderFilter:'',convFilter:'waiting',suppressAutoSelect:false,loginError:'',loginBusy:false,loginDraft:{account:'',password:'',remember:false},composerDraft:'',composerDrafts:{},composerFocused:false,sendingChat:false,showConversationList:false,acceptLock:null,readCursors:{},acceptingId:'',clockBusy:false,assignBusy:false,realtimeReady:false,hoursTimer:null,lastPollAt:'',listScrollTop:0,poolRealtimeBound:false,virtStart:0,attPage:0};
+  var state={route:'dashboard',session:null,data:null,services:[],servicesError:'',servicesSource:'',createOrderErrors:{bosses:'',companions:'',services:''},loading:false,error:'',notice:'',activeConversation:'',orderFilter:'',convFilter:'waiting',suppressAutoSelect:false,loginError:'',loginBusy:false,loginDraft:{account:'',password:'',remember:false},composerDraft:'',composerDrafts:{},composerFocused:false,sendingChat:false,showConversationList:false,acceptLock:null,readCursors:{},acceptingId:'',clockBusy:false,assignBusy:false,realtimeReady:false,hoursTimer:null,lastPollAt:'',listScrollTop:0,pageScrollTop:0,tableScrollTop:0,tableScrollLeft:0,poolRealtimeBound:false,virtStart:0,attPage:0};
   var CONV_ROW_H=92;
   var CONV_OVERSCAN=6;
   var ATT_PAGE_SIZE=10;
@@ -1488,7 +1488,18 @@
           (remote.orders||[]).forEach(function(o){if(o&&o.id)orderById[o.id]=o;});
           res.data.orders.forEach(function(o){
             if(!o||!o.id)return;
-            orderById[o.id]=Object.assign({},orderById[o.id]||{},o);
+            var prev=orderById[o.id]||{};
+            var next=Object.assign({},prev,o);
+            // Keep a usable proof URL when poll re-signs (or briefly fails) for the same receipt.
+            var sameReceipt=String(prev.paymentReceiptId||'')&&String(prev.paymentReceiptId||'')===String(o.paymentReceiptId||'');
+            if(sameReceipt){
+              if(!next.paymentProofUrl&&prev.paymentProofUrl)next.paymentProofUrl=prev.paymentProofUrl;
+              else if(prev.paymentProofUrl&&o.paymentProofUrl&&prev.paymentProofUrl!==o.paymentProofUrl){
+                // Prefer existing URL to avoid remount churn; lightbox can refresh on demand.
+                next.paymentProofUrl=prev.paymentProofUrl;
+              }
+            }
+            orderById[o.id]=next;
           });
           remote.orders=Object.keys(orderById).map(function(k){return orderById[k];}).sort(function(a,b){
             return String(b.createdAt||b.updatedAt||'').localeCompare(String(a.createdAt||a.updatedAt||''));
@@ -1610,12 +1621,14 @@
         patchDashboardMetrics();
         return;
       }
-      // Orders: remount only when payment/status fingerprint changes (keeps proof modal usable).
+      // Orders: remount only when payment/status fingerprint changes (ignore rotating signed URLs).
       if(state.route==='orders'&&isPollPayload&&!isFullBootstrap){
         var sig=(remote.orders||[]).map(function(o){
-          return [o.id,o.status,o.paymentReview?1:0,o.paymentProofUrl||'',o.statusText||''].join(':');
+          return [o.id,o.status,o.paymentReview?1:0,o.paymentReceiptId||'',o.statusText||'',o.grabCount||0,o.companionId||''].join(':');
         }).join('|');
         if(sig===state._ordersPollSig){
+          // Still keep latest proof URLs in memory without remounting the page (scroll-safe).
+          state.data=remote;
           syncPoolCounters();
           return;
         }
@@ -1889,6 +1902,28 @@
     state.route=routeFromPath(location.pathname);
     paint();
   });
+  function capturePageScroll(){
+    try{
+      var page=root.querySelector('.cs-page');
+      var wrap=root.querySelector('.cs-table-wrap');
+      if(page)state.pageScrollTop=page.scrollTop||0;
+      if(wrap){
+        state.tableScrollTop=wrap.scrollTop||0;
+        state.tableScrollLeft=wrap.scrollLeft||0;
+      }
+    }catch(e){}
+  }
+  function restorePageScroll(){
+    try{
+      var page=root.querySelector('.cs-page');
+      var wrap=root.querySelector('.cs-table-wrap');
+      if(page&&typeof state.pageScrollTop==='number')page.scrollTop=state.pageScrollTop;
+      if(wrap){
+        if(typeof state.tableScrollTop==='number')wrap.scrollTop=state.tableScrollTop;
+        if(typeof state.tableScrollLeft==='number')wrap.scrollLeft=state.tableScrollLeft;
+      }
+    }catch(e){}
+  }
   function paint(){
     try{
       // Do NOT re-read URL into state.route here — that snapped 统一会话池 back to 工作台.
@@ -1898,7 +1933,9 @@
         return;
       }
       if(!state.data)state.data=emptyDashboardData();
+      capturePageScroll();
       renderShell();
+      restorePageScroll();
       syncPoolCounters();
       if(state.route==='conversations'){
         restoreComposer();
@@ -2781,8 +2818,9 @@
       rows.push(['审核时间',o.paymentReviewedAt||'-']);
     }
     if(mode==='review')rows.push(['评价',o.reviewText||o.rating||'暂无评价']);
-    var proof=(mode==='pay'||mode==='refund')&&o.paymentProofUrl&&!/^proof:/i.test(String(o.paymentProofUrl||''))
-      ?('<div style="margin-top:12px"><button type="button" class="cs-btn ghost" data-proof-lightbox="'+esc(o.paymentProofUrl)+'">查看凭证图片</button></div>')
+    var hasProof=(o.paymentProofUrl&&!/^proof:/i.test(String(o.paymentProofUrl||'')))||o.paymentReceiptId||o.paymentReview;
+    var proof=(mode==='pay'||mode==='refund')&&hasProof
+      ?('<div style="margin-top:12px"><button type="button" class="cs-btn ghost" data-proof-lightbox="'+(esc(o.paymentProofUrl||''))+'" data-proof-order-id="'+esc(o.id)+'" data-proof-receipt-id="'+esc(o.paymentReceiptId||'')+'">查看凭证图片</button></div>')
       :'';
     modal('<div class="cs-dialog-head"><h3>'+esc(title)+'</h3><button class="cs-btn ghost" type="button" data-close-modal>关闭</button></div><div class="cs-info-list">'+
       rows.map(function(r){return '<div><span>'+esc(r[0])+'</span><strong>'+esc(String(r[1]==null?'-':r[1]))+'</strong></div>';}).join('')+
@@ -2793,7 +2831,9 @@
     var st=String(o.status||'');
     var isPublicHall=(!o.companionId)&&((String(o.assignmentType||'').toLowerCase()==='public')||!o.assignmentType||o.orderType==='open_grab'||st==='pending'||st==='waiting_boss_confirm');
     var inGrabHall=isPublicHall&&(st==='pending'||st==='waiting_boss_confirm')&&!o.companionId;
-    var proofBlock=(o.paymentReview&&o.paymentProofUrl&&!/^proof:/i.test(String(o.paymentProofUrl||'')))?('<div class="cs-proof-preview" style="margin:6px 0"><button type="button" class="cs-btn ghost" data-proof-lightbox="'+esc(o.paymentProofUrl)+'" style="padding:0;border:0;background:transparent;cursor:zoom-in" title="查看付款截图大图"><img src="'+esc(o.paymentProofUrl)+'" alt="付款凭证" style="max-width:120px;max-height:120px;border-radius:8px;object-fit:cover;border:1px solid rgba(255,255,255,.15);display:block"></button></div>'):'';
+    var proofUrl=(!/^proof:/i.test(String(o.paymentProofUrl||''))?String(o.paymentProofUrl||''):'');
+    var canShowProof=!!(o.paymentReview&&(o.paymentReceiptId||proofUrl));
+    var proofBlock=canShowProof?('<div class="cs-proof-preview" style="margin:6px 0"><button type="button" class="cs-btn ghost" data-proof-lightbox="'+esc(proofUrl)+'" data-proof-order-id="'+esc(o.id)+'" data-proof-receipt-id="'+esc(o.paymentReceiptId||'')+'" style="padding:0;border:0;background:transparent;cursor:zoom-in" title="查看付款截图大图">'+(proofUrl?('<img src="'+esc(proofUrl)+'" alt="付款凭证" style="max-width:120px;max-height:120px;border-radius:8px;object-fit:cover;border:1px solid rgba(255,255,255,.15);display:block">'):('<span class="cs-btn ghost" style="display:inline-flex;align-items:center;height:32px;padding:0 10px">查看付款截图</span>'))+'</button></div>'):'';
 
     if(st==='awaiting_payment'){
       if(o.paymentReview){
@@ -3371,7 +3411,45 @@
       }).catch(function(err){doTransfer.disabled=false;toast(err.message||'转交失败');});
       return;
     }
-    var proofLight=e.target.closest('[data-proof-lightbox]');if(proofLight){var pUrl=proofLight.getAttribute('data-proof-lightbox')||'';if(pUrl){var oldLb=document.getElementById('csProofLightbox');if(oldLb)oldLb.remove();var lb=document.createElement('div');lb.id='csProofLightbox';lb.className='cs-modal';lb.innerHTML='<div class="cs-dialog" style="max-width:min(96vw,920px);padding:12px;text-align:center"><img src="'+esc(pUrl)+'" alt="付款截图大图" style="max-width:100%;max-height:80vh;object-fit:contain;border-radius:12px"><div style="margin-top:10px"><button class="cs-btn" type="button" data-close-modal>关闭</button></div></div>';document.body.appendChild(lb);}return;}var pay=e.target.closest('[data-confirm-payment]');if(pay){
+    var proofLight=e.target.closest('[data-proof-lightbox]');if(proofLight){
+      e.preventDefault();
+      var pUrl=proofLight.getAttribute('data-proof-lightbox')||'';
+      var pOrderId=proofLight.getAttribute('data-proof-order-id')||'';
+      var pReceiptId=proofLight.getAttribute('data-proof-receipt-id')||'';
+      function openProofLightbox(url){
+        if(!url||/^proof:/i.test(url)){toast('付款截图暂时无法打开');return;}
+        var oldLb=document.getElementById('csProofLightbox');if(oldLb)oldLb.remove();
+        var lb=document.createElement('div');
+        lb.id='csProofLightbox';
+        lb.className='cs-modal';
+        lb.innerHTML='<div class="cs-dialog" style="max-width:min(96vw,920px);padding:12px;text-align:center"><img src="'+esc(url)+'" alt="付款截图大图" style="max-width:100%;max-height:80vh;object-fit:contain;border-radius:12px"><div style="margin-top:10px"><button class="cs-btn" type="button" data-close-modal>关闭</button></div></div>';
+        document.body.appendChild(lb);
+      }
+      function cacheProofUrl(orderId,url,receiptId){
+        if(!orderId||!url||!state.data||!Array.isArray(state.data.orders))return;
+        var idx=state.data.orders.findIndex(function(o){return o.id===orderId});
+        if(idx>=0){
+          state.data.orders[idx]=Object.assign({},state.data.orders[idx],{
+            paymentProofUrl:url,
+            paymentReceiptId:receiptId||state.data.orders[idx].paymentReceiptId||''
+          });
+        }
+      }
+      if(pOrderId){
+        // Always re-sign on open so expired/rotating poll URLs do not block CS preview.
+        api('get_payment_proof',{id:pOrderId,receipt_id:pReceiptId||undefined}).then(function(res){
+          var url=res.paymentProofUrl||'';
+          cacheProofUrl(pOrderId,url,res.paymentReceiptId||pReceiptId);
+          openProofLightbox(url||pUrl);
+        }).catch(function(err){
+          if(pUrl&&!/^proof:/i.test(pUrl))openProofLightbox(pUrl);
+          else toast(err.message||'付款截图加载失败');
+        });
+        return;
+      }
+      openProofLightbox(pUrl);
+      return;
+    }var pay=e.target.closest('[data-confirm-payment]');if(pay){
       var sendHall=pay.getAttribute('data-send-hall')==='1';
       var payId=pay.dataset.confirmPayment||'';
       if(pay.disabled)return;
@@ -3389,12 +3467,14 @@
             grabCount:res.order.grabCount!=null?res.order.grabCount:state.data.orders[idx].grabCount||0,
             paymentReview:false
           });
+          // Invalidate orders poll signature so next refresh can remount with new status.
+          state._ordersPollSig='';
           paint();
         }
         return softRefresh().then(function(){
           if(res.sentToGrabHall||res.path==='grab_hall'){
             state.orderFilter='pending';
-            state.route='/customer-service/orders';
+            state.route='orders';
             try{history.replaceState({},'', '/customer-service/orders/?focus='+encodeURIComponent(payId));}catch(err){}
             paint();
             var row=document.querySelector('tr[data-grab-hall="1"] td')||document.querySelector('[data-view-grabs="'+payId+'"]');

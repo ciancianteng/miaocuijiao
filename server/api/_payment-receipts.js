@@ -61,6 +61,58 @@ export async function listPendingForCs({ orderIds = [] } = {}) {
   return companionDb("payment_receipts", query).catch(() => []);
 }
 
+async function insertPaidTransaction({ order, receipt, reviewerId, at }) {
+  const rows = await companionDb("payment_transactions", "", {
+    method: "POST",
+    body: JSON.stringify({
+      order_id: order.id,
+      receipt_id: receipt.id,
+      boss_id: order.boss_id,
+      gross_amount: money(order.total_amount),
+      refunded_amount: 0,
+      net_amount: money(order.total_amount),
+      payment_status: "paid",
+      payment_method: receipt.payment_method || paymentMethod(order),
+      confirmed_by: reviewerId,
+      confirmed_at: at,
+      created_at: at,
+    }),
+  });
+  return rows?.[0] || null;
+}
+
+/** Recover approved receipt that never got a payment_transactions row (half-commit). */
+export async function recoverApprovedWithoutTx({ order, reviewerId }) {
+  const existing = await companionDb(
+    "payment_transactions",
+    `?order_id=eq.${encodeURIComponent(order.id)}&payment_status=eq.paid&limit=1`
+  ).catch(() => []);
+  if (existing?.[0]) return { transaction: existing[0], receipt: null, duplicate: true };
+  const approvedRows = await companionDb(
+    "payment_receipts",
+    `?order_id=eq.${encodeURIComponent(order.id)}&status=eq.approved&order=reviewed_at.desc&limit=1`
+  ).catch(() => []);
+  const approvedReceipt = approvedRows?.[0] || null;
+  if (!approvedReceipt) return null;
+  const at = nowIso();
+  try {
+    const transaction = await insertPaidTransaction({
+      order,
+      receipt: approvedReceipt,
+      reviewerId: reviewerId || approvedReceipt.confirmed_by || approvedReceipt.reviewed_by,
+      at,
+    });
+    return { transaction, receipt: approvedReceipt, duplicate: false, recovered: true };
+  } catch (error) {
+    if (!/duplicate|unique/i.test(String(error?.message || ""))) throw error;
+    const replay = await companionDb(
+      "payment_transactions",
+      `?order_id=eq.${encodeURIComponent(order.id)}&limit=1`
+    ).catch(() => []);
+    return { transaction: replay?.[0] || null, receipt: approvedReceipt, duplicate: true, recovered: true };
+  }
+}
+
 export async function approveAndLedger({ order, receipt, reviewerId }) {
   const existing = await companionDb("payment_transactions", `?order_id=eq.${encodeURIComponent(order.id)}&limit=1`).catch(() => []);
   if (existing?.[0]) return { transaction: existing[0], duplicate: true };
@@ -73,20 +125,20 @@ export async function approveAndLedger({ order, receipt, reviewerId }) {
   if (!approvedReceipt) {
     const replay = await companionDb("payment_transactions", `?order_id=eq.${encodeURIComponent(order.id)}&limit=1`).catch(() => []);
     if (replay?.[0]) return { transaction: replay[0], duplicate: true };
+    // Receipt already approved but TX insert previously failed — recover instead of 409.
+    const recovered = await recoverApprovedWithoutTx({ order, reviewerId });
+    if (recovered?.transaction) return recovered;
     throw Object.assign(new Error("付款凭证已被处理，请刷新后重试。"), { status: 409 });
   }
   try {
-    const rows = await companionDb("payment_transactions", "", {
-      method: "POST",
-      body: JSON.stringify({
-        order_id: order.id, receipt_id: approvedReceipt.id, boss_id: order.boss_id,
-        gross_amount: money(order.total_amount), refunded_amount: 0, net_amount: money(order.total_amount),
-        payment_status: "paid", payment_method: approvedReceipt.payment_method, confirmed_by: reviewerId, confirmed_at: at, created_at: at,
-      }),
-    });
-    return { transaction: rows?.[0] || null, receipt: approvedReceipt, duplicate: false };
+    const transaction = await insertPaidTransaction({ order, receipt: approvedReceipt, reviewerId, at });
+    return { transaction, receipt: approvedReceipt, duplicate: false };
   } catch (error) {
-    if (!/duplicate|unique/i.test(String(error?.message || ""))) throw error;
+    if (!/duplicate|unique/i.test(String(error?.message || ""))) {
+      // Keep approved receipt; next confirm_payment will recover via recoverApprovedWithoutTx.
+      console.warn("[approveAndLedger] TX insert failed after approve", error?.message || error);
+      throw error;
+    }
     const replay = await companionDb("payment_transactions", `?order_id=eq.${encodeURIComponent(order.id)}&limit=1`);
     return { transaction: replay?.[0] || null, receipt: approvedReceipt, duplicate: true };
   }
@@ -253,6 +305,18 @@ export function exportCsv(rows = []) {
   ).join("\n");
 }
 
-export async function signedProofUrl(receipt) {
-  return receipt?.storage_path ? createSignedUrl(receipt.storage_bucket || BUCKET, receipt.storage_path, 300) : "";
+export async function signedProofUrl(receipt, expiresIn = 3600) {
+  if (!receipt?.storage_path) return "";
+  const ttl = Math.max(300, Number(expiresIn) || 3600);
+  return createSignedUrl(receipt.storage_bucket || BUCKET, receipt.storage_path, ttl);
+}
+
+export async function latestReceiptForOrder(orderId) {
+  const id = String(orderId || "").trim();
+  if (!id) return null;
+  const rows = await companionDb(
+    "payment_receipts",
+    `?order_id=eq.${encodeURIComponent(id)}&status=in.(pending,approved)&order=uploaded_at.desc&limit=1`
+  ).catch(() => []);
+  return rows?.[0] || null;
 }
