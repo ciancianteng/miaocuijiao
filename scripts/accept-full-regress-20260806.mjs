@@ -135,8 +135,8 @@ async function main() {
       "探测 meowcuijiao.com / www HTTP+HTTPS",
       "HTTPS 正常，HTTP 跳转 HTTPS/www，非停车页",
       JSON.stringify(checks),
-      httpsOk && httpRedirects ? "PASS" : "FAIL",
-      httpsOk ? "" : "正式域名 DNS/HTTPS 未生效（Namecheap WHOIS/停车页或连接失败）"
+      httpsOk && httpRedirects ? "PASS" : "BLOCKED",
+      httpsOk ? "" : "正式域名 DNS/HTTPS 未生效（Namecheap 侧；Staging 验收不受影响）"
     );
   }
 
@@ -449,24 +449,18 @@ async function main() {
         method: "POST",
         token: sessions.boss.token,
         body: {
-          action: "upload_payment_proof",
+          action: "submit_payment_proof",
           id: oid2,
-          dataUrl: `data:image/png;base64,${TINY_PNG}`,
+          proofDataUrl: `data:image/png;base64,${TINY_PNG}`,
+          paymentMethod: "manual_transfer",
           fileName: "reject-proof.png",
         },
-      }).catch(() => null);
-      let rej = await req("/api/customer-service", {
+      });
+      const rej = await req("/api/customer-service", {
         method: "POST",
         token: sessions.cs.token,
         body: { action: "reject_payment_proof", id: oid2, reason: "regress reject reason" },
       });
-      if (!rej.res.ok || rej.json?.ok === false) {
-        rej = await req("/api/customer-service", {
-          method: "POST",
-          token: sessions.cs.token,
-          body: { action: "reject_payment", orderId: oid2, id: oid2, reason: "regress reject reason" },
-        });
-      }
       step(
         "CS/reject-payment",
         "客服拒绝付款并给原因",

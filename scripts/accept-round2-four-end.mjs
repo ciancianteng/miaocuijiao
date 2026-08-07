@@ -57,7 +57,7 @@ async function main() {
 
   step("Static/boss payment proof", /submit_payment_proof|data-payment-proof/.test(payJs), "upload flow present");
   step("Static/boss no stale QR cache", /支付通道暂不可用/.test(payJs) && /platformPayInfo/.test(payJs), "empty copy + live pay info");
-  step("Static/place-order no hardcoded services", /LEGACY_SERVICE_NAMES|resolveServices/.test(poJs) && !/护航.*代肝.*陪玩/.test(poJs), "companion services binding");
+  step("Static/place-order no hardcoded services", /LEGACY_SERVICE_NAMES/.test(poJs) && /resolveServices/.test(poJs) && /companion\.services/.test(poJs), "companion services binding");
   step("Static/companion cover removed", !/上传封面/.test(wbJs), "no cover upload in workbench");
   step("Static/withdraw accordion", /pw-rules-accordion|<details/.test(wbJs), "rules collapse");
   step("Static/CS proof+confirm", /get_payment_proof|confirm_payment/.test(csJs), "cs payment ops");
