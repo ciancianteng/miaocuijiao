@@ -165,25 +165,14 @@ async function getOrCreateConversation(profile, orderId = "", meta = {}) {
     const active = await supabaseJson(restUrl("conversations", activeQuery), { headers: serviceHeaders() }).catch(() => []);
     if (active?.[0]) {
       let conversation = active[0];
-      if (orderId) {
-        const orders = await supabaseJson(
-          restUrl("orders", `?id=eq.${encodeURIComponent(orderId)}&select=id,companion_id,customer_service_id&limit=1`),
-          { headers: serviceHeaders() }
-        ).catch(() => []);
-        const orderRow = orders?.[0] || null;
-        const patch = {};
-        if (orderRow?.companion_id && String(conversation.companion_id || "") !== String(orderRow.companion_id)) {
-          patch.companion_id = orderRow.companion_id;
-        }
-        if (Object.keys(patch).length) {
-          patch.updated_at = nowIso();
-          await supabaseJson(restUrl("conversations", `?id=eq.${encodeURIComponent(conversation.id)}`), {
-            method: "PATCH",
-            headers: serviceHeaders(),
-            body: JSON.stringify(patch),
-          }).catch(() => null);
-          conversation = { ...conversation, ...patch };
-        }
+      // Do NOT stamp companion_id onto boss↔CS rooms — that leaked chats into companion inbox.
+      if (orderId && conversation.companion_id) {
+        await supabaseJson(restUrl("conversations", `?id=eq.${encodeURIComponent(conversation.id)}`), {
+          method: "PATCH",
+          headers: serviceHeaders(),
+          body: JSON.stringify({ companion_id: null, updated_at: nowIso() }),
+        }).catch(() => null);
+        conversation = { ...conversation, companion_id: null };
       }
       return { conversation, created: false, order: null };
     }
@@ -203,15 +192,15 @@ async function getOrCreateConversation(profile, orderId = "", meta = {}) {
       const reopenPatch = {
         status: "waiting_service",
         customer_service_id: null,
+        companion_id: null,
         closed_at: null,
         closed_by: null,
         updated_at: nowIso(),
       };
       const orders = await supabaseJson(
-        restUrl("orders", `?id=eq.${encodeURIComponent(orderId)}&select=id,companion_id&limit=1`),
+        restUrl("orders", `?id=eq.${encodeURIComponent(orderId)}&select=id,order_no&limit=1`),
         { headers: serviceHeaders() }
       ).catch(() => []);
-      if (orders?.[0]?.companion_id) reopenPatch.companion_id = orders[0].companion_id;
       const updated = await supabaseJson(restUrl("conversations", `?id=eq.${encodeURIComponent(existing.id)}`), {
         method: "PATCH",
         headers: serviceHeaders(),
@@ -254,7 +243,7 @@ async function getOrCreateConversation(profile, orderId = "", meta = {}) {
   const payload = {
     boss_id: profile.id,
     order_id: orderId || null,
-    companion_id: order?.companion_id || null,
+    companion_id: null,
     conversation_type: conversationType,
     status: "waiting_service",
     customer_service_id: null,
@@ -328,6 +317,8 @@ async function conversationByIdForBoss(profile, conversationId) {
   if (String(row.boss_id || "") !== String(profile.id || "")) {
     throw Object.assign(new Error("无权限查看该会话。"), { status: 403, code: "FORBIDDEN_CONVERSATION" });
   }
+  const { assertBossCanAccessConversation } = await import("./_conversation-privacy.js");
+  assertBossCanAccessConversation(row, profile.id);
   return row;
 }
 
@@ -450,7 +441,8 @@ async function listConversations(profile) {
     restUrl("conversations", `?boss_id=eq.${encodeURIComponent(profile.id)}&order=updated_at.desc&limit=100`),
     { headers: serviceHeaders() }
   );
-  const conversations = Array.isArray(rows) ? rows : [];
+  const { isBossCsConversation } = await import("./_conversation-privacy.js");
+  const conversations = (Array.isArray(rows) ? rows : []).filter((row) => isBossCsConversation(row));
   if (!conversations.length) return [];
 
   const orderIds = [...new Set(conversations.map((c) => c.order_id).filter(Boolean))];

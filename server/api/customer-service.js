@@ -539,11 +539,17 @@ function withConversationLockFields(conv, serviceProfileId) {
 }
 async function loadOpenConversationByOrderId(orderId) {
   if (!orderId) return null;
+  // Prefer boss↔CS order_support for order lock / mutation gates — never companion_support.
+  const typed = await maybeRows(
+    "conversations",
+    `?order_id=eq.${encodeURIComponent(orderId)}&conversation_type=eq.order_support&status=not.in.(closed,ended)&order=updated_at.desc&limit=1`
+  );
+  if (typed?.[0]) return typed[0];
   const rows = await maybeRows(
     "conversations",
-    `?order_id=eq.${encodeURIComponent(orderId)}&status=not.in.(closed,ended)&order=updated_at.desc&limit=1`
+    `?order_id=eq.${encodeURIComponent(orderId)}&status=not.in.(closed,ended)&order=updated_at.desc&limit=5`
   );
-  return rows?.[0] || null;
+  return (rows || []).find((r) => String(r.conversation_type || "") !== "companion_support" && r.boss_id) || null;
 }
 async function assertOrderMutationAllowed(order, serviceProfile, { requireOwner = false } = {}) {
   try {
@@ -681,17 +687,25 @@ async function ensureConversation({
   consult_type = "",
   forceNew = false,
 }) {
+  // Boss↔CS only. Never stamp companion_id; never reuse companion_support by order_id alone.
   const consultType = order_id
     ? normalizeBossConsultType(consult_type || "current_order", { orderId: order_id })
     : normalizeBossConsultType(consult_type || "other");
   let rows = [];
   if (!forceNew) {
     let query = order_id
-      ? `?order_id=eq.${encodeURIComponent(order_id)}&status=not.in.(closed,ended)&limit=1`
+      ? `?boss_id=eq.${encodeURIComponent(boss_id)}&order_id=eq.${encodeURIComponent(order_id)}&conversation_type=eq.order_support&status=not.in.(closed,ended)&order=updated_at.desc&limit=1`
       : `?boss_id=eq.${encodeURIComponent(boss_id)}&order_id=is.null&consult_type=eq.${encodeURIComponent(consultType)}&status=not.in.(closed,ended)&order=updated_at.desc&limit=1`;
     rows = await maybeRows("conversations", query);
+    if (!rows[0] && order_id) {
+      // Legacy boss order rooms without conversation_type (exclude companion_support).
+      const loose = await maybeRows(
+        "conversations",
+        `?boss_id=eq.${encodeURIComponent(boss_id)}&order_id=eq.${encodeURIComponent(order_id)}&status=not.in.(closed,ended)&order=updated_at.desc&limit=5`
+      );
+      rows = (loose || []).filter((r) => String(r.conversation_type || "") !== "companion_support").slice(0, 1);
+    }
     if (!rows[0] && !order_id) {
-      // Column may be missing — fall back to order-null open thread only (still not all statuses).
       rows = await maybeRows(
         "conversations",
         `?boss_id=eq.${encodeURIComponent(boss_id)}&order_id=is.null&status=not.in.(closed,ended)&order=updated_at.desc&limit=1`
@@ -699,10 +713,7 @@ async function ensureConversation({
     }
   }
   if (rows[0]) {
-    const patch = { updated_at: nowIso() };
-    if (companion_id && String(rows[0].companion_id || "") !== String(companion_id)) {
-      patch.companion_id = companion_id;
-    }
+    const patch = { updated_at: nowIso(), companion_id: null };
     if (customer_service_id && !rows[0].customer_service_id) {
       patch.customer_service_id = customer_service_id;
     }
@@ -717,7 +728,7 @@ async function ensureConversation({
   }
   const base = {
     boss_id,
-    companion_id,
+    companion_id: null,
     customer_service_id,
     order_id,
     status: customer_service_id ? "open" : "waiting_service",
@@ -1765,7 +1776,7 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       });
       const conversation = await ensureConversation({
         boss_id: boss.id,
-        companion_id: order?.companion_id || null,
+        companion_id: null,
         customer_service_id: service.profile.id,
         order_id: orderId || null,
         consult_type: consultType,
@@ -2798,7 +2809,7 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       } catch (_) {}
       const conversation = await ensureConversation({
         boss_id: order.boss_id,
-        companion_id: order.companion_id || null,
+        companion_id: null,
         customer_service_id: service.profile.id,
         order_id: orderId,
         consult_type: "refund",
@@ -3004,7 +3015,7 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         (o.send_to_hall === true || o.sendToHall === true || o.publish_to_hall === true || body.send_to_hall === true);
       const conversation = await ensureConversation({
         boss_id: bossId,
-        companion_id: order.companion_id || null,
+        companion_id: null,
         customer_service_id: service.profile.id,
         order_id: order.id,
       });
@@ -3168,7 +3179,7 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         patchOrder(order.id, { note: nextNote }).catch(() => null)
       );
       const conversation = await ensureConversation({
-        boss_id: order.boss_id, companion_id: order.companion_id, customer_service_id: service.profile.id, order_id: order.id,
+        boss_id: order.boss_id, companion_id: null, customer_service_id: service.profile.id, order_id: order.id,
       });
       await addMessage(conversation, service.profile.id, "customer_service", `付款凭证已驳回：${reason}。请重新上传。`, "system", order.id);
       return json(res, 200, { ok: true, message: "已驳回付款凭证，老板可重新上传。", order: { ...order, paymentReview: false } });
@@ -3962,7 +3973,7 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       await helpers.stampDispute(order, String(body.reason || body.note || "cs_dispute").slice(0, 80));
       const conversation = await ensureConversation({
         boss_id: order.boss_id,
-        companion_id: order.companion_id,
+        companion_id: null,
         customer_service_id: service.profile.id,
         order_id: order.id,
       });
@@ -3984,7 +3995,7 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       await helpers.clearDispute(order);
       const conversation = await ensureConversation({
         boss_id: order.boss_id,
-        companion_id: order.companion_id,
+        companion_id: null,
         customer_service_id: service.profile.id,
         order_id: order.id,
       });
@@ -4422,7 +4433,7 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       }
       const conversation = await ensureConversation({
         boss_id: order.boss_id,
-        companion_id: order.companion_id,
+        companion_id: null,
         customer_service_id: service.profile.id,
         order_id: order.id,
       });

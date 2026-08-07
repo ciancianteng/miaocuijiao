@@ -3208,6 +3208,7 @@
       var statusEl=root.querySelector('[data-cs-upload-status]');
       Media.pickAndSendImages({
         token:token,
+        conversationId:String(state.activeConversation||''),
         multiple:true,
         onStatus:function(t){if(statusEl)statusEl.textContent=t||'';},
         onError:function(err){toast((err&&err.message)||'发送失败');},

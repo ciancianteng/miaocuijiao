@@ -20,6 +20,11 @@ import {
   publicDisplayName,
   resolveBossPublicCode,
 } from "./_account-codes.js";
+import {
+  assertCompanionCanAccessConversation,
+  companionSupportListFilter,
+  isCompanionCsConversation,
+} from "./_conversation-privacy.js";
 
 function nowIso() {
   return new Date().toISOString();
@@ -539,6 +544,7 @@ export async function sendCompanionChatMessage(conversation, companionUserId, co
   let type = String(messageType || "text").trim() || "text";
   if (!text) throw Object.assign(new Error("不能发送空消息"), { status: 400 });
   if (!conversation?.id) throw Object.assign(new Error("会话不存在"), { status: 404 });
+  assertCompanionCanAccessConversation(conversation, companionUserId);
   if (conversation.status === "closed" || conversation.status === "ended") {
     throw Object.assign(new Error("会话已结束，无法继续发送"), { status: 403 });
   }
@@ -631,6 +637,24 @@ export function viewMessage(row = {}) {
   };
 }
 
+export async function viewMessageSigned(row = {}) {
+  const base = viewMessage(row);
+  if (base.messageType === "image" && base.imageUrl) {
+    try {
+      const { signChatMediaUrl } = await import("./_chat-media.js");
+      const signed = await signChatMediaUrl(base.imageUrl);
+      if (signed) {
+        base.imageUrl = signed;
+        base.image_url = signed;
+        base.content = signed;
+      }
+    } catch {
+      /* keep raw */
+    }
+  }
+  return base;
+}
+
 function conversationUnreadCount(messages, companionUserId) {
   return (messages || []).filter(
     (m) =>
@@ -644,32 +668,38 @@ function conversationUnreadCount(messages, companionUserId) {
 async function loadCompanionSupportConversations(companionUserId) {
   const uid = String(companionUserId || "").trim();
   if (!uid) return [];
-  // Include companion_support AND order_support threads this companion is on,
-  // so boss/CS image messages on the order room sync to the companion end.
+  // Privacy: companions may ONLY see companion_support (陪玩↔客服).
+  // Never list order_support / general_support boss↔CS rooms, even if companion_id was stamped.
   const select =
     "id,companion_id,boss_id,customer_service_id,order_id,consult_type,status,conversation_type,created_at,updated_at,last_message_at,closed_at,ended_at,closed_by,accepted_at,title";
+  const filter = companionSupportListFilter(uid);
   const rows = await supabaseJson(
     restUrl(
       "conversations",
-      `?companion_id=eq.${encodeURIComponent(uid)}&order=updated_at.desc&limit=100&select=${select}`
+      `?${filter}&order=updated_at.desc&limit=100&select=${select}`
     ),
     { headers: serviceHeaders() }
   ).catch(async (err) => {
-    if (!/consult_type|closed_at|ended_at|closed_by|boss_id|conversation_type|column|schema/i.test(String(err?.message || ""))) {
+    // Fallback if conversation_type / boss_id filters fail on older schemas: load by companion_id then filter in JS.
+    if (!/conversation_type|boss_id|column|schema|PGRST/i.test(String(err?.message || ""))) {
       return [];
     }
-    return supabaseJson(
-      restUrl("conversations", `?companion_id=eq.${encodeURIComponent(uid)}&order=updated_at.desc&limit=100`),
+    const loose = await supabaseJson(
+      restUrl(
+        "conversations",
+        `?companion_id=eq.${encodeURIComponent(uid)}&order=updated_at.desc&limit=100&select=${select}`
+      ),
       { headers: serviceHeaders() }
-    ).catch(() => []);
+    ).catch(() =>
+      supabaseJson(
+        restUrl("conversations", `?companion_id=eq.${encodeURIComponent(uid)}&order=updated_at.desc&limit=100`),
+        { headers: serviceHeaders() }
+      ).catch(() => [])
+    );
+    return Array.isArray(loose) ? loose : [];
   });
   const list = Array.isArray(rows) ? rows : [];
-  // Prefer support + order rooms; drop accidental unrelated rows without type if any.
-  return list.filter((row) => {
-    const t = String(row.conversation_type || "");
-    if (!t) return true;
-    return t === "companion_support" || t === "order_support" || t === "general_support";
-  });
+  return list.filter((row) => isCompanionCsConversation(row));
 }
 
 async function resolveOrderMeta(orderIds = []) {
@@ -796,42 +826,37 @@ async function loadConversationListMeta(conversationIds = [], companionUserId = 
 
 function viewCompanionCsConversation(
   row = {},
-  { orderNo = "", csName = "", lastMessage = "", lastTime = "", unread = 0, bossPeer = null } = {}
+  { orderNo = "", csName = "", lastMessage = "", lastTime = "", unread = 0 } = {}
 ) {
   const closed = isClosedConversationStatus(row.status);
   const transferring = isPendingTransferStatus(row.status);
-  const convType = String(row.conversation_type || "");
-  const isOrderRoom = convType === "order_support" || (!!row.order_id && convType !== "companion_support");
-  const consultKey = isOrderRoom
-    ? "order_dock"
-    : normalizeCompanionConsultType(row.consult_type, { orderId: row.order_id || "" });
-  const consultLabel = isOrderRoom ? "订单沟通" : consultTypeLabel("companion", consultKey);
+  const consultKey = normalizeCompanionConsultType(row.consult_type, { orderId: row.order_id || "" });
+  const consultLabel = consultTypeLabel("companion", consultKey);
   const orderLabel = row.order_id ? orderNo || String(row.order_id).slice(0, 8) : "非订单咨询";
   const statusLabel = conversationStatusLabel(row);
-  const peerName = isOrderRoom
-    ? String(bossPeer?.label || bossPeer?.name || "老板")
-    : String(csName || (row.customer_service_id ? "客服" : "官方客服"));
-  const peerCode = isOrderRoom ? String(bossPeer?.code || "") : "";
+  const peerName = String(csName || (row.customer_service_id ? "客服" : "官方客服"));
+  const title = row.order_id ? "订单沟通" : consultLabel;
   const subtitle = transferring
     ? TRANSFER_USER_TIP
     : closed
       ? `已结束 · ${orderLabel}`
-      : `${statusLabel} · ${peerName}${peerCode && peerName.indexOf(peerCode) < 0 ? ` · ${peerCode}` : ""} · ${orderLabel}`;
+      : `${statusLabel} · 客服：${peerName} · ${orderLabel}`;
   return {
     id: row.id,
     key: row.id,
     type: "cs",
-    conversationType: convType || (isOrderRoom ? "order_support" : "companion_support"),
-    title: consultLabel,
+    conversationType: "companion_support",
+    title,
     subtitle,
     status: closed ? "ended" : transferring ? "pending_transfer" : row.customer_service_id ? "active" : "waiting",
     statusLabel,
     assignedServiceId: row.customer_service_id || "",
     assignedServiceName: csName || "",
     peerName,
-    peerCode,
-    bossName: isOrderRoom ? peerName : "",
-    bossCode: peerCode,
+    peerCode: "",
+    // Never expose boss identity on companion chat list.
+    bossName: "",
+    bossCode: "",
     orderId: row.order_id || "",
     orderNo: orderNo || "",
     orderLabel,
@@ -856,6 +881,7 @@ export async function endCompanionSupportConversation(companionUserId, conversat
   ).catch(() => []);
   const existing = rows?.[0] || null;
   if (!existing) throw Object.assign(new Error("会话不存在"), { status: 404 });
+  assertCompanionCanAccessConversation(existing, uid);
   if (isClosedConversationStatus(existing.status)) {
     return existing;
   }
@@ -912,7 +938,12 @@ export async function loadCompanionThreadMessages(profile, conversationId) {
   ).catch(() => []);
   const conversation = rows?.[0] || null;
   if (!conversation) throw Object.assign(new Error("会话不存在或无权访问"), { status: 404 });
+  // Hard deny boss↔CS rooms even if companion_id was historically stamped.
+  assertCompanionCanAccessConversation(conversation, uid);
   const messages = await loadConversationMessages(cid).catch(() => []);
+  // Defense in depth: never surface boss-authored bubbles to companion clients.
+  const safeMessages = (messages || []).filter((m) => String(m.sender_role || "") !== "boss");
+  const signed = await Promise.all(safeMessages.map((m) => viewMessageSigned(m)));
   return {
     conversationId: cid,
     conversation: viewCompanionCsConversation(conversation, {
@@ -920,14 +951,33 @@ export async function loadCompanionThreadMessages(profile, conversationId) {
       lastMessage: "",
       unread: 0,
     }),
-    messages: (messages || []).map(viewMessage),
+    messages: signed,
   };
+}
+
+async function detachCompanionFromBossRooms(companionUserId) {
+  const uid = String(companionUserId || "").trim();
+  if (!uid) return;
+  // Historical leak fix: companion_id stamped on boss↔CS rooms must be cleared.
+  const selectors = [
+    `?companion_id=eq.${encodeURIComponent(uid)}&conversation_type=eq.order_support`,
+    `?companion_id=eq.${encodeURIComponent(uid)}&conversation_type=eq.general_support`,
+  ];
+  for (const q of selectors) {
+    await supabaseJson(restUrl("conversations", q), {
+      method: "PATCH",
+      headers: serviceHeaders(),
+      body: JSON.stringify({ companion_id: null, updated_at: nowIso() }),
+    }).catch(() => null);
+  }
 }
 
 export async function buildCompanionInbox(profile, companion, bootstrapSlice = {}) {
   const activeId = String(bootstrapSlice.activeConversationId || bootstrapSlice.conversationId || "").trim();
   const includeActiveMessages = bootstrapSlice.includeActiveMessages !== false;
   const skipDerivedNotices = !!bootstrapSlice.light || !!bootstrapSlice.skipDerivedNotices;
+  // Best-effort historical scrub so leaked boss rooms disappear immediately for this companion.
+  await detachCompanionFromBossRooms(profile.id).catch(() => null);
   let rows = [];
   try {
     rows = await loadCompanionSupportConversations(profile.id);
@@ -940,12 +990,8 @@ export async function buildCompanionInbox(profile, companion, bootstrapSlice = {
 
   const listed = rows.slice(0, 60);
   const orderMeta = await resolveOrderMeta(listed.map((r) => r.order_id));
-  const bossIds = listed
-    .map((r) => String(r.boss_id || orderMeta[String(r.order_id || "")]?.bossId || "").trim())
-    .filter(Boolean);
-  const [csNames, bossPeers, threadMeta] = await Promise.all([
+  const [csNames, threadMeta] = await Promise.all([
     resolveCsDisplayNames(listed.map((r) => r.customer_service_id)),
-    resolveBossPeers(bossIds),
     loadConversationListMeta(
       listed.map((r) => r.id).filter(Boolean),
       profile.id
@@ -955,14 +1001,12 @@ export async function buildCompanionInbox(profile, companion, bootstrapSlice = {
   const csConversations = listed.map((row) => {
     const meta = threadMeta[row.id] || {};
     const oMeta = orderMeta[String(row.order_id || "")] || {};
-    const bossId = String(row.boss_id || oMeta.bossId || "").trim();
     return viewCompanionCsConversation(row, {
       orderNo: oMeta.orderNo || "",
       csName: csNames[String(row.customer_service_id || "")] || "",
       lastMessage: meta.lastMessage || "",
       lastTime: meta.lastTime || "",
       unread: meta.unread || 0,
-      bossPeer: bossPeers[bossId] || null,
     });
   });
 
@@ -975,6 +1019,7 @@ export async function buildCompanionInbox(profile, companion, bootstrapSlice = {
   let activeMessages = [];
   if (includeActiveMessages && active?.id) {
     activeMessages = await loadConversationMessages(active.id).catch(() => []);
+    activeMessages = (activeMessages || []).filter((m) => String(m.sender_role || "") !== "boss");
   }
   const csUnreadTotal = csConversations.reduce((sum, c) => sum + Number(c.unread || 0), 0);
 

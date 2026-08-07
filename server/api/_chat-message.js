@@ -19,6 +19,8 @@ export function normalizeImageUrl(raw) {
   const s = stripImageTag(raw);
   if (!s) return "";
   if (/^(blob:|data:)/i.test(s)) return "";
+  if (/^chat-images-private:/i.test(s)) return s;
+  if (/^conv\//i.test(s)) return `chat-images-private:${s}`;
   if (!/^https?:\/\//i.test(s)) return "";
   return s;
 }
@@ -30,8 +32,9 @@ export function looksLikeImageMessage({ messageType, content, imageUrl, image_ur
   if (c.indexOf(IMG_TAG) === 0) return true;
   if (normalizeImageUrl(imageUrl || image_url || mediaUrl || media_url)) return true;
   if (normalizeImageUrl(c)) {
+    if (/^chat-images-private:/i.test(c) || /^conv\//i.test(c)) return true;
     if (/\.(jpg|jpeg|png|webp)(\?|#|$)/i.test(c)) return true;
-    if (/\/storage\/v1\/object\/public\/chat-images\//i.test(c)) return true;
+    if (/\/storage\/v1\/object\/(?:public|sign)\/chat-images(?:-private)?\//i.test(c)) return true;
   }
   return false;
 }

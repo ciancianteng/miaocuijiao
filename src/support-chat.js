@@ -1518,6 +1518,7 @@
       var token = authAccessToken();
       Media.pickAndSendImages({
         token: token,
+        conversationId: String((state.conversation && state.conversation.id) || ''),
         multiple: true,
         onStatus: function (t) {
           if (statusEl) statusEl.textContent = t || '';

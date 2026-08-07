@@ -1417,17 +1417,19 @@
     if(typeof RT.unsubscribe==='function')RT.unsubscribe(cid);
     RT.subscribeMessages(cid,token,function(row){
       if(!row||!row.id)return;
+      var role=String(row.sender_role||'');
+      // Privacy: never render boss↔CS bubbles on companion client, even if leaked via realtime.
+      if(role==='boss')return;
       if(!state.inbox)state.inbox={messages:[],conversations:[]};
       var list=state.inbox.messages=Array.isArray(state.inbox.messages)?state.inbox.messages:[];
       if(list.some(function(m){return String(m.id)===String(row.id)}))return;
-      var role=String(row.sender_role||'');
       var Media=window.MCJChatMedia;
       var view={
         id:row.id,
         conversationId:row.conversation_id||cid,
         content:row.content||'',
         senderRole:role,
-        senderLabel:role==='companion'?'我':(role==='customer_service'?'客服':(role==='boss'?'老板':'系统')),
+        senderLabel:role==='companion'?'我':(role==='customer_service'?'客服':'系统'),
         side:role==='companion'?'right':'left',
         createdAt:row.created_at||new Date().toISOString(),
         messageType:row.message_type||'text',
@@ -2284,10 +2286,10 @@
         '<label class="pw-consult-type">咨询类型 <select data-cs-consult-type>'+consultTypeOptionsHtml('other')+'</select></label>'+
         '<button class="pw-btn primary" type="button" data-start-cs-consult>发起新咨询</button></div></div>';
     }
-    var peer=conv.peerName||conv.bossName||conv.assignedServiceName||'';
-    var title=peer||conv.consultTypeLabel||consultTypeLabel(conv.consultType)||'官方客服';
+    var peer=conv.assignedServiceName||conv.peerName||'客服';
+    var title=conv.orderId?'订单沟通':(conv.consultTypeLabel||consultTypeLabel(conv.consultType)||'官方客服');
     var orderBit=conv.orderNo?('订单 '+conv.orderNo):(conv.orderLabel||'');
-    var meta=[conv.statusLabel||'',orderBit,conv.peerCode||''].filter(Boolean).join(' · ');
+    var meta=[conv.statusLabel||'','客服：'+peer,orderBit].filter(Boolean).join(' · ');
     var head='<div class="pw-chat-head"><div><h3>'+esc(title)+'</h3><p>'+esc(meta||conv.subtitle||'工作时间 9:00–24:00')+'</p></div>'+
       '<div class="pw-actions" style="gap:8px;flex-wrap:wrap">'+
       (!ended?'<button class="pw-btn" type="button" data-end-cs-chat="'+esc(conv.id)+'">结束对话</button>':'')+
@@ -2355,16 +2357,16 @@
     var historyList=csList.filter(function(c){return !!c.ended});
     function sessionRow(c){
       var isActive=session==='cs'&&activeId&&String(c.id)===activeId;
-      var peer=c.peerName||c.bossName||c.assignedServiceName||(c.orderId?'老板':'客服');
-      if(c.peerCode&&String(peer).indexOf(c.peerCode)<0)peer=peer+' · '+c.peerCode;
+      var peer=c.assignedServiceName||c.peerName||'客服';
+      var title=c.orderId?'订单沟通':(c.consultTypeLabel||c.title||'官方客服');
       var orderBit=c.orderNo?('订单 '+c.orderNo):(c.orderLabel&&c.orderLabel!=='非订单咨询'?c.orderLabel:'');
       var preview=c.lastMessage||'';
       var time=fmtSessionTime(c.lastTime);
       return '<button type="button" class="pw-session'+(isActive?' active':'')+(c.ended?' is-ended':'')+'" data-chat-session="cs" data-cs-conversation="'+esc(c.id)+'">'+
         '<span class="pw-session-avatar" aria-hidden="true">'+(c.orderId?'💬':'🎧')+'</span>'+
         '<span class="pw-session-body">'+
-          '<span class="pw-session-top"><b>'+esc(peer)+'</b><time>'+esc(time)+'</time></span>'+
-          (orderBit?'<span class="pw-session-order">'+esc(orderBit)+'</span>':'')+
+          '<span class="pw-session-top"><b>'+esc(title)+'</b><time>'+esc(time)+'</time></span>'+
+          '<span class="pw-session-order">'+esc(['客服：'+peer, orderBit, c.statusLabel||''].filter(Boolean).join(' · '))+'</span>'+
           '<span class="pw-session-preview">'+esc(preview)+'</span>'+
         '</span>'+
         (c.unread?'<em class="pw-unread">'+esc(c.unread)+'</em>':'')+
@@ -4020,17 +4022,19 @@
       var statusEl=root.querySelector('[data-pw-upload-status]');
       Media.pickAndSendImages({
         token:token,
+        conversationId:String((activeConvImg&&activeConvImg.id)||companionCsConversationId()||''),
         multiple:true,
         onStatus:function(t){if(statusEl)statusEl.textContent=t||'';},
         onError:function(err){toast((err&&err.message)||'发送失败');},
-        onUploaded:function(url){
+        onUploaded:function(url, up){
+          var mediaUrl=(up&&(up.storageRef||up.url))||url;
           state.chatBusy=true;
           if(statusEl)statusEl.textContent='上传中…';
           if(state.inbox){
             state.inbox.messages=(state.inbox.messages||[]).concat([{
               id:'local-img-'+Date.now(),_localId:'local-img',_pending:true,
               side:'right',senderRole:'companion',senderLabel:'我',
-              messageType:'image',message_type:'image',content:url,createdAt:new Date().toISOString()
+              messageType:'image',message_type:'image',content:url,imageUrl:url,createdAt:new Date().toISOString()
             }]);
             paint({preserveScroll:true});
           }
@@ -4039,7 +4043,7 @@
           var prevType=String((activeConvImg&&activeConvImg.consultType)||csConvConsultType()||'').trim();
           var forceNew=!!(prevType&&prevType!==consultType);
           var cidImg=companionCsConversationId();
-          return api('send_cs_message',{content:url,message_type:'image',consult_type:consultType,conversation_id:cidImg,forceNew:forceNew}).then(function(){
+          return api('send_cs_message',{content:mediaUrl,message_type:'image',consult_type:consultType,conversation_id:cidImg,forceNew:forceNew}).then(function(){
             state.chatBusy=false;
             return loadActiveThread({force:true,clear:false,paint:false}).then(function(){return reloadInbox({paint:true});});
           }).catch(function(err){

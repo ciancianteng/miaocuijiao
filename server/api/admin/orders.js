@@ -173,19 +173,34 @@ function safeOrder(row, profiles, extras = {}) {
 }
 async function addSystem(order, adminId, text) {
   try {
-    let rows = await supabaseJson(restUrl("conversations", `?order_id=eq.${encodeURIComponent(order.id)}&limit=1`), {
-      headers: serviceHeaders(),
-    });
+    let rows = await supabaseJson(
+      restUrl(
+        "conversations",
+        `?boss_id=eq.${encodeURIComponent(order.boss_id)}&order_id=eq.${encodeURIComponent(order.id)}&conversation_type=eq.order_support&order=updated_at.desc&limit=1`
+      ),
+      { headers: serviceHeaders() }
+    ).catch(() => []);
     let conv = rows?.[0];
+    if (!conv) {
+      const loose = await supabaseJson(
+        restUrl(
+          "conversations",
+          `?boss_id=eq.${encodeURIComponent(order.boss_id)}&order_id=eq.${encodeURIComponent(order.id)}&order=updated_at.desc&limit=5`
+        ),
+        { headers: serviceHeaders() }
+      ).catch(() => []);
+      conv = (Array.isArray(loose) ? loose : []).find((r) => String(r.conversation_type || "") !== "companion_support") || null;
+    }
     if (!conv) {
       const created = await supabaseJson(restUrl("conversations"), {
         method: "POST",
         headers: serviceHeaders(),
         body: JSON.stringify({
           boss_id: order.boss_id || null,
-          companion_id: order.companion_id || null,
+          companion_id: null,
           customer_service_id: order.customer_service_id || null,
           order_id: order.id,
+          conversation_type: "order_support",
           status: "open",
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),

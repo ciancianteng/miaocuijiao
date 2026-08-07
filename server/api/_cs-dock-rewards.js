@@ -220,10 +220,20 @@ function nodeReached(status, settleNode) {
 async function findConversationForOrder(order) {
   if (!order?.id) return null;
   try {
-    const byOrder = await sb(
-      rest("conversations", `?order_id=eq.${encodeURIComponent(order.id)}&order=updated_at.desc&limit=1`)
+    const typed = await sb(
+      rest(
+        "conversations",
+        `?order_id=eq.${encodeURIComponent(order.id)}&conversation_type=eq.order_support&order=updated_at.desc&limit=1`
+      )
     );
-    if (Array.isArray(byOrder) && byOrder[0]) return byOrder[0];
+    if (Array.isArray(typed) && typed[0]) return typed[0];
+    const byOrder = await sb(
+      rest("conversations", `?order_id=eq.${encodeURIComponent(order.id)}&order=updated_at.desc&limit=5`)
+    );
+    const hit = (Array.isArray(byOrder) ? byOrder : []).find(
+      (r) => String(r.conversation_type || "") !== "companion_support" && r.boss_id
+    );
+    if (hit) return hit;
   } catch {
     /* ignore */
   }
@@ -232,10 +242,10 @@ async function findConversationForOrder(order) {
       const rows = await sb(
         rest(
           "conversations",
-          `?boss_id=eq.${encodeURIComponent(order.boss_id)}&customer_service_id=eq.${encodeURIComponent(order.customer_service_id)}&order=updated_at.desc&limit=1`
+          `?boss_id=eq.${encodeURIComponent(order.boss_id)}&customer_service_id=eq.${encodeURIComponent(order.customer_service_id)}&order=updated_at.desc&limit=5`
         )
       );
-      return Array.isArray(rows) ? rows[0] : null;
+      return (Array.isArray(rows) ? rows : []).find((r) => String(r.conversation_type || "") !== "companion_support") || null;
     } catch {
       return null;
     }

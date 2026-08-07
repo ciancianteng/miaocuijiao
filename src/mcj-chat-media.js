@@ -234,7 +234,7 @@
     });
   }
 
-  function uploadDataUrl(dataUrl, filename, token) {
+  function uploadDataUrl(dataUrl, filename, token, conversationId) {
     return fetch("/api/chat-media", {
       method: "POST",
       headers: {
@@ -245,7 +245,13 @@
         "x-mcj-service-token": token,
         "x-mcj-companion-token": token,
       },
-      body: JSON.stringify({ action: "upload", data_url: dataUrl, filename: filename || "chat.jpg" }),
+      body: JSON.stringify({
+        action: "upload",
+        data_url: dataUrl,
+        filename: filename || "chat.jpg",
+        conversation_id: conversationId || "",
+        conversationId: conversationId || "",
+      }),
     }).then(function (res) {
       return res.json().catch(function () {
         return {};
@@ -284,6 +290,12 @@
           resolve([]);
           return;
         }
+        var conversationId = String(opts.conversationId || opts.conversation_id || "").trim();
+        if (!conversationId) {
+          toast("缺少会话，无法上传图片");
+          resolve([]);
+          return;
+        }
         var results = [];
         var chain = Promise.resolve();
         files.forEach(function (file, idx) {
@@ -291,7 +303,7 @@
             if (opts.onStatus) opts.onStatus("上传中… (" + (idx + 1) + "/" + files.length + ")");
             return compressFile(file)
               .then(function (packed) {
-                return uploadDataUrl(packed.dataUrl, packed.filename, token);
+                return uploadDataUrl(packed.dataUrl, packed.filename, token, conversationId);
               })
               .then(function (up) {
                 results.push(up);

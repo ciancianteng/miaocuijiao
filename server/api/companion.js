@@ -2181,8 +2181,79 @@ async function viewCompanionWithdrawal(w) {
     createdAt: w.submitted_at || w.created_at,
   };
 }
-async function ensureConversation(order) { const existing=await supabaseJson(restUrl("conversations", `?order_id=eq.${encodeURIComponent(order.id)}&limit=1`), { headers: serviceHeaders() }); if(existing?.[0]) return existing[0]; const rows=await supabaseJson(restUrl("conversations"), { method:"POST", headers: serviceHeaders(), body: JSON.stringify({ boss_id: order.boss_id, companion_id: order.companion_id || null, customer_service_id: order.customer_service_id || null, order_id: order.id, status: "open", created_at: nowIso(), updated_at: nowIso() }) }); return rows?.[0] || null; }
-async function addSystemMessage(order, senderId, senderRole, content) { const conversation=await ensureConversation(order); if(!conversation) return; await supabaseJson(restUrl("messages"), { method:"POST", headers: serviceHeaders(), body: JSON.stringify({ conversation_id: conversation.id, sender_id: senderId, sender_role: senderRole, message_type: "system", content, order_id: order.id, created_at: nowIso() }) }); }
+async function ensureConversation(order) {
+  // System notices for order events belong on the BOSS↔CS order_support thread only.
+  // Never attach companion_id and never reuse companion_support rows for the same order_id.
+  const bossId = order?.boss_id || null;
+  if (!bossId || !order?.id) return null;
+  const typed = await supabaseJson(
+    restUrl(
+      "conversations",
+      `?boss_id=eq.${encodeURIComponent(bossId)}&order_id=eq.${encodeURIComponent(order.id)}&conversation_type=eq.order_support&order=updated_at.desc&limit=1`
+    ),
+    { headers: serviceHeaders() }
+  ).catch(() => []);
+  if (typed?.[0]) return typed[0];
+  const legacy = await supabaseJson(
+    restUrl(
+      "conversations",
+      `?boss_id=eq.${encodeURIComponent(bossId)}&order_id=eq.${encodeURIComponent(order.id)}&order=updated_at.desc&limit=5`
+    ),
+    { headers: serviceHeaders() }
+  ).catch(() => []);
+  const hit = (Array.isArray(legacy) ? legacy : []).find((row) => {
+    const t = String(row.conversation_type || "");
+    return t !== "companion_support" && !!row.boss_id;
+  });
+  if (hit) return hit;
+  const rows = await supabaseJson(restUrl("conversations"), {
+    method: "POST",
+    headers: serviceHeaders(),
+    body: JSON.stringify({
+      boss_id: bossId,
+      companion_id: null,
+      customer_service_id: order.customer_service_id || null,
+      order_id: order.id,
+      conversation_type: "order_support",
+      status: "open",
+      created_at: nowIso(),
+      updated_at: nowIso(),
+    }),
+  }).catch(async (err) => {
+    if (!/conversation_type/i.test(String(err?.message || ""))) throw err;
+    return supabaseJson(restUrl("conversations"), {
+      method: "POST",
+      headers: serviceHeaders(),
+      body: JSON.stringify({
+        boss_id: bossId,
+        companion_id: null,
+        customer_service_id: order.customer_service_id || null,
+        order_id: order.id,
+        status: "open",
+        created_at: nowIso(),
+        updated_at: nowIso(),
+      }),
+    });
+  });
+  return rows?.[0] || null;
+}
+async function addSystemMessage(order, senderId, senderRole, content) {
+  const conversation = await ensureConversation(order);
+  if (!conversation) return;
+  await supabaseJson(restUrl("messages"), {
+    method: "POST",
+    headers: serviceHeaders(),
+    body: JSON.stringify({
+      conversation_id: conversation.id,
+      sender_id: senderId,
+      sender_role: senderRole,
+      message_type: "system",
+      content,
+      order_id: order.id,
+      created_at: nowIso(),
+    }),
+  });
+}
 async function claimOrder(profile, companion, id) {
   if (!canAccept(profile, companion)) {
     const status = normalizeOnlineStatus(companion.availability_status || companion.online_status);
@@ -4415,7 +4486,13 @@ export default async function handler(req, res) {
         ).catch(() => []);
         conversation = rows?.[0] || null;
         if (!conversation) {
-          return json(res, 404, { ok: false, message: "会话不存在" });
+          return json(res, 404, { ok: false, message: "会话不存在或无权访问" });
+        }
+        try {
+          const { assertCompanionCanAccessConversation } = await import("./_conversation-privacy.js");
+          assertCompanionCanAccessConversation(conversation, auth.profile.id);
+        } catch (err) {
+          return json(res, err.status || 403, { ok: false, message: err.message || "无权访问该会话" });
         }
         if (isClosedConversationStatus(conversation.status)) {
           return json(res, 403, { ok: false, message: "会话已结束，无法继续发送" });

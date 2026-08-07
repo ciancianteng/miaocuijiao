@@ -679,27 +679,52 @@ async function loadOrders(profile, id = "") {
   });
 }
 async function ensureConversation(order, bossId) {
-  const existing = await supabaseJson(restUrl("conversations", `?order_id=eq.${encodeURIComponent(order.id)}&limit=1`), { headers: serviceHeaders() });
-  if (existing?.[0]) {
-    const patch = { updated_at: nowIso() };
-    if (order.companion_id && String(existing[0].companion_id || "") !== String(order.companion_id)) {
-      patch.companion_id = order.companion_id;
+  // Boss↔CS order_support only. Never stamp companion_id; never reuse companion_support by order_id.
+  const typed = await supabaseJson(
+    restUrl(
+      "conversations",
+      `?boss_id=eq.${encodeURIComponent(bossId)}&order_id=eq.${encodeURIComponent(order.id)}&conversation_type=eq.order_support&order=updated_at.desc&limit=1`
+    ),
+    { headers: serviceHeaders() }
+  ).catch(() => []);
+  if (typed?.[0]) {
+    if (typed[0].companion_id) {
+      await supabaseJson(restUrl("conversations", `?id=eq.${encodeURIComponent(typed[0].id)}`), {
+        method: "PATCH",
+        headers: serviceHeaders(),
+        body: JSON.stringify({ companion_id: null, updated_at: nowIso() }),
+      }).catch(() => null);
+      return { ...typed[0], companion_id: null };
     }
-    if (order.customer_service_id && !existing[0].customer_service_id) {
+    return typed[0];
+  }
+  const existingRows = await supabaseJson(
+    restUrl(
+      "conversations",
+      `?boss_id=eq.${encodeURIComponent(bossId)}&order_id=eq.${encodeURIComponent(order.id)}&order=updated_at.desc&limit=5`
+    ),
+    { headers: serviceHeaders() }
+  ).catch(() => []);
+  const existing = (Array.isArray(existingRows) ? existingRows : []).find(
+    (r) => String(r.conversation_type || "") !== "companion_support"
+  );
+  if (existing) {
+    const patch = { updated_at: nowIso(), companion_id: null };
+    if (order.customer_service_id && !existing.customer_service_id) {
       patch.customer_service_id = order.customer_service_id;
     }
     try {
-      await supabaseJson(restUrl("conversations", `?id=eq.${encodeURIComponent(existing[0].id)}`), {
+      await supabaseJson(restUrl("conversations", `?id=eq.${encodeURIComponent(existing.id)}`), {
         method: "PATCH",
         headers: serviceHeaders(),
         body: JSON.stringify(patch),
       });
     } catch (_) {}
-    return { ...existing[0], ...patch };
+    return { ...existing, ...patch };
   }
   const base = {
     boss_id: bossId,
-    companion_id: order.companion_id || null,
+    companion_id: null,
     customer_service_id: order.customer_service_id || null,
     order_id: order.id,
     status: "open",
