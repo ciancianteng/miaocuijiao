@@ -85,6 +85,17 @@ export function stripInternalOrderMarkers(text = "") {
   return raw.replace(/\n{2,}/g, "\n").trim();
 }
 
+/** Grab rows that boss/CS may still choose (exclude rejected/withdrawn losers). */
+export function isSelectableGrabStatus(status) {
+  const s = String(status || "pending_customer_selection").toLowerCase().trim();
+  if (!s) return true;
+  if (["not_selected", "withdrawn", "cancelled", "canceled", "rejected", "expired", "lost"].includes(s)) {
+    return false;
+  }
+  // pending_customer_selection | pending | grabbed | selected | active | …
+  return true;
+}
+
 export function createOrderGrabHelpers({ restUrl, supabaseJson, serviceHeaders }) {
   async function patchOrderText(orderId, nextText, preferNote = true) {
     const attempts = preferNote
@@ -407,6 +418,7 @@ export function createOrderGrabHelpers({ restUrl, supabaseJson, serviceHeaders }
     clearCompletionPending,
     orderHasCompletionPending,
     orderBlobSource,
+    isSelectableGrabStatus,
     COMPLETION_PENDING_MARKER,
   };
 }

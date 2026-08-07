@@ -1642,7 +1642,7 @@
         alert('缺少订单或陪玩信息');
         return;
       }
-      if (!confirm('确认选择该陪玩？将提交「我要她」意向，请客服确认指定后才会正式派单。')) return;
+      if (!confirm('确认选择该陪玩？选择后将正式指定该陪玩，并等待陪玩确认接单。')) return;
       want.disabled = true;
       var prev = want.textContent;
       want.textContent = '处理中…';
@@ -1656,7 +1656,7 @@
           'Content-Type': 'application/json',
           Authorization: 'Bearer ' + token,
         },
-        body: JSON.stringify({ action: 'want_him', id: oid, companion_id: cid, intentOnly: true }),
+        body: JSON.stringify({ action: 'want_him', id: oid, companion_id: cid }),
       })
         .then(function (res) {
           return res.json().then(function (body) {
@@ -1665,8 +1665,8 @@
         })
         .then(function (x) {
           if (!x.res.ok || x.body.ok === false) throw new Error(x.body.message || '选择失败');
-          alert(x.body.message || '已提交意向，等待客服确认指定。');
-          want.textContent = '已提交意向';
+          alert(x.body.message || '已指定陪玩，等待陪玩确认接单。');
+          want.textContent = '已指定';
         })
         .catch(function (err) {
           want.disabled = false;

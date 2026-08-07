@@ -1363,10 +1363,30 @@ export default async function handler(req, res) {
       const beforeRows = await supabaseJson(restUrl(TABLE, `?id=eq.${encodeURIComponent(id)}&boss_id=eq.${encodeURIComponent(profile.id)}&limit=1`), { headers: serviceHeaders() });
       const before = Array.isArray(beforeRows) ? beforeRows[0] : null;
       if (!before) return json(res, 404, { ok: false, message: "订单不存在。" });
+      // Idempotent: already bound to this companion.
+      {
+        const alreadyCompanion = String(before.companion_id || "").trim();
+        const wantId = String(body.companion_id || body.companionId || body.grab_companion_id || "").trim();
+        if (
+          alreadyCompanion &&
+          wantId &&
+          alreadyCompanion === wantId &&
+          ["claimed", "confirmed", "in_progress"].includes(String(before.status || ""))
+        ) {
+          return json(res, 200, {
+            ok: true,
+            message: "已指定该陪玩。",
+            intentOnly: false,
+            bound: true,
+            deduped: true,
+            order: viewOrder(before),
+          });
+        }
+      }
       if (!["waiting_boss_confirm", "pending"].includes(before.status)) {
         return json(res, 409, { ok: false, message: "当前订单状态不能选择陪玩。" });
       }
-      const { createOrderGrabHelpers } = await import("./_order-grabs.js");
+      const { createOrderGrabHelpers, isSelectableGrabStatus } = await import("./_order-grabs.js");
       const {
         enrichGrabCompanions,
         parseBossIntent,
@@ -1385,26 +1405,44 @@ export default async function handler(req, res) {
       if (!selectedId) {
         return json(res, 400, { ok: false, message: "请选择一位陪玩。" });
       }
-      const pendingOk = grabs.some((g) => g.companionId === selectedId && g.status === "pending_customer_selection");
-      if (!pendingOk && grabs.length) {
-        return json(res, 409, { ok: false, message: "该陪玩未抢单或状态无效，请从抢单列表中选择。" });
-      }
       if (!grabs.length) {
         return json(res, 409, { ok: false, message: "暂无陪玩抢单，请等待陪玩申请后再选择。" });
       }
-      // Product path: boss 「我要她」= intent only → CS 「确认指定」 locks companion.
-      // Only explicit select_and_bind may still bind immediately (legacy escape hatch).
-      const bindNow =
-        action === "select_and_bind" &&
-        body.intentOnly !== true &&
-        body.intent_only !== true &&
-        String(body.mode || "").toLowerCase() !== "intent";
+      let hit = grabs.find((g) => String(g.companionId || "") === String(selectedId));
+      // Allow companion public code / uid on the card to resolve to the grab UUID.
+      if (!hit && !/^[0-9a-f-]{36}$/i.test(selectedId)) {
+        try {
+          const profiles = await supabaseJson(
+            restUrl(
+              "profiles",
+              `?or=(companion_uid.eq.${encodeURIComponent(selectedId)},companion_code.eq.${encodeURIComponent(selectedId)},id.eq.${encodeURIComponent(selectedId)})&select=id,companion_uid,companion_code&limit=3`
+            ),
+            { headers: serviceHeaders() }
+          );
+          const pid = Array.isArray(profiles) && profiles[0]?.id ? String(profiles[0].id) : "";
+          if (pid) {
+            selectedId = pid;
+            hit = grabs.find((g) => String(g.companionId || "") === pid);
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+      if (!hit || !isSelectableGrabStatus(hit.status)) {
+        return json(res, 409, {
+          ok: false,
+          message: "该陪玩未抢单或状态无效，请从抢单列表中选择。",
+          code: "GRAB_STATUS_INVALID",
+        });
+      }
+      // Product: boss「我要他/她」= bind companion now (四端同步).
+      // Only explicit set_boss_intent stays intent-only.
+      const shouldBind = action !== "set_boss_intent";
       const enriched = await enrichGrabCompanions({ restUrl, supabaseJson, serviceHeaders }, grabs);
-      const pick = enriched.find((g) => g.companionId === selectedId);
+      const pick = enriched.find((g) => String(g.companionId || "") === String(selectedId));
       const pickName = pick?.companion?.nickname || "陪玩";
 
-      if (bindNow) {
-        await grabsApi.finalizeGrabSelection(before, selectedId);
+      if (shouldBind) {
         const { transitionOrderStatus } = await import("./_order-status.js");
         const patched =
           (await transitionOrderStatus(
@@ -1416,6 +1454,7 @@ export default async function handler(req, res) {
               patch: {
                 companion_id: selectedId,
                 accepted_at: null,
+                assignment_type: "public",
               },
               operatorRole: "boss",
               operatorId: profile.id,
@@ -1426,9 +1465,31 @@ export default async function handler(req, res) {
             await supabaseJson(restUrl(TABLE, `?id=eq.${encodeURIComponent(id)}&boss_id=eq.${encodeURIComponent(profile.id)}`), {
               method: "PATCH",
               headers: serviceHeaders(),
-              body: JSON.stringify({ status: "claimed", companion_id: selectedId, accepted_at: null }),
+              body: JSON.stringify({
+                status: "claimed",
+                companion_id: selectedId,
+                accepted_at: null,
+                assignment_type: "public",
+              }),
             })
           )?.[0];
+        if (!patched || String(patched.status || "") === String(before.status || "")) {
+          // Soft fallback without assignment_type if column missing.
+          const soft = (
+            await supabaseJson(restUrl(TABLE, `?id=eq.${encodeURIComponent(id)}&boss_id=eq.${encodeURIComponent(profile.id)}`), {
+              method: "PATCH",
+              headers: serviceHeaders(),
+              body: JSON.stringify({ status: "claimed", companion_id: selectedId, accepted_at: null }),
+            }).catch(() => null)
+          )?.[0];
+          if (!soft) {
+            return json(res, 409, { ok: false, message: "订单状态已变更，请刷新后重试。" });
+          }
+        }
+        const order = patched || { ...before, status: "claimed", companion_id: selectedId };
+        await grabsApi.finalizeGrabSelection(order, selectedId).catch((err) =>
+          console.warn("[orders/want_him] finalizeGrabSelection", err?.message || err)
+        );
         try {
           const { stampClaimedAtNote } = await import("./_order-confirm-timeout.js");
           await patchOrderNoteField({ restUrl, supabaseJson, serviceHeaders }, id, (text) =>
@@ -1437,7 +1498,6 @@ export default async function handler(req, res) {
         } catch {
           /* ignore */
         }
-        const order = patched || { ...before, status: "claimed", companion_id: selectedId };
         try {
           const { createGrabListingHelpers } = await import("./_order-grab-listings.js");
           const listingsApi = createGrabListingHelpers({ restUrl, supabaseJson, serviceHeaders });
@@ -1450,9 +1510,8 @@ export default async function handler(req, res) {
           profile.id,
           `老板已选择陪玩 ${pickName}。订单进入等待陪玩确认。`
         );
-        // Notify non-selected grabbers — order leaves their grab hall via finalizeGrabSelection.
         for (const g of enriched) {
-          if (g.companionId === selectedId) continue;
+          if (String(g.companionId || "") === String(selectedId)) continue;
           try {
             await addSystemMessage(
               { ...order, companion_id: g.companionId },
@@ -1462,6 +1521,18 @@ export default async function handler(req, res) {
           } catch {
             /* best-effort */
           }
+        }
+        try {
+          const { notifyCompanionOrderAssigned } = await import("./_companion-order-notify.js");
+          await Promise.race([
+            notifyCompanionOrderAssigned(
+              { ...order, companion_id: selectedId, status: "claimed" },
+              { eventType: "assign" }
+            ).catch((err) => console.warn("[orders/want_him] companion notify", err?.message || err)),
+            new Promise((resolve) => setTimeout(resolve, 3500)),
+          ]);
+        } catch (err) {
+          console.warn("[orders/want_him] companion notify import", err?.message || err);
         }
         return json(res, 200, {
           ok: true,
@@ -1478,7 +1549,7 @@ export default async function handler(req, res) {
         });
       }
 
-      // Legacy intent-only path (explicit opt-in only).
+      // Legacy intent-only path (set_boss_intent).
       let order = before;
       if (before.status === "pending") {
         const rows = await supabaseJson(
@@ -1518,8 +1589,10 @@ export default async function handler(req, res) {
       const intent = parseBossIntent(order);
       const marked = enriched.map((g) => ({
         ...g,
-        bossPreferred: g.companionId === selectedId,
-        companion: g.companion ? { ...g.companion, bossPreferred: g.companionId === selectedId } : null,
+        bossPreferred: String(g.companionId || "") === String(selectedId),
+        companion: g.companion
+          ? { ...g.companion, bossPreferred: String(g.companionId || "") === String(selectedId) }
+          : null,
       }));
       return json(res, 200, {
         ok: true,

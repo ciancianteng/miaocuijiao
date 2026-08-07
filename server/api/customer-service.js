@@ -3582,17 +3582,26 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       if (!["pending", "waiting_boss_confirm"].includes(order.status)) {
         return json(res, 409, { ok: false, message: "当前订单状态不能推送陪玩名片给老板。" });
       }
-      const { createOrderGrabHelpers } = await import("./_order-grabs.js");
+      const { createOrderGrabHelpers, isSelectableGrabStatus } = await import("./_order-grabs.js");
       const { enrichGrabCompanions } = await import("./_order-flow.js");
       const grabsApi = createOrderGrabHelpers({ restUrl, supabaseJson, serviceHeaders });
       const grabs = await grabsApi.listGrabs(order.id, order.note || order.description || "");
-      const hit = grabs.find((g) => g.companionId === companion.id);
-      if (!hit && grabs.length) {
-        return json(res, 409, { ok: false, message: "只能推送已抢单的陪玩。" });
+      const hit = grabs.find((g) => String(g.companionId || "") === String(companion.id));
+      if (!hit) {
+        return json(res, 409, {
+          ok: false,
+          message: "只能推送已抢单的陪玩。请等待陪玩抢单后再推送。",
+          code: "GRAB_REQUIRED",
+        });
       }
-      const enriched = await enrichGrabCompanions({ restUrl, supabaseJson, serviceHeaders }, [
-        hit || { companionId: companion.id, status: "pending_customer_selection" },
-      ]);
+      if (!isSelectableGrabStatus(hit.status)) {
+        return json(res, 409, {
+          ok: false,
+          message: "该陪玩抢单状态无效，无法推送给老板。",
+          code: "GRAB_STATUS_INVALID",
+        });
+      }
+      const enriched = await enrichGrabCompanions({ restUrl, supabaseJson, serviceHeaders }, [hit]);
       const c = enriched[0]?.companion || {};
       const card = {
         type: "companion_card",
@@ -3748,9 +3757,9 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
             deduped: true,
           });
         }
-        if (grabs.length && nextStatus === "claimed") {
-          await grabsApi.finalizeGrabSelection(order, companionId);
-        }
+        // Bind order first; only then finalize grab winners/losers.
+        // Finalizing before a failed status transition left grabs as "selected"
+        // while the order stayed pending — boss「我要他」then failed.
         const directAssign = !fromGrabs || !grabs.length;
         const assignPatch = {
           companion_id: companionId,
@@ -3795,6 +3804,14 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
           } else {
             throw err;
           }
+        }
+        if (!patched) {
+          return json(res, 409, { ok: false, message: "订单状态已变更，请刷新后重试。" });
+        }
+        if (grabs.length && nextStatus === "claimed") {
+          await grabsApi.finalizeGrabSelection(patched || order, companionId).catch((err) =>
+            console.warn("[cs/assign] finalizeGrabSelection", err?.message || err)
+          );
         }
         try {
           const { stampClaimedAtNote } = await import("./_order-confirm-timeout.js");
