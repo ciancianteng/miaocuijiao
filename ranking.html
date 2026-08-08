@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>人气榜 · MEOW CUI JIAO</title>
+  <link rel="stylesheet" href="src/platform.css">
+  <link rel="stylesheet" href="src/design-system.css">
+  <link rel="stylesheet" href="src/home-popularity.css">
+  <link rel="stylesheet" href="src/boss-header.css">
+  <link rel="stylesheet" href="src/place-order-modal.css">
+  <script src="src/role-gates.js"></script>
+  <script src="src/boss-header.js" defer></script>
+  <style>
+    body{
+      background:
+        radial-gradient(circle at 18% 8%, rgba(243,168,203,.18), transparent 28%),
+        radial-gradient(circle at 82% 12%, rgba(255,120,180,.10), transparent 30%),
+        linear-gradient(180deg,#070409,#120914 46%,#050406);
+      color:#f7e9f0;min-height:100vh;
+    }
+    .rank-page{max-width:1100px;margin:0 auto;padding:28px 18px 96px}
+    .rank-hero{
+      margin-bottom:20px;padding:28px 24px;border-radius:22px;
+      border:1px solid rgba(243,168,203,.28);
+      background:linear-gradient(135deg,rgba(32,18,40,.82),rgba(10,7,14,.88));
+    }
+    .rank-hero h1{margin:0;font-size:34px;font-weight:1000;color:#fff5fa}
+    .rank-hero p{margin:10px 0 0;color:#d8c4cf;font-weight:850}
+    .rank-back{display:inline-block;margin-bottom:14px;color:#ffd0e4;font-weight:900;text-decoration:none}
+  </style>
+</head>
+<body>
+  <main class="rank-page">
+    <a class="rank-back" href="index.html">← 返回首页</a>
+    <section class="rank-hero">
+      <h1>陪玩人气榜</h1>
+      <p>根据完成订单、好评、礼物与在线活跃综合计分。每周一（马来西亚时区）刷新本周榜，历史榜单保留。</p>
+    </section>
+    <div class="rank-page-filters" id="rankFilters">
+      <button type="button" data-period="weekly" class="active">本周</button>
+      <button type="button" data-period="monthly">本月</button>
+      <button type="button" data-period="total">总榜</button>
+      <select id="rankGame" aria-label="游戏/服务分类">
+        <option value="">全部分类</option>
+      </select>
+      <select id="rankOnline" aria-label="在线状态">
+        <option value="">全部状态</option>
+        <option value="1">仅在线</option>
+      </select>
+      <select id="rankLevel" aria-label="等级筛选">
+        <option value="">全部等级</option>
+      </select>
+    </div>
+    <div id="rankBoard"><div class="pop-empty">正在读取榜单...</div></div>
+  </main>
+  <script src="src/currency.js"></script>
+  <script src="src/place-order-modal.js?v=20260807payChannel1"></script>
+  <script src="src/ranking-page.js"></script>
+</body>
+</html>

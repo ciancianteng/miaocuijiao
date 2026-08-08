@@ -4,7 +4,10 @@
 
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
   function uid(prefix) { return prefix + "-" + Date.now().toString(36).toUpperCase() + Math.random().toString(16).slice(2, 6).toUpperCase(); }
-  function money(v) { return "RM" + Number(v || 0).toFixed(2); }
+  function money(v) {
+    if (window.MCJCurrency) return window.MCJCurrency.formatPlain(v);
+    return Number(v || 0).toFixed(2).replace(/\.00$/, "") + " 猫粮";
+  }
   function now() { return new Date().toLocaleString("zh-CN"); }
   function db() { return window.MCJRealData && window.MCJRealData.readDB ? window.MCJRealData.readDB() : readRaw(REAL_KEY); }
   function readRaw(key) { try { return JSON.parse(localStorage.getItem(key) || "{}") || {}; } catch (e) { return {}; } }
@@ -231,11 +234,11 @@
       var type = /时间|截止/.test(field) ? ' type="datetime-local"' : "";
       return '<label>' + esc(field) + '<input name="field_' + idx + '"' + type + ' data-field-label="' + esc(field) + '"></label>';
     }).join("");
-    modalShell('<div class="club-price-head"><div><h2>发布固定玩法订单</h2><p>' + esc(g.name) + ' · 价格固定，发布后符合资格的陪玩可直接抢单成交。</p></div></div><form class="club-demand-form" data-gameplay-order-form="' + esc(g.id) + '"><div class="club-price-detail wide"><div><span>订单价格</span><strong>' + money(g.fixedPrice) + '</strong></div><div><span>平台抽成</span><strong>' + money(g.platformCut) + '</strong></div><div><span>陪玩到账</span><strong>' + money(g.playerIncome) + '</strong></div></div>' + custom + '<label class="wide">老板备注<textarea name="bossNote"></textarea></label><label>发布模式<select name="orderMode"><option value="fixed_gameplay_public">发布到玩法大厅抢单</option><option value="fixed_gameplay_designated">指定陪玩订单</option></select></label><label>付款状态<select name="paymentStatus"><option value="paid">已付款 / 余额已冻结</option><option value="unpaid">未付款</option></select></label><button class="club-demand-submit" type="submit">确认发布订单</button></form>');
+    modalShell('<div class="club-price-head"><div><h2>发布固定玩法订单</h2><p>' + esc(g.name) + ' · 价格固定，发布后符合资格的陪玩可直接抢单成交。</p></div></div><form class="club-demand-form" data-gameplay-order-form="' + esc(g.id) + '"><div class="club-price-detail wide"><div><span>订单价格</span><strong>' + money(g.fixedPrice) + '</strong></div><div><span>平台抽成</span><strong>' + money(g.platformCut) + '</strong></div><div><span>陪玩到账</span><strong>' + money(g.playerIncome) + '</strong></div></div>' + custom + '<label class="wide">老板备注<textarea name="bossNote"></textarea></label><label>发布模式<select name="orderMode"><option value="fixed_gameplay_public">发布到玩法大厅抢单</option><option value="fixed_gameplay_designated">指定陪玩订单</option></select></label><label>付款状态<select name="paymentStatus"><option value="paid">已付款 / 猫粮已冻结</option><option value="unpaid">未付款</option></select></label><button class="club-demand-submit" type="submit">确认发布订单</button></form>');
   }
   function submitGameplayOrder(form) {
     var g = gameplayById(form.dataset.gameplayOrderForm); if (!g) return;
-    if (form.elements.paymentStatus.value !== "paid") { alert("未付款订单不能进入玩法订单大厅，请先完成付款或冻结余额。"); return; }
+    if (form.elements.paymentStatus.value !== "paid") { alert("未付款订单不能进入玩法订单大厅，请先完成付款或冻结猫粮。"); return; }
     var fd = new FormData(form);
     var extra = {};
     form.querySelectorAll("[data-field-label]").forEach(function (input) { extra[input.dataset.fieldLabel] = input.value; });

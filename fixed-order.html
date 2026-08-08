@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>固定玩法下单 - MEOW CUI JIAO</title>
+  <link rel="stylesheet" href="src/style.css">
+  <style>
+    body{background:#08070a;color:#fff}.fixed-shell{width:min(900px,calc(100% - 32px));margin:0 auto;padding:24px 0 80px}.boss-nav{display:flex;gap:18px;flex:1;flex-wrap:wrap;align-items:center}.boss-nav a,.boss-nav button{border:0;background:transparent;color:#cdb8c4;cursor:pointer;font:inherit;font-size:14px;padding:0;text-decoration:none}.panel{border:1px solid rgba(255,255,255,.1);border-radius:18px;background:rgba(255,255,255,.045);padding:18px;margin-top:18px}.panel h1,.panel h2{margin:0 0 10px}.muted{color:#9ca3af}.summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:14px}.summary div{border:1px solid rgba(255,255,255,.08);border-radius:12px;background:rgba(0,0,0,.18);padding:10px}.summary span{display:block;color:#9ca3af;font-size:12px}.summary strong{display:block;margin-top:5px}.form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.form-grid label{display:grid;gap:7px;color:#ffd6e7;font-weight:900}.form-grid input,.form-grid textarea{border:1px solid rgba(255,255,255,.12);border-radius:12px;background:rgba(0,0,0,.22);color:#fff;padding:11px;font:inherit}.form-grid textarea{min-height:100px;resize:vertical}.wide{grid-column:1/-1}.btn-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}.btn{border:1px solid rgba(255,255,255,.12);border-radius:12px;background:rgba(255,255,255,.06);color:#fff;padding:10px 14px;cursor:pointer;text-decoration:none;font-weight:900}.btn.primary{border-color:rgba(255,143,197,.5);background:rgba(255,143,197,.16)}.btn:disabled{opacity:.55;cursor:not-allowed}.notice{margin-top:12px;color:#ffd6e7}.empty{padding:24px;text-align:center;color:#9ca3af}@media(max-width:680px){.summary,.form-grid{grid-template-columns:1fr}.topbar{align-items:flex-start;flex-direction:column;padding:18px 20px}.fixed-shell{width:calc(100% - 24px)}}
+  </style>
+</head>
+<body>
+  <header class="topbar"><a class="brand" href="index.html"><img src="assets/meow-cuijiao-brand.jpg" alt="MEOW CUI JIAO"><span>MEOW CUI JIAO</span></a><nav class="boss-nav"><a href="index.html">首页</a><a href="more-gameplays.html">更多玩法</a><a href="orders.html">我的订单</a><a href="support.html">在线客服</a></nav></header>
+  <main class="fixed-shell" id="app"><section class="panel empty">正在读取固定玩法...</section></main>
+  <script type="module" src="src/role-gates.js"></script>
+  <script type="module" src="src/currency.js"></script>
+  <script>
+    (function(){
+      var root=document.getElementById('app'),pkg=null,submitting=false,stateMessage='';
+      function token(){return localStorage.getItem('mcjAuthAccessToken')||sessionStorage.getItem('mcjAuthAccessToken')||''}
+      function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
+      function money(v){if(window.MCJCurrency)return window.MCJCurrency.formatPlain(v);var n=Number(v||0);return (Number.isFinite(n)?n:0).toFixed(2).replace(/\.00$/,'')+' 猫粮'}
+      function duration(v){var n=Number(v||0);if(!n)return '-';return n%60===0?(n/60)+'小时':n+'分钟'}
+      function packageId(){return new URLSearchParams(location.search).get('package')||''}
+      function paint(message){
+        if(!pkg){root.innerHTML='<section class="panel empty">'+esc(message||'固定玩法不存在。')+'</section>';return}
+        root.innerHTML='<section class="panel"><h1>固定玩法下单</h1><p class="muted">价格、游戏和时长来自后台配置，不能在前台修改。</p><div class="summary"><div><span>玩法名称</span><strong>'+esc(pkg.name)+'</strong></div><div><span>所属游戏</span><strong>'+esc(pkg.game)+'</strong></div><div><span>固定价格</span><strong>'+money(pkg.fixedPrice)+'</strong></div><div><span>服务时长</span><strong>'+esc(duration(pkg.durationMinutes))+'</strong></div></div></section><section class="panel"><h2>确认资料</h2><form class="form-grid" data-fixed-form><label>游戏ID<input name="gameId" required placeholder="请输入您的游戏ID"></label><label>服务器/区服<input name="server" required placeholder="例如：亚服 / 电信区"></label><label>开始时间<input name="startTime" type="datetime-local" required></label><label>适用等级<input value="Lv'+esc(pkg.levelMin||1)+'-Lv'+esc(pkg.levelMax||5)+'" disabled></label><label class="wide">需求备注<textarea name="remark" placeholder="补充目标、段位、注意事项等"></textarea></label><div class="wide btn-row"><button class="btn primary" type="submit" '+(submitting?'disabled':'')+'>'+(submitting?'正在提交...':'提交订单')+'</button><a class="btn" href="more-gameplays.html">返回更多玩法</a></div></form><div class="notice" id="stateMsg">'+esc(message||stateMessage||'')+'</div></section>';
+      }
+      function load(){
+        var id=packageId();
+        if(!id){paint('缺少固定玩法 ID。');return}
+        fetch('/api/service-packages?id='+encodeURIComponent(id),{headers:{Accept:'application/json'}}).then(function(res){return res.json().then(function(body){if(!res.ok||body.ok===false)throw new Error(body.message||'固定玩法读取失败');return body})}).then(function(body){pkg=body.package;if(!pkg)throw new Error('固定玩法不存在或已下架。');paint()}).catch(function(err){paint(err.message||'固定玩法读取失败')});
+      }
+      document.addEventListener('submit',async function(e){
+        if(!e.target.matches('[data-fixed-form]'))return;
+        e.preventDefault();
+        if(!token()){
+          if(window.MCJAuthContinue&&typeof window.MCJAuthContinue.requireLogin==='function'){
+            window.MCJAuthContinue.requireLogin(function(){
+              e.target.dispatchEvent(new Event('submit',{cancelable:true,bubbles:true}));
+            });
+            return;
+          }
+          if(window.MCJModal&&typeof window.MCJModal.openLogin==='function'){window.MCJModal.openLogin('login');return}
+          sessionStorage.setItem('mcjAfterLoginRedirect',location.pathname+location.search);
+          location.href='index.html#login';
+          return;
+        }
+        if(!pkg||submitting)return;stateMessage='';
+        var fd=new FormData(e.target);
+        submitting=true;paint();
+        try{
+          var description='固定玩法：'+pkg.name+'\\n游戏ID：'+fd.get('gameId')+'\\n服务器/区服：'+fd.get('server')+'\\n开始时间：'+fd.get('startTime')+'\\n需求备注：'+(fd.get('remark')||'');
+          var res=await fetch('/api/orders',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token()},body:JSON.stringify({action:'create',order:{order_type:'service_package',title:pkg.name,game:pkg.game,description:description,hours:Math.max(1,Number(pkg.durationMinutes||60)/60),unit_price:pkg.fixedPrice,total_amount:pkg.fixedPrice,service_package_id:pkg.id}})});
+          var body=await res.json().catch(function(){return {}});
+          if(!res.ok||body.ok===false)throw new Error(body.message||'订单提交失败');
+          stateMessage='订单已提交，请联系客服确认付款。请到我的订单查看。';
+          e.target.reset();
+        }catch(err){stateMessage=err.message||'订单提交失败'}finally{submitting=false;paint()}
+      });
+      load();
+    })();
+  </script>
+</body>
+</html>
+

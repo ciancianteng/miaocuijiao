@@ -1,25 +1,11 @@
 (function () {
   "use strict";
 
-  var API_URL = "/api/home/daily-stats";
-  var ZERO_STATS = {
-    date: "",
-    timezone: "Asia/Kuala_Lumpur",
-    ordersCreated: 0,
-    ordersCompleted: 0,
-    newCustomers: 0,
-    newCompanions: 0,
-    onlineCompanions: 0,
-    grossRevenue: 0,
-    currency: "MYR"
-  };
+  var API_URL = "/api/gateway?path=" + encodeURIComponent("home/daily-stats");
   var fields = [
     ["ordersCreated", "今日订单", ""],
-    ["ordersCompleted", "今日完成订单", ""],
-    ["newCustomers", "今日新增老板", ""],
-    ["newCompanions", "今日新增陪玩", ""],
-    ["onlineCompanions", "当前在线陪玩", ""],
-    ["grossRevenue", "今日交易额", "currency"]
+    ["onlineCompanions", "在线陪玩", ""],
+    ["grossRevenue", "今日营业额", "currency"],
   ];
 
   function esc(value) {
@@ -29,40 +15,92 @@
   }
 
   function numberValue(data, key) {
-    var value = data && data[key];
-    var number = Number(value);
+    var number = Number(data && data[key]);
     return Number.isFinite(number) ? number : 0;
   }
 
-  function currencyLabel(value) {
-    return String(value || "MYR").toUpperCase() === "MYR" ? "RM" : String(value || "RM");
-  }
-
   function valueText(data, key, currencyKey) {
-    if (currencyKey) return '<span class="home-daily-unit">' + esc(currencyLabel(data && data[currencyKey])) + '</span>' + numberValue(data, key).toFixed(2);
+    if (currencyKey) {
+      var amount = numberValue(data, key);
+      if (window.MCJCurrency) return esc(window.MCJCurrency.formatPlain(amount));
+      return esc(String(Math.round(amount))) + " 猫粮";
+    }
     return String(Math.round(numberValue(data, key)));
   }
 
-  function render(input) {
+  function renderEmpty() {
     var root = document.querySelector("[data-home-daily-stats]");
     if (!root) return;
-    var data = Object.assign({}, ZERO_STATS, input || {});
     root.hidden = false;
-    var meta = data.date ? '<p>' + esc(data.date) + ' · ' + esc(data.timezone || "Asia/Kuala_Lumpur") + '</p>' : "";
-    root.innerHTML = '<div class="section-title compact-title"><div><h2>今日平台数据</h2>' + meta + '</div></div>' +
-      '<div class="home-daily-grid">' + fields.map(function (field) {
-        return '<article class="home-daily-card"><span>' + esc(field[1]) + '</span><strong>' + valueText(data, field[0], field[2]) + '</strong></article>';
-      }).join("") + '</div>';
+    root.innerHTML =
+      '<div class="section-title compact-title"><div><h2>今日平台数据</h2><p>暂无平台数据</p></div></div>' +
+      '<div class="home-daily-empty" role="status">暂无平台数据</div>';
   }
 
-  async function load() {
-    try {
-      var response = await fetch(API_URL, { headers: { "Accept": "application/json" }, cache: "no-store" });
-      if (!response.ok) throw new Error("daily stats unavailable");
-      render(await response.json());
-    } catch (error) {
-      render(ZERO_STATS);
+  function formatUpdatedLabel(data) {
+    var raw = data && (data.updatedAt || data.updated_at || data.generatedAt || data.asOf);
+    var d = raw ? new Date(raw) : new Date();
+    if (Number.isNaN(d.getTime())) d = new Date();
+    var hh = String(d.getHours()).padStart(2, "0");
+    var mm = String(d.getMinutes()).padStart(2, "0");
+    return "最后更新 " + hh + ":" + mm;
+  }
+
+  function render(data) {
+    var root = document.querySelector("[data-home-daily-stats]");
+    if (!root) return;
+    root.hidden = false;
+    if (!data || data.configured === false || data.ok === false) {
+      renderEmpty();
+      return;
     }
+    var meta = "<p>" + esc(formatUpdatedLabel(data)) + "</p>";
+    root.innerHTML =
+      '<div class="section-title compact-title"><div><h2>今日平台数据</h2>' +
+      meta +
+      "</div></div>" +
+      '<div class="home-daily-grid">' +
+      fields
+        .map(function (field) {
+          return (
+            '<article class="home-daily-card"><span>' +
+            esc(field[1]) +
+            "</span><strong>" +
+            valueText(data, field[0], field[2]) +
+            "</strong></article>"
+          );
+        })
+        .join("") +
+      "</div>";
+  }
+
+  function fetchOnce() {
+    return fetch(API_URL, { headers: { Accept: "application/json" }, cache: "no-store" }).then(function (response) {
+      return response
+        .json()
+        .catch(function () {
+          return {};
+        })
+        .then(function (body) {
+          if (!response.ok || body.ok === false) {
+            throw new Error(body.message || "request_failed");
+          }
+          return body;
+        });
+    });
+  }
+
+  function load() {
+    fetchOnce()
+      .catch(function () {
+        return fetchOnce();
+      })
+      .then(function (body) {
+        render(body);
+      })
+      .catch(function () {
+        renderEmpty();
+      });
   }
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", load);

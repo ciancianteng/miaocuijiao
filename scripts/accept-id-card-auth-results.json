@@ -1,0 +1,27 @@
+{
+  "base": "https://meow-cuijiao-homepage-fhctk1t0f-ciancianteng-4581s-projects.vercel.app",
+  "email": "companion.idcard.1785715257525@meow.test",
+  "password": "McjTest@12345678",
+  "profileId": "592ec1d2-5357-42af-b4d3-dc4136fd10f4",
+  "at": "2026-08-03T00:03:31.182Z",
+  "results": {
+    "id_apply": {
+      "status": "PASS",
+      "note": "profile=592ec1d2-5357-42af-b4d3-dc4136fd10f4"
+    },
+    "id_admin_sees_mode": {
+      "status": "PASS",
+      "note": "id_card"
+    },
+    "id_admin_approve": {
+      "status": "PASS",
+      "note": "{\"application_status\":\"approved\",\"verification_status\":\"approved\",\"deposit_status\":\"pending\"}"
+    },
+    "id_hall_visible": {
+      "status": "PASS",
+      "note": "身份证终验陪玩"
+    }
+  },
+  "pass": 4,
+  "fail": 0
+}

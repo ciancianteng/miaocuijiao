@@ -1,1 +1,52 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>客服中心 · Meow Cui Jiao</title><link rel="stylesheet" href="src/platform.css"></head><body><header class="topbar"><div class="topbar-inner"><a class="brand" href="index.html"><img src="assets/meow-cuijiao-brand.jpg" alt="logo"><span>MEOW CUI JIAO<small>妙脆角电竞</small></span></a><nav class="nav"><a href="index.html">首页</a><a href="companion-center.html">陪玩大厅</a><a href="leaderboard.html">排行榜</a><a href="activities.html">活动中心</a><a href="miao-coin.html">喵币</a><a href="orders.html">我的订单</a><a href="messages.html">消息</a><a class="active" href="mine.html">我的</a></nav></div></header><main class="page"><section class="hero"><div><h1>客服中心</h1><p>像猫猫客服站一样，集中处理充值、订单、退款和账号问题。</p></div></section><section class="section grid grid-3"><article class="card"><div class="gift-icon">💬</div><h3>WhatsApp 客服入口</h3><button class="btn primary">联系</button></article><article class="card"><div class="gift-icon">💬</div><h3>Telegram 客服入口</h3><button class="btn primary">联系</button></article><article class="card"><div class="gift-icon">💬</div><h3>Discord 客服入口</h3><button class="btn primary">联系</button></article></section><section class="section grid grid-2"><article class="card"><h3>充值问题</h3><p class="muted">常见问题 FAQ，后续可接入真实客服知识库。</p></article><article class="card"><h3>订单问题</h3><p class="muted">常见问题 FAQ，后续可接入真实客服知识库。</p></article><article class="card"><h3>退款说明</h3><p class="muted">常见问题 FAQ，后续可接入真实客服知识库。</p></article><article class="card"><h3>账号问题</h3><p class="muted">常见问题 FAQ，后续可接入真实客服知识库。</p></article></section></main><nav class="bottom-nav"><a href="index.html">首页</a><a href="companion-center.html">大厅</a><a href="leaderboard.html">排行</a><a href="miao-coin.html">喵币</a><a class="active" href="mine.html">我的</a></nav><div class="modal" id="modal"><div class="dialog"><button class="close" data-close>×</button><div id="modalBody"></div></div></div><script src="src/platform.js"></script></body></html>
+<!doctype html>
+<html lang="zh-CN" class="support-page">
+<head>
+  <script src="/portal-early-gate.js?v=20260805bossSessionDual1"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>在线客服 - MEOW CUI JIAO</title>
+  <style>
+    html.support-page, body.support-page {
+      overflow: hidden !important;
+      max-width: 100%;
+      height: 100%;
+      margin: 0;
+      background: #08070a;
+      color: #fff;
+    }
+    /* No business shell before auth — prevent order/session flash */
+    #supportApp { min-height: 100%; }
+  </style>
+  <link rel="stylesheet" crossorigin href="/src/support-chat.css?v=20260807bossFix1">
+  <link rel="stylesheet" crossorigin href="/src/style.css">
+  <link rel="stylesheet" crossorigin href="/src/boss-header.css?v=20260807bossFix1">
+</head>
+<body class="support-page">
+  <main class="support-shell" id="supportApp" aria-busy="true"></main>
+
+  <script src="src/currency.js"></script>
+  <script src="src/role-gates.js?v=20260804authP0boss4"></script>
+  <script src="src/boss-auth-session.js"></script>
+  <script src="src/boss-header.js?v=20260807bossFix1" defer></script>
+  <script src="src/mcj-chat-media.js?v=20260807chatIso1"></script>
+  <script src="src/mcj-chat-realtime.js?v=20260804p0fix"></script>
+  <script src="src/support-chat.js?v=20260807bossFix1"></script>
+<script id="mcjBossLogoutHandler">
+  document.addEventListener('click', function(event) {
+    var btn = event.target && event.target.closest && event.target.closest('[data-boss-logout]');
+    if (!btn) return;
+    if (window.MCJRoleGate) {
+      window.MCJRoleGate.logout('boss');
+      window.MCJRoleGate.logout('customer');
+    }
+    localStorage.removeItem('mcjAuthAccessToken');
+    localStorage.removeItem('mcjAuthRefreshToken');
+    sessionStorage.removeItem('mcjAuthAccessToken');
+    sessionStorage.removeItem('mcjAuthRefreshToken');
+    localStorage.removeItem('customerAuthToken');
+    sessionStorage.removeItem('customerAuthToken');
+    location.href = 'index.html';
+  });
+</script>
+</body>
+</html>

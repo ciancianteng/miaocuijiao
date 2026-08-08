@@ -105,7 +105,7 @@
     var img = card.querySelector(".avatar img,.hot-cover img,img");
     var name = text(card, "h3", "MOMO");
     var game = text(card, ".game-line,.hot-info p,[data-game]", "VALORANT");
-    var price = text(card, ".price,.hot-meta span:last-child", "RM20/小时");
+    var price = text(card, ".price,.hot-meta span:last-child", "20 猫粮/小时");
     var rating = text(card, ".rating,.hot-meta span:first-child", "Star 5.0").replace(/^Star/i, "Star");
     var orders = text(card, ".order-line,.hot-orders", "24h orders: 24");
     var tags = [].slice.call(card.querySelectorAll(".tag-row span,.hot-tags span,.mini-tags span")).map(function (x) {
@@ -147,7 +147,7 @@
 
   function confirmHtml(data) {
     var unit = numericPrice(data.price);
-    return '<div class="mcj-order-card"><div class="mcj-order-cover"><img src="' + esc(data.img) + '" alt="' + esc(data.name) + '"><span class="mcj-order-status">' + T.pending + '</span></div><div class="mcj-order-body"><h2>' + T.confirmTitle + '</h2><p class="mcj-order-meta">' + esc(data.name) + ' | ' + esc(data.game) + ' | RM' + unit + '/小时</p><div class="mcj-order-grid"><label class="mcj-order-field"><span>' + T.hours + '</span><select id="mcjOrderHours"><option value="1">' + T.oneHour + '</option><option value="2">' + T.twoHour + '</option><option value="3">' + T.threeHour + '</option><option value="4">' + T.fourHour + '</option><option value="8">' + T.night + '</option></select></label><div class="mcj-order-chip"><span>' + T.total + '</span><strong id="mcjOrderTotal">RM' + unit + '</strong></div></div><label class="mcj-order-field"><span>' + T.remark + '</span><textarea id="mcjOrderRemark" placeholder="' + T.remarkPh + '"></textarea></label><button class="mcj-confirm-btn" data-mcj-create-order type="button">' + T.createOrder + '</button></div></div>';
+    return '<div class="mcj-order-card"><div class="mcj-order-cover"><img src="' + esc(data.img) + '" alt="' + esc(data.name) + '"><span class="mcj-order-status">' + T.pending + '</span></div><div class="mcj-order-body"><h2>' + T.confirmTitle + '</h2><p class="mcj-order-meta">' + esc(data.name) + ' | ' + esc(data.game) + ' | ' + unit + ' 猫粮/小时</p><div class="mcj-order-grid"><label class="mcj-order-field"><span>' + T.hours + '</span><select id="mcjOrderHours"><option value="1">' + T.oneHour + '</option><option value="2">' + T.twoHour + '</option><option value="3">' + T.threeHour + '</option><option value="4">' + T.fourHour + '</option><option value="8">' + T.night + '</option></select></label><div class="mcj-order-chip"><span>' + T.total + '</span><strong id="mcjOrderTotal">' + unit + ' 猫粮</strong></div></div><label class="mcj-order-field"><span>' + T.remark + '</span><textarea id="mcjOrderRemark" placeholder="' + T.remarkPh + '"></textarea></label><button class="mcj-confirm-btn" data-mcj-create-order type="button">' + T.createOrder + '</button></div></div>';
   }
 
   function openDetail(data) {
@@ -164,10 +164,10 @@
     var user = null;
     try { user = JSON.parse(localStorage.getItem("mcjCurrentUser") || "null"); } catch (e) {}
     if (!user) {
-      user = { user_id: "user_demo_001", name: "Demo Boss" };
-      localStorage.setItem("mcjCurrentUser", JSON.stringify(user));
+      try { user = JSON.parse(localStorage.getItem("customerUser") || "null"); } catch (e2) {}
     }
-    return user;
+    // Never invent a demo / acceptance identity.
+    return user || null;
   }
 
   function createOrder() {
@@ -176,9 +176,14 @@
     var unit = numericPrice(data.price);
     var remark = (document.getElementById("mcjOrderRemark") || {}).value || "";
     var user = currentUser();
+    if (!user) {
+      if (typeof window.loginRequiredModal === "function") window.loginRequiredModal();
+      else location.href = "/login.html";
+      return;
+    }
     var order = {
       order_id: "MCJ-" + Date.now(),
-      user_id: user.user_id,
+      user_id: user.user_id || user.id || "",
       player_id: data.playerId,
       player_name: data.name,
       player_avatar: data.img,
@@ -187,7 +192,7 @@
       duration: hours + " hours",
       hours: hours,
       unit_price: unit,
-      amount: "RM" + (unit * hours),
+      amount: (unit * hours) + " 猫粮",
       remark: remark,
       status: "pending_payment",
       created_at: new Date().toISOString()
@@ -252,7 +257,7 @@
     if (e.target && e.target.id === "mcjOrderHours") {
       var data = window.__MCJ_ACTIVE_ORDER__ || {};
       var total = document.getElementById("mcjOrderTotal");
-      if (total) total.textContent = "RM" + (numericPrice(data.price) * Number(e.target.value || 1));
+      if (total) total.textContent = (numericPrice(data.price) * Number(e.target.value || 1)) + " 猫粮";
     }
   }, true);
 

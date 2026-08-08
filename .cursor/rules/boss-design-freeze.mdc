@@ -1,0 +1,47 @@
+---
+description: 老板端 Design Freeze — P0 验收通过，全面冻结；仅允许严重 Bug
+alwaysApply: true
+---
+
+# 老板端 Design Freeze（全面冻结）
+
+自 2026-07-31 起，**【老板端】** 进入 **Freeze**。  
+订单详情弹窗以当前版本为准，**不要继续优化**。
+
+## 禁止修改（除非严重 Bug）
+
+- 首页
+- 我的订单（含订单详情弹窗）
+- 下单流程
+- 支付流程
+- 订单状态 / 状态机展示与流转（非严重 Bug）
+- UI 布局、配色、间距、卡片、弹窗样式
+- 导航与入口位置
+- 按钮位置与主路径文案
+
+涉及文件（触及即需遵守，默认不要改）：
+
+- `index.html`、`orders.html`、`payment-confirm.html`、`mine.html`、`companion-center.html`
+- `place-order.html`、`order-confirm.html`、`support.html`、`recharge.html`、`gifts.html` 等老板端页面
+- `src/boss-header.*`、`src/place-order-modal.*`、`src/payment-confirm.js`
+- `src/order-flow.js`、`src/order-confirm.js`、`src/home-*.js`、老板端相关 CSS
+- 为「改老板端体验」而改动的 `server/api/orders.js` 展示/流程逻辑（严重 Bug 除外）
+
+## 仅允许
+
+**严重 Bug**：崩溃、无法登录、无法下单/支付、状态无法写入数据库、数据错乱、安全漏洞。
+
+修严重 Bug 时：最小改动；不得借机重构、改布局、挪按钮、改导航。
+
+## 开发重点（切换到这些端）
+
+1. **陪玩端** P0  
+2. **客服端** P0  
+3. **后台中心** P0（后台仍遵守 `admin-design-freeze.mdc`：不改壳子/布局，只做业务与 Bug）
+
+```
+// ❌ 不要再改老板端（含订单详情弹窗继续优化）
+// ✅ 陪玩端 / 客服端 / 后台业务
+```
+
+若任务看起来需要改老板端：先停下来，确认是否为严重 Bug；否则拒绝改动并转向陪玩/客服/后台。

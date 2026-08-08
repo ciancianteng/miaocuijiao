@@ -1,0 +1,72 @@
+{
+  "freezeStyle": true,
+  "hot": [
+    {
+      "rank": 1,
+      "content": "\"TOP 1\"",
+      "left": "18px",
+      "right": "310.703px",
+      "top": "18px",
+      "height": "28px",
+      "radius": "999px",
+      "fontSize": "12px",
+      "display": "flex",
+      "cardPad": "14px",
+      "cardMinH": "342px",
+      "coverMinH": "240px",
+      "coverRadius": "18px",
+      "coverRatio": "3 / 4"
+    },
+    {
+      "rank": 2,
+      "content": "\"TOP 2\"",
+      "left": "18px",
+      "right": "310.703px",
+      "top": "18px",
+      "height": "28px",
+      "radius": "999px",
+      "fontSize": "12px",
+      "display": "flex",
+      "cardPad": "14px",
+      "cardMinH": "342px",
+      "coverMinH": "240px",
+      "coverRadius": "18px",
+      "coverRatio": "4 / 3"
+    }
+  ],
+  "recent": [
+    {
+      "rank": 1,
+      "content": "\"TOP 1\"",
+      "left": "18px",
+      "right": "310.703px",
+      "top": "18px",
+      "height": "28px",
+      "radius": "999px",
+      "fontSize": "12px",
+      "display": "flex",
+      "cardPad": "14px",
+      "cardMinH": "342px",
+      "coverMinH": "240px",
+      "coverRadius": "18px",
+      "coverRatio": "3 / 4"
+    },
+    {
+      "rank": 2,
+      "content": "\"TOP 2\"",
+      "left": "18px",
+      "right": "310.703px",
+      "top": "18px",
+      "height": "28px",
+      "radius": "999px",
+      "fontSize": "12px",
+      "display": "flex",
+      "cardPad": "14px",
+      "cardMinH": "342px",
+      "coverMinH": "240px",
+      "coverRadius": "18px",
+      "coverRatio": "4 / 3"
+    }
+  ],
+  "moreTopHidden": "none"
+}

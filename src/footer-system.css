@@ -45,6 +45,28 @@
   padding: 0 16px;
   font-weight: 800;
   cursor: pointer;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  font-size: 13px;
+  line-height: 1;
+  font-family: inherit;
+}
+
+.mcj-footer-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  width: min(420px, 100%);
+  margin: 0 auto;
+}
+
+.mcj-footer-actions .mcj-footer-link {
+  width: 100%;
+  min-width: 0;
+  padding: 0 10px;
 }
 
 .mcj-footer-link:hover,
@@ -59,6 +81,14 @@
   color: rgba(255, 245, 250, .58);
   font-size: 12px;
   letter-spacing: .04em;
+}
+
+.mcj-footer-ssm {
+  margin-top: 4px;
+  font-size: 11px;
+  line-height: 1.35;
+  color: rgba(255, 245, 250, .48);
+  letter-spacing: .03em;
 }
 
 .mcj-footer-links {
@@ -252,5 +282,14 @@
 
   .mcj-form-grid {
     grid-template-columns: 1fr;
+  }
+
+  .mcj-footer-actions {
+    grid-template-columns: 1fr;
+    width: min(280px, 100%);
+  }
+
+  .mcj-site-footer {
+    padding-bottom: calc(96px + env(safe-area-inset-bottom));
   }
 }

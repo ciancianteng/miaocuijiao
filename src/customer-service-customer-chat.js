@@ -60,10 +60,18 @@
 
   function draw(id) {
     var inst = instances[id];
+    var totalUnread = (inst.conversations || []).reduce(function (sum, c) {
+      return sum + (Number(c.unread_count || c.unreadCount || 0) || 0);
+    }, 0);
+    var unreadBadge = totalUnread
+      ? '<em class="mcj-unread mcj-msg-title-badge" aria-label="未读 ' + esc(totalUnread > 99 ? "99+" : totalUnread) + '">' +
+        esc(totalUnread > 99 ? "99+" : totalUnread) +
+        "</em>"
+      : "";
     inst.target.innerHTML = [
       '<div class="mcj-customer-chat" data-customer-chat="' + esc(id) + '">',
       '<aside class="mcj-chat-card mcj-customer-chat-list">',
-      '<div class="mcj-customer-chat-title"><h1>消息中心</h1><p>订单消息和客服会话</p></div>',
+      '<div class="mcj-customer-chat-title"><h1>消息中心' + unreadBadge + '</h1><p>订单消息和客服会话</p></div>',
       '<input class="mcj-chat-search" data-customer-chat-search placeholder="搜索会话、订单号、客服">',
       '<div class="mcj-conversation-list">' + listHTML(inst) + '</div>',
       '</aside>',

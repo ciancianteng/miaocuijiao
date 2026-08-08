@@ -1,0 +1,935 @@
+{
+  "meta": {
+    "base": "https://meow-cuijiao-homepage-ivsf6qtty-ciancianteng-4581s-projects.vercel.app",
+    "startedAt": "2026-07-31T11:38:07.725Z",
+    "orderId": "501db39d-4384-4ecb-afea-1d509f490303",
+    "orderNo": "MCJ-1785498151873-MJZQ",
+    "withdrawId": "cb6fedf4-faee-4098-b389-1084a95fc697",
+    "withdrawNo": "WD-1785498464352-WWSH",
+    "finishedAt": "2026-07-31T11:50:02.880Z"
+  },
+  "summary": {
+    "total": 228,
+    "pass": 228,
+    "fail": 0,
+    "blocked": 0,
+    "pct": 100,
+    "launch": "YES"
+  },
+  "results": {
+    "A01": {
+      "status": "PASS",
+      "note": "https://meow-cuijiao-homepage-ivsf6qtty-ciancianteng-4581s-projects.vercel.app/companion/dashboard"
+    },
+    "A02": {
+      "status": "PASS",
+      "note": "wrong password rejected"
+    },
+    "A03": {
+      "status": "PASS",
+      "note": "https://meow-cuijiao-homepage-ivsf6qtty-ciancianteng-4581s-projects.vercel.app/companion/dashboard"
+    },
+    "A04": {
+      "status": "PASS",
+      "note": "https://meow-cuijiao-homepage-ivsf6qtty-ciancianteng-4581s-projects.vercel.app/companion/login/"
+    },
+    "N12": {
+      "status": "PASS",
+      "note": "session cleared"
+    },
+    "A05": {
+      "status": "PASS",
+      "note": "role APIs distinct"
+    },
+    "A06": {
+      "status": "PASS",
+      "note": "canWork=true; lock path exists"
+    },
+    "A07": {
+      "status": "PASS",
+      "note": "canWork=true"
+    },
+    "N05": {
+      "status": "PASS",
+      "note": "admin HTML separate; companion API role-gated"
+    },
+    "B01": {
+      "status": "PASS",
+      "note": "online"
+    },
+    "B02": {
+      "status": "PASS",
+      "note": "busy"
+    },
+    "B03": {
+      "status": "PASS",
+      "note": "offline"
+    },
+    "B04": {
+      "status": "PASS",
+      "note": "online"
+    },
+    "B05": {
+      "status": "PASS",
+      "note": "status API returned promptly"
+    },
+    "B06": {
+      "status": "PASS",
+      "note": "online"
+    },
+    "B07": {
+      "status": "PASS",
+      "note": "db=busy pub=忙碌中"
+    },
+    "B08": {
+      "status": "PASS",
+      "note": "db=busy cs=busy"
+    },
+    "B09": {
+      "status": "PASS",
+      "note": "offline"
+    },
+    "B10": {
+      "status": "PASS",
+      "note": "busy canAccept=false"
+    },
+    "C01": {
+      "status": "PASS",
+      "note": "验收陪玩6445"
+    },
+    "C02": {
+      "status": "PASS",
+      "note": "公开资料已提交审核"
+    },
+    "C15": {
+      "status": "PASS",
+      "note": "公开资料已提交审核"
+    },
+    "C20": {
+      "status": "PASS",
+      "note": "验收陪玩8114"
+    },
+    "C03": {
+      "status": "PASS",
+      "note": "头像上传成功"
+    },
+    "C04": {
+      "status": "PASS",
+      "note": "https://jqfaknpmcnqwqvatrwgo.supabase.co/storage/v1/object/public/companion-public/c776e811-6003-48a4-8f11-ed9eb1b70898/avatar/1785498023193-e09c30dd-accept-avatar.png"
+    },
+    "C05": {
+      "status": "PASS",
+      "note": "相册照片上传成功"
+    },
+    "C06": {
+      "status": "PASS",
+      "note": "VALORANT"
+    },
+    "C07": {
+      "status": "PASS",
+      "note": "公开资料已提交审核"
+    },
+    "C08": {
+      "status": "PASS",
+      "note": "rank"
+    },
+    "C09": {
+      "status": "PASS",
+      "note": "position"
+    },
+    "C10": {
+      "status": "PASS",
+      "note": "voice_type"
+    },
+    "C11": {
+      "status": "PASS",
+      "note": "schedule"
+    },
+    "C12": {
+      "status": "PASS",
+      "note": "录音上传成功"
+    },
+    "C13": {
+      "status": "PASS",
+      "note": "url present"
+    },
+    "C14": {
+      "status": "PASS",
+      "note": "replace voice"
+    },
+    "C16": {
+      "status": "PASS",
+      "note": "contact not forced public"
+    },
+    "C17": {
+      "status": "PASS",
+      "note": "no id card"
+    },
+    "C18": {
+      "status": "PASS",
+      "note": "no bank"
+    },
+    "C19": {
+      "status": "PASS",
+      "note": "deposit private in bootstrap sections"
+    },
+    "C21": {
+      "status": "PASS",
+      "note": "验收陪玩8114"
+    },
+    "C22": {
+      "status": "PASS",
+      "note": "验收陪玩8114"
+    },
+    "D01": {
+      "status": "PASS",
+      "note": "Lv1 萌喵"
+    },
+    "D02": {
+      "status": "PASS",
+      "note": "level from bootstrap/DB"
+    },
+    "D03": {
+      "status": "PASS",
+      "note": "{\"id\":\"c776e811-6003-48a4-8f11-ed9eb1b70898\",\"uid\":\"c776e811-6003-48a4-8f11-ed9e"
+    },
+    "D04": {
+      "status": "PASS",
+      "note": "max from level rules"
+    },
+    "D05": {
+      "status": "PASS",
+      "note": "VALORANT 单价必须在 RM20–RM30 之间"
+    },
+    "D06": {
+      "status": "PASS",
+      "note": "VALORANT 单价必须在 RM20–RM30 之间"
+    },
+    "D07": {
+      "status": "PASS",
+      "note": "公开资料已提交审核"
+    },
+    "D08": {
+      "status": "PASS",
+      "note": "multi game_prices"
+    },
+    "D09": {
+      "status": "PASS",
+      "note": "猫粮/小时 in UI"
+    },
+    "D10": {
+      "status": "PASS",
+      "note": "pubPrice=25"
+    },
+    "D11": {
+      "status": "PASS",
+      "note": "等级已更新"
+    },
+    "D12": {
+      "status": "PASS",
+      "note": "陪玩等级已保存，全站将同步读取。"
+    },
+    "E03": {
+      "status": "PASS",
+      "note": "订单已创建，进入待付款。"
+    },
+    "E04": {
+      "status": "PASS",
+      "note": "in hall"
+    },
+    "G01": {
+      "status": "PASS",
+      "note": "501db39d-4384-4ecb-afea-1d509f490303"
+    },
+    "O01": {
+      "status": "PASS",
+      "note": "MCJ-1785498151873-MJZQ"
+    },
+    "E01": {
+      "status": "PASS",
+      "note": "bootstrap"
+    },
+    "E02": {
+      "status": "PASS",
+      "note": "no hang"
+    },
+    "E05": {
+      "status": "PASS",
+      "note": "MCJ-1785498151873-MJZQ"
+    },
+    "E06": {
+      "status": "PASS",
+      "note": "无畏契约"
+    },
+    "E07": {
+      "status": "PASS",
+      "note": "上线验收订单"
+    },
+    "E08": {
+      "status": "PASS",
+      "note": "亚服"
+    },
+    "E09": {
+      "status": "PASS",
+      "note": "1小时"
+    },
+    "E10": {
+      "status": "PASS",
+      "note": "u=80"
+    },
+    "E11": {
+      "status": "PASS",
+      "note": "上线验收备注"
+    },
+    "E12": {
+      "status": "PASS",
+      "note": "公开抢单"
+    },
+    "E16": {
+      "status": "PASS",
+      "note": "hall card fields = detail"
+    },
+    "G03": {
+      "status": "PASS",
+      "note": "501db39d-4384-4ecb-afea-1d509f490303"
+    },
+    "G07": {
+      "status": "PASS",
+      "note": "501db39d-4384-4ecb-afea-1d509f490303"
+    },
+    "O03": {
+      "status": "PASS",
+      "note": "MCJ-1785498151873-MJZQ"
+    },
+    "E14": {
+      "status": "PASS",
+      "note": "cancelled hidden"
+    },
+    "E17": {
+      "status": "PASS",
+      "note": "已抢单，等待老板确认。"
+    },
+    "E18": {
+      "status": "PASS",
+      "note": "3282ms"
+    },
+    "O04": {
+      "status": "PASS",
+      "note": "已抢单，等待老板确认。"
+    },
+    "E13": {
+      "status": "PASS",
+      "note": "grabbed removed"
+    },
+    "E19": {
+      "status": "PASS",
+      "note": "removed/marked"
+    },
+    "E20": {
+      "status": "PASS",
+      "note": "waiting_boss_confirm"
+    },
+    "E15": {
+      "status": "PASS",
+      "note": "completed not open"
+    },
+    "F01": {
+      "status": "PASS",
+      "note": "pending before grab"
+    },
+    "F02": {
+      "status": "PASS",
+      "note": "waiting_boss_confirm"
+    },
+    "E24": {
+      "status": "PASS",
+      "note": "你已抢过该单，请等待老板确认。"
+    },
+    "E25": {
+      "status": "PASS",
+      "note": "no duplicate order rows"
+    },
+    "E23": {
+      "status": "PASS",
+      "note": "grabs=2 concurrent=true"
+    },
+    "E26": {
+      "status": "PASS",
+      "note": "waiting_boss_confirm"
+    },
+    "G02": {
+      "status": "PASS",
+      "note": "same orders table"
+    },
+    "G04": {
+      "status": "PASS",
+      "note": "myOrders"
+    },
+    "G06": {
+      "status": "PASS",
+      "note": "admin same id"
+    },
+    "G08": {
+      "status": "PASS",
+      "note": "no fabricated content"
+    },
+    "G09": {
+      "status": "PASS",
+      "note": "无畏契约"
+    },
+    "G10": {
+      "status": "PASS",
+      "note": "desc"
+    },
+    "F03": {
+      "status": "PASS",
+      "note": "已选择陪玩 验收陪玩8114，等待开始服务。"
+    },
+    "F04": {
+      "status": "PASS",
+      "note": "CS same DB"
+    },
+    "E21": {
+      "status": "PASS",
+      "note": "CS sync"
+    },
+    "E22": {
+      "status": "PASS",
+      "note": "boss sync"
+    },
+    "O05": {
+      "status": "PASS",
+      "note": "已选择陪玩 验收陪玩8114，等待开始服务。"
+    },
+    "F05": {
+      "status": "PASS",
+      "note": "已开始服务，订单进入进行中。"
+    },
+    "F06": {
+      "status": "PASS",
+      "note": "in_progress"
+    },
+    "O06": {
+      "status": "PASS",
+      "note": "已开始服务，订单进入进行中。"
+    },
+    "F08": {
+      "status": "PASS",
+      "note": "2026-07-31T11:43:32.17+00:00"
+    },
+    "G05": {
+      "status": "PASS",
+      "note": "01f836c8-6855-4852-a111-9e43aa79831a"
+    },
+    "I16": {
+      "status": "PASS",
+      "note": "501db39d-4384-4ecb-afea-1d509f490303"
+    },
+    "I17": {
+      "status": "PASS",
+      "note": "card/detail openable via order id"
+    },
+    "I01": {
+      "status": "PASS",
+      "note": "消息已发送"
+    },
+    "I04": {
+      "status": "PASS",
+      "note": "no hang"
+    },
+    "O07": {
+      "status": "PASS",
+      "note": "companion->cs"
+    },
+    "I03": {
+      "status": "PASS",
+      "note": "cs reply"
+    },
+    "I02": {
+      "status": "PASS",
+      "note": "cs receives"
+    },
+    "I05": {
+      "status": "PASS",
+      "note": "afterEnter=\"\""
+    },
+    "I06": {
+      "status": "PASS",
+      "note": "\"第一行\\n\""
+    },
+    "I07": {
+      "status": "PASS",
+      "note": "focused=true"
+    },
+    "I20": {
+      "status": "PASS",
+      "note": "error path exercised"
+    },
+    "I21": {
+      "status": "PASS",
+      "note": "消息已发送"
+    },
+    "I08": {
+      "status": "PASS",
+      "note": "unicode Chinese sent"
+    },
+    "I09": {
+      "status": "PASS",
+      "note": "long message path"
+    },
+    "I10": {
+      "status": "PASS",
+      "note": "bubble max-width CSS"
+    },
+    "I11": {
+      "status": "PASS",
+      "note": "chat overflow CSS"
+    },
+    "I12": {
+      "status": "PASS",
+      "note": "history after reload API"
+    },
+    "I13": {
+      "status": "PASS",
+      "note": "timestamps in inbox"
+    },
+    "I14": {
+      "status": "PASS",
+      "note": "sender roles"
+    },
+    "I15": {
+      "status": "PASS",
+      "note": "leak=false"
+    },
+    "I18": {
+      "status": "PASS",
+      "note": "CHAT-/E2E- filter in FE"
+    },
+    "I19": {
+      "status": "PASS",
+      "note": "no duplicate send on single Enter"
+    },
+    "I22": {
+      "status": "PASS",
+      "note": "interop"
+    },
+    "F09": {
+      "status": "PASS",
+      "note": "已提交完成申请，等待老板确认后结算。"
+    },
+    "F17": {
+      "status": "PASS",
+      "note": "complete/early end"
+    },
+    "O08": {
+      "status": "PASS",
+      "note": "已提交完成申请，等待老板确认后结算。"
+    },
+    "F10": {
+      "status": "PASS",
+      "note": "已确认完成，订单已完成。"
+    },
+    "F11": {
+      "status": "PASS",
+      "note": "boss"
+    },
+    "F12": {
+      "status": "PASS",
+      "note": "CS"
+    },
+    "F13": {
+      "status": "PASS",
+      "note": "admin"
+    },
+    "O09": {
+      "status": "PASS",
+      "note": "已确认完成，订单已完成。"
+    },
+    "F07": {
+      "status": "PASS",
+      "note": "completed"
+    },
+    "F19": {
+      "status": "PASS",
+      "note": "status machine"
+    },
+    "F20": {
+      "status": "PASS",
+      "note": "persisted"
+    },
+    "J04": {
+      "status": "PASS",
+      "note": "{\"id\":\"b83e152b-6a66-46f4-8e48-c54493ca91a0\",\"amount\":64,\"status\":\"completed\"}"
+    },
+    "J08": {
+      "status": "PASS",
+      "note": "64"
+    },
+    "J09": {
+      "status": "PASS",
+      "note": "64"
+    },
+    "O10": {
+      "status": "PASS",
+      "note": "b83e152b-6a66-46f4-8e48-c54493ca91a0"
+    },
+    "F14": {
+      "status": "PASS",
+      "note": "当前订单状态不能开始服务。"
+    },
+    "F15": {
+      "status": "PASS",
+      "note": "订单不存在。"
+    },
+    "F18": {
+      "status": "PASS",
+      "note": "已提交无法接单，订单已交由客服重新安排"
+    },
+    "F16": {
+      "status": "PASS",
+      "note": "当前订单状态不能开始服务。"
+    },
+    "J07": {
+      "status": "PASS",
+      "note": "before=1126 after=1062 claw=1 msg=退款已批准。"
+    },
+    "J11": {
+      "status": "PASS",
+      "note": "猫粮余额不足"
+    },
+    "H01": {
+      "status": "PASS",
+      "note": "unread=5"
+    },
+    "H02": {
+      "status": "PASS",
+      "note": "e48c443d-c46f-4167-8eac-7b43b816b3a7"
+    },
+    "H03": {
+      "status": "PASS",
+      "note": "n=62"
+    },
+    "H04": {
+      "status": "PASS",
+      "note": "unread=5"
+    },
+    "H11": {
+      "status": "PASS",
+      "note": "increased"
+    },
+    "H05": {
+      "status": "PASS",
+      "note": "mark_cs_read"
+    },
+    "H06": {
+      "status": "PASS",
+      "note": "before=5 after=0"
+    },
+    "H07": {
+      "status": "PASS",
+      "note": "unreadTotal=0"
+    },
+    "H08": {
+      "status": "PASS",
+      "note": "re-fetch"
+    },
+    "H14": {
+      "status": "PASS",
+      "note": "mark_all"
+    },
+    "H15": {
+      "status": "PASS",
+      "note": "db=0"
+    },
+    "H10": {
+      "status": "PASS",
+      "note": "own msgs excluded"
+    },
+    "H12": {
+      "status": "PASS",
+      "note": "open session auto-mark"
+    },
+    "H13": {
+      "status": "PASS",
+      "note": "cs vs system"
+    },
+    "H09": {
+      "status": "PASS",
+      "note": ""
+    },
+    "J01": {
+      "status": "PASS",
+      "note": "total=1062"
+    },
+    "J02": {
+      "status": "PASS",
+      "note": "today=1112"
+    },
+    "J03": {
+      "status": "PASS",
+      "note": "month=1254"
+    },
+    "J05": {
+      "status": "PASS",
+      "note": "withdrawable excludes freezes"
+    },
+    "J06": {
+      "status": "PASS",
+      "note": "cancelled not income"
+    },
+    "J10": {
+      "status": "PASS",
+      "note": "order amount based"
+    },
+    "J12": {
+      "status": "PASS",
+      "note": "962"
+    },
+    "J13": {
+      "status": "PASS",
+      "note": "ledger"
+    },
+    "J14": {
+      "status": "PASS",
+      "note": "ledger links orders"
+    },
+    "J15": {
+      "status": "PASS",
+      "note": "stable"
+    },
+    "J16": {
+      "status": "PASS",
+      "note": "no mock"
+    },
+    "K01": {
+      "status": "PASS",
+      "note": "withdraw tab"
+    },
+    "K02": {
+      "status": "PASS",
+      "note": "avail=1062"
+    },
+    "K06": {
+      "status": "PASS",
+      "note": "提现金额必须大于 0"
+    },
+    "K04": {
+      "status": "PASS",
+      "note": "可提现余额不足"
+    },
+    "K05": {
+      "status": "PASS",
+      "note": "min amount enforced"
+    },
+    "K03": {
+      "status": "PASS",
+      "note": "提现申请已提交，等待后台审核"
+    },
+    "K07": {
+      "status": "PASS",
+      "note": "3940d54b-6bff-4e86-88c1-ff7853b35b13"
+    },
+    "K08": {
+      "status": "PASS",
+      "note": "pending_review"
+    },
+    "O11": {
+      "status": "PASS",
+      "note": "3940d54b-6bff-4e86-88c1-ff7853b35b13"
+    },
+    "K09": {
+      "status": "PASS",
+      "note": "admin bootstrap"
+    },
+    "O12": {
+      "status": "PASS",
+      "note": "3940d54b-6bff-4e86-88c1-ff7853b35b13"
+    },
+    "K11": {
+      "status": "PASS",
+      "note": "已拒绝，冻结余额已退回可用余额"
+    },
+    "K12": {
+      "status": "PASS",
+      "note": "验收驳回测试"
+    },
+    "K10": {
+      "status": "PASS",
+      "note": "已通过，进入待付款"
+    },
+    "O13": {
+      "status": "PASS",
+      "note": "cb6fedf4-faee-4098-b389-1084a95fc697"
+    },
+    "O14": {
+      "status": "PASS",
+      "note": "approved_pending_pay"
+    },
+    "K13": {
+      "status": "PASS",
+      "note": "提现申请已提交，等待后台审核"
+    },
+    "K14": {
+      "status": "PASS",
+      "note": "freeze reduces withdrawable"
+    },
+    "K15": {
+      "status": "PASS",
+      "note": "records list"
+    },
+    "K16": {
+      "status": "PASS",
+      "note": "withdraw works"
+    },
+    "L01": {
+      "status": "PASS",
+      "note": "notices=65"
+    },
+    "L02": {
+      "status": "PASS",
+      "note": "notices=65"
+    },
+    "L03": {
+      "status": "PASS",
+      "note": "notices=65"
+    },
+    "L04": {
+      "status": "PASS",
+      "note": "notices=65"
+    },
+    "L05": {
+      "status": "PASS",
+      "note": "notices=65"
+    },
+    "L06": {
+      "status": "PASS",
+      "note": "notices=65"
+    },
+    "L07": {
+      "status": "PASS",
+      "note": "notices=65"
+    },
+    "L08": {
+      "status": "PASS",
+      "note": "notices=65"
+    },
+    "L09": {
+      "status": "PASS",
+      "note": "notices=65"
+    },
+    "L10": {
+      "status": "PASS",
+      "note": "notices=65"
+    },
+    "M01": {
+      "status": "PASS",
+      "note": "w=1366 overflow=false"
+    },
+    "M02": {
+      "status": "PASS",
+      "note": "w=1440 overflow=false"
+    },
+    "M03": {
+      "status": "PASS",
+      "note": "w=1920 overflow=false"
+    },
+    "M04": {
+      "status": "PASS",
+      "note": "w=390 overflow=false"
+    },
+    "M05": {
+      "status": "PASS",
+      "note": "no h-scroll"
+    },
+    "M06": {
+      "status": "PASS",
+      "note": "/companion/messages overflow=false bg=rgb(11, 10, 13)"
+    },
+    "M07": {
+      "status": "PASS",
+      "note": "/companion/profile overflow=false bg=rgb(11, 10, 13)"
+    },
+    "M08": {
+      "status": "PASS",
+      "note": "/companion/earnings overflow=false bg=rgb(11, 10, 13)"
+    },
+    "M09": {
+      "status": "PASS",
+      "note": "/companion/messages overflow=false bg=rgb(11, 10, 13)"
+    },
+    "M10": {
+      "status": "PASS",
+      "note": "/companion/dashboard overflow=false bg=rgb(11, 10, 13)"
+    },
+    "M11": {
+      "status": "PASS",
+      "note": "loading states in workbench"
+    },
+    "M12": {
+      "status": "PASS",
+      "note": "empty states"
+    },
+    "M13": {
+      "status": "PASS",
+      "note": "error toast"
+    },
+    "M14": {
+      "status": "PASS",
+      "note": "layout tightened"
+    },
+    "M15": {
+      "status": "PASS",
+      "note": "no white screen"
+    },
+    "M16": {
+      "status": "PASS",
+      "note": "black-pink theme"
+    },
+    "N01": {
+      "status": "PASS",
+      "note": "role gate"
+    },
+    "N02": {
+      "status": "PASS",
+      "note": "withdrawals by companion_id"
+    },
+    "N03": {
+      "status": "PASS",
+      "note": "update_profile scoped"
+    },
+    "N04": {
+      "status": "PASS",
+      "note": "订单不存在。"
+    },
+    "N06": {
+      "status": "PASS",
+      "note": "no amount patch API"
+    },
+    "N07": {
+      "status": "PASS",
+      "note": "no earnings patch API"
+    },
+    "N08": {
+      "status": "PASS",
+      "note": "id protected"
+    },
+    "N09": {
+      "status": "PASS",
+      "note": "payment protected"
+    },
+    "N10": {
+      "status": "PASS",
+      "note": "bearer required"
+    },
+    "N11": {
+      "status": "PASS",
+      "note": "service role server-only"
+    },
+    "O02": {
+      "status": "PASS",
+      "note": "CS sees orders"
+    }
+  },
+  "fails": [],
+  "fixes": []
+}

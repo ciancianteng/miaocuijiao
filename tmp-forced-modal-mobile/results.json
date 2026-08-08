@@ -1,0 +1,57 @@
+{
+  "base": "https://meow-cuijiao-homepage-ely9w333a-ciancianteng-4581s-projects.vercel.app",
+  "results": [
+    {
+      "width": 360,
+      "pass": true,
+      "shown": true,
+      "shot": "C:\\Users\\cianc\\Desktop\\meow-cuijiao-homepage\\meow-cuijiao-homepage\\tmp-forced-modal-mobile\\forced-360.png",
+      "hasMask": true,
+      "hasModal": true,
+      "docW": 360,
+      "winW": 360,
+      "overflowX": false,
+      "modalInViewport": true,
+      "bodyScrollable": true,
+      "btnVisible": true,
+      "btnText": "我已阅读并同意",
+      "modalHeight": 720,
+      "closedOk": true
+    },
+    {
+      "width": 390,
+      "pass": true,
+      "shown": true,
+      "shot": "C:\\Users\\cianc\\Desktop\\meow-cuijiao-homepage\\meow-cuijiao-homepage\\tmp-forced-modal-mobile\\forced-390.png",
+      "hasMask": true,
+      "hasModal": true,
+      "docW": 390,
+      "winW": 390,
+      "overflowX": false,
+      "modalInViewport": true,
+      "bodyScrollable": false,
+      "btnVisible": true,
+      "btnText": "我已阅读并同意",
+      "modalHeight": 720,
+      "closedOk": true
+    },
+    {
+      "width": 430,
+      "pass": true,
+      "shown": true,
+      "shot": "C:\\Users\\cianc\\Desktop\\meow-cuijiao-homepage\\meow-cuijiao-homepage\\tmp-forced-modal-mobile\\forced-430.png",
+      "hasMask": true,
+      "hasModal": true,
+      "docW": 430,
+      "winW": 430,
+      "overflowX": false,
+      "modalInViewport": true,
+      "bodyScrollable": false,
+      "btnVisible": true,
+      "btnText": "我已阅读并同意",
+      "modalHeight": 720,
+      "closedOk": true
+    }
+  ],
+  "allPass": true
+}

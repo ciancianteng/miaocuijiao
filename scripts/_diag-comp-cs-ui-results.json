@@ -1,0 +1,160 @@
+{
+  "marker": "LIVE-UI-1785770989584",
+  "staging": "https://meow-cuijiao-homepage-staging.vercel.app",
+  "compUid": "1d3fe6a0-830f-47aa-a135-e3f3ab9ff6d0",
+  "csUid": "268e8205-0e09-4870-b44f-72676ade6ce5",
+  "send": {
+    "ok": true,
+    "msgId": "0074fdc1-1085-4c94-be0e-dec52892f2e8",
+    "convId": "5fad0389-b21c-4429-9cb0-a28fbdba86dd",
+    "status": 200
+  },
+  "convId": "5fad0389-b21c-4429-9cb0-a28fbdba86dd",
+  "dbMsgs": [
+    {
+      "id": "0074fdc1-1085-4c94-be0e-dec52892f2e8",
+      "sender_role": "companion",
+      "content": "LIVE-UI-1785770989584",
+      "created_at": "2026-08-03T15:29:52.789+00:00",
+      "message_type": "text"
+    },
+    {
+      "id": "a43f935b-7df2-4301-9191-19e90b042f85",
+      "sender_role": "companion",
+      "content": "COMP-CS-PROBE-1785770740133",
+      "created_at": "2026-08-03T15:25:43.613+00:00",
+      "message_type": "text"
+    },
+    {
+      "id": "4686a970-05b0-4ca1-a4f8-f4918d0a4dfc",
+      "sender_role": "customer_service",
+      "content": "RTLIVE-1785770294254-csreply",
+      "created_at": "2026-08-03T15:18:50.284+00:00",
+      "message_type": "text"
+    },
+    {
+      "id": "e9df252d-5aa7-48a6-a563-4d133ba62d8e",
+      "sender_role": "companion",
+      "content": "RTLIVE-1785770294254-live",
+      "created_at": "2026-08-03T15:18:33.65+00:00",
+      "message_type": "text"
+    },
+    {
+      "id": "9beabc39-df52-4f0b-9326-91de5fe6eacc",
+      "sender_role": "customer_service",
+      "content": "__IMG__:https://meow-cuijiao-homepage-staging.vercel.app/default-avatar.png",
+      "created_at": "2026-08-03T15:14:52.977+00:00",
+      "message_type": "text"
+    },
+    {
+      "id": "0d6537fb-bcba-4fe9-9693-50b2c2860df0",
+      "sender_role": "customer_service",
+      "content": "COMPCS-RT-1785770051374-from-cs",
+      "created_at": "2026-08-03T15:14:50.519+00:00",
+      "message_type": "text"
+    },
+    {
+      "id": "c5594d0c-9d55-4c8e-9129-13ee5fa63ac8",
+      "sender_role": "companion",
+      "content": "__IMG__:https://meow-cuijiao-homepage-staging.vercel.app/default-avatar.png",
+      "created_at": "2026-08-03T15:14:17.184+00:00",
+      "message_type": "text"
+    },
+    {
+      "id": "0be985d3-fa6d-49ba-b5bc-1cf6e01ae8d1",
+      "sender_role": "companion",
+      "content": "COMPCS-RT-1785770051374-from-companion",
+      "created_at": "2026-08-03T15:14:14.979+00:00",
+      "message_type": "text"
+    },
+    {
+      "id": "199d5ae2-6184-4297-b26f-dc72abe6e927",
+      "sender_role": "companion",
+      "content": "COMP-CS-PROBE-1785769422213",
+      "created_at": "2026-08-03T15:03:45.756+00:00",
+      "message_type": "text"
+    },
+    {
+      "id": "f35fd4f9-658e-4a73-8ae7-ca317542f0eb",
+      "sender_role": "companion",
+      "content": "陪玩发起官方客服咨询，系统已分配在线客服。",
+      "created_at": "2026-08-03T06:41:52.716+00:00",
+      "message_type": "system"
+    }
+  ],
+  "noiseHits": [],
+  "dbConv": {
+    "id": "5fad0389-b21c-4429-9cb0-a28fbdba86dd",
+    "boss_id": null,
+    "companion_id": "1d3fe6a0-830f-47aa-a135-e3f3ab9ff6d0",
+    "customer_service_id": "268e8205-0e09-4870-b44f-72676ade6ce5",
+    "order_id": null,
+    "status": "active",
+    "created_at": "2026-08-03T06:41:52.389+00:00",
+    "updated_at": "2026-08-03T15:29:53.148+00:00",
+    "conversation_type": "companion_support",
+    "last_message_at": "2026-08-03T15:29:53.148+00:00",
+    "last_read_at": "2026-08-03T15:26:17.284+00:00",
+    "closed_at": null,
+    "closed_by": null
+  },
+  "staffId": "268e8205-0e09-4870-b44f-72676ade6ce5",
+  "staffMatchesCs": true,
+  "foundConv": {
+    "id": "5fad0389-b21c-4429-9cb0-a28fbdba86dd",
+    "bossId": "",
+    "bossUid": "",
+    "bossName": "陪玩 · 草稿保留42324",
+    "companionId": "1d3fe6a0-830f-47aa-a135-e3f3ab9ff6d0",
+    "conversationType": "companion_support",
+    "orderId": "",
+    "orderNo": "",
+    "currentServiceId": "268e8205-0e09-4870-b44f-72676ade6ce5",
+    "currentServiceName": "终验客服",
+    "status": "正在接待",
+    "rawStatus": "active",
+    "lastMessage": "LIVE-UI-1785770989584",
+    "lastTime": "2026-08-03T15:29:52.789+00:00",
+    "unread": 1,
+    "unreadCount": 1,
+    "closedAt": "",
+    "closedBy": "",
+    "lastReadAt": "2026-08-03T15:26:17.284+00:00",
+    "acceptedAt": "",
+    "updatedAt": "2026-08-03T15:29:53.148+00:00",
+    "lockedByOther": false
+  },
+  "foundMsg": {
+    "id": "0074fdc1-1085-4c94-be0e-dec52892f2e8",
+    "conversationId": "5fad0389-b21c-4429-9cb0-a28fbdba86dd",
+    "senderId": "1d3fe6a0-830f-47aa-a135-e3f3ab9ff6d0",
+    "senderRole": "companion",
+    "senderName": "草稿保留42324",
+    "messageType": "text",
+    "content": "LIVE-UI-1785770989584",
+    "orderId": "",
+    "createdAt": "2026-08-03T15:29:52.789+00:00",
+    "readAt": ""
+  },
+  "simWaiting": [],
+  "simActive": [
+    {
+      "id": "5fad0389-b21c-4429-9cb0-a28fbdba86dd",
+      "name": "陪玩 · 草稿保留42324",
+      "status": "正在接待",
+      "svc": "268e8205-0e09-4870-b44f-72676ade6ce5",
+      "locked": false
+    },
+    {
+      "id": "e378d530-786e-40a8-bc50-ea07df45e8af",
+      "name": "陪玩 · 1717大王",
+      "status": "正在接待",
+      "svc": "0d67ee96-4eaf-41c8-92ff-5a5497ad8b08",
+      "locked": true
+    }
+  ],
+  "inWaitingTab": false,
+  "inActiveTab": true,
+  "invisibleInBothTabs": false,
+  "uiError": "browserType.launch: Executable doesn't exist at C:\\Users\\cianc\\AppData\\Local\\ms-playwright\\chromium_headless_shell-1234\\chrome-headless-shell-win64\\chrome-headless-shell.exe\n╔════════════════════════════════════════════════════════════╗\n║ Looks like Playwright was just installed or updated.       ║\n║ Please run the following command to download new browsers: ║\n║                                                            ║\n║     npx playwright install                                 ║\n║                                                            ║\n║ <3 Playwright Team                                         ║\n╚════════════════════════════════════════════════════════════╝\n    at main (C:\\Users\\cianc\\Desktop\\meow-cuijiao-homepage\\meow-cuijiao-homepage\\scripts\\_diag-comp-cs-ui.mjs:141:32)"
+}

@@ -1,0 +1,12 @@
+{
+  "finalUrl": "https://meow-cuijiao-homepage-staging.vercel.app/admin.html#dashboard",
+  "consoleLogs": [
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 500 ()"
+    }
+  ],
+  "title": "瓒呯骇绠＄悊鍛樺悗鍙?| MEOW CUI JIAO",
+  "hasShell": true,
+  "loginError": null
+}

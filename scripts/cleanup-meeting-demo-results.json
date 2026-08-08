@@ -1,0 +1,63 @@
+{
+  "at": "2026-08-02T23:43:29.002Z",
+  "actions": [
+    {
+      "deactivateTestBanners": [
+        {
+          "id": "acf2c9cc-58c3-4748-a525-ffdc89a77855",
+          "title": "[TEST] 手游组队频道"
+        }
+      ]
+    },
+    {
+      "homeBannerOk": "954b9c39-377d-4ec8-8580-07e258445e71"
+    },
+    {
+      "insertCampaignError": "null value in column \"pay_amount_rm\" of relation \"recharge_campaigns\" violates not-null constraint",
+      "attemptedFields": [
+        "name",
+        "base_cat_food",
+        "bonus_cat_food",
+        "sort_order",
+        "enabled"
+      ]
+    }
+  ],
+  "campaignColumns": [
+    "id",
+    "name",
+    "pay_amount_rm",
+    "base_cat_food",
+    "bonus_cat_food",
+    "total_cat_food",
+    "starts_at",
+    "ends_at",
+    "per_boss_limit",
+    "first_recharge_only",
+    "enabled",
+    "sort_order",
+    "description",
+    "created_at",
+    "updated_at"
+  ],
+  "campaignsBefore": [],
+  "bannersAfter": [
+    {
+      "id": "acf2c9cc-58c3-4748-a525-ffdc89a77855",
+      "title": "[TEST] 手游组队频道",
+      "subtitle": "P0-3 Preview 验收测试频道（正式上线前可删除）。|__team_lobby__",
+      "image_url": "/default-avatar.png",
+      "is_active": false,
+      "sort_order": 1
+    },
+    {
+      "id": "954b9c39-377d-4ec8-8580-07e258445e71",
+      "title": "MEOW CUI JIAO",
+      "subtitle": "首页轮播",
+      "image_url": "/default-home-banner.png",
+      "is_active": true,
+      "sort_order": 10
+    }
+  ],
+  "campaignsAfter": []
+}
