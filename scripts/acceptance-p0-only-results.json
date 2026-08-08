@@ -1,0 +1,151 @@
+{
+  "meta": {
+    "base": "https://meow-cuijiao-homepage-ivsf6qtty-ciancianteng-4581s-projects.vercel.app",
+    "startedAt": "2026-07-31T11:52:29.172Z",
+    "earnBefore": 1062,
+    "availBefore": 1062,
+    "orderId": "dcfe1899-09ed-4bcf-8933-f0d6ca8d3ba4",
+    "orderNo": "MCJ-1785498758372-LMSJ",
+    "earnAfterOrder": 1126,
+    "availAfterOrder": 1126,
+    "incomeAmount": 64,
+    "withdrawId": "5d71abaa-37ec-4bdf-9cb5-7e0ad02423ac",
+    "withdrawNo": "WD-1785498868001-VF41",
+    "finishedAt": "2026-07-31T11:54:37.988Z"
+  },
+  "summary": {
+    "total": 25,
+    "pass": 25,
+    "fail": 0,
+    "blocked": 0,
+    "launch": "YES"
+  },
+  "results": {
+    "P0_1_hall": {
+      "status": "PASS",
+      "note": "hall has MCJ-1785498758372-LMSJ game=无畏契约 unit=80"
+    },
+    "P0_1_grab": {
+      "status": "PASS",
+      "note": "已抢单，等待老板确认。"
+    },
+    "P0_1_after_grab": {
+      "status": "PASS",
+      "note": "mine=waiting_boss_confirm openGone=true"
+    },
+    "P0_2_after_grab_sync": {
+      "status": "PASS",
+      "note": "db=waiting_boss_confirm boss=waiting_boss_confirm cs=waiting_boss_confirm admin=admin_ok=false"
+    },
+    "P0_6_confirm": {
+      "status": "PASS",
+      "note": "已选择陪玩 验收陪玩8114，等待开始服务。"
+    },
+    "P0_6_start": {
+      "status": "PASS",
+      "note": "已开始服务，订单进入进行中。"
+    },
+    "P0_2_in_progress_sync": {
+      "status": "PASS",
+      "note": "db=in_progress companion=in_progress boss=in_progress"
+    },
+    "P0_3_cs_companion": {
+      "status": "PASS",
+      "note": "send=true csSees=true conv=e48c443d-c46f-4167-8eac-7b43b816b3a7"
+    },
+    "P0_3_companion_sees_cs": {
+      "status": "PASS",
+      "note": "visible in inbox API"
+    },
+    "P0_3_boss_cs": {
+      "status": "PASS",
+      "note": "threadOk=true bossApi=false supportApi=false conv=732ea4b7-bb12-487a-b073-1e8f17f4abb1"
+    },
+    "P0_6_complete": {
+      "status": "PASS",
+      "note": "已提交完成申请，等待老板确认后结算。"
+    },
+    "P0_6_boss_confirm_done": {
+      "status": "PASS",
+      "note": "已确认完成，订单已完成。"
+    },
+    "P0_2_completed_sync": {
+      "status": "PASS",
+      "note": "db=completed"
+    },
+    "P0_4_earnings": {
+      "status": "PASS",
+      "note": "income=64 earn 1062->1126 avail 1062->1126"
+    },
+    "P0_6_withdraw_submit": {
+      "status": "PASS",
+      "note": "提现申请已提交，等待后台审核"
+    },
+    "P0_5_pending_visible": {
+      "status": "PASS",
+      "note": "status=pending_review avail 1126->1076"
+    },
+    "P0_5_admin_sees": {
+      "status": "PASS",
+      "note": "5d71abaa-37ec-4bdf-9cb5-7e0ad02423ac"
+    },
+    "P0_5_admin_approve": {
+      "status": "PASS",
+      "note": "已通过，进入待付款"
+    },
+    "P0_5_companion_sync": {
+      "status": "PASS",
+      "note": "dbStatus=approved_pending_pay avail=1076 companionList=true"
+    },
+    "P0_1": {
+      "status": "PASS",
+      "note": "抢单大厅真实出现并可抢"
+    },
+    "P0_2": {
+      "status": "PASS",
+      "note": "四端订单状态同步"
+    },
+    "P0_3": {
+      "status": "PASS",
+      "note": "老板客服 / 客服陪玩聊天互通"
+    },
+    "P0_4": {
+      "status": "PASS",
+      "note": "完成后收益与可提现增加"
+    },
+    "P0_5": {
+      "status": "PASS",
+      "note": "提现后台审核后陪玩端同步"
+    },
+    "P0_6": {
+      "status": "PASS",
+      "note": "同单一条链 MCJ-1785498758372-LMSJ"
+    }
+  },
+  "checklist": {
+    "1_hall_grab": {
+      "status": "PASS",
+      "note": "抢单大厅真实出现并可抢"
+    },
+    "2_status_sync": {
+      "status": "PASS",
+      "note": "四端订单状态同步"
+    },
+    "3_chat_interop": {
+      "status": "PASS",
+      "note": "老板客服 / 客服陪玩聊天互通"
+    },
+    "4_earnings": {
+      "status": "PASS",
+      "note": "完成后收益与可提现增加"
+    },
+    "5_withdraw_review": {
+      "status": "PASS",
+      "note": "提现后台审核后陪玩端同步"
+    },
+    "6_full_chain": {
+      "status": "PASS",
+      "note": "同单一条链 MCJ-1785498758372-LMSJ"
+    }
+  }
+}

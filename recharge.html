@@ -1,11 +1,12 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
+  <script src="/portal-early-gate.js?v=20260805bossSessionDual1"></script>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>充值中心 - MEOW CUI JIAO</title>
-  <link rel="stylesheet" href="src/style.css">
-  <link rel="stylesheet" href="src/boss-header.css">
+
+
   <style>
     *{box-sizing:border-box}
     body{margin:0;background:#08070a;color:#fff;font-family:"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
@@ -40,10 +41,12 @@
     @media(max-width:860px){.layout,.stats,.campaigns{grid-template-columns:1fr}.page-head{display:block}}
     @media(max-width:520px){.recharge-shell{width:calc(100% - 24px);padding-top:16px}.boss-nav{gap:12px}.record,.tx{grid-template-columns:1fr}.page-head h1{font-size:24px}}
   </style>
+  <link rel="stylesheet" crossorigin href="/src/style.css">
+  <link rel="stylesheet" crossorigin href="/src/boss-header.css">
 </head>
 <body>
   <header class="topbar">
-    <a class="brand" href="index.html"><img src="assets/meow-cuijiao-brand.jpg" alt="MEOW CUI JIAO"><span>MEOW CUI JIAO</span></a>
+    <a class="brand" href="index.html"><img src="/assets/meow-cuijiao-brand.jpg" alt="MEOW CUI JIAO"><span>MEOW CUI JIAO</span></a>
     <nav class="boss-nav">
       <a href="index.html">首页</a>
       <a href="companion-center.html">陪玩大厅</a>
@@ -62,7 +65,7 @@
   <script>
     (function(){
       var root=document.getElementById('rechargeApp');
-      var state={loading:true,submitting:false,error:'',message:'',messageType:'warn',summary:{balance:0,paidBalance:0,bonusBalance:0,totalRecharge:0,totalSpent:0},campaigns:[],transactions:[],methods:[],records:[],campaignId:'',method:'tng'};
+      var state={loading:true,submitting:false,error:'',message:'',messageType:'warn',summary:{balance:0,paidBalance:0,bonusBalance:0,totalRecharge:0,totalSpent:0},campaigns:[],transactions:[],methods:[],records:[],campaignId:'',method:''};
       function token(){return localStorage.getItem('mcjAuthAccessToken')||sessionStorage.getItem('mcjAuthAccessToken')||''}
       function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
       function money(v){var n=Number(v||0);return 'RM'+(Number.isFinite(n)?n:0).toFixed(2)}
@@ -97,11 +100,12 @@
           state.summary=body.summary||state.summary;
           state.campaigns=body.campaigns||[];
           state.transactions=body.transactions||[];
-          state.methods=body.methods&&body.methods.length?body.methods:[{code:'tng',name:'TNG',statusText:'暂未开放'},{code:'alipay',name:'支付宝',statusText:'暂未开放'},{code:'bank',name:'银行支付',statusText:'暂未开放'}];
+          state.methods=(body.methods||[]).filter(function(m){return m&&m.code&&(m.open===true||(m.enabled&&m.configured&&m.statusText==='可用'));});
           state.records=body.records||[];
           if(!state.campaigns.some(function(c){return c.id===state.campaignId}))state.campaignId=state.campaigns[0]?state.campaigns[0].id:'';
           if(!state.methods.some(function(m){return m.code===state.method}))state.method=state.methods[0]?state.methods[0].code:'';
-          if(body.message){state.message=body.message;state.messageType='warn'}else if(!state.message||state.messageType==='warn'){state.message='';}
+          if(!state.methods.length){state.message=body.message||'暂无可用支付方式，请联系管理员在后台启用';state.messageType='warn'}
+          else if(body.message){state.message=body.message;state.messageType='warn'}else if(!state.message||state.messageType==='warn'){state.message='';}
         }catch(err){state.error=err.message||'充值数据读取失败'}finally{state.loading=false;paint()}
       }
       async function submit(){

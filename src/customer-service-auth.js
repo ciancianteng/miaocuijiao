@@ -8,6 +8,7 @@
   var EXPIRED_MESSAGE = "登录已过期，请重新登录。";
   var refreshPromise = null;
   var sessionReadyPromise = null;
+  var guardPromise = null;
   var listeners = [];
 
   function readRaw() {
@@ -58,6 +59,33 @@
     return localStorage.getItem(key) || sessionStorage.getItem(key) || "";
   }
 
+  function clearForeignRoleSessions() {
+    // Must wipe boss soft session before writing shared JWT — otherwise boss
+    // pages keep customerUser while APIs use the CS token (identity bleed).
+    if (window.MCJRoleGate && typeof window.MCJRoleGate.clearOtherRoleSessions === "function") {
+      window.MCJRoleGate.clearOtherRoleSessions("customer_service");
+      return;
+    }
+    [
+      "customerAuthToken",
+      "customerUser",
+      "companionAuthToken",
+      "companionUser",
+      "mcjCompanionSession",
+      "adminAuthToken",
+      "adminUser",
+      "mcjAuthAccessToken",
+      "mcjAuthRefreshToken",
+      "mcjAuthExpiresAt",
+      "mcjRole",
+    ].forEach(function (key) {
+      try {
+        localStorage.removeItem(key);
+        sessionStorage.removeItem(key);
+      } catch (e) {}
+    });
+  }
+
   function persistAuthMirrors(session) {
     // Keep soft portal keys + shared auth mirrors in sync for role-gates / API.
     var soft = "customer_service_session_v4_" + Date.now();
@@ -79,12 +107,17 @@
       }
       sessionStorage.removeItem("customerServiceAuthToken");
       sessionStorage.removeItem("customerServiceUser");
+      sessionStorage.removeItem("mcjRole");
+      sessionStorage.removeItem("mcjAuthAccessToken");
+      sessionStorage.removeItem("mcjAuthRefreshToken");
+      sessionStorage.removeItem("mcjAuthExpiresAt");
     } catch (e) {}
   }
 
   function saveSession(input, remember) {
     var session = normalizeSession(input, remember !== false);
     if (!session) return null;
+    clearForeignRoleSessions();
     // P0: always persist to localStorage so refresh + new tabs keep login.
     try {
       localStorage.setItem(SESSION_KEY, JSON.stringify(session));
@@ -146,24 +179,88 @@
 
   function hasCsRoleHint() {
     try {
-      var user = JSON.parse(localStorage.getItem("customerServiceUser") || "null");
+      var user = JSON.parse(
+        localStorage.getItem("customerServiceUser") || sessionStorage.getItem("customerServiceUser") || "null"
+      );
       var role = String((user && (user.role || user.user_role)) || "").toLowerCase();
       if (role === "customer_service" || role === "service") return true;
     } catch (e) {}
     try {
-      var shared = String(localStorage.getItem("mcjAuthRole") || "").toLowerCase();
+      var shared = String(localStorage.getItem("mcjRole") || sessionStorage.getItem("mcjRole") || "").toLowerCase();
       if (shared === "customer_service" || shared === "service") return true;
     } catch (e2) {}
     return false;
   }
 
-  /** CS session only — never treat boss/admin shared tokens as logged-in CS. */
-  function hasSession() {
+  function looksLikeJwt(token) {
+    var access = String(token || "").trim();
+    return (
+      access.length >= 20 &&
+      access.split(".").length === 3 &&
+      access.split(".").every(function (p) {
+        return p.length > 0;
+      })
+    );
+  }
+
+  /** Heal soft/mirror leftovers into mcjServiceSession so login↔dashboard never loop. */
+  function healSessionBlobIfNeeded() {
     var blob = readRaw();
-    if (blob && (blob.token || blob.accessToken || blob.access_token)) return true;
-    // Shared mirrors only count when role is explicitly customer_service.
-    if (hasCsRoleHint() && (getAccessToken() || getRefreshToken())) return true;
-    return false;
+    var blobAccess = String((blob && (blob.token || blob.accessToken || blob.access_token)) || "").trim();
+    var blobRefresh = String((blob && (blob.refreshToken || blob.refresh_token)) || "").trim();
+    if (blob && (looksLikeJwt(blobAccess) || blobRefresh)) return blob;
+    var soft = readItem("customerServiceAuthToken");
+    if (String(soft).indexOf("customer_service_session_") !== 0) return blob;
+    if (!hasCsRoleHint()) return blob;
+    var access = String(readItem("mcjAuthAccessToken") || blobAccess || "").trim();
+    var refresh = String(readItem("mcjAuthRefreshToken") || blobRefresh || "").trim();
+    if (!looksLikeJwt(access) && !refresh) return blob;
+    var user = {};
+    try {
+      user = JSON.parse(localStorage.getItem("customerServiceUser") || sessionStorage.getItem("customerServiceUser") || "{}") || {};
+    } catch (e) {
+      user = {};
+    }
+    return saveSession(
+      {
+        token: access,
+        refreshToken: refresh,
+        expiresAt: readItem("mcjAuthExpiresAt") || (blob && blob.expiresAt) || "",
+        user: user,
+      },
+      true
+    );
+  }
+
+  /** CS session only — require portal blob (after heal). Soft mirrors alone never unlock. */
+  function hasSession() {
+    healSessionBlobIfNeeded();
+    var blob = readRaw();
+    if (!blob) return false;
+    var access = String(blob.token || blob.accessToken || blob.access_token || "").trim();
+    var refresh = String(blob.refreshToken || blob.refresh_token || "").trim();
+    if (!looksLikeJwt(access) && !refresh) return false;
+    if (!hasCsRoleHint()) {
+      var softHint = readItem("customerServiceAuthToken");
+      if (String(softHint).indexOf("customer_service_session_") !== 0) return false;
+    }
+    // Keep soft portal token in sync with early-gate (missing soft ⇒ login↔dashboard bounce).
+    var soft = readItem("customerServiceAuthToken");
+    if (String(soft).indexOf("customer_service_session_") !== 0) {
+      try {
+        persistAuthMirrors(
+          normalizeSession(blob, true) || {
+            token: access,
+            refreshToken: refresh,
+            expiresAt: (blob && (blob.expiresAt != null ? blob.expiresAt : blob.expires_at)) || "",
+            user: (blob && blob.user) || {},
+          }
+        );
+      } catch (e) {}
+      soft = readItem("customerServiceAuthToken");
+      if (String(soft).indexOf("customer_service_session_") !== 0) return false;
+    }
+    return true;
   }
 
   function needsRefresh() {
@@ -171,8 +268,10 @@
     var refresh = getRefreshToken();
     if (!access && refresh) return true;
     if (!access) return false;
+    // Unparseable / non-expiring access token with a refresh token must be rotated
+    // (avoids treating garbage JWT as a valid logged-in session).
     var exp = getExpiresAtMs();
-    if (!exp) return false;
+    if (!exp) return !!refresh;
     return Date.now() >= exp - REFRESH_BUFFER_MS;
   }
 
@@ -256,13 +355,18 @@
   }
 
   function ensureSession() {
-    sessionReadyPromise = getSession().then(function (result) {
-      if (!hasSession()) return result;
-      if (!needsRefresh()) return result;
-      return refreshSession().then(function () {
-        return getSession();
+    if (sessionReadyPromise) return sessionReadyPromise;
+    sessionReadyPromise = getSession()
+      .then(function (result) {
+        if (!hasSession()) return result;
+        if (!needsRefresh()) return result;
+        return refreshSession().then(function () {
+          return getSession();
+        });
+      })
+      .finally(function () {
+        sessionReadyPromise = null;
       });
-    });
     return sessionReadyPromise;
   }
 
@@ -367,22 +471,25 @@
   }
 
   function guardCustomerServicePages() {
+    if (guardPromise) return guardPromise;
     var path = String(location.pathname || "").replace(/\\/g, "/");
     if (!/\/customer-service(\/|$)/i.test(path)) return Promise.resolve(true);
     if (/\/customer-service\/login/i.test(path)) {
-      return ensureSession()
+      // Login surface must stay put — never auto-bounce to dashboard here.
+      // (Dual redirects from role-gates + login script caused infinite flicker.)
+      if (window.__MCJCsLoginRedirecting) {
+        revealCsPage();
+        return Promise.resolve(false);
+      }
+      guardPromise = Promise.resolve()
         .then(function () {
-          if (hasSession()) {
-            location.replace("/customer-service/dashboard/");
-            return false;
-          }
           revealCsPage();
           return true;
         })
-        .catch(function () {
-          revealCsPage();
-          return true;
+        .finally(function () {
+          guardPromise = null;
         });
+      return guardPromise;
     }
     try {
       document.documentElement.setAttribute("data-mcj-service-auth", "pending");
@@ -397,7 +504,7 @@
         revealCsPage();
       }
     }, 8000);
-    return ensureSession()
+    guardPromise = ensureSession()
       .then(function () {
         clearTimeout(safety);
         if (hasSession()) {
@@ -417,7 +524,11 @@
         revealCsPage();
         redirectToLogin(path + String(location.search || "") + String(location.hash || ""));
         return false;
+      })
+      .finally(function () {
+        guardPromise = null;
       });
+    return guardPromise;
   }
 
   window.MCJServiceAuth = {

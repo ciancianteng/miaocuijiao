@@ -256,6 +256,7 @@
     var bank = list.find(function (p) {
       return p.id === "bank-my";
     }) || {};
+    var qrUrl = String(bank.qrUrl || "").trim();
     return (
       '<div class="admin-sync-note">支付 Client Secret / API Secret / Webhook Secret 仅存服务端。完整银行账号按权限脱敏。详细渠道编辑也可使用左侧「支付设置」模块。</div>' +
       '<div class="table-wrap"><table><thead><tr><th>渠道</th><th>启用</th><th>商户名称</th><th>商户编号</th><th>回调地址</th><th>环境</th><th>连接</th><th>密钥</th><th>最近检测</th></tr></thead><tbody>' +
@@ -267,7 +268,18 @@
       field("accountName", "公司账户名称", bank.accountName || "") +
       field("accountLast4", "账号后四位", bank.accountLast4 || "") +
       field("duitnowId", "DuitNow ID", bank.duitnowId || "") +
-      field("qrUrl", "QR 图片链接", bank.qrUrl || "") +
+      '<div class="payment-qr-preview" style="margin:10px 0">' +
+      "<strong>收款二维码</strong>" +
+      (qrUrl
+        ? '<div style="margin:8px 0"><img src="' +
+          esc(qrUrl) +
+          '" alt="收款二维码" style="max-width:200px;max-height:200px;border-radius:12px;background:#fff;padding:8px;border:1px solid rgba(255,255,255,.12)"></div>'
+        : '<p style="opacity:.75;margin:8px 0">尚未上传。请上传 PNG / JPG / WEBP，系统会自动保存并生成公开链接。</p>') +
+      '<input type="hidden" name="qrUrl" value="' +
+      esc(qrUrl) +
+      '">' +
+      '<label>上传二维码图片（PNG / JPG / WEBP）<input type="file" accept="image/png,image/jpeg,image/jpg,image/webp" data-ps-qr-upload="bank-my"></label>' +
+      '<p style="opacity:.7;font-size:12px;margin:6px 0 0">无需手动填写 https 链接；重新上传即可覆盖。</p></div>' +
       boolSelect("bankEnabled", "启用银行转账", bank.enabled === true) +
       '<input type="hidden" name="channelId" value="bank-my">' +
       '<button class="primary-btn" type="submit">保存银行公开信息</button></form>'
@@ -481,6 +493,49 @@
     });
   }
 
+  function uploadPayQr(channelId, file) {
+    if (!file) return;
+    var type = String(file.type || "").toLowerCase();
+    var name = String(file.name || "").toLowerCase();
+    if (!(/image\/(png|jpeg|jpg|webp)/.test(type) || /\.(png|jpe?g|webp)$/.test(name))) {
+      alert("仅支持 PNG / JPG / WEBP");
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      alert("图片不能超过 8MB");
+      return;
+    }
+    var reader = new FileReader();
+    reader.onload = function () {
+      state.message = "正在上传二维码…";
+      paint();
+      Auth.post(
+        "/api/admin/payment-settings",
+        {
+          action: "upload_qr",
+          channelId: channelId || "bank-my",
+          dataUrl: String(reader.result || ""),
+          filename: file.name || "pay-qr.png",
+        },
+        { "x-mcj-admin-role": role() }
+      )
+        .then(function (res) {
+          state.message = res.message || "二维码已上传";
+          state.tab = "payment";
+          return load();
+        })
+        .catch(function (err) {
+          state.message = "";
+          alert(err.message || "上传失败");
+          paint();
+        });
+    };
+    reader.onerror = function () {
+      alert("读取图片失败");
+    };
+    reader.readAsDataURL(file);
+  }
+
   function load() {
     state.loading = true;
     state.error = "";
@@ -517,6 +572,16 @@
         alert(err.message || "更新失败");
       });
   }
+
+  document.addEventListener("change", function (e) {
+    var box = mount();
+    if (!box) return;
+    var input = e.target.closest("[data-ps-qr-upload]");
+    if (!input || !box.contains(input)) return;
+    var file = input.files && input.files[0];
+    uploadPayQr(input.getAttribute("data-ps-qr-upload") || "bank-my", file);
+    input.value = "";
+  });
 
   document.addEventListener("click", function (e) {
     var box = mount();
@@ -583,13 +648,16 @@
     var settings = Object.assign({}, s(), payload);
     if (action === "save_payments_public") {
       var channels = Object.assign({}, settings.paymentChannelsPublic || {});
+      var existingQr =
+        ((settings.paymentChannelsPublic || {})["bank-my"] && (settings.paymentChannelsPublic || {})["bank-my"].qrUrl) ||
+        "";
       channels["bank-my"] = Object.assign({}, channels["bank-my"] || {}, {
         enabled: payload.bankEnabled === true,
         bankName: payload.bankName || "",
         accountName: payload.accountName || "",
         accountNumber: payload.accountLast4 || "",
         duitnowId: payload.duitnowId || "",
-        qrUrl: payload.qrUrl || "",
+        qrUrl: payload.qrUrl || existingQr || "",
         mode: "live",
       });
       settings.paymentChannelsPublic = channels;

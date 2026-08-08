@@ -1,0 +1,177 @@
+{
+  "base": "https://meow-cuijiao-homepage-staging.vercel.app",
+  "at": "2026-08-03T22:07:35.246Z",
+  "newEmail": "pw.flow.1785794717254@meow.test",
+  "companionProfileId": "2947cb27-4673-4267-822d-7bdd14c67f84",
+  "userId": "def5a888-1a90-4231-9975-d0b5758d5024",
+  "enums": {
+    "db": [
+      "draft",
+      "pending(=submitted/pending_review)",
+      "rejected",
+      "resubmit/need_more",
+      "approved"
+    ],
+    "ui": [
+      "draft",
+      "pending",
+      "rejected",
+      "need_more",
+      "approved"
+    ]
+  },
+  "pass": 30,
+  "fail": 0,
+  "results": [
+    {
+      "id": "case1.register",
+      "pass": true,
+      "detail": "陪玩账号已创建，请继续填写资料。草稿不会出现在正式陪玩列表。"
+    },
+    {
+      "id": "case1.login_before_review",
+      "pass": true,
+      "detail": "pw.flow.1785794717254@meow.test"
+    },
+    {
+      "id": "case1.status_draft_or_incomplete",
+      "pass": true,
+      "detail": "status=draft canWork=false"
+    },
+    {
+      "id": "case1.cannot_work",
+      "pass": true,
+      "detail": "资料未完成，请继续填写申请。完成后提交审核。"
+    },
+    {
+      "id": "case1.online_blocked",
+      "pass": true,
+      "detail": "您的陪玩认证尚未通过，暂不可使用此功能。"
+    },
+    {
+      "id": "case1.lock_message",
+      "pass": true,
+      "detail": "您的陪玩认证尚未通过，暂不可使用此功能。"
+    },
+    {
+      "id": "case1.db_draft",
+      "pass": true,
+      "detail": "{\"id\":\"2947cb27-4673-4267-822d-7bdd14c67f84\",\"application_status\":\"draft\",\"application_submitted_at\":null,\"allow_orders\":false,\"companion_code\":null}"
+    },
+    {
+      "id": "case2.submit",
+      "pass": true,
+      "detail": "申请已提交，等待后台审核。"
+    },
+    {
+      "id": "case2.pending",
+      "pass": true,
+      "detail": "{\"id\":\"2947cb27-4673-4267-822d-7bdd14c67f84\",\"application_status\":\"pending\",\"application_submitted_at\":\"2026-08-03T22:05:43.266+00:00\"}"
+    },
+    {
+      "id": "case2.bootstrap_pending",
+      "pass": true,
+      "detail": "pending"
+    },
+    {
+      "id": "case2.still_cannot_work",
+      "pass": true,
+      "detail": "您的陪玩认证尚未通过，暂不可使用此功能。"
+    },
+    {
+      "id": "admin.login",
+      "pass": true,
+      "detail": "admin@meow.test"
+    },
+    {
+      "id": "case4.reject_api",
+      "pass": true,
+      "detail": "true"
+    },
+    {
+      "id": "case4.status_rejected",
+      "pass": true,
+      "detail": "rejected"
+    },
+    {
+      "id": "case4.reason",
+      "pass": true,
+      "detail": "驳回验收-1785794717254"
+    },
+    {
+      "id": "case4.inbox",
+      "pass": true,
+      "detail": "[{\"title\":\"认证申请需修改\",\"body\":\"原因：驳回验收-1785794717254\\n\\n[email_pending] 邮件待发送：SMTP 未配置\"},{\"title\":\"人气活动\",\"body\":\"完成本周第一单，即可登上人气榜。\"}]"
+    },
+    {
+      "id": "case4.db_notice",
+      "pass": true,
+      "detail": "[{\"title\":\"认证申请需修改\",\"body\":\"原因：驳回验收-1785794717254\\n\\n[email_pending] 邮件待发送：SMTP 未配置\",\"created_at\":\"2026-08-03T22:06:04.581+00:00\"}]"
+    },
+    {
+      "id": "case4.email_pending_table",
+      "pass": true,
+      "detail": "table optional/missing — mail helper falls back without failing review"
+    },
+    {
+      "id": "case4.resubmit",
+      "pass": true,
+      "detail": "申请已提交，等待后台审核。"
+    },
+    {
+      "id": "case4.back_to_pending",
+      "pass": true,
+      "detail": "{\"application_status\":\"pending\",\"application_reject_reason\":\"\"}"
+    },
+    {
+      "id": "case3.status_approved",
+      "pass": true,
+      "detail": "approved"
+    },
+    {
+      "id": "case3.can_work",
+      "pass": true,
+      "detail": "{\"canLogin\":true,\"canWork\":true,\"canSetAvailable\":false,\"canAcceptOrder\":false,\"canStartOrder\":false,\"canWithdraw\":false,\"messagesMode\":\"system_only\",\"lockReason\":\"\",\"withdrawLockReason\":\"请先提交并等待结款账户审核通过\",\"forcedAckRequired\":true,\"forcedAckReason\":\"请先阅读并确认最新强制公告\",\"publishReady\":false,\"profileComplete\":false}"
+    },
+    {
+      "id": "case3.pw_code",
+      "pass": true,
+      "detail": "PW00008"
+    },
+    {
+      "id": "case3.allow_orders",
+      "pass": true,
+      "detail": "{\"application_status\":\"approved\",\"allow_orders\":true,\"companion_code\":\"PW00008\",\"online_status\":\"offline\"}"
+    },
+    {
+      "id": "case3.inbox",
+      "pass": true,
+      "detail": "[{\"title\":\"认证审核通过\",\"body\":\"您的陪玩认证已通过，接单权限已经开放。\\n\\n[email_pending] 邮件待发送：SMTP 未配置\"},{\"title\":\"认证申请需修改\",\"body\":\"原因：驳回验收-1785794717254\\n\\n[email_pending] 邮件待发送：SMTP 未配置\"}]"
+    },
+    {
+      "id": "case3.hall_visible_or_gate",
+      "pass": true,
+      "detail": "may wait publish-gate media — approve+allow_orders done"
+    },
+    {
+      "id": "case5.grab_blocked",
+      "pass": true,
+      "detail": "您的陪玩认证尚未通过，暂不可使用此功能。"
+    },
+    {
+      "id": "case5.withdraw_blocked",
+      "pass": true,
+      "detail": "您的陪玩认证尚未通过，暂不可使用此功能。"
+    },
+    {
+      "id": "case5.online_blocked",
+      "pass": true,
+      "detail": "您的陪玩认证尚未通过，暂不可使用此功能。"
+    },
+    {
+      "id": "case5.message_clear",
+      "pass": true,
+      "detail": "您的陪玩认证尚未通过，暂不可使用此功能。 | 您的陪玩认证尚未通过，暂不可使用此功能。 | 您的陪玩认证尚未通过，暂不可使用此功能。"
+    }
+  ]
+}

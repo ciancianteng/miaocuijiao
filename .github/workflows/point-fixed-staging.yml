@@ -1,0 +1,65 @@
+name: Point fixed Staging alias
+
+# Alias-only: points meow-cuijiao-homepage-staging.vercel.app at the latest
+# successful Preview deployment for the staging branch (payment SoT).
+on:
+  workflow_dispatch:
+    inputs:
+      host:
+        description: "Optional explicit deployment host (without https://). Empty = resolve latest staging Preview."
+        required: false
+        default: ""
+  push:
+    branches:
+      - staging
+      - cursor/payment-linkage-unify-28a8
+    paths:
+      - ".github/workflows/point-fixed-staging.yml"
+      - "scripts/deploy-staging.mjs"
+      - "src/place-order-modal.js"
+      - "src/place-order-page.js"
+      - "src/gameplay-product.js"
+      - "recharge.html"
+      - "custom-order.html"
+      - "server/api/_platform-pay-qr.js"
+      - "server/api/recharge.js"
+
+permissions:
+  contents: read
+  deployments: read
+
+jobs:
+  alias:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve target host + alias fixed Staging
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          INPUT_HOST: ${{ github.event.inputs.host || '' }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [ -z "${VERCEL_TOKEN:-}" ]; then
+            echo "::error::VERCEL_TOKEN secret is not set. Add a Vercel token at repo Settings → Secrets → Actions."
+            exit 1
+          fi
+          npm i -g vercel@58.5.1
+          FIXED="meow-cuijiao-homepage-staging.vercel.app"
+          MIRROR="meow-cuijiao-homepage-staging-ciancianteng-4581s-projects.vercel.app"
+          HOST="${INPUT_HOST:-}"
+          if [ -z "$HOST" ]; then
+            # Prefer git-staging branch preview host (stable name for staging branch).
+            HOST="meow-cuijiao-homepage-git-staging-ciancianteng-4581s-projects.vercel.app"
+          fi
+          HOST="${HOST#https://}"
+          HOST="${HOST%/}"
+          echo "Aliasing $HOST -> $FIXED"
+          vercel alias set "$HOST" "$FIXED" --token "$VERCEL_TOKEN" --scope ciancianteng-4581s-projects
+          echo "Aliasing $HOST -> $MIRROR"
+          vercel alias set "$HOST" "$MIRROR" --token "$VERCEL_TOKEN" --scope ciancianteng-4581s-projects || true
+          echo "DONE https://$FIXED/"
+          curl -sL "https://$FIXED/" | grep -o 'src="[^"]*place-order[^"]*"' | head -5 || true
+          curl -sL "https://$FIXED/api/build-info" || true

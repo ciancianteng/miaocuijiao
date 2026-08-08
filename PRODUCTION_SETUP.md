@@ -98,6 +98,29 @@ npx vercel --prod
 
 仍须先有 Preview 验证或明确可接受回滚风险。
 
+## 5.1 Production mutation guards（强制）
+
+仓库内 seed / cleanup / destructive migrate 脚本已接入 `scripts/lib/prod-guard.mjs`：
+
+- 目标 URL / `DATABASE_URL` / `SUPABASE_URL` 看起来像 Production，或 `VERCEL_ENV=production` / `APP_ENV=production` 时，**默认拒绝执行**。
+- 仅当同时设置：
+  - `ALLOW_PROD_MUTATION=1`（或 `ALLOW_PROD_SEED` / `ALLOW_PROD_MIGRATE` / `ALLOW_PROD_RESET`）
+  - `CONFIRM_PROD_MUTATION=YES_I_MEAN_PRODUCTION`
+  才允许覆盖（危险，仅事故修复用）。
+- **禁止**用 seed / truncate / demo cleanup 对正式库做验收重灌。Deploy 本身不得 wipe / reinit Production 数据。
+- Staging 与 Production 的 `SUPABASE_*` **必须是两套不同项目**。若 `/api/public/companions` 两边返回同一 `*.supabase.co` storage host，视为 P0，禁止发正式。
+
+## 5.2 Backup before Production deploy
+
+正式发版前必须有可恢复备份（任选其一，并记录时间点）：
+
+1. Supabase Dashboard → Database → Backups（Pro+ 自动备份 / PITR），确认最近成功备份时间。  
+2. 或本地 `pg_dump`（使用 **Production** `DATABASE_URL`，输出到安全离线位置，勿提交 Git）。  
+
+本仓库 **不**自动在 deploy 时 dump；没有确认备份前不要 `vercel --prod` / 合入 Production。
+
+恢复路径：Supabase Dashboard restore，或 `psql` 导入 dump（先在 Staging 演练）。
+
 ## 6. 自定义域名
 
 1. Vercel → Project → Domains → 绑定正式域名。  

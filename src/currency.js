@@ -49,6 +49,31 @@
     return "RM" + (Number.isFinite(n) ? n : 0).toFixed(2);
   }
 
+  /**
+   * Display-only reference FX vs MYR. NOT used for settlement.
+   * Approx: 1 MYR ≈ 1.68 CNY ≈ 0.30 SGD
+   */
+  var REFERENCE_FX = { MYR: 1, CNY: 1.68, SGD: 0.3 };
+
+  /** Example: RM50 ≈ ¥84 ≈ SGD15 */
+  function formatRmWithFx(rmAmount) {
+    var rm = amountNumber(rmAmount);
+    var cny = Math.round(rm * REFERENCE_FX.CNY);
+    var sgd = Math.round(rm * REFERENCE_FX.SGD);
+    return "RM" + trimAmount(rm) + " ≈ ¥" + cny + " ≈ SGD" + sgd;
+  }
+
+  /**
+   * Treat 1 猫粮 ≈ RM1 for reference display only.
+   * Example: ≈ RM30 ≈ ¥50 ≈ SGD9
+   */
+  function formatCatFoodWithFx(catfood) {
+    var rm = amountNumber(catfood);
+    var cny = Math.round(rm * REFERENCE_FX.CNY);
+    var sgd = Math.round(rm * REFERENCE_FX.SGD);
+    return "≈ RM" + trimAmount(rm) + " ≈ ¥" + cny + " ≈ SGD" + sgd;
+  }
+
   /** Rewrite legacy "RM30/小时" / "RM60.00" / "RM20-RM30" strings into 猫粮 copy. */
   function rewriteLegacy(text) {
     var raw = String(text == null ? "" : text);
@@ -76,6 +101,9 @@
     formatRate: formatRate,
     formatRange: formatRange,
     formatRm: formatRm,
+    REFERENCE_FX: REFERENCE_FX,
+    formatRmWithFx: formatRmWithFx,
+    formatCatFoodWithFx: formatCatFoodWithFx,
     rewriteLegacy: rewriteLegacy,
   };
 

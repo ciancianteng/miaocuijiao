@@ -1,16 +1,30 @@
-﻿import fs from "node:fs";
+import fs from "node:fs";
 import path from "node:path";
 import { assertBossProfile, identityView } from "./_boss-identity.js";
 import { resolvePlatformCommission } from "./_commission-rates.js";
+import { readLocalLevels } from "./_companion-levels-store.js";
 import { priceForGame } from "./_game-prices.js";
 import {
   ORDER_STATUS_LABELS,
   allowPreviewTestPay,
+  bossFacingStatusText,
   normalizeOrderStatus,
   orderStatusLabel,
   writeOrderStatusLog,
   transitionOrderStatus,
 } from "./_order-status.js";
+import { evaluatePublishGate } from "./_companion-publish-gate.js";
+import { allocateOrderNo, resolveOrderPublicNo } from "./_account-codes.js";
+import { companionDb } from "./_companion-media-store.js";
+import { listPendingForCs, latestRejectedForOrders, signedProofUrl, uploadProof } from "./_payment-receipts.js";
+import { loadPlatformPayQr, listBossOrderPaymentMethods, normalizePaymentChannelId, isWalletPayEnabled, loadPaymentChannelsContext } from "./_platform-pay-qr.js";
+import { stripInternalOrderMarkers } from "./_order-grabs.js";
+import {
+  completionCountdown,
+  formatRemainingLabel,
+  parseCompletionMethod,
+  createOrderCompleteHelpers,
+} from "./_order-complete.js";
 
 loadLocalEnv();
 
@@ -61,13 +75,170 @@ function serviceHeaders(extra = {}) {
 function restUrl(table, query = "") { return `${envValue("SUPABASE_URL")}/rest/v1/${table}${query}`; }
 function authUrl(path) { return `${envValue("SUPABASE_URL")}/auth/v1/${path}`; }
 function money(value) { const n = Number(String(value ?? "").replace(/[^\d.-]/g, "")); return Number.isFinite(n) ? n : 0; }
+
+/** Load companion pricing row; omit optional columns that may be missing in older schemas. */
+async function loadCompanionPricingRow(userId) {
+  const id = String(userId || "").trim();
+  if (!id) return null;
+  // Prefer wide select, but never fall all the way to price-only — publish gate needs profile fields.
+  const selects = [
+    "id,user_id,price,game_prices,tags,game,main_service,service_ids,pricing_unit,nickname,age,gender,region,service_type,voice_url,card_image_url,application_status,verification_status,deposit_status,allow_orders,online_status,availability_status",
+    "id,user_id,price,game_prices,tags,game,main_service,service_ids,nickname,age,gender,region,service_type,voice_url,card_image_url,application_status,verification_status,allow_orders,online_status,availability_status",
+    "id,user_id,price,game_prices,tags,game,main_service,nickname,age,gender,region,service_type,voice_url,card_image_url,application_status,verification_status,allow_orders,online_status",
+    "id,user_id,price,tags,game,nickname,age,gender,region,voice_url,card_image_url,application_status,verification_status,allow_orders,online_status",
+    "id,user_id,price,game,nickname,application_status,verification_status,allow_orders,online_status",
+  ];
+  for (const select of selects) {
+    try {
+      const rows = await supabaseJson(
+        restUrl("companion_profiles", `?user_id=eq.${encodeURIComponent(id)}&select=${select}&limit=1`),
+        { headers: serviceHeaders() }
+      );
+      if (Array.isArray(rows) && rows[0]) return rows[0];
+    } catch (error) {
+      const msg = String(error?.message || error || "");
+      if (!/42703|column|schema cache|PGRST204|does not exist/i.test(msg)) throw error;
+    }
+  }
+  return null;
+}
+
+async function loadCompanionMediaExtras(companionProfileId) {
+  const pid = String(companionProfileId || "").trim();
+  if (!pid) return {};
+  try {
+    const rows = await supabaseJson(
+      restUrl(
+        "companion_media",
+        `?companion_profile_id=eq.${encodeURIComponent(pid)}&media_type=in.(avatar,cover,gallery,voice)&select=id,media_type,storage_path,status&limit=50`
+      ),
+      { headers: serviceHeaders() }
+    );
+    const list = Array.isArray(rows) ? rows : [];
+    const extras = { avatarUrl: "", voiceUrl: "", gallery: [] };
+    for (const row of list) {
+      if (row.status && /rejected|deleted/i.test(String(row.status))) continue;
+      // Presence markers only — publish gate checks existence, not durable public URLs.
+      if (row.media_type === "avatar" && (row.storage_path || row.id)) {
+        extras.avatarUrl = "storage://present/" + (row.storage_path || row.id);
+      }
+      if (row.media_type === "voice" && (row.storage_path || row.id)) {
+        extras.voiceUrl = "storage://present/" + (row.storage_path || row.id);
+      }
+      if (row.media_type === "gallery") {
+        extras.gallery.push({ id: row.id, url: row.storage_path || String(row.id) });
+      }
+    }
+    return extras;
+  } catch {
+    return {};
+  }
+}
+
+async function assertCompanionOrderable(companionUserId) {
+  const cp = await loadCompanionPricingRow(companionUserId);
+  if (!cp) return { ok: false, message: "指定陪玩不存在或不可下单。" };
+  let profile = null;
+  try {
+    const rows = await supabaseJson(
+      restUrl("profiles", `?id=eq.${encodeURIComponent(companionUserId)}&select=id,display_name,avatar_url,status,role&limit=1`),
+      { headers: serviceHeaders() }
+    );
+    profile = Array.isArray(rows) ? rows[0] : null;
+  } catch {
+    profile = null;
+  }
+  const mediaExtras = await loadCompanionMediaExtras(cp.id);
+  const gate = evaluatePublishGate(
+    cp,
+    profile || { role: "companion", status: "active", display_name: cp.nickname, avatar_url: "" },
+    mediaExtras
+  );
+  if (!gate.ok) {
+    return {
+      ok: false,
+      message: gate.statusLabel === "资料不完整"
+        ? "该陪玩资料未完善，暂不可下单"
+        : gate.statusLabel === "待审核"
+          ? "该陪玩尚未通过审核，暂不可下单"
+          : `该陪玩暂不可下单（${gate.statusLabel}）`,
+      gate,
+      cp,
+    };
+  }
+  const online = String(cp.availability_status || cp.online_status || "offline").toLowerCase();
+  if (online === "paused") {
+    return { ok: false, message: "该陪玩已暂停接单，请稍后再试", gate, cp };
+  }
+  if (online === "offline") {
+    return { ok: false, message: "该陪玩当前离线，暂不可下单", gate, cp };
+  }
+  return { ok: true, gate, cp, online };
+}
+
+/** Resolve profiles.id / companion_profiles.id / PW code → profiles user id. */
+async function resolveCompanionUserId(rawId) {
+  const id = String(rawId || "").trim();
+  if (!id) return "";
+  try {
+    const byUser = await supabaseJson(restUrl("profiles", `?id=eq.${encodeURIComponent(id)}&role=eq.companion&select=id&limit=1`), {
+      headers: serviceHeaders(),
+    });
+    if (Array.isArray(byUser) && byUser[0]?.id) return byUser[0].id;
+  } catch {
+    /* continue */
+  }
+  try {
+    const byCpId = await supabaseJson(
+      restUrl("companion_profiles", `?id=eq.${encodeURIComponent(id)}&select=user_id&limit=1`),
+      { headers: serviceHeaders() }
+    );
+    if (Array.isArray(byCpId) && byCpId[0]?.user_id) return byCpId[0].user_id;
+  } catch {
+    /* continue */
+  }
+  const code = id.toUpperCase();
+  if (/^PW\d+$/i.test(code) || /^P\d+$/i.test(code)) {
+    try {
+      const byCode = await supabaseJson(
+        restUrl("companion_profiles", `?companion_code=eq.${encodeURIComponent(code)}&select=user_id&limit=1`),
+        { headers: serviceHeaders() }
+      );
+      if (Array.isArray(byCode) && byCode[0]?.user_id) return byCode[0].user_id;
+    } catch {
+      /* column may be missing */
+    }
+    const digits = code.replace(/^PW0*/i, "").replace(/^P0*/i, "");
+    if (digits) {
+      try {
+        const byUid = await supabaseJson(
+          restUrl("companion_profiles", `?companion_uid=eq.${encodeURIComponent(digits)}&select=user_id&limit=1`),
+          { headers: serviceHeaders() }
+        );
+        if (Array.isArray(byUid) && byUid[0]?.user_id) return byUid[0].user_id;
+      } catch {
+        /* continue */
+      }
+    }
+  }
+  return id;
+}
 function nowIso() { return new Date().toISOString(); }
-function orderNo() { return `MCJ-${Date.now()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`; }
+async function nextOrderNo() {
+  try {
+    return await allocateOrderNo(companionDb);
+  } catch {
+    return `MCJO${String(Date.now()).slice(-6)}`;
+  }
+}
 function paymentMethodLabel(method) {
   const key = String(method || "").toLowerCase();
+  if (/duitnow/.test(key)) return "DuitNow";
   if (/tng/.test(key)) return "TNG";
   if (/bank|银行/.test(key)) return "银行卡";
   if (/alipay|支付宝/.test(key)) return "支付宝";
+  if (/stripe/.test(key)) return "Stripe";
+  if (/hitpay/.test(key)) return "HitPay";
   if (/cat.?food|wallet|猫粮|余额/.test(key)) return "猫粮余额";
   return method || "猫粮余额";
 }
@@ -75,7 +246,26 @@ function isWalletMethod(method) {
   return /cat.?food|wallet|猫粮|余额/.test(String(method || "").toLowerCase());
 }
 function isPreviewTestMethod(method) {
-  return /tng|bank|银行|card|银行卡|alipay|支付宝/.test(String(method || "").toLowerCase());
+  return /tng|duitnow|bank|银行|card|银行卡|alipay|支付宝|hitpay|stripe|toyyib/.test(String(method || "").toLowerCase());
+}
+
+async function assertOrderPaymentMethodAllowed(paymentMethod) {
+  const raw = String(paymentMethod || "").trim();
+  if (!raw) return { ok: false, message: "请选择支付方式" };
+  if (isWalletMethod(raw)) {
+    const ctx = await loadPaymentChannelsContext();
+    if (!isWalletPayEnabled(ctx.platformData, ctx.publicMap, ctx.byId)) {
+      return { ok: false, message: "余额支付暂未开放，请选择其他支付方式" };
+    }
+    return { ok: true, code: "catfood" };
+  }
+  const listed = await listBossOrderPaymentMethods([]);
+  const code = normalizePaymentChannelId(raw) || raw.toLowerCase();
+  const hit = (listed.methods || []).find((m) => m.code === code || m.id === code || m.code === raw || m.id === raw);
+  if (!hit || hit.open === false) {
+    return { ok: false, message: "该支付方式暂未开放，请选择其他支付方式" };
+  }
+  return { ok: true, code: hit.code || code };
 }
 
 async function parseBody(req) {
@@ -143,17 +333,38 @@ async function profileFromToken(req) {
 function bossHint(row = {}) {
   const status = row.status || "";
   const note = String(row.note || row.cancel_reason || "");
+  if (status === "awaiting_payment") {
+    // Source of truth: pending payment_receipts row (not leftover note markers).
+    if (row.paymentReceipt) return "付款凭证已提交，等待人工审核。";
+    if (row.paymentRejectReason) return `付款凭证已驳回：${row.paymentRejectReason}。请重新上传。`;
+    return "请尽快完成付款并上传凭证。";
+  }
   if (status === "claimed") return "订单已付款，正在等待陪玩确认接单";
-  if (status === "confirmed") return "陪玩已确认，可以开始服务";
-  if (status === "in_progress") return "服务进行中";
+  if (status === "confirmed" || status === "in_progress") {
+    if (
+      String(row.note || "").includes("[[COMPLETION_PENDING]]") ||
+      String(row.description || "").includes("[[COMPLETION_PENDING]]")
+    ) {
+      const cd = completionCountdown(row);
+      if (cd.autoConfirmPaused) return cd.autoConfirmPausedReason || "订单问题处理中，自动确认已暂停。";
+      const left = formatRemainingLabel(cd.autoConfirmRemainingMs);
+      return left
+        ? `陪玩已申请完成，请确认本次服务。若没有问题，系统将在 ${left} 后自动确认完成。`
+        : "陪玩已申请完成，请确认本次服务。";
+    }
+    return "服务进行中";
+  }
   if (status === "pending" && /陪玩确认超时|确认超时/.test(note)) return "陪玩暂未响应，客服正在处理中";
-  if (status === "pending" && /无法接单|拒单/.test(note)) return "陪玩暂时无法接单，客服正在处理中";
-  if (status === "pending") return "客服正在重新安排陪玩";
+  if (status === "pending" && /无法接单|拒单/.test(note)) return "陪玩暂时无法接单，订单已重新进入抢单大厅";
+  if (status === "pending") return "付款已确认，待客服处理派单。";
+  if (status === "waiting_boss_confirm") return "已有陪玩抢单，请选择一位";
   return "";
 }
 function paymentStatusLabel(row = {}) {
   const s = row.status || "";
-  if (s === "awaiting_payment") return "待付款";
+  if (s === "awaiting_payment") {
+    return row.paymentReceipt ? "待人工审核" : "待付款";
+  }
   if (s === "cancelled") return "已取消";
   return "已付款";
 }
@@ -161,16 +372,15 @@ function acceptStatusLabel(row = {}) {
   const s = row.status || "";
   const note = String(row.note || row.cancel_reason || "");
   if (s === "awaiting_payment") return "尚未付款";
-  if (s === "claimed") return "待陪玩确认";
-  if (s === "confirmed") return "待开始";
-  if (s === "in_progress") return "进行中";
-  if (s === "waiting_boss_confirm") return "选择陪玩中";
+  if (s === "claimed") return "等待陪玩确认";
+  if (s === "confirmed" || s === "in_progress") return "进行中";
+  if (s === "waiting_boss_confirm") return "等待老板选择";
   if (s === "completed" || s === "reviewed") return "已完成";
   if (s === "pending" && /陪玩确认超时|确认超时/.test(note)) return "陪玩确认超时";
   if (s === "pending" && /无法接单|拒单/.test(note)) return "陪玩无法接单，等待重新安排";
-  if (s === "pending") return row.companion_id ? "待接单" : "待接单";
+  if (s === "pending") return "待客服处理";
   if (s === "cancelled") return "已取消";
-  return STATUS_TEXT[s] || s || "-";
+  return bossFacingStatusText(row);
 }
 function viewOrder(row = {}) {
   const reviewed = !!(row.reviewed || row.review_id || row.reviewId);
@@ -182,7 +392,18 @@ function viewOrder(row = {}) {
   const notesFromDesc = description.split("\n")[0] || "";
   const serviceName = String(row.service_name || row.serviceName || row.game || row.title || "").trim();
   const gameId = String(row.game_id_value || row.game_id || row.gameId || gameIdFromDesc || "").trim();
-  const paymentMethod = String(row.payment_method || row.paymentMethod || payFromDesc || "").trim();
+  const paymentMethodRaw = String(row.payment_method || row.paymentMethod || payFromDesc || "").trim();
+  const paymentMethod =
+    normalizePaymentChannelId(paymentMethodRaw) ||
+    (/duitnow/i.test(paymentMethodRaw)
+      ? "duitnow"
+      : /tng/i.test(paymentMethodRaw)
+        ? "tng"
+        : /alipay|支付宝/i.test(paymentMethodRaw)
+          ? "alipay"
+          : /bank|银行/i.test(paymentMethodRaw)
+            ? "bank-transfer"
+            : paymentMethodRaw);
   const companionName =
     (row.companion && (row.companion.display_name || row.companion.nickname || row.companion.email)) ||
     row.companion_name ||
@@ -193,11 +414,17 @@ function viewOrder(row = {}) {
   const completionPending =
     String(row.note || "").includes("[[COMPLETION_PENDING]]") ||
     String(row.description || "").includes("[[COMPLETION_PENDING]]");
-  let statusText = STATUS_TEXT[status] || STATUS_TEXT[row.status] || row.status || "待付款";
-  if (status === "in_progress" && completionPending) statusText = "陪玩已完成，待确认";
+  const countdown = completionCountdown(row);
   const grabCount = Array.isArray(row.grabs)
     ? row.grabs.length
     : Number(row.grabCount != null ? row.grabCount : row.grab_count || 0) || 0;
+  let statusText = bossFacingStatusText({ ...row, status, grabs: row.grabs }, grabCount);
+  if (status === "in_progress" && completionPending) {
+    statusText = countdown.autoConfirmPaused ? "等待处理订单问题" : "等待您确认完成";
+  }
+  if ((status === "pending" || status === "waiting_boss_confirm") && grabCount > 0) {
+    statusText = `已有 ${grabCount} 位陪玩抢单（点击查看）`;
+  }
   const bossIntent = row.bossIntent || null;
   const flowStatus =
     row.flowStatus ||
@@ -211,6 +438,15 @@ function viewOrder(row = {}) {
       completed: "completed",
       cancelled: "cancelled",
     }[status] || status);
+  // Pending receipt only — leftover [[PAYMENT_PROOF]] notes must not keep 待人工审核 after reject.
+  const paymentReview = status === "awaiting_payment" && !!row.paymentReceipt;
+  if (paymentReview && status === "awaiting_payment") {
+    statusText = "待人工审核";
+  } else if (status === "awaiting_payment" && row.paymentRejectReason) {
+    statusText = "待付款";
+  }
+  const cleanDescription = stripInternalOrderMarkers(description);
+  const cleanNote = stripInternalOrderMarkers(String(row.note || ""));
   return {
     id: row.id,
     orderNo: row.order_no || row.id,
@@ -223,7 +459,7 @@ function viewOrder(row = {}) {
     orderTypeKey: row.order_type || "custom",
     game: row.game || "",
     title: row.title || "",
-    description,
+    description: cleanDescription,
     notes: bossNotes,
     bossNotes,
     serviceType: serviceName || row.game || "",
@@ -242,15 +478,28 @@ function viewOrder(row = {}) {
     flowStatus,
     statusText,
     completionPending,
+    completionRequestedAt: countdown.completionRequestedAt || "",
+    autoConfirmAt: countdown.autoConfirmAt || "",
+    autoConfirmRemainingMs: countdown.autoConfirmRemainingMs,
+    autoConfirmRemainingLabel: formatRemainingLabel(countdown.autoConfirmRemainingMs),
+    autoConfirmPaused: !!countdown.autoConfirmPaused,
+    autoConfirmPausedReason: countdown.autoConfirmPausedReason || "",
+    completionMethod: parseCompletionMethod(row) || "",
     grabs: row.grabs || [],
     grabCount,
     bossIntent,
     preferredCompanionId: bossIntent?.companionId || "",
     paymentStatus: paymentStatusLabel(row),
     acceptStatus: acceptStatusLabel(row),
+    paymentReview,
+    paymentProofUrl: row.paymentProofUrl || "",
+    paymentRejectReason: row.paymentRejectReason || "",
+    paymentReviewedAt: row.paymentReviewedAt || "",
+    paymentReviewedByName: row.paymentReviewedByName || "",
+    paidAt: row.paid_at || row.paidAt || "",
     bossHint: bossHint(row),
     cancelReason: row.cancel_reason || "",
-    note: row.note || "",
+    note: cleanNote,
     reviewed,
     reviewId: row.review_id || row.reviewId || "",
     reviewRating: row.review_rating != null ? Number(row.review_rating) : null,
@@ -279,10 +528,45 @@ async function loadOrders(profile, id = "") {
   } catch {
     /* best-effort SLA — never block boss list */
   }
-  // Core columns + note when available (boss intent / grab markers).
+  try {
+    const helpers = createOrderCompleteHelpers({
+      restUrl,
+      supabaseJson,
+      serviceHeaders,
+      addSystemMessage: async (order, actorId, content) => addSystemMessage(order, actorId || order.boss_id, content),
+    });
+    await Promise.race([
+      helpers.expireCompletionAutoConfirms({ limit: 20 }),
+      new Promise((resolve) => setTimeout(resolve, 2000)),
+    ]);
+  } catch {
+    /* best-effort auto-complete */
+  }
+  // Core columns always include description (completion-pending marker dual-writes here).
+  // note is preferred for markers; cancel_reason is optional — never drop note when cancel_reason is missing.
   const selectCore =
     "id,order_no,boss_id,companion_id,customer_service_id,order_type,game,title,description,hours,unit_price,total_amount,status,created_at,accepted_at,started_at,completed_at,cancelled_at";
-  const selectRich = selectCore + ",note,cancel_reason";
+  const selectWithNote = selectCore + ",note";
+  const selectRich = selectWithNote + ",cancel_reason";
+  if (id) {
+    // Ownership check first — foreign order id must not leak existence details as 200 empty.
+    let probe;
+    try {
+      probe = await supabaseJson(
+        restUrl(TABLE, `?id=eq.${encodeURIComponent(id)}&select=id,boss_id&limit=1`),
+        { headers: serviceHeaders() }
+      );
+    } catch {
+      probe = [];
+    }
+    const hit = Array.isArray(probe) ? probe[0] : null;
+    if (!hit) {
+      throw Object.assign(new Error("订单不存在。"), { status: 404, code: "ORDER_NOT_FOUND" });
+    }
+    if (String(hit.boss_id || "") !== String(profile.id || "")) {
+      throw Object.assign(new Error("无权限查看该订单。"), { status: 403, code: "FORBIDDEN_ORDER" });
+    }
+  }
   const queryOf = (sel) =>
     id
       ? `?id=eq.${encodeURIComponent(id)}&boss_id=eq.${encodeURIComponent(profile.id)}&select=${sel}&order=created_at.desc&limit=1`
@@ -292,7 +576,12 @@ async function loadOrders(profile, id = "") {
     rows = await supabaseJson(restUrl(TABLE, queryOf(selectRich)), { headers: serviceHeaders() });
   } catch (err) {
     if (!/column|schema cache|PGRST/i.test(String(err?.message || ""))) throw err;
-    rows = await supabaseJson(restUrl(TABLE, queryOf(selectCore)), { headers: serviceHeaders() });
+    try {
+      rows = await supabaseJson(restUrl(TABLE, queryOf(selectWithNote)), { headers: serviceHeaders() });
+    } catch (err2) {
+      if (!/column|schema cache|PGRST/i.test(String(err2?.message || ""))) throw err2;
+      rows = await supabaseJson(restUrl(TABLE, queryOf(selectCore)), { headers: serviceHeaders() });
+    }
   }
   const orders = Array.isArray(rows) ? rows : [];
   const companionIds = [...new Set(orders.map((row) => row.companion_id).filter(Boolean))];
@@ -368,11 +657,33 @@ async function loadOrders(profile, id = "") {
 
   // Parallelize grab enrichment so list GET stays under Preview cold-start budgets.
   const grabLists = await Promise.all(orders.map((row) => grabsFor(row)));
+  let receiptByOrder = {};
+  let proofUrlByOrder = {};
+  let rejectedByOrder = {};
+  const awaitingIds = orders.filter((row) => row.status === "awaiting_payment").map((row) => row.id).filter(Boolean);
+  if (awaitingIds.length) {
+    try {
+      const receipts = await listPendingForCs({ orderIds: awaitingIds });
+      receiptByOrder = Object.fromEntries((receipts || []).map((receipt) => [receipt.order_id, receipt]));
+      const pairs = await Promise.all(
+        (receipts || []).map(async (receipt) => [receipt.order_id, (await signedProofUrl(receipt).catch(() => "")) || ""])
+      );
+      proofUrlByOrder = Object.fromEntries(pairs);
+      const needReject = awaitingIds.filter((oid) => !receiptByOrder[oid]);
+      if (needReject.length) rejectedByOrder = await latestRejectedForOrders(needReject);
+    } catch {
+      receiptByOrder = {};
+      proofUrlByOrder = {};
+      rejectedByOrder = {};
+    }
+  }
   return orders.map((row, index) => {
     const rev = reviewByOrder[row.id];
     const grabs = grabLists[index] || [];
     const intent = parseBossIntent(row);
-    return viewOrder({
+    const receipt = receiptByOrder[row.id] || null;
+    const rejected = rejectedByOrder[row.id] || null;
+    const viewed = viewOrder({
       ...row,
       grabs,
       grabCount: grabs.length,
@@ -384,25 +695,69 @@ async function loadOrders(profile, id = "") {
       review_id: rev?.id || "",
       review_rating: rev?.rating,
       review_content: rev?.content || "",
+      paymentReceipt: receipt,
+      paymentProofUrl: proofUrlByOrder[row.id] || "",
+      paymentRejectReason: rejected?.reject_reason || "",
+      paymentReviewedAt: rejected?.reviewed_at || "",
     });
+    if (proofUrlByOrder[row.id]) viewed.paymentProofUrl = proofUrlByOrder[row.id];
+    if (rejected?.reject_reason) {
+      viewed.paymentRejectReason = rejected.reject_reason;
+      viewed.paymentReviewedAt = rejected.reviewed_at || "";
+      if (!receipt) {
+        viewed.bossHint = `付款凭证已驳回：${rejected.reject_reason}。请重新上传。`;
+      }
+    }
+    return viewed;
   });
 }
 async function ensureConversation(order, bossId) {
-  const existing = await supabaseJson(restUrl("conversations", `?order_id=eq.${encodeURIComponent(order.id)}&limit=1`), { headers: serviceHeaders() });
-  if (existing?.[0]) {
-    // Keep 1:1 order_id binding; refresh updated_at so CS list sorts correctly.
-    try {
-      await supabaseJson(restUrl("conversations", `?id=eq.${encodeURIComponent(existing[0].id)}`), {
+  // Boss↔CS order_support only. Never stamp companion_id; never reuse companion_support by order_id.
+  const typed = await supabaseJson(
+    restUrl(
+      "conversations",
+      `?boss_id=eq.${encodeURIComponent(bossId)}&order_id=eq.${encodeURIComponent(order.id)}&conversation_type=eq.order_support&order=updated_at.desc&limit=1`
+    ),
+    { headers: serviceHeaders() }
+  ).catch(() => []);
+  if (typed?.[0]) {
+    if (typed[0].companion_id) {
+      await supabaseJson(restUrl("conversations", `?id=eq.${encodeURIComponent(typed[0].id)}`), {
         method: "PATCH",
         headers: serviceHeaders(),
-        body: JSON.stringify({ updated_at: nowIso() }),
+        body: JSON.stringify({ companion_id: null, updated_at: nowIso() }),
+      }).catch(() => null);
+      return { ...typed[0], companion_id: null };
+    }
+    return typed[0];
+  }
+  const existingRows = await supabaseJson(
+    restUrl(
+      "conversations",
+      `?boss_id=eq.${encodeURIComponent(bossId)}&order_id=eq.${encodeURIComponent(order.id)}&order=updated_at.desc&limit=5`
+    ),
+    { headers: serviceHeaders() }
+  ).catch(() => []);
+  const existing = (Array.isArray(existingRows) ? existingRows : []).find(
+    (r) => String(r.conversation_type || "") !== "companion_support"
+  );
+  if (existing) {
+    const patch = { updated_at: nowIso(), companion_id: null };
+    if (order.customer_service_id && !existing.customer_service_id) {
+      patch.customer_service_id = order.customer_service_id;
+    }
+    try {
+      await supabaseJson(restUrl("conversations", `?id=eq.${encodeURIComponent(existing.id)}`), {
+        method: "PATCH",
+        headers: serviceHeaders(),
+        body: JSON.stringify(patch),
       });
     } catch (_) {}
-    return existing[0];
+    return { ...existing, ...patch };
   }
   const base = {
     boss_id: bossId,
-    companion_id: order.companion_id || null,
+    companion_id: null,
     customer_service_id: order.customer_service_id || null,
     order_id: order.id,
     status: "open",
@@ -497,13 +852,70 @@ export default async function handler(req, res) {
     const profile = await profileFromToken(req);
     if (req.method === "GET") {
       const orders = await loadOrders(profile, String(req.query.id || ""));
+      let refundByOrder = {};
+      try {
+        const refundApi = await import("./_boss-refund-payout.js");
+        const refunds = await refundApi.listBossRefunds(companionDb, { bossId: profile.id, limit: 200 });
+        for (const r of refunds || []) {
+          if (r.orderId && !refundByOrder[r.orderId]) refundByOrder[r.orderId] = r;
+        }
+      } catch {
+        refundByOrder = {};
+      }
+      const enriched = (orders || []).map((o) => {
+        const r = refundByOrder[o.id];
+        if (!r) return o;
+        return {
+          ...o,
+          fridayRefundStatus: r.status,
+          fridayRefundStatusText: r.statusText,
+          fridaySettlementDate: r.settlementDate || "",
+          fridayRefundAmountRm: r.amountRm,
+          fridayRefundNo: r.refundNo,
+        };
+      });
+      let platformPayInfo = null;
+      const singleId = String(req.query.id || "").trim();
+      if (singleId) {
+        const target = enriched.find((o) => String(o.id) === singleId || String(o.orderNo || o.order_no || "") === singleId);
+        if (target && String(target.status || "") === "awaiting_payment" && !isWalletMethod(target.paymentMethod || target.payment_method)) {
+          try {
+            // Bind QR strictly to this order's selected payment_method — never cross-fallback.
+            platformPayInfo = await loadPlatformPayQr(target.paymentMethod || target.payment_method || "");
+          } catch (err) {
+            console.warn("[orders] platformPayInfo", String(err?.message || err).slice(0, 160));
+            const methodHint = String(target.paymentMethod || target.payment_method || "").trim();
+            platformPayInfo = {
+              channelId: "",
+              requestedMethod: methodHint,
+              title: methodHint || "平台收款",
+              qrUrl: "",
+              instructions: methodHint
+                ? `${paymentMethodLabel(methodHint)} 暂未开放，请选择其他支付方式`
+                : "支付通道暂不可用",
+              enabled: false,
+              unavailable: true,
+              source: "error",
+            };
+          }
+        }
+      }
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
       return json(res, 200, {
         ok: true,
         configured: true,
-        orders,
+        orders: enriched.map((o) =>
+          platformPayInfo &&
+          (String(o.id) === singleId || String(o.orderNo || o.order_no || "") === singleId)
+            ? { ...o, platformPayInfo }
+            : o
+        ),
+        platformPayInfo,
         statusText: STATUS_TEXT,
         identity: profile._identity || null,
-        allowTestPay: allowPreviewTestPay(),
+        allowTestPay: allowPreviewTestPay({
+          allowTestPay: req.query?.allowTestPay ?? req.query?.allow_test_pay,
+        }),
       });
     }
     if (req.method !== "POST") {
@@ -512,11 +924,45 @@ export default async function handler(req, res) {
     }
     const body = await parseBody(req);
     const action = String(body.action || "create");
+    if (action === "list_my_refunds" || action === "my_refunds") {
+      try {
+        const refundApi = await import("./_boss-refund-payout.js");
+        const refunds = await refundApi.listBossRefunds(companionDb, { bossId: profile.id, limit: 100 });
+        return json(res, 200, { ok: true, refunds });
+      } catch (e) {
+        return json(res, 200, { ok: true, refunds: [], message: e.message || "" });
+      }
+    }
     if (action === "create" || action === "place_order") {
       const order = body.order || body;
+      const idempotencyKey = String(
+        body.idempotencyKey || body.idempotency_key || order.idempotencyKey || order.idempotency_key || ""
+      ).trim();
+      if (idempotencyKey) {
+        try {
+          const existing = await supabaseJson(
+            restUrl(TABLE, `?idempotency_key=eq.${encodeURIComponent(idempotencyKey)}&limit=1`),
+            { headers: serviceHeaders() }
+          );
+          if (existing?.[0]) {
+            return json(res, 200, {
+              ok: true,
+              message: "订单已存在（防重复提交）",
+              order: viewOrder(existing[0]),
+              deduped: true,
+              replayed: true,
+            });
+          }
+        } catch (e) {
+          if (!/idempotency|column|schema cache|PGRST/i.test(String(e.message || ""))) throw e;
+        }
+      }
       let companionId = String(order.companion_id || order.companionId || body.companionId || "").trim();
       if (action === "place_order" && !companionId) {
         return json(res, 400, { ok: false, message: "缺少陪玩信息，无法下单。" });
+      }
+      if (companionId) {
+        companionId = (await resolveCompanionUserId(companionId)) || companionId;
       }
       const quantity = Math.max(1, Math.floor(money(order.quantity || 1) || 1));
       const baseHours = Math.max(0.5, money(order.hours || order.duration || 1));
@@ -525,7 +971,12 @@ export default async function handler(req, res) {
       const companionName = String(order.companionName || order.companion_name || "").trim();
       const gameId = String(order.gameId || order.game_id || order.gameIdValue || order.game_id_value || "").trim();
       const couponCode = String(order.couponCode || order.coupon || "").trim();
-      const paymentMethod = String(order.paymentMethod || order.payment_method || "catfood").trim().toLowerCase();
+      let paymentMethod = String(order.paymentMethod || order.payment_method || "").trim().toLowerCase();
+      const payGate = await assertOrderPaymentMethodAllowed(paymentMethod || "catfood");
+      if (!payGate.ok) {
+        return json(res, 409, { ok: false, message: payGate.message || "该支付方式暂未开放" });
+      }
+      paymentMethod = String(payGate.code || paymentMethod).toLowerCase();
       const notes = String(order.notes || order.remark || order.description || "").trim();
       const game = String(order.game || serviceType || "陪玩").trim();
       let unitPrice = 0;
@@ -558,18 +1009,29 @@ export default async function handler(req, res) {
       if (action === "place_order") {
         if (!gameId) return json(res, 400, { ok: false, message: "请填写游戏 ID。" });
         // Server-authoritative unit price from companion_profiles — never trust client unit/total.
-        const cpRows = await supabaseJson(
-          restUrl(
-            "companion_profiles",
-            `?user_id=eq.${encodeURIComponent(companionId)}&select=price,game_prices,tags,game,main_service,service_ids,pricing_unit&limit=1`
-          ),
-          { headers: serviceHeaders() }
-        ).catch(() => []);
-        const cp = Array.isArray(cpRows) ? cpRows[0] : null;
+        const orderable = await assertCompanionOrderable(companionId);
+        if (!orderable.ok) {
+          return json(res, 400, { ok: false, message: orderable.message || "该陪玩暂不可下单" });
+        }
+        const cp = orderable.cp;
         const serviceId = String(order.serviceId || order.service_id || "").trim();
-        unitPrice = money(priceForGame(cp || {}, game, serviceId));
-        if (!(unitPrice > 0)) unitPrice = money(cp?.price);
-        if (!(unitPrice > 0)) return json(res, 400, { ok: false, message: "陪玩单价无效，请刷新后重试。" });
+        const gameHint = String(order.gameName || order.game_name || order.mainGame || order.main_game || game || "").trim();
+        unitPrice = money(priceForGame(cp, gameHint, serviceId));
+        if (!(unitPrice > 0)) unitPrice = money(cp.price);
+        if (!(unitPrice > 0)) {
+          // Prefer first positive game_prices entry when service/game labels don't match keys.
+          const gp = cp.game_prices && typeof cp.game_prices === "object" ? cp.game_prices : {};
+          for (const k of Object.keys(gp)) {
+            const v = money(gp[k]);
+            if (v > 0) {
+              unitPrice = v;
+              break;
+            }
+          }
+        }
+        if (!(unitPrice > 0)) {
+          return json(res, 400, { ok: false, message: "该陪玩尚未设置单价" });
+        }
         totalAmount = Math.round(unitPrice * hours * 100) / 100;
         const clientUnit = money(order.unit_price || order.unitPrice || order.price || order.budget || 0);
         const clientTotal = money(order.total_amount || order.totalAmount);
@@ -601,20 +1063,23 @@ export default async function handler(req, res) {
               notes || `${serviceType}订单`,
               gameId ? `游戏ID：${gameId}` : "",
               couponCode ? `优惠券：${couponCode}` : "",
-              `付款方式：${paymentMethodLabel(paymentMethod)}`,
+              `付款方式：${paymentMethod}`,
               companionName ? `指定陪玩：${companionName}` : "",
             ].filter(Boolean)
           : [
               String(order.description || order.requirements || order.service_content || notes || ""),
               gameId && !String(order.description || "").includes("游戏ID") ? `游戏ID：${gameId}` : "",
+              // Persist selected channel for QR routing (create path previously dropped it → 线下确认).
+              `付款方式：${paymentMethod}`,
             ].filter(Boolean);
 
       const row = {
-        order_no: orderNo(),
+        order_no: await nextOrderNo(),
         boss_id: profile.id,
         companion_id: companionId || null,
         customer_service_id: null,
         order_type: companionId ? "direct_companion" : String(order.order_type || order.orderType || "custom"),
+        assignment_type: companionId ? "assigned" : "public",
         game: action === "place_order" ? game : String(order.game || game || ""),
         title: action === "place_order" ? title : String(order.title || "自定义订单"),
         description: descriptionParts.join("\n"),
@@ -624,9 +1089,11 @@ export default async function handler(req, res) {
         status,
         created_at: nowIso()
       };
+      if (idempotencyKey) row.idempotency_key = idempotencyKey;
       // Optional marketplace columns (ignore if schema missing).
       const enriched = {
         ...row,
+        payment_method: paymentMethod,
         service_name: serviceType,
         game_id_value: gameId || String(order.game_id || "").trim(),
         notes: notes || descriptionParts.join("\n"),
@@ -637,8 +1104,64 @@ export default async function handler(req, res) {
       try {
         rows = await supabaseJson(restUrl(TABLE), { method: "POST", headers: serviceHeaders(), body: JSON.stringify(enriched) });
       } catch (insertErr) {
-        if (!/column|schema cache|PGRST/i.test(String(insertErr.message || ""))) throw insertErr;
-        rows = await supabaseJson(restUrl(TABLE), { method: "POST", headers: serviceHeaders(), body: JSON.stringify(row) });
+        const msg = String(insertErr.message || "");
+        if (idempotencyKey && /duplicate|unique|idempotency/i.test(msg)) {
+          const existing = await supabaseJson(
+            restUrl(TABLE, `?idempotency_key=eq.${encodeURIComponent(idempotencyKey)}&limit=1`),
+            { headers: serviceHeaders() }
+          ).catch(() => []);
+          if (existing?.[0]) {
+            return json(res, 200, {
+              ok: true,
+              message: "订单已存在（防重复提交）",
+              order: viewOrder(existing[0]),
+              deduped: true,
+              replayed: true,
+            });
+          }
+        }
+        if (!/column|schema cache|PGRST/i.test(msg)) throw insertErr;
+        try {
+          rows = await supabaseJson(restUrl(TABLE), {
+            method: "POST",
+            headers: serviceHeaders(),
+            body: JSON.stringify(row),
+          });
+        } catch (e2) {
+          const msg2 = String(e2.message || "");
+          if (idempotencyKey && /duplicate|unique|idempotency/i.test(msg2)) {
+            const existing = await supabaseJson(
+              restUrl(TABLE, `?idempotency_key=eq.${encodeURIComponent(idempotencyKey)}&limit=1`),
+              { headers: serviceHeaders() }
+            ).catch(() => []);
+            if (existing?.[0]) {
+              return json(res, 200, {
+                ok: true,
+                message: "订单已存在（防重复提交）",
+                order: viewOrder(existing[0]),
+                deduped: true,
+                replayed: true,
+              });
+            }
+          }
+          if (idempotencyKey && /idempotency_key|column|schema cache|PGRST/i.test(msg2)) {
+            const { idempotency_key: _ik, assignment_type: _at, ...core } = row;
+            rows = await supabaseJson(restUrl(TABLE), {
+              method: "POST",
+              headers: serviceHeaders(),
+              body: JSON.stringify(core),
+            });
+          } else if (/assignment_type|column|schema cache|PGRST/i.test(msg2)) {
+            const { assignment_type: _at, ...core } = row;
+            rows = await supabaseJson(restUrl(TABLE), {
+              method: "POST",
+              headers: serviceHeaders(),
+              body: JSON.stringify(core),
+            });
+          } else {
+            throw e2;
+          }
+        }
       }
       let saved = rows?.[0] || enriched;
 
@@ -654,6 +1177,53 @@ export default async function handler(req, res) {
     }
     const id = String(body.id || body.order_id || body.orderId || "");
     if (!id) return json(res, 400, { ok: false, message: "缺少订单 ID。" });
+    if (action === "submit_payment_proof") {
+      const beforeRows = await supabaseJson(
+        restUrl(TABLE, `?id=eq.${encodeURIComponent(id)}&boss_id=eq.${encodeURIComponent(profile.id)}&limit=1`),
+        { headers: serviceHeaders() }
+      );
+      const before = Array.isArray(beforeRows) ? beforeRows[0] : null;
+      if (!before) return json(res, 404, { ok: false, message: "订单不存在。" });
+      if (before.status !== "awaiting_payment") {
+        return json(res, 409, { ok: false, message: "当前订单无需提交付款凭证。", order: viewOrder(before) });
+      }
+      const result = await uploadProof({
+        order: before,
+        bossId: profile.id,
+        dataUrl: body.proofDataUrl || body.paymentProof || body.fileDataUrl || body.file || "",
+        paymentMethod: body.paymentMethod || body.payment_method || viewOrder(before).paymentMethod,
+      });
+      const marker = `[[PAYMENT_PROOF]] bucket=${result.receipt?.storage_bucket || "companion-payment-proofs"} path=${result.receipt?.storage_path || ""}`;
+      let saved = before;
+      const note = `${String(before.note || "").replace(/\[\[PAYMENT_PROOF\]\][^\n]*/g, "").trim()}\n${marker}`.trim();
+      const description = `${String(before.description || "").replace(/\[\[PAYMENT_PROOF\]\][^\n]*/g, "").trim()}\n${marker}`.trim();
+      try {
+        const rows = await supabaseJson(restUrl(TABLE, `?id=eq.${encodeURIComponent(before.id)}&boss_id=eq.${encodeURIComponent(profile.id)}`), {
+          method: "PATCH",
+          headers: serviceHeaders(),
+          body: JSON.stringify({ note, description }),
+        });
+        saved = rows?.[0] || { ...before, note, description };
+      } catch (err) {
+        // note/description columns may be unavailable — receipt row remains source of truth.
+        console.warn("[submit_payment_proof] note patch", String(err?.message || err).slice(0, 160));
+        saved = { ...before, note, description, paymentReceipt: result.receipt };
+      }
+      await addSystemMessage(saved, profile.id, "老板已上传付款凭证，等待人工审核。").catch(() => {});
+      const proofUrl = await signedProofUrl(result.receipt).catch(() => "");
+      return json(res, 200, {
+        ok: true,
+        message: "付款凭证已提交，等待人工审核。",
+        receipt: { id: result.receipt?.id, receiptNo: result.receipt?.receipt_no },
+        order: {
+          ...viewOrder({ ...saved, paymentReceipt: result.receipt, paymentProofUrl: proofUrl || "" }),
+          paymentReview: true,
+          paymentProofUrl: proofUrl || result.receipt?.storage_path || "",
+          statusText: "待人工审核",
+          paymentStatus: "待人工审核",
+        },
+      });
+    }
     if (action === "pay_order") {
       const beforeRows = await supabaseJson(restUrl(TABLE, `?id=eq.${encodeURIComponent(id)}&boss_id=eq.${encodeURIComponent(profile.id)}&limit=1`), { headers: serviceHeaders() });
       const before = Array.isArray(beforeRows) ? beforeRows[0] : null;
@@ -661,13 +1231,24 @@ export default async function handler(req, res) {
       if (normalizeOrderStatus(before.status) !== "awaiting_payment") {
         return json(res, 409, { ok: false, message: "当前订单无需再次支付。", order: viewOrder(before) });
       }
-      const paymentMethod = String(body.paymentMethod || body.payment_method || viewOrder(before).paymentMethod || "").trim().toLowerCase();
+      const paymentMethodRaw = String(body.paymentMethod || body.payment_method || viewOrder(before).paymentMethod || "").trim().toLowerCase();
+      const payGate = await assertOrderPaymentMethodAllowed(paymentMethodRaw);
+      if (!payGate.ok) {
+        return json(res, 409, { ok: false, message: payGate.message || "该支付方式暂未开放" });
+      }
+      const paymentMethod = String(payGate.code || paymentMethodRaw).toLowerCase();
       const previewTest =
         String(body.preview_test || body.previewTest || "").trim() === "1" ||
         String(body.test_pay || "").trim() === "1";
-      const previewAllowed = allowPreviewTestPay();
+      const previewAllowed = allowPreviewTestPay({
+        allowTestPay: body.allowTestPay ?? body.allow_test_pay ?? req.query?.allowTestPay,
+      });
       if (previewTest && !previewAllowed) {
-        return json(res, 403, { ok: false, message: "正式环境不允许使用测试支付。" });
+        return json(res, 403, {
+          ok: false,
+          message: "测试支付未开启。请使用猫粮支付，或在 URL 加 ?allowTestPay=1 / 设置 MCJ_ALLOW_TEST_PAY=1。",
+          allowTestPay: false,
+        });
       }
 
       let usedTestPay = false;
@@ -720,8 +1301,15 @@ export default async function handler(req, res) {
       }
 
       const nextStatus = before.companion_id ? "claimed" : "pending";
-      const acceptedAt = nextStatus === "claimed" ? nowIso() : null;
+      // Companion must confirm before accepted_at / start — never pre-stamp on pay.
       const deps = { restUrl, supabaseJson, serviceHeaders };
+      const payPatch = {
+        accepted_at: null,
+        assignment_type: before.companion_id ? "assigned" : "public",
+        ...(before.companion_id
+          ? { order_type: before.order_type || "direct_companion" }
+          : { companion_id: null, order_type: before.order_type || "open_grab" }),
+      };
       let saved;
       try {
         saved = await transitionOrderStatus(deps, {
@@ -729,20 +1317,20 @@ export default async function handler(req, res) {
           filterQuery: `?id=eq.${encodeURIComponent(before.id)}&boss_id=eq.${encodeURIComponent(profile.id)}&status=eq.awaiting_payment`,
           fromStatus: before.status,
           toStatus: nextStatus,
-          patch: { accepted_at: acceptedAt },
+          patch: payPatch,
           operatorRole: "boss",
           operatorId: profile.id,
           note: usedTestPay ? "TEST preview pay success" : "boss wallet/gateway pay success",
         });
       } catch (e) {
-        // Retry without accepted_at if column missing (should not happen on init.sql).
-        if (!/accepted_at|column|schema cache|PGRST/i.test(String(e.message || ""))) throw e;
+        // Retry without optional columns if schema missing.
+        if (!/accepted_at|assignment_type|order_type|column|schema cache|PGRST/i.test(String(e.message || ""))) throw e;
         saved = await transitionOrderStatus(deps, {
           orderId: before.id,
           filterQuery: `?id=eq.${encodeURIComponent(before.id)}&boss_id=eq.${encodeURIComponent(profile.id)}&status=eq.awaiting_payment`,
           fromStatus: before.status,
           toStatus: nextStatus,
-          patch: {},
+          patch: before.companion_id ? {} : { companion_id: null },
           operatorRole: "boss",
           operatorId: profile.id,
           note: usedTestPay ? "TEST preview pay success" : "boss pay success",
@@ -753,7 +1341,7 @@ export default async function handler(req, res) {
           restUrl(TABLE, `?id=eq.${encodeURIComponent(before.id)}&boss_id=eq.${encodeURIComponent(profile.id)}&limit=1`),
           { headers: serviceHeaders() }
         );
-        saved = again?.[0] || { ...before, status: nextStatus, accepted_at: acceptedAt };
+        saved = again?.[0] || { ...before, status: nextStatus, accepted_at: null };
         await writeOrderStatusLog(deps, {
           orderId: before.id,
           fromStatus: before.status,
@@ -774,14 +1362,40 @@ export default async function handler(req, res) {
           profile.id,
           nextStatus === "claimed"
             ? `${usedTestPay ? "[TEST] " : ""}订单已支付，指定陪玩为 ${companionLabel}，等待陪玩确认。`
-            : `${usedTestPay ? "[TEST] " : ""}订单已支付，已进入待客服安排 / 公开抢单。`
+            : `${usedTestPay ? "[TEST] " : ""}订单已支付，已进入抢单大厅，等待陪玩抢单。`
         );
       } catch (_) {
         /* chat soft-fail — status already persisted */
       }
+      if (nextStatus === "pending" && !before.companion_id) {
+        try {
+          const { createGrabListingHelpers } = await import("./_order-grab-listings.js");
+          const listingsApi = createGrabListingHelpers({ restUrl, supabaseJson, serviceHeaders });
+          await listingsApi.upsertListing(saved || before, {
+            publishedByCsId: null,
+            reason: usedTestPay ? "boss_test_pay_open_grab" : "boss_pay_open_grab",
+          });
+        } catch (err) {
+          console.warn("[orders/pay_order] upsertListing", err?.message || err);
+        }
+      }
+      if (nextStatus === "claimed" && before.companion_id) {
+        try {
+          const { notifyCompanionOrderAssigned } = await import("./_companion-order-notify.js");
+          await Promise.race([
+            notifyCompanionOrderAssigned(saved || { ...before, status: "claimed" }, {
+              eventType: "assign",
+              email: "",
+            }).catch((err) => console.warn("[orders/pay_order] companion notify", err?.message || err)),
+            new Promise((resolve) => setTimeout(resolve, 3500)),
+          ]);
+        } catch (err) {
+          console.warn("[orders/pay_order] companion notify import", err?.message || err);
+        }
+      }
       let reward = null;
       try {
-        reward = await (await import("./_cs-dock-rewards.js")).trySettleDockReward(saved, {
+        reward = await (await import("./_cs-commission-settle.js")).settleCsOrderIncome(saved, {
           source: usedTestPay ? "boss_test_pay" : "boss_pay",
         });
       } catch (_) {}
@@ -791,10 +1405,10 @@ export default async function handler(req, res) {
         message: usedTestPay
           ? nextStatus === "claimed"
             ? "测试支付成功（TEST）。订单已进入等待陪玩确认。"
-            : "测试支付成功（TEST）。订单已进入待客服安排。"
+            : "测试支付成功（TEST）。订单已进入抢单大厅。"
           : nextStatus === "claimed"
             ? "支付成功，订单已进入等待陪玩确认。"
-            : "支付成功，订单已进入待客服安排。",
+            : "支付成功，订单已进入抢单大厅。",
         order: viewOrder(saved),
         allowTestPay: previewAllowed,
         reward,
@@ -805,82 +1419,222 @@ export default async function handler(req, res) {
       const before = Array.isArray(beforeRows) ? beforeRows[0] : null;
       if (!before) return json(res, 404, { ok: false, message: "订单不存在。" });
       const { createOrderGrabHelpers } = await import("./_order-grabs.js");
+      const { enrichGrabCompanions, parseBossIntent } = await import("./_order-flow.js");
       const grabsApi = createOrderGrabHelpers({ restUrl, supabaseJson, serviceHeaders });
       const grabs = await grabsApi.listGrabs(before.id, before.note || before.description || "");
-      const companionIds = [...new Set(grabs.map((g) => g.companionId).filter(Boolean))];
-      let companions = [];
-      if (companionIds.length) {
-        const profiles = await supabaseJson(
-          restUrl("profiles", `?id=in.(${companionIds.map(encodeURIComponent).join(",")})&select=id,display_name,email,avatar_url`),
-          { headers: serviceHeaders() }
-        ).catch(() => []);
-        const cps = await supabaseJson(
-          restUrl("companion_profiles", `?user_id=in.(${companionIds.map(encodeURIComponent).join(",")})`),
-          { headers: serviceHeaders() }
-        ).catch(() => []);
-        const pMap = Object.fromEntries((profiles || []).map((p) => [p.id, p]));
-        const cMap = Object.fromEntries((cps || []).map((c) => [c.user_id, c]));
-        companions = companionIds.map((cid) => {
-          const p = pMap[cid] || {};
-          const c = cMap[cid] || {};
-          return {
-            id: cid,
-            nickname: c.nickname || p.display_name || p.email || "陪玩",
-            avatarUrl: c.avatar_url || p.avatar_url || "",
-            level: c.level_name || "",
-            onlineStatus: c.online_status || "offline",
-            price: money(c.price),
-            tags: c.tags || c.tag_list || "",
-            mainGame: c.game || c.main_game || "",
-            rating: money(c.rating || c.score || 0),
-            completedOrders: Number(c.completed_orders || c.order_count || 0) || 0,
-            voiceUrl: c.voice_url || c.voice_sample_url || "",
-          };
-        });
-      }
+      const intent = parseBossIntent(before);
+      const enriched = await enrichGrabCompanions({ restUrl, supabaseJson, serviceHeaders }, grabs);
+      const marked = enriched.map((g) => ({
+        ...g,
+        bossPreferred: !!(intent && intent.companionId === g.companionId),
+        companion: g.companion
+          ? { ...g.companion, bossPreferred: !!(intent && intent.companionId === g.companionId) }
+          : null,
+      }));
       return json(res, 200, {
         ok: true,
-        grabs: grabs.map((g) => ({
-          ...g,
-          companion: companions.find((c) => c.id === g.companionId) || null,
-        })),
-        order: viewOrder(before),
+        grabCount: marked.length,
+        bossIntent: intent,
+        grabs: marked,
+        order: viewOrder({
+          ...before,
+          grabs: marked,
+          grabCount: marked.length,
+          bossIntent: intent,
+        }),
       });
     }
-    if (action === "confirm_companion" || action === "select_grabber" || action === "set_boss_intent") {
+    if (action === "confirm_companion" || action === "select_grabber" || action === "set_boss_intent" || action === "want_him" || action === "select_and_bind") {
       const beforeRows = await supabaseJson(restUrl(TABLE, `?id=eq.${encodeURIComponent(id)}&boss_id=eq.${encodeURIComponent(profile.id)}&limit=1`), { headers: serviceHeaders() });
       const before = Array.isArray(beforeRows) ? beforeRows[0] : null;
       if (!before) return json(res, 404, { ok: false, message: "订单不存在。" });
-      if (!["waiting_boss_confirm", "pending"].includes(before.status)) {
-        return json(res, 409, { ok: false, message: "当前订单状态不能选择意向陪玩。" });
+      // Idempotent: already bound to this companion.
+      {
+        const alreadyCompanion = String(before.companion_id || "").trim();
+        const wantId = String(body.companion_id || body.companionId || body.grab_companion_id || "").trim();
+        if (
+          alreadyCompanion &&
+          wantId &&
+          alreadyCompanion === wantId &&
+          ["claimed", "confirmed", "in_progress"].includes(String(before.status || ""))
+        ) {
+          return json(res, 200, {
+            ok: true,
+            message: "已指定该陪玩。",
+            intentOnly: false,
+            bound: true,
+            deduped: true,
+            order: viewOrder(before),
+          });
+        }
       }
-      const { createOrderGrabHelpers } = await import("./_order-grabs.js");
+      if (!["waiting_boss_confirm", "pending"].includes(before.status)) {
+        return json(res, 409, { ok: false, message: "当前订单状态不能选择陪玩。" });
+      }
+      const { createOrderGrabHelpers, isSelectableGrabStatus } = await import("./_order-grabs.js");
       const {
         enrichGrabCompanions,
         parseBossIntent,
         withBossIntent,
+        clearBossIntent,
         patchOrderNoteField,
         toFlowStatus,
       } = await import("./_order-flow.js");
       const grabsApi = createOrderGrabHelpers({ restUrl, supabaseJson, serviceHeaders });
       const grabs = await grabsApi.listGrabs(before.id, before.note || before.description || "");
-      // Boss intent only — never auto-lock companion; CS must confirm.
       let selectedId = String(body.companion_id || body.companionId || body.grab_companion_id || "").trim();
       const grabId = String(body.grab_id || body.grabId || "").trim();
       if (!selectedId && grabId) {
         selectedId = (grabs.find((g) => g.grabId === grabId || g.id === grabId) || {}).companionId || "";
       }
       if (!selectedId) {
-        return json(res, 400, { ok: false, message: "请手动选择一位抢单陪玩作为意向。" });
-      }
-      const pendingOk = grabs.some((g) => g.companionId === selectedId && g.status === "pending_customer_selection");
-      if (!pendingOk && grabs.length) {
-        return json(res, 409, { ok: false, message: "该陪玩未抢单或状态无效，请从抢单列表中选择。" });
+        return json(res, 400, { ok: false, message: "请选择一位陪玩。" });
       }
       if (!grabs.length) {
         return json(res, 409, { ok: false, message: "暂无陪玩抢单，请等待陪玩申请后再选择。" });
       }
-      // Keep selecting: pending → waiting_boss_confirm if needed; do NOT bind companion_id.
+      let hit = grabs.find((g) => String(g.companionId || "") === String(selectedId));
+      // Allow companion public code / uid on the card to resolve to the grab UUID.
+      if (!hit && !/^[0-9a-f-]{36}$/i.test(selectedId)) {
+        try {
+          const profiles = await supabaseJson(
+            restUrl(
+              "profiles",
+              `?or=(companion_uid.eq.${encodeURIComponent(selectedId)},companion_code.eq.${encodeURIComponent(selectedId)},id.eq.${encodeURIComponent(selectedId)})&select=id,companion_uid,companion_code&limit=3`
+            ),
+            { headers: serviceHeaders() }
+          );
+          const pid = Array.isArray(profiles) && profiles[0]?.id ? String(profiles[0].id) : "";
+          if (pid) {
+            selectedId = pid;
+            hit = grabs.find((g) => String(g.companionId || "") === pid);
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+      if (!hit || !isSelectableGrabStatus(hit.status)) {
+        return json(res, 409, {
+          ok: false,
+          message: "该陪玩未抢单或状态无效，请从抢单列表中选择。",
+          code: "GRAB_STATUS_INVALID",
+        });
+      }
+      // Product: boss「我要他/她」= bind companion now (四端同步).
+      // Only explicit set_boss_intent stays intent-only.
+      const shouldBind = action !== "set_boss_intent";
+      const enriched = await enrichGrabCompanions({ restUrl, supabaseJson, serviceHeaders }, grabs);
+      const pick = enriched.find((g) => String(g.companionId || "") === String(selectedId));
+      const pickName = pick?.companion?.nickname || "陪玩";
+
+      if (shouldBind) {
+        const { transitionOrderStatus } = await import("./_order-status.js");
+        const patched =
+          (await transitionOrderStatus(
+            { restUrl, supabaseJson, serviceHeaders },
+            {
+              orderId: id,
+              fromStatus: before.status,
+              toStatus: "claimed",
+              patch: {
+                companion_id: selectedId,
+                accepted_at: null,
+                assignment_type: "public",
+              },
+              operatorRole: "boss",
+              operatorId: profile.id,
+              note: `老板选择陪玩 ${pickName}`,
+            }
+          ).catch(() => null)) ||
+          (
+            await supabaseJson(restUrl(TABLE, `?id=eq.${encodeURIComponent(id)}&boss_id=eq.${encodeURIComponent(profile.id)}`), {
+              method: "PATCH",
+              headers: serviceHeaders(),
+              body: JSON.stringify({
+                status: "claimed",
+                companion_id: selectedId,
+                accepted_at: null,
+                assignment_type: "public",
+              }),
+            })
+          )?.[0];
+        if (!patched || String(patched.status || "") === String(before.status || "")) {
+          // Soft fallback without assignment_type if column missing.
+          const soft = (
+            await supabaseJson(restUrl(TABLE, `?id=eq.${encodeURIComponent(id)}&boss_id=eq.${encodeURIComponent(profile.id)}`), {
+              method: "PATCH",
+              headers: serviceHeaders(),
+              body: JSON.stringify({ status: "claimed", companion_id: selectedId, accepted_at: null }),
+            }).catch(() => null)
+          )?.[0];
+          if (!soft) {
+            return json(res, 409, { ok: false, message: "订单状态已变更，请刷新后重试。" });
+          }
+        }
+        const order = patched || { ...before, status: "claimed", companion_id: selectedId };
+        await grabsApi.finalizeGrabSelection(order, selectedId).catch((err) =>
+          console.warn("[orders/want_him] finalizeGrabSelection", err?.message || err)
+        );
+        try {
+          const { stampClaimedAtNote } = await import("./_order-confirm-timeout.js");
+          await patchOrderNoteField({ restUrl, supabaseJson, serviceHeaders }, id, (text) =>
+            stampClaimedAtNote(clearBossIntent(text))
+          );
+        } catch {
+          /* ignore */
+        }
+        try {
+          const { createGrabListingHelpers } = await import("./_order-grab-listings.js");
+          const listingsApi = createGrabListingHelpers({ restUrl, supabaseJson, serviceHeaders });
+          await listingsApi.closeListing(id, "boss_selected");
+        } catch {
+          /* optional */
+        }
+        await addSystemMessage(
+          order,
+          profile.id,
+          `老板已选择陪玩 ${pickName}。订单进入等待陪玩确认。`
+        );
+        for (const g of enriched) {
+          if (String(g.companionId || "") === String(selectedId)) continue;
+          try {
+            await addSystemMessage(
+              { ...order, companion_id: g.companionId },
+              profile.id,
+              "该订单已由其他陪玩接单。"
+            );
+          } catch {
+            /* best-effort */
+          }
+        }
+        try {
+          const { notifyCompanionOrderAssigned } = await import("./_companion-order-notify.js");
+          await Promise.race([
+            notifyCompanionOrderAssigned(
+              { ...order, companion_id: selectedId, status: "claimed" },
+              { eventType: "assign" }
+            ).catch((err) => console.warn("[orders/want_him] companion notify", err?.message || err)),
+            new Promise((resolve) => setTimeout(resolve, 3500)),
+          ]);
+        } catch (err) {
+          console.warn("[orders/want_him] companion notify import", err?.message || err);
+        }
+        return json(res, 200, {
+          ok: true,
+          message: `已选择陪玩 ${pickName}，等待陪玩确认接单。`,
+          intentOnly: false,
+          bound: true,
+          order: viewOrder({
+            ...order,
+            status: "claimed",
+            companion_id: selectedId,
+            flowStatus: toFlowStatus("claimed"),
+            grabCount: enriched.length,
+          }),
+        });
+      }
+
+      // Legacy intent-only path (set_boss_intent).
       let order = before;
       if (before.status === "pending") {
         const rows = await supabaseJson(
@@ -904,9 +1658,6 @@ export default async function handler(req, res) {
           }
         );
       }
-      const enriched = await enrichGrabCompanions({ restUrl, supabaseJson, serviceHeaders }, grabs);
-      const pick = enriched.find((g) => g.companionId === selectedId);
-      const pickName = pick?.companion?.nickname || "陪玩";
       order = await patchOrderNoteField({ restUrl, supabaseJson, serviceHeaders }, id, (text) =>
         withBossIntent(text, {
           companion_id: selectedId,
@@ -923,8 +1674,10 @@ export default async function handler(req, res) {
       const intent = parseBossIntent(order);
       const marked = enriched.map((g) => ({
         ...g,
-        bossPreferred: g.companionId === selectedId,
-        companion: g.companion ? { ...g.companion, bossPreferred: g.companionId === selectedId } : null,
+        bossPreferred: String(g.companionId || "") === String(selectedId),
+        companion: g.companion
+          ? { ...g.companion, bossPreferred: String(g.companionId || "") === String(selectedId) }
+          : null,
       }));
       return json(res, 200, {
         ok: true,
@@ -949,113 +1702,73 @@ export default async function handler(req, res) {
       const beforeRows = await supabaseJson(restUrl(TABLE, `?id=eq.${encodeURIComponent(id)}&boss_id=eq.${encodeURIComponent(profile.id)}&limit=1`), { headers: serviceHeaders() });
       const before = Array.isArray(beforeRows) ? beforeRows[0] : null;
       if (!before) return json(res, 404, { ok: false, message: "订单不存在。" });
-      if (before.status !== "in_progress") {
-        return json(res, 409, { ok: false, message: "当前订单不能确认完成。" });
-      }
-      if (/refunded|refund_requested|cancelled/.test(String(before.status || ""))) {
-        return json(res, 409, { ok: false, message: "订单已退款或取消，不能结算。" });
-      }
-      if (String(before.settlement_status || "") === "settled") {
+      const helpers = createOrderCompleteHelpers({
+        restUrl,
+        supabaseJson,
+        serviceHeaders,
+        addSystemMessage: async (order, actorId, content) => addSystemMessage(order, actorId || profile.id, content),
+      });
+      try {
+        const out = await helpers.finalizeOrderCompletion(before, {
+          method: "boss_manual",
+          actorId: profile.id,
+          message: "老板已确认完成订单。",
+        });
         return json(res, 200, {
           ok: true,
-          message: "订单已结算，无需重复结算。",
-          order: viewOrder(before),
-          duplicate: true,
+          message: out.message || "已确认完成，订单已完成。",
+          order: viewOrder(out.order || before),
+          reward: out.reward || null,
+          settlement: out.settlement || null,
+          completionMethod: out.completionMethod || "boss_manual",
+          duplicate: !!out.duplicate,
+        });
+      } catch (err) {
+        const status = Number(err?.status) || 500;
+        return json(res, status >= 400 && status < 600 ? status : 500, {
+          ok: false,
+          message: err?.message || "确认完成失败。",
         });
       }
-      const { createOrderGrabHelpers } = await import("./_order-grabs.js");
-      const grabsApi = createOrderGrabHelpers({ restUrl, supabaseJson, serviceHeaders });
-      if (!grabsApi.orderHasCompletionPending(before)) {
-        return json(res, 409, { ok: false, message: "陪玩尚未申请完成服务。" });
+    }
+    if (action === "report_order_problem" || action === "pause_auto_confirm") {
+      const beforeRows = await supabaseJson(
+        restUrl(TABLE, `?id=eq.${encodeURIComponent(id)}&boss_id=eq.${encodeURIComponent(profile.id)}&limit=1`),
+        { headers: serviceHeaders() }
+      );
+      const before = Array.isArray(beforeRows) ? beforeRows[0] : null;
+      if (!before) return json(res, 404, { ok: false, message: "订单不存在。" });
+      if (before.status !== "in_progress") {
+        return json(res, 409, { ok: false, message: "当前订单状态不能提交问题。" });
       }
-      const completedAt = nowIso();
-      await grabsApi.clearCompletionPending(before);
-      let rows;
-      try {
-        rows = await supabaseJson(
-          restUrl(TABLE, `?id=eq.${encodeURIComponent(id)}&boss_id=eq.${encodeURIComponent(profile.id)}&status=eq.in_progress`),
-          { method: "PATCH", headers: serviceHeaders(), body: JSON.stringify({ status: "completed", completed_at: completedAt }) }
-        );
-      } catch (err) {
-        throw err;
+      const helpers = createOrderCompleteHelpers({
+        restUrl,
+        supabaseJson,
+        serviceHeaders,
+        addSystemMessage: async (order, actorId, content) => addSystemMessage(order, actorId || profile.id, content),
+      });
+      if (!helpers.orderHasCompletionPending(before)) {
+        return json(res, 409, { ok: false, message: "陪玩尚未申请完成，请直接联系客服。" });
       }
-      const saved = rows?.[0] || { ...before, status: "completed", completed_at: completedAt };
-      await addSystemMessage(saved, profile.id, "老板已确认完成订单。");
-      if (saved.companion_id) {
-        try {
-          const existingTx = await supabaseJson(
-            restUrl(
-              "transactions",
-              `?order_id=eq.${encodeURIComponent(saved.id)}&user_id=eq.${encodeURIComponent(saved.companion_id)}&transaction_type=eq.companion_income&limit=1`
-            ),
-            { headers: serviceHeaders() }
-          ).catch(() => []);
-          if (!existingTx?.[0]) {
-            const cp = (
-              await supabaseJson(
-                restUrl("companion_profiles", `?user_id=eq.${encodeURIComponent(saved.companion_id)}&limit=1`),
-                { headers: serviceHeaders() }
-              ).catch(() => [])
-            )?.[0] || {};
-            const amount = money(saved.total_amount);
-            const { platformRate, companionShareRate } = resolvePlatformCommission(cp.commission_rate, 20);
-            const companionNet = Math.round((amount * companionShareRate) / 100 * 100) / 100;
-            const platformFee = Math.round((amount - companionNet) * 100) / 100;
-            const settlement = {
-              orderId: saved.id,
-              orderNo: saved.order_no,
-              companionNetCatFood: companionNet,
-              platformCommissionCatFood: platformFee,
-              platformCommissionRate: platformRate,
-              companionShareRate,
-              completedAt,
-            };
-            await supabaseJson(restUrl("transactions"), {
-              method: "POST",
-              headers: serviceHeaders(),
-              body: JSON.stringify({
-                user_id: saved.companion_id,
-                order_id: saved.id,
-                transaction_type: "companion_income",
-                amount: companionNet,
-                status: "completed",
-                note: `MCJ_SETTLEMENT:${JSON.stringify(settlement)}`,
-                created_at: completedAt,
-              }),
-            });
-            try {
-              await supabaseJson(restUrl(TABLE, `?id=eq.${encodeURIComponent(saved.id)}`), {
-                method: "PATCH",
-                headers: serviceHeaders(),
-                body: JSON.stringify({
-                  settlement_note: `MCJ_SETTLEMENT:${JSON.stringify(settlement)}`,
-                  companion_income: companionNet,
-                  platform_fee: platformFee,
-                  settlement_status: "settled",
-                }),
-              });
-            } catch (_) {}
-          }
-        } catch (_) {}
-      }
-      let reward = null;
-      try {
-        reward = await (await import("./_cs-dock-rewards.js")).trySettleDockReward(
-          { ...saved, status: "completed" },
-          { source: "boss_confirm_complete" }
-        );
-      } catch (_) {}
+      await helpers.stampAutoPaused(before, String(body.reason || "boss_problem").slice(0, 80));
+      await addSystemMessage(before, profile.id, "老板反馈订单有问题，已暂停 24 小时自动确认，请客服处理。");
+      const fresh = (
+        await supabaseJson(
+          restUrl(TABLE, `?id=eq.${encodeURIComponent(id)}&boss_id=eq.${encodeURIComponent(profile.id)}&limit=1`),
+          { headers: serviceHeaders() }
+        )
+      )?.[0] || before;
       return json(res, 200, {
         ok: true,
-        message: "已确认完成，订单已完成。",
-        order: viewOrder(saved),
-        reward,
+        message: "已记录订单问题并暂停自动确认，请联系客服继续处理。",
+        order: viewOrder(fresh),
+        supportUrl: `/support.html?order=${encodeURIComponent(id)}`,
       });
     }
     if (action === "cancel_order") {
       const order = await patchOwnedOrder(profile, id, ["awaiting_payment", "pending", "claimed", "waiting_boss_confirm", "confirmed"], { status: "cancelled", cancelled_at: nowIso() }, "老板已取消订单。");
       try {
-        await (await import("./_cs-dock-rewards.js")).clawbackOrCancelReward(
+        await (await import("./_cs-commission-settle.js")).clawbackCsOrderIncome(
           { id: order?.id || id, status: "cancelled" },
           { reason: "老板取消订单", mode: "cancel" }
         );
@@ -1063,8 +1776,32 @@ export default async function handler(req, res) {
       return json(res, 200, { ok: true, message: "订单已取消。", order });
     }
     if (action === "request_refund") {
-      const order = await patchOwnedOrder(profile, id, ["confirmed", "in_progress", "completed"], { status: "refund_requested" }, "老板已申请退款，等待客服处理。");
-      return json(res, 200, { ok: true, message: "退款申请已提交。", order });
+      const beforeRows = await supabaseJson(
+        restUrl(TABLE, `?id=eq.${encodeURIComponent(id)}&boss_id=eq.${encodeURIComponent(profile.id)}&limit=1`),
+        { headers: serviceHeaders() }
+      ).catch(() => []);
+      const before = Array.isArray(beforeRows) ? beforeRows[0] : null;
+      const order = await patchOwnedOrder(profile, id, ["confirmed", "in_progress", "completed"], { status: "refund_requested" }, "老板已申请退款，等待客服处理。预计周五统一退款，不会即时到账。");
+      let refund = null;
+      try {
+        const refundApi = await import("./_boss-refund-payout.js");
+        const amount = money(body.amount != null ? body.amount : order?.total_amount || before?.total_amount || order?.paid_cat_food);
+        const created = await refundApi.createBossRefundRequest(companionDb, {
+          order: order || before || { id, boss_id: profile.id, total_amount: amount, order_no: before?.order_no },
+          boss: profile,
+          amount,
+          reason: String(body.reason || body.note || "老板申请退款"),
+        });
+        if (created.ok) refund = created.refund;
+      } catch (e) {
+        console.warn("[orders] friday refund enqueue:", e?.message || e);
+      }
+      return json(res, 200, {
+        ok: true,
+        message: "退款申请已提交。当前状态：待审核。预计处理日为本周五或下周五，不会即时到账。",
+        order,
+        refund,
+      });
     }
     if (action === "submit_review") {
       const beforeRows = await supabaseJson(

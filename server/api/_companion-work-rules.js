@@ -20,12 +20,17 @@ export const DEFAULT_RULE_CATEGORIES = [
 ];
 
 function headers() {
-  return {
-    apikey: process.env.SUPABASE_SERVICE_ROLE_KEY,
-    Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const base = {
+    apikey: key,
     "Content-Type": "application/json",
     Prefer: "return=representation",
   };
+  // New sb_secret_ keys are not JWTs — Authorization Bearer would be rejected.
+  if (key && !String(key).startsWith("sb_secret_")) {
+    base.Authorization = `Bearer ${key}`;
+  }
+  return base;
 }
 function rest(table, query = "") {
   return `${process.env.SUPABASE_URL}/rest/v1/${table}${query}`;

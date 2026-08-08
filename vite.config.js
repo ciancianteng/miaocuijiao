@@ -46,11 +46,13 @@ const pages = [
   "companion/wallet/index.html",
   "companion/profile/index.html",
   "companion/verification/index.html",
+  "companion/review-status/index.html",
   "custom-order.html",
   "customer-service.html",
   "customer-service/index.html",
   "customer-service/login/index.html",
   "customer-service/dashboard/index.html",
+  "customer-service/conversations/index.html",
   "customer-service/chats/index.html",
   "customer-service/orders/index.html",
   "customer-service/dispatch/index.html",
@@ -73,6 +75,7 @@ const pages = [
   "orders.html",
   "payment-confirm.html",
   "place-order.html",
+  "player.html",
   "preview.html",
   "profile.html",
   "ranking.html",
@@ -84,60 +87,67 @@ const pages = [
 ];
 
 function localApiFunctions() {
+  async function apiMiddleware(req, res, next) {
+    const requestUrl = new URL(req.url || "/", "http://localhost");
+    if (!requestUrl.pathname.startsWith("/api/")) return next();
+    // Prefer server/api (Vercel catch-all layout); fall back to legacy ./api
+    const rel = requestUrl.pathname.replace(/^\/api\//, "");
+    const candidates = [
+      resolve(__dirname, `./server/api/${rel}.js`),
+      resolve(__dirname, `./server/api/${rel}/index.js`),
+      resolve(__dirname, `.${requestUrl.pathname}.js`),
+    ];
+    const file = candidates.find((p) => existsSync(p));
+    if (!file) return next();
+
+    try {
+      const chunks = [];
+      for await (const chunk of req) chunks.push(chunk);
+      const rawBody = Buffer.concat(chunks).toString("utf8");
+      req.query = Object.fromEntries(requestUrl.searchParams.entries());
+      req.body = rawBody ? JSON.parse(rawBody) : {};
+      res.status = (code) => {
+        res.statusCode = code;
+        return res;
+      };
+      res.json = (data) => {
+        if (!res.headersSent) res.setHeader("Content-Type", "application/json; charset=utf-8");
+        res.end(JSON.stringify(data));
+      };
+      res.send = (data) => {
+        if (Buffer.isBuffer(data) || typeof data === "string") return res.end(data);
+        res.end(JSON.stringify(data));
+      };
+      const mod = await import(`${pathToFileURL(file).href}?t=${Date.now()}`);
+      await mod.default(req, res);
+    } catch (error) {
+      if (!res.headersSent) res.setHeader("Content-Type", "application/json; charset=utf-8");
+      res.statusCode = 500;
+      res.end(JSON.stringify({ ok: false, message: error.message || "Local API error" }));
+    }
+  }
   return {
     name: "local-api-functions",
     configureServer(server) {
-      server.middlewares.use(async (req, res, next) => {
-        const requestUrl = new URL(req.url || "/", "http://localhost");
-        if (!requestUrl.pathname.startsWith("/api/")) return next();
-        // Prefer server/api (Vercel catch-all layout); fall back to legacy ./api
-        const rel = requestUrl.pathname.replace(/^\/api\//, "");
-        const candidates = [
-          resolve(__dirname, `./server/api/${rel}.js`),
-          resolve(__dirname, `./server/api/${rel}/index.js`),
-          resolve(__dirname, `.${requestUrl.pathname}.js`),
-        ];
-        const file = candidates.find((p) => existsSync(p));
-        if (!file) return next();
-
-        try {
-          const chunks = [];
-          for await (const chunk of req) chunks.push(chunk);
-          const rawBody = Buffer.concat(chunks).toString("utf8");
-          req.query = Object.fromEntries(requestUrl.searchParams.entries());
-          req.body = rawBody ? JSON.parse(rawBody) : {};
-          res.status = (code) => {
-            res.statusCode = code;
-            return res;
-          };
-          res.json = (data) => {
-            if (!res.headersSent) res.setHeader("Content-Type", "application/json; charset=utf-8");
-            res.end(JSON.stringify(data));
-          };
-          res.send = (data) => {
-            if (Buffer.isBuffer(data) || typeof data === "string") return res.end(data);
-            res.end(JSON.stringify(data));
-          };
-          const mod = await import(`${pathToFileURL(file).href}?t=${Date.now()}`);
-          await mod.default(req, res);
-        } catch (error) {
-          if (!res.headersSent) res.setHeader("Content-Type", "application/json; charset=utf-8");
-          res.statusCode = 500;
-          res.end(JSON.stringify({ ok: false, message: error.message || "Local API error" }));
-        }
-      });
-    }
+      server.middlewares.use(apiMiddleware);
+    },
+    // Same API middleware for `vite preview` so local acceptance can hit /api/*
+    configurePreviewServer(server) {
+      server.middlewares.use(apiMiddleware);
+    },
   };
 }
 function localRouteAliases() {
   const aliases = new Map([
     ["/companion", "/companion/index.html"],
     ["/companion/login", "/companion/login/index.html"],
+    ["/companion/review-status", "/companion/review-status/index.html"],
     ["/customer-service", "/customer-service/index.html"],
     ["/customer-service/login", "/customer-service/login/index.html"],
     ["/customer-service/dashboard", "/customer-service/dashboard/index.html"],
     ["/customer-service/orders", "/customer-service/orders/index.html"],
-    ["/customer-service/conversations", "/customer-service/dashboard/index.html"],
+    ["/customer-service/conversations", "/customer-service/conversations/index.html"],
+    ["/customer-service/chats", "/customer-service/conversations/index.html"],
     ["/customer-service/create-order", "/customer-service/dashboard/index.html"],
     ["/customer-service/compensation", "/customer-service/dashboard/index.html"],
     ["/customer-service/reports", "/customer-service/dashboard/index.html"],

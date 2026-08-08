@@ -316,6 +316,10 @@ export async function readLocalLevels() {
   return DEFAULT_LEVELS.map((row, index) => normalizeLevelRow(row, index));
 }
 
+function isServerlessFs() {
+  return !!(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.NOW_REGION);
+}
+
 export async function writeLocalLevels(rows) {
   const list = (Array.isArray(rows) ? rows : []).map((row, index) => normalizeLevelRow(row, index))
     .sort((a, b) => a.sort - b.sort || a.level - b.level);
@@ -323,13 +327,22 @@ export async function writeLocalLevels(rows) {
     const saved = await writeDbLevels(list);
     if (Array.isArray(saved)) return saved.sort((a, b) => a.sort - b.sort || a.level - b.level);
   } catch (error) {
-    if (!isMissingTable(error)) console.error("[companion-levels] DB write failed, fallback local", error.message || error);
+    if (!isMissingTable(error)) {
+      console.error("[companion-levels] DB write failed", error.message || error);
+      throw Object.assign(new Error(`等级保存失败：${error.message || error}`), { status: 503 });
+    }
+  }
+  if (isServerlessFs()) {
+    throw Object.assign(
+      new Error("等级表未就绪，无法在 Staging 写入本地文件。请执行 companion_levels 迁移后重试。"),
+      { status: 503 }
+    );
   }
   try {
     await ensureDir();
     await fs.writeFile(DATA_FILE, JSON.stringify(list, null, 2), "utf8");
-  } catch {
-    /* Preview/serverless may be read-only; still return levels for this request */
+  } catch (error) {
+    throw Object.assign(new Error(`等级本地保存失败：${error.message || error}`), { status: 500 });
   }
   return list;
 }
@@ -339,6 +352,106 @@ export async function updateLocalLevels(mutator) {
   const result = await mutator(list);
   await writeLocalLevels(list);
   return result;
+}
+
+/** Persist a single level into the catalog (merge → full write). */
+export async function upsertLocalLevel(row) {
+  const list = await readLocalLevels();
+  const next = normalizeLevelRow(row, list.length);
+  const idx = list.findIndex((item) => String(item.id) === String(next.id));
+  if (idx >= 0) {
+    list[idx] = normalizeLevelRow(
+      { ...list[idx], ...next, id: list[idx].id, level: list[idx].level || next.level },
+      idx
+    );
+  } else {
+    list.push(next);
+  }
+  return writeLocalLevels(list);
+}
+
+function companionProfilesUrl(query = "") {
+  return `${env("SUPABASE_URL")}/rest/v1/companion_profiles${query}`;
+}
+
+/**
+ * Push each level's commission_rate onto companions at that level.
+ * New settlements read companion_profiles.commission_rate; historical settled orders keep their snapshot.
+ */
+export async function syncCompanionCommissionsFromLevels(levels) {
+  const list = (Array.isArray(levels) ? levels : []).map((row, index) => normalizeLevelRow(row, index));
+  const report = { ok: true, updated: 0, skipped: 0, errors: [] };
+  if (!hasDb()) {
+    report.skipped = list.length;
+    report.message = "无数据库连接，跳过陪玩抽成同步（等级配置仍已写入）。";
+    return report;
+  }
+  for (const level of list) {
+    const rate = Math.max(0, Math.min(100, Number(level.commissionRate) || 0));
+    const patch = {
+      commission_rate: rate,
+      commission_effective_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    const queries = [
+      `?level_id=eq.${encodeURIComponent(level.id)}`,
+      `?level_id=eq.${encodeURIComponent(level.code)}`,
+    ];
+    for (const query of queries) {
+      try {
+        const response = await fetch(companionProfilesUrl(query), {
+          method: "PATCH",
+          headers: serviceHeaders({ Prefer: "return=representation" }),
+          body: JSON.stringify(patch),
+        });
+        const text = await response.text();
+        let body = null;
+        try {
+          body = text ? JSON.parse(text) : null;
+        } catch {
+          body = text;
+        }
+        if (!response.ok) {
+          if (response.status === 404 || isMissingTable({ message: text })) continue;
+          report.errors.push(`${level.code}: ${body?.message || text || `HTTP ${response.status}`}`);
+          report.ok = false;
+          continue;
+        }
+        report.updated += Array.isArray(body) ? body.length : 0;
+      } catch (error) {
+        report.errors.push(`${level.code}: ${error.message || error}`);
+        report.ok = false;
+      }
+    }
+  }
+  if (report.errors.length) report.ok = false;
+  return report;
+}
+
+export const PUBLISH_SYNC_TARGETS = [
+  { key: "db", label: "数据库 companion_levels" },
+  { key: "boss_hall", label: "老板端 · 陪玩大厅" },
+  { key: "more_gameplays", label: "更多玩法" },
+  { key: "boss_detail", label: "陪玩详情 / 下单" },
+  { key: "boss_ranking", label: "排行榜 / 俱乐部等级页" },
+  { key: "companion", label: "陪玩端 · 限价与抽成" },
+  { key: "cs", label: "客服端 · 等级展示" },
+  { key: "admin", label: "后台中心" },
+  { key: "device", label: "手机 / PC（同一份配置）" },
+];
+
+export function buildPublishSyncChecklist({ verified = false, commission = null, error = "" } = {}) {
+  return PUBLISH_SYNC_TARGETS.map((item) => {
+    if (error) return { ...item, ok: false, detail: error };
+    if (item.key === "db") return { ...item, ok: verified, detail: verified ? "已写入" : "校验失败" };
+    if (item.key === "companion" && commission) {
+      const detail = commission.ok
+        ? `抽成已同步 ${commission.updated || 0} 人`
+        : (commission.errors && commission.errors[0]) || commission.message || "抽成同步异常";
+      return { ...item, ok: !!commission.ok || !!commission.skipped, detail };
+    }
+    return { ...item, ok: verified, detail: verified ? "读同一份等级配置" : "未验证" };
+  });
 }
 
 export function toPublicLevel(level) {

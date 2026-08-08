@@ -143,10 +143,52 @@
   height:40px;
   display:block;
 }
-.profile-detail-page .pd-detail-split{align-items:start}
+.profile-detail-page .pd-video-card{
+  margin-top:12px;
+}
+.profile-detail-page .pd-video-player video{
+  width:100%;
+  max-height:360px;
+  border-radius:14px;
+  background:#000;
+  display:block;
+}
+
+/* Voice sits in hero right panel (under tags); 基本资料 full-width next row */
+.profile-detail-page .profile-hero .profile-info-panel{
+  display:flex;
+  flex-direction:column;
+  min-height:100%;
+  height:100%;
+  box-sizing:border-box;
+}
+.profile-detail-page .profile-hero .pd-voice-card.pd-voice-in-hero{
+  width:min(480px,100%);
+  max-width:480px;
+  min-width:0;
+  margin-top:auto;
+  margin-left:auto;
+  padding-top:16px;
+  box-sizing:border-box;
+  align-self:flex-end;
+}
+.profile-detail-page .pd-info-card.pd-info-card--full{
+  width:100%;
+  max-width:100%;
+}
+.profile-detail-page .profile-info-panel .mcj-id-tags{
+  margin-top:12px;
+}
 
 @media(max-width:760px){
-  .profile-detail-page .pd-detail-split{grid-template-columns:1fr}
+  .profile-detail-page .profile-hero .pd-voice-card.pd-voice-in-hero{
+    width:100%;
+    max-width:100%;
+    margin-left:0;
+    margin-top:16px;
+    padding-top:0;
+    align-self:stretch;
+  }
   .profile-bottom-bar.pd-bottom-bar{
     width:calc(100% - 16px);
     bottom:calc(8px + env(safe-area-inset-bottom));
@@ -154,6 +196,91 @@
   }
   .profile-bottom-bar.pd-bottom-bar a,
   .profile-bottom-bar.pd-bottom-bar button{font-size:14px;height:44px}
+
+  /* Mobile avatar: shorter first screen so identity + CTA remain visible */
+  .profile-detail-page .profile-hero{
+    grid-template-columns:1fr !important;
+    justify-items:center;
+    gap:14px;
+    padding:14px 14px 16px;
+  }
+  .profile-detail-page .profile-avatar-wrap{
+    width:80%;
+    max-width:80%;
+    height:min(390px,48vh);
+    max-height:390px;
+    margin:0 auto;
+    border-radius:18px;
+    overflow:hidden;
+  }
+  .profile-detail-page .profile-avatar-wrap .profile-avatar,
+  .profile-detail-page .profile-avatar{
+    display:block;
+    width:100%;
+    height:100%;
+    max-height:390px;
+    aspect-ratio:auto !important;
+    object-fit:cover;
+    object-position:center top;
+  }
+  .profile-detail-page .profile-info-panel{
+    width:100%;
+    padding:4px 2px 0;
+  }
+  .profile-detail-page .profile-info-panel h1{
+    font-size:28px;
+    line-height:1.2;
+  }
+  .profile-detail-page .profile-info-panel .mcj-id-tags,
+  .profile-detail-page .profile-info-panel .companion-tags{
+    display:flex !important;
+    flex-wrap:wrap !important;
+    gap:8px !important;
+    row-gap:8px !important;
+    column-gap:8px !important;
+    margin-top:10px;
+  }
+  .profile-detail-page .profile-info-panel .mcj-id-tags > span,
+  .profile-detail-page .profile-info-panel .companion-tags > span{
+    height:var(--mcj-badge-h, 28px) !important;
+    min-height:var(--mcj-badge-h, 28px) !important;
+    max-height:var(--mcj-badge-h, 28px) !important;
+    padding:0 var(--mcj-badge-pad-x, 10px) !important;
+    margin:0 !important;
+    box-sizing:border-box !important;
+    line-height:1 !important;
+    transform:none !important;
+  }
+  .profile-detail-page .profile-info-panel .mcj-cert-badge.is-official,
+  .profile-detail-page .profile-info-panel .mcj-cert-tag.is-official{
+    border-width:var(--mcj-badge-bw, 1px) !important;
+    border-style:solid !important;
+    border-color:rgba(212,160,40,.72) !important;
+    border-radius:var(--mcj-badge-radius, 999px) !important;
+    background:linear-gradient(180deg,#ffe7a8 0%,#e8c15a 42%,#c49220 100%) !important;
+    color:#2a1800 !important;
+    box-shadow:0 0 0 1px rgba(90,55,0,.25),0 6px 14px rgba(212,160,40,.28) !important;
+  }
+  .profile-detail-page .profile-info-panel .mcj-cert-badge.is-official::before{
+    background:#8a5a00 !important;
+    box-shadow:none !important;
+  }
+  .profile-detail-page .profile-bio{
+    margin:10px 0 8px;
+    font-size:14px;
+    display:-webkit-box;
+    -webkit-line-clamp:3;
+    -webkit-box-orient:vertical;
+    overflow:hidden;
+  }
+  .profile-detail-page .game-line{
+    flex-wrap:wrap;
+    gap:6px 10px;
+    font-size:14px;
+  }
+  .profile-detail-page .profile-pop-badges{
+    margin-top:6px !important;
+  }
 }
 
 .mcj-sheet-mask{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:80;display:flex;align-items:flex-end;justify-content:center}
@@ -182,3 +309,142 @@
 .companion-online-badge.is-busy:before{background:#f59e0b!important;box-shadow:0 0 10px rgba(245,158,11,.45)!important}
 .companion-online-badge.is-paused:before{background:#cbd5e1!important;box-shadow:none!important}
 .companion-online-badge.is-online:before{background:#22c55e!important}
+
+/* Real order reviews — overflow-safe stacked cards */
+.profile-detail-page .real-review-wall{
+  height:auto;
+  min-height:0;
+  overflow:visible;
+  min-width:0;
+}
+.profile-detail-page .real-review-wall .section-head{
+  gap:10px;
+  min-width:0;
+}
+.profile-detail-page .real-review-wall .section-head h2,
+.profile-detail-page .real-review-wall .section-head span{
+  min-width:0;
+  overflow-wrap:anywhere;
+  word-break:break-word;
+  white-space:normal;
+}
+.profile-detail-page .real-review-wall .review-list{
+  display:grid;
+  gap:12px;
+  padding:14px 16px 18px;
+  height:auto;
+  min-height:0;
+  min-width:0;
+  overflow:visible;
+  box-sizing:border-box;
+}
+.profile-detail-page .pd-review-empty{
+  margin:0;
+  padding:8px 2px 4px;
+  color:rgba(255,226,239,.62);
+}
+.profile-detail-page .pd-review-item{
+  display:grid;
+  gap:8px;
+  min-width:0;
+  max-width:100%;
+  box-sizing:border-box;
+  padding:14px 16px;
+  border-radius:14px;
+  border:1px solid rgba(255,255,255,.1);
+  background:rgba(255,255,255,.04);
+  overflow:hidden;
+}
+.profile-detail-page .pd-review-item > *{
+  min-width:0;
+  max-width:100%;
+  margin:0;
+  overflow-wrap:anywhere;
+  word-break:break-word;
+  white-space:normal;
+}
+.profile-detail-page .pd-review-stars{
+  color:#ffb4d4;
+  font-size:18px;
+  letter-spacing:2px;
+  line-height:1.2;
+  font-weight:800;
+}
+.profile-detail-page .pd-review-badge{
+  color:#ffe2f0;
+  font-size:14px;
+  font-weight:800;
+  line-height:1.35;
+}
+.profile-detail-page .pd-review-boss{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  min-width:0;
+}
+.profile-detail-page .pd-review-avatar{
+  flex:0 0 auto;
+  width:36px;
+  height:36px;
+  border-radius:50%;
+  object-fit:cover;
+  background:linear-gradient(135deg,#3a2a35,#5a3a4a);
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  font-size:14px;
+  font-weight:800;
+  color:#ffc2dc;
+}
+.profile-detail-page .pd-review-boss-code{
+  min-width:0;
+  font-size:15px;
+  font-weight:800;
+  color:#fff5fa;
+  overflow-wrap:anywhere;
+  word-break:break-word;
+  white-space:normal;
+}
+.profile-detail-page .pd-review-order,
+.profile-detail-page .pd-review-game,
+.profile-detail-page .pd-review-time{
+  color:rgba(255,214,231,.72);
+  font-size:13px;
+  font-weight:700;
+  line-height:1.45;
+}
+.profile-detail-page .pd-review-body{
+  color:rgba(255,255,255,.9);
+  font-size:14px;
+  font-weight:700;
+  line-height:1.55;
+  display:-webkit-box;
+  -webkit-box-orient:vertical;
+  -webkit-line-clamp:4;
+  line-clamp:4;
+  overflow:hidden;
+}
+.profile-detail-page .pd-review-body.is-expanded{
+  display:block;
+  -webkit-line-clamp:unset;
+  line-clamp:unset;
+  overflow:visible;
+}
+.profile-detail-page .pd-review-expand{
+  justify-self:start;
+  margin-top:2px;
+  padding:0;
+  border:0;
+  background:transparent;
+  color:#ffb6d9;
+  font-size:13px;
+  font-weight:800;
+  cursor:pointer;
+}
+.profile-detail-page .pd-review-expand:hover{color:#ffe2f0}
+
+@media(max-width:760px){
+  .profile-detail-page .real-review-wall .review-list{padding:12px 12px 16px}
+  .profile-detail-page .pd-review-item{padding:12px 12px}
+  .profile-detail-page .pd-review-stars{font-size:16px}
+}

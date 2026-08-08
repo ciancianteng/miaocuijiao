@@ -1,7 +1,10 @@
 (function () {
   "use strict";
 
-  var Auth = window.MCJAdminAuthFetch;
+  function authApi() {
+    return window.MCJAdminAuthFetch || null;
+  }
+
   var saving = false;
 
   function esc(v) {
@@ -165,6 +168,7 @@
 
     var basic = rows([
       { 0: "头像", 1: media.avatarUrl ? thumb(media.avatarUrl, "头像") : "", 2: "尚未上传头像", html: true },
+      { 0: "卡面封面", 1: media.coverUrl ? thumb(media.coverUrl, "卡面封面") : "", 2: "尚未上传卡面封面", html: true },
       ["昵称", d.name || d.nickname],
       ["陪玩 ID", d.playerId || d.id],
       ["邮箱", d.email || "尚未填写邮箱"],
@@ -174,6 +178,9 @@
       ["地区", d.region || "尚未填写"],
       ["注册时间", d.registered_at || d.created_at || "—"],
       ["最近登录", d.lastLogin || d.last_login || "暂无登录记录"],
+      ["是否已设置密码", d.hasPassword || d.has_password ? "是" : "否"],
+      ["最近密码重置", d.passwordSetAt || d.password_set_at || "—"],
+      ["最近登录 IP", d.lastLoginIp || d.last_login_ip || "—"],
     ]);
     if (edit) {
       basic +=
@@ -324,6 +331,7 @@
     var mediaHtml =
       rows([
         { 0: "当前头像", 1: media.avatarUrl ? thumb(media.avatarUrl, "头像") : "", 2: "尚未上传头像", html: true },
+        { 0: "卡面封面", 1: media.coverUrl ? thumb(media.coverUrl, "卡面封面") : "", 2: "尚未上传卡面封面", html: true },
         ["媒体总状态", media.statusLabel || "—"],
         ["驳回原因", media.rejectReason || "无"],
       ]) +
@@ -486,6 +494,7 @@
   }
 
   function apiPost(body) {
+    var Auth = authApi();
     var headers = { "x-mcj-admin-role": (window.MCJAdminRole || localStorage.getItem("mcjAdminRole") || "admin") };
     if (Auth && Auth.post) return Auth.post("/api/admin/players", body, headers);
     return fetch("/api/admin/players", {
@@ -501,8 +510,17 @@
   }
 
   function apiGetDetail(id) {
-    var url = "/api/admin/players?id=" + encodeURIComponent(id);
+    var Auth = authApi();
     var headers = { "x-mcj-admin-role": (window.MCJAdminRole || localStorage.getItem("mcjAdminRole") || "admin") };
+    // Prefer POST detail — same auth path as list mutations; avoids GET query rewrite quirks.
+    if (Auth && Auth.post) {
+      return Auth.post("/api/admin/players", { action: "detail", id: id }, headers).catch(function (err) {
+        var url = "/api/admin/players?id=" + encodeURIComponent(id);
+        if (Auth.get) return Auth.get(url, headers);
+        throw err;
+      });
+    }
+    var url = "/api/admin/players?id=" + encodeURIComponent(id);
     if (Auth && Auth.get) return Auth.get(url, headers);
     return fetch(url, { headers: Object.assign({ Accept: "application/json" }, headers) }).then(function (res) {
       return res.json().then(function (data) {

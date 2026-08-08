@@ -18,6 +18,8 @@
     couponCode: "",
     couponDiscount: 0,
     couponHint: "",
+    payment: "",
+    payMethods: [],
   };
 
   function esc(v) {
@@ -32,6 +34,49 @@
 
   function token() {
     return localStorage.getItem("mcjAuthAccessToken") || sessionStorage.getItem("mcjAuthAccessToken") || "";
+  }
+
+  function authHeaders() {
+    var t = token();
+    var h = { Accept: "application/json", "Content-Type": "application/json" };
+    if (t) {
+      h.Authorization = "Bearer " + t;
+      h["x-mcj-access-token"] = t;
+    }
+    return h;
+  }
+
+  function applyOrderPayMethods(body) {
+    // Sole SoT: GET /api/recharge → orderPayMethods. No methods[] reconstruct / no hardcode.
+    var list = Array.isArray(body && body.orderPayMethods) ? body.orderPayMethods : [];
+    state.payMethods = list
+      .filter(function (m) {
+        return m && (m.id || m.code) && m.open !== false;
+      })
+      .map(function (m) {
+        return { id: m.id || m.code, label: m.label || m.name || m.code || m.id };
+      });
+    if (!state.payMethods.some(function (p) { return p.id === state.payment; })) {
+      state.payment = state.payMethods[0] ? state.payMethods[0].id : "";
+    }
+  }
+
+  function refreshPayMethods() {
+    if (!token()) {
+      state.payMethods = [];
+      return Promise.resolve([]);
+    }
+    return fetch("/api/recharge", { method: "GET", headers: authHeaders() })
+      .then(function (res) {
+        return res.json().then(function (body) {
+          if (!res.ok || body.ok === false) throw new Error(body.message || "支付方式读取失败");
+          applyOrderPayMethods(body);
+          return state.payMethods;
+        });
+      })
+      .catch(function () {
+        return state.payMethods;
+      });
   }
 
   function packagesOf(p) {
@@ -230,6 +275,24 @@
       '<button type="button" data-gp-apply-coupon>使用</button></div>' +
       (state.couponHint ? '<small class="gameplay-product-hint">' + esc(state.couponHint) + "</small>" : "") +
       "</div>" +
+      '<div class="gameplay-product-field"><span>支付方式 <i class="req">*</i></span>' +
+      '<div class="gameplay-pay-methods" data-gp-pay-grid role="group">' +
+      (state.payMethods.length
+        ? state.payMethods
+            .map(function (m) {
+              return (
+                '<button type="button" class="gameplay-package-btn' +
+                (state.payment === m.id ? " is-active" : "") +
+                '" data-gp-pay="' +
+                esc(m.id) +
+                '"><strong>' +
+                esc(m.label) +
+                "</strong></button>"
+              );
+            })
+            .join("")
+        : '<small class="gameplay-product-hint">暂无可用支付方式，请联系管理员在后台启用</small>') +
+      "</div></div>" +
       '<div class="gameplay-product-totals">' +
       '<div><span>小计</span><strong data-gp-subtotal>' + esc(catFood(subtotal())) + "</strong></div>" +
       '<div><span>优惠金额</span><strong data-gp-discount>-' + esc(catFood(discount())) + "</strong></div>" +
@@ -281,6 +344,9 @@
       .finally(function () {
         state.loading = false;
         render();
+        refreshPayMethods().then(function () {
+          if (!state.loading) render();
+        });
       });
   }
 
@@ -335,6 +401,11 @@
     }
     if (!state.startTime) {
       state.message = "请选择开始时间";
+      render();
+      return;
+    }
+    if (!state.payment) {
+      state.message = "请选择支付方式";
       render();
       return;
     }
@@ -403,7 +474,7 @@
           packageName: pkg && pkg.name,
           couponCode: state.couponCode,
           discountAmount: discount(),
-          paymentMethod: "tng",
+          paymentMethod: state.payment,
           startTime: state.startTime,
         },
       }),
@@ -431,12 +502,29 @@
     var pkgBtn = e.target.closest("[data-gp-package]");
     if (pkgBtn) {
       e.preventDefault();
-      state.packageId = pkgBtn.getAttribute("data-gp-package") || "";
+      var nextPkg = pkgBtn.getAttribute("data-gp-package") || "";
       state.couponDiscount = 0;
       state.couponHint = state.couponCode ? "套餐已变更，请重新确认优惠码" : "";
       var form = document.querySelector("[data-gp-order-form]");
+      // collectForm 会读到旧的 hidden packageId；先同步其它字段，再强制套用点击的套餐。
       if (form) collectForm(form);
+      state.packageId = nextPkg;
+      var hiddenPkg = form && form.querySelector('input[name="packageId"]');
+      if (hiddenPkg) hiddenPkg.value = nextPkg;
       render();
+      return;
+    }
+
+    var payBtn = e.target.closest("[data-gp-pay]");
+    if (payBtn) {
+      e.preventDefault();
+      state.payment = payBtn.getAttribute("data-gp-pay") || "";
+      var grid = document.querySelector("[data-gp-pay-grid]");
+      if (grid) {
+        grid.querySelectorAll("[data-gp-pay]").forEach(function (btn) {
+          btn.classList.toggle("is-active", btn === payBtn);
+        });
+      }
       return;
     }
 

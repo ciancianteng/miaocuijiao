@@ -1,4 +1,9 @@
 import { ORDER_STATUS_LABELS } from "../_order-status.js";
+import {
+  completionCountdown,
+  formatRemainingLabel,
+  parseCompletionMethod,
+} from "../_order-complete.js";
 const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY"];
 const ADMIN_ROLES = new Set(["admin", "super_admin"]);
 const ORDER_STATUS_TEXT = { ...ORDER_STATUS_LABELS };
@@ -13,6 +18,10 @@ const UI_ACTION_MAP = {
   "confirm-start": "confirm_start",
   "confirm-complete": "confirm_complete",
   "early-end": "confirm_complete",
+  freeze: "freeze_order",
+  "freeze-order": "freeze_order",
+  unfreeze: "unfreeze_order",
+  "unfreeze-order": "unfreeze_order",
   update_status: "update_status",
   assign_service: "assign_service",
   assign_companion: "assign_companion",
@@ -98,7 +107,16 @@ function safeOrder(row, profiles, extras = {}) {
   const companion = profiles[row.companion_id] || {};
   const service = profiles[row.customer_service_id] || {};
   const status = row.status || "";
-  const statusText = ORDER_STATUS_TEXT[status] || status || "-";
+  const completionPending =
+    String(row.note || "").includes("[[COMPLETION_PENDING]]") ||
+    String(row.description || "").includes("[[COMPLETION_PENDING]]");
+  const countdown = completionCountdown(row);
+  let statusText = ORDER_STATUS_TEXT[status] || status || "-";
+  let orderStatus = statusText;
+  if (status === "in_progress" && completionPending) {
+    statusText = countdown.autoConfirmPaused ? "等待处理订单问题" : "已申请完成，等待老板确认";
+    orderStatus = "待确认完成";
+  }
   const paid = !["awaiting_payment", "cancelled"].includes(status);
   const flowStatus =
     extras.flowStatus ||
@@ -128,10 +146,18 @@ function safeOrder(row, profiles, extras = {}) {
     amount: money(row.total_amount),
     totalAmount: money(row.total_amount),
     paymentStatus: paid ? "已支付" : "未支付",
-    orderStatus: statusText,
+    orderStatus,
     status,
     flowStatus,
     statusText,
+    completionPending,
+    completionRequestedAt: countdown.completionRequestedAt || "",
+    autoConfirmAt: countdown.autoConfirmAt || "",
+    autoConfirmRemainingMs: countdown.autoConfirmRemainingMs,
+    autoConfirmRemainingLabel: formatRemainingLabel(countdown.autoConfirmRemainingMs),
+    autoConfirmPaused: !!countdown.autoConfirmPaused,
+    autoConfirmPausedReason: countdown.autoConfirmPausedReason || "",
+    completionMethod: parseCompletionMethod(row) || "",
     grabCount: Number(extras.grabCount != null ? extras.grabCount : 0) || 0,
     grabs: extras.grabs || [],
     bossIntent: extras.bossIntent || null,
@@ -147,9 +173,42 @@ function safeOrder(row, profiles, extras = {}) {
 }
 async function addSystem(order, adminId, text) {
   try {
-    const rows = await supabaseJson(restUrl("conversations", `?order_id=eq.${encodeURIComponent(order.id)}&limit=1`), { headers: serviceHeaders() });
-    const conv = rows[0];
-    if (!conv) return;
+    let rows = await supabaseJson(
+      restUrl(
+        "conversations",
+        `?boss_id=eq.${encodeURIComponent(order.boss_id)}&order_id=eq.${encodeURIComponent(order.id)}&conversation_type=eq.order_support&order=updated_at.desc&limit=1`
+      ),
+      { headers: serviceHeaders() }
+    ).catch(() => []);
+    let conv = rows?.[0];
+    if (!conv) {
+      const loose = await supabaseJson(
+        restUrl(
+          "conversations",
+          `?boss_id=eq.${encodeURIComponent(order.boss_id)}&order_id=eq.${encodeURIComponent(order.id)}&order=updated_at.desc&limit=5`
+        ),
+        { headers: serviceHeaders() }
+      ).catch(() => []);
+      conv = (Array.isArray(loose) ? loose : []).find((r) => String(r.conversation_type || "") !== "companion_support") || null;
+    }
+    if (!conv) {
+      const created = await supabaseJson(restUrl("conversations"), {
+        method: "POST",
+        headers: serviceHeaders(),
+        body: JSON.stringify({
+          boss_id: order.boss_id || null,
+          companion_id: null,
+          customer_service_id: order.customer_service_id || null,
+          order_id: order.id,
+          conversation_type: "order_support",
+          status: "open",
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }),
+      }).catch(() => null);
+      conv = Array.isArray(created) ? created[0] : created;
+    }
+    if (!conv?.id) return;
     await supabaseJson(restUrl("messages"), {
       method: "POST",
       headers: serviceHeaders(),
@@ -298,7 +357,7 @@ export default async function handler(req, res) {
           let grabCount = 0;
           let bossIntent = null;
           try {
-            if (["pending", "waiting_boss_confirm", "claimed", "confirmed"].includes(o.status)) {
+            if (["pending", "waiting_boss_confirm", "claimed", "confirmed", "in_progress", "cancelled", "completed"].includes(o.status)) {
               const grabs = await grabsApi.listGrabs(o.id, o.note || o.description || "");
               grabCount = grabs.length;
             }
@@ -321,7 +380,10 @@ export default async function handler(req, res) {
         inProgress: list.filter((x) => x.status === "in_progress").length,
         completed: list.filter((x) => x.status === "completed").length,
         afterSale: list.filter((x) => x.status === "refund_requested").length,
-        revenue: list.reduce((n, x) => n + x.amount, 0),
+        revenue: list.reduce((n, x) => {
+          if (x.status === "awaiting_payment" || x.status === "cancelled") return n;
+          return n + x.amount;
+        }, 0),
         profit: 0,
       };
       return json(res, 200, { ok: true, configured: true, orders: list, summary, orderStatuses: ORDER_STATUS_TEXT });
@@ -406,15 +468,32 @@ export default async function handler(req, res) {
     } else if (action === "assign_companion" || action === "confirm_grab_assignment") {
       const companionId = String(body.companion_id || payload.companion_id || payload.player_id || "").trim();
       if (!companionId) return json(res, 400, { ok: false, message: "请指定陪玩 ID。" });
+      // BOSS_PICK_LOCK — already locked after companion confirmed/started.
+      if (before.companion_id && ["confirmed", "in_progress"].includes(before.status)) {
+        return json(res, 409, {
+          ok: false,
+          code: "BOSS_PICK_LOCK",
+          message: "订单已在进行中，后台不可再次指定。",
+        });
+      }
       const fromGrabs = body.from_grabs === true || body.fromGrabs === true || action === "confirm_grab_assignment";
-      if (fromGrabs || ["pending", "waiting_boss_confirm"].includes(before.status)) {
+      // Public grab hall: admin may only confirm from grab applicants (same as CS).
+      {
         const { createOrderGrabHelpers } = await import("../_order-grabs.js");
         const grabsApi = createOrderGrabHelpers({ restUrl, supabaseJson, serviceHeaders });
         const grabs = await grabsApi.listGrabs(before.id, before.note || before.description || "");
-        if (grabs.length) {
+        const isPublicHall =
+          ["pending", "waiting_boss_confirm"].includes(before.status) && !String(before.companion_id || "").trim();
+        if (isPublicHall || fromGrabs) {
+          if (!grabs.length) {
+            return json(res, 409, { ok: false, message: "暂无陪玩抢单，不能直接指定。请等待抢单或走 VIP 指定下单。" });
+          }
           const hit = grabs.find((g) => g.companionId === companionId);
           if (!hit) return json(res, 409, { ok: false, message: "只能从已抢单陪玩中指定。" });
           await grabsApi.finalizeGrabSelection(before, companionId);
+        } else if (grabs.length) {
+          const hit = grabs.find((g) => g.companionId === companionId);
+          if (hit) await grabsApi.finalizeGrabSelection(before, companionId);
         }
       }
       patch.companion_id = companionId;
@@ -435,8 +514,69 @@ export default async function handler(req, res) {
       patch.status = "in_progress";
       patch.started_at = new Date().toISOString();
     } else if (action === "confirm_complete") {
-      patch.status = "completed";
-      patch.completed_at = new Date().toISOString();
+      try {
+        const { createOrderCompleteHelpers } = await import("../_order-complete.js");
+        const helpers = createOrderCompleteHelpers({
+          restUrl,
+          supabaseJson,
+          serviceHeaders,
+          addSystemMessage: async (order, actorId, content) => addSystem(order, actorId || admin.id, content),
+        });
+        // Admin may force-complete even without companion apply.
+        if (!helpers.orderHasCompletionPending(before)) {
+          await helpers.markCompletionPending(before);
+          const refreshed = (
+            await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(id)}&limit=1`), {
+              headers: serviceHeaders(),
+            })
+          )?.[0] || before;
+          const out = await helpers.finalizeOrderCompletion(refreshed, {
+            method: "admin_force",
+            actorId: admin.id,
+            message: String(payload.reason || body.reason || "后台确认完成订单"),
+          });
+          return json(res, 200, {
+            ok: true,
+            message: out.message || "订单已完成。",
+            order: safeOrder(out.order || refreshed, await (async () => {
+              const ids = [out.order?.boss_id || refreshed.boss_id, out.order?.companion_id || refreshed.companion_id, out.order?.customer_service_id || refreshed.customer_service_id].filter(Boolean);
+              const rows = ids.length
+                ? await supabaseJson(
+                    restUrl("profiles", `?id=in.(${ids.map(encodeURIComponent).join(",")})&select=id,display_name,email,boss_uid`),
+                    { headers: serviceHeaders() }
+                  ).catch(() => [])
+                : [];
+              return Object.fromEntries((rows || []).map((p) => [p.id, p]));
+            })()),
+            completionMethod: out.completionMethod || "admin_force",
+          });
+        }
+        const out = await helpers.finalizeOrderCompletion(before, {
+          method: "admin_force",
+          actorId: admin.id,
+          message: String(payload.reason || body.reason || "后台确认完成订单"),
+        });
+        return json(res, 200, {
+          ok: true,
+          message: out.message || "订单已完成。",
+          order: safeOrder(out.order || before, {}),
+          completionMethod: out.completionMethod || "admin_force",
+        });
+      } catch (err) {
+        return json(res, err.status || 500, { ok: false, message: err.message || "确认完成失败" });
+      }
+    } else if (action === "freeze_order" || action === "freeze") {
+      const { createOrderCompleteHelpers } = await import("../_order-complete.js");
+      const helpers = createOrderCompleteHelpers({ restUrl, supabaseJson, serviceHeaders, addSystemMessage: async () => {} });
+      await helpers.stampFrozen(before, String(payload.reason || body.reason || "admin_freeze").slice(0, 80));
+      await addSystem(before, admin.id, "后台已冻结订单，暂停自动确认完成。");
+      return json(res, 200, { ok: true, message: "订单已冻结，自动确认已暂停。" });
+    } else if (action === "unfreeze_order" || action === "unfreeze") {
+      const { createOrderCompleteHelpers } = await import("../_order-complete.js");
+      const helpers = createOrderCompleteHelpers({ restUrl, supabaseJson, serviceHeaders, addSystemMessage: async () => {} });
+      await helpers.clearFrozen(before);
+      await addSystem(before, admin.id, "后台已解除订单冻结。");
+      return json(res, 200, { ok: true, message: "已解除冻结。" });
     } else if (action === "cancel") {
       patch.status = "cancelled";
       patch.cancelled_at = new Date().toISOString();
@@ -451,8 +591,18 @@ export default async function handler(req, res) {
     if (!Object.keys(patch).length) return json(res, 400, { ok: false, message: "未知订单操作。" });
     if (patch.status && patch.status !== before.status && (action === "update_status" || action === "cancel" || action === "refund" || action === "confirm_start" || action === "confirm_complete" || action === "push_hall" || action === "assign_companion" || action === "confirm_grab_assignment" || action === "unassign_companion" || action === "cancel_assign")) {
       try {
-        const { assertCsStatusTransition, writeOrderStatusLog } = await import("../_order-status.js");
-        if (action === "update_status") assertCsStatusTransition(before.status, patch.status);
+        const { writeOrderStatusLog, isCanonicalOrderStatus, normalizeOrderStatus } = await import("../_order-status.js");
+        if (action === "update_status") {
+          const to = normalizeOrderStatus(patch.status);
+          if (!isCanonicalOrderStatus(to) || to === "reviewed") {
+            return json(res, 400, { ok: false, message: `无效订单状态：${patch.status}` });
+          }
+          // Admin ops may jump for recovery; still block no-op and invalid enums.
+          if (normalizeOrderStatus(before.status) === to) {
+            return json(res, 400, { ok: false, message: "订单已是该状态。" });
+          }
+          patch.status = to;
+        }
         await writeOrderStatusLog(
           { restUrl, supabaseJson, serviceHeaders },
           {
@@ -466,6 +616,15 @@ export default async function handler(req, res) {
         );
       } catch (err) {
         if (action === "update_status") return json(res, err.status || 400, { ok: false, message: err.message || "非法状态跳转。" });
+      }
+    }
+    if (patch.status === "claimed" && before.status !== "claimed") {
+      try {
+        const { stampClaimedAtNote } = await import("../_order-confirm-timeout.js");
+        const { patchOrderNoteField } = await import("../_order-flow.js");
+        await patchOrderNoteField({ restUrl, supabaseJson, serviceHeaders }, id, (text) => stampClaimedAtNote(text));
+      } catch {
+        /* optional */
       }
     }
     const updated = await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(id)}`), {
@@ -482,10 +641,24 @@ export default async function handler(req, res) {
       m[p.id] = p;
       return m;
     }, {});
-    if (action === "assign_companion") {
+    if (action === "assign_companion" || action === "confirm_grab_assignment") {
       const name = map[after.companion_id]?.display_name || map[after.companion_id]?.email || "陪玩";
-      await addSystem(after, admin.id, `已推送陪玩：${name}，请陪玩尽快接单`);
+      await addSystem(after, admin.id, `后台已指定陪玩：${name}。订单进入等待陪玩确认。`);
       await logAdminOp(admin, action, id, { status: before.status }, { status: after.status, ...patch }, String(payload.reason || ""));
+      try {
+        const { notifyCompanionOrderAssigned } = await import("../_companion-order-notify.js");
+        const prevCompanion = String(before.companion_id || "").trim();
+        await Promise.race([
+          notifyCompanionOrderAssigned(after, {
+            eventType: prevCompanion && prevCompanion !== String(after.companion_id || "") ? "reassign" : "assign",
+            previousCompanionId: prevCompanion,
+            email: map[after.companion_id]?.email || "",
+          }).catch((err) => console.warn("[admin/assign] companion notify", err?.message || err)),
+          new Promise((resolve) => setTimeout(resolve, 3500)),
+        ]);
+      } catch (err) {
+        console.warn("[admin/assign] companion notify import", err?.message || err);
+      }
       return json(res, 200, { ok: true, message: "指定成功", order: safeOrder(after, map) });
     }
     await addSystem(after, admin.id, `后台更新订单：${ORDER_STATUS_TEXT[patch.status] || patch.status || action}`);

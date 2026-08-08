@@ -13,7 +13,106 @@ const ENV_SECRET_KEYS = [
   { key: "PAYMENT_ENCRYPTION_KEY", label: "支付密钥加密主密钥", source: "env" },
   { key: "PLATFORM_SECRETS_ENCRYPTION_KEY", label: "平台密钥库加密主密钥", source: "env" },
   { key: "SMS_API_KEY", label: "短信验证码 API Key", source: "vault_or_env", vaultKey: "sms_api_key" },
+  { key: "SMS_SECRET", label: "短信 Secret", source: "vault_or_env", vaultKey: "sms_secret" },
+  { key: "DISCORD_BOT_TOKEN", label: "Discord Bot Token", source: "vault_or_env", vaultKey: "discord_bot_token" },
+  { key: "WHATSAPP_API_KEY", label: "WhatsApp API Key", source: "vault_or_env", vaultKey: "whatsapp_api_key" },
+  { key: "WHATSAPP_ACCESS_TOKEN", label: "WhatsApp Access Token", source: "vault_or_env", vaultKey: "whatsapp_access_token" },
+  { key: "PAYMENT_API_KEY", label: "支付 API Key", source: "vault_or_env", vaultKey: "payment_api_key" },
+  { key: "PAYMENT_SECRET_KEY", label: "支付 Secret Key", source: "vault_or_env", vaultKey: "payment_secret_key" },
 ];
+
+/** Third-party services configurable from 系统设置 (public fields + vault secrets). */
+const SERVICE_CATALOG = [
+  {
+    id: "payment",
+    name: "支付服务",
+    purpose: "充值与回调",
+    check: "payment",
+    publicFields: [
+      { key: "paymentMerchantId", label: "Merchant ID" },
+      { key: "paymentCallbackUrl", label: "Callback URL", placeholder: "/api/payment-callback" },
+    ],
+    secretFields: [
+      { vaultKey: "payment_api_key", formKey: "apiKey", label: "API Key", envKey: "PAYMENT_API_KEY" },
+      { vaultKey: "payment_secret_key", formKey: "secretKey", label: "Secret Key", envKey: "PAYMENT_SECRET_KEY" },
+    ],
+  },
+  {
+    id: "mail",
+    name: "邮件服务",
+    purpose: "通知与验证邮件",
+    check: "mail",
+    publicFields: [
+      { key: "smtpHost", label: "SMTP Host" },
+      { key: "smtpPort", label: "Port", type: "number" },
+      { key: "smtpUsername", label: "Username" },
+      { key: "mailFromName", label: "Sender Name" },
+      { key: "mailFromEmail", label: "发件邮箱", type: "email" },
+    ],
+    secretFields: [
+      { vaultKey: "smtp_pass", formKey: "password", label: "Password", envKey: "SMTP_PASS" },
+    ],
+  },
+  {
+    id: "discord",
+    name: "Discord",
+    purpose: "社群通知",
+    check: "discord",
+    optional: true,
+    publicFields: [
+      { key: "discordGuildId", label: "Guild ID" },
+      { key: "discordInviteLink", label: "Invite Link" },
+    ],
+    secretFields: [
+      { vaultKey: "discord_bot_token", formKey: "botToken", label: "Bot Token", envKey: "DISCORD_BOT_TOKEN" },
+    ],
+  },
+  {
+    id: "whatsapp",
+    name: "WhatsApp",
+    purpose: "客户触达",
+    check: "whatsapp",
+    optional: true,
+    publicFields: [
+      { key: "whatsappPhoneId", label: "Phone ID" },
+    ],
+    secretFields: [
+      { vaultKey: "whatsapp_api_key", formKey: "apiKey", label: "API Key", envKey: "WHATSAPP_API_KEY" },
+      { vaultKey: "whatsapp_access_token", formKey: "accessToken", label: "Access Token", envKey: "WHATSAPP_ACCESS_TOKEN" },
+    ],
+  },
+  {
+    id: "sms",
+    name: "短信验证码",
+    purpose: "登录/绑定验证",
+    check: "sms",
+    publicFields: [
+      { key: "smsSender", label: "Sender" },
+    ],
+    secretFields: [
+      { vaultKey: "sms_api_key", formKey: "apiKey", label: "API Key", envKey: "SMS_API_KEY" },
+      { vaultKey: "sms_secret", formKey: "secret", label: "Secret", envKey: "SMS_SECRET" },
+    ],
+  },
+  {
+    id: "ai",
+    name: "AI 喵管家",
+    purpose: "智能客服辅助",
+    check: "ai",
+    publicFields: [
+      { key: "aiModel", label: "Model" },
+      { key: "aiBaseUrl", label: "Base URL（可选）", placeholder: "https://api.openai.com/v1" },
+      { key: "aiEnabled", label: "启用 AI", type: "boolean" },
+    ],
+    secretFields: [
+      { vaultKey: "ai_api_key", formKey: "apiKey", label: "API Key", envKey: "AI_API_KEY" },
+    ],
+  },
+];
+
+const ALLOWED_VAULT_KEYS = new Set(
+  SERVICE_CATALOG.flatMap((s) => (s.secretFields || []).map((f) => f.vaultKey)).concat(["smtp_pass", "ai_api_key", "sms_api_key"])
+);
 
 const PAYMENT_CHANNELS = [
   { id: "tng", name: "TNG" },
@@ -59,11 +158,19 @@ const DEFAULT_SETTINGS = {
   smtpHost: "",
   smtpPort: 587,
   smtpTls: true,
+  smtpUsername: "",
   aiEnabled: false,
   aiModel: "",
+  aiBaseUrl: "",
   aiSystemPrompt: "",
   aiDailyLimit: 100,
   aiHandoffRule: "用户要求人工或敏感纠纷时转客服",
+  paymentMerchantId: "",
+  paymentCallbackUrl: "/api/payment-callback",
+  discordGuildId: "",
+  discordInviteLink: "",
+  whatsappPhoneId: "",
+  smsSender: "",
   paymentChannelsPublic: {},
 };
 
@@ -208,11 +315,19 @@ function normalizeSettings(input = {}) {
     smtpHost: String(input.smtpHost || "").trim(),
     smtpPort: Math.max(1, Number(input.smtpPort ?? 587) || 587),
     smtpTls: bool(input.smtpTls, true),
+    smtpUsername: String(input.smtpUsername || "").trim(),
     aiEnabled: bool(input.aiEnabled, false),
     aiModel: String(input.aiModel || "").trim(),
+    aiBaseUrl: String(input.aiBaseUrl || "").trim(),
     aiSystemPrompt: String(input.aiSystemPrompt || "").trim(),
     aiDailyLimit: Math.max(0, Number(input.aiDailyLimit ?? 100) || 0),
     aiHandoffRule: String(input.aiHandoffRule || DEFAULT_SETTINGS.aiHandoffRule).trim(),
+    paymentMerchantId: String(input.paymentMerchantId || "").trim(),
+    paymentCallbackUrl: String(input.paymentCallbackUrl || DEFAULT_SETTINGS.paymentCallbackUrl).trim() || DEFAULT_SETTINGS.paymentCallbackUrl,
+    discordGuildId: String(input.discordGuildId || "").trim(),
+    discordInviteLink: String(input.discordInviteLink || "").trim(),
+    whatsappPhoneId: String(input.whatsappPhoneId || "").trim(),
+    smsSender: String(input.smsSender || "").trim(),
     paymentChannelsPublic,
   };
 }
@@ -233,7 +348,11 @@ async function saveSettings(settings, adminId) {
 }
 
 function encryptionKey() {
-  const raw = process.env.PLATFORM_SECRETS_ENCRYPTION_KEY || process.env.PAYMENT_ENCRYPTION_KEY || "";
+  const raw =
+    process.env.PLATFORM_SECRETS_ENCRYPTION_KEY ||
+    process.env.PAYMENT_ENCRYPTION_KEY ||
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    "";
   if (!raw) return null;
   return crypto.createHash("sha256").update(String(raw)).digest();
 }
@@ -256,6 +375,225 @@ function decryptSecret(blob) {
   const decipher = crypto.createDecipheriv("aes-256-gcm", key, Buffer.from(ivB64, "base64"));
   decipher.setAuthTag(Buffer.from(tagB64, "base64"));
   return Buffer.concat([decipher.update(Buffer.from(dataB64, "base64")), decipher.final()]).toString("utf8");
+}
+
+function maskSecret(value) {
+  const s = String(value || "");
+  if (!s) return "";
+  if (s.length <= 4) return "••••";
+  return "••••" + s.slice(-4);
+}
+
+function parseMaskFromNote(note) {
+  const text = String(note || "");
+  const m = text.match(/masked:([•\*\.xX\u2022]{2,}.{0,8})/);
+  if (m) return m[1];
+  const last4 = text.match(/末四位\s*([A-Za-z0-9]{2,8})/);
+  if (last4) return "••••" + last4[1];
+  return "";
+}
+
+async function upsertVaultSecret(vaultKey, plain, adminId, label) {
+  const value = String(plain || "").trim();
+  if (!value) return null;
+  const ciphertext = encryptSecret(value);
+  const masked = maskSecret(value);
+  const note = `已加密存储，不可回显 · masked:${masked}`;
+  await supabaseJson(restUrl("platform_secret_vault", "?on_conflict=secret_key"), {
+    method: "POST",
+    headers: serviceHeaders({ Prefer: "resolution=merge-duplicates,return=representation" }),
+    body: JSON.stringify({
+      secret_key: vaultKey,
+      ciphertext,
+      configured: true,
+      updated_at: new Date().toISOString(),
+      updated_by: adminId || null,
+      note,
+    }),
+  });
+  return { vaultKey, status: "已配置", masked, label: label || vaultKey };
+}
+
+async function resolveVaultPlain(vaultKey, envKey) {
+  if (envKey && process.env[envKey]) return String(process.env[envKey]);
+  const vault = await loadVaultCipher(vaultKey);
+  if (vault?.ciphertext) return decryptSecret(vault.ciphertext);
+  return "";
+}
+
+function serviceById(id) {
+  return SERVICE_CATALOG.find((s) => s.id === id) || null;
+}
+
+function publicValuesForService(service, settings) {
+  const out = {};
+  (service.publicFields || []).forEach((f) => {
+    if (f.type === "boolean") out[f.key] = !!settings[f.key];
+    else if (f.type === "number") out[f.key] = settings[f.key];
+    else out[f.key] = settings[f.key] != null ? String(settings[f.key]) : "";
+  });
+  return out;
+}
+
+async function secretMetaForService(service, vaultMap) {
+  const fields = [];
+  for (const f of service.secretFields || []) {
+    const vaultRow = vaultMap[f.vaultKey];
+    const fromEnv = !!(f.envKey && process.env[f.envKey]);
+    const fromVault = !!(vaultRow && vaultRow.configured);
+    const configured = fromEnv || fromVault;
+    fields.push({
+      vaultKey: f.vaultKey,
+      formKey: f.formKey,
+      label: f.label,
+      configured,
+      status: configured ? "已配置" : "未配置",
+      masked: configured ? parseMaskFromNote(vaultRow?.note) || "••••已配置" : "",
+      updatedAt: vaultRow?.updated_at || "",
+      source: fromEnv ? "env" : fromVault ? "vault" : "none",
+    });
+  }
+  return fields;
+}
+
+async function buildServiceConfigs(settings) {
+  let vault = [];
+  try {
+    vault = await loadVaultRows();
+  } catch {
+    vault = [];
+  }
+  const vaultMap = (vault || []).reduce((m, r) => {
+    m[r.secret_key] = r;
+    return m;
+  }, {});
+  const list = [];
+  for (const service of SERVICE_CATALOG) {
+    const secrets = await secretMetaForService(service, vaultMap);
+    const publicValues = publicValuesForService(service, settings);
+    const hasPublic = Object.values(publicValues).some((v) => v !== "" && v !== false && v != null);
+    const hasSecret = secrets.some((s) => s.configured);
+    list.push({
+      id: service.id,
+      name: service.name,
+      purpose: service.purpose,
+      optional: !!service.optional,
+      configurable: true,
+      publicFields: service.publicFields,
+      secretFields: secrets,
+      publicValues,
+      status: hasSecret || hasPublic ? "已配置" : "未配置",
+      configured: hasSecret || hasPublic,
+    });
+  }
+  return list;
+}
+
+async function testServiceConnection(serviceId, settings) {
+  const service = serviceById(serviceId);
+  if (!service) throw Object.assign(new Error("未知服务"), { status: 400 });
+
+  if (serviceId === "mail") {
+    const host = process.env.SMTP_HOST || settings.smtpHost;
+    const pass = await resolveVaultPlain("smtp_pass", "SMTP_PASS");
+    const user = process.env.SMTP_USER || settings.smtpUsername || settings.mailFromEmail;
+    if (!host) return { ok: false, status: "missing", message: "未配置 SMTP Host，请先保存邮件配置。" };
+    if (!pass) return { ok: false, status: "missing", message: "未配置 SMTP Password，请先保存密钥。" };
+    return {
+      ok: true,
+      status: "ok",
+      message: `邮件配置完整：SMTP ${host}:${settings.smtpPort || 587}（用户 ${user || "未填"}，密码已保存，未实际发信）`,
+    };
+  }
+
+  if (serviceId === "payment") {
+    const apiKey = await resolveVaultPlain("payment_api_key", "PAYMENT_API_KEY");
+    const secret = await resolveVaultPlain("payment_secret_key", "PAYMENT_SECRET_KEY");
+    const merchantId = settings.paymentMerchantId || "";
+    const callbackUrl = settings.paymentCallbackUrl || "/api/payment-callback";
+    if (!apiKey || !secret) {
+      return { ok: false, status: "missing", message: "未配置 API Key / Secret Key，请先保存支付配置。" };
+    }
+    return {
+      ok: true,
+      status: "ok",
+      message: `支付密钥已配置（Merchant ${merchantId || "未填"}，回调 ${callbackUrl}）。渠道细调见左侧「支付设置」。`,
+    };
+  }
+
+  if (serviceId === "ai") {
+    if (!settings.aiEnabled) {
+      return { ok: false, status: "missing", message: "AI 功能未启用，请先在配置中开启。" };
+    }
+    const key = await resolveVaultPlain("ai_api_key", "AI_API_KEY");
+    if (!key) return { ok: false, status: "missing", message: "缺少 AI API Key，请先保存。" };
+    const base = settings.aiBaseUrl || "（默认提供商）";
+    return {
+      ok: true,
+      status: "ok",
+      message: `AI 已配置：模型 ${settings.aiModel || "未命名"}，Base URL ${base}`,
+    };
+  }
+
+  if (serviceId === "sms") {
+    const apiKey = await resolveVaultPlain("sms_api_key", "SMS_API_KEY");
+    const secret = await resolveVaultPlain("sms_secret", "SMS_SECRET");
+    if (!apiKey) return { ok: false, status: "missing", message: "缺少短信 API Key，请先保存。" };
+    return {
+      ok: true,
+      status: "ok",
+      message: `短信已配置：Sender ${settings.smsSender || "未填"}，Secret ${secret ? "已保存" : "未填（可选）"}`,
+    };
+  }
+
+  if (serviceId === "discord") {
+    const token = await resolveVaultPlain("discord_bot_token", "DISCORD_BOT_TOKEN");
+    if (!token) return { ok: false, status: "missing", message: "缺少 Discord Bot Token，请先保存。" };
+    if (!settings.discordGuildId) {
+      return { ok: false, status: "missing", message: "缺少 Guild ID，请先保存公开配置。" };
+    }
+    try {
+      const response = await fetch(`https://discord.com/api/v10/guilds/${encodeURIComponent(settings.discordGuildId)}`, {
+        headers: { Authorization: `Bot ${token}` },
+      });
+      if (response.status === 401 || response.status === 403) {
+        return { ok: false, status: "error", message: `Discord Token/权限无效（HTTP ${response.status}）` };
+      }
+      if (response.status === 404) {
+        return { ok: false, status: "error", message: "Guild ID 不存在或 Bot 未加入该服务器" };
+      }
+      if (!response.ok) {
+        const text = await response.text();
+        return { ok: false, status: "error", message: `Discord API HTTP ${response.status}: ${String(text).slice(0, 120)}` };
+      }
+      const body = await response.json().catch(() => ({}));
+      return {
+        ok: true,
+        status: "ok",
+        message: `Discord 连接成功：${body.name || settings.discordGuildId}${settings.discordInviteLink ? " · 邀请链接已配置" : ""}`,
+      };
+    } catch (e) {
+      return { ok: false, status: "error", message: e.message || "Discord 请求失败" };
+    }
+  }
+
+  if (serviceId === "whatsapp") {
+    const apiKey = await resolveVaultPlain("whatsapp_api_key", "WHATSAPP_API_KEY");
+    const token = await resolveVaultPlain("whatsapp_access_token", "WHATSAPP_ACCESS_TOKEN");
+    if (!apiKey && !token) {
+      return { ok: false, status: "missing", message: "缺少 WhatsApp API Key / Access Token，请先保存。" };
+    }
+    if (!settings.whatsappPhoneId) {
+      return { ok: false, status: "missing", message: "缺少 Phone ID，请先保存公开配置。" };
+    }
+    return {
+      ok: true,
+      status: "ok",
+      message: `WhatsApp 配置完整：Phone ID ${settings.whatsappPhoneId}（密钥已保存，未实际发消息）`,
+    };
+  }
+
+  return { ok: false, status: "missing", message: "该服务暂不支持测试连接" };
 }
 
 async function loadVaultRows() {
@@ -308,6 +646,7 @@ async function secretStatuses() {
       updatable: entry.source !== "env",
       envOnly: entry.source === "env",
       updatedAt: vaultRow?.updated_at || "",
+      masked: configured && entry.vaultKey ? parseMaskFromNote(vaultRow?.note) || (fromEnv ? "••••env" : "••••已配置") : "",
       note: entry.source === "env" ? "仅可通过服务器环境变量 / Vercel Secrets 配置，页面不可回显" : vaultRow?.note || "",
     };
   });
@@ -450,13 +789,33 @@ async function runDiagnostics() {
       if (!hasPass) return { status: "missing", detail: "SMTP 已填 Host，但密码未配置" };
       return { status: "ok", detail: `SMTP ${smtpHost}（密码已配置，未在此发送）` };
     }),
+    probe("payment", async () => {
+      const settings = normalizeSettings((await loadSettingsRow())?.data || {});
+      const result = await testServiceConnection("payment", settings);
+      return { status: result.status === "ok" ? "ok" : result.status || "missing", detail: result.message };
+    }),
+    probe("sms", async () => {
+      const settings = normalizeSettings((await loadSettingsRow())?.data || {});
+      const result = await testServiceConnection("sms", settings);
+      return { status: result.status === "ok" ? "ok" : result.status || "missing", detail: result.message };
+    }),
     probe("ai", async () => {
       const settings = normalizeSettings((await loadSettingsRow())?.data || {});
       if (!settings.aiEnabled) return { status: "missing", detail: "AI 功能未启用" };
       const envKey = !!process.env.AI_API_KEY;
       const vault = await loadVaultCipher("ai_api_key");
       if (!envKey && !(vault && vault.configured)) return { status: "missing", detail: "缺少 AI_API_KEY" };
-      return { status: "ok", detail: `模型 ${settings.aiModel || "未命名"}` };
+      return { status: "ok", detail: `模型 ${settings.aiModel || "未命名"}${settings.aiBaseUrl ? " · " + settings.aiBaseUrl : ""}` };
+    }),
+    probe("discord", async () => {
+      const settings = normalizeSettings((await loadSettingsRow())?.data || {});
+      const result = await testServiceConnection("discord", settings);
+      return { status: result.status === "ok" ? "ok" : result.status || "missing", detail: result.message };
+    }),
+    probe("whatsapp", async () => {
+      const settings = normalizeSettings((await loadSettingsRow())?.data || {});
+      const result = await testServiceConnection("whatsapp", settings);
+      return { status: result.status === "ok" ? "ok" : result.status || "missing", detail: result.message };
     }),
     probe("file_upload", async () => {
       if (!base || !service) return { status: "missing", detail: "Storage 未配置" };
@@ -532,7 +891,7 @@ async function paymentChannelSummary(settings) {
   });
 }
 
-function thirdPartyCards(settings, secrets, diagnostics) {
+function thirdPartyCards(settings, secrets, diagnostics, serviceConfigs) {
   const byId = (diagnostics.checks || []).reduce((m, c) => {
     m[c.id] = c;
     return m;
@@ -541,32 +900,44 @@ function thirdPartyCards(settings, secrets, diagnostics) {
     m[s.key] = s;
     return m;
   }, {});
+  const cfgBy = (serviceConfigs || []).reduce((m, s) => {
+    m[s.id] = s;
+    return m;
+  }, {});
   const cards = [
-    { id: "supabase", name: "Supabase", purpose: "数据库 / Auth / Storage", check: "database" },
-    { id: "mail", name: "邮件服务", purpose: "通知与验证邮件", check: "mail", secret: "SMTP_PASS" },
-    { id: "payment", name: "支付服务", purpose: "充值与回调", check: "payment_callback" },
-    { id: "sms", name: "短信验证码", purpose: "登录/绑定验证", secret: "SMS_API_KEY" },
-    { id: "storage", name: "图片存储", purpose: "证件 / 收据 / 媒体", check: "storage" },
-    { id: "ai", name: "AI 喵管家", purpose: "智能客服辅助", check: "ai", secret: "AI_API_KEY" },
-    { id: "discord", name: "Discord", purpose: "社群通知", optional: true },
-    { id: "whatsapp", name: "WhatsApp", purpose: "客户触达", optional: true },
-    { id: "telegram", name: "Telegram", purpose: "客服通道", optional: true },
+    { id: "supabase", name: "Supabase", purpose: "数据库 / Auth / Storage", check: "database", configurable: false },
+    { id: "mail", name: "邮件服务", purpose: "通知与验证邮件", check: "mail", secret: "SMTP_PASS", configurable: true },
+    { id: "payment", name: "支付服务", purpose: "充值与回调", check: "payment", configurable: true },
+    { id: "sms", name: "短信验证码", purpose: "登录/绑定验证", secret: "SMS_API_KEY", check: "sms", configurable: true },
+    { id: "storage", name: "图片存储", purpose: "证件 / 收据 / 媒体", check: "storage", configurable: false },
+    { id: "ai", name: "AI 喵管家", purpose: "智能客服辅助", check: "ai", secret: "AI_API_KEY", configurable: true },
+    { id: "discord", name: "Discord", purpose: "社群通知", check: "discord", optional: true, configurable: true },
+    { id: "whatsapp", name: "WhatsApp", purpose: "客户触达", check: "whatsapp", optional: true, configurable: true },
+    { id: "telegram", name: "Telegram", purpose: "客服通道", optional: true, configurable: false },
   ];
   return cards.map((c) => {
     const check = byId[c.check];
     const secret = c.secret ? secretBy[c.secret] : null;
+    const cfg = cfgBy[c.id];
     let status = "未配置";
     if (check) status = check.statusText || check.status;
+    else if (cfg?.configured) status = "已配置";
     else if (secret) status = secret.status;
     else if (c.optional) status = "未配置";
+    const secretMasks = (cfg?.secretFields || [])
+      .filter((s) => s.configured)
+      .map((s) => `${s.label} ${s.masked || "••••"}`)
+      .join(" · ");
     return {
       id: c.id,
       name: c.name,
       purpose: c.purpose,
       status,
-      mode: c.id === "ai" ? (settings.aiEnabled ? "正式/测试由模型配置决定" : "关闭") : "—",
+      mode: c.id === "ai" ? (settings.aiEnabled ? "已启用" : "关闭") : "—",
       lastCheckedAt: check?.checkedAt || "",
-      detail: check?.detail || secret?.note || "",
+      detail: check?.detail || secretMasks || secret?.note || "",
+      configurable: !!c.configurable,
+      configured: !!(cfg?.configured || (secret && secret.configured) || (check && check.status === "ok")),
     };
   });
 }
@@ -574,7 +945,7 @@ function thirdPartyCards(settings, secrets, diagnostics) {
 async function sendTestMail({ to, settings, admin }) {
   const host = process.env.SMTP_HOST || settings.smtpHost;
   const port = Number(process.env.SMTP_PORT || settings.smtpPort || 587);
-  const user = process.env.SMTP_USER || settings.mailFromEmail;
+  const user = process.env.SMTP_USER || settings.smtpUsername || settings.mailFromEmail;
   let pass = process.env.SMTP_PASS || "";
   if (!pass) {
     const vault = await loadVaultCipher("smtp_pass");
@@ -637,13 +1008,14 @@ export default async function handler(req, res) {
         return json(res, 200, { ok: true, configured: !!row, settings, source: row ? "supabase" : "default" });
       }
 
-      const [secrets, diagnostics, payments, logs] = await Promise.all([
+      const [secrets, diagnostics, payments, logs, serviceConfigs] = await Promise.all([
         secretStatuses(),
         runDiagnostics(),
         paymentChannelSummary(settings),
         supabaseJson(restUrl("platform_config_logs", "?order=created_at.desc&limit=50"), { headers: serviceHeaders() }).catch(
           (e) => (isMissingTable(e) ? [] : Promise.reject(e))
         ),
+        buildServiceConfigs(settings),
       ]);
 
       const viteLeak = diagnostics.forbiddenFrontendKeys || {};
@@ -651,12 +1023,13 @@ export default async function handler(req, res) {
         ok: true,
         configured: !!row,
         role: profile.role,
-        canEditSecrets: isSuper(profile, req),
+        canEditSecrets: isSuper(profile, req) || profile.role === "admin" || profile.role === "finance_admin",
         settings,
         secrets,
         diagnostics,
         payments,
-        thirdParties: thirdPartyCards(settings, secrets, diagnostics),
+        serviceConfigs,
+        thirdParties: thirdPartyCards(settings, secrets, diagnostics, serviceConfigs),
         keyPolicy: {
           frontendAllowed: ["VITE_SUPABASE_URL", "VITE_SUPABASE_PUBLISHABLE_KEY", "VITE_SUPABASE_ANON_KEY"],
           frontendForbidden: ["VITE_SUPABASE_SERVICE_ROLE_KEY", "VITE_SUPABASE_SECRET_KEY"],
@@ -668,6 +1041,7 @@ export default async function handler(req, res) {
           serviceRoleLocation: "服务器环境变量 SUPABASE_SERVICE_ROLE_KEY（禁止 VITE_ / 前端 / Git）",
           paymentCallback: "/api/payment-callback",
           viteLeakDetected: !!(viteLeak.VITE_SUPABASE_SERVICE_ROLE_KEY || viteLeak.VITE_SUPABASE_SECRET_KEY),
+          secretsStorage: "platform_secret_vault（AES-256-GCM 加密）+ 可选环境变量覆盖",
         },
         logs: (logs || []).map((l) => ({
           id: l.id,
@@ -715,8 +1089,8 @@ export default async function handler(req, res) {
     }
 
     if (action === "update_secret") {
-      if (!isSuper(profile, req)) {
-        return json(res, 403, { ok: false, message: "仅超级管理员可以替换敏感密钥" });
+      if (!isSuper(profile, req) && profile.role !== "admin" && profile.role !== "finance_admin") {
+        return json(res, 403, { ok: false, message: "仅管理员可以替换敏感密钥" });
       }
       const vaultKey = String(body.vaultKey || body.secretKey || "").trim();
       const value = String(body.value || body.secret || "").trim();
@@ -730,24 +1104,11 @@ export default async function handler(req, res) {
           message: "Supabase service_role / secret key 只能在服务器环境变量或 Vercel Secrets 中配置，不能通过网页写入。",
         });
       }
-      const allowed = new Set(["smtp_pass", "ai_api_key", "sms_api_key"]);
-      if (!allowed.has(vaultKey)) return json(res, 400, { ok: false, message: "不支持的密钥类型" });
+      if (!ALLOWED_VAULT_KEYS.has(vaultKey)) return json(res, 400, { ok: false, message: "不支持的密钥类型" });
 
       const before = await loadVaultCipher(vaultKey);
       const beforeStatus = before?.configured ? "已配置" : "未配置";
-      const ciphertext = encryptSecret(value);
-      await supabaseJson(restUrl("platform_secret_vault", "?on_conflict=secret_key"), {
-        method: "POST",
-        headers: serviceHeaders({ Prefer: "resolution=merge-duplicates,return=representation" }),
-        body: JSON.stringify({
-          secret_key: vaultKey,
-          ciphertext,
-          configured: true,
-          updated_at: new Date().toISOString(),
-          updated_by: profile.id,
-          note: "已加密存储，不可回显",
-        }),
-      });
+      const savedSecret = await upsertVaultSecret(vaultKey, value, profile.id);
       await writeConfigLog({
         admin: profile,
         configType: vaultKey,
@@ -760,7 +1121,105 @@ export default async function handler(req, res) {
       return json(res, 200, {
         ok: true,
         message: "密钥已安全保存（加密存储，不会回显）",
-        secret: { vaultKey, status: "已配置", updatedAt: new Date().toISOString() },
+        secret: { vaultKey, status: "已配置", masked: savedSecret?.masked || "••••", updatedAt: new Date().toISOString() },
+      });
+    }
+
+    if (action === "save_service_config") {
+      if (!isSuper(profile, req) && profile.role !== "admin" && profile.role !== "finance_admin") {
+        return json(res, 403, { ok: false, message: "无权保存第三方服务配置" });
+      }
+      const serviceId = String(body.serviceId || body.service || "").trim();
+      const service = serviceById(serviceId);
+      if (!service) return json(res, 400, { ok: false, message: "未知服务" });
+      const publicInput = body.public && typeof body.public === "object" ? body.public : body.settings || {};
+      const secretsInput = body.secrets && typeof body.secrets === "object" ? body.secrets : {};
+      const reason = String(body.reason || `保存 ${service.name} 配置`).trim();
+
+      const nextPatch = {};
+      for (const f of service.publicFields || []) {
+        if (!Object.prototype.hasOwnProperty.call(publicInput, f.key)) continue;
+        if (f.type === "boolean") nextPatch[f.key] = bool(publicInput[f.key], false);
+        else if (f.type === "number") nextPatch[f.key] = Number(publicInput[f.key]);
+        else nextPatch[f.key] = String(publicInput[f.key] ?? "").trim();
+      }
+      // Never accept secret plaintext into platform_settings
+      delete nextPatch.smtpPass;
+      delete nextPatch.aiApiKey;
+      delete nextPatch.apiKey;
+      delete nextPatch.secretKey;
+      delete nextPatch.password;
+      delete nextPatch.botToken;
+      delete nextPatch.accessToken;
+
+      const saved = await saveSettings(normalizeSettings({ ...current, ...nextPatch }), profile.id);
+
+      const secretResults = [];
+      for (const f of service.secretFields || []) {
+        const raw = secretsInput[f.formKey] ?? secretsInput[f.vaultKey];
+        const value = raw == null ? "" : String(raw).trim();
+        if (!value) continue;
+        // Skip if client sent the masked placeholder back
+        if (/^•+|^\*+|已配置|留空/.test(value)) continue;
+        const before = await loadVaultCipher(f.vaultKey);
+        const beforeStatus = before?.configured ? "已配置" : "未配置";
+        const savedSecret = await upsertVaultSecret(f.vaultKey, value, profile.id, f.label);
+        secretResults.push({
+          vaultKey: f.vaultKey,
+          formKey: f.formKey,
+          status: "已配置",
+          masked: savedSecret?.masked || maskSecret(value),
+        });
+        await writeConfigLog({
+          admin: profile,
+          configType: `${serviceId}:${f.vaultKey}`,
+          action: beforeStatus === "已配置" ? "replace_secret" : "configure_secret",
+          beforeStatus,
+          afterStatus: beforeStatus === "已配置" ? "已替换" : "已配置",
+          reason,
+          ip: clientIp(req),
+        });
+      }
+
+      await writeConfigLog({
+        admin: profile,
+        configType: `service:${serviceId}`,
+        action: "save_service_config",
+        beforeStatus: "—",
+        afterStatus: "已保存",
+        reason,
+        ip: clientIp(req),
+      });
+
+      const serviceConfigs = await buildServiceConfigs(saved);
+      const cfg = serviceConfigs.find((s) => s.id === serviceId);
+      return json(res, 200, {
+        ok: true,
+        message: `${service.name} 配置已保存（密钥加密存储，响应仅回显脱敏）`,
+        settings: saved,
+        serviceConfig: cfg,
+        secretsUpdated: secretResults,
+      });
+    }
+
+    if (action === "test_service") {
+      const serviceId = String(body.serviceId || body.service || "").trim();
+      if (!serviceId) return json(res, 400, { ok: false, message: "缺少 serviceId" });
+      const result = await testServiceConnection(serviceId, current);
+      await writeConfigLog({
+        admin: profile,
+        configType: `service:${serviceId}`,
+        action: "test_service",
+        beforeStatus: "—",
+        afterStatus: result.ok ? "测试通过" : result.status || "失败",
+        reason: result.message || "",
+        ip: clientIp(req),
+      });
+      return json(res, result.ok ? 200 : 400, {
+        ok: result.ok,
+        status: result.status,
+        message: result.message,
+        serviceId,
       });
     }
 

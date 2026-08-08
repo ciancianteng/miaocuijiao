@@ -4,6 +4,9 @@ import {
   readLocalLevels,
   writeLocalLevels,
   updateLocalLevels,
+  upsertLocalLevel,
+  syncCompanionCommissionsFromLevels,
+  buildPublishSyncChecklist,
   toPublicLevel,
 } from "../_companion-levels-store.js";
 
@@ -41,6 +44,29 @@ function nextLevelNumber(list) {
   return max + 1;
 }
 
+function verifyPublished(levels, expected) {
+  const got = (Array.isArray(levels) ? levels : []).map((row) => normalizeLevelRow(row));
+  const want = (Array.isArray(expected) ? expected : []).map((row) => normalizeLevelRow(row));
+  if (!want.length) return { ok: false, message: "发布列表为空。" };
+  if (got.length !== want.length) {
+    return { ok: false, message: `校验失败：期望 ${want.length} 个等级，实际 ${got.length} 个。` };
+  }
+  for (const item of want) {
+    const match = got.find((row) => String(row.id) === String(item.id));
+    if (!match) return { ok: false, message: `校验失败：缺少等级 ${item.code || item.id}。` };
+    if (Number(match.min) !== Number(item.min) || Number(match.max) !== Number(item.max)) {
+      return { ok: false, message: `校验失败：${item.code} 价格区间未写入。` };
+    }
+    if (Number(match.commissionRate) !== Number(item.commissionRate)) {
+      return { ok: false, message: `校验失败：${item.code} 抽成未写入。` };
+    }
+    if (String(match.badgeBorder || "").toLowerCase() !== String(item.badgeBorder || "").toLowerCase()) {
+      return { ok: false, message: `校验失败：${item.code} 徽章边框色未写入。` };
+    }
+  }
+  return { ok: true };
+}
+
 export default async function handler(req, res) {
   try {
     if (!requireAdmin(req, res)) return;
@@ -49,7 +75,7 @@ export default async function handler(req, res) {
       const levels = await readLocalLevels();
       return json(res, 200, {
         ok: true,
-        source: "local",
+        source: "companion_levels",
         levels: levels.map(toPublicLevel),
         defaults: DEFAULT_LEVELS.map((row) => toPublicLevel(row)),
       });
@@ -63,11 +89,100 @@ export default async function handler(req, res) {
     const body = await parseBody(req);
     const action = String(body.action || "save_all").trim();
 
+    if (action === "save_one" || action === "save_current") {
+      const incoming = body.level || body.payload || null;
+      if (!incoming || typeof incoming !== "object") {
+        return json(res, 400, { ok: false, message: "请提交当前等级数据。" });
+      }
+      const levels = await upsertLocalLevel(incoming);
+      const saved = levels.find((row) => String(row.id) === String(normalizeLevelRow(incoming).id));
+      return json(res, 200, {
+        ok: true,
+        message: "当前等级已保存。点击「发布到全站」后各端立即读取最新配置。",
+        level: saved ? toPublicLevel(saved) : null,
+        levels: levels.map(toPublicLevel),
+        published: false,
+        source: "companion_levels",
+      });
+    }
+
+    if (action === "publish" || action === "publish_all") {
+      const incoming = Array.isArray(body.levels) ? body.levels : [];
+      if (!incoming.length) return json(res, 400, { ok: false, message: "请提交等级列表。" });
+      const normalized = incoming.map((row, index) => normalizeLevelRow(row, index));
+      let levels;
+      try {
+        levels = await writeLocalLevels(normalized);
+      } catch (error) {
+        const checklist = buildPublishSyncChecklist({ verified: false, error: error.message || "写入失败" });
+        return json(res, 500, {
+          ok: false,
+          message: `发布失败：${error.message || "写入等级配置失败"}`,
+          checklist,
+          sync: checklist,
+        });
+      }
+
+      const verify = verifyPublished(levels, normalized);
+      if (!verify.ok) {
+        const checklist = buildPublishSyncChecklist({ verified: false, error: verify.message });
+        return json(res, 500, {
+          ok: false,
+          message: verify.message || "发布后校验失败",
+          checklist,
+          sync: checklist,
+          levels: levels.map(toPublicLevel),
+        });
+      }
+
+      let commission = { ok: true, updated: 0, skipped: 0, errors: [] };
+      if (body.syncCommission !== false) {
+        try {
+          commission = await syncCompanionCommissionsFromLevels(levels);
+        } catch (error) {
+          commission = { ok: false, updated: 0, errors: [error.message || "抽成同步失败"] };
+        }
+      }
+
+      const checklist = buildPublishSyncChecklist({ verified: true, commission });
+      const commissionFailed = commission && commission.ok === false && !(commission.skipped > 0);
+      if (commissionFailed) {
+        return json(res, 207, {
+          ok: false,
+          message: `等级已写入，但抽成同步失败：${(commission.errors && commission.errors[0]) || "未知错误"}`,
+          checklist,
+          sync: checklist,
+          commission,
+          levels: levels.map(toPublicLevel),
+          published: true,
+          publishedAt: new Date().toISOString(),
+        });
+      }
+
+      return json(res, 200, {
+        ok: true,
+        message: "已同步全站",
+        checklist,
+        sync: checklist,
+        commission,
+        levels: levels.map(toPublicLevel),
+        published: true,
+        publishedAt: new Date().toISOString(),
+        source: "companion_levels",
+      });
+    }
+
     if (action === "save_all" || action === "save") {
       const incoming = Array.isArray(body.levels) ? body.levels : [];
       if (!incoming.length) return json(res, 400, { ok: false, message: "请提交等级列表。" });
       const levels = await writeLocalLevels(incoming.map((row, index) => normalizeLevelRow(row, index)));
-      return json(res, 200, { ok: true, message: "陪玩等级已保存，全站将同步读取。", levels: levels.map(toPublicLevel), source: "local" });
+      return json(res, 200, {
+        ok: true,
+        message: "陪玩等级已保存。建议使用「发布到全站」完成抽成同步与校验。",
+        levels: levels.map(toPublicLevel),
+        published: false,
+        source: "companion_levels",
+      });
     }
 
     if (action === "create") {
@@ -84,25 +199,25 @@ export default async function handler(req, res) {
         list.push(row);
         return { level: row };
       });
-      return json(res, 200, { ok: true, message: "已新增等级", level: toPublicLevel(created.level), source: "local" });
+      return json(res, 200, { ok: true, message: "已新增等级", level: toPublicLevel(created.level), source: "companion_levels" });
     }
 
     if (action === "delete") {
       const id = String(body.id || "").trim();
       if (!id) return json(res, 400, { ok: false, message: "缺少等级 ID。" });
-      const levels = await updateLocalLevels(async (list) => {
+      await updateLocalLevels(async (list) => {
         const next = list.filter((row) => String(row.id) !== id);
         if (next.length === list.length) throw Object.assign(new Error("等级不存在。"), { status: 404 });
         list.splice(0, list.length, ...next);
         return { levels: list };
       });
-      return json(res, 200, { ok: true, message: "已删除等级", levels: (await readLocalLevels()).map(toPublicLevel), source: "local" });
+      return json(res, 200, { ok: true, message: "已删除等级", levels: (await readLocalLevels()).map(toPublicLevel), source: "companion_levels" });
     }
 
     if (action === "reorder") {
       const ids = Array.isArray(body.ids) ? body.ids.map(String) : [];
       if (!ids.length) return json(res, 400, { ok: false, message: "缺少排序列表。" });
-      const levels = await updateLocalLevels(async (list) => {
+      await updateLocalLevels(async (list) => {
         const map = new Map(list.map((row) => [String(row.id), row]));
         const ordered = ids.map((id, index) => {
           const row = map.get(id);
@@ -117,7 +232,7 @@ export default async function handler(req, res) {
         }));
         return { levels: list };
       });
-      return json(res, 200, { ok: true, message: "排序已更新", levels: (await readLocalLevels()).map(toPublicLevel), source: "local" });
+      return json(res, 200, { ok: true, message: "排序已更新", levels: (await readLocalLevels()).map(toPublicLevel), source: "companion_levels" });
     }
 
     return json(res, 400, { ok: false, message: "未知操作。" });

@@ -133,7 +133,7 @@ html:has(.mcj-auth-page) {
 }
 
 .mcj-auth-desc {
-  margin: 0 0 22px;
+  margin: 0 0 8px;
   color: #9ca3af;
   line-height: 1.55;
   font-size: 14px;
@@ -147,9 +147,34 @@ html:has(.mcj-auth-page) {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 16px;
+  gap: 18px;
   width: 100%;
   min-width: 0;
+}
+
+/* Shared OTP + send-code row (boss / companion / forgot) */
+.mcj-auth-code-row,
+.login-code-row {
+  display: grid;
+  grid-template-columns: 1fr 132px;
+  gap: 10px;
+  align-items: stretch;
+  width: 100%;
+  min-width: 0;
+}
+
+.mcj-auth-code-row > input,
+.login-code-row > input {
+  width: 100%;
+  min-width: 0;
+}
+
+.mcj-auth-code-row .mcj-auth-btn,
+.mcj-auth-code-row .login-small-btn {
+  height: 52px;
+  min-height: 52px;
+  white-space: nowrap;
+  padding: 0 10px;
 }
 
 .mcj-auth-field {
@@ -365,7 +390,17 @@ html:has(.mcj-auth-page) {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 10px;
-  margin-bottom: 4px;
+  margin: 0 0 4px;
+}
+
+/* Method tabs (验证码登录 / 密码登录) sit below title+desc with comfortable gap */
+.mcj-auth-method-tabs,
+.mcj-auth-tabs.mcj-auth-method-tabs {
+  margin: 24px 0 0;
+}
+
+.mcj-auth-card {
+  min-height: 520px;
 }
 
 .mcj-auth-tabs .mcj-auth-btn {

@@ -14,7 +14,7 @@ body > #modal {
   margin: 0 !important;
   padding: 16px !important;
   transform: none !important;
-  z-index: 99999 !important;
+  z-index: 100100 !important;
   display: none !important;
   align-items: center !important;
   justify-content: center !important;
@@ -55,10 +55,14 @@ body > #modal.open {
   max-width: 480px !important;
   height: auto !important;
   height: fit-content !important;
-  min-height: 0 !important;
+  min-height: 560px !important;
   max-height: calc(100dvh - 32px) !important;
-  overflow: hidden !important;
-  padding: 32px 28px 24px !important;
+  /* Allow vertical scroll when register fields exceed viewport (esp. mobile + keyboard). */
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  padding: 36px 28px 28px !important;
   box-sizing: border-box !important;
   align-self: center !important;
   flex: 0 0 auto !important;
@@ -106,7 +110,7 @@ body > #modal.open {
 }
 
 #modal .boss-login-modal > .muted {
-  margin: 8px 0 0 !important;
+  margin: 10px 0 0 !important;
   padding: 0 !important;
   font-size: 16px !important;
   font-weight: 500 !important;
@@ -116,16 +120,44 @@ body > #modal.open {
   text-transform: none !important;
 }
 
+/* Push method tabs below title + description */
+#modal .boss-login-modal .login-tabs {
+  display: grid !important;
+  grid-template-columns: 1fr 1fr !important;
+  gap: 10px !important;
+  margin: 28px 0 0 !important;
+  padding: 0 !important;
+}
+
+#modal .boss-login-modal .login-tab {
+  height: 44px !important;
+  min-height: 44px !important;
+  border-radius: 999px !important;
+  border: 1px solid rgba(243, 168, 203, 0.24) !important;
+  background: rgba(255, 255, 255, 0.045) !important;
+  color: #ffe1ef !important;
+  font-weight: 800 !important;
+  font-size: 14px !important;
+  cursor: pointer;
+}
+
+#modal .boss-login-modal .login-tab.active {
+  border: 0 !important;
+  background: linear-gradient(180deg, #ffe2ef, #e7a0c4) !important;
+  color: #1b0712 !important;
+}
+
 #modal .boss-login-modal .login-panel {
   display: none !important;
   grid-template-columns: 1fr !important;
-  gap: 16px !important;
+  gap: 18px !important;
   margin-top: 0 !important;
 }
 
 #modal .boss-login-modal .login-panel.active {
   display: grid !important;
-  margin-top: 20px !important;
+  margin-top: 22px !important;
+  gap: 18px !important;
 }
 
 #modal .boss-login-modal .login-panel label {
@@ -135,6 +167,31 @@ body > #modal.open {
   font-weight: 700 !important;
   font-size: 13px !important;
   margin: 0 !important;
+}
+
+#modal .boss-login-modal .login-code-row {
+  display: grid !important;
+  grid-template-columns: 1fr 132px !important;
+  gap: 10px !important;
+  align-items: stretch !important;
+}
+
+#modal .boss-login-modal .login-code-row input {
+  width: 100% !important;
+  min-width: 0 !important;
+}
+
+#modal .boss-login-modal .login-small-btn {
+  height: 52px !important;
+  min-height: 52px !important;
+  border-radius: 14px !important;
+  border: 1px solid rgba(243, 168, 203, 0.24) !important;
+  background: rgba(255, 255, 255, 0.045) !important;
+  color: #ffe1ef !important;
+  font-weight: 800 !important;
+  cursor: pointer;
+  white-space: nowrap;
+  padding: 0 10px !important;
 }
 
 #modal .boss-login-modal .login-panel input,
@@ -216,7 +273,8 @@ body > #modal.open {
 }
 
 #modal .boss-login-modal .login-links a,
-#modal .boss-login-modal .login-links button.linkish {
+#modal .boss-login-modal .login-links button.linkish,
+#modal .boss-login-modal .login-links button[data-forgot-password] {
   appearance: none;
   border: 0;
   background: none;
@@ -233,20 +291,48 @@ body > #modal.open {
 }
 
 #modal .boss-login-modal .login-links a:hover,
-#modal .boss-login-modal .login-links button.linkish:hover {
+#modal .boss-login-modal .login-links button.linkish:hover,
+#modal .boss-login-modal .login-links button[data-forgot-password]:hover {
   text-decoration: underline;
 }
 
 @media (max-width: 560px) {
+  /* Overlay: vertically center auth dialog on mobile. */
+  #modal.modal,
+  body > #modal {
+    align-items: center !important;
+    justify-content: center !important;
+    padding: max(8px, env(safe-area-inset-top, 0px)) 12px max(8px, env(safe-area-inset-bottom, 0px)) !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  #modal.modal.open,
+  body > #modal.open {
+    align-items: center !important;
+    justify-content: center !important;
+  }
+
   #modal .dialog.is-auth-dialog,
   #modal .dialog:has(.boss-login-modal) {
-    width: calc(100vw - 32px) !important;
-    max-width: calc(100vw - 32px) !important;
-    padding: 28px 20px 24px !important;
+    width: calc(100vw - 24px) !important;
+    max-width: calc(100vw - 24px) !important;
+    min-height: min(520px, 86dvh) !important;
+    max-height: 90dvh !important;
+    max-height: 90vh !important; /* fallback */
+    margin: auto !important;
+    padding: 30px 20px calc(26px + env(safe-area-inset-bottom, 0px)) !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    align-self: center !important;
   }
 
   #modal .boss-login-modal {
     padding-right: 28px !important;
+    padding-bottom: 8px !important;
   }
 
   #modal .boss-login-modal h2 {
@@ -257,16 +343,40 @@ body > #modal.open {
     font-size: 14px !important;
   }
 
+  #modal .boss-login-modal .login-tabs {
+    margin-top: 24px !important;
+  }
+
+  #modal .boss-login-modal .login-panel.active {
+    margin-top: 20px !important;
+    gap: 16px !important;
+    padding-bottom: 4px !important;
+  }
+
+  #modal .boss-login-modal .login-code-row {
+    grid-template-columns: 1fr 118px !important;
+  }
+
+  #modal .boss-login-modal .login-submit {
+    margin-bottom: 4px !important;
+  }
+
   #modal .boss-login-modal .login-links {
     gap: 8px !important;
+    height: auto !important;
+    min-height: 40px !important;
+    padding-bottom: 4px !important;
   }
 
   #modal .boss-login-modal .login-links a,
-  #modal .boss-login-modal .login-links button.linkish {
+  #modal .boss-login-modal .login-links button.linkish,
+  #modal .boss-login-modal .login-links button[data-forgot-password] {
     font-size: 12px;
+    line-height: 1.4;
   }
 }
 
+/* Body scroll lock only — modal dialog remains scrollable. */
 html.mcj-modal-open,
 body.mcj-modal-open {
   overflow: hidden !important;

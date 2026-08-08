@@ -1,19 +1,15 @@
 ﻿(function () {
   "use strict";
 
-  var SERVICES = ["陪玩", "护航", "跑刀", "代肝", "自定义"];
+  var LEGACY_SERVICE_NAMES = { "陪玩": 1, "护航": 1, "跑刀": 1, "代肝": 1, "自定义": 1, "陪玩服务": 1, "陪聊服务": 1 };
   var HOURS = [
     { id: "1", label: "1 小时", value: 1 },
     { id: "2", label: "2 小时", value: 2 },
     { id: "3", label: "3 小时", value: 3 },
     { id: "custom", label: "自定义", value: 0, custom: true },
   ];
-  var PAYMENTS = [
-    { id: "tng", label: "TNG" },
-    { id: "bank", label: "银行卡" },
-    { id: "alipay", label: "支付宝" },
-    { id: "catfood", label: "猫粮余额" },
-  ];
+  // Never hardcode channel list — filled live from /api/recharge (payment_channels SoT).
+  var PAYMENTS = [];
 
   var DEFAULT_AVATAR = "/default-avatar.png";
   var toastTimer = null;
@@ -21,16 +17,18 @@
   var state = {
     open: false,
     companion: null,
-    service: "陪玩",
+    service: "",
     customService: "",
+    selectedServiceId: "",
     hoursMode: "1",
     hours: 1,
     quantity: 1,
     couponCode: "",
-    payment: "tng",
+    payment: "",
     submitting: false,
     submitStartedAt: 0,
     walletBalance: null,
+    payMethods: [],
   };
 
   function esc(v) {
@@ -128,9 +126,30 @@
     btn.setAttribute("aria-busy", on ? "true" : "false");
     btn.textContent = on ? "提交中…" : "确认订单并付款";
   }
+  function applyOrderPayMethods(body) {
+    // Sole SoT: GET /api/recharge → orderPayMethods (payment_channels + wallet gate).
+    // Never reconstruct from body.methods / never hardcode fallback channels.
+    var list = Array.isArray(body && body.orderPayMethods) ? body.orderPayMethods : [];
+    state.payMethods = list
+      .filter(function (m) {
+        return m && (m.id || m.code) && m.open !== false;
+      })
+      .map(function (m) {
+        return {
+          id: m.id || m.code,
+          label: m.label || m.name || m.code || m.id,
+          open: true,
+          statusText: m.statusText || "可用",
+        };
+      });
+    if (!state.payMethods.some(function (p) { return p.id === state.payment; })) {
+      state.payment = state.payMethods[0] ? state.payMethods[0].id : "";
+    }
+  }
   function refreshWalletBalance() {
     if (!token()) {
       state.walletBalance = null;
+      state.payMethods = [];
       return Promise.resolve(null);
     }
     return fetch("/api/recharge", { method: "GET", headers: authHeaders() })
@@ -144,6 +163,7 @@
                 ? body.wallet.totalBalance
                 : null;
           state.walletBalance = bal == null ? null : money(bal);
+          applyOrderPayMethods(body);
           return state.walletBalance;
         });
       })
@@ -160,31 +180,49 @@
     var total = totalAmount();
     var bal = state.walletBalance;
     var catInsufficient = bal != null && !(bal + 1e-9 >= total);
-    grid.innerHTML = PAYMENTS.map(function (p) {
-      var insufficient = p.id === "catfood" && catInsufficient;
-      if (insufficient) {
+    // Only SoT list from /api/recharge. PAYMENTS is intentionally empty (no hardcode fallback).
+    var list = state.payMethods && state.payMethods.length ? state.payMethods : [];
+    if (!list.length) {
+      grid.innerHTML =
+        '<p class="mcj-po-empty-services" style="color:#9ca3af;font-size:13px;margin:0">暂无可用支付方式，请联系管理员在后台启用</p>';
+      state.payment = "";
+      return;
+    }
+    grid.innerHTML = list
+      .map(function (p) {
+        var insufficient = p.id === "catfood" && catInsufficient;
+        if (insufficient) {
+          return (
+            '<button type="button" class="mcj-po-pay-card is-maintenance" disabled aria-disabled="true">' +
+            '<span class="mcj-po-pay-title">' +
+            esc(p.label) +
+            '</span><span class="mcj-po-pay-check">余额不足</span></button>'
+          );
+        }
         return (
-          '<button type="button" class="mcj-po-pay-card is-maintenance" disabled aria-disabled="true">' +
-          '<span class="mcj-po-pay-title">' +
+          '<button type="button" class="mcj-po-pay-card' +
+          (state.payment === p.id ? " active" : "") +
+          '" data-po-pay="' +
+          esc(p.id) +
+          '"><span class="mcj-po-pay-title">' +
           esc(p.label) +
-          '</span><span class="mcj-po-pay-check">余额不足</span></button>'
+          '</span><span class="mcj-po-pay-check" aria-hidden="true"></span></button>'
         );
-      }
-      return (
-        '<button type="button" class="mcj-po-pay-card' +
-        (state.payment === p.id ? " active" : "") +
-        '" data-po-pay="' +
-        esc(p.id) +
-        '"><span class="mcj-po-pay-title">' +
-        esc(p.label) +
-        '</span><span class="mcj-po-pay-check" aria-hidden="true"></span></button>'
-      );
-    }).join("");
-    if (state.payment === "catfood" && catInsufficient) state.payment = "tng";
+      })
+      .join("");
+    if (state.payment === "catfood" && catInsufficient) {
+      var alt = list.find(function (p) {
+        return p.id !== "catfood";
+      });
+      state.payment = alt ? alt.id : "catfood";
+    }
+    if (!list.some(function (p) { return p.id === state.payment; })) {
+      state.payment = list[0] ? list[0].id : "";
+    }
     grid.querySelectorAll("[data-po-pay]").forEach(function (btn) {
       btn.addEventListener("click", function () {
         if (btn.disabled) return;
-        state.payment = btn.getAttribute("data-po-pay") || "tng";
+        state.payment = btn.getAttribute("data-po-pay") || "";
         setExclusiveActive(grid.querySelectorAll("[data-po-pay]"), btn);
       });
     });
@@ -268,45 +306,278 @@
             : raw.hourlyPrice
     );
     var service =
-      String(raw.service || raw.serviceType || raw.serviceName || raw.game || raw.mainGame || "陪玩").trim() ||
-      "陪玩";
+      String(raw.service || raw.serviceName || raw.game || raw.mainGame || "").trim();
+    if (LEGACY_SERVICE_NAMES[service]) service = "";
     var level = String(raw.level || raw.levelName || raw.rank || raw.tier || "").trim() || "认证陪玩";
-    var onlineRaw = raw.online != null ? raw.online : raw.isOnline != null ? raw.isOnline : raw.status;
-    var online =
-      onlineRaw === true ||
-      onlineRaw === 1 ||
-      /online|在线|busy|接单中/i.test(String(onlineRaw || ""));
+    var onlineRaw =
+      raw.availabilityStatus ||
+      raw.availability_status ||
+      raw.availabilityText ||
+      raw.onlineStatus ||
+      raw.online_status ||
+      raw.status;
+    var presence =
+      window.MCJCompanionPresence && window.MCJCompanionPresence.fromCompanion
+        ? window.MCJCompanionPresence.fromCompanion(raw)
+        : null;
+    var online = presence
+      ? presence.code === "online" || presence.code === "busy"
+      : onlineRaw === true ||
+        onlineRaw === 1 ||
+        /online|在线|busy|接单中|忙碌/i.test(String(onlineRaw || ""));
+    var gamePrices = raw.gamePrices || raw.game_prices || {};
+    if (typeof gamePrices !== "object" || !gamePrices) gamePrices = {};
+    var serviceIds = raw.serviceIds || raw.service_ids || [];
+    if (!Array.isArray(serviceIds)) serviceIds = [];
+    var services = Array.isArray(raw.services) ? raw.services.slice() : [];
+    var game = String(raw.game || raw.mainGame || raw.main_game || "").trim();
     return {
       companionId: id,
       companionName: name,
       unitPrice: unitPrice,
       service: service,
+      game: game,
+      mainGame: game,
+      services: services,
+      serviceIds: serviceIds,
+      gamePrices: gamePrices,
       pricingUnit: String(raw.pricingUnit || raw.pricing_unit || "小时"),
       avatar: avatarSrc(raw.avatar || raw.cover || raw.cardImageUrl || ""),
       publicId: raw.publicId || "",
       level: level,
       online: online,
+      availabilityStatus: presence ? presence.code : String(raw.availabilityStatus || "").toLowerCase() || "",
+      availabilityText: presence ? presence.label : raw.availabilityText || (online ? "在线可接单" : "离线"),
     };
   }
-  function matchService(service) {
+  function splitGameNames(value) {
+    return String(value || "")
+      .split(/[,，、\/|]+/)
+      .map(function (s) {
+        return String(s || "").trim();
+      })
+      .filter(function (s) {
+        return s && !LEGACY_SERVICE_NAMES[s];
+      });
+  }
+  function normalizeServiceItem(s, idx) {
+    if (s == null) return null;
+    if (typeof s === "string") {
+      var n = String(s).trim();
+      if (!n || LEGACY_SERVICE_NAMES[n]) return null;
+      return { id: "name:" + n, serviceId: "", name: n, price: 0, pricingUnit: "小时", sort: idx || 0 };
+    }
+    if (typeof s !== "object") return null;
+    var name = String(s.name || s.title || s.serviceName || s.game || "").trim();
+    if (!name || LEGACY_SERVICE_NAMES[name]) return null;
+    return {
+      id: String(s.id || s.serviceId || s.service_id || "name:" + name),
+      serviceId: String(s.serviceId || s.service_id || (/^[0-9a-f-]{36}$/i.test(String(s.id || "")) ? s.id : "") || ""),
+      name: name,
+      price: money(s.price != null ? s.price : s.unitPrice != null ? s.unitPrice : 0),
+      pricingUnit: String(s.pricingUnit || s.pricing_unit || "小时"),
+      sort: s.sort != null ? Number(s.sort) : idx || 0,
+    };
+  }
+  function resolveServices(companion) {
+    companion = companion || {};
+    var out = [];
+    var seen = Object.create(null);
+    function push(item) {
+      if (!item || !item.name || LEGACY_SERVICE_NAMES[item.name]) return;
+      var key = String(item.serviceId || item.id || item.name).toLowerCase();
+      if (seen[key] || seen["n:" + item.name]) return;
+      seen[key] = 1;
+      seen["n:" + item.name] = 1;
+      out.push(item);
+    }
+    if (Array.isArray(companion.services)) {
+      companion.services.forEach(function (s, i) {
+        push(normalizeServiceItem(s, i));
+      });
+    }
+    var prices = companion.gamePrices && typeof companion.gamePrices === "object" ? companion.gamePrices : {};
+    var games = splitGameNames(companion.game || companion.mainGame || "");
+    if (!out.length && Array.isArray(companion.serviceIds) && companion.serviceIds.length) {
+      companion.serviceIds.forEach(function (id, i) {
+        var sid = String(id || "").trim();
+        if (!sid) return;
+        var named =
+          games[i] ||
+          (!/^[0-9a-f-]{36}$/i.test(sid) ? sid : "") ||
+          Object.keys(prices).find(function (k) {
+            return k === sid || (!/^[0-9a-f-]{36}$/i.test(k) && money(prices[k]) === money(prices[sid]) && money(prices[k]) > 0);
+          }) ||
+          "";
+        if (!named || LEGACY_SERVICE_NAMES[named]) return;
+        push({
+          id: sid,
+          serviceId: sid,
+          name: named,
+          price: money(prices[sid] != null ? prices[sid] : prices[named] != null ? prices[named] : companion.unitPrice),
+          pricingUnit: companion.pricingUnit || "小时",
+          sort: i,
+        });
+      });
+    }
+    if (!out.length && games.length) {
+      games.forEach(function (g, i) {
+        push({
+          id: "name:" + g,
+          serviceId: "",
+          name: g,
+          price: money(prices[g] != null ? prices[g] : companion.unitPrice),
+          pricingUnit: companion.pricingUnit || "小时",
+          sort: i,
+        });
+      });
+    }
+    if (!out.length && companion.service && !LEGACY_SERVICE_NAMES[companion.service]) {
+      push({
+        id: "name:" + companion.service,
+        serviceId: "",
+        name: companion.service,
+        price: money(companion.unitPrice),
+        pricingUnit: companion.pricingUnit || "小时",
+        sort: 0,
+      });
+    }
+    out.forEach(function (s) {
+      if (!(s.price > 0)) {
+        s.price = money(prices[s.name] || prices[s.serviceId] || prices[s.id] || companion.unitPrice || 0);
+      }
+    });
+    return out;
+  }
+  function applySelectedService(svc) {
+    if (!svc || !svc.name) return;
+    state.service = svc.name;
+    state.customService = "";
+    state.selectedServiceId = svc.serviceId || svc.id || "";
+    if (state.companion) {
+      if (money(svc.price) > 0) state.companion.unitPrice = money(svc.price);
+      if (svc.pricingUnit) state.companion.pricingUnit = svc.pricingUnit;
+      state.companion.service = svc.name;
+    }
+    var mask = activeMask();
+    if (mask) {
+      mask.querySelectorAll("[data-po-service]").forEach(function (btn) {
+        var on = btn.getAttribute("data-po-service") === state.service;
+        btn.classList.toggle("active", on);
+        btn.setAttribute("aria-pressed", on ? "true" : "false");
+      });
+      var preview = mask.querySelector("[data-po-service-preview]");
+      if (preview) preview.textContent = currentServiceLabel();
+      var hero = mask.querySelector("[data-po-price-hero]");
+      if (hero && state.companion) hero.textContent = moneyText(state.companion.unitPrice);
+      var unitLabel = mask.querySelector(".mcj-po-price-row small");
+      if (unitLabel && state.companion) unitLabel.textContent = "/ " + (state.companion.pricingUnit || "小时");
+    }
+    refreshTotals();
+  }
+  function remountServiceChips() {
+    var mask = activeMask();
+    if (!mask || !state.companion) return;
+    var wrap = mask.querySelector(".mcj-po-chips[role='group']");
+    if (!wrap) return;
+    var services = resolveServices(state.companion);
+    if (!services.length) {
+      wrap.innerHTML = '<span class="mcj-po-empty-services" style="color:#9ca3af;font-size:13px">该陪玩暂无可下单服务项目</span>';
+      return;
+    }
+    wrap.innerHTML = services
+      .map(function (s) {
+        return (
+          '<button type="button" data-po-service="' +
+          esc(s.name) +
+          '" data-po-service-id="' +
+          esc(s.serviceId || s.id || "") +
+          '" data-po-service-price="' +
+          esc(s.price) +
+          '" class="mcj-po-chip' +
+          (state.service === s.name ? " active" : "") +
+          '" aria-pressed="' +
+          (state.service === s.name ? "true" : "false") +
+          '">' +
+          esc(s.name) +
+          "</button>"
+        );
+      })
+      .join("");
+    wrap.querySelectorAll("[data-po-service]").forEach(function (btn) {
+      btn.addEventListener("click", function (ev) {
+        ev.preventDefault();
+        var name = btn.getAttribute("data-po-service") || "";
+        var list = resolveServices(state.companion);
+        var svc = list.find(function (s) {
+          return s.name === name;
+        });
+        if (svc) applySelectedService(svc);
+      });
+    });
+    // hide legacy custom input if present
+    var customWrap = mask.querySelector("[data-po-custom-service]");
+    if (customWrap) customWrap.classList.remove("show");
+  }
+  function hydrateFromCatalog(companionId) {
+    companionId = String(companionId || (state.companion && state.companion.companionId) || "").trim();
+    if (!companionId) return Promise.resolve(null);
+    return fetch("/api/boss/marketplace?action=catalog&companionId=" + encodeURIComponent(companionId), {
+      headers: authHeaders(),
+      cache: "no-store",
+    })
+      .then(function (res) {
+        return res.json().then(function (body) {
+          if (!res.ok || (body && body.ok === false)) throw new Error((body && body.message) || "服务目录读取失败");
+          return body;
+        });
+      })
+      .then(function (body) {
+        if (!state.companion || String(state.companion.companionId) !== companionId) return body;
+        var services = Array.isArray(body.services) ? body.services : [];
+        var catC = body.companion || {};
+        state.companion.services = services;
+        if (catC.gamePrices || catC.game_prices) state.companion.gamePrices = catC.gamePrices || catC.game_prices;
+        if (catC.serviceIds || catC.service_ids) state.companion.serviceIds = catC.serviceIds || catC.service_ids;
+        var gameName = catC.game || catC.mainGame || "";
+        if (gameName) {
+          state.companion.game = gameName;
+          state.companion.mainGame = gameName;
+        }
+        if (state.open) {
+          remountServiceChips();
+          var list = resolveServices(state.companion);
+          var cur =
+            list.find(function (s) {
+              return s.name === state.service;
+            }) || list[0];
+          if (cur) applySelectedService(cur);
+        }
+        return body;
+      })
+      .catch(function () {
+        return null;
+      });
+  }
+  function matchService(service, companion) {
+    var list = resolveServices(companion || state.companion || {});
     var s = String(service || "").trim();
-    if (!s) return { service: "陪玩", custom: "" };
-    for (var i = 0; i < SERVICES.length; i++) {
-      if (SERVICES[i] === "自定义") continue;
-      if (s === SERVICES[i] || s.indexOf(SERVICES[i]) !== -1) {
-        return { service: SERVICES[i], custom: "" };
+    if (LEGACY_SERVICE_NAMES[s]) s = "";
+    if (s) {
+      for (var i = 0; i < list.length; i++) {
+        if (list[i].name === s || s.indexOf(list[i].name) !== -1 || list[i].name.indexOf(s) !== -1) {
+          return { service: list[i].name, custom: "", item: list[i] };
+        }
       }
     }
-    return { service: "自定义", custom: s };
+    if (list[0]) return { service: list[0].name, custom: "", item: list[0] };
+    return { service: "", custom: "", item: null };
   }
   function currentHours() {
     return Math.max(0.5, money(state.hours) || 1);
   }
   function currentServiceLabel() {
-    if (state.service === "自定义") {
-      return String(state.customService || "").trim() || "自定义";
-    }
-    return state.service;
+    return String(state.service || "").trim() || "未选择服务";
   }
   function currentQuantity() {
     return Math.max(1, Math.floor(money(state.quantity) || 1));
@@ -322,7 +593,7 @@
     try {
       var cid = state.companion && state.companion.companionId;
       var back = cid
-        ? "profile.html?player=" + encodeURIComponent(cid) + "&open_order=1"
+        ? "profile.html?id=" + encodeURIComponent(cid) + "&open_order=1"
         : location.href;
       sessionStorage.setItem("mcjAfterLoginRedirect", back);
     } catch (e) {}
@@ -421,19 +692,31 @@
     close({ fromPop: true });
     state.open = true;
 
-    var serviceChips = SERVICES.map(function (s) {
-      return (
-        '<button type="button" data-po-service="' +
-        esc(s) +
-        '" class="mcj-po-chip' +
-        (state.service === s ? " active" : "") +
-        '" aria-pressed="' +
-        (state.service === s ? "true" : "false") +
-        '">' +
-        esc(s) +
-        "</button>"
-      );
-    }).join("");
+    var companionServices = resolveServices(c);
+    if (companionServices.length && !companionServices.some(function (s) { return s.name === state.service; })) {
+      state.service = companionServices[0].name;
+      state.selectedServiceId = companionServices[0].serviceId || companionServices[0].id || "";
+      if (companionServices[0].price > 0) c.unitPrice = companionServices[0].price;
+    }
+    var serviceChips = companionServices.length
+      ? companionServices.map(function (s) {
+          return (
+            '<button type="button" data-po-service="' +
+            esc(s.name) +
+            '" data-po-service-id="' +
+            esc(s.serviceId || s.id || "") +
+            '" data-po-service-price="' +
+            esc(s.price) +
+            '" class="mcj-po-chip' +
+            (state.service === s.name ? " active" : "") +
+            '" aria-pressed="' +
+            (state.service === s.name ? "true" : "false") +
+            '">' +
+            esc(s.name) +
+            "</button>"
+          );
+        }).join("")
+      : '<span class="mcj-po-empty-services" data-po-services-loading style="color:#9ca3af;font-size:13px">正在读取该陪玩的服务项目…</span>';
     var hourChips = HOURS.map(function (h) {
       return (
         '<button type="button" data-po-hours="' +
@@ -447,17 +730,22 @@
         "</button>"
       );
     }).join("");
-    var payCards = PAYMENTS.map(function (p) {
-      return (
-        '<button type="button" class="mcj-po-pay-card' +
-        (state.payment === p.id ? " active" : "") +
-        '" data-po-pay="' +
-        esc(p.id) +
-        '"><span class="mcj-po-pay-title">' +
-        esc(p.label) +
-        '</span><span class="mcj-po-pay-check" aria-hidden="true"></span></button>'
-      );
-    }).join("");
+    var payList = state.payMethods && state.payMethods.length ? state.payMethods : [];
+    var payCards = payList.length
+      ? payList
+          .map(function (p) {
+            return (
+              '<button type="button" class="mcj-po-pay-card' +
+              (state.payment === p.id ? " active" : "") +
+              '" data-po-pay="' +
+              esc(p.id) +
+              '"><span class="mcj-po-pay-title">' +
+              esc(p.label) +
+              '</span><span class="mcj-po-pay-check" aria-hidden="true"></span></button>'
+            );
+          })
+          .join("")
+      : '<p class="mcj-po-empty-services" style="color:#9ca3af;font-size:13px;margin:0">正在读取支付方式…</p>';
 
     var mask = document.createElement("div");
     mask.className = "mcj-po-mask";
@@ -488,7 +776,7 @@
       '<span class="mcj-po-pill' +
       (c.online ? " online" : "") +
       '">' +
-      (c.online ? "在线" : "离线") +
+      esc(c.availabilityText || (c.online ? "在线可接单" : "离线")) +
       "</span>" +
       "</div></div></div>" +
       '<button type="button" class="mcj-po-close" data-po-close aria-label="关闭">×</button>' +
@@ -506,11 +794,6 @@
       '<div class="mcj-po-field"><span class="mcj-po-label">游戏/服务项目</span><div class="mcj-po-chips" role="group">' +
       serviceChips +
       "</div></div>" +
-      '<div class="mcj-po-custom-service' +
-      (state.service === "自定义" ? " show" : "") +
-      '" data-po-custom-service><label>自定义服务内容<input data-po-custom-service-input value="' +
-      esc(state.customService) +
-      '" placeholder="例如：双排陪练"></label></div>' +
       '<div class="mcj-po-field"><span class="mcj-po-label">数量或时长</span><div class="mcj-po-chips" role="radiogroup">' +
       hourChips +
       "</div>" +
@@ -617,22 +900,20 @@
     mask.querySelectorAll("[data-po-service]").forEach(function (btn) {
       btn.addEventListener("click", function (ev) {
         ev.preventDefault();
-        state.service = btn.getAttribute("data-po-service") || "陪玩";
+        var name = btn.getAttribute("data-po-service") || "";
+        var list = resolveServices(state.companion);
+        var svc = list.find(function (s) {
+          return s.name === name;
+        }) || {
+          name: name,
+          serviceId: btn.getAttribute("data-po-service-id") || "",
+          price: money(btn.getAttribute("data-po-service-price")),
+          pricingUnit: (state.companion && state.companion.pricingUnit) || "小时",
+        };
+        applySelectedService(svc);
         setExclusiveActive(mask.querySelectorAll("[data-po-service]"), btn);
-        var wrap = mask.querySelector("[data-po-custom-service]");
-        if (wrap) wrap.classList.toggle("show", state.service === "自定义");
-        var preview = mask.querySelector("[data-po-service-preview]");
-        if (preview) preview.textContent = currentServiceLabel();
       });
     });
-    var customServiceInput = mask.querySelector("[data-po-custom-service-input]");
-    if (customServiceInput) {
-      customServiceInput.addEventListener("input", function () {
-        state.customService = customServiceInput.value;
-        var preview = mask.querySelector("[data-po-service-preview]");
-        if (preview) preview.textContent = currentServiceLabel();
-      });
-    }
     mask.querySelectorAll("[data-po-hours]").forEach(function (btn) {
       btn.addEventListener("click", function (ev) {
         ev.preventDefault();
@@ -672,7 +953,7 @@
     mask.querySelectorAll("[data-po-pay]").forEach(function (btn) {
       btn.addEventListener("click", function () {
         if (btn.disabled) return;
-        state.payment = btn.getAttribute("data-po-pay") || "tng";
+        state.payment = btn.getAttribute("data-po-pay") || "";
         setExclusiveActive(mask.querySelectorAll("[data-po-pay]"), btn);
       });
     });
@@ -727,6 +1008,23 @@
     close();
     toast("下单成功");
     if (oid) {
+      try {
+        var list = [];
+        try {
+          list = JSON.parse(localStorage.getItem("mcjBossOrdersCache") || "[]");
+          if (!Array.isArray(list)) list = [];
+        } catch (eList) {
+          list = [];
+        }
+        var row = Object.assign({}, order || {}, {
+          id: oid,
+          status: order && order.status ? order.status : "awaiting_payment",
+          statusText: (order && order.statusText) || "待付款",
+          createdAt: (order && (order.createdAt || order.created_at)) || new Date().toISOString(),
+        });
+        list = [row].concat(list.filter(function (x) { return String(x.id) !== String(oid); }));
+        localStorage.setItem("mcjBossOrdersCache", JSON.stringify(list.slice(0, 80)));
+      } catch (eCache) {}
       location.href = "orders.html?id=" + encodeURIComponent(oid);
       return;
     }
@@ -738,14 +1036,16 @@
     close();
     if (oid) {
       try {
-        sessionStorage.setItem(
-          "mcjOrderCache:" + oid,
-          JSON.stringify({
-            id: oid,
-            paymentMethod: state.payment,
-            totalAmount: order.totalAmount || totalAmount(),
-          })
-        );
+        var cachePayload = JSON.stringify({
+          id: oid,
+          status: "awaiting_payment",
+          paymentMethod: state.payment,
+          totalAmount: order.totalAmount || totalAmount(),
+        });
+        try {
+          localStorage.setItem("mcjOrderCache:" + oid, cachePayload);
+        } catch (e2) {}
+        sessionStorage.setItem("mcjOrderCache:" + oid, cachePayload);
       } catch (e) {}
       location.href = "payment-confirm.html?order=" + encodeURIComponent(oid);
       return;
@@ -771,6 +1071,15 @@
       var c = state.companion;
       if (!c || !c.companionId) {
         failValidate("缺少陪玩信息，无法下单");
+        return;
+      }
+      var svcList = resolveServices(c);
+      if (!svcList.length) {
+        failValidate("该陪玩暂无可下单服务项目");
+        return;
+      }
+      if (!state.service || !svcList.some(function (s) { return s.name === state.service; })) {
+        failValidate("请选择游戏/服务项目");
         return;
       }
       if (!(money(c.unitPrice) > 0)) {
@@ -818,7 +1127,7 @@
       }
       if (isWalletPayment(payment)) {
         if (state.walletBalance != null && !(state.walletBalance + 1e-9 >= total)) {
-          failValidate("猫粮余额不足，请改用 TNG / 银行卡 / 支付宝或先充值");
+          failValidate("猫粮余额不足，请改用其他支付方式或先充值");
           return;
         }
       }
@@ -929,33 +1238,43 @@
       console.error("[MCJPlaceOrder] missing companion", rawCompanion);
       return;
     }
-    if (!(companion.unitPrice > 0)) {
+    var bootServices = resolveServices(companion);
+    if (!(companion.unitPrice > 0) && bootServices[0] && bootServices[0].price > 0) {
+      companion.unitPrice = bootServices[0].price;
+    }
+    if (!(companion.unitPrice > 0) && !bootServices.length) {
+      // Allow open; hydrateFromCatalog may still bring prices.
+      companion.unitPrice = companion.unitPrice || 0;
+    } else if (!(companion.unitPrice > 0)) {
       failOpen("该陪玩暂无有效单价，暂不可下单");
       console.error("[MCJPlaceOrder] invalid unitPrice", companion);
       return;
     }
     state.companion = companion;
-    var matched = matchService(companion.service);
+    var matched = matchService(companion.service, companion);
     state.service = matched.service;
-    state.customService = matched.custom;
+    state.customService = "";
+    state.selectedServiceId = (matched.item && (matched.item.serviceId || matched.item.id)) || "";
+    if (matched.item && matched.item.price > 0) companion.unitPrice = matched.item.price;
     state.hoursMode = "1";
     state.hours = 1;
     state.quantity = 1;
     state.couponCode = "";
-    state.payment = "tng";
+    state.payment = state.payMethods[0] ? state.payMethods[0].id : "";
     state.submitting = false;
     state.submitStartedAt = 0;
     try {
       paint();
+      hydrateFromCatalog(companion.companionId);
     } catch (err) {
       console.error("[MCJPlaceOrder] paint crashed", err);
       failOpen("下单窗口加载失败，请重新打开");
     }
   }
 
-  function openFromProfileCompanion(companion, extras) {
+  function openFromCanonicalCompanion(src, extras) {
     extras = extras || {};
-    var src = companion && typeof companion === "object" ? companion : {};
+    src = src && typeof src === "object" ? src : {};
     var companionId = String(
       extras.companionId || src.companionId || src.companion_id || src.id || src.uid || ""
     ).trim();
@@ -979,18 +1298,34 @@
       var nextPrice = money(unitPrice);
       if (nextPrice > 0) state.companion.unitPrice = nextPrice;
       if (companionName) state.companion.companionName = companionName;
-      if (extras.avatar || src.avatar) state.companion.avatar = extras.avatar || src.avatar || state.companion.avatar;
+      if (extras.avatar || src.avatar || src.cover) {
+        state.companion.avatar = extras.avatar || src.avatar || src.cover || state.companion.avatar;
+      }
       if (extras.publicId || src.publicId) state.companion.publicId = extras.publicId || src.publicId || state.companion.publicId;
       if (extras.pricingUnit || src.pricingUnit) {
         state.companion.pricingUnit = extras.pricingUnit || src.pricingUnit || state.companion.pricingUnit;
       }
-      var matched = matchService(extras.service || src.service || src.serviceType || src.game || state.companion.service);
-      if (matched.service && matched.service !== "自定义") {
-        state.service = matched.service;
-        state.customService = "";
+      if (Array.isArray(extras.services) || Array.isArray(src.services)) {
+        state.companion.services = extras.services || src.services || state.companion.services;
       }
-      refreshTotals();
-      paintPayCards();
+      if (extras.serviceIds || extras.service_ids || src.serviceIds || src.service_ids) {
+        state.companion.serviceIds = extras.serviceIds || extras.service_ids || src.serviceIds || src.service_ids;
+      }
+      if (extras.gamePrices || extras.game_prices || src.gamePrices || src.game_prices) {
+        state.companion.gamePrices = extras.gamePrices || extras.game_prices || src.gamePrices || src.game_prices;
+      }
+      var gameName = extras.game || src.game || src.mainGame || extras.service || "";
+      if (gameName && !LEGACY_SERVICE_NAMES[gameName]) {
+        state.companion.game = gameName;
+        state.companion.mainGame = gameName;
+      }
+      remountServiceChips();
+      var matched = matchService(extras.service || src.service || src.game || state.companion.service, state.companion);
+      if (matched.item) applySelectedService(matched.item);
+      else {
+        refreshTotals();
+        paintPayCards();
+      }
       return;
     }
 
@@ -1003,8 +1338,12 @@
       unitPrice: unitPrice,
       priceValue: unitPrice,
       price: unitPrice,
-      service: extras.service || src.service || src.serviceType || src.game || src.mainGame || "陪玩",
-      game: extras.service || src.game || src.mainGame || "陪玩",
+      service: extras.service || src.service || src.game || src.mainGame || "",
+      game: extras.game || src.game || src.mainGame || extras.service || "",
+      mainGame: extras.game || src.game || src.mainGame || "",
+      services: extras.services || src.services || [],
+      serviceIds: extras.serviceIds || extras.service_ids || src.serviceIds || src.service_ids || [],
+      gamePrices: extras.gamePrices || extras.game_prices || src.gamePrices || src.game_prices || {},
       avatar: extras.avatar || src.avatar || src.cover || "",
       publicId: extras.publicId || src.publicId || "",
       pricingUnit: extras.pricingUnit || src.pricingUnit || "小时",
@@ -1013,6 +1352,48 @@
     });
   }
 
+  function openFromProfileCompanion(companion, extras) {
+    extras = extras || {};
+    var src = companion && typeof companion === "object" ? companion : {};
+    // Always open immediately with known payload — never leave 立即下单 looking dead.
+    openFromCanonicalCompanion(src, extras);
+    var companionId = String(
+      extras.companionId || src.companionId || src.companion_id || src.id || src.uid || ""
+    ).trim();
+    if (!companionId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(companionId)) {
+      return;
+    }
+    // Soft refresh from the same public companion record used by home / hall / detail.
+    fetch("/api/public/companions?id=" + encodeURIComponent(companionId), {
+      headers: { Accept: "application/json" },
+      cache: "no-store",
+    })
+      .then(function (res) {
+        return res.json().then(function (body) {
+          if (!res.ok || !body || body.ok === false) throw new Error((body && body.message) || "陪玩资料读取失败");
+          var list = Array.isArray(body.companions) ? body.companions : body.companion ? [body.companion] : [];
+          var row = list[0] || null;
+          if (!row) throw new Error("陪玩资料不存在");
+          return row;
+        });
+      })
+      .then(function (row) {
+        var merged = Object.assign({}, extras, {
+          services: extras.services || row.services || [],
+          serviceIds: extras.serviceIds || row.serviceIds || row.service_ids || [],
+          gamePrices: extras.gamePrices || row.gamePrices || row.game_prices || {},
+          game: extras.game || row.game || row.mainGame || "",
+          service: extras.service || (row.services && row.services[0] && row.services[0].name) || row.game || "",
+        });
+        openFromCanonicalCompanion(row, merged);
+        hydrateFromCatalog(companionId);
+      })
+      .catch(function () {
+        hydrateFromCatalog(companionId);
+      });
+  }
+
+  window.MCJ_PAY_SOT_VERSION = '20260808paySotForceSrc1';
   window.MCJPlaceOrder = {
     open: open,
     openFromCompanion: openFromProfileCompanion,
@@ -1024,6 +1405,9 @@
       return !!state.open;
     },
     submit: submitOrder,
+    resolveServices: resolveServices,
+    applySelectedService: applySelectedService,
+    hydrateFromCatalog: hydrateFromCatalog,
   };
 
   window.addEventListener("popstate", function () {

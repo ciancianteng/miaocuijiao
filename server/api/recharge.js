@@ -10,18 +10,22 @@ import {
   viewTx,
   viewWallet,
 } from "./_wallet.js";
+import {
+  CANONICAL_PAYMENT_CHANNELS,
+  listBossOrderPaymentMethods,
+  listBossPaymentMethods,
+  loadChannelPayInfo,
+  normalizePaymentChannelId,
+} from "./_platform-pay-qr.js";
 
 loadLocalEnv();
 
 const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY"];
-const DEFAULT_METHODS = [
-  { code: "hitpay", name: "HitPay", category: "api" },
-  { code: "toyyibpay", name: "ToyyibPay", category: "api" },
-  { code: "stripe", name: "Stripe", category: "api" },
-  { code: "duitnow", name: "DuitNow", category: "manual" },
-  { code: "tng", name: "TNG", category: "manual" },
-  { code: "bank-transfer", name: "银行转账", category: "manual" },
-];
+const DEFAULT_METHODS = CANONICAL_PAYMENT_CHANNELS.map((item) => ({
+  code: item.code,
+  name: item.name,
+  category: item.category,
+}));
 
 function loadLocalEnv() {
   const envPath = path.resolve(process.cwd(), ".env.local");
@@ -125,28 +129,38 @@ function paymentNo() {
 }
 
 function methodConfigured(method) {
-  if (!method?.is_enabled) return false;
-  const category = String(method.category || "").toLowerCase();
-  const code = String(method.code || "").toLowerCase();
-  const manualCodes = new Set(["tng", "duitnow", "bank-transfer", "bank", "alipay"]);
-  if (category === "manual" || manualCodes.has(code)) {
-    // Manual / QR / transfer: admin Payment Settings already validates收款资料 on save.
-    return true;
+  // Prefer flags already computed from payment_channels SoT.
+  if (method && typeof method.configured === "boolean") {
+    return Boolean(method.configured && method.enabled !== false && method.open !== false);
   }
-  // API gateways: require at least one credential synced from Payment Settings (no hardcoded keys).
+  if (method?.enabled === false || method?.open === false) return false;
+  if (!method?.is_enabled && method?.enabled == null) return false;
+  const category = String(method.category || "").toLowerCase();
+  const code = normalizePaymentChannelId(method.code || method.name);
+  const manualCodes = new Set(["tng", "duitnow", "bank-transfer", "alipay"]);
+  if (category === "manual" || manualCodes.has(code)) {
+    return Boolean(method.is_enabled || method.enabled);
+  }
   const hasKey = Boolean(String(method.api_key || "").trim() || String(method.api_secret || "").trim());
-  return hasKey;
+  return hasKey && Boolean(method.is_enabled || method.enabled);
 }
 
 function publicMethod(row) {
+  const code = normalizePaymentChannelId(row.code || row.name) || row.code || "";
+  const enabled = row.enabled != null ? Boolean(row.enabled) : Boolean(row.is_enabled);
+  const configured = row.configured != null ? Boolean(row.configured) : methodConfigured({ ...row, enabled, code });
+  const open = row.open != null ? Boolean(row.open) : enabled && configured;
   return {
     id: row.id || "",
-    code: row.code || "",
-    name: row.name || "",
-    enabled: Boolean(row.is_enabled),
-    configured: methodConfigured(row),
+    code,
+    name: row.name || code,
+    category: row.category || "api",
+    enabled,
+    configured,
+    open,
     mode: row.mode || "test",
-    statusText: !row.is_enabled ? "暂未开放" : methodConfigured(row) ? "可用" : "暂未开放",
+    statusText: open ? "可用" : "暂未开放",
+    payInfo: row.payInfo && row.payInfo.enabled ? row.payInfo : null,
   };
 }
 
@@ -156,6 +170,9 @@ function defaultMethodRows() {
     code: item.code,
     name: item.name,
     is_enabled: false,
+    enabled: false,
+    configured: false,
+    open: false,
     sort_order: index + 1,
     mode: "test",
     category: item.category || "api",
@@ -163,13 +180,41 @@ function defaultMethodRows() {
 }
 
 async function loadMethods() {
+  let methodRows = [];
+  let methodsTableReady = true;
   try {
     const rows = await supabaseJson(restUrl("payment_methods", "?order=sort_order.asc,name.asc"), { headers: serviceHeaders() });
-    const list = Array.isArray(rows) && rows.length ? rows : defaultMethodRows();
-    return { tableReady: true, methods: list.map(publicMethod), raw: list };
+    methodRows = Array.isArray(rows) ? rows : [];
+  } catch (error) {
+    if (!isMissingTable(error)) throw error;
+    methodsTableReady = false;
+    methodRows = [];
+  }
+  try {
+    const listed = await listBossPaymentMethods(methodRows);
+    const orderListed = await listBossOrderPaymentMethods(methodRows);
+    const raw = listed.methods.length ? listed.methods : defaultMethodRows();
+    return {
+      tableReady: listed.tableReady || methodsTableReady,
+      methods: raw.map(publicMethod),
+      // Boss UI should only offer open channels (hide disabled).
+      openMethods: raw.map(publicMethod).filter((m) => m.open),
+      orderPayMethods: orderListed.methods,
+      walletPayEnabled: orderListed.walletPayEnabled,
+      raw,
+      message: !listed.tableReady && !methodsTableReady ? "支付通道表未初始化。" : "",
+    };
   } catch (error) {
     if (isMissingTable(error)) {
-      return { tableReady: false, methods: defaultMethodRows().map(publicMethod), raw: defaultMethodRows(), message: "payment_methods 表未初始化。" };
+      return {
+        tableReady: false,
+        methods: defaultMethodRows().map(publicMethod),
+        openMethods: [],
+        orderPayMethods: [],
+        walletPayEnabled: true,
+        raw: defaultMethodRows(),
+        message: "支付通道表未初始化。",
+      };
     }
     throw error;
   }
@@ -329,6 +374,10 @@ export default async function handler(req, res) {
       ]);
       const activeCampaigns = campaigns.filter(campaignActive);
       const wallet = viewWallet(walletRow, profile.id);
+      // Recharge center: only show open (enabled+configured) channels — hide disabled.
+      const visibleMethods = methodState.openMethods?.length
+        ? methodState.openMethods
+        : (methodState.methods || []).filter((m) => m.open);
       return json(res, 200, {
         ok: true,
         wallet,
@@ -343,10 +392,17 @@ export default async function handler(req, res) {
         },
         campaigns: activeCampaigns,
         transactions: walletTx.map(viewTx),
-        methods: methodState.methods,
+        methods: visibleMethods,
+        // Full channel list with flags (for debugging / optional UIs).
+        allMethods: methodState.methods,
+        // Order / place-order / gameplay / custom-order shared SoT (includes 猫粮余额 when enabled).
+        orderPayMethods: methodState.orderPayMethods || [],
+        walletPayEnabled: methodState.walletPayEnabled !== false,
         records: paymentOrders.records.map(recordView),
         paymentTablesReady: paymentOrders.tableReady && methodState.tableReady,
-        message: !paymentOrders.tableReady || !methodState.tableReady ? "支付表未初始化，充值提交暂不可用。" : "",
+        message:
+          methodState.message ||
+          (!paymentOrders.tableReady || !methodState.tableReady ? "支付表未初始化，充值提交暂不可用。" : ""),
       });
     }
 
@@ -356,17 +412,33 @@ export default async function handler(req, res) {
     }
 
     const body = await parseBody(req);
-    const methodCode = String(body.paymentMethod || body.method || "").trim();
+    const methodCodeRaw = String(body.paymentMethod || body.method || "").trim();
+    const methodCode = normalizePaymentChannelId(methodCodeRaw) || methodCodeRaw;
     const campaignId = String(body.campaignId || body.campaign_id || "").trim();
     if (!methodCode) return json(res, 400, { ok: false, message: "请选择支付方式。" });
 
     const methodState = await loadMethods();
     if (!methodState.tableReady) {
-      return json(res, 503, { ok: false, message: "该支付方式暂未开放：payment_methods 表未初始化。" });
+      return json(res, 503, { ok: false, message: "该支付方式暂未开放：支付通道未初始化。" });
     }
-    const method = methodState.raw.find((item) => item.code === methodCode || item.name === methodCode);
+    const method =
+      methodState.raw.find(
+        (item) =>
+          item.code === methodCode ||
+          item.name === methodCodeRaw ||
+          item.name === methodCode ||
+          normalizePaymentChannelId(item.code) === methodCode
+      ) || null;
     if (!method) return json(res, 404, { ok: false, message: "支付方式不存在。" });
 
+    // Hard block: disabled / unconfigured — never fall back to another channel.
+    if (!methodConfigured(method)) {
+      return json(res, 409, {
+        ok: false,
+        message: "该支付方式暂未开放",
+        method: publicMethod(method),
+      });
+    }
     let campaign = null;
     let amount = money(body.amount);
     if (campaignId) {
@@ -388,21 +460,52 @@ export default async function handler(req, res) {
 
     if (amount <= 0) return json(res, 400, { ok: false, message: "请选择有效的充值金额。" });
 
-    const paymentOrder = await createPaymentOrder(profile, method, amount, campaign);
-    if (!methodConfigured(method)) {
-      return json(res, 409, {
-        ok: false,
-        message: "该支付方式暂未开放",
-        paymentOrder: paymentOrder ? recordView(paymentOrder) : null,
+    // Persist canonical code only (never manual_tng).
+    const methodForOrder = { ...method, code: method.code || methodCode, is_enabled: true };
+    const paymentOrder = await createPaymentOrder(profile, methodForOrder, amount, campaign);
+
+    const methodCategory = String(method.category || "").toLowerCase();
+    const isManual =
+      methodCategory === "manual" ||
+      ["tng", "duitnow", "bank-transfer", "alipay"].includes(String(method.code || methodCode).toLowerCase());
+    if (isManual) {
+      const payInfo = await loadChannelPayInfo(method.code || methodCode);
+      if (!payInfo || payInfo.enabled === false || payInfo.unavailable) {
+        await updatePaymentOrder(paymentOrder.id, { status: "unavailable" }).catch(() => null);
+        return json(res, 409, {
+          ok: false,
+          message: "该支付方式暂未开放",
+          paymentOrder: recordView(paymentOrder),
+        });
+      }
+      const manualUrl = `/recharge.html?paymentNo=${encodeURIComponent(paymentOrder?.payment_no || "")}`;
+      const saved = await updatePaymentOrder(paymentOrder.id, {
+        status: "pending_payment",
+        payment_url: manualUrl,
+        payment_method: method.code || methodCode,
+        raw_response: {
+          mode: "manual",
+          channelId: method.code || methodCode,
+          message: "请按收款指引完成转账，管理员确认后猫粮到账。",
+        },
+      });
+      return json(res, 200, {
+        ok: true,
+        manual: true,
+        message: "充值单已创建。请完成转账，管理员在后台确认到账后猫粮入账。",
+        paymentUrl: manualUrl,
+        payInfo,
+        paymentOrder: recordView(saved || paymentOrder),
         campaign: campaign ? viewCampaign(campaign) : null,
       });
     }
 
     try {
-      const payment = await callPaymentProvider(method, paymentOrder);
+      const payment = await callPaymentProvider(methodForOrder, paymentOrder);
       const saved = await updatePaymentOrder(paymentOrder.id, {
         status: "pending_payment",
         payment_url: payment.paymentUrl,
+        payment_method: method.code || methodCode,
         raw_response: payment.raw,
       });
       return json(res, 200, {

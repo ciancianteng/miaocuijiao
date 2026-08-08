@@ -1,4 +1,4 @@
-﻿(function () {
+(function () {
   var DB_KEY = "mcjRealDB.v1";
   var EMPTY_DB = {
     siteSettings: { bannerImage: "", noticeText: "", customerServiceUrl: "", discordInviteUrl: "" },
@@ -71,6 +71,43 @@
   function emptyCard(text) {
     return '<article class="neon-card companion-card hot-card mcj-empty-card"><div class="hot-info"><h3>' + esc(text || "暂无陪玩") + '</h3></div></article>';
   }
+  /** Focal crop only — never change cover aspect / card size from JS. */
+  var COVER_FOCUS_DEFAULTS = {
+    PW00002: { x: 50, y: 22 }, // 1717 face
+    PW00004: { x: 50, y: 40 }, // 凝梦 composition
+  };
+  function clampPct(n, fallback) {
+    var v = Number(n);
+    if (!Number.isFinite(v)) return fallback;
+    return Math.max(0, Math.min(100, v));
+  }
+  function resolveCoverFocus(item) {
+    var pub = String((item && (item.publicId || item.companionCode || item.id)) || "").toUpperCase();
+    var preset = COVER_FOCUS_DEFAULTS[pub] || null;
+    var x = item && (item.objectPositionX != null ? item.objectPositionX : item.object_position_x);
+    var y = item && (item.objectPositionY != null ? item.objectPositionY : item.object_position_y);
+    var focal = item && (item.focalPoint || item.focal_point);
+    if (focal && typeof focal === "object") {
+      if (x == null && focal.x != null) x = focal.x;
+      if (y == null && focal.y != null) y = focal.y;
+    } else if (typeof focal === "string" && focal.indexOf(",") >= 0) {
+      var parts = focal.split(",");
+      if (x == null) x = parts[0];
+      if (y == null) y = parts[1];
+    }
+    if ((x == null || y == null) && preset) {
+      x = x == null ? preset.x : x;
+      y = y == null ? preset.y : y;
+    }
+    var fit = String((item && (item.coverFit || item.cover_fit)) || "cover").toLowerCase();
+    if (fit !== "contain") fit = "cover";
+    return {
+      x: clampPct(x, 50),
+      y: clampPct(y, 25),
+      fit: fit,
+      publicId: pub,
+    };
+  }
   function companionCardHtml(item, rank) {
     var cover = item.cover || item.cardCover || item.image || "";
     var avatar = item.avatar || cover || "/default-avatar.png";
@@ -88,12 +125,37 @@
     var displayName = String(item.name || "").trim();
     if (isGarbledName(displayName)) displayName = "未命名陪玩";
     var price = item.price || item.servicePrice || "";
-    var detail = "profile.html?player=" + encodeURIComponent(item.id || item.name || "");
-    var certBadges = item.certificationStatus === "approved"
-      ? '<div class="hot-tags mcj-cert-tags"><span>✔ 已认证</span><span>🏅 官方认证</span>' + (item.isStreamer ? '<span>🎙 主播认证</span>' : '') + '</div>'
-      : '';
-    return '<article class="neon-card companion-card hot-card" data-companion-id="' + esc(item.id || "") + '">' +
-      '<div class="hot-cover"><img src="' + esc(cover || avatar || "/default-avatar.png") + '" alt="' + esc(displayName) + '" onerror="this.onerror=null;this.src=\'/default-avatar.png\'"><span class="online-dot"></span></div>' +
+    var uuid = String(item.id || item.uid || item.companionId || "").trim();
+    var isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(uuid);
+    // Always navigate by real companion/user UUID — never by PW public display code.
+    var detail = isUuid ? ("profile.html?id=" + encodeURIComponent(uuid)) : "";
+    var focus = resolveCoverFocus(item);
+    var pos = focus.x + "% " + focus.y + "%";
+    var certBadges = "";
+    var certList = item.certTags || item.certificationTags || [];
+    if (Array.isArray(certList) && certList.length) {
+      certBadges =
+        '<div class="hot-tags mcj-cert-tags">' +
+        certList
+          .slice(0, 4)
+          .map(function (t) {
+            var name = typeof t === "string" ? t : t.name || t.title || "";
+            if (!name) return "";
+            var icon = typeof t === "object" && t.icon ? t.icon + " " : "🏅 ";
+            return "<span>" + esc(icon + name) + "</span>";
+          })
+          .filter(Boolean)
+          .join("") +
+        "</div>";
+    } else if (item.certificationStatus === "approved") {
+      certBadges =
+        '<div class="hot-tags mcj-cert-tags"><span>✔ 已认证</span></div>';
+    }
+    var actionHtml = detail
+      ? '<a class="mini-order" href="' + esc(detail) + '">查看详情</a>'
+      : '<span class="mini-order" aria-disabled="true" style="opacity:.55;pointer-events:none">资料不可用</span>';
+    return '<article class="neon-card companion-card hot-card" data-companion-id="' + esc(isUuid ? uuid : "") + '" data-public-id="' + esc(focus.publicId || item.publicId || "") + '">' +
+      '<div class="hot-cover"><img src="' + esc(cover || avatar || "/default-avatar.png") + '" alt="' + esc(displayName) + '" data-cover-fit="' + esc(focus.fit) + '" style="object-fit:' + esc(focus.fit) + ';object-position:' + esc(pos) + ';--mcj-cover-pos:' + esc(pos) + '" onerror="this.onerror=null;this.src=\'/default-avatar.png\'"><span class="online-dot"></span></div>' +
       '<div class="hot-info">' +
       '<h3>' + esc(displayName) + '</h3>' +
       '<p>' + esc(item.game || item.mainGame || "") + '</p>' +
@@ -101,7 +163,7 @@
       '<div class="hot-orders">' + esc(price || "") + '</div>' +
       certBadges +
       '<div class="hot-tags">' + tagsHtml(item.tags || item.serviceTags) + '</div>' +
-      '<a class="mini-order" href="' + esc(detail) + '">查看详情</a>' +
+      actionHtml +
       '</div>' +
       '</article>';
   }
@@ -109,10 +171,18 @@
     options = options || {};
     var track = document.getElementById(id);
     if (!track) return;
-    var items = sorted(companions || []).filter(function (c) {
-      return c && c.id && !isGarbledName(c.name);
-    }).slice(0, 3);
-    track.dataset.ready = "";
+    // Only render real companions with UUID ids — never pad blank TOP slots / fake PW-only rows.
+    var source = (companions || []).filter(function (c) {
+      var uuid = String((c && (c.id || c.uid || c.companionId)) || "").trim();
+      var isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(uuid);
+      return c && isUuid && !isGarbledName(c.name) && c.name;
+    });
+    var items = source.slice(0, 3);
+    var cols = Math.max(1, items.length + 1); // companions + MORE
+    track.dataset.ready = "1";
+    track.dataset.sourceCount = String(source.length);
+    track.setAttribute("data-home-source-count", String(source.length));
+    track.style.gridTemplateColumns = "repeat(" + cols + ", minmax(0, 1fr))";
     if (!items.length) { track.innerHTML = emptyCard("暂无陪玩"); return; }
     track.innerHTML = items.map(companionCardHtml).join("") +
       '<a class="neon-card companion-card hot-card hot-more-card" href="' + esc(options.moreHref || "companion-center.html") + '"><div class="hot-more-inner"><span>MORE</span><strong>更多</strong><p>' + esc(options.moreDesc || "进入陪玩大厅") + '</p></div></a>';
@@ -210,8 +280,15 @@
           ? window.MCJCurrency.formatRate(priceNum, item.pricingUnit || "小时")
           : (String(priceNum).replace(/\.0+$/, "") + " 猫粮/" + (item.pricingUnit || "小时")))
       : "";
+    var coverRaw = window.MCJCompanionMedia
+      ? window.MCJCompanionMedia.resolveCover(item)
+      : (window.MCJAvatar ? window.MCJAvatar.resolve(item.cover || item.cardImageUrl || item.avatar || "") : (item.cover || item.cardImageUrl || item.avatar || "/default-avatar.png"));
+    var avatarRaw = window.MCJCompanionMedia
+      ? window.MCJCompanionMedia.resolveAvatar(item)
+      : (window.MCJAvatar ? window.MCJAvatar.resolve(item.avatar || item.cover || "") : (item.avatar || item.cover || "/default-avatar.png"));
     return {
       id: item.uid || item.id || item.companionProfileId || "",
+      publicId: item.publicId || "",
       name: item.nameValid === false ? "" : (item.nickname || item.name || ""),
       // keep through for filters
       nameValid: item.nameValid !== false && !isGarbledName(item.nickname || item.name),
@@ -220,31 +297,75 @@
       rating: item.rating || item.score || "",
       price: priceLabel,
       servicePrice: priceLabel,
-      cover: window.MCJCompanionMedia
-        ? window.MCJCompanionMedia.resolveCover(item)
-        : (window.MCJAvatar ? window.MCJAvatar.resolve(item.cover || item.cardImageUrl || item.avatar || "") : (item.cover || item.cardImageUrl || item.avatar || "/default-avatar.png")),
-      avatar: window.MCJCompanionMedia
-        ? window.MCJCompanionMedia.resolveAvatar(item)
-        : (window.MCJAvatar ? window.MCJAvatar.resolve(item.avatar || item.cover || "") : (item.avatar || item.cover || "/default-avatar.png")),
+      cover: coverRaw,
+      avatar: avatarRaw,
+      hasRealCover: !!(coverRaw && !/default-avatar/i.test(String(coverRaw))),
+      objectPositionX: item.objectPositionX != null ? item.objectPositionX : item.object_position_x,
+      objectPositionY: item.objectPositionY != null ? item.objectPositionY : item.object_position_y,
+      focalPoint: item.focalPoint || item.focal_point || null,
+      coverFit: item.coverFit || item.cover_fit || "",
       tags: item.tags || item.serviceTags || [],
+      certTags: item.certTags || item.certificationTags || [],
       certificationStatus: item.verificationStatus || "",
       auditStatus: "approved",
+      featured: item.featured === true || item.recommendationStatus === "featured",
       visible: true,
-      status: item.availabilityStatus || item.onlineStatus || item.status || "online",
+      status: item.availabilityStatus || item.onlineStatus || item.status || "offline",
       sort: Number(item.sort || 0)
     };
   }
-  function applyHomeCompanionTracks(comps) {
+  function pickHotRecommendPool(comps) {
     var valid = (comps || []).filter(function (c) {
       return c && c.id && !isGarbledName(c.name) && c.name;
     });
-    renderTopThreeTrack("hotCompanionTrack", valid);
+    // Stable order: never use updated_at churn. Prefer featured for homepage hot track.
+    function stableSort(list) {
+      return list.slice().sort(function (a, b) {
+        var fa = a.featured ? 1 : 0;
+        var fb = b.featured ? 1 : 0;
+        if (fb !== fa) return fb - fa;
+        var pa = String(a.publicId || a.id || "");
+        var pb = String(b.publicId || b.id || "");
+        if (pa < pb) return -1;
+        if (pa > pb) return 1;
+        return String(a.name || "").localeCompare(String(b.name || ""), "zh");
+      });
+    }
+    var featured = valid.filter(function (c) { return c.featured; });
+    // Admin has「是否推荐到首页」: when any featured exist, homepage uses only those.
+    // When none marked yet, all hall-visible companions can enter recommend ranking (stable).
+    return stableSort(featured.length ? featured : valid);
+  }
+  function applyHomeCompanionTracks(comps, opts) {
+    opts = opts || {};
+    var hallValid = (comps || []).filter(function (c) {
+      var uuid = String((c && (c.id || c.uid || c.companionId)) || "").trim();
+      var isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(uuid);
+      return c && isUuid && !isGarbledName(c.name) && c.name;
+    });
+    var hotPool = pickHotRecommendPool(hallValid);
+    // Expose full recommendation source size for acceptance (display still top-3).
+    try {
+      window.__MCJ_HOME_COMPANION_SOURCE__ = {
+        count: hotPool.length,
+        hallCount: hallValid.length,
+        featuredCount: hallValid.filter(function (c) { return c.featured; }).length,
+        ids: hotPool.map(function (c) { return c.id || c.uid; }),
+        publicIds: hotPool.map(function (c) { return c.publicId || ""; }),
+        names: hotPool.map(function (c) { return c.name; }),
+      };
+    } catch (e) {}
+    if (!opts.skipEmpty && !hallValid.length && !opts.fromApi) {
+      // Keep previous cards while waiting for live API; avoid flash of「暂无陪玩」.
+      return;
+    }
+    renderTopThreeTrack("hotCompanionTrack", hotPool);
     [["recentCompanionTrack", "orders.html", "查看订单"], ["gameCompanionTrack", "companion-center.html", "进入陪玩大厅"], ["reviewCompanionTrack", "companion-center.html", "进入陪玩大厅"]].forEach(function (cfg) {
       var track = document.getElementById(cfg[0]);
       var section = track && track.closest(".section");
       if (section) section.hidden = false;
-      if (valid.length) renderTopThreeTrack(cfg[0], valid, { moreHref: cfg[1], moreDesc: cfg[2] });
-      else if (track) track.innerHTML = emptyCard("暂无陪玩");
+      if (hotPool.length) renderTopThreeTrack(cfg[0], hotPool, { moreHref: cfg[1], moreDesc: cfg[2] });
+      else if (track && opts.fromApi) track.innerHTML = emptyCard("暂无陪玩");
     });
   }
   function loadHomeCompanionsFromApi() {
@@ -280,9 +401,8 @@
     }
     renderOfficialAds();
     /* Prefer live public API only; never keep garbled local placeholder cards on home. */
-    applyHomeCompanionTracks([]);
     loadHomeCompanionsFromApi().then(function (apiComps) {
-      applyHomeCompanionTracks(apiComps);
+      applyHomeCompanionTracks(apiComps, { fromApi: true, skipEmpty: true });
     });
     renderHomepageButtons();
   }

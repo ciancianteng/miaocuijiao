@@ -53,7 +53,7 @@ function serviceHeaders() {
 }
 
 function publicView(data = {}) {
-  return {
+  const merged = {
     ...DEFAULT_SETTINGS,
     ...data,
     // strip any accidental secret-like keys
@@ -61,6 +61,16 @@ function publicView(data = {}) {
     aiApiKey: undefined,
     serviceRoleKey: undefined,
   };
+  // Never publish platform收款二维码 / 账户到首页或公开 settings。
+  delete merged.paymentChannelsPublic;
+  delete merged.paymentBankAccounts;
+  delete merged.payment_bank_accounts;
+  delete merged.banks;
+  delete merged.qrUrl;
+  delete merged.duitnowId;
+  delete merged.accountNumber;
+  delete merged.bankAccount;
+  return merged;
 }
 
 export default async function handler(req, res) {

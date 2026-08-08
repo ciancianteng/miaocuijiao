@@ -17,11 +17,14 @@
     if (window.MCJRoleGate && typeof window.MCJRoleGate.isLogged === "function") {
       return !!(window.MCJRoleGate.isLogged("customer") || window.MCJRoleGate.isLogged("boss"));
     }
-    return !!(
+    if (window.MCJBossAuth && typeof window.MCJBossAuth.hasValidAccessToken === "function") {
+      return !!window.MCJBossAuth.hasValidAccessToken();
+    }
+    var t =
       localStorage.getItem("mcjAuthAccessToken") ||
       sessionStorage.getItem("mcjAuthAccessToken") ||
-      localStorage.getItem("customerAuthToken")
-    );
+      "";
+    return !!(t && t.split(".").length === 3);
   }
 
   function esc(value) {
@@ -63,9 +66,12 @@
     var modal = document.getElementById("modal");
     var body = document.getElementById("modalBody");
     if (modal && body) {
-      body.innerHTML = window.bossLoginHtml ? window.bossLoginHtml() : '<div class="boss-login-modal"><h2>登录 MEOW CUI JIAO</h2><div class="login-tabs"><button class="login-tab active" type="button" data-login-tab="phone">手机验证</button><button class="login-tab" type="button" data-login-tab="gmail">Gmail 登录</button></div><div class="login-panel active" data-login-panel="phone"><label>国家区号<select><option>+60 马来西亚</option><option>+86 中国</option></select></label><label>手机号码<input placeholder="请输入手机号码"></label><label>验证码<input placeholder="请输入验证码"></label><button class="login-submit" data-login-confirm type="button">登录并进入</button></div><div class="login-panel" data-login-panel="gmail"><label>Gmail 邮箱<input type="email" placeholder="name@gmail.com"></label><label>密码或邮箱验证码<input type="password"></label><button class="login-submit" data-login-confirm type="button">登录并进入</button></div></div>';
+      body.innerHTML = window.bossLoginHtml ? window.bossLoginHtml() : '<div class="boss-login-modal" data-auth-mode="login"><h2>登录 MEOW CUI JIAO</h2><p class="muted">邮箱验证码登录（也可使用密码）。</p><div class="login-tabs"><button class="login-tab active" type="button" data-login-tab="otp">验证码登录</button><button class="login-tab" type="button" data-login-tab="email">密码登录</button></div><div class="login-panel active" data-login-panel="otp"><label class="wide">邮箱<input id="loginOtpEmail" type="email" inputmode="email" autocomplete="email" placeholder="name@example.com" value=""></label><label class="wide">验证码<div class="login-code-row"><input id="loginOtpCode" name="otp" type="text" inputmode="numeric" autocomplete="one-time-code" data-auth-code="1" data-auth-sensitive="1" maxlength="6" placeholder="6 位验证码" value=""><button class="login-small-btn" type="button" data-send-login-otp data-login-role="boss">获取验证码</button></div></label><button class="login-submit" data-login-confirm data-login-method="otp" type="button">验证码登录</button></div><div class="login-panel" data-login-panel="email"><label class="wide">邮箱<input id="loginGmail" type="email" inputmode="email" autocomplete="email" placeholder="name@example.com" value=""></label><label class="wide">密码<input id="loginGmailCode" type="password" autocomplete="current-password" data-auth-sensitive="1" value=""></label><button class="login-submit" data-login-confirm data-login-method="email" type="button">密码登录</button></div><p id="loginState" data-login-error></p></div>';
       modal.classList.add("open");
       document.body.style.overflow = "hidden";
+      if (window.MCJAuthShell && window.MCJAuthShell.prepareAuthForm) {
+        window.MCJAuthShell.prepareAuthForm(body.querySelector(".boss-login-modal") || body, { clearAccount: true });
+      }
       return;
     }
     var login = document.querySelector("[data-login]");
@@ -91,9 +97,8 @@
         event.preventDefault();
         event.stopPropagation();
         if (event.stopImmediatePropagation) event.stopImmediatePropagation();
-        sendCode.textContent = "已发送";
-        var stateEl = document.querySelector("[data-login-state]");
-        if (stateEl) stateEl.textContent = "验证码已发送，请查收后输入";
+        var stateEl = document.querySelector("[data-login-state], #loginState, [data-login-error]");
+        if (stateEl) stateEl.textContent = "MVP 请使用邮箱验证码登录（首页登录弹窗）。";
         return;
       }
       var loginConfirm = event.target.closest && event.target.closest("[data-login-confirm]");
@@ -238,43 +243,9 @@
   function fixActivitiesLogin() {
     if (!/activities\.html$/.test(location.pathname)) return;
     var title = document.querySelector("#loginModal h2");
-    var send = document.getElementById("sendCode");
-    var confirm = document.getElementById("confirmLogin");
     var state = document.getElementById("loginState");
-    if (title) title.textContent = "手机号登录";
-    if (send) send.textContent = "获取验证码";
-    if (confirm) confirm.textContent = "登录并进入";
-    if (state) state.textContent = "请输入收到的验证码";
-    document.addEventListener("click", function (event) {
-      if (event.target && event.target.id === "sendCode") {
-        event.preventDefault();
-        event.stopPropagation();
-        if (event.stopImmediatePropagation) event.stopImmediatePropagation();
-        event.target.textContent = "已发送";
-        if (state) state.textContent = "验证码已发送，请查收后输入";
-      }
-      if (event.target && event.target.id === "confirmLogin") {
-        event.preventDefault();
-        event.stopPropagation();
-        if (event.stopImmediatePropagation) event.stopImmediatePropagation();
-        var phone = document.getElementById("phoneInput");
-        var code = document.getElementById("codeInput");
-        if (!phone || !phone.value.trim()) {
-          if (state) state.textContent = "请填写手机号";
-          return;
-        }
-        if (!code || !code.value.trim()) {
-          if (state) state.textContent = "请填写验证码";
-          return;
-        }
-        if (window.MCJRoleGate) window.MCJRoleGate.login("customer", phone.value.trim());
-        if (state) state.textContent = "登录成功";
-        setTimeout(function () {
-          var modal = document.getElementById("loginModal");
-          if (modal) modal.classList.remove("show");
-        }, 350);
-      }
-    }, true);
+    if (title) title.textContent = "邮箱登录";
+    if (state) state.textContent = "MVP 第一版使用邮箱体系，请前往首页登录。";
   }
 
   function fixRechargePanelText() {

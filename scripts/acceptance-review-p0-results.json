@@ -1,0 +1,39 @@
+{
+  "summary": {
+    "total": 6,
+    "pass": 6,
+    "fail": 0,
+    "blocked": 0,
+    "launch": "YES",
+    "orderNo": "MCJ-1785499501290-U83A",
+    "orderId": "ee1aebc7-c638-4b3b-af0e-ced56a858260",
+    "reviewId": "0d1b2757-0891-4d8b-8a17-60eb72ec3e75",
+    "base": "https://meow-cuijiao-homepage-eiulr7yus-ciancianteng-4581s-projects.vercel.app"
+  },
+  "results": {
+    "R01_can_review_button": {
+      "status": "PASS",
+      "note": "canReview=true status=completed reviewed=false"
+    },
+    "R02_submit": {
+      "status": "PASS",
+      "note": "评价已提交。"
+    },
+    "R03_db": {
+      "status": "PASS",
+      "note": "{\"id\":\"0d1b2757-0891-4d8b-8a17-60eb72ec3e75\",\"rating\":5,\"content\":\"P0评价验收 1785499530683 服务很好\",\"companion_id\":\"c776e811-6003-48a4-8f11-ed9eb1b70898\",\"boss_id\":\"89bbc343-d508-4539-b4d1-2b42949936a6\",\"status\":\"published\"}"
+    },
+    "R04_public_profile": {
+      "status": "PASS",
+      "note": "rating=5 reviews=4 good=4 hit=true"
+    },
+    "R05_admin": {
+      "status": "PASS",
+      "note": "rating=5 good=4 hit=true"
+    },
+    "R06_button_gone": {
+      "status": "PASS",
+      "note": "canReview=false reviewed=true"
+    }
+  }
+}

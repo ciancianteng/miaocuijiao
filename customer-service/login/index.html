@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>客服端登录 | MEOW CUI JIAO</title>
-  <link rel="stylesheet" href="/src/auth-shell.css">
+  <link rel="stylesheet" href="/src/auth-shell.css?v=20260805loginUi1">
   <link rel="stylesheet" href="/src/mcj-safe-area.css?v=20260801safeArea">
 </head>
 <body>
@@ -19,7 +19,7 @@
         <p class="mcj-auth-desc">使用后台创建的客服账号登录</p>
         <form class="mcj-auth-form" data-login autocomplete="on" method="post" action="#">
           <label class="mcj-auth-field">邮箱
-            <input name="account" type="text" inputmode="email" autocomplete="username" required placeholder="请输入客服邮箱" spellcheck="false">
+            <input name="account" type="email" inputmode="email" autocomplete="email" required placeholder="请输入客服邮箱" spellcheck="false">
           </label>
           <label class="mcj-auth-field">密码
             <div class="mcj-auth-password password-field">
@@ -29,6 +29,7 @@
           </label>
           <label class="mcj-auth-check"><input name="remember" type="checkbox" checked> 记住登录</label>
           <button class="mcj-auth-btn primary" type="submit">登录</button>
+          <button class="mcj-auth-btn ghost" type="button" data-forgot-password data-forgot-role="customer_service">忘记密码</button>
           <p class="mcj-auth-error" data-auth-error></p>
           <p class="mcj-auth-note">客服账号由管理员创建，停用账号无法登录。本页面不提供注册入口。</p>
         </form>
@@ -36,8 +37,9 @@
     </main>
   </div>
   <!-- Shared CS auth first, then role-gates + dedicated login script. -->
-  <script src="/src/customer-service-auth.js?v=20260730csP0unread"></script>
-  <script src="/src/role-gates.js?v=20260730csP0unread"></script>
-  <script src="/src/customer-service-login.js?v=20260730csP0unread"></script>
+  <script type="module" src="/src/customer-service-auth.js?v=20260806csLoginFlicker2"></script>
+  <script type="module" src="/src/role-gates.js?v=20260806csLoginFlicker2"></script>
+  <script type="module" src="/src/forgot-password.js?v=20260806forgotP0"></script>
+  <script type="module" src="/src/customer-service-login.js?v=20260806csLoginFlicker2"></script>
 </body>
 </html>

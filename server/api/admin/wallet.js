@@ -77,6 +77,50 @@ export default async function handler(req, res) {
         });
         return json(res, 200, { ok: true, items: Array.isArray(rows) ? rows : [] });
       }
+      if (action === "pending_recharges" || action === "list_pending_recharges") {
+        const statusFilter = String(req.query.status || "pending_payment").trim();
+        let query = "?order=created_at.desc&limit=200";
+        if (statusFilter && statusFilter !== "all") {
+          query = `?status=eq.${encodeURIComponent(statusFilter)}&order=created_at.desc&limit=200`;
+        }
+        const rows = await supabaseJson(restUrl("payment_orders", query), { headers: serviceHeaders() }).catch((e) => {
+          if (isMissingRelation(e)) return [];
+          throw e;
+        });
+        const list = Array.isArray(rows) ? rows : [];
+        const bossIds = [...new Set(list.map((r) => r.boss_id).filter(Boolean))];
+        const profileMap = {};
+        await Promise.all(
+          bossIds.map(async (id) => {
+            try {
+              const profiles = await supabaseJson(restUrl("profiles", `?id=eq.${encodeURIComponent(id)}&select=id,display_name,nickname,email,phone&limit=1`), {
+                headers: serviceHeaders(),
+              });
+              profileMap[id] = profiles?.[0] || null;
+            } catch {
+              profileMap[id] = null;
+            }
+          })
+        );
+        const items = list.map((row) => {
+          const p = profileMap[row.boss_id] || {};
+          return {
+            id: row.id,
+            paymentNo: row.payment_no || row.id,
+            bossId: row.boss_id || "",
+            bossName: p.display_name || p.nickname || p.email || "老板",
+            amountRm: money(row.amount),
+            catFoodAmount: money(row.cat_food_amount || row.paid_cat_food),
+            bonusCatFood: money(row.bonus_cat_food),
+            paymentMethod: row.payment_method || "",
+            status: row.status || "pending_payment",
+            paymentUrl: row.payment_url || "",
+            createdAt: row.created_at || "",
+            creditedAt: row.credited_at || "",
+          };
+        });
+        return json(res, 200, { ok: true, items });
+      }
       if (!bossId) return json(res, 400, { ok: false, message: "缺少 bossId" });
       const [wallet, txs] = await Promise.all([getWallet(bossId), listWalletTx(bossId, 100)]);
       return json(res, 200, {
@@ -351,6 +395,56 @@ export default async function handler(req, res) {
         ok: true,
         message: result?.duplicate ? "已到账（重复模拟被忽略）" : "模拟支付成功，猫粮已入账",
         result,
+      });
+    }
+
+    if (action === "confirm_manual_recharge") {
+      const paymentNo = String(body.paymentNo || body.payment_no || body.id || "").trim();
+      if (!paymentNo) return json(res, 400, { ok: false, message: "缺少 paymentNo" });
+      const orderRows = await supabaseJson(
+        restUrl(
+          "payment_orders",
+          `?or=(payment_no.eq.${encodeURIComponent(paymentNo)},id.eq.${encodeURIComponent(paymentNo)})&limit=1`
+        ),
+        { headers: serviceHeaders() }
+      );
+      const order = orderRows?.[0];
+      if (!order) return json(res, 404, { ok: false, message: "充值订单不存在" });
+      const st = String(order.status || "").toLowerCase();
+      if (st === "paid" || st === "credited") {
+        return json(res, 200, { ok: true, message: "该充值单已到账", paymentNo: order.payment_no, duplicate: true });
+      }
+      if (!/pending|pending_payment|awaiting|unpaid|manual/i.test(st)) {
+        return json(res, 400, { ok: false, message: `当前状态不可确认到账：${order.status || "-"}` });
+      }
+      const tradeNo = String(body.tradeNo || body.trade_no || body.providerTradeNo || `MANUAL-${Date.now()}`).trim();
+      const result = await creditRechargePayment(order.payment_no, tradeNo, `admin-confirm:${order.payment_no}`);
+      await writeAdminLog({
+        module: "wallet",
+        action: "confirm_manual_recharge",
+        targetType: "payment_order",
+        targetId: order.payment_no,
+        operatorId,
+        operatorRole: admin.role || "admin",
+        reason: String(body.reason || "管理员确认线下转账到账"),
+        after: result,
+      });
+      try {
+        await notifyBoss(
+          order.boss_id,
+          "充值已到账",
+          `管理员已确认您的充值 ${order.payment_no}，猫粮已入账。`,
+          "wallet",
+          order.payment_no
+        );
+      } catch {
+        /* optional */
+      }
+      return json(res, 200, {
+        ok: true,
+        message: result?.duplicate ? "已到账（重复确认被忽略）" : "已确认到账，猫粮已入账",
+        result,
+        paymentNo: order.payment_no,
       });
     }
 

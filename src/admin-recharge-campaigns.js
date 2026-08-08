@@ -30,6 +30,33 @@
   function target() {
     return document.getElementById(TARGET);
   }
+  function rcFormTitle() {
+    return state.editing && state.editing.id ? "编辑充值档位" : "新建充值档位";
+  }
+  function openFormOverlay() {
+    if (!state.formOpen) return false;
+    if (window.MCJAdminOverlay) {
+      window.MCJAdminOverlay.open({
+        title: rcFormTitle(),
+        html: formHtml(),
+        onClose: function () {
+          state.formOpen = false;
+          state.editing = null;
+        },
+      });
+      return true;
+    }
+    return false;
+  }
+  function closeFormOverlay() {
+    if (window.MCJAdminOverlay && window.MCJAdminOverlay.isOpen && window.MCJAdminOverlay.isOpen()) {
+      window.MCJAdminOverlay.close();
+      return;
+    }
+    state.formOpen = false;
+    state.editing = null;
+    paint();
+  }
   function paint() {
     var box = target();
     if (!box) return;
@@ -67,7 +94,7 @@
     box.innerHTML =
       '<div class="admin-section-head compact"><div><h3>充值活动档位</h3><p>创建实付金额、基础猫粮与赠送猫粮。到账由支付回调写入钱包流水。</p></div><button class="mini-btn primary-lite" type="button" data-rc-new>新建档位</button></div>' +
       (state.message ? '<div class="admin-sync-note">' + esc(state.message) + "</div>" : "") +
-      (state.formOpen ? formHtml() : "") +
+      (!window.MCJAdminOverlay && state.formOpen ? formHtml() : "") +
       '<div class="table-wrap"><table><thead><tr><th>活动名称</th><th>实付 RM</th><th>基础猫粮</th><th>赠送</th><th>总到账</th><th>状态</th><th>操作</th></tr></thead><tbody>' +
       (rows || '<tr><td colspan="7">暂无活动，请先创建。</td></tr>') +
       "</tbody></table></div>";
@@ -180,13 +207,11 @@
     if (e.target.closest("[data-rc-new]")) {
       state.editing = null;
       state.formOpen = true;
-      paint();
+      if (!openFormOverlay()) paint();
       return;
     }
     if (e.target.closest("[data-rc-cancel]")) {
-      state.formOpen = false;
-      state.editing = null;
-      paint();
+      closeFormOverlay();
       return;
     }
     var edit = e.target.closest("[data-rc-edit]");
@@ -195,7 +220,7 @@
         return c.id === edit.dataset.rcEdit;
       });
       state.formOpen = true;
-      paint();
+      if (!openFormOverlay()) paint();
       return;
     }
     var dis = e.target.closest("[data-rc-disable]");
@@ -227,8 +252,12 @@
     })
       .then(function (res) {
         state.message = res.message || "已保存";
-        state.formOpen = false;
-        state.editing = null;
+        if (window.MCJAdminOverlay && window.MCJAdminOverlay.isOpen && window.MCJAdminOverlay.isOpen()) {
+          window.MCJAdminOverlay.close();
+        } else {
+          state.formOpen = false;
+          state.editing = null;
+        }
         load();
       })
       .catch(function (err) {

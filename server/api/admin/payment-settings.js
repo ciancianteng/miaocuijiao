@@ -74,7 +74,19 @@ const CHANNELS = [
 ];
 
 /** Selectable收款渠道 providers for the bank/e-wallet CRUD list (payment_bank_accounts). */
-const BANK_PROVIDERS = ["Maybank", "CIMB", "Public Bank", "Touch 'n Go", "支付宝", "微信支付", "USDT", "其他"];
+const BANK_PROVIDERS = [
+  "Maybank",
+  "CIMB",
+  "Public Bank",
+  "OCBC",
+  "RHB",
+  "Touch 'n Go",
+  "支付宝",
+  "微信支付",
+  "USDT",
+  "其他",
+];
+const PLATFORM_BANKS_KEY = "paymentBankAccounts";
 
 const TABLES = {
   channels: "payment_channels",
@@ -168,6 +180,246 @@ function isMissingTable(error) {
   return /relation|does not exist|Could not find the table|schema cache/i.test(msg);
 }
 
+async function readPlatformBanks() {
+  try {
+    const rows = await supabaseFetch("platform_settings", "?id=eq.global&select=id,data&limit=1");
+    const data = Array.isArray(rows) ? rows[0]?.data : rows?.data;
+    const list = data?.[PLATFORM_BANKS_KEY];
+    return Array.isArray(list) ? list : [];
+  } catch {
+    return [];
+  }
+}
+
+async function writePlatformBanks(banks = []) {
+  const rows = await supabaseFetch("platform_settings", "?id=eq.global&select=id,data&limit=1").catch(() => []);
+  const current = Array.isArray(rows) ? rows[0] : null;
+  const data = { ...(current?.data && typeof current.data === "object" ? current.data : {}), [PLATFORM_BANKS_KEY]: banks };
+  if (current?.id) {
+    await supabaseFetch("platform_settings", `?id=eq.${encodeURIComponent(current.id)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ data, updated_at: new Date().toISOString() }),
+    });
+  } else {
+    await supabaseFetch("platform_settings", "", {
+      method: "POST",
+      headers: { Prefer: "resolution=merge-duplicates,return=representation" },
+      body: JSON.stringify([{ id: "global", data, updated_at: new Date().toISOString() }]),
+    });
+  }
+  return banks;
+}
+
+const PLATFORM_PAYMENT_BUCKET = "platform-payment";
+
+async function syncChannelPublicConfig(channelId, patch = {}) {
+  const rows = await supabaseFetch("platform_settings", "?id=eq.global&select=id,data&limit=1").catch(() => []);
+  const current = Array.isArray(rows) ? rows[0] : null;
+  const data = current?.data && typeof current.data === "object" ? { ...current.data } : {};
+  const publicMap =
+    data.paymentChannelsPublic && typeof data.paymentChannelsPublic === "object"
+      ? { ...data.paymentChannelsPublic }
+      : {};
+  const prev = publicMap[channelId] && typeof publicMap[channelId] === "object" ? publicMap[channelId] : {};
+  const next = {
+    ...prev,
+    ...patch,
+  };
+  if (patch.qrUrl !== undefined) next.qrUrl = String(patch.qrUrl || "").trim();
+  if (patch.manual && typeof patch.manual === "object") {
+    next.manual = { ...(prev.manual && typeof prev.manual === "object" ? prev.manual : {}), ...patch.manual };
+  }
+  publicMap[channelId] = next;
+  data.paymentChannelsPublic = publicMap;
+  const payload = { id: "global", data, updated_at: new Date().toISOString() };
+  if (current?.id) {
+    await supabaseFetch("platform_settings", `?id=eq.${encodeURIComponent(current.id)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ data: payload.data, updated_at: payload.updated_at }),
+    });
+  } else {
+    await supabaseFetch("platform_settings", "", {
+      method: "POST",
+      headers: { Prefer: "resolution=merge-duplicates,return=representation" },
+      body: JSON.stringify([payload]),
+    });
+  }
+  return publicMap[channelId];
+}
+
+/** @deprecated use syncChannelPublicConfig */
+async function syncChannelQrToPlatformSettings(channelId, qrUrl, extras = {}) {
+  return syncChannelPublicConfig(channelId, { ...extras, qrUrl: String(qrUrl || "").trim() });
+}
+
+function publicConfigFromChannel(channel = {}, data = {}, qrUrl = "") {
+  const manual = data.manual && typeof data.manual === "object" ? data.manual : {};
+  return {
+    enabled: channel.enabled !== false,
+    visible: channel.visible !== false,
+    publicLabel: data.publicLabel || channel.name || "",
+    bankName: manual.bankName || "",
+    accountName: manual.receiverName || "",
+    receiverName: manual.receiverName || "",
+    bankAccount: manual.bankAccount || "",
+    phone: manual.phone || "",
+    duitnowId: manual.duitnowId || "",
+    qrUrl: String(qrUrl || manual.qrUrl || data.qrUrl || "").trim(),
+    instructions: data.instructions || "",
+    minAmount: data.minAmount,
+    maxAmount: data.maxAmount,
+    mode: channel.mode || "test",
+    manual: {
+      receiverName: manual.receiverName || "",
+      bankName: manual.bankName || "",
+      bankAccount: manual.bankAccount || "",
+      phone: manual.phone || "",
+      duitnowId: manual.duitnowId || "",
+      qrUrl: String(qrUrl || manual.qrUrl || data.qrUrl || "").trim(),
+    },
+  };
+}
+
+async function uploadPlatformPayQrImage(dataUrl, channelId) {
+  const {
+    decodeDataUrl,
+    assertImageUpload,
+    ensurePublicBucket,
+    publicObjectUrl,
+  } = await import("../_companion-media-store.js");
+  const decoded = assertImageUpload(decodeDataUrl(dataUrl));
+  await ensurePublicBucket(PLATFORM_PAYMENT_BUCKET, ["image/jpeg", "image/png", "image/webp"]);
+  const mime = String(decoded.contentType || "image/png").toLowerCase();
+  const ext = mime.includes("webp") ? "webp" : mime.includes("png") ? "png" : "jpg";
+  const safeId = String(channelId || "duitnow")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "duitnow";
+  // Fixed path so re-upload overwrites the previous QR for this channel.
+  const objectPath = `qr/${safeId}.${ext}`;
+  const response = await fetch(
+    `${process.env.SUPABASE_URL}/storage/v1/object/${PLATFORM_PAYMENT_BUCKET}/${objectPath}`,
+    {
+      method: "POST",
+      headers: {
+        apikey: process.env.SUPABASE_SERVICE_ROLE_KEY,
+        Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+        "Content-Type": decoded.contentType || "image/png",
+        "x-upsert": "true",
+      },
+      body: decoded.buffer,
+    }
+  );
+  if (!response.ok) {
+    const text = await response.text();
+    throw Object.assign(new Error(`二维码上传失败：${text || response.status}`), { status: 502 });
+  }
+  // Cache-bust so payment page refreshes immediately after overwrite.
+  const base = publicObjectUrl(PLATFORM_PAYMENT_BUCKET, objectPath);
+  return `${base}${base.includes("?") ? "&" : "?"}v=${Date.now()}`;
+}
+
+/** Current QR actually served on boss payment page (enabled + qrUrl). */
+async function resolveActivePublicQr() {
+  try {
+    // Admin preview only — first enabled channel with QR. Boss order pay uses loadPlatformPayQr(method).
+    const { loadAdminPreviewPayQr } = await import("../_platform-pay-qr.js");
+    const info = await loadAdminPreviewPayQr();
+    if (!info || !info.qrUrl || info.enabled === false) {
+      return {
+        available: false,
+        qrUrl: "",
+        channelId: "",
+        title: "平台收款",
+        instructions: "支付通道暂不可用",
+        source: info?.source || "empty",
+      };
+    }
+    return {
+      available: true,
+      qrUrl: info.qrUrl,
+      channelId: info.channelId || "",
+      title: info.title || "平台收款",
+      receiverName: info.receiverName || "",
+      bankName: info.bankName || "",
+      instructions: info.instructions || "",
+      source: info.source || "payment_channels",
+      updatedHint: "老板支付页刷新后立即使用此二维码（无需重新部署）",
+    };
+  } catch (err) {
+    return {
+      available: false,
+      qrUrl: "",
+      channelId: "",
+      title: "平台收款",
+      instructions: "支付通道暂不可用",
+      source: "error",
+      error: String(err?.message || err).slice(0, 160),
+    };
+  }
+}
+
+async function persistChannelQrUrl(channelId, qrUrl) {
+  const tpl = channelTemplate(channelId);
+  let existing = null;
+  try {
+    const rows = await supabaseFetch(
+      TABLES.channels,
+      `?channel_id=eq.${encodeURIComponent(tpl.id)}&select=*&limit=1`
+    );
+    existing = Array.isArray(rows) ? rows[0] : null;
+  } catch (error) {
+    if (!isMissingTable(error)) throw error;
+  }
+  const prevData = existing?.data && typeof existing.data === "object" ? existing.data : {};
+  const prevManual = prevData.manual && typeof prevData.manual === "object" ? prevData.manual : {};
+  const nextData = {
+    ...prevData,
+    qrUrl,
+    manual: { ...prevManual, qrUrl },
+  };
+  const row = {
+    id: tpl.id,
+    channel_id: tpl.id,
+    name: existing?.name || tpl.name,
+    icon: existing?.icon || tpl.icon,
+    payment_type: existing?.payment_type || tpl.paymentType,
+    category: existing?.category || tpl.category,
+    currencies: existing?.currencies || tpl.currencies,
+    mode: existing?.mode === "live" ? "live" : "test",
+    // Uploading a live QR implies this channel should be the active payment source.
+    enabled: true,
+    visible: true,
+    sort: existing?.sort != null ? Number(existing.sort) : CHANNELS.findIndex((c) => c.id === tpl.id) + 1,
+    data: nextData,
+    config_status: "已启用",
+    updated_at: new Date().toISOString(),
+  };
+  try {
+    await upsert(TABLES.channels, channelDbRow(row));
+  } catch (error) {
+    if (isMissingTable(error)) {
+      // Fall back to platform_settings only.
+      await syncChannelPublicConfig(tpl.id, {
+        enabled: true,
+        visible: true,
+        publicLabel: tpl.name,
+        qrUrl,
+        manual: { qrUrl },
+      });
+      return { channel: null, qrUrl, source: "platform_settings" };
+    }
+    throw error;
+  }
+  await syncChannelPublicConfig(tpl.id, {
+    ...publicConfigFromChannel(row, nextData, qrUrl),
+    enabled: row.enabled !== false,
+    publicLabel: nextData.publicLabel || tpl.name,
+  });
+  return { channel: row, qrUrl, source: "payment_channels" };
+}
+
 async function upsert(table, rows, onConflict = "id") {
   return supabaseFetch(table, `?on_conflict=${encodeURIComponent(onConflict)}`, {
     method: "POST",
@@ -225,6 +477,59 @@ function mergeChannels(rows = [], credentials = []) {
       credential_keys: credential?.credential_keys || base.credential_keys,
       has_credentials: Boolean(credential?.credential_status === "已配置"),
       required_fields: base.required_fields,
+    };
+  });
+}
+
+async function readPaymentChannelsPublic() {
+  try {
+    const rows = await supabaseFetch("platform_settings", "?id=eq.global&select=id,data&limit=1");
+    const data = Array.isArray(rows) ? rows[0]?.data : rows?.data;
+    const map = data?.paymentChannelsPublic;
+    return map && typeof map === "object" ? map : {};
+  } catch {
+    return {};
+  }
+}
+
+/** Overlay QR / manual fields from platform_settings when payment_channels table is incomplete. */
+function applyPublicPayOverlay(channels = [], publicMap = {}) {
+  return (channels || []).map((ch) => {
+    const id = ch.channel_id || ch.id;
+    const pub = publicMap[id];
+    if (!pub || typeof pub !== "object") return ch;
+    const data = ch.data && typeof ch.data === "object" ? { ...ch.data } : {};
+    const manual = data.manual && typeof data.manual === "object" ? { ...data.manual } : {};
+    const pubManual = pub.manual && typeof pub.manual === "object" ? pub.manual : {};
+    const qrUrl = String(manual.qrUrl || data.qrUrl || pubManual.qrUrl || pub.qrUrl || "").trim();
+    if (qrUrl) {
+      manual.qrUrl = qrUrl;
+      data.qrUrl = qrUrl;
+    }
+    const receiverName = manual.receiverName || pubManual.receiverName || pub.accountName || pub.receiverName || "";
+    const bankName = manual.bankName || pubManual.bankName || pub.bankName || "";
+    const bankAccount = manual.bankAccount || pubManual.bankAccount || pub.bankAccount || "";
+    const phone = manual.phone || pubManual.phone || pub.phone || "";
+    const duitnowId = manual.duitnowId || pubManual.duitnowId || pub.duitnowId || "";
+    if (receiverName) manual.receiverName = receiverName;
+    if (bankName) manual.bankName = bankName;
+    if (bankAccount) manual.bankAccount = bankAccount;
+    if (phone) manual.phone = phone;
+    if (duitnowId) manual.duitnowId = duitnowId;
+    if (pub.publicLabel && !data.publicLabel) data.publicLabel = pub.publicLabel;
+    if (pub.instructions != null && pub.instructions !== "" && !data.instructions) data.instructions = pub.instructions;
+    if (pub.minAmount != null && data.minAmount == null) data.minAmount = pub.minAmount;
+    if (pub.maxAmount != null && data.maxAmount == null) data.maxAmount = pub.maxAmount;
+    data.manual = manual;
+    const enabled = pub.enabled != null ? !!pub.enabled : ch.enabled;
+    const configured = !!(qrUrl || receiverName || bankName || bankAccount || duitnowId || phone);
+    return {
+      ...ch,
+      enabled,
+      visible: pub.visible != null ? !!pub.visible : pub.enabled != null ? !!pub.enabled : ch.visible,
+      mode: pub.mode || ch.mode,
+      data,
+      config_status: configured ? (enabled ? "已启用" : "已配置") : ch.config_status,
     };
   });
 }
@@ -491,35 +796,47 @@ async function syncPaymentMethod(channel, credentials = {}) {
 
 async function loadState() {
   try {
-    const [channels, credentials, banks, rates, webhooks, transactions, logs] = await Promise.all([
+    const [channels, credentials, banks, rates, webhooks, transactions, logs, publicMap] = await Promise.all([
       supabaseFetch(TABLES.channels, "?order=sort.asc,updated_at.desc"),
       supabaseFetch(TABLES.credentials, "?select=id,channel_id,credential_status,credential_keys,updated_at"),
-      supabaseFetch(TABLES.banks, "?order=updated_at.desc").catch(() => []),
+      supabaseFetch(TABLES.banks, "?order=updated_at.desc").catch(() => null),
       supabaseFetch(TABLES.rates, "?order=updated_at.desc").catch(() => []),
       supabaseFetch(TABLES.webhooks, "?order=updated_at.desc").catch(() => []),
       supabaseFetch(TABLES.transactions, "?order=created_at.desc&limit=100").catch(() => []),
       supabaseFetch(TABLES.logs, "?order=created_at.desc&limit=100").catch(() => []),
+      readPaymentChannelsPublic(),
     ]);
+    let bankRows = banks;
+    let bankSource = "table";
+    if (bankRows == null) {
+      bankRows = await readPlatformBanks();
+      bankSource = "platform_settings";
+    }
     return {
-      channels: mergeChannels(channels, credentials),
-      banks: banks || [],
+      channels: applyPublicPayOverlay(mergeChannels(channels, credentials), publicMap),
+      banks: bankRows || [],
       rates: rates || [],
       webhooks: webhooks || [],
       transactions: transactions || [],
       logs: logs || [],
       tablesReady: true,
+      bankSource,
     };
   } catch (error) {
     if (isMissingTable(error)) {
+      const [banks, publicMap] = await Promise.all([readPlatformBanks(), readPaymentChannelsPublic()]);
       return {
-        channels: defaults(),
-        banks: [],
+        channels: applyPublicPayOverlay(defaults(), publicMap),
+        banks,
         rates: [],
         webhooks: [],
         transactions: [],
         logs: [],
-        tablesReady: false,
-        message: "支付设置数据表未初始化。请先执行 supabase/migrations/20260731_payment_settings.sql。",
+        tablesReady: true,
+        bankSource: "platform_settings",
+        message: banks.length
+          ? "支付渠道表未建全；收款账户 / 二维码已使用 platform_settings 兜底存储。"
+          : "支付渠道表未建全；收款账户 / 二维码将写入 platform_settings 兜底存储。",
       };
     }
     throw error;
@@ -555,7 +872,15 @@ async function handler(req, res) {
   try {
     if (req.method === "GET") {
       const state = await loadState();
-      return json(res, 200, { ok: true, configured: true, ...state, templates: CHANNELS, bankProviders: BANK_PROVIDERS });
+      const activePublicQr = await resolveActivePublicQr();
+      return json(res, 200, {
+        ok: true,
+        configured: true,
+        ...state,
+        activePublicQr,
+        templates: CHANNELS,
+        bankProviders: BANK_PROVIDERS,
+      });
     }
 
     if (req.method !== "POST") {
@@ -565,6 +890,99 @@ async function handler(req, res) {
 
     const body = await readBody(req);
     const action = String(body.action || "");
+
+    if (action === "ensure_schema" || action === "apply_migration") {
+      // Probe payment_channels; optionally apply SQL when DATABASE_URL is present on the server.
+      let tableReady = false;
+      let probeError = "";
+      try {
+        await supabaseFetch(TABLES.channels, "?select=id&limit=1");
+        tableReady = true;
+      } catch (error) {
+        tableReady = !isMissingTable(error);
+        if (!tableReady) probeError = String(error?.message || error).slice(0, 240);
+        else throw error;
+      }
+      if (tableReady) {
+        return json(res, 200, {
+          ok: true,
+          tableReady: true,
+          message: "payment_channels 已就绪",
+          migration: "supabase/migrations/20260731_payment_settings.sql",
+        });
+      }
+      const dbUrl =
+        process.env.DATABASE_URL ||
+        process.env.SUPABASE_DB_URL ||
+        process.env.POSTGRES_URL ||
+        process.env.DIRECT_URL ||
+        "";
+      if (!dbUrl) {
+        return json(res, 200, {
+          ok: true,
+          tableReady: false,
+          applied: false,
+          message:
+            "payment_channels 尚未创建。服务端未配置 DATABASE_URL，无法自动执行 DDL。请在 Supabase SQL Editor 执行 supabase/migrations/20260731_payment_settings.sql。保存接口已可写入 platform_settings 兜底。",
+          migration: "supabase/migrations/20260731_payment_settings.sql",
+          probeError,
+        });
+      }
+      try {
+        const { readFileSync } = await import("node:fs");
+        const { resolve } = await import("node:path");
+        const pg = await import("pg");
+        const sqlPath = resolve(process.cwd(), "supabase/migrations/20260731_payment_settings.sql");
+        const sql = readFileSync(sqlPath, "utf8");
+        const client = new pg.default.Client({ connectionString: dbUrl, ssl: { rejectUnauthorized: false } });
+        await client.connect();
+        try {
+          await client.query(sql);
+        } finally {
+          await client.end();
+        }
+        await supabaseFetch(TABLES.channels, "?select=id&limit=1");
+        return json(res, 200, {
+          ok: true,
+          tableReady: true,
+          applied: true,
+          message: "已执行 payment_settings 迁移，payment_channels 可用",
+          migration: "supabase/migrations/20260731_payment_settings.sql",
+        });
+      } catch (error) {
+        return json(res, 503, {
+          ok: false,
+          tableReady: false,
+          applied: false,
+          message: `自动迁移失败：${error.message || error}`,
+          migration: "supabase/migrations/20260731_payment_settings.sql",
+        });
+      }
+    }
+
+    if (action === "upload_qr" || action === "upload_pay_qr") {
+      const channelId = String(body.channelId || body.channel_id || body.id || "duitnow").trim() || "duitnow";
+      const dataUrl = String(body.dataUrl || body.data_url || body.imageData || body.fileDataUrl || "").trim();
+      if (!dataUrl) return json(res, 400, { ok: false, message: "请先选择二维码图片（PNG / JPG / WEBP）。" });
+      let qrUrl = "";
+      try {
+        qrUrl = await uploadPlatformPayQrImage(dataUrl, channelId);
+      } catch (err) {
+        return json(res, err.status || 400, { ok: false, message: err.message || "二维码上传失败" });
+      }
+      const saved = await persistChannelQrUrl(channelId, qrUrl);
+      await writeLog(req, "upload_qr", channelId, null, { qrUrl, source: saved.source });
+      const activePublicQr = await resolveActivePublicQr();
+      return json(res, 200, {
+        ok: true,
+        message: "二维码已上传并写入支付配置；老板支付页刷新即可看到最新二维码",
+        channelId,
+        qrUrl,
+        source: saved.source,
+        channel: saved.channel,
+        activePublicQr,
+      });
+    }
 
     if (action === "save_channel") {
       const input = body.channel || {};
@@ -578,6 +996,36 @@ async function handler(req, res) {
         if (value) mergedCreds[key] = value;
       });
       const credentialKeys = safeKeys(mergedCreds);
+      const incomingData = input.data && typeof input.data === "object" ? input.data : {};
+      const incomingManual =
+        incomingData.manual && typeof incomingData.manual === "object" ? incomingData.manual : {};
+      // Preserve existing QR URL when admin leaves upload field empty (no more manual https paste).
+      let existingQr = "";
+      try {
+        const prevRows = await supabaseFetch(
+          TABLES.channels,
+          `?channel_id=eq.${encodeURIComponent(tpl.id)}&select=data&limit=1`
+        );
+        const prev = Array.isArray(prevRows) ? prevRows[0] : null;
+        existingQr = String(prev?.data?.manual?.qrUrl || prev?.data?.qrUrl || "").trim();
+      } catch {
+        existingQr = "";
+      }
+      if (!existingQr) {
+        try {
+          const publicMap = await readPaymentChannelsPublic();
+          const pub = publicMap[tpl.id] || {};
+          existingQr = String(pub.qrUrl || pub.manual?.qrUrl || "").trim();
+        } catch {
+          /* ignore */
+        }
+      }
+      const qrUrl = String(incomingManual.qrUrl || incomingData.qrUrl || "").trim() || existingQr;
+      const data = {
+        ...incomingData,
+        qrUrl,
+        manual: { ...incomingManual, qrUrl },
+      };
       const channel = {
         id: tpl.id,
         channel_id: tpl.id,
@@ -590,18 +1038,45 @@ async function handler(req, res) {
         enabled: Boolean(input.enabled),
         visible: Boolean(input.visible ?? input.enabled),
         sort: Number(input.sort || CHANNELS.findIndex((c) => c.id === tpl.id) + 1),
-        data: input.data || {},
+        data,
         updated_at: new Date().toISOString(),
       };
       channel.config_status = computeStatus(channel, credentialKeys);
       let rows;
+      let saveSource = "payment_channels";
       try {
         rows = await upsert(TABLES.channels, channelDbRow(channel));
       } catch (error) {
         if (isMissingTable(error)) {
-          return json(res, 503, {
-            ok: false,
-            message: "支付设置数据表未初始化。请先执行 supabase/migrations/20260731_payment_settings.sql。",
+          // Table missing: still persist full manual config so payment page can read it.
+          saveSource = "platform_settings";
+          try {
+            await syncChannelPublicConfig(tpl.id, publicConfigFromChannel(channel, data, qrUrl));
+          } catch (syncErr) {
+            return json(res, 503, {
+              ok: false,
+              message:
+                "支付设置数据表未初始化，且兜底写入失败。请先执行 supabase/migrations/20260731_payment_settings.sql。",
+              detail: String(syncErr?.message || syncErr).slice(0, 200),
+            });
+          }
+          if (credentialKeys.length) {
+            /* credentials table likely missing too — skip soft */
+          }
+          await writeLog(req, "save_channel", tpl.id, null, {
+            ...channel,
+            credentials: credentialKeys,
+            source: saveSource,
+          });
+          const activePublicQrFallback = await resolveActivePublicQr();
+          return json(res, 200, {
+            ok: true,
+            message:
+              "支付渠道配置已保存（payment_channels 表未初始化，已写入 platform_settings；请尽快执行 supabase/migrations/20260731_payment_settings.sql）",
+            channel,
+            source: saveSource,
+            migration: "supabase/migrations/20260731_payment_settings.sql",
+            activePublicQr: activePublicQrFallback,
           });
         }
         throw error;
@@ -617,8 +1092,20 @@ async function handler(req, res) {
         });
       }
       await syncPaymentMethod(channel, mergedCreds);
-      await writeLog(req, "save_channel", tpl.id, null, { ...channel, credentials: credentialKeys });
-      return json(res, 200, { ok: true, message: "支付渠道配置已保存", channel: rows?.[0] || channel });
+      try {
+        await syncChannelPublicConfig(tpl.id, publicConfigFromChannel(channel, data, qrUrl));
+      } catch {
+        /* soft-fail public mirror */
+      }
+      await writeLog(req, "save_channel", tpl.id, null, { ...channel, credentials: credentialKeys, source: saveSource });
+      const activePublicQr = await resolveActivePublicQr();
+      return json(res, 200, {
+        ok: true,
+        message: "支付渠道配置已保存；老板支付页将立即读取最新启用二维码",
+        channel: rows?.[0] || channel,
+        source: saveSource,
+        activePublicQr,
+      });
     }
 
     if (action === "test_channel") {
@@ -691,27 +1178,58 @@ async function handler(req, res) {
         config_status: enabled ? "已启用" : "已停用",
         updated_at: new Date().toISOString(),
       };
-      await upsert(TABLES.channels, channelDbRow(next));
-      const creds = await loadCredentialPayload(id);
-      await syncPaymentMethod(next, creds);
+      try {
+        await upsert(TABLES.channels, channelDbRow(next));
+      } catch (error) {
+        if (!isMissingTable(error)) throw error;
+        // No payment_channels table: enabled flag lives in platform_settings public mirror.
+      }
+      try {
+        const creds = await loadCredentialPayload(id);
+        await syncPaymentMethod(next, creds);
+      } catch {
+        /* soft-fail payment_methods when schema incomplete */
+      }
+      // Enable/disable must sync public mirror so boss payment page updates without redeploy.
+      try {
+        const qrUrl = String(next.data?.manual?.qrUrl || next.data?.qrUrl || "").trim();
+        await syncChannelPublicConfig(id, publicConfigFromChannel(next, next.data || {}, qrUrl));
+      } catch (syncErr) {
+        return json(res, 503, {
+          ok: false,
+          message: `启用状态同步失败：${String(syncErr?.message || syncErr).slice(0, 160)}`,
+        });
+      }
       await writeLog(req, enabled ? "enable_channel" : "disable_channel", id, channel, next);
-      return json(res, 200, { ok: true, message: enabled ? "支付渠道已启用" : "支付渠道已停用", channel: next });
+      const activePublicQr = await resolveActivePublicQr();
+      return json(res, 200, {
+        ok: true,
+        message: enabled ? "支付渠道已启用" : "支付渠道已停用",
+        channel: next,
+        activePublicQr,
+      });
     }
 
     if (action === "save_bank") {
-      const bank = body.bank || {};
+      const bank = body.bank || body || {};
       const id = String(bank.id || "").trim();
       let existing = null;
+      let usePlatform = false;
       if (id) {
-        const rows = await supabaseFetch(TABLES.banks, `?id=eq.${encodeURIComponent(id)}&limit=1`).catch(() => []);
-        existing = rows?.[0] || null;
+        try {
+          const rows = await supabaseFetch(TABLES.banks, `?id=eq.${encodeURIComponent(id)}&limit=1`);
+          existing = rows?.[0] || null;
+        } catch (error) {
+          if (isMissingTable(error)) usePlatform = true;
+          else throw error;
+        }
       }
-      const accountNumber = String(bank.accountNumber || "").trim();
+      const accountNumber = String(bank.accountNumber || bank.account_number || "").trim();
       const row = {
         id: id || `bank-${Date.now()}`,
-        bank_name: String(bank.bankName || bank.provider || (existing && existing.bank_name) || ""),
-        account_name: String(bank.accountName || ""),
-        enterprise_name: String(bank.enterpriseName || ""),
+        bank_name: String(bank.bankName || bank.bank_name || bank.provider || (existing && existing.bank_name) || ""),
+        account_name: String(bank.accountName || bank.account_name || ""),
+        enterprise_name: String(bank.enterpriseName || bank.enterprise_name || ""),
         account_number_mask: accountNumber
           ? accountNumber.replace(/\s+/g, "").replace(/^(.+)(.{4})$/, "**** $2")
           : String((existing && existing.account_number_mask) || ""),
@@ -720,19 +1238,39 @@ async function handler(req, res) {
           : existing?.encrypted_payload || null,
         currency: String(bank.currency || "MYR"),
         usage: String(bank.usage || "充值收款"),
-        is_default: Boolean(bank.isDefault),
+        is_default: Boolean(bank.isDefault ?? bank.is_default),
         enabled: bank.enabled !== false,
         updated_at: new Date().toISOString(),
       };
-      const rows = await upsert(TABLES.banks, row);
-      await writeLog(req, "save_bank", row.id, existing, { ...row, encrypted_payload: "[encrypted]" });
-      return json(res, 200, { ok: true, message: "收款渠道已保存", bank: rows?.[0] || row });
+      if (!BANK_PROVIDERS.includes(row.bank_name) && row.bank_name !== "其他") {
+        // Allow custom but keep known providers first.
+      }
+      try {
+        if (usePlatform) throw Object.assign(new Error("Could not find the table"), { status: 404 });
+        const rows = await upsert(TABLES.banks, row);
+        await writeLog(req, "save_bank", row.id, existing, { ...row, encrypted_payload: "[encrypted]" });
+        return json(res, 200, { ok: true, message: "收款渠道已保存", bank: rows?.[0] || row });
+      } catch (error) {
+        if (!isMissingTable(error)) throw error;
+        const list = await readPlatformBanks();
+        const idx = list.findIndex((b) => String(b.id) === String(row.id));
+        const next = idx >= 0 ? list.map((b, i) => (i === idx ? row : b)) : [row, ...list];
+        await writePlatformBanks(next);
+        await writeLog(req, "save_bank", row.id, existing, { ...row, encrypted_payload: "[encrypted]", source: "platform_settings" });
+        return json(res, 200, { ok: true, message: "收款渠道已保存", bank: row, bankSource: "platform_settings" });
+      }
     }
 
     if (action === "delete_bank") {
       const id = String(body.id || "").trim();
       if (!id) return json(res, 400, { ok: false, message: "缺少收款渠道 ID" });
-      await supabaseFetch(TABLES.banks, `?id=eq.${encodeURIComponent(id)}`, { method: "DELETE" });
+      try {
+        await supabaseFetch(TABLES.banks, `?id=eq.${encodeURIComponent(id)}`, { method: "DELETE" });
+      } catch (error) {
+        if (!isMissingTable(error)) throw error;
+        const next = (await readPlatformBanks()).filter((b) => String(b.id) !== id);
+        await writePlatformBanks(next);
+      }
       await writeLog(req, "delete_bank", id, null, null);
       return json(res, 200, { ok: true, message: "收款渠道已删除" });
     }
@@ -741,12 +1279,22 @@ async function handler(req, res) {
       const id = String(body.id || "").trim();
       if (!id) return json(res, 400, { ok: false, message: "缺少收款渠道 ID" });
       const enabled = Boolean(body.enabled);
-      const rows = await supabaseFetch(TABLES.banks, `?id=eq.${encodeURIComponent(id)}`, {
-        method: "PATCH",
-        body: JSON.stringify({ enabled, updated_at: new Date().toISOString() }),
-      });
-      await writeLog(req, enabled ? "enable_bank" : "disable_bank", id, null, { enabled });
-      return json(res, 200, { ok: true, message: enabled ? "收款渠道已启用" : "收款渠道已停用", bank: rows?.[0] || null });
+      try {
+        const rows = await supabaseFetch(TABLES.banks, `?id=eq.${encodeURIComponent(id)}`, {
+          method: "PATCH",
+          body: JSON.stringify({ enabled, updated_at: new Date().toISOString() }),
+        });
+        await writeLog(req, enabled ? "enable_bank" : "disable_bank", id, null, { enabled });
+        return json(res, 200, { ok: true, message: enabled ? "收款渠道已启用" : "收款渠道已停用", bank: rows?.[0] || null });
+      } catch (error) {
+        if (!isMissingTable(error)) throw error;
+        const list = await readPlatformBanks();
+        const next = list.map((b) => (String(b.id) === id ? { ...b, enabled, updated_at: new Date().toISOString() } : b));
+        await writePlatformBanks(next);
+        const bank = next.find((b) => String(b.id) === id) || null;
+        await writeLog(req, enabled ? "enable_bank" : "disable_bank", id, null, { enabled, source: "platform_settings" });
+        return json(res, 200, { ok: true, message: enabled ? "收款渠道已启用" : "收款渠道已停用", bank });
+      }
     }
 
     return json(res, 400, { ok: false, message: "未知支付设置操作" });

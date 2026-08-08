@@ -83,7 +83,7 @@ create table if not exists public.companion_media (
   id uuid primary key default gen_random_uuid(),
   companion_profile_id uuid not null references public.companion_profiles(id) on delete cascade,
   user_id uuid not null references public.profiles(id) on delete cascade,
-  media_type text not null check (media_type in ('avatar','gallery','voice')),
+  media_type text not null check (media_type in ('avatar','cover','gallery','voice')),
   storage_bucket text not null default '',
   storage_path text not null default '',
   content_type text not null default '',

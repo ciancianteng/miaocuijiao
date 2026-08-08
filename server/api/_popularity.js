@@ -315,7 +315,7 @@ export async function recomputePopularity({ periods, gameKeys, operatorId, opera
   const [companions, reviews, favorites, complaints, sessions, adjustments] = await Promise.all([
     dbMaybe(
       "companion_profiles",
-      "?verification_status=eq.approved&select=user_id,nickname,game,main_service,level_name,level_id,price,pricing_unit,card_image_url,availability_status,online_status,companion_uid&limit=3000"
+      "?verification_status=eq.approved&select=user_id,nickname,game,main_service,level_name,level_id,price,card_image_url,availability_status,online_status,companion_uid,application_status,application_submitted_at&limit=3000"
     ),
     dbMaybe("companion_reviews", "?select=id,companion_id,boss_id,rating,status,created_at&order=created_at.desc&limit=5000"),
     dbMaybe("companion_favorites", "?select=id,boss_id,companion_id,created_at&limit=8000"),
@@ -326,7 +326,14 @@ export async function recomputePopularity({ periods, gameKeys, operatorId, opera
 
   const companionMap = {};
   for (const c of companions || []) {
-    if (c.user_id) companionMap[c.user_id] = c;
+    if (!c?.user_id) continue;
+    const appSt = String(c.application_status || "").trim().toLowerCase();
+    if (/^(draft|archived|deleted)$/.test(appSt)) continue;
+    if (appSt && !/approved|verified|passed/.test(appSt)) continue;
+    // Never-submitted rows are drafts even if verification_status was stubbed approved.
+    if (!appSt && !c.application_submitted_at) continue;
+    if (!/approved|verified|passed/.test(appSt) && !c.application_submitted_at) continue;
+    companionMap[c.user_id] = c;
   }
   const companionIds = Object.keys(companionMap);
   const allGameKeys = new Set([""]);

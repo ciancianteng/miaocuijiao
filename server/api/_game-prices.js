@@ -160,7 +160,18 @@ export function servicesFromGamePrices(companion = {}, catalog = []) {
   if (ids.length) {
     return ids.map((id, idx) => {
       const svc = byId.get(String(id));
-      const name = svc?.name || svc?.title || Object.keys(prices).find((k) => k === id) || "游戏";
+      const uuidName = /^[0-9a-f-]{36}$/i.test(String(id));
+      const pricedName = Object.keys(prices).find(
+        (k) => k !== id && !/^[0-9a-f-]{36}$/i.test(k) && money(prices[k]) === money(prices[id] || 0) && money(prices[k]) > 0
+      );
+      const name =
+        svc?.name ||
+        svc?.title ||
+        pricedName ||
+        (!uuidName ? String(id) : "") ||
+        splitGames(companion.game || companion.main_service)[idx] ||
+        Object.keys(prices).find((k) => !/^[0-9a-f-]{36}$/i.test(k) && prices[k] > 0) ||
+        "游戏";
       return {
         id: String(id),
         serviceId: String(id),
@@ -177,11 +188,16 @@ export function servicesFromGamePrices(companion = {}, catalog = []) {
     (g) => prices[g] > 0 || money(companion.price) > 0
   );
   if (!list.length) {
+    // Do NOT invent legacy defaults (陪玩/护航/代肝). Empty means companion has no configured games.
+    const fallbackName = String(companion.game || companion.main_service || "").trim();
+    if (!fallbackName || /^(陪玩|护航|跑刀|代肝|自定义|陪玩服务|陪聊服务)$/.test(fallbackName)) {
+      return [];
+    }
     return [
       {
         id: "default",
         serviceId: "",
-        name: companion.game || companion.main_service || "陪玩服务",
+        name: fallbackName,
         price: money(companion.price),
         pricingUnit: unit,
       },

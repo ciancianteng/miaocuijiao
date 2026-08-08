@@ -1,0 +1,236 @@
+{
+  "base": "https://meow-cuijiao-homepage-klle82ejp-ciancianteng-4581s-projects.vercel.app",
+  "at": "2026-08-02T23:49:22.217Z",
+  "pass": 38,
+  "fail": 0,
+  "results": [
+    {
+      "section": "home",
+      "id": "index",
+      "pass": true,
+      "detail": "status=200 bytes=227554"
+    },
+    {
+      "section": "home",
+      "id": "companion-center",
+      "pass": true,
+      "detail": "status=200 bytes=7580"
+    },
+    {
+      "section": "home",
+      "id": "more-gameplays",
+      "pass": true,
+      "detail": "status=200 bytes=2104"
+    },
+    {
+      "section": "home",
+      "id": "custom-order",
+      "pass": true,
+      "detail": "status=200 bytes=10897"
+    },
+    {
+      "section": "home",
+      "id": "team-lobby",
+      "pass": true,
+      "detail": "status=200 bytes=8471"
+    },
+    {
+      "section": "home",
+      "id": "companion-apply",
+      "pass": true,
+      "detail": "status=200 bytes=1471"
+    },
+    {
+      "section": "home",
+      "id": "support",
+      "pass": true,
+      "detail": "status=200 bytes=3156"
+    },
+    {
+      "section": "home",
+      "id": "club-levels",
+      "pass": true,
+      "detail": "status=200 bytes=1089"
+    },
+    {
+      "section": "home",
+      "id": "api-public-companions",
+      "pass": true,
+      "detail": "status=200 ok=true"
+    },
+    {
+      "section": "home",
+      "id": "api-banners",
+      "pass": true,
+      "detail": "status=200 ok=true"
+    },
+    {
+      "section": "home",
+      "id": "api-announcements",
+      "pass": true,
+      "detail": "status=200 ok=true"
+    },
+    {
+      "section": "boss",
+      "id": "login",
+      "pass": true,
+      "detail": "status=200 bytes=1211"
+    },
+    {
+      "section": "boss",
+      "id": "mine",
+      "pass": true,
+      "detail": "status=200 bytes=12497"
+    },
+    {
+      "section": "boss",
+      "id": "recharge",
+      "pass": true,
+      "detail": "status=200 bytes=15516"
+    },
+    {
+      "section": "boss",
+      "id": "orders",
+      "pass": true,
+      "detail": "status=200 bytes=35386"
+    },
+    {
+      "section": "boss",
+      "id": "payment-confirm",
+      "pass": true,
+      "detail": "status=200 bytes=3301"
+    },
+    {
+      "section": "boss",
+      "id": "profile",
+      "pass": true,
+      "detail": "status=200 bytes=2047"
+    },
+    {
+      "section": "boss",
+      "id": "player-redirect",
+      "pass": true,
+      "detail": "status=200 bytes=652"
+    },
+    {
+      "section": "boss",
+      "id": "checkin-redirect",
+      "pass": true,
+      "detail": "status=200 bytes=2477"
+    },
+    {
+      "section": "boss",
+      "id": "favorites-redirect",
+      "pass": true,
+      "detail": "status=200 bytes=5256"
+    },
+    {
+      "section": "boss",
+      "id": "gifts-redirect",
+      "pass": true,
+      "detail": "status=200 bytes=2594"
+    },
+    {
+      "section": "cs",
+      "id": "login",
+      "pass": true,
+      "detail": "status=200 bytes=2215"
+    },
+    {
+      "section": "cs",
+      "id": "dashboard",
+      "pass": true,
+      "detail": "status=200 bytes=940"
+    },
+    {
+      "section": "cs",
+      "id": "conversations",
+      "pass": true,
+      "detail": "status=200 bytes=1470"
+    },
+    {
+      "section": "cs",
+      "id": "orders",
+      "pass": true,
+      "detail": "status=200 bytes=865"
+    },
+    {
+      "section": "cs",
+      "id": "reports",
+      "pass": true,
+      "detail": "status=200 bytes=1470"
+    },
+    {
+      "section": "companion",
+      "id": "login",
+      "pass": true,
+      "detail": "status=200 bytes=808"
+    },
+    {
+      "section": "companion",
+      "id": "dashboard",
+      "pass": true,
+      "detail": "status=200 bytes=870"
+    },
+    {
+      "section": "companion",
+      "id": "hall",
+      "pass": true,
+      "detail": "status=200 bytes=777"
+    },
+    {
+      "section": "companion",
+      "id": "orders",
+      "pass": true,
+      "detail": "status=200 bytes=705"
+    },
+    {
+      "section": "companion",
+      "id": "earnings",
+      "pass": true,
+      "detail": "status=200 bytes=689"
+    },
+    {
+      "section": "companion",
+      "id": "wallet",
+      "pass": true,
+      "detail": "status=200 bytes=734"
+    },
+    {
+      "section": "companion",
+      "id": "messages",
+      "pass": true,
+      "detail": "status=200 bytes=867"
+    },
+    {
+      "section": "companion",
+      "id": "profile",
+      "pass": true,
+      "detail": "status=200 bytes=646"
+    },
+    {
+      "section": "companion",
+      "id": "apply",
+      "pass": true,
+      "detail": "status=200 bytes=1471"
+    },
+    {
+      "section": "admin",
+      "id": "login",
+      "pass": true,
+      "detail": "status=200 bytes=3663"
+    },
+    {
+      "section": "admin",
+      "id": "home",
+      "pass": true,
+      "detail": "status=200 bytes=14323"
+    },
+    {
+      "section": "critical",
+      "id": "player.html_not_404",
+      "pass": true,
+      "detail": "status=200 bytes=652"
+    }
+  ]
+}

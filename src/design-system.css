@@ -374,7 +374,7 @@ textarea {
 }
 
 /* mcj-design-system hard override: visible, visual-only unification */
-button:not(.modal-close):not(.close):not(.ad-dot):not(.mcj-hero-arrow):not(.mcj-po-chip):not(.mcj-po-close):not(.mcj-po-cancel-link):not(.mcj-po-submit):not(.mcj-po-pay-card):not(.cs-conversation):not(.support-session):not(.pw-btn):not(.pw-status-btn),
+button:not(.modal-close):not(.close):not(.ad-dot):not(.mcj-hero-arrow):not(.mcj-hero-dot):not(.mcj-po-chip):not(.mcj-po-close):not(.mcj-po-cancel-link):not(.mcj-po-submit):not(.mcj-po-pay-card):not(.cs-conversation):not(.support-session):not(.pw-btn):not(.pw-status-btn):not(.companion-card-action),
 a.btn,
 .btn,
 .mcj-btn,
@@ -429,7 +429,7 @@ a.btn,
   transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease, background .18s ease !important;
 }
 
-button:not(.modal-close):not(.close):not(.ad-dot):not(.mcj-hero-arrow):not(.mcj-po-chip):not(.mcj-po-close):not(.mcj-po-cancel-link):not(.mcj-po-submit):not(.mcj-po-pay-card):not(.cs-conversation):not(.support-session):not(.pw-btn):not(.pw-status-btn):hover,
+button:not(.modal-close):not(.close):not(.ad-dot):not(.mcj-hero-arrow):not(.mcj-hero-dot):not(.mcj-po-chip):not(.mcj-po-close):not(.mcj-po-cancel-link):not(.mcj-po-submit):not(.mcj-po-pay-card):not(.cs-conversation):not(.support-session):not(.pw-btn):not(.pw-status-btn):not(.companion-card-action):hover,
 a.btn:hover,
 .btn:hover,
 .mcj-btn:hover,
@@ -825,8 +825,21 @@ header.mcj-boss-header .live2d-avatar {
     display: none !important;
   }
   header.mcj-boss-header .mcj-desk-nav {
-    display: grid !important;
-    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    display: flex !important;
+    flex-wrap: nowrap !important;
+    align-items: center !important;
+    justify-content: flex-end !important;
+    gap: 6px !important;
+    max-width: none !important;
+  }
+  header.mcj-boss-header .mcj-desk-nav > a {
+    flex: 0 0 auto !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    height: 40px !important;
+    padding: 0 11px !important;
+    font-size: 13px !important;
+    box-shadow: none !important;
   }
 }
 @media (max-width: 899px) {
