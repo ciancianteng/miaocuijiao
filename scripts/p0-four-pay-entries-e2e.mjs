@@ -131,11 +131,19 @@ async function setOnlyExternal(adminToken, bossToken, codes) {
 
 (async () => {
   let failed = 0;
-  const browser = await chromium.launch({
+  const browserOpts = {
     channel: "chrome",
     headless: true,
     args: ["--no-sandbox", "--disable-dev-shm-usage"],
-  });
+  };
+  let browser = await chromium.launch(browserOpts);
+
+  async function freshBrowser() {
+    try {
+      await browser.close();
+    } catch {}
+    browser = await chromium.launch(browserOpts);
+  }
 
   try {
     // Probe shipped JS for hardcodes (alias regression detector)
@@ -185,7 +193,7 @@ async function setOnlyExternal(adminToken, bossToken, codes) {
     step("companion available", !!companionId, companionId || "none");
 
     async function openEntry(page, which) {
-      if (which === "立即下单") {
+      if (which.startsWith("立即下单")) {
         // Real boss path: companion hall → 立即下单 opens MCJPlaceOrder modal (SoT).
         await page.goto(`${BASE}/companion-center.html`, { waitUntil: "domcontentloaded", timeout: 60000 });
         await page.waitForTimeout(2000);
@@ -202,10 +210,10 @@ async function setOnlyExternal(adminToken, bossToken, codes) {
           timeout: 20000,
         }).catch(() => {});
         await page.waitForTimeout(1500);
-      } else if (which === "自定义订单") {
+      } else if (which.startsWith("自定义订单")) {
         await page.goto(`${BASE}/custom-order.html`, { waitUntil: "domcontentloaded", timeout: 60000 });
         await page.waitForSelector("#customPayMethods, [data-custom-pay]", { timeout: 20000 }).catch(() => {});
-      } else if (which === "更多玩法") {
+      } else if (which.startsWith("更多玩法")) {
         await page.goto(`${BASE}/more-gameplays.html`, { waitUntil: "domcontentloaded", timeout: 60000 });
         await page.waitForTimeout(1500);
         const link = page.locator('a[href*="gameplay-product"], .gameplay-card a, [data-gameplay] a').first();
@@ -215,9 +223,9 @@ async function setOnlyExternal(adminToken, bossToken, codes) {
           await page.goto(`${BASE}/gameplay-product.html`, { waitUntil: "domcontentloaded", timeout: 60000 });
         }
         await page.waitForSelector("[data-gp-pay], [data-gp-pay-grid]", { timeout: 20000 }).catch(() => {});
-      } else if (which === "充值中心") {
+      } else if (which.startsWith("充值中心")) {
         await page.goto(`${BASE}/recharge.html`, { waitUntil: "domcontentloaded", timeout: 60000 });
-        await page.waitForSelector(".method, [data-method]", { timeout: 20000 }).catch(() => {});
+        await page.waitForSelector(".method, [data-method], .empty, .panel", { timeout: 20000 }).catch(() => {});
       }
     }
 
@@ -231,12 +239,19 @@ async function setOnlyExternal(adminToken, bossToken, codes) {
         const shot = path.join(ART, `${fileSlug}.png`);
         await page.screenshot({ path: shot, fullPage: true });
         // Recharge ignores catfood
-        const expect = name === "充值中心" ? expectOpen.filter((x) => x !== "catfood") : expectOpen;
+        const expect = name.startsWith("充值中心") ? expectOpen.filter((x) => x !== "catfood") : expectOpen;
         const a = analyzeLabels(labels, expect);
-        const ok = a.ok;
-        step(name, ok, `expect=${expect.join(",") || "(none)"} labels=${JSON.stringify(labels).slice(0, 220)} tng=${a.hasTng} duit=${a.hasDuit} ali=${a.hasAlipay} bank=${a.hasBank} shot=${path.basename(shot)}`);
-        if (!ok) failed++;
-        return ok;
+        // For order pages expecting only catfood, require catfood chip when wallet gate is on.
+        const needCatVisible = !name.startsWith("充值中心") && expect.includes("catfood") && expect.length === 1;
+        const ok = a.ok && (!needCatVisible || a.hasCat || labels.length === 0 /* empty UI still fails below */);
+        const finalOk = needCatVisible ? a.hasCat && !a.hasTng && !a.hasDuit && !a.hasAlipay && !a.hasBank : a.ok;
+        step(
+          name,
+          finalOk,
+          `expect=${expect.join(",") || "(none)"} labels=${JSON.stringify(labels).slice(0, 220)} tng=${a.hasTng} duit=${a.hasDuit} ali=${a.hasAlipay} bank=${a.hasBank} url=${page.url()} shot=${path.basename(shot)}`
+        );
+        if (!finalOk) failed++;
+        return finalOk;
       } finally {
         await page.close();
       }
@@ -279,11 +294,15 @@ async function setOnlyExternal(adminToken, bossToken, codes) {
     await assertEntry("更多玩法", order, "03-gameplay-duitnow");
     await assertEntry("充值中心", order.filter((x) => x !== "catfood"), "04-recharge-duitnow");
 
+    await freshBrowser();
+
     // Scenario B: TNG off must never show TNG — close all external
     ({ order } = await setOnlyExternal(adminToken, bossToken, []));
     step("API all external off", !order.some((x) => x !== "catfood"), order.join(",") || "(none)");
     await assertEntry("立即下单-all-off", order, "05-place-order-all-off");
     await assertEntry("充值中心-all-off", order.filter((x) => x !== "catfood"), "06-recharge-all-off");
+
+    await freshBrowser();
 
     // Scenario C: only TNG
     ({ order } = await setOnlyExternal(adminToken, bossToken, ["tng"]));
@@ -291,7 +310,11 @@ async function setOnlyExternal(adminToken, bossToken, codes) {
     step("API only TNG", tngOk, order.join(",") || "TNG not open");
     if (!tngOk) failed++;
     await assertEntry("立即下单-only-tng", order, "07-place-order-tng");
+    await assertEntry("自定义订单-only-tng", order, "07b-custom-tng");
+    await assertEntry("更多玩法-only-tng", order, "07c-gameplay-tng");
     await assertEntry("充值中心-only-tng", order.filter((x) => x !== "catfood"), "08-recharge-tng");
+
+    await freshBrowser();
 
     // Restore: DuitNow on, others off (human baseline)
     for (const ch of snapshot) {
@@ -302,7 +325,9 @@ async function setOnlyExternal(adminToken, bossToken, codes) {
     step("e2e crashed", false, err.stack || err.message);
     failed++;
   } finally {
-    await browser.close();
+    try {
+      await browser.close();
+    } catch {}
   }
 
   const out = { base: BASE, failed, results, at: new Date().toISOString() };
