@@ -180,7 +180,8 @@
     var total = totalAmount();
     var bal = state.walletBalance;
     var catInsufficient = bal != null && !(bal + 1e-9 >= total);
-    var list = state.payMethods && state.payMethods.length ? state.payMethods : PAYMENTS;
+    // Only SoT list from /api/recharge. PAYMENTS is intentionally empty (no hardcode fallback).
+    var list = state.payMethods && state.payMethods.length ? state.payMethods : [];
     if (!list.length) {
       grid.innerHTML =
         '<p class="mcj-po-empty-services" style="color:#9ca3af;font-size:13px;margin:0">暂无可用支付方式，请联系管理员在后台启用</p>';
@@ -729,7 +730,7 @@
         "</button>"
       );
     }).join("");
-    var payList = state.payMethods && state.payMethods.length ? state.payMethods : PAYMENTS;
+    var payList = state.payMethods && state.payMethods.length ? state.payMethods : [];
     var payCards = payList.length
       ? payList
           .map(function (p) {

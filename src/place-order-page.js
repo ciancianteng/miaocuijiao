@@ -309,7 +309,7 @@
         "</button>"
       );
     }).join("");
-    var payList = state.payMethods && state.payMethods.length ? state.payMethods : PAYMENTS;
+    var payList = state.payMethods && state.payMethods.length ? state.payMethods : [];
     var payCards = payList.length
       ? payList
           .map(function (p) {
@@ -611,7 +611,8 @@
 
   function boot() {
     var q = qs();
-    var companionId = String(q.get("companionId") || q.get("id") || "").trim();
+    // Accept companionId|id|companion — all boss entry deep-links used in the wild.
+    var companionId = String(q.get("companionId") || q.get("id") || q.get("companion") || "").trim();
     var unitPrice = money(q.get("price") || q.get("unitPrice"));
     var name = String(q.get("name") || q.get("companionName") || "陪玩").trim() || "陪玩";
     var service = String(q.get("service") || q.get("game") || "").trim();
