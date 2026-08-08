@@ -20,3 +20,4 @@ BUTTON_AUDIT.md
 # Local / poisoned Vercel build artifacts — never commit
 .vercel/
 .vercel/**
+dist
