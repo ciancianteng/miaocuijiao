@@ -392,7 +392,18 @@ function viewOrder(row = {}) {
   const notesFromDesc = description.split("\n")[0] || "";
   const serviceName = String(row.service_name || row.serviceName || row.game || row.title || "").trim();
   const gameId = String(row.game_id_value || row.game_id || row.gameId || gameIdFromDesc || "").trim();
-  const paymentMethod = String(row.payment_method || row.paymentMethod || payFromDesc || "").trim();
+  const paymentMethodRaw = String(row.payment_method || row.paymentMethod || payFromDesc || "").trim();
+  const paymentMethod =
+    normalizePaymentChannelId(paymentMethodRaw) ||
+    (/duitnow/i.test(paymentMethodRaw)
+      ? "duitnow"
+      : /tng/i.test(paymentMethodRaw)
+        ? "tng"
+        : /alipay|支付宝/i.test(paymentMethodRaw)
+          ? "alipay"
+          : /bank|银行/i.test(paymentMethodRaw)
+            ? "bank-transfer"
+            : paymentMethodRaw);
   const companionName =
     (row.companion && (row.companion.display_name || row.companion.nickname || row.companion.email)) ||
     row.companion_name ||
@@ -1052,12 +1063,14 @@ export default async function handler(req, res) {
               notes || `${serviceType}订单`,
               gameId ? `游戏ID：${gameId}` : "",
               couponCode ? `优惠券：${couponCode}` : "",
-              `付款方式：${paymentMethodLabel(paymentMethod)}`,
+              `付款方式：${paymentMethod}`,
               companionName ? `指定陪玩：${companionName}` : "",
             ].filter(Boolean)
           : [
               String(order.description || order.requirements || order.service_content || notes || ""),
               gameId && !String(order.description || "").includes("游戏ID") ? `游戏ID：${gameId}` : "",
+              // Persist selected channel for QR routing (create path previously dropped it → 线下确认).
+              `付款方式：${paymentMethod}`,
             ].filter(Boolean);
 
       const row = {
@@ -1080,6 +1093,7 @@ export default async function handler(req, res) {
       // Optional marketplace columns (ignore if schema missing).
       const enriched = {
         ...row,
+        payment_method: paymentMethod,
         service_name: serviceType,
         game_id_value: gameId || String(order.game_id || "").trim(),
         notes: notes || descriptionParts.join("\n"),
