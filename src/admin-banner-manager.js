@@ -345,12 +345,21 @@
     var input = zone && zone.querySelector("[data-banner-file]");
     if (!zone || !input || zone.dataset.bound === "1") return;
     zone.dataset.bound = "1";
-    // Transparent full-zone <input type="file"> handles native click.
-    // Never preventDefault on click — that cancels the system file picker.
-    // Fallback: clicking non-input area (if any) still opens the picker.
+    // Ensure the native control is enabled and reachable.
+    input.disabled = false;
+    input.removeAttribute("disabled");
+    input.style.pointerEvents = "auto";
+    // Transparent full-zone <input type="file"> must receive the real user click.
+    // Never preventDefault / stopPropagation on click — that cancels the OS file picker
+    // (this was the P0 regression: zone click called preventDefault over the input).
     zone.addEventListener("click", function (e) {
-      if (e.target === input) return;
-      input.click();
+      if (e.target === input || (input.contains && input.contains(e.target))) return;
+      // Fallback only when click landed on decorative inner (should not happen — input covers zone).
+      try {
+        input.click();
+      } catch (err) {
+        console.error("[Banner 管理] 打开文件选择器失败", err);
+      }
     });
     input.addEventListener("change", function () {
       var file = input.files && input.files[0];
@@ -367,7 +376,6 @@
     function onDragLeave(e) {
       e.preventDefault();
       e.stopPropagation();
-      // relatedTarget may be null or leave the zone entirely
       var next = e.relatedTarget;
       if (next && zone.contains(next)) return;
       zone.classList.remove("is-dragover");
@@ -650,7 +658,15 @@
       .then(load)
       .catch(function () {});
   }
+  function onHashOrSection() {
+    var hash = String(location.hash || "").replace(/^#/, "");
+    var section = document.body && document.body.dataset ? document.body.dataset.adminSection : "";
+    if (hash === "banners" || section === "banners") {
+      if (window.MCJAdminAuthFetch && target()) load();
+    }
+  }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
   else init();
+  window.addEventListener("hashchange", onHashOrSection);
   window.MCJAdminBannerManager = { reload: load };
 })();
