@@ -8,12 +8,8 @@
     { id: "3", label: "3 小时", value: 3 },
     { id: "custom", label: "自定义", value: 0, custom: true },
   ];
-  var PAYMENTS = [
-    { id: "tng", label: "TNG" },
-    { id: "bank", label: "银行卡" },
-    { id: "alipay", label: "支付宝" },
-    { id: "catfood", label: "猫粮余额" },
-  ];
+  // Never hardcode channel list — filled live from /api/recharge (payment_channels SoT).
+  var PAYMENTS = [];
 
   var DEFAULT_AVATAR = "/default-avatar.png";
   var toastTimer = null;
@@ -28,10 +24,11 @@
     hours: 1,
     quantity: 1,
     couponCode: "",
-    payment: "tng",
+    payment: "",
     submitting: false,
     submitStartedAt: 0,
     walletBalance: null,
+    payMethods: [],
   };
 
   function esc(v) {
@@ -129,9 +126,41 @@
     btn.setAttribute("aria-busy", on ? "true" : "false");
     btn.textContent = on ? "提交中…" : "确认订单并付款";
   }
+  function applyOrderPayMethods(body) {
+    var list = Array.isArray(body.orderPayMethods) ? body.orderPayMethods : [];
+    if (!list.length && Array.isArray(body.methods)) {
+      list = (body.methods || [])
+        .filter(function (m) {
+          return m && m.code && (m.open === true || (m.enabled && m.configured));
+        })
+        .map(function (m) {
+          return { id: m.code, code: m.code, label: m.name || m.code, open: true, statusText: "可用" };
+        });
+      if (body.walletPayEnabled !== false) {
+        list = list.concat([{ id: "catfood", code: "catfood", label: "猫粮余额", open: true, statusText: "可用" }]);
+      }
+    }
+    // Hide disabled/closed — only enabled channels from admin SoT.
+    state.payMethods = list
+      .filter(function (m) {
+        return m && (m.id || m.code) && m.open !== false;
+      })
+      .map(function (m) {
+        return {
+          id: m.id || m.code,
+          label: m.label || m.name || m.code || m.id,
+          open: true,
+          statusText: m.statusText || "可用",
+        };
+      });
+    if (!state.payMethods.some(function (p) { return p.id === state.payment; })) {
+      state.payment = state.payMethods[0] ? state.payMethods[0].id : "";
+    }
+  }
   function refreshWalletBalance() {
     if (!token()) {
       state.walletBalance = null;
+      state.payMethods = [];
       return Promise.resolve(null);
     }
     return fetch("/api/recharge", { method: "GET", headers: authHeaders() })
@@ -145,6 +174,7 @@
                 ? body.wallet.totalBalance
                 : null;
           state.walletBalance = bal == null ? null : money(bal);
+          applyOrderPayMethods(body);
           return state.walletBalance;
         });
       })
@@ -161,31 +191,48 @@
     var total = totalAmount();
     var bal = state.walletBalance;
     var catInsufficient = bal != null && !(bal + 1e-9 >= total);
-    grid.innerHTML = PAYMENTS.map(function (p) {
-      var insufficient = p.id === "catfood" && catInsufficient;
-      if (insufficient) {
+    var list = state.payMethods && state.payMethods.length ? state.payMethods : PAYMENTS;
+    if (!list.length) {
+      grid.innerHTML =
+        '<p class="mcj-po-empty-services" style="color:#9ca3af;font-size:13px;margin:0">暂无可用支付方式，请联系管理员在后台启用</p>';
+      state.payment = "";
+      return;
+    }
+    grid.innerHTML = list
+      .map(function (p) {
+        var insufficient = p.id === "catfood" && catInsufficient;
+        if (insufficient) {
+          return (
+            '<button type="button" class="mcj-po-pay-card is-maintenance" disabled aria-disabled="true">' +
+            '<span class="mcj-po-pay-title">' +
+            esc(p.label) +
+            '</span><span class="mcj-po-pay-check">余额不足</span></button>'
+          );
+        }
         return (
-          '<button type="button" class="mcj-po-pay-card is-maintenance" disabled aria-disabled="true">' +
-          '<span class="mcj-po-pay-title">' +
+          '<button type="button" class="mcj-po-pay-card' +
+          (state.payment === p.id ? " active" : "") +
+          '" data-po-pay="' +
+          esc(p.id) +
+          '"><span class="mcj-po-pay-title">' +
           esc(p.label) +
-          '</span><span class="mcj-po-pay-check">余额不足</span></button>'
+          '</span><span class="mcj-po-pay-check" aria-hidden="true"></span></button>'
         );
-      }
-      return (
-        '<button type="button" class="mcj-po-pay-card' +
-        (state.payment === p.id ? " active" : "") +
-        '" data-po-pay="' +
-        esc(p.id) +
-        '"><span class="mcj-po-pay-title">' +
-        esc(p.label) +
-        '</span><span class="mcj-po-pay-check" aria-hidden="true"></span></button>'
-      );
-    }).join("");
-    if (state.payment === "catfood" && catInsufficient) state.payment = "tng";
+      })
+      .join("");
+    if (state.payment === "catfood" && catInsufficient) {
+      var alt = list.find(function (p) {
+        return p.id !== "catfood";
+      });
+      state.payment = alt ? alt.id : "catfood";
+    }
+    if (!list.some(function (p) { return p.id === state.payment; })) {
+      state.payment = list[0] ? list[0].id : "";
+    }
     grid.querySelectorAll("[data-po-pay]").forEach(function (btn) {
       btn.addEventListener("click", function () {
         if (btn.disabled) return;
-        state.payment = btn.getAttribute("data-po-pay") || "tng";
+        state.payment = btn.getAttribute("data-po-pay") || "";
         setExclusiveActive(grid.querySelectorAll("[data-po-pay]"), btn);
       });
     });
@@ -693,17 +740,22 @@
         "</button>"
       );
     }).join("");
-    var payCards = PAYMENTS.map(function (p) {
-      return (
-        '<button type="button" class="mcj-po-pay-card' +
-        (state.payment === p.id ? " active" : "") +
-        '" data-po-pay="' +
-        esc(p.id) +
-        '"><span class="mcj-po-pay-title">' +
-        esc(p.label) +
-        '</span><span class="mcj-po-pay-check" aria-hidden="true"></span></button>'
-      );
-    }).join("");
+    var payList = state.payMethods && state.payMethods.length ? state.payMethods : PAYMENTS;
+    var payCards = payList.length
+      ? payList
+          .map(function (p) {
+            return (
+              '<button type="button" class="mcj-po-pay-card' +
+              (state.payment === p.id ? " active" : "") +
+              '" data-po-pay="' +
+              esc(p.id) +
+              '"><span class="mcj-po-pay-title">' +
+              esc(p.label) +
+              '</span><span class="mcj-po-pay-check" aria-hidden="true"></span></button>'
+            );
+          })
+          .join("")
+      : '<p class="mcj-po-empty-services" style="color:#9ca3af;font-size:13px;margin:0">正在读取支付方式…</p>';
 
     var mask = document.createElement("div");
     mask.className = "mcj-po-mask";
@@ -911,7 +963,7 @@
     mask.querySelectorAll("[data-po-pay]").forEach(function (btn) {
       btn.addEventListener("click", function () {
         if (btn.disabled) return;
-        state.payment = btn.getAttribute("data-po-pay") || "tng";
+        state.payment = btn.getAttribute("data-po-pay") || "";
         setExclusiveActive(mask.querySelectorAll("[data-po-pay]"), btn);
       });
     });
@@ -1085,7 +1137,7 @@
       }
       if (isWalletPayment(payment)) {
         if (state.walletBalance != null && !(state.walletBalance + 1e-9 >= total)) {
-          failValidate("猫粮余额不足，请改用 TNG / 银行卡 / 支付宝或先充值");
+          failValidate("猫粮余额不足，请改用其他支付方式或先充值");
           return;
         }
       }
@@ -1218,7 +1270,7 @@
     state.hours = 1;
     state.quantity = 1;
     state.couponCode = "";
-    state.payment = "tng";
+    state.payment = state.payMethods[0] ? state.payMethods[0].id : "";
     state.submitting = false;
     state.submitStartedAt = 0;
     try {

@@ -17,7 +17,7 @@ import { evaluatePublishGate } from "./_companion-publish-gate.js";
 import { allocateOrderNo, resolveOrderPublicNo } from "./_account-codes.js";
 import { companionDb } from "./_companion-media-store.js";
 import { listPendingForCs, latestRejectedForOrders, signedProofUrl, uploadProof } from "./_payment-receipts.js";
-import { loadPlatformPayQr } from "./_platform-pay-qr.js";
+import { loadPlatformPayQr, listBossOrderPaymentMethods, normalizePaymentChannelId, isWalletPayEnabled, loadPaymentChannelsContext } from "./_platform-pay-qr.js";
 import { stripInternalOrderMarkers } from "./_order-grabs.js";
 import {
   completionCountdown,
@@ -233,9 +233,12 @@ async function nextOrderNo() {
 }
 function paymentMethodLabel(method) {
   const key = String(method || "").toLowerCase();
+  if (/duitnow/.test(key)) return "DuitNow";
   if (/tng/.test(key)) return "TNG";
   if (/bank|银行/.test(key)) return "银行卡";
   if (/alipay|支付宝/.test(key)) return "支付宝";
+  if (/stripe/.test(key)) return "Stripe";
+  if (/hitpay/.test(key)) return "HitPay";
   if (/cat.?food|wallet|猫粮|余额/.test(key)) return "猫粮余额";
   return method || "猫粮余额";
 }
@@ -243,7 +246,26 @@ function isWalletMethod(method) {
   return /cat.?food|wallet|猫粮|余额/.test(String(method || "").toLowerCase());
 }
 function isPreviewTestMethod(method) {
-  return /tng|bank|银行|card|银行卡|alipay|支付宝/.test(String(method || "").toLowerCase());
+  return /tng|duitnow|bank|银行|card|银行卡|alipay|支付宝|hitpay|stripe|toyyib/.test(String(method || "").toLowerCase());
+}
+
+async function assertOrderPaymentMethodAllowed(paymentMethod) {
+  const raw = String(paymentMethod || "").trim();
+  if (!raw) return { ok: false, message: "请选择支付方式" };
+  if (isWalletMethod(raw)) {
+    const ctx = await loadPaymentChannelsContext();
+    if (!isWalletPayEnabled(ctx.platformData, ctx.publicMap, ctx.byId)) {
+      return { ok: false, message: "余额支付暂未开放，请选择其他支付方式" };
+    }
+    return { ok: true, code: "catfood" };
+  }
+  const listed = await listBossOrderPaymentMethods([]);
+  const code = normalizePaymentChannelId(raw) || raw.toLowerCase();
+  const hit = (listed.methods || []).find((m) => m.code === code || m.id === code || m.code === raw || m.id === raw);
+  if (!hit || hit.open === false) {
+    return { ok: false, message: "该支付方式暂未开放，请选择其他支付方式" };
+  }
+  return { ok: true, code: hit.code || code };
 }
 
 async function parseBody(req) {
@@ -847,15 +869,21 @@ export default async function handler(req, res) {
         const target = enriched.find((o) => String(o.id) === singleId || String(o.orderNo || o.order_no || "") === singleId);
         if (target && String(target.status || "") === "awaiting_payment" && !isWalletMethod(target.paymentMethod || target.payment_method)) {
           try {
-            platformPayInfo = await loadPlatformPayQr();
+            // Bind QR strictly to this order's selected payment_method — never cross-fallback.
+            platformPayInfo = await loadPlatformPayQr(target.paymentMethod || target.payment_method || "");
           } catch (err) {
             console.warn("[orders] platformPayInfo", String(err?.message || err).slice(0, 160));
+            const methodHint = String(target.paymentMethod || target.payment_method || "").trim();
             platformPayInfo = {
               channelId: "",
-              title: "平台收款",
+              requestedMethod: methodHint,
+              title: methodHint || "平台收款",
               qrUrl: "",
-              instructions: "支付通道暂不可用",
+              instructions: methodHint
+                ? `${paymentMethodLabel(methodHint)} 暂未开放，请选择其他支付方式`
+                : "支付通道暂不可用",
               enabled: false,
+              unavailable: true,
               source: "error",
             };
           }
@@ -932,7 +960,12 @@ export default async function handler(req, res) {
       const companionName = String(order.companionName || order.companion_name || "").trim();
       const gameId = String(order.gameId || order.game_id || order.gameIdValue || order.game_id_value || "").trim();
       const couponCode = String(order.couponCode || order.coupon || "").trim();
-      const paymentMethod = String(order.paymentMethod || order.payment_method || "catfood").trim().toLowerCase();
+      let paymentMethod = String(order.paymentMethod || order.payment_method || "").trim().toLowerCase();
+      const payGate = await assertOrderPaymentMethodAllowed(paymentMethod || "catfood");
+      if (!payGate.ok) {
+        return json(res, 409, { ok: false, message: payGate.message || "该支付方式暂未开放" });
+      }
+      paymentMethod = String(payGate.code || paymentMethod).toLowerCase();
       const notes = String(order.notes || order.remark || order.description || "").trim();
       const game = String(order.game || serviceType || "陪玩").trim();
       let unitPrice = 0;
@@ -1184,7 +1217,12 @@ export default async function handler(req, res) {
       if (normalizeOrderStatus(before.status) !== "awaiting_payment") {
         return json(res, 409, { ok: false, message: "当前订单无需再次支付。", order: viewOrder(before) });
       }
-      const paymentMethod = String(body.paymentMethod || body.payment_method || viewOrder(before).paymentMethod || "").trim().toLowerCase();
+      const paymentMethodRaw = String(body.paymentMethod || body.payment_method || viewOrder(before).paymentMethod || "").trim().toLowerCase();
+      const payGate = await assertOrderPaymentMethodAllowed(paymentMethodRaw);
+      if (!payGate.ok) {
+        return json(res, 409, { ok: false, message: payGate.message || "该支付方式暂未开放" });
+      }
+      const paymentMethod = String(payGate.code || paymentMethodRaw).toLowerCase();
       const previewTest =
         String(body.preview_test || body.previewTest || "").trim() === "1" ||
         String(body.test_pay || "").trim() === "1";
