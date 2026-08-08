@@ -234,7 +234,7 @@
       (state.draft && state.draft.url) || (state.current && state.current.image_url) || "";
     var editing = !!state.editingId;
     var publishLabel = state.publishing
-      ? (editing ? "保存中…" : "发布中…")
+      ? "上传中/发布中…"
       : editing
         ? "保存编辑并发布"
         : "保存并发布";
@@ -342,32 +342,51 @@
   }
   function bindUploadZone() {
     var zone = document.querySelector("[data-banner-upload-zone]");
-    var input = document.querySelector("[data-banner-file]");
+    var input = zone && zone.querySelector("[data-banner-file]");
     if (!zone || !input || zone.dataset.bound === "1") return;
     zone.dataset.bound = "1";
+    // Transparent full-zone <input type="file"> handles native click.
+    // Never preventDefault on click — that cancels the system file picker.
+    // Fallback: clicking non-input area (if any) still opens the picker.
     zone.addEventListener("click", function (e) {
-      e.preventDefault();
+      if (e.target === input) return;
       input.click();
     });
     input.addEventListener("change", function () {
-      acceptFile(input.files && input.files[0]);
+      var file = input.files && input.files[0];
+      if (!file) return;
+      acceptFile(file);
       input.value = "";
     });
+    function onDragEnterOver(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+      zone.classList.add("is-dragover");
+    }
+    function onDragLeave(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      // relatedTarget may be null or leave the zone entirely
+      var next = e.relatedTarget;
+      if (next && zone.contains(next)) return;
+      zone.classList.remove("is-dragover");
+    }
+    function onDrop(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      zone.classList.remove("is-dragover");
+      var file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      if (file) acceptFile(file);
+    }
     ["dragenter", "dragover"].forEach(function (name) {
-      zone.addEventListener(name, function (e) {
-        e.preventDefault();
-        zone.classList.add("is-dragover");
-      });
+      zone.addEventListener(name, onDragEnterOver);
+      input.addEventListener(name, onDragEnterOver);
     });
-    ["dragleave", "drop"].forEach(function (name) {
-      zone.addEventListener(name, function (e) {
-        e.preventDefault();
-        zone.classList.remove("is-dragover");
-        if (name === "drop" && e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]) {
-          acceptFile(e.dataTransfer.files[0]);
-        }
-      });
-    });
+    zone.addEventListener("dragleave", onDragLeave);
+    input.addEventListener("dragleave", onDragLeave);
+    zone.addEventListener("drop", onDrop);
+    input.addEventListener("drop", onDrop);
   }
   function exportCoverDataUrl() {
     return new Promise(function (resolve, reject) {
@@ -470,6 +489,8 @@
   function publish() {
     if (!state.draft || state.publishing) return;
     state.publishing = true;
+    state.error = "";
+    state.message = "上传中/发布中…";
     render();
     exportCoverDataUrl()
       .then(function (dataUrl) {
@@ -501,7 +522,9 @@
         });
       })
       .then(function (res) {
-        alert(res.message || (state.editingId ? "Banner 已保存" : "Banner 发布成功"));
+        var okMsg = res.message || (state.editingId ? "Banner 已保存" : "Banner 发布成功");
+        state.message = okMsg;
+        alert(okMsg);
         resetDraft(false);
         state.current = res.banner || state.current;
         state.publishing = false;
@@ -512,7 +535,10 @@
         return load();
       })
       .catch(function (err) {
-        alert(err.message || "保存失败");
+        var msg = err.message || "保存失败";
+        state.error = msg;
+        state.message = "";
+        alert(msg);
         state.publishing = false;
         render();
         bind();
