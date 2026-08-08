@@ -1392,6 +1392,7 @@
       });
   }
 
+  window.MCJ_PAY_SOT_VERSION = '20260808paySotForceSrc1';
   window.MCJPlaceOrder = {
     open: open,
     openFromCompanion: openFromProfileCompanion,
