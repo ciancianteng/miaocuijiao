@@ -152,14 +152,14 @@ const tinyPng =
   );
 
   const compSend = await api("/api/companion", compTok, {
-    action: "send_support_message",
+    action: "send_cs_message",
     content: markerComp,
     consult_type: "general",
   });
   const altCompSend =
     compSend.ok
       ? compSend
-      : await api("/api/chat", compTok, { action: "send_message", content: markerComp, portal: "companion" });
+      : await api("/api/companion", compTok, { action: "send_message", content: markerComp, consult_type: "general" });
   const compConvId =
     (compSend.json?.conversation || compSend.json)?.id ||
     compSend.json?.conversationId ||
