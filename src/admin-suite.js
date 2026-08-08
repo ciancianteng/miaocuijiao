@@ -897,6 +897,7 @@
     return idLine;
   }
   function renderPlayerTableRows(){
+    closePlayerMoreMenu();
     var box=document.getElementById('playerManagementTable');if(!box)return;
     if(!playerAdminState.loaded){
       box.innerHTML='<div class="player-empty-state"><strong>正在加载陪玩列表…</strong></div>';
@@ -1002,6 +1003,99 @@
     reloadList:function(){loadPlayerAdminRows();}
   };
   function closePlayerDrawer(){var drawer=document.getElementById('playerDetailDrawer');if(drawer){drawer.hidden=true;drawer.classList.remove('open');drawer.innerHTML='';}}
+  var playerMorePopover={el:null,anchor:null,home:null,onScroll:null,bound:false};
+  function clearPlayerMoreMenuInlineStyles(menu){
+    if(!menu||!menu.style)return;
+    menu.style.position='';
+    menu.style.top='';
+    menu.style.left='';
+    menu.style.right='';
+    menu.style.bottom='';
+    menu.style.zIndex='';
+    menu.style.minWidth='';
+  }
+  function closePlayerMoreMenu(){
+    var menu=playerMorePopover.el;
+    if(menu){
+      menu.hidden=true;
+      menu.classList.remove('is-portal-open');
+      clearPlayerMoreMenuInlineStyles(menu);
+      if(playerMorePopover.home&&document.body.contains(playerMorePopover.home)){
+        playerMorePopover.home.appendChild(menu);
+      }else if(menu.parentNode===document.body){
+        menu.remove();
+      }
+    }
+    playerMorePopover.el=null;
+    playerMorePopover.anchor=null;
+    playerMorePopover.home=null;
+    if(playerMorePopover.onScroll){
+      document.querySelectorAll('.player-table-wrap').forEach(function(scroller){
+        scroller.removeEventListener('scroll',playerMorePopover.onScroll);
+      });
+      window.removeEventListener('scroll',playerMorePopover.onScroll,true);
+      window.removeEventListener('resize',playerMorePopover.onScroll);
+      playerMorePopover.onScroll=null;
+    }
+  }
+  function positionPlayerMoreMenu(){
+    var menu=playerMorePopover.el;
+    var anchor=playerMorePopover.anchor;
+    if(!menu||!anchor||!document.body.contains(anchor)){closePlayerMoreMenu();return;}
+    var rect=anchor.getBoundingClientRect();
+    var gap=4;
+    var pad=8;
+    var menuWidth=Math.max(148,menu.offsetWidth||148);
+    var menuHeight=Math.max(menu.offsetHeight||1,1);
+    var left=rect.right-menuWidth;
+    if(left<pad)left=pad;
+    if(left+menuWidth>window.innerWidth-pad)left=Math.max(pad,window.innerWidth-menuWidth-pad);
+    var top=rect.bottom+gap;
+    var spaceBelow=window.innerHeight-rect.bottom-pad;
+    var spaceAbove=rect.top-pad;
+    if(top+menuHeight>window.innerHeight-pad && spaceAbove>=menuHeight+gap){
+      top=rect.top-gap-menuHeight;
+    }else if(top+menuHeight>window.innerHeight-pad){
+      top=Math.max(pad,window.innerHeight-menuHeight-pad);
+    }
+    top=Math.max(pad,Math.min(top,window.innerHeight-menuHeight-pad));
+    menu.style.position='fixed';
+    menu.style.zIndex='10050';
+    menu.style.right='auto';
+    menu.style.bottom='auto';
+    menu.style.left=Math.round(left)+'px';
+    menu.style.top=Math.round(top)+'px';
+    menu.style.minWidth=menuWidth+'px';
+  }
+  function openPlayerMoreMenu(anchorBtn){
+    var wrap=anchorBtn.closest('.player-more-wrap')||anchorBtn.parentElement;
+    var menu=wrap&&wrap.querySelector('.player-more-menu');
+    if(!menu)return;
+    if(playerMorePopover.el===menu&&!menu.hidden){closePlayerMoreMenu();return;}
+    closePlayerMoreMenu();
+    playerMorePopover.home=wrap;
+    playerMorePopover.anchor=anchorBtn;
+    playerMorePopover.el=menu;
+    document.body.appendChild(menu);
+    menu.hidden=false;
+    menu.classList.add('is-portal-open');
+    positionPlayerMoreMenu();
+    requestAnimationFrame(function(){positionPlayerMoreMenu();});
+    playerMorePopover.onScroll=function(){closePlayerMoreMenu();};
+    document.querySelectorAll('.player-table-wrap').forEach(function(scroller){
+      scroller.addEventListener('scroll',playerMorePopover.onScroll,{passive:true});
+    });
+    window.addEventListener('scroll',playerMorePopover.onScroll,true);
+    window.addEventListener('resize',playerMorePopover.onScroll);
+  }
+  function ensurePlayerMorePopoverBound(){
+    if(playerMorePopover.bound)return;
+    playerMorePopover.bound=true;
+    document.addEventListener('keydown',function(e){
+      if(e.key==='Escape')closePlayerMoreMenu();
+    });
+  }
+  ensurePlayerMorePopoverBound();
   function collectPlayerEditForm(form){var data={};if(!form)return data;new FormData(form).forEach(function(value,key){data[key]=value});return data;}
   function updatePlayerRowInMemory(id,payload){
     (playerAdminState.rows||[]).forEach(function(row){var rid=String(row.id||row.uid||row.playerId||row.player_id||row.name||row.nickname);if(rid!==String(id))return;Object.keys(payload||{}).forEach(function(key){var value=payload[key];if(key==='orderCommissionRate')row.orderCommissionRate=value;if(key==='directRebateRate')row.directRebateRate=value;if(key==='giftCommissionRate')row.giftCommissionRate=value;if(key==='accountStatus')row.accountStatus=value;if(key==='auditStatus')row.auditStatus=value;if(key==='identityStatus')row.identityStatus=value;if(key==='depositStatus')row.depositStatus=value;if(key==='withdrawStatus')row.withdrawStatus=value;if(key==='levelId')row.levelId=value;if(key==='featured')row.featured=value==='true'||value===true;if(key==='pinned')row.pinned=value==='true'||value===true;if(key==='workStatus')row.workStatus=value;if(key==='rejectReason')row.rejectReason=value;if(key==='depositConfirmRemark')row.depositConfirmRemark=value;if(key==='withdrawRejectReason')row.withdrawRejectReason=value;});row.updatedAt=new Date().toISOString();});
@@ -1991,30 +2085,11 @@
       var homeReload=e.target.closest('[data-home-entry-reload]');if(homeReload){renderHomeEntryManager();return;}var homeEdit=e.target.closest('[data-home-entry-edit]');if(homeEdit){openHomeEntryEditor(homeEdit.dataset.homeEntryEdit);return;}var homeClose=e.target.closest('[data-home-entry-close]');if(homeClose){var drawer=document.querySelector('[data-home-entry-drawer]');if(drawer){drawer.hidden=true;drawer.innerHTML='';}return;}var bannerClear=e.target.closest('[data-banner-clear-image]');if(bannerClear){var form=bannerClear.closest('[data-content-form]');var field=bannerClear.dataset.bannerClearImage;var target=form&&form.querySelector('[name="'+field+'"]');if(target)target.value='';if(form)refreshBannerSimplePreview(form);return;}var contentAction=e.target.closest('[data-content-action]');if(contentAction){var ctype=contentAction.dataset.contentType,cid=contentAction.dataset.contentId,act=contentAction.dataset.contentAction;if(act==='new'){openPlatformContentEditor(ctype,'');return;}if(act==='edit'){openPlatformContentEditor(ctype,cid);return;}if(act==='cancel'){var editor=document.querySelector('[data-content-editor="'+ctype+'"]');if(editor){editor.hidden=true;editor.innerHTML='';}return;}if(act==='reload'){var cfg=platformContentConfig(ctype);if(cfg)loadPlatformContent(cfg);return;}if(act==='preview'){var form=document.querySelector('[data-content-form="'+ctype+'"]');if(form){var cfgp=platformContentConfig(ctype);var box=form.querySelector('.content-preview-box');if(box)box.innerHTML=renderContentPreview(cfgp,collectPlatformContentForm(form).draft);}return;}if(act==='delete'&&isProtectedBaseData(ctype)){alert('该数据已被业务使用时不能直接删除。请先停用，避免破坏历史订单和资料。');return;}if(/delete|unpublish|disable/.test(act)&&!confirm('确认执行该内容操作？'))return;if(act==='save'){var editForm=document.querySelector('[data-content-form="'+ctype+'"][data-content-id="'+cid+'"]');submitPlatformContent('save',ctype,cid,editForm?collectPlatformContentForm(editForm):{});return;}submitPlatformContent(act,ctype,cid,{});return;}
       var playerMore=e.target.closest('[data-player-more]');if(playerMore){
         e.preventDefault();e.stopPropagation();
-        var wrap=playerMore.closest('.player-more-wrap')||playerMore.parentElement;
-        var menu=wrap&&wrap.querySelector('.player-more-menu');
-        document.querySelectorAll('.player-more-menu').forEach(function(m){if(m!==menu){m.hidden=true;m.classList.remove('is-portal-open');}});
-        if(!menu)return;
-        var willOpen=!!menu.hidden;
-        if(!willOpen){menu.hidden=true;menu.classList.remove('is-portal-open');menu.style.position='';menu.style.top='';menu.style.left='';menu.style.right='';menu.style.bottom='';return;}
-        menu.hidden=false;menu.classList.add('is-portal-open');
-        var rect=playerMore.getBoundingClientRect();
-        var menuW=Math.max(148,menu.offsetWidth||148);
-        var left=Math.min(window.innerWidth-menuW-8,Math.max(8,rect.right-menuW));
-        var top=rect.bottom+4;
-        if(top+160>window.innerHeight)top=Math.max(8,rect.top-164);
-        menu.style.position='fixed';
-        menu.style.zIndex='200';
-        menu.style.left=left+'px';
-        menu.style.top=top+'px';
-        menu.style.right='auto';
-        menu.style.bottom='auto';
+        openPlayerMoreMenu(playerMore);
         return;
       }
-      if(!e.target.closest('.player-more-wrap')&&!e.target.closest('.player-more-menu')){
-        document.querySelectorAll('.player-more-menu.is-portal-open,.player-more-menu:not([hidden])').forEach(function(m){
-          if(m.classList.contains('is-portal-open')||!m.hidden){m.hidden=true;m.classList.remove('is-portal-open');m.style.position='';m.style.top='';m.style.left='';m.style.right='';m.style.bottom='';}
-        });
+      if(playerMorePopover.el&&!e.target.closest('.player-more-menu')&&!e.target.closest('[data-player-more]')){
+        closePlayerMoreMenu();
       }
       var playerJump=e.target.closest('[data-player-jump]');if(playerJump){var nav=document.querySelector('.side-nav [data-section="'+playerJump.dataset.playerJump+'"]');if(nav)nav.click();return;}
       var playerSearchBtn=e.target.closest('[data-player-search-button]');if(playerSearchBtn){filterPlayerManagement();return;}
@@ -2024,7 +2099,7 @@
       var playerPageGo=e.target.closest('[data-player-page-go]');if(playerPageGo){var jump=document.querySelector('[data-player-page-jump]');var total=visiblePlayerRows().length;var pages=Math.max(1,Math.ceil(total/playerAdminState.pageSize));playerAdminState.page=Math.min(Math.max(1,Number(jump&&jump.value)||1),pages);renderPlayerTableRows();return;}
       var playerClose=e.target.closest('[data-player-drawer-close]');if(playerClose){closePlayerDrawer();return;}
       var playerSec=e.target.closest('[data-player-sec]');if(playerSec){var secAct=playerSec.dataset.playerSec,secId=playerSec.dataset.playerId;var labels={send_password_reset:'向该陪玩发送密码重置邮件？管理员无法查看新密码。',force_change_password:'强制该陪玩下次登录后修改密码？',revoke_sessions:'注销该陪玩全部登录会话？',enable:'解封该陪玩账号？'};if(!confirm(labels[secAct]||'确认执行该操作？'))return;submitPlayerSecure(secAct,secId,{});return;}
-      var playerAction=e.target.closest('[data-player-action]');if(playerAction){var action=playerAction.dataset.playerAction,id=playerAction.dataset.playerId,focus=playerAction.dataset.playerSection||'';if(action==='view'||action==='edit'){openPlayerDetail(id,action,focus);return;}if(action==='save-detail'){var detailForm=document.querySelector('[data-player-detail-form]');var payload=collectPlayerEditForm(detailForm);if(window.MCJAdminPlayerDetail&&window.MCJAdminPlayerDetail.isSaving&&window.MCJAdminPlayerDetail.isSaving())return;savePlayerAdminChanges('edit',id,payload,function(result){alert((result&&result.message)||'修改已保存');openPlayerDetail(id,'view',focus);});return;}if(action==='save-edit'){submitPlayerSecure('edit',id,collectPlayerEditForm(document.querySelector('[data-player-edit-form]')));return;}if(/freeze|ban-order/.test(action)&&!confirm('确认执行该陪玩账号操作？'))return;submitPlayerSecure(action,id,{});return;}var playerOpen=e.target.closest('[data-player-open]');if(playerOpen&&!e.target.closest('button,a,input,select')){openPlayerDetail(playerOpen.dataset.playerOpen,'view');return;}
+      var playerAction=e.target.closest('[data-player-action]');if(playerAction){closePlayerMoreMenu();var action=playerAction.dataset.playerAction,id=playerAction.dataset.playerId,focus=playerAction.dataset.playerSection||'';if(action==='view'||action==='edit'){openPlayerDetail(id,action,focus);return;}if(action==='save-detail'){var detailForm=document.querySelector('[data-player-detail-form]');var payload=collectPlayerEditForm(detailForm);if(window.MCJAdminPlayerDetail&&window.MCJAdminPlayerDetail.isSaving&&window.MCJAdminPlayerDetail.isSaving())return;savePlayerAdminChanges('edit',id,payload,function(result){alert((result&&result.message)||'修改已保存');openPlayerDetail(id,'view',focus);});return;}if(action==='save-edit'){submitPlayerSecure('edit',id,collectPlayerEditForm(document.querySelector('[data-player-edit-form]')));return;}if(/freeze|ban-order/.test(action)&&!confirm('确认执行该陪玩账号操作？'))return;submitPlayerSecure(action,id,{});return;}var playerOpen=e.target.closest('[data-player-open]');if(playerOpen&&!e.target.closest('button,a,input,select')){openPlayerDetail(playerOpen.dataset.playerOpen,'view');return;}
       var playerBulk=e.target.closest('[data-player-bulk]');if(playerBulk){submitPlayerSecure('bulk-'+playerBulk.dataset.playerBulk,'selected',{});return;}
       var ptab=e.target.closest('[data-payment-tab]');if(ptab){renderPaymentSettings(ptab.dataset.paymentTab);return;}var couponNew=e.target.closest('[data-coupon-new]');if(couponNew){openCouponEditor('');return;}var couponEdit=e.target.closest('[data-coupon-edit]');if(couponEdit){openCouponEditor(couponEdit.dataset.couponEdit);return;}var couponCancel=e.target.closest('[data-coupon-cancel]');if(couponCancel){var ce=document.querySelector('[data-coupon-editor]');if(ce){ce.hidden=true;ce.innerHTML='';}return;}var couponToggle=e.target.closest('[data-coupon-toggle]');if(couponToggle){var enabled=couponToggle.dataset.couponEnabled==='true';if(!enabled&&!confirm('确认停用该优惠券？'))return;toggleCoupon(couponToggle.dataset.couponToggle,enabled);return;}
       var pedit=e.target.closest('[data-payment-edit]');if(pedit){renderPaymentSettings('channels',pedit.dataset.paymentEdit);return;}

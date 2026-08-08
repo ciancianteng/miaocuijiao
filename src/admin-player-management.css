@@ -315,9 +315,45 @@
 
 #playerManagement .player-more-menu.is-portal-open {
   display: grid !important;
-  position: fixed;
-  z-index: 200;
 }
+
+/* Portaled to document.body — must not depend on #playerManagement ancestors */
+.player-more-menu.is-portal-open {
+  position: fixed !important;
+  right: auto !important;
+  bottom: auto !important;
+  z-index: 10050 !important;
+  display: grid !important;
+  min-width: 148px;
+  padding: 6px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: #15151b;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45);
+  gap: 2px;
+  box-sizing: border-box;
+}
+
+.player-more-menu.is-portal-open[hidden] {
+  display: none !important;
+}
+
+.player-more-menu.is-portal-open button {
+  border: 0;
+  background: transparent;
+  color: #f0eaef;
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 12px;
+  width: 100%;
+}
+
+.player-more-menu.is-portal-open button:hover {
+  background: rgba(255, 145, 195, 0.12);
+}
+
 #playerManagement .player-action-cell,
 #playerManagement .player-more-wrap {
   overflow: visible !important;
