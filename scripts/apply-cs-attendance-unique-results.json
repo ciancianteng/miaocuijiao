@@ -1,0 +1,17 @@
+{
+  "ok": true,
+  "steps": [
+    {
+      "step": "dedupe",
+      "rowCount": 0
+    },
+    {
+      "step": "unique_index",
+      "ok": true
+    },
+    {
+      "step": "verify",
+      "found": true
+    }
+  ]
+}

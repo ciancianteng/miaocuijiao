@@ -1,0 +1,49 @@
+{
+  "regions": ["hkg1"],
+  "crons": [
+    {
+      "path": "/api/cron/order-auto-complete",
+      "schedule": "0 4 * * *"
+    }
+  ],
+  "rewrites": [
+    { "source": "/ranking", "destination": "/ranking.html" },
+    { "source": "/leaderboard", "destination": "/ranking.html" },
+    { "source": "/login", "destination": "/login.html" },
+    { "source": "/orders", "destination": "/orders.html" },
+    { "source": "/recharge", "destination": "/recharge.html" },
+    { "source": "/recharge/", "destination": "/recharge.html" },
+    { "source": "/more-gameplays", "destination": "/more-gameplays.html" },
+    { "source": "/gameplay-product", "destination": "/gameplay-product.html" },
+    { "source": "/fixed-order", "destination": "/fixed-order.html" },
+    { "source": "/team-lobby", "destination": "/team-lobby.html" },
+    { "source": "/custom-order", "destination": "/custom-order.html" },
+    { "source": "/payment-confirm", "destination": "/payment-confirm.html" },
+    { "source": "/support", "destination": "/support.html" },
+    { "source": "/support/", "destination": "/support.html" },
+    { "source": "/club-levels", "destination": "/club-levels.html" },
+    { "source": "/club-levels/", "destination": "/club-levels.html" },
+    { "source": "/companion/login", "destination": "/companion/login/index.html" },
+    { "source": "/companion/login/", "destination": "/companion/login/index.html" },
+    { "source": "/companion", "destination": "/companion/index.html" },
+    { "source": "/companion/", "destination": "/companion/index.html" },
+    { "source": "/companion/:path*", "destination": "/companion/index.html" },
+    { "source": "/customer-service/login", "destination": "/customer-service/login/index.html" },
+    { "source": "/customer-service/login/", "destination": "/customer-service/login/index.html" },
+    { "source": "/customer-service/conversations", "destination": "/customer-service/conversations/index.html" },
+    { "source": "/customer-service/conversations/", "destination": "/customer-service/conversations/index.html" },
+    { "source": "/customer-service/chats", "destination": "/customer-service/conversations/index.html" },
+    { "source": "/customer-service/chats/", "destination": "/customer-service/conversations/index.html" },
+    { "source": "/customer-service", "destination": "/customer-service/index.html" },
+    { "source": "/customer-service/", "destination": "/customer-service/index.html" },
+    { "source": "/customer-service/:path*", "destination": "/customer-service/index.html" },
+    { "source": "/admin/login", "destination": "/admin/login/index.html" },
+    { "source": "/admin/login/", "destination": "/admin/login/index.html" },
+    { "source": "/admin", "destination": "/admin.html" },
+    { "source": "/admin/", "destination": "/admin.html" },
+    { "source": "/admin/:path*", "destination": "/admin.html" },
+    { "source": "/report", "destination": "/report/index.html" },
+    { "source": "/report/:path*", "destination": "/report/index.html" },
+    { "source": "/api/:seg/:path+", "destination": "/api/gateway?path=:seg/:path+" }
+  ]
+}

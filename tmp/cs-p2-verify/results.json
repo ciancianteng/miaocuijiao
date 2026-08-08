@@ -1,0 +1,51 @@
+{
+  "preview": "https://meow-cuijiao-homepage-hmhx3tr2j-ciancianteng-4581s-projects.vercel.app",
+  "ready": true,
+  "steps": [
+    {
+      "step": "attendance-section",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "step": "attendance-columns",
+      "ok": true,
+      "detail": "日期 | 上班时间 | 下班时间 | 当日工时 | 状态"
+    },
+    {
+      "step": "no-page-overflow",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "step": "mobile-cards",
+      "ok": true,
+      "detail": "cards container present"
+    },
+    {
+      "step": "pool-before",
+      "ok": true,
+      "detail": "{\"waiting\":25,\"active\":16,\"ended\":2,\"unreadNav\":\"69\",\"cards\":25,\"unreads\":24}"
+    },
+    {
+      "step": "unread-clear",
+      "ok": true,
+      "detail": "nav 69 -> 69; active badge cleared=true"
+    },
+    {
+      "step": "accept-waiting-to-active",
+      "ok": false,
+      "detail": "w 25->25; a 16->16"
+    },
+    {
+      "step": "end-active-to-ended",
+      "ok": false,
+      "detail": "no end button"
+    },
+    {
+      "step": "dashboard-metrics",
+      "ok": true,
+      "detail": "{\"current\":\"0\",\"unread\":\"0\"}"
+    }
+  ]
+}

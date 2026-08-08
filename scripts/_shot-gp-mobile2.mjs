@@ -1,0 +1,14 @@
+﻿import { chromium } from "playwright";
+const BASE = "https://meow-cuijiao-homepage-1bdbxjkbb-ciancianteng-4581s-projects.vercel.app";
+const url = BASE + "/gameplay-product.html?id=gp-delta-loot";
+const browser = await chromium.launch();
+const mobile = await browser.newPage({ viewport: { width: 390, height: 844 } });
+await mobile.goto(url, { waitUntil: "networkidle", timeout: 60000 });
+await mobile.waitForSelector(".gameplay-order-card", { timeout: 30000 });
+await mobile.waitForTimeout(800);
+await mobile.locator(".gameplay-order-card").scrollIntoViewIfNeeded();
+await mobile.waitForTimeout(400);
+await mobile.screenshot({ path: "tmp-shots/gp-mobile-390-order.png", fullPage: false });
+await mobile.screenshot({ path: "tmp-shots/gp-mobile-390-full.png", fullPage: true });
+await browser.close();
+console.log("mobile order shots ok");

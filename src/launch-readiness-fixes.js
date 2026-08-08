@@ -1,4 +1,4 @@
-(function () {
+﻿(function () {
   "use strict";
 
   var REAL_KEY = "mcjRealDB.v1";
@@ -14,7 +14,17 @@
   }
 
   function isLoggedIn() {
-    return !!localStorage.getItem("customerAuthToken");
+    if (window.MCJRoleGate && typeof window.MCJRoleGate.isLogged === "function") {
+      return !!(window.MCJRoleGate.isLogged("customer") || window.MCJRoleGate.isLogged("boss"));
+    }
+    if (window.MCJBossAuth && typeof window.MCJBossAuth.hasValidAccessToken === "function") {
+      return !!window.MCJBossAuth.hasValidAccessToken();
+    }
+    var t =
+      localStorage.getItem("mcjAuthAccessToken") ||
+      sessionStorage.getItem("mcjAuthAccessToken") ||
+      "";
+    return !!(t && t.split(".").length === 3);
   }
 
   function esc(value) {
@@ -47,7 +57,7 @@
       ["前端模拟" + "验证码", "验证码"],
       ["模拟验证码" + "：", "验证码已发送"],
       ["模拟登录", "登录"],
-      ["测试环境，不会自动增加余额，也不会伪造充值成功" + "。", "提交后将进入后台人工审核，审核通过后余额到账。"],
+      ["测试环境，不会自动增加猫粮，也不会伪造到账" + "。", "提交后将进入后台人工审核，审核通过后猫粮到账。"],
       ["当前为测试" + "环境", "当前为人工审核流程"]
     ]);
   }
@@ -56,9 +66,12 @@
     var modal = document.getElementById("modal");
     var body = document.getElementById("modalBody");
     if (modal && body) {
-      body.innerHTML = window.bossLoginHtml ? window.bossLoginHtml() : '<div class="boss-login-modal"><h2>登录 MEOW CUI JIAO</h2><div class="login-tabs"><button class="login-tab active" type="button" data-login-tab="phone">手机验证</button><button class="login-tab" type="button" data-login-tab="gmail">Gmail 登录</button></div><div class="login-panel active" data-login-panel="phone"><label>国家区号<select><option>+60 马来西亚</option><option>+86 中国</option></select></label><label>手机号码<input placeholder="请输入手机号码"></label><label>验证码<input placeholder="请输入验证码"></label><button class="login-submit" data-login-confirm type="button">登录并进入</button></div><div class="login-panel" data-login-panel="gmail"><label>Gmail 邮箱<input type="email" placeholder="name@gmail.com"></label><label>密码或邮箱验证码<input type="password"></label><button class="login-submit" data-login-confirm type="button">登录并进入</button></div></div>';
+      body.innerHTML = window.bossLoginHtml ? window.bossLoginHtml() : '<div class="boss-login-modal" data-auth-mode="login"><h2>登录 MEOW CUI JIAO</h2><p class="muted">邮箱验证码登录（也可使用密码）。</p><div class="login-tabs"><button class="login-tab active" type="button" data-login-tab="otp">验证码登录</button><button class="login-tab" type="button" data-login-tab="email">密码登录</button></div><div class="login-panel active" data-login-panel="otp"><label class="wide">邮箱<input id="loginOtpEmail" type="email" inputmode="email" autocomplete="email" placeholder="name@example.com" value=""></label><label class="wide">验证码<div class="login-code-row"><input id="loginOtpCode" name="otp" type="text" inputmode="numeric" autocomplete="one-time-code" data-auth-code="1" data-auth-sensitive="1" maxlength="6" placeholder="6 位验证码" value=""><button class="login-small-btn" type="button" data-send-login-otp data-login-role="boss">获取验证码</button></div></label><button class="login-submit" data-login-confirm data-login-method="otp" type="button">验证码登录</button></div><div class="login-panel" data-login-panel="email"><label class="wide">邮箱<input id="loginGmail" type="email" inputmode="email" autocomplete="email" placeholder="name@example.com" value=""></label><label class="wide">密码<input id="loginGmailCode" type="password" autocomplete="current-password" data-auth-sensitive="1" value=""></label><button class="login-submit" data-login-confirm data-login-method="email" type="button">密码登录</button></div><p id="loginState" data-login-error></p></div>';
       modal.classList.add("open");
       document.body.style.overflow = "hidden";
+      if (window.MCJAuthShell && window.MCJAuthShell.prepareAuthForm) {
+        window.MCJAuthShell.prepareAuthForm(body.querySelector(".boss-login-modal") || body, { clearAccount: true });
+      }
       return;
     }
     var login = document.querySelector("[data-login]");
@@ -84,44 +97,13 @@
         event.preventDefault();
         event.stopPropagation();
         if (event.stopImmediatePropagation) event.stopImmediatePropagation();
-        sendCode.textContent = "已发送";
-        var stateEl = document.querySelector("[data-login-state]");
-        if (stateEl) stateEl.textContent = "验证码已发送，请查收后输入";
+        var stateEl = document.querySelector("[data-login-state], #loginState, [data-login-error]");
+        if (stateEl) stateEl.textContent = "MVP 请使用邮箱验证码登录（首页登录弹窗）。";
         return;
       }
       var loginConfirm = event.target.closest && event.target.closest("[data-login-confirm]");
       if (loginConfirm) {
-        event.preventDefault();
-        event.stopPropagation();
-        if (event.stopImmediatePropagation) event.stopImmediatePropagation();
-        var activePanel = document.querySelector(".login-panel.active") || loginConfirm.closest(".login-panel");
-        var inputs = activePanel ? activePanel.querySelectorAll("input") : document.querySelectorAll(".boss-login-modal input");
-        var account = "";
-        Array.prototype.some.call(inputs, function (input) {
-          if (input.value && input.value.trim()) {
-            account = input.value.trim();
-            return true;
-          }
-          return false;
-        });
-        var state = document.querySelector("[data-login-state]");
-        if (!account) {
-          if (state) state.textContent = "请填写登录信息";
-          return;
-        }
-        if (window.MCJRoleGate) window.MCJRoleGate.login("customer", account);
-        else {
-          localStorage.setItem("customerAuthToken", "customer-" + Date.now());
-          localStorage.setItem("customerUser", JSON.stringify({ account: account, role: "customer" }));
-        }
-        if (state) state.textContent = "登录成功";
-        var modal = document.getElementById("modal");
-        if (modal) modal.classList.remove("open");
-        document.body.style.overflow = "";
-        var next = sessionStorage.getItem("mcjAfterLoginRedirect");
-        sessionStorage.removeItem("mcjAfterLoginRedirect");
-        if (next) location.href = next;
-        else refreshTop();
+        // Real login is handled by MCJRoleGate (Supabase /api/auth). Do not fake-login.
         return;
       }
       var mine = event.target.closest && event.target.closest('a[href="mine.html"], [data-open-mine]');
@@ -143,14 +125,14 @@
     style.id = "launchReadinessStyles";
     style.textContent = [
       ".launch-hidden{display:none!important}",
-      ".launch-entry-grid{display:grid!important;grid-template-columns:repeat(5,minmax(0,1fr))!important;gap:14px!important}",
+      ".launch-entry-grid{display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr))!important;gap:14px!important}",
       ".launch-entry-grid .quick-entry-card{min-height:112px!important;display:flex!important;align-items:center!important;gap:0!important}",
       ".launch-entry-grid .quick-entry-card i{display:none!important}",
       ".launch-entry-grid .quick-entry-card i:before,.launch-entry-grid .quick-entry-card i:after{content:none!important;display:none!important}",
       ".launch-entry-grid .quick-entry-card i img{display:none!important}",
       ".launch-entry-grid .quick-entry-card span{word-break:keep-all!important;overflow-wrap:normal!important}",
       ".launch-empty-state{border:1px dashed rgba(243,168,203,.28);border-radius:20px;background:rgba(255,255,255,.035);padding:24px;text-align:center;color:#ffdceb;font-weight:900}",
-      "@media(max-width:980px){.launch-entry-grid{grid-template-columns:repeat(3,minmax(0,1fr))!important}}",
+      "@media(max-width:980px){.launch-entry-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}}",
       "@media(max-width:760px){.launch-entry-grid{grid-template-columns:1fr 1fr!important}.launch-entry-grid .quick-entry-card{min-height:108px!important;gap:12px!important}.launch-entry-grid .quick-entry-card i,.launch-entry-grid .quick-entry-card i img{width:44px!important;height:44px!important;min-width:44px!important}}"
     ].join("\n");
     document.head.appendChild(style);
@@ -170,11 +152,10 @@
     grid.dataset.launchQuickReady = "1";
     grid.classList.add("launch-entry-grid");
     grid.innerHTML = [
-      quickButton("自定义订单", "填写需求，客服匹配陪玩", 'data-href="custom-order.html"'),
-      quickButton("更多玩法", "护航、跑刀、代肝、趣味单", 'data-href="more-gameplays.html"'),
-      quickButton("陪玩大厅", "浏览已上架陪玩", 'data-href="companion-center.html"'),
-      quickButton("组队大厅", "进入组队社区", 'data-href="team-lobby.html"'),
-      quickButton("充值中心", "查看充值与余额", 'data-href="miao-coin.html"')
+      quickButton("陪玩大厅", "浏览已上架陪玩，立即下单", 'data-href="companion-center.html" data-home-entry="companion-hall"'),
+      quickButton("更多玩法", "护航、跑刀、代肝、趣味单", 'data-href="more-gameplays.html" data-home-entry="more-gameplays"'),
+      quickButton("自定义订单", "填写需求，客服匹配陪玩", 'data-href="custom-order.html" data-home-entry="custom-order"'),
+      quickButton("组队大厅", "进入组队社区找队友", 'data-href="team-lobby.html" data-home-entry="team-lobby"')
     ].join("");
   }
 
@@ -224,16 +205,18 @@
   function fixCompanionHallState() {
     if (!/companion-center\.html$/.test(location.pathname)) return;
     var count = document.getElementById("resultCount");
-    if (count && new RegExp("正在读取后台" + "数据").test(count.textContent || "")) count.textContent = "等待后台真实陪玩数据";
+    if (count && new RegExp("正在读取后台" + "数据").test(count.textContent || "")) count.textContent = "正在加载陪玩…";
     setTimeout(function () {
       var list = document.getElementById("playerList");
       var empty = document.getElementById("emptyState");
+      var text = count ? String(count.textContent || "") : "";
+      if (/正在加载/.test(text)) return;
       if (list && !list.children.length && empty) {
         empty.hidden = false;
-        empty.innerHTML = '暂时没有找到符合条件的陪玩<br><a class="btn primary" href="companion-apply.html" style="margin-top:12px;display:inline-flex">申请成为陪玩</a>';
+        empty.innerHTML = "<strong>暂无可接单陪玩</strong><br><span>通过审核并上线接单的陪玩将在这里展示。</span>";
         if (count) count.textContent = "暂无已审核上架陪玩";
       }
-    }, 1400);
+    }, 4000);
   }
 
   function fixVoiceHall() {
@@ -260,50 +243,16 @@
   function fixActivitiesLogin() {
     if (!/activities\.html$/.test(location.pathname)) return;
     var title = document.querySelector("#loginModal h2");
-    var send = document.getElementById("sendCode");
-    var confirm = document.getElementById("confirmLogin");
     var state = document.getElementById("loginState");
-    if (title) title.textContent = "手机号登录";
-    if (send) send.textContent = "获取验证码";
-    if (confirm) confirm.textContent = "登录并进入";
-    if (state) state.textContent = "请输入收到的验证码";
-    document.addEventListener("click", function (event) {
-      if (event.target && event.target.id === "sendCode") {
-        event.preventDefault();
-        event.stopPropagation();
-        if (event.stopImmediatePropagation) event.stopImmediatePropagation();
-        event.target.textContent = "已发送";
-        if (state) state.textContent = "验证码已发送，请查收后输入";
-      }
-      if (event.target && event.target.id === "confirmLogin") {
-        event.preventDefault();
-        event.stopPropagation();
-        if (event.stopImmediatePropagation) event.stopImmediatePropagation();
-        var phone = document.getElementById("phoneInput");
-        var code = document.getElementById("codeInput");
-        if (!phone || !phone.value.trim()) {
-          if (state) state.textContent = "请填写手机号";
-          return;
-        }
-        if (!code || !code.value.trim()) {
-          if (state) state.textContent = "请填写验证码";
-          return;
-        }
-        if (window.MCJRoleGate) window.MCJRoleGate.login("customer", phone.value.trim());
-        if (state) state.textContent = "登录成功";
-        setTimeout(function () {
-          var modal = document.getElementById("loginModal");
-          if (modal) modal.classList.remove("show");
-        }, 350);
-      }
-    }, true);
+    if (title) title.textContent = "邮箱登录";
+    if (state) state.textContent = "MVP 第一版使用邮箱体系，请前往首页登录。";
   }
 
   function fixRechargePanelText() {
     if (!/mine\.html$/.test(location.pathname)) return;
     setTimeout(function () {
       var warn = document.querySelector("#panel-recharge .state-warn");
-      if (warn) warn.textContent = "请选择金额和支付渠道，上传付款凭证后提交后台审核；审核通过后余额到账。";
+      if (warn) warn.textContent = "请选择金额和支付渠道，上传付款凭证后提交后台审核；审核通过后猫粮到账。";
       var panel = document.getElementById("panel-recharge");
       if (panel && !panel.querySelector("[data-recharge-proof]")) {
         var box = document.createElement("div");
@@ -330,7 +279,7 @@
       setTimeout(function () {
         submit.disabled = false;
         submit.textContent = "提交审核";
-        alert("充值申请已提交后台审核");
+        alert("猫粮充值申请已提交后台审核");
       }, 500);
     }, true);
   }

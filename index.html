@@ -1,8 +1,8 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>MEOW CUI JIAO GAMING CLUB</title>
   <style>
     :root{
@@ -38,7 +38,7 @@
     .feature-row{grid-template-columns:repeat(4,1fr)}.feature-card{min-height:190px;padding:26px;display:flex;flex-direction:column;justify-content:space-between}.feature-head{position:relative;z-index:1;display:flex;align-items:flex-start;gap:16px}.feature-icon{width:58px;height:58px;border-radius:20px;display:grid;place-items:center;background:rgba(255,220,235,.12);border:1px solid rgba(243,168,203,.28);font-size:28px}.feature-card h3{margin:0;font-size:25px}.feature-card p{margin:7px 0 0;color:var(--muted);font-weight:850}.feature-card .btn{position:relative;z-index:1;width:max-content;min-height:42px;padding:0 17px;border:0;border-radius:999px;background:linear-gradient(180deg,#ffe2ef,#e9a0c6);color:#1b0712;font-weight:1000;cursor:pointer}
     .section-title{display:flex;align-items:end;justify-content:space-between;gap:16px;margin-bottom:18px}.section-title h2{margin:0;font-size:28px}.section-title p{margin:5px 0 0;color:var(--muted)}
     .order-strip{display:flex;gap:20px;overflow-x:auto;padding:4px 2px 18px;scroll-snap-type:x mandatory}.order-strip::-webkit-scrollbar{height:8px}.order-strip::-webkit-scrollbar-thumb{background:rgba(243,168,203,.36);border-radius:99px}.companion-card{flex:0 0 238px;scroll-snap-align:start;padding:12px}.avatar{position:relative;height:190px;border-radius:20px;overflow:hidden;border:1px solid rgba(243,168,203,.28);background:#120d15}.avatar img{width:100%;height:100%;object-fit:cover}.online-dot{position:absolute;right:12px;top:12px;width:13px;height:13px;border-radius:50%;background:#72efb4;box-shadow:0 0 12px #72efb4}.companion-info{position:relative;z-index:1;padding:13px 4px 2px}.row{display:flex;align-items:center;justify-content:space-between;gap:8px}.companion-info h3{margin:0;font-size:19px}.price{font-weight:1000;color:var(--pink-soft)}.muted{color:var(--muted)}.mini{margin:8px 0 12px;color:var(--muted);font-size:13px}.order-btn{width:100%;height:40px;border:0;border-radius:999px;background:linear-gradient(180deg,#ffe2ef,#e9a0c6);color:#1b0712;font-weight:1000;cursor:pointer;transition:.2s ease}.order-btn:hover{transform:translateY(-2px);box-shadow:0 0 20px rgba(243,168,203,.24)}
-    .modal{position:fixed;inset:0;z-index:100;display:none;align-items:start;justify-items:center;background:rgba(2,1,4,.76);backdrop-filter:blur(12px);padding:320px 20px 20px;overflow:auto}.modal.open{display:grid}.dialog{width:min(680px,100%);max-height:calc(100vh - 340px);overflow:auto;border:1px solid rgba(243,168,203,.34);border-radius:24px;background:linear-gradient(180deg,rgba(30,24,36,.96),rgba(9,8,13,.98));box-shadow:0 24px 90px rgba(0,0,0,.62);padding:22px}.close{float:right;width:36px;height:36px;border-radius:50%;border:1px solid rgba(243,168,203,.28);background:rgba(0,0,0,.25);color:#ffe1ef;font-size:22px;cursor:pointer}
+    .modal{position:fixed;inset:0;z-index:99999;display:none;align-items:center;justify-content:center;background:rgba(2,1,4,.76);backdrop-filter:blur(12px);padding:16px;overflow:hidden;width:100vw;height:100dvh;margin:0;transform:none}.modal.open{display:flex}.dialog{position:relative;width:min(680px,100%);max-height:calc(100dvh - 32px);overflow:auto;border:1px solid rgba(243,168,203,.34);border-radius:24px;background:linear-gradient(180deg,rgba(30,24,36,.96),rgba(9,8,13,.98));box-shadow:0 24px 90px rgba(0,0,0,.62);padding:22px;margin:0;transform:none}.close{position:absolute;right:12px;top:12px;z-index:3;float:none;width:36px;height:36px;border-radius:50%;border:1px solid rgba(243,168,203,.28);background:rgba(0,0,0,.25);color:#ffe1ef;font-size:22px;line-height:1;cursor:pointer;display:grid;place-items:center}.dialog:has(.boss-login-modal),.dialog.is-auth-dialog{width:460px;max-width:min(480px,calc(100vw - 32px));height:auto;min-height:560px;max-height:calc(100dvh - 32px);overflow:auto;padding:36px 28px 28px}
     .team-lobby-card .feature-icon{box-shadow:0 0 22px rgba(243,168,203,.22);background:radial-gradient(circle at 50% 40%,rgba(255,220,235,.22),rgba(243,168,203,.09))}.team-lobby-card .btn{box-shadow:0 0 20px rgba(243,168,203,.22)}@media(max-width:980px){.live-stats{grid-template-columns:repeat(2,1fr)}.feature-row{grid-template-columns:1fr}.container{padding:20px}.main-nav{justify-content:flex-start;overflow-x:auto;flex-wrap:nowrap;padding-bottom:4px}.main-nav a,.main-nav button{white-space:nowrap}.brand span{display:block}}
     @media(max-width:560px){.header-inner{padding:0 16px}.top-actions{gap:10px}.top-actions button{padding:0 12px}.container{padding:16px}.notice-bar{margin-bottom:20px}.banner{height:clamp(180px,28vh,220px);margin-bottom:18px}.live-stats{grid-template-columns:1fr}.stat-card{min-height:118px}.stat-card strong{font-size:38px}.feature-card{min-height:168px}.section{margin-bottom:34px}.section-title{align-items:flex-start;flex-direction:column}.companion-card{flex-basis:220px}.avatar{height:176px}}
     .mobile-bottom-nav{display:none}
@@ -296,8 +296,8 @@ img,video,canvas,svg{max-width:100%}
   -webkit-backdrop-filter:blur(10px) saturate(1.04)!important;
 }
 @media(max-width:560px){.banner img{border-radius:17px!important;transform:translateY(-4px) scale(1.02)!important;outline-offset:3px!important}.banner:after{left:14%;right:14%;bottom:-10px;height:18px!important}}
-  /* boss-login-modal-v1 */
-.boss-login-modal{display:grid;gap:16px;clear:both}.boss-login-modal h2{margin:0;color:#fff5fa;font-size:28px}.login-tabs{display:grid;grid-template-columns:1fr 1fr;gap:10px}.login-tab{height:42px;border-radius:999px;border:1px solid rgba(243,168,203,.24);background:rgba(255,255,255,.045);color:#ffe1ef;font-weight:1000;cursor:pointer}.login-tab.active{border:0;background:linear-gradient(180deg,#ffe2ef,#e7a0c4);color:#1b0712}.login-panel{display:none;grid-template-columns:1fr 1fr;gap:12px}.login-panel.active{display:grid}.login-panel label{display:grid;gap:7px;color:#ffdceb;font-weight:900;font-size:13px}.login-panel input,.login-panel select{height:44px;border-radius:14px;border:1px solid rgba(243,168,203,.22);background:rgba(255,255,255,.055);color:#fff;padding:0 12px;outline:0}.login-panel .wide{grid-column:1/-1}.login-code-row{display:grid;grid-template-columns:1fr 132px;gap:10px}.login-small-btn{height:44px;border-radius:14px;border:1px solid rgba(243,168,203,.24);background:rgba(255,255,255,.045);color:#ffe1ef;font-weight:1000;cursor:pointer}.login-submit{grid-column:1/-1;height:46px;border:0;border-radius:999px;background:linear-gradient(180deg,#ffe2ef,#e7a0c4);color:#1b0712;font-weight:1000;cursor:pointer;box-shadow:0 0 20px rgba(243,168,203,.22)}@media(max-width:560px){.login-panel{grid-template-columns:1fr}.login-code-row{grid-template-columns:1fr}}
+  /* boss-login-modal-v3 — auth density; final polish in src/login-modal.css */
+.boss-login-modal{display:grid;gap:0;clear:both}.boss-login-modal h2{margin:0;color:#fff5fa;font-size:32px;font-weight:700;line-height:1.2}.boss-login-modal>.muted{margin:10px 0 0;font-size:16px;line-height:1.45;color:rgba(255,255,255,.72);font-weight:500;text-transform:none;letter-spacing:0}.login-tabs{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:28px 0 0}.login-tab{height:44px;border-radius:999px;border:1px solid rgba(243,168,203,.24);background:rgba(255,255,255,.045);color:#ffe1ef;font-weight:800;cursor:pointer}.login-tab.active{border:0;background:linear-gradient(180deg,#ffe2ef,#e7a0c4);color:#1b0712}.login-panel{display:none;grid-template-columns:1fr;gap:18px}.login-panel.active{display:grid;margin-top:22px}.login-panel label{display:grid;gap:8px;color:#ffdceb;font-weight:700;font-size:13px}.login-panel input,.login-panel select{height:52px;border-radius:14px;border:1.5px solid rgba(255,120,180,.35);background:rgba(255,255,255,.055);color:#fff;padding:0 16px;outline:0;box-sizing:border-box}.login-panel .wide{grid-column:1/-1}.login-code-row{display:grid;grid-template-columns:1fr 132px;gap:10px;align-items:stretch}.login-small-btn{height:52px;border-radius:14px;border:1px solid rgba(243,168,203,.24);background:rgba(255,255,255,.045);color:#ffe1ef;font-weight:800;cursor:pointer}.login-submit{grid-column:1/-1;height:52px;border:0;border-radius:14px;background:linear-gradient(180deg,#ffe2ef,#e7a0c4);color:#1b0712;font-weight:800;cursor:pointer;box-shadow:0 10px 28px rgba(0,0,0,.35),0 0 22px rgba(243,168,203,.28)}.boss-login-modal [data-login-error],.boss-login-modal #loginState{margin:10px 0 0;min-height:0;color:#ff8fc5;font-size:13px;font-weight:700;line-height:1.35}.login-links{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:nowrap;height:40px;margin-top:14px}.login-links a,.login-links button.linkish{appearance:none;border:0;background:none;padding:0;color:#ffdceb;font-size:13px;font-weight:700;text-decoration:none;cursor:pointer;font-family:inherit;white-space:nowrap;line-height:40px}.login-links a:hover,.login-links button.linkish:hover{text-decoration:underline}.boss-login-modal[data-auth-mode="register"] .login-links{justify-content:center}@media(max-width:560px){.dialog:has(.boss-login-modal),.dialog.is-auth-dialog{width:calc(100vw - 32px);max-width:calc(100vw - 32px);min-height:min(520px,86dvh)}.boss-login-modal h2{font-size:26px}.boss-login-modal>.muted{font-size:14px}.login-tabs{margin-top:24px}.login-panel.active{margin-top:20px;gap:16px}}
 
   /* auth-visibility-fix-v1 */
 .top-actions .user-chip.auth-only{display:none!important}
@@ -311,11 +311,54 @@ body:not(.is-logged-in) .top-actions a{display:none!important}
 body:not(.is-logged-in) .top-actions .login{display:inline-flex!important}
 @media(max-width:720px){
   .header-nav{display:none!important}
+  header.mcj-boss-header .header-nav:not(.mcj-desk-nav),
+  header.mcj-boss-header .mcj-boss-nav:not(.mcj-desk-nav),
+  header.mcj-boss-header .mcj-desk-nav{display:none!important}
+  header.mcj-boss-header .mcj-mnav{display:flex!important}
   .site-header .top-actions a{display:none!important}
-  .mobile-bottom-nav{position:fixed;left:12px;right:12px;bottom:12px;z-index:80;display:grid;grid-template-columns:repeat(5,1fr);gap:6px;padding:8px;border:1px solid rgba(243,168,203,.24);border-radius:18px;background:rgba(8,6,12,.88);backdrop-filter:blur(16px);box-shadow:0 12px 34px rgba(0,0,0,.42)}
-  .mobile-bottom-nav a,.mobile-bottom-nav button{height:44px;border:0;border-radius:12px;background:transparent;color:#f7dce9;font-size:12px;font-weight:950;display:grid;place-items:center;text-decoration:none}
+  header.mcj-boss-header .mcj-mnav-drawer a{display:flex!important}
+  header.mcj-boss-header .mcj-mnav-drawer[hidden]{display:none!important}
+  .mobile-bottom-nav{
+    position:fixed;
+    left:max(8px, env(safe-area-inset-left));
+    right:max(8px, env(safe-area-inset-right));
+    bottom:max(8px, env(safe-area-inset-bottom));
+    z-index:80;
+    display:grid;
+    grid-template-columns:repeat(5,minmax(0,1fr));
+    gap:4px;
+    width:auto;
+    max-width:100%;
+    box-sizing:border-box;
+    padding:8px 6px;
+    border:1px solid rgba(243,168,203,.24);
+    border-radius:18px;
+    background:rgba(8,6,12,.88);
+    backdrop-filter:blur(16px);
+    box-shadow:0 12px 34px rgba(0,0,0,.42);
+    overflow:visible;
+  }
+  .mobile-bottom-nav a,.mobile-bottom-nav button{
+    min-width:0;
+    width:100%;
+    height:44px;
+    padding:0 2px;
+    border:0;
+    border-radius:12px;
+    background:transparent;
+    color:#f7dce9;
+    font-size:12px;
+    font-weight:950;
+    line-height:1.2;
+    display:grid;
+    place-items:center;
+    text-align:center;
+    text-decoration:none;
+    white-space:nowrap;
+    overflow:visible;
+  }
   .mobile-bottom-nav .active{background:rgba(243,168,203,.14);color:#fff5fa}
-  .container{padding-bottom:88px!important}
+  .container{padding-bottom:calc(96px + env(safe-area-inset-bottom))!important}
 }
 
 /* today-data-detail-v1 */
@@ -717,7 +760,8 @@ body:after{
   overflow:hidden!important;
 }
 @media(max-width:900px){
-  .today-data-grid,.quick-entry-grid{grid-template-columns:repeat(4,minmax(0,1fr))!important;gap:8px!important}
+  .today-data-grid{grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:8px!important}
+  .quick-entry-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:8px!important}
   .today-data .data-card{height:82px!important;min-height:82px!important;padding:12px!important;grid-template-columns:minmax(0,1fr) 34px!important;border-radius:14px!important}
   .today-data .data-card span{font-size:11px!important}
   .today-data .data-card strong{font-size:22px!important;margin-top:6px!important}
@@ -1368,7 +1412,9 @@ label{
 .companion-track .hot-cover{
   position:relative!important;
   width:100%!important;
-  height:138px!important;
+  height:auto!important;
+  aspect-ratio:4 / 5!important;
+  min-height:220px!important;
   border-radius:18px!important;
   overflow:hidden!important;
   border:1px solid rgba(255,180,218,.26)!important;
@@ -1380,22 +1426,25 @@ label{
   position:absolute;
   inset:0;
   pointer-events:none;
-  background:linear-gradient(180deg,transparent 48%,rgba(6,3,8,.58));
+  background:linear-gradient(180deg,transparent 62%,rgba(6,3,8,.52));
+  z-index:1;
 }
 .companion-track .hot-cover img{
   width:100%!important;
   height:100%!important;
   object-fit:cover!important;
-  transition:transform .35s ease,filter .35s ease!important;
+  object-position:center 25%!important;
+  transition:filter .35s ease!important;
+  transform:none!important;
 }
 .companion-track .companion-card:hover .hot-cover img{
-  transform:scale(1.04)!important;
-  filter:saturate(1.08) contrast(1.04)!important;
+  transform:none!important;
+  filter:saturate(1.04) contrast(1.02)!important;
 }
 .companion-track .hot-info{
   position:relative!important;
   z-index:2!important;
-  padding:13px 2px 0!important;
+  padding:4px 2px 0!important;
 }
 .companion-track .hot-info h3{
   margin:0!important;
@@ -1410,7 +1459,7 @@ label{
   text-shadow:none!important;
 }
 .companion-track .hot-info > p{
-  margin:9px 0 7px!important;
+  margin:2px 0 1px!important;
   color:#ffafd5!important;
   font-size:12px!important;
   font-weight:950!important;
@@ -1425,7 +1474,7 @@ label{
   align-items:center!important;
   justify-content:space-between!important;
   gap:8px!important;
-  margin:0 0 8px!important;
+  margin:0 0 2px!important;
 }
 .companion-track .hot-meta span{
   min-width:0!important;
@@ -1437,7 +1486,7 @@ label{
   text-overflow:ellipsis!important;
 }
 .companion-track .hot-orders{
-  margin:0 0 10px!important;
+  margin:0 0 2px!important;
   color:rgba(230,210,222,.72)!important;
   font-size:12px!important;
   line-height:1.25!important;
@@ -1448,10 +1497,12 @@ label{
 }
 .companion-track .hot-tags{
   display:flex!important;
-  gap:6px!important;
-  flex-wrap:nowrap!important;
-  margin:0 0 12px!important;
+  gap:3px!important;
+  flex-wrap:wrap!important;
+  margin:0 0 2px!important;
+  max-height:40px!important;
   overflow:hidden!important;
+  align-content:flex-start!important;
 }
 .companion-track .hot-tags span{
   max-width:84px!important;
@@ -1464,7 +1515,7 @@ label{
   border-radius:999px!important;
   font-size:11px!important;
   font-weight:900!important;
-  padding:5px 8px!important;
+  padding:2px 8px!important;
 }
 .companion-track .mini-order{
   width:100%!important;
@@ -1502,25 +1553,25 @@ label{
   box-shadow:none!important;
 }
 @media(max-width:900px){
-  .companion-track .hot-cover{height:124px!important}
+  .companion-track .hot-cover{height:auto!important;min-height:200px!important;aspect-ratio:4 / 5!important}
   .companion-track .hot-info h3{font-size:17px!important}
   .companion-track .mini-order{height:36px!important;font-size:12px!important}
 }
 
 
-/* hot-recommend-top3-badges-v1 */
-#hotCompanionTrack .companion-card:nth-child(1),
-#hotCompanionTrack .companion-card:nth-child(2),
-#hotCompanionTrack .companion-card:nth-child(3){
+/* companion-card-freeze-top-badges-v1 — 标准=最近下单：左上角小粉胶囊（禁止改） */
+#hotCompanionTrack .companion-card:nth-child(1):not(.hot-more-card),
+#hotCompanionTrack .companion-card:nth-child(2):not(.hot-more-card),
+#hotCompanionTrack .companion-card:nth-child(3):not(.hot-more-card){
   position:relative!important;
 }
-#hotCompanionTrack .companion-card:nth-child(1)::after,
-#hotCompanionTrack .companion-card:nth-child(2)::after,
-#hotCompanionTrack .companion-card:nth-child(3)::after{
+#hotCompanionTrack .companion-card:nth-child(1):not(.hot-more-card)::after,
+#hotCompanionTrack .companion-card:nth-child(2):not(.hot-more-card)::after,
+#hotCompanionTrack .companion-card:nth-child(3):not(.hot-more-card)::after{
   position:absolute;
-  left:18px;
-  top:18px;
+  left:18px;right:auto;top:18px;
   z-index:5;
+  width:auto;max-width:none;
   height:28px;
   padding:0 10px;
   border-radius:999px;
@@ -1534,13 +1585,14 @@ label{
   font-weight:1000;
   letter-spacing:.06em;
   box-shadow:0 8px 18px rgba(0,0,0,.28);
+  white-space:nowrap;
 }
-#hotCompanionTrack .companion-card:nth-child(1)::after{content:"TOP 1"}
-#hotCompanionTrack .companion-card:nth-child(2)::after{content:"TOP 2"}
-#hotCompanionTrack .companion-card:nth-child(3)::after{content:"TOP 3"}
-#hotCompanionTrack .companion-card:nth-child(1){border-color:rgba(255,215,235,.46)!important}
-#hotCompanionTrack .companion-card:nth-child(2){border-color:rgba(255,184,220,.36)!important}
-#hotCompanionTrack .companion-card:nth-child(3){border-color:rgba(255,160,208,.32)!important}
+#hotCompanionTrack .companion-card:nth-child(1):not(.hot-more-card)::after{content:"TOP 1"}
+#hotCompanionTrack .companion-card:nth-child(2):not(.hot-more-card)::after{content:"TOP 2"}
+#hotCompanionTrack .companion-card:nth-child(3):not(.hot-more-card)::after{content:"TOP 3"}
+#hotCompanionTrack .companion-card:nth-child(1):not(.hot-more-card){border-color:rgba(255,215,235,.46)!important}
+#hotCompanionTrack .companion-card:nth-child(2):not(.hot-more-card){border-color:rgba(255,184,220,.36)!important}
+#hotCompanionTrack .companion-card:nth-child(3):not(.hot-more-card){border-color:rgba(255,160,208,.32)!important}
 
 
 /* hot-recommend-top3-only-more-v1 */
@@ -1642,10 +1694,10 @@ label{
 .hot-recommend-section .auto-carousel::-webkit-scrollbar{display:none!important}
 #hotCompanionTrack{
   display:grid!important;
-  grid-template-columns:repeat(4,minmax(236px,1fr))!important;
+  grid-template-columns:repeat(auto-fit,minmax(220px,1fr))!important;
   gap:18px!important;
   width:100%!important;
-  min-width:1016px!important;
+  min-width:0!important;
   align-items:stretch!important;
 }
 #hotCompanionTrack .companion-card{
@@ -1653,32 +1705,36 @@ label{
   min-width:0!important;
   max-width:none!important;
   flex:none!important;
-  min-height:342px!important;
+  min-height:286px!important;
   height:100%!important;
-  padding:14px!important;
+  padding:14px 14px 6px!important;
+  display:flex!important;
+  flex-direction:column!important;
 }
 #hotCompanionTrack .hot-cover{
-  height:166px!important;
+  height:auto!important;
+  min-height:240px!important;
+  aspect-ratio:4 / 5!important;
   border-radius:18px!important;
 }
 #hotCompanionTrack .hot-info{
-  min-height:148px!important;
+  min-height:0!important;
   display:flex!important;
   flex-direction:column!important;
-  padding:13px 2px 2px!important;
+  padding:4px 2px 0!important;
 }
 #hotCompanionTrack .hot-info h3{
   font-size:21px!important;
   line-height:1.1!important;
 }
 #hotCompanionTrack .hot-tags{
-  min-height:28px!important;
+  min-height:0!important;
 }
 #hotCompanionTrack .mini-order{
   margin-top:auto!important;
 }
 #hotCompanionTrack .hot-more-card{
-  min-height:342px!important;
+  min-height:312px!important;
   height:100%!important;
 }
 #hotCompanionTrack .hot-more-inner{
@@ -1698,8 +1754,8 @@ label{
   font-size:14px!important;
 }
 @media(min-width:1180px){
-  #hotCompanionTrack{min-width:0!important;grid-template-columns:repeat(4,minmax(0,1fr))!important}
-  #hotCompanionTrack .hot-cover{height:176px!important}
+  #hotCompanionTrack{min-width:0!important;grid-template-columns:repeat(auto-fit,minmax(0,1fr))!important}
+  #hotCompanionTrack .hot-cover{height:auto!important;min-height:260px!important;aspect-ratio:4 / 5!important}
 }
 
 /* companion-top3-sections-unified-v1 */
@@ -1708,10 +1764,10 @@ label{
 #gameCompanionTrack,
 #reviewCompanionTrack{
   display:grid!important;
-  grid-template-columns:repeat(4,minmax(236px,1fr))!important;
+  grid-template-columns:repeat(auto-fit,minmax(220px,1fr))!important;
   gap:18px!important;
   width:100%!important;
-  min-width:1016px!important;
+  min-width:0!important;
   align-items:stretch!important;
 }
 .hot-recommend-section .auto-carousel,
@@ -1737,25 +1793,29 @@ label{
   min-width:0!important;
   max-width:none!important;
   flex:none!important;
-  min-height:342px!important;
+  min-height:286px!important;
   height:100%!important;
-  padding:14px!important;
+  padding:14px 14px 6px!important;
+  display:flex!important;
+  flex-direction:column!important;
 }
 #hotCompanionTrack .hot-cover,
 #recentCompanionTrack .hot-cover,
 #gameCompanionTrack .hot-cover,
 #reviewCompanionTrack .hot-cover{
-  height:166px!important;
+  height:auto!important;
+  min-height:240px!important;
+  aspect-ratio:4 / 5!important;
   border-radius:18px!important;
 }
 #hotCompanionTrack .hot-info,
 #recentCompanionTrack .hot-info,
 #gameCompanionTrack .hot-info,
 #reviewCompanionTrack .hot-info{
-  min-height:148px!important;
+  min-height:0!important;
   display:flex!important;
   flex-direction:column!important;
-  padding:13px 2px 2px!important;
+  padding:4px 2px 0!important;
 }
 #hotCompanionTrack .hot-info h3,
 #recentCompanionTrack .hot-info h3,
@@ -1768,7 +1828,7 @@ label{
 #recentCompanionTrack .hot-tags,
 #gameCompanionTrack .hot-tags,
 #reviewCompanionTrack .hot-tags{
-  min-height:28px!important;
+  min-height:0!important;
 }
 #hotCompanionTrack .mini-order,
 #recentCompanionTrack .mini-order,
@@ -1776,34 +1836,38 @@ label{
 #reviewCompanionTrack .mini-order{
   margin-top:auto!important;
 }
-#hotCompanionTrack .companion-card:nth-child(1),
-#hotCompanionTrack .companion-card:nth-child(2),
-#hotCompanionTrack .companion-card:nth-child(3),
-#recentCompanionTrack .companion-card:nth-child(1),
-#recentCompanionTrack .companion-card:nth-child(2),
-#recentCompanionTrack .companion-card:nth-child(3),
-#gameCompanionTrack .companion-card:nth-child(1),
-#gameCompanionTrack .companion-card:nth-child(2),
-#gameCompanionTrack .companion-card:nth-child(3),
-#reviewCompanionTrack .companion-card:nth-child(1),
-#reviewCompanionTrack .companion-card:nth-child(2),
-#reviewCompanionTrack .companion-card:nth-child(3){position:relative!important}
-#hotCompanionTrack .companion-card:nth-child(1)::after,
-#hotCompanionTrack .companion-card:nth-child(2)::after,
-#hotCompanionTrack .companion-card:nth-child(3)::after,
-#recentCompanionTrack .companion-card:nth-child(1)::after,
-#recentCompanionTrack .companion-card:nth-child(2)::after,
-#recentCompanionTrack .companion-card:nth-child(3)::after,
-#gameCompanionTrack .companion-card:nth-child(1)::after,
-#gameCompanionTrack .companion-card:nth-child(2)::after,
-#gameCompanionTrack .companion-card:nth-child(3)::after,
-#reviewCompanionTrack .companion-card:nth-child(1)::after,
-#reviewCompanionTrack .companion-card:nth-child(2)::after,
-#reviewCompanionTrack .companion-card:nth-child(3)::after{
+/* companion-card-freeze-unified-v1 — 热门/最近/游戏/好评共用「最近下单」版型；TOP=左上角小粉胶囊 */
+#hotCompanionTrack .companion-card:nth-child(1):not(.hot-more-card),
+#hotCompanionTrack .companion-card:nth-child(2):not(.hot-more-card),
+#hotCompanionTrack .companion-card:nth-child(3):not(.hot-more-card),
+#recentCompanionTrack .companion-card:nth-child(1):not(.hot-more-card),
+#recentCompanionTrack .companion-card:nth-child(2):not(.hot-more-card),
+#recentCompanionTrack .companion-card:nth-child(3):not(.hot-more-card),
+#gameCompanionTrack .companion-card:nth-child(1):not(.hot-more-card),
+#gameCompanionTrack .companion-card:nth-child(2):not(.hot-more-card),
+#gameCompanionTrack .companion-card:nth-child(3):not(.hot-more-card),
+#reviewCompanionTrack .companion-card:nth-child(1):not(.hot-more-card),
+#reviewCompanionTrack .companion-card:nth-child(2):not(.hot-more-card),
+#reviewCompanionTrack .companion-card:nth-child(3):not(.hot-more-card){position:relative!important}
+#hotCompanionTrack .companion-card:nth-child(1):not(.hot-more-card)::after,
+#hotCompanionTrack .companion-card:nth-child(2):not(.hot-more-card)::after,
+#hotCompanionTrack .companion-card:nth-child(3):not(.hot-more-card)::after,
+#recentCompanionTrack .companion-card:nth-child(1):not(.hot-more-card)::after,
+#recentCompanionTrack .companion-card:nth-child(2):not(.hot-more-card)::after,
+#recentCompanionTrack .companion-card:nth-child(3):not(.hot-more-card)::after,
+#gameCompanionTrack .companion-card:nth-child(1):not(.hot-more-card)::after,
+#gameCompanionTrack .companion-card:nth-child(2):not(.hot-more-card)::after,
+#gameCompanionTrack .companion-card:nth-child(3):not(.hot-more-card)::after,
+#reviewCompanionTrack .companion-card:nth-child(1):not(.hot-more-card)::after,
+#reviewCompanionTrack .companion-card:nth-child(2):not(.hot-more-card)::after,
+#reviewCompanionTrack .companion-card:nth-child(3):not(.hot-more-card)::after{
   position:absolute!important;
   left:18px!important;
+  right:auto!important;
   top:18px!important;
   z-index:5!important;
+  width:auto!important;
+  max-width:none!important;
   height:28px!important;
   padding:0 10px!important;
   border-radius:999px!important;
@@ -1817,10 +1881,11 @@ label{
   font-weight:1000!important;
   letter-spacing:.06em!important;
   box-shadow:0 8px 18px rgba(0,0,0,.28)!important;
+  white-space:nowrap!important;
 }
-#hotCompanionTrack .companion-card:nth-child(1)::after,#recentCompanionTrack .companion-card:nth-child(1)::after,#gameCompanionTrack .companion-card:nth-child(1)::after,#reviewCompanionTrack .companion-card:nth-child(1)::after{content:"TOP 1"!important}
-#hotCompanionTrack .companion-card:nth-child(2)::after,#recentCompanionTrack .companion-card:nth-child(2)::after,#gameCompanionTrack .companion-card:nth-child(2)::after,#reviewCompanionTrack .companion-card:nth-child(2)::after{content:"TOP 2"!important}
-#hotCompanionTrack .companion-card:nth-child(3)::after,#recentCompanionTrack .companion-card:nth-child(3)::after,#gameCompanionTrack .companion-card:nth-child(3)::after,#reviewCompanionTrack .companion-card:nth-child(3)::after{content:"TOP 3"!important}
+#hotCompanionTrack .companion-card:nth-child(1):not(.hot-more-card)::after,#recentCompanionTrack .companion-card:nth-child(1):not(.hot-more-card)::after,#gameCompanionTrack .companion-card:nth-child(1):not(.hot-more-card)::after,#reviewCompanionTrack .companion-card:nth-child(1):not(.hot-more-card)::after{content:"TOP 1"!important}
+#hotCompanionTrack .companion-card:nth-child(2):not(.hot-more-card)::after,#recentCompanionTrack .companion-card:nth-child(2):not(.hot-more-card)::after,#gameCompanionTrack .companion-card:nth-child(2):not(.hot-more-card)::after,#reviewCompanionTrack .companion-card:nth-child(2):not(.hot-more-card)::after{content:"TOP 2"!important}
+#hotCompanionTrack .companion-card:nth-child(3):not(.hot-more-card)::after,#recentCompanionTrack .companion-card:nth-child(3):not(.hot-more-card)::after,#gameCompanionTrack .companion-card:nth-child(3):not(.hot-more-card)::after,#reviewCompanionTrack .companion-card:nth-child(3):not(.hot-more-card)::after{content:"TOP 3"!important}
 #hotCompanionTrack .hot-more-card,
 #recentCompanionTrack .hot-more-card,
 #gameCompanionTrack .hot-more-card,
@@ -1830,7 +1895,7 @@ label{
   justify-content:center!important;
   cursor:pointer!important;
   text-align:center!important;
-  min-height:342px!important;
+  min-height:286px!important;
   height:100%!important;
   border-color:rgba(255,184,220,.34)!important;
   background:radial-gradient(circle at 50% 8%,rgba(255,133,197,.22),transparent 42%),linear-gradient(155deg,rgba(34,13,31,.92),rgba(10,7,14,.98))!important;
@@ -1891,8 +1956,8 @@ label{
 #gameCompanionTrack .hot-more-inner p,
 #reviewCompanionTrack .hot-more-inner p{margin:0!important;color:rgba(255,221,239,.68)!important;font-size:14px!important;font-weight:800!important}
 @media(min-width:1180px){
-  #hotCompanionTrack,#recentCompanionTrack,#gameCompanionTrack,#reviewCompanionTrack{min-width:0!important;grid-template-columns:repeat(4,minmax(0,1fr))!important}
-  #hotCompanionTrack .hot-cover,#recentCompanionTrack .hot-cover,#gameCompanionTrack .hot-cover,#reviewCompanionTrack .hot-cover{height:176px!important}
+  #hotCompanionTrack,#recentCompanionTrack,#gameCompanionTrack,#reviewCompanionTrack{min-width:0!important;grid-template-columns:repeat(auto-fit,minmax(0,1fr))!important}
+  #hotCompanionTrack .hot-cover,#recentCompanionTrack .hot-cover,#gameCompanionTrack .hot-cover,#reviewCompanionTrack .hot-cover{height:auto!important;min-height:260px!important;aspect-ratio:4 / 5!important}
 }
 
 
@@ -2224,30 +2289,12 @@ label{
   .quick-entry-grid .quick-entry-card:nth-child(4) i::before{border-radius:10px!important}
 }
 
-/* announcement-cn-neon-border-v1 */
-.announcement-strip{
-  position:relative!important;
-  border:1px solid rgba(255,124,194,.72)!important;
-  background:linear-gradient(90deg,rgba(29,12,25,.88),rgba(68,18,49,.52),rgba(14,7,16,.88))!important;
-  box-shadow:0 0 10px rgba(255,91,170,.22),0 0 24px rgba(255,91,170,.10),inset 0 0 16px rgba(255,220,239,.07)!important;
-}
-.announcement-strip::before{
-  content:"";
-  position:absolute;
-  inset:2px;
-  border-radius:inherit;
-  border:1px solid rgba(255,220,239,.24);
-  pointer-events:none;
-}
-.announcement-strip span{
-  position:relative;
-  z-index:1;
-  color:#ffe0ef!important;
-  text-shadow:0 0 8px rgba(255,108,184,.24);
-}
+/* announcement-cn-neon-border-v1 — 已停用双层描边；正式样式见 home-announcements.css */
+.announcement-strip.home-announcement-bar::before,
+.announcement-strip.home-announcement-bar::after{content:none!important;display:none!important}
 
 /* quick-entry-add-join-custom-v1 */
-.quick-entry-grid{grid-template-columns:repeat(3,minmax(0,1fr))!important}
+.quick-entry-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}
 .quick-entry-grid .quick-entry-card:nth-child(5),
 .quick-entry-grid .quick-entry-card:nth-child(6){
   border-color:rgba(255,79,170,.38)!important;
@@ -2277,8 +2324,8 @@ label{
     text-stroke:.75px #ffc0dd!important;
   }
 }
-@media(max-width:1180px){.quick-entry-grid{grid-template-columns:repeat(3,minmax(0,1fr))!important}}
-@media(max-width:680px){.quick-entry-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}}
+@media(max-width:1180px){.quick-entry-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}}
+@media(max-width:767px){.quick-entry-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}}
 /* companion-apply-cta-v2 */
 .companion-apply-guide{margin-top:clamp(12px,1.8vh,22px)!important;margin-bottom:clamp(18px,2.5vh,34px)!important}
 .companion-apply-guide-card{
@@ -2468,10 +2515,7 @@ label{
   -webkit-backdrop-filter:none!important;
   filter:none!important;
 }
-.announcement-strip{
-  margin-top:0!important;
-  margin-bottom:var(--home-gap)!important;
-}
+/* 首页公告栏样式已迁移到 src/home-announcements.css */
 @media(max-width:980px){
   .banner{height:clamp(200px,30vh,300px)!important}
 }
@@ -2622,13 +2666,14 @@ label{
 
 /* mcj-home-hero-platform-v1 */
 .mcj-home-hero{
-  --hero-h:520px;
-  --hero-mobile-h:260px;
-  --hero-radius:24px;
-  --hero-fit:contain;
+  --hero-h:260px;
+  --hero-mobile-h:190px;
+  --hero-radius:20px;
+  --hero-fit:cover;
   --hero-position:50% 50%;
   position:relative;
-  width:min(1440px,calc(100vw - 96px));
+  width:100%;
+  max-width:100%;
   height:var(--hero-h);
   margin:16px auto 18px;
   border-radius:var(--hero-radius);
@@ -2696,14 +2741,14 @@ label{
 @keyframes mcjHeroSweep{0%,60%{transform:translateX(-34%)}84%,100%{transform:translateX(28%)}}
 @keyframes mcjHeroFloat{0%,100%{translate:0 0}50%{translate:0 -8px}}
 @keyframes mcjParticleFloat{0%,100%{opacity:.14;transform:translateY(0) scale(.78)}50%{opacity:.42;transform:translateY(-14px) scale(1)}}
-@media(max-width:980px){.mcj-home-hero{width:calc(100vw - 40px);height:360px}.mcj-hero-stage{grid-template-columns:1fr 1fr;padding:38px 34px 68px}.mcj-hero-copy h1{font-size:48px}.mcj-hero-copy p{font-size:18px}.mcj-hero-visual{height:260px}.mcj-hero-dots{bottom:66px}}
-@media(max-width:640px){.mcj-home-hero{width:calc(100vw - 32px);height:var(--hero-mobile-h);border-radius:18px;margin-top:12px;margin-bottom:16px}.mcj-hero-stage{grid-template-columns:1fr;align-content:center;padding:22px 20px 58px}.mcj-hero-copy{max-width:78%;}.mcj-hero-kicker{height:26px;font-size:10px}.mcj-hero-copy h1{font-size:34px;margin:10px 0 6px}.mcj-hero-copy p{font-size:14px}.mcj-hero-copy small{font-size:11px;letter-spacing:.06em}.mcj-hero-actions{margin-top:14px;gap:9px}.mcj-hero-btn{height:40px;min-width:108px;border-radius:12px;padding:0 12px;font-size:12px}.mcj-hero-visual{position:absolute;right:10px;top:50%;width:46%;height:58%;transform:translateY(-50%)}.mcj-hero-announcement{left:12px;right:12px;bottom:12px;height:32px;padding:0 11px}.mcj-hero-announcement b{font-size:10px}.mcj-hero-ticker span{font-size:11px}.mcj-hero-arrow{display:none}.mcj-hero-dots{bottom:48px}.mcj-hero-dots button{width:7px;height:7px}.mcj-hero-dots button.active{width:20px}}
+@media(max-width:980px){.mcj-home-hero{width:100%;height:clamp(220px,22vw,240px);max-height:240px}.mcj-hero-stage{grid-template-columns:1fr 1fr;padding:38px 34px 68px}.mcj-hero-copy h1{font-size:48px}.mcj-hero-copy p{font-size:18px}.mcj-hero-visual{height:260px}.mcj-hero-dots{bottom:66px}}
+@media(max-width:640px){.mcj-home-hero{width:100%;height:clamp(170px,46vw,210px);max-height:210px;border-radius:18px;margin-top:12px;margin-bottom:16px}.mcj-hero-stage{grid-template-columns:1fr;align-content:center;padding:22px 20px 58px}.mcj-hero-copy{max-width:78%;}.mcj-hero-kicker{height:26px;font-size:10px}.mcj-hero-copy h1{font-size:34px;margin:10px 0 6px}.mcj-hero-copy p{font-size:14px}.mcj-hero-copy small{font-size:11px;letter-spacing:.06em}.mcj-hero-actions{margin-top:14px;gap:9px}.mcj-hero-btn{height:40px;min-width:108px;border-radius:12px;padding:0 12px;font-size:12px}.mcj-hero-visual{position:absolute;right:10px;top:50%;width:46%;height:58%;transform:translateY(-50%)}.mcj-hero-announcement{left:12px;right:12px;bottom:12px;height:32px;padding:0 11px}.mcj-hero-announcement b{font-size:10px}.mcj-hero-ticker span{font-size:11px}.mcj-hero-arrow{display:none}.mcj-hero-dots{bottom:48px}.mcj-hero-dots button{width:7px;height:7px}.mcj-hero-dots button.active{width:20px}}
 @media(prefers-reduced-motion:reduce){.mcj-home-hero,.mcj-home-hero *{animation:none!important;transition:none!important}}
 
 /* mcj-home-banner-single-image-fix-v2 */
 .container > .mcj-home-hero{
-  width:min(1440px,calc(100vw - 96px))!important;
-  height:520px!important;
+  width:100%!important;max-width:100%!important;
+  height:clamp(240px,18vw,280px)!important;max-height:300px!important;
   margin:16px auto 0!important;
   border:0!important;
   border-radius:20px!important;
@@ -2798,8 +2843,8 @@ label{
 .mcj-hero-notice b{color:#ff9ecf;font-size:13px;letter-spacing:.1em;white-space:nowrap}
 .mcj-hero-notice div{min-width:0;flex:1;overflow:hidden;white-space:nowrap}
 .mcj-hero-notice span{display:inline-block;min-width:100%;padding-left:100%;animation:noticeScroll 22s linear infinite}
-@media(max-width:980px){.container > .mcj-home-hero,.mcj-hero-below-actions,.mcj-hero-notice{width:calc(100vw - 40px)!important}.container > .mcj-home-hero{height:520px!important}}
-@media(max-width:640px){.container > .mcj-home-hero{width:calc(100vw - 32px)!important;height:260px!important;border-radius:18px!important}.mcj-hero-below-actions{width:calc(100vw - 32px)!important;margin-top:12px;gap:10px}.mcj-hero-below-actions .mcj-hero-btn{height:46px;min-width:0;flex:1;padding:0 12px;font-size:13px}.mcj-hero-notice{width:calc(100vw - 32px)!important;height:38px;margin-top:14px;margin-bottom:28px;border-radius:18px}.mcj-hero-notice b{font-size:11px}.mcj-hero-notice span{font-size:12px}.mcj-home-hero .mcj-hero-arrow{display:none!important}.mcj-home-hero .mcj-hero-dots{bottom:12px!important}}
+@media(max-width:980px){.container > .mcj-home-hero{width:100%!important;height:clamp(220px,22vw,240px)!important;max-height:240px!important}}
+@media(max-width:640px){.container > .mcj-home-hero{width:100%!important;height:clamp(170px,46vw,210px)!important;max-height:210px!important;border-radius:18px!important}.mcj-hero-below-actions{width:100%!important;max-width:100%!important;box-sizing:border-box;margin-top:12px;gap:10px}.mcj-hero-below-actions .mcj-hero-btn{height:46px;min-width:0;flex:1;padding:0 12px;font-size:13px}.mcj-hero-notice{width:100%!important;max-width:100%!important;box-sizing:border-box;height:38px;margin-top:14px;margin-bottom:28px;border-radius:18px}.mcj-hero-notice b{font-size:11px}.mcj-hero-notice span{font-size:12px}.mcj-home-hero .mcj-hero-arrow{display:none!important}.mcj-home-hero .mcj-hero-dots{bottom:12px!important}}
 
 /* quick-entry-single-icon-fix-v1 */
 .quick-entry-grid .quick-entry-card{
@@ -2965,30 +3010,32 @@ label{
     min-height:44px!important;
   }
 }
-.quick-entry-grid{grid-template-columns:repeat(5,minmax(0,1fr))!important}
+.quick-entry-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}
 .quick-entry-grid .quick-entry-card{
-  min-height:118px!important;
-  border-radius:20px!important;
+  min-height:100px!important;
+  height:100px!important;
+  max-height:108px!important;
+  border-radius:16px!important;
   border:1px solid rgba(243,168,203,.28)!important;
-  background:linear-gradient(145deg,rgba(255,255,255,.055),rgba(255,255,255,.018)),rgba(15,9,20,.86)!important;
-  box-shadow:0 18px 50px rgba(0,0,0,.36),inset 0 1px 0 rgba(255,255,255,.06)!important;
+  background:linear-gradient(105deg,rgba(243,168,203,.10),rgba(255,255,255,.02) 40%,transparent),rgba(15,9,20,.90)!important;
+  box-shadow:0 10px 28px rgba(0,0,0,.32),inset 0 1px 0 rgba(255,255,255,.04)!important;
 }
 .quick-entry-grid .quick-entry-card i,
 .quick-entry-grid .quick-entry-card i::before{
-  width:50px!important;
-  height:50px!important;
-  min-width:50px!important;
-  border-radius:16px!important;
+  width:24px!important;
+  height:24px!important;
+  min-width:24px!important;
+  border-radius:8px!important;
   background:rgba(255,220,235,.08)!important;
   border:1px solid rgba(243,168,203,.26)!important;
   color:#ffdceb!important;
   -webkit-text-fill-color:#ffdceb!important;
   -webkit-text-stroke:0!important;
   text-stroke:0!important;
-  font-size:20px!important;
+  font-size:14px!important;
   font-weight:1000!important;
   filter:none!important;
-  box-shadow:inset 0 0 18px rgba(255,220,235,.06),0 0 16px rgba(243,168,203,.12)!important;
+  box-shadow:none!important;
 }
 .quick-entry-grid .quick-entry-card i::before{content:none!important;display:none!important}
 .quick-entry-grid .quick-entry-card strong{
@@ -3006,16 +3053,18 @@ label{
   line-height:1.38!important;
   letter-spacing:0!important;
 }
-.login-links{display:flex;justify-content:space-between;gap:12px;margin-top:2px}
-.login-links a{color:#ffdceb;font-size:13px;font-weight:900;text-decoration:none}
-.login-links a:hover{text-decoration:underline}
-@media(max-width:980px){.quick-entry-grid{grid-template-columns:repeat(3,minmax(0,1fr))!important}}
+.login-links{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:nowrap;height:40px;margin-top:12px}
+.login-links a,.login-links button.linkish{color:#ffdceb;font-size:13px;font-weight:700;text-decoration:none;cursor:pointer;border:0;background:none;padding:0;font-family:inherit;white-space:nowrap;line-height:40px}
+.login-links a:hover,.login-links button.linkish:hover{text-decoration:underline}
+@media(max-width:980px){.quick-entry-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}}
 @media(max-width:640px){.quick-entry-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}.quick-entry-grid .quick-entry-card{min-height:104px!important;padding:14px!important}.quick-entry-grid .quick-entry-card i{width:44px!important;height:44px!important;min-width:44px!important}.quick-entry-grid .quick-entry-card strong{font-size:16px!important}.quick-entry-grid .quick-entry-card span{font-size:11px!important}}
 
 /* homepage-restored-banner-stats-icons-v1 */
-.site-header .header-inner{justify-content:space-between!important}
+.site-header:not(.mcj-boss-header) .header-inner{justify-content:space-between!important}
+header.mcj-boss-header .mcj-boss-header-inner,
+header.mcj-boss-header .header-inner{justify-content:flex-start!important}
 .site-header .header-nav{display:none!important}
-.container>.mcj-home-hero{height:clamp(280px,31vw,360px)!important;margin-top:12px!important;margin-bottom:18px!important}
+.container>.mcj-home-hero{height:clamp(240px,18vw,280px)!important;max-height:300px!important;margin-top:16px!important;margin-bottom:16px!important}
 .mcj-home-hero.is-empty{display:grid!important;place-items:center!important;border:1px solid rgba(243,168,203,.28)!important;background:radial-gradient(circle at 18% 18%,rgba(243,168,203,.14),transparent 36%),linear-gradient(145deg,rgba(18,10,23,.96),rgba(5,4,8,.98))!important;box-shadow:0 0 30px rgba(243,168,203,.13),0 24px 70px rgba(0,0,0,.42)!important}
 .mcj-hero-empty{display:grid;place-items:center;gap:8px;text-align:center;color:#ffe2ef}
 .mcj-hero-empty strong{font-size:22px;font-weight:1000}
@@ -3027,17 +3076,20 @@ label{
 .home-daily-card strong{display:block;margin-top:8px;color:#fff5fa;font-size:24px;line-height:1.05;font-family:"Arial Rounded MT Bold","Microsoft YaHei UI",Inter,sans-serif;text-shadow:0 0 14px rgba(243,168,203,.24);white-space:nowrap}
 .home-daily-card small{display:block;margin-top:6px;color:#bfaebb;font-size:11px;font-weight:850}
 .home-daily-card.is-error strong{font-size:13px;white-space:normal;line-height:1.35}
-.quick-entry-grid{grid-template-columns:repeat(5,minmax(0,1fr))!important;gap:14px!important}
-.quick-entry-grid .quick-entry-card{min-height:112px!important;border-radius:18px!important;border:1px solid rgba(243,168,203,.30)!important;background:linear-gradient(105deg,rgba(243,168,203,.12),rgba(255,255,255,.025) 34%,rgba(0,0,0,.06)),rgba(13,8,17,.86)!important;box-shadow:0 18px 50px rgba(0,0,0,.36),inset 0 1px 0 rgba(255,255,255,.055)!important}
-.quick-entry-grid .quick-entry-card i{width:48px!important;height:48px!important;min-width:48px!important;border-radius:16px!important;background:radial-gradient(circle at 42% 35%,rgba(255,220,235,.22),rgba(243,168,203,.07))!important;border:1px solid rgba(243,168,203,.30)!important;box-shadow:inset 0 0 18px rgba(255,220,235,.06),0 0 16px rgba(243,168,203,.12)!important}
-.quick-entry-grid .quick-entry-card i img{display:block!important;width:34px!important;height:34px!important;min-width:34px!important;min-height:34px!important;object-fit:contain!important;filter:drop-shadow(0 0 8px rgba(243,168,203,.22))!important}
+.quick-entry-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:14px!important}
+.quick-entry-grid .quick-entry-card{min-height:100px!important;height:100px!important;max-height:108px!important;border-radius:16px!important;border:1px solid rgba(243,168,203,.30)!important;background:linear-gradient(105deg,rgba(243,168,203,.12),rgba(255,255,255,.025) 34%,rgba(0,0,0,.06)),rgba(13,8,17,.86)!important;box-shadow:0 18px 50px rgba(0,0,0,.36),inset 0 1px 0 rgba(255,255,255,.055)!important}
+.quick-entry-grid .quick-entry-card i{width:24px!important;height:24px!important;min-width:24px!important;border-radius:8px!important;background:rgba(255,220,235,.10)!important;border:1px solid rgba(243,168,203,.26)!important;box-shadow:none!important}
+.quick-entry-grid .quick-entry-card i img{display:block!important;width:18px!important;height:18px!important;min-width:18px!important;min-height:18px!important;object-fit:contain!important;filter:none!important}
 .quick-entry-grid .quick-entry-card strong{font-size:17px!important;font-weight:900!important;color:#fff5fa!important;-webkit-text-fill-color:#fff5fa!important;letter-spacing:0!important}
 .quick-entry-grid .quick-entry-card span{font-size:12px!important;color:rgba(255,226,239,.72)!important;line-height:1.38!important}
-#hotCompanionTrack .companion-card::after,#recentCompanionTrack .companion-card::after,#gameCompanionTrack .companion-card::after,#reviewCompanionTrack .companion-card::after{content:none!important;display:none!important}
-#floatingCustomerService{position:fixed!important;right:24px!important;bottom:24px!important;z-index:9999!important}
-#floatingCustomerService .floating-cs-button{background:rgba(18,14,18,.88)!important;background-image:none!important;border:1px solid rgba(255,145,195,.55)!important}
-@media(max-width:980px){.home-daily-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.quick-entry-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}.container>.mcj-home-hero{height:clamp(210px,34vw,300px)!important}}
-@media(max-width:640px){.home-daily-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.home-daily-card{min-height:86px;padding:14px 12px}.home-daily-card strong{font-size:21px}.container>.mcj-home-hero{height:clamp(170px,50vw,230px)!important;border-radius:18px!important}.quick-entry-grid .quick-entry-card{min-height:104px!important;padding:14px!important}.quick-entry-grid .quick-entry-card i,.quick-entry-grid .quick-entry-card i img{width:42px!important;height:42px!important;min-width:42px!important}.quick-entry-grid .quick-entry-card i img{width:30px!important;height:30px!important;min-width:30px!important;min-height:30px!important}#floatingCustomerService{right:16px!important;bottom:18px!important}}
+/* companion-card-freeze: keep TOP capsules via higher-specificity nth-child rules; do not blank them here */
+#hotCompanionTrack .companion-card.hot-more-card::after,
+#recentCompanionTrack .companion-card.hot-more-card::after,
+#gameCompanionTrack .companion-card.hot-more-card::after,
+#reviewCompanionTrack .companion-card.hot-more-card::after{content:none!important;display:none!important}
+@media(max-width:980px){.home-daily-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.quick-entry-grid{grid-template-columns:repeat(3,minmax(0,1fr))!important}.container>.mcj-home-hero{height:clamp(220px,22vw,240px)!important;max-height:240px!important}}
+@media(max-width:767px){.quick-entry-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}.quick-entry-grid .quick-entry-card{min-height:92px!important;height:92px!important;max-height:100px!important;padding:14px!important}}
+@media(max-width:640px){.home-daily-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.home-daily-card{min-height:86px;padding:14px 12px}.home-daily-card strong{font-size:21px}.container>.mcj-home-hero{height:clamp(170px,46vw,210px)!important;max-height:210px!important;border-radius:18px!important}}
 @media(max-width:360px){.quick-entry-grid{grid-template-columns:1fr!important}.home-daily-grid{grid-template-columns:1fr}}
 
 /* homepage-ui-second-pass-v1 */
@@ -3068,27 +3120,28 @@ label{
   box-shadow:0 22px 70px rgba(0,0,0,.42),inset 0 1px 0 rgba(255,255,255,.08),0 0 34px rgba(243,168,203,.12)!important;
 }
 .mcj-hero-empty{
-  gap:12px!important;
-  padding:24px!important;
+  display:none!important;
 }
 .mcj-hero-empty strong{
-  font-family:"Microsoft YaHei UI",Inter,Arial,sans-serif!important;
-  font-size:clamp(26px,3.2vw,42px)!important;
-  font-weight:700!important;
-  letter-spacing:0!important;
-  color:#fff!important;
-  text-shadow:0 0 22px rgba(243,168,203,.20)!important;
+  font-size:16px!important;
 }
 .mcj-hero-empty span{
-  font-family:"Microsoft YaHei UI",Inter,Arial,sans-serif!important;
-  font-size:15px!important;
-  font-weight:400!important;
-  color:rgba(255,226,239,.78)!important;
+  font-size:13px!important;
 }
 .home-daily-grid{
-  grid-template-columns:repeat(6,minmax(0,1fr))!important;
+  grid-template-columns:repeat(3,minmax(0,1fr))!important;
   gap:14px!important;
   align-items:stretch!important;
+}
+.quick-entry-grid,
+.quick-entry-grid.launch-entry-grid{
+  grid-template-columns:repeat(2,minmax(0,1fr))!important;
+  gap:14px!important;
+}
+.quick-entry-grid .quick-entry-card{
+  min-height:110px!important;
+  height:auto!important;
+  max-height:none!important;
 }
 .home-daily-card{
   height:112px!important;
@@ -3133,26 +3186,32 @@ label{
 }
 .quick-entry-grid,
 .quick-entry-grid.launch-entry-grid{
-  grid-template-columns:repeat(5,minmax(0,1fr))!important;
+  grid-template-columns:repeat(2,minmax(0,1fr))!important;
   gap:14px!important;
+}
+.quick-entry-grid [data-home-entry="my-orders"],
+.quick-entry-grid [data-home-entry="support"]{
+  display:none!important;
 }
 .quick-entry-grid .quick-entry-card,
 .quick-entry-grid.launch-entry-grid .quick-entry-card{
   position:relative!important;
   display:flex!important;
   align-items:center!important;
-  min-height:112px!important;
-  height:112px!important;
-  padding:22px 18px 22px 24px!important;
+  min-height:100px!important;
+  height:100px!important;
+  max-height:108px!important;
+  padding:14px 16px!important;
   gap:0!important;
-  border-radius:18px!important;
+  border-radius:16px!important;
   border:1px solid rgba(255,214,232,.24)!important;
-  background:linear-gradient(145deg,rgba(255,255,255,.055),rgba(255,255,255,.018)),rgba(10,9,14,.84)!important;
-  box-shadow:0 18px 46px rgba(0,0,0,.36),inset 0 1px 0 rgba(255,255,255,.055)!important;
+  background:linear-gradient(105deg,rgba(243,168,203,.10),rgba(255,255,255,.02) 40%,transparent),rgba(10,9,14,.90)!important;
+  box-shadow:0 10px 28px rgba(0,0,0,.32),inset 0 1px 0 rgba(255,255,255,.04)!important;
   color:#fff!important;
   overflow:hidden!important;
   text-align:left!important;
-  transition:transform .22s ease,border-color .22s ease,box-shadow .22s ease,background .22s ease!important;
+  transform:none!important;
+  transition:border-color .18s ease,box-shadow .18s ease,background .18s ease!important;
 }
 .quick-entry-grid .quick-entry-card:before,
 .quick-entry-grid.launch-entry-grid .quick-entry-card:before{
@@ -3178,10 +3237,10 @@ label{
 }
 .quick-entry-grid .quick-entry-card:hover,
 .quick-entry-grid.launch-entry-grid .quick-entry-card:hover{
-  transform:translateY(-3px)!important;
-  border-color:rgba(255,214,232,.64)!important;
-  background:linear-gradient(145deg,rgba(255,214,232,.075),rgba(255,255,255,.024)),rgba(12,10,16,.92)!important;
-  box-shadow:0 0 28px rgba(243,168,203,.20),0 24px 60px rgba(0,0,0,.44),inset 0 1px 0 rgba(255,255,255,.08)!important;
+  transform:none!important;
+  border-color:rgba(255,214,232,.50)!important;
+  background:linear-gradient(105deg,rgba(243,168,203,.14),rgba(255,255,255,.03) 40%,transparent),rgba(12,10,16,.94)!important;
+  box-shadow:0 12px 32px rgba(0,0,0,.38),0 0 14px rgba(243,168,203,.12)!important;
 }
 .quick-entry-grid .quick-entry-card i,
 .quick-entry-grid .quick-entry-card i:before,
@@ -3215,9 +3274,9 @@ label{
 .quick-entry-grid.launch-entry-grid .quick-entry-card:nth-child(n) strong{
   display:block!important;
   font-family:"Microsoft YaHei UI",Inter,Arial,sans-serif!important;
-  font-size:18px!important;
-  font-weight:700!important;
-  line-height:1.25!important;
+  font-size:17px!important;
+  font-weight:800!important;
+  line-height:1.2!important;
   color:#fff!important;
   -webkit-text-fill-color:#fff!important;
   -webkit-text-stroke:0!important;
@@ -3231,11 +3290,11 @@ label{
 .quick-entry-grid .quick-entry-card:nth-child(n) span,
 .quick-entry-grid.launch-entry-grid .quick-entry-card:nth-child(n) span{
   display:block!important;
-  margin-top:8px!important;
+  margin-top:6px!important;
   font-family:"Microsoft YaHei UI",Inter,Arial,sans-serif!important;
-  font-size:13px!important;
-  font-weight:400!important;
-  line-height:1.4!important;
+  font-size:12px!important;
+  font-weight:500!important;
+  line-height:1.35!important;
   color:#ffe2ef!important;
   -webkit-text-fill-color:#ffe2ef!important;
   opacity:.75!important;
@@ -3243,73 +3302,269 @@ label{
   text-shadow:none!important;
 }
 @media(max-width:980px){
-  .home-daily-grid{grid-template-columns:repeat(3,minmax(0,1fr))!important}
   .quick-entry-grid,.quick-entry-grid.launch-entry-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}
 }
+@media(max-width:980px){
+  .home-daily-grid{grid-template-columns:repeat(3,minmax(0,1fr))!important}
+}
+@media(max-width:767px){
+  .quick-entry-grid,.quick-entry-grid.launch-entry-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+  .quick-entry-grid .quick-entry-card,.quick-entry-grid.launch-entry-grid .quick-entry-card{height:92px!important;min-height:92px!important;max-height:100px!important;padding:14px!important}
+  .quick-entry-grid .quick-entry-card strong,.quick-entry-grid.launch-entry-grid .quick-entry-card strong{font-size:16px!important}
+  .quick-entry-grid .quick-entry-card span,.quick-entry-grid.launch-entry-grid .quick-entry-card span{font-size:11px!important}
+}
 @media(max-width:640px){
-  .home-daily-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}
-  .home-daily-card{height:104px!important;min-height:104px!important}
-  .home-daily-card strong{font-size:28px!important}
-  .quick-entry-grid .quick-entry-card,.quick-entry-grid.launch-entry-grid .quick-entry-card{height:104px!important;min-height:104px!important;padding:18px 16px 18px 22px!important}
-  .quick-entry-grid .quick-entry-card strong,.quick-entry-grid.launch-entry-grid .quick-entry-card strong{font-size:18px!important}
-  .quick-entry-grid .quick-entry-card span,.quick-entry-grid.launch-entry-grid .quick-entry-card span{font-size:13px!important}
+  .home-daily-grid{grid-template-columns:repeat(3,minmax(0,1fr))!important}
+  .home-daily-card{height:auto!important;min-height:72px!important;max-height:84px!important;padding:10px 8px!important}
+  .home-daily-card strong{font-size:20px!important}
 }
 @media(max-width:360px){
   .home-daily-grid,.quick-entry-grid,.quick-entry-grid.launch-entry-grid{grid-template-columns:1fr!important}
 }
+
+/* homepage-launch-ready-guard-v1 — size lock deferred to src/home-banner.css */
+
+/* v1-home-mobile-ui-lock — P0 overflow / images / daily empty */
+html,body{max-width:100%;overflow-x:hidden!important}
+body{overflow-x:hidden!important}
+.container,.home-page,main.container{max-width:100%;overflow-x:hidden;box-sizing:border-box}
+img{max-width:100%;height:auto}
+.mcj-home-hero .mcj-hero-image,
+.mcj-home-hero img.mcj-hero-image{
+  width:100%!important;
+  max-width:100%!important;
+  height:100%!important;
+  object-fit:cover!important;
+}
+.home-daily-empty{
+  margin:0;
+  padding:18px 14px;
+  border-radius:18px;
+  border:1px dashed rgba(243,168,203,.28);
+  background:rgba(255,255,255,.03);
+  color:#cdb8c4;
+  font-weight:850;
+  text-align:center;
+}
+@media(max-width:900px){
+  .home-popularity-section,.pop-board,.pop-podium,.pop-list,.pop-podium-card,.pop-list-row{max-width:100%!important}
+  .pop-podium{overflow-x:hidden!important}
+}
+.quick-entry-grid .quick-entry-card[hidden],
+.mobile-bottom-nav a[hidden]{display:none!important}
+@media(max-width:640px){
+  .container{padding-bottom:104px!important}
+}
+
+/* homepage-clean-background-v1 */
+body{
+  background:
+    radial-gradient(circle at 18% 0%, rgba(243,168,203,.035), transparent 32%),
+    radial-gradient(circle at 86% 18%, rgba(255,255,255,.025), transparent 30%),
+    linear-gradient(180deg,#050507 0%,#08070a 48%,#050406 100%)!important;
+}
+body:before,
+body:after,
+.ambient-layer,
+.ambient-layer *{
+  content:none!important;
+  display:none!important;
+  animation:none!important;
+  background:none!important;
+  box-shadow:none!important;
+  filter:none!important;
+}
+
+/* ===== Mobile mnav / desktop desk-nav (20260802mobileP0c) ===== */
+header.mcj-boss-header .top-actions,
+header.mcj-boss-header .live2d-avatar,
+header.mcj-boss-header [data-favorite],
+header.mcj-boss-header .mcj-boss-star,
+header.mcj-boss-header .header-star,
+header.mcj-boss-header .mcj-mnav-brand{display:none!important}
+@media(min-width:900px){
+  header.mcj-boss-header .mcj-mnav{display:none!important}
+  header.mcj-boss-header .mcj-desk-nav{
+    display:flex!important;
+    flex-wrap:nowrap!important;
+    align-items:center!important;
+    justify-content:flex-end!important;
+    gap:6px!important;
+    max-width:none!important
+  }
+  header.mcj-boss-header .mcj-desk-nav>a{
+    flex:0 0 auto!important;
+    min-width:0!important;
+    max-width:none!important;
+    height:40px!important;
+    padding:0 11px!important;
+    font-size:13px!important;
+    font-weight:750!important;
+    border-radius:10px!important;
+    white-space:nowrap!important;
+    box-shadow:none!important
+  }
+}
+@media(max-width:899px){
+  header.mcj-boss-header .mcj-desk-nav,
+  header.mcj-boss-header .header-nav:not(.mcj-desk-nav),
+  header.mcj-boss-header .mcj-boss-nav:not(.mcj-desk-nav){display:none!important}
+  header.mcj-boss-header .mcj-header-brand{
+    display:flex!important;
+    flex:1 1 auto!important;
+    order:0!important;
+    min-width:0!important;
+    max-width:none!important
+  }
+  header.mcj-boss-header .mcj-mnav{
+    display:flex!important;
+    align-items:center!important;
+    justify-content:center!important;
+    flex:0 0 auto!important;
+    width:auto!important;
+    max-width:48px!important;
+    margin:0 0 0 auto!important;
+    order:2!important
+  }
+  header.mcj-boss-header .mcj-mnav-toggle{display:inline-flex!important}
+}
+html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!important}
+
+
+/* companion-card-cover-focal-v2 — crop focus only; do NOT change cover/card size */
+.companion-track .hot-cover img{
+  object-position:var(--mcj-cover-pos, center 25%)!important;
+}
+/* Mobile: keep existing crop defaults — do not apply desktop focal overrides */
+@media(max-width:980px){
+  .companion-track .hot-cover img{
+    --mcj-cover-pos:center 25%;
+    object-position:center 25%!important;
+  }
+}
+/* Desktop only: keep frozen cover size, retarget face crop for known companions */
+@media(min-width:981px){
+  #hotCompanionTrack .companion-card[data-public-id="PW00002"] .hot-cover img,
+  #recentCompanionTrack .companion-card[data-public-id="PW00002"] .hot-cover img,
+  #gameCompanionTrack .companion-card[data-public-id="PW00002"] .hot-cover img,
+  #reviewCompanionTrack .companion-card[data-public-id="PW00002"] .hot-cover img{
+    --mcj-cover-pos:50% 22%;
+    object-position:50% 22%!important;
+  }
+  #hotCompanionTrack .companion-card[data-public-id="PW00004"] .hot-cover img,
+  #recentCompanionTrack .companion-card[data-public-id="PW00004"] .hot-cover img,
+  #gameCompanionTrack .companion-card[data-public-id="PW00004"] .hot-cover img,
+  #reviewCompanionTrack .companion-card[data-public-id="PW00004"] .hot-cover img{
+    --mcj-cover-pos:50% 40%;
+    object-position:50% 40%!important;
+  }
+}
+
 </style>
   <link rel="stylesheet" href="src/certification-system.css">
   <link rel="stylesheet" href="src/companion-application.css">
   <link rel="stylesheet" href="src/real-data-admin.css">
   <link rel="stylesheet" href="src/gameplay-flow.css">
   <link rel="stylesheet" href="src/design-system.css">
+  <link rel="stylesheet" href="src/home-banner.css">
+  <link rel="stylesheet" href="src/home-announcements.css?v=20260805annRotate1">
+  <link rel="stylesheet" href="src/home-popularity.css">
+  <link rel="stylesheet" href="src/home-desktop.css">
+  <link rel="stylesheet" href="src/login-modal.css?v=20260805loginUi1">
+  <link rel="stylesheet" href="src/place-order-modal.css">
+  <link rel="stylesheet" href="src/notify-system.css">
+  <script type="module" src="src/role-gates.js?v=20260805p0home1"></script>
+  <script type="module" src="src/boss-auth-session.js?v=20260805p0home1"></script>
+  <script type="module" src="src/forgot-password.js?v=20260806forgotP0"></script>
+  <script type="module" src="src/avatar-fallback.js"></script>
+  <script type="module" src="src/companion-media.js?v=20260802mediaSync"></script>
+  <script type="module" src="src/launch-feature-freeze.js"></script>
+  <script type="module" src="src/notify-system.js" defer></script>
+  <script type="module" src="src/boss-header.js?v=20260805p0home1" defer></script>
+  <script type="module" src="src/boss-forced-ack.js?v=20260805p0home1" defer></script>
+  <link rel="stylesheet" href="src/boss-header.css?v=20260805p0home1">
+  <link rel="stylesheet" href="/src/mcj-safe-area.css?v=20260802mobileP0c">
+  <link rel="stylesheet" href="src/home-mobile.css?v=20260804annMarquee3">
 </head>
 <body>
-  <div class="ambient-layer" aria-hidden="true"><span class="paw p1">🐾</span><span class="paw p2">🐾</span><span class="paw p3">🐾</span><span class="heart h1">♥</span><span class="heart h2">♥</span><span class="spark s1"></span><span class="spark s2"></span><span class="spark s3"></span></div>
-  <header class="site-header">
-    <div class="header-inner">
-      <a class="brand" href="index.html"><span class="live2d-avatar"><img src="assets/meow-cuijiao-brand.jpg" alt="logo"><i></i></span><span>妙脆角<small>Meow Cui Jiao</small></span></a>
-      <div class="top-actions"><button class="login" data-modal="login" data-guest-only>登录</button><a class="auth-only" data-auth-only data-message-link data-role="customer" href="messages.html">消息</a><a class="user-chip auth-only" data-auth-only data-role="customer" href="mine.html"><span class="user-dot"></span><span>我的</span></a></div>
+  <div class="ambient-layer" aria-hidden="true"></div>
+  <header class="site-header mcj-boss-header" data-mcj-boss-header="1" aria-label="顶部导航">
+    <div class="mcj-boss-header-inner header-inner">
+      <a class="mcj-header-brand" href="/" aria-label="MEOW CUI JIAO 妙脆角 首页">
+        <img class="mcj-header-brand-logo" src="/src/assets/meow-cuijiao-brand.jpg" alt="MEOW CUI JIAO" width="40" height="40" decoding="async" data-mcj-brand-logo="1">
+        <span class="mcj-header-brand-text">
+          <span class="mcj-header-brand-en">Meow Cui Jiao</span>
+          <span class="mcj-header-brand-zh">妙脆角</span>
+        </span>
+      </a>
+      <nav class="mcj-desk-nav" aria-label="桌面主导航">
+        <a href="index.html" class="active">首页</a>
+        <a href="companion-center.html">大厅</a>
+        <a href="orders.html">订单</a>
+        <a href="support.html?start=1">客服</a>
+        <a href="login.html" data-mcj-boss-login>登录</a>
+      </nav>
+      <div class="mcj-mnav">
+        <button type="button" class="mcj-mnav-toggle" data-mcj-mnav-toggle aria-controls="mcjMnavSheet" aria-expanded="false" aria-label="打开菜单">☰</button>
+      </div>
     </div>
   </header>
   <main class="container">
     <section class="mcj-home-hero" data-mcj-home-hero aria-label="MEOW CUI JIAO 首页 Banner"></section>
 
-    <div class="announcement-strip fade-cycle" hidden><span></span></div>
+    <div class="announcement-strip home-announcement-bar" id="homeAnnouncementBar" role="region" aria-label="官方公告">
+      <div class="home-announcement-label"><span aria-hidden="true">📢</span><strong>官方公告</strong></div>
+      <div class="home-announcement-track-wrap" data-announcement-open data-empty="1" role="button" aria-label="暂无最新公告">
+        <span class="home-announcement-static">暂无最新公告。</span>
+      </div>
+    </div>
 
-    <section class="section home-daily-stats" data-home-daily-stats aria-label="今日平台数据"></section>
+    <section class="section home-daily-stats" data-home-daily-stats aria-label="今日平台数据" hidden></section>
 
     <section class="section quick-entry-section">
       <div class="section-title compact-title"><div><h2>快速入口</h2><p>QUICK ACCESS</p></div></div>
-      <div class="quick-entry-grid">
-        <a class="neon-card quick-entry-card" href="custom-order.html"><div><strong>自定义订单</strong><span>填写需求，客服匹配陪玩</span></div></a>
-        <a class="neon-card quick-entry-card" href="more-gameplays.html"><div><strong>更多玩法</strong><span>护航、跑刀、代肝、趣味单</span></div></a>
-        <a class="neon-card quick-entry-card" href="companion-center.html"><div><strong>陪玩大厅</strong><span>浏览已上架陪玩</span></div></a>
-        <a class="neon-card quick-entry-card" href="team-lobby.html"><div><strong>组队大厅</strong><span>进入组队社区</span></div></a>
-        <a class="neon-card quick-entry-card" href="miao-coin.html"><div><strong>充值中心</strong><span>查看充值与余额</span></div></a>
+            <div class="quick-entry-grid">
+        <a class="neon-card quick-entry-card" href="companion-center.html" data-home-entry="companion-hall"><div><strong>陪玩大厅</strong><span>浏览已上架陪玩，立即下单</span></div></a>
+        <a class="neon-card quick-entry-card" href="more-gameplays.html" data-home-entry="more-gameplays"><div><strong>更多玩法</strong><span>护航、跑刀、代肝、趣味单</span></div></a>
+        <a class="neon-card quick-entry-card" href="custom-order.html" data-home-entry="custom-order"><div><strong>自定义订单</strong><span>填写需求，客服匹配陪玩</span></div></a>
+        <a class="neon-card quick-entry-card" href="team-lobby.html" data-home-entry="team-lobby"><div><strong>组队大厅</strong><span>进入组队社区找队友</span></div></a>
       </div>
+      <a class="neon-card club-level-entry-card" href="club-levels.html" data-home-entry="club-levels" style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:12px;padding:14px 16px;text-decoration:none;min-height:64px;width:100%;box-sizing:border-box">
+        <div><strong style="display:block;font-size:16px;color:#fff">了解俱乐部等级制度</strong><span style="color:rgba(255,228,240,.7);font-size:13px">萌喵到喵皇 · 价格区间与升级权益</span></div>
+        <span style="color:#f9a8d4;font-weight:700;white-space:nowrap">查看说明 →</span>
+      </a>
     </section>
 
-    <section class="section companion-apply-guide">
+    <section class="section companion-apply-guide" data-companion-apply-section>
       <div class="neon-card companion-apply-guide-card">
         <div class="companion-apply-guide-icon" aria-hidden="true"><img src="assets/companion-apply-cat-logo.png" alt=""></div>
         <div>
-          <h2>想利用游戏赚取收入？</h2>
-          <p>加入妙脆角认证陪玩，自由接单、收益清晰、支持线上申请提现，享受平台流量扶持。</p>
+          <h2>申请成为陪玩</h2>
+          <p>提交资料，通过审核后即可接单</p>
         </div>
-        <a class="order-btn" href="companion-apply.html" data-companion-apply-guide>立即申请成为陪玩</a>
+        <a class="order-btn" href="companion-apply.html" data-companion-apply-guide>申请成为陪玩</a>
       </div>
     </section>
-<section class="section official-ads" aria-label="首页活动">
+<section class="section official-ads" aria-label="首页活动" hidden>
       <div class="section-title"><div><h2>首页活动</h2><p>活动内容由后台配置</p></div></div>
       <div class="official-ad-slider" id="officialAdSlider">
         <div class="official-ad-track" id="officialAdTrack"></div>
         <div class="ad-dots" id="officialAdDots"></div>
       </div>
     </section>
+    <section class="section home-popularity-section" aria-label="本周人气陪玩榜">
+      <div class="section-title hot-title-row">
+        <div>
+          <h2>本周人气榜</h2>
+          <p>实时根据接单、好评、在线和礼物热度更新。</p>
+        </div>
+        <a class="btn lobby-link" href="companion-center.html">更多陪玩</a>
+      </div>
+      <div class="pop-board" id="homePopularityBoard"></div>
+    </section>
         <section class="section hot-recommend-section">
       <div class="section-title hot-title-row">
-        <div><h2>🔥 热门推荐陪玩</h2><p>后台实时同步热门推荐</p></div>
+        <div><h2>热门推荐陪玩</h2><p>真实陪玩入驻后将在这里展示</p></div>
         <a class="btn lobby-link" href="companion-center.html">进入大厅</a>
       </div>
       <div class="auto-carousel">
@@ -3321,8 +3576,8 @@ label{
         <section class="section recent-companions">
           <div class="section-title">
             <div>
-              <h2>🧾 最近下单陪玩</h2>
-              <p>后台实时同步最近下单动态</p>
+              <h2>最近下单陪玩</h2>
+              <p>有真实订单后将在这里展示</p>
             </div>
             <a class="btn lobby-link" href="companion-center.html">更多陪玩</a>
           </div>
@@ -3334,7 +3589,7 @@ label{
         <section class="section game-companions">
           <div class="section-title">
             <div>
-              <h2>🎮 热门游戏陪玩</h2>
+              <h2>热门游戏陪玩</h2>
               <p>热门游戏陪玩实时推荐</p>
             </div>
             <a class="btn lobby-link" href="companion-center.html">更多陪玩</a>
@@ -3347,7 +3602,7 @@ label{
         <section class="section review-companions">
           <div class="section-title">
             <div>
-              <h2>⭐ 最新好评陪玩</h2>
+              <h2>最新好评陪玩</h2>
               <p>最新评价同步展示</p>
             </div>
             <a class="btn lobby-link" href="companion-center.html">更多陪玩</a>
@@ -3357,7 +3612,7 @@ label{
           </div>
         </section>
 
-    <footer class="site-footer"><strong>MEOW CUI JIAO ENTERPRISE</strong><br><span>✓ Registered Malaysian Enterprise</span><br><small>© MEOW CUI JIAO ENTERPRISE. All rights reserved.</small></footer>
+    <footer class="site-footer"><strong>MEOW CUI JIAO ENTERPRISE</strong><br><span>✓ Registered Malaysian Enterprise</span><br><small>© MEOW CUI JIAO ENTERPRISE. All rights reserved.</small><br><small class="mcj-footer-ssm" style="display:inline-block;margin-top:4px;font-size:11px;line-height:1.35;opacity:.85">SSM Registration No. 202603181917</small></footer>
   </main>
   <nav class="mobile-bottom-nav" aria-label="底部导航">
     <a class="active" href="index.html">首页</a>
@@ -3370,15 +3625,17 @@ label{
   <div class="modal" id="modal"><div class="dialog"><button class="close" data-close>×</button><div id="modalBody"></div></div></div>
   
 
-  <script src="src/platform-contract.js"></script>
-  <script src="src/unified-config.js"></script>
-  <script src="src/commission-engine.js"></script>
-  <script src="src/unified-api.js"></script>
-  <script src="src/role-gates.js"></script>
+  <script type="module" src="src/platform-contract.js"></script>
+  <script type="module" src="src/unified-config.js"></script>
+  <script type="module" src="src/commission-engine.js"></script>
+  <script type="module" src="src/unified-api.js"></script>
+  <script type="module" src="src/currency.js"></script>
+  <script src="src/auth-shell.js?v=20260806emailKeyboard1"></script>
+  <script type="module" src="src/login-modal-portal.js?v=20260805loginUi1"></script>
   <script>
     const modal=document.getElementById('modal');const modalBody=document.getElementById('modalBody');
-    function isLoggedIn(){return window.MCJRoleGate ? window.MCJRoleGate.isLogged('customer') : false}
-    function refreshAuthUI(){document.body.classList.toggle('is-logged-in',isLoggedIn());}
+    function isLoggedIn(){return window.MCJRoleGate ? !!(window.MCJRoleGate.isLogged('customer')||window.MCJRoleGate.isLogged('boss')) : !!(function(){var t=localStorage.getItem('mcjAuthAccessToken')||sessionStorage.getItem('mcjAuthAccessToken')||'';return t&&t.split('.').length===3;})()}
+    function refreshAuthUI(){document.body.classList.toggle('is-logged-in',isLoggedIn());window.dispatchEvent(new CustomEvent('mcj:auth-updated'));}
     function getDiscordInviteUrl(){
       var direct=(localStorage.getItem('discordInviteUrl')||'').trim();
       if(direct)return direct;
@@ -3389,8 +3646,37 @@ label{
       if(url){window.open(url,'_blank','noopener');return;}
       alert('组队大厅链接暂未开放，请稍后再试。');
     }
-    function openModal(html){modalBody.innerHTML=html;modal.classList.add('open');document.body.style.overflow='hidden'}
-    function closeModal(){modal.classList.remove('open');document.body.style.overflow=''}
+    function openModal(html){
+      if(window.MCJModal&&typeof window.MCJModal.open==='function'){
+        window.MCJModal.open(html);
+        return;
+      }
+      if(modal.parentNode!==document.body) document.body.appendChild(modal);
+      modalBody.innerHTML=html;
+      var dialog=modal.querySelector('.dialog');
+      var isAuth=/boss-login-modal/.test(String(html||''));
+      if(dialog){dialog.classList.toggle('is-auth-dialog', isAuth);dialog.scrollTop=0;}
+      modal.scrollTop=0;
+      modal.classList.add('open');
+      document.body.style.overflow='hidden';
+      if(isAuth&&modalBody&&window.MCJAuthShell&&window.MCJAuthShell.prepareAuthForm){
+        window.MCJAuthShell.prepareAuthForm(modalBody.querySelector('.boss-login-modal')||modalBody,{clearAccount:true});
+      }
+    }
+    function closeModal(){
+      if(window.MCJModal&&typeof window.MCJModal.close==='function'){window.MCJModal.close();return;}
+      var body=document.getElementById('modalBody');
+      if(body&&body.querySelector&&body.querySelector('.boss-login-modal')){
+        if(window.MCJAuthShell&&window.MCJAuthShell.clearAuthFields){
+          window.MCJAuthShell.clearAuthFields(body,{clearCode:true,clearPassword:true,clearAccount:true});
+        }
+        body.innerHTML='';
+      }
+      var dialog=modal&&modal.querySelector('.dialog');
+      if(dialog)dialog.classList.remove('is-auth-dialog');
+      modal.classList.remove('open');
+      document.body.style.overflow='';
+    }
     function htmlSafe(text){return String(text||'').replace(/[&<>"']/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]})}
     function readText(el,selector,fallback){var node=selector?el.querySelector(selector):el;return ((node&&node.textContent)||fallback||'').trim()}
     function collectCompanionData(button){
@@ -3411,15 +3697,56 @@ label{
     }
     function openCompanionOrder(button){openModal(companionDetailHtml(collectCompanionData(button)))}
     function numericPrice(price){var m=String(price||'').match(/[\d.]+/);return m?Number(m[0]):0}
-    function bossLoginHtml(){
-      return '<div class="boss-login-modal"><h2>登录 MEOW CUI JIAO</h2><div class="login-tabs"><button class="login-tab active" type="button" data-login-tab="phone">手机验证码登录</button><button class="login-tab" type="button" data-login-tab="email">邮箱登录</button></div><div class="login-panel active" data-login-panel="phone"><label>国家区号<select id="loginDialCode"><option value="+60">+60 马来西亚</option><option value="+86">+86 中国</option></select></label><label>手机号码<input id="loginPhone" inputmode="tel" placeholder="请输入手机号码"></label><label class="wide">验证码<div class="login-code-row"><input id="loginCode" inputmode="numeric" placeholder="请输入验证码"><button class="login-small-btn" type="button" data-send-code>获取验证码</button></div></label><button class="login-submit" type="button" data-login-confirm data-login-method="phone">登录</button></div><div class="login-panel" data-login-panel="email"><label class="wide">邮箱<input id="loginGmail" type="email" placeholder="请输入邮箱"></label><label class="wide">密码或邮箱验证码<input id="loginGmailCode" type="password" placeholder="请输入密码或验证码"></label><button class="login-submit" type="button" data-login-confirm data-login-method="email">登录</button></div><div class="login-links"><a href="mine.html?register=1">注册新账号</a><a href="mine.html?forgot=1">忘记密码</a></div></div>';
+    function bossLoginHtml(mode){
+      mode = mode === 'register' ? 'register' : 'login';
+      var otpPanel =
+        '<div class="login-panel'+(mode==='login'?' active':'')+'" data-login-panel="otp" data-auth-panel="login-otp">'+
+        '<label class="wide">邮箱<input id="loginOtpEmail" type="email" inputmode="email" autocomplete="email" placeholder="请输入邮箱" value=""></label>'+
+        '<label class="wide">验证码<div class="login-code-row">'+
+        '<input id="loginOtpCode" name="otp" type="text" inputmode="numeric" autocomplete="one-time-code" data-auth-code="1" data-auth-sensitive="1" placeholder="6 位验证码" maxlength="6" value="">'+
+        '<button class="login-small-btn" type="button" data-send-login-otp data-login-role="boss">获取验证码</button>'+
+        '</div></label>'+
+        '<button class="login-submit" type="button" data-login-confirm data-login-method="otp">验证码登录</button>'+
+        '</div>';
+      var passPanel =
+        '<div class="login-panel" data-login-panel="email" data-auth-panel="login-pass">'+
+        '<label class="wide">邮箱<input id="loginGmail" type="email" inputmode="email" autocomplete="email" placeholder="请输入邮箱" value=""></label>'+
+        '<label class="wide">密码<input id="loginGmailCode" type="password" autocomplete="current-password" data-auth-sensitive="1" placeholder="请输入密码" value=""></label>'+
+        '<button class="login-submit" type="button" data-login-confirm data-login-method="email">密码登录</button>'+
+        '</div>';
+      var loginPanel = mode==='login'
+        ? ('<div class="login-tabs">'+
+          '<button class="login-tab active" type="button" data-login-tab="otp">验证码登录</button>'+
+          '<button class="login-tab" type="button" data-login-tab="email">密码登录</button></div>'+
+          otpPanel+passPanel)
+        : '';
+      var registerPanel = '<div class="login-panel'+(mode==='register'?' active':'')+'" data-login-panel="register" data-auth-panel="register">'+
+        '<label class="wide">昵称<input id="registerNickname" type="text" autocomplete="nickname" placeholder="请输入昵称" maxlength="40" value=""></label>'+
+        '<label class="wide">邮箱<div class="login-code-row">'+
+        '<input id="registerEmail" type="email" inputmode="email" autocomplete="email" placeholder="请输入邮箱" value="">'+
+        '<button class="login-small-btn" type="button" data-send-register-otp data-register-role="boss">获取验证码</button>'+
+        '</div></label>'+
+        '<label class="wide">邮箱验证码<div class="login-code-row">'+
+        '<input id="registerOtpCode" name="registerOtp" type="text" inputmode="numeric" autocomplete="one-time-code" data-auth-code="1" data-auth-sensitive="1" placeholder="6 位验证码" maxlength="6" value="">'+
+        '<button class="login-small-btn" type="button" data-verify-register-otp data-register-role="boss">验证邮箱</button>'+
+        '</div></label>'+
+        '<p class="muted" data-register-verified-hint style="margin:0 0 8px">请先完成邮箱验证，验证成功后才能注册。</p>'+
+        '<input type="hidden" id="registerEmailToken" value="">'+
+        '<label class="wide">密码<input id="registerPassword" type="password" autocomplete="new-password" data-auth-sensitive="1" placeholder="至少 8 位，含字母和数字" value=""></label>'+
+        '<label class="wide">确认密码<input id="registerPasswordConfirm" type="password" autocomplete="new-password" data-auth-sensitive="1" placeholder="再次输入密码" value=""></label>'+
+        '<button class="login-submit" type="button" data-register-confirm disabled>注册</button></div>';
+      var links = mode === 'register'
+        ? '<div class="login-links"><button class="linkish" type="button" data-switch-auth="login">已有账号？立即登录</button></div>'
+        : '<div class="login-links"><button class="linkish" type="button" data-forgot-password data-forgot-role="boss">忘记密码</button><button class="linkish" type="button" data-switch-auth="register">还没有账号？立即注册</button></div>';
+      return '<div class="boss-login-modal" data-auth-mode="'+mode+'"><h2>'+(mode==='register'?'注册老板账号':'登录 MEOW CUI JIAO')+'</h2><p class="muted">'+(mode==='register'?'邮箱验证码验证通过后才能注册，成功后自动登录并生成老板 UID。':'邮箱验证码登录（也可使用密码）。')+'</p>'+loginPanel+registerPanel+'<p id="loginState" data-login-error></p>'+links+'</div>';
     }
+    window.bossLoginHtml = bossLoginHtml;
     function loginRequiredModal(){
       openModal(bossLoginHtml());
     }
     function orderConfirmHtml(data){
       var unit=numericPrice(data.price);
-      return '<div class="companion-detail-modal order-confirm-modal"><div class="detail-cover"><img src="'+htmlSafe(data.img)+'" alt="'+htmlSafe(data.name)+'"><span class="detail-status">待确认</span></div><div class="detail-body"><h2>确认下单</h2><p class="detail-meta">'+htmlSafe(data.name)+' 路 '+htmlSafe(data.game)+' 路 RM'+unit+'/h</p><div class="detail-grid"><label class="field"><span>选择时长</span><select id="orderHours"><option value="1">1 小时</option><option value="2">2 小时</option><option value="3">3 小时</option><option value="4">4 小时</option><option value="8">包夜 8 小时</option></select></label><div class="detail-chip"><span>总价</span><strong id="orderTotal">RM'+unit+'</strong></div></div><label class="field"><span>备注</span><textarea id="orderRemark" placeholder="例如：想玩排位、语音聊天、不要压力队友..."></textarea></label><button class="confirm-order" data-create-order data-player-id="'+htmlSafe(data.playerId)+'" data-name="'+htmlSafe(data.name)+'" data-game="'+htmlSafe(data.game)+'" data-price="'+unit+'" data-img="'+htmlSafe(data.img)+'">确认创建订单</button></div></div>';
+      return '<div class="companion-detail-modal order-confirm-modal"><div class="detail-cover"><img src="'+htmlSafe(data.img)+'" alt="'+htmlSafe(data.name)+'"><span class="detail-status">待确认</span></div><div class="detail-body"><h2>确认下单</h2><p class="detail-meta">'+htmlSafe(data.name)+' 路 '+htmlSafe(data.game)+' 路 '+unit+' 猫粮/小时</p><div class="detail-grid"><label class="field"><span>选择时长</span><select id="orderHours"><option value="1">1 小时</option><option value="2">2 小时</option><option value="3">3 小时</option><option value="4">4 小时</option><option value="8">包夜 8 小时</option></select></label><div class="detail-chip"><span>总价</span><strong id="orderTotal">'+unit+' 猫粮</strong></div></div><label class="field"><span>备注</span><textarea id="orderRemark" placeholder="例如：想玩排位、语音聊天、不要压力队友..."></textarea></label><button class="confirm-order" data-create-order data-player-id="'+htmlSafe(data.playerId)+'" data-name="'+htmlSafe(data.name)+'" data-game="'+htmlSafe(data.game)+'" data-price="'+unit+'" data-img="'+htmlSafe(data.img)+'">确认创建订单</button></div></div>';
     }
     function openOrderConfirm(data){openModal(orderConfirmHtml(data))}
     function getCurrentUser(){
@@ -3433,7 +3760,7 @@ label{
       var hours=Number((document.getElementById('orderHours')||{}).value||1);
       var unit=Number(button.dataset.price||12);
       var remark=(document.getElementById('orderRemark')||{}).value||'';
-      var order={order_id:'MCJ-'+Date.now(),user_id:user.user_id,player_id:button.dataset.playerId,player_name:button.dataset.name,player_avatar:button.dataset.img,game:button.dataset.game,service_time:new Date().toLocaleString(),duration:hours+' hours',hours:hours,unit_price:unit,amount:'RM'+(unit*hours),remark:remark,status:'pending_payment',created_at:new Date().toISOString()};
+      var order={order_id:'MCJ-'+Date.now(),user_id:user.user_id,player_id:button.dataset.playerId,player_name:button.dataset.name,player_avatar:button.dataset.img,game:button.dataset.game,service_time:new Date().toLocaleString(),duration:hours+' hours',hours:hours,unit_price:unit,amount:(unit*hours)+' 猫粮',remark:remark,status:'pending_payment',created_at:new Date().toISOString()};
       var db={};
       try{db=JSON.parse(localStorage.getItem('mcjRealDB.v1')||'{}')}catch(e){db={}}
       db.orders=Array.isArray(db.orders)?db.orders:[];
@@ -3531,7 +3858,7 @@ label{
         var contentAds=(db.contents&&Array.isArray(db.contents.ads))?db.contents.ads:[];
         var legacyAds=Array.isArray(db.ads)?db.ads:[];
         var saved=contentAds.concat(legacyAds);
-        if(saved.length){defaults=saved.map(function(ad){return {title:ad.title,sub:ad.description||ad.subtitle||'',button:ad.button||ad.buttonText||'查看',tag:ad.tag||'OFFICIAL',link:ad.link||ad.href||'#',image:ad.image||'',enabled:ad.enabled!==false&&ad.enabled!=='false',sort:ad.sort,start:ad.startAt,end:ad.endAt};});}
+        if(saved.length){defaults=saved.map(function(ad){return {title:ad.title,sub:ad.description||ad.subtitle||'',button:ad.button||ad.buttonText||'查看',tag:ad.tag||'OFFICIAL',link:ad.link||ad.href||'',image:ad.image||'',enabled:ad.enabled!==false&&ad.enabled!=='false',sort:ad.sort,start:ad.startAt,end:ad.endAt};});}
       }catch(e){}
       var now=Date.now();
       return defaults.filter(function(ad){
@@ -3551,8 +3878,8 @@ label{
       if(!track||!dots||!slider)return;
       var ads=loadOfficialAds(),index=0,timer=null;
       function render(){
-        if(!ads.length){track.innerHTML='<article class="official-ad active"><div class="ad-glass-copy"><h2>暂无广告位</h2><p>后台发布并上架广告后会显示在这里。</p><span class="ad-action">真实数据</span></div></article>';dots.innerHTML='';return;}
-        track.innerHTML=ads.map(function(ad,i){return '<a class="official-ad '+(i===index?'active':'')+'" href="#" data-ad-index="'+i+'"><img src="'+ad.image+'" alt="'+ad.title+'"><span class="ad-badge">'+(ad.tag||'OFFICIAL')+'</span><div class="ad-glass-copy"><h2>'+ad.title+'</h2><p>'+ad.sub+'</p><span class="ad-action">'+(ad.button||'立即查看')+'</span></div></a>';}).join('');
+        if(!ads.length){var section=slider.closest(".official-ads");if(section)section.hidden=true;track.innerHTML="";dots.innerHTML="";return;} var section=slider.closest(".official-ads");if(section)section.hidden=false;
+        track.innerHTML=ads.map(function(ad,i){var href=(ad.link&&ad.link!=='discord')?ad.link:'index.html';return '<a class="official-ad '+(i===index?'active':'')+'" href="'+href+'" data-ad-index="'+i+'"><img src="'+ad.image+'" alt="'+ad.title+'"><span class="ad-badge">'+(ad.tag||'OFFICIAL')+'</span><div class="ad-glass-copy"><h2>'+ad.title+'</h2><p>'+ad.sub+'</p><span class="ad-action">'+(ad.button||'立即查看')+'</span></div></a>';}).join('');
         dots.innerHTML=ads.map(function(_,i){return '<button class="ad-dot '+(i===index?'active':'')+'" data-ad-dot="'+i+'" aria-label="切换广告"></button>';}).join('');
       }
       function go(i){if(!ads.length)return;index=(i+ads.length)%ads.length;render()}
@@ -3566,7 +3893,7 @@ label{
     document.addEventListener('click',function(e){
       if(e.target.matches('[data-close]')||e.target===modal)closeModal();
       if(e.target.closest('[data-discord-join]')) openDiscordInvite();
-      if(e.target.closest('[data-login-confirm]')){if(window.MCJRoleGate){window.MCJRoleGate.login('customer','customer_demo');}closeModal();refreshAuthUI();return;}
+      if(e.target.closest('[data-login-confirm]')){return;}
       var book=e.target.closest('[data-book]');
       if(book){e.preventDefault();openCompanionOrder(book);return;}
       var bookRow=e.target.closest('.bottom-row,.hot-info');
@@ -3582,20 +3909,38 @@ label{
       var confirm=e.target.closest('[data-confirm-order]');
       if(confirm){e.preventDefault();if(!isLoggedIn()){loginRequiredModal();return;}location.href='checkin.html?companion='+encodeURIComponent(confirm.dataset.companion||'');return;}
       const target=e.target.closest('[data-modal]');
-      if(target){const map={login:(typeof bossLoginHtml==='function'?bossLoginHtml():'<h2>登录 MEOW CUI JIAO</h2><button class="order-btn" data-login-confirm>登录</button>'),order:'<h2>快速下单</h2><p class="muted">请选择已上架的陪玩后创建订单。</p><a class="order-btn" href="companion-center.html">进入陪玩大厅</a>',join:'<h2>加入陪玩</h2><p class="muted">提交资料后，平台会审核你的入驻申请</p><button class="order-btn">立即申请</button>',guide:'<h2>下单教学</h2><p>1. 点击陪玩大厅<br>2. 选择游戏和陪玩<br>3. 点击立即下单<br>4. 客服确认后开始服务</p>'};openModal(map[target.dataset.modal]||'')}
+      if(target){
+        var key=String(target.dataset.modal||'');
+        var map={login:(typeof bossLoginHtml==='function'?bossLoginHtml():'<h2>登录 MEOW CUI JIAO</h2><button class="order-btn" data-login-confirm>登录</button>'),order:'<h2>快速下单</h2><p class="muted">请选择已上架的陪玩后创建订单。</p><a class="order-btn" href="companion-center.html">进入陪玩大厅</a>',join:'<h2>加入陪玩</h2><p class="muted">提交资料后，平台会审核你的入驻申请</p><button class="order-btn">立即申请</button>',guide:'<h2>下单教学</h2><p>1. 点击陪玩大厅<br>2. 选择游戏和陪玩<br>3. 点击立即下单<br>4. 客服确认后开始服务</p>'};
+        if(!map[key])return;
+        openModal(map[key]);
+      }
     });
     document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal()});
   </script>
-  <script src="src/site-data.js"></script>
-  <script src="src/home-banner.js"></script>
-  <script src="src/home-daily-stats.js"></script>
-  <script src="src/companion-application.js"></script>
+  <script type="module" src="src/site-data.js?v=20260804profileUuid1"></script>
+  <script type="module" src="src/home-banner.js"></script>
+  <script type="module" src="src/home-announcements.js?v=20260805annRotate1"></script>
+  <script type="module" src="src/home-daily-stats.js?v=20260802mobileP0c"></script>
+  <script src="src/companion-presence.js?v=20260805profileLock1"></script>
+  <script type="module" src="src/place-order-modal.js?v=20260807payChannel1"></script>
+  <script type="module" src="src/home-popularity.js?v=20260805profileLock1"></script>
+  <script type="module" src="src/home-services.js"></script>
+  <script type="module" src="src/companion-application.js"></script>
   <script>
     (function(){
       function safeText(text){return String(text||'').replace(/[&<>"']/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]})}
       function modalBox(){return {modal:document.getElementById('modal'),body:document.getElementById('modalBody')}}
-      function showModal(html){var box=modalBox();if(!box.modal||!box.body)return;box.body.innerHTML=html;box.modal.classList.add('open');document.body.style.overflow='hidden'}
-      function hideModal(){var box=modalBox();if(!box.modal)return;box.modal.classList.remove('open');document.body.style.overflow=''}
+      function showModal(html){
+        if(window.MCJModal&&typeof window.MCJModal.open==='function'){window.MCJModal.open(html);return;}
+        var box=modalBox();if(!box.modal||!box.body)return;
+        if(box.modal.parentNode!==document.body)document.body.appendChild(box.modal);
+        box.body.innerHTML=html;box.modal.classList.add('open');document.body.style.overflow='hidden'
+      }
+      function hideModal(){
+        if(window.MCJModal&&typeof window.MCJModal.close==='function'){window.MCJModal.close();return;}
+        var box=modalBox();if(!box.modal)return;box.modal.classList.remove('open');document.body.style.overflow=''
+      }
       function cardText(card,selector,fallback){var el=selector?card.querySelector(selector):card;return ((el&&el.textContent)||fallback||'').trim()}
       function priceNumber(price){var match=String(price||'').match(/[\d.]+/);return match?Number(match[0]):12}
       function getPlayer(button){
@@ -3625,7 +3970,7 @@ label{
           '<div class="detail-tags">'+tagHtml+'</div>'+
           '<div class="detail-grid">'+
           '<label class="field"><span>\u9009\u62e9\u65f6\u957f</span><select id="homeOrderHours"><option value="1">1 \u5c0f\u65f6</option><option value="2">2 \u5c0f\u65f6</option><option value="3">3 \u5c0f\u65f6</option><option value="4">4 \u5c0f\u65f6</option><option value="8">\u5305\u591c 8 \u5c0f\u65f6</option></select></label>'+
-          '<div class="detail-chip"><span>\u603b\u4ef7</span><strong id="homeOrderTotal">RM'+unit+'</strong></div>'+
+          '<div class="detail-chip"><span>\u603b\u4ef7</span><strong id="homeOrderTotal">'+unit+' 猫粮</strong></div>'+
           '<div class="detail-chip"><span>\u5728\u7ebf\u72b6\u6001</span><strong>'+safeText(data.status)+'</strong></div>'+
           '<div class="detail-chip"><span>\u670d\u52a1\u65b9\u5f0f</span><strong>\u8bed\u97f3 / \u6587\u5b57</strong></div>'+
           '</div>'+
@@ -3683,7 +4028,7 @@ label{
         if(e.target&&e.target.id==='homeOrderHours'){
           var unit=priceNumber((window.__homeOrderPlayer||{}).price);
           var total=document.getElementById('homeOrderTotal');
-          if(total)total.textContent='RM'+(unit*Number(e.target.value||1));
+          if(total)total.textContent=(unit*Number(e.target.value||1))+' 猫粮';
         }
       },true);
       document.addEventListener('keydown',function(e){if(e.key==='Escape')hideModal()});
@@ -3761,7 +4106,7 @@ label{
           if(!strong)return;
           var value=map[type];
           if(type==='reviews'){strong.dataset.count=String(value);strong.textContent=value+'%';}
-          else if(type==='revenue'){strong.dataset.count=String(value);strong.textContent=value>0?'RM '+Number(value).toFixed(2):'';}
+          else if(type==='revenue'){strong.dataset.count=String(value);strong.textContent=value>0?(Number(value).toFixed(2).replace(/\.00$/,'')+' 猫粮'):'';}
           else{strong.dataset.count=String(value||0);strong.textContent=String(value||0);}
         });
         document.querySelectorAll('[data-live-stat="revenue"] strong').forEach(function(strong){if(!Number(strong.dataset.count||0))strong.textContent='';});
@@ -3777,10 +4122,10 @@ label{
           body=summary([['在线陪玩',data.online.length||data.players.length],['全部陪玩',data.players.length],['可派单','实时同步']])+rows(data.online.length?data.online:data.players,function(p){return {title:(p.name||p.title||'未命名陪玩')+' / '+(p.game||'游戏未填'),desc:'价格 '+(p.price||'未填')+' · 评分 '+(p.rating||p.score||'5.0')+' · 标签 '+((Array.isArray(p.tags)?p.tags.join('、'):p.tags)||'后台未填'),value:(p.orders24h||p.orders||0)+' 单'}});
         } else if(type==='orders'){
           title='今日订单明细'; desc='显示今天创建的订单，可看到订单号、陪玩、游戏、状态和金额。'; actions='<a class="primary" href="orders.html">查看我的订单</a>';
-          body=summary([['今日订单',data.orders.length],['待处理',data.orders.filter(function(o){return /待|pending|匹配|支付/.test(String(o.status||''))}).length],['今日金额','RM '+Math.round(data.revenue)]])+rows(data.orders,function(o){return {title:(o.order_id||o.id||'未编号订单')+' / '+(o.player_name||o.player||o.boss||'未知'),desc:'游戏 '+(o.game||o.service||'未填')+' · 时间 '+(o.service_time||o.time||o.created_at||'刚刚'),value:(o.status||'待处理')+' · '+(o.amount||o.total||'RM0')}});
+          body=summary([['今日订单',data.orders.length],['待处理',data.orders.filter(function(o){return /待|pending|匹配|支付/.test(String(o.status||''))}).length],['今日金额',Math.round(data.revenue)+' 猫粮']])+rows(data.orders,function(o){return {title:(o.order_id||o.id||'未编号订单')+' / '+(o.player_name||o.player||o.boss||'未知'),desc:'游戏 '+(o.game||o.service||'未填')+' · 时间 '+(o.service_time||o.time||o.created_at||'刚刚'),value:(o.status||'待处理')+' · '+(o.amount||o.total||'0 猫粮')}});
         } else if(type==='revenue'){
           title='今日营业额明细'; desc='按今日订单金额汇总。'; actions='<a class="primary" href="orders.html">订单列表</a>';
-          body=summary([['今日营业额','RM '+Math.round(data.revenue)],['订单',data.orders.length],['客单价','RM '+Math.round(data.revenue/Math.max(data.orders.length,1))]])+rows(data.orders,function(o){return {title:(o.order_id||o.id||'未编号订单')+' / '+(o.player_name||o.player||'陪玩未填'),desc:'状态 '+(o.status||'待处理')+' · '+(o.game||o.service||'服务未填'),value:o.amount||o.total||'RM0'}});
+          body=summary([['今日营业额',Math.round(data.revenue)+' 猫粮'],['订单',data.orders.length],['客单价',Math.round(data.revenue/Math.max(data.orders.length,1))+' 猫粮']])+rows(data.orders,function(o){return {title:(o.order_id||o.id||'未编号订单')+' / '+(o.player_name||o.player||'陪玩未填'),desc:'状态 '+(o.status||'待处理')+' · '+(o.game||o.service||'服务未填'),value:o.amount||o.total||'0 猫粮'}});
         } else {
           title='好评明细'; desc='显示已通过评价列表，可看到评分、评价内容和对应游戏。'; actions='<a class="primary" href="companion-center.html">查看陪玩评价</a>';
           body=summary([['好评率',data.goodRate.toFixed(1)+'%'],['评价',data.reviews.length],['平均分',(data.goodRate/20).toFixed(1)]])+rows(data.reviews,function(r){return {title:(r.name||r.user||'老板')+' / '+(r.game||'游戏未填'),desc:r.comment||r.description||'后台暂无评价内容',value:(r.rating||r.score||'5.0')+' 分'}});
@@ -3879,7 +4224,16 @@ label{
       wireCards();
       document.addEventListener('DOMContentLoaded',wireCards);
       window.addEventListener('load',wireCards);
-      setInterval(wireCards,700);
+      // Avoid 700ms forever loop — rewire only when companion cards are injected.
+      if(typeof MutationObserver!=='undefined'){
+        var moTarget=document.getElementById('companions')||document.body;
+        var moTimer=null;
+        var mo=new MutationObserver(function(){
+          if(moTimer)return;
+          moTimer=setTimeout(function(){moTimer=null;wireCards();},400);
+        });
+        mo.observe(moTarget,{childList:true,subtree:true});
+      }
     })();
   </script>
   <script>
@@ -3887,10 +4241,22 @@ label{
       if (window.__mcjLoginClickFixReady) return;
       window.__mcjLoginClickFixReady = true;
       function showLogin(){
+        if (window.MCJModal && typeof window.MCJModal.openLogin === 'function') {
+          window.MCJModal.openLogin('login');
+          return;
+        }
+        if (typeof openModal === 'function' && typeof bossLoginHtml === 'function') {
+          openModal(bossLoginHtml());
+          return;
+        }
         var modal = document.getElementById('modal');
         var body = document.getElementById('modalBody');
         if (!modal || !body) return;
+        if (modal.parentNode !== document.body) document.body.appendChild(modal);
         body.innerHTML = typeof bossLoginHtml === 'function' ? bossLoginHtml() : '<h2>登录 MEOW CUI JIAO</h2><button class="order-btn" data-login-confirm type="button">登录</button>';
+        var dialog = modal.querySelector('.dialog');
+        if (dialog) { dialog.classList.add('is-auth-dialog'); dialog.scrollTop = 0; }
+        modal.scrollTop = 0;
         modal.classList.add('open');
         document.body.style.overflow = 'hidden';
       }
@@ -3906,13 +4272,56 @@ label{
         localStorage.removeItem('mcjSwitchAccount');
         setTimeout(showLogin, 120);
       }
+      var hash = String(location.hash || '').replace(/^#/, '').toLowerCase();
+      if ((hash === 'login' || hash === 'register') && window.MCJModal && window.MCJModal.openLogin) {
+        var logged = false;
+        try {
+          logged = !!(window.MCJRoleGate && window.MCJRoleGate.isLogged && (window.MCJRoleGate.isLogged('boss') || window.MCJRoleGate.isLogged('customer')));
+          if (!logged) {
+            var tok = sessionStorage.getItem('mcjAuthAccessToken') || localStorage.getItem('mcjAuthAccessToken') || '';
+            logged = tok.split('.').length === 3 && tok.length > 20;
+          }
+        } catch (e) {}
+        if (logged) {
+          try { history.replaceState(null, '', location.pathname + location.search); } catch (e2) {}
+        } else {
+          var y = window.scrollY || 0;
+          window.MCJModal.openLogin(hash === 'register' ? 'register' : 'login');
+          window.scrollTo(0, y);
+        }
+      }
       document.addEventListener('click', function(e){
+        var switchBtn = e.target.closest && e.target.closest('[data-switch-auth]');
+        if (switchBtn) {
+          e.preventDefault();
+          var mode = switchBtn.getAttribute('data-switch-auth') === 'register' ? 'register' : 'login';
+          var body = document.getElementById('modalBody');
+          if (body && typeof bossLoginHtml === 'function') {
+            body.innerHTML = bossLoginHtml(mode);
+            if (window.MCJAuthShell && window.MCJAuthShell.prepareAuthForm) {
+              window.MCJAuthShell.prepareAuthForm(body.querySelector('.boss-login-modal') || body, { clearAccount: true });
+            }
+          }
+          return;
+        }
         var tab = e.target.closest && e.target.closest('[data-login-tab]');
         if (tab) {
           var box = tab.closest('.boss-login-modal');
           if (!box) return;
           box.querySelectorAll('[data-login-tab]').forEach(function(btn){btn.classList.toggle('active', btn === tab);});
-          box.querySelectorAll('[data-login-panel]').forEach(function(panel){panel.classList.toggle('active', panel.getAttribute('data-login-panel') === tab.getAttribute('data-login-tab'));});
+          box.querySelectorAll('[data-login-panel]').forEach(function(panel){
+            var key = panel.getAttribute('data-login-panel');
+            if (key === 'register') return;
+            panel.classList.toggle('active', key === tab.getAttribute('data-login-tab'));
+          });
+          if (window.MCJAuthShell && window.MCJAuthShell.clearAuthFields) {
+            window.MCJAuthShell.clearAuthFields(box, { clearCode: true, clearPassword: true, clearAccount: false });
+          } else {
+            box.querySelectorAll('#loginOtpCode,#loginCode,#loginGmailCode,[data-auth-code],input[type="password"]').forEach(function(el){
+              try { el.value=''; el.defaultValue=''; el.removeAttribute('value'); } catch (err) {}
+            });
+            box.querySelectorAll('[data-login-error],#loginState').forEach(function(el){ el.textContent=''; });
+          }
           return;
         }
         if (e.target.closest && e.target.closest('[data-send-code]')) {
@@ -3922,11 +4331,8 @@ label{
         }
         var confirm = e.target.closest && e.target.closest('[data-login-confirm]');
         if (!confirm) return;
-        if(window.MCJRoleGate){window.MCJRoleGate.login('customer','customer_demo');}
-        document.body.classList.add('is-logged-in');
-        var modal = document.getElementById('modal');
-        if (modal) modal.classList.remove('open');
-        document.body.style.overflow = '';
+        // Supabase login is owned by role-gates.js (capture). Do not stub-login here.
+        return;
       }, true);
     })();
   </script>
@@ -3936,13 +4342,20 @@ label{
       window.__mcjOrderLinkGuardReady=true;
       function loggedIn(){return window.MCJRoleGate ? window.MCJRoleGate.isLogged('customer') : false}
       function openLogin(){
+        if(window.MCJModal&&typeof window.MCJModal.openLogin==='function'){
+          window.MCJModal.openLogin('login');
+          return;
+        }
         if(typeof loginRequiredModal==='function'){
           loginRequiredModal();
           return;
         }
         var modal=document.getElementById('modal'), body=document.getElementById('modalBody');
         if(modal&&body){
-          body.innerHTML='<h2>请先登录</h2><p class="muted">登录后才可以查看「我的订单」</p><button class="order-btn" data-login-confirm type="button">登录 / 注册</button>';
+          if(modal.parentNode!==document.body)document.body.appendChild(modal);
+          body.innerHTML=typeof bossLoginHtml==='function'?bossLoginHtml():'<h2>请先登录</h2><button class="order-btn" data-login-confirm type="button">登录 / 注册</button>';
+          var dialog=modal.querySelector('.dialog');
+          if(dialog){dialog.classList.add('is-auth-dialog');dialog.scrollTop=0;}
           modal.classList.add('open');
           document.body.style.overflow='hidden';
         }
@@ -3964,7 +4377,7 @@ label{
         if(!confirm)return;
         var redirect=sessionStorage.getItem('mcjAfterLoginRedirect');
         if(!redirect)return;
-        if(window.MCJRoleGate){window.MCJRoleGate.login('customer','customer_demo');}
+        return;
         sessionStorage.removeItem('mcjAfterLoginRedirect');
         e.preventDefault();
         e.stopPropagation();
@@ -3973,15 +4386,255 @@ label{
       },true);
     })();
   </script>
-  <script src="src/dropdown-system.js" defer></script>
-  <script src="src/real-data-admin.js" defer></script>
-  <script src="src/footer-system.js" defer></script>
-  <script src="src/text-guard.js" defer></script>
-  <script src="src/meow-butler.js?v=20260723-cathead-panel" defer></script>
-  <script src="src/design-system.js" defer></script>
+
+  <script>
+    (function homepageLaunchGuards(){
+      var placeholder = "assets/meow-cuijiao-brand.jpg";
+      document.addEventListener("error", function(event){
+        var img = event.target;
+        if (!img || img.tagName !== "IMG" || img.dataset.fallbackApplied === "1" || img.dataset.mcjButlerLogo === "1") return;
+        img.dataset.fallbackApplied = "1";
+        img.src = placeholder;
+      }, true);
+    })();
+  </script>
+  <script type="module" src="src/dropdown-system.js" defer></script>
+  <script type="module" src="src/real-data-admin.js" defer></script>
+  <script type="module" src="src/footer-system.js?v=20260805ssm1" defer></script>
+  <script type="module" src="src/text-guard.js?v=20260730home4" defer></script>
+  <script type="module" src="src/design-system.js" defer></script>
+<script id="mcjBossLogoutHandler">
+  document.addEventListener('click', function(event) {
+    var btn = event.target && event.target.closest && event.target.closest('[data-boss-logout]');
+    if (!btn) return;
+    if (window.MCJRoleGate) {
+      window.MCJRoleGate.logout('boss');
+      window.MCJRoleGate.logout('customer');
+    }
+    localStorage.removeItem('mcjAuthAccessToken');
+    localStorage.removeItem('mcjAuthRefreshToken');
+    sessionStorage.removeItem('mcjAuthAccessToken');
+    sessionStorage.removeItem('mcjAuthRefreshToken');
+    location.href = 'index.html';
+  });
+</script>
+<script id="mcjMvpMaintHandler">
+  document.addEventListener('click', function(event) {
+    var btn = event.target && event.target.closest && event.target.closest('[data-maint]');
+    if (!btn) return;
+    event.preventDefault();
+    try { btn.hidden = true; btn.setAttribute('aria-hidden', 'true'); } catch (e) {}
+  });
+</script>
+<style id="mcj-p0-final-quick-entry">
+  /* Final P0: force homepage quick entries to 2×2, equal size */
+  .quick-entry-grid,
+  .quick-entry-grid.launch-entry-grid{
+    display:grid!important;
+    grid-template-columns:repeat(2,minmax(0,1fr))!important;
+    gap:14px!important;
+  }
+  .quick-entry-grid .quick-entry-card,
+  .quick-entry-grid.launch-entry-grid .quick-entry-card{
+    min-height:100px!important;
+    height:100px!important;
+    max-height:108px!important;
+  }
+  @media(max-width:560px){
+    .quick-entry-grid,
+    .quick-entry-grid.launch-entry-grid{
+      grid-template-columns:repeat(2,minmax(0,1fr))!important;
+    }
+  }
+</style>
+<style id="mcj-companion-card-freeze-v1">
+/* Companion Card Freeze — source of truth = #recentCompanionTrack / 「最近下单陪玩」
+   Locked: card size, cover ratio, radius, padding, button, TOP capsule (left pink).
+   Allowed later: data/API/object-fit/object-position/severe bugs only.
+   Final compact metrics: see #mcj-companion-card-freeze-final-v3 below. */
+#hotCompanionTrack,
+#recentCompanionTrack,
+#gameCompanionTrack,
+#reviewCompanionTrack{
+  display:grid!important;
+  grid-template-columns:repeat(auto-fit,minmax(220px,1fr))!important;
+  gap:18px!important;
+  width:100%!important;
+  align-items:stretch!important;
+}
+#hotCompanionTrack .companion-card,
+#recentCompanionTrack .companion-card,
+#gameCompanionTrack .companion-card,
+#reviewCompanionTrack .companion-card{
+  min-height:286px!important;
+  height:100%!important;
+  padding:14px 14px 6px!important;
+  display:flex!important;
+  flex-direction:column!important;
+  box-sizing:border-box!important;
+}
+#hotCompanionTrack .hot-cover,
+#recentCompanionTrack .hot-cover,
+#gameCompanionTrack .hot-cover,
+#reviewCompanionTrack .hot-cover{
+  height:auto!important;
+  min-height:240px!important;
+  aspect-ratio:4 / 5!important;
+  border-radius:18px!important;
+  flex:0 0 auto!important;
+}
+#hotCompanionTrack .companion-card:nth-child(1):not(.hot-more-card)::after,
+#hotCompanionTrack .companion-card:nth-child(2):not(.hot-more-card)::after,
+#hotCompanionTrack .companion-card:nth-child(3):not(.hot-more-card)::after,
+#recentCompanionTrack .companion-card:nth-child(1):not(.hot-more-card)::after,
+#recentCompanionTrack .companion-card:nth-child(2):not(.hot-more-card)::after,
+#recentCompanionTrack .companion-card:nth-child(3):not(.hot-more-card)::after,
+#gameCompanionTrack .companion-card:nth-child(1):not(.hot-more-card)::after,
+#gameCompanionTrack .companion-card:nth-child(2):not(.hot-more-card)::after,
+#gameCompanionTrack .companion-card:nth-child(3):not(.hot-more-card)::after,
+#reviewCompanionTrack .companion-card:nth-child(1):not(.hot-more-card)::after,
+#reviewCompanionTrack .companion-card:nth-child(2):not(.hot-more-card)::after,
+#reviewCompanionTrack .companion-card:nth-child(3):not(.hot-more-card)::after{
+  position:absolute!important;
+  left:18px!important;
+  right:auto!important;
+  top:18px!important;
+  z-index:5!important;
+  width:auto!important;
+  height:28px!important;
+  padding:0 10px!important;
+  border-radius:999px!important;
+  display:inline-flex!important;
+  align-items:center!important;
+  justify-content:center!important;
+  background:linear-gradient(145deg,rgba(255,222,238,.92),rgba(255,126,194,.82))!important;
+  border:1px solid rgba(255,235,246,.72)!important;
+  color:#180711!important;
+  font-size:12px!important;
+  font-weight:1000!important;
+  letter-spacing:.06em!important;
+  box-shadow:0 8px 18px rgba(0,0,0,.28)!important;
+  white-space:nowrap!important;
+}
+#hotCompanionTrack .companion-card:nth-child(1):not(.hot-more-card)::after,
+#recentCompanionTrack .companion-card:nth-child(1):not(.hot-more-card)::after,
+#gameCompanionTrack .companion-card:nth-child(1):not(.hot-more-card)::after,
+#reviewCompanionTrack .companion-card:nth-child(1):not(.hot-more-card)::after{content:"TOP 1"!important}
+#hotCompanionTrack .companion-card:nth-child(2):not(.hot-more-card)::after,
+#recentCompanionTrack .companion-card:nth-child(2):not(.hot-more-card)::after,
+#gameCompanionTrack .companion-card:nth-child(2):not(.hot-more-card)::after,
+#reviewCompanionTrack .companion-card:nth-child(2):not(.hot-more-card)::after{content:"TOP 2"!important}
+#hotCompanionTrack .companion-card:nth-child(3):not(.hot-more-card)::after,
+#recentCompanionTrack .companion-card:nth-child(3):not(.hot-more-card)::after,
+#gameCompanionTrack .companion-card:nth-child(3):not(.hot-more-card)::after,
+#reviewCompanionTrack .companion-card:nth-child(3):not(.hot-more-card)::after{content:"TOP 3"!important}
+#hotCompanionTrack .companion-card.hot-more-card::after,
+#recentCompanionTrack .companion-card.hot-more-card::after,
+#gameCompanionTrack .companion-card.hot-more-card::after,
+#reviewCompanionTrack .companion-card.hot-more-card::after{content:none!important;display:none!important}
+</style>
+<style id="mcj-companion-card-freeze-final-v3">
+/* Companion Card Freeze Final v3 (2026-08-04) — info whitespace only (−8~10% card height).
+   LOCKED forever unless user explicitly requests redesign:
+   cover height/ratio, card width, fonts, button size, TOP/online badges, colors, radii, shadows.
+   ONLY .hot-info vertical rhythm was compressed; photos untouched. */
+#hotCompanionTrack .companion-card,
+#recentCompanionTrack .companion-card,
+#gameCompanionTrack .companion-card,
+#reviewCompanionTrack .companion-card,
+#hotCompanionTrack .hot-more-card,
+#recentCompanionTrack .hot-more-card,
+#gameCompanionTrack .hot-more-card,
+#reviewCompanionTrack .hot-more-card{
+  min-height:286px!important;
+  height:100%!important;
+  padding:14px 14px 6px!important;
+  display:flex!important;
+  flex-direction:column!important;
+  box-sizing:border-box!important;
+}
+/* Cover metrics FROZEN — do not change height / ratio / crop */
+#hotCompanionTrack .hot-cover,
+#recentCompanionTrack .hot-cover,
+#gameCompanionTrack .hot-cover,
+#reviewCompanionTrack .hot-cover{
+  height:auto!important;
+  min-height:240px!important;
+  aspect-ratio:4 / 5!important;
+  border-radius:18px!important;
+  flex:0 0 auto!important;
+}
+#hotCompanionTrack .hot-info,
+#recentCompanionTrack .hot-info,
+#gameCompanionTrack .hot-info,
+#reviewCompanionTrack .hot-info{
+  min-height:0!important;
+  flex:1 1 auto!important;
+  display:flex!important;
+  flex-direction:column!important;
+  padding:4px 2px 0!important;
+  gap:0!important;
+}
+#hotCompanionTrack .hot-info h3,
+#recentCompanionTrack .hot-info h3,
+#gameCompanionTrack .hot-info h3,
+#reviewCompanionTrack .hot-info h3{
+  margin:0!important;
+}
+#hotCompanionTrack .hot-info > p,
+#recentCompanionTrack .hot-info > p,
+#gameCompanionTrack .hot-info > p,
+#reviewCompanionTrack .hot-info > p,
+.companion-track .hot-info > p{
+  margin:2px 0 1px!important;
+}
+#hotCompanionTrack .hot-meta,
+#recentCompanionTrack .hot-meta,
+#gameCompanionTrack .hot-meta,
+#reviewCompanionTrack .hot-meta,
+.companion-track .hot-meta{
+  margin:0 0 2px!important;
+}
+#hotCompanionTrack .hot-orders,
+#recentCompanionTrack .hot-orders,
+#gameCompanionTrack .hot-orders,
+#reviewCompanionTrack .hot-orders,
+.companion-track .hot-orders{
+  margin:0 0 2px!important;
+}
+#hotCompanionTrack .hot-tags,
+#recentCompanionTrack .hot-tags,
+#gameCompanionTrack .hot-tags,
+#reviewCompanionTrack .hot-tags,
+.companion-track .hot-tags{
+  display:flex!important;
+  flex-wrap:wrap!important;
+  align-content:flex-start!important;
+  gap:3px!important;
+  margin:0 0 2px!important;
+  min-height:0!important;
+  max-height:40px!important;
+  overflow:hidden!important;
+  flex:0 0 auto!important;
+}
+#hotCompanionTrack .hot-tags span,
+#recentCompanionTrack .hot-tags span,
+#gameCompanionTrack .hot-tags span,
+#reviewCompanionTrack .hot-tags span,
+.companion-track .hot-tags span{
+  padding:2px 8px!important;
+}
+#hotCompanionTrack .mini-order,
+#recentCompanionTrack .mini-order,
+#gameCompanionTrack .mini-order,
+#reviewCompanionTrack .mini-order{
+  margin-top:auto!important;
+  flex:0 0 auto!important;
+  height:38px!important;
+}
+</style>
 </body>
 </html>
-
 
 
 

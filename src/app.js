@@ -1,4 +1,4 @@
-﻿const fake={dispatch:[['#MCJ-2401','VALORANT 盲盒派单','等待陪玩接单'],['#MCJ-2402','APEX 双排陪玩','已分配给奶油'],['#MCJ-2403','英雄联盟 局','客服复核中']],gifts:[['喵喵','收到粉色火箭 RM66','用户评价 5.0'],['小白猫','收到奶茶 RM18','用户评价 4.9'],['奶油','收到玫瑰 RM8','用户评价 4.8']],flows:[['订单收入','RM 2,480','已入账'],['礼物收入','RM 618','待结算'],['退款支出','RM 120','已处理']],tickets:[]};function $(id){return document.getElementById(id)}function renderList(id,rows){const el=$(id);if(!el)return;el.innerHTML=rows.map(function(r){return '<div class="item"><span><b>'+r[0]+'</b><small>'+r[1]+'</small></span><strong>'+r[2]+'</strong></div>'}).join('')}renderList('flowList',fake.flows);renderList('adminActions',[['盲盒派单','按游戏、评分、在线状态匹配','已预留'],['评价管理','筛选低分和申诉评价','已预留'],['收入导出','按日期导出收入和礼物收入','已预留']]);const modal=$('loginModal');let code='';document.querySelectorAll('[data-login]').forEach(function(btn){btn.addEventListener('click',function(){if(modal){modal.classList.add('show');modal.setAttribute('aria-hidden','false')}})});document.querySelectorAll('[data-close]').forEach(function(btn){btn.addEventListener('click',function(){if(modal){modal.classList.remove('show');modal.setAttribute('aria-hidden','true')}})});if($('sendCode'))$('sendCode').addEventListener('click',function(){code=String(Math.floor(100000+Math.random()*900000));$('loginState').textContent='模拟验证码：'+code});if($('confirmLogin'))$('confirmLogin').addEventListener('click',function(){const phone=$('phoneInput').value.trim();const input=$('codeInput').value.trim();if(!/^1\d{10}$/.test(phone)){$('loginState').textContent='请输入正确的 11 位手机号。';return}if(!code||input!==code){$('loginState').textContent='验证码不正确，请先获取验证码。';return}localStorage.setItem('mcjLoginPhone',phone);$('loginState').textContent='登录成功，身份路由已预留。';setTimeout(function(){modal.classList.remove('show')},500)});const chat=$('chatMessages');function addMsg(text,me){if(!chat)return;const div=document.createElement('div');div.className='msg'+(me?' me':'');div.textContent=text;chat.appendChild(div)}addMsg('客服主管：今天盲盒派单成功率 96%，异常订单 19 个。',false);addMsg('老板：重点看礼物收入和低分评价。',true);if($('sendChat'))$('sendChat').addEventListener('click',function(){const input=$('chatInput');if(!input.value.trim())return;addMsg(input.value.trim(),true);input.value='';setTimeout(function(){addMsg('系统：消息已同步到后台中心。',false)},300)});
+﻿const fake={dispatch:[['#MCJ-2401','VALORANT 盲盒派单','等待陪玩接单'],['#MCJ-2402','APEX 双排陪玩','已分配给奶油'],['#MCJ-2403','英雄联盟 局','客服复核中']],gifts:[['喵喵','收到粉色火箭 RM66','用户评价 5.0'],['小白猫','收到奶茶 RM18','用户评价 4.9'],['奶油','收到玫瑰 RM8','用户评价 4.8']],flows:[['订单收入','RM 2,480','已入账'],['礼物收入','RM 618','待结算'],['退款支出','RM 120','已处理']],tickets:[]};function $(id){return document.getElementById(id)}function renderList(id,rows){const el=$(id);if(!el)return;el.innerHTML=rows.map(function(r){return '<div class="item"><span><b>'+r[0]+'</b><small>'+r[1]+'</small></span><strong>'+r[2]+'</strong></div>'}).join('')}renderList('flowList',fake.flows);renderList('adminActions',[['盲盒派单','按游戏、评分、在线状态匹配','已预留'],['评价管理','筛选低分和申诉评价','已预留'],['收入导出','按日期导出收入和礼物收入','已预留']]);const modal=$('loginModal');document.querySelectorAll('[data-login]').forEach(function(btn){btn.addEventListener('click',function(){if(modal){modal.classList.add('show');modal.setAttribute('aria-hidden','false')}})});document.querySelectorAll('[data-close]').forEach(function(btn){btn.addEventListener('click',function(){if(modal){modal.classList.remove('show');modal.setAttribute('aria-hidden','true')}})});const chat=$('chatMessages');function addMsg(text,me){if(!chat)return;const div=document.createElement('div');div.className='msg'+(me?' me':'');div.textContent=text;chat.appendChild(div)}addMsg('客服主管：今天盲盒派单成功率 96%，异常订单 19 个。',false);addMsg('老板：重点看礼物收入和低分评价。',true);if($('sendChat'))$('sendChat').addEventListener('click',function(){const input=$('chatInput');if(!input.value.trim())return;addMsg(input.value.trim(),true);input.value='';setTimeout(function(){addMsg('系统：消息已同步到后台中心。',false)},300)});
 // homepage service picker
 document.querySelectorAll('.service-card').forEach(function(card){card.addEventListener('click',function(){document.querySelectorAll('.service-card').forEach(function(c){c.classList.remove('active')});card.classList.add('active');var detail=document.getElementById('serviceDetail');if(detail){detail.querySelector('h2').textContent=card.dataset.service;detail.querySelector('p:last-child').textContent=card.dataset.desc + ' 登录后可继续选择时长、预算和指定要求。';}})});
 
@@ -76,44 +76,19 @@ document.querySelectorAll('.service-card').forEach(function(card){card.addEventL
 (function(){var input=document.getElementById('customPrice');if(!input)return;input.addEventListener('change',function(){if(Number(input.value)<10||!input.value)input.value=10;});})();
 
 
-// floating service
+// floating service (legacy 喵管家) — permanently removed
 (function(){
-  function initServiceChat(){
-    var btn=document.getElementById('floatingService');
-    var chat=document.getElementById('serviceChat');
-    var close=document.getElementById('closeServiceChat');
-    var input=document.getElementById('serviceChatInput');
-    var send=document.getElementById('sendServiceChat');
-    var body=document.getElementById('serviceChatBody');
-    if(!btn||!chat||btn.dataset.bound==='1')return;
-    btn.dataset.bound='1';
-    function add(text,type){
-      var div=document.createElement('div');
-      div.className='chat-bubble '+type;
-      div.textContent=text;
-      body.appendChild(div);
-      body.scrollTop=body.scrollHeight;
-    }
-    btn.addEventListener('click',function(){
-      chat.classList.add('open');
-      chat.setAttribute('aria-hidden','false');
-      setTimeout(function(){if(input)input.focus();},50);
+  function purge(){
+    ['floatingService','serviceChat','closeServiceChat','serviceChatInput','sendServiceChat','serviceChatBody'].forEach(function(id){
+      var el=document.getElementById(id);
+      if(el&&el.parentNode)el.parentNode.removeChild(el);
     });
-    if(close)close.addEventListener('click',function(){
-      chat.classList.remove('open');
-      chat.setAttribute('aria-hidden','true');
+    document.querySelectorAll('.floating-service,#floatingService,.service-chat,#serviceChat').forEach(function(el){
+      if(el&&el.parentNode)el.parentNode.removeChild(el);
     });
-    function sendMsg(){
-      var text=(input&&input.value||'').trim();
-      if(!text)return;
-      add(text,'boss');
-      input.value='';
-      setTimeout(function(){add('收到，客服会根据您的订单需求帮您处理。','staff');},500);
-    }
-    if(send)send.addEventListener('click',sendMsg);
-    if(input)input.addEventListener('keydown',function(e){if(e.key==='Enter')sendMsg();});
   }
-  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',initServiceChat);else initServiceChat();
+  purge();
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',purge);
 })();
 
 // service tip modal
@@ -360,47 +335,7 @@ document.querySelectorAll('.service-card').forEach(function(card){card.addEventL
   document.querySelectorAll('[data-guide-close]').forEach(function(btn){btn.addEventListener('click',function(){modal.classList.remove('show');modal.setAttribute('aria-hidden','true');});});
 })();
 
-// draggable floating service with bounce
-(function(){
-  function initDrag(){
-    var btn=document.getElementById('floatingService');
-    var chat=document.getElementById('serviceChat');
-    if(!btn||btn.dataset.dragBound==='ball')return;
-    btn.dataset.dragBound='ball';
-    var x=window.innerWidth-120,y=window.innerHeight-110,vx=0,vy=0,dragging=false,lastX=0,lastY=0,lastT=0,anim=0,moved=false;
-    var saved=JSON.parse(localStorage.getItem('mcjServiceFloatPos')||'null');if(saved){x=saved.x;y=saved.y}
-    function limits(){return {maxX:window.innerWidth-btn.offsetWidth-8,maxY:window.innerHeight-btn.offsetHeight-8}}
-    function burstFur(edge){
-      var r=btn.getBoundingClientRect();
-      var cx=r.left+r.width/2, cy=r.top+r.height/2;
-      for(var i=0;i<9;i++){
-        var fur=document.createElement('i');
-        fur.className='cat-fur-particle';
-        var spread=(Math.random()*70-35);
-        var out=edge==='left'?70:edge==='right'?-70:Math.random()*80-40;
-        var up=edge==='bottom'?-70:edge==='top'?70:(Math.random()*70-35);
-        fur.style.left=(cx+(Math.random()*34-17))+'px';
-        fur.style.top=(cy+(Math.random()*30-15))+'px';
-        fur.style.setProperty('--dx',(out+spread*.35)+'px');
-        fur.style.setProperty('--dy',(up+spread)+'px');
-        fur.style.setProperty('--rot',(Math.random()*120-60)+'deg');
-        document.body.appendChild(fur);
-        setTimeout(function(el){el.remove();},950,fur);
-      }
-    }
-    function place(){var l=limits();x=Math.max(8,Math.min(l.maxX,x));y=Math.max(8,Math.min(l.maxY,y));btn.style.left=x+'px';btn.style.top=y+'px';btn.style.right='auto';btn.style.bottom='auto';btn.style.position='fixed';if(chat){chat.style.position='fixed';chat.style.right='auto';chat.style.bottom='auto';var cw=chat.offsetWidth||340;var ch=chat.offsetHeight||460;var cx=Math.min(Math.max(8,x-cw+btn.offsetWidth),window.innerWidth-cw-8);var cy=Math.min(Math.max(8,y-ch-12),window.innerHeight-ch-8);chat.style.left=cx+'px';chat.style.top=cy+'px';}localStorage.setItem('mcjServiceFloatPos',JSON.stringify({x:x,y:y}));}
-    function step(){if(dragging)return;var l=limits();x+=vx;y+=vy;vx*=.94;vy*=.94;if(x<=8){x=8;vx=Math.abs(vx)*.72;burstFur('left')}if(y<=8){y=8;vy=Math.abs(vy)*.72;burstFur('top')}if(x>=l.maxX){x=l.maxX;vx=-Math.abs(vx)*.72;burstFur('right')}if(y>=l.maxY){y=l.maxY;vy=-Math.abs(vy)*.72;burstFur('bottom')}place();if(Math.abs(vx)+Math.abs(vy)>.18)anim=requestAnimationFrame(step);else{vx=0;vy=0;cancelAnimationFrame(anim);}}
-    requestAnimationFrame(place);
-    btn.addEventListener('pointerdown',function(e){dragging=true;moved=false;cancelAnimationFrame(anim);btn.classList.add('dragging');btn.setPointerCapture&&btn.setPointerCapture(e.pointerId);lastX=e.clientX;lastY=e.clientY;lastT=Date.now();});
-    btn.addEventListener('pointermove',function(e){if(!dragging)return;var now=Date.now();var dt=Math.max(16,now-lastT);var dx=e.clientX-lastX;var dy=e.clientY-lastY;if(Math.abs(dx)+Math.abs(dy)>2)moved=true;x+=dx;y+=dy;vx=dx/dt*16;vy=dy/dt*16;lastX=e.clientX;lastY=e.clientY;lastT=now;place();});
-    btn.addEventListener('pointerup',function(e){if(!dragging)return;dragging=false;btn.classList.remove('dragging');if(moved){btn.dataset.justDragged='1';e.preventDefault();e.stopPropagation();vx*=1.55;vy*=1.55;anim=requestAnimationFrame(step);setTimeout(function(){btn.dataset.justDragged='';},120);} });
-    btn.addEventListener('click',function(e){if(btn.dataset.justDragged==='1'){e.preventDefault();e.stopImmediatePropagation();btn.dataset.justDragged='';}},true);
-    window.addEventListener('resize',place);
-  }
-  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',initDrag);else initDrag();
-})();
-
-
+// draggable floating service — removed with 喵管家
 
 // safe channel no jump
 (function(){
