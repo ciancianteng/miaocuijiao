@@ -323,8 +323,9 @@ async function uploadPlatformPayQrImage(dataUrl, channelId) {
 /** Current QR actually served on boss payment page (enabled + qrUrl). */
 async function resolveActivePublicQr() {
   try {
-    const { loadPlatformPayQr } = await import("../_platform-pay-qr.js");
-    const info = await loadPlatformPayQr();
+    // Admin preview only — first enabled channel with QR. Boss order pay uses loadPlatformPayQr(method).
+    const { loadAdminPreviewPayQr } = await import("../_platform-pay-qr.js");
+    const info = await loadAdminPreviewPayQr();
     if (!info || !info.qrUrl || info.enabled === false) {
       return {
         available: false,

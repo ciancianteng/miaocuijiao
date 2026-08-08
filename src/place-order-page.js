@@ -8,13 +8,8 @@
     { id: "3", label: "3 小时", value: 3 },
     { id: "custom", label: "自定义", value: 0, custom: true },
   ];
-  var PAYMENTS = [
-    { id: "duitnow", label: "DuitNow" },
-    { id: "tng", label: "TNG" },
-    { id: "bank", label: "银行卡" },
-    { id: "alipay", label: "支付宝" },
-    { id: "catfood", label: "猫粮余额" },
-  ];
+  // Never hardcode channel list — filled live from /api/recharge (payment_channels SoT).
+  var PAYMENTS = [];
   var DEFAULT_AVATAR = "/default-avatar.png";
   var root = document.getElementById("placeOrderPage");
   if (!root) return;
@@ -28,8 +23,9 @@
     hours: 1,
     quantity: 1,
     couponCode: "",
-    payment: "duitnow",
+    payment: "",
     submitting: false,
+    payMethods: [],
   };
 
   function esc(v) {
@@ -62,6 +58,53 @@
       h["x-mcj-access-token"] = t;
     }
     return h;
+  }
+  function applyOrderPayMethods(body) {
+    var list = Array.isArray(body.orderPayMethods) ? body.orderPayMethods : [];
+    if (!list.length && Array.isArray(body.methods)) {
+      list = (body.methods || [])
+        .filter(function (m) {
+          return m && m.code && (m.open === true || (m.enabled && m.configured));
+        })
+        .map(function (m) {
+          return { id: m.code, code: m.code, label: m.name || m.code, open: true, statusText: "可用" };
+        });
+      if (body.walletPayEnabled !== false) {
+        list = list.concat([{ id: "catfood", code: "catfood", label: "猫粮余额", open: true, statusText: "可用" }]);
+      }
+    }
+    state.payMethods = list
+      .filter(function (m) {
+        return m && (m.id || m.code) && m.open !== false;
+      })
+      .map(function (m) {
+        return {
+          id: m.id || m.code,
+          label: m.label || m.name || m.code || m.id,
+          open: true,
+          statusText: m.statusText || "可用",
+        };
+      });
+    if (!state.payMethods.some(function (p) { return p.id === state.payment; })) {
+      state.payment = state.payMethods[0] ? state.payMethods[0].id : "";
+    }
+  }
+  function refreshPayMethods() {
+    if (!token()) {
+      state.payMethods = [];
+      return Promise.resolve([]);
+    }
+    return fetch("/api/recharge", { method: "GET", headers: authHeaders() })
+      .then(function (res) {
+        return res.json().then(function (body) {
+          if (!res.ok || body.ok === false) throw new Error(body.message || "支付方式读取失败");
+          applyOrderPayMethods(body);
+          return state.payMethods;
+        });
+      })
+      .catch(function () {
+        return state.payMethods;
+      });
   }
   function avatarSrc(raw) {
     var s = String(raw == null ? "" : raw).trim();
@@ -277,17 +320,22 @@
         "</button>"
       );
     }).join("");
-    var payCards = PAYMENTS.map(function (p) {
-      return (
-        '<button type="button" class="mcj-po-pay-card' +
-        (state.payment === p.id ? " active" : "") +
-        '" data-po-pay="' +
-        esc(p.id) +
-        '"><span class="mcj-po-pay-title">' +
-        esc(p.label) +
-        '</span><span class="mcj-po-pay-check" aria-hidden="true"></span></button>'
-      );
-    }).join("");
+    var payList = state.payMethods && state.payMethods.length ? state.payMethods : PAYMENTS;
+    var payCards = payList.length
+      ? payList
+          .map(function (p) {
+            return (
+              '<button type="button" class="mcj-po-pay-card' +
+              (state.payment === p.id ? " active" : "") +
+              '" data-po-pay="' +
+              esc(p.id) +
+              '"><span class="mcj-po-pay-title">' +
+              esc(p.label) +
+              '</span><span class="mcj-po-pay-check" aria-hidden="true"></span></button>'
+            );
+          })
+          .join("")
+      : '<p style="color:#9ca3af;font-size:13px;margin:0">暂无可用支付方式，请联系管理员在后台启用</p>';
 
     root.innerHTML =
       '<a class="po-back" href="javascript:history.back()">← 返回</a>' +
@@ -423,7 +471,7 @@
     }
     root.querySelectorAll("[data-po-pay]").forEach(function (btn) {
       btn.addEventListener("click", function () {
-        state.payment = btn.getAttribute("data-po-pay") || "duitnow";
+        state.payment = btn.getAttribute("data-po-pay") || "";
         root.querySelectorAll("[data-po-pay]").forEach(function (b) {
           b.classList.toggle("active", b === btn);
         });
@@ -622,6 +670,7 @@
         });
       }),
       hydrateFromCatalog(companionId),
+      refreshPayMethods(),
     ])
       .then(function (pair) {
         var row = pair[0];

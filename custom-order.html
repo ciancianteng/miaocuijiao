@@ -51,6 +51,7 @@
         <label>性别偏好<select name="gender_preference"><option>不限</option><option>女</option><option>男</option><option>保密</option></select></label>
         <label>语言要求<input name="language" placeholder="中文 / 英文 / 马来语"></label>
         <label class="wide">完整需求<textarea name="requirements" required placeholder="写清楚游戏区服、目标、玩法、备注和特殊要求"></textarea></label>
+        <label class="wide">支付方式<div id="customPayMethods" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px"></div></label>
       </form>
       <div class="custom-actions">
         <a class="btn" href="index.html">返回首页</a>
@@ -69,11 +70,55 @@
       function authToken(){return localStorage.getItem('mcjAuthAccessToken')||sessionStorage.getItem('mcjAuthAccessToken')||'';}
       function companionId(){var p=new URLSearchParams(location.search);return p.get('companion_id')||p.get('companion')||p.get('player')||'';}
       var form=document.getElementById('customOrderForm'),state=document.getElementById('customState'),btn=document.getElementById('customSubmit');
+      var payState={methods:[],payment:''};
+      function applyOrderPayMethods(body){
+        var list=Array.isArray(body.orderPayMethods)?body.orderPayMethods:[];
+        if(!list.length&&Array.isArray(body.methods)){
+          list=(body.methods||[]).filter(function(m){return m&&m.code&&(m.open===true||(m.enabled&&m.configured));})
+            .map(function(m){return {id:m.code,label:m.name||m.code};});
+          if(body.walletPayEnabled!==false)list=list.concat([{id:'catfood',label:'猫粮余额'}]);
+        }
+        payState.methods=list.filter(function(m){return m&&(m.id||m.code);})
+          .map(function(m){return {id:m.id||m.code,label:m.label||m.name||m.code||m.id};});
+        if(!payState.methods.some(function(p){return p.id===payState.payment;})){
+          payState.payment=payState.methods[0]?payState.methods[0].id:'';
+        }
+        var wrap=document.getElementById('customPayMethods');
+        if(!wrap)return;
+        if(!payState.methods.length){
+          wrap.innerHTML='<p class="empty-note" style="margin:0">暂无可用支付方式，请联系管理员在后台启用</p>';
+          return;
+        }
+        wrap.innerHTML=payState.methods.map(function(m){
+          return '<button type="button" class="btn'+(payState.payment===m.id?' primary':'')+'" data-custom-pay="'+String(m.id).replace(/"/g,'&quot;')+'">'+String(m.label).replace(/</g,'&lt;')+'</button>';
+        }).join(' ');
+      }
+      function refreshPayMethods(){
+        if(!authToken())return Promise.resolve();
+        return fetch('/api/recharge',{method:'GET',headers:{Accept:'application/json',Authorization:'Bearer '+authToken(),'x-mcj-access-token':authToken()}})
+          .then(function(res){return res.json().then(function(body){if(!res.ok||body.ok===false)throw new Error(body.message||'支付方式读取失败');applyOrderPayMethods(body);});})
+          .catch(function(){});
+      }
+      document.addEventListener('click',function(e){
+        var payBtn=e.target.closest('[data-custom-pay]');
+        if(!payBtn)return;
+        e.preventDefault();
+        payState.payment=payBtn.getAttribute('data-custom-pay')||'';
+        var wrap=document.getElementById('customPayMethods');
+        if(wrap){
+          wrap.querySelectorAll('[data-custom-pay]').forEach(function(btn){
+            btn.classList.toggle('primary',btn===payBtn);
+          });
+        }
+      });
       form.addEventListener('submit',async function(e){
         e.preventDefault();
         if(!isLogged()){sessionStorage.setItem('mcjAfterLoginRedirect','custom-order.html');location.href='index.html';return}
         if(btn.disabled)return;btn.disabled=true;btn.textContent='正在提交...';
         state.hidden=true;
+        if(!payState.payment){
+          state.hidden=false;state.textContent='请选择支付方式';btn.disabled=false;btn.textContent='提交给客服报价';return;
+        }
         var data={};Array.prototype.forEach.call(form.elements,function(el){if(el.name)data[el.name]=String(el.value||'').trim()});
         var requiredLevel=Number(data.companion_level||1);
         data.required_level=requiredLevel;
@@ -94,7 +139,7 @@
         data.total_amount=data.unit_price*parsedHours;
         var u=user();
         try{
-          var response=await fetch('/api/orders',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+authToken()},body:JSON.stringify({action:'create',order:Object.assign(data,{companion_id:companionId(),order_type:'custom',description:[data.requirements||data.title||'',data.game_id?('游戏ID：'+data.game_id):'',data.scheduled_at?('预约时间：'+data.scheduled_at):''].filter(Boolean).join('\n'),hours:data.hours,unit_price:data.unit_price,total_amount:data.total_amount,game_id:data.game_id,gameId:data.game_id,boss:{id:u.id||'',uid:u.uid||u.id||'',name:u.name||u.nickname||'老板',bossId:u.bossId||''}})})});
+          var response=await fetch('/api/orders',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+authToken()},body:JSON.stringify({action:'create',order:Object.assign(data,{companion_id:companionId(),order_type:'custom',paymentMethod:payState.payment,payment_method:payState.payment,description:[data.requirements||data.title||'',data.game_id?('游戏ID：'+data.game_id):'',data.scheduled_at?('预约时间：'+data.scheduled_at):''].filter(Boolean).join('\n'),hours:data.hours,unit_price:data.unit_price,total_amount:data.total_amount,game_id:data.game_id,gameId:data.game_id,boss:{id:u.id||'',uid:u.uid||u.id||'',name:u.name||u.nickname||'老板',bossId:u.bossId||''}})})});
           var body=await response.json().catch(function(){return {}});
           if(!response.ok||!body.ok)throw new Error(body.message||'订单提交失败');
           var oid=(body.order&&body.order.id)||body.orderId||body.id||'';
@@ -111,6 +156,7 @@
           btn.textContent='提交给客服报价';
         }
       });
+      refreshPayMethods();
     })();
   </script>
   <script src="src/companion-levels.js"></script>
