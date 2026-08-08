@@ -57,5 +57,10 @@ const rechargeHtml = read("recharge.html");
 check("充值中心 no hardcoded closed fallback", !/code:'tng',name:'TNG',statusText:'暂未开放'/.test(rechargeHtml), "no hardcode fallback");
 check("充值中心 filters open methods", /m\.open===true|open===true/.test(rechargeHtml), "filter open");
 
+check("立即下单 no methods reconstruct fallback", !/!list\.length && Array\.isArray\(body\.methods\)/.test(modal), "no fallback");
+check("place-order page no methods reconstruct", !/!list\.length && Array\.isArray\(body\.methods\)/.test(page), "no fallback");
+check("更多玩法 no methods reconstruct", !/!list\.length && Array\.isArray\(body\.methods\)/.test(gp), "no fallback");
+check("自定义订单 no methods reconstruct", !/!list\.length&&Array\.isArray\(body\.methods\)/.test(custom), "no fallback");
+
 console.log(failed ? `BOSS_PAY_METHODS_SYNC_FAIL ${failed}` : "BOSS_PAY_METHODS_SYNC_PASS");
 process.exit(failed ? 1 : 0);

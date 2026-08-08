@@ -1661,12 +1661,17 @@ async function bootstrapData(profile, companion) {
 
   const feePercent = money(cfg.withdraw_fee_percent);
   const feeFixed = money(cfg.withdraw_fee_rm);
+  // Companion self bootstrap: return full account details for the owner.
+  // Boss/public APIs never use this payload — keep masking only on admin default + public strippers.
   const approvedAccounts = paymentAccounts
     .filter((a) => /approved|verified/.test(String(a.status || "")))
     .map((a) => ({
       id: a.id,
       bankName: a.bank_name || "",
       accountHolder: a.account_name || "",
+      accountName: a.account_name || "",
+      bankAccount: a.bank_account || "",
+      tngAccount: a.tng_account || "",
       accountLast4: a.account_last4 || maskBankAccount(a.bank_account).slice(-4),
       status: a.status,
     }));
@@ -1876,7 +1881,10 @@ async function bootstrapData(profile, companion) {
           settlementHint: `预计发放日期：${nextSettlement}（星期五）`,
           weeklyBanner: viewWeeklyRules(weeklyCfg),
           currentAccount: payment
-            ? `${payment.bank_name || ""} ${payment.account_name || ""} ****${payment.account_last4 || maskBankAccount(payment.bank_account).slice(-4)}`
+            ? `${payment.bank_name || ""} ${payment.account_name || ""} ${payment.bank_account || ""}`.trim()
+            : "",
+          currentAccountMasked: payment
+            ? `${payment.bank_name || ""} ${payment.account_name || ""} ****${payment.account_last4 || maskBankAccount(payment.bank_account).slice(-4)}`.trim()
             : "",
           approvedAccounts,
         },
@@ -1893,7 +1901,11 @@ async function bootstrapData(profile, companion) {
       accountAccessStatus: unifiedAccess.status,
       accountAccessLabel: unifiedAccess.label,
       realName: identity?.real_name || "",
+      // Self-view: full plaintext for the authenticated companion only.
+      identityNo: identity?.identity_no || "",
       bankName: payment?.bank_name || "",
+      accountName: payment?.account_name || "",
+      bankAccount: payment?.bank_account || "",
       phone: companion?.contact_phone || "",
       tngAccount: payment?.tng_account || "",
       identityNoMasked: identity?.identity_no
@@ -2802,12 +2814,16 @@ export default async function handler(req, res) {
       const payment =
         (paymentAccounts || []).find((a) => /approved|verified/.test(String(a.status || ""))) ||
         null;
+      // Self wallet/earnings: full settlement account for the owner (same as bootstrap).
       const approvedAccounts = (paymentAccounts || [])
         .filter((a) => /approved|verified/.test(String(a.status || "")))
         .map((a) => ({
           id: a.id,
           bankName: a.bank_name || "",
           accountHolder: a.account_name || "",
+          accountName: a.account_name || "",
+          bankAccount: a.bank_account || "",
+          tngAccount: a.tng_account || "",
           accountLast4: a.account_last4 || maskBankAccount(a.bank_account).slice(-4),
           status: a.status,
         }));
@@ -2836,7 +2852,10 @@ export default async function handler(req, res) {
             feeRm: money(cfg.withdraw_fee_rm),
             feePercent: money(cfg.withdraw_fee_percent),
             currentAccount: payment
-              ? `${payment.bank_name || ""} ${payment.account_name || ""} ****${payment.account_last4 || maskBankAccount(payment.bank_account).slice(-4)}`
+              ? `${payment.bank_name || ""} ${payment.account_name || ""} ${payment.bank_account || ""}`.trim()
+              : "",
+            currentAccountMasked: payment
+              ? `${payment.bank_name || ""} ${payment.account_name || ""} ****${payment.account_last4 || maskBankAccount(payment.bank_account).slice(-4)}`.trim()
               : "",
             approvedAccounts,
           },

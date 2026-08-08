@@ -2740,10 +2740,11 @@
     var depositReject=d.rejectReason||v.depositRejectReason||'';
     var contactPhone=accountDraftVal('contact_phone',raw.contact_phone||v.phone||'');
     var realName=accountDraftVal('real_name',v.realName||'');
-    var identityNo=accountDraftVal('identity_no','');
+    // Self view: prefer full plaintext from bootstrap (not masked placeholders).
+    var identityNo=accountDraftVal('identity_no',v.identityNo||'');
     var verifyPhone=accountDraftVal('phone',v.phone||raw.contact_phone||'');
     var bankName=accountDraftVal('bank_name',v.bankName||'');
-    var bankAccount=accountDraftVal('bank_account','');
+    var bankAccount=accountDraftVal('bank_account',v.bankAccount||'');
     var tngAccount=accountDraftVal('tng_account',v.tngAccount||'');
     var verifyRemark=accountDraftVal('remark','');
     var paidAmount=accountDraftVal('paid_amount',d.paidAmount||'');
@@ -2758,12 +2759,13 @@
       '<p class="pw-note">资料审核：<strong data-audit-status="'+esc(appStatusRaw)+'">'+esc(appStatusLabel)+'</strong> · 实名：<strong>'+esc(idStatus)+'</strong> · 收款：<strong>'+esc(STATUS_CN.verification(bankStatusRaw))+'</strong></p>'+
       '<div class="pw-info-list">'+
         infoRow('真实姓名',v.realName||'-')+
-        infoRow('身份证号码',v.identityNoMasked||(v.hasIdentityNo?'已填写':'-'))+
+        infoRow('身份证号码',v.identityNo||v.identityNoMasked||(v.hasIdentityNo?'已填写':'-'))+
         infoRow('身份证正面',(v.hasIdFront||v.idFrontUrl)?'已上传':'-')+
         infoRow('身份证反面',(v.hasIdBack||v.idBackUrl)?'已上传':'-')+
         infoRow('联系方式',v.phone||raw.contact_phone||'-')+
         infoRow('银行名称',v.bankName||'-')+
-        infoRow('收款账号',v.bankAccountMasked||rules.currentAccount||'-')+
+        infoRow('账户户名',v.accountName||'-')+
+        infoRow('收款账号',v.bankAccount||v.bankAccountMasked||rules.currentAccount||'-')+
         infoRow('TNG 账号',v.tngAccount||'-')+
       '</div>'+
       ((v.idFrontUrl||v.idBackUrl)
@@ -2776,12 +2778,12 @@
       privacyReviewBannerHtml(verifyPhase,verifyReject,'profile')+
       '<p class="pw-note">资料审核：<strong data-audit-status="'+esc(appStatusRaw)+'">'+esc(appStatusLabel)+'</strong>'+(verifyReject?' · 拒绝原因：'+esc(verifyReject):'')+'</p>'+
       '<label>真实姓名<input name="real_name" value="'+esc(realName)+'" required></label>'+
-      '<label>身份证号码<input name="identity_no" value="'+esc(identityNo)+'" required autocomplete="off" placeholder="'+(v.identityNoMasked?'已保存 '+v.identityNoMasked+'，修改请重新输入':'')+'"></label>'+
+      '<label>身份证号码<input name="identity_no" value="'+esc(identityNo)+'" required autocomplete="off"></label>'+
       accountDocCard({key:'id_front',label:'身份证正面',cta:'上传身份证正面',url:v.idFrontUrl||'',statusText:idStatus,rejectReason:v.identityRejectReason||''})+
       accountDocCard({key:'id_back',label:'身份证反面',cta:'上传身份证反面',url:v.idBackUrl||'',statusText:idStatus,rejectReason:v.identityRejectReason||''})+
       '<label>联系方式<input name="phone" value="'+esc(verifyPhone)+'" required></label>'+
       '<label>银行名称<input name="bank_name" value="'+esc(bankName)+'" required></label>'+
-      '<label>收款账号 / 提现账户<input name="bank_account" value="'+esc(bankAccount)+'" required autocomplete="off" placeholder="'+(v.bankAccountMasked?'已保存 '+v.bankAccountMasked+'，修改请重新输入':'')+'"></label>'+
+      '<label>收款账号 / 提现账户<input name="bank_account" value="'+esc(bankAccount)+'" required autocomplete="off"></label>'+
       '<label>TNG 账号<input name="tng_account" value="'+esc(tngAccount)+'"></label>'+
       '<label>备注<textarea name="remark">'+esc(verifyRemark)+'</textarea></label>'+
       '<button class="pw-btn primary" type="submit">'+(verifyPhase==='rejected'?'重新提交认证审核':'提交认证审核')+'</button></form>';

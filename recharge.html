@@ -65,7 +65,7 @@
   <script>
     (function(){
       var root=document.getElementById('rechargeApp');
-      var state={loading:true,submitting:false,error:'',message:'',messageType:'warn',summary:{balance:0,paidBalance:0,bonusBalance:0,totalRecharge:0,totalSpent:0},campaigns:[],transactions:[],methods:[],records:[],campaignId:'',method:'tng'};
+      var state={loading:true,submitting:false,error:'',message:'',messageType:'warn',summary:{balance:0,paidBalance:0,bonusBalance:0,totalRecharge:0,totalSpent:0},campaigns:[],transactions:[],methods:[],records:[],campaignId:'',method:''};
       function token(){return localStorage.getItem('mcjAuthAccessToken')||sessionStorage.getItem('mcjAuthAccessToken')||''}
       function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
       function money(v){var n=Number(v||0);return 'RM'+(Number.isFinite(n)?n:0).toFixed(2)}

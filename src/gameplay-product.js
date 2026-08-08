@@ -47,19 +47,8 @@
   }
 
   function applyOrderPayMethods(body) {
-    var list = Array.isArray(body.orderPayMethods) ? body.orderPayMethods : [];
-    if (!list.length && Array.isArray(body.methods)) {
-      list = (body.methods || [])
-        .filter(function (m) {
-          return m && m.code && (m.open === true || (m.enabled && m.configured));
-        })
-        .map(function (m) {
-          return { id: m.code, code: m.code, label: m.name || m.code, open: true };
-        });
-      if (body.walletPayEnabled !== false) {
-        list = list.concat([{ id: "catfood", code: "catfood", label: "猫粮余额", open: true }]);
-      }
-    }
+    // Sole SoT: GET /api/recharge → orderPayMethods. No methods[] reconstruct / no hardcode.
+    var list = Array.isArray(body && body.orderPayMethods) ? body.orderPayMethods : [];
     state.payMethods = list
       .filter(function (m) {
         return m && (m.id || m.code) && m.open !== false;

@@ -127,20 +127,9 @@
     btn.textContent = on ? "提交中…" : "确认订单并付款";
   }
   function applyOrderPayMethods(body) {
-    var list = Array.isArray(body.orderPayMethods) ? body.orderPayMethods : [];
-    if (!list.length && Array.isArray(body.methods)) {
-      list = (body.methods || [])
-        .filter(function (m) {
-          return m && m.code && (m.open === true || (m.enabled && m.configured));
-        })
-        .map(function (m) {
-          return { id: m.code, code: m.code, label: m.name || m.code, open: true, statusText: "可用" };
-        });
-      if (body.walletPayEnabled !== false) {
-        list = list.concat([{ id: "catfood", code: "catfood", label: "猫粮余额", open: true, statusText: "可用" }]);
-      }
-    }
-    // Hide disabled/closed — only enabled channels from admin SoT.
+    // Sole SoT: GET /api/recharge → orderPayMethods (payment_channels + wallet gate).
+    // Never reconstruct from body.methods / never hardcode fallback channels.
+    var list = Array.isArray(body && body.orderPayMethods) ? body.orderPayMethods : [];
     state.payMethods = list
       .filter(function (m) {
         return m && (m.id || m.code) && m.open !== false;
