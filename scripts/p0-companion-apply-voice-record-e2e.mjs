@@ -435,7 +435,8 @@ async function main() {
   }
 
   // Start recording
-  await page.locator("[data-record-start]").click({ force: true });
+  await page.locator("#applyVoicePanel").scrollIntoViewIfNeeded().catch(() => {});
+  await page.locator("[data-record-start]").click({ force: true, timeout: 15000 });
   await page.waitForTimeout(900);
   const recording = await page.evaluate(() => {
     const state = document.getElementById("voiceState")?.textContent || "";
