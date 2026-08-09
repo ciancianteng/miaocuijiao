@@ -121,7 +121,7 @@
       ' title="点击放大">' +
       '<img class="mcj-chat-img" src="' +
       src +
-      '" alt="图片" loading="lazy" decoding="async" referrerpolicy="no-referrer" data-mcj-chat-img="1" data-mcj-img-resign />' +
+      '" alt="图片" loading="eager" decoding="async" referrerpolicy="no-referrer" data-mcj-chat-img="1" data-mcj-img-resign />' +
       "</a>"
     );
   }

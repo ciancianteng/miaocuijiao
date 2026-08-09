@@ -543,6 +543,21 @@ async function writePngFixture(name, b64) {
     await bossPage.waitForSelector("[data-chat-image-btn]", { timeout: 15000 }).catch(() => {});
     const bossBtn = bossPage.locator("[data-chat-image-btn]");
     step("ui_boss_image_button", (await bossBtn.count()) > 0, "图片按钮");
+    await bossPage.evaluate(() => {
+      const box = document.querySelector(".support-messages, .support-thread, [data-messages], .mcj-message-list");
+      if (box) box.scrollTop = box.scrollHeight;
+      document.querySelectorAll("img.mcj-chat-img").forEach((img) => {
+        try {
+          img.loading = "eager";
+          if (img.dataset.src) img.src = img.dataset.src;
+        } catch (_) {}
+      });
+    });
+    await bossPage.waitForTimeout(2500);
+    await bossPage.waitForFunction(() => {
+      const imgs = [...document.querySelectorAll("img.mcj-chat-img")];
+      return imgs.some((i) => i.naturalWidth >= 32 && !/default-avatar/.test(i.currentSrc || ""));
+    }, null, { timeout: 20000 }).catch(() => {});
     const bossImgs = await bossPage.locator(".mcj-chat-img, [data-chat-image]").count();
     const bossDecoded = await bossPage.evaluate(() => {
       const imgs = [...document.querySelectorAll("img.mcj-chat-img")];
