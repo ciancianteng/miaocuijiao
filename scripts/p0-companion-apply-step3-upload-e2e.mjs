@@ -117,10 +117,13 @@ function seedDraft(email, nickname) {
 (async () => {
   console.log("BASE", BASE);
   const html = await (await fetch(`${BASE}/companion-apply.html?cb=${Date.now()}`, { cache: "no-store" })).text();
+  const assetMatch = html.match(/\/assets\/companion-apply-[^"]+\.js/);
+  const assetUrl = assetMatch ? `${BASE}${assetMatch[0]}` : "";
+  const assetJs = assetUrl ? await (await fetch(assetUrl, { cache: "no-store" })).text() : "";
   step(
     "asset_cache_bust",
-    /companion-application\.js\?v=20260809step3Upload1/.test(html) && /mcj-upload\.js\?v=20260809step3Upload1/.test(html),
-    /companion-application\.js\?v=[^"']+/.exec(html)?.[0] || "missing"
+    /本地草稿空间已满|卡面封面已取消|无需单独上传卡面封面|compressImageFile/.test(assetJs),
+    assetMatch?.[0] || "missing bundled apply asset"
   );
 
   const stamp = Date.now().toString(36);
