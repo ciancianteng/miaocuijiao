@@ -2487,14 +2487,24 @@
           name:user.displayName||user.email||prev.name||'管理员',
           nickname:user.displayName||prev.nickname||'',
           role:role,
-          adminRole:role==='super_admin'?'super_admin':'admin',
+          adminRole:role==='super_admin'?'super_admin':(role==='finance_admin'?'finance_admin':'admin'),
           status:user.status||'active',
-          permissions:[role==='super_admin'?'super_admin':'admin']
+          permissions:[role==='super_admin'?'super_admin':(role==='finance_admin'?'finance_admin':'admin')]
         };
         try{
           store.setItem('adminUser',JSON.stringify(next));
           store.setItem('mcjRole',role);
           window.MCJAdminRole=next.adminRole;
+        }catch(e){}
+        try{
+          var brandRole=document.querySelector('[data-admin-role-label]');
+          if(brandRole){
+            brandRole.textContent=role==='finance_admin'?'Finance Admin':(role==='admin'||role==='super_admin'?'Super Admin':'Admin');
+          }
+          var toggle=document.querySelector('[data-admin-profile-toggle]');
+          if(toggle){
+            toggle.textContent=role==='finance_admin'?'财务管理员':(role==='admin'||role==='super_admin'?'超级管理员':'管理员');
+          }
         }catch(e){}
         return next;
       })

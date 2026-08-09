@@ -34,28 +34,44 @@ import {
   resolveCompanionPublicCode,
 } from "../_account-codes.js";
 import { exportCsv as exportPaymentReceiptsCsv, listPaidForAdmin, listPendingForAdmin, listRejectedForAdmin, enrichReceiptAudit, approveAndLedger, rejectProof } from "../_payment-receipts.js";
+import { normalizeAdminRole } from "../_admin-auth.js";
 
 const FINANCE_BUCKET = "finance-receipts";
 const FINANCE_ROLES = new Set(["admin", "super_admin", "finance_admin"]);
-const REVEAL_ROLES = new Set(["super_admin", "finance_admin"]);
+/**
+ * Full bank reveal: Super Admin + Finance Admin only.
+ * In this product the primary portal role `admin` is the Super Admin identity
+ * (UI historically labels it Super Admin); `super_admin` is the explicit elevated alias.
+ * Ordinary / non-finance roles never enter this API (assertFinanceAdmin).
+ */
+const REVEAL_ROLES = new Set(["admin", "super_admin", "finance_admin"]);
 
-/** Unified weekly payout statuses */
+function adminRoleLabel(role) {
+  const r = normalizeAdminRole(role);
+  if (r === "super_admin" || r === "admin") return "Super Admin";
+  if (r === "finance_admin") return "财务管理员";
+  return r || "管理员";
+}
+
+/** Unified weekly payout statuses — product flow: 待审核 → 待打款 → 已完成 / 已拒绝 */
 const WITHDRAW_STATUS = {
   ...PAYOUT_STATUS_TEXT,
-  pending: "已提交",
-  pending_review: "待周五结算",
-  pending_friday: "待周五结算",
-  reviewing: "审核中",
-  approved: "审核通过待打款",
-  approved_pending_pay: "审核通过待打款",
-  pending_payment: "审核通过待打款",
-  paying: "审核通过待打款",
-  paid_pending_receipt: "已打款",
-  paid: "已打款",
+  pending: "待审核",
+  pending_review: "待审核",
+  pending_friday: "待审核",
+  submitted: "待审核",
+  reviewing: "待审核",
+  rolled_over: "待审核",
+  approved: "待打款",
+  approved_pending_pay: "待打款",
+  pending_payment: "待打款",
+  paying: "待打款",
+  paid_pending_receipt: "待打款",
+  paid: "待打款",
   completed: "已完成",
-  rejected: "已驳回",
-  rolled_over: "顺延至下周",
+  rejected: "已拒绝",
   pay_failed: "付款失败",
+  failed: "付款失败",
   cancelled: "已撤销",
 };
 
@@ -71,12 +87,33 @@ async function assertFinanceAdmin(req) {
 }
 
 function canReveal(profile) {
-  return REVEAL_ROLES.has(String(profile?.role || ""));
+  return REVEAL_ROLES.has(normalizeAdminRole(profile?.role));
 }
 
 function canConfirmPay(profile) {
   // Manual remittance confirm: admin / super_admin / finance_admin
-  return FINANCE_ROLES.has(String(profile?.role || ""));
+  return FINANCE_ROLES.has(normalizeAdminRole(profile?.role));
+}
+
+function resolveDuitNowId(account = {}, row = {}) {
+  const method = String(account.method || row.payout_method || row.method || "").toLowerCase();
+  const candidates = [
+    account.duitnow_id,
+    account.duitnowId,
+    account.duit_now_id,
+    row.duitnow_id,
+    row.duitnowId,
+  ];
+  for (const c of candidates) {
+    const v = String(c || "").trim();
+    if (v) return v;
+  }
+  // Some companions store DuitNow ID in tng_account when method is DuitNow.
+  if (/duitnow|duit_now/.test(method)) {
+    const tng = String(account.tng_account || row.tng_account || "").trim();
+    if (tng && !/^\*+/.test(tng)) return tng;
+  }
+  return "";
 }
 
 function money(v) {
@@ -709,6 +746,12 @@ export default async function handler(req, res) {
           statusText: "已拒绝",
         })),
         statusMaps: { withdraw: WITHDRAW_STATUS, payroll: PAYROLL_STATUS },
+        capabilities: {
+          role: normalizeAdminRole(adminProfile.role),
+          roleLabel: adminRoleLabel(adminProfile.role),
+          canReveal: canReveal(adminProfile),
+          canConfirmPay: canConfirmPay(adminProfile),
+        },
       });
     }
 
@@ -1661,29 +1704,121 @@ export default async function handler(req, res) {
     }
 
     if (action === "reveal_account") {
-      if (!canReveal(adminProfile)) return json(res, 403, { ok: false, message: "仅超级管理员或财务管理员可查看完整账号" });
-      const accountId = String(body.paymentAccountId || body.accountId || "").trim();
+      if (!canReveal(adminProfile)) {
+        return json(res, 403, { ok: false, message: "仅超级管理员或财务管理员可查看完整账号" });
+      }
+      const withdrawalId = String(body.withdrawalId || body.id || body.withdrawal_id || "").trim();
+      let accountId = String(body.paymentAccountId || body.accountId || "").trim();
+      let wd = null;
+      if (withdrawalId) {
+        const wdRows = await companionDb("companion_withdrawals", `?id=eq.${encodeURIComponent(withdrawalId)}&limit=1`);
+        wd = wdRows?.[0] || null;
+        if (!wd) return json(res, 404, { ok: false, message: "提现单不存在" });
+        if (!accountId) accountId = String(wd.payment_account_id || "").trim();
+      }
+      if (!accountId) return json(res, 400, { ok: false, message: "缺少结款账户或提现单" });
       const rows = await companionDb("companion_payment_accounts", `?id=eq.${encodeURIComponent(accountId)}&limit=1`);
       const acc = rows?.[0];
       if (!acc) return json(res, 404, { ok: false, message: "结款账户不存在" });
+
+      const companionId = String(wd?.companion_id || acc.user_id || "").trim();
+      const profiles = await profileMap([companionId, adminProfile.id]);
+      let companionExtra = {};
+      if (companionId) {
+        companionExtra =
+          (
+            await companionDb(
+              "companion_profiles",
+              `?user_id=eq.${encodeURIComponent(companionId)}&select=id,user_id,companion_code,nickname&limit=1`
+            ).catch(() => [])
+          )?.[0] || {};
+      }
+      const companionCode = resolveCompanionPublicCode(companionExtra, profiles[companionId] || {});
+      const companionName = publicDisplayName(
+        { display_name: companionExtra.nickname || profiles[companionId]?.display_name, email: profiles[companionId]?.email },
+        companionCode || "-"
+      );
+      const duitnowId = resolveDuitNowId(acc, wd || {});
+      const fullAccount = String(acc.bank_account || "").replace(/\s+/g, "");
+      const viewedAt = nowIso();
+      const viewerRole = normalizeAdminRole(adminProfile.role);
+      const viewerName = adminDisplayName(adminProfile);
+
       await writeAdminLog({
         module: "finance",
         action: "reveal_bank_account",
-        targetType: "companion_payment_account",
-        targetId: accountId,
-        operatorRole: adminRole,
+        targetType: withdrawalId ? "companion_withdrawal" : "companion_payment_account",
+        targetId: withdrawalId || accountId,
+        operatorId: adminProfile.id || null,
+        operatorRole: viewerRole,
         reason: body.reason || "查看完整银行账号",
+        after: {
+          paymentAccountId: accountId,
+          withdrawalId: withdrawalId || null,
+          viewedAt,
+          viewerId: adminProfile.id || null,
+          viewerName,
+          companionId,
+          accountLast4: acc.account_last4 || maskBankAccount(fullAccount).slice(-4),
+        },
       });
+      try {
+        await writePayoutLog({
+          payoutType: "companion_withdraw",
+          relatedRecordId: withdrawalId || accountId,
+          payeeUserId: companionId,
+          payeeName: companionName,
+          payeeUid: companionCode || companionId,
+          amountRm: wd ? money(wd.net_amount_rm) : 0,
+          notes: body.reason || "查看完整银行账号",
+          adminId: adminProfile.id || null,
+          adminName: viewerName,
+          adminRole: viewerRole,
+          ip: clientIp(req),
+          action: "reveal_bank_account",
+        });
+      } catch {
+        /* optional audit trail */
+      }
+
       return json(res, 200, {
         ok: true,
+        viewedAt,
+        viewer: {
+          id: adminProfile.id || null,
+          role: viewerRole,
+          roleLabel: adminRoleLabel(viewerRole),
+          name: viewerName,
+        },
         account: {
           id: acc.id,
-          bankName: acc.bank_name,
-          accountHolder: acc.account_name,
-          accountNumber: acc.bank_account,
-          accountLast4: acc.account_last4 || maskBankAccount(acc.bank_account).slice(-4),
+          bankName: acc.bank_name || wd?.bank_name || "",
+          accountHolder: acc.account_name || wd?.account_holder || wd?.account_name || "",
+          accountNumber: fullAccount,
+          accountLast4: acc.account_last4 || maskBankAccount(fullAccount).slice(-4),
+          duitnowId,
+          tngAccount: String(acc.tng_account || "").trim(),
+          alipayAccount: String(acc.alipay_account || "").trim(),
+          method: String(acc.method || wd?.payout_method || "").trim(),
           status: acc.status,
         },
+        withdrawal: wd
+          ? {
+              id: resolveRowId(wd),
+              withdrawalNo: wd.withdrawal_no || "",
+              companionId,
+              companionUid: companionCode || "",
+              companionName,
+              netAmountRm: money(wd.net_amount_rm),
+              catFoodAmount: money(wd.cat_food_amount || wd.amount),
+              status: wd.status,
+              statusText: WITHDRAW_STATUS[wd.status] || wd.status,
+            }
+          : {
+              companionId,
+              companionUid: companionCode || "",
+              companionName,
+            },
       });
     }
 

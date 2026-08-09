@@ -84,8 +84,16 @@
   function updateToggleLabel(user) {
     var btn = document.querySelector("[data-admin-profile-toggle]");
     if (!btn) return;
-    var role = String((user && user.role) || "").toLowerCase();
-    btn.textContent = role === "admin" ? "超级管理员" : "管理员";
+    var role = String((user && (user.role || user.adminRole)) || "").toLowerCase();
+    if (role === "super_admin" || role === "admin") btn.textContent = "超级管理员";
+    else if (role === "finance_admin") btn.textContent = "财务管理员";
+    else btn.textContent = "管理员";
+    var brandRole = document.querySelector("[data-admin-role-label]");
+    if (brandRole) {
+      if (role === "super_admin" || role === "admin") brandRole.textContent = "Super Admin";
+      else if (role === "finance_admin") brandRole.textContent = "Finance Admin";
+      else brandRole.textContent = "Admin";
+    }
   }
 
   function bind() {

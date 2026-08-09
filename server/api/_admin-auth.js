@@ -124,7 +124,9 @@ export async function requireAdmin(req, { allowRoles = ADMIN_ROLES, module = "" 
   if (module && !adminHasModule({ ...profile, role: normalized }, module)) {
     throw Object.assign(new Error("没有陪玩管理权限"), { status: 403 });
   }
-  return { ...profile, role: normalized === "super_admin" ? "super_admin" : profile.role };
+  // Always return the normalized role so UI labels and permission checks share one source of truth.
+  // Raw DB aliases (superadmin/root/finance) must not leak into canReveal / display logic.
+  return { ...profile, role: normalized };
 }
 
 export { ADMIN_ROLES };

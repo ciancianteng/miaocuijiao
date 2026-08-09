@@ -21,6 +21,10 @@
     currentBatch: null,
     filterUid: "",
     filterMonth: "",
+    canReveal: false,
+    canConfirmPay: true,
+    role: "",
+    roleLabel: "",
   };
 
   function esc(v) {
@@ -194,14 +198,18 @@
       '<div style="display:flex;justify-content:space-between;gap:8px"><span style="color:#9ca3af;font-size:12px">户名</span><strong style="font-size:13px">' +
       esc(w.accountHolder || "-") +
       "</strong></div>" +
-      '<div style="display:flex;justify-content:space-between;gap:8px"><span style="color:#9ca3af;font-size:12px">账号后四位</span><strong style="font-size:13px;letter-spacing:.08em">****' +
+      '<div style="display:flex;justify-content:space-between;gap:8px"><span style="color:#9ca3af;font-size:12px">账号</span><strong style="font-size:13px;letter-spacing:.08em">*****' +
       esc(w.accountLast4 || "----") +
       "</strong></div>" +
-      (w.paymentAccountId
+      (w.paymentAccountId && state.canReveal
         ? '<button class="mini-btn" type="button" data-fin-reveal="' +
           esc(w.paymentAccountId) +
+          '" data-fin-reveal-wd="' +
+          esc(w.id) +
           '" style="margin-top:4px">查看完整账号</button>'
-        : "") +
+        : w.paymentAccountId
+          ? '<div class="admin-sync-note" style="margin-top:4px;font-size:11px">完整账号仅超级管理员/财务可查看</div>'
+          : "") +
       '<button class="mini-btn" type="button" data-fin-view-wd="' +
       esc(w.id) +
       '">打款信息详情</button>' +
@@ -247,7 +255,7 @@
           (/approved_pending_pay|paying|paid_pending_receipt|pending_payment|approved|paid|failed/.test(String(w.status || ""))
             ? ' <button class="mini-btn primary-lite" type="button" data-fin-paid-wd="' +
               esc(w.id) +
-              '">打款完成</button> <button class="mini-btn" type="button" data-fin-reject-wd="' +
+              '">确认打款完成</button> <button class="mini-btn" type="button" data-fin-reject-wd="' +
               esc(w.id) +
               '">拒绝</button> <button class="mini-btn" type="button" data-fin-wd-fail="' +
               esc(w.id) +
@@ -258,7 +266,7 @@
       })
       .join("");
     return (
-      '<div class="admin-sync-note">陪玩提现进入周五批次；审核通过后须上传收据才能完成。无凭证不可标记完成。打款信息已拆分为银行 / 户名 / 后四位，避免挤在一行误读。</div>' +
+      '<div class="admin-sync-note">流程：待审核 → 待打款 → 上传打款凭证并确认 → 已完成。无凭证不可标记完成。列表仅显示脱敏账号（*****后四位）；超级管理员/财务点击「查看完整账号」后才展示明文，并写入操作日志。</div>' +
       '<div class="table-wrap"><table><thead><tr><th>提现单号</th><th>陪玩</th><th>提现猫粮</th><th>应付 RM</th><th>打款信息</th><th>状态</th><th>提交时间</th><th>操作</th></tr></thead><tbody>' +
       (rows || '<tr><td colspan="8">暂无提现申请</td></tr>') +
       "</tbody></table></div>"
@@ -593,6 +601,11 @@
         state.weeklyRules = res.weeklyRules || {};
         state.settlementSummary = res.settlementSummary || {};
         state.currentBatch = res.currentBatch || null;
+        var caps = res.capabilities || {};
+        state.role = caps.role || role();
+        state.roleLabel = caps.roleLabel || "";
+        state.canReveal = caps.canReveal === true || /^(admin|super_admin|finance_admin)$/.test(String(state.role || ""));
+        state.canConfirmPay = caps.canConfirmPay !== false;
         state.loading = false;
         paint();
       })
@@ -791,13 +804,14 @@
       "position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px";
     overlay.innerHTML =
       '<div style="background:#fff;max-width:460px;width:100%;border-radius:12px;padding:18px;box-shadow:0 12px 40px rgba(0,0,0,.2)">' +
-      '<h3 style="margin:0 0 8px">上传打款收据/截图并确认完成</h3>' +
-      '<p style="margin:0 0 12px;color:#666;font-size:13px">必须上传转账收据或截图后才能标记「打款完成」，陪玩端将同步显示已打款。银行流水号可选填。</p>' +
+      '<h3 style="margin:0 0 8px">上传打款凭证并确认完成</h3>' +
+      '<p style="margin:0 0 12px;color:#666;font-size:13px">须先完成真实银行转账。上传打款凭证 + 填写银行流水号后，才可将状态改为「已完成」。陪玩端将同步显示已完成。</p>' +
       '<div data-wp-drop style="border:1px dashed #bbb;border-radius:10px;padding:18px;text-align:center;margin:10px 0;cursor:pointer;background:#fafafa">' +
-      "<strong>点击或拖拽上传收据/截图</strong><div style=\"font-size:12px;color:#888;margin-top:6px\">JPG / PNG / WEBP / PDF</div>" +
+      "<strong>点击或拖拽上传打款凭证</strong><div style=\"font-size:12px;color:#888;margin-top:6px\">JPG / PNG / WEBP / PDF</div>" +
       '<div data-wp-preview style="margin-top:8px;font-size:13px;color:#333"></div></div>' +
       '<input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" data-wp-file hidden>' +
-      '<label style="display:block;margin:10px 0 8px">银行流水号 / 备注（可选）<input data-wp-ref style="width:100%"></label>' +
+      '<label style="display:block;margin:10px 0 8px">银行流水号 / 交易编号（必填）<input data-wp-ref style="width:100%" required placeholder="例如银行回单编号"></label>' +
+      '<label style="display:block;margin:10px 0 8px">备注（可选）<input data-wp-note style="width:100%"></label>' +
       '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">' +
       '<button type="button" class="mini-btn" data-wp-cancel>取消</button>' +
       '<button type="button" class="mini-btn primary-lite" data-wp-submit>确认打款完成</button></div></div>';
@@ -838,14 +852,20 @@
     });
     overlay.querySelector("[data-wp-submit]").addEventListener("click", function () {
       if (!fileData) {
-        alert("必须上传转账收据或截图");
+        alert("必须上传打款凭证后才能确认完成");
         return;
       }
-      if (!confirm("确认标记该提现为「打款完成」？陪玩端将同步显示已打款。")) return;
+      var bankReference = String(overlay.querySelector("[data-wp-ref]").value || "").trim();
+      if (!bankReference) {
+        alert("请填写银行流水号 / 交易编号");
+        return;
+      }
+      if (!confirm("确认已完成真实打款并标记该提现为「已完成」？陪玩端将同步显示已完成。")) return;
       post("mark_withdraw_paid", {
         id: withdrawalId,
         receiptDataUrl: fileData,
-        bankReference: overlay.querySelector("[data-wp-ref]").value.trim(),
+        bankReference: bankReference,
+        paymentRemark: String(overlay.querySelector("[data-wp-note]").value || "").trim(),
       })
         .then(function (res) {
           overlay.remove();
@@ -1152,8 +1172,15 @@
             esc(a.accountHolder || w.accountHolder || "-") +
             "</strong></div>" +
             "<div>账号：<strong>" +
-            esc(a.accountNumber || (w.accountLast4 ? "****" + w.accountLast4 : "-")) +
+            esc(w.accountLast4 ? "*****" + w.accountLast4 : "*****----") +
             "</strong></div>" +
+            (state.canReveal && (w.paymentAccountId || w.id)
+              ? '<button class="mini-btn" type="button" data-fin-reveal="' +
+                esc(w.paymentAccountId || "") +
+                '" data-fin-reveal-wd="' +
+                esc(w.id || viewWd.dataset.finViewWd) +
+                '" style="margin-top:8px">查看完整账号</button>'
+              : '<div class="admin-sync-note" style="margin-top:8px">完整账号需超级管理员/财务点击「查看完整账号」</div>') +
             "</div>" +
             "<div><span style=\"color:#9ca3af\">状态</span><br><strong>" +
             esc(w.statusText || w.status || "-") +
@@ -1200,26 +1227,68 @@
     }
     var reveal = e.target.closest("[data-fin-reveal]");
     if (reveal) {
-      post("reveal_account", { paymentAccountId: reveal.dataset.finReveal, reason: "财务查看完整银行账号" })
+      if (!state.canReveal) {
+        alert("仅超级管理员或财务管理员可查看完整账号");
+        return;
+      }
+      post("reveal_account", {
+        paymentAccountId: reveal.dataset.finReveal,
+        withdrawalId: reveal.dataset.finRevealWd || "",
+        reason: "财务查看完整银行账号",
+      })
         .then(function (res) {
           var a = res.account || {};
+          var w = res.withdrawal || {};
+          var viewer = res.viewer || {};
           var html =
-            '<div style="display:grid;gap:8px;text-align:left"><div>银行：<strong>' +
+            '<div style="display:grid;gap:8px;text-align:left">' +
+            "<div>陪玩昵称：<strong>" +
+            esc(w.companionName || "-") +
+            "</strong></div>" +
+            "<div>陪玩 ID：<strong>" +
+            esc(w.companionUid || w.companionId || "-") +
+            "</strong></div>" +
+            "<div>提现单号：<strong>" +
+            esc(w.withdrawalNo || "-") +
+            "</strong></div>" +
+            "<div>提现金额：<strong>RM " +
+            esc(w.netAmountRm != null ? w.netAmountRm : "-") +
+            "</strong></div>" +
+            "<div>银行：<strong>" +
             esc(a.bankName || "") +
-            "</strong></div><div>户名：<strong>" +
+            "</strong></div>" +
+            "<div>户名：<strong>" +
             esc(a.accountHolder || "") +
-            "</strong></div><div>账号：<strong>" +
+            "</strong></div>" +
+            "<div>完整银行账号：<strong style=\"letter-spacing:.04em\">" +
             esc(a.accountNumber || "") +
-            "</strong></div><div class=\"admin-sync-note\">已写入操作日志</div></div>";
-          if (window.MCJAdminModal && window.MCJAdminModal.open) window.MCJAdminModal.open("完整银行账号", html);
+            "</strong></div>" +
+            (a.duitnowId
+              ? "<div>DuitNow ID：<strong>" + esc(a.duitnowId) + "</strong></div>"
+              : "") +
+            '<div class="admin-sync-note">查看人：' +
+            esc(viewer.name || viewer.roleLabel || "admin") +
+            " · " +
+            esc(res.viewedAt || "") +
+            "（已写入操作日志）</div></div>";
+          if (window.MCJAdminModal && window.MCJAdminModal.open) window.MCJAdminModal.open("完整收款资料", html);
           else
             alert(
-              "银行：" +
+              "陪玩：" +
+                (w.companionName || "") +
+                "\nID：" +
+                (w.companionUid || w.companionId || "") +
+                "\n银行：" +
                 (a.bankName || "") +
                 "\n户名：" +
                 (a.accountHolder || "") +
-                "\n账号：" +
+                "\n完整账号：" +
                 (a.accountNumber || "") +
+                (a.duitnowId ? "\nDuitNow：" + a.duitnowId : "") +
+                "\n提现单号：" +
+                (w.withdrawalNo || "") +
+                "\n金额：RM " +
+                (w.netAmountRm != null ? w.netAmountRm : "") +
                 "\n（已写入操作日志）"
             );
         })
