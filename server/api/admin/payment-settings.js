@@ -536,24 +536,25 @@ function applyPublicPayOverlay(channels = [], publicMap = {}) {
     if (pub.forOrder != null && data.forOrder == null) data.forOrder = pub.forOrder !== false;
     if (pub.forRecharge != null && data.forRecharge == null) data.forRecharge = pub.forRecharge !== false;
     data.manual = manual;
-    // SoT: payment_channels.enabled wins. Public mirror only fills missing QR/manual fields.
-    // Never let a stale public enabled=true override a real DB disable (or vice versa).
-    const enabled = ch.enabled !== false && ch.visible !== false;
+    // SoT: payment_channels.enabled / visible are separate. Do not invent a collapsed
+    // "enabled" that disagrees with boss listBossPaymentMethods.
+    const enabled = ch.enabled === true || ch.enabled === "true" || ch.enabled === 1;
+    const visible = ch.visible !== false && ch.visible !== "false" && ch.visible !== 0;
     const configured = bossManualConfigured(id, { ...manual, qrUrl, phone, bankAccount, receiverName, duitnowId }, ch.category);
     const forOrder = data.forOrder != null ? data.forOrder !== false : true;
     const forRecharge = data.forRecharge != null ? data.forRecharge !== false : true;
     return {
       ...ch,
       enabled,
-      visible: ch.visible !== false,
+      visible,
       forOrder,
       forRecharge,
       configured,
-      bossOrderOpen: !!(enabled && configured && forOrder),
-      bossRechargeOpen: !!(enabled && configured && forRecharge),
+      bossOrderOpen: !!(enabled && visible && configured && forOrder),
+      bossRechargeOpen: !!(enabled && visible && configured && forRecharge),
       mode: ch.mode || pub.mode || "test",
       data,
-      config_status: configured ? (enabled ? "已启用" : "已配置") : ch.config_status || "未配置",
+      config_status: configured ? (enabled && visible ? "已启用" : "已配置") : ch.config_status || "未配置",
     };
   });
 }

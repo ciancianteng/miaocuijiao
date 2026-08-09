@@ -130,11 +130,11 @@ function unavailablePayInfo(channelId, methodHint = "") {
 }
 
 function channelIsEnabled(channelRow, pub = {}) {
-  // SoT: payment_channels row wins when present. Public mirror is fallback only
-  // (table missing / channel never upserted). Never let a stale public enabled=true
-  // override a real DB disable — that caused "admin 已启用 / boss empty" flip-flops.
+  // SoT: payment_channels row wins when present. Public mirror is fallback only.
   if (channelRow) {
-    return channelRow.enabled !== false && channelRow.visible !== false;
+    const enabled = channelRow.enabled === true || channelRow.enabled === "true" || channelRow.enabled === 1;
+    const visible = channelRow.visible !== false && channelRow.visible !== "false" && channelRow.visible !== 0;
+    return enabled && visible;
   }
   if (pub && pub.enabled != null) return !!pub.enabled;
   return false;
