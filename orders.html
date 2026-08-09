@@ -569,6 +569,10 @@
             var o=state.orders.find(function(x){return x.id===orderId});
             if(o)detail(o,false);
           }
+          try{
+            var bumpCid=(body.companionId||(body.order&&(body.order.companionId||body.order.companion_id))||(state.orders.find(function(x){return x.id===orderId})||{}).companionId||'');
+            localStorage.setItem('mcjCompanionReviewBump',JSON.stringify({companionId:bumpCid,orderId:orderId,at:Date.now()}));
+          }catch(eBump){}
           alert(body.already?'该订单已评价':(body.message||'评价提交成功'));
         }catch(err){
           if(reviewState)reviewState.textContent=err.message||'评价失败';

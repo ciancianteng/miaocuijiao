@@ -1810,15 +1810,23 @@ export default async function handler(req, res) {
       );
       const order = Array.isArray(beforeRows) ? beforeRows[0] : null;
       if (!order) return json(res, 404, { ok: false, message: "订单不存在。" });
-      if (String(order.status) !== "completed") return json(res, 400, { ok: false, message: "只有已完成订单可以评价。" });
+      const statusNow = String(order.status || "");
+      if (/^(cancelled|refunded|refund_requested)$/.test(statusNow)) {
+        return json(res, 400, { ok: false, message: "已取消或退款的订单不能评价。" });
+      }
+      if (statusNow !== "completed") return json(res, 400, { ok: false, message: "只有已完成订单可以评价。" });
       if (!order.companion_id) return json(res, 400, { ok: false, message: "该订单没有可评价的陪玩。" });
+      const bodyCompanionId = String(body.companion_id || body.companionId || "").trim();
+      if (bodyCompanionId && bodyCompanionId !== String(order.companion_id)) {
+        return json(res, 400, { ok: false, message: "评价陪玩与订单陪玩不一致。" });
+      }
       const rating = Math.max(1, Math.min(5, Number(body.rating || body.stars || 0) || 0));
       if (!(rating >= 1 && rating <= 5)) return json(res, 400, { ok: false, message: "请选择 1-5 星评分。" });
       const content = String(body.content || body.comment || body.note || "").trim();
       const existing = await supabaseJson(
         restUrl(
           "companion_reviews",
-          `?order_id=eq.${encodeURIComponent(order.id)}&boss_id=eq.${encodeURIComponent(profile.id)}&select=id&limit=1`
+          `?order_id=eq.${encodeURIComponent(order.id)}&select=id,order_id,companion_id,boss_id,rating,content,status,created_at&order=created_at.desc&limit=1`
         ),
         { headers: serviceHeaders() }
       ).catch(() => []);
@@ -1828,6 +1836,7 @@ export default async function handler(req, res) {
           message: "该订单已评价。",
           review: existing[0],
           already: true,
+          companionId: order.companion_id,
           order: viewOrder({
             ...order,
             reviewed: true,
@@ -1871,6 +1880,7 @@ export default async function handler(req, res) {
         ok: true,
         message: "评价已提交。",
         review,
+        companionId: order.companion_id,
         order: viewOrder({
           ...order,
           reviewed: true,

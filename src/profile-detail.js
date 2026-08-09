@@ -938,13 +938,58 @@
       if (tries > 80) clearInterval(timer);
     }, 150);
   })();
-  // Soft poll online status so boss detail stays in sync without full refresh.
+  // Soft poll: availability + real order reviews stay in sync without hard refresh.
   (function pollStatus() {
-    var id = param();
-    if (!id) return;
-    setInterval(function () {
-      if (!state.companion || document.hidden) return;
-      fetch("/api/public/companions?id=" + encodeURIComponent(id), {
+    function reviewFingerprint(c) {
+      if (!c) return "";
+      var list = Array.isArray(c.reviews) ? c.reviews : [];
+      return [
+        Number(c.reviewCount || list.length) || 0,
+        Number(c.rating || 0) || 0,
+        list
+          .slice(0, 12)
+          .map(function (r) {
+            return String(r.id || "") + ":" + String(r.createdAt || "") + ":" + String(r.content || "").slice(0, 24);
+          })
+          .join("|"),
+      ].join("#");
+    }
+    function applyCompanionPayload(c, opts) {
+      opts = opts || {};
+      if (!c) return;
+      c = syncPresence(c);
+      var prevFp = reviewFingerprint(state.companion);
+      var nextFp = reviewFingerprint(c);
+      var prevAvail = state.companion && state.companion.availabilityStatus;
+      if (state.companion && (state.companion.id === c.id || state.companion.uid === c.uid)) {
+        state.companion = Object.assign({}, state.companion, c);
+      } else {
+        state.companion = c;
+      }
+      if (opts.force || prevFp !== nextFp || prevAvail !== c.availabilityStatus) {
+        render(state.companion);
+        return;
+      }
+      var p =
+        window.MCJCompanionPresence && window.MCJCompanionPresence.fromCompanion
+          ? window.MCJCompanionPresence.fromCompanion(state.companion)
+          : null;
+      document.querySelectorAll(".mcj-status-dot").forEach(function (el) {
+        if (!p) {
+          if (c.availabilityText) el.lastChild && (el.childNodes[el.childNodes.length - 1].textContent = c.availabilityText);
+          return;
+        }
+        el.className = "mcj-status-dot " + p.className;
+        el.setAttribute("data-online-status", p.code);
+        el.setAttribute("data-online-status-label", p.label);
+        el.innerHTML = "<i></i>" + esc(p.label);
+      });
+    }
+    function refetchCompanion(opts) {
+      opts = opts || {};
+      var id = param();
+      if (!id) return;
+      fetch("/api/public/companions?id=" + encodeURIComponent(id) + "&_=" + Date.now(), {
         headers: { Accept: "application/json" },
         cache: "no-store",
       })
@@ -956,40 +1001,29 @@
         .then(function (body) {
           var c = body && body.companions && body.companions[0];
           if (!c) return;
-          c = syncPresence(c);
-          var prev = state.companion.availabilityStatus;
-          var next = c.availabilityStatus;
-          state.companion.availabilityStatus = c.availabilityStatus;
-          state.companion.availabilityText = c.availabilityText || c.status;
-          state.companion.onlineStatus = c.onlineStatus;
-          state.companion.onlineStatusLabel = c.onlineStatusLabel || c.availabilityText;
-          state.companion.status = c.status;
-          state.companion.online = c.online;
-          state.companion.canOrderNow = c.canOrderNow;
-          state.companion.certTags = c.certTags || c.certificationTags || state.companion.certTags;
-          state.companion.voiceUrl = c.voiceUrl || state.companion.voiceUrl;
-          state.companion.hasVoice = c.hasVoice;
-          state.companion.gallery = c.gallery || state.companion.gallery;
-          if (prev !== next) render(state.companion);
-          else {
-            var p =
-              window.MCJCompanionPresence && window.MCJCompanionPresence.fromCompanion
-                ? window.MCJCompanionPresence.fromCompanion(state.companion)
-                : null;
-            document.querySelectorAll(".mcj-status-dot").forEach(function (el) {
-              if (!p) {
-                if (c.availabilityText) el.lastChild && (el.childNodes[el.childNodes.length - 1].textContent = c.availabilityText);
-                return;
-              }
-              el.className = "mcj-status-dot " + p.className;
-              el.setAttribute("data-online-status", p.code);
-              el.setAttribute("data-online-status-label", p.label);
-              el.innerHTML = "<i></i>" + esc(p.label);
-            });
-          }
+          if (state.popularity) c.popularity = state.popularity;
+          applyCompanionPayload(c, opts);
         })
         .catch(function () {});
-    }, 12000);
+    }
+    var id = param();
+    if (!id) return;
+    setInterval(function () {
+      if (!state.companion || document.hidden) return;
+      refetchCompanion({});
+    }, 8000);
+    document.addEventListener("visibilitychange", function () {
+      if (!document.hidden) refetchCompanion({});
+    });
+    window.addEventListener("storage", function (e) {
+      if (!e || e.key !== "mcjCompanionReviewBump") return;
+      try {
+        var payload = JSON.parse(e.newValue || "{}");
+        var cid = String(payload.companionId || "");
+        if (cid && state.companion && cid !== String(state.companion.id || state.companion.uid || "")) return;
+      } catch (_) {}
+      refetchCompanion({ force: true });
+    });
   })();
   if (window.MCJBossHeader && typeof window.MCJBossHeader.sync === "function") {
     window.MCJBossHeader.sync();

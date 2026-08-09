@@ -4146,6 +4146,17 @@
   }
   window.MCJCompanionApi=api;
   window.__MCJCompanionAfterForcedAck=function(){loadData({soft:true}).then(function(){paint()});};
+  window.addEventListener('storage',function(e){
+    if(!e||e.key!=='mcjCompanionReviewBump')return;
+    if(!state.session||!state.session.token)return;
+    loadData({soft:true,forcePaint:true,preserveScroll:true}).catch(function(){});
+  });
+  document.addEventListener('visibilitychange',function(){
+    if(document.hidden)return;
+    if(!state.session||!state.session.token)return;
+    if(['profile','account','dashboard'].indexOf(state.route)===-1)return;
+    loadData({soft:true,forcePaint:true,preserveScroll:true}).catch(function(){});
+  });
   init();
 })();
 

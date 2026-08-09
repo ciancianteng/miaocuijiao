@@ -300,10 +300,40 @@ async function attachReviews(companions = []) {
     if (/companion_reviews|schema cache|PGRST|does not exist/i.test(String(e.message || e))) return companions;
     throw e;
   }
+  const listAll = Array.isArray(rows) ? rows : [];
+  // One published review per order (keep newest).
+  const byOrder = new Map();
+  for (const r of listAll) {
+    const key = String(r.order_id || r.id || "");
+    if (!key || byOrder.has(key)) continue;
+    byOrder.set(key, r);
+  }
+  const deduped = [...byOrder.values()];
+  const bossIds = [...new Set(deduped.map((r) => r.boss_id).filter(Boolean))];
+  const orderIds = [...new Set(deduped.map((r) => r.order_id).filter(Boolean))];
+  let bosses = {};
+  let orders = {};
+  if (bossIds.length) {
+    const profiles = await supabaseJson(
+      restUrl("profiles", `?id=in.(${bossIds.map(encodeURIComponent).join(",")})&select=id,display_name,boss_uid`),
+      { headers: headers() }
+    ).catch(() => []);
+    bosses = Object.fromEntries((profiles || []).map((p) => [p.id, p]));
+  }
+  if (orderIds.length) {
+    const orderRows = await supabaseJson(
+      restUrl("orders", `?id=in.(${orderIds.map(encodeURIComponent).join(",")})&select=id,order_no,game,status,companion_id`),
+      { headers: headers() }
+    ).catch(() => []);
+    orders = Object.fromEntries((orderRows || []).map((o) => [o.id, o]));
+  }
   const byCid = {};
-  for (const r of Array.isArray(rows) ? rows : []) {
+  for (const r of deduped) {
     const cid = r.companion_id;
     if (!cid) continue;
+    // Never attach a review to the wrong companion even if companion_id was corrupted.
+    const order = orders[r.order_id] || {};
+    if (order.companion_id && String(order.companion_id) !== String(cid)) continue;
     if (!byCid[cid]) byCid[cid] = [];
     byCid[cid].push(r);
   }
@@ -314,13 +344,26 @@ async function attachReviews(companions = []) {
     return {
       ...c,
       ...summary,
-      reviews: list.slice(0, 30).map((r) => ({
-        id: r.id,
-        orderId: r.order_id || "",
-        rating: Number(r.rating) || 0,
-        content: r.content || "",
-        createdAt: r.created_at || "",
-      })),
+      reviews: list.slice(0, 30).map((r) => {
+        const boss = bosses[r.boss_id] || {};
+        const order = orders[r.order_id] || {};
+        const bossCode = String(boss.boss_uid || "").trim() || "";
+        return {
+          id: r.id,
+          orderId: order.order_no || r.order_id || "",
+          orderNo: order.order_no || r.order_id || "",
+          companionId: r.companion_id || cid,
+          bossId: r.boss_id || "",
+          bossCode,
+          bossUid: bossCode,
+          gameName: order.game || "",
+          game: order.game || "",
+          rating: Number(r.rating) || 0,
+          content: r.content || "",
+          createdAt: r.created_at || "",
+          status: r.status || "published",
+        };
+      }),
     };
   });
 }

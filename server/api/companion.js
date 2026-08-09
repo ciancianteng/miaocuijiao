@@ -2040,7 +2040,7 @@ async function loadCompanionReviews(companionUserId) {
     }
     if (orderIds.length) {
       const orderRows = await supabaseJson(
-        restUrl("orders", `?id=in.(${orderIds.map(encodeURIComponent).join(",")})&select=id,order_no,game,status`),
+        restUrl("orders", `?id=in.(${orderIds.map(encodeURIComponent).join(",")})&select=id,order_no,game,status,companion_id`),
         { headers: serviceHeaders() }
       ).catch(() => []);
       orders = Object.fromEntries((orderRows || []).map((o) => [o.id, o]));
@@ -2048,11 +2048,15 @@ async function loadCompanionReviews(companionUserId) {
     return deduped.map((r) => {
       const boss = bosses[r.boss_id] || {};
       const order = orders[r.order_id] || {};
+      // Guard against mis-bound reviews leaking onto this companion profile.
+      if (order.companion_id && String(order.companion_id) !== String(companionUserId)) return null;
       const bossCode = resolveBossPublicCode(boss) || "";
       return {
         id: r.id,
         orderId: order.order_no || r.order_id || "",
         orderNo: order.order_no || r.order_id || "",
+        companionId: r.companion_id || companionUserId,
+        bossId: r.boss_id || "",
         gameName: order.game || "",
         game: order.game || "",
         rating: Number(r.rating || 0),
@@ -2065,7 +2069,7 @@ async function loadCompanionReviews(companionUserId) {
         avatarUrl: "",
         anonymous: true,
       };
-    });
+    }).filter(Boolean);
   } catch {
     return [];
   }
