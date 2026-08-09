@@ -383,14 +383,38 @@ async function writePngFixture(name, b64) {
 
     await csPage.locator('[data-conv-filter="active"]').click().catch(() => {});
     await csPage.waitForTimeout(600);
-    const convRow = csPage.locator(`[data-conversation="${convId}"]`);
-    if (await convRow.count()) {
-      await convRow.first().click();
-    } else {
+    let opened = false;
+    for (let i = 0; i < 50 && !opened; i++) {
+      const row = csPage.locator(`[data-conversation="${convId}"]`);
+      if (await row.count()) {
+        await row.first().click();
+        opened = true;
+        break;
+      }
+      await csPage.evaluate(() => {
+        const body =
+          document.querySelector("[data-cs-virt-body]") ||
+          document.querySelector(".cs-chat-list") ||
+          document.querySelector("[data-cs-chat-list]");
+        if (body) body.scrollTop = (body.scrollTop || 0) + 480;
+      });
+      await csPage.waitForTimeout(150);
+    }
+    if (!opened) {
       const any = csPage.locator("[data-conversation]").first();
       if (await any.count()) await any.click();
     }
     await csPage.waitForTimeout(2000);
+    // If still empty pane, click "打开会话列表" then first row.
+    if (!(await csPage.locator("[data-cs-image]").count())) {
+      const openList = csPage.locator('button:has-text("打开会话列表")');
+      if (await openList.count()) await openList.first().click();
+      await csPage.waitForTimeout(500);
+      const row2 = csPage.locator(`[data-conversation="${convId}"]`);
+      if (await row2.count()) await row2.first().click();
+      else if (await csPage.locator("[data-conversation]").count()) await csPage.locator("[data-conversation]").first().click();
+      await csPage.waitForTimeout(1500);
+    }
     await csPage.waitForSelector("[data-cs-image]", { timeout: 15000 }).catch(() => {});
     const imgBtn = csPage.locator("[data-cs-image]");
     const btnOk = (await imgBtn.count()) > 0;
@@ -449,7 +473,7 @@ async function writePngFixture(name, b64) {
       },
       { email: BOSS_A, pass: PASS }
     );
-    await bossPage.goto(`${BASE}/support.html?conversation_id=${encodeURIComponent(convId)}&t=${Date.now()}`, {
+    await bossPage.goto(`${BASE}/support.html?conversation=${encodeURIComponent(convId)}&t=${Date.now()}`, {
       waitUntil: "domcontentloaded",
       timeout: 90000,
     });
@@ -457,8 +481,17 @@ async function writePngFixture(name, b64) {
       timeout: 30000,
     }).catch(() => {});
     await bossPage.waitForTimeout(2500);
+    if (!(await bossPage.locator("[data-chat-image-btn]").count())) {
+      const item = bossPage.locator(`[data-select-conversation="${convId}"], [data-conversation="${convId}"]`);
+      if (await item.count()) await item.first().click();
+      else if (await bossPage.locator("[data-select-conversation]").count()) {
+        await bossPage.locator("[data-select-conversation]").first().click();
+      }
+      await bossPage.waitForTimeout(2000);
+    }
     const bossMedia = await bossPage.evaluate(() => !!(window.MCJChatMedia && window.MCJChatMedia.pickAndSendImages));
     step("ui_boss_media_loaded", bossMedia, bossMedia ? "ok" : `url=${bossPage.url()}`);
+    await bossPage.waitForSelector("[data-chat-image-btn]", { timeout: 15000 }).catch(() => {});
     const bossBtn = bossPage.locator("[data-chat-image-btn]");
     step("ui_boss_image_button", (await bossBtn.count()) > 0, "图片按钮");
     const bossImgs = await bossPage.locator(".mcj-chat-img, [data-chat-image]").count();

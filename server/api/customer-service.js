@@ -2620,7 +2620,7 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
           const list = byConv[c.id] || [];
           if (list.length) {
             const last = list[list.length - 1];
-            c.lastMessage = last.content || c.lastMessage || "";
+            c.lastMessage = messagePreviewText(last) || last.content || c.lastMessage || "";
             c.lastTime = last.createdAt || c.lastTime;
           }
           // Other CS can see that new messages exist, but must not clear owner unread via mark_read.
@@ -2638,7 +2638,7 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         const list = byConv[c.id] || [];
         if (list.length) {
           const last = list[list.length - 1];
-          c.lastMessage = last.content || "";
+          c.lastMessage = messagePreviewText(last) || last.content || "";
           c.lastTime = last.createdAt || c.lastTime;
         }
         const roles = c._unreadRoles || ["boss"];
