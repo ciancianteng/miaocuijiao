@@ -360,11 +360,10 @@ async function writePngFixture(name, b64) {
 
   if (browser) {
     const pngPath = await writePngFixture("ui-upload.png", PNG_B64);
-    const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
-    const csPage = await context.newPage();
-    const bossPage = await context.newPage();
 
-    // CS UI login + image button
+    // --- CS UI (isolated context) ---
+    const csCtx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    const csPage = await csCtx.newPage();
     await csPage.goto(`${BASE}/customer-service/login/?t=${Date.now()}`, { waitUntil: "domcontentloaded", timeout: 90000 });
     await csPage.waitForSelector('input[name="account"]', { timeout: 30000 });
     await csPage.fill('input[name="account"]', CS_EMAIL);
@@ -374,34 +373,25 @@ async function writePngFixture(name, b64) {
       csPage.click('button[type="submit"]'),
     ]);
     await csPage.waitForTimeout(1500);
-    // Prefer in-app nav so SPA modules stay mounted.
     const convNav = csPage.locator('.cs-nav button:has-text("统一会话池"), a:has-text("统一会话池")');
-    if (await convNav.count()) {
-      await convNav.first().click();
-    } else {
-      await csPage.goto(`${BASE}/customer-service/conversations/?t=${Date.now()}`, { waitUntil: "domcontentloaded", timeout: 90000 });
-    }
+    if (await convNav.count()) await convNav.first().click();
+    else await csPage.goto(`${BASE}/customer-service/conversations/?t=${Date.now()}`, { waitUntil: "domcontentloaded", timeout: 90000 });
     await csPage.waitForFunction(() => !!(window.MCJChatMedia && window.MCJChatMedia.pickAndSendImages), null, { timeout: 30000 }).catch(() => {});
     await csPage.waitForTimeout(1500);
     const mediaReady = await csPage.evaluate(() => !!(window.MCJChatMedia && window.MCJChatMedia.pickAndSendImages));
     step("ui_cs_media_loaded", mediaReady, mediaReady ? "MCJChatMedia ready" : "missing MCJChatMedia");
 
-    // open conversation via SPA when possible
-    await csPage.evaluate((id) => {
-      const row = document.querySelector(
-        `[data-open-conversation="${id}"], [data-select-conversation="${id}"], [data-conv-id="${id}"], [data-conversation-id="${id}"]`
-      );
-      if (row) row.click();
-    }, convId);
-    await csPage.waitForTimeout(1500);
-    if (!(await csPage.locator("[data-cs-image]").count())) {
-      const tab = csPage.locator('[data-conv-filter="active"]');
-      if (await tab.count()) await tab.click();
-      await csPage.waitForTimeout(800);
-      const item = csPage.locator("[data-open-conversation], [data-select-conversation]").first();
-      if (await item.count()) await item.click();
-      await csPage.waitForTimeout(1500);
+    await csPage.locator('[data-conv-filter="active"]').click().catch(() => {});
+    await csPage.waitForTimeout(600);
+    const convRow = csPage.locator(`[data-conversation="${convId}"]`);
+    if (await convRow.count()) {
+      await convRow.first().click();
+    } else {
+      const any = csPage.locator("[data-conversation]").first();
+      if (await any.count()) await any.click();
     }
+    await csPage.waitForTimeout(2000);
+    await csPage.waitForSelector("[data-cs-image]", { timeout: 15000 }).catch(() => {});
     const imgBtn = csPage.locator("[data-cs-image]");
     const btnOk = (await imgBtn.count()) > 0;
     step("ui_cs_image_button", btnOk, btnOk ? await imgBtn.first().innerText().catch(() => "btn") : "missing");
@@ -414,7 +404,7 @@ async function writePngFixture(name, b64) {
       ]);
       if (fileChooser) {
         await fileChooser.setFiles(pngPath);
-        await csPage.waitForTimeout(5000);
+        await csPage.waitForTimeout(6000);
         const hasImg = await csPage.locator(".cs-chat-messages .mcj-chat-img, .cs-chat-messages [data-chat-image]").count();
         step("ui_cs_image_send_visible", hasImg > 0, `thumbs=${hasImg}`);
         await shot(csPage, "cs-after-image-send");
@@ -424,12 +414,13 @@ async function writePngFixture(name, b64) {
     } else {
       step("ui_cs_image_send_visible", false, "button/media missing");
     }
+    await csCtx.close();
 
-    // Boss UI
-    // Boss UI — seed portal JWT keys before opening support (portal-early-gate)
-    const bossSeed = await context.newPage();
-    await bossSeed.goto(`${BASE}/`, { waitUntil: "domcontentloaded", timeout: 90000 });
-    await bossSeed.evaluate(
+    // --- Boss UI (isolated context + portal JWT) ---
+    const bossCtx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    const bossPage = await bossCtx.newPage();
+    await bossPage.goto(`${BASE}/`, { waitUntil: "domcontentloaded", timeout: 90000 });
+    await bossPage.evaluate(
       async ({ email, pass }) => {
         const res = await fetch("/api/auth", {
           method: "POST",
@@ -442,8 +433,7 @@ async function writePngFixture(name, b64) {
         const refresh = session.refreshToken || session.refresh_token || "";
         const expiresAt = session.expiresAt || session.expires_at || "";
         const user = body.user || session.user || { email, role: "boss" };
-        const stores = [localStorage, sessionStorage];
-        stores.forEach((store) => {
+        [localStorage, sessionStorage].forEach((store) => {
           try {
             if (token) store.setItem("mcjAuthAccessToken", token);
             if (refresh) store.setItem("mcjAuthRefreshToken", refresh);
@@ -459,8 +449,6 @@ async function writePngFixture(name, b64) {
       },
       { email: BOSS_A, pass: PASS }
     );
-    await bossSeed.close();
-
     await bossPage.goto(`${BASE}/support.html?conversation_id=${encodeURIComponent(convId)}&t=${Date.now()}`, {
       waitUntil: "domcontentloaded",
       timeout: 90000,
@@ -468,7 +456,7 @@ async function writePngFixture(name, b64) {
     await bossPage.waitForFunction(() => !!(window.MCJChatMedia && window.MCJChatMedia.pickAndSendImages), null, {
       timeout: 30000,
     }).catch(() => {});
-    await bossPage.waitForTimeout(2000);
+    await bossPage.waitForTimeout(2500);
     const bossMedia = await bossPage.evaluate(() => !!(window.MCJChatMedia && window.MCJChatMedia.pickAndSendImages));
     step("ui_boss_media_loaded", bossMedia, bossMedia ? "ok" : `url=${bossPage.url()}`);
     const bossBtn = bossPage.locator("[data-chat-image-btn]");
@@ -476,6 +464,7 @@ async function writePngFixture(name, b64) {
     const bossImgs = await bossPage.locator(".mcj-chat-img, [data-chat-image]").count();
     step("ui_boss_sees_history_images", bossImgs >= 1, `imgs=${bossImgs}`);
     await shot(bossPage, "boss-support-chat");
+    await bossCtx.close();
 
     await browser.close();
   }
