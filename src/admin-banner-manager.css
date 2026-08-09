@@ -157,6 +157,7 @@
   padding: 0 !important;
   border: 0 !important;
   opacity: 0 !important;
+  color: transparent !important;
   overflow: hidden !important;
   cursor: pointer !important;
   pointer-events: auto !important;
@@ -165,6 +166,8 @@
   background: transparent !important;
   box-shadow: none !important;
   font-size: 0 !important;
+  line-height: 0 !important;
+  text-indent: -9999px !important;
   z-index: 3 !important;
 }
 

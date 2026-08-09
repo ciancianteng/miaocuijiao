@@ -239,7 +239,9 @@ async function uploadBannerImage(dataUrl, filename = "banner") {
   if (!file) throw new Error("图片数据无效，请重新上传。");
   const bucket = await ensureBannerBucket();
   const ext = (file.contentType.split("/")[1] || "png").replace("jpeg", "jpg");
-  const safeName = String(filename || "homepage-banner").replace(/[^a-z0-9.-]/gi, "-") || "homepage-banner";
+  const rawName = String(filename || "homepage-banner");
+  const baseName = rawName.replace(/\.[a-z0-9]+$/i, "");
+  const safeName = baseName.replace(/[^a-z0-9.-]/gi, "-") || "homepage-banner";
   const objectPath = `homepage/${Date.now()}-${safeName}.${ext}`;
   const response = await fetch(storageObjectUrl(bucket, objectPath), {
     method: "POST",
