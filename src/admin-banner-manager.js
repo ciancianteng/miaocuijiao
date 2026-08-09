@@ -184,6 +184,9 @@
             esc(formatTime(item.created_at)) +
             "</span>" +
             (active ? '<span class="banner-ops-badge live">使用中</span>' : "") +
+            (item.is_active === false
+              ? '<span class="banner-ops-badge">已停用</span>'
+              : '<span class="banner-ops-badge live">已启用</span>') +
             (editing ? '<span class="banner-ops-badge live">编辑中</span>' : "") +
             "</div>" +
             '<label class="banner-ops-sort">标题 <input type="text" maxlength="80" value="' +
@@ -213,6 +216,11 @@
               : '<button class="mini-btn" type="button" data-banner-set="' +
                 esc(item.id) +
                 '">设为当前</button>') +
+            '<button class="mini-btn" type="button" data-banner-toggle-active="' +
+            esc(item.id) +
+            '">' +
+            (item.is_active === false ? "启用" : "停用") +
+            "</button>" +
             '<button class="mini-btn danger" type="button" data-banner-delete="' +
             esc(item.id) +
             '">删除</button>' +
@@ -234,7 +242,7 @@
       (state.draft && state.draft.url) || (state.current && state.current.image_url) || "";
     var editing = !!state.editingId;
     var publishLabel = state.publishing
-      ? (editing ? "保存中…" : "发布中…")
+      ? "上传中/发布中…"
       : editing
         ? "保存编辑并发布"
         : "保存并发布";
@@ -342,32 +350,59 @@
   }
   function bindUploadZone() {
     var zone = document.querySelector("[data-banner-upload-zone]");
-    var input = document.querySelector("[data-banner-file]");
+    var input = zone && zone.querySelector("[data-banner-file]");
     if (!zone || !input || zone.dataset.bound === "1") return;
     zone.dataset.bound = "1";
+    // Ensure the native control is enabled and reachable.
+    input.disabled = false;
+    input.removeAttribute("disabled");
+    input.style.pointerEvents = "auto";
+    // Transparent full-zone <input type="file"> must receive the real user click.
+    // Never preventDefault / stopPropagation on click — that cancels the OS file picker
+    // (this was the P0 regression: zone click called preventDefault over the input).
     zone.addEventListener("click", function (e) {
-      e.preventDefault();
-      input.click();
+      if (e.target === input || (input.contains && input.contains(e.target))) return;
+      // Fallback only when click landed on decorative inner (should not happen — input covers zone).
+      try {
+        input.click();
+      } catch (err) {
+        console.error("[Banner 管理] 打开文件选择器失败", err);
+      }
     });
     input.addEventListener("change", function () {
-      acceptFile(input.files && input.files[0]);
+      var file = input.files && input.files[0];
+      if (!file) return;
+      acceptFile(file);
       input.value = "";
     });
+    function onDragEnterOver(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+      zone.classList.add("is-dragover");
+    }
+    function onDragLeave(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      var next = e.relatedTarget;
+      if (next && zone.contains(next)) return;
+      zone.classList.remove("is-dragover");
+    }
+    function onDrop(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      zone.classList.remove("is-dragover");
+      var file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      if (file) acceptFile(file);
+    }
     ["dragenter", "dragover"].forEach(function (name) {
-      zone.addEventListener(name, function (e) {
-        e.preventDefault();
-        zone.classList.add("is-dragover");
-      });
+      zone.addEventListener(name, onDragEnterOver);
+      input.addEventListener(name, onDragEnterOver);
     });
-    ["dragleave", "drop"].forEach(function (name) {
-      zone.addEventListener(name, function (e) {
-        e.preventDefault();
-        zone.classList.remove("is-dragover");
-        if (name === "drop" && e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]) {
-          acceptFile(e.dataTransfer.files[0]);
-        }
-      });
-    });
+    zone.addEventListener("dragleave", onDragLeave);
+    input.addEventListener("dragleave", onDragLeave);
+    zone.addEventListener("drop", onDrop);
+    input.addEventListener("drop", onDrop);
   }
   function exportCoverDataUrl() {
     return new Promise(function (resolve, reject) {
@@ -470,6 +505,8 @@
   function publish() {
     if (!state.draft || state.publishing) return;
     state.publishing = true;
+    state.error = "";
+    state.message = "上传中/发布中…";
     render();
     exportCoverDataUrl()
       .then(function (dataUrl) {
@@ -501,7 +538,9 @@
         });
       })
       .then(function (res) {
-        alert(res.message || (state.editingId ? "Banner 已保存" : "Banner 发布成功"));
+        var okMsg = res.message || (state.editingId ? "Banner 已保存" : "Banner 发布成功");
+        state.message = okMsg;
+        alert(okMsg);
         resetDraft(false);
         state.current = res.banner || state.current;
         state.publishing = false;
@@ -512,7 +551,10 @@
         return load();
       })
       .catch(function (err) {
-        alert(err.message || "保存失败");
+        var msg = err.message || "保存失败";
+        state.error = msg;
+        state.message = "";
+        alert(msg);
         state.publishing = false;
         render();
         bind();
@@ -541,6 +583,24 @@
       })
       .catch(function (err) {
         alert(err.message || "删除失败");
+      });
+  }
+  function toggleActive(id) {
+    var item = state.history.find(function (row) {
+      return String(row.id) === String(id);
+    });
+    var next = !(item && item.is_active !== false);
+    apiPost({ action: "toggle_active", id: id, is_active: next })
+      .then(function (res) {
+        alert(res.message || (next ? "Banner 已启用" : "Banner 已停用"));
+        try {
+          localStorage.setItem("mcj_banner_published_at", String(Date.now()));
+          window.dispatchEvent(new Event("mcj:platform-data-updated"));
+        } catch (e) {}
+        return load();
+      })
+      .catch(function (err) {
+        alert(err.message || "启用/停用失败");
       });
   }
   function previewHistory(id) {
@@ -572,6 +632,11 @@
     document.querySelectorAll("[data-banner-delete]").forEach(function (btn) {
       btn.onclick = function () {
         removeBanner(btn.getAttribute("data-banner-delete"));
+      };
+    });
+    document.querySelectorAll("[data-banner-toggle-active]").forEach(function (btn) {
+      btn.onclick = function () {
+        toggleActive(btn.getAttribute("data-banner-toggle-active"));
       };
     });
     document.querySelectorAll("[data-banner-save-meta]").forEach(function (btn) {
@@ -624,7 +689,15 @@
       .then(load)
       .catch(function () {});
   }
+  function onHashOrSection() {
+    var hash = String(location.hash || "").replace(/^#/, "");
+    var section = document.body && document.body.dataset ? document.body.dataset.adminSection : "";
+    if (hash === "banners" || section === "banners") {
+      if (window.MCJAdminAuthFetch && target()) load();
+    }
+  }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
   else init();
+  window.addEventListener("hashchange", onHashOrSection);
   window.MCJAdminBannerManager = { reload: load };
 })();
