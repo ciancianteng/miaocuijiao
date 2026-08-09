@@ -102,40 +102,163 @@
             '<button class="mini-btn danger" data-admin-order-cancel="'+esc(o.id)+'">取消</button>'+
             '<button class="mini-btn danger" data-admin-order-delete="'+esc(o.id)+'">删除</button></td></tr>';
         }).join(''):'<tr><td colspan="9"><div class="empty">暂无订单</div></td></tr>')+
-        '</tbody></table></div><div id="adminOrderGrabModal" hidden></div><div id="adminProofLightbox" class="admin-proof-lightbox" hidden></div>';
+        '</tbody></table></div><div id="adminProofLightbox" class="admin-proof-lightbox" hidden></div>';
+      ensureGrabModalHost();
     }).catch(function(err){target.innerHTML=note(err.message)});
   }
   function grabStatusLabel(s){
     return ({pending_customer_selection:'待老板选择',selected:'已指定',not_selected:'未选中',withdrawn:'已撤回',cancelled:'已取消',rejected:'已拒绝'})[s]||s||'-';
   }
+  function onlineStatusLabel(c){
+    var raw=String((c&&(c.onlineStatusLabel||c.onlineStatus||c.online_status))||'').trim();
+    if(!raw)return '未知';
+    if(/online|在线/i.test(raw)&&!/offline|busy|忙碌|离线/i.test(raw))return '在线';
+    if(/busy|忙碌/i.test(raw))return '忙碌';
+    if(/offline|离线/i.test(raw))return '离线';
+    return raw;
+  }
   function fmtGrabTime(v){
     if(!v)return '-';
     try{return new Date(v).toLocaleString('zh-CN',{hour12:false})}catch(e){return String(v)}
   }
-  function showGrabModal(orderId,mode){
+  function ensureGrabModalHost(){
+    var box=document.getElementById('adminOrderGrabModal');
+    if(!box){
+      box=document.createElement('div');
+      box.id='adminOrderGrabModal';
+      box.className='admin-grab-modal';
+      box.hidden=true;
+      box.setAttribute('aria-hidden','true');
+      document.body.appendChild(box);
+    }else if(!box.classList.contains('admin-grab-modal')){
+      box.classList.add('admin-grab-modal');
+    }
+    return box;
+  }
+  function closeGrabModal(){
     var box=document.getElementById('adminOrderGrabModal');
     if(!box)return;
+    box.hidden=true;
+    box.setAttribute('aria-hidden','true');
+    box.innerHTML='';
+  }
+  function companionProfileHref(c){
+    var id=String((c&&(c.id||c.companionId||c.user_id||c.uid))||'').trim();
+    if(c&&c.detailUrl)return String(c.detailUrl);
+    return '/player.html?id='+encodeURIComponent(id);
+  }
+  function companionPublicId(c){
+    return String((c&&(c.companionUid||c.companionCode||c.publicId||c.companion_uid||c.id))||'-');
+  }
+  function grabCardHtml(orderId,g,mode,designatedId){
+    var c=g.companion||{};
+    var cid=String(g.companionId||c.id||'');
+    var isFinal=!!(designatedId&&cid&&designatedId===cid)||String(g.status||'')==='selected';
+    var avatar=c.avatarUrl||c.cardImageUrl
+      ?('<img class="admin-grab-avatar" src="'+esc(c.avatarUrl||c.cardImageUrl)+'" alt="">')
+      :('<div class="admin-grab-avatar-fallback">'+esc(String(c.nickname||'?').slice(0,1))+'</div>');
+    var selectBtn=(mode==='assign'&&cid&&!isFinal)
+      ?('<button class="mini-btn primary" type="button" data-admin-confirm-grab="'+esc(orderId)+'" data-companion-id="'+esc(cid)+'" data-from-grabs="1">选择该陪玩</button>')
+      :(isFinal?'<span class="admin-sync-note" style="display:inline;margin:0;color:#5ee0a1">已指定</span>':'');
+    return '<article class="admin-grab-card'+(isFinal?' is-final':'')+'">'+avatar+
+      '<div class="admin-grab-card-body"><strong>'+esc(c.nickname||'陪玩')+(g.bossPreferred?' · 老板意向':'')+'</strong>'+
+      '<p>陪玩 ID '+esc(companionPublicId(c))+' · 等级 '+esc(c.level||c.levelName||'-')+'</p>'+
+      '<p>游戏/服务 '+esc(c.mainGame||c.game||c.mainService||'-')+' · 价格 '+money(c.price||0)+'</p>'+
+      '<p>在线状态 '+esc(onlineStatusLabel(c))+' · 抢单 '+esc(grabStatusLabel(g.status))+' · '+esc(fmtGrabTime(g.grabbedAt||g.grabbed_at))+'</p>'+
+      '<div class="admin-grab-actions">'+
+      '<a class="mini-btn" href="'+esc(companionProfileHref(c))+'" target="_blank" rel="noopener">查看资料</a>'+
+      selectBtn+
+      (c.voiceUrl?'<a class="mini-btn" href="'+esc(c.voiceUrl)+'" target="_blank" rel="noopener">试听</a>':'')+
+      '</div></div></article>';
+  }
+  function playerCardHtml(orderId,p){
+    var profileId=String(p.user_id||p.uid||p.userId||'').trim();
+    if(!profileId)return '';
+    var nick=p.nickname||p.name||'陪玩';
+    var avatar=p.avatar_url||p.avatar||p.card_image_url
+      ?('<img class="admin-grab-avatar" src="'+esc(p.avatar_url||p.avatar||p.card_image_url)+'" alt="">')
+      :('<div class="admin-grab-avatar-fallback">'+esc(String(nick).slice(0,1))+'</div>');
+    var pub=p.companionUid||p.companion_uid||p.companionCode||p.publicId||profileId;
+    return '<article class="admin-grab-card" data-admin-player-row data-name="'+esc(String(nick).toLowerCase())+'" data-code="'+esc(String(pub).toLowerCase())+'" data-id="'+esc(profileId.toLowerCase())+'">'+avatar+
+      '<div class="admin-grab-card-body"><strong>'+esc(nick)+'</strong>'+
+      '<p>陪玩 ID '+esc(pub)+' · 等级 '+esc(p.levelName||p.level_name||p.level||'-')+'</p>'+
+      '<p>游戏/服务 '+esc(p.mainGame||p.game||p.mainService||p.main_service||'-')+' · 价格 '+money(p.price||0)+'</p>'+
+      '<p>在线状态 '+esc(onlineStatusLabel(p))+' · 审核 '+esc(p.auditStatus||p.applicationStatus||'-')+'</p>'+
+      '<div class="admin-grab-actions">'+
+      '<a class="mini-btn" href="/player.html?id='+encodeURIComponent(profileId)+'" target="_blank" rel="noopener">查看资料</a>'+
+      '<button class="mini-btn primary" type="button" data-admin-confirm-grab="'+esc(orderId)+'" data-companion-id="'+esc(profileId)+'" data-from-grabs="0">选择该陪玩</button>'+
+      '</div></div></article>';
+  }
+  function isPublicHallOrder(order){
+    var st=String((order&&(order.status||''))||'');
+    var cid=String((order&&(order.companion_id||order.companionId))||'').trim();
+    return (st==='pending'||st==='waiting_boss_confirm')&&!cid;
+  }
+  function approvedPlayers(list){
+    return (list||[]).filter(function(p){
+      var audit=String(p.auditStatus||p.applicationStatus||p.verification_status||p.application_status||'').toLowerCase();
+      var allow=p.allowOrders!==false&&p.allow_orders!==false;
+      var approved=/approved|已通过|verified|passed/.test(audit)||p.auditStatus==='已通过';
+      return approved&&allow&&String(p.user_id||p.uid||p.userId||'').trim();
+    });
+  }
+  function paintGrabModal(orderId,mode,res,players){
+    var box=ensureGrabModalHost();
+    var grabs=res.grabs||[];
+    var intent=res.bossIntent||null;
+    var order=res.order||{};
+    var designatedId=String(order.companion_id||order.companionId||'');
+    var hall=isPublicHallOrder(order);
+    var title=mode==='assign'?'指定陪玩':'查看抢单人';
+    var meta='订单 '+esc(order.orderNo||orderId)+
+      ' · 状态 '+esc(order.statusText||statusText(order.status))+
+      (intent?' · 老板意向：'+esc(intent.companionName||intent.companionId):'')+
+      (designatedId?' · 已指定：'+esc(order.companionName||designatedId):' · 尚未指定');
+    var body='';
+    if(mode==='view'){
+      body=grabs.length
+        ?('<div><h4 style="margin:0 0 8px;color:#fff">抢单陪玩（'+grabs.length+'）</h4>'+grabs.map(function(g){return grabCardHtml(orderId,g,'view',designatedId)}).join('')+'</div>')
+        :'<div class="admin-grab-empty" data-admin-grabs-empty>暂无抢单人</div>';
+    }else{
+      var grabBlock=grabs.length
+        ?('<div><h4 style="margin:0 0 8px;color:#fff">已抢单陪玩（'+grabs.length+'）</h4><p class="admin-assign-hint">公开抢单订单请从抢单人中确认指定；确认后写入订单并进入待陪玩确认。</p>'+
+          grabs.map(function(g){return grabCardHtml(orderId,g,'assign',designatedId)}).join('')+'</div>')
+        :'<div class="admin-grab-empty" data-admin-grabs-empty>暂无抢单人</div>';
+      var freeBlock='';
+      if(hall){
+        freeBlock='<p class="admin-assign-hint">公开抢单路径不支持直接指定任意陪玩。请从上方抢单人中选择，或走 VIP 指定下单。</p>';
+      }else{
+        var approved=approvedPlayers(players||[]);
+        freeBlock='<hr style="border:0;border-top:1px solid rgba(255,255,255,.1);margin:14px 0">'+
+          '<h4 style="margin:0 0 8px;color:#fff">可用/已审核陪玩</h4>'+
+          '<input class="admin-assign-search" type="search" data-admin-assign-search placeholder="搜索昵称 / 陪玩 ID / UUID" autocomplete="off">'+
+          '<div class="admin-assign-picker-list" data-admin-assign-picker>'+
+          (approved.length?approved.map(function(p){return playerCardHtml(orderId,p)}).join(''):'<div class="admin-grab-empty">暂无可用陪玩</div>')+
+          '</div>'+
+          '<p class="admin-assign-hint">指定将真实写入订单 companion，与客服端同源。</p>';
+      }
+      body=grabBlock+freeBlock;
+    }
     box.hidden=false;
-    box.innerHTML='<div class="content-loading">加载抢单人...</div>';
-    post('/api/admin/orders',{action:'list_grabs',id:orderId}).then(function(res){
-      var grabs=res.grabs||[];
-      var intent=res.bossIntent||null;
-      var order=res.order||{};
-      var designatedId=String(order.companion_id||order.companionId||'');
-      var html='<div class="admin-final-head"><div><h3>'+(mode==='assign'?'指定陪玩':'抢单人列表')+'</h3><p>订单 '+esc(order.orderNo||orderId)+(intent?' · 老板意向：'+esc(intent.companionName||intent.companionId):'')+(designatedId?' · 最终指定：'+esc(order.companionName||designatedId):' · 尚未最终指定')+'</p></div><button class="mini-btn" type="button" data-admin-close-grabs>关闭</button></div>';
-      if(!grabs.length){html+='<div class="empty">暂无抢单记录</div>';box.innerHTML=html;return;}
-      html+='<div class="admin-final-table-wrap"><table class="admin-final-table"><thead><tr><th>头像</th><th>昵称</th><th>等级</th><th>游戏</th><th>单价</th><th>抢单时间</th><th>抢单状态</th><th>最终指定</th><th>意向</th><th>操作</th></tr></thead><tbody>'+
-        grabs.map(function(g){
-          var c=g.companion||{};
-          var cid=String(g.companionId||c.id||'');
-          var isFinal=!!(designatedId&&cid&&designatedId===cid)||String(g.status||'')==='selected';
-          return '<tr'+(isFinal?' style="background:rgba(94,224,161,.08)"':'')+'><td>'+(c.avatarUrl?'<img src="'+esc(c.avatarUrl)+'" alt="" style="width:40px;height:40px;border-radius:8px;object-fit:cover">':'-')+'</td><td>'+esc(c.nickname||'-')+'<br><small>'+esc(c.companionUid||c.id||'')+'</small></td><td>'+esc(c.level||'-')+'</td><td>'+esc(c.mainGame||c.game||'-')+'</td><td>'+money(c.price||0)+'</td><td>'+esc(fmtGrabTime(g.grabbedAt||g.grabbed_at))+'</td><td>'+esc(grabStatusLabel(g.status))+'</td><td>'+(isFinal?'<strong style="color:#5ee0a1">是 · 最终指定</strong>':'否')+'</td><td>'+(g.bossPreferred?'是':'否')+'</td><td>'+
-            (mode==='assign'&&!isFinal?'<button class="mini-btn primary" data-admin-confirm-grab="'+esc(orderId)+'" data-companion-id="'+esc(cid)+'">确认指定</button>':'')+
-            (c.voiceUrl?' <a class="mini-btn" href="'+esc(c.voiceUrl)+'" target="_blank" rel="noopener">试听</a>':'')+
-            ' <a class="mini-btn" href="/player.html?id='+encodeURIComponent(c.id||'')+'" target="_blank" rel="noopener">详情</a></td></tr>';
-        }).join('')+'</tbody></table></div>';
-      box.innerHTML=html;
-    }).catch(function(err){box.innerHTML=note(err.message)});
+    box.setAttribute('aria-hidden','false');
+    box.innerHTML='<div class="admin-grab-modal-card" role="dialog" aria-modal="true" aria-label="'+esc(title)+'">'+
+      '<div class="admin-grab-modal-head"><div><h3>'+esc(title)+'</h3><p>'+meta+'</p></div>'+
+      '<button class="mini-btn" type="button" data-admin-close-grabs>关闭</button></div>'+body+'</div>';
+  }
+  function showGrabModal(orderId,mode){
+    var box=ensureGrabModalHost();
+    box.hidden=false;
+    box.setAttribute('aria-hidden','false');
+    box.innerHTML='<div class="admin-grab-modal-card"><div class="content-loading">'+(mode==='assign'?'加载陪玩选择器...':'加载抢单人...')+'</div></div>';
+    var grabsReq=post('/api/admin/orders',{action:'list_grabs',id:orderId});
+    var playersReq=mode==='assign'
+      ?get('/api/admin/players').catch(function(){return {players:[]}})
+      :Promise.resolve({players:[]});
+    Promise.all([grabsReq,playersReq]).then(function(pair){
+      paintGrabModal(orderId,mode,pair[0]||{},(pair[1]&&pair[1].players)||[]);
+    }).catch(function(err){
+      box.innerHTML='<div class="admin-grab-modal-card"><div class="admin-final-head"><div><h3>加载失败</h3></div><button class="mini-btn" type="button" data-admin-close-grabs>关闭</button></div>'+note(err.message||'加载失败')+'</div>';
+    });
   }
   function renderReports(){
     /* 提现与发薪由 src/admin-finance.js 接管 #serviceReportsManagement */
@@ -292,20 +415,37 @@
     if(vg){showGrabModal(vg.dataset.adminViewGrabs,'view');return;}
     var ag=e.target.closest('[data-admin-assign-grab]');
     if(ag){showGrabModal(ag.dataset.adminAssignGrab,'assign');return;}
-    if(e.target.closest('[data-admin-close-grabs]')){
-      var box=document.getElementById('adminOrderGrabModal');
-      if(box){box.hidden=true;box.innerHTML='';}
+    if(e.target.closest('[data-admin-close-grabs]')||e.target.id==='adminOrderGrabModal'||(e.target.classList&&e.target.classList.contains('admin-grab-modal'))){
+      closeGrabModal();
       return;
     }
     var cg=e.target.closest('[data-admin-confirm-grab]');
     if(cg){
-      if(!confirm('确定指定该陪玩？\n\n指定后，其他抢单陪玩将无法再接此订单。'))return;
-      post('/api/admin/orders',{action:'confirm_grab_assignment',id:cg.dataset.adminConfirmGrab,companion_id:cg.dataset.companionId,from_grabs:true}).then(function(res){alert(res.message||'指定成功');var box=document.getElementById('adminOrderGrabModal');if(box){box.hidden=true;box.innerHTML='';}renderOrders();}).catch(function(err){alert(err.message)});
+      var fromGrabs=String(cg.dataset.fromGrabs||'1')!=='0';
+      var label=fromGrabs?'确认指定该抢单陪玩？\n\n确认后订单离开抢单大厅，正式发送给该陪玩等待确认接单；其他抢单陪玩将无法再抢。':'确定指定该陪玩？\n\n指定后将真实写入订单，陪玩端进入待确认。';
+      if(!confirm(label))return;
+      cg.disabled=true;
+      var prevText=cg.textContent;
+      cg.textContent='指定中…';
+      var action=fromGrabs?'confirm_grab_assignment':'assign_companion';
+      post('/api/admin/orders',{action:action,id:cg.dataset.adminConfirmGrab,companion_id:cg.dataset.companionId,from_grabs:!!fromGrabs}).then(function(res){
+        alert(res.message||'指定成功');
+        closeGrabModal();
+        renderOrders();
+      }).catch(function(err){
+        cg.disabled=false;
+        cg.textContent=prevText||'选择该陪玩';
+        alert(err.message||'指定失败');
+      });
       return;
     }
     var ua=e.target.closest('[data-admin-unassign]');
-    if(ua&&confirm('确认取消指定？订单将回到待抢单。')){
-      post('/api/admin/orders',{action:'unassign_companion',id:ua.dataset.adminUnassign}).then(renderOrders).catch(function(err){alert(err.message)});
+    if(ua&&confirm('确认取消指定？\n\n将清除订单已指定陪玩，四端同步恢复未指定/返回抢单。')){
+      ua.disabled=true;
+      post('/api/admin/orders',{action:'unassign_companion',id:ua.dataset.adminUnassign}).then(function(res){
+        alert(res.message||'已取消指定');
+        renderOrders();
+      }).catch(function(err){ua.disabled=false;alert(err.message)});
       return;
     }
     if(e.target.closest('[data-announcement-reset]')){
@@ -377,5 +517,17 @@
     var da=e.target.closest('[data-delete-announcement]');
     if(da&&confirm('确认删除公告？'))post('/api/admin/content',{action:'delete_announcement',id:da.dataset.deleteAnnouncement}).then(renderContent).catch(function(err){alert(err.message)});
   });
-  document.addEventListener('DOMContentLoaded',function(){if(!Auth)return;Auth.ensureValidToken().then(function(){renderDashboard();renderOrders();renderReports();renderContent()}).catch(function(){})});
+  document.addEventListener('input',function(e){
+    var search=e.target.closest('[data-admin-assign-search]');
+    if(!search)return;
+    var q=String(search.value||'').trim().toLowerCase();
+    var box=document.getElementById('adminOrderGrabModal');
+    if(!box)return;
+    box.querySelectorAll('[data-admin-player-row]').forEach(function(row){
+      if(!q){row.hidden=false;return;}
+      var hay=((row.dataset.name||'')+' '+(row.dataset.code||'')+' '+(row.dataset.id||'')).toLowerCase();
+      row.hidden=hay.indexOf(q)<0;
+    });
+  });
+  document.addEventListener('DOMContentLoaded',function(){if(!Auth)return;Auth.ensureValidToken().then(function(){ensureGrabModalHost();renderDashboard();renderOrders();renderReports();renderContent()}).catch(function(){})});
 })();
