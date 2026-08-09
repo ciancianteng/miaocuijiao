@@ -4,6 +4,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import zlib from "node:zlib";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 
@@ -19,14 +20,58 @@ const ART_REPO = path.join(ROOT, "artifacts", "cs-boss-image-chat-e2e");
 fs.mkdirSync(ART, { recursive: true });
 fs.mkdirSync(ART_REPO, { recursive: true });
 
-/** 10x10 red PNG */
-const PNG_B64 =
-  "iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+7AAAAFUlEQVR42mP8z8BQz0AEYBxVSF+FABJADveWkH6oAAAAAElFTkSuQmCC";
-const PNG_DATA = `data:image/png;base64,${PNG_B64}`;
-/** 10x10 blue-ish PNG variant (different bytes) */
-const PNG2_B64 =
-  "iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+7AAAAFUlEQVR42mNkYPhfz0AEYBxVSF+FAP5FDvcfRYQwAAAAAElFTkSuQmCC";
-const PNG2_DATA = `data:image/png;base64,${PNG2_B64}`;
+/** Valid solid-color PNG fixtures (legacy tiny base64 blobs were undecodable). */
+function makePngDataUrlSync(r, g, b, w = 160, h = 100) {
+  function crc32(buf) {
+    let c = ~0;
+    for (let i = 0; i < buf.length; i++) {
+      c ^= buf[i];
+      for (let k = 0; k < 8; k++) c = c & 1 ? (0xedb88320 ^ (c >>> 1)) : c >>> 1;
+    }
+    return ~c >>> 0;
+  }
+  function u32(n) {
+    const b = Buffer.alloc(4);
+    b.writeUInt32BE(n >>> 0, 0);
+    return b;
+  }
+  function chunk(type, data) {
+    const typeBuf = Buffer.from(type, "ascii");
+    const len = u32(data.length);
+    const crc = u32(crc32(Buffer.concat([typeBuf, data])));
+    return Buffer.concat([len, typeBuf, data, crc]);
+  }
+  const raw = Buffer.alloc((w * 3 + 1) * h);
+  for (let y = 0; y < h; y++) {
+    const row = y * (w * 3 + 1);
+    raw[row] = 0;
+    for (let x = 0; x < w; x++) {
+      const i = row + 1 + x * 3;
+      raw[i] = r;
+      raw[i + 1] = g;
+      raw[i + 2] = b;
+    }
+  }
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(w, 0);
+  ihdr.writeUInt32BE(h, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 2;
+  const png = Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk("IHDR", ihdr),
+    chunk("IDAT", zlib.deflateSync(raw, { level: 9 })),
+    chunk("IEND", Buffer.alloc(0)),
+  ]);
+  return { dataUrl: `data:image/png;base64,${png.toString("base64")}`, buf: png };
+}
+
+const PNG1 = makePngDataUrlSync(220, 40, 80);
+const PNG2 = makePngDataUrlSync(40, 120, 220);
+const PNG_DATA = PNG1.dataUrl;
+const PNG2_DATA = PNG2.dataUrl;
+const PNG_B64 = PNG1.buf.toString("base64");
+const PNG2_B64 = PNG2.buf.toString("base64");
 
 const results = [];
 function step(name, ok, detail) {
