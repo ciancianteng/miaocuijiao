@@ -168,7 +168,16 @@
 
     var basic = rows([
       { 0: "头像", 1: media.avatarUrl ? thumb(media.avatarUrl, "头像") : "", 2: "尚未上传头像", html: true },
-      { 0: "卡面封面", 1: media.coverUrl ? thumb(media.coverUrl, "卡面封面") : "", 2: "尚未上传卡面封面", html: true },
+      {
+        0: "卡面展示",
+        1: media.coverUrl
+          ? thumb(media.coverUrl, "卡面")
+          : media.avatarUrl
+            ? thumb(media.avatarUrl, "卡面(=头像)")
+            : "",
+        2: "使用头像/相册（已取消单独卡面上传）",
+        html: true,
+      },
       ["昵称", d.name || d.nickname],
       ["陪玩 ID", d.playerId || d.id],
       ["邮箱", d.email || "尚未填写邮箱"],
@@ -330,8 +339,22 @@
         .join("") || emptyText("尚未上传语音");
     var mediaHtml =
       rows([
-        { 0: "当前头像", 1: media.avatarUrl ? thumb(media.avatarUrl, "头像") : "", 2: "尚未上传头像", html: true },
-        { 0: "卡面封面", 1: media.coverUrl ? thumb(media.coverUrl, "卡面封面") : "", 2: "尚未上传卡面封面", html: true },
+      {
+        0: "当前头像",
+        1: media.avatarUrl ? thumb(media.avatarUrl, "头像") : "",
+        2: "尚未上传头像",
+        html: true,
+      },
+      {
+        0: "卡面展示",
+        1: media.coverUrl
+          ? thumb(media.coverUrl, "卡面")
+          : media.avatarUrl
+            ? thumb(media.avatarUrl, "卡面(=头像)")
+            : "",
+        2: "使用头像/相册（已取消单独卡面上传）",
+        html: true,
+      },
         ["媒体总状态", media.statusLabel || "—"],
         ["驳回原因", media.rejectReason || "无"],
       ]) +

@@ -12,6 +12,10 @@
   var suppressVoiceSave = false;
   var uploadBusy = {};
   var uploadErrors = {};
+  /** In-memory only: blob/data previews must NEVER be written to localStorage (QuotaExceeded). */
+  var livePreviews = {};
+  var liveVoiceBlob = null;
+  var liveVoiceObjectUrl = "";
 
   var steps = [
     "阅读陪玩制度",
@@ -48,7 +52,88 @@
   function now() { return new Date().toLocaleString("zh-CN"); }
   function uid(prefix) { return prefix + "-" + Date.now().toString(36).toUpperCase() + Math.random().toString(16).slice(2, 6).toUpperCase(); }
   function readRaw(key) { try { return JSON.parse(localStorage.getItem(key) || "{}") || {}; } catch (e) { return {}; } }
-  function writeRaw(key, data) { localStorage.setItem(key, JSON.stringify(data || {})); }
+  function isEphemeralMediaUrl(v) {
+    return /^(data:|blob:|filesystem:|file:)/i.test(String(v || "").trim());
+  }
+  function scrubAssetForStorage(asset) {
+    if (!asset) return asset;
+    if (typeof asset === "string") {
+      return isEphemeralMediaUrl(asset) ? "" : asset;
+    }
+    if (Array.isArray(asset)) {
+      return asset.map(scrubAssetForStorage).filter(function (item) {
+        if (!item) return false;
+        if (typeof item === "string") return !!item;
+        return !!(item.url || item.path || item.id);
+      });
+    }
+    var out = Object.assign({}, asset);
+    if (isEphemeralMediaUrl(out.url)) out.url = "";
+    if (isEphemeralMediaUrl(out.path)) out.path = "";
+    if (isEphemeralMediaUrl(out.preview)) out.preview = "";
+    // Keep durable path/url/status only — never persist base64 payloads.
+    if (!out.url && !out.path && out.status === "uploading") {
+      return { status: "uploading" };
+    }
+    return out;
+  }
+  function scrubDraftForStorage(draft) {
+    draft = draft && typeof draft === "object" ? draft : {};
+    var next = Object.assign({}, draft);
+    next.uploads = Object.assign({}, draft.uploads || {});
+    // Deprecated card-cover upload removed from step 3/5 — drop from local draft.
+    delete next.uploads.cover;
+    delete next.uploads.cardCover;
+    delete next.uploads.card_cover;
+    delete next.uploads.profile_cover;
+    Object.keys(next.uploads).forEach(function (key) {
+      next.uploads[key] = scrubAssetForStorage(next.uploads[key]);
+    });
+    next.identity = Object.assign({}, draft.identity || {});
+    ["idFront", "idBack", "depositProof", "idHandheld"].forEach(function (key) {
+      if (next.identity[key]) next.identity[key] = scrubAssetForStorage(next.identity[key]);
+    });
+    next.voice = Object.assign({}, draft.voice || {});
+    if (isEphemeralMediaUrl(next.voice.url)) {
+      next.voice = Object.assign({}, next.voice, { url: "", hasLocal: true });
+    }
+    if (next.voice.fileUpload) next.voice.fileUpload = scrubAssetForStorage(next.voice.fileUpload);
+    return next;
+  }
+  function writeRaw(key, data) {
+    var payload = data || {};
+    if (key === DRAFT_KEY) payload = scrubDraftForStorage(payload);
+    var text = JSON.stringify(payload);
+    try {
+      localStorage.setItem(key, text);
+    } catch (err) {
+      var msg = String((err && err.name) || "") + " " + String((err && err.message) || err || "");
+      if (/quota|QuotaExceeded|NS_ERROR_DOM_QUOTA/i.test(msg)) {
+        // Last resort: drop ephemeral media leftovers and retry once.
+        if (key === DRAFT_KEY) {
+          try {
+            var lean = scrubDraftForStorage(payload);
+            localStorage.setItem(key, JSON.stringify(lean));
+            return;
+          } catch (e2) {}
+        }
+        throw new Error(
+          "浏览器本地草稿空间已满（不是云端 Storage 配额）。已改为仅保存图片云端地址；请刷新后重新上传头像/相册。"
+        );
+      }
+      throw err;
+    }
+  }
+  function setLivePreview(key, url) {
+    if (livePreviews[key] && livePreviews[key] !== url && /^blob:/i.test(livePreviews[key])) {
+      try { URL.revokeObjectURL(livePreviews[key]); } catch (e) {}
+    }
+    if (url) livePreviews[key] = url;
+    else delete livePreviews[key];
+  }
+  function clearLivePreview(key) {
+    setLivePreview(key, "");
+  }
   function defaultDeposit() {
     return {
       amount: 100,
@@ -89,7 +174,18 @@
     return { id: applicantId(), name: "当前账号" };
   }
   function readDraft() {
-    return Object.assign({ step: 0, data: {}, uploads: {}, gameCards: [], voice: {}, rulesAgreement: {} }, readRaw(DRAFT_KEY));
+    var draft = Object.assign(
+      { step: 0, data: {}, uploads: {}, gameCards: [], voice: {}, rulesAgreement: {} },
+      readRaw(DRAFT_KEY)
+    );
+    // One-time cleanup of legacy base64 drafts that caused QuotaExceededError.
+    if (draft.uploads) {
+      delete draft.uploads.cover;
+      delete draft.uploads.cardCover;
+      delete draft.uploads.card_cover;
+      delete draft.uploads.profile_cover;
+    }
+    return scrubDraftForStorage(draft);
   }
   function saveDraft(patch) {
     var draft = readDraft();
@@ -150,7 +246,9 @@
   function normalizeUploadAsset(value) {
     return U() ? U().normalizeAsset(value) : { url: String(value || ""), path: "", id: "", status: value ? "ok" : "" };
   }
-  function assetPreview(value) {
+  function assetPreview(value, liveKey) {
+    if (liveKey && livePreviews[liveKey]) return livePreviews[liveKey];
+    if (value && value.__liveKey && livePreviews[value.__liveKey]) return livePreviews[value.__liveKey];
     return U() ? U().previewSrc(value) : String((value && value.url) || value || "");
   }
   function hasDurableUpload(value) {
@@ -196,7 +294,6 @@
     }
     if (index === 3) {
       if (!hasDurableUpload(uploads.avatar)) missing.push("头像");
-      if (!hasDurableUpload(uploads.cover)) missing.push("卡面封面");
       if (!(voice.confirmed && (hasDurableUpload(voice) || hasDurableUpload(voice.url) || voice.storagePath || voice.path))) {
         missing.push("试音并确认使用");
       }
@@ -403,8 +500,12 @@
     var value = opts.value;
     var status = uploadBusy[name] ? "uploading" : uploadErrors[name] ? "error" : "";
     if (!status && hasDurableUpload(value)) status = "ok";
+    else if (!status && livePreviews[name]) status = uploadBusy[name] ? "uploading" : "ok";
+    var previewValue = livePreviews[name]
+      ? { url: livePreviews[name], status: status || "uploading" }
+      : value;
     if (!U() || !U().renderCard) {
-      return '<label class="form-field upload-field">' + esc(label) + '<input name="' + esc(name) + '" data-file-field type="file" accept="' + esc(opts.accept || "image/jpeg,image/png,image/webp") + '"><span class="upload-card">' + (assetPreview(value) ? '<img class="apply-preview" src="' + esc(assetPreview(value)) + '" alt="">' : '<span class="upload-plus">＋</span>') + '</span></label>';
+      return '<label class="form-field upload-field">' + esc(label) + '<input name="' + esc(name) + '" data-file-field type="file" accept="' + esc(opts.accept || "image/jpeg,image/png,image/webp") + '"><span class="upload-card">' + (assetPreview(previewValue, name) ? '<img class="apply-preview" src="' + esc(assetPreview(previewValue, name)) + '" alt="">' : '<span class="upload-plus">＋</span>') + '</span></label>';
     }
     return U().renderCard({
       key: name,
@@ -414,7 +515,7 @@
       // 默认不强制相机；仅当 opts.capture === true 时才带 capture
       capture: opts.capture === true,
       multiple: !!opts.multiple,
-      value: value,
+      value: previewValue,
       status: status,
       error: uploadErrors[name] || "",
       busy: !!uploadBusy[name],
@@ -424,11 +525,12 @@
   function galleryUploadHtml(uploads) {
     var list = photoListOf(uploads);
     var cards = list.map(function (item, idx) {
-      var preview = assetPreview(item);
+      var liveKey = "photos:" + ((item && item.id) || idx);
+      var preview = assetPreview(item, liveKey) || assetPreview(item);
       var id = (item && item.id) || idx;
       return '<div class="mcj-upload-preview-wrap apply-gallery-item" data-gallery-item="' + esc(String(id)) + '">' +
         (preview ? '<img class="mcj-upload-preview" src="' + esc(preview) + '" alt="相册">' : "") +
-        '<span class="mcj-upload-badge">已上传</span>' +
+        '<span class="mcj-upload-badge">' + (hasDurableUpload(item) ? "上传成功" : "上传中") + '</span>' +
         '<button type="button" class="mcj-upload-remove" data-clear-gallery="' + esc(String(idx)) + '" aria-label="删除">×</button>' +
         "</div>";
     }).join("");
@@ -496,8 +598,7 @@
   function uploadHtml(draft) {
     var u = draft.uploads || {};
     return '<section class="apply-panel"><h2>上传头像与资料</h2><form class="apply-grid">' +
-      fileField("avatar", "头像", { value: u.avatar, hint: "支持 jpg / png / webp；点击＋选择相册或拍照" }) +
-      fileField("cover", "卡面封面", { value: u.cover, hint: "老板大厅与详情页展示用；点击＋选择相册或拍照" }) +
+      fileField("avatar", "头像", { value: u.avatar, hint: "支持 jpg / jpeg / png / webp；可从相册选择或拍照；上传成功后可替换" }) +
       galleryUploadHtml(u) +
       fileField("records", "游戏战绩图", { value: u.records, hint: "选填；支持 jpg / png / webp" }) +
       fileField("voiceFile", "上传已有音频（可选）", {
@@ -514,18 +615,19 @@
         capture: false,
         hint: "支持 mp4 / mov，最长约 30 秒；选填",
       }) +
-      '<p class="apply-note full">图片、音频与视频会立即上传到云端。卡面封面审核通过后同步老板大厅与详情页。刷新或重新登录后仍可恢复。</p></form></section>' +
+      '<p class="apply-note full">头像与相册会立即上传到云端 Storage。老板大厅卡面统一使用头像/相册，无需单独上传卡面封面。刷新或重新登录后仍可恢复。</p></form></section>' +
       voiceHtml(draft);
   }
   function voiceHtml(draft) {
     var v = draft.voice || {};
     var q = v.quality || {};
-    var hasVoice = !!v.url;
+    var voiceSrc = liveVoiceObjectUrl || v.url || "";
+    var hasVoice = !!(voiceSrc || v.hasLocal || hasDurableUpload(v) || hasDurableUpload(v.url));
     var canConfirm = hasVoice && v.listened && q.volumeOk && q.durationOk && q.notBlank;
     var waveform = Array.isArray(q.waveform) && q.waveform.length ? q.waveform : [18, 30, 44, 24, 38, 28, 48];
     var reasons = Array.isArray(q.reasons) ? q.reasons : [];
     var template = "大家好，我是" + (draft.data.nickname || "你的昵称") + "，主玩" + ((draft.data.mainGames || [draft.data.mainGame || "你的游戏"]).join("、")) + "，风格偏" + ((draft.data.personalTags || ["温柔", "娱乐"]).slice(0, 3).join("、")) + "。我可以陪你上分、娱乐或者聊天，希望能给你带来轻松开心的游戏体验。";
-    return '<section class="apply-panel"><h2>录制试音</h2><div class="voice-recorder" data-voice-status="' + esc(v.status || "尚未录制") + '"><div class="voice-stage"><span class="' + (hasVoice ? "done" : "active") + '">1 录制</span><span class="' + (v.listened ? "done" : hasVoice ? "active" : "") + '">2 试听</span><span class="' + (v.confirmed ? "done" : canConfirm ? "active" : "") + '">3 确认</span></div><div class="voice-status"><strong id="voiceState">' + esc(v.status || "尚未录制") + '</strong><span id="voiceTimer">' + esc(v.duration ? v.duration + " 秒" : "00:00") + '</span></div><div class="voice-wave" id="voiceWave">' + waveform.map(function (h) { return '<i style="height:' + Math.max(12, Math.min(56, Number(h || 18))) + 'px"></i>'; }).join("") + '</div><div class="voice-actions"><button class="apply-btn primary" type="button" data-record-start>🎤 开始录音</button><button class="apply-btn" type="button" data-record-stop disabled>⏹ 停止录音</button><button class="apply-btn" type="button" data-record-play ' + (!hasVoice ? "disabled" : "") + '>▶ 播放试听</button><button class="apply-btn" type="button" data-record-reset ' + (!hasVoice ? "disabled" : "") + '>🔄 重新录制</button><button class="apply-btn" type="button" data-record-delete ' + (!hasVoice ? "disabled" : "") + '>删除录音</button><button class="apply-btn primary" type="button" data-record-confirm ' + (!canConfirm ? "disabled" : "") + '>✅ 确认使用</button></div>' + (v.url ? '<audio id="voicePreview" controls preload="metadata" src="' + esc(v.url) + '"></audio>' : '<audio id="voicePreview" controls hidden></audio>') + '<div class="voice-quality"><span class="' + (q.durationOk ? "ok" : "bad") + '">✔ 时长' + (q.durationOk ? "符合" : "需 10~60 秒") + '</span><span class="' + (q.humanVoice ? "ok" : "bad") + '">✔ ' + (q.humanVoice ? "检测到人声" : "人声不足") + '</span><span class="' + (q.volumeOk ? "ok" : "bad") + '">✔ 音量' + (q.volumeOk ? "正常" : "过低") + '</span><span class="' + (q.notBlank ? "ok" : "bad") + '">✔ ' + (q.notBlank ? "无空白录音" : "静音过多") + '</span></div>' + (reasons.length ? '<div class="voice-errors">' + reasons.map(function (r) { return '<p>' + esc(r) + '</p>'; }).join("") + '</div>' : '') + '<div class="voice-tip">' + (hasVoice ? (canConfirm ? "试听完成，可以确认使用。确认后会自动上传并标记本步骤完成。" : "请播放完整试听，确认音量和内容正常后再提交。") : "建议录制 10 到 60 秒，简单介绍声音特点、游戏风格和接单优势。") + '</div></div><div class="voice-template-card"><div><h3>不知道说什么？可以参考下面模板。</h3><p id="voiceTemplateText">' + esc(template) + '</p></div><button class="apply-btn small" type="button" data-copy-voice-template>一键复制模板</button></div><form class="apply-grid">' + field("voiceNote", "试音说明", "textarea", (draft.data || {}).voiceNote, 'placeholder="可以简单介绍自己的声音特点、擅长的聊天风格或游戏。"') + '</form></section>';
+    return '<section class="apply-panel"><h2>录制试音</h2><div class="voice-recorder" data-voice-status="' + esc(v.status || "尚未录制") + '"><div class="voice-stage"><span class="' + (hasVoice ? "done" : "active") + '">1 录制</span><span class="' + (v.listened ? "done" : hasVoice ? "active" : "") + '">2 试听</span><span class="' + (v.confirmed ? "done" : canConfirm ? "active" : "") + '">3 确认</span></div><div class="voice-status"><strong id="voiceState">' + esc(v.status || "尚未录制") + '</strong><span id="voiceTimer">' + esc(v.duration ? v.duration + " 秒" : "00:00") + '</span></div><div class="voice-wave" id="voiceWave">' + waveform.map(function (h) { return '<i style="height:' + Math.max(12, Math.min(56, Number(h || 18))) + 'px"></i>'; }).join("") + '</div><div class="voice-actions"><button class="apply-btn primary" type="button" data-record-start>🎤 开始录音</button><button class="apply-btn" type="button" data-record-stop disabled>⏹ 停止录音</button><button class="apply-btn" type="button" data-record-play ' + (!hasVoice ? "disabled" : "") + '>▶ 播放试听</button><button class="apply-btn" type="button" data-record-reset ' + (!hasVoice ? "disabled" : "") + '>🔄 重新录制</button><button class="apply-btn" type="button" data-record-delete ' + (!hasVoice ? "disabled" : "") + '>删除录音</button><button class="apply-btn primary" type="button" data-record-confirm ' + (!canConfirm ? "disabled" : "") + '>✅ 确认使用</button></div>' + (voiceSrc ? '<audio id="voicePreview" controls preload="metadata" src="' + esc(voiceSrc) + '"></audio>' : '<audio id="voicePreview" controls hidden></audio>') + '<div class="voice-quality"><span class="' + (q.durationOk ? "ok" : "bad") + '">✔ 时长' + (q.durationOk ? "符合" : "需 10~60 秒") + '</span><span class="' + (q.humanVoice ? "ok" : "bad") + '">✔ ' + (q.humanVoice ? "检测到人声" : "人声不足") + '</span><span class="' + (q.volumeOk ? "ok" : "bad") + '">✔ 音量' + (q.volumeOk ? "正常" : "过低") + '</span><span class="' + (q.notBlank ? "ok" : "bad") + '">✔ ' + (q.notBlank ? "无空白录音" : "静音过多") + '</span></div>' + (reasons.length ? '<div class="voice-errors">' + reasons.map(function (r) { return '<p>' + esc(r) + '</p>'; }).join("") + '</div>' : '') + '<div class="voice-tip">' + (hasVoice ? (canConfirm ? "试听完成，可以确认使用。确认后会自动上传并标记本步骤完成。" : "请播放完整试听，确认音量和内容正常后再提交。") : "建议录制 10 到 60 秒，简单介绍声音特点、游戏风格和接单优势。") + '</div></div><div class="voice-template-card"><div><h3>不知道说什么？可以参考下面模板。</h3><p id="voiceTemplateText">' + esc(template) + '</p></div><button class="apply-btn small" type="button" data-copy-voice-template>一键复制模板</button></div><form class="apply-grid">' + field("voiceNote", "试音说明", "textarea", (draft.data || {}).voiceNote, 'placeholder="可以简单介绍自己的声音特点、擅长的聊天风格或游戏。"') + '</form></section>';
   }
   function depositPayeeHtml(set) {
     var lines = [];
@@ -982,11 +1084,6 @@
         return postCompanion("upload_media", { media_type: "gallery", data_url: normalizeUploadAsset(img).url, filename: "gallery.jpg" });
       });
     });
-    if (needsMediaUpload(uploads.cover)) {
-      chain = chain.then(function () {
-        return postCompanion("upload_media", { media_type: "cover", data_url: normalizeUploadAsset(uploads.cover).url, filename: "cover.jpg" });
-      });
-    }
     if (needsMediaUpload(uploads.records)) {
       chain = chain.then(function () {
         return postCompanion("upload_media", { media_type: "gallery", data_url: normalizeUploadAsset(uploads.records).url, filename: "records.jpg" });
@@ -1184,10 +1281,29 @@
         return;
       }
       var quality = await analyzeVoiceBlob(blob, duration);
-      var url = await blobToDataURL(blob);
+      if (liveVoiceObjectUrl) {
+        try { URL.revokeObjectURL(liveVoiceObjectUrl); } catch (e) {}
+      }
+      liveVoiceBlob = blob;
+      liveVoiceObjectUrl = URL.createObjectURL(blob);
       var audio = document.getElementById("voicePreview");
-      if (audio) { audio.hidden = false; audio.src = url; }
-      saveDraft({ voice: { status: quality.passed ? "已录制，请先试听" : "检测未通过，请重新录制", url: url, duration: quality.duration, confirmed: false, listened: false, uploaded: false, uploadedAt: "", mimeType: blob.type, size: blob.size, quality: quality } });
+      if (audio) { audio.hidden = false; audio.src = liveVoiceObjectUrl; }
+      // Never persist base64 voice into localStorage (QuotaExceeded on mobile).
+      saveDraft({
+        voice: {
+          status: quality.passed ? "已录制，请先试听" : "检测未通过，请重新录制",
+          url: "",
+          hasLocal: true,
+          duration: quality.duration,
+          confirmed: false,
+          listened: false,
+          uploaded: false,
+          uploadedAt: "",
+          mimeType: blob.type,
+          size: blob.size,
+          quality: quality,
+        },
+      });
       setVoiceState(quality.passed ? "已录制，待确认" : "检测未通过", quality.duration);
       document.body.classList.remove("voice-recording-active");
       render(3);
@@ -1219,6 +1335,11 @@
       recorder.stop();
     }
     chunks = [];
+    liveVoiceBlob = null;
+    if (liveVoiceObjectUrl) {
+      try { URL.revokeObjectURL(liveVoiceObjectUrl); } catch (e) {}
+      liveVoiceObjectUrl = "";
+    }
     var draft = readDraft();
     draft.voice = { status: "尚未录制" };
     writeRaw(DRAFT_KEY, draft);
@@ -1250,14 +1371,16 @@
       render(3);
       return;
     }
-    if (!d.voice.url) { showApplyTip("请先完成录音。"); return; }
+    if (!d.voice.url && !liveVoiceBlob && !liveVoiceObjectUrl) { showApplyTip("请先完成录音。"); return; }
     uploadBusy.voice = true;
     render(3);
-    var dataUrlPromise = /^data:/i.test(String(d.voice.url))
+    var dataUrlPromise = /^data:/i.test(String(d.voice.url || ""))
       ? Promise.resolve(d.voice.url)
-      : fetch(d.voice.url).then(function (r) { return r.blob(); }).then(function (blob) {
-          return fileToDataURL(blob);
-        });
+      : liveVoiceBlob
+        ? fileToDataURL(liveVoiceBlob)
+        : fetch(liveVoiceObjectUrl || d.voice.url).then(function (r) { return r.blob(); }).then(function (blob) {
+            return fileToDataURL(blob);
+          });
     dataUrlPromise
       .then(function (dataUrl) {
         return postCompanion("upload_media", {
@@ -1271,6 +1394,11 @@
       .then(function (res) {
         uploadBusy.voice = false;
         delete uploadErrors.voice;
+        liveVoiceBlob = null;
+        if (liveVoiceObjectUrl) {
+          try { URL.revokeObjectURL(liveVoiceObjectUrl); } catch (e) {}
+          liveVoiceObjectUrl = "";
+        }
         var next = readDraft();
         next.voice = Object.assign({}, next.voice || {}, {
           status: "已确认",
@@ -1278,7 +1406,8 @@
           confirmedAt: now(),
           uploaded: true,
           uploadedAt: now(),
-          url: (res && res.url) || (res && res.media && res.media.url) || next.voice.url,
+          hasLocal: false,
+          url: (res && res.url) || (res && res.media && res.media.url) || "",
           path: (res && res.path) || (res && res.media && res.media.path) || next.voice.path || "",
           bucket: (res && res.bucket) || (res && res.media && res.media.bucket) || next.voice.bucket || "",
           storageOk: true,
@@ -1303,17 +1432,37 @@
     draft.voice = draft.voice || {};
     delete uploadErrors[key];
     delete uploadBusy[key];
+    clearLivePreview(key);
+    var existing = null;
     if (key === "voiceFile") {
+      existing = draft.voice.fileUpload;
       delete draft.voice.fileUpload;
       if (draft.voice.fromFile) {
         draft.voice = { status: "尚未录制" };
       }
     } else if (key === "idFront" || key === "idBack" || key === "depositProof" || key === "idHandheld") {
+      existing = draft.identity[key];
       delete draft.identity[key];
     } else {
+      existing = draft.uploads[key];
       delete draft.uploads[key];
     }
     writeRaw(DRAFT_KEY, draft);
+    if (existing && (existing.id || key === "avatar") && companionToken()) {
+      var mt =
+        key === "avatar"
+          ? "avatar"
+          : key === "showcaseVideo"
+            ? "video"
+            : key === "voiceFile"
+              ? "voice"
+              : "gallery";
+      postCompanion("delete_media", {
+        media_id: existing.id || "",
+        media_type: mt,
+        id: existing.id || "",
+      }).catch(function () {});
+    }
     render(Number(document.getElementById("companionApplyRoot").dataset.step || 0));
   }
   function setUploadAsset(key, asset) {
@@ -1321,16 +1470,18 @@
     draft.uploads = draft.uploads || {};
     draft.identity = draft.identity || {};
     draft.voice = draft.voice || {};
+    var safe = scrubAssetForStorage(asset);
     if (key === "idFront" || key === "idBack" || key === "depositProof" || key === "idHandheld") {
-      draft.identity[key] = asset;
+      draft.identity[key] = safe;
     } else if (key === "voiceFile") {
-      draft.voice.fileUpload = asset;
-      draft.voice.url = asset.url || draft.voice.url;
-      draft.voice.path = asset.path || draft.voice.path;
+      draft.voice.fileUpload = safe;
+      draft.voice.url = safe.url || draft.voice.url;
+      draft.voice.path = safe.path || draft.voice.path;
       draft.voice.confirmed = true;
       draft.voice.listened = true;
       draft.voice.uploaded = true;
       draft.voice.fromFile = true;
+      draft.voice.hasLocal = false;
       draft.voice.status = "已确认";
       draft.voice.quality = Object.assign({}, draft.voice.quality || {}, {
         passed: true,
@@ -1346,23 +1497,25 @@
       var list = photoListOf(draft.uploads);
       var dup = list.some(function (p) {
         return (
-          (asset.id && p && p.id && String(p.id) === String(asset.id)) ||
-          (asset.path && p && p.path && String(p.path) === String(asset.path)) ||
-          (asset.url && p && p.url && String(p.url) === String(asset.url) && !/^data:/i.test(String(asset.url)))
+          (safe.id && p && p.id && String(p.id) === String(safe.id)) ||
+          (safe.path && p && p.path && String(p.path) === String(safe.path)) ||
+          (safe.url && p && p.url && String(p.url) === String(safe.url) && !/^data:/i.test(String(safe.url)))
         );
       });
       if (dup) return;
-      list.push(asset);
+      list.push(safe);
       draft.uploads.photos = list.slice(0, 6);
+    } else if (key === "cover" || key === "cardCover" || key === "card_cover" || key === "profile_cover") {
+      // Cover upload removed — ignore.
+      return;
     } else {
-      draft.uploads[key] = asset;
+      draft.uploads[key] = safe;
     }
     writeRaw(DRAFT_KEY, draft);
   }
   function uploadKeyConfig(key) {
     var map = {
       avatar: { api: "upload_media", mediaType: "avatar", kind: "image" },
-      cover: { api: "upload_media", mediaType: "cover", kind: "image" },
       photos: { api: "upload_media", mediaType: "gallery", kind: "image" },
       records: { api: "upload_media", mediaType: "gallery", kind: "image" },
       voiceFile: { api: "upload_media", mediaType: "voice", kind: "audio" },
@@ -1377,7 +1530,12 @@
     var key = payload.key;
     var files = payload.files || [];
     var cfg = uploadKeyConfig(key);
-    if (!cfg) return Promise.resolve();
+    if (!cfg) {
+      if (key === "cover" || key === "cardCover") {
+        showApplyTip("卡面封面已取消，请上传头像与相册即可。");
+      }
+      return Promise.resolve();
+    }
     if (!companionToken()) {
       showApplyTip("请先登录或注册陪玩账号后再上传，以便同步到云端存储。");
       return Promise.resolve();
@@ -1404,13 +1562,26 @@
     uploadBusy[key] = true;
     delete uploadErrors[key];
     var step = Number(document.getElementById("companionApplyRoot").dataset.step || 0);
-    render(step);
     var localPreview = "";
-    return fileToDataURL(file)
+    try {
+      localPreview = URL.createObjectURL(file);
+      if (key !== "photos") setLivePreview(key, localPreview);
+    } catch (e) {
+      localPreview = "";
+    }
+    render(step);
+    var prepare =
+      kind === "image" && U() && U().compressImageFile
+        ? U().compressImageFile(file)
+        : fileToDataURL(file);
+    return prepare
       .then(function (dataUrl) {
-        localPreview = dataUrl;
+        if (!dataUrl || !/^data:/i.test(String(dataUrl))) {
+          throw new Error("读取图片失败，请重选后重试");
+        }
+        // Do NOT write dataUrl into localStorage — that caused QuotaExceededError on mobile.
         if (key !== "photos") {
-          setUploadAsset(key, { url: dataUrl, path: "", status: "uploading" });
+          setUploadAsset(key, { url: "", path: "", status: "uploading" });
           render(step);
         }
         var body =
@@ -1435,16 +1606,26 @@
           status: "ok",
         };
         if (!asset.url && !asset.path) throw new Error("上传成功但未返回地址，请重新上传");
-        if (!asset.url && localPreview) asset.url = localPreview;
-        if (asset.url && /^data:/i.test(asset.url) && !asset.path) {
+        if (asset.url && isEphemeralMediaUrl(asset.url) && !asset.path) {
           throw new Error("云端未返回可访问地址，请重新上传");
         }
+        // Prefer durable cloud URL for preview; drop temporary blob.
+        if (asset.url && !isEphemeralMediaUrl(asset.url)) {
+          clearLivePreview(key);
+        }
         setUploadAsset(key, asset);
+        if (key === "avatar") showApplyTip("头像上传成功");
         render(Number(document.getElementById("companionApplyRoot").dataset.step || 0));
       })
       .catch(function (err) {
         uploadBusy[key] = false;
-        uploadErrors[key] = err.message || "上传失败";
+        var friendly = String(err && err.message || "上传失败");
+        if (/quota has been exceeded|QuotaExceeded/i.test(friendly)) {
+          friendly =
+            "浏览器本地草稿空间已满（不是云端 Storage）。请刷新后重试；图片只会上传到云端，不再写入本地大图。";
+        }
+        uploadErrors[key] = friendly;
+        clearLivePreview(key);
         if (key === "idFront" || key === "idBack" || key === "depositProof") {
           var d = readDraft();
           d.identity = d.identity || {};
@@ -1461,7 +1642,7 @@
           delete du.uploads[key];
           writeRaw(DRAFT_KEY, du);
         }
-        showApplyTip("上传失败：" + (err.message || "请重试"));
+        showApplyTip("上传失败：" + friendly);
         render(Number(document.getElementById("companionApplyRoot").dataset.step || 0));
         return Promise.reject(err);
       });
@@ -1978,11 +2159,15 @@
         var gd = readDraft();
         var glist = photoListOf(gd.uploads);
         if (gIdx >= 0 && gIdx < glist.length) {
+          var removed = glist[gIdx];
           glist.splice(gIdx, 1);
           gd.uploads = gd.uploads || {};
           gd.uploads.photos = glist;
           writeRaw(DRAFT_KEY, gd);
           render(Number(root.dataset.step || 0));
+          if (removed && removed.id && companionToken()) {
+            postCompanion("delete_media", { media_id: removed.id, media_type: "gallery" }).catch(function () {});
+          }
         }
         return;
       }
@@ -2080,9 +2265,7 @@
     if (!hasDurableUpload(draft.uploads.avatar) && (mediaMap.avatarUrl || player.avatar)) {
       draft.uploads.avatar = { url: mediaMap.avatarUrl || player.avatar, status: "ok" };
     }
-    if (!hasDurableUpload(draft.uploads.cover) && (mediaMap.coverUrl || player.cardImage || player.card_image_url || player.cardImageUrl)) {
-      draft.uploads.cover = { url: mediaMap.coverUrl || player.cardImage || player.card_image_url || player.cardImageUrl, status: "ok" };
-    }
+    // Card cover upload removed — do not hydrate into draft.uploads.cover.
     if (!hasDurableUpload(draft.uploads.showcaseVideo) && mediaMap.videoUrl) {
       draft.uploads.showcaseVideo = { url: mediaMap.videoUrl, status: "ok" };
     }

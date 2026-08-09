@@ -166,6 +166,49 @@
     });
   }
 
+  /** Compress phone photos before JSON upload — keeps API body small; never for permanent localStorage. */
+  function compressImageFile(file, opts) {
+    opts = opts || {};
+    var maxEdge = Number(opts.maxEdge) || 1600;
+    var quality = Number(opts.quality) || 0.82;
+    return readAsDataUrl(file).then(function (raw) {
+      if (!/^data:image\//i.test(raw)) return raw;
+      if (file && file.size <= 700 * 1024 && raw.length < 900 * 1024) return raw;
+      return new Promise(function (resolve, reject) {
+        var img = new Image();
+        img.onload = function () {
+          try {
+            var w = img.naturalWidth || img.width || 0;
+            var h = img.naturalHeight || img.height || 0;
+            if (!w || !h) return resolve(raw);
+            var scale = Math.min(1, maxEdge / Math.max(w, h));
+            var cw = Math.max(1, Math.round(w * scale));
+            var ch = Math.max(1, Math.round(h * scale));
+            var canvas = document.createElement("canvas");
+            canvas.width = cw;
+            canvas.height = ch;
+            var ctx = canvas.getContext("2d");
+            if (!ctx) return resolve(raw);
+            ctx.drawImage(img, 0, 0, cw, ch);
+            var q = quality;
+            var out = canvas.toDataURL("image/jpeg", q);
+            while (out.length > 1.5 * 1024 * 1024 && q > 0.5) {
+              q -= 0.08;
+              out = canvas.toDataURL("image/jpeg", q);
+            }
+            resolve(out || raw);
+          } catch (err) {
+            resolve(raw);
+          }
+        };
+        img.onerror = function () {
+          reject(new Error("图片预览失败，请改用 JPG 或 PNG"));
+        };
+        img.src = raw;
+      });
+    });
+  }
+
   /**
    * @param {object} opts
    * @param {string} opts.key - field key (avatar, cover, photos, voiceFile, idFront, …)
@@ -220,7 +263,7 @@
         : status === "error"
           ? "上传失败"
           : hasPreview
-            ? "已上传"
+            ? "上传成功"
             : "";
     var tip =
       opts.hint ||
@@ -567,6 +610,7 @@
     hasDurableAsset: hasDurableAsset,
     validateFile: validateFile,
     readAsDataUrl: readAsDataUrl,
+    compressImageFile: compressImageFile,
     renderCard: renderCard,
     bind: bind,
     openSourceSheet: openSourceSheet,
