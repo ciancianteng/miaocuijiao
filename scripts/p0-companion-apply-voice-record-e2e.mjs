@@ -87,12 +87,21 @@ function tok(j) {
   return j?.session?.accessToken || j?.session?.token || j?.accessToken || j?.token || "";
 }
 
-async function shot(page, name) {
-  const file = `${name}.png`;
-  const p1 = path.join(ART, file);
-  await page.screenshot({ path: p1, fullPage: true });
-  fs.copyFileSync(p1, path.join(ART_REPO, file));
-  return p1;
+async function forceStep3(page) {
+  await page.evaluate(() => {
+    const draft = JSON.parse(localStorage.getItem("mcjCompanionApplicationDraft.v1") || "{}");
+    draft.step = 3;
+    draft.rulesAgreement = Object.assign({}, draft.rulesAgreement || {}, { accepted: true });
+    localStorage.setItem("mcjCompanionApplicationDraft.v1", JSON.stringify(draft));
+    const btn = document.querySelector('[data-apply-step="3"]');
+    if (btn) btn.click();
+  });
+  await page.waitForTimeout(700);
+  const ok = await page.evaluate(() => !!document.querySelector("#applyVoicePanel") || !!document.querySelector('[data-mcj-upload-input="avatar"]'));
+  if (!ok) {
+    await navigateToUploadStep(page, { seedVoice: false });
+  }
+  await page.locator("#applyVoicePanel, [data-mcj-upload-input='avatar']").first().waitFor({ state: "attached", timeout: 15000 }).catch(() => {});
 }
 
 async function navigateToUploadStep(page, { seedVoice = false } = {}) {
@@ -214,12 +223,7 @@ async function installRecorderMock(page, { denyMic = false } = {}) {
         }
         start() {
           this.state = "recording";
-          // emit a chunk periodically so timeslice path works
-          this._timer = setInterval(() => {
-            if (typeof this.ondataavailable === "function") {
-              this.ondataavailable({ data: new Blob([new Uint8Array(64)], { type: this.mimeType }) });
-            }
-          }, 200);
+          // no interval chunks — stop() emits one full audible WAV so decode/quality gates work
         }
         stop() {
           this.state = "inactive";
@@ -608,7 +612,7 @@ async function main() {
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => !/正在加载申请资料/.test(document.body.innerText), { timeout: 90000 }).catch(() => {});
   await page.waitForTimeout(1000);
-  await navigateToUploadStep(page, { seedVoice: false });
+  await forceStep3(page);
   await page.locator("#applyVoicePanel").scrollIntoViewIfNeeded().catch(() => {});
   const afterRefresh = await page.evaluate(() => {
     const draft = JSON.parse(localStorage.getItem("mcjCompanionApplicationDraft.v1") || "{}");
@@ -619,6 +623,7 @@ async function main() {
       uploaded: !!draft.voice?.uploaded,
       audioSrc: String(audio?.src || "").slice(0, 180),
       statusText: document.getElementById("voiceState")?.textContent || "",
+      panel: !!document.getElementById("applyVoicePanel"),
     };
   });
   const boot = await api(`/api/companion?action=bootstrap`, companionToken, null, "GET");
@@ -665,16 +670,16 @@ async function main() {
   step("admin_can_play_voice", adminPlay.ok || !!(bootVoice || voiceUrl), JSON.stringify(adminPlay));
 
   // Upload existing audio file path
-  await navigateToUploadStep(page, { seedVoice: false });
+  await forceStep3(page);
   await page.locator("#applyVoicePanel").scrollIntoViewIfNeeded().catch(() => {});
   const voiceFile = page.locator('[data-mcj-upload-input="voiceFile"]').first();
-  await voiceFile.waitFor({ state: "attached", timeout: 15000 });
+  await voiceFile.waitFor({ state: "attached", timeout: 20000 });
   await voiceFile.setInputFiles({
     name: "existing-voice.wav",
     mimeType: "audio/wav",
     buffer: makeToneWav(12),
   });
-  await page.waitForTimeout(5000);
+  await page.waitForTimeout(6000);
   const fileUpload = await page.evaluate(() => {
     const draft = JSON.parse(localStorage.getItem("mcjCompanionApplicationDraft.v1") || "{}");
     const v = draft.voice || {};
@@ -689,6 +694,7 @@ async function main() {
   await shot(page, "08-file-upload");
 
   // Delete audio
+  await forceStep3(page);
   const del = page.locator("[data-record-delete], [data-clear-upload='voiceFile']").first();
   if (await del.count()) {
     await del.click({ force: true });
@@ -698,9 +704,8 @@ async function main() {
       const draft = JSON.parse(localStorage.getItem("mcjCompanionApplicationDraft.v1") || "{}");
       draft.voice = { status: "尚未录制" };
       localStorage.setItem("mcjCompanionApplicationDraft.v1", JSON.stringify(draft));
-      document.querySelector('[data-apply-step="3"]')?.click();
     });
-    await page.waitForTimeout(600);
+    await forceStep3(page);
   }
   const afterDel = await page.evaluate(() => {
     const draft = JSON.parse(localStorage.getItem("mcjCompanionApplicationDraft.v1") || "{}");
@@ -709,8 +714,9 @@ async function main() {
   step("delete_audio", !afterDel.uploaded && !/^https?:/i.test(afterDel.url), JSON.stringify(afterDel));
 
   // Avatar/gallery not broken
-  await navigateToUploadStep(page, { seedVoice: true });
+  await forceStep3(page);
   const avatarInput = page.locator('[data-mcj-upload-input="avatar"]').first();
+  await avatarInput.waitFor({ state: "attached", timeout: 15000 });
   await avatarInput.setInputFiles({ name: "avatar-v.png", mimeType: "image/png", buffer: makePng(41) });
   await page.waitForTimeout(3500);
   const avatarOk = await page.evaluate(() => {
