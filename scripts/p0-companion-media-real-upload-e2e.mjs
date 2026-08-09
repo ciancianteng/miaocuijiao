@@ -370,12 +370,21 @@ async function shot(page, name) {
     report.Storage上传 = "PASS";
     report.DB保存 = "PASS";
   }
-  await page.waitForTimeout(1500);
+  await page.waitForTimeout(800);
+  await page
+    .waitForFunction(() => {
+      const a = document.querySelector("audio[data-voice-audio], .pw-voice-preview audio");
+      const src = (a && a.getAttribute("src")) || "";
+      return /^https?:\/\//i.test(src);
+    }, { timeout: 20000 })
+    .catch(() => null);
   await shot(page, "03-voice-file-uploaded");
 
   let audioSrc = (await page.locator("audio[data-voice-audio], .pw-voice-preview audio").first().getAttribute("src").catch(() => "")) || "";
-  step("ui_voice_player_src_http", isPlayable(audioSrc), audioSrc.slice(0, 140));
-  if (isPlayable(audioSrc)) {
+  // data: preview during upload is OK transiently; after success must be https (Storage signed/public).
+  const playerHttp = isPlayable(audioSrc);
+  step("ui_voice_player_src_http", playerHttp, audioSrc.slice(0, 140));
+  if (playerHttp) {
     const playGet = await headOrGet(audioSrc);
     meta.playStatus.companion = playGet.status;
     step("ui_voice_play_get", playGet.ok, `status=${playGet.status}`);

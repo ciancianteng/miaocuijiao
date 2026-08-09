@@ -3182,6 +3182,11 @@
         state.data.player.voiceUrl=res.url;
         state.voicePlayError='';
         clearVoiceLocal();
+        // Swap optimistic data:/blob: preview to the real Storage URL immediately.
+        var voiceAudio=document.querySelector('audio[data-voice-audio], .pw-voice-preview audio');
+        if(voiceAudio&&isPlayableMediaUrl(res.url)){
+          try{voiceAudio.src=res.url}catch(e){}
+        }
       }
       return loadData({soft:true,forcePaint:true});
     }).catch(function(err){
