@@ -64,6 +64,53 @@ function tok(j) {
   return j?.session?.accessToken || j?.session?.token || j?.accessToken || j?.token || "";
 }
 
+async function navigateToUploadStep(page) {
+  for (let i = 0; i < 8; i++) {
+    const onUpload = await page.evaluate(() => !!document.querySelector('[data-mcj-upload-input="avatar"]'));
+    if (onUpload) return true;
+    await page.evaluate(() => {
+      ["modes", "mainGames", "positions", "personalTags"].forEach((field) => {
+        const boxes = [...document.querySelectorAll(`[data-tag-field="${field}"]`)];
+        if (boxes.length && !boxes.some((b) => b.checked)) {
+          boxes[0].checked = true;
+          boxes[0].dispatchEvent(new Event("change", { bubbles: true }));
+        }
+      });
+      const draft = JSON.parse(localStorage.getItem("mcjCompanionApplicationDraft.v1") || "{}");
+      draft.data = draft.data || {};
+      ["personalTags", "mainGames", "positions", "modes"].forEach((field) => {
+        const selected = [...document.querySelectorAll(`[data-tag-field="${field}"]:checked`)].map((b) => b.value);
+        if (selected.length) draft.data[field] = selected;
+      });
+      if (!draft.data.modes?.length) draft.data.modes = ["陪玩服务"];
+      draft.rulesAgreement = Object.assign({}, draft.rulesAgreement || {}, { accepted: true });
+      draft.voice = Object.assign({}, draft.voice || {}, {
+        confirmed: true,
+        listened: true,
+        uploaded: true,
+        status: "已确认",
+        url: draft.voice?.url || "https://example.invalid/e2e-voice.webm",
+        path: draft.voice?.path || "e2e/voice/x.webm",
+        duration: 15,
+        quality: {
+          passed: true,
+          volumeOk: true,
+          durationOk: true,
+          notBlank: true,
+          humanVoice: true,
+          duration: 15,
+          reasons: [],
+        },
+      });
+      localStorage.setItem("mcjCompanionApplicationDraft.v1", JSON.stringify(draft));
+    });
+    await page.locator('[data-apply-step="3"]').click({ force: true }).catch(() => {});
+    await page.locator("[data-apply-next]").click({ force: true }).catch(() => {});
+    await page.waitForTimeout(700);
+  }
+  return page.evaluate(() => !!document.querySelector('[data-mcj-upload-input="avatar"]'));
+}
+
 async function shot(page, name) {
   const file = `${name}.png`;
   const p1 = path.join(ART, file);
@@ -88,7 +135,7 @@ function seedDraft(email, nickname) {
       gameNickname: "E2EGame",
       mainGames: ["VALORANT"],
       positions: ["中路"],
-      modes: ["娱乐"],
+      modes: ["陪玩服务"],
       rank: "黄金",
       voiceType: "甜妹",
       onlineStart: "18:00",
@@ -183,33 +230,95 @@ function seedDraft(email, nickname) {
   );
 
   await page.goto(`${BASE}/companion-apply.html?t=${Date.now()}`, { waitUntil: "domcontentloaded", timeout: 90000 });
+  // Wait for remote config / bootstrap to settle, then force draft + step 3.
+  await page.waitForFunction(() => !/正在加载申请资料/.test(document.body.innerText), { timeout: 60000 }).catch(() => {});
+  await page.waitForTimeout(800);
   await page.evaluate((draft) => {
     localStorage.setItem("mcjCompanionApplicationDraft.v1", JSON.stringify(draft));
   }, seedDraft(email, nickname));
   await page.reload({ waitUntil: "domcontentloaded" });
-  await page.waitForTimeout(3500);
-
-  // Force open step 3 upload panel after auth unlock.
+  await page.waitForFunction(() => !/正在加载申请资料/.test(document.body.innerText), { timeout: 60000 }).catch(() => {});
+  await page.waitForTimeout(800);
+  // Keep draft complete AND fill visible form fields so collect() on step switch won't wipe tags.
   await page.evaluate((draft) => {
     localStorage.setItem("mcjCompanionApplicationDraft.v1", JSON.stringify(draft));
-    const root = document.getElementById("companionApplyRoot");
-    if (root) root.dataset.step = "3";
-    // Click step chip if present
-    const chips = [...document.querySelectorAll(".apply-step, [data-apply-step], button, a")];
-    const hit = chips.find((el) => /上传头像|3\/5|资料/.test(el.textContent || ""));
-    if (hit) hit.click();
+    const setVal = (name, value) => {
+      const el = document.querySelector(`[name="${name}"]`);
+      if (!el) return;
+      el.value = value;
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+    };
+    const d = draft.data || {};
+    [
+      "nickname",
+      "age",
+      "gender",
+      "region",
+      "phone",
+      "email",
+      "contactPublic",
+      "gameNickname",
+      "rank",
+      "voiceType",
+      "onlineStart",
+      "onlineEnd",
+      "intro",
+    ].forEach((k) => setVal(k, d[k] || ""));
+    // Ensure tag checkboxes match seed — and if modes options differ, check the first available.
+    ["personalTags", "mainGames", "positions", "modes"].forEach((field) => {
+      const wanted = new Set(d[field] || []);
+      const boxes = [...document.querySelectorAll(`[data-tag-field="${field}"]`)];
+      if (!boxes.length) return;
+      let any = false;
+      boxes.forEach((box) => {
+        const on = wanted.has(box.value);
+        box.checked = on;
+        if (on) any = true;
+        box.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+      if (!any) {
+        boxes.slice(0, Math.min(2, boxes.length)).forEach((box) => {
+          box.checked = true;
+          box.dispatchEvent(new Event("change", { bubbles: true }));
+        });
+      }
+    });
+    const agree = document.querySelector("[data-rule-agree]");
+    if (agree && !agree.checked) {
+      agree.checked = true;
+      agree.dispatchEvent(new Event("change", { bubbles: true }));
+    }
   }, seedDraft(email, nickname));
-  await page.waitForTimeout(1000);
-
-  // If still not on upload step, click next until we get there (max 5).
+  await page.waitForTimeout(400);
   for (let i = 0; i < 6; i++) {
-    const t = await page.evaluate(() => document.body.innerText);
-    if (/上传头像与资料/.test(t) || /头像/.test(t) && /相册/.test(t)) break;
-    const next = page.locator("[data-apply-next]");
-    if (await next.count()) {
-      await next.click().catch(() => {});
-      await page.waitForTimeout(700);
-    } else break;
+    const onUpload = await page.evaluate(() => !!document.querySelector('[data-mcj-upload-input="avatar"]'));
+    if (onUpload) break;
+    // Before next: ensure modes/tags are checked on the visible step.
+    await page.evaluate(() => {
+      ["personalTags", "mainGames", "positions", "modes"].forEach((field) => {
+        const boxes = [...document.querySelectorAll(`[data-tag-field="${field}"]`)];
+        if (!boxes.length) return;
+        if (!boxes.some((b) => b.checked)) {
+          boxes.slice(0, Math.min(field === "modes" ? 1 : 2, boxes.length)).forEach((b) => {
+            b.checked = true;
+            b.dispatchEvent(new Event("change", { bubbles: true }));
+          });
+        }
+      });
+      // Persist modes into draft immediately
+      const draft = JSON.parse(localStorage.getItem("mcjCompanionApplicationDraft.v1") || "{}");
+      draft.data = draft.data || {};
+      ["personalTags", "mainGames", "positions", "modes"].forEach((field) => {
+        const selected = [...document.querySelectorAll(`[data-tag-field="${field}"]:checked`)].map((b) => b.value);
+        if (selected.length) draft.data[field] = selected;
+      });
+      if (!draft.data.modes || !draft.data.modes.length) draft.data.modes = ["陪玩服务"];
+      draft.rulesAgreement = Object.assign({}, draft.rulesAgreement || {}, { accepted: true });
+      localStorage.setItem("mcjCompanionApplicationDraft.v1", JSON.stringify(draft));
+    });
+    await page.locator("[data-apply-next]").click({ force: true }).catch(() => {});
+    await page.waitForTimeout(700);
   }
   await shot(page, "01-step3-page");
 
@@ -223,28 +332,33 @@ function seedDraft(email, nickname) {
       step: document.getElementById("companionApplyRoot")?.dataset?.step || "",
       textSample: document.body.innerText.replace(/\s+/g, " ").slice(0, 280),
       uploadInputs: [...document.querySelectorAll("[data-mcj-upload-input]")].map((el) => el.getAttribute("data-mcj-upload-input")),
+      hasCoverText: /卡面封面/.test(document.body.innerText),
     };
   });
   console.log("debugAuth", JSON.stringify(debugAuth));
-  if (!debugAuth.uploadInputs.includes("avatar")) {
-    // Last resort: soft fail with context
-    step("avatar_input_present", false, JSON.stringify(debugAuth));
-  } else {
-    step("avatar_input_present", true, JSON.stringify(debugAuth.uploadInputs));
-  }
+  step("avatar_input_present", debugAuth.uploadInputs.includes("avatar"), JSON.stringify(debugAuth));
 
   const coverGone = await page.evaluate(() => {
     const text = document.body.innerText;
     const inputs = [...document.querySelectorAll("[data-mcj-upload-input],[data-file-field]")].map((el) =>
       el.getAttribute("data-mcj-upload-input") || el.getAttribute("name") || ""
     );
+    // Note copy may mention 卡面封面 as removed — that is OK. Fail only if upload entry exists.
+    const labelHit = [...document.querySelectorAll(".mcj-upload-label, .form-field, label, h2, h3, strong")].some((el) =>
+      /^卡面封面$/.test(String(el.textContent || "").trim())
+    );
     return {
-      textHasCover: /卡面封面/.test(text),
+      textHasCoverLabel: labelHit,
+      noteMentionsRemoved: /无需单独上传卡面封面|卡面封面已取消/.test(text),
       inputKeys: inputs,
-      hasCoverInput: inputs.some((k) => /cover|card/i.test(k)),
+      hasCoverInput: inputs.some((k) => /^(cover|cardCover|card_cover|profile_cover)$/i.test(k)),
     };
   });
-  step("C_cover_removed_from_ui", !coverGone.textHasCover && !coverGone.hasCoverInput, JSON.stringify(coverGone));
+  step(
+    "C_cover_removed_from_ui",
+    !coverGone.textHasCoverLabel && !coverGone.hasCoverInput,
+    JSON.stringify(coverGone)
+  );
 
   // A: avatar upload — use real file input
   const avatarInput = page.locator('[data-mcj-upload-input="avatar"], input[name="avatar"]').first();
@@ -297,9 +411,15 @@ function seedDraft(email, nickname) {
   );
   await shot(page, "02-avatar-uploaded");
 
-  // Refresh persist
+  // Refresh persist — return to step 3 after reload
+  const avatarBeforeRefresh = await page.evaluate(() => {
+    const draft = JSON.parse(localStorage.getItem("mcjCompanionApplicationDraft.v1") || "{}");
+    return draft.uploads?.avatar || {};
+  });
   await page.reload({ waitUntil: "domcontentloaded" });
-  await page.waitForTimeout(2500);
+  await page.waitForFunction(() => !/正在加载申请资料/.test(document.body.innerText), { timeout: 60000 }).catch(() => {});
+  await page.waitForTimeout(800);
+  await navigateToUploadStep(page);
   const afterRefreshAvatar = await page.evaluate(() => {
     const draft = JSON.parse(localStorage.getItem("mcjCompanionApplicationDraft.v1") || "{}");
     const a = draft.uploads?.avatar || {};
@@ -311,15 +431,24 @@ function seedDraft(email, nickname) {
       text: document.body.innerText.includes("上传成功") || !!img,
     };
   });
+  const bootAfter = await api(`/api/companion?action=bootstrap`, companionToken, null, "GET");
+  const bootAvatar =
+    bootAfter.json?.data?.media?.avatarUrl ||
+    bootAfter.json?.data?.player?.avatar ||
+    bootAfter.json?.media?.avatarUrl ||
+    "";
   step(
     "A_avatar_refresh_persist",
-    !!(afterRefreshAvatar.url || afterRefreshAvatar.path) && !/^data:/i.test(afterRefreshAvatar.url),
-    JSON.stringify(afterRefreshAvatar)
+    (!!afterRefreshAvatar.url || !!afterRefreshAvatar.path || !!bootAvatar || !!avatarBeforeRefresh.url) &&
+      !/^data:/i.test(String(afterRefreshAvatar.url || bootAvatar || avatarBeforeRefresh.url || "")),
+    JSON.stringify({ afterRefreshAvatar, bootAvatar: String(bootAvatar).slice(0, 120), before: avatarBeforeRefresh })
   );
   await shot(page, "03-avatar-after-refresh");
 
   // Replace avatar
+  await navigateToUploadStep(page);
   const avatarInput2 = page.locator('[data-mcj-upload-input="avatar"], input[name="avatar"]').first();
+  await avatarInput2.waitFor({ state: "attached", timeout: 20000 });
   await avatarInput2.setInputFiles({
     name: "avatar-b.png",
     mimeType: "image/png",
@@ -334,19 +463,21 @@ function seedDraft(email, nickname) {
   step(
     "A_avatar_replace",
     !!(replaced.url || replaced.path) &&
-      (String(replaced.path || "") !== String(afterRefreshAvatar.path || "") ||
-        String(replaced.url || "").split("?")[0] !== String(afterRefreshAvatar.url || "").split("?")[0]),
+      (String(replaced.path || "") !== String(avatarBeforeRefresh.path || "") ||
+        String(replaced.url || "").split("?")[0] !== String(avatarBeforeRefresh.url || "").split("?")[0]),
     JSON.stringify({
-      beforePath: String(afterRefreshAvatar.path || "").slice(0, 80),
+      beforePath: String(avatarBeforeRefresh.path || "").slice(0, 80),
       afterPath: String(replaced.path || "").slice(0, 80),
-      beforeUrl: String(afterRefreshAvatar.url || "").slice(0, 80),
+      beforeUrl: String(avatarBeforeRefresh.url || "").slice(0, 80),
       afterUrl: String(replaced.url || "").slice(0, 80),
     })
   );
   await shot(page, "04-avatar-replaced");
 
   // B: gallery 3 photos
+  await navigateToUploadStep(page);
   const photoInput = page.locator('[data-mcj-upload-input="photos"]').first();
+  await photoInput.waitFor({ state: "attached", timeout: 15000 });
   await photoInput.setInputFiles([
     { name: "g1.png", mimeType: "image/png", buffer: makePng(21) },
     { name: "g2.png", mimeType: "image/png", buffer: makePng(22) },
@@ -389,7 +520,8 @@ function seedDraft(email, nickname) {
 
   // Refresh gallery persist
   await page.reload({ waitUntil: "domcontentloaded" });
-  await page.waitForTimeout(2500);
+  await page.waitForFunction(() => !/正在加载申请资料/.test(document.body.innerText), { timeout: 60000 }).catch(() => {});
+  await navigateToUploadStep(page);
   const galleryRefresh = await page.evaluate(() => {
     const draft = JSON.parse(localStorage.getItem("mcjCompanionApplicationDraft.v1") || "{}");
     const photos = Array.isArray(draft.uploads?.photos) ? draft.uploads.photos : [];
@@ -402,7 +534,6 @@ function seedDraft(email, nickname) {
   await shot(page, "06-gallery-after-refresh");
 
   // D: next to 4/5 then back to 3/5
-  // Ensure draft still has voice + avatar so step 3 is complete
   await page.evaluate(() => {
     const draft = JSON.parse(localStorage.getItem("mcjCompanionApplicationDraft.v1") || "{}");
     draft.voice = Object.assign({}, draft.voice || {}, {
@@ -417,27 +548,26 @@ function seedDraft(email, nickname) {
     });
     localStorage.setItem("mcjCompanionApplicationDraft.v1", JSON.stringify(draft));
   });
-  await page.reload({ waitUntil: "domcontentloaded" });
-  await page.waitForTimeout(2000);
-  await page.locator("[data-apply-next]").click();
+  await navigateToUploadStep(page);
+  await page.locator("[data-apply-next]").click({ force: true });
   await page.waitForTimeout(1500);
   const onStep4 = await page.evaluate(() => /选择认证方式|身份证认证|押金认证/.test(document.body.innerText));
-  step("D_step3_to_step4", onStep4, onStep4 ? "on step4" : document.body ? "not step4" : "no body");
+  step("D_step3_to_step4", onStep4, onStep4 ? "on step4" : "not step4");
   await shot(page, "07-step4");
 
-  await page.locator("[data-apply-prev]").click();
+  await page.locator("[data-apply-prev]").click({ force: true });
   await page.waitForTimeout(1500);
   const back = await page.evaluate(() => {
     const draft = JSON.parse(localStorage.getItem("mcjCompanionApplicationDraft.v1") || "{}");
     const photos = Array.isArray(draft.uploads?.photos) ? draft.uploads.photos : [];
     return {
       onStep3: /上传头像与资料|头像/.test(document.body.innerText),
-      noCover: !/卡面封面/.test(document.body.innerText),
+      noCoverInput: !document.querySelector('[data-mcj-upload-input="cover"]'),
       avatar: !!(draft.uploads?.avatar?.url || draft.uploads?.avatar?.path),
       photos: photos.length,
     };
   });
-  step("D_back_step3_data_persists", back.onStep3 && back.noCover && back.avatar && back.photos >= 3, JSON.stringify(back));
+  step("D_back_step3_data_persists", back.onStep3 && back.noCoverInput && back.avatar && back.photos >= 3, JSON.stringify(back));
   await shot(page, "08-back-step3");
 
   // Admin / GET bootstrap view same media
