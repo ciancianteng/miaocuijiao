@@ -368,35 +368,67 @@ async function main() {
   await page.locator("#applyVoicePanel").scrollIntoViewIfNeeded().catch(() => {});
   await shot(page, "02-voice-panel");
 
-  // Permission denied path (separate page)
+  // Permission denied path (separate context)
   {
     const denyCtx = await browser.newContext({ ...iphone, locale: "zh-CN" });
     await installRecorderMock(denyCtx, { denyMic: true });
+    await denyCtx.addInitScript(
+      ({ token, email, nickname }) => {
+        const session = { token, accessToken: token, email, role: "companion", user: { email, name: nickname, role: "companion" } };
+        localStorage.setItem("mcjCompanionSession", JSON.stringify(session));
+        sessionStorage.setItem("mcjCompanionSession", JSON.stringify(session));
+        localStorage.setItem("mcjAuthAccessToken", token);
+        localStorage.setItem("mcjRole", "companion");
+        localStorage.setItem("customerUser", JSON.stringify({ role: "companion", email, name: nickname }));
+        localStorage.setItem(
+          "mcjCompanionApplicationDraft.v1",
+          JSON.stringify({
+            step: 3,
+            rulesAgreement: { accepted: true },
+            data: {
+              nickname,
+              age: "22",
+              gender: "女",
+              region: "KL",
+              phone: "60111111111",
+              email,
+              personalTags: ["随和"],
+              gameNickname: "DenyMic",
+              mainGames: ["VALORANT"],
+              positions: ["中路"],
+              modes: ["陪玩服务"],
+              rank: "黄金",
+              voiceType: "甜妹",
+              onlineStart: "18:00",
+              onlineEnd: "23:00",
+              intro: "deny mic tip test",
+            },
+            uploads: {},
+            voice: { status: "尚未录制" },
+            identity: {},
+            gameCards: [],
+          })
+        );
+      },
+      { token: companionToken, email: loginEmail, nickname: "拒麦测试" }
+    );
     const denyPage = await denyCtx.newPage();
-    await denyPage.goto(`${BASE}/companion-apply.html`, { waitUntil: "domcontentloaded", timeout: 90000 });
-    await denyPage.evaluate(({ token }) => {
-      localStorage.setItem("mcjCompanionSession", JSON.stringify({ accessToken: token, token, role: "companion" }));
-      localStorage.setItem("mcj_companion_token", token);
-      const draft = JSON.parse(localStorage.getItem("mcjCompanionApplicationDraft.v1") || "{}");
-      draft.voice = { status: "尚未录制" };
-      draft.rulesAgreement = { accepted: true };
-      draft.data = Object.assign({}, draft.data || {}, {
-        nickname: "拒麦测试",
-        modes: ["陪玩服务"],
-        mainGames: ["王者荣耀"],
-        positions: ["打野"],
-        personalTags: ["温柔"],
-      });
-      localStorage.setItem("mcjCompanionApplicationDraft.v1", JSON.stringify(draft));
-    }, { token: companionToken });
-    await denyPage.reload({ waitUntil: "domcontentloaded" });
-    await denyPage.waitForTimeout(800);
+    await denyPage.goto(`${BASE}/companion-apply.html?t=${Date.now()}`, { waitUntil: "domcontentloaded", timeout: 90000 });
+    await denyPage.waitForFunction(() => !/正在加载申请资料/.test(document.body.innerText), { timeout: 60000 }).catch(() => {});
     await navigateToUploadStep(denyPage, { seedVoice: false });
     await denyPage.locator("#applyVoicePanel").scrollIntoViewIfNeeded().catch(() => {});
-    await denyPage.locator("[data-record-start]").click({ force: true });
-    await denyPage.waitForTimeout(800);
-    const tip = await denyPage.evaluate(() => document.body.innerText);
-    step("mic_permission_denied_tip", /请允许麦克风权限后再录音/.test(tip), tip.slice(0, 200));
+    const hasStart = await denyPage.locator("[data-record-start]").count();
+    if (hasStart) {
+      await denyPage.locator("[data-record-start]").click({ force: true });
+    } else {
+      await denyPage.evaluate(() => document.querySelector("[data-record-start]")?.click());
+    }
+    await denyPage.waitForTimeout(1000);
+    const tip = await denyPage.evaluate(() => {
+      const banner = document.querySelector("[data-apply-tip]");
+      return (banner && banner.textContent) || document.body.innerText;
+    });
+    step("mic_permission_denied_tip", /请允许麦克风权限后再录音/.test(tip), String(tip).slice(0, 240));
     await denyPage.screenshot({ path: path.join(ART, "03-mic-denied.png"), fullPage: true });
     fs.copyFileSync(path.join(ART, "03-mic-denied.png"), path.join(ART_REPO, "03-mic-denied.png"));
     await denyCtx.close();
