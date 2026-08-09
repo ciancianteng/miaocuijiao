@@ -16,9 +16,11 @@
     .pay-row{border:1px solid rgba(255,255,255,.08);border-radius:12px;background:rgba(0,0,0,.18);padding:12px;display:flex;justify-content:space-between;gap:12px}
     .pay-row span{color:#9ca3af;font-size:13px}.pay-row strong{color:#fff;word-break:break-word;text-align:right}
     .pay-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:18px}
-    .pay-btn{border:1px solid rgba(255,255,255,.22);border-radius:12px;background:rgba(255,255,255,.1);color:#fff;padding:10px 14px;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;font-weight:700;min-height:44px}
-    .pay-btn.primary{border-color:rgba(255,143,197,.65);background:rgba(255,143,197,.28);color:#fff}
-    .pay-btn:disabled,.pay-btn.is-disabled{opacity:.55;cursor:not-allowed;pointer-events:none}
+    .pay-btn{border:1px solid rgba(255,158,207,.55);border-radius:12px;background:rgba(255,143,197,.18);color:#ffe6f2;padding:10px 14px;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;font-weight:800;min-height:44px;opacity:1;box-shadow:inset 0 1px 0 rgba(255,255,255,.08)}
+    .pay-btn.primary{border-color:transparent;background:linear-gradient(180deg,#ffe2ef,#ff9ecf);color:#1b0712;box-shadow:0 0 18px rgba(255,158,207,.28),inset 0 1px 0 rgba(255,255,255,.45)}
+    .pay-btn:hover:not(:disabled):not(.is-disabled){border-color:rgba(255,212,230,.8);filter:brightness(1.06)}
+    .pay-btn.primary:hover:not(:disabled):not(.is-disabled){filter:brightness(1.05)}
+    .pay-btn:disabled,.pay-btn.is-disabled{opacity:.45;cursor:not-allowed;pointer-events:none;filter:saturate(.5);background:rgba(255,255,255,.06)!important;border-color:rgba(255,255,255,.12)!important;color:#9ca3af!important;box-shadow:none!important}
     .pay-alert{margin-top:14px;color:#ffb9d6;font-weight:600}
     .pay-status-box{margin-top:14px;border:1px solid rgba(255,143,197,.35);border-radius:12px;background:rgba(255,143,197,.12);padding:12px 14px}
     .pay-status-box strong{display:block;color:#ffd6e7;font-size:15px}

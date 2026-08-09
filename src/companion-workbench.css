@@ -190,6 +190,18 @@ a.pw-btn{display:inline-flex;align-items:center;justify-content:center;text-deco
 .pw-btn:hover:not(:disabled){border-color:var(--pw-line-pink);background:rgba(255,255,255,.06)}
 .pw-btn.primary{border-color:transparent;background:linear-gradient(135deg,#ff7fbc,#d85f9d);color:#fff;font-weight:700}
 .pw-btn.danger{border-color:rgba(255,111,134,.35);color:var(--pw-bad)}
+/* Enabled secondary actions: pink outline so they don't read as disabled */
+.pw-btn:not(.primary):not(.danger):not(:disabled):not(.is-disabled){
+  border-color:rgba(255,158,207,.48);
+  background:rgba(255,143,197,.12);
+  color:#ffe6f2;
+  opacity:1;
+  cursor:pointer;
+}
+.pw-btn:not(.primary):not(.danger):not(:disabled):not(.is-disabled):hover{
+  border-color:rgba(255,212,230,.78);
+  background:rgba(255,143,197,.18);
+}
 .pw-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
 .pw-card{border:1px solid var(--pw-line);border-radius:18px;background:rgba(18,16,22,.82);box-shadow:0 14px 34px rgba(0,0,0,.18)}
 .pw-card h3{margin:0 0 14px;font-size:16px}

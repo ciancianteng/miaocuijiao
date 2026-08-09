@@ -866,3 +866,33 @@
   }
   .cs-orders-table .cs-col-actions{min-width:220px}
 }
+
+
+/* Enabled secondary cs-btn: do not look disabled (portal-scoped, not global theme) */
+.cs-btn:not(.primary):not(.danger):not(.warn):not([disabled]):not(:disabled){
+  border-color:rgba(255,158,207,.48);
+  background:rgba(255,143,197,.12);
+  color:#ffe6f2;
+  opacity:1;
+  cursor:pointer;
+}
+.cs-btn.ghost:not([disabled]):not(:disabled){
+  border-color:rgba(255,158,207,.48);
+  background:rgba(255,143,197,.10);
+  color:#ffe6f2;
+  opacity:1;
+  cursor:pointer;
+}
+.cs-btn:not(.primary):not(.danger):not(.warn):not([disabled]):not(:disabled):hover,
+.cs-btn.ghost:not([disabled]):not(:disabled):hover{
+  border-color:rgba(255,212,230,.78);
+  background:rgba(255,143,197,.18);
+}
+.cs-btn[disabled],.cs-btn:disabled{
+  opacity:.45 !important;
+  cursor:not-allowed !important;
+  filter:saturate(.5);
+  background:rgba(255,255,255,.05) !important;
+  border-color:rgba(255,255,255,.12) !important;
+  color:#9ca3af !important;
+}
