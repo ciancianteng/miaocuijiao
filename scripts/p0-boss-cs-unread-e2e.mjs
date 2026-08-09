@@ -341,30 +341,65 @@ async function ensurePair(bossTok, csTok) {
       args: ["--no-sandbox", "--disable-dev-shm-usage"],
     });
     const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
-    await page.goto(`${BASE}/login.html?t=${Date.now()}`, { waitUntil: "domcontentloaded", timeout: 90000 }).catch(() => {});
-    // Direct support page with injected session via login API token in localStorage
+    // Ensure unread exists for UI badge assertion
+    await api("/api/chat", bossTok, { action: "mark_read", conversation_id: convA });
+    if (convB) await api("/api/chat", bossTok, { action: "mark_read", conversation_id: convB });
+    await csSendText(csTok, convA, `${marker}-ui-1`);
+    await csSendText(csTok, convA, `${marker}-ui-2`);
+    if (convB) await csSendText(csTok, convB, `${marker}-ui-b`);
+    await sleep(800);
+
+    await page.goto(`${BASE}/login.html?t=${Date.now()}`, { waitUntil: "domcontentloaded", timeout: 90000 });
+    await page.waitForTimeout(600);
+    const emailSel = 'input[type=email],input[name=email],input[name=account],#email';
+    const passSel = 'input[type=password],input[name=password],#password';
+    if (await page.locator(emailSel).count()) {
+      await page.fill(emailSel, BOSS_EMAIL);
+      await page.fill(passSel, PASS);
+      await page.click('button[type=submit],button:has-text("登录")');
+      await page.waitForTimeout(2500);
+    }
+    // Fallback: seed session mirrors used by boss support gate
+    await page.evaluate(
+      ({ token, email }) => {
+        localStorage.setItem("mcjAuthAccessToken", token);
+        sessionStorage.setItem("mcjAuthAccessToken", token);
+        localStorage.setItem("mcjRole", "boss");
+        sessionStorage.setItem("mcjRole", "boss");
+        sessionStorage.setItem(
+          "customerUser",
+          JSON.stringify({ role: "boss", email, displayName: "E2E Boss" })
+        );
+        localStorage.setItem(
+          "customerUser",
+          JSON.stringify({ role: "boss", email, displayName: "E2E Boss" })
+        );
+      },
+      { token: bossTok, email: BOSS_EMAIL }
+    );
     await page.goto(`${BASE}/support.html?t=${Date.now()}`, { waitUntil: "domcontentloaded", timeout: 90000 });
-    await page.evaluate((token) => {
-      localStorage.setItem("mcjAuthAccessToken", token);
-      sessionStorage.setItem("mcjAuthAccessToken", token);
-    }, bossTok);
-    await page.reload({ waitUntil: "domcontentloaded" });
-    await page.waitForSelector(".support-session, .support-empty-list", { timeout: 45000 });
-    await sleep(1500);
+    await page.waitForSelector(".support-session, .support-login-panel, .support-empty-list", { timeout: 60000 });
+    // If still on login panel, click login is not enough — reload with seeded token
+    if (await page.locator(".support-login-panel").count()) {
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await page.waitForTimeout(1500);
+    }
+    await page.waitForSelector(".support-session, .support-empty-list", { timeout: 60000 });
+    await sleep(2000);
     const badgeCount = await page.locator(".support-session .support-unread").count();
     const badgeTexts = await page.locator(".support-session .support-unread").allTextContents();
     const navBadge = await page.locator("[data-mcj-chat-unread-badge]:not([hidden])").count();
-    step("ui_session_badges", badgeCount > 0, `badges=${badgeCount} texts=${badgeTexts.join(",")}`);
-    step("ui_nav_or_total", navBadge > 0 || badgeCount > 0, `nav=${navBadge} session=${badgeCount}`);
+    const totalBadge = await page.locator(".support-unread-total").count();
+    step("ui_session_badges", badgeCount > 0, `badges=${badgeCount} texts=${badgeTexts.join(",")} totalHead=${totalBadge}`);
+    step("ui_nav_or_total", navBadge > 0 || totalBadge > 0 || badgeCount > 0, `nav=${navBadge} total=${totalBadge} session=${badgeCount}`);
     await page.screenshot({ path: path.join(ART, "01-unread-list.png"), fullPage: true }).catch(() => {});
     fs.copyFileSync(path.join(ART, "01-unread-list.png"), path.join(ART_REPO, "01-unread-list.png"));
 
-    // Open first unread session → badge should clear after mark_read
     const withBadge = page.locator(".support-session").filter({ has: page.locator(".support-unread") }).first();
     if (await withBadge.count()) {
-      await withBadge.click();
-      await sleep(2000);
-      const still = await page.locator('.support-session.active .support-unread').count();
+      await withBadge.evaluate((el) => el.click());
+      await sleep(2500);
+      const still = await page.locator(".support-session.active .support-unread").count();
       step("ui_open_clears_active", still === 0, `activeUnreadBadges=${still}`);
     } else {
       step("ui_open_clears_active", true, "no badge row to open");
