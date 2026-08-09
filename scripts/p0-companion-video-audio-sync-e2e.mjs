@@ -123,41 +123,44 @@ async function login(email, role) {
       : JSON.stringify(videoUp.json).slice(0, 240)
   );
 
-  // Companion self bootstrap
-  const boot = await api("/api/companion", cp.token, { action: "bootstrap" });
-  const media = Array.isArray(boot.json?.media) ? boot.json.media : [];
+  // Companion self bootstrap (GET)
+  const bootRes = await fetch(`${BASE}/api/companion?action=bootstrap`, {
+    headers: {
+      Authorization: `Bearer ${cp.token}`,
+      "x-mcj-companion-token": cp.token,
+      "x-mcj-access-token": cp.token,
+    },
+  });
+  const bootJson = await bootRes.json().catch(() => ({}));
+  const boot = bootJson.data || bootJson;
+  const media = Array.isArray(boot.media) ? boot.media : [];
   const selfVoice = media.find((m) => String(m.mediaType || m.media_type) === "voice" && m.url);
   const selfVideo =
     media.find((m) => String(m.mediaType || m.media_type) === "video" && m.url) ||
-    (boot.json?.player?.videoUrl ? { url: boot.json.player.videoUrl } : null);
+    (boot.player?.videoUrl ? { url: boot.player.videoUrl } : null);
   step("companion_self_voice", !!selfVoice?.url && /^https?:\/\//i.test(selfVoice.url), String(selfVoice?.url || "").slice(0, 90));
   step("companion_self_video", !!selfVideo?.url && /^https?:\/\//i.test(selfVideo.url), String(selfVideo?.url || "").slice(0, 90));
 
-  // Admin detail see + play URLs
-  const players = await api("/api/admin/players", ad.token, { action: "list", q: COMP, limit: 20 });
-  const list = players.json?.players || players.json?.data || players.json?.rows || [];
-  let companionRow =
-    list.find((p) => String(p.email || "").toLowerCase() === COMP.toLowerCase()) ||
-    list.find((p) => /companion\.final/i.test(String(p.email || p.nickname || ""))) ||
-    list[0];
-  // Prefer detail by known companion from bootstrap
-  const profileId =
-    boot.json?.player?.id ||
-    boot.json?.companion?.id ||
-    boot.json?.profile?.companionProfileId ||
-    companionRow?.id ||
-    "";
-  const detail = await api("/api/admin/players", ad.token, {
-    action: "detail",
-    id: profileId || companionRow?.id,
+  // Admin list GET + detail
+  const listRes = await fetch(`${BASE}/api/admin/players`, {
+    headers: { Authorization: `Bearer ${ad.token}`, "x-mcj-admin-token": ad.token, "x-mcj-access-token": ad.token },
   });
-  const dMedia = detail.json?.detail?.media || detail.json?.media || {};
-  const adminVoice = (dMedia.voices || [])[0];
-  const adminVideo = (dMedia.videos || [])[0];
+  const listJson = await listRes.json().catch(() => ({}));
+  const list = listJson.players || [];
+  const companionRow =
+    list.find((p) => String(p.email || "").toLowerCase() === COMP.toLowerCase()) ||
+    list.find((p) => /companion\.final/i.test(String(p.email || ""))) ||
+    null;
+  const profileId = companionRow?.id || "";
+  step("admin_find_companion", !!profileId, profileId || "missing");
+  const detail = await api("/api/admin/players", ad.token, { action: "detail", id: profileId });
+  const dMedia = detail.json?.detail?.media || detail.json?.player?.media || {};
+  const adminVoice = (dMedia.voices || []).find((v) => String(v.id) === String(voiceId)) || (dMedia.voices || [])[0];
+  const adminVideo = (dMedia.videos || []).find((v) => String(v.id) === String(videoId)) || (dMedia.videos || [])[0];
   step(
     "admin_see_voice",
     !!adminVoice?.url && /^https?:\/\//i.test(adminVoice.url),
-    adminVoice ? `id=${adminVoice.id} status=${adminVoice.status}` : JSON.stringify(dMedia).slice(0, 160)
+    adminVoice ? `id=${adminVoice.id} status=${adminVoice.status}` : JSON.stringify(Object.keys(dMedia))
   );
   step(
     "admin_see_video",
@@ -165,11 +168,10 @@ async function login(email, role) {
     adminVideo ? `id=${adminVideo.id} status=${adminVideo.status}` : `videos=${(dMedia.videos || []).length}`
   );
 
-  // Approve both
   const approveVoice = adminVoice?.id
     ? await api("/api/admin/players", ad.token, {
         action: "review_media",
-        id: profileId || companionRow?.id,
+        id: profileId,
         mediaId: adminVoice.id,
         status: "approved",
       })
@@ -177,7 +179,7 @@ async function login(email, role) {
   const approveVideo = adminVideo?.id
     ? await api("/api/admin/players", ad.token, {
         action: "review_media",
-        id: profileId || companionRow?.id,
+        id: profileId,
         mediaId: adminVideo.id,
         status: "approved",
       })
@@ -185,24 +187,18 @@ async function login(email, role) {
   step("admin_approve_voice", approveVoice.ok, approveVoice.json?.message || "");
   step("admin_approve_video", approveVideo.ok, approveVideo.json?.message || "");
 
-  await sleep(800);
+  await sleep(900);
 
-  // Public/boss profile
-  const userId = boot.json?.player?.userId || boot.json?.user?.id || boot.json?.profile?.id || "";
-  const publicId =
-    boot.json?.player?.companionCode ||
-    boot.json?.player?.publicId ||
-    boot.json?.companion?.companion_code ||
-    userId;
+  const userId = boot.player?.userId || boot.player?.id || companionRow?.userId || "";
+  const publicId = boot.player?.companionCode || boot.player?.publicId || userId;
   const pub = await api(`/api/public/companions?id=${encodeURIComponent(publicId || userId)}`, null, null, "GET");
-  const pubList = pub.json?.companions || pub.json?.data || (Array.isArray(pub.json) ? pub.json : []);
+  const pubList = pub.json?.companions || pub.json?.data || [];
   const one = Array.isArray(pubList) ? pubList[0] : pub.json?.companion || pub.json;
   const pubVoice = one?.voiceUrl || "";
   const pubVideo = one?.videoUrl || one?.showcaseVideoUrl || "";
   step("boss_public_voice", /^https?:\/\//i.test(pubVoice), String(pubVoice).slice(0, 100));
   step("boss_public_video", /^https?:\/\//i.test(pubVideo), String(pubVideo).slice(0, 100));
 
-  // Delete both
   const delVoice = await api("/api/companion", cp.token, {
     action: "delete_media",
     media_id: adminVoice?.id || voiceId,
@@ -218,17 +214,18 @@ async function login(email, role) {
 
   await sleep(900);
 
-  const boot2 = await api("/api/companion", cp.token, { action: "bootstrap" });
-  const media2 = Array.isArray(boot2.json?.media) ? boot2.json.media : [];
+  const boot2Res = await fetch(`${BASE}/api/companion?action=bootstrap`, {
+    headers: { Authorization: `Bearer ${cp.token}`, "x-mcj-companion-token": cp.token },
+  });
+  const boot2Json = await boot2Res.json().catch(() => ({}));
+  const boot2 = boot2Json.data || boot2Json;
+  const media2 = Array.isArray(boot2.media) ? boot2.media : [];
   const goneSelfVoice = !media2.some((m) => String(m.mediaType) === "voice" && m.url);
-  const goneSelfVideo = !media2.some((m) => String(m.mediaType) === "video" && m.url) && !boot2.json?.player?.videoUrl;
+  const goneSelfVideo = !media2.some((m) => String(m.mediaType) === "video" && m.url) && !boot2.player?.videoUrl;
   step("self_after_delete", goneSelfVoice && goneSelfVideo, `voiceGone=${goneSelfVoice} videoGone=${goneSelfVideo}`);
 
-  const detail2 = await api("/api/admin/players", ad.token, {
-    action: "detail",
-    id: profileId || companionRow?.id,
-  });
-  const d2 = detail2.json?.detail?.media || detail2.json?.media || {};
+  const detail2 = await api("/api/admin/players", ad.token, { action: "detail", id: profileId });
+  const d2 = detail2.json?.detail?.media || detail2.json?.player?.media || {};
   step(
     "admin_after_delete",
     !(d2.voices || []).length && !(d2.videos || []).length,
@@ -236,13 +233,9 @@ async function login(email, role) {
   );
 
   const pub2 = await api(`/api/public/companions?id=${encodeURIComponent(publicId || userId)}`, null, null, "GET");
-  const pubList2 = pub2.json?.companions || pub2.json?.data || [];
-  const one2 = Array.isArray(pubList2) ? pubList2[0] : pub2.json?.companion || pub2.json;
-  const pubVoice2 = one2?.voiceUrl || "";
-  const pubVideo2 = one2?.videoUrl || one2?.showcaseVideoUrl || "";
-  step("public_after_delete", !pubVoice2 && !pubVideo2, `voice=${!!pubVoice2} video=${!!pubVideo2}`);
+  const one2 = (pub2.json?.companions || pub2.json?.data || [])[0] || pub2.json?.companion || pub2.json;
+  step("public_after_delete", !(one2?.voiceUrl || one2?.videoUrl || one2?.showcaseVideoUrl), `voice=${!!one2?.voiceUrl} video=${!!one2?.videoUrl}`);
 
-  // Refresh persist of absence
   const pub3 = await api(`/api/public/companions?id=${encodeURIComponent(publicId || userId)}`, null, null, "GET");
   const one3 = (pub3.json?.companions || pub3.json?.data || [])[0] || pub3.json?.companion || pub3.json;
   step(

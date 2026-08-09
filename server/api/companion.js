@@ -3991,7 +3991,21 @@ export default async function handler(req, res) {
           "companion_media",
           `?companion_profile_id=eq.${encodeURIComponent(row.id)}&media_type=eq.${encodeURIComponent(mediaType)}`
         ).catch(() => []);
-        for (const old of oldRows || []) {
+        let legacyVideoRows = [];
+        if (mediaType === "video") {
+          // Older DBs may store showcase video as gallery + video/* content_type.
+          const galleryRows = await companionDb(
+            "companion_media",
+            `?companion_profile_id=eq.${encodeURIComponent(row.id)}&media_type=eq.gallery&select=*`
+          ).catch(() => []);
+          legacyVideoRows = (galleryRows || []).filter(
+            (g) =>
+              /^video\//i.test(String(g.content_type || "")) ||
+              /\/video\//i.test(String(g.storage_path || "")) ||
+              String(g.storage_bucket || "") === PRIVATE_BUCKETS.video
+          );
+        }
+        for (const old of [...(oldRows || []), ...legacyVideoRows]) {
           try {
             await deleteStorageObject(old.storage_bucket, old.storage_path);
           } catch {
@@ -4205,6 +4219,18 @@ export default async function handler(req, res) {
             "companion_media",
             `?companion_profile_id=eq.${encodeURIComponent(row.id)}&media_type=eq.${encodeURIComponent(mediaType)}`
           );
+          if (mediaType === "video" && !(items || []).length) {
+            const galleryRows = await companionDb(
+              "companion_media",
+              `?companion_profile_id=eq.${encodeURIComponent(row.id)}&media_type=eq.gallery`
+            ).catch(() => []);
+            items = (galleryRows || []).filter(
+              (g) =>
+                /^video\//i.test(String(g.content_type || "")) ||
+                /\/video\//i.test(String(g.storage_path || "")) ||
+                String(g.storage_bucket || "") === PRIVATE_BUCKETS.video
+            );
+          }
         } else {
           return json(res, 400, { ok: false, message: "缺少要删除的媒体" });
         }
@@ -4226,6 +4252,12 @@ export default async function handler(req, res) {
       }
       if (!items?.length) return json(res, 404, { ok: false, message: "媒体不存在" });
       const deletedTypes = new Set((items || []).map((i) => String(i.media_type || "")));
+      const deletedVideoLike = (items || []).some(
+        (i) =>
+          i.media_type === "video" ||
+          /^video\//i.test(String(i.content_type || "")) ||
+          String(i.storage_bucket || "") === PRIVATE_BUCKETS.video
+      );
       for (const item of items) {
         try {
           await deleteStorageObject(item.storage_bucket, item.storage_path);
@@ -4259,7 +4291,7 @@ export default async function handler(req, res) {
           updated_at: nowIso(),
         }).catch(() => null);
       }
-      if (deletedTypes.has("video")) {
+      if (deletedTypes.has("video") || deletedVideoLike) {
         await patchCompanionProfile(`?id=eq.${encodeURIComponent(row.id)}`, {
           media_status: "pending",
           updated_at: nowIso(),
