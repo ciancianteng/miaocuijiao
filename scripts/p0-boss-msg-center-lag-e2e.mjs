@@ -120,13 +120,18 @@ async function runViewport(label, deviceOpts, { injectFix }) {
     return null;
   }
 
-  await page.goto(`${BASE}/support.html?cb=${Date.now()}`, { waitUntil: "domcontentloaded", timeout: 60000 });
+  await page.goto(BASE + "/support.html?cb=" + Date.now(), { waitUntil: "domcontentloaded", timeout: 60000 });
   await page.waitForSelector(".support-session[data-select-conversation]", { timeout: 30000 });
-  const lagfix = await page.evaluate(() => String(window.__MCJ_SUPPORT_CHAT_LAGFIX || ""));
+  var lagFixFlag = "";
+  try {
+    lagFixFlag = await page.evaluate("String(window.__MCJ_SUPPORT_CHAT_LAGFIX || '')");
+  } catch (e) {
+    lagFixFlag = "";
+  }
   if (injectFix) {
-    step(`${label}_fix_injected`, injectedHits >= 1 && lagfix === "20260809bossMsgLag1", `hits=${injectedHits} flag=${lagfix || "(none)"}`);
+    step(label + "_fix_injected", injectedHits >= 1 && lagFixFlag === "20260809bossMsgLag1", "hits=" + injectedHits + " flag=" + (lagFixFlag || "(none)"));
   } else {
-    step(`${label}_baseline_no_fix_flag`, lagfix !== "20260809bossMsgLag1", `flag=${lagFix || "(none)"}`);
+    step(label + "_baseline_no_fix_flag", lagFixFlag !== "20260809bossMsgLag1", "flag=" + (lagFixFlag || "(none)"));
   }
 
   const isMobile = /mobile/.test(label);
@@ -152,11 +157,11 @@ async function runViewport(label, deviceOpts, { injectFix }) {
     const t0 = Date.now();
     await card.click({ timeout: 5000 });
     if (isMobile) {
-      await page.waitForSelector(".support-main-head, .support-messages", { timeout: 2500 });
       await page.waitForFunction(() => {
         const layout = document.querySelector(".support-layout");
-        return !!(layout && layout.classList.contains("mobile-detail"));
-      }, null, { timeout: 2500 });
+        const main = document.querySelector(".support-messages, .support-main-head");
+        return !!(layout && layout.classList.contains("mobile-detail") && main);
+      }, null, { timeout: 3000 });
     } else {
       await page.waitForFunction(
         (id) => {
