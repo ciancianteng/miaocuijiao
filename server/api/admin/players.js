@@ -14,7 +14,7 @@ import { requireAdmin as requireAdminJwt, ADMIN_ROLES as SHARED_ADMIN_ROLES } fr
 
 const ADMIN_ROLES = SHARED_ADMIN_ROLES;
 const PLAYER_TABLE = "companion_profiles";
-const SIGN_TTL = 300;
+const SIGN_TTL = 60 * 60; // 1h — voice/gallery preview must remain playable in admin sessions
 
 const ACCOUNT_LABEL = { active: "正常", disabled: "冻结", pending: "待审核" };
 const STATUS_LABEL = {

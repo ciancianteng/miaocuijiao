@@ -2533,41 +2533,61 @@
       (busy?'<p class="pw-media-status" data-gallery-status>上传中…</p>':'')+
       '</div>';
   }
+  function isPlayableMediaUrl(u){
+    return /^(https?:\/\/|blob:|data:audio\/)/i.test(String(u||'').trim());
+  }
+  function pickVoicePlayUrl(voiceMedia,p,raw,localUrl){
+    if(localUrl&&isPlayableMediaUrl(localUrl))return String(localUrl);
+    var list=[
+      voiceMedia&&voiceMedia.url,
+      p&&p.voiceUrl,
+      p&&p.voice_url,
+      raw&&raw.voiceSignedUrl,
+      raw&&raw.voice_url
+    ];
+    for(var i=0;i<list.length;i++){
+      if(isPlayableMediaUrl(list[i]))return String(list[i]).trim();
+    }
+    return '';
+  }
   function pwVoiceUploadHtml(p,raw,uploadBusy){
     var busy=uploadBusy==='voice';
     var voiceMedia=((state.data&&state.data.media)||[]).filter(function(m){return m.mediaType==='voice'&&m.url})[0];
-    var remoteUrl=(voiceMedia&&voiceMedia.url)||p.voiceUrl||raw.voice_url||'';
     var localUrl=voiceRec.localUrl||'';
-    var playUrl=localUrl||remoteUrl||'';
+    var playUrl=pickVoicePlayUrl(voiceMedia,p,raw||{},localUrl);
     var recording=!!voiceRec.recording;
     var hasLocal=!!(voiceRec.localBlob||localUrl);
     var clock=pwFmtVoiceClock(voiceRec.duration||0);
+    var err=state.voicePlayError?('<p class="pw-field-error" data-voice-play-error>'+esc(state.voicePlayError)+'</p>'):'';
     return '<div class="pw-media-block pw-voice-block">'+
       '<p class="pw-field-hint">支持现场录音或上传 mp3 / m4a / wav / webm。重新上传会覆盖旧录音。</p>'+
       '<div class="pw-voice-toolbar">'+
       '<button type="button" class="pw-voice-btn primary'+(recording?' is-live':'')+'" data-voice-record-toggle '+(busy?'disabled':'')+'>'+
       (recording?'⏹ 停止录音':'🎙 开始录音')+
       '</button>'+
-      '<label class="pw-voice-btn'+(busy?' is-busy':'')+'" data-pw-upload-trigger="voice">'+
+      '<label class="pw-voice-btn'+(busy?' is-busy':'')+'">'+
       (busy?'上传中…':'↑ 上传音频')+
       pwHiddenMediaInput({accept:AUDIO_ACCEPT,disabled:!!uploadBusy||recording,dataset:' data-upload-voice'})+
       '</label>'+
       '</div>'+
       (recording?'<p class="pw-voice-live" data-voice-timer>● 录音中 '+esc(clock)+'</p>':'')+
+      err+
       '<div class="pw-voice-preview" data-voice-preview>'+
       (playUrl
         ? '<div class="pw-voice-player-row">'+
-          '<audio controls preload="metadata" src="'+esc(playUrl)+'"></audio>'+
-          (hasLocal&&!remoteUrl?'<span class="pw-voice-dur">'+esc(clock)+'</span>':'')+
+          '<audio controls preload="metadata" src="'+esc(playUrl)+'" data-voice-audio></audio>'+
+          (hasLocal?'<span class="pw-voice-dur">'+esc(clock)+'</span>':'')+
           '</div>'+
           '<div class="pw-voice-edit-row">'+
           '<button type="button" class="pw-media-chip" data-voice-rerecord '+(busy||recording?'disabled':'')+'>重录</button>'+
-          (hasLocal&&!remoteUrl
+          (hasLocal
             ? '<button type="button" class="pw-media-chip primary" data-voice-upload-local '+(busy||recording?'disabled':'')+'>确认上传</button>'
             : '')+
           '<button type="button" class="pw-media-chip danger" data-delete-voice '+(busy||recording?'disabled':'')+'>删除</button>'+
           '</div>'
-        : '<div class="pw-voice-empty">尚未录制或上传语音试听</div>')+
+        : (hasLocal
+          ? '<div class="pw-voice-empty">录音已生成，请点击「确认上传」保存到云端</div><div class="pw-voice-edit-row"><button type="button" class="pw-media-chip primary" data-voice-upload-local>确认上传</button><button type="button" class="pw-media-chip" data-voice-rerecord>重录</button><button type="button" class="pw-media-chip danger" data-delete-voice>删除</button></div>'
+          : '<div class="pw-voice-empty">尚未录制或上传语音试听</div>'))+
       '</div></div>';
   }
 
@@ -3160,14 +3180,17 @@
       }
       if(res&&res.url&&mediaType==='voice'&&state.data&&state.data.player){
         state.data.player.voiceUrl=res.url;
+        state.voicePlayError='';
         clearVoiceLocal();
       }
       return loadData({soft:true,forcePaint:true});
     }).catch(function(err){
       state.uploadBusy='';
       captureLiveForms(true);
-      paint();
-      toast(err.message||'上传失败，请重试');
+      paint({preserveScroll:true});
+      var msg=String((err&&err.message)||'上传失败，请重试');
+      toast('上传失败：'+msg);
+      try{console.error('[companion-media] upload failed',mediaType,err)}catch(e){}
     });
   }
   function validateProfileForm(form){
@@ -3629,19 +3652,30 @@
     }
     if(e.target.closest('[data-voice-record-toggle]')){
       e.preventDefault();
-      if(voiceRec.recording)stopVoiceRecording();
-      else startVoiceRecording();
+      try{
+        if(voiceRec.recording)stopVoiceRecording();
+        else startVoiceRecording();
+      }catch(err){
+        try{console.error('[companion-media] voice record toggle',err)}catch(e){}
+        toast('录音失败：'+(err&&err.message||'无法开始录音'));
+      }
       return;
     }
     if(e.target.closest('[data-voice-rerecord]')){
       e.preventDefault();
-      clearVoiceLocal();
-      startVoiceRecording();
+      try{
+        clearVoiceLocal();
+        startVoiceRecording();
+      }catch(err){
+        toast('录音失败：'+(err&&err.message||'无法重录'));
+      }
       return;
     }
     if(e.target.closest('[data-voice-upload-local]')){
       e.preventDefault();
-      uploadLocalVoiceRecording();
+      uploadLocalVoiceRecording().catch(function(err){
+        toast('上传失败：'+(err&&err.message||'确认上传失败'));
+      });
       return;
     }
     var previewBtn=e.target.closest('[data-gallery-preview]');
@@ -3711,9 +3745,10 @@
   function isPwTouchUpload(){
     if(window.MCJUpload&&typeof window.MCJUpload.isTouchLike==='function')return !!window.MCJUpload.isTouchLike();
     try{
-      return (window.matchMedia&&window.matchMedia('(pointer: coarse)').matches)||
-        (navigator&&navigator.maxTouchPoints>0)||
-        /Android|iPhone|iPad|iPod/i.test(String(navigator.userAgent||''));
+      var ua=/Android|iPhone|iPad|iPod/i.test(String(navigator.userAgent||''));
+      var coarse=!!(window.matchMedia&&window.matchMedia('(pointer: coarse)').matches);
+      // Do NOT treat desktop touchpads (maxTouchPoints>0) as mobile upload mode.
+      return !!(ua||coarse);
     }catch(e){return false}
   }
   function openPwUploadSourceSheet(onChosen){
@@ -3721,27 +3756,58 @@
       window.MCJUpload.openSourceSheet(null,onChosen);
       return;
     }
-    var choice=window.confirm('从相册选择？\n确定=相册 / 取消=拍照');
-    onChosen({capture:!choice});
+    var old=document.querySelector('[data-pw-source-sheet]');
+    if(old)old.remove();
+    var mask=document.createElement('div');
+    mask.className='pw-source-sheet';
+    mask.setAttribute('data-pw-source-sheet','1');
+    mask.innerHTML='<div class="pw-source-sheet-panel" role="dialog" aria-modal="true" aria-label="选择图片来源">'+
+      '<strong>添加照片</strong>'+
+      '<button type="button" class="pw-voice-btn primary" data-pw-source="album">从相册选择</button>'+
+      '<button type="button" class="pw-voice-btn" data-pw-source="camera">拍照</button>'+
+      '<button type="button" class="pw-media-chip" data-pw-source-cancel>取消</button>'+
+      '</div>';
+    function finish(opts){
+      try{mask.remove()}catch(e){}
+      if(opts&&typeof onChosen==='function')onChosen(opts);
+    }
+    mask.addEventListener('click',function(ev){
+      if(ev.target===mask||ev.target.closest('[data-pw-source-cancel]')){finish(null);return}
+      var album=ev.target.closest('[data-pw-source="album"]');
+      if(album){finish({capture:false});return}
+      var cam=ev.target.closest('[data-pw-source="camera"]');
+      if(cam){finish({capture:true});return}
+    });
+    document.body.appendChild(mask);
   }
   function triggerPwHiddenPick(accept,useCapture,onFile,opts){
     opts=opts||{};
+    // Never reuse .pw-media-input — its !important CSS creates a full-screen overlay
+    // and breaks gesture-chained programmatic picks.
     var input=document.createElement('input');
     input.type='file';
     input.accept=accept||IMAGE_ACCEPT;
     if(opts.multiple)input.multiple=true;
     if(useCapture)input.setAttribute('capture','environment');
-    input.className='pw-media-input';
-    input.style.cssText='position:fixed;left:-9999px;top:0;opacity:0;width:1px;height:1px;overflow:hidden;';
+    input.setAttribute('data-pw-temp-pick','1');
+    input.style.cssText='position:fixed!important;left:-10000px!important;top:0!important;width:1px!important;height:1px!important;opacity:0!important;overflow:hidden!important;z-index:-1!important;';
     document.body.appendChild(input);
+    var cleaned=false;
+    function cleanup(){
+      if(cleaned)return;
+      cleaned=true;
+      try{input.remove()}catch(err){}
+    }
     input.addEventListener('change',function(){
       var files=input.files?Array.prototype.slice.call(input.files):[];
-      try{input.remove()}catch(err){}
-      if(!files.length)return;
+      cleanup();
+      if(!files.length){toast('未选择文件');return}
       if(opts.multiple&&typeof opts.onFiles==='function'){opts.onFiles(files);return}
       if(typeof onFile==='function')onFile(files[0]);
     });
-    input.click();
+    input.addEventListener('cancel',cleanup);
+    setTimeout(cleanup,120000);
+    try{input.click()}catch(err){cleanup();toast('无法打开文件选择器，请重试')}
   }
   function uploadGalleryFiles(files){
     var list=Array.isArray(files)?files.filter(Boolean):[];
@@ -3845,9 +3911,12 @@
       paint({preserveScroll:true});
     }).catch(function(err){
       var name=String((err&&err.name)||'');
-      if(/NotAllowed|PermissionDenied/i.test(name))toast('请允许麦克风权限后再录音');
-      else if(/NotFound|DevicesNotFound/i.test(name))toast('未检测到麦克风，请改用上传音频');
-      else toast((err&&err.message)||'无法开启麦克风');
+      var msg='';
+      if(/NotAllowed|PermissionDenied/i.test(name))msg='请允许麦克风权限后再录音';
+      else if(/NotFound|DevicesNotFound/i.test(name))msg='未检测到麦克风，请改用上传音频';
+      else msg=(err&&err.message)||'无法开启麦克风';
+      try{console.error('[companion-media] voice record failed',err)}catch(e){}
+      toast('录音失败：'+msg);
     });
   }
   function uploadLocalVoiceRecording(){
@@ -3898,6 +3967,14 @@
         }
       });
     });
+  },true);
+  document.addEventListener('error',function(e){
+    var audio=e.target&&e.target.matches&&e.target.matches('audio[data-voice-audio], .pw-voice-preview audio')?e.target:null;
+    if(!audio)return;
+    state.voicePlayError='音频加载失败（可能是链接过期或格式不支持），请重新上传录音';
+    var host=document.querySelector('[data-voice-play-error]');
+    if(host)host.textContent=state.voicePlayError;
+    else toast(state.voicePlayError);
   },true);
   document.addEventListener('change',function(e){
     var profileField=e.target.closest('[data-profile-form] input,[data-profile-form] textarea,[data-profile-form] select');
