@@ -12,6 +12,7 @@
   var loadGen = 0;
   var paying = false;
   var allowTestPay = null;
+  var redirectTimer = null;
   var proofDraft = {
     orderId: "",
     file: null,
@@ -22,6 +23,7 @@
     uploaded: false,
     successTip: "",
     error: "",
+    serverProofUrl: "",
   };
 
   function esc(v) {
@@ -103,12 +105,23 @@
     );
   }
 
+  function fileInputHtml(orderId, labelText, primary) {
+    return (
+      '<label class="pay-btn' +
+      (primary ? " primary" : "") +
+      ' pay-proof-pick">' +
+      esc(labelText) +
+      '<input class="pay-proof-file" type="file" accept="image/png,image/jpeg,image/webp,image/jpg,.png,.jpg,.jpeg,.webp" data-payment-proof="' +
+      esc(orderId) +
+      '"></label>'
+    );
+  }
+
   function qrPanelHtml(order) {
     var st = String(order.status || "");
     if (st !== "awaiting_payment") return "";
     if (isWalletMethod(order)) return "";
-    if (isReviewing(order) && !(proofDraft.file || proofDraft.previewUrl)) return "";
-    // Live network payload only — never fall back to a cached/old QR image.
+    if (isReviewing(order) && !(proofDraft.file || proofDraft.previewUrl || proofDraft.serverProofUrl)) return "";
     var info = platformPayInfo || null;
     if (order && order.platformPayInfo && order.platformPayInfo.__live === true) {
       info = order.platformPayInfo;
@@ -117,7 +130,6 @@
     var channelId = String((info && info.channelId) || "").toLowerCase();
     var html = '<div class="pay-qr" data-pay-qr data-pay-channel="' + esc(channelId || methodCode(order)) + '">';
     html += "<h2>" + esc((info && info.title) || payLabel || "平台收款") + "</h2>";
-    // Only show QR when it belongs to the order's selected channel (server already enforces; guard UI too).
     var hasQr = !!(info && info.qrUrl && info.enabled !== false && info.unavailable !== true);
     if (hasQr && channelId && /tng|duitnow|alipay|bank|stripe|hitpay/.test(methodCode(order))) {
       var methodKey = methodCode(order);
@@ -133,10 +145,7 @@
     if (hasQr) {
       html +=
         '<p class="pay-hint">' +
-        esc(
-          (info && info.instructions) ||
-            "请扫描下方收款二维码完成付款。仅本支付页显示，首页不公开收款码。"
-        ) +
+        esc((info && info.instructions) || "请扫描下方收款二维码完成付款。仅本支付页显示，首页不公开收款码。") +
         "</p>";
       html +=
         '<div class="pay-qr-frame"><img src="' +
@@ -145,9 +154,7 @@
         esc(payLabel + " 收款二维码") +
         '" data-mcj-pay-qr="1" referrerpolicy="no-referrer" data-pay-qr-img="1"></div>';
     } else {
-      var closedMsg =
-        (info && info.instructions) ||
-        payLabel + " 暂未开放，请选择其他支付方式";
+      var closedMsg = (info && info.instructions) || payLabel + " 暂未开放，请选择其他支付方式";
       html += '<p class="pay-alert" role="status" data-pay-unavailable="1">' + esc(closedMsg) + "</p>";
       html +=
         '<p class="pay-hint">不会自动切换到其他支付通道的二维码。请返回重新选择已开放的支付方式，或联系客服。</p>';
@@ -188,26 +195,98 @@
     proofDraft.uploading = false;
     proofDraft.uploaded = false;
     proofDraft.error = "";
+    proofDraft.serverProofUrl = "";
     if (!keepTip) proofDraft.successTip = "";
   }
   function isAllowedProofFile(file) {
     if (!file) return false;
     var type = String(file.type || "").toLowerCase();
     if (/^image\/(png|jpeg|jpg|webp)$/.test(type)) return true;
-    // iOS / 部分 Android 相册可能给出空 MIME，按扩展名兜底。
+    if (/heic|heif|image\/heic|image\/heif/.test(type)) return false;
     var name = String(file.name || "").toLowerCase();
+    if (/\.(heic|heif)$/.test(name)) return false;
     return /\.(png|jpe?g|webp)$/.test(name);
   }
   function setProofFile(orderId, file) {
-    clearProofDraft();
+    if (proofDraft.previewUrl && String(proofDraft.previewUrl).indexOf("blob:") === 0) {
+      try {
+        URL.revokeObjectURL(proofDraft.previewUrl);
+      } catch (e) {}
+    }
     proofDraft.orderId = orderId;
     proofDraft.file = file;
-    proofDraft.fileName = String((file && file.name) || "付款截图").trim();
+    proofDraft.fileName = String((file && file.name) || "付款截图").trim() || "付款截图";
+    proofDraft.progress = 0;
+    proofDraft.uploading = false;
+    proofDraft.uploaded = false;
+    proofDraft.error = "";
+    proofDraft.serverProofUrl = "";
     try {
       proofDraft.previewUrl = URL.createObjectURL(file);
     } catch (e) {
       proofDraft.previewUrl = "";
     }
+  }
+
+  /** Compress large phone photos so JSON body stays under platform limits; still a real image upload. */
+  function prepareProofDataUrl(file, onProgress) {
+    return new Promise(function (resolve, reject) {
+      if (!file) return reject(new Error("请先选择付款截图"));
+      var reader = new FileReader();
+      reader.onerror = function () {
+        reject(new Error("读取图片失败，请重选 JPG/PNG 后重试"));
+      };
+      reader.onprogress = function (ev) {
+        if (ev.lengthComputable && ev.total && typeof onProgress === "function") {
+          onProgress(Math.min(40, 10 + Math.round((ev.loaded / ev.total) * 30)));
+        }
+      };
+      reader.onload = function () {
+        var raw = String(reader.result || "");
+        if (!/^data:image\//i.test(raw)) return reject(new Error("无法读取图片内容"));
+        // Small enough already — upload as-is.
+        if (file.size <= 900 * 1024 && raw.length < 1200 * 1024) {
+          if (typeof onProgress === "function") onProgress(55);
+          return resolve(raw);
+        }
+        var img = new Image();
+        img.onload = function () {
+          try {
+            var maxEdge = 1600;
+            var w = img.naturalWidth || img.width || 0;
+            var h = img.naturalHeight || img.height || 0;
+            if (!w || !h) return reject(new Error("图片尺寸无效"));
+            var scale = Math.min(1, maxEdge / Math.max(w, h));
+            var cw = Math.max(1, Math.round(w * scale));
+            var ch = Math.max(1, Math.round(h * scale));
+            var canvas = document.createElement("canvas");
+            canvas.width = cw;
+            canvas.height = ch;
+            var ctx = canvas.getContext("2d");
+            if (!ctx) return reject(new Error("浏览器无法压缩图片，请换一张较小的 JPG/PNG"));
+            ctx.drawImage(img, 0, 0, cw, ch);
+            var quality = 0.82;
+            var out = canvas.toDataURL("image/jpeg", quality);
+            while (out.length > 1.6 * 1024 * 1024 && quality > 0.5) {
+              quality -= 0.08;
+              out = canvas.toDataURL("image/jpeg", quality);
+            }
+            if (out.length > 2.8 * 1024 * 1024) {
+              return reject(new Error("图片过大，请换一张更清晰且小于 8MB 的截图后重试"));
+            }
+            if (typeof onProgress === "function") onProgress(60);
+            resolve(out);
+          } catch (err) {
+            reject(new Error(err.message || "图片压缩失败"));
+          }
+        };
+        img.onerror = function () {
+          reject(new Error("图片预览失败，请改用 JPG 或 PNG 重新选择"));
+        };
+        img.src = raw;
+      };
+      reader.readAsDataURL(file);
+    });
   }
 
   var STATUS_LABEL = (window.MCJOrderStatus && window.MCJOrderStatus.LABELS) || {
@@ -291,24 +370,14 @@
         disabledHint: "当前无需再次付款确认",
       };
     }
-    if (s === "confirmed") {
+    if (s === "confirmed" || s === "in_progress") {
       return {
         title: "进行中",
-        reason: "陪玩已确认接单",
-        next: "陪玩开始服务后订单将进入进行中。",
-        primary: "orders",
-        primaryLabel: "查看我的订单",
-        disabledHint: "付款已确认，无需重复操作",
-      };
-    }
-    if (s === "in_progress") {
-      return {
-        title: "进行中",
-        reason: "服务进行中",
+        reason: s === "in_progress" ? "服务进行中" : "陪玩已确认接单",
         next: "如有问题请联系客服协助。",
-        primary: "contact_cs",
-        primaryLabel: "联系客服",
-        disabledHint: "服务进行中，付款确认已完成",
+        primary: s === "in_progress" ? "contact_cs" : "orders",
+        primaryLabel: s === "in_progress" ? "联系客服" : "查看我的订单",
+        disabledHint: "付款已确认，无需重复操作",
       };
     }
     if (s === "completed" || s === "reviewed") {
@@ -376,13 +445,12 @@
 
   function proofPanelHtml(order) {
     var reviewing = isReviewing(order);
-    var preview = proofDraft.previewUrl || order.paymentProofUrl || "";
+    var preview = proofDraft.previewUrl || proofDraft.serverProofUrl || order.paymentProofUrl || "";
     var hasLocal = !!(proofDraft.file || proofDraft.previewUrl);
     var showUpload = String(order.status || "") === "awaiting_payment" && (!reviewing || hasLocal || !preview);
     if (String(order.status || "") !== "awaiting_payment") return "";
     if (isWalletMethod(order) && !reviewing && !hasLocal) return "";
 
-    // Channel not open → do not invite proof upload (would imply payment was possible).
     var info = platformPayInfo || (order && order.platformPayInfo) || null;
     var channelClosed =
       !isWalletMethod(order) &&
@@ -396,9 +464,9 @@
     var html = '<div class="pay-proof" data-proof-panel>';
     html += "<h2>付款截图</h2>";
     if (reviewing && !hasLocal) {
-      html += '<p class="pay-hint">当前状态：待人工审核。可删除后重新上传，或进入下一步查看订单。</p>';
+      html += '<p class="pay-hint">当前状态：待人工审核。可删除后重新上传，或进入「我的订单」查看。</p>';
     } else {
-      html += '<p class="pay-hint">扫码付款后，请上传付款截图（JPG / PNG / WEBP），再点击「我已付款」。</p>';
+      html += '<p class="pay-hint">扫码付款后，请上传付款截图（JPG / PNG / WEBP），再点击「我已付款」。选择后将立即显示预览。</p>';
     }
 
     if (preview) {
@@ -407,18 +475,16 @@
         esc(preview) +
         '" alt="付款截图预览" data-mcj-pay-proof="1">' +
         (proofDraft.fileName
-          ? '<p class="pay-proof-name">已选择：' + esc(proofDraft.fileName) + "</p>"
-          : "") +
+          ? '<p class="pay-proof-name" data-proof-filename>已选择：' + esc(proofDraft.fileName) + "</p>"
+          : reviewing
+            ? '<p class="pay-proof-name">付款截图已上传</p>'
+            : "") +
         '<div class="pay-proof-preview-actions">' +
         '<button type="button" class="pay-btn" data-proof-delete>删除</button>' +
-        '<label class="pay-btn">重新上传<input type="file" accept="image/png,image/jpeg,image/webp,image/jpg,.png,.jpg,.jpeg,.webp" data-payment-proof="' +
-        esc(order.id) +
-        '" hidden></label></div></div>';
+        fileInputHtml(order.id, "重新上传", false) +
+        "</div></div>";
     } else {
-      html +=
-        '<label class="pay-btn primary pay-proof-pick">选择付款截图<input type="file" accept="image/png,image/jpeg,image/webp,image/jpg,.png,.jpg,.jpeg,.webp" data-payment-proof="' +
-        esc(order.id) +
-        '" hidden></label>';
+      html += fileInputHtml(order.id, "选择付款截图", true);
     }
 
     if (proofDraft.uploading || proofDraft.progress > 0) {
@@ -433,12 +499,12 @@
     }
     if (proofDraft.successTip || (reviewing && !proofDraft.error && !proofDraft.file)) {
       html +=
-        '<p class="pay-success" role="status">' +
-        esc(proofDraft.successTip || "付款凭证已提交，当前状态：待人工审核") +
+        '<p class="pay-success" role="status" data-proof-success>' +
+        esc(proofDraft.successTip || "付款截图已上传，当前状态：待人工审核") +
         "</p>";
     }
     if (proofDraft.error) {
-      html += '<p class="pay-alert" role="alert">' + esc(proofDraft.error) + "</p>";
+      html += '<p class="pay-alert" role="alert" data-proof-error>' + esc(proofDraft.error) + "</p>";
     }
 
     html += '<div class="pay-actions pay-proof-actions">';
@@ -447,24 +513,22 @@
         '<button type="button" class="pay-btn primary" data-proof-submit="' +
         esc(order.id) +
         '"' +
-        (proofDraft.uploading ? " disabled" : "") +
+        (proofDraft.uploading ? " disabled aria-busy=\"true\"" : "") +
         ">" +
         (proofDraft.uploading ? "上传中…" : "我已付款") +
         "</button>";
     } else if (!reviewing && !proofDraft.uploaded) {
       html +=
-        '<button type="button" class="pay-btn primary" data-proof-submit="' +
+        '<button type="button" class="pay-btn primary is-disabled" data-proof-submit="' +
         esc(order.id) +
-        '">我已付款</button>';
+        '" disabled aria-disabled="true">我已付款</button>';
+      html += '<p class="pay-hint" data-proof-need-file>请先选择付款截图，上传成功后才能提交。</p>';
     } else if (reviewing || proofDraft.uploaded) {
       html +=
         '<a class="pay-btn primary" href="orders.html?filter=payment_review&id=' +
         encodeURIComponent(order.id) +
-        '">下一步：查看待人工审核订单</a>';
-      html +=
-        '<label class="pay-btn">重新上传<input type="file" accept="image/png,image/jpeg,image/webp" data-payment-proof="' +
-        esc(order.id) +
-        '" hidden></label>';
+        '">查看我的订单（待审核）</a>';
+      html += fileInputHtml(order.id, "重新上传", false);
     }
     html += "</div></div>";
     return html;
@@ -477,7 +541,10 @@
     var reviewing = isReviewing(order);
     var label = reviewing && st === "awaiting_payment" ? "待人工审核" : STATUS_LABEL[st] || order.statusText || st;
     var csHref = "support.html?order=" + encodeURIComponent(order.id);
-    var ordersHref = "orders.html?id=" + encodeURIComponent(order.id);
+    var ordersHref =
+      reviewing && st === "awaiting_payment"
+        ? "orders.html?filter=payment_review&id=" + encodeURIComponent(order.id)
+        : "orders.html?id=" + encodeURIComponent(order.id);
     var actions = '<div class="pay-actions">';
     var needsManualProof = st === "awaiting_payment" && !isWalletMethod(order);
 
@@ -527,27 +594,17 @@
     }
     actions += '<a class="pay-btn" href="companion-center.html">继续浏览陪玩</a></div>';
 
-    if (guide.disabledHint && st !== "awaiting_payment") {
-      actions +=
-        '<p class="pay-hint" role="status"><strong>当前不可用说明：</strong>' +
-        esc(guide.disabledHint) +
-        "</p>";
-    }
-
     paint(
-      '<section class="pay-card"><h1>支付确认</h1>' +
-        (opts.fromCache ? '<p class="pay-sync">已显示缓存，正在同步最新状态…</p>' : "") +
-        '<div class="pay-status-box" role="status">' +
-        "<strong>" +
-        esc(guide.title) +
-        "</strong>" +
-        "<p>" +
+      '<section class="pay-card" data-order-id="' +
+        esc(order.id) +
+        '"><h1>支付确认</h1>' +
+        '<div class="pay-status-box"><strong data-pay-status>' +
+        esc(label) +
+        "</strong><p>" +
         esc(guide.reason) +
-        "</p>" +
-        "<p>" +
+        "</p><p>" +
         esc(guide.next) +
-        "</p>" +
-        "</div>" +
+        "</p></div>" +
         '<div class="pay-grid">' +
         '<div class="pay-row"><span>订单号</span><strong>' +
         esc(order.orderNo || order.order_no || order.id) +
@@ -556,10 +613,10 @@
         esc(companionName(order)) +
         "</strong></div>" +
         '<div class="pay-row"><span>服务</span><strong>' +
-        esc(order.serviceType || order.serviceName || order.game || order.title || "-") +
+        esc(order.game || order.serviceName || order.title || "-") +
         "</strong></div>" +
         '<div class="pay-row"><span>时长</span><strong>' +
-        esc(order.hours != null ? order.hours + " 小时" : "-") +
+        esc(order.hours ? order.hours + " 小时" : order.duration || "-") +
         "</strong></div>" +
         '<div class="pay-row"><span>游戏 ID</span><strong>' +
         esc(parseGameId(order)) +
@@ -568,31 +625,24 @@
         esc(money(order.totalAmount || order.amount)) +
         "</strong></div>" +
         '<div class="pay-row"><span>支付方式</span><strong>' +
-        esc(order.paymentMethod || order.payment_method || "线下确认") +
+        esc(order.paymentMethod || order.payment_method || "-") +
         "</strong></div>" +
         '<div class="pay-row"><span>当前状态</span><strong>' +
         esc(label) +
-        "</strong></div>" +
-        "</div>" +
-        (st === "awaiting_payment"
-          ? '<p class="pay-alert">' +
-            esc(
-              reviewing
-                ? "付款凭证已提交，当前为待人工审核。客服确认收款前不会进入接单流程。"
-                : canShowTestPay()
-                  ? "请按所选支付方式付款并上传截图。Preview / 测试环境另可点「测试支付成功（TEST）」。"
-                  : isWalletMethod(order)
-                    ? "支付成功后将进入“等待陪玩确认”。"
-                    : "请先按本单支付方式完成付款，再上传截图并点击「我已付款」。"
-            ) +
-            "</p>"
-          : "") +
+        "</strong></div></div>" +
+        (reviewing
+          ? '<p class="pay-hint">付款凭证已提交，当前为待人工审核。客服确认收款前不会进入接单流程。</p>'
+          : needsManualProof
+            ? '<p class="pay-hint">请先按本单支付方式完成付款，再上传截图并点击「我已付款」。</p>'
+            : "") +
         qrPanelHtml(order) +
         proofPanelHtml(order) +
         actions +
+        (opts.fromCache ? '<p class="pay-sync">正在同步最新订单状态…</p>' : "") +
         "</section>"
     );
   }
+
   async function submitPay(orderId, previewTest) {
     if (paying) return;
     paying = true;
@@ -604,7 +654,7 @@
           action: "pay_order",
           id: orderId,
           preview_test: previewTest ? "1" : "",
-          paymentMethod: readCache(orderId)?.paymentMethod || readCache(orderId)?.payment_method || "",
+          paymentMethod: (readCache(orderId) && (readCache(orderId).paymentMethod || readCache(orderId).payment_method)) || "",
         }),
       });
       var body = await res.json().catch(function () {
@@ -634,14 +684,21 @@
     }
   }
 
-  function tickProgress(target, done) {
-    proofDraft.progress = Math.max(proofDraft.progress, target);
-    if (typeof done === "function") done();
+  function tickProgress(target) {
+    proofDraft.progress = Math.max(Number(proofDraft.progress) || 0, target);
+  }
+
+  function goMyOrdersReview(orderId) {
+    var href = "orders.html?filter=payment_review&id=" + encodeURIComponent(orderId);
+    if (redirectTimer) clearTimeout(redirectTimer);
+    redirectTimer = setTimeout(function () {
+      location.replace(href);
+    }, 650);
   }
 
   async function submitProof(orderId) {
     var file = proofDraft.file;
-    var current = readCache(orderId) || { id: orderId, status: "awaiting_payment" };
+    var current = readCache(orderId) || { id: orderId, status: "awaiting_payment", paymentMethod: "duitnow" };
     if (paying || proofDraft.uploading) {
       proofDraft.error = "正在上传中，请稍候…";
       renderOrder(current);
@@ -649,11 +706,12 @@
     }
     if (!file) {
       proofDraft.error = "请先选择付款截图，再点击「我已付款」";
+      proofDraft.successTip = "";
       renderOrder(current);
       return;
     }
     if (!isAllowedProofFile(file)) {
-      proofDraft.error = "仅支持 JPG、PNG、WEBP 图片";
+      proofDraft.error = "仅支持 JPG、PNG、WEBP。iPhone 请用「照片」导出为 JPG，或关闭「保留原格式」后再选。";
       renderOrder(current);
       return;
     }
@@ -664,55 +722,55 @@
     proofDraft.successTip = "正在上传付款截图…";
     renderOrder(current);
     try {
-      tickProgress(25);
+      tickProgress(12);
       renderOrder(current);
-      var dataUrl = await new Promise(function (resolve, reject) {
-        var reader = new FileReader();
-        reader.onprogress = function (ev) {
-          if (ev.lengthComputable && ev.total) {
-            proofDraft.progress = Math.min(70, 25 + Math.round((ev.loaded / ev.total) * 40));
-            renderOrder(current);
-          }
-        };
-        reader.onload = function () {
-          resolve(reader.result);
-        };
-        reader.onerror = function () {
-          reject(new Error("读取图片失败"));
-        };
-        reader.readAsDataURL(file);
+      var dataUrl = await prepareProofDataUrl(file, function (p) {
+        tickProgress(p);
+        renderOrder(current);
       });
-      tickProgress(78);
+      tickProgress(72);
+      proofDraft.successTip = "付款截图处理完成，正在提交审核…";
       renderOrder(current);
       var res = await fetch("/api/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: "Bearer " + token() },
-        body: JSON.stringify({ action: "submit_payment_proof", id: orderId, proofDataUrl: dataUrl }),
+        body: JSON.stringify({
+          action: "submit_payment_proof",
+          id: orderId,
+          proofDataUrl: dataUrl,
+          paymentMethod: current.paymentMethod || current.payment_method || "",
+        }),
       });
       var body = await res.json().catch(function () {
         return {};
       });
-      if (!res.ok || body.ok === false) throw new Error(body.message || "付款凭证提交失败");
+      if (!res.ok || body.ok === false) throw new Error(body.message || "付款凭证提交失败（" + res.status + "）");
       tickProgress(100);
       proofDraft.uploading = false;
       proofDraft.uploaded = true;
       proofDraft.file = null;
-      proofDraft.successTip = "上传成功！付款凭证已提交，订单进入待人工审核。";
+      proofDraft.successTip = "付款截图已上传。订单进入待审核，正在跳转「我的订单」…";
       var nextOrder = body.order || current;
       nextOrder.paymentReview = true;
+      nextOrder.status = nextOrder.status || "awaiting_payment";
       nextOrder.statusText = "待人工审核";
       nextOrder.paymentStatus = "待人工审核";
       if (body.order && body.order.paymentProofUrl) {
         nextOrder.paymentProofUrl = body.order.paymentProofUrl;
+        proofDraft.serverProofUrl = body.order.paymentProofUrl;
+        proofDraft.previewUrl = body.order.paymentProofUrl;
       } else if (proofDraft.previewUrl) {
         nextOrder.paymentProofUrl = proofDraft.previewUrl;
       }
       writeCache(orderId, nextOrder);
       renderOrder(nextOrder);
+      goMyOrdersReview(orderId);
     } catch (err) {
       proofDraft.uploading = false;
       proofDraft.progress = 0;
+      proofDraft.uploaded = false;
       proofDraft.error = err.message || "付款凭证提交失败";
+      proofDraft.successTip = "";
       renderOrder(current);
     } finally {
       paying = false;
@@ -725,7 +783,6 @@
       if (!raw) return null;
       var parsed = JSON.parse(raw);
       if (parsed && !parsed.status) parsed.status = "awaiting_payment";
-      // Never reuse a cached QR — admin may have rotated it.
       if (parsed && parsed.platformPayInfo) delete parsed.platformPayInfo;
       return parsed;
     } catch (e) {
@@ -794,7 +851,6 @@
       if (body.platformPayInfo && typeof body.platformPayInfo === "object") {
         platformPayInfo = Object.assign({}, body.platformPayInfo, { __live: true });
       } else {
-        // Explicit empty — do not keep a previous page session QR.
         platformPayInfo = {
           qrUrl: "",
           enabled: false,
@@ -811,7 +867,19 @@
       }
       order.platformPayInfo = platformPayInfo;
       writeCache(orderId, order);
-      if (!(proofDraft.uploading || proofDraft.file)) renderOrder(order);
+      // Never wipe a local file selection / in-flight upload with a poll refresh.
+      if (proofDraft.uploading || proofDraft.file || (proofDraft.previewUrl && !proofDraft.uploaded)) {
+        return;
+      }
+      if (order.paymentProofUrl && !proofDraft.previewUrl) {
+        proofDraft.serverProofUrl = order.paymentProofUrl;
+        proofDraft.previewUrl = order.paymentProofUrl;
+        if (isReviewing(order)) {
+          proofDraft.uploaded = true;
+          proofDraft.successTip = proofDraft.successTip || "付款截图已上传，当前状态：待人工审核";
+        }
+      }
+      renderOrder(order);
     } catch (err) {
       if (gen !== loadGen) return;
       if (err && err.name === "AbortError") return;
@@ -823,7 +891,7 @@
   function startPoll() {
     if (pollTimer) clearInterval(pollTimer);
     pollTimer = setInterval(function () {
-      if (document.hidden || proofDraft.uploading) return;
+      if (document.hidden || proofDraft.uploading || proofDraft.file) return;
       loadOrder({ silent: true });
     }, POLL_MS);
   }
@@ -841,14 +909,18 @@
       clearProofDraft();
       var oid = q("order") || q("id");
       var order = readCache(oid) || { id: oid, status: "awaiting_payment" };
-      // Local delete: allow re-upload even if server still shows reviewing.
-      order = Object.assign({}, order, { paymentProofUrl: "" });
+      order = Object.assign({}, order, { paymentProofUrl: "", paymentReview: false });
       renderOrder(order);
       return;
     }
     var submitBtn = e.target.closest("[data-proof-submit]");
     if (submitBtn) {
       e.preventDefault();
+      if (submitBtn.disabled || submitBtn.getAttribute("aria-disabled") === "true") {
+        proofDraft.error = "请先选择付款截图，再点击「我已付款」";
+        renderOrder(readCache(q("order") || q("id")) || { id: q("order") || q("id"), status: "awaiting_payment" });
+        return;
+      }
       submitProof(submitBtn.getAttribute("data-proof-submit"));
       return;
     }
@@ -867,29 +939,39 @@
   root.addEventListener("change", function (e) {
     var input = e.target.closest("[data-payment-proof]");
     if (!input || !input.files || !input.files[0]) return;
-    var orderId = input.getAttribute("data-payment-proof");
+    var orderId = input.getAttribute("data-payment-proof") || q("order") || q("id");
     var file = input.files[0];
+    // Keep a durable File reference — do not rely on the input node (re-rendered away).
     if (!isAllowedProofFile(file)) {
-      proofDraft.error = "仅支持 JPG、PNG、WEBP 图片";
+      proofDraft.error =
+        /heic|heif/i.test(String(file.type || file.name || ""))
+          ? "当前是 HEIC 原图。请在系统相册设置中关闭「保留原格式」，或导出为 JPG/PNG 后再上传。"
+          : "仅支持 JPG、PNG、WEBP 图片";
       proofDraft.successTip = "";
+      try {
+        input.value = "";
+      } catch (err) {}
       renderOrder(readCache(orderId) || { id: orderId, status: "awaiting_payment" });
       return;
     }
     setProofFile(orderId, file);
     proofDraft.error = "";
     proofDraft.uploaded = false;
-    proofDraft.successTip = "已选择：" + (proofDraft.fileName || file.name || "付款截图") + "，请点击「我已付款」提交";
+    proofDraft.successTip = "已选择：" + (proofDraft.fileName || file.name || "付款截图") + "，请确认预览后点击「我已付款」";
     renderOrder(readCache(orderId) || { id: orderId, status: "awaiting_payment" });
   });
 
   document.addEventListener("visibilitychange", function () {
-    if (!document.hidden) loadOrder({ silent: true });
+    if (!document.hidden) {
+      // Returning from photo picker: keep local File/preview; only sync when idle.
+      if (!(proofDraft.file || proofDraft.uploading)) loadOrder({ silent: true });
+    }
   });
 
   window.addEventListener("pagehide", function () {
     if (abortCtrl) abortCtrl.abort();
     if (pollTimer) clearInterval(pollTimer);
-    clearProofDraft();
+    // Do NOT clearProofDraft here — mobile Safari may fire pagehide when opening the photo picker.
   });
 
   loadOrder();
