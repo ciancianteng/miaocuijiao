@@ -111,7 +111,8 @@ async function shot(page, name) {
     waitUntil: "domcontentloaded",
     timeout: 90000,
   });
-  await page.waitForSelector("[data-proof-panel], [data-payment-proof]", { timeout: 45000 });
+  await page.waitForSelector("[data-proof-panel], [data-proof-pick]", { timeout: 45000 });
+  await page.waitForSelector("#mcjDurableProofInput", { timeout: 10000 });
   await page.waitForTimeout(1200);
   await shot(page, "01-mobile-pay-page");
 
