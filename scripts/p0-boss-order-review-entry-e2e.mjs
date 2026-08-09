@@ -13,10 +13,12 @@ const BASE = (process.env.PREVIEW || process.env.MCJ_STAGING_URL || "https://meo
   ""
 );
 const PASS = process.env.PASS || process.env.MCJ_TEST_PASSWORD || "McjTest@12345678";
-const BOSS = process.env.E2E_BOSS_EMAIL || "boss@meow.test";
-const CS = process.env.E2E_CS_EMAIL || "service@meow.test";
-const COMP = process.env.E2E_COMPANION_EMAIL || "companion@meow.test";
+const BOSS = process.env.E2E_BOSS_EMAIL || "boss.final.1785714993009@meow.test";
+const CS = process.env.E2E_CS_EMAIL || "service.final.1785714993009@meow.test";
+const COMP = process.env.E2E_COMPANION_EMAIL || "companion.final.1785714993009@meow.test";
 const ADMIN = process.env.E2E_ADMIN_EMAIL || "admin@meow.test";
+const PNG =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 const ART = path.join("/opt/cursor/artifacts", "boss-order-review-entry-e2e");
 const ART_REPO = path.join(ROOT, "artifacts", "boss-order-review-entry-e2e");
 fs.mkdirSync(ART, { recursive: true });
@@ -74,8 +76,8 @@ function sleep(ms) {
   const bossT = tok(bossLogin.json);
   const csLogin = await api("/api/customer-service", null, { action: "login", account: CS, password: PASS });
   const csT = tok(csLogin.json) || tok((await api("/api/auth", null, { action: "login", email: CS, password: PASS, loginPortal: "customer_service" })).json);
-  const compLogin = await api("/api/auth", null, { action: "login", email: COMP, password: PASS, loginPortal: "companion" });
-  const compT = tok(compLogin.json);
+  const compLogin = await api("/api/companion", null, { action: "login", account: COMP, password: PASS });
+  const compT = tok(compLogin.json) || tok((await api("/api/auth", null, { action: "login", email: COMP, password: PASS, loginPortal: "companion" })).json);
   const adminLogin = await api("/api/auth", null, { action: "login", email: ADMIN, password: PASS, loginPortal: "admin" });
   const adminT = tok(adminLogin.json);
   step("logins", !!(bossT && csT && compT && adminT), `boss=${!!bossT} cs=${!!csT} comp=${!!compT} admin=${!!adminT}`);
@@ -84,23 +86,30 @@ function sleep(ms) {
     process.exit(1);
   }
 
+  const bootMe = await api("/api/companion?action=bootstrap", compT, null, "GET");
+  const companionId = bootMe.json?.data?.player?.id || bootMe.json?.player?.id || "";
   const comps = await api("/api/public/companions", null, null, "GET");
-  const companionId = compLogin.json?.profile?.id || compLogin.json?.session?.user?.id || "";
   const testComp =
     (comps.json?.companions || []).find((c) => String(c.id) === String(companionId)) ||
-    (comps.json?.companions || []).find((c) => /TEST|验收|meow/i.test(c.name || "")) ||
+    (comps.json?.companions || []).find((c) => /Final|1717|TEST|验收/i.test(c.name || "")) ||
     (comps.json?.companions || [])[0];
+  const unit = Number(
+    (Array.isArray(testComp?.services) && testComp.services[0] && (testComp.services[0].price ?? testComp.services[0].unitPrice)) ||
+      testComp?.priceValue ||
+      testComp?.price ||
+      35
+  );
   const place = await api("/api/orders", bossT, {
     action: "place_order",
     companionId: testComp?.id || companionId,
     companionName: testComp?.name || "E2E陪玩",
-    serviceType: "陪玩",
-    service: "陪玩",
-    game: "陪玩",
-    unitPrice: Number(testComp?.priceValue || 35),
+    serviceType: (testComp?.services && testComp.services[0] && (testComp.services[0].name || testComp.services[0].title)) || "VALORANT",
+    service: (testComp?.services && testComp.services[0] && (testComp.services[0].name || testComp.services[0].title)) || "VALORANT",
+    game: testComp?.game || "VALORANT",
+    unitPrice: unit,
     hours: 1,
     quantity: 1,
-    totalAmount: Number(testComp?.priceValue || 35),
+    totalAmount: unit,
     gameId: `REVIEW-ENTRY-${stamp}`,
     paymentMethod: "tng",
     notes: `review-entry-e2e ${stamp}`,
@@ -108,45 +117,16 @@ function sleep(ms) {
   });
   let orderId = place.json?.order?.id || "";
   let orderNo = place.json?.order?.orderNo || place.json?.order?.order_no || orderId;
-  if (!orderId) {
-    const create = await api("/api/orders", bossT, {
-      action: "create",
-      order: {
-        title: "评价入口E2E",
-        game: "VALORANT",
-        game_id: `REVIEW-${stamp}`,
-        description: `review-entry-e2e ${stamp}`,
-        hours: 1,
-        unit_price: 15,
-        total_amount: 15,
-        order_type: "custom",
-        payment_method: "duitnow",
-        companion_id: testComp?.id || companionId,
-      },
-    });
-    orderId = create.json?.order?.id || "";
-    orderNo = create.json?.order?.orderNo || create.json?.order?.order_no || orderId;
-    step("create_order_fallback", !!(create.ok && orderId), `${orderNo}`);
-  } else {
-    step("place_order", !!(place.ok && orderId), `${orderNo} status=${place.json?.order?.status}`);
-  }
+  step("place_order", !!(place.ok && orderId), `${orderNo} status=${place.json?.order?.status} msg=${place.json?.message || ""}`);
 
-  // Ensure CS conversation + confirm payment
-  await api("/api/chat", bossT, { action: "ensure_order_conversation", orderId });
-  const csBoot = await api("/api/customer-service", csT, null, "GET");
-  let convId =
-    (csBoot.json?.conversations || csBoot.json?.data?.conversations || []).find(
-      (c) => c.order_id === orderId || c.orderId === orderId
-    )?.id || "";
-  if (!convId) {
-    const bossConvs = await api("/api/chat?action=list", bossT, null, "GET");
-    const list = bossConvs.json?.conversations || bossConvs.json?.data?.conversations || [];
-    convId = list.find((c) => c.order_id === orderId || c.orderId === orderId)?.id || list[0]?.id || "";
-  }
-  if (convId) {
-    await api("/api/customer-service/accept", csT, { conversationId: convId, conversation_id: convId, orderId, order_id: orderId });
-    await api("/api/customer-service", csT, { action: "take_conversation", conversationId: convId, conversation_id: convId });
-  }
+  const proof = await api("/api/orders", bossT, {
+    action: "submit_payment_proof",
+    id: orderId,
+    proofDataUrl: PNG,
+    paymentMethod: "tng",
+  });
+  step("submit_proof", !!proof.ok, proof.json?.message || `review=${proof.json?.order?.paymentReview}`);
+
   const pay = await api("/api/customer-service", csT, { action: "confirm_payment", id: orderId });
   let st = pay.json?.order?.status || "";
   step("confirm_payment", !!(pay.ok && (st === "claimed" || st === "pending" || st === "waiting_boss_confirm")), `status=${st} msg=${pay.json?.message || ""}`);
@@ -156,6 +136,7 @@ function sleep(ms) {
       action: "assign_companion",
       id: orderId,
       companion_id: testComp?.id || companionId,
+      from_grabs: false,
     });
     st = assign.json?.order?.status || st;
     step("assign_companion", !!assign.ok, `status=${st}`);
@@ -163,16 +144,22 @@ function sleep(ms) {
     step("assign_companion", true, `skip status=${st}`);
   }
 
-  let accept;
-  if (st === "claimed") {
-    accept = await api("/api/companion", compT, { action: "accept_direct_order", id: orderId });
-  } else if (st === "waiting_boss_confirm") {
-    await api("/api/orders", bossT, { action: "confirm_companion", id: orderId, companion_id: testComp?.id || companionId });
-    accept = await api("/api/companion", compT, { action: "accept_order", id: orderId });
-  } else {
-    accept = await api("/api/companion", compT, { action: "accept_order", id: orderId });
+  // Clear forced ack so companion can accept
+  const pendingForced = await api("/api/companion", compT, { action: "pending_forced" });
+  for (const item of pendingForced.json?.pendingForced || []) {
+    await api("/api/companion", compT, {
+      action: "acknowledge_forced",
+      id: item.id || item.contentId || item.content_id,
+      content_id: item.id || item.contentId || item.content_id,
+    });
   }
+
+  let accept = await api("/api/companion", compT, { action: "accept_direct_order", id: orderId });
   st = accept.json?.order?.status || accept.json?.order?.dbStatus || st;
+  if (!accept.ok) {
+    accept = await api("/api/companion", compT, { action: "accept_order", id: orderId });
+    st = accept.json?.order?.status || st;
+  }
   if (st === "waiting_boss_confirm") {
     const bc = await api("/api/orders", bossT, { action: "confirm_companion", id: orderId });
     st = bc.json?.order?.status || st;
@@ -180,17 +167,15 @@ function sleep(ms) {
   if (st === "confirmed") {
     const start = await api("/api/companion", compT, { action: "start_order", id: orderId });
     st = start.json?.order?.status || st;
-    step("start_order", st === "in_progress", `status=${st}`);
-  } else {
-    step("start_order", st === "in_progress", `status=${st}`);
   }
+  step("start_order", st === "in_progress", `status=${st} acceptMsg=${accept.json?.message || ""}`);
 
   const complete = await api("/api/companion", compT, { action: "complete_order", id: orderId });
   st = complete.json?.order?.status || st;
   if (st === "in_progress" || complete.json?.awaitingBossConfirm) {
-    const confirm = await api("/api/orders", bossT, { action: "confirm_completion", id: orderId });
-    st = confirm.json?.order?.status || st;
-    step("boss_confirm_completion", st === "completed" || confirm.json?.order?.canReview === true, `status=${st} canReview=${confirm.json?.order?.canReview}`);
+    const confirmDone = await api("/api/orders", bossT, { action: "confirm_completion", id: orderId });
+    st = confirmDone.json?.order?.status || st;
+    step("boss_confirm_completion", st === "completed" || confirmDone.json?.order?.canReview === true, `status=${st} canReview=${confirmDone.json?.order?.canReview}`);
   } else {
     step("boss_confirm_completion", st === "completed", `direct status=${st}`);
   }
