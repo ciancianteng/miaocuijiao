@@ -38,6 +38,28 @@
     ['refunded','已退款'],
     ['cancelled','已取消']
   ];
+  var ordersById={};
+  var orderManagePopover={el:null,anchor:null,orderId:'',bound:false};
+  function isUuid(v){
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(v||'').trim());
+  }
+  function displayOrderNo(o){
+    var no=String((o&&(o.orderNo||o.order_no))||'').trim();
+    if(no&&!isUuid(no))return no;
+    return '—';
+  }
+  function fmtOrderTime(v){
+    var s=String(v||'').trim();
+    if(!s||s==='-')return '-';
+    var m=s.match(/^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})/);
+    if(m)return m[1]+' '+m[2];
+    try{
+      var d=new Date(s);
+      if(isNaN(d.getTime()))return s;
+      function p(n){return n<10?'0'+n:String(n)}
+      return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+' '+p(d.getHours())+':'+p(d.getMinutes());
+    }catch(e){return s}
+  }
   function orderStatusSelectValue(current){
     var s=String(current||'');
     if(s==='after_sale')return 'refund_requested';
@@ -45,11 +67,137 @@
   }
   function orderStatusSelect(orderId,current){
     var selected=orderStatusSelectValue(current);
-    return '<select class="admin-order-status-select" data-admin-order-status-select="'+esc(orderId)+'" aria-label="订单状态">'+
+    return '<label class="admin-order-manage-status"><span>更新订单状态（含退款/售后）</span><span class="admin-order-manage-status-row">'+
+      '<select class="admin-order-status-select" data-admin-order-status-select="'+esc(orderId)+'" aria-label="订单状态">'+
       ORDER_STATUS_OPTIONS.map(function(opt){
         return '<option value="'+esc(opt[0])+'"'+(String(selected)===opt[0]?' selected':'')+'>'+esc(opt[1])+'</option>';
       }).join('')+
-      '</select><button class="mini-btn" type="button" data-admin-order-status-apply="'+esc(orderId)+'">更新</button>';
+      '</select><button class="mini-btn primary-lite" type="button" data-admin-order-status-apply="'+esc(orderId)+'">更新</button></span></label>';
+  }
+  function closeOrderManageMenu(){
+    if(orderManagePopover.el){
+      try{orderManagePopover.el.remove()}catch(e){}
+      orderManagePopover.el=null;
+    }
+    if(orderManagePopover.anchor){
+      orderManagePopover.anchor.setAttribute('aria-expanded','false');
+      orderManagePopover.anchor.classList.remove('is-open');
+    }
+    orderManagePopover.anchor=null;
+    orderManagePopover.orderId='';
+    document.querySelectorAll('[data-admin-order-manage-toggle].is-open').forEach(function(btn){
+      btn.classList.remove('is-open');
+      btn.setAttribute('aria-expanded','false');
+    });
+  }
+  function positionOrderManageMenu(){
+    var menu=orderManagePopover.el;
+    var btn=orderManagePopover.anchor;
+    if(!menu||!btn)return;
+    var rect=btn.getBoundingClientRect();
+    var mw=menu.offsetWidth||220;
+    var mh=menu.offsetHeight||280;
+    var left=Math.min(Math.max(8,rect.right-mw),window.innerWidth-mw-8);
+    var top=rect.bottom+6;
+    if(top+mh>window.innerHeight-8)top=Math.max(8,rect.top-mh-6);
+    menu.style.left=left+'px';
+    menu.style.top=top+'px';
+  }
+  function buildOrderManageMenuHtml(o,proofByOrder){
+    var id=String(o.id||'');
+    var st=String(o.status||'');
+    var closed=/^(cancelled|refunded)$/i.test(st);
+    var done=/^(completed)$/i.test(st);
+    var canAssign=!closed&&!done;
+    var canUnassign=!!o.companion_id&&!['in_progress','completed','cancelled','refunded'].includes(st);
+    var canCancel=!closed&&!done;
+    var p=proofByOrder[String(o.id)];
+    var items=[];
+    items.push('<button type="button" role="menuitem" data-admin-order-detail="'+esc(id)+'">查看订单详情</button>');
+    if(p&&p.proofUrl){
+      items.push('<button type="button" role="menuitem" data-admin-proof-preview="'+esc(p.proofUrl)+'">查看付款截图</button>');
+    }
+    if(p){
+      items.push('<button type="button" role="menuitem" class="primary-text" data-admin-approve-proof="'+esc(p.orderId||o.id)+'" data-receipt-id="'+esc(p.receiptId||p.id||'')+'">支付审核 · 通过</button>');
+      items.push('<button type="button" role="menuitem" data-admin-reject-proof="'+esc(p.orderId||o.id)+'" data-receipt-id="'+esc(p.receiptId||p.id||'')+'">支付审核 · 拒绝</button>');
+    }else if(st==='awaiting_payment'){
+      items.push('<div class="admin-order-manage-note">待老板上传付款凭证</div>');
+    }
+    items.push('<div class="admin-order-manage-divider"></div>');
+    items.push(orderStatusSelect(id,st));
+    items.push('<div class="admin-order-manage-divider"></div>');
+    if(!closed){
+      items.push('<button type="button" role="menuitem" data-admin-view-grabs="'+esc(id)+'">查看抢单人</button>');
+    }
+    if(canAssign){
+      items.push('<button type="button" role="menuitem" data-admin-assign-grab="'+esc(id)+'">指定陪玩</button>');
+    }
+    if(canUnassign){
+      items.push('<button type="button" role="menuitem" data-admin-unassign="'+esc(id)+'">取消指定</button>');
+    }
+    if(canCancel){
+      items.push('<button type="button" role="menuitem" class="danger-text" data-admin-order-cancel="'+esc(id)+'">取消订单</button>');
+    }
+    items.push('<button type="button" role="menuitem" class="danger-text" data-admin-order-delete="'+esc(id)+'">删除</button>');
+    return items.join('');
+  }
+  function openOrderManageMenu(anchorBtn){
+    var orderId=String(anchorBtn.getAttribute('data-order-id')||'').trim();
+    if(!orderId)return;
+    if(orderManagePopover.el&&orderManagePopover.orderId===orderId){
+      closeOrderManageMenu();
+      return;
+    }
+    closeOrderManageMenu();
+    var o=ordersById[orderId];
+    if(!o)return;
+    var proofByOrder={};
+    try{
+      (window.__adminPendingProofs||[]).forEach(function(p){if(p.orderId)proofByOrder[String(p.orderId)]=p;});
+    }catch(e){}
+    var menu=document.createElement('div');
+    menu.className='admin-order-manage-popover';
+    menu.setAttribute('role','menu');
+    menu.setAttribute('data-admin-order-manage-popover','1');
+    menu.innerHTML=buildOrderManageMenuHtml(o,proofByOrder);
+    document.body.appendChild(menu);
+    orderManagePopover.el=menu;
+    orderManagePopover.anchor=anchorBtn;
+    orderManagePopover.orderId=orderId;
+    anchorBtn.setAttribute('aria-expanded','true');
+    anchorBtn.classList.add('is-open');
+    positionOrderManageMenu();
+  }
+  function showOrderDetail(orderId){
+    var o=ordersById[orderId];
+    if(!o){alert('未找到订单');return}
+    var lb=document.getElementById('adminProofLightbox');
+    if(!lb){
+      lb=document.createElement('div');
+      lb.id='adminProofLightbox';
+      lb.className='admin-proof-lightbox';
+      lb.hidden=true;
+      document.body.appendChild(lb);
+    }
+    var rows=[
+      ['订单号',displayOrderNo(o)],
+      ['订单 UUID',o.id||'-'],
+      ['老板',o.bossName||'-'],
+      ['老板 UID',o.bossUid||'-'],
+      ['服务内容',o.serviceContent||o.game||'-'],
+      ['金额',money(o.totalAmount)],
+      ['状态',o.statusText||statusText(o.status)],
+      ['抢单人数',o.grabCount||0],
+      ['已选陪玩',o.companionName||'-'],
+      ['创建时间',fmtOrderTime(o.createdAt)],
+      ['订单类型',o.orderType||o.type||'-'],
+      ['说明',o.description||'-']
+    ];
+    lb.hidden=false;
+    lb.setAttribute('aria-hidden','false');
+    lb.innerHTML='<div class="admin-proof-lightbox-card admin-order-detail-card"><div class="admin-proof-lightbox-head"><strong>订单详情</strong><button class="mini-btn" type="button" data-admin-proof-close>关闭</button></div><div class="admin-order-detail-list">'+
+      rows.map(function(r){return '<div><span>'+esc(r[0])+'</span><strong>'+esc(r[1])+'</strong></div>'}).join('')+
+      '</div></div>';
   }
   function renderOrders(){
     var target=document.getElementById('orderManagement');
@@ -63,44 +211,38 @@
       var fin=pair[1]||{};
       var rows=res.orders||[];
       var pendingProofs=fin.pendingPaymentProofs||[];
+      window.__adminPendingProofs=pendingProofs;
+      ordersById={};
+      rows.forEach(function(o){if(o&&o.id)ordersById[String(o.id)]=o;});
       var proofByOrder={};
       pendingProofs.forEach(function(p){if(p.orderId)proofByOrder[String(p.orderId)]=p;});
-      function proofCell(o){
-        var p=proofByOrder[String(o.id)];
-        if(o.status==='awaiting_payment'||p){
-          var btns='';
-          if(p&&p.proofUrl)btns+='<button class="mini-btn" type="button" data-admin-proof-preview="'+esc(p.proofUrl)+'">查看截图</button> ';
-          if(p){
-            btns+='<button class="mini-btn primary-lite" type="button" data-admin-approve-proof="'+esc(p.orderId||o.id)+'" data-receipt-id="'+esc(p.receiptId||p.id||'')+'">审核通过</button> ';
-            btns+='<button class="mini-btn" type="button" data-admin-reject-proof="'+esc(p.orderId||o.id)+'" data-receipt-id="'+esc(p.receiptId||p.id||'')+'">拒绝</button>';
-          }else if(o.status==='awaiting_payment'){
-            btns+='<span class="admin-sync-note" style="display:inline;margin:0">待老板上传凭证</span>';
-          }
-          return btns;
-        }
-        return '';
-      }
-      var proofPanel='<section class="admin-final-form" style="margin-top:16px"><div class="admin-final-head"><div><h3>支付审核（待处理）</h3><p>查看老板付款截图，审核通过/拒绝后同步订单状态。完整历史见「提现与发放 → 付款凭证中心」。</p></div></div>'+
+      closeOrderManageMenu();
+      var proofPanel='<section class="admin-final-form" style="margin-top:16px"><div class="admin-final-head"><div><h3>支付审核（待处理）</h3><p>查看老板付款截图，审核通过/拒绝后同步订单状态。完整历史见「提现与发放 → 付款凭证中心」。订单行内也可从「管理」进入审核。</p></div></div>'+
         '<div class="admin-final-table-wrap"><table class="admin-final-table"><thead><tr><th>订单号</th><th>老板</th><th>金额</th><th>支付方式</th><th>付款截图</th><th>上传时间</th><th>操作</th></tr></thead><tbody>'+
         (pendingProofs.length?pendingProofs.map(function(r){
-          return '<tr><td>'+esc(r.orderNo||r.orderId)+'</td><td>'+esc(r.bossName||r.bossUid||'-')+'</td><td>'+esc(r.amount)+'</td><td>'+esc(r.paymentMethod||'-')+'</td><td>'+
+          return '<tr><td>'+esc((r.orderNo&&!isUuid(r.orderNo))?r.orderNo:(r.orderId&&!isUuid(r.orderId)?r.orderId:'—'))+'</td><td>'+esc(r.bossName||r.bossUid||'-')+'</td><td>'+esc(r.amount)+'</td><td>'+esc(r.paymentMethod||'-')+'</td><td>'+
             (r.proofUrl?'<button class="mini-btn" type="button" data-admin-proof-preview="'+esc(r.proofUrl)+'"><img src="'+esc(r.proofUrl)+'" alt="付款截图" style="width:56px;height:56px;object-fit:cover;border-radius:8px;display:block"></button>':'无图')+
-            '</td><td>'+esc(r.uploadedAt||'-')+'</td><td><button class="mini-btn primary-lite" type="button" data-admin-approve-proof="'+esc(r.orderId)+'" data-receipt-id="'+esc(r.receiptId||r.id||'')+'">审核通过</button> <button class="mini-btn" type="button" data-admin-reject-proof="'+esc(r.orderId)+'" data-receipt-id="'+esc(r.receiptId||r.id||'')+'">拒绝</button></td></tr>';
+            '</td><td>'+esc(fmtOrderTime(r.uploadedAt)||'-')+'</td><td><button class="mini-btn primary-lite" type="button" data-admin-approve-proof="'+esc(r.orderId)+'" data-receipt-id="'+esc(r.receiptId||r.id||'')+'">审核通过</button> <button class="mini-btn" type="button" data-admin-reject-proof="'+esc(r.orderId)+'" data-receipt-id="'+esc(r.receiptId||r.id||'')+'">拒绝</button></td></tr>';
         }).join(''):'<tr><td colspan="7"><div class="empty">暂无待审核付款凭证</div></td></tr>')+
         '</tbody></table></div></section>';
       target.innerHTML=(res.message?note(res.message):'')+
-        '<div class="admin-final-head"><div><h3>订单管理</h3><p>真实订单：抢单名单（时间/状态/最终指定）、指定陪玩、支付审核。状态用下拉选择。</p></div><button class="mini-btn" data-admin-final-refresh="orders">刷新</button></div>'+
+        '<div class="admin-final-head"><div><h3>订单管理</h3><p>真实订单：列表保持简洁，点击「管理」展开该笔订单的完整操作（抢单、指定、支付审核、状态、取消/删除）。</p></div><button class="mini-btn" data-admin-final-refresh="orders">刷新</button></div>'+
         proofPanel+
-        '<div class="admin-final-table-wrap" style="margin-top:16px"><table class="admin-final-table"><thead><tr><th>订单编号</th><th>老板</th><th>服务内容</th><th>金额</th><th>状态</th><th>抢单人数</th><th>已选陪玩</th><th>创建时间</th><th>操作</th></tr></thead><tbody>'+
+        '<div class="admin-final-table-wrap admin-orders-table-wrap" style="margin-top:16px"><table class="admin-final-table admin-orders-table"><thead><tr><th>订单号</th><th>老板</th><th>服务内容</th><th>金额</th><th>状态</th><th>抢单人数</th><th>已选陪玩</th><th>创建时间</th><th class="admin-orders-col-actions">操作</th></tr></thead><tbody>'+
         (rows.length?rows.map(function(o){
-          return '<tr data-order-row="'+esc(o.id)+'"><td>'+esc(o.orderNo)+'</td><td>'+esc(o.bossName)+'</td><td>'+esc(o.serviceContent||o.game||'-')+'</td><td>'+money(o.totalAmount)+'</td><td>'+esc(o.statusText||statusText(o.status))+'</td><td>'+esc(o.grabCount||0)+'</td><td>'+esc(o.companionName||'-')+'</td><td>'+esc(o.createdAt||'-')+'</td><td class="admin-order-actions">'+
-            orderStatusSelect(o.id,o.status)+
-            '<button class="mini-btn" data-admin-view-grabs="'+esc(o.id)+'">查看抢单人</button>'+
-            '<button class="mini-btn" data-admin-assign-grab="'+esc(o.id)+'">指定陪玩</button>'+
-            (o.companion_id&&!['in_progress','completed'].includes(o.status)?'<button class="mini-btn" data-admin-unassign="'+esc(o.id)+'">取消指定</button>':'')+
-            proofCell(o)+
-            '<button class="mini-btn danger" data-admin-order-cancel="'+esc(o.id)+'">取消</button>'+
-            '<button class="mini-btn danger" data-admin-order-delete="'+esc(o.id)+'">删除</button></td></tr>';
+          var hasProof=!!proofByOrder[String(o.id)];
+          return '<tr data-order-row="'+esc(o.id)+'"'+(hasProof?' data-has-proof="1"':'')+'>'+
+            '<td class="admin-orders-col-no" title="'+esc(displayOrderNo(o))+'"><strong>'+esc(displayOrderNo(o))+'</strong></td>'+
+            '<td>'+esc(o.bossName)+'</td>'+
+            '<td class="admin-orders-col-service" title="'+esc(o.serviceContent||o.game||'-')+'">'+esc(o.serviceContent||o.game||'-')+'</td>'+
+            '<td>'+money(o.totalAmount)+'</td>'+
+            '<td>'+esc(o.statusText||statusText(o.status))+'</td>'+
+            '<td>'+esc(o.grabCount||0)+'</td>'+
+            '<td>'+esc(o.companionName||'-')+'</td>'+
+            '<td class="admin-orders-col-time">'+esc(fmtOrderTime(o.createdAt))+'</td>'+
+            '<td class="admin-order-actions admin-orders-col-actions">'+
+            '<button class="mini-btn admin-order-manage-toggle" type="button" data-admin-order-manage-toggle data-order-id="'+esc(o.id)+'" aria-expanded="false" aria-haspopup="menu">管理 ▼</button>'+
+            '</td></tr>';
         }).join(''):'<tr><td colspan="9"><div class="empty">暂无订单</div></td></tr>')+
         '</tbody></table></div><div id="adminProofLightbox" class="admin-proof-lightbox" hidden></div>';
       ensureGrabModalHost();
@@ -371,12 +513,40 @@
       return;
     }
   });
+  function bindOrderManageChrome(){
+    if(orderManagePopover.bound)return;
+    orderManagePopover.bound=true;
+    document.addEventListener('keydown',function(e){
+      if(e.key==='Escape'&&orderManagePopover.orderId)closeOrderManageMenu();
+    });
+    window.addEventListener('resize',function(){
+      if(orderManagePopover.orderId)closeOrderManageMenu();
+    });
+    window.addEventListener('scroll',function(){
+      if(orderManagePopover.orderId)closeOrderManageMenu();
+    },true);
+  }
+  bindOrderManageChrome();
   document.addEventListener('click',function(e){
     if(e.target.closest('[data-admin-final-refresh="orders"]'))renderOrders();
     if(e.target.closest('[data-admin-final-refresh="reports"]'))renderReports();
     if(e.target.closest('[data-admin-final-refresh="dashboard"]'))renderDashboard();
+    var manageToggle=e.target.closest('[data-admin-order-manage-toggle]');
+    if(manageToggle){
+      e.preventDefault();
+      e.stopPropagation();
+      openOrderManageMenu(manageToggle);
+      return;
+    }
+    var detailBtn=e.target.closest('[data-admin-order-detail]');
+    if(detailBtn){
+      closeOrderManageMenu();
+      showOrderDetail(detailBtn.getAttribute('data-admin-order-detail'));
+      return;
+    }
     var proofPrev=e.target.closest('[data-admin-proof-preview]');
     if(proofPrev){
+      closeOrderManageMenu();
       var lb=document.getElementById('adminProofLightbox');
       if(lb){
         lb.hidden=false;
@@ -399,6 +569,7 @@
     var ap=e.target.closest('[data-admin-approve-proof]');
     if(ap){
       if(!confirm('确认审核通过该付款凭证？将同步更新订单状态。'))return;
+      closeOrderManageMenu();
       post('/api/admin/finance',{action:'approve_payment_proof',orderId:ap.dataset.adminApproveProof,receiptId:ap.dataset.receiptId||''}).then(function(res){alert(res.message||'已通过');renderOrders();}).catch(function(err){alert(err.message)});
       return;
     }
@@ -408,13 +579,14 @@
       if(reason==null)return;
       reason=String(reason||'').trim();
       if(!reason){alert('必须填写拒绝原因');return;}
+      closeOrderManageMenu();
       post('/api/admin/finance',{action:'reject_payment_proof',orderId:rp.dataset.adminRejectProof,receiptId:rp.dataset.receiptId||'',reason:reason}).then(function(res){alert(res.message||'已拒绝');renderOrders();}).catch(function(err){alert(err.message)});
       return;
     }
     var vg=e.target.closest('[data-admin-view-grabs]');
-    if(vg){showGrabModal(vg.dataset.adminViewGrabs,'view');return;}
+    if(vg){closeOrderManageMenu();showGrabModal(vg.dataset.adminViewGrabs,'view');return;}
     var ag=e.target.closest('[data-admin-assign-grab]');
-    if(ag){showGrabModal(ag.dataset.adminAssignGrab,'assign');return;}
+    if(ag){closeOrderManageMenu();showGrabModal(ag.dataset.adminAssignGrab,'assign');return;}
     if(e.target.closest('[data-admin-close-grabs]')||e.target.id==='adminOrderGrabModal'||(e.target.classList&&e.target.classList.contains('admin-grab-modal'))){
       closeGrabModal();
       return;
@@ -442,6 +614,7 @@
     var ua=e.target.closest('[data-admin-unassign]');
     if(ua&&confirm('确认取消指定？\n\n将清除订单已指定陪玩，四端同步恢复未指定/返回抢单。')){
       ua.disabled=true;
+      closeOrderManageMenu();
       post('/api/admin/orders',{action:'unassign_companion',id:ua.dataset.adminUnassign}).then(function(res){
         alert(res.message||'已取消指定');
         renderOrders();
@@ -462,12 +635,15 @@
     }
     var os=e.target.closest('[data-admin-order-status-apply]');
     if(os){
-      var row=os.closest('tr')||os.parentElement;
-      var sel=row&&row.querySelector('[data-admin-order-status-select="'+os.dataset.adminOrderStatusApply+'"]');
+      var oid=os.dataset.adminOrderStatusApply;
+      var sel=
+        (orderManagePopover.el&&orderManagePopover.el.querySelector('[data-admin-order-status-select="'+oid+'"]'))||
+        document.querySelector('[data-admin-order-status-select="'+oid+'"]');
       var status=sel?String(sel.value||'').trim():'';
       if(!status){alert('请先选择状态');return}
       if(!confirm('确认将订单状态更新为「'+(sel.options[sel.selectedIndex]?sel.options[sel.selectedIndex].text:status)+'」？'))return;
-      post('/api/admin/orders',{action:'update_status',id:os.dataset.adminOrderStatusApply,status:status}).then(renderOrders).catch(function(err){alert(err.message)});
+      closeOrderManageMenu();
+      post('/api/admin/orders',{action:'update_status',id:oid,status:status}).then(renderOrders).catch(function(err){alert(err.message)});
       return;
     }
     var legacyOs=e.target.closest('[data-admin-order-status]');
@@ -476,11 +652,21 @@
       return;
     }
     var oc=e.target.closest('[data-admin-order-cancel]');
-    if(oc&&confirm('确认取消该订单？'))post('/api/admin/orders',{action:'cancel',id:oc.dataset.adminOrderCancel}).then(renderOrders).catch(function(err){alert(err.message)});
+    if(oc&&confirm('确认取消该订单？')){
+      closeOrderManageMenu();
+      post('/api/admin/orders',{action:'cancel',id:oc.dataset.adminOrderCancel}).then(renderOrders).catch(function(err){alert(err.message)});
+      return;
+    }
     var od=e.target.closest('[data-admin-order-delete]');
     if(od&&confirm('确认永久删除订单？\n将同时删除订单、相关聊天与缓存。真实订单会记入操作日志。')){
+      closeOrderManageMenu();
       post('/api/admin/orders',{action:'delete',id:od.dataset.adminOrderDelete}).then(function(res){alert(res.message||'已删除');renderOrders();}).catch(function(err){alert(err.message)});
       return;
+    }
+    if(orderManagePopover.orderId){
+      var inPopover=e.target.closest('.admin-order-manage-popover');
+      var inToggle=e.target.closest('[data-admin-order-manage-toggle]');
+      if(!inPopover&&!inToggle)closeOrderManageMenu();
     }
     var rr=e.target.closest('[data-report-review]');
     if(rr){

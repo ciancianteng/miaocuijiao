@@ -11,8 +11,105 @@
 .admin-final-table{width:100%;border-collapse:collapse;min-width:880px}
 .admin-final-table th,.admin-final-table td{padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.08);text-align:left;white-space:nowrap}
 .admin-final-table th{color:#9ca3af;font-weight:600;background:rgba(0,0,0,.22);position:sticky;top:0}
-.admin-final-table td.admin-order-actions,.admin-order-actions{white-space:normal;display:flex;flex-wrap:wrap;gap:8px;align-items:center;min-width:0}
-.admin-order-status-select{min-width:140px;max-width:180px}
+.admin-final-table td.admin-order-actions,.admin-order-actions{white-space:nowrap;display:block;min-width:0;max-width:110px}
+.admin-orders-table-wrap{max-width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch}
+.admin-orders-table{min-width:920px;table-layout:fixed;width:100%}
+.admin-orders-table .admin-orders-col-no{width:118px;max-width:118px;overflow:hidden;text-overflow:ellipsis}
+.admin-orders-table .admin-orders-col-service{max-width:160px;overflow:hidden;text-overflow:ellipsis}
+.admin-orders-table .admin-orders-col-time{width:132px}
+.admin-orders-table .admin-orders-col-actions{width:96px;text-align:right}
+.admin-order-manage-toggle.is-open{border-color:rgba(255,143,197,.55);color:#ffd6e8;background:rgba(255,143,197,.12)}
+.admin-order-manage-popover{
+  position:fixed;
+  z-index:140000;
+  min-width:220px;
+  max-width:min(320px,calc(100vw - 16px));
+  max-height:min(70vh,520px);
+  overflow:auto;
+  padding:8px;
+  border-radius:12px;
+  border:1px solid rgba(255,143,197,.28);
+  background:#16161e;
+  box-shadow:0 16px 40px rgba(0,0,0,.45);
+  box-sizing:border-box;
+}
+.admin-order-manage-popover button[role="menuitem"]{
+  display:block;
+  width:100%;
+  box-sizing:border-box;
+  text-align:left;
+  margin:0;
+  padding:9px 10px;
+  border:0;
+  border-radius:8px;
+  background:transparent;
+  color:#f3f4f6;
+  font:inherit;
+  font-size:13px;
+  cursor:pointer;
+}
+.admin-order-manage-popover button[role="menuitem"]:hover,
+.admin-order-manage-popover button[role="menuitem"]:focus{
+  background:rgba(255,143,197,.14);
+  color:#ffd6e8;
+  outline:none;
+}
+.admin-order-manage-popover button.primary-text{color:#ffb3d4}
+.admin-order-manage-popover button.danger-text{color:#fca5a5}
+.admin-order-manage-divider{
+  height:1px;
+  margin:6px 4px;
+  background:rgba(255,255,255,.1);
+}
+.admin-order-manage-note{
+  padding:8px 10px;
+  color:#9ca3af;
+  font-size:12px;
+  line-height:1.4;
+}
+.admin-order-manage-status{
+  display:grid;
+  gap:6px;
+  padding:6px 4px 8px;
+  color:#d1d5db;
+  font-size:12px;
+}
+.admin-order-manage-status-row{
+  display:flex;
+  gap:8px;
+  align-items:center;
+  flex-wrap:wrap;
+}
+.admin-order-status-select{
+  flex:1 1 140px;
+  min-width:120px;
+  max-width:100%;
+  border:1px solid rgba(255,255,255,.12);
+  border-radius:8px;
+  background:rgba(0,0,0,.28);
+  color:#fff;
+  padding:8px 10px;
+}
+.admin-order-detail-card{max-width:min(560px,96vw)}
+.admin-order-detail-list{display:grid;gap:10px}
+.admin-order-detail-list>div{
+  display:grid;
+  grid-template-columns:110px minmax(0,1fr);
+  gap:10px;
+  align-items:start;
+  padding-bottom:8px;
+  border-bottom:1px solid rgba(255,255,255,.08);
+}
+.admin-order-detail-list span{color:#9ca3af;font-size:12px}
+.admin-order-detail-list strong{color:#fff;font-weight:600;word-break:break-all;font-size:13px}
+@media(max-width:1440px){
+  .admin-orders-table{min-width:860px}
+  .admin-final-table th,.admin-final-table td{padding:8px 10px}
+}
+@media(max-width:1366px){
+  .admin-orders-table{min-width:820px}
+  .admin-orders-table .admin-orders-col-service{max-width:120px}
+}
 .admin-final-form{display:grid;grid-template-columns:repeat(3,minmax(160px,1fr));gap:12px;margin-bottom:14px;padding:12px;border:1px solid rgba(255,255,255,.1);border-radius:12px;background:rgba(0,0,0,.16)}
 .admin-final-form label{display:grid;gap:6px;color:#d1d5db;font-size:13px}
 .admin-final-form input,.admin-final-form select,.admin-final-form textarea{border:1px solid rgba(255,255,255,.12);border-radius:8px;background:rgba(0,0,0,.28);color:#fff;padding:9px 10px}
