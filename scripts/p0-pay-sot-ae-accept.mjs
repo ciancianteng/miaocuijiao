@@ -247,17 +247,18 @@ async function main() {
       action: "submit_payment_proof",
       id: orderId,
       orderId,
+      proofDataUrl: `data:image/png;base64,${pngB64}`,
       paymentProofDataUrl: `data:image/png;base64,${pngB64}`,
       imageDataUrl: `data:image/png;base64,${pngB64}`,
       note: "ae-accept-proof",
     });
     let proofOk = proof.ok;
     let proofUrl =
+      proof.json?.proofUrl ||
       proof.json?.order?.paymentProofUrl ||
       proof.json?.order?.payment_proof_url ||
       proof.json?.paymentProofUrl ||
       proof.json?.payment_proof_url ||
-      proof.json?.proofUrl ||
       "";
     if (!proofOk) {
       // Browser upload if present

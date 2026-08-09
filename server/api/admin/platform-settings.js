@@ -1114,14 +1114,9 @@ export default async function handler(req, res) {
               },
               updated_at: new Date().toISOString(),
             };
-            await supabaseJson(`${supabaseUrl()}/rest/v1/payment_channels`, {
+            await supabaseJson(restUrl("payment_channels"), {
               method: "POST",
-              headers: {
-                Prefer: "resolution=merge-duplicates,return=minimal",
-                apikey: process.env.SUPABASE_SERVICE_ROLE_KEY,
-                Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
-                "Content-Type": "application/json",
-              },
+              headers: serviceHeaders({ Prefer: "resolution=merge-duplicates,return=minimal" }),
               body: JSON.stringify([row]),
             });
           }
