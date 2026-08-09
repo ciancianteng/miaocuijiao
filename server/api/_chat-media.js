@@ -87,10 +87,10 @@ export async function assertChatMediaAccess(conversation, userId, profileRole = 
   throw Object.assign(new Error("无权访问该聊天图片"), { status: 403 });
 }
 
-export async function uploadChatImageBuffer({ userId, conversationId, buffer, contentType, filename }) {
+export async function uploadChatImageBuffer({ userId, conversationId, buffer, contentType, filename, profileRole = "" }) {
   const conversation = await loadConversation(conversationId);
   if (!conversation) throw Object.assign(new Error("会话不存在，无法上传图片"), { status: 404 });
-  await assertChatMediaAccess(conversation, userId);
+  await assertChatMediaAccess(conversation, userId, profileRole);
 
   await ensurePrivateBucket(CHAT_BUCKET, ["image/jpeg", "image/png", "image/webp"]);
   const ext =
@@ -110,7 +110,7 @@ export async function uploadChatImageBuffer({ userId, conversationId, buffer, co
   };
 }
 
-export async function uploadChatImageDataUrl({ userId, conversationId, dataUrl, filename }) {
+export async function uploadChatImageDataUrl({ userId, conversationId, dataUrl, filename, profileRole = "" }) {
   const decoded = assertChatImage(decodeDataUrl(dataUrl));
   return uploadChatImageBuffer({
     userId,
@@ -118,6 +118,7 @@ export async function uploadChatImageDataUrl({ userId, conversationId, dataUrl, 
     buffer: decoded.buffer,
     contentType: decoded.contentType,
     filename,
+    profileRole,
   });
 }
 

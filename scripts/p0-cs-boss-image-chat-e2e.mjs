@@ -12,7 +12,7 @@ const BASE = (process.env.PREVIEW || "https://meow-cuijiao-homepage-staging.verc
 const PASS = process.env.PASS || process.env.MCJ_TEST_PASSWORD || "McjTest@12345678";
 const CS_EMAIL = process.env.E2E_CS_EMAIL || "service.final.1785714993009@meow.test";
 const BOSS_A = process.env.E2E_BOSS_EMAIL || "boss.final.1785714993009@meow.test";
-const BOSS_B = process.env.E2E_BOSS_B_EMAIL || "boss.final.1785714993010@meow.test";
+const BOSS_B = process.env.E2E_BOSS_B_EMAIL || "boss@meow.test";
 const COMP = process.env.E2E_COMPANION_EMAIL || "companion.final.1785714993009@meow.test";
 const ART = path.join("/opt/cursor/artifacts", "cs-boss-image-chat-e2e");
 const ART_REPO = path.join(ROOT, "artifacts", "cs-boss-image-chat-e2e");
@@ -140,18 +140,13 @@ async function writePngFixture(name, b64) {
     step("boss_a_conversation", !!convId, convId || JSON.stringify(open.json).slice(0, 240));
   }
 
-  // CS accept / lock conversation if needed
+  // CS accept / lock conversation (required before CS can send)
   {
-    const boot = await api("/api/customer-service", csTok, { action: "bootstrap" });
-    const convs = boot.json?.data?.conversations || boot.json?.conversations || [];
-    const mine = convs.find((c) => c.id === convId) || convs.find((c) => String(c.bossId || c.boss_id || "") && c.id);
-    if (mine && !mine.currentServiceId && !mine.customerServiceId) {
-      const acc = await api("/api/customer-service", csTok, { action: "accept_conversation", conversation_id: convId, id: convId });
-      step("cs_accept", acc.ok, acc.ok ? "accepted" : JSON.stringify(acc.json).slice(0, 200));
-    } else {
-      const assigned = String(mine?.currentServiceId || mine?.customer_service_id || mine?.assignedCsId || "");
-      step("cs_accept", true, assigned ? `already assigned ${assigned.slice(0, 8)}` : "pool ready");
-    }
+    const acc = await api("/api/customer-service", csTok, { action: "accept", conversation_id: convId, id: convId });
+    const ok =
+      acc.ok ||
+      /已接待|已在接待|正在接待/i.test(String(acc.json?.message || ""));
+    step("cs_accept", ok, acc.json?.message || JSON.stringify(acc.json).slice(0, 200));
   }
 
   // ========== TEST 1: CS → Boss image ==========
@@ -181,14 +176,21 @@ async function writePngFixture(name, b64) {
     );
 
     await sleep(800);
-    const bossMsgs = await api("/api/chat", bossATok, { action: "messages", conversation_id: convId });
+    const bossMsgs = await api(`/api/chat?action=messages&conversation_id=${encodeURIComponent(convId)}`, bossATok, null, "GET");
     const list = bossMsgs.json?.messages || [];
-    const hit = list.find((m) => {
-      const u = imgOf(m);
-      return String(m.messageType || m.message_type) === "image" && isHttpsImg(u) && (u.includes(marker) || (csStorageRef && (m.storageRef || "").includes(csStorageRef.split(":")[1] || "x")) || u === sentUrl || (csImgUrl && u.split("?")[0] === csImgUrl.split("?")[0]));
-    }) || list.filter((m) => String(m.messageType || m.message_type) === "image").slice(-1)[0];
+    const images = list.filter((m) => String(m.messageType || m.message_type) === "image" && isHttpsImg(imgOf(m)));
+    const hit =
+      images.find((m) => {
+        const u = imgOf(m);
+        const ref = String(m.storageRef || m.content || "");
+        return (
+          (csStorageRef && ref.includes(csStorageRef.split(":")[1] || "___")) ||
+          (sentUrl && u.split("?")[0] === sentUrl.split("?")[0]) ||
+          (csImgUrl && u.split("?")[0] === csImgUrl.split("?")[0])
+        );
+      }) || images.slice(-1)[0];
     const bossSees = hit && isHttpsImg(imgOf(hit));
-    step("boss_receives_cs_image", !!bossSees, bossSees ? imgOf(hit).slice(0, 100) : `msgs=${list.length}`);
+    step("boss_receives_cs_image", !!bossSees, bossSees ? imgOf(hit).slice(0, 100) : `msgs=${list.length} imgs=${images.length}`);
     if (bossSees) csImgUrl = imgOf(hit) || csImgUrl;
   }
 
@@ -231,7 +233,7 @@ async function writePngFixture(name, b64) {
   // ========== TEST 3: refresh persist (re-list / re-sign) ==========
   {
     const csMsgs = await api("/api/customer-service", csTok, { action: "list_messages", conversation_id: convId, id: convId });
-    const bossMsgs = await api("/api/chat", bossATok, { action: "messages", conversation_id: convId });
+    const bossMsgs = await api(`/api/chat?action=messages&conversation_id=${encodeURIComponent(convId)}`, bossATok, null, "GET");
     const csImgs = (csMsgs.json?.messages || []).filter((m) => String(m.messageType || m.message_type) === "image" && isHttpsImg(imgOf(m)));
     const bossImgs = (bossMsgs.json?.messages || []).filter((m) => String(m.messageType || m.message_type) === "image" && isHttpsImg(imgOf(m)));
     step("refresh_persist_cs", csImgs.length >= 2, `csImages=${csImgs.length}`);
@@ -251,7 +253,7 @@ async function writePngFixture(name, b64) {
     const cs2 = await loginRole(CS_EMAIL, "customer_service");
     const ba2 = await loginRole(BOSS_A, "boss");
     const csMsgs = await api("/api/customer-service", cs2.token, { action: "list_messages", conversation_id: convId, id: convId });
-    const bossMsgs = await api("/api/chat", ba2.token, { action: "messages", conversation_id: convId });
+    const bossMsgs = await api(`/api/chat?action=messages&conversation_id=${encodeURIComponent(convId)}`, ba2.token, null, "GET");
     const csImgs = (csMsgs.json?.messages || []).filter((m) => String(m.messageType || m.message_type) === "image" && isHttpsImg(imgOf(m)));
     const bossImgs = (bossMsgs.json?.messages || []).filter((m) => String(m.messageType || m.message_type) === "image" && isHttpsImg(imgOf(m)));
     step("relogin_history_cs", csImgs.length >= 2, `csImages=${csImgs.length}`);
@@ -324,7 +326,7 @@ async function writePngFixture(name, b64) {
       message_type: "text",
     });
     await sleep(500);
-    const bossMsgs = await api("/api/chat", bossATok, { action: "messages", conversation_id: convId });
+    const bossMsgs = await api(`/api/chat?action=messages&conversation_id=${encodeURIComponent(convId)}`, bossATok, null, "GET");
     const bossSees = (bossMsgs.json?.messages || []).some((m) => String(m.content || "") === text);
     const reply = `${marker}-text-pong`;
     const bossSend = await api("/api/chat", bossATok, {
@@ -372,24 +374,28 @@ async function writePngFixture(name, b64) {
       csPage.click('button[type="submit"]'),
     ]);
     await csPage.goto(`${BASE}/customer-service/conversations/?t=${Date.now()}`, { waitUntil: "domcontentloaded", timeout: 90000 });
-    await csPage.waitForTimeout(2500);
+    await csPage.waitForFunction(() => !!(window.MCJChatMedia && window.MCJChatMedia.pickAndSendImages), null, { timeout: 30000 }).catch(() => {});
     const mediaReady = await csPage.evaluate(() => !!(window.MCJChatMedia && window.MCJChatMedia.pickAndSendImages));
     step("ui_cs_media_loaded", mediaReady, mediaReady ? "MCJChatMedia ready" : "missing MCJChatMedia");
 
-    // open conversation
+    // open conversation via SPA route/state when possible
     await csPage.evaluate((id) => {
-      const row = document.querySelector(`[data-open-conversation="${id}"], [data-select-conversation="${id}"], [data-conv-id="${id}"]`);
+      try {
+        history.replaceState({}, "", "/customer-service/conversations/?id=" + encodeURIComponent(id));
+      } catch (_) {}
+      const row = document.querySelector(
+        `[data-open-conversation="${id}"], [data-select-conversation="${id}"], [data-conv-id="${id}"], [data-conversation-id="${id}"]`
+      );
       if (row) row.click();
     }, convId);
     await csPage.waitForTimeout(1500);
-    // fallback: click first active conv
     if (!(await csPage.locator("[data-cs-image]").count())) {
       const tab = csPage.locator('[data-conv-filter="active"]');
       if (await tab.count()) await tab.click();
       await csPage.waitForTimeout(800);
       const item = csPage.locator("[data-open-conversation], [data-select-conversation]").first();
       if (await item.count()) await item.click();
-      await csPage.waitForTimeout(1200);
+      await csPage.waitForTimeout(1500);
     }
     const imgBtn = csPage.locator("[data-cs-image]");
     const btnOk = (await imgBtn.count()) > 0;
@@ -417,26 +423,48 @@ async function writePngFixture(name, b64) {
     // Boss UI
     await bossPage.goto(`${BASE}/support.html?t=${Date.now()}`, { waitUntil: "domcontentloaded", timeout: 90000 });
     await bossPage.evaluate(
-      ({ email, pass, token }) => {
-        const session = {
+      ({ email, token, sessionJson }) => {
+        const session = sessionJson || {
           accessToken: token,
           token,
           user: { email, role: "boss" },
           email,
         };
+        const keys = ["mcjBossSession", "mcjCustomerSession", "mcjAuthSession", "sb-session"];
         try {
+          for (const k of keys) {
+            localStorage.setItem(k, JSON.stringify(session));
+            sessionStorage.setItem(k, JSON.stringify(session));
+          }
+        } catch (_) {}
+      },
+      { email: BOSS_A, token: bossATok, sessionJson: null }
+    );
+    // Prefer API login cookie/session via page fetch
+    await bossPage.evaluate(
+      async ({ email, pass }) => {
+        try {
+          const res = await fetch("/api/auth", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "login", email, password: pass, role: "boss" }),
+          });
+          const body = await res.json();
+          const token = body?.session?.accessToken || body?.session?.token || body?.token || "";
+          const session = body?.session || { accessToken: token, token, user: body?.user || { email, role: "boss" } };
           localStorage.setItem("mcjBossSession", JSON.stringify(session));
           sessionStorage.setItem("mcjBossSession", JSON.stringify(session));
           localStorage.setItem("mcjCustomerSession", JSON.stringify(session));
         } catch (_) {}
       },
-      { email: BOSS_A, pass: PASS, token: bossATok }
+      { email: BOSS_A, pass: PASS }
     );
-    await bossPage.goto(`${BASE}/support.html?conversation_id=${convId}&t=${Date.now()}`, {
+    await bossPage.goto(`${BASE}/support.html?conversation_id=${encodeURIComponent(convId)}&t=${Date.now()}`, {
       waitUntil: "domcontentloaded",
       timeout: 90000,
     });
-    await bossPage.waitForTimeout(3000);
+    await bossPage.waitForFunction(() => !!(window.MCJChatMedia && window.MCJChatMedia.pickAndSendImages), null, { timeout: 30000 }).catch(() => {});
+    await bossPage.waitForTimeout(2000);
     const bossMedia = await bossPage.evaluate(() => !!(window.MCJChatMedia && window.MCJChatMedia.pickAndSendImages));
     step("ui_boss_media_loaded", bossMedia, bossMedia ? "ok" : "missing");
     const bossBtn = bossPage.locator("[data-chat-image-btn]");

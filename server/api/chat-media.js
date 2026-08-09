@@ -129,6 +129,7 @@ export default async function handler(req, res) {
       conversationId,
       dataUrl,
       filename: body.filename || body.name || "chat.jpg",
+      profileRole: profile?.role || "",
     });
     return json(res, 200, {
       ok: true,
