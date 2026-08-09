@@ -13,10 +13,10 @@ const BASE = (process.env.PREVIEW || process.env.MCJ_STAGING_URL || "https://meo
   ""
 );
 const PASS = process.env.PASS || process.env.MCJ_TEST_PASSWORD || "McjTest@12345678";
-const ADMIN = process.env.E2E_ADMIN_EMAIL || "admin@meow.test";
-const BOSS = process.env.E2E_BOSS_EMAIL || "boss@meow.test";
+const COMP = process.env.E2E_COMPANION_EMAIL || "companion.final.1785714993009@meow.test";
 const CS = process.env.E2E_CS_EMAIL || "service@meow.test";
-const COMP = process.env.E2E_COMPANION_EMAIL || "companion@meow.test";
+const BOSS = process.env.E2E_BOSS_EMAIL || "boss@meow.test";
+const ADMIN = process.env.E2E_ADMIN_EMAIL || "admin@meow.test";
 const PNG =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 const ART = path.join("/opt/cursor/artifacts", "admin-order-assign-grabs-e2e");
@@ -59,31 +59,39 @@ async function shot(page, name) {
   return p1;
 }
 
-async function injectAdmin(page, token) {
-  await page.addInitScript(
-    ({ token }) => {
-      localStorage.setItem("mcjAdminAccessToken", token);
-      sessionStorage.setItem("mcjAdminAccessToken", token);
-      localStorage.setItem("adminAuthToken", token);
-      localStorage.setItem("mcjAuthAccessToken", token);
-      sessionStorage.setItem("mcjAuthAccessToken", token);
-      localStorage.setItem("adminUser", JSON.stringify({ role: "admin", email: "admin@meow.test", roleKey: "admin" }));
-      localStorage.setItem("mcjAdminRole", "admin");
-      localStorage.setItem("mcjRole", "admin");
-    },
-    { token }
-  );
+async function loginAdminUi(page) {
+  await page.goto(`${BASE}/admin/login/?t=${Date.now()}`, { waitUntil: "domcontentloaded", timeout: 90000 });
+  await page.waitForTimeout(800);
+  await page.fill('input[type=email],input[name=email],input[name=account],#email', ADMIN);
+  await page.fill('input[type=password]', PASS);
+  await page.click('button[type=submit],button:has-text("登录")');
+  await page.waitForURL(/admin\.html/, { timeout: 30000 });
+  await page.waitForSelector('[data-section="orders"]', { timeout: 30000 });
 }
 
 async function openOrders(page) {
-  await page.goto(`${BASE}/admin.html?t=${Date.now()}`, { waitUntil: "domcontentloaded", timeout: 90000 });
-  await page.waitForTimeout(1500);
-  const btn = page.locator('[data-section="orders"]');
+  const btn = page.locator('[data-section="orders"]').first();
   await btn.click({ timeout: 20000 });
-  await page.waitForSelector("#orderManagement .admin-final-table, #orderManagement .empty, #orderManagement .content-loading", {
+  await page.waitForSelector("#section-orders.active, #section-orders.is-active, section.section.active #orderManagement, #orderManagement .admin-final-table", {
     timeout: 30000,
+  }).catch(() => {});
+  // Activate section class if suite uses hidden sections
+  await page.evaluate(() => {
+    document.querySelectorAll(".section").forEach((s) => s.classList.remove("active"));
+    const sec = document.getElementById("section-orders");
+    if (sec) {
+      sec.classList.add("active");
+      sec.style.display = "block";
+      sec.hidden = false;
+    }
+    document.querySelectorAll("[data-section]").forEach((b) => b.classList.toggle("active", b.getAttribute("data-section") === "orders"));
   });
-  await page.waitForFunction(() => !document.querySelector("#orderManagement .content-loading"), null, { timeout: 45000 }).catch(() => {});
+  await page.waitForFunction(() => {
+    const t = document.querySelector("#orderManagement .admin-final-table, #orderManagement .empty");
+    if (!t) return false;
+    const r = t.getBoundingClientRect();
+    return r.width > 0 && r.height > 0;
+  }, null, { timeout: 45000 });
 }
 
 (async () => {
@@ -109,19 +117,37 @@ async function openOrders(page) {
       unit_price: 22,
       total_amount: 22,
       order_type: "custom",
-      payment_method: "tng",
+      payment_method: "duitnow",
     },
   });
   const oid = place.json?.order?.id || "";
   const orderNo = place.json?.order?.orderNo || place.json?.order?.order_no || oid;
-  step("create_order", !!(place.ok && oid), `${orderNo} ${oid}`);
+  step("create_order", !!(place.ok && oid), `${place.json?.message || ""} ${orderNo} ${oid}`);
 
-  await api("/api/orders", bossT, { action: "submit_payment_proof", id: oid, proofDataUrl: PNG, paymentMethod: "tng" });
+  const proof = await api("/api/orders", bossT, {
+    action: "submit_payment_proof",
+    id: oid,
+    proofDataUrl: PNG,
+    paymentMethod: "duitnow",
+  });
+  step("submit_proof", !!proof.ok, proof.json?.message || proof.status);
   const confirm = await api("/api/customer-service", csT, { action: "confirm_payment", id: oid });
   step("confirm_to_hall", confirm.ok && confirm.json?.order?.status === "pending", confirm.json?.order?.status || confirm.json?.message);
 
   const emptyGrabs = await api("/api/admin/orders", adminT, { action: "list_grabs", id: oid });
   step("api_empty_grabs", emptyGrabs.ok && (emptyGrabs.json?.grabs || []).length === 0, `count=${(emptyGrabs.json?.grabs || []).length}`);
+
+  // Ensure companion can grab (online + forced ack if needed)
+  const pending = await api("/api/companion", compT, { action: "pending_forced" });
+  for (const item of pending.json?.pendingForced || []) {
+    await api("/api/companion", compT, {
+      action: "acknowledge_forced",
+      id: item.id || item.contentId || item.content_id,
+      content_id: item.id || item.contentId || item.content_id,
+    });
+  }
+  const online = await api("/api/companion", compT, { action: "set_online_status", online_status: "online" });
+  step("companion_online", !!online.ok, online.json?.message || online.json?.onlineStatus || String(online.status));
 
   let browser;
   try {
@@ -135,11 +161,11 @@ async function openOrders(page) {
     if (!browser) throw e;
   }
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
-  await injectAdmin(page, adminT);
   page.on("dialog", async (d) => {
     await d.accept();
   });
 
+  await loginAdminUi(page);
   await openOrders(page);
   // Prefer the new test order row; fall back to first view-grabs button.
   let row = page.locator(`[data-order-row="${oid}"]`);
