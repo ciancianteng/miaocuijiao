@@ -143,9 +143,10 @@ function imgOf(m) {
     acc.json?.message || JSON.stringify(acc.json).slice(0, 160)
   );
 
-  // Baseline unread on CS for this conversation
+  // Baseline unread on CS for this conversation (poll nests under data)
   const beforeList = await api("/api/customer-service", cs.token, { action: "poll_updates" });
-  const beforeConv = (beforeList.json?.conversations || []).find((c) => String(c.id) === String(convId));
+  const beforeConvs = beforeList.json?.data?.conversations || beforeList.json?.conversations || [];
+  const beforeConv = beforeConvs.find((c) => String(c.id) === String(convId));
   const beforeUnread = Number(beforeConv?.unread || beforeConv?.unreadCount || 0);
 
   // TEST 1+2: companion → CS image
@@ -330,27 +331,39 @@ function imgOf(m) {
 
   // TEST 8 unread +1 when CS not focused — simulate by sending image then checking poll unread
   {
-    // Mark read first
+    // Mark read first (CS not viewing thread afterward)
     await api("/api/customer-service", cs.token, { action: "mark_read", conversation_id: convId, id: convId });
-    await sleep(400);
+    await sleep(500);
     const up = await api("/api/chat-media", cp.token, {
       action: "upload",
       conversation_id: convId,
       data_url: makePng(10, 200, 10).dataUrl,
       filename: `${marker}-unread.png`,
     });
-    await api("/api/companion", cp.token, {
+    const sendUnread = await api("/api/companion", cp.token, {
       action: "send_cs_message",
       conversation_id: convId,
       content: up.json?.storageRef || up.json?.url,
       message_type: "image",
       forceNew: false,
     });
-    await sleep(900);
+    await sleep(1100);
     const poll = await api("/api/customer-service", cs.token, { action: "poll_updates" });
-    const conv = (poll.json?.conversations || []).find((c) => String(c.id) === String(convId));
-    const unread = Number(conv?.unread || conv?.unreadCount || 0);
-    step("unread_image_counts", unread >= 1, `unread=${unread} before=${beforeUnread}`);
+    const pollConvs = poll.json?.data?.conversations || poll.json?.conversations || [];
+    const conv = pollConvs.find((c) => String(c.id) === String(convId));
+    let unread = Number(conv?.unread || conv?.unreadCount || 0);
+    // Fallback: bootstrap conversation list (same unread source CS desk uses on load)
+    if (unread < 1) {
+      const boot = await api("/api/customer-service", cs.token, { action: "bootstrap" });
+      const bootConvs = boot.json?.data?.conversations || boot.json?.conversations || [];
+      const b = bootConvs.find((c) => String(c.id) === String(convId));
+      unread = Number(b?.unread || b?.unreadCount || 0);
+    }
+    step(
+      "unread_image_counts",
+      sendUnread.ok && unread >= 1,
+      `unread=${unread} before=${beforeUnread} send=${sendUnread.ok} inPoll=${!!conv}`
+    );
   }
 
   // UI smoke: companion messages page image button present
@@ -374,31 +387,48 @@ function imgOf(m) {
         const session = body.session || {};
         const token = session.accessToken || session.token || body.token || "";
         const refresh = session.refreshToken || session.refresh_token || "";
-        const user = body.user || { email, role: "companion" };
+        const user = Object.assign({}, body.user || {}, { email, role: "companion" });
         const payload = JSON.stringify({
           token,
           accessToken: token,
           refreshToken: refresh,
+          expiresAt: session.expiresAt || session.expires_at || "",
           user,
           remember: true,
         });
         localStorage.setItem("mcjCompanionSession", payload);
         sessionStorage.setItem("mcjCompanionSession", payload);
-        // Also try common keys used by workbench
-        localStorage.setItem("companionSession", payload);
-        sessionStorage.setItem("companionSession", payload);
+        localStorage.setItem("companionAuthToken", "companion_session_v4_e2e");
+        sessionStorage.setItem("companionAuthToken", "companion_session_v4_e2e");
+        localStorage.setItem("companionUser", JSON.stringify(user));
+        sessionStorage.setItem("companionUser", JSON.stringify(user));
         localStorage.setItem("mcjAuthAccessToken", token);
         sessionStorage.setItem("mcjAuthAccessToken", token);
+        if (refresh) {
+          localStorage.setItem("mcjAuthRefreshToken", refresh);
+          sessionStorage.setItem("mcjAuthRefreshToken", refresh);
+        }
         localStorage.setItem("mcjRole", "companion");
+        sessionStorage.setItem("mcjRole", "companion");
       },
       { email: COMP, pass: PASS, base: BASE }
     );
-    // Discover session key from page source if needed
-    await page.goto(`${BASE}/companion/messages/?t=${Date.now()}`, { waitUntil: "domcontentloaded", timeout: 90000 });
-    await sleep(2500);
+    await page.goto(`${BASE}/companion/messages/?t=${Date.now()}&v=20260809compImg1`, {
+      waitUntil: "domcontentloaded",
+      timeout: 90000,
+    });
+    await page.waitForFunction(() => !!(window.MCJChatMedia && window.MCJChatMedia.pickAndSendImages), null, {
+      timeout: 20000,
+    }).catch(() => {});
+    // Open CS thread if list is shown first
+    const csEntry = page.locator('[data-chat-session="cs"], [data-open-cs], [data-cs-chat], .pw-chat-item, [data-conversation-id]').first();
+    if (await csEntry.count()) {
+      await csEntry.click().catch(() => {});
+    }
+    await page.waitForSelector("[data-pw-image]", { timeout: 25000 }).catch(() => {});
     const mediaReady = await page.evaluate(() => !!(window.MCJChatMedia && window.MCJChatMedia.pickAndSendImages));
     const imgBtn = await page.locator("[data-pw-image]").count();
-    step("ui_companion_media_ready", mediaReady, `media=${mediaReady} btn=${imgBtn}`);
+    step("ui_companion_media_ready", mediaReady && imgBtn > 0, `media=${mediaReady} btn=${imgBtn}`);
     await page.screenshot({ path: path.join(ART, "01-companion-messages.png"), fullPage: true }).catch(() => {});
     try {
       fs.copyFileSync(path.join(ART, "01-companion-messages.png"), path.join(ART_REPO, "01-companion-messages.png"));
