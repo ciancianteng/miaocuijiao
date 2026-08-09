@@ -2559,6 +2559,38 @@ export default async function handler(req, res) {
       return json(res, 200, result);
     }
 
+    if (action === "reject_boss_refund" || action === "reject_refund") {
+      if (!canConfirmPay(adminProfile)) {
+        return json(res, 403, { ok: false, message: "仅财务管理员可驳回退款" });
+      }
+      const refundId = String(body.id || body.refundId || "").trim();
+      const reason = String(body.reason || body.rejectReason || body.note || "").trim();
+      if (!refundId) return json(res, 400, { ok: false, message: "缺少退款单 id" });
+      if (!reason) return json(res, 400, { ok: false, message: "请填写驳回原因" });
+      const refundApi = await import("../_boss-refund-payout.js");
+      const result = await refundApi.csSuggestRefund(companionDb, {
+        refundId,
+        decision: "reject",
+        note: reason,
+        csProfile: {
+          id: adminProfile.id,
+          display_name: adminDisplayName(adminProfile),
+          email: adminProfile.email || "",
+        },
+      });
+      if (!result.ok) return json(res, 400, result);
+      await writeAdminLog({
+        module: "finance",
+        action: "reject_boss_refund",
+        targetType: "boss_refund_requests",
+        targetId: refundId,
+        operatorId: adminProfile.id || null,
+        operatorRole: normalizeAdminRole(adminProfile.role),
+        reason,
+      });
+      return json(res, 200, result);
+    }
+
     if (action === "add_withdraw_to_batch" || action === "add_companion_wage_to_batch") {
       if (!canConfirmPay(adminProfile)) {
         return json(res, 403, { ok: false, message: "仅财务管理员可操作批次" });
