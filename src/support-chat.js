@@ -36,7 +36,12 @@ import './mcj-chat-realtime.js';
     realtimeReady: false,
     poolRealtimeBound: false,
     totalUnread: 0,
+    /** @type {Record<string,{messages:any[],conversation:any,orders:any[],ts:number}>} */
+    threadCache: {},
+    activeRtCid: "",
+    threadLoadSeq: 0,
   };
+  var THREAD_CACHE_MAX = 24;
 
   var COMPOSER_SEL = '[data-send] [name="content"]';
   var EMOJIS = ["😀", "😁", "😂", "😊", "😍", "😘", "👍", "🙏", "🎉", "🐱", "💖", "🔥"];
@@ -648,10 +653,18 @@ import './mcj-chat-realtime.js';
     var RT = window.MCJChatRealtime;
     var cid = String(conversationId || (state.conversation && state.conversation.id) || "").trim();
     if (!RT || !cid) return;
+    // Drop previous conversation channel when switching threads.
+    var prev = String(state.activeRtCid || "").trim();
+    if (prev && prev !== cid && typeof RT.unsubscribe === "function") {
+      RT.unsubscribe(prev);
+    }
+    state.activeRtCid = cid;
     // Only drop this conversation channel — never wipe unrelated pool/message channels.
     if (typeof RT.unsubscribe === "function") RT.unsubscribe(cid);
     RT.subscribeMessages(cid, authAccessToken(), function (row) {
       if (!row || !row.id) return;
+      // Ignore inserts for a thread we are no longer viewing / subscribed as active.
+      if (String(state.activeRtCid || "") !== String(cid)) return;
       if (state.messages.some(function (m) { return m.id === row.id; })) return;
       var Media = window.MCJChatMedia;
       var normalized = Object.assign({}, row);
@@ -670,12 +683,13 @@ import './mcj-chat-realtime.js';
         return !(sameUrl && m.sender_role === "boss");
       });
       state.messages = state.messages.concat([normalized]);
+      cacheActiveThread();
       var activeId = state.conversation && state.conversation.id;
       if (isCsPeerMessage(row)) {
         if (activeId && String(activeId) === String(cid) && state.mobileDetail !== false) {
           // Viewing this thread: persist read immediately so badges stay cleared.
           bumpConversationPreview(cid, row, { unreadDelta: 0, forceUnread: 0 });
-          markConversationRead(cid);
+          markConversationRead(cid, { silent: true });
         } else {
           bumpConversationPreview(cid, row, { unreadDelta: 1 });
         }
@@ -688,6 +702,77 @@ import './mcj-chat-realtime.js';
       state.realtimeReady = true;
     }).catch(function () {
       state.realtimeReady = false;
+    });
+  }
+  function cacheActiveThread() {
+    var c = state.conversation;
+    var cid = c && c.id ? String(c.id) : "";
+    if (!cid) return;
+    state.threadCache[cid] = {
+      messages: (state.messages || []).slice(),
+      conversation: Object.assign({}, c),
+      orders: (state.orders || []).slice(),
+      ts: Date.now(),
+    };
+    var keys = Object.keys(state.threadCache);
+    if (keys.length <= THREAD_CACHE_MAX) return;
+    keys
+      .sort(function (a, b) {
+        return (state.threadCache[a].ts || 0) - (state.threadCache[b].ts || 0);
+      })
+      .slice(0, keys.length - THREAD_CACHE_MAX)
+      .forEach(function (k) {
+        delete state.threadCache[k];
+      });
+  }
+  function restoreThreadCache(cid) {
+    var hit = state.threadCache[String(cid || "")];
+    if (!hit) return false;
+    state.messages = (hit.messages || []).slice();
+    state.orders = (hit.orders || []).slice();
+    if (hit.conversation && hit.conversation.id) {
+      state.conversation = Object.assign({}, hit.conversation, state.conversation || {}, { id: String(cid) });
+    }
+    return true;
+  }
+  function conversationFromList(cid) {
+    var id = String(cid || "");
+    var hit = (state.conversations || []).find(function (c) {
+      return String(c.id) === id;
+    });
+    return hit ? Object.assign({}, hit, { id: id }) : { id: id };
+  }
+  function selectConversationInstant(id) {
+    var cid = String(id || "").trim();
+    if (!cid) return;
+    var same =
+      state.conversation &&
+      String(state.conversation.id) === cid &&
+      (!isMobile() || state.mobileDetail);
+    captureComposer();
+    if (!same) cacheActiveThread();
+    state.emojiOpen = false;
+    state.error = "";
+    // Never gate the whole main pane on thread loading — keep shell interactive.
+    state.loading = false;
+    state.conversation = conversationFromList(cid);
+    state.mobileDetail = true;
+    syncUrl(state.conversation);
+    var hadCache = restoreThreadCache(cid);
+    if (!hadCache && !same) {
+      state.messages = [];
+      state.orders = [];
+    }
+    // Instant UI: soft-patch list+main only; avoid full root.innerHTML remount.
+    if (canSoftPatch()) softUpdate({ keepScroll: false });
+    else paint();
+    bindBossRealtime(cid);
+    var seq = ++state.threadLoadSeq;
+    // Background refresh; cached threads stay on screen (silent).
+    loadThread(cid, hadCache || same, seq).catch(function (err) {
+      if (seq !== state.threadLoadSeq) return;
+      state.error = (err && err.message) || "读取会话失败";
+      toast(state.error);
     });
   }
   function bumpConversationPreview(conversationId, row, opts) {
@@ -742,7 +827,7 @@ import './mcj-chat-realtime.js';
         if (activeId && activeId === cid) {
           if (isCsPeerMessage(row) && state.mobileDetail !== false) {
             bumpConversationPreview(cid, row, { forceUnread: 0 });
-            markConversationRead(cid);
+            markConversationRead(cid, { silent: true });
           } else {
             bumpConversationPreview(cid, row, { unreadDelta: 0 });
           }
@@ -858,7 +943,8 @@ import './mcj-chat-realtime.js';
       badge.remove();
     }
   }
-  function markConversationRead(conversationId) {
+  function markConversationRead(conversationId, opts) {
+    opts = opts || {};
     var cid = String(conversationId || (state.conversation && state.conversation.id) || "").trim();
     if (!cid) return Promise.resolve(null);
     return fetchJson("/api/chat", {
@@ -884,7 +970,13 @@ import './mcj-chat-realtime.js';
           state.conversation.unread = 0;
         }
         syncTotalUnread(state.conversations);
-        softUpdate({ keepScroll: true });
+        // Unread badge refresh must not remount the chat pane / composer.
+        if (opts.silent) {
+          patchAsideHead();
+          patchSessionList();
+        } else {
+          softUpdate({ keepScroll: true });
+        }
         return body;
       })
       .catch(function () {
@@ -949,21 +1041,51 @@ import './mcj-chat-realtime.js';
         return [];
       });
   }
-  function loadThread(conversationId, silent) {
+  function loadThread(conversationId, silent, seq) {
     var cid = conversationId || (state.conversation && state.conversation.id) || conversationParam();
     if (!cid) return Promise.resolve(null);
     var requestedId = String(cid);
+    var mySeq = seq != null ? Number(seq) : ++state.threadLoadSeq;
     return fetchJson("/api/chat?conversation_id=" + encodeURIComponent(cid))
       .then(function (body) {
+        // Rapid switch: ignore stale responses so UI does not thrash.
+        if (mySeq !== state.threadLoadSeq) return body;
+        if (state.conversation && String(state.conversation.id) !== requestedId) return body;
         applyPayload(body, { keepScroll: !!silent, pinConversationId: requestedId });
-        return markConversationRead(requestedId).then(function () {
-          return loadOrders().then(function () {
-            softUpdate({ keepScroll: !!silent });
-            return body;
-          });
-        });
+        cacheActiveThread();
+        // mark_read + orders must not block first paint / message display.
+        markConversationRead(requestedId, { silent: true }).catch(function () {});
+        loadOrders()
+          .then(function () {
+            if (mySeq !== state.threadLoadSeq) return;
+            if (state.conversation && String(state.conversation.id) !== requestedId) return;
+            cacheActiveThread();
+            // Order card is optional chrome — soft patch without serial wait on messages.
+            if (canSoftPatch()) {
+              var main = root.querySelector(".support-main");
+              if (main) {
+                var stickBox = root.querySelector("[data-messages]");
+                var prevBottom = stickBox ? stickBox.scrollHeight - stickBox.scrollTop : 0;
+                var stickBottom = !silent || prevBottom < 96;
+                var prevScroll = stickBox ? stickBox.scrollTop : 0;
+                captureComposer();
+                patchMain();
+                var next = root.querySelector("[data-messages]");
+                if (next) {
+                  if (stickBottom) next.scrollTop = next.scrollHeight;
+                  else next.scrollTop = Math.max(0, prevScroll);
+                }
+                syncComposerChrome();
+              } else {
+                softUpdate({ keepScroll: !!silent });
+              }
+            }
+          })
+          .catch(function () {});
+        return body;
       })
       .catch(function (err) {
+        if (mySeq !== state.threadLoadSeq) return null;
         var msg = String((err && err.message) || "");
         var status = Number(err && err.status) || 0;
         if (status === 403 || /无权限/.test(msg)) {
@@ -1327,8 +1449,7 @@ import './mcj-chat-realtime.js';
   function applyPayload(body, opts) {
     opts = opts || {};
     if (Array.isArray(body.conversations)) state.conversations = normalizeConversations(body.conversations);
-    var prevCid = state.conversation && state.conversation.id;
-    var pinCid = String(opts.pinConversationId || prevCid || "").trim();
+    var pinCid = String(opts.pinConversationId || (state.conversation && state.conversation.id) || "").trim();
     var incomingConv = body.conversation || null;
     var incomingCid = incomingConv && incomingConv.id ? String(incomingConv.id) : "";
     // Never steal focus: ignore stale poll/open responses for another conversation.
@@ -1373,8 +1494,14 @@ import './mcj-chat-realtime.js';
     state.error = '';
     softUpdate(opts);
     var nextCid = state.conversation && state.conversation.id;
-    if (nextCid && nextCid !== prevCid) bindBossRealtime(nextCid);
-    else if (nextCid && !state.realtimeReady) bindBossRealtime(nextCid);
+    // Always (re)bind when the active thread changes OR first ready.
+    // Click handler may pre-set conversation.id — still must switch channels.
+    if (nextCid) {
+      var prevRt = String(state.activeRtCid || "");
+      if (String(nextCid) !== prevRt || !state.realtimeReady) {
+        bindBossRealtime(nextCid);
+      }
+    }
   }
   function bootstrap() {
     if (!hasAuthSession()) {
@@ -1657,19 +1784,7 @@ import './mcj-chat-realtime.js';
     if (select) {
       var id = select.getAttribute('data-select-conversation');
       if (!id) return;
-      captureComposer();
-      state.conversation = { id: id };
-      state.mobileDetail = true;
-      state.emojiOpen = false;
-      state.loading = true;
-      paint();
-      loadThread(id, false).catch(function (err) {
-        state.error = err.message || '读取会话失败';
-        toast(state.error);
-      }).finally(function () {
-        state.loading = false;
-        softUpdate();
-      });
+      selectConversationInstant(id);
       return;
     }
     var orderSelect = e.target.closest('[data-open-order-conversation]');
