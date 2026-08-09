@@ -474,8 +474,9 @@ async function listConversations(profile) {
     conversationIds.length
       ? supabaseJson(
           restUrl(
+            // mcj_user_role is only boss|companion|customer_service|admin — never include service/system here.
             "messages",
-            `?conversation_id=in.(${conversationIds.map(encodeURIComponent).join(",")})&sender_role=in.(customer_service,service,system,admin)&read_at=is.null&select=id,conversation_id&limit=2000`
+            `?conversation_id=in.(${conversationIds.map(encodeURIComponent).join(",")})&sender_role=in.(customer_service,admin)&read_at=is.null&select=id,conversation_id&limit=2000`
           ),
           { headers: serviceHeaders() }
         ).catch(() => [])
@@ -564,11 +565,16 @@ function dedupeBossConversationsByOrder(list = []) {
   );
 }
 
+const BOSS_UNREAD_PEER_ROLES = ["customer_service", "admin"];
+
 async function countBossUnreadFromCs(conversationId) {
+  if (!conversationId) return 0;
   const rows = await supabaseJson(
     restUrl(
       "messages",
-      `?conversation_id=eq.${encodeURIComponent(conversationId)}&sender_role=in.(customer_service,service,system,admin)&read_at=is.null&select=id&limit=1000`
+      `?conversation_id=eq.${encodeURIComponent(conversationId)}&sender_role=in.(${BOSS_UNREAD_PEER_ROLES.join(
+        ","
+      )})&read_at=is.null&select=id&limit=1000`
     ),
     { headers: serviceHeaders() }
   ).catch(() => []);
@@ -577,16 +583,60 @@ async function countBossUnreadFromCs(conversationId) {
 
 async function markBossReadCsMessages(conversationId) {
   const readAt = nowIso();
+  if (!conversationId) return { readAt, unread: 0 };
+  const unreadFilter = `?conversation_id=eq.${encodeURIComponent(
+    conversationId
+  )}&sender_role=in.(${BOSS_UNREAD_PEER_ROLES.join(",")})&read_at=is.null`;
   try {
-    await supabaseJson(
-      restUrl(
-        "messages",
-        `?conversation_id=eq.${encodeURIComponent(conversationId)}&sender_role=in.(customer_service,service,system,admin)&read_at=is.null`
-      ),
-      { method: "PATCH", headers: serviceHeaders(), body: JSON.stringify({ read_at: readAt }) }
-    );
-  } catch (_) {}
-  const remaining = await countBossUnreadFromCs(conversationId);
+    await supabaseJson(restUrl("messages", unreadFilter), {
+      method: "PATCH",
+      headers: serviceHeaders(),
+      body: JSON.stringify({ read_at: readAt }),
+    });
+  } catch (_) {
+    try {
+      await supabaseJson(
+        restUrl(
+          "messages",
+          `?conversation_id=eq.${encodeURIComponent(conversationId)}&sender_role=in.(customer_service,admin)&read_at=is.null`
+        ),
+        { method: "PATCH", headers: serviceHeaders(), body: JSON.stringify({ read_at: readAt }) }
+      );
+    } catch (_) {}
+  }
+  // Persist conversation read cursor (mirrors CS mark_read). unread_count column is optional.
+  try {
+    await supabaseJson(restUrl("conversations", `?id=eq.${encodeURIComponent(conversationId)}`), {
+      method: "PATCH",
+      headers: serviceHeaders(),
+      body: JSON.stringify({ last_read_at: readAt, unread_count: 0, updated_at: readAt }),
+    });
+  } catch (err) {
+    const detail = String(err?.message || err || "");
+    if (/unread_count/i.test(detail)) {
+      try {
+        await supabaseJson(restUrl("conversations", `?id=eq.${encodeURIComponent(conversationId)}`), {
+          method: "PATCH",
+          headers: serviceHeaders(),
+          body: JSON.stringify({ last_read_at: readAt, updated_at: readAt }),
+        });
+      } catch (_) {}
+    }
+  }
+  // Retry once if rows still unread (race with concurrent CS insert).
+  let remaining = await countBossUnreadFromCs(conversationId);
+  if (remaining > 0) {
+    try {
+      await supabaseJson(
+        restUrl(
+          "messages",
+          `?conversation_id=eq.${encodeURIComponent(conversationId)}&sender_role=in.(customer_service,admin)&read_at=is.null`
+        ),
+        { method: "PATCH", headers: serviceHeaders(), body: JSON.stringify({ read_at: readAt }) }
+      );
+    } catch (_) {}
+    remaining = await countBossUnreadFromCs(conversationId);
+  }
   return { readAt, unread: remaining };
 }
 

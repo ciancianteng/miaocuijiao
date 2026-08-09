@@ -34,6 +34,7 @@ import './mcj-chat-realtime.js';
     orderCardOpen: false,
     emojiOpen: false,
     realtimeReady: false,
+    poolRealtimeBound: false,
     totalUnread: 0,
   };
 
@@ -639,6 +640,10 @@ import './mcj-chat-realtime.js';
       ""
     );
   }
+  function isCsPeerMessage(row) {
+    var role = String((row && (row.sender_role || row.senderRole)) || "").toLowerCase();
+    return role === "customer_service" || role === "admin";
+  }
   function bindBossRealtime(conversationId) {
     var RT = window.MCJChatRealtime;
     var cid = String(conversationId || (state.conversation && state.conversation.id) || "").trim();
@@ -665,25 +670,17 @@ import './mcj-chat-realtime.js';
         return !(sameUrl && m.sender_role === "boss");
       });
       state.messages = state.messages.concat([normalized]);
-      var role = String(row.sender_role || row.senderRole || "").toLowerCase();
       var activeId = state.conversation && state.conversation.id;
-      var fromCs = /customer_service|service|system|admin/.test(role);
-      if (fromCs) {
+      if (isCsPeerMessage(row)) {
         if (activeId && String(activeId) === String(cid) && state.mobileDetail !== false) {
+          // Viewing this thread: persist read immediately so badges stay cleared.
+          bumpConversationPreview(cid, row, { unreadDelta: 0, forceUnread: 0 });
           markConversationRead(cid);
         } else {
-          state.conversations = (state.conversations || []).map(function (c) {
-            if (String(c.id) === String(cid)) {
-              c.unreadCount = Number(c.unreadCount || 0) + 1;
-              c.unread = c.unreadCount;
-              c.lastMessage = previewMessage(row.content || c.lastMessage, row.message_type || row.messageType || "");
-              c.lastMessageAt = row.created_at || c.lastMessageAt;
-            }
-            return c;
-          });
-          state.conversations = normalizeConversations(state.conversations);
-          syncTotalUnread(state.conversations);
+          bumpConversationPreview(cid, row, { unreadDelta: 1 });
         }
+      } else {
+        bumpConversationPreview(cid, row, { unreadDelta: 0 });
       }
       if (root.querySelector("[data-messages]")) patchMessages({ keepScroll: false });
       else softUpdate({ keepScroll: false });
@@ -691,6 +688,83 @@ import './mcj-chat-realtime.js';
       state.realtimeReady = true;
     }).catch(function () {
       state.realtimeReady = false;
+    });
+  }
+  function bumpConversationPreview(conversationId, row, opts) {
+    opts = opts || {};
+    var cid = String(conversationId || "").trim();
+    if (!cid) return;
+    var found = false;
+    state.conversations = (state.conversations || []).map(function (c) {
+      if (String(c.id) !== String(cid)) return c;
+      found = true;
+      var next = Object.assign({}, c);
+      next.lastMessage = previewMessage(row.content || c.lastMessage, row.message_type || row.messageType || "");
+      next.lastMessageAt = row.created_at || c.lastMessageAt;
+      next.updatedAt = row.created_at || c.updatedAt || next.lastMessageAt;
+      if (opts.forceUnread != null) {
+        next.unreadCount = Math.max(0, Number(opts.forceUnread) || 0);
+      } else if (Number(opts.unreadDelta || 0)) {
+        next.unreadCount = Math.max(0, Number(c.unreadCount || 0) + Number(opts.unreadDelta || 0));
+      }
+      next.unread = next.unreadCount;
+      return next;
+    });
+    if (!found && Number(opts.unreadDelta || 0) > 0) {
+      // Unknown thread — refresh list from server so unread persists correctly.
+      loadList().then(function () { softUpdate({ keepScroll: true }); }).catch(function () {});
+      return;
+    }
+    state.conversations = normalizeConversations(state.conversations);
+    syncTotalUnread(state.conversations);
+  }
+  function bindBossPoolRealtime(force) {
+    var RT = window.MCJChatRealtime;
+    if (!RT || typeof RT.subscribeConversations !== "function") return;
+    var token = authAccessToken();
+    if (!token) return;
+    if (state.poolRealtimeBound && !force) return;
+    state.poolRealtimeBound = true;
+    RT.subscribeConversations(token, {
+      onMessage: function (row) {
+        if (!row || !row.conversation_id) return;
+        var cid = String(row.conversation_id);
+        var activeId = state.conversation && state.conversation.id ? String(state.conversation.id) : "";
+        var known = (state.conversations || []).some(function (c) { return String(c.id) === cid; });
+        if (!known) {
+          // May be a brand-new CS message on a thread not yet in local cache.
+          if (isCsPeerMessage(row)) {
+            loadList().then(function () { softUpdate({ keepScroll: true }); }).catch(function () {});
+          }
+          return;
+        }
+        // Active thread message inserts are handled by subscribeMessages (avoid double unread).
+        if (activeId && activeId === cid) {
+          if (isCsPeerMessage(row) && state.mobileDetail !== false) {
+            bumpConversationPreview(cid, row, { forceUnread: 0 });
+            markConversationRead(cid);
+          } else {
+            bumpConversationPreview(cid, row, { unreadDelta: 0 });
+          }
+          softUpdate({ keepScroll: true });
+          return;
+        }
+        if (isCsPeerMessage(row)) {
+          bumpConversationPreview(cid, row, { unreadDelta: 1 });
+          softUpdate({ keepScroll: true });
+        } else if (String(row.sender_role || "").toLowerCase() === "boss") {
+          bumpConversationPreview(cid, row, { unreadDelta: 0 });
+          softUpdate({ keepScroll: true });
+        }
+      },
+      onReady: function () {
+        state.poolRealtimeBound = true;
+      },
+      onError: function () {
+        state.poolRealtimeBound = false;
+      },
+    }).catch(function () {
+      state.poolRealtimeBound = false;
     });
   }
   function captureComposer() {
@@ -762,6 +836,27 @@ import './mcj-chat-realtime.js';
       }
       window.dispatchEvent(new CustomEvent("mcj-boss-chat-unread", { detail: { unread: state.totalUnread } }));
     } catch (e) {}
+    patchAsideHead();
+  }
+  function patchAsideHead() {
+    var head = root.querySelector(".support-aside-head h1");
+    if (!head) return;
+    var total = Number(state.totalUnread || 0);
+    var badge = head.querySelector(".support-unread-total");
+    if (total > 0) {
+      var label = total > 99 ? "99+" : String(total);
+      if (badge) {
+        badge.hidden = false;
+        badge.textContent = label;
+      } else {
+        badge = document.createElement("em");
+        badge.className = "support-unread support-unread-total";
+        badge.textContent = label;
+        head.appendChild(badge);
+      }
+    } else if (badge) {
+      badge.remove();
+    }
   }
   function markConversationRead(conversationId) {
     var cid = String(conversationId || (state.conversation && state.conversation.id) || "").trim();
@@ -1186,6 +1281,7 @@ import './mcj-chat-realtime.js';
       var prevBottom = box ? box.scrollHeight - box.scrollTop : 0;
       var stickBottom = !opts.keepScroll || prevBottom < 96;
       var prevScroll = box ? box.scrollTop : 0;
+      patchAsideHead();
       patchSessionList();
       patchMain();
       var next = root.querySelector("[data-messages]");
@@ -1377,8 +1473,10 @@ import './mcj-chat-realtime.js';
   }
   function startPoll() {
     if (state.pollTimer) clearInterval(state.pollTimer);
+    bindBossPoolRealtime(false);
     state.pollTimer = setInterval(function () {
       if (!hasAuthSession() || state.sending || state.opening || document.hidden) return;
+      if (!state.poolRealtimeBound) bindBossPoolRealtime(true);
       if (!state.conversation || !state.conversation.id) {
         loadList().then(function () { softUpdate({ keepScroll: true }); }).catch(function () {});
         return;
