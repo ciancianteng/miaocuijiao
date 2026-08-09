@@ -1076,6 +1076,59 @@ export default async function handler(req, res) {
       delete next.aiApiKey;
       delete next.serviceRoleKey;
       const saved = await saveSettings(next, profile.id);
+      // Bridge: 支付接入 must not be a second SoT. Mirror bank-my / channel public enables
+      // into payment_channels so boss orderPayMethods stays consistent.
+      if (action === "save_payments_public") {
+        try {
+          const pub = saved.paymentChannelsPublic || next.paymentChannelsPublic || {};
+          const bankPub = pub["bank-my"] || pub["bank-transfer"] || null;
+          if (bankPub && typeof bankPub === "object") {
+            const enabled = bankPub.enabled !== false;
+            const qrUrl = String(bankPub.qrUrl || bankPub.manual?.qrUrl || "").trim();
+            const row = {
+              id: "bank-transfer",
+              channel_id: "bank-transfer",
+              name: "银行转账",
+              icon: "BANK",
+              payment_type: "银行转账",
+              category: "manual",
+              currencies: ["MYR"],
+              config_status: enabled ? "已启用" : "已停用",
+              mode: "test",
+              enabled,
+              visible: enabled,
+              sort: 6,
+              data: {
+                publicLabel: "银行卡",
+                forOrder: bankPub.forOrder !== false,
+                forRecharge: bankPub.forRecharge !== false,
+                instructions: bankPub.instructions || "",
+                qrUrl,
+                manual: {
+                  receiverName: bankPub.accountName || bankPub.receiverName || "",
+                  bankName: bankPub.bankName || "",
+                  bankAccount: bankPub.bankAccount || "",
+                  duitnowId: bankPub.duitnowId || "",
+                  qrUrl,
+                },
+              },
+              updated_at: new Date().toISOString(),
+            };
+            await supabaseJson(`${supabaseUrl()}/rest/v1/payment_channels`, {
+              method: "POST",
+              headers: {
+                Prefer: "resolution=merge-duplicates,return=minimal",
+                apikey: process.env.SUPABASE_SERVICE_ROLE_KEY,
+                Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify([row]),
+            });
+          }
+        } catch (bridgeErr) {
+          console.warn("[platform-settings] payment_channels bridge failed", bridgeErr?.message || bridgeErr);
+        }
+      }
       await writeConfigLog({
         admin: profile,
         configType: action,

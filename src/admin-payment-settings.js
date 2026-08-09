@@ -173,13 +173,12 @@
       .map(function (item) {
         var id = item.channel_id || item.id;
         var status = item.config_status || "未配置";
-        var enabledText = item.enabled ? "已启用" : "已停用";
+        var enabledText = item.enabled ? "开关:开" : "开关:关";
         var data = item.data || {};
         var forOrder = item.forOrder != null ? item.forOrder !== false : data.forOrder !== false;
         var forRecharge = item.forRecharge != null ? item.forRecharge !== false : data.forRecharge !== false;
-        var scopeBits = [];
-        if (forOrder) scopeBits.push("订单付款");
-        if (forRecharge) scopeBits.push("余额充值");
+        var orderVisible = item.bossOrderOpen === true || (item.open === true && forOrder);
+        var rechargeVisible = item.bossRechargeOpen === true || (item.open === true && forRecharge);
         return (
           '<article class="payment-channel-card">' +
           '<div class="payment-channel-icon">' +
@@ -195,10 +194,11 @@
           '<div class="payment-card-meta">' +
           chip(status) +
           chip(enabledText) +
-          (scopeBits.length ? chip(scopeBits.join(" · ")) : chip("未指定用途")) +
+          chip(orderVisible ? "订单可见" : "订单不可见") +
+          chip(rechargeVisible ? "充值可见" : "充值不可见") +
           "<small>" +
           esc(modeLabel(item.mode)) +
-          " · " +
+          " · SoT=payment_channels · " +
           esc(item.updated_at || "-") +
           "</small></div>" +
           '<div class="payment-card-actions">' +
@@ -221,9 +221,15 @@
       .join("");
 
     var editor = state.editId ? renderEditor(channelById(state.editId)) : "";
+    var orderCodes = (state.bossOrderMethods || []).join(", ") || "（无）";
+    var rechargeCodes = (state.bossRechargeMethods || []).join(", ") || "（无）";
     return (
       renderActivePublicQr() +
-      '<div class="admin-sync-note" style="margin:0 0 12px">启用后老板端「立即下单」读取 <code>orderPayMethods</code>（订单付款），「充值中心」读取开放的充值通道。请明确勾选适用场景，避免后台启用但订单页查不到。</div>' +
+      '<div class="admin-sync-note" style="margin:0 0 12px">单一数据源：<code>payment_channels</code>。老板「立即下单」读取 <code>GET /api/recharge → orderPayMethods</code>（需 enabled + 资料齐全 + 适用于订单）。当前老板订单可见：<strong>' +
+      esc(orderCodes) +
+      "</strong>；充值可见：<strong>" +
+      esc(rechargeCodes) +
+      "</strong>。开关开但订单不可见 = 缺二维码/密钥或未勾选适用场景，不是老板端写死。</div>" +
       '<div class="payment-channel-grid">' +
       (cards || '<div class="empty">暂无支付渠道</div>') +
       "</div>" +
@@ -609,6 +615,8 @@
         state.tablesReady = result.tablesReady !== false;
         state.message = result.message || "";
         state.activePublicQr = result.activePublicQr || null;
+        state.bossOrderMethods = result.bossOrderMethods || [];
+        state.bossRechargeMethods = result.bossRechargeMethods || [];
         state.loading = false;
         render();
       })

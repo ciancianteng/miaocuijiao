@@ -29,6 +29,7 @@
     submitStartedAt: 0,
     walletBalance: null,
     payMethods: [],
+    payLoadError: "",
   };
 
   function esc(v) {
@@ -167,12 +168,17 @@
       if (!token()) {
         state.walletBalance = null;
         state.payMethods = [];
+        state.payLoadError = "请先登录老板账号后再选择支付方式";
         return Promise.resolve(null);
       }
       return fetch("/api/recharge", { method: "GET", headers: authHeaders(), cache: "no-store" })
         .then(function (res) {
           return res.json().then(function (body) {
-            if (!res.ok || body.ok === false) throw new Error(body.message || "余额读取失败");
+            if (!res.ok || body.ok === false) {
+              var err = new Error(body.message || "支付方式读取失败");
+              err.status = res.status;
+              throw err;
+            }
             var bal =
               body.summary && body.summary.balance != null
                 ? body.summary.balance
@@ -181,11 +187,11 @@
                   : null;
             state.walletBalance = bal == null ? null : money(bal);
             applyOrderPayMethods(body);
+            state.payLoadError = "";
             return state.walletBalance;
           });
         })
-        .catch(function () {
-          // Soft fail: keep prior methods if any; retry once after session settle.
+        .catch(function (err) {
           if (tryCount < 1) {
             return new Promise(function (resolve) {
               setTimeout(function () {
@@ -193,6 +199,10 @@
               }, 600);
             });
           }
+          state.payLoadError =
+            (err && err.status === 401) || /登录|token|jwt|过期/i.test(String((err && err.message) || ""))
+              ? "登录已失效，请重新登录后再下单"
+              : String((err && err.message) || "支付方式读取失败，请刷新重试");
           return state.walletBalance;
         });
     }
@@ -215,7 +225,9 @@
     var list = state.payMethods && state.payMethods.length ? state.payMethods : [];
     if (!list.length) {
       grid.innerHTML =
-        '<p class="mcj-po-empty-services" style="color:#9ca3af;font-size:13px;margin:0">暂无可用支付方式，请联系管理员在后台启用</p>';
+        '<p class="mcj-po-empty-services" style="color:#9ca3af;font-size:13px;margin:0">' +
+        esc(state.payLoadError || "暂无可用支付方式，请联系管理员在后台启用") +
+        "</p>";
       state.payment = "";
       return;
     }
@@ -1424,7 +1436,7 @@
       });
   }
 
-  window.MCJ_PAY_SOT_VERSION = '20260809payScopeOrder1';
+  window.MCJ_PAY_SOT_VERSION = '20260809paySotRoot1';
   window.MCJPlaceOrder = {
     open: open,
     openFromCompanion: openFromProfileCompanion,

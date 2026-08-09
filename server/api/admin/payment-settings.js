@@ -48,7 +48,8 @@ const CHANNELS = [
     paymentType: "手动收款 / QR",
     category: "manual",
     currencies: ["MYR"],
-    requiredManual: ["receiverName", "duitnowId"],
+    // Must match boss listBossPaymentMethods / manualUsable: DuitNow needs QR to be order-visible.
+    requiredManual: ["receiverName", "duitnowId", "qrUrl"],
     requiredApi: [],
   },
   {
@@ -58,7 +59,8 @@ const CHANNELS = [
     paymentType: "手动收款",
     category: "manual",
     currencies: ["MYR"],
-    requiredManual: ["receiverName", "phone"],
+    // Boss accepts phone OR qrUrl; require at least one via toggle check below.
+    requiredManual: ["receiverName"],
     requiredApi: [],
   },
   {
@@ -500,8 +502,15 @@ async function readPaymentChannelsPublic() {
 function applyPublicPayOverlay(channels = [], publicMap = {}) {
   return (channels || []).map((ch) => {
     const id = ch.channel_id || ch.id;
-    const pub = publicMap[id];
-    if (!pub || typeof pub !== "object") return ch;
+    const pub = publicMap[id] || publicMap[id === "bank-transfer" ? "bank-my" : ""] || null;
+    if (!pub || typeof pub !== "object") {
+      const data0 = ch.data && typeof ch.data === "object" ? ch.data : {};
+      return {
+        ...ch,
+        forOrder: data0.forOrder != null ? data0.forOrder !== false : true,
+        forRecharge: data0.forRecharge != null ? data0.forRecharge !== false : true,
+      };
+    }
     const data = ch.data && typeof ch.data === "object" ? { ...ch.data } : {};
     const manual = data.manual && typeof data.manual === "object" ? { ...data.manual } : {};
     const pubManual = pub.manual && typeof pub.manual === "object" ? pub.manual : {};
@@ -527,21 +536,40 @@ function applyPublicPayOverlay(channels = [], publicMap = {}) {
     if (pub.forOrder != null && data.forOrder == null) data.forOrder = pub.forOrder !== false;
     if (pub.forRecharge != null && data.forRecharge == null) data.forRecharge = pub.forRecharge !== false;
     data.manual = manual;
-    const enabled = pub.enabled != null ? !!pub.enabled : ch.enabled;
-    const configured = !!(qrUrl || receiverName || bankName || bankAccount || duitnowId || phone);
+    // SoT: payment_channels.enabled wins. Public mirror only fills missing QR/manual fields.
+    // Never let a stale public enabled=true override a real DB disable (or vice versa).
+    const enabled = ch.enabled !== false && ch.visible !== false;
+    const configured = bossManualConfigured(id, { ...manual, qrUrl, phone, bankAccount, receiverName, duitnowId }, ch.category);
     const forOrder = data.forOrder != null ? data.forOrder !== false : true;
     const forRecharge = data.forRecharge != null ? data.forRecharge !== false : true;
     return {
       ...ch,
       enabled,
-      visible: pub.visible != null ? !!pub.visible : pub.enabled != null ? !!pub.enabled : ch.visible,
+      visible: ch.visible !== false,
       forOrder,
       forRecharge,
-      mode: pub.mode || ch.mode,
+      configured,
+      bossOrderOpen: !!(enabled && configured && forOrder),
+      bossRechargeOpen: !!(enabled && configured && forRecharge),
+      mode: ch.mode || pub.mode || "test",
       data,
-      config_status: configured ? (enabled ? "已启用" : "已配置") : ch.config_status,
+      config_status: configured ? (enabled ? "已启用" : "已配置") : ch.config_status || "未配置",
     };
   });
+}
+
+/** Same usability rules as server/api/_platform-pay-qr.js manualUsable / API key gate. */
+function bossManualConfigured(channelId, manual = {}, category = "manual") {
+  const id = String(channelId || "").toLowerCase();
+  const m = manual || {};
+  if (category === "api") return false; // API uses credentials; filled later in enrich
+  if (id === "duitnow") return Boolean(String(m.qrUrl || "").trim());
+  if (id === "tng") return Boolean(String(m.phone || "").trim() || String(m.qrUrl || "").trim());
+  if (id === "bank-transfer" || id === "bank-my") {
+    return Boolean(String(m.bankAccount || "").trim() && String(m.receiverName || "").trim()) || Boolean(String(m.qrUrl || "").trim());
+  }
+  if (id === "alipay") return Boolean(String(m.qrUrl || "").trim());
+  return Boolean(String(m.qrUrl || m.bankAccount || m.phone || m.duitnowId || "").trim());
 }
 
 /** Strip UI-only fields before writing payment_channels. */
@@ -883,10 +911,45 @@ async function handler(req, res) {
     if (req.method === "GET") {
       const state = await loadState();
       const activePublicQr = await resolveActivePublicQr();
+      // Enrich with the SAME open flags boss /api/recharge uses (no separate criteria).
+      let bossOrderCodes = [];
+      let bossRechargeCodes = [];
+      try {
+        const { listBossOrderPaymentMethods, listBossPaymentMethods, filterBossRechargeMethods } = await import(
+          "../_platform-pay-qr.js"
+        );
+        const orderListed = await listBossOrderPaymentMethods([]);
+        const listed = await listBossPaymentMethods([]);
+        bossOrderCodes = (orderListed.methods || []).map((m) => m.code).filter((c) => c && c !== "catfood");
+        bossRechargeCodes = filterBossRechargeMethods(listed.methods || []).map((m) => m.code);
+        state.channels = (state.channels || []).map((ch) => {
+          const id = ch.channel_id || ch.id;
+          const hit = (listed.methods || []).find((m) => m.code === id);
+          const configured = hit ? !!hit.configured : !!ch.configured;
+          const open = hit ? !!hit.open : !!(ch.enabled && configured);
+          const forOrder = ch.forOrder !== false && (ch.data?.forOrder !== false);
+          const forRecharge = ch.forRecharge !== false && (ch.data?.forRecharge !== false);
+          return {
+            ...ch,
+            configured,
+            open,
+            bossOrderOpen: bossOrderCodes.includes(id),
+            bossRechargeOpen: bossRechargeCodes.includes(id),
+            forOrder,
+            forRecharge,
+            config_status: open ? (ch.enabled ? "已启用" : "已配置") : configured ? (ch.enabled ? "已启用(缺资料)" : "已配置") : ch.config_status || "未配置",
+          };
+        });
+      } catch {
+        /* keep overlay flags */
+      }
       return json(res, 200, {
         ok: true,
         configured: true,
         ...state,
+        bossOrderMethods: bossOrderCodes,
+        bossRechargeMethods: bossRechargeCodes,
+        sot: "payment_channels",
         activePublicQr,
         templates: CHANNELS,
         bankProviders: BANK_PROVIDERS,
@@ -1165,10 +1228,20 @@ async function handler(req, res) {
       }
       if (enabled && channel.category === "manual") {
         const tpl = channelTemplate(id);
-        const manual = channel.data?.manual || {};
+        const manual = {
+          ...(channel.data?.manual || {}),
+          qrUrl: String(channel.data?.manual?.qrUrl || channel.data?.qrUrl || "").trim(),
+        };
         const missing = (tpl.requiredManual || []).filter((key) => !String(manual[key] || "").trim());
         if (missing.length) {
           return json(res, 400, { ok: false, message: `请先保存收款资料（缺少：${missing.join("、")}）再启用。` });
+        }
+        // Align with boss open gate (manualUsable): TNG needs phone or QR.
+        if (id === "tng" && !String(manual.phone || "").trim() && !String(manual.qrUrl || "").trim()) {
+          return json(res, 400, { ok: false, message: "请先保存 TNG 手机号或收款二维码后再启用。" });
+        }
+        if (id === "duitnow" && !String(manual.qrUrl || "").trim()) {
+          return json(res, 400, { ok: false, message: "请先上传 DuitNow 收款二维码后再启用（老板端需要二维码才可见）。" });
         }
       }
       const next = {

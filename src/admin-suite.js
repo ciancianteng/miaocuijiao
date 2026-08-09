@@ -1334,9 +1334,8 @@
       window.MCJAdminPaymentSettings.mount();
       return;
     }
-    active=active||target.dataset.currentPaymentTab||'channels';
-    target.dataset.currentPaymentTab=active;
-    target.innerHTML='<div class="payment-module-head"><h2>支付设置</h2><p>管理支付渠道、收款资料、接口配置与启用状态</p></div>'+paymentTabsHtml(active)+'<div class="payment-body">'+paymentBody(active,editId)+'</div>';
+    // Never render local mock paymentTemplates as "已启用" — that lied to operators.
+    target.innerHTML='<div class="payment-module-head"><h2>支付设置</h2><p class="admin-sync-note" style="color:#ff8aa0">真实支付模块未加载（admin-payment-settings.js）。禁止使用本地假模板启停。请刷新页面或检查脚本是否加载失败。</p></div>';
   }
   function paymentBody(active,editId){
     if(active==='manual')return renderPaymentManual();
