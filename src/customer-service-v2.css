@@ -755,3 +755,114 @@
 }
 
 
+
+/* ===== Orders table layout (UI only) — keep page from horizontal overflow ===== */
+.cs-page[data-route="orders"],
+.cs-page:has(.cs-orders-table-wrap){
+  overflow-x:hidden;
+  max-width:100%;
+  min-width:0;
+}
+.cs-orders-table-wrap{
+  width:100%;
+  max-width:100%;
+  min-width:0;
+  overflow-x:auto;
+  overflow-y:visible;
+  -webkit-overflow-scrolling:touch;
+  overscroll-behavior-x:contain;
+}
+.cs-orders-table{
+  width:100%;
+  min-width:0;
+  table-layout:fixed;
+  border-collapse:separate;
+  border-spacing:0;
+}
+.cs-orders-table th,
+.cs-orders-table td{
+  white-space:normal;
+  overflow-wrap:anywhere;
+  word-break:break-word;
+  vertical-align:top;
+  padding:10px 10px;
+  line-height:1.35;
+}
+.cs-orders-table .cs-col-no{width:12%}
+.cs-orders-table .cs-col-boss{width:10%}
+.cs-orders-table .cs-col-companion{width:10%}
+.cs-orders-table .cs-col-game{width:9%}
+.cs-orders-table .cs-col-amount{width:8%;white-space:nowrap}
+.cs-orders-table .cs-col-status{width:12%}
+.cs-orders-table .cs-col-time{width:12%;white-space:nowrap;font-variant-numeric:tabular-nums}
+.cs-orders-table .cs-col-actions{
+  width:27%;
+  min-width:200px;
+  position:sticky;
+  right:0;
+  z-index:3;
+  background:var(--panel);
+  box-shadow:-10px 0 16px rgba(0,0,0,.22);
+}
+.cs-orders-table thead .cs-col-actions{
+  z-index:4;
+  background:#14141a;
+}
+.cs-orders-table tbody tr:hover .cs-col-actions{
+  background:#16161d;
+}
+.cs-orders-table .cs-actions{
+  max-width:none;
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+  align-items:flex-start;
+}
+.cs-orders-table .cs-actions .cs-btn{
+  height:32px;
+  padding:0 10px;
+  font-size:12px;
+  white-space:nowrap;
+}
+.cs-orders-table .cs-actions .cs-note{
+  max-width:100%;
+  white-space:normal;
+  font-size:12px;
+  line-height:1.35;
+}
+.cs-proof-preview{
+  margin:6px 0 0;
+  max-width:56px;
+}
+.cs-proof-thumb-btn{
+  display:inline-flex;
+  padding:0;
+  border:0;
+  background:transparent;
+  cursor:zoom-in;
+  line-height:0;
+}
+.cs-proof-thumb{
+  display:block;
+  width:48px;
+  height:48px;
+  max-width:48px;
+  max-height:48px;
+  object-fit:cover;
+  border-radius:8px;
+  border:1px solid rgba(255,255,255,.15);
+}
+.cs-proof-fallback{
+  display:inline-flex;
+  align-items:center;
+  height:28px;
+  padding:0 8px;
+  font-size:11px;
+}
+@media (max-width:1280px){
+  .cs-orders-table{
+    min-width:980px; /* allow internal scroll on narrow PC; page itself never widens */
+    table-layout:fixed;
+  }
+  .cs-orders-table .cs-col-actions{min-width:220px}
+}

@@ -2587,6 +2587,18 @@
     if(d.getFullYear()===yest.getFullYear()&&d.getMonth()===yest.getMonth()&&d.getDate()===yest.getDate())return '昨天';
     return (d.getMonth()+1)+'/'+d.getDate();
   }
+  /** Orders table / detail: readable local datetime, never raw DB ISO with ms/offset. */
+  function fmtOrderDateTime(v){
+    if(v==null||v==='')return '-';
+    var d=new Date(v);
+    function pad(n){return String(n).padStart(2,'0');}
+    if(!isNaN(d.getTime())){
+      return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+' '+pad(d.getHours())+':'+pad(d.getMinutes())+':'+pad(d.getSeconds());
+    }
+    var s=String(v).trim().replace('T',' ');
+    s=s.replace(/\.\d+/,'').replace(/Z$/i,'').replace(/[+-]\d{2}:?\d{2}$/,'');
+    return s.trim()||'-';
+  }
   function conversationStatusKind(c){
     if(isClosedConv(c))return 'ended';
     if(c&&(c.currentServiceId||isMineConv(c)))return 'active';
@@ -2761,7 +2773,7 @@
       return String(b.createdAt||b.updatedAt||'').localeCompare(String(a.createdAt||a.updatedAt||''));
     });
     var statuses=(state.data&&state.data.orderStatuses)||{};
-    return '<div class="cs-page-head"><div><h2>订单处理</h2><p>确认付款、指派陪玩、处理退款，所有操作写入真实订单表。</p></div><div class="cs-actions"><button class="cs-btn primary" data-route="/customer-service/create-order">客服代下单</button></div></div><div class="cs-toolbar"><select data-order-filter><option value="">全部状态</option>'+Object.keys(statuses).map(function(k){return '<option value="'+esc(k)+'" '+(state.orderFilter===k?'selected':'')+'>'+esc(statuses[k])+'</option>'}).join('')+'</select><button class="cs-btn" data-refresh>刷新</button></div><section class="cs-table-wrap"><table class="cs-table"><thead><tr><th>订单编号</th><th>老板</th><th>陪玩</th><th>游戏</th><th>金额</th><th>状态</th><th>创建时间</th><th>操作</th></tr></thead><tbody>'+(rows.length?rows.map(orderRow).join(''):'<tr><td colspan="8"><div class="cs-empty">暂无订单</div></td></tr>')+'</tbody></table></section>';
+    return '<div class="cs-page-head"><div><h2>订单处理</h2><p>确认付款、指派陪玩、处理退款，所有操作写入真实订单表。</p></div><div class="cs-actions"><button class="cs-btn primary" data-route="/customer-service/create-order">客服代下单</button></div></div><div class="cs-toolbar"><select data-order-filter><option value="">全部状态</option>'+Object.keys(statuses).map(function(k){return '<option value="'+esc(k)+'" '+(state.orderFilter===k?'selected':'')+'>'+esc(statuses[k])+'</option>'}).join('')+'</select><button class="cs-btn" data-refresh>刷新</button></div><section class="cs-table-wrap cs-orders-table-wrap"><table class="cs-table cs-orders-table"><thead><tr><th class="cs-col-no">订单编号</th><th class="cs-col-boss">老板</th><th class="cs-col-companion">陪玩</th><th class="cs-col-game">游戏</th><th class="cs-col-amount">金额</th><th class="cs-col-status">状态</th><th class="cs-col-time">创建时间</th><th class="cs-col-actions">操作</th></tr></thead><tbody>'+(rows.length?rows.map(orderRow).join(''):'<tr><td colspan="8"><div class="cs-empty">暂无订单</div></td></tr>')+'</tbody></table></section>';
   }
   function compensationHtml(){
     var bosses=(state.data&&state.data.bosses)||[];
@@ -2804,7 +2816,7 @@
       ['陪玩',o.companionName||'-'],
       ['游戏',o.game||'-'],
       ['金额',money(o.totalAmount)],
-      ['创建时间',o.createdAt||'-']
+      ['创建时间',fmtOrderDateTime(o.createdAt)]
     ];
     if(mode==='cancel')rows.push(['取消原因',o.cancelReason||o.note||'-']);
     if(mode==='refund'){
@@ -2813,9 +2825,9 @@
     }
     if(mode==='pay'){
       rows.push(['付款状态',paymentStatusLabel(o)]);
-      rows.push(['支付时间',o.paidAt||o.acceptedAt||'-']);
+      rows.push(['支付时间',fmtOrderDateTime(o.paidAt||o.acceptedAt)]);
       rows.push(['审核人',o.paymentReviewedByName||o.serviceName||'-']);
-      rows.push(['审核时间',o.paymentReviewedAt||'-']);
+      rows.push(['审核时间',fmtOrderDateTime(o.paymentReviewedAt)]);
     }
     if(mode==='review')rows.push(['评价',o.reviewText||o.rating||'暂无评价']);
     var hasProof=(o.paymentProofUrl&&!/^proof:/i.test(String(o.paymentProofUrl||'')))||o.paymentReceiptId||o.paymentReview;
@@ -2833,7 +2845,7 @@
     var inGrabHall=isPublicHall&&(st==='pending'||st==='waiting_boss_confirm')&&!o.companionId;
     var proofUrl=(!/^proof:/i.test(String(o.paymentProofUrl||''))?String(o.paymentProofUrl||''):'');
     var canShowProof=!!(o.paymentReview&&(o.paymentReceiptId||proofUrl));
-    var proofBlock=canShowProof?('<div class="cs-proof-preview" style="margin:6px 0"><button type="button" class="cs-btn ghost" data-proof-lightbox="'+esc(proofUrl)+'" data-proof-order-id="'+esc(o.id)+'" data-proof-receipt-id="'+esc(o.paymentReceiptId||'')+'" style="padding:0;border:0;background:transparent;cursor:zoom-in" title="查看付款截图大图">'+(proofUrl?('<img src="'+esc(proofUrl)+'" alt="付款凭证" style="max-width:120px;max-height:120px;border-radius:8px;object-fit:cover;border:1px solid rgba(255,255,255,.15);display:block">'):('<span class="cs-btn ghost" style="display:inline-flex;align-items:center;height:32px;padding:0 10px">查看付款截图</span>'))+'</button></div>'):'';
+    var proofBlock=canShowProof?('<div class="cs-proof-preview"><button type="button" class="cs-proof-thumb-btn" data-proof-lightbox="'+esc(proofUrl)+'" data-proof-order-id="'+esc(o.id)+'" data-proof-receipt-id="'+esc(o.paymentReceiptId||'')+'" title="查看付款截图大图">'+(proofUrl?('<img class="cs-proof-thumb" src="'+esc(proofUrl)+'" alt="付款凭证" loading="lazy">'):('<span class="cs-btn ghost cs-proof-fallback">查看付款截图</span>'))+'</button></div>'):'';
 
     if(st==='awaiting_payment'){
       if(o.paymentReview){
@@ -2892,7 +2904,7 @@
 
     var statusLabel=o.paymentReview?'待人工审核':(inGrabHall?'抢单中':(st==='claimed'?'待陪玩确认':(o.statusText||st)));
     var statusCell=esc(statusLabel)+(o.needsReassign?'<br><small style="color:#f59e0b">'+(esc(o.reassignHint||'待重新安排'))+'</small>':'')+(inGrabHall?'<br><small>抢单 '+(o.grabCount||0)+' 人</small>':'')+(o.preferredCompanionId?'<br><small style="color:#60a5fa">老板意向已提交</small>':'')+proofBlock;
-    return '<tr'+(o.needsReassign?' style="background:rgba(245,158,11,.08)"':'')+(inGrabHall?' data-grab-hall="1"':'')+' data-order-status="'+esc(st)+'"><td>'+esc(o.orderNo)+'</td><td>'+esc(sanitizeBossLabel(o.bossName,publicBossCode(o)))+(publicBossCode(o)?'<br><small>'+esc(publicBossCode(o))+'</small>':'')+'</td><td>'+esc(o.companionName||'-')+'</td><td>'+esc(o.game||'-')+'</td><td>'+money(o.totalAmount)+'</td><td>'+statusCell+'</td><td>'+esc(o.createdAt||'-')+'</td><td><div class="cs-actions">'+actions.join('')+'</div></td></tr>';
+    return '<tr'+(o.needsReassign?' style="background:rgba(245,158,11,.08)"':'')+(inGrabHall?' data-grab-hall="1"':'')+' data-order-status="'+esc(st)+'"><td class="cs-col-no">'+esc(o.orderNo)+'</td><td class="cs-col-boss">'+esc(sanitizeBossLabel(o.bossName,publicBossCode(o)))+(publicBossCode(o)?'<br><small>'+esc(publicBossCode(o))+'</small>':'')+'</td><td class="cs-col-companion">'+esc(o.companionName||'-')+'</td><td class="cs-col-game">'+esc(o.game||'-')+'</td><td class="cs-col-amount">'+money(o.totalAmount)+'</td><td class="cs-col-status">'+statusCell+'</td><td class="cs-col-time">'+esc(fmtOrderDateTime(o.createdAt))+'</td><td class="cs-col-actions"><div class="cs-actions">'+actions.join('')+'</div></td></tr>';
   }
   function createOrderHtml(){
     var bosses=(state.data&&state.data.bosses)||[];
