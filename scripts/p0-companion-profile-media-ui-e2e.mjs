@@ -115,9 +115,13 @@ function tinyPngDataUrl() {
   const adminPlayer = await api(`/api/admin/players?id=${encodeURIComponent(companionId)}`, adminT, null, "GET", {
     "x-mcj-admin-role": "admin",
   });
-  const adminMedia = adminPlayer.json?.media || adminPlayer.json?.player?.media || adminPlayer.json?.data?.media || [];
-  const adminGallery = (Array.isArray(adminMedia) ? adminMedia : []).filter((m) => (m.mediaType || m.media_type) === "gallery");
-  step("admin_sees_gallery", adminGallery.length > 0 || !!adminPlayer.json?.player, `gallery=${adminGallery.length}`);
+  const adminMediaObj = adminPlayer.json?.player?.media || adminPlayer.json?.media || {};
+  const adminGallery = Array.isArray(adminMediaObj)
+    ? adminMediaObj.filter((m) => (m.mediaType || m.media_type) === "gallery")
+    : adminMediaObj.gallery || [];
+  const adminVoices = Array.isArray(adminMediaObj) ? [] : adminMediaObj.voices || [];
+  step("admin_sees_gallery", Array.isArray(adminGallery) && adminGallery.length > 0, `gallery=${adminGallery.length}`);
+  step("admin_sees_voice", Array.isArray(adminVoices) && adminVoices.length > 0, `voices=${adminVoices.length}`);
 
   const pub = await api(`/api/public/companions?id=${encodeURIComponent(companionId)}`, null, null, "GET");
   const pubC = (pub.json?.companions || [])[0] || {};
