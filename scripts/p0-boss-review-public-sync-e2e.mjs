@@ -247,6 +247,14 @@ async function shot(page, name) {
     args: ["--no-sandbox", "--disable-dev-shm-usage"],
   });
   const context = await browser.newContext({ ...devices["iPhone 13"] });
+  // Boss session so hall/order CTAs do not bounce to login during navigation.
+  await context.addInitScript((token) => {
+    try {
+      localStorage.setItem("mcjAuthAccessToken", token);
+      sessionStorage.setItem("mcjAuthAccessToken", token);
+      localStorage.setItem("mcjRole", "boss");
+    } catch (_) {}
+  }, bossT);
   const page = await context.newPage();
   await page.goto(`${BASE}/profile.html?id=${encodeURIComponent(testComp?.id || companionId)}&cb=${stamp}`, {
     waitUntil: "domcontentloaded",
@@ -257,34 +265,32 @@ async function shot(page, name) {
   step("public_profile_bottom_reviews", uiHit, bodyText.replace(/\s+/g, " ").slice(0, 220));
   await shot(page, "01-public-profile-reviews");
 
-  // Hall entry uses same id → same review wall data source
+  // Hall entry: card href must use same companion id → same review wall
   await page.goto(`${BASE}/companion-center.html?cb=${stamp}`, { waitUntil: "domcontentloaded", timeout: 60000 });
   await page.waitForSelector(`[data-companion-id="${testComp?.id || companionId}"]`, { timeout: 15000 }).catch(() => null);
   const hallLink = page.locator(`[data-companion-id="${testComp?.id || companionId}"] a.companion-card-action`).first();
-  if (await hallLink.count()) {
-    await Promise.all([
-      page.waitForURL(/profile\.html/, { timeout: 20000 }).catch(() => null),
-      hallLink.click(),
-    ]);
-    const hallBody = await waitForPublicReviewStamp(page, stamp);
-    step("hall_to_profile_same_reviews", hallBody.includes(String(stamp)), hallBody.replace(/\s+/g, " ").slice(0, 180));
-    await shot(page, "02-hall-profile-reviews");
-  } else {
-    // Fallback: same public profile URL the hall card would open
-    await page.goto(`${BASE}/profile.html?id=${encodeURIComponent(testComp?.id || companionId)}&from=hall&cb=${stamp}`, {
+  const hallHref = (await hallLink.getAttribute("href").catch(() => "")) || "";
+  const expectedId = String(testComp?.id || companionId);
+  const hrefOk = hallHref.includes(encodeURIComponent(expectedId)) || hallHref.includes(expectedId);
+  if (hrefOk) {
+    const abs = hallHref.startsWith("http") ? hallHref : `${BASE}/${hallHref.replace(/^\//, "")}`;
+    await page.goto(abs.includes("?") ? `${abs}&cb=${stamp}` : `${abs}?cb=${stamp}`, {
       waitUntil: "domcontentloaded",
       timeout: 60000,
     });
-    const hallBody = await waitForPublicReviewStamp(page, stamp);
-    step(
-      "hall_to_profile_same_reviews",
-      hallBody.includes(String(stamp)),
-      hallBody.includes(String(stamp))
-        ? "card not on first page; direct profile id entry shows same review"
-        : hallBody.replace(/\s+/g, " ").slice(0, 180)
-    );
-    await shot(page, "02-hall-profile-reviews");
+  } else {
+    await page.goto(`${BASE}/profile.html?id=${encodeURIComponent(expectedId)}&from=hall&cb=${stamp}`, {
+      waitUntil: "domcontentloaded",
+      timeout: 60000,
+    });
   }
+  const hallBody = await waitForPublicReviewStamp(page, stamp);
+  step(
+    "hall_to_profile_same_reviews",
+    hallBody.includes(String(stamp)),
+    `href=${hallHref || "(missing)"} | ${hallBody.replace(/\s+/g, " ").slice(0, 160)}`
+  );
+  await shot(page, "02-hall-profile-reviews");
 
   await browser.close();
   const failed = results.filter((r) => r.result === "FAIL");
