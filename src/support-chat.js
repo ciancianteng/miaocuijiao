@@ -491,6 +491,9 @@ import './mcj-chat-realtime.js';
   function syncChatChrome() {
     var inChat = !!(state.conversation && state.conversation.id && (state.mobileDetail || !isMobile()));
     document.body.classList.toggle("support-chat-live", inChat);
+    // softUpdate must keep mobile list/chat panes in sync (paint used to remount this class).
+    var layout = root.querySelector(".support-layout");
+    if (layout) layout.classList.toggle("mobile-detail", !!state.mobileDetail);
   }
   function syncUrl(conversation) {
     try {
