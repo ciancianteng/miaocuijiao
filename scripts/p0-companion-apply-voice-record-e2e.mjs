@@ -341,9 +341,29 @@ async function main() {
 
   await page.goto(`${BASE}/companion-apply.html?t=${Date.now()}`, { waitUntil: "domcontentloaded", timeout: 90000 });
   await page.waitForFunction(() => !/正在加载申请资料/.test(document.body.innerText), { timeout: 90000 }).catch(() => {});
-  await page.waitForTimeout(800);
-
-  const reached = await navigateToUploadStep(page, { seedVoice: false });
+  // Step 0 requires publishedRule(); wait until制度 loads or checkbox appears usable.
+  await page.waitForFunction(
+    () => {
+      const t = document.body.innerText || "";
+      return !/正在加载制度/.test(t) && (/我已阅读并同意陪玩制度/.test(t) || !!document.querySelector('[data-mcj-upload-input="avatar"]'));
+    },
+    { timeout: 90000 }
+  ).catch(() => {});
+  await page.waitForTimeout(500);
+  await page.evaluate(() => {
+    const agree = document.querySelector("[data-rule-agree]");
+    if (agree && !agree.checked) {
+      agree.checked = true;
+      agree.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+    const draft = JSON.parse(localStorage.getItem("mcjCompanionApplicationDraft.v1") || "{}");
+    draft.step = 3;
+    draft.rulesAgreement = Object.assign({}, draft.rulesAgreement || {}, { accepted: true });
+    localStorage.setItem("mcjCompanionApplicationDraft.v1", JSON.stringify(draft));
+  });
+  await forceStep3(page);
+  let reached = await page.evaluate(() => !!document.querySelector('[data-mcj-upload-input="avatar"]'));
+  if (!reached) reached = await navigateToUploadStep(page, { seedVoice: false });
   step("nav_step3_upload", reached, "avatar input present");
   await shot(page, "01-step3");
 
