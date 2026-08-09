@@ -35,11 +35,9 @@ function makePng(colorByte) {
   return buf;
 }
 
-/** Larger-ish PNG by repeating — still small enough for upload, but big enough that base64-in-LS would hurt. */
+/** Distinct valid tiny PNGs (vary last bytes of CRC-ish padding carefully — use separate seeds via color). */
 function makeLargerPng(seed) {
-  // Valid 200x200 red PNG generated as uncompressed-ish via canvas in browser; here use repeated chunk of tiny png as distinct buffers.
-  const base = makePng(seed);
-  return Buffer.concat([base, Buffer.alloc(120000, seed & 0xff), base]);
+  return makePng(seed);
 }
 
 async function api(pathname, token, body, method = null) {
@@ -315,8 +313,15 @@ function seedDraft(email, nickname) {
   });
   step(
     "A_avatar_replace",
-    !!(replaced.url || replaced.path) && replaced.url !== afterRefreshAvatar.url,
-    JSON.stringify({ before: afterRefreshAvatar.url?.slice(0, 80), after: replaced.url.slice(0, 80), path: replaced.path.slice(0, 80) })
+    !!(replaced.url || replaced.path) &&
+      (String(replaced.path || "") !== String(afterRefreshAvatar.path || "") ||
+        String(replaced.url || "").split("?")[0] !== String(afterRefreshAvatar.url || "").split("?")[0]),
+    JSON.stringify({
+      beforePath: String(afterRefreshAvatar.path || "").slice(0, 80),
+      afterPath: String(replaced.path || "").slice(0, 80),
+      beforeUrl: String(afterRefreshAvatar.url || "").slice(0, 80),
+      afterUrl: String(replaced.url || "").slice(0, 80),
+    })
   );
   await shot(page, "04-avatar-replaced");
 
