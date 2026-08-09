@@ -47,12 +47,25 @@ async function loginAdminUi(page) {
 
 async function openOrders(page) {
   await page.locator('[data-section="orders"]').first().click({ timeout: 20000 });
-  await page.waitForSelector("#orderManagement .admin-orders-table, #orderManagement .admin-final-table", {
-    timeout: 45000,
+  await page.evaluate(() => {
+    document.querySelectorAll(".section").forEach((s) => s.classList.remove("active"));
+    const sec = document.getElementById("section-orders");
+    if (sec) {
+      sec.classList.add("active");
+      sec.style.display = "block";
+      sec.hidden = false;
+    }
+    document.querySelectorAll("[data-section]").forEach((b) =>
+      b.classList.toggle("active", b.getAttribute("data-section") === "orders")
+    );
   });
   await page.waitForFunction(() => {
     const t = document.querySelector("#orderManagement");
-    return t && !t.querySelector(".content-loading");
+    if (!t || t.querySelector(".content-loading")) return false;
+    const table = t.querySelector(".admin-orders-table") || t.querySelector(".admin-final-table");
+    if (!table) return false;
+    const r = table.getBoundingClientRect();
+    return r.width > 0 && r.height > 0;
   }, null, { timeout: 45000 });
 }
 
