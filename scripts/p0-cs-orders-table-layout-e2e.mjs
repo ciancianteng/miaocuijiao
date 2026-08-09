@@ -44,12 +44,20 @@ async function loginCs(page) {
 }
 
 async function openOrders(page) {
-  await page.goto(`${BASE}/customer-service/orders/?t=${Date.now()}`, { waitUntil: "domcontentloaded", timeout: 90000 });
-  await page.waitForTimeout(2500);
-  if (!(await page.locator(".cs-orders-table, table.cs-table").count())) {
-    await page.locator('button:has-text("订单处理"), [data-route*="orders"]').first().click({ force: true }).catch(() => {});
-    await page.waitForTimeout(2000);
+  // Prefer in-app nav so bootstrap state is preserved (full reload can briefly paint empty).
+  const nav = page.locator('.cs-nav button:has-text("订单处理")');
+  if (await nav.count()) {
+    await nav.first().click();
+  } else {
+    await page.goto(`${BASE}/customer-service/orders/?t=${Date.now()}`, { waitUntil: "domcontentloaded", timeout: 90000 });
   }
+  await page.waitForTimeout(2500);
+  await page.waitForFunction(() => {
+    const rows = document.querySelectorAll(".cs-orders-table tbody tr, table.cs-table tbody tr");
+    if (!rows.length) return false;
+    const text = rows[0].innerText || "";
+    return !/暂无订单/.test(text) || rows.length > 1;
+  }, { timeout: 45000 }).catch(() => {});
   await page.waitForSelector(".cs-orders-table, table.cs-table", { timeout: 30000 });
 }
 
