@@ -88,7 +88,7 @@
     if (!box) {
       box = document.createElement("div");
       box.id = "csDockRewardMount";
-      box.style.marginTop = "24px";
+      box.className = "cs-reward-mount";
       // Only create when accounts panel is open (inner placeholder missing).
       var accBody = host.querySelector('.cs-acc-item[data-cs-acc="accounts"] .cs-acc-body');
       if (accBody) accBody.appendChild(box);
@@ -237,7 +237,8 @@
           })
           .join("");
     return (
-      '<div class="table-wrap service-account-table-wrap"><table class="service-account-table"><thead><tr>' +
+      '<div class="table-wrap cs-reward-table-wrap">' +
+      '<table class="cs-reward-table"><thead><tr>' +
       "<th>客服名称</th><th>老板</th><th>订单编号</th><th>会话编号</th><th>订单金额</th><th>奖励猫粮</th><th>结算状态</th><th>结算时间</th><th>是否退款</th><th>是否扣回</th><th>备注</th>" +
       "</tr></thead><tbody>" +
       body +
@@ -245,17 +246,11 @@
     );
   }
 
-  function render() {
-    var box = mount();
-    if (!box) return;
-    var s = state.settings || {};
-    box.innerHTML =
-      '<section class="service-account-admin" data-cs-dock-reward-admin>' +
-      (state.error ? '<div class="admin-sync-note error">' + esc(state.error) + "</div>" : "") +
-      (state.message ? '<div class="admin-sync-note">' + esc(state.message) + "</div>" : "") +
-      settingsForm(s) +
-      '<header class="service-account-head" style="margin-top:22px"><div><h3>客服奖励记录</h3><p>每条记录绑定唯一订单；同一订单不可重复结算。</p></div></header>' +
-      '<div class="service-record-toolbar" style="display:flex;gap:8px;flex-wrap:wrap;margin:0 0 12px">' +
+  function recordsBlock() {
+    return (
+      '<section class="cs-reward-records" data-cs-reward-records>' +
+      '<header class="cs-reward-records-head"><div><h3>客服奖励记录</h3><p>每条记录绑定唯一订单；同一订单不可重复结算。</p></div></header>' +
+      '<div class="cs-reward-toolbar" role="search" aria-label="客服奖励筛选">' +
       '<select data-cs-reward-filter-status><option value="">全部状态</option>' +
       '<option value="settled"' +
       (state.filterStatus === "settled" ? " selected" : "") +
@@ -269,13 +264,27 @@
       '<option value="clawed_back"' +
       (state.filterStatus === "clawed_back" ? " selected" : "") +
       ">已扣回</option></select>" +
-      '<input data-cs-reward-filter-service placeholder="按客服 UUID 筛选" value="' +
+      '<input data-cs-reward-filter-service type="search" placeholder="按客服 UUID 筛选" value="' +
       esc(state.filterServiceId) +
       '">' +
       '<button class="mini-btn primary-lite" type="button" data-cs-reward-filter-apply>筛选</button>' +
       '<button class="mini-btn" type="button" data-cs-reward-reload>刷新记录</button>' +
       "</div>" +
       (state.loading ? '<div class="empty">加载中...</div>' : recordsTable()) +
+      "</section>"
+    );
+  }
+
+  function render() {
+    var box = mount();
+    if (!box) return;
+    var s = state.settings || {};
+    box.innerHTML =
+      '<section class="cs-reward-panel service-account-admin" data-cs-dock-reward-admin>' +
+      (state.error ? '<div class="admin-sync-note error">' + esc(state.error) + "</div>" : "") +
+      (state.message ? '<div class="admin-sync-note">' + esc(state.message) + "</div>" : "") +
+      settingsForm(s) +
+      recordsBlock() +
       "</section>";
   }
 

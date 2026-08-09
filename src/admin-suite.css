@@ -1666,15 +1666,44 @@ body[data-admin-section="bosses"] .boss-filter-bar,
 /* admin-service-records-v1 */
 body[data-admin-section="service-records"] #section-service-records>.panel{padding:14px;border-radius:12px;background:rgba(255,255,255,.018)}
 body[data-admin-section="service-records"] #section-service-records>.panel>h2{display:none}
-.service-record-admin{display:grid;gap:10px;min-height:calc(100vh - 148px)}
-.service-record-toolbar{display:grid;grid-template-columns:minmax(280px,1.4fr) 140px 150px 72px 72px 72px;gap:8px;align-items:center;max-height:64px;padding:10px;border:1px solid rgba(255,255,255,.07);border-radius:10px;background:rgba(0,0,0,.14)}
-.service-record-toolbar input,.service-record-toolbar select{height:36px;border-radius:8px;border:1px solid rgba(255,255,255,.09);background:#111116;color:#f3edf1;padding:0 10px;font-size:12px;outline:none}.service-record-toolbar input:focus,.service-record-toolbar select:focus{border-color:rgba(243,168,203,.32)}
-.service-record-toolbar .mini-btn{height:36px;min-height:36px;border-radius:8px;font-size:12px;padding:0 10px}
+.service-record-admin{display:grid;gap:10px;min-height:calc(100vh - 148px);min-width:0}
+.service-record-toolbar{
+  display:grid;
+  grid-template-columns:minmax(220px,1.4fr) minmax(120px,140px) minmax(130px,150px) auto auto auto;
+  gap:8px;
+  align-items:center;
+  min-width:0;
+  width:100%;
+  max-width:100%;
+  height:auto;
+  max-height:none;
+  min-height:0;
+  padding:10px;
+  border:1px solid rgba(255,255,255,.07);
+  border-radius:10px;
+  background:rgba(0,0,0,.14);
+  position:relative;
+  z-index:1;
+  overflow:visible;
+  box-sizing:border-box;
+}
+.service-record-toolbar input,.service-record-toolbar select{height:36px;min-width:0;width:100%;border-radius:8px;border:1px solid rgba(255,255,255,.09);background:#111116;color:#f3edf1;padding:0 10px;font-size:12px;outline:none;box-sizing:border-box}.service-record-toolbar input:focus,.service-record-toolbar select:focus{border-color:rgba(243,168,203,.32)}
+.service-record-toolbar .mini-btn{height:36px;min-height:36px;border-radius:8px;font-size:12px;padding:0 10px;justify-self:start}
 .service-record-table-wrap{height:calc(100vh - 286px);min-height:500px;max-height:none!important;overflow:auto;border-radius:10px;border:1px solid rgba(255,255,255,.08);background:#0d0d12}
 .service-record-data-table{width:max-content;min-width:1180px;border-collapse:separate;border-spacing:0;table-layout:fixed}.service-record-data-table th,.service-record-data-table td{height:46px;max-height:46px;padding:6px 9px;border:0;border-right:1px solid rgba(255,255,255,.07);border-bottom:1px solid rgba(255,255,255,.07);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px;line-height:1.25;color:#e9e3e8}.service-record-data-table th{position:sticky;top:0;z-index:4;height:38px;background:#17171d;color:#aaa2aa;font-weight:760}.service-record-data-table tbody tr:hover{background:rgba(255,255,255,.045);cursor:pointer}
 .service-record-data-table th:nth-child(1),.service-record-data-table td:nth-child(1){width:130px}.service-record-data-table th:nth-child(2),.service-record-data-table td:nth-child(2){width:150px}.service-record-data-table th:nth-child(3),.service-record-data-table td:nth-child(3),.service-record-data-table th:nth-child(4),.service-record-data-table td:nth-child(4){width:120px}.service-record-data-table th:nth-child(5),.service-record-data-table td:nth-child(5){width:110px}.service-record-data-table th:nth-child(6),.service-record-data-table td:nth-child(6){width:100px}.service-record-data-table th:nth-child(7),.service-record-data-table td:nth-child(7){width:100px}.service-record-data-table th:nth-child(8),.service-record-data-table td:nth-child(8){width:110px}.service-record-data-table th:nth-child(9),.service-record-data-table td:nth-child(9){width:90px}.service-record-data-table th:nth-child(10),.service-record-data-table td:nth-child(10){position:sticky;right:0;z-index:5;width:260px;background:#111116;box-shadow:-1px 0 0 rgba(255,255,255,.08)}.service-record-data-table th:nth-child(10){z-index:7;background:#17171d}
 .service-record-actions{display:flex;align-items:center;gap:5px;overflow:visible!important}.service-record-actions .mini-btn{height:28px;min-height:28px;border-radius:7px;padding:0 8px;font-size:12px}.service-record-empty{min-height:220px;display:grid;place-content:center;justify-items:center;gap:7px;color:#9f949c;text-align:center}.service-record-empty strong{color:#fff;font-size:14px}.service-record-empty span{font-size:12px}.service-record-pagination.compact{height:42px;margin-top:0;padding:7px 8px;border:1px solid rgba(255,255,255,.07);border-top:0;border-radius:0 0 10px 10px;background:#101015;font-size:12px;color:#9f949c;display:flex;align-items:center;justify-content:space-between;gap:10px}.service-record-pagination.compact>div{display:flex;align-items:center;gap:7px}.service-record-pagination.compact select,.service-record-pagination.compact input{height:30px;border-radius:7px;border:1px solid rgba(255,255,255,.09);background:#16161c;color:#fff;padding:0 8px}.service-record-pagination.compact input{width:54px;text-align:center}.service-record-pagination.compact .mini-btn{height:30px;min-height:30px;border-radius:7px;padding:0 8px;font-size:12px}.service-record-detail-actions{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0}
-@media(max-width:1100px){.service-record-toolbar{grid-template-columns:repeat(2,minmax(0,1fr));max-height:none}.service-record-table-wrap{height:calc(100vh - 340px);min-height:420px}.service-record-pagination.compact{height:auto;align-items:stretch;flex-direction:column}.service-record-pagination.compact>div{flex-wrap:wrap}}
+@media(max-width:1100px){
+  .service-record-toolbar{
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    max-height:none;
+    height:auto;
+  }
+  .service-record-toolbar .mini-btn{width:100%;justify-self:stretch}
+  .service-record-table-wrap{height:calc(100vh - 340px);min-height:420px}
+  .service-record-pagination.compact{height:auto;align-items:stretch;flex-direction:column}
+  .service-record-pagination.compact>div{flex-wrap:wrap}
+}
 /* boss-ops-focus-v5 — keep 10-col table aligned; no phantom sticky width */
 body[data-admin-section="bosses"] .boss-bulk-wrap{display:none!important;}
 body[data-admin-section="bosses"] .boss-more-menu,
@@ -1821,28 +1850,58 @@ body[data-admin-section="service-reports"] #section-service-reports > .panel{
   .service-account-table{min-width:1100px}
 }
 
-/* CS dock rewards panel — spacing + summary inside existing 客服管理 panel (no shell change) */
-.cs-reward-panel{display:grid;gap:12px;min-width:0;max-width:100%}
+/* CS dock rewards panel — document-flow stack (toolbar never overlaps table) */
+.cs-reward-panel{
+  display:grid;
+  gap:16px;
+  min-width:0;
+  max-width:100%;
+  position:relative;
+  z-index:0;
+}
+.cs-reward-records{
+  display:grid;
+  gap:12px;
+  min-width:0;
+  max-width:100%;
+  position:relative;
+  z-index:0;
+}
+.cs-reward-records-head{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:12px;
+  min-width:0;
+}
+.cs-reward-records-head h3{margin:0;font-size:17px;color:#fff}
+.cs-reward-records-head p{margin:4px 0 0;color:var(--muted);font-size:12px}
 .cs-reward-toolbar{
   display:flex;
   flex-wrap:wrap;
   align-items:center;
   gap:8px;
-  margin:0 0 14px;
+  width:100%;
+  max-width:100%;
+  min-width:0;
+  height:auto;
+  max-height:none;
+  margin:0;
   padding:10px;
   border:1px solid rgba(255,255,255,.07);
   border-radius:10px;
   background:rgba(0,0,0,.14);
-  max-height:none;
   overflow:visible;
   position:relative;
   z-index:1;
+  box-sizing:border-box;
 }
 .cs-reward-toolbar select,
 .cs-reward-toolbar input{
   height:36px;
   min-width:140px;
-  flex:1 1 160px;
+  flex:1 1 180px;
+  max-width:100%;
   border-radius:8px;
   border:1px solid rgba(255,255,255,.09);
   background:#111116;
@@ -1850,16 +1909,70 @@ body[data-admin-section="service-reports"] #section-service-reports > .panel{
   padding:0 10px;
   font-size:12px;
   outline:none;
+  box-sizing:border-box;
 }
-.cs-reward-toolbar .mini-btn{height:36px;min-height:36px;border-radius:8px;font-size:12px;padding:0 12px;flex:0 0 auto}
+.cs-reward-toolbar .mini-btn{
+  height:36px;
+  min-height:36px;
+  border-radius:8px;
+  font-size:12px;
+  padding:0 12px;
+  flex:0 0 auto;
+}
 .cs-reward-summary .stat-card{min-width:0}
 .cs-reward-card-sub{display:block;margin-top:6px;color:var(--muted);font-size:12px;font-weight:700}
-.cs-reward-table-wrap{min-height:280px;max-height:min(58vh,640px);margin-top:0}
-.cs-reward-table{min-width:760px!important;width:100%!important}
+.cs-reward-table-wrap{
+  position:relative;
+  z-index:0;
+  width:100%;
+  max-width:100%;
+  min-width:0;
+  min-height:240px;
+  max-height:min(58vh,640px);
+  margin:0;
+  padding:0;
+  border-radius:12px;
+  border:1px solid rgba(255,255,255,.09);
+  background:#0d0d12;
+  overflow-x:auto;
+  overflow-y:auto;
+  -webkit-overflow-scrolling:touch;
+  scrollbar-gutter:stable;
+}
+.cs-reward-table{
+  width:max-content;
+  min-width:960px;
+  max-width:none;
+  border-collapse:separate;
+  border-spacing:0;
+  table-layout:auto;
+  margin:0;
+}
 .cs-reward-table th,
-.cs-reward-table td{white-space:nowrap}
-.cs-reward-table td:last-child,
-.cs-reward-table th:last-child{min-width:110px}
+.cs-reward-table td{
+  position:static;
+  right:auto;
+  left:auto;
+  top:auto;
+  transform:none;
+  padding:10px 12px;
+  border-bottom:1px solid rgba(255,255,255,.07);
+  font-size:13px;
+  text-align:left;
+  white-space:nowrap;
+  vertical-align:middle;
+  box-shadow:none;
+  background:transparent;
+}
+.cs-reward-table th{
+  position:sticky;
+  top:0;
+  z-index:2;
+  background:#141017;
+  color:#cdbbc6;
+  font-size:12px;
+}
+.cs-reward-table tbody tr:hover{background:rgba(255,255,255,.035)}
 .cs-reward-detail-row td{
   position:static!important;
   right:auto!important;
@@ -1880,9 +1993,29 @@ body[data-admin-section="service-reports"] #section-service-reports > .panel{
   white-space:nowrap;
 }
 .cs-reward-detail-table th{color:#b9a8b4;font-weight:760;background:transparent}
+#csDockRewardMount{
+  display:block;
+  width:100%;
+  max-width:100%;
+  min-width:0;
+  margin-top:20px;
+  position:relative;
+  z-index:0;
+}
+body[data-admin-section="service-accounts"] .cs-acc-body{
+  display:grid;
+  gap:12px;
+  min-width:0;
+  max-width:100%;
+  overflow:visible;
+}
+@media(max-width:1100px){
+  .cs-reward-toolbar select,
+  .cs-reward-toolbar input{flex:1 1 100%;min-width:0}
+}
 @media(max-width:900px){
   .cs-reward-summary{grid-template-columns:repeat(2,minmax(0,1fr))!important}
-  .cs-reward-table{min-width:680px!important}
+  .cs-reward-table{min-width:720px}
 }
 
 /* Admin modal close fix: header outside scroll layer (boss detail + shared modal) */

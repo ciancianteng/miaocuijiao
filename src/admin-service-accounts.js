@@ -310,7 +310,7 @@
       '<div class="table-wrap service-account-table-wrap"><table class="service-account-table"><thead><tr><th>客服姓名</th><th>客服编号</th><th>登录邮箱</th><th>当前状态</th><th>在线状态</th><th>今日订单</th><th>今日接待</th><th>今日工作时长</th><th>操作</th></tr></thead><tbody>' +
       rowsHtml() +
       "</tbody></table></div>" +
-      '<div id="csDockRewardMount" style="margin-top:20px"></div>'
+      '<div id="csDockRewardMount" class="cs-reward-mount"></div>'
     );
   }
   function commissionBodyHtml() {
