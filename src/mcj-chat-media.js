@@ -1,7 +1,7 @@
 /**
  * Shared chat media helpers for boss / CS / companion.
  * Compress → upload → send image messages; lightbox preview.
- * Single source of truth: one public Storage URL per message.
+ * Durable content: prefer storageRef (chat-images-private:path); display via signed https.
  */
 (function (global) {
   "use strict";
@@ -35,8 +35,14 @@
     var s = stripImageTag(raw);
     if (!s) return "";
     if (/^(blob:|data:)/i.test(s)) return "";
+    if (/^chat-images-private:/i.test(s)) return s;
+    if (/^conv\//i.test(s)) return "chat-images-private:" + s;
     if (!/^https?:\/\//i.test(s)) return "";
     return s;
+  }
+
+  function isHttpsUrl(s) {
+    return /^https?:\/\//i.test(String(s || ""));
   }
 
   function isImageMessage(m) {
@@ -45,29 +51,45 @@
     if (t === "image") return true;
     var c = String(m.content || "");
     if (c.indexOf(IMG_TAG) === 0) return true;
-    if (normalizeImageUrl(m.imageUrl || m.image_url || m.mediaUrl || m.media_url)) return true;
+    if (normalizeImageUrl(m.imageUrl || m.image_url || m.mediaUrl || m.media_url || m.storageRef)) {
+      return true;
+    }
     var bare = normalizeImageUrl(c);
     if (!bare) return false;
+    if (/^chat-images-private:/i.test(bare) || /^conv\//i.test(c)) return true;
     if (/\.(jpg|jpeg|png|webp)(\?|#|$)/i.test(bare)) return true;
-    if (/\/storage\/v1\/object\/public\/chat-images\//i.test(bare)) return true;
+    if (/\/storage\/v1\/object\/(?:public|sign)\/chat-images(?:-private)?\//i.test(bare)) return true;
     return false;
   }
 
   /**
-   * Resolve the single durable image URL for a message.
-   * Prefer imageUrl / image_url / mediaUrl, then content (with __IMG__: strip).
+   * Resolve a displayable https image URL for a message.
+   * Prefer signed/public https fields; never return blob/data.
    */
   function imageUrlOf(m) {
     if (!m) return "";
-    var fromFields = normalizeImageUrl(m.imageUrl || m.image_url || m.mediaUrl || m.media_url);
-    if (fromFields) return fromFields;
-    return normalizeImageUrl(m.content);
+    var fields = [m.imageUrl, m.image_url, m.mediaUrl, m.media_url, m.content];
+    var i;
+    for (i = 0; i < fields.length; i++) {
+      var u = normalizeImageUrl(fields[i]);
+      if (u && isHttpsUrl(u)) return u;
+    }
+    return "";
+  }
+
+  function storageRefOf(m) {
+    if (!m) return "";
+    var raw = m.storageRef || m.storage_ref || "";
+    if (/^chat-images-private:/i.test(String(raw))) return String(raw);
+    var c = normalizeImageUrl(m.content);
+    if (/^chat-images-private:/i.test(c)) return c;
+    return "";
   }
 
   /** Cache-bust only when URL has no unique path token; Storage paths already include ts+uuid. */
   function displayUrl(url, createdAt) {
     var u = normalizeImageUrl(url);
-    if (!u) return "";
+    if (!u || !isHttpsUrl(u)) return "";
     if (/[?&](v|t)=/i.test(u)) return u;
     if (/\/\d{10,}-[a-f0-9]{4,}-/i.test(u)) return u;
     var ts = createdAt ? Date.parse(createdAt) : NaN;
@@ -82,16 +104,24 @@
       });
     };
     meta = meta || {};
-    var src = esc(displayUrl(url, meta.createdAt || meta.created_at));
+    var srcRaw = displayUrl(url, meta.createdAt || meta.created_at) || (isHttpsUrl(url) ? url : "");
+    if (!srcRaw) {
+      return '<span class="mcj-chat-img-missing">[图片]</span>';
+    }
+    var src = esc(srcRaw);
+    var ref = esc(meta.storageRef || "");
     return (
       '<a class="mcj-chat-img-wrap" href="' +
       src +
       '" data-chat-image="' +
       src +
-      '" title="点击放大">' +
+      '"' +
+      (ref ? ' data-chat-storage-ref="' + ref + '"' : "") +
+      (meta.conversationId ? ' data-chat-conversation="' + esc(meta.conversationId) + '"' : "") +
+      ' title="点击放大">' +
       '<img class="mcj-chat-img" src="' +
       src +
-      '" alt="图片" loading="lazy" decoding="async" referrerpolicy="no-referrer" />' +
+      '" alt="图片" loading="lazy" decoding="async" referrerpolicy="no-referrer" data-mcj-img-resign />' +
       "</a>"
     );
   }
@@ -122,7 +152,8 @@
     var el = document.getElementById("mcjChatLightbox");
     var img = el.querySelector("[data-lb-img]");
     var cap = el.querySelector("[data-lb-meta]");
-    img.src = normalizeImageUrl(url) || url;
+    var href = normalizeImageUrl(url) || url;
+    img.src = isHttpsUrl(href) ? href : url;
     if (cap) {
       var parts = [];
       if (meta && meta.sender) parts.push(String(meta.sender));
@@ -150,26 +181,24 @@
     scope.__mcjLbBound = true;
     scope.addEventListener("click", function (e) {
       var a = e.target.closest("[data-chat-image]");
-      if (!a) return;
+      if (!a || !scope.contains(a)) return;
       e.preventDefault();
-      var msg = a.closest("[data-msg-id]");
+      var bubble = a.closest("[data-msg-id], .cs-msg, .support-msg, .mcj-msg");
       var sender = "";
       var time = "";
-      if (msg) {
-        var strong = msg.querySelector("strong");
-        var small = msg.querySelector("small");
-        if (strong) sender = strong.textContent || "";
-        if (small) time = (small.textContent || "").split("·")[0].trim();
+      if (bubble) {
+        sender = bubble.getAttribute("data-sender-name") || "";
+        time = bubble.getAttribute("data-created-at") || "";
       }
       openLightbox(a.getAttribute("data-chat-image") || a.href, { sender: sender, time: time });
     });
   }
 
-  function readAsDataUrl(file) {
+  function readFileAsDataUrl(file) {
     return new Promise(function (resolve, reject) {
       var reader = new FileReader();
       reader.onload = function () {
-        resolve(reader.result);
+        resolve(String(reader.result || ""));
       };
       reader.onerror = function () {
         reject(new Error("读取图片失败"));
@@ -185,51 +214,49 @@
         resolve(img);
       };
       img.onerror = function () {
-        reject(new Error("图片解析失败"));
+        reject(new Error("图片解码失败"));
       };
       img.src = dataUrl;
     });
   }
 
+  function canvasToJpegDataUrl(canvas, quality) {
+    try {
+      return canvas.toDataURL("image/jpeg", quality);
+    } catch (e) {
+      return "";
+    }
+  }
+
   function compressFile(file) {
-    return Promise.resolve().then(function () {
-      if (!file) throw new Error("未选择文件");
-      if (!ALLOWED.test(file.type || "")) throw new Error("仅支持 jpg / jpeg / png / webp");
-      if (file.size > MAX_BYTES) throw new Error("单张图片不能超过 10MB");
-      return readAsDataUrl(file).then(function (raw) {
-        return loadImage(raw).then(function (img) {
-          var w = img.naturalWidth || img.width;
-          var h = img.naturalHeight || img.height;
-          var scale = Math.min(1, TARGET_MAX_EDGE / Math.max(w, h, 1));
-          var cw = Math.max(1, Math.round(w * scale));
-          var ch = Math.max(1, Math.round(h * scale));
-          var canvas = document.createElement("canvas");
-          canvas.width = cw;
-          canvas.height = ch;
-          var ctx = canvas.getContext("2d");
-          ctx.drawImage(img, 0, 0, cw, ch);
-          var mime = "image/jpeg";
-          if (/image\/png/i.test(file.type) && file.size < 400 * 1024) mime = "image/png";
-          else if (/image\/webp/i.test(file.type)) mime = "image/webp";
-          var quality = TARGET_QUALITY;
-          var dataUrl = canvas.toDataURL(mime, quality);
-          var guard = 0;
-          while (dataUrl.length > 1.8 * 1024 * 1024 && quality > 0.45 && guard < 6) {
-            quality -= 0.1;
-            dataUrl = canvas.toDataURL("image/jpeg", quality);
-            mime = "image/jpeg";
-            guard += 1;
-          }
-          if (dataUrl.length > 12 * 1024 * 1024) {
-            throw new Error("压缩后仍过大，请换一张较小的图片");
-          }
-          var ext = mime === "image/png" ? ".png" : mime === "image/webp" ? ".webp" : ".jpg";
-          return {
-            dataUrl: dataUrl,
-            mime: mime,
-            filename: String(file.name || "chat.jpg").replace(/\.[^.]+$/, "") + ext,
-          };
-        });
+    if (!file || !ALLOWED.test(file.type || "")) {
+      return Promise.reject(new Error("仅支持 JPG / JPEG / PNG / WEBP"));
+    }
+    if (file.size > MAX_BYTES) {
+      return Promise.reject(new Error("单张图片不能超过 10MB"));
+    }
+    var filename = String(file.name || "chat.jpg");
+    return readFileAsDataUrl(file).then(function (dataUrl) {
+      // Small enough PNG/WebP/JPEG: skip re-encode when under ~1.2MB.
+      if (file.size < 1.2 * 1024 * 1024 && /image\/(jpeg|jpg|png|webp)/i.test(file.type || "")) {
+        return { dataUrl: dataUrl, filename: filename };
+      }
+      return loadImage(dataUrl).then(function (img) {
+        var w = img.naturalWidth || img.width || 0;
+        var h = img.naturalHeight || img.height || 0;
+        if (!w || !h) return { dataUrl: dataUrl, filename: filename };
+        var scale = Math.min(1, TARGET_MAX_EDGE / Math.max(w, h));
+        var tw = Math.max(1, Math.round(w * scale));
+        var th = Math.max(1, Math.round(h * scale));
+        var canvas = document.createElement("canvas");
+        canvas.width = tw;
+        canvas.height = th;
+        var ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, tw, th);
+        var out = canvasToJpegDataUrl(canvas, TARGET_QUALITY);
+        if (!out || out.length < 32) return { dataUrl: dataUrl, filename: filename };
+        var base = filename.replace(/\.[^.]+$/, "") || "chat";
+        return { dataUrl: out, filename: base + ".jpg" };
       });
     });
   }
@@ -238,12 +265,8 @@
     return fetch("/api/chat-media", {
       method: "POST",
       headers: {
-        Accept: "application/json",
         "Content-Type": "application/json",
-        Authorization: "Bearer " + token,
-        "x-mcj-access-token": token,
-        "x-mcj-service-token": token,
-        "x-mcj-companion-token": token,
+        Authorization: "Bearer " + String(token || ""),
       },
       body: JSON.stringify({
         action: "upload",
@@ -253,20 +276,52 @@
         conversationId: conversationId || "",
       }),
     }).then(function (res) {
-      return res.json().catch(function () {
-        return {};
-      }).then(function (body) {
-        if (!res.ok || body.ok === false || !body.url) {
-          throw new Error((body && body.message) || "上传失败");
-        }
-        return body;
-      });
+      return res
+        .json()
+        .catch(function () {
+          return {};
+        })
+        .then(function (body) {
+          if (!res.ok || body.ok === false || !body.url) {
+            throw new Error((body && body.message) || "图片发送失败，请重试");
+          }
+          return body;
+        });
+    });
+  }
+
+  function signUrl(raw, conversationId, token) {
+    return fetch("/api/chat-media", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer " + String(token || ""),
+      },
+      body: JSON.stringify({
+        action: "sign",
+        conversation_id: conversationId || "",
+        conversationId: conversationId || "",
+        url: raw,
+        storageRef: raw,
+      }),
+    }).then(function (res) {
+      return res
+        .json()
+        .catch(function () {
+          return {};
+        })
+        .then(function (body) {
+          if (!res.ok || body.ok === false || !body.url) {
+            throw new Error((body && body.message) || "图片加载失败");
+          }
+          return body.url;
+        });
     });
   }
 
   /**
    * Pick files (multi), compress+upload each, call onUploaded(url, meta) per file.
-   * onStatus(text) for UX.
+   * meta includes storageRef for durable message content.
    */
   function pickAndSendImages(opts) {
     opts = opts || {};
@@ -314,8 +369,10 @@
               })
               .catch(function (err) {
                 if (opts.onStatus) opts.onStatus("发送失败");
-                if (opts.onError) opts.onError(err, file);
-                else toast((err && err.message) || "发送失败");
+                var msg = (err && err.message) || "图片发送失败，请重试";
+                if (!/图片发送失败/.test(msg)) msg = "图片发送失败，请重试";
+                if (opts.onError) opts.onError(new Error(msg), file);
+                else toast(msg);
               });
           });
         });
@@ -334,6 +391,7 @@
     style.textContent =
       ".mcj-chat-img-wrap{display:inline-block;max-width:min(240px,70vw);border-radius:12px;overflow:hidden;border:1px solid rgba(255,255,255,.12)}" +
       ".mcj-chat-img{display:block;max-width:100%;max-height:280px;width:auto;height:auto;object-fit:contain;cursor:zoom-in;background:rgba(0,0,0,.2)}" +
+      ".mcj-chat-img-missing{color:#9ca3af;font-size:13px}" +
       ".mcj-chat-lightbox{position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.88);display:flex;align-items:center;justify-content:center;padding:24px}" +
       ".mcj-chat-lightbox[hidden]{display:none!important}" +
       ".mcj-chat-lightbox-figure{margin:0;max-width:min(96vw,1200px);max-height:92vh;display:flex;flex-direction:column;align-items:center;gap:10px}" +
@@ -342,8 +400,9 @@
       ".mcj-chat-lightbox-close{position:fixed;top:16px;right:16px;width:42px;height:42px;border:0;border-radius:999px;background:rgba(255,255,255,.14);color:#fff;font-size:28px;cursor:pointer;line-height:1}" +
       "html.mcj-lb-open,html.mcj-lb-open body{overflow:hidden!important}" +
       ".mcj-composer-tools{display:flex;gap:8px;align-items:center;flex:0 0 auto}" +
-      ".mcj-composer-tool{width:40px;height:40px;border-radius:12px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);color:#fff;cursor:pointer;font-size:18px;display:inline-flex;align-items:center;justify-content:center}" +
+      ".mcj-composer-tool{min-width:40px;height:40px;padding:0 10px;border-radius:12px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);color:#fff;cursor:pointer;font-size:13px;display:inline-flex;align-items:center;justify-content:center;white-space:nowrap}" +
       ".mcj-composer-tool:disabled{opacity:.45;cursor:not-allowed}" +
+      ".mcj-composer-tool-img{font-size:12px;letter-spacing:0}" +
       ".mcj-upload-status{font-size:12px;color:#9ca3af;min-height:16px}";
     document.head.appendChild(style);
   }
@@ -355,16 +414,18 @@
     IMG_TAG: IMG_TAG,
     isImageMessage: isImageMessage,
     imageUrlOf: imageUrlOf,
+    storageRefOf: storageRefOf,
     normalizeImageUrl: normalizeImageUrl,
     stripImageTag: stripImageTag,
     displayUrl: displayUrl,
     imageBubbleHtml: imageBubbleHtml,
     compressFile: compressFile,
     uploadDataUrl: uploadDataUrl,
+    signUrl: signUrl,
     pickAndSendImages: pickAndSendImages,
     openLightbox: openLightbox,
     closeLightbox: closeLightbox,
     bindLightboxClicks: bindLightboxClicks,
     toast: toast,
   };
-})(window);
+})(typeof window !== "undefined" ? window : globalThis);

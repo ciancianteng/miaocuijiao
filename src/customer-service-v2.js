@@ -1,3 +1,6 @@
+import './mcj-chat-media.js';
+import './mcj-chat-realtime.js';
+
 (function(){
   var root=document.getElementById('serviceApp');
   if(!root)return;
@@ -1006,6 +1009,7 @@
       content:row.content||'',
       messageType:row.message_type||row.messageType||'text',
       imageUrl:row.imageUrl||row.image_url||'',
+      storageRef:row.storageRef||row.storage_ref||'',
       orderId:row.order_id||row.orderId||'',
       createdAt:row.created_at||row.createdAt||'',
       readAt:row.read_at||row.readAt||'',
@@ -2687,7 +2691,7 @@
         '<form class="cs-chat-input" data-send-message action="#" method="post" autocomplete="off" onsubmit="return false;">'+
         '<div class="mcj-composer-tools">'+
         '<button class="mcj-composer-tool" type="button" data-cs-emoji'+(canReply?'':' disabled')+' aria-label="表情">😊</button>'+
-        '<button class="mcj-composer-tool" type="button" data-cs-image'+(canReply?'':' disabled')+' aria-label="图片">🖼</button>'+
+        '<button class="mcj-composer-tool mcj-composer-tool-img" type="button" data-cs-image'+(canReply?'':' disabled')+' aria-label="图片/相册" title="图片/相册">图片</button>'+
         '</div>'+
         '<textarea name="content" data-cs-composer rows="1" placeholder="'+esc(canReply?'输入消息，Enter 发送，Shift+Enter 换行':(blockReason||'无法回复'))+'" autocomplete="off" maxlength="2000"'+(canReply?'':' disabled readonly')+'></textarea>'+
         '<button class="cs-btn primary cs-send-btn" type="button" data-cs-send'+(canReply&&String(state.composerDraft||'').trim()?'':' disabled')+'>发送</button>'+
@@ -2761,7 +2765,11 @@
     var who=mine?(m.senderName||m.sender_name||'客服'):(system?'':(m.senderName||m.sender_name||(senderRole==='boss'?'老板':(senderRole==='companion'?'陪玩':''))));
     var Media=window.MCJChatMedia;
     var isImg=Media&&Media.isImageMessage(m);
-    var body=isImg?Media.imageBubbleHtml(Media.imageUrlOf(m),esc,{createdAt:m.createdAt||m.created_at}):('<p>'+esc(m.content||'')+'</p>');
+    var body=isImg?Media.imageBubbleHtml(Media.imageUrlOf(m),esc,{
+      createdAt:m.createdAt||m.created_at,
+      storageRef:m.storageRef||m.storage_ref||'',
+      conversationId:m.conversationId||m.conversation_id||state.activeConversation||''
+    }):('<p>'+esc(m.content||'')+'</p>');
     var isImgPending=(m.messageType==='image'||m.message_type==='image');
     var pending=m._pending?(isImgPending?' · 上传中…':' · 发送中…'):'';
     var failed=m._failed?' · 发送失败 <button type="button" class="cs-link" data-retry-img="'+esc(m._localId||m.id||'')+'">重试</button>':'';
@@ -2935,20 +2943,24 @@
   function reportsHtml(){var work=(state.data&&state.data.workData)||{},salary=work.salary||{},cur=salary.current||{},history=salary.history||[],attRows=(work.attendance&&work.attendance.rows)||[],notices=(state.data&&state.data.notifications)||[],payrolls=(state.data&&state.data.payrolls)||[],settlements=(state.data&&state.data.commissionSettlements)||work.commissionSettlements||[],sum=(state.data&&state.data.summary)||{},cfg=work.config||{},withdrawable=sum.withdrawableSalary!=null?sum.withdrawableSalary:(cur.totalSalary||0);var noticeBlock=notices.length?'<section class="cs-card" style="margin-bottom:14px"><h3 style="margin:0 0 8px">工资通知</h3>'+notices.slice(0,8).map(function(n){return '<div style="padding:8px 0;border-bottom:1px solid #eee"><strong>'+esc(n.title||'通知')+'</strong><div style="color:#9ca3af;font-size:12px;margin-top:4px">'+esc(n.body||'')+'</div><div style="color:#6b7280;font-size:11px;margin-top:4px">'+esc(n.at||'')+'</div></div>'}).join('')+'</section>':'';var withdrawBlock='<section class="cs-card" style="margin-bottom:14px"><h3 style="margin:0 0 8px">每周五统一结算</h3><p style="margin:0 0 10px;color:#6b7280;font-size:13px">'+esc(((state.data&&state.data.weeklySettlement)||{}).csBannerBody||'周四 23:59 前 → 本周五；截止后 → 下周五。金额系统自动计算，不可手填。')+'</p><div class="cs-info-list"><div><span>本周可结算工资</span><strong>'+money(((state.data&&state.data.payrollSummary)||{}).settleableAmount!=null?state.data.payrollSummary.settleableAmount:withdrawable)+'</strong></div><div><span>已申请金额</span><strong>'+money(((state.data&&state.data.payrollSummary)||{}).appliedAmount||0)+'</strong></div><div><span>待周五发放金额</span><strong>'+money(((state.data&&state.data.payrollSummary)||{}).pendingFridayAmount||0)+'</strong></div><div><span>预计发放日期</span><strong>'+esc((((state.data&&state.data.weeklySettlement)||{}).nextSettlementDate||((state.data&&state.data.payrollSummary)||{}).nextSettlementDate||'-'))+( ((state.data&&state.data.weeklySettlement)||{}).nextSettlementDate?'（星期五）':'')+'</strong></div><div><span>可申请金额</span><strong>'+money(withdrawable)+'</strong></div></div><div class="cs-actions" style="margin-top:12px"><button class="cs-btn primary" type="button" data-request-salary-withdraw '+(Number(withdrawable)<=0?'disabled':'')+'>申请本周结算（'+money(withdrawable)+'）</button></div></section>';var rewardBlock='<section class="cs-table-wrap" style="margin-top:14px"><h3 style="margin:0 0 10px">奖励记录</h3><table class="cs-table"><thead><tr><th>订单号</th><th>奖励类型</th><th>固定奖励</th><th>提成</th><th>夜班补贴</th><th>全勤奖励</th><th>退款扣回</th><th>最终金额</th><th>状态</th></tr></thead><tbody>'+(settlements.length?settlements.map(function(r){return '<tr><td>'+esc(r.orderNo||'-')+'</td><td>'+esc(r.rewardType||'order_commission')+'</td><td>'+money(r.fixedRewardRm||0)+'</td><td>'+money(r.percentCommissionRm||0)+'</td><td>'+money(r.nightShiftRm||0)+'</td><td>'+money(r.attendanceBonusRm||0)+'</td><td>'+money(r.clawbackRm||0)+'</td><td>'+money(r.finalAmountRm||0)+'</td><td>'+esc(r.status||'-')+'</td></tr>'}).join(''):'<tr><td colspan="9">暂无奖励记录（完成订单后按后台佣金设置自动入账）</td></tr>')+'</tbody></table></section>';var payrollBlock='<section class="cs-table-wrap" style="margin-top:14px"><h3 style="margin:0 0 10px">历史结算记录</h3><table class="cs-table"><thead><tr><th>单号</th><th>周期</th><th>底薪</th><th>奖金</th><th>扣款</th><th>应发</th><th>预计发放</th><th>状态</th><th></th></tr></thead><tbody>'+(payrolls.length?payrolls.map(function(p){return '<tr><td>'+esc(p.payrollNo||'-')+'</td><td>'+esc((p.periodStart||'')+' ~ '+(p.periodEnd||''))+'</td><td>'+money(p.baseSalaryRm||0)+'</td><td>'+money(p.bonusRm||0)+'</td><td>'+money(p.deductionRm||0)+'</td><td>'+money(p.netSalaryRm||0)+'</td><td>'+esc(p.settlementDate||'-')+'</td><td>'+esc(p.statusText||p.status||'-')+'</td><td>'+(p.status!=='completed'?'<button class="cs-btn ghost" type="button" data-payroll-appeal="'+esc(p.id)+'">申诉</button>':'-')+'</td></tr>'}).join(''):'<tr><td colspan="9">暂无发放记录</td></tr>')+'</tbody></table></section>';return '<div class="cs-page-head"><div><h2>工资中心</h2><p>底薪/全勤/夜班/每单奖励/提成等全部实时读取后台佣金设置；订单提成按结算快照入账，改配置不影响历史单。</p></div></div>'+noticeBlock+withdrawBlock+'<section class="cs-grid cs-metrics">'+metric('基础工资',money(cur.baseSalary||0))+metric('全勤奖励',money(cur.attendanceBonus||0))+metric('接待奖励',money(cur.receptionBonus||0))+metric('订单提成',money(cur.orderCommission||0))+metric('夜班补贴',money(cur.nightShiftAllowance||0))+metric('迟到扣款',money(cur.lateDeduction||0))+metric('缺勤扣款',money(cur.absenceDeduction||0))+metric('其他调整',money(cur.otherAdjustment||0))+metric('本月预计工资',money(cur.totalSalary||0))+metric('工资状态',cur.status||'统计中')+'</section><section class="cs-table-wrap" style="margin-top:14px"><h3 style="margin:0 0 10px">本月打卡（工资计算依据）</h3><table class="cs-table"><thead><tr><th>日期</th><th>上班</th><th>下班</th><th>工时</th><th>迟到</th><th>缺勤</th><th>状态</th></tr></thead><tbody>'+(attRows.length?attRows.map(function(r){return '<tr><td>'+esc(r.reportDate||r.date||'-')+'</td><td>'+esc(r.clockInText||'-')+'</td><td>'+esc(r.clockOutText||'-')+'</td><td>'+esc(r.workHours!=null?r.workHours:'-')+'</td><td>'+esc(r.isLate?'是':'否')+'</td><td>'+esc(r.isAbsent?'是':'否')+'</td><td>'+esc(r.attendanceStatus||'-')+'</td></tr>'}).join(''):'<tr><td colspan="7">暂无打卡记录</td></tr>')+'</tbody></table></section>'+rewardBlock+payrollBlock+'<section class="cs-table-wrap" style="margin-top:14px"><table class="cs-table"><thead><tr><th>月份</th><th>基础工资</th><th>全勤奖励</th><th>接待奖励</th><th>订单提成</th><th>扣款合计</th><th>预计工资</th><th>状态</th></tr></thead><tbody>'+(history.length?history.map(function(r){var deductions=(Number(r.lateDeduction||0)+Number(r.absenceDeduction||0)+Number(r.earlyLeaveDeduction||0));return '<tr><td>'+esc(r.salaryMonth||'-')+'</td><td>'+money(r.baseSalary||0)+'</td><td>'+money(r.attendanceBonus||0)+'</td><td>'+money(r.receptionBonus||0)+'</td><td>'+money(r.orderCommission||0)+'</td><td>'+money(deductions)+'</td><td>'+money(r.totalSalary||0)+'</td><td>'+esc(r.status||'统计中')+'</td></tr>'}).join(''):'<tr><td colspan="8">暂无工资记录</td></tr>')+'</tbody></table></section>'}
   function reportStatus(s){return ({pending:'待审核',approved:'已批准',rejected:'已拒绝',paid:'已支付',completed:'已发放'})[s]||s||'-'}
   function profileHtml(){var s=(state.data&&state.data.staff)||state.session.user||{},work=(state.data&&state.data.workData)||{},cfg=work.config||{},att=work.attendance||{},sum=(state.data&&state.data.summary)||{},csName=String(s.name||s.displayName||'').trim()||'客服',avatar='<div class="cs-avatar" style="width:64px;height:64px;display:grid;place-items:center">'+esc(csName.slice(0,1))+'</div>';return '<section class="cs-card"><h2>我的资料</h2><div class="cs-user-card">'+avatar+'<div><strong>'+esc(csName)+'</strong><div style="color:#9ca3af;margin-top:4px">'+esc(cfg.shiftName||'默认班次')+'</div></div></div><div class="cs-info-list"><div><span>当前班次</span><strong>'+esc((cfg.shiftStart||'09:00')+' - '+(cfg.shiftEnd||'18:00'))+'</strong></div><div><span>入职日期</span><strong>'+esc(cfg.joinDate||'-')+'</strong></div><div><span>在线状态</span><strong>'+esc(sum.currentReceptions>0?'接待中':'在线')+'</strong></div><div><span>今日打卡状态</span><strong>'+esc((work.todayAttendance&&work.todayAttendance.attendanceStatus)||'未打卡')+'</strong></div><div><span>本月出勤</span><strong>'+esc((att.actualDays||0)+' / '+(att.standardDays||0))+'</strong></div><div><span>本月预计工资</span><strong>'+money(sum.estimatedSalary||0)+'</strong></div><div><span>历史工资记录</span><strong>'+esc((work.salary&&work.salary.history&&work.salary.history.length)||0)+' 条</strong></div></div></section>'}
-  function sendChatImage(url){
-    if(!url||!state.activeConversation)return Promise.resolve();
+  function sendChatImage(payload){
+    var up=typeof payload==='string'?{url:payload}:(payload||{});
+    var displayUrl=String(up.url||up.imageUrl||up.image_url||'').trim();
+    var durable=String(up.storageRef||up.storage_ref||up.url||'').trim();
+    if(!durable||!state.activeConversation)return Promise.resolve();
     var conv=activeConversation();
     if(!composerCanReply(conv)){
       toast(composerBlockReason(conv)||'当前无法发送消息');
       return Promise.resolve();
     }
     var localId='local-img-'+Date.now();
+    var preview=displayUrl||durable;
     var optimistic={
       id:localId,_localId:localId,_pending:true,
       conversationId:state.activeConversation,
       senderId:myServiceId()||'',
       senderRole:'customer_service',senderName:myServiceName()||'客服',
-      messageType:'image',content:url,createdAt:new Date().toISOString()
+      messageType:'image',content:preview,imageUrl:preview,storageRef:up.storageRef||'',createdAt:new Date().toISOString()
     };
     if(!state.data)state.data=emptyDashboardData();
     if(!state.data.messages)state.data.messages=[];
@@ -2960,7 +2972,7 @@
       box.insertAdjacentHTML('beforeend',messageHtml(optimistic));
       try{box.scrollTop=box.scrollHeight;}catch(e){}
     }
-    return api('send_message',{conversation_id:state.activeConversation,content:url,message_type:'image'}).then(function(res){
+    return api('send_message',{conversation_id:state.activeConversation,content:durable,message_type:'image',image_url:displayUrl||durable}).then(function(res){
       if(res&&res.messageRow){
         state.data.messages=(state.data.messages||[]).filter(function(m){return m.id!==localId&&m._localId!==localId;});
         if(!state.data.messages.some(function(m){return m.id===res.messageRow.id;})){
@@ -2973,15 +2985,13 @@
       }
       return softRefresh();
     }).catch(function(err){
-      state.data.messages=(state.data.messages||[]).map(function(m){
-        if(m.id!==localId&&m._localId!==localId)return m;
-        return Object.assign({},m,{_pending:false,_failed:true});
-      });
+      // Do not leave a blank/orphan image message on failure.
+      state.data.messages=(state.data.messages||[]).filter(function(m){return m.id!==localId&&m._localId!==localId;});
       if(box){
-        var old=box.querySelector('[data-msg-id="'+localId+'"]');
-        if(old)old.outerHTML=messageHtml(Object.assign({},optimistic,{_pending:false,_failed:true}));
+        var oldFail=box.querySelector('[data-msg-id="'+localId+'"]');
+        if(oldFail)oldFail.remove();
       }
-      toast(err.message||'图片发送失败');
+      toast('图片发送失败，请重试');
     });
   }
   function sendChatMessage(){
@@ -3223,8 +3233,8 @@
         conversationId:String(state.activeConversation||''),
         multiple:true,
         onStatus:function(t){if(statusEl)statusEl.textContent=t||'';},
-        onError:function(err){toast((err&&err.message)||'发送失败');},
-        onUploaded:function(url){return sendChatImage(url);}
+        onError:function(){toast('图片发送失败，请重试');},
+        onUploaded:function(url,up){return sendChatImage(up||{url:url});}
       }).then(function(){if(statusEl)setTimeout(function(){statusEl.textContent='';},1500);});
       return;
     }

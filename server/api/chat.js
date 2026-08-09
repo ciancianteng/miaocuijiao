@@ -3,6 +3,7 @@ import path from "node:path";
 import { assertBossProfile, identityView } from "./_boss-identity.js";
 import {
   decorateChatMessage,
+  decorateChatMessageSigned,
   messagePreviewText,
   normalizeImageUrl,
   persistImageMessage,
@@ -392,14 +393,16 @@ async function loadMessages(conversationId) {
     ).catch(() => []);
     profileMap = Object.fromEntries((profiles || []).map((p) => [p.id, p]));
   }
-  return list.map((row) => {
-    const sender = profileMap[row.sender_id] || {};
-    let senderName = "";
-    if (row.sender_role === "customer_service") senderName = staffDisplayName(sender);
-    else if (row.sender_role === "boss") senderName = String(sender.display_name || "").trim() || "老板";
-    else if (row.sender_role === "companion") senderName = String(sender.display_name || "").trim() || "陪玩";
-    return decorateChatMessage(row, { senderName });
-  });
+  return Promise.all(
+    list.map(async (row) => {
+      const sender = profileMap[row.sender_id] || {};
+      let senderName = "";
+      if (row.sender_role === "customer_service") senderName = staffDisplayName(sender);
+      else if (row.sender_role === "boss") senderName = String(sender.display_name || "").trim() || "老板";
+      else if (row.sender_role === "companion") senderName = String(sender.display_name || "").trim() || "陪玩";
+      return decorateChatMessageSigned(row, { senderName });
+    })
+  );
 }
 
 async function decorateConversationPayload(conversation, presence) {
@@ -853,7 +856,7 @@ export default async function handler(req, res) {
       }),
     }).catch(() => {});
 
-    const message = decorateChatMessage(row || {}, {
+    const message = await decorateChatMessageSigned(row || {}, {
       conversationId: conversation.id,
       senderId: profile.id,
       senderRole: "boss",

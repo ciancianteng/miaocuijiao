@@ -1,3 +1,6 @@
+import './mcj-chat-media.js';
+import './mcj-chat-realtime.js';
+
 (function () {
   var root = document.getElementById("supportApp");
   if (!root) return;
@@ -603,7 +606,11 @@
     var Media = window.MCJChatMedia;
     var isImg = Media && Media.isImageMessage(m);
     var bodyHtml = isImg
-      ? Media.imageBubbleHtml(Media.imageUrlOf(m), esc, { createdAt: m.created_at || m.createdAt })
+      ? Media.imageBubbleHtml(Media.imageUrlOf(m), esc, {
+          createdAt: m.created_at || m.createdAt,
+          storageRef: m.storageRef || m.storage_ref || "",
+          conversationId: (state.conversation && state.conversation.id) || m.conversation_id || m.conversationId || "",
+        })
       : "<p>" + esc(m.content || "") + "</p>";
     return (
       '<div class="support-msg ' +
@@ -1139,7 +1146,7 @@
       '<form class="support-composer" data-send>' +
       '<div class="support-composer-tools mcj-composer-tools">' +
       '<button class="support-tool-btn mcj-composer-tool" type="button" data-toggle-emoji aria-label="表情">😊</button>' +
-      '<button class="support-tool-btn mcj-composer-tool" type="button" data-chat-image-btn aria-label="图片">🖼</button>' +
+      '<button class="support-tool-btn mcj-composer-tool mcj-composer-tool-img" type="button" data-chat-image-btn aria-label="图片/相册" title="图片/相册">图片</button>' +
       '</div>' +
       '<textarea name="content" rows="1" enterkeyhint="send" placeholder="输入消息，Enter 发送，Shift+Enter 换行" autocomplete="off" maxlength="2000">' +
       esc(state.composerDraft || '') +
@@ -1523,11 +1530,11 @@
         onStatus: function (t) {
           if (statusEl) statusEl.textContent = t || '';
         },
-        onError: function (err) {
-          toast((err && err.message) || '发送失败');
+        onError: function () {
+          toast('图片发送失败，请重试');
         },
-        onUploaded: function (url) {
-          return sendImageMessage(url);
+        onUploaded: function (url, up) {
+          return sendImageMessage(up || { url: url });
         },
       }).then(function () {
         if (statusEl) setTimeout(function () { statusEl.textContent = ''; }, 1500);
@@ -1604,33 +1611,40 @@
     }
   });
 
-  function sendImageMessage(url) {
-    if (!url || !state.conversation || !state.conversation.id) return Promise.resolve();
+  function sendImageMessage(payload) {
+    var up = typeof payload === 'string' ? { url: payload } : (payload || {});
+    var displayUrl = String(up.url || up.imageUrl || up.image_url || '').trim();
+    var durable = String(up.storageRef || up.storage_ref || up.url || '').trim();
+    if (!durable || !state.conversation || !state.conversation.id) return Promise.resolve();
     var localId = 'local-img-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+    var preview = displayUrl || durable;
     var optimistic = {
       _localId: localId,
       _pending: true,
       id: localId,
       sender_role: 'boss',
       message_type: 'image',
-      content: url,
+      content: preview,
+      imageUrl: preview,
+      image_url: preview,
+      storageRef: up.storageRef || '',
       created_at: new Date().toISOString(),
       sender_name: '我',
     };
     state.messages = state.messages.concat([optimistic]);
     if (!patchMessages({ keepScroll: false })) softUpdate({ keepScroll: false });
-    var payload = {
+    var payloadBody = {
       action: 'send',
-      content: url,
+      content: durable,
       message_type: 'image',
       conversation_id: state.conversation.id,
     };
     var oid = orderId() || state.conversation.order_id || state.conversation.orderId || '';
-    if (oid) payload.order_id = oid;
+    if (oid) payloadBody.order_id = oid;
     return fetchJson('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(payloadBody),
       _mcjTimeoutMs: 12000,
     })
       .then(function (body) {
@@ -1643,13 +1657,12 @@
         }
         if (!patchMessages({ keepScroll: false })) softUpdate({ keepScroll: false });
       })
-      .catch(function (err) {
-        state.messages = state.messages.map(function (m) {
-          if (m._localId !== localId) return m;
-          return Object.assign({}, m, { _pending: false, _failed: true });
+      .catch(function () {
+        state.messages = state.messages.filter(function (m) {
+          return m._localId !== localId;
         });
         if (!patchMessages({ keepScroll: true })) softUpdate({ keepScroll: true });
-        toast(err.message || '图片发送失败，可点击重试');
+        toast('图片发送失败，请重试');
       });
   }
 
@@ -1770,7 +1783,10 @@
     var Media = window.MCJChatMedia;
     if (failed.message_type === 'image' || (Media && Media.isImageMessage(failed))) {
       softUpdate({ keepScroll: true });
-      sendImageMessage(Media ? Media.imageUrlOf(failed) : failed.content);
+      sendImageMessage({
+        url: Media ? Media.imageUrlOf(failed) : failed.content,
+        storageRef: (Media && Media.storageRefOf && Media.storageRefOf(failed)) || failed.storageRef || '',
+      });
       return;
     }
     state.composerDraft = failed.content;

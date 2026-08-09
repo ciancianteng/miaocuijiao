@@ -42,6 +42,7 @@ import {
 } from "./_cs-session-lock.js";
 import {
   decorateChatMessage,
+  decorateChatMessageSigned,
   messagePreviewText,
   normalizeImageUrl,
   persistImageMessage,
@@ -483,6 +484,18 @@ function safeMessage(row, profiles = {}) {
     senderName = String(sender.display_name || "").trim() || "陪玩";
   }
   return decorateChatMessage(row, { senderName });
+}
+async function safeMessageSigned(row, profiles = {}) {
+  const sender = profiles[row.sender_id] || {};
+  let senderName = "";
+  if (row.sender_role === "customer_service") {
+    senderName = csDisplayName(sender);
+  } else if (row.sender_role === "boss") {
+    senderName = bossForCs(sender).bossName;
+  } else if (row.sender_role === "companion") {
+    senderName = String(sender.display_name || "").trim() || "陪玩";
+  }
+  return decorateChatMessageSigned(row, { senderName });
 }
 function unreadRolesForConversation(conversation) {
   const isCompanionSupport =
@@ -1271,11 +1284,12 @@ async function loadBootstrap(serviceProfile) {
     settlementStatus: r.settlementStatus || r.status,
     settledAt: r.settledAt || "",
   }));
+  const messages = await Promise.all((messagesRaw || []).map((row) => safeMessageSigned(row, profiles)));
   return {
     staff: safeProfile(serviceProfile),
     summary,
     conversations: conversationsWithLock,
-    messages: messagesRaw.map((row) => safeMessage(row, profiles)),
+    messages,
     orders,
     bosses,
     companions,
@@ -2453,10 +2467,11 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       const profiles = await profileMap(ids.concat([existing.boss_id, existing.companion_id, existing.customer_service_id]));
       const other = existing.customer_service_id ? profiles[existing.customer_service_id] || (await profileById(existing.customer_service_id)) : null;
       const lockedByOther = !!lockBanner;
+      const messages = await Promise.all((rows || []).map((row) => safeMessageSigned(row, profiles)));
       return json(res, 200, {
         ok: true,
         conversationId: id,
-        messages: (rows || []).map((row) => safeMessage(row, profiles)),
+        messages,
         locked: lockedByOther,
         lockedByOther,
         lockBanner: lockBanner || "",
@@ -2589,10 +2604,12 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
           _unreadRoles: unreadRoles,
         };
       });
-      const messages = (msgRows || [])
-        .slice()
-        .sort((a, b) => String(a.created_at || "").localeCompare(String(b.created_at || "")))
-        .map((row) => safeMessage(row, profiles));
+      const messages = await Promise.all(
+        (msgRows || [])
+          .slice()
+          .sort((a, b) => String(a.created_at || "").localeCompare(String(b.created_at || "")))
+          .map((row) => safeMessageSigned(row, profiles))
+      );
       // Light unread recount for listed conversations using last_read_at + recent messages sample.
       const byConv = messages.reduce((m, msg) => {
         (m[msg.conversationId] = m[msg.conversationId] || []).push(msg);
@@ -2719,7 +2736,7 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       const msg = await addMessage(conversation, service.profile.id, "customer_service", content, messageType);
       await touchConversationActive({ restUrl, supabaseJson, serviceHeaders }, conversation.id);
       const messageRow = msg
-        ? Object.assign({}, safeMessage(msg, { [service.profile.id]: service.profile }), {
+        ? Object.assign({}, await safeMessageSigned(msg, { [service.profile.id]: service.profile }), {
             senderName: String(service.profile.display_name || "").trim() || "客服",
           })
         : null;

@@ -68,7 +68,8 @@ export function isMissingImageUrlColumnError(err) {
 
 /**
  * Decorate a DB message row for API clients.
- * Always expose imageUrl (bare https) for image messages; never leak blob/data.
+ * Image content may be a durable storageRef (chat-images-private:path) or https URL.
+ * Prefer decorateChatMessageSigned when returning to browsers so imageUrl is viewable.
  */
 export function decorateChatMessage(row = {}, extras = {}) {
   const contentRaw = String(row.content || "");
@@ -84,6 +85,12 @@ export function decorateChatMessage(row = {}, extras = {}) {
     ? "image"
     : String(row.message_type || row.messageType || extras.messageType || "text");
   const content = isImage ? imageUrl || stripImageTag(contentRaw) : contentRaw;
+  const storageRef =
+    isImage && (/^chat-images-private:/i.test(contentRaw) || /^conv\//i.test(contentRaw.trim()))
+      ? normalizeImageUrl(contentRaw)
+      : isImage && /^chat-images-private:/i.test(String(imageUrl || ""))
+        ? imageUrl
+        : "";
   return {
     id: row.id || "",
     conversation_id: row.conversation_id || extras.conversationId || "",
@@ -97,6 +104,7 @@ export function decorateChatMessage(row = {}, extras = {}) {
     content,
     image_url: isImage ? imageUrl : "",
     imageUrl: isImage ? imageUrl : "",
+    storageRef: storageRef || "",
     order_id: row.order_id || extras.orderId || null,
     orderId: row.order_id || extras.orderId || "",
     created_at: row.created_at || extras.createdAt || "",
@@ -106,6 +114,44 @@ export function decorateChatMessage(row = {}, extras = {}) {
     sender_name: extras.senderName || row.sender_name || "",
     senderName: extras.senderName || row.sender_name || "",
   };
+}
+
+/** Sign private chat image refs so clients get a short-lived https URL. */
+export async function decorateChatMessageSigned(row = {}, extras = {}) {
+  const base = decorateChatMessage(row, extras);
+  if (base.messageType !== "image" && base.message_type !== "image") return base;
+  const raw = base.storageRef || base.imageUrl || base.content || "";
+  if (!raw) return base;
+  try {
+    const { signChatMediaUrl, parseChatStorageRef } = await import("./_chat-media.js");
+    const signed = await signChatMediaUrl(base.storageRef || raw);
+    const parsed = parseChatStorageRef(base.storageRef || row.content || row.image_url || raw);
+    const storageRef =
+      parsed?.bucket === "chat-images-private"
+        ? `chat-images-private:${parsed.path}`
+        : base.storageRef || "";
+    if (signed && /^https?:\/\//i.test(signed)) {
+      return {
+        ...base,
+        content: signed,
+        image_url: signed,
+        imageUrl: signed,
+        storageRef: storageRef || base.storageRef || "",
+      };
+    }
+  } catch {
+    /* keep undecorated */
+  }
+  return base;
+}
+
+export async function decorateChatMessagesSigned(rows = [], extrasFn) {
+  const list = Array.isArray(rows) ? rows : [];
+  return Promise.all(
+    list.map((row) =>
+      decorateChatMessageSigned(row, typeof extrasFn === "function" ? extrasFn(row) || {} : extrasFn || {})
+    )
+  );
 }
 
 export function messagePreviewText(rowOrContent, messageType) {
@@ -181,17 +227,18 @@ export function messagePreviewText(rowOrContent, messageType) {
 }
 
 /**
- * Persist one image message: single Storage URL in content (+ image_url when column exists).
+ * Persist one image message: prefer durable storageRef in content (+ image_url when column exists).
  * Falls back to __IMG__: tag when message_type enum lacks "image".
  * @param {(payload: object) => Promise<any>} insertFn
  * @param {object} basePayload fields besides message_type/content/image_url
- * @param {string} url public https Storage URL
+ * @param {string} url storageRef (chat-images-private:path) or https URL
  */
 export async function persistImageMessage(insertFn, basePayload, url) {
   const imageUrl = normalizeImageUrl(url);
   if (!imageUrl) {
     throw Object.assign(new Error("图片消息内容无效"), { status: 400 });
   }
+  // Prefer durable private ref in content; signed https is re-issued on read.
   const attempts = [
     { ...basePayload, message_type: "image", content: imageUrl, image_url: imageUrl },
     { ...basePayload, message_type: "image", content: imageUrl },
