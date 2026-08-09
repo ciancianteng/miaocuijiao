@@ -475,7 +475,11 @@ async function writePngFixture(name, b64) {
         await fileChooser.setFiles(pngPath);
         await csPage.waitForTimeout(6000);
         const hasImg = await csPage.locator(".cs-chat-messages .mcj-chat-img, .cs-chat-messages [data-chat-image]").count();
-        step("ui_cs_image_send_visible", hasImg > 0, `thumbs=${hasImg}`);
+        const decoded = await csPage.evaluate(() => {
+          const imgs = [...document.querySelectorAll(".cs-chat-messages img.mcj-chat-img")];
+          return imgs.filter((i) => i.naturalWidth >= 32 && !/default-avatar/.test(i.currentSrc || "")).length;
+        });
+        step("ui_cs_image_send_visible", hasImg > 0 && decoded > 0, `thumbs=${hasImg} decoded=${decoded}`);
         await shot(csPage, "cs-after-image-send");
       } else {
         step("ui_cs_image_send_visible", false, "filechooser not opened");
@@ -540,7 +544,11 @@ async function writePngFixture(name, b64) {
     const bossBtn = bossPage.locator("[data-chat-image-btn]");
     step("ui_boss_image_button", (await bossBtn.count()) > 0, "图片按钮");
     const bossImgs = await bossPage.locator(".mcj-chat-img, [data-chat-image]").count();
-    step("ui_boss_sees_history_images", bossImgs >= 1, `imgs=${bossImgs}`);
+    const bossDecoded = await bossPage.evaluate(() => {
+      const imgs = [...document.querySelectorAll("img.mcj-chat-img")];
+      return imgs.filter((i) => i.naturalWidth >= 32 && !/default-avatar/.test(i.currentSrc || "")).length;
+    });
+    step("ui_boss_sees_history_images", bossImgs >= 1 && bossDecoded >= 1, `imgs=${bossImgs} decoded=${bossDecoded}`);
     await shot(bossPage, "boss-support-chat");
     await bossCtx.close();
 
