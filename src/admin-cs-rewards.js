@@ -251,7 +251,7 @@
       '<section class="cs-reward-records" data-cs-reward-records>' +
       '<header class="cs-reward-records-head"><div><h3>客服奖励记录</h3><p>每条记录绑定唯一订单；同一订单不可重复结算。</p></div></header>' +
       '<div class="cs-reward-toolbar" role="search" aria-label="客服奖励筛选">' +
-      '<select data-cs-reward-filter-status><option value="">全部状态</option>' +
+      '<select data-cs-reward-filter-status data-admin-control="native"><option value="">全部状态</option>' +
       '<option value="settled"' +
       (state.filterStatus === "settled" ? " selected" : "") +
       ">已结算</option>" +

@@ -358,6 +358,9 @@
     selects.forEach(function (select) {
       if (!select || select.dataset.adminEnhanced === "1") return;
       if (select.closest(".admin-select") && select.dataset.adminEnhanced === "1") return;
+      // Keep filter/search toolbars on native controls so enhanced selects cannot break row flow.
+      if (select.getAttribute("data-admin-control") === "native") return;
+      if (select.closest(".cs-reward-toolbar, .service-record-toolbar, [role='search']")) return;
       // Only enhance inside admin surfaces
       if (!select.closest(".admin-shell, #adminModal, .admin-content, body[data-allowed-roles]")) return;
       try {

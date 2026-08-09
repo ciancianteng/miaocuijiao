@@ -1861,7 +1861,7 @@ body[data-admin-section="service-reports"] #section-service-reports > .panel{
 }
 .cs-reward-records{
   display:grid;
-  gap:12px;
+  gap:16px;
   min-width:0;
   max-width:100%;
   position:relative;
@@ -1897,7 +1897,8 @@ body[data-admin-section="service-reports"] #section-service-reports > .panel{
   box-sizing:border-box;
 }
 .cs-reward-toolbar select,
-.cs-reward-toolbar input{
+.cs-reward-toolbar input,
+.cs-reward-toolbar .admin-select{
   height:36px;
   min-width:140px;
   flex:1 1 180px;
@@ -1910,6 +1911,17 @@ body[data-admin-section="service-reports"] #section-service-reports > .panel{
   font-size:12px;
   outline:none;
   box-sizing:border-box;
+}
+.cs-reward-toolbar .admin-select{
+  display:flex;
+  align-items:stretch;
+  padding:0;
+  height:auto;
+  min-height:36px;
+}
+.cs-reward-toolbar .admin-select-trigger{
+  width:100%;
+  min-height:36px;
 }
 .cs-reward-toolbar .mini-btn{
   height:36px;
