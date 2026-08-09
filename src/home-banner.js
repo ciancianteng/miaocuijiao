@@ -274,20 +274,28 @@
     return data.desktopImage;
   }
 
+  function isCustomCrop(crop) {
+    var c = normalizeCrop(crop || {});
+    return Math.abs(c.zoom - 1) > 0.02 || Math.abs(c.x) > 0.01 || Math.abs(c.y) > 0.01;
+  }
+
   function cropFor(data, device) {
+    var desktop = data.crop || normalizeCrop({});
     if (device === "mobile") {
-      if (data.hasDedicatedMobile) return data.mobileCrop || normalizeCrop({}, { ratioW: 1080, ratioH: 1350 });
-      /* Fallback: auto-crop desktop landscape into mobile strip (prefer center / slight top bias) */
-      var base = data.crop || normalizeCrop({});
+      var mobile = data.mobileCrop || normalizeCrop({}, { ratioW: 1080, ratioH: 1350 });
+      // Dedicated mobile image may exist, but unless mobileCrop was explicitly customized,
+      // reuse the same admin framing (zoom/x/y) with responsive container sizing.
+      var useMobile = data.hasDedicatedMobile && isCustomCrop(mobile);
+      var src = useMobile ? mobile : desktop;
       return {
-        zoom: Math.max(1, Number(base.zoom) || 1),
-        x: Number(base.x) || 0,
-        y: Number.isFinite(Number(base.y)) ? Number(base.y) : -0.08,
+        zoom: Math.max(1, Number(src.zoom) || 1),
+        x: Number(src.x) || 0,
+        y: Number.isFinite(Number(src.y)) ? Number(src.y) : 0,
         ratioW: 1080,
         ratioH: 1350,
       };
     }
-    return data.crop || normalizeCrop({});
+    return desktop;
   }
 
   function applyVars(root, data, device) {

@@ -549,6 +549,7 @@
       .then(function (dataUrl) {
         var editingId = state.editingId;
         var crop = cropPayload();
+        var mobileCrop = Object.assign({}, crop, { ratioW: 1080, ratioH: 1350, ratio: "1080:1350" });
         if (editingId) {
           var card = document.querySelector('[data-banner-id="' + editingId + '"]');
           var titleInput = card && card.querySelector('[data-banner-title="' + editingId + '"]');
@@ -566,6 +567,9 @@
             is_active: true,
             crop: crop,
             crop_meta: crop,
+            mobileCrop: mobileCrop,
+            mobile_crop: mobileCrop,
+            mobile_crop_meta: mobileCrop,
           };
           if (dataUrl) body.image_data = dataUrl;
           return apiPost(body);
@@ -579,6 +583,9 @@
           is_active: true,
           crop: crop,
           crop_meta: crop,
+          mobileCrop: mobileCrop,
+          mobile_crop: mobileCrop,
+          mobile_crop_meta: mobileCrop,
         });
       })
       .then(function (res) {
