@@ -129,7 +129,7 @@ async function shot(page, name) {
   }
   step("completed", st === "completed", `status=${st}`);
 
-  // Refunded/cancelled must not accept reviews (guard probe with a cancelled-like check via wrong status message on fake)
+  // Invalid / cancelled orders must not create a normal completion review
   const refundProbe = await api("/api/orders", bossT, {
     action: "submit_review",
     id: "00000000-0000-0000-0000-000000000000",
@@ -137,6 +137,40 @@ async function shot(page, name) {
     content: "should-fail",
   });
   step("invalid_order_blocked", !refundProbe.ok || /不存在|不能评价|已完成/.test(String(refundProbe.json?.message || "")), refundProbe.json?.message || "");
+
+  const cancelPlace = await api("/api/orders", bossT, {
+    action: "place_order",
+    companionId: testComp?.id || companionId,
+    companionName: testComp?.name || "E2E陪玩",
+    serviceType: "VALORANT",
+    service: "VALORANT",
+    game: "VALORANT",
+    unitPrice: unit,
+    hours: 1,
+    quantity: 1,
+    totalAmount: unit,
+    gameId: `PUB-REVIEW-CANCEL-${stamp}`,
+    paymentMethod: "tng",
+    notes: `public-review-cancel ${stamp}`,
+    idempotencyKey: `pub-review-cancel-${stamp}`,
+  });
+  const cancelOrderId = cancelPlace.json?.order?.id || "";
+  if (cancelOrderId) {
+    await api("/api/orders", bossT, { action: "cancel_order", id: cancelOrderId });
+    const cancelReview = await api("/api/orders", bossT, {
+      action: "submit_review",
+      id: cancelOrderId,
+      rating: 5,
+      content: `should-not-review-cancelled ${stamp}`,
+    });
+    step(
+      "cancelled_order_review_blocked",
+      !cancelReview.ok || /取消|退款|不能评价|已完成/.test(String(cancelReview.json?.message || "")),
+      cancelReview.json?.message || `status=${cancelReview.status}`
+    );
+  } else {
+    step("cancelled_order_review_blocked", false, "failed to place cancel probe order");
+  }
 
   const review = await api("/api/orders", bossT, {
     action: "submit_review",
@@ -187,6 +221,22 @@ async function shot(page, name) {
     (Array.isArray(playerReviews) ? playerReviews : []).some((r) => String(r.content || "").includes(String(stamp))) || adminHit;
   step("admin_player_or_reviews", adminPlayerHit, `playerReviews=${Array.isArray(playerReviews) ? playerReviews.length : 0}`);
 
+  async function waitForPublicReviewStamp(page, expectedStamp) {
+    await page.waitForSelector("#realReviewList", { timeout: 20000 }).catch(() => null);
+    await page
+      .waitForFunction(
+        (s) => {
+          const el = document.querySelector("#realReviewList");
+          return !!(el && String(el.textContent || "").includes(String(s)));
+        },
+        expectedStamp,
+        { timeout: 20000 }
+      )
+      .catch(() => null);
+    const text = await page.locator("#realReviewList").innerText().catch(() => "");
+    return String(text || "");
+  }
+
   const browser = await chromium.launch({
     executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH || "/usr/bin/google-chrome-stable",
     headless: true,
@@ -198,24 +248,38 @@ async function shot(page, name) {
     waitUntil: "domcontentloaded",
     timeout: 60000,
   });
-  await page.waitForTimeout(3500);
-  const bodyText = await page.locator("#realReviewList, .real-review-wall").innerText().catch(() => "");
+  const bodyText = await waitForPublicReviewStamp(page, stamp);
   const uiHit = bodyText.includes(String(stamp)) || bodyText.includes("公开资料评价同步E2E");
   step("public_profile_bottom_reviews", uiHit, bodyText.replace(/\s+/g, " ").slice(0, 220));
   await shot(page, "01-public-profile-reviews");
 
-  // Hall entry uses same id
+  // Hall entry uses same id → same review wall data source
   await page.goto(`${BASE}/companion-center.html?cb=${stamp}`, { waitUntil: "domcontentloaded", timeout: 60000 });
-  await page.waitForTimeout(2500);
+  await page.waitForSelector(`[data-companion-id="${testComp?.id || companionId}"]`, { timeout: 15000 }).catch(() => null);
   const hallLink = page.locator(`[data-companion-id="${testComp?.id || companionId}"] a.companion-card-action`).first();
   if (await hallLink.count()) {
-    await hallLink.click();
-    await page.waitForTimeout(3500);
-    const hallBody = await page.locator("#realReviewList, .real-review-wall").innerText().catch(() => "");
+    await Promise.all([
+      page.waitForURL(/profile\.html/, { timeout: 20000 }).catch(() => null),
+      hallLink.click(),
+    ]);
+    const hallBody = await waitForPublicReviewStamp(page, stamp);
     step("hall_to_profile_same_reviews", hallBody.includes(String(stamp)), hallBody.replace(/\s+/g, " ").slice(0, 180));
     await shot(page, "02-hall-profile-reviews");
   } else {
-    step("hall_to_profile_same_reviews", true, "card not on first page; api already verified");
+    // Fallback: same public profile URL the hall card would open
+    await page.goto(`${BASE}/profile.html?id=${encodeURIComponent(testComp?.id || companionId)}&from=hall&cb=${stamp}`, {
+      waitUntil: "domcontentloaded",
+      timeout: 60000,
+    });
+    const hallBody = await waitForPublicReviewStamp(page, stamp);
+    step(
+      "hall_to_profile_same_reviews",
+      hallBody.includes(String(stamp)),
+      hallBody.includes(String(stamp))
+        ? "card not on first page; direct profile id entry shows same review"
+        : hallBody.replace(/\s+/g, " ").slice(0, 180)
+    );
+    await shot(page, "02-hall-profile-reviews");
   }
 
   await browser.close();
