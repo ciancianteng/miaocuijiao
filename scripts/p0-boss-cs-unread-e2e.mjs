@@ -341,7 +341,6 @@ async function ensurePair(bossTok, csTok) {
       args: ["--no-sandbox", "--disable-dev-shm-usage"],
     });
     const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
-    // Ensure unread exists for UI badge assertion
     await api("/api/chat", bossTok, { action: "mark_read", conversation_id: convA });
     if (convB) await api("/api/chat", bossTok, { action: "mark_read", conversation_id: convB });
     await csSendText(csTok, convA, `${marker}-ui-1`);
@@ -349,41 +348,37 @@ async function ensurePair(bossTok, csTok) {
     if (convB) await csSendText(csTok, convB, `${marker}-ui-b`);
     await sleep(800);
 
-    await page.goto(`${BASE}/login.html?t=${Date.now()}`, { waitUntil: "domcontentloaded", timeout: 90000 });
-    await page.waitForTimeout(600);
-    const emailSel = 'input[type=email],input[name=email],input[name=account],#email';
-    const passSel = 'input[type=password],input[name=password],#password';
-    if (await page.locator(emailSel).count()) {
-      await page.fill(emailSel, BOSS_EMAIL);
-      await page.fill(passSel, PASS);
-      await page.click('button[type=submit],button:has-text("登录")');
-      await page.waitForTimeout(2500);
-    }
-    // Fallback: seed session mirrors used by boss support gate
+    await page.goto(`${BASE}/support.html?t=${Date.now()}`, { waitUntil: "domcontentloaded", timeout: 90000 });
     await page.evaluate(
-      ({ token, email }) => {
-        localStorage.setItem("mcjAuthAccessToken", token);
-        sessionStorage.setItem("mcjAuthAccessToken", token);
-        localStorage.setItem("mcjRole", "boss");
-        sessionStorage.setItem("mcjRole", "boss");
-        sessionStorage.setItem(
-          "customerUser",
-          JSON.stringify({ role: "boss", email, displayName: "E2E Boss" })
-        );
-        localStorage.setItem(
-          "customerUser",
-          JSON.stringify({ role: "boss", email, displayName: "E2E Boss" })
-        );
+      async ({ email, pass, base }) => {
+        const res = await fetch(`${base}/api/auth`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "login", email, password: pass, role: "boss" }),
+        });
+        const body = await res.json();
+        const session = body.session || {};
+        const token = session.accessToken || session.token || body.token || "";
+        const refresh = session.refreshToken || session.refresh_token || "";
+        const expiresAt = session.expiresAt || session.expires_at || "";
+        const user = body.user || session.user || { email, role: "boss" };
+        [localStorage, sessionStorage].forEach((store) => {
+          try {
+            if (token) store.setItem("mcjAuthAccessToken", token);
+            if (refresh) store.setItem("mcjAuthRefreshToken", refresh);
+            if (expiresAt) store.setItem("mcjAuthExpiresAt", String(expiresAt));
+            store.setItem("mcjRole", "boss");
+            store.setItem("customerAuthToken", token);
+            store.setItem("customerUser", JSON.stringify(user));
+            store.setItem("mcjCurrentUser", JSON.stringify(user));
+            store.setItem("mcjBossSession", JSON.stringify(session));
+            store.setItem("mcjCustomerSession", JSON.stringify(session));
+          } catch (_) {}
+        });
       },
-      { token: bossTok, email: BOSS_EMAIL }
+      { email: BOSS_EMAIL, pass: PASS, base: BASE }
     );
     await page.goto(`${BASE}/support.html?t=${Date.now()}`, { waitUntil: "domcontentloaded", timeout: 90000 });
-    await page.waitForSelector(".support-session, .support-login-panel, .support-empty-list", { timeout: 60000 });
-    // If still on login panel, click login is not enough — reload with seeded token
-    if (await page.locator(".support-login-panel").count()) {
-      await page.reload({ waitUntil: "domcontentloaded" });
-      await page.waitForTimeout(1500);
-    }
     await page.waitForSelector(".support-session, .support-empty-list", { timeout: 60000 });
     await sleep(2000);
     const badgeCount = await page.locator(".support-session .support-unread").count();
