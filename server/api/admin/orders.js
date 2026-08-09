@@ -339,7 +339,40 @@ export default async function handler(req, res) {
           m[p.id] = p;
           return m;
         }, {});
-        return json(res, 200, { ok: true, configured: true, order: safeOrder(order, map) });
+        const reviewRows = await supabaseJson(
+          restUrl(
+            "companion_reviews",
+            `?order_id=eq.${encodeURIComponent(id)}&select=id,order_id,boss_id,companion_id,rating,content,status,created_at&order=created_at.desc&limit=5`
+          ),
+          { headers: serviceHeaders() }
+        ).catch(() => []);
+        const reviews = (Array.isArray(reviewRows) ? reviewRows : []).map((r) => ({
+          id: r.id,
+          orderId: r.order_id || id,
+          bossId: r.boss_id || "",
+          companionId: r.companion_id || "",
+          rating: Number(r.rating) || 0,
+          content: r.content || "",
+          status: r.status || "published",
+          createdAt: r.created_at || "",
+        }));
+        const latest = reviews[0] || null;
+        const viewed = safeOrder(order, map);
+        if (latest) {
+          viewed.reviewed = true;
+          viewed.reviewId = latest.id;
+          viewed.reviewRating = latest.rating;
+          viewed.reviewContent = latest.content;
+          viewed.review = latest;
+        } else {
+          viewed.reviewed = false;
+          viewed.reviewId = "";
+          viewed.reviewRating = null;
+          viewed.reviewContent = "";
+          viewed.review = null;
+        }
+        viewed.reviews = reviews;
+        return json(res, 200, { ok: true, configured: true, order: viewed, reviews });
       }
       const [orders, profiles] = await Promise.all([
         supabaseJson(restUrl("orders", "?order=created_at.desc&limit=500"), { headers: serviceHeaders() }).catch(() => []),

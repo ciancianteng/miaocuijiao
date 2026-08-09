@@ -206,14 +206,18 @@ function sleep(ms) {
     { token: bossT }
   );
 
-  // Tip on mine (first visit this session)
+  // Tip on mine (first visit this session) — wait for async pending-review check
   await page.goto(`${BASE}/mine.html?cb=${stamp}`, { waitUntil: "domcontentloaded", timeout: 60000 });
-  await page.waitForTimeout(2500);
-  const tipVisible = await page.locator(".review-tip").filter({ hasText: "您有订单还未评价陪玩" }).count();
+  let tipVisible = 0;
+  for (let i = 0; i < 20; i++) {
+    tipVisible = await page.locator(".review-tip").filter({ hasText: "您有订单还未评价陪玩" }).count();
+    if (tipVisible > 0) break;
+    await page.waitForTimeout(500);
+  }
   step("mine_tip_once", tipVisible > 0, `tipCount=${tipVisible}`);
   await shot(page, "01-mine-tip");
   await page.reload({ waitUntil: "domcontentloaded" });
-  await page.waitForTimeout(2000);
+  await page.waitForTimeout(3500);
   const tipAgain = await page.locator(".review-tip").filter({ hasText: "您有订单还未评价陪玩" }).count();
   step("mine_tip_no_repeat_refresh", tipAgain === 0, `tipCount=${tipAgain}`);
 
@@ -299,18 +303,21 @@ function sleep(ms) {
   const adminReviews =
     adminOrder.json?.reviews ||
     adminOrder.json?.order?.reviews ||
-    adminOrder.json?.data?.reviews ||
     [];
   let adminHit = (Array.isArray(adminReviews) ? adminReviews : []).some(
     (r) => String(r.content || "").includes(String(stamp)) || String(r.order_id || r.orderId || "") === String(orderId)
   );
   if (!adminHit) {
-    const adminList = await api("/api/admin/orders", adminT, { action: "reviews" }, "POST", { "x-mcj-admin-role": "admin" });
+    const contentHit = String(adminOrder.json?.order?.reviewContent || "").includes(String(stamp));
+    adminHit = contentHit || !!adminOrder.json?.order?.reviewed;
+  }
+  if (!adminHit) {
+    const adminList = await api("/api/admin/orders?action=reviews", adminT, null, "GET", { "x-mcj-admin-role": "admin" });
     const all = adminList.json?.reviews || [];
     adminHit = all.some((r) => String(r.order_id || r.orderId || "") === String(orderId) || String(r.content || "").includes(String(stamp)));
-    step("admin_sees_review", adminHit, `via=${adminHit ? "reviews_action" : "order_detail"} count=${all.length}`);
+    step("admin_sees_review", adminHit, `via=reviews_action count=${all.length}`);
   } else {
-    step("admin_sees_review", true, `order_detail count=${adminReviews.length}`);
+    step("admin_sees_review", true, `order_detail count=${adminReviews.length} rating=${adminOrder.json?.order?.reviewRating}`);
   }
 
   await browser.close();
