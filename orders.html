@@ -84,8 +84,22 @@
     .companion-pick{display:grid;grid-template-columns:56px 1fr;gap:12px;align-items:center}
     .companion-avatar{width:56px;height:56px;border-radius:14px;background:rgba(255,255,255,.08);object-fit:cover;display:grid;place-items:center;color:#ffd6e7;font-weight:900}
     .companion-pick p{margin:4px 0 0;color:#9ca3af}
+    .modal-box.review-modal{width:min(440px,100%);border:1px solid rgba(255,143,197,.26);border-radius:18px;background:#111014;padding:20px}
+    .review-modal .modal-head{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:12px}
+    .review-modal .modal-head h2{margin:0;font-size:20px}
+    .review-modal .close{width:36px;height:36px;border:1px solid rgba(255,255,255,.12);border-radius:10px;background:rgba(255,255,255,.06);color:#fff;cursor:pointer}
+    .review-modal .review-meta{margin:0 0 14px;color:#9ca3af;font-size:13px;line-height:1.45}
+    .review-modal .form-grid{display:grid;gap:12px}
+    .review-modal label{display:grid;gap:7px;color:#ffd6e7;font-weight:800}
+    .review-modal textarea,.review-modal select{border:1px solid rgba(255,255,255,.12);border-radius:10px;background:rgba(0,0,0,.24);color:#fff;padding:10px 12px;font:inherit}
+    .review-modal textarea{min-height:96px;resize:vertical}
+    .review-stars{display:flex;gap:6px;flex-wrap:wrap}
+    .review-star{width:42px;height:42px;border:1px solid rgba(255,255,255,.16);border-radius:10px;background:rgba(255,255,255,.06);color:#9ca3af;font-size:20px;cursor:pointer;line-height:1}
+    .review-star.on{border-color:rgba(255,143,197,.55);background:rgba(255,143,197,.22);color:#ffd6e7}
+    .review-modal .review-state{margin:4px 0 0;min-height:20px;color:#ffb9d6;font-size:13px}
+    .review-modal .review-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:4px}
     @media(max-width:880px){.order-grid{grid-template-columns:1fr 1fr}.order-actions{justify-content:flex-start}.od-layout{grid-template-columns:1fr}.modal-box.order-detail-modal{width:min(100%,calc(100% - 16px));max-height:92vh}}
-    @media(max-width:560px){.tabs{flex-wrap:nowrap;overflow-x:auto;padding-bottom:6px;-webkit-overflow-scrolling:touch}.order-grid{grid-template-columns:1fr}.orders-head{display:block}.order-card header{display:block}.order-status{display:inline-block;margin-top:8px}.order-btn{width:100%}.status-actions{display:grid}.companion-pick{grid-template-columns:48px 1fr}.companion-avatar{width:48px;height:48px}.od-fields{grid-template-columns:1fr}.order-detail-modal .modal-footer{justify-content:stretch}.order-detail-modal .modal-footer .order-btn{flex:1 1 calc(50% - 6px);min-width:0}}
+    @media(max-width:560px){.tabs{flex-wrap:nowrap;overflow-x:auto;padding-bottom:6px;-webkit-overflow-scrolling:touch}.order-grid{grid-template-columns:1fr}.orders-head{display:block}.order-card header{display:block}.order-status{display:inline-block;margin-top:8px}.order-btn{width:100%}.status-actions{display:grid}.companion-pick{grid-template-columns:48px 1fr}.companion-avatar{width:48px;height:48px}.od-fields{grid-template-columns:1fr}.order-detail-modal .modal-footer{justify-content:stretch}.order-detail-modal .modal-footer .order-btn{flex:1 1 calc(50% - 6px);min-width:0}.review-modal .review-actions .order-btn{flex:1}}
   </style>
   <link rel="stylesheet" crossorigin href="/src/boss-header.css">
   <link rel="stylesheet" crossorigin href="/src/style.css">
@@ -100,6 +114,24 @@
       <div class="modal-footer" id="detailFooter"></div>
     </div>
   </div>
+  <div class="modal" id="reviewModal" aria-hidden="true">
+    <form class="modal-box review-modal" id="reviewForm">
+      <div class="modal-head"><h2>评价陪玩</h2><button class="close" type="button" data-review-close aria-label="关闭">×</button></div>
+      <p class="review-meta" id="reviewOrderMeta"></p>
+      <div class="form-grid">
+        <label>星级评分
+          <div class="review-stars" id="reviewStars" role="radiogroup" aria-label="星级评分"></div>
+          <input type="hidden" name="rating" id="reviewRating" value="5">
+        </label>
+        <label>评价内容<textarea name="content" id="reviewContent" rows="4" maxlength="500" placeholder="写下你的评价（选填）"></textarea></label>
+        <div class="review-actions">
+          <button class="order-btn primary" type="submit" id="reviewSubmitBtn">提交评价</button>
+          <button class="order-btn" type="button" data-review-close>取消</button>
+        </div>
+        <p class="review-state" id="reviewState"></p>
+      </div>
+    </form>
+  </div>
   <script src="src/role-gates.js"></script>
   <script src="src/boss-header.js?v=20260804authP0boss2" defer></script>
   <script src="src/boss-forced-ack.js?v=20260803rules1" defer></script>
@@ -108,11 +140,14 @@
   <script>
     (function(){
       var root=document.getElementById('ordersApp'),modal=document.getElementById('detailModal'),detailBody=document.getElementById('detailBody'),detailFooter=document.getElementById('detailFooter');
+      var reviewModal=document.getElementById('reviewModal'),reviewForm=document.getElementById('reviewForm'),reviewOrderMeta=document.getElementById('reviewOrderMeta'),reviewStars=document.getElementById('reviewStars'),reviewRating=document.getElementById('reviewRating'),reviewContent=document.getElementById('reviewContent'),reviewState=document.getElementById('reviewState'),reviewSubmitBtn=document.getElementById('reviewSubmitBtn');
       var CACHE_KEY='mcjBossOrdersCache';
       var POLL_MS=8000;
       var abortCtrl=null;
       var loadGen=0;
       var pollTimer=null;
+      var reviewOrderId='';
+      var pendingOpenReviewId=(function(){try{return String(new URLSearchParams(location.search).get('openReview')||'').trim()}catch(e){return ''}})();
       var state={loading:true,error:'',orders:[],filter:(function(){var f=new URLSearchParams(location.search).get('filter')||'all';var ok=['all','awaiting_payment','payment_review','arranging','waiting_companion','boss_confirm','active','completed','after_sale','cancelled'];return ok.indexOf(f)>=0?f:'all'})(),fromCache:false,syncing:false};
       var tabs=[['all','全部'],['awaiting_payment','待付款'],['payment_review','待人工审核'],['arranging','待客服处理'],['waiting_companion','等待陪玩确认'],['boss_confirm','等待老板选择'],['active','进行中'],['completed','已完成'],['after_sale','售后'],['cancelled','已取消']];
       var statusText=(window.MCJOrderStatus&&window.MCJOrderStatus.LABELS)||{awaiting_payment:'待付款',payment_review:'待人工审核',pending:'待客服处理',claimed:'等待陪玩确认',waiting_boss_confirm:'等待老板选择',confirmed:'进行中',in_progress:'进行中',completed:'已完成',reviewed:'已评价',cancelled:'已取消',refund_requested:'售后',refunded:'已退款'};
@@ -245,9 +280,12 @@
             out.push('<a class="order-btn primary" href="support.html?order='+encodeURIComponent(o.id)+'">联系客服</a>');
           }
         }else if(canReview(o)){
-          out.push('<button class="order-btn primary" data-detail="'+esc(o.id)+'" data-open-review="1" type="button">立即评价</button>');
+          out.push('<button class="order-btn primary" data-review-order="'+esc(o.id)+'" type="button">评价陪玩</button>');
           out.push('<button class="order-btn" data-action="request_refund" data-id="'+esc(o.id)+'">申请售后</button>');
-        }else if(s==='completed'||s==='reviewed'||o.reviewed){
+        }else if(o.reviewed||s==='reviewed'){
+          out.push('<button class="order-btn is-disabled" type="button" disabled aria-disabled="true">已评价</button>');
+          out.push('<button class="order-btn" data-action="request_refund" data-id="'+esc(o.id)+'">申请售后</button>');
+        }else if(s==='completed'){
           out.push('<button class="order-btn" data-action="request_refund" data-id="'+esc(o.id)+'">申请售后</button>');
         }else if(s==='cancelled'){
           out.push('<button class="order-btn is-disabled" type="button" disabled aria-disabled="true">已取消</button>');
@@ -300,7 +338,8 @@
         }else if(o.status==='in_progress'||o.status==='confirmed'){
           footer+='<a class="order-btn primary" href="support.html?order='+encodeURIComponent(o.id)+'">联系客服</a>';
         }else if(canReview(o)||o.status==='completed'||o.status==='reviewed'||o.reviewed){
-          if(canReview(o))footer+='<button class="order-btn primary" type="button" data-show-review="'+esc(o.id)+'">立即评价</button>';
+          if(canReview(o))footer+='<button class="order-btn primary" type="button" data-show-review="'+esc(o.id)+'">评价陪玩</button>';
+          else if(o.reviewed||o.status==='reviewed')footer+='<button class="order-btn is-disabled" type="button" disabled aria-disabled="true">已评价</button>';
           footer+='<button class="order-btn" type="button" data-action="request_refund" data-id="'+esc(o.id)+'">申请售后</button>';
           footer+='<a class="order-btn primary" href="support.html?order='+encodeURIComponent(o.id)+'">联系客服</a>';
         }else{
@@ -313,6 +352,7 @@
         if(detailFooter)detailFooter.innerHTML=footer;
         modal.classList.add('open');
         modal.setAttribute('aria-hidden','false');
+        if(openReview&&canReview(o))openReviewModal(o);
       }
       function statusPanelInner(o,openReview){
         var html='';
@@ -372,10 +412,7 @@
           if(o.reviewed||o.status==='reviewed'){
             html+='<p>评分：'+esc('★★★★★'.slice(0,Number(o.reviewRating||0)||0)+(o.reviewRating?(' '+o.reviewRating+' 星'):'已评价'))+'</p><p>评价：'+esc(o.reviewContent||'-')+'</p>';
           }else{
-            html+='<div class="status-actions"><button class="order-btn primary" type="button" data-show-review="'+esc(o.id)+'">立即评价</button><button class="order-btn" data-action="request_refund" data-id="'+esc(o.id)+'">申请售后</button></div>';
-            if(openReview){
-              html+='<div data-review-form="'+esc(o.id)+'" style="display:grid;gap:10px;margin-top:10px"><label>评分<select name="rating"><option value="5">★★★★★</option><option value="4">★★★★</option><option value="3">★★★</option><option value="2">★★</option><option value="1">★</option></select></label><label>文字评价<textarea name="content" rows="3" maxlength="500" placeholder="写下你的评价"></textarea></label><button class="order-btn primary" type="button" data-submit-review="'+esc(o.id)+'">提交</button></div>';
-            }
+            html+='<div class="status-actions"><button class="order-btn primary" type="button" data-show-review="'+esc(o.id)+'">评价陪玩</button><button class="order-btn" data-action="request_refund" data-id="'+esc(o.id)+'">申请售后</button></div>';
           }
           if(o.reviewed||o.status==='reviewed'){
             html+='<div class="status-actions" style="margin-top:10px"><button class="order-btn" data-action="request_refund" data-id="'+esc(o.id)+'">申请售后</button></div>';
@@ -463,15 +500,90 @@
           }else paint();
         }
       }
-      async function submit(action,id,extra){try{var payload=Object.assign({action:action,id:id},extra||{});if(action==='want_him'||action==='confirm_companion'||action==='select_grabber'){if(!confirm('确认「我要她」？将正式指定该陪玩，并等待陪玩确认接单。'))return}if(action==='confirm_completion'){if(!confirm('确认完成本次服务？确认后订单将变为已完成，并开放评价与结算。'))return}if(action==='report_order_problem'){if(!confirm('确认提交订单问题？系统将暂停 24 小时自动确认，并请你联系客服处理。'))return}var res=await fetch('/api/orders',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token()},body:JSON.stringify(payload)});var body=await res.json().catch(function(){return {}});if(!res.ok||body.ok===false)throw new Error(body.message||'操作失败');await load();if(action==='want_him'||action==='confirm_companion'||action==='select_grabber'){alert(body.message||'已指定陪玩，等待陪玩确认接单。')}if(action==='report_order_problem'){alert(body.message||'已暂停自动确认，请联系客服。');location.href=body.supportUrl||('support.html?order='+encodeURIComponent(id));return}if(action==='confirm_completion'&&body.order){var done=state.orders.find(function(x){return x.id===id})||body.order;if(done)detail(done,!!done.canReview);alert(body.message||'已确认完成，订单已完成。')}else if(modal.classList.contains('open')){var cur=state.orders.find(function(x){return x.id===id});if(cur)detail(cur)}}catch(err){alert(err.message||'操作失败')}}
-      async function submitReview(id){var box=detailBody.querySelector('[data-review-form="'+id+'"]');if(!box)return;var rating=box.querySelector('[name="rating"]').value;var content=box.querySelector('[name="content"]').value;try{var res=await fetch('/api/orders',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token()},body:JSON.stringify({action:'submit_review',id:id,rating:Number(rating),content:content})});var body=await res.json().catch(function(){return {}});if(!res.ok||body.ok===false)throw new Error(body.message||'评价失败');await load();var o=state.orders.find(function(x){return x.id===id});if(o)detail(o);else modal.classList.remove('open');alert(body.message||'评价已提交')}catch(err){alert(err.message||'评价失败')}}
-      document.addEventListener('click',function(e){var f=e.target.closest('[data-filter]');if(f){state.filter=f.dataset.filter;paint();return}if(e.target.closest('[data-refresh]')){load();return}var d=e.target.closest('[data-detail]');if(d){(async function(){var o=state.orders.find(function(x){return x.id===d.dataset.detail});if(!o)return;try{var freshRes=await fetch('/api/orders?id='+encodeURIComponent(o.id),{headers:{Accept:'application/json',Authorization:'Bearer '+token()},cache:'no-store'});var freshBody=await freshRes.json().catch(function(){return{}});if(freshRes.ok&&freshBody.ok!==false){var fresh=(Array.isArray(freshBody.orders)?freshBody.orders[0]:null)||freshBody.order;if(fresh&&fresh.id){o=Object.assign({},o,fresh);var ix=state.orders.findIndex(function(x){return x.id===o.id});if(ix>=0)state.orders[ix]=o;writeCache(state.orders);paint()}}}catch(errFresh){}if((o.status==='waiting_boss_confirm'||o.status==='pending')&&!(o.grabs&&o.grabs.length)){try{var res=await fetch('/api/orders',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token()},body:JSON.stringify({action:'list_grabs',id:o.id})});var body=await res.json().catch(function(){return{}});if(res.ok&&body.ok!==false&&Array.isArray(body.grabs)){o.grabs=body.grabs;var idx=state.orders.findIndex(function(x){return x.id===o.id});if(idx>=0)state.orders[idx]=o}}catch(err){}}detail(o,d.getAttribute('data-open-review')==='1'||canReview(o))})();return}var showRev=e.target.closest('[data-show-review]');if(showRev){var o2=state.orders.find(function(x){return x.id===showRev.getAttribute('data-show-review')});if(o2)detail(o2,true);return}var sr=e.target.closest('[data-submit-review]');if(sr){submitReview(sr.getAttribute('data-submit-review'));return}var a=e.target.closest('[data-action]');if(a){submit(a.dataset.action,a.dataset.id,{companion_id:a.getAttribute('data-companion-id')||''});return}if(e.target.closest('[data-close]')||e.target===modal){modal.classList.remove('open');modal.setAttribute('aria-hidden','true');return}if(e.target.closest('[data-logout]')){if(window.MCJRoleGate){window.MCJRoleGate.logout('boss');window.MCJRoleGate.logout('customer')}localStorage.removeItem('mcjAuthAccessToken');localStorage.removeItem('mcjAuthRefreshToken');sessionStorage.removeItem('mcjAuthAccessToken');sessionStorage.removeItem('mcjAuthRefreshToken');location.href='index.html';return}});
+      async function submit(action,id,extra){try{var payload=Object.assign({action:action,id:id},extra||{});if(action==='want_him'||action==='confirm_companion'||action==='select_grabber'){if(!confirm('确认「我要她」？将正式指定该陪玩，并等待陪玩确认接单。'))return}if(action==='confirm_completion'){if(!confirm('确认完成本次服务？确认后订单将变为已完成，并开放评价与结算。'))return}if(action==='report_order_problem'){if(!confirm('确认提交订单问题？系统将暂停 24 小时自动确认，并请你联系客服处理。'))return}var res=await fetch('/api/orders',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token()},body:JSON.stringify(payload)});var body=await res.json().catch(function(){return {}});if(!res.ok||body.ok===false)throw new Error(body.message||'操作失败');await load();if(action==='want_him'||action==='confirm_companion'||action==='select_grabber'){alert(body.message||'已指定陪玩，等待陪玩确认接单。')}if(action==='report_order_problem'){alert(body.message||'已暂停自动确认，请联系客服。');location.href=body.supportUrl||('support.html?order='+encodeURIComponent(id));return}if(action==='confirm_completion'&&body.order){var done=state.orders.find(function(x){return x.id===id})||body.order;if(done&&canReview(done)){openReviewModal(done)}else if(done){detail(done,false)}alert(body.message||'已确认完成，订单已完成。')}else if(modal.classList.contains('open')){var cur=state.orders.find(function(x){return x.id===id});if(cur)detail(cur)}}catch(err){alert(err.message||'操作失败')}}
+      function paintReviewStars(n){
+        var rating=Math.max(1,Math.min(5,Number(n)||5));
+        if(reviewRating)reviewRating.value=String(rating);
+        if(!reviewStars)return;
+        var html='';
+        for(var i=1;i<=5;i++){
+          html+='<button class="review-star'+(i<=rating?' on':'')+'" type="button" data-star="'+i+'" aria-label="'+i+' 星" aria-checked="'+(i===rating?'true':'false')+'" role="radio">★</button>';
+        }
+        reviewStars.innerHTML=html;
+      }
+      function openReviewModal(o){
+        if(!o||!canReview(o)||!reviewModal)return;
+        reviewOrderId=o.id;
+        if(reviewOrderMeta){
+          reviewOrderMeta.textContent='订单 '+(o.orderNo||o.order_no||o.id)+' · 陪玩 '+companionName(o);
+        }
+        if(reviewContent)reviewContent.value='';
+        if(reviewState)reviewState.textContent='';
+        if(reviewSubmitBtn){reviewSubmitBtn.disabled=false;reviewSubmitBtn.textContent='提交评价'}
+        paintReviewStars(5);
+        reviewModal.classList.add('open');
+        reviewModal.setAttribute('aria-hidden','false');
+      }
+      function closeReviewModal(){
+        if(!reviewModal)return;
+        reviewModal.classList.remove('open');
+        reviewModal.setAttribute('aria-hidden','true');
+        reviewOrderId='';
+      }
+      function maybeOpenPendingReview(){
+        if(!pendingOpenReviewId)return;
+        var id=pendingOpenReviewId;
+        pendingOpenReviewId='';
+        try{
+          var u=new URL(location.href);
+          u.searchParams.delete('openReview');
+          history.replaceState({},'',u.pathname+(u.search||'')+(u.hash||''));
+        }catch(e){}
+        var o=state.orders.find(function(x){return x.id===id});
+        if(o&&canReview(o))openReviewModal(o);
+        else if(o&&(o.reviewed||o.status==='reviewed'))alert('该订单已评价');
+      }
+      async function submitReview(id){
+        var orderId=id||reviewOrderId;
+        if(!orderId)return;
+        var rating=Number((reviewRating&&reviewRating.value)||5);
+        var content=(reviewContent&&reviewContent.value)||'';
+        if(!(rating>=1&&rating<=5)){if(reviewState)reviewState.textContent='请选择 1-5 星评分';return}
+        if(reviewState)reviewState.textContent='提交中…';
+        if(reviewSubmitBtn){reviewSubmitBtn.disabled=true;reviewSubmitBtn.textContent='提交中…'}
+        try{
+          var res=await fetch('/api/orders',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token()},body:JSON.stringify({action:'submit_review',id:orderId,rating:rating,content:content})});
+          var body=await res.json().catch(function(){return {}});
+          if(!res.ok||body.ok===false)throw new Error(body.message||'评价失败');
+          if(body.order){
+            var ix=state.orders.findIndex(function(x){return x.id===orderId});
+            if(ix>=0){
+              state.orders[ix]=Object.assign({},state.orders[ix],body.order,{reviewed:true,canReview:false,status:body.order.status||'reviewed',reviewRating:body.order.reviewRating!=null?body.order.reviewRating:rating,reviewContent:body.order.reviewContent!=null?body.order.reviewContent:content});
+              writeCache(state.orders);
+            }
+          }
+          await load({silent:true});
+          paint();
+          closeReviewModal();
+          if(modal.classList.contains('open')){
+            var o=state.orders.find(function(x){return x.id===orderId});
+            if(o)detail(o,false);
+          }
+          alert(body.already?'该订单已评价':(body.message||'评价提交成功'));
+        }catch(err){
+          if(reviewState)reviewState.textContent=err.message||'评价失败';
+          if(reviewSubmitBtn){reviewSubmitBtn.disabled=false;reviewSubmitBtn.textContent='提交评价'}
+          alert(err.message||'评价失败');
+        }
+      }
+      document.addEventListener('click',function(e){var f=e.target.closest('[data-filter]');if(f){state.filter=f.dataset.filter;paint();return}if(e.target.closest('[data-refresh]')){load();return}var revBtn=e.target.closest('[data-review-order]');if(revBtn){var ro=state.orders.find(function(x){return x.id===revBtn.getAttribute('data-review-order')});if(ro)openReviewModal(ro);return}var starBtn=e.target.closest('[data-star]');if(starBtn&&reviewStars&&reviewStars.contains(starBtn)){paintReviewStars(starBtn.getAttribute('data-star'));return}if(e.target.closest('[data-review-close]')||e.target===reviewModal){closeReviewModal();return}var d=e.target.closest('[data-detail]');if(d){(async function(){var o=state.orders.find(function(x){return x.id===d.dataset.detail});if(!o)return;try{var freshRes=await fetch('/api/orders?id='+encodeURIComponent(o.id),{headers:{Accept:'application/json',Authorization:'Bearer '+token()},cache:'no-store'});var freshBody=await freshRes.json().catch(function(){return{}});if(freshRes.ok&&freshBody.ok!==false){var fresh=(Array.isArray(freshBody.orders)?freshBody.orders[0]:null)||freshBody.order;if(fresh&&fresh.id){o=Object.assign({},o,fresh);var ix=state.orders.findIndex(function(x){return x.id===o.id});if(ix>=0)state.orders[ix]=o;writeCache(state.orders);paint()}}}catch(errFresh){}if((o.status==='waiting_boss_confirm'||o.status==='pending')&&!(o.grabs&&o.grabs.length)){try{var res=await fetch('/api/orders',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token()},body:JSON.stringify({action:'list_grabs',id:o.id})});var body=await res.json().catch(function(){return{}});if(res.ok&&body.ok!==false&&Array.isArray(body.grabs)){o.grabs=body.grabs;var idx=state.orders.findIndex(function(x){return x.id===o.id});if(idx>=0)state.orders[idx]=o}}catch(err){}}detail(o,false)})();return}var showRev=e.target.closest('[data-show-review]');if(showRev){var o2=state.orders.find(function(x){return x.id===showRev.getAttribute('data-show-review')});if(o2)openReviewModal(o2);return}var a=e.target.closest('[data-action]');if(a){submit(a.dataset.action,a.dataset.id,{companion_id:a.getAttribute('data-companion-id')||''});return}if(e.target.closest('[data-close]')||e.target===modal){modal.classList.remove('open');modal.setAttribute('aria-hidden','true');return}if(e.target.closest('[data-logout]')){if(window.MCJRoleGate){window.MCJRoleGate.logout('boss');window.MCJRoleGate.logout('customer')}localStorage.removeItem('mcjAuthAccessToken');localStorage.removeItem('mcjAuthRefreshToken');sessionStorage.removeItem('mcjAuthAccessToken');sessionStorage.removeItem('mcjAuthRefreshToken');location.href='index.html';return}});
+      if(reviewForm){reviewForm.addEventListener('submit',function(e){e.preventDefault();submitReview(reviewOrderId)})}
       document.addEventListener('visibilitychange',function(){if(!document.hidden)load({silent:true})});
       window.addEventListener('pagehide',function(){if(abortCtrl)abortCtrl.abort();if(pollTimer)clearInterval(pollTimer)});
       var boot=readCache();
       if(boot&&boot.length){state.orders=boot;state.fromCache=true;state.loading=false;state.syncing=true}
       paint();
-      load();
+      load().then(function(){maybeOpenPendingReview()});
       pollTimer=setInterval(function(){if(!document.hidden)load({silent:true})},POLL_MS);
     })();
   </script>

@@ -25,6 +25,21 @@
       opacity:.45!important;cursor:not-allowed!important;filter:saturate(.5);
       background:rgba(255,255,255,.06)!important;border-color:rgba(255,255,255,.12)!important;color:#9ca3af!important;box-shadow:none!important;
     }
+    .review-tip{
+      margin:0 0 14px;padding:12px 14px;border:1px solid rgba(255,143,197,.35);
+      border-radius:14px;background:rgba(255,143,197,.1);color:#ffd6e7;
+      display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;
+    }
+    .review-tip p{margin:0;font-size:14px;line-height:1.45}
+    .review-tip .tip-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+    .review-tip .tip-link{
+      border:0;background:transparent;color:#ffe6f2;font-weight:800;cursor:pointer;
+      text-decoration:underline;padding:0;font:inherit;
+    }
+    .review-tip .tip-dismiss{
+      width:32px;height:32px;border:1px solid rgba(255,255,255,.14);border-radius:10px;
+      background:rgba(255,255,255,.06);color:#fff;cursor:pointer;
+    }
 </style>
 </head>
 <body>
@@ -51,7 +66,27 @@
       var modal=document.getElementById('editModal');
       var form=document.getElementById('profileForm');
       var editState=document.getElementById('editState');
-      var state={loading:true,error:'',user:null,wallet:null,passwordHint:''};
+      var state={loading:true,error:'',user:null,wallet:null,passwordHint:'',pendingReviewTipId:''};
+      var TIP_KEY='mcjBossPendingReviewTipShown';
+      function tipAlreadyShown(){try{return sessionStorage.getItem(TIP_KEY)==='1'}catch(e){return false}}
+      function markTipShown(){try{sessionStorage.setItem(TIP_KEY,'1')}catch(e){}}
+      async function checkPendingReviewTip(){
+        if(!token()||tipAlreadyShown()||state.pendingReviewTipId)return;
+        try{
+          var res=await fetch('/api/orders',{headers:{Accept:'application/json',Authorization:'Bearer '+token()},cache:'no-store'});
+          var body=await res.json().catch(function(){return{}});
+          if(!res.ok||body.ok===false)return;
+          var rows=Array.isArray(body.orders)?body.orders:[];
+          var pending=rows.find(function(o){
+            return !!(o&&(o.canReview||(o.status==='completed'&&!o.reviewed&&(o.companionId||(o.companion&&o.companion.id)||o.companion_id))));
+          });
+          if(pending&&pending.id){
+            state.pendingReviewTipId=pending.id;
+            markTipShown();
+            paint();
+          }
+        }catch(e){}
+      }
       function token(){try{return sessionStorage.getItem('mcjAuthAccessToken')||localStorage.getItem('mcjAuthAccessToken')||''}catch(e){return ''}}
       function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
       function date(v){if(!v)return '-';try{return new Date(v).toLocaleString('zh-CN',{hour12:false})}catch(e){return v}}
@@ -69,7 +104,10 @@
         var paidBal=wallet.paidBalance!=null?wallet.paidBalance:'-';
         var bonusBal=wallet.bonusBalance!=null?wallet.bonusBalance:'-';
         var setHint=u.hasPassword===true||u.has_password===true?'':'<p style="margin:12px 0 0;color:#fbbf24;font-size:13px">提示：建议设置登录密码，便于下次邮箱+密码登录（不强制）。</p>';
-        root.innerHTML='<section class="account-card"><div class="account-head"><div class="profile-main"><div class="avatar">'+avatarHtml(u)+'</div><div class="profile-title"><h1>'+esc(u.displayName||'老板账号')+'</h1><p>我的账号</p></div></div><button class="boss-btn" data-edit type="button">编辑资料</button></div><div class="info-grid"><div class="info-item"><span>老板 UID</span><strong>'+esc(publicUid)+'</strong></div><div class="info-item"><span>总猫粮</span><strong>'+esc(totalBal)+'</strong></div><div class="info-item"><span>充值猫粮</span><strong>'+esc(paidBal)+'</strong></div><div class="info-item"><span>赠送猫粮</span><strong>'+esc(bonusBal)+'</strong></div><div class="info-item"><span>邮箱</span><strong>'+esc(u.email||'-')+'</strong></div><div class="info-item"><span>手机号</span><strong>'+esc(u.phone||'-')+'</strong></div><div class="info-item"><span>注册时间</span><strong>'+esc(date(u.createdAt))+'</strong></div><div class="info-item"><span>账号状态</span><strong>'+esc(statusText(u.status))+'</strong></div>'+techHtml+'</div>'+setHint+'<div class="action-row"><a class="boss-btn ghost" href="recharge.html">充值中心 / 钱包流水</a><a class="boss-btn ghost" href="orders.html">查看我的订单</a><a class="boss-btn ghost" href="support.html">联系在线客服</a><button class="boss-btn ghost" type="button" data-logout>退出登录</button></div><div id="bossAccountSecurity"></div></section>';
+        var tipHtml=state.pendingReviewTipId
+          ?('<div class="review-tip" role="status"><p>您有订单还未评价陪玩</p><div class="tip-actions"><button class="tip-link" type="button" data-open-pending-review>去评价</button><button class="tip-dismiss" type="button" data-dismiss-review-tip aria-label="关闭">×</button></div></div>')
+          :'';
+        root.innerHTML=tipHtml+'<section class="account-card"><div class="account-head"><div class="profile-main"><div class="avatar">'+avatarHtml(u)+'</div><div class="profile-title"><h1>'+esc(u.displayName||'老板账号')+'</h1><p>我的账号</p></div></div><button class="boss-btn" data-edit type="button">编辑资料</button></div><div class="info-grid"><div class="info-item"><span>老板 UID</span><strong>'+esc(publicUid)+'</strong></div><div class="info-item"><span>总猫粮</span><strong>'+esc(totalBal)+'</strong></div><div class="info-item"><span>充值猫粮</span><strong>'+esc(paidBal)+'</strong></div><div class="info-item"><span>赠送猫粮</span><strong>'+esc(bonusBal)+'</strong></div><div class="info-item"><span>邮箱</span><strong>'+esc(u.email||'-')+'</strong></div><div class="info-item"><span>手机号</span><strong>'+esc(u.phone||'-')+'</strong></div><div class="info-item"><span>注册时间</span><strong>'+esc(date(u.createdAt))+'</strong></div><div class="info-item"><span>账号状态</span><strong>'+esc(statusText(u.status))+'</strong></div>'+techHtml+'</div>'+setHint+'<div class="action-row"><a class="boss-btn ghost" href="recharge.html">充值中心 / 钱包流水</a><a class="boss-btn ghost" href="orders.html">查看我的订单</a><a class="boss-btn ghost" href="support.html">联系在线客服</a><button class="boss-btn ghost" type="button" data-logout>退出登录</button></div><div id="bossAccountSecurity"></div></section>';
         if(window.MCJAccountSecurity){
           window.MCJAccountSecurity.mount('#bossAccountSecurity',u,{role:'boss',passwordHint:state.passwordHint,onUpdated:function(data){if(data&&data.user)state.user=data.user;paint();}});
         }
@@ -106,9 +144,18 @@ async function load(){
           }else{
             state.error=msg;
           }
-        }finally{state.loading=false;paint()}
+        }finally{state.loading=false;paint();checkPendingReviewTip()}
       }
       document.addEventListener('click',async function(e){
+        var openTip=e.target.closest('[data-open-pending-review]');
+        if(openTip){
+          var oid=state.pendingReviewTipId;
+          state.pendingReviewTipId='';
+          if(oid)location.href='orders.html?openReview='+encodeURIComponent(oid);
+          else location.href='orders.html?filter=completed';
+          return;
+        }
+        if(e.target.closest('[data-dismiss-review-tip]')){state.pendingReviewTipId='';paint();return}
         var sendBtn=e.target.closest('[data-mine-send-register-otp]');
         var verifyBtn=e.target.closest('[data-mine-verify-register-otp]');
         if(!sendBtn&&!verifyBtn)return;
