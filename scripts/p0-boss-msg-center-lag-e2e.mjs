@@ -65,8 +65,10 @@ async function runViewport(label, deviceOpts) {
   const pageErrors = [];
   page.on("pageerror", (err) => pageErrors.push(String(err.message || err)));
 
+  let injectedHits = 0;
   // Serve fixed module so staging HTML/API can be used immediately.
-  await page.route(/\/src\/support-chat\.js(?:\?.*)?$/, async (route) => {
+  await page.route(/support-chat\.js(?:\?.*)?$/, async (route) => {
+    injectedHits += 1;
     await route.fulfill({
       status: 200,
       contentType: "text/javascript; charset=utf-8",
@@ -111,10 +113,7 @@ async function runViewport(label, deviceOpts) {
 
   await page.goto(`${BASE}/support.html?cb=${Date.now()}`, { waitUntil: "domcontentloaded", timeout: 60000 });
   await page.waitForSelector(".support-session[data-select-conversation]", { timeout: 30000 });
-  const hasFix = await page.evaluate(() =>
-    [...document.querySelectorAll('script[type="module"]')].some((s) => /support-chat\.js/.test(s.src))
-  );
-  step(`${label}_module_loaded`, hasFix, "support-chat module tag present");
+  step(`${label}_module_injected`, injectedHits >= 1, `injectHits=${injectedHits}`);
 
   const isMobile = label === "mobile";
 
