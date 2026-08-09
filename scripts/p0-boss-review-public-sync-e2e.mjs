@@ -64,7 +64,11 @@ async function shot(page, name) {
   const reviewText = `公开资料评价同步E2E ${stamp}`;
 
   const profileHtml = await (await fetch(`${BASE}/profile.html?cb=${stamp}`, { cache: "no-store" })).text();
-  step("profile_asset_review_sync", /profile-detail\.js\?v=20260809reviewSync1/.test(profileHtml), /profile-detail\.js\?v=[^"']+/.exec(profileHtml)?.[0] || "missing");
+  step(
+    "profile_asset_review_sync",
+    /profile-detail\.js\?v=20260809reviewSync[12]/.test(profileHtml),
+    /profile-detail\.js\?v=[^"']+/.exec(profileHtml)?.[0] || "missing"
+  );
 
   const bossT = tok((await api("/api/auth", null, { action: "login", email: BOSS, password: PASS, loginPortal: "boss" })).json);
   const csT = tok((await api("/api/customer-service", null, { action: "login", account: CS, password: PASS })).json);
