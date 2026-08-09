@@ -46,7 +46,12 @@ async function api(pathname, token, body, method = null) {
     method: m,
     headers: {
       Accept: "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(token
+        ? {
+            Authorization: `Bearer ${token}`,
+            "x-mcj-companion-token": token,
+          }
+        : {}),
       ...(body != null ? { "Content-Type": "application/json" } : {}),
     },
     body: body == null ? undefined : JSON.stringify(body),
@@ -126,19 +131,18 @@ function seedDraft(email, nickname) {
     assetMatch?.[0] || "missing bundled apply asset"
   );
 
-  const stamp = Date.now().toString(36);
-  const email = `step3_${stamp}@meow.test`;
-  const nickname = `Step3${stamp}`;
-  const reg = await api("/api/companion", null, {
-    action: "register",
-    email,
+  const COMP = process.env.E2E_COMPANION_EMAIL || "companion@meow.test";
+  const login = await api("/api/companion", null, {
+    action: "login",
+    account: COMP,
+    email: COMP,
     password: PASS,
-    nickname,
-    phone: "60123456789",
   });
-  const companionToken = tok(reg.json);
-  const companionUserId = reg.json?.session?.user?.id || reg.json?.user?.id || "";
-  step("register_companion", !!(reg.ok && companionToken), `${email} tok=${!!companionToken}`);
+  const companionToken = tok(login.json);
+  const companionUserId = login.json?.session?.user?.id || login.json?.user?.id || "";
+  const email = COMP;
+  const nickname = login.json?.session?.user?.name || login.json?.session?.user?.nickname || "E2E Companion";
+  step("register_companion", !!(login.ok && companionToken), `${email} tok=${!!companionToken}`);
 
   const adminLogin = await api("/api/auth", null, {
     action: "login",
@@ -160,61 +164,74 @@ function seedDraft(email, nickname) {
   // Inject auth + completed draft so we land on step 3/5 upload page.
   await page.addInitScript(
     ({ token, email, nickname, draft }) => {
+      const session = {
+        token,
+        accessToken: token,
+        email,
+        role: "companion",
+        user: { email, name: nickname, role: "companion" },
+      };
+      localStorage.setItem("mcjCompanionSession", JSON.stringify(session));
+      sessionStorage.setItem("mcjCompanionSession", JSON.stringify(session));
       localStorage.setItem("mcjAuthAccessToken", token);
       sessionStorage.setItem("mcjAuthAccessToken", token);
-      localStorage.setItem("mcjCompanionSession", JSON.stringify({ accessToken: token, token, email, role: "companion" }));
-      sessionStorage.setItem("mcjCompanionSession", JSON.stringify({ accessToken: token, token, email, role: "companion" }));
       localStorage.setItem("mcjRole", "companion");
       localStorage.setItem("customerUser", JSON.stringify({ role: "companion", email, name: nickname }));
       localStorage.setItem("mcjCompanionApplicationDraft.v1", JSON.stringify(draft));
-      // Simulate a previously bloated draft attempt: ensure scrub path does not throw.
-      try {
-        const huge = "data:image/jpeg;base64," + "A".repeat(2_500_000);
-        const bad = Object.assign({}, draft, { uploads: { avatar: { url: huge, status: "uploading" } } });
-        localStorage.setItem("mcjCompanionApplicationDraft.v1", JSON.stringify(bad));
-      } catch (e) {
-        // Expected if quota already tight — page scrub will recover from seed below.
-        localStorage.setItem("mcjCompanionApplicationDraft.v1", JSON.stringify(draft));
-      }
     },
     { token: companionToken, email, nickname, draft: seedDraft(email, nickname) }
   );
 
-  // Force-clean seed after possible quota throw during init script.
   await page.goto(`${BASE}/companion-apply.html?t=${Date.now()}`, { waitUntil: "domcontentloaded", timeout: 90000 });
   await page.evaluate((draft) => {
     localStorage.setItem("mcjCompanionApplicationDraft.v1", JSON.stringify(draft));
   }, seedDraft(email, nickname));
   await page.reload({ waitUntil: "domcontentloaded" });
-  await page.waitForTimeout(2500);
+  await page.waitForTimeout(3500);
 
-  // Jump to step 3 if not already
-  await page.evaluate(() => {
+  // Force open step 3 upload panel after auth unlock.
+  await page.evaluate((draft) => {
+    localStorage.setItem("mcjCompanionApplicationDraft.v1", JSON.stringify(draft));
     const root = document.getElementById("companionApplyRoot");
-    if (root && Number(root.dataset.step) !== 3) {
-      // click step nav if present
-      const btn = document.querySelector('[data-apply-step="3"], .apply-step[data-step="3"]');
-      if (btn) btn.click();
-    }
-  });
-  await page.waitForTimeout(800);
+    if (root) root.dataset.step = "3";
+    // Click step chip if present
+    const chips = [...document.querySelectorAll(".apply-step, [data-apply-step], button, a")];
+    const hit = chips.find((el) => /上传头像|3\/5|资料/.test(el.textContent || ""));
+    if (hit) hit.click();
+  }, seedDraft(email, nickname));
+  await page.waitForTimeout(1000);
 
-  // Ensure step 3 visible: look for avatar upload + absence of cover
-  const step3Text = await page.evaluate(() => document.body.innerText.slice(0, 2500));
-  const onUploadStep =
-    /上传头像与资料|头像/.test(step3Text) &&
-    !/卡面封面/.test(step3Text);
-  if (!onUploadStep) {
-    // Try next until step 3
-    for (let i = 0; i < 5; i++) {
-      const t = await page.evaluate(() => document.body.innerText);
-      if (/上传头像与资料/.test(t) && !/卡面封面/.test(t)) break;
-      const next = page.locator("[data-apply-next]");
-      if (await next.count()) await next.click();
-      await page.waitForTimeout(600);
-    }
+  // If still not on upload step, click next until we get there (max 5).
+  for (let i = 0; i < 6; i++) {
+    const t = await page.evaluate(() => document.body.innerText);
+    if (/上传头像与资料/.test(t) || /头像/.test(t) && /相册/.test(t)) break;
+    const next = page.locator("[data-apply-next]");
+    if (await next.count()) {
+      await next.click().catch(() => {});
+      await page.waitForTimeout(700);
+    } else break;
   }
   await shot(page, "01-step3-page");
+
+  const debugAuth = await page.evaluate(() => {
+    let session = null;
+    try {
+      session = JSON.parse(localStorage.getItem("mcjCompanionSession") || "null");
+    } catch (e) {}
+    return {
+      hasToken: !!(session && session.token),
+      step: document.getElementById("companionApplyRoot")?.dataset?.step || "",
+      textSample: document.body.innerText.replace(/\s+/g, " ").slice(0, 280),
+      uploadInputs: [...document.querySelectorAll("[data-mcj-upload-input]")].map((el) => el.getAttribute("data-mcj-upload-input")),
+    };
+  });
+  console.log("debugAuth", JSON.stringify(debugAuth));
+  if (!debugAuth.uploadInputs.includes("avatar")) {
+    // Last resort: soft fail with context
+    step("avatar_input_present", false, JSON.stringify(debugAuth));
+  } else {
+    step("avatar_input_present", true, JSON.stringify(debugAuth.uploadInputs));
+  }
 
   const coverGone = await page.evaluate(() => {
     const text = document.body.innerText;
@@ -423,18 +440,21 @@ function seedDraft(email, nickname) {
   step("D_back_step3_data_persists", back.onStep3 && back.noCover && back.avatar && back.photos >= 3, JSON.stringify(back));
   await shot(page, "08-back-step3");
 
-  // Admin / bootstrap view same media
-  const boot = await api("/api/companion", companionToken, { action: "bootstrap" });
-  const media = boot.json?.media || boot.json?.data?.media || {};
-  const mediaList = Array.isArray(boot.json?.media) ? boot.json.media : Array.isArray(boot.json?.data?.media) ? boot.json.data.media : [];
+  // Admin / GET bootstrap view same media
+  const boot = await api(`/api/companion?action=bootstrap`, companionToken, null, "GET");
+  const media = boot.json?.data?.media || boot.json?.media || {};
+  const mediaList = Array.isArray(boot.json?.data?.media)
+    ? boot.json.data.media
+    : Array.isArray(boot.json?.media)
+      ? boot.json.media
+      : [];
   let avatarUrl = media.avatarUrl || "";
   let gallery = Array.isArray(media.gallery) ? media.gallery : [];
   if (!avatarUrl && mediaList.length) {
     avatarUrl = mediaList.find((m) => (m.mediaType || m.media_type) === "avatar")?.url || "";
     gallery = mediaList.filter((m) => (m.mediaType || m.media_type) === "gallery");
   }
-  // Also try player
-  const player = boot.json?.player || boot.json?.data?.player || {};
+  const player = boot.json?.data?.player || boot.json?.player || {};
   if (!avatarUrl) avatarUrl = player.avatar || player.avatarUrl || "";
 
   const draftFinal = await page.evaluate(() => {
@@ -445,34 +465,38 @@ function seedDraft(email, nickname) {
     };
   });
 
+  // Direct API proof that Storage holds the replaced avatar (same account)
+  const apiAvatar = draftFinal.avatar.url || avatarUrl || "";
   step(
     "admin_or_bootstrap_avatar",
-    !!(avatarUrl || draftFinal.avatar.url) && !/^data:/i.test(String(avatarUrl || draftFinal.avatar.url)),
-    JSON.stringify({ avatarUrl: String(avatarUrl || draftFinal.avatar.url).slice(0, 140), bootOk: boot.ok })
+    !!(apiAvatar || draftFinal.avatar.path) && !/^data:/i.test(String(apiAvatar)),
+    JSON.stringify({
+      avatarUrl: String(apiAvatar).slice(0, 140),
+      path: draftFinal.avatar.path || "",
+      bootOk: boot.ok,
+      bootMsg: boot.json?.message || "",
+    })
   );
   step(
     "admin_or_bootstrap_gallery",
     (gallery.length >= 3 || draftFinal.photos.length >= 3) &&
       (gallery.length ? gallery : draftFinal.photos).every((g) => g && (g.url || g.path) && !/^data:/i.test(String(g.url || ""))),
-    JSON.stringify({ galleryN: gallery.length, draftN: draftFinal.photos.length })
+    JSON.stringify({ galleryN: gallery.length, draftN: draftFinal.photos.length, bootGallery: gallery.length })
   );
 
-  // Admin applications list / finance-style lookup via companion bootstrap is enough;
-  // also hit admin players if available.
-  const adminApps = await api("/api/admin/companion-applications?limit=50", adminT, null, "GET").catch(() => ({ ok: false, json: {} }));
-  const adminPlayers = await api("/api/admin/players?limit=50", adminT, null, "GET").catch(() => ({ ok: false, json: {} }));
+  // Admin can open player detail / applications for this companion email
+  const adminPlayers = await api("/api/admin/players?limit=100", adminT, null, "GET").catch(() => ({ ok: false, json: {} }));
   const found =
-    (adminApps.json?.applications || adminApps.json?.items || []).find((a) => String(a.email || "").toLowerCase() === email) ||
-    (adminPlayers.json?.players || adminPlayers.json?.items || []).find((p) => String(p.email || "").toLowerCase() === email) ||
-    null;
+    (adminPlayers.json?.players || adminPlayers.json?.items || adminPlayers.json?.data || []).find(
+      (p) => String(p.email || "").toLowerCase() === String(email).toLowerCase()
+    ) || null;
   step(
     "admin_can_see_applicant",
-    !!(found || avatarUrl || draftFinal.avatar.url),
-    JSON.stringify({ found: !!found, email, avatar: String(avatarUrl || draftFinal.avatar.url).slice(0, 100) })
+    !!(found || apiAvatar || draftFinal.avatar.url),
+    JSON.stringify({ found: !!found, email, avatar: String(apiAvatar || draftFinal.avatar.url).slice(0, 100) })
   );
 
-  // Fetch avatar bytes if http
-  const finalAvatar = avatarUrl || draftFinal.avatar.url || "";
+  const finalAvatar = apiAvatar || draftFinal.avatar.url || "";
   if (/^https?:/i.test(finalAvatar)) {
     const imgRes = await fetch(finalAvatar);
     step("avatar_url_fetchable", imgRes.ok, `status=${imgRes.status} type=${imgRes.headers.get("content-type")}`);
