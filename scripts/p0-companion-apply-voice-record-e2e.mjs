@@ -87,6 +87,14 @@ function tok(j) {
   return j?.session?.accessToken || j?.session?.token || j?.accessToken || j?.token || "";
 }
 
+async function shot(page, name) {
+  const file = `${name}.png`;
+  const p1 = path.join(ART, file);
+  await page.screenshot({ path: p1, fullPage: true });
+  fs.copyFileSync(p1, path.join(ART_REPO, file));
+  return p1;
+}
+
 async function forceStep3(page) {
   await page.evaluate(() => {
     const draft = JSON.parse(localStorage.getItem("mcjCompanionApplicationDraft.v1") || "{}");
