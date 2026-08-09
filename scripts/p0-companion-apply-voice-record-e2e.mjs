@@ -447,7 +447,15 @@ async function main() {
     const denyPage = await denyCtx.newPage();
     await denyPage.goto(`${BASE}/companion-apply.html?t=${Date.now()}`, { waitUntil: "domcontentloaded", timeout: 90000 });
     await denyPage.waitForFunction(() => !/正在加载申请资料/.test(document.body.innerText), { timeout: 60000 }).catch(() => {});
-    await navigateToUploadStep(denyPage, { seedVoice: false });
+    await denyPage.waitForFunction(() => !/正在加载制度/.test(document.body.innerText || ""), { timeout: 60000 }).catch(() => {});
+    await denyPage.evaluate(() => {
+      const draft = JSON.parse(localStorage.getItem("mcjCompanionApplicationDraft.v1") || "{}");
+      draft.step = 3;
+      draft.voice = { status: "尚未录制" };
+      draft.rulesAgreement = Object.assign({}, draft.rulesAgreement || {}, { accepted: true });
+      localStorage.setItem("mcjCompanionApplicationDraft.v1", JSON.stringify(draft));
+    });
+    await forceStep3(denyPage);
     await denyPage.locator("#applyVoicePanel").scrollIntoViewIfNeeded().catch(() => {});
     const hasStart = await denyPage.locator("[data-record-start]").count();
     if (hasStart) {
@@ -458,7 +466,7 @@ async function main() {
     await denyPage.waitForTimeout(1000);
     const tip = await denyPage.evaluate(() => {
       const banner = document.querySelector("[data-apply-tip]");
-      return (banner && banner.textContent) || document.body.innerText;
+      return (banner && !banner.hidden && banner.textContent) || document.body.innerText;
     });
     step("mic_permission_denied_tip", /请允许麦克风权限后再录音/.test(tip), String(tip).slice(0, 240));
     await denyPage.screenshot({ path: path.join(ART, "03-mic-denied.png"), fullPage: true });
