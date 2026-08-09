@@ -26,6 +26,7 @@
     payment: "",
     submitting: false,
     payMethods: [],
+    payMethodsLoaded: false,
   };
 
   function esc(v) {
@@ -41,14 +42,29 @@
     if (window.MCJCurrency) return window.MCJCurrency.formatAmount(v);
     return "🐱 " + money(v).toFixed(2).replace(/\.00$/, "") + " 猫粮";
   }
+  function looksLikeJwt(raw) {
+    var t = String(raw || "").trim();
+    if (!t || t.length < 20) return false;
+    var parts = t.split(".");
+    return parts.length === 3 && parts.every(function (p) {
+      return p.length > 0;
+    });
+  }
   function token() {
-    return (
-      localStorage.getItem("mcjAuthAccessToken") ||
-      sessionStorage.getItem("mcjAuthAccessToken") ||
-      localStorage.getItem("customerAuthToken") ||
-      sessionStorage.getItem("customerAuthToken") ||
-      ""
-    );
+    if (window.MCJBossAuth && typeof window.MCJBossAuth.getAccessToken === "function") {
+      var fromBoss = window.MCJBossAuth.getAccessToken();
+      if (looksLikeJwt(fromBoss)) return fromBoss;
+    }
+    var candidates = [
+      localStorage.getItem("mcjAuthAccessToken"),
+      sessionStorage.getItem("mcjAuthAccessToken"),
+      localStorage.getItem("customerAuthToken"),
+      sessionStorage.getItem("customerAuthToken"),
+    ];
+    for (var i = 0; i < candidates.length; i++) {
+      if (looksLikeJwt(candidates[i])) return candidates[i];
+    }
+    return "";
   }
   function authHeaders() {
     var t = token();
@@ -78,22 +94,39 @@
       state.payment = state.payMethods[0] ? state.payMethods[0].id : "";
     }
   }
-  function refreshPayMethods() {
-    if (!token()) {
-      state.payMethods = [];
-      return Promise.resolve([]);
-    }
-    return fetch("/api/recharge", { method: "GET", headers: authHeaders() })
-      .then(function (res) {
-        return res.json().then(function (body) {
-          if (!res.ok || body.ok === false) throw new Error(body.message || "支付方式读取失败");
-          applyOrderPayMethods(body);
+  function refreshPayMethods(attempt) {
+    var tryCount = attempt || 0;
+    function runFetch() {
+      if (!token()) {
+        state.payMethods = [];
+        state.payMethodsLoaded = true;
+        return Promise.resolve([]);
+      }
+      return fetch("/api/recharge", { method: "GET", headers: authHeaders(), cache: "no-store" })
+        .then(function (res) {
+          return res.json().then(function (body) {
+            if (!res.ok || body.ok === false) throw new Error(body.message || "支付方式读取失败");
+            applyOrderPayMethods(body);
+            state.payMethodsLoaded = true;
+            return state.payMethods;
+          });
+        })
+        .catch(function () {
+          if (tryCount < 1) {
+            return new Promise(function (resolve) {
+              setTimeout(function () {
+                resolve(refreshPayMethods(tryCount + 1));
+              }, 600);
+            });
+          }
+          state.payMethodsLoaded = true;
           return state.payMethods;
         });
-      })
-      .catch(function () {
-        return state.payMethods;
-      });
+    }
+    if (window.MCJBossAuth && typeof window.MCJBossAuth.ensureSession === "function") {
+      return window.MCJBossAuth.ensureSession().then(runFetch).catch(runFetch);
+    }
+    return runFetch();
   }
   function avatarSrc(raw) {
     var s = String(raw == null ? "" : raw).trim();
@@ -324,7 +357,9 @@
             );
           })
           .join("")
-      : '<p style="color:#9ca3af;font-size:13px;margin:0">暂无可用支付方式，请联系管理员在后台启用</p>';
+      : state.payMethodsLoaded
+        ? '<p style="color:#9ca3af;font-size:13px;margin:0">暂无可用支付方式，请联系管理员在后台启用</p>'
+        : '<p style="color:#9ca3af;font-size:13px;margin:0">正在读取支付方式…</p>';
 
     root.innerHTML =
       '<a class="po-back" href="javascript:history.back()">← 返回</a>' +

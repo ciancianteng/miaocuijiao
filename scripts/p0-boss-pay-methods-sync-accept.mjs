@@ -27,11 +27,15 @@ check("SoT exports listBossPaymentMethods", /export async function listBossPayme
 check("SoT exports listBossOrderPaymentMethods", /export async function listBossOrderPaymentMethods/.test(sot), "listBossOrderPaymentMethods");
 check("SoT no cross-fallback", /Never cross-fallback|never cross-fallback|no cross-channel/i.test(sot), "documented");
 check("SoT wallet pay gate", /isWalletPayEnabled/.test(sot), "wallet gate");
+check("SoT scope flags", /channelScopeFlags|forOrder|forRecharge/.test(sot), "order vs recharge scopes");
+check("SoT filterBossRechargeMethods", /filterBossRechargeMethods/.test(sot), "recharge filter");
+check("SoT order filter uses forOrder", /forOrder !== false/.test(sot), "order filter");
 
 const rechargeApi = read("server/api/recharge.js");
 check("recharge uses listBossPaymentMethods", /listBossPaymentMethods/.test(rechargeApi), "import+load");
 check("recharge returns orderPayMethods", /orderPayMethods/.test(rechargeApi), "orderPayMethods field");
 check("recharge hides closed from methods", /openMethods/.test(rechargeApi), "openMethods");
+check("recharge filters forRecharge", /filterBossRechargeMethods/.test(rechargeApi), "forRecharge");
 
 const ordersApi = read("server/api/orders.js");
 check("orders gates disabled methods", /assertOrderPaymentMethodAllowed/.test(ordersApi), "gate");
@@ -40,6 +44,8 @@ check("orders binds QR to method", /loadPlatformPayQr\(\s*target\.paymentMethod/
 const modal = read("src/place-order-modal.js");
 check("立即下单 no hardcoded TNG", !/\{\s*id:\s*"tng"\s*,\s*label:\s*"TNG"\s*\}/.test(modal), "no hardcode");
 check("立即下单 loads /api/recharge", /\/api\/recharge/.test(modal) && /orderPayMethods|applyOrderPayMethods/.test(modal), "live methods");
+check("立即下单 JWT-only token", /looksLikeJwt/.test(modal), "jwt gate");
+check("立即下单 ensureSession", /ensureSession/.test(modal), "session ensure");
 
 const page = read("src/place-order-page.js");
 check("place-order page no hardcoded TNG", !/\{\s*id:\s*"tng"\s*,\s*label:\s*"TNG"\s*\}/.test(page), "no hardcode");

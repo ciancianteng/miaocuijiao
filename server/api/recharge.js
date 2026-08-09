@@ -12,6 +12,7 @@ import {
 } from "./_wallet.js";
 import {
   CANONICAL_PAYMENT_CHANNELS,
+  filterBossRechargeMethods,
   listBossOrderPaymentMethods,
   listBossPaymentMethods,
   loadChannelPayInfo,
@@ -158,6 +159,8 @@ function publicMethod(row) {
     enabled,
     configured,
     open,
+    forOrder: row.forOrder !== false,
+    forRecharge: row.forRecharge !== false,
     mode: row.mode || "test",
     statusText: open ? "可用" : "暂未开放",
     payInfo: row.payInfo && row.payInfo.enabled ? row.payInfo : null,
@@ -194,11 +197,14 @@ async function loadMethods() {
     const listed = await listBossPaymentMethods(methodRows);
     const orderListed = await listBossOrderPaymentMethods(methodRows);
     const raw = listed.methods.length ? listed.methods : defaultMethodRows();
+    const publicMethods = raw.map(publicMethod);
+    // Recharge center: open + forRecharge only (order uses orderPayMethods).
+    const rechargeOpen = filterBossRechargeMethods(publicMethods);
     return {
       tableReady: listed.tableReady || methodsTableReady,
-      methods: raw.map(publicMethod),
-      // Boss UI should only offer open channels (hide disabled).
-      openMethods: raw.map(publicMethod).filter((m) => m.open),
+      methods: publicMethods,
+      // Boss recharge UI should only offer open + forRecharge channels.
+      openMethods: rechargeOpen,
       orderPayMethods: orderListed.methods,
       walletPayEnabled: orderListed.walletPayEnabled,
       raw,
@@ -374,10 +380,10 @@ export default async function handler(req, res) {
       ]);
       const activeCampaigns = campaigns.filter(campaignActive);
       const wallet = viewWallet(walletRow, profile.id);
-      // Recharge center: only show open (enabled+configured) channels — hide disabled.
+      // Recharge center: open + forRecharge only — never reuse orderPayMethods here.
       const visibleMethods = methodState.openMethods?.length
         ? methodState.openMethods
-        : (methodState.methods || []).filter((m) => m.open);
+        : filterBossRechargeMethods(methodState.methods || []);
       return json(res, 200, {
         ok: true,
         wallet,

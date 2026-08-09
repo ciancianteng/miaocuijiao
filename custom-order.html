@@ -61,13 +61,23 @@
     </section>
   </main>
   <script src="src/role-gates.js"></script>
+  <script src="src/boss-auth-session.js?v=20260809payScopeOrder1"></script>
   <script src="src/dropdown-system.js" defer></script>
   <script src="src/design-system.js" defer></script>
   <script>
     (function(){
       function isLogged(){return window.MCJRoleGate&&window.MCJRoleGate.isLogged('customer')}
       function user(){return window.MCJRoleGate?window.MCJRoleGate.user('customer'):{} }
-      function authToken(){return localStorage.getItem('mcjAuthAccessToken')||sessionStorage.getItem('mcjAuthAccessToken')||'';}
+      function looksLikeJwt(raw){var t=String(raw||'').trim();if(!t||t.length<20)return false;var parts=t.split('.');return parts.length===3&&parts.every(function(p){return p.length>0;});}
+      function authToken(){
+        if(window.MCJBossAuth&&typeof window.MCJBossAuth.getAccessToken==='function'){
+          var t=window.MCJBossAuth.getAccessToken();
+          if(looksLikeJwt(t))return t;
+        }
+        var candidates=[localStorage.getItem('mcjAuthAccessToken'),sessionStorage.getItem('mcjAuthAccessToken'),localStorage.getItem('customerAuthToken'),sessionStorage.getItem('customerAuthToken')];
+        for(var i=0;i<candidates.length;i++){if(looksLikeJwt(candidates[i]))return candidates[i];}
+        return '';
+      }
       function companionId(){var p=new URLSearchParams(location.search);return p.get('companion_id')||p.get('companion')||p.get('player')||'';}
       var form=document.getElementById('customOrderForm'),state=document.getElementById('customState'),btn=document.getElementById('customSubmit');
       var payState={methods:[],payment:''};
@@ -89,11 +99,22 @@
           return '<button type="button" class="btn'+(payState.payment===m.id?' primary':'')+'" data-custom-pay="'+String(m.id).replace(/"/g,'&quot;')+'">'+String(m.label).replace(/</g,'&lt;')+'</button>';
         }).join(' ');
       }
-      function refreshPayMethods(){
-        if(!authToken())return Promise.resolve();
-        return fetch('/api/recharge',{method:'GET',headers:{Accept:'application/json',Authorization:'Bearer '+authToken(),'x-mcj-access-token':authToken()}})
-          .then(function(res){return res.json().then(function(body){if(!res.ok||body.ok===false)throw new Error(body.message||'支付方式读取失败');applyOrderPayMethods(body);});})
-          .catch(function(){});
+      function refreshPayMethods(attempt){
+        var tryCount=attempt||0;
+        function runFetch(){
+          if(!authToken())return Promise.resolve();
+          return fetch('/api/recharge',{method:'GET',headers:{Accept:'application/json',Authorization:'Bearer '+authToken(),'x-mcj-access-token':authToken()},cache:'no-store'})
+            .then(function(res){return res.json().then(function(body){if(!res.ok||body.ok===false)throw new Error(body.message||'支付方式读取失败');applyOrderPayMethods(body);});})
+            .catch(function(){
+              if(tryCount<1){
+                return new Promise(function(resolve){setTimeout(function(){resolve(refreshPayMethods(tryCount+1));},600);});
+              }
+            });
+        }
+        if(window.MCJBossAuth&&typeof window.MCJBossAuth.ensureSession==='function'){
+          return window.MCJBossAuth.ensureSession().then(runFetch).catch(runFetch);
+        }
+        return runFetch();
       }
       document.addEventListener('click',function(e){
         var payBtn=e.target.closest('[data-custom-pay]');

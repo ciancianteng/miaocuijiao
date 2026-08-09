@@ -130,11 +130,32 @@ function unavailablePayInfo(channelId, methodHint = "") {
 }
 
 function channelIsEnabled(channelRow, pub = {}) {
+  const pubOn = pub && pub.enabled != null ? !!pub.enabled : null;
   if (channelRow) {
-    return channelRow.enabled !== false && channelRow.visible !== false;
+    const rowOn = channelRow.enabled !== false && channelRow.visible !== false;
+    // payment_channels is primary SoT; also honor public mirror when admin
+    // fallback-saved enable there (table write failed / partial sync).
+    if (rowOn) return true;
+    if (pubOn === true) return true;
+    return false;
   }
-  if (pub && pub.enabled != null) return !!pub.enabled;
+  if (pubOn != null) return pubOn;
   return false;
+}
+
+/** Scope flags: default both true when unset (backward compatible). */
+export function channelScopeFlags(data = {}, pub = {}) {
+  const src = data && typeof data === "object" ? data : {};
+  const p = pub && typeof pub === "object" ? pub : {};
+  const read = (key) => {
+    if (src[key] != null) return src[key] !== false;
+    if (p[key] != null) return p[key] !== false;
+    return true;
+  };
+  return {
+    forOrder: read("forOrder"),
+    forRecharge: read("forRecharge"),
+  };
 }
 
 function defaultInstructions(channelId) {
@@ -164,6 +185,7 @@ function channelMeta(channelId, channelRow, publicMap = {}) {
   const data = (channelRow && channelRow.data) || {};
   const manual = mergeManual(channelRow, pub);
   const enabled = channelIsEnabled(channelRow, pub);
+  const scopes = channelScopeFlags(data, pub);
   const qrUrl = moneySafe(manual.qrUrl || data.qrUrl || pub.qrUrl || "");
   const duitnowId = moneySafe(manual.duitnowId || pub.duitnowId || "");
   const receiverName = moneySafe(manual.receiverName || pub.accountName || pub.receiverName || "");
@@ -179,6 +201,8 @@ function channelMeta(channelId, channelRow, publicMap = {}) {
   return {
     channelId,
     enabled,
+    forOrder: scopes.forOrder,
+    forRecharge: scopes.forRecharge,
     category,
     publicLabel,
     qrUrl,
@@ -458,6 +482,8 @@ export async function listBossPaymentMethods(methodRows = []) {
       enabled,
       configured,
       open,
+      forOrder: meta.forOrder !== false,
+      forRecharge: meta.forRecharge !== false,
       mode: channelRow?.mode || methodRow?.mode || "test",
       statusText: open ? "可用" : "暂未开放",
       payInfo: payInfo && payInfo.enabled ? payInfo : null,
@@ -499,10 +525,10 @@ export async function listBossPaymentMethods(methodRows = []) {
   };
 }
 
-/** Boss order-pay methods: enabled channels + optional 猫粮余额. */
+/** Boss order-pay methods: open + forOrder channels + optional 猫粮余额. */
 export async function listBossOrderPaymentMethods(methodRows = []) {
   const listed = await listBossPaymentMethods(methodRows);
-  const openChannels = listed.methods.filter((m) => m.open);
+  const openChannels = listed.methods.filter((m) => m.open && m.forOrder !== false);
   const methods = openChannels.map((m) => ({
     id: m.code,
     code: m.code,
@@ -511,6 +537,8 @@ export async function listBossOrderPaymentMethods(methodRows = []) {
     open: true,
     enabled: true,
     configured: true,
+    forOrder: true,
+    forRecharge: m.forRecharge !== false,
     statusText: "可用",
     category: m.category,
     payInfo: m.payInfo,
@@ -524,6 +552,8 @@ export async function listBossOrderPaymentMethods(methodRows = []) {
       open: true,
       enabled: true,
       configured: true,
+      forOrder: true,
+      forRecharge: false,
       statusText: "可用",
       category: "wallet",
       payInfo: null,
@@ -535,6 +565,11 @@ export async function listBossOrderPaymentMethods(methodRows = []) {
     walletPayEnabled: listed.walletPayEnabled,
     allChannels: listed.methods,
   };
+}
+
+/** Boss recharge methods: open + forRecharge (no catfood — recharge tops up wallet). */
+export function filterBossRechargeMethods(methods = []) {
+  return (methods || []).filter((m) => m && m.open && m.forRecharge !== false && m.code !== "catfood");
 }
 
 /** Keys that must never appear on public platform settings responses. */

@@ -254,9 +254,13 @@ async function syncChannelQrToPlatformSettings(channelId, qrUrl, extras = {}) {
 
 function publicConfigFromChannel(channel = {}, data = {}, qrUrl = "") {
   const manual = data.manual && typeof data.manual === "object" ? data.manual : {};
+  const forOrder = data.forOrder != null ? data.forOrder !== false : true;
+  const forRecharge = data.forRecharge != null ? data.forRecharge !== false : true;
   return {
     enabled: channel.enabled !== false,
     visible: channel.visible !== false,
+    forOrder,
+    forRecharge,
     publicLabel: data.publicLabel || channel.name || "",
     bankName: manual.bankName || "",
     accountName: manual.receiverName || "",
@@ -520,13 +524,19 @@ function applyPublicPayOverlay(channels = [], publicMap = {}) {
     if (pub.instructions != null && pub.instructions !== "" && !data.instructions) data.instructions = pub.instructions;
     if (pub.minAmount != null && data.minAmount == null) data.minAmount = pub.minAmount;
     if (pub.maxAmount != null && data.maxAmount == null) data.maxAmount = pub.maxAmount;
+    if (pub.forOrder != null && data.forOrder == null) data.forOrder = pub.forOrder !== false;
+    if (pub.forRecharge != null && data.forRecharge == null) data.forRecharge = pub.forRecharge !== false;
     data.manual = manual;
     const enabled = pub.enabled != null ? !!pub.enabled : ch.enabled;
     const configured = !!(qrUrl || receiverName || bankName || bankAccount || duitnowId || phone);
+    const forOrder = data.forOrder != null ? data.forOrder !== false : true;
+    const forRecharge = data.forRecharge != null ? data.forRecharge !== false : true;
     return {
       ...ch,
       enabled,
       visible: pub.visible != null ? !!pub.visible : pub.enabled != null ? !!pub.enabled : ch.visible,
+      forOrder,
+      forRecharge,
       mode: pub.mode || ch.mode,
       data,
       config_status: configured ? (enabled ? "已启用" : "已配置") : ch.config_status,

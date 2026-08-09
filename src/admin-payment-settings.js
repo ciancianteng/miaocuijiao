@@ -174,6 +174,12 @@
         var id = item.channel_id || item.id;
         var status = item.config_status || "未配置";
         var enabledText = item.enabled ? "已启用" : "已停用";
+        var data = item.data || {};
+        var forOrder = item.forOrder != null ? item.forOrder !== false : data.forOrder !== false;
+        var forRecharge = item.forRecharge != null ? item.forRecharge !== false : data.forRecharge !== false;
+        var scopeBits = [];
+        if (forOrder) scopeBits.push("订单付款");
+        if (forRecharge) scopeBits.push("余额充值");
         return (
           '<article class="payment-channel-card">' +
           '<div class="payment-channel-icon">' +
@@ -189,6 +195,7 @@
           '<div class="payment-card-meta">' +
           chip(status) +
           chip(enabledText) +
+          (scopeBits.length ? chip(scopeBits.join(" · ")) : chip("未指定用途")) +
           "<small>" +
           esc(modeLabel(item.mode)) +
           " · " +
@@ -216,6 +223,7 @@
     var editor = state.editId ? renderEditor(channelById(state.editId)) : "";
     return (
       renderActivePublicQr() +
+      '<div class="admin-sync-note" style="margin:0 0 12px">启用后老板端「立即下单」读取 <code>orderPayMethods</code>（订单付款），「充值中心」读取开放的充值通道。请明确勾选适用场景，避免后台启用但订单页查不到。</div>' +
       '<div class="payment-channel-grid">' +
       (cards || '<div class="empty">暂无支付渠道</div>') +
       "</div>" +
@@ -316,6 +324,16 @@
       '>停用</option><option value="true"' +
       (item.enabled ? " selected" : "") +
       ">启用</option></select></label>" +
+      '<label><span>适用于订单付款</span><select name="forOrder"><option value="true"' +
+      ((data.forOrder !== false && item.forOrder !== false) ? " selected" : "") +
+      '>是</option><option value="false"' +
+      ((data.forOrder === false || item.forOrder === false) ? " selected" : "") +
+      ">否</option></select></label>" +
+      '<label><span>适用于余额充值</span><select name="forRecharge"><option value="true"' +
+      ((data.forRecharge !== false && item.forRecharge !== false) ? " selected" : "") +
+      '>是</option><option value="false"' +
+      ((data.forRecharge === false || item.forRecharge === false) ? " selected" : "") +
+      ">否</option></select></label>" +
       '<label><span>最低充值金额</span><input name="minAmount" inputmode="decimal" value="' +
       esc(data.minAmount != null ? data.minAmount : 10) +
       '"></label>' +
@@ -556,6 +574,8 @@
       minAmount: Number(fd.get("minAmount") || 10),
       maxAmount: Number(fd.get("maxAmount") || 5000),
       instructions: String(fd.get("instructions") || ""),
+      forOrder: String(fd.get("forOrder")) !== "false",
+      forRecharge: String(fd.get("forRecharge")) !== "false",
       manual: manual,
     });
     return {
@@ -623,6 +643,8 @@
       pub[id] = {
         enabled: ch.enabled !== false,
         visible: ch.visible !== false,
+        forOrder: data.forOrder !== false,
+        forRecharge: data.forRecharge !== false,
         publicLabel: data.publicLabel || ch.name || "",
         bankName: manual.bankName || "",
         accountName: manual.receiverName || "",

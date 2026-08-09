@@ -61,12 +61,22 @@
   <main class="recharge-shell" id="rechargeApp"></main>
 
   <script src="src/role-gates.js"></script>
+  <script src="src/boss-auth-session.js?v=20260809payScopeOrder1"></script>
   <script src="src/boss-header.js" defer></script>
   <script>
     (function(){
       var root=document.getElementById('rechargeApp');
       var state={loading:true,submitting:false,error:'',message:'',messageType:'warn',summary:{balance:0,paidBalance:0,bonusBalance:0,totalRecharge:0,totalSpent:0},campaigns:[],transactions:[],methods:[],records:[],campaignId:'',method:''};
-      function token(){return localStorage.getItem('mcjAuthAccessToken')||sessionStorage.getItem('mcjAuthAccessToken')||''}
+      function looksLikeJwt(raw){var t=String(raw||'').trim();if(!t||t.length<20)return false;var parts=t.split('.');return parts.length===3&&parts.every(function(p){return p.length>0;});}
+      function token(){
+        if(window.MCJBossAuth&&typeof window.MCJBossAuth.getAccessToken==='function'){
+          var t=window.MCJBossAuth.getAccessToken();
+          if(looksLikeJwt(t))return t;
+        }
+        var candidates=[localStorage.getItem('mcjAuthAccessToken'),sessionStorage.getItem('mcjAuthAccessToken')];
+        for(var i=0;i<candidates.length;i++){if(looksLikeJwt(candidates[i]))return candidates[i];}
+        return '';
+      }
       function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
       function money(v){var n=Number(v||0);return 'RM'+(Number.isFinite(n)?n:0).toFixed(2)}
       function date(v){if(!v)return '-';try{return new Date(v).toLocaleString('zh-CN',{hour12:false})}catch(e){return v}}
@@ -100,7 +110,7 @@
           state.summary=body.summary||state.summary;
           state.campaigns=body.campaigns||[];
           state.transactions=body.transactions||[];
-          state.methods=(body.methods||[]).filter(function(m){return m&&m.code&&(m.open===true||(m.enabled&&m.configured&&m.statusText==='可用'));});
+          state.methods=(body.methods||[]).filter(function(m){return m&&m.code&&m.open===true&&m.forRecharge!==false;});
           state.records=body.records||[];
           if(!state.campaigns.some(function(c){return c.id===state.campaignId}))state.campaignId=state.campaigns[0]?state.campaigns[0].id:'';
           if(!state.methods.some(function(m){return m.code===state.method}))state.method=state.methods[0]?state.methods[0].code:'';

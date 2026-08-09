@@ -47,14 +47,29 @@
   function priceHeroHtml(v) {
     return '<span class="mcj-po-price-hero" data-po-price-hero>' + esc(moneyText(v)) + "</span>";
   }
+  function looksLikeJwt(raw) {
+    var t = String(raw || "").trim();
+    if (!t || t.length < 20) return false;
+    var parts = t.split(".");
+    return parts.length === 3 && parts.every(function (p) {
+      return p.length > 0;
+    });
+  }
   function token() {
-    return (
-      localStorage.getItem("mcjAuthAccessToken") ||
-      sessionStorage.getItem("mcjAuthAccessToken") ||
-      localStorage.getItem("customerAuthToken") ||
-      sessionStorage.getItem("customerAuthToken") ||
-      ""
-    );
+    if (window.MCJBossAuth && typeof window.MCJBossAuth.getAccessToken === "function") {
+      var fromBoss = window.MCJBossAuth.getAccessToken();
+      if (looksLikeJwt(fromBoss)) return fromBoss;
+    }
+    var candidates = [
+      localStorage.getItem("mcjAuthAccessToken"),
+      sessionStorage.getItem("mcjAuthAccessToken"),
+      localStorage.getItem("customerAuthToken"),
+      sessionStorage.getItem("customerAuthToken"),
+    ];
+    for (var i = 0; i < candidates.length; i++) {
+      if (looksLikeJwt(candidates[i])) return candidates[i];
+    }
+    return "";
   }
   function authHeaders() {
     var t = token();
@@ -146,31 +161,47 @@
       state.payment = state.payMethods[0] ? state.payMethods[0].id : "";
     }
   }
-  function refreshWalletBalance() {
-    if (!token()) {
-      state.walletBalance = null;
-      state.payMethods = [];
-      return Promise.resolve(null);
-    }
-    return fetch("/api/recharge", { method: "GET", headers: authHeaders() })
-      .then(function (res) {
-        return res.json().then(function (body) {
-          if (!res.ok || body.ok === false) throw new Error(body.message || "余额读取失败");
-          var bal =
-            body.summary && body.summary.balance != null
-              ? body.summary.balance
-              : body.wallet && body.wallet.totalBalance != null
-                ? body.wallet.totalBalance
-                : null;
-          state.walletBalance = bal == null ? null : money(bal);
-          applyOrderPayMethods(body);
+  function refreshWalletBalance(attempt) {
+    var tryCount = attempt || 0;
+    function runFetch() {
+      if (!token()) {
+        state.walletBalance = null;
+        state.payMethods = [];
+        return Promise.resolve(null);
+      }
+      return fetch("/api/recharge", { method: "GET", headers: authHeaders(), cache: "no-store" })
+        .then(function (res) {
+          return res.json().then(function (body) {
+            if (!res.ok || body.ok === false) throw new Error(body.message || "余额读取失败");
+            var bal =
+              body.summary && body.summary.balance != null
+                ? body.summary.balance
+                : body.wallet && body.wallet.totalBalance != null
+                  ? body.wallet.totalBalance
+                  : null;
+            state.walletBalance = bal == null ? null : money(bal);
+            applyOrderPayMethods(body);
+            return state.walletBalance;
+          });
+        })
+        .catch(function () {
+          // Soft fail: keep prior methods if any; retry once after session settle.
+          if (tryCount < 1) {
+            return new Promise(function (resolve) {
+              setTimeout(function () {
+                resolve(refreshWalletBalance(tryCount + 1));
+              }, 600);
+            });
+          }
           return state.walletBalance;
         });
-      })
-      .catch(function () {
-        state.walletBalance = null;
-        return null;
-      });
+    }
+    if (window.MCJBossAuth && typeof window.MCJBossAuth.ensureSession === "function") {
+      return window.MCJBossAuth.ensureSession()
+        .then(runFetch)
+        .catch(runFetch);
+    }
+    return runFetch();
   }
   function paintPayCards() {
     var mask = activeMask();
@@ -1393,7 +1424,7 @@
       });
   }
 
-  window.MCJ_PAY_SOT_VERSION = '20260808paySotForceSrc1';
+  window.MCJ_PAY_SOT_VERSION = '20260809payScopeOrder1';
   window.MCJPlaceOrder = {
     open: open,
     openFromCompanion: openFromProfileCompanion,
