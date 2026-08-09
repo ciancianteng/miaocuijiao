@@ -370,19 +370,24 @@ async function writePngFixture(name, b64) {
     await csPage.fill('input[name="account"]', CS_EMAIL);
     await csPage.fill('input[name="password"]', PASS);
     await Promise.all([
-      csPage.waitForURL(/\/customer-service\//i, { timeout: 60000 }),
+      csPage.waitForURL(/\/customer-service\/(dashboard|orders|conversations)/i, { timeout: 60000 }),
       csPage.click('button[type="submit"]'),
     ]);
-    await csPage.goto(`${BASE}/customer-service/conversations/?t=${Date.now()}`, { waitUntil: "domcontentloaded", timeout: 90000 });
+    await csPage.waitForTimeout(1500);
+    // Prefer in-app nav so SPA modules stay mounted.
+    const convNav = csPage.locator('.cs-nav button:has-text("统一会话池"), a:has-text("统一会话池")');
+    if (await convNav.count()) {
+      await convNav.first().click();
+    } else {
+      await csPage.goto(`${BASE}/customer-service/conversations/?t=${Date.now()}`, { waitUntil: "domcontentloaded", timeout: 90000 });
+    }
     await csPage.waitForFunction(() => !!(window.MCJChatMedia && window.MCJChatMedia.pickAndSendImages), null, { timeout: 30000 }).catch(() => {});
+    await csPage.waitForTimeout(1500);
     const mediaReady = await csPage.evaluate(() => !!(window.MCJChatMedia && window.MCJChatMedia.pickAndSendImages));
     step("ui_cs_media_loaded", mediaReady, mediaReady ? "MCJChatMedia ready" : "missing MCJChatMedia");
 
-    // open conversation via SPA route/state when possible
+    // open conversation via SPA when possible
     await csPage.evaluate((id) => {
-      try {
-        history.replaceState({}, "", "/customer-service/conversations/?id=" + encodeURIComponent(id));
-      } catch (_) {}
       const row = document.querySelector(
         `[data-open-conversation="${id}"], [data-select-conversation="${id}"], [data-conv-id="${id}"], [data-conversation-id="${id}"]`
       );
@@ -421,52 +426,51 @@ async function writePngFixture(name, b64) {
     }
 
     // Boss UI
-    await bossPage.goto(`${BASE}/support.html?t=${Date.now()}`, { waitUntil: "domcontentloaded", timeout: 90000 });
-    await bossPage.evaluate(
-      ({ email, token, sessionJson }) => {
-        const session = sessionJson || {
-          accessToken: token,
-          token,
-          user: { email, role: "boss" },
-          email,
-        };
-        const keys = ["mcjBossSession", "mcjCustomerSession", "mcjAuthSession", "sb-session"];
-        try {
-          for (const k of keys) {
-            localStorage.setItem(k, JSON.stringify(session));
-            sessionStorage.setItem(k, JSON.stringify(session));
-          }
-        } catch (_) {}
-      },
-      { email: BOSS_A, token: bossATok, sessionJson: null }
-    );
-    // Prefer API login cookie/session via page fetch
-    await bossPage.evaluate(
+    // Boss UI — seed portal JWT keys before opening support (portal-early-gate)
+    const bossSeed = await context.newPage();
+    await bossSeed.goto(`${BASE}/`, { waitUntil: "domcontentloaded", timeout: 90000 });
+    await bossSeed.evaluate(
       async ({ email, pass }) => {
-        try {
-          const res = await fetch("/api/auth", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ action: "login", email, password: pass, role: "boss" }),
-          });
-          const body = await res.json();
-          const token = body?.session?.accessToken || body?.session?.token || body?.token || "";
-          const session = body?.session || { accessToken: token, token, user: body?.user || { email, role: "boss" } };
-          localStorage.setItem("mcjBossSession", JSON.stringify(session));
-          sessionStorage.setItem("mcjBossSession", JSON.stringify(session));
-          localStorage.setItem("mcjCustomerSession", JSON.stringify(session));
-        } catch (_) {}
+        const res = await fetch("/api/auth", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "login", email, password: pass, role: "boss" }),
+        });
+        const body = await res.json();
+        const session = body.session || {};
+        const token = session.accessToken || session.token || body.token || "";
+        const refresh = session.refreshToken || session.refresh_token || "";
+        const expiresAt = session.expiresAt || session.expires_at || "";
+        const user = body.user || session.user || { email, role: "boss" };
+        const stores = [localStorage, sessionStorage];
+        stores.forEach((store) => {
+          try {
+            if (token) store.setItem("mcjAuthAccessToken", token);
+            if (refresh) store.setItem("mcjAuthRefreshToken", refresh);
+            if (expiresAt) store.setItem("mcjAuthExpiresAt", String(expiresAt));
+            store.setItem("mcjRole", "boss");
+            store.setItem("customerAuthToken", token);
+            store.setItem("customerUser", JSON.stringify(user));
+            store.setItem("mcjCurrentUser", JSON.stringify(user));
+            store.setItem("mcjBossSession", JSON.stringify(session));
+            store.setItem("mcjCustomerSession", JSON.stringify(session));
+          } catch (_) {}
+        });
       },
       { email: BOSS_A, pass: PASS }
     );
+    await bossSeed.close();
+
     await bossPage.goto(`${BASE}/support.html?conversation_id=${encodeURIComponent(convId)}&t=${Date.now()}`, {
       waitUntil: "domcontentloaded",
       timeout: 90000,
     });
-    await bossPage.waitForFunction(() => !!(window.MCJChatMedia && window.MCJChatMedia.pickAndSendImages), null, { timeout: 30000 }).catch(() => {});
+    await bossPage.waitForFunction(() => !!(window.MCJChatMedia && window.MCJChatMedia.pickAndSendImages), null, {
+      timeout: 30000,
+    }).catch(() => {});
     await bossPage.waitForTimeout(2000);
     const bossMedia = await bossPage.evaluate(() => !!(window.MCJChatMedia && window.MCJChatMedia.pickAndSendImages));
-    step("ui_boss_media_loaded", bossMedia, bossMedia ? "ok" : "missing");
+    step("ui_boss_media_loaded", bossMedia, bossMedia ? "ok" : `url=${bossPage.url()}`);
     const bossBtn = bossPage.locator("[data-chat-image-btn]");
     step("ui_boss_image_button", (await bossBtn.count()) > 0, "图片按钮");
     const bossImgs = await bossPage.locator(".mcj-chat-img, [data-chat-image]").count();
