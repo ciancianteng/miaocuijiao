@@ -260,7 +260,7 @@ async function runViewport(label, deviceOpts, { injectFix }) {
   const summary = {
     label,
     injectFix,
-    lagFix,
+    lagFix: lagFixFlag,
     avgUi,
     maxUi,
     firstUi: open1.uiMs,
