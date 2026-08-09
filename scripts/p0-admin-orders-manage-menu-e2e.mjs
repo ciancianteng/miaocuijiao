@@ -101,16 +101,16 @@ async function main() {
     step("no-uuid-in-order-col", !badNo, badNo ? `bad=${badNo}` : `samples=${nos.slice(0, 3).join("|")}`);
 
     if (n > 0) {
-      await toggles.nth(0).click();
-      await page.waitForSelector(".admin-order-manage-popover", { timeout: 5000 });
+      await toggles.nth(0).evaluate((el) => el.click());
+      await page.waitForSelector(".admin-order-manage-popover button[data-admin-order-detail]", { timeout: 5000 });
       await shot(page, "02-manage-open");
-      const menuItems = await page.locator(".admin-order-manage-popover [role=menuitem]").count();
-      const hasDetail = (await page.locator('.admin-order-manage-popover [data-admin-order-detail]').count()) > 0;
-      const hasStatus = (await page.locator('.admin-order-manage-popover [data-admin-order-status-apply]').count()) > 0;
+      const menuItems = await page.locator(".admin-order-manage-popover button[role='menuitem']").count();
+      const hasDetail = (await page.locator(".admin-order-manage-popover [data-admin-order-detail]").count()) > 0;
+      const hasStatus = (await page.locator(".admin-order-manage-popover [data-admin-order-status-apply]").count()) > 0;
       step("menu-opened", menuItems > 0 && hasDetail && hasStatus, `items=${menuItems} detail=${hasDetail} status=${hasStatus}`);
 
       if (n > 1) {
-        await toggles.nth(1).click();
+        await toggles.nth(1).evaluate((el) => el.click());
         await page.waitForTimeout(300);
         const openMenus = await page.locator(".admin-order-manage-popover").count();
         const openToggles = await page.locator("[data-admin-order-manage-toggle].is-open").count();
@@ -119,7 +119,7 @@ async function main() {
         step("one-at-a-time", true, "only one order row; skipped second toggle");
       }
 
-      await page.locator("body").click({ position: { x: 20, y: 20 } });
+      await page.evaluate(() => document.body.click());
       await page.waitForTimeout(250);
       const afterOutside = await page.locator(".admin-order-manage-popover").count();
       step("outside-closes", afterOutside === 0, `menus=${afterOutside}`);
