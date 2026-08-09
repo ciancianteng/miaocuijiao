@@ -40,15 +40,28 @@ function bannerItem(row) {
   const mobileCropRaw = row.mobile_crop_meta || row.mobile_crop || {};
   const crop =
     cropRaw && typeof cropRaw === "object" && !Array.isArray(cropRaw)
-      ? {
-          zoom: Number(cropRaw.zoom ?? cropRaw.scale ?? 1) || 1,
-          x: Number(cropRaw.x ?? cropRaw.offsetX ?? cropRaw.nx ?? 0) || 0,
-          y: Number(cropRaw.y ?? cropRaw.offsetY ?? cropRaw.ny ?? 0) || 0,
-          ratioW: Number(cropRaw.ratioW ?? cropRaw.ratio_w ?? 1920) || 1920,
-          ratioH: Number(cropRaw.ratioH ?? cropRaw.ratio_h ?? 700) || 700,
-          ratio: String(cropRaw.ratio || `${cropRaw.ratioW || 1920}:${cropRaw.ratioH || 700}`),
-        }
-      : { zoom: 1, x: 0, y: 0, ratioW: 1920, ratioH: 700, ratio: "1920:700" };
+      ? (() => {
+          let zoom = Number(cropRaw.zoom ?? cropRaw.scale ?? 1) || 1;
+          let x = Number(cropRaw.x ?? cropRaw.offsetX ?? cropRaw.nx ?? 0) || 0;
+          let y = Number(cropRaw.y ?? cropRaw.offsetY ?? cropRaw.ny ?? 0) || 0;
+          if (zoom < 1) zoom = 1;
+          if (Math.abs(x) > 2 || Math.abs(y) > 2) {
+            x = Math.max(-1.5, Math.min(1.5, x / 640));
+            y = Math.max(-1.5, Math.min(1.5, y / 360));
+          }
+          return {
+            zoom,
+            scale: zoom,
+            x,
+            y,
+            offsetX: x,
+            offsetY: y,
+            ratioW: Number(cropRaw.ratioW ?? cropRaw.ratio_w ?? 1920) || 1920,
+            ratioH: Number(cropRaw.ratioH ?? cropRaw.ratio_h ?? 700) || 700,
+            ratio: String(cropRaw.ratio || `${cropRaw.ratioW || 1920}:${cropRaw.ratioH || 700}`),
+          };
+        })()
+      : { zoom: 1, scale: 1, x: 0, y: 0, offsetX: 0, offsetY: 0, ratioW: 1920, ratioH: 700, ratio: "1920:700" };
   const mobileCrop =
     mobileCropRaw && typeof mobileCropRaw === "object" && !Array.isArray(mobileCropRaw)
       ? {

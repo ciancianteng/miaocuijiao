@@ -91,6 +91,9 @@
   }
 
   function applyCropToImg(img, frame, crop) {
+    if (window.MCJBannerCrop && typeof window.MCJBannerCrop.applyCropToImg === "function") {
+      return window.MCJBannerCrop.applyCropToImg(img, frame, crop);
+    }
     if (!img || !frame) return;
     var natW = img.naturalWidth || 1920;
     var natH = img.naturalHeight || 700;
@@ -98,12 +101,10 @@
     var fw = Math.max(1, frame.clientWidth || frame.offsetWidth);
     var fh = Math.max(1, frame.clientHeight || frame.offsetHeight);
     var c = normalizeCrop(crop);
-    /* zoom floor 1 = always cover; never shrink below cover baseline (no side gaps) */
     if (c.zoom < 1) c.zoom = 1;
     var base = coverBaseSize(natW, natH, fw, fh);
     var w = base.w * c.zoom;
     var h = base.h * c.zoom;
-    /* !important so index.html / global img max-width rules cannot letterbox */
     img.style.setProperty("width", w + "px", "important");
     img.style.setProperty("height", h + "px", "important");
     img.style.setProperty("max-width", "none", "important");

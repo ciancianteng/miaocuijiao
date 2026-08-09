@@ -13,7 +13,7 @@
     draft: null,
     editingId: "",
     editMeta: { title: "", link: "", sort_order: 100 },
-    crop: { scale: 1, offsetX: 0, offsetY: 0 },
+    crop: { zoom: 1, x: 0, y: 0 },
     natural: { width: 0, height: 0 },
   };
   var DESKTOP_RATIO = 1920 / 700;
@@ -55,10 +55,16 @@
         state.current = null;
         state.history = [];
       })
-      .finally(function () {
+      .      finally(function () {
         state.loading = false;
         render();
         bind();
+        requestAnimationFrame(function () {
+          if (!state.draft && state.current) {
+            state.crop = normalizeCropState(state.current.crop_meta || state.current.crop || {});
+            applyCropFrames();
+          }
+        });
       });
   }
   function resetDraft(keepEditing) {
@@ -66,7 +72,7 @@
       URL.revokeObjectURL(state.draft.url);
     }
     state.draft = null;
-    state.crop = { scale: 1, offsetX: 0, offsetY: 0 };
+    state.crop = { zoom: 1, x: 0, y: 0 };
     state.natural = { width: 0, height: 0 };
     if (!keepEditing) {
       state.editingId = "";
@@ -87,15 +93,14 @@
     var url = URL.createObjectURL(file);
     var img = new Image();
     img.onload = function () {
-      state.draft = { file: file, url: url };
+      state.draft = { file: file, url: url, reused: false };
       state.natural = { width: img.naturalWidth, height: img.naturalHeight };
-      var frameRatio = DESKTOP_RATIO;
-      var imageRatio = img.naturalWidth / Math.max(1, img.naturalHeight);
-      state.crop.scale = imageRatio > frameRatio ? 1 : frameRatio / imageRatio;
-      state.crop.offsetX = 0;
-      state.crop.offsetY = 0;
+      state.crop = { zoom: 1, x: 0, y: 0 };
       render();
       bind();
+      requestAnimationFrame(function () {
+        applyCropFrames();
+      });
     };
     img.onerror = function () {
       alert("图片读取失败，请换一张试试。");
@@ -103,17 +108,50 @@
     };
     img.src = url;
   }
-  function cropTransformStyle() {
-    var s = state.crop.scale;
-    return (
-      "translate(calc(-50% + " +
-      state.crop.offsetX +
-      "px), calc(-50% + " +
-      state.crop.offsetY +
-      "px)) scale(" +
-      s +
-      ")"
-    );
+  function cropApi() {
+    return window.MCJBannerCrop || null;
+  }
+  function normalizeCropState(raw) {
+    var api = cropApi();
+    var c = api && api.normalizeCrop ? api.normalizeCrop(raw || state.crop, { ratioW: 1920, ratioH: 700 }) : raw || state.crop;
+    return {
+      zoom: Number(c.zoom != null ? c.zoom : c.scale) || 1,
+      x: Number(c.x != null ? c.x : c.offsetX) || 0,
+      y: Number(c.y != null ? c.y : c.offsetY) || 0,
+    };
+  }
+  function cropPayload() {
+    var c = normalizeCropState(state.crop);
+    return {
+      zoom: c.zoom,
+      scale: c.zoom,
+      x: c.x,
+      y: c.y,
+      offsetX: c.x,
+      offsetY: c.y,
+      ratioW: 1920,
+      ratioH: 700,
+      ratio: "1920:700",
+    };
+  }
+  function applyCropFrames() {
+    var api = cropApi();
+    if (!api || !api.applyCropToImg) return;
+    var crop = cropPayload();
+    var pairs = [
+      [document.querySelector("[data-banner-crop-img]"), document.querySelector("[data-banner-crop-stage]")],
+      [document.querySelector("[data-banner-live-preview] img"), document.querySelector("[data-banner-live-preview]")],
+    ];
+    pairs.forEach(function (pair) {
+      var img = pair[0];
+      var frame = pair[1];
+      if (!img || !frame) return;
+      function run() {
+        api.applyCropToImg(img, frame, crop);
+      }
+      if (img.complete && img.naturalWidth) run();
+      else img.addEventListener("load", run, { once: true });
+    });
   }
   function renderUploadZone() {
     if (state.draft && state.draft.url) {
@@ -122,22 +160,20 @@
         '<div class="banner-ops-crop-stage" data-banner-crop-stage>' +
         '<img data-banner-crop-img src="' +
         esc(state.draft.url) +
-        '" style="transform:' +
-        esc(cropTransformStyle()) +
         '" alt="">' +
         "</div>" +
         '<div class="banner-ops-crop-controls">' +
-        '<label>缩放<input type="range" data-banner-crop-scale min="0.2" max="3" step="0.01" value="' +
-        state.crop.scale +
+        '<label>缩放<input type="range" data-banner-crop-scale min="1" max="3" step="0.01" value="' +
+        state.crop.zoom +
         '"></label>' +
-        '<label>左右位置<input type="range" data-banner-crop-x min="-400" max="400" step="1" value="' +
-        state.crop.offsetX +
+        '<label>左右位置<input type="range" data-banner-crop-x min="-1" max="1" step="0.01" value="' +
+        state.crop.x +
         '"></label>' +
-        '<label>上下位置<input type="range" data-banner-crop-y min="-400" max="400" step="1" value="' +
-        state.crop.offsetY +
+        '<label>上下位置<input type="range" data-banner-crop-y min="-1" max="1" step="0.01" value="' +
+        state.crop.y +
         '"></label>' +
         "</div>" +
-        '<p class="admin-sync-note">拖动图片或调整滑杆，确认宽屏预览正确后点击保存。也可重新拖入图片更换。</p>' +
+        '<p class="admin-sync-note">缩放 / 左右 / 上下会写入数据库 crop_meta，首页用同一套参数渲染。确认预览后点击保存。</p>' +
         '<div class="banner-ops-upload banner-ops-upload-replace" data-banner-upload-zone>' +
         '<input class="banner-ops-file" type="file" accept="image/jpeg,image/png,image/webp" data-banner-file tabindex="-1" aria-hidden="true">' +
         '<div class="banner-ops-upload-inner">' +
@@ -255,7 +291,7 @@
       "<p>宽屏比例（约 1920×700）。保存成功后首页会读取当前启用 Banner。</p>" +
       '<div class="banner-ops-preview" data-banner-live-preview>' +
       (previewUrl
-        ? '<img src="' + esc(previewUrl) + '" alt="当前 Banner" style="transform:' + esc(state.draft ? cropTransformStyle() : "none") + '">'
+        ? '<img src="' + esc(previewUrl) + '" alt="当前 Banner">'
         : '<div class="banner-ops-preview-empty">暂无 Banner，请上传并发布</div>') +
       "</div></section>" +
       '<section class="banner-ops-section">' +
@@ -294,13 +330,15 @@
     var lastX = 0;
     var lastY = 0;
     function move(dx, dy) {
-      state.crop.offsetX += dx;
-      state.crop.offsetY += dy;
-      img.style.transform = cropTransformStyle();
+      var fw = Math.max(1, stage.clientWidth || 1);
+      var fh = Math.max(1, stage.clientHeight || 1);
+      state.crop.x = Math.max(-1.5, Math.min(1.5, state.crop.x + dx / fw));
+      state.crop.y = Math.max(-1.5, Math.min(1.5, state.crop.y + dy / fh));
+      applyCropFrames();
       var xInput = document.querySelector("[data-banner-crop-x]");
       var yInput = document.querySelector("[data-banner-crop-y]");
-      if (xInput) xInput.value = String(state.crop.offsetX);
-      if (yInput) yInput.value = String(state.crop.offsetY);
+      if (xInput) xInput.value = String(state.crop.x);
+      if (yInput) yInput.value = String(state.crop.y);
     }
     stage.addEventListener("pointerdown", function (e) {
       dragging = true;
@@ -325,28 +363,28 @@
     var scale = document.querySelector("[data-banner-crop-scale]");
     var x = document.querySelector("[data-banner-crop-x]");
     var y = document.querySelector("[data-banner-crop-y]");
-    var img = document.querySelector("[data-banner-crop-img]");
     function apply() {
-      if (img) img.style.transform = cropTransformStyle();
-      var live = document.querySelector("[data-banner-live-preview] img");
-      if (live && state.draft) live.src = state.draft.url;
+      applyCropFrames();
     }
     if (scale)
       scale.oninput = function () {
-        state.crop.scale = Number(scale.value) || 1;
+        state.crop.zoom = Math.max(1, Number(scale.value) || 1);
         apply();
       };
     if (x)
       x.oninput = function () {
-        state.crop.offsetX = Number(x.value) || 0;
+        state.crop.x = Number(x.value) || 0;
         apply();
       };
     if (y)
       y.oninput = function () {
-        state.crop.offsetY = Number(y.value) || 0;
+        state.crop.y = Number(y.value) || 0;
         apply();
       };
     bindCropDrag();
+    requestAnimationFrame(function () {
+      applyCropFrames();
+    });
   }
   function bindUploadZone() {
     var zone = document.querySelector("[data-banner-upload-zone]");
@@ -404,57 +442,54 @@
     zone.addEventListener("drop", onDrop);
     input.addEventListener("drop", onDrop);
   }
-  function exportCoverDataUrl() {
+  function readFileAsDataUrl(file) {
     return new Promise(function (resolve, reject) {
-      if (!state.draft) return reject(new Error("没有可发布的图片"));
-      var img = new Image();
-      img.onload = function () {
-        var stage = document.querySelector("[data-banner-crop-stage]");
-        var stageW = stage && stage.clientWidth;
-        var stageH = stage && stage.clientHeight;
-        if (!stageW || !stageH) {
-          reject(new Error("裁剪画布尚未渲染完成，请稍等片刻后重新点击「保存并发布」"));
-          return;
-        }
-        var canvas = document.createElement("canvas");
-        var outW = 1920;
-        var outH = 700;
-        canvas.width = outW;
-        canvas.height = outH;
-        var ctx = canvas.getContext("2d");
-        var scale = state.crop.scale;
-        var drawW = img.naturalWidth * scale;
-        var drawH = img.naturalHeight * scale;
-        var centerX = stageW / 2 + state.crop.offsetX;
-        var centerY = stageH / 2 + state.crop.offsetY;
-        var destScale = outW / stageW;
-        var dx = (centerX - drawW / 2) * destScale;
-        var dy = (centerY - drawH / 2) * destScale;
-        ctx.fillStyle = "#000";
-        ctx.fillRect(0, 0, outW, outH);
-        ctx.drawImage(img, dx, dy, drawW * destScale, drawH * destScale);
-        var type = state.draft.file && state.draft.file.type === "image/png" ? "image/png" : "image/jpeg";
-        resolve(canvas.toDataURL(type, 0.92));
+      if (!file) return reject(new Error("没有可发布的图片文件"));
+      var reader = new FileReader();
+      reader.onload = function () {
+        resolve(reader.result);
       };
-      img.onerror = function () {
-        reject(new Error("图片处理失败"));
+      reader.onerror = function () {
+        reject(new Error("图片读取失败"));
       };
-      img.src = state.draft.url;
+      reader.readAsDataURL(file);
     });
+  }
+  function resolvePublishImageData() {
+    if (!state.draft) return Promise.reject(new Error("没有可发布的图片"));
+    // Crop-only update on existing banner: persist crop_meta without re-uploading bytes.
+    if (state.draft.reused && state.editingId) {
+      return Promise.resolve(null);
+    }
+    // Prefer original file bytes — crop is persisted in crop_meta, not baked into pixels.
+    if (state.draft.file) return readFileAsDataUrl(state.draft.file);
+    // Remote URL without File (CORS fallback): fetch blob then data URL.
+    return fetch(state.draft.url, { mode: "cors", credentials: "omit" })
+      .then(function (res) {
+        if (!res.ok) throw new Error("无法读取原图，请重新上传图片后再保存");
+        return res.blob();
+      })
+      .then(function (blob) {
+        var type = blob.type || "image/jpeg";
+        var file = new File([blob], "homepage-banner.jpg", { type: type });
+        state.draft.file = file;
+        return readFileAsDataUrl(file);
+      });
   }
   function applyDraftImage(file, url) {
     var img = new Image();
     img.onload = function () {
-      state.draft = { file: file || null, url: url };
+      var reused = !!(state.draft && state.draft.reused);
+      state.draft = { file: file || null, url: url, reused: reused };
       state.natural = { width: img.naturalWidth, height: img.naturalHeight };
-      var imageRatio = img.naturalWidth / Math.max(1, img.naturalHeight);
-      state.crop.scale = imageRatio > DESKTOP_RATIO ? 1 : DESKTOP_RATIO / imageRatio;
-      state.crop.offsetX = 0;
-      state.crop.offsetY = 0;
+      if (!state.crop || state.crop.zoom == null) state.crop = { zoom: 1, x: 0, y: 0 };
       render();
       bind();
-      var stage = document.querySelector("[data-banner-crop-stage]");
-      if (stage) stage.scrollIntoView({ behavior: "smooth", block: "center" });
+      requestAnimationFrame(function () {
+        applyCropFrames();
+        var stage = document.querySelector("[data-banner-crop-stage]");
+        if (stage) stage.scrollIntoView({ behavior: "smooth", block: "center" });
+      });
     };
     img.onerror = function () {
       alert("图片加载失败，请重新上传。");
@@ -480,8 +515,8 @@
       link: item.button_link || item.link || "",
       sort_order: item.sort_order != null ? item.sort_order : 100,
     };
+    state.crop = normalizeCropState(item.crop_meta || item.crop || {});
     var remote = item.image_url;
-    // Prefer blob so canvas export is not CORS-tainted.
     fetch(remote, { mode: "cors", credentials: "omit" })
       .then(function (res) {
         if (!res.ok) throw new Error("fetch failed");
@@ -490,10 +525,12 @@
       .then(function (blob) {
         var type = blob.type || "image/jpeg";
         var file = new File([blob], "banner-edit.jpg", { type: type });
-        applyDraftImage(file, URL.createObjectURL(blob));
+        var url = URL.createObjectURL(blob);
+        state.draft = { file: file, url: url, reused: true };
+        applyDraftImage(file, url);
       })
       .catch(function () {
-        // Fallback: show remote image; user can replace if canvas export fails.
+        state.draft = { file: null, url: remote, reused: true };
         applyDraftImage(null, remote);
       });
   }
@@ -508,18 +545,18 @@
     state.error = "";
     state.message = "上传中/发布中…";
     render();
-    exportCoverDataUrl()
+    resolvePublishImageData()
       .then(function (dataUrl) {
         var editingId = state.editingId;
+        var crop = cropPayload();
         if (editingId) {
           var card = document.querySelector('[data-banner-id="' + editingId + '"]');
           var titleInput = card && card.querySelector('[data-banner-title="' + editingId + '"]');
           var linkInput = card && card.querySelector('[data-banner-link="' + editingId + '"]');
           var sortInput = card && card.querySelector('[data-banner-sort="' + editingId + '"]');
-          return apiPost({
+          var body = {
             action: "update",
             id: editingId,
-            image_data: dataUrl,
             filename: (state.draft.file && state.draft.file.name) || "homepage-banner.jpg",
             title: titleInput ? titleInput.value : state.editMeta.title,
             link: linkInput ? linkInput.value : state.editMeta.link,
@@ -527,14 +564,21 @@
             sort_order: Number(sortInput && sortInput.value != null ? sortInput.value : state.editMeta.sort_order),
             is_main: true,
             is_active: true,
-          });
+            crop: crop,
+            crop_meta: crop,
+          };
+          if (dataUrl) body.image_data = dataUrl;
+          return apiPost(body);
         }
+        if (!dataUrl) throw new Error("请先上传 Banner 图片");
         return apiPost({
           action: "publish",
           image_data: dataUrl,
           filename: (state.draft.file && state.draft.file.name) || "homepage-banner.jpg",
           is_main: true,
           is_active: true,
+          crop: crop,
+          crop_meta: crop,
         });
       })
       .then(function (res) {

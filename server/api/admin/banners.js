@@ -101,10 +101,26 @@ function normalizeCropMeta(raw, ratioDefaults = DESKTOP_RATIO) {
   const src = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
   const ratioW = clampNum(src.ratioW ?? src.ratio_w ?? ratioDefaults.w, 320, 4096, ratioDefaults.w);
   const ratioH = clampNum(src.ratioH ?? src.ratio_h ?? ratioDefaults.h, 120, 2160, ratioDefaults.h);
+  let zoom = clampNum(src.zoom ?? src.scale ?? 1, 1, 4, 1);
+  let x = Number(src.x ?? src.offsetX ?? src.nx ?? 0);
+  let y = Number(src.y ?? src.offsetY ?? src.ny ?? 0);
+  if (!Number.isFinite(x)) x = 0;
+  if (!Number.isFinite(y)) y = 0;
+  // Legacy admin pixel pans (±400) → frame fractions
+  if (Math.abs(x) > 2 || Math.abs(y) > 2) {
+    x = clampNum(x / 640, -1.5, 1.5, 0);
+    y = clampNum(y / 360, -1.5, 1.5, 0);
+  } else {
+    x = clampNum(x, -1.5, 1.5, 0);
+    y = clampNum(y, -1.5, 1.5, 0);
+  }
   return {
-    zoom: clampNum(src.zoom ?? src.scale ?? 1, 1, 4, 1),
-    x: clampNum(src.x ?? src.offsetX ?? src.nx ?? 0, -1.5, 1.5, 0),
-    y: clampNum(src.y ?? src.offsetY ?? src.ny ?? 0, -1.5, 1.5, 0),
+    zoom,
+    scale: zoom,
+    x,
+    y,
+    offsetX: x,
+    offsetY: y,
     ratioW,
     ratioH,
     ratio: `${Math.round(ratioW)}:${Math.round(ratioH)}`,
