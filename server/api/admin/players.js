@@ -373,8 +373,18 @@ async function buildDetail(row, profile, opts = {}) {
     mediaSigned.find((m) => m.mediaType === "cover") ||
     mediaSigned.find((m) => m.mediaType === "gallery" && Number(m.sortOrder || 0) === 1) ||
     null;
-  const gallery = mediaSigned.filter((m) => m.mediaType === "gallery" || m.mediaType === "cover");
+  const gallery = mediaSigned.filter((m) => {
+    if (m.mediaType === "cover") return true;
+    if (m.mediaType !== "gallery") return false;
+    const ctype = String(m.contentType || "").toLowerCase();
+    return !/^video\//.test(ctype);
+  });
   const voices = mediaSigned.filter((m) => m.mediaType === "voice");
+  const videos = mediaSigned.filter((m) => {
+    if (m.mediaType === "video") return true;
+    if (m.mediaType === "gallery" && /^video\//i.test(String(m.contentType || ""))) return true;
+    return false;
+  });
 
   const completed = related.orders.filter((o) => o.status === "completed").length;
   const cancelled = related.orders.filter((o) => o.status === "cancelled").length;
@@ -506,10 +516,18 @@ async function buildDetail(row, profile, opts = {}) {
       coverUrl: coverMedia?.url || row.card_image_url || resolveCompanionCover(profile, row) || "",
       gallery,
       voices,
+      videos,
       status: row.media_status || "pending",
       statusLabel: labelStatus(row.media_status || "pending"),
       rejectReason: row.media_reject_reason || "",
-      empty: !avatarMedia && !coverMedia && !gallery.length && !voices.length && !row.card_image_url && !row.voice_url,
+      empty:
+        !avatarMedia &&
+        !coverMedia &&
+        !gallery.length &&
+        !voices.length &&
+        !videos.length &&
+        !row.card_image_url &&
+        !row.voice_url,
     },
     deposit: deposit
       ? {
@@ -734,7 +752,7 @@ async function reviewMedia(req, companion, payload) {
   const status = normalizeStatusInput(payload.status || payload.mediaStatus, "pending");
   const reason = String(payload.rejectReason || payload.reason || "").trim();
   if ((status === "rejected" || status === "resubmit") && !reason) {
-    throw Object.assign(new Error("驳回头像/相册/语音时必须填写原因。"), { status: 400 });
+    throw Object.assign(new Error("驳回头像/相册/语音/视频时必须填写原因。"), { status: 400 });
   }
   const mediaId = String(payload.mediaId || "").trim();
   if (mediaId) {

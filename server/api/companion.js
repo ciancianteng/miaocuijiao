@@ -3,6 +3,7 @@
   PUBLIC_BUCKETS,
   assertAudioUpload,
   assertImageUpload,
+  assertVideoUpload,
   buildObjectPath,
   companionDb,
   createSignedUrl,
@@ -1710,7 +1711,11 @@ async function bootstrapData(profile, companion) {
   const gallerySeen = new Set();
   const galleryOnly = [];
   for (const g of signedMediaRaw
-    .filter((m) => m.mediaType === "gallery")
+    .filter((m) => {
+      if (m.mediaType !== "gallery") return false;
+      const ctype = String(m.contentType || m.content_type || "").toLowerCase();
+      return !/^video\//.test(ctype);
+    })
     .sort((a, b) => Number(a.sortOrder ?? 100) - Number(b.sortOrder ?? 100))) {
     const key = String(g.storagePath || g.url || g.id || "").trim();
     if (!key || gallerySeen.has(key)) continue;
@@ -1736,9 +1741,15 @@ async function bootstrapData(profile, companion) {
       seenTypes.cover = true;
     }
   }
-  const videosOnly = signedMediaRaw.filter((m) => m.mediaType === "video").sort(byUploadedDesc);
+  const videosOnly = signedMediaRaw
+    .filter((m) => {
+      if (m.mediaType === "video") return true;
+      const ctype = String(m.contentType || m.content_type || "").toLowerCase();
+      return m.mediaType === "gallery" && /^video\//.test(ctype);
+    })
+    .sort(byUploadedDesc);
   if (videosOnly[0]) {
-    signedMedia.push(videosOnly[0]);
+    signedMedia.push({ ...videosOnly[0], mediaType: "video" });
     seenTypes.video = true;
   }
   // Merge synthesized fallbacks for ANY missing media type (not only when table is empty).
@@ -3946,21 +3957,13 @@ export default async function handler(req, res) {
       } else if (mediaType === "video") {
         const decoded = decodeDataUrl(dataUrl);
         if (!decoded) return json(res, 400, { ok: false, message: "请选择要上传的视频文件" });
-        const mime = String(decoded.contentType || "").toLowerCase();
-        const okVideo =
-          /^video\//.test(mime) ||
-          mime === "application/octet-stream" ||
-          !mime;
-        if (!okVideo) return json(res, 400, { ok: false, message: "仅支持 mp4 / mov 视频" });
-        if (decoded.buffer && decoded.buffer.length > 40 * 1024 * 1024) {
-          return json(res, 400, { ok: false, message: "视频不能超过 40MB" });
-        }
+        const checked = assertVideoUpload(decoded);
         const dur = body.duration_seconds != null ? Number(body.duration_seconds) : null;
         if (dur && dur > 30.5) return json(res, 400, { ok: false, message: "视频最长 30 秒" });
         const objectPath = buildObjectPath(auth.profile.id, "video", body.filename || "showcase.mp4");
-        const bucket = PRIVATE_BUCKETS.gallery || PRIVATE_BUCKETS.audio;
-        await uploadPrivateObject(bucket, objectPath, decoded.buffer, decoded.contentType || "video/mp4");
-        uploaded = { bucket, path: objectPath, contentType: decoded.contentType || "video/mp4" };
+        const bucket = PRIVATE_BUCKETS.video;
+        await uploadPrivateObject(bucket, objectPath, checked.buffer, checked.contentType);
+        uploaded = { bucket, path: objectPath, contentType: checked.contentType };
       } else {
         const decoded = assertImageUpload(decodeDataUrl(dataUrl));
         const objectPath = buildObjectPath(auth.profile.id, mediaType, body.filename || `${mediaType}.jpg`);
@@ -4142,6 +4145,8 @@ export default async function handler(req, res) {
               ? "相册照片上传成功"
               : mediaType === "voice"
                 ? "录音上传成功"
+                : mediaType === "video"
+                  ? "展示视频上传成功"
                 : "媒体上传成功",
         url: publicUrl,
         path: uploaded.path,
@@ -4194,10 +4199,10 @@ export default async function handler(req, res) {
             "companion_media",
             `?id=eq.${encodeURIComponent(mediaId)}&user_id=eq.${encodeURIComponent(auth.profile.id)}`
           );
-        } else if (mediaType === "avatar") {
+        } else if (mediaType === "avatar" || mediaType === "voice" || mediaType === "video") {
           items = await companionDb(
             "companion_media",
-            `?companion_profile_id=eq.${encodeURIComponent(row.id)}&media_type=eq.avatar`
+            `?companion_profile_id=eq.${encodeURIComponent(row.id)}&media_type=eq.${encodeURIComponent(mediaType)}`
           );
         } else {
           return json(res, 400, { ok: false, message: "缺少要删除的媒体" });
@@ -4219,6 +4224,7 @@ export default async function handler(req, res) {
         throw error;
       }
       if (!items?.length) return json(res, 404, { ok: false, message: "媒体不存在" });
+      const deletedTypes = new Set((items || []).map((i) => String(i.media_type || "")));
       for (const item of items) {
         try {
           await deleteStorageObject(item.storage_bucket, item.storage_path);
@@ -4231,7 +4237,7 @@ export default async function handler(req, res) {
           if (!isMissingRelation(error)) throw error;
         }
       }
-      const deletedAvatar = items.some((i) => i.media_type === "avatar");
+      const deletedAvatar = deletedTypes.has("avatar");
       if (deletedAvatar) {
         await supabaseJson(restUrl("profiles", `?id=eq.${encodeURIComponent(auth.profile.id)}`), {
           method: "PATCH",
@@ -4243,6 +4249,20 @@ export default async function handler(req, res) {
           headers: serviceHeaders(),
           body: JSON.stringify({ card_image_url: "", updated_at: nowIso() }),
         });
+      }
+      // Voice/video must unbind profile fields so public + self views cannot resurrect old files.
+      if (deletedTypes.has("voice")) {
+        await patchCompanionProfile(`?id=eq.${encodeURIComponent(row.id)}`, {
+          voice_url: "",
+          media_status: "pending",
+          updated_at: nowIso(),
+        }).catch(() => null);
+      }
+      if (deletedTypes.has("video")) {
+        await patchCompanionProfile(`?id=eq.${encodeURIComponent(row.id)}`, {
+          media_status: "pending",
+          updated_at: nowIso(),
+        }).catch(() => null);
       }
       return json(res, 200, { ok: true, message: "已删除" });
     }

@@ -9,6 +9,7 @@ const PRIVATE_BUCKETS = {
   identity: "companion-identities",
   gallery: "companion-gallery",
   audio: "companion-audio",
+  video: "companion-video",
   payment: "companion-payment-proofs",
 };
 
@@ -112,10 +113,26 @@ async function listBuckets() {
   return Array.isArray(body) ? body : [];
 }
 
-export async function ensurePrivateBucket(bucket, mimeTypes) {
+export async function ensurePrivateBucket(bucket, mimeTypes, fileSizeLimit = 20 * 1024 * 1024) {
   const list = await listBuckets();
-  const exists = list.some((item) => item && (item.id === bucket || item.name === bucket));
-  if (exists) return bucket;
+  const existing = (list || []).find((item) => item && (item.id === bucket || item.name === bucket));
+  if (existing) {
+    // Keep MIME allowlist current (e.g. companion-video needs video/*).
+    try {
+      await fetch(`${process.env.SUPABASE_URL}/storage/v1/bucket/${bucket}`, {
+        method: "PUT",
+        headers: companionServiceHeaders(),
+        body: JSON.stringify({
+          public: false,
+          file_size_limit: fileSizeLimit,
+          allowed_mime_types: mimeTypes,
+        }),
+      });
+    } catch {
+      /* best-effort */
+    }
+    return bucket;
+  }
   const response = await fetch(`${process.env.SUPABASE_URL}/storage/v1/bucket`, {
     method: "POST",
     headers: companionServiceHeaders(),
@@ -123,7 +140,7 @@ export async function ensurePrivateBucket(bucket, mimeTypes) {
       id: bucket,
       name: bucket,
       public: false,
-      file_size_limit: 20 * 1024 * 1024,
+      file_size_limit: fileSizeLimit,
       allowed_mime_types: mimeTypes,
     }),
   });
@@ -167,6 +184,11 @@ export async function ensureCompanionBuckets() {
     "audio/ogg",
     "audio/x-m4a",
   ]);
+  await ensurePrivateBucket(
+    PRIVATE_BUCKETS.video,
+    ["video/mp4", "video/quicktime", "video/webm", "video/x-m4v", "application/octet-stream"],
+    40 * 1024 * 1024
+  );
   await ensurePrivateBucket(PRIVATE_BUCKETS.payment, ["image/jpeg", "image/png", "image/webp", "application/pdf"]);
   try {
     await ensurePublicBucket(PUBLIC_BUCKETS.profile, ["image/jpeg", "image/png", "image/webp"]);
@@ -174,6 +196,33 @@ export async function ensureCompanionBuckets() {
     /* public bucket optional; private + signed URL still works */
   }
   return PRIVATE_BUCKETS;
+}
+
+const MAX_VIDEO_BYTES = 40 * 1024 * 1024;
+const ALLOWED_VIDEO_MIME = new Set([
+  "video/mp4",
+  "video/quicktime",
+  "video/webm",
+  "video/x-m4v",
+  "application/octet-stream",
+]);
+
+export function assertVideoUpload(decoded) {
+  if (!decoded || !decoded.buffer) {
+    throw Object.assign(new Error("文件格式无效，请选择 mp4 / mov 视频"), { status: 400 });
+  }
+  const mime = String(decoded.contentType || "").toLowerCase() || "video/mp4";
+  const ok = ALLOWED_VIDEO_MIME.has(mime) || /^video\//.test(mime);
+  if (!ok) {
+    throw Object.assign(new Error("仅支持 mp4 / mov / webm 视频"), { status: 400 });
+  }
+  if (decoded.buffer.length > MAX_VIDEO_BYTES) {
+    throw Object.assign(new Error("视频不能超过 40MB"), { status: 413 });
+  }
+  return {
+    ...decoded,
+    contentType: mime.startsWith("video/") ? mime : "video/mp4",
+  };
 }
 
 export function publicObjectUrl(bucket, objectPath) {

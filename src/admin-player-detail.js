@@ -337,6 +337,34 @@
           );
         })
         .join("") || emptyText("尚未上传语音");
+    var videoHtml =
+      (media.videos || [])
+        .map(function (item) {
+          return (
+            '<div class="admin-sync-note">' +
+            (item.url
+              ? '<video controls playsinline src="' +
+                esc(item.url) +
+                '" style="width:100%;max-width:420px;border-radius:12px;background:#000"></video>'
+              : "展示视频暂不可播放") +
+            "<div>时长：" +
+            esc(item.durationSeconds != null ? item.durationSeconds + " 秒" : "未知") +
+            " · 上传：" +
+            esc(item.uploadedAt || "—") +
+            " · " +
+            esc(item.statusLabel || "") +
+            "</div>" +
+            (edit
+              ? '<button class="mini-btn" type="button" data-player-media-review="' +
+                esc(item.id) +
+                '" data-status="approved">通过</button> <button class="mini-btn" type="button" data-player-media-review="' +
+                esc(item.id) +
+                '" data-status="rejected">不通过</button>'
+              : "") +
+            "</div>"
+          );
+        })
+        .join("") || emptyText("尚未上传展示视频");
     var mediaHtml =
       rows([
       {
@@ -361,7 +389,9 @@
       "<h4 style=\"margin:12px 0 8px;color:#fff;font-size:13px\">相册</h4>" +
       galleryHtml +
       "<h4 style=\"margin:12px 0 8px;color:#fff;font-size:13px\">语音</h4>" +
-      voiceHtml;
+      voiceHtml +
+      "<h4 style=\"margin:12px 0 8px;color:#fff;font-size:13px\">展示视频</h4>" +
+      videoHtml;
     if (edit) mediaHtml += reviewBox("media", media.status);
 
     var split =

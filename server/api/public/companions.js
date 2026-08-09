@@ -180,6 +180,12 @@ function publicCompanion(row = {}, profile = {}, levels = [], catalog = [], medi
     pickStableMediaUrl(mediaExtras.voiceUrl) ||
     (String(mediaExtras.voiceUrl || "").trim().startsWith("http") ? String(mediaExtras.voiceUrl).trim() : "") ||
     "";
+  const videoPlayable =
+    pickStableMediaUrl(mediaExtras.videoUrl, mediaExtras.showcaseVideoUrl) ||
+    (String(mediaExtras.videoUrl || mediaExtras.showcaseVideoUrl || "").trim().startsWith("http")
+      ? String(mediaExtras.videoUrl || mediaExtras.showcaseVideoUrl).trim()
+      : "") ||
+    "";
   const gallery = Array.isArray(mediaExtras.gallery)
     ? mediaExtras.gallery.filter((g) => g && g.url && /^https?:\/\//i.test(String(g.url)))
     : [];
@@ -232,8 +238,8 @@ function publicCompanion(row = {}, profile = {}, levels = [], catalog = [], medi
     hasVoice: !!voicePlayable,
     cardImageUrl: pickStableMediaUrl(row.card_image_url, cover) || "",
     gallery,
-    videoUrl: pickStableMediaUrl(mediaExtras.videoUrl, mediaExtras.showcaseVideoUrl) || "",
-    showcaseVideoUrl: pickStableMediaUrl(mediaExtras.videoUrl, mediaExtras.showcaseVideoUrl) || "",
+    videoUrl: videoPlayable,
+    showcaseVideoUrl: videoPlayable,
     desc: row.description || "",
     description: row.description || "",
     gender: row.gender || "",
@@ -327,22 +333,45 @@ async function mediaExtrasByProfile(profileIds = []) {
     rows = await supabaseJson(
       restUrl(
         "companion_media",
-        `?companion_profile_id=in.(${ids.map(encodeURIComponent).join(",")})&media_type=in.(avatar,cover,gallery,voice)&order=sort_order.asc&limit=3000&select=id,companion_profile_id,media_type,storage_bucket,storage_path,status`
+        `?companion_profile_id=in.(${ids.map(encodeURIComponent).join(",")})&media_type=in.(avatar,cover,gallery,voice,video)&order=sort_order.asc&limit=3000&select=id,companion_profile_id,media_type,storage_bucket,storage_path,status,content_type`
       ),
       { headers: headers() }
     );
   } catch (e) {
-    if (/companion_media|schema cache|PGRST|does not exist/i.test(String(e.message || e))) return {};
-    throw e;
+    // Older DBs without video in check constraint: fall back without video filter.
+    if (/companion_media|schema cache|PGRST|does not exist|media_type|check/i.test(String(e.message || e))) {
+      try {
+        rows = await supabaseJson(
+          restUrl(
+            "companion_media",
+            `?companion_profile_id=in.(${ids.map(encodeURIComponent).join(",")})&media_type=in.(avatar,cover,gallery,voice)&order=sort_order.asc&limit=3000&select=id,companion_profile_id,media_type,storage_bucket,storage_path,status,content_type`
+          ),
+          { headers: headers() }
+        );
+      } catch (e2) {
+        if (/companion_media|schema cache|PGRST|does not exist/i.test(String(e2.message || e2))) return {};
+        throw e2;
+      }
+    } else {
+      throw e;
+    }
   }
   const byProfile = {};
   for (const row of Array.isArray(rows) ? rows : []) {
     const pid = row.companion_profile_id;
     if (!pid) continue;
-    if (!byProfile[pid]) byProfile[pid] = { avatarUrl: "", coverUrl: "", voiceUrl: "", gallery: [] };
+    if (!byProfile[pid]) byProfile[pid] = { avatarUrl: "", coverUrl: "", voiceUrl: "", videoUrl: "", showcaseVideoUrl: "", gallery: [] };
     const bucket = String(row.storage_bucket || "").trim();
     const path = String(row.storage_path || "").trim();
     if (!bucket || !path) continue;
+    const status = String(row.status || "pending").toLowerCase();
+    const ctype = String(row.content_type || "").toLowerCase();
+    const isVideo =
+      row.media_type === "video" ||
+      (row.media_type === "gallery" && /^video\//.test(ctype)) ||
+      (row.media_type === "gallery" && /\/video\//i.test(path));
+    // Boss/public: voice + video only after approve (existing review rule).
+    if ((row.media_type === "voice" || isVideo) && status && status !== "approved") continue;
     let url = "";
     try {
       if (bucket === "companion-public" || /public/i.test(bucket)) {
@@ -357,11 +386,15 @@ async function mediaExtrasByProfile(profileIds = []) {
     if (!url || !/^https?:\/\//i.test(url)) continue;
     if (row.media_type === "avatar" && !byProfile[pid].avatarUrl) byProfile[pid].avatarUrl = url;
     if (row.media_type === "cover" && !byProfile[pid].coverUrl) byProfile[pid].coverUrl = url;
-    if (row.media_type === "gallery") {
+    if (row.media_type === "gallery" && !isVideo) {
       byProfile[pid].gallery.push({ id: row.id, url });
       if (!byProfile[pid].coverUrl) byProfile[pid].coverUrl = url;
     }
     if (row.media_type === "voice" && !byProfile[pid].voiceUrl) byProfile[pid].voiceUrl = url;
+    if (isVideo && !byProfile[pid].videoUrl) {
+      byProfile[pid].videoUrl = url;
+      byProfile[pid].showcaseVideoUrl = url;
+    }
     if (row.media_type === "avatar" && !byProfile[pid].coverUrl) byProfile[pid].coverUrl = url;
   }
   return byProfile;
@@ -451,6 +484,8 @@ async function loadCompanions(id = "") {
     const media = { ...(mediaMap[row.id] || {}) };
     // Prefer companion_media voice, else durable storage:// / legacy URL — always size-gate.
     media.voiceUrl = await resolvePlayableUrl(media.voiceUrl || row.voice_url);
+    media.videoUrl = await resolvePlayableUrl(media.videoUrl || media.showcaseVideoUrl || "");
+    media.showcaseVideoUrl = media.videoUrl;
     // Parse legacy gallery tags when companion_media has no gallery rows.
     if (!Array.isArray(media.gallery) || !media.gallery.length) {
       const tag = String(row.tags || "");

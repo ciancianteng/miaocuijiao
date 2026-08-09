@@ -153,8 +153,16 @@ export function mapCompanionPublicFields(row = {}, profile = {}, extras = {}) {
     cover,
     cardImageUrl: pickStableMediaUrl(row.card_image_url, cover) || "",
     voiceUrl: pickStableMediaUrl(row.voice_url, extras.voiceUrl) || row.voice_url || "",
-    videoUrl: pickStableMediaUrl(extras.videoUrl, extras.showcaseVideoUrl) || "",
-    showcaseVideoUrl: pickStableMediaUrl(extras.videoUrl, extras.showcaseVideoUrl) || "",
+    videoUrl: pickStableMediaUrl(extras.videoUrl, extras.showcaseVideoUrl) ||
+      (String(extras.videoUrl || extras.showcaseVideoUrl || "").trim().startsWith("http")
+        ? String(extras.videoUrl || extras.showcaseVideoUrl).trim()
+        : "") ||
+      "",
+    showcaseVideoUrl: pickStableMediaUrl(extras.videoUrl, extras.showcaseVideoUrl) ||
+      (String(extras.videoUrl || extras.showcaseVideoUrl || "").trim().startsWith("http")
+        ? String(extras.videoUrl || extras.showcaseVideoUrl).trim()
+        : "") ||
+      "",
     availabilityStatus: avail,
     availabilityText: availabilityText(avail),
     onlineStatus: availabilityText(avail),

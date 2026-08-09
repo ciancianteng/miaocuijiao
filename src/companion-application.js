@@ -2409,11 +2409,13 @@
       var mt = String(m.mediaType || m.media_type || "").toLowerCase();
       var url = m.url || "";
       if (!url) return;
+      var ctype = String(m.contentType || m.content_type || "").toLowerCase();
+      var isVideo = mt === "video" || (mt === "gallery" && /^video\//.test(ctype));
       if (mt === "avatar" && !mediaMap.avatarUrl) mediaMap.avatarUrl = url;
       else if (mt === "cover" && !mediaMap.coverUrl) mediaMap.coverUrl = url;
       else if (mt === "voice" && !mediaMap.voiceUrl) mediaMap.voiceUrl = url;
-      else if (mt === "video" && !mediaMap.videoUrl) mediaMap.videoUrl = url;
-      else if (mt === "gallery") mediaMap.gallery.push({ id: m.id || "", url: url, status: "ok" });
+      else if (isVideo && !mediaMap.videoUrl) mediaMap.videoUrl = url;
+      else if (mt === "gallery" && !isVideo) mediaMap.gallery.push({ id: m.id || "", url: url, status: "ok" });
     });
     if (boot.media && !Array.isArray(boot.media)) {
       mediaMap.avatarUrl = mediaMap.avatarUrl || boot.media.avatarUrl || "";
