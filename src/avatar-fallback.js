@@ -57,8 +57,25 @@
     return false;
   }
 
+  /** CS↔boss↔companion chat bubbles / lightbox — keep signed private Storage URLs. */
+  function isChatImage(img) {
+    if (!img || img.tagName !== "IMG") return false;
+    if (img.getAttribute("data-mcj-chat-img") === "1") return true;
+    if (img.getAttribute("data-mcj-img-resign") != null) return true;
+    if (img.classList && img.classList.contains("mcj-chat-img")) return true;
+    if (typeof img.closest === "function") {
+      if (img.closest(".mcj-chat-img-wrap, [data-chat-image], .mcj-chat-lightbox, #mcjChatLightbox")) {
+        return true;
+      }
+    }
+    var src = String(img.getAttribute("src") || img.src || "");
+    if (/\/storage\/v1\/object\/sign\/chat-images(?:-private)?\//i.test(src)) return true;
+    if (/chat-images-private\//i.test(src)) return true;
+    return false;
+  }
+
   function shouldSkip(img) {
-    return isBrandLogo(img) || isProductCover(img) || isPayQr(img) || isPaymentProof(img);
+    return isBrandLogo(img) || isProductCover(img) || isPayQr(img) || isPaymentProof(img) || isChatImage(img);
   }
 
   function isBadUrl(src) {
@@ -69,8 +86,7 @@
     if (/^(https?:\/\/)?(localhost|127\.0\.0\.1|0\.0\.0\.0)(:\d+)?\b/i.test(s)) return true;
     // Brand mark is a real asset for header/logo — do NOT treat as bad placeholder here.
     // Companion cards that misuse brand as avatar are handled elsewhere.
-    if (/\/storage\/v1\/object\/sign\//i.test(s)) return true;
-    if (/[?&]token=/i.test(s) && /\/storage\/v1\//i.test(s)) return true;
+    // NOTE: do NOT treat /storage/.../sign/ URLs as bad — private chat images use signed URLs.
     return false;
   }
 
