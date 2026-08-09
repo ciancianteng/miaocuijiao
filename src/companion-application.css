@@ -28,6 +28,17 @@
 /* mcj-upload inputs must remain clickable — override legacy hide */
 .apply-grid .mcj-upload-input,.apply-panel .mcj-upload-input{display:block!important;opacity:0!important;position:absolute!important}
 .voice-recorder,.apply-subcard{border:1px solid rgba(243,168,203,.18);border-radius:18px;background:rgba(255,255,255,.035);padding:16px}.voice-stage{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}.voice-stage span{border:1px solid rgba(243,168,203,.18);border-radius:999px;background:rgba(255,255,255,.04);color:#cdb8c4;font-size:12px;font-weight:1000;padding:7px 10px}.voice-stage span.active{border-color:rgba(255,214,235,.62);color:#ffe2ef;background:rgba(243,168,203,.14)}.voice-stage span.done{border-color:rgba(114,239,180,.32);color:#b8ffd7;background:rgba(114,239,180,.10)}.voice-status{display:flex;align-items:center;justify-content:space-between;gap:12px}.voice-status strong{font-size:18px;color:#ffe2f0}.voice-status span{font-variant-numeric:tabular-nums;color:#fff}.voice-actions{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0}.voice-recorder audio{width:100%;margin-top:8px}
+.apply-voice-panel{margin-top:18px;scroll-margin-top:18px}
+.voice-method-title{margin:0 0 10px;color:#ffe2ef;font-size:15px;font-weight:1000}
+.voice-alt-upload{margin-top:18px;padding-top:16px;border-top:1px solid rgba(243,168,203,.16)}
+.voice-recording-badge{display:none;margin:10px 0 0;color:#ff8fb4;font-size:13px;font-weight:1000;letter-spacing:.02em}
+.voice-recording-active .voice-recording-badge{display:block;animation:voicePulse 1s ease-in-out infinite}
+.voice-recording-active .voice-status strong{color:#ff9ec4}
+@keyframes voicePulse{0%,100%{opacity:.55}50%{opacity:1}}
+.voice-template-card{margin-top:16px;display:flex;align-items:flex-start;justify-content:space-between;gap:14px;border:1px solid rgba(243,168,203,.16);border-radius:16px;background:rgba(0,0,0,.16);padding:14px}
+.voice-template-card h3{margin:0 0 8px;color:#ffe2f0;font-size:15px}.voice-template-card p{margin:0;color:#d9bfcd;line-height:1.6;font-size:13px}
+.voice-errors{margin-top:10px;color:#ffb3c2;font-size:13px;font-weight:850}.voice-errors p{margin:4px 0}
+.apply-voice-uploaded{margin:10px 0 0}
 .tag-picker>span{color:#ffdceb;font-size:13px;font-weight:950}.tag-group{display:grid;gap:8px}.tag-group b{color:#fff5fa;font-size:13px}.tag-list{display:flex;gap:8px;flex-wrap:wrap}.tag-pill{display:inline-flex!important;align-items:center;gap:8px;min-height:34px;border:1px solid rgba(243,168,203,.22);border-radius:999px;background:rgba(255,255,255,.045);padding:0 12px;color:#ffdceb;cursor:pointer}.tag-pill.checked{border-color:rgba(255,214,235,.68);background:rgba(243,168,203,.16);box-shadow:0 0 16px rgba(243,168,203,.12)}.tag-pill input{appearance:none!important;-webkit-appearance:none!important;width:18px!important;height:18px!important;min-width:18px!important;min-height:18px!important;padding:0!important;margin:0!important;border-radius:50%!important;border:1.5px solid rgba(243,168,203,.55)!important;background:rgba(255,255,255,.06)!important;box-shadow:none!important;accent-color:#f3a8cb;position:relative;flex:0 0 auto}.tag-pill input:checked{background:rgba(243,168,203,.35)!important;border-color:#f3a8cb!important}.tag-pill input:checked::after{content:"";position:absolute;inset:4px;border-radius:50%;background:#f3a8cb;box-shadow:0 0 8px rgba(243,168,203,.55)}.custom-tag-row,.copy-field{display:flex;gap:8px;align-items:center}.custom-tag-row input,.copy-field input{flex:1;min-width:0}.step-complete-mark{width:max-content;margin-top:14px;border:1px solid rgba(243,168,203,.24);border-radius:999px;background:rgba(255,255,255,.045);color:#ffe2ef;font-weight:1000;padding:8px 12px}.voice-wave{height:64px;margin:14px 0;border:1px solid rgba(243,168,203,.16);border-radius:16px;background:rgba(0,0,0,.18);display:flex;align-items:center;justify-content:center;gap:7px}.voice-wave i{width:7px;height:18px;border-radius:99px;background:linear-gradient(180deg,#ffe2ef,#f06fb0);opacity:.58}.voice-recording-active .voice-wave i{animation:voiceWave .78s ease-in-out infinite}.voice-wave i:nth-child(2){animation-delay:.08s;height:30px}.voice-wave i:nth-child(3){animation-delay:.16s;height:44px}.voice-wave i:nth-child(4){animation-delay:.24s;height:24px}.voice-wave i:nth-child(5){animation-delay:.32s;height:38px}.voice-wave i:nth-child(6){animation-delay:.4s;height:28px}.voice-wave i:nth-child(7){animation-delay:.48s;height:48px}@keyframes voiceWave{0%,100%{transform:scaleY(.45);opacity:.38}50%{transform:scaleY(1.15);opacity:1}}.voice-quality{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.voice-quality span{border:1px solid rgba(243,168,203,.18);border-radius:999px;padding:7px 10px;font-size:12px;font-weight:950}.voice-quality .ok{color:#b8ffd7;background:rgba(114,239,180,.10);border-color:rgba(114,239,180,.28)}.voice-quality .wait{color:#ffd7e9;background:rgba(255,255,255,.045)}.voice-tip{margin-top:12px;border:1px solid rgba(243,168,203,.16);border-radius:14px;background:rgba(0,0,0,.16);padding:11px 12px;color:#d9bfcd;font-size:13px;font-weight:850;line-height:1.55}
 .apply-split{display:grid;grid-template-columns:1fr 1fr;gap:14px}.apply-subcard h3{margin:0 0 10px;color:#ffe2f0}.apply-subcard ul{margin:0 0 12px;padding-left:18px;color:#d9bfcd;line-height:1.65}.deposit-status{margin-top:14px;border:1px solid rgba(243,168,203,.14);border-radius:14px;padding:12px;background:rgba(0,0,0,.16)}.deposit-status strong{color:#ffd166}
 .apply-subcard .apply-grid .form-field:first-child{grid-column:1/-1}.apply-panel,.apply-subcard,.apply-steps,.apply-success{box-sizing:border-box}.apply-actions .apply-btn{min-width:132px;height:46px}
@@ -346,7 +357,8 @@
     grid-template-columns:minmax(0,1fr)!important;
     width:100%!important;
     min-width:0!important;
-    overflow:hidden!important;
+    overflow-x:hidden!important;
+    overflow-y:visible!important;
   }
   .apply-steps{
     display:block!important;
@@ -605,7 +617,8 @@
     gap:16px!important;
     width:100%!important;
     min-width:0!important;
-    overflow:hidden!important;
+    overflow-x:hidden!important;
+    overflow-y:visible!important;
   }
   .apply-steps{
     position:static!important;

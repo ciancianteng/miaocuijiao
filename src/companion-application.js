@@ -597,17 +597,11 @@
   }
   function uploadHtml(draft) {
     var u = draft.uploads || {};
-    return '<section class="apply-panel"><h2>上传头像与资料</h2><form class="apply-grid">' +
+    return (
+      '<section class="apply-panel"><h2>上传头像与资料</h2><form class="apply-grid">' +
       fileField("avatar", "头像", { value: u.avatar, hint: "支持 jpg / jpeg / png / webp；可从相册选择或拍照；上传成功后可替换" }) +
       galleryUploadHtml(u) +
       fileField("records", "游戏战绩图", { value: u.records, hint: "选填；支持 jpg / png / webp" }) +
-      fileField("voiceFile", "上传已有音频（可选）", {
-        kind: "audio",
-        value: (draft.voice && draft.voice.fileUpload) || null,
-        accept: U() ? U().AUDIO_ACCEPT : "audio/mpeg,audio/mp4,audio/aac,audio/wav,.mp3,.m4a,.aac,.wav",
-        capture: false,
-        hint: "支持 mp3 / m4a / aac / wav；也可下方现场录音",
-      }) +
       fileField("showcaseVideo", "个人展示视频（可选）", {
         kind: "video",
         value: u.showcaseVideo || null,
@@ -615,19 +609,137 @@
         capture: false,
         hint: "支持 mp4 / mov，最长约 30 秒；选填",
       }) +
-      '<p class="apply-note full">头像与相册会立即上传到云端 Storage。老板大厅卡面统一使用头像/相册，无需单独上传卡面封面。刷新或重新登录后仍可恢复。</p></form></section>' +
-      voiceHtml(draft);
+      '<p class="apply-note full">头像、相册与试音会上传到云端 Storage。老板大厅卡面统一使用头像/相册。刷新后仍可恢复。</p>' +
+      '<p class="apply-note full"><a href="#applyVoicePanel" style="color:#ffd6e8;font-weight:1000">↓ 试音（必填）</a>：支持【现场录音】或【上传已有音频】，请完成其中一种。</p></form></section>' +
+      voiceHtml(draft)
+    );
   }
   function voiceHtml(draft) {
     var v = draft.voice || {};
     var q = v.quality || {};
     var voiceSrc = liveVoiceObjectUrl || v.url || "";
-    var hasVoice = !!(voiceSrc || v.hasLocal || hasDurableUpload(v) || hasDurableUpload(v.url));
-    var canConfirm = hasVoice && v.listened && q.volumeOk && q.durationOk && q.notBlank;
+    var hasLocalVoice = !!(liveVoiceBlob || liveVoiceObjectUrl || v.hasLocal);
+    var hasVoice = !!(voiceSrc || hasLocalVoice || hasDurableUpload(v) || hasDurableUpload(v.url) || hasDurableUpload(v.fileUpload));
+    var uploadedOk = !!(v.uploaded && (hasDurableUpload(v) || hasDurableUpload(v.url) || hasDurableUpload(v.fileUpload)));
+    var canConfirm = hasVoice && !uploadedOk && v.listened && q.volumeOk && q.durationOk && q.notBlank;
     var waveform = Array.isArray(q.waveform) && q.waveform.length ? q.waveform : [18, 30, 44, 24, 38, 28, 48];
     var reasons = Array.isArray(q.reasons) ? q.reasons : [];
-    var template = "大家好，我是" + (draft.data.nickname || "你的昵称") + "，主玩" + ((draft.data.mainGames || [draft.data.mainGame || "你的游戏"]).join("、")) + "，风格偏" + ((draft.data.personalTags || ["温柔", "娱乐"]).slice(0, 3).join("、")) + "。我可以陪你上分、娱乐或者聊天，希望能给你带来轻松开心的游戏体验。";
-    return '<section class="apply-panel"><h2>录制试音</h2><div class="voice-recorder" data-voice-status="' + esc(v.status || "尚未录制") + '"><div class="voice-stage"><span class="' + (hasVoice ? "done" : "active") + '">1 录制</span><span class="' + (v.listened ? "done" : hasVoice ? "active" : "") + '">2 试听</span><span class="' + (v.confirmed ? "done" : canConfirm ? "active" : "") + '">3 确认</span></div><div class="voice-status"><strong id="voiceState">' + esc(v.status || "尚未录制") + '</strong><span id="voiceTimer">' + esc(v.duration ? v.duration + " 秒" : "00:00") + '</span></div><div class="voice-wave" id="voiceWave">' + waveform.map(function (h) { return '<i style="height:' + Math.max(12, Math.min(56, Number(h || 18))) + 'px"></i>'; }).join("") + '</div><div class="voice-actions"><button class="apply-btn primary" type="button" data-record-start>🎤 开始录音</button><button class="apply-btn" type="button" data-record-stop disabled>⏹ 停止录音</button><button class="apply-btn" type="button" data-record-play ' + (!hasVoice ? "disabled" : "") + '>▶ 播放试听</button><button class="apply-btn" type="button" data-record-reset ' + (!hasVoice ? "disabled" : "") + '>🔄 重新录制</button><button class="apply-btn" type="button" data-record-delete ' + (!hasVoice ? "disabled" : "") + '>删除录音</button><button class="apply-btn primary" type="button" data-record-confirm ' + (!canConfirm ? "disabled" : "") + '>✅ 确认使用</button></div>' + (voiceSrc ? '<audio id="voicePreview" controls preload="metadata" src="' + esc(voiceSrc) + '"></audio>' : '<audio id="voicePreview" controls hidden></audio>') + '<div class="voice-quality"><span class="' + (q.durationOk ? "ok" : "bad") + '">✔ 时长' + (q.durationOk ? "符合" : "需 10~60 秒") + '</span><span class="' + (q.humanVoice ? "ok" : "bad") + '">✔ ' + (q.humanVoice ? "检测到人声" : "人声不足") + '</span><span class="' + (q.volumeOk ? "ok" : "bad") + '">✔ 音量' + (q.volumeOk ? "正常" : "过低") + '</span><span class="' + (q.notBlank ? "ok" : "bad") + '">✔ ' + (q.notBlank ? "无空白录音" : "静音过多") + '</span></div>' + (reasons.length ? '<div class="voice-errors">' + reasons.map(function (r) { return '<p>' + esc(r) + '</p>'; }).join("") + '</div>' : '') + '<div class="voice-tip">' + (hasVoice ? (canConfirm ? "试听完成，可以确认使用。确认后会自动上传并标记本步骤完成。" : "请播放完整试听，确认音量和内容正常后再提交。") : "建议录制 10 到 60 秒，简单介绍声音特点、游戏风格和接单优势。") + '</div></div><div class="voice-template-card"><div><h3>不知道说什么？可以参考下面模板。</h3><p id="voiceTemplateText">' + esc(template) + '</p></div><button class="apply-btn small" type="button" data-copy-voice-template>一键复制模板</button></div><form class="apply-grid">' + field("voiceNote", "试音说明", "textarea", (draft.data || {}).voiceNote, 'placeholder="可以简单介绍自己的声音特点、擅长的聊天风格或游戏。"') + '</form></section>';
+    var template =
+      "大家好，我是" +
+      (draft.data.nickname || "你的昵称") +
+      "，主玩" +
+      (draft.data.mainGames || [draft.data.mainGame || "你的游戏"]).join("、") +
+      "，风格偏" +
+      (draft.data.personalTags || ["温柔", "娱乐"]).slice(0, 3).join("、") +
+      "。我可以陪你上分、娱乐或者聊天，希望能给你带来轻松开心的游戏体验。";
+    var statusText = v.status || "尚未录制";
+    if (uploadBusy.voice) statusText = "正在上传试音…";
+    else if (uploadedOk) statusText = "已上传";
+
+    var fileUploadCard = fileField("voiceFile", "上传已有音频（备用）", {
+      kind: "audio",
+      value: (draft.voice && draft.voice.fileUpload) || null,
+      accept: U() ? U().AUDIO_ACCEPT : "audio/mpeg,audio/mp4,audio/aac,audio/wav,.mp3,.m4a,.aac,.wav",
+      capture: false,
+      hint: "支持 mp3 / m4a / aac / wav；浏览器不支持录音时可用此方式",
+    });
+
+    return (
+      '<section class="apply-panel apply-voice-panel" id="applyVoicePanel"><h2>试音（必填）</h2>' +
+      '<p class="apply-note">必须完成现场录音或上传已有音频之一。推荐使用现场录音。</p>' +
+      '<div class="voice-recorder" data-voice-status="' +
+      esc(statusText) +
+      '">' +
+      '<div class="voice-method-title">方式 A：现场录音</div>' +
+      '<div class="voice-stage"><span class="' +
+      (hasVoice ? "done" : "active") +
+      '">1 录制</span><span class="' +
+      (v.listened || uploadedOk ? "done" : hasVoice ? "active" : "") +
+      '">2 试听</span><span class="' +
+      (uploadedOk || v.confirmed ? "done" : canConfirm ? "active" : "") +
+      '">3 确认上传</span></div>' +
+      '<div class="voice-status"><strong id="voiceState">' +
+      esc(statusText) +
+      '</strong><span id="voiceTimer">' +
+      esc(v.duration ? v.duration + " 秒" : "00:00") +
+      "</span></div>" +
+      '<div class="voice-recording-badge" aria-live="polite">● 正在录音</div>' +
+      '<div class="voice-wave" id="voiceWave">' +
+      waveform
+        .map(function (h) {
+          return '<i style="height:' + Math.max(12, Math.min(56, Number(h || 18))) + 'px"></i>';
+        })
+        .join("") +
+      "</div>" +
+      '<div class="voice-actions">' +
+      '<button class="apply-btn primary" type="button" data-record-start>🎤 开始录音</button>' +
+      '<button class="apply-btn" type="button" data-record-stop disabled>⏹ 停止录音</button>' +
+      '<button class="apply-btn" type="button" data-record-play ' +
+      (!hasVoice ? "disabled" : "") +
+      ">▶ 播放 / 暂停</button>" +
+      '<button class="apply-btn" type="button" data-record-reset ' +
+      (!hasVoice ? "disabled" : "") +
+      ">🔄 重录</button>" +
+      '<button class="apply-btn" type="button" data-record-delete ' +
+      (!hasVoice ? "disabled" : "") +
+      ">删除</button>" +
+      '<button class="apply-btn primary" type="button" data-record-confirm ' +
+      (!canConfirm || uploadBusy.voice ? "disabled" : "") +
+      ">" +
+      (uploadBusy.voice ? "上传中…" : uploadedOk ? "已上传" : "✅ 确认上传") +
+      "</button>" +
+      "</div>" +
+      (voiceSrc
+        ? '<audio id="voicePreview" controls preload="metadata" src="' + esc(voiceSrc) + '"></audio>'
+        : '<audio id="voicePreview" controls hidden></audio>') +
+      (uploadedOk ? '<p class="pay-success apply-voice-uploaded" role="status">试音已上传，可播放；可重录或改用下方上传文件替换。</p>' : "") +
+      '<div class="voice-quality"><span class="' +
+      (q.durationOk ? "ok" : "bad") +
+      '">✔ 时长' +
+      (q.durationOk ? "符合" : "需 10~60 秒") +
+      '</span><span class="' +
+      (q.humanVoice ? "ok" : "bad") +
+      '">✔ ' +
+      (q.humanVoice ? "检测到人声" : "人声不足") +
+      '</span><span class="' +
+      (q.volumeOk ? "ok" : "bad") +
+      '">✔ 音量' +
+      (q.volumeOk ? "正常" : "过低") +
+      '</span><span class="' +
+      (q.notBlank ? "ok" : "bad") +
+      '">✔ ' +
+      (q.notBlank ? "无空白录音" : "静音过多") +
+      "</span></div>" +
+      (reasons.length
+        ? '<div class="voice-errors">' +
+          reasons
+            .map(function (r) {
+              return "<p>" + esc(r) + "</p>";
+            })
+            .join("") +
+          "</div>"
+        : "") +
+      '<div class="voice-tip">' +
+      (uploadedOk
+        ? "试音已上传到云端。如需更换，请重录并再次确认上传，或使用下方上传已有音频。"
+        : hasVoice
+          ? canConfirm
+            ? "试听完成，请点击「确认上传」保存到云端。"
+            : "请播放完整试听，确认音量和内容正常后再上传。"
+          : "点击「开始录音」后允许麦克风权限，录制 10～60 秒自我介绍。") +
+      "</div></div>" +
+      '<div class="voice-alt-upload"><div class="voice-method-title">方式 B：上传已有音频</div>' +
+      '<p class="apply-note">若浏览器不支持录音，或你已有音频文件，可在此上传。</p>' +
+      '<div class="apply-grid">' +
+      fileUploadCard +
+      "</div></div>" +
+      '<div class="voice-template-card"><div><h3>不知道说什么？可以参考下面模板。</h3><p id="voiceTemplateText">' +
+      esc(template) +
+      '</p></div><button class="apply-btn small" type="button" data-copy-voice-template>一键复制模板</button></div>' +
+      '<form class="apply-grid">' +
+      field("voiceNote", "试音说明", "textarea", (draft.data || {}).voiceNote, 'placeholder="可以简单介绍自己的声音特点、擅长的聊天风格或游戏。"') +
+      "</form></section>"
+    );
   }
   function depositPayeeHtml(set) {
     var lines = [];
@@ -1153,6 +1265,10 @@
     modal.innerHTML = '<div><h2>申请已提交，等待后台审核。</h2><p>当前状态：待审核。你可随时回到本页查看审核进度。</p><div class="apply-actions"><a class="apply-btn" href="companion-apply.html">查看审核进度</a><a class="apply-btn primary" href="index.html">返回首页</a></div></div>';
     document.body.appendChild(modal);
   }
+  function hasPlayableVoiceDraft() {
+    var v = (readDraft().voice || {});
+    return !!(liveVoiceObjectUrl || liveVoiceBlob || v.hasLocal || hasDurableUpload(v) || hasDurableUpload(v.url) || hasDurableUpload(v.fileUpload));
+  }
   function setVoiceState(text, seconds) {
     var state = document.getElementById("voiceState");
     var timer = document.getElementById("voiceTimer");
@@ -1165,11 +1281,110 @@
     var play = document.querySelector("[data-record-play]");
     var reset = document.querySelector("[data-record-reset]");
     var confirm = document.querySelector("[data-record-confirm]");
+    var del = document.querySelector("[data-record-delete]");
+    var hasVoice = hasPlayableVoiceDraft();
     if (start) start.disabled = !!isRecording;
     if (stop) stop.disabled = !isRecording;
-    if (play) play.disabled = !!isRecording || !readDraft().voice.url;
-    if (reset) reset.disabled = !!isRecording || !readDraft().voice.url;
-    if (confirm) confirm.disabled = true;
+    if (play) play.disabled = !!isRecording || !hasVoice;
+    if (reset) reset.disabled = !!isRecording || !hasVoice;
+    if (del) del.disabled = !!isRecording || !hasVoice;
+    if (confirm && isRecording) confirm.disabled = true;
+    document.body.classList.toggle("voice-recording-active", !!isRecording);
+  }
+  async function startRecording() {
+    if (!navigator.mediaDevices || !window.MediaRecorder) {
+      showApplyTip("当前浏览器不支持网页录音。请改用下方「上传已有音频」，或更换手机 Chrome / Safari 后重试。");
+      try {
+        document.getElementById("applyVoicePanel")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      } catch (e) {}
+      return;
+    }
+    if (recorder && recorder.state === "recording") return;
+    chunks = [];
+    suppressVoiceSave = false;
+    var stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (e) {
+      var name = String((e && e.name) || "");
+      if (/NotAllowed|PermissionDenied/i.test(name) || /permission|denied|NotAllowed/i.test(String(e && e.message || ""))) {
+        showApplyTip("请允许麦克风权限后再录音。可在系统设置 → Safari/Chrome → 麦克风中开启，然后返回本页重试。");
+      } else if (/NotFound|DevicesNotFound/i.test(name)) {
+        showApplyTip("未检测到麦克风设备。请检查手机麦克风，或改用下方「上传已有音频」。");
+      } else {
+        showApplyTip("无法开启麦克风：" + (e.message || "请允许麦克风权限后再录音"));
+      }
+      return;
+    }
+    recorder = new MediaRecorder(stream, (function () {
+      var candidates = ["audio/mp4", "audio/aac", "audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus"];
+      for (var i = 0; i < candidates.length; i += 1) {
+        try {
+          if (window.MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(candidates[i])) {
+            return { mimeType: candidates[i] };
+          }
+        } catch (err) {}
+      }
+      return undefined;
+    })());
+    recorder.ondataavailable = function (e) { if (e.data && e.data.size) chunks.push(e.data); };
+    recorder.onstop = async function () {
+      stream.getTracks().forEach(function (t) { t.stop(); });
+      if (suppressVoiceSave) {
+        suppressVoiceSave = false;
+        chunks = [];
+        return;
+      }
+      var duration = Math.round((Date.now() - recordStartedAt) / 1000);
+      var mime = (recorder && recorder.mimeType) || (chunks[0] && chunks[0].type) || "audio/webm";
+      var blob = new Blob(chunks, { type: mime });
+      if (!blob.size) {
+        saveDraft({ voice: { status: "录音失败（无声音数据），请重录", url: "", duration: duration, confirmed: false, listened: false, uploaded: false, hasLocal: false } });
+        setVoiceState("录音失败，请重录", duration);
+        document.body.classList.remove("voice-recording-active");
+        render(3);
+        return;
+      }
+      var quality = await analyzeVoiceBlob(blob, duration);
+      if (liveVoiceObjectUrl) {
+        try { URL.revokeObjectURL(liveVoiceObjectUrl); } catch (e) {}
+      }
+      liveVoiceBlob = blob;
+      liveVoiceObjectUrl = URL.createObjectURL(blob);
+      // Never persist base64 voice into localStorage (QuotaExceeded on mobile).
+      saveDraft({
+        voice: {
+          status: quality.passed ? "已录制，请先试听" : "检测未通过，请重新录制",
+          url: "",
+          hasLocal: true,
+          duration: quality.duration,
+          confirmed: false,
+          listened: false,
+          uploaded: false,
+          uploadedAt: "",
+          mimeType: blob.type,
+          size: blob.size,
+          quality: quality,
+        },
+      });
+      setVoiceState(quality.passed ? "已录制，待试听确认" : "检测未通过", quality.duration);
+      document.body.classList.remove("voice-recording-active");
+      render(3);
+      try {
+        document.getElementById("applyVoicePanel")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      } catch (e2) {}
+    };
+    recordStartedAt = Date.now();
+    try { recorder.start(250); } catch (eStart) { recorder.start(); }
+    document.body.classList.add("voice-recording-active");
+    setRecordingUi(true);
+    setVoiceState("正在录音", 0);
+    clearInterval(recordTimer);
+    recordTimer = setInterval(function () {
+      var sec = Math.round((Date.now() - recordStartedAt) / 1000);
+      setVoiceState("正在录音", sec);
+      if (sec >= MAX_VOICE_SECONDS && recorder && recorder.state === "recording") stopRecording();
+    }, 500);
   }
   function blobToDataURL(blob) {
     return new Promise(function (resolve) {
@@ -1238,88 +1453,6 @@
     if (!result.notBlank) result.reasons.push("录音中静音比例过高，请重新录制完整自我介绍。");
     result.passed = result.durationOk && result.humanVoice && result.volumeOk && result.notBlank;
     return result;
-  }
-  async function startRecording() {
-    if (!navigator.mediaDevices || !window.MediaRecorder) { showApplyTip("当前浏览器不支持网页录音，请更换手机 Chrome 或 Safari。"); return; }
-    if (recorder && recorder.state === "recording") return;
-    chunks = [];
-    suppressVoiceSave = false;
-    var stream;
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    } catch (e) {
-      showApplyTip("无法开启麦克风，请检查浏览器麦克风权限。");
-      return;
-    }
-    recorder = new MediaRecorder(stream, (function () {
-      var candidates = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg;codecs=opus"];
-      for (var i = 0; i < candidates.length; i += 1) {
-        try {
-          if (window.MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(candidates[i])) {
-            return { mimeType: candidates[i] };
-          }
-        } catch (e) {}
-      }
-      return undefined;
-    })());
-    recorder.ondataavailable = function (e) { if (e.data && e.data.size) chunks.push(e.data); };
-    recorder.onstop = async function () {
-      stream.getTracks().forEach(function (t) { t.stop(); });
-      if (suppressVoiceSave) {
-        suppressVoiceSave = false;
-        chunks = [];
-        return;
-      }
-      var duration = Math.round((Date.now() - recordStartedAt) / 1000);
-      var mime = (recorder && recorder.mimeType) || (chunks[0] && chunks[0].type) || "audio/webm";
-      var blob = new Blob(chunks, { type: mime });
-      if (!blob.size) {
-        saveDraft({ voice: { status: "录音失败（无声音数据），请重录", url: "", duration: duration, confirmed: false, listened: false, uploaded: false } });
-        setVoiceState("录音失败，请重录", duration);
-        document.body.classList.remove("voice-recording-active");
-        render(3);
-        return;
-      }
-      var quality = await analyzeVoiceBlob(blob, duration);
-      if (liveVoiceObjectUrl) {
-        try { URL.revokeObjectURL(liveVoiceObjectUrl); } catch (e) {}
-      }
-      liveVoiceBlob = blob;
-      liveVoiceObjectUrl = URL.createObjectURL(blob);
-      var audio = document.getElementById("voicePreview");
-      if (audio) { audio.hidden = false; audio.src = liveVoiceObjectUrl; }
-      // Never persist base64 voice into localStorage (QuotaExceeded on mobile).
-      saveDraft({
-        voice: {
-          status: quality.passed ? "已录制，请先试听" : "检测未通过，请重新录制",
-          url: "",
-          hasLocal: true,
-          duration: quality.duration,
-          confirmed: false,
-          listened: false,
-          uploaded: false,
-          uploadedAt: "",
-          mimeType: blob.type,
-          size: blob.size,
-          quality: quality,
-        },
-      });
-      setVoiceState(quality.passed ? "已录制，待确认" : "检测未通过", quality.duration);
-      document.body.classList.remove("voice-recording-active");
-      render(3);
-    };
-    recordStartedAt = Date.now();
-    // timeslice keeps chunks flowing so stop always yields playable audio
-    try { recorder.start(250); } catch (eStart) { recorder.start(); }
-    document.body.classList.add("voice-recording-active");
-    setRecordingUi(true);
-    setVoiceState("正在录音", 0);
-    clearInterval(recordTimer);
-    recordTimer = setInterval(function () {
-      var sec = Math.round((Date.now() - recordStartedAt) / 1000);
-      setVoiceState("正在录音", sec);
-      if (sec >= MAX_VOICE_SECONDS && recorder && recorder.state === "recording") stopRecording();
-    }, 500);
   }
   function stopRecording() {
     clearInterval(recordTimer);
@@ -2118,8 +2251,22 @@
       if (e.target.closest("[data-record-stop]")) stopRecording();
       if (e.target.closest("[data-record-play]")) {
         var audio = document.getElementById("voicePreview");
-        if (audio && audio.src) audio.play();
-        else showApplyTip("请先完成录音。");
+        var playSrc = (audio && audio.src) || liveVoiceObjectUrl || ((readDraft().voice || {}).url || "");
+        if (!audio || !playSrc) {
+          showApplyTip("请先完成录音。");
+          return;
+        }
+        if (!audio.src || audio.src !== playSrc) {
+          audio.hidden = false;
+          audio.src = playSrc;
+        }
+        if (audio.paused) {
+          audio.play().catch(function (err) {
+            showApplyTip("播放失败：" + ((err && err.message) || "请重试或改用上传已有音频"));
+          });
+        } else {
+          audio.pause();
+        }
       }
       if (e.target.closest("[data-copy-voice-template]")) {
         var text = document.getElementById("voiceTemplateText");
@@ -2225,6 +2372,19 @@
         writeRaw(DRAFT_KEY, draft);
         render(3);
       }
+    }, true);
+    document.addEventListener("timeupdate", function (e) {
+      if (!(e.target && e.target.id === "voicePreview")) return;
+      var a = e.target;
+      var dur = Number(a.duration || 0);
+      var cur = Number(a.currentTime || 0);
+      if (!(dur > 0 && cur / dur >= 0.85) && !(cur >= 8)) return;
+      var draft = readDraft();
+      if (!draft.voice || draft.voice.listened) return;
+      draft.voice.listened = true;
+      draft.voice.status = "已试听，可确认";
+      writeRaw(DRAFT_KEY, draft);
+      render(3);
     }, true);
   }
   function hydrateUploadsFromBootstrap(boot) {
