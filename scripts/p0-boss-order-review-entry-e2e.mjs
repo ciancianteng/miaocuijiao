@@ -269,21 +269,21 @@ function sleep(ms) {
   step("list_reviewed_btn", doneBtnText.includes("已评价") && stillCan === 0, `done="${doneBtnText}" stillCan=${stillCan}`);
   await shot(page, "04-list-reviewed");
 
-  // Detail second entry should show 已评价 / no re-submit
-  if (await cardAfter.count()) {
-    await cardAfter.locator("header, h3").first().click({ force: true }).catch(() => null);
+  // Detail second entry should show 已评价
+  const detailBtn = cardAfter.locator('button[data-detail]');
+  if (await detailBtn.count()) {
+    await detailBtn.click();
+    await page.waitForTimeout(1500);
+  } else {
+    await page.evaluate((id) => {
+      const btn = document.createElement("button");
+      btn.setAttribute("data-detail", id);
+      document.body.appendChild(btn);
+      btn.click();
+      btn.remove();
+    }, orderId);
+    await page.waitForTimeout(1500);
   }
-  // open via data-detail if present; otherwise fetch and open by injecting
-  const openDetail = page.locator(`[data-order-id="${orderId}"]`).locator("xpath=..");
-  // Use API-backed UI: click any non-review disabled area then open detail through programmatic query
-  await page.evaluate((id) => {
-    const btn = document.createElement("button");
-    btn.setAttribute("data-detail", id);
-    document.body.appendChild(btn);
-    btn.click();
-    btn.remove();
-  }, orderId);
-  await page.waitForTimeout(1200);
   const detailReviewed = await page.locator("#detailModal.open").locator("text=已评价").count();
   step("detail_second_entry_reviewed", detailReviewed > 0, `count=${detailReviewed}`);
   await shot(page, "05-detail-reviewed");
