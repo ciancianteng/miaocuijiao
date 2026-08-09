@@ -55,6 +55,21 @@
   var COMPANION_ISOLATION_MSG='您的陪玩认证尚未通过，目前只能查看审核进度。';
   var HIDDEN_MVP_ROUTES={};
   var state={route:'dashboard',session:null,data:null,notice:'',loading:false,error:'',walletWarning:'',authTab:'login',loginMethod:'otp',loginError:'',loginBusy:false,registerToken:'',registerVerifiedEmail:'',registerCooldownUntil:0,registerBusy:false,forgotStep:'',forgotAccount:'',forgotBusy:false,forgotMsg:'',forgotResetToken:'',profileServices:[],profileVoiceTypes:[],profileCompanionTags:[],profileErrors:{},profileDraft:null,accountDraft:null,uploadBusy:'',statusBusy:false,pendingOnlineStatus:null,settlement:null,orderFilter:'all',pollTimer:null,rulesPollTimer:null,ordersCacheAt:0,msgFilter:'all',settings:null,earningsTab:'overview',chatSession:'cs',chatConversationId:'',chatBusy:false,withdrawBusy:false,inbox:null,inboxError:'',hallOrderType:'all',hallGame:'all',_prevDesignated:null,_prevAuditLocked:null,_toastTimer:null,_ordersRtReady:false,_alertedOrderIds:null,_baseDocTitle:'',_focusOrderId:''};
+  var IMAGE_ACCEPT='image/jpeg,image/jpg,image/png,image/webp,image/*';
+  var AUDIO_ACCEPT='audio/*,.mp3,.wav,.m4a,.webm,.ogg,audio/mpeg,audio/mp4,audio/wav,audio/webm,audio/aac';
+  var voiceRec={
+    recorder:null,
+    stream:null,
+    chunks:[],
+    startedAt:0,
+    timer:null,
+    recording:false,
+    localUrl:'',
+    localBlob:null,
+    duration:0,
+    mimeType:''
+  };
+
   var SESSION_KEY='mcjCompanionSession';
   var SETTINGS_KEY='mcjCompanionSettings';
   var MSG_READ_KEY='mcjCompanionMsgRead';
@@ -2423,6 +2438,139 @@
   }
   function fieldErr(name){var msg=state.profileErrors&&state.profileErrors[name];return msg?'<span class="pw-field-error" data-field-error="'+esc(name)+'">'+esc(msg)+'</span>':''}
   function fieldLabel(text,required){return '<span class="pw-field-label">'+esc(text)+(required?'<i class="pw-req">*</i>':'')+'</span>'}
+
+  function pwFmtVoiceClock(sec){
+    var s=Math.max(0,Math.floor(Number(sec)||0));
+    var m=Math.floor(s/60);
+    var r=s%60;
+    return (m<10?'0':'')+m+':'+(r<10?'0':'')+r;
+  }
+  function pwHiddenMediaInput(attrs){
+    attrs=attrs||{};
+    return '<input type="file" class="pw-media-input" tabindex="-1" aria-hidden="true"'+
+      (attrs.accept?' accept="'+esc(attrs.accept)+'"':'')+
+      (attrs.multiple?' multiple':'')+
+      (attrs.disabled?' disabled':'')+
+      (attrs.dataset||'')+
+      '>';
+  }
+  function pwMediaAddTile(opts){
+    opts=opts||{};
+    var busy=!!opts.busy;
+    var disabled=!!opts.disabled||busy;
+    var label=busy?'上传中…':(opts.label||'添加照片');
+    var sub=opts.sub||'JPG / PNG / WEBP';
+    return '<label class="pw-media-add'+(busy?' is-busy':'')+(disabled?' is-disabled':'')+'"'+
+      (opts.trigger?' data-pw-upload-trigger="'+esc(opts.trigger)+'"':'')+
+      (disabled?' aria-disabled="true"':'')+'>'+
+      '<span class="pw-media-add-plus" aria-hidden="true">＋</span>'+
+      '<strong>'+esc(label)+'</strong>'+
+      (sub?'<small>'+esc(sub)+'</small>':'')+
+      pwHiddenMediaInput({
+        accept:opts.accept||IMAGE_ACCEPT,
+        multiple:!!opts.multiple,
+        disabled:disabled,
+        dataset:opts.inputAttrs||''
+      })+
+      '</label>';
+  }
+  function pwAvatarUploadHtml(displayAvatar,avatarUrl,uploadBusy){
+    var busy=uploadBusy==='avatar';
+    return '<div class="pw-media-block pw-avatar-block">'+
+      '<div class="pw-avatar-stage">'+(avatarUrl
+        ? '<div class="pw-avatar-preview-wrap">'+
+          '<img class="pw-avatar-preview" src="'+esc(displayAvatar)+'" alt="头像预览" data-avatar-preview>'+
+          '<div class="pw-avatar-tools">'+
+          '<label class="pw-media-chip'+(busy?' is-busy':'')+'" data-pw-upload-trigger="avatar">'+
+          (busy?'上传中…':'更换')+
+          pwHiddenMediaInput({accept:IMAGE_ACCEPT,disabled:!!uploadBusy,dataset:' data-upload-avatar'})+
+          '</label>'+
+          '<button type="button" class="pw-media-chip danger" data-delete-avatar>删除</button>'+
+          '</div></div>'
+        : pwMediaAddTile({
+            trigger:'avatar',
+            label:busy?'上传中…':'添加头像',
+            sub:'JPG / PNG / WEBP',
+            busy:busy,
+            disabled:!!uploadBusy,
+            inputAttrs:' data-upload-avatar'
+          })
+      )+'</div>'+
+      '<p class="pw-field-hint">支持 jpg / png / webp，单张不超过 5MB。</p>'+
+      '</div>';
+  }
+  function pwGalleryItemHtml(item,idx,total){
+    var url=item.url||'/default-avatar.png';
+    return '<article class="pw-media-thumb'+(item._uploading?' is-uploading':'')+'" data-media-id="'+esc(item.id||'')+'">'+
+      '<button type="button" class="pw-media-thumb-hit" data-gallery-preview="'+esc(url)+'" aria-label="预览相册照片">'+
+      '<img src="'+esc(url)+'" alt="相册照片">'+(item._uploading?'<span class="pw-media-uploading">上传中…</span>':'')+
+      '</button>'+
+      '<div class="pw-media-thumb-tools">'+
+      '<button type="button" class="pw-media-icon-btn" data-gallery-move="-1" '+(idx===0?'disabled':'')+' title="上移" aria-label="上移">↑</button>'+
+      '<button type="button" class="pw-media-icon-btn" data-gallery-move="1" '+(idx===total-1?'disabled':'')+' title="下移" aria-label="下移">↓</button>'+
+      '<button type="button" class="pw-media-icon-btn danger" data-delete-media="'+esc(item.id||'')+'" title="删除" aria-label="删除">×</button>'+
+      '</div></article>';
+  }
+  function pwGalleryUploadHtml(gallery,uploadBusy){
+    var busy=uploadBusy==='gallery';
+    var full=gallery.length>=6;
+    var items=gallery.map(function(item,idx){return pwGalleryItemHtml(item,idx,gallery.length)}).join('');
+    return '<div class="pw-media-block pw-gallery-block">'+
+      '<p class="pw-field-hint">至少 1 张，最多 6 张。支持多选；手机可从相册选择或拍照。</p>'+
+      '<div class="pw-gallery-grid" data-gallery-list>'+
+      (items||'')+
+      (full?'':pwMediaAddTile({
+        trigger:'gallery',
+        label:busy?'上传中…':'添加照片',
+        sub:'JPG / PNG / WEBP',
+        busy:busy,
+        disabled:!!uploadBusy||full,
+        multiple:true,
+        inputAttrs:' data-upload-gallery'
+      }))+
+      (!items&&full?'':'')+
+      '</div>'+
+      (busy?'<p class="pw-media-status" data-gallery-status>上传中…</p>':'')+
+      '</div>';
+  }
+  function pwVoiceUploadHtml(p,raw,uploadBusy){
+    var busy=uploadBusy==='voice';
+    var voiceMedia=((state.data&&state.data.media)||[]).filter(function(m){return m.mediaType==='voice'&&m.url})[0];
+    var remoteUrl=(voiceMedia&&voiceMedia.url)||p.voiceUrl||raw.voice_url||'';
+    var localUrl=voiceRec.localUrl||'';
+    var playUrl=localUrl||remoteUrl||'';
+    var recording=!!voiceRec.recording;
+    var hasLocal=!!(voiceRec.localBlob||localUrl);
+    var clock=pwFmtVoiceClock(voiceRec.duration||0);
+    return '<div class="pw-media-block pw-voice-block">'+
+      '<p class="pw-field-hint">支持现场录音或上传 mp3 / m4a / wav / webm。重新上传会覆盖旧录音。</p>'+
+      '<div class="pw-voice-toolbar">'+
+      '<button type="button" class="pw-voice-btn primary'+(recording?' is-live':'')+'" data-voice-record-toggle '+(busy?'disabled':'')+'>'+
+      (recording?'⏹ 停止录音':'🎙 开始录音')+
+      '</button>'+
+      '<label class="pw-voice-btn'+(busy?' is-busy':'')+'" data-pw-upload-trigger="voice">'+
+      (busy?'上传中…':'↑ 上传音频')+
+      pwHiddenMediaInput({accept:AUDIO_ACCEPT,disabled:!!uploadBusy||recording,dataset:' data-upload-voice'})+
+      '</label>'+
+      '</div>'+
+      (recording?'<p class="pw-voice-live" data-voice-timer>● 录音中 '+esc(clock)+'</p>':'')+
+      '<div class="pw-voice-preview" data-voice-preview>'+
+      (playUrl
+        ? '<div class="pw-voice-player-row">'+
+          '<audio controls preload="metadata" src="'+esc(playUrl)+'"></audio>'+
+          (hasLocal&&!remoteUrl?'<span class="pw-voice-dur">'+esc(clock)+'</span>':'')+
+          '</div>'+
+          '<div class="pw-voice-edit-row">'+
+          '<button type="button" class="pw-media-chip" data-voice-rerecord '+(busy||recording?'disabled':'')+'>重录</button>'+
+          (hasLocal&&!remoteUrl
+            ? '<button type="button" class="pw-media-chip primary" data-voice-upload-local '+(busy||recording?'disabled':'')+'>确认上传</button>'
+            : '')+
+          '<button type="button" class="pw-media-chip danger" data-delete-voice '+(busy||recording?'disabled':'')+'>删除</button>'+
+          '</div>'
+        : '<div class="pw-voice-empty">尚未录制或上传语音试听</div>')+
+      '</div></div>';
+  }
+
   function profileHtml(){
     var p=(state.data&&state.data.player)||{};
     var raw=p.raw||{};
@@ -2503,15 +2651,7 @@
         '<span class="pw-game-price-unit"><input name="game_price_'+esc(s.id)+'" type="number" inputmode="decimal" step="0.01" min="0" value="'+(needsReset&&!(draftPrice||gamePrices[s.id]||gamePrices[s.name])?'':esc(val))+'" placeholder="RM" '+(on?'':'disabled')+' data-min-price="'+esc(minP)+'" data-max-price="'+esc(maxP)+'" data-max-plus="'+(maxPlus?'1':'0')+'"> /小时</span>'+
         '</label>';
     }).join(''):'';
-    var galleryHtml=gallery.map(function(item,idx){
-      return '<div class="pw-gallery-item" data-media-id="'+esc(item.id)+'">'+
-        '<img src="'+esc(item.url||'/default-avatar.png')+'" alt="相册">' +
-        '<div class="pw-gallery-actions">'+
-        '<button type="button" class="pw-btn" data-gallery-move="-1" '+(idx===0?'disabled':'')+'>上移</button>'+
-        '<button type="button" class="pw-btn" data-gallery-move="1" '+(idx===gallery.length-1?'disabled':'')+'>下移</button>'+
-        '<button type="button" class="pw-btn danger" data-delete-media="'+esc(item.id)+'">删除</button>'+
-        '</div></div>';
-    }).join('');
+    var galleryHtml=""; // rendered via pwGalleryUploadHtml
     var previewId=encodeURIComponent(p.id||p.uid||'');
     return '<div class="pw-page-head"><div><h2>我的资料（公开）</h2><p>老板可见。联系方式 / 身份证 / 押金 / 收款请到「账号中心」。</p></div><div class="pw-actions">'+
       (previewId?'<a class="pw-btn" href="/profile.html?player='+previewId+'" target="_blank" rel="noopener">预览老板端展示</a>':'')+
@@ -2524,16 +2664,7 @@
       '<section class="pw-card pad" style="margin-bottom:14px"><h3>基本展示资料</h3>'+
       '<div class="pw-field pw-upload-block'+(state.profileErrors&&state.profileErrors.avatar?' is-missing':'')+'" data-field="avatar">'+
       fieldLabel('头像',true)+
-      '<div class="pw-avatar-upload">'+
-      '<img class="pw-avatar-preview" src="'+esc(displayAvatar)+'" alt="头像预览" data-avatar-preview>'+
-      '<div class="pw-upload-actions">'+
-      '<label class="pw-btn pw-file-btn'+(uploadBusy==='avatar'?' is-busy':'')+'" data-pw-upload-trigger="avatar">'+
-      (uploadBusy==='avatar'?'上传中…':'上传头像')+
-      '<input type="file" class="pw-file-input" accept="image/jpeg,image/jpg,image/png,image/webp,image/*" data-upload-avatar '+(uploadBusy?'disabled':'')+'>'+
-      '</label>'+
-      (avatarUrl?'<button type="button" class="pw-btn danger" data-delete-avatar>删除头像</button>':'')+
-      '</div></div>'+
-      '<p class="pw-field-hint">支持 jpg / png / webp，单张不超过 5MB。</p>'+
+      pwAvatarUploadHtml(displayAvatar,avatarUrl,uploadBusy)+
       fieldErr('avatar')+
       '</div>'+
       '<div class="pw-two-col">'+
@@ -2569,29 +2700,13 @@
       '</section>'+
       '<section class="pw-card pad" style="margin-bottom:14px"><h3>展示资料</h3>'+
       '<div class="pw-field pw-upload-block'+(state.profileErrors&&state.profileErrors.gallery?' is-missing':'')+'" data-field="gallery">'+
-      fieldLabel('相册',true)+
-      '<div class="pw-gallery-grid" data-gallery-list>'+(galleryHtml||'<div class="pw-empty tiny">还没有相册照片，请至少上传 1 张（最多 6 张）</div>')+'</div>'+
-      '<label class="pw-btn pw-file-btn'+(uploadBusy==='gallery'||gallery.length>=6?' is-busy':'')+'" data-pw-upload-trigger="gallery">'+
-      (uploadBusy==='gallery'?'上传中…':(gallery.length>=6?'已达 6 张上限':'上传相册照片'))+
-      '<input type="file" class="pw-file-input" accept="image/jpeg,image/jpg,image/png,image/webp,image/*" data-upload-gallery '+(uploadBusy||gallery.length>=6?'disabled':'')+'>'+
-      '</label>'+
+      fieldLabel('相册照片',true)+
+      pwGalleryUploadHtml(gallery,uploadBusy)+
       fieldErr('gallery')+
       '</div>'+
       '<div class="pw-field pw-upload-block'+(state.profileErrors&&state.profileErrors.voice?' is-missing':'')+'" data-field="voice">'+
-      fieldLabel('录音',true)+
-      (function(){
-        var voiceMedia=((state.data&&state.data.media)||[]).filter(function(m){return m.mediaType==='voice'&&m.url})[0];
-        var v=(voiceMedia&&voiceMedia.url)||p.voiceUrl||raw.voice_url||'';
-        if(v){
-          return '<div class="pw-voice-preview" data-voice-preview><audio controls preload="metadata" src="'+esc(v)+'"></audio></div>'+
-            '<p class="pw-field-hint">已上传录音，可直接试听；重新上传将覆盖。</p>';
-        }
-        return '<div class="pw-voice-preview" data-voice-preview></div><p class="pw-field-hint">尚未上传语音试听。支持 mp3 / m4a / wav / webm。</p>';
-      })()+
-      '<label class="pw-btn pw-file-btn'+(uploadBusy==='voice'?' is-busy':'')+'">'+
-      (uploadBusy==='voice'?'上传中…':'上传录音')+
-      '<input type="file" class="pw-file-input" accept="audio/*,.mp3,.wav,.m4a,.webm,.ogg,audio/mpeg,audio/mp4,audio/wav,audio/webm" data-upload-voice '+(uploadBusy?'disabled':'')+'>'+
-      '</label>'+
+      fieldLabel('语音试听',true)+
+      pwVoiceUploadHtml(p,raw,uploadBusy)+
       fieldErr('voice')+
       '</div>'+
       '<div class="pw-field">'+fieldLabel('在线状态',false)+'<p class="pw-field-hint">当前：'+esc((STATUS_META[currentOnlineStatus()]||{}).label||'离线')+'（只读，审核通过后可在工作台切换）</p></div>'+
@@ -3026,10 +3141,12 @@
         if(list){
           var empty=list.querySelector('.pw-empty');
           if(empty)empty.remove();
-          var tmp=document.createElement('div');
-          tmp.className='pw-gallery-item is-uploading';
-          tmp.innerHTML='<img src="'+esc(dataUrl)+'" alt="相册上传中">';
-          list.appendChild(tmp);
+          var tmp=document.createElement('article');
+          tmp.className='pw-media-thumb is-uploading';
+          tmp.innerHTML='<button type="button" class="pw-media-thumb-hit" disabled><img src="'+esc(dataUrl)+'" alt="相册上传中"><span class="pw-media-uploading">上传中…</span></button>';
+          var addTile=list.querySelector('.pw-media-add');
+          if(addTile)list.insertBefore(tmp,addTile);
+          else list.appendChild(tmp);
         }
       }
       return api('upload_media',{media_type:mediaType,data_url:dataUrl,filename:file.name||(mediaType==='voice'?'voice.webm':mediaType+'.jpg')});
@@ -3043,6 +3160,7 @@
       }
       if(res&&res.url&&mediaType==='voice'&&state.data&&state.data.player){
         state.data.player.voiceUrl=res.url;
+        clearVoiceLocal();
       }
       return loadData({soft:true,forcePaint:true});
     }).catch(function(err){
@@ -3498,6 +3616,40 @@
       api('delete_media',{media_type:'avatar'}).then(function(x){toast(x.message||'头像已删除');return loadData({soft:true,forcePaint:true})}).catch(function(err){toast(err.message)});
       return;
     }
+    if(e.target.closest('[data-delete-voice]')){
+      if(voiceRec.recording){toast('请先停止录音');return}
+      captureLiveForms(true);
+      clearVoiceLocal();
+      api('delete_media',{media_type:'voice'}).then(function(x){
+        if(state.data&&state.data.player)state.data.player.voiceUrl='';
+        toast(x.message||'录音已删除');
+        return loadData({soft:true,forcePaint:true});
+      }).catch(function(err){toast(err.message||'删除失败')});
+      return;
+    }
+    if(e.target.closest('[data-voice-record-toggle]')){
+      e.preventDefault();
+      if(voiceRec.recording)stopVoiceRecording();
+      else startVoiceRecording();
+      return;
+    }
+    if(e.target.closest('[data-voice-rerecord]')){
+      e.preventDefault();
+      clearVoiceLocal();
+      startVoiceRecording();
+      return;
+    }
+    if(e.target.closest('[data-voice-upload-local]')){
+      e.preventDefault();
+      uploadLocalVoiceRecording();
+      return;
+    }
+    var previewBtn=e.target.closest('[data-gallery-preview]');
+    if(previewBtn){
+      e.preventDefault();
+      openGalleryLightbox(previewBtn.getAttribute('data-gallery-preview')||'');
+      return;
+    }
     var delDoc=e.target.closest('[data-delete-doc]');
     if(delDoc){
       e.preventDefault();
@@ -3572,37 +3724,178 @@
     var choice=window.confirm('从相册选择？\n确定=相册 / 取消=拍照');
     onChosen({capture:!choice});
   }
-  function triggerPwHiddenPick(accept,useCapture,onFile){
+  function triggerPwHiddenPick(accept,useCapture,onFile,opts){
+    opts=opts||{};
     var input=document.createElement('input');
     input.type='file';
-    input.accept=accept||'image/jpeg,image/jpg,image/png,image/webp,image/*';
+    input.accept=accept||IMAGE_ACCEPT;
+    if(opts.multiple)input.multiple=true;
     if(useCapture)input.setAttribute('capture','environment');
-    input.style.cssText='position:fixed;left:-9999px;top:0;opacity:0;width:1px;height:1px;';
+    input.className='pw-media-input';
+    input.style.cssText='position:fixed;left:-9999px;top:0;opacity:0;width:1px;height:1px;overflow:hidden;';
     document.body.appendChild(input);
     input.addEventListener('change',function(){
-      var file=input.files&&input.files[0];
+      var files=input.files?Array.prototype.slice.call(input.files):[];
       try{input.remove()}catch(err){}
-      if(file&&typeof onFile==='function')onFile(file);
+      if(!files.length)return;
+      if(opts.multiple&&typeof opts.onFiles==='function'){opts.onFiles(files);return}
+      if(typeof onFile==='function')onFile(files[0]);
     });
     input.click();
   }
-  // Mobile: intercept + uploads → 相册/拍照 sheet (never jump straight to camera).
+  function uploadGalleryFiles(files){
+    var list=Array.isArray(files)?files.filter(Boolean):[];
+    if(!list.length)return Promise.resolve();
+    var existing=((state.data&&state.data.media)||[]).filter(function(m){return m.mediaType==='gallery'}).length;
+    var room=Math.max(0,6-existing);
+    if(!room){toast('相册最多 6 张');return Promise.resolve()}
+    if(list.length>room)toast('最多还能上传 '+room+' 张，已自动截取');
+    list=list.slice(0,room);
+    var chain=Promise.resolve();
+    list.forEach(function(file){
+      chain=chain.then(function(){return uploadImage('gallery',file)});
+    });
+    return chain;
+  }
+  function clearVoiceLocal(){
+    if(voiceRec.localUrl){
+      try{URL.revokeObjectURL(voiceRec.localUrl)}catch(e){}
+    }
+    voiceRec.localUrl='';
+    voiceRec.localBlob=null;
+    voiceRec.duration=0;
+    voiceRec.mimeType='';
+  }
+  function stopVoiceTracks(){
+    if(voiceRec.stream){
+      try{voiceRec.stream.getTracks().forEach(function(t){t.stop()})}catch(e){}
+    }
+    voiceRec.stream=null;
+  }
+  function stopVoiceTimer(){
+    if(voiceRec.timer){clearInterval(voiceRec.timer);voiceRec.timer=null}
+  }
+  function syncVoiceTimerUi(){
+    var el=document.querySelector('[data-voice-timer]');
+    if(!el)return;
+    var sec=voiceRec.recording?Math.floor((Date.now()-voiceRec.startedAt)/1000):(voiceRec.duration||0);
+    el.textContent='● 录音中 '+pwFmtVoiceClock(sec);
+  }
+  function stopVoiceRecording(opts){
+    opts=opts||{};
+    stopVoiceTimer();
+    var rec=voiceRec.recorder;
+    voiceRec.recording=false;
+    if(rec&&rec.state!=='inactive'){
+      try{rec.stop()}catch(e){}
+    }else{
+      stopVoiceTracks();
+      if(!opts.silent)paint({preserveScroll:true});
+    }
+  }
+  function startVoiceRecording(){
+    if(state.uploadBusy){toast('请等待当前上传完成');return}
+    if(voiceRec.recording)return;
+    if(!navigator.mediaDevices||!window.MediaRecorder){
+      toast('当前浏览器不支持网页录音，请改用「上传音频」');
+      return;
+    }
+    navigator.mediaDevices.getUserMedia({audio:true}).then(function(stream){
+      clearVoiceLocal();
+      voiceRec.stream=stream;
+      voiceRec.chunks=[];
+      var mime='';
+      var candidates=['audio/mp4','audio/aac','audio/webm;codecs=opus','audio/webm','audio/ogg;codecs=opus'];
+      for(var i=0;i<candidates.length;i++){
+        try{
+          if(window.MediaRecorder.isTypeSupported&&MediaRecorder.isTypeSupported(candidates[i])){mime=candidates[i];break}
+        }catch(e){}
+      }
+      var recorder;
+      try{recorder=mime?new MediaRecorder(stream,{mimeType:mime}):new MediaRecorder(stream)}
+      catch(err){recorder=new MediaRecorder(stream)}
+      voiceRec.recorder=recorder;
+      voiceRec.mimeType=recorder.mimeType||mime||'audio/webm';
+      voiceRec.startedAt=Date.now();
+      voiceRec.recording=true;
+      recorder.ondataavailable=function(e){if(e.data&&e.data.size)voiceRec.chunks.push(e.data)};
+      recorder.onstop=function(){
+        stopVoiceTracks();
+        voiceRec.recording=false;
+        stopVoiceTimer();
+        var duration=Math.max(1,Math.round((Date.now()-voiceRec.startedAt)/1000));
+        var blob=new Blob(voiceRec.chunks,{type:voiceRec.mimeType||'audio/webm'});
+        voiceRec.chunks=[];
+        voiceRec.recorder=null;
+        if(!blob.size){
+          toast('录音失败（无声音数据），请重试');
+          paint({preserveScroll:true});
+          return;
+        }
+        clearVoiceLocal();
+        voiceRec.localBlob=blob;
+        voiceRec.localUrl=URL.createObjectURL(blob);
+        voiceRec.duration=duration;
+        paint({preserveScroll:true});
+        toast('录音完成，可试听后确认上传');
+      };
+      recorder.start(250);
+      stopVoiceTimer();
+      voiceRec.timer=setInterval(syncVoiceTimerUi,250);
+      paint({preserveScroll:true});
+    }).catch(function(err){
+      var name=String((err&&err.name)||'');
+      if(/NotAllowed|PermissionDenied/i.test(name))toast('请允许麦克风权限后再录音');
+      else if(/NotFound|DevicesNotFound/i.test(name))toast('未检测到麦克风，请改用上传音频');
+      else toast((err&&err.message)||'无法开启麦克风');
+    });
+  }
+  function uploadLocalVoiceRecording(){
+    if(!voiceRec.localBlob){toast('请先录音');return Promise.resolve()}
+    var ext=/mp4|aac/i.test(voiceRec.mimeType||'')?'m4a':(/ogg/i.test(voiceRec.mimeType||'')?'ogg':'webm');
+    var file=new File([voiceRec.localBlob],'voice-record.'+ext,{type:voiceRec.mimeType||'audio/webm'});
+    return uploadImage('voice',file).then(function(){
+      clearVoiceLocal();
+    });
+  }
+  function openGalleryLightbox(url){
+    var src=String(url||'').trim();
+    if(!src)return;
+    var old=document.querySelector('[data-pw-lightbox]');
+    if(old)old.remove();
+    var mask=document.createElement('div');
+    mask.className='pw-lightbox';
+    mask.setAttribute('data-pw-lightbox','1');
+    mask.innerHTML='<button type="button" class="pw-lightbox-close" data-lightbox-close aria-label="关闭">×</button><img src="'+esc(src)+'" alt="相册预览">';
+    mask.addEventListener('click',function(ev){
+      if(ev.target===mask||ev.target.closest('[data-lightbox-close]'))mask.remove();
+    });
+    document.body.appendChild(mask);
+  }
+  // Mobile: intercept image uploads → 相册/拍照 sheet (never jump straight to camera).
   document.addEventListener('click',function(e){
     if(!isPwTouchUpload())return;
     var host=e.target.closest('[data-pw-upload-trigger]');
-    if(!host||host.classList.contains('is-busy'))return;
+    if(!host||host.classList.contains('is-busy')||host.classList.contains('is-disabled'))return;
     var input=host.querySelector('[data-upload-avatar],[data-upload-gallery],[data-upload-doc],[data-upload-voice]');
     if(!input||input.disabled)return;
-    if(input.hasAttribute('data-upload-voice'))return; // audio: native picker
+    if(input.hasAttribute('data-upload-voice'))return; // audio: native picker via hidden input
     e.preventDefault();
     e.stopPropagation();
     openPwUploadSourceSheet(function(opts){
       if(!opts)return;
-      var accept=input.getAttribute('accept')||'image/jpeg,image/jpg,image/png,image/webp,image/*';
+      var accept=input.getAttribute('accept')||IMAGE_ACCEPT;
+      var multi=input.hasAttribute('multiple')||input.hasAttribute('data-upload-gallery');
       triggerPwHiddenPick(accept,!!opts.capture,function(file){
         if(input.hasAttribute('data-upload-avatar'))uploadImage('avatar',file);
         else if(input.hasAttribute('data-upload-gallery'))uploadImage('gallery',file);
         else if(input.hasAttribute('data-upload-doc'))uploadPrivateDoc(input.getAttribute('data-upload-doc')||'',file);
+      },{
+        multiple:multi&&!opts.capture,
+        onFiles:function(files){
+          if(input.hasAttribute('data-upload-gallery'))uploadGalleryFiles(files);
+          else if(files[0]&&input.hasAttribute('data-upload-avatar'))uploadImage('avatar',files[0]);
+        }
       });
     });
   },true);
@@ -3636,9 +3929,19 @@
     var avatarInput=e.target.closest('[data-upload-avatar]');
     if(avatarInput&&avatarInput.files&&avatarInput.files[0]){uploadImage('avatar',avatarInput.files[0]);avatarInput.value='';return}
     var galleryInput=e.target.closest('[data-upload-gallery]');
-    if(galleryInput&&galleryInput.files&&galleryInput.files[0]){uploadImage('gallery',galleryInput.files[0]);galleryInput.value='';return}
+    if(galleryInput&&galleryInput.files&&galleryInput.files.length){
+      var gFiles=Array.prototype.slice.call(galleryInput.files);
+      galleryInput.value='';
+      uploadGalleryFiles(gFiles);
+      return;
+    }
     var voiceInput=e.target.closest('[data-upload-voice]');
-    if(voiceInput&&voiceInput.files&&voiceInput.files[0]){uploadImage('voice',voiceInput.files[0]);voiceInput.value='';return}
+    if(voiceInput&&voiceInput.files&&voiceInput.files[0]){
+      clearVoiceLocal();
+      uploadImage('voice',voiceInput.files[0]);
+      voiceInput.value='';
+      return;
+    }
     var docInput=e.target.closest('[data-upload-doc]');
     if(docInput&&docInput.files&&docInput.files[0]){
       uploadPrivateDoc(docInput.getAttribute('data-upload-doc')||'',docInput.files[0]);
