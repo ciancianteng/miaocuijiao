@@ -1700,6 +1700,7 @@ async function bootstrapData(profile, companion) {
       uploadedAt: item.uploaded_at,
       sortOrder: item.sort_order,
       storagePath: item.storage_path || "",
+      contentType: item.content_type || "",
       url,
     });
   }
