@@ -217,10 +217,10 @@
         if(s==='awaiting_payment'){
           if(isPaymentReview(o)){
             out.push('<a class="order-btn primary" href="payment-confirm.html?order='+encodeURIComponent(o.id)+'">查看审核进度</a>');
-            out.push('<a class="order-btn" href="support.html?order='+encodeURIComponent(o.id)+'">联系客服</a>');
+            out.push('<a class="order-btn primary" href="support.html?order='+encodeURIComponent(o.id)+'">联系客服</a>');
           }else{
             out.push('<a class="order-btn primary" href="payment-confirm.html?order='+encodeURIComponent(o.id)+'">立即去支付</a>');
-            out.push('<a class="order-btn" href="support.html?order='+encodeURIComponent(o.id)+'">联系客服</a>');
+            out.push('<a class="order-btn primary" href="support.html?order='+encodeURIComponent(o.id)+'">联系客服</a>');
           }
         }else if(s==='claimed'){
           out.push('<a class="order-btn primary" href="support.html?order='+encodeURIComponent(o.id)+'">联系客服</a>');
@@ -232,7 +232,7 @@
           else out.push('<button class="order-btn is-disabled" type="button" disabled aria-disabled="true">已有 0 位陪玩抢单</button>');
         }else if(s==='waiting_boss_confirm'){
           var gc2=Number(o.grabCount!=null?o.grabCount:(o.grabs&&o.grabs.length)||0)||0;
-          out.push('<a class="order-btn" href="support.html?order='+encodeURIComponent(o.id)+'">联系客服</a>');
+          out.push('<a class="order-btn primary" href="support.html?order='+encodeURIComponent(o.id)+'">联系客服</a>');
           out.push('<button class="order-btn primary" data-detail="'+esc(o.id)+'" type="button">'+(gc2?'查看抢单陪玩（已有 '+gc2+' 位）':'查看抢单陪玩')+'</button>');
         }else if(s==='confirmed'){
           out.push('<a class="order-btn primary" href="support.html?order='+encodeURIComponent(o.id)+'">联系客服</a>');
@@ -302,9 +302,9 @@
         }else if(canReview(o)||o.status==='completed'||o.status==='reviewed'||o.reviewed){
           if(canReview(o))footer+='<button class="order-btn primary" type="button" data-show-review="'+esc(o.id)+'">立即评价</button>';
           footer+='<button class="order-btn" type="button" data-action="request_refund" data-id="'+esc(o.id)+'">申请售后</button>';
-          footer+='<a class="order-btn" href="support.html?order='+encodeURIComponent(o.id)+'">联系客服</a>';
+          footer+='<a class="order-btn primary" href="support.html?order='+encodeURIComponent(o.id)+'">联系客服</a>';
         }else{
-          footer+='<a class="order-btn" href="support.html?order='+encodeURIComponent(o.id)+'">联系客服</a>';
+          footer+='<a class="order-btn primary" href="support.html?order='+encodeURIComponent(o.id)+'">联系客服</a>';
         }
         footer+='<button class="order-btn" type="button" data-close>返回</button>';
         if(canCancelOrder(o)){
@@ -317,7 +317,7 @@
       function statusPanelInner(o,openReview){
         var html='';
         if(o.status==='awaiting_payment'&&isPaymentReview(o)){
-          html='<div class="status-panel"><p>付款状态：待人工审核</p><p>订单金额：'+moneyEmoji(o.totalAmount||o.amount)+'</p><p class="order-hint">付款凭证已提交，等待客服确认收款后才会进入接单流程。</p><div class="status-actions"><a class="order-btn primary" href="payment-confirm.html?order='+encodeURIComponent(o.id)+'">查看/重新上传凭证</a><a class="order-btn" href="support.html?order='+encodeURIComponent(o.id)+'">联系客服</a></div></div>';
+          html='<div class="status-panel"><p>付款状态：待人工审核</p><p>订单金额：'+moneyEmoji(o.totalAmount||o.amount)+'</p><p class="order-hint">付款凭证已提交，等待客服确认收款后才会进入接单流程。</p><div class="status-actions"><a class="order-btn primary" href="payment-confirm.html?order='+encodeURIComponent(o.id)+'">查看/重新上传凭证</a><a class="order-btn primary" href="support.html?order='+encodeURIComponent(o.id)+'">联系客服</a></div></div>';
         }else if(o.status==='awaiting_payment'){
           html='<div class="status-panel"><p>订单金额：'+moneyEmoji(o.totalAmount||o.amount)+'</p><p>支付方式：'+esc(o.paymentMethod||o.payment_method||'待确认')+'</p><p class="order-hint">下一步：进入支付页扫码付款并上传截图，点击「我已付款」后进入“待人工审核”</p><div class="status-actions"><a class="order-btn primary" href="payment-confirm.html?order='+encodeURIComponent(o.id)+'">立即去支付</a></div></div>';
         }else if(o.status==='claimed'){
@@ -337,7 +337,7 @@
               '<p>抢单时间：'+esc(date(g.grabbedAt||g.grabbed_at||c.grabbedAt||''))+'</p>'+
               (c.voiceUrl?'<p><a href="'+esc(c.voiceUrl)+'" target="_blank" rel="noopener">录音试听</a></p>':'')+
               '<div class="status-actions"><button class="order-btn primary" data-action="want_him" data-id="'+esc(o.id)+'" data-companion-id="'+esc(g.companionId||c.id||'')+'">我要她</button>'+
-              '<a class="order-btn" href="support.html?order='+encodeURIComponent(o.id)+'">联系客服</a>'+
+              '<a class="order-btn primary" href="support.html?order='+encodeURIComponent(o.id)+'">联系客服</a>'+
               '<a class="order-btn" href="profile.html?player='+encodeURIComponent(g.companionId||c.id||'')+'" target="_blank" rel="noopener">资料详情</a></div></div></div>';
           }
           if(grabsAll.length){
@@ -348,7 +348,7 @@
             html='<div class="status-panel"><p>已有 <strong>'+gcAll+'</strong> 位陪玩抢单。</p>'+
               (gcAll?'<p class="order-hint">点击下方按钮加载抢单陪玩资料卡。</p><div class="status-actions"><button class="order-btn primary" data-detail="'+esc(o.id)+'" type="button">查看抢单陪玩</button></div>':
                 '<p class="order-hint">订单已在抢单大厅，等待在线陪玩抢单。人数会自动刷新。</p>')+
-              '<div class="status-actions" style="margin-top:8px"><a class="order-btn" href="support.html?order='+encodeURIComponent(o.id)+'">联系客服</a></div></div>';
+              '<div class="status-actions" style="margin-top:8px"><a class="order-btn primary" href="support.html?order='+encodeURIComponent(o.id)+'">联系客服</a></div></div>';
           }
         }else if(o.status==='confirmed'){
           html='<div class="status-panel"><p>当前陪玩：'+esc(companionName(o))+'</p><p>付款状态：已付款</p><p>接单状态：进行中</p><p class="order-hint">陪玩已确认接单，服务进行中</p><div class="status-actions"><a class="order-btn primary" href="support.html?order='+encodeURIComponent(o.id)+'">联系客服</a></div></div>';
