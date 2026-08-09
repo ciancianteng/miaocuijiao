@@ -105,11 +105,41 @@ async function readOrderPayLabels(page) {
 
 async function openOrderModal(page) {
   await page.goto(`${BASE}/companion-center.html`, { waitUntil: "domcontentloaded", timeout: 60000 });
-  await page.waitForTimeout(1200);
-  const orderBtn = page.locator("[data-hall-order], button:has-text('立即下单')").first();
-  await orderBtn.click({ timeout: 20000 });
-  await page.waitForSelector("[data-mcj-po-mask], .mcj-po-mask", { timeout: 20000 });
-  await page.waitForTimeout(1800);
+  await page.waitForTimeout(1500);
+  // Prefer hall order buttons; fallback to profile path.
+  const hallBtn = page.locator("[data-hall-order]").first();
+  if ((await hallBtn.count()) > 0) {
+    await hallBtn.click({ timeout: 20000 });
+  } else {
+    const card = page.locator("a[href*='profile.html'], .companion-card a").first();
+    await card.click({ timeout: 20000 });
+    await page.waitForTimeout(1200);
+    await page.locator("button:has-text('立即下单'), [data-open-order]").first().click({ timeout: 20000 });
+  }
+  await page.waitForSelector("[data-mcj-po-mask] .mcj-po-dialog, .mcj-po-mask .mcj-po-dialog", { timeout: 25000 });
+  await page.waitForTimeout(2000);
+}
+
+async function fillAndSubmitOrder(page, methodId) {
+  const payBtn = page.locator(`[data-po-pay="${methodId}"]`).first();
+  if ((await payBtn.count()) === 0) throw new Error(`missing pay method ${methodId}`);
+  await payBtn.click();
+  await page.fill("[data-po-game-id]", `E2E-PAY-${Date.now()}`);
+  const schedule = page.locator("[data-po-schedule]");
+  if ((await schedule.count()) > 0) await schedule.fill("今晚 21:00");
+  const contact = page.locator("[data-po-contact]");
+  if ((await contact.count()) > 0) await contact.fill("e2e@meow.test");
+  // Ensure a service chip is selected if present.
+  const svc = page.locator("[data-po-service]").first();
+  if ((await svc.count()) > 0) await svc.click();
+  await page.click("[data-po-submit]");
+  await page.waitForTimeout(3500);
+  const url = page.url();
+  const onPay =
+    /payment-confirm\.html|order-confirm\.html|orders\.html/i.test(url) ||
+    (await page.locator("text=我已付款").count()) > 0 ||
+    (await page.locator("[data-pay-upload], .pay-hint, input[type='file']").count()) > 0;
+  return { url, onPay };
 }
 
 async function main() {
@@ -166,28 +196,22 @@ async function main() {
     step("UI not empty message", !/暂无可用支付方式/.test(pay.emptyText) || ids.length > 0, pay.emptyText) || failed++;
 
     // Select TNG and submit to payment next step.
-    const tngBtn = page.locator('[data-po-pay="tng"]').first();
-    if (await tngBtn.count()) await tngBtn.click();
-    await page.fill("[data-po-game-id]", `E2E-PAY-${Date.now()}`);
-    await page.click("[data-po-submit]");
-    await page.waitForTimeout(2500);
-    const url = page.url();
-    const onPay =
-      /payment-confirm|order-confirm|orders\.html|pay/i.test(url) ||
-      (await page.locator("text=我已付款, text=付款截图, text=支付, .pay-hint, [data-pay-upload]").count()) > 0;
+    const payNext = await fillAndSubmitOrder(page, "tng");
     await page.screenshot({ path: path.join(ART, "02-after-confirm-pay.png"), fullPage: true });
-    step("confirm pay enters next step", onPay || /payment-confirm|orders/.test(url), url) || failed++;
+    step("confirm pay enters next step", payNext.onPay, payNext.url) || failed++;
 
     // Disable both external channels — order should hide them (catfood may remain).
     await toggleChannel(adminToken, "duitnow", false);
     await toggleChannel(adminToken, "tng", false);
-    await page.reload({ waitUntil: "domcontentloaded" });
-    await openOrderModal(page);
-    await page.screenshot({ path: path.join(ART, "03-disabled-order-modal.png"), fullPage: true });
-    pay = await readOrderPayLabels(page);
+    // Fresh page for disable check (avoid stale modal / mid-pay redirect).
+    const page2 = await context.newPage();
+    await openOrderModal(page2);
+    await page2.screenshot({ path: path.join(ART, "03-disabled-order-modal.png"), fullPage: true });
+    pay = await readOrderPayLabels(page2);
     const ids2 = pay.labels.map((x) => x.id);
     step("UI hides DuitNow+TNG when disabled", !ids2.includes("duitnow") && !ids2.includes("tng"), JSON.stringify(pay)) ||
       failed++;
+    await page2.close();
 
     // Scope: enable but forOrder=false → should not appear on order.
     await toggleChannel(adminToken, "duitnow", true);
