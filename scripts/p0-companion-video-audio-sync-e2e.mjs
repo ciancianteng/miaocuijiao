@@ -29,9 +29,24 @@ function tok(j) {
   return j?.session?.accessToken || j?.session?.token || j?.accessToken || j?.token || "";
 }
 function makeWav() {
-  // minimal PCM wav
-  const raw = Buffer.from("UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=", "base64");
-  return { dataUrl: `data:audio/wav;base64,${raw.toString("base64")}`, b64: raw.toString("base64") };
+  // Build a WAV large enough to pass public size-gate (>512 bytes).
+  const dataSize = 2048;
+  const buf = Buffer.alloc(44 + dataSize, 0);
+  buf.write("RIFF", 0);
+  buf.writeUInt32LE(36 + dataSize, 4);
+  buf.write("WAVE", 8);
+  buf.write("fmt ", 12);
+  buf.writeUInt32LE(16, 16); // pcm chunk size
+  buf.writeUInt16LE(1, 20); // PCM
+  buf.writeUInt16LE(1, 22); // mono
+  buf.writeUInt32LE(8000, 24); // sample rate
+  buf.writeUInt32LE(8000, 28); // byte rate
+  buf.writeUInt16LE(1, 32); // block align
+  buf.writeUInt16LE(8, 34); // bits
+  buf.write("data", 36);
+  buf.writeUInt32LE(dataSize, 40);
+  for (let i = 0; i < dataSize; i++) buf[44 + i] = i % 256;
+  return { dataUrl: `data:audio/wav;base64,${buf.toString("base64")}` };
 }
 function makeTinyMp4() {
   // Minimal-ish mp4-like bytes (ftyp + free) — Storage accepts by MIME; player may not decode.
