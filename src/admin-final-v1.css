@@ -19,6 +19,50 @@
 .admin-final-form textarea{min-height:72px}
 .admin-final-form .wide{grid-column:1/-1}
 .admin-final-thumb{width:96px;height:42px;object-fit:cover;border-radius:8px;border:1px solid rgba(255,255,255,.12)}
+/* Payment proof lightbox — never use inline display:grid with [hidden] (inline wins and darkens the page). */
+.admin-proof-lightbox,
+#adminProofLightbox{
+  position:fixed;
+  inset:0;
+  z-index:120000;
+  display:none;
+  place-items:center;
+  padding:24px;
+  margin:0;
+  background:rgba(0,0,0,.72);
+  box-sizing:border-box;
+}
+.admin-proof-lightbox[hidden],
+#adminProofLightbox[hidden]{
+  display:none!important;
+  pointer-events:none!important;
+}
+.admin-proof-lightbox:not([hidden]),
+#adminProofLightbox:not([hidden]){
+  display:grid;
+  pointer-events:auto;
+}
+.admin-proof-lightbox-card{
+  max-width:min(920px,96vw);
+  max-height:90vh;
+  overflow:auto;
+  background:#121218;
+  border-radius:16px;
+  padding:16px;
+  border:1px solid rgba(255,255,255,.12);
+}
+.admin-proof-lightbox-head{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:12px;
+  margin-bottom:12px;
+}
+.admin-proof-lightbox-card img{
+  max-width:100%;
+  border-radius:12px;
+  display:block;
+}
 @media(max-width:1279px) and (min-width:1024px){.admin-final-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:1023px){.admin-final-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.admin-final-form{grid-template-columns:1fr}}
 @media(max-width:767px){.admin-final-grid{grid-template-columns:1fr}}

@@ -102,7 +102,7 @@
             '<button class="mini-btn danger" data-admin-order-cancel="'+esc(o.id)+'">取消</button>'+
             '<button class="mini-btn danger" data-admin-order-delete="'+esc(o.id)+'">删除</button></td></tr>';
         }).join(''):'<tr><td colspan="9"><div class="empty">暂无订单</div></td></tr>')+
-        '</tbody></table></div><div id="adminOrderGrabModal" hidden></div><div id="adminProofLightbox" hidden style="position:fixed;inset:0;z-index:120;background:rgba(0,0,0,.72);display:grid;place-items:center;padding:24px"></div>';
+        '</tbody></table></div><div id="adminOrderGrabModal" hidden></div><div id="adminProofLightbox" class="admin-proof-lightbox" hidden></div>';
     }).catch(function(err){target.innerHTML=note(err.message)});
   }
   function grabStatusLabel(s){
@@ -257,16 +257,20 @@
       var lb=document.getElementById('adminProofLightbox');
       if(lb){
         lb.hidden=false;
-        lb.style.display='grid';
-        lb.innerHTML='<div style="max-width:min(920px,96vw);max-height:90vh;overflow:auto;background:#121218;border-radius:16px;padding:16px;border:1px solid rgba(255,255,255,.12)"><div style="display:flex;justify-content:space-between;gap:12px;margin-bottom:12px"><strong>付款截图</strong><button class="mini-btn" type="button" data-admin-proof-close>关闭</button></div><img src="'+esc(proofPrev.dataset.adminProofPreview)+'" alt="付款截图" style="max-width:100%;border-radius:12px;display:block"></div>';
+        lb.setAttribute('aria-hidden','false');
+        lb.innerHTML='<div class="admin-proof-lightbox-card"><div class="admin-proof-lightbox-head"><strong>付款截图</strong><button class="mini-btn" type="button" data-admin-proof-close>关闭</button></div><img src="'+esc(proofPrev.dataset.adminProofPreview)+'" alt="付款截图"></div>';
       } else {
         window.open(proofPrev.dataset.adminProofPreview,'_blank');
       }
       return;
     }
-    if(e.target.closest('[data-admin-proof-close]')||(e.target.id==='adminProofLightbox')){
+    if(e.target.closest('[data-admin-proof-close]')||(e.target.id==='adminProofLightbox')||e.target.classList.contains('admin-proof-lightbox')){
       var lb2=document.getElementById('adminProofLightbox');
-      if(lb2){lb2.hidden=true;lb2.style.display='none';lb2.innerHTML='';}
+      if(lb2){
+        lb2.hidden=true;
+        lb2.setAttribute('aria-hidden','true');
+        lb2.innerHTML='';
+      }
       return;
     }
     var ap=e.target.closest('[data-admin-approve-proof]');
