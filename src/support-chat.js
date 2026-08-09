@@ -4,6 +4,9 @@ import './mcj-chat-realtime.js';
 (function () {
   var root = document.getElementById("supportApp");
   if (!root) return;
+  try {
+    window.__MCJ_SUPPORT_CHAT_LAGFIX = "20260809bossMsgLag1";
+  } catch (_) {}
 
   document.documentElement.classList.add("support-page");
   document.body.classList.add("support-page");

@@ -1,7 +1,7 @@
 /**
  * P0: Boss support message-center conversation switch lag.
- * Injects local support-chat.js so we can verify the fix against staging APIs
- * even before Vercel preview catches up.
+ * Injects the locally built /assets/support-*.js bundle (Vite production)
+ * while using staging APIs.
  *
  * Usage: PREVIEW=https://meow-cuijiao-homepage-staging.vercel.app node scripts/p0-boss-msg-center-lag-e2e.mjs
  */
@@ -17,7 +17,13 @@ const BASE = (process.env.PREVIEW || process.env.MCJ_STAGING_URL || "https://meo
 );
 const PASS = process.env.PASS || process.env.MCJ_TEST_PASSWORD || "McjTest@12345678";
 const BOSS = process.env.E2E_BOSS_EMAIL || "boss.final.1785714993009@meow.test";
-const LOCAL_JS = fs.readFileSync(path.join(ROOT, "src/support-chat.js"), "utf8");
+const SRC_JS = fs.readFileSync(path.join(ROOT, "src/support-chat.js"), "utf8");
+const DIST_SUPPORT = (() => {
+  const dir = path.join(ROOT, "dist/assets");
+  if (!fs.existsSync(dir)) return null;
+  const hit = fs.readdirSync(dir).find((f) => /^support-[^.]+\.js$/.test(f));
+  return hit ? fs.readFileSync(path.join(dir, hit), "utf8") : null;
+})();
 const ART = path.join("/opt/cursor/artifacts", "boss-msg-center-lag-e2e");
 const ART_REPO = path.join(ROOT, "artifacts", "boss-msg-center-lag-e2e");
 fs.mkdirSync(ART, { recursive: true });
@@ -25,7 +31,7 @@ fs.mkdirSync(ART_REPO, { recursive: true });
 
 const results = [];
 function step(name, ok, detail) {
-  results.push({ step: name, result: ok ? "PASS" : "FAIL", detail: String(detail || "").slice(0, 800) });
+  results.push({ step: name, result: ok ? "PASS" : "FAIL", detail: String(detail || "").slice(0, 900) });
   console.log(`[${ok ? "PASS" : "FAIL"}] ${name} :: ${detail}`);
   return ok;
 }
@@ -54,7 +60,7 @@ async function shot(page, name) {
   } catch (_) {}
 }
 
-async function runViewport(label, deviceOpts) {
+async function runViewport(label, deviceOpts, { injectFix }) {
   const browser = await chromium.launch({
     executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH || "/usr/bin/google-chrome-stable",
     headless: true,
@@ -66,21 +72,24 @@ async function runViewport(label, deviceOpts) {
   page.on("pageerror", (err) => pageErrors.push(String(err.message || err)));
 
   let injectedHits = 0;
-  // Serve fixed module so staging HTML/API can be used immediately.
-  await page.route(/support-chat\.js(?:\?.*)?$/, async (route) => {
-    injectedHits += 1;
-    await route.fulfill({
-      status: 200,
-      contentType: "text/javascript; charset=utf-8",
-      body: LOCAL_JS,
-      headers: { "cache-control": "no-store" },
+  if (injectFix && DIST_SUPPORT) {
+    await page.route(/\/assets\/support-[^/?#]+\.js(?:\?.*)?$/, async (route) => {
+      injectedHits += 1;
+      await route.fulfill({
+        status: 200,
+        contentType: "text/javascript; charset=utf-8",
+        body: DIST_SUPPORT,
+        headers: { "cache-control": "no-store", "access-control-allow-origin": "*" },
+      });
     });
-  });
+  }
 
   const chatGets = [];
   const chatPosts = [];
+  const orderGets = [];
   page.on("request", (req) => {
     const u = req.url();
+    if (u.includes("/api/orders")) orderGets.push({ t: Date.now(), u });
     if (!u.includes("/api/chat")) return;
     if (req.method() === "GET") chatGets.push({ t: Date.now(), u });
     if (req.method() === "POST") chatPosts.push({ t: Date.now(), u, post: req.postData() || "" });
@@ -91,7 +100,7 @@ async function runViewport(label, deviceOpts) {
   step(`${label}_login`, !!token, `tok=${!!token}`);
   if (!token) {
     await browser.close();
-    return;
+    return null;
   }
 
   await context.addInitScript((t) => {
@@ -108,14 +117,19 @@ async function runViewport(label, deviceOpts) {
   step(`${label}_has_conversations`, convs.length >= 2, `count=${convs.length}`);
   if (convs.length < 2) {
     await browser.close();
-    return;
+    return null;
   }
 
   await page.goto(`${BASE}/support.html?cb=${Date.now()}`, { waitUntil: "domcontentloaded", timeout: 60000 });
   await page.waitForSelector(".support-session[data-select-conversation]", { timeout: 30000 });
-  step(`${label}_module_injected`, injectedHits >= 1, `injectHits=${injectedHits}`);
+  const lagfix = await page.evaluate(() => String(window.__MCJ_SUPPORT_CHAT_LAGFIX || ""));
+  if (injectFix) {
+    step(`${label}_fix_injected`, injectedHits >= 1 && lagfix === "20260809bossMsgLag1", `hits=${injectedHits} flag=${lagfix || "(none)"}`);
+  } else {
+    step(`${label}_baseline_no_fix_flag`, lagfix !== "20260809bossMsgLag1", `flag=${lagFix || "(none)"}`);
+  }
 
-  const isMobile = label === "mobile";
+  const isMobile = /mobile/.test(label);
 
   async function ensureListVisible() {
     if (!isMobile) return;
@@ -128,7 +142,7 @@ async function runViewport(label, deviceOpts) {
     }
   }
 
-  async function clickSession(index) {
+  async function clickSession(index, { waitMessages } = {}) {
     await ensureListVisible();
     const cards = page.locator(".support-session[data-select-conversation]");
     const count = await cards.count();
@@ -137,7 +151,6 @@ async function runViewport(label, deviceOpts) {
     const cid = await card.getAttribute("data-select-conversation");
     const t0 = Date.now();
     await card.click({ timeout: 5000 });
-    // Immediate UI: active class (desktop) or chat main head (mobile detail) without waiting for network.
     if (isMobile) {
       await page.waitForSelector(".support-main-head, .support-messages", { timeout: 2500 });
       await page.waitForFunction(() => {
@@ -156,19 +169,39 @@ async function runViewport(label, deviceOpts) {
       );
     }
     const uiMs = Date.now() - t0;
-    return { cid, uiMs };
+    let msgMs = null;
+    if (waitMessages) {
+      await page.waitForSelector(".support-messages", { timeout: 8000 });
+      // Messages pane exists immediately; wait until either real msgs or empty placeholder after paint.
+      await page.waitForFunction(() => {
+        const box = document.querySelector(".support-messages");
+        if (!box) return false;
+        return box.querySelector(".support-msg, .support-list-empty") != null;
+      }, null, { timeout: 8000 });
+      msgMs = Date.now() - t0;
+    }
+    return { cid, uiMs, msgMs };
   }
 
+  // Measure: UI + message pane ready (should not wait on orders)
   chatGets.length = 0;
-  chatPosts.length = 0;
-  const open1 = await clickSession(0);
-  step(`${label}_first_switch_ui_ms`, open1.uiMs <= 800, `uiMs=${open1.uiMs} cid=${open1.cid}`);
-  await page.waitForTimeout(1200);
+  orderGets.length = 0;
+  const open1 = await clickSession(0, { waitMessages: true });
+  // Observe whether orders request continues after messages already shown
+  await page.waitForTimeout(1500);
+  const ordersAfter = orderGets.length;
+  step(
+    `${label}_first_switch_ui_ms`,
+    open1.uiMs <= 800,
+    `uiMs=${open1.uiMs} msgMs=${open1.msgMs} cid=${open1.cid} ordersAfter=${ordersAfter}`
+  );
   await shot(page, `${label}-01-first`);
 
+  // Rapid 10 switches — UI only (no waiting for network)
   const switchMs = [];
   chatGets.length = 0;
   chatPosts.length = 0;
+  orderGets.length = 0;
   const tRapid0 = Date.now();
   for (let i = 0; i < 10; i++) {
     const r = await clickSession(i + 1);
@@ -195,48 +228,80 @@ async function runViewport(label, deviceOpts) {
 
   await page.waitForTimeout(2500);
   const threadGets = chatGets.filter((g) => /conversation_id=/.test(g.u));
-  const listGets = chatGets.filter((g) => /action=conversations/.test(g.u));
   const markReads = chatPosts.filter((p) => /mark_read/.test(p.post));
   step(
     `${label}_thread_get_not_exploding`,
     threadGets.length <= 22,
-    `threadGets=${threadGets.length} listGets=${listGets.length} markReads=${markReads.length} allGets=${chatGets.length}`
+    `threadGets=${threadGets.length} markReads=${markReads.length} orderGets=${orderGets.length} allGets=${chatGets.length}`
   );
 
+  // Cache revisit
   await ensureListVisible();
-  const cards = page.locator(".support-session[data-select-conversation]");
-  const c0 = await cards.nth(0).getAttribute("data-select-conversation");
-  const c1 = await cards.nth(1).getAttribute("data-select-conversation");
   await clickSession(0);
   await page.waitForTimeout(900);
   await clickSession(1);
   await page.waitForTimeout(900);
   chatGets.length = 0;
   const tCache0 = Date.now();
-  const cacheOpen = await clickSession(0);
+  const cacheOpen = await clickSession(0, { waitMessages: true });
   const cacheUi = Date.now() - tCache0;
   const msgCount = await page.locator(".support-messages .support-msg, .support-messages .support-list-empty").count();
   step(
     `${label}_cache_revisit_instant`,
     cacheUi <= 900 && cacheOpen.uiMs <= 800 && msgCount >= 1,
-    `uiMs=${cacheUi} clickUi=${cacheOpen.uiMs} msgsOrEmpty=${msgCount} a=${c0} b=${c1}`
+    `uiMs=${cacheUi} clickUi=${cacheOpen.uiMs} msgMs=${cacheOpen.msgMs} msgsOrEmpty=${msgCount}`
   );
   await page.waitForTimeout(800);
   const revisitThreadGets = chatGets.filter((g) => /conversation_id=/.test(g.u)).length;
   step(`${label}_cache_revisit_single_refresh`, revisitThreadGets <= 2, `threadGets=${revisitThreadGets}`);
-
   step(`${label}_no_pageerror`, pageErrors.length === 0, pageErrors.slice(0, 3).join(" | ") || "ok");
   await shot(page, `${label}-02-after-rapid`);
+
+  const summary = {
+    label,
+    injectFix,
+    lagFix,
+    avgUi,
+    maxUi,
+    firstUi: open1.uiMs,
+    firstMsg: open1.msgMs,
+    rapidWall,
+    threadGets: threadGets.length,
+  };
   await browser.close();
+  return summary;
 }
 
 (async () => {
   console.log("BASE", BASE);
-  step("local_fix_markers", /selectConversationInstant|threadCache|threadLoadSeq/.test(LOCAL_JS), "support-chat.js contains lag-fix symbols");
-  await runViewport("mobile", devices["iPhone 13"]);
-  await runViewport("desktop", { viewport: { width: 1440, height: 900 } });
+  step("local_fix_markers", /selectConversationInstant|threadCache|threadLoadSeq/.test(SRC_JS), "support-chat.js contains lag-fix symbols");
+  step("dist_bundle_ready", !!(DIST_SUPPORT && /__MCJ_SUPPORT_CHAT_LAGFIX/.test(DIST_SUPPORT)), `bytes=${DIST_SUPPORT ? DIST_SUPPORT.length : 0}`);
+  if (!DIST_SUPPORT) {
+    console.error("Missing dist/assets/support-*.js — run npm run build first");
+    process.exit(1);
+  }
+
+  // Optional baseline (old staging bundle) for comparison — does not fail the run.
+  const baselineDesktop = await runViewport("baseline_desktop", { viewport: { width: 1440, height: 900 } }, { injectFix: false });
+  const mobile = await runViewport("mobile", devices["iPhone 13"], { injectFix: true });
+  const desktop = await runViewport("desktop", { viewport: { width: 1440, height: 900 } }, { injectFix: true });
+
+  if (baselineDesktop && desktop) {
+    step(
+      "fix_vs_baseline_ui",
+      desktop.avgUi <= baselineDesktop.avgUi + 80,
+      `baselineAvg=${baselineDesktop.avgUi} fixedAvg=${desktop.avgUi} baselineMax=${baselineDesktop.maxUi} fixedMax=${desktop.maxUi}`
+    );
+  }
+
   const failed = results.filter((r) => r.result === "FAIL");
-  const out = { overall: failed.length ? "FAIL" : "PASS", failed: failed.length, results, base: BASE };
+  const out = {
+    overall: failed.length ? "FAIL" : "PASS",
+    failed: failed.length,
+    results,
+    base: BASE,
+    summaries: { baselineDesktop, mobile, desktop },
+  };
   fs.writeFileSync(path.join(ART, "results.json"), JSON.stringify(out, null, 2));
   fs.writeFileSync(path.join(ART_REPO, "results.json"), JSON.stringify(out, null, 2));
   console.log("OVERALL", out.overall, `failed=${failed.length}`);
