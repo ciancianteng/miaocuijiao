@@ -64,7 +64,7 @@ async function shot(page, name) {
 (async () => {
   console.log("BASE", BASE);
   const html = await (await fetch(`${BASE}/payment-confirm.html?cb=${Date.now()}`, { cache: "no-store" })).text();
-  step("asset_cache_bust", /payment-confirm\.js\?v=20260809payProofUpload1/.test(html), /payment-confirm\.js\?v=[^"']+/.exec(html)?.[0] || "missing");
+  step("asset_cache_bust", /payment-confirm\.js\?v=20260809payProofUpload2/.test(html), /payment-confirm\.js\?v=[^"']+/.exec(html)?.[0] || "missing");
 
   const bossT = tok((await api("/api/auth", null, { action: "login", email: BOSS, password: PASS, loginPortal: "boss" })).json);
   const csT = tok((await api("/api/customer-service", null, { action: "login", account: CS, password: PASS })).json);
@@ -116,10 +116,13 @@ async function shot(page, name) {
   await shot(page, "01-mobile-pay-page");
 
   const fileCss = await page.evaluate(() => {
-    const input = document.querySelector(".pay-proof-file, [data-payment-proof]");
+    const input = document.querySelector("#mcjDurableProofInput, [data-mcj-durable-proof], [data-payment-proof]");
     if (!input) return null;
     const s = getComputedStyle(input);
     return {
+      id: input.id,
+      durable: input.getAttribute("data-mcj-durable-proof") === "1",
+      outsideRoot: !document.getElementById("paymentConfirmApp")?.contains(input),
       display: s.display,
       opacity: s.opacity,
       pe: s.pointerEvents,
@@ -129,8 +132,8 @@ async function shot(page, name) {
     };
   });
   step(
-    "file_input_not_display_none",
-    !!(fileCss && fileCss.display !== "none" && !fileCss.hiddenAttr && Number(fileCss.opacity) === 0),
+    "durable_file_input_outside_paint_root",
+    !!(fileCss && fileCss.durable && fileCss.outsideRoot && fileCss.display !== "none" && !fileCss.hiddenAttr),
     JSON.stringify(fileCss)
   );
 
@@ -139,28 +142,46 @@ async function shot(page, name) {
   const disabledBefore = await beforeSubmit.isDisabled();
   step("submit_disabled_without_file", disabledBefore, `disabled=${disabledBefore}`);
 
-  // ① select real PNG
-  await page.setInputFiles("[data-payment-proof]", {
+  // Simulate mobile poll race while picker is "open": force paint/load while selecting.
+  await page.evaluate(() => {
+    window.__mcjRacePaint = setInterval(() => {
+      const app = document.getElementById("paymentConfirmApp");
+      if (!app) return;
+      // Mimic poll re-render pressure without leaving the page.
+      app.dispatchEvent(new Event("mcj-test-paint-pressure"));
+    }, 200);
+  });
+
+  // ① select real PNG via durable input (survives paint)
+  await page.setInputFiles("#mcjDurableProofInput", {
     name: "duitnow-proof.png",
     mimeType: "image/png",
     buffer: makePngBuffer(),
   });
   await page.waitForSelector(".pay-proof-preview img", { timeout: 15000 });
+  await page.evaluate(() => {
+    if (window.__mcjRacePaint) clearInterval(window.__mcjRacePaint);
+  });
   const preview = await page.evaluate(() => {
     const img = document.querySelector(".pay-proof-preview img");
     const name = document.querySelector("[data-proof-filename], .pay-proof-name");
     const tip = document.querySelector("[data-proof-success], .pay-success");
+    const durable = document.getElementById("mcjDurableProofInput");
     return {
       src: img?.getAttribute("src") || "",
       natural: img?.naturalWidth || 0,
       name: name?.textContent || "",
       tip: tip?.textContent || "",
       submitEnabled: !document.querySelector("[data-proof-submit]")?.disabled,
+      durableStillMounted: !!durable && !document.getElementById("paymentConfirmApp")?.contains(durable),
     };
   });
   step(
     "①②_preview_and_filename",
-    /blob:|https?:/.test(preview.src) && /已选择：duitnow-proof\.png/.test(preview.name) && preview.submitEnabled,
+    /blob:|https?:/.test(preview.src) &&
+      /已选择：duitnow-proof\.png/.test(preview.name) &&
+      preview.submitEnabled &&
+      preview.durableStillMounted,
     JSON.stringify(preview)
   );
   await shot(page, "02-mobile-preview-selected");

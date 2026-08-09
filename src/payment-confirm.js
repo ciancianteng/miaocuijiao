@@ -13,6 +13,9 @@
   var paying = false;
   var allowTestPay = null;
   var redirectTimer = null;
+  var pickingProof = false;
+  var pickWatchTimer = null;
+  var heldProofFile = null; // durable File ref — survives paint() destroying <input>
   var proofDraft = {
     orderId: "",
     file: null,
@@ -25,6 +28,32 @@
     error: "",
     serverProofUrl: "",
   };
+
+  function activeProofFile() {
+    return proofDraft.file || heldProofFile || null;
+  }
+
+  function beginProofPick() {
+    pickingProof = true;
+    if (pickWatchTimer) clearTimeout(pickWatchTimer);
+    // Mobile Safari: photo sheet can take long; keep poll/paint frozen until change or timeout.
+    pickWatchTimer = setTimeout(function () {
+      pickingProof = false;
+      pickWatchTimer = null;
+    }, 120000);
+  }
+
+  function endProofPick() {
+    pickingProof = false;
+    if (pickWatchTimer) {
+      clearTimeout(pickWatchTimer);
+      pickWatchTimer = null;
+    }
+  }
+
+  function shouldFreezeOrderPaint() {
+    return !!(pickingProof || proofDraft.uploading || activeProofFile());
+  }
 
   function esc(v) {
     return String(v == null ? "" : v).replace(/[&<>"']/g, function (c) {
@@ -64,8 +93,129 @@
     return new URLSearchParams(location.search).get(name) || "";
   }
   function paint(html) {
+    // Never wipe the page while the OS photo picker is open — destroying in-panel
+    // controls mid-pick races with mobile Safari and drops the selection.
+    if (pickingProof) return;
     root.innerHTML = html;
     bindPayQrFallback();
+    bindProofPickTriggers();
+    syncDurableProofInput();
+  }
+
+  /** Persistent <input type=file> lives outside #paymentConfirmApp so poll/paint never kills it. */
+  function ensureDurableProofInput() {
+    var el = document.getElementById("mcjDurableProofInput");
+    if (el) return el;
+    el = document.createElement("input");
+    el.id = "mcjDurableProofInput";
+    el.type = "file";
+    el.accept = "image/png,image/jpeg,image/webp,image/jpg,.png,.jpg,.jpeg,.webp";
+    el.setAttribute("data-payment-proof", "");
+    el.setAttribute("data-mcj-durable-proof", "1");
+    el.className = "pay-proof-file";
+    el.setAttribute("aria-hidden", "true");
+    el.tabIndex = -1;
+    el.style.cssText =
+      "position:fixed;left:0;top:0;width:1px;height:1px;opacity:0;overflow:hidden;z-index:2147483000;pointer-events:none;";
+    document.body.appendChild(el);
+    ["pointerdown", "touchstart", "mousedown", "click", "focus"].forEach(function (evName) {
+      el.addEventListener(
+        evName,
+        function () {
+          beginProofPick();
+        },
+        { passive: true }
+      );
+    });
+    el.addEventListener("change", function () {
+      onProofFileChosen(el);
+    });
+    return el;
+  }
+
+  function syncDurableProofInput() {
+    var el = ensureDurableProofInput();
+    var oid = proofDraft.orderId || q("order") || q("id") || "";
+    if (oid) el.setAttribute("data-payment-proof", oid);
+  }
+
+  function openDurableProofPicker(orderId) {
+    beginProofPick();
+    var el = ensureDurableProofInput();
+    if (orderId) {
+      proofDraft.orderId = orderId;
+      el.setAttribute("data-payment-proof", orderId);
+    }
+    try {
+      el.value = "";
+    } catch (err) {}
+    // Re-enable pointer events only for the native picker gesture.
+    el.style.pointerEvents = "auto";
+    try {
+      if (typeof el.showPicker === "function") el.showPicker();
+      else el.click();
+    } catch (err) {
+      try {
+        el.click();
+      } catch (e2) {}
+    }
+    setTimeout(function () {
+      el.style.pointerEvents = "none";
+    }, 0);
+  }
+
+  function bindProofPickTriggers() {
+    root.querySelectorAll("[data-proof-pick]").forEach(function (btn) {
+      if (btn.getAttribute("data-proof-guard") === "1") return;
+      btn.setAttribute("data-proof-guard", "1");
+      ["pointerdown", "touchstart", "mousedown"].forEach(function (evName) {
+        btn.addEventListener(
+          evName,
+          function () {
+            beginProofPick();
+          },
+          { passive: true }
+        );
+      });
+      btn.addEventListener("click", function (e) {
+        e.preventDefault();
+        openDurableProofPicker(btn.getAttribute("data-proof-pick") || q("order") || q("id"));
+      });
+    });
+  }
+
+  function onProofFileChosen(input) {
+    endProofPick();
+    if (!input || !input.files || !input.files[0]) return;
+    var file = input.files[0];
+    // Dedupe: input listener + capture listener can both fire once.
+    if (
+      heldProofFile === file &&
+      proofDraft.file === file &&
+      proofDraft.previewUrl &&
+      !proofDraft.uploaded
+    ) {
+      return;
+    }
+    var orderId = input.getAttribute("data-payment-proof") || proofDraft.orderId || q("order") || q("id");
+    if (!isAllowedProofFile(file)) {
+      proofDraft.error =
+        /heic|heif/i.test(String(file.type || file.name || ""))
+          ? "当前是 HEIC 原图。请在系统相册设置中关闭「保留原格式」，或导出为 JPG/PNG 后再上传。"
+          : "仅支持 JPG、PNG、WEBP 图片";
+      proofDraft.successTip = "";
+      try {
+        input.value = "";
+      } catch (err) {}
+      renderOrder(readCache(orderId) || { id: orderId, status: "awaiting_payment" });
+      return;
+    }
+    setProofFile(orderId, file);
+    proofDraft.error = "";
+    proofDraft.uploaded = false;
+    proofDraft.successTip =
+      "已选择：" + (proofDraft.fileName || file.name || "付款截图") + "，请确认预览后点击「我已付款」";
+    renderOrder(readCache(orderId) || { id: orderId, status: "awaiting_payment" });
   }
   function bindPayQrFallback() {
     root.querySelectorAll("[data-mcj-pay-qr],[data-pay-qr-img]").forEach(function (img) {
@@ -106,14 +256,15 @@
   }
 
   function fileInputHtml(orderId, labelText, primary) {
+    // Button (not <label>+nested input): the real file input is durable outside paint().
     return (
-      '<label class="pay-btn' +
+      '<button type="button" class="pay-btn' +
       (primary ? " primary" : "") +
-      ' pay-proof-pick">' +
-      esc(labelText) +
-      '<input class="pay-proof-file" type="file" accept="image/png,image/jpeg,image/webp,image/jpg,.png,.jpg,.jpeg,.webp" data-payment-proof="' +
+      ' pay-proof-pick" data-proof-pick="' +
       esc(orderId) +
-      '"></label>'
+      '">' +
+      esc(labelText) +
+      "</button>"
     );
   }
 
@@ -121,7 +272,7 @@
     var st = String(order.status || "");
     if (st !== "awaiting_payment") return "";
     if (isWalletMethod(order)) return "";
-    if (isReviewing(order) && !(proofDraft.file || proofDraft.previewUrl || proofDraft.serverProofUrl)) return "";
+    if (isReviewing(order) && !(activeProofFile() || proofDraft.previewUrl || proofDraft.serverProofUrl)) return "";
     var info = platformPayInfo || null;
     if (order && order.platformPayInfo && order.platformPayInfo.__live === true) {
       info = order.platformPayInfo;
@@ -188,6 +339,7 @@
         URL.revokeObjectURL(proofDraft.previewUrl);
       } catch (e) {}
     }
+    heldProofFile = null;
     proofDraft.file = null;
     proofDraft.fileName = "";
     proofDraft.previewUrl = "";
@@ -205,7 +357,8 @@
     if (/heic|heif|image\/heic|image\/heif/.test(type)) return false;
     var name = String(file.name || "").toLowerCase();
     if (/\.(heic|heif)$/.test(name)) return false;
-    return /\.(png|jpe?g|webp)$/.test(name);
+    // Some Android WebViews omit MIME — allow by extension.
+    return /\.(png|jpe?g|webp)$/.test(name) || /^image\//.test(type);
   }
   function setProofFile(orderId, file) {
     if (proofDraft.previewUrl && String(proofDraft.previewUrl).indexOf("blob:") === 0) {
@@ -213,6 +366,7 @@
         URL.revokeObjectURL(proofDraft.previewUrl);
       } catch (e) {}
     }
+    heldProofFile = file || null;
     proofDraft.orderId = orderId;
     proofDraft.file = file;
     proofDraft.fileName = String((file && file.name) || "付款截图").trim() || "付款截图";
@@ -446,8 +600,8 @@
   function proofPanelHtml(order) {
     var reviewing = isReviewing(order);
     var preview = proofDraft.previewUrl || proofDraft.serverProofUrl || order.paymentProofUrl || "";
-    var hasLocal = !!(proofDraft.file || proofDraft.previewUrl);
-    var showUpload = String(order.status || "") === "awaiting_payment" && (!reviewing || hasLocal || !preview);
+    var localFile = activeProofFile();
+    var hasLocal = !!(localFile || proofDraft.previewUrl);
     if (String(order.status || "") !== "awaiting_payment") return "";
     if (isWalletMethod(order) && !reviewing && !hasLocal) return "";
 
@@ -476,8 +630,8 @@
         '" alt="付款截图预览" data-mcj-pay-proof="1">' +
         (proofDraft.fileName
           ? '<p class="pay-proof-name" data-proof-filename>已选择：' + esc(proofDraft.fileName) + "</p>"
-          : reviewing
-            ? '<p class="pay-proof-name">付款截图已上传</p>'
+          : reviewing || proofDraft.uploaded
+            ? '<p class="pay-proof-name" data-proof-uploaded>付款凭证已上传</p>'
             : "") +
         '<div class="pay-proof-preview-actions">' +
         '<button type="button" class="pay-btn" data-proof-delete>删除</button>' +
@@ -497,10 +651,10 @@
         esc(proofDraft.progress) +
         "%</span></div>";
     }
-    if (proofDraft.successTip || (reviewing && !proofDraft.error && !proofDraft.file)) {
+    if (proofDraft.successTip || (reviewing && !proofDraft.error && !localFile)) {
       html +=
         '<p class="pay-success" role="status" data-proof-success>' +
-        esc(proofDraft.successTip || "付款截图已上传，当前状态：待人工审核") +
+        esc(proofDraft.successTip || "付款凭证已上传，当前状态：待人工审核") +
         "</p>";
     }
     if (proofDraft.error) {
@@ -508,7 +662,7 @@
     }
 
     html += '<div class="pay-actions pay-proof-actions">';
-    if (proofDraft.file && !proofDraft.uploaded) {
+    if (localFile && !proofDraft.uploaded) {
       html +=
         '<button type="button" class="pay-btn primary" data-proof-submit="' +
         esc(order.id) +
@@ -697,7 +851,7 @@
   }
 
   async function submitProof(orderId) {
-    var file = proofDraft.file;
+    var file = activeProofFile();
     var current = readCache(orderId) || { id: orderId, status: "awaiting_payment", paymentMethod: "duitnow" };
     if (paying || proofDraft.uploading) {
       proofDraft.error = "正在上传中，请稍候…";
@@ -745,23 +899,28 @@
         return {};
       });
       if (!res.ok || body.ok === false) throw new Error(body.message || "付款凭证提交失败（" + res.status + "）");
+      if (!body.order || !(body.order.paymentProofUrl || body.order.payment_proof_url)) {
+        throw new Error("上传未返回图片地址，请重试（禁止本地假预览代替真实上传）");
+      }
       tickProgress(100);
       proofDraft.uploading = false;
       proofDraft.uploaded = true;
+      heldProofFile = null;
       proofDraft.file = null;
-      proofDraft.successTip = "付款截图已上传。订单进入待审核，正在跳转「我的订单」…";
+      proofDraft.successTip = "付款凭证已上传。订单进入待审核，正在跳转「我的订单」…";
       var nextOrder = body.order || current;
       nextOrder.paymentReview = true;
       nextOrder.status = nextOrder.status || "awaiting_payment";
       nextOrder.statusText = "待人工审核";
       nextOrder.paymentStatus = "待人工审核";
-      if (body.order && body.order.paymentProofUrl) {
-        nextOrder.paymentProofUrl = body.order.paymentProofUrl;
-        proofDraft.serverProofUrl = body.order.paymentProofUrl;
-        proofDraft.previewUrl = body.order.paymentProofUrl;
-      } else if (proofDraft.previewUrl) {
-        nextOrder.paymentProofUrl = proofDraft.previewUrl;
-      }
+      nextOrder.paymentProofUrl = body.order.paymentProofUrl || body.order.payment_proof_url || "";
+      proofDraft.serverProofUrl = nextOrder.paymentProofUrl;
+      proofDraft.previewUrl = nextOrder.paymentProofUrl;
+      proofDraft.fileName = "";
+      try {
+        var durable = document.getElementById("mcjDurableProofInput");
+        if (durable) durable.value = "";
+      } catch (e) {}
       writeCache(orderId, nextOrder);
       renderOrder(nextOrder);
       goMyOrdersReview(orderId);
@@ -867,8 +1026,8 @@
       }
       order.platformPayInfo = platformPayInfo;
       writeCache(orderId, order);
-      // Never wipe a local file selection / in-flight upload with a poll refresh.
-      if (proofDraft.uploading || proofDraft.file || (proofDraft.previewUrl && !proofDraft.uploaded)) {
+      // Never wipe a local file selection / in-flight upload / open picker with a poll refresh.
+      if (shouldFreezeOrderPaint() && !proofDraft.uploaded) {
         return;
       }
       if (order.paymentProofUrl && !proofDraft.previewUrl) {
@@ -876,7 +1035,7 @@
         proofDraft.previewUrl = order.paymentProofUrl;
         if (isReviewing(order)) {
           proofDraft.uploaded = true;
-          proofDraft.successTip = proofDraft.successTip || "付款截图已上传，当前状态：待人工审核";
+          proofDraft.successTip = proofDraft.successTip || "付款凭证已上传，当前状态：待人工审核";
         }
       }
       renderOrder(order);
@@ -937,34 +1096,26 @@
     }
   });
   root.addEventListener("change", function (e) {
-    var input = e.target.closest("[data-payment-proof]");
-    if (!input || !input.files || !input.files[0]) return;
-    var orderId = input.getAttribute("data-payment-proof") || q("order") || q("id");
-    var file = input.files[0];
-    // Keep a durable File reference — do not rely on the input node (re-rendered away).
-    if (!isAllowedProofFile(file)) {
-      proofDraft.error =
-        /heic|heif/i.test(String(file.type || file.name || ""))
-          ? "当前是 HEIC 原图。请在系统相册设置中关闭「保留原格式」，或导出为 JPG/PNG 后再上传。"
-          : "仅支持 JPG、PNG、WEBP 图片";
-      proofDraft.successTip = "";
-      try {
-        input.value = "";
-      } catch (err) {}
-      renderOrder(readCache(orderId) || { id: orderId, status: "awaiting_payment" });
-      return;
-    }
-    setProofFile(orderId, file);
-    proofDraft.error = "";
-    proofDraft.uploaded = false;
-    proofDraft.successTip = "已选择：" + (proofDraft.fileName || file.name || "付款截图") + "，请确认预览后点击「我已付款」";
-    renderOrder(readCache(orderId) || { id: orderId, status: "awaiting_payment" });
+    var input = e.target.closest("[data-payment-proof], [data-mcj-durable-proof]");
+    if (!input) return;
+    onProofFileChosen(input);
   });
+
+  // Capture-phase: catch file change even if bubbling is interrupted.
+  document.addEventListener(
+    "change",
+    function (e) {
+      var t = e.target;
+      if (!t || t.id !== "mcjDurableProofInput") return;
+      onProofFileChosen(t);
+    },
+    true
+  );
 
   document.addEventListener("visibilitychange", function () {
     if (!document.hidden) {
       // Returning from photo picker: keep local File/preview; only sync when idle.
-      if (!(proofDraft.file || proofDraft.uploading)) loadOrder({ silent: true });
+      if (!shouldFreezeOrderPaint() || proofDraft.uploaded) loadOrder({ silent: true });
     }
   });
 
@@ -974,6 +1125,7 @@
     // Do NOT clearProofDraft here — mobile Safari may fire pagehide when opening the photo picker.
   });
 
+  ensureDurableProofInput();
   loadOrder();
   startPoll();
 })();
