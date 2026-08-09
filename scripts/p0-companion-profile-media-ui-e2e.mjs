@@ -54,7 +54,16 @@ function tinyPngDataUrl() {
   step("css_hides_native_input", /\.pw-media-input\{[\s\S]*opacity:0/.test(LOCAL_CSS), "pw-media-input opacity 0");
 
   const compLogin = await api("/api/companion", null, { action: "login", account: COMP, password: PASS });
-  const compT = tok(compLogin.json) || compLogin.json?.session?.accessToken || "";
+  const compT =
+    tok(compLogin.json) ||
+    compLogin.json?.session?.accessToken ||
+    compLogin.json?.data?.session?.accessToken ||
+    "";
+  const refresh =
+    compLogin.json?.session?.refreshToken ||
+    compLogin.json?.data?.session?.refreshToken ||
+    "";
+  const user = compLogin.json?.user || compLogin.json?.session?.user || compLogin.json?.data?.user || {};
   step("companion_login", !!compT, `ok=${compLogin.ok}`);
   if (!compT) process.exit(1);
 
@@ -130,15 +139,30 @@ function tinyPngDataUrl() {
       ...(deviceOpts || { viewport: { width: 1280, height: 900 } }),
       permissions: ["microphone", "camera"],
     });
-    await context.addInitScript((payload) => {
-      try {
-        localStorage.setItem("mcjCompanionSession", JSON.stringify({ accessToken: payload.token, role: "companion" }));
-        localStorage.setItem("companionAuthToken", payload.token);
-        localStorage.setItem("mcjAuthAccessToken", payload.token);
-        sessionStorage.setItem("mcjAuthAccessToken", payload.token);
-        localStorage.setItem("mcjRole", "companion");
-      } catch (_) {}
-    }, { token: compT });
+    await context.addInitScript(
+      (payload) => {
+        try {
+          const session = {
+            token: payload.token,
+            accessToken: payload.token,
+            refreshToken: payload.refresh || "",
+            user: payload.user || { role: "companion" },
+            remember: true,
+          };
+          const raw = JSON.stringify(session);
+          localStorage.setItem("mcjCompanionSession", raw);
+          sessionStorage.setItem("mcjCompanionSession", raw);
+          localStorage.setItem("companionAuthToken", "companion_session_v4_e2e");
+          sessionStorage.setItem("companionAuthToken", "companion_session_v4_e2e");
+          localStorage.setItem("companionUser", JSON.stringify(Object.assign({ role: "companion" }, payload.user || {})));
+          localStorage.setItem("mcjAuthAccessToken", payload.token);
+          sessionStorage.setItem("mcjAuthAccessToken", payload.token);
+          localStorage.setItem("mcjRole", "companion");
+          sessionStorage.setItem("mcjRole", "companion");
+        } catch (_) {}
+      },
+      { token: compT, refresh, user }
+    );
 
     const page = await context.newPage();
     await page.route(/companion-workbench\.js(?:\?.*)?$/, async (route) => {
