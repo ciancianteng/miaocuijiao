@@ -1,5 +1,6 @@
 /**
  * P0: Boss order list 【评价陪玩】 entry + shared review modal + cross-portal sync.
+ * DEPLOY_BUMP: admin-order-review-sync
  * Usage: PREVIEW=https://meow-cuijiao-homepage-staging.vercel.app node scripts/p0-boss-order-review-entry-e2e.mjs
  */
 import fs from "node:fs";
