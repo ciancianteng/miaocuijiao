@@ -1439,8 +1439,22 @@
       if(Media&&Media.isImageMessage(view)){
         view.messageType='image';
         view.message_type='image';
-        view.imageUrl=Media.imageUrlOf(view);
-        view.content=view.imageUrl||view.content;
+        if(!view.storageRef&&Media.storageRefOf)view.storageRef=Media.storageRefOf(view);
+        var https=Media.imageUrlOf(view);
+        if(https){
+          view.imageUrl=https;
+          view.content=https;
+        }else if(Media.resolveDisplayImageUrl){
+          Media.resolveDisplayImageUrl(view,cid,token).then(function(signed){
+            if(!signed||!state.inbox||!Array.isArray(state.inbox.messages))return;
+            state.inbox.messages=state.inbox.messages.map(function(m){
+              if(String(m.id)!==String(view.id))return m;
+              return Object.assign({},m,{imageUrl:signed,image_url:signed,content:signed,storageRef:view.storageRef||m.storageRef||''});
+            });
+            cacheThreadMessages(cid,state.inbox.messages);
+            if(state.route==='messages')paint();
+          }).catch(function(){});
+        }
       }
       state.inbox.messages=list.filter(function(m){
         if(!(m._pending||m._failed))return true;
@@ -2233,9 +2247,12 @@
       if(raw.charAt(0)===':'&&/^:https?:\/\//i.test(raw))raw=raw.slice(1);
       return /^https?:\/\//i.test(raw)?raw:'';
     }
-    function imgBubble(url,createdAt){
-      if(Media&&Media.imageBubbleHtml)return Media.imageBubbleHtml(url,esc,{createdAt:createdAt});
+    function imgBubble(url,createdAt,m){
+      var ref=(m&&(m.storageRef||m.storage_ref))||'';
+      var cid=String((m&&(m.conversationId||m.conversation_id))||companionCsConversationId()||'');
+      if(Media&&Media.imageBubbleHtml)return Media.imageBubbleHtml(url||'',esc,{createdAt:createdAt,storageRef:ref,conversationId:cid});
       var src=esc(url);
+      if(!src)return '<span class="mcj-chat-img-missing">[图片]</span>';
       return '<a class="mcj-chat-img-wrap" href="'+src+'" data-chat-image="'+src+'" title="点击放大"><img class="mcj-chat-img" src="'+src+'" alt="图片" loading="lazy" decoding="async" referrerpolicy="no-referrer" /></a>';
     }
     if(state.chatThreadLoading&&!(messages&&messages.length)){
@@ -2250,7 +2267,7 @@
       }).map(function(m){
         var side=m.side||(m.senderRole==='companion'?'right':'left');
         var isImg=fallbackIsImg(m);
-        var bubble=isImg?imgBubble(fallbackImgUrl(m),m.createdAt||m.created_at):('<div class="pw-bubble">'+esc(m.content)+'</div>');
+        var bubble=isImg?imgBubble(fallbackImgUrl(m),m.createdAt||m.created_at,m):('<div class="pw-bubble">'+esc(m.content)+'</div>');
         var pending=m._pending?' · 上传中…':'';
         var failed=m._failed?' · 发送失败':'';
         return '<div class="pw-msg '+esc(side)+'" data-msg-id="'+esc(m.id||m._localId||'')+'">'+bubble+'<small>'+esc(m.senderLabel||'')+' · '+esc(fmtTime(m.createdAt))+pending+failed+'</small></div>';
@@ -4021,40 +4038,96 @@
       var Media=window.MCJChatMedia;
       if(!Media){toast('图片组件未加载');return}
       var token=(state.session&&state.session.token)||'';
+      if(!token){toast('请先登录');return}
       var statusEl=root.querySelector('[data-pw-upload-status]');
-      Media.pickAndSendImages({
-        token:token,
-        conversationId:String((activeConvImg&&activeConvImg.id)||companionCsConversationId()||''),
-        multiple:true,
-        onStatus:function(t){if(statusEl)statusEl.textContent=t||'';},
-        onError:function(err){toast((err&&err.message)||'发送失败');},
-        onUploaded:function(url, up){
-          var mediaUrl=(up&&(up.storageRef||up.url))||url;
-          state.chatBusy=true;
-          if(statusEl)statusEl.textContent='上传中…';
-          if(state.inbox){
-            state.inbox.messages=(state.inbox.messages||[]).concat([{
-              id:'local-img-'+Date.now(),_localId:'local-img',_pending:true,
-              side:'right',senderRole:'companion',senderLabel:'我',
-              messageType:'image',message_type:'image',content:url,imageUrl:url,createdAt:new Date().toISOString()
-            }]);
-            paint({preserveScroll:true});
-          }
-          var consultEl=root.querySelector('[data-cs-consult-type]');
-          var consultType=String((consultEl&&consultEl.value)||csConvConsultType()||'other').trim()||'other';
-          var prevType=String((activeConvImg&&activeConvImg.consultType)||csConvConsultType()||'').trim();
-          var forceNew=!!(prevType&&prevType!==consultType);
-          var cidImg=companionCsConversationId();
-          return api('send_cs_message',{content:mediaUrl,message_type:'image',consult_type:consultType,conversation_id:cidImg,forceNew:forceNew}).then(function(){
-            state.chatBusy=false;
-            return loadActiveThread({force:true,clear:false,paint:false}).then(function(){return reloadInbox({paint:true});});
-          }).catch(function(err){
-            state.chatBusy=false;
-            toast(err.message||'图片发送失败');
-            paint({preserveScroll:true});
-          });
+      var consultEl=root.querySelector('[data-cs-consult-type]');
+      var consultType=String((consultEl&&consultEl.value)||csConvConsultType()||'other').trim()||'other';
+      state.csConsultType=consultType;
+      // Ensure a real companion_support conversation exists before upload (same id for upload+send).
+      var ensureCid=Promise.resolve(companionCsConversationId());
+      if(!companionCsConversationId()){
+        ensureCid=api('start_cs_consult',{consult_type:consultType,forceNew:false}).then(function(res){
+          var newId=String((res&&(res.conversationId||(res.conversation&&res.conversation.id)))||'').trim();
+          if(newId)state.chatConversationId=newId;
+          if(res&&(res.inbox||res.data))applyInboxPayload(res.inbox||res.data,{keepConversation:true});
+          return companionCsConversationId();
+        });
+      }
+      ensureCid.then(function(cidReady){
+        var cid=String(cidReady||companionCsConversationId()||'').trim();
+        if(!cid){
+          toast('缺少会话，无法上传图片');
+          return;
         }
-      }).then(function(){if(statusEl)setTimeout(function(){statusEl.textContent='';},1200);});
+        state.chatConversationId=cid;
+        Media.pickAndSendImages({
+          token:token,
+          conversationId:cid,
+          multiple:true,
+          onStatus:function(t){if(statusEl)statusEl.textContent=t||'';},
+          onError:function(err){toast((err&&err.message)||'图片发送失败，请重试');},
+          onUploaded:function(url, up){
+            var durable=String((up&&(up.storageRef||up.url))||url||'').trim();
+            var preview=String((up&&up.url)||url||'').trim();
+            if(!durable){
+              toast('图片发送失败，请重试');
+              return Promise.resolve();
+            }
+            state.chatBusy=true;
+            if(statusEl)statusEl.textContent='发送中…';
+            var localId='local-img-'+Date.now();
+            if(state.inbox){
+              state.inbox.messages=(state.inbox.messages||[]).concat([{
+                id:localId,_localId:localId,_pending:true,
+                conversationId:cid,
+                side:'right',senderRole:'companion',senderLabel:'我',
+                messageType:'image',message_type:'image',
+                content:preview||durable,imageUrl:preview||durable,
+                storageRef:(up&&up.storageRef)||(/^chat-images-private:/i.test(durable)?durable:''),
+                createdAt:new Date().toISOString()
+              }]);
+              paint({preserveScroll:true});
+            }
+            // Never forceNew on image send — must land in the same conversation that owns the upload path.
+            return api('send_cs_message',{
+              content:durable,
+              message_type:'image',
+              consult_type:consultType,
+              conversation_id:cid,
+              forceNew:false
+            }).then(function(res){
+              state.chatBusy=false;
+              var row=res&&res.messageRow;
+              if(row&&state.inbox){
+                state.inbox.messages=(state.inbox.messages||[]).filter(function(m){
+                  return m.id!==localId&&m._localId!==localId;
+                });
+                if(!state.inbox.messages.some(function(m){return String(m.id)===String(row.id);})){
+                  state.inbox.messages=state.inbox.messages.concat([Object.assign({},row,{
+                    conversationId:row.conversationId||cid,
+                    side:'right',
+                    senderLabel:row.senderLabel||'我'
+                  })]);
+                }
+                paint({preserveScroll:true});
+              }
+              return loadActiveThread({force:true,clear:false,paint:false}).then(function(){return reloadInbox({paint:true});});
+            }).catch(function(err){
+              state.chatBusy=false;
+              if(state.inbox&&state.inbox.messages){
+                state.inbox.messages=state.inbox.messages.map(function(m){
+                  if(m.id!==localId&&m._localId!==localId)return m;
+                  return Object.assign({},m,{_pending:false,_failed:true});
+                });
+              }
+              toast((err&&err.message)||'图片发送失败，请重试');
+              paint({preserveScroll:true});
+            });
+          }
+        }).then(function(){if(statusEl)setTimeout(function(){statusEl.textContent='';},1200);});
+      }).catch(function(err){
+        toast((err&&err.message)||'图片发送失败，请重试');
+      });
       return;
     }
   });

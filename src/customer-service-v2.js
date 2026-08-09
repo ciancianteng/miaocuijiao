@@ -695,7 +695,16 @@ import './mcj-chat-realtime.js';
           softRefresh();
         }
         if(state.activeConversation===cid){
-          mergeIncomingMessage(mapDbMessage(row));
+          var mappedPool=mapDbMessage(row);
+          hydrateIncomingImage(mappedPool).then(function(msg){
+            if(!mergeIncomingMessage(msg)){
+              // Already present — still try to patch bubble if signed URL arrived late.
+              patchMessageBubble(msg);
+              return;
+            }
+            if(state.route==='conversations'&&root.querySelector('.cs-chat-layout'))patchConversationMessages();
+            else if(state.route==='conversations')paint();
+          });
         }
         syncPoolCounters();
         if(state.route==='conversations'&&root.querySelector('.cs-chat-layout'))patchConversationMessages();
@@ -1018,10 +1027,40 @@ import './mcj-chat-realtime.js';
     if(Media&&Media.isImageMessage(mapped)){
       mapped.messageType='image';
       mapped.message_type='image';
-      mapped.imageUrl=Media.imageUrlOf(mapped);
-      mapped.content=mapped.imageUrl||mapped.content;
+      if(!mapped.storageRef&&Media.storageRefOf)mapped.storageRef=Media.storageRefOf(mapped);
+      var https=Media.imageUrlOf(mapped);
+      if(https){
+        mapped.imageUrl=https;
+        mapped.content=https;
+      }
     }
     return mapped;
+  }
+  function hydrateIncomingImage(msg){
+    if(!msg)return Promise.resolve(msg);
+    var Media=window.MCJChatMedia;
+    if(!Media||!Media.isImageMessage(msg))return Promise.resolve(msg);
+    if(Media.imageUrlOf(msg))return Promise.resolve(msg);
+    var token=(state.session&&(state.session.token||state.session.accessToken))||'';
+    var cid=msg.conversationId||state.activeConversation||'';
+    if(!Media.resolveDisplayImageUrl)return Promise.resolve(msg);
+    return Media.resolveDisplayImageUrl(msg,cid,token).then(function(signed){
+      if(signed){
+        msg.imageUrl=signed;
+        msg.image_url=signed;
+        msg.content=signed;
+        if(!msg.storageRef&&Media.storageRefOf)msg.storageRef=Media.storageRefOf(msg)||msg.storageRef;
+      }
+      return msg;
+    }).catch(function(){return msg;});
+  }
+  function patchMessageBubble(msg){
+    if(!msg||!msg.id)return;
+    var box=root.querySelector('.cs-chat-messages');
+    if(!box)return;
+    var node=box.querySelector('[data-msg-id="'+String(msg.id).replace(/"/g,'')+'"]');
+    if(!node)return;
+    try{node.outerHTML=messageHtml(msg);}catch(e){}
   }
   function loadActiveConversationMessages(cid){
     var id=String(cid||state.activeConversation||'').trim();
@@ -1074,14 +1113,19 @@ import './mcj-chat-realtime.js';
     // Do not kill pool subscription — only replace this conversation channel.
     if(typeof RT.unsubscribe==='function')RT.unsubscribe(id);
     RT.subscribeMessages(id,token,function(row){
-      var msg=mapDbMessage(row);
-      if(!mergeIncomingMessage(msg))return;
-      if(state.activeConversation===id){
-        clearUnreadLocally(id);
-        markConversationRead(id);
-      }
-      if(state.route==='conversations'&&root.querySelector('.cs-chat-layout'))patchConversationMessages();
-      else if(state.route==='conversations')paint();
+      var mapped=mapDbMessage(row);
+      hydrateIncomingImage(mapped).then(function(msg){
+        if(!mergeIncomingMessage(msg)){
+          patchMessageBubble(msg);
+          return;
+        }
+        if(state.activeConversation===id){
+          clearUnreadLocally(id);
+          markConversationRead(id);
+        }
+        if(state.route==='conversations'&&root.querySelector('.cs-chat-layout'))patchConversationMessages();
+        else if(state.route==='conversations')paint();
+      });
     }).then(function(){
       state.realtimeReady=true;
     }).catch(function(){
@@ -2765,9 +2809,9 @@ import './mcj-chat-realtime.js';
     var who=mine?(m.senderName||m.sender_name||'客服'):(system?'':(m.senderName||m.sender_name||(senderRole==='boss'?'老板':(senderRole==='companion'?'陪玩':''))));
     var Media=window.MCJChatMedia;
     var isImg=Media&&Media.isImageMessage(m);
-    var body=isImg?Media.imageBubbleHtml(Media.imageUrlOf(m),esc,{
+    var body=isImg?Media.imageBubbleHtml(Media.imageUrlOf(m)||'',esc,{
       createdAt:m.createdAt||m.created_at,
-      storageRef:m.storageRef||m.storage_ref||'',
+      storageRef:m.storageRef||m.storage_ref||(Media.storageRefOf?Media.storageRefOf(m):'')||'',
       conversationId:m.conversationId||m.conversation_id||state.activeConversation||''
     }):('<p>'+esc(m.content||'')+'</p>');
     var isImgPending=(m.messageType==='image'||m.message_type==='image');

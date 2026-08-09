@@ -54,6 +54,7 @@ import {
   loadConversationMessages,
   loadCompanionThreadMessages,
   viewMessage,
+  viewMessageSigned,
   buildSystemNotices,
   loadCompanionNotifications,
   loadReadKeys,
@@ -4530,13 +4531,14 @@ export default async function handler(req, res) {
         body.content || body.message || "",
         messageType
       );
+      const messageRow = msg ? await viewMessageSigned(msg) : null;
       return json(res, 200, {
         ok: true,
         message: "消息已发送",
         conversationId: conversation?.id || conversationId || "",
         consultType: conversation?.consult_type || consultType || "",
         orderId: conversation?.order_id || orderId || "",
-        messageRow: viewMessage(msg),
+        messageRow: messageRow || (msg ? viewMessage(msg) : null),
       });
     }
     if (action === "mark_notices_read") {

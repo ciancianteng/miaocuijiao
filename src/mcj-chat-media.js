@@ -83,7 +83,82 @@
     if (/^chat-images-private:/i.test(String(raw))) return String(raw);
     var c = normalizeImageUrl(m.content);
     if (/^chat-images-private:/i.test(c)) return c;
+    var img = normalizeImageUrl(m.imageUrl || m.image_url || "");
+    if (/^chat-images-private:/i.test(img)) return img;
     return "";
+  }
+
+  /**
+   * Resolve a displayable https URL, signing private storage refs when needed.
+   * Returns a Promise<string>.
+   */
+  function resolveDisplayImageUrl(m, conversationId, token) {
+    var https = imageUrlOf(m);
+    if (https) return Promise.resolve(https);
+    var ref = storageRefOf(m);
+    if (!ref) return Promise.resolve("");
+    var tok =
+      token ||
+      localStorage.getItem("mcjAuthAccessToken") ||
+      sessionStorage.getItem("mcjAuthAccessToken") ||
+      localStorage.getItem("customerServiceAuthToken") ||
+      sessionStorage.getItem("customerServiceAuthToken") ||
+      "";
+    var cid =
+      conversationId ||
+      (m && (m.conversationId || m.conversation_id)) ||
+      "";
+    if (!tok || !cid) return Promise.resolve("");
+    return signUrl(ref, cid, tok).catch(function () {
+      return "";
+    });
+  }
+
+  function bindImageResign(root) {
+    var scope = root || document;
+    if (scope.__mcjImgResignBound) return;
+    scope.__mcjImgResignBound = true;
+    scope.addEventListener(
+      "error",
+      function (e) {
+        var img = e.target;
+        if (!img || img.tagName !== "IMG") return;
+        if (!img.getAttribute("data-mcj-img-resign")) return;
+        if (img.getAttribute("data-mcj-resigning") === "1") return;
+        var wrap = img.closest("[data-chat-image], [data-chat-storage-ref]");
+        var ref =
+          (wrap && wrap.getAttribute("data-chat-storage-ref")) ||
+          img.getAttribute("data-chat-storage-ref") ||
+          "";
+        var cid =
+          (wrap && wrap.getAttribute("data-chat-conversation")) ||
+          img.getAttribute("data-chat-conversation") ||
+          "";
+        if (!ref || !/^chat-images-private:/i.test(ref)) return;
+        var tok =
+          localStorage.getItem("mcjAuthAccessToken") ||
+          sessionStorage.getItem("mcjAuthAccessToken") ||
+          localStorage.getItem("customerServiceAuthToken") ||
+          sessionStorage.getItem("customerServiceAuthToken") ||
+          "";
+        if (!tok || !cid) return;
+        img.setAttribute("data-mcj-resigning", "1");
+        signUrl(ref, cid, tok)
+          .then(function (signed) {
+            if (!signed) return;
+            img.src = signed;
+            if (wrap) {
+              wrap.setAttribute("href", signed);
+              wrap.setAttribute("data-chat-image", signed);
+            }
+          })
+          .catch(function () {})
+          .then(function () {
+            img.removeAttribute("data-mcj-resigning");
+          });
+      },
+      true
+    );
   }
 
   /** Cache-bust only when URL has no unique path token; Storage paths already include ts+uuid. */
@@ -105,18 +180,30 @@
     };
     meta = meta || {};
     var srcRaw = displayUrl(url, meta.createdAt || meta.created_at) || (isHttpsUrl(url) ? url : "");
+    var ref = String(meta.storageRef || "").trim();
+    if (!ref && /^chat-images-private:/i.test(String(url || ""))) ref = String(url);
+    if (!srcRaw && ref) {
+      // Private ref without signed https yet — placeholder until resign/hydrate.
+      return (
+        '<span class="mcj-chat-img-missing" data-mcj-img-pending="1" data-chat-storage-ref="' +
+        esc(ref) +
+        '"' +
+        (meta.conversationId ? ' data-chat-conversation="' + esc(meta.conversationId) + '"' : "") +
+        ">[图片加载中…]</span>"
+      );
+    }
     if (!srcRaw) {
       return '<span class="mcj-chat-img-missing">[图片]</span>';
     }
     var src = esc(srcRaw);
-    var ref = esc(meta.storageRef || "");
+    var refEsc = esc(ref);
     return (
       '<a class="mcj-chat-img-wrap" href="' +
       src +
       '" data-chat-image="' +
       src +
       '"' +
-      (ref ? ' data-chat-storage-ref="' + ref + '"' : "") +
+      (refEsc ? ' data-chat-storage-ref="' + refEsc + '"' : "") +
       (meta.conversationId ? ' data-chat-conversation="' + esc(meta.conversationId) + '"' : "") +
       ' title="点击放大">' +
       '<img class="mcj-chat-img" src="' +
@@ -176,6 +263,7 @@
 
   function bindLightboxClicks(root) {
     ensureLightbox();
+    bindImageResign(root);
     var scope = root || document;
     if (scope.__mcjLbBound) return;
     scope.__mcjLbBound = true;
@@ -183,7 +271,7 @@
       var a = e.target.closest("[data-chat-image]");
       if (!a || !scope.contains(a)) return;
       e.preventDefault();
-      var bubble = a.closest("[data-msg-id], .cs-msg, .support-msg, .mcj-msg");
+      var bubble = a.closest("[data-msg-id], .cs-msg, .support-msg, .mcj-msg, .pw-msg");
       var sender = "";
       var time = "";
       if (bubble) {
@@ -422,10 +510,16 @@
     compressFile: compressFile,
     uploadDataUrl: uploadDataUrl,
     signUrl: signUrl,
+    resolveDisplayImageUrl: resolveDisplayImageUrl,
     pickAndSendImages: pickAndSendImages,
     openLightbox: openLightbox,
     closeLightbox: closeLightbox,
     bindLightboxClicks: bindLightboxClicks,
+    bindImageResign: bindImageResign,
     toast: toast,
   };
+  // Global resign for chat images across portals.
+  try {
+    bindImageResign(document);
+  } catch (e) {}
 })(typeof window !== "undefined" ? window : globalThis);

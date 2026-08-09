@@ -632,6 +632,7 @@ export function viewMessage(row = {}) {
     content: decorated.content,
     imageUrl: decorated.imageUrl,
     image_url: decorated.image_url,
+    storageRef: decorated.storageRef || "",
     createdAt: decorated.createdAt,
     readAt: decorated.readAt,
   };
@@ -639,18 +640,23 @@ export function viewMessage(row = {}) {
 
 export async function viewMessageSigned(row = {}) {
   const base = viewMessage(row);
-  if (base.messageType === "image" && base.imageUrl) {
-    try {
-      const { signChatMediaUrl } = await import("./_chat-media.js");
-      const signed = await signChatMediaUrl(base.imageUrl);
-      if (signed) {
-        base.imageUrl = signed;
-        base.image_url = signed;
-        base.content = signed;
-      }
-    } catch {
-      /* keep raw */
+  if (base.messageType !== "image" && base.message_type !== "image") return base;
+  const raw = base.storageRef || base.imageUrl || base.image_url || base.content || "";
+  if (!raw) return base;
+  try {
+    const { signChatMediaUrl, parseChatStorageRef } = await import("./_chat-media.js");
+    const signed = await signChatMediaUrl(raw);
+    const parsed = parseChatStorageRef(raw);
+    const storageRef =
+      parsed?.bucket === "chat-images-private" ? `chat-images-private:${parsed.path}` : base.storageRef || "";
+    if (signed && /^https?:\/\//i.test(signed)) {
+      base.imageUrl = signed;
+      base.image_url = signed;
+      base.content = signed;
+      if (storageRef) base.storageRef = storageRef;
     }
+  } catch {
+    /* keep raw */
   }
   return base;
 }
