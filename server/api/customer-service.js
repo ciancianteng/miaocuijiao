@@ -13,6 +13,7 @@ import {
 import { companionDb } from "./_companion-media-store.js";
 import {
   approveAndLedger,
+  hydrateReceiptReviewers,
   latestApprovedForOrders,
   latestReceiptForOrder,
   listPendingForCs,
