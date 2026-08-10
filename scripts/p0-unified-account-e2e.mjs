@@ -317,16 +317,23 @@ async function main() {
     log("G", false, e.message);
   }
 
-  // H: CS assign order boss to self companion — reject
+  // H: CS assign order boss to self companion — reject (user_id)
   try {
     const csLogin = await api("/api/auth", {
       method: "POST",
       body: { action: "login", email: process.env.E2E_CS_EMAIL || "service@meow.test", password: PASS },
     });
     const csTok = csLogin.json?.session?.accessToken || "";
+    // Prefer a formal companion account that also shops as boss (same user_id).
+    const compLogin = await api("/api/auth", {
+      method: "POST",
+      body: { action: "login", email: OTHER_COMP, password: PASS },
+    });
+    const compTok = compLogin.json?.session?.accessToken || "";
+    const compUid = compLogin.json?.session?.user?.id || "";
     const create = await api("/api/orders", {
       method: "POST",
-      token,
+      token: compTok || token,
       body: {
         action: "create",
         game: "Valorant",
@@ -338,13 +345,14 @@ async function main() {
       },
     });
     const orderId = create.json?.order?.id || "";
+    const targetUid = compUid || userId;
     const assign = await api("/api/customer-service", {
       method: "POST",
       token: csTok,
       body: {
         action: "assign_companion",
         id: orderId || "00000000-0000-0000-0000-000000000001",
-        companion_id: userId,
+        companion_id: targetUid,
       },
     });
     const rejected =
