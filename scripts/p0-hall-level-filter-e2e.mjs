@@ -367,24 +367,39 @@ async function api(pathname, token, body, method = null, headers = {}) {
       const modalText = await page.locator(".mcj-po-pill[data-level-id]").first().innerText().catch(() => "");
       const orderOk = String(modalLevel || "") === String(hallLevel || pubL || "") && !!modalLevel;
       step("order_modal_level", orderOk, `modal=${modalLevel}/${modalText} expect=${hallLevel || pubL}`);
-      await page.locator("[data-po-close], .mcj-po-close").first().click({ timeout: 3000 }).catch(() => {});
-      await page.keyboard.press("Escape").catch(() => {});
-      await page.waitForSelector(".mcj-po-mask", { state: "detached", timeout: 5000 }).catch(() => {});
       await page.evaluate(() => {
-        document.querySelectorAll(".mcj-po-mask").forEach((n) => n.remove());
+        document.querySelectorAll(".mcj-po-mask,[data-mcj-po-mask]").forEach((n) => n.remove());
+        document.body.classList.remove("mcj-po-open");
       });
+      await page.waitForTimeout(200);
     }
   }
 
   // New companion searchable: any approved companion name must be findable
   const newest = comps2[0];
   if (newest?.name) {
+    await page.evaluate(() => {
+      document.querySelectorAll(".mcj-po-mask,[data-mcj-po-mask]").forEach((n) => n.remove());
+    });
     await page.fill("#searchInput", newest.name);
-    await page.selectOption("#levelFilter", "");
-    await page.selectOption("#gameFilter", "");
-    await page.selectOption("#priceFilter", "");
-    await page.click("#applyFilter");
-    await page.waitForTimeout(400);
+    await page.selectOption("#levelFilter", { index: 0 }).catch(() => {});
+    await page.evaluate(() => {
+      const level = document.getElementById("levelFilter");
+      const game = document.getElementById("gameFilter");
+      const price = document.getElementById("priceFilter");
+      if (level) level.value = "";
+      if (game) game.value = "";
+      if (price) price.value = "";
+      ["levelFilter", "gameFilter", "priceFilter", "searchInput"].forEach(function (id) {
+        var el = document.getElementById(id);
+        if (!el) return;
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+        el.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+      var btn = document.getElementById("applyFilter");
+      if (btn) btn.click();
+    });
+    await page.waitForTimeout(500);
     const found = await page.locator(`#playerList .player-card[data-companion-id="${newest.id}"]`).count();
     const searchable = found > 0;
     step("new_companion_searchable", searchable, `name=${newest.name} found=${found}`);
