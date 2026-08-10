@@ -4042,7 +4042,7 @@ export default async function handler(req, res) {
           id_handheld_path: existing?.id_handheld_path || "",
           status: keepPending ? "pending" : "draft",
           reject_reason: existing?.reject_reason || "",
-          submitted_at: existing?.submitted_at || null,
+          submitted_at: existing?.submitted_at || nowIso(),
         });
         const url = await signedPrivateDocUrl(PRIVATE_BUCKETS.identity, uploaded.path);
         return json(res, 200, { ok: true, message: "身份证正面上传成功", docType: "id_front", url, path: uploaded.path });
@@ -4074,7 +4074,7 @@ export default async function handler(req, res) {
           id_handheld_path: existing?.id_handheld_path || "",
           status: keepPending ? "pending" : "draft",
           reject_reason: existing?.reject_reason || "",
-          submitted_at: existing?.submitted_at || null,
+          submitted_at: existing?.submitted_at || nowIso(),
         });
         const url = await signedPrivateDocUrl(PRIVATE_BUCKETS.identity, uploaded.path);
         return json(res, 200, { ok: true, message: "身份证反面上传成功", docType: "id_back", url, path: uploaded.path });
