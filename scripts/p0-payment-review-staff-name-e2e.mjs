@@ -171,7 +171,9 @@ function findOrder(payload, orderId) {
     "boss_reject_shows_cs_a",
     !!(
       String(rejectedOrder.paymentReviewedByName || "") === NAME_A &&
-      /不清晰/.test(String(rejectedOrder.paymentRejectReason || rejectedOrder.bossHint || ""))
+      /不清晰/.test(String(rejectedOrder.paymentRejectReason || rejectedOrder.bossHint || "")) &&
+      !/\[\[REVIEW_STAFF/.test(String(rejectedOrder.paymentRejectReason || "")) &&
+      !/\[\[REVIEW_STAFF/.test(String(rejectedOrder.bossHint || ""))
     ),
     `name=${rejectedOrder.paymentReviewedByName} staffId=${rejectedOrder.paymentReviewedByStaffId} hint=${rejectedOrder.bossHint} reason=${rejectedOrder.paymentRejectReason}`
   );
@@ -247,7 +249,11 @@ function findOrder(payload, orderId) {
   );
   step(
     "admin_reject_shows_cs_a",
-    !!(adminRejected && String(adminRejected.reviewerName || adminRejected.reviewedByStaffName || "") === NAME_A),
+    !!(
+      adminRejected &&
+      String(adminRejected.reviewerName || adminRejected.reviewedByStaffName || "") === NAME_A &&
+      !/\[\[REVIEW_STAFF/.test(String(adminRejected.rejectReason || ""))
+    ),
     `row=${adminRejected ? JSON.stringify({ reviewerName: adminRejected.reviewerName, reason: adminRejected.rejectReason }).slice(0, 220) : "missing"}`
   );
 
