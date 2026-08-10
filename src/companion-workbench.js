@@ -115,10 +115,10 @@
     },
     deposit:function(s){
       var v=String(s||'').trim().toLowerCase();
-      if(!v||/none|not_submitted|missing|unsubmitted|draft|uploaded|unpaid/.test(v))return '未缴纳';
-      if(/approved|verified|passed|paid|active|completed|received/.test(v))return '已通过';
+      if(!v||/none|not_submitted|missing|unsubmitted|draft|uploaded|unpaid|未缴/.test(v))return '未缴纳';
       if(/reject|declin|fail/.test(v))return '审核未通过';
-      if(/pending|review|submit/.test(v))return '待审核';
+      if(/^(approved|verified|passed|paid|active|completed|received)$|已通过|已缴纳/.test(v))return '已通过';
+      if(/pending|review|submit|待审/.test(v))return '待审核';
       return s||'未缴纳';
     },
     identity:function(s){

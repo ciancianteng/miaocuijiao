@@ -130,7 +130,7 @@ async function main() {
   // ---- Case: neither approved → cannot work ----
   // Force identity pending/draft path + deposit unpaid/pending via admin
   // Prefer: deposit unpaid + identity rejected/pending without approved
-  const depOff = await review(adminLogin.token, companionId, "deposit", "unpaid");
+  const depOff = await review(adminLogin.token, companionId, "deposit", "pending");
   const idOff = await review(adminLogin.token, companionId, "identity", "pending");
   // If identity row missing, unpaid deposit alone may still leave id path open if identity_status profile says approved.
   // Also try resetting identity to rejected when possible.
@@ -163,22 +163,28 @@ async function main() {
     JSON.stringify(s).slice(0, 300)
   );
 
-  // ---- Deposit unpaid again, identity approved ----
-  await review(adminLogin.token, companionId, "deposit", "unpaid");
-  const idOn = await review(adminLogin.token, companionId, "identity", "approved");
-  step("admin_approve_identity", idOn.status < 500 && idOn.json?.ok !== false, idOn.json?.message || String(idOn.status));
-  s = snap(await bootstrap(compLogin.token));
-  // If identity approve failed (no row), keep deposit path for restore
-  if (!s.identityVerified) {
-    step("identity_only_unlocks", false, "identity approve failed or no identity row; " + JSON.stringify(s).slice(0, 220));
-    await review(adminLogin.token, companionId, "deposit", "approved");
-  } else {
-    step(
-      "identity_only_unlocks",
-      s.canWork === true && s.identityVerified === true && s.depositVerified === false,
-      JSON.stringify(s).slice(0, 300)
-    );
+  // ---- Deposit pending again, identity approved (seed identity row if missing) ----
+  await review(adminLogin.token, companionId, "deposit", "pending");
+  let idOn = await review(adminLogin.token, companionId, "identity", "approved");
+  if (idOn.status === 404 || /尚未上传身份证/i.test(String(idOn.json?.message || ""))) {
+    const seeded = await api("/api/companion", compLogin.token, {
+      action: "submit_verification",
+      real_name: "E2E身份证",
+      identity_no: "E2E90001",
+      phone: "0110000000",
+      bank_name: "E2E Bank",
+      bank_account: "1234567890",
+    });
+    step("seed_identity_row", seeded.json?.ok !== false, seeded.json?.message || String(seeded.status));
+    idOn = await review(adminLogin.token, companionId, "identity", "approved");
   }
+  step("admin_approve_identity", idOn.status < 400 && idOn.json?.ok !== false, idOn.json?.message || String(idOn.status));
+  s = snap(await bootstrap(compLogin.token));
+  step(
+    "identity_only_unlocks",
+    s.canWork === true && s.identityVerified === true && s.depositVerified === false,
+    JSON.stringify(s).slice(0, 300)
+  );
 
   // ---- Both approved ----
   await review(adminLogin.token, companionId, "deposit", "approved");

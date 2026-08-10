@@ -787,10 +787,12 @@ function normalizeProfileReviewStatus(companion = {}) {
 }
 function normalizeDepositStatus(companion = {}, depositRow = null) {
   const raw = String(depositRow?.status || companion.deposit_status || "").trim().toLowerCase();
-  if (/approved|verified|passed|paid|received/.test(raw)) return "approved";
-  if (/reject/.test(raw)) return "rejected";
-  if (/pending|review|submitted/.test(raw)) return "pending";
-  if (/unpaid|draft|none|not_submitted/.test(raw) || !raw) return "unpaid";
+  // Check unpaid/rejected BEFORE /paid/ — "unpaid" must never match paid.
+  if (/unpaid|draft|none|not_submitted|missing|未缴/.test(raw) || !raw) return "unpaid";
+  if (/reject|驳回|拒绝/.test(raw)) return "rejected";
+  if (/^(approved|verified|passed|paid|received)$|已通过|已缴纳|已到账/.test(raw)) return "approved";
+  if (/pending|review|submit|待审|审核中/.test(raw)) return "pending";
+  if (/refund/.test(raw)) return "refunded";
   return "pending";
 }
 function profileReviewApproved(companion = {}) {

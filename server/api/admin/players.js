@@ -120,24 +120,30 @@ async function requireAdmin(req) {
   return requireAdminJwt(req, { allowRoles: ADMIN_ROLES, module: "players" });
 }
 
-function labelStatus(value, fallback = "待审核") {
-  const key = String(value || "").toLowerCase();
-  return STATUS_LABEL[key] || value || fallback;
-}
-
 function normalizeStatusInput(value, fallback = "pending") {
   const text = String(value || "").trim();
   if (!text) return fallback;
+  // Order matters: "unpaid" contains "paid" — match unpaid first.
+  if (/未缴纳|unpaid/i.test(text)) return "unpaid";
   if (/待审核|pending|审核中/i.test(text)) return "pending";
-  if (/已通过|approved|已认证|verified|已缴纳|paid|已到账/i.test(text)) return "approved";
+  if (/已通过|approved|已认证|verified|已缴纳|^paid$|已到账/i.test(text)) return "approved";
   if (/已驳回|已拒绝|rejected/i.test(text)) return "rejected";
   if (/重新提交|resubmit|待补充/i.test(text)) return "resubmit";
-  if (/未缴纳|unpaid/i.test(text)) return "unpaid";
   if (/已退回|refunded/i.test(text)) return "refunded";
   if (/正常|启用|active/i.test(text)) return "active";
   if (/冻结|封禁|停用|disabled/i.test(text)) return "disabled";
   if (/暂停接单/i.test(text)) return "paused";
   return text;
+}
+
+function labelStatus(value, fallback = "待审核") {
+  const raw = String(value || "").trim();
+  if (!raw) return fallback;
+  // Normalize so unpaid is never labeled via the "paid" token inside the string.
+  const key = normalizeStatusInput(raw, String(raw).toLowerCase());
+  if (STATUS_LABEL[key]) return STATUS_LABEL[key];
+  if (STATUS_LABEL[String(raw).toLowerCase()]) return STATUS_LABEL[String(raw).toLowerCase()];
+  return raw || fallback;
 }
 
 function money(value) {
