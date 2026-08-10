@@ -324,18 +324,32 @@ async function main() {
       body: { action: "login", email: process.env.E2E_CS_EMAIL || "service@meow.test", password: PASS },
     });
     const csTok = csLogin.json?.session?.accessToken || "";
+    const create = await api("/api/orders", {
+      method: "POST",
+      token,
+      body: {
+        action: "create",
+        game: "Valorant",
+        description: "unified-cs-self-assign",
+        hours: 1,
+        unit_price: 10,
+        total_amount: 10,
+        paymentMethod: "catfood",
+      },
+    });
+    const orderId = create.json?.order?.id || "";
     const assign = await api("/api/customer-service", {
       method: "POST",
       token: csTok,
       body: {
         action: "assign_companion",
-        id: "00000000-0000-0000-0000-000000000001",
+        id: orderId || "00000000-0000-0000-0000-000000000001",
         companion_id: userId,
       },
     });
     const rejected =
       assign.json?.code === "SELF_TRADE_FORBIDDEN" ||
-      /自己|老板本人|同一账号|不存在|SELF_TRADE/i.test(String(assign.json?.message || ""));
+      /自己|老板本人|同一账号|SELF_TRADE/i.test(String(assign.json?.message || ""));
     log("H", rejected, assign.json?.message || `status=${assign.status}`);
   } catch (e) {
     log("H", false, e.message);
