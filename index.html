@@ -3660,8 +3660,10 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
         var sub=card.querySelector('span');
         if(sub&&!sub.dataset.tlDefault)sub.dataset.tlDefault=sub.textContent||'';
         if(sub)sub.textContent=open?(sub.dataset.tlDefault||'进入组队社区找队友'):'暂未开放';
-        if(open)card.setAttribute('href',teamLobbyState.link);
-        else card.setAttribute('href','#');
+        // Keep hash href so click is always handled by JS (no stale hardcoded Discord URL).
+        card.setAttribute('href','#');
+        if(open)card.setAttribute('data-team-lobby-url',teamLobbyState.link);
+        else card.removeAttribute('data-team-lobby-url');
       });
     }
     function fetchTeamLobbySettings(force){

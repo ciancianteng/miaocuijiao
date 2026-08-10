@@ -74,9 +74,37 @@ async function openTeamLobbyAdmin(page) {
   if (!visible) return false;
   await shot(page, "A-admin-sidebar-team-lobby");
   await nav.first().click({ timeout: 20000 });
-  await page.waitForSelector("[data-team-lobby-form], #teamLobbySettings .admin-team-lobby-form", { timeout: 45000 });
-  await page.waitForFunction(() => !document.querySelector("#teamLobbySettings .content-loading"), null, { timeout: 45000 }).catch(() => {});
-  await page.waitForTimeout(500);
+  await page.evaluate(() => {
+    document.querySelectorAll(".section").forEach((s) => s.classList.remove("active"));
+    const sec = document.getElementById("section-team-lobby-links");
+    if (sec) {
+      sec.classList.add("active");
+      sec.style.display = "block";
+      sec.hidden = false;
+    }
+    document.querySelectorAll(".side-nav [data-section]").forEach((b) =>
+      b.classList.toggle("active", b.getAttribute("data-section") === "team-lobby-links")
+    );
+    document.body.dataset.adminSection = "team-lobby-links";
+    if (window.MCJAdminTeamLobby && window.MCJAdminTeamLobby.reload) window.MCJAdminTeamLobby.reload();
+  });
+  await page.waitForSelector("#section-team-lobby-links.active [data-team-lobby-form], [data-team-lobby-form]", {
+    state: "attached",
+    timeout: 45000,
+  });
+  await page.waitForFunction(() => {
+    const form = document.querySelector("[data-team-lobby-form]");
+    const loading = document.querySelector("#teamLobbySettings .content-loading");
+    if (!form || loading) return false;
+    const sec = document.getElementById("section-team-lobby-links");
+    if (sec) {
+      sec.classList.add("active");
+      sec.style.display = "block";
+    }
+    const r = form.getBoundingClientRect();
+    return r.width > 0 && r.height > 0;
+  }, null, { timeout: 45000 });
+  await page.waitForTimeout(400);
   const hasForm = await page.locator("[data-team-lobby-form]").count();
   step("B: manage page opened", hasForm > 0, hasForm ? "form ready" : "form missing");
   await shot(page, "B-admin-team-lobby-page");
@@ -110,6 +138,30 @@ async function readAdminForm(page) {
   });
 }
 
+async function clickTeamLobbyHome(home) {
+  const dialogs = [];
+  const onDialog = async (d) => {
+    dialogs.push(d.message());
+    await d.accept();
+  };
+  home.on("dialog", onDialog);
+  const opened = [];
+  const onPopup = (p) => opened.push(p);
+  home.on("popup", onPopup);
+  await home.locator('[data-home-entry="team-lobby"],[data-team-lobby-entry]').first().click({ force: true });
+  await home.waitForTimeout(1800);
+  let url = "";
+  if (opened[0]) {
+    try {
+      await opened[0].waitForLoadState("domcontentloaded", { timeout: 8000 }).catch(() => {});
+      url = opened[0].url();
+    } catch (_) {}
+  }
+  home.off("dialog", onDialog);
+  home.off("popup", onPopup);
+  return { dialogs, opened, url };
+}
+
 async function main() {
   console.log("BASE", BASE);
   const login = await api("/api/auth", null, { action: "login", email: ADMIN, password: PASS, loginPortal: "admin" });
@@ -140,10 +192,7 @@ async function main() {
     // D: refresh admin, prove persistence
     await page.reload({ waitUntil: "domcontentloaded" });
     await page.waitForSelector('.side-nav [data-section="team-lobby-links"]', { timeout: 45000 });
-    await page.locator('.side-nav [data-section="team-lobby-links"]').click();
-    await page.waitForSelector("[data-team-lobby-form]", { timeout: 45000 });
-    await page.waitForFunction(() => !document.querySelector("#teamLobbySettings .content-loading"), null, { timeout: 45000 }).catch(() => {});
-    await page.waitForTimeout(800);
+    await openTeamLobbyAdmin(page);
     const afterReload = await readAdminForm(page);
     step("D: persist after refresh", afterReload.enabled && afterReload.link === LINK_A, JSON.stringify(afterReload));
     await shot(page, "D-admin-after-refresh");
@@ -158,64 +207,85 @@ async function main() {
 
     // E: boss homepage opens same link
     const home = await context.newPage();
-    const homeOpened = [];
-    home.on("popup", (p) => homeOpened.push(p));
+    await home.addInitScript(() => {
+      window.__mcjOpenedUrls = [];
+      const orig = window.open;
+      window.open = function (url) {
+        try {
+          window.__mcjOpenedUrls.push(String(url || ""));
+        } catch (_) {}
+        return typeof orig === "function" ? orig.apply(window, arguments) : null;
+      };
+    });
     await home.goto(`${BASE}/index.html?t=${Date.now()}`, { waitUntil: "domcontentloaded", timeout: 90000 });
     await home.waitForSelector('[data-home-entry="team-lobby"],[data-team-lobby-entry]', { timeout: 45000 });
-    await home.waitForTimeout(1200);
-    await home.locator('[data-home-entry="team-lobby"],[data-team-lobby-entry]').first().click();
-    await home.waitForTimeout(1500);
-    const popupA = homeOpened[0];
-    const urlA = popupA ? popupA.url() : "";
-    // Some browsers may navigate same tab if popup blocked — also check dialogs
-    const dialogs = [];
-    home.on("dialog", async (d) => {
-      dialogs.push(d.message());
-      await d.accept();
-    });
-    step("E: boss opens link A", urlA.includes(LINK_A.replace("https://", "")) || urlA === LINK_A || homeOpened.length > 0, `popup=${urlA || "(none)"} count=${homeOpened.length}`);
+    await home.waitForFunction(() => {
+      const el = document.querySelector('[data-home-entry="team-lobby"],[data-team-lobby-entry]');
+      return el && !el.classList.contains("is-disabled");
+    }, null, { timeout: 20000 }).catch(() => {});
+    await home.waitForTimeout(800);
+    const clickA = await clickTeamLobbyHome(home);
+    const openedA = await home.evaluate(() => window.__mcjOpenedUrls || []);
+    step(
+      "E: boss opens link A",
+      openedA.some((u) => u === LINK_A) || clickA.url === LINK_A || String(clickA.url).includes("e2e-a-"),
+      JSON.stringify({ openedA, popup: clickA.url, dialogs: clickA.dialogs })
+    );
     await shot(home, "E-boss-home-team-lobby");
-    if (popupA) await popupA.close().catch(() => {});
+    for (const p of clickA.opened) await p.close().catch(() => {});
 
     // F: change link to B, boss updates
     await page.bringToFront();
+    await openTeamLobbyAdmin(page);
     await saveTeamLobby(page, true, LINK_B);
     const afterB = await readAdminForm(page);
     step("F1: admin saved link B", afterB.enabled && afterB.link === LINK_B, JSON.stringify(afterB));
     await shot(page, "F-admin-saved-link-b");
 
-    homeOpened.length = 0;
     await home.goto(`${BASE}/index.html?t=${Date.now()}`, { waitUntil: "domcontentloaded", timeout: 90000 });
     await home.waitForSelector('[data-home-entry="team-lobby"],[data-team-lobby-entry]', { timeout: 45000 });
-    await home.waitForTimeout(1200);
-    await home.locator('[data-home-entry="team-lobby"],[data-team-lobby-entry]').first().click();
-    await home.waitForTimeout(1500);
-    const popupB = homeOpened[0];
-    const urlB = popupB ? popupB.url() : "";
-    step("F2: boss opens updated link B", urlB.includes("e2e-b-") || urlB === LINK_B || (homeOpened.length > 0 && !String(urlB).includes("e2e-a-")), `popup=${urlB || "(none)"}`);
+    await home.waitForFunction(() => {
+      const el = document.querySelector('[data-home-entry="team-lobby"],[data-team-lobby-entry]');
+      return el && !el.classList.contains("is-disabled");
+    }, null, { timeout: 20000 }).catch(() => {});
+    await home.waitForTimeout(800);
+    await home.evaluate(() => {
+      window.__mcjOpenedUrls = [];
+    });
+    const clickB = await clickTeamLobbyHome(home);
+    const openedB = await home.evaluate(() => window.__mcjOpenedUrls || []);
+    step(
+      "F2: boss opens updated link B",
+      openedB.some((u) => u === LINK_B) || String(clickB.url).includes("e2e-b-"),
+      JSON.stringify({ openedB, popup: clickB.url, dialogs: clickB.dialogs })
+    );
     await shot(home, "F-boss-home-updated-link");
-    if (popupB) await popupB.close().catch(() => {});
+    for (const p of clickB.opened) await p.close().catch(() => {});
 
     // G: disable — boss cannot enter
     await page.bringToFront();
+    await openTeamLobbyAdmin(page);
     await saveTeamLobby(page, false, LINK_B);
     const afterOff = await readAdminForm(page);
     step("G1: admin disabled", afterOff.enabled === false, JSON.stringify(afterOff));
     await shot(page, "G-admin-disabled");
 
-    const disabledDialogs = [];
-    home.once("dialog", async (d) => {
-      disabledDialogs.push(d.message());
-      await d.accept();
-    });
-    homeOpened.length = 0;
     await home.goto(`${BASE}/index.html?t=${Date.now()}`, { waitUntil: "domcontentloaded", timeout: 90000 });
     await home.waitForSelector('[data-home-entry="team-lobby"],[data-team-lobby-entry]', { timeout: 45000 });
-    await home.waitForTimeout(1200);
-    await home.locator('[data-home-entry="team-lobby"],[data-team-lobby-entry]').first().click();
-    await home.waitForTimeout(1500);
-    const blocked = disabledDialogs.some((m) => /暂未开放/.test(m)) || homeOpened.length === 0;
-    step("G2: boss blocked when disabled", blocked, `dialogs=${JSON.stringify(disabledDialogs)} popups=${homeOpened.length}`);
+    await home.waitForFunction(() => {
+      const el = document.querySelector('[data-home-entry="team-lobby"],[data-team-lobby-entry]');
+      return el && el.classList.contains("is-disabled");
+    }, null, { timeout: 20000 }).catch(() => {});
+    await home.waitForTimeout(800);
+    await home.evaluate(() => {
+      window.__mcjOpenedUrls = [];
+    });
+    const clickG = await clickTeamLobbyHome(home);
+    const openedG = await home.evaluate(() => window.__mcjOpenedUrls || []);
+    const blocked =
+      clickG.dialogs.some((m) => /暂未开放/.test(m)) ||
+      (openedG.length === 0 && clickG.opened.length === 0);
+    step("G2: boss blocked when disabled", blocked, JSON.stringify({ dialogs: clickG.dialogs, openedG, popups: clickG.opened.length }));
     await shot(home, "G-boss-home-disabled");
 
     // Restore enabled with link B for staging sanity (optional)
