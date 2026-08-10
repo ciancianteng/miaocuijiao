@@ -746,7 +746,7 @@ export default async function handler(req, res) {
           reviewerName: row.reviewerName || row.reviewedByStaffName || "",
           reviewedByStaffId: row.reviewedByStaffId || row.reviewed_by_staff_id || "",
           reviewedByStaffName: row.reviewedByStaffName || row.reviewerName || "",
-          rejectReason: row.reject_reason || row.rejectReason || "",
+          rejectReason: row.rejectReason || stripReviewStaffMark(row.reject_reason || "") || "",
           proofUrl: row.proofUrl || "",
           status: "rejected",
           statusText: "已拒绝",

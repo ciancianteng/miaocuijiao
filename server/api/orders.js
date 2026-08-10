@@ -742,15 +742,15 @@ async function loadOrders(profile, id = "") {
       ...reviewFields,
     });
     if (proofUrlByOrder[row.id]) viewed.paymentProofUrl = proofUrlByOrder[row.id];
-    if (rejected?.reject_reason) {
-      viewed.paymentRejectReason = rejected.reject_reason;
+    if (rejected?.reject_reason || reviewFields.paymentRejectReason) {
+      viewed.paymentRejectReason = reviewFields.paymentRejectReason || rejected.reject_reason || "";
       viewed.paymentReviewedAt = reviewFields.paymentReviewedAt || rejected.reviewed_at || "";
       viewed.paymentReviewedByName = reviewFields.paymentReviewedByName || "";
       viewed.paymentReviewedByStaffId = reviewFields.paymentReviewedByStaffId || "";
       if (!receipt) {
         viewed.bossHint = bossHint({
           ...row,
-          paymentRejectReason: rejected.reject_reason,
+          paymentRejectReason: viewed.paymentRejectReason,
           paymentReviewedByName: viewed.paymentReviewedByName,
         });
       }

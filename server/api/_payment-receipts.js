@@ -656,6 +656,8 @@ export async function listRejectedForAdmin({ limit = 200 } = {}) {
         reviewedByStaffName: storedName || staffReviewerNameFromProfile(reviewer) || "",
         amount: money(receipt.amount != null ? receipt.amount : order.total_amount),
         proofUrl: proofUrl || "",
+        reject_reason: stripReviewStaffMark(receipt.reject_reason || ""),
+        rejectReason: stripReviewStaffMark(receipt.reject_reason || ""),
       };
     })
   );
