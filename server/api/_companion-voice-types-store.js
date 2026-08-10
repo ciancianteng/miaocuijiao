@@ -40,11 +40,20 @@ function isMissingTable(error) {
 export const DEFAULT_VOICE_TYPES = [
   { id: "voice-tianmei", name: "甜妹", description: "甜美可爱", sort: 1 },
   { id: "voice-yujie", name: "御姐", description: "成熟自信", sort: 2 },
-  { id: "voice-luoli", name: "萝莉音", description: "娇软萝莉", sort: 3 },
-  { id: "voice-shaonian", name: "少年音", description: "清亮少年", sort: 4 },
-  { id: "voice-cixing", name: "磁性", description: "低沉磁性", sort: 5 },
-  { id: "voice-wenrou", name: "温柔", description: "温柔细腻", sort: 6 },
+  { id: "voice-shaoyu", name: "少御", description: "少年御姐感", sort: 3 },
+  { id: "voice-luoli", name: "萝莉", description: "娇软萝莉", sort: 4 },
+  { id: "voice-wenrou", name: "温柔", description: "温柔细腻", sort: 5 },
+  { id: "voice-qingleng", name: "清冷", description: "清冷淡然", sort: 6 },
+  { id: "voice-yonglan", name: "慵懒", description: "慵懒随性", sort: 7 },
+  { id: "voice-cixing", name: "磁性", description: "低沉磁性", sort: 8 },
+  { id: "voice-shaonian", name: "少年", description: "清亮少年", sort: 9 },
+  { id: "voice-qingshu", name: "青叔", description: "青叔稳重", sort: 10 },
+  { id: "voice-dashu", name: "大叔", description: "大叔低沉", sort: 11 },
+  { id: "voice-other", name: "其他", description: "自定义声线", sort: 12 },
 ].map((row) => ({ ...row, enabled: true }));
+
+/** Companion self-select catalog (no admin「声线管理」dependency). */
+export const COMPANION_VOICE_OPTIONS = DEFAULT_VOICE_TYPES.map((row) => row.name);
 
 export function normalizeVoiceType(row = {}, index = 0) {
   const name = String(row.name || row.title || "").trim();
@@ -240,9 +249,11 @@ export async function updateVoiceTypes(mutator) {
   return result;
 }
 
-/** Validate selected names against enabled catalog; returns joined string or throws. */
+/** Validate companion-chosen voice labels (fixed catalog + custom「其他」). No admin DB required. */
 export async function normalizeSelectedVoiceTypes(raw, { required = false } = {}) {
-  const selected = splitVoiceTypeNames(raw);
+  const selected = splitVoiceTypeNames(raw)
+    .map((name) => String(name || "").replace(/^其他\s*[:：]\s*/, "").trim())
+    .filter((name) => name && name !== "其他");
   if (!selected.length) {
     if (required) {
       const err = new Error("请选择声线");
@@ -252,26 +263,24 @@ export async function normalizeSelectedVoiceTypes(raw, { required = false } = {}
     }
     return "";
   }
-  const catalog = await readVoiceTypes();
-  const enabled = new Map(
-    catalog
-      .filter((item) => item.enabled !== false)
-      .map((item) => [item.name.toLowerCase(), item.name])
-  );
-  const resolved = [];
+  const out = [];
   const seen = new Set();
-  for (const name of selected) {
-    const key = name.toLowerCase();
-    const canon = enabled.get(key);
-    if (!canon) {
-      const err = new Error(`声线「${name}」不可用，请从后台配置中重新选择`);
+  for (const name of selected.slice(0, 12)) {
+    const n = String(name).slice(0, 20).trim();
+    if (!n) continue;
+    const key = n.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(n);
+  }
+  if (!out.length) {
+    if (required) {
+      const err = new Error("请选择声线");
       err.status = 400;
       err.field = "voice_type";
       throw err;
     }
-    if (seen.has(canon)) continue;
-    seen.add(canon);
-    resolved.push(canon);
+    return "";
   }
-  return joinVoiceTypeNames(resolved);
+  return joinVoiceTypeNames(out);
 }

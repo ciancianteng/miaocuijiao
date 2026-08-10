@@ -56,6 +56,10 @@
   var HIDDEN_MVP_ROUTES={};
   var state={route:'dashboard',session:null,data:null,notice:'',loading:false,error:'',walletWarning:'',authTab:'login',loginMethod:'otp',loginError:'',loginBusy:false,registerToken:'',registerVerifiedEmail:'',registerCooldownUntil:0,registerBusy:false,forgotStep:'',forgotAccount:'',forgotBusy:false,forgotMsg:'',forgotResetToken:'',profileServices:[],profileVoiceTypes:[],profileCompanionTags:[],profileErrors:{},profileDraft:null,accountDraft:null,uploadBusy:'',statusBusy:false,pendingOnlineStatus:null,settlement:null,orderFilter:'all',pollTimer:null,rulesPollTimer:null,ordersCacheAt:0,msgFilter:'all',settings:null,earningsTab:'overview',chatSession:'cs',chatConversationId:'',chatBusy:false,withdrawBusy:false,inbox:null,inboxError:'',hallOrderType:'all',hallGame:'all',_prevDesignated:null,_prevAuditLocked:null,_toastTimer:null,_ordersRtReady:false,_alertedOrderIds:null,_baseDocTitle:'',_focusOrderId:''};
   var IMAGE_ACCEPT='image/jpeg,image/jpg,image/png,image/webp,image/*';
+  /** Companion self-select voice lines — not from admin「声线管理」. */
+  var FIXED_VOICE_OPTIONS=['甜妹','御姐','少御','萝莉','温柔','清冷','慵懒','磁性','少年','青叔','大叔','其他'];
+  var FIXED_VOICE_SET={};
+  FIXED_VOICE_OPTIONS.forEach(function(n){if(n!=='其他')FIXED_VOICE_SET[n]=1});
   var AUDIO_ACCEPT='audio/*,.mp3,.wav,.m4a,.webm,.ogg,audio/mpeg,audio/mp4,audio/wav,audio/webm,audio/aac';
   var voiceRec={
     recorder:null,
@@ -589,7 +593,15 @@
       public_tags:Array.prototype.map.call(form.querySelectorAll('input[name="public_tag_opt"]:checked'),function(el){return el.value}).filter(Boolean).join('、'),
       publicTagList:Array.prototype.map.call(form.querySelectorAll('input[name="public_tag_opt"]:checked'),function(el){return el.value}).filter(Boolean),
       bio:String(fd.get('bio')||''),
-      voiceTypes:Array.prototype.map.call(form.querySelectorAll('input[name="voice_type_opt"]:checked'),function(el){return el.value}).filter(Boolean),
+      voiceTypes:(function(){
+        var checked=Array.prototype.map.call(form.querySelectorAll('input[name="voice_type_opt"]:checked'),function(el){return el.value}).filter(Boolean);
+        var custom=String(fd.get('voice_type_custom')||'').trim();
+        var list=checked.filter(function(x){return x!=='其他'});
+        if(checked.indexOf('其他')!==-1&&custom)list.push(custom);
+        return list;
+      })(),
+      voiceCustom:String(fd.get('voice_type_custom')||''),
+      voiceOtherOn:!!form.querySelector('input[name="voice_type_opt"][value="其他"]:checked'),
       game_id:String(fd.get('game_id')||''),
       rank:String(fd.get('rank')||''),
       position:String(fd.get('position')||''),
@@ -895,17 +907,13 @@
       .catch(function(){state.profileServices=[];});
   }
   function loadProfileVoiceTypes(){
-    return fetch('/api/platform/content?types=voice_types,companion_tags',{headers:{Accept:'application/json'},cache:'no-store'})
+    // Tags still come from admin tag library / defaults. Voice options are fixed client-side.
+    return fetch('/api/platform/content?types=companion_tags',{headers:{Accept:'application/json'},cache:'no-store'})
       .then(function(res){return res.json().catch(function(){return {ok:false,byType:{}}})})
       .then(function(body){
-        var rows=(body&&body.byType&&body.byType.voice_types)||[];
-        state.profileVoiceTypes=(rows||[]).map(function(item){
-          return {
-            id:String(item.id||''),
-            name:String(item.name||item.title||'').trim(),
-            enabled:item.enabled!==false
-          };
-        }).filter(function(item){return item.name&&item.enabled!==false;});
+        state.profileVoiceTypes=FIXED_VOICE_OPTIONS.map(function(name,idx){
+          return {id:'voice-fixed-'+idx,name:name,enabled:true};
+        });
         var tags=(body&&body.byType&&body.byType.companion_tags)||[];
         state.profileCompanionTags=(tags||[]).map(function(item){
           return {
@@ -915,7 +923,28 @@
           };
         }).filter(function(item){return item.name&&item.enabled!==false;});
       })
-      .catch(function(){state.profileVoiceTypes=[];state.profileCompanionTags=[];});
+      .catch(function(){
+        state.profileVoiceTypes=FIXED_VOICE_OPTIONS.map(function(name,idx){
+          return {id:'voice-fixed-'+idx,name:name,enabled:true};
+        });
+        state.profileCompanionTags=[];
+      });
+  }
+  function splitCompanionVoiceSelection(names){
+    var list=Array.isArray(names)?names.slice():[];
+    var selectedFixed=[];
+    var customs=[];
+    list.forEach(function(n){
+      var name=String(n||'').trim();
+      if(!name)return;
+      if(FIXED_VOICE_SET[name])selectedFixed.push(name);
+      else if(name!=='其他')customs.push(name);
+    });
+    return {
+      selectedFixed:selectedFixed,
+      custom:customs.join('、'),
+      otherOn:customs.length>0||list.indexOf('其他')!==-1
+    };
   }
   function selectedPublicTagsFromPlayer(p,raw,draft){
     if(draft&&Array.isArray(draft.publicTagList))return draft.publicTagList.slice();
@@ -2476,27 +2505,24 @@
   }
   function pwAvatarUploadHtml(displayAvatar,avatarUrl,uploadBusy){
     var busy=uploadBusy==='avatar';
+    var has=!!avatarUrl;
+    // Never render a visible/native file control — Safari shows "Choose File / no file selected".
+    // Picker is opened programmatically via [data-pw-pick-avatar].
     return '<div class="pw-media-block pw-avatar-block">'+
-      '<div class="pw-avatar-stage">'+(avatarUrl
-        ? '<div class="pw-avatar-preview-wrap">'+
-          '<img class="pw-avatar-preview" src="'+esc(displayAvatar)+'" alt="头像预览" data-avatar-preview>'+
-          '<div class="pw-avatar-tools">'+
-          '<label class="pw-media-chip'+(busy?' is-busy':'')+'" data-pw-upload-trigger="avatar">'+
-          (busy?'上传中…':'更换')+
-          pwHiddenMediaInput({accept:IMAGE_ACCEPT,disabled:!!uploadBusy,dataset:' data-upload-avatar'})+
-          '</label>'+
-          '<button type="button" class="pw-media-chip danger" data-delete-avatar>删除</button>'+
-          '</div></div>'
-        : pwMediaAddTile({
-            trigger:'avatar',
-            label:busy?'上传中…':'添加头像',
-            sub:'JPG / PNG / WEBP',
-            busy:busy,
-            disabled:!!uploadBusy,
-            inputAttrs:' data-upload-avatar'
-          })
-      )+'</div>'+
-      '<p class="pw-field-hint">支持 jpg / png / webp，单张不超过 5MB。</p>'+
+      '<div class="pw-avatar-stage">'+
+      '<div class="pw-avatar-preview-wrap">'+
+      (has
+        ? '<img class="pw-avatar-preview" src="'+esc(displayAvatar)+'" alt="头像预览" data-avatar-preview>'
+        : '<div class="pw-avatar-placeholder" data-avatar-placeholder aria-hidden="true">头像</div>')+
+      '</div>'+
+      '<div class="pw-avatar-tools">'+
+      '<button type="button" class="pw-media-chip'+(busy?' is-busy':'')+(has?'':' primary')+'" data-pw-pick-avatar '+(busy?'disabled':'')+'>'+
+      (busy?'上传中…':(has?'更换头像':'上传头像'))+
+      '</button>'+
+      (has?'<button type="button" class="pw-media-chip danger" data-delete-avatar '+(busy?'disabled':'')+'>删除</button>':'')+
+      '</div></div>'+
+      '<p class="pw-media-status" data-avatar-status>'+(busy?'上传中…':(has?'已上传':'未选择图片'))+'</p>'+
+      '<p class="pw-field-hint">支持 jpg / png / webp，单张不超过 5MB。手机可从相册选择或拍照。</p>'+
       '</div>';
   }
   function pwGalleryItemHtml(item,idx,total){
@@ -2633,7 +2659,7 @@
     var tagChecks=tagOpts.length?tagOpts.map(function(t){
       var on=selectedTags.indexOf(t.name)!==-1;
       return '<label class="pw-check-chip"><input type="checkbox" name="public_tag_opt" value="'+esc(t.name)+'" '+(on?'checked':'')+'> '+esc(t.name)+'</label>';
-    }).join(''):'<span class="pw-muted">后台暂未配置标签，请联系管理员</span>';
+    }).join(''):'<span class="pw-muted">暂无可用标签</span>';
     var uploadBusy=state.uploadBusy;
     var minP=level.minPrice!=null?level.minPrice:20;
     var maxP=level.maxPrice!=null?level.maxPrice:30;
@@ -2645,15 +2671,16 @@
     var genderRadios=['男','女','不公开'].map(function(g){
       return '<label class="pw-radio"><input type="radio" name="gender" value="'+esc(g)+'" '+(gender===g?'checked':'')+'> '+esc(g)+'</label>';
     }).join('');
-    var selectedVoices=draft&&Array.isArray(draft.voiceTypes)?draft.voiceTypes.slice():selectedVoiceTypesFromPlayer(p,raw);
-    var voiceOpts=(state.profileVoiceTypes||[]).slice();
-    selectedVoices.forEach(function(name){
-      if(!voiceOpts.some(function(v){return v.name===name}))voiceOpts.push({id:'legacy-'+name,name:name,enabled:true});
-    });
-    var voiceTypeChecks=voiceOpts.map(function(v){
-      var on=selectedVoices.indexOf(v.name)!==-1;
-      return '<label class="pw-check-chip"><input type="checkbox" name="voice_type_opt" value="'+esc(v.name)+'" '+(on?'checked':'')+'> '+esc(v.name)+'</label>';
+    var voiceSel=splitCompanionVoiceSelection(draft&&Array.isArray(draft.voiceTypes)?draft.voiceTypes:selectedVoiceTypesFromPlayer(p,raw));
+    if(draft&&draft.voiceCustom!=null)voiceSel.custom=String(draft.voiceCustom||'');
+    if(draft&&draft.voiceOtherOn!=null)voiceSel.otherOn=!!draft.voiceOtherOn;
+    var voiceTypeChecks=FIXED_VOICE_OPTIONS.map(function(name){
+      var on=name==='其他'?voiceSel.otherOn:(voiceSel.selectedFixed.indexOf(name)!==-1);
+      return '<label class="pw-check-chip"><input type="checkbox" name="voice_type_opt" value="'+esc(name)+'" data-voice-opt="'+esc(name)+'" '+(on?'checked':'')+'> '+esc(name)+'</label>';
     }).join('');
+    var voiceCustomHtml='<div class="pw-voice-custom'+(voiceSel.otherOn?' is-on':'')+'" data-voice-custom-wrap '+(voiceSel.otherOn?'':'hidden')+'>'+
+      '<input name="voice_type_custom" type="text" maxlength="20" value="'+esc(voiceSel.custom)+'" placeholder="选择「其他」时填写自定义声线，例如：奶狗音" data-voice-custom>'+
+      '</div>';
     var serviceTypeChecks=['陪玩服务','陪聊服务'].map(function(t){
       var on=selectedTypes.indexOf(t)!==-1;
       return '<label class="pw-check-chip"><input type="checkbox" name="service_type_opt" value="'+esc(t)+'" '+(on?'checked':'')+'> '+esc(t)+'</label>';
@@ -2696,12 +2723,13 @@
       '<div class="pw-field">'+fieldLabel('地区',true)+'<input name="region" value="'+esc(regionVal)+'" placeholder="例如：马来西亚·吉隆坡">'+fieldErr('region')+'</div>'+
       '</div>'+
       '<div class="pw-field" data-field="voice_type">'+fieldLabel('声线',true)+
-      '<div class="pw-chip-grid">'+(voiceTypeChecks||'<div class="pw-empty tiny">暂无声线选项，请联系后台在「声线管理」配置</div>')+'</div>'+
-      '<p class="pw-field-hint">可多选；与标签分开，展示为「声线：甜妹」</p>'+fieldErr('voice_type')+'</div>'+
+      '<div class="pw-chip-grid">'+voiceTypeChecks+'</div>'+
+      voiceCustomHtml+
+      '<p class="pw-field-hint">可多选；选择「其他」可填写自定义声线。展示为「声线：甜妹 / 慵懒」</p>'+fieldErr('voice_type')+'</div>'+
       '<div class="pw-field"><span class="pw-field-label">当前等级</span><p class="pw-field-hint">'+esc(levelLabel)+'（由后台评定，决定可设置的价格区间）</p></div>'+
       '<div class="pw-field">'+fieldLabel('标签',false)+
       '<div class="pw-chip-grid">'+tagChecks+'</div>'+
-      '<p class="pw-field-hint">从后台标签库多选；保存后同步老板端大厅筛选</p></div>'+
+      '<p class="pw-field-hint">可多选；保存后同步老板端大厅展示</p></div>'+
       '<div class="pw-field">'+fieldLabel('介绍',false)+'<textarea name="bio" rows="4" placeholder="简单介绍你的技术、声音和陪玩风格">'+esc(bioVal)+'</textarea></div>'+
       '</section>'+
       '<section class="pw-card pad" style="margin-bottom:14px"><h3>游戏与价格</h3>'+
@@ -3177,6 +3205,8 @@
       if(res&&res.url&&mediaType==='avatar'&&state.data&&state.data.player){
         state.data.player.avatar=res.url;
         state.data.player.hasCustomAvatar=true;
+        var statusOk=document.querySelector('[data-avatar-status]');
+        if(statusOk)statusOk.textContent='已上传';
       }
       if(res&&res.url&&mediaType==='voice'&&state.data&&state.data.player){
         state.data.player.voiceUrl=res.url;
@@ -3208,7 +3238,11 @@
     var region=String(fd.get('region')||'').trim();
     var gameId=String(fd.get('game_id')||'').trim();
     var serviceTypes=Array.prototype.map.call(form.querySelectorAll('input[name="service_type_opt"]:checked'),function(el){return el.value}).filter(Boolean);
-    var voiceTypes=Array.prototype.map.call(form.querySelectorAll('input[name="voice_type_opt"]:checked'),function(el){return el.value}).filter(Boolean);
+    var voiceChecked=Array.prototype.map.call(form.querySelectorAll('input[name="voice_type_opt"]:checked'),function(el){return el.value}).filter(Boolean);
+    var voiceCustom=String(fd.get('voice_type_custom')||'').trim();
+    var voiceOtherOn=voiceChecked.indexOf('其他')!==-1;
+    var voiceTypes=voiceChecked.filter(function(x){return x!=='其他'});
+    if(voiceOtherOn&&voiceCustom)voiceTypes.push(voiceCustom);
     var publicTagList=Array.prototype.map.call(form.querySelectorAll('input[name="public_tag_opt"]:checked'),function(el){return el.value}).filter(Boolean);
     var publicTagsJoined=publicTagList.join('、');
     var serviceInputs=Array.prototype.slice.call(form.querySelectorAll('input[name="service_id_opt"]:checked'));
@@ -3238,7 +3272,8 @@
     if(!Number.isFinite(age)||age<18||age>60){errors.age='年龄须为 18–60 的数字';missing.push('缺少年龄')}
     if(!gender){errors.gender='请选择性别';missing.push('缺少性别')}
     if(!region){errors.region='请填写地区';missing.push('缺少地区')}
-    if(!voiceTypes.length){errors.voice_type='请至少选择一种声线';missing.push('缺少声线')}
+    if(voiceOtherOn&&!voiceCustom){errors.voice_type='选择「其他」时请填写自定义声线';missing.push('缺少声线')}
+    else if(!voiceTypes.length){errors.voice_type='请至少选择一种声线';missing.push('缺少声线')}
     if(!serviceTypes.length){errors.service_type='请至少选择一种可提供服务';missing.push('缺少服务类型')}
     if(!serviceIds.length){errors.main_game='请至少选择一个可接游戏';missing.push('缺少游戏资料')}
     if(!gameId){errors.game_id='请填写游戏 ID';if(missing.indexOf('缺少游戏资料')===-1)missing.push('缺少游戏资料')}
@@ -3946,14 +3981,51 @@
     });
     document.body.appendChild(mask);
   }
-  // Mobile: intercept image uploads → 相册/拍照 sheet (never jump straight to camera).
+  // Avatar: button opens album/camera sheet on mobile, native file dialog on PC — never show Choose File text.
+  function pickCompanionAvatar(){
+    if(state.uploadBusy){toast('请等待当前上传完成');return}
+    function onFile(file){
+      if(!file)return;
+      if(!/^image\/(jpeg|jpg|png|webp)$/i.test(String(file.type||''))&&!/\.(jpe?g|png|webp)$/i.test(String(file.name||''))){
+        toast('请选择 JPG / PNG / WEBP 图片');
+        return;
+      }
+      if(file.size>5*1024*1024){toast('头像不能超过 5MB');return}
+      var statusEl=document.querySelector('[data-avatar-status]');
+      if(statusEl)statusEl.textContent='已选择：'+(file.name||'图片');
+      uploadImage('avatar',file);
+    }
+    if(isPwTouchUpload()){
+      openPwUploadSourceSheet(function(opts){
+        if(!opts)return;
+        triggerPwHiddenPick(IMAGE_ACCEPT,!!opts.capture,onFile);
+      });
+      return;
+    }
+    triggerPwHiddenPick(IMAGE_ACCEPT,false,onFile);
+  }
+  // Mobile: intercept gallery/doc image uploads → 相册/拍照 sheet (never jump straight to camera).
   document.addEventListener('click',function(e){
+    var pickAvatar=e.target.closest('[data-pw-pick-avatar]');
+    if(pickAvatar){
+      e.preventDefault();
+      e.stopPropagation();
+      if(!pickAvatar.disabled)pickCompanionAvatar();
+      return;
+    }
     if(!isPwTouchUpload())return;
     var host=e.target.closest('[data-pw-upload-trigger]');
     if(!host||host.classList.contains('is-busy')||host.classList.contains('is-disabled'))return;
     var input=host.querySelector('[data-upload-avatar],[data-upload-gallery],[data-upload-doc],[data-upload-voice]');
     if(!input||input.disabled)return;
     if(input.hasAttribute('data-upload-voice'))return; // audio: native picker via hidden input
+    if(input.hasAttribute('data-upload-avatar')){
+      // Legacy avatar trigger (if any) — route to button flow
+      e.preventDefault();
+      e.stopPropagation();
+      pickCompanionAvatar();
+      return;
+    }
     e.preventDefault();
     e.stopPropagation();
     openPwUploadSourceSheet(function(opts){
@@ -3961,14 +4033,12 @@
       var accept=input.getAttribute('accept')||IMAGE_ACCEPT;
       var multi=input.hasAttribute('multiple')||input.hasAttribute('data-upload-gallery');
       triggerPwHiddenPick(accept,!!opts.capture,function(file){
-        if(input.hasAttribute('data-upload-avatar'))uploadImage('avatar',file);
-        else if(input.hasAttribute('data-upload-gallery'))uploadImage('gallery',file);
+        if(input.hasAttribute('data-upload-gallery'))uploadImage('gallery',file);
         else if(input.hasAttribute('data-upload-doc'))uploadPrivateDoc(input.getAttribute('data-upload-doc')||'',file);
       },{
         multiple:multi&&!opts.capture,
         onFiles:function(files){
           if(input.hasAttribute('data-upload-gallery'))uploadGalleryFiles(files);
-          else if(files[0]&&input.hasAttribute('data-upload-avatar'))uploadImage('avatar',files[0]);
         }
       });
     });
@@ -3986,6 +4056,18 @@
     if(profileField){
       var pForm=profileField.closest('[data-profile-form]');
       if(pForm)state.profileDraft=readProfileDraft(pForm);
+      if(profileField.matches('input[name="voice_type_opt"][value="其他"]')){
+        var wrap=pForm&&pForm.querySelector('[data-voice-custom-wrap]');
+        if(wrap){
+          var on=!!profileField.checked;
+          wrap.hidden=!on;
+          wrap.classList.toggle('is-on',on);
+          if(on){
+            var customInp=wrap.querySelector('[data-voice-custom]');
+            if(customInp)try{customInp.focus()}catch(err){}
+          }
+        }
+      }
     }
     var accountChanged=e.target.closest('[data-private-contact-form] input,[data-private-contact-form] textarea,[data-verification-form] input,[data-verification-form] textarea,[data-deposit-form] input,[data-deposit-form] textarea');
     if(accountChanged)state.accountDraft=readAccountDraft();

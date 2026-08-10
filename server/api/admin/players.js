@@ -234,6 +234,8 @@ function mapListPlayer(row = {}, profile = {}) {
     allow_orders: row.allow_orders !== false,
     allowOrders: row.allow_orders !== false,
     tags: row.tags || "",
+    voice_type: row.voice_type || "",
+    voiceType: row.voice_type || "",
     deposit_status: depositRaw,
     depositStatus: labelStatus(depositRaw, depositRaw),
     verification_status: applicationRaw,

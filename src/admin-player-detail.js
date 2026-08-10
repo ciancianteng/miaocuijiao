@@ -185,6 +185,7 @@
       ["年龄", d.age || "尚未填写"],
       ["性别", d.gender || "尚未填写"],
       ["地区", d.region || "尚未填写"],
+      ["声线", d.voiceType || d.voice_type || (d.application && d.application.voiceType) || "尚未填写"],
       ["注册时间", d.registered_at || d.created_at || "—"],
       ["最近登录", d.lastLogin || d.last_login || "暂无登录记录"],
       ["是否已设置密码", d.hasPassword || d.has_password ? "是" : "否"],

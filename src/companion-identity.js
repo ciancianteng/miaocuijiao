@@ -44,7 +44,9 @@
 
   function formatVoiceLabel(voice) {
     var v = normalizeVoice(voice);
-    return v ? "声线：" + v : "声线：未设置";
+    if (!v) return "声线：未设置";
+    var parts = asList(v);
+    return "声线：" + (parts.length ? parts.join(" / ") : v);
   }
 
   function filterServiceTags(tags, voice) {
@@ -121,13 +123,13 @@
     }
     if (cert) parts.push(cert);
     if (opts.includeVoice !== false) {
-      var voiceText = formatVoiceLabel(voice);
-      var unset = !normalizeVoice(voice);
+      var voiceParts = asList(voice);
+      var unset = !voiceParts.length;
       parts.push(
         '<span class="mcj-voice-tag' +
           (unset ? " is-unset" : "") +
           '"><span class="mcj-voice-label">声线：</span>' +
-          esc(unset ? "未设置" : normalizeVoice(voice)) +
+          esc(unset ? "未设置" : voiceParts.join(" / ")) +
           "</span>"
       );
     }

@@ -651,6 +651,14 @@ a.pw-btn{display:inline-flex;align-items:center;justify-content:center;text-deco
 .pw-avatar-stage{display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap}
 .pw-avatar-preview-wrap{display:grid;gap:10px;justify-items:start}
 .pw-avatar-preview{width:96px;height:96px;border-radius:50%;object-fit:cover;border:1px solid var(--pw-line-pink);background:rgba(255,255,255,.06);display:block}
+.pw-avatar-placeholder{
+  width:96px;height:96px;border-radius:50%;display:grid;place-items:center;
+  border:1px dashed rgba(255,145,195,.45);background:rgba(255,255,255,.04);color:var(--pw-dim);font-size:13px;font-weight:700;
+}
+.pw-media-status{margin:0;color:#ffd6e8;font-size:13px;font-weight:700}
+.pw-voice-custom{margin-top:10px}
+.pw-voice-custom[hidden]{display:none!important}
+.pw-voice-custom input{width:100%;min-height:42px;border-radius:12px;border:1px solid rgba(255,145,195,.35);background:rgba(0,0,0,.28);color:#fff;padding:0 12px}
 .pw-avatar-tools,.pw-voice-edit-row{display:flex;flex-wrap:wrap;gap:8px}
 .pw-media-chip{
   position:relative;

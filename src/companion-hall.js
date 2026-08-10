@@ -419,11 +419,14 @@
             return '<span class="mcj-service-tag">' + esc(tag) + "</span>";
           }).join("");
           var voice = String(item.voiceType || "").trim().replace(/^声线\s*[:：]\s*/, "");
+          var voiceParts = voice
+            ? voice.split(/[,，、|/]+/).map(function (x) { return String(x || "").trim(); }).filter(Boolean)
+            : [];
           var voiceHtml =
             '<span class="mcj-voice-tag' +
-            (voice ? "" : " is-unset") +
+            (voiceParts.length ? "" : " is-unset") +
             '"><span class="mcj-voice-label">声线：</span>' +
-            esc(voice || "未设置") +
+            esc(voiceParts.length ? voiceParts.join(" / ") : "未设置") +
             "</span>";
           return '<div class="mcj-id-tags companion-identity-row companion-tags">' + level + gender + voiceHtml + styleTags + "</div>";
         })();

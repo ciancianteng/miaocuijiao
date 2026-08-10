@@ -148,6 +148,10 @@ export function normalizeTagRow(row = {}, index = 0) {
   };
 }
 
+function isServerlessFs() {
+  return !!(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.NOW_REGION);
+}
+
 export async function readLocalTags() {
   try {
     const dbRows = await readDbTags();
@@ -155,7 +159,11 @@ export async function readLocalTags() {
       return dbRows.sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name, "zh"));
     }
   } catch (error) {
-    if (!isMissingTable(error)) console.error("[companion-tags] DB read failed, fallback local", error.message || error);
+    if (!isMissingTable(error)) console.error("[companion-tags] DB read failed, fallback defaults", error.message || error);
+  }
+  // On Vercel/serverless, never mkdir cwd (.local-data) — return in-memory defaults.
+  if (isServerlessFs()) {
+    return DEFAULT_TAGS.map((row, index) => normalizeTagRow(row, index));
   }
   await ensureDir();
   try {
@@ -169,10 +177,6 @@ export async function readLocalTags() {
   const seeded = DEFAULT_TAGS.map((row, index) => normalizeTagRow(row, index));
   await writeLocalTags(seeded);
   return seeded;
-}
-
-function isServerlessFs() {
-  return !!(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.NOW_REGION);
 }
 
 export async function writeLocalTags(rows) {
