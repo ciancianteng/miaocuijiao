@@ -3149,6 +3149,10 @@ export default async function handler(req, res) {
         }
       }
       const enriched = await enrichProfileRoles({ ...profile, roles: nextRoles }, authUser);
+      // Echo client-held refresh token so apply-page uploads can auto-refresh after JWT TTL.
+      // Access token alone cannot mint a refresh token server-side.
+      const refreshToken = String(body.refreshToken || body.refresh_token || "").trim();
+      const expiresAt = body.expiresAt || body.expires_at || "";
       return json(res, 200, {
         ok: true,
         message: createdNewRow
@@ -3164,6 +3168,8 @@ export default async function handler(req, res) {
         session: {
           token,
           accessToken: token,
+          refreshToken,
+          expiresAt,
           user: safePlayer(enriched.profile || profile, companion || {}),
         },
       });

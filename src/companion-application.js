@@ -388,6 +388,283 @@
     }
   }
 
+  function storageGet(key) {
+    try {
+      return sessionStorage.getItem(key) || localStorage.getItem(key) || "";
+    } catch (e) {
+      return "";
+    }
+  }
+
+  function storageSetBoth(key, value) {
+    try {
+      localStorage.setItem(key, value);
+    } catch (e) {}
+    try {
+      sessionStorage.setItem(key, value);
+    } catch (e2) {}
+  }
+
+  function readCompanionSession() {
+    try {
+      return (
+        JSON.parse(localStorage.getItem("mcjCompanionSession") || sessionStorage.getItem("mcjCompanionSession") || "null") ||
+        null
+      );
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function readAnyRefreshToken(session) {
+    var s = session || readCompanionSession() || {};
+    var fromSession = String(s.refreshToken || s.refresh_token || "").trim();
+    if (fromSession) return fromSession;
+    var mirrored = String(storageGet("mcjAuthRefreshToken") || "").trim();
+    if (mirrored) return mirrored;
+    try {
+      var boss = JSON.parse(localStorage.getItem("mcjBossSession") || sessionStorage.getItem("mcjBossSession") || "null") || {};
+      var fromBoss = String(boss.refreshToken || boss.refresh_token || "").trim();
+      if (fromBoss) return fromBoss;
+    } catch (e) {}
+    return "";
+  }
+
+  function readAnyExpiresAt(session) {
+    var s = session || readCompanionSession() || {};
+    var fromSession = s.expiresAt != null && s.expiresAt !== "" ? s.expiresAt : s.expires_at;
+    if (fromSession != null && fromSession !== "") return fromSession;
+    return storageGet("mcjAuthExpiresAt") || "";
+  }
+
+  function jwtExpSec(token) {
+    try {
+      var part = String(token || "").split(".")[1];
+      if (!part) return 0;
+      var b64 = part.replace(/-/g, "+").replace(/_/g, "/");
+      while (b64.length % 4) b64 += "=";
+      var payload = JSON.parse(atob(b64));
+      return Number(payload && payload.exp) || 0;
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  function saveCompanionSession(session) {
+    if (!session) return;
+    var token = session.token || session.accessToken || session.access_token || "";
+    var refreshToken = String(session.refreshToken || session.refresh_token || readAnyRefreshToken(session) || "").trim();
+    var expiresAt = session.expiresAt || session.expires_at || readAnyExpiresAt(session) || "";
+    if (!expiresAt && token) {
+      var exp = jwtExpSec(token);
+      if (exp) expiresAt = exp;
+    }
+    var normalized = {
+      token: token,
+      accessToken: token,
+      refreshToken: refreshToken,
+      expiresAt: expiresAt,
+      user: session.user || null,
+      remember: session.remember !== false,
+    };
+    var raw = JSON.stringify(normalized);
+    try {
+      localStorage.setItem("mcjCompanionSession", raw);
+    } catch (e) {}
+    try {
+      sessionStorage.setItem("mcjCompanionSession", raw);
+    } catch (e2) {}
+    // Mirror shared auth keys so refresh + long apply sessions stay coherent (do not wipe boss).
+    try {
+      if (normalized.token) storageSetBoth("mcjAuthAccessToken", normalized.token);
+      if (normalized.refreshToken) storageSetBoth("mcjAuthRefreshToken", normalized.refreshToken);
+      if (normalized.expiresAt !== "" && normalized.expiresAt != null) {
+        storageSetBoth("mcjAuthExpiresAt", String(normalized.expiresAt));
+      }
+    } catch (e3) {}
+  }
+
+  function companionToken() {
+    var session = readCompanionSession();
+    if (!session) return "";
+    return String(session.token || session.accessToken || "").trim();
+  }
+
+  function clearCompanionAccessOnly() {
+    // Drop expired access so auth gate can show; keep draft + refresh attempt already failed.
+    try {
+      var session = readCompanionSession() || {};
+      session.token = "";
+      session.accessToken = "";
+      var raw = JSON.stringify(session);
+      localStorage.setItem("mcjCompanionSession", raw);
+      sessionStorage.setItem("mcjCompanionSession", raw);
+    } catch (e) {}
+  }
+
+  var applyRefreshPromise = null;
+  function refreshApplySession() {
+    if (applyRefreshPromise) return applyRefreshPromise;
+    var session = readCompanionSession() || {};
+    var refreshToken = readAnyRefreshToken(session);
+    if (!refreshToken) {
+      return Promise.reject(new Error("登录状态已过期，请重新登录后继续。"));
+    }
+    applyRefreshPromise = fetch("/api/auth", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ action: "refresh", refreshToken: refreshToken }),
+    })
+      .then(function (res) {
+        return res.json().then(function (body) {
+          if (!res.ok || body.ok === false) {
+            throw new Error(body.message || "登录状态已过期，请重新登录后继续。");
+          }
+          var sess = body.session || {};
+          saveCompanionSession({
+            token: sess.accessToken || sess.token || "",
+            accessToken: sess.accessToken || sess.token || "",
+            refreshToken: sess.refreshToken || refreshToken,
+            expiresAt: sess.expiresAt || sess.expires_at || "",
+            user: sess.user || session.user || {},
+            remember: session.remember !== false,
+          });
+          return true;
+        });
+      })
+      .finally(function () {
+        applyRefreshPromise = null;
+      });
+    return applyRefreshPromise;
+  }
+
+  function ensureFreshApplySession() {
+    var session = readCompanionSession() || {};
+    var token = String(session.token || session.accessToken || "").trim();
+    if (!token) {
+      return Promise.reject(new Error("请先登录或注册陪玩账号后再提交，以便资料同步到后台。"));
+    }
+    var expRaw = readAnyExpiresAt(session);
+    var exp = Number(expRaw) || 0;
+    if (exp > 1e12) exp = Math.floor(exp / 1000);
+    if (!exp) exp = jwtExpSec(token);
+    var nowSec = Math.floor(Date.now() / 1000);
+    // Refresh when expired or within 90s of expiry (same policy as companion workbench).
+    if (exp && exp <= nowSec + 90) {
+      return refreshApplySession().then(function () {
+        return readCompanionSession();
+      });
+    }
+    // No expiry metadata but we have a refresh token: still OK to proceed; reactive refresh covers 401.
+    return Promise.resolve(session);
+  }
+
+  function postCompanion(action, payload, retried) {
+    function humanize(msg) {
+      var text = String(msg || "").trim();
+      if (/invalid JWT|token is expired|unable to parse or verify|jwt|登录态无效|请先登录|登录已过期|refreshToken 已失效/i.test(text)) {
+        return "登录状态已过期，请重新登录后继续。";
+      }
+      if (/invalid input syntax for type uuid|22P02/i.test(text)) {
+        return "媒体数据异常，请刷新后重试。";
+      }
+      if (/HTTP\s*403|HTTP\s*401/i.test(text)) {
+        return "登录状态已过期，请重新登录后继续。";
+      }
+      return text || "提交失败";
+    }
+    function sendOnce() {
+      var token = companionToken();
+      if (!token) return Promise.reject(new Error("请先登录或注册陪玩账号后再提交，以便资料同步到后台。"));
+      return fetch("/api/companion", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          "x-mcj-companion-token": token,
+          Authorization: "Bearer " + token,
+        },
+        body: JSON.stringify(Object.assign({ action: action }, payload || {})),
+      }).then(function (res) {
+        return res.json().then(function (body) {
+          if (!res.ok || body.ok === false) {
+            var errMsg = humanize(body.message || "提交失败");
+            var err = new Error(errMsg);
+            err.status = res.status;
+            throw err;
+          }
+          return body;
+        });
+      });
+    }
+    return ensureFreshApplySession()
+      .catch(function (freshErr) {
+        // If proactive refresh failed, still try once with current token then reactive path.
+        if (companionToken()) return null;
+        throw freshErr;
+      })
+      .then(function () {
+        return sendOnce().catch(function (err) {
+          var errMsg = humanize((err && err.message) || "");
+          if (!retried && /登录状态已过期/.test(errMsg)) {
+            return refreshApplySession()
+              .then(function () {
+                return postCompanion(action, payload, true);
+              })
+              .catch(function (refreshErr) {
+                clearCompanionAccessOnly();
+                throw new Error(humanize((refreshErr && refreshErr.message) || errMsg));
+              });
+          }
+          throw new Error(errMsg);
+        });
+      });
+  }
+
+  function fetchCompanionBootstrap() {
+    function loadOnce() {
+      var token = companionToken();
+      if (!token) return Promise.resolve(null);
+      return fetch("/api/companion?action=bootstrap", {
+        headers: {
+          Accept: "application/json",
+          "x-mcj-companion-token": token,
+          Authorization: "Bearer " + token,
+        },
+        cache: "no-store",
+      }).then(function (res) {
+        return res.json().then(function (body) {
+          if (res.status === 401 || (body && /登录状态已过期|invalid JWT|token is expired/i.test(String(body.message || "")))) {
+            var err = new Error(body.message || "登录状态已过期，请重新登录后继续。");
+            err.status = 401;
+            throw err;
+          }
+          if (!res.ok || body.ok === false) return null;
+          return body.data || body;
+        });
+      });
+    }
+    return ensureFreshApplySession()
+      .catch(function () {
+        return null;
+      })
+      .then(function () {
+        return loadOnce().catch(function (err) {
+          if (err && (err.status === 401 || /登录状态已过期|jwt|token is expired/i.test(String(err.message || "")))) {
+            return refreshApplySession()
+              .then(function () {
+                return loadOnce();
+              })
+              .catch(function () {
+                clearCompanionAccessOnly();
+                return null;
+              });
+          }
+          return null;
+        });
+      });
+  }
+
   function authGateHtml() {
     if (companionToken()) return "";
     var bossTok = bossAccessToken();
@@ -982,111 +1259,6 @@
       rejected: "已拒绝",
     };
     return map[String(code || "").toLowerCase()] || code || "草稿";
-  }
-  function saveCompanionSession(session) {
-    if (!session) return;
-    var token = session.token || session.accessToken || session.access_token || "";
-    var normalized = {
-      token: token,
-      accessToken: token,
-      refreshToken: session.refreshToken || session.refresh_token || "",
-      expiresAt: session.expiresAt || session.expires_at || "",
-      user: session.user || null,
-      remember: !!session.remember,
-    };
-    var raw = JSON.stringify(normalized);
-    try { localStorage.setItem("mcjCompanionSession", raw); } catch (e) {}
-    try { sessionStorage.setItem("mcjCompanionSession", raw); } catch (e) {}
-  }
-  function companionToken() {
-    try {
-      var session = JSON.parse(localStorage.getItem("mcjCompanionSession") || sessionStorage.getItem("mcjCompanionSession") || "null");
-      return session && session.token ? session.token : "";
-    } catch (e) {
-      return "";
-    }
-  }
-  function postCompanion(action, payload, retried) {
-    var token = companionToken();
-    if (!token) return Promise.reject(new Error("请先登录或注册陪玩账号后再提交，以便资料同步到后台。"));
-    function humanize(msg) {
-      var text = String(msg || "").trim();
-      if (/invalid JWT|token is expired|unable to parse or verify|jwt|登录态无效|请先登录|登录已过期/i.test(text)) {
-        return "登录状态已过期，请重新登录后继续。";
-      }
-      if (/invalid input syntax for type uuid|22P02/i.test(text)) {
-        return "媒体数据异常，请刷新后重试。";
-      }
-      if (/HTTP\s*403|HTTP\s*401/i.test(text)) {
-        return "登录状态已过期，请重新登录后继续。";
-      }
-      return text || "提交失败";
-    }
-    function refreshApplySession() {
-      var session = null;
-      try {
-        session = JSON.parse(localStorage.getItem("mcjCompanionSession") || sessionStorage.getItem("mcjCompanionSession") || "null") || {};
-      } catch (e) {
-        session = {};
-      }
-      var refreshToken = String(session.refreshToken || session.refresh_token || "").trim();
-      if (!refreshToken) return Promise.reject(new Error("登录状态已过期，请重新登录后继续。"));
-      return fetch("/api/auth", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({ action: "refresh", refreshToken: refreshToken }),
-      }).then(function (res) {
-        return res.json().then(function (body) {
-          if (!res.ok || body.ok === false) throw new Error(body.message || "登录状态已过期，请重新登录后继续。");
-          var sess = body.session || {};
-          saveCompanionSession({
-            token: sess.accessToken || sess.token || "",
-            accessToken: sess.accessToken || sess.token || "",
-            refreshToken: sess.refreshToken || refreshToken,
-            expiresAt: sess.expiresAt || sess.expires_at || "",
-            user: sess.user || session.user || {},
-            remember: session.remember !== false,
-          });
-          return true;
-        });
-      });
-    }
-    return fetch("/api/companion", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-        "x-mcj-companion-token": token,
-        Authorization: "Bearer " + token,
-      },
-      body: JSON.stringify(Object.assign({ action: action }, payload || {})),
-    }).then(function (res) {
-      return res.json().then(function (body) {
-        if (!res.ok || body.ok === false) {
-          var errMsg = humanize(body.message || "提交失败");
-          if (!retried && /登录状态已过期/.test(errMsg)) {
-            return refreshApplySession().then(function () {
-              return postCompanion(action, payload, true);
-            });
-          }
-          throw new Error(errMsg);
-        }
-        return body;
-      });
-    });
-  }
-  function fetchCompanionBootstrap() {
-    var token = companionToken();
-    if (!token) return Promise.resolve(null);
-    return fetch("/api/companion?action=bootstrap", {
-      headers: { Accept: "application/json", "x-mcj-companion-token": token },
-      cache: "no-store",
-    }).then(function (res) {
-      return res.json().then(function (body) {
-        if (!res.ok || body.ok === false) return null;
-        return body.data || body;
-      });
-    }).catch(function () { return null; });
   }
   function saveApplyScroll() {
     try {
@@ -1955,7 +2127,15 @@
   }
 
   async function afterCompanionAuthSuccess(session, email, nickname) {
-    saveCompanionSession(session);
+    // Merge any existing boss/shared refresh token so long apply sessions can auto-refresh.
+    var merged = Object.assign({}, session || {});
+    if (!merged.refreshToken && !merged.refresh_token) {
+      merged.refreshToken = readAnyRefreshToken(merged);
+    }
+    if (merged.expiresAt == null || merged.expiresAt === "") {
+      merged.expiresAt = readAnyExpiresAt(merged);
+    }
+    saveCompanionSession(merged);
     if (nickname || email) {
       try { saveDraft({ data: { nickname: nickname || "", email: email || "" } }); } catch (e) {}
     }
@@ -1969,10 +2149,28 @@
       try { clearInterval(authUi._cooldownTimer); } catch (e4) {}
       authUi._cooldownTimer = null;
     }
-    // Unlock 1/5 UI immediately; bootstrap can hydrate in the background.
+    // Resume draft progress — never force restart at step 1 after re-login.
+    var resumeStep = 0;
     try {
-      render(0, { alignStepNav: true });
-      showApplyTip("登录成功，请从第 1 步开始填写申请。", "ok");
+      resumeStep = Math.max(0, Math.min(steps.length - 1, Number(readDraft().step || 0) || 0));
+    } catch (eStep) {
+      resumeStep = 0;
+    }
+    var hadProgress = false;
+    try {
+      var d0 = readDraft();
+      hadProgress =
+        resumeStep > 0 ||
+        !!(d0.rulesAgreement && d0.rulesAgreement.accepted) ||
+        !!(d0.data && (d0.data.nickname || d0.data.gender || d0.data.mainGames)) ||
+        !!(d0.uploads && (d0.uploads.avatar || (d0.uploads.photos && d0.uploads.photos.length)));
+    } catch (eProg) {}
+    try {
+      render(resumeStep, { alignStepNav: true });
+      showApplyTip(
+        hadProgress ? "登录成功，已恢复申请草稿进度。" : "登录成功，请继续填写陪玩申请。",
+        "ok"
+      );
     } catch (renderErr) {
       showApplyTip(renderErr.message || "登录成功，但页面刷新失败，请手动刷新。");
     }
@@ -1985,7 +2183,10 @@
         };
       }
       hydrateUploadsFromBootstrap(boot);
-      render(0, { alignStepNav: true });
+      try {
+        resumeStep = Math.max(0, Math.min(steps.length - 1, Number(readDraft().step || resumeStep) || 0));
+      } catch (eStep2) {}
+      render(resumeStep, { alignStepNav: true });
     } catch (bootErr) {
       try { console.warn("[apply-auth] bootstrap", bootErr); } catch (e5) {}
     }
@@ -2054,6 +2255,8 @@
         authUi.busy = true;
         setAuthMessage("正在当前账号下开通陪玩资料…", "ok");
         render(Number(root.dataset.step || 0));
+        var bossRefresh = readAnyRefreshToken();
+        var bossExpires = readAnyExpiresAt();
         fetch("/api/companion", {
           method: "POST",
           headers: {
@@ -2062,7 +2265,11 @@
             Authorization: "Bearer " + bossTok,
             "x-mcj-companion-token": bossTok,
           },
-          body: JSON.stringify({ action: "apply_companion_role" }),
+          body: JSON.stringify({
+            action: "apply_companion_role",
+            refreshToken: bossRefresh,
+            expiresAt: bossExpires,
+          }),
         })
           .then(function (res) {
             return res.json().then(function (body) {
@@ -2076,6 +2283,8 @@
               accessToken: bossTok,
               user: (body.session && body.session.user) || {},
             };
+            if (!sess.refreshToken) sess.refreshToken = bossRefresh;
+            if (sess.expiresAt == null || sess.expiresAt === "") sess.expiresAt = bossExpires;
             return afterCompanionAuthSuccess(sess, "", "");
           })
           .catch(function (err) {
@@ -2627,11 +2836,31 @@
     }
     hydrateUploadsFromBootstrap(boot);
   }
+  function hydrateSessionRefreshFromMirrors() {
+    // Backfill refreshToken/expiresAt for older companion sessions created via boss upgrade without refresh.
+    var session = readCompanionSession();
+    if (!session || !(session.token || session.accessToken)) return;
+    var refresh = String(session.refreshToken || session.refresh_token || "").trim();
+    var exp = session.expiresAt != null && session.expiresAt !== "" ? session.expiresAt : session.expires_at;
+    var mirroredRefresh = readAnyRefreshToken(session);
+    var mirroredExp = readAnyExpiresAt(session);
+    if ((!refresh && mirroredRefresh) || ((exp == null || exp === "") && mirroredExp !== "")) {
+      saveCompanionSession({
+        token: session.token || session.accessToken || "",
+        accessToken: session.token || session.accessToken || "",
+        refreshToken: refresh || mirroredRefresh,
+        expiresAt: exp != null && exp !== "" ? exp : mirroredExp,
+        user: session.user || null,
+        remember: session.remember !== false,
+      });
+    }
+  }
   function runApplyBootstrap(force) {
     if (initStarted && !force) return;
     initStarted = true;
     initLoading = true;
     initLoadError = "";
+    hydrateSessionRefreshFromMirrors();
     render(readDraft().step || 0);
     bind();
     var taxonomyReady = window.MCJTaxonomy && window.MCJTaxonomy.load
