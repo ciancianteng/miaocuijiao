@@ -3783,6 +3783,14 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
     if (action === "assign_companion" || action === "push_companion" || action === "dispatch_companion" || action === "confirm_grab_assignment") {
       const order = await orderById(String(body.id || body.order_id || ""));
       const companionInput = String(body.companion_id || body.companionId || body.companion_uid || "").trim();
+      // Fast path: compare raw user_id before companion profile resolve (pending multi-role accounts).
+      if (order && companionInput && String(order.boss_id || "").trim() === companionInput) {
+        return json(res, 403, {
+          ok: false,
+          code: "SELF_TRADE_FORBIDDEN",
+          message: "不能把订单指定给订单老板本人的陪玩身份：老板与陪玩属于同一账号（user_id）。",
+        });
+      }
       if (order && companionInput) {
         try {
           const { resolveCompanionUserIdFlexible, assertNotSelfTrade, isSamePerson } = await import("./_account-roles.js");
