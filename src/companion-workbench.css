@@ -715,6 +715,9 @@ a.pw-btn{display:inline-flex;align-items:center;justify-content:center;text-deco
   background:rgba(90,12,28,.88);
   color:#ffd0d8;
 }
+@media (hover:hover) and (pointer:fine){
+  .pw-gallery-camera-btn{display:none!important}
+}
 .pw-gallery-grid{
   display:grid;
   grid-template-columns:repeat(3,minmax(0,1fr));

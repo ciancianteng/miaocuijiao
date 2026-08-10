@@ -2615,9 +2615,8 @@
       (busy||full?'disabled ':'')+
       'class="pw-gallery-native-input" tabindex="-1" aria-hidden="true">'+
       '</label>';
-    var cameraBtn=isPwTouchUpload()
-      ? '<button type="button" class="pw-media-chip'+(busy||full?' is-busy':'')+'" data-pw-pick-gallery-camera '+(busy||full?'disabled':'')+'>拍照</button>'
-      : '';
+    var cameraBtn=
+      '<button type="button" class="pw-media-chip pw-gallery-camera-btn'+(busy||full?' is-busy':'')+'" data-pw-pick-gallery-camera '+(busy||full?'disabled':'')+'>拍照</button>';
     return '<div class="pw-media-block pw-gallery-block">'+
       '<p class="pw-field-hint">至少 1 张，最多 6 张。可一次多选（本次最多还能选 '+esc(String(room))+' 张）。手机点「从相册选择」打开系统相册多选。</p>'+
       '<div class="pw-gallery-grid" data-gallery-list>'+
