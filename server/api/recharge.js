@@ -312,8 +312,12 @@ async function signProofUrl(row) {
 async function loadPaymentOrderByNo(paymentNo, bossId = "") {
   const no = String(paymentNo || "").trim();
   if (!no) return null;
-  let query = `?or=(payment_no.eq.${encodeURIComponent(no)},id.eq.${encodeURIComponent(no)})&limit=1`;
-  if (bossId) query = `?boss_id=eq.${encodeURIComponent(bossId)}&or=(payment_no.eq.${encodeURIComponent(no)},id.eq.${encodeURIComponent(no)})&limit=1`;
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(no);
+  const match = isUuid
+    ? `or=(payment_no.eq.${encodeURIComponent(no)},id.eq.${encodeURIComponent(no)})`
+    : `payment_no=eq.${encodeURIComponent(no)}`;
+  let query = `?${match}&limit=1`;
+  if (bossId) query = `?boss_id=eq.${encodeURIComponent(bossId)}&${match}&limit=1`;
   const rows = await supabaseJson(restUrl("payment_orders", query), { headers: serviceHeaders() });
   return Array.isArray(rows) ? rows[0] : null;
 }
