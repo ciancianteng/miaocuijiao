@@ -56,7 +56,7 @@
     .pay-qr-frame img[data-mcj-pay-qr],
     .pay-qr-frame img[data-pay-qr-img]{
       width:420px;
-      max-width:90%;
+      max-width:min(90vw,420px);
       height:auto;
       object-fit:contain;
       object-position:center;
@@ -121,7 +121,7 @@
       .pay-qr-frame img[data-mcj-pay-qr],
       .pay-qr-frame img[data-pay-qr-img]{
         width:min(88vw,420px);
-        max-width:90%;
+        max-width:min(88vw,420px);
       }
       .pay-qr-save{display:inline-flex;width:100%;justify-content:center}
       .pay-qr-meta{margin-top:24px}
@@ -135,6 +135,6 @@
   <script src="src/boss-header.js" defer></script>
   <script src="src/currency.js"></script>
   <script src="src/order-status.js"></script>
-  <script src="/src/payment-confirm.js?v=20260810payQrEnlarge1" defer></script>
+  <script src="/src/payment-confirm.js?v=20260810payQrEnlarge2" defer></script>
 </body>
 </html>

@@ -113,7 +113,7 @@
           esc(info.qrUrl) +
           '" alt="' +
           esc((info.title || methodName(o.paymentMethod)) + " 收款二维码") +
-          '" data-mcj-pay-qr="1" referrerpolicy="no-referrer"></div>' +
+          '" data-mcj-pay-qr="1" referrerpolicy="no-referrer" crossorigin="anonymous"></div>' +
           '<div class="pay-qr-actions"><button type="button" class="pay-qr-save" data-pay-qr-save="' +
           esc(info.qrUrl) +
           '">保存收款码</button></div>'
@@ -628,6 +628,8 @@
     var box = ensurePayQrLightbox();
     var img = box.querySelector("[data-pay-qr-lightbox-img]");
     if (img) {
+      img.setAttribute("crossorigin", "anonymous");
+      img.referrerPolicy = "no-referrer";
       img.src = src;
       img.alt = alt || "收款二维码大图";
     }

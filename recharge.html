@@ -46,7 +46,7 @@
     .pay-qr-sub{margin:0 0 4px;text-align:center;color:#9ca3af;font-size:12px}
     /* DuitNow/recharge QR: large sharp contain — never crop/stretch or white outer plate. */
     .pay-qr-frame{display:inline-block;max-width:100%;margin:14px auto 0;padding:0;border-radius:0;background:transparent;border:0;box-shadow:none;outline:none;overflow:visible;line-height:0;cursor:zoom-in}
-    .pay-qr-frame img,.pay-qr-frame img[data-mcj-pay-qr]{width:420px;max-width:90%;height:auto;object-fit:contain;object-position:center;display:block;margin:0 auto;padding:0;background:transparent!important;border:0!important;outline:0!important;box-shadow:none!important;border-radius:0!important;image-rendering:auto;-webkit-tap-highlight-color:transparent;cursor:zoom-in}
+    .pay-qr-frame img,.pay-qr-frame img[data-mcj-pay-qr]{width:420px;max-width:min(90vw,420px);height:auto;object-fit:contain;object-position:center;display:block;margin:0 auto;padding:0;background:transparent!important;border:0!important;outline:0!important;box-shadow:none!important;border-radius:0!important;image-rendering:auto;-webkit-tap-highlight-color:transparent;cursor:zoom-in}
     .pay-qr-actions{display:flex;justify-content:center;width:100%;margin:14px 0 0}
     .pay-qr-save{display:none}
     .pay-qr-meta,.pay-row{display:grid;gap:8px}
@@ -68,7 +68,7 @@
     .pay-hint{margin:10px 0 0;color:#ffd6e7;font-size:13px;line-height:1.5}
     @media(max-width:860px){.layout,.stats,.campaigns{grid-template-columns:1fr}.page-head{display:block}}
     @media(max-width:560px){
-      .pay-qr-frame img,.pay-qr-frame img[data-mcj-pay-qr]{width:min(88vw,420px);max-width:90%}
+      .pay-qr-frame img,.pay-qr-frame img[data-mcj-pay-qr]{width:min(88vw,420px);max-width:min(88vw,420px)}
       .pay-qr-save{display:inline-flex;width:100%;justify-content:center;min-height:44px;border:1px solid rgba(255,158,207,.55);border-radius:12px;background:rgba(255,143,197,.18);color:#ffe6f2;padding:10px 14px;cursor:pointer;font-weight:800}
       .pay-qr-meta{margin-top:24px}
     }
@@ -97,6 +97,6 @@
   <script src="src/boss-auth-session.js?v=20260809payScopeOrder1"></script>
   <script src="src/boss-header.js" defer></script>
   <script src="src/avatar-fallback.js"></script>
-  <script src="src/recharge-center.js?v=20260810payQrEnlarge1" defer></script>
+  <script src="src/recharge-center.js?v=20260810payQrEnlarge2" defer></script>
 </body>
 </html>

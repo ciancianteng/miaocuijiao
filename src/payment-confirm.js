@@ -261,6 +261,8 @@
     var box = ensurePayQrLightbox();
     var img = box.querySelector("[data-pay-qr-lightbox-img]");
     if (img) {
+      img.setAttribute("crossorigin", "anonymous");
+      img.referrerPolicy = "no-referrer";
       img.src = src;
       img.alt = alt || "收款二维码大图";
     }
@@ -376,7 +378,7 @@
         esc(info.qrUrl) +
         '" alt="' +
         esc(payLabel + " 收款二维码") +
-        '" data-mcj-pay-qr="1" referrerpolicy="no-referrer" data-pay-qr-img="1"></div>';
+        '" data-mcj-pay-qr="1" referrerpolicy="no-referrer" crossorigin="anonymous" data-pay-qr-img="1"></div>';
       html +=
         '<div class="pay-qr-actions"><button type="button" class="pay-btn pay-qr-save" data-pay-qr-save="' +
         esc(info.qrUrl) +
