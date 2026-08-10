@@ -3782,7 +3782,26 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
     }
     if (action === "assign_companion" || action === "push_companion" || action === "dispatch_companion" || action === "confirm_grab_assignment") {
       const order = await orderById(String(body.id || body.order_id || ""));
-      const companion = await resolveCompanion(String(body.companion_id || body.companionId || body.companion_uid || ""));
+      const companionInput = String(body.companion_id || body.companionId || body.companion_uid || "").trim();
+      if (order && companionInput) {
+        try {
+          const { resolveCompanionUserIdFlexible, assertNotSelfTrade, isSamePerson } = await import("./_account-roles.js");
+          const resolvedPlayer =
+            (await resolveCompanionUserIdFlexible(companionInput)) || companionInput;
+          if (isSamePerson(order.boss_id, resolvedPlayer) || isSamePerson(order.boss_id, companionInput)) {
+            assertNotSelfTrade(order.boss_id, resolvedPlayer || companionInput, "把订单指定给订单老板本人");
+          }
+        } catch (selfErr) {
+          if (selfErr?.code === "SELF_TRADE_FORBIDDEN") {
+            return json(res, selfErr.status || 403, {
+              ok: false,
+              code: selfErr.code,
+              message: selfErr.message || "不能把订单指定给订单老板本人的陪玩身份。",
+            });
+          }
+        }
+      }
+      const companion = await resolveCompanion(companionInput);
       if (!order || !companion || !isUuid(companion.id)) return json(res, 400, { ok: false, message: "订单或陪玩不存在。" });
       try {
         await assertOrderMutationAllowed(order, service.profile);
