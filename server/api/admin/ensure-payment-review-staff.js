@@ -18,7 +18,31 @@ export default async function handler(req, res) {
 
   const body = typeof req.body === "object" && req.body ? req.body : {};
   const action = String(body.action || "ensure_payment_review_staff").trim();
-  const out = { ok: true, adminId: admin.id, action, ddl: null };
+  const out = { ok: true, adminId: admin.id, action, ddl: null, probe: null };
+
+  if (action === "probe_staff") {
+    const staffId = String(body.staffId || body.id || "").trim();
+    try {
+      const { loadStaffReviewer, staffReviewerNameFromProfile } = await import("../_payment-receipts.js");
+      const { companionDb } = await import("../_companion-media-store.js");
+      const rows = await companionDb(
+        "profiles",
+        `?id=eq.${encodeURIComponent(staffId)}&select=id,display_name,nickname,email,role&limit=1`
+      ).catch((e) => [{ _error: String(e?.message || e) }]);
+      const staff = await loadStaffReviewer(staffId);
+      out.probe = {
+        staffId,
+        row: rows?.[0] || null,
+        loadedName: staff.name,
+        fromProfileHelper: staffReviewerNameFromProfile(rows?.[0] || {}),
+      };
+      return json(res, 200, out);
+    } catch (err) {
+      out.ok = false;
+      out.probe = { error: err.message || String(err) };
+      return json(res, 500, out);
+    }
+  }
 
   const databaseUrl = String(
     process.env.DATABASE_URL || process.env.SUPABASE_DB_URL || process.env.POSTGRES_URL || ""

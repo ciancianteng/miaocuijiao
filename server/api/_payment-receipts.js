@@ -41,18 +41,46 @@ export async function loadStaffReviewer(staffId) {
   return { id, name: staffReviewerNameFromProfile(profile || {}), profile };
 }
 
+const REVIEW_STAFF_MARK_RE = /\[\[REVIEW_STAFF:([^\]|]+)\|([^\]|]+)\|([^\]]+)\]\]/;
+
+export function encodeReviewStaffMark({ staffId, staffName, reviewedAt }) {
+  const id = String(staffId || "").trim();
+  const name = String(staffName || "").trim().replace(/[|\]]/g, "");
+  const at = String(reviewedAt || nowIso()).trim();
+  if (!id || !name) return "";
+  return `[[REVIEW_STAFF:${id}|${name}|${at}]]`;
+}
+
+export function parseReviewStaffMark(text = "") {
+  const m = String(text || "").match(REVIEW_STAFF_MARK_RE);
+  if (!m) return null;
+  return {
+    reviewed_by_staff_id: String(m[1] || "").trim(),
+    reviewed_by_staff_name: String(m[2] || "").trim(),
+    reviewed_at: String(m[3] || "").trim(),
+  };
+}
+
+export function stripReviewStaffMark(text = "") {
+  return String(text || "")
+    .replace(REVIEW_STAFF_MARK_RE, "")
+    .replace(/\n{2,}/g, "\n")
+    .trim();
+}
+
 export function receiptReviewerFields(receipt = {}) {
+  const marked = parseReviewStaffMark(receipt.review_remark || "") || parseReviewStaffMark(receipt.reject_reason || "");
   const staffId = String(
-    receipt.reviewed_by_staff_id || receipt.reviewed_by || receipt.confirmed_by || ""
+    receipt.reviewed_by_staff_id || marked?.reviewed_by_staff_id || receipt.reviewed_by || receipt.confirmed_by || ""
   ).trim();
-  const staffName = String(receipt.reviewed_by_staff_name || "").trim();
+  const staffName = String(receipt.reviewed_by_staff_name || marked?.reviewed_by_staff_name || "").trim();
   return {
     paymentReviewedByStaffId: staffId,
     paymentReviewedByName: staffName,
-    paymentReviewedAt: receipt.reviewed_at || receipt.confirmed_at || "",
+    paymentReviewedAt: receipt.reviewed_at || marked?.reviewed_at || receipt.confirmed_at || "",
     paymentReviewStatus: receipt.status || "",
-    paymentRejectReason: receipt.reject_reason || "",
-    paymentReviewRemark: receipt.review_remark || "",
+    paymentRejectReason: stripReviewStaffMark(receipt.reject_reason || ""),
+    paymentReviewRemark: stripReviewStaffMark(receipt.review_remark || ""),
   };
 }
 
@@ -170,7 +198,17 @@ export async function hydrateReceiptReviewers(receipts = []) {
   ).catch(() => []);
   const profileMap = Object.fromEntries((profiles || []).map((row) => [row.id, row]));
   return merged.map((r) => {
-    if (!r || String(r.reviewed_by_staff_name || "").trim()) return r;
+    if (!r) return r;
+    const marked = parseReviewStaffMark(r.review_remark || "") || parseReviewStaffMark(r.reject_reason || "");
+    if (marked?.reviewed_by_staff_name && !String(r.reviewed_by_staff_name || "").trim()) {
+      r = {
+        ...r,
+        reviewed_by_staff_id: r.reviewed_by_staff_id || marked.reviewed_by_staff_id || r.reviewed_by || null,
+        reviewed_by_staff_name: marked.reviewed_by_staff_name,
+        reviewed_at: r.reviewed_at || marked.reviewed_at || "",
+      };
+    }
+    if (String(r.reviewed_by_staff_name || "").trim()) return r;
     const id = String(r.reviewed_by_staff_id || r.reviewed_by || r.confirmed_by || "").trim();
     const name = staffReviewerNameFromProfile(profileMap[id] || {});
     if (!name) return r;
@@ -284,14 +322,22 @@ async function persistReviewerSnapshotArtifacts(receipt, payload) {
 }
 
 function reviewPatch({ staffId, staffName, status, at, reason = "", remark = "" }) {
+  const mark = encodeReviewStaffMark({ staffId, staffName, reviewedAt: at });
+  // Always embed snapshot mark into existing text columns so name survives without DDL.
+  const reasonWithMark =
+    status === "rejected"
+      ? [String(reason || "").trim(), mark].filter(Boolean).join("\n")
+      : mark;
+  const remarkWithMark = [String(remark || reason || "").trim(), mark].filter(Boolean).join("\n");
   const patch = {
     status,
     reviewed_at: at,
     reviewed_by: staffId || null,
     reviewed_by_staff_id: staffId || null,
     reviewed_by_staff_name: String(staffName || ""),
-    reject_reason: String(reason || ""),
-    review_remark: String(remark || reason || ""),
+    // For approved rows reject_reason normally empty — use it as durable name SoT when columns missing.
+    reject_reason: status === "rejected" ? reasonWithMark : mark,
+    review_remark: remarkWithMark,
   };
   if (status === "approved") {
     patch.confirmed_at = at;
@@ -314,6 +360,7 @@ async function patchReceiptReview(receiptId, patch) {
       status: patch.status,
       reviewed_at: patch.reviewed_at,
       reviewed_by: patch.reviewed_by,
+      // Keep REVIEW_STAFF mark inside reject_reason (existing column) as durable name snapshot.
       reject_reason: patch.reject_reason || "",
     };
     if (patch.confirmed_at) legacy.confirmed_at = patch.confirmed_at;
@@ -673,7 +720,7 @@ export async function enrichReceiptAudit(rows = []) {
         reviewedByStaffId: reviewerId,
         reviewedByStaffName: storedName || staffReviewerNameFromProfile(reviewer) || "",
         reviewedAt: receipt.reviewed_at || row.confirmed_at || receipt.confirmed_at || "",
-        rejectReason: receipt.reject_reason || row.reject_reason || "",
+        rejectReason: stripReviewStaffMark(receipt.reject_reason || row.reject_reason || ""),
         proofUrl,
       };
     })
