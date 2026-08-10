@@ -131,7 +131,8 @@ async function measureQr(page) {
 async function decodeQr(page) {
   return page.evaluate(async () => {
     const img = document.querySelector(".pay-qr-frame img, [data-mcj-pay-qr]");
-    if (!img || !img.complete || !img.naturalWidth) return { ok: false, reason: "no-img" };
+    if (!img || !img.getAttribute("src")) return { ok: false, reason: "no-img" };
+    const src = img.getAttribute("src");
     try {
       if (!window.jsQR) {
         await new Promise((resolve, reject) => {
@@ -142,11 +143,16 @@ async function decodeQr(page) {
           document.head.appendChild(s);
         });
       }
+      // Fetch original asset (no recompress) to avoid canvas CORS taint.
+      const res = await fetch(src, { mode: "cors", cache: "no-store" });
+      if (!res.ok) return { ok: false, reason: "fetch-" + res.status };
+      const blob = await res.blob();
+      const bmp = await createImageBitmap(blob);
       const canvas = document.createElement("canvas");
-      canvas.width = img.naturalWidth;
-      canvas.height = img.naturalHeight;
+      canvas.width = bmp.width;
+      canvas.height = bmp.height;
       const ctx = canvas.getContext("2d");
-      ctx.drawImage(img, 0, 0);
+      ctx.drawImage(bmp, 0, 0);
       const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
       const code = window.jsQR(data.data, data.width, data.height, { inversionAttempts: "attemptBoth" });
       return {
@@ -154,6 +160,7 @@ async function decodeQr(page) {
         data: code ? String(code.data || "").slice(0, 120) : "",
         w: canvas.width,
         h: canvas.height,
+        displayW: Math.round(img.getBoundingClientRect().width),
       };
     } catch (e) {
       return { ok: false, reason: String(e && e.message) };
