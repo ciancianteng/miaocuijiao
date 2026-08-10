@@ -112,21 +112,49 @@ async function openTeamLobbyAdmin(page) {
 }
 
 async function saveTeamLobby(page, enabled, link) {
-  if (enabled) await page.locator('input[name="teamLobbyEnabled"][value="true"]').check();
-  else await page.locator('input[name="teamLobbyEnabled"][value="false"]').check();
-  await page.fill('input[name="teamLobbyLink"]', link || "");
-  await page.locator("[data-team-lobby-save]").click();
-  await page.waitForTimeout(1200);
-  await page.waitForFunction(
-    () => {
-      const note = document.querySelector("#teamLobbySettings .admin-sync-note");
-      const err = note && /失败|错误/.test(note.textContent || "");
-      const ok = note && /已保存|设置已保存/.test(note.textContent || "");
-      return ok || err || !document.querySelector("[data-team-lobby-save][disabled]");
+  await page.waitForSelector("[data-team-lobby-form] input[name='teamLobbyLink']", { timeout: 30000 });
+  await page.waitForFunction(() => !document.querySelector("#teamLobbySettings .content-loading"), null, { timeout: 30000 });
+  await page.evaluate(
+    ({ enabled, link }) => {
+      const form = document.querySelector("[data-team-lobby-form]");
+      if (!form) throw new Error("missing form");
+      const radio = form.querySelector(`input[name="teamLobbyEnabled"][value="${enabled ? "true" : "false"}"]`);
+      if (radio) {
+        radio.checked = true;
+        radio.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      const input = form.querySelector('input[name="teamLobbyLink"]');
+      if (input) {
+        input.value = link || "";
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        input.dispatchEvent(new Event("change", { bubbles: true }));
+      }
     },
-    null,
-    { timeout: 30000 }
-  ).catch(() => {});
+    { enabled, link }
+  );
+  await page.locator("[data-team-lobby-save]").click({ force: true });
+  await page.waitForFunction(
+    ({ enabled, link }) => {
+      const note = document.querySelector("#teamLobbySettings .admin-sync-note");
+      const text = (note && note.textContent) || "";
+      if (/失败|错误|无权/.test(text)) return "ERR:" + text;
+      const en = !!document.querySelector('input[name="teamLobbyEnabled"][value="true"]:checked');
+      const cur = (document.querySelector('input[name="teamLobbyLink"]') || {}).value || "";
+      if (/已保存|设置已保存/.test(text) && en === enabled && cur === link) return "OK";
+      return false;
+    },
+    { enabled, link },
+    { timeout: 45000 }
+  );
+  // Confirm durable public SoT
+  for (let i = 0; i < 10; i++) {
+    const pub = await api("/api/platform/settings");
+    const s = pub.json?.settings || {};
+    const en = s.teamLobbyEnabled === true || s.teamLobbyEnabled === "true";
+    if (en === enabled && String(s.teamLobbyLink || "") === String(link || "")) return;
+    await page.waitForTimeout(500);
+  }
+  throw new Error("save_team_lobby not visible on public settings yet");
 }
 
 async function readAdminForm(page) {
@@ -148,7 +176,12 @@ async function clickTeamLobbyHome(home) {
   const opened = [];
   const onPopup = (p) => opened.push(p);
   home.on("popup", onPopup);
-  await home.locator('[data-home-entry="team-lobby"],[data-team-lobby-entry]').first().click({ force: true });
+  await home.evaluate(() => {
+    const el = document.querySelector('[data-home-entry="team-lobby"],[data-team-lobby-entry]');
+    if (!el) throw new Error("team lobby entry missing");
+    el.scrollIntoView({ block: "center", inline: "nearest" });
+    el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
+  });
   await home.waitForTimeout(1800);
   let url = "";
   if (opened[0]) {
