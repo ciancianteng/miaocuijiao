@@ -1365,12 +1365,26 @@
       if (extras.gamePrices || extras.game_prices || src.gamePrices || src.game_prices) {
         state.companion.gamePrices = extras.gamePrices || extras.game_prices || src.gamePrices || src.game_prices;
       }
+      if (extras.levelId || extras.level_id || src.levelId || src.level_id) {
+        state.companion.levelId = extras.levelId || extras.level_id || src.levelId || src.level_id;
+      }
+      if (extras.level || src.level || src.levelName) {
+        state.companion.level = extras.level || src.level || src.levelName || state.companion.level;
+      }
       var gameName = extras.game || src.game || src.mainGame || extras.service || "";
       if (gameName && !LEGACY_SERVICE_NAMES[gameName]) {
         state.companion.game = gameName;
         state.companion.mainGame = gameName;
       }
       remountServiceChips();
+      // Soft update must refresh header level pill without remounting the whole dialog.
+      try {
+        var pill = document.querySelector('.mcj-po-mask .mcj-po-pill[data-level-id]');
+        if (pill && state.companion) {
+          pill.setAttribute("data-level-id", state.companion.levelId || "");
+          pill.textContent = state.companion.level || "未设置等级";
+        }
+      } catch (e) {}
       var matched = matchService(extras.service || src.service || src.game || state.companion.service, state.companion);
       if (matched.item) applySelectedService(matched.item);
       else {
@@ -1398,8 +1412,12 @@
       avatar: extras.avatar || src.avatar || src.cover || "",
       publicId: extras.publicId || src.publicId || "",
       pricingUnit: extras.pricingUnit || src.pricingUnit || "小时",
+      levelId: extras.levelId || extras.level_id || src.levelId || src.level_id || "",
       level: extras.level || src.level || src.levelName || "",
+      levelName: extras.levelName || src.levelName || extras.level || src.level || "",
       online: extras.online != null ? extras.online : src.online != null ? src.online : src.isOnline,
+      availabilityStatus: extras.availabilityStatus || src.availabilityStatus || "",
+      availabilityText: extras.availabilityText || src.availabilityText || "",
     });
   }
 

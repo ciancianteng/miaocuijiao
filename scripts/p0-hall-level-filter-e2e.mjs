@@ -367,7 +367,12 @@ async function api(pathname, token, body, method = null, headers = {}) {
       const modalText = await page.locator(".mcj-po-pill[data-level-id]").first().innerText().catch(() => "");
       const orderOk = String(modalLevel || "") === String(hallLevel || pubL || "") && !!modalLevel;
       step("order_modal_level", orderOk, `modal=${modalLevel}/${modalText} expect=${hallLevel || pubL}`);
+      await page.locator("[data-po-close], .mcj-po-close").first().click({ timeout: 3000 }).catch(() => {});
       await page.keyboard.press("Escape").catch(() => {});
+      await page.waitForSelector(".mcj-po-mask", { state: "detached", timeout: 5000 }).catch(() => {});
+      await page.evaluate(() => {
+        document.querySelectorAll(".mcj-po-mask").forEach((n) => n.remove());
+      });
     }
   }
 
