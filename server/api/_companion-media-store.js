@@ -92,10 +92,36 @@ export function isMissingRelation(error) {
   return error?.status === 404 || /PGRST205|Could not find the table|schema cache|does not exist/i.test(text);
 }
 
+/**
+ * Parse data URLs including MIME parameters (e.g. audio/webm;codecs=opus).
+ * Legacy regex `data:([^;]+);base64` rejects MediaRecorder blobs and breaks voice upload.
+ */
 export function decodeDataUrl(dataUrl) {
-  const match = String(dataUrl || "").match(/^data:([^;]+);base64,(.+)$/i);
+  const raw = String(dataUrl || "").trim();
+  const match = raw.match(/^data:([^,]*?),(.*)$/i);
   if (!match) return null;
-  return { contentType: match[1], buffer: Buffer.from(match[2], "base64") };
+  const meta = String(match[1] || "");
+  const payload = match[2] || "";
+  const isBase64 = /;base64$/i.test(meta) || /;base64;/i.test(meta);
+  if (!isBase64) return null;
+  const mimeRaw = meta.replace(/;base64$/i, "").trim();
+  // Strip parameters after the type/subtype (codecs=opus, etc.)
+  const contentType = (mimeRaw.split(";")[0] || "application/octet-stream").trim().toLowerCase() || "application/octet-stream";
+  try {
+    return { contentType, buffer: Buffer.from(payload, "base64") };
+  } catch {
+    return null;
+  }
+}
+
+/** Normalize Content-Type for Storage allowlists (drop codecs / parameters). */
+export function normalizeMimeType(mime, fallback = "application/octet-stream") {
+  const raw = String(mime || "").trim().toLowerCase();
+  if (!raw) return fallback;
+  const base = raw.split(";")[0].trim();
+  if (base === "image/jpg") return "image/jpeg";
+  if (base === "audio/mp3") return "audio/mpeg";
+  return base || fallback;
 }
 
 async function listBuckets() {
@@ -178,11 +204,17 @@ export async function ensureCompanionBuckets() {
   await ensurePrivateBucket(PRIVATE_BUCKETS.gallery, ["image/jpeg", "image/png", "image/webp"]);
   await ensurePrivateBucket(PRIVATE_BUCKETS.audio, [
     "audio/mpeg",
+    "audio/mp3",
     "audio/mp4",
     "audio/wav",
+    "audio/x-wav",
+    "audio/wave",
     "audio/webm",
     "audio/ogg",
+    "audio/aac",
     "audio/x-m4a",
+    "audio/m4a",
+    "application/octet-stream",
   ]);
   await ensurePrivateBucket(
     PRIVATE_BUCKETS.video,
@@ -211,7 +243,7 @@ export function assertVideoUpload(decoded) {
   if (!decoded || !decoded.buffer) {
     throw Object.assign(new Error("文件格式无效，请选择 mp4 / mov 视频"), { status: 400 });
   }
-  const mime = String(decoded.contentType || "").toLowerCase() || "video/mp4";
+  const mime = normalizeMimeType(decoded.contentType, "video/mp4");
   const ok = ALLOWED_VIDEO_MIME.has(mime) || /^video\//.test(mime);
   if (!ok) {
     throw Object.assign(new Error("仅支持 mp4 / mov / webm 视频"), { status: 400 });
@@ -254,27 +286,32 @@ const ALLOWED_AUDIO_MIME = new Set([
   "audio/mp4",
   "audio/wav",
   "audio/x-wav",
+  "audio/wave",
   "audio/ogg",
   "audio/aac",
+  "audio/x-m4a",
+  "audio/m4a",
   "application/octet-stream",
 ]);
 
 export function assertAudioUpload(decoded) {
   if (!decoded || !decoded.buffer) {
-    throw Object.assign(new Error("文件格式无效，请选择语音文件（webm / mp3 / wav）"), { status: 400 });
+    throw Object.assign(new Error("文件格式无效，请选择语音文件（webm / mp3 / wav / m4a）"), { status: 400 });
   }
-  const mime = String(decoded.contentType || "").toLowerCase() || "audio/webm";
+  const mime = normalizeMimeType(decoded.contentType, "audio/webm");
   const ok =
     ALLOWED_AUDIO_MIME.has(mime) ||
     /^audio\//.test(mime) ||
     mime === "application/octet-stream";
   if (!ok) {
-    throw Object.assign(new Error("仅支持 webm / mp3 / wav / ogg / aac 语音格式"), { status: 400 });
+    throw Object.assign(new Error("仅支持 webm / mp3 / wav / ogg / aac / m4a 语音格式"), { status: 400 });
   }
   if (decoded.buffer.length > MAX_AUDIO_BYTES) {
     throw Object.assign(new Error("语音文件不能超过 8MB"), { status: 413 });
   }
-  return { ...decoded, contentType: mime.startsWith("audio/") ? mime : "audio/webm" };
+  // Always store a parameter-free type so Storage bucket allowlists accept the object.
+  const contentType = mime.startsWith("audio/") || mime === "application/octet-stream" ? mime : "audio/webm";
+  return { ...decoded, contentType: contentType === "application/octet-stream" ? "audio/webm" : contentType };
 }
 
 export async function deleteStorageObject(bucket, objectPath) {

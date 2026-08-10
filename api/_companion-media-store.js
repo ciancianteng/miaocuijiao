@@ -72,9 +72,20 @@ export function isMissingRelation(error) {
 }
 
 export function decodeDataUrl(dataUrl) {
-  const match = String(dataUrl || "").match(/^data:([^;]+);base64,(.+)$/i);
+  const raw = String(dataUrl || "").trim();
+  const match = raw.match(/^data:([^,]*?),(.*)$/i);
   if (!match) return null;
-  return { contentType: match[1], buffer: Buffer.from(match[2], "base64") };
+  const meta = String(match[1] || "");
+  const payload = match[2] || "";
+  const isBase64 = /;base64$/i.test(meta) || /;base64;/i.test(meta);
+  if (!isBase64) return null;
+  const mimeRaw = meta.replace(/;base64$/i, "").trim();
+  const contentType = (mimeRaw.split(";")[0] || "application/octet-stream").trim().toLowerCase() || "application/octet-stream";
+  try {
+    return { contentType, buffer: Buffer.from(payload, "base64") };
+  } catch {
+    return null;
+  }
 }
 
 async function listBuckets() {

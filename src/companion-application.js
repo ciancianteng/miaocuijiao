@@ -139,7 +139,8 @@
       amount: 100,
       currency: "MYR",
       enabled: true,
-      methods: ["TNG", "DuitNow", "Alipay"],
+      methods: [],
+      channels: [],
       chinaRateSource: "支付页面实时汇率",
       manualCnyRate: 1.55,
       description: "认证押金用于保障平台服务秩序，最终支付金额以支付页面显示为准。",
@@ -201,6 +202,32 @@
   }
   function depositSettings() {
     return Object.assign(defaultDeposit(), readDB().depositSettings || readPlatform().depositSettings || {});
+  }
+  function depositChannels() {
+    var set = depositSettings();
+    return Array.isArray(set.channels) ? set.channels.slice() : [];
+  }
+  function depositChannelByMethod(method) {
+    var key = String(method || "").trim().toLowerCase();
+    if (!key) return null;
+    var channels = depositChannels();
+    for (var i = 0; i < channels.length; i += 1) {
+      var c = channels[i] || {};
+      var code = String(c.code || c.id || "").trim().toLowerCase();
+      var name = String(c.name || c.label || "").trim().toLowerCase();
+      if (code === key || name === key) return c;
+    }
+    return null;
+  }
+  function depositMethodLabels() {
+    var channels = depositChannels();
+    if (channels.length) {
+      return channels.map(function (c) {
+        return c.name || c.label || c.code || c.id;
+      }).filter(Boolean);
+    }
+    // Never invent TNG/DuitNow/Alipay — empty until backend payment_channels load.
+    return [];
   }
   function voiceTypeOptions() {
     var db = readDB();
@@ -308,6 +335,11 @@
       }
       if (mode === "deposit") {
         if (!hasDurableUpload(identity.depositProof)) missing.push("押金付款凭证");
+        if (!hasText(identity, "depositMethod") && !depositMethodLabels().length) {
+          missing.push("押金支付方式（后台尚未启用人工支付）");
+        } else if (!hasText(identity, "depositMethod")) {
+          missing.push("押金支付方式");
+        }
       }
       [["settlementMethod", "结款方式"], ["settlementName", "结款户名"], ["settlementAccount", "结款账号"]].forEach(function (item) {
         if (!hasText(identity, item[0])) missing.push(item[1]);
@@ -498,10 +530,24 @@
     draft = draft || readDraft();
     var doneCount = steps.filter(function (_, i) { return stepComplete(i, draft); }).length;
     var reachable = maxReachableStep(draft);
-    var percent = Math.round((doneCount / steps.length) * 100);
+    var remoteCode = remoteStatus && remoteStatus.applicationStatus
+      ? String(remoteStatus.applicationStatus).toLowerCase()
+      : "";
+    var submitted = /pending|review|submitted|pending_review|approved|verified|passed|resubmit|need_more|rejected/.test(remoteCode);
+    var isDraftRemote = !remoteCode || remoteCode === "draft" || remoteCode === "archived";
+    // Never show 100% while application is still draft / not formally submitted.
+    var percent = submitted
+      ? 100
+      : Math.min(isDraftRemote && doneCount >= steps.length ? 90 : 99, Math.round((doneCount / steps.length) * 100));
+    if (!doneCount) percent = 0;
+    var progressLabel = submitted
+      ? (doneCount + " / " + steps.length + " · 已提交")
+      : (doneCount >= steps.length
+        ? (doneCount + " / " + steps.length + " · 待提交审核")
+        : (doneCount + " / " + steps.length + " · " + percent + "%"));
     var lockIcon = "🔒";
-    return '<div class="apply-mobile-step"><span>第 ' + (index + 1) + ' 步，共 ' + steps.length + ' 步</span><strong>' + esc(stepLabels[index] || steps[index]) + '</strong><small>已完成 ' + doneCount + ' / ' + steps.length + '</small></div>' +
-      '<aside class="apply-steps" aria-label="申请流程导航"><div class="apply-progress-head"><strong>申请进度</strong><span>' + doneCount + ' / ' + steps.length + ' · ' + percent + '%</span></div><div class="apply-progress-bar" aria-hidden="true"><i style="width:' + percent + '%"></i></div><div class="apply-step-list">' + steps.map(function (s, i) {
+    return '<div class="apply-mobile-step"><span>第 ' + (index + 1) + ' 步，共 ' + steps.length + ' 步</span><strong>' + esc(stepLabels[index] || steps[index]) + '</strong><small>' + (submitted ? "已提交审核" : ("已完成 " + doneCount + " / " + steps.length)) + '</small></div>' +
+      '<aside class="apply-steps" aria-label="申请流程导航"><div class="apply-progress-head"><strong>申请进度</strong><span>' + progressLabel + '</span></div><div class="apply-progress-bar" aria-hidden="true"><i style="width:' + percent + '%"></i></div><div class="apply-step-list">' + steps.map(function (s, i) {
         var done = stepComplete(i, draft);
         var locked = i > reachable;
         var stateText = i === index ? "当前步骤" : done ? "已完成" : locked ? "完成上一步后解锁" : "未完成";
@@ -517,6 +563,10 @@
     return '<label class="form-field">' + esc(label) + '<input name="' + esc(name) + '" data-apply-field type="' + esc(type) + '" value="' + esc(value || "") + '" ' + attrs + '></label>';
   }
   function selectField(name, label, value, options) {
+    options = Array.isArray(options) ? options.slice() : [];
+    if (!options.length) {
+      return '<label class="form-field">' + esc(label) + '<select name="' + esc(name) + '" data-apply-field disabled><option value="">暂无可用支付方式</option></select></label>';
+    }
     return '<label class="form-field">' + esc(label) + '<select name="' + esc(name) + '" data-apply-field>' + options.map(function (o) {
       return '<option value="' + esc(o) + '"' + (o === value ? " selected" : "") + '>' + esc(o) + '</option>';
     }).join("") + '</select></label>';
@@ -780,6 +830,65 @@
     if (set.payeeNote || set.paymentNote) lines.push("<li>" + esc(set.payeeNote || set.paymentNote) + "</li>");
     return lines.length ? "<ul>" + lines.join("") + "</ul>" : "";
   }
+  function depositChannelPanelHtml(id, set) {
+    var methodLabels = depositMethodLabels();
+    var selected = String(id.depositMethod || "").trim();
+    if (!selected && methodLabels.length) selected = methodLabels[0];
+    var channel = depositChannelByMethod(selected);
+    var currency = set.currency || "MYR";
+    var amount = Number(set.amount || 100);
+    var methodSelect = methodLabels.length
+      ? selectField("depositMethod", "押金支付方式", selected, methodLabels)
+      : '<p class="apply-note full" role="alert">后台暂无已启用的人工支付方式，请联系平台客服开通后再缴纳押金。</p>';
+    var qrBlock = "";
+    if (channel) {
+      var detailLines = [];
+      if (channel.receiverName) detailLines.push("<li>收款户名：" + esc(channel.receiverName) + "</li>");
+      if (channel.bankAccount) detailLines.push("<li>收款账号：" + esc(channel.bankAccount) + "</li>");
+      if (channel.bankName) detailLines.push("<li>收款银行：" + esc(channel.bankName) + "</li>");
+      if (channel.phone) detailLines.push("<li>收款手机：" + esc(channel.phone) + "</li>");
+      if (channel.duitnowId) detailLines.push("<li>DuitNow ID：" + esc(channel.duitnowId) + "</li>");
+      if (channel.instructions) detailLines.push("<li>" + esc(channel.instructions) + "</li>");
+      if (channel.qrUrl) {
+        qrBlock =
+          '<div class="apply-deposit-qr" data-deposit-qr="' + esc(channel.code || channel.id || "") + '">' +
+          '<p><strong>' + esc(channel.name || channel.label || selected) + " 收款二维码</strong></p>" +
+          '<img src="' + esc(channel.qrUrl) + '" alt="' + esc((channel.name || selected) + " 收款二维码") + '" style="max-width:240px;width:100%;height:auto;background:#fff;padding:10px;border-radius:12px">' +
+          (detailLines.length ? "<ul>" + detailLines.join("") + "</ul>" : "") +
+          "</div>";
+      } else {
+        qrBlock =
+          '<div class="apply-deposit-qr-empty" role="alert">' +
+          "<p>该支付方式暂未配置收款二维码，请联系平台客服</p>" +
+          (detailLines.length ? "<ul>" + detailLines.join("") + "</ul>" : "") +
+          "</div>";
+      }
+    } else if (methodLabels.length) {
+      qrBlock = '<p class="apply-note full">请选择支付方式以显示收款二维码。</p>';
+    }
+    var proof = id.depositProof;
+    var proofName = "";
+    try {
+      proofName = (proof && (proof.name || proof.filename || proof.fileName)) || "";
+    } catch (e) {}
+    var proofHint = hasDurableUpload(proof)
+      ? ('<p class="pay-success" role="status">' + (proofName ? esc(proofName) + " · " : "") + "凭证已上传</p>")
+      : "";
+    return (
+      '<div class="apply-subcard"><h3>认证押金：' + esc(currency) + " " + Number(amount || 100).toFixed(0) + "</h3>" +
+      "<ul><li>请向平台收款账号转账后上传付款凭证</li>" +
+      (methodLabels.length ? ("<li>当前可用方式：" + esc(methodLabels.join("、")) + "</li>") : "") +
+      "</ul>" +
+      (set.description ? "<p>" + esc(set.description) + "</p>" : "") +
+      depositPayeeHtml(set) +
+      '<form class="apply-grid">' +
+      methodSelect +
+      qrBlock +
+      fileField("depositProof", "押金付款凭证", { value: id.depositProof, hint: "上传付款截图后可重新选择或删除" }) +
+      proofHint +
+      "</form></div>"
+    );
+  }
   function identityHtml(draft) {
     var id = draft.identity || {};
     var mode = String(id.authMode || "").trim();
@@ -798,15 +907,7 @@
         fileField("idBack", "身份证 / 证件背面", { value: id.idBack }) +
         "</form></div>";
     } else if (mode === "deposit") {
-      modeForm =
-        '<div class="apply-subcard"><h3>认证押金：' + esc(set.currency || "RM") + Number(set.amount || 100).toFixed(0) + "</h3>" +
-        "<ul><li>请向平台收款账号转账后上传付款凭证</li><li>支持方式：" + esc((set.methods || []).join("、") || "TNG / DuitNow / Alipay") + "</li></ul>" +
-        (set.description ? "<p>" + esc(set.description) + "</p>" : "") +
-        depositPayeeHtml(set) +
-        '<form class="apply-grid">' +
-        selectField("depositMethod", "押金支付方式", id.depositMethod, set.methods || ["TNG", "DuitNow", "Alipay"]) +
-        fileField("depositProof", "押金付款凭证", { value: id.depositProof }) +
-        "</form></div>";
+      modeForm = depositChannelPanelHtml(id, set);
     }
     var settlement =
       mode === "id_card" || mode === "deposit"
@@ -817,7 +918,7 @@
           '</form><div class="deposit-status"><strong>审核通过后即可成为陪玩</strong><p>认证方式为二选一，审核对应方式通过后即可接单。</p></div></div>'
         : "";
     return (
-      '<section class="apply-panel"><h2>选择认证方式</h2><p class="apply-note full">请先选择一种认证方式（身份证认证 或 押金认证，二选一）。结款资料为必填项。</p>' +
+      '<section class="apply-panel"><h2>选择认证方式</h2><p class="apply-note full">请先选择一种认证方式（身份证认证 或 押金认证，二选一）。马来西亚用户可自由选择，不因国家/币种禁用押金认证。结款资料为必填项。</p>' +
       choice +
       modeForm +
       settlement +
@@ -971,7 +1072,9 @@
 
   function statusLabelOf(code) {
     var map = {
+      draft: "草稿（未提交）",
       pending: "待审核",
+      pending_review: "待审核",
       review: "待审核",
       submitted: "待审核",
       resubmit: "需要补资料",
@@ -981,7 +1084,7 @@
       passed: "已通过",
       rejected: "已拒绝",
     };
-    return map[String(code || "").toLowerCase()] || code || "草稿";
+    return map[String(code || "").toLowerCase()] || code || "草稿（未提交）";
   }
   function saveCompanionSession(session) {
     if (!session) return;
@@ -1198,22 +1301,41 @@
         if (deposits[0]) {
           var dep = Object.assign({}, deposits[0].published || {}, deposits[0].draft || {}, deposits[0]);
           var db2 = readDB();
-          db2.depositSettings = Object.assign(defaultDeposit(), {
-            amount: Number(dep.amount || 100),
-            currency: dep.currency || "MYR",
-            description: dep.paymentDescription || dep.description || defaultDeposit().description,
-            refundRule: dep.refundDescription || dep.refundTerms || defaultDeposit().refundRule,
-            methods: Array.isArray(dep.paymentMethod) ? dep.paymentMethod : String(dep.paymentMethod || "TNG,DuitNow,Alipay").split(/[,，]/).map(function (s) { return s.trim(); }).filter(Boolean),
-            payeeName: dep.payeeName || dep.accountName || dep.receiverName || "",
-            payeeAccount: dep.payeeAccount || dep.accountNumber || dep.receiverAccount || "",
-            payeeBank: dep.payeeBank || dep.bankName || "",
-            payeeNote: dep.payeeNote || dep.paymentNote || "",
+          var prev = Object.assign({}, defaultDeposit(), db2.depositSettings || {});
+          db2.depositSettings = Object.assign(prev, {
+            amount: Number(dep.amount || prev.amount || 100),
+            currency: dep.currency || prev.currency || "MYR",
+            description: dep.paymentDescription || dep.description || prev.description,
+            refundRule: dep.refundDescription || dep.refundTerms || prev.refundRule,
+            // Payment methods/QRs come from payment_channels via bootstrap.depositPay — never hardcode here.
+            payeeName: dep.payeeName || dep.accountName || dep.receiverName || prev.payeeName || "",
+            payeeAccount: dep.payeeAccount || dep.accountNumber || dep.receiverAccount || prev.payeeAccount || "",
+            payeeBank: dep.payeeBank || dep.bankName || prev.payeeBank || "",
+            payeeNote: dep.payeeNote || dep.paymentNote || prev.payeeNote || "",
           });
           writeDB(db2);
           syncPlatform(db2);
         }
         remoteConfigLoaded = true;
       });
+  }
+  function applyDepositPayConfig(pay) {
+    if (!pay || typeof pay !== "object") return;
+    var channels = Array.isArray(pay.methods) ? pay.methods : [];
+    var labels = channels.map(function (c) {
+      return (c && (c.name || c.label || c.code || c.id)) || "";
+    }).filter(Boolean);
+    var db = readDB();
+    db.depositSettings = Object.assign(defaultDeposit(), db.depositSettings || {}, {
+      amount: Number(pay.amount != null ? pay.amount : (db.depositSettings && db.depositSettings.amount) || 100) || 100,
+      currency: pay.currency || (db.depositSettings && db.depositSettings.currency) || "MYR",
+      description: pay.description || (db.depositSettings && db.depositSettings.description) || defaultDeposit().description,
+      refundRule: pay.refundRule || (db.depositSettings && db.depositSettings.refundRule) || defaultDeposit().refundRule,
+      methods: labels.slice(),
+      channels: channels.slice(),
+    });
+    writeDB(db);
+    syncPlatform(db);
   }
   function submitApplication() {
     var missing = validateBeforeSubmit();
@@ -1299,7 +1421,11 @@
         var proof = storagePayloadForSubmit(identity.depositProof);
         return postCompanion("submit_deposit_proof", {
           paid_amount: (depositSettings().amount || 100),
-          payment_method: identity.depositMethod || "",
+          required_amount: (depositSettings().amount || 100),
+          payment_method: (function () {
+            var ch = depositChannelByMethod(identity.depositMethod);
+            return (ch && (ch.code || ch.id || ch.name)) || identity.depositMethod || "";
+          })(),
           proof_url: proof || "",
           remark: "陪玩申请一并提交",
           settlementMethod: identity.settlementMethod || "",
@@ -1420,6 +1546,7 @@
       }
       var duration = Math.round((Date.now() - recordStartedAt) / 1000);
       var mime = (recorder && recorder.mimeType) || (chunks[0] && chunks[0].type) || "audio/webm";
+      mime = String(mime || "audio/webm").split(";")[0].trim() || "audio/webm";
       var blob = new Blob(chunks, { type: mime });
       if (!blob.size) {
         saveDraft({ voice: { status: "录音失败（无声音数据），请重录", url: "", duration: duration, confirmed: false, listened: false, uploaded: false, hasLocal: false } });
@@ -1589,21 +1716,36 @@
     }
     if (!d.voice.url && !liveVoiceBlob && !liveVoiceObjectUrl) { showApplyTip("请先完成录音。"); return; }
     uploadBusy.voice = true;
+    delete uploadErrors.voice;
     render(3);
+    function stripMime(m) {
+      return String(m || "").split(";")[0].trim().toLowerCase() || "audio/webm";
+    }
+    function blobForUpload() {
+      var mime = stripMime((d.voice && d.voice.mimeType) || (liveVoiceBlob && liveVoiceBlob.type) || "audio/webm");
+      if (liveVoiceBlob) {
+        // Rebuild blob with parameter-free MIME so data URLs decode correctly server-side.
+        return liveVoiceBlob.type === mime ? liveVoiceBlob : new Blob([liveVoiceBlob], { type: mime });
+      }
+      return null;
+    }
+    var mimeType = stripMime((d.voice && d.voice.mimeType) || (liveVoiceBlob && liveVoiceBlob.type) || "audio/webm");
+    var filename = /mp4|m4a|aac/i.test(mimeType) ? "voice.m4a" : /ogg/i.test(mimeType) ? "voice.ogg" : /wav/i.test(mimeType) ? "voice.wav" : "voice.webm";
     var dataUrlPromise = /^data:/i.test(String(d.voice.url || ""))
       ? Promise.resolve(d.voice.url)
-      : liveVoiceBlob
-        ? fileToDataURL(liveVoiceBlob)
+      : blobForUpload()
+        ? fileToDataURL(blobForUpload())
         : fetch(liveVoiceObjectUrl || d.voice.url).then(function (r) { return r.blob(); }).then(function (blob) {
-            return fileToDataURL(blob);
+            var clean = new Blob([blob], { type: stripMime(blob.type || mimeType) });
+            return fileToDataURL(clean);
           });
     dataUrlPromise
       .then(function (dataUrl) {
         return postCompanion("upload_media", {
           media_type: "voice",
           data_url: dataUrl,
-          filename: /mp4/i.test(String((d.voice && d.voice.mimeType) || "")) ? "voice.m4a" : "voice.webm",
-          content_type: (d.voice && d.voice.mimeType) || "",
+          filename: filename,
+          content_type: mimeType,
           duration_seconds: duration,
         });
       })
@@ -1617,27 +1759,30 @@
         }
         var next = readDraft();
         next.voice = Object.assign({}, next.voice || {}, {
-          status: "已确认",
+          status: "试音上传成功",
           confirmed: true,
           confirmedAt: now(),
           uploaded: true,
           uploadedAt: now(),
           hasLocal: false,
+          mimeType: mimeType,
           url: (res && res.url) || (res && res.media && res.media.url) || "",
           path: (res && res.path) || (res && res.media && res.media.path) || next.voice.path || "",
           bucket: (res && res.bucket) || (res && res.media && res.media.bucket) || next.voice.bucket || "",
           storageOk: true,
         });
         writeRaw(DRAFT_KEY, next);
+        showApplyTip("试音上传成功", "ok");
         render(3);
       })
       .catch(function (err) {
         uploadBusy.voice = false;
-        uploadErrors.voice = err.message || "上传失败";
+        var reason = (err && err.message) || "上传失败";
+        uploadErrors.voice = reason;
         var next = readDraft();
         next.voice = Object.assign({}, next.voice || {}, { status: "上传失败，请重新确认", confirmed: false, uploaded: false });
         writeRaw(DRAFT_KEY, next);
-        showApplyTip("试音上传失败：" + (err.message || "请重试"));
+        showApplyTip("试音上传失败：" + reason);
         render(3);
       });
   }
@@ -1980,7 +2125,13 @@
       var boot = await fetchCompanionBootstrap();
       if (boot && boot.player) {
         remoteStatus = {
-          applicationStatus: boot.player.auditStatus || boot.player.applicationStatus || "",
+          applicationStatus:
+            boot.applicationStatus ||
+            boot.application_status ||
+            boot.player.auditStatus ||
+            boot.player.applicationStatus ||
+            boot.player.profileReviewStatus ||
+            "",
           rejectReason: boot.player.applicationRejectReason || "",
         };
       }
@@ -2447,25 +2598,49 @@
       var authModeBtn = e.target.closest("[data-auth-mode]");
       if (authModeBtn) {
         e.preventDefault();
-        var nextMode = String(authModeBtn.getAttribute("data-auth-mode") || "").trim();
-        if (nextMode !== "id_card" && nextMode !== "deposit") return;
-        var cur = readDraft();
-        cur.identity = Object.assign({}, cur.identity || {});
-        cur.identity.authMode = nextMode;
-        if (nextMode === "id_card") {
-          delete cur.identity.depositProof;
-          delete cur.identity.depositMethod;
-        } else {
-          delete cur.identity.idFront;
-          delete cur.identity.idBack;
-          delete cur.identity.documentType;
+        e.stopPropagation();
+        try {
+          var nextMode = String(authModeBtn.getAttribute("data-auth-mode") || "").trim();
+          if (nextMode !== "id_card" && nextMode !== "deposit") return;
+          var cur = readDraft();
+          // Always clone — never mutate a frozen/shared object (prevents "Assignment to constant variable").
+          var nextIdentity = Object.assign({}, cur.identity || {});
+          nextIdentity.authMode = nextMode;
+          if (nextMode === "id_card") {
+            delete nextIdentity.depositProof;
+            delete nextIdentity.depositMethod;
+          } else {
+            delete nextIdentity.idFront;
+            delete nextIdentity.idBack;
+            delete nextIdentity.documentType;
+            if (!nextIdentity.depositMethod) {
+              var labels = depositMethodLabels();
+              if (labels.length) nextIdentity.depositMethod = labels[0];
+            }
+          }
+          var nextDraft = Object.assign({}, cur, { identity: nextIdentity, step: 4 });
+          writeRaw(DRAFT_KEY, nextDraft);
+          render(4);
+          if (companionToken()) {
+            postCompanion("save_credential_mode", {
+              auth_mode: nextMode,
+              credential_mode: nextMode,
+            }).catch(function (err) {
+              showApplyTip("认证方式已本地保存，但同步服务器失败：" + ((err && err.message) || "请稍后重试"));
+            });
+          }
+        } catch (errMode) {
+          showApplyTip("选择认证方式失败：" + ((errMode && errMode.message) || String(errMode || "未知错误")));
         }
-        writeRaw(DRAFT_KEY, cur);
-        render(4);
         return;
       }
     });
     document.addEventListener("change", async function (e) {
+      if (e.target && e.target.name === "depositMethod" && e.target.closest("#companionApplyRoot")) {
+        await collect(root);
+        render(4);
+        return;
+      }
       if (e.target.matches("[data-tag-field]")) {
         var picker = e.target.closest("[data-tag-picker]");
         if (!picker || !root.contains(picker)) return;
@@ -2580,6 +2755,19 @@
         status: "ok",
       };
     }
+    if (deposit.paymentMethod && !draft.identity.depositMethod) {
+      draft.identity.depositMethod = deposit.paymentMethod;
+    }
+    var cred =
+      boot.credentialMode ||
+      boot.credential_mode ||
+      player.credentialMode ||
+      player.credential_mode ||
+      "";
+    if ((cred === "id_card" || cred === "deposit") && !draft.identity.authMode) {
+      draft.identity.authMode = cred;
+    }
+    if (boot.depositPay) applyDepositPayConfig(boot.depositPay);
     writeRaw(DRAFT_KEY, draft);
   }
   function initHomeEntry() {
@@ -2621,10 +2809,17 @@
   function applyBootstrap(boot) {
     if (boot && boot.player) {
       remoteStatus = {
-        applicationStatus: boot.player.auditStatus || boot.player.applicationStatus || "",
+        applicationStatus:
+          boot.applicationStatus ||
+          boot.application_status ||
+          boot.player.auditStatus ||
+          boot.player.applicationStatus ||
+          boot.player.profileReviewStatus ||
+          "",
         rejectReason: boot.player.applicationRejectReason || "",
       };
     }
+    if (boot && boot.depositPay) applyDepositPayConfig(boot.depositPay);
     hydrateUploadsFromBootstrap(boot);
   }
   function runApplyBootstrap(force) {
