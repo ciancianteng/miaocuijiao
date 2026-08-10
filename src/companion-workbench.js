@@ -814,12 +814,12 @@
     go('/companion/login');
   }
   function toast(msg){
-    state.notice=msg||'';
+    state.notice=humanizeClientError(msg)||'';
     if(state.route==='login'||!state.session){
       var err=document.querySelector('[data-auth-error]');
       if(err){
-        err.textContent=msg||'';
-        setTimeout(function(){if(err.textContent===msg){err.textContent='';state.notice='';}},2200);
+        err.textContent=state.notice||'';
+        setTimeout(function(){if(err.textContent===state.notice){err.textContent='';state.notice='';}},2200);
         return;
       }
     }
@@ -827,12 +827,12 @@
     var host=root.querySelector('.pw-shell')||root;
     var existing=root.querySelector('.pw-toast');
     if(existing){
-      existing.textContent=msg||'';
+      existing.textContent=state.notice||'';
       existing.classList.add('show');
     }else if(host){
       var t=document.createElement('div');
       t.className='pw-toast show';
-      t.textContent=msg||'';
+      t.textContent=state.notice||'';
       host.appendChild(t);
     }else{
       captureLiveForms();
@@ -845,10 +845,45 @@
       if(el)el.remove();
     },2200);
   }
+  function humanizeClientError(msg){
+    var text=String(msg||'').trim();
+    if(!text)return '';
+    if(/invalid JWT|token is expired|unable to parse or verify|jwt|登录态无效|请先登录|登录已过期/i.test(text)){
+      return '登录状态已过期，请重新登录后继续。';
+    }
+    if(/invalid input syntax for type uuid|22P02/i.test(text)){
+      return '媒体数据异常，请刷新后重试。';
+    }
+    if(/HTTP\s*403|HTTP\s*401/i.test(text) && /auth|jwt|token/i.test(text)){
+      return '登录状态已过期，请重新登录后继续。';
+    }
+    if(/HTTP\s*\d{3}|PGRST|PostgREST|supabase/i.test(text) && !/请|上传|删除|相册|头像|录音|视频|保存|网络/.test(text)){
+      return '操作失败，请稍后重试。';
+    }
+    return text.replace(/^上传失败：\s*/,'');
+  }
+  function ensureFreshCompanionSession(){
+    var session=state.session||readSession()||{};
+    if(!session.token){
+      return Promise.reject(new Error('登录状态已过期，请重新登录后继续。'));
+    }
+    var expRaw=session.expiresAt!=null?session.expiresAt:session.expires_at;
+    var exp=Number(expRaw)||0;
+    // Support unix seconds or ms.
+    if(exp>1e12)exp=Math.floor(exp/1000);
+    var nowSec=Math.floor(Date.now()/1000);
+    if(exp && exp <= nowSec + 90){
+      return refreshCompanionSession();
+    }
+    return Promise.resolve(session);
+  }
   function api(action,body,method,retried){
     var opts={method:method||'POST',headers:{'Content-Type':'application/json'}};
     var session=state.session||readSession();
-    if(session&&session.token)opts.headers['x-mcj-companion-token']=session.token;
+    if(session&&session.token){
+      opts.headers['x-mcj-companion-token']=session.token;
+      opts.headers.Authorization='Bearer '+session.token;
+    }
     var ctrl=typeof AbortController!=='undefined'?new AbortController():null;
     if(ctrl){
       opts.signal=ctrl.signal;
@@ -874,10 +909,11 @@
         return refreshCompanionSession().then(function(){
           return api(action,body,method,true);
         }).catch(function(refreshErr){
-          forceReLogin((refreshErr&&refreshErr.message)||'登录已过期，请重新登录。');
-          throw refreshErr;
+          forceReLogin(humanizeClientError((refreshErr&&refreshErr.message)||'登录状态已过期，请重新登录后继续。'));
+          throw new Error(humanizeClientError((refreshErr&&refreshErr.message)||'登录状态已过期，请重新登录后继续。'));
         });
       }
+      err.message=humanizeClientError(err.message||err)||'操作失败，请稍后重试';
       throw err;
     });
   }
@@ -2542,20 +2578,15 @@
     var full=gallery.length>=6;
     var items=gallery.map(function(item,idx){return pwGalleryItemHtml(item,idx,gallery.length)}).join('');
     return '<div class="pw-media-block pw-gallery-block">'+
-      '<p class="pw-field-hint">至少 1 张，最多 6 张。支持多选；手机可从相册选择或拍照。</p>'+
+      '<p class="pw-field-hint">至少 1 张，最多 6 张。支持多选；手机从相册选择，不会直接打开相机。</p>'+
       '<div class="pw-gallery-grid" data-gallery-list>'+
       (items||'')+
-      (full?'':pwMediaAddTile({
-        trigger:'gallery',
-        label:busy?'上传中…':'添加照片',
-        sub:'JPG / PNG / WEBP',
-        busy:busy,
-        disabled:!!uploadBusy||full,
-        multiple:true,
-        inputAttrs:' data-upload-gallery'
-      }))+
-      (!items&&full?'':'')+
       '</div>'+
+      (full?'':('<div class="pw-gallery-actions">'+
+        '<button type="button" class="pw-media-chip primary'+(busy?' is-busy':'')+'" data-pw-pick-gallery '+(busy||uploadBusy?'disabled':'')+'>'+
+        (busy?'上传中…':'从相册选择 / 上传照片')+
+        '</button>'+
+        '</div>'))+
       (busy?'<p class="pw-media-status" data-gallery-status>上传中…</p>':'')+
       '</div>';
   }
@@ -3176,7 +3207,8 @@
     state.uploadBusy=mediaType;
     var localPreview='';
     paint();
-    return withTimeout(readFileAsDataUrl(file,mediaType==='voice'?'voice':'image').then(function(dataUrl){
+    return ensureFreshCompanionSession().then(function(){
+      return withTimeout(readFileAsDataUrl(file,mediaType==='voice'?'voice':'image').then(function(dataUrl){
       localPreview=dataUrl;
       var preview=document.querySelector('[data-avatar-preview]');
       if(mediaType==='avatar'&&preview)preview.src=dataUrl;
@@ -3198,7 +3230,8 @@
         }
       }
       return api('upload_media',{media_type:mediaType,data_url:dataUrl,filename:file.name||(mediaType==='voice'?'voice.webm':mediaType+'.jpg')});
-    }),45000,'上传超时，请检查网络后重试').then(function(res){
+    }),45000,'上传超时，请检查网络后重试');
+    }).then(function(res){
       toast(res.message||'上传成功');
       state.uploadBusy='';
       // Keep draft + force paint so thumbnails / voice player refresh without wiping fields.
@@ -3223,8 +3256,8 @@
       state.uploadBusy='';
       captureLiveForms(true);
       paint({preserveScroll:true});
-      var msg=String((err&&err.message)||'上传失败，请重试');
-      toast('上传失败：'+msg);
+      var msg=humanizeClientError((err&&err.message)||'上传失败，请重试');
+      toast(msg.indexOf('登录状态')===0?msg:('上传失败：'+msg));
       try{console.error('[companion-media] upload failed',mediaType,err)}catch(e){}
     });
   }
@@ -4004,6 +4037,29 @@
     }
     triggerPwHiddenPick(IMAGE_ACCEPT,false,onFile);
   }
+  function pickCompanionGallery(){
+    if(state.uploadBusy){toast('请等待当前上传完成');return}
+    var existing=((state.data&&state.data.media)||[]).filter(function(m){return m.mediaType==='gallery'}).length;
+    if(existing>=6){toast('相册最多 6 张');return}
+    function onFiles(files){
+      uploadGalleryFiles(files||[]);
+    }
+    function onFile(file){
+      if(file)uploadGalleryFiles([file]);
+    }
+    // Gallery: accept=image/* + multiple; never force capture (iPhone would open camera only).
+    if(isPwTouchUpload()){
+      openPwUploadSourceSheet(function(opts){
+        if(!opts)return;
+        triggerPwHiddenPick('image/*',!!opts.capture,onFile,{
+          multiple:!opts.capture,
+          onFiles:onFiles
+        });
+      });
+      return;
+    }
+    triggerPwHiddenPick('image/*',false,onFile,{multiple:true,onFiles:onFiles});
+  }
   // Mobile: intercept gallery/doc image uploads → 相册/拍照 sheet (never jump straight to camera).
   document.addEventListener('click',function(e){
     var pickAvatar=e.target.closest('[data-pw-pick-avatar]');
@@ -4011,6 +4067,13 @@
       e.preventDefault();
       e.stopPropagation();
       if(!pickAvatar.disabled)pickCompanionAvatar();
+      return;
+    }
+    var pickGallery=e.target.closest('[data-pw-pick-gallery]');
+    if(pickGallery){
+      e.preventDefault();
+      e.stopPropagation();
+      if(!pickGallery.disabled)pickCompanionGallery();
       return;
     }
     if(!isPwTouchUpload())return;

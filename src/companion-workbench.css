@@ -611,7 +611,17 @@ a.pw-btn{display:inline-flex;align-items:center;justify-content:center;text-deco
   border:0!important;
   cursor:pointer;
 }
-.pw-media-block{display:grid;gap:10px;width:100%}
+.pw-gallery-actions{
+  display:flex;
+  flex-wrap:wrap;
+  gap:10px;
+  margin-top:4px;
+}
+.pw-gallery-actions .pw-media-chip{
+  min-height:44px;
+  padding:0 16px;
+  font-weight:800;
+}
 .pw-media-add{
   position:relative;
   display:grid;

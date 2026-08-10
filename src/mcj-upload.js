@@ -6,7 +6,7 @@
 (function (global) {
   "use strict";
 
-  var IMAGE_ACCEPT = "image/jpeg,image/jpg,image/png,image/webp";
+  var IMAGE_ACCEPT = "image/*,image/jpeg,image/jpg,image/png,image/webp";
   var AUDIO_ACCEPT =
     "audio/mpeg,audio/mp3,audio/mp4,audio/aac,audio/x-m4a,audio/webm,audio/ogg,audio/wav,audio/wave,audio/x-wav,.mp3,.m4a,.aac,.webm,.ogg,.wav";
   var VIDEO_ACCEPT = "video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm";

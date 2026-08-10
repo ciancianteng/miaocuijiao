@@ -398,9 +398,9 @@ async function requireCompanion(req) {
   try {
     authUser = await authUserFromToken(token);
   } catch (error) {
-    throw Object.assign(new Error(`陪玩登录态无效：${error.message || "无法校验 token"}`), { status: 401 });
+    throw Object.assign(new Error("登录状态已过期，请重新登录后继续。"), { status: 401, cause: error });
   }
-  if (!authUser?.id) throw Object.assign(new Error("陪玩登录态无效：auth user 为空"), { status: 401 });
+  if (!authUser?.id) throw Object.assign(new Error("登录状态已过期，请重新登录后继续。"), { status: 401 });
   const profile = await profileById(authUser.id);
   if (!profile) throw Object.assign(new Error("陪玩资料不存在（profiles 为空），无法查询钱包。"), { status: 403 });
   if (profile.role !== "companion") throw Object.assign(new Error("无权访问陪玩端。"), { status: 403 });
@@ -472,7 +472,135 @@ async function listStoragePrefix(bucket, prefix) {
   }
 }
 
-async function synthesizeMediaFallback(profile, companion) {
+function isUuid(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(value || "").trim());
+}
+
+function isSyntheticMediaId(value) {
+  const id = String(value || "").trim();
+  if (!id || isUuid(id)) return false;
+  return /^(storage-gallery-|legacy-gallery-|legacy-avatar|legacy-voice|fb-|legacy-)/i.test(id);
+}
+
+function humanizeCompanionApiError(error) {
+  const raw = String(error?.message || error || "");
+  const status = Number(error?.status) || 500;
+  const blob = `${raw} ${typeof error?.body === "string" ? error.body : JSON.stringify(error?.body || "")}`;
+  if (
+    status === 401 ||
+    /jwt|token is expired|invalid jwt|unable to parse or verify|unauthorized|登录态无效|请先登录|登录已过期/i.test(blob)
+  ) {
+    return { status: 401, message: "登录状态已过期，请重新登录后继续。" };
+  }
+  if (/invalid input syntax for type uuid|22P02/i.test(blob)) {
+    return { status: 400, message: "媒体数据异常，请刷新后重试。" };
+  }
+  if (/HTTP\s*403|\/auth\/v1\/user/i.test(blob) && /jwt|token|expired|signature/i.test(blob)) {
+    return { status: 401, message: "登录状态已过期，请重新登录后继续。" };
+  }
+  if (/PGRST|PostgREST|supabase|schema cache|permission denied for/i.test(blob) && !/请|上传|删除|相册|头像|录音|视频/.test(raw)) {
+    return { status: status >= 400 && status < 600 ? status : 500, message: "操作失败，请稍后重试。" };
+  }
+  // Never leak raw HTTP / JWT / UUID dumps to companion UI.
+  if (/invalid JWT|HTTP\s*\d{3}|invalid input syntax/i.test(raw)) {
+    if (/jwt|token|expired|403|401/i.test(raw)) {
+      return { status: 401, message: "登录状态已过期，请重新登录后继续。" };
+    }
+    return { status: status >= 400 && status < 600 ? status : 500, message: "操作失败，请稍后重试。" };
+  }
+  return { status: status >= 400 && status < 600 ? status : 500, message: raw || "陪玩端接口异常" };
+}
+
+/**
+ * When companion_media exists but gallery rows are empty, migrate durable tag/storage
+ * gallery fallbacks into real UUID rows once. Never rehydrate storage after DB has gallery
+ * rows — that would resurrect deleted photos.
+ */
+async function migrateGalleryFallbacksIntoMedia(profile, companionRow, mediaRows) {
+  if (!profile?.id || !companionRow?.id) return Array.isArray(mediaRows) ? mediaRows : [];
+  const existing = Array.isArray(mediaRows) ? mediaRows.slice() : [];
+  const galleryImageRows = existing.filter((m) => {
+    if (String(m.media_type || "") !== "gallery") return false;
+    const ctype = String(m.content_type || "").toLowerCase();
+    return !/^video\//.test(ctype);
+  });
+  const pathKeys = new Set(
+    galleryImageRows
+      .map((m) => `${String(m.storage_bucket || "").trim()}::${String(m.storage_path || "").trim()}`)
+      .filter((k) => !k.startsWith("::") && k !== "::")
+  );
+
+  const insertGallery = async (bucket, objectPath, sortOrder, uploadedAt) => {
+    const key = `${bucket}::${objectPath}`;
+    if (!bucket || !objectPath || pathKeys.has(key)) return null;
+    try {
+      const rows = await companionDb("companion_media", "", {
+        method: "POST",
+        body: JSON.stringify({
+          companion_profile_id: companionRow.id,
+          user_id: profile.id,
+          media_type: "gallery",
+          storage_bucket: bucket,
+          storage_path: objectPath,
+          content_type: "image/jpeg",
+          status: "approved",
+          sort_order: sortOrder || 100,
+          uploaded_at: uploadedAt || nowIso(),
+          created_at: nowIso(),
+          updated_at: nowIso(),
+        }),
+      });
+      const row = Array.isArray(rows) ? rows[0] : rows;
+      if (row?.id) {
+        pathKeys.add(key);
+        existing.push(row);
+        return row;
+      }
+    } catch {
+      /* best-effort migrate */
+    }
+    return null;
+  };
+
+  const { items: tagItems, baseTags } = readGalleryFallback(companionRow.tags);
+  let migratedFromTags = 0;
+  for (const g of tagItems) {
+    const bucket = String(g.bucket || "").trim();
+    const objectPath = String(g.path || "").trim();
+    if (!bucket || !objectPath) continue;
+    const row = await insertGallery(bucket, objectPath, g.sortOrder || 100, g.uploadedAt || "");
+    if (row) migratedFromTags += 1;
+  }
+  if (tagItems.length) {
+    try {
+      await patchCompanionProfile(`?id=eq.${encodeURIComponent(companionRow.id)}`, {
+        tags: writeGalleryFallback(baseTags, []),
+        updated_at: nowIso(),
+      });
+      companionRow.tags = writeGalleryFallback(baseTags, []);
+    } catch {
+      /* optional */
+    }
+  }
+
+  // Only hydrate storage orphans when DB gallery is still empty (bootstrap / broken fake-id era).
+  if (!galleryImageRows.length && !migratedFromTags) {
+    let sort = 100;
+    for (const bucket of [PRIVATE_BUCKETS.gallery, PUBLIC_BUCKETS.profile]) {
+      const files = await listStoragePrefix(bucket, `${profile.id}/gallery`);
+      for (const file of files.slice(0, 6)) {
+        const objectPath = `${profile.id}/gallery/${file.name}`;
+        await insertGallery(bucket, objectPath, sort, file.updated_at || file.created_at || "");
+        sort += 10;
+      }
+    }
+  }
+
+  return existing;
+}
+
+async function synthesizeMediaFallback(profile, companion, opts = {}) {
+  const allowStorageListing = opts.allowStorageListing !== false;
   const signedMedia = [];
   const avatarUrl = resolveDisplayAvatar(profile, companion || {});
   if (avatarUrl && avatarUrl !== "/default-avatar.png") {
@@ -516,8 +644,9 @@ async function synthesizeMediaFallback(profile, companion) {
     });
   }
 
-  // Storage listing fallback when companion_media / tags gallery encoding unavailable.
-  if (!gallerySeen.size && profile?.id) {
+  // Storage listing is ONLY a last-resort when companion_media table is missing.
+  // When the table exists, empty gallery means empty — never re-list Storage (resurrects deletes).
+  if (allowStorageListing && !gallerySeen.size && profile?.id) {
     const buckets = [PRIVATE_BUCKETS.gallery, PUBLIC_BUCKETS.profile];
     let sort = 100;
     for (const bucket of buckets) {
@@ -544,6 +673,8 @@ async function synthesizeMediaFallback(profile, companion) {
           uploadedAt: file.updated_at || file.created_at || "",
           sortOrder: sort,
           url: gUrl,
+          storageBucket: bucket,
+          storagePath: objectPath,
         });
         sort += 10;
       }
@@ -1526,6 +1657,7 @@ async function bootstrapData(profile, companion) {
   let payment = null;
   let deposit = null;
   let media = [];
+  let mediaTableAvailable = false;
   let paymentAccounts = [];
   try {
     const cpId = companionRow?.id || "";
@@ -1539,22 +1671,47 @@ async function bootstrapData(profile, companion) {
       companionDb(table, `?user_id=eq.${encodeURIComponent(profile.id)}${extra}`).catch((e) =>
         isMissingRelation(e) ? [] : Promise.reject(e)
       );
-    const [identityRowsRaw, paymentRowsRaw, depositRowsRaw, mediaRowsRaw] = await Promise.all([
+    // Detect companion_media availability separately so empty gallery ≠ missing table.
+    let mediaRowsRaw = [];
+    try {
+      if (cpId) {
+        mediaRowsRaw = await companionDb(
+          "companion_media",
+          `?companion_profile_id=eq.${encodeURIComponent(cpId)}&order=sort_order.asc`
+        );
+        mediaTableAvailable = true;
+      } else {
+        mediaRowsRaw = await companionDb(
+          "companion_media",
+          `?user_id=eq.${encodeURIComponent(profile.id)}&order=sort_order.asc`
+        );
+        mediaTableAvailable = true;
+      }
+    } catch (mediaErr) {
+      if (isMissingRelation(mediaErr)) {
+        mediaTableAvailable = false;
+        mediaRowsRaw = [];
+      } else {
+        throw mediaErr;
+      }
+    }
+    const [identityRowsRaw, paymentRowsRaw, depositRowsRaw] = await Promise.all([
       byProfile("companion_identity_verifications", "&order=updated_at.desc&limit=1"),
       byProfile("companion_payment_accounts", "&order=submitted_at.desc&limit=20"),
       byProfile("companion_deposits", "&order=created_at.desc&limit=1"),
-      byProfile("companion_media", "&order=sort_order.asc"),
     ]);
     let identityRows = identityRowsRaw;
     let paymentRows = paymentRowsRaw;
     let depositRows = depositRowsRaw;
     let mediaRows = mediaRowsRaw;
-    if (!identityRows?.length || !paymentRows?.length || !depositRows?.length || !mediaRows?.length) {
+    if (!identityRows?.length || !paymentRows?.length || !depositRows?.length || (mediaTableAvailable && !mediaRows?.length)) {
       const [i2, p2, d2, m2] = await Promise.all([
         identityRows?.length ? Promise.resolve(identityRows) : byUser("companion_identity_verifications", "&order=updated_at.desc&limit=1"),
         paymentRows?.length ? Promise.resolve(paymentRows) : byUser("companion_payment_accounts", "&order=submitted_at.desc&limit=20"),
         depositRows?.length ? Promise.resolve(depositRows) : byUser("companion_deposits", "&order=created_at.desc&limit=1"),
-        mediaRows?.length ? Promise.resolve(mediaRows) : byUser("companion_media", "&order=sort_order.asc"),
+        mediaTableAvailable && !mediaRows?.length
+          ? byUser("companion_media", "&order=sort_order.asc")
+          : Promise.resolve(mediaRows),
       ]);
       identityRows = i2;
       paymentRows = p2;
@@ -1566,6 +1723,9 @@ async function bootstrapData(profile, companion) {
     payment = paymentAccounts.find((a) => a.status === "approved" || a.status === "verified") || paymentAccounts[0] || null;
     deposit = depositRows?.[0] || null;
     media = Array.isArray(mediaRows) ? mediaRows : [];
+    if (mediaTableAvailable && companionRow?.id) {
+      media = await migrateGalleryFallbacksIntoMedia(profile, companionRow, media);
+    }
   } catch (error) {
     warnings.push(`profile-assets: ${error.message || error}`);
   }
@@ -1753,24 +1913,31 @@ async function bootstrapData(profile, companion) {
     signedMedia.push({ ...videosOnly[0], mediaType: "video" });
     seenTypes.video = true;
   }
-  // Merge synthesized fallbacks for ANY missing media type (not only when table is empty).
-  // Fixes: avatar-only companion_media rows hiding gallery tags / voice_url / storage listing.
+  // Merge synthesized fallbacks for missing single-slot types.
+  // Gallery: companion_media is canonical when the table exists — never mix storage listing
+  // back in (that caused overwrite illusion + delete resurrection). When the table is missing,
+  // allow ALL tag/storage gallery items (multi-append), not just the first.
   {
-    const synthesized = await synthesizeMediaFallback(profile, companionRow);
+    const dbHadGallery = signedMedia.some((m) => m.mediaType === "gallery");
+    const synthesized = await synthesizeMediaFallback(profile, companionRow, {
+      allowStorageListing: !mediaTableAvailable,
+    });
     for (const syn of synthesized) {
       const mt = String(syn.mediaType || "");
       if (mt === "avatar" && seenTypes.avatar) continue;
       if (mt === "cover" && seenTypes.cover) continue;
       if (mt === "voice" && seenTypes.voice) continue;
-      if (mt === "gallery" && seenTypes.gallery) continue;
+      if (mt === "video" && seenTypes.video) continue;
       if (mt === "gallery") {
-        // Allow multiple gallery items from fallback only when table had none.
-        if (signedMedia.some((m) => m.mediaType === "gallery" && m.url === syn.url)) continue;
+        if (mediaTableAvailable || dbHadGallery) continue;
+        if (signedMedia.some((m) => m.mediaType === "gallery" && m.url && m.url === syn.url)) continue;
+        signedMedia.push(syn);
+        continue;
       }
       if (mt === "avatar") seenTypes.avatar = true;
       if (mt === "cover") seenTypes.cover = true;
       if (mt === "voice") seenTypes.voice = true;
-      if (mt === "gallery") seenTypes.gallery = true;
+      if (mt === "video") seenTypes.video = true;
       signedMedia.push(syn);
     }
   }
@@ -3942,11 +4109,17 @@ export default async function handler(req, res) {
       if (mediaType === "gallery") {
         const existing = await companionDb(
           "companion_media",
-          `?companion_profile_id=eq.${encodeURIComponent(row.id)}&media_type=eq.gallery&select=id`
+          `?companion_profile_id=eq.${encodeURIComponent(row.id)}&media_type=eq.gallery&select=id,sort_order,content_type,storage_path`
         ).catch((e) => (isMissingRelation(e) ? null : Promise.reject(e)));
-        const galleryCount = existing == null ? galleryFallback.items.length : (existing || []).length;
+        const galleryRows = (existing || []).filter((g) => !/^video\//i.test(String(g.content_type || "")));
+        const galleryCount = existing == null ? galleryFallback.items.length : galleryRows.length;
         if (galleryCount >= 6) {
           return json(res, 400, { ok: false, message: "相册最多上传 6 张，请先删除后再上传" });
+        }
+        // Append semantics: next sort_order = max + 10 (never overwrite prior rows).
+        if (existing != null && body.sort_order == null) {
+          const maxSort = galleryRows.reduce((acc, g) => Math.max(acc, Number(g.sort_order) || 0), 0);
+          body.sort_order = maxSort + 10;
         }
       }
 
@@ -4186,7 +4359,29 @@ export default async function handler(req, res) {
       const mediaId = String(body.media_id || body.id || "").trim();
       const mediaType = String(body.media_type || body.mediaType || "").trim();
 
-      // Legacy / soft-fallback ids when companion_media table is missing.
+      async function clearGalleryTagItem(predicate) {
+        const galleryFallback = readGalleryFallback(row.tags || companion.tags || "");
+        const nextItems = galleryFallback.items.filter((g) => !predicate(g));
+        if (nextItems.length !== galleryFallback.items.length) {
+          await supabaseJson(restUrl("companion_profiles", `?id=eq.${encodeURIComponent(row.id)}`), {
+            method: "PATCH",
+            headers: serviceHeaders(),
+            body: JSON.stringify({ tags: writeGalleryFallback(galleryFallback.baseTags, nextItems), updated_at: nowIso() }),
+          });
+        }
+        return nextItems;
+      }
+
+      async function deleteStorageByBucketPath(bucket, objectPath) {
+        if (!bucket || !objectPath) return;
+        try {
+          await deleteStorageObject(bucket, objectPath);
+        } catch {
+          /* ignore missing object */
+        }
+      }
+
+      // Legacy / soft-fallback ids when companion_media table is missing OR synthetic client ids.
       if (mediaId === "legacy-avatar" || (mediaType === "avatar" && mediaId.startsWith("legacy-"))) {
         await supabaseJson(restUrl("profiles", `?id=eq.${encodeURIComponent(auth.profile.id)}`), {
           method: "PATCH",
@@ -4200,14 +4395,62 @@ export default async function handler(req, res) {
         });
         return json(res, 200, { ok: true, message: "已删除" });
       }
+
       if (mediaId.startsWith("fb-") || mediaId.startsWith("legacy-gallery-")) {
-        const galleryFallback = readGalleryFallback(row.tags || companion.tags || "");
-        const nextItems = galleryFallback.items.filter((g) => String(g.id) !== mediaId);
-        await supabaseJson(restUrl("companion_profiles", `?id=eq.${encodeURIComponent(row.id)}`), {
-          method: "PATCH",
-          headers: serviceHeaders(),
-          body: JSON.stringify({ tags: writeGalleryFallback(galleryFallback.baseTags, nextItems), updated_at: nowIso() }),
+        const restPath = mediaId.startsWith("legacy-gallery-") ? mediaId.slice("legacy-gallery-".length) : "";
+        await clearGalleryTagItem((g) => {
+          if (String(g.id) === mediaId) return true;
+          if (restPath && (String(g.path || "") === restPath || String(g.url || "") === restPath)) return true;
+          return false;
         });
+        // Best-effort: also remove matching companion_media / storage when path is known.
+        if (restPath && !/^https?:\/\//i.test(restPath)) {
+          for (const bucket of [PUBLIC_BUCKETS.profile, PRIVATE_BUCKETS.gallery]) {
+            await deleteStorageByBucketPath(bucket, restPath);
+            try {
+              await companionDb(
+                "companion_media",
+                `?user_id=eq.${encodeURIComponent(auth.profile.id)}&storage_path=eq.${encodeURIComponent(restPath)}`,
+                { method: "DELETE" }
+              );
+            } catch {
+              /* ignore */
+            }
+          }
+        }
+        return json(res, 200, { ok: true, message: "已删除" });
+      }
+
+      // Fake storage-listing ids must NEVER hit companion_media.id (uuid column).
+      // Format: storage-gallery-{bucket}-{filename}
+      const storageSyn = mediaId.match(/^storage-gallery-(companion-public|companion-gallery)-(.+)$/i);
+      if (storageSyn) {
+        const bucket = storageSyn[1];
+        const fileName = storageSyn[2];
+        const objectPath = `${auth.profile.id}/gallery/${fileName}`;
+        await deleteStorageByBucketPath(bucket, objectPath);
+        try {
+          await companionDb(
+            "companion_media",
+            `?user_id=eq.${encodeURIComponent(auth.profile.id)}&storage_bucket=eq.${encodeURIComponent(bucket)}&storage_path=eq.${encodeURIComponent(objectPath)}`,
+            { method: "DELETE" }
+          );
+        } catch (error) {
+          if (!isMissingRelation(error)) {
+            /* path delete is enough for SoT when table missing */
+          }
+        }
+        await clearGalleryTagItem(
+          (g) =>
+            String(g.path || "") === objectPath ||
+            (String(g.bucket || "") === bucket && String(g.path || "").endsWith(`/${fileName}`))
+        );
+        return json(res, 200, { ok: true, message: "已删除" });
+      }
+
+      if (mediaId && !isUuid(mediaId)) {
+        // Any other non-UUID id: refuse uuid eq filter; try tag cleanup only.
+        await clearGalleryTagItem((g) => String(g.id) === mediaId);
         return json(res, 200, { ok: true, message: "已删除" });
       }
 
@@ -4263,15 +4506,18 @@ export default async function handler(req, res) {
           String(i.storage_bucket || "") === PRIVATE_BUCKETS.video
       );
       for (const item of items) {
-        try {
-          await deleteStorageObject(item.storage_bucket, item.storage_path);
-        } catch {
-          /* ignore */
-        }
+        await deleteStorageByBucketPath(item.storage_bucket, item.storage_path);
         try {
           await companionDb("companion_media", `?id=eq.${encodeURIComponent(item.id)}`, { method: "DELETE" });
         } catch (error) {
           if (!isMissingRelation(error)) throw error;
+        }
+        if (item.media_type === "gallery") {
+          await clearGalleryTagItem(
+            (g) =>
+              String(g.path || "") === String(item.storage_path || "") ||
+              String(g.id || "") === String(item.id || "")
+          );
         }
       }
       const deletedAvatar = deletedTypes.has("avatar");
@@ -4310,6 +4556,7 @@ export default async function handler(req, res) {
       if (!ids.length) return json(res, 400, { ok: false, message: "缺少排序列表" });
       let order = 10;
       for (const id of ids) {
+        if (!isUuid(id)) continue;
         await companionDb(
           "companion_media",
           `?id=eq.${encodeURIComponent(id)}&companion_profile_id=eq.${encodeURIComponent(row.id)}`,
@@ -4911,12 +5158,11 @@ export default async function handler(req, res) {
 
     return json(res, 400, { ok: false, message: "未知陪玩端操作" });
   } catch (error) {
-    return json(res, error.status || 500, {
+    const friendly = humanizeCompanionApiError(error);
+    return json(res, friendly.status || 500, {
       ok: false,
-      message: error.message || "陪玩端接口异常",
-      status: error.status || 500,
-      supabase: error.body || null,
-      url: error.url || "",
+      message: friendly.message || "陪玩端接口异常",
+      status: friendly.status || 500,
     });
   }
 }

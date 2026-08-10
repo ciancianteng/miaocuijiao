@@ -536,8 +536,9 @@
     }).join("");
     var addCard = list.length >= 6
       ? '<p class="apply-note full">相册已达 6 张上限</p>'
-      : fileField("photos", "相册照片（可多张）", {
+      :       fileField("photos", "相册照片（可多张）", {
           multiple: true,
+          accept: "image/*",
           hint: "支持 jpg / png / webp，最多 6 张；点击从相册选择或拍照",
           value: null,
         });
@@ -599,9 +600,9 @@
     var u = draft.uploads || {};
     return (
       '<section class="apply-panel"><h2>上传头像与资料</h2><form class="apply-grid">' +
-      fileField("avatar", "头像", { value: u.avatar, hint: "支持 jpg / jpeg / png / webp；可从相册选择或拍照；上传成功后可替换" }) +
+      fileField("avatar", "头像", { value: u.avatar, accept: "image/*", hint: "支持 jpg / jpeg / png / webp；可从相册选择或拍照；上传成功后可替换" }) +
       galleryUploadHtml(u) +
-      fileField("records", "游戏战绩图", { value: u.records, hint: "选填；支持 jpg / png / webp" }) +
+      fileField("records", "游戏战绩图", { value: u.records, accept: "image/*", hint: "选填；支持 jpg / png / webp" }) +
       fileField("showcaseVideo", "个人展示视频（可选）", {
         kind: "video",
         value: u.showcaseVideo || null,
@@ -978,16 +979,71 @@
       return "";
     }
   }
-  function postCompanion(action, payload) {
+  function postCompanion(action, payload, retried) {
     var token = companionToken();
     if (!token) return Promise.reject(new Error("请先登录或注册陪玩账号后再提交，以便资料同步到后台。"));
+    function humanize(msg) {
+      var text = String(msg || "").trim();
+      if (/invalid JWT|token is expired|unable to parse or verify|jwt|登录态无效|请先登录|登录已过期/i.test(text)) {
+        return "登录状态已过期，请重新登录后继续。";
+      }
+      if (/invalid input syntax for type uuid|22P02/i.test(text)) {
+        return "媒体数据异常，请刷新后重试。";
+      }
+      if (/HTTP\s*403|HTTP\s*401/i.test(text)) {
+        return "登录状态已过期，请重新登录后继续。";
+      }
+      return text || "提交失败";
+    }
+    function refreshApplySession() {
+      var session = null;
+      try {
+        session = JSON.parse(localStorage.getItem("mcjCompanionSession") || sessionStorage.getItem("mcjCompanionSession") || "null") || {};
+      } catch (e) {
+        session = {};
+      }
+      var refreshToken = String(session.refreshToken || session.refresh_token || "").trim();
+      if (!refreshToken) return Promise.reject(new Error("登录状态已过期，请重新登录后继续。"));
+      return fetch("/api/auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ action: "refresh", refreshToken: refreshToken }),
+      }).then(function (res) {
+        return res.json().then(function (body) {
+          if (!res.ok || body.ok === false) throw new Error(body.message || "登录状态已过期，请重新登录后继续。");
+          var sess = body.session || {};
+          saveCompanionSession({
+            token: sess.accessToken || sess.token || "",
+            accessToken: sess.accessToken || sess.token || "",
+            refreshToken: sess.refreshToken || refreshToken,
+            expiresAt: sess.expiresAt || sess.expires_at || "",
+            user: sess.user || session.user || {},
+            remember: session.remember !== false,
+          });
+          return true;
+        });
+      });
+    }
     return fetch("/api/companion", {
       method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json", "x-mcj-companion-token": token },
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        "x-mcj-companion-token": token,
+        Authorization: "Bearer " + token,
+      },
       body: JSON.stringify(Object.assign({ action: action }, payload || {})),
     }).then(function (res) {
       return res.json().then(function (body) {
-        if (!res.ok || body.ok === false) throw new Error(body.message || "提交失败");
+        if (!res.ok || body.ok === false) {
+          var errMsg = humanize(body.message || "提交失败");
+          if (!retried && /登录状态已过期/.test(errMsg)) {
+            return refreshApplySession().then(function () {
+              return postCompanion(action, payload, true);
+            });
+          }
+          throw new Error(errMsg);
+        }
         return body;
       });
     });
