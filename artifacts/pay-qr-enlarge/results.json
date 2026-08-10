@@ -1,0 +1,154 @@
+{
+  "auditedAt": "2026-08-10T18:47:02.430Z",
+  "base": "https://meow-cuijiao-homepage-mfj9erfah-ciancianteng-4581s-projects.vercel.app",
+  "paymentNo": "PAY-1786387606882-BULM",
+  "results": [
+    {
+      "step": "source_css_pc_420",
+      "result": "PASS",
+      "detail": "payment-confirm + recharge have width:420px"
+    },
+    {
+      "step": "source_css_mobile_88vw",
+      "result": "PASS",
+      "detail": "mobile min(88vw,420px) present"
+    },
+    {
+      "step": "source_no_object_fit_cover_on_qr",
+      "result": "PASS",
+      "detail": "no object-fit:cover on QR img"
+    },
+    {
+      "step": "source_save_button_markup",
+      "result": "PASS",
+      "detail": "recharge-center has 保存收款码"
+    },
+    {
+      "step": "boss_login",
+      "result": "PASS",
+      "detail": "boss@meow.test"
+    },
+    {
+      "step": "create_duitnow_payment",
+      "result": "PASS",
+      "detail": "paymentNo=PAY-1786387606882-BULM method=duitnow"
+    },
+    {
+      "step": "desktop_object_fit_contain",
+      "result": "PASS",
+      "detail": "{\"objectFit\":\"contain\",\"objectPosition\":\"50% 50%\"}"
+    },
+    {
+      "step": "desktop_qr_size_ge_360",
+      "result": "PASS",
+      "detail": "displayW=420 cssWidth=420px"
+    },
+    {
+      "step": "desktop_layout_fields_intact",
+      "result": "PASS",
+      "detail": "{\"title\":\"扫码付款\",\"hasReceiver\":true,\"hasBank\":true,\"hasAccount\":true,\"hasProof\":true,\"hasPaid\":true,\"hasAmount\":true,\"metaGap\":36}"
+    },
+    {
+      "step": "desktop_scan_title",
+      "result": "PASS",
+      "detail": "title=扫码付款"
+    },
+    {
+      "step": "desktop_spacing_meta",
+      "result": "PASS",
+      "detail": "metaGap=36"
+    },
+    {
+      "step": "desktop_lightbox_open",
+      "result": "PASS",
+      "detail": "{\"open\":true,\"src\":\"https://jqfaknpmcnqwqvatrwgo.supabase.co/storage/v1/object/public/platform-payment/qr/duitnow.jpg?v=1786113205114\",\"w\":720,\"h\":720,\"bg\":\"rgba(0, 0, 0, 0.92)\"}"
+    },
+    {
+      "step": "desktop_lightbox_close",
+      "result": "PASS",
+      "detail": "closed=true"
+    },
+    {
+      "step": "desktop_qr_decodeable",
+      "result": "PASS",
+      "detail": "{\"ok\":true,\"data\":\"00020201021126600014A000000615000101065043240228MYT2XK7Q0EJOEMJ23HH6SVQJFO9J5204481653034585802MY5924MEOW CUI JIAO ENTER\",\"w\":1254,\"h\":1254,\"displayW\":420}"
+    },
+    {
+      "step": "mobile_object_fit_contain",
+      "result": "PASS",
+      "detail": "{\"objectFit\":\"contain\",\"objectPosition\":\"50% 50%\"}"
+    },
+    {
+      "step": "mobile_qr_size_ge_85vw",
+      "result": "PASS",
+      "detail": "displayW=343 bodyW=390 min=331"
+    },
+    {
+      "step": "mobile_save_button_visible",
+      "result": "PASS",
+      "detail": "saveVisible=true text=保存收款码"
+    },
+    {
+      "step": "mobile_layout_fields_intact",
+      "result": "PASS",
+      "detail": "{\"title\":\"扫码付款\",\"hasReceiver\":true,\"hasBank\":true,\"hasAccount\":true,\"hasProof\":true,\"hasPaid\":true,\"hasAmount\":true,\"metaGap\":82}"
+    },
+    {
+      "step": "mobile_scan_title",
+      "result": "PASS",
+      "detail": "title=扫码付款"
+    },
+    {
+      "step": "mobile_spacing_meta",
+      "result": "PASS",
+      "detail": "metaGap=82"
+    },
+    {
+      "step": "mobile_lightbox_open",
+      "result": "PASS",
+      "detail": "{\"open\":true,\"src\":\"https://jqfaknpmcnqwqvatrwgo.supabase.co/storage/v1/object/public/platform-payment/qr/duitnow.jpg?v=1786113205114\",\"w\":374,\"h\":374,\"bg\":\"rgba(0, 0, 0, 0.92)\"}"
+    },
+    {
+      "step": "mobile_lightbox_close",
+      "result": "PASS",
+      "detail": "closed=true"
+    },
+    {
+      "step": "mobile_save_click",
+      "result": "PASS",
+      "detail": "download=true"
+    },
+    {
+      "step": "mobile_qr_decodeable",
+      "result": "PASS",
+      "detail": "{\"ok\":true,\"data\":\"00020201021126600014A000000615000101065043240228MYT2XK7Q0EJOEMJ23HH6SVQJFO9J5204481653034585802MY5924MEOW CUI JIAO ENTER\",\"w\":1254,\"h\":1254,\"displayW\":343}"
+    }
+  ],
+  "verdicts": {
+    "source_css_pc_420": "PASS",
+    "source_css_mobile_88vw": "PASS",
+    "source_no_object_fit_cover_on_qr": "PASS",
+    "source_save_button_markup": "PASS",
+    "boss_login": "PASS",
+    "create_duitnow_payment": "PASS",
+    "desktop_object_fit_contain": "PASS",
+    "desktop_qr_size_ge_360": "PASS",
+    "desktop_layout_fields_intact": "PASS",
+    "desktop_scan_title": "PASS",
+    "desktop_spacing_meta": "PASS",
+    "desktop_lightbox_open": "PASS",
+    "desktop_lightbox_close": "PASS",
+    "desktop_qr_decodeable": "PASS",
+    "mobile_object_fit_contain": "PASS",
+    "mobile_qr_size_ge_85vw": "PASS",
+    "mobile_save_button_visible": "PASS",
+    "mobile_layout_fields_intact": "PASS",
+    "mobile_scan_title": "PASS",
+    "mobile_spacing_meta": "PASS",
+    "mobile_lightbox_open": "PASS",
+    "mobile_lightbox_close": "PASS",
+    "mobile_save_click": "PASS",
+    "mobile_qr_decodeable": "PASS"
+  },
+  "allPass": true
+}

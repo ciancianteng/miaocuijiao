@@ -32,13 +32,12 @@
     .pay-skel-line.short{width:55%}
     .pay-proof{margin-top:18px;border:1px solid rgba(255,143,197,.28);border-radius:14px;background:rgba(255,143,197,.08);padding:14px}
     .pay-proof h2{margin:0 0 8px;font-size:16px;color:#ffd6e7}
-    .pay-qr{margin-top:18px;border:1px solid rgba(255,143,197,.28);border-radius:14px;background:rgba(255,143,197,.08);padding:14px;display:flex;flex-direction:column;align-items:stretch}
-    .pay-qr h2{margin:0 0 8px;font-size:16px;color:#ffd6e7}
-    /* DuitNow QR display: no white plate / white outer frame.
-       Wrapper is theme-fused (transparent) and only hugs the asset.
-       Necessary QR quiet-zone white inside the uploaded image is kept for scan. */
+    .pay-qr{margin-top:18px;border:1px solid rgba(255,143,197,.28);border-radius:14px;background:rgba(255,143,197,.08);padding:16px 14px 18px;display:flex;flex-direction:column;align-items:stretch}
+    .pay-qr h2{margin:0 0 6px;font-size:18px;color:#ffd6e7;text-align:center;letter-spacing:.04em}
+    .pay-qr .pay-qr-sub{margin:0 0 4px;text-align:center;color:#9ca3af;font-size:12px}
+    /* DuitNow QR: large, sharp, no crop/stretch; quiet-zone white inside asset kept for scan. */
     .pay-qr-frame{
-      margin:12px auto 0;
+      margin:14px auto 0;
       display:inline-block;
       max-width:100%;
       box-sizing:border-box;
@@ -51,14 +50,14 @@
       overflow:visible;
       align-self:center;
       line-height:0;
+      cursor:zoom-in;
     }
     .pay-qr-frame img,
     .pay-qr-frame img[data-mcj-pay-qr],
     .pay-qr-frame img[data-pay-qr-img]{
-      width:240px;
-      max-width:100%;
+      width:420px;
+      max-width:min(90vw,420px);
       height:auto;
-      /* Never crop/cover QR modules — keep every uploaded pixel scannable. */
       object-fit:contain;
       object-position:center;
       display:block;
@@ -71,8 +70,22 @@
       border-radius:0!important;
       image-rendering:auto;
       -webkit-tap-highlight-color:transparent;
+      cursor:zoom-in;
     }
-    .pay-qr-meta{display:grid;gap:8px;margin-top:12px}
+    .pay-qr-actions{display:flex;justify-content:center;margin:14px 0 0}
+    .pay-qr-save{display:none}
+    .pay-qr-meta{display:grid;gap:8px;margin-top:22px}
+    .pay-qr-lightbox{
+      position:fixed;inset:0;z-index:9999;display:none;align-items:center;justify-content:center;
+      background:rgba(0,0,0,.92);padding:16px;cursor:zoom-out;
+    }
+    .pay-qr-lightbox.is-open{display:flex}
+    .pay-qr-lightbox img{
+      width:auto;height:auto;max-width:min(96vw,720px);max-height:92vh;
+      object-fit:contain;background:transparent;border:0;border-radius:0;box-shadow:none;
+      image-rendering:auto;cursor:default;
+    }
+    .pay-qr-lightbox-hint{position:absolute;bottom:18px;left:0;right:0;text-align:center;color:#c4b5c0;font-size:13px;pointer-events:none}
     .pay-proof-pick{margin-top:8px;position:relative;overflow:hidden}
     .pay-proof-preview{margin-top:10px;display:grid;gap:10px}
     .pay-proof-preview img{width:min(100%,320px);max-height:240px;object-fit:contain;border-radius:12px;border:1px solid rgba(255,255,255,.14);background:rgba(0,0,0,.24)}
@@ -101,7 +114,18 @@
     .pay-progress span{position:absolute;inset:0;display:grid;place-items:center;font-size:12px;color:#fff;font-weight:700}
     .pay-success{margin:10px 0 0;color:#9dffc1;font-weight:700}
     @keyframes payShimmer{0%{background-position:100% 0}100%{background-position:-100% 0}}
-    @media(max-width:560px){.pay-actions{display:grid}.pay-btn{width:100%;justify-content:center}}
+    @media(max-width:560px){
+      .pay-actions{display:grid}
+      .pay-btn{width:100%;justify-content:center}
+      .pay-qr-frame img,
+      .pay-qr-frame img[data-mcj-pay-qr],
+      .pay-qr-frame img[data-pay-qr-img]{
+        width:min(88vw,420px);
+        max-width:min(88vw,420px);
+      }
+      .pay-qr-save{display:inline-flex;width:100%;justify-content:center}
+      .pay-qr-meta{margin-top:24px}
+    }
   </style>
 </head>
 <body style="background:#08070a;color:#fff">
@@ -111,6 +135,6 @@
   <script src="src/boss-header.js" defer></script>
   <script src="src/currency.js"></script>
   <script src="src/order-status.js"></script>
-  <script src="/src/payment-confirm.js?v=20260809payProofUpload2" defer></script>
+  <script src="/src/payment-confirm.js?v=20260810payQrEnlarge2" defer></script>
 </body>
 </html>

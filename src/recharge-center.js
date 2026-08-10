@@ -105,11 +105,18 @@
 
     var qr =
       info && info.qrUrl
-        ? '<div class="pay-qr-frame"><img src="' +
+        ? '<p class="pay-qr-title">扫码付款</p>' +
+          '<p class="pay-qr-sub">' +
+          esc(methodName(o.paymentMethod) || info.title || "DuitNow") +
+          "</p>" +
+          '<div class="pay-qr-frame" data-pay-qr-zoom="1" role="button" tabindex="0" aria-label="点击放大收款二维码"><img src="' +
           esc(info.qrUrl) +
           '" alt="' +
           esc((info.title || methodName(o.paymentMethod)) + " 收款二维码") +
-          '" data-mcj-pay-qr="1" referrerpolicy="no-referrer"></div>'
+          '" data-mcj-pay-qr="1" referrerpolicy="no-referrer" crossorigin="anonymous"></div>' +
+          '<div class="pay-qr-actions"><button type="button" class="pay-qr-save" data-pay-qr-save="' +
+          esc(info.qrUrl) +
+          '">保存收款码</button></div>'
         : '<p class="pay-hint">平台暂未配置该支付方式的收款二维码，请联系客服。</p>';
 
     return (
@@ -594,7 +601,95 @@
     }
   }
 
+  function ensurePayQrLightbox() {
+    var box = document.getElementById("mcjPayQrLightbox");
+    if (box) return box;
+    box = document.createElement("div");
+    box.id = "mcjPayQrLightbox";
+    box.className = "pay-qr-lightbox";
+    box.setAttribute("role", "dialog");
+    box.setAttribute("aria-modal", "true");
+    box.setAttribute("aria-label", "收款二维码大图");
+    box.innerHTML =
+      '<img alt="收款二维码大图" data-pay-qr-lightbox-img="1" referrerpolicy="no-referrer">' +
+      '<div class="pay-qr-lightbox-hint">点击空白处关闭</div>';
+    document.body.appendChild(box);
+    box.addEventListener("click", function (e) {
+      if (e.target && e.target.getAttribute("data-pay-qr-lightbox-img") === "1") return;
+      closePayQrLightbox();
+    });
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape") closePayQrLightbox();
+    });
+    return box;
+  }
+  function openPayQrLightbox(src, alt) {
+    if (!src) return;
+    var box = ensurePayQrLightbox();
+    var img = box.querySelector("[data-pay-qr-lightbox-img]");
+    if (img) {
+      img.setAttribute("crossorigin", "anonymous");
+      img.referrerPolicy = "no-referrer";
+      img.src = src;
+      img.alt = alt || "收款二维码大图";
+    }
+    box.classList.add("is-open");
+    try {
+      document.body.style.overflow = "hidden";
+    } catch (e) {}
+  }
+  function closePayQrLightbox() {
+    var box = document.getElementById("mcjPayQrLightbox");
+    if (!box) return;
+    box.classList.remove("is-open");
+    try {
+      document.body.style.overflow = "";
+    } catch (e) {}
+  }
+  function savePayQrImage(src) {
+    if (!src) return Promise.resolve();
+    var filename = "mcj-收款码-" + Date.now() + ".png";
+    return fetch(src, { mode: "cors", cache: "no-store" })
+      .then(function (res) {
+        if (!res.ok) throw new Error("fetch failed");
+        return res.blob();
+      })
+      .then(function (blob) {
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        a.rel = "noopener";
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(function () {
+          try {
+            URL.revokeObjectURL(url);
+            a.remove();
+          } catch (e) {}
+        }, 1500);
+      })
+      .catch(function () {
+        window.open(src, "_blank", "noopener");
+      });
+  }
+
   document.addEventListener("click", function (e) {
+    var zoom = e.target.closest("[data-pay-qr-zoom], [data-mcj-pay-qr]");
+    if (zoom && root.contains(zoom)) {
+      var img = zoom.tagName === "IMG" ? zoom : zoom.querySelector("img[data-mcj-pay-qr], img");
+      if (img && img.getAttribute("src")) {
+        e.preventDefault();
+        openPayQrLightbox(img.getAttribute("src"), img.getAttribute("alt") || "收款二维码大图");
+        return;
+      }
+    }
+    var saveBtn = e.target.closest("[data-pay-qr-save]");
+    if (saveBtn && root.contains(saveBtn)) {
+      e.preventDefault();
+      savePayQrImage(saveBtn.getAttribute("data-pay-qr-save") || "");
+      return;
+    }
     var camp = e.target.closest("[data-campaign]");
     if (camp) {
       state.campaignId = camp.dataset.campaign;
@@ -652,6 +747,16 @@
       sessionStorage.removeItem("mcjAuthRefreshToken");
       location.href = "index.html";
     }
+  });
+
+  document.addEventListener("keydown", function (e) {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    var zoom = e.target.closest("[data-pay-qr-zoom]");
+    if (!zoom || !root.contains(zoom)) return;
+    var img = zoom.querySelector("img[data-mcj-pay-qr], img");
+    if (!img || !img.getAttribute("src")) return;
+    e.preventDefault();
+    openPayQrLightbox(img.getAttribute("src"), img.getAttribute("alt") || "收款二维码大图");
   });
 
   document.addEventListener("change", function (e) {

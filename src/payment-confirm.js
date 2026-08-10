@@ -234,6 +234,79 @@
       });
     });
   }
+  function ensurePayQrLightbox() {
+    var box = document.getElementById("mcjPayQrLightbox");
+    if (box) return box;
+    box = document.createElement("div");
+    box.id = "mcjPayQrLightbox";
+    box.className = "pay-qr-lightbox";
+    box.setAttribute("role", "dialog");
+    box.setAttribute("aria-modal", "true");
+    box.setAttribute("aria-label", "收款二维码大图");
+    box.innerHTML =
+      '<img alt="收款二维码大图" data-pay-qr-lightbox-img="1" referrerpolicy="no-referrer">' +
+      '<div class="pay-qr-lightbox-hint">点击空白处关闭</div>';
+    document.body.appendChild(box);
+    box.addEventListener("click", function (e) {
+      if (e.target && e.target.getAttribute("data-pay-qr-lightbox-img") === "1") return;
+      closePayQrLightbox();
+    });
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape") closePayQrLightbox();
+    });
+    return box;
+  }
+  function openPayQrLightbox(src, alt) {
+    if (!src) return;
+    var box = ensurePayQrLightbox();
+    var img = box.querySelector("[data-pay-qr-lightbox-img]");
+    if (img) {
+      img.setAttribute("crossorigin", "anonymous");
+      img.referrerPolicy = "no-referrer";
+      img.src = src;
+      img.alt = alt || "收款二维码大图";
+    }
+    box.classList.add("is-open");
+    try {
+      document.body.style.overflow = "hidden";
+    } catch (e) {}
+  }
+  function closePayQrLightbox() {
+    var box = document.getElementById("mcjPayQrLightbox");
+    if (!box) return;
+    box.classList.remove("is-open");
+    try {
+      document.body.style.overflow = "";
+    } catch (e) {}
+  }
+  function savePayQrImage(src) {
+    if (!src) return Promise.resolve();
+    var filename = "mcj-收款码-" + Date.now() + ".png";
+    return fetch(src, { mode: "cors", cache: "no-store" })
+      .then(function (res) {
+        if (!res.ok) throw new Error("fetch failed");
+        return res.blob();
+      })
+      .then(function (blob) {
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        a.rel = "noopener";
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(function () {
+          try {
+            URL.revokeObjectURL(url);
+            a.remove();
+          } catch (e) {}
+        }, 1500);
+      })
+      .catch(function () {
+        // CORS or network fallback: open original full image (not a compressed thumb).
+        window.open(src, "_blank", "noopener");
+      });
+  }
   function parseGameId(order) {
     if (order.gameId || order.game_id) return order.gameId || order.game_id;
     var desc = String(order.description || "");
@@ -280,7 +353,8 @@
     var payLabel = methodLabel(order);
     var channelId = String((info && info.channelId) || "").toLowerCase();
     var html = '<div class="pay-qr" data-pay-qr data-pay-channel="' + esc(channelId || methodCode(order)) + '">';
-    html += "<h2>" + esc((info && info.title) || payLabel || "平台收款") + "</h2>";
+    html += "<h2>扫码付款</h2>";
+    if (payLabel) html += '<p class="pay-qr-sub">' + esc(payLabel) + (info && info.title && info.title !== payLabel ? " · " + esc(info.title) : "") + "</p>";
     var hasQr = !!(info && info.qrUrl && info.enabled !== false && info.unavailable !== true);
     if (hasQr && channelId && /tng|duitnow|alipay|bank|stripe|hitpay/.test(methodCode(order))) {
       var methodKey = methodCode(order);
@@ -296,14 +370,19 @@
     if (hasQr) {
       html +=
         '<p class="pay-hint">' +
-        esc((info && info.instructions) || "请扫描下方收款二维码完成付款。仅本支付页显示，首页不公开收款码。") +
+        esc((info && info.instructions) || "请扫描下方收款二维码完成付款。点击二维码可放大；手机可保存收款码到相册后再打开支付 App。") +
         "</p>";
       html +=
-        '<div class="pay-qr-frame"><img src="' +
+        '<div class="pay-qr-frame" data-pay-qr-zoom="1" role="button" tabindex="0" aria-label="点击放大收款二维码">' +
+        '<img src="' +
         esc(info.qrUrl) +
         '" alt="' +
         esc(payLabel + " 收款二维码") +
-        '" data-mcj-pay-qr="1" referrerpolicy="no-referrer" data-pay-qr-img="1"></div>';
+        '" data-mcj-pay-qr="1" referrerpolicy="no-referrer" crossorigin="anonymous" data-pay-qr-img="1"></div>';
+      html +=
+        '<div class="pay-qr-actions"><button type="button" class="pay-btn pay-qr-save" data-pay-qr-save="' +
+        esc(info.qrUrl) +
+        '">保存收款码</button></div>';
     } else {
       var closedMsg = (info && info.instructions) || payLabel + " 暂未开放，请选择其他支付方式";
       html += '<p class="pay-alert" role="status" data-pay-unavailable="1">' + esc(closedMsg) + "</p>";
@@ -1066,6 +1145,21 @@
   }
 
   root.addEventListener("click", function (e) {
+    var zoom = e.target.closest("[data-pay-qr-zoom], [data-mcj-pay-qr], [data-pay-qr-img]");
+    if (zoom) {
+      var img = zoom.tagName === "IMG" ? zoom : zoom.querySelector("img[data-mcj-pay-qr], img[data-pay-qr-img], img");
+      if (img && img.getAttribute("src")) {
+        e.preventDefault();
+        openPayQrLightbox(img.getAttribute("src"), img.getAttribute("alt") || "收款二维码大图");
+        return;
+      }
+    }
+    var saveBtn = e.target.closest("[data-pay-qr-save]");
+    if (saveBtn) {
+      e.preventDefault();
+      savePayQrImage(saveBtn.getAttribute("data-pay-qr-save") || "");
+      return;
+    }
     var btn = e.target.closest("[data-reload]");
     if (btn) {
       e.preventDefault();
@@ -1104,6 +1198,15 @@
       e.preventDefault();
       submitPay(previewBtn.getAttribute("data-preview-pay"), true);
     }
+  });
+  root.addEventListener("keydown", function (e) {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    var zoom = e.target.closest("[data-pay-qr-zoom]");
+    if (!zoom) return;
+    var img = zoom.querySelector("img[data-mcj-pay-qr], img[data-pay-qr-img], img");
+    if (!img || !img.getAttribute("src")) return;
+    e.preventDefault();
+    openPayQrLightbox(img.getAttribute("src"), img.getAttribute("alt") || "收款二维码大图");
   });
   root.addEventListener("change", function (e) {
     var input = e.target.closest("[data-payment-proof], [data-mcj-durable-proof]");
