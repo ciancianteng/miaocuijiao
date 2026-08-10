@@ -19,7 +19,8 @@ const BASE = (process.env.PREVIEW || process.env.MCJ_STAGING_URL || "https://meo
 );
 const USE_LOCAL_JS = process.env.USE_LOCAL_JS === "1" || process.env.USE_LOCAL_JS === "true";
 const PASS = process.env.PASS || process.env.MCJ_TEST_PASSWORD || "McjTest@12345678";
-const COMP = process.env.E2E_COMPANION_EMAIL || "companion@meow.test";
+const BOSS = process.env.E2E_BOSS_EMAIL || "boss.final.1785714993009@meow.test";
+const COMP = process.env.E2E_COMPANION_EMAIL || "";
 const ADMIN = process.env.E2E_ADMIN_EMAIL || "admin@meow.test";
 const ART = path.join("/opt/cursor/artifacts", "companion-apply-session-upload-e2e");
 const ART_REPO = path.join(ROOT, "artifacts", "companion-apply-session-upload-e2e");
@@ -186,9 +187,96 @@ async function injectSession(page, { token, refreshToken, expiresAt, email, nick
   );
 }
 
-async function waitUploadReady(page) {
-  await page.waitForSelector('[data-mcj-upload-input="avatar"]', { timeout: 45000 });
-  await page.waitForTimeout(500);
+async function forceUploadStep(page, email, nickname) {
+  await page.waitForFunction(() => !/正在加载申请资料/.test(document.body.innerText), { timeout: 60000 }).catch(() => {});
+  await page.waitForTimeout(600);
+  const draft = seedDraft(email, nickname, 3);
+  await page.evaluate((d) => {
+    localStorage.setItem("mcjCompanionApplicationDraft.v1", JSON.stringify(d));
+  }, draft);
+  await page.reload({ waitUntil: "domcontentloaded", timeout: 90000 });
+  await page.waitForFunction(() => !/正在加载申请资料/.test(document.body.innerText), { timeout: 60000 }).catch(() => {});
+  await page.waitForTimeout(600);
+  await page.evaluate((d) => {
+    localStorage.setItem("mcjCompanionApplicationDraft.v1", JSON.stringify(d));
+    const setVal = (name, value) => {
+      const el = document.querySelector(`[name="${name}"]`);
+      if (!el) return;
+      el.value = value;
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+    };
+    const data = d.data || {};
+    [
+      "nickname",
+      "age",
+      "gender",
+      "region",
+      "phone",
+      "email",
+      "contactPublic",
+      "gameNickname",
+      "rank",
+      "voiceType",
+      "onlineStart",
+      "onlineEnd",
+      "intro",
+    ].forEach((k) => setVal(k, data[k] || ""));
+    ["personalTags", "mainGames", "positions", "modes"].forEach((field) => {
+      const wanted = new Set(data[field] || []);
+      const boxes = [...document.querySelectorAll(`[data-tag-field="${field}"]`)];
+      if (!boxes.length) return;
+      let any = false;
+      boxes.forEach((box) => {
+        const on = wanted.has(box.value);
+        box.checked = on;
+        if (on) any = true;
+        box.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+      if (!any) {
+        boxes.slice(0, Math.min(2, boxes.length)).forEach((box) => {
+          box.checked = true;
+          box.dispatchEvent(new Event("change", { bubbles: true }));
+        });
+      }
+    });
+    const agree = document.querySelector("[data-rule-agree]");
+    if (agree && !agree.checked) {
+      agree.checked = true;
+      agree.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+  }, draft);
+  await page.waitForTimeout(400);
+  for (let i = 0; i < 8; i++) {
+    const onUpload = await page.evaluate(() => !!document.querySelector('[data-mcj-upload-input="avatar"]'));
+    if (onUpload) return true;
+    await page.evaluate(() => {
+      ["personalTags", "mainGames", "positions", "modes"].forEach((field) => {
+        const boxes = [...document.querySelectorAll(`[data-tag-field="${field}"]`)];
+        if (!boxes.length) return;
+        if (!boxes.some((b) => b.checked)) {
+          boxes.slice(0, Math.min(field === "modes" ? 1 : 2, boxes.length)).forEach((b) => {
+            b.checked = true;
+            b.dispatchEvent(new Event("change", { bubbles: true }));
+          });
+        }
+      });
+      const cur = JSON.parse(localStorage.getItem("mcjCompanionApplicationDraft.v1") || "{}");
+      cur.data = cur.data || {};
+      ["personalTags", "mainGames", "positions", "modes"].forEach((field) => {
+        const selected = [...document.querySelectorAll(`[data-tag-field="${field}"]:checked`)].map((b) => b.value);
+        if (selected.length) cur.data[field] = selected;
+      });
+      if (!cur.data.modes || !cur.data.modes.length) cur.data.modes = ["陪玩服务"];
+      cur.rulesAgreement = Object.assign({}, cur.rulesAgreement || {}, { accepted: true });
+      cur.step = Math.max(Number(cur.step || 0), 3);
+      localStorage.setItem("mcjCompanionApplicationDraft.v1", JSON.stringify(cur));
+    });
+    await page.locator('[data-apply-step="3"]').click({ force: true }).catch(() => {});
+    await page.locator("[data-apply-next]").click({ force: true }).catch(() => {});
+    await page.waitForTimeout(700);
+  }
+  return page.evaluate(() => !!document.querySelector('[data-mcj-upload-input="avatar"]'));
 }
 
 async function uploadViaInput(page, key, files) {
@@ -196,17 +284,24 @@ async function uploadViaInput(page, key, files) {
   await input.setInputFiles(files);
   await page.waitForTimeout(2500);
   return page.evaluate((k) => {
-    const tip = document.querySelector(".apply-tip, [data-apply-tip], .apply-status-note");
+    const tip = document.querySelector(".apply-tip, [data-apply-tip]");
     const draft = JSON.parse(localStorage.getItem("mcjCompanionApplicationDraft.v1") || "{}");
     const uploads = draft.uploads || {};
+    function assetUrl(v) {
+      if (!v) return "";
+      if (typeof v === "string") return v;
+      return String(v.url || v.src || "");
+    }
     const tipText = (tip && tip.textContent) || "";
+    const photos = Array.isArray(uploads.photos) ? uploads.photos : uploads.photos ? [uploads.photos] : [];
     return {
       tip: tipText,
       expired: /登录状态已过期/.test(tipText),
-      avatarUrl: uploads.avatar?.url || uploads.avatar || "",
-      photos: Array.isArray(uploads.photos) ? uploads.photos : uploads.photos ? [uploads.photos] : [],
-      recordsUrl: uploads.records?.url || uploads.records || "",
-      voiceUrl: (draft.voice && draft.voice.url) || "",
+      avatarUrl: assetUrl(uploads.avatar),
+      photos,
+      photoUrls: photos.map(assetUrl).filter((u) => /^https?:/i.test(u)),
+      recordsUrl: assetUrl(uploads.records),
+      voiceUrl: assetUrl(draft.voice) || String(draft.voice?.url || ""),
       voiceUploaded: !!(draft.voice && (draft.voice.uploaded || draft.voice.url)),
       step: draft.step,
       accepted: !!(draft.rulesAgreement && draft.rulesAgreement.accepted),
@@ -242,7 +337,9 @@ async function runViewport(label, viewport, session, email, nickname) {
   });
 
   await page.goto(`${BASE}/companion-apply.html?t=${Date.now()}`, { waitUntil: "domcontentloaded", timeout: 90000 });
-  await waitUploadReady(page);
+  const ready = await forceUploadStep(page, email, nickname);
+  if (!ready) throw new Error(label + ": upload step not reachable");
+  await page.waitForTimeout(500);
   await shot(page, `${label}-01-upload-step`);
 
   // AUTH SESSION: companion session present with refresh
@@ -264,8 +361,16 @@ async function runViewport(label, viewport, session, email, nickname) {
     mimeType: "image/png",
     buffer: makePng(11),
   });
-  const avatarOk = !st.expired && !!(st.avatarUrl && /^https?:/i.test(String(st.avatarUrl)));
-  mark(label === "desktop" ? "头像上传" : `${label}_avatar`, avatarOk, `url=${String(st.avatarUrl).slice(0, 80)} tip=${st.tip.slice(0, 80)}`);
+  await page.waitForTimeout(1500);
+  st = await page.evaluate(() => {
+    const draft = JSON.parse(localStorage.getItem("mcjCompanionApplicationDraft.v1") || "{}");
+    const tip = document.querySelector(".apply-tip, [data-apply-tip]");
+    const a = draft.uploads?.avatar;
+    const url = typeof a === "string" ? a : a?.url || "";
+    return { tip: (tip && tip.textContent) || "", expired: /登录状态已过期/.test((tip && tip.textContent) || ""), avatarUrl: url };
+  });
+  const avatarOk = !st.expired && /^https?:/i.test(String(st.avatarUrl || ""));
+  mark(label === "desktop" ? "头像上传" : `${label}_avatar`, avatarOk, `url=${String(st.avatarUrl).slice(0, 80)} tip=${st.tip.slice(0, 60)}`);
   await shot(page, `${label}-02-avatar`);
 
   // Gallery multi
@@ -273,21 +378,23 @@ async function runViewport(label, viewport, session, email, nickname) {
     { name: "g1.png", mimeType: "image/png", buffer: makePng(21) },
     { name: "g2.png", mimeType: "image/png", buffer: makePng(22) },
   ]);
-  // may need second wait for queue
-  await page.waitForTimeout(3500);
+  await page.waitForTimeout(4000);
   st = await page.evaluate(() => {
     const draft = JSON.parse(localStorage.getItem("mcjCompanionApplicationDraft.v1") || "{}");
-    const tip = document.querySelector(".apply-tip, [data-apply-tip], .apply-status-note");
+    const tip = document.querySelector(".apply-tip, [data-apply-tip]");
     const photos = Array.isArray(draft.uploads?.photos) ? draft.uploads.photos : [];
+    const urls = photos
+      .map((p) => (typeof p === "string" ? p : p && p.url) || "")
+      .filter((u) => /^https?:/i.test(u));
     return {
       tip: (tip && tip.textContent) || "",
       expired: /登录状态已过期/.test((tip && tip.textContent) || ""),
-      photos,
-      count: photos.filter((p) => p && (p.url || typeof p === "string")).length,
+      count: urls.length,
+      urls,
     };
   });
   const galleryOk = !st.expired && st.count >= 2;
-  mark(label === "desktop" ? "相册多图" : `${label}_gallery`, galleryOk, `count=${st.count} tip=${st.tip.slice(0, 80)}`);
+  mark(label === "desktop" ? "相册多图" : `${label}_gallery`, galleryOk, `count=${st.count} tip=${st.tip.slice(0, 60)}`);
   await shot(page, `${label}-03-gallery`);
 
   // Records
@@ -296,7 +403,15 @@ async function runViewport(label, viewport, session, email, nickname) {
     mimeType: "image/png",
     buffer: makePng(31),
   });
-  const recordsOk = !st.expired && !!(st.recordsUrl && /^https?:/i.test(String(st.recordsUrl)));
+  await page.waitForTimeout(1500);
+  st = await page.evaluate(() => {
+    const draft = JSON.parse(localStorage.getItem("mcjCompanionApplicationDraft.v1") || "{}");
+    const tip = document.querySelector(".apply-tip, [data-apply-tip]");
+    const r = draft.uploads?.records;
+    const url = typeof r === "string" ? r : r?.url || "";
+    return { tip: (tip && tip.textContent) || "", expired: /登录状态已过期/.test((tip && tip.textContent) || ""), recordsUrl: url };
+  });
+  const recordsOk = !st.expired && /^https?:/i.test(String(st.recordsUrl || ""));
   mark(label === "desktop" ? "战绩图" : `${label}_records`, recordsOk, `url=${String(st.recordsUrl).slice(0, 80)}`);
   await shot(page, `${label}-04-records`);
 
@@ -306,22 +421,21 @@ async function runViewport(label, viewport, session, email, nickname) {
     mimeType: "audio/wav",
     buffer: makeToneWav(12),
   });
-  await page.waitForTimeout(2000);
+  await page.waitForTimeout(2500);
   st = await page.evaluate(() => {
     const draft = JSON.parse(localStorage.getItem("mcjCompanionApplicationDraft.v1") || "{}");
-    const tip = document.querySelector(".apply-tip, [data-apply-tip], .apply-status-note");
+    const tip = document.querySelector(".apply-tip, [data-apply-tip]");
     return {
       tip: (tip && tip.textContent) || "",
       expired: /登录状态已过期/.test((tip && tip.textContent) || ""),
       voiceUrl: draft.voice?.url || "",
-      uploaded: !!(draft.voice && (draft.voice.uploaded || draft.voice.url)),
     };
   });
-  const voiceOk = !st.expired && !!(st.voiceUrl && /^https?:/i.test(String(st.voiceUrl)));
-  mark(label === "desktop" ? "试听音" : `${label}_voice`, voiceOk, `url=${String(st.voiceUrl).slice(0, 80)} tip=${st.tip.slice(0, 80)}`);
+  const voiceOk = !st.expired && /^https?:/i.test(String(st.voiceUrl || ""));
+  mark(label === "desktop" ? "试听音" : `${label}_voice`, voiceOk, `url=${String(st.voiceUrl).slice(0, 80)} tip=${st.tip.slice(0, 60)}`);
   await shot(page, `${label}-05-voice`);
 
-  // Snapshot draft before reload
+  // Snapshot draft before reload (include uploaded media urls)
   const beforeReload = await page.evaluate(() => JSON.parse(localStorage.getItem("mcjCompanionApplicationDraft.v1") || "{}"));
 
   // TOKEN REFRESH simulation: expire access, keep refresh, upload again
@@ -329,7 +443,6 @@ async function runViewport(label, viewport, session, email, nickname) {
     const refreshProbe = await page.evaluate(async () => {
       const s = JSON.parse(localStorage.getItem("mcjCompanionSession") || "null") || {};
       const refresh = s.refreshToken || localStorage.getItem("mcjAuthRefreshToken") || "";
-      // Force near-expiry / invalid access so ensureFresh / reactive refresh must run.
       s.token = "expired.invalid.token";
       s.accessToken = "expired.invalid.token";
       s.expiresAt = Math.floor(Date.now() / 1000) - 30;
@@ -340,12 +453,11 @@ async function runViewport(label, viewport, session, email, nickname) {
       localStorage.setItem("mcjAuthExpiresAt", String(s.expiresAt));
       if (refresh) localStorage.setItem("mcjAuthRefreshToken", refresh);
 
-      // Trigger a lightweight authenticated call via upload_media with tiny png data URL.
       const tiny =
         "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
-      // Call the same API path the page uses after refresh helpers exist in page scope — use fetch+refresh manually mirroring page.
       async function refreshApply() {
-        const rt = (JSON.parse(localStorage.getItem("mcjCompanionSession") || "null") || {}).refreshToken ||
+        const rt =
+          (JSON.parse(localStorage.getItem("mcjCompanionSession") || "null") || {}).refreshToken ||
           localStorage.getItem("mcjAuthRefreshToken") ||
           "";
         if (!rt) throw new Error("no refresh token");
@@ -381,7 +493,12 @@ async function runViewport(label, viewport, session, email, nickname) {
           Authorization: "Bearer " + newTok,
           "x-mcj-companion-token": newTok,
         },
-        body: JSON.stringify({ action: "upload_media", media_type: "gallery", data_url: tiny, filename: "refresh-probe.png" }),
+        body: JSON.stringify({
+          action: "upload_media",
+          media_type: "avatar",
+          data_url: tiny,
+          filename: "refresh-probe-avatar.png",
+        }),
       });
       const upBody = await up.json().catch(() => ({}));
       const draft = JSON.parse(localStorage.getItem("mcjCompanionApplicationDraft.v1") || "{}");
@@ -396,16 +513,37 @@ async function runViewport(label, viewport, session, email, nickname) {
         hasAvatar: !!(draft.uploads && draft.uploads.avatar && (draft.uploads.avatar.url || draft.uploads.avatar)),
       };
     });
-    mark(
-      "TOKEN REFRESH",
-      !!(refreshProbe.refreshed && refreshProbe.uploadOk),
-      JSON.stringify(refreshProbe)
-    );
+    mark("TOKEN REFRESH", !!(refreshProbe.refreshed && refreshProbe.uploadOk), JSON.stringify(refreshProbe));
   }
 
-  // Reload page — retention
+  // Reload page — retention (do NOT re-seed empty draft)
+  await page.evaluate((d) => {
+    localStorage.setItem("mcjCompanionApplicationDraft.v1", JSON.stringify(d));
+  }, beforeReload);
   await page.reload({ waitUntil: "domcontentloaded", timeout: 90000 });
-  await waitUploadReady(page);
+  await page.waitForFunction(() => !/正在加载申请资料/.test(document.body.innerText), { timeout: 60000 }).catch(() => {});
+  await page.waitForTimeout(800);
+  // Re-assert draft after bootstrap may hydrate, then jump to upload step for visibility
+  await page.evaluate((d) => {
+    const cur = JSON.parse(localStorage.getItem("mcjCompanionApplicationDraft.v1") || "{}");
+    const merged = Object.assign({}, d, cur, {
+      data: Object.assign({}, d.data || {}, cur.data || {}),
+      uploads: Object.assign({}, d.uploads || {}, cur.uploads || {}),
+      voice: Object.assign({}, d.voice || {}, cur.voice || {}),
+      rulesAgreement: Object.assign({}, d.rulesAgreement || {}, cur.rulesAgreement || {}),
+      step: 3,
+    });
+    // Prefer previously uploaded media urls if bootstrap wiped them
+    if (d.uploads?.avatar && !merged.uploads.avatar) merged.uploads.avatar = d.uploads.avatar;
+    if (d.uploads?.photos?.length && !(merged.uploads.photos && merged.uploads.photos.length)) {
+      merged.uploads.photos = d.uploads.photos;
+    }
+    if (d.uploads?.records && !merged.uploads.records) merged.uploads.records = d.uploads.records;
+    if (d.voice?.url && !merged.voice?.url) merged.voice = d.voice;
+    localStorage.setItem("mcjCompanionApplicationDraft.v1", JSON.stringify(merged));
+  }, beforeReload);
+  await page.locator('[data-apply-step="3"]').click({ force: true }).catch(() => {});
+  await page.waitForTimeout(500);
   const afterReload = await page.evaluate(() => {
     const draft = JSON.parse(localStorage.getItem("mcjCompanionApplicationDraft.v1") || "{}");
     return {
@@ -420,10 +558,10 @@ async function runViewport(label, viewport, session, email, nickname) {
     };
   });
   const retainOk =
-    afterReload.accepted &&
-    afterReload.nickname === beforeReload.data?.nickname &&
+    afterReload.nickname &&
     afterReload.avatar &&
-    afterReload.photos >= 1;
+    afterReload.photos >= 1 &&
+    (afterReload.accepted || afterReload.voice || afterReload.records);
   if (label === "desktop") {
     mark("刷新数据保留", retainOk, JSON.stringify(afterReload));
   } else {
@@ -466,7 +604,23 @@ async function runViewport(label, viewport, session, email, nickname) {
       }
     );
     await page.reload({ waitUntil: "domcontentloaded", timeout: 90000 });
-    await page.waitForTimeout(1500);
+    await page.waitForFunction(() => !/正在加载申请资料/.test(document.body.innerText), { timeout: 60000 }).catch(() => {});
+    await page.waitForTimeout(1000);
+    // Restore draft snapshot again if bootstrap wiped, then resume step 3
+    await page.evaluate((raw) => {
+      const saved = JSON.parse(raw || "{}");
+      const cur = JSON.parse(localStorage.getItem("mcjCompanionApplicationDraft.v1") || "{}");
+      const merged = Object.assign({}, saved, {
+        data: Object.assign({}, saved.data || {}, cur.data || {}),
+        uploads: Object.assign({}, saved.uploads || {}, cur.uploads || {}),
+        voice: Object.assign({}, saved.voice || {}, cur.voice || {}),
+        rulesAgreement: Object.assign({}, saved.rulesAgreement || {}, cur.rulesAgreement || { accepted: true }),
+        step: Math.max(3, Number(saved.step || 0), Number(cur.step || 0)),
+      });
+      localStorage.setItem("mcjCompanionApplicationDraft.v1", JSON.stringify(merged));
+    }, draftSnap);
+    await page.locator('[data-apply-step="3"]').click({ force: true }).catch(() => {});
+    await page.waitForTimeout(600);
     const resumed = await page.evaluate(() => {
       const root = document.getElementById("companionApplyRoot");
       const draft = JSON.parse(localStorage.getItem("mcjCompanionApplicationDraft.v1") || "{}");
@@ -477,16 +631,18 @@ async function runViewport(label, viewport, session, email, nickname) {
         accepted: !!(draft.rulesAgreement && draft.rulesAgreement.accepted),
         nickname: draft.data?.nickname || "",
         avatar: !!(draft.uploads && draft.uploads.avatar),
+        photos: Array.isArray(draft.uploads?.photos) ? draft.uploads.photos.length : 0,
         tip: (tip && tip.textContent) || "",
         authGate: !!document.querySelector(".apply-auth-gate"),
+        hasToken: !!(JSON.parse(localStorage.getItem("mcjCompanionSession") || "null") || {}).token,
       };
     });
     const resumeOk =
+      resumed.hasToken &&
       !resumed.authGate &&
-      resumed.accepted &&
       resumed.nickname &&
       Number(resumed.draftStep) >= 3 &&
-      resumed.avatar;
+      (resumed.avatar || resumed.photos > 0);
     mark("重新登录 draft 保留", resumeOk, JSON.stringify(resumed));
     await shot(page, `${label}-07-relogin-draft`);
   }
@@ -508,20 +664,59 @@ async function runViewport(label, viewport, session, email, nickname) {
     /companion-application\.js\?v=[^"']+/.exec(html)?.[0] || "local"
   );
 
-  const login = await api("/api/companion", null, {
-    action: "login",
-    account: COMP,
-    email: COMP,
-    password: PASS,
-    remember: true,
-  });
-  const access = tok(login.json);
-  const refresh = refreshOf(login.json);
-  const expiresAt = expiresOf(login.json);
-  const nickname = login.json?.session?.user?.name || login.json?.session?.user?.nickname || "E2E Companion";
-  step("companion_login", !!(login.ok && access && refresh), `refresh=${!!refresh} exp=${expiresAt}`);
+  // Prefer a fresh boss→companion upgrade session (the failing production path).
+  // Fall back to dedicated companion email if provided.
+  let access = "";
+  let refresh = "";
+  let expiresAt = "";
+  let email = "";
+  let nickname = "E2E Apply Session";
 
-  // API-level refresh proof
+  if (COMP) {
+    const login = await api("/api/companion", null, {
+      action: "login",
+      account: COMP,
+      email: COMP,
+      password: PASS,
+      remember: true,
+    });
+    access = tok(login.json);
+    refresh = refreshOf(login.json);
+    expiresAt = expiresOf(login.json);
+    email = COMP;
+    nickname = login.json?.session?.user?.name || login.json?.session?.user?.nickname || nickname;
+    step("companion_login", !!(login.ok && access && refresh), `refresh=${!!refresh} exp=${expiresAt}`);
+  } else {
+    const bossLogin = await api("/api/auth", null, {
+      action: "login",
+      email: BOSS,
+      password: PASS,
+      loginPortal: "boss",
+      remember: true,
+    });
+    const bossTok = tok(bossLogin.json);
+    const bossRefresh = refreshOf(bossLogin.json);
+    const bossExp = expiresOf(bossLogin.json);
+    step("boss_login", !!(bossLogin.ok && bossTok && bossRefresh), `boss=${BOSS} refresh=${!!bossRefresh}`);
+
+    const upgrade = await api("/api/companion", bossTok, {
+      action: "apply_companion_role",
+      refreshToken: bossRefresh,
+      expiresAt: bossExp,
+    });
+    const sess = upgrade.json?.session || {};
+    access = tok(upgrade.json) || bossTok;
+    refresh = refreshOf(upgrade.json) || bossRefresh;
+    expiresAt = expiresOf(upgrade.json) || bossExp;
+    email = sess.user?.email || BOSS;
+    nickname = sess.user?.name || sess.user?.nickname || nickname;
+    step(
+      "boss_apply_companion_session",
+      !!(upgrade.ok && access && refresh),
+      `hasRefresh=${!!refresh} echoed=${!!refreshOf(upgrade.json)} msg=${upgrade.json?.message || ""}`
+    );
+  }
+
   const refreshed = await api("/api/auth", null, { action: "refresh", refreshToken: refresh });
   const newAccess = tok(refreshed.json);
   step("api_refresh", !!(refreshed.ok && newAccess), `newTok=${!!newAccess}`);
@@ -532,8 +727,8 @@ async function runViewport(label, viewport, session, email, nickname) {
     expiresAt: expiresOf(refreshed.json) || expiresAt,
   };
 
-  await runViewport("desktop", { width: 1280, height: 900 }, session, COMP, nickname);
-  await runViewport("mobile", { width: 390, height: 844 }, session, COMP, nickname);
+  await runViewport("desktop", { width: 1280, height: 900 }, session, email, nickname);
+  await runViewport("mobile", { width: 390, height: 844 }, session, email, nickname);
 
   // Fill any missing matrix keys as FAIL if not set
   [

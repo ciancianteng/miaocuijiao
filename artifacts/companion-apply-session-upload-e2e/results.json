@@ -1,0 +1,159 @@
+{
+  "base": "https://meow-cuijiao-homepage-staging.vercel.app",
+  "useLocalJs": true,
+  "matrix": {
+    "AUTH SESSION": {
+      "result": "PASS",
+      "detail": "{\"hasToken\":true,\"hasRefresh\":true,\"expiresAt\":1786387349}"
+    },
+    "头像上传": {
+      "result": "PASS",
+      "detail": "url=https://jqfaknpmcnqwqvatrwgo.supabase.co/storage/v1/object/public/companion-publ tip="
+    },
+    "相册多图": {
+      "result": "PASS",
+      "detail": "count=2 tip="
+    },
+    "战绩图": {
+      "result": "PASS",
+      "detail": "url=https://jqfaknpmcnqwqvatrwgo.supabase.co/storage/v1/object/public/companion-publ"
+    },
+    "试听音": {
+      "result": "PASS",
+      "detail": "url=https://jqfaknpmcnqwqvatrwgo.supabase.co/storage/v1/object/sign/companion-audio/ tip="
+    },
+    "TOKEN REFRESH": {
+      "result": "PASS",
+      "detail": "{\"refreshed\":true,\"uploadOk\":true,\"message\":\"头像上传成功\",\"draftStep\":3,\"draftAccepted\":true,\"draftNickname\":\"Boss Final\",\"draftPhotos\":2,\"hasAvatar\":true}"
+    },
+    "刷新数据保留": {
+      "result": "PASS",
+      "detail": "{\"step\":3,\"accepted\":false,\"nickname\":\"Boss Final\",\"mainGames\":[\"VALORANT\"],\"avatar\":true,\"photos\":3,\"records\":true,\"voice\":true}"
+    },
+    "重新登录 draft 保留": {
+      "result": "PASS",
+      "detail": "{\"stepAttr\":\"0\",\"draftStep\":3,\"accepted\":false,\"nickname\":\"Boss Final\",\"avatar\":true,\"photos\":3,\"tip\":\"请先补充以下内容：\\n- 阅读并同意陪玩制度\",\"authGate\":false,\"hasToken\":true}"
+    },
+    "PC 实际流程": {
+      "result": "PASS",
+      "detail": "desktop media+retain"
+    },
+    "mobile_avatar": {
+      "result": "PASS",
+      "detail": "url=https://jqfaknpmcnqwqvatrwgo.supabase.co/storage/v1/object/public/companion-publ tip="
+    },
+    "mobile_gallery": {
+      "result": "PASS",
+      "detail": "count=2 tip="
+    },
+    "mobile_records": {
+      "result": "PASS",
+      "detail": "url=https://jqfaknpmcnqwqvatrwgo.supabase.co/storage/v1/object/public/companion-publ"
+    },
+    "mobile_voice": {
+      "result": "PASS",
+      "detail": "url=https://jqfaknpmcnqwqvatrwgo.supabase.co/storage/v1/object/sign/companion-audio/ tip="
+    },
+    "手机实际流程": {
+      "result": "PASS",
+      "detail": "mobile media+retain"
+    }
+  },
+  "results": [
+    {
+      "step": "apply_page_cache_bust",
+      "result": "PASS",
+      "detail": "local"
+    },
+    {
+      "step": "boss_login",
+      "result": "PASS",
+      "detail": "boss=boss.final.1785714993009@meow.test refresh=true"
+    },
+    {
+      "step": "boss_apply_companion_session",
+      "result": "PASS",
+      "detail": "hasRefresh=true echoed=false msg=当前账号已关联陪玩资料，可继续填写或查看审核进度。"
+    },
+    {
+      "step": "api_refresh",
+      "result": "PASS",
+      "detail": "newTok=true"
+    },
+    {
+      "step": "AUTH SESSION",
+      "result": "PASS",
+      "detail": "{\"hasToken\":true,\"hasRefresh\":true,\"expiresAt\":1786387349}"
+    },
+    {
+      "step": "头像上传",
+      "result": "PASS",
+      "detail": "url=https://jqfaknpmcnqwqvatrwgo.supabase.co/storage/v1/object/public/companion-publ tip="
+    },
+    {
+      "step": "相册多图",
+      "result": "PASS",
+      "detail": "count=2 tip="
+    },
+    {
+      "step": "战绩图",
+      "result": "PASS",
+      "detail": "url=https://jqfaknpmcnqwqvatrwgo.supabase.co/storage/v1/object/public/companion-publ"
+    },
+    {
+      "step": "试听音",
+      "result": "PASS",
+      "detail": "url=https://jqfaknpmcnqwqvatrwgo.supabase.co/storage/v1/object/sign/companion-audio/ tip="
+    },
+    {
+      "step": "TOKEN REFRESH",
+      "result": "PASS",
+      "detail": "{\"refreshed\":true,\"uploadOk\":true,\"message\":\"头像上传成功\",\"draftStep\":3,\"draftAccepted\":true,\"draftNickname\":\"Boss Final\",\"draftPhotos\":2,\"hasAvatar\":true}"
+    },
+    {
+      "step": "刷新数据保留",
+      "result": "PASS",
+      "detail": "{\"step\":3,\"accepted\":false,\"nickname\":\"Boss Final\",\"mainGames\":[\"VALORANT\"],\"avatar\":true,\"photos\":3,\"records\":true,\"voice\":true}"
+    },
+    {
+      "step": "重新登录 draft 保留",
+      "result": "PASS",
+      "detail": "{\"stepAttr\":\"0\",\"draftStep\":3,\"accepted\":false,\"nickname\":\"Boss Final\",\"avatar\":true,\"photos\":3,\"tip\":\"请先补充以下内容：\\n- 阅读并同意陪玩制度\",\"authGate\":false,\"hasToken\":true}"
+    },
+    {
+      "step": "PC 实际流程",
+      "result": "PASS",
+      "detail": "desktop media+retain"
+    },
+    {
+      "step": "mobile_avatar",
+      "result": "PASS",
+      "detail": "url=https://jqfaknpmcnqwqvatrwgo.supabase.co/storage/v1/object/public/companion-publ tip="
+    },
+    {
+      "step": "mobile_gallery",
+      "result": "PASS",
+      "detail": "count=2 tip="
+    },
+    {
+      "step": "mobile_records",
+      "result": "PASS",
+      "detail": "url=https://jqfaknpmcnqwqvatrwgo.supabase.co/storage/v1/object/public/companion-publ"
+    },
+    {
+      "step": "mobile_voice",
+      "result": "PASS",
+      "detail": "url=https://jqfaknpmcnqwqvatrwgo.supabase.co/storage/v1/object/sign/companion-audio/ tip="
+    },
+    {
+      "step": "mobile_reload_retain",
+      "result": "PASS",
+      "detail": "{\"step\":3,\"accepted\":false,\"nickname\":\"Boss Final\",\"mainGames\":[\"VALORANT\"],\"avatar\":true,\"photos\":6,\"records\":true,\"voice\":true}"
+    },
+    {
+      "step": "手机实际流程",
+      "result": "PASS",
+      "detail": "mobile media+retain"
+    }
+  ]
+}
