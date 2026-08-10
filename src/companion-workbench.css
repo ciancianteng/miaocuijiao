@@ -683,6 +683,38 @@ a.pw-btn{display:inline-flex;align-items:center;justify-content:center;text-deco
 .pw-media-chip.primary{background:rgba(255,143,197,.16);border-color:rgba(255,145,195,.55)}
 .pw-media-chip.danger{border-color:rgba(255,111,134,.45);color:#ffb3c0}
 .pw-media-chip.is-busy{opacity:.7;pointer-events:none}
+.pw-gallery-pick-label{
+  position:relative;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  cursor:pointer;
+  overflow:hidden;
+}
+.pw-gallery-pick-label.is-disabled{
+  opacity:.45;
+  pointer-events:none;
+  cursor:not-allowed;
+}
+/* Native multi file input inside label — must stay in DOM (not display:none) for iOS multi-select. */
+.pw-gallery-native-input{
+  position:absolute!important;
+  inset:0!important;
+  width:100%!important;
+  height:100%!important;
+  margin:0!important;
+  padding:0!important;
+  opacity:0!important;
+  border:0!important;
+  cursor:pointer!important;
+  font-size:0!important;
+  z-index:3;
+}
+.pw-media-uploading.is-fail,
+.pw-media-thumb.is-fail .pw-media-uploading{
+  background:rgba(90,12,28,.88);
+  color:#ffd0d8;
+}
 .pw-gallery-grid{
   display:grid;
   grid-template-columns:repeat(3,minmax(0,1fr));
