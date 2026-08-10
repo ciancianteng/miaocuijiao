@@ -721,8 +721,19 @@ async function reviewIdentity(req, companion, payload) {
     method: "PATCH",
     body: JSON.stringify({
       verification_status: status === "approved" ? "approved" : status,
+      identity_status: status,
       updated_at: new Date().toISOString(),
     }),
+  }).catch(async (err) => {
+    // identity_status column may be absent on older schemas
+    if (!/identity_status|column|schema cache|PGRST/i.test(String(err?.message || err || ""))) throw err;
+    await companionDb(PLAYER_TABLE, `?id=eq.${encodeURIComponent(companion.id)}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        verification_status: status === "approved" ? "approved" : status,
+        updated_at: new Date().toISOString(),
+      }),
+    });
   });
   await logOperation(req, "review_identity", companion.id, before, after?.[0] || { status, reason }, reason);
   return after?.[0];

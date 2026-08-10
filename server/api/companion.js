@@ -874,6 +874,7 @@ function isolationForbiddenResponse(res, err) {
   });
 }
 function resolveCredentialMode(companion = {}, depositRow = null) {
+  // Preferred auth path hint (apply form). Order eligibility is OR, not XOR.
   const tagged = String(companion.credential_mode || companion.auth_mode || "").trim().toLowerCase();
   if (tagged === "id_card" || tagged === "deposit") return tagged;
   const note = String(companion.application_note || "");
@@ -883,26 +884,56 @@ function resolveCredentialMode(companion = {}, depositRow = null) {
   if (depSt === "approved" || depSt === "pending") return "deposit";
   return "id_card";
 }
+function normalizeIdentityStatus(identityRow = null, companion = {}) {
+  // Prefer dedicated identity verification row — "uploaded/pending" ≠ approved.
+  const raw = String(
+    identityRow?.status || companion?.identity_status || ""
+  )
+    .trim()
+    .toLowerCase();
+  if (/approved|verified|passed/.test(raw)) return "approved";
+  if (/reject/.test(raw)) return "rejected";
+  if (/pending|review|submit|uploaded/.test(raw)) return "pending";
+  if (!raw || /draft|none|not_submitted|missing|unsubmitted/.test(raw)) return "draft";
+  return "pending";
+}
+function identityApproved(identityRow = null, companion = {}) {
+  return normalizeIdentityStatus(identityRow, companion) === "approved";
+}
 /**
- * Work/order access: approved application + active + allow_orders.
- * Deposit is XOR with id_card — only required when credential_mode=deposit.
+ * Work/order access (locked):
+ * 1) profile application approved
+ * 2) identity_verified OR deposit_verified (admin-approved only)
+ * 3) account active + companion not disabled
+ * Forced-ack is applied separately on top of canWork.
  */
-function resolveAccountAccessStatus(profile = {}, companion = {}, depositRow = null) {
+function resolveAccountAccessStatus(profile = {}, companion = {}, depositRow = null, identityRow = null) {
   const profileSt = normalizeProfileReviewStatus(companion);
   const depositSt = normalizeDepositStatus(companion, depositRow);
-  const authMode = resolveCredentialMode(companion, depositRow);
+  const identitySt = normalizeIdentityStatus(identityRow, companion);
+  const idOk = identitySt === "approved";
+  const depOk = depositSt === "approved";
+  const base = {
+    identityVerified: idOk,
+    depositVerified: depOk,
+    identityStatus: identitySt,
+    depositStatus: depositSt,
+    profileReviewStatus: profileSt,
+    credentialOrOk: idOk || depOk,
+  };
   if (profile.status && profile.status !== "active" && profile.status !== "pending") {
-    return { status: "blocked", label: "账号已停用，无法接单。" };
+    return { ...base, status: "blocked", label: "账号已停用，无法接单。" };
   }
   if (profile.status !== "active") {
-    return { status: "pending", label: "账号尚未启用，暂时无法接单。" };
+    return { ...base, status: "pending", label: "账号尚未启用，暂时无法接单。" };
   }
   if (companion.allow_orders === false && profileSt === "approved") {
-    return { status: "blocked", label: "后台已暂停该账号接单权限。" };
+    return { ...base, status: "blocked", label: "后台已暂停该账号接单权限。" };
   }
   if (profileSt === "rejected") {
     const appReason = String(companion.application_reject_reason || "").trim();
     return {
+      ...base,
       status: "rejected",
       label: appReason ? `审核未通过：${appReason}` : "资料审核未通过，请修改后重新提交。",
     };
@@ -910,61 +941,155 @@ function resolveAccountAccessStatus(profile = {}, companion = {}, depositRow = n
   if (profileSt === "need_more") {
     const appReason = String(companion.application_reject_reason || "").trim();
     return {
+      ...base,
       status: "need_more",
       label: appReason ? `需补交资料：${appReason}` : "请按审核意见补交资料后再接单。",
     };
   }
   if (profileSt === "draft") {
-    return { status: "draft", label: "资料未完成，请继续填写申请。完成后提交审核。" };
+    return { ...base, status: "draft", label: "资料未完成，请继续填写申请。完成后提交审核。" };
   }
   if (profileSt !== "approved") {
-    return { status: "pending", label: "资料审核中，暂时无法接单。" };
+    return { ...base, status: "pending", label: "资料审核中，暂时无法接单。" };
   }
-  // application approved
-  if (authMode === "deposit" && depositSt === "rejected") {
-    const depReason = String(depositRow?.reject_reason || companion.deposit_reject_reason || "").trim();
+  // Profile approved — credential is OR of identity / deposit (admin approved only).
+  if (!idOk && !depOk) {
+    const idPending = identitySt === "pending";
+    const depPending = depositSt === "pending";
+    const idRejected = identitySt === "rejected";
+    const depRejected = depositSt === "rejected";
+    if (idPending || depPending) {
+      const bits = [];
+      if (idPending) bits.push("身份证认证审核中");
+      if (depPending) bits.push("押金认证审核中");
+      return {
+        ...base,
+        status: "incomplete",
+        label: `${bits.join("；")}。上传≠通过，需后台审核通过后才能接单。`,
+      };
+    }
+    if (idRejected && depRejected) {
+      return {
+        ...base,
+        status: "incomplete",
+        label: "身份证与押金认证均未通过，请任选其一重新提交并等待审核。",
+      };
+    }
+    if (idRejected && !depOk) {
+      const reason = String(identityRow?.reject_reason || "").trim();
+      return {
+        ...base,
+        status: "incomplete",
+        label: reason
+          ? `身份证认证未通过：${reason}。也可改走押金认证（二选一）。`
+          : "身份证认证未通过。请重新提交，或改走押金认证（二选一）。",
+      };
+    }
+    if (depRejected && !idOk) {
+      const reason = String(depositRow?.reject_reason || companion.deposit_reject_reason || "").trim();
+      return {
+        ...base,
+        status: "incomplete",
+        label: reason
+          ? `押金认证未通过：${reason}。也可改走身份证认证（二选一）。`
+          : "押金认证未通过。请重新提交，或改走身份证认证（二选一）。",
+      };
+    }
     return {
-      status: "rejected",
-      label: depReason ? `押金审核未通过：${depReason}` : "押金审核未通过，请重新提交。",
+      ...base,
+      status: "incomplete",
+      label: "认证未完成：请完成身份证认证或押金认证（二选一），后台审核通过后方可接单。",
     };
   }
-  if (authMode === "deposit" && depositSt !== "approved") {
-    if (depositSt === "unpaid") {
-      return { status: "pending", label: "请完成押金认证后再接单。" };
-    }
-    return { status: "pending", label: "押金审核中，暂时无法接单。" };
-  }
   if (companion.allow_orders === false) {
-    return { status: "blocked", label: "后台已暂停该账号接单权限。" };
+    return { ...base, status: "blocked", label: "后台已暂停该账号接单权限。" };
   }
-  return { status: "approved", label: "认证已通过，可正常接单。" };
+  const via = idOk && depOk ? "身份证与押金均已通过" : idOk ? "身份证认证已通过" : "押金认证已通过";
+  return { ...base, status: "approved", label: `${via}，可正常接单。` };
 }
-function canWork(profile = {}, companion = {}, depositRow = null) {
-  return resolveAccountAccessStatus(profile, companion, depositRow).status === "approved";
+function canWork(profile = {}, companion = {}, depositRow = null, identityRow = null) {
+  return resolveAccountAccessStatus(profile, companion, depositRow, identityRow).status === "approved";
 }
-function canAccept(profile = {}, companion = {}, depositRow = null) {
-  return canWork(profile, companion, depositRow) && normalizeOnlineStatus(companion.availability_status || companion.online_status) === "online";
+function canAccept(profile = {}, companion = {}, depositRow = null, identityRow = null) {
+  return (
+    canWork(profile, companion, depositRow, identityRow) &&
+    normalizeOnlineStatus(companion.availability_status || companion.online_status) === "online"
+  );
 }
-function auditLockMessage(profile = {}, companion = {}, depositRow = null) {
-  const access = resolveAccountAccessStatus(profile, companion, depositRow);
+function auditLockMessage(profile = {}, companion = {}, depositRow = null, identityRow = null) {
+  const access = resolveAccountAccessStatus(profile, companion, depositRow, identityRow);
   if (access.status === "approved") return "";
   if (access.status === "rejected" || access.status === "need_more") return access.label || COMPANION_AUTH_LOCK_MSG;
   if (access.status === "draft") return access.label || "资料未完成，请继续填写申请。";
-  return COMPANION_AUTH_LOCK_MSG;
+  if (access.status === "incomplete") return access.label || "请完成身份证认证或押金认证（二选一）。";
+  return access.label || COMPANION_AUTH_LOCK_MSG;
 }
-function applyUnifiedAccessFields(player, profile, companionRow, depositRow = null) {
-  const access = resolveAccountAccessStatus(profile, companionRow, depositRow);
+function applyUnifiedAccessFields(player, profile, companionRow, depositRow = null, identityRow = null) {
+  const access = resolveAccountAccessStatus(profile, companionRow, depositRow, identityRow);
   const profileReview = normalizeProfileReviewStatus(companionRow);
   const depositSt = normalizeDepositStatus(companionRow, depositRow);
+  const identitySt = normalizeIdentityStatus(identityRow, companionRow);
   player.profileReviewStatus = profileReview;
   player.profile_review_status = profileReview;
   player.depositStatus = depositSt;
   player.deposit_status = depositSt;
+  player.identityStatus = identitySt;
+  player.identity_status = identitySt;
+  player.identityVerified = !!access.identityVerified;
+  player.depositVerified = !!access.depositVerified;
+  player.credentialOrOk = !!access.credentialOrOk;
   player.accountAccessStatus = access.status;
   player.account_access_status = access.status;
   player.accountAccessLabel = access.label;
   player.auditStatus = profileReview;
   return access;
+}
+async function fetchCompanionAuthRows(profile = {}, companion = {}) {
+  const cpId = companion?.id || "";
+  const userId = profile?.id || companion?.user_id || "";
+  async function one(table, query) {
+    try {
+      const rows = await companionDb(table, query);
+      return Array.isArray(rows) ? rows[0] || null : null;
+    } catch (err) {
+      if (isMissingRelation(err)) return null;
+      throw err;
+    }
+  }
+  const [identityByProfile, depositByProfile] = await Promise.all([
+    cpId
+      ? one("companion_identity_verifications", `?companion_profile_id=eq.${encodeURIComponent(cpId)}&order=updated_at.desc&limit=1`)
+      : Promise.resolve(null),
+    cpId
+      ? one("companion_deposits", `?companion_profile_id=eq.${encodeURIComponent(cpId)}&order=created_at.desc&limit=1`)
+      : Promise.resolve(null),
+  ]);
+  let identity = identityByProfile;
+  let deposit = depositByProfile;
+  if ((!identity || !deposit) && userId) {
+    const [identityByUser, depositByUser] = await Promise.all([
+      identity
+        ? Promise.resolve(identity)
+        : one("companion_identity_verifications", `?user_id=eq.${encodeURIComponent(userId)}&order=updated_at.desc&limit=1`),
+      deposit
+        ? Promise.resolve(deposit)
+        : one("companion_deposits", `?user_id=eq.${encodeURIComponent(userId)}&order=created_at.desc&limit=1`),
+    ]);
+    identity = identity || identityByUser;
+    deposit = deposit || depositByUser;
+  }
+  return { identity, deposit };
+}
+async function assertCompanionOrderEligibility(profile, companion) {
+  const { identity, deposit } = await fetchCompanionAuthRows(profile, companion || {});
+  if (!canWork(profile, companion || {}, deposit, identity)) {
+    const err = new Error(auditLockMessage(profile, companion || {}, deposit, identity) || COMPANION_AUTH_LOCK_MSG);
+    err.status = 403;
+    err.code = "COMPANION_AUTH_LOCKED";
+    err.access = resolveAccountAccessStatus(profile, companion || {}, deposit, identity);
+    throw err;
+  }
+  return { identity, deposit };
 }
 function stripOrderFacingText(text = "") {
   return String(text || "")
@@ -1561,7 +1686,8 @@ async function bootstrapData(profile, companion) {
   // Heal stale online/busy while audit-locked so admin/companion/boss stay consistent.
   let companionRow = companion || {};
   const isolated = isCompanionIsolated(profile, companionRow);
-  if (!canWork(profile, companionRow) || isolated) {
+  // Isolation forces offline immediately. Full canWork offline-heal runs after ID/deposit load.
+  if (isolated) {
     const cur = normalizeOnlineStatus(companionRow.availability_status || companionRow.online_status);
     if (cur !== "offline") {
       try {
@@ -1583,15 +1709,18 @@ async function bootstrapData(profile, companion) {
   const player = safePlayer(profile, companionRow);
   const permissions = {
     canLogin: true,
-    canWork: canWork(profile, companionRow),
-    canSetAvailable: canWork(profile, companionRow),
-    canAcceptOrder: canAccept(profile, companionRow),
-    canStartOrder: canWork(profile, companionRow),
+    canWork: false,
+    canSetAvailable: false,
+    canAcceptOrder: false,
+    canStartOrder: false,
     canWithdraw: false,
     messagesMode: isolated ? "system_cs_only" : "system_only",
     lockReason: auditLockMessage(profile, companionRow),
     isolationMode: isolated,
     applicationStatus: normalizeProfileReviewStatus(companionRow),
+    identityVerified: false,
+    depositVerified: false,
+    credentialOrOk: false,
     accountStatus: profile.status || "active",
     companionEnabled: companionEnabled(companionRow),
     isolationMessage: isolated ? COMPANION_ISOLATION_MSG : "",
@@ -1761,12 +1890,17 @@ async function bootstrapData(profile, companion) {
     }
   }
 
-  const unifiedAccess = applyUnifiedAccessFields(player, profile, companionRow, deposit);
-  permissions.canWork = canWork(profile, companionRow, deposit);
+  const unifiedAccess = applyUnifiedAccessFields(player, profile, companionRow, deposit, identity);
+  permissions.canWork = canWork(profile, companionRow, deposit, identity);
   permissions.canSetAvailable = permissions.canWork;
-  permissions.canAcceptOrder = canAccept(profile, companionRow, deposit);
+  permissions.canAcceptOrder = canAccept(profile, companionRow, deposit, identity);
   permissions.canStartOrder = permissions.canWork;
-  permissions.lockReason = auditLockMessage(profile, companionRow, deposit);
+  permissions.lockReason = auditLockMessage(profile, companionRow, deposit, identity);
+  permissions.identityVerified = !!unifiedAccess.identityVerified;
+  permissions.depositVerified = !!unifiedAccess.depositVerified;
+  permissions.credentialOrOk = !!unifiedAccess.credentialOrOk;
+  permissions.identityStatus = unifiedAccess.identityStatus;
+  permissions.depositStatus = unifiedAccess.depositStatus;
   permissions.isolationMode = isCompanionIsolated(profile, companionRow);
   permissions.applicationStatus = normalizeProfileReviewStatus(companionRow);
   permissions.accountStatus = profile.status || "active";
@@ -1775,6 +1909,25 @@ async function bootstrapData(profile, companion) {
   permissions.allowedRoutes = permissions.isolationMode
     ? ["review-status", "profile", "account", "login"]
     : null;
+  // Soft-heal online status when credential/order gate fails (approved profile but incomplete OR).
+  if (!permissions.canWork && !permissions.isolationMode) {
+    const cur = normalizeOnlineStatus(companionRow.availability_status || companionRow.online_status);
+    if (cur !== "offline") {
+      try {
+        await supabaseJson(restUrl("companion_profiles", `?user_id=eq.${encodeURIComponent(profile.id)}`), {
+          method: "PATCH",
+          headers: serviceHeaders(),
+          body: JSON.stringify({ online_status: "offline", updated_at: nowIso() }),
+        });
+        companionRow = { ...companionRow, online_status: "offline", availability_status: "offline" };
+        player.onlineStatus = "offline";
+        player.onlineStatusLabel = statusLabel("offline");
+        player.workStatus = statusLabel("offline");
+      } catch (error) {
+        warnings.push(`offline_heal_auth: ${error.message || error}`);
+      }
+    }
+  }
   if (permissions.isolationMode) {
     permissions.canWork = false;
     permissions.canSetAvailable = false;
@@ -1808,7 +1961,7 @@ async function bootstrapData(profile, companion) {
     /^(submitted|pending_friday|reviewing|pending|pending_review|rolled_over)$/.test(String(w.status || ""))
   );
   const canWithdrawNow =
-    canWork(profile, companionRow, deposit) &&
+    canWork(profile, companionRow, deposit, identity) &&
     credentialOk &&
     bankOk &&
     accountOk &&
@@ -1824,7 +1977,7 @@ async function bootstrapData(profile, companion) {
     permissions.canStartOrder = false;
   }
   if (!canWithdrawNow) {
-    if (!canWork(profile, companionRow, deposit)) {
+    if (!canWork(profile, companionRow, deposit, identity)) {
       permissions.withdrawLockReason = COMPANION_AUTH_LOCK_MSG;
     } else if (!credentialOk) permissions.withdrawLockReason = "请先完成押金认证并通过审核";
     else if (!bankOk) permissions.withdrawLockReason = "请先提交并等待结款账户审核通过";
@@ -2085,7 +2238,10 @@ async function bootstrapData(profile, companion) {
         },
     withdrawals: permissions.isolationMode ? [] : await Promise.all(withdrawalRows.map((w) => viewCompanionWithdrawal(w))),
     verification: {
-      identityStatus: identity?.status || "draft",
+      identityStatus: normalizeIdentityStatus(identity, companionRow),
+      identityVerified: identityApproved(identity, companionRow),
+      depositVerified: depositApproved(companionRow, deposit),
+      credentialOrOk: identityApproved(identity, companionRow) || depositApproved(companionRow, deposit),
       contactStatus: companionRow?.verification_status || "draft",
       bankStatus: payment?.status || "draft",
       depositStatus: normalizeDepositStatus(companionRow, deposit),
@@ -3084,8 +3240,15 @@ export default async function handler(req, res) {
       } catch (err) {
         return isolationForbiddenResponse(res, err);
       }
-      if (!canWork(auth.profile, companion || {})) {
-        return json(res, 403, { ok: false, message: COMPANION_AUTH_LOCK_MSG });
+      try {
+        await assertCompanionOrderEligibility(auth.profile, companion || {});
+      } catch (err) {
+        return json(res, err.status || 403, {
+          ok: false,
+          message: err.message || COMPANION_AUTH_LOCK_MSG,
+          code: err.code || "COMPANION_AUTH_LOCKED",
+          access: err.access || null,
+        });
       }
       try {
         await (await import("./_content-acks.js")).assertCompanionCanWork(auth.profile.id);
@@ -3116,8 +3279,15 @@ export default async function handler(req, res) {
       } catch (err) {
         return isolationForbiddenResponse(res, err);
       }
-      if (!canWork(auth.profile, companion || {})) {
-        return json(res, 403, { ok: false, message: COMPANION_AUTH_LOCK_MSG });
+      try {
+        await assertCompanionOrderEligibility(auth.profile, companion || {});
+      } catch (err) {
+        return json(res, err.status || 403, {
+          ok: false,
+          message: err.message || COMPANION_AUTH_LOCK_MSG,
+          code: err.code || "COMPANION_AUTH_LOCKED",
+          access: err.access || null,
+        });
       }
       try {
         await (await import("./_content-acks.js")).assertCompanionCanWork(auth.profile.id);
@@ -3233,8 +3403,15 @@ export default async function handler(req, res) {
       } catch (err) {
         return isolationForbiddenResponse(res, err);
       }
-      if (!canWork(auth.profile, companion || {})) {
-        return json(res, 403, { ok: false, message: COMPANION_AUTH_LOCK_MSG });
+      try {
+        await assertCompanionOrderEligibility(auth.profile, companion || {});
+      } catch (err) {
+        return json(res, err.status || 403, {
+          ok: false,
+          message: err.message || COMPANION_AUTH_LOCK_MSG,
+          code: err.code || "COMPANION_AUTH_LOCKED",
+          access: err.access || null,
+        });
       }
       try {
         await (await import("./_content-acks.js")).assertCompanionCanWork(auth.profile.id);
@@ -3408,8 +3585,15 @@ export default async function handler(req, res) {
       } catch (err) {
         return isolationForbiddenResponse(res, err);
       }
-      if (!canWork(auth.profile, companion || {})) {
-        return json(res, 403, { ok: false, message: COMPANION_AUTH_LOCK_MSG });
+      try {
+        await assertCompanionOrderEligibility(auth.profile, companion || {});
+      } catch (err) {
+        return json(res, err.status || 403, {
+          ok: false,
+          message: err.message || COMPANION_AUTH_LOCK_MSG,
+          code: err.code || "COMPANION_AUTH_LOCKED",
+          access: err.access || null,
+        });
       }
       if (status === "online" || status === "busy") {
         try {

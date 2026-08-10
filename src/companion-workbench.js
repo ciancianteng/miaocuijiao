@@ -121,11 +121,20 @@
       if(/pending|review|submit/.test(v))return '待审核';
       return s||'未缴纳';
     },
+    identity:function(s){
+      var v=String(s||'').trim().toLowerCase();
+      if(!v||/none|not_submitted|missing|unsubmitted|draft/.test(v))return '未提交';
+      if(/approved|verified|passed/.test(v))return '已通过';
+      if(/reject|declin|fail/.test(v))return '审核未通过';
+      if(/pending|review|submit|uploaded/.test(v))return '审核中';
+      return s||'未提交';
+    },
     accountAccess:function(s){
       var v=String(s||'').trim().toLowerCase();
       if(!v)return '待审核';
       if(/approved|verified|passed|active/.test(v))return '可正常接单';
-      if(/reject|declin|fail/.test(v))return '暂不可接单';
+      if(/incomplete|credential/.test(v))return '认证未完成';
+      if(/reject|declin|fail|blocked/.test(v))return '暂不可接单';
       if(/pending|review|submit/.test(v))return '审核中';
       return s||'待审核';
     }
@@ -140,22 +149,31 @@
     var perms=(state.data&&state.data.permissions)||{};
     var profileReview=String(p.profile_review_status||p.profileReviewStatus||p.auditStatus||raw.application_status||'').trim();
     var depositSt=String(p.deposit_status||p.depositStatus||d.status||v.depositStatus||raw.deposit_status||'').trim();
+    var identitySt=String(p.identity_status||p.identityStatus||v.identityStatus||raw.identity_status||'').trim();
+    var identityVerified=perms.identityVerified===true||p.identityVerified===true||v.identityVerified===true||/approved|verified|passed/.test(identitySt.toLowerCase());
+    var depositVerified=perms.depositVerified===true||p.depositVerified===true||v.depositVerified===true||/approved|verified|passed|paid|received/.test(depositSt.toLowerCase());
+    var credentialOrOk=perms.credentialOrOk===true||p.credentialOrOk===true||v.credentialOrOk===true||identityVerified||depositVerified;
     var accessSt=String(p.account_access_status||p.accountAccessStatus||'').trim();
     var accessLabel=String(p.accountAccessLabel||'').trim();
     if(!accessSt){
       var profOk=/approved|verified|passed/.test(String(profileReview).toLowerCase());
-      var depOk=/approved|verified|passed|paid|received/.test(String(depositSt).toLowerCase());
-      if(profOk&&depOk)accessSt='approved';
-      else if(/reject|declin|fail/.test(String(profileReview).toLowerCase())||/reject|declin|fail/.test(String(depositSt).toLowerCase()))accessSt='rejected';
+      if(profOk&&credentialOrOk)accessSt='approved';
+      else if(profOk&&!credentialOrOk)accessSt='incomplete';
+      else if(/reject|declin|fail/.test(String(profileReview).toLowerCase()))accessSt='rejected';
       else accessSt='pending';
     }
     if(!accessLabel){
-      if(accessSt==='approved'||perms.canWork===true)accessLabel='资料与押金均已通过，可正常接单。';
+      if(accessSt==='approved'||perms.canWork===true)accessLabel='认证条件已满足，可正常接单。';
+      else if(accessSt==='incomplete')accessLabel='请完成身份证认证或押金认证（二选一）';
       else accessLabel=perms.lockReason||auditHint();
     }
     return {
       profile_review_status:profileReview,
       deposit_status:depositSt,
+      identity_status:identitySt,
+      identityVerified:identityVerified,
+      depositVerified:depositVerified,
+      credentialOrOk:credentialOrOk,
       account_access_status:accessSt,
       accountAccessLabel:accessLabel,
       canWork:perms.canWork===true
@@ -398,10 +416,20 @@
     if(isForcedAckLocked())return true;
     return perm.canWork===false||perm.canSetAvailable===false;
   }
+  function isCredentialIncomplete(){
+    if(isIsolationMode()||!isProfileApproved())return false;
+    if(isForcedAckLocked())return false;
+    var ua=unifiedAccess();
+    var perm=(state.data||{}).permissions||{};
+    if(ua.credentialOrOk||perm.credentialOrOk||perm.canWork===true)return false;
+    var st=String(ua.account_access_status||'').toLowerCase();
+    return st==='incomplete'||perm.canWork===false||perm.canSetAvailable===false;
+  }
   function todayStatusLockLabel(){
-    // Approved + unread forced announcement must NEVER read as「审核中」.
-    if(isIsolationMode()||!isProfileApproved())return '审核中（不可接单）';
+    // Never show「审核中」for approved profile locked only by credential/forced.
+    if(isIsolationMode()||!isProfileApproved())return '资料审核中（不可接单）';
     if(isForcedAckLocked())return '暂不可接单';
+    if(isCredentialIncomplete())return '认证未完成';
     var perm=(state.data||{}).permissions||{};
     if(perm.canWork===false||perm.canSetAvailable===false)return '暂不可接单';
     return '';
@@ -413,11 +441,15 @@
     if(isForcedAckLocked()||data.forcedAckRequired||perm.forcedAckRequired){
       return perm.forcedAckReason||'请先阅读并确认最新强制公告';
     }
+    if(isCredentialIncomplete()){
+      return perm.lockReason||'请完成身份证认证或押金认证（二选一）';
+    }
     return perm.lockReason||'您的陪玩认证尚未通过，暂不可使用此功能。';
   }
   function orderGateButtonLabel(fallback){
     if(isForcedAckLocked())return '请先确认强制公告';
     if(isIsolationMode()||!isProfileApproved())return '审核通过后可抢单';
+    if(isCredentialIncomplete())return '请先完成认证';
     return fallback||'暂不可接单';
   }
   function refreshForcedAckModal(attempt){
@@ -467,13 +499,17 @@
     if(/approved|verified|passed/.test(st)){
       var can=!!(((state.data||{}).permissions||{}).canWork);
       var forced=isForcedAckLocked();
+      var incomplete=isCredentialIncomplete();
       if(can&&!forced){
-        return '<div class="pw-alert pw-privacy-review" role="status" data-review-status-banner="approved"><strong>恭喜，认证已通过</strong><span>您的接单权限已开放。</span>'+emailPending+'<button class="pw-btn primary" type="button" data-enter-hall>开始接单</button></div>';
+        return '<div class="pw-alert pw-privacy-review" role="status" data-review-status-banner="approved"><strong>恭喜，资料审核已通过</strong><span>您的接单权限已开放。</span>'+emailPending+'<button class="pw-btn primary" type="button" data-enter-hall>开始接单</button></div>';
       }
       if(forced){
-        return '<div class="pw-alert pw-privacy-review" role="status" data-review-status-banner="approved"><strong>恭喜，认证已通过</strong><span>请先阅读并确认最新强制公告后，即可切换在线接单。</span>'+emailPending+'</div>';
+        return '<div class="pw-alert pw-privacy-review" role="status" data-review-status-banner="approved"><strong>恭喜，资料审核已通过</strong><span>请先阅读并确认最新强制公告后，即可切换在线接单。</span>'+emailPending+'</div>';
       }
-      return '<div class="pw-alert pw-privacy-review" role="status" data-review-status-banner="approved"><strong>恭喜，认证已通过</strong><span>'+esc(ua.accountAccessLabel||'认证已通过，请完善剩余接单条件。')+'</span>'+emailPending+'</div>';
+      if(incomplete){
+        return '<div class="pw-alert" role="status" data-review-status-banner="incomplete"><strong>认证未完成</strong><span>请完成身份证认证或押金认证（二选一）。上传≠通过，需后台审核通过后才能接单。</span>'+emailPending+'<button class="pw-btn primary" type="button" data-route="/companion/account">去完成认证</button></div>';
+      }
+      return '<div class="pw-alert pw-privacy-review" role="status" data-review-status-banner="approved"><strong>恭喜，资料审核已通过</strong><span>'+esc(ua.accountAccessLabel||'请完善剩余接单条件。')+'</span>'+emailPending+'</div>';
     }
     if(/draft|none|not_submitted|missing|unsubmitted/.test(st)||!st){
       return '<div class="pw-alert" role="status" data-review-status-banner="draft"><strong>资料未完成</strong><span>请继续填写申请并保存草稿。审核通过前可登录，但不可接单。</span><button class="pw-btn" type="button" data-route="/companion/profile">继续填写</button></div>';
@@ -496,9 +532,12 @@
     var ua=unifiedAccess();
     var st=String(ua.account_access_status||'').toLowerCase();
     if(st==='approved'||ua.canWork){
-      return '<div class="pw-alert pw-privacy-review" role="status"><strong>✅ 可正常接单</strong><span>'+esc(ua.accountAccessLabel||'资料与押金均已通过审核。')+'</span></div>';
+      return '<div class="pw-alert pw-privacy-review" role="status"><strong>✅ 可正常接单</strong><span>'+esc(ua.accountAccessLabel||'认证条件已满足。')+'</span></div>';
     }
-    if(/reject|declin|fail/.test(st)){
+    if(st==='incomplete'||isCredentialIncomplete()){
+      return '<div class="pw-alert" role="status"><strong>认证未完成</strong><span>'+esc(ua.accountAccessLabel||'请完成身份证认证或押金认证（二选一）。')+'</span></div>';
+    }
+    if(/reject|declin|fail|blocked/.test(st)){
       return '<div class="pw-alert" role="status"><strong>暂不可接单</strong><span>'+esc(ua.accountAccessLabel||auditHint())+'</span></div>';
     }
     return '<div class="pw-note" style="margin:0 0 14px" role="status">'+esc(ua.accountAccessLabel||auditHint())+'</div>';
@@ -730,7 +769,7 @@
       return '<div class="pw-alert pw-privacy-review" role="status" data-privacy-review="pending"><strong>✅ 已提交审核，等待后台审核。</strong><span>审核完成前不可再次提交，以下为已提交资料（只读）。</span></div>';
     }
     if(phase==='approved'){
-      var approvedTitle=kind==='deposit'?'✅ 押金已通过审核。':(kind==='profile'?'✅ 资料已通过审核。':'✅ 已通过审核。');
+      var approvedTitle=kind==='deposit'?'✅ 押金认证已通过。':(kind==='identity'?'✅ 身份证认证已通过。':(kind==='profile'?'✅ 资料已通过审核。':'✅ 已通过审核。'));
       return '<div class="pw-alert pw-privacy-review" role="status" data-privacy-review="approved"><strong>'+approvedTitle+'</strong><span>如需变更请联系客服或等待后台开放修改。</span></div>';
     }
     if(phase==='rejected'){
@@ -2099,7 +2138,7 @@
       '<section class="pw-card pad" style="margin-top:14px"><h3>待处理事项</h3>'+todoList()+'</section>'+
       '<div class="pw-actions" style="margin-top:14px;flex-wrap:wrap"><button class="pw-btn" type="button" data-route="/companion/earnings">收益中心</button><button class="pw-btn" type="button" data-route="/companion/messages">消息中心</button><button class="pw-btn" type="button" data-route="/companion/rules">规则与制度</button></div>';
   }
-  function todoList(){var s=(state.data||{}).summary||{},ua=unifiedAccess();var accessLabel=isForcedAckLocked()?'暂不可接单（待确认强制公告）':STATUS_CN.accountAccess(ua.account_access_status);var rows=[['待确认订单',s.waitingConfirm||0],['进行中就绪',s.waitingStart||0],['待完成订单',s.waitingComplete||0],['待处理消息',unreadCount()],['资料审核状态',STATUS_CN.verification(ua.profile_review_status)],['押金状态',STATUS_CN.deposit(ua.deposit_status)],['账号接单权限',accessLabel]];return '<div class="pw-info-list">'+rows.map(function(r){return '<div><span>'+esc(r[0])+'</span><strong>'+esc(r[1])+'</strong></div>'}).join('')+'</div>'}
+  function todoList(){var s=(state.data||{}).summary||{},ua=unifiedAccess();var accessLabel=isForcedAckLocked()?'暂不可接单（待确认强制公告）':(isCredentialIncomplete()?'认证未完成':STATUS_CN.accountAccess(ua.account_access_status));var rows=[['待确认订单',s.waitingConfirm||0],['进行中就绪',s.waitingStart||0],['待完成订单',s.waitingComplete||0],['待处理消息',unreadCount()],['资料审核状态',STATUS_CN.verification(ua.profile_review_status)],['身份证认证',STATUS_CN.identity(ua.identity_status)],['押金认证',STATUS_CN.deposit(ua.deposit_status)],['账号接单权限',accessLabel]];return '<div class="pw-info-list">'+rows.map(function(r){return '<div><span>'+esc(r[0])+'</span><strong>'+esc(r[1])+'</strong></div>'}).join('')+'</div>'}
   function orderStatus(o){return o.orderStatus||o.statusText||o.status||'-'}
   function fmtTime(v){if(!v)return '-';try{return new Date(v).toLocaleString('zh-CN',{hour12:false})}catch(e){return String(v)}}
   var REJECT_REASONS=['正在服务其他订单','时间无法配合','临时有事','不接该项目','其他'];
@@ -3028,10 +3067,22 @@
     var appStatusLabel=STATUS_CN.verification(appStatusRaw);
     var depositSubmitted=!!(d.depositSubmitted||((d.hasProof||d.proofUrl)&&num(d.paidAmount)>0&&d.paymentMethod));
     var depositPhase=privacyReviewPhase(depositStatusRaw,{submitted:depositSubmitted});
-    var idStatus=STATUS_CN.verification(idStatusRaw);
+    var idStatus=STATUS_CN.identity(idStatusRaw);
     var depositStatus=STATUS_CN.deposit(depositStatusRaw);
-    var verifyReject=v.applicationRejectReason||[v.identityRejectReason,v.paymentRejectReason].filter(Boolean).join('；');
+    var verifyReject=v.identityRejectReason||'';
     var depositReject=d.rejectReason||v.depositRejectReason||'';
+    var credentialOk=!!(ua.credentialOrOk||ua.identityVerified||ua.depositVerified);
+    var credentialBanner=credentialOk
+      ?('<div class="pw-alert pw-privacy-review" role="status"><strong>认证条件已满足</strong><span>'+
+        (ua.identityVerified&&ua.depositVerified?'身份证与押金均已通过（二选一已满足）。'
+          :(ua.identityVerified?'身份证认证已通过，无需再完成押金也可接单。'
+            :'押金认证已通过，无需再完成身份证也可接单。'))+
+        '</span></div>')
+      :('<div class="pw-alert" role="status"><strong>认证方式（二选一）</strong><span>完成 <em>身份证认证</em> 或 <em>押金认证</em> 任一即可。上传/提交≠通过，必须后台审核通过后才算完成。</span>'+
+        '<div class="pw-info-list" style="margin-top:10px">'+
+          infoRow('A. 身份证认证',idStatus)+
+          infoRow('B. 押金认证（RM100）',depositStatus)+
+        '</div></div>');
     var contactPhone=accountDraftVal('contact_phone',raw.contact_phone||v.phone||'');
     var realName=accountDraftVal('real_name',v.realName||'');
     // Self view: prefer full plaintext from bootstrap (not masked placeholders).
@@ -3044,13 +3095,14 @@
     var paidAmount=accountDraftVal('paid_amount',d.paidAmount||'');
     var paymentMethod=accountDraftVal('payment_method',d.paymentMethod||'');
     var depositRemark=accountDraftVal('deposit_remark',d.remark||'');
-    var verifyLocked=verifyPhase==='pending'||verifyPhase==='approved';
+    var idPhase=privacyReviewPhase(idStatusRaw,{submitted:idSubmitted});
+    var verifyLocked=idPhase==='pending'||idPhase==='approved';
     var depositLocked=depositPhase==='pending'||depositPhase==='approved';
     var verifyView=
       '<section class="pw-card pad pw-form-narrow pw-account-verify" style="margin-top:14px" data-verification-view>'+
-      '<h3>身份证 / 实名认证 / 收款账户</h3>'+
-      privacyReviewBannerHtml(verifyPhase,verifyReject,'profile')+
-      '<p class="pw-note">资料审核：<strong data-audit-status="'+esc(appStatusRaw)+'">'+esc(appStatusLabel)+'</strong> · 实名：<strong>'+esc(idStatus)+'</strong> · 收款：<strong>'+esc(STATUS_CN.verification(bankStatusRaw))+'</strong></p>'+
+      '<h3>A. 身份证认证</h3>'+
+      privacyReviewBannerHtml(privacyReviewPhase(idStatusRaw,{submitted:idSubmitted}),verifyReject,'identity')+
+      '<p class="pw-note">状态：<strong>'+esc(idStatus)+'</strong>（仅后台审核通过才算完成）</p>'+
       '<div class="pw-info-list">'+
         infoRow('真实姓名',v.realName||'-')+
         infoRow('身份证号码',v.identityNo||v.identityNoMasked||(v.hasIdentityNo?'已填写':'-'))+
@@ -3068,9 +3120,9 @@
       '</section>';
     var verifyForm=
       '<form class="pw-card pad pw-form pw-form-narrow pw-account-verify" style="margin-top:14px" data-verification-form>'+
-      '<h3>身份证 / 实名认证 / 收款账户</h3>'+
-      privacyReviewBannerHtml(verifyPhase,verifyReject,'profile')+
-      '<p class="pw-note">资料审核：<strong data-audit-status="'+esc(appStatusRaw)+'">'+esc(appStatusLabel)+'</strong>'+(verifyReject?' · 拒绝原因：'+esc(verifyReject):'')+'</p>'+
+      '<h3>A. 身份证认证</h3>'+
+      privacyReviewBannerHtml(privacyReviewPhase(idStatusRaw,{submitted:idSubmitted}),verifyReject,'identity')+
+      '<p class="pw-note">提交后等待后台审核。审核通过 = 身份认证完成（与押金二选一即可）。</p>'+
       '<label>真实姓名<input name="real_name" value="'+esc(realName)+'" required></label>'+
       '<label>身份证号码<input name="identity_no" value="'+esc(identityNo)+'" required autocomplete="off"></label>'+
       accountDocCard({key:'id_front',label:'身份证正面',cta:'上传身份证正面',url:v.idFrontUrl||'',statusText:idStatus,rejectReason:v.identityRejectReason||''})+
@@ -3080,12 +3132,12 @@
       '<label>收款账号 / 提现账户<input name="bank_account" value="'+esc(bankAccount)+'" required autocomplete="off"></label>'+
       '<label>TNG 账号<input name="tng_account" value="'+esc(tngAccount)+'"></label>'+
       '<label>备注<textarea name="remark">'+esc(verifyRemark)+'</textarea></label>'+
-      '<button class="pw-btn primary" type="submit">'+(verifyPhase==='rejected'?'重新提交认证审核':'提交认证审核')+'</button></form>';
+      '<button class="pw-btn primary" type="submit">'+(privacyReviewPhase(idStatusRaw,{submitted:idSubmitted})==='rejected'?'重新提交身份证认证':'提交身份证认证')+'</button></form>';
     var depositView=
       '<section class="pw-card pad pw-form-narrow pw-account-deposit" style="margin-top:14px" data-deposit-view>'+
-      '<h3>押金</h3>'+
+      '<h3>B. 押金认证（RM100）</h3>'+
       privacyReviewBannerHtml(depositPhase,depositReject,'deposit')+
-      '<p class="pw-note">审核状态：<strong>'+esc(depositStatus)+'</strong></p>'+
+      '<p class="pw-note">状态：<strong>'+esc(depositStatus)+'</strong>（仅后台审核通过才算完成）</p>'+
       '<div class="pw-info-list">'+
         infoRow('已缴金额',d.paidAmount!=null&&d.paidAmount!==''?('RM '+d.paidAmount):'-')+
         infoRow('付款方式',d.paymentMethod||'-')+
@@ -3096,9 +3148,9 @@
       '</section>';
     var depositForm=
       '<form class="pw-card pad pw-form pw-form-narrow pw-account-deposit" style="margin-top:14px" data-deposit-form>'+
-      '<h3>押金</h3>'+
+      '<h3>B. 押金认证（RM100）</h3>'+
       privacyReviewBannerHtml(depositPhase,depositReject,'deposit')+
-      '<p class="pw-note">审核状态：<strong>'+esc(depositStatus)+'</strong>'+(depositReject?' · 拒绝原因：'+esc(depositReject):'')+'</p>'+
+      '<p class="pw-note">提交付款凭证后等待后台审核。审核通过 = 押金认证完成（与身份证二选一即可）。</p>'+
       '<label>已缴金额 RM<input name="paid_amount" type="number" min="1" required value="'+esc(paidAmount)+'"></label>'+
       '<label>付款方式<input name="payment_method" required value="'+esc(paymentMethod)+'" placeholder="例如：银行转账 / TNG"></label>'+
       accountDocCard({key:'deposit_proof',label:'押金付款凭证',cta:'上传付款凭证',url:d.proofUrl||'',statusText:depositStatus,rejectReason:depositReject})+
@@ -3107,12 +3159,13 @@
     return '<div class="pw-page-head"><div><h2>账号中心（隐私）</h2><p>仅本人 / 客服 / 后台可见，老板永远看不到。</p></div><button class="pw-btn" type="button" data-route="/companion/profile">公开资料</button></div>'+
       accountAccessBannerHtml()+
       reviewRejectBannerHtml('/companion/account')+
+      credentialBanner+
       '<div class="pw-alert"><strong>隐私提示</strong><span>本页面仅本人和平台后台可见，不会公开给老板。</span></div>'+
       '<div class="pw-two-col">'+
         '<section class="pw-card pad"><h3>账号信息</h3><div class="pw-info-list">'+
           infoRow('登录邮箱',p.email||p.uid||'-')+
           infoRow('联系方式',raw.contact_phone||v.phone||'未填写')+
-          infoRow('实名认证',idStatus)+
+          infoRow('身份证认证',idStatus)+
           infoRow('真实姓名',v.realName||'未填写')+
           infoRow('资料审核状态',STATUS_CN.verification(ua.profile_review_status))+
         '</div></section>'+
@@ -3120,7 +3173,7 @@
           infoRow('收款账户审核',STATUS_CN.verification(bankStatusRaw))+
           infoRow('银行名称',v.bankName||'未填写')+
           infoRow('当前提现账户',rules.currentAccount||'未绑定')+
-          infoRow('押金状态',STATUS_CN.deposit(ua.deposit_status))+
+          infoRow('押金认证',STATUS_CN.deposit(ua.deposit_status))+
           infoRow('账号接单权限',STATUS_CN.accountAccess(ua.account_access_status))+
           infoRow('当前等级',level.level||p.level||'未设置')+
         '</div>'+
