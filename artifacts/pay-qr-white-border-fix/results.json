@@ -1,0 +1,112 @@
+{
+  "base": "https://meow-cuijiao-homepage-staging.vercel.app",
+  "useLocalHtml": true,
+  "orderId": "2e3b0078-f73b-4569-8e43-90757dc53c27",
+  "results": [
+    {
+      "step": "local_css_transparent_frame",
+      "result": "PASS",
+      "detail": "local payment-confirm.css"
+    },
+    {
+      "step": "deployed_css_check_skipped",
+      "result": "PASS",
+      "detail": "USE_LOCAL_HTML=1 serving workspace HTML"
+    },
+    {
+      "step": "boss_login",
+      "result": "PASS",
+      "detail": "boss.final.1785714993009@meow.test"
+    },
+    {
+      "step": "pick_companion",
+      "result": "PASS",
+      "detail": "c776e811-6003-48a4-8f11-ed9eb1b70898 [TEST] 验收陪玩"
+    },
+    {
+      "step": "create_order",
+      "result": "PASS",
+      "detail": "id=2e3b0078-f73b-4569-8e43-90757dc53c27 status=awaiting_payment msg=订单已提交，请完成支付。"
+    },
+    {
+      "step": "duitnow_qr_present",
+      "result": "PASS",
+      "detail": "channel=duitnow hasQr=true"
+    },
+    {
+      "step": "desktop_no_white_frame_bg",
+      "result": "PASS",
+      "detail": "rgba(0, 0, 0, 0)"
+    },
+    {
+      "step": "desktop_no_white_img_bg",
+      "result": "PASS",
+      "detail": "rgba(0, 0, 0, 0)"
+    },
+    {
+      "step": "desktop_no_frame_border",
+      "result": "PASS",
+      "detail": "0px rgb(255, 255, 255)"
+    },
+    {
+      "step": "desktop_frame_hugs_img",
+      "result": "PASS",
+      "detail": "frame=240x240 img=240x240"
+    },
+    {
+      "step": "desktop_duitnow_channel",
+      "result": "PASS",
+      "detail": "duitnow"
+    },
+    {
+      "step": "desktop_no_white_plate_outside_img",
+      "result": "PASS",
+      "detail": "whiteOutside=0/3317 ratio=0.0000 img=18,18-262,259"
+    },
+    {
+      "step": "desktop_qr_scannable",
+      "result": "PASS",
+      "detail": "00020201021126600014A000000615000101065043240228MYT2XK7Q0EJOEMJ23HH6SVQJFO9J5204481653034585802M"
+    },
+    {
+      "step": "mobile_no_white_frame_bg",
+      "result": "PASS",
+      "detail": "rgba(0, 0, 0, 0)"
+    },
+    {
+      "step": "mobile_no_white_img_bg",
+      "result": "PASS",
+      "detail": "rgba(0, 0, 0, 0)"
+    },
+    {
+      "step": "mobile_no_frame_border",
+      "result": "PASS",
+      "detail": "0px rgb(255, 255, 255)"
+    },
+    {
+      "step": "mobile_frame_hugs_img",
+      "result": "PASS",
+      "detail": "frame=240x240 img=240x240"
+    },
+    {
+      "step": "mobile_duitnow_channel",
+      "result": "PASS",
+      "detail": "duitnow"
+    },
+    {
+      "step": "mobile_no_white_plate_outside_img",
+      "result": "PASS",
+      "detail": "whiteOutside=0/4471 ratio=0.0000 img=18,18-262,262"
+    },
+    {
+      "step": "mobile_qr_scannable",
+      "result": "PASS",
+      "detail": "00020201021126600014A000000615000101065043240228MYT2XK7Q0EJOEMJ23HH6SVQJFO9J5204481653034585802M"
+    },
+    {
+      "step": "no_payment_logic_changed",
+      "result": "PASS",
+      "detail": "display CSS only on payment-confirm.html + recharge.html; no orders/TNG/proof/review edits"
+    }
+  ]
+}
