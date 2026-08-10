@@ -8,7 +8,14 @@
 (function () {
   "use strict";
 
-  var GATE_VERSION = "20260807adminAuthP0";
+  var GATE_VERSION = "20260810backNav1";
+
+  function clearAuthBootOverlay() {
+    try {
+      var el = document.getElementById("mcjAuthBootOverlay");
+      if (el && el.parentNode) el.parentNode.removeChild(el);
+    } catch (e) {}
+  }
 
   function pathNow() {
     return String(location.pathname || "/").replace(/\\/g, "/");
@@ -306,15 +313,15 @@
     // —— Boss protected pages ——
     // Soft / refresh / URL params NEVER unlock. Require non-expired access JWT.
     // NOTE: profile.html is public companion detail — do NOT gate it.
+    // IMPORTANT: never wipe body.innerHTML on the allow path / pageshow(bfcache).
+    // deny() still blanks the shell before redirect. Clearing body on restore left an
+    // empty black page after revealShell().
     if (
       /\/(mine|orders|support|recharge|messages|favorites|payment-confirm|order-confirm|gifts)\.html$/i.test(
         p
       )
     ) {
       hideShell();
-      try {
-        if (document.body) document.body.innerHTML = "";
-      } catch (e0) {}
       var bossUser = null;
       try {
         bossUser = JSON.parse(bossItem("customerUser") || "null") || {};
@@ -331,21 +338,63 @@
         wipeBossIdentity();
         return deny("/login.html");
       }
+      clearAuthBootOverlay();
       revealShell();
       return true;
     }
 
+    clearAuthBootOverlay();
     return true;
   }
 
   evaluate();
 
+  // Load homepage overlay safety net on gated portals (idempotent).
+  if (!window.__MCJHomeOverlayGuard) {
+    try {
+      var og = document.createElement("script");
+      og.src = "/src/home-overlay-guard.js?v=20260810backNav1";
+      og.defer = true;
+      (document.head || document.documentElement).appendChild(og);
+    } catch (eOg) {}
+  }
+
   window.addEventListener(
     "pageshow",
     function (event) {
+      clearAuthBootOverlay();
+      // Always re-check on Back/Forward; bfcache restore is the critical case.
       if (event && event.persisted) {
         evaluate();
+      } else {
+        // Non-persisted pageshow still needs overlay/visibility recovery.
+        try {
+          if (document.documentElement.getAttribute("data-mcj-auth-gate") === "1") {
+            // If gate attribute lingered without a deny redirect, reveal public shells.
+            var p = pathNow();
+            if (isLoginSurface(p) || !/\/(admin|companion|customer-service)(\/|$)/i.test(p)) {
+              // Boss gated HTML paths still need evaluate when soft-restored oddly.
+              if (
+                /\/(mine|orders|support|recharge|messages|favorites|payment-confirm|order-confirm|gifts)\.html$/i.test(
+                  p
+                )
+              ) {
+                evaluate();
+              } else {
+                revealShell();
+              }
+            }
+          }
+        } catch (ePs) {}
       }
+    },
+    true
+  );
+
+  window.addEventListener(
+    "popstate",
+    function () {
+      clearAuthBootOverlay();
     },
     true
   );

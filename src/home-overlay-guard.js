@@ -9,6 +9,7 @@
   window.__MCJHomeOverlayGuard = true;
 
   var SELECTORS = [
+    "#mcjAuthBootOverlay",
     "[data-pw-forced-mask]",
     ".pw-forced-mask",
     ".mcj-po-mask",
@@ -87,6 +88,16 @@
 
   function clearStuck(el) {
     if (!el) return;
+    // Auth boot mask is always transient — remove on sight when sweeping.
+    if (el.id === "mcjAuthBootOverlay") {
+      try {
+        if (el.parentNode) el.parentNode.removeChild(el);
+      } catch (e0) {
+        el.style.display = "none";
+        el.style.pointerEvents = "none";
+      }
+      return;
+    }
     if (el.id === "modal" || el.classList.contains("modal")) {
       el.classList.remove("open");
       el.setAttribute("aria-hidden", "true");
@@ -185,6 +196,33 @@
     document.addEventListener("visibilitychange", function () {
       if (!document.hidden) sweep();
     });
+    // Browser Back/Forward + bfcache restore must clear stranded masks immediately.
+    window.addEventListener(
+      "pageshow",
+      function () {
+        sweep();
+        setTimeout(sweep, 0);
+        setTimeout(sweep, 200);
+      },
+      true
+    );
+    window.addEventListener(
+      "popstate",
+      function () {
+        sweep();
+        setTimeout(sweep, 0);
+      },
+      true
+    );
+    window.addEventListener(
+      "pagehide",
+      function () {
+        // Prefer removing auth boot overlay before the document is frozen into bfcache.
+        var bootEl = document.getElementById("mcjAuthBootOverlay");
+        if (bootEl) clearStuck(bootEl);
+      },
+      true
+    );
   }
 
   window.MCJHomeOverlayGuard = { sweep: sweep };

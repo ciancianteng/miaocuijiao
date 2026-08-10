@@ -601,6 +601,49 @@
     } catch (e) {}
   }
 
+  /**
+   * P0 back-nav: #mcjAuthBootOverlay must never enter bfcache.
+   * Login success used to navigate while the overlay was still mounted; browser Back
+   * then restored a frozen page with a full-screen dark mask (looks like a black screen).
+   */
+  function clearBackNavArtifacts() {
+    hideAuthBootOverlay();
+    try {
+      if (window.MCJModal && typeof window.MCJModal.unlockBodyScroll === "function") {
+        window.MCJModal.unlockBodyScroll();
+      }
+    } catch (e0) {}
+    try {
+      document.documentElement.classList.remove(
+        "mcj-modal-open",
+        "mcj-mnav-open",
+        "pw-forced-open",
+        "mcj-floating-cs-lock",
+        "action-modal-open"
+      );
+      document.body &&
+        document.body.classList.remove(
+          "mcj-modal-open",
+          "mcj-mnav-open",
+          "pw-forced-open",
+          "mcj-floating-cs-lock",
+          "action-modal-open"
+        );
+      document.documentElement.style.overflow = "";
+      if (document.body) {
+        document.body.style.overflow = "";
+        document.body.style.position = "";
+        document.body.style.top = "";
+        document.body.style.width = "";
+      }
+    } catch (e1) {}
+    try {
+      if (window.MCJHomeOverlayGuard && typeof window.MCJHomeOverlayGuard.sweep === "function") {
+        window.MCJHomeOverlayGuard.sweep();
+      }
+    } catch (e2) {}
+  }
+
   function sessionReadable() {
     try {
       var a =
@@ -660,6 +703,8 @@
         setLoginMessage(document.body, "登录态保存失败，请重试。");
         return;
       }
+      // Strip overlay BEFORE history navigation so bfcache never freezes a black mask.
+      hideAuthBootOverlay();
       if (dest !== here && dest + ".html" !== here && here + "/" !== dest) {
         location.href = String(redirect || "/").replace(/#(login|register)$/i, "");
         return;
@@ -668,7 +713,6 @@
         location.replace((location.pathname || "/") + (location.search || ""));
         return;
       }
-      hideAuthBootOverlay();
     };
     if (typeof requestAnimationFrame === "function") {
       requestAnimationFrame(function () {
@@ -1289,6 +1333,39 @@
     },
     true
   );
+
+  // Back/forward + bfcache: never leave auth boot mask / scroll locks behind.
+  window.addEventListener(
+    "pagehide",
+    function () {
+      clearBackNavArtifacts();
+    },
+    true
+  );
+  window.addEventListener(
+    "pageshow",
+    function () {
+      clearBackNavArtifacts();
+    },
+    true
+  );
+  window.addEventListener(
+    "popstate",
+    function () {
+      clearBackNavArtifacts();
+    },
+    true
+  );
+
+  // Safety net for stuck dark masks (homepage + portals that load role-gates).
+  if (!window.__MCJHomeOverlayGuard) {
+    try {
+      var og = document.createElement("script");
+      og.src = "/src/home-overlay-guard.js?v=20260810backNav1";
+      og.defer = true;
+      (document.head || document.documentElement).appendChild(og);
+    } catch (eOg) {}
+  }
 
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", refreshAuthUi);
