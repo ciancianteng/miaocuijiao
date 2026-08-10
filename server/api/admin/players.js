@@ -35,22 +35,28 @@ async function resolveLevelMeta(levelIdOrName) {
   const key = String(levelIdOrName || "").trim();
   if (!key) return null;
   const levels = await readLocalLevels().catch(() => []);
-  const found = (levels || []).find(
-    (l) =>
-      String(l.id) === key ||
-      String(l.code) === key ||
-      String(l.name) === key ||
-      String(l.level) === key ||
-      `${l.code || ""} ${l.name || ""}`.trim() === key
-  );
+  const norm = (v) =>
+    String(v || "")
+      .trim()
+      .toLowerCase()
+      .replace(/lv\.?\s*/gi, "lv")
+      .replace(/\s+/g, " ");
+  const keyN = norm(key);
+  const num = Number((key.match(/\d+/) || [])[0]);
+  const found = (levels || []).find((l) => {
+    const keys = [l.id, l.code, l.name, `${l.code || ""} ${l.name || ""}`, `lv${l.level || ""}`].map(norm);
+    return keys.includes(keyN) || Number(l.level) === num;
+  });
   if (!found) {
     return { id: key, name: key, min: null, commissionRate: null };
   }
   return {
     id: found.id,
-    name: `${found.code || ""} ${found.name || ""}`.trim() || found.name || found.id,
+    name: `${found.code || ""} ${found.name || ""}`.trim() || found.name || key,
+    code: found.code,
     min: found.min,
     max: found.max,
+    maxPlus: found.maxPlus,
     commissionRate: found.commissionRate,
   };
 }
@@ -1035,7 +1041,9 @@ export default async function handler(req, res) {
       const meta = await resolveLevelMeta(levelId || levelNameRaw);
       const after = await patchCompanionRow(id, {
         level_id: meta?.id || levelId || levelNameRaw,
-        level_name: meta?.name || levelNameRaw || levelId,
+        level_name: meta
+          ? `${meta.code || ""} ${meta.name || ""}`.trim() || meta.name || levelNameRaw || levelId
+          : levelNameRaw || levelId,
         level_effective_at: new Date().toISOString(),
         ...(payload.price != null ? { price: money(payload.price) } : meta?.min != null && !(money(companion.price) > 0) ? { price: money(meta.min) } : {}),
       });

@@ -159,7 +159,7 @@
       '<div class="hot-info">' +
       '<h3>' + esc(displayName) + '</h3>' +
       '<p>' + esc(item.game || item.mainGame || "") + '</p>' +
-      '<div class="hot-meta"><span>' + esc(item.level || "Lv.1") + '</span><span>★ ' + esc(item.rating || "") + '</span></div>' +
+      '<div class="hot-meta"><span>' + esc(item.level || "未设置等级") + '</span><span>★ ' + esc(item.rating || "") + '</span></div>' +
       '<div class="hot-orders">' + esc(price || "") + '</div>' +
       certBadges +
       '<div class="hot-tags">' + tagsHtml(item.tags || item.serviceTags) + '</div>' +
@@ -293,7 +293,9 @@
       // keep through for filters
       nameValid: item.nameValid !== false && !isGarbledName(item.nickname || item.name),
       game: item.game || item.mainGame || "",
-      level: item.levelName || item.level || "Lv.1",
+      level: item.levelName || item.level || "未设置等级",
+      levelId: item.levelId || item.level_id || "",
+      levelName: item.levelName || item.level || "",
       rating: item.rating || item.score || "",
       price: priceLabel,
       servicePrice: priceLabel,

@@ -142,22 +142,50 @@
     return Number.isFinite(number) ? Math.max(0, number) : 0;
   }
 
-  function findLevel(value) {
+  function normalizeLookupKey(value) {
+    return String(value == null ? "" : value)
+      .trim()
+      .toLowerCase()
+      .replace(/lv\.?\s*/gi, "lv")
+      .replace(/\s+/g, " ");
+  }
+
+  /** Resolve a level from admin/API data. Returns null when unset/unknown — never invents Lv1. */
+  function resolveLevel(value) {
     var levels = read();
     var text = String(value == null ? "" : value).trim();
+    if (!text || /^未设置/.test(text)) return null;
+    var key = normalizeLookupKey(text);
     var number = Number((text.match(/\d+/) || [])[0]);
     return levels.find(function (level) {
-      return level.id === text || level.code === text || level.name === text || level.level === number || text.indexOf(level.name) > -1;
-    }) || levels[0] || copy(DEFAULT_LEVELS[0]);
+      var keys = [
+        level.id,
+        level.code,
+        level.name,
+        level.code + " " + level.name,
+        "Lv" + level.level + " " + level.name,
+        "lv" + level.level
+      ].map(normalizeLookupKey);
+      return keys.indexOf(key) > -1 || level.level === number || (level.name && key.indexOf(normalizeLookupKey(level.name)) > -1);
+    }) || null;
+  }
+
+  function findLevel(value) {
+    return resolveLevel(value) || read()[0] || copy(DEFAULT_LEVELS[0]);
   }
 
   function label(value) {
-    var level = findLevel(value);
+    var level = resolveLevel(value);
+    if (!level) {
+      var raw = String(value == null ? "" : value).trim();
+      return raw && !/^未设置/.test(raw) ? raw : "未设置等级";
+    }
     return level.code + " " + level.name;
   }
 
   function labelWithIcon(value) {
-    var level = findLevel(value);
+    var level = resolveLevel(value);
+    if (!level) return label(value);
     return (level.icon ? level.icon + " " : "") + level.code + " " + level.name;
   }
 
@@ -220,22 +248,45 @@
 
   function normalizeCompanion(item) {
     var source = item || {};
-    var level = findLevel(source.levelId || source.player_level_id || source.level || source.level_name || source.rank);
-    var price = clampPrice(level, source.hourlyPrice || source.servicePrice || source.price || source.unitPrice);
+    var level = resolveLevel(
+      source.levelId ||
+        source.player_level_id ||
+        source.level_id ||
+        source.level ||
+        source.levelName ||
+        source.level_name ||
+        source.rank
+    );
+    // Preserve the real DB/API price for hall filters — never invent/clamp display prices here.
+    var rawPrice =
+      source.priceValue != null
+        ? source.priceValue
+        : source.hourlyPrice != null
+          ? source.hourlyPrice
+          : source.servicePrice != null
+            ? source.servicePrice
+            : source.price != null
+              ? source.price
+              : source.unitPrice;
+    var price = priceNumber(rawPrice);
+    var levelId = level ? level.id : String(source.levelId || source.level_id || "").trim();
+    var levelLabel = level
+      ? level.code + " " + level.name
+      : String(source.levelName || source.level || source.level_name || "").trim() || "未设置等级";
     return Object.assign({}, source, {
-      levelId: level.id,
-      levelNumber: level.level,
-      levelLabel: label(level.id),
-      levelLabelWithIcon: labelWithIcon(level.id),
-      levelRange: formatRange(level),
-      levelDescription: level.description,
-      levelColor: level.color,
-      displayColor: level.displayColor,
-      cardBackground: level.cardBackground,
-      badgeBorder: level.badgeBorder,
-      badgeText: level.badgeText,
-      badgeIcon: level.badgeIcon,
-      commissionRate: level.commissionRate,
+      levelId: levelId,
+      levelNumber: level ? level.level : Number(String(levelId).replace(/\D+/g, "")) || 0,
+      levelLabel: levelLabel,
+      levelLabelWithIcon: level ? labelWithIcon(level.id) : levelLabel,
+      levelRange: level ? formatRange(level) : "",
+      levelDescription: level ? level.description : "",
+      levelColor: level ? level.color : "",
+      displayColor: level ? level.displayColor : "",
+      cardBackground: level ? level.cardBackground : "",
+      badgeBorder: level ? level.badgeBorder : "",
+      badgeText: level ? level.badgeText : "",
+      badgeIcon: level ? level.badgeIcon : "",
+      commissionRate: level ? level.commissionRate : source.commissionRate,
       priceValue: price,
       priceDisplay: formatHourlyPrice(price)
     });
@@ -278,12 +329,14 @@
     read: read,
     save: save,
     find: findLevel,
+    resolve: resolveLevel,
     label: label,
     labelWithIcon: labelWithIcon,
     formatRange: formatRange,
     formatHourlyPrice: formatHourlyPrice,
     priceNumber: priceNumber,
     validatePrice: validatePrice,
+    clampPrice: clampPrice,
     normalizeCompanion: normalizeCompanion,
     selectOptions: selectOptions,
     applyTheme: applyTheme,

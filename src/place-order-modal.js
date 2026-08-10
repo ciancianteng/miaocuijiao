@@ -351,7 +351,12 @@
     var service =
       String(raw.service || raw.serviceName || raw.game || raw.mainGame || "").trim();
     if (LEGACY_SERVICE_NAMES[service]) service = "";
-    var level = String(raw.level || raw.levelName || raw.rank || raw.tier || "").trim() || "认证陪玩";
+    var levelId = String(raw.levelId || raw.level_id || "").trim();
+    var level = String(raw.level || raw.levelName || raw.rank || raw.tier || "").trim();
+    if (!level && levelId && window.MCJCompanionLevels && window.MCJCompanionLevels.label) {
+      level = window.MCJCompanionLevels.label(levelId);
+    }
+    if (!level) level = "未设置等级";
     var onlineRaw =
       raw.availabilityStatus ||
       raw.availability_status ||
@@ -388,6 +393,7 @@
       avatar: avatarSrc(raw.avatar || raw.cover || raw.cardImageUrl || ""),
       publicId: raw.publicId || "",
       level: level,
+      levelId: levelId,
       online: online,
       availabilityStatus: presence ? presence.code : String(raw.availabilityStatus || "").toLowerCase() || "",
       availabilityText: presence ? presence.label : raw.availabilityText || (online ? "在线可接单" : "离线"),
@@ -813,8 +819,10 @@
       esc(c.companionName) +
       "</div>" +
       '<div class="mcj-po-meta">' +
-      '<span class="mcj-po-pill">' +
-      esc(c.level || "认证陪玩") +
+      '<span class="mcj-po-pill" data-level-id="' +
+      esc(c.levelId || "") +
+      '">' +
+      esc(c.level || "未设置等级") +
       "</span>" +
       '<span class="mcj-po-pill' +
       (c.online ? " online" : "") +

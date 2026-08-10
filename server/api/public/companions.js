@@ -120,16 +120,39 @@ function availabilityCode(row = {}) {
 function availabilityText(code) {
   return ({ online: "在线可接单", busy: "忙碌中", paused: "暂停接单", offline: "离线" })[code] || "离线";
 }
+function normalizeLevelLookupKey(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/lv\.?\s*/gi, "lv")
+    .replace(/\s+/g, " ");
+}
 function findLevelMeta(levels, row = {}) {
   const list = Array.isArray(levels) ? levels : [];
   const id = String(row.level_id || "").trim();
   const name = String(row.level_name || "").trim();
+  if (id) {
+    const idKey = normalizeLevelLookupKey(id);
+    const byId = list.find((l) => {
+      const keys = [String(l.id || ""), String(l.code || ""), `lv${l.level || ""}`].map(normalizeLevelLookupKey);
+      return keys.includes(idKey) || String(l.id) === id || String(l.code) === id;
+    });
+    if (byId) return byId;
+  }
+  if (!name || /^未设置/.test(name)) return null;
+  const nameKey = normalizeLevelLookupKey(name);
   return (
-    list.find((l) => String(l.id) === id) ||
-    list.find((l) => String(l.code) === id || String(l.code) === name) ||
-    list.find((l) => String(l.name) === name) ||
-    list.find((l) => name && `${l.code || ""} ${l.name || ""}`.trim() === name) ||
-    null
+    list.find((l) => {
+      const keys = [
+        String(l.id || ""),
+        String(l.code || ""),
+        String(l.name || ""),
+        `${l.code || ""} ${l.name || ""}`,
+        `Lv${l.level || ""} ${l.name || ""}`,
+        `lv${l.level || ""}`,
+      ].map(normalizeLevelLookupKey);
+      return keys.includes(nameKey) || (l.name && nameKey.includes(normalizeLevelLookupKey(l.name)));
+    }) || null
   );
 }
 function resolveServiceTypes(row = {}) {

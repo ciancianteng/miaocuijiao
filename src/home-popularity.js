@@ -206,6 +206,7 @@
       nickname: c.nickname || c.name || "",
       avatar: avatarUrl(c.avatar || c.cover || ""),
       level: c.levelName || c.level || "",
+      levelId: c.levelId || c.level_id || "",
       availabilityStatus: p ? p.code : c.availabilityStatus || "offline",
       availabilityText: p ? p.label : c.availabilityText || c.status || c.onlineStatus || "",
       popularityScore: 0,
