@@ -33,7 +33,7 @@ import {
   publicDisplayName,
   resolveCompanionPublicCode,
 } from "../_account-codes.js";
-import { exportCsv as exportPaymentReceiptsCsv, listPaidForAdmin, listPendingForAdmin, listRejectedForAdmin, enrichReceiptAudit, approveAndLedger, rejectProof, staffReviewerNameFromProfile } from "../_payment-receipts.js";
+import { exportCsv as exportPaymentReceiptsCsv, listPaidForAdmin, listPendingForAdmin, listRejectedForAdmin, enrichReceiptAudit, approveAndLedger, rejectProof, staffReviewerNameFromProfile, stripReviewStaffMark } from "../_payment-receipts.js";
 import { normalizeAdminRole } from "../_admin-auth.js";
 
 const FINANCE_BUCKET = "finance-receipts";
