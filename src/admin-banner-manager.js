@@ -606,8 +606,9 @@
       if (!state.crop || state.crop.zoom == null) state.crop = { zoom: 1, x: 0, y: 0 };
       render();
       bind();
+      watchLivePreviewFrame();
+      scheduleApplyCropFrames();
       requestAnimationFrame(function () {
-        applyCropFrames();
         var stage = document.querySelector("[data-banner-crop-stage]");
         if (stage) stage.scrollIntoView({ behavior: "smooth", block: "center" });
       });
