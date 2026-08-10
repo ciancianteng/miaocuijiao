@@ -1,7 +1,7 @@
 {
-  "base": "https://meow-cuijiao-homepage-staging.vercel.app",
-  "useLocalHtml": true,
-  "orderId": "2e3b0078-f73b-4569-8e43-90757dc53c27",
+  "base": "https://meow-cuijiao-homepage-git-cu-6a89be-ciancianteng-4581s-projects.vercel.app",
+  "useLocalHtml": false,
+  "orderId": "65d050a4-88e8-40a8-a1d2-33c08e14c11d",
   "results": [
     {
       "step": "local_css_transparent_frame",
@@ -9,9 +9,9 @@
       "detail": "local payment-confirm.css"
     },
     {
-      "step": "deployed_css_check_skipped",
+      "step": "deployed_css_transparent_frame",
       "result": "PASS",
-      "detail": "USE_LOCAL_HTML=1 serving workspace HTML"
+      "detail": "background:transparent"
     },
     {
       "step": "boss_login",
@@ -26,7 +26,7 @@
     {
       "step": "create_order",
       "result": "PASS",
-      "detail": "id=2e3b0078-f73b-4569-8e43-90757dc53c27 status=awaiting_payment msg=订单已提交，请完成支付。"
+      "detail": "id=65d050a4-88e8-40a8-a1d2-33c08e14c11d status=awaiting_payment msg=订单已提交，请完成支付。"
     },
     {
       "step": "duitnow_qr_present",
