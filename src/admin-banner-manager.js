@@ -15,8 +15,11 @@
     editMeta: { title: "", link: "", sort_order: 100 },
     crop: { zoom: 1, x: 0, y: 0 },
     natural: { width: 0, height: 0 },
+    previewIndex: 0,
   };
   var DESKTOP_RATIO = 1920 / 700;
+  var _cropRetryTimer = 0;
+  var _livePreviewRo = null;
 
   function esc(v) {
     return String(v == null ? "" : v).replace(/[&<>"']/g, function (c) {
@@ -49,22 +52,27 @@
         state.current = res.current || null;
         state.history = res.history || [];
         state.message = res.message || "";
+        var list = activeBannersForPreview();
+        if (state.current && state.current.id) {
+          var idx = list.findIndex(function (item) {
+            return String(item.id) === String(state.current.id);
+          });
+          state.previewIndex = idx >= 0 ? idx : 0;
+        } else {
+          state.previewIndex = 0;
+        }
       })
       .catch(function (err) {
         state.error = err.message || "Banner 读取失败";
         state.current = null;
         state.history = [];
       })
-      .      finally(function () {
+      .finally(function () {
         state.loading = false;
         render();
         bind();
-        requestAnimationFrame(function () {
-          if (!state.draft && state.current) {
-            state.crop = normalizeCropState(state.current.crop_meta || state.current.crop || {});
-            applyCropFrames();
-          }
-        });
+        watchLivePreviewFrame();
+        scheduleApplyCropFrames();
       });
   }
   function resetDraft(keepEditing) {
@@ -98,9 +106,8 @@
       state.crop = { zoom: 1, x: 0, y: 0 };
       render();
       bind();
-      requestAnimationFrame(function () {
-        applyCropFrames();
-      });
+      watchLivePreviewFrame();
+      scheduleApplyCropFrames();
     };
     img.onerror = function () {
       alert("图片读取失败，请换一张试试。");
@@ -137,21 +144,140 @@
   function applyCropFrames() {
     var api = cropApi();
     if (!api || !api.applyCropToImg) return;
-    var crop = cropPayload();
     var pairs = [
-      [document.querySelector("[data-banner-crop-img]"), document.querySelector("[data-banner-crop-stage]")],
-      [document.querySelector("[data-banner-live-preview] img"), document.querySelector("[data-banner-live-preview]")],
+      [document.querySelector("[data-banner-crop-img]"), document.querySelector("[data-banner-crop-stage]"), "draft"],
+      [document.querySelector("[data-banner-live-preview] img"), document.querySelector("[data-banner-live-preview]"), "live"],
     ];
     pairs.forEach(function (pair) {
       var img = pair[0];
       var frame = pair[1];
+      var kind = pair[2];
       if (!img || !frame) return;
+      // P0: never apply crop while the preview frame has no real layout size.
+      // Otherwise coverBaseSize(nat, 1×1) collapses the img to ~2.7×1px with !important
+      // and the large 1920×700 box looks completely blank.
+      var fw = Math.max(0, frame.clientWidth || frame.offsetWidth || 0);
+      var fh = Math.max(0, frame.clientHeight || frame.offsetHeight || 0);
+      if (fw < 32 || fh < 16) return;
+      var crop =
+        kind === "live" && !(state.draft && state.draft.url)
+          ? normalizeCropState(livePreviewCropSource())
+          : cropPayload();
       function run() {
         api.applyCropToImg(img, frame, crop);
       }
       if (img.complete && img.naturalWidth) run();
       else img.addEventListener("load", run, { once: true });
     });
+  }
+
+  function livePreviewCropSource() {
+    var list = activeBannersForPreview();
+    var item = list[state.previewIndex] || list[0] || state.current || null;
+    return (item && (item.crop_meta || item.crop)) || {};
+  }
+
+  function activeBannersForPreview() {
+    var list = (state.history || []).filter(function (item) {
+      return item && item.is_active === true && item.image_url;
+    });
+    list.sort(function (a, b) {
+      return Number(a.sort_order != null ? a.sort_order : 100) - Number(b.sort_order != null ? b.sort_order : 100);
+    });
+    if (!list.length && state.current && state.current.image_url) {
+      list = [state.current];
+    }
+    return list;
+  }
+
+  function scheduleApplyCropFrames() {
+    if (_cropRetryTimer) {
+      clearTimeout(_cropRetryTimer);
+      _cropRetryTimer = 0;
+    }
+    var tries = 0;
+    function tick() {
+      tries += 1;
+      applyCropFrames();
+      var live = document.querySelector("[data-banner-live-preview]");
+      var stage = document.querySelector("[data-banner-crop-stage]");
+      var liveNeeds =
+        live &&
+        live.querySelector("img") &&
+        (live.clientWidth < 32 || live.clientHeight < 16 || !live.querySelector("img[data-crop-ready]"));
+      var stageNeeds =
+        stage &&
+        stage.querySelector("img") &&
+        (stage.clientWidth < 32 || stage.clientHeight < 16 || !stage.querySelector("img[data-crop-ready]"));
+      if ((liveNeeds || stageNeeds) && tries < 30) {
+        _cropRetryTimer = setTimeout(tick, tries < 5 ? 32 : 80);
+      }
+    }
+    requestAnimationFrame(function () {
+      requestAnimationFrame(tick);
+    });
+  }
+
+  function watchLivePreviewFrame() {
+    var live = document.querySelector("[data-banner-live-preview]");
+    if (!live || typeof ResizeObserver === "undefined") return;
+    if (_livePreviewRo) {
+      try {
+        _livePreviewRo.disconnect();
+      } catch (e) {}
+      _livePreviewRo = null;
+    }
+    _livePreviewRo = new ResizeObserver(function () {
+      if (live.clientWidth >= 32 && live.clientHeight >= 16) applyCropFrames();
+    });
+    _livePreviewRo.observe(live);
+  }
+
+  function renderLivePreview() {
+    // While uploading/editing a draft image, keep existing behavior: preview the draft.
+    if (state.draft && state.draft.url) {
+      return (
+        '<div class="banner-ops-preview" data-banner-live-preview>' +
+        '<img src="' +
+        esc(state.draft.url) +
+        '" alt="当前 Banner">' +
+        "</div>"
+      );
+    }
+    var list = activeBannersForPreview();
+    if (!list.length) {
+      return (
+        '<div class="banner-ops-preview" data-banner-live-preview>' +
+        '<div class="banner-ops-preview-empty">暂无启用中的 Banner</div>' +
+        "</div>"
+      );
+    }
+    if (state.previewIndex < 0 || state.previewIndex >= list.length) state.previewIndex = 0;
+    var item = list[state.previewIndex] || list[0];
+    var nav =
+      list.length > 1
+        ? '<div class="banner-ops-preview-nav">' +
+          '<button type="button" class="mini-btn" data-banner-preview-prev aria-label="上一张">上一张</button>' +
+          '<span class="banner-ops-preview-count">' +
+          (state.previewIndex + 1) +
+          " / " +
+          list.length +
+          " · 启用中</span>" +
+          '<button type="button" class="mini-btn" data-banner-preview-next aria-label="下一张">下一张</button>' +
+          "</div>"
+        : "";
+    return (
+      '<div class="banner-ops-preview" data-banner-live-preview data-banner-preview-id="' +
+      esc(item.id) +
+      '">' +
+      '<img src="' +
+      esc(item.image_url) +
+      '" alt="' +
+      esc(item.title || "当前 Banner") +
+      '">' +
+      "</div>" +
+      nav
+    );
   }
   function renderUploadZone() {
     if (state.draft && state.draft.url) {
@@ -274,8 +400,6 @@
       box.innerHTML = '<div class="banner-ops-loading">正在读取 Banner...</div>';
       return;
     }
-    var previewUrl =
-      (state.draft && state.draft.url) || (state.current && state.current.image_url) || "";
     var editing = !!state.editingId;
     var publishLabel = state.publishing
       ? "上传中/发布中…"
@@ -288,12 +412,9 @@
       '<div class="banner-ops">' +
       '<section class="banner-ops-section">' +
       "<h3>首页 Banner 实时预览</h3>" +
-      "<p>宽屏比例（约 1920×700）。保存成功后首页会读取当前启用 Banner。</p>" +
-      '<div class="banner-ops-preview" data-banner-live-preview>' +
-      (previewUrl
-        ? '<img src="' + esc(previewUrl) + '" alt="当前 Banner">'
-        : '<div class="banner-ops-preview-empty">暂无 Banner，请上传并发布</div>') +
-      "</div></section>" +
+      "<p>宽屏比例（约 1920×700）。显示当前启用中的 Banner，与首页数据源一致。</p>" +
+      renderLivePreview() +
+      "</section>" +
       '<section class="banner-ops-section">' +
       "<h3>" + (editing ? "编辑 Banner（上传 / 裁剪 / 保存）" : "上传 / 裁剪 / 发布") + "</h3>" +
       "<p>" + (editing
@@ -655,13 +776,35 @@
       });
   }
   function previewHistory(id) {
-    var item = state.history.find(function (row) {
+    var list = activeBannersForPreview();
+    var idx = list.findIndex(function (row) {
       return String(row.id) === String(id);
     });
-    if (!item || !item.image_url) return;
-    var live = document.querySelector("[data-banner-live-preview]");
-    if (!live) return;
-    live.innerHTML = '<img src="' + esc(item.image_url) + '" alt="Banner 预览">';
+    if (idx < 0) {
+      var item = state.history.find(function (row) {
+        return String(row.id) === String(id);
+      });
+      if (!item || !item.image_url) return;
+      var live = document.querySelector("[data-banner-live-preview]");
+      if (!live) return;
+      live.innerHTML = '<img src="' + esc(item.image_url) + '" alt="Banner 预览">';
+      scheduleApplyCropFrames();
+      return;
+    }
+    state.previewIndex = idx;
+    render();
+    bind();
+    watchLivePreviewFrame();
+    scheduleApplyCropFrames();
+  }
+  function shiftPreview(delta) {
+    var list = activeBannersForPreview();
+    if (list.length < 2) return;
+    state.previewIndex = (state.previewIndex + delta + list.length) % list.length;
+    render();
+    bind();
+    watchLivePreviewFrame();
+    scheduleApplyCropFrames();
   }
   function bind() {
     bindUploadZone();
@@ -670,6 +813,10 @@
     if (publishBtn) publishBtn.onclick = publish;
     var cancelBtn = document.querySelector("[data-banner-cancel-edit]");
     if (cancelBtn) cancelBtn.onclick = cancelEdit;
+    var prevBtn = document.querySelector("[data-banner-preview-prev]");
+    if (prevBtn) prevBtn.onclick = function () { shiftPreview(-1); };
+    var nextBtn = document.querySelector("[data-banner-preview-next]");
+    if (nextBtn) nextBtn.onclick = function () { shiftPreview(1); };
     document.querySelectorAll("[data-banner-edit]").forEach(function (btn) {
       btn.onclick = function () {
         openEdit(btn.getAttribute("data-banner-edit"));

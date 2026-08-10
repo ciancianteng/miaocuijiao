@@ -27,6 +27,18 @@
   transform-origin: center center;
 }
 .banner-ops-preview-empty { display: grid; place-items: center; height: 100%; color: #9ca3af; font-size: 14px; }
+.banner-ops-preview-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 10px;
+}
+.banner-ops-preview-count {
+  color: #9ca3af;
+  font-size: 12px;
+  font-weight: 600;
+}
 
 .banner-ops-crop { display: grid; gap: 12px; width: 100%; }
 .banner-ops-crop-head {
