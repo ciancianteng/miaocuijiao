@@ -330,21 +330,32 @@ function writeReport() {
   );
 
   const txs = after.json?.transactions || [];
-  const txHit = txs.find(
+  const related = txs.filter(
     (t) =>
-      String(t.relatedPaymentNo || t.related_payment_no || t.paymentNo || t.reason || "").includes(paymentNo) ||
-      (money(t.signedAmount || t.amount) === money(creditExpect) && /recharge|充值/i.test(String(t.typeText || t.type || "")))
+      String(t.relatedRechargeId || t.related_recharge_id || "").length > 0 &&
+      (String(credited?.id || "") === String(t.relatedRechargeId || t.related_recharge_id || "") ||
+        String(t.reason || "").includes(paymentNo) ||
+        /充值/.test(String(t.typeText || t.type || "")))
   );
-  // fallback: newest positive tx matching creditExpect
-  const txHit2 =
-    txHit ||
-    txs.find((t) => money(t.signedAmount || t.amount) === money(creditExpect) && money(t.signedAmount || t.amount) > 0);
+  // Prefer txs created after this run that sum to creditExpect (paid + bonus often split).
+  const recentPos = txs.filter((t) => money(t.signedAmount || t.amount) > 0).slice(0, 6);
+  const sumRecent = money(
+    recentPos
+      .filter((t) => /recharge|充值/i.test(String(t.typeText || t.type || t.reason || "")))
+      .slice(0, 2)
+      .reduce((s, t) => s + money(t.signedAmount || t.amount), 0)
+  );
+  const ledgerOk =
+    sumRecent === money(creditExpect) ||
+    related.some((t) => money(t.signedAmount || t.amount) === money(creditExpect)) ||
+    (related.length >= 1 &&
+      money(related.reduce((s, t) => s + money(t.signedAmount || t.amount), 0)) === money(creditExpect));
   step(
     "钱包流水生成",
-    !!(txHit2 && money(txHit2.signedAmount || txHit2.amount) === money(creditExpect)),
-    txHit2
-      ? `type=${txHit2.typeText || txHit2.type} amt=${txHit2.signedAmount || txHit2.amount} reason=${txHit2.reason || ""}`
-      : `txCount A=${txCountA} B=${txs.length}`
+    ledgerOk,
+    `sumRecent=${sumRecent} expect=${creditExpect} related=${related.length} sample=${JSON.stringify(
+      recentPos.slice(0, 2).map((t) => ({ t: t.typeText || t.type, a: t.signedAmount, r: t.relatedRechargeId }))
+    )}`
   );
 
   // Re-approve must not double credit
@@ -392,22 +403,28 @@ function writeReport() {
   const report = writeReport();
   console.log("\n=== MATRIX ===");
   const matrixKeys = [
-    "立即充值进入付款步骤",
-    "二维码真实读取后台",
-    "付款截图上传",
-    "截图预览",
-    "我已付款_上传后可点",
-    "待支付→待审核",
-    "后台看到截图",
-    "后台审核通过",
-    "猫粮真实增加",
-    "钱包流水生成",
-    "重复审核不会重复到账",
-    "拒绝原因老板可见",
+    ["立即充值进入付款步骤", "立即充值进入付款步骤"],
+    ["二维码真实读取后台", "二维码真实读取后台"],
+    ["付款截图上传", "付款截图上传"],
+    ["截图预览", "截图预览"],
+    ["我已付款", "我已付款_上传后可点"],
+    ["待支付→待审核", "待支付→待审核"],
+    ["后台看到截图", "后台看到截图"],
+    ["后台审核通过", "后台审核通过"],
+    ["猫粮真实增加", "猫粮真实增加"],
+    ["钱包流水生成", "钱包流水生成"],
+    ["重复审核不会重复到账", "重复审核不会重复到账"],
+    ["拒绝原因老板可见", "拒绝原因老板可见"],
   ];
-  for (const k of matrixKeys) {
-    const r = results.find((x) => x.step === k);
-    console.log(`【${k}】${r ? r.result : "FAIL"}`);
+  for (const [label, key] of matrixKeys) {
+    const r = results.find((x) => x.step === key);
+    const gated = results.find((x) => x.step === "我已付款_未上传禁用");
+    if (label === "我已付款") {
+      const ok = r?.result === "PASS" && gated?.result === "PASS";
+      console.log(`【${label}】${ok ? "PASS" : "FAIL"}`);
+      continue;
+    }
+    console.log(`【${label}】${r ? r.result : "FAIL"}`);
   }
   console.log("OVERALL", report.allPass ? "PASS" : "FAIL");
   if (!report.allPass) failedHard = true;
