@@ -130,21 +130,55 @@ function writeReport() {
     });
   }
 
+  // Ensure a non-first-recharge RM100/105 campaign exists (existing test bosses already paid once).
+  const campsAdmin = await api("/api/admin/recharge-campaigns", adminT, null, "GET", { "x-mcj-admin-role": "admin" });
+  let daily = (campsAdmin.json?.campaigns || []).find(
+    (c) =>
+      c &&
+      c.enabled !== false &&
+      !c.firstRechargeOnly &&
+      money(c.payAmountRm) === 100 &&
+      money(c.totalCatFood) === 105
+  );
+  if (!daily) {
+    const createdCamp = await api(
+      "/api/admin/recharge-campaigns",
+      adminT,
+      {
+        name: "日常充值RM100",
+        payAmountRm: 100,
+        baseCatFood: 100,
+        bonusCatFood: 5,
+        totalCatFood: 105,
+        firstRechargeOnly: false,
+        perBossLimit: 0,
+        enabled: true,
+        sortOrder: 2,
+        description: "日常充值档位（非首充）",
+      },
+      "POST",
+      { "x-mcj-admin-role": "admin" }
+    );
+    daily = createdCamp.json?.campaign || null;
+  }
+  step("ensure_daily_campaign", !!(daily && daily.id), daily ? `${daily.id} ${daily.name}` : "missing");
+
   const before = await api("/api/recharge", bossT, null, "GET");
   const balanceA = money(before.json?.summary?.balance ?? before.json?.wallet?.totalBalance);
   const txCountA = (before.json?.transactions || []).length;
   const campaigns = before.json?.campaigns || [];
   const methods = (before.json?.methods || []).filter((m) => m && m.open !== false);
   const camp =
+    campaigns.find((c) => c.id === daily?.id) ||
+    campaigns.find((c) => !c.firstRechargeOnly && money(c.payAmountRm) === 100) ||
     campaigns.find((c) => money(c.payAmountRm) === 100 && money(c.totalCatFood) === 105) ||
-    campaigns.find((c) => money(c.payAmountRm) === 100) ||
     campaigns[0];
   const duitnow = methods.find((m) => String(m.code || "").toLowerCase() === "duitnow") || methods[0];
   step(
     "campaign_rm100_105",
-    !!(camp && money(camp.payAmountRm) > 0),
+    !!(camp && money(camp.payAmountRm) > 0 && !camp.firstRechargeOnly),
     camp
-      ? `${camp.name} pay=${camp.payAmountRm} base=${camp.baseCatFood} bonus=${camp.bonusCatFood} total=${camp.totalCatFood}`
+      ? `${camp.name} pay=${camp.payAmountRm} base=${camp.baseCatFood} bonus=${camp.bonusCatFood} total=${camp.totalCatFood} first=${camp.firstRechargeOnly}`
       : "no campaign"
   );
   step("method_duitnow_enabled", !!(duitnow && duitnow.code), duitnow ? `${duitnow.code} open=${duitnow.open}` : "missing");
