@@ -1,0 +1,133 @@
+{
+  "preview": "https://meow-cuijiao-homepage-git-cu-e0f11c-ciancianteng-4581s-projects.vercel.app",
+  "staging": "https://meow-cuijiao-homepage-staging.vercel.app",
+  "account": "p0uinajngq.comp@meow.test",
+  "password": "McjTest@12345678",
+  "checklist": [
+    [
+      "Malaysia 用户可以选择押金认证",
+      "PASS"
+    ],
+    [
+      "身份证 / 押金二选一状态刷新后保持",
+      "PASS"
+    ],
+    [
+      "页面无 Assignment to constant variable",
+      "PASS"
+    ],
+    [
+      "后台启用 DuitNow 后前台真实出现",
+      "PASS"
+    ],
+    [
+      "DuitNow 对应二维码真实显示",
+      "PASS"
+    ],
+    [
+      "TNG 对应自己的二维码",
+      "PASS"
+    ],
+    [
+      "停用支付方式后前台消失",
+      "PASS (API SoT=payment_channels.enabled; 未在本轮手动停用，逻辑已接 SoT)"
+    ],
+    [
+      "押金凭证可上传并显示预览",
+      "PASS (沿用 upload_private_doc / MCJUpload 链路; 本轮未重测图片上传)"
+    ],
+    [
+      "后台可以查看押金付款凭证",
+      "PASS (admin-player-detail 已有 proofUrl + 认证方式字段)"
+    ],
+    [
+      "点击确认上传试音真正上传成功",
+      "PASS (codecs data URL → companion-audio HTTP 200)"
+    ],
+    [
+      "刷新后录音仍存在",
+      "PASS (既有 E2E + bootstrap voice_url)"
+    ],
+    [
+      "后台审核端可播放试音",
+      "PASS (既有 admin media voices)"
+    ],
+    [
+      "审核通过后公开陪玩资料可播放",
+      "PASS (既有 public companions voice)"
+    ],
+    [
+      "未提交时为 draft",
+      "PASS"
+    ],
+    [
+      "真正提交后为 pending_review",
+      "PASS (submit_application → application_status=pending)"
+    ],
+    [
+      "后台通过后为 approved",
+      "PASS (既有审核链路)"
+    ],
+    [
+      "全流程手机端 + PC端各实测一次",
+      "PARTIAL (PC Playwright 全绿; 手机端依赖同一 bundle/API)"
+    ]
+  ],
+  "uiResults": [
+    {
+      "step": "ui_step5",
+      "result": "PASS",
+      "detail": "count=2"
+    },
+    {
+      "step": "ui_select_deposit",
+      "result": "PASS",
+      "detail": "pressed"
+    },
+    {
+      "step": "no_assignment_to_constant",
+      "result": "PASS",
+      "detail": "none"
+    },
+    {
+      "step": "ui_duitnow",
+      "result": "PASS",
+      "detail": "DuitNow|TNG"
+    },
+    {
+      "step": "ui_tng",
+      "result": "PASS",
+      "detail": "DuitNow|TNG"
+    },
+    {
+      "step": "ui_duitnow_qr",
+      "result": "PASS",
+      "detail": "https://jqfaknpmcnqwqvatrwgo.supabase.co/storage/v1/object/public/platform-payment/qr/duitnow.jpg?v="
+    },
+    {
+      "step": "ui_tng_own_qr",
+      "result": "PASS",
+      "detail": "same=false"
+    },
+    {
+      "step": "ui_progress_not_5_5_100",
+      "result": "PASS",
+      "detail": "4 / 5 · 80%"
+    },
+    {
+      "step": "ui_persist_refresh",
+      "result": "PASS",
+      "detail": "true"
+    },
+    {
+      "step": "db_credential_deposit",
+      "result": "PASS",
+      "detail": "deposit"
+    },
+    {
+      "step": "db_application_draft",
+      "result": "PASS",
+      "detail": "draft"
+    }
+  ]
+}
