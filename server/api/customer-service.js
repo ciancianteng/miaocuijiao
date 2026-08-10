@@ -13,11 +13,14 @@ import {
 import { companionDb } from "./_companion-media-store.js";
 import {
   approveAndLedger,
+  latestApprovedForOrders,
   latestReceiptForOrder,
   listPendingForCs,
   recoverApprovedWithoutTx,
+  receiptReviewerFields,
   rejectProof,
   signedProofUrl,
+  staffReviewerNameFromProfile,
 } from "./_payment-receipts.js";
 import { bossForCs } from "./_privacy.js";
 import { sendEmailOtp, mailProviderStatus } from "./_mail.js";
@@ -452,7 +455,9 @@ function safeOrder(row, profiles = {}, extras = {}) {
     paymentReceiptId: extras.paymentReceipt?.id || "",
     paymentRejectReason: extras.paymentRejectReason || "",
     paymentReviewedByName: extras.paymentReviewedByName || "",
+    paymentReviewedByStaffId: extras.paymentReviewedByStaffId || "",
     paymentReviewedAt: extras.paymentReviewedAt || "",
+    paymentReviewStatus: extras.paymentReviewStatus || "",
     paidAt: row.paid_at || extras.paidAt || "",
     cancelReason: row.cancel_reason || "",
     needsReassign,
@@ -1074,16 +1079,26 @@ async function loadBootstrap(serviceProfile) {
     })
   );
   const signedByOrder = Object.fromEntries(signedPairs);
+  const paidIds = (ordersRaw || [])
+    .filter((row) => row.status && row.status !== "awaiting_payment" && row.status !== "cancelled")
+    .map((row) => row.id)
+    .filter(Boolean);
+  const approvedByOrder = paidIds.length ? await latestApprovedForOrders(paidIds).catch(() => ({})) : {};
   const orders = ordersRaw.map((row) => {
     const extra = grabMap[row.id] || {};
     const receipt = receiptByOrder[row.id] || null;
+    const approved = approvedByOrder[row.id] || null;
+    const reviewFields = approved ? receiptReviewerFields(approved) : {};
     return safeOrder(row, profiles, {
       grabCount: extra.grabCount || 0,
       grabs: extra.grabs || [],
       bossIntent: extra.bossIntent || null,
       flowStatus: toFlowStatus(row.status),
       paymentReceipt: receipt,
-      paymentProofUrl: receipt ? signedByOrder[row.id] || "" : "",
+      paymentProofUrl: receipt
+        ? signedByOrder[row.id] || ""
+        : "",
+      ...reviewFields,
     });
   }); const msgByConv = messagesRaw.reduce((map, msg) => { (map[msg.conversation_id] = map[msg.conversation_id] || []).push(msg); return map; }, {}); const conversationsMapped = conversationsRaw.map((row) => { const boss = profiles[row.boss_id] || {}; const companionProf = profiles[row.companion_id] || {}; const service = profiles[row.customer_service_id] || {}; const msgs = msgByConv[row.id] || []; const last = msgs[msgs.length - 1] || {}; const bossUid = bossForCs(boss).bossUid; const isCompanionSupport = String(row.conversation_type || "") === "companion_support" || (!row.boss_id && row.companion_id); const isClosed = row.status === "closed" || row.status === "ended"; const convStatus = isClosed ? "已结束" : (row.customer_service_id ? "正在接待" : "待接待"); const lastReadAt = row.last_read_at || ""; const unreadRoles = isCompanionSupport ? ["companion"] : ["boss"];   const unreadBoss = isClosed ? [] : msgs.filter((m) => {
     if (!unreadRoles.includes(m.sender_role) || m.read_at) return false;
@@ -3184,7 +3199,33 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       const receipts = await listPendingForCs({ orderIds: [order.id] });
       const receipt = receipts?.[0];
       if (!receipt) return json(res, 404, { ok: false, message: "未找到待审核付款凭证。" });
-      await rejectProof({ receipt, reviewerId: service.profile.id, reason });
+      await rejectProof({
+        receipt,
+        reviewerId: service.profile.id,
+        reviewerName: staffReviewerNameFromProfile(service.profile),
+        reason,
+      });
+      const rejectedRows = await companionDb(
+        "payment_receipts",
+        `?id=eq.${encodeURIComponent(receipt.id)}&limit=1`
+      ).catch(() => []);
+      const rejectedReceipt = (await hydrateReceiptReviewers(rejectedRows || []))[0] || rejectedRows?.[0] || null;
+      const rejectFields = rejectedReceipt
+        ? receiptReviewerFields({
+            ...rejectedReceipt,
+            reviewed_by_staff_id:
+              rejectedReceipt.reviewed_by_staff_id || rejectedReceipt.reviewed_by || service.profile.id,
+            reviewed_by_staff_name:
+              rejectedReceipt.reviewed_by_staff_name || staffReviewerNameFromProfile(service.profile) || "",
+            reject_reason: reason,
+            status: "rejected",
+          })
+        : {
+            paymentReviewedByName: staffReviewerNameFromProfile(service.profile) || "",
+            paymentReviewedByStaffId: service.profile.id,
+            paymentRejectReason: reason,
+            paymentReviewStatus: "rejected",
+          };
       const stripProof = (text) =>
         String(text || "")
           .replace(/\n?\[\[PAYMENT_PROOF\]\][^\n]*/g, "")
@@ -3199,7 +3240,11 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         boss_id: order.boss_id, companion_id: null, customer_service_id: service.profile.id, order_id: order.id,
       });
       await addMessage(conversation, service.profile.id, "customer_service", `付款凭证已驳回：${reason}。请重新上传。`, "system", order.id);
-      return json(res, 200, { ok: true, message: "已驳回付款凭证，老板可重新上传。", order: { ...order, paymentReview: false } });
+      return json(res, 200, {
+        ok: true,
+        message: "已驳回付款凭证，老板可重新上传。",
+        order: { ...order, paymentReview: false, ...rejectFields },
+      });
     }
     if (action === "confirm_payment" || action === "push_to_grab_hall" || action === "send_to_grab_hall") {
       const order = await orderById(String(body.id || body.order_id || ""));
@@ -3294,9 +3339,16 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       }
       // A submitted manual proof represents an off-wallet payment.
       let walletSkipped = false;
+      let approvedReceiptSnapshot = null;
       if (pendingReceipt) {
         try {
-          await approveAndLedger({ order, receipt: pendingReceipt, reviewerId: service.profile.id });
+          const ledged = await approveAndLedger({
+            order,
+            receipt: pendingReceipt,
+            reviewerId: service.profile.id,
+            reviewerName: staffReviewerNameFromProfile(service.profile),
+          });
+          approvedReceiptSnapshot = ledged?.receipt || null;
         } catch (err) {
           // If approve succeeded but TX failed, try recovery once before aborting.
           const recovered = await recoverApprovedWithoutTx({
@@ -3310,6 +3362,7 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
               code: err.code || "PAYMENT_LEDGER_FAILED",
             });
           }
+          approvedReceiptSnapshot = recovered?.receipt || null;
         }
         walletSkipped = true;
       } else if (existingManualPayment) {
@@ -3472,6 +3525,25 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         ? []
         : await grabsApi.listGrabs(order.id, patched.note || order.note || order.description || "");
       const paidAtIso = patched.paid_at || nowIso();
+      const reviewedReceipt = approvedReceiptSnapshot || pendingReceipt || null;
+      const reviewFields = reviewedReceipt
+        ? receiptReviewerFields({
+            ...reviewedReceipt,
+            reviewed_by_staff_id:
+              reviewedReceipt.reviewed_by_staff_id || reviewedReceipt.reviewed_by || service.profile.id,
+            reviewed_by_staff_name:
+              reviewedReceipt.reviewed_by_staff_name ||
+              staffReviewerNameFromProfile(service.profile) ||
+              "",
+            reviewed_at: reviewedReceipt.reviewed_at || paidAtIso,
+            status: reviewedReceipt.status || "approved",
+          })
+        : {
+            paymentReviewedByName: staffReviewerNameFromProfile(service.profile) || "",
+            paymentReviewedByStaffId: service.profile.id,
+            paymentReviewedAt: paidAtIso,
+            paymentReviewStatus: "approved",
+          };
       const finalOrder = safeOrder(
         {
           ...order,
@@ -3487,9 +3559,8 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
           grabCount: grabs.length,
           grabs,
           paidAt: paidAtIso,
-          paymentReviewedByName: csDisplayName(service.profile) || service.profile.display_name || "",
-          paymentReviewedAt: paidAtIso,
-          paymentProofUrl: pendingReceipt ? (await signedProofUrl(pendingReceipt).catch(() => "")) || "" : "",
+          ...reviewFields,
+          paymentProofUrl: reviewedReceipt ? (await signedProofUrl(reviewedReceipt).catch(() => "")) || "" : "",
         }
       );
 

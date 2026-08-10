@@ -2098,6 +2098,11 @@
       '<div><span>老板备注</span><strong>'+esc(o.bossNotes||'-')+'</strong></div>'+
       '<div><span>下单时间</span><strong>'+esc(fmtTime(o.createdAt))+'</strong></div>'+
       (o.confirmDeadline?'<div><span>最迟确认时间</span><strong>'+esc(fmtTime(o.confirmDeadline))+'</strong></div>':'')+
+      (String(o.paymentReviewStatus||'').toLowerCase()==='approved'||o.paymentReviewedByName
+        ?('<div><span>付款状态</span><strong>付款已审核</strong></div>'+
+          (o.paymentReviewedByName?'<div><span>审核客服</span><strong>'+esc(o.paymentReviewedByName)+'</strong></div>':'')+
+          (o.paymentReviewedAt?'<div><span>审核时间</span><strong>'+esc(fmtTime(o.paymentReviewedAt))+'</strong></div>':''))
+        :'')+
       '</div><footer class="pw-actions">'+orderActions(o)+'</footer></article>';
   }
   function ordersHtml(){

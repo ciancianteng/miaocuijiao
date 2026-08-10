@@ -16,7 +16,7 @@ import {
 import { evaluatePublishGate } from "./_companion-publish-gate.js";
 import { allocateOrderNo, resolveOrderPublicNo } from "./_account-codes.js";
 import { companionDb } from "./_companion-media-store.js";
-import { listPendingForCs, latestRejectedForOrders, signedProofUrl, uploadProof } from "./_payment-receipts.js";
+import { listPendingForCs, latestRejectedForOrders, latestApprovedForOrders, signedProofUrl, uploadProof, receiptReviewerFields } from "./_payment-receipts.js";
 import { loadPlatformPayQr, listBossOrderPaymentMethods, normalizePaymentChannelId, isWalletPayEnabled, loadPaymentChannelsContext } from "./_platform-pay-qr.js";
 import { stripInternalOrderMarkers } from "./_order-grabs.js";
 import {
@@ -333,13 +333,22 @@ async function profileFromToken(req) {
 function bossHint(row = {}) {
   const status = row.status || "";
   const note = String(row.note || row.cancel_reason || "");
+  const reviewerName = String(row.paymentReviewedByName || "").trim();
   if (status === "awaiting_payment") {
     // Source of truth: pending payment_receipts row (not leftover note markers).
     if (row.paymentReceipt) return "付款凭证已提交，等待人工审核。";
-    if (row.paymentRejectReason) return `付款凭证已驳回：${row.paymentRejectReason}。请重新上传。`;
+    if (row.paymentRejectReason) {
+      return reviewerName
+        ? `付款凭证未通过（审核客服：${reviewerName}）：${row.paymentRejectReason}。请重新上传。`
+        : `付款凭证已驳回：${row.paymentRejectReason}。请重新上传。`;
+    }
     return "请尽快完成付款并上传凭证。";
   }
-  if (status === "claimed") return "订单已付款，正在等待陪玩确认接单";
+  if (status === "claimed") {
+    return reviewerName
+      ? `已由客服 ${reviewerName} 审核通过，正在等待陪玩确认接单`
+      : "订单已付款，正在等待陪玩确认接单";
+  }
   if (status === "confirmed" || status === "in_progress") {
     if (
       String(row.note || "").includes("[[COMPLETION_PENDING]]") ||
@@ -352,12 +361,19 @@ function bossHint(row = {}) {
         ? `陪玩已申请完成，请确认本次服务。若没有问题，系统将在 ${left} 后自动确认完成。`
         : "陪玩已申请完成，请确认本次服务。";
     }
-    return "服务进行中";
+    return reviewerName ? `付款已由客服 ${reviewerName} 审核通过，服务进行中` : "服务进行中";
   }
   if (status === "pending" && /陪玩确认超时|确认超时/.test(note)) return "陪玩暂未响应，客服正在处理中";
   if (status === "pending" && /无法接单|拒单/.test(note)) return "陪玩暂时无法接单，订单已重新进入抢单大厅";
-  if (status === "pending") return "付款已确认，待客服处理派单。";
+  if (status === "pending") {
+    return reviewerName
+      ? `已由客服 ${reviewerName} 审核通过，待派单/抢单。`
+      : "付款已确认，待客服处理派单。";
+  }
   if (status === "waiting_boss_confirm") return "已有陪玩抢单，请选择一位";
+  if ((status === "completed" || status === "reviewed") && reviewerName) {
+    return `付款已由客服 ${reviewerName} 审核通过`;
+  }
   return "";
 }
 function paymentStatusLabel(row = {}) {
@@ -496,6 +512,8 @@ function viewOrder(row = {}) {
     paymentRejectReason: row.paymentRejectReason || "",
     paymentReviewedAt: row.paymentReviewedAt || "",
     paymentReviewedByName: row.paymentReviewedByName || "",
+    paymentReviewedByStaffId: row.paymentReviewedByStaffId || "",
+    paymentReviewStatus: row.paymentReviewStatus || "",
     paidAt: row.paid_at || row.paidAt || "",
     bossHint: bossHint(row),
     cancelReason: row.cancel_reason || "",
@@ -660,21 +678,41 @@ async function loadOrders(profile, id = "") {
   let receiptByOrder = {};
   let proofUrlByOrder = {};
   let rejectedByOrder = {};
+  let approvedByOrder = {};
   const awaitingIds = orders.filter((row) => row.status === "awaiting_payment").map((row) => row.id).filter(Boolean);
-  if (awaitingIds.length) {
+  const paidIds = orders
+    .filter((row) => row.status && row.status !== "awaiting_payment" && row.status !== "cancelled")
+    .map((row) => row.id)
+    .filter(Boolean);
+  if (awaitingIds.length || paidIds.length) {
     try {
-      const receipts = await listPendingForCs({ orderIds: awaitingIds });
-      receiptByOrder = Object.fromEntries((receipts || []).map((receipt) => [receipt.order_id, receipt]));
-      const pairs = await Promise.all(
-        (receipts || []).map(async (receipt) => [receipt.order_id, (await signedProofUrl(receipt).catch(() => "")) || ""])
-      );
-      proofUrlByOrder = Object.fromEntries(pairs);
-      const needReject = awaitingIds.filter((oid) => !receiptByOrder[oid]);
-      if (needReject.length) rejectedByOrder = await latestRejectedForOrders(needReject);
+      if (awaitingIds.length) {
+        const receipts = await listPendingForCs({ orderIds: awaitingIds });
+        receiptByOrder = Object.fromEntries((receipts || []).map((receipt) => [receipt.order_id, receipt]));
+        const pairs = await Promise.all(
+          (receipts || []).map(async (receipt) => [receipt.order_id, (await signedProofUrl(receipt).catch(() => "")) || ""])
+        );
+        proofUrlByOrder = Object.fromEntries(pairs);
+        const needReject = awaitingIds.filter((oid) => !receiptByOrder[oid]);
+        if (needReject.length) rejectedByOrder = await latestRejectedForOrders(needReject);
+      }
+      if (paidIds.length) {
+        approvedByOrder = await latestApprovedForOrders(paidIds);
+        const approvedPairs = await Promise.all(
+          Object.values(approvedByOrder).map(async (receipt) => [
+            receipt.order_id,
+            (await signedProofUrl(receipt).catch(() => "")) || "",
+          ])
+        );
+        for (const [oid, url] of approvedPairs) {
+          if (url && !proofUrlByOrder[oid]) proofUrlByOrder[oid] = url;
+        }
+      }
     } catch {
       receiptByOrder = {};
       proofUrlByOrder = {};
       rejectedByOrder = {};
+      approvedByOrder = {};
     }
   }
   return orders.map((row, index) => {
@@ -683,6 +721,9 @@ async function loadOrders(profile, id = "") {
     const intent = parseBossIntent(row);
     const receipt = receiptByOrder[row.id] || null;
     const rejected = rejectedByOrder[row.id] || null;
+    const approved = approvedByOrder[row.id] || null;
+    const reviewSrc = approved || rejected || null;
+    const reviewFields = reviewSrc ? receiptReviewerFields(reviewSrc) : {};
     const viewed = viewOrder({
       ...row,
       grabs,
@@ -698,14 +739,20 @@ async function loadOrders(profile, id = "") {
       paymentReceipt: receipt,
       paymentProofUrl: proofUrlByOrder[row.id] || "",
       paymentRejectReason: rejected?.reject_reason || "",
-      paymentReviewedAt: rejected?.reviewed_at || "",
+      ...reviewFields,
     });
     if (proofUrlByOrder[row.id]) viewed.paymentProofUrl = proofUrlByOrder[row.id];
     if (rejected?.reject_reason) {
       viewed.paymentRejectReason = rejected.reject_reason;
-      viewed.paymentReviewedAt = rejected.reviewed_at || "";
+      viewed.paymentReviewedAt = reviewFields.paymentReviewedAt || rejected.reviewed_at || "";
+      viewed.paymentReviewedByName = reviewFields.paymentReviewedByName || "";
+      viewed.paymentReviewedByStaffId = reviewFields.paymentReviewedByStaffId || "";
       if (!receipt) {
-        viewed.bossHint = `付款凭证已驳回：${rejected.reject_reason}。请重新上传。`;
+        viewed.bossHint = bossHint({
+          ...row,
+          paymentRejectReason: rejected.reject_reason,
+          paymentReviewedByName: viewed.paymentReviewedByName,
+        });
       }
     }
     return viewed;

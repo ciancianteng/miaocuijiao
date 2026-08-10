@@ -54,7 +54,7 @@
     }
     return (
       '<div class="table-wrap"><table class="admin-table"><thead><tr>' +
-      "<th>充值单号</th><th>老板 / ID</th><th>应付 RM</th><th>猫粮(基础+赠送)</th><th>支付方式</th><th>付款截图</th><th>状态</th><th>时间</th><th>操作</th>" +
+      "<th>充值单号</th><th>老板 / ID</th><th>应付 RM</th><th>猫粮(基础+赠送)</th><th>支付方式</th><th>付款截图</th><th>状态</th><th>审核客服</th><th>时间</th><th>操作</th>" +
       "</tr></thead><tbody>" +
       list
         .map(function (r) {
@@ -76,6 +76,11 @@
               esc(r.paymentNo) +
               '">拒绝</button></div>';
           }
+          var reviewer =
+            esc(r.reviewedByStaffName || r.reviewerName || "-") +
+            (r.reviewedByStaffId
+              ? '<br><small class="muted">' + esc(r.reviewedByStaffId) + "</small>"
+              : "");
           return (
             "<tr>" +
             "<td><strong>" +
@@ -107,7 +112,10 @@
             (r.rejectReason ? "<br><small>" + esc(r.rejectReason) + "</small>" : "") +
             "</td>" +
             "<td>" +
-            esc(String(r.submittedAt || r.createdAt || "").replace("T", " ").slice(0, 19)) +
+            reviewer +
+            "</td>" +
+            "<td>" +
+            esc(String(r.reviewedAt || r.submittedAt || r.createdAt || "").replace("T", " ").slice(0, 19)) +
             "</td>" +
             "<td>" +
             actions +

@@ -2759,6 +2759,9 @@ import './mcj-chat-realtime.js';
       ?('<div class="cs-info-list">'+
         '<div><span>订单编号</span><strong title="'+esc(order.orderNo||'')+'">'+esc(order.orderNo)+'</strong></div>'+
         '<div><span>付款状态</span><strong>'+esc(paymentStatusLabel(order))+'</strong></div>'+
+        (order.paymentReviewedByName?('<div><span>审核人</span><strong>'+esc(order.paymentReviewedByName)+'</strong></div>'):'')+
+        (order.paymentReviewedAt?('<div><span>审核时间</span><strong>'+esc(fmtOrderDateTime(order.paymentReviewedAt))+'</strong></div>'):'')+
+        (order.paymentRejectReason?('<div><span>拒绝原因</span><strong>'+esc(order.paymentRejectReason)+'</strong></div>'):'')+
         '<div><span>指定陪玩</span><strong>'+esc(order.companionName||'-')+'</strong></div>'+
         '<div><span>陪玩确认</span><strong>'+esc(companionAcceptLabel(order))+'</strong></div>'+
         '<div><span>确认时间</span><strong>'+esc(order.acceptedAt?fmtChatTime(order.acceptedAt):'-')+'</strong></div>'+
@@ -2878,8 +2881,10 @@ import './mcj-chat-realtime.js';
     if(mode==='pay'){
       rows.push(['付款状态',paymentStatusLabel(o)]);
       rows.push(['支付时间',fmtOrderDateTime(o.paidAt||o.acceptedAt)]);
-      rows.push(['审核人',o.paymentReviewedByName||o.serviceName||'-']);
+      rows.push(['审核人',o.paymentReviewedByName||'-']);
+      if(o.paymentReviewedByStaffId)rows.push(['审核人ID',o.paymentReviewedByStaffId]);
       rows.push(['审核时间',fmtOrderDateTime(o.paymentReviewedAt)]);
+      if(o.paymentRejectReason)rows.push(['拒绝原因',o.paymentRejectReason]);
     }
     if(mode==='review')rows.push(['评价',o.reviewText||o.rating||'暂无评价']);
     var hasProof=(o.paymentProofUrl&&!/^proof:/i.test(String(o.paymentProofUrl||'')))||o.paymentReceiptId||o.paymentReview;

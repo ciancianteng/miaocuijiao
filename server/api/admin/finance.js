@@ -33,7 +33,7 @@ import {
   publicDisplayName,
   resolveCompanionPublicCode,
 } from "../_account-codes.js";
-import { exportCsv as exportPaymentReceiptsCsv, listPaidForAdmin, listPendingForAdmin, listRejectedForAdmin, enrichReceiptAudit, approveAndLedger, rejectProof } from "../_payment-receipts.js";
+import { exportCsv as exportPaymentReceiptsCsv, listPaidForAdmin, listPendingForAdmin, listRejectedForAdmin, enrichReceiptAudit, approveAndLedger, rejectProof, staffReviewerNameFromProfile } from "../_payment-receipts.js";
 import { normalizeAdminRole } from "../_admin-auth.js";
 
 const FINANCE_BUCKET = "finance-receipts";
@@ -699,7 +699,9 @@ export default async function handler(req, res) {
           paymentMethod: row.payment_method || row.paymentMethod || "",
           confirmedAt: row.confirmed_at || row.reviewedAt || "",
           reviewedAt: row.reviewedAt || row.confirmed_at || "",
-          reviewerName: row.reviewerName || "",
+          reviewerName: row.reviewerName || row.reviewedByStaffName || "",
+          reviewedByStaffId: row.reviewedByStaffId || row.reviewed_by_staff_id || "",
+          reviewedByStaffName: row.reviewedByStaffName || row.reviewerName || "",
           proofPath: row.receipt?.storage_path || row.proofPath || "",
           proofUrl: row.proofUrl || "",
           rejectReason: "",
@@ -721,6 +723,8 @@ export default async function handler(req, res) {
           uploadedAt: row.uploaded_at || row.created_at || "",
           proofUrl: row.proofUrl || "",
           reviewerName: "",
+          reviewedByStaffId: "",
+          reviewedByStaffName: "",
           reviewedAt: "",
           rejectReason: "",
           status: "pending",
@@ -739,7 +743,9 @@ export default async function handler(req, res) {
           paymentMethod: row.payment_method || row.order?.payment_method || "",
           uploadedAt: row.uploaded_at || row.created_at || "",
           reviewedAt: row.reviewed_at || row.reviewedAt || "",
-          reviewerName: row.reviewerName || "",
+          reviewerName: row.reviewerName || row.reviewedByStaffName || "",
+          reviewedByStaffId: row.reviewedByStaffId || row.reviewed_by_staff_id || "",
+          reviewedByStaffName: row.reviewedByStaffName || row.reviewerName || "",
           rejectReason: row.reject_reason || row.rejectReason || "",
           proofUrl: row.proofUrl || "",
           status: "rejected",
@@ -804,7 +810,12 @@ export default async function handler(req, res) {
           }
           const reason = String(body.reason || body.reject_reason || "").trim();
           if (!reason) return json(res, 400, { ok: false, message: "请填写驳回付款原因。" });
-          await rejectProof({ receipt, reviewerId: adminProfile.id, reason });
+          await rejectProof({
+            receipt,
+            reviewerId: adminProfile.id,
+            reviewerName: staffReviewerNameFromProfile(adminProfile),
+            reason,
+          });
           const stripProof = (text) =>
             String(text || "")
               .replace(/\n?\[\[PAYMENT_PROOF\]\][^\n]*/g, "")
@@ -834,7 +845,12 @@ export default async function handler(req, res) {
           return json(res, 200, { ok: true, message: "已驳回付款凭证，老板可重新上传。" });
         }
         if (String(receipt.status || "pending") === "pending") {
-          await approveAndLedger({ order, receipt, reviewerId: adminProfile.id });
+          await approveAndLedger({
+            order,
+            receipt,
+            reviewerId: adminProfile.id,
+            reviewerName: staffReviewerNameFromProfile(adminProfile),
+          });
         }
         const next = order.companion_id ? "claimed" : "pending";
         // Keep patch minimal — avoid optional columns that break Prefer/404 on some schemas.

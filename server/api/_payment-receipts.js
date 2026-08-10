@@ -6,6 +6,7 @@ import {
   ensurePrivateBucket,
   uploadPrivateObject,
 } from "./_companion-media-store.js";
+import { isDbUuid, isDevLogin } from "./_account-codes.js";
 
 const BUCKET = "companion-payment-proofs";
 const IMAGE_TYPES = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp"]);
@@ -18,6 +19,228 @@ function paymentMethod(order = {}) {
   const text = String(order.payment_method || order.paymentMethod || order.description || "");
   const hit = text.match(/付款方式[：:]\s*([^\n；;]+)/i);
   return (hit ? hit[1] : text).trim() || "manual";
+}
+
+/** Real staff display name only — never email / uuid / hardcoded 客服|管理员. */
+export function staffReviewerNameFromProfile(profile = {}) {
+  const name = String(profile.display_name || profile.nickname || profile.name || "").trim();
+  if (!name) return "";
+  if (/@/.test(name) || isDbUuid(name) || isDevLogin(name)) return "";
+  if (/^(客服|管理员|admin|cs|customer[\s_-]?service)$/i.test(name)) return "";
+  return name;
+}
+
+export async function loadStaffReviewer(staffId) {
+  const id = String(staffId || "").trim();
+  if (!id || !isDbUuid(id)) return { id: "", name: "" };
+  const rows = await companionDb(
+    "profiles",
+    `?id=eq.${encodeURIComponent(id)}&select=id,display_name,nickname,email,role&limit=1`
+  ).catch(() => []);
+  const profile = rows?.[0] || null;
+  return { id, name: staffReviewerNameFromProfile(profile || {}), profile };
+}
+
+export function receiptReviewerFields(receipt = {}) {
+  const staffId = String(
+    receipt.reviewed_by_staff_id || receipt.reviewed_by || receipt.confirmed_by || ""
+  ).trim();
+  const staffName = String(receipt.reviewed_by_staff_name || "").trim();
+  return {
+    paymentReviewedByStaffId: staffId,
+    paymentReviewedByName: staffName,
+    paymentReviewedAt: receipt.reviewed_at || receipt.confirmed_at || "",
+    paymentReviewStatus: receipt.status || "",
+    paymentRejectReason: receipt.reject_reason || "",
+    paymentReviewRemark: receipt.review_remark || "",
+  };
+}
+
+/** Durable snapshot when payment_review_history / staff columns are not yet migrated. */
+async function appendOperationLogSnapshot({
+  sourceTable,
+  sourceId,
+  action,
+  staffId,
+  staffName,
+  reviewStatus,
+  reviewRemark = "",
+  rejectReason = "",
+  reviewedAt,
+}) {
+  try {
+    await companionDb("payment_operation_logs", "", {
+      method: "POST",
+      body: JSON.stringify({
+        id: `payrev-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`,
+        action: `payment_review_${String(action || reviewStatus || "review")}`,
+        target_id: String(sourceId || ""),
+        operator_role: "customer_service",
+        ip: "",
+        device: sourceTable || "",
+        before_value: null,
+        after_value: {
+          source_table: sourceTable,
+          source_id: sourceId,
+          reviewed_by_staff_id: staffId || null,
+          reviewed_by_staff_name: String(staffName || ""),
+          review_status: String(reviewStatus || ""),
+          review_remark: String(reviewRemark || ""),
+          reject_reason: String(rejectReason || ""),
+          reviewed_at: reviewedAt || nowIso(),
+        },
+        created_at: nowIso(),
+      }),
+    });
+  } catch (error) {
+    if (!/PGRST205|Could not find the table|schema cache|does not exist/i.test(String(error?.message || ""))) {
+      console.warn("[payment_operation_logs review]", error?.message || error);
+    }
+  }
+}
+
+/** Load first-reviewer snapshots from payment_operation_logs (never overwrite-first). */
+export async function loadReviewerSnapshotsFromLogs(sourceIds = []) {
+  const ids = [...new Set((sourceIds || []).map((id) => String(id || "").trim()).filter(Boolean))];
+  if (!ids.length) return {};
+  const rows = await companionDb(
+    "payment_operation_logs",
+    `?or=(action.eq.payment_review_approved,action.eq.payment_review_rejected,action.eq.payment_review_review)&target_id=in.(${ids.map(encodeURIComponent).join(",")})&order=created_at.asc&limit=1000`
+  ).catch(() => []);
+  const map = {};
+  for (const row of rows || []) {
+    const tid = String(row?.target_id || "").trim();
+    if (!tid || map[tid]) continue;
+    const after = row.after_value && typeof row.after_value === "object" ? row.after_value : {};
+    const name = String(after.reviewed_by_staff_name || "").trim();
+    const staffId = String(after.reviewed_by_staff_id || "").trim();
+    if (!name && !staffId) continue;
+    map[tid] = {
+      reviewed_by_staff_id: staffId || null,
+      reviewed_by_staff_name: name,
+      reviewed_at: after.reviewed_at || row.created_at || "",
+      review_status: after.review_status || "",
+      review_remark: after.review_remark || "",
+      reject_reason: after.reject_reason || "",
+    };
+  }
+  return map;
+}
+
+/** Merge DB columns + log snapshot (columns win when present). */
+export function mergeReceiptReviewerSnapshot(receipt = {}, logSnap = null) {
+  if (!receipt) return receipt;
+  const storedName = String(receipt.reviewed_by_staff_name || "").trim();
+  const storedId = String(receipt.reviewed_by_staff_id || "").trim();
+  if (storedName && storedId) return receipt;
+  if (!logSnap) return receipt;
+  return {
+    ...receipt,
+    reviewed_by_staff_id: storedId || logSnap.reviewed_by_staff_id || receipt.reviewed_by || null,
+    reviewed_by_staff_name: storedName || String(logSnap.reviewed_by_staff_name || "").trim(),
+    reviewed_at: receipt.reviewed_at || logSnap.reviewed_at || "",
+    review_remark: receipt.review_remark || logSnap.review_remark || "",
+    reject_reason: receipt.reject_reason || logSnap.reject_reason || "",
+  };
+}
+
+export async function hydrateReceiptReviewers(receipts = []) {
+  const list = Array.isArray(receipts) ? receipts : [];
+  if (!list.length) return list;
+  const need = list.filter((r) => r && !String(r.reviewed_by_staff_name || "").trim());
+  if (!need.length) return list;
+  const snaps = await loadReviewerSnapshotsFromLogs(need.map((r) => r.id));
+  return list.map((r) => mergeReceiptReviewerSnapshot(r, snaps[r?.id] || null));
+}
+
+async function appendReviewHistory({
+  sourceTable,
+  sourceId,
+  action,
+  staffId,
+  staffName,
+  reviewStatus,
+  reviewRemark = "",
+  rejectReason = "",
+  reviewedAt,
+}) {
+  const payload = {
+    sourceTable,
+    sourceId,
+    action,
+    staffId,
+    staffName,
+    reviewStatus,
+    reviewRemark,
+    rejectReason,
+    reviewedAt,
+  };
+  try {
+    await companionDb("payment_review_history", "", {
+      method: "POST",
+      body: JSON.stringify({
+        source_table: sourceTable,
+        source_id: sourceId,
+        action: String(action || ""),
+        reviewed_by_staff_id: staffId || null,
+        reviewed_by_staff_name: String(staffName || ""),
+        review_status: String(reviewStatus || ""),
+        review_remark: String(reviewRemark || ""),
+        reject_reason: String(rejectReason || ""),
+        reviewed_at: reviewedAt || nowIso(),
+        created_at: nowIso(),
+      }),
+    });
+  } catch (error) {
+    // History table may be missing before migration; never block approve/reject.
+    if (!/PGRST205|Could not find the table|schema cache|does not exist/i.test(String(error?.message || ""))) {
+      console.warn("[payment_review_history]", error?.message || error);
+    }
+  }
+  // Always dual-write to existing payment_operation_logs so snapshot survives without DDL.
+  await appendOperationLogSnapshot(payload);
+}
+
+function reviewPatch({ staffId, staffName, status, at, reason = "", remark = "" }) {
+  const patch = {
+    status,
+    reviewed_at: at,
+    reviewed_by: staffId || null,
+    reviewed_by_staff_id: staffId || null,
+    reviewed_by_staff_name: String(staffName || ""),
+    reject_reason: String(reason || ""),
+    review_remark: String(remark || reason || ""),
+  };
+  if (status === "approved") {
+    patch.confirmed_at = at;
+    patch.confirmed_by = staffId || null;
+  }
+  return patch;
+}
+
+async function patchReceiptReview(receiptId, patch) {
+  // Prefer full staff snapshot columns; fall back if migration not applied yet.
+  try {
+    return await companionDb("payment_receipts", `?id=eq.${encodeURIComponent(receiptId)}&status=eq.pending`, {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    });
+  } catch (error) {
+    const msg = `${error?.message || ""} ${JSON.stringify(error?.body || "")}`;
+    if (!/reviewed_by_staff|review_remark|Could not find the .* column/i.test(msg)) throw error;
+    const legacy = {
+      status: patch.status,
+      reviewed_at: patch.reviewed_at,
+      reviewed_by: patch.reviewed_by,
+      reject_reason: patch.reject_reason || "",
+    };
+    if (patch.confirmed_at) legacy.confirmed_at = patch.confirmed_at;
+    if (patch.confirmed_by) legacy.confirmed_by = patch.confirmed_by;
+    return companionDb("payment_receipts", `?id=eq.${encodeURIComponent(receiptId)}&status=eq.pending`, {
+      method: "PATCH",
+      body: JSON.stringify(legacy),
+    });
+  }
 }
 
 export async function uploadProof({ order, bossId, dataUrl, paymentMethod: method }) {
@@ -113,44 +336,119 @@ export async function recoverApprovedWithoutTx({ order, reviewerId }) {
   }
 }
 
-export async function approveAndLedger({ order, receipt, reviewerId }) {
+export async function approveAndLedger({ order, receipt, reviewerId, reviewerName = "" }) {
   const existing = await companionDb("payment_transactions", `?order_id=eq.${encodeURIComponent(order.id)}&limit=1`).catch(() => []);
   if (existing?.[0]) return { transaction: existing[0], duplicate: true };
   const at = nowIso();
-  const approved = await companionDb("payment_receipts", `?id=eq.${encodeURIComponent(receipt.id)}&status=eq.pending`, {
-    method: "PATCH",
-    body: JSON.stringify({ status: "approved", reviewed_at: at, reviewed_by: reviewerId, confirmed_at: at, confirmed_by: reviewerId }),
-  });
+  const staff = await loadStaffReviewer(reviewerId);
+  const staffId = staff.id || String(reviewerId || "").trim();
+  const staffName = String(reviewerName || staff.name || "").trim();
+  if (!staffId) throw Object.assign(new Error("缺少审核客服身份，无法确认付款。"), { status: 401 });
+  if (!staffName) {
+    throw Object.assign(new Error("当前客服账号未设置真实显示名称，请先在客服资料中填写姓名后再审核。"), {
+      status: 400,
+    });
+  }
+
+  // Already reviewed: never overwrite first reviewer; recover TX if needed.
+  if (receipt?.status && receipt.status !== "pending") {
+    if (receipt.status === "approved") {
+      const recovered = await recoverApprovedWithoutTx({ order, reviewerId: staffId });
+      if (recovered?.transaction) return { ...recovered, duplicate: true };
+    }
+    throw Object.assign(new Error("付款凭证已被处理，审核人不可覆盖。"), { status: 409 });
+  }
+
+  const approved = await patchReceiptReview(
+    receipt.id,
+    reviewPatch({ staffId, staffName, status: "approved", at })
+  );
   const approvedReceipt = approved?.[0];
   if (!approvedReceipt) {
     const replay = await companionDb("payment_transactions", `?order_id=eq.${encodeURIComponent(order.id)}&limit=1`).catch(() => []);
     if (replay?.[0]) return { transaction: replay[0], duplicate: true };
-    // Receipt already approved but TX insert previously failed — recover instead of 409.
-    const recovered = await recoverApprovedWithoutTx({ order, reviewerId });
+    const recovered = await recoverApprovedWithoutTx({ order, reviewerId: staffId });
     if (recovered?.transaction) return recovered;
     throw Object.assign(new Error("付款凭证已被处理，请刷新后重试。"), { status: 409 });
   }
+
+  await appendReviewHistory({
+    sourceTable: "payment_receipts",
+    sourceId: approvedReceipt.id,
+    action: "approved",
+    staffId,
+    staffName,
+    reviewStatus: "approved",
+    reviewedAt: at,
+  });
+
+  // Ensure snapshot fields present even if DB returned legacy row without new columns.
+  const receiptOut = {
+    ...approvedReceipt,
+    reviewed_by: staffId,
+    reviewed_by_staff_id: staffId,
+    reviewed_by_staff_name: staffName || approvedReceipt.reviewed_by_staff_name || "",
+    reviewed_at: approvedReceipt.reviewed_at || at,
+  };
+
   try {
-    const transaction = await insertPaidTransaction({ order, receipt: approvedReceipt, reviewerId, at });
-    return { transaction, receipt: approvedReceipt, duplicate: false };
+    const transaction = await insertPaidTransaction({ order, receipt: receiptOut, reviewerId: staffId, at });
+    return { transaction, receipt: receiptOut, duplicate: false };
   } catch (error) {
     if (!/duplicate|unique/i.test(String(error?.message || ""))) {
-      // Keep approved receipt; next confirm_payment will recover via recoverApprovedWithoutTx.
       console.warn("[approveAndLedger] TX insert failed after approve", error?.message || error);
       throw error;
     }
     const replay = await companionDb("payment_transactions", `?order_id=eq.${encodeURIComponent(order.id)}&limit=1`);
-    return { transaction: replay?.[0] || null, receipt: approvedReceipt, duplicate: true };
+    return { transaction: replay?.[0] || null, receipt: receiptOut, duplicate: true };
   }
 }
 
-export async function rejectProof({ receipt, reviewerId, reason }) {
-  const rows = await companionDb("payment_receipts", `?id=eq.${encodeURIComponent(receipt.id)}&status=eq.pending`, {
-    method: "PATCH",
-    body: JSON.stringify({ status: "rejected", reject_reason: reason, reviewed_at: nowIso(), reviewed_by: reviewerId }),
-  });
+export async function rejectProof({ receipt, reviewerId, reviewerName = "", reason, remark = "" }) {
+  const at = nowIso();
+  const staff = await loadStaffReviewer(reviewerId);
+  const staffId = staff.id || String(reviewerId || "").trim();
+  const staffName = String(reviewerName || staff.name || "").trim();
+  if (!staffId) throw Object.assign(new Error("缺少审核客服身份，无法驳回付款。"), { status: 401 });
+  if (!staffName) {
+    throw Object.assign(new Error("当前客服账号未设置真实显示名称，请先在客服资料中填写姓名后再审核。"), {
+      status: 400,
+    });
+  }
+  if (receipt?.status && receipt.status !== "pending") {
+    throw Object.assign(new Error("付款凭证已被处理，审核人不可覆盖。"), { status: 409 });
+  }
+  const rows = await patchReceiptReview(
+    receipt.id,
+    reviewPatch({
+      staffId,
+      staffName,
+      status: "rejected",
+      at,
+      reason,
+      remark: remark || reason,
+    })
+  );
   if (!rows?.[0]) throw Object.assign(new Error("付款凭证已被处理，请刷新后重试。"), { status: 409 });
-  return rows[0];
+  const out = {
+    ...rows[0],
+    reviewed_by: staffId,
+    reviewed_by_staff_id: staffId,
+    reviewed_by_staff_name: staffName,
+    reviewed_at: rows[0].reviewed_at || at,
+  };
+  await appendReviewHistory({
+    sourceTable: "payment_receipts",
+    sourceId: out.id,
+    action: "rejected",
+    staffId,
+    staffName,
+    reviewStatus: "rejected",
+    reviewRemark: remark || reason,
+    rejectReason: reason,
+    reviewedAt: at,
+  });
+  return out;
 }
 
 export async function listPendingForAdmin() {
@@ -205,19 +503,23 @@ export async function listRejectedForAdmin({ limit = 200 } = {}) {
   }
   const orderMap = Object.fromEntries((orders || []).map((row) => [row.id, row]));
   const profileMap = Object.fromEntries((profiles || []).map((row) => [row.id, row]));
+  const hydrated = await hydrateReceiptReviewers(filtered);
   return Promise.all(
-    filtered.map(async (receipt) => {
+    hydrated.map(async (receipt) => {
       const order = orderMap[receipt.order_id] || {};
       const boss = profileMap[receipt.boss_id || order.boss_id] || {};
-      const reviewer = profileMap[receipt.reviewed_by] || {};
+      const reviewer = profileMap[receipt.reviewed_by_staff_id || receipt.reviewed_by] || {};
       const proofUrl = await signedProofUrl(receipt).catch(() => "");
+      const storedName = String(receipt.reviewed_by_staff_name || "").trim();
       return {
         ...receipt,
         order,
         orderNo: order.order_no || order.id || receipt.order_id || "",
         bossName: String(boss.display_name || "").trim() || boss.email || receipt.boss_id || "",
         bossUid: boss.boss_uid || "",
-        reviewerName: String(reviewer.display_name || "").trim() || reviewer.email || receipt.reviewed_by || "",
+        reviewerName: storedName || staffReviewerNameFromProfile(reviewer) || "",
+        reviewedByStaffId: receipt.reviewed_by_staff_id || receipt.reviewed_by || "",
+        reviewedByStaffName: storedName || staffReviewerNameFromProfile(reviewer) || "",
         amount: money(receipt.amount != null ? receipt.amount : order.total_amount),
         proofUrl: proofUrl || "",
       };
@@ -229,34 +531,63 @@ export async function listRejectedForAdmin({ limit = 200 } = {}) {
 export async function enrichReceiptAudit(rows = []) {
   const list = Array.isArray(rows) ? rows : [];
   if (!list.length) return [];
-  const bossIds = [...new Set(list.map((r) => r.boss_id || r.bossId || r.order?.boss_id).filter(Boolean))];
+  const withSnap = await hydrateReceiptReviewers(
+    list.map((row) => {
+      const receipt = row.receipt || row;
+      return {
+        ...receipt,
+        reviewed_by_staff_id: row.reviewed_by_staff_id || receipt.reviewed_by_staff_id,
+        reviewed_by_staff_name: row.reviewed_by_staff_name || receipt.reviewed_by_staff_name,
+        reviewed_by: row.reviewed_by || receipt.reviewed_by,
+        confirmed_by: row.confirmed_by || receipt.confirmed_by,
+        reviewed_at: row.reviewed_at || receipt.reviewed_at,
+        reject_reason: row.reject_reason || receipt.reject_reason,
+        review_remark: row.review_remark || receipt.review_remark,
+        _row: row,
+      };
+    })
+  );
+  const bossIds = [...new Set(withSnap.map((r) => r.boss_id || r._row?.boss_id || r._row?.bossId || r._row?.order?.boss_id).filter(Boolean))];
   const reviewerIds = [
-    ...new Set(list.flatMap((r) => [r.reviewed_by, r.confirmed_by, r.receipt?.reviewed_by, r.receipt?.confirmed_by]).filter(Boolean)),
+    ...new Set(
+      withSnap
+        .flatMap((r) => [r.reviewed_by_staff_id, r.reviewed_by, r.confirmed_by])
+        .filter(Boolean)
+    ),
   ];
   const profileIds = [...new Set([...bossIds, ...reviewerIds])];
   const profiles = profileIds.length
     ? await companionDb(
         "profiles",
-        `?id=in.(${profileIds.map(encodeURIComponent).join(",")})&select=id,display_name,email,role,boss_uid&limit=800`
+        `?id=in.(${profileIds.map(encodeURIComponent).join(",")})&select=id,display_name,nickname,email,role,boss_uid&limit=800`
       ).catch(() => [])
     : [];
   const profileMap = Object.fromEntries((profiles || []).map((row) => [row.id, row]));
   return Promise.all(
-    list.map(async (row) => {
-      const receipt = row.receipt || row;
-      const bossId = row.boss_id || row.bossId || row.order?.boss_id || "";
-      const reviewerId = row.reviewed_by || row.confirmed_by || receipt.reviewed_by || receipt.confirmed_by || "";
+    withSnap.map(async (receipt) => {
+      const row = receipt._row || receipt;
+      const bossId = row.boss_id || row.bossId || row.order?.boss_id || receipt.boss_id || "";
+      const reviewerId =
+        receipt.reviewed_by_staff_id ||
+        receipt.reviewed_by ||
+        receipt.confirmed_by ||
+        "";
       const boss = profileMap[bossId] || {};
       const reviewer = profileMap[reviewerId] || {};
       const proofUrl = row.proofUrl || (await signedProofUrl(receipt).catch(() => "")) || "";
+      const storedName = String(receipt.reviewed_by_staff_name || "").trim();
       return {
         ...row,
+        ...receipt,
         orderNo: row.orderNo || row.order?.order_no || row.order_id || row.orderId || "",
         bossName: String(boss.display_name || "").trim() || boss.email || bossId || "",
         bossUid: boss.boss_uid || "",
-        reviewerName: String(reviewer.display_name || "").trim() || reviewer.email || reviewerId || "",
-        reviewedAt: row.reviewed_at || row.confirmed_at || receipt.reviewed_at || receipt.confirmed_at || "",
-        rejectReason: row.reject_reason || receipt.reject_reason || "",
+        // Prefer immutable snapshot; live profile only if snapshot missing (legacy rows).
+        reviewerName: storedName || staffReviewerNameFromProfile(reviewer) || "",
+        reviewedByStaffId: reviewerId,
+        reviewedByStaffName: storedName || staffReviewerNameFromProfile(reviewer) || "",
+        reviewedAt: receipt.reviewed_at || row.confirmed_at || receipt.confirmed_at || "",
+        rejectReason: receipt.reject_reason || row.reject_reason || "",
         proofUrl,
       };
     })
@@ -270,11 +601,29 @@ export async function latestRejectedForOrders(orderIds = []) {
     "payment_receipts",
     `?order_id=in.(${ids.map(encodeURIComponent).join(",")})&status=eq.rejected&order=reviewed_at.desc&limit=500`
   ).catch(() => []);
+  const hydrated = await hydrateReceiptReviewers(receipts || []);
   const map = {};
-  for (const row of receipts || []) {
+  for (const row of hydrated) {
     if (!row?.order_id || map[row.order_id]) continue;
     // Ignore legacy auto-reject rows created by older re-upload path.
     if (String(row.reject_reason || "") === "老板重新上传付款凭证") continue;
+    map[row.order_id] = row;
+  }
+  return map;
+}
+
+/** Latest approved receipt per order — SoT for reviewer name after payment passes. */
+export async function latestApprovedForOrders(orderIds = []) {
+  const ids = [...new Set((orderIds || []).filter(Boolean))];
+  if (!ids.length) return {};
+  const receipts = await companionDb(
+    "payment_receipts",
+    `?order_id=in.(${ids.map(encodeURIComponent).join(",")})&status=eq.approved&order=reviewed_at.desc&limit=800`
+  ).catch(() => []);
+  const hydrated = await hydrateReceiptReviewers(receipts || []);
+  const map = {};
+  for (const row of hydrated) {
+    if (!row?.order_id || map[row.order_id]) continue;
     map[row.order_id] = row;
   }
   return map;

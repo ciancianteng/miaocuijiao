@@ -1067,6 +1067,12 @@ function viewOrder(row = {}, boss = {}, settlement = null) {
     autoConfirmPaused: !!countdown.autoConfirmPaused,
     autoConfirmPausedReason: countdown.autoConfirmPausedReason || "",
     completionMethod: parseCompletionMethod(row) || "",
+    paidAt: row.paid_at || "",
+    paymentReviewedByName: row.paymentReviewedByName || "",
+    paymentReviewedByStaffId: row.paymentReviewedByStaffId || "",
+    paymentReviewedAt: row.paymentReviewedAt || "",
+    paymentReviewStatus: row.paymentReviewStatus || "",
+    paymentRejectReason: row.paymentRejectReason || "",
     appointmentAt: row.created_at || "",
     createdAt: row.created_at || "",
     completedAt: row.completed_at || parsed?.completedAt || "",
@@ -1259,6 +1265,23 @@ async function loadOrdersFor(profile, companion, transactions = []) {
     const parsed = parseSettlementNote(tx.note);
     if (parsed) settlementByOrder[tx.order_id] = { ...parsed, transactionId: tx.id, settledAmount: money(tx.amount) };
   });
+  let approvedPaymentByOrder = {};
+  try {
+    const { latestApprovedForOrders, receiptReviewerFields } = await import("./_payment-receipts.js");
+    const payIds = [...visibleMine, ...pendingSelection]
+      .map((r) => r.id)
+      .filter(Boolean);
+    if (payIds.length) {
+      approvedPaymentByOrder = await latestApprovedForOrders(payIds);
+    }
+    for (const [oid, receipt] of Object.entries(approvedPaymentByOrder || {})) {
+      const fields = receiptReviewerFields(receipt);
+      const target = visibleMine.find((r) => r.id === oid) || pendingSelection.find((r) => r.id === oid);
+      if (target) Object.assign(target, fields);
+    }
+  } catch {
+    approvedPaymentByOrder = {};
+  }
   return {
     myOrders: [
       ...visibleMine.map((row) => {

@@ -461,6 +461,9 @@
           proofImg(r.proofUrl, true) +
           "</td><td>" +
           esc(r.reviewerName || "-") +
+          (r.reviewedByStaffId
+            ? '<br><small class="muted">staff_id: ' + esc(r.reviewedByStaffId) + "</small>"
+            : "") +
           "</td><td>" +
           esc(r.uploadedAt || "-") +
           "</td><td>-</td><td><button class=\"mini-btn primary-lite\" type=\"button\" data-fin-approve-proof=\"" +
@@ -490,6 +493,9 @@
           proofImg(r.proofUrl, false) +
           "</td><td>" +
           esc(r.reviewerName || "-") +
+          (r.reviewedByStaffId
+            ? '<br><small class="muted">staff_id: ' + esc(r.reviewedByStaffId) + "</small>"
+            : "") +
           "</td><td>" +
           esc(r.reviewedAt || r.confirmedAt || "-") +
           "</td><td>-</td></tr>"
@@ -511,6 +517,9 @@
           proofImg(r.proofUrl, false) +
           "</td><td>" +
           esc(r.reviewerName || "-") +
+          (r.reviewedByStaffId
+            ? '<br><small class="muted">staff_id: ' + esc(r.reviewedByStaffId) + "</small>"
+            : "") +
           "</td><td>" +
           esc(r.reviewedAt || "-") +
           "</td><td>" +

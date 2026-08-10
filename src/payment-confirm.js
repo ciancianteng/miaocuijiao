@@ -469,6 +469,8 @@
   function statusGuide(status, order) {
     var s = String(status || "");
     var reviewing = isReviewing(order);
+    var reviewerName = String((order && (order.paymentReviewedByName || order.reviewedByStaffName)) || "").trim();
+    var bossHint = String((order && order.bossHint) || "").trim();
     if (s === "awaiting_payment" && reviewing) {
       return {
         title: "待人工审核",
@@ -483,7 +485,11 @@
       var rejectReason = String((order && (order.paymentRejectReason || order.rejectReason)) || "").trim();
       return {
         title: "待付款",
-        reason: rejectReason ? "付款凭证已驳回：" + rejectReason : "订单已创建，状态为待付款。",
+        reason: rejectReason
+          ? reviewerName
+            ? "付款凭证未通过（审核客服：" + reviewerName + "）：" + rejectReason
+            : "付款凭证已驳回：" + rejectReason
+          : "订单已创建，状态为待付款。",
         next: isWalletMethod(order || {})
           ? "请使用猫粮余额完成支付，支付成功后订单才会发送给陪玩确认。"
           : rejectReason
@@ -497,7 +503,9 @@
     if (s === "claimed") {
       return {
         title: "等待陪玩确认",
-        reason: "订单已支付，正在等待陪玩确认接单",
+        reason: reviewerName
+          ? "已由客服 " + reviewerName + " 审核通过，正在等待陪玩确认接单"
+          : bossHint || "订单已支付，正在等待陪玩确认接单",
         next: "陪玩确认前不会开始服务，也不会结算收益。",
         primary: "orders",
         primaryLabel: "查看我的订单",
@@ -507,7 +515,9 @@
     if (s === "pending") {
       return {
         title: "待客服处理",
-        reason: "付款已确认，正在等待客服处理派单",
+        reason: reviewerName
+          ? "已由客服 " + reviewerName + " 审核通过，待派单/抢单。"
+          : bossHint || "付款已确认，正在等待客服处理派单",
         next: "可联系客服催进度；订单不会自动消失。",
         primary: "contact_cs",
         primaryLabel: "联系客服催进度",
