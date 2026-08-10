@@ -128,22 +128,11 @@ async function main() {
   }
 
   // ---- Case: neither approved → cannot work ----
-  // Force identity pending/draft path + deposit unpaid/pending via admin
-  // Prefer: deposit unpaid + identity rejected/pending without approved
+  // Identity is draft (not approved); set deposit pending so OR fails.
   const depOff = await review(adminLogin.token, companionId, "deposit", "pending");
-  const idOff = await review(adminLogin.token, companionId, "identity", "pending");
-  // If identity row missing, unpaid deposit alone may still leave id path open if identity_status profile says approved.
-  // Also try resetting identity to rejected when possible.
-  step("admin_set_deposit_unpaid", depOff.status < 400 && depOff.json?.ok !== false, depOff.json?.message || String(depOff.status));
-  step("admin_set_identity_pending", idOff.status < 500, idOff.json?.message || String(idOff.status));
+  step("admin_set_deposit_pending", depOff.status < 400 && depOff.json?.ok !== false, depOff.json?.message || String(depOff.status));
 
   let s = snap(await bootstrap(compLogin.token));
-  // If identity still verified due to missing row / stuck approved on profile, force deposit-only incomplete by also rejecting identity if possible
-  if (s.identityVerified && !s.depositVerified) {
-    const idRej = await review(adminLogin.token, companionId, "identity", "rejected");
-    step("admin_reject_identity_for_incomplete", idRej.status < 500, idRej.json?.message || "");
-    s = snap(await bootstrap(compLogin.token));
-  }
   const incompleteOk = s.review === "approved" && s.canWork === false && (s.access === "incomplete" || !s.credentialOrOk);
   step("profile_approved_but_no_credential_locks", incompleteOk, JSON.stringify(s).slice(0, 300));
   const blockedOnline = await setOnline(compLogin.token, "online");
@@ -167,6 +156,10 @@ async function main() {
   await review(adminLogin.token, companionId, "deposit", "pending");
   let idOn = await review(adminLogin.token, companionId, "identity", "approved");
   if (idOn.status === 404 || /尚未上传身份证/i.test(String(idOn.json?.message || ""))) {
+    const png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    const upFront = await api("/api/companion", compLogin.token, { action: "upload_private_doc", doc_type: "id_front", dataUrl: png, filename: "id-front.png" });
+    const upBack = await api("/api/companion", compLogin.token, { action: "upload_private_doc", doc_type: "id_back", dataUrl: png, filename: "id-back.png" });
+    step("seed_identity_docs", upFront.json?.ok !== false && upBack.json?.ok !== false, `${upFront.json?.message||""};${upBack.json?.message||""}`);
     const seeded = await api("/api/companion", compLogin.token, {
       action: "submit_verification",
       real_name: "E2E身份证",
