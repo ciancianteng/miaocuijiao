@@ -3346,6 +3346,28 @@ export default async function handler(req, res) {
     if (req.method !== "POST") return json(res,405,{ok:false,message:"Method Not Allowed"});
     const body = await parseBody(req);
     if (action === "accept_order") {
+      const orderId = String(body.id || body.orderId || body.order_id || "").trim();
+      if (orderId) {
+        try {
+          const beforeRows = await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(orderId)}&select=id,boss_id,status,companion_id&limit=1`), {
+            headers: serviceHeaders(),
+          });
+          const before = beforeRows?.[0];
+          if (before) {
+            const { assertNotSelfTrade } = await import("./_account-roles.js");
+            assertNotSelfTrade(before.boss_id, auth.profile.id, "抢自己的订单");
+          }
+        } catch (selfErr) {
+          if (selfErr?.code === "SELF_TRADE_FORBIDDEN") {
+            return json(res, selfErr.status || 403, {
+              ok: false,
+              code: selfErr.code,
+              message: selfErr.message,
+            });
+          }
+          /* continue to normal path for load errors */
+        }
+      }
       try {
         assertCompanionBusinessAccess(auth.profile, companion || {});
       } catch (err) {
@@ -3371,7 +3393,7 @@ export default async function handler(req, res) {
           pending: err.pending || [],
         });
       }
-      const order = await claimOrder(auth.profile, companion, String(body.id || ""));
+      const order = await claimOrder(auth.profile, companion, orderId);
       const already = !!order._already;
       return json(res, 200, {
         ok: true,
