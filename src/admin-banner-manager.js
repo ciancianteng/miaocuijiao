@@ -144,31 +144,62 @@
   function applyCropFrames() {
     var api = cropApi();
     if (!api || !api.applyCropToImg) return;
-    var pairs = [
-      [document.querySelector("[data-banner-crop-img]"), document.querySelector("[data-banner-crop-stage]"), "draft"],
-      [document.querySelector("[data-banner-live-preview] img"), document.querySelector("[data-banner-live-preview]"), "live"],
-    ];
-    pairs.forEach(function (pair) {
-      var img = pair[0];
-      var frame = pair[1];
-      var kind = pair[2];
-      if (!img || !frame) return;
-      // P0: never apply crop while the preview frame has no real layout size.
-      // Otherwise coverBaseSize(nat, 1×1) collapses the img to ~2.7×1px with !important
-      // and the large 1920×700 box looks completely blank.
-      var fw = Math.max(0, frame.clientWidth || frame.offsetWidth || 0);
-      var fh = Math.max(0, frame.clientHeight || frame.offsetHeight || 0);
-      if (fw < 32 || fh < 16) return;
-      var crop =
-        kind === "live" && !(state.draft && state.draft.url)
-          ? normalizeCropState(livePreviewCropSource())
-          : cropPayload();
-      function run() {
-        api.applyCropToImg(img, frame, crop);
+    // Only the upload/edit crop stage uses pixel crop math.
+    // Top live preview uses CSS cover + object-position (see applyLivePreviewStyles)
+    // to avoid the 0×0 layout race that collapsed the image to ~2.7×1px.
+    var img = document.querySelector("[data-banner-crop-img]");
+    var frame = document.querySelector("[data-banner-crop-stage]");
+    if (!img || !frame) return;
+    var fw = Math.max(0, frame.clientWidth || frame.offsetWidth || 0);
+    var fh = Math.max(0, frame.clientHeight || frame.offsetHeight || 0);
+    if (fw < 32 || fh < 16) return;
+    var crop = cropPayload();
+    function run() {
+      api.applyCropToImg(img, frame, crop);
+    }
+    if (img.complete && img.naturalWidth) run();
+    else img.addEventListener("load", run, { once: true });
+  }
+
+  function applyLivePreviewStyles() {
+    var frame = document.querySelector("[data-banner-live-preview]");
+    var img = frame && frame.querySelector("img");
+    if (!img) return;
+    var crop =
+      state.draft && state.draft.url
+        ? cropPayload()
+        : normalizeCropState(livePreviewCropSource());
+    var pos = "50% 50%";
+    try {
+      var api = cropApi();
+      if (api && typeof api.objectPositionFromCrop === "function") {
+        pos = api.objectPositionFromCrop(crop) || pos;
       }
-      if (img.complete && img.naturalWidth) run();
-      else img.addEventListener("load", run, { once: true });
-    });
+    } catch (e) {}
+    // Clear any prior !important microscopic crop styles from older builds / races.
+    img.style.removeProperty("position");
+    img.style.removeProperty("width");
+    img.style.removeProperty("height");
+    img.style.removeProperty("max-width");
+    img.style.removeProperty("max-height");
+    img.style.removeProperty("left");
+    img.style.removeProperty("top");
+    img.style.removeProperty("right");
+    img.style.removeProperty("bottom");
+    img.style.removeProperty("transform");
+    img.style.removeProperty("transform-origin");
+    img.style.removeProperty("object-fit");
+    img.style.cssText = "";
+    img.style.position = "absolute";
+    img.style.inset = "0";
+    img.style.width = "100%";
+    img.style.height = "100%";
+    img.style.maxWidth = "none";
+    img.style.maxHeight = "none";
+    img.style.objectFit = "cover";
+    img.style.objectPosition = pos;
+    img.style.transform = "none";
+    img.setAttribute("data-crop-ready", "1");
   }
 
   function livePreviewCropSource() {
@@ -198,18 +229,14 @@
     var tries = 0;
     function tick() {
       tries += 1;
+      applyLivePreviewStyles();
       applyCropFrames();
-      var live = document.querySelector("[data-banner-live-preview]");
       var stage = document.querySelector("[data-banner-crop-stage]");
-      var liveNeeds =
-        live &&
-        live.querySelector("img") &&
-        (live.clientWidth < 32 || live.clientHeight < 16 || !live.querySelector("img[data-crop-ready]"));
       var stageNeeds =
         stage &&
         stage.querySelector("img") &&
         (stage.clientWidth < 32 || stage.clientHeight < 16 || !stage.querySelector("img[data-crop-ready]"));
-      if ((liveNeeds || stageNeeds) && tries < 30) {
+      if (stageNeeds && tries < 30) {
         _cropRetryTimer = setTimeout(tick, tries < 5 ? 32 : 80);
       }
     }
@@ -228,7 +255,7 @@
       _livePreviewRo = null;
     }
     _livePreviewRo = new ResizeObserver(function () {
-      if (live.clientWidth >= 32 && live.clientHeight >= 16) applyCropFrames();
+      applyLivePreviewStyles();
     });
     _livePreviewRo.observe(live);
   }
