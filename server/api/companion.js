@@ -2641,6 +2641,12 @@ async function addSystemMessage(order, senderId, senderRole, content) {
   });
 }
 async function claimOrder(profile, companion, id) {
+  const beforeRows = await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(id)}&limit=1`), { headers: serviceHeaders() });
+  const before = beforeRows?.[0];
+  if (!before) throw Object.assign(new Error("订单不存在。"), { status: 404 });
+  // Self-trade first (user_id), before work-eligibility gates.
+  const { assertNotSelfTrade } = await import("./_account-roles.js");
+  assertNotSelfTrade(before.boss_id, profile.id, "抢自己的订单");
   if (!canAccept(profile, companion)) {
     const status = normalizeOnlineStatus(companion.availability_status || companion.online_status);
     const reason = !canWork(profile, companion)
@@ -2652,11 +2658,6 @@ async function claimOrder(profile, companion, id) {
           : "请先在工作台切换为在线接单。";
     throw Object.assign(new Error(reason), { status: 403 });
   }
-  const beforeRows = await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(id)}&limit=1`), { headers: serviceHeaders() });
-  const before = beforeRows?.[0];
-  if (!before) throw Object.assign(new Error("订单不存在。"), { status: 404 });
-  const { assertNotSelfTrade } = await import("./_account-roles.js");
-  assertNotSelfTrade(before.boss_id, profile.id, "抢自己的订单");
   const { resolveAssignmentType, ASSIGNMENT_ASSIGNED, isPublicHallEligible } = await import("./_order-assignment.js");
   // Open grab only: never auto-bind companion_id; never jump to confirmed/in_progress.
   // Assigned / 指定陪玩 orders are invisible to the public hall and cannot be grabbed.

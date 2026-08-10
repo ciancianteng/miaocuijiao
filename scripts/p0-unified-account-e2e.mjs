@@ -91,14 +91,30 @@ async function main() {
     log("A", false, e.message);
   }
 
-  // J early probe + duplicate register reject
+  // Duplicate-email register must be blocked (avoid OTP cooldown flake).
   try {
-    const again = await api("/api/auth", {
+    const dupReg = await api("/api/auth", {
       method: "POST",
-      body: { action: "send_register_otp", email: EMAIL, role: "boss" },
+      body: {
+        action: "register",
+        email: EMAIL,
+        password: PASS,
+        confirmPassword: PASS,
+        displayName: "Dup",
+        registerToken: "invalid_token_for_dup_probe",
+        role: "boss",
+      },
     });
-    const blocked = again.status === 409 || /已注册|直接登录/i.test(String(again.json?.message || ""));
-    log("J_register_block", blocked, again.json?.message || `status=${again.status}`);
+    // Either OTP token invalid after uniqueness, or explicit already registered.
+    const send = await api("/api/auth", {
+      method: "POST",
+      body: { action: "send_register_otp", email: EMAIL, role: "companion" },
+    });
+    const blocked =
+      send.status === 409 ||
+      /已注册|直接登录|申请陪玩/i.test(String(send.json?.message || "")) ||
+      /已注册|直接登录/i.test(String(dupReg.json?.message || ""));
+    log("J_register_block", blocked, send.json?.message || dupReg.json?.message || `status=${send.status}`);
   } catch (e) {
     log("J_register_block", false, e.message);
   }
@@ -265,15 +281,8 @@ async function main() {
     log("F", false, e.message);
   }
 
-  // G: grab own order must be rejected
+  // G: grab own order must be rejected by user_id (before work eligibility)
   try {
-    // Create a public hall order as this boss via CS path is heavy; simulate claim on a synthetic check:
-    const claim = await api("/api/companion", {
-      method: "POST",
-      token,
-      body: { action: "accept_order", id: "00000000-0000-0000-0000-000000000000" },
-    });
-    // Better: create open order then claim
     const create = await api("/api/orders", {
       method: "POST",
       token,
@@ -288,25 +297,22 @@ async function main() {
       },
     });
     const orderId = create.json?.order?.id || "";
-    // force pending public if possible via pay is hard; try claim anyway if pending
-    let grabMsg = "";
-    let grabOk = false;
-    if (orderId) {
-      // mark as pending public best-effort (may fail without CS)
-      const grab = await api("/api/companion", {
-        method: "POST",
-        token,
-        body: { action: "accept_order", id: orderId },
-      });
-      grabMsg = grab.json?.message || `status=${grab.status}`;
-      grabOk =
-        grab.json?.code === "SELF_TRADE_FORBIDDEN" ||
-        /自己|同一账号|SELF_TRADE|不可抢|不存在|不能/i.test(grabMsg);
-    } else {
-      grabMsg = create.json?.message || claim.json?.message || "no order";
-      grabOk = /自己|SELF_TRADE|不存在|无权/i.test(grabMsg);
-    }
-    log("G", grabOk, grabMsg);
+    if (!orderId) throw new Error(create.json?.message || "create order failed");
+    // Best-effort flip to pending public so claim path loads the row.
+    await api("/api/orders", {
+      method: "POST",
+      token,
+      body: { action: "confirm_payment", id: orderId, testPay: true },
+    }).catch(() => null);
+    const grab = await api("/api/companion", {
+      method: "POST",
+      token,
+      body: { action: "accept_order", id: orderId },
+    });
+    const grabOk =
+      grab.json?.code === "SELF_TRADE_FORBIDDEN" ||
+      /抢自己的订单|同一账号|SELF_TRADE/i.test(String(grab.json?.message || ""));
+    log("G", grabOk, grab.json?.message || `status=${grab.status}`);
   } catch (e) {
     log("G", false, e.message);
   }
