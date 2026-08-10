@@ -131,29 +131,25 @@ function findOrder(payload, orderId) {
     (companions.json?.companions || [])[0];
   step("pick_companion", !!comp?.id, `id=${comp?.id} name=${comp?.name}`);
 
-  const orderPayload = {
-    companionId: comp?.id,
-    companionName: comp?.name || "陪玩",
-    serviceType: "陪玩",
-    service: "陪玩",
+  const orderPayloadBase = {
+    title: "付款审核客服姓名E2E",
     game: "VALORANT",
-    unitPrice: Number(comp?.priceValue || 10),
+    game_id: "PAY-REV",
+    description: "payment review staff name e2e",
+    unit_price: Number(comp?.priceValue || 10),
     hours: 1,
-    quantity: 1,
-    totalAmount: Number(comp?.priceValue || 10),
-    paymentMethod: "tng",
+    total_amount: Number(comp?.priceValue || 10),
+    companion_id: comp?.id,
+    payment_method: "tng",
   };
 
   // ---- Reject path ----
   const placeReject = await api("/api/orders", bossToken, {
-    action: "place_order",
-    ...orderPayload,
-    gameId: "PAY-REV-REJ",
-    notes: "payment review staff reject e2e",
-    idempotencyKey: "pay-rev-rej-" + Date.now(),
+    action: "create",
+    order: { ...orderPayloadBase, game_id: "PAY-REV-REJ", description: "payment review staff reject e2e" },
   });
   const rejectOrderId = placeReject.json?.order?.id;
-  step("place_reject_order", !!(placeReject.json?.ok && rejectOrderId), `id=${rejectOrderId}`);
+  step("place_reject_order", !!(placeReject.json?.ok && rejectOrderId), `id=${rejectOrderId} msg=${placeReject.json?.message || ""}`);
 
   await api("/api/orders", bossToken, {
     action: "submit_payment_proof",
@@ -187,14 +183,11 @@ function findOrder(payload, orderId) {
 
   // ---- Approve path ----
   const place = await api("/api/orders", bossToken, {
-    action: "place_order",
-    ...orderPayload,
-    gameId: "PAY-REV-OK",
-    notes: "payment review staff approve e2e",
-    idempotencyKey: "pay-rev-ok-" + Date.now(),
+    action: "create",
+    order: { ...orderPayloadBase, game_id: "PAY-REV-OK", description: "payment review staff approve e2e" },
   });
   const orderId = place.json?.order?.id;
-  step("place_approve_order", !!(place.json?.ok && orderId), `id=${orderId}`);
+  step("place_approve_order", !!(place.json?.ok && orderId), `id=${orderId} msg=${place.json?.message || ""}`);
 
   const proof = await api("/api/orders", bossToken, {
     action: "submit_payment_proof",
@@ -212,7 +205,7 @@ function findOrder(payload, orderId) {
   step(
     "cs_a_approve",
     !!(approve.json?.ok && approvedOrder.status && approvedOrder.status !== "awaiting_payment"),
-    `status=${approvedOrder.status} name=${approvedOrder.paymentReviewedByName} staffId=${approvedOrder.paymentReviewedByStaffId}`
+    `status=${approvedOrder.status} name=${approvedOrder.paymentReviewedByName} staffId=${approvedOrder.paymentReviewedByStaffId} msg=${approve.json?.message || ""}`
   );
   step(
     "approve_response_has_cs_a_snapshot",
