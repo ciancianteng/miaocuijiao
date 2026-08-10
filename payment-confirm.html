@@ -34,8 +34,34 @@
     .pay-proof h2{margin:0 0 8px;font-size:16px;color:#ffd6e7}
     .pay-qr{margin-top:18px;border:1px solid rgba(255,143,197,.28);border-radius:14px;background:rgba(255,143,197,.08);padding:14px}
     .pay-qr h2{margin:0 0 8px;font-size:16px;color:#ffd6e7}
-    .pay-qr-frame{margin-top:12px;display:grid;place-items:center;padding:12px;border-radius:12px;background:rgba(255,255,255,.92)}
-    .pay-qr-frame img{width:min(100%,260px);height:auto;aspect-ratio:1;object-fit:contain;display:block}
+    .pay-qr-frame{
+      margin-top:12px;
+      display:grid;
+      place-items:center;
+      justify-items:center;
+      width:100%;
+      box-sizing:border-box;
+      padding:10px;
+      border-radius:14px;
+      /* Match pay card dark frosted surface — never a white plate behind the QR. */
+      background:rgba(0,0,0,.45);
+      border:1px solid rgba(255,143,197,.32);
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.04);
+      overflow:hidden;
+    }
+    .pay-qr-frame img{
+      width:min(100%,240px);
+      max-width:100%;
+      height:auto;
+      aspect-ratio:1;
+      object-fit:contain;
+      object-position:center;
+      display:block;
+      margin:0 auto;
+      background:transparent;
+      border:0;
+      border-radius:8px;
+    }
     .pay-qr-meta{display:grid;gap:8px;margin-top:12px}
     .pay-proof-pick{margin-top:8px;position:relative;overflow:hidden}
     .pay-proof-preview{margin-top:10px;display:grid;gap:10px}
