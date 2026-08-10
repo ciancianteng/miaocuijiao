@@ -316,12 +316,18 @@ async function resolveCompanionAuthEmail(accountRaw = "") {
   const lower = account.toLowerCase();
   // MVP: email is the primary auth identity. Companion UID remains a password-login alias.
   if (/^\S+@\S+\.\S+$/.test(lower)) {
+    // Prefer accounts that already have companion_profiles; else any profile with this email (multi-role).
     const byEmail = await supabaseJson(
-      restUrl("profiles", `?email=eq.${encodeURIComponent(lower)}&role=eq.companion&limit=1`),
+      restUrl("profiles", `?email=eq.${encodeURIComponent(lower)}&select=id,email,role,status&limit=5`),
       { headers: serviceHeaders() }
     ).catch(() => []);
-    if (byEmail?.[0]?.email) return { email: String(byEmail[0].email).toLowerCase(), profile: byEmail[0] };
-    return { email: lower, profile: null };
+    const list = Array.isArray(byEmail) ? byEmail : [];
+    for (const row of list) {
+      const cp = await companionProfile(row.id);
+      if (cp) return { email: String(row.email || lower).toLowerCase(), profile: row, companion: cp };
+    }
+    if (list[0]?.email) return { email: String(list[0].email).toLowerCase(), profile: list[0], companion: null };
+    return { email: lower, profile: null, companion: null };
   }
   const byUid = await supabaseJson(
     restUrl("companion_profiles", `?companion_uid=eq.${encodeURIComponent(account)}&select=user_id,companion_uid&limit=1`),
@@ -329,8 +335,8 @@ async function resolveCompanionAuthEmail(accountRaw = "") {
   ).catch(() => []);
   if (byUid?.[0]?.user_id) {
     const profile = await profileById(byUid[0].user_id);
-    if (profile?.role === "companion" && profile.email) {
-      return { email: String(profile.email).toLowerCase(), profile };
+    if (profile?.email) {
+      return { email: String(profile.email).toLowerCase(), profile, companion: byUid[0] };
     }
   }
   return null;
@@ -403,9 +409,12 @@ async function requireCompanion(req) {
   if (!authUser?.id) throw Object.assign(new Error("登录状态已过期，请重新登录后继续。"), { status: 401 });
   const profile = await profileById(authUser.id);
   if (!profile) throw Object.assign(new Error("陪玩资料不存在（profiles 为空），无法查询钱包。"), { status: 403 });
-  if (profile.role !== "companion") throw Object.assign(new Error("无权访问陪玩端。"), { status: 403 });
-  if (profile.status === "disabled") throw Object.assign(new Error("陪玩账号已停用。"), { status: 403 });
   const companion = await companionProfile(profile.id);
+  const { hasCompanionRole } = await import("./_account-roles.js");
+  if (!hasCompanionRole(profile, { companion, authUser })) {
+    throw Object.assign(new Error("无权访问陪玩端。请先申请陪玩身份。"), { status: 403, code: "NO_COMPANION_ROLE" });
+  }
+  if (profile.status === "disabled") throw Object.assign(new Error("陪玩账号已停用。"), { status: 403 });
   return { token, authUser, profile, companion };
 }
 function statusLabel(code) {
@@ -732,6 +741,12 @@ function safePlayer(profile = {}, companion = {}) {
     name: companion.nickname || profile.display_name || profile.email || "陪玩",
     avatar: resolveDisplayAvatar(profile, companion),
     hasCustomAvatar: !!(profile.avatar_url || companion.card_image_url) && resolveDisplayAvatar(profile, companion) !== "/default-avatar.png",
+    role: "companion",
+    roles: Array.isArray(profile.roles) && profile.roles.length
+      ? profile.roles
+      : ["companion", ...(String(profile.role || "").toLowerCase() === "boss" ? ["boss"] : ["boss"])],
+    hasBoss: true,
+    hasCompanion: true,
     mainGame: companion.game || "",
     game: companion.game || "",
     serviceType: serviceTypes[0] || "陪玩服务",
@@ -1273,6 +1288,8 @@ async function loadOrdersFor(profile, companion, transactions = []) {
     }
   }
   openRows = (openRows || []).filter((row) => isPublicHallEligible(row));
+  // Self-trade guard: never show own boss orders in the grab hall for the same user_id.
+  openRows = (openRows || []).filter((row) => String(row.boss_id || "") !== String(profile.id || ""));
   const { createOrderGrabHelpers } = await import("./_order-grabs.js");
   const { hallStateForOrder, hallStateLabel, toFlowStatus, isOrderExpired } = await import("./_order-flow.js");
   const grabsApi = createOrderGrabHelpers({ restUrl, supabaseJson, serviceHeaders });
@@ -2638,6 +2655,8 @@ async function claimOrder(profile, companion, id) {
   const beforeRows = await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(id)}&limit=1`), { headers: serviceHeaders() });
   const before = beforeRows?.[0];
   if (!before) throw Object.assign(new Error("订单不存在。"), { status: 404 });
+  const { assertNotSelfTrade } = await import("./_account-roles.js");
+  assertNotSelfTrade(before.boss_id, profile.id, "抢自己的订单");
   const { resolveAssignmentType, ASSIGNMENT_ASSIGNED, isPublicHallEligible } = await import("./_order-assignment.js");
   // Open grab only: never auto-bind companion_id; never jump to confirmed/in_progress.
   // Assigned / 指定陪玩 orders are invisible to the public hall and cannot be grabbed.
@@ -2751,7 +2770,11 @@ export default async function handler(req, res) {
         return json(res,401,{ok:false,message:"账号或密码错误"});
       }
       const profile = await profileById(auth.user.id);
-      if (!profile || profile.role !== "companion") return json(res,403,{ok:false,message:"无权访问陪玩端"});
+      const companion = await companionProfile(profile?.id);
+      const { hasCompanionRole, enrichProfileRoles } = await import("./_account-roles.js");
+      if (!profile || !hasCompanionRole(profile, { companion, authUser: auth.user })) {
+        return json(res,403,{ok:false,message:"无权访问陪玩端。请先申请陪玩身份。",code:"NO_COMPANION_ROLE"});
+      }
       if (profile.status === "disabled") return json(res,403,{ok:false,message:"陪玩账号已停用"});
       try {
         const { resolveEmailVerified } = await import("./_account-security.js");
@@ -2759,20 +2782,24 @@ export default async function handler(req, res) {
           return json(res,403,{ok:false,message:"请先完成邮箱验证。",code:"EMAIL_NOT_VERIFIED"});
         }
       } catch { /* if helper missing, continue */ }
-      const companion = await companionProfile(profile.id);
       try {
         const { touchLastLogin, stampPasswordSet } = await import("./_account-security.js");
         await stampPasswordSet(profile.id, { mustChangePassword: false }).catch(() => null);
         await touchLastLogin(profile.id, "");
+      } catch { /* optional */ }
+      let playerProfile = profile;
+      try {
+        const enriched = await enrichProfileRoles(profile, auth.user);
+        playerProfile = enriched.profile || profile;
       } catch { /* optional */ }
       return json(res,200,{ok:true,session:{
         token:auth.access_token,
         accessToken:auth.access_token,
         refreshToken:auth.refresh_token || "",
         expiresAt:auth.expires_at || "",
-        user:safePlayer(profile, companion || {}),
+        user:safePlayer(playerProfile, companion || {}),
         remember:!!body.remember
-      }});
+      },needRolePick:!!(playerProfile?.roles || []).includes("boss")});
     }
     if (action === "forgot_password" || action === "send_reset_code") {
       const body = await parseBody(req);
@@ -2963,15 +2990,25 @@ export default async function handler(req, res) {
           message: otpErr?.message || "请先完成邮箱验证。",
         });
       }
-      // Block register when email already belongs to a formal (approved) companion,
-      // or an active draft/pending application (must login to continue, not create duplicates).
+      // Unified account: never create a second Auth user for an existing email.
       try {
+        const { normalizeEmail, findProfilesByEmail } = await import("./_account-roles.js");
+        const emailNorm = normalizeEmail(email);
+        const emailProfiles = await findProfilesByEmail(emailNorm);
+        if (emailProfiles.length) {
+          return json(res, 409, {
+            ok: false,
+            code: "EMAIL_EXISTS_LOGIN_THEN_APPLY",
+            message: "该邮箱已注册，请直接登录。已登录老板可在当前账号下申请陪玩身份，不会创建新账号。",
+          });
+        }
+        // Also probe Auth uniqueness soft-fail path via profiles role filter (legacy).
         const { isFormalCompanion, isApplicationDraft } = await import("./_companion-draft.js");
-        const emailProfiles = await supabaseJson(
+        const legacyProfiles = await supabaseJson(
           restUrl("profiles", `?email=eq.${encodeURIComponent(email)}&select=id,email,role&limit=5`),
           { headers: serviceHeaders() }
         ).catch(() => []);
-        for (const ep of Array.isArray(emailProfiles) ? emailProfiles : []) {
+        for (const ep of Array.isArray(legacyProfiles) ? legacyProfiles : []) {
           const cp = await companionProfile(ep.id);
           if (!cp) continue;
           if (isFormalCompanion(cp)) {
@@ -2997,9 +3034,10 @@ export default async function handler(req, res) {
             has_password: wantsPassword,
             email_verified: true,
             email_verified_at: nowIso(),
+            roles: ["companion", "boss"],
             ...(wantsPassword ? { password_set_at: nowIso() } : {}),
           },
-          app_metadata: { has_password: wantsPassword, email_verified: true },
+          app_metadata: { has_password: wantsPassword, email_verified: true, roles: ["companion", "boss"] },
         }),
       });
       const companionProfilePayload = {
@@ -3025,6 +3063,10 @@ export default async function handler(req, res) {
           throw profErr;
         }
       }
+      try {
+        const { persistRoles } = await import("./_account-roles.js");
+        await persistRoles(created.id, ["companion", "boss"], { primaryRole: "companion" });
+      } catch { /* optional */ }
       await supabaseJson(restUrl("companion_profiles"), { method:"POST", headers: serviceHeaders(), body: JSON.stringify({ user_id: created.id, nickname, contact_phone: "", verification_status: "pending", deposit_status: "pending", application_status: "draft", allow_orders: false, online_status: "offline", created_at: nowIso(), updated_at: nowIso() }) });
       try {
         const { stampPasswordSet, stampPasswordUnset } = await import("./_account-security.js");
@@ -3057,6 +3099,72 @@ export default async function handler(req, res) {
           : "陪玩账号已创建。建议前往账号安全设置密码（审核状态不影响密码设置）。",
         suggestSetPassword: !wantsPassword,
         session:{token:auth.access_token,accessToken:auth.access_token,refreshToken:auth.refresh_token||"",user:safePlayer(profile, companion || {}),remember:!!body.remember}
+      });
+    }
+    if (action === "apply_companion_role" || action === "upgrade_to_companion" || action === "boss_apply_companion") {
+      const body = bodyEarly || (await parseBody(req));
+      const token = tokenFrom(req) || String(body.accessToken || body.token || "").trim();
+      if (!token) return json(res, 401, { ok: false, message: "请先登录后再申请陪玩身份。" });
+      let authUser;
+      try {
+        authUser = await authUserFromToken(token);
+      } catch {
+        return json(res, 401, { ok: false, message: "登录状态已过期，请重新登录后继续。" });
+      }
+      const profile = await profileById(authUser.id);
+      if (!profile) return json(res, 403, { ok: false, message: "账号未绑定平台资料。" });
+      if (String(profile.status || "").toLowerCase() === "disabled") {
+        return json(res, 403, { ok: false, message: "账号已停用。" });
+      }
+      const nickname = String(body.nickname || body.name || profile.display_name || "").trim() || "陪玩";
+      let companion = await companionProfile(profile.id);
+      const createdNewRow = !companion?.id;
+      if (!companion?.id) {
+        companion = await ensureCompanionRow(profile, null);
+      }
+      // Keep primary role as-is when already boss; only attach companion capability on same user_id.
+      const { addRoleToUser, enrichProfileRoles } = await import("./_account-roles.js");
+      const nextRoles = await addRoleToUser(profile.id, "companion", {
+        primaryRole: profile.role || "boss",
+        existingProfile: profile,
+        authUser,
+      });
+      // Application starts as draft/pending — never auto-approve.
+      if (companion?.id && createdNewRow) {
+        try {
+          await supabaseJson(restUrl("companion_profiles", `?id=eq.${encodeURIComponent(companion.id)}`), {
+            method: "PATCH",
+            headers: serviceHeaders(),
+            body: JSON.stringify({
+              nickname,
+              application_status: companion.application_status || "draft",
+              verification_status: companion.verification_status || "pending",
+              updated_at: nowIso(),
+            }),
+          });
+          companion = (await companionProfile(profile.id)) || companion;
+        } catch {
+          /* optional */
+        }
+      }
+      const enriched = await enrichProfileRoles({ ...profile, roles: nextRoles }, authUser);
+      return json(res, 200, {
+        ok: true,
+        message: createdNewRow
+          ? "已在当前账号下开通陪玩申请（未新建 User ID）。请继续填写资料并提交审核。"
+          : "当前账号已关联陪玩资料，可继续填写或查看审核进度。",
+        userId: profile.id,
+        sameUserId: true,
+        createdNewAuthUser: false,
+        roles: enriched.roles,
+        playerStatus: normalizeProfileReviewStatus(companion || {}),
+        applicationStatus: String(companion?.application_status || "draft"),
+        companion: companion || null,
+        session: {
+          token,
+          accessToken: token,
+          user: safePlayer(enriched.profile || profile, companion || {}),
+        },
       });
     }
     const auth = await requireCompanion(req);

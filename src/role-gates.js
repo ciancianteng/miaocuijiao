@@ -353,8 +353,17 @@
         window.MCJBossAuth.saveSession(session, rememberMe);
       } catch (e) {}
     }
+    var roles = Array.isArray(userData.roles) ? userData.roles : [];
+    var multi =
+      !!userData.hasBoss && !!userData.hasCompanion ||
+      (roles.indexOf("boss") >= 0 && roles.indexOf("companion") >= 0) ||
+      (roles.indexOf("boss") >= 0 && roles.indexOf("player") >= 0);
     ["customer", "companion", "customer_service", "admin"].forEach(function (other) {
       if (other === role) return;
+      // Unified multi-role: keep the twin portal session so switch-identity does not re-login.
+      if (multi && ((role === "customer" && other === "companion") || (role === "companion" && other === "customer"))) {
+        return;
+      }
       var otherCfg = cfgFor(other);
       localStorage.removeItem(otherCfg.token); localStorage.removeItem(otherCfg.user);
       sessionStorage.removeItem(otherCfg.token); sessionStorage.removeItem(otherCfg.user);
@@ -366,6 +375,110 @@
       }
     });
     return user;
+  }
+
+  /** Switch active portal for multi-role accounts without creating a new Auth user. */
+  function switchActivePortal(targetRole, sessionHint) {
+    var want = profileRole(targetRole || "");
+    var access =
+      (sessionHint && (sessionHint.accessToken || sessionHint.token)) ||
+      readAccessToken() ||
+      "";
+    if (!looksLikeJwt(access)) return { ok: false, message: "请先登录后再切换身份。" };
+    var refresh = "";
+    var expiresAt = "";
+    try {
+      refresh =
+        sessionStorage.getItem("mcjAuthRefreshToken") ||
+        localStorage.getItem("mcjAuthRefreshToken") ||
+        "";
+      expiresAt =
+        sessionStorage.getItem("mcjAuthExpiresAt") ||
+        localStorage.getItem("mcjAuthExpiresAt") ||
+        "";
+    } catch (e) {}
+    var baseUser = {};
+    try {
+      baseUser = JSON.parse(localStorage.getItem("mcjCurrentUser") || sessionStorage.getItem("mcjCurrentUser") || "{}") || {};
+    } catch (e2) {
+      baseUser = {};
+    }
+    if (sessionHint && sessionHint.user) baseUser = Object.assign({}, baseUser, sessionHint.user);
+    var session = {
+      accessToken: access,
+      refreshToken: refresh,
+      expiresAt: expiresAt,
+      user: Object.assign({}, baseUser, {
+        role: want === "companion" ? "companion" : "boss",
+        hasBoss: true,
+        hasCompanion: true,
+        roles: Array.isArray(baseUser.roles) && baseUser.roles.length ? baseUser.roles : ["boss", "companion"],
+      }),
+    };
+    if (want === "companion") {
+      try {
+        var raw = JSON.stringify({
+          token: access,
+          accessToken: access,
+          refreshToken: refresh,
+          expiresAt: expiresAt,
+          user: session.user,
+          remember: true,
+        });
+        localStorage.setItem("mcjCompanionSession", raw);
+        sessionStorage.setItem("mcjCompanionSession", raw);
+        localStorage.setItem("companionAuthToken", "companion_session_" + SESSION_VERSION + "_" + Date.now());
+        localStorage.setItem("companionUser", JSON.stringify(session.user));
+        sessionStorage.setItem("companionAuthToken", localStorage.getItem("companionAuthToken"));
+        sessionStorage.setItem("companionUser", JSON.stringify(session.user));
+        localStorage.setItem("mcjActivePortal", "companion");
+        sessionStorage.setItem("mcjActivePortal", "companion");
+        localStorage.setItem("mcjRole", "companion");
+        sessionStorage.setItem("mcjRole", "companion");
+      } catch (e3) {}
+      return { ok: true, redirect: "/companion/dashboard/", role: "companion" };
+    }
+    saveSession(session, true);
+    try {
+      localStorage.setItem("mcjActivePortal", "boss");
+      sessionStorage.setItem("mcjActivePortal", "boss");
+    } catch (e4) {}
+    return { ok: true, redirect: "/index.html", role: "boss" };
+  }
+
+  function showRolePickModal(body, remember) {
+    return new Promise(function (resolve) {
+      var existing = document.getElementById("mcjRolePickModal");
+      if (existing) existing.remove();
+      var mask = document.createElement("div");
+      mask.id = "mcjRolePickModal";
+      mask.setAttribute("role", "dialog");
+      mask.style.cssText =
+        "position:fixed;inset:0;z-index:99999;background:rgba(8,4,12,.72);display:flex;align-items:center;justify-content:center;padding:20px;";
+      mask.innerHTML =
+        '<div style="width:min(420px,100%);border-radius:18px;background:#161018;border:1px solid rgba(243,168,203,.28);padding:22px 20px;color:#fff5fa;font-family:inherit;">' +
+        "<h2 style=\"margin:0 0 8px;font-size:20px;\">选择进入身份</h2>" +
+        "<p style=\"margin:0 0 18px;color:#d9bfcd;font-size:14px;line-height:1.5;\">同一账号可切换老板端 / 陪玩端，不会重新登录或新建账号。</p>" +
+        '<div style="display:flex;flex-direction:column;gap:10px;">' +
+        '<button type="button" data-role-pick="boss" style="padding:12px 14px;border-radius:12px;border:1px solid rgba(243,168,203,.35);background:rgba(243,168,203,.16);color:#fff5fa;font-weight:800;cursor:pointer;">进入老板端</button>' +
+        '<button type="button" data-role-pick="companion" style="padding:12px 14px;border-radius:12px;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.06);color:#fff5fa;font-weight:800;cursor:pointer;">进入陪玩端</button>' +
+        "</div></div>";
+      document.body.appendChild(mask);
+      mask.addEventListener("click", function (ev) {
+        var btn = ev.target.closest("[data-role-pick]");
+        if (!btn) return;
+        var pick = btn.getAttribute("data-role-pick");
+        mask.remove();
+        resolve(pick);
+      });
+    }).then(function (pick) {
+      if (!pick) return body;
+      var switched = switchActivePortal(pick, body.session);
+      body._pickedRole = pick;
+      body.redirect = switched.redirect || body.redirect;
+      if (pick === "boss") saveSession(body.session, remember !== false);
+      return body;
+    });
   }
 
   async function postAuth(payload) {
@@ -386,7 +499,16 @@
 
   async function loginWithDatabase(account, password, remember) {
     var body = await postAuth({ action: "login", email: account, password: password });
-    saveSession(body.session, remember);
+    var u = (body.session && body.session.user) || {};
+    var needPick =
+      body.needRolePick ||
+      (!!u.hasBoss && !!u.hasCompanion) ||
+      (Array.isArray(u.roles) && u.roles.indexOf("boss") >= 0 && u.roles.indexOf("companion") >= 0);
+    if (needPick && typeof document !== "undefined") {
+      body = await showRolePickModal(body, remember);
+    } else {
+      saveSession(body.session, remember);
+    }
     return body;
   }
 
@@ -1114,6 +1236,8 @@
     loginPortal: loginPortal,
     registerWithDatabase: registerWithDatabase,
     saveSession: saveSession,
+    switchActivePortal: switchActivePortal,
+    showRolePickModal: showRolePickModal,
     logout: logout,
     isLogged: isLogged,
     user: user,

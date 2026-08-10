@@ -178,13 +178,23 @@ async function assertCompanionOrderable(companionUserId) {
 
 /** Resolve profiles.id / companion_profiles.id / PW code → profiles user id. */
 async function resolveCompanionUserId(rawId) {
+  try {
+    const { resolveCompanionUserIdFlexible } = await import("./_account-roles.js");
+    const flex = await resolveCompanionUserIdFlexible(rawId);
+    if (flex) return flex;
+  } catch {
+    /* fall through to legacy */
+  }
   const id = String(rawId || "").trim();
   if (!id) return "";
   try {
-    const byUser = await supabaseJson(restUrl("profiles", `?id=eq.${encodeURIComponent(id)}&role=eq.companion&select=id&limit=1`), {
+    const byUser = await supabaseJson(restUrl("profiles", `?id=eq.${encodeURIComponent(id)}&select=id&limit=1`), {
       headers: serviceHeaders(),
     });
-    if (Array.isArray(byUser) && byUser[0]?.id) return byUser[0].id;
+    if (Array.isArray(byUser) && byUser[0]?.id) {
+      const cp = await loadCompanionPricingRow(byUser[0].id);
+      if (cp) return byUser[0].id;
+    }
   } catch {
     /* continue */
   }
@@ -1010,6 +1020,16 @@ export default async function handler(req, res) {
       }
       if (companionId) {
         companionId = (await resolveCompanionUserId(companionId)) || companionId;
+        try {
+          const { assertNotSelfTrade } = await import("./_account-roles.js");
+          assertNotSelfTrade(profile.id, companionId, "给自己下单");
+        } catch (selfErr) {
+          return json(res, selfErr.status || 403, {
+            ok: false,
+            code: selfErr.code || "SELF_TRADE_FORBIDDEN",
+            message: selfErr.message || "不能给自己下单。",
+          });
+        }
       }
       const quantity = Math.max(1, Math.floor(money(order.quantity || 1) || 1));
       const baseHours = Math.max(0.5, money(order.hours || order.duration || 1));
@@ -1032,7 +1052,8 @@ export default async function handler(req, res) {
       if (companionId) {
         let companions = await supabaseJson(restUrl("profiles", `?id=eq.${encodeURIComponent(companionId)}&limit=1`), { headers: serviceHeaders() });
         let companion = Array.isArray(companions) ? companions[0] : null;
-        if (!companion || companion.role !== "companion") {
+        const cpRow = companion ? await loadCompanionPricingRow(companion.id) : null;
+        if (!companion || !cpRow) {
           try {
             const cpRows = await supabaseJson(
               restUrl("companion_profiles", `?id=eq.${encodeURIComponent(companionId)}&select=id,user_id&limit=1`),
@@ -1042,13 +1063,14 @@ export default async function handler(req, res) {
             if (userId) {
               companions = await supabaseJson(restUrl("profiles", `?id=eq.${encodeURIComponent(userId)}&limit=1`), { headers: serviceHeaders() });
               companion = Array.isArray(companions) ? companions[0] : null;
-              if (companion && companion.role === "companion") companionId = companion.id;
+              if (companion) companionId = companion.id;
             }
           } catch (_) {
             /* keep original 404 path */
           }
         }
-        if (!companion || companion.role !== "companion") {
+        const stillCp = companion ? await loadCompanionPricingRow(companion.id) : null;
+        if (!companion || !stillCp) {
           return json(res, 404, { ok: false, message: "指定陪玩不存在或不可下单。" });
         }
       }
@@ -1537,6 +1559,17 @@ export default async function handler(req, res) {
       if (!selectedId) {
         return json(res, 400, { ok: false, message: "请选择一位陪玩。" });
       }
+      try {
+        const resolvedSelf = (await resolveCompanionUserId(selectedId)) || selectedId;
+        const { assertNotSelfTrade } = await import("./_account-roles.js");
+        assertNotSelfTrade(profile.id, resolvedSelf, "选择自己作为陪玩");
+      } catch (selfErr) {
+        return json(res, selfErr.status || 403, {
+          ok: false,
+          code: selfErr.code || "SELF_TRADE_FORBIDDEN",
+          message: selfErr.message || "不能选择自己作为陪玩。",
+        });
+      }
       if (!grabs.length) {
         return json(res, 409, { ok: false, message: "暂无陪玩抢单，请等待陪玩申请后再选择。" });
       }
@@ -1863,6 +1896,16 @@ export default async function handler(req, res) {
       }
       if (statusNow !== "completed") return json(res, 400, { ok: false, message: "只有已完成订单可以评价。" });
       if (!order.companion_id) return json(res, 400, { ok: false, message: "该订单没有可评价的陪玩。" });
+      try {
+        const { assertNotSelfTrade } = await import("./_account-roles.js");
+        assertNotSelfTrade(profile.id, order.companion_id, "评价自己");
+      } catch (selfErr) {
+        return json(res, selfErr.status || 403, {
+          ok: false,
+          code: selfErr.code || "SELF_TRADE_FORBIDDEN",
+          message: selfErr.message || "不能评价自己。",
+        });
+      }
       const bodyCompanionId = String(body.companion_id || body.companionId || "").trim();
       if (bodyCompanionId && bodyCompanionId !== String(order.companion_id)) {
         return json(res, 400, { ok: false, message: "评价陪玩与订单陪玩不一致。" });

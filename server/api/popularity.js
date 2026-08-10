@@ -134,6 +134,17 @@ export default async function handler(req, res) {
         },
       }).catch(() => null);
       if (!user?.id) return json(res, 401, { ok: false, message: "登录已失效" });
+      try {
+        const { resolveCompanionUserIdFlexible, assertNotSelfTrade } = await import("./_account-roles.js");
+        const playerUserId = (await resolveCompanionUserIdFlexible(companionId)) || companionId;
+        assertNotSelfTrade(user.id, playerUserId, "收藏自己");
+      } catch (selfErr) {
+        return json(res, selfErr.status || 403, {
+          ok: false,
+          code: selfErr.code || "SELF_TRADE_FORBIDDEN",
+          message: selfErr.message || "不能收藏自己。",
+        });
+      }
       await supabaseJson(restUrl("companion_favorites", "?on_conflict=boss_id,companion_id"), {
         method: "POST",
         headers: serviceHeaders({ Prefer: "resolution=ignore-duplicates,return=representation" }),

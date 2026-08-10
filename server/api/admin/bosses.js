@@ -610,9 +610,29 @@ export default async function handler(req, res) {
     }
     try {
       const query = parseQuery(req);
+      if (String(query.action || "").trim() === "scan_duplicate_emails") {
+        const { scanDuplicateEmails } = await import("../_account-roles.js");
+        const result = await scanDuplicateEmails({ limit: Number(query.limit || 3000) || 3000 });
+        return json(res, 200, {
+          ok: true,
+          ...result,
+          mergePolicy:
+            "Do not delete. Keep earliest profile as canonical user_id; re-point orders/wallets/companion_profiles/chats/reviews to that id; blank duplicate profile emails after merge.",
+        });
+      }
       const detailId = String(query.id || query.bossId || query.boss_id || "").trim();
       if (detailId) {
         const detail = await loadBossDetail(detailId);
+        try {
+          const { enrichProfileRoles } = await import("../_account-roles.js");
+          const enriched = await enrichProfileRoles(detail.boss || detail.profile || { id: detailId });
+          detail.roles = enriched.roles;
+          detail.hasBoss = enriched.hasBoss;
+          detail.hasCompanion = enriched.hasCompanion;
+          detail.companionProfile = enriched.companion || null;
+        } catch {
+          /* optional */
+        }
         return json(res, 200, { ok: true, configured: true, ...detail });
       }
 

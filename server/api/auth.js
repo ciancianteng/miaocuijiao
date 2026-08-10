@@ -209,7 +209,7 @@ function metaBossUid(authUser = {}) {
   return String(authUser?.user_metadata?.boss_uid || authUser?.app_metadata?.boss_uid || "").trim();
 }
 
-function safeProfile(profile = {}, authUser = {}, security = null) {
+function safeProfile(profile = {}, authUser = {}, security = null, rolesInfo = null) {
   let role = String(profile.role || "").trim();
   const roleLower = role.toLowerCase();
   // Frontend historically used "customer" for the same boss account.
@@ -219,12 +219,24 @@ function safeProfile(profile = {}, authUser = {}, security = null) {
   const countryCode = normalizeCountryCode(profile.country_code || profile.countryCode || "MY");
   const phoneE164 = String(profile.phone_e164 || profile.phoneE164 || "").trim();
   const dialCode = dialForCountry(countryCode);
+  const roles = Array.isArray(rolesInfo?.roles)
+    ? rolesInfo.roles
+    : Array.isArray(profile.roles)
+      ? profile.roles
+      : role
+        ? [role]
+        : [];
+  const hasBoss = rolesInfo ? !!rolesInfo.hasBoss : roles.includes("boss") || role === "boss";
+  const hasCompanion = rolesInfo ? !!rolesInfo.hasCompanion : roles.includes("companion") || role === "companion";
   const out = {
     id: profile.id || authUser.id || "",
     bossUid,
     boss_uid: bossUid,
     uid: bossUid || profile.id || authUser.id || "",
     role,
+    roles,
+    hasBoss,
+    hasCompanion,
     displayName: profile.display_name || authUser.user_metadata?.display_name || "",
     avatarUrl: profile.avatar_url || "",
     status: profile.status || "pending",
@@ -237,7 +249,7 @@ function safeProfile(profile = {}, authUser = {}, security = null) {
     dialCode,
   };
   // Self-facing: boss/CS/companion may see own email/phone; never return password/secrets.
-  if (isSelf && (role === "boss" || role === "companion" || role === "customer_service" || role === "admin" || role === "super_admin")) {
+  if (isSelf && (role === "boss" || role === "companion" || hasBoss || hasCompanion || role === "customer_service" || role === "admin" || role === "super_admin")) {
     out.email = profile.email || authUser.email || "";
     out.phone = profile.phone || authUser.phone || "";
   }
@@ -251,7 +263,16 @@ function safeProfile(profile = {}, authUser = {}, security = null) {
 
 async function enrichSafeProfile(profile = {}, authUser = {}) {
   const hasPassword = await resolveHasPassword(profile, authUser, { probeAuth: true });
-  return safeProfile(profile, authUser, { hasPassword });
+  let rolesInfo = null;
+  try {
+    const { enrichProfileRoles } = await import("./_account-roles.js");
+    const enriched = await enrichProfileRoles(profile, authUser);
+    rolesInfo = enriched;
+    profile = enriched.profile || profile;
+  } catch {
+    /* optional */
+  }
+  return safeProfile(profile, authUser, { hasPassword }, rolesInfo);
 }
 
 function canManagePassword(profile = {}) {
@@ -743,26 +764,25 @@ async function handleSendRegisterOtp(body, res) {
     const r = roleOf(row);
     return r && r !== "companion" && !["boss", "customer", "owner", "user"].includes(r);
   });
-  if (role === "boss") {
-    if (bossHit) {
+  // Unified account: one normalized email → one user_id. Never create a second Auth user for role switch.
+  if ((existing || []).length) {
+    if (role === "boss") {
       return json(res, 409, { ok: false, message: "该邮箱已注册，请直接登录。" });
     }
     if (companionHit) {
-      return json(res, 409, { ok: false, message: "该邮箱已被陪玩账号占用，请更换邮箱。" });
-    }
-    if (otherHit) {
-      return json(res, 409, { ok: false, message: "该邮箱已被其他角色占用，请更换邮箱。" });
-    }
-  } else {
-    if (companionHit) {
       return json(res, 409, { ok: false, message: "该邮箱已有陪玩账号，请切换到「已有账号登录」。" });
     }
-    if (bossHit || otherHit) {
+    if (bossHit) {
       return json(res, 409, {
         ok: false,
-        message: "该邮箱已被其他角色占用，请更换邮箱后再注册陪玩。",
+        code: "EMAIL_EXISTS_LOGIN_THEN_APPLY",
+        message: "该邮箱已注册，请直接登录；登录后可在当前账号下申请陪玩身份，不会创建新账号。",
       });
     }
+    if (otherHit) {
+      return json(res, 409, { ok: false, message: "该邮箱已被其他角色占用，请直接登录。" });
+    }
+    return json(res, 409, { ok: false, message: "该邮箱已注册，请直接登录。" });
   }
   const code = randomOtpCode();
   try {
@@ -1178,21 +1198,30 @@ export default async function handler(req, res) {
           code: "PROFILE_INIT_FAILED",
         });
       }
-      if (["boss", "customer", "owner", "user"].includes(String(profile.role || "").trim().toLowerCase())) {
+      if (
+        ["boss", "customer", "owner", "user", "companion", "player"].includes(
+          String(profile.role || "").trim().toLowerCase()
+        )
+      ) {
         try {
-          profile = await ensureBossUid({ ...profile, role: "boss" }, authUser);
+          profile = await ensureBossUid(
+            { ...profile, role: ["companion", "player"].includes(String(profile.role || "").toLowerCase()) ? profile.role : "boss" },
+            authUser
+          );
         } catch {
           /* keep session usable */
         }
       }
       const user = await enrichSafeProfile(profile, authUser);
-      if (!VALID_ROLES.has(user.role)) return json(res, 403, { ok: false, message: "账号角色无效。" });
-      if (!canLoginWithStatus(profile, user.role)) {
+      if (!VALID_ROLES.has(user.role) && !(user.hasBoss || user.hasCompanion)) {
+        return json(res, 403, { ok: false, message: "账号角色无效。" });
+      }
+      if (!canLoginWithStatus(profile, user.role || (user.hasCompanion ? "companion" : "boss"))) {
         return json(res, 403, { ok: false, message: "账号未启用或正在审核。" });
       }
       let pendingForced = [];
       let forcedAckRequired = false;
-      if (["boss", "customer", "owner", "user"].includes(String(user.role || "").toLowerCase())) {
+      if (user.hasBoss || ["boss", "customer", "owner", "user"].includes(String(user.role || "").toLowerCase())) {
         try {
           const acks = await import("./_content-acks.js");
           pendingForced = await acks.pendingForcedForUser(profile.id, { audience: "boss" });
@@ -1204,7 +1233,12 @@ export default async function handler(req, res) {
       return json(res, 200, {
         ok: true,
         user,
-        redirect: redirectFor(user.role),
+        redirect: redirectFor(user.hasBoss ? "boss" : user.role),
+        portals: {
+          boss: user.hasBoss ? redirectFor("boss") : "",
+          companion: user.hasCompanion ? redirectFor("companion") : "",
+        },
+        needRolePick: !!(user.hasBoss && user.hasCompanion),
         pendingForced,
         forcedAckRequired,
         passwordHint: PASSWORD_RULE_HINT,
@@ -1677,6 +1711,13 @@ export default async function handler(req, res) {
           if (!/boss_uid|schema cache|Could not find|Auth|metadata|user/i.test(detail)) throw uidError;
           profile = { ...(profile || baseProfile), boss_uid: profile?.boss_uid || "" };
         }
+        try {
+          const { persistRoles } = await import("./_account-roles.js");
+          await persistRoles(userId, ["boss"], { primaryRole: "boss" });
+          profile = { ...profile, roles: ["boss"] };
+        } catch {
+          /* optional roles column / metadata */
+        }
       } catch (error) {
         try {
           await supabaseJson(authUrl(`admin/users/${encodeURIComponent(userId)}`), {
@@ -1845,9 +1886,13 @@ export default async function handler(req, res) {
         code: "EMAIL_NOT_VERIFIED",
       });
     }
-    if (["boss", "customer", "owner", "user"].includes(String(profile.role || "").trim().toLowerCase())) {
+    if (
+      ["boss", "customer", "owner", "user", "companion", "player"].includes(
+        String(profile.role || "").trim().toLowerCase()
+      )
+    ) {
       try {
-        profile = await ensureBossUid({ ...profile, role: "boss" }, authUser);
+        profile = await ensureBossUid({ ...profile, role: profile.role === "companion" ? profile.role : "boss" }, authUser);
       } catch {
         /* keep login usable even if UID backfill fails */
       }
@@ -1860,13 +1905,24 @@ export default async function handler(req, res) {
       { ...profile, has_password: true },
       { ...authUser, user_metadata: { ...(authUser?.user_metadata || {}), boss_uid: profile.boss_uid || metaBossUid(authUser), has_password: true } }
     );
-    if (!VALID_ROLES.has(user.role)) return json(res, 403, { ok: false, message: "账号角色无效。" });
-    if (!canLoginWithStatus(profile, user.role)) return json(res, 403, { ok: false, message: "账号未启用或正在审核。" });
+    if (!VALID_ROLES.has(user.role) && !(user.hasBoss || user.hasCompanion)) {
+      return json(res, 403, { ok: false, message: "账号角色无效。" });
+    }
+    if (!canLoginWithStatus(profile, user.role || (user.hasCompanion ? "companion" : "boss"))) {
+      return json(res, 403, { ok: false, message: "账号未启用或正在审核。" });
+    }
     await touchLastLogin(profile.id, clientIp(req));
+    const needRolePick = !!(user.hasBoss && user.hasCompanion);
+    const defaultRedirect = user.hasBoss
+      ? redirectFor("boss")
+      : user.hasCompanion
+        ? redirectFor("companion")
+        : redirectFor(user.role);
     if (resolveMustChangePassword(profile, authUser)) {
       return json(res, 200, {
         ok: true,
         mustChangePassword: true,
+        needRolePick,
         message: "管理员要求您修改密码后才能继续使用。",
         session: {
           accessToken: auth.access_token,
@@ -1874,19 +1930,28 @@ export default async function handler(req, res) {
           expiresAt: auth.expires_at,
           user: { ...user, mustChangePassword: true, must_change_password: true },
         },
-        redirect: redirectFor(user.role),
+        redirect: defaultRedirect,
+        portals: {
+          boss: user.hasBoss ? redirectFor("boss") : "",
+          companion: user.hasCompanion ? redirectFor("companion") : "",
+        },
       });
     }
 
     return json(res, 200, {
       ok: true,
+      needRolePick,
       session: {
         accessToken: auth.access_token,
         refreshToken: auth.refresh_token,
         expiresAt: auth.expires_at,
         user,
       },
-      redirect: redirectFor(user.role),
+      redirect: defaultRedirect,
+      portals: {
+        boss: user.hasBoss ? redirectFor("boss") : "",
+        companion: user.hasCompanion ? redirectFor("companion") : "",
+      },
     });
   } catch (error) {
     const action = String((req.body && req.body.action) || req.query?.action || "");

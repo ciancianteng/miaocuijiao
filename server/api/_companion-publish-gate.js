@@ -208,8 +208,16 @@ function criticalMissing(row = {}, profile = {}) {
  */
 export function evaluatePublishGate(row = {}, profile = {}, mediaExtras = {}) {
   const blockReasons = [];
-  const accountEnabled = !!(profile && profile.role === "companion" && profile.status === "active");
-  if (!profile || profile.role !== "companion") blockReasons.push("非陪玩账号");
+  const role = String(profile?.role || "").trim().toLowerCase();
+  const roles = Array.isArray(profile?.roles) ? profile.roles.map((r) => String(r || "").toLowerCase()) : [];
+  const isCompanionCapable =
+    role === "companion" ||
+    role === "player" ||
+    roles.includes("companion") ||
+    roles.includes("player") ||
+    !!(row && (row.user_id || row.id));
+  const accountEnabled = !!(profile && isCompanionCapable && profile.status === "active");
+  if (!profile || !isCompanionCapable) blockReasons.push("非陪玩账号");
   else if (isBannedOrDisabled(profile)) blockReasons.push("账号已封禁/停用");
   else if (profile.status !== "active") blockReasons.push("账号未启用");
 

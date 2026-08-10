@@ -2975,6 +2975,18 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
           message: "指定陪玩订单不能发布到抢单大厅。请选择「指定陪玩」或清空陪玩后发布公开抢单。",
         });
       }
+      if (companionId) {
+        try {
+          const { assertNotSelfTrade } = await import("./_account-roles.js");
+          assertNotSelfTrade(bossId, companionId, "指定自己作为陪玩");
+        } catch (selfErr) {
+          return json(res, selfErr.status || 403, {
+            ok: false,
+            code: selfErr.code || "SELF_TRADE_FORBIDDEN",
+            message: selfErr.message || "不能指定订单老板本人为陪玩。",
+          });
+        }
+      }
       const assignmentType = companionId ? "assigned" : "public";
       const orderType = String(
         o.order_type ||
@@ -3792,6 +3804,16 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         }
       }
       const companionId = companion.id;
+      try {
+        const { assertNotSelfTrade } = await import("./_account-roles.js");
+        assertNotSelfTrade(order.boss_id, companionId, "把订单指定给订单老板本人");
+      } catch (selfErr) {
+        return json(res, selfErr.status || 403, {
+          ok: false,
+          code: selfErr.code || "SELF_TRADE_FORBIDDEN",
+          message: selfErr.message || "不能把订单指定给订单老板本人的陪玩身份。",
+        });
+      }
       // Public unpaid orders must go through grab hall after payment — CS cannot convert them into VIP assigned here.
       {
         const st = String(order.status || "");

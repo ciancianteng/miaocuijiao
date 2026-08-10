@@ -376,9 +376,36 @@
     return '<p class="apply-auth-msg ' + (authUi.messageTone === "ok" ? "is-ok" : "is-error") + '" data-apply-auth-msg>' + esc(authUi.message) + "</p>";
   }
 
+  function bossAccessToken() {
+    try {
+      return (
+        sessionStorage.getItem("mcjAuthAccessToken") ||
+        localStorage.getItem("mcjAuthAccessToken") ||
+        ""
+      );
+    } catch (e) {
+      return "";
+    }
+  }
+
   function authGateHtml() {
     if (companionToken()) return "";
+    var bossTok = bossAccessToken();
     var mode = authUi.mode === "login" ? "login" : "register";
+    if (bossTok && mode !== "login") {
+      // Prefer upgrading the logged-in boss account instead of creating a second Auth user.
+      return (
+        '<section class="apply-panel apply-auth-gate">' +
+        "<h2>使用当前老板账号申请陪玩</h2>" +
+        "<p class=\"apply-note\">检测到你已登录老板端。将在<strong>同一 User ID</strong>下开通陪玩资料，不会新建账号，也不会丢失老板订单/充值/聊天。</p>" +
+        '<div class="apply-actions apply-auth-actions">' +
+        '<button class="apply-btn primary" type="button" data-apply-from-boss' + (authUi.busy ? " disabled" : "") + ">使用当前账号申请陪玩</button>" +
+        '<button class="apply-btn" type="button" data-apply-auth-mode="login">改用其他陪玩账号登录</button>' +
+        "</div>" +
+        authMessageHtml() +
+        "</section>"
+      );
+    }
     var loginMethod = authUi.loginMethod === "otp" ? "otp" : "password";
     var regCooldown = authCooldownLeft(authUi.cooldownUntil);
     var loginCooldown = authCooldownLeft(authUi.loginCooldownUntil);
@@ -2013,6 +2040,49 @@
         if (window.MCJAuthShell && window.MCJAuthShell.clearAuthFields) {
           window.MCJAuthShell.clearAuthFields(root, { clearCode: true, clearPassword: true, clearAccount: false });
         }
+        return;
+      }
+
+      if (e.target.closest("[data-apply-from-boss]")) {
+        e.preventDefault();
+        var bossTok = bossAccessToken();
+        if (!bossTok) {
+          setAuthMessage("请先登录老板账号。", "error");
+          render(Number(root.dataset.step || 0));
+          return;
+        }
+        authUi.busy = true;
+        setAuthMessage("正在当前账号下开通陪玩资料…", "ok");
+        render(Number(root.dataset.step || 0));
+        fetch("/api/companion", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+            Authorization: "Bearer " + bossTok,
+            "x-mcj-companion-token": bossTok,
+          },
+          body: JSON.stringify({ action: "apply_companion_role" }),
+        })
+          .then(function (res) {
+            return res.json().then(function (body) {
+              if (!res.ok || body.ok === false) throw new Error((body && body.message) || "申请失败");
+              return body;
+            });
+          })
+          .then(function (body) {
+            var sess = body.session || {
+              token: bossTok,
+              accessToken: bossTok,
+              user: (body.session && body.session.user) || {},
+            };
+            return afterCompanionAuthSuccess(sess, "", "");
+          })
+          .catch(function (err) {
+            authUi.busy = false;
+            setAuthMessage(err.message || "申请失败", "error");
+            render(Number(root.dataset.step || 0));
+          });
         return;
       }
       var loginMethodBtn = e.target.closest("[data-apply-login-method]");

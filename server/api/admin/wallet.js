@@ -197,6 +197,23 @@ export default async function handler(req, res) {
       if (grantType === "bad_review" && balanceType !== "bonus") {
         return json(res, 400, { ok: false, message: "差评安抚必须发放到赠送猫粮" });
       }
+      if (grantType === "invite") {
+        const sourceUserId = String(
+          body.sourceUserId || body.source_user_id || body.inviteeId || body.invitee_id || body.fromUserId || ""
+        ).trim();
+        if (sourceUserId) {
+          try {
+            const { assertNotSelfRebate } = await import("../_account-roles.js");
+            assertNotSelfRebate(bossId, sourceUserId, "邀请奖励");
+          } catch (selfErr) {
+            return json(res, selfErr.status || 403, {
+              ok: false,
+              code: selfErr.code || "SELF_REBATE_FORBIDDEN",
+              message: selfErr.message || "不能产生自己给自己的邀请奖励。",
+            });
+          }
+        }
+      }
 
       const idempotencyKey = String(body.idempotencyKey || `admin-grant:${bossId}:${Date.now()}:${amount}:${grantType}`).trim();
       const before = viewWallet(await getWallet(bossId), bossId);
