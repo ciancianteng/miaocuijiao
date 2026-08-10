@@ -148,9 +148,77 @@ export async function hydrateReceiptReviewers(receipts = []) {
   const list = Array.isArray(receipts) ? receipts : [];
   if (!list.length) return list;
   const need = list.filter((r) => r && !String(r.reviewed_by_staff_name || "").trim());
-  if (!need.length) return list;
-  const snaps = await loadReviewerSnapshotsFromLogs(need.map((r) => r.id));
-  return list.map((r) => mergeReceiptReviewerSnapshot(r, snaps[r?.id] || null));
+  let snaps = {};
+  if (need.length) {
+    snaps = await loadReviewerSnapshotsFromLogs(need.map((r) => r.id));
+  }
+  const merged = list.map((r) => mergeReceiptReviewerSnapshot(r, snaps[r?.id] || null));
+  // Live profiles fallback for legacy rows / missing DDL columns — keyed by immutable reviewed_by id.
+  const stillNeed = merged.filter((r) => r && !String(r.reviewed_by_staff_name || "").trim());
+  if (!stillNeed.length) return merged;
+  const ids = [
+    ...new Set(
+      stillNeed
+        .map((r) => String(r.reviewed_by_staff_id || r.reviewed_by || r.confirmed_by || "").trim())
+        .filter((id) => isDbUuid(id))
+    ),
+  ];
+  if (!ids.length) return merged;
+  const profiles = await companionDb(
+    "profiles",
+    `?id=in.(${ids.map(encodeURIComponent).join(",")})&select=id,display_name,nickname,email,role&limit=500`
+  ).catch(() => []);
+  const profileMap = Object.fromEntries((profiles || []).map((row) => [row.id, row]));
+  return merged.map((r) => {
+    if (!r || String(r.reviewed_by_staff_name || "").trim()) return r;
+    const id = String(r.reviewed_by_staff_id || r.reviewed_by || r.confirmed_by || "").trim();
+    const name = staffReviewerNameFromProfile(profileMap[id] || {});
+    if (!name) return r;
+    return {
+      ...r,
+      reviewed_by_staff_id: id || r.reviewed_by_staff_id || null,
+      reviewed_by_staff_name: name,
+    };
+  });
+}
+
+/** Persist reviewer snapshot beside proof file when DB columns / history table unavailable. */
+async function writeReviewSidecar(receipt, snapshot) {
+  const base = String(receipt?.storage_path || "").trim();
+  if (!base) return;
+  try {
+    await uploadPrivateObject(
+      BUCKET,
+      `${base}.staff-review.json`,
+      Buffer.from(JSON.stringify(snapshot), "utf8"),
+      "text/plain"
+    );
+  } catch (error) {
+    console.warn("[payment_review_sidecar]", error?.message || error);
+  }
+}
+
+async function readReviewSidecar(receipt) {
+  const base = String(receipt?.storage_path || "").trim();
+  if (!base) return null;
+  try {
+    const url = await createSignedUrl(receipt.storage_bucket || BUCKET, `${base}.staff-review.json`, 180);
+    if (!url) return null;
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const json = await res.json().catch(() => null);
+    if (!json || typeof json !== "object") return null;
+    return {
+      reviewed_by_staff_id: json.reviewed_by_staff_id || null,
+      reviewed_by_staff_name: String(json.reviewed_by_staff_name || "").trim(),
+      reviewed_at: json.reviewed_at || "",
+      review_status: json.review_status || "",
+      review_remark: json.review_remark || "",
+      reject_reason: json.reject_reason || "",
+    };
+  } catch {
+    return null;
+  }
 }
 
 async function appendReviewHistory({
@@ -199,6 +267,20 @@ async function appendReviewHistory({
   }
   // Always dual-write to existing payment_operation_logs so snapshot survives without DDL.
   await appendOperationLogSnapshot(payload);
+}
+
+async function persistReviewerSnapshotArtifacts(receipt, payload) {
+  await appendReviewHistory(payload);
+  await writeReviewSidecar(receipt, {
+    source_table: payload.sourceTable,
+    source_id: payload.sourceId,
+    reviewed_by_staff_id: payload.staffId || null,
+    reviewed_by_staff_name: String(payload.staffName || ""),
+    review_status: String(payload.reviewStatus || ""),
+    review_remark: String(payload.reviewRemark || ""),
+    reject_reason: String(payload.rejectReason || ""),
+    reviewed_at: payload.reviewedAt || nowIso(),
+  });
 }
 
 function reviewPatch({ staffId, staffName, status, at, reason = "", remark = "" }) {
@@ -372,7 +454,18 @@ export async function approveAndLedger({ order, receipt, reviewerId, reviewerNam
     throw Object.assign(new Error("付款凭证已被处理，请刷新后重试。"), { status: 409 });
   }
 
-  await appendReviewHistory({
+  // Ensure snapshot fields present even if DB returned legacy row without new columns.
+  const receiptOut = {
+    ...approvedReceipt,
+    reviewed_by: staffId,
+    reviewed_by_staff_id: staffId,
+    reviewed_by_staff_name: staffName || approvedReceipt.reviewed_by_staff_name || "",
+    reviewed_at: approvedReceipt.reviewed_at || at,
+    storage_path: approvedReceipt.storage_path || receipt.storage_path,
+    storage_bucket: approvedReceipt.storage_bucket || receipt.storage_bucket,
+  };
+
+  await persistReviewerSnapshotArtifacts(receiptOut, {
     sourceTable: "payment_receipts",
     sourceId: approvedReceipt.id,
     action: "approved",
@@ -381,15 +474,6 @@ export async function approveAndLedger({ order, receipt, reviewerId, reviewerNam
     reviewStatus: "approved",
     reviewedAt: at,
   });
-
-  // Ensure snapshot fields present even if DB returned legacy row without new columns.
-  const receiptOut = {
-    ...approvedReceipt,
-    reviewed_by: staffId,
-    reviewed_by_staff_id: staffId,
-    reviewed_by_staff_name: staffName || approvedReceipt.reviewed_by_staff_name || "",
-    reviewed_at: approvedReceipt.reviewed_at || at,
-  };
 
   try {
     const transaction = await insertPaidTransaction({ order, receipt: receiptOut, reviewerId: staffId, at });
@@ -436,8 +520,10 @@ export async function rejectProof({ receipt, reviewerId, reviewerName = "", reas
     reviewed_by_staff_id: staffId,
     reviewed_by_staff_name: staffName,
     reviewed_at: rows[0].reviewed_at || at,
+    storage_path: rows[0].storage_path || receipt.storage_path,
+    storage_bucket: rows[0].storage_bucket || receipt.storage_bucket,
   };
-  await appendReviewHistory({
+  await persistReviewerSnapshotArtifacts(out, {
     sourceTable: "payment_receipts",
     sourceId: out.id,
     action: "rejected",
@@ -632,7 +718,8 @@ export async function latestApprovedForOrders(orderIds = []) {
 export async function listPaidForAdmin({ year = "", month = "" } = {}) {
   const rows = await companionDb("payment_transactions", "?payment_status=eq.paid&order=confirmed_at.desc&limit=2000").catch(() => []);
   const receipts = await companionDb("payment_receipts", "?status=eq.approved&limit=2000").catch(() => []);
-  const receiptMap = Object.fromEntries((receipts || []).map((row) => [row.id, row]));
+  const hydratedReceipts = await hydrateReceiptReviewers(receipts || []);
+  const receiptMap = Object.fromEntries((hydratedReceipts || []).map((row) => [row.id, row]));
   const filtered = (rows || [])
     .filter((row) => {
       const date = String(row.confirmed_at || row.created_at || "");
