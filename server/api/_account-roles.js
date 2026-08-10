@@ -8,7 +8,15 @@
  * - companion_profiles.user_id unique → companion capability
  * - optional profiles.roles text[] / auth app_metadata.roles
  */
-import { authUrl, restUrl, supabaseJson, headersWithServiceRole } from "./_supabase.js";
+import { envValue, restUrl, serviceHeaders, supabaseJson } from "./_wallet.js";
+
+function authUrl(path = "") {
+  return `${envValue("SUPABASE_URL").replace(/\/$/, "")}/auth/v1/${String(path).replace(/^\//, "")}`;
+}
+
+function headersWithServiceRole(extra = {}) {
+  return serviceHeaders(extra);
+}
 
 const BOSS_ALIASES = new Set(["boss", "customer", "owner", "user"]);
 
