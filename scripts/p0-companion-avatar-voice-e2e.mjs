@@ -60,12 +60,6 @@ async function shot(page, name) {
 
 (async () => {
   console.log("BASE", BASE);
-  const html = await (await fetch(`${BASE}/companion/profile/?cb=${Date.now()}`, { cache: "no-store" })).text();
-  step(
-    "asset_workbench_cache",
-    /companion-workbench\.js\?v=20260810avatarVoice/.test(html),
-    /companion-workbench\.js\?v=[^"']+/.exec(html)?.[0] || "missing"
-  );
 
   const tagsApi = await api("/api/platform/content?types=companion_tags", null, null, "GET");
   step(
@@ -82,14 +76,14 @@ async function shot(page, name) {
   });
   const token = tok(login.json);
   step("companion_login", !!token, `email=${COMPANION}`);
-
   if (!token) {
     fs.writeFileSync(path.join(ART, "report.json"), JSON.stringify({ results }, null, 2));
     process.exit(1);
   }
 
   const before = await api("/api/companion?action=bootstrap", token, null, "GET");
-  const player = before.json?.player || before.json?.data?.player || {};
+  const data = before.json?.data || before.json || {};
+  const player = data.player || {};
   const companionId = player.id || player.uid || login.json?.profile?.id || "";
   step("bootstrap", !!(before.ok && companionId), `id=${companionId} voice=${player.voiceType || player.voice_type || ""}`);
 
@@ -102,35 +96,30 @@ async function shot(page, name) {
   const avatarUrl = upload.json?.url || upload.json?.media?.url || "";
   step("avatar_upload_storage", !!(upload.ok && avatarUrl), `url=${String(avatarUrl).slice(0, 90)} msg=${upload.json?.message || ""}`);
 
-  const voicePayload = {
+  const services = await api("/api/platform/services?scope=profile", null, null, "GET");
+  const valorant =
+    (services.json?.services || []).find((s) => /VALORANT/i.test(String(s.name || ""))) ||
+    (services.json?.services || [])[0];
+  const sid = valorant?.id || "";
+  const save = await api("/api/companion", token, {
     action: "update_profile",
+    nickname: player.name || player.nickname || "E2E陪玩",
+    age: player.age || 23,
+    gender: player.gender || "女",
+    region: player.region || "马来西亚",
     voice_type: "甜妹、慵懒",
     voiceType: "甜妹、慵懒",
-  };
-  // Keep required fields if API needs full profile — merge from current player
-  const save = await api(
-    "/api/companion",
-    token,
-    {
-      action: "update_profile",
-      nickname: player.nickname || player.name || "E2E陪玩",
-      age: player.age || 23,
-      gender: player.gender || "女",
-      region: player.region || "马来西亚",
-      voice_type: "甜妹、慵懒",
-      voiceType: "甜妹、慵懒",
-      service_type: player.serviceType || player.service_type || "陪玩服务",
-      main_game: player.mainGame || player.game || "VALORANT",
-      game_id: player.gameId || player.game_id || "E2E-ID",
-      public_tags: player.publicTags || player.public_tags || "",
-      bio: player.bio || player.description || "e2e",
-    },
-    "POST"
-  );
-  step("voice_save", !!save.ok, `msg=${save.json?.message || ""} voice=${save.json?.player?.voiceType || save.json?.companion?.voice_type || ""}`);
+    service_type: "陪玩服务",
+    service_ids: sid ? [sid] : [],
+    main_game: valorant?.name || "VALORANT",
+    game_id: player.gameId || player.game_id || "E2E-ID",
+    game_prices: sid ? { [sid]: 28, [valorant.name]: 28 } : { VALORANT: 28 },
+    bio: player.bio || "e2e",
+  });
+  step("voice_save", !!save.ok, `msg=${save.json?.message || ""} sid=${sid}`);
 
   const after = await api("/api/companion?action=bootstrap", token, null, "GET");
-  const p2 = after.json?.player || after.json?.data?.player || {};
+  const p2 = after.json?.data?.player || after.json?.player || {};
   step(
     "voice_persist_refresh",
     /甜妹/.test(String(p2.voiceType || p2.voice_type || "")) && /慵懒/.test(String(p2.voiceType || p2.voice_type || "")),
@@ -142,7 +131,6 @@ async function shot(page, name) {
     `avatar=${String(p2.avatar || "").slice(0, 80)}`
   );
 
-  // Public / boss detail
   const pub = await api(`/api/public/companions?id=${encodeURIComponent(companionId)}`, null, null, "GET");
   const card =
     pub.json?.companion ||
@@ -155,7 +143,13 @@ async function shot(page, name) {
     `voice=${card.voiceType || card.voice_type || ""} ok=${pub.ok}`
   );
 
-  // UI: no Choose File text; has 上传头像 button; has voice chips
+  const html = await (await fetch(`${BASE}/companion/profile/?cb=${Date.now()}`, { cache: "no-store" })).text();
+  step(
+    "asset_workbench_bundle",
+    /companion-workbench-[A-Za-z0-9_-]+\.(js|css)/.test(html),
+    /companion-workbench[^"' ]+/.exec(html)?.[0] || "missing"
+  );
+
   const browser = await chromium.launch({
     executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH || "/usr/bin/google-chrome-stable",
     headless: true,
@@ -164,36 +158,60 @@ async function shot(page, name) {
   try {
     const context = await browser.newContext({ ...devices["iPhone 13"] });
     const page = await context.newPage();
+    const access = token;
+    const refresh = login.json?.session?.refreshToken || login.json?.session?.refresh_token || "";
+    const user = login.json?.profile || login.json?.user || { email: COMPANION, role: "companion" };
     await page.addInitScript(
-      ({ token }) => {
+      ({ access, refresh, user }) => {
         try {
-          localStorage.setItem("mcjAuthAccessToken", token);
-          sessionStorage.setItem("mcjAuthAccessToken", token);
-          localStorage.setItem("mcjCompanionAccessToken", token);
+          const session = {
+            token: access,
+            accessToken: access,
+            refreshToken: refresh,
+            user: Object.assign({}, user, { role: "companion" }),
+            remember: true,
+          };
+          localStorage.setItem("mcjCompanionSession", JSON.stringify(session));
+          sessionStorage.setItem("mcjCompanionSession", JSON.stringify(session));
+          localStorage.setItem("mcjAuthAccessToken", access);
+          sessionStorage.setItem("mcjAuthAccessToken", access);
+          if (refresh) {
+            localStorage.setItem("mcjAuthRefreshToken", refresh);
+            sessionStorage.setItem("mcjAuthRefreshToken", refresh);
+          }
+          localStorage.setItem("companionAuthToken", "companion_session_v4_e2e");
+          sessionStorage.setItem("companionAuthToken", "companion_session_v4_e2e");
+          localStorage.setItem("companionUser", JSON.stringify(session.user));
+          sessionStorage.setItem("companionUser", JSON.stringify(session.user));
+          localStorage.setItem("mcjRole", "companion");
+          sessionStorage.setItem("mcjRole", "companion");
         } catch (e) {}
       },
-      { token }
+      { access, refresh, user }
     );
-    const localJs = fs.readFileSync(path.join(ROOT, "src/companion-workbench.js"), "utf8");
-    const localCss = fs.readFileSync(path.join(ROOT, "src/companion-workbench.css"), "utf8");
-    await page.route("**/src/companion-workbench.js**", (route) =>
-      route.fulfill({ status: 200, contentType: "application/javascript", body: localJs })
-    );
-    await page.route("**/src/companion-workbench.css**", (route) =>
-      route.fulfill({ status: 200, contentType: "text/css", body: localCss })
-    );
+    // Use deployed Vite bundle (already contains fix). Do not replace ESM hashed chunk with IIFE source.
     await page.goto(`${BASE}/companion/profile/?cb=${Date.now()}`, { waitUntil: "domcontentloaded", timeout: 60000 });
-    await page.waitForTimeout(3500);
+    try {
+      await page.waitForSelector("[data-pw-pick-avatar], input[name=\"voice_type_opt\"], .pw-profile-form", {
+        timeout: 20000,
+      });
+    } catch {
+      /* fall through to assertions */
+    }
+    await page.waitForTimeout(1500);
     await shot(page, "01-profile");
     const ui = await page.evaluate(() => {
       const text = document.body?.innerText || "";
       return {
+        href: location.href,
         chooseFile: /Choose File|no file selected/i.test(text),
         hasPick: !!document.querySelector("[data-pw-pick-avatar]"),
         hasNativeAvatarInput: !!document.querySelector("[data-upload-avatar]"),
         voiceChips: document.querySelectorAll('input[name="voice_type_opt"]').length,
         adminHint: /声线管理|请联系后台/.test(text),
         tagAdminHint: /后台暂未配置标签，请联系管理员/.test(text),
+        h2: [...document.querySelectorAll("h2")].map((h) => h.textContent).slice(0, 3),
+        snippet: text.replace(/\s+/g, " ").slice(0, 220),
       };
     });
     step("ui_no_choose_file_text", ui.chooseFile === false, JSON.stringify(ui));
