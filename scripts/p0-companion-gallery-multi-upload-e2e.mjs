@@ -303,7 +303,12 @@ function galleryOf(boot) {
 
   // Boss public detail
   const pub = await api(`/api/public/companions?id=${encodeURIComponent(companionId)}`, null, null, "GET");
-  const pubCompanion = pub.json?.companion || pub.json?.data || pub.json || {};
+  const pubCompanion =
+    (pub.json?.companions || []).find((x) => x.id === companionId) ||
+    (pub.json?.companions || [])[0] ||
+    pub.json?.companion ||
+    pub.json?.data ||
+    {};
   const pubGal = pubCompanion.gallery || pubCompanion.media?.gallery || [];
   const pubCount = Array.isArray(pubGal)
     ? pubGal.length
