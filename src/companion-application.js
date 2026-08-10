@@ -571,14 +571,20 @@
         });
     return '<div class="form-field full apply-gallery-block"><span class="mcj-upload-label">相册</span><div class="apply-gallery-grid">' + cards + "</div>" + addCard + "</div>";
   }
-  function tagPicker(fieldName, label, selected, groups, limit) {
+  function tagPicker(fieldName, label, selected, groups, limit, opts) {
     selected = Array.isArray(selected) ? selected : [];
+    opts = opts || {};
+    // 仅个人标签允许自定义；可接游戏 / 擅长位置 / 可提供服务必须选自后台配置，禁止申请端自建。
+    var allowCustom = opts.allowCustom === true;
     var body = Object.keys(groups || {}).map(function (group) {
       return '<div class="tag-group"><b>' + esc(group) + '</b><div class="tag-list">' + groups[group].map(function (tag) {
         return '<label class="tag-pill ' + (selected.indexOf(tag) >= 0 ? "checked" : "") + '"><input type="checkbox" data-tag-field="' + esc(fieldName) + '" value="' + esc(tag) + '" ' + (selected.indexOf(tag) >= 0 ? "checked" : "") + '> ' + esc(tag) + '</label>';
       }).join("") + '</div></div>';
     }).join("");
-    return '<div class="form-field full tag-picker" data-tag-picker="' + esc(fieldName) + '" data-tag-limit="' + (limit || 99) + '"><span>' + esc(label) + '</span>' + body + '<div class="custom-tag-row"><input data-custom-tag-input="' + esc(fieldName) + '" placeholder="新增自定义标签"><button class="apply-btn small" type="button" data-add-custom-tag="' + esc(fieldName) + '">添加</button></div><small>已选择 <em data-tag-count="' + esc(fieldName) + '">' + selected.length + '</em> / ' + (limit || 99) + '</small></div>';
+    var customRow = allowCustom
+      ? '<div class="custom-tag-row"><input data-custom-tag-input="' + esc(fieldName) + '" placeholder="新增自定义标签"><button class="apply-btn small" type="button" data-add-custom-tag="' + esc(fieldName) + '">添加</button></div>'
+      : '';
+    return '<div class="form-field full tag-picker" data-tag-picker="' + esc(fieldName) + '" data-tag-limit="' + (limit || 99) + '"><span>' + esc(label) + '</span>' + body + customRow + '<small>已选择 <em data-tag-count="' + esc(fieldName) + '">' + selected.length + '</em> / ' + (limit || 99) + '</small></div>';
   }
 
   function rulesHtml(draft) {
@@ -606,7 +612,7 @@
       field("phone", "联系电话", "tel", data.phone) +
       field("email", "邮箱", "email", data.email) +
       selectField("contactPublic", "联系方式是否公开", data.contactPublic, ["不公开，仅平台可见", "审核通过后公开给已下单老板"]) +
-      tagPicker("personalTags", "个人标签（必填，最多 10 个）", data.personalTags, tagGroups.personalTags, 10) +
+      tagPicker("personalTags", "个人标签（必填，最多 10 个）", data.personalTags, tagGroups.personalTags, 10, { allowCustom: true }) +
       '</form></section>';
   }
   function gameHtml(data) {
@@ -2406,6 +2412,8 @@
       var addTag = e.target.closest("[data-add-custom-tag]");
       if (addTag) {
         var key = addTag.dataset.addCustomTag;
+        // 仅个人标签允许自定义；禁止通过该入口给游戏/位置等后台选项加自定义项。
+        if (key !== "personalTags") return;
         var input = document.querySelector('[data-custom-tag-input="' + key + '"]');
         var value = input ? input.value.trim() : "";
         if (!value) return;
