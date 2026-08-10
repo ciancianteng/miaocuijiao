@@ -534,7 +534,19 @@
         game: orderBtn.getAttribute("data-hall-game") || "陪玩",
         avatar: orderBtn.getAttribute("data-hall-avatar") || "",
         publicId: orderBtn.getAttribute("data-hall-public-id") || "",
+        levelId: orderBtn.getAttribute("data-hall-level") || "",
+        level: (function () {
+          var lid = orderBtn.getAttribute("data-hall-level") || "";
+          if (lid && window.MCJCompanionLevels && window.MCJCompanionLevels.label) {
+            return window.MCJCompanionLevels.label(lid);
+          }
+          var card = orderBtn.closest(".player-card");
+          var pill = card && card.querySelector(".companion-level-pill");
+          return (pill && pill.textContent) || "";
+        })(),
         pricingUnit: "小时",
+        availabilityStatus: orderBtn.getAttribute("data-hall-status") || "",
+        availabilityText: orderBtn.getAttribute("data-hall-status-text") || "",
       });
     });
   }

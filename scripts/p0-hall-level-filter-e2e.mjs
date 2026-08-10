@@ -365,7 +365,8 @@ async function api(pathname, token, body, method = null, headers = {}) {
       await page.waitForTimeout(600);
       const modalLevel = await page.locator(".mcj-po-pill[data-level-id]").first().getAttribute("data-level-id").catch(() => "");
       const modalText = await page.locator(".mcj-po-pill[data-level-id]").first().innerText().catch(() => "");
-      step("order_modal_level", !modalLevel || modalLevel === (hallLevel || pubL), `modal=${modalLevel}/${modalText}`);
+      const orderOk = String(modalLevel || "") === String(hallLevel || pubL || "") && !!modalLevel;
+      step("order_modal_level", orderOk, `modal=${modalLevel}/${modalText} expect=${hallLevel || pubL}`);
       await page.keyboard.press("Escape").catch(() => {});
     }
   }
