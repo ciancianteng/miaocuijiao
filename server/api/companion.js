@@ -583,18 +583,10 @@ async function migrateGalleryFallbacksIntoMedia(profile, companionRow, mediaRows
     }
   }
 
-  // Only hydrate storage orphans when DB gallery is still empty (bootstrap / broken fake-id era).
-  if (!galleryImageRows.length && !migratedFromTags) {
-    let sort = 100;
-    for (const bucket of [PRIVATE_BUCKETS.gallery, PUBLIC_BUCKETS.profile]) {
-      const files = await listStoragePrefix(bucket, `${profile.id}/gallery`);
-      for (const file of files.slice(0, 6)) {
-        const objectPath = `${profile.id}/gallery/${file.name}`;
-        await insertGallery(bucket, objectPath, sort, file.updated_at || file.created_at || "");
-        sort += 10;
-      }
-    }
-  }
+  // IMPORTANT: never re-list Storage into companion_media when the table exists.
+  // Doing so resurrects deleted gallery photos (DB empty + leftover objects → migrate → back).
+  // Tags marker is the only bootstrap fallback; orphans without DB rows stay ignored.
+  void migratedFromTags;
 
   return existing;
 }

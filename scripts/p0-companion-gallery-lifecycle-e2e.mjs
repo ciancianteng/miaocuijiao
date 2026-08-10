@@ -124,16 +124,16 @@ async function bootstrap(token) {
 }
 
 async function clearGallery(token) {
-  let boot = await bootstrap(token);
-  let g = galleryOf(boot);
-  for (const item of g) {
-    const del = await api(token, { action: "delete_media", media_id: item.id, media_type: "gallery" });
-    if (!del.ok) {
-      // synthetic id path should still succeed after fix
-      console.warn("delete during clear:", del.rawMessage, item.id);
+  for (let round = 0; round < 3; round++) {
+    const boot = await bootstrap(token);
+    const g = galleryOf(boot);
+    if (!g.length) return [];
+    for (const item of g) {
+      const del = await api(token, { action: "delete_media", media_id: item.id, media_type: "gallery" });
+      if (!del.ok) console.warn("delete during clear:", del.rawMessage, item.id);
     }
   }
-  boot = await bootstrap(token);
+  const boot = await bootstrap(token);
   return galleryOf(boot);
 }
 
