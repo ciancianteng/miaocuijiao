@@ -3174,6 +3174,9 @@
           infoRow('银行名称',v.bankName||'未填写')+
           infoRow('当前提现账户',rules.currentAccount||'未绑定')+
           infoRow('押金认证',STATUS_CN.deposit(ua.deposit_status))+
+          (ua.depositVerified
+            ? infoRow('押金状态','押金：'+(d.requiredAmount!=null?('MYR'+d.requiredAmount):'MYR100')+' / 已认证')
+            :(ua.identityVerified?infoRow('押金状态','身份证认证路径（未缴押金）'):infoRow('押金状态','未认证')))+
           infoRow('账号接单权限',STATUS_CN.accountAccess(ua.account_access_status))+
           infoRow('当前等级',level.level||p.level||'未设置')+
         '</div>'+

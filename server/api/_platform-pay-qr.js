@@ -569,6 +569,46 @@ export function filterBossRechargeMethods(methods = []) {
   return (methods || []).filter((m) => m && m.open && m.forRecharge !== false && m.code !== "catfood");
 }
 
+/**
+ * Companion apply deposit auth: enabled manual channels from payment_channels SoT.
+ * Show even when QR is missing (UI must explain and block blank QR).
+ * Never hardcode TNG / DuitNow / Alipay on the client.
+ */
+export async function listCompanionDepositPaymentMethods() {
+  const listed = await listBossPaymentMethods([]);
+  const methods = (listed.methods || [])
+    .filter((m) => m && m.category === "manual" && m.enabled)
+    .map((m) => {
+      const meta = m._meta || {};
+      const pay = m.payInfo || {};
+      const qrUrl = moneySafe(pay.qrUrl || meta.qrUrl || "");
+      return {
+        id: m.code,
+        code: m.code,
+        name: m.name,
+        label: m.name,
+        enabled: true,
+        category: "manual",
+        qrUrl,
+        hasQr: !!qrUrl,
+        receiverName: moneySafe(pay.receiverName || meta.receiverName || ""),
+        bankName: moneySafe(pay.bankName || meta.bankName || ""),
+        bankAccount: moneySafe(pay.bankAccount || meta.bankAccount || ""),
+        phone: moneySafe(pay.phone || meta.phone || ""),
+        duitnowId: moneySafe(pay.duitnowId || meta.duitnowId || ""),
+        instructions: moneySafe(pay.instructions || meta.instructions || "") || defaultInstructions(m.code),
+        sort_order: Number(m.sort_order ?? 100),
+        source: meta.source || m.source || "payment_channels",
+      };
+    })
+    .sort((a, b) => a.sort_order - b.sort_order || String(a.name).localeCompare(String(b.name)));
+  return {
+    tableReady: listed.tableReady,
+    methods,
+    sot: "payment_channels",
+  };
+}
+
 /** Keys that must never appear on public platform settings responses. */
 export const PUBLIC_SETTINGS_PAYMENT_STRIP_KEYS = [
   "paymentChannelsPublic",

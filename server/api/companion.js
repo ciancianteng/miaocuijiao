@@ -12,9 +12,11 @@
   ensureCompanionBuckets,
   isMissingRelation,
   maskBankAccount,
+  normalizeMimeType,
   publicObjectUrl,
   uploadPrivateObject,
 } from "./_companion-media-store.js";
+import { listCompanionDepositPaymentMethods } from "./_platform-pay-qr.js";
 import { companionPopularityMe, recordOnlineSession, scheduleRecomputeSoft } from "./_popularity.js";
 import { readLocalLevels, toPublicLevel } from "./_companion-levels-store.js";
 import { resolvePlatformCommission } from "./_commission-rates.js";
@@ -834,6 +836,8 @@ const COMPANION_ISOLATION_ALLOWED_ACTIONS = new Set([
   "upload_media",
   "delete_media",
   "reorder_media",
+  "save_credential_mode",
+  "deposit_pay_methods",
   "start_cs_consult",
   "open_cs_conversation",
   "end_cs_conversation",
@@ -900,6 +904,70 @@ function resolveCredentialMode(companion = {}, depositRow = null) {
   const depSt = normalizeDepositStatus(companion, depositRow);
   if (depSt === "approved" || depSt === "pending") return "deposit";
   return "id_card";
+}
+
+/** Explicit apply-form choice only — never invent id_card default for hydration. */
+function explicitCredentialMode(companion = {}) {
+  const tagged = String(companion.credential_mode || companion.auth_mode || "").trim().toLowerCase();
+  if (tagged === "id_card" || tagged === "deposit") return tagged;
+  const note = String(companion.application_note || "");
+  const m = note.match(/\[AUTH_MODE:(id_card|deposit)\]/i);
+  if (m) return m[1].toLowerCase();
+  return "";
+}
+
+async function loadCompanionDepositAmountConfig() {
+  try {
+    const rows = await companionDb(
+      "platform_content_items",
+      "?type=eq.player_deposit_settings&order=updated_at.desc&limit=1"
+    );
+    const row = Array.isArray(rows) ? rows[0] : null;
+    if (!row) return { amount: 100, currency: "MYR", description: "" };
+    const data = {
+      ...(row.published && typeof row.published === "object" ? row.published : {}),
+      ...(row.draft && typeof row.draft === "object" ? row.draft : {}),
+    };
+    return {
+      amount: Number(data.amount || 100) || 100,
+      currency: String(data.currency || "MYR").trim() || "MYR",
+      description: String(data.paymentDescription || data.description || "").trim(),
+      refundRule: String(data.refundDescription || data.refundTerms || "").trim(),
+    };
+  } catch {
+    return { amount: 100, currency: "MYR", description: "" };
+  }
+}
+
+async function patchCredentialMode(row, authMode) {
+  const mode = authMode === "id_card" || authMode === "deposit" ? authMode : "";
+  if (!mode || !row?.id) return { ok: false };
+  const rawNote = String(row.application_note || "").replace(/\[AUTH_MODE:(?:id_card|deposit)\]\s*/gi, "").trim();
+  const applicationNote = `[AUTH_MODE:${mode}]${rawNote ? ` ${rawNote}` : ""}`;
+  const patch = {
+    application_note: applicationNote,
+    credential_mode: mode,
+    updated_at: nowIso(),
+  };
+  try {
+    await supabaseJson(restUrl("companion_profiles", `?id=eq.${encodeURIComponent(row.id)}`), {
+      method: "PATCH",
+      headers: serviceHeaders(),
+      body: JSON.stringify(patch),
+    });
+    return { ok: true, credentialMode: mode };
+  } catch (firstErr) {
+    if (patch.credential_mode && /column|schema cache|PGRST|credential_mode/i.test(String(firstErr?.message || firstErr || ""))) {
+      delete patch.credential_mode;
+      await supabaseJson(restUrl("companion_profiles", `?id=eq.${encodeURIComponent(row.id)}`), {
+        method: "PATCH",
+        headers: serviceHeaders(),
+        body: JSON.stringify(patch),
+      });
+      return { ok: true, credentialMode: mode };
+    }
+    throw firstErr;
+  }
 }
 function normalizeIdentityStatus(identityRow = null, companion = {}) {
   // Prefer dedicated identity verification row — "uploaded/pending" ≠ approved.
@@ -2333,6 +2401,10 @@ async function bootstrapData(profile, companion) {
       ),
       hasProof: !!String(deposit?.proof_path || "").trim(),
     },
+    credentialMode: explicitCredentialMode(companionRow),
+    credential_mode: explicitCredentialMode(companionRow),
+    applicationStatus: normalizeProfileReviewStatus(companionRow),
+    application_status: normalizeProfileReviewStatus(companionRow),
     playerGames: [],
     media: signedMedia,
     levelInfo: {
@@ -2362,6 +2434,32 @@ async function bootstrapData(profile, companion) {
     reviews: await loadCompanionReviews(profile.id),
     orderStatuses: Object.values(ORDER_STATUS_TEXT),
     paymentStatuses: [],
+    depositPay: await (async () => {
+      try {
+        const [payListed, amountCfg] = await Promise.all([
+          listCompanionDepositPaymentMethods(),
+          loadCompanionDepositAmountConfig(),
+        ]);
+        return {
+          amount: amountCfg.amount,
+          currency: amountCfg.currency,
+          description: amountCfg.description || "",
+          refundRule: amountCfg.refundRule || "",
+          methods: payListed.methods || [],
+          sot: payListed.sot || "payment_channels",
+        };
+      } catch (err) {
+        warnings.push(`deposit_pay: ${err?.message || err}`);
+        return {
+          amount: 100,
+          currency: "MYR",
+          description: "",
+          refundRule: "",
+          methods: [],
+          sot: "payment_channels",
+        };
+      }
+    })(),
   };
 }
 
@@ -3182,6 +3280,22 @@ export default async function handler(req, res) {
       });
     }
     if (req.method === "GET" && action === "bootstrap") return json(res,200,{ok:true,data:await bootstrapData(auth.profile, companion)});
+    if (req.method === "GET" && (action === "deposit_pay_methods" || action === "deposit_payment_methods")) {
+      const [payListed, amountCfg] = await Promise.all([
+        listCompanionDepositPaymentMethods(),
+        loadCompanionDepositAmountConfig(),
+      ]);
+      return json(res, 200, {
+        ok: true,
+        amount: amountCfg.amount,
+        currency: amountCfg.currency,
+        description: amountCfg.description || "",
+        refundRule: amountCfg.refundRule || "",
+        methods: payListed.methods || [],
+        sot: payListed.sot || "payment_channels",
+        tableReady: payListed.tableReady,
+      });
+    }
     if (req.method === "GET" && action === "inbox") {
       const activeConversationId = String(req.query.conversation_id || req.query.conversationId || "").trim();
       const light =
@@ -3777,6 +3891,24 @@ export default async function handler(req, res) {
         });
       }
     }
+    if (action === "save_credential_mode" || action === "set_credential_mode") {
+      const row = await ensureCompanionRow(auth.profile, companion);
+      const authModeRaw = String(body.auth_mode || body.credential_mode || body.authMode || body.credentialMode || "")
+        .trim()
+        .toLowerCase();
+      if (authModeRaw !== "id_card" && authModeRaw !== "deposit") {
+        return json(res, 400, { ok: false, message: "请选择身份证认证或押金认证" });
+      }
+      // Selecting auth mode must NOT flip draft → pending; only formal submit does.
+      const saved = await patchCredentialMode(row, authModeRaw);
+      return json(res, 200, {
+        ok: true,
+        message: authModeRaw === "deposit" ? "已选择押金认证" : "已选择身份证认证",
+        credentialMode: saved.credentialMode || authModeRaw,
+        applicationStatus: normalizeProfileReviewStatus({ ...row, ...companion }),
+      });
+    }
+
     if (action === "update_profile") {
       if (body.privacy_only) {
         const privacyContact = String(body.contact_phone || body.phone || "").trim();
@@ -4384,9 +4516,15 @@ export default async function handler(req, res) {
         remark: String(body.remark || ""),
         paid_at: nowIso(),
       });
+      // Deposit path = deposit credential mode (persist even if full application not yet submitted).
+      try {
+        await patchCredentialMode(row, "deposit");
+      } catch {
+        /* non-fatal */
+      }
       const bankAccountRaw = String(body.bank_account || body.bankAccount || body.settlementAccount || "").trim();
       const settlementMethod = String(
-        body.settlementMethod || body.method || body.payment_method || body.paymentMethod || ""
+        body.settlementMethod || body.method || ""
       ).trim();
       const settlementName = String(body.account_name || body.accountName || body.settlementName || "").trim();
       const settlementBank = String(body.bank_name || body.bankName || body.settlementBank || "").trim();
@@ -4459,7 +4597,19 @@ export default async function handler(req, res) {
       let publicUrl = "";
       if (mediaType === "voice") {
         const decoded = decodeDataUrl(dataUrl);
-        if (!decoded) return json(res, 400, { ok: false, message: "请选择要上传的语音文件" });
+        if (!decoded) {
+          return json(res, 400, {
+            ok: false,
+            message: "语音文件无法解析（请重新录音或上传 webm / m4a / wav / mp3）",
+          });
+        }
+        // Prefer client MIME when data-URL type is missing; always strip codecs=.
+        const clientMime = normalizeMimeType(body.content_type || body.contentType || "", "");
+        if (clientMime && /^audio\//.test(clientMime)) {
+          decoded.contentType = clientMime;
+        } else {
+          decoded.contentType = normalizeMimeType(decoded.contentType, "audio/webm");
+        }
         const checked = assertAudioUpload(decoded);
         const objectPath = buildObjectPath(auth.profile.id, "voice", body.filename || "voice.webm");
         await uploadPrivateObject(PRIVATE_BUCKETS.audio, objectPath, checked.buffer, checked.contentType);

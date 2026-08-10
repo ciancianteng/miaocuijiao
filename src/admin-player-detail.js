@@ -421,6 +421,7 @@
     var depositHtml = deposit.empty
       ? emptyText("尚未缴纳押金")
       : rows([
+          ["认证方式", d.credentialMode === "deposit" || d.credential_mode === "deposit" ? "押金认证" : (d.credentialMode === "id_card" || d.credential_mode === "id_card" ? "身份证认证" : (deposit.hasProof ? "押金认证" : "—"))],
           ["应缴押金", "RM" + (deposit.requiredAmount != null ? deposit.requiredAmount : 100)],
           ["已缴金额", "RM" + (deposit.paidAmount != null ? deposit.paidAmount : 0)],
           ["缴纳时间", deposit.paidAt || "—"],

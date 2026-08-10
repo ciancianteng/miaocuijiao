@@ -1,0 +1,62 @@
+{
+  "base": "https://meow-cuijiao-homepage-git-cu-e0f11c-ciancianteng-4581s-projects.vercel.app",
+  "email": "p0uinajngq.comp@meow.test",
+  "password": "McjTest@12345678",
+  "results": [
+    {
+      "step": "ui_step5",
+      "result": "PASS",
+      "detail": "count=2"
+    },
+    {
+      "step": "ui_select_deposit",
+      "result": "PASS",
+      "detail": "pressed"
+    },
+    {
+      "step": "no_assignment_to_constant",
+      "result": "PASS",
+      "detail": "none"
+    },
+    {
+      "step": "ui_duitnow",
+      "result": "PASS",
+      "detail": "DuitNow|TNG"
+    },
+    {
+      "step": "ui_tng",
+      "result": "PASS",
+      "detail": "DuitNow|TNG"
+    },
+    {
+      "step": "ui_duitnow_qr",
+      "result": "PASS",
+      "detail": "https://jqfaknpmcnqwqvatrwgo.supabase.co/storage/v1/object/public/platform-payment/qr/duitnow.jpg?v="
+    },
+    {
+      "step": "ui_tng_own_qr",
+      "result": "PASS",
+      "detail": "same=false"
+    },
+    {
+      "step": "ui_progress_not_5_5_100",
+      "result": "PASS",
+      "detail": "4 / 5 · 80%"
+    },
+    {
+      "step": "ui_persist_refresh",
+      "result": "PASS",
+      "detail": "true"
+    },
+    {
+      "step": "db_credential_deposit",
+      "result": "PASS",
+      "detail": "deposit"
+    },
+    {
+      "step": "db_application_draft",
+      "result": "PASS",
+      "detail": "draft"
+    }
+  ]
+}

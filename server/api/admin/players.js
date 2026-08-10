@@ -461,6 +461,24 @@ async function buildDetail(row, profile, opts = {}) {
     contact_phone: row.contact_phone || profile.phone || "",
     voice_url: row.voice_url || "",
     card_image_url: row.card_image_url || "",
+    credentialMode: (() => {
+      const tagged = String(row.credential_mode || row.auth_mode || "").trim().toLowerCase();
+      if (tagged === "id_card" || tagged === "deposit") return tagged;
+      const note = String(row.application_note || "");
+      const m = note.match(/\[AUTH_MODE:(id_card|deposit)\]/i);
+      if (m) return m[1].toLowerCase();
+      if (deposit?.proof_path || /pending|approved|paid/i.test(String(deposit?.status || ""))) return "deposit";
+      return "";
+    })(),
+    credential_mode: (() => {
+      const tagged = String(row.credential_mode || row.auth_mode || "").trim().toLowerCase();
+      if (tagged === "id_card" || tagged === "deposit") return tagged;
+      const note = String(row.application_note || "");
+      const m = note.match(/\[AUTH_MODE:(id_card|deposit)\]/i);
+      if (m) return m[1].toLowerCase();
+      if (deposit?.proof_path || /pending|approved|paid/i.test(String(deposit?.status || ""))) return "deposit";
+      return "";
+    })(),
     level_effective_at: row.level_effective_at || "",
     commission_effective_at: row.commission_effective_at || "",
     application: {
