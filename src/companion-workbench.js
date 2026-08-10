@@ -378,17 +378,61 @@
     state.route='review-status';
     return true;
   }
+  function isProfileApproved(){
+    var ua=unifiedAccess();
+    var perm=(state.data||{}).permissions||{};
+    var st=String(ua.profile_review_status||perm.applicationStatus||perm.profile_review_status||'').toLowerCase();
+    return /approved|verified|passed/.test(st);
+  }
+  function isForcedAckLocked(){
+    if(isIsolationMode())return false;
+    var perm=(state.data||{}).permissions||{};
+    var data=state.data||{};
+    if(data.forcedAckRequired||perm.forcedAckRequired)return true;
+    return Array.isArray(data.pendingForced)&&data.pendingForced.length>0;
+  }
+  /** True when companion cannot grab / go online (review OR forced-ack OR other gates). */
   function isAuditLocked(){
     var perm=(state.data||{}).permissions||{};
     if(isIsolationMode())return true;
-    return perm.canWork===false||perm.canSetAvailable===false||!!(state.data||{}).forcedAckRequired;
+    if(isForcedAckLocked())return true;
+    return perm.canWork===false||perm.canSetAvailable===false;
+  }
+  function todayStatusLockLabel(){
+    // Approved + unread forced announcement must NEVER read as「审核中」.
+    if(isIsolationMode()||!isProfileApproved())return '审核中（不可接单）';
+    if(isForcedAckLocked())return '暂不可接单';
+    var perm=(state.data||{}).permissions||{};
+    if(perm.canWork===false||perm.canSetAvailable===false)return '暂不可接单';
+    return '';
   }
   function auditHint(){
     var perm=(state.data||{}).permissions||{};
     var data=state.data||{};
     if(isIsolationMode())return isolationHint();
-    if(data.forcedAckRequired||perm.forcedAckRequired)return perm.forcedAckReason||'请先阅读并确认最新强制公告后，才能切换状态、抢单或接单。';
+    if(isForcedAckLocked()||data.forcedAckRequired||perm.forcedAckRequired){
+      return perm.forcedAckReason||'请先阅读并确认最新强制公告';
+    }
     return perm.lockReason||'您的陪玩认证尚未通过，暂不可使用此功能。';
+  }
+  function orderGateButtonLabel(fallback){
+    if(isForcedAckLocked())return '请先确认强制公告';
+    if(isIsolationMode()||!isProfileApproved())return '审核通过后可抢单';
+    return fallback||'暂不可接单';
+  }
+  function refreshForcedAckModal(attempt){
+    var n=Number(attempt||0)||0;
+    var data=state.data||{};
+    try{
+      var api=window.MCJCompanionForcedAck;
+      if(api&&(typeof api.refreshFromBootstrap==='function'||typeof api.refresh==='function')){
+        (api.refreshFromBootstrap||api.refresh).call(api,data);
+        return;
+      }
+    }catch(e){}
+    if(!Array.isArray(data.pendingForced)||!data.pendingForced.length)return;
+    if(n>=20)return;
+    setTimeout(function(){refreshForcedAckModal(n+1)},100);
   }
   function collectRejectReasons(){
     var v=(state.data&&state.data.verification)||{};
@@ -422,8 +466,12 @@
     }
     if(/approved|verified|passed/.test(st)){
       var can=!!(((state.data||{}).permissions||{}).canWork);
-      if(can){
+      var forced=isForcedAckLocked();
+      if(can&&!forced){
         return '<div class="pw-alert pw-privacy-review" role="status" data-review-status-banner="approved"><strong>恭喜，认证已通过</strong><span>您的接单权限已开放。</span>'+emailPending+'<button class="pw-btn primary" type="button" data-enter-hall>开始接单</button></div>';
+      }
+      if(forced){
+        return '<div class="pw-alert pw-privacy-review" role="status" data-review-status-banner="approved"><strong>恭喜，认证已通过</strong><span>请先阅读并确认最新强制公告后，即可切换在线接单。</span>'+emailPending+'</div>';
       }
       return '<div class="pw-alert pw-privacy-review" role="status" data-review-status-banner="approved"><strong>恭喜，认证已通过</strong><span>'+esc(ua.accountAccessLabel||'认证已通过，请完善剩余接单条件。')+'</span>'+emailPending+'</div>';
     }
@@ -1254,9 +1302,7 @@
       state.walletWarning=(walletResult&&walletResult.data&&walletResult.data.warnings&&walletResult.data.warnings[0])
         || (result.data&&result.data.walletWarnings&&result.data.walletWarnings[0])
         || '';
-      if(window.MCJCompanionForcedAck&&window.MCJCompanionForcedAck.refreshFromBootstrap){
-        window.MCJCompanionForcedAck.refreshFromBootstrap(state.data);
-      }
+      refreshForcedAckModal(0);
       var sInit=(state.data||{}).summary||{};
       if(state._prevDesignated==null)state._prevDesignated=num(sInit.waitingConfirm||sInit.designatedPending);
       var auditNow=isAuditLocked();
@@ -1993,8 +2039,9 @@
     var cur=currentOnlineStatus();
     var locked=isAuditLocked();
     var metaCur=STATUS_META[cur]||STATUS_META.offline;
-    var label=locked?'审核中（不可接单）':(metaCur.emoji+' '+metaCur.label);
-    return '<div class="pw-status-panel '+(extraClass||'')+(state.statusBusy?' is-busy':'')+(locked?' is-locked':'')+'">'+
+    var lockLabel=todayStatusLockLabel();
+    var label=lockLabel||(metaCur.emoji+' '+metaCur.label);
+    return '<div class="pw-status-panel '+(extraClass||'')+(state.statusBusy?' is-busy':'')+(locked?' is-locked':'')+(isForcedAckLocked()?' is-forced-ack':'')+'" data-status-lock="'+(isForcedAckLocked()?'forced':(lockLabel?'review':'none'))+'">'+
       '<div class="pw-status-current">今日状态：<strong data-current-status-label>'+esc(label)+'</strong></div>'+
       '<div class="pw-status-switch" role="radiogroup" aria-label="接单状态">'+
       ['online','busy','paused','offline'].map(function(key){
@@ -2052,7 +2099,7 @@
       '<section class="pw-card pad" style="margin-top:14px"><h3>待处理事项</h3>'+todoList()+'</section>'+
       '<div class="pw-actions" style="margin-top:14px;flex-wrap:wrap"><button class="pw-btn" type="button" data-route="/companion/earnings">收益中心</button><button class="pw-btn" type="button" data-route="/companion/messages">消息中心</button><button class="pw-btn" type="button" data-route="/companion/rules">规则与制度</button></div>';
   }
-  function todoList(){var s=(state.data||{}).summary||{},ua=unifiedAccess();var rows=[['待确认订单',s.waitingConfirm||0],['进行中就绪',s.waitingStart||0],['待完成订单',s.waitingComplete||0],['待处理消息',unreadCount()],['资料审核状态',STATUS_CN.verification(ua.profile_review_status)],['押金状态',STATUS_CN.deposit(ua.deposit_status)],['账号接单权限',STATUS_CN.accountAccess(ua.account_access_status)]];return '<div class="pw-info-list">'+rows.map(function(r){return '<div><span>'+esc(r[0])+'</span><strong>'+esc(r[1])+'</strong></div>'}).join('')+'</div>'}
+  function todoList(){var s=(state.data||{}).summary||{},ua=unifiedAccess();var accessLabel=isForcedAckLocked()?'暂不可接单（待确认强制公告）':STATUS_CN.accountAccess(ua.account_access_status);var rows=[['待确认订单',s.waitingConfirm||0],['进行中就绪',s.waitingStart||0],['待完成订单',s.waitingComplete||0],['待处理消息',unreadCount()],['资料审核状态',STATUS_CN.verification(ua.profile_review_status)],['押金状态',STATUS_CN.deposit(ua.deposit_status)],['账号接单权限',accessLabel]];return '<div class="pw-info-list">'+rows.map(function(r){return '<div><span>'+esc(r[0])+'</span><strong>'+esc(r[1])+'</strong></div>'}).join('')+'</div>'}
   function orderStatus(o){return o.orderStatus||o.statusText||o.status||'-'}
   function fmtTime(v){if(!v)return '-';try{return new Date(v).toLocaleString('zh-CN',{hour12:false})}catch(e){return String(v)}}
   var REJECT_REASONS=['正在服务其他订单','时间无法配合','临时有事','不接该项目','其他'];
@@ -2879,7 +2926,7 @@
       return true;
     });
     var statusReadout='<div class="pw-card pad" style="margin-bottom:14px;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px">'+
-      '<span>当前状态：<strong>'+esc((locked?'审核中（不可接单）':statusMeta.emoji+' '+statusMeta.label))+'</strong>。如需切换，请前往工作台。</span>'+
+      '<span>当前状态：<strong>'+esc((todayStatusLockLabel()||(statusMeta.emoji+' '+statusMeta.label)))+'</strong>。如需切换，请前往工作台。</span>'+
       '<button class="pw-btn" type="button" data-route="/companion/dashboard">前往工作台</button>'+
       '</div>';
     var filtersRow='<div class="pw-hall-filters">'+
@@ -2903,7 +2950,7 @@
         else if(hallState==='cancelled'){disabled=true;btnLabel='已取消';}
         else if(hallState==='expired'){disabled=true;btnLabel='已失效';}
         else if(already){disabled=true;btnLabel='已抢单，等待老板选择';}
-        else if(locked){disabled=true;btnLabel='审核通过后可抢单';}
+        else if(locked){disabled=true;btnLabel=orderGateButtonLabel('审核通过后可抢单');}
         else if(statusKey==='busy'){disabled=true;btnLabel='当前忙碌，无法抢新订单';}
         else if(statusKey==='paused'){disabled=true;btnLabel='已暂停接单，无法抢新订单';}
         else if(statusKey==='offline'){disabled=true;btnLabel='离线状态无法抢单';}

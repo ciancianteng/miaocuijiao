@@ -1,5 +1,6 @@
 /**
  * Companion forced-ack modal + work rules page helpers.
+ * SoT: announcements (kind=forced) + content_ack_records via /api/companion.
  */
 (function () {
   "use strict";
@@ -34,10 +35,13 @@
   }
 
   function forcedMeta(item) {
-    var html = "版本 " + esc(item.version || "1");
-    if (item.updatedAt) html += "<br>最后更新：" + esc(fmtContentTime(item.updatedAt));
-    html += "<br>请滚动至底部后确认";
-    return html;
+    var bits = [];
+    var published = item.publishedAt || item.published_at || item.startAt || "";
+    if (published) bits.push("发布时间：" + fmtContentTime(published));
+    if (item.updatedAt && item.updatedAt !== published) bits.push("最后更新：" + fmtContentTime(item.updatedAt));
+    bits.push("版本 " + (item.version || "1"));
+    bits.push("请滚动至底部后确认");
+    return bits.map(esc).join("<br>");
   }
 
   function ensureCss() {
@@ -49,7 +53,7 @@
       ".pw-forced-modal{width:min(560px,100%);max-width:100%;max-height:min(88vh,720px);max-height:min(88dvh,720px);background:#160e14;border:1px solid rgba(244,114,182,.35);border-radius:18px 18px 12px 12px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 50px rgba(0,0,0,.45);box-sizing:border-box}" +
       ".pw-forced-modal header{padding:14px 16px 8px;border-bottom:1px solid rgba(244,114,182,.18);flex:0 0 auto}" +
       ".pw-forced-modal header strong{display:block;color:#fff;font-size:17px}" +
-      ".pw-forced-modal header span{display:block;margin-top:4px;color:rgba(255,228,240,.62);font-size:12px}" +
+      ".pw-forced-modal header span{display:block;margin-top:4px;color:rgba(255,228,240,.62);font-size:12px;line-height:1.5}" +
       ".pw-forced-body{flex:1 1 auto;min-height:0;overflow:auto;-webkit-overflow-scrolling:touch;padding:14px 16px;color:rgba(255,228,240,.88);line-height:1.65;white-space:pre-wrap;font-size:14px;overscroll-behavior:contain}" +
       ".pw-forced-foot{flex:0 0 auto;padding:12px 16px calc(12px + env(safe-area-inset-bottom,0px));border-top:1px solid rgba(244,114,182,.18);background:#120a10;display:grid;gap:10px}" +
       ".pw-forced-foot label{display:flex;gap:8px;align-items:flex-start;color:rgba(255,228,240,.8);font-size:13px;line-height:1.45}" +
@@ -105,7 +109,7 @@
       "</div>" +
       '<div class="pw-forced-foot">' +
       '<label><input type="checkbox" data-pw-forced-agree disabled> 我已完整阅读并同意遵守以上规则</label>' +
-      '<button type="button" data-pw-forced-confirm disabled>我已阅读并同意</button>' +
+      '<button type="button" data-pw-forced-confirm disabled>我已阅读并确认</button>' +
       "</div></div>";
 
     var body = mask.querySelector("[data-pw-forced-body]");
@@ -170,7 +174,7 @@
           })
           .catch(function (err) {
             btn.disabled = false;
-            btn.textContent = "我已阅读并同意";
+            btn.textContent = "我已阅读并确认";
             alert((err && err.message) || "确认失败，请重试");
           });
       });
@@ -194,12 +198,15 @@
     return state.pending.length > 0 || !!document.querySelector("[data-pw-forced-mask]");
   }
 
+  function refreshFromBootstrap(data) {
+    var pending = (data && data.pendingForced) || [];
+    return show(pending);
+  }
+
   window.MCJCompanionForcedAck = {
     show: show,
     required: required,
-    refreshFromBootstrap: function (data) {
-      var pending = (data && data.pendingForced) || [];
-      return show(pending);
-    },
+    refresh: refreshFromBootstrap,
+    refreshFromBootstrap: refreshFromBootstrap,
   };
 })();
