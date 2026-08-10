@@ -16,12 +16,22 @@ import {
   listBossOrderPaymentMethods,
   listBossPaymentMethods,
   loadChannelPayInfo,
+  loadPlatformPayQr,
   normalizePaymentChannelId,
 } from "./_platform-pay-qr.js";
+import {
+  buildObjectPath,
+  createSignedUrl,
+  decodeDataUrl,
+  ensurePrivateBucket,
+  uploadPrivateObject,
+} from "./_companion-media-store.js";
 
 loadLocalEnv();
 
 const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY"];
+const PROOF_BUCKET = "companion-payment-proofs";
+const PROOF_MIME = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp"]);
 const DEFAULT_METHODS = CANONICAL_PAYMENT_CHANNELS.map((item) => ({
   code: item.code,
   name: item.name,
@@ -238,7 +248,10 @@ async function loadPaymentOrders(profileId) {
   }
 }
 
-function recordView(row) {
+function recordView(row, extras = {}) {
+  const raw = row?.raw_response && typeof row.raw_response === "object" ? row.raw_response : {};
+  const proofPath = String(row.proof_path || raw.proofPath || "").trim();
+  const proofBucket = String(row.proof_bucket || raw.proofBucket || PROOF_BUCKET).trim() || PROOF_BUCKET;
   return {
     id: row.id,
     paymentNo: row.payment_no || row.id,
@@ -246,13 +259,113 @@ function recordView(row) {
     catFoodAmount: money(row.cat_food_amount),
     paidCatFood: money(row.paid_cat_food || row.cat_food_amount),
     bonusCatFood: money(row.bonus_cat_food),
+    totalCatFood: money(row.cat_food_amount) || money(row.paid_cat_food) + money(row.bonus_cat_food),
     campaignId: row.campaign_id || "",
     paymentMethod: row.payment_method || "",
     status: row.status || "pending",
+    statusText: rechargeStatusText(row.status),
     paymentUrl: row.payment_url || "",
+    proofUrl: extras.proofUrl || row.proof_url || raw.proofUrl || "",
+    proofPath,
+    proofBucket,
+    hasProof: !!(proofPath || row.proof_url || raw.proofUrl),
+    rejectReason: String(row.reject_reason || raw.rejectReason || "").trim(),
+    submittedAt: row.submitted_at || raw.submittedAt || "",
     creditedAt: row.credited_at || "",
     createdAt: row.created_at || "",
+    updatedAt: row.updated_at || "",
   };
+}
+
+function rechargeStatusText(status) {
+  const s = String(status || "").toLowerCase();
+  return (
+    {
+      pending: "待支付",
+      pending_payment: "待支付",
+      pending_review: "待审核",
+      paid: "已到账",
+      credited: "已到账",
+      rejected: "已拒绝",
+      failed: "失败",
+      cancelled: "已取消",
+      unavailable: "暂未开放",
+    }[s] || status || "-"
+  );
+}
+
+async function signProofUrl(row) {
+  const raw = row?.raw_response && typeof row.raw_response === "object" ? row.raw_response : {};
+  const bucket = String(row.proof_bucket || raw.proofBucket || "").trim();
+  const objectPath = String(row.proof_path || raw.proofPath || "").trim();
+  if (bucket && objectPath) {
+    try {
+      return (await createSignedUrl(bucket, objectPath, 60 * 60 * 12)) || "";
+    } catch {
+      return "";
+    }
+  }
+  const url = String(row.proof_url || raw.proofUrl || "").trim();
+  return /^https?:\/\//i.test(url) ? url : "";
+}
+
+async function loadPaymentOrderByNo(paymentNo, bossId = "") {
+  const no = String(paymentNo || "").trim();
+  if (!no) return null;
+  let query = `?or=(payment_no.eq.${encodeURIComponent(no)},id.eq.${encodeURIComponent(no)})&limit=1`;
+  if (bossId) query = `?boss_id=eq.${encodeURIComponent(bossId)}&or=(payment_no.eq.${encodeURIComponent(no)},id.eq.${encodeURIComponent(no)})&limit=1`;
+  const rows = await supabaseJson(restUrl("payment_orders", query), { headers: serviceHeaders() });
+  return Array.isArray(rows) ? rows[0] : null;
+}
+
+async function uploadRechargeProof({ bossId, paymentNo, dataUrl }) {
+  const decoded = decodeDataUrl(dataUrl);
+  if (!decoded?.buffer?.length || !PROOF_MIME.has(String(decoded.contentType || "").toLowerCase())) {
+    throw Object.assign(new Error("请上传 JPG、PNG 或 WEBP 格式的付款截图"), { status: 400 });
+  }
+  if (decoded.buffer.length > 10 * 1024 * 1024) {
+    throw Object.assign(new Error("付款截图不能超过 10MB"), { status: 413 });
+  }
+  await ensurePrivateBucket(PROOF_BUCKET, [...PROOF_MIME]);
+  const ext = /png/i.test(decoded.contentType) ? "png" : /webp/i.test(decoded.contentType) ? "webp" : "jpg";
+  const objectPath = buildObjectPath(bossId, `recharge-proofs/${paymentNo}`, `proof-${Date.now()}.${ext}`);
+  await uploadPrivateObject(PROOF_BUCKET, objectPath, decoded.buffer, decoded.contentType);
+  let signed = "";
+  try {
+    signed = (await createSignedUrl(PROOF_BUCKET, objectPath, 60 * 60 * 12)) || "";
+  } catch {
+    signed = "";
+  }
+  return { bucket: PROOF_BUCKET, path: objectPath, url: signed, contentType: decoded.contentType };
+}
+
+async function patchPaymentOrderProof(order, proof, extra = {}) {
+  const raw = order?.raw_response && typeof order.raw_response === "object" ? { ...order.raw_response } : {};
+  raw.proofBucket = proof.bucket;
+  raw.proofPath = proof.path;
+  raw.proofUrl = proof.url || "";
+  raw.submittedAt = new Date().toISOString();
+  if (extra.rejectReason != null) raw.rejectReason = extra.rejectReason;
+  const basePatch = {
+    status: extra.status || "pending_review",
+    raw_response: raw,
+    payment_url: order.payment_url || `/recharge.html?paymentNo=${encodeURIComponent(order.payment_no || "")}`,
+  };
+  const withCols = {
+    ...basePatch,
+    proof_bucket: proof.bucket,
+    proof_path: proof.path,
+    proof_url: proof.url || "",
+    submitted_at: raw.submittedAt,
+    reject_reason: extra.rejectReason != null ? String(extra.rejectReason) : "",
+  };
+  try {
+    return await updatePaymentOrder(order.id, withCols);
+  } catch (err) {
+    // Columns may not exist yet — fall back to raw_response only.
+    if (!/column|schema cache|PGRST/i.test(String(err?.message || ""))) throw err;
+    return updatePaymentOrder(order.id, basePatch);
+  }
 }
 
 function campaignActive(c) {
@@ -371,6 +484,19 @@ export default async function handler(req, res) {
     const profile = await profileFromToken(req);
 
     if (req.method === "GET") {
+      const paymentNoQ = String(req.query.paymentNo || req.query.payment_no || "").trim();
+      if (paymentNoQ) {
+        const order = await loadPaymentOrderByNo(paymentNoQ, profile.id);
+        if (!order) return json(res, 404, { ok: false, message: "充值订单不存在" });
+        const proofUrl = await signProofUrl(order);
+        const payInfo = await loadPlatformPayQr(order.payment_method || "").catch(() => null);
+        return json(res, 200, {
+          ok: true,
+          paymentOrder: recordView(order, { proofUrl }),
+          payInfo: payInfo && payInfo.enabled !== false ? payInfo : null,
+        });
+      }
+
       const [walletRow, walletTx, paymentOrders, methodState, campaigns] = await Promise.all([
         getWallet(profile.id),
         listWalletTx(profile.id, 50),
@@ -384,6 +510,11 @@ export default async function handler(req, res) {
       const visibleMethods = methodState.openMethods?.length
         ? methodState.openMethods
         : filterBossRechargeMethods(methodState.methods || []);
+      const records = [];
+      for (const row of paymentOrders.records || []) {
+        const proofUrl = await signProofUrl(row);
+        records.push(recordView(row, { proofUrl }));
+      }
       return json(res, 200, {
         ok: true,
         wallet,
@@ -404,7 +535,7 @@ export default async function handler(req, res) {
         // Order / place-order / gameplay / custom-order shared SoT (includes 猫粮余额 when enabled).
         orderPayMethods: methodState.orderPayMethods || [],
         walletPayEnabled: methodState.walletPayEnabled !== false,
-        records: paymentOrders.records.map(recordView),
+        records,
         paymentTablesReady: paymentOrders.tableReady && methodState.tableReady,
         message:
           methodState.message ||
@@ -418,6 +549,80 @@ export default async function handler(req, res) {
     }
 
     const body = await parseBody(req);
+    const action = String(body.action || "").trim();
+
+    // ——— Submit / replace payment proof on an existing recharge order (no new PAY- row) ———
+    if (action === "submit_proof" || action === "submit_recharge_proof") {
+      const paymentNo = String(body.paymentNo || body.payment_no || body.id || "").trim();
+      if (!paymentNo) return json(res, 400, { ok: false, message: "缺少充值单号" });
+      const order = await loadPaymentOrderByNo(paymentNo, profile.id);
+      if (!order) return json(res, 404, { ok: false, message: "充值订单不存在" });
+      const st = String(order.status || "").toLowerCase();
+      if (/paid|credited/.test(st)) {
+        return json(res, 409, { ok: false, message: "该充值单已到账，无需再提交凭证", paymentOrder: recordView(order) });
+      }
+      if (!/pending|pending_payment|pending_review|rejected|awaiting|unpaid|manual/.test(st)) {
+        return json(res, 409, {
+          ok: false,
+          message: `当前状态不可提交付款凭证：${order.status || "-"}`,
+          paymentOrder: recordView(order),
+        });
+      }
+      const dataUrl = body.proofDataUrl || body.paymentProof || body.fileDataUrl || body.file || body.data_url || "";
+      if (!dataUrl) return json(res, 400, { ok: false, message: "请先上传付款截图" });
+      const proof = await uploadRechargeProof({ bossId: profile.id, paymentNo: order.payment_no, dataUrl });
+      const saved = await patchPaymentOrderProof(order, proof, { status: "pending_review", rejectReason: "" });
+      const proofUrl = (await signProofUrl(saved || order)) || proof.url || "";
+      return json(res, 200, {
+        ok: true,
+        message: "付款截图已提交，等待后台审核。",
+        paymentOrder: recordView(saved || order, { proofUrl }),
+      });
+    }
+
+    if (action === "get_payment" || action === "load_payment") {
+      const paymentNo = String(body.paymentNo || body.payment_no || body.id || "").trim();
+      if (!paymentNo) return json(res, 400, { ok: false, message: "缺少充值单号" });
+      const order = await loadPaymentOrderByNo(paymentNo, profile.id);
+      if (!order) return json(res, 404, { ok: false, message: "充值订单不存在" });
+      const proofUrl = await signProofUrl(order);
+      const payInfo = await loadPlatformPayQr(order.payment_method || "").catch(() => null);
+      return json(res, 200, {
+        ok: true,
+        paymentOrder: recordView(order, { proofUrl }),
+        payInfo: payInfo && payInfo.enabled !== false ? payInfo : null,
+      });
+    }
+
+    if (action === "cleanup_test_pending") {
+      // Boss can discard own unsubmitted pending PAY shells created by the old fake flow.
+      const paymentNo = String(body.paymentNo || body.payment_no || "").trim();
+      if (!paymentNo) return json(res, 400, { ok: false, message: "缺少充值单号" });
+      const order = await loadPaymentOrderByNo(paymentNo, profile.id);
+      if (!order) return json(res, 404, { ok: false, message: "充值订单不存在" });
+      const st = String(order.status || "").toLowerCase();
+      const raw = order.raw_response && typeof order.raw_response === "object" ? order.raw_response : {};
+      const hasProof = !!(order.proof_path || order.proof_url || raw.proofPath || raw.proofUrl);
+      if (hasProof || /pending_review|paid|credited/.test(st)) {
+        return json(res, 409, { ok: false, message: "已有凭证或已入账的订单不能清理" });
+      }
+      if (!/pending|pending_payment|unavailable|failed|cancelled/.test(st)) {
+        return json(res, 409, { ok: false, message: "当前状态不可清理" });
+      }
+      try {
+        await supabaseJson(restUrl("payment_orders", `?id=eq.${encodeURIComponent(order.id)}&boss_id=eq.${encodeURIComponent(profile.id)}`), {
+          method: "DELETE",
+          headers: serviceHeaders({ Prefer: "return=minimal" }),
+        });
+      } catch {
+        await updatePaymentOrder(order.id, {
+          status: "cancelled",
+          raw_response: { ...(raw || {}), cancelledReason: "boss_cleanup_empty_pending" },
+        });
+      }
+      return json(res, 200, { ok: true, message: "已清理空待支付单", paymentNo: order.payment_no });
+    }
+
     const methodCodeRaw = String(body.paymentMethod || body.method || "").trim();
     const methodCode = normalizePaymentChannelId(methodCodeRaw) || methodCodeRaw;
     const campaignId = String(body.campaignId || body.campaign_id || "").trim();
@@ -498,11 +703,12 @@ export default async function handler(req, res) {
       return json(res, 200, {
         ok: true,
         manual: true,
-        message: "充值单已创建。请完成转账，管理员在后台确认到账后猫粮入账。",
+        message: "请扫码完成付款并上传截图，提交后等待后台审核入账。",
         paymentUrl: manualUrl,
         payInfo,
         paymentOrder: recordView(saved || paymentOrder),
         campaign: campaign ? viewCampaign(campaign) : null,
+        enterPaymentStep: true,
       });
     }
 

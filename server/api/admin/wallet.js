@@ -78,15 +78,32 @@ export default async function handler(req, res) {
         return json(res, 200, { ok: true, items: Array.isArray(rows) ? rows : [] });
       }
       if (action === "pending_recharges" || action === "list_pending_recharges") {
-        const statusFilter = String(req.query.status || "pending_payment").trim();
-        let query = "?order=created_at.desc&limit=200";
-        if (statusFilter && statusFilter !== "all") {
-          query = `?status=eq.${encodeURIComponent(statusFilter)}&order=created_at.desc&limit=200`;
+        const statusFilter = String(req.query.status || "pending_review").trim();
+        let rows = [];
+        try {
+          if (statusFilter === "pending_all" || statusFilter === "queue") {
+            // Review queue: awaiting payment proof review (and legacy pending_payment shells).
+            const a = await supabaseJson(
+              restUrl("payment_orders", `?status=eq.pending_review&order=submitted_at.desc.nullslast,created_at.desc&limit=200`),
+              { headers: serviceHeaders() }
+            ).catch(() => []);
+            const b = await supabaseJson(
+              restUrl("payment_orders", `?status=eq.pending_payment&order=created_at.desc&limit=100`),
+              { headers: serviceHeaders() }
+            ).catch(() => []);
+            rows = [...(Array.isArray(a) ? a : []), ...(Array.isArray(b) ? b : [])];
+          } else if (statusFilter && statusFilter !== "all") {
+            const query = `?status=eq.${encodeURIComponent(statusFilter)}&order=created_at.desc&limit=200`;
+            rows = await supabaseJson(restUrl("payment_orders", query), { headers: serviceHeaders() });
+          } else {
+            rows = await supabaseJson(restUrl("payment_orders", "?order=created_at.desc&limit=200"), {
+              headers: serviceHeaders(),
+            });
+          }
+        } catch (e) {
+          if (isMissingRelation(e)) rows = [];
+          else throw e;
         }
-        const rows = await supabaseJson(restUrl("payment_orders", query), { headers: serviceHeaders() }).catch((e) => {
-          if (isMissingRelation(e)) return [];
-          throw e;
-        });
         const list = Array.isArray(rows) ? rows : [];
         const bossIds = [...new Set(list.map((r) => r.boss_id).filter(Boolean))];
         const profileMap = {};
@@ -102,23 +119,43 @@ export default async function handler(req, res) {
             }
           })
         );
-        const items = list.map((row) => {
+        const items = [];
+        for (const row of list) {
           const p = profileMap[row.boss_id] || {};
-          return {
+          const raw = row.raw_response && typeof row.raw_response === "object" ? row.raw_response : {};
+          let proofUrl = String(row.proof_url || raw.proofUrl || "").trim();
+          const bucket = String(row.proof_bucket || raw.proofBucket || "").trim();
+          const objectPath = String(row.proof_path || raw.proofPath || "").trim();
+          if ((!proofUrl || !/^https?:\/\//i.test(proofUrl)) && bucket && objectPath) {
+            try {
+              const { createSignedUrl } = await import("../_companion-media-store.js");
+              proofUrl = (await createSignedUrl(bucket, objectPath, 60 * 60)) || proofUrl;
+            } catch {
+              /* keep */
+            }
+          }
+          items.push({
             id: row.id,
             paymentNo: row.payment_no || row.id,
             bossId: row.boss_id || "",
             bossName: p.display_name || p.nickname || p.email || "老板",
+            bossEmail: p.email || "",
             amountRm: money(row.amount),
             catFoodAmount: money(row.cat_food_amount || row.paid_cat_food),
+            paidCatFood: money(row.paid_cat_food || row.cat_food_amount),
             bonusCatFood: money(row.bonus_cat_food),
+            totalCatFood: money(row.cat_food_amount) || money(row.paid_cat_food) + money(row.bonus_cat_food),
             paymentMethod: row.payment_method || "",
             status: row.status || "pending_payment",
             paymentUrl: row.payment_url || "",
+            proofUrl,
+            proofPath: objectPath,
+            rejectReason: String(row.reject_reason || raw.rejectReason || "").trim(),
+            submittedAt: row.submitted_at || raw.submittedAt || "",
             createdAt: row.created_at || "",
             creditedAt: row.credited_at || "",
-          };
-        });
+          });
+        }
         return json(res, 200, { ok: true, items });
       }
       if (!bossId) return json(res, 400, { ok: false, message: "缺少 bossId" });
@@ -414,8 +451,13 @@ export default async function handler(req, res) {
       if (st === "paid" || st === "credited") {
         return json(res, 200, { ok: true, message: "该充值单已到账", paymentNo: order.payment_no, duplicate: true });
       }
-      if (!/pending|pending_payment|awaiting|unpaid|manual/i.test(st)) {
+      if (!/pending|pending_payment|pending_review|awaiting|unpaid|manual/i.test(st)) {
         return json(res, 400, { ok: false, message: `当前状态不可确认到账：${order.status || "-"}` });
+      }
+      const raw = order.raw_response && typeof order.raw_response === "object" ? order.raw_response : {};
+      const hasProof = !!(order.proof_path || order.proof_url || raw.proofPath || raw.proofUrl);
+      if (!hasProof && st === "pending_review") {
+        return json(res, 400, { ok: false, message: "该充值单缺少付款截图，不能审核通过" });
       }
       const tradeNo = String(body.tradeNo || body.trade_no || body.providerTradeNo || `MANUAL-${Date.now()}`).trim();
       const result = await creditRechargePayment(order.payment_no, tradeNo, `admin-confirm:${order.payment_no}`);
@@ -446,6 +488,108 @@ export default async function handler(req, res) {
         result,
         paymentNo: order.payment_no,
       });
+    }
+
+    if (action === "reject_manual_recharge" || action === "reject_recharge") {
+      const paymentNo = String(body.paymentNo || body.payment_no || body.id || "").trim();
+      const reason = String(body.reason || body.rejectReason || body.reject_reason || "").trim();
+      if (!paymentNo) return json(res, 400, { ok: false, message: "缺少 paymentNo" });
+      if (!reason) return json(res, 400, { ok: false, message: "请填写拒绝原因" });
+      const orderRows = await supabaseJson(
+        restUrl(
+          "payment_orders",
+          `?or=(payment_no.eq.${encodeURIComponent(paymentNo)},id.eq.${encodeURIComponent(paymentNo)})&limit=1`
+        ),
+        { headers: serviceHeaders() }
+      );
+      const order = orderRows?.[0];
+      if (!order) return json(res, 404, { ok: false, message: "充值订单不存在" });
+      const st = String(order.status || "").toLowerCase();
+      if (st === "paid" || st === "credited") {
+        return json(res, 409, { ok: false, message: "已到账订单不能拒绝" });
+      }
+      if (!/pending_review|pending_payment|pending/i.test(st)) {
+        return json(res, 400, { ok: false, message: `当前状态不可拒绝：${order.status || "-"}` });
+      }
+      const raw = order.raw_response && typeof order.raw_response === "object" ? { ...order.raw_response } : {};
+      raw.rejectReason = reason;
+      raw.rejectedAt = new Date().toISOString();
+      const patch = { status: "rejected", raw_response: raw, reject_reason: reason };
+      let saved = null;
+      try {
+        const rows = await supabaseJson(restUrl("payment_orders", `?id=eq.${encodeURIComponent(order.id)}`), {
+          method: "PATCH",
+          headers: serviceHeaders(),
+          body: JSON.stringify({ ...patch, updated_at: new Date().toISOString() }),
+        });
+        saved = rows?.[0] || null;
+      } catch (err) {
+        if (!/column|schema cache|PGRST/i.test(String(err?.message || ""))) throw err;
+        const rows = await supabaseJson(restUrl("payment_orders", `?id=eq.${encodeURIComponent(order.id)}`), {
+          method: "PATCH",
+          headers: serviceHeaders(),
+          body: JSON.stringify({ status: "rejected", raw_response: raw, updated_at: new Date().toISOString() }),
+        });
+        saved = rows?.[0] || null;
+      }
+      await writeAdminLog({
+        module: "wallet",
+        action: "reject_manual_recharge",
+        targetType: "payment_order",
+        targetId: order.payment_no,
+        operatorId,
+        operatorRole: admin.role || "admin",
+        reason,
+        after: saved,
+      });
+      try {
+        await notifyBoss(order.boss_id, "充值审核未通过", `充值单 ${order.payment_no} 被拒绝：${reason}`, "wallet", order.payment_no);
+      } catch {
+        /* optional */
+      }
+      return json(res, 200, { ok: true, message: "已拒绝该充值申请", paymentNo: order.payment_no, reason });
+    }
+
+    if (action === "cleanup_test_recharges") {
+      // Admin: cancel empty pending shells matching PAY- timestamps (no proof, not paid).
+      const nos = Array.isArray(body.paymentNos)
+        ? body.paymentNos.map((x) => String(x || "").trim()).filter(Boolean)
+        : String(body.paymentNo || body.payment_no || "")
+            .split(/[,，\s]+/)
+            .map((x) => x.trim())
+            .filter(Boolean);
+      if (!nos.length) return json(res, 400, { ok: false, message: "缺少 paymentNos" });
+      const cleaned = [];
+      const skipped = [];
+      for (const paymentNo of nos) {
+        const orderRows = await supabaseJson(
+          restUrl("payment_orders", `?payment_no=eq.${encodeURIComponent(paymentNo)}&limit=1`),
+          { headers: serviceHeaders() }
+        ).catch(() => []);
+        const order = orderRows?.[0];
+        if (!order) {
+          skipped.push({ paymentNo, reason: "not_found" });
+          continue;
+        }
+        const st = String(order.status || "").toLowerCase();
+        const raw = order.raw_response && typeof order.raw_response === "object" ? order.raw_response : {};
+        const hasProof = !!(order.proof_path || order.proof_url || raw.proofPath || raw.proofUrl);
+        if (hasProof || /paid|credited|pending_review/.test(st)) {
+          skipped.push({ paymentNo, reason: "has_proof_or_final", status: st });
+          continue;
+        }
+        await supabaseJson(restUrl("payment_orders", `?id=eq.${encodeURIComponent(order.id)}`), {
+          method: "PATCH",
+          headers: serviceHeaders(),
+          body: JSON.stringify({
+            status: "cancelled",
+            raw_response: { ...raw, cancelledReason: "admin_cleanup_test_pending", cancelledAt: new Date().toISOString() },
+            updated_at: new Date().toISOString(),
+          }),
+        }).catch(() => null);
+        cleaned.push(paymentNo);
+      }
+      return json(res, 200, { ok: true, cleaned, skipped });
     }
 
     return json(res, 400, { ok: false, message: "未知钱包操作" });
