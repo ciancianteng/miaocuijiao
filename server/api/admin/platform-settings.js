@@ -172,6 +172,9 @@ const DEFAULT_SETTINGS = {
   whatsappPhoneId: "",
   smsSender: "",
   paymentChannelsPublic: {},
+  /** Homepage「组队大厅」singleton — enable + jump URL (Discord or other). */
+  teamLobbyEnabled: false,
+  teamLobbyLink: "",
 };
 
 function json(res, status, data) {
@@ -329,6 +332,8 @@ function normalizeSettings(input = {}) {
     whatsappPhoneId: String(input.whatsappPhoneId || "").trim(),
     smsSender: String(input.smsSender || "").trim(),
     paymentChannelsPublic,
+    teamLobbyEnabled: bool(input.teamLobbyEnabled, false),
+    teamLobbyLink: String(input.teamLobbyLink || input.discordInviteLink || "").trim(),
   };
 }
 
@@ -1068,6 +1073,43 @@ export default async function handler(req, res) {
     const body = await parseBody(req);
     const action = String(body.action || "save").trim();
     const current = normalizeSettings((await loadSettingsRow())?.data || {});
+
+    if (action === "save_team_lobby") {
+      if (!isSuper(profile, req) && profile.role !== "admin" && profile.role !== "finance_admin" && profile.role !== "ops_admin") {
+        return json(res, 403, { ok: false, message: "无权保存组队大厅设置" });
+      }
+      const enabled = bool(body.teamLobbyEnabled ?? body.enabled, false);
+      const link = String(body.teamLobbyLink ?? body.link ?? body.url ?? "").trim();
+      if (enabled && !link) {
+        return json(res, 400, { ok: false, message: "启用前必须填写跳转链接" });
+      }
+      if (link && !/^https:\/\//i.test(link)) {
+        return json(res, 400, { ok: false, message: "跳转链接必须是 https:// 开头的完整地址" });
+      }
+      const next = normalizeSettings({
+        ...current,
+        teamLobbyEnabled: enabled,
+        teamLobbyLink: link,
+      });
+      const saved = await saveSettings(next, profile.id);
+      await writeConfigLog({
+        admin: profile,
+        configType: "team_lobby",
+        action: "save_team_lobby",
+        beforeStatus: current.teamLobbyEnabled ? "启用" : "停用",
+        afterStatus: saved.teamLobbyEnabled ? "启用" : "停用",
+        reason: body.reason || "保存组队大厅设置",
+        ip: clientIp(req),
+      }).catch(() => null);
+      return json(res, 200, {
+        ok: true,
+        message: "组队大厅设置已保存",
+        settings: {
+          teamLobbyEnabled: saved.teamLobbyEnabled,
+          teamLobbyLink: saved.teamLobbyLink,
+        },
+      });
+    }
 
     if (action === "save" || action === "save_platform_info" || action === "save_features" || action === "save_security" || action === "save_mail_public" || action === "save_ai_public" || action === "save_payments_public") {
       const next = normalizeSettings({ ...current, ...(body.settings || body) });

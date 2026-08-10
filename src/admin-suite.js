@@ -1409,7 +1409,7 @@
     banners:{target:'crud-banners',title:'Banner 管理',type:'banners',desc:'已迁移至专用 Banner 上传管理模块。',fields:['title','desktopImage','mobileImage','link','linkTarget','sort','startAt','endAt','autoPlay','intervalSeconds'],disabled:true},
     announcements:{target:'table-announcements',title:'公告管理',type:'announcements',desc:'对应首页 Banner 下方公告，前台按后台排序和时间播放。',fields:['content','link','sort','startAt','endAt','displayMode']},
     ads:{target:'crud-ads',title:'广告位管理',type:'ad_slots',desc:'同步首页、陪玩大厅、组队大厅、充值中心等广告位。',fields:['title','subtitle','image','link','position','sort','startAt','endAt','carousel','official']},
-    'team-lobby-links':{target:'teamLobbySettings',title:'组队大厅设置',type:'team_lobby_channels',desc:'管理组队大厅 Discord 频道卡片，前台按排序和显示状态读取。',fields:['image','name','description','discordUrl','sort']},
+    'team-lobby-links':{target:'teamLobbySettings',title:'组队大厅管理',type:'team_lobby_channels',desc:'已迁移至组队大厅管理（启用/跳转链接）。',fields:['image','name','description','discordUrl','sort'],disabled:true},
     'meow-butler':{target:'table-meow_butler',title:'喵管家管理',type:'customer_service_widget',desc:'控制首页和老板端右下角客服浮窗。',fields:['displayName','icon','welcomeText','onlineStatus','businessHours','offlineText','clickBehavior','defaultChannel','showRedDot','globalVisible']},
     'sync-center':{target:'table-sync_center',title:'全端功能同步',type:'system_content_versions',desc:'查看各内容模块后台版本、前台版本、发布时间和同步状态。',fields:['moduleName','backendVersion','frontendVersion','syncStatus','publishedBy','publishedAt']},
     'price-table':{target:'table-price_table',title:'俱乐部价格表管理',type:'club_price_tables',desc:'同步陪玩价格范围、下单页面、自定义订单和陪玩端定价限制。',fields:['game','serviceType','level','minPrice','maxPrice','defaultPrice','unit','nightPrice','holidayPrice','sort']},
@@ -1862,7 +1862,7 @@
     ads:['广告位管理','全站广告位素材与投放状态'],
     'home-entry-settings':['首页入口管理','统一管理首页功能入口、组队大厅频道和更多玩法入口'],
     'page-content-settings':['页面内容管理','价格、制度、玩法资格和页面内容配置'],
-    'team-lobby-links':['组队大厅设置','Discord 频道卡片、卡面图片、排序和跳转链接'],
+    'team-lobby-links':['组队大厅管理','启用/停用组队大厅，并配置老板端首页跳转链接'],
     'meow-butler':['喵管家管理','在线客服入口与快捷入口配置'],
     'sync-center':['全端功能同步','用户端、老板端、陪玩端、客服端数据同步'],
     'price-table':['俱乐部价格表管理','俱乐部服务价格范围和规则'],
@@ -1944,6 +1944,10 @@
       if(window.innerWidth<1024)document.body.classList.remove('admin-sidebar-open');
       updateTitle(activeName,target,label,parentLabel);
       if(activeName&&location.hash.slice(1)!==activeName)history.replaceState(null,'','#'+activeName);
+      if(target==='team-lobby-links'&&window.MCJAdminTeamLobby&&typeof window.MCJAdminTeamLobby.reload==='function'){
+        try{window.MCJAdminTeamLobby.reload();}catch(err){}
+      }
+      try{document.dispatchEvent(new CustomEvent('mcj:admin-section',{detail:{section:target}}));}catch(err2){}
     }
     document.querySelectorAll('.side-nav button').forEach(function(btn){btn.disabled=false;btn.style.pointerEvents='auto'});
     buttons.forEach(function(btn){

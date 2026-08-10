@@ -204,6 +204,8 @@ img,video,canvas,svg{max-width:100%}
 .data-card strong{font-size:clamp(25px,3.6vh,32px)}
 .data-card i{width:var(--home-icon);height:var(--home-icon);font-size:clamp(20px,2.8vh,24px)}
 .quick-entry-card{min-height:var(--home-entry-min)!important;padding:var(--home-card-pad)!important;gap:clamp(10px,1.5vh,14px)!important}
+.quick-entry-card.is-disabled{opacity:.55;filter:grayscale(.12);cursor:not-allowed}
+.quick-entry-card.is-disabled:hover{transform:none!important;box-shadow:none!important}
 .quick-entry-card i{width:var(--home-icon);height:var(--home-icon);font-size:clamp(21px,3vh,27px)}
 .quick-entry-card strong{font-size:clamp(18px,2.45vh,22px)}
 .quick-entry-card span{margin-top:clamp(3px,.7vh,6px);line-height:1.35}
@@ -3527,7 +3529,7 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
         <a class="neon-card quick-entry-card" href="companion-center.html" data-home-entry="companion-hall"><div><strong>陪玩大厅</strong><span>浏览已上架陪玩，立即下单</span></div></a>
         <a class="neon-card quick-entry-card" href="more-gameplays.html" data-home-entry="more-gameplays"><div><strong>更多玩法</strong><span>护航、跑刀、代肝、趣味单</span></div></a>
         <a class="neon-card quick-entry-card" href="custom-order.html" data-home-entry="custom-order"><div><strong>自定义订单</strong><span>填写需求，客服匹配陪玩</span></div></a>
-        <a class="neon-card quick-entry-card" href="team-lobby.html" data-home-entry="team-lobby"><div><strong>组队大厅</strong><span>进入组队社区找队友</span></div></a>
+        <a class="neon-card quick-entry-card" href="team-lobby.html" data-home-entry="team-lobby" data-team-lobby-entry="1"><div><strong>组队大厅</strong><span>进入组队社区找队友</span></div></a>
       </div>
       <a class="neon-card club-level-entry-card" href="club-levels.html" data-home-entry="club-levels" style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:12px;padding:14px 16px;text-decoration:none;min-height:64px;width:100%;box-sizing:border-box">
         <div><strong style="display:block;font-size:16px;color:#fff">了解俱乐部等级制度</strong><span style="color:rgba(255,228,240,.7);font-size:13px">萌喵到喵皇 · 价格区间与升级权益</span></div>
@@ -3641,11 +3643,72 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
       if(direct)return direct;
       try{var settings=JSON.parse(localStorage.getItem('mcjPlatformSettings')||'{}');return String(settings.discordInviteUrl||'').trim();}catch(e){return '';}
     }
-    function openDiscordInvite(){
-      var url=getDiscordInviteUrl();
-      if(url){window.open(url,'_blank','noopener');return;}
-      alert('组队大厅链接暂未开放，请稍后再试。');
+    var teamLobbyState={loaded:false,loading:null,enabled:false,link:''};
+    function normalizeTeamLobbySettings(settings){
+      settings=settings||{};
+      return {
+        enabled:settings.teamLobbyEnabled===true||settings.teamLobbyEnabled==='true',
+        link:String(settings.teamLobbyLink||'').trim()
+      };
     }
+    function applyTeamLobbyEntryUi(){
+      var cards=document.querySelectorAll('[data-team-lobby-entry],[data-home-entry="team-lobby"]');
+      cards.forEach(function(card){
+        var open=!!(teamLobbyState.enabled&&teamLobbyState.link);
+        card.classList.toggle('is-disabled',!open);
+        card.setAttribute('aria-disabled',open?'false':'true');
+        var sub=card.querySelector('span');
+        if(sub&&!sub.dataset.tlDefault)sub.dataset.tlDefault=sub.textContent||'';
+        if(sub)sub.textContent=open?(sub.dataset.tlDefault||'进入组队社区找队友'):'暂未开放';
+        if(open)card.setAttribute('href',teamLobbyState.link);
+        else card.setAttribute('href','#');
+      });
+    }
+    function fetchTeamLobbySettings(force){
+      if(!force&&teamLobbyState.loaded)return Promise.resolve(teamLobbyState);
+      if(teamLobbyState.loading)return teamLobbyState.loading;
+      teamLobbyState.loading=fetch('/api/platform/settings',{headers:{Accept:'application/json'},cache:'no-store'})
+        .then(function(res){return res.json().catch(function(){return {};})})
+        .then(function(body){
+          var next=normalizeTeamLobbySettings(body&&body.settings);
+          teamLobbyState.enabled=next.enabled;
+          teamLobbyState.link=next.link;
+          teamLobbyState.loaded=true;
+          teamLobbyState.loading=null;
+          applyTeamLobbyEntryUi();
+          return teamLobbyState;
+        })
+        .catch(function(){
+          teamLobbyState.loading=null;
+          teamLobbyState.loaded=true;
+          teamLobbyState.enabled=false;
+          teamLobbyState.link='';
+          applyTeamLobbyEntryUi();
+          return teamLobbyState;
+        });
+      return teamLobbyState.loading;
+    }
+    function openTeamLobbyEntry(event){
+      if(event){event.preventDefault();event.stopPropagation();}
+      return fetchTeamLobbySettings(true).then(function(state){
+        if(state.enabled&&state.link){
+          window.open(state.link,'_blank','noopener');
+          return true;
+        }
+        alert('组队大厅暂未开放');
+        return false;
+      });
+    }
+    function openDiscordInvite(){
+      // Prefer platform team-lobby SoT; fall back to legacy local keys only for ads that still call discord.
+      return fetchTeamLobbySettings(false).then(function(state){
+        if(state.enabled&&state.link){window.open(state.link,'_blank','noopener');return;}
+        var url=getDiscordInviteUrl();
+        if(url){window.open(url,'_blank','noopener');return;}
+        alert('组队大厅链接暂未开放，请稍后再试。');
+      });
+    }
+    fetchTeamLobbySettings(false);
     function openModal(html){
       if(window.MCJModal&&typeof window.MCJModal.open==='function'){
         window.MCJModal.open(html);
@@ -3892,6 +3955,8 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
     initOfficialAds();
     document.addEventListener('click',function(e){
       if(e.target.matches('[data-close]')||e.target===modal)closeModal();
+      var teamLobbyEntry=e.target.closest('[data-team-lobby-entry],[data-home-entry="team-lobby"]');
+      if(teamLobbyEntry){openTeamLobbyEntry(e);return;}
       if(e.target.closest('[data-discord-join]')) openDiscordInvite();
       if(e.target.closest('[data-login-confirm]')){return;}
       var book=e.target.closest('[data-book]');

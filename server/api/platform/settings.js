@@ -32,6 +32,8 @@ const DEFAULT_SETTINGS = {
   defaultDeposit: 100,
   defaultLevel: "Lv1",
   sessionHours: 168,
+  teamLobbyEnabled: false,
+  teamLobbyLink: "",
 };
 
 function json(res, status, data) {
