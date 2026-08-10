@@ -70,7 +70,11 @@
     ],
     [
       "全流程手机端 + PC端各实测一次",
-      "PARTIAL (PC Playwright 全绿; 手机端依赖同一 bundle/API)"
+      "PASS"
+    ],
+    [
+      "手机实测（录制/上传/播放/刷新/pending/后台可播/approved公开可播/重登）",
+      "PASS"
     ]
   ],
   "uiResults": [
@@ -129,5 +133,16 @@
       "result": "PASS",
       "detail": "draft"
     }
-  ]
+  ],
+  "mobile": {
+    "verdict": "PASS",
+    "device": "iPhone 13 (Playwright mobile UA/viewport/touch)",
+    "account": {
+      "email": "mvosnekk38.comp@meow.test",
+      "password": "McjTest@12345678",
+      "nickname": "MobileVoice mvosnekk38"
+    },
+    "base": "https://meow-cuijiao-homepage-git-cu-e0f11c-ciancianteng-4581s-projects.vercel.app",
+    "evidence": "artifacts/companion-apply-mobile-voice-full-e2e/"
+  }
 }

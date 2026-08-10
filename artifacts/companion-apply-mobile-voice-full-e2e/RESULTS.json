@@ -1,0 +1,149 @@
+{
+  "base": "https://meow-cuijiao-homepage-git-cu-e0f11c-ciancianteng-4581s-projects.vercel.app",
+  "device": "iPhone 13 (Playwright mobile UA/viewport/touch)",
+  "account": {
+    "email": "mvosnekk38.comp@meow.test",
+    "password": "McjTest@12345678",
+    "nickname": "MobileVoice mvosnekk38"
+  },
+  "results": [
+    {
+      "step": "mobile_register_draft",
+      "result": "PASS",
+      "detail": "mvosnekk38.comp@meow.test"
+    },
+    {
+      "step": "mobile_pre_avatar",
+      "result": "PASS",
+      "detail": "头像上传成功"
+    },
+    {
+      "step": "mobile_ua",
+      "result": "PASS",
+      "detail": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.5 Mobile/15E148 Safari/604.1"
+    },
+    {
+      "step": "mobile_step3_voice_panel",
+      "result": "PASS",
+      "detail": "voice panel"
+    },
+    {
+      "step": "mobile_record_start",
+      "result": "PASS",
+      "detail": "正在录音"
+    },
+    {
+      "step": "mobile_confirm_upload",
+      "result": "PASS",
+      "detail": "{\"uploaded\":true,\"confirmed\":true,\"status\":\"试音上传成功\",\"url\":\"https://jqfaknpmcnqwqvatrwgo.supabase.co/storage/v1/object/sign/companion-audio/179e5b9c-441e-41cd-9cbf-a48697130153/voice/1786376736076-11c6da69-voice.wav?toke\",\"path\":\"179e5b9c-441e-41cd-9cbf-a48697130153/voice/1786376736076-11c6da69-voice.wav\",\"audioSrc\":\"https://jqfaknpmcnqwqvatrwgo.supabase.co/storage/v1/object/sign/companion-audio/179e5b9c-441e-41cd-9cbf-a48697130153/voice/1786376736076-11c6da69-voice.wav?toke\",\"hasDataUrl\":false}"
+    },
+    {
+      "step": "mobile_play_after_upload",
+      "result": "PASS",
+      "detail": "{\"ok\":true,\"currentTime\":0.342416,\"src\":\"https://jqfaknpmcnqwqvatrwgo.supabase.co/storage/v1/object/sign/companion-audio/179e5b9c-441e-41cd-9cbf-a48697130153/voice/1786376736076-11c6da69-voice.wav?toke\"}"
+    },
+    {
+      "step": "mobile_refresh_persist",
+      "result": "PASS",
+      "detail": "{\"afterRefresh\":{\"uploaded\":true,\"url\":\"https://jqfaknpmcnqwqvatrwgo.supabase.co/storage/v1/object/sign/companion-audio/179e5b9c-441e-41cd-9cbf-a48697130153/voi\",\"path\":\"\",\"audioSrc\":\"https://jqfaknpmcnqwqvatrwgo.supabase.co/storage/v1/object/sign/companion-audio/179e5b9c-441e-41cd-9cbf-a48697130153/voi\",\"status\":\"已确认\"},\"bootVoice\":\"https://jqfaknpmcnqwqvatrwgo.supabase.co/storage/v1/object/sign/companion-audio/179e5b9c-441e-41cd-9cbf-a48697130153/voice/1786376736076-11c\"}"
+    },
+    {
+      "step": "mobile_play_after_refresh",
+      "result": "PASS",
+      "detail": "{\"ok\":true,\"src\":\"https://jqfaknpmcnqwqvatrwgo.supabase.co/storage/v1/object/sign/companion-audio/179e5b9c-441e-41cd-9cbf-a48697130153/voice/1786376736076-11c6da69-voice.wav?toke\"}"
+    },
+    {
+      "step": "mobile_step5_visible",
+      "result": "PASS",
+      "detail": "count=2"
+    },
+    {
+      "step": "mobile_select_deposit",
+      "result": "PASS",
+      "detail": "pressed"
+    },
+    {
+      "step": "mobile_no_assignment_const",
+      "result": "PASS",
+      "detail": "none"
+    },
+    {
+      "step": "mobile_deposit_proof_api",
+      "result": "PASS",
+      "detail": "付款凭证上传成功"
+    },
+    {
+      "step": "mobile_submit_application",
+      "result": "PASS",
+      "detail": "申请已提交，等待后台审核。"
+    },
+    {
+      "step": "mobile_submit_deposit",
+      "result": "PASS",
+      "detail": "已提交审核，等待后台审核。"
+    },
+    {
+      "step": "mobile_status_pending",
+      "result": "PASS",
+      "detail": "applicationStatus=pending"
+    },
+    {
+      "step": "admin_login",
+      "result": "PASS",
+      "detail": ""
+    },
+    {
+      "step": "admin_finds_applicant",
+      "result": "PASS",
+      "detail": "id=77e53299-f670-4e72-a0a6-aeb7a327c0e6 email=mvosnekk38.comp@meow.test nick=MobileVoice mvosnekk38"
+    },
+    {
+      "step": "admin_can_see_voice",
+      "result": "PASS",
+      "detail": "https://jqfaknpmcnqwqvatrwgo.supabase.co/storage/v1/object/sign/companion-audio/179e5b9c-441e-41cd-9cbf-a48697130153/voice/1786376736076-11c6da69-voice.wav?token=eyJraWQiOiJzdG9yYW"
+    },
+    {
+      "step": "admin_can_play_voice",
+      "result": "PASS",
+      "detail": "http=200 ctype=audio/wav"
+    },
+    {
+      "step": "admin_approve",
+      "result": "PASS",
+      "detail": "陪玩申请审核已保存"
+    },
+    {
+      "step": "mobile_status_approved",
+      "result": "PASS",
+      "detail": "status=approved"
+    },
+    {
+      "step": "public_profile_has_voice",
+      "result": "PASS",
+      "detail": "https://jqfaknpmcnqwqvatrwgo.supabase.co/storage/v1/object/sign/companion-audio/179e5b9c-441e-41cd-9cbf-a48697130153/voice/1786376736076-11c6da69-voice.wav?token=eyJraWQiOiJzdG9yYW"
+    },
+    {
+      "step": "public_profile_can_play",
+      "result": "PASS",
+      "detail": "http=200 ctype=audio/wav"
+    },
+    {
+      "step": "mobile_relogin",
+      "result": "PASS",
+      "detail": ""
+    },
+    {
+      "step": "mobile_relogin_voice_persists",
+      "result": "PASS",
+      "detail": "https://jqfaknpmcnqwqvatrwgo.supabase.co/storage/v1/object/sign/companion-audio/179e5b9c-441e-41cd-9cbf-a48697130153/voice/1786376736076-11c6da69-voice.wav?token=eyJraWQiOiJzdG9yYW"
+    },
+    {
+      "step": "手机实测",
+      "result": "PASS",
+      "detail": "all mobile gates PASS"
+    }
+  ],
+  "passCount": 27,
+  "failCount": 0,
+  "mobileVerdict": "PASS"
+}
