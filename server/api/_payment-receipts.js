@@ -181,9 +181,20 @@ export async function hydrateReceiptReviewers(receipts = []) {
     snaps = await loadReviewerSnapshotsFromLogs(need.map((r) => r.id));
   }
   const merged = list.map((r) => mergeReceiptReviewerSnapshot(r, snaps[r?.id] || null));
+  const withMarks = merged.map((r) => {
+    if (!r || String(r.reviewed_by_staff_name || "").trim()) return r;
+    const marked = parseReviewStaffMark(r.review_remark || "") || parseReviewStaffMark(r.reject_reason || "");
+    if (!marked?.reviewed_by_staff_name) return r;
+    return {
+      ...r,
+      reviewed_by_staff_id: r.reviewed_by_staff_id || marked.reviewed_by_staff_id || r.reviewed_by || null,
+      reviewed_by_staff_name: marked.reviewed_by_staff_name,
+      reviewed_at: r.reviewed_at || marked.reviewed_at || "",
+    };
+  });
   // Live profiles fallback for legacy rows / missing DDL columns — keyed by immutable reviewed_by id.
-  const stillNeed = merged.filter((r) => r && !String(r.reviewed_by_staff_name || "").trim());
-  if (!stillNeed.length) return merged;
+  const stillNeed = withMarks.filter((r) => r && !String(r.reviewed_by_staff_name || "").trim());
+  if (!stillNeed.length) return withMarks;
   const ids = [
     ...new Set(
       stillNeed
@@ -191,24 +202,14 @@ export async function hydrateReceiptReviewers(receipts = []) {
         .filter((id) => isDbUuid(id))
     ),
   ];
-  if (!ids.length) return merged;
+  if (!ids.length) return withMarks;
   const profiles = await companionDb(
     "profiles",
     `?id=in.(${ids.map(encodeURIComponent).join(",")})&select=id,display_name,nickname,email,role&limit=500`
   ).catch(() => []);
   const profileMap = Object.fromEntries((profiles || []).map((row) => [row.id, row]));
-  return merged.map((r) => {
-    if (!r) return r;
-    const marked = parseReviewStaffMark(r.review_remark || "") || parseReviewStaffMark(r.reject_reason || "");
-    if (marked?.reviewed_by_staff_name && !String(r.reviewed_by_staff_name || "").trim()) {
-      r = {
-        ...r,
-        reviewed_by_staff_id: r.reviewed_by_staff_id || marked.reviewed_by_staff_id || r.reviewed_by || null,
-        reviewed_by_staff_name: marked.reviewed_by_staff_name,
-        reviewed_at: r.reviewed_at || marked.reviewed_at || "",
-      };
-    }
-    if (String(r.reviewed_by_staff_name || "").trim()) return r;
+  return withMarks.map((r) => {
+    if (!r || String(r.reviewed_by_staff_name || "").trim()) return r;
     const id = String(r.reviewed_by_staff_id || r.reviewed_by || r.confirmed_by || "").trim();
     const name = staffReviewerNameFromProfile(profileMap[id] || {});
     if (!name) return r;
