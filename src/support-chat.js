@@ -5,7 +5,7 @@ import './mcj-chat-realtime.js';
   var root = document.getElementById("supportApp");
   if (!root) return;
   try {
-    window.__MCJ_SUPPORT_CHAT_LAGFIX = "20260811bossMsgQr1";
+    window.__MCJ_SUPPORT_CHAT_LAGFIX = "20260811bossMsgQr2";
   } catch (_) {}
 
   document.documentElement.classList.add("support-page");
@@ -1226,9 +1226,9 @@ import './mcj-chat-realtime.js';
   }
   function sessionDisplayName(c) {
     var name = String(
-      (c && (c.customerServiceName || c.serviceName || c.customer_service_name || c.title)) || ""
+      (c && (c.customerServiceName || c.serviceName || c.customer_service_name || c.peerName || c.peer_name)) || ""
     ).trim();
-    if (name && !/^订单咨询/.test(name)) return name;
+    if (name && !/^订单/.test(name) && !/^人工客服/.test(name)) return name;
     if (isOrderConversation(c)) return "订单客服";
     return "人工客服";
   }
