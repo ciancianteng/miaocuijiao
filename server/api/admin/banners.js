@@ -3,6 +3,8 @@ const ADMIN_ROLES = new Set(["admin", "super_admin"]);
 const BANNER_BUCKET = () => String(process.env.SUPABASE_CONTENT_BUCKET || process.env.SUPABASE_BANNER_BUCKET || "banners").trim() || "banners";
 
 function json(res, status, data) {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+  res.setHeader("Pragma", "no-cache");
   return res.status(status).json(data);
 }
 function hasDb() {
@@ -644,6 +646,23 @@ export default async function handler(req, res) {
       });
       if (!existing[0]) return json(res, 404, { ok: false, message: "Banner 不存在。" });
       const wasMain = existing[0].is_main === true;
+      // Best-effort remove Storage objects so homepage cannot keep serving orphan files.
+      for (const field of ["image_url", "mobile_image_url"]) {
+        const url = String(existing[0][field] || "").trim();
+        const m = url.match(/\/storage\/v1\/object\/public\/([^/]+)\/(.+)$/i);
+        if (!m) continue;
+        try {
+          await fetch(storageObjectUrl(m[1], decodeURIComponent(m[2])), {
+            method: "DELETE",
+            headers: {
+              apikey: process.env.SUPABASE_SERVICE_ROLE_KEY,
+              Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+            },
+          });
+        } catch {
+          /* ignore storage cleanup failures */
+        }
+      }
       await supabaseJson(restUrl("banners", `?id=eq.${encodeURIComponent(id)}`), {
         method: "DELETE",
         headers: serviceHeaders(),

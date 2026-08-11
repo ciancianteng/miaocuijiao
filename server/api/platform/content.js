@@ -6,7 +6,11 @@ import { readVoiceTypes, toPublicVoiceType } from "../_companion-voice-types-sto
 const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"];
 
 function hasDatabaseConfig() { return REQUIRED_ENV.every((key) => process.env[key]); }
-function json(res, status, data) { res.status(status).json(data); }
+function json(res, status, data) {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+  res.setHeader("Pragma", "no-cache");
+  res.status(status).json(data);
+}
 function headers() {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   const base = { apikey: key };

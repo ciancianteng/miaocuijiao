@@ -8,11 +8,7 @@
   var slideCache = new WeakMap();
   var remoteStore = { contents: { banners: [], notices: [] } };
   var remoteLoaded = false;
-  var FALLBACK_BANNER = "/default-home-banner.png";
-
-  function resolveFallbackBanner() {
-    return FALLBACK_BANNER;
-  }
+  // No hardcoded /default-home-banner.png — homepage SoT is admin `banners` table only.
 
   function contentApiUrl() {
     return "/api/gateway?path=" + encodeURIComponent("platform/content") + "&types=banners&_=" + Date.now();
@@ -337,17 +333,23 @@
   }
 
   function resolveBannerSrc(source) {
-    var fallback = resolveFallbackBanner();
     var src = String(source || "").trim();
-    if (!src || /^mcj-local-banner:\/\//i.test(src)) return fallback;
+    // Never substitute a packaged default image — missing URL means skip / empty frame.
+    if (!src || /^mcj-local-banner:\/\//i.test(src)) return "";
     return src;
   }
 
   function slideHtml(data, source, index, isActive) {
     var tag = data.link && !data.buttonText ? "a" : "div";
     var attrs = data.link && !data.buttonText ? ' href="' + esc(data.link) + '" target="' + esc(data.linkTarget) + '"' : "";
-    var fallback = resolveFallbackBanner();
     var safeSrc = resolveBannerSrc(source);
+    var imgHtml = safeSrc
+      ? '<img class="mcj-hero-image" src="' +
+        esc(safeSrc) +
+        '" alt="' +
+        esc(data.alt) +
+        '" decoding="async">'
+      : '<div class="mcj-hero-image mcj-hero-image-missing" role="img" aria-label="' + esc(data.alt || "Banner") + '"></div>';
     return (
       '<div class="mcj-hero-slide' +
       (isActive ? " is-active" : "") +
@@ -361,13 +363,7 @@
       ' aria-label="' +
       esc(data.name) +
       '">' +
-      '<img class="mcj-hero-image" src="' +
-      esc(safeSrc) +
-      '" alt="' +
-      esc(data.alt) +
-      '" decoding="async" data-banner-fallback="' +
-      esc(fallback) +
-      '">' +
+      imgHtml +
       overlayHtml(data) +
       "</" +
       tag +
@@ -406,17 +402,12 @@
   }
 
   function emptyHeroHtml() {
-    var fallback = resolveFallbackBanner();
-    /* Prefer brand image over a giant welcome text box when DB has no banner. */
+    /* No packaged default banner — empty frame only when DB has zero active banners. */
     return (
-      '<div class="mcj-hero-slides">' +
+      '<div class="mcj-hero-slides" data-banner-empty="1">' +
       '<div class="mcj-hero-slide is-active" data-hero-slide="0">' +
-      '<div class="mcj-hero-image-link" aria-label="妙脆角默认 Banner">' +
-      '<img class="mcj-hero-image" src="' +
-      esc(fallback) +
-      '" alt="妙脆角" decoding="async" data-banner-fallback="' +
-      esc(fallback) +
-      '">' +
+      '<div class="mcj-hero-image-link" aria-label="暂无 Banner">' +
+      '<div class="mcj-hero-image mcj-hero-image-missing" role="img" aria-label="暂无 Banner"></div>' +
       "</div></div></div>"
     );
   }
@@ -428,15 +419,12 @@
       img.dataset.fallbackBound = "1";
       img.addEventListener("error", function onBannerError() {
         img.removeEventListener("error", onBannerError);
-        var fallback = img.getAttribute("data-banner-fallback") || resolveFallbackBanner();
-        if (img.getAttribute("src") === fallback) {
-          img.removeAttribute("src");
-          img.alt = "妙脆角";
-          img.style.background =
-            "radial-gradient(circle at 30% 30%,rgba(243,168,203,.35),transparent 55%),linear-gradient(135deg,#1a0f18,#050406)";
-          return;
-        }
-        img.setAttribute("src", fallback);
+        // Never swap in /default-home-banner.png — hide broken image, keep CSS frame.
+        img.removeAttribute("src");
+        img.alt = "Banner 加载失败";
+        img.classList.add("mcj-hero-image-missing");
+        img.style.background =
+          "radial-gradient(circle at 30% 30%,rgba(243,168,203,.22),transparent 55%),linear-gradient(135deg,#1a0f18,#050406)";
       });
     });
   }
@@ -510,19 +498,18 @@
   function renderEmpty(root, data, device) {
     root.hidden = false;
     root.classList.add("mcj-home-hero");
-    root.classList.remove("is-empty");
+    root.classList.add("is-empty");
     root.dataset.heroIndex = "0";
+    root.removeAttribute("data-banner-id");
     applyVars(root, data || normalized({}), device || "desktop");
     root.innerHTML = emptyHeroHtml();
     slideCache.set(root, {
       signature: "empty",
       banners: [],
-      normalized: [data || normalized({})],
+      normalized: [],
       device: device || "desktop",
       index: 0,
     });
-    wireBannerImageFallback(root);
-    applyAllCrops(root);
     return null;
   }
 

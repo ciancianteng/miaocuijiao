@@ -262,6 +262,9 @@
               : '<div class="banner-ops-preview-empty">无图片</div>') +
             "</div>" +
             '<div class="banner-ops-card-body">' +
+            "<strong class=\"banner-ops-card-title\">" +
+            esc(item.title || "(未命名 Banner)") +
+            "</strong>" +
             '<div class="banner-ops-card-meta"><span>' +
             esc(formatTime(item.created_at)) +
             "</span>" +
@@ -367,7 +370,7 @@
       "</div></section>" +
       '<section class="banner-ops-section">' +
       "<h3>历史 Banner</h3>" +
-      "<p>点「编辑」将该 Banner 完整加载到上方编辑区。启用/停用、删除、排序仍可在卡片上快捷操作。</p>" +
+      "<p>点「编辑」将该 Banner 完整加载到上方编辑区。每张 Banner 均可：编辑 / 启用停用 / 删除。首页与后台共用同一数据表 <code>banners</code>（公开接口 <code>/api/platform/content?types=banners</code>）。删除后首页立即消失，无默认蓝色兜底图。</p>" +
       renderHistory() +
       "</section></div>";
   }
@@ -689,10 +692,14 @@
       });
   }
   function removeBanner(id) {
-    if (!confirm("确认删除这张 Banner？删除后无法恢复。")) return;
+    if (!confirm("确认删除这张 Banner？删除后首页将立即同步移除，且无法恢复。")) return;
     apiPost({ action: "delete", id: id })
       .then(function (res) {
         alert(res.message || "已删除");
+        try {
+          localStorage.setItem("mcj_banner_published_at", String(Date.now()));
+          window.dispatchEvent(new Event("mcj:platform-data-updated"));
+        } catch (e) {}
         return load();
       })
       .catch(function (err) {

@@ -387,11 +387,7 @@
   function renderHomeManagedData() {
     var db = readDB();
     var settings = db.siteSettings || {};
-    var bannerImg = document.querySelector(".banner img, .hero-img");
-    if (bannerImg) {
-      if (settings.bannerImage) bannerImg.src = settings.bannerImage;
-      else if (!bannerImg.getAttribute("src")) bannerImg.src = "assets/hero-banner-latest.png";
-    }
+    // Homepage hero SoT: home-banner.js → banners table. Do not inject packaged defaults.
     var noticeBox = document.querySelector(".announcement-strip");
     /* 公告栏由 home-announcements.js 负责，避免本地 siteSettings 覆盖后台公告。 */
     if (noticeBox && noticeBox.id !== "homeAnnouncementBar" && !window.MCJHomeAnnouncements) {

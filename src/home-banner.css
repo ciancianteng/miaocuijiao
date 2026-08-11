@@ -368,7 +368,20 @@
   transform: translateY(-50%) !important;
 }
 
-/* Empty / fallback: still image frame, never giant welcome text */
+.mcj-home-hero .mcj-hero-image.mcj-hero-image-missing,
+.mcj-home-hero .mcj-hero-image-missing {
+  display: block !important;
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  background:
+    radial-gradient(circle at 28% 28%, rgba(243, 168, 203, 0.18), transparent 52%),
+    linear-gradient(145deg, #161018, #07060a) !important;
+  border: 0 !important;
+}
+
+/* Empty / fallback: still image frame, never giant welcome text, never default blue asset */
 .mcj-home-hero.is-empty {
   display: block !important;
   place-items: unset !important;
