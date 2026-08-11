@@ -848,20 +848,24 @@
         });
     return '<div class="form-field full apply-gallery-block"><span class="mcj-upload-label">相册</span><div class="apply-gallery-grid">' + cards + "</div>" + addCard + "</div>";
   }
-  function tagPicker(fieldName, label, selected, groups, limit, opts) {
+  function tagPicker(fieldName, label, selected, groups, limit) {
     selected = Array.isArray(selected) ? selected : [];
-    opts = opts || {};
-    // 仅个人标签允许自定义；可接游戏 / 擅长位置 / 可提供服务必须选自后台配置，禁止申请端自建。
-    var allowCustom = opts.allowCustom === true;
+    // 仅允许选择后台/系统已配置标签，禁止申请端自建任何自定义标签。
+    var allowed = {};
+    Object.keys(groups || {}).forEach(function (group) {
+      (groups[group] || []).forEach(function (tag) {
+        allowed[tag] = true;
+      });
+    });
+    selected = selected.filter(function (tag) {
+      return !!allowed[tag];
+    });
     var body = Object.keys(groups || {}).map(function (group) {
       return '<div class="tag-group"><b>' + esc(group) + '</b><div class="tag-list">' + groups[group].map(function (tag) {
         return '<label class="tag-pill ' + (selected.indexOf(tag) >= 0 ? "checked" : "") + '"><input type="checkbox" data-tag-field="' + esc(fieldName) + '" value="' + esc(tag) + '" ' + (selected.indexOf(tag) >= 0 ? "checked" : "") + '> ' + esc(tag) + '</label>';
       }).join("") + '</div></div>';
     }).join("");
-    var customRow = allowCustom
-      ? '<div class="custom-tag-row"><input data-custom-tag-input="' + esc(fieldName) + '" placeholder="新增自定义标签"><button class="apply-btn small" type="button" data-add-custom-tag="' + esc(fieldName) + '">添加</button></div>'
-      : '';
-    return '<div class="form-field full tag-picker" data-tag-picker="' + esc(fieldName) + '" data-tag-limit="' + (limit || 99) + '"><span>' + esc(label) + '</span>' + body + customRow + '<small>已选择 <em data-tag-count="' + esc(fieldName) + '">' + selected.length + '</em> / ' + (limit || 99) + '</small></div>';
+    return '<div class="form-field full tag-picker" data-tag-picker="' + esc(fieldName) + '" data-tag-limit="' + (limit || 99) + '"><span>' + esc(label) + '</span>' + body + '<small>已选择 <em data-tag-count="' + esc(fieldName) + '">' + selected.length + '</em> / ' + (limit || 99) + '</small></div>';
   }
 
   function rulesHtml(draft) {
@@ -889,7 +893,7 @@
       field("phone", "联系电话", "tel", data.phone) +
       field("email", "邮箱", "email", data.email) +
       selectField("contactPublic", "联系方式是否公开", data.contactPublic, ["不公开，仅平台可见", "审核通过后公开给已下单老板"]) +
-      tagPicker("personalTags", "个人标签（必填，最多 10 个）", data.personalTags, tagGroups.personalTags, 10, { allowCustom: true }) +
+      tagPicker("personalTags", "个人标签（必填，最多 10 个）", data.personalTags, tagGroups.personalTags, 10) +
       '</form></section>';
   }
   function gameHtml(data) {
@@ -2618,23 +2622,6 @@
       if (e.target.closest("[data-record-delete]")) clearVoiceRecording();
       if (e.target.closest("[data-record-confirm]")) confirmVoice();
       if (e.target.closest("[data-apply-save]")) { e.preventDefault(); await collect(root); showApplyTip("草稿已保存", "ok"); return; }
-      var addTag = e.target.closest("[data-add-custom-tag]");
-      if (addTag) {
-        var key = addTag.dataset.addCustomTag;
-        // 仅个人标签允许自定义；禁止通过该入口给游戏/位置等后台选项加自定义项。
-        if (key !== "personalTags") return;
-        var input = document.querySelector('[data-custom-tag-input="' + key + '"]');
-        var value = input ? input.value.trim() : "";
-        if (!value) return;
-        var d = readDraft();
-        d.data = d.data || {};
-        d.data[key] = Array.isArray(d.data[key]) ? d.data[key] : [];
-        var limit = Number((document.querySelector('[data-tag-picker="' + key + '"]') || {}).dataset && document.querySelector('[data-tag-picker="' + key + '"]').dataset.tagLimit || 99);
-        if (d.data[key].length >= limit) { showApplyTip("最多只能选择 " + limit + " 个标签"); return; }
-        if (d.data[key].indexOf(value) < 0) d.data[key].push(value);
-        writeRaw(DRAFT_KEY, d);
-        render(Number(root.dataset.step || 0));
-      }
       if (e.target.closest("[data-copy-nickname]")) {
         var nick = document.querySelector('input[name="gameNickname"]');
         if (nick) navigator.clipboard && navigator.clipboard.writeText(nick.value || "");
