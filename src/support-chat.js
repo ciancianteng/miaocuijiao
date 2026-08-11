@@ -5,7 +5,7 @@ import './mcj-chat-realtime.js';
   var root = document.getElementById("supportApp");
   if (!root) return;
   try {
-    window.__MCJ_SUPPORT_CHAT_LAGFIX = "20260811bossMsgQr3";
+    window.__MCJ_SUPPORT_CHAT_LAGFIX = "20260811bossMsgQr4";
   } catch (_) {}
 
   document.documentElement.classList.add("support-page");
@@ -1794,6 +1794,15 @@ import './mcj-chat-realtime.js';
     e.preventDefault();
     var form = e.target.closest('[data-send]');
     if (form) form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+  }, true);
+  // Guarantee send-button click always submits (same path as Enter).
+  root.addEventListener('click', function (e) {
+    var sendBtn = e.target && e.target.closest && e.target.closest('[data-send-btn]');
+    if (!sendBtn || !root.contains(sendBtn) || sendBtn.disabled) return;
+    var form = sendBtn.closest('[data-send]');
+    if (!form) return;
+    e.preventDefault();
+    form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
   }, true);
 
   document.addEventListener('click', function (e) {
