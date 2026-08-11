@@ -54,23 +54,30 @@ async function waitDeploy(maxMs = 180000) {
   while (Date.now() - t0 < maxMs) {
     try {
       const html = await (await fetch(`${BASE}/companion-apply.html?cb=${Date.now()}`, { cache: "no-store" })).text();
-      const asset = html.match(/\/assets\/companion-apply-[^"'?]+\.js/) || html.match(/src\/companion-application\.js[^"']*/);
+      const asset =
+        html.match(/\/assets\/companion-apply-[^"'?]+\.js/) ||
+        html.match(/src\/companion-application\.js[^"']*/);
       let jsText = "";
       if (asset) {
-        const url = asset[0].startsWith("/") ? `${BASE}${asset[0]}` : `${BASE}/${asset[0]}`;
+        const rel = asset[0].startsWith("src/") ? "/" + asset[0] : asset[0];
+        const url = rel.startsWith("http") ? rel : `${BASE}${rel.startsWith("/") ? rel : "/" + rel}`;
         jsText = await (await fetch(url.split("?")[0] + "?cb=" + Date.now(), { cache: "no-store" })).text();
       }
       const ok =
-        /草稿中/.test(jsText || html) &&
-        /审核中/.test(jsText || html) &&
-        /审核通过/.test(jsText || html) &&
-        /审核未通过/.test(jsText || html) &&
-        /applyStatusZh1|draft:\s*"草稿中"|draft:"草稿中"/.test(jsText || html);
+        /草稿中/.test(jsText) &&
+        /审核中/.test(jsText) &&
+        /审核通过/.test(jsText) &&
+        /审核未通过/.test(jsText) &&
+        (/draft:\s*"草稿中"|draft:"草稿中"/.test(jsText) || /draft:"草稿中"/.test(jsText.replace(/\s+/g, "")));
       if (ok) {
-        step("deploy_ready", true, `elapsed=${Date.now() - t0}ms`);
+        step("deploy_ready", true, `elapsed=${Date.now() - t0}ms asset=${asset ? asset[0] : "none"}`);
         return true;
       }
-      console.log("[wait] deploy not ready");
+      console.log("[wait] deploy not ready", {
+        hasAsset: !!asset,
+        draft: /草稿中/.test(jsText),
+        len: jsText.length,
+      });
     } catch (e) {
       console.log("[wait]", e.message);
     }
