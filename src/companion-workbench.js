@@ -1966,6 +1966,8 @@
     if(canPatch){
       // Keep sidebar/header DOM stable — only swap main page content + chrome labels.
       syncShellChrome(isolated);
+      // Reset scroll BEFORE content swap so the new page never paints at the old offset.
+      if(routeChanged)resetRouteScroll();
       var pageEl=existing.querySelector('.pw-page');
       if(pageEl)pageEl.innerHTML=pageHtml();
       var menu=existing.querySelector('.pw-menu');
