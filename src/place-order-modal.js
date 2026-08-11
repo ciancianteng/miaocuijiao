@@ -14,6 +14,8 @@
   var DEFAULT_AVATAR = "/default-avatar.png";
   var toastTimer = null;
   var openGuard = false;
+  var pendingOpenPayload = null;
+  var payFetchSeq = 0;
   var state = {
     open: false,
     companion: null,
@@ -30,7 +32,26 @@
     walletBalance: null,
     payMethods: [],
     payLoadError: "",
+    payMethodsLoading: false,
   };
+
+  function resetOrderFormState() {
+    state.companion = null;
+    state.service = "";
+    state.customService = "";
+    state.selectedServiceId = "";
+    state.hoursMode = "1";
+    state.hours = 1;
+    state.quantity = 1;
+    state.couponCode = "";
+    state.payment = "";
+    state.submitting = false;
+    state.submitStartedAt = 0;
+    state.walletBalance = null;
+    state.payMethods = [];
+    state.payLoadError = "";
+    state.payMethodsLoading = false;
+  }
 
   function esc(v) {
     return String(v == null ? "" : v).replace(/[&<>"']/g, function (c) {
@@ -56,6 +77,17 @@
       return p.length > 0;
     });
   }
+  function tokenFromSessionBlob(raw) {
+    if (!raw) return "";
+    try {
+      var obj = typeof raw === "string" ? JSON.parse(raw) : raw;
+      if (!obj || typeof obj !== "object") return "";
+      var t = obj.accessToken || obj.token || (obj.session && (obj.session.accessToken || obj.session.token)) || "";
+      return looksLikeJwt(t) ? t : "";
+    } catch (e) {
+      return "";
+    }
+  }
   function token() {
     if (window.MCJBossAuth && typeof window.MCJBossAuth.getAccessToken === "function") {
       var fromBoss = window.MCJBossAuth.getAccessToken();
@@ -66,6 +98,10 @@
       sessionStorage.getItem("mcjAuthAccessToken"),
       localStorage.getItem("customerAuthToken"),
       sessionStorage.getItem("customerAuthToken"),
+      tokenFromSessionBlob(localStorage.getItem("mcjBossSession")),
+      tokenFromSessionBlob(sessionStorage.getItem("mcjBossSession")),
+      tokenFromSessionBlob(localStorage.getItem("customerUser")),
+      tokenFromSessionBlob(sessionStorage.getItem("customerUser")),
     ];
     for (var i = 0; i < candidates.length; i++) {
       if (looksLikeJwt(candidates[i])) return candidates[i];
@@ -142,6 +178,34 @@
     btn.setAttribute("aria-busy", on ? "true" : "false");
     btn.textContent = on ? "提交中…" : "确认订单并付款";
   }
+  function syncSubmitAvailability() {
+    var btn = qs("[data-po-submit]");
+    if (!btn) return;
+    if (state.submitting) {
+      btn.disabled = true;
+      btn.setAttribute("aria-busy", "true");
+      btn.textContent = "提交中…";
+      return;
+    }
+    btn.setAttribute("aria-busy", "false");
+    if (state.payMethodsLoading) {
+      btn.disabled = true;
+      btn.textContent = "支付方式加载中…";
+      return;
+    }
+    if (!(state.payMethods && state.payMethods.length)) {
+      btn.disabled = true;
+      btn.textContent = "暂无可用支付方式";
+      return;
+    }
+    if (!String(state.payment || "").trim()) {
+      btn.disabled = true;
+      btn.textContent = "请选择支付方式";
+      return;
+    }
+    btn.disabled = false;
+    btn.textContent = "确认订单并付款";
+  }
   function applyOrderPayMethods(body) {
     // Sole SoT: GET /api/recharge → orderPayMethods (payment_channels + wallet gate).
     // Never reconstruct from body.methods / never hardcode fallback channels.
@@ -164,10 +228,15 @@
   }
   function refreshWalletBalance(attempt) {
     var tryCount = attempt || 0;
+    var seq = ++payFetchSeq;
+    state.payMethodsLoading = true;
+    state.payLoadError = "";
     function runFetch() {
       if (!token()) {
+        if (seq !== payFetchSeq) return Promise.resolve(null);
         state.walletBalance = null;
         state.payMethods = [];
+        state.payMethodsLoading = false;
         state.payLoadError = "请先登录老板账号后再选择支付方式";
         return Promise.resolve(null);
       }
@@ -179,6 +248,7 @@
               err.status = res.status;
               throw err;
             }
+            if (seq !== payFetchSeq) return state.walletBalance;
             var bal =
               body.summary && body.summary.balance != null
                 ? body.summary.balance
@@ -188,10 +258,12 @@
             state.walletBalance = bal == null ? null : money(bal);
             applyOrderPayMethods(body);
             state.payLoadError = "";
+            state.payMethodsLoading = false;
             return state.walletBalance;
           });
         })
         .catch(function (err) {
+          if (seq !== payFetchSeq) return state.walletBalance;
           if (tryCount < 1) {
             return new Promise(function (resolve) {
               setTimeout(function () {
@@ -199,6 +271,7 @@
               }, 600);
             });
           }
+          state.payMethodsLoading = false;
           state.payLoadError =
             (err && err.status === 401) || /登录|token|jwt|过期/i.test(String((err && err.message) || ""))
               ? "登录已失效，请重新登录后再下单"
@@ -221,14 +294,22 @@
     var total = totalAmount();
     var bal = state.walletBalance;
     var catInsufficient = bal != null && !(bal + 1e-9 >= total);
-    // Only SoT list from /api/recharge. PAYMENTS is intentionally empty (no hardcode fallback).
     var list = state.payMethods && state.payMethods.length ? state.payMethods : [];
+
+    if (state.payMethodsLoading && !list.length) {
+      grid.innerHTML =
+        '<p class="mcj-po-empty-services" style="color:#9ca3af;font-size:13px;margin:0">正在读取支付方式…</p>';
+      syncSubmitAvailability();
+      return;
+    }
+
     if (!list.length) {
       grid.innerHTML =
-        '<p class="mcj-po-empty-services" style="color:#9ca3af;font-size:13px;margin:0">' +
-        esc(state.payLoadError || "暂无可用支付方式，请联系管理员在后台启用") +
+        '<p class="mcj-po-empty-services" style="color:#ffb4d0;font-size:13px;margin:0;line-height:1.55">' +
+        esc(state.payLoadError || "当前暂无可用支付方式，请稍后再试或联系客服") +
         "</p>";
       state.payment = "";
+      syncSubmitAvailability();
       return;
     }
     grid.innerHTML = list
@@ -267,8 +348,11 @@
         if (btn.disabled) return;
         state.payment = btn.getAttribute("data-po-pay") || "";
         setExclusiveActive(grid.querySelectorAll("[data-po-pay]"), btn);
+        setError("");
+        syncSubmitAvailability();
       });
     });
+    syncSubmitAvailability();
   }
   function lockScroll(lock) {
     if (lock) {
@@ -311,6 +395,9 @@
     state.open = false;
     state.submitting = false;
     openGuard = false;
+    pendingOpenPayload = null;
+    payFetchSeq += 1;
+    resetOrderFormState();
     lockScroll(false);
   }
   function failOpen(msg) {
@@ -666,6 +753,10 @@
     state.submitting = false;
     state.submitStartedAt = 0;
     openGuard = false;
+    pendingOpenPayload = null;
+    payFetchSeq += 1;
+    // Always drop residual form / payment state so the next open re-initializes from live data.
+    if (!opts.keepFormState) resetOrderFormState();
     lockScroll(false);
     // Never history.back() — that can leave the current Preview and strand a black mask.
     try {
@@ -724,7 +815,10 @@
     });
     var priceHero = document.querySelector("[data-po-price-hero]");
     if (priceHero && c) priceHero.textContent = moneyText(c.unitPrice);
-    if (activeMask()) paintPayCards();
+    // Soft totals refresh must not wipe payment UI while methods are still loading.
+    if (activeMask() && (state.payMethods.length || !state.payMethodsLoading)) {
+      paintPayCards();
+    }
   }
 
   function paint() {
@@ -738,8 +832,14 @@
       return;
     }
     ensureCss();
-    close({ fromPop: true });
+    // Remount dialog chrome but keep the freshly prepared form fields on `state`
+    // (companion/hours/qty/service). Payment methods always re-fetch after mount.
+    close({ fromPop: true, keepFormState: true });
     state.open = true;
+    state.payMethodsLoading = true;
+    state.payMethods = [];
+    state.payment = "";
+    state.payLoadError = "";
 
     var companionServices = resolveServices(c);
     if (companionServices.length && !companionServices.some(function (s) { return s.name === state.service; })) {
@@ -888,7 +988,7 @@
       esc(moneyText(totalAmount())) +
       "</strong></div>" +
       '<p class="mcj-po-error mcj-po-footer-error" data-po-error hidden></p>' +
-      '<button type="button" class="primary mcj-po-submit" data-po-submit>确认订单并付款</button>' +
+      '<button type="button" class="primary mcj-po-submit" data-po-submit disabled aria-busy="false">支付方式加载中…</button>' +
       "</div></div>";
 
     var dialog = mask.querySelector(".mcj-po-dialog");
@@ -1019,6 +1119,7 @@
     refreshWalletBalance().then(function () {
       if (!state.open || !activeMask()) return;
       paintPayCards();
+      syncSubmitAvailability();
     });
   }
 
@@ -1159,8 +1260,17 @@
         failValidate("服务时间不能为空", "[data-po-schedule]");
         return;
       }
+      if (state.payMethodsLoading) {
+        failValidate("支付方式加载中，请稍候再试");
+        return;
+      }
+      if (!(state.payMethods && state.payMethods.length)) {
+        failValidate(state.payLoadError || "当前暂无可用支付方式，请稍后再试或联系客服");
+        syncSubmitAvailability();
+        return;
+      }
       if (!payment) {
-        failValidate("支付方式不能为空");
+        failValidate("请选择支付方式后再确认订单");
         return;
       }
       if (state.service === "自定义" && !String(state.customService || "").trim()) {
@@ -1277,11 +1387,21 @@
       toast("订单提交中，请稍候…");
       return;
     }
-    if (openGuard) return;
+    // Coalesce rapid re-entry: keep the latest payload instead of silently dropping.
+    if (openGuard) {
+      pendingOpenPayload = rawCompanion;
+      return;
+    }
     openGuard = true;
+    pendingOpenPayload = null;
     setTimeout(function () {
       openGuard = false;
-    }, 400);
+      if (pendingOpenPayload) {
+        var next = pendingOpenPayload;
+        pendingOpenPayload = null;
+        open(next);
+      }
+    }, 250);
 
     var companion = normalizeCompanion(rawCompanion);
     if (!companion) {
@@ -1301,6 +1421,8 @@
       console.error("[MCJPlaceOrder] invalid unitPrice", companion);
       return;
     }
+    // Fresh session every open — never reuse previous companion/payment/hours state.
+    resetOrderFormState();
     state.companion = companion;
     var matched = matchService(companion.service, companion);
     state.service = matched.service;
@@ -1311,7 +1433,9 @@
     state.hours = 1;
     state.quantity = 1;
     state.couponCode = "";
-    state.payment = state.payMethods[0] ? state.payMethods[0].id : "";
+    state.payment = "";
+    state.payMethods = [];
+    state.payMethodsLoading = true;
     state.submitting = false;
     state.submitStartedAt = 0;
     try {
@@ -1389,8 +1513,9 @@
       if (matched.item) applySelectedService(matched.item);
       else {
         refreshTotals();
-        paintPayCards();
       }
+      // Soft update never clears/reloads payment cards from empty cache — only refresh if already loaded.
+      if (state.payMethods.length && !state.payMethodsLoading) paintPayCards();
       return;
     }
 
@@ -1462,7 +1587,7 @@
       });
   }
 
-  window.MCJ_PAY_SOT_VERSION = '20260809paySotRoot1';
+  window.MCJ_PAY_SOT_VERSION = '20260811orderFlowFix1';
   window.MCJPlaceOrder = {
     open: open,
     openFromCompanion: openFromProfileCompanion,
@@ -1477,6 +1602,9 @@
     resolveServices: resolveServices,
     applySelectedService: applySelectedService,
     hydrateFromCatalog: hydrateFromCatalog,
+    reset: function () {
+      hardCleanup();
+    },
   };
 
   window.addEventListener("popstate", function () {

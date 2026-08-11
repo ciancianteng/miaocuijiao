@@ -549,79 +549,89 @@
       alert("陪玩资料尚未加载完成");
       return;
     }
-    if (!window.MCJPlaceOrder || typeof window.MCJPlaceOrder.openFromCompanion !== "function") {
-      alert("下单组件未加载，请刷新页面后重试");
-      return;
-    }
-    // Open immediately so 立即下单 never feels like a no-op; catalog upgrades price if它回来得及.
-    try {
-      c = syncPresence(c);
-      var presence =
-        window.MCJCompanionPresence && window.MCJCompanionPresence.fromCompanion
-          ? window.MCJCompanionPresence.fromCompanion(c)
-          : null;
-      window.MCJPlaceOrder.openFromCompanion(c, {
-        companionId: c.id || c.uid,
-        companionName: c.name || c.nickname,
-        unitPrice: Number(c.priceValue != null ? c.priceValue : c.price) || 0,
-        service: (c.services && c.services[0] && c.services[0].name) || c.game || c.mainGame || "",
-        services: Array.isArray(c.services) ? c.services : [],
-        serviceIds: c.serviceIds || c.service_ids || [],
-        gamePrices: c.gamePrices || c.game_prices || {},
-        avatar: c.avatar || c.cover || c.cardImageUrl || "",
-        publicId: c.publicId || "",
-        pricingUnit: c.pricingUnit || "小时",
-        availabilityStatus: presence ? presence.code : c.availabilityStatus || "",
-        availabilityText: presence ? presence.label : c.availabilityText || c.status || c.onlineStatus || "",
-        online: presence ? presence.code === "online" || presence.code === "busy" : c.online != null ? c.online : c.canOrderNow,
-        certTags: c.certTags || c.certificationTags || [],
-        publishReady: c.publishReady,
-        canAcceptOrders: c.canAcceptOrders,
-        canOrderNow: presence ? presence.canOrderNow : c.canOrderNow,
-        level: c.level || c.levelName || "",
-      });
-    } catch (err) {
-      if (window.MCJPlaceOrder && window.MCJPlaceOrder.close) window.MCJPlaceOrder.close();
-      alert((err && err.message) || "打开下单弹窗失败");
-      return;
-    }
-    loadCatalog()
-      .then(function (cat) {
-        if (!document.querySelector(".mcj-po-mask")) return;
-        if (window.MCJPlaceOrder && typeof window.MCJPlaceOrder.isSubmitting === "function" && window.MCJPlaceOrder.isSubmitting()) {
+    function tryOpen(attempt) {
+      if (!window.MCJPlaceOrder || typeof window.MCJPlaceOrder.openFromCompanion !== "function") {
+        if ((attempt || 0) < 20) {
+          setTimeout(function () {
+            tryOpen((attempt || 0) + 1);
+          }, 100);
           return;
         }
-        var catC = (cat && cat.companion) || {};
-        var services = (cat && cat.services) || [];
-        var selected = services[0] || null;
-        var unitPrice = Number(
-          (selected && selected.price) || catC.price || c.priceValue || c.price || 0
-        );
-        if (!(unitPrice > 0)) return;
-        var serviceName =
-          (selected && selected.name) || catC.game || c.game || c.mainGame || "";
+        alert("下单组件未加载，请刷新页面后重试");
+        return;
+      }
+      // Open immediately so 立即下单 never feels like a no-op; catalog upgrades price if它回来得及.
+      try {
+        c = syncPresence(c);
+        var presence =
+          window.MCJCompanionPresence && window.MCJCompanionPresence.fromCompanion
+            ? window.MCJCompanionPresence.fromCompanion(c)
+            : null;
         window.MCJPlaceOrder.openFromCompanion(c, {
           companionId: c.id || c.uid,
-          companionName: catC.name || c.name || c.nickname,
-          unitPrice: unitPrice,
-          service: serviceName,
-          services: services,
+          companionName: c.name || c.nickname,
+          unitPrice: Number(c.priceValue != null ? c.priceValue : c.price) || 0,
+          service: (c.services && c.services[0] && c.services[0].name) || c.game || c.mainGame || "",
+          services: Array.isArray(c.services) ? c.services : [],
           serviceIds: c.serviceIds || c.service_ids || [],
-          gamePrices: catC.gamePrices || c.gamePrices || c.game_prices || {},
-          avatar: catC.avatar || c.avatar,
-          publicId: catC.publicId || c.publicId || "",
-          pricingUnit: (selected && selected.pricingUnit) || catC.pricingUnit || c.pricingUnit || "小时",
-          availabilityStatus: c.availabilityStatus || catC.availabilityStatus || "",
-          availabilityText: c.availabilityText || c.status || c.onlineStatus || "",
-          online: c.online != null ? c.online : c.canOrderNow,
+          gamePrices: c.gamePrices || c.game_prices || {},
+          avatar: c.avatar || c.cover || c.cardImageUrl || "",
+          publicId: c.publicId || "",
+          pricingUnit: c.pricingUnit || "小时",
+          availabilityStatus: presence ? presence.code : c.availabilityStatus || "",
+          availabilityText: presence ? presence.label : c.availabilityText || c.status || c.onlineStatus || "",
+          online: presence ? presence.code === "online" || presence.code === "busy" : c.online != null ? c.online : c.canOrderNow,
           certTags: c.certTags || c.certificationTags || [],
           publishReady: c.publishReady,
           canAcceptOrders: c.canAcceptOrders,
-          canOrderNow: c.canOrderNow,
+          canOrderNow: presence ? presence.canOrderNow : c.canOrderNow,
           level: c.level || c.levelName || "",
         });
-      })
-      .catch(function () {});
+      } catch (err) {
+        if (window.MCJPlaceOrder && window.MCJPlaceOrder.close) window.MCJPlaceOrder.close();
+        alert((err && err.message) || "打开下单弹窗失败");
+        return;
+      }
+      loadCatalog()
+        .then(function (cat) {
+          if (!window.MCJPlaceOrder || typeof window.MCJPlaceOrder.isOpen === "function" && !window.MCJPlaceOrder.isOpen()) return;
+          if (!document.querySelector(".mcj-po-mask,[data-mcj-po-mask]")) return;
+          if (window.MCJPlaceOrder && typeof window.MCJPlaceOrder.isSubmitting === "function" && window.MCJPlaceOrder.isSubmitting()) {
+            return;
+          }
+          var catC = (cat && cat.companion) || {};
+          var services = (cat && cat.services) || [];
+          var selected = services[0] || null;
+          var unitPrice = Number(
+            (selected && selected.price) || catC.price || c.priceValue || c.price || 0
+          );
+          if (!(unitPrice > 0)) return;
+          var serviceName =
+            (selected && selected.name) || catC.game || c.game || c.mainGame || "";
+          window.MCJPlaceOrder.openFromCompanion(c, {
+            companionId: c.id || c.uid,
+            companionName: catC.name || c.name || c.nickname,
+            unitPrice: unitPrice,
+            service: serviceName,
+            services: services,
+            serviceIds: c.serviceIds || c.service_ids || [],
+            gamePrices: catC.gamePrices || c.gamePrices || c.game_prices || {},
+            avatar: catC.avatar || c.avatar,
+            publicId: catC.publicId || c.publicId || "",
+            pricingUnit: (selected && selected.pricingUnit) || catC.pricingUnit || c.pricingUnit || "小时",
+            availabilityStatus: c.availabilityStatus || catC.availabilityStatus || "",
+            availabilityText: c.availabilityText || c.status || c.onlineStatus || "",
+            online: c.online != null ? c.online : c.canOrderNow,
+            certTags: c.certTags || c.certificationTags || [],
+            publishReady: c.publishReady,
+            canAcceptOrders: c.canAcceptOrders,
+            canOrderNow: c.canOrderNow,
+            level: c.level || c.levelName || "",
+          });
+        })
+        .catch(function () {});
+    }
+    tryOpen(0);
   }
 
   function openGiftSheet() {
