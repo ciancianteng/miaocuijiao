@@ -100,7 +100,8 @@ async function installRecorderMock(context) {
       class FakeMR {
         constructor(stream, opts) {
           this.stream = stream;
-          this.mimeType = (opts && opts.mimeType) || "audio/webm";
+          // Mimic real Chrome MediaRecorder (codecs param breaks naive data: regex).
+          this.mimeType = (opts && opts.mimeType) || "audio/webm;codecs=opus";
           this.state = "inactive";
           this.ondataavailable = null;
           this.onstop = null;
@@ -117,15 +118,18 @@ async function installRecorderMock(context) {
         stop() {
           this.state = "inactive";
           clearInterval(this._t);
-          if (this.ondataavailable) this.ondataavailable({ data: wavBlob });
+          // Final chunk uses codecs mime — FileReader → data:audio/webm;codecs=opus;base64,...
+          const finalBlob = new Blob([bytes], { type: this.mimeType });
+          if (this.ondataavailable) this.ondataavailable({ data: finalBlob });
           const stopHandler = this.onstop;
           setTimeout(() => {
             if (stopHandler) stopHandler();
           }, 40);
         }
       }
+      FakeMR.isTypeSupported = (t) => /webm|mp4|aac|ogg|wav/i.test(String(t || ""));
       window.MediaRecorder = FakeMR;
-      MediaRecorder.isTypeSupported = () => true;
+      MediaRecorder.isTypeSupported = FakeMR.isTypeSupported;
       navigator.mediaDevices.getUserMedia = async () => {
         const ctx = new (window.AudioContext || window.webkitAudioContext)();
         const dest = ctx.createMediaStreamDestination();

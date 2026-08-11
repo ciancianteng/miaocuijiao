@@ -61,7 +61,13 @@ check("自定义订单 sends paymentMethod", /paymentMethod:payState\.payment/.t
 
 const rechargeHtml = read("recharge.html");
 check("充值中心 no hardcoded closed fallback", !/code:'tng',name:'TNG',statusText:'暂未开放'/.test(rechargeHtml), "no hardcode fallback");
-check("充值中心 filters open methods", /m\.open===true|open===true/.test(rechargeHtml), "filter open");
+const rechargeJs = read("src/recharge-center.js");
+check(
+  "充值中心 filters open methods",
+  /open\s*===\s*true/.test(rechargeJs) && /forRecharge/.test(rechargeJs),
+  "filter open+forRecharge"
+);
+check("充值中心 loads /api/recharge", /\/api\/recharge/.test(rechargeJs), "live methods");
 
 check("立即下单 no methods reconstruct fallback", !/!list\.length && Array\.isArray\(body\.methods\)/.test(modal), "no fallback");
 check("place-order page no methods reconstruct", !/!list\.length && Array\.isArray\(body\.methods\)/.test(page), "no fallback");

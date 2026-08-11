@@ -130,14 +130,25 @@ function unavailablePayInfo(channelId, methodHint = "") {
 }
 
 function channelIsEnabled(channelRow, pub = {}) {
-  // SoT: payment_channels row wins when present. Public mirror is fallback only.
+  // Strict master switch: enabled must be explicitly true.
+  // payment_channels row is SoT when present; public mirror cannot override a disabled row.
+  // When row is missing, public mirror must also be explicitly enabled (never default-on).
+  const pubEnabled =
+    pub &&
+    (pub.enabled === true || pub.enabled === "true" || pub.enabled === 1) &&
+    pub.visible !== false &&
+    pub.visible !== "false" &&
+    pub.visible !== 0;
   if (channelRow) {
-    const enabled = channelRow.enabled === true || channelRow.enabled === "true" || channelRow.enabled === 1;
-    const visible = channelRow.visible !== false && channelRow.visible !== "false" && channelRow.visible !== 0;
-    return enabled && visible;
+    const enabled =
+      channelRow.enabled === true || channelRow.enabled === "true" || channelRow.enabled === 1;
+    const visible =
+      channelRow.visible !== false &&
+      channelRow.visible !== "false" &&
+      channelRow.visible !== 0;
+    return !!(enabled && visible);
   }
-  if (pub && pub.enabled != null) return !!pub.enabled;
-  return false;
+  return !!pubEnabled;
 }
 
 /** Scope flags: default both true when unset (backward compatible). */
@@ -152,6 +163,7 @@ export function channelScopeFlags(data = {}, pub = {}) {
   return {
     forOrder: read("forOrder"),
     forRecharge: read("forRecharge"),
+    forDeposit: read("forDeposit"),
   };
 }
 
@@ -200,6 +212,7 @@ function channelMeta(channelId, channelRow, publicMap = {}) {
     enabled,
     forOrder: scopes.forOrder,
     forRecharge: scopes.forRecharge,
+    forDeposit: scopes.forDeposit,
     category,
     publicLabel,
     qrUrl,
@@ -301,15 +314,37 @@ export async function loadPaymentChannelsContext() {
   let tableReady = true;
   try {
     channelRows = await companionDb("payment_channels", "?select=*&order=sort.asc");
-  } catch {
-    tableReady = false;
-    channelRows = [];
+    if (!Array.isArray(channelRows)) channelRows = [];
+  } catch (error) {
+    // Retry without order — some rows with null sort can break PostgREST order clauses.
+    try {
+      channelRows = await companionDb("payment_channels", "?select=*&limit=200");
+      if (!Array.isArray(channelRows)) channelRows = [];
+    } catch (error2) {
+      tableReady = !/PGRST205|Could not find the table|schema cache|does not exist/i.test(
+        String(error2?.message || error?.message || "")
+      );
+      channelRows = [];
+      if (tableReady) {
+        console.warn(
+          "[payment_channels] load failed; refusing public-mirror-only open list:",
+          error2?.message || error?.message || error2 || error
+        );
+      }
+    }
   }
-  const byId = (channelRows || []).reduce((m, r) => {
-    const id = normalizePaymentChannelId(r.channel_id || r.id) || r.channel_id || r.id;
-    if (id) m[id] = r;
-    return m;
-  }, {});
+  const byId = {};
+  for (const r of channelRows || []) {
+    const keys = [
+      normalizePaymentChannelId(r.channel_id),
+      normalizePaymentChannelId(r.id),
+      String(r.channel_id || "").trim().toLowerCase(),
+      String(r.id || "").trim().toLowerCase(),
+    ].filter(Boolean);
+    for (const key of keys) {
+      if (!byId[key]) byId[key] = r;
+    }
+  }
   return { publicMap, byId, channelRows: channelRows || [], tableReady, platformData };
 }
 
@@ -481,6 +516,7 @@ export async function listBossPaymentMethods(methodRows = []) {
       open,
       forOrder: meta.forOrder !== false,
       forRecharge: meta.forRecharge !== false,
+      forDeposit: meta.forDeposit !== false,
       mode: channelRow?.mode || methodRow?.mode || "test",
       statusText: open ? "可用" : "暂未开放",
       payInfo: payInfo && payInfo.enabled ? payInfo : null,
@@ -506,9 +542,17 @@ export async function listBossPaymentMethods(methodRows = []) {
     pushChannel(code, row.name, row.category, row, methodsByCode[code]);
   }
   // Also surface channels that only exist in the public mirror (table missing / partial).
+  // NEVER invent an open channel from public mirror when payment_channels table is ready
+  // but the row is simply disabled/missing — disabled rows already handled via byId.
   for (const rawId of Object.keys(ctx.publicMap || {})) {
     const code = normalizePaymentChannelId(rawId);
     if (!code || seen.has(code) || code === "catfood") continue;
+    // If table is ready and this channel has no row, only show when public explicitly enabled.
+    // If table is ready and row exists, it was already pushed above.
+    if (ctx.tableReady && ctx.channelRows.length && !ctx.byId[code]) {
+      const pub = ctx.publicMap[code] || ctx.publicMap[rawId] || {};
+      if (!(pub.enabled === true || pub.enabled === "true" || pub.enabled === 1)) continue;
+    }
     pushChannel(code, CHANNEL_LABELS[code] || code, "manual", ctx.byId[code], methodsByCode[code]);
   }
 
@@ -567,6 +611,48 @@ export async function listBossOrderPaymentMethods(methodRows = []) {
 /** Boss recharge methods: open + forRecharge (no catfood — recharge tops up wallet). */
 export function filterBossRechargeMethods(methods = []) {
   return (methods || []).filter((m) => m && m.open && m.forRecharge !== false && m.code !== "catfood");
+}
+
+/**
+ * Companion RM100 deposit pay channels: enabled + forDeposit + usable manual payInfo.
+ * Never includes catfood / API-gateway-only methods without payee details.
+ */
+export async function listDepositPaymentMethods(methodRows = []) {
+  const listed = await listBossPaymentMethods(methodRows);
+  const methods = (listed.methods || [])
+    .filter(
+      (m) =>
+        m &&
+        m.open &&
+        m.forDeposit !== false &&
+        m.code !== "catfood" &&
+        m.payInfo &&
+        (m.payInfo.qrUrl || m.payInfo.bankAccount || m.payInfo.duitnowId || m.payInfo.phone)
+    )
+    .map((m) => ({
+      id: m.code,
+      code: m.code,
+      label: m.name,
+      name: m.name,
+      open: true,
+      enabled: true,
+      forDeposit: true,
+      category: m.category || "manual",
+      statusText: "可用",
+      payInfo: {
+        channelId: m.payInfo.channelId || m.code,
+        title: m.payInfo.title || m.name,
+        qrUrl: m.payInfo.qrUrl || "",
+        duitnowId: m.payInfo.duitnowId || "",
+        receiverName: m.payInfo.receiverName || "",
+        bankName: m.payInfo.bankName || "",
+        bankAccount: m.payInfo.bankAccount || "",
+        phone: m.payInfo.phone || "",
+        instructions: m.payInfo.instructions || "",
+        amountRm: 100,
+      },
+    }));
+  return { tableReady: listed.tableReady, methods, amountRm: 100 };
 }
 
 /** Keys that must never appear on public platform settings responses. */

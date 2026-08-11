@@ -90,6 +90,19 @@ body {
   gap: 18px;
 }
 
+/* Orders: keep main width; allow table region to scroll horizontally */
+body[data-admin-section="orders"] .admin-main {
+  overflow-x: hidden !important;
+}
+body[data-admin-section="orders"] .admin-content,
+body[data-admin-section="orders"] #section-orders,
+body[data-admin-section="orders"] #section-orders .panel,
+body[data-admin-section="orders"] #orderManagement {
+  width: 100% !important;
+  max-width: none !important;
+  min-width: 0 !important;
+}
+
 /* ----- Brand ----- */
 .admin-sidebar .side-brand,
 .admin-sidebar .brand-copy {

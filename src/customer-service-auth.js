@@ -36,7 +36,7 @@
     if (!input || typeof input !== "object") return null;
     var token = String(input.token || input.accessToken || input.access_token || "").trim();
     var refreshToken = String(
-      input.refreshToken || input.refresh_token || readItem("mcjAuthRefreshToken") || ""
+      input.refreshToken || input.refresh_token || ""
     ).trim();
     if (!token && !refreshToken) return null;
     var expiresAt = input.expiresAt != null ? input.expiresAt : input.expires_at;
@@ -60,34 +60,15 @@
   }
 
   function clearForeignRoleSessions() {
-    // Must wipe boss soft session before writing shared JWT — otherwise boss
-    // pages keep customerUser while APIs use the CS token (identity bleed).
+    // Portal isolation: CS login must NOT wipe boss/companion sessions.
     if (window.MCJRoleGate && typeof window.MCJRoleGate.clearOtherRoleSessions === "function") {
       window.MCJRoleGate.clearOtherRoleSessions("customer_service");
       return;
     }
-    [
-      "customerAuthToken",
-      "customerUser",
-      "companionAuthToken",
-      "companionUser",
-      "mcjCompanionSession",
-      "adminAuthToken",
-      "adminUser",
-      "mcjAuthAccessToken",
-      "mcjAuthRefreshToken",
-      "mcjAuthExpiresAt",
-      "mcjRole",
-    ].forEach(function (key) {
-      try {
-        localStorage.removeItem(key);
-        sessionStorage.removeItem(key);
-      } catch (e) {}
-    });
   }
 
   function persistAuthMirrors(session) {
-    // Keep soft portal keys + shared auth mirrors in sync for role-gates / API.
+    // Soft portal keys only — never overwrite boss mcjAuth*.
     var soft = "customer_service_session_v4_" + Date.now();
     try {
       localStorage.setItem("customerServiceAuthToken", soft);
@@ -99,18 +80,15 @@
           })
         )
       );
-      localStorage.setItem("mcjRole", "customer_service");
-      if (session.token) localStorage.setItem("mcjAuthAccessToken", session.token);
-      if (session.refreshToken) localStorage.setItem("mcjAuthRefreshToken", session.refreshToken);
-      if (session.expiresAt != null && session.expiresAt !== "") {
-        localStorage.setItem("mcjAuthExpiresAt", String(session.expiresAt));
-      }
-      sessionStorage.removeItem("customerServiceAuthToken");
-      sessionStorage.removeItem("customerServiceUser");
-      sessionStorage.removeItem("mcjRole");
-      sessionStorage.removeItem("mcjAuthAccessToken");
-      sessionStorage.removeItem("mcjAuthRefreshToken");
-      sessionStorage.removeItem("mcjAuthExpiresAt");
+      sessionStorage.setItem("customerServiceAuthToken", soft);
+      sessionStorage.setItem(
+        "customerServiceUser",
+        JSON.stringify(
+          Object.assign({}, session.user || {}, {
+            role: (session.user && session.user.role) || "customer_service",
+          })
+        )
+      );
     } catch (e) {}
   }
 
@@ -137,34 +115,23 @@
       SESSION_KEY,
       "customerServiceAuthToken",
       "customerServiceUser",
-      "mcjAuthAccessToken",
-      "mcjAuthRefreshToken",
-      "mcjAuthExpiresAt",
     ].forEach(function (key) {
       try {
         localStorage.removeItem(key);
         sessionStorage.removeItem(key);
       } catch (e) {}
     });
-    try {
-      if (localStorage.getItem("mcjRole") === "customer_service") {
-        localStorage.removeItem("mcjRole");
-      }
-      if (sessionStorage.getItem("mcjRole") === "customer_service") {
-        sessionStorage.removeItem("mcjRole");
-      }
-    } catch (e) {}
     emit("SIGNED_OUT", { reason: reason || "logout" });
   }
 
   function getAccessToken() {
     var s = readRaw();
-    return String((s && (s.token || s.accessToken)) || readItem("mcjAuthAccessToken") || "").trim();
+    return String((s && (s.token || s.accessToken)) || "").trim();
   }
 
   function getRefreshToken() {
     var s = readRaw();
-    return String((s && (s.refreshToken || s.refresh_token)) || readItem("mcjAuthRefreshToken") || "").trim();
+    return String((s && (s.refreshToken || s.refresh_token)) || "").trim();
   }
 
   function getExpiresAtMs() {
@@ -209,27 +176,8 @@
     var blobAccess = String((blob && (blob.token || blob.accessToken || blob.access_token)) || "").trim();
     var blobRefresh = String((blob && (blob.refreshToken || blob.refresh_token)) || "").trim();
     if (blob && (looksLikeJwt(blobAccess) || blobRefresh)) return blob;
-    var soft = readItem("customerServiceAuthToken");
-    if (String(soft).indexOf("customer_service_session_") !== 0) return blob;
-    if (!hasCsRoleHint()) return blob;
-    var access = String(readItem("mcjAuthAccessToken") || blobAccess || "").trim();
-    var refresh = String(readItem("mcjAuthRefreshToken") || blobRefresh || "").trim();
-    if (!looksLikeJwt(access) && !refresh) return blob;
-    var user = {};
-    try {
-      user = JSON.parse(localStorage.getItem("customerServiceUser") || sessionStorage.getItem("customerServiceUser") || "{}") || {};
-    } catch (e) {
-      user = {};
-    }
-    return saveSession(
-      {
-        token: access,
-        refreshToken: refresh,
-        expiresAt: readItem("mcjAuthExpiresAt") || (blob && blob.expiresAt) || "",
-        user: user,
-      },
-      true
-    );
+    // Never heal CS session from boss mcjAuth* — that caused cross-portal inheritance.
+    return blob;
   }
 
   /** CS session only — require portal blob (after heal). Soft mirrors alone never unlock. */

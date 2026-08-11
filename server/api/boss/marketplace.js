@@ -6,6 +6,8 @@ import { resolveCompanionAvatar, resolveCompanionCover } from "../_companion-pub
 import { debitWallet, getWallet, money as walletMoney, writeAdminLog } from "../_wallet.js";
 import { scheduleRecomputeSoft } from "../_popularity.js";
 import { servicesFromGamePrices, readGamePrices } from "../_game-prices.js";
+import { hasBossRole } from "../_account-roles.js";
+import { allocateOrderNo } from "../_account-codes.js";
 
 const REQUIRED = ["SUPABASE_URL", "SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY"];
 
@@ -89,7 +91,9 @@ async function requireBoss(req) {
     headers: serviceHeaders(),
   });
   const profile = rows?.[0];
-  if (!profile || profile.role !== "boss") throw Object.assign(new Error("请使用老板账号操作"), { status: 403 });
+  if (!profile || !hasBossRole(profile, { authUser: user })) {
+    throw Object.assign(new Error("请使用老板账号操作"), { status: 403 });
+  }
   if (profile.status !== "active") throw Object.assign(new Error("账号已停用"), { status: 403 });
   return profile;
 }
@@ -353,8 +357,9 @@ export default async function handler(req, res) {
         });
       }
 
+      const formalOrderNo = await allocateOrderNo(companionDb).catch(() => `MCJO${String(Date.now()).slice(-6)}`);
       const orderPayload = {
-        order_no: no("ORD"),
+        order_no: formalOrderNo || `MCJO${String(Date.now()).slice(-6)}`,
         boss_id: boss.id,
         companion_id: companionId,
         customer_service_id: null,

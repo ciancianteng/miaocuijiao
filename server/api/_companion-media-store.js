@@ -93,9 +93,26 @@ export function isMissingRelation(error) {
 }
 
 export function decodeDataUrl(dataUrl) {
-  const match = String(dataUrl || "").match(/^data:([^;]+);base64,(.+)$/i);
+  // Support MediaRecorder types like data:audio/webm;codecs=opus;base64,...
+  // (old regex only matched data:<type>;base64, and rejected codecs parameters).
+  const raw = String(dataUrl || "").trim();
+  const match = raw.match(/^data:([^,]*),(.*)$/i);
   if (!match) return null;
-  return { contentType: match[1], buffer: Buffer.from(match[2], "base64") };
+  const meta = String(match[1] || "");
+  const payload = String(match[2] || "");
+  if (!payload) return null;
+  const parts = meta.split(";").map((p) => p.trim()).filter(Boolean);
+  const isBase64 = parts.some((p) => /^base64$/i.test(p));
+  const contentType = parts.find((p) => p.includes("/")) || "application/octet-stream";
+  try {
+    const buffer = isBase64
+      ? Buffer.from(payload.replace(/\s+/g, ""), "base64")
+      : Buffer.from(decodeURIComponent(payload), "utf8");
+    if (!buffer.length) return null;
+    return { contentType, buffer };
+  } catch {
+    return null;
+  }
 }
 
 async function listBuckets() {
@@ -263,7 +280,9 @@ export function assertAudioUpload(decoded) {
   if (!decoded || !decoded.buffer) {
     throw Object.assign(new Error("文件格式无效，请选择语音文件（webm / mp3 / wav）"), { status: 400 });
   }
-  const mime = String(decoded.contentType || "").toLowerCase() || "audio/webm";
+  // Strip codec / parameter suffixes for Storage allowlists (audio/webm;codecs=opus → audio/webm).
+  const rawMime = String(decoded.contentType || "").toLowerCase() || "audio/webm";
+  const mime = rawMime.split(";")[0].trim() || "audio/webm";
   const ok =
     ALLOWED_AUDIO_MIME.has(mime) ||
     /^audio\//.test(mime) ||
@@ -272,9 +291,15 @@ export function assertAudioUpload(decoded) {
     throw Object.assign(new Error("仅支持 webm / mp3 / wav / ogg / aac 语音格式"), { status: 400 });
   }
   if (decoded.buffer.length > MAX_AUDIO_BYTES) {
-    throw Object.assign(new Error("语音文件不能超过 8MB"), { status: 413 });
+    throw Object.assign(new Error(`语音文件不能超过 8MB（当前约 ${(decoded.buffer.length / (1024 * 1024)).toFixed(2)}MB）`), {
+      status: 413,
+    });
   }
-  return { ...decoded, contentType: mime.startsWith("audio/") ? mime : "audio/webm" };
+  let contentType = mime.startsWith("audio/") ? mime : "audio/webm";
+  if (contentType === "audio/mp3") contentType = "audio/mpeg";
+  if (contentType === "audio/x-wav") contentType = "audio/wav";
+  if (contentType === "audio/aac") contentType = "audio/mp4";
+  return { ...decoded, contentType };
 }
 
 export async function deleteStorageObject(bucket, objectPath) {

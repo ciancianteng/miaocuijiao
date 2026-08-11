@@ -27,6 +27,11 @@ const env = Object.fromEntries(
 const SUPABASE_URL = (env.SUPABASE_URL || env.VITE_SUPABASE_URL || "").replace(/\/$/, "");
 const ANON = env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY;
 const SERVICE = env.SUPABASE_SERVICE_ROLE_KEY;
+if (process.env.ALLOW_CREATE_TEST_ACCOUNTS !== "1") {
+  console.error("Refusing to run accept-final-lifecycle: creates *.final.@meow.test accounts. Set ALLOW_CREATE_TEST_ACCOUNTS=1 to override.");
+  process.exit(2);
+}
+
 const PASS = "McjTest@12345678";
 const ADMIN_EMAIL = process.env.MCJ_ADMIN_EMAIL || "admin@meow.test";
 const BASE = (process.argv.find((a) => a.startsWith("--base="))?.slice(7) || "").replace(/\/$/, "");

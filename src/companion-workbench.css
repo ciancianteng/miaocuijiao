@@ -105,6 +105,24 @@ button:disabled{cursor:not-allowed;opacity:.52}
 .pw-doc-preview-wrap{display:grid;gap:10px}
 .pw-doc-preview{display:block;width:100%;max-width:100%;aspect-ratio:16/10;object-fit:cover;border-radius:14px;border:1px solid var(--pw-line);background:rgba(255,255,255,.05)}
 .pw-account-verify,.pw-account-deposit{padding-bottom:18px}
+.pw-deposit-channels{display:grid;gap:12px;margin:0 0 14px}
+.pw-deposit-channel{display:block;border:1px solid var(--pw-line);border-radius:14px;padding:12px;background:rgba(255,255,255,.03);cursor:pointer}
+.pw-deposit-channel.is-active{border-color:rgba(255,145,195,.55);background:rgba(255,143,197,.08)}
+.pw-deposit-channel>input{position:absolute;opacity:0;pointer-events:none}
+.pw-deposit-channel-body{display:grid;gap:10px}
+.pw-deposit-qr-block{display:grid;gap:8px;justify-items:center;text-align:center;margin-top:4px}
+.pw-deposit-qr-block .pay-qr-frame{display:inline-block;max-width:100%;margin:0 auto;padding:0;border-radius:0;background:transparent;border:0;box-shadow:none;outline:none;overflow:visible;line-height:0;cursor:zoom-in}
+.pw-deposit-qr-block .pay-qr-frame img,.pw-deposit-qr-block img[data-mcj-pay-qr]{width:280px;max-width:min(92vw,280px);height:auto;object-fit:contain;display:block;margin:0 auto;padding:10px;background:#fff;border-radius:12px;cursor:zoom-in}
+.pay-qr-lightbox{position:fixed;inset:0;z-index:9999;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.88);padding:20px;box-sizing:border-box}
+.pay-qr-lightbox.is-open{display:flex}
+.pay-qr-lightbox-panel{position:relative;max-width:min(92vw,560px);max-height:92vh;display:grid;gap:12px;justify-items:center}
+.pay-qr-lightbox-panel img{width:min(86vw,520px);height:auto;max-height:78vh;object-fit:contain;background:#fff;border-radius:12px;padding:12px}
+.pay-qr-lightbox-close{position:absolute;top:-8px;right:-8px;width:40px;height:40px;border:0;border-radius:999px;background:#fff;color:#1b0712;font-size:22px;font-weight:800;line-height:1;cursor:pointer;box-shadow:0 8px 24px rgba(0,0,0,.35)}
+.pay-qr-lightbox-hint{margin:0;color:#c4b5c0;font-size:13px;text-align:center}
+.pw-deposit-badge h3{margin:0 0 10px}
+.pw-deposit-record-modal{position:fixed;inset:0;z-index:9998;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.72);padding:18px;box-sizing:border-box}
+.pw-deposit-record-panel{width:min(92vw,420px);max-height:86vh;overflow:auto;background:#2a1522;border:1px solid rgba(255,255,255,.12);border-radius:16px;padding:16px}
+.pw-deposit-record-panel h3{margin:10px 0 0}
 .pw-note{margin:0 0 12px;color:var(--pw-muted);font-size:13px;line-height:1.5}
 .pw-note strong{color:#fff}
 .pw-gallery-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
@@ -126,8 +144,8 @@ button:disabled{cursor:not-allowed;opacity:.52}
 .pw-nav button:hover{background:rgba(255,255,255,.045);color:#fff}
 .pw-nav button.active{background:var(--pw-pink-soft);color:#fff}
 .pw-nav button.active:before{content:"";position:absolute;left:0;top:10px;bottom:10px;width:3px;border-radius:8px;background:var(--pw-pink)}
-.pw-main{height:100vh;display:grid;grid-template-rows:72px 1fr;overflow:hidden}
-.pw-top{display:flex;align-items:center;justify-content:space-between;padding:0 28px;border-bottom:1px solid var(--pw-line);background:rgba(12,11,16,.88)}
+.pw-main{height:100vh;display:flex;flex-direction:column;overflow:hidden;min-height:0}
+.pw-top{display:flex;align-items:center;justify-content:space-between;padding:0 28px;border-bottom:1px solid var(--pw-line);background:rgba(12,11,16,.88);flex-shrink:0;min-height:72px;box-sizing:border-box}
 .pw-top h1{margin:0;font-size:22px;font-weight:750}
 .pw-top p{margin:4px 0 0;color:var(--pw-muted);font-size:13px}
 .pw-account{position:relative}
@@ -137,7 +155,7 @@ button:disabled{cursor:not-allowed;opacity:.52}
 .pw-menu button{height:36px;border:0;border-radius:10px;background:transparent;color:var(--pw-muted);text-align:left;padding:0 10px}
 .pw-menu button:hover{background:rgba(255,255,255,.06);color:#fff}
 .pw-menu .danger{color:var(--pw-bad)}
-.pw-page{overflow-y:auto;overflow-x:hidden;padding:24px 28px 48px;max-width:1280px;margin:0 auto;width:100%;box-sizing:border-box}
+.pw-page{flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;padding:24px 28px 48px;max-width:1280px;margin:0 auto;width:100%;box-sizing:border-box;-webkit-overflow-scrolling:touch}
 .pw-page-head{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;margin-bottom:18px}
 .pw-page-head h2{margin:0;font-size:24px;font-weight:780}
 .pw-page-head p{margin:6px 0 0;color:var(--pw-muted);font-size:14px}
@@ -364,7 +382,7 @@ a.pw-btn{display:inline-flex;align-items:center;justify-content:center;text-deco
   .pw-main{height:auto;min-height:100vh;min-height:100dvh;display:block}
   .pw-top{height:auto;min-height:64px;padding:14px 16px;position:sticky;top:0;z-index:10;align-items:flex-start}
   .pw-top h1{font-size:18px}
-  .pw-page{padding:16px 14px calc(28px + env(safe-area-inset-bottom));overflow:visible}
+  .pw-page{flex:none;min-height:0;padding:16px 14px calc(28px + env(safe-area-inset-bottom));overflow:visible}
   .pw-page-head{display:grid}
   .pw-actions{width:100%}
   .pw-actions .pw-btn{flex:1 1 calc(50% - 8px)}
@@ -551,6 +569,7 @@ a.pw-btn{display:inline-flex;align-items:center;justify-content:center;text-deco
 .pw-announcement-host{
   margin:0 16px 12px;
   min-width:0;
+  flex-shrink:0;
 }
 .pw-announcement-host[hidden]{display:none!important}
 .pw-announcement-host .home-announcement-bar{

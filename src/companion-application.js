@@ -480,13 +480,27 @@
       var exp = jwtExpSec(token);
       if (exp) expiresAt = exp;
     }
+    var user = Object.assign({}, session.user || {}, { role: "companion" });
+    if (window.MCJRoleGate && typeof window.MCJRoleGate.writeCompanionPortalSession === "function") {
+      window.MCJRoleGate.writeCompanionPortalSession(
+        {
+          accessToken: token,
+          refreshToken: refreshToken,
+          expiresAt: expiresAt,
+          user: user,
+        },
+        session.remember !== false
+      );
+      return;
+    }
     var normalized = {
       token: token,
       accessToken: token,
       refreshToken: refreshToken,
       expiresAt: expiresAt,
-      user: session.user || null,
+      user: user,
       remember: session.remember !== false,
+      portal: "companion",
     };
     var raw = JSON.stringify(normalized);
     try {
@@ -495,14 +509,14 @@
     try {
       sessionStorage.setItem("mcjCompanionSession", raw);
     } catch (e2) {}
-    // Mirror shared auth keys so refresh + long apply sessions stay coherent (do not wipe boss).
     try {
-      if (normalized.token) storageSetBoth("mcjAuthAccessToken", normalized.token);
-      if (normalized.refreshToken) storageSetBoth("mcjAuthRefreshToken", normalized.refreshToken);
-      if (normalized.expiresAt !== "" && normalized.expiresAt != null) {
-        storageSetBoth("mcjAuthExpiresAt", String(normalized.expiresAt));
-      }
+      var soft = "companion_session_v4_" + Date.now();
+      localStorage.setItem("companionAuthToken", soft);
+      sessionStorage.setItem("companionAuthToken", soft);
+      localStorage.setItem("companionUser", JSON.stringify(user));
+      sessionStorage.setItem("companionUser", JSON.stringify(user));
     } catch (e3) {}
+    // Do NOT mirror into boss mcjAuth* — portal isolation.
   }
 
   function companionToken() {
@@ -581,7 +595,7 @@
   }
 
   function postCompanion(action, payload, retried) {
-    function humanize(msg) {
+    function humanize(msg, status) {
       var text = String(msg || "").trim();
       if (/invalid JWT|token is expired|unable to parse or verify|jwt|登录态无效|请先登录|登录已过期|refreshToken 已失效/i.test(text)) {
         return "登录状态已过期，请重新登录后继续。";
@@ -589,15 +603,20 @@
       if (/invalid input syntax for type uuid|22P02/i.test(text)) {
         return "媒体数据异常，请刷新后重试。";
       }
-      if (/HTTP\s*403|HTTP\s*401/i.test(text)) {
+      if (/HTTP\s*403|HTTP\s*401/i.test(text) || status === 401 || status === 403) {
         return "登录状态已过期，请重新登录后继续。";
+      }
+      // Never surface raw JS runtime dumps on the apply page.
+      if (/Assignment to constant variable|TypeError|ReferenceError|SyntaxError|is not defined|Cannot read propert/i.test(text)) {
+        return "操作失败，请稍后重试。";
       }
       return text || "提交失败";
     }
     function sendOnce() {
       var token = companionToken();
       if (!token) return Promise.reject(new Error("请先登录或注册陪玩账号后再提交，以便资料同步到后台。"));
-      return fetch("/api/companion", {
+      var uploadUrl = "/api/companion";
+      return fetch(uploadUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -607,15 +626,26 @@
         },
         body: JSON.stringify(Object.assign({ action: action }, payload || {})),
       }).then(function (res) {
-        return res.json().then(function (body) {
-          if (!res.ok || body.ok === false) {
-            var errMsg = humanize(body.message || "提交失败");
-            var err = new Error(errMsg);
-            err.status = res.status;
-            throw err;
-          }
-          return body;
-        });
+        return res
+          .json()
+          .catch(function () {
+            return {};
+          })
+          .then(function (body) {
+            if (!res.ok || body.ok === false) {
+              var serverMsg = String((body && (body.message || body.error)) || "").trim();
+              var errMsg = humanize(serverMsg || "提交失败", res.status);
+              if (action === "upload_media" && res.status && !/登录状态已过期|操作失败，请稍后重试/.test(errMsg)) {
+                errMsg = "HTTP " + res.status + (serverMsg ? " · " + serverMsg : " · 上传失败");
+              }
+              var err = new Error(errMsg);
+              err.status = res.status;
+              err.uploadUrl = uploadUrl;
+              err.serverMessage = serverMsg;
+              throw err;
+            }
+            return body;
+          });
       });
     }
     return ensureFreshApplySession()
@@ -626,7 +656,7 @@
       })
       .then(function () {
         return sendOnce().catch(function (err) {
-          var errMsg = humanize((err && err.message) || "");
+          var errMsg = humanize((err && err.message) || "", err && err.status);
           if (!retried && /登录状态已过期/.test(errMsg)) {
             return refreshApplySession()
               .then(function () {
@@ -637,7 +667,11 @@
                 throw new Error(humanize((refreshErr && refreshErr.message) || errMsg));
               });
           }
-          throw new Error(errMsg);
+          var out = new Error(errMsg);
+          out.status = err && err.status;
+          out.uploadUrl = err && err.uploadUrl;
+          out.serverMessage = err && err.serverMessage;
+          throw out;
         });
       });
   }
@@ -869,20 +903,24 @@
         });
     return '<div class="form-field full apply-gallery-block"><span class="mcj-upload-label">相册</span><div class="apply-gallery-grid">' + cards + "</div>" + addCard + "</div>";
   }
-  function tagPicker(fieldName, label, selected, groups, limit, opts) {
+  function tagPicker(fieldName, label, selected, groups, limit) {
     selected = Array.isArray(selected) ? selected : [];
-    opts = opts || {};
-    // 仅个人标签允许自定义；可接游戏 / 擅长位置 / 可提供服务必须选自后台配置，禁止申请端自建。
-    var allowCustom = opts.allowCustom === true;
+    // 仅允许选择后台/系统已配置标签，禁止申请端自建任何自定义标签。
+    var allowed = {};
+    Object.keys(groups || {}).forEach(function (group) {
+      (groups[group] || []).forEach(function (tag) {
+        allowed[tag] = true;
+      });
+    });
+    selected = selected.filter(function (tag) {
+      return !!allowed[tag];
+    });
     var body = Object.keys(groups || {}).map(function (group) {
       return '<div class="tag-group"><b>' + esc(group) + '</b><div class="tag-list">' + groups[group].map(function (tag) {
         return '<label class="tag-pill ' + (selected.indexOf(tag) >= 0 ? "checked" : "") + '"><input type="checkbox" data-tag-field="' + esc(fieldName) + '" value="' + esc(tag) + '" ' + (selected.indexOf(tag) >= 0 ? "checked" : "") + '> ' + esc(tag) + '</label>';
       }).join("") + '</div></div>';
     }).join("");
-    var customRow = allowCustom
-      ? '<div class="custom-tag-row"><input data-custom-tag-input="' + esc(fieldName) + '" placeholder="新增自定义标签"><button class="apply-btn small" type="button" data-add-custom-tag="' + esc(fieldName) + '">添加</button></div>'
-      : '';
-    return '<div class="form-field full tag-picker" data-tag-picker="' + esc(fieldName) + '" data-tag-limit="' + (limit || 99) + '"><span>' + esc(label) + '</span>' + body + customRow + '<small>已选择 <em data-tag-count="' + esc(fieldName) + '">' + selected.length + '</em> / ' + (limit || 99) + '</small></div>';
+    return '<div class="form-field full tag-picker" data-tag-picker="' + esc(fieldName) + '" data-tag-limit="' + (limit || 99) + '"><span>' + esc(label) + '</span>' + body + '<small>已选择 <em data-tag-count="' + esc(fieldName) + '">' + selected.length + '</em> / ' + (limit || 99) + '</small></div>';
   }
 
   function rulesHtml(draft) {
@@ -910,7 +948,7 @@
       field("phone", "联系电话", "tel", data.phone) +
       field("email", "邮箱", "email", data.email) +
       selectField("contactPublic", "联系方式是否公开", data.contactPublic, ["不公开，仅平台可见", "审核通过后公开给已下单老板"]) +
-      tagPicker("personalTags", "个人标签（必填，最多 10 个）", data.personalTags, tagGroups.personalTags, 10, { allowCustom: true }) +
+      tagPicker("personalTags", "个人标签（必填，最多 10 个）", data.personalTags, tagGroups.personalTags, 10) +
       '</form></section>';
   }
   function gameHtml(data) {
@@ -1295,18 +1333,23 @@
   var SCROLL_KEY = "mcjCompanionApplyScroll.v1";
 
   function statusLabelOf(code) {
+    var key = String(code || "").toLowerCase().trim();
     var map = {
-      pending: "待审核",
-      review: "待审核",
-      submitted: "待审核",
+      draft: "草稿中",
+      pending: "审核中",
+      review: "审核中",
+      submitted: "审核中",
       resubmit: "需要补资料",
       need_more: "需要补资料",
-      approved: "已通过",
-      verified: "已通过",
-      passed: "已通过",
-      rejected: "已拒绝",
+      approved: "审核通过",
+      verified: "审核通过",
+      passed: "审核通过",
+      rejected: "审核未通过",
     };
-    return map[String(code || "").toLowerCase()] || code || "草稿";
+    if (map[key]) return map[key];
+    // Never leak raw English DB enums (draft/pending/…) to the UI.
+    if (!key || /^[a-z][a-z0-9_]*$/i.test(key)) return "草稿中";
+    return String(code);
   }
   function saveApplyScroll() {
     try {
@@ -1565,7 +1608,7 @@
   function showSuccess() {
     var modal = document.createElement("div");
     modal.className = "apply-submit-modal";
-    modal.innerHTML = '<div><h2>申请已提交，等待后台审核。</h2><p>当前状态：待审核。你可随时回到本页查看审核进度。</p><div class="apply-actions"><a class="apply-btn" href="companion-apply.html">查看审核进度</a><a class="apply-btn primary" href="index.html">返回首页</a></div></div>';
+    modal.innerHTML = '<div><h2>申请已提交，等待后台审核。</h2><p>当前状态：审核中。你可随时回到本页查看审核进度。</p><div class="apply-actions"><a class="apply-btn" href="companion-apply.html">查看审核进度</a><a class="apply-btn primary" href="index.html">返回首页</a></div></div>';
     document.body.appendChild(modal);
   }
   function hasPlayableVoiceDraft() {
@@ -1858,35 +1901,53 @@
       render(3);
 
       var mime = String((d.voice && d.voice.mimeType) || (liveVoiceBlob && liveVoiceBlob.type) || "");
-      var filename = /mp4|aac|m4a/i.test(mime) ? "voice.m4a" : /ogg/i.test(mime) ? "voice.ogg" : "voice.webm";
+      var baseMime = mime.split(";")[0].trim() || "audio/webm";
+      var filename = /mp4|aac|m4a/i.test(baseMime)
+        ? "voice.m4a"
+        : /ogg/i.test(baseMime)
+          ? "voice.ogg"
+          : /wav/i.test(baseMime)
+            ? "voice.wav"
+            : "voice.webm";
+      var uploadUrl = "/api/companion";
+      function normalizeVoiceBlob(blob) {
+        if (!blob) return blob;
+        var t = String(blob.type || "").split(";")[0].trim();
+        if (t && t !== blob.type) return new Blob([blob], { type: t });
+        return blob;
+      }
       var dataUrlPromise = /^data:/i.test(String(d.voice.url || ""))
         ? Promise.resolve(d.voice.url)
         : liveVoiceBlob
-          ? fileToDataURL(liveVoiceBlob)
+          ? fileToDataURL(normalizeVoiceBlob(liveVoiceBlob))
           : fetch(liveVoiceObjectUrl)
               .then(function (r) {
-                if (!r.ok) throw new Error("读取本地录音失败");
+                if (!r.ok) throw new Error("读取本地录音失败 HTTP " + r.status);
                 return r.blob();
               })
               .then(function (blob) {
                 if (!blob || !blob.size) throw new Error("录音文件为空，请重新录制");
                 liveVoiceBlob = blob;
-                return fileToDataURL(blob);
+                return fileToDataURL(normalizeVoiceBlob(blob));
               });
 
       dataUrlPromise
         .then(function (dataUrl) {
-          if (!dataUrl || !/^data:audio\/|^data:application\/octet-stream|;base64,/i.test(String(dataUrl))) {
+          if (!dataUrl || !/^data:/i.test(String(dataUrl)) || String(dataUrl).indexOf(",") < 0) {
             throw new Error("录音数据无效，请重新录制");
           }
           if (String(dataUrl).length < 1000) {
             throw new Error("录音文件过小或为空，请重新录制");
           }
+          var sizeApprox = Math.round((String(dataUrl).length - String(dataUrl).indexOf(",") - 1) * 0.75);
           try {
             console.info("[apply-voice] uploading", {
-              bytesApprox: Math.round(String(dataUrl).length * 0.75),
-              mime: mime,
-              filename: filename,
+              fileName: filename,
+              fileType: baseMime || mime || "(unknown)",
+              fileSize: sizeApprox,
+              uploadURL: uploadUrl,
+              action: "upload_media",
+              media_type: "voice",
               duration: duration,
             });
           } catch (eLog) {}
@@ -1894,9 +1955,26 @@
             media_type: "voice",
             data_url: dataUrl,
             filename: filename,
-            content_type: mime || "",
+            content_type: baseMime || mime || "",
             duration_seconds: duration,
-          });
+          }).then(
+            function (res) {
+              return res;
+            },
+            function (err) {
+              try {
+                console.error("[apply-voice] upload failed", {
+                  fileName: filename,
+                  fileType: baseMime || mime || "(unknown)",
+                  fileSize: sizeApprox,
+                  uploadURL: (err && err.uploadUrl) || uploadUrl,
+                  responseStatus: (err && err.status) || null,
+                  serverErrorMessage: (err && (err.serverMessage || err.message)) || String(err || ""),
+                });
+              } catch (eDbg) {}
+              throw err;
+            }
+          );
         })
         .then(function (res) {
           uploadBusy.voice = false;
@@ -1938,9 +2016,19 @@
         .catch(function (err) {
           uploadBusy.voice = false;
           var msg = (err && err.message) || "上传失败，请重试";
+          if (err && err.status && !/HTTP\s*\d+/.test(msg)) {
+            msg = "HTTP " + err.status + " · " + msg;
+          }
           uploadErrors.voice = msg;
           try {
-            console.error("[apply-voice] upload failed", err);
+            console.error("[apply-voice] upload failed", {
+              fileName: filename,
+              fileType: baseMime || mime || "(unknown)",
+              fileSize: (liveVoiceBlob && liveVoiceBlob.size) || (d.voice && d.voice.size) || null,
+              uploadURL: (err && err.uploadUrl) || uploadUrl,
+              responseStatus: (err && err.status) || null,
+              serverErrorMessage: (err && (err.serverMessage || err.message)) || msg,
+            });
           } catch (e2) {}
           var next = readDraft();
           next.voice = Object.assign({}, next.voice || {}, {
@@ -2774,23 +2862,6 @@
         return;
       }
       if (e.target.closest("[data-apply-save]")) { e.preventDefault(); await collect(root); showApplyTip("草稿已保存", "ok"); return; }
-      var addTag = e.target.closest("[data-add-custom-tag]");
-      if (addTag) {
-        var key = addTag.dataset.addCustomTag;
-        // 仅个人标签允许自定义；禁止通过该入口给游戏/位置等后台选项加自定义项。
-        if (key !== "personalTags") return;
-        var input = document.querySelector('[data-custom-tag-input="' + key + '"]');
-        var value = input ? input.value.trim() : "";
-        if (!value) return;
-        var d = readDraft();
-        d.data = d.data || {};
-        d.data[key] = Array.isArray(d.data[key]) ? d.data[key] : [];
-        var limit = Number((document.querySelector('[data-tag-picker="' + key + '"]') || {}).dataset && document.querySelector('[data-tag-picker="' + key + '"]').dataset.tagLimit || 99);
-        if (d.data[key].length >= limit) { showApplyTip("最多只能选择 " + limit + " 个标签"); return; }
-        if (d.data[key].indexOf(value) < 0) d.data[key].push(value);
-        writeRaw(DRAFT_KEY, d);
-        render(Number(root.dataset.step || 0));
-      }
       if (e.target.closest("[data-copy-nickname]")) {
         var nick = document.querySelector('input[name="gameNickname"]');
         if (nick) navigator.clipboard && navigator.clipboard.writeText(nick.value || "");

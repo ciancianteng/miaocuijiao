@@ -8,6 +8,7 @@
   if (!root) return;
 
   var state = {
+    authLoading: true,
     loading: true,
     submitting: false,
     uploading: false,
@@ -34,14 +35,19 @@
     var parts = t.split(".");
     return parts.length === 3 && parts.every(function (p) { return p.length > 0; });
   }
+  /** Sole token SoT: MCJBossAuth (session → local). Never invent a parallel localStorage-first path. */
   function token() {
     if (window.MCJBossAuth && typeof window.MCJBossAuth.getAccessToken === "function") {
       var t = window.MCJBossAuth.getAccessToken();
-      if (looksLikeJwt(t)) return t;
+      return looksLikeJwt(t) ? t : "";
     }
-    var candidates = [localStorage.getItem("mcjAuthAccessToken"), sessionStorage.getItem("mcjAuthAccessToken")];
-    for (var i = 0; i < candidates.length; i++) if (looksLikeJwt(candidates[i])) return candidates[i];
-    return "";
+    try {
+      var fallback =
+        sessionStorage.getItem("mcjAuthAccessToken") || localStorage.getItem("mcjAuthAccessToken") || "";
+      return looksLikeJwt(fallback) ? fallback : "";
+    } catch (e) {
+      return "";
+    }
   }
   function esc(v) {
     return String(v == null ? "" : v).replace(/[&<>"']/g, function (c) {
@@ -105,7 +111,7 @@
 
     var qr =
       info && info.qrUrl
-        ? '<div class="pay-qr-frame"><img src="' +
+        ? '<div class="pay-qr-frame" data-pay-qr-zoom="1" role="button" tabindex="0" aria-label="点击放大收款二维码"><img src="' +
           esc(info.qrUrl) +
           '" alt="' +
           esc((info.title || methodName(o.paymentMethod)) + " 收款二维码") +
@@ -176,7 +182,22 @@
     );
   }
 
+  function refundRuleBannerHtml() {
+    return (
+      '<section class="refund-rule-banner" role="alert" data-refund-rule-banner>' +
+      '<strong class="rr-title">【重要退款规则】</strong>' +
+      "<p>充值完成后，平台<strong>不提供现金退款</strong>。<br>" +
+      "任何订单取消、售后、退款或争议处理，如审核同意退款，退款金额一律退回老板账户<em>【猫粮余额】</em>，" +
+      "不原路退回银行卡、DuitNow、TNG 或其他现金支付渠道。<br>" +
+      "退款猫粮到账后可继续用于平台消费。</p></section>"
+    );
+  }
+
   function paint() {
+    if (state.authLoading) {
+      root.innerHTML = '<section class="page-head"><div><h1>充值中心</h1><p>正在验证登录状态...</p></div></section>';
+      return;
+    }
     if (!token()) {
       root.innerHTML =
         '<section class="page-head"><div><h1>充值中心</h1><p>请先登录老板账号后再进行充值。</p></div><a class="ghost-btn" href="index.html">返回首页登录</a></section>';
@@ -187,14 +208,21 @@
       return;
     }
     if (state.error) {
+      var unauthorizedBoss =
+        /只有老板账号可以访问|当前账号无此端权限|不是老板/i.test(String(state.error || ""));
       root.innerHTML =
         '<section class="page-head"><div><h1>充值中心</h1><p class="muted">' +
-        esc(state.error) +
+        esc(
+          unauthorizedBoss
+            ? "当前账号已登录，但无老板端充值权限。"
+            : state.error
+        ) +
         '</p></div><button class="ghost-btn" data-refresh type="button">重试</button></section>';
       return;
     }
     if (state.step === "pay" && state.payOrder) {
       root.innerHTML =
+        refundRuleBannerHtml() +
         payStepHtml() +
         '<section class="panel"><h2>钱包流水</h2>' +
         ledgerHtml() +
@@ -207,6 +235,7 @@
     var c = selectedCampaign();
     root.innerHTML =
       '<section class="page-head"><div><h1>充值中心</h1><p>选择充值活动与支付方式，进入付款步骤上传截图后，由后台审核入账。</p></div><button class="ghost-btn" data-refresh type="button">刷新</button></section>' +
+      refundRuleBannerHtml() +
       '<section class="stats"><article class="stat"><span>猫粮余额</span><strong>' +
       esc(state.summary.balance || 0) +
       ' 猫粮</strong></article><article class="stat"><span>充值猫粮</span><strong>' +
@@ -397,14 +426,30 @@
     }
   }
 
+  function waitAuthReady() {
+    if (window.MCJBossAuth && typeof window.MCJBossAuth.ensureSession === "function") {
+      return window.MCJBossAuth.ensureSession().catch(function () {
+        return null;
+      });
+    }
+    return Promise.resolve(null);
+  }
+
   async function load() {
+    state.authLoading = true;
+    state.loading = true;
+    state.error = "";
+    paint();
+    try {
+      await waitAuthReady();
+    } catch (e0) {}
+    state.authLoading = false;
     if (!token()) {
       state.loading = false;
       paint();
       return;
     }
     state.loading = true;
-    state.error = "";
     paint();
     try {
       var body = await api("/api/recharge", null, "GET");
@@ -594,6 +639,48 @@
     }
   }
 
+  function ensurePayQrLightbox() {
+    var box = document.getElementById("payQrLightbox");
+    if (box) return box;
+    box = document.createElement("div");
+    box.id = "payQrLightbox";
+    box.className = "pay-qr-lightbox";
+    box.setAttribute("hidden", "");
+    box.innerHTML =
+      '<div class="pay-qr-lightbox-panel" role="dialog" aria-modal="true" aria-label="收款二维码放大预览">' +
+      '<button type="button" class="pay-qr-lightbox-close" data-pay-qr-close aria-label="关闭">×</button>' +
+      '<img alt="收款二维码大图" data-pay-qr-lightbox-img="1" referrerpolicy="no-referrer">' +
+      '<p class="pay-qr-lightbox-hint">点击遮罩或关闭按钮可关闭</p>' +
+      "</div>";
+    document.body.appendChild(box);
+    box.addEventListener("click", function (e) {
+      if (e.target && e.target.closest && e.target.closest("[data-pay-qr-close]")) {
+        closePayQrLightbox();
+        return;
+      }
+      if (e.target === box) closePayQrLightbox();
+    });
+    return box;
+  }
+  function openPayQrLightbox(src) {
+    var url = String(src || "").trim();
+    if (!url) return;
+    var box = ensurePayQrLightbox();
+    var img = box.querySelector("[data-pay-qr-lightbox-img]");
+    if (img) {
+      img.removeAttribute("src");
+      img.src = url;
+    }
+    box.classList.add("is-open");
+    box.removeAttribute("hidden");
+  }
+  function closePayQrLightbox() {
+    var box = document.getElementById("payQrLightbox");
+    if (!box) return;
+    box.classList.remove("is-open");
+    box.setAttribute("hidden", "");
+  }
+
   document.addEventListener("click", function (e) {
     var camp = e.target.closest("[data-campaign]");
     if (camp) {
@@ -636,6 +723,14 @@
       submitPaid();
       return;
     }
+    var zoom = e.target.closest("[data-pay-qr-zoom], [data-mcj-pay-qr]");
+    if (zoom && root.contains(zoom)) {
+      e.preventDefault();
+      var img = zoom.tagName === "IMG" ? zoom : zoom.querySelector("img[data-mcj-pay-qr], img");
+      var src = (img && img.currentSrc) || (img && img.src) || (state.payInfo && state.payInfo.qrUrl) || "";
+      openPayQrLightbox(src);
+      return;
+    }
     var openPay = e.target.closest("[data-open-pay]");
     if (openPay) {
       openExistingPayment(openPay.getAttribute("data-open-pay") || "");
@@ -654,11 +749,46 @@
     }
   });
 
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") closePayQrLightbox();
+    if (e.key !== "Enter" && e.key !== " ") return;
+    var zoom = e.target.closest && e.target.closest("[data-pay-qr-zoom]");
+    if (!zoom || !root.contains(zoom)) return;
+    e.preventDefault();
+    var img = zoom.querySelector("img[data-mcj-pay-qr], img");
+    openPayQrLightbox((img && img.src) || (state.payInfo && state.payInfo.qrUrl) || "");
+  });
+
   document.addEventListener("change", function (e) {
     var input = e.target.closest("[data-proof-file]");
     if (!input || !input.files || !input.files[0]) return;
     onPickProof(input.files[0]);
     input.value = "";
+  });
+
+  var authReloadTimer = null;
+  window.addEventListener("mcj:auth-updated", function (ev) {
+    var reason = ev && ev.detail && ev.detail.reason;
+    // Ignore ensureSession/saveSession noise after a successful paint — only react to real auth flips.
+    if (reason === "ensureSession") return;
+    if (state.authLoading || state.loading) return;
+    if (authReloadTimer) clearTimeout(authReloadTimer);
+    authReloadTimer = setTimeout(function () {
+      authReloadTimer = null;
+      if (token()) {
+        if (state.error || !state.campaigns.length) load();
+      } else {
+        state.authLoading = false;
+        state.loading = false;
+        paint();
+      }
+    }, 50);
+  });
+  window.addEventListener("mcj:auth-expired", function () {
+    state.authLoading = false;
+    state.loading = false;
+    state.error = "";
+    paint();
   });
 
   load();

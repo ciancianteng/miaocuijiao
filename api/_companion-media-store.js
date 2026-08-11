@@ -72,9 +72,25 @@ export function isMissingRelation(error) {
 }
 
 export function decodeDataUrl(dataUrl) {
-  const match = String(dataUrl || "").match(/^data:([^;]+);base64,(.+)$/i);
+  // Support MediaRecorder types like data:audio/webm;codecs=opus;base64,...
+  const raw = String(dataUrl || "").trim();
+  const match = raw.match(/^data:([^,]*),(.*)$/i);
   if (!match) return null;
-  return { contentType: match[1], buffer: Buffer.from(match[2], "base64") };
+  const meta = String(match[1] || "");
+  const payload = String(match[2] || "");
+  if (!payload) return null;
+  const parts = meta.split(";").map((p) => p.trim()).filter(Boolean);
+  const isBase64 = parts.some((p) => /^base64$/i.test(p));
+  const contentType = parts.find((p) => p.includes("/")) || "application/octet-stream";
+  try {
+    const buffer = isBase64
+      ? Buffer.from(payload.replace(/\s+/g, ""), "base64")
+      : Buffer.from(decodeURIComponent(payload), "utf8");
+    if (!buffer.length) return null;
+    return { contentType, buffer };
+  } catch {
+    return null;
+  }
 }
 
 async function listBuckets() {

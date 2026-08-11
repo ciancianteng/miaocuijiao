@@ -104,6 +104,8 @@ const TABLES = {
 function json(res, status, data) {
   res.statusCode = status;
   res.setHeader("Content-Type", "application/json; charset=utf-8");
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+  res.setHeader("Pragma", "no-cache");
   res.end(JSON.stringify(data));
 }
 
@@ -178,8 +180,17 @@ async function supabaseFetch(table, query = "", init = {}) {
 }
 
 function isMissingTable(error) {
-  const msg = String(error?.message || error?.body?.message || "");
-  return /relation|does not exist|Could not find the table|schema cache/i.test(msg);
+  // Strict: do NOT match bare "relation" (that catches unrelated Postgres constraint errors
+  // and incorrectly falls back to platform_settings while payment_channels still exists).
+  const msg = String(
+    error?.message || error?.body?.message || error?.body?.hint || error?.body?.details || ""
+  );
+  const code = String(error?.body?.code || error?.code || "");
+  return (
+    code === "42P01" ||
+    code === "PGRST205" ||
+    /PGRST205|Could not find the table|schema cache|does not exist/i.test(msg)
+  );
 }
 
 async function readPlatformBanks() {
@@ -258,11 +269,21 @@ function publicConfigFromChannel(channel = {}, data = {}, qrUrl = "") {
   const manual = data.manual && typeof data.manual === "object" ? data.manual : {};
   const forOrder = data.forOrder != null ? data.forOrder !== false : true;
   const forRecharge = data.forRecharge != null ? data.forRecharge !== false : true;
+  const forDeposit = data.forDeposit != null ? data.forDeposit !== false : true;
+  // Strict master switch: only explicitly enabled channels are public.
+  // Never treat missing/undefined enabled as true (re-opens closed channels).
+  const enabled = channel.enabled === true || channel.enabled === "true" || channel.enabled === 1;
+  const visible =
+    enabled &&
+    channel.visible !== false &&
+    channel.visible !== "false" &&
+    channel.visible !== 0;
   return {
-    enabled: channel.enabled !== false,
-    visible: channel.visible !== false,
+    enabled: !!enabled,
+    visible: !!visible,
     forOrder,
     forRecharge,
+    forDeposit,
     publicLabel: data.publicLabel || channel.name || "",
     bankName: manual.bankName || "",
     accountName: manual.receiverName || "",
@@ -275,6 +296,7 @@ function publicConfigFromChannel(channel = {}, data = {}, qrUrl = "") {
     minAmount: data.minAmount,
     maxAmount: data.maxAmount,
     mode: channel.mode || "test",
+    updatedAt: channel.updated_at || channel.updatedAt || new Date().toISOString(),
     manual: {
       receiverName: manual.receiverName || "",
       bankName: manual.bankName || "",
@@ -284,6 +306,40 @@ function publicConfigFromChannel(channel = {}, data = {}, qrUrl = "") {
       qrUrl: String(qrUrl || manual.qrUrl || data.qrUrl || "").trim(),
     },
   };
+}
+
+/**
+ * When payment_channels rows exist, heal platform_settings.paymentChannelsPublic to match.
+ * When the table is missing, public mirror is the SoT — do not call this.
+ */
+async function healPaymentChannelsPublicMirror(channelRows = []) {
+  if (!Array.isArray(channelRows) || !channelRows.length) {
+    return { healed: false, reason: "no_rows" };
+  }
+  try {
+    const publicMap = await readPaymentChannelsPublic();
+    let changed = 0;
+    for (const ch of channelRows) {
+      const id = String(ch?.channel_id || ch?.id || "").trim();
+      if (!id) continue;
+      const data = ch.data && typeof ch.data === "object" ? ch.data : {};
+      const qrUrl = String(data?.manual?.qrUrl || data?.qrUrl || "").trim();
+      const expected = publicConfigFromChannel(ch, data, qrUrl);
+      const cur = publicMap[id] && typeof publicMap[id] === "object" ? publicMap[id] : {};
+      const curEnabled = cur.enabled === true || cur.enabled === "true" || cur.enabled === 1;
+      const qrChanged = String(cur.qrUrl || cur.manual?.qrUrl || "") !== String(expected.qrUrl || "");
+      const scopeChanged =
+        (cur.forOrder !== false) !== (expected.forOrder !== false) ||
+        (cur.forRecharge !== false) !== (expected.forRecharge !== false);
+      if (curEnabled !== expected.enabled || qrChanged || scopeChanged || !publicMap[id]) {
+        await syncChannelPublicConfig(id, expected);
+        changed += 1;
+      }
+    }
+    return { healed: changed > 0, changed, reason: changed ? "synced" : "already_in_sync" };
+  } catch (e) {
+    return { healed: false, reason: String(e?.message || e || "heal_failed") };
+  }
 }
 
 async function uploadPlatformPayQrImage(dataUrl, channelId) {
@@ -420,7 +476,7 @@ async function persistChannelQrUrl(channelId, qrUrl) {
   }
   await syncChannelPublicConfig(tpl.id, {
     ...publicConfigFromChannel(row, nextData, qrUrl),
-    enabled: row.enabled !== false,
+    enabled: row.enabled === true,
     publicLabel: nextData.publicLabel || tpl.name,
   });
   return { channel: row, qrUrl, source: "payment_channels" };
@@ -499,16 +555,25 @@ async function readPaymentChannelsPublic() {
 }
 
 /** Overlay QR / manual fields from platform_settings when payment_channels table is incomplete. */
-function applyPublicPayOverlay(channels = [], publicMap = {}) {
+function applyPublicPayOverlay(channels = [], publicMap = {}, opts = {}) {
+  // When payment_channels table is missing, public mirror is the sole SoT for enabled/visible.
+  // Synthetic default rows have updated_at=null — never let them shadow a live public enabled flag.
+  const publicIsSoT = opts.publicIsSoT === true;
   return (channels || []).map((ch) => {
     const id = ch.channel_id || ch.id;
     const pub = publicMap[id] || publicMap[id === "bank-transfer" ? "bank-my" : ""] || null;
+    const hasRealDbRow = Boolean(ch && (ch.updated_at || ch.updatedAt) && !publicIsSoT);
     if (!pub || typeof pub !== "object") {
       const data0 = ch.data && typeof ch.data === "object" ? ch.data : {};
+      const enabled0 = ch.enabled === true || ch.enabled === "true" || ch.enabled === 1;
       return {
         ...ch,
+        enabled: !!enabled0,
+        visible: ch.visible !== false && ch.visible !== "false" && ch.visible !== 0,
         forOrder: data0.forOrder != null ? data0.forOrder !== false : true,
         forRecharge: data0.forRecharge != null ? data0.forRecharge !== false : true,
+        forDeposit: data0.forDeposit != null ? data0.forDeposit !== false : true,
+        source: hasRealDbRow ? "payment_channels" : publicIsSoT ? "platform_settings" : "default",
       };
     }
     const data = ch.data && typeof ch.data === "object" ? { ...ch.data } : {};
@@ -535,25 +600,50 @@ function applyPublicPayOverlay(channels = [], publicMap = {}) {
     if (pub.maxAmount != null && data.maxAmount == null) data.maxAmount = pub.maxAmount;
     if (pub.forOrder != null && data.forOrder == null) data.forOrder = pub.forOrder !== false;
     if (pub.forRecharge != null && data.forRecharge == null) data.forRecharge = pub.forRecharge !== false;
+    if (pub.forDeposit != null && data.forDeposit == null) data.forDeposit = pub.forDeposit !== false;
     data.manual = manual;
-    // SoT: payment_channels.enabled / visible are separate. Do not invent a collapsed
-    // "enabled" that disagrees with boss listBossPaymentMethods.
-    const enabled = ch.enabled === true || ch.enabled === "true" || ch.enabled === 1;
-    const visible = ch.visible !== false && ch.visible !== "false" && ch.visible !== 0;
+
+    const rowEnabled = ch.enabled === true || ch.enabled === "true" || ch.enabled === 1;
+    const pubEnabled = pub.enabled === true || pub.enabled === "true" || pub.enabled === 1;
+    // Real DB row wins; otherwise public mirror is SoT (table missing / synthetic defaults).
+    const enabled = hasRealDbRow ? rowEnabled : pub.enabled != null ? pubEnabled : rowEnabled;
+    const rowVisible = ch.visible !== false && ch.visible !== "false" && ch.visible !== 0;
+    const pubVisible = pub.visible !== false && pub.visible !== "false" && pub.visible !== 0;
+    const visible = hasRealDbRow ? rowVisible : pub.visible != null ? pubVisible && enabled : rowVisible && enabled;
+
     const configured = bossManualConfigured(id, { ...manual, qrUrl, phone, bankAccount, receiverName, duitnowId }, ch.category);
-    const forOrder = data.forOrder != null ? data.forOrder !== false : true;
-    const forRecharge = data.forRecharge != null ? data.forRecharge !== false : true;
+    const forOrder =
+      data.forOrder != null
+        ? data.forOrder !== false
+        : pub.forOrder != null
+          ? pub.forOrder !== false
+          : true;
+    const forRecharge =
+      data.forRecharge != null
+        ? data.forRecharge !== false
+        : pub.forRecharge != null
+          ? pub.forRecharge !== false
+          : true;
+    const forDeposit =
+      data.forDeposit != null
+        ? data.forDeposit !== false
+        : pub.forDeposit != null
+          ? pub.forDeposit !== false
+          : true;
     return {
       ...ch,
-      enabled,
-      visible,
+      enabled: !!enabled,
+      visible: !!visible,
       forOrder,
       forRecharge,
+      forDeposit,
       configured,
       bossOrderOpen: !!(enabled && visible && configured && forOrder),
       bossRechargeOpen: !!(enabled && visible && configured && forRecharge),
+      bossDepositOpen: !!(enabled && visible && configured && forDeposit),
       mode: ch.mode || pub.mode || "test",
       data,
+      source: hasRealDbRow ? "payment_channels" : "platform_settings",
       config_status: configured ? (enabled && visible ? "已启用" : "已配置") : ch.config_status || "未配置",
     };
   });
@@ -851,31 +941,40 @@ async function loadState() {
       bankRows = await readPlatformBanks();
       bankSource = "platform_settings";
     }
+    const merged = applyPublicPayOverlay(mergeChannels(channels, credentials), publicMap, { publicIsSoT: false });
+    // Keep public mirror aligned with payment_channels (DB is SoT when table exists).
+    try {
+      await healPaymentChannelsPublicMirror(merged.filter((c) => c.updated_at || c.updatedAt));
+    } catch {
+      /* soft-fail heal */
+    }
     return {
-      channels: applyPublicPayOverlay(mergeChannels(channels, credentials), publicMap),
+      channels: merged,
       banks: bankRows || [],
       rates: rates || [],
       webhooks: webhooks || [],
       transactions: transactions || [],
       logs: logs || [],
       tablesReady: true,
+      channelSource: "payment_channels",
       bankSource,
     };
   } catch (error) {
     if (isMissingTable(error)) {
       const [banks, publicMap] = await Promise.all([readPlatformBanks(), readPaymentChannelsPublic()]);
       return {
-        channels: applyPublicPayOverlay(defaults(), publicMap),
+        channels: applyPublicPayOverlay(defaults(), publicMap, { publicIsSoT: true }),
         banks,
         rates: [],
         webhooks: [],
         transactions: [],
         logs: [],
-        tablesReady: true,
+        tablesReady: false,
+        channelSource: "platform_settings",
         bankSource: "platform_settings",
         message: banks.length
-          ? "支付渠道表未建全；收款账户 / 二维码已使用 platform_settings 兜底存储。"
-          : "支付渠道表未建全；收款账户 / 二维码将写入 platform_settings 兜底存储。",
+          ? "支付渠道表未建全；启用状态 / 收款二维码以 platform_settings.paymentChannelsPublic 为唯一数据源（与老板端同源）。"
+          : "支付渠道表未建全；启用状态 / 收款二维码写入 platform_settings.paymentChannelsPublic（与老板端同源）。请尽快执行 supabase/migrations/20260731_payment_settings.sql。",
       };
     }
     throw error;
@@ -915,14 +1014,20 @@ async function handler(req, res) {
       // Enrich with the SAME open flags boss /api/recharge uses (no separate criteria).
       let bossOrderCodes = [];
       let bossRechargeCodes = [];
+      let bossDepositCodes = [];
       try {
-        const { listBossOrderPaymentMethods, listBossPaymentMethods, filterBossRechargeMethods } = await import(
-          "../_platform-pay-qr.js"
-        );
+        const {
+          listBossOrderPaymentMethods,
+          listBossPaymentMethods,
+          filterBossRechargeMethods,
+          listDepositPaymentMethods,
+        } = await import("../_platform-pay-qr.js");
         const orderListed = await listBossOrderPaymentMethods([]);
         const listed = await listBossPaymentMethods([]);
+        const depositListed = await listDepositPaymentMethods([]);
         bossOrderCodes = (orderListed.methods || []).map((m) => m.code).filter((c) => c && c !== "catfood");
         bossRechargeCodes = filterBossRechargeMethods(listed.methods || []).map((m) => m.code);
+        bossDepositCodes = (depositListed.methods || []).map((m) => m.code).filter(Boolean);
         state.channels = (state.channels || []).map((ch) => {
           const id = ch.channel_id || ch.id;
           const hit = (listed.methods || []).find((m) => m.code === id);
@@ -930,14 +1035,17 @@ async function handler(req, res) {
           const open = hit ? !!hit.open : !!(ch.enabled && configured);
           const forOrder = ch.forOrder !== false && (ch.data?.forOrder !== false);
           const forRecharge = ch.forRecharge !== false && (ch.data?.forRecharge !== false);
+          const forDeposit = ch.forDeposit !== false && (ch.data?.forDeposit !== false);
           return {
             ...ch,
             configured,
             open,
             bossOrderOpen: bossOrderCodes.includes(id),
             bossRechargeOpen: bossRechargeCodes.includes(id),
+            bossDepositOpen: bossDepositCodes.includes(id),
             forOrder,
             forRecharge,
+            forDeposit,
             config_status: open ? (ch.enabled ? "已启用" : "已配置") : configured ? (ch.enabled ? "已启用(缺资料)" : "已配置") : ch.config_status || "未配置",
           };
         });
@@ -950,6 +1058,7 @@ async function handler(req, res) {
         ...state,
         bossOrderMethods: bossOrderCodes,
         bossRechargeMethods: bossRechargeCodes,
+        bossDepositMethods: bossDepositCodes,
         sot: "payment_channels",
         activePublicQr,
         templates: CHANNELS,

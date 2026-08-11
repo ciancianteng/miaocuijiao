@@ -4233,7 +4233,7 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
                     transaction_type: "refund",
                     amount: claw,
                     status: "completed",
-                    note: note || "订单退款扣回陪玩收入（待周五退款）",
+                    note: note || "订单退款扣回陪玩收入（待退回老板猫粮）",
                     created_at: nowIso(),
                   }),
                 });
@@ -4247,12 +4247,12 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
         try {
           reward = await (await import("./_cs-commission-settle.js")).clawbackCsOrderIncome(
             { ...order, status: "refund_requested" },
-            { reason: note || "订单退款入周五队列，扣回奖励", mode: "refund" }
+            { reason: note || "订单退款，扣回奖励", mode: "refund" }
           );
         } catch (_) {}
         return json(res, 200, {
           ok: true,
-          message: "已批准进入周五退款队列（不会即时到账）。后台打款完成并上传凭证后，老板才会收到退款。",
+          message: "已建议批准。退款方式：猫粮余额。请后台点击「确认退款猫粮」后立即入账（不退现金）。",
           order: patched,
           refund: result.refund,
           reward,

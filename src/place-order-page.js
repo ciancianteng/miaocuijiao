@@ -53,13 +53,11 @@
   function token() {
     if (window.MCJBossAuth && typeof window.MCJBossAuth.getAccessToken === "function") {
       var fromBoss = window.MCJBossAuth.getAccessToken();
-      if (looksLikeJwt(fromBoss)) return fromBoss;
+      return looksLikeJwt(fromBoss) ? fromBoss : "";
     }
     var candidates = [
-      localStorage.getItem("mcjAuthAccessToken"),
       sessionStorage.getItem("mcjAuthAccessToken"),
-      localStorage.getItem("customerAuthToken"),
-      sessionStorage.getItem("customerAuthToken"),
+      localStorage.getItem("mcjAuthAccessToken"),
     ];
     for (var i = 0; i < candidates.length; i++) {
       if (looksLikeJwt(candidates[i])) return candidates[i];

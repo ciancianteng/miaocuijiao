@@ -106,20 +106,24 @@
   var STATUS_CN={
     verification:function(s){
       var v=String(s||'').trim().toLowerCase();
-      if(!v||/none|not_submitted|missing|unsubmitted|draft|uploaded/.test(v))return '资料未完成';
-      if(/approved|verified|passed|active/.test(v))return '已通过';
+      if(!v||/none|not_submitted|missing|unsubmitted|uploaded/.test(v))return '资料未完成';
+      if(/^draft$/.test(v))return '草稿中';
+      if(/approved|verified|passed|active/.test(v))return '审核通过';
       if(/reject|declin|fail/.test(v))return '审核未通过';
       if(/resubmit|need_more/.test(v))return '需补资料';
       if(/pending|review|submit/.test(v))return '审核中';
-      return s||'资料未完成';
+      // Never leak raw English DB enums to the companion UI.
+      if(/^[a-z][a-z0-9_]*$/i.test(v))return '资料未完成';
+      return '资料未完成';
     },
     deposit:function(s){
       var v=String(s||'').trim().toLowerCase();
       if(!v||/none|not_submitted|missing|unsubmitted|draft|uploaded|unpaid|未缴/.test(v))return '未缴纳';
       if(/reject|declin|fail/.test(v))return '审核未通过';
-      if(/^(approved|verified|passed|paid|active|completed|received)$|已通过|已缴纳/.test(v))return '已通过';
-      if(/pending|review|submit|待审/.test(v))return '待审核';
-      return s||'未缴纳';
+      if(/^(approved|verified|passed|paid|active|completed|received)$|已通过|已缴纳/.test(v))return '已缴纳 ✓';
+      if(/pending|review|submit|待审/.test(v))return '押金审核中';
+      if(/^[a-z][a-z0-9_]*$/i.test(v))return '未缴纳';
+      return '未缴纳';
     },
     identity:function(s){
       var v=String(s||'').trim().toLowerCase();
@@ -127,16 +131,18 @@
       if(/approved|verified|passed/.test(v))return '已通过';
       if(/reject|declin|fail/.test(v))return '审核未通过';
       if(/pending|review|submit|uploaded/.test(v))return '审核中';
-      return s||'未提交';
+      if(/^[a-z][a-z0-9_]*$/i.test(v))return '未提交';
+      return '未提交';
     },
     accountAccess:function(s){
       var v=String(s||'').trim().toLowerCase();
-      if(!v)return '待审核';
+      if(!v)return '审核中';
       if(/approved|verified|passed|active/.test(v))return '可正常接单';
       if(/incomplete|credential/.test(v))return '认证未完成';
       if(/reject|declin|fail|blocked/.test(v))return '暂不可接单';
       if(/pending|review|submit/.test(v))return '审核中';
-      return s||'待审核';
+      if(/^[a-z][a-z0-9_]*$/i.test(v))return '审核中';
+      return '审核中';
     }
   };
   var CONSULT_TYPE_CN={order_dock:'订单对接',profile_audit:'资料审核',deposit_auth:'押金认证',withdraw:'提现问题',earnings:'收益问题',other:'其他'};
@@ -165,7 +171,8 @@
     if(!accessLabel){
       if(accessSt==='approved'||perms.canWork===true)accessLabel='认证条件已满足，可正常接单。';
       else if(accessSt==='incomplete')accessLabel='请完成身份证认证或押金认证（二选一）';
-      else accessLabel=perms.lockReason||auditHint();
+      // Never call auditHint() here — it calls isCredentialIncomplete → isProfileApproved → unifiedAccess (stack overflow).
+      else accessLabel=perms.lockReason||'资料审核中，请耐心等待。';
     }
     return {
       profile_review_status:profileReview,
@@ -397,9 +404,20 @@
     return true;
   }
   function isProfileApproved(){
-    var ua=unifiedAccess();
+    // Read review status directly — do NOT call unifiedAccess() here
+    // (unifiedAccess → auditHint → isCredentialIncomplete → isProfileApproved would recurse).
+    var p=(state.data&&state.data.player)||{};
+    var raw=p.raw||{};
     var perm=(state.data||{}).permissions||{};
-    var st=String(ua.profile_review_status||perm.applicationStatus||perm.profile_review_status||'').toLowerCase();
+    var st=String(
+      p.profile_review_status||
+      p.profileReviewStatus||
+      p.auditStatus||
+      raw.application_status||
+      perm.applicationStatus||
+      perm.profile_review_status||
+      ""
+    ).toLowerCase();
     return /approved|verified|passed/.test(st);
   }
   function isForcedAckLocked(){
@@ -419,11 +437,28 @@
   function isCredentialIncomplete(){
     if(isIsolationMode()||!isProfileApproved())return false;
     if(isForcedAckLocked())return false;
-    var ua=unifiedAccess();
+    // Prefer permission flags / stored access status — avoid re-entering unifiedAccess().
     var perm=(state.data||{}).permissions||{};
-    if(ua.credentialOrOk||perm.credentialOrOk||perm.canWork===true)return false;
-    var st=String(ua.account_access_status||'').toLowerCase();
-    return st==='incomplete'||perm.canWork===false||perm.canSetAvailable===false;
+    var p=(state.data&&state.data.player)||{};
+    var v=(state.data&&state.data.verification)||{};
+    var d=(state.data&&state.data.deposit)||{};
+    var raw=p.raw||{};
+    if(perm.credentialOrOk===true||p.credentialOrOk===true||v.credentialOrOk===true||perm.canWork===true)return false;
+    var identitySt=String(p.identity_status||p.identityStatus||v.identityStatus||raw.identity_status||"").trim();
+    var depositSt=String(p.deposit_status||p.depositStatus||d.status||v.depositStatus||raw.deposit_status||"").trim();
+    var identityVerified=
+      perm.identityVerified===true||
+      p.identityVerified===true||
+      v.identityVerified===true||
+      /approved|verified|passed/.test(identitySt.toLowerCase());
+    var depositVerified=
+      perm.depositVerified===true||
+      p.depositVerified===true||
+      v.depositVerified===true||
+      /approved|verified|passed|paid|received/.test(depositSt.toLowerCase());
+    if(identityVerified||depositVerified)return false;
+    var accessSt=String(p.account_access_status||p.accountAccessStatus||"").toLowerCase();
+    return accessSt==="incomplete"||perm.canWork===false||perm.canSetAvailable===false;
   }
   function todayStatusLockLabel(){
     // Never show「审核中」for approved profile locked only by credential/forced.
@@ -608,7 +643,8 @@
     if(leavingProfile)state.profileDraft=null;
     var leavingAccount=isAccountRoute(state.route)&&!/\/companion\/(account|mine|verification)(\/|$)/.test(next);
     if(leavingAccount)state.accountDraft=null;
-    history.pushState(null,'',next);paint();
+    history.pushState(null,'',next);
+    paint({routeChange:true});
   }
   function isAccountRoute(route){
     var r=route!=null?route:state.route;
@@ -716,8 +752,7 @@
     }
     if(deposit){
       var dfd=new FormData(deposit);
-      draft.paid_amount=String(dfd.get('paid_amount')||'');
-      draft.payment_method=String(dfd.get('payment_method')||'');
+      draft.channel_id=String(dfd.get('channel_id')||'');
       draft.deposit_remark=String(dfd.get('remark')||'');
     }
     var activeForm=document.activeElement&&document.activeElement.closest
@@ -783,6 +818,13 @@
     return fallback==null?'':String(fallback);
   }
   function readSession(){try{return JSON.parse(localStorage.getItem(SESSION_KEY)||sessionStorage.getItem(SESSION_KEY)||'null')}catch(e){return null}}
+  function sessionLooksValid(s){
+    if(!s||typeof s!=='object')return false;
+    var t=String(s.token||s.accessToken||'').trim();
+    var r=String(s.refreshToken||s.refresh_token||'').trim();
+    if(r)return true;
+    return t.split('.').length===3&&t.length>20;
+  }
   function saveSession(session,remember){
     // Always dual-write so refresh + new tab keep companion login (incl. refreshToken).
     var normalized={
@@ -790,16 +832,22 @@
       accessToken:String((session&&(session.accessToken||session.token||session.access_token))||'').trim(),
       refreshToken:String((session&&(session.refreshToken||session.refresh_token))||'').trim(),
       expiresAt:(session&&(session.expiresAt!=null?session.expiresAt:session.expires_at))||'',
-      user:(session&&session.user)||{},
-      remember:remember!==false&&!(session&&session.remember===false)
+      user:Object.assign({},(session&&session.user)||{},{role:((session&&session.user&&session.user.role)||'companion')}),
+      remember:remember!==false&&!(session&&session.remember===false),
+      portal:'companion',
+      portalLoginAt:Date.now()
     };
     if(!normalized.token&&!normalized.refreshToken)return;
-    // P0: wipe boss/CS/admin soft sessions before claiming shared JWT mirrors.
-    if(window.MCJRoleGate&&typeof window.MCJRoleGate.clearOtherRoleSessions==='function'){
-      window.MCJRoleGate.clearOtherRoleSessions('companion');
-      if(typeof window.MCJRoleGate.clearSharedAuthMirrors==='function')window.MCJRoleGate.clearSharedAuthMirrors();
-    }else{
-      ['customerAuthToken','customerUser','customerServiceAuthToken','customerServiceUser','mcjServiceSession','adminAuthToken','adminUser','mcjAuthAccessToken','mcjAuthRefreshToken','mcjAuthExpiresAt','mcjRole'].forEach(function(k){try{localStorage.removeItem(k);sessionStorage.removeItem(k);}catch(e){}});
+    // P0: companion portal session is isolated — do NOT wipe boss/CS/admin or shared boss JWT.
+    if(window.MCJRoleGate&&typeof window.MCJRoleGate.writeCompanionPortalSession==='function'){
+      window.MCJRoleGate.writeCompanionPortalSession({
+        accessToken:normalized.token||normalized.accessToken,
+        refreshToken:normalized.refreshToken,
+        expiresAt:normalized.expiresAt,
+        user:normalized.user
+      },normalized.remember);
+      state.session=normalized;
+      return;
     }
     var payload=JSON.stringify(normalized);
     try{localStorage.setItem(SESSION_KEY,payload);}catch(e){}
@@ -808,23 +856,9 @@
       var soft='companion_session_v4_'+Date.now();
       localStorage.setItem('companionAuthToken',soft);
       sessionStorage.setItem('companionAuthToken',soft);
-      var userPayload=JSON.stringify(Object.assign({},normalized.user||{},{role:(normalized.user&&normalized.user.role)||'companion'}));
+      var userPayload=JSON.stringify(normalized.user||{});
       localStorage.setItem('companionUser',userPayload);
       sessionStorage.setItem('companionUser',userPayload);
-      localStorage.setItem('mcjRole','companion');
-      sessionStorage.setItem('mcjRole','companion');
-      if(normalized.token){
-        localStorage.setItem('mcjAuthAccessToken',normalized.token);
-        sessionStorage.setItem('mcjAuthAccessToken',normalized.token);
-      }
-      if(normalized.refreshToken){
-        localStorage.setItem('mcjAuthRefreshToken',normalized.refreshToken);
-        sessionStorage.setItem('mcjAuthRefreshToken',normalized.refreshToken);
-      }
-      if(normalized.expiresAt!==''&&normalized.expiresAt!=null){
-        localStorage.setItem('mcjAuthExpiresAt',String(normalized.expiresAt));
-        sessionStorage.setItem('mcjAuthExpiresAt',String(normalized.expiresAt));
-      }
     }catch(e){}
     state.session=normalized;
   }
@@ -836,15 +870,7 @@
       localStorage.removeItem('companionUser');
       sessionStorage.removeItem('companionAuthToken');
       sessionStorage.removeItem('companionUser');
-      localStorage.removeItem('mcjAuthAccessToken');
-      localStorage.removeItem('mcjAuthRefreshToken');
-      localStorage.removeItem('mcjAuthExpiresAt');
-      sessionStorage.removeItem('mcjAuthAccessToken');
-      sessionStorage.removeItem('mcjAuthRefreshToken');
-      sessionStorage.removeItem('mcjAuthExpiresAt');
-      if(localStorage.getItem('mcjRole')==='companion'||localStorage.getItem('mcjRole')==='player'){
-        localStorage.removeItem('mcjRole');
-      }
+      // Never clear boss mcjAuth* — boss portal must stay logged in.
     }catch(e){}
     state.session=null;
     state.data=null;
@@ -1011,6 +1037,8 @@
       if(!res.ok||body.ok===false){
         var err=new Error(body.message||('请求失败：HTTP '+res.status));
         err.status=res.status;
+        err.serverMessage=String((body&&body.message)||'');
+        err.uploadUrl='/api/companion';
         throw err;
       }
       return body;
@@ -1655,6 +1683,10 @@
   function init(){
     state.settings=readSettings();
     state.session=readSession();
+    if(state.session&&!sessionLooksValid(state.session)){
+      clearSession();
+      state.session=null;
+    }
     state.route=route();
     applyFocusOrderFromQuery();
     if(!state.session&&state.route!=='login'){go('/companion/login');return}
@@ -1673,7 +1705,15 @@
       });
     }else paint();
   }
-  window.addEventListener('popstate',init);
+  window.addEventListener('popstate',function(){
+    if(!state.session){
+      init();
+      return;
+    }
+    // Soft route restore — do not remount the whole workbench / re-run cold init.
+    paint({routeChange:true});
+    loadData({soft:true}).catch(function(){});
+  });
   document.addEventListener('visibilitychange',function(){
     if(!document.hidden&&state.session){
       // Soft sync only — do not force-paint over an in-progress profile edit.
@@ -1681,33 +1721,82 @@
     }
   });
   function captureScrollPos(){
-    var main=document.querySelector('.pw-main');
     var page=document.querySelector('.pw-page');
     return {
-      winY:window.scrollY||document.documentElement.scrollTop||0,
-      mainY:main?main.scrollTop:0,
+      winY:window.scrollY||document.documentElement.scrollTop||document.body.scrollTop||0,
       pageY:page?page.scrollTop:0
     };
   }
-  function restoreScrollPos(pos){
+  function applyScrollPos(pos){
     if(!pos)return;
-    var apply=function(){
-      try{window.scrollTo(0,pos.winY||0)}catch(e){}
-      var main=document.querySelector('.pw-main');
-      var page=document.querySelector('.pw-page');
-      if(main&&pos.mainY!=null)main.scrollTop=pos.mainY;
-      if(page&&pos.pageY!=null)page.scrollTop=pos.pageY;
-    };
-    apply();
-    requestAnimationFrame(function(){apply();requestAnimationFrame(apply)});
+    var page=document.querySelector('.pw-page');
+    if(page&&pos.pageY!=null)page.scrollTop=pos.pageY;
+    try{
+      if(document.documentElement)document.documentElement.scrollTop=pos.winY||0;
+      if(document.body)document.body.scrollTop=pos.winY||0;
+    }catch(e){}
+  }
+  /** Route-enter: reset scroll once with the content swap (no animation / no rAF bounce). */
+  function resetRouteScroll(){
+    var page=root.querySelector('.pw-page');
+    if(page)page.scrollTop=0;
+    try{
+      if(document.documentElement)document.documentElement.scrollTop=0;
+      if(document.body)document.body.scrollTop=0;
+    }catch(e){}
+  }
+  function syncShellChrome(isolated){
+    var unread=unreadCount();
+    var lock=(state.data&&state.data.permissions&&state.data.permissions.lockReason)||'';
+    var subtitle=isolated
+      ? isolationHint()
+      : (lock?String(lock):'抢单 → 服务 → 完成订单 → 收益提现');
+    var h1=root.querySelector('.pw-top h1');
+    var sub=root.querySelector('.pw-top p');
+    if(h1)h1.textContent=title();
+    if(sub)sub.textContent=subtitle;
+    root.querySelectorAll('.pw-nav [data-route], .pw-bottom-nav [data-route]').forEach(function(btn){
+      var path=btn.getAttribute('data-route')||'';
+      var key=ROUTES[path.replace(/\/$/,'')]||ROUTES[path]||'';
+      if(path.indexOf('/companion/grab-hall')>=0||path.indexOf('/companion/order-hall')>=0)key='hall';
+      var active=state.route===key
+        ||(key==='account'&&(state.route==='mine'||state.route==='verification'))
+        ||(key==='earnings'&&state.route==='wallet');
+      btn.classList.toggle('active',!!active);
+      if(key==='messages'){
+        var badge=btn.querySelector('.pw-nav-badge');
+        if(unread){
+          if(!badge){
+            badge=document.createElement('em');
+            badge.className='pw-nav-badge';
+            btn.appendChild(document.createTextNode(' '));
+            btn.appendChild(badge);
+          }
+          badge.textContent=String(unread);
+        }else if(badge){
+          badge.remove();
+        }
+      }
+    });
+  }
+  function syncTransientOverlays(){
+    var notice=noticeHtml();
+    var settle=settlementModalHtml();
+    var oldToast=root.querySelector('.pw-toast');
+    var oldModal=root.querySelector('[data-close-settlement].pw-modal, .pw-modal[data-close-settlement]');
+    if(!oldModal)oldModal=root.querySelector('.pw-modal');
+    if(oldToast)oldToast.remove();
+    if(oldModal)oldModal.remove();
+    if(notice||settle){
+      var wrap=document.createElement('div');
+      wrap.innerHTML=notice+settle;
+      while(wrap.firstChild)root.appendChild(wrap.firstChild);
+    }
   }
   function paint(opts){
     opts=opts||{};
-    var keepScroll=!!opts.preserveScroll||!!state._preserveScrollOnce||isEditingLiveForm()||isAccountRoute()||state.route==='profile'||state.route==='messages'||state.route==='review-status';
-    state._preserveScrollOnce=false;
-    var scrollPos=keepScroll?captureScrollPos():null;
-    if(keepScroll&&(isAccountRoute()||state.route==='profile'))state._skipFocusScrollOnce=true;
     captureLiveForms();
+    var prevRoute=state.route;
     state.route=route();
     if(state.route!=='profile')state.profileDraft=null;
     if(!isAccountRoute())state.accountDraft=null;
@@ -1721,7 +1810,7 @@
         state.route='dashboard';
         try{history.replaceState(null,'','/companion/dashboard');}catch(e){}
         state.notice='人气榜在首页展示，陪玩端不需要单独页。';
-        setTimeout(function(){state.notice='';paint()},2200);
+        setTimeout(function(){state.notice='';paint({preserveScroll:true})},2200);
       }
     }
     if(state.route==='rules'){
@@ -1745,10 +1834,19 @@
         state.route='earnings';
       }
     }
+    var routeChanged=!!opts.routeChange||prevRoute!==state.route;
+    // Same-route soft paints must keep scroll (poll / inbox / form sync).
+    // Route changes never inherit the previous page's scroll position.
+    var preserveScroll=!routeChanged&&opts.preserveScroll!==false;
+    state._preserveScrollOnce=false;
+    if(preserveScroll&&(isAccountRoute()||state.route==='profile'))state._skipFocusScrollOnce=true;
     if(state.route==='login')return renderLogin();
     if(!state.session){renderLogin();return}
-    renderShell();
-    if(scrollPos)restoreScrollPos(scrollPos);
+    renderShell({
+      routeChanged:routeChanged,
+      preserveScroll:preserveScroll,
+      forceFull:!!opts.forceFull
+    });
   }
   function noticeHtml(){return state.notice?'<div class="pw-toast show">'+esc(state.notice)+'</div>':''}
   function forgotPasswordModalHtml(){
@@ -1871,11 +1969,15 @@
     }
     window.addEventListener('resize',syncPwKeyboardInset);
   }
-  function renderShell(){
+  function renderShell(opts){
+    opts=opts||{};
     var data=state.data||{},player=data.player||state.session.user||{},lock=data.permissions&&data.permissions.lockReason;
     var unread=unreadCount();
     var isolated=isIsolationMode();
     var navItems=isolated?ISOLATION_NAV:NAV;
+    var routeChanged=!!opts.routeChanged;
+    var preserveScroll=!!opts.preserveScroll&&!routeChanged;
+    var scrollPos=preserveScroll?captureScrollPos():null;
     try{
       document.body.classList.toggle('pw-route-messages', state.route==='messages');
       document.body.classList.toggle('pw-isolation', isolated);
@@ -1886,10 +1988,52 @@
     var accountMenu=isolated
       ? '<button type="button" data-route="/companion/review-status">审核状态</button><button type="button" data-route="/companion/profile">申请资料</button><button type="button" data-route="/companion/account">账号资料</button><button class="danger" type="button" data-logout>退出登录</button>'
       : '<button type="button" data-route="/companion/profile">我的资料</button><button type="button" data-route="/companion/account">账号中心</button><button type="button" data-route="/companion/settings">设置</button><button class="danger" type="button" data-logout>退出登录</button>';
+
+    var existing=root.querySelector('.pw-shell');
+    var canPatch=!!existing
+      && !opts.forceFull
+      && ((isolated&&existing.classList.contains('is-isolation'))||(!isolated&&!existing.classList.contains('is-isolation')));
+
+    if(canPatch){
+      // Keep sidebar/header DOM stable — only swap main page content + chrome labels.
+      syncShellChrome(isolated);
+      // Reset scroll BEFORE content swap so the new page never paints at the old offset.
+      if(routeChanged)resetRouteScroll();
+      var pageEl=existing.querySelector('.pw-page');
+      if(pageEl)pageEl.innerHTML=pageHtml();
+      var menu=existing.querySelector('.pw-menu');
+      if(menu)menu.innerHTML=accountMenu;
+      var annHost=existing.querySelector('[data-pw-announcement-host], .pw-announcement-host');
+      if(!isolated&&!annHost&&window.MCJCompanionAnnouncements&&window.MCJCompanionAnnouncements.hostHtml){
+        var top=existing.querySelector('.pw-top');
+        if(top&&top.parentNode){
+          var holder=document.createElement('div');
+          holder.innerHTML=window.MCJCompanionAnnouncements.hostHtml();
+          if(holder.firstChild)top.parentNode.insertBefore(holder.firstChild,top.nextSibling);
+        }
+      }
+      syncTransientOverlays();
+      if(routeChanged)resetRouteScroll();
+      else if(scrollPos)applyScrollPos(scrollPos);
+      bindPwKeyboardInset();
+      syncPwKeyboardInset();
+      if(!isolated&&window.MCJCompanionAnnouncements){
+        if(window.MCJCompanionAnnouncements.onShellPaint)window.MCJCompanionAnnouncements.onShellPaint();
+      }
+      if(state.route==='profile')restoreProfileFocus();
+      if(isAccountRoute()){
+        restoreAccountFocus();
+        mountCompanionAccountSecurity();
+      }
+      return;
+    }
+
     root.innerHTML='<div class="pw-shell'+(isolated?' is-isolation':'')+'"><aside class="pw-side"><div class="pw-brand"><strong>MEOW CUI JIAO</strong><span>'+(isolated?'审核隔离模式':'Companion Workbench')+'</span></div><nav class="pw-nav">'+navItems.map(function(n){
       var badge=n[0]==='messages'&&unread?' <em class="pw-nav-badge">'+unread+'</em>':'';
       return '<button class="'+(state.route===n[0]||(n[0]==='account'&&(state.route==='mine'||state.route==='verification'))||(n[0]==='earnings'&&state.route==='wallet')?'active':'')+'" data-route="'+n[2]+'">'+n[1]+badge+'</button>';
     }).join('')+'</nav></aside><section class="pw-main"><header class="pw-top"><div><h1>'+title()+'</h1><p>'+subtitle+'</p></div><div class="pw-account"><button class="pw-avatar" data-account-toggle>'+esc(String(player.name||player.uid||'P').slice(0,1).toUpperCase())+'</button><div class="pw-menu">'+accountMenu+'</div></div></header>'+(isolated?'':(window.MCJCompanionAnnouncements&&window.MCJCompanionAnnouncements.hostHtml?window.MCJCompanionAnnouncements.hostHtml():'<div class="pw-announcement-host" data-pw-announcement-host hidden></div>'))+'<main class="pw-page">'+pageHtml()+'</main></section>'+bottomNavHtml()+'</div>'+noticeHtml()+settlementModalHtml();
+    if(routeChanged)resetRouteScroll();
+    else if(scrollPos)applyScrollPos(scrollPos);
     if(!isolated&&window.MCJCompanionAnnouncements){
       if(window.MCJCompanionAnnouncements.onShellPaint)window.MCJCompanionAnnouncements.onShellPaint();
       else if(window.MCJCompanionAnnouncements.reload)window.MCJCompanionAnnouncements.reload();
@@ -2111,6 +2255,105 @@
     var missText=missing.length?missing.join('、'):(status||'资料不完整');
     return '<div class="pw-alert" role="status"><strong>尚未对老板公开</strong><span>'+esc(status||'资料不完整')+'：'+esc(missText)+'。完善并审核通过后才会出现在首页/大厅，且老板才能下单。</span><button class="pw-btn" type="button" data-route="/companion/profile">去完善资料</button></div>';
   }
+  function depositChannelsFromState(){
+    var d=(state.data&&state.data.deposit)||{};
+    var list=d.depositChannels||d.channels||[];
+    return Array.isArray(list)?list:[];
+  }
+  function depositPayInfoHtml(channel,selectedId){
+    if(!channel)return '<p class="pw-note" style="color:#ff8aa0">俱乐部尚未配置押金收款渠道，请联系管理员。</p>';
+    var info=channel.payInfo||{};
+    var id=String(channel.id||channel.code||'');
+    var checked=selectedId?id===selectedId:true;
+    var qr=String(info.qrUrl||'').trim();
+    var accountLabel=/duitnow/i.test(id+String(channel.label||''))?'DuitNow ID':'银行账号';
+    var accountVal=String(info.duitnowId||info.bankAccount||info.phone||'').trim();
+    return '<label class="pw-deposit-channel'+(checked?' is-active':'')+'" data-deposit-channel-card="'+esc(id)+'">'+
+      '<input type="radio" name="channel_id" value="'+esc(id)+'" '+(checked?'checked':'')+' required>'+
+      '<div class="pw-deposit-channel-body">'+
+      '<strong>'+esc(channel.label||channel.name||id)+'</strong>'+
+      '<div class="pw-info-list">'+
+        infoRow('支付方式',channel.label||channel.name||'-')+
+        infoRow('收款人名称',info.receiverName||'-')+
+        infoRow('银行名称',info.bankName||'-')+
+        infoRow(accountLabel,accountVal||'-')+
+        infoRow('应付金额','RM '+(info.amountRm!=null?info.amountRm:100))+
+      '</div>'+
+      (qr
+        ?('<div class="pw-deposit-qr-block"><p class="pw-note">收款二维码（点击可放大扫码）</p>'+
+          '<div class="pay-qr-frame" data-pay-qr-zoom="1" role="button" tabindex="0" aria-label="点击放大收款二维码">'+
+          '<img src="'+esc(qr)+'" alt="押金收款二维码" data-mcj-pay-qr="1" referrerpolicy="no-referrer">'+
+          '</div></div>')
+        :'<p class="pw-note">该渠道暂无二维码，请按上方账号信息转账。</p>')+
+      (info.instructions?'<p class="pw-note">'+esc(info.instructions)+'</p>':'')+
+      '</div></label>';
+  }
+  function openDepositQrLightbox(src){
+    if(!src)return;
+    var box=document.getElementById('pwDepositQrLightbox');
+    if(!box){
+      box=document.createElement('div');
+      box.id='pwDepositQrLightbox';
+      box.className='pay-qr-lightbox';
+      box.innerHTML=
+        '<div class="pay-qr-lightbox-panel" role="dialog" aria-modal="true" aria-label="收款二维码放大预览">'+
+        '<button type="button" class="pay-qr-lightbox-close" data-pay-qr-close aria-label="关闭">×</button>'+
+        '<img alt="收款二维码大图" data-pay-qr-lightbox-img="1" referrerpolicy="no-referrer">'+
+        '<p class="pay-qr-lightbox-hint">点击遮罩或关闭按钮可关闭</p>'+
+        '</div>';
+      box.addEventListener('click',function(e){
+        if(e.target===box||(e.target&&e.target.closest&&e.target.closest('[data-pay-qr-close]'))){
+          box.classList.remove('is-open');
+        }
+      });
+      document.body.appendChild(box);
+    }
+    var img=box.querySelector('[data-pay-qr-lightbox-img]');
+    if(img)img.src=src;
+    box.classList.add('is-open');
+  }
+  function depositBadgeHtml(){
+    var ua=unifiedAccess();
+    var d=(state.data&&state.data.deposit)||{};
+    if(!(ua.depositVerified||/paid|approved|verified|passed|已缴纳/.test(String(ua.deposit_status||d.status||'').toLowerCase())))return '';
+    return '<section class="pw-card pad pw-deposit-badge" data-deposit-badge style="margin-top:14px">'+
+      '<h3>押金证明</h3>'+
+      '<div class="pw-info-list">'+
+        infoRow('押金','RM '+(d.requiredAmount!=null?d.requiredAmount:(d.amountRm||100)))+
+        infoRow('状态','已缴纳 ✓')+
+        infoRow('记录编号',d.recordNo||'-')+
+        infoRow('缴纳时间',d.paidAt?fmtTime(d.paidAt):'-')+
+      '</div>'+
+      '<div class="pw-actions" style="margin-top:12px"><button class="pw-btn" type="button" data-view-deposit-record>查看押金记录</button></div>'+
+      '</section>';
+  }
+  function depositRecordModalHtml(){
+    var d=(state.data&&state.data.deposit)||{};
+    var hist=Array.isArray(d.history)&&d.history.length?d.history:[{
+      recordNo:d.recordNo||'',
+      requiredAmount:d.requiredAmount||d.amountRm||100,
+      paidAmount:d.paidAmount||100,
+      statusLabel:STATUS_CN.deposit(d.status),
+      paidAt:d.paidAt||'',
+      paymentMethod:d.paymentMethod||'',
+      reviewedAt:d.reviewedAt||''
+    }];
+    return '<div class="pw-deposit-record-modal" data-deposit-record-modal>'+
+      '<div class="pw-deposit-record-panel" role="dialog" aria-modal="true" aria-label="押金记录">'+
+      '<button type="button" class="pw-btn" data-close-deposit-record>关闭</button>'+
+      '<h3>押金记录</h3>'+
+      hist.map(function(row){
+        return '<div class="pw-info-list" style="margin-top:12px">'+
+          infoRow('记录编号',row.recordNo||row.id||'-')+
+          infoRow('金额','RM '+(row.requiredAmount!=null?row.requiredAmount:(row.paidAmount||100)))+
+          infoRow('状态',row.statusLabel||STATUS_CN.deposit(row.status))+
+          infoRow('付款方式',row.paymentMethod||'-')+
+          infoRow('缴纳时间',row.paidAt?fmtTime(row.paidAt):'-')+
+          infoRow('审核时间',row.reviewedAt?fmtTime(row.reviewedAt):'-')+
+        '</div>';
+      }).join('')+
+      '</div></div>';
+  }
   function dashboardHtml(){
     var s=(state.data||{}).summary||{};
     var online=currentOnlineStatus()==='online';
@@ -2127,6 +2370,7 @@
       publishGateBannerHtml()+
       reviewBanner+
       extra+
+      depositBadgeHtml()+
       statusSwitcherHtml()+
       (!locked&&!online?'<div class="pw-note" style="margin:0 0 14px">请先切换为在线接单。</div>':'')+
       '<section class="pw-grid">'+
@@ -3095,6 +3339,8 @@
     var paidAmount=accountDraftVal('paid_amount',d.paidAmount||'');
     var paymentMethod=accountDraftVal('payment_method',d.paymentMethod||'');
     var depositRemark=accountDraftVal('deposit_remark',d.remark||'');
+    var depositChannelList=depositChannelsFromState();
+    var selectedChannelId=accountDraftVal('channel_id',d.channelId||(depositChannelList[0]&&(depositChannelList[0].id||depositChannelList[0].code))||'');
     var idPhase=privacyReviewPhase(idStatusRaw,{submitted:idSubmitted});
     var verifyLocked=idPhase==='pending'||idPhase==='approved';
     var depositLocked=depositPhase==='pending'||depositPhase==='approved';
@@ -3133,33 +3379,56 @@
       '<label>TNG 账号<input name="tng_account" value="'+esc(tngAccount)+'"></label>'+
       '<label>备注<textarea name="remark">'+esc(verifyRemark)+'</textarea></label>'+
       '<button class="pw-btn primary" type="submit">'+(privacyReviewPhase(idStatusRaw,{submitted:idSubmitted})==='rejected'?'重新提交身份证认证':'提交身份证认证')+'</button></form>';
-    var depositView=
+    var depositPaidView=
       '<section class="pw-card pad pw-form-narrow pw-account-deposit" style="margin-top:14px" data-deposit-view>'+
       '<h3>B. 押金认证（RM100）</h3>'+
       privacyReviewBannerHtml(depositPhase,depositReject,'deposit')+
-      '<p class="pw-note">状态：<strong>'+esc(depositStatus)+'</strong>（仅后台审核通过才算完成）</p>'+
       '<div class="pw-info-list">'+
-        infoRow('已缴金额',d.paidAmount!=null&&d.paidAmount!==''?('RM '+d.paidAmount):'-')+
+        infoRow('押金','RM '+(d.requiredAmount!=null?d.requiredAmount:(d.amountRm||100)))+
+        infoRow('状态','已缴纳 ✓')+
+        infoRow('记录编号',d.recordNo||'-')+
+        infoRow('缴纳时间',d.paidAt?fmtTime(d.paidAt):'-')+
         infoRow('付款方式',d.paymentMethod||'-')+
         infoRow('付款凭证',(d.hasProof||d.proofUrl)?'已上传':'-')+
-        infoRow('备注',d.remark||'-')+
+      '</div>'+
+      '<div class="pw-actions" style="margin-top:12px"><button class="pw-btn" type="button" data-view-deposit-record>查看押金记录</button></div>'+
+      (d.proofUrl?'<div class="pw-doc-preview-wrap" style="margin-top:12px"><img class="pw-doc-preview" src="'+esc(d.proofUrl)+'" alt="押金凭证"></div>':'')+
+      '</section>';
+    var depositPendingView=
+      '<section class="pw-card pad pw-form-narrow pw-account-deposit" style="margin-top:14px" data-deposit-view>'+
+      '<h3>B. 押金认证（RM100）</h3>'+
+      privacyReviewBannerHtml(depositPhase,depositReject,'deposit')+
+      '<p class="pw-note">状态：<strong>押金审核中</strong>（仅后台管理员审核通过才算完成）</p>'+
+      '<div class="pw-info-list">'+
+        infoRow('应付 / 已缴','RM '+(d.paidAmount!=null&&d.paidAmount!==''?d.paidAmount:(d.requiredAmount||100)))+
+        infoRow('付款方式',d.paymentMethod||'-')+
+        infoRow('记录编号',d.recordNo||'-')+
+        infoRow('付款凭证',(d.hasProof||d.proofUrl)?'已上传':'-')+
+        infoRow('备注',(d.remark||'').replace(/\[\[DEPOSIT_PAY\]\][\s\S]*?\[\[\/DEPOSIT_PAY\]\]/g,'').trim()||'-')+
       '</div>'+
       (d.proofUrl?'<div class="pw-doc-preview-wrap" style="margin-top:12px"><img class="pw-doc-preview" src="'+esc(d.proofUrl)+'" alt="押金凭证"></div>':'')+
       '</section>';
+    var depositChannelsHtml=depositChannelList.length
+      ?('<div class="pw-deposit-channels" data-deposit-channels>'+depositChannelList.map(function(ch){
+          var cid=String(ch.id||ch.code||'');
+          return depositPayInfoHtml(ch,selectedChannelId||cid);
+        }).join('')+'</div>')
+      :'<p class="pw-note" style="color:#ff8aa0">俱乐部尚未配置可用的押金收款渠道。请联系管理员在后台「支付设置」启用押金收款。</p>';
     var depositForm=
       '<form class="pw-card pad pw-form pw-form-narrow pw-account-deposit" style="margin-top:14px" data-deposit-form>'+
       '<h3>B. 押金认证（RM100）</h3>'+
       privacyReviewBannerHtml(depositPhase,depositReject,'deposit')+
-      '<p class="pw-note">提交付款凭证后等待后台审核。审核通过 = 押金认证完成（与身份证二选一即可）。</p>'+
-      '<label>已缴金额 RM<input name="paid_amount" type="number" min="1" required value="'+esc(paidAmount)+'"></label>'+
-      '<label>付款方式<input name="payment_method" required value="'+esc(paymentMethod)+'" placeholder="例如：银行转账 / TNG"></label>'+
+      '<p class="pw-note">请按下方俱乐部真实收款资料支付 <strong>RM100</strong>，上传付款凭证后点击「提交押金审核」。审核通过 = 押金认证完成（与身份证二选一即可）。</p>'+
+      depositChannelsHtml+
       accountDocCard({key:'deposit_proof',label:'押金付款凭证',cta:'上传付款凭证',url:d.proofUrl||'',statusText:depositStatus,rejectReason:depositReject})+
-      '<label>备注<textarea name="remark">'+esc(depositRemark)+'</textarea></label>'+
-      '<button class="pw-btn primary" type="submit">'+(depositPhase==='rejected'?'重新提交押金凭证':'提交押金凭证')+'</button></form>';
+      '<label>备注（可选）<textarea name="remark">'+esc((depositRemark||'').replace(/\[\[DEPOSIT_PAY\]\][\s\S]*?\[\[\/DEPOSIT_PAY\]\]/g,'').trim())+'</textarea></label>'+
+      '<button class="pw-btn primary" type="submit" '+(depositChannelList.length?'':'disabled')+'>'+(depositPhase==='rejected'?'重新提交押金审核':'提交押金审核')+'</button></form>';
+    var depositBlock=depositPhase==='approved'?depositPaidView:(depositLocked?depositPendingView:depositForm);
     return '<div class="pw-page-head"><div><h2>账号中心（隐私）</h2><p>仅本人 / 客服 / 后台可见，老板永远看不到。</p></div><button class="pw-btn" type="button" data-route="/companion/profile">公开资料</button></div>'+
       accountAccessBannerHtml()+
       reviewRejectBannerHtml('/companion/account')+
       credentialBanner+
+      (depositPhase==='approved'?depositBadgeHtml():'')+
       '<div class="pw-alert"><strong>隐私提示</strong><span>本页面仅本人和平台后台可见，不会公开给老板。</span></div>'+
       '<div class="pw-two-col">'+
         '<section class="pw-card pad"><h3>账号信息</h3><div class="pw-info-list">'+
@@ -3173,18 +3442,21 @@
           infoRow('收款账户审核',STATUS_CN.verification(bankStatusRaw))+
           infoRow('银行名称',v.bankName||'未填写')+
           infoRow('当前提现账户',rules.currentAccount||'未绑定')+
-          infoRow('押金认证',STATUS_CN.deposit(ua.deposit_status))+
+          infoRow('押金',depositPhase==='approved'?('RM '+(d.requiredAmount||d.amountRm||100)):'RM 100')+
+          infoRow('押金状态',STATUS_CN.deposit(ua.deposit_status))+
           infoRow('账号接单权限',STATUS_CN.accountAccess(ua.account_access_status))+
           infoRow('当前等级',level.level||p.level||'未设置')+
         '</div>'+
-        '<div class="pw-actions" style="margin-top:12px"><button class="pw-btn primary" type="button" data-route="/companion/earnings" data-earnings-tab="withdraw">去提现</button></div>'+
+        '<div class="pw-actions" style="margin-top:12px"><button class="pw-btn primary" type="button" data-route="/companion/earnings" data-earnings-tab="withdraw">去提现</button>'+
+        (depositPhase==='approved'?'<button class="pw-btn" type="button" data-view-deposit-record>查看押金记录</button>':'')+
+        '</div>'+
         '</section>'+
       '</div>'+
       '<form class="pw-card pad pw-form pw-form-narrow" style="margin-top:14px" data-private-contact-form><h3>联系方式</h3>'+
       '<label>联系方式（WhatsApp / 手机）<input name="contact_phone" value="'+esc(contactPhone)+'" required placeholder="仅后台/客服可见"></label>'+
       '<button class="pw-btn primary" type="submit">保存联系方式</button></form>'+
       (verifyLocked?verifyView:verifyForm)+
-      (depositLocked?depositView:depositForm)+
+      depositBlock+
       '<section class="pw-card pad pw-form-narrow" style="margin-top:14px" id="pwAccountSecurityMount"><h3>账号安全</h3><div class="pw-empty">加载中…</div></section>';
   }
   function rulesHtml(){
@@ -3392,9 +3664,21 @@
       state.uploadBusy='';
       captureLiveForms(true);
       paint({preserveScroll:true});
-      var msg=humanizeClientError((err&&err.message)||'上传失败，请重试');
+      var status=err&&err.status;
+      var serverMsg=err&&(err.serverMessage||err.message)||'上传失败，请重试';
+      var msg=humanizeClientError(serverMsg);
+      if(status&&!/登录状态/.test(msg)&&!/HTTP\s*\d+/.test(msg))msg='HTTP '+status+' · '+msg;
       toast(msg.indexOf('登录状态')===0?msg:('上传失败：'+msg));
-      try{console.error('[companion-media] upload failed',mediaType,err)}catch(e){}
+      try{
+        console.error('[companion-media] upload failed',{
+          fileName:file&&file.name,
+          fileType:file&&file.type,
+          fileSize:file&&file.size,
+          uploadURL:'/api/companion',
+          responseStatus:status||null,
+          serverErrorMessage:serverMsg
+        });
+      }catch(e){}
     });
   }
   function validateProfileForm(form){
@@ -3528,6 +3812,25 @@
     api('reorder_media',{ordered_ids:media.map(function(m){return m.id})}).then(function(res){toast(res.message||'顺序已更新');return loadData()}).catch(function(err){toast(err.message)});
   }
   document.addEventListener('click',function(e){
+    var qrZoom=e.target.closest('[data-pay-qr-zoom], [data-mcj-pay-qr]');
+    if(qrZoom && (e.target.closest('[data-deposit-form], [data-deposit-view], [data-deposit-channels]')||qrZoom.closest('.pw-deposit-qr-block'))){
+      var qImg=qrZoom.tagName==='IMG'?qrZoom:qrZoom.querySelector('img[data-mcj-pay-qr], img');
+      if(qImg&&qImg.src){e.preventDefault();openDepositQrLightbox(qImg.src);return}
+    }
+    if(e.target.closest('[data-view-deposit-record]')){
+      e.preventDefault();
+      var existing=document.querySelector('[data-deposit-record-modal]');
+      if(existing)existing.remove();
+      var wrap=document.createElement('div');
+      wrap.innerHTML=depositRecordModalHtml();
+      document.body.appendChild(wrap.firstChild);
+      return;
+    }
+    if(e.target.closest('[data-close-deposit-record]')||(e.target.matches&&e.target.matches('[data-deposit-record-modal]'))){
+      var modal=e.target.closest('[data-deposit-record-modal]')||document.querySelector('[data-deposit-record-modal]');
+      if(modal)modal.remove();
+      return;
+    }
     var tab=e.target.closest('[data-auth-tab]');
     if(tab){
       state.authTab=tab.dataset.authTab==='register'?'register':'login';
@@ -4459,21 +4762,38 @@
         var code=String(fd.get('code')||'').trim();
         if(!account||!/^\S+@\S+\.\S+$/.test(account)){state.loginBusy=false;state.loginError='请输入有效邮箱。';if(Auth&&Auth.setLoading)Auth.setLoading(btn,false,'验证码登录');else if(btn){btn.disabled=false;btn.textContent='验证码登录';}if(Auth&&Auth.setFormError)Auth.setFormError(form,state.loginError);else{var e1=form.querySelector('[data-auth-error]');if(e1)e1.textContent=state.loginError;}return;}
         if(!/^\d{4,8}$/.test(code)){state.loginBusy=false;state.loginError='请输入验证码。';if(Auth&&Auth.setLoading)Auth.setLoading(btn,false,'验证码登录');else if(btn){btn.disabled=false;btn.textContent='验证码登录';}if(Auth&&Auth.setFormError)Auth.setFormError(form,state.loginError);else{var e2=form.querySelector('[data-auth-error]');if(e2)e2.textContent=state.loginError;}return;}
-        run=fetch('/api/auth',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify({action:'login_with_otp',email:account,code:code,role:'companion'})}).then(function(r){return r.json().then(function(j){if(!r.ok||j.ok===false)throw new Error((j&&j.message)||'登录失败');return j;});});
+        run=fetch('/api/auth',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify({action:'login_with_otp',email:account,code:code,role:'companion',loginPortal:'companion'})}).then(function(r){return r.json().then(function(j){if(!r.ok||j.ok===false)throw new Error((j&&j.message)||'登录失败');return j;});});
       }else{
         var password=String(fd.get('password')||'');
         run=Gate&&typeof Gate.loginPortal==='function'?Gate.loginPortal('companion',account,password,remember):api('login',{account:account,password:password,remember:remember});
       }
       run.then(function(res){
         var sess=res.session||{};
+        var user=Object.assign({},sess.user||{},{role:'companion'});
+        if(!(user.hasCompanion||user.role==='companion')){
+          throw new Error((Gate&&Gate.portalDeniedMessage?Gate.portalDeniedMessage('companion'):null)||'该账号暂无陪玩端权限');
+        }
+        if(Gate&&typeof Gate.writeCompanionPortalSession==='function'){
+          Gate.writeCompanionPortalSession({
+            accessToken:sess.accessToken||sess.token||'',
+            refreshToken:sess.refreshToken||sess.refresh_token||'',
+            expiresAt:sess.expiresAt||sess.expires_at||'',
+            user:user
+          },remember);
+        }
         saveSession({
           token:sess.accessToken||sess.token||'',
           refreshToken:sess.refreshToken||sess.refresh_token||'',
           expiresAt:sess.expiresAt||sess.expires_at||'',
-          user:sess.user||{},
+          user:user,
           remember:remember
         },remember);
-        state.loginBusy=false;state.loginError='';go('/companion/review-status');return loadData();
+        state.loginBusy=false;state.loginError='';
+        // Prefer API redirect; fall back to review-status for isolation / dashboard for approved.
+        var next=String((res&&res.redirect)||'/companion/review-status');
+        if(!/^\/companion\//.test(next))next='/companion/review-status';
+        go(next);
+        return loadData();
       }).catch(function(err){
         state.loginBusy=false;
         state.loginError=(Gate&&Gate.humanizeAuthError?Gate.humanizeAuthError(err):null)||err.message||'账号或密码错误。';
@@ -4625,14 +4945,17 @@
       df.forEach(function(v,k){dp[k]=String(v||'')});
       var dep=(state.data&&state.data.deposit)||{};
       if(!dep.hasProof&&!dep.proofUrl){toast('请先上传押金付款凭证');return}
+      if(!String(dp.channel_id||'').trim()){toast('请选择俱乐部收款渠道');return}
       delete dp.proof_url;
+      delete dp.payment_method;
+      delete dp.paid_amount;
       var dBtn=dForm.querySelector('[type="submit"]');
-      var dLabel=dBtn?String(dBtn.textContent||'提交押金凭证'):'提交押金凭证';
+      var dLabel=dBtn?String(dBtn.textContent||'提交押金审核'):'提交押金审核';
       if(dBtn){dBtn.disabled=true;dBtn.textContent='提交中…';}
       api('submit_deposit_proof',dp).then(function(res){
         state.accountDraft=null;
         if(dBtn){dBtn.disabled=false;dBtn.textContent=dLabel;}
-        toast(res.message||'已提交审核，等待后台审核。');
+        toast(res.message||'已提交押金审核，状态：押金审核中。');
         return loadData({soft:true,forcePaint:true,preserveScroll:true});
       }).catch(function(err){
         if(dBtn){dBtn.disabled=false;dBtn.textContent=dLabel;}

@@ -1,18 +1,16 @@
 /**
- * Boss refund → Friday bank payout queue (NOT instant wallet credit).
- * CS suggests approve/reject; final enqueue creates boss_refund_requests + payout_requests.
- * Admin marks paid with receipt → then credit wallet / update net revenue (idempotent).
+ * Boss refund → 猫粮余额 only (never cash / bank / DuitNow / TNG / original-path).
+ * CS suggests approve/reject; admin confirms → creditWallet(transactionType: "refund") idempotently.
  */
 import {
   computeSettlementDate,
-  formatSettlementHint,
   mergeWeeklySettings,
   nextSettlementFriday,
   buildBatchCode,
   weekRangeFromFriday,
   isoWeekParts,
 } from "./_weekly-settlement.js";
-import { upsertPayoutRequest, syncPayoutRequestStatus, loadFinanceWeeklySettings } from "./_payout-requests.js";
+import { syncPayoutRequestStatus, loadFinanceWeeklySettings } from "./_payout-requests.js";
 
 function money(v) {
   const n = Number(String(v ?? "").replace(/[^\d.-]/g, ""));
@@ -31,17 +29,19 @@ function isMissing(err) {
 
 export const REFUND_STATUS_TEXT = {
   pending_review: "待审核",
-  approved_for_payout: "待周五退款",
-  included_in_batch: "已进入本周批次",
-  processing: "正在打款",
-  paid: "退款已完成",
+  approved_for_payout: "待退回猫粮",
+  included_in_batch: "待退回猫粮",
+  processing: "退款处理中",
+  paid: "已退款（猫粮）",
   rejected: "退款未通过",
   failed: "退款失败",
-  carried_forward: "顺延下周",
+  carried_forward: "待退回猫粮",
   cancelled: "已取消",
 };
 
 export function viewBossRefund(row = {}) {
+  const amount = money(row.paid_amount_rm != null && row.status === "paid" ? row.paid_amount_rm : row.amount_rm);
+  const refundMethod = "meowcoin";
   return {
     id: row.id,
     refundNo: row.refund_no || "",
@@ -50,7 +50,11 @@ export function viewBossRefund(row = {}) {
     bossId: row.boss_id || "",
     bossUid: row.boss_uid || "",
     bossName: row.boss_name || "",
-    amountRm: money(row.amount_rm),
+    amountRm: amount,
+    /** 订单金额按猫粮计；字段名历史遗留 amount_rm，实际为应退猫粮数量 */
+    amountCatFood: amount,
+    refundMethod,
+    refundMethodText: "猫粮余额",
     reason: row.reason || "",
     csSuggest: row.cs_suggest || "",
     csNote: row.cs_note || "",
@@ -60,17 +64,19 @@ export function viewBossRefund(row = {}) {
     status: row.status || "pending_review",
     statusText: REFUND_STATUS_TEXT[row.status] || row.status || "-",
     settlementDate: row.settlement_date || "",
-    settlementHint: formatSettlementHint(row.settlement_date),
+    settlementHint: row.status === "paid" ? "已退回猫粮余额" : "审核通过后立即退回猫粮余额（不退现金）",
     batchId: row.batch_id || "",
     bankReference: row.bank_reference || "",
     paidAt: row.paid_at || "",
     paidAmountRm: money(row.paid_amount_rm ?? row.amount_rm),
+    paidCatFood: money(row.paid_amount_rm ?? row.amount_rm),
     rejectReason: row.reject_reason || "",
     failReason: row.fail_reason || "",
     canReapply: row.can_reapply !== false,
     receiptPath: row.receipt_path || "",
     createdAt: row.created_at || "",
     updatedAt: row.updated_at || "",
+    alreadyRefunded: String(row.status || "") === "paid",
   };
 }
 
@@ -132,7 +138,7 @@ export async function createBossRefundRequest(db, {
       body: JSON.stringify(row),
     });
     const saved = Array.isArray(created) ? created[0] : created;
-    return { ok: true, refund: viewBossRefund(saved), message: "退款申请已提交，待客服审核。预计周五统一处理，不会即时到账。" };
+    return { ok: true, refund: viewBossRefund(saved), message: "退款申请已提交，待客服/后台审核。审核通过并确认后，退款将退回您的猫粮余额（不退现金）。" };
   } catch (e) {
     if (isMissing(e)) {
       return { ok: false, message: "退款结算表未就绪，请执行 friday_settlement_center migration。" };
@@ -176,9 +182,7 @@ export async function csSuggestRefund(db, {
     return { ok: true, message: "已驳回退款申请。", refund: viewBossRefund(patched?.[0] || patched) };
   }
 
-  // approve → queue for Friday (no wallet credit yet)
-  const weekly = mergeWeeklySettings(await loadFinanceWeeklySettings(db));
-  const settlementDate = row.settlement_date || computeSettlementDate(new Date(), weekly);
+  // approve → 待后台确认退回猫粮（不再进入银行打款队列）
   const patch = {
     status: "approved_for_payout",
     cs_suggest: "approve",
@@ -186,7 +190,6 @@ export async function csSuggestRefund(db, {
     assigned_cs_id: csProfile.id,
     assigned_cs_name: csProfile.display_name || csProfile.nickname || "",
     assigned_cs_account: csProfile.email || csProfile.account || "",
-    settlement_date: settlementDate,
     reviewed_at: nowIso(),
     reviewed_by: csProfile.id,
     updated_at: nowIso(),
@@ -197,39 +200,206 @@ export async function csSuggestRefund(db, {
   });
   const saved = patched?.[0] || { ...row, ...patch };
 
-  const payout = await upsertPayoutRequest(db, {
-    payoutNo: saved.refund_no || no("PO-RF"),
-    applicantType: "boss",
-    applicantId: saved.boss_id,
-    applicantName: saved.boss_name,
-    applicantUid: saved.boss_uid,
-    amount: saved.amount_rm,
-    currency: "MYR",
-    settlementDate,
-    status: "pending_friday",
-    payoutType: "boss_refund",
-    relatedTable: "boss_refund_requests",
-    relatedRecordId: saved.id,
-    sourceOrderIds: [saved.order_id],
-    meta: {
-      payout_type: "boss_refund",
-      refund_no: saved.refund_no,
-      order_no: saved.order_no,
-      cs_id: csProfile.id,
-      cs_name: patch.assigned_cs_name,
-    },
-  });
-  if (payout?.id) {
-    await db("boss_refund_requests", `?id=eq.${encodeURIComponent(saved.id)}`, {
-      method: "PATCH",
-      body: JSON.stringify({ payout_request_id: payout.id, updated_at: nowIso() }),
-    }).catch(() => null);
-  }
   return {
     ok: true,
-    message: "已建议批准并进入周五退款队列（不会即时到账）。",
-    refund: viewBossRefund({ ...saved, payout_request_id: payout?.id || saved.payout_request_id }),
+    message: "已建议批准。退款方式固定为猫粮余额，请后台点击「确认退款猫粮」后立即入账（不退现金）。",
+    refund: viewBossRefund(saved),
   };
+}
+
+/**
+ * P0：确认退款猫粮 — 真实 creditWallet + 幂等 + 更新订单。
+ * 禁止现金/银行/原路退款。
+ */
+export async function confirmBossCatFoodRefund(db, {
+  refundId,
+  amount,
+  adminId,
+  adminName,
+  reason,
+} = {}) {
+  const rows = await db("boss_refund_requests", `?id=eq.${encodeURIComponent(refundId)}&limit=1`);
+  const row = rows?.[0];
+  if (!row) return { ok: false, message: "退款记录不存在" };
+
+  if (String(row.status || "") === "paid") {
+    let wallet = null;
+    try {
+      const walletApi = await import("./_wallet.js");
+      wallet = await walletApi.getWallet(row.boss_id);
+    } catch {
+      /* optional */
+    }
+    return {
+      ok: true,
+      message: "已退款（幂等，未重复入账）",
+      refund: viewBossRefund(row),
+      duplicate: true,
+      alreadyRefunded: true,
+      wallet,
+    };
+  }
+
+  if (/rejected|cancelled/i.test(String(row.status || ""))) {
+    return { ok: false, message: "已驳回/取消的退款不可确认。" };
+  }
+
+  const creditAmount = money(amount != null ? amount : row.amount_rm);
+  if (creditAmount <= 0) {
+    return { ok: false, message: "退款猫粮必须大于 0。" };
+  }
+  if (!row.boss_id) {
+    return { ok: false, message: "退款记录缺少老板 ID，无法入账。" };
+  }
+
+  const idempotencyKey = `refund-meow:${row.id}`;
+  const walletApi = await import("./_wallet.js");
+  let creditResult;
+  try {
+    creditResult = await walletApi.creditWallet({
+      bossId: row.boss_id,
+      transactionType: "refund",
+      amount: creditAmount,
+      balanceType: "paid",
+      idempotencyKey,
+      reason: String(reason || row.cs_note || row.reason || "订单退款退回猫粮").slice(0, 240),
+      internalNote: `confirmBossCatFoodRefund by ${adminName || adminId || "admin"}`,
+      relatedOrderId: row.order_id || null,
+      operatorId: adminId || null,
+    });
+  } catch (e) {
+    return { ok: false, message: `猫粮入账失败：${e?.message || e}` };
+  }
+
+  const duplicateCredit = !!(creditResult && (creditResult.duplicate === true || creditResult.ok === true && creditResult.duplicate));
+
+  const patch = {
+    status: "paid",
+    paid_amount_rm: creditAmount,
+    paid_at: nowIso(),
+    paid_by: adminId || null,
+    bank_reference: "MEOW_WALLET",
+    receipt_bucket: "",
+    receipt_path: "meowcoin-wallet",
+    fail_reason: "",
+    updated_at: nowIso(),
+  };
+  const patched = await db("boss_refund_requests", `?id=eq.${encodeURIComponent(refundId)}`, {
+    method: "PATCH",
+    body: JSON.stringify(patch),
+  });
+  const saved = patched?.[0] || { ...row, ...patch };
+
+  // Cancel any legacy Friday payout queue rows (cash path retired).
+  try {
+    await syncPayoutRequestStatus(db, {
+      relatedTable: "boss_refund_requests",
+      relatedRecordId: refundId,
+      status: "completed",
+      patch: {
+        paid_at: patch.paid_at,
+        paid_by: adminId || null,
+        transaction_no: "MEOW_WALLET",
+        receipt_url: "meowcoin-wallet",
+        meta: { refund_method: "meowcoin", cash_refund: false },
+      },
+    });
+  } catch {
+    /* optional */
+  }
+
+  if (saved.order_id) {
+    // orders 表无 refund_amount / updated_at 列；只写 status，避免 PATCH 静默失败导致仍为售后中。
+    try {
+      await db("orders", `?id=eq.${encodeURIComponent(saved.order_id)}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: "refunded" }),
+      });
+    } catch (e) {
+      console.warn("[refund-meow] order status:", e?.message || e);
+      try {
+        const walletApiForOrder = await import("./_wallet.js");
+        await walletApiForOrder.supabaseJson(
+          walletApiForOrder.restUrl("orders", `?id=eq.${encodeURIComponent(saved.order_id)}`),
+          {
+            method: "PATCH",
+            headers: walletApiForOrder.serviceHeaders({ Prefer: "return=minimal" }),
+            body: JSON.stringify({ status: "refunded" }),
+          }
+        );
+      } catch (e2) {
+        console.warn("[refund-meow] order status fallback:", e2?.message || e2);
+      }
+    }
+    try {
+      const txs = await db(
+        "payment_transactions",
+        `?order_id=eq.${encodeURIComponent(saved.order_id)}&select=id,gross_amount,refunded_amount,net_amount&limit=1`
+      );
+      const tx = txs?.[0];
+      if (tx?.id) {
+        const refunded = Math.min(money(tx.gross_amount), money(tx.refunded_amount) + creditAmount);
+        const net = Math.max(0, money(tx.gross_amount) - refunded);
+        await db("payment_transactions", `?id=eq.${encodeURIComponent(tx.id)}`, {
+          method: "PATCH",
+          body: JSON.stringify({ refunded_amount: refunded, net_amount: net }),
+        });
+      }
+    } catch (e) {
+      console.warn("[refund-meow] payment_transactions:", e?.message || e);
+    }
+  }
+
+  if (saved.batch_id || row.batch_id) {
+    try {
+      await refreshBatchTotals(db, saved.batch_id || row.batch_id);
+    } catch {
+      /* optional */
+    }
+  }
+
+  let wallet = creditResult?.wallet || null;
+  try {
+    wallet = (await walletApi.getWallet(row.boss_id)) || wallet;
+  } catch {
+    /* optional */
+  }
+
+  try {
+    await walletApi.notifyBoss(
+      saved.boss_id,
+      "退款成功",
+      `订单 ${saved.order_no || ""} 已退回 ${creditAmount} 猫粮到您的平台余额，可继续用于平台消费，不支持提现或现金退款。`,
+      "refund",
+      saved.id
+    );
+  } catch {
+    /* optional */
+  }
+
+  return {
+    ok: true,
+    message: duplicateCredit
+      ? "已退款（幂等，未重复入账）"
+      : `已确认退回 ${creditAmount} 猫粮到老板账户`,
+    refund: viewBossRefund(saved),
+    duplicate: !!duplicateCredit,
+    alreadyRefunded: !!duplicateCredit,
+    wallet,
+    creditedCatFood: creditAmount,
+    adminName: adminName || "",
+  };
+}
+
+/** @deprecated Use confirmBossCatFoodRefund — cash/bank path removed. */
+export async function completeBossRefundPayout(db, params = {}) {
+  return confirmBossCatFoodRefund(db, {
+    refundId: params.refundId,
+    amount: params.paidAmount != null ? params.paidAmount : params.amount,
+    adminId: params.adminId,
+    adminName: params.adminName,
+    reason: params.reason || params.bankReference || "订单退款退回猫粮",
+  });
 }
 
 export async function ensureSettlementBatch(db, settlementFriday) {
@@ -545,161 +715,6 @@ export async function markWageFailed(db, { kind, id, reason = "打款失败" } =
   });
   if (row.batch_id) await refreshBatchTotals(db, row.batch_id);
   return { ok: true, message: "已标记打款失败", item: patched?.[0] || { ...row, status: "failed" }, reason: note };
-}
-
-/**
- * Complete Friday bank refund: require receipt path + bank ref; idempotent wallet credit.
- */
-export async function completeBossRefundPayout(db, {
-  refundId,
-  paidAmount,
-  bankReference,
-  paidAt,
-  receiptBucket,
-  receiptPath,
-  adminId,
-  adminName,
-} = {}) {
-  const rows = await db("boss_refund_requests", `?id=eq.${encodeURIComponent(refundId)}&limit=1`);
-  const row = rows?.[0];
-  if (!row) return { ok: false, message: "退款记录不存在" };
-  if (row.status === "paid") {
-    return { ok: true, message: "已打款（幂等）", refund: viewBossRefund(row), duplicate: true };
-  }
-  if (!String(bankReference || "").trim()) {
-    return { ok: false, message: "必须填写银行参考号 / Transaction Reference" };
-  }
-  if (!String(receiptPath || "").trim()) {
-    return { ok: false, message: "没有上传打款凭证，不允许标记完成。" };
-  }
-  const amount = money(paidAmount != null ? paidAmount : row.amount_rm);
-  const patch = {
-    status: "paid",
-    paid_amount_rm: amount,
-    paid_at: paidAt || nowIso(),
-    paid_by: adminId || null,
-    bank_reference: String(bankReference).trim(),
-    receipt_bucket: receiptBucket || "finance-receipts",
-    receipt_path: String(receiptPath).trim(),
-    updated_at: nowIso(),
-  };
-  const patched = await db("boss_refund_requests", `?id=eq.${encodeURIComponent(refundId)}`, {
-    method: "PATCH",
-    body: JSON.stringify(patch),
-  });
-  const saved = patched?.[0] || { ...row, ...patch };
-
-  // Versioned receipt (never overwrite)
-  try {
-    const vers = await db(
-      "payout_receipt_versions",
-      `?related_table=eq.boss_refund_requests&related_record_id=eq.${encodeURIComponent(refundId)}&select=version&order=version.desc&limit=1`
-    );
-    const nextVer = (vers?.[0]?.version || 0) + 1;
-    await db("payout_receipt_versions", "", {
-      method: "POST",
-      body: JSON.stringify({
-        related_table: "boss_refund_requests",
-        related_record_id: refundId,
-        version: nextVer,
-        storage_bucket: patch.receipt_bucket,
-        storage_path: patch.receipt_path,
-        bank_reference: patch.bank_reference,
-        paid_amount_rm: amount,
-        uploaded_by: adminId || null,
-        created_at: nowIso(),
-      }),
-    });
-  } catch {
-    /* optional table */
-  }
-
-  await syncPayoutRequestStatus(db, {
-    relatedTable: "boss_refund_requests",
-    relatedRecordId: refundId,
-    status: "completed",
-    patch: {
-      paid_at: patch.paid_at,
-      paid_by: adminId || null,
-      transaction_no: patch.bank_reference,
-      receipt_url: patch.receipt_path,
-    },
-  });
-
-  // Wallet credit only after bank payout confirmed (idempotent)
-  try {
-    const walletApi = await import("./_wallet.js");
-    await walletApi.creditWallet({
-      bossId: saved.boss_id,
-      transactionType: "refund",
-      amount,
-      balanceType: "paid",
-      idempotencyKey: `friday-refund-paid:${saved.id}`,
-      reason: saved.cs_note || saved.reason || "周五退款到账",
-      relatedOrderId: saved.order_id,
-      operatorId: adminId,
-    });
-  } catch (e) {
-    console.warn("[friday-refund] wallet credit:", e?.message || e);
-  }
-
-  // Order → refunded only after Friday bank payout
-  if (saved.order_id) {
-    try {
-      await db("orders", `?id=eq.${encodeURIComponent(saved.order_id)}`, {
-        method: "PATCH",
-        body: JSON.stringify({ status: "refunded", updated_at: nowIso() }),
-      });
-    } catch (e) {
-      console.warn("[friday-refund] order status:", e?.message || e);
-    }
-    // Net revenue: increase refunded_amount only after bank payout confirmed
-    try {
-      const txs = await db(
-        "payment_transactions",
-        `?order_id=eq.${encodeURIComponent(saved.order_id)}&select=id,gross_amount,refunded_amount,net_amount&limit=1`
-      );
-      const tx = txs?.[0];
-      if (tx?.id) {
-        const refunded = Math.min(money(tx.gross_amount), money(tx.refunded_amount) + amount);
-        const net = Math.max(0, money(tx.gross_amount) - refunded);
-        await db("payment_transactions", `?id=eq.${encodeURIComponent(tx.id)}`, {
-          method: "PATCH",
-          body: JSON.stringify({
-            refunded_amount: refunded,
-            net_amount: net,
-          }),
-        });
-      }
-    } catch (e) {
-      console.warn("[friday-refund] payment_transactions net:", e?.message || e);
-    }
-  }
-
-  if (saved.batch_id || row.batch_id) {
-    await refreshBatchTotals(db, saved.batch_id || row.batch_id);
-  }
-
-  // Notify boss
-  try {
-    const { notifyBoss } = await import("./_wallet.js");
-    await notifyBoss(
-      saved.boss_id,
-      "退款已完成",
-      `订单 ${saved.order_no || ""} 退款 RM ${amount} 已打款。参考号：${patch.bank_reference}`,
-      "refund",
-      saved.id
-    );
-  } catch {
-    /* optional */
-  }
-
-  return {
-    ok: true,
-    message: "退款打款完成",
-    refund: viewBossRefund(saved),
-    adminName: adminName || "",
-  };
 }
 
 export async function listBossRefunds(db, { bossId, status, limit = 100 } = {}) {

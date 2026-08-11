@@ -32,6 +32,37 @@
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
     });
   }
+  function toast(msg) {
+    var el = document.getElementById("adminFinalToast");
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "adminFinalToast";
+      el.className = "admin-final-toast";
+      document.body.appendChild(el);
+    }
+    el.textContent = String(msg || "");
+    el.classList.add("show");
+    clearTimeout(el._t);
+    el._t = setTimeout(function () {
+      el.classList.remove("show");
+    }, 2800);
+  }
+  function openAdminUi(title, html) {
+    if (window.MCJAdminModal && window.MCJAdminModal.open) {
+      window.MCJAdminModal.open(title, html);
+      return true;
+    }
+    var modal = document.getElementById("adminModal");
+    if (!modal) return false;
+    modal.classList.add("show");
+    modal.hidden = false;
+    modal.setAttribute("aria-hidden", "false");
+    var body = document.getElementById("modalBody") || modal.querySelector("[data-admin-modal-body], .modal-body, .admin-modal-body");
+    var titleEl = modal.querySelector("h3, .modal-title, .admin-modal-head strong, .admin-modal-head h3");
+    if (titleEl) titleEl.textContent = title;
+    if (body) body.innerHTML = html;
+    return true;
+  }
   function role() {
     try {
       var u = JSON.parse(localStorage.getItem("adminUser") || sessionStorage.getItem("adminUser") || "{}");
@@ -105,7 +136,7 @@
     var batch = state.currentBatch || {};
     return (
       '<div class="admin-sync-note">' +
-      "周结：周四 23:59（Asia/Kuala_Lumpur）前 → 本周五发放；截止后 → 下周五。人工银行转账后须上传打款凭证。退款/陪玩工资/客服工资统一周五批次。" +
+      "周结：陪玩工资 / 客服工资统一周五发放。老板订单退款已改为<strong>即时退回猫粮余额</strong>（不退现金、不原路退回）。" +
       "<br>本周五 " +
       esc(rules.thisFriday || sum.thisFriday || "-") +
       " · 批次 " +
@@ -131,33 +162,23 @@
   function refundsHtml(list) {
     var rows = (list || state.bossRefunds || [])
       .map(function (r) {
+        var paid = /^(paid)$/i.test(String(r.status || ""));
         var actions = "";
-        if (/approved_for_payout|carried_forward|failed/i.test(String(r.status || ""))) {
+        if (paid) {
+          actions = '<button class="mini-btn" type="button" disabled>已退款</button>';
+        } else if (/pending_review|approved_for_payout|included_in_batch|processing|failed|carried_forward/i.test(String(r.status || ""))) {
           actions +=
-            '<button class="mini-btn" type="button" data-fin-refund-batch="' +
+            '<button class="mini-btn primary-lite" type="button" data-fin-refund-meow="' +
             esc(r.id) +
-            '">加入本周批次</button> ';
-          actions +=
-            '<button class="mini-btn" type="button" data-fin-refund-next="' +
-            esc(r.id) +
-            '">移至下周</button> ';
+            '">确认退款猫粮</button> ';
+          if (/pending_review/i.test(String(r.status || ""))) {
+            actions +=
+              '<button class="mini-btn" type="button" data-fin-refund-reject="' +
+              esc(r.id) +
+              '">驳回</button>';
+          }
         }
-        if (/approved_for_payout|included_in_batch|carried_forward|failed/i.test(String(r.status || ""))) {
-          actions +=
-            '<button class="mini-btn" type="button" data-fin-refund-processing="' +
-            esc(r.id) +
-            '">标记处理中</button> ';
-        }
-        if (/approved_for_payout|included_in_batch|processing|failed|carried_forward/i.test(String(r.status || ""))) {
-          actions +=
-            '<button class="mini-btn primary-lite" type="button" data-fin-refund-paid="' +
-            esc(r.id) +
-            '">上传凭证/打款完成</button> ';
-          actions +=
-            '<button class="mini-btn" type="button" data-fin-refund-fail="' +
-            esc(r.id) +
-            '">打款失败</button>';
-        }
+        var amt = Number(r.amountCatFood != null ? r.amountCatFood : r.amountRm || 0);
         return (
           "<tr><td>" +
           esc(r.refundNo) +
@@ -167,16 +188,14 @@
           esc(r.bossUid) +
           "</small></td><td>" +
           esc(r.orderNo) +
-          "</td><td>RM " +
-          esc(r.amountRm) +
-          "</td><td>" +
+          '</td><td><strong>' +
+          esc(amt) +
+          ' 猫粮</strong><br><small>退款方式：猫粮余额（固定）</small></td><td>' +
           esc(r.assignedCsName || "-") +
           "</td><td>" +
-          esc(r.settlementDate || "-") +
+          esc(r.statusText || r.status) +
           "</td><td>" +
-          esc(r.statusText) +
-          "</td><td>" +
-          esc(r.createdAt) +
+          esc(String(r.createdAt || "").slice(0, 19).replace("T", " ")) +
           "</td><td>" +
           actions +
           "</td></tr>"
@@ -184,12 +203,15 @@
       })
       .join("");
     return (
-      '<div class="table-wrap"><table><thead><tr><th>退款单号</th><th>老板</th><th>订单</th><th>金额</th><th>负责人客服</th><th>预计结算日</th><th>状态</th><th>申请时间</th><th>操作</th></tr></thead><tbody>' +
-      (rows || '<tr><td colspan="9">暂无老板退款</td></tr>') +
+      '<div class="admin-sync-note" style="margin-bottom:10px">平台规则：订单退款<strong>只退猫粮余额</strong>，不退现金、不原路退回银行卡 / DuitNow / TNG。点击「确认退款猫粮」后立即入账并写 REFUND 流水（幂等）。</div>' +
+      '<div class="table-wrap"><table><thead><tr><th>退款单号</th><th>老板</th><th>订单</th><th>退款猫粮</th><th>负责人客服</th><th>状态</th><th>申请时间</th><th>操作</th></tr></thead><tbody>' +
+      (rows || '<tr><td colspan="8">暂无老板退款</td></tr>') +
       "</tbody></table></div>"
     );
   }
+
   function withdrawPayeeCard(w) {
+    var masked = "*****" + esc(w.accountLast4 || "----");
     return (
       '<div class="fin-payee-card" style="display:grid;gap:6px;min-width:220px;padding:10px 12px;border:1px solid rgba(255,255,255,.10);border-radius:12px;background:rgba(255,255,255,.03);text-align:left">' +
       '<div style="display:flex;justify-content:space-between;gap:8px"><span style="color:#9ca3af;font-size:12px">银行</span><strong style="font-size:13px">' +
@@ -198,15 +220,17 @@
       '<div style="display:flex;justify-content:space-between;gap:8px"><span style="color:#9ca3af;font-size:12px">户名</span><strong style="font-size:13px">' +
       esc(w.accountHolder || "-") +
       "</strong></div>" +
-      '<div style="display:flex;justify-content:space-between;gap:8px"><span style="color:#9ca3af;font-size:12px">账号</span><strong style="font-size:13px;letter-spacing:.08em">*****' +
-      esc(w.accountLast4 || "----") +
+      '<div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><span style="color:#9ca3af;font-size:12px">账号</span><strong class="fin-account-value" data-fin-account-display data-masked="' +
+      masked +
+      '" style="font-size:13px;letter-spacing:.08em">' +
+      masked +
       "</strong></div>" +
       (w.paymentAccountId && state.canReveal
         ? '<button class="mini-btn" type="button" data-fin-reveal="' +
           esc(w.paymentAccountId) +
           '" data-fin-reveal-wd="' +
           esc(w.id) +
-          '" style="margin-top:4px">查看完整账号</button>'
+          '" data-fin-reveal-state="masked" style="margin-top:4px">查看完整账号</button>'
         : w.paymentAccountId
           ? '<div class="admin-sync-note" style="margin-top:4px;font-size:11px">完整账号仅超级管理员/财务可查看</div>'
           : "") +
@@ -586,7 +610,7 @@
                   payrollsHtml()
                 : withdrawalsHtml();
     box.innerHTML =
-      '<div class="admin-section-head compact"><div><h3>周五结算中心</h3><p>老板退款 · 陪玩工资 · 客服工资统一周五结算；打款须上传凭证。禁止即时到账。</p></div><button class="mini-btn" type="button" data-fin-reload>刷新</button></div>' +
+      '<div class="admin-section-head compact"><div><h3>周五结算中心</h3><p>陪玩工资 · 客服工资统一周五结算并上传打款凭证。老板订单退款改为<strong>确认退款猫粮</strong>即时入账，禁止现金/原路退款。</p></div><button class="mini-btn" type="button" data-fin-reload>刷新</button></div>' +
       (state.message ? '<div class="admin-sync-note">' + esc(state.message) + "</div>" : "") +
       (state.tab !== "friday" ? fridayBannerHtml() : "") +
       tabsHtml() +
@@ -741,67 +765,74 @@
     var row = (state.bossRefunds || []).find(function (r) {
       return String(r.id) === String(refundId);
     });
-    var amount = row ? row.amountRm : "";
+    if (row && /^(paid)$/i.test(String(row.status || ""))) {
+      alert("该退款已完成（已退款），不可重复操作。");
+      return;
+    }
+    var amt = row ? Number(row.amountCatFood != null ? row.amountCatFood : row.amountRm || 0) : 0;
     var overlay = document.createElement("div");
     overlay.style.cssText =
-      "position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px";
+      "position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px";
     overlay.innerHTML =
-      '<div style="background:#fff;max-width:480px;width:100%;border-radius:12px;padding:18px;box-shadow:0 12px 40px rgba(0,0,0,.2)">' +
-      '<h3 style="margin:0 0 8px">老板退款 · 上传打款凭证</h3>' +
-      '<p style="margin:0 0 12px;color:#666;font-size:13px">必须上传凭证并填写银行参考号后才能标记完成。应付：RM ' +
-      esc(amount) +
-      "</p>" +
-      '<label style="display:block;margin-bottom:8px">实际打款金额 RM<input type="number" step="0.01" data-rf-amount value="' +
-      esc(amount) +
-      '" style="width:100%"></label>' +
-      '<label style="display:block;margin-bottom:8px">银行参考号 / Transaction Reference<input data-rf-ref required style="width:100%"></label>' +
-      '<div data-rf-drop style="border:1px dashed #bbb;border-radius:10px;padding:18px;text-align:center;margin:10px 0;cursor:pointer;background:#fafafa"><strong>点击上传打款凭证</strong></div>' +
-      '<input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" data-rf-file hidden>' +
-      '<div data-rf-preview style="font-size:13px;margin:8px 0"></div>' +
-      '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">' +
+      '<div style="background:#1a1520;color:#fff;max-width:520px;width:100%;border-radius:14px;padding:20px;border:1px solid rgba(255,143,197,.28);box-shadow:0 16px 48px rgba(0,0,0,.45)">' +
+      '<h3 style="margin:0 0 8px">确认退款猫粮</h3>' +
+      '<p style="margin:0 0 12px;color:#ffb4d0;font-size:13px;line-height:1.55">退款方式固定为<strong>猫粮余额</strong>。确认后立即计入老板猫粮并生成 REFUND 流水，不退现金、不原路退回。</p>' +
+      '<div class="detail-list" style="display:grid;gap:8px;margin-bottom:12px;font-size:14px">' +
+      "<div><span style=\"color:#9ca3af\">退款老板</span><strong style=\"float:right\">" +
+      esc((row && (row.bossName || row.bossUid)) || "-") +
+      "</strong></div>" +
+      "<div><span style=\"color:#9ca3af\">订单编号</span><strong style=\"float:right\">" +
+      esc((row && row.orderNo) || "-") +
+      "</strong></div>" +
+      "<div><span style=\"color:#9ca3af\">退款金额 / 折算猫粮</span><strong style=\"float:right\">" +
+      esc(amt) +
+      " 猫粮</strong></div>" +
+      "<div><span style=\"color:#9ca3af\">退款原因</span><strong style=\"float:right;max-width:60%;text-align:right\">" +
+      esc((row && (row.csNote || row.reason)) || "-") +
+      "</strong></div></div>" +
+      '<label style="display:block;margin-bottom:10px;font-size:13px">退款猫粮数量<input type="number" step="0.01" min="0.01" data-rf-amount value="' +
+      esc(amt) +
+      '" style="width:100%;margin-top:6px;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,.15);background:#0d0b10;color:#fff"></label>' +
+      '<label style="display:block;margin-bottom:10px;font-size:13px">备注（可选）<input data-rf-note style="width:100%;margin-top:6px;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,.15);background:#0d0b10;color:#fff"></label>' +
+      '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">' +
       '<button type="button" class="mini-btn" data-rf-cancel>取消</button>' +
-      '<button type="button" class="mini-btn primary-lite" data-rf-submit>二次确认 · 打款完成</button></div></div>';
+      '<button type="button" class="mini-btn primary-lite" data-rf-submit>确认退款猫粮</button></div></div>';
     document.body.appendChild(overlay);
-    var fileData = "";
-    var drop = overlay.querySelector("[data-rf-drop]");
-    var fileInput = overlay.querySelector("[data-rf-file]");
-    drop.addEventListener("click", function () {
-      fileInput.click();
-    });
-    fileInput.addEventListener("change", function () {
-      var file = fileInput.files && fileInput.files[0];
-      if (!file) return;
-      readFileAsDataUrl(file).then(function (url) {
-        fileData = url;
-        overlay.querySelector("[data-rf-preview]").textContent = "已选择：" + file.name;
-      });
-    });
     overlay.querySelector("[data-rf-cancel]").addEventListener("click", function () {
       overlay.remove();
     });
     overlay.querySelector("[data-rf-submit]").addEventListener("click", function () {
-      var ref = overlay.querySelector("[data-rf-ref]").value.trim();
-      if (!ref) {
-        alert("必须填写银行参考号");
+      var credit = Number(overlay.querySelector("[data-rf-amount]").value || 0);
+      if (!(credit > 0)) {
+        alert("请填写有效退款猫粮数量");
         return;
       }
-      if (!fileData) {
-        alert("没有上传打款凭证，不允许标记完成");
+      if (
+        !confirm(
+          "确认将 " +
+            credit +
+            " 猫粮退回该老板账户？确认后将立即计入老板猫粮余额并生成退款流水。"
+        )
+      ) {
         return;
       }
-      if (!confirm("确认该笔老板退款已银行打款完成？将通知老板并入账（幂等，重复点击不会重复入账）。")) return;
-      post("mark_refund_paid", {
+      var btn = overlay.querySelector("[data-rf-submit]");
+      btn.disabled = true;
+      btn.textContent = "入账中…";
+      post("confirm_meowcoin_refund", {
         id: refundId,
-        bankReference: ref,
-        paidAmount: overlay.querySelector("[data-rf-amount]").value,
-        receiptDataUrl: fileData,
+        amount: credit,
+        reason: overlay.querySelector("[data-rf-note]").value || "后台确认退款猫粮",
       })
         .then(function (res) {
           overlay.remove();
-          state.message = res.message || "退款打款完成";
+          state.message = res.message || "已确认退款猫粮";
+          if (res.alreadyRefunded || res.duplicate) state.message = "已退款（未重复入账）";
           load();
         })
         .catch(function (err) {
+          btn.disabled = false;
+          btn.textContent = "确认退款猫粮";
           alert(err.message);
         });
     });
@@ -929,6 +960,25 @@
     var refundPaid = e.target.closest("[data-fin-refund-paid]");
     if (refundPaid) {
       openBossRefundPaidUploader(refundPaid.dataset.finRefundPaid);
+      return;
+    }
+    var refundMeow = e.target.closest("[data-fin-refund-meow]");
+    if (refundMeow) {
+      openBossRefundPaidUploader(refundMeow.dataset.finRefundMeow);
+      return;
+    }
+    var refundReject = e.target.closest("[data-fin-refund-reject]");
+    if (refundReject) {
+      var why = prompt("驳回原因（必填）", "") || "";
+      if (!why.trim()) return;
+      post("reject_boss_refund", { id: refundReject.dataset.finRefundReject, note: why.trim(), reason: why.trim() })
+        .then(function (res) {
+          state.message = res.message || "已驳回";
+          load();
+        })
+        .catch(function (err) {
+          alert(err.message);
+        });
       return;
     }
     var refundProcessing = e.target.closest("[data-fin-refund-processing]");
@@ -1157,6 +1207,7 @@
         .then(function (res) {
           var w = res.item || res.withdrawal || res.detail || res || {};
           var a = res.account || w.paymentAccount || {};
+          var masked = w.accountLast4 ? "*****" + w.accountLast4 : "*****----";
           var html =
             '<div style="display:grid;gap:10px;text-align:left">' +
             "<div><span style=\"color:#9ca3af\">提现单号</span><br><strong>" +
@@ -1172,7 +1223,7 @@
             "（" +
             esc(w.catFoodAmount != null ? w.catFoodAmount : "-") +
             " 猫粮）</strong></div>" +
-            '<div style="padding:12px;border:1px solid rgba(255,255,255,.12);border-radius:12px;background:rgba(255,255,255,.03)">' +
+            '<div class="fin-payee-card" style="padding:12px;border:1px solid rgba(255,255,255,.12);border-radius:12px;background:rgba(255,255,255,.03)">' +
             "<div style=\"margin-bottom:8px;font-weight:700\">打款信息</div>" +
             "<div>银行：<strong>" +
             esc(a.bankName || w.bankName || "-") +
@@ -1180,66 +1231,73 @@
             "<div>户名：<strong>" +
             esc(a.accountHolder || w.accountHolder || "-") +
             "</strong></div>" +
-            "<div>账号：<strong>" +
-            esc(w.accountLast4 ? "*****" + w.accountLast4 : "*****----") +
+            '<div>账号：<strong class="fin-account-value" data-fin-account-display data-masked="' +
+            esc(masked) +
+            '" style="letter-spacing:.08em">' +
+            esc(masked) +
             "</strong></div>" +
             (state.canReveal && (w.paymentAccountId || w.id)
               ? '<button class="mini-btn" type="button" data-fin-reveal="' +
                 esc(w.paymentAccountId || "") +
                 '" data-fin-reveal-wd="' +
                 esc(w.id || viewWd.dataset.finViewWd) +
-                '" style="margin-top:8px">查看完整账号</button>'
+                '" data-fin-reveal-state="masked" style="margin-top:8px">查看完整账号</button>'
               : '<div class="admin-sync-note" style="margin-top:8px">完整账号需超级管理员/财务点击「查看完整账号」</div>') +
             "</div>" +
             "<div><span style=\"color:#9ca3af\">状态</span><br><strong>" +
             esc(w.statusText || w.status || "-") +
             "</strong></div></div>";
-          if (window.MCJAdminModal && window.MCJAdminModal.open) {
-            window.MCJAdminModal.open("打款信息详情", html);
-          } else {
-            var modal = document.getElementById("adminModal");
-            if (modal) {
-              modal.classList.add("show");
-              modal.hidden = false;
-              var body = modal.querySelector("[data-admin-modal-body], .modal-body, .admin-modal-body") || modal;
-              var title = modal.querySelector("h3, .modal-title");
-              if (title) title.textContent = "打款信息详情";
-              if (body) body.innerHTML = html;
-            } else {
-              alert(
-                "银行：" +
-                  (a.bankName || w.bankName || "") +
-                  "\n户名：" +
-                  (a.accountHolder || w.accountHolder || "") +
-                  "\n账号：" +
-                  (a.accountNumber || "****" + (w.accountLast4 || ""))
-              );
-            }
-          }
+          if (!openAdminUi("打款信息详情", html)) toast("无法打开打款信息详情");
         })
         .catch(function (err) {
-          // Fallback: use list row fields when detail API unavailable
-          var w = (state.withdrawals || []).find(function (x) {
-            return String(x.id) === String(viewWd.dataset.finViewWd);
-          }) || {};
-          alert(
-            "银行：" +
-              (w.bankName || "") +
-              "\n户名：" +
-              (w.accountHolder || "") +
-              "\n账号后四位：****" +
-              (w.accountLast4 || "") +
-              (err && err.message ? "\n(" + err.message + ")" : "")
-          );
+          var w =
+            (state.withdrawals || []).find(function (x) {
+              return String(x.id) === String(viewWd.dataset.finViewWd);
+            }) || {};
+          var masked = w.accountLast4 ? "*****" + w.accountLast4 : "*****----";
+          var html =
+            '<div style="display:grid;gap:10px;text-align:left">' +
+            "<div>银行：<strong>" +
+            esc(w.bankName || "-") +
+            "</strong></div>" +
+            "<div>户名：<strong>" +
+            esc(w.accountHolder || "-") +
+            "</strong></div>" +
+            '<div>账号：<strong class="fin-account-value" data-fin-account-display data-masked="' +
+            esc(masked) +
+            '">' +
+            esc(masked) +
+            "</strong></div>" +
+            (err && err.message ? '<div class="admin-sync-note">' + esc(err.message) + "</div>" : "") +
+            "</div>";
+          if (!openAdminUi("打款信息详情", html)) toast(err.message || "读取打款信息失败");
         });
       return;
     }
     var reveal = e.target.closest("[data-fin-reveal]");
     if (reveal) {
       if (!state.canReveal) {
-        alert("仅超级管理员或财务管理员可查看完整账号");
+        toast("仅超级管理员或财务管理员可查看完整账号");
         return;
       }
+      var card = reveal.closest(".fin-payee-card") || reveal.parentElement;
+      var display = card ? card.querySelector("[data-fin-account-display]") : null;
+      var stateNow = String(reveal.getAttribute("data-fin-reveal-state") || "masked");
+      if (stateNow === "revealed" && display) {
+        display.textContent = display.getAttribute("data-masked") || "*****----";
+        reveal.setAttribute("data-fin-reveal-state", "masked");
+        reveal.textContent = "查看完整账号";
+        return;
+      }
+      if (reveal.dataset.finFullAccount && display) {
+        display.textContent = reveal.dataset.finFullAccount;
+        reveal.setAttribute("data-fin-reveal-state", "revealed");
+        reveal.textContent = "隐藏完整账号";
+        return;
+      }
+      reveal.disabled = true;
+      var prev = reveal.textContent;
+      reveal.textContent = "读取中…";
       post("reveal_account", {
         paymentAccountId: reveal.dataset.finReveal,
         withdrawalId: reveal.dataset.finRevealWd || "",
@@ -1247,62 +1305,19 @@
       })
         .then(function (res) {
           var a = res.account || {};
-          var w = res.withdrawal || {};
-          var viewer = res.viewer || {};
-          var html =
-            '<div style="display:grid;gap:8px;text-align:left">' +
-            "<div>陪玩昵称：<strong>" +
-            esc(w.companionName || "-") +
-            "</strong></div>" +
-            "<div>陪玩 ID：<strong>" +
-            esc(w.companionUid || w.companionId || "-") +
-            "</strong></div>" +
-            "<div>提现单号：<strong>" +
-            esc(w.withdrawalNo || "-") +
-            "</strong></div>" +
-            "<div>提现金额：<strong>RM " +
-            esc(w.netAmountRm != null ? w.netAmountRm : "-") +
-            "</strong></div>" +
-            "<div>银行：<strong>" +
-            esc(a.bankName || "") +
-            "</strong></div>" +
-            "<div>户名：<strong>" +
-            esc(a.accountHolder || "") +
-            "</strong></div>" +
-            "<div>完整银行账号：<strong style=\"letter-spacing:.04em\">" +
-            esc(a.accountNumber || "") +
-            "</strong></div>" +
-            (a.duitnowId
-              ? "<div>DuitNow ID：<strong>" + esc(a.duitnowId) + "</strong></div>"
-              : "") +
-            '<div class="admin-sync-note">查看人：' +
-            esc(viewer.name || viewer.roleLabel || "admin") +
-            " · " +
-            esc(res.viewedAt || "") +
-            "（已写入操作日志）</div></div>";
-          if (window.MCJAdminModal && window.MCJAdminModal.open) window.MCJAdminModal.open("完整收款资料", html);
-          else
-            alert(
-              "陪玩：" +
-                (w.companionName || "") +
-                "\nID：" +
-                (w.companionUid || w.companionId || "") +
-                "\n银行：" +
-                (a.bankName || "") +
-                "\n户名：" +
-                (a.accountHolder || "") +
-                "\n完整账号：" +
-                (a.accountNumber || "") +
-                (a.duitnowId ? "\nDuitNow：" + a.duitnowId : "") +
-                "\n提现单号：" +
-                (w.withdrawalNo || "") +
-                "\n金额：RM " +
-                (w.netAmountRm != null ? w.netAmountRm : "") +
-                "\n（已写入操作日志）"
-            );
+          var full = String(a.accountNumber || "").replace(/\s+/g, "");
+          if (!full) throw new Error("未返回完整账号");
+          reveal.dataset.finFullAccount = full;
+          if (display) display.textContent = full;
+          reveal.setAttribute("data-fin-reveal-state", "revealed");
+          reveal.textContent = "隐藏完整账号";
+          reveal.disabled = false;
+          toast("已写入操作日志");
         })
         .catch(function (err) {
-          alert(err.message);
+          reveal.disabled = false;
+          reveal.textContent = prev || "查看完整账号";
+          toast(err.message || "查看失败");
         });
       return;
     }

@@ -7,17 +7,117 @@
 .admin-final-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px}
 .admin-final-head h3{margin:0}
 .admin-final-head p{margin:4px 0 0;color:#9ca3af}
-.admin-final-table-wrap{overflow:auto;border:1px solid rgba(255,255,255,.1);border-radius:12px;background:rgba(255,255,255,.035)}
-.admin-final-table{width:100%;border-collapse:collapse;min-width:880px}
-.admin-final-table th,.admin-final-table td{padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.08);text-align:left;white-space:nowrap}
+.admin-final-table-wrap{overflow:auto;border:1px solid rgba(255,255,255,.1);border-radius:12px;background:rgba(255,255,255,.035);width:100%;max-width:none;min-width:0}
+.admin-final-table{width:100%;border-collapse:collapse;min-width:880px;table-layout:auto}
+.admin-final-table th,.admin-final-table td{padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.08);text-align:left;white-space:nowrap;vertical-align:middle}
 .admin-final-table th{color:#9ca3af;font-weight:600;background:rgba(0,0,0,.22);position:sticky;top:0}
-.admin-final-table td.admin-order-actions,.admin-order-actions{white-space:nowrap;display:block;min-width:0;max-width:110px}
-.admin-orders-table-wrap{max-width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch}
-.admin-orders-table{min-width:920px;table-layout:fixed;width:100%}
-.admin-orders-table .admin-orders-col-no{width:118px;max-width:118px;overflow:hidden;text-overflow:ellipsis}
-.admin-orders-table .admin-orders-col-service{max-width:160px;overflow:hidden;text-overflow:ellipsis}
-.admin-orders-table .admin-orders-col-time{width:132px}
-.admin-orders-table .admin-orders-col-actions{width:96px;text-align:right}
+
+/* Orders section — never shrink into a mid-page strip */
+#section-orders,
+#section-orders .panel,
+#orderManagement{
+  width:100%!important;
+  max-width:none!important;
+  min-width:0!important;
+  box-sizing:border-box;
+}
+#orderManagement{
+  display:grid;
+  gap:16px;
+}
+.admin-orders-page{
+  width:100%;
+  max-width:none;
+  min-width:0;
+  display:grid;
+  gap:16px;
+}
+.admin-orders-proof-panel{
+  display:grid;
+  gap:12px;
+  width:100%;
+  max-width:none;
+  margin:0;
+  padding:14px;
+  border:1px solid rgba(255,255,255,.1);
+  border-radius:12px;
+  background:rgba(0,0,0,.16);
+  box-sizing:border-box;
+}
+.admin-orders-table-wrap{
+  width:100%!important;
+  max-width:none!important;
+  min-width:0;
+  overflow-x:auto!important;
+  overflow-y:visible;
+  -webkit-overflow-scrolling:touch;
+}
+.admin-orders-table{
+  width:max-content;
+  min-width:100%;
+  table-layout:auto!important;
+  border-collapse:separate;
+  border-spacing:0;
+}
+.admin-orders-table th,
+.admin-orders-table td{
+  overflow:visible!important;
+  text-overflow:clip;
+  white-space:nowrap;
+  vertical-align:middle;
+}
+.admin-orders-table .admin-orders-col-no{min-width:118px}
+.admin-orders-table .admin-orders-col-party{min-width:120px}
+.admin-orders-table .admin-orders-col-party small{display:block;margin-top:3px;color:#9ca3af;font-size:11px}
+.admin-orders-table .admin-orders-col-amount{min-width:88px}
+.admin-orders-table .admin-orders-col-pay{min-width:88px}
+.admin-orders-table .admin-orders-col-status{min-width:96px}
+.admin-orders-table .admin-orders-col-staff{min-width:110px}
+.admin-orders-table .admin-orders-col-staff small{display:block;margin-top:3px;color:#9ca3af;font-size:11px}
+.admin-orders-table .admin-orders-col-time{min-width:132px}
+.admin-orders-table .admin-orders-col-actions{
+  min-width:168px;
+  width:auto;
+  text-align:right;
+  white-space:nowrap;
+}
+.admin-final-table td.admin-order-actions,
+.admin-order-actions{
+  white-space:nowrap!important;
+  display:table-cell!important;
+  min-width:168px!important;
+  max-width:none!important;
+  width:auto!important;
+  overflow:visible!important;
+}
+.admin-order-actions .mini-btn{margin:2px 0 2px 6px}
+.admin-order-status-pill{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  min-height:26px;
+  padding:0 10px;
+  border-radius:999px;
+  border:1px solid rgba(255,255,255,.12);
+  font-size:12px;
+  font-weight:700;
+  line-height:1;
+  white-space:nowrap;
+  box-sizing:border-box;
+}
+.admin-order-status-pill::before{
+  content:"";
+  width:8px;
+  height:8px;
+  border-radius:50%;
+  flex:0 0 auto;
+  background:currentColor;
+}
+.admin-order-status-pill.is-ok{color:#77efbd;background:rgba(119,239,189,.08)}
+.admin-order-status-pill.is-wait{color:#ffd36f;background:rgba(255,211,111,.08)}
+.admin-order-status-pill.is-bad{color:#ff6f91;background:rgba(255,111,145,.08)}
+.admin-order-status-pill.is-info{color:#79b8ff;background:rgba(121,184,255,.08)}
+
 .admin-order-manage-toggle.is-open{border-color:rgba(255,143,197,.55);color:#ffd6e8;background:rgba(255,143,197,.12)}
 .admin-order-manage-popover{
   position:fixed;
@@ -90,32 +190,49 @@
   color:#fff;
   padding:8px 10px;
 }
-.admin-order-detail-card{max-width:min(560px,96vw)}
+
+.admin-order-detail-card{
+  max-width:min(760px,96vw)!important;
+  width:min(760px,96vw);
+}
 .admin-order-detail-list{display:grid;gap:10px}
 .admin-order-detail-list>div{
   display:grid;
-  grid-template-columns:110px minmax(0,1fr);
+  grid-template-columns:120px minmax(0,1fr);
   gap:10px;
   align-items:start;
   padding-bottom:8px;
   border-bottom:1px solid rgba(255,255,255,.08);
 }
+.admin-order-detail-section{
+  margin-top:14px;
+  padding-top:4px;
+}
+.admin-order-detail-section h4{
+  margin:0 0 10px;
+  font-size:14px;
+  color:#ffd6e8;
+}
 .admin-order-detail-list span{color:#9ca3af;font-size:12px}
-.admin-order-detail-list strong{color:#fff;font-weight:600;word-break:break-all;font-size:13px}
-@media(max-width:1440px){
-  .admin-orders-table{min-width:860px}
-  .admin-final-table th,.admin-final-table td{padding:8px 10px}
+.admin-order-detail-list strong{color:#fff;font-weight:600;word-break:break-word;font-size:13px}
+.admin-order-proof-thumb{
+  width:96px;
+  height:96px;
+  object-fit:cover;
+  border-radius:10px;
+  border:1px solid rgba(255,255,255,.14);
+  cursor:zoom-in;
+  display:block;
+  background:rgba(0,0,0,.25);
 }
-@media(max-width:1366px){
-  .admin-orders-table{min-width:820px}
-  .admin-orders-table .admin-orders-col-service{max-width:120px}
-}
+
 .admin-final-form{display:grid;grid-template-columns:repeat(3,minmax(160px,1fr));gap:12px;margin-bottom:14px;padding:12px;border:1px solid rgba(255,255,255,.1);border-radius:12px;background:rgba(0,0,0,.16)}
 .admin-final-form label{display:grid;gap:6px;color:#d1d5db;font-size:13px}
 .admin-final-form input,.admin-final-form select,.admin-final-form textarea{border:1px solid rgba(255,255,255,.12);border-radius:8px;background:rgba(0,0,0,.28);color:#fff;padding:9px 10px}
 .admin-final-form textarea{min-height:72px}
 .admin-final-form .wide{grid-column:1/-1}
 .admin-final-thumb{width:96px;height:42px;object-fit:cover;border-radius:8px;border:1px solid rgba(255,255,255,.12)}
+
 /* Payment proof lightbox — never use inline display:grid with [hidden] (inline wins and darkens the page). */
 .admin-proof-lightbox,
 #adminProofLightbox{
@@ -160,7 +277,60 @@
   border-radius:12px;
   display:block;
 }
-/* Grab / assign drawer — fixed overlay (never inline under a long orders table). */
+
+.admin-final-toast{
+  position:fixed;
+  right:22px;
+  bottom:22px;
+  z-index:150000;
+  max-width:min(360px,90vw);
+  padding:12px 16px;
+  border-radius:12px;
+  border:1px solid rgba(255,143,197,.35);
+  background:#18141c;
+  color:#ffe2ef;
+  box-shadow:0 16px 40px rgba(0,0,0,.4);
+  opacity:0;
+  transform:translateY(12px);
+  pointer-events:none;
+  transition:.2s ease;
+  white-space:pre-line;
+  line-height:1.5;
+}
+.admin-final-toast.show{opacity:1;transform:translateY(0);pointer-events:auto}
+.admin-final-prompt{
+  position:fixed;
+  inset:0;
+  z-index:145000;
+  display:grid;
+  place-items:center;
+  padding:20px;
+  background:rgba(0,0,0,.66);
+}
+.admin-final-prompt-card{
+  width:min(420px,94vw);
+  padding:16px;
+  border-radius:14px;
+  border:1px solid rgba(255,143,197,.28);
+  background:#141018;
+  display:grid;
+  gap:12px;
+}
+.admin-final-prompt-card p{margin:0;color:#f3f4f6;line-height:1.5}
+.admin-final-prompt-card textarea,
+.admin-final-prompt-card input{
+  width:100%;
+  box-sizing:border-box;
+  min-height:72px;
+  border:1px solid rgba(255,255,255,.12);
+  border-radius:10px;
+  background:rgba(0,0,0,.28);
+  color:#fff;
+  padding:10px 12px;
+  font:inherit;
+}
+.admin-final-prompt-actions{display:flex;justify-content:flex-end;gap:8px}
+
 .admin-grab-modal,
 #adminOrderGrabModal{
   position:fixed;
@@ -211,6 +381,7 @@
   border-radius:12px;
   background:rgba(255,255,255,.03);
 }
+.admin-grab-list{display:grid;gap:10px}
 .admin-grab-card{
   display:flex;
   gap:12px;
@@ -223,6 +394,7 @@
 }
 .admin-grab-card.is-final{border-color:rgba(94,224,161,.45);background:rgba(94,224,161,.08)}
 .admin-grab-card img.admin-grab-avatar,
+.admin-grab-avatar,
 .admin-grab-avatar-fallback{
   width:52px;height:52px;border-radius:12px;object-fit:cover;flex:0 0 auto;
 }
@@ -245,6 +417,9 @@
 }
 .admin-assign-picker-list{max-height:280px;overflow:auto;margin-bottom:8px}
 .admin-assign-hint{margin:8px 0 0;color:#9ca3af;font-size:12px;line-height:1.45}
+@media(max-width:1440px){
+  .admin-final-table th,.admin-final-table td{padding:8px 10px}
+}
 @media(max-width:1279px) and (min-width:1024px){.admin-final-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:1023px){.admin-final-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.admin-final-form{grid-template-columns:1fr}}
 @media(max-width:767px){.admin-final-grid{grid-template-columns:1fr}}

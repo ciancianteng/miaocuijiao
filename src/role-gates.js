@@ -176,17 +176,19 @@
       "mcjAdminAccessToken",
       "mcjAdminRefreshToken",
       "mcjAdminExpiresAt",
-      "mcjAuthAccessToken",
-      "mcjAuthRefreshToken",
-      "mcjAuthExpiresAt",
-      "mcjRole",
-      "mcjCurrentUser",
     ].forEach(function (key) {
       try {
         localStorage.removeItem(key);
         sessionStorage.removeItem(key);
       } catch (e) {}
     });
+    try {
+      var role = localStorage.getItem("mcjRole") || sessionStorage.getItem("mcjRole") || "";
+      if (role === "admin" || role === "super_admin") {
+        localStorage.removeItem("mcjRole");
+        sessionStorage.removeItem("mcjRole");
+      }
+    } catch (e2) {}
   }
 
   function isLogged(role) {
@@ -201,6 +203,10 @@
       }
       // JWT + soft present; identity refresh will confirm role before rendering.
       return true;
+    }
+    // Companion: soft alone NEVER counts — require portal-scoped JWT blob.
+    if (key === "companion") {
+      return hasPortalSession("companion");
     }
     // Boss / customer: soft session alone NEVER counts — require live access JWT.
     if (isBossSurfaceRole(role)) {
@@ -280,13 +286,114 @@
   }
   function refreshAuthUi() {
     if (!document.body) return;
-    document.body.classList.toggle("is-logged-in", isLogged("customer") || isLogged("boss"));
-    window.dispatchEvent(new CustomEvent("mcj:auth-updated"));
+    if (window.__mcjAuthUiRefreshing) return;
+    window.__mcjAuthUiRefreshing = true;
+    try {
+      document.body.classList.toggle("is-logged-in", isLogged("customer") || isLogged("boss"));
+      window.dispatchEvent(new CustomEvent("mcj:auth-updated"));
+    } finally {
+      window.__mcjAuthUiRefreshing = false;
+    }
+  }
+
+  function inferPortalFromPage() {
+    var p = path();
+    if (/\/companion(\/|$)/i.test(p)) return "companion";
+    if (/\/customer-service(\/|$)/i.test(p)) return "customer_service";
+    if (/\/admin(\/|\.html|$)/i.test(p)) return "admin";
+    // Boss dedicated surfaces (homepage modal / login.html / mine) — never role-pick here.
+    if (/^\/?$|\/index\.html$/i.test(p) || /\/login\.html$/i.test(p) || /\/mine\.html$/i.test(p)) return "boss";
+    return "";
+  }
+
+  function portalDeniedMessage(portal) {
+    if (portal === "boss") return "该账号暂无老板端权限";
+    if (portal === "companion") return "该账号暂无陪玩端权限";
+    if (portal === "customer_service") return "该账号暂无客服权限";
+    if (portal === "admin") return "该账号暂无管理员权限";
+    return "账号角色与当前入口不匹配。";
   }
 
   function isAdminRole(role) {
     role = String(role || "");
     return role === "admin" || role === "super_admin";
+  }
+
+  function writeCompanionPortalSession(session, remember) {
+    var userData = (session && session.user) || {};
+    var access = String((session && (session.accessToken || session.token || session.access_token)) || "").trim();
+    var refresh = String((session && (session.refreshToken || session.refresh_token)) || "").trim();
+    var expiresAt = (session && (session.expiresAt != null ? session.expiresAt : session.expires_at)) || "";
+    if (!looksLikeJwt(access) && !refresh) return null;
+    var user = Object.assign({}, userData, {
+      role: "companion",
+      email: userData.email || "",
+      id: userData.id || userData.user_id || "",
+    });
+    var soft = "companion_session_" + SESSION_VERSION + "_" + Date.now();
+    var blob = {
+      token: access,
+      accessToken: access,
+      refreshToken: refresh,
+      expiresAt: expiresAt,
+      user: user,
+      remember: remember !== false,
+      portal: "companion",
+      portalLoginAt: Date.now(),
+    };
+    var stores = remember !== false ? [localStorage, sessionStorage] : [sessionStorage];
+    stores.forEach(function (store) {
+      try {
+        store.setItem("mcjCompanionSession", JSON.stringify(blob));
+        store.setItem("companionAuthToken", soft);
+        store.setItem("companionUser", JSON.stringify(user));
+      } catch (e) {}
+    });
+    if (remember === false) {
+      try {
+        localStorage.removeItem("mcjCompanionSession");
+        localStorage.removeItem("companionAuthToken");
+        localStorage.removeItem("companionUser");
+      } catch (e2) {}
+    }
+    return user;
+  }
+
+  function clearCompanionPortalSession() {
+    [
+      "mcjCompanionSession",
+      "companionAuthToken",
+      "companionUser",
+    ].forEach(function (key) {
+      try {
+        localStorage.removeItem(key);
+        sessionStorage.removeItem(key);
+      } catch (e) {}
+    });
+  }
+
+  function clearBossPortalSession() {
+    // Boss-only keys. Never touch companion / CS / dedicated admin JWT.
+    var adminSoft = hasAdminSoftSession();
+    [
+      "customerAuthToken",
+      "customerUser",
+      "mcjCurrentUser",
+      "mcjBossSession",
+      "mcjActivePortal",
+    ]
+      .concat(adminSoft ? [] : ["mcjAuthAccessToken", "mcjAuthRefreshToken", "mcjAuthExpiresAt", "mcjRole"])
+      .forEach(function (key) {
+        try {
+          localStorage.removeItem(key);
+          sessionStorage.removeItem(key);
+        } catch (e) {}
+      });
+    if (window.MCJBossAuth && typeof window.MCJBossAuth.clearSession === "function") {
+      try {
+        window.MCJBossAuth.clearSession();
+      } catch (e2) {}
+    }
   }
 
   function saveSession(session, remember) {
@@ -301,6 +408,8 @@
     var stores = rememberMe ? [sessionStorage, localStorage] : [sessionStorage];
     var token = role + "_session_" + SESSION_VERSION + "_" + Date.now();
     var adminOk = isAdminRole(userData.role);
+    var isCompanion = role === "companion";
+    var isCs = role === "customer_service";
     var user = {
       id: userData.id || "",
       uid: userData.bossUid || userData.boss_uid || userData.uid || userData.id || "",
@@ -315,19 +424,58 @@
       avatarUrl: userData.avatarUrl || "",
       role: userData.role || role,
       status: userData.status || "active",
+      hasBoss: !!userData.hasBoss,
+      hasCompanion: !!userData.hasCompanion,
+      roles: Array.isArray(userData.roles) ? userData.roles : [],
       adminRole: adminOk ? (userData.role === "super_admin" ? "super_admin" : "admin") : "",
       permissions: adminOk ? [userData.role === "super_admin" ? "super_admin" : "admin"] : []
     };
+
+    // Companion / CS: portal-scoped JWT only — never overwrite boss mcjAuth*.
+    if (isCompanion) {
+      writeCompanionPortalSession(
+        {
+          accessToken: session.accessToken || session.token || "",
+          refreshToken: session.refreshToken || "",
+          expiresAt: session.expiresAt || "",
+          user: user,
+        },
+        rememberMe
+      );
+      return user;
+    }
+    if (isCs) {
+      syncPortalSessions(
+        {
+          accessToken: session.accessToken || session.token || "",
+          refreshToken: session.refreshToken || "",
+          expiresAt: session.expiresAt || "",
+          user: user,
+        },
+        rememberMe
+      );
+      stores.forEach(function (store) {
+        try {
+          store.setItem(cfg.token, token);
+          store.setItem(cfg.user, JSON.stringify(user));
+        } catch (e) {}
+      });
+      return user;
+    }
+
     stores.forEach(function (store) {
       try {
         store.setItem(cfg.token, token);
         store.setItem(cfg.user, JSON.stringify(user));
-        store.setItem("mcjRole", userData.role || role);
-        store.setItem("mcjCurrentUser", JSON.stringify(user));
-        if (session.accessToken) store.setItem("mcjAuthAccessToken", session.accessToken);
-        if (session.refreshToken) store.setItem("mcjAuthRefreshToken", session.refreshToken);
-        if (session.expiresAt) store.setItem("mcjAuthExpiresAt", String(session.expiresAt));
-        if (adminOk) {
+        // mcjRole / mcjAuth* are boss (and admin soft) markers — do not use for companion/CS.
+        if (!adminOk) {
+          store.setItem("mcjRole", userData.role || role);
+          store.setItem("mcjCurrentUser", JSON.stringify(user));
+          if (session.accessToken) store.setItem("mcjAuthAccessToken", session.accessToken);
+          if (session.refreshToken) store.setItem("mcjAuthRefreshToken", session.refreshToken);
+          if (session.expiresAt) store.setItem("mcjAuthExpiresAt", String(session.expiresAt));
+        } else {
+          store.setItem("mcjRole", userData.role || role);
           if (session.accessToken) store.setItem("mcjAdminAccessToken", session.accessToken);
           if (session.refreshToken) store.setItem("mcjAdminRefreshToken", session.refreshToken);
           if (session.expiresAt) store.setItem("mcjAdminExpiresAt", String(session.expiresAt));
@@ -338,11 +486,13 @@
       try {
         localStorage.removeItem(cfg.token);
         localStorage.removeItem(cfg.user);
-        localStorage.removeItem("mcjRole");
-        localStorage.removeItem("mcjAuthAccessToken");
-        localStorage.removeItem("mcjAuthRefreshToken");
-        localStorage.removeItem("mcjAuthExpiresAt");
-        localStorage.removeItem("mcjCurrentUser");
+        if (!adminOk) {
+          localStorage.removeItem("mcjRole");
+          localStorage.removeItem("mcjAuthAccessToken");
+          localStorage.removeItem("mcjAuthRefreshToken");
+          localStorage.removeItem("mcjAuthExpiresAt");
+          localStorage.removeItem("mcjCurrentUser");
+        }
       } catch (e2) {}
     }
     if (adminOk && window.MCJAdminAuthFetch && typeof window.MCJAdminAuthFetch.saveTokens === "function") {
@@ -353,33 +503,30 @@
         window.MCJBossAuth.saveSession(session, rememberMe);
       } catch (e) {}
     }
-    var roles = Array.isArray(userData.roles) ? userData.roles : [];
-    var multi =
-      !!userData.hasBoss && !!userData.hasCompanion ||
-      (roles.indexOf("boss") >= 0 && roles.indexOf("companion") >= 0) ||
-      (roles.indexOf("boss") >= 0 && roles.indexOf("player") >= 0);
-    ["customer", "companion", "customer_service", "admin"].forEach(function (other) {
-      if (other === role) return;
-      // Unified multi-role: keep the twin portal session so switch-identity does not re-login.
-      if (multi && ((role === "customer" && other === "companion") || (role === "companion" && other === "customer"))) {
-        return;
-      }
-      var otherCfg = cfgFor(other);
-      localStorage.removeItem(otherCfg.token); localStorage.removeItem(otherCfg.user);
-      sessionStorage.removeItem(otherCfg.token); sessionStorage.removeItem(otherCfg.user);
-      if (other === "admin") {
-        ["mcjAdminAccessToken", "mcjAdminRefreshToken", "mcjAdminExpiresAt"].forEach(function (k) {
-          localStorage.removeItem(k);
-          sessionStorage.removeItem(k);
-        });
-      }
-    });
+    // P0 portal isolation: NEVER clear companion / CS / admin when saving boss (and vice versa).
+    // Each portal must be logged out explicitly. Same email may hold boss+companion after separate logins.
     return user;
   }
 
-  /** Switch active portal for multi-role accounts without creating a new Auth user. */
+  /**
+   * Switch UI hint only — NEVER copy boss JWT into companion session.
+   * Opening 陪玩端 requires an explicit companion portal login.
+   */
   function switchActivePortal(targetRole, sessionHint) {
     var want = profileRole(targetRole || "");
+    if (want === "companion") {
+      try {
+        localStorage.setItem("mcjActivePortal", "companion");
+        sessionStorage.setItem("mcjActivePortal", "companion");
+      } catch (e) {}
+      return {
+        ok: true,
+        redirect: "/companion/login/",
+        role: "companion",
+        requireLogin: true,
+        message: "请使用陪玩账号登录陪玩端（不会沿用老板端登录态）。",
+      };
+    }
     var access =
       (sessionHint && (sessionHint.accessToken || sessionHint.token)) ||
       readAccessToken() ||
@@ -409,35 +556,11 @@
       refreshToken: refresh,
       expiresAt: expiresAt,
       user: Object.assign({}, baseUser, {
-        role: want === "companion" ? "companion" : "boss",
+        role: "boss",
         hasBoss: true,
-        hasCompanion: true,
-        roles: Array.isArray(baseUser.roles) && baseUser.roles.length ? baseUser.roles : ["boss", "companion"],
+        hasCompanion: !!(baseUser.hasCompanion || (sessionHint && sessionHint.user && sessionHint.user.hasCompanion)),
       }),
     };
-    if (want === "companion") {
-      try {
-        var raw = JSON.stringify({
-          token: access,
-          accessToken: access,
-          refreshToken: refresh,
-          expiresAt: expiresAt,
-          user: session.user,
-          remember: true,
-        });
-        localStorage.setItem("mcjCompanionSession", raw);
-        sessionStorage.setItem("mcjCompanionSession", raw);
-        localStorage.setItem("companionAuthToken", "companion_session_" + SESSION_VERSION + "_" + Date.now());
-        localStorage.setItem("companionUser", JSON.stringify(session.user));
-        sessionStorage.setItem("companionAuthToken", localStorage.getItem("companionAuthToken"));
-        sessionStorage.setItem("companionUser", JSON.stringify(session.user));
-        localStorage.setItem("mcjActivePortal", "companion");
-        sessionStorage.setItem("mcjActivePortal", "companion");
-        localStorage.setItem("mcjRole", "companion");
-        sessionStorage.setItem("mcjRole", "companion");
-      } catch (e3) {}
-      return { ok: true, redirect: "/companion/dashboard/", role: "companion" };
-    }
     saveSession(session, true);
     try {
       localStorage.setItem("mcjActivePortal", "boss");
@@ -458,10 +581,10 @@
       mask.innerHTML =
         '<div style="width:min(420px,100%);border-radius:18px;background:#161018;border:1px solid rgba(243,168,203,.28);padding:22px 20px;color:#fff5fa;font-family:inherit;">' +
         "<h2 style=\"margin:0 0 8px;font-size:20px;\">选择进入身份</h2>" +
-        "<p style=\"margin:0 0 18px;color:#d9bfcd;font-size:14px;line-height:1.5;\">同一账号可切换老板端 / 陪玩端，不会重新登录或新建账号。</p>" +
+        "<p style=\"margin:0 0 18px;color:#d9bfcd;font-size:14px;line-height:1.5;\">同一邮箱可拥有老板与陪玩资料。进入陪玩端需在陪玩登录页确认身份，不会从老板端自动带入。</p>" +
         '<div style="display:flex;flex-direction:column;gap:10px;">' +
         '<button type="button" data-role-pick="boss" style="padding:12px 14px;border-radius:12px;border:1px solid rgba(243,168,203,.35);background:rgba(243,168,203,.16);color:#fff5fa;font-weight:800;cursor:pointer;">进入老板端</button>' +
-        '<button type="button" data-role-pick="companion" style="padding:12px 14px;border-radius:12px;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.06);color:#fff5fa;font-weight:800;cursor:pointer;">进入陪玩端</button>' +
+        '<button type="button" data-role-pick="companion" style="padding:12px 14px;border-radius:12px;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.06);color:#fff5fa;font-weight:800;cursor:pointer;">去陪玩端登录</button>' +
         "</div></div>";
       document.body.appendChild(mask);
       mask.addEventListener("click", function (ev) {
@@ -473,10 +596,32 @@
       });
     }).then(function (pick) {
       if (!pick) return body;
-      var switched = switchActivePortal(pick, body.session);
       body._pickedRole = pick;
-      body.redirect = switched.redirect || body.redirect;
-      if (pick === "boss") saveSession(body.session, remember !== false);
+      if (pick === "companion") {
+        // Explicit choice from login: write companion portal session from this auth,
+        // without claiming boss soft session as companion auto-entry later is gated by portal blob.
+        if (body.session) {
+          var u = Object.assign({}, body.session.user || {}, { role: "companion" });
+          writeCompanionPortalSession(
+            {
+              accessToken: body.session.accessToken,
+              refreshToken: body.session.refreshToken,
+              expiresAt: body.session.expiresAt,
+              user: u,
+            },
+            remember !== false
+          );
+          body.session = Object.assign({}, body.session, { user: u });
+        }
+        body.redirect = "/companion/review-status";
+        return body;
+      }
+      if (body.session) {
+        var bossUser = Object.assign({}, body.session.user || {}, { role: "boss" });
+        body.session = Object.assign({}, body.session, { user: bossUser });
+        saveSession(body.session, remember !== false);
+      }
+      body.redirect = "/index.html";
       return body;
     });
   }
@@ -497,17 +642,91 @@
     return body;
   }
 
-  async function loginWithDatabase(account, password, remember) {
-    var body = await postAuth({ action: "login", email: account, password: password });
+  async function loginWithDatabase(account, password, remember, options) {
+    options = options || {};
+    var expectedPortal = profileRole(options.expectedPortal || options.expectedRole || "");
+    // Dedicated portal pages never show the boss/companion picker.
+    if (!expectedPortal && !options.allowRolePick) {
+      expectedPortal = inferPortalFromPage();
+    }
+    if (options.allowRolePick) expectedPortal = "";
+    var staffPortal =
+      expectedPortal === "customer_service" || expectedPortal === "admin" || expectedPortal === "super_admin";
+    var body = await postAuth({
+      action: "login",
+      email: account,
+      password: password,
+      loginPortal: expectedPortal || undefined,
+      role: expectedPortal || undefined,
+    });
     var u = (body.session && body.session.user) || {};
+
+    if (expectedPortal === "companion") {
+      if (!(u.hasCompanion || profileRole(u.role) === "companion")) {
+        throw new Error(portalDeniedMessage("companion"));
+      }
+      var companionUser = Object.assign({}, u, { role: "companion" });
+      body.session = Object.assign({}, body.session, { user: companionUser });
+      writeCompanionPortalSession(body.session, remember !== false);
+      // Do not copy companion JWT into boss soft session.
+      body.redirect = body.redirect || "/companion/review-status";
+      body._pickedRole = "companion";
+      body.needRolePick = false;
+      return body;
+    }
+    if (expectedPortal === "customer_service") {
+      if (profileRole(u.role) !== "customer_service") {
+        throw new Error(portalDeniedMessage("customer_service"));
+      }
+      saveSession(body.session, remember !== false);
+      syncPortalSessions(body.session, remember !== false);
+      body.needRolePick = false;
+      return body;
+    }
+    if (expectedPortal === "admin") {
+      if (!isAdminRole(u.role)) {
+        throw new Error(portalDeniedMessage("admin"));
+      }
+      saveSession(body.session, remember !== false);
+      body.needRolePick = false;
+      return body;
+    }
+    if (expectedPortal === "boss") {
+      if (!(u.hasBoss || profileRole(u.role) === "boss")) {
+        throw new Error(portalDeniedMessage("boss"));
+      }
+      var bossUser = Object.assign({}, u, { role: "boss" });
+      body.session = Object.assign({}, body.session, { user: bossUser });
+      saveSession(body.session, remember !== false);
+      body.redirect = body.redirect || "/index.html";
+      body._pickedRole = "boss";
+      body.needRolePick = false;
+      return body;
+    }
+
+    // Public unified login only: role picker when account truly has both consumer portals.
     var needPick =
-      body.needRolePick ||
-      (!!u.hasBoss && !!u.hasCompanion) ||
-      (Array.isArray(u.roles) && u.roles.indexOf("boss") >= 0 && u.roles.indexOf("companion") >= 0);
+      !staffPortal &&
+      !!options.allowRolePick &&
+      (body.needRolePick ||
+        (!!u.hasBoss && !!u.hasCompanion) ||
+        (Array.isArray(u.roles) && u.roles.indexOf("boss") >= 0 && u.roles.indexOf("companion") >= 0));
     if (needPick && typeof document !== "undefined") {
       body = await showRolePickModal(body, remember);
     } else {
-      saveSession(body.session, remember);
+      if (body.session && body.session.user) {
+        var fallbackRole = u.hasBoss || profileRole(u.role) === "boss" ? "boss" : u.hasCompanion ? "companion" : u.role;
+        body.session = Object.assign({}, body.session, {
+          user: Object.assign({}, body.session.user, { role: fallbackRole }),
+        });
+        if (profileRole(fallbackRole) === "companion") {
+          writeCompanionPortalSession(body.session, remember !== false);
+          body.redirect = body.redirect || "/companion/review-status";
+          body._pickedRole = "companion";
+        } else {
+          saveSession(body.session, remember !== false);
+        }
+      }
     }
     return body;
   }
@@ -531,7 +750,7 @@
     var user = (session && session.user) || {};
     var role = profileRole(user.role || "");
     var token = (session && (session.accessToken || session.token || session.access_token)) || "";
-    if (!token) return;
+    if (!token && role !== "companion") return;
     if (role === "customer_service") {
       if (window.MCJServiceAuth && typeof window.MCJServiceAuth.saveSession === "function") {
         window.MCJServiceAuth.saveSession(
@@ -552,21 +771,19 @@
           expiresAt: session.expiresAt || session.expires_at || "",
           user: user,
           remember: remember !== false,
+          portal: "customer_service",
         };
-        // Always dual-write so refresh / new tabs keep CS login.
         localStorage.setItem("mcjServiceSession", JSON.stringify(cs));
         sessionStorage.setItem("mcjServiceSession", JSON.stringify(cs));
+        var soft = "customer_service_session_" + SESSION_VERSION + "_" + Date.now();
+        localStorage.setItem("customerServiceAuthToken", soft);
+        sessionStorage.setItem("customerServiceAuthToken", soft);
+        localStorage.setItem("customerServiceUser", JSON.stringify(Object.assign({}, user, { role: "customer_service" })));
+        sessionStorage.setItem("customerServiceUser", JSON.stringify(Object.assign({}, user, { role: "customer_service" })));
       }
     }
     if (role === "companion") {
-      var pw = { token: token, user: user, remember: remember !== false };
-      if (remember === false) {
-        sessionStorage.setItem("mcjCompanionSession", JSON.stringify(pw));
-        localStorage.removeItem("mcjCompanionSession");
-      } else {
-        localStorage.setItem("mcjCompanionSession", JSON.stringify(pw));
-        sessionStorage.removeItem("mcjCompanionSession");
-      }
+      writeCompanionPortalSession(session, remember !== false);
     }
   }
 
@@ -607,7 +824,13 @@
         sessionStorage.getItem("mcjAuthAccessToken") ||
         localStorage.getItem("mcjAuthAccessToken") ||
         "";
-      return !!(a && a.split(".").length === 3);
+      if (a && a.split(".").length === 3) return true;
+      var pw = JSON.parse(
+        localStorage.getItem("mcjCompanionSession") || sessionStorage.getItem("mcjCompanionSession") || "null"
+      );
+      var pt = pw && (pw.token || pw.accessToken);
+      if (pt && String(pt).split(".").length === 3) return true;
+      return false;
     } catch (e) {
       return false;
     }
@@ -615,14 +838,22 @@
 
   function afterAuthSuccess(result, options) {
     options = options || {};
+    if (window.__mcjAfterAuthBusy) return;
+    window.__mcjAfterAuthBusy = true;
     showAuthBootOverlay("正在登录…");
     // Session must already be saved by caller; re-confirm dual-write before navigate.
+    var picked = result && result._pickedRole;
     if (result && result.session) {
       try {
-        saveSession(result.session, options.remember !== false);
+        if (profileRole(picked) === "companion" || profileRole((result.session.user || {}).role) === "companion") {
+          writeCompanionPortalSession(result.session, options.remember !== false);
+        } else {
+          saveSession(result.session, options.remember !== false);
+        }
       } catch (e) {}
     }
     if (!sessionReadable()) {
+      window.__mcjAfterAuthBusy = false;
       hideAuthBootOverlay();
       setLoginMessage(document.body, "登录态保存失败，请重试。");
       return;
@@ -635,8 +866,13 @@
     if (window.MCJBossHeader && typeof window.MCJBossHeader.refreshNotifications === "function") {
       window.MCJBossHeader.refreshNotifications();
     }
-    var role = (result.session && result.session.user && result.session.user.role) || "boss";
-    syncPortalSessions(result.session, options.remember !== false);
+    var role =
+      profileRole(picked) ||
+      (result.session && result.session.user && result.session.user.role) ||
+      "boss";
+    if (profileRole(role) !== "companion") {
+      syncPortalSessions(result.session, options.remember !== false);
+    }
     var pending = sessionStorage.getItem("mcjAfterLoginRedirect") || localStorage.getItem("mcjAfterLoginRedirect");
     try {
       sessionStorage.removeItem("mcjAfterLoginRedirect");
@@ -656,19 +892,27 @@
     // Yield one frame so storage flush is visible to the next document before navigate.
     var go = function () {
       if (!sessionReadable()) {
+        window.__mcjAfterAuthBusy = false;
         hideAuthBootOverlay();
         setLoginMessage(document.body, "登录态保存失败，请重试。");
         return;
       }
-      if (dest !== here && dest + ".html" !== here && here + "/" !== dest) {
+      var destPath = String(dest || "/").split("?")[0].split("#")[0].replace(/\/+$/, "") || "/";
+      var herePath = String(here || "/").split("?")[0].split("#")[0].replace(/\/+$/, "") || "/";
+      var sameDoc =
+        destPath === herePath ||
+        destPath + ".html" === herePath ||
+        herePath + ".html" === destPath ||
+        (herePath === "/" && /index\.html$/i.test(destPath)) ||
+        (destPath === "/" && /index\.html$/i.test(herePath));
+      if (!sameDoc) {
         location.href = String(redirect || "/").replace(/#(login|register)$/i, "");
         return;
       }
-      if (profileRole(role) === "boss") {
-        location.replace((location.pathname || "/") + (location.search || ""));
-        return;
-      }
+      // Same document: do NOT location.replace(self) — that re-booted auth listeners and
+      // caused Maximum call stack / login flicker loops on boss homepage.
       hideAuthBootOverlay();
+      window.__mcjAfterAuthBusy = false;
     };
     if (typeof requestAnimationFrame === "function") {
       requestAnimationFrame(function () {
@@ -690,78 +934,89 @@
    * expectedRole: boss | companion | customer_service | admin
    */
   async function loginPortal(expectedRole, account, password, remember) {
-    var body = await loginWithDatabase(account, password, remember !== false);
-    var role = (body.session && body.session.user && body.session.user.role) || "";
     var want = profileRole(expectedRole);
+    var body = await loginWithDatabase(account, password, remember !== false, { expectedPortal: want });
+    var role = (body.session && body.session.user && body.session.user.role) || "";
     var got = profileRole(role);
+    var u = (body.session && body.session.user) || {};
     if (want === "admin") {
       if (!isAdminRole(role)) {
         logout("admin");
-        logout("customer");
-        throw new Error("非管理员账号不得进入后台中心。");
+        throw new Error(portalDeniedMessage("admin"));
+      }
+    } else if (want === "companion") {
+      if (!(u.hasCompanion || got === "companion")) {
+        clearCompanionPortalSession();
+        throw new Error(portalDeniedMessage("companion"));
+      }
+    } else if (want === "boss") {
+      if (!(u.hasBoss || got === "boss")) {
+        logout("boss");
+        throw new Error(portalDeniedMessage("boss"));
       }
     } else if (got !== want) {
       logout(got);
       logout(want);
-      throw new Error(
-        want === "boss"
-          ? "非老板账号，请使用对应入口登录。"
-          : want === "companion"
-            ? "无权访问陪玩端。"
-            : want === "customer_service"
-              ? "无权访问客服端。"
-              : "账号角色与当前入口不匹配。"
-      );
+      throw new Error(portalDeniedMessage(want) || "账号角色与当前入口不匹配。");
     }
-    syncPortalSessions(body.session, remember !== false);
+    if (want === "companion") {
+      syncPortalSessions(body.session, remember !== false);
+    } else if (want !== "boss") {
+      syncPortalSessions(body.session, remember !== false);
+    }
     return body;
   }
   function user(role) { return readUser(role); }
   function logout(role) {
+    var storageKey = storageRole(role);
+    if (!role) {
+      clearCompanionPortalSession();
+      clearBossPortalSession();
+      if (window.MCJServiceAuth && typeof window.MCJServiceAuth.clearSession === "function") {
+        window.MCJServiceAuth.clearSession("logout");
+      } else {
+        ["mcjServiceSession", "customerServiceAuthToken", "customerServiceUser"].forEach(function (k) {
+          localStorage.removeItem(k);
+          sessionStorage.removeItem(k);
+        });
+      }
+      clearAdminClientSession();
+      refreshAuthUi();
+      return;
+    }
+    if (storageKey === "companion") {
+      clearCompanionPortalSession();
+      refreshAuthUi();
+      return;
+    }
+    if (storageKey === "customer_service") {
+      if (window.MCJServiceAuth && typeof window.MCJServiceAuth.clearSession === "function") {
+        window.MCJServiceAuth.clearSession("logout");
+      } else {
+        ["mcjServiceSession", "customerServiceAuthToken", "customerServiceUser"].forEach(function (k) {
+          localStorage.removeItem(k);
+          sessionStorage.removeItem(k);
+        });
+      }
+      refreshAuthUi();
+      return;
+    }
+    if (storageKey === "admin") {
+      clearAdminClientSession();
+      refreshAuthUi();
+      return;
+    }
+    if (storageKey === "customer" || role === "boss") {
+      clearBossPortalSession();
+      refreshAuthUi();
+      return;
+    }
     var cfg = cfgFor(role);
     if (cfg) {
       localStorage.removeItem(cfg.token);
       localStorage.removeItem(cfg.user);
       sessionStorage.removeItem(cfg.token);
       sessionStorage.removeItem(cfg.user);
-    }
-    var storageKey = storageRole(role);
-    if (storageKey === "customer_service" || !role) {
-      if (window.MCJServiceAuth && typeof window.MCJServiceAuth.clearSession === "function") {
-        window.MCJServiceAuth.clearSession("logout");
-      } else {
-        localStorage.removeItem("mcjServiceSession");
-        sessionStorage.removeItem("mcjServiceSession");
-      }
-    }
-    if (storageKey === "companion" || !role) {
-      localStorage.removeItem("mcjCompanionSession");
-      sessionStorage.removeItem("mcjCompanionSession");
-    }
-    if (storageKey === "admin" || storageKey === "customer" || role === "boss" || !role) {
-      localStorage.removeItem("mcjRole");
-      sessionStorage.removeItem("mcjRole");
-      localStorage.removeItem("mcjAuthAccessToken");
-      sessionStorage.removeItem("mcjAuthAccessToken");
-      localStorage.removeItem("mcjAuthRefreshToken");
-      sessionStorage.removeItem("mcjAuthRefreshToken");
-      localStorage.removeItem("mcjAuthExpiresAt");
-      sessionStorage.removeItem("mcjAuthExpiresAt");
-      localStorage.removeItem("mcjCurrentUser");
-      sessionStorage.removeItem("mcjCurrentUser");
-      localStorage.removeItem("customerAuthToken");
-      sessionStorage.removeItem("customerAuthToken");
-      localStorage.removeItem("customerUser");
-      sessionStorage.removeItem("customerUser");
-      if (window.MCJBossAuth && typeof window.MCJBossAuth.clearSession === "function") {
-        try { window.MCJBossAuth.clearSession(); } catch (e) {}
-      }
-    }
-    if (storageKey === "admin" || !role) {
-      ["mcjAdminAccessToken", "mcjAdminRefreshToken", "mcjAdminExpiresAt"].forEach(function (k) {
-        localStorage.removeItem(k);
-        sessionStorage.removeItem(k);
-      });
     }
     refreshAuthUi();
   }
@@ -773,16 +1028,59 @@
       }
       try {
         var cs = JSON.parse(localStorage.getItem("mcjServiceSession") || sessionStorage.getItem("mcjServiceSession") || "null");
-        if (cs && (cs.token || cs.accessToken || cs.refreshToken)) return true;
+        var csTok = cs && (cs.token || cs.accessToken);
+        if (cs && (looksLikeJwt(csTok) || cs.refreshToken)) return true;
       } catch (e) {}
+      return false;
     }
     if (key === "companion") {
       try {
         var pw = JSON.parse(localStorage.getItem("mcjCompanionSession") || sessionStorage.getItem("mcjCompanionSession") || "null");
-        if (pw && pw.token) return true;
-      } catch (e) {}
+        var soft = localStorage.getItem("companionAuthToken") || sessionStorage.getItem("companionAuthToken") || "";
+        var access = pw && (pw.token || pw.accessToken);
+        var softOk = String(soft).indexOf("companion_session_") === 0;
+        if (!softOk) return false;
+        if (!(looksLikeJwt(access) || (pw && pw.refreshToken))) return false;
+        var pwRole = pw && pw.user && pw.user.role;
+        if (pwRole && profileRole(pwRole) !== "companion") return false;
+        return true;
+      } catch (e2) {
+        return false;
+      }
     }
+    if (key === "admin") return isLogged("admin");
     return isLogged(role);
+  }
+
+  /**
+   * Clear soft sessions of OTHER portals. Boss↔companion coexist — do not wipe the twin.
+   * Used by callers that previously expected exclusive soft sessions.
+   */
+  function clearOtherRoleSessions(keepRole) {
+    var keep = profileRole(keepRole || "");
+    if (keep !== "companion" && keep !== "boss" && keep !== "customer") {
+      // Admin / CS login: do not steal boss/companion coexistence unless explicitly logging those out.
+    }
+    if (keep === "companion") {
+      // Companion login must NOT clear boss.
+      return;
+    }
+    if (keep === "boss" || keep === "customer") {
+      // Boss login must NOT clear companion.
+      return;
+    }
+    if (keep === "customer_service") {
+      // CS must not inherit/clear boss+companion JWT stores.
+      return;
+    }
+    if (keep === "admin") {
+      return;
+    }
+  }
+
+  function clearSharedAuthMirrors() {
+    // Deprecated no-op for portal isolation: shared mcjAuth* belongs to boss only.
+    // Companion/CS must not wipe boss JWT when claiming their own portal session.
   }
 
   function denyUnauthed(loginHref, returnTo) {
@@ -839,12 +1137,62 @@
     }
 
     if (/\/(mine|orders|support|recharge|messages|favorites|payment-confirm|order-confirm|gifts)\.html$/i.test(p)) {
-      // Soft / refresh alone insufficient — require non-expired access JWT.
+      // Soft / refresh alone insufficient for sync deny — wait restoreSession before claiming guest.
       // profile.html is public companion detail and stays ungated.
-      if (!hasValidBossAccessToken()) {
+      if (hasValidBossAccessToken()) return true;
+      var canRestore = false;
+      try {
+        canRestore = !!(
+          sessionStorage.getItem("mcjAuthRefreshToken") ||
+          localStorage.getItem("mcjAuthRefreshToken") ||
+          (window.MCJBossAuth &&
+            typeof window.MCJBossAuth.canRestoreSession === "function" &&
+            window.MCJBossAuth.canRestoreSession())
+        );
+      } catch (eRest) {}
+      if (!canRestore) {
         wipeBossGuestArtifacts();
         return denyUnauthed("/login.html", returnPath());
       }
+      try {
+        document.documentElement.setAttribute("data-mcj-auth-gate", "pending");
+        document.documentElement.style.visibility = "hidden";
+      } catch (eHide) {}
+      var finishBossGate = function (ok) {
+        try {
+          document.documentElement.removeAttribute("data-mcj-auth-gate");
+          document.documentElement.style.visibility = "";
+        } catch (eShow) {}
+        if (!ok) {
+          wipeBossGuestArtifacts();
+          denyUnauthed("/login.html", returnPath());
+        }
+      };
+      var safety = setTimeout(function () {
+        finishBossGate(hasValidBossAccessToken());
+      }, 8000);
+      // role-gates often loads before boss-auth-session.js — wait for SoT then ensureSession.
+      (function waitBossAuth(tries) {
+        if (window.MCJBossAuth && typeof window.MCJBossAuth.ensureSession === "function") {
+          window.MCJBossAuth.ensureSession()
+            .catch(function () {
+              return null;
+            })
+            .then(function () {
+              clearTimeout(safety);
+              finishBossGate(hasValidBossAccessToken());
+            });
+          return;
+        }
+        if (tries >= 40) {
+          clearTimeout(safety);
+          finishBossGate(hasValidBossAccessToken());
+          return;
+        }
+        setTimeout(function () {
+          waitBossAuth(tries + 1);
+        }, 50);
+      })(0);
       return true;
     }
     return true;
@@ -870,10 +1218,23 @@
     }
     if (storageRole(role) === "customer" || role === "boss") {
       if (/\/(mine|orders|support|recharge|messages|favorites|payment-confirm|order-confirm|gifts)\.html$/i.test(path())) {
-        if (!hasValidBossAccessToken()) {
+        if (hasValidBossAccessToken()) return true;
+        var canRestoreGuard = false;
+        try {
+          canRestoreGuard = !!(
+            sessionStorage.getItem("mcjAuthRefreshToken") ||
+            localStorage.getItem("mcjAuthRefreshToken") ||
+            (window.MCJBossAuth &&
+              typeof window.MCJBossAuth.canRestoreSession === "function" &&
+              window.MCJBossAuth.canRestoreSession())
+          );
+        } catch (eG) {}
+        if (!canRestoreGuard) {
           wipeBossGuestArtifacts();
           return denyUnauthed("/login.html", returnPath());
         }
+        // Defer decision to bootRouteProtection / MCJBossAuth.ensureSession — do not flash guest.
+        return true;
       }
     }
     if (storageRole(role) === "customer_service") {
@@ -1177,6 +1538,11 @@
         target.disabled = true;
         var oldOtpText = target.textContent;
         target.textContent = "登录中...";
+        var otpPortal =
+          profileRole(target.getAttribute("data-login-portal") || target.getAttribute("data-login-role") || "") ||
+          inferPortalFromPage() ||
+          "boss";
+        var allowPick = String(target.getAttribute("data-login-portal") || "").toLowerCase() === "public";
         fetch("/api/auth", {
           method: "POST",
           headers: { "Content-Type": "application/json", Accept: "application/json" },
@@ -1184,7 +1550,8 @@
             action: "login_with_otp",
             email: otpAccount,
             code: otpCode,
-            role: target.getAttribute("data-login-role") || "boss",
+            role: allowPick ? "boss" : otpPortal,
+            loginPortal: allowPick ? undefined : otpPortal,
           }),
         })
           .then(function (r) {
@@ -1193,8 +1560,28 @@
               return j;
             });
           })
-          .then(function (result) {
-            saveSession(result.session, true);
+          .then(async function (result) {
+            var u = (result.session && result.session.user) || {};
+            if (!allowPick) {
+              if (otpPortal === "companion") {
+                if (!(u.hasCompanion || profileRole(u.role) === "companion")) throw new Error(portalDeniedMessage("companion"));
+                result.session = Object.assign({}, result.session, { user: Object.assign({}, u, { role: "companion" }) });
+                writeCompanionPortalSession(result.session, true);
+                result._pickedRole = "companion";
+                result.redirect = result.redirect || "/companion/review-status";
+              } else if (otpPortal === "boss") {
+                if (!(u.hasBoss || profileRole(u.role) === "boss")) throw new Error(portalDeniedMessage("boss"));
+                result.session = Object.assign({}, result.session, { user: Object.assign({}, u, { role: "boss" }) });
+                saveSession(result.session, true);
+                result._pickedRole = "boss";
+              } else {
+                saveSession(result.session, true);
+              }
+            } else if (result.needRolePick && u.hasBoss && u.hasCompanion) {
+              result = await showRolePickModal(result, true);
+            } else {
+              saveSession(result.session, true);
+            }
             afterAuthSuccess(result, { remember: true });
           })
           .catch(function (error) {
@@ -1213,7 +1600,12 @@
       target.disabled = true;
       var oldText = target.textContent;
       target.textContent = "登录中...";
-      loginWithDatabase(account, passwordLogin, true)
+      var passPortalAttr = String(target.getAttribute("data-login-portal") || "").toLowerCase();
+      var passOpts =
+        passPortalAttr === "public"
+          ? { allowRolePick: true }
+          : { expectedPortal: profileRole(passPortalAttr || inferPortalFromPage() || "boss") };
+      loginWithDatabase(account, passwordLogin, true, passOpts)
         .then(function (result) {
           afterAuthSuccess(result, { remember: true });
         })
@@ -1238,6 +1630,8 @@
     saveSession: saveSession,
     switchActivePortal: switchActivePortal,
     showRolePickModal: showRolePickModal,
+    inferPortalFromPage: inferPortalFromPage,
+    portalDeniedMessage: portalDeniedMessage,
     logout: logout,
     isLogged: isLogged,
     user: user,
@@ -1246,6 +1640,12 @@
     profileRole: profileRole,
     humanizeAuthError: humanizeAuthError,
     syncPortalSessions: syncPortalSessions,
+    hasPortalSession: hasPortalSession,
+    clearOtherRoleSessions: clearOtherRoleSessions,
+    clearSharedAuthMirrors: clearSharedAuthMirrors,
+    clearCompanionPortalSession: clearCompanionPortalSession,
+    clearBossPortalSession: clearBossPortalSession,
+    writeCompanionPortalSession: writeCompanionPortalSession,
   };
 
   (function loadBossHeader() {
