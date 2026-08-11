@@ -153,49 +153,46 @@ async function main() {
   }, token);
 
   // Live-render each status by stubbing companion bootstrap auditStatus.
+  let stubStatus = "draft";
+  await page.route("**/api/companion**", async (route) => {
+    const req = route.request();
+    const url = req.url();
+    const isBootstrap = /action=bootstrap/i.test(url);
+    if (!isBootstrap) return route.continue();
+    const code = stubStatus;
+    const labelPayload = {
+      ok: true,
+      data: {
+        player: {
+          auditStatus: code,
+          applicationStatus: code,
+          application_status: code,
+          applicationRejectReason: code === "rejected" ? "测试驳回" : "",
+        },
+      },
+    };
+    try {
+      const res = await route.fetch();
+      const json = await res.json().catch(() => ({}));
+      const data = json.data || json || {};
+      data.player = Object.assign({}, data.player || {}, labelPayload.data.player);
+      const body = json.data ? Object.assign({}, json, { ok: true, data }) : { ok: true, data };
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(body),
+      });
+    } catch (_) {
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(labelPayload),
+      });
+    }
+  });
+
   for (const [code, label] of Object.entries(EXPECTED)) {
-    await page.unroute("**/api/companion**").catch(() => null);
-    await page.route("**/api/companion**", async (route) => {
-      const req = route.request();
-      const url = req.url();
-      const isBootstrap = /action=bootstrap/i.test(url) || /bootstrap/i.test(url);
-      if (!isBootstrap) return route.continue();
-      try {
-        const res = await route.fetch();
-        const json = await res.json().catch(() => ({}));
-        const data = json.data || json;
-        if (data) {
-          data.player = Object.assign({}, data.player || {}, {
-            auditStatus: code,
-            applicationStatus: code,
-            application_status: code,
-            applicationRejectReason: code === "rejected" ? "测试驳回" : "",
-          });
-          if (json.data) json.data = data;
-          else Object.assign(json, data);
-        }
-        return route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify(json.ok === false ? { ok: true, data } : json.data ? json : { ok: true, data }),
-        });
-      } catch (_) {
-        return route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify({
-            ok: true,
-            data: {
-              player: {
-                auditStatus: code,
-                applicationStatus: code,
-                applicationRejectReason: code === "rejected" ? "测试驳回" : "",
-              },
-            },
-          }),
-        });
-      }
-    });
+    stubStatus = code;
     await page.goto(`${BASE}/companion-apply.html?cb=${Date.now()}&statusStub=${code}`, {
       waitUntil: "domcontentloaded",
       timeout: 90000,
