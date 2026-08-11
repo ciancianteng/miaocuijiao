@@ -304,6 +304,7 @@
       .finally(function () {
         markReady();
         // Do not broadcast ensureSession on every coalesce — widgets listen for login/logout flips.
+        if (sessionReadyPromise === pending) sessionReadyPromise = null;
       });
     sessionReadyPromise = pending;
     return pending;

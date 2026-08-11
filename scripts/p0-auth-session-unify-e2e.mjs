@@ -187,7 +187,7 @@ async function main() {
         // do not overwrite if already set by inject — inject runs first in addInitScript order...
       } catch (e) {}
     });
-    await page.goto(`${BASE}/profile.html?t=${Date.now()}`, { waitUntil: "domcontentloaded", timeout: 90000 });
+    await page.goto(`${BASE}/index.html?t=${Date.now()}`, { waitUntil: "commit", timeout: 60000 });
     await page.waitForTimeout(1500);
     // open place order if button exists
     const orderBtn = page.locator('[data-mcj-place-order], [data-open-place-order], button:has-text("立即下单"), a:has-text("立即下单")').first();
@@ -196,7 +196,7 @@ async function main() {
       await page.waitForTimeout(2000);
     } else {
       // fallback: navigate recharge + custom order
-      await page.goto(`${BASE}/custom-order.html?t=${Date.now()}`, { waitUntil: "domcontentloaded", timeout: 90000 });
+      await page.goto(`${BASE}/custom-order.html?t=${Date.now()}`, { waitUntil: "commit", timeout: 60000 });
       await page.waitForTimeout(2000);
     }
     const text = await pageText(page);
@@ -246,7 +246,7 @@ async function main() {
       localStorage.setItem("mcjAuthAccessToken", "eyJhbGciOiJub25lIn0.eyJyb2xlIjoiY29tcGFuaW9uIiwic3ViIjoiZmFrZSJ9.sig");
       localStorage.setItem("customerUser", JSON.stringify({ role: "companion" }));
     }, { session: bossLogin.json.session, user: bossLogin.json.user || bossLogin.json.session.user });
-    await page.goto(`${BASE}/recharge.html?t=${Date.now()}`, { waitUntil: "domcontentloaded", timeout: 90000 });
+    await page.goto(`${BASE}/recharge.html?t=${Date.now()}`, { waitUntil: "commit", timeout: 60000 });
     // Wait past authLoading
     await page.waitForFunction(() => {
       const t = document.body ? document.body.innerText : "";
@@ -269,11 +269,11 @@ async function main() {
     const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
     const page = await ctx.newPage();
     await injectBossSession(page, bossLogin.json.session, bossLogin.json.user || bossLogin.json.session.user);
-    await page.goto(`${BASE}/recharge.html?t=${Date.now()}`, { waitUntil: "domcontentloaded", timeout: 90000 });
+    await page.goto(`${BASE}/recharge.html?t=${Date.now()}`, { waitUntil: "commit", timeout: 60000 });
     await page.waitForTimeout(2000);
     const samples = [];
     page.on("framenavigated", async () => {});
-    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.reload({ waitUntil: "commit" });
     for (let i = 0; i < 8; i++) {
       await page.waitForTimeout(200);
       const t = await pageText(page);
@@ -300,7 +300,7 @@ async function main() {
     let allOk = true;
     const details = [];
     for (const p of paths) {
-      await page.goto(`${BASE}${p}?t=${Date.now()}`, { waitUntil: "domcontentloaded", timeout: 90000 });
+      await page.goto(`${BASE}${p}?t=${Date.now()}`, { waitUntil: "commit", timeout: 60000 });
       await page.waitForTimeout(1500);
       const t = await pageText(page);
       const bad = /请先登录|未登录|只有老板|无权限|选择身份/.test(t) && !/工作台|订单|账号|收益|资料/.test(t);
@@ -320,9 +320,9 @@ async function main() {
     const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
     const page = await ctx.newPage();
     await injectCompanionSession(page, compLogin.json.session, compLogin.json.user || compLogin.json.session.user);
-    await page.goto(`${BASE}/companion/dashboard/?t=${Date.now()}`, { waitUntil: "domcontentloaded", timeout: 90000 });
+    await page.goto(`${BASE}/companion/dashboard/?t=${Date.now()}`, { waitUntil: "commit", timeout: 60000 });
     await page.waitForTimeout(1200);
-    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.reload({ waitUntil: "commit" });
     await page.waitForTimeout(2000);
     const ok = !/\/companion\/login/i.test(page.url()) && !/请先登录|未登录/.test(await pageText(page));
     step("TEST5-companion-f5", ok, page.url());
@@ -334,7 +334,7 @@ async function main() {
     const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
     const page = await ctx.newPage();
     await injectCsSession(page, csLogin.json.session, csLogin.json.user || csLogin.json.session.user);
-    await page.goto(`${BASE}/customer-service/dashboard/?t=${Date.now()}`, { waitUntil: "domcontentloaded", timeout: 90000 });
+    await page.goto(`${BASE}/customer-service/dashboard/?t=${Date.now()}`, { waitUntil: "commit", timeout: 60000 });
     await page.waitForTimeout(2500);
     const t = await pageText(page);
     const ok = !/\/customer-service\/login/i.test(page.url()) && !/请先登录|未登录|选择身份|老板端|陪玩端/.test(t);
@@ -347,9 +347,9 @@ async function main() {
     const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
     const page = await ctx.newPage();
     await injectCsSession(page, csLogin.json.session, csLogin.json.user || csLogin.json.session.user);
-    await page.goto(`${BASE}/customer-service/orders/?t=${Date.now()}`, { waitUntil: "domcontentloaded", timeout: 90000 });
+    await page.goto(`${BASE}/customer-service/orders/?t=${Date.now()}`, { waitUntil: "commit", timeout: 60000 });
     await page.waitForTimeout(1500);
-    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.reload({ waitUntil: "commit" });
     await page.waitForTimeout(2500);
     const t = await pageText(page);
     const ok =
@@ -364,7 +364,7 @@ async function main() {
     const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
     const page = await ctx.newPage();
     await injectAdminSession(page, adminLogin.json.session, adminLogin.json.user || adminLogin.json.session.user);
-    await page.goto(`${BASE}/admin.html?t=${Date.now()}`, { waitUntil: "domcontentloaded", timeout: 90000 });
+    await page.goto(`${BASE}/admin.html?t=${Date.now()}`, { waitUntil: "commit", timeout: 60000 });
     await page.waitForTimeout(2500);
     const t = await pageText(page);
     const ok = !/\/admin\/login/i.test(page.url()) && !/请先登录|未登录/.test(t);
@@ -377,9 +377,9 @@ async function main() {
     const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
     const page = await ctx.newPage();
     await injectAdminSession(page, adminLogin.json.session, adminLogin.json.user || adminLogin.json.session.user);
-    await page.goto(`${BASE}/admin.html#payment?t=${Date.now()}`, { waitUntil: "domcontentloaded", timeout: 90000 });
+    await page.goto(`${BASE}/admin.html#payment?t=${Date.now()}`, { waitUntil: "commit", timeout: 60000 });
     await page.waitForTimeout(1500);
-    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.reload({ waitUntil: "commit" });
     await page.waitForTimeout(2500);
     const ok = !/\/admin\/login/i.test(page.url()) && !/请先登录|未登录/.test(await pageText(page));
     step("TEST9-admin-f5", ok, page.url());
@@ -391,7 +391,7 @@ async function main() {
     const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
     const page = await ctx.newPage();
     await injectBossSession(page, bossLogin.json.session, bossLogin.json.user || bossLogin.json.session.user);
-    await page.goto(`${BASE}/recharge.html?t=${Date.now()}`, { waitUntil: "domcontentloaded", timeout: 90000 });
+    await page.goto(`${BASE}/recharge.html?t=${Date.now()}`, { waitUntil: "commit", timeout: 60000 });
     await page.waitForTimeout(1500);
     await page.evaluate(() => {
       if (window.MCJBossAuth && window.MCJBossAuth.clearSession) window.MCJBossAuth.clearSession();
@@ -400,7 +400,7 @@ async function main() {
         window.MCJRoleGate.logout("customer");
       }
     });
-    await page.goto(`${BASE}/recharge.html?t=${Date.now()}`, { waitUntil: "domcontentloaded", timeout: 90000 });
+    await page.goto(`${BASE}/recharge.html?t=${Date.now()}`, { waitUntil: "commit", timeout: 60000 });
     await page.waitForTimeout(2000);
     const url = page.url();
     const t = await pageText(page);
@@ -428,7 +428,7 @@ async function main() {
     ];
     let fails = [];
     for (const p of pages) {
-      await page.goto(`${BASE}${p}?t=${Date.now()}`, { waitUntil: "domcontentloaded", timeout: 90000 });
+      await page.goto(`${BASE}${p}?t=${Date.now()}`, { waitUntil: "commit", timeout: 60000 });
       await page.waitForTimeout(900);
       const t = await pageText(page);
       if (/login\.html/i.test(page.url())) {
@@ -451,9 +451,9 @@ async function main() {
       if (m.type() === "error") errs.push(m.text());
     });
     await injectBossSession(page, bossLogin.json.session, bossLogin.json.user || bossLogin.json.session.user);
-    await page.goto(`${BASE}/recharge.html?t=${Date.now()}`, { waitUntil: "domcontentloaded", timeout: 90000 });
+    await page.goto(`${BASE}/recharge.html?t=${Date.now()}`, { waitUntil: "commit", timeout: 60000 });
     await page.waitForTimeout(2500);
-    await page.goto(`${BASE}/support.html?t=${Date.now()}`, { waitUntil: "domcontentloaded", timeout: 90000 });
+    await page.goto(`${BASE}/support.html?t=${Date.now()}`, { waitUntil: "commit", timeout: 60000 });
     await page.waitForTimeout(2500);
     const bad = errs.filter((e) => /Maximum call stack|infinite|auth loop|too much recursion/i.test(e));
     step("TEST12-console-no-auth-loop", bad.length === 0, bad.slice(0, 3).join(" | ") || `errors=${errs.length}`);
