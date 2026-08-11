@@ -174,9 +174,14 @@
   function setSubmitLoading(on) {
     var btn = qs("[data-po-submit]");
     if (!btn) return;
-    btn.disabled = !!on;
-    btn.setAttribute("aria-busy", on ? "true" : "false");
-    btn.textContent = on ? "提交中…" : "确认订单并付款";
+    if (on) {
+      btn.disabled = true;
+      btn.setAttribute("aria-busy", "true");
+      btn.textContent = "提交中…";
+      return;
+    }
+    btn.setAttribute("aria-busy", "false");
+    syncSubmitAvailability();
   }
   function syncSubmitAvailability() {
     var btn = qs("[data-po-submit]");
