@@ -68,7 +68,7 @@ async function waitDeploy(maxMs = 180000) {
         /审核中/.test(jsText) &&
         /审核通过/.test(jsText) &&
         /审核未通过/.test(jsText) &&
-        (/draft:\s*"草稿中"|draft:"草稿中"/.test(jsText) || /draft:"草稿中"/.test(jsText.replace(/\s+/g, "")));
+        /draft\s*:\s*[`'"]草稿中[`'"]/.test(jsText);
       if (ok) {
         step("deploy_ready", true, `elapsed=${Date.now() - t0}ms asset=${asset ? asset[0] : "none"}`);
         return true;
