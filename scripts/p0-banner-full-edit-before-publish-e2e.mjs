@@ -272,10 +272,18 @@ async function main() {
     await page.waitForSelector("[data-banner-editor-title]", { timeout: 45000 });
     await shot(page, "04-after-publish");
 
-    // Find in history
+    // Find in history (title lives in input value — not always plain innerText)
     await page.waitForTimeout(1000);
+    const histHasTitle = await page.evaluate((title) => {
+      const inputs = Array.from(document.querySelectorAll("#crud-banners [data-banner-title]"));
+      return inputs.some((el) => String(el.value || "") === title);
+    }, TITLE_NEW);
     const histText = await page.locator("#crud-banners").innerText();
-    step("TEST2_history_shows_title", histText.includes(TITLE_NEW), histText.includes(TITLE_NEW) ? "found in DOM" : "missing");
+    step(
+      "TEST2_history_shows_title",
+      histHasTitle || histText.includes(TITLE_NEW),
+      histHasTitle ? "found in history title input" : histText.includes(TITLE_NEW) ? "found in DOM text" : "missing"
+    );
 
     // Public homepage data
     let afterPub = [];
