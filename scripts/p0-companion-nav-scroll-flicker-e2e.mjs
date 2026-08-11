@@ -291,15 +291,18 @@ async function runViewport(browser, label, viewport) {
         ? true
         : await page.evaluate(() => document.querySelector(".pw-side")?.getAttribute("data-pw-side-mark") === "1");
 
-      // Bounce detection: early sample shows large scroll then later near 0
+      // Bounce = NEW route briefly at bottom then jumps to top.
+      // Ignore samples still on the previous pathname.
+      var toPath = to[0].replace(/\/$/, "");
+      var afterPath = samples.filter(function (s) {
+        return String(s.path || "").replace(/\/$/, "").indexOf(toPath) >= 0;
+      });
       let bounced = false;
-      if (samples.length >= 2) {
-        const earlyMax = Math.max(
-          ...samples.slice(0, 2).map((s) => (isMobile ? s.winY : s.pageY))
-        );
-        const late = samples[samples.length - 1];
+      if (afterPath.length >= 2) {
+        const earlyMax = Math.max(...afterPath.slice(0, Math.min(3, afterPath.length)).map((s) => (isMobile ? s.winY : s.pageY)));
+        const late = afterPath[afterPath.length - 1];
         const lateY = isMobile ? late.winY : late.pageY;
-        if (earlyMax > 200 && lateY < 40) bounced = true;
+        if (earlyMax > 120 && lateY < 40 && earlyMax - lateY > 80) bounced = true;
       }
       const finalTop = isMobile ? after.winY < 40 : after.pageY < 40;
       const pathOk = after.route.includes(to[0].replace(/\/$/, "")) || after.route.endsWith(to[0]);
