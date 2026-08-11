@@ -60,6 +60,10 @@ function envValue(key) {
 }
 
 function json(res, status, data) {
+  if (typeof res.setHeader === "function") {
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+    res.setHeader("Pragma", "no-cache");
+  }
   res.status(status).json(data);
 }
 

@@ -15,6 +15,7 @@
     banks: [],
     bankProviders: BANK_PROVIDERS,
     tablesReady: true,
+    channelSource: "payment_channels",
     message: "",
     editId: "",
     bankEditId: "",
@@ -226,13 +227,22 @@
     var editor = state.editId ? renderEditor(channelById(state.editId)) : "";
     var orderCodes = (state.bossOrderMethods || []).join(", ") || "（无）";
     var rechargeCodes = (state.bossRechargeMethods || []).join(", ") || "（无）";
+    var sotLabel =
+      state.channelSource === "platform_settings" || state.tablesReady === false
+        ? "platform_settings.paymentChannelsPublic（payment_channels 表未建，与老板端同源）"
+        : "payment_channels（public mirror 自动同步）";
     return (
       renderActivePublicQr() +
-      '<div class="admin-sync-note" style="margin:0 0 12px">单一数据源：<code>payment_channels</code>。老板「立即下单」读取 <code>GET /api/recharge → orderPayMethods</code>（需 enabled + 资料齐全 + 适用于订单）。当前老板订单可见：<strong>' +
+      '<div class="admin-sync-note" style="margin:0 0 12px">单一数据源：<code>' +
+      esc(sotLabel) +
+      "</code>。老板「立即下单」读取 <code>GET /api/recharge → orderPayMethods</code>（需 enabled + 资料齐全 + 适用于订单）；充值中心读取同接口 <code>methods</code>（需 enabled + 适用于充值）。当前老板订单可见：<strong>" +
       esc(orderCodes) +
       "</strong>；充值可见：<strong>" +
       esc(rechargeCodes) +
       "</strong>。开关开但订单不可见 = 缺二维码/密钥或未勾选适用场景，不是老板端写死。</div>" +
+      (state.message
+        ? '<div class="admin-sync-note" style="margin:0 0 12px;color:#a15c00">' + esc(state.message) + "</div>"
+        : "") +
       '<div class="payment-channel-grid">' +
       (cards || '<div class="empty">暂无支付渠道</div>') +
       "</div>" +
@@ -622,6 +632,7 @@
         state.banks = result.banks || [];
         state.bankProviders = result.bankProviders && result.bankProviders.length ? result.bankProviders : BANK_PROVIDERS;
         state.tablesReady = result.tablesReady !== false;
+        state.channelSource = result.channelSource || (result.tablesReady === false ? "platform_settings" : "payment_channels");
         state.message = result.message || "";
         state.activePublicQr = result.activePublicQr || null;
         state.bossOrderMethods = result.bossOrderMethods || [];
