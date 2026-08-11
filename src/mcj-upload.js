@@ -10,9 +10,9 @@
   var AUDIO_ACCEPT =
     "audio/mpeg,audio/mp3,audio/mp4,audio/aac,audio/x-m4a,audio/webm,audio/ogg,audio/wav,audio/wave,audio/x-wav,.mp3,.m4a,.aac,.webm,.ogg,.wav";
   var VIDEO_ACCEPT = "video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm";
-  var MAX_IMAGE_BYTES = 10 * 1024 * 1024;
-  var MAX_AUDIO_BYTES = 20 * 1024 * 1024;
-  var MAX_VIDEO_BYTES = 40 * 1024 * 1024;
+  var MAX_IMAGE_BYTES = 100 * 1024 * 1024;
+  var MAX_AUDIO_BYTES = 50 * 1024 * 1024;
+  var MAX_VIDEO_BYTES = 200 * 1024 * 1024;
   var MAX_VIDEO_SECONDS = 30;
   var IMAGE_MIME = { "image/jpeg": 1, "image/jpg": 1, "image/png": 1, "image/webp": 1 };
   var AUDIO_MIME = {
@@ -122,7 +122,8 @@
         ext === "webm" ||
         ext === "wav";
       if (!audioOk) return { ok: false, error: "仅支持 mp3 / m4a / aac / wav 语音" };
-      if (file.size > MAX_AUDIO_BYTES) return { ok: false, error: "语音不能超过 20MB" };
+      // Soft client hint only — real limit is enforced by Storage / API.
+      if (file.size > MAX_AUDIO_BYTES) return { ok: false, error: "语音文件过大，请压缩后重试或改用较短录音" };
       return { ok: true };
     }
     if (kind === "video") {
@@ -134,7 +135,7 @@
         ext === "mov" ||
         ext === "webm";
       if (!videoOk) return { ok: false, error: "仅支持 mp4 / mov 视频" };
-      if (file.size > MAX_VIDEO_BYTES) return { ok: false, error: "视频不能超过 40MB" };
+      if (file.size > MAX_VIDEO_BYTES) return { ok: false, error: "视频文件过大，请压缩后重试" };
       return { ok: true, maxSeconds: MAX_VIDEO_SECONDS };
     }
     var imageOk =
@@ -148,7 +149,7 @@
       ext === "png" ||
       ext === "webp";
     if (!imageOk) return { ok: false, error: "仅支持 jpg / png / webp 图片" };
-    if (file.size > MAX_IMAGE_BYTES) return { ok: false, error: "单张图片不能超过 10MB" };
+    if (file.size > MAX_IMAGE_BYTES) return { ok: false, error: "图片文件过大，请压缩后重试" };
     return { ok: true };
   }
 

@@ -728,6 +728,7 @@ async function reviewIdentity(req, companion, payload) {
     body: JSON.stringify({
       verification_status: status === "approved" ? "approved" : status,
       identity_status: status,
+      ...(status === "approved" ? { allow_orders: true } : {}),
       updated_at: new Date().toISOString(),
     }),
   }).catch(async (err) => {
@@ -737,6 +738,7 @@ async function reviewIdentity(req, companion, payload) {
       method: "PATCH",
       body: JSON.stringify({
         verification_status: status === "approved" ? "approved" : status,
+        ...(status === "approved" ? { allow_orders: true } : {}),
         updated_at: new Date().toISOString(),
       }),
     });
@@ -837,7 +839,13 @@ async function reviewDeposit(req, companion, payload) {
   }
   await companionDb(PLAYER_TABLE, `?id=eq.${encodeURIComponent(companion.id)}`, {
     method: "PATCH",
-    body: JSON.stringify({ deposit_status: mapped, updated_at: new Date().toISOString() }),
+    body: JSON.stringify({
+      deposit_status: mapped,
+      ...(status === "approved" || mapped === "paid"
+        ? { allow_orders: true, verification_status: "approved" }
+        : {}),
+      updated_at: new Date().toISOString(),
+    }),
   });
   await logOperation(req, "review_deposit", companion.id, before || companion, { status: mapped, reason }, reason);
   return { status: mapped, reason };
@@ -878,8 +886,13 @@ async function reviewApplication(req, companion, payload) {
     if (payload.allowOrders != null || payload.allow_orders != null) {
       extras.allow_orders = bool(payload.allowOrders ?? payload.allow_orders, true);
     }
-    // Must set verification_status=approved so /api/public/companions (filters by it) publishes the companion.
+    // Application approve → 待认证（allow_orders=false until ID/deposit approved).
     patch = approveListingPatchForRow(companion, extras);
+    // Hard-gate: profile approve must not unlock grab hall until credential OR is satisfied.
+    patch.allow_orders = false;
+    if (!/approved|verified|passed/i.test(String(companion.verification_status || ""))) {
+      patch.verification_status = "pending";
+    }
   } else {
     patch = unlistListingPatch({ status, reason });
     // Drop undefined verification_status from unlist when archived

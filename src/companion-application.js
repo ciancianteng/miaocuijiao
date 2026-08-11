@@ -22,14 +22,14 @@
     "基本资料",
     "游戏资料",
     "上传头像与资料",
-    "选择认证方式"
+    "认证说明"
   ];
   var stepLabels = [
     "阅读陪玩制度",
     "填写基本资料",
     "填写游戏资料",
     "上传头像与资料",
-    "选择认证方式"
+    "阅读认证说明"
   ];
 
   var tagGroups = {
@@ -321,18 +321,10 @@
       return missing;
     }
     if (index === 4) {
-      var mode = String(identity.authMode || "").trim();
-      if (mode !== "id_card" && mode !== "deposit") missing.push("选择认证方式（身份证或押金二选一）");
-      if (mode === "id_card") {
-        if (!hasDurableUpload(identity.idFront)) missing.push("证件正面");
-        if (!hasDurableUpload(identity.idBack)) missing.push("证件背面");
+      // 申请阶段仅阅读认证说明，不上传身份证/押金，不收集结款资料。
+      if (!(draft.authNotice && draft.authNotice.acknowledged)) {
+        missing.push("确认已阅读后续认证说明");
       }
-      if (mode === "deposit") {
-        if (!hasDurableUpload(identity.depositProof)) missing.push("押金付款凭证");
-      }
-      [["settlementMethod", "结款方式"], ["settlementName", "结款户名"], ["settlementAccount", "结款账号"]].forEach(function (item) {
-        if (!hasText(identity, item[0])) missing.push(item[1]);
-      });
       return missing;
     }
     return missing;
@@ -869,20 +861,15 @@
         });
     return '<div class="form-field full apply-gallery-block"><span class="mcj-upload-label">相册</span><div class="apply-gallery-grid">' + cards + "</div>" + addCard + "</div>";
   }
-  function tagPicker(fieldName, label, selected, groups, limit, opts) {
+  function tagPicker(fieldName, label, selected, groups, limit) {
     selected = Array.isArray(selected) ? selected : [];
-    opts = opts || {};
-    // 仅个人标签允许自定义；可接游戏 / 擅长位置 / 可提供服务必须选自后台配置，禁止申请端自建。
-    var allowCustom = opts.allowCustom === true;
+    // 全部标签仅可选平台后台预设，禁止申请端自定义新增。
     var body = Object.keys(groups || {}).map(function (group) {
       return '<div class="tag-group"><b>' + esc(group) + '</b><div class="tag-list">' + groups[group].map(function (tag) {
         return '<label class="tag-pill ' + (selected.indexOf(tag) >= 0 ? "checked" : "") + '"><input type="checkbox" data-tag-field="' + esc(fieldName) + '" value="' + esc(tag) + '" ' + (selected.indexOf(tag) >= 0 ? "checked" : "") + '> ' + esc(tag) + '</label>';
       }).join("") + '</div></div>';
     }).join("");
-    var customRow = allowCustom
-      ? '<div class="custom-tag-row"><input data-custom-tag-input="' + esc(fieldName) + '" placeholder="新增自定义标签"><button class="apply-btn small" type="button" data-add-custom-tag="' + esc(fieldName) + '">添加</button></div>'
-      : '';
-    return '<div class="form-field full tag-picker" data-tag-picker="' + esc(fieldName) + '" data-tag-limit="' + (limit || 99) + '"><span>' + esc(label) + '</span>' + body + customRow + '<small>已选择 <em data-tag-count="' + esc(fieldName) + '">' + selected.length + '</em> / ' + (limit || 99) + '</small></div>';
+    return '<div class="form-field full tag-picker" data-tag-picker="' + esc(fieldName) + '" data-tag-limit="' + (limit || 99) + '"><span>' + esc(label) + '</span>' + body + '<small>已选择 <em data-tag-count="' + esc(fieldName) + '">' + selected.length + '</em> / ' + (limit || 99) + '（仅可选平台预设标签）</small></div>';
   }
 
   function rulesHtml(draft) {
@@ -910,7 +897,7 @@
       field("phone", "联系电话", "tel", data.phone) +
       field("email", "邮箱", "email", data.email) +
       selectField("contactPublic", "联系方式是否公开", data.contactPublic, ["不公开，仅平台可见", "审核通过后公开给已下单老板"]) +
-      tagPicker("personalTags", "个人标签（必填，最多 10 个）", data.personalTags, tagGroups.personalTags, 10, { allowCustom: true }) +
+      tagPicker("personalTags", "个人标签（必填，最多 10 个）", data.personalTags, tagGroups.personalTags, 10) +
       '</form></section>';
   }
   function gameHtml(data) {
@@ -1105,48 +1092,26 @@
     if (set.payeeNote || set.paymentNote) lines.push("<li>" + esc(set.payeeNote || set.paymentNote) + "</li>");
     return lines.length ? "<ul>" + lines.join("") + "</ul>" : "";
   }
-  function identityHtml(draft) {
-    var id = draft.identity || {};
-    var mode = String(id.authMode || "").trim();
-    var set = depositSettings();
-    var choice =
-      '<div class="apply-split">' +
-      '<button class="apply-subcard" type="button" data-auth-mode="id_card" aria-pressed="' + (mode === "id_card" ? "true" : "false") + '"><h3>身份证认证</h3><p>上传证件正反面完成认证。选择后无需缴纳押金。</p><strong>' + (mode === "id_card" ? "已选择" : "点击选择") + "</strong></button>" +
-      '<button class="apply-subcard" type="button" data-auth-mode="deposit" aria-pressed="' + (mode === "deposit" ? "true" : "false") + '"><h3>押金认证</h3><p>按平台收款账号支付押金并上传凭证。选择后无需上传身份证。</p><strong>' + (mode === "deposit" ? "已选择" : "点击选择") + "</strong></button>" +
-      "</div>";
-    var modeForm = "";
-    if (mode === "id_card") {
-      modeForm =
-        '<div class="apply-subcard"><h3>身份证资料</h3><p>资料仅用于平台审核，不会在老板端公开。</p><form class="apply-grid">' +
-        selectField("documentType", "证件类型", id.documentType, ["马来西亚身份证", "中国大陆身份证"]) +
-        fileField("idFront", "身份证 / 证件正面", { value: id.idFront }) +
-        fileField("idBack", "身份证 / 证件背面", { value: id.idBack }) +
-        "</form></div>";
-    } else if (mode === "deposit") {
-      modeForm =
-        '<div class="apply-subcard"><h3>认证押金：' + esc(set.currency || "RM") + Number(set.amount || 100).toFixed(0) + "</h3>" +
-        "<ul><li>请向平台收款账号转账后上传付款凭证</li><li>支持方式：" + esc((set.methods || []).join("、") || "TNG / DuitNow / Alipay") + "</li></ul>" +
-        (set.description ? "<p>" + esc(set.description) + "</p>" : "") +
-        depositPayeeHtml(set) +
-        '<form class="apply-grid">' +
-        selectField("depositMethod", "押金支付方式", id.depositMethod, set.methods || ["TNG", "DuitNow", "Alipay"]) +
-        fileField("depositProof", "押金付款凭证", { value: id.depositProof }) +
-        "</form></div>";
-    }
-    var settlement =
-      mode === "id_card" || mode === "deposit"
-        ? '<div class="apply-subcard"><h3>结款资料（必填）</h3><form class="apply-grid">' +
-          selectField("settlementMethod", "结款方式", id.settlementMethod, ["银行卡", "DuitNow", "TNG Wallet", "支付宝"]) +
-          field("settlementName", "结款户名", "text", id.settlementName) +
-          field("settlementAccount", "结款账号", "text", id.settlementAccount) +
-          '</form><div class="deposit-status"><strong>审核通过后即可成为陪玩</strong><p>认证方式为二选一，审核对应方式通过后即可接单。</p></div></div>'
-        : "";
+  /** 申请第 5 步：仅认证说明，不收集身份证/押金/结款。 */
+  function authNoticeHtml(draft) {
+    var ack = !!(draft.authNotice && draft.authNotice.acknowledged);
     return (
-      '<section class="apply-panel"><h2>选择认证方式</h2><p class="apply-note full">请先选择一种认证方式（身份证认证 或 押金认证，二选一）。结款资料为必填项。</p>' +
-      choice +
-      modeForm +
-      settlement +
-      "</section>"
+      '<section class="apply-panel" id="applyAuthNoticePanel"><h2>认证说明 / 后续认证</h2>' +
+      '<div class="apply-subcard">' +
+      '<h3>资料审核通过后须完成认证</h3>' +
+      '<p class="apply-note full">资料审核通过后，成为陪玩前必须完成以下认证之一：</p>' +
+      "<ul>" +
+      "<li>① 身份证认证</li>" +
+      "<li>② RM100 押金认证</li>" +
+      "</ul>" +
+      '<p class="apply-note full">二选一完成并经后台审核通过后，方可正式接单。申请阶段无需上传身份证、无需支付押金、无需填写结款账户。</p>' +
+      '<p class="apply-note full">审核通过后请登录陪玩端，在「账号中心」完成认证；结款资料请到陪玩端「隐私设置 / 结款资料」自行填写（仅本人与后台可见）。</p>' +
+      "</div>" +
+      '<div class="agree-bar" style="margin-top:16px">' +
+      '<label class="agree-row"><input type="checkbox" data-auth-notice-ack ' +
+      (ack ? "checked" : "") +
+      "><span>我已阅读并了解：审核通过后需完成身份证或押金认证（二选一）才能接单</span></label>" +
+      "</div></section>"
     );
   }
   function stepHtml(index, draft) {
@@ -1154,7 +1119,7 @@
     if (index === 1) return basicHtml(draft.data || {});
     if (index === 2) return gameHtml(draft.data || {});
     if (index === 3) return uploadHtml(draft);
-    return identityHtml(draft);
+    return authNoticeHtml(draft);
   }
   function statusNotice() {
     var code = remoteStatus && remoteStatus.applicationStatus;
@@ -1165,7 +1130,7 @@
     var tip = "";
     if (/resubmit|need_more/.test(String(code))) tip = "请按审核意见修改后重新提交。";
     else if (/pending|review|submitted/.test(String(code))) tip = "请耐心等待后台审核，可刷新本页查看最新状态。";
-    else if (/approved|verified|passed/.test(String(code))) tip = "可前往陪玩端登录；所选认证方式审核通过后即可接单。";
+    else if (/approved|verified|passed/.test(String(code))) tip = "资料已通过。请登录陪玩端完成身份证或押金认证（二选一）后再接单。";
     else if (/rejected/.test(String(code))) tip = "如有疑问请联系平台客服。";
     return '<div class="apply-status-note">当前申请状态：<b>' + esc(statusLabelOf(code)) + '</b>' +
       (reason ? ' · 原因：' + esc(reason) : "") +
@@ -1440,13 +1405,12 @@
     if (missing.length) { showApplyTip("还有以下资料没有完成：\n" + missing.join("\n")); return; }
     var draft = readDraft();
     var user = currentUser();
-    var identity = draft.identity || {};
     var uploads = draft.uploads || {};
     var voice = draft.voice || {};
     var mainGames = draft.data.mainGames || [];
     var modes = draft.data.modes || [];
     var chain = Promise.resolve();
-    var authMode = String(identity.authMode || "").trim();
+    // 申请阶段不再提交身份证/押金/结款；认证在陪玩端完成。
     chain = chain.then(function () {
       return postCompanion("submit_application", {
         main_service: (mainGames[0] || ""),
@@ -1467,24 +1431,6 @@
         phone: draft.data.phone || "",
         email: draft.data.email || "",
         contact_public: draft.data.contactPublic || "",
-        auth_mode: authMode,
-        credential_mode: authMode,
-      });
-    });
-    chain = chain.then(function () {
-      if (authMode !== "id_card") return null;
-      return postCompanion("submit_verification", {
-        real_name: identity.realName || identity.name || draft.data.realName || user.name || "",
-        identity_no: identity.idNumber || identity.identityNo || "",
-        id_front: storagePayloadForSubmit(identity.idFront),
-        id_back: storagePayloadForSubmit(identity.idBack),
-        id_handheld: storagePayloadForSubmit(identity.idHandheld),
-        bank_name: identity.settlementBank || identity.bankName || "",
-        account_name: identity.settlementName || "",
-        bank_account: identity.settlementAccount || "",
-        tng_account: identity.tngAccount || "",
-        method: identity.settlementMethod || "bank",
-        phone: draft.data.phone || "",
       });
     });
     if (needsMediaUpload(uploads.avatar)) {
@@ -1514,22 +1460,12 @@
         });
       });
     }
-    if (authMode === "deposit" && (hasDurableUpload(identity.depositProof) || needsMediaUpload(identity.depositProof))) {
+    if (needsMediaUpload(uploads.showcaseVideo) || (uploads.showcaseVideo && uploads.showcaseVideo.url && /^data:/i.test(String(uploads.showcaseVideo.url || "")))) {
       chain = chain.then(function () {
-        var proof = storagePayloadForSubmit(identity.depositProof);
-        return postCompanion("submit_deposit_proof", {
-          paid_amount: (depositSettings().amount || 100),
-          payment_method: identity.depositMethod || "",
-          proof_url: proof || "",
-          remark: "陪玩申请一并提交",
-          settlementMethod: identity.settlementMethod || "",
-          settlementName: identity.settlementName || "",
-          settlementAccount: identity.settlementAccount || "",
-          bank_name: identity.settlementBank || identity.bankName || "",
-          account_name: identity.settlementName || "",
-          bank_account: identity.settlementAccount || "",
-          tng_account: identity.tngAccount || "",
-          method: identity.settlementMethod || "bank",
+        return postCompanion("upload_media", {
+          media_type: "video",
+          data_url: normalizeUploadAsset(uploads.showcaseVideo).url,
+          filename: "showcase.mp4",
         });
       });
     }
@@ -1795,7 +1731,7 @@
   }
   function confirmVoice() {
     try {
-      if (uploadBusy.voice) {
+      if (uploadBusy.voice || uploadBusy.voiceFile) {
         showApplyTip("试音正在上传中，请稍候…", "ok");
         return;
       }
@@ -1822,8 +1758,6 @@
 
       var hasLive = !!(liveVoiceBlob || liveVoiceObjectUrl);
       var alreadyDurable = !!(hasDurableUpload(d.voice) || hasDurableUpload(d.voice.url) || hasDurableUpload(d.voice.fileUpload));
-
-      // Only skip network upload when cloud asset already exists AND there is no new local blob to push.
       if (alreadyDurable && !hasLive) {
         d.voice.status = "上传成功 / 已保存";
         d.voice.confirmed = true;
@@ -1837,9 +1771,7 @@
         render(3);
         return;
       }
-
-      if (!hasLive && !/^data:/i.test(String(d.voice.url || ""))) {
-        // Stale hasLocal after refresh/navigation — never silently no-op.
+      if (!hasLive) {
         d.voice = Object.assign({}, d.voice, {
           hasLocal: false,
           listened: false,
@@ -1853,54 +1785,52 @@
         return;
       }
 
+      function buildVoiceFile(blob) {
+        if (!blob || !blob.size) throw new Error("录音文件为空，请重新录制");
+        var mime = String((d.voice && d.voice.mimeType) || blob.type || "audio/webm");
+        var ext = /mp4|aac|m4a/i.test(mime) ? "m4a" : /ogg/i.test(mime) ? "ogg" : /wav/i.test(mime) ? "wav" : "webm";
+        try {
+          return new File([blob], "voice-record." + ext, { type: mime });
+        } catch (eFile) {
+          var fallback = blob;
+          try {
+            fallback = new Blob([blob], { type: mime });
+            fallback.name = "voice-record." + ext;
+          } catch (e2) {}
+          return fallback;
+        }
+      }
+
       uploadBusy.voice = true;
       delete uploadErrors.voice;
       render(3);
 
-      var mime = String((d.voice && d.voice.mimeType) || (liveVoiceBlob && liveVoiceBlob.type) || "");
-      var filename = /mp4|aac|m4a/i.test(mime) ? "voice.m4a" : /ogg/i.test(mime) ? "voice.ogg" : "voice.webm";
-      var dataUrlPromise = /^data:/i.test(String(d.voice.url || ""))
-        ? Promise.resolve(d.voice.url)
-        : liveVoiceBlob
-          ? fileToDataURL(liveVoiceBlob)
-          : fetch(liveVoiceObjectUrl)
-              .then(function (r) {
-                if (!r.ok) throw new Error("读取本地录音失败");
-                return r.blob();
-              })
-              .then(function (blob) {
-                if (!blob || !blob.size) throw new Error("录音文件为空，请重新录制");
-                liveVoiceBlob = blob;
-                return fileToDataURL(blob);
-              });
+      var blobPromise = liveVoiceBlob
+        ? Promise.resolve(liveVoiceBlob)
+        : fetch(liveVoiceObjectUrl).then(function (r) {
+            if (!r.ok) throw new Error("读取本地录音失败");
+            return r.blob();
+          });
 
-      dataUrlPromise
-        .then(function (dataUrl) {
-          if (!dataUrl || !/^data:audio\/|^data:application\/octet-stream|;base64,/i.test(String(dataUrl))) {
-            throw new Error("录音数据无效，请重新录制");
-          }
-          if (String(dataUrl).length < 1000) {
-            throw new Error("录音文件过小或为空，请重新录制");
-          }
-          try {
-            console.info("[apply-voice] uploading", {
-              bytesApprox: Math.round(String(dataUrl).length * 0.75),
-              mime: mime,
-              filename: filename,
-              duration: duration,
-            });
-          } catch (eLog) {}
-          return postCompanion("upload_media", {
-            media_type: "voice",
-            data_url: dataUrl,
-            filename: filename,
-            content_type: mime || "",
-            duration_seconds: duration,
+      blobPromise
+        .then(function (blob) {
+          liveVoiceBlob = blob;
+          var file = buildVoiceFile(blob);
+          // 与「上传已有音频」共用同一套 handleUploadPick → upload_media 链路。
+          return handleUploadPick({
+            key: "voiceFile",
+            files: [file],
+            kind: "audio",
+            _fromLiveRecord: true,
+            _queued: true,
+          }).then(function () {
+            return duration;
           });
         })
-        .then(function (res) {
+        .then(function () {
           uploadBusy.voice = false;
           delete uploadErrors.voice;
+          delete uploadBusy.voiceFile;
           liveVoiceBlob = null;
           if (liveVoiceObjectUrl) {
             try {
@@ -1909,14 +1839,12 @@
             liveVoiceObjectUrl = "";
           }
           var next = readDraft();
-          var durableUrl =
-            (res && res.url) || (res && res.media && res.media.url) || "";
-          var durablePath =
-            (res && res.path) || (res && res.media && res.media.path) || "";
-          var durableBucket =
-            (res && res.bucket) || (res && res.media && res.media.bucket) || "";
-          if (!durablePath && !durableUrl) {
-            throw new Error("上传成功但未返回云端地址，请重试");
+          var durable =
+            hasDurableUpload(next.voice) ||
+            hasDurableUpload(next.voice && next.voice.url) ||
+            hasDurableUpload(next.voice && next.voice.fileUpload);
+          if (!durable) {
+            throw new Error("上传未写入云端地址，请重试");
           }
           next.voice = Object.assign({}, next.voice || {}, {
             status: "上传成功 / 已保存",
@@ -1925,11 +1853,8 @@
             uploaded: true,
             uploadedAt: now(),
             hasLocal: false,
-            url: durableUrl,
-            path: durablePath,
-            bucket: durableBucket,
-            storageOk: true,
-            id: (res && res.media && res.media.id) || next.voice.id || "",
+            fromFile: false,
+            duration: duration,
           });
           writeRaw(DRAFT_KEY, next);
           showApplyTip("上传成功 / 已保存", "ok");
@@ -1937,6 +1862,7 @@
         })
         .catch(function (err) {
           uploadBusy.voice = false;
+          delete uploadBusy.voiceFile;
           var msg = (err && err.message) || "上传失败，请重试";
           uploadErrors.voice = msg;
           try {
@@ -2117,7 +2043,7 @@
     return prepare
       .then(function (dataUrl) {
         if (!dataUrl || !/^data:/i.test(String(dataUrl))) {
-          throw new Error("读取图片失败，请重选后重试");
+          throw new Error(kind === "audio" || kind === "video" ? "读取文件失败，请重选后重试" : "读取图片失败，请重选后重试");
         }
         // Do NOT write dataUrl into localStorage — that caused QuotaExceededError on mobile.
         if (key !== "photos") {
@@ -2131,7 +2057,13 @@
                 media_type: cfg.mediaType,
                 data_url: dataUrl,
                 filename: file.name || (cfg.mediaType === "voice" ? "voice.webm" : cfg.mediaType === "video" ? "showcase.mp4" : cfg.mediaType + ".jpg"),
-                duration_seconds: durationSeconds != null ? durationSeconds : undefined,
+                content_type: file.type || "",
+                duration_seconds:
+                  durationSeconds != null
+                    ? durationSeconds
+                    : cfg.mediaType === "voice"
+                      ? Number((readDraft().voice || {}).duration || 0) || undefined
+                      : undefined,
               };
         return postCompanion(cfg.api, body);
       })
@@ -2774,23 +2706,6 @@
         return;
       }
       if (e.target.closest("[data-apply-save]")) { e.preventDefault(); await collect(root); showApplyTip("草稿已保存", "ok"); return; }
-      var addTag = e.target.closest("[data-add-custom-tag]");
-      if (addTag) {
-        var key = addTag.dataset.addCustomTag;
-        // 仅个人标签允许自定义；禁止通过该入口给游戏/位置等后台选项加自定义项。
-        if (key !== "personalTags") return;
-        var input = document.querySelector('[data-custom-tag-input="' + key + '"]');
-        var value = input ? input.value.trim() : "";
-        if (!value) return;
-        var d = readDraft();
-        d.data = d.data || {};
-        d.data[key] = Array.isArray(d.data[key]) ? d.data[key] : [];
-        var limit = Number((document.querySelector('[data-tag-picker="' + key + '"]') || {}).dataset && document.querySelector('[data-tag-picker="' + key + '"]').dataset.tagLimit || 99);
-        if (d.data[key].length >= limit) { showApplyTip("最多只能选择 " + limit + " 个标签"); return; }
-        if (d.data[key].indexOf(value) < 0) d.data[key].push(value);
-        writeRaw(DRAFT_KEY, d);
-        render(Number(root.dataset.step || 0));
-      }
       if (e.target.closest("[data-copy-nickname]")) {
         var nick = document.querySelector('input[name="gameNickname"]');
         if (nick) navigator.clipboard && navigator.clipboard.writeText(nick.value || "");
@@ -2817,28 +2732,16 @@
         }
         return;
       }
-      var authModeBtn = e.target.closest("[data-auth-mode]");
-      if (authModeBtn) {
-        e.preventDefault();
-        var nextMode = String(authModeBtn.getAttribute("data-auth-mode") || "").trim();
-        if (nextMode !== "id_card" && nextMode !== "deposit") return;
-        var cur = readDraft();
-        cur.identity = Object.assign({}, cur.identity || {});
-        cur.identity.authMode = nextMode;
-        if (nextMode === "id_card") {
-          delete cur.identity.depositProof;
-          delete cur.identity.depositMethod;
-        } else {
-          delete cur.identity.idFront;
-          delete cur.identity.idBack;
-          delete cur.identity.documentType;
-        }
-        writeRaw(DRAFT_KEY, cur);
-        render(4);
-        return;
-      }
     });
     document.addEventListener("change", async function (e) {
+      if (e.target && e.target.matches && e.target.matches("[data-auth-notice-ack]")) {
+        var curAck = readDraft();
+        curAck.authNotice = { acknowledged: !!e.target.checked, acknowledgedAt: e.target.checked ? now() : "" };
+        writeRaw(DRAFT_KEY, curAck);
+        var markAck = root.querySelector(".step-complete-mark");
+        if (markAck) markAck.textContent = stepComplete(Number(root.dataset.step || 0), readDraft()) ? "已完成 ✔" : "未完成 ○";
+        return;
+      }
       if (e.target.matches("[data-tag-field]")) {
         var picker = e.target.closest("[data-tag-picker]");
         if (!picker || !root.contains(picker)) return;

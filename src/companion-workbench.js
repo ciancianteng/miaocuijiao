@@ -429,7 +429,7 @@
     // Never show「审核中」for approved profile locked only by credential/forced.
     if(isIsolationMode()||!isProfileApproved())return '资料审核中（不可接单）';
     if(isForcedAckLocked())return '暂不可接单';
-    if(isCredentialIncomplete())return '认证未完成';
+    if(isCredentialIncomplete())return '待完成认证';
     var perm=(state.data||{}).permissions||{};
     if(perm.canWork===false||perm.canSetAvailable===false)return '暂不可接单';
     return '';
@@ -507,7 +507,7 @@
         return '<div class="pw-alert pw-privacy-review" role="status" data-review-status-banner="approved"><strong>恭喜，资料审核已通过</strong><span>请先阅读并确认最新强制公告后，即可切换在线接单。</span>'+emailPending+'</div>';
       }
       if(incomplete){
-        return '<div class="pw-alert" role="status" data-review-status-banner="incomplete"><strong>认证未完成</strong><span>请完成身份证认证或押金认证（二选一）。上传≠通过，需后台审核通过后才能接单。</span>'+emailPending+'<button class="pw-btn primary" type="button" data-route="/companion/account">去完成认证</button></div>';
+        return '<div class="pw-alert" role="status" data-review-status-banner="incomplete"><strong>待完成认证</strong><span>资料已通过审核。请完成身份证认证或押金认证（二选一）。上传≠通过，需后台审核通过后才能抢单/接单。</span>'+emailPending+'<button class="pw-btn primary" type="button" data-route="/companion/account">去完成认证</button></div>';
       }
       return '<div class="pw-alert pw-privacy-review" role="status" data-review-status-banner="approved"><strong>恭喜，资料审核已通过</strong><span>'+esc(ua.accountAccessLabel||'请完善剩余接单条件。')+'</span>'+emailPending+'</div>';
     }
@@ -3128,9 +3128,9 @@
       accountDocCard({key:'id_front',label:'身份证正面',cta:'上传身份证正面',url:v.idFrontUrl||'',statusText:idStatus,rejectReason:v.identityRejectReason||''})+
       accountDocCard({key:'id_back',label:'身份证反面',cta:'上传身份证反面',url:v.idBackUrl||'',statusText:idStatus,rejectReason:v.identityRejectReason||''})+
       '<label>联系方式<input name="phone" value="'+esc(verifyPhone)+'" required></label>'+
-      '<label>银行名称<input name="bank_name" value="'+esc(bankName)+'" required></label>'+
-      '<label>收款账号 / 提现账户<input name="bank_account" value="'+esc(bankAccount)+'" required autocomplete="off"></label>'+
-      '<label>TNG 账号<input name="tng_account" value="'+esc(tngAccount)+'"></label>'+
+      '<label>银行名称（结款资料，选填）<input name="bank_name" value="'+esc(bankName)+'" autocomplete="off"></label>'+
+      '<label>收款账号 / 提现账户（结款资料，选填）<input name="bank_account" value="'+esc(bankAccount)+'" autocomplete="off"></label>'+
+      '<label>TNG 账号（选填）<input name="tng_account" value="'+esc(tngAccount)+'"></label>'+
       '<label>备注<textarea name="remark">'+esc(verifyRemark)+'</textarea></label>'+
       '<button class="pw-btn primary" type="submit">'+(privacyReviewPhase(idStatusRaw,{submitted:idSubmitted})==='rejected'?'重新提交身份证认证':'提交身份证认证')+'</button></form>';
     var depositView=
