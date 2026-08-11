@@ -5,7 +5,7 @@ import './mcj-chat-realtime.js';
   var root = document.getElementById("supportApp");
   if (!root) return;
   try {
-    window.__MCJ_SUPPORT_CHAT_LAGFIX = "20260811bossMsgQr2";
+    window.__MCJ_SUPPORT_CHAT_LAGFIX = "20260811bossMsgQr3";
   } catch (_) {}
 
   document.documentElement.classList.add("support-page");
@@ -2061,6 +2061,8 @@ import './mcj-chat-realtime.js';
     }
     state.sending = true;
     state.composerFocused = true;
+    // Drop in-flight silent thread polls so they cannot wipe this optimistic send.
+    var sendSeq = ++state.threadLoadSeq;
     var localId = 'local-' + Date.now();
     var optimistic = { _localId: localId, _pending: true, id: localId, sender_role: 'boss', message_type: 'text', content: content, created_at: new Date().toISOString(), sender_name: '我' };
     state.messages = state.messages.concat([optimistic]);
@@ -2073,19 +2075,31 @@ import './mcj-chat-realtime.js';
     var oid = orderId() || state.conversation.order_id || state.conversation.orderId || '';
     if (oid) payload.order_id = oid;
     fetchJson('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload), _mcjTimeoutMs: 6000 }).then(function (body) {
+      if (sendSeq !== state.threadLoadSeq) return;
       var serverMsg = body.appended || body.row || null;
       state.messages = state.messages.filter(function (m) { return m._localId !== localId; });
-      if (serverMsg) {
-        if (!state.messages.some(function (m) { return m.id === serverMsg.id; })) {
-          state.messages = state.messages.concat([serverMsg]);
-        }
+      var keep = serverMsg || {
+        id: 'sent-' + Date.now(),
+        sender_role: 'boss',
+        message_type: 'text',
+        content: content,
+        created_at: new Date().toISOString(),
+        sender_name: '我',
+      };
+      if (!state.messages.some(function (m) {
+        return (keep.id && m.id && String(m.id) === String(keep.id)) ||
+          (m.sender_role === 'boss' && m.content === content);
+      })) {
+        state.messages = state.messages.concat([keep]);
       }
       if (body.conversation) state.conversation = body.conversation;
       if (typeof body.serviceOnline === 'boolean') state.serviceOnline = body.serviceOnline;
       if (body.serviceStatus) state.serviceStatus = body.serviceStatus;
+      cacheActiveThread();
       if (!patchMessages({ keepScroll: false })) softUpdate({ keepScroll: false });
       else patchSessionList();
     }).catch(function (err) {
+      if (sendSeq !== state.threadLoadSeq) return;
       state.messages = state.messages.map(function (m) {
         if (m._localId !== localId) return m;
         return Object.assign({}, m, { _pending: false, _failed: true });
