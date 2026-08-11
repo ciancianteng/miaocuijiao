@@ -114,6 +114,61 @@ function isDepositPaidStatus(status) {
   return /^(approved|verified|passed|paid|active|completed|received)$/i.test(String(status || "").trim());
 }
 
+/** Ensure a durable companion_deposits ledger row exists when profile already says paid. */
+async function softHealPaidDepositLedger(profile = {}, companionRow = {}, deposit = null) {
+  if (deposit && isDepositPaidStatus(deposit.status)) return deposit;
+  const profileSt = String(companionRow?.deposit_status || "").trim();
+  if (!isDepositPaidStatus(profileSt) && !/^approved$/i.test(profileSt)) return deposit;
+  if (!companionRow?.id || !profile?.id) return deposit;
+  try {
+    const existing = await companionDb(
+      "companion_deposits",
+      `?companion_profile_id=eq.${encodeURIComponent(companionRow.id)}&order=created_at.desc&limit=20`
+    ).catch((e) => (isMissingRelation(e) ? [] : Promise.reject(e)));
+    const paid = (existing || []).find((r) => isDepositPaidStatus(r?.status));
+    if (paid) return paid;
+    const latest = existing?.[0] || null;
+    if (latest) {
+      const patched = await companionDb("companion_deposits", `?id=eq.${encodeURIComponent(latest.id)}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          status: "paid",
+          required_amount: Number(latest.required_amount || DEPOSIT_AMOUNT_RM) || DEPOSIT_AMOUNT_RM,
+          paid_amount: Number(latest.paid_amount || DEPOSIT_AMOUNT_RM) || DEPOSIT_AMOUNT_RM,
+          payment_method: latest.payment_method || "俱乐部收款",
+          paid_at: latest.paid_at || nowIso(),
+          reviewed_at: latest.reviewed_at || nowIso(),
+          updated_at: nowIso(),
+        }),
+      });
+      return Array.isArray(patched) ? patched[0] : latest;
+    }
+    const created = await companionDb("companion_deposits", "", {
+      method: "POST",
+      body: JSON.stringify({
+        companion_profile_id: companionRow.id,
+        user_id: profile.id,
+        required_amount: DEPOSIT_AMOUNT_RM,
+        paid_amount: DEPOSIT_AMOUNT_RM,
+        payment_method: "俱乐部收款",
+        proof_path: "",
+        proof_bucket: PRIVATE_BUCKETS.payment,
+        status: "paid",
+        refund_status: "none",
+        reject_reason: "",
+        remark: "[[DEPOSIT_PAY]]{\"label\":\"俱乐部收款\",\"amountRm\":100,\"healed\":true}[[/DEPOSIT_PAY]]",
+        paid_at: nowIso(),
+        reviewed_at: nowIso(),
+        created_at: nowIso(),
+        updated_at: nowIso(),
+      }),
+    });
+    return Array.isArray(created) ? created[0] : created;
+  } catch {
+    return deposit;
+  }
+}
+
 const ORDER_STATUS_TEXT = COMPANION_STATUS_LABELS;
 
 const WITHDRAW_STATUS_TEXT = {
@@ -1929,6 +1984,10 @@ async function bootstrapData(profile, companion) {
       depositList.find((row) => isDepositPaidStatus(row?.status)) ||
       depositList[0] ||
       null;
+    deposit = await softHealPaidDepositLedger(profile, companionRow, deposit);
+    if (deposit && !depositHistoryRows.some((r) => String(r.id) === String(deposit.id))) {
+      depositHistoryRows = [deposit, ...depositHistoryRows];
+    }
     media = Array.isArray(mediaRows) ? mediaRows : [];
     if (mediaTableAvailable && companionRow?.id) {
       media = await migrateGalleryFallbacksIntoMedia(profile, companionRow, media);

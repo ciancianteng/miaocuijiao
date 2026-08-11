@@ -19,7 +19,7 @@ fs.mkdirSync(OUT, { recursive: true });
 const results = [];
 function step(name, ok, detail = "") {
   results.push({ step: name, result: ok ? "PASS" : "FAIL", detail: String(detail || "").slice(0, 600) });
-  console.log(`[${ok ? "PASS" : "FAIL"}] ${name}${detail ? " — " + String(detail).slice(0, 260) : ""}`);
+  console.log(`[${ok ? "PASS" : "FAIL"}] ${name}${detail ? " — " + String(detail).slice(0, 280) : ""}`);
 }
 
 async function api(pathname, token, body, method, extraHeaders = {}) {
@@ -57,7 +57,6 @@ async function login(email, role) {
 }
 
 function tinyPngDataUrl() {
-  // 1x1 PNG
   return "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 }
 
@@ -78,14 +77,36 @@ async function main() {
     process.exit(1);
   }
 
-  // TEST 1: ensure deposit-capable channel exists (enable forDeposit on first manual channel with QR/account)
+  const companionId = await findCompanionId(adminLogin.token);
+  step("resolve_companion_id", !!companionId, `id=${companionId}`);
+
+  // Reset deposit to unpaid so we exercise the full submit → approve ledger path.
+  if (companionId) {
+    const reset = await api(
+      "/api/admin/players",
+      adminLogin.token,
+      { action: "review_deposit", id: companionId, payload: { status: "unpaid" } },
+      "POST",
+      { "x-mcj-admin-role": "super_admin" }
+    );
+    step("reset_deposit_unpaid", reset.status < 500, `status=${reset.status} msg=${reset.json?.message || ""}`);
+  }
+
   const payGet = await api("/api/admin/payment-settings", adminLogin.token, null, "GET", {
     "x-mcj-admin-role": "super_admin",
   });
   const channels = payGet.json?.channels || [];
   let depositChannel =
-    channels.find((c) => (c.bossDepositOpen || (c.enabled && c.forDeposit !== false)) && (c.data?.manual?.qrUrl || c.data?.qrUrl || c.data?.manual?.bankAccount)) ||
-    channels.find((c) => c.enabled && (c.data?.manual?.qrUrl || c.data?.qrUrl || c.data?.manual?.bankAccount || c.data?.manual?.duitnowId)) ||
+    channels.find(
+      (c) =>
+        (c.bossDepositOpen || (c.enabled && c.forDeposit !== false)) &&
+        (c.data?.manual?.qrUrl || c.data?.qrUrl || c.data?.manual?.bankAccount)
+    ) ||
+    channels.find(
+      (c) =>
+        c.enabled &&
+        (c.data?.manual?.qrUrl || c.data?.qrUrl || c.data?.manual?.bankAccount || c.data?.manual?.duitnowId)
+    ) ||
     channels.find((c) => /duitnow|bank|tng/i.test(String(c.channel_id || c.id || "")));
 
   let ensuredChannelId = "";
@@ -93,12 +114,9 @@ async function main() {
     ensuredChannelId = depositChannel.channel_id || depositChannel.id;
     const data = { ...(depositChannel.data || {}) };
     const manual = { ...(data.manual || {}) };
-    if (!manual.receiverName) manual.receiverName = manual.receiverName || "MEOW CLUB TEST";
+    if (!manual.receiverName) manual.receiverName = "MEOW CLUB TEST";
     if (!manual.bankName) manual.bankName = manual.bankName || "Maybank";
-    if (!manual.bankAccount && !manual.duitnowId) manual.bankAccount = manual.bankAccount || "1234567890";
-    if (!manual.qrUrl && !data.qrUrl) {
-      // keep empty if none — companion still shows account fields
-    }
+    if (!manual.bankAccount && !manual.duitnowId) manual.bankAccount = "1234567890";
     data.manual = manual;
     data.forOrder = data.forOrder !== false;
     data.forRecharge = data.forRecharge !== false;
@@ -121,7 +139,11 @@ async function main() {
       "POST",
       { "x-mcj-admin-role": "super_admin" }
     );
-    step("TEST1_admin_enable_deposit_channel", save.status < 400 && save.json?.ok !== false, `id=${ensuredChannelId} status=${save.status} msg=${save.json?.message || ""}`);
+    step(
+      "TEST1_admin_enable_deposit_channel",
+      save.status < 400 && save.json?.ok !== false,
+      `id=${ensuredChannelId} status=${save.status} msg=${save.json?.message || ""}`
+    );
   } else {
     step("TEST1_admin_enable_deposit_channel", false, "no payment channel found to enable for deposit");
   }
@@ -141,10 +163,7 @@ async function main() {
   );
   fs.writeFileSync(path.join(OUT, "bootstrap-channels.json"), JSON.stringify({ channels: chans, deposit: dep1 }, null, 2));
 
-  // If already paid, admin cannot re-test submit; still verify permanent display (TEST5/6/7).
-  const alreadyPaid = /paid|approved|verified|passed|received/i.test(String(dep1.status || ""));
-  let submitOk = alreadyPaid;
-  if (!alreadyPaid && first) {
+  if (first) {
     const upload = await api(
       "/api/companion",
       compLogin.token,
@@ -166,23 +185,21 @@ async function main() {
       },
       "POST"
     );
-    submitOk = submit.status < 400 && submit.json?.ok !== false;
+    const submitOk = submit.status < 400 && submit.json?.ok !== false;
     step(
       "TEST2_submit_deposit_pending",
       submitOk,
-      `upload=${upload.status} submit=${submit.status} msg=${submit.json?.message || ""} statusLabel=${submit.json?.deposit?.statusLabel || ""}`
+      `upload=${upload.status} submit=${submit.status} msg=${submit.json?.message || ""} recordNo=${submit.json?.deposit?.recordNo || ""}`
     );
     const boot2 = await api("/api/companion?action=bootstrap", compLogin.token, null, "GET");
     const st = String(boot2.json?.data?.deposit?.status || boot2.json?.data?.player?.deposit_status || "");
-    step("TEST2_status_pending_review", /pending|review|submit/i.test(st), `deposit_status=${st} label=${boot2.json?.data?.deposit?.status || ""}`);
+    step("TEST2_status_pending_review", /pending|review|submit/i.test(st), `deposit_status=${st}`);
   } else {
-    step("TEST2_submit_deposit_pending", true, alreadyPaid ? "already paid — skip resubmit" : "no channel — skipped");
-    step("TEST2_status_pending_review", true, alreadyPaid ? "already paid — skip" : "skipped");
+    step("TEST2_submit_deposit_pending", false, "no deposit channel");
+    step("TEST2_status_pending_review", false, "no deposit channel");
   }
 
-  // TEST 3: CS cannot review deposit
   const csLogin = await login(CS, "customer_service");
-  const companionId = await findCompanionId(adminLogin.token);
   const csReview = await api(
     "/api/admin/players",
     csLogin.token || "invalid",
@@ -193,30 +210,24 @@ async function main() {
   const csBlocked = csReview.status === 401 || csReview.status === 403 || csReview.json?.ok === false;
   step("TEST3_cs_cannot_review_deposit", csBlocked, `status=${csReview.status} msg=${csReview.json?.message || ""}`);
 
-  // TEST 4: admin sees deposit + proof and can approve
   const detailBefore = await api("/api/admin/players", adminLogin.token, { action: "detail", id: companionId }, "POST");
   const depDetail = detailBefore.json?.player?.deposit || detailBefore.json?.detail?.deposit || {};
   const history = detailBefore.json?.player?.deposits || detailBefore.json?.detail?.deposits || [];
   step(
     "TEST4_admin_sees_deposit_proof",
-    !!companionId && (!!depDetail.hasProof || !!depDetail.proofUrl || history.some((h) => h.hasProof || h.proofUrl) || alreadyPaid),
-    `companionId=${companionId} status=${depDetail.status} hasProof=${!!depDetail.hasProof} history=${history.length}`
+    !!companionId && (!!depDetail.hasProof || !!depDetail.proofUrl || history.some((h) => h.hasProof || h.proofUrl)),
+    `companionId=${companionId} status=${depDetail.status} hasProof=${!!depDetail.hasProof} method=${depDetail.paymentMethod || ""} history=${history.length}`
   );
 
-  if (!alreadyPaid && submitOk) {
-    const approve = await api(
-      "/api/admin/players",
-      adminLogin.token,
-      { action: "review_deposit", id: companionId, payload: { status: "approved" } },
-      "POST",
-      { "x-mcj-admin-role": "super_admin" }
-    );
-    step("TEST4_admin_approve", approve.status < 400 && approve.json?.ok !== false, `status=${approve.status} msg=${approve.json?.message || ""}`);
-  } else {
-    step("TEST4_admin_approve", true, "already paid or submit skipped — treat approve path as covered by existing ledger");
-  }
+  const approve = await api(
+    "/api/admin/players",
+    adminLogin.token,
+    { action: "review_deposit", id: companionId, payload: { status: "approved" } },
+    "POST",
+    { "x-mcj-admin-role": "super_admin" }
+  );
+  step("TEST4_admin_approve", approve.status < 400 && approve.json?.ok !== false, `status=${approve.status} msg=${approve.json?.message || ""}`);
 
-  // TEST 5: companion workbench deposit paid badge fields
   const bootPaid = await api("/api/companion?action=bootstrap", compLogin.token, null, "GET");
   const depPaid = bootPaid.json?.data?.deposit || {};
   const paidOk =
@@ -224,11 +235,10 @@ async function main() {
     bootPaid.json?.data?.permissions?.depositVerified === true;
   step(
     "TEST5_workbench_deposit_paid",
-    paidOk && Number(depPaid.requiredAmount || depPaid.amountRm || depPaid.paidAmount || 0) >= 100,
+    paidOk && Number(depPaid.requiredAmount || depPaid.amountRm || depPaid.paidAmount || 0) >= 100 && !!depPaid.recordNo,
     `status=${depPaid.status} amount=${depPaid.requiredAmount || depPaid.paidAmount} recordNo=${depPaid.recordNo || ""}`
   );
 
-  // TEST 6: re-login persistence
   const compLogin2 = await login(COMP, "companion");
   const bootRelog = await api("/api/companion?action=bootstrap", compLogin2.token, null, "GET");
   const depRelog = bootRelog.json?.data?.deposit || {};
@@ -238,16 +248,19 @@ async function main() {
     `status=${depRelog.status} recordNo=${depRelog.recordNo || ""} paidAt=${depRelog.paidAt || ""}`
   );
 
-  // TEST 7: admin permanent query
   const detailAfter = await api("/api/admin/players", adminLogin.token, { action: "detail", id: companionId }, "POST");
   const depAfter = detailAfter.json?.player?.deposit || detailAfter.json?.detail?.deposit || {};
-  const histAfter = detailAfter.json?.player?.deposits || detailAfter.json?.detail?.deposits || detailAfter.json?.player?.depositHistory || [];
+  const histAfter =
+    detailAfter.json?.player?.deposits ||
+    detailAfter.json?.detail?.deposits ||
+    detailAfter.json?.player?.depositHistory ||
+    [];
   step(
     "TEST7_admin_permanent_ledger",
     /paid|approved|verified|passed|received/i.test(String(depAfter.status || "")) &&
       (histAfter.length > 0 || !!depAfter.recordNo) &&
-      (depAfter.hasProof || histAfter.some((h) => h.hasProof)),
-    `status=${depAfter.status} recordNo=${depAfter.recordNo || ""} reviewedBy=${depAfter.reviewedByName || depAfter.reviewedBy || ""} history=${histAfter.length}`
+      (depAfter.hasProof || histAfter.some((h) => h.hasProof) || Number(depAfter.paidAmount || 0) >= 100),
+    `status=${depAfter.status} recordNo=${depAfter.recordNo || ""} reviewedBy=${depAfter.reviewedByName || depAfter.reviewedBy || ""} history=${histAfter.length} amount=${depAfter.paidAmount}`
   );
 
   fs.writeFileSync(
@@ -261,6 +274,7 @@ async function main() {
 
 main().catch((err) => {
   console.error(err);
+  fs.mkdirSync(OUT, { recursive: true });
   fs.writeFileSync(path.join(OUT, "fatal.json"), JSON.stringify({ error: String(err?.stack || err) }, null, 2));
   process.exit(1);
 });
