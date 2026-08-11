@@ -281,30 +281,33 @@ async function main() {
   // ========== TEST 5-7: recharge QR ==========
   const methods = await api("/api/recharge", token, null, "GET");
   const campaigns = methods.json?.campaigns || [];
-  const camp = campaigns[0];
   const methodList = methods.json?.methods || [];
   const duitnow =
     methodList.find((m) => /duitnow/i.test(String(m.code || m.id || m.method || m.name || ""))) || methodList[0];
   const methodCode = String(duitnow?.code || "duitnow");
   let paymentNo = "";
-  if (camp) {
-    const created = await api("/api/recharge", token, {
-      campaignId: camp.id || camp.campaignId,
-      paymentMethod: methodCode,
-    });
-    paymentNo = created.json?.paymentOrder?.paymentNo || created.json?.paymentNo || "";
-    step(
-      "create_payment",
-      !!paymentNo,
-      `paymentNo=${paymentNo} status=${created.status} msg=${created.json?.message || ""} method=${methodCode}`
-    );
-  }
+  // Prefer existing pending payment so we do not depend on first-recharge campaigns.
+  const existing = (methods.json?.records || []).find((r) => /pending/i.test(String(r.status || "")));
+  paymentNo = existing?.paymentNo || "";
   if (!paymentNo) {
-    const existing = (methods.json?.records || []).find((r) =>
-      /pending/i.test(String(r.status || ""))
-    );
-    paymentNo = existing?.paymentNo || "";
-    step("create_payment_fallback", !!paymentNo, `existing=${paymentNo}`);
+    const camp =
+      campaigns.find((c) => !c.firstRechargeOnly && !c.first_recharge_only) ||
+      campaigns.find((c) => Number(c.amount || c.payAmountRm || 0) > 0) ||
+      campaigns[0];
+    if (camp) {
+      const created = await api("/api/recharge", token, {
+        campaignId: camp.id || camp.campaignId,
+        paymentMethod: methodCode,
+      });
+      paymentNo = created.json?.paymentOrder?.paymentNo || created.json?.paymentNo || "";
+      step(
+        "create_payment",
+        !!paymentNo,
+        `paymentNo=${paymentNo} status=${created.status} msg=${created.json?.message || ""} method=${methodCode}`
+      );
+    }
+  } else {
+    step("create_payment", true, `reuse existing pending=${paymentNo}`);
   }
 
   if (paymentNo) {
