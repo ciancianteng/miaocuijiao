@@ -3740,7 +3740,7 @@ import './mcj-chat-realtime.js';
       if(sel)sel.innerHTML='<option value="">加载失败</option>';
     });
   }
-  function openRefund(id){modal('<div class="cs-dialog-head"><h3>处理退款（周五打款）</h3><button class="cs-btn" type="button" data-close-modal>关闭</button></div><p style="margin:0 0 10px;color:#6b7280;font-size:13px">批准后进入周五退款队列，不会即时到老板钱包。后台打款完成并上传凭证后才到账。</p><label>处理结果<select data-refund-decision><option value="approve">建议批准（入周五队列）</option><option value="reject">拒绝退款</option></select></label><label>拒绝后恢复状态<select data-restore-status><option value="in_progress">进行中</option><option value="completed">已完成</option><option value="cancelled">已取消</option></select></label><label>备注<textarea data-refund-note required></textarea></label><button class="cs-btn primary" type="button" data-do-refund="'+esc(id)+'">保存</button>')}
+  function openRefund(id){modal('<div class="cs-dialog-head"><h3>处理退款（退回猫粮）</h3><button class="cs-btn" type="button" data-close-modal>关闭</button></div><p style="margin:0 0 10px;color:#f5b7d2;font-size:13px;line-height:1.55"><strong>退款方式：猫粮余额（固定，不可改）</strong><br>客服不可选择现金退款，也不可填写银行卡退款资料。建议批准后由后台点击「确认退款猫粮」立即入账。</p><label>处理结果<select data-refund-decision><option value="approve">建议批准（退回猫粮）</option><option value="reject">拒绝退款</option></select></label><label>拒绝后恢复状态<select data-restore-status><option value="in_progress">进行中</option><option value="completed">已完成</option><option value="cancelled">已取消</option></select></label><label>备注<textarea data-refund-note required></textarea></label><button class="cs-btn primary" type="button" data-do-refund="'+esc(id)+'">保存</button>')}
   document.addEventListener('click',function(e){
     var pushBoss=e.target.closest('[data-push-to-boss]');
     if(pushBoss){

@@ -2383,37 +2383,24 @@ export default async function handler(req, res) {
       return json(res, 200, result);
     }
 
-    if (action === "mark_refund_paid" || action === "complete_boss_refund") {
+    if (
+      action === "mark_refund_paid" ||
+      action === "complete_boss_refund" ||
+      action === "confirm_meowcoin_refund" ||
+      action === "confirm_refund_meowcoin"
+    ) {
       if (!canConfirmPay(adminProfile)) {
-        return json(res, 403, { ok: false, message: "仅超级管理员或财务管理员可确认打款" });
+        return json(res, 403, { ok: false, message: "仅超级管理员或财务管理员可确认退款猫粮" });
       }
       const refundId = String(body.id || body.refundId || "").trim();
-      const bankReference = String(body.bankReference || body.transactionNo || "").trim();
-      const dataUrl = String(body.receiptDataUrl || body.fileDataUrl || "").trim();
       if (!refundId) return json(res, 400, { ok: false, message: "缺少退款 id" });
-      if (!bankReference) return json(res, 400, { ok: false, message: "必须填写银行参考号" });
-      if (!dataUrl) return json(res, 400, { ok: false, message: "没有上传打款凭证，不允许标记完成" });
-
-      const decoded = decodeDataUrl(dataUrl);
-      if (!decoded?.buffer?.length) return json(res, 400, { ok: false, message: "凭证文件无效" });
-      const bucket = "finance-receipts";
-      await ensurePrivateBucket(bucket);
-      const parts = new Date().toISOString().slice(0, 10).split("-");
-      const objectPath = `payout-receipts/${parts[0]}/W/${refundId}-${Date.now()}.${
-        (decoded.contentType || "image/jpeg").includes("png") ? "png" : "jpg"
-      }`;
-      await uploadPrivateObject(bucket, objectPath, decoded.buffer, decoded.contentType || "image/jpeg");
-
       const refundApi = await import("../_boss-refund-payout.js");
-      const result = await refundApi.completeBossRefundPayout(companionDb, {
+      const result = await refundApi.confirmBossCatFoodRefund(companionDb, {
         refundId,
-        paidAmount: body.paidAmount != null ? body.paidAmount : body.amount,
-        bankReference,
-        paidAt: body.paidAt || nowIso(),
-        receiptBucket: bucket,
-        receiptPath: objectPath,
+        amount: body.amount != null ? body.amount : body.paidAmount != null ? body.paidAmount : body.paid_amount,
         adminId: adminProfile.id,
         adminName: adminProfile.display_name || adminProfile.email || "",
+        reason: String(body.reason || body.note || body.notes || "后台确认退款猫粮").slice(0, 240),
       });
       if (!result.ok) return json(res, 400, result);
 
@@ -2423,23 +2410,31 @@ export default async function handler(req, res) {
         payeeUserId: result.refund?.bossId,
         payeeName: result.refund?.bossName,
         payeeUid: result.refund?.bossUid,
-        amountRm: result.refund?.paidAmountRm || result.refund?.amountRm,
-        bankReference,
-        receiptPath: objectPath,
-        notes: String(body.notes || ""),
+        amountRm: result.refund?.paidAmountRm || result.refund?.amountRm || result.creditedCatFood,
+        bankReference: "MEOW_WALLET",
+        receiptPath: "meowcoin-wallet",
+        notes: String(body.notes || body.reason || "猫粮余额退款"),
         adminId: adminProfile.id,
         adminName: adminProfile.display_name || "",
         adminRole,
-        action: "mark_refund_paid",
-      });
+        action: "confirm_meowcoin_refund",
+      }).catch(() => null);
       await writeAdminLog({
         module: "finance",
-        action: "mark_refund_paid",
+        action: "confirm_meowcoin_refund",
         targetType: "boss_refund_requests",
         targetId: refundId,
         operatorRole: adminRole,
+      }).catch(() => null);
+      return json(res, 200, {
+        ok: true,
+        message: result.message,
+        refund: result.refund,
+        wallet: result.wallet,
+        duplicate: !!result.duplicate,
+        alreadyRefunded: !!result.alreadyRefunded || !!result.duplicate,
+        creditedCatFood: result.creditedCatFood,
       });
-      return json(res, 200, result);
     }
 
     if (action === "export_settlement") {

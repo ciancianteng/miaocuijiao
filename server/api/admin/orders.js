@@ -801,7 +801,60 @@ export default async function handler(req, res) {
       patch.status = "cancelled";
       patch.cancelled_at = new Date().toISOString();
     } else if (action === "refund") {
-      patch.status = "refunded";
+      // P0：同意退款 = 确认退款猫粮（真实入账），禁止仅改状态
+      try {
+        const { companionDb } = await import("../_companion-media-store.js");
+        const refundApi = await import("../_boss-refund-payout.js");
+        let refundRows = await companionDb(
+          "boss_refund_requests",
+          `?order_id=eq.${encodeURIComponent(id)}&status=neq.rejected&status=neq.cancelled&order=created_at.desc&limit=5`
+        ).catch(() => []);
+        let refundRow = (refundRows || []).find((r) => r.status === "paid") || (refundRows || [])[0];
+        if (!refundRow) {
+          const created = await refundApi.createBossRefundRequest(companionDb, {
+            order: before,
+            boss: { id: before.boss_id, display_name: "", public_uid: "" },
+            amount: body.amount != null ? body.amount : before.paid_cat_food || before.total_amount,
+            reason: String(payload.reason || body.reason || "后台同意退款"),
+          });
+          if (!created.ok) return json(res, 400, created);
+          refundRows = await companionDb(
+            "boss_refund_requests",
+            `?id=eq.${encodeURIComponent(created.refund.id)}&limit=1`
+          ).catch(() => []);
+          refundRow = refundRows?.[0];
+        }
+        if (!refundRow) return json(res, 400, { ok: false, message: "无法创建退款记录" });
+        if (String(refundRow.status) !== "paid" && String(refundRow.status) === "pending_review") {
+          await refundApi.csSuggestRefund(companionDb, {
+            refundId: refundRow.id,
+            decision: "approve",
+            note: String(payload.reason || body.reason || "后台同意退款"),
+            csProfile: { id: admin.id, display_name: admin.display_name || admin.email || "admin", email: admin.email || "" },
+          }).catch(() => null);
+        }
+        const result = await refundApi.confirmBossCatFoodRefund(companionDb, {
+          refundId: refundRow.id,
+          amount: body.amount != null ? body.amount : refundRow.amount_rm,
+          adminId: admin.id,
+          adminName: admin.display_name || admin.email || "",
+          reason: String(payload.reason || body.reason || "后台确认退款猫粮"),
+        });
+        if (!result.ok) return json(res, 400, result);
+        const afterRows = await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(id)}&limit=1`), {
+          headers: serviceHeaders(),
+        }).catch(() => []);
+        return json(res, 200, {
+          ok: true,
+          message: result.message || "已确认退款猫粮",
+          order: safeOrder(afterRows?.[0] || { ...before, status: "refunded" }, {}),
+          refund: result.refund,
+          wallet: result.wallet,
+          duplicate: !!result.duplicate,
+        });
+      } catch (err) {
+        return json(res, err.status || 500, { ok: false, message: err.message || "退款猫粮失败" });
+      }
     } else if (action === "update_status") {
       // fallthrough uses patch.status already set above — validate graph
     } else {

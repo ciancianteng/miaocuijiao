@@ -929,8 +929,25 @@ export default async function handler(req, res) {
           fridaySettlementDate: r.settlementDate || "",
           fridayRefundAmountRm: r.amountRm,
           fridayRefundNo: r.refundNo,
+          refundMethod: r.refundMethod || "meowcoin",
+          refundMethodText: r.refundMethodText || "猫粮余额",
+          refundCatFood: r.amountCatFood != null ? r.amountCatFood : r.amountRm,
+          refundPaidAt: r.paidAt || "",
+          refundAlreadyPaid: !!r.alreadyRefunded || r.status === "paid",
         };
       });
+      let walletSnapshot = null;
+      try {
+        const walletApi = await import("./_wallet.js");
+        walletSnapshot = await walletApi.getWallet(profile.id);
+      } catch {
+        walletSnapshot = null;
+      }
+      const withWallet = (enriched || []).map((o) =>
+        o.status === "refunded" || o.refundAlreadyPaid
+          ? { ...o, currentCatFoodBalance: walletSnapshot?.totalBalance ?? walletSnapshot?.total_balance ?? null }
+          : o
+      );
       let platformPayInfo = null;
       const singleId = String(req.query.id || "").trim();
       if (singleId) {
@@ -961,7 +978,7 @@ export default async function handler(req, res) {
       return json(res, 200, {
         ok: true,
         configured: true,
-        orders: enriched.map((o) =>
+        orders: withWallet.map((o) =>
           platformPayInfo &&
           (String(o.id) === singleId || String(o.orderNo || o.order_no || "") === singleId)
             ? { ...o, platformPayInfo }
@@ -1861,7 +1878,7 @@ export default async function handler(req, res) {
         { headers: serviceHeaders() }
       ).catch(() => []);
       const before = Array.isArray(beforeRows) ? beforeRows[0] : null;
-      const order = await patchOwnedOrder(profile, id, ["confirmed", "in_progress", "completed"], { status: "refund_requested" }, "老板已申请退款，等待客服处理。预计周五统一退款，不会即时到账。");
+      const order = await patchOwnedOrder(profile, id, ["confirmed", "in_progress", "completed"], { status: "refund_requested" }, "老板已申请退款，等待客服/后台审核。审核通过并确认后，退款将退回猫粮余额（不退现金）。");
       let refund = null;
       try {
         const refundApi = await import("./_boss-refund-payout.js");
@@ -1874,11 +1891,11 @@ export default async function handler(req, res) {
         });
         if (created.ok) refund = created.refund;
       } catch (e) {
-        console.warn("[orders] friday refund enqueue:", e?.message || e);
+        console.warn("[orders] refund enqueue:", e?.message || e);
       }
       return json(res, 200, {
         ok: true,
-        message: "退款申请已提交。当前状态：待审核。预计处理日为本周五或下周五，不会即时到账。",
+        message: "退款申请已提交。当前状态：待审核。审核通过后将退回您的猫粮余额，不支持现金/原路退款。",
         order,
         refund,
       });

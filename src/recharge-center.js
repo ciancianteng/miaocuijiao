@@ -176,6 +176,17 @@
     );
   }
 
+  function refundRuleBannerHtml() {
+    return (
+      '<section class="refund-rule-banner" role="alert" data-refund-rule-banner>' +
+      '<strong class="rr-title">【重要退款规则】</strong>' +
+      "<p>充值完成后，平台<strong>不提供现金退款</strong>。<br>" +
+      "任何订单取消、售后、退款或争议处理，如审核同意退款，退款金额一律退回老板账户<em>【猫粮余额】</em>，" +
+      "不原路退回银行卡、DuitNow、TNG 或其他现金支付渠道。<br>" +
+      "退款猫粮到账后可继续用于平台消费。</p></section>"
+    );
+  }
+
   function paint() {
     if (!token()) {
       root.innerHTML =
@@ -195,6 +206,7 @@
     }
     if (state.step === "pay" && state.payOrder) {
       root.innerHTML =
+        refundRuleBannerHtml() +
         payStepHtml() +
         '<section class="panel"><h2>钱包流水</h2>' +
         ledgerHtml() +
@@ -207,6 +219,7 @@
     var c = selectedCampaign();
     root.innerHTML =
       '<section class="page-head"><div><h1>充值中心</h1><p>选择充值活动与支付方式，进入付款步骤上传截图后，由后台审核入账。</p></div><button class="ghost-btn" data-refresh type="button">刷新</button></section>' +
+      refundRuleBannerHtml() +
       '<section class="stats"><article class="stat"><span>猫粮余额</span><strong>' +
       esc(state.summary.balance || 0) +
       ' 猫粮</strong></article><article class="stat"><span>充值猫粮</span><strong>' +

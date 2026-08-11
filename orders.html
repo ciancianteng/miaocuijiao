@@ -419,12 +419,19 @@
           }
           html+='</div>';
         }else if(o.status==='refund_requested'||o.status==='refunded'){
-          var refundHint=o.status==='refunded'
-            ?'退款已完成（周五银行打款到账）'
-            :'客服审核中 / 待周五统一退款（不会即时到账）';
-          if(o.fridayRefundStatusText)refundHint=o.fridayRefundStatusText;
-          if(o.fridaySettlementDate)refundHint+=' · 预计 '+String(o.fridaySettlementDate).slice(0,10)+'（周五）';
-          html='<div class="status-panel"><p>售后类型：退款申请</p><p>处理进度：'+esc(refundHint)+'</p><p>客服回复：请在在线客服中查看最新回复。批准后进入周五结算批次，管理员打款并上传凭证后才会到账。</p></div>';
+          var paid=o.status==='refunded'||o.refundAlreadyPaid||o.fridayRefundStatus==='paid';
+          var cat=o.refundCatFood!=null?o.refundCatFood:(o.fridayRefundAmountRm!=null?o.fridayRefundAmountRm:(o.amount||o.totalAmount||''));
+          if(paid){
+            html='<div class="status-panel aftersale-refund-ok"><p><strong>【退款成功】</strong></p>'+
+              '<p>退款方式：猫粮余额</p>'+
+              '<p>退款猫粮：'+esc(cat)+'</p>'+
+              (o.refundPaidAt?'<p>退款时间：'+esc(String(o.refundPaidAt).slice(0,19).replace('T',' '))+'</p>':'')+
+              (o.currentCatFoodBalance!=null?'<p>当前猫粮余额：'+esc(o.currentCatFoodBalance)+'</p>':'')+
+              '<p class="muted" style="margin-top:8px;line-height:1.55">退款已退回您的平台猫粮余额，可继续用于平台消费，不支持提现或现金退款。</p></div>';
+          }else{
+            var refundHint=o.fridayRefundStatusText||'客服/后台审核中';
+            html='<div class="status-panel"><p>售后类型：退款申请</p><p>处理进度：'+esc(refundHint)+'</p><p>退款方式：猫粮余额（固定）</p><p>客服回复：请在在线客服中查看最新回复。审核通过并由后台确认后，退款将立即退回您的猫粮余额，不退现金、不原路退回。</p></div>';
+          }
         }else if(o.status==='cancelled'){
           html='<div class="status-panel"><p>取消原因：'+esc(o.cancelReason||o.cancel_reason||'订单已取消')+'</p><p>取消时间：'+esc(date(o.cancelledAt||o.cancelled_at))+'</p></div>';
         }else{

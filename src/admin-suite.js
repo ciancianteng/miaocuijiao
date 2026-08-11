@@ -711,7 +711,7 @@
       '进行中':[['timer','查看计时'],['early-end','提前结束',true],['extend','延长服务'],['after-sale','发起售后']],
       '待确认完成':[['confirm-complete','确认完成'],['return-service','退回继续服务'],['after-sale','发起售后']],
       '已完成':[['review','查看评价'],['settlement','查看结算'],['after-sale','发起售后']],
-      '售后处理中':[['after-sale-view','查看售后'],['refund-approve','同意退款',true],['refund-reject','拒绝退款',true],['partial-refund','部分退款',true],['change-player','更换陪玩'],['compensate','补偿余额',true]]
+      '售后处理中':[['after-sale-view','查看售后'],['refund-approve','确认退款猫粮',true],['refund-reject','拒绝退款',true],['partial-refund','部分退款猫粮',true],['change-player','更换陪玩'],['compensate','补偿余额',true]]
     };
     var base=[['view','查看'],['remark','编辑备注'],['chat','查看聊天'],['payment','查看支付'],['settlement','查看结算'],['assign-service','分配客服']];
     return base.concat(map[order.orderStatus]||[['cancel','取消订单',true]]).map(function(x){return {key:x[0],label:x[1],danger:!!x[2]}});
