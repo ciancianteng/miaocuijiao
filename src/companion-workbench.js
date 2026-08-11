@@ -551,18 +551,18 @@
   function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
   function loadWorkRules(){
     state.rulesLoading=true;
-    paint();
+    paint({preserveScroll:true});
     return fetch('/api/platform/content?types=companion_work_rules',{cache:'no-store',headers:{Accept:'application/json'}})
       .then(function(r){return r.json()})
       .then(function(body){
         state.workRules=(((body||{}).byType||{}).companion_work_rules)||[];
         state.rulesLoading=false;
-        paint();
+        paint({preserveScroll:true});
       })
       .catch(function(){
         state.workRules=[];
         state.rulesLoading=false;
-        paint();
+        paint({preserveScroll:true});
       });
   }
   function money(v) {
@@ -1650,6 +1650,9 @@
     }).catch(function(){ state._rtBoundCid=''; });
   }
   function init(){
+    try{
+      if('scrollRestoration' in history)history.scrollRestoration='manual';
+    }catch(e){}
     state.settings=readSettings();
     state.session=readSession();
     if(state.session&&!sessionLooksValid(state.session)){
@@ -1808,7 +1811,10 @@
     // Route changes never inherit the previous page's scroll position.
     var preserveScroll=!routeChanged&&opts.preserveScroll!==false;
     state._preserveScrollOnce=false;
-    if(preserveScroll&&(isAccountRoute()||state.route==='profile'))state._skipFocusScrollOnce=true;
+    // Never let focus restore / focusin scrollIntoView fight a route-enter top paint.
+    if(routeChanged||preserveScroll){
+      if(isAccountRoute()||state.route==='profile')state._skipFocusScrollOnce=true;
+    }
     if(state.route==='login')return renderLogin();
     if(!state.session){renderLogin();return}
     renderShell({
