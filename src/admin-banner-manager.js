@@ -12,10 +12,13 @@
     history: [],
     draft: null,
     editingId: "",
-    editMeta: { title: "", link: "", sort_order: 100 },
+    editMeta: { title: "", link: "", sort_order: 100, is_active: true },
     crop: { zoom: 1, x: 0, y: 0 },
     natural: { width: 0, height: 0 },
   };
+  function defaultEditMeta() {
+    return { title: "", link: "", sort_order: 100, is_active: true };
+  }
   var DESKTOP_RATIO = 1920 / 700;
 
   function esc(v) {
@@ -76,8 +79,44 @@
     state.natural = { width: 0, height: 0 };
     if (!keepEditing) {
       state.editingId = "";
-      state.editMeta = { title: "", link: "", sort_order: 100 };
+      state.editMeta = defaultEditMeta();
     }
+  }
+  function syncEditMetaFromForm() {
+    var title = document.querySelector("[data-banner-editor-title]");
+    var link = document.querySelector("[data-banner-editor-link]");
+    var sort = document.querySelector("[data-banner-editor-sort]");
+    var enabled = document.querySelector("[data-banner-editor-enabled]");
+    if (title) state.editMeta.title = String(title.value || "").trim();
+    if (link) state.editMeta.link = String(link.value || "").trim();
+    if (sort) {
+      var n = Number(sort.value);
+      state.editMeta.sort_order = Number.isFinite(n) ? Math.max(0, Math.round(n)) : 100;
+    }
+    if (enabled) state.editMeta.is_active = !!enabled.checked;
+  }
+  function renderMetaForm() {
+    var meta = state.editMeta || defaultEditMeta();
+    var enabled = meta.is_active !== false;
+    return (
+      '<div class="banner-ops-form-grid" data-banner-editor-meta>' +
+      '<label class="banner-ops-field">Banner 标题' +
+      '<input type="text" maxlength="80" data-banner-editor-title value="' +
+      esc(meta.title || "") +
+      '" placeholder="请输入 Banner 标题"></label>' +
+      '<label class="banner-ops-field">跳转链接' +
+      '<input type="text" maxlength="240" data-banner-editor-link value="' +
+      esc(meta.link || "") +
+      '" placeholder="https:// 或站内路径"></label>' +
+      '<label class="banner-ops-field">排序' +
+      '<input type="number" min="0" step="1" data-banner-editor-sort value="' +
+      esc(meta.sort_order != null ? meta.sort_order : 100) +
+      '" placeholder="100"></label>' +
+      '<label class="banner-ops-check"><input type="checkbox" data-banner-editor-enabled' +
+      (enabled ? " checked" : "") +
+      "> 启用状态（勾选=启用，取消=停用）</label>" +
+      "</div>"
+    );
   }
   function acceptFile(file) {
     if (!file) return;
@@ -243,10 +282,10 @@
             '" style="width:72px"></label>' +
             '<button class="mini-btn primary-lite" type="button" data-banner-edit="' +
             esc(item.id) +
-            '">编辑图片</button>' +
+            '">编辑</button>' +
             '<button class="mini-btn" type="button" data-banner-save-meta="' +
             esc(item.id) +
-            '">保存标题/链接</button>' +
+            '">快捷保存</button>' +
             (active
               ? ""
               : '<button class="mini-btn" type="button" data-banner-set="' +
@@ -278,9 +317,9 @@
       (state.draft && state.draft.url) || (state.current && state.current.image_url) || "";
     var editing = !!state.editingId;
     var publishLabel = state.publishing
-      ? "上传中/发布中…"
+      ? "保存中…"
       : editing
-        ? "保存编辑并发布"
+        ? "保存修改"
         : "保存并发布";
     box.innerHTML =
       (state.error ? '<div class="admin-sync-note">' + esc(state.error) + "</div>" : "") +
@@ -294,30 +333,34 @@
         ? '<img src="' + esc(previewUrl) + '" alt="当前 Banner">'
         : '<div class="banner-ops-preview-empty">暂无 Banner，请上传并发布</div>') +
       "</div></section>" +
-      '<section class="banner-ops-section">' +
-      "<h3>" + (editing ? "编辑 Banner（上传 / 裁剪 / 保存）" : "上传 / 裁剪 / 发布") + "</h3>" +
+      '<section class="banner-ops-section" data-banner-editor>' +
+      "<h3>" + (editing ? "编辑 Banner" : "新 Banner 编辑区") + "</h3>" +
       "<p>" + (editing
-        ? "正在编辑历史 Banner。可直接更换图片、裁剪预览后保存；保存后仍会更新首页当前图。"
-        : "上传后可裁剪，再点击保存并发布到首页。也可从下方历史记录点「编辑图片」。") + "</p>" +
+        ? "已加载历史 Banner。可修改图片、裁剪位置、标题、链接、排序、启用状态，确认后点「保存修改」。"
+        : "发布前请一次完成图片、裁剪、标题、链接、排序与启用状态，确认无误后再点「保存并发布」。") + "</p>" +
       (editing
-        ? '<div class="admin-sync-note">编辑中：' + esc(state.editingId) +
-          ' · 标题/链接可在下方历史卡片修改，或保存图片时一并带上当前草稿。</div>'
+        ? '<div class="admin-sync-note">编辑中：' + esc(state.editingId) + " · 保存修改会覆盖该条 Banner，不会新建。</div>"
         : "") +
+      renderMetaForm() +
       renderUploadZone() +
       (state.draft
-        ? '<div class="admin-sync-note">图片已选择，请调整裁剪后点击下方「' + (editing ? "保存编辑并发布" : "保存并发布") + '」，否则首页不会更新。</div>'
-        : "") +
+        ? '<div class="admin-sync-note">图片已选择，请确认标题/链接/裁剪后点击下方「' +
+          (editing ? "保存修改" : "保存并发布") +
+          '」，否则不会写入首页。</div>'
+        : '<div class="admin-sync-note">可先填写标题、链接、排序与启用状态，再上传图片；未点击「' +
+          (editing ? "保存修改" : "保存并发布") +
+          '」前不会发布到首页。</div>') +
       '<div class="banner-ops-actions">' +
       '<button class="primary-btn" type="button" data-banner-publish ' +
       (state.publishing || !state.draft ? "disabled" : "") +
       ">" + publishLabel + "</button>" +
       (editing
         ? '<button class="mini-btn" type="button" data-banner-cancel-edit">取消编辑</button>'
-        : "") +
+        : '<button class="mini-btn" type="button" data-banner-reset-new">清空草稿</button>') +
       "</div></section>" +
       '<section class="banner-ops-section">' +
       "<h3>历史 Banner</h3>" +
-      "<p>点「编辑图片」进入上方编辑区（上传 / 预览 / 裁剪 / 保存）。「设为当前」会立刻切换首页 Banner。</p>" +
+      "<p>点「编辑」将该 Banner 完整加载到上方编辑区。启用/停用、删除、排序仍可在卡片上快捷操作。</p>" +
       renderHistory() +
       "</section></div>";
   }
@@ -514,8 +557,13 @@
       title: item.title || "",
       link: item.button_link || item.link || "",
       sort_order: item.sort_order != null ? item.sort_order : 100,
+      is_active: item.is_active !== false,
     };
     state.crop = normalizeCropState(item.crop_meta || item.crop || {});
+    state.message = "正在加载 Banner 到编辑区…";
+    state.error = "";
+    render();
+    bind();
     var remote = item.image_url;
     fetch(remote, { mode: "cors", credentials: "omit" })
       .then(function (res) {
@@ -541,55 +589,63 @@
   }
   function publish() {
     if (!state.draft || state.publishing) return;
+    syncEditMetaFromForm();
     state.publishing = true;
     state.error = "";
-    state.message = "上传中/发布中…";
+    state.message = state.editingId ? "保存修改中…" : "上传中/发布中…";
     render();
     resolvePublishImageData()
       .then(function (dataUrl) {
         var editingId = state.editingId;
         var crop = cropPayload();
         var mobileCrop = Object.assign({}, crop, { ratioW: 1080, ratioH: 1350, ratio: "1080:1350" });
-        if (editingId) {
-          var card = document.querySelector('[data-banner-id="' + editingId + '"]');
-          var titleInput = card && card.querySelector('[data-banner-title="' + editingId + '"]');
-          var linkInput = card && card.querySelector('[data-banner-link="' + editingId + '"]');
-          var sortInput = card && card.querySelector('[data-banner-sort="' + editingId + '"]');
-          var body = {
-            action: "update",
-            id: editingId,
-            filename: (state.draft.file && state.draft.file.name) || "homepage-banner.jpg",
-            title: titleInput ? titleInput.value : state.editMeta.title,
-            link: linkInput ? linkInput.value : state.editMeta.link,
-            button_link: linkInput ? linkInput.value : state.editMeta.link,
-            sort_order: Number(sortInput && sortInput.value != null ? sortInput.value : state.editMeta.sort_order),
-            is_main: true,
-            is_active: true,
-            crop: crop,
-            crop_meta: crop,
-            mobileCrop: mobileCrop,
-            mobile_crop: mobileCrop,
-            mobile_crop_meta: mobileCrop,
-          };
-          if (dataUrl) body.image_data = dataUrl;
-          return apiPost(body);
-        }
-        if (!dataUrl) throw new Error("请先上传 Banner 图片");
-        return apiPost({
-          action: "publish",
-          image_data: dataUrl,
-          filename: (state.draft.file && state.draft.file.name) || "homepage-banner.jpg",
-          is_main: true,
-          is_active: true,
+        var meta = state.editMeta || defaultEditMeta();
+        var title = String(meta.title || "").trim();
+        var link = String(meta.link || "").trim();
+        var sortOrder = Number(meta.sort_order);
+        if (!Number.isFinite(sortOrder)) sortOrder = 100;
+        var isActive = meta.is_active !== false;
+        var shared = {
+          title: title,
+          link: link,
+          button_link: link,
+          sort_order: sortOrder,
+          is_main: isActive,
+          is_active: isActive,
           crop: crop,
           crop_meta: crop,
           mobileCrop: mobileCrop,
           mobile_crop: mobileCrop,
           mobile_crop_meta: mobileCrop,
-        });
+        };
+        if (editingId) {
+          var body = Object.assign(
+            {
+              action: "update",
+              id: editingId,
+              filename: (state.draft.file && state.draft.file.name) || "homepage-banner.jpg",
+            },
+            shared
+          );
+          if (dataUrl) body.image_data = dataUrl;
+          return apiPost(body);
+        }
+        if (!dataUrl) throw new Error("请先上传 Banner 图片");
+        return apiPost(
+          Object.assign(
+            {
+              action: "publish",
+              image_data: dataUrl,
+              filename: (state.draft.file && state.draft.file.name) || "homepage-banner.jpg",
+            },
+            shared
+          )
+        );
       })
       .then(function (res) {
-        var okMsg = res.message || (state.editingId ? "Banner 已保存" : "Banner 发布成功");
+        var okMsg =
+          res.message ||
+          (state.editingId ? "Banner 已保存修改" : "Banner 已保存并发布");
         state.message = okMsg;
         alert(okMsg);
         resetDraft(false);
@@ -663,13 +719,34 @@
     if (!live) return;
     live.innerHTML = '<img src="' + esc(item.image_url) + '" alt="Banner 预览">';
   }
+  function bindMetaForm() {
+    var root = document.querySelector("[data-banner-editor-meta]");
+    if (!root || root.dataset.bound === "1") return;
+    root.dataset.bound = "1";
+    root.addEventListener("input", function () {
+      syncEditMetaFromForm();
+    });
+    root.addEventListener("change", function () {
+      syncEditMetaFromForm();
+    });
+  }
   function bind() {
     bindUploadZone();
     bindCropControls();
+    bindMetaForm();
     var publishBtn = document.querySelector("[data-banner-publish]");
     if (publishBtn) publishBtn.onclick = publish;
     var cancelBtn = document.querySelector("[data-banner-cancel-edit]");
     if (cancelBtn) cancelBtn.onclick = cancelEdit;
+    var resetNewBtn = document.querySelector("[data-banner-reset-new]");
+    if (resetNewBtn)
+      resetNewBtn.onclick = function () {
+        resetDraft(false);
+        state.message = "";
+        state.error = "";
+        render();
+        bind();
+      };
     document.querySelectorAll("[data-banner-edit]").forEach(function (btn) {
       btn.onclick = function () {
         openEdit(btn.getAttribute("data-banner-edit"));

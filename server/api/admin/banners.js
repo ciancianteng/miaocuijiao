@@ -486,17 +486,20 @@ export default async function handler(req, res) {
         sort_order: meta.sort_order,
         crop_meta: meta.crop_meta,
         mobile_crop_meta: meta.mobile_crop_meta,
-        is_main: true,
+        is_main: meta.is_active !== false,
         created_at: now,
         updated_at: now,
       };
-      await clearOtherMain(null);
+      if (payload.is_main) await clearOtherMain(null);
       const rows = await writeBannerRow("POST", restUrl("banners"), payload);
       let banner = mapBanner(rows[0] || payload);
       // Ensure homepage current pointer even if is_main column soft-fails.
+      // Respect admin "enabled" choice: do not force inactive banners onto homepage.
       try {
-        const promoted = await setMainBanner(banner.id, { ensureActive: true });
-        if (promoted) banner = mapBanner(promoted);
+        if (payload.is_active) {
+          const promoted = await setMainBanner(banner.id, { ensureActive: true });
+          if (promoted) banner = mapBanner(promoted);
+        }
       } catch {
         /* best effort */
       }
@@ -576,8 +579,11 @@ export default async function handler(req, res) {
 
       if (meta.is_main) await clearOtherMain(id);
       const row = await patchBanner(id, patch);
-      const data = await listBanners();
-      const banner = mapBanner(row);
+      let data = await listBanners();
+      if (meta.is_active === false && (mapped.is_main || patch.is_main === false)) {
+        data = await promoteMainIfNeeded();
+      }
+      const banner = mapBanner(row) || data.history.find((b) => String(b.id) === String(id)) || null;
       return json(res, 200, {
         ok: true,
         message: banner?.has_dedicated_mobile
