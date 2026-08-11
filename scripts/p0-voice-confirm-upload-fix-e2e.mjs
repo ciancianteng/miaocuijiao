@@ -18,6 +18,8 @@ const BASE = (process.env.PREVIEW || process.env.MCJ_STAGING_URL || "https://meo
   /\/$/,
   ""
 );
+/** When serving a local build, proxy /api to staging so Storage/DB are real. */
+const API_BASE = (process.env.API_BASE || BASE).replace(/\/$/, "");
 const PASS = process.env.PASS || process.env.MCJ_TEST_PASSWORD || "McjTest@12345678";
 const ART = path.join("/opt/cursor/artifacts", "voice-confirm-upload-fix");
 const ART_REPO = path.join(ROOT, "artifacts", "voice-confirm-upload-fix");
@@ -59,7 +61,7 @@ function makeToneWav(seconds = 12, freq = 440) {
 
 async function api(pathname, token, body, method = null) {
   const m = method || (body == null ? "GET" : "POST");
-  const res = await fetch(`${BASE}${pathname}`, {
+  const res = await fetch(`${API_BASE}${pathname}`, {
     method: m,
     headers: {
       Accept: "application/json",
@@ -232,6 +234,27 @@ await context.addInitScript(
 );
 
 const page = await context.newPage();
+if (API_BASE !== BASE) {
+  await page.route("**/api/**", async (route) => {
+    const req = route.request();
+    const u = new URL(req.url());
+    const target = `${API_BASE}${u.pathname}${u.search}`;
+    const headers = { ...req.headers() };
+    delete headers.host;
+    const res = await fetch(target, {
+      method: req.method(),
+      headers,
+      body: req.postData(),
+    });
+    const buf = Buffer.from(await res.arrayBuffer());
+    const outHeaders = {};
+    res.headers.forEach((v, k) => {
+      if (k.toLowerCase() === "content-encoding") return;
+      outHeaders[k] = v;
+    });
+    await route.fulfill({ status: res.status, headers: outHeaders, body: buf });
+  });
+}
 const net = [];
 page.on("request", (req) => {
   if (/\/api\/companion/.test(req.url()) && req.method() === "POST") {
