@@ -26,6 +26,7 @@ import {
   ensurePrivateBucket,
   uploadPrivateObject,
 } from "./_companion-media-store.js";
+import { hasBossRole } from "./_account-roles.js";
 
 loadLocalEnv();
 
@@ -130,7 +131,9 @@ async function profileFromToken(req) {
   const rows = await supabaseJson(restUrl("profiles", `?id=eq.${encodeURIComponent(authUser.id)}&limit=1`), { headers: serviceHeaders() });
   const profile = Array.isArray(rows) ? rows[0] : null;
   if (!profile) throw Object.assign(new Error("账号未绑定平台资料。"), { status: 403 });
-  if (profile.role !== "boss") throw Object.assign(new Error("只有老板账号可以访问充值中心。"), { status: 403 });
+  if (!hasBossRole(profile, { authUser })) {
+    throw Object.assign(new Error("只有老板账号可以访问充值中心。"), { status: 403 });
+  }
   if (profile.status !== "active") throw Object.assign(new Error("老板账号未启用。"), { status: 403 });
   return profile;
 }

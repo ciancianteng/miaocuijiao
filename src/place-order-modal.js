@@ -92,16 +92,12 @@
     if (window.MCJBossAuth && typeof window.MCJBossAuth.getAccessToken === "function") {
       var fromBoss = window.MCJBossAuth.getAccessToken();
       if (looksLikeJwt(fromBoss)) return fromBoss;
+      return "";
     }
+    // Fallback only when auth module missing: session-first (same order as MCJBossAuth).
     var candidates = [
-      localStorage.getItem("mcjAuthAccessToken"),
       sessionStorage.getItem("mcjAuthAccessToken"),
-      localStorage.getItem("customerAuthToken"),
-      sessionStorage.getItem("customerAuthToken"),
-      tokenFromSessionBlob(localStorage.getItem("mcjBossSession")),
-      tokenFromSessionBlob(sessionStorage.getItem("mcjBossSession")),
-      tokenFromSessionBlob(localStorage.getItem("customerUser")),
-      tokenFromSessionBlob(sessionStorage.getItem("customerUser")),
+      localStorage.getItem("mcjAuthAccessToken"),
     ];
     for (var i = 0; i < candidates.length; i++) {
       if (looksLikeJwt(candidates[i])) return candidates[i];
@@ -277,10 +273,14 @@
             });
           }
           state.payMethodsLoading = false;
-          state.payLoadError =
-            (err && err.status === 401) || /登录|token|jwt|过期/i.test(String((err && err.message) || ""))
-              ? "登录已失效，请重新登录后再下单"
-              : String((err && err.message) || "支付方式读取失败，请刷新重试");
+          var msg = String((err && err.message) || "");
+          if ((err && err.status === 401) || /登录|token|jwt|过期/i.test(msg)) {
+            state.payLoadError = "登录已失效，请重新登录后再下单";
+          } else if (/只有老板账号可以访问|无此端权限|不是老板/i.test(msg)) {
+            state.payLoadError = "当前账号已登录，但无老板端下单权限";
+          } else {
+            state.payLoadError = msg || "支付方式读取失败，请刷新重试";
+          }
           return state.walletBalance;
         });
     }

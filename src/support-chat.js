@@ -166,20 +166,24 @@ import './mcj-chat-realtime.js';
     return String(sessionStorage.getItem("mcjRole") || "").toLowerCase();
   }
   function hasBossGateSession() {
-    try {
-      localStorage.removeItem("mcjAuthAccessToken");
-      localStorage.removeItem("mcjAuthRefreshToken");
-      localStorage.removeItem("customerAuthToken");
-      localStorage.removeItem("customerUser");
-    } catch (e0) {}
+    // Never wipe localStorage on read — that desyncs remember-me vs sessionStorage
+    // and makes recharge / place-order disagree with the header auth state.
     if (window.MCJBossAuth && typeof window.MCJBossAuth.hasValidAccessToken === "function") {
-      if (!window.MCJBossAuth.hasValidAccessToken()) return false;
+      if (!window.MCJBossAuth.hasValidAccessToken()) {
+        if (typeof window.MCJBossAuth.canRestoreSession === "function" && window.MCJBossAuth.canRestoreSession()) {
+          return true; // refresh pending — resolveIdentity awaits ensureSession
+        }
+        return false;
+      }
     } else {
-      var jwt = sessionStorage.getItem("mcjAuthAccessToken") || "";
+      var jwt =
+        (typeof sessionStorage !== "undefined" && sessionStorage.getItem("mcjAuthAccessToken")) ||
+        (typeof localStorage !== "undefined" && localStorage.getItem("mcjAuthAccessToken")) ||
+        "";
       if (!jwt || String(jwt).split(".").length !== 3) return false;
     }
     var role = sharedRoleHint();
-    if (role && role !== "boss" && role !== "customer" && role !== "user") return false;
+    if (role && role !== "boss" && role !== "customer" && role !== "owner" && role !== "user") return false;
     if (window.MCJRoleGate && typeof window.MCJRoleGate.isLogged === "function") {
       return !!(window.MCJRoleGate.isLogged("customer") || window.MCJRoleGate.isLogged("boss"));
     }

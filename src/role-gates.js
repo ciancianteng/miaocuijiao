@@ -1137,12 +1137,62 @@
     }
 
     if (/\/(mine|orders|support|recharge|messages|favorites|payment-confirm|order-confirm|gifts)\.html$/i.test(p)) {
-      // Soft / refresh alone insufficient — require non-expired access JWT.
+      // Soft / refresh alone insufficient for sync deny — wait restoreSession before claiming guest.
       // profile.html is public companion detail and stays ungated.
-      if (!hasValidBossAccessToken()) {
+      if (hasValidBossAccessToken()) return true;
+      var canRestore = false;
+      try {
+        canRestore = !!(
+          sessionStorage.getItem("mcjAuthRefreshToken") ||
+          localStorage.getItem("mcjAuthRefreshToken") ||
+          (window.MCJBossAuth &&
+            typeof window.MCJBossAuth.canRestoreSession === "function" &&
+            window.MCJBossAuth.canRestoreSession())
+        );
+      } catch (eRest) {}
+      if (!canRestore) {
         wipeBossGuestArtifacts();
         return denyUnauthed("/login.html", returnPath());
       }
+      try {
+        document.documentElement.setAttribute("data-mcj-auth-gate", "pending");
+        document.documentElement.style.visibility = "hidden";
+      } catch (eHide) {}
+      var finishBossGate = function (ok) {
+        try {
+          document.documentElement.removeAttribute("data-mcj-auth-gate");
+          document.documentElement.style.visibility = "";
+        } catch (eShow) {}
+        if (!ok) {
+          wipeBossGuestArtifacts();
+          denyUnauthed("/login.html", returnPath());
+        }
+      };
+      var safety = setTimeout(function () {
+        finishBossGate(hasValidBossAccessToken());
+      }, 8000);
+      // role-gates often loads before boss-auth-session.js — wait for SoT then ensureSession.
+      (function waitBossAuth(tries) {
+        if (window.MCJBossAuth && typeof window.MCJBossAuth.ensureSession === "function") {
+          window.MCJBossAuth.ensureSession()
+            .catch(function () {
+              return null;
+            })
+            .then(function () {
+              clearTimeout(safety);
+              finishBossGate(hasValidBossAccessToken());
+            });
+          return;
+        }
+        if (tries >= 40) {
+          clearTimeout(safety);
+          finishBossGate(hasValidBossAccessToken());
+          return;
+        }
+        setTimeout(function () {
+          waitBossAuth(tries + 1);
+        }, 50);
+      })(0);
       return true;
     }
     return true;
@@ -1168,10 +1218,23 @@
     }
     if (storageRole(role) === "customer" || role === "boss") {
       if (/\/(mine|orders|support|recharge|messages|favorites|payment-confirm|order-confirm|gifts)\.html$/i.test(path())) {
-        if (!hasValidBossAccessToken()) {
+        if (hasValidBossAccessToken()) return true;
+        var canRestoreGuard = false;
+        try {
+          canRestoreGuard = !!(
+            sessionStorage.getItem("mcjAuthRefreshToken") ||
+            localStorage.getItem("mcjAuthRefreshToken") ||
+            (window.MCJBossAuth &&
+              typeof window.MCJBossAuth.canRestoreSession === "function" &&
+              window.MCJBossAuth.canRestoreSession())
+          );
+        } catch (eG) {}
+        if (!canRestoreGuard) {
           wipeBossGuestArtifacts();
           return denyUnauthed("/login.html", returnPath());
         }
+        // Defer decision to bootRouteProtection / MCJBossAuth.ensureSession — do not flash guest.
+        return true;
       }
     }
     if (storageRole(role) === "customer_service") {

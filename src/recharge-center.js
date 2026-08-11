@@ -8,6 +8,7 @@
   if (!root) return;
 
   var state = {
+    authLoading: true,
     loading: true,
     submitting: false,
     uploading: false,
@@ -34,14 +35,19 @@
     var parts = t.split(".");
     return parts.length === 3 && parts.every(function (p) { return p.length > 0; });
   }
+  /** Sole token SoT: MCJBossAuth (session → local). Never invent a parallel localStorage-first path. */
   function token() {
     if (window.MCJBossAuth && typeof window.MCJBossAuth.getAccessToken === "function") {
       var t = window.MCJBossAuth.getAccessToken();
-      if (looksLikeJwt(t)) return t;
+      return looksLikeJwt(t) ? t : "";
     }
-    var candidates = [localStorage.getItem("mcjAuthAccessToken"), sessionStorage.getItem("mcjAuthAccessToken")];
-    for (var i = 0; i < candidates.length; i++) if (looksLikeJwt(candidates[i])) return candidates[i];
-    return "";
+    try {
+      var fallback =
+        sessionStorage.getItem("mcjAuthAccessToken") || localStorage.getItem("mcjAuthAccessToken") || "";
+      return looksLikeJwt(fallback) ? fallback : "";
+    } catch (e) {
+      return "";
+    }
   }
   function esc(v) {
     return String(v == null ? "" : v).replace(/[&<>"']/g, function (c) {
@@ -188,6 +194,10 @@
   }
 
   function paint() {
+    if (state.authLoading) {
+      root.innerHTML = '<section class="page-head"><div><h1>充值中心</h1><p>正在验证登录状态...</p></div></section>';
+      return;
+    }
     if (!token()) {
       root.innerHTML =
         '<section class="page-head"><div><h1>充值中心</h1><p>请先登录老板账号后再进行充值。</p></div><a class="ghost-btn" href="index.html">返回首页登录</a></section>';
@@ -198,9 +208,15 @@
       return;
     }
     if (state.error) {
+      var unauthorizedBoss =
+        /只有老板账号可以访问|当前账号无此端权限|不是老板/i.test(String(state.error || ""));
       root.innerHTML =
         '<section class="page-head"><div><h1>充值中心</h1><p class="muted">' +
-        esc(state.error) +
+        esc(
+          unauthorizedBoss
+            ? "当前账号已登录，但无老板端充值权限。"
+            : state.error
+        ) +
         '</p></div><button class="ghost-btn" data-refresh type="button">重试</button></section>';
       return;
     }
@@ -410,14 +426,30 @@
     }
   }
 
+  function waitAuthReady() {
+    if (window.MCJBossAuth && typeof window.MCJBossAuth.ensureSession === "function") {
+      return window.MCJBossAuth.ensureSession().catch(function () {
+        return null;
+      });
+    }
+    return Promise.resolve(null);
+  }
+
   async function load() {
+    state.authLoading = true;
+    state.loading = true;
+    state.error = "";
+    paint();
+    try {
+      await waitAuthReady();
+    } catch (e0) {}
+    state.authLoading = false;
     if (!token()) {
       state.loading = false;
       paint();
       return;
     }
     state.loading = true;
-    state.error = "";
     paint();
     try {
       var body = await api("/api/recharge", null, "GET");
@@ -732,6 +764,23 @@
     if (!input || !input.files || !input.files[0]) return;
     onPickProof(input.files[0]);
     input.value = "";
+  });
+
+  window.addEventListener("mcj:auth-updated", function () {
+    if (state.authLoading) return;
+    if (token() && !state.loading && (state.error || state.step === "select")) {
+      load();
+    } else if (!token()) {
+      state.authLoading = false;
+      state.loading = false;
+      paint();
+    }
+  });
+  window.addEventListener("mcj:auth-expired", function () {
+    state.authLoading = false;
+    state.loading = false;
+    state.error = "";
+    paint();
   });
 
   load();

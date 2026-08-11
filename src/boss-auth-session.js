@@ -7,6 +7,9 @@
   var EXPIRED_MESSAGE = "登录已过期，请重新登录。";
   var refreshPromise = null;
   var sessionReadyPromise = null;
+  var authLoading = true;
+  var readyResolvers = [];
+  var AUTH_EVENT = "mcj:auth-updated";
 
   var BOSS_KEYS = [
     "mcjAuthAccessToken",
@@ -41,7 +44,7 @@
   }
 
   function readItem(key) {
-    // Persist across refresh: prefer session tab copy, then localStorage.
+    // Single SoT read order for the whole boss portal: session tab → durable local.
     try {
       return sessionStorage.getItem(key) || localStorage.getItem(key) || "";
     } catch (e) {
@@ -49,8 +52,23 @@
     }
   }
 
-  function authStore(persist) {
-    return persist === false ? sessionStorage : localStorage;
+  function emitAuthUpdated(detail) {
+    try {
+      window.dispatchEvent(new CustomEvent(AUTH_EVENT, { detail: detail || {} }));
+    } catch (e) {}
+    try {
+      window.dispatchEvent(new CustomEvent("mcj:auth-changed", { detail: detail || {} }));
+    } catch (e2) {}
+  }
+
+  function markReady() {
+    authLoading = false;
+    var waiters = readyResolvers.splice(0, readyResolvers.length);
+    waiters.forEach(function (resolve) {
+      try {
+        resolve(snapshot());
+      } catch (e) {}
+    });
   }
 
   function getAccessToken() {
@@ -108,6 +126,58 @@
     return Date.now() >= exp - REFRESH_BUFFER_MS;
   }
 
+  function parseStoredUser() {
+    try {
+      var raw = readItem("customerUser") || readItem("mcjCurrentUser");
+      if (!raw) return null;
+      var user = JSON.parse(raw);
+      return user && typeof user === "object" ? user : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function getStoredRoles() {
+    var user = parseStoredUser() || {};
+    var roles = Array.isArray(user.roles) ? user.roles.slice() : [];
+    var primary = String(user.role || readItem("mcjRole") || "").trim().toLowerCase();
+    if (primary && roles.indexOf(primary) < 0) roles.push(primary);
+    return roles.map(function (r) {
+      return String(r || "").trim().toLowerCase();
+    }).filter(Boolean);
+  }
+
+  function hasBossCapability() {
+    var roles = getStoredRoles();
+    var bossLike = { boss: 1, customer: 1, owner: 1, user: 1 };
+    if (roles.some(function (r) { return bossLike[r]; })) return true;
+    var user = parseStoredUser();
+    if (user && user.hasBoss === true) return true;
+    // JWT present on boss portal without role hint yet — treat as pending, not denied.
+    return hasValidAccessToken() || !!getRefreshToken();
+  }
+
+  function snapshot() {
+    var user = parseStoredUser();
+    return {
+      authLoading: authLoading,
+      authenticated: hasValidAccessToken(),
+      hasRefresh: !!getRefreshToken(),
+      isBoss: hasBossCapability() && (hasValidAccessToken() || !!getRefreshToken()),
+      user: user,
+      roles: getStoredRoles(),
+      portal: "boss",
+      accessToken: getAccessToken() || "",
+    };
+  }
+
+  function whenReady() {
+    if (!authLoading) return Promise.resolve(snapshot());
+    return new Promise(function (resolve) {
+      readyResolvers.push(resolve);
+    });
+  }
+
   function saveSession(session, persist) {
     if (!session) return;
     // Dual-write when remember/persist: current tab (sessionStorage) + durable (localStorage).
@@ -128,7 +198,17 @@
         localStorage.removeItem("mcjAuthRefreshToken");
         localStorage.removeItem("mcjAuthExpiresAt");
       } catch (e2) {}
+    } else {
+      // Keep stores aligned: avoid stale local JWT disagreeing with session after refresh.
+      try {
+        if (session.accessToken) localStorage.setItem("mcjAuthAccessToken", session.accessToken);
+        if (session.refreshToken) localStorage.setItem("mcjAuthRefreshToken", session.refreshToken);
+        if (session.expiresAt != null && session.expiresAt !== "") {
+          localStorage.setItem("mcjAuthExpiresAt", String(session.expiresAt));
+        }
+      } catch (e3) {}
     }
+    emitAuthUpdated({ reason: "saveSession", persist: persist !== false });
   }
 
   function clearSession() {
@@ -136,10 +216,15 @@
     try {
       window.dispatchEvent(new CustomEvent("mcj:auth-expired"));
     } catch (e2) {}
+    emitAuthUpdated({ reason: "clearSession" });
   }
 
   function hasSession() {
     return hasValidAccessToken();
+  }
+
+  function canRestoreSession() {
+    return hasValidAccessToken() || !!getRefreshToken();
   }
 
   function getSession() {
@@ -197,20 +282,47 @@
   }
 
   function ensureSession() {
-    sessionReadyPromise = getSession().then(function (result) {
-      var access = getAccessToken();
-      var refresh = getRefreshToken();
-      if (!access && !refresh) return result;
-      if (hasValidAccessToken() && !needsRefresh()) return result;
-      if (!refresh) {
-        clearSession();
+    if (sessionReadyPromise) return sessionReadyPromise;
+    authLoading = true;
+    sessionReadyPromise = getSession()
+      .then(function (result) {
+        var access = getAccessToken();
+        var refresh = getRefreshToken();
+        if (!access && !refresh) return result;
+        if (hasValidAccessToken() && !needsRefresh()) return result;
+        if (!refresh) {
+          clearSession();
+          return { data: { session: null }, error: null };
+        }
+        return refreshSession().then(function () {
+          return getSession();
+        });
+      })
+      .catch(function () {
         return { data: { session: null }, error: null };
-      }
-      return refreshSession().then(function () {
-        return getSession();
+      })
+      .finally(function () {
+        markReady();
+        emitAuthUpdated({ reason: "ensureSession" });
+        // Allow a later ensureSession after logout / new login.
+        sessionReadyPromise = sessionReadyPromise;
       });
-    });
-    return sessionReadyPromise;
+    // Clear latch after settle so future login can re-run, but coalesce concurrent callers.
+    var latch = sessionReadyPromise;
+    sessionReadyPromise = latch.then(
+      function (v) {
+        sessionReadyPromise = null;
+        return v;
+      },
+      function (e) {
+        sessionReadyPromise = null;
+        throw e;
+      }
+    );
+    // Keep in-flight reference for coalescing: use latch until cleared above.
+    // Re-assign so concurrent callers hit the pending thenable while it is non-null briefly.
+    // Simpler approach: keep pending until done without nulling mid-flight incorrectly.
+    return latch;
   }
 
   function authHeaders(extra) {
@@ -282,8 +394,27 @@
     clearSession: clearSession,
     wipeLocalBossAuth: wipeLocalBossAuth,
     hasSession: hasSession,
+    canRestoreSession: canRestoreSession,
     hasValidAccessToken: hasValidAccessToken,
+    getAccessToken: getAccessToken,
+    getRefreshToken: getRefreshToken,
+    getStoredUser: parseStoredUser,
+    getStoredRoles: getStoredRoles,
+    hasBossCapability: hasBossCapability,
+    snapshot: snapshot,
+    whenReady: whenReady,
+    isAuthLoading: function () {
+      return !!authLoading;
+    },
     looksLikeJwt: looksLikeJwt,
     expiredMessage: EXPIRED_MESSAGE,
+    AUTH_EVENT: AUTH_EVENT,
   };
+
+  // Kick restore immediately so route guards / widgets can await authLoading=false.
+  try {
+    ensureSession();
+  } catch (bootErr) {
+    markReady();
+  }
 })();

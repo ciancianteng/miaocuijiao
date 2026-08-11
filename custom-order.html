@@ -60,8 +60,8 @@
       <p class="empty-note" id="customState" hidden></p>
     </section>
   </main>
-  <script src="src/role-gates.js?v=20260811portalIso2"></script>
-  <script src="src/boss-auth-session.js?v=20260809payScopeOrder1"></script>
+  <script src="src/role-gates.js?v=20260811authUnify1"></script>
+  <script src="src/boss-auth-session.js?v=20260811authUnify1"></script>
   <script src="src/dropdown-system.js" defer></script>
   <script src="src/design-system.js" defer></script>
   <script>
@@ -72,9 +72,9 @@
       function authToken(){
         if(window.MCJBossAuth&&typeof window.MCJBossAuth.getAccessToken==='function'){
           var t=window.MCJBossAuth.getAccessToken();
-          if(looksLikeJwt(t))return t;
+          return looksLikeJwt(t)?t:'';
         }
-        var candidates=[localStorage.getItem('mcjAuthAccessToken'),sessionStorage.getItem('mcjAuthAccessToken'),localStorage.getItem('customerAuthToken'),sessionStorage.getItem('customerAuthToken')];
+        var candidates=[sessionStorage.getItem('mcjAuthAccessToken'),localStorage.getItem('mcjAuthAccessToken')];
         for(var i=0;i<candidates.length;i++){if(looksLikeJwt(candidates[i]))return candidates[i];}
         return '';
       }

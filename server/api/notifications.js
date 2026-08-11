@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { hasBossRole } from "./_account-roles.js";
 
 loadLocalEnv();
 
@@ -140,7 +141,7 @@ async function profileFromToken(req) {
   const profile = Array.isArray(rows) ? rows[0] : null;
   if (!profile) throw Object.assign(new Error("账号未绑定平台资料。"), { status: 403 });
   if (profile.status !== "active") throw Object.assign(new Error("账号未启用。"), { status: 403 });
-  if (profile.role !== "boss") {
+  if (!hasBossRole(profile, { authUser })) {
     throw Object.assign(new Error("只有老板账号可以查看通知。"), { status: 403 });
   }
   return profile;
