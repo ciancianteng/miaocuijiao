@@ -789,6 +789,13 @@
     return fallback==null?'':String(fallback);
   }
   function readSession(){try{return JSON.parse(localStorage.getItem(SESSION_KEY)||sessionStorage.getItem(SESSION_KEY)||'null')}catch(e){return null}}
+  function sessionLooksValid(s){
+    if(!s||typeof s!=='object')return false;
+    var t=String(s.token||s.accessToken||'').trim();
+    var r=String(s.refreshToken||s.refresh_token||'').trim();
+    if(r)return true;
+    return t.split('.').length===3&&t.length>20;
+  }
   function saveSession(session,remember){
     // Always dual-write so refresh + new tab keep companion login (incl. refreshToken).
     var normalized={
@@ -796,16 +803,22 @@
       accessToken:String((session&&(session.accessToken||session.token||session.access_token))||'').trim(),
       refreshToken:String((session&&(session.refreshToken||session.refresh_token))||'').trim(),
       expiresAt:(session&&(session.expiresAt!=null?session.expiresAt:session.expires_at))||'',
-      user:(session&&session.user)||{},
-      remember:remember!==false&&!(session&&session.remember===false)
+      user:Object.assign({},(session&&session.user)||{},{role:((session&&session.user&&session.user.role)||'companion')}),
+      remember:remember!==false&&!(session&&session.remember===false),
+      portal:'companion',
+      portalLoginAt:Date.now()
     };
     if(!normalized.token&&!normalized.refreshToken)return;
-    // P0: wipe boss/CS/admin soft sessions before claiming shared JWT mirrors.
-    if(window.MCJRoleGate&&typeof window.MCJRoleGate.clearOtherRoleSessions==='function'){
-      window.MCJRoleGate.clearOtherRoleSessions('companion');
-      if(typeof window.MCJRoleGate.clearSharedAuthMirrors==='function')window.MCJRoleGate.clearSharedAuthMirrors();
-    }else{
-      ['customerAuthToken','customerUser','customerServiceAuthToken','customerServiceUser','mcjServiceSession','adminAuthToken','adminUser','mcjAuthAccessToken','mcjAuthRefreshToken','mcjAuthExpiresAt','mcjRole'].forEach(function(k){try{localStorage.removeItem(k);sessionStorage.removeItem(k);}catch(e){}});
+    // P0: companion portal session is isolated — do NOT wipe boss/CS/admin or shared boss JWT.
+    if(window.MCJRoleGate&&typeof window.MCJRoleGate.writeCompanionPortalSession==='function'){
+      window.MCJRoleGate.writeCompanionPortalSession({
+        accessToken:normalized.token||normalized.accessToken,
+        refreshToken:normalized.refreshToken,
+        expiresAt:normalized.expiresAt,
+        user:normalized.user
+      },normalized.remember);
+      state.session=normalized;
+      return;
     }
     var payload=JSON.stringify(normalized);
     try{localStorage.setItem(SESSION_KEY,payload);}catch(e){}
@@ -814,23 +827,9 @@
       var soft='companion_session_v4_'+Date.now();
       localStorage.setItem('companionAuthToken',soft);
       sessionStorage.setItem('companionAuthToken',soft);
-      var userPayload=JSON.stringify(Object.assign({},normalized.user||{},{role:(normalized.user&&normalized.user.role)||'companion'}));
+      var userPayload=JSON.stringify(normalized.user||{});
       localStorage.setItem('companionUser',userPayload);
       sessionStorage.setItem('companionUser',userPayload);
-      localStorage.setItem('mcjRole','companion');
-      sessionStorage.setItem('mcjRole','companion');
-      if(normalized.token){
-        localStorage.setItem('mcjAuthAccessToken',normalized.token);
-        sessionStorage.setItem('mcjAuthAccessToken',normalized.token);
-      }
-      if(normalized.refreshToken){
-        localStorage.setItem('mcjAuthRefreshToken',normalized.refreshToken);
-        sessionStorage.setItem('mcjAuthRefreshToken',normalized.refreshToken);
-      }
-      if(normalized.expiresAt!==''&&normalized.expiresAt!=null){
-        localStorage.setItem('mcjAuthExpiresAt',String(normalized.expiresAt));
-        sessionStorage.setItem('mcjAuthExpiresAt',String(normalized.expiresAt));
-      }
     }catch(e){}
     state.session=normalized;
   }
@@ -842,15 +841,7 @@
       localStorage.removeItem('companionUser');
       sessionStorage.removeItem('companionAuthToken');
       sessionStorage.removeItem('companionUser');
-      localStorage.removeItem('mcjAuthAccessToken');
-      localStorage.removeItem('mcjAuthRefreshToken');
-      localStorage.removeItem('mcjAuthExpiresAt');
-      sessionStorage.removeItem('mcjAuthAccessToken');
-      sessionStorage.removeItem('mcjAuthRefreshToken');
-      sessionStorage.removeItem('mcjAuthExpiresAt');
-      if(localStorage.getItem('mcjRole')==='companion'||localStorage.getItem('mcjRole')==='player'){
-        localStorage.removeItem('mcjRole');
-      }
+      // Never clear boss mcjAuth* — boss portal must stay logged in.
     }catch(e){}
     state.session=null;
     state.data=null;
@@ -1661,6 +1652,10 @@
   function init(){
     state.settings=readSettings();
     state.session=readSession();
+    if(state.session&&!sessionLooksValid(state.session)){
+      clearSession();
+      state.session=null;
+    }
     state.route=route();
     applyFocusOrderFromQuery();
     if(!state.session&&state.route!=='login'){go('/companion/login');return}

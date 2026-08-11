@@ -8,7 +8,7 @@
 (function () {
   "use strict";
 
-  var GATE_VERSION = "20260807adminAuthP0";
+  var GATE_VERSION = "20260811portalIso1";
 
   function pathNow() {
     return String(location.pathname || "/").replace(/\\/g, "/");
@@ -242,17 +242,11 @@
       var pwAccess = pw && (pw.token || pw.accessToken || pw.access_token);
       var pwRefresh = pw && (pw.refreshToken || pw.refresh_token);
       var pwUser = (pw && pw.user) || readJson("companionUser") || {};
-      var pwShared = String(item("mcjRole") || "").toLowerCase();
       var pwSoft = item("companionAuthToken");
       var pwSoftOk = String(pwSoft).indexOf("companion_session_") === 0;
-      var pwRoleOk =
-        isCompanionRole(roleOf(pwUser)) ||
-        isCompanionRole(pwShared) ||
-        (pwSoftOk && !pwShared);
+      // Portal isolation: ignore shared mcjRole / boss JWT. Companion blob + soft only.
+      var pwRoleOk = isCompanionRole(roleOf(pwUser)) || (pwSoftOk && !roleOf(pwUser));
       if (!pwSoftOk || !hasJwtOrRefresh(pwAccess, pwRefresh) || !pwRoleOk) {
-        return deny("/companion/login/");
-      }
-      if (pwShared && !isCompanionRole(pwShared)) {
         return deny("/companion/login/");
       }
       revealShell();
@@ -266,37 +260,13 @@
       var csAccess = cs && (cs.token || cs.accessToken || cs.access_token);
       var csRefresh = cs && (cs.refreshToken || cs.refresh_token);
       var csUser = (cs && cs.user) || readJson("customerServiceUser") || {};
-      var csShared = String(item("mcjRole") || "").toLowerCase();
       var csSoft = item("customerServiceAuthToken");
       var csSoftOk = String(csSoft).indexOf("customer_service_session_") === 0;
-      var csRoleOk =
-        isCsRole(roleOf(csUser)) ||
-        isCsRole(csShared) ||
-        (csSoftOk && !csShared);
+      var csRoleOk = isCsRole(roleOf(csUser)) || (csSoftOk && !roleOf(csUser));
       var csCredOk = hasValidAccessJwt(csAccess) || !!String(csRefresh || "").trim();
       if (!csSoftOk || !csCredOk || !csRoleOk) {
-        // Wipe half-sessions so login page does not immediately bounce back to dashboard.
-        [
-          "mcjServiceSession",
-          "customerServiceAuthToken",
-          "customerServiceUser",
-          "mcjAuthAccessToken",
-          "mcjAuthRefreshToken",
-          "mcjAuthExpiresAt",
-        ].forEach(removeItem);
-        if (isCsRole(csShared)) removeItem("mcjRole");
-        return deny("/customer-service/login/");
-      }
-      if (csShared && !isCsRole(csShared)) {
-        [
-          "mcjServiceSession",
-          "customerServiceAuthToken",
-          "customerServiceUser",
-          "mcjAuthAccessToken",
-          "mcjAuthRefreshToken",
-          "mcjAuthExpiresAt",
-          "mcjRole",
-        ].forEach(removeItem);
+        // Wipe CS half-sessions only — never touch boss mcjAuth*.
+        ["mcjServiceSession", "customerServiceAuthToken", "customerServiceUser"].forEach(removeItem);
         return deny("/customer-service/login/");
       }
       revealShell();

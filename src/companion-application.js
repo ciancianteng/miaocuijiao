@@ -459,13 +459,27 @@
       var exp = jwtExpSec(token);
       if (exp) expiresAt = exp;
     }
+    var user = Object.assign({}, session.user || {}, { role: "companion" });
+    if (window.MCJRoleGate && typeof window.MCJRoleGate.writeCompanionPortalSession === "function") {
+      window.MCJRoleGate.writeCompanionPortalSession(
+        {
+          accessToken: token,
+          refreshToken: refreshToken,
+          expiresAt: expiresAt,
+          user: user,
+        },
+        session.remember !== false
+      );
+      return;
+    }
     var normalized = {
       token: token,
       accessToken: token,
       refreshToken: refreshToken,
       expiresAt: expiresAt,
-      user: session.user || null,
+      user: user,
       remember: session.remember !== false,
+      portal: "companion",
     };
     var raw = JSON.stringify(normalized);
     try {
@@ -474,14 +488,14 @@
     try {
       sessionStorage.setItem("mcjCompanionSession", raw);
     } catch (e2) {}
-    // Mirror shared auth keys so refresh + long apply sessions stay coherent (do not wipe boss).
     try {
-      if (normalized.token) storageSetBoth("mcjAuthAccessToken", normalized.token);
-      if (normalized.refreshToken) storageSetBoth("mcjAuthRefreshToken", normalized.refreshToken);
-      if (normalized.expiresAt !== "" && normalized.expiresAt != null) {
-        storageSetBoth("mcjAuthExpiresAt", String(normalized.expiresAt));
-      }
+      var soft = "companion_session_v4_" + Date.now();
+      localStorage.setItem("companionAuthToken", soft);
+      sessionStorage.setItem("companionAuthToken", soft);
+      localStorage.setItem("companionUser", JSON.stringify(user));
+      sessionStorage.setItem("companionUser", JSON.stringify(user));
     } catch (e3) {}
+    // Do NOT mirror into boss mcjAuth* — portal isolation.
   }
 
   function companionToken() {
