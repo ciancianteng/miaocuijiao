@@ -5,7 +5,7 @@ import './mcj-chat-realtime.js';
   var root = document.getElementById("supportApp");
   if (!root) return;
   try {
-    window.__MCJ_SUPPORT_CHAT_LAGFIX = "20260809bossMsgLag1";
+    window.__MCJ_SUPPORT_CHAT_LAGFIX = "20260811bossMsgQr1";
   } catch (_) {}
 
   document.documentElement.classList.add("support-page");
@@ -1066,25 +1066,12 @@ import './mcj-chat-realtime.js';
             if (mySeq !== state.threadLoadSeq) return;
             if (state.conversation && String(state.conversation.id) !== requestedId) return;
             cacheActiveThread();
-            // Order card is optional chrome — soft patch without serial wait on messages.
-            if (canSoftPatch()) {
-              var main = root.querySelector(".support-main");
-              if (main) {
-                var stickBox = root.querySelector("[data-messages]");
-                var prevBottom = stickBox ? stickBox.scrollHeight - stickBox.scrollTop : 0;
-                var stickBottom = !silent || prevBottom < 96;
-                var prevScroll = stickBox ? stickBox.scrollTop : 0;
-                captureComposer();
-                patchMain();
-                var next = root.querySelector("[data-messages]");
-                if (next) {
-                  if (stickBottom) next.scrollTop = next.scrollHeight;
-                  else next.scrollTop = Math.max(0, prevScroll);
-                }
-                syncComposerChrome();
-              } else {
-                softUpdate({ keepScroll: !!silent });
-              }
+            // Order card is optional chrome — never remount composer/messages for it.
+            if (canSoftPatch() && root.querySelector("[data-messages]")) {
+              patchOrderSummaryOnly();
+              patchChatHeader();
+            } else {
+              softUpdate({ keepScroll: !!silent });
             }
           })
           .catch(function () {});
@@ -1237,6 +1224,30 @@ import './mcj-chat-realtime.js';
     // WeChat-style: no third-column order dump. Current order card lives in chat panel.
     return "";
   }
+  function sessionDisplayName(c) {
+    var name = String(
+      (c && (c.customerServiceName || c.serviceName || c.customer_service_name || c.title)) || ""
+    ).trim();
+    if (name && !/^订单咨询/.test(name)) return name;
+    if (isOrderConversation(c)) return "订单客服";
+    return "人工客服";
+  }
+  function sessionLine2(c) {
+    var orderNo = String((c && (c.orderNo || c.order_no)) || "").trim();
+    if (orderNo) return "订单 " + orderNo;
+    var consult = String((c && (c.consultType || c.consult_type || c.subtitle)) || "").trim();
+    var consultMap = {
+      other: "普通咨询",
+      new_order: "新订单咨询",
+      current_order: "当前订单问题",
+      recharge: "充值问题",
+      refund: "退款售后",
+    };
+    if (consultMap[consult]) return consultMap[consult];
+    if (consult && consult.length < 28) return consult;
+    if (isClosedConversation(c)) return "会话已结束";
+    return isOrderConversation(c) ? "订单咨询" : "人工客服咨询";
+  }
   function listHtml() {
     var activeId = state.conversation && state.conversation.id;
     var list = state.conversations || [];
@@ -1258,11 +1269,15 @@ import './mcj-chat-realtime.js';
       list
         .map(function (c) {
           var orderMode = isOrderConversation(c);
-          var title = orderMode
-            ? "订单咨询" + (c.orderNo || c.order_no ? " · " + (c.orderNo || c.order_no) : "")
-            : "人工客服咨询";
+          var line1 = sessionDisplayName(c);
+          var line2 = sessionLine2(c);
+          var line3 = isClosedConversation(c)
+            ? "会话已结束 · 可重新发起"
+            : previewMessage(c.lastMessage || "暂无消息");
           var unread = Number(c.unreadCount || 0)
-            ? '<em class="support-unread">' + esc(Number(c.unreadCount || 0) > 99 ? "99+" : c.unreadCount) + "</em>"
+            ? '<em class="support-unread" aria-label="未读">' +
+              esc(Number(c.unreadCount || 0) > 99 ? "99+" : c.unreadCount) +
+              "</em>"
             : "";
           return (
             '<button type="button" class="support-session' +
@@ -1270,15 +1285,21 @@ import './mcj-chat-realtime.js';
             (activeId && c.id === activeId ? " active" : "") +
             '" data-select-conversation="' +
             esc(c.id) +
-            '"><div class="support-session-main"><strong>' +
-            esc(title) +
-            "</strong><span>" +
-            esc(isClosedConversation(c) ? "会话已结束 · 可重新发起" : previewMessage(c.lastMessage || "暂无消息")) +
-            "</span></div><small>" +
+            '"><div class="support-session-main">' +
+            '<strong class="support-session-name">' +
+            esc(line1) +
+            "</strong>" +
+            '<span class="support-session-sub">' +
+            esc(line2) +
+            "</span>" +
+            '<span class="support-session-preview">' +
+            esc(line3) +
+            "</span></div>" +
+            '<div class="support-session-aside"><small>' +
             esc(shortTime(c.lastMessageAt || c.updatedAt || "")) +
             "</small>" +
             unread +
-            "</button>"
+            "</div></button>"
           );
         })
         .join("") +
@@ -1334,10 +1355,16 @@ import './mcj-chat-realtime.js';
       '<p class="support-chat-status">' + esc(chatStatus) + '</p>' +
       '</div></div><button class="support-btn" type="button" data-refresh>刷新</button></header>' +
       (order ? orderSummaryHtml(order) : '') +
-      '<div class="support-messages" data-messages>' +
+      '<div class="support-messages" data-messages data-cid="' +
+      esc(state.conversation.id || "") +
+      '">' +
       (state.messages.length ? state.messages.map(msgHtml).join('') : '<div class="support-list-empty">你可以先留言，客服上线后会尽快回复。</div>') +
       '</div>' +
-      '<div class="support-footer" data-support-footer>' +
+      '<div class="support-footer" data-support-footer data-closed="' +
+      (isClosedConversation(state.conversation) ? "1" : "0") +
+      '" data-emoji="' +
+      (state.emojiOpen ? "1" : "0") +
+      '">' +
       composerHtml() +
       '</div>'
     );
@@ -1400,24 +1427,131 @@ import './mcj-chat-realtime.js';
   function patchRail() {
     /* rail removed — WeChat 2-column layout */
   }
+  function patchChatHeader() {
+    var copy = root.querySelector(".support-main-copy");
+    if (!copy || !state.conversation) return false;
+    var order = conversationOrder(state.conversation);
+    var serviceName = state.conversation.customerServiceName || state.conversation.serviceName || "在线客服";
+    var orderNo = state.conversation.orderNo || state.conversation.order_no || (order && order.orderNo) || "";
+    var chatStatus = topStatusText(state.conversation);
+    if (isClosedConversation(state.conversation)) chatStatus = "会话已结束 · 可重新发起咨询";
+    else if (state.serviceStatus && !/重新安排/.test(String(state.serviceStatus || ""))) {
+      if (/等待客服接待|客服暂时离线|客服已接入|正在为您服务|会话已结束|正在为你更换客服/.test(String(state.serviceStatus))) {
+        chatStatus = state.serviceStatus;
+      }
+    }
+    var h2 = copy.querySelector("h2");
+    if (h2) {
+      h2.textContent =
+        state.conversation.customerServiceId || state.conversation.customer_service_id ? serviceName : "在线客服";
+    }
+    var orderEl = copy.querySelector(".support-order-no") || copy.querySelector("p:not(.support-chat-status)");
+    if (orderEl && !orderEl.classList.contains("support-chat-status")) {
+      if (orderNo) {
+        orderEl.className = "support-order-no";
+        orderEl.title = orderNo;
+        orderEl.textContent = "订单 " + orderNo;
+      } else {
+        orderEl.className = "";
+        orderEl.removeAttribute("title");
+        orderEl.textContent = "人工客服咨询";
+      }
+    }
+    var statusEl = copy.querySelector(".support-chat-status");
+    if (statusEl) statusEl.textContent = chatStatus;
+    return true;
+  }
+  function patchOrderSummaryOnly() {
+    var main = root.querySelector(".support-main");
+    if (!main || !state.conversation) return false;
+    var existing = main.querySelector(".support-order-summary");
+    var order = conversationOrder(state.conversation);
+    var html = order ? orderSummaryHtml(order) : "";
+    if (!html) {
+      if (existing) existing.remove();
+      return true;
+    }
+    if (existing) {
+      existing.outerHTML = html;
+      return true;
+    }
+    var head = main.querySelector(".support-main-head");
+    var msgs = main.querySelector("[data-messages]");
+    if (head && msgs) {
+      head.insertAdjacentHTML("afterend", html);
+      return true;
+    }
+    return false;
+  }
+  function patchFooterIfNeeded(force) {
+    var footer = root.querySelector("[data-support-footer]");
+    if (!footer || !state.conversation) return false;
+    var closed = isClosedConversation(state.conversation) ? "1" : "0";
+    var emoji = state.emojiOpen ? "1" : "0";
+    if (
+      !force &&
+      footer.getAttribute("data-closed") === closed &&
+      footer.getAttribute("data-emoji") === emoji &&
+      footer.querySelector("[data-send], [data-ended-panel]")
+    ) {
+      syncComposerChrome();
+      return true;
+    }
+    captureComposer();
+    footer.setAttribute("data-closed", closed);
+    footer.setAttribute("data-emoji", emoji);
+    footer.innerHTML = composerHtml();
+    syncComposerChrome();
+    return true;
+  }
   function softUpdate(opts) {
     opts = opts || {};
     captureComposer();
     syncChatChrome();
     if (canSoftPatch()) {
-      var box = root.querySelector("[data-messages]");
-      var prevBottom = box ? box.scrollHeight - box.scrollTop : 0;
-      var stickBottom = !opts.keepScroll || prevBottom < 96;
-      var prevScroll = box ? box.scrollTop : 0;
+      var activeId = state.conversation && state.conversation.id ? String(state.conversation.id) : "";
+      var messagesBox = root.querySelector("[data-messages]");
+      var renderedId = messagesBox ? String(messagesBox.getAttribute("data-cid") || "") : "";
+      var hasChatShell = !!(
+        root.querySelector(".support-main-head") &&
+        messagesBox &&
+        root.querySelector("[data-support-footer]")
+      );
+      var needFullMain =
+        !!opts.forceMain ||
+        !state.conversation ||
+        !hasChatShell ||
+        !activeId ||
+        renderedId !== activeId ||
+        !!state.authLoading ||
+        !!state.customerLoading ||
+        !!state.authError ||
+        !state.identity ||
+        (!!state.error && !state.conversation) ||
+        (!!state.loading && !state.conversation && !(state.conversations || []).length);
+
       patchAsideHead();
       patchSessionList();
-      patchMain();
-      var next = root.querySelector("[data-messages]");
-      if (next) {
-        if (stickBottom) next.scrollTop = next.scrollHeight;
-        else next.scrollTop = Math.max(0, prevScroll);
+
+      if (needFullMain) {
+        var box = messagesBox;
+        var prevBottom = box ? box.scrollHeight - box.scrollTop : 0;
+        var stickBottom = !opts.keepScroll || prevBottom < 96;
+        var prevScroll = box ? box.scrollTop : 0;
+        patchMain();
+        var next = root.querySelector("[data-messages]");
+        if (next) {
+          if (stickBottom) next.scrollTop = next.scrollHeight;
+          else next.scrollTop = Math.max(0, prevScroll);
+        }
+        syncComposerChrome();
+        return;
       }
-      syncComposerChrome();
+
+      patchChatHeader();
+      patchOrderSummaryOnly();
+      patchMessages(opts);
+      patchFooterIfNeeded(!!opts.remountFooter);
       return;
     }
     paint(opts);
@@ -1611,12 +1745,29 @@ import './mcj-chat-realtime.js';
       if (!hasAuthSession() || state.sending || state.opening || document.hidden) return;
       if (!state.poolRealtimeBound) bindBossPoolRealtime(true);
       if (!state.conversation || !state.conversation.id) {
-        loadList().then(function () { softUpdate({ keepScroll: true }); }).catch(function () {});
+        loadList()
+          .then(function () {
+            if (canSoftPatch()) {
+              patchAsideHead();
+              patchSessionList();
+            } else softUpdate({ keepScroll: true });
+          })
+          .catch(function () {});
         return;
       }
-      // Realtime is primary; poll only active thread + conversation list (orders load on demand).
-      Promise.all([loadList(), loadThread(state.conversation.id, true)]).catch(function () {});
-    }, 10000);
+      // List poll keeps unread badges fresh; thread poll is fallback when realtime is down.
+      loadList()
+        .then(function () {
+          if (canSoftPatch()) {
+            patchAsideHead();
+            patchSessionList();
+          }
+        })
+        .catch(function () {});
+      if (!state.realtimeReady) {
+        loadThread(state.conversation.id, true).catch(function () {});
+      }
+    }, 12000);
   }
 
   root.addEventListener('input', function (e) {
@@ -1725,7 +1876,7 @@ import './mcj-chat-realtime.js';
     var emojiToggle = e.target.closest('[data-toggle-emoji]');
     if (emojiToggle) {
       state.emojiOpen = !state.emojiOpen;
-      softUpdate({ keepScroll: true });
+      softUpdate({ keepScroll: true, remountFooter: true });
       return;
     }
     var imgBtn = e.target.closest('[data-chat-image-btn]');
@@ -1777,7 +1928,7 @@ import './mcj-chat-realtime.js';
       var emoji = emojiBtn.getAttribute('data-emoji') || '';
       state.composerDraft = String(state.composerDraft || '') + emoji;
       state.composerFocused = true;
-      softUpdate({ keepScroll: true });
+      softUpdate({ keepScroll: true, remountFooter: true });
       setTimeout(focusComposer, 0);
       return;
     }
@@ -2014,13 +2165,26 @@ import './mcj-chat-realtime.js';
   });
 
   document.addEventListener('visibilitychange', function () {
-    if (!document.hidden && hasAuthSession()) bootstrap();
+    if (document.hidden || !hasAuthSession()) return;
+    // Soft refresh only — full bootstrap remounts composer and reloads everything.
+    loadList()
+      .then(function () {
+        if (canSoftPatch()) {
+          patchAsideHead();
+          patchSessionList();
+        } else softUpdate({ keepScroll: true });
+        if (state.conversation && state.conversation.id) {
+          return loadThread(state.conversation.id, true);
+        }
+      })
+      .catch(function () {});
   });
 
   function syncKeyboardInset() {
     try {
       var vv = window.visualViewport;
-      if (!vv) {
+      var mobile = window.matchMedia && window.matchMedia("(max-width: 820px)").matches;
+      if (!vv || !mobile) {
         document.documentElement.style.setProperty("--support-keyboard-inset", "0px");
         return;
       }

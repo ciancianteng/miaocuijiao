@@ -105,7 +105,7 @@
 
     var qr =
       info && info.qrUrl
-        ? '<div class="pay-qr-frame"><img src="' +
+        ? '<div class="pay-qr-frame" data-pay-qr-zoom="1" role="button" tabindex="0" aria-label="点击放大收款二维码"><img src="' +
           esc(info.qrUrl) +
           '" alt="' +
           esc((info.title || methodName(o.paymentMethod)) + " 收款二维码") +
@@ -607,6 +607,48 @@
     }
   }
 
+  function ensurePayQrLightbox() {
+    var box = document.getElementById("payQrLightbox");
+    if (box) return box;
+    box = document.createElement("div");
+    box.id = "payQrLightbox";
+    box.className = "pay-qr-lightbox";
+    box.setAttribute("hidden", "");
+    box.innerHTML =
+      '<div class="pay-qr-lightbox-panel" role="dialog" aria-modal="true" aria-label="收款二维码放大预览">' +
+      '<button type="button" class="pay-qr-lightbox-close" data-pay-qr-close aria-label="关闭">×</button>' +
+      '<img alt="收款二维码大图" data-pay-qr-lightbox-img="1" referrerpolicy="no-referrer">' +
+      '<p class="pay-qr-lightbox-hint">点击遮罩或关闭按钮可关闭</p>' +
+      "</div>";
+    document.body.appendChild(box);
+    box.addEventListener("click", function (e) {
+      if (e.target && e.target.closest && e.target.closest("[data-pay-qr-close]")) {
+        closePayQrLightbox();
+        return;
+      }
+      if (e.target === box) closePayQrLightbox();
+    });
+    return box;
+  }
+  function openPayQrLightbox(src) {
+    var url = String(src || "").trim();
+    if (!url) return;
+    var box = ensurePayQrLightbox();
+    var img = box.querySelector("[data-pay-qr-lightbox-img]");
+    if (img) {
+      img.removeAttribute("src");
+      img.src = url;
+    }
+    box.classList.add("is-open");
+    box.removeAttribute("hidden");
+  }
+  function closePayQrLightbox() {
+    var box = document.getElementById("payQrLightbox");
+    if (!box) return;
+    box.classList.remove("is-open");
+    box.setAttribute("hidden", "");
+  }
+
   document.addEventListener("click", function (e) {
     var camp = e.target.closest("[data-campaign]");
     if (camp) {
@@ -649,6 +691,14 @@
       submitPaid();
       return;
     }
+    var zoom = e.target.closest("[data-pay-qr-zoom], [data-mcj-pay-qr]");
+    if (zoom && root.contains(zoom)) {
+      e.preventDefault();
+      var img = zoom.tagName === "IMG" ? zoom : zoom.querySelector("img[data-mcj-pay-qr], img");
+      var src = (img && img.currentSrc) || (img && img.src) || (state.payInfo && state.payInfo.qrUrl) || "";
+      openPayQrLightbox(src);
+      return;
+    }
     var openPay = e.target.closest("[data-open-pay]");
     if (openPay) {
       openExistingPayment(openPay.getAttribute("data-open-pay") || "");
@@ -665,6 +715,16 @@
       sessionStorage.removeItem("mcjAuthRefreshToken");
       location.href = "index.html";
     }
+  });
+
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") closePayQrLightbox();
+    if (e.key !== "Enter" && e.key !== " ") return;
+    var zoom = e.target.closest && e.target.closest("[data-pay-qr-zoom]");
+    if (!zoom || !root.contains(zoom)) return;
+    e.preventDefault();
+    var img = zoom.querySelector("img[data-mcj-pay-qr], img");
+    openPayQrLightbox((img && img.src) || (state.payInfo && state.payInfo.qrUrl) || "");
   });
 
   document.addEventListener("change", function (e) {
