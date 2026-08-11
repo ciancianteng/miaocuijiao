@@ -120,8 +120,8 @@
       var v=String(s||'').trim().toLowerCase();
       if(!v||/none|not_submitted|missing|unsubmitted|draft|uploaded|unpaid|未缴/.test(v))return '未缴纳';
       if(/reject|declin|fail/.test(v))return '审核未通过';
-      if(/^(approved|verified|passed|paid|active|completed|received)$|已通过|已缴纳/.test(v))return '已通过';
-      if(/pending|review|submit|待审/.test(v))return '审核中';
+      if(/^(approved|verified|passed|paid|active|completed|received)$|已通过|已缴纳/.test(v))return '已缴纳 ✓';
+      if(/pending|review|submit|待审/.test(v))return '押金审核中';
       if(/^[a-z][a-z0-9_]*$/i.test(v))return '未缴纳';
       return '未缴纳';
     },
@@ -722,8 +722,7 @@
     }
     if(deposit){
       var dfd=new FormData(deposit);
-      draft.paid_amount=String(dfd.get('paid_amount')||'');
-      draft.payment_method=String(dfd.get('payment_method')||'');
+      draft.channel_id=String(dfd.get('channel_id')||'');
       draft.deposit_remark=String(dfd.get('remark')||'');
     }
     var activeForm=document.activeElement&&document.activeElement.closest
@@ -2112,6 +2111,105 @@
     var missText=missing.length?missing.join('、'):(status||'资料不完整');
     return '<div class="pw-alert" role="status"><strong>尚未对老板公开</strong><span>'+esc(status||'资料不完整')+'：'+esc(missText)+'。完善并审核通过后才会出现在首页/大厅，且老板才能下单。</span><button class="pw-btn" type="button" data-route="/companion/profile">去完善资料</button></div>';
   }
+  function depositChannelsFromState(){
+    var d=(state.data&&state.data.deposit)||{};
+    var list=d.depositChannels||d.channels||[];
+    return Array.isArray(list)?list:[];
+  }
+  function depositPayInfoHtml(channel,selectedId){
+    if(!channel)return '<p class="pw-note" style="color:#ff8aa0">俱乐部尚未配置押金收款渠道，请联系管理员。</p>';
+    var info=channel.payInfo||{};
+    var id=String(channel.id||channel.code||'');
+    var checked=selectedId?id===selectedId:true;
+    var qr=String(info.qrUrl||'').trim();
+    var accountLabel=/duitnow/i.test(id+String(channel.label||''))?'DuitNow ID':'银行账号';
+    var accountVal=String(info.duitnowId||info.bankAccount||info.phone||'').trim();
+    return '<label class="pw-deposit-channel'+(checked?' is-active':'')+'" data-deposit-channel-card="'+esc(id)+'">'+
+      '<input type="radio" name="channel_id" value="'+esc(id)+'" '+(checked?'checked':'')+' required>'+
+      '<div class="pw-deposit-channel-body">'+
+      '<strong>'+esc(channel.label||channel.name||id)+'</strong>'+
+      '<div class="pw-info-list">'+
+        infoRow('支付方式',channel.label||channel.name||'-')+
+        infoRow('收款人名称',info.receiverName||'-')+
+        infoRow('银行名称',info.bankName||'-')+
+        infoRow(accountLabel,accountVal||'-')+
+        infoRow('应付金额','RM '+(info.amountRm!=null?info.amountRm:100))+
+      '</div>'+
+      (qr
+        ?('<div class="pw-deposit-qr-block"><p class="pw-note">收款二维码（点击可放大扫码）</p>'+
+          '<div class="pay-qr-frame" data-pay-qr-zoom="1" role="button" tabindex="0" aria-label="点击放大收款二维码">'+
+          '<img src="'+esc(qr)+'" alt="押金收款二维码" data-mcj-pay-qr="1" referrerpolicy="no-referrer">'+
+          '</div></div>')
+        :'<p class="pw-note">该渠道暂无二维码，请按上方账号信息转账。</p>')+
+      (info.instructions?'<p class="pw-note">'+esc(info.instructions)+'</p>':'')+
+      '</div></label>';
+  }
+  function openDepositQrLightbox(src){
+    if(!src)return;
+    var box=document.getElementById('pwDepositQrLightbox');
+    if(!box){
+      box=document.createElement('div');
+      box.id='pwDepositQrLightbox';
+      box.className='pay-qr-lightbox';
+      box.innerHTML=
+        '<div class="pay-qr-lightbox-panel" role="dialog" aria-modal="true" aria-label="收款二维码放大预览">'+
+        '<button type="button" class="pay-qr-lightbox-close" data-pay-qr-close aria-label="关闭">×</button>'+
+        '<img alt="收款二维码大图" data-pay-qr-lightbox-img="1" referrerpolicy="no-referrer">'+
+        '<p class="pay-qr-lightbox-hint">点击遮罩或关闭按钮可关闭</p>'+
+        '</div>';
+      box.addEventListener('click',function(e){
+        if(e.target===box||(e.target&&e.target.closest&&e.target.closest('[data-pay-qr-close]'))){
+          box.classList.remove('is-open');
+        }
+      });
+      document.body.appendChild(box);
+    }
+    var img=box.querySelector('[data-pay-qr-lightbox-img]');
+    if(img)img.src=src;
+    box.classList.add('is-open');
+  }
+  function depositBadgeHtml(){
+    var ua=unifiedAccess();
+    var d=(state.data&&state.data.deposit)||{};
+    if(!(ua.depositVerified||/paid|approved|verified|passed|已缴纳/.test(String(ua.deposit_status||d.status||'').toLowerCase())))return '';
+    return '<section class="pw-card pad pw-deposit-badge" data-deposit-badge style="margin-top:14px">'+
+      '<h3>押金证明</h3>'+
+      '<div class="pw-info-list">'+
+        infoRow('押金','RM '+(d.requiredAmount!=null?d.requiredAmount:(d.amountRm||100)))+
+        infoRow('状态','已缴纳 ✓')+
+        infoRow('记录编号',d.recordNo||'-')+
+        infoRow('缴纳时间',d.paidAt?fmtTime(d.paidAt):'-')+
+      '</div>'+
+      '<div class="pw-actions" style="margin-top:12px"><button class="pw-btn" type="button" data-view-deposit-record>查看押金记录</button></div>'+
+      '</section>';
+  }
+  function depositRecordModalHtml(){
+    var d=(state.data&&state.data.deposit)||{};
+    var hist=Array.isArray(d.history)&&d.history.length?d.history:[{
+      recordNo:d.recordNo||'',
+      requiredAmount:d.requiredAmount||d.amountRm||100,
+      paidAmount:d.paidAmount||100,
+      statusLabel:STATUS_CN.deposit(d.status),
+      paidAt:d.paidAt||'',
+      paymentMethod:d.paymentMethod||'',
+      reviewedAt:d.reviewedAt||''
+    }];
+    return '<div class="pw-deposit-record-modal" data-deposit-record-modal>'+
+      '<div class="pw-deposit-record-panel" role="dialog" aria-modal="true" aria-label="押金记录">'+
+      '<button type="button" class="pw-btn" data-close-deposit-record>关闭</button>'+
+      '<h3>押金记录</h3>'+
+      hist.map(function(row){
+        return '<div class="pw-info-list" style="margin-top:12px">'+
+          infoRow('记录编号',row.recordNo||row.id||'-')+
+          infoRow('金额','RM '+(row.requiredAmount!=null?row.requiredAmount:(row.paidAmount||100)))+
+          infoRow('状态',row.statusLabel||STATUS_CN.deposit(row.status))+
+          infoRow('付款方式',row.paymentMethod||'-')+
+          infoRow('缴纳时间',row.paidAt?fmtTime(row.paidAt):'-')+
+          infoRow('审核时间',row.reviewedAt?fmtTime(row.reviewedAt):'-')+
+        '</div>';
+      }).join('')+
+      '</div></div>';
+  }
   function dashboardHtml(){
     var s=(state.data||{}).summary||{};
     var online=currentOnlineStatus()==='online';
@@ -2128,6 +2226,7 @@
       publishGateBannerHtml()+
       reviewBanner+
       extra+
+      depositBadgeHtml()+
       statusSwitcherHtml()+
       (!locked&&!online?'<div class="pw-note" style="margin:0 0 14px">请先切换为在线接单。</div>':'')+
       '<section class="pw-grid">'+
@@ -3096,6 +3195,8 @@
     var paidAmount=accountDraftVal('paid_amount',d.paidAmount||'');
     var paymentMethod=accountDraftVal('payment_method',d.paymentMethod||'');
     var depositRemark=accountDraftVal('deposit_remark',d.remark||'');
+    var depositChannelList=depositChannelsFromState();
+    var selectedChannelId=accountDraftVal('channel_id',d.channelId||(depositChannelList[0]&&(depositChannelList[0].id||depositChannelList[0].code))||'');
     var idPhase=privacyReviewPhase(idStatusRaw,{submitted:idSubmitted});
     var verifyLocked=idPhase==='pending'||idPhase==='approved';
     var depositLocked=depositPhase==='pending'||depositPhase==='approved';
@@ -3134,33 +3235,56 @@
       '<label>TNG 账号<input name="tng_account" value="'+esc(tngAccount)+'"></label>'+
       '<label>备注<textarea name="remark">'+esc(verifyRemark)+'</textarea></label>'+
       '<button class="pw-btn primary" type="submit">'+(privacyReviewPhase(idStatusRaw,{submitted:idSubmitted})==='rejected'?'重新提交身份证认证':'提交身份证认证')+'</button></form>';
-    var depositView=
+    var depositPaidView=
       '<section class="pw-card pad pw-form-narrow pw-account-deposit" style="margin-top:14px" data-deposit-view>'+
       '<h3>B. 押金认证（RM100）</h3>'+
       privacyReviewBannerHtml(depositPhase,depositReject,'deposit')+
-      '<p class="pw-note">状态：<strong>'+esc(depositStatus)+'</strong>（仅后台审核通过才算完成）</p>'+
       '<div class="pw-info-list">'+
-        infoRow('已缴金额',d.paidAmount!=null&&d.paidAmount!==''?('RM '+d.paidAmount):'-')+
+        infoRow('押金','RM '+(d.requiredAmount!=null?d.requiredAmount:(d.amountRm||100)))+
+        infoRow('状态','已缴纳 ✓')+
+        infoRow('记录编号',d.recordNo||'-')+
+        infoRow('缴纳时间',d.paidAt?fmtTime(d.paidAt):'-')+
         infoRow('付款方式',d.paymentMethod||'-')+
         infoRow('付款凭证',(d.hasProof||d.proofUrl)?'已上传':'-')+
-        infoRow('备注',d.remark||'-')+
+      '</div>'+
+      '<div class="pw-actions" style="margin-top:12px"><button class="pw-btn" type="button" data-view-deposit-record>查看押金记录</button></div>'+
+      (d.proofUrl?'<div class="pw-doc-preview-wrap" style="margin-top:12px"><img class="pw-doc-preview" src="'+esc(d.proofUrl)+'" alt="押金凭证"></div>':'')+
+      '</section>';
+    var depositPendingView=
+      '<section class="pw-card pad pw-form-narrow pw-account-deposit" style="margin-top:14px" data-deposit-view>'+
+      '<h3>B. 押金认证（RM100）</h3>'+
+      privacyReviewBannerHtml(depositPhase,depositReject,'deposit')+
+      '<p class="pw-note">状态：<strong>押金审核中</strong>（仅后台管理员审核通过才算完成）</p>'+
+      '<div class="pw-info-list">'+
+        infoRow('应付 / 已缴','RM '+(d.paidAmount!=null&&d.paidAmount!==''?d.paidAmount:(d.requiredAmount||100)))+
+        infoRow('付款方式',d.paymentMethod||'-')+
+        infoRow('记录编号',d.recordNo||'-')+
+        infoRow('付款凭证',(d.hasProof||d.proofUrl)?'已上传':'-')+
+        infoRow('备注',(d.remark||'').replace(/\[\[DEPOSIT_PAY\]\][\s\S]*?\[\[\/DEPOSIT_PAY\]\]/g,'').trim()||'-')+
       '</div>'+
       (d.proofUrl?'<div class="pw-doc-preview-wrap" style="margin-top:12px"><img class="pw-doc-preview" src="'+esc(d.proofUrl)+'" alt="押金凭证"></div>':'')+
       '</section>';
+    var depositChannelsHtml=depositChannelList.length
+      ?('<div class="pw-deposit-channels" data-deposit-channels>'+depositChannelList.map(function(ch){
+          var cid=String(ch.id||ch.code||'');
+          return depositPayInfoHtml(ch,selectedChannelId||cid);
+        }).join('')+'</div>')
+      :'<p class="pw-note" style="color:#ff8aa0">俱乐部尚未配置可用的押金收款渠道。请联系管理员在后台「支付设置」启用押金收款。</p>';
     var depositForm=
       '<form class="pw-card pad pw-form pw-form-narrow pw-account-deposit" style="margin-top:14px" data-deposit-form>'+
       '<h3>B. 押金认证（RM100）</h3>'+
       privacyReviewBannerHtml(depositPhase,depositReject,'deposit')+
-      '<p class="pw-note">提交付款凭证后等待后台审核。审核通过 = 押金认证完成（与身份证二选一即可）。</p>'+
-      '<label>已缴金额 RM<input name="paid_amount" type="number" min="1" required value="'+esc(paidAmount)+'"></label>'+
-      '<label>付款方式<input name="payment_method" required value="'+esc(paymentMethod)+'" placeholder="例如：银行转账 / TNG"></label>'+
+      '<p class="pw-note">请按下方俱乐部真实收款资料支付 <strong>RM100</strong>，上传付款凭证后点击「提交押金审核」。审核通过 = 押金认证完成（与身份证二选一即可）。</p>'+
+      depositChannelsHtml+
       accountDocCard({key:'deposit_proof',label:'押金付款凭证',cta:'上传付款凭证',url:d.proofUrl||'',statusText:depositStatus,rejectReason:depositReject})+
-      '<label>备注<textarea name="remark">'+esc(depositRemark)+'</textarea></label>'+
-      '<button class="pw-btn primary" type="submit">'+(depositPhase==='rejected'?'重新提交押金凭证':'提交押金凭证')+'</button></form>';
+      '<label>备注（可选）<textarea name="remark">'+esc((depositRemark||'').replace(/\[\[DEPOSIT_PAY\]\][\s\S]*?\[\[\/DEPOSIT_PAY\]\]/g,'').trim())+'</textarea></label>'+
+      '<button class="pw-btn primary" type="submit" '+(depositChannelList.length?'':'disabled')+'>'+(depositPhase==='rejected'?'重新提交押金审核':'提交押金审核')+'</button></form>';
+    var depositBlock=depositPhase==='approved'?depositPaidView:(depositLocked?depositPendingView:depositForm);
     return '<div class="pw-page-head"><div><h2>账号中心（隐私）</h2><p>仅本人 / 客服 / 后台可见，老板永远看不到。</p></div><button class="pw-btn" type="button" data-route="/companion/profile">公开资料</button></div>'+
       accountAccessBannerHtml()+
       reviewRejectBannerHtml('/companion/account')+
       credentialBanner+
+      (depositPhase==='approved'?depositBadgeHtml():'')+
       '<div class="pw-alert"><strong>隐私提示</strong><span>本页面仅本人和平台后台可见，不会公开给老板。</span></div>'+
       '<div class="pw-two-col">'+
         '<section class="pw-card pad"><h3>账号信息</h3><div class="pw-info-list">'+
@@ -3174,18 +3298,21 @@
           infoRow('收款账户审核',STATUS_CN.verification(bankStatusRaw))+
           infoRow('银行名称',v.bankName||'未填写')+
           infoRow('当前提现账户',rules.currentAccount||'未绑定')+
-          infoRow('押金认证',STATUS_CN.deposit(ua.deposit_status))+
+          infoRow('押金',depositPhase==='approved'?('RM '+(d.requiredAmount||d.amountRm||100)):'RM 100')+
+          infoRow('押金状态',STATUS_CN.deposit(ua.deposit_status))+
           infoRow('账号接单权限',STATUS_CN.accountAccess(ua.account_access_status))+
           infoRow('当前等级',level.level||p.level||'未设置')+
         '</div>'+
-        '<div class="pw-actions" style="margin-top:12px"><button class="pw-btn primary" type="button" data-route="/companion/earnings" data-earnings-tab="withdraw">去提现</button></div>'+
+        '<div class="pw-actions" style="margin-top:12px"><button class="pw-btn primary" type="button" data-route="/companion/earnings" data-earnings-tab="withdraw">去提现</button>'+
+        (depositPhase==='approved'?'<button class="pw-btn" type="button" data-view-deposit-record>查看押金记录</button>':'')+
+        '</div>'+
         '</section>'+
       '</div>'+
       '<form class="pw-card pad pw-form pw-form-narrow" style="margin-top:14px" data-private-contact-form><h3>联系方式</h3>'+
       '<label>联系方式（WhatsApp / 手机）<input name="contact_phone" value="'+esc(contactPhone)+'" required placeholder="仅后台/客服可见"></label>'+
       '<button class="pw-btn primary" type="submit">保存联系方式</button></form>'+
       (verifyLocked?verifyView:verifyForm)+
-      (depositLocked?depositView:depositForm)+
+      depositBlock+
       '<section class="pw-card pad pw-form-narrow" style="margin-top:14px" id="pwAccountSecurityMount"><h3>账号安全</h3><div class="pw-empty">加载中…</div></section>';
   }
   function rulesHtml(){
@@ -3529,6 +3656,25 @@
     api('reorder_media',{ordered_ids:media.map(function(m){return m.id})}).then(function(res){toast(res.message||'顺序已更新');return loadData()}).catch(function(err){toast(err.message)});
   }
   document.addEventListener('click',function(e){
+    var qrZoom=e.target.closest('[data-pay-qr-zoom], [data-mcj-pay-qr]');
+    if(qrZoom && (e.target.closest('[data-deposit-form], [data-deposit-view], [data-deposit-channels]')||qrZoom.closest('.pw-deposit-qr-block'))){
+      var qImg=qrZoom.tagName==='IMG'?qrZoom:qrZoom.querySelector('img[data-mcj-pay-qr], img');
+      if(qImg&&qImg.src){e.preventDefault();openDepositQrLightbox(qImg.src);return}
+    }
+    if(e.target.closest('[data-view-deposit-record]')){
+      e.preventDefault();
+      var existing=document.querySelector('[data-deposit-record-modal]');
+      if(existing)existing.remove();
+      var wrap=document.createElement('div');
+      wrap.innerHTML=depositRecordModalHtml();
+      document.body.appendChild(wrap.firstChild);
+      return;
+    }
+    if(e.target.closest('[data-close-deposit-record]')||(e.target.matches&&e.target.matches('[data-deposit-record-modal]'))){
+      var modal=e.target.closest('[data-deposit-record-modal]')||document.querySelector('[data-deposit-record-modal]');
+      if(modal)modal.remove();
+      return;
+    }
     var tab=e.target.closest('[data-auth-tab]');
     if(tab){
       state.authTab=tab.dataset.authTab==='register'?'register':'login';
@@ -4614,14 +4760,17 @@
       df.forEach(function(v,k){dp[k]=String(v||'')});
       var dep=(state.data&&state.data.deposit)||{};
       if(!dep.hasProof&&!dep.proofUrl){toast('请先上传押金付款凭证');return}
+      if(!String(dp.channel_id||'').trim()){toast('请选择俱乐部收款渠道');return}
       delete dp.proof_url;
+      delete dp.payment_method;
+      delete dp.paid_amount;
       var dBtn=dForm.querySelector('[type="submit"]');
-      var dLabel=dBtn?String(dBtn.textContent||'提交押金凭证'):'提交押金凭证';
+      var dLabel=dBtn?String(dBtn.textContent||'提交押金审核'):'提交押金审核';
       if(dBtn){dBtn.disabled=true;dBtn.textContent='提交中…';}
       api('submit_deposit_proof',dp).then(function(res){
         state.accountDraft=null;
         if(dBtn){dBtn.disabled=false;dBtn.textContent=dLabel;}
-        toast(res.message||'已提交审核，等待后台审核。');
+        toast(res.message||'已提交押金审核，状态：押金审核中。');
         return loadData({soft:true,forcePaint:true,preserveScroll:true});
       }).catch(function(err){
         if(dBtn){dBtn.disabled=false;dBtn.textContent=dLabel;}

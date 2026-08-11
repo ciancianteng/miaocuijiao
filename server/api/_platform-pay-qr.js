@@ -152,6 +152,7 @@ export function channelScopeFlags(data = {}, pub = {}) {
   return {
     forOrder: read("forOrder"),
     forRecharge: read("forRecharge"),
+    forDeposit: read("forDeposit"),
   };
 }
 
@@ -200,6 +201,7 @@ function channelMeta(channelId, channelRow, publicMap = {}) {
     enabled,
     forOrder: scopes.forOrder,
     forRecharge: scopes.forRecharge,
+    forDeposit: scopes.forDeposit,
     category,
     publicLabel,
     qrUrl,
@@ -481,6 +483,7 @@ export async function listBossPaymentMethods(methodRows = []) {
       open,
       forOrder: meta.forOrder !== false,
       forRecharge: meta.forRecharge !== false,
+      forDeposit: meta.forDeposit !== false,
       mode: channelRow?.mode || methodRow?.mode || "test",
       statusText: open ? "可用" : "暂未开放",
       payInfo: payInfo && payInfo.enabled ? payInfo : null,
@@ -567,6 +570,48 @@ export async function listBossOrderPaymentMethods(methodRows = []) {
 /** Boss recharge methods: open + forRecharge (no catfood — recharge tops up wallet). */
 export function filterBossRechargeMethods(methods = []) {
   return (methods || []).filter((m) => m && m.open && m.forRecharge !== false && m.code !== "catfood");
+}
+
+/**
+ * Companion RM100 deposit pay channels: enabled + forDeposit + usable manual payInfo.
+ * Never includes catfood / API-gateway-only methods without payee details.
+ */
+export async function listDepositPaymentMethods(methodRows = []) {
+  const listed = await listBossPaymentMethods(methodRows);
+  const methods = (listed.methods || [])
+    .filter(
+      (m) =>
+        m &&
+        m.open &&
+        m.forDeposit !== false &&
+        m.code !== "catfood" &&
+        m.payInfo &&
+        (m.payInfo.qrUrl || m.payInfo.bankAccount || m.payInfo.duitnowId || m.payInfo.phone)
+    )
+    .map((m) => ({
+      id: m.code,
+      code: m.code,
+      label: m.name,
+      name: m.name,
+      open: true,
+      enabled: true,
+      forDeposit: true,
+      category: m.category || "manual",
+      statusText: "可用",
+      payInfo: {
+        channelId: m.payInfo.channelId || m.code,
+        title: m.payInfo.title || m.name,
+        qrUrl: m.payInfo.qrUrl || "",
+        duitnowId: m.payInfo.duitnowId || "",
+        receiverName: m.payInfo.receiverName || "",
+        bankName: m.payInfo.bankName || "",
+        bankAccount: m.payInfo.bankAccount || "",
+        phone: m.payInfo.phone || "",
+        instructions: m.payInfo.instructions || "",
+        amountRm: 100,
+      },
+    }));
+  return { tableReady: listed.tableReady, methods, amountRm: 100 };
 }
 
 /** Keys that must never appear on public platform settings responses. */

@@ -177,8 +177,10 @@
         var data = item.data || {};
         var forOrder = item.forOrder != null ? item.forOrder !== false : data.forOrder !== false;
         var forRecharge = item.forRecharge != null ? item.forRecharge !== false : data.forRecharge !== false;
+        var forDeposit = item.forDeposit != null ? item.forDeposit !== false : data.forDeposit !== false;
         var orderVisible = item.bossOrderOpen === true || (item.open === true && forOrder);
         var rechargeVisible = item.bossRechargeOpen === true || (item.open === true && forRecharge);
+        var depositVisible = item.bossDepositOpen === true || (item.open === true && forDeposit);
         return (
           '<article class="payment-channel-card">' +
           '<div class="payment-channel-icon">' +
@@ -196,6 +198,7 @@
           chip(enabledText) +
           chip(orderVisible ? "订单可见" : "订单不可见") +
           chip(rechargeVisible ? "充值可见" : "充值不可见") +
+          chip(depositVisible ? "押金可见" : "押金不可见") +
           "<small>" +
           esc(modeLabel(item.mode)) +
           " · SoT=payment_channels · " +
@@ -339,6 +342,11 @@
       ((data.forRecharge !== false && item.forRecharge !== false) ? " selected" : "") +
       '>是</option><option value="false"' +
       ((data.forRecharge === false || item.forRecharge === false) ? " selected" : "") +
+      ">否</option></select></label>" +
+      '<label><span>适用于陪玩押金（RM100）</span><select name="forDeposit"><option value="true"' +
+      ((data.forDeposit !== false && item.forDeposit !== false) ? " selected" : "") +
+      '>是</option><option value="false"' +
+      ((data.forDeposit === false || item.forDeposit === false) ? " selected" : "") +
       ">否</option></select></label>" +
       '<label><span>最低充值金额</span><input name="minAmount" inputmode="decimal" value="' +
       esc(data.minAmount != null ? data.minAmount : 10) +
@@ -582,6 +590,7 @@
       instructions: String(fd.get("instructions") || ""),
       forOrder: String(fd.get("forOrder")) !== "false",
       forRecharge: String(fd.get("forRecharge")) !== "false",
+      forDeposit: String(fd.get("forDeposit")) !== "false",
       manual: manual,
     });
     return {
@@ -653,6 +662,7 @@
         visible: ch.visible !== false,
         forOrder: data.forOrder !== false,
         forRecharge: data.forRecharge !== false,
+        forDeposit: data.forDeposit !== false,
         publicLabel: data.publicLabel || ch.name || "",
         bankName: manual.bankName || "",
         accountName: manual.receiverName || "",

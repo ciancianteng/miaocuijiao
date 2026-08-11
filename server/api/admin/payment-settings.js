@@ -258,11 +258,13 @@ function publicConfigFromChannel(channel = {}, data = {}, qrUrl = "") {
   const manual = data.manual && typeof data.manual === "object" ? data.manual : {};
   const forOrder = data.forOrder != null ? data.forOrder !== false : true;
   const forRecharge = data.forRecharge != null ? data.forRecharge !== false : true;
+  const forDeposit = data.forDeposit != null ? data.forDeposit !== false : true;
   return {
     enabled: channel.enabled !== false,
     visible: channel.visible !== false,
     forOrder,
     forRecharge,
+    forDeposit,
     publicLabel: data.publicLabel || channel.name || "",
     bankName: manual.bankName || "",
     accountName: manual.receiverName || "",
@@ -509,6 +511,7 @@ function applyPublicPayOverlay(channels = [], publicMap = {}) {
         ...ch,
         forOrder: data0.forOrder != null ? data0.forOrder !== false : true,
         forRecharge: data0.forRecharge != null ? data0.forRecharge !== false : true,
+        forDeposit: data0.forDeposit != null ? data0.forDeposit !== false : true,
       };
     }
     const data = ch.data && typeof ch.data === "object" ? { ...ch.data } : {};
@@ -535,6 +538,7 @@ function applyPublicPayOverlay(channels = [], publicMap = {}) {
     if (pub.maxAmount != null && data.maxAmount == null) data.maxAmount = pub.maxAmount;
     if (pub.forOrder != null && data.forOrder == null) data.forOrder = pub.forOrder !== false;
     if (pub.forRecharge != null && data.forRecharge == null) data.forRecharge = pub.forRecharge !== false;
+    if (pub.forDeposit != null && data.forDeposit == null) data.forDeposit = pub.forDeposit !== false;
     data.manual = manual;
     // SoT: payment_channels.enabled / visible are separate. Do not invent a collapsed
     // "enabled" that disagrees with boss listBossPaymentMethods.
@@ -543,15 +547,18 @@ function applyPublicPayOverlay(channels = [], publicMap = {}) {
     const configured = bossManualConfigured(id, { ...manual, qrUrl, phone, bankAccount, receiverName, duitnowId }, ch.category);
     const forOrder = data.forOrder != null ? data.forOrder !== false : true;
     const forRecharge = data.forRecharge != null ? data.forRecharge !== false : true;
+    const forDeposit = data.forDeposit != null ? data.forDeposit !== false : true;
     return {
       ...ch,
       enabled,
       visible,
       forOrder,
       forRecharge,
+      forDeposit,
       configured,
       bossOrderOpen: !!(enabled && visible && configured && forOrder),
       bossRechargeOpen: !!(enabled && visible && configured && forRecharge),
+      bossDepositOpen: !!(enabled && visible && configured && forDeposit),
       mode: ch.mode || pub.mode || "test",
       data,
       config_status: configured ? (enabled && visible ? "已启用" : "已配置") : ch.config_status || "未配置",
@@ -915,14 +922,20 @@ async function handler(req, res) {
       // Enrich with the SAME open flags boss /api/recharge uses (no separate criteria).
       let bossOrderCodes = [];
       let bossRechargeCodes = [];
+      let bossDepositCodes = [];
       try {
-        const { listBossOrderPaymentMethods, listBossPaymentMethods, filterBossRechargeMethods } = await import(
-          "../_platform-pay-qr.js"
-        );
+        const {
+          listBossOrderPaymentMethods,
+          listBossPaymentMethods,
+          filterBossRechargeMethods,
+          listDepositPaymentMethods,
+        } = await import("../_platform-pay-qr.js");
         const orderListed = await listBossOrderPaymentMethods([]);
         const listed = await listBossPaymentMethods([]);
+        const depositListed = await listDepositPaymentMethods([]);
         bossOrderCodes = (orderListed.methods || []).map((m) => m.code).filter((c) => c && c !== "catfood");
         bossRechargeCodes = filterBossRechargeMethods(listed.methods || []).map((m) => m.code);
+        bossDepositCodes = (depositListed.methods || []).map((m) => m.code).filter(Boolean);
         state.channels = (state.channels || []).map((ch) => {
           const id = ch.channel_id || ch.id;
           const hit = (listed.methods || []).find((m) => m.code === id);
@@ -930,14 +943,17 @@ async function handler(req, res) {
           const open = hit ? !!hit.open : !!(ch.enabled && configured);
           const forOrder = ch.forOrder !== false && (ch.data?.forOrder !== false);
           const forRecharge = ch.forRecharge !== false && (ch.data?.forRecharge !== false);
+          const forDeposit = ch.forDeposit !== false && (ch.data?.forDeposit !== false);
           return {
             ...ch,
             configured,
             open,
             bossOrderOpen: bossOrderCodes.includes(id),
             bossRechargeOpen: bossRechargeCodes.includes(id),
+            bossDepositOpen: bossDepositCodes.includes(id),
             forOrder,
             forRecharge,
+            forDeposit,
             config_status: open ? (ch.enabled ? "已启用" : "已配置") : configured ? (ch.enabled ? "已启用(缺资料)" : "已配置") : ch.config_status || "未配置",
           };
         });
@@ -950,6 +966,7 @@ async function handler(req, res) {
         ...state,
         bossOrderMethods: bossOrderCodes,
         bossRechargeMethods: bossRechargeCodes,
+        bossDepositMethods: bossDepositCodes,
         sot: "payment_channels",
         activePublicQr,
         templates: CHANNELS,
