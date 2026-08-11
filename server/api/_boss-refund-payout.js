@@ -309,22 +309,24 @@ export async function confirmBossCatFoodRefund(db, {
   }
 
   if (saved.order_id) {
+    // orders 表无 refund_amount / updated_at 列；只写 status，避免 PATCH 静默失败导致仍为售后中。
     try {
       await db("orders", `?id=eq.${encodeURIComponent(saved.order_id)}`, {
         method: "PATCH",
-        body: JSON.stringify({
-          status: "refunded",
-          refund_amount: creditAmount,
-          updated_at: nowIso(),
-        }),
+        body: JSON.stringify({ status: "refunded" }),
       });
     } catch (e) {
       console.warn("[refund-meow] order status:", e?.message || e);
       try {
-        await db("orders", `?id=eq.${encodeURIComponent(saved.order_id)}`, {
-          method: "PATCH",
-          body: JSON.stringify({ status: "refunded", updated_at: nowIso() }),
-        });
+        const walletApiForOrder = await import("./_wallet.js");
+        await walletApiForOrder.supabaseJson(
+          walletApiForOrder.restUrl("orders", `?id=eq.${encodeURIComponent(saved.order_id)}`),
+          {
+            method: "PATCH",
+            headers: walletApiForOrder.serviceHeaders({ Prefer: "return=minimal" }),
+            body: JSON.stringify({ status: "refunded" }),
+          }
+        );
       } catch (e2) {
         console.warn("[refund-meow] order status fallback:", e2?.message || e2);
       }

@@ -922,8 +922,11 @@ export default async function handler(req, res) {
       const enriched = (orders || []).map((o) => {
         const r = refundByOrder[o.id];
         if (!r) return o;
+        const paid = !!r.alreadyRefunded || r.status === "paid";
         return {
           ...o,
+          // 若退款已入账但订单行尚未刷到 refunded，对老板端按已退款展示
+          status: paid && o.status === "refund_requested" ? "refunded" : o.status,
           fridayRefundStatus: r.status,
           fridayRefundStatusText: r.statusText,
           fridaySettlementDate: r.settlementDate || "",
@@ -933,7 +936,7 @@ export default async function handler(req, res) {
           refundMethodText: r.refundMethodText || "猫粮余额",
           refundCatFood: r.amountCatFood != null ? r.amountCatFood : r.amountRm,
           refundPaidAt: r.paidAt || "",
-          refundAlreadyPaid: !!r.alreadyRefunded || r.status === "paid",
+          refundAlreadyPaid: paid,
         };
       });
       let walletSnapshot = null;
