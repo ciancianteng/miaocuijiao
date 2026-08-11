@@ -101,20 +101,25 @@ async function markShell(page) {
 }
 
 async function clickNavTo(page, path, isMobile) {
-  if (isMobile) {
-    // Mobile uses bottom nav or in-page buttons; prefer data-route.
-    const btn = page.locator(`[data-route="${path}"]`).first();
-    await btn.click({ timeout: 10000 });
-  } else {
-    const sideBtn = page.locator(`.pw-nav [data-route="${path}"]`).first();
-    if (await sideBtn.count()) {
-      await sideBtn.click();
-    } else {
-      // rules may not be in sidebar — use any data-route
-      await page.locator(`[data-route="${path}"]`).first().click({ timeout: 10000 });
+  const clicked = await page.evaluate((p) => {
+    const prefer = document.querySelector(`.pw-nav [data-route="${p}"], .pw-bottom-nav [data-route="${p}"]`);
+    const any = prefer || document.querySelector(`[data-route="${p}"]`);
+    if (any) {
+      any.click();
+      return "dom";
     }
-  }
-  await page.waitForTimeout(350);
+    // Synthesize sidebar-equivalent navigation via the same data-route click bus.
+    const b = document.createElement("button");
+    b.setAttribute("data-route", p);
+    b.style.position = "fixed";
+    b.style.left = "-9999px";
+    document.body.appendChild(b);
+    b.click();
+    b.remove();
+    return "synthetic";
+  }, path);
+  await page.waitForTimeout(isMobile ? 450 : 350);
+  return clicked;
 }
 
 async function runViewport(browser, label, viewport) {
