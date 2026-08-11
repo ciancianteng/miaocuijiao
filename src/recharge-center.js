@@ -766,15 +766,23 @@
     input.value = "";
   });
 
-  window.addEventListener("mcj:auth-updated", function () {
-    if (state.authLoading) return;
-    if (token() && !state.loading && (state.error || state.step === "select")) {
-      load();
-    } else if (!token()) {
-      state.authLoading = false;
-      state.loading = false;
-      paint();
-    }
+  var authReloadTimer = null;
+  window.addEventListener("mcj:auth-updated", function (ev) {
+    var reason = ev && ev.detail && ev.detail.reason;
+    // Ignore ensureSession/saveSession noise after a successful paint — only react to real auth flips.
+    if (reason === "ensureSession") return;
+    if (state.authLoading || state.loading) return;
+    if (authReloadTimer) clearTimeout(authReloadTimer);
+    authReloadTimer = setTimeout(function () {
+      authReloadTimer = null;
+      if (token()) {
+        if (state.error || !state.campaigns.length) load();
+      } else {
+        state.authLoading = false;
+        state.loading = false;
+        paint();
+      }
+    }, 50);
   });
   window.addEventListener("mcj:auth-expired", function () {
     state.authLoading = false;

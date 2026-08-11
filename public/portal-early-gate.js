@@ -112,7 +112,7 @@
 
   function isBossRole(role) {
     role = String(role || "").trim().toLowerCase();
-    return role === "boss" || role === "customer" || role === "user";
+    return role === "boss" || role === "customer" || role === "owner" || role === "user";
   }
 
   function isCompanionRole(role) {

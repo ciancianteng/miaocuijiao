@@ -284,7 +284,7 @@
   function ensureSession() {
     if (sessionReadyPromise) return sessionReadyPromise;
     authLoading = true;
-    sessionReadyPromise = getSession()
+    var pending = getSession()
       .then(function (result) {
         var access = getAccessToken();
         var refresh = getRefreshToken();
@@ -303,26 +303,10 @@
       })
       .finally(function () {
         markReady();
-        emitAuthUpdated({ reason: "ensureSession" });
-        // Allow a later ensureSession after logout / new login.
-        sessionReadyPromise = sessionReadyPromise;
+        // Do not broadcast ensureSession on every coalesce — widgets listen for login/logout flips.
       });
-    // Clear latch after settle so future login can re-run, but coalesce concurrent callers.
-    var latch = sessionReadyPromise;
-    sessionReadyPromise = latch.then(
-      function (v) {
-        sessionReadyPromise = null;
-        return v;
-      },
-      function (e) {
-        sessionReadyPromise = null;
-        throw e;
-      }
-    );
-    // Keep in-flight reference for coalescing: use latch until cleared above.
-    // Re-assign so concurrent callers hit the pending thenable while it is non-null briefly.
-    // Simpler approach: keep pending until done without nulling mid-flight incorrectly.
-    return latch;
+    sessionReadyPromise = pending;
+    return pending;
   }
 
   function authHeaders(extra) {
