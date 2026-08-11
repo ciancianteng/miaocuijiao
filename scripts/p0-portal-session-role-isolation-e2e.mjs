@@ -185,21 +185,27 @@ async function injectBossSession(page, session) {
 
 async function loginCompanionUi(page, email) {
   await page.goto(`${BASE}/companion/login/?t=${Date.now()}`, { waitUntil: "domcontentloaded", timeout: 90000 });
-  await page.waitForTimeout(800);
-  // Must show login form (not auto-enter)
-  const hasForm = (await page.locator('[data-login], form[data-login], input[name=account], input[type=password]').count()) > 0;
-  await page.fill('input[name=account],input[type=email],#account', email);
-  await page.fill('input[name=password],input[type=password]', PASS);
+  await page.waitForTimeout(1000);
+  const hasForm = (await page.locator("[data-login], form[data-login], input[name=account]").count()) > 0;
+  // Default is OTP — switch to password panel
+  const passTab = page.locator('[data-login-method-tab="password"]').first();
+  if ((await passTab.count()) > 0) {
+    await passTab.click();
+    await page.waitForTimeout(400);
+  }
+  await page.locator('form[data-login-method="password"] input[name="account"]').first().fill(email);
+  await page.locator('form[data-login-method="password"] input[name="password"]').first().fill(PASS);
   page.once("dialog", async (d) => {
     try {
       await d.accept();
     } catch {}
   });
-  await page.click('[data-login] button[type=submit], form[data-login] button[type=submit],button:has-text("登录")');
+  await page.locator('form[data-login-method="password"] button[type="submit"]').first().click();
   await page.waitForTimeout(3000);
-  for (let i = 0; i < 25; i++) {
+  for (let i = 0; i < 30; i++) {
     const st = await readStorage(page);
     if (st.companionTokLen > 20 && st.companionSoft) return { st, hasForm };
+    if (st.companionTokLen > 20 && !/\/companion\/login/i.test(page.url())) return { st, hasForm };
     await page.waitForTimeout(500);
   }
   return { st: await readStorage(page), hasForm };
