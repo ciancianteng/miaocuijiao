@@ -602,6 +602,10 @@ function humanizeCompanionApiError(error) {
   if (/PGRST|PostgREST|supabase|schema cache|permission denied for/i.test(blob) && !/请|上传|删除|相册|头像|录音|视频/.test(raw)) {
     return { status: status >= 400 && status < 600 ? status : 500, message: "操作失败，请稍后重试。" };
   }
+  // Never leak raw JS/runtime dumps (e.g. "Assignment to constant variable") to companion UI.
+  if (/Assignment to constant variable|TypeError|ReferenceError|SyntaxError|is not defined|Cannot read propert/i.test(raw)) {
+    return { status: 500, message: "操作失败，请稍后重试。" };
+  }
   // Never leak raw HTTP / JWT / UUID dumps to companion UI.
   if (/invalid JWT|HTTP\s*\d{3}|invalid input syntax/i.test(raw)) {
     if (/jwt|token|expired|403|401/i.test(raw)) {
@@ -4225,7 +4229,7 @@ export default async function handler(req, res) {
         return json(res, 400, { ok: false, message: "请上传身份证正面和反面照片。" });
       }
       const identityNoRaw = String(body.identity_no || body.identityNo || "").trim();
-      const identityNo =
+      let identityNo =
         !identityNoRaw || /^\*+\d{0,4}$/.test(identityNoRaw)
           ? String(existingIdentity?.identity_no || "")
           : identityNoRaw;

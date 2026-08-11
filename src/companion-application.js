@@ -585,6 +585,10 @@
       if (/HTTP\s*403|HTTP\s*401/i.test(text)) {
         return "登录状态已过期，请重新登录后继续。";
       }
+      // Never surface raw JS runtime dumps on the apply page.
+      if (/Assignment to constant variable|TypeError|ReferenceError|SyntaxError|is not defined|Cannot read propert/i.test(text)) {
+        return "操作失败，请稍后重试。";
+      }
       return text || "提交失败";
     }
     function sendOnce() {
