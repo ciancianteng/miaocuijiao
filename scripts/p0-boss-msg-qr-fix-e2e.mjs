@@ -57,10 +57,10 @@ async function waitDeploy(maxMs = 180000) {
       const html = await (await fetch(`${BASE}/support.html?cb=${Date.now()}`, { cache: "no-store" })).text();
       const reh = await (await fetch(`${BASE}/recharge.html?cb=${Date.now()}`, { cache: "no-store" })).text();
       const assetMatch = html.match(/\/assets\/support-[^"'?]+\.js/);
-      let okSupport = /20260811bossMsgQr3/.test(html);
+      let okSupport = /20260811bossMsgQr4/.test(html);
       if (!okSupport && assetMatch) {
         const js = await (await fetch(`${BASE}${assetMatch[0]}?cb=${Date.now()}`, { cache: "no-store" })).text();
-        okSupport = /20260811bossMsgQr3/.test(js) && /support-session-name/.test(js) && /订单客服/.test(js);
+        okSupport = /20260811bossMsgQr4/.test(js) && /support-session-name/.test(js) && /订单客服/.test(js);
       }
       const okRecharge = (/20260811bossMsgQr1/.test(reh) || /pay-qr-lightbox/.test(reh)) && /width:320px/.test(reh);
       if (okSupport && okRecharge) {
@@ -259,9 +259,14 @@ async function main() {
   const ta = page.locator(".support-composer textarea, [data-send] [name=content]");
   if (await ta.count()) {
     const marker = `E2E消息中心 ${Date.now()}`;
-    await ta.fill(marker);
+    await ta.click();
+    await page.keyboard.type(marker, { delay: 5 });
     const sendWait = page.waitForResponse(
-      (res) => res.url().includes("/api/chat") && res.request().method() === "POST",
+      (res) => {
+        if (!res.url().includes("/api/chat") || res.request().method() !== "POST") return false;
+        const body = res.request().postData() || "";
+        return /"action"\s*:\s*"send"/.test(body);
+      },
       { timeout: 15000 }
     ).catch(() => null);
     await page.locator(".support-send-btn, [data-send-btn]").click();
