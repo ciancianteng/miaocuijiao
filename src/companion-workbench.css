@@ -105,6 +105,24 @@ button:disabled{cursor:not-allowed;opacity:.52}
 .pw-doc-preview-wrap{display:grid;gap:10px}
 .pw-doc-preview{display:block;width:100%;max-width:100%;aspect-ratio:16/10;object-fit:cover;border-radius:14px;border:1px solid var(--pw-line);background:rgba(255,255,255,.05)}
 .pw-account-verify,.pw-account-deposit{padding-bottom:18px}
+.pw-deposit-channels{display:grid;gap:12px;margin:0 0 14px}
+.pw-deposit-channel{display:block;border:1px solid var(--pw-line);border-radius:14px;padding:12px;background:rgba(255,255,255,.03);cursor:pointer}
+.pw-deposit-channel.is-active{border-color:rgba(255,145,195,.55);background:rgba(255,143,197,.08)}
+.pw-deposit-channel>input{position:absolute;opacity:0;pointer-events:none}
+.pw-deposit-channel-body{display:grid;gap:10px}
+.pw-deposit-qr-block{display:grid;gap:8px;justify-items:center;text-align:center;margin-top:4px}
+.pw-deposit-qr-block .pay-qr-frame{display:inline-block;max-width:100%;margin:0 auto;padding:0;border-radius:0;background:transparent;border:0;box-shadow:none;outline:none;overflow:visible;line-height:0;cursor:zoom-in}
+.pw-deposit-qr-block .pay-qr-frame img,.pw-deposit-qr-block img[data-mcj-pay-qr]{width:280px;max-width:min(92vw,280px);height:auto;object-fit:contain;display:block;margin:0 auto;padding:10px;background:#fff;border-radius:12px;cursor:zoom-in}
+.pay-qr-lightbox{position:fixed;inset:0;z-index:9999;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.88);padding:20px;box-sizing:border-box}
+.pay-qr-lightbox.is-open{display:flex}
+.pay-qr-lightbox-panel{position:relative;max-width:min(92vw,560px);max-height:92vh;display:grid;gap:12px;justify-items:center}
+.pay-qr-lightbox-panel img{width:min(86vw,520px);height:auto;max-height:78vh;object-fit:contain;background:#fff;border-radius:12px;padding:12px}
+.pay-qr-lightbox-close{position:absolute;top:-8px;right:-8px;width:40px;height:40px;border:0;border-radius:999px;background:#fff;color:#1b0712;font-size:22px;font-weight:800;line-height:1;cursor:pointer;box-shadow:0 8px 24px rgba(0,0,0,.35)}
+.pay-qr-lightbox-hint{margin:0;color:#c4b5c0;font-size:13px;text-align:center}
+.pw-deposit-badge h3{margin:0 0 10px}
+.pw-deposit-record-modal{position:fixed;inset:0;z-index:9998;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.72);padding:18px;box-sizing:border-box}
+.pw-deposit-record-panel{width:min(92vw,420px);max-height:86vh;overflow:auto;background:#2a1522;border:1px solid rgba(255,255,255,.12);border-radius:16px;padding:16px}
+.pw-deposit-record-panel h3{margin:10px 0 0}
 .pw-note{margin:0 0 12px;color:var(--pw-muted);font-size:13px;line-height:1.5}
 .pw-note strong{color:#fff}
 .pw-gallery-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}

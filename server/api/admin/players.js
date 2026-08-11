@@ -283,7 +283,7 @@ function mapListPlayer(row = {}, profile = {}) {
 }
 
 async function loadRelated(profileId, companionId) {
-  const empty = { identity: null, payment: null, media: [], deposit: null, orders: [], income: [], reviews: [] };
+  const empty = { identity: null, payment: null, media: [], deposit: null, deposits: [], orders: [], income: [], reviews: [] };
   try {
     const [identityRows, paymentRows, mediaRows, depositRows, orderRows, txRows, reviewRows] = await Promise.all([
       companionDb("companion_identity_verifications", `?companion_profile_id=eq.${encodeURIComponent(companionId)}&limit=1`).catch((e) => {
@@ -301,7 +301,7 @@ async function loadRelated(profileId, companionId) {
         if (isMissingRelation(e)) return [];
         throw e;
       }),
-      companionDb("companion_deposits", `?companion_profile_id=eq.${encodeURIComponent(companionId)}&order=created_at.desc&limit=1`).catch(
+      companionDb("companion_deposits", `?companion_profile_id=eq.${encodeURIComponent(companionId)}&order=created_at.desc&limit=50`).catch(
         (e) => {
           if (isMissingRelation(e)) return [];
           throw e;
@@ -320,11 +320,14 @@ async function loadRelated(profileId, companionId) {
         throw e;
       }),
     ]);
+    const deposits = Array.isArray(depositRows) ? depositRows : [];
+    const paid = deposits.find((d) => /^(paid|approved|verified|passed|received)$/i.test(String(d.status || ""))) || null;
     return {
       identity: identityRows?.[0] || null,
       payment: paymentRows?.[0] || null,
       media: Array.isArray(mediaRows) ? mediaRows : [],
-      deposit: depositRows?.[0] || null,
+      deposit: paid || deposits[0] || null,
+      deposits,
       orders: Array.isArray(orderRows) ? orderRows : [],
       income: Array.isArray(txRows) ? txRows : [],
       reviews: Array.isArray(reviewRows) ? reviewRows : [],
@@ -352,6 +355,7 @@ async function buildDetail(row, profile, opts = {}) {
   const identity = related.identity;
   const payment = related.payment;
   const deposit = related.deposit;
+  const deposits = related.deposits || (deposit ? [deposit] : []);
   const media = related.media;
 
   const idFrontUrl = identity?.id_front_path
@@ -364,6 +368,73 @@ async function buildDetail(row, profile, opts = {}) {
   const proofUrl = deposit?.proof_path
     ? await signPath(deposit.proof_bucket || PRIVATE_BUCKETS.payment, deposit.proof_path)
     : "";
+
+  function depositRecordNo(row = {}) {
+    const id = String(row.id || "").replace(/-/g, "");
+    if (id.length >= 8) return `DEP-${id.slice(0, 8).toUpperCase()}`;
+    return id ? `DEP-${id.toUpperCase()}` : "";
+  }
+  function parseDepositPaySnap(remark = "") {
+    const text = String(remark || "");
+    const i = text.indexOf("[[DEPOSIT_PAY]]");
+    if (i < 0) return null;
+    const j = text.indexOf("[[/DEPOSIT_PAY]]", i);
+    if (j < 0) return null;
+    try {
+      return JSON.parse(text.slice(i + "[[DEPOSIT_PAY]]".length, j));
+    } catch {
+      return null;
+    }
+  }
+  const reviewerIds = [
+    ...new Set(
+      deposits
+        .map((d) => String(d.reviewed_by || "").trim())
+        .filter(Boolean)
+    ),
+  ];
+  const reviewerMap = {};
+  await Promise.all(
+    reviewerIds.map(async (rid) => {
+      try {
+        const p = await getProfile(rid);
+        reviewerMap[rid] = p?.display_name || p?.nickname || p?.email || rid;
+      } catch {
+        reviewerMap[rid] = rid;
+      }
+    })
+  );
+  const depositHistory = [];
+  for (const row of deposits) {
+    const url = row.proof_path
+      ? await signPath(row.proof_bucket || PRIVATE_BUCKETS.payment, row.proof_path)
+      : "";
+    const snap = parseDepositPaySnap(row.remark || "");
+    depositHistory.push({
+      id: row.id || "",
+      recordNo: depositRecordNo(row),
+      requiredAmount: row.required_amount != null ? Number(row.required_amount) : 100,
+      paidAmount: row.paid_amount != null ? Number(row.paid_amount) : 0,
+      paidAt: row.paid_at || "",
+      paymentMethod: row.payment_method || snap?.label || "",
+      proofUrl: url,
+      hasProof: !!row.proof_path,
+      status: row.status,
+      statusLabel: labelStatus(row.status),
+      refundStatus: row.refund_status || "none",
+      refundStatusLabel: labelStatus(row.refund_status || "none", "无"),
+      refundedAt: row.refunded_at || "",
+      rejectReason: row.reject_reason || "",
+      remark: row.remark || "",
+      reviewedAt: row.reviewed_at || "",
+      reviewedBy: row.reviewed_by || "",
+      reviewedByName: reviewerMap[row.reviewed_by] || row.reviewed_by || "",
+      channel: snap,
+      createdAt: row.created_at || "",
+      updatedAt: row.updated_at || "",
+    });
+  }
+  const depositSnap = parseDepositPaySnap(deposit?.remark || "");
 
   const mediaSigned = [];
   for (const item of media) {
@@ -545,18 +616,25 @@ async function buildDetail(row, profile, opts = {}) {
     },
     deposit: deposit
       ? {
+          id: deposit.id || "",
+          recordNo: depositRecordNo(deposit),
           requiredAmount: deposit.required_amount,
           paidAmount: deposit.paid_amount,
           paidAt: deposit.paid_at || "",
-          paymentMethod: deposit.payment_method || "",
+          paymentMethod: deposit.payment_method || depositSnap?.label || "",
           proofUrl,
           hasProof: !!deposit.proof_path,
           status: deposit.status,
           statusLabel: labelStatus(deposit.status),
           refundStatus: deposit.refund_status || "none",
           refundStatusLabel: labelStatus(deposit.refund_status || "none", "无"),
+          refundedAt: deposit.refunded_at || "",
           rejectReason: deposit.reject_reason || "",
           remark: deposit.remark || "",
+          reviewedAt: deposit.reviewed_at || "",
+          reviewedBy: deposit.reviewed_by || "",
+          reviewedByName: reviewerMap[deposit.reviewed_by] || deposit.reviewed_by || "",
+          channel: depositSnap,
           empty: false,
         }
       : {
@@ -566,6 +644,8 @@ async function buildDetail(row, profile, opts = {}) {
           paidAmount: 0,
           hasProof: false,
         },
+    deposits: depositHistory,
+    depositHistory,
     stats: {
       totalOrders: related.orders.length,
       completedOrders: completed,
@@ -807,7 +887,7 @@ async function reviewMedia(req, companion, payload) {
   return { status, reason };
 }
 
-async function reviewDeposit(req, companion, payload) {
+async function reviewDeposit(req, companion, payload, admin = null) {
   const status = normalizeStatusInput(payload.status || payload.depositStatus, "pending");
   const reason = String(payload.rejectReason || payload.reason || "").trim();
   if ((status === "rejected" || status === "resubmit") && !reason) {
@@ -815,31 +895,43 @@ async function reviewDeposit(req, companion, payload) {
   }
   const rows = await companionDb(
     "companion_deposits",
-    `?companion_profile_id=eq.${encodeURIComponent(companion.id)}&order=created_at.desc&limit=1`
+    `?companion_profile_id=eq.${encodeURIComponent(companion.id)}&order=created_at.desc&limit=20`
   ).catch((e) => {
     if (isMissingRelation(e)) throw Object.assign(new Error("请先执行 supabase/companion-admin-data.sql"), { status: 503 });
     throw e;
   });
-  const before = rows?.[0];
+  const list = Array.isArray(rows) ? rows : [];
+  const targetId = String(payload.depositId || payload.deposit_id || "").trim();
+  const before =
+    (targetId && list.find((r) => String(r.id) === targetId)) ||
+    list.find((r) => /pending|review|submit|resubmit/i.test(String(r.status || ""))) ||
+    list[0];
   const mapped =
     status === "approved" ? "paid" : status === "unpaid" ? "unpaid" : status === "refunded" ? "refunded" : status;
   if (before) {
+    const patch = {
+      status: mapped,
+      reject_reason: reason,
+      remark: String(payload.remark || payload.depositConfirmRemark || before.remark || ""),
+      reviewed_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    if (admin?.id) patch.reviewed_by = admin.id;
+    if (mapped === "paid" && !before.paid_at) patch.paid_at = new Date().toISOString();
+    if (mapped === "paid") {
+      patch.required_amount = Number(before.required_amount || 100) || 100;
+      if (!(Number(before.paid_amount) > 0)) patch.paid_amount = 100;
+    }
     await companionDb("companion_deposits", `?id=eq.${encodeURIComponent(before.id)}`, {
       method: "PATCH",
-      body: JSON.stringify({
-        status: mapped,
-        reject_reason: reason,
-        remark: String(payload.remark || payload.depositConfirmRemark || before.remark || ""),
-        reviewed_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      }),
+      body: JSON.stringify(patch),
     });
   }
   await companionDb(PLAYER_TABLE, `?id=eq.${encodeURIComponent(companion.id)}`, {
     method: "PATCH",
     body: JSON.stringify({ deposit_status: mapped, updated_at: new Date().toISOString() }),
   });
-  await logOperation(req, "review_deposit", companion.id, before || companion, { status: mapped, reason }, reason);
+  await logOperation(req, "review_deposit", companion.id, before || companion, { status: mapped, reason, reviewedBy: admin?.id || "" }, reason);
   return { status: mapped, reason };
 }
 
@@ -945,8 +1037,9 @@ async function reviewApplication(req, companion, payload) {
 }
 
 export default async function handler(req, res) {
+  let admin = null;
   try {
-    await requireAdmin(req);
+    admin = await requireAdmin(req);
   } catch (error) {
     return json(res, error.status || 403, { ok: false, message: error.message || "没有陪玩管理权限" });
   }
@@ -1064,7 +1157,7 @@ export default async function handler(req, res) {
       return json(res, 200, { ok: true, message: "媒体审核已保存", player: detail });
     }
     if (action === "review_deposit") {
-      await reviewDeposit(req, companion, payload);
+      await reviewDeposit(req, companion, payload, admin);
       const detail = await buildDetail(await getCompanion(id), await getProfile(companion.user_id));
       return json(res, 200, { ok: true, message: "押金审核已保存", player: detail });
     }

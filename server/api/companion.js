@@ -76,6 +76,43 @@ import {
   lockPayoutSources,
   upsertPayoutRequest,
 } from "./_payout-requests.js";
+import { listDepositPaymentMethods } from "./_platform-pay-qr.js";
+
+const DEPOSIT_AMOUNT_RM = 100;
+const DEPOSIT_CHANNEL_MARK_START = "[[DEPOSIT_PAY]]";
+const DEPOSIT_CHANNEL_MARK_END = "[[/DEPOSIT_PAY]]";
+
+function depositRecordNo(row = {}) {
+  const id = String(row.id || "").replace(/-/g, "");
+  if (id.length >= 8) return `DEP-${id.slice(0, 8).toUpperCase()}`;
+  return id ? `DEP-${id.toUpperCase()}` : "";
+}
+
+function parseDepositChannelSnapshot(remark = "") {
+  const text = String(remark || "");
+  const i = text.indexOf(DEPOSIT_CHANNEL_MARK_START);
+  if (i < 0) return null;
+  const j = text.indexOf(DEPOSIT_CHANNEL_MARK_END, i);
+  if (j < 0) return null;
+  try {
+    return JSON.parse(text.slice(i + DEPOSIT_CHANNEL_MARK_START.length, j));
+  } catch {
+    return null;
+  }
+}
+
+function embedDepositChannelSnapshot(remark, snapshot) {
+  const base = String(remark || "")
+    .replace(/\[\[DEPOSIT_PAY\]\][\s\S]*?\[\[\/DEPOSIT_PAY\]\]/g, "")
+    .trim();
+  if (!snapshot || typeof snapshot !== "object") return base;
+  const block = `${DEPOSIT_CHANNEL_MARK_START}${JSON.stringify(snapshot)}${DEPOSIT_CHANNEL_MARK_END}`;
+  return base ? `${base}\n${block}` : block;
+}
+
+function isDepositPaidStatus(status) {
+  return /^(approved|verified|passed|paid|active|completed|received)$/i.test(String(status || "").trim());
+}
 
 const ORDER_STATUS_TEXT = COMPANION_STATUS_LABELS;
 
@@ -1819,6 +1856,7 @@ async function bootstrapData(profile, companion) {
   let identity = null;
   let payment = null;
   let deposit = null;
+  let depositHistoryRows = [];
   let media = [];
   let mediaTableAvailable = false;
   let paymentAccounts = [];
@@ -1861,7 +1899,7 @@ async function bootstrapData(profile, companion) {
     const [identityRowsRaw, paymentRowsRaw, depositRowsRaw] = await Promise.all([
       byProfile("companion_identity_verifications", "&order=updated_at.desc&limit=1"),
       byProfile("companion_payment_accounts", "&order=submitted_at.desc&limit=20"),
-      byProfile("companion_deposits", "&order=created_at.desc&limit=1"),
+      byProfile("companion_deposits", "&order=created_at.desc&limit=20"),
     ]);
     let identityRows = identityRowsRaw;
     let paymentRows = paymentRowsRaw;
@@ -1871,7 +1909,7 @@ async function bootstrapData(profile, companion) {
       const [i2, p2, d2, m2] = await Promise.all([
         identityRows?.length ? Promise.resolve(identityRows) : byUser("companion_identity_verifications", "&order=updated_at.desc&limit=1"),
         paymentRows?.length ? Promise.resolve(paymentRows) : byUser("companion_payment_accounts", "&order=submitted_at.desc&limit=20"),
-        depositRows?.length ? Promise.resolve(depositRows) : byUser("companion_deposits", "&order=created_at.desc&limit=1"),
+        depositRows?.length ? Promise.resolve(depositRows) : byUser("companion_deposits", "&order=created_at.desc&limit=20"),
         mediaTableAvailable && !mediaRows?.length
           ? byUser("companion_media", "&order=sort_order.asc")
           : Promise.resolve(mediaRows),
@@ -1884,7 +1922,13 @@ async function bootstrapData(profile, companion) {
     identity = identityRows?.[0] || null;
     paymentAccounts = Array.isArray(paymentRows) ? paymentRows : [];
     payment = paymentAccounts.find((a) => a.status === "approved" || a.status === "verified") || paymentAccounts[0] || null;
-    deposit = depositRows?.[0] || null;
+    // Prefer a paid/approved ledger row when present so permanent deposit proof survives later drafts.
+    const depositList = Array.isArray(depositRows) ? depositRows : [];
+    depositHistoryRows = depositList;
+    deposit =
+      depositList.find((row) => isDepositPaidStatus(row?.status)) ||
+      depositList[0] ||
+      null;
     media = Array.isArray(mediaRows) ? mediaRows : [];
     if (mediaTableAvailable && companionRow?.id) {
       media = await migrateGalleryFallbacksIntoMedia(profile, companionRow, media);
@@ -2311,28 +2355,76 @@ async function bootstrapData(profile, companion) {
       hasIdFront: !!String(identity?.id_front_path || "").trim(),
       hasIdBack: !!String(identity?.id_back_path || "").trim(),
     },
-    deposit: {
-      status: normalizeDepositStatus(companionRow, deposit),
-      deposit_status: normalizeDepositStatus(companionRow, deposit),
-      profile_review_status: normalizeProfileReviewStatus(companionRow),
-      account_access_status: unifiedAccess.status,
-      requiredAmount: deposit?.required_amount || 100,
-      paidAmount: deposit?.paid_amount || 0,
-      rejectReason: deposit?.reject_reason || "",
-      paymentMethod: deposit?.payment_method || "",
-      remark: deposit?.remark || "",
-      depositSubmitted: !!(
-        String(deposit?.proof_path || "").trim() &&
-        Number(deposit?.paid_amount || 0) > 0 &&
-        String(deposit?.payment_method || "").trim() &&
-        !/draft|uploaded|none|not_submitted/i.test(String(deposit?.status || ""))
-      ),
-      proofUrl: await signedPrivateDocUrl(
-        deposit?.proof_bucket || PRIVATE_BUCKETS.payment,
-        deposit?.proof_path
-      ),
-      hasProof: !!String(deposit?.proof_path || "").trim(),
-    },
+    deposit: await (async () => {
+      let depositChannels = [];
+      try {
+        const listed = await listDepositPaymentMethods([]);
+        depositChannels = listed.methods || [];
+      } catch (err) {
+        warnings.push(`deposit_channels: ${err.message || err}`);
+      }
+      const channelSnap = parseDepositChannelSnapshot(deposit?.remark || "");
+      const history = [];
+      for (const row of depositHistoryRows.slice(0, 20)) {
+        history.push({
+          id: row.id || "",
+          recordNo: depositRecordNo(row),
+          requiredAmount: Number(row.required_amount || DEPOSIT_AMOUNT_RM) || DEPOSIT_AMOUNT_RM,
+          paidAmount: Number(row.paid_amount || 0) || 0,
+          paymentMethod: row.payment_method || "",
+          status: row.status || "",
+          statusLabel: isDepositPaidStatus(row.status)
+            ? "已缴纳"
+            : /pending|review|submit/i.test(String(row.status || ""))
+              ? "审核中"
+              : /refund/i.test(String(row.status || ""))
+                ? "已退还"
+                : /reject/i.test(String(row.status || ""))
+                  ? "已拒绝"
+                  : String(row.status || ""),
+          paidAt: row.paid_at || "",
+          reviewedAt: row.reviewed_at || "",
+          reviewedBy: row.reviewed_by || "",
+          rejectReason: row.reject_reason || "",
+          channel: parseDepositChannelSnapshot(row.remark || ""),
+          proofUrl: await signedPrivateDocUrl(row.proof_bucket || PRIVATE_BUCKETS.payment, row.proof_path),
+          hasProof: !!String(row.proof_path || "").trim(),
+        });
+      }
+      const status = normalizeDepositStatus(companionRow, deposit);
+      return {
+        status,
+        deposit_status: status,
+        profile_review_status: normalizeProfileReviewStatus(companionRow),
+        account_access_status: unifiedAccess.status,
+        requiredAmount: deposit?.required_amount || DEPOSIT_AMOUNT_RM,
+        amountRm: DEPOSIT_AMOUNT_RM,
+        paidAmount: deposit?.paid_amount || 0,
+        rejectReason: deposit?.reject_reason || "",
+        paymentMethod: deposit?.payment_method || channelSnap?.label || "",
+        remark: deposit?.remark || "",
+        id: deposit?.id || "",
+        recordNo: depositRecordNo(deposit || {}),
+        paidAt: deposit?.paid_at || "",
+        reviewedAt: deposit?.reviewed_at || "",
+        reviewedBy: deposit?.reviewed_by || "",
+        channelId: channelSnap?.channelId || "",
+        channel: channelSnap,
+        depositSubmitted: !!(
+          String(deposit?.proof_path || "").trim() &&
+          (Number(deposit?.paid_amount || 0) > 0 || String(deposit?.payment_method || "").trim()) &&
+          !/draft|uploaded|none|not_submitted|unpaid/i.test(String(deposit?.status || ""))
+        ),
+        proofUrl: await signedPrivateDocUrl(
+          deposit?.proof_bucket || PRIVATE_BUCKETS.payment,
+          deposit?.proof_path
+        ),
+        hasProof: !!String(deposit?.proof_path || "").trim(),
+        channels: depositChannels,
+        depositChannels,
+        history,
+      };
+    })(),
     playerGames: [],
     media: signedMedia,
     levelInfo: {
@@ -4360,9 +4452,37 @@ export default async function handler(req, res) {
       const existingDeposit = (
         await companionDb(
           "companion_deposits",
-          `?companion_profile_id=eq.${encodeURIComponent(row.id)}&order=created_at.desc&limit=1`
+          `?companion_profile_id=eq.${encodeURIComponent(row.id)}&order=created_at.desc&limit=20`
         ).catch((e) => (isMissingRelation(e) ? [] : Promise.reject(e)))
-      )?.[0];
+      ) || [];
+      const paidExisting = existingDeposit.find((d) => isDepositPaidStatus(d?.status));
+      if (paidExisting) {
+        return json(res, 400, {
+          ok: false,
+          message: "押金已缴纳，无需重复提交。",
+          deposit: { id: paidExisting.id, recordNo: depositRecordNo(paidExisting), status: paidExisting.status },
+        });
+      }
+      const latestDeposit = existingDeposit[0] || null;
+      const listed = await listDepositPaymentMethods([]).catch(() => ({ methods: [] }));
+      const channels = Array.isArray(listed.methods) ? listed.methods : [];
+      if (!channels.length) {
+        return json(res, 503, {
+          ok: false,
+          message: "俱乐部尚未配置押金收款渠道，请联系管理员在「支付设置」启用押金收款。",
+        });
+      }
+      const channelId = String(body.channel_id || body.channelId || body.payment_channel || "").trim();
+      const channel =
+        channels.find((c) => c.id === channelId || c.code === channelId) ||
+        (channels.length === 1 ? channels[0] : null);
+      if (!channel || !channel.payInfo) {
+        return json(res, 400, { ok: false, message: "请选择俱乐部收款渠道后再提交押金审核。" });
+      }
+      const payInfo = channel.payInfo || {};
+      const paymentMethodLabel = String(
+        channel.label || channel.name || payInfo.title || channel.code || "俱乐部收款"
+      ).trim();
       const proofRaw = body.proof_url || body.proofUrl || body.proof || "";
       const proof = proofRaw
         ? await saveUploadFromBody(
@@ -4373,63 +4493,56 @@ export default async function handler(req, res) {
             "deposit-proof.jpg"
           )
         : {
-            path: existingDeposit?.proof_path || "",
-            bucket: existingDeposit?.proof_bucket || PRIVATE_BUCKETS.payment,
+            path: latestDeposit?.proof_path || "",
+            bucket: latestDeposit?.proof_bucket || PRIVATE_BUCKETS.payment,
           };
       if (!proof.path) {
         return json(res, 400, { ok: false, message: "请先上传押金付款凭证图片。" });
       }
-      await upsertByCompanion("companion_deposits", row.id, auth.profile.id, {
-        required_amount: money(body.required_amount || existingDeposit?.required_amount || 100) || 100,
-        paid_amount: money(body.paid_amount || body.paidAmount),
-        payment_method: String(body.payment_method || body.paymentMethod || ""),
+      const channelSnapshot = {
+        channelId: channel.code || channel.id,
+        label: paymentMethodLabel,
+        receiverName: payInfo.receiverName || "",
+        bankName: payInfo.bankName || "",
+        bankAccount: payInfo.bankAccount || "",
+        duitnowId: payInfo.duitnowId || "",
+        phone: payInfo.phone || "",
+        qrUrl: payInfo.qrUrl || "",
+        amountRm: DEPOSIT_AMOUNT_RM,
+      };
+      const userRemark = String(body.remark || "").trim();
+      const remark = embedDepositChannelSnapshot(userRemark, channelSnapshot);
+      const saved = await upsertByCompanion("companion_deposits", row.id, auth.profile.id, {
+        required_amount: DEPOSIT_AMOUNT_RM,
+        paid_amount: DEPOSIT_AMOUNT_RM,
+        payment_method: paymentMethodLabel,
         proof_path: proof.path || "",
         proof_bucket: proof.bucket || PRIVATE_BUCKETS.payment,
         status: "pending",
         reject_reason: "",
-        remark: String(body.remark || ""),
+        remark,
         paid_at: nowIso(),
       });
-      const bankAccountRaw = String(body.bank_account || body.bankAccount || body.settlementAccount || "").trim();
-      const settlementMethod = String(
-        body.settlementMethod || body.method || body.payment_method || body.paymentMethod || ""
-      ).trim();
-      const settlementName = String(body.account_name || body.accountName || body.settlementName || "").trim();
-      const settlementBank = String(body.bank_name || body.bankName || body.settlementBank || "").trim();
-      const tngAccount = String(body.tng_account || body.tngAccount || "").trim();
-      const alipayAccount = String(body.alipay_account || body.alipayAccount || "").trim();
-      if (bankAccountRaw || settlementName || settlementBank || tngAccount || alipayAccount || settlementMethod) {
-        const existingPayment = (
-          await companionDb(
-            "companion_payment_accounts",
-            `?companion_profile_id=eq.${encodeURIComponent(row.id)}&order=created_at.desc&limit=1`
-          ).catch((e) => (isMissingRelation(e) ? [] : Promise.reject(e)))
-        )?.[0];
-        const bankAccount =
-          !bankAccountRaw || /^\*+\d{0,4}$/.test(bankAccountRaw)
-            ? String(existingPayment?.bank_account || "")
-            : bankAccountRaw;
-        await upsertByCompanion("companion_payment_accounts", row.id, auth.profile.id, {
-          method: settlementMethod || String(existingPayment?.method || "bank"),
-          bank_name: settlementBank || String(existingPayment?.bank_name || ""),
-          account_name: settlementName || String(existingPayment?.account_name || ""),
-          bank_account: bankAccount,
-          account_last4: String(bankAccount || "")
-            .replace(/\s+/g, "")
-            .slice(-4),
-          tng_account: tngAccount || String(existingPayment?.tng_account || ""),
-          alipay_account: alipayAccount || String(existingPayment?.alipay_account || ""),
-          status: "pending",
-          reject_reason: "",
-          submitted_at: nowIso(),
-        });
-      }
+      const savedRow = Array.isArray(saved) ? saved[0] : saved;
       await supabaseJson(restUrl("companion_profiles", `?id=eq.${encodeURIComponent(row.id)}`), {
         method: "PATCH",
         headers: serviceHeaders(),
         body: JSON.stringify({ deposit_status: "pending", updated_at: nowIso() }),
       });
-      return json(res, 200, { ok: true, message: "已提交审核，等待后台审核。" });
+      return json(res, 200, {
+        ok: true,
+        message: "已提交押金审核，状态：押金审核中。",
+        deposit: {
+          id: savedRow?.id || latestDeposit?.id || "",
+          recordNo: depositRecordNo(savedRow || latestDeposit || {}),
+          status: "pending",
+          statusLabel: "押金审核中",
+          requiredAmount: DEPOSIT_AMOUNT_RM,
+          paidAmount: DEPOSIT_AMOUNT_RM,
+          paymentMethod: paymentMethodLabel,
+          channelId: channelSnapshot.channelId,
+        },
+      });
     }
 
     if (action === "upload_media") {

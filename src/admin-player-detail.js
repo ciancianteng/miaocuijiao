@@ -418,9 +418,17 @@
           "</div>"
         : "");
 
-    var depositHtml = deposit.empty
+    var depositHistory = Array.isArray(d.deposits)
+      ? d.deposits
+      : Array.isArray(d.depositHistory)
+        ? d.depositHistory
+        : deposit && !deposit.empty
+          ? [deposit]
+          : [];
+    var depositHtml = deposit.empty && !depositHistory.length
       ? emptyText("尚未缴纳押金")
       : rows([
+          ["记录编号", deposit.recordNo || "—"],
           ["应缴押金", "RM" + (deposit.requiredAmount != null ? deposit.requiredAmount : 100)],
           ["已缴金额", "RM" + (deposit.paidAmount != null ? deposit.paidAmount : 0)],
           ["缴纳时间", deposit.paidAt || "—"],
@@ -432,9 +440,41 @@
             html: true,
           },
           ["审核状态", deposit.statusLabel || deposit.status],
+          ["审核时间", deposit.reviewedAt || "—"],
+          ["审核管理员", deposit.reviewedByName || deposit.reviewedBy || "—"],
           ["退款状态", deposit.refundStatusLabel || deposit.refundStatus || "无"],
+          ["退还时间", deposit.refundedAt || "—"],
           ["驳回原因", deposit.rejectReason || "无"],
         ]);
+    if (depositHistory.length) {
+      depositHtml +=
+        '<div class="player-deposit-history" style="margin-top:14px"><h4 style="margin:0 0 8px">押金记录（永久账目）</h4>' +
+        depositHistory
+          .map(function (row) {
+            return (
+              '<article class="panel" style="margin:0 0 10px;padding:12px">' +
+              rows([
+                ["记录编号", row.recordNo || row.id || "—"],
+                ["金额", "RM" + (row.requiredAmount != null ? row.requiredAmount : row.paidAmount != null ? row.paidAmount : 100)],
+                ["状态", row.statusLabel || row.status || "—"],
+                ["付款方式", row.paymentMethod || "—"],
+                ["缴纳时间", row.paidAt || "—"],
+                ["审核时间", row.reviewedAt || "—"],
+                ["审核管理员", row.reviewedByName || row.reviewedBy || "—"],
+                ["退还时间", row.refundedAt || "—"],
+                {
+                  0: "付款凭证",
+                  1: row.hasProof ? thumb(row.proofUrl, "押金凭证") : "",
+                  2: "无凭证",
+                  html: true,
+                },
+              ]) +
+              "</article>"
+            );
+          })
+          .join("") +
+        "</div>";
+    }
     if (edit) depositHtml += reviewBox("deposit", deposit.status === "paid" ? "approved" : deposit.status);
 
     var orderRows = (d.recentOrders || [])
@@ -528,7 +568,7 @@
       section("payment", "结款账户", paymentHtml) +
       section("media", "头像 / 相册 / 语音", mediaHtml) +
       section("split", "等级与价格", split) +
-      section("deposit", "押金", depositHtml) +
+      section("deposit", "押金记录", depositHtml) +
       section("income", "订单与收益", income) +
       section("account", "账号管理", account) +
       (edit
