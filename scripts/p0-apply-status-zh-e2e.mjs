@@ -134,64 +134,64 @@ async function main() {
     } catch (_) {}
   }, token);
 
-  // Inject each status into the rendered banner by evaluating label map + DOM patch after load,
-  // and also verify live banner never shows English enums.
-  await page.goto(`${BASE}/companion-apply.html?cb=${Date.now()}`, { waitUntil: "domcontentloaded", timeout: 90000 });
-  await page.waitForTimeout(2500);
-  await page.screenshot({ path: path.join(ART, "01-live-status.png") }).catch(() => null);
-  try {
-    fs.copyFileSync(path.join(ART, "01-live-status.png"), path.join(ART_REPO, "01-live-status.png"));
-  } catch (_) {}
-
-  const live = await page.evaluate(() => {
-    const note = document.querySelector(".apply-status-note");
-    const text = (note && note.textContent) || "";
-    const body = document.body.innerText || "";
-    const englishHit = /\b(draft|pending|approved|rejected)\b/i.test(text);
-    const bodyEnglishInStatusLine = /当前申请状态[：:]\s*(draft|pending|approved|rejected)\b/i.test(body);
-    return { text: text.slice(0, 200), englishHit, bodyEnglishInStatusLine, hasNote: !!note };
-  });
-  step(
-    "live_no_english_status",
-    !live.englishHit && !live.bodyEnglishInStatusLine,
-    JSON.stringify(live)
-  );
-
-  // Simulate all four statuses in the banner DOM using the same Chinese map.
+  // Live-render each status by stubbing companion bootstrap auditStatus.
   for (const [code, label] of Object.entries(EXPECTED)) {
-    await page.evaluate(
-      ({ code, label }) => {
-        let note = document.querySelector(".apply-status-note");
-        if (!note) {
-          note = document.createElement("div");
-          note.className = "apply-status-note";
-          note.setAttribute("data-e2e-status", "1");
-          const root = document.getElementById("companionApplyApp") || document.body;
-          root.prepend(note);
+    await page.route("**/api/companion**", async (route) => {
+      const req = route.request();
+      const url = req.url();
+      if (!/action=bootstrap|bootstrap/i.test(url) && req.method() === "GET" && !/companion\?/.test(url)) {
+        return route.continue();
+      }
+      // Only rewrite bootstrap JSON.
+      if (req.method() === "GET" || /bootstrap/i.test(url) || (req.postData() || "").includes("bootstrap")) {
+        try {
+          const res = await route.fetch();
+          const json = await res.json().catch(() => ({}));
+          if (json && json.player) {
+            json.player.auditStatus = code;
+            json.player.applicationStatus = code;
+            json.player.application_status = code;
+            if (code !== "rejected") json.player.applicationRejectReason = "";
+            else json.player.applicationRejectReason = "测试驳回";
+          } else if (json) {
+            json.player = { auditStatus: code, applicationStatus: code };
+          }
+          return route.fulfill({
+            status: res.status(),
+            contentType: "application/json",
+            body: JSON.stringify(json),
+          });
+        } catch (_) {
+          return route.continue();
         }
-        note.innerHTML = "当前申请状态：<b>" + label + "</b>。";
-        note.setAttribute("data-status-code", code);
-      },
-      { code, label }
-    );
-    const check = await page.evaluate(() => {
+      }
+      return route.continue();
+    });
+    await page.goto(`${BASE}/companion-apply.html?cb=${Date.now()}&statusStub=${code}`, {
+      waitUntil: "domcontentloaded",
+      timeout: 90000,
+    });
+    await page.waitForTimeout(2800);
+    const check = await page.evaluate((expectedLabel) => {
       const note = document.querySelector(".apply-status-note");
       const text = (note && note.textContent) || "";
       return {
-        text,
+        text: text.slice(0, 240),
+        hasLabel: text.includes(expectedLabel),
         hasEnglish: /\b(draft|pending|approved|rejected)\b/i.test(text),
-        hasChineseLabel: /草稿中|审核中|审核通过|审核未通过/.test(text),
+        line: (/当前申请状态[：:][^\n]*/.exec(document.body.innerText || "") || [""])[0],
       };
-    });
-    await page.screenshot({ path: path.join(ART, `status-${code}.png`) }).catch(() => null);
+    }, label);
+    await page.screenshot({ path: path.join(ART, `live-${code}.png`) }).catch(() => null);
     try {
-      fs.copyFileSync(path.join(ART, `status-${code}.png`), path.join(ART_REPO, `status-${code}.png`));
+      fs.copyFileSync(path.join(ART, `live-${code}.png`), path.join(ART_REPO, `live-${code}.png`));
     } catch (_) {}
     step(
-      `ui_${code}`,
-      !check.hasEnglish && check.text.includes(EXPECTED[code]),
+      `live_render_${code}`,
+      check.hasLabel && !check.hasEnglish,
       JSON.stringify(check)
     );
+    await page.unroute("**/api/companion**").catch(() => null);
   }
 
   // Also verify workbench STATUS_CN.verification mapping via source
