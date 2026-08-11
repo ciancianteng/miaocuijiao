@@ -614,7 +614,8 @@
     if(leavingProfile)state.profileDraft=null;
     var leavingAccount=isAccountRoute(state.route)&&!/\/companion\/(account|mine|verification)(\/|$)/.test(next);
     if(leavingAccount)state.accountDraft=null;
-    history.pushState(null,'',next);paint();
+    history.pushState(null,'',next);
+    paint({routeChange:true});
   }
   function isAccountRoute(route){
     var r=route!=null?route:state.route;
@@ -1673,7 +1674,15 @@
       });
     }else paint();
   }
-  window.addEventListener('popstate',init);
+  window.addEventListener('popstate',function(){
+    if(!state.session){
+      init();
+      return;
+    }
+    // Soft route restore — do not remount the whole workbench / re-run cold init.
+    paint({routeChange:true});
+    loadData({soft:true}).catch(function(){});
+  });
   document.addEventListener('visibilitychange',function(){
     if(!document.hidden&&state.session){
       // Soft sync only — do not force-paint over an in-progress profile edit.
@@ -1681,33 +1690,82 @@
     }
   });
   function captureScrollPos(){
-    var main=document.querySelector('.pw-main');
     var page=document.querySelector('.pw-page');
     return {
-      winY:window.scrollY||document.documentElement.scrollTop||0,
-      mainY:main?main.scrollTop:0,
+      winY:window.scrollY||document.documentElement.scrollTop||document.body.scrollTop||0,
       pageY:page?page.scrollTop:0
     };
   }
-  function restoreScrollPos(pos){
+  function applyScrollPos(pos){
     if(!pos)return;
-    var apply=function(){
-      try{window.scrollTo(0,pos.winY||0)}catch(e){}
-      var main=document.querySelector('.pw-main');
-      var page=document.querySelector('.pw-page');
-      if(main&&pos.mainY!=null)main.scrollTop=pos.mainY;
-      if(page&&pos.pageY!=null)page.scrollTop=pos.pageY;
-    };
-    apply();
-    requestAnimationFrame(function(){apply();requestAnimationFrame(apply)});
+    var page=document.querySelector('.pw-page');
+    if(page&&pos.pageY!=null)page.scrollTop=pos.pageY;
+    try{
+      if(document.documentElement)document.documentElement.scrollTop=pos.winY||0;
+      if(document.body)document.body.scrollTop=pos.winY||0;
+    }catch(e){}
+  }
+  /** Route-enter: reset scroll once with the content swap (no animation / no rAF bounce). */
+  function resetRouteScroll(){
+    var page=root.querySelector('.pw-page');
+    if(page)page.scrollTop=0;
+    try{
+      if(document.documentElement)document.documentElement.scrollTop=0;
+      if(document.body)document.body.scrollTop=0;
+    }catch(e){}
+  }
+  function syncShellChrome(isolated){
+    var unread=unreadCount();
+    var lock=(state.data&&state.data.permissions&&state.data.permissions.lockReason)||'';
+    var subtitle=isolated
+      ? isolationHint()
+      : (lock?String(lock):'抢单 → 服务 → 完成订单 → 收益提现');
+    var h1=root.querySelector('.pw-top h1');
+    var sub=root.querySelector('.pw-top p');
+    if(h1)h1.textContent=title();
+    if(sub)sub.textContent=subtitle;
+    root.querySelectorAll('.pw-nav [data-route], .pw-bottom-nav [data-route]').forEach(function(btn){
+      var path=btn.getAttribute('data-route')||'';
+      var key=ROUTES[path.replace(/\/$/,'')]||ROUTES[path]||'';
+      if(path.indexOf('/companion/grab-hall')>=0||path.indexOf('/companion/order-hall')>=0)key='hall';
+      var active=state.route===key
+        ||(key==='account'&&(state.route==='mine'||state.route==='verification'))
+        ||(key==='earnings'&&state.route==='wallet');
+      btn.classList.toggle('active',!!active);
+      if(key==='messages'){
+        var badge=btn.querySelector('.pw-nav-badge');
+        if(unread){
+          if(!badge){
+            badge=document.createElement('em');
+            badge.className='pw-nav-badge';
+            btn.appendChild(document.createTextNode(' '));
+            btn.appendChild(badge);
+          }
+          badge.textContent=String(unread);
+        }else if(badge){
+          badge.remove();
+        }
+      }
+    });
+  }
+  function syncTransientOverlays(){
+    var notice=noticeHtml();
+    var settle=settlementModalHtml();
+    var oldToast=root.querySelector('.pw-toast');
+    var oldModal=root.querySelector('[data-close-settlement].pw-modal, .pw-modal[data-close-settlement]');
+    if(!oldModal)oldModal=root.querySelector('.pw-modal');
+    if(oldToast)oldToast.remove();
+    if(oldModal)oldModal.remove();
+    if(notice||settle){
+      var wrap=document.createElement('div');
+      wrap.innerHTML=notice+settle;
+      while(wrap.firstChild)root.appendChild(wrap.firstChild);
+    }
   }
   function paint(opts){
     opts=opts||{};
-    var keepScroll=!!opts.preserveScroll||!!state._preserveScrollOnce||isEditingLiveForm()||isAccountRoute()||state.route==='profile'||state.route==='messages'||state.route==='review-status';
-    state._preserveScrollOnce=false;
-    var scrollPos=keepScroll?captureScrollPos():null;
-    if(keepScroll&&(isAccountRoute()||state.route==='profile'))state._skipFocusScrollOnce=true;
     captureLiveForms();
+    var prevRoute=state.route;
     state.route=route();
     if(state.route!=='profile')state.profileDraft=null;
     if(!isAccountRoute())state.accountDraft=null;
@@ -1721,7 +1779,7 @@
         state.route='dashboard';
         try{history.replaceState(null,'','/companion/dashboard');}catch(e){}
         state.notice='人气榜在首页展示，陪玩端不需要单独页。';
-        setTimeout(function(){state.notice='';paint()},2200);
+        setTimeout(function(){state.notice='';paint({preserveScroll:true})},2200);
       }
     }
     if(state.route==='rules'){
@@ -1745,10 +1803,19 @@
         state.route='earnings';
       }
     }
+    var routeChanged=!!opts.routeChange||prevRoute!==state.route;
+    // Same-route soft paints must keep scroll (poll / inbox / form sync).
+    // Route changes never inherit the previous page's scroll position.
+    var preserveScroll=!routeChanged&&opts.preserveScroll!==false;
+    state._preserveScrollOnce=false;
+    if(preserveScroll&&(isAccountRoute()||state.route==='profile'))state._skipFocusScrollOnce=true;
     if(state.route==='login')return renderLogin();
     if(!state.session){renderLogin();return}
-    renderShell();
-    if(scrollPos)restoreScrollPos(scrollPos);
+    renderShell({
+      routeChanged:routeChanged,
+      preserveScroll:preserveScroll,
+      forceFull:!!opts.forceFull
+    });
   }
   function noticeHtml(){return state.notice?'<div class="pw-toast show">'+esc(state.notice)+'</div>':''}
   function forgotPasswordModalHtml(){
@@ -1871,11 +1938,15 @@
     }
     window.addEventListener('resize',syncPwKeyboardInset);
   }
-  function renderShell(){
+  function renderShell(opts){
+    opts=opts||{};
     var data=state.data||{},player=data.player||state.session.user||{},lock=data.permissions&&data.permissions.lockReason;
     var unread=unreadCount();
     var isolated=isIsolationMode();
     var navItems=isolated?ISOLATION_NAV:NAV;
+    var routeChanged=!!opts.routeChanged;
+    var preserveScroll=!!opts.preserveScroll&&!routeChanged;
+    var scrollPos=preserveScroll?captureScrollPos():null;
     try{
       document.body.classList.toggle('pw-route-messages', state.route==='messages');
       document.body.classList.toggle('pw-isolation', isolated);
@@ -1886,10 +1957,50 @@
     var accountMenu=isolated
       ? '<button type="button" data-route="/companion/review-status">审核状态</button><button type="button" data-route="/companion/profile">申请资料</button><button type="button" data-route="/companion/account">账号资料</button><button class="danger" type="button" data-logout>退出登录</button>'
       : '<button type="button" data-route="/companion/profile">我的资料</button><button type="button" data-route="/companion/account">账号中心</button><button type="button" data-route="/companion/settings">设置</button><button class="danger" type="button" data-logout>退出登录</button>';
+
+    var existing=root.querySelector('.pw-shell');
+    var canPatch=!!existing
+      && !opts.forceFull
+      && ((isolated&&existing.classList.contains('is-isolation'))||(!isolated&&!existing.classList.contains('is-isolation')));
+
+    if(canPatch){
+      // Keep sidebar/header DOM stable — only swap main page content + chrome labels.
+      syncShellChrome(isolated);
+      var pageEl=existing.querySelector('.pw-page');
+      if(pageEl)pageEl.innerHTML=pageHtml();
+      var menu=existing.querySelector('.pw-menu');
+      if(menu)menu.innerHTML=accountMenu;
+      var annHost=existing.querySelector('[data-pw-announcement-host], .pw-announcement-host');
+      if(!isolated&&!annHost&&window.MCJCompanionAnnouncements&&window.MCJCompanionAnnouncements.hostHtml){
+        var top=existing.querySelector('.pw-top');
+        if(top&&top.parentNode){
+          var holder=document.createElement('div');
+          holder.innerHTML=window.MCJCompanionAnnouncements.hostHtml();
+          if(holder.firstChild)top.parentNode.insertBefore(holder.firstChild,top.nextSibling);
+        }
+      }
+      syncTransientOverlays();
+      if(routeChanged)resetRouteScroll();
+      else if(scrollPos)applyScrollPos(scrollPos);
+      bindPwKeyboardInset();
+      syncPwKeyboardInset();
+      if(!isolated&&window.MCJCompanionAnnouncements){
+        if(window.MCJCompanionAnnouncements.onShellPaint)window.MCJCompanionAnnouncements.onShellPaint();
+      }
+      if(state.route==='profile')restoreProfileFocus();
+      if(isAccountRoute()){
+        restoreAccountFocus();
+        mountCompanionAccountSecurity();
+      }
+      return;
+    }
+
     root.innerHTML='<div class="pw-shell'+(isolated?' is-isolation':'')+'"><aside class="pw-side"><div class="pw-brand"><strong>MEOW CUI JIAO</strong><span>'+(isolated?'审核隔离模式':'Companion Workbench')+'</span></div><nav class="pw-nav">'+navItems.map(function(n){
       var badge=n[0]==='messages'&&unread?' <em class="pw-nav-badge">'+unread+'</em>':'';
       return '<button class="'+(state.route===n[0]||(n[0]==='account'&&(state.route==='mine'||state.route==='verification'))||(n[0]==='earnings'&&state.route==='wallet')?'active':'')+'" data-route="'+n[2]+'">'+n[1]+badge+'</button>';
     }).join('')+'</nav></aside><section class="pw-main"><header class="pw-top"><div><h1>'+title()+'</h1><p>'+subtitle+'</p></div><div class="pw-account"><button class="pw-avatar" data-account-toggle>'+esc(String(player.name||player.uid||'P').slice(0,1).toUpperCase())+'</button><div class="pw-menu">'+accountMenu+'</div></div></header>'+(isolated?'':(window.MCJCompanionAnnouncements&&window.MCJCompanionAnnouncements.hostHtml?window.MCJCompanionAnnouncements.hostHtml():'<div class="pw-announcement-host" data-pw-announcement-host hidden></div>'))+'<main class="pw-page">'+pageHtml()+'</main></section>'+bottomNavHtml()+'</div>'+noticeHtml()+settlementModalHtml();
+    if(routeChanged)resetRouteScroll();
+    else if(scrollPos)applyScrollPos(scrollPos);
     if(!isolated&&window.MCJCompanionAnnouncements){
       if(window.MCJCompanionAnnouncements.onShellPaint)window.MCJCompanionAnnouncements.onShellPaint();
       else if(window.MCJCompanionAnnouncements.reload)window.MCJCompanionAnnouncements.reload();
