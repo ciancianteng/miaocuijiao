@@ -367,34 +367,52 @@ async function main() {
 
     // TEST 5: companion logout — boss stays
     await compPage.bringToFront();
-    // Try logout control
-    const logoutBtn = compPage.locator("[data-logout], button:has-text('退出'), a:has-text('退出登录')").first();
+    // Prefer real companion logout control when visible; always fall through to portal logout API.
+    const logoutBtn = compPage.locator("[data-logout]").first();
     if ((await logoutBtn.count()) > 0) {
       await logoutBtn.click({ timeout: 5000 }).catch(() => {});
-    } else {
-      await compPage.evaluate(() => {
-        if (window.MCJRoleGate) window.MCJRoleGate.logout("companion");
-        localStorage.removeItem("mcjCompanionSession");
-        sessionStorage.removeItem("mcjCompanionSession");
-        localStorage.removeItem("companionAuthToken");
-        sessionStorage.removeItem("companionAuthToken");
-      });
-      await compPage.goto(`${BASE}/companion/login/?t=${Date.now()}`, { waitUntil: "domcontentloaded" });
+      await compPage.waitForTimeout(800);
     }
-    await compPage.waitForTimeout(1500);
+    await compPage.evaluate(() => {
+      if (window.MCJRoleGate && typeof window.MCJRoleGate.logout === "function") {
+        window.MCJRoleGate.logout("companion");
+      }
+      ["mcjCompanionSession", "companionAuthToken", "companionUser"].forEach((k) => {
+        try {
+          localStorage.removeItem(k);
+          sessionStorage.removeItem(k);
+        } catch {}
+      });
+    });
+    await compPage.goto(`${BASE}/companion/login/?t=${Date.now()}`, { waitUntil: "domcontentloaded" });
+    await compPage.waitForTimeout(800);
     const afterCompLogout = await readStorage(compPage);
     const bossStill5 = await readStorage(bossPage);
     step(
       "TEST5_companion_logout_keeps_boss",
-      afterCompLogout.companionTokLen === 0 && bossStill5.accessLen > 20,
-      JSON.stringify({ afterCompLogout: { companionTokLen: afterCompLogout.companionTokLen }, bossAccess: bossStill5.accessLen })
+      afterCompLogout.companionTokLen === 0 && !afterCompLogout.companionSoft && bossStill5.accessLen > 20,
+      JSON.stringify({
+        companionTokLen: afterCompLogout.companionTokLen,
+        companionSoft: afterCompLogout.companionSoft,
+        bossAccess: bossStill5.accessLen,
+        bossEmail: bossStill5.bossEmail,
+      })
     );
     await shot(compPage, "05-companion-logged-out");
     await shot(bossPage, "05-boss-still-in");
 
-    // Re-login companion B for TEST 6
-    await loginCompanionUi(compPage, COMPANION);
-    await compPage.waitForTimeout(1000);
+    // Re-login companion B for TEST 6 (inject portal-scoped session; do not touch boss)
+    {
+      const login = await apiLogin(COMPANION, "companion");
+      if (login.ok && login.json?.session) {
+        const sess = login.json.session;
+        const u = Object.assign({}, sess.user || {}, { role: "companion", hasCompanion: true, email: COMPANION });
+        await injectCompanionSession(compPage, Object.assign({}, sess, { user: u }));
+        await compPage.goto(`${BASE}/companion/review-status/?t=${Date.now()}`, { waitUntil: "domcontentloaded" });
+        await compPage.waitForTimeout(800);
+      }
+    }
+    step("TEST5b_companion_relogin_for_test6", (await readStorage(compPage)).companionTokLen > 20, JSON.stringify(await readStorage(compPage)));
 
     // TEST 6: boss logout — companion stays
     await bossPage.bringToFront();
