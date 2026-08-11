@@ -124,11 +124,18 @@
       alert("仅支持 JPG、PNG、WEBP 图片。");
       return;
     }
-    var keepEditing = !!state.editingId;
-    resetDraft(keepEditing);
-    if (keepEditing) {
-      /* preserve editingId/editMeta */
+    // Keep title/link/sort/enabled across image upload/replace (new + edit).
+    syncEditMetaFromForm();
+    var preservedEditingId = state.editingId || "";
+    var preservedMeta = Object.assign({}, state.editMeta || defaultEditMeta());
+    if (state.draft && state.draft.url && state.draft.url.indexOf("blob:") === 0) {
+      URL.revokeObjectURL(state.draft.url);
     }
+    state.draft = null;
+    state.crop = { zoom: 1, x: 0, y: 0 };
+    state.natural = { width: 0, height: 0 };
+    state.editingId = preservedEditingId;
+    state.editMeta = preservedMeta;
     var url = URL.createObjectURL(file);
     var img = new Image();
     img.onload = function () {
