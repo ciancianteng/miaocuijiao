@@ -174,14 +174,17 @@ export function listingStatusOnlyPatch(row = {}, extra = {}) {
   return patch;
 }
 
-/** Patch applied when admin approves an application (status only + optional admin extras). */
+/** Patch applied when admin approves an application (status only + optional admin extras).
+ *  Application approve ≠ 可接单：进入「待认证」，须身份证或押金二选一通过后才开放接单。
+ */
 export function approveListingPatch(extra = {}) {
   const now = new Date().toISOString();
   return {
     application_status: "approved",
-    verification_status: "approved",
-    allow_orders: true,
-    // Stay offline until companion goes online unless caller sets online_status.
+    // Keep listing unpublished until credential (ID or deposit) is admin-approved.
+    verification_status: "pending",
+    allow_orders: false,
+    // Stay offline until companion completes credential and goes online.
     online_status: extra.online_status != null ? extra.online_status : "offline",
     updated_at: now,
     ...extra,

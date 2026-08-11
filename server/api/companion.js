@@ -944,9 +944,6 @@ function resolveAccountAccessStatus(profile = {}, companion = {}, depositRow = n
   if (profile.status !== "active") {
     return { ...base, status: "pending", label: "账号尚未启用，暂时无法接单。" };
   }
-  if (companion.allow_orders === false && profileSt === "approved") {
-    return { ...base, status: "blocked", label: "后台已暂停该账号接单权限。" };
-  }
   if (profileSt === "rejected") {
     const appReason = String(companion.application_reject_reason || "").trim();
     return {
@@ -970,6 +967,7 @@ function resolveAccountAccessStatus(profile = {}, companion = {}, depositRow = n
     return { ...base, status: "pending", label: "资料审核中，暂时无法接单。" };
   }
   // Profile approved — credential is OR of identity / deposit (admin approved only).
+  // allow_orders=false here means「待认证」or admin pause; check credentials before treating as blocked.
   if (!idOk && !depOk) {
     const idPending = identitySt === "pending";
     const depPending = depositSt === "pending";
@@ -1015,7 +1013,7 @@ function resolveAccountAccessStatus(profile = {}, companion = {}, depositRow = n
     return {
       ...base,
       status: "incomplete",
-      label: "认证未完成：请完成身份证认证或押金认证（二选一），后台审核通过后方可接单。",
+      label: "待完成认证：请完成身份证认证或押金认证（二选一），后台审核通过后方可接单。",
     };
   }
   if (companion.allow_orders === false) {
@@ -4074,12 +4072,12 @@ export default async function handler(req, res) {
         return json(res, 400, { ok: false, message: "请上传身份证正面和反面照片。" });
       }
       const identityNoRaw = String(body.identity_no || body.identityNo || "").trim();
-      const identityNo =
+      let identityNo =
         !identityNoRaw || /^\*+\d{0,4}$/.test(identityNoRaw)
           ? String(existingIdentity?.identity_no || "")
           : identityNoRaw;
       if (!identityNo) {
-        // Apply form uploads ID photos but does not collect identity_no; allow pending review with empty number.
+        // Allow pending review with empty number only when both ID photos are present.
         if (!(front.path && back.path)) {
           return json(res, 400, { ok: false, message: "请填写身份证号码。" });
         }
@@ -4134,10 +4132,11 @@ export default async function handler(req, res) {
         method: "PATCH",
         headers: serviceHeaders(),
         body: JSON.stringify({
-          verification_status: "pending",
-          application_status: "pending",
+          // Credential submit must NOT rewind an already-approved application back to pending.
+          ...( /approved|verified|passed/i.test(String(row.application_status || ""))
+            ? {}
+            : { application_status: "pending", application_submitted_at: nowIso() }),
           application_reject_reason: "",
-          application_submitted_at: nowIso(),
           updated_at: nowIso(),
         }),
       });

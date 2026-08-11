@@ -22,14 +22,14 @@
     "基本资料",
     "游戏资料",
     "上传头像与资料",
-    "选择认证方式"
+    "认证说明"
   ];
   var stepLabels = [
     "阅读陪玩制度",
     "填写基本资料",
     "填写游戏资料",
     "上传头像与资料",
-    "选择认证方式"
+    "阅读认证说明"
   ];
 
   var tagGroups = {
@@ -185,7 +185,28 @@
       delete draft.uploads.card_cover;
       delete draft.uploads.profile_cover;
     }
-    return scrubDraftForStorage(draft);
+    draft = scrubDraftForStorage(draft);
+    // Drop stale hasLocal markers when in-memory blob is gone (refresh / bfcache).
+    if (
+      draft.voice &&
+      draft.voice.hasLocal &&
+      !liveVoiceBlob &&
+      !liveVoiceObjectUrl &&
+      !hasDurableUpload(draft.voice) &&
+      !hasDurableUpload(draft.voice.url) &&
+      !hasDurableUpload(draft.voice.fileUpload)
+    ) {
+      draft.voice = Object.assign({}, draft.voice, {
+        hasLocal: false,
+        listened: false,
+        confirmed: false,
+        uploaded: false,
+        status: draft.voice.status && /失效|尚未/.test(String(draft.voice.status))
+          ? draft.voice.status
+          : "本地录音已失效，请重新录制",
+      });
+    }
+    return draft;
   }
   function saveDraft(patch) {
     var draft = readDraft();
@@ -300,18 +321,10 @@
       return missing;
     }
     if (index === 4) {
-      var mode = String(identity.authMode || "").trim();
-      if (mode !== "id_card" && mode !== "deposit") missing.push("选择认证方式（身份证或押金二选一）");
-      if (mode === "id_card") {
-        if (!hasDurableUpload(identity.idFront)) missing.push("证件正面");
-        if (!hasDurableUpload(identity.idBack)) missing.push("证件背面");
+      // 申请阶段仅阅读认证说明，不上传身份证/押金，不收集结款资料。
+      if (!(draft.authNotice && draft.authNotice.acknowledged)) {
+        missing.push("确认已阅读后续认证说明");
       }
-      if (mode === "deposit") {
-        if (!hasDurableUpload(identity.depositProof)) missing.push("押金付款凭证");
-      }
-      [["settlementMethod", "结款方式"], ["settlementName", "结款户名"], ["settlementAccount", "结款账号"]].forEach(function (item) {
-        if (!hasText(identity, item[0])) missing.push(item[1]);
-      });
       return missing;
     }
     return missing;
@@ -848,20 +861,15 @@
         });
     return '<div class="form-field full apply-gallery-block"><span class="mcj-upload-label">相册</span><div class="apply-gallery-grid">' + cards + "</div>" + addCard + "</div>";
   }
-  function tagPicker(fieldName, label, selected, groups, limit, opts) {
+  function tagPicker(fieldName, label, selected, groups, limit) {
     selected = Array.isArray(selected) ? selected : [];
-    opts = opts || {};
-    // 仅个人标签允许自定义；可接游戏 / 擅长位置 / 可提供服务必须选自后台配置，禁止申请端自建。
-    var allowCustom = opts.allowCustom === true;
+    // 全部标签仅可选平台后台预设，禁止申请端自定义新增。
     var body = Object.keys(groups || {}).map(function (group) {
       return '<div class="tag-group"><b>' + esc(group) + '</b><div class="tag-list">' + groups[group].map(function (tag) {
         return '<label class="tag-pill ' + (selected.indexOf(tag) >= 0 ? "checked" : "") + '"><input type="checkbox" data-tag-field="' + esc(fieldName) + '" value="' + esc(tag) + '" ' + (selected.indexOf(tag) >= 0 ? "checked" : "") + '> ' + esc(tag) + '</label>';
       }).join("") + '</div></div>';
     }).join("");
-    var customRow = allowCustom
-      ? '<div class="custom-tag-row"><input data-custom-tag-input="' + esc(fieldName) + '" placeholder="新增自定义标签"><button class="apply-btn small" type="button" data-add-custom-tag="' + esc(fieldName) + '">添加</button></div>'
-      : '';
-    return '<div class="form-field full tag-picker" data-tag-picker="' + esc(fieldName) + '" data-tag-limit="' + (limit || 99) + '"><span>' + esc(label) + '</span>' + body + customRow + '<small>已选择 <em data-tag-count="' + esc(fieldName) + '">' + selected.length + '</em> / ' + (limit || 99) + '</small></div>';
+    return '<div class="form-field full tag-picker" data-tag-picker="' + esc(fieldName) + '" data-tag-limit="' + (limit || 99) + '"><span>' + esc(label) + '</span>' + body + '<small>已选择 <em data-tag-count="' + esc(fieldName) + '">' + selected.length + '</em> / ' + (limit || 99) + '（仅可选平台预设标签）</small></div>';
   }
 
   function rulesHtml(draft) {
@@ -889,7 +897,7 @@
       field("phone", "联系电话", "tel", data.phone) +
       field("email", "邮箱", "email", data.email) +
       selectField("contactPublic", "联系方式是否公开", data.contactPublic, ["不公开，仅平台可见", "审核通过后公开给已下单老板"]) +
-      tagPicker("personalTags", "个人标签（必填，最多 10 个）", data.personalTags, tagGroups.personalTags, 10, { allowCustom: true }) +
+      tagPicker("personalTags", "个人标签（必填，最多 10 个）", data.personalTags, tagGroups.personalTags, 10) +
       '</form></section>';
   }
   function gameHtml(data) {
@@ -928,11 +936,21 @@
   function voiceHtml(draft) {
     var v = draft.voice || {};
     var q = v.quality || {};
-    var voiceSrc = liveVoiceObjectUrl || v.url || "";
-    var hasLocalVoice = !!(liveVoiceBlob || liveVoiceObjectUrl || v.hasLocal);
-    var hasVoice = !!(voiceSrc || hasLocalVoice || hasDurableUpload(v) || hasDurableUpload(v.url) || hasDurableUpload(v.fileUpload));
+    // Local blob lives only in memory — never treat draft.hasLocal alone as playable/uploadable.
+    var hasLiveLocal = !!(liveVoiceBlob || liveVoiceObjectUrl);
+    var voiceSrc = liveVoiceObjectUrl || (!isEphemeralMediaUrl(v.url) ? v.url : "") || "";
+    var hasLocalVoice = hasLiveLocal;
+    var staleLocal = !!(v.hasLocal && !hasLiveLocal && !hasDurableUpload(v) && !hasDurableUpload(v.url) && !hasDurableUpload(v.fileUpload));
+    var hasVoice = !!(voiceSrc || hasLiveLocal || hasDurableUpload(v) || hasDurableUpload(v.url) || hasDurableUpload(v.fileUpload));
     var uploadedOk = !!(v.uploaded && (hasDurableUpload(v) || hasDurableUpload(v.url) || hasDurableUpload(v.fileUpload)));
-    var canConfirm = hasVoice && !uploadedOk && v.listened && q.volumeOk && q.durationOk && q.notBlank;
+    var canConfirm =
+      hasLiveLocal &&
+      !uploadedOk &&
+      !!v.listened &&
+      !!q.volumeOk &&
+      !!q.durationOk &&
+      !!q.notBlank &&
+      !uploadBusy.voice;
     var waveform = Array.isArray(q.waveform) && q.waveform.length ? q.waveform : [18, 30, 44, 24, 38, 28, 48];
     var reasons = Array.isArray(q.reasons) ? q.reasons : [];
     var template =
@@ -945,7 +963,9 @@
       "。我可以陪你上分、娱乐或者聊天，希望能给你带来轻松开心的游戏体验。";
     var statusText = v.status || "尚未录制";
     if (uploadBusy.voice) statusText = "正在上传试音…";
-    else if (uploadedOk) statusText = "已上传";
+    else if (uploadedOk) statusText = "上传成功 / 已保存";
+    else if (staleLocal) statusText = "本地录音已失效，请重新录制";
+    else if (uploadErrors.voice) statusText = "上传失败，请重试";
 
     var fileUploadCard = fileField("voiceFile", "上传已有音频（备用）", {
       kind: "audio",
@@ -995,15 +1015,20 @@
       (!hasVoice ? "disabled" : "") +
       ">删除</button>" +
       '<button class="apply-btn primary" type="button" data-record-confirm ' +
-      (!canConfirm || uploadBusy.voice ? "disabled" : "") +
-      ">" +
-      (uploadBusy.voice ? "上传中…" : uploadedOk ? "已上传" : "✅ 确认上传") +
+      (!canConfirm ? "disabled" : "") +
+      ' aria-busy="' +
+      (uploadBusy.voice ? "true" : "false") +
+      '">' +
+      (uploadBusy.voice ? "上传中…" : uploadedOk ? "上传成功 / 已保存" : "✅ 确认上传") +
       "</button>" +
       "</div>" +
       (voiceSrc
         ? '<audio id="voicePreview" controls preload="metadata" src="' + esc(voiceSrc) + '"></audio>'
         : '<audio id="voicePreview" controls hidden></audio>') +
-      (uploadedOk ? '<p class="pay-success apply-voice-uploaded" role="status">试音已上传，可播放；可重录或改用下方上传文件替换。</p>' : "") +
+      (uploadedOk ? '<p class="pay-success apply-voice-uploaded" role="status">上传成功 / 已保存。可播放；可重录或改用下方上传文件替换。</p>' : "") +
+      (uploadErrors.voice
+        ? '<p class="voice-errors apply-voice-upload-error" role="alert">上传失败，请重试：' + esc(uploadErrors.voice) + "</p>"
+        : "") +
       '<div class="voice-quality"><span class="' +
       (q.durationOk ? "ok" : "bad") +
       '">✔ 时长' +
@@ -1030,14 +1055,18 @@
             .join("") +
           "</div>"
         : "") +
-      '<div class="voice-tip">' +
-      (uploadedOk
-        ? "试音已上传到云端。如需更换，请重录并再次确认上传，或使用下方上传已有音频。"
-        : hasVoice
-          ? canConfirm
-            ? "试听完成，请点击「确认上传」保存到云端。"
-            : "请播放完整试听，确认音量和内容正常后再上传。"
-          : "点击「开始录音」后允许麦克风权限，录制 10～60 秒自我介绍。") +
+      '<div class="voice-tip" data-voice-tip>' +
+      (uploadBusy.voice
+        ? "试音上传中，请稍候…"
+        : uploadedOk
+          ? "上传成功 / 已保存到云端。如需更换，请重录并再次确认上传，或使用下方上传已有音频。"
+          : staleLocal
+            ? "录音仅保存在当前页面。刷新或离开后需重新录制，再点击「确认上传」。"
+            : hasVoice
+              ? canConfirm
+                ? "试听完成，请点击「确认上传」保存到云端。"
+                : "请播放完整试听，确认音量和内容正常后再上传。"
+              : "点击「开始录音」后允许麦克风权限，录制 10～60 秒自我介绍。") +
       "</div></div>" +
       '<div class="voice-alt-upload"><div class="voice-method-title">方式 B：上传已有音频</div>' +
       '<p class="apply-note">若浏览器不支持录音，或你已有音频文件，可在此上传。</p>' +
@@ -1063,48 +1092,26 @@
     if (set.payeeNote || set.paymentNote) lines.push("<li>" + esc(set.payeeNote || set.paymentNote) + "</li>");
     return lines.length ? "<ul>" + lines.join("") + "</ul>" : "";
   }
-  function identityHtml(draft) {
-    var id = draft.identity || {};
-    var mode = String(id.authMode || "").trim();
-    var set = depositSettings();
-    var choice =
-      '<div class="apply-split">' +
-      '<button class="apply-subcard" type="button" data-auth-mode="id_card" aria-pressed="' + (mode === "id_card" ? "true" : "false") + '"><h3>身份证认证</h3><p>上传证件正反面完成认证。选择后无需缴纳押金。</p><strong>' + (mode === "id_card" ? "已选择" : "点击选择") + "</strong></button>" +
-      '<button class="apply-subcard" type="button" data-auth-mode="deposit" aria-pressed="' + (mode === "deposit" ? "true" : "false") + '"><h3>押金认证</h3><p>按平台收款账号支付押金并上传凭证。选择后无需上传身份证。</p><strong>' + (mode === "deposit" ? "已选择" : "点击选择") + "</strong></button>" +
-      "</div>";
-    var modeForm = "";
-    if (mode === "id_card") {
-      modeForm =
-        '<div class="apply-subcard"><h3>身份证资料</h3><p>资料仅用于平台审核，不会在老板端公开。</p><form class="apply-grid">' +
-        selectField("documentType", "证件类型", id.documentType, ["马来西亚身份证", "中国大陆身份证"]) +
-        fileField("idFront", "身份证 / 证件正面", { value: id.idFront }) +
-        fileField("idBack", "身份证 / 证件背面", { value: id.idBack }) +
-        "</form></div>";
-    } else if (mode === "deposit") {
-      modeForm =
-        '<div class="apply-subcard"><h3>认证押金：' + esc(set.currency || "RM") + Number(set.amount || 100).toFixed(0) + "</h3>" +
-        "<ul><li>请向平台收款账号转账后上传付款凭证</li><li>支持方式：" + esc((set.methods || []).join("、") || "TNG / DuitNow / Alipay") + "</li></ul>" +
-        (set.description ? "<p>" + esc(set.description) + "</p>" : "") +
-        depositPayeeHtml(set) +
-        '<form class="apply-grid">' +
-        selectField("depositMethod", "押金支付方式", id.depositMethod, set.methods || ["TNG", "DuitNow", "Alipay"]) +
-        fileField("depositProof", "押金付款凭证", { value: id.depositProof }) +
-        "</form></div>";
-    }
-    var settlement =
-      mode === "id_card" || mode === "deposit"
-        ? '<div class="apply-subcard"><h3>结款资料（必填）</h3><form class="apply-grid">' +
-          selectField("settlementMethod", "结款方式", id.settlementMethod, ["银行卡", "DuitNow", "TNG Wallet", "支付宝"]) +
-          field("settlementName", "结款户名", "text", id.settlementName) +
-          field("settlementAccount", "结款账号", "text", id.settlementAccount) +
-          '</form><div class="deposit-status"><strong>审核通过后即可成为陪玩</strong><p>认证方式为二选一，审核对应方式通过后即可接单。</p></div></div>'
-        : "";
+  /** 申请第 5 步：仅认证说明，不收集身份证/押金/结款。 */
+  function authNoticeHtml(draft) {
+    var ack = !!(draft.authNotice && draft.authNotice.acknowledged);
     return (
-      '<section class="apply-panel"><h2>选择认证方式</h2><p class="apply-note full">请先选择一种认证方式（身份证认证 或 押金认证，二选一）。结款资料为必填项。</p>' +
-      choice +
-      modeForm +
-      settlement +
-      "</section>"
+      '<section class="apply-panel" id="applyAuthNoticePanel"><h2>认证说明 / 后续认证</h2>' +
+      '<div class="apply-subcard">' +
+      '<h3>资料审核通过后须完成认证</h3>' +
+      '<p class="apply-note full">资料审核通过后，成为陪玩前必须完成以下认证之一：</p>' +
+      "<ul>" +
+      "<li>① 身份证认证</li>" +
+      "<li>② RM100 押金认证</li>" +
+      "</ul>" +
+      '<p class="apply-note full">二选一完成并经后台审核通过后，方可正式接单。申请阶段无需上传身份证、无需支付押金、无需填写结款账户。</p>' +
+      '<p class="apply-note full">审核通过后请登录陪玩端，在「账号中心」完成认证；结款资料请到陪玩端「隐私设置 / 结款资料」自行填写（仅本人与后台可见）。</p>' +
+      "</div>" +
+      '<div class="agree-bar" style="margin-top:16px">' +
+      '<label class="agree-row"><input type="checkbox" data-auth-notice-ack ' +
+      (ack ? "checked" : "") +
+      "><span>我已阅读并了解：审核通过后需完成身份证或押金认证（二选一）才能接单</span></label>" +
+      "</div></section>"
     );
   }
   function stepHtml(index, draft) {
@@ -1112,7 +1119,7 @@
     if (index === 1) return basicHtml(draft.data || {});
     if (index === 2) return gameHtml(draft.data || {});
     if (index === 3) return uploadHtml(draft);
-    return identityHtml(draft);
+    return authNoticeHtml(draft);
   }
   function statusNotice() {
     var code = remoteStatus && remoteStatus.applicationStatus;
@@ -1123,7 +1130,7 @@
     var tip = "";
     if (/resubmit|need_more/.test(String(code))) tip = "请按审核意见修改后重新提交。";
     else if (/pending|review|submitted/.test(String(code))) tip = "请耐心等待后台审核，可刷新本页查看最新状态。";
-    else if (/approved|verified|passed/.test(String(code))) tip = "可前往陪玩端登录；所选认证方式审核通过后即可接单。";
+    else if (/approved|verified|passed/.test(String(code))) tip = "资料已通过。请登录陪玩端完成身份证或押金认证（二选一）后再接单。";
     else if (/rejected/.test(String(code))) tip = "如有疑问请联系平台客服。";
     return '<div class="apply-status-note">当前申请状态：<b>' + esc(statusLabelOf(code)) + '</b>' +
       (reason ? ' · 原因：' + esc(reason) : "") +
@@ -1398,13 +1405,12 @@
     if (missing.length) { showApplyTip("还有以下资料没有完成：\n" + missing.join("\n")); return; }
     var draft = readDraft();
     var user = currentUser();
-    var identity = draft.identity || {};
     var uploads = draft.uploads || {};
     var voice = draft.voice || {};
     var mainGames = draft.data.mainGames || [];
     var modes = draft.data.modes || [];
     var chain = Promise.resolve();
-    var authMode = String(identity.authMode || "").trim();
+    // 申请阶段不再提交身份证/押金/结款；认证在陪玩端完成。
     chain = chain.then(function () {
       return postCompanion("submit_application", {
         main_service: (mainGames[0] || ""),
@@ -1425,24 +1431,6 @@
         phone: draft.data.phone || "",
         email: draft.data.email || "",
         contact_public: draft.data.contactPublic || "",
-        auth_mode: authMode,
-        credential_mode: authMode,
-      });
-    });
-    chain = chain.then(function () {
-      if (authMode !== "id_card") return null;
-      return postCompanion("submit_verification", {
-        real_name: identity.realName || identity.name || draft.data.realName || user.name || "",
-        identity_no: identity.idNumber || identity.identityNo || "",
-        id_front: storagePayloadForSubmit(identity.idFront),
-        id_back: storagePayloadForSubmit(identity.idBack),
-        id_handheld: storagePayloadForSubmit(identity.idHandheld),
-        bank_name: identity.settlementBank || identity.bankName || "",
-        account_name: identity.settlementName || "",
-        bank_account: identity.settlementAccount || "",
-        tng_account: identity.tngAccount || "",
-        method: identity.settlementMethod || "bank",
-        phone: draft.data.phone || "",
       });
     });
     if (needsMediaUpload(uploads.avatar)) {
@@ -1472,22 +1460,12 @@
         });
       });
     }
-    if (authMode === "deposit" && (hasDurableUpload(identity.depositProof) || needsMediaUpload(identity.depositProof))) {
+    if (needsMediaUpload(uploads.showcaseVideo) || (uploads.showcaseVideo && uploads.showcaseVideo.url && /^data:/i.test(String(uploads.showcaseVideo.url || "")))) {
       chain = chain.then(function () {
-        var proof = storagePayloadForSubmit(identity.depositProof);
-        return postCompanion("submit_deposit_proof", {
-          paid_amount: (depositSettings().amount || 100),
-          payment_method: identity.depositMethod || "",
-          proof_url: proof || "",
-          remark: "陪玩申请一并提交",
-          settlementMethod: identity.settlementMethod || "",
-          settlementName: identity.settlementName || "",
-          settlementAccount: identity.settlementAccount || "",
-          bank_name: identity.settlementBank || identity.bankName || "",
-          account_name: identity.settlementName || "",
-          bank_account: identity.settlementAccount || "",
-          tng_account: identity.tngAccount || "",
-          method: identity.settlementMethod || "bank",
+        return postCompanion("upload_media", {
+          media_type: "video",
+          data_url: normalizeUploadAsset(uploads.showcaseVideo).url,
+          filename: "showcase.mp4",
         });
       });
     }
@@ -1527,8 +1505,8 @@
     document.body.appendChild(modal);
   }
   function hasPlayableVoiceDraft() {
-    var v = (readDraft().voice || {});
-    return !!(liveVoiceObjectUrl || liveVoiceBlob || v.hasLocal || hasDurableUpload(v) || hasDurableUpload(v.url) || hasDurableUpload(v.fileUpload));
+    var v = readDraft().voice || {};
+    return !!(liveVoiceObjectUrl || liveVoiceBlob || hasDurableUpload(v) || hasDurableUpload(v.url) || hasDurableUpload(v.fileUpload));
   }
   function setVoiceState(text, seconds) {
     var state = document.getElementById("voiceState");
@@ -1613,21 +1591,25 @@
       liveVoiceBlob = blob;
       liveVoiceObjectUrl = URL.createObjectURL(blob);
       // Never persist base64 voice into localStorage (QuotaExceeded on mobile).
-      saveDraft({
-        voice: {
-          status: quality.passed ? "已录制，请先试听" : "检测未通过，请重新录制",
-          url: "",
-          hasLocal: true,
-          duration: quality.duration,
-          confirmed: false,
-          listened: false,
-          uploaded: false,
-          uploadedAt: "",
-          mimeType: blob.type,
-          size: blob.size,
-          quality: quality,
-        },
-      });
+      // Replace voice object entirely so stale path/url/bucket from a prior upload cannot
+      // short-circuit「确认上传」into a fake local-only success.
+      var draftAfterRec = readDraft();
+      draftAfterRec.voice = {
+        status: quality.passed ? "已录制，请先试听" : "检测未通过，请重新录制",
+        url: "",
+        path: "",
+        bucket: "",
+        hasLocal: true,
+        duration: quality.duration,
+        confirmed: false,
+        listened: false,
+        uploaded: false,
+        uploadedAt: "",
+        mimeType: blob.type,
+        size: blob.size,
+        quality: quality,
+      };
+      writeRaw(DRAFT_KEY, draftAfterRec);
       setVoiceState(quality.passed ? "已录制，待试听确认" : "检测未通过", quality.duration);
       document.body.classList.remove("voice-recording-active");
       render(3);
@@ -1748,76 +1730,166 @@
     render(3);
   }
   function confirmVoice() {
-    var d = readDraft();
-    var duration = Number((d.voice || {}).duration || 0);
-    if (duration < MIN_VOICE_SECONDS) { showApplyTip("试音不能少于 10 秒，请重新录制。"); return; }
-    if (!((d.voice || {}).listened)) { showApplyTip("请先播放完整试听，再确认使用。"); return; }
-    var q = (d.voice || {}).quality || {};
-    if (!q.volumeOk || !q.durationOk || !q.notBlank) { showApplyTip("录音质量检测未通过，请重新录制。"); return; }
-    if (!companionToken()) { showApplyTip("请先登录陪玩账号后再上传试音。"); return; }
-    if (hasDurableUpload(d.voice) || hasDurableUpload(d.voice.url)) {
-      d.voice.status = "已确认";
-      d.voice.confirmed = true;
-      d.voice.confirmedAt = now();
-      d.voice.uploaded = true;
-      d.voice.uploadedAt = now();
-      writeRaw(DRAFT_KEY, d);
-      render(3);
-      return;
-    }
-    if (!d.voice.url && !liveVoiceBlob && !liveVoiceObjectUrl) { showApplyTip("请先完成录音。"); return; }
-    uploadBusy.voice = true;
-    render(3);
-    var dataUrlPromise = /^data:/i.test(String(d.voice.url || ""))
-      ? Promise.resolve(d.voice.url)
-      : liveVoiceBlob
-        ? fileToDataURL(liveVoiceBlob)
-        : fetch(liveVoiceObjectUrl || d.voice.url).then(function (r) { return r.blob(); }).then(function (blob) {
-            return fileToDataURL(blob);
-          });
-    dataUrlPromise
-      .then(function (dataUrl) {
-        return postCompanion("upload_media", {
-          media_type: "voice",
-          data_url: dataUrl,
-          filename: /mp4/i.test(String((d.voice && d.voice.mimeType) || "")) ? "voice.m4a" : "voice.webm",
-          content_type: (d.voice && d.voice.mimeType) || "",
-          duration_seconds: duration,
-        });
-      })
-      .then(function (res) {
-        uploadBusy.voice = false;
+    try {
+      if (uploadBusy.voice || uploadBusy.voiceFile) {
+        showApplyTip("试音正在上传中，请稍候…", "ok");
+        return;
+      }
+      var d = readDraft();
+      d.voice = d.voice || {};
+      var duration = Number((d.voice || {}).duration || 0);
+      if (duration < MIN_VOICE_SECONDS) {
+        showApplyTip("试音不能少于 10 秒，请重新录制。");
+        return;
+      }
+      if (!((d.voice || {}).listened)) {
+        showApplyTip("请先播放完整试听，再确认使用。");
+        return;
+      }
+      var q = (d.voice || {}).quality || {};
+      if (!q.volumeOk || !q.durationOk || !q.notBlank) {
+        showApplyTip("录音质量检测未通过，请重新录制。");
+        return;
+      }
+      if (!companionToken()) {
+        showApplyTip("请先登录陪玩账号后再上传试音。");
+        return;
+      }
+
+      var hasLive = !!(liveVoiceBlob || liveVoiceObjectUrl);
+      var alreadyDurable = !!(hasDurableUpload(d.voice) || hasDurableUpload(d.voice.url) || hasDurableUpload(d.voice.fileUpload));
+      if (alreadyDurable && !hasLive) {
+        d.voice.status = "上传成功 / 已保存";
+        d.voice.confirmed = true;
+        d.voice.confirmedAt = now();
+        d.voice.uploaded = true;
+        d.voice.uploadedAt = now();
+        d.voice.hasLocal = false;
+        writeRaw(DRAFT_KEY, d);
         delete uploadErrors.voice;
-        liveVoiceBlob = null;
-        if (liveVoiceObjectUrl) {
-          try { URL.revokeObjectURL(liveVoiceObjectUrl); } catch (e) {}
-          liveVoiceObjectUrl = "";
-        }
-        var next = readDraft();
-        next.voice = Object.assign({}, next.voice || {}, {
-          status: "已确认",
-          confirmed: true,
-          confirmedAt: now(),
-          uploaded: true,
-          uploadedAt: now(),
+        showApplyTip("上传成功 / 已保存", "ok");
+        render(3);
+        return;
+      }
+      if (!hasLive) {
+        d.voice = Object.assign({}, d.voice, {
           hasLocal: false,
-          url: (res && res.url) || (res && res.media && res.media.url) || "",
-          path: (res && res.path) || (res && res.media && res.media.path) || next.voice.path || "",
-          bucket: (res && res.bucket) || (res && res.media && res.media.bucket) || next.voice.bucket || "",
-          storageOk: true,
+          listened: false,
+          confirmed: false,
+          uploaded: false,
+          status: "本地录音已失效，请重新录制",
         });
-        writeRaw(DRAFT_KEY, next);
+        writeRaw(DRAFT_KEY, d);
+        showApplyTip("本地录音已失效（刷新后需重录）。请重新录制后再点「确认上传」。");
         render(3);
-      })
-      .catch(function (err) {
-        uploadBusy.voice = false;
-        uploadErrors.voice = err.message || "上传失败";
-        var next = readDraft();
-        next.voice = Object.assign({}, next.voice || {}, { status: "上传失败，请重新确认", confirmed: false, uploaded: false });
-        writeRaw(DRAFT_KEY, next);
-        showApplyTip("试音上传失败：" + (err.message || "请重试"));
+        return;
+      }
+
+      function buildVoiceFile(blob) {
+        if (!blob || !blob.size) throw new Error("录音文件为空，请重新录制");
+        var mime = String((d.voice && d.voice.mimeType) || blob.type || "audio/webm");
+        var ext = /mp4|aac|m4a/i.test(mime) ? "m4a" : /ogg/i.test(mime) ? "ogg" : /wav/i.test(mime) ? "wav" : "webm";
+        try {
+          return new File([blob], "voice-record." + ext, { type: mime });
+        } catch (eFile) {
+          var fallback = blob;
+          try {
+            fallback = new Blob([blob], { type: mime });
+            fallback.name = "voice-record." + ext;
+          } catch (e2) {}
+          return fallback;
+        }
+      }
+
+      uploadBusy.voice = true;
+      delete uploadErrors.voice;
+      render(3);
+
+      var blobPromise = liveVoiceBlob
+        ? Promise.resolve(liveVoiceBlob)
+        : fetch(liveVoiceObjectUrl).then(function (r) {
+            if (!r.ok) throw new Error("读取本地录音失败");
+            return r.blob();
+          });
+
+      blobPromise
+        .then(function (blob) {
+          liveVoiceBlob = blob;
+          var file = buildVoiceFile(blob);
+          // 与「上传已有音频」共用同一套 handleUploadPick → upload_media 链路。
+          return handleUploadPick({
+            key: "voiceFile",
+            files: [file],
+            kind: "audio",
+            _fromLiveRecord: true,
+            _queued: true,
+          }).then(function () {
+            return duration;
+          });
+        })
+        .then(function () {
+          uploadBusy.voice = false;
+          delete uploadErrors.voice;
+          delete uploadBusy.voiceFile;
+          liveVoiceBlob = null;
+          if (liveVoiceObjectUrl) {
+            try {
+              URL.revokeObjectURL(liveVoiceObjectUrl);
+            } catch (e) {}
+            liveVoiceObjectUrl = "";
+          }
+          var next = readDraft();
+          var durable =
+            hasDurableUpload(next.voice) ||
+            hasDurableUpload(next.voice && next.voice.url) ||
+            hasDurableUpload(next.voice && next.voice.fileUpload);
+          if (!durable) {
+            throw new Error("上传未写入云端地址，请重试");
+          }
+          next.voice = Object.assign({}, next.voice || {}, {
+            status: "上传成功 / 已保存",
+            confirmed: true,
+            confirmedAt: now(),
+            uploaded: true,
+            uploadedAt: now(),
+            hasLocal: false,
+            fromFile: false,
+            duration: duration,
+          });
+          writeRaw(DRAFT_KEY, next);
+          showApplyTip("上传成功 / 已保存", "ok");
+          render(3);
+        })
+        .catch(function (err) {
+          uploadBusy.voice = false;
+          delete uploadBusy.voiceFile;
+          var msg = (err && err.message) || "上传失败，请重试";
+          uploadErrors.voice = msg;
+          try {
+            console.error("[apply-voice] upload failed", err);
+          } catch (e2) {}
+          var next = readDraft();
+          next.voice = Object.assign({}, next.voice || {}, {
+            status: "上传失败，请重试",
+            confirmed: false,
+            uploaded: false,
+          });
+          writeRaw(DRAFT_KEY, next);
+          showApplyTip("上传失败，请重试：" + msg);
+          render(3);
+        });
+    } catch (err) {
+      uploadBusy.voice = false;
+      var failMsg = (err && err.message) || "上传失败，请重试";
+      uploadErrors.voice = failMsg;
+      try {
+        console.error("[apply-voice] confirmVoice threw", err);
+      } catch (e3) {}
+      showApplyTip("上传失败，请重试：" + failMsg);
+      try {
         render(3);
-      });
+      } catch (e4) {}
+    }
   }
   function clearUpload(key) {
     var draft = readDraft();
@@ -1971,7 +2043,7 @@
     return prepare
       .then(function (dataUrl) {
         if (!dataUrl || !/^data:/i.test(String(dataUrl))) {
-          throw new Error("读取图片失败，请重选后重试");
+          throw new Error(kind === "audio" || kind === "video" ? "读取文件失败，请重选后重试" : "读取图片失败，请重选后重试");
         }
         // Do NOT write dataUrl into localStorage — that caused QuotaExceededError on mobile.
         if (key !== "photos") {
@@ -1985,7 +2057,13 @@
                 media_type: cfg.mediaType,
                 data_url: dataUrl,
                 filename: file.name || (cfg.mediaType === "voice" ? "voice.webm" : cfg.mediaType === "video" ? "showcase.mp4" : cfg.mediaType + ".jpg"),
-                duration_seconds: durationSeconds != null ? durationSeconds : undefined,
+                content_type: file.type || "",
+                duration_seconds:
+                  durationSeconds != null
+                    ? durationSeconds
+                    : cfg.mediaType === "voice"
+                      ? Number((readDraft().voice || {}).duration || 0) || undefined
+                      : undefined,
               };
         return postCompanion(cfg.api, body);
       })
@@ -2616,25 +2694,18 @@
       }
       if (e.target.closest("[data-record-reset]")) clearVoiceRecording();
       if (e.target.closest("[data-record-delete]")) clearVoiceRecording();
-      if (e.target.closest("[data-record-confirm]")) confirmVoice();
-      if (e.target.closest("[data-apply-save]")) { e.preventDefault(); await collect(root); showApplyTip("草稿已保存", "ok"); return; }
-      var addTag = e.target.closest("[data-add-custom-tag]");
-      if (addTag) {
-        var key = addTag.dataset.addCustomTag;
-        // 仅个人标签允许自定义；禁止通过该入口给游戏/位置等后台选项加自定义项。
-        if (key !== "personalTags") return;
-        var input = document.querySelector('[data-custom-tag-input="' + key + '"]');
-        var value = input ? input.value.trim() : "";
-        if (!value) return;
-        var d = readDraft();
-        d.data = d.data || {};
-        d.data[key] = Array.isArray(d.data[key]) ? d.data[key] : [];
-        var limit = Number((document.querySelector('[data-tag-picker="' + key + '"]') || {}).dataset && document.querySelector('[data-tag-picker="' + key + '"]').dataset.tagLimit || 99);
-        if (d.data[key].length >= limit) { showApplyTip("最多只能选择 " + limit + " 个标签"); return; }
-        if (d.data[key].indexOf(value) < 0) d.data[key].push(value);
-        writeRaw(DRAFT_KEY, d);
-        render(Number(root.dataset.step || 0));
+      if (e.target.closest("[data-record-confirm]")) {
+        e.preventDefault();
+        var confirmBtn = e.target.closest("[data-record-confirm]");
+        if (confirmBtn && confirmBtn.disabled) {
+          if (uploadBusy.voice) showApplyTip("试音正在上传中，请稍候…", "ok");
+          else showApplyTip("请先完成录音并试听后，再确认上传。");
+          return;
+        }
+        confirmVoice();
+        return;
       }
+      if (e.target.closest("[data-apply-save]")) { e.preventDefault(); await collect(root); showApplyTip("草稿已保存", "ok"); return; }
       if (e.target.closest("[data-copy-nickname]")) {
         var nick = document.querySelector('input[name="gameNickname"]');
         if (nick) navigator.clipboard && navigator.clipboard.writeText(nick.value || "");
@@ -2661,28 +2732,16 @@
         }
         return;
       }
-      var authModeBtn = e.target.closest("[data-auth-mode]");
-      if (authModeBtn) {
-        e.preventDefault();
-        var nextMode = String(authModeBtn.getAttribute("data-auth-mode") || "").trim();
-        if (nextMode !== "id_card" && nextMode !== "deposit") return;
-        var cur = readDraft();
-        cur.identity = Object.assign({}, cur.identity || {});
-        cur.identity.authMode = nextMode;
-        if (nextMode === "id_card") {
-          delete cur.identity.depositProof;
-          delete cur.identity.depositMethod;
-        } else {
-          delete cur.identity.idFront;
-          delete cur.identity.idBack;
-          delete cur.identity.documentType;
-        }
-        writeRaw(DRAFT_KEY, cur);
-        render(4);
-        return;
-      }
     });
     document.addEventListener("change", async function (e) {
+      if (e.target && e.target.matches && e.target.matches("[data-auth-notice-ack]")) {
+        var curAck = readDraft();
+        curAck.authNotice = { acknowledged: !!e.target.checked, acknowledgedAt: e.target.checked ? now() : "" };
+        writeRaw(DRAFT_KEY, curAck);
+        var markAck = root.querySelector(".step-complete-mark");
+        if (markAck) markAck.textContent = stepComplete(Number(root.dataset.step || 0), readDraft()) ? "已完成 ✔" : "未完成 ○";
+        return;
+      }
       if (e.target.matches("[data-tag-field]")) {
         var picker = e.target.closest("[data-tag-picker]");
         if (!picker || !root.contains(picker)) return;

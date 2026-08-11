@@ -1,0 +1,76 @@
+{
+  "base": "http://127.0.0.1:4173",
+  "voiceUrl": "https://jqfaknpmcnqwqvatrwgo.supabase.co/storage/v1/object/sign/companion-audio/c776e811-6003-48a4-8f11-ed9eb1b70898/voice/1786420433468-4de7c713-voice.m4a?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLW",
+  "voicePath": "c776e811-6003-48a4-8f11-ed9eb1b70898/voice/1786420433468-4de7c713-voice.m4a",
+  "uploadHttp": 200,
+  "uploadBody": {
+    "ok": true,
+    "message": "录音上传成功",
+    "path": "c776e811-6003-48a4-8f11-ed9eb1b70898/voice/1786420433468-4de7c713-voice.m4a",
+    "bucket": "companion-audio",
+    "url": "https://jqfaknpmcnqwqvatrwgo.supabase.co/storage/v1/object/sign/companion-audio/c776e811-6003-48a4-8f11-ed9eb1b70898/voice/1786420433468-4de7c713-voice.m4a?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLW"
+  },
+  "net": [
+    {
+      "phase": "req",
+      "url": "http://127.0.0.1:4173/api/companion",
+      "postHead": "{\"action\":\"upload_media\",\"media_type\":\"voice\",\"data_url\":\"data:audio/mp4;base64,UklGRiTcBQBXQVZFZm10IBAAAAABAAEAgD4AAAB9",
+      "len": 539522
+    },
+    {
+      "phase": "res",
+      "status": 200,
+      "body": "{\"ok\":true,\"message\":\"录音上传成功\",\"url\":\"https://jqfaknpmcnqwqvatrwgo.supabase.co/storage/v1/object/sign/companion-audio/c776e811-6003-48a4-8f11-ed9eb1b70898/voice/1786420433468-4de7c713-voice.m4a?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV9iZmRjMWQ1OS1iMTFiLTQ0MmEtODg4Yy1lMDliOGFjYTE5YTYiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJjb21wYW5pb24tYXVkaW8vYzc3NmU4MTEtNjAwMy00OGE0LThmMTEtZWQ5ZWIxYjcwODk4L3ZvaWNlLzE3ODY0MjA0MzM0NjgtNGRlN2M3MTMtdm9pY2UubTRhIiwic2NvcGUiOiJkb3dubG9hZCIsImlhdCI6MTc4NjQyMDQzNCwiZXhw"
+    }
+  ],
+  "results": [
+    {
+      "step": "auth_companion",
+      "result": "PASS",
+      "detail": "status=200 tok=true"
+    },
+    {
+      "step": "stale_local_blocks_confirm",
+      "result": "PASS",
+      "detail": "{\"tip\":\"上传成功 / 已保存到云端。如需更换，请重录并再次确认上传，或使用下方上传已有音频。\",\"status\":\"上传成功 / 已保存\",\"disabled\":true,\"text\":\"上传成功 / 已保存\",\"hasLocal\":false}"
+    },
+    {
+      "step": "ready_for_confirm",
+      "result": "PASS",
+      "detail": "{\"tip\":\"试听完成，请点击「确认上传」保存到云端。\",\"disabled\":false,\"text\":\"确认上传\",\"listened\":true,\"hasLocal\":true,\"quality\":{\"duration\":12,\"durationOk\":true,\"volumeOk\":true,\"humanVoice\":true,\"notBlank\":true,\"rms\":0.3182455103070798,\"peak\":1.0093718767166138,\"silenceRatio\":0.016793272864701437,\"waveform\":[56,56,56,56,56,56,56,56,56,56,56,56,56,56,56,56,56,56,56,56,56,56,56,56],\"reasons\":[],\"passed\":true},\"audioSrc\":\"blob:http://127.0.0.1:4173/b900ee33-d40e-4316-a2e1-b6f0c43e6\"}"
+    },
+    {
+      "step": "shows_uploading_or_success",
+      "result": "PASS",
+      "detail": "{\"text\":\"上传中…\",\"tip\":\"试音上传中，请稍候…\",\"status\":\"正在上传试音…\",\"busy\":\"true\"}"
+    },
+    {
+      "step": "network_upload_media",
+      "result": "PASS",
+      "detail": "{\"http\":200,\"ok\":true,\"message\":\"录音上传成功\",\"path\":\"c776e811-6003-48a4-8f11-ed9eb1b70898/voice/1786420433468-4de7c713-voice.m4a\",\"url\":\"https://jqfaknpmcnqwqvatrwgo.supabase.co/storage/v1/object/sign/companion-audio/c776e811-6003-48a4-8f11-ed9eb1b70898/voice/1786420433468-4de7c713-voice.m4a?toke\",\"bucket\":\"companion-audio\"}"
+    },
+    {
+      "step": "upload_success_ui_and_draft",
+      "result": "PASS",
+      "detail": "{\"tip\":\"上传成功 / 已保存到云端。如需更换，请重录并再次确认上传，或使用下方上传已有音频。\",\"status\":\"上传成功 / 已保存\",\"btnText\":\"上传成功 / 已保存\",\"uploaded\":true,\"confirmed\":true,\"url\":\"https://jqfaknpmcnqwqvatrwgo.supabase.co/storage/v1/object/sign/companion-audio/c776e811-6003-48a4-8f11-ed9eb1b70898/voice/1786420433468-4de7c713-voice.m4a?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLW\",\"path\":\"c776e811-6003-48a4-8f11-ed9eb1b70898/voice/1786420433468-4de7c713-voice.m4a\",\"bucket\":\"companion-audio\",\"hasData\":false,\"hasBlob\":false,\"banner\":\"\"}"
+    },
+    {
+      "step": "refresh_persist_playable",
+      "result": "PASS",
+      "detail": "{\"afterRefresh\":{\"url\":\"https://jqfaknpmcnqwqvatrwgo.supabase.co/storage/v1/object/sign/companion-audio/c776e811-6003-48a4-8f11-ed9eb1b70898/voice/1786420433468-4de7c713-voice.m4a?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLW\",\"path\":\"\",\"uploaded\":true,\"audioSrc\":\"https://jqfaknpmcnqwqvatrwgo.supabase.co/storage/v1/object/sign/companion-audio/c776e811-6003-48a4-8f11-ed9eb1b70898/voice/1786420433468-4de7c713-voice.m4a?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLW\",\"status\":\"上传成功 / 已保存\"},\"bootVoice\":\"https://jqfaknpmcnqwqvatrwgo.supabase.co/storage/v1/object/sign/companion-audio/c776e811-6003-48a4-8f11-ed9eb1b70898/voice/1786420433468-4de7c713-voice.m4a?token=eyJraWQiOiJzdG9yYW\",\"bootPath\":\"\"}"
+    },
+    {
+      "step": "relogin_bootstrap_voice",
+      "result": "PASS",
+      "detail": "https://jqfaknpmcnqwqvatrwgo.supabase.co/storage/v1/object/sign/companion-audio/c776e811-6003-48a4-8f11-ed9eb1b70898/voice/1786420433468-4de7c713-voice.m4a?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLW"
+    },
+    {
+      "step": "admin_can_play_voice",
+      "result": "PASS",
+      "detail": "{\"ok\":true,\"url\":\"https://jqfaknpmcnqwqvatrwgo.supabase.co/storage/v1/object/sign/companion-audio/c776e811-6003-48a4-8f11-ed9eb1b70898/voice/1786420433468-4de7c713-voice.m4a?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLW\"}"
+    }
+  ],
+  "passCount": 9,
+  "failCount": 0,
+  "ALL_PASS": true
+}

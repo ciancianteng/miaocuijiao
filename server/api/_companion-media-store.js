@@ -17,7 +17,7 @@ const PUBLIC_BUCKETS = {
   profile: "companion-public",
 };
 
-const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+const MAX_IMAGE_BYTES = 50 * 1024 * 1024;
 const ALLOWED_IMAGE_MIME = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp"]);
 
 function loadLocalEnv() {
@@ -187,7 +187,7 @@ export async function ensureCompanionBuckets() {
   await ensurePrivateBucket(
     PRIVATE_BUCKETS.video,
     ["video/mp4", "video/quicktime", "video/webm", "video/x-m4v", "application/octet-stream"],
-    40 * 1024 * 1024
+    200 * 1024 * 1024
   );
   await ensurePrivateBucket(PRIVATE_BUCKETS.payment, ["image/jpeg", "image/png", "image/webp", "application/pdf"]);
   try {
@@ -198,7 +198,7 @@ export async function ensureCompanionBuckets() {
   return PRIVATE_BUCKETS;
 }
 
-const MAX_VIDEO_BYTES = 40 * 1024 * 1024;
+const MAX_VIDEO_BYTES = 200 * 1024 * 1024;
 const ALLOWED_VIDEO_MIME = new Set([
   "video/mp4",
   "video/quicktime",
@@ -217,7 +217,7 @@ export function assertVideoUpload(decoded) {
     throw Object.assign(new Error("仅支持 mp4 / mov / webm 视频"), { status: 400 });
   }
   if (decoded.buffer.length > MAX_VIDEO_BYTES) {
-    throw Object.assign(new Error("视频不能超过 40MB"), { status: 413 });
+    throw Object.assign(new Error("视频文件过大，请压缩后重试"), { status: 413 });
   }
   return {
     ...decoded,
@@ -241,12 +241,12 @@ export function assertImageUpload(decoded) {
     throw Object.assign(new Error("仅支持 jpg、jpeg、png、webp 格式"), { status: 400 });
   }
   if (decoded.buffer.length > MAX_IMAGE_BYTES) {
-    throw Object.assign(new Error("单张图片不能超过 10MB"), { status: 413 });
+    throw Object.assign(new Error("图片文件过大，请压缩后重试"), { status: 413 });
   }
   return { ...decoded, contentType: normalized === "image/jpg" ? "image/jpeg" : normalized || "image/jpeg" };
 }
 
-const MAX_AUDIO_BYTES = 8 * 1024 * 1024;
+const MAX_AUDIO_BYTES = 30 * 1024 * 1024;
 const ALLOWED_AUDIO_MIME = new Set([
   "audio/webm",
   "audio/mpeg",
@@ -272,7 +272,7 @@ export function assertAudioUpload(decoded) {
     throw Object.assign(new Error("仅支持 webm / mp3 / wav / ogg / aac 语音格式"), { status: 400 });
   }
   if (decoded.buffer.length > MAX_AUDIO_BYTES) {
-    throw Object.assign(new Error("语音文件不能超过 8MB"), { status: 413 });
+    throw Object.assign(new Error("语音文件过大，请压缩后重试或改用较短录音"), { status: 413 });
   }
   return { ...decoded, contentType: mime.startsWith("audio/") ? mime : "audio/webm" };
 }
