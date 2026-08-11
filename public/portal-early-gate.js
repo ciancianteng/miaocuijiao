@@ -8,7 +8,7 @@
 (function () {
   "use strict";
 
-  var GATE_VERSION = "20260811portalIso1";
+  var GATE_VERSION = "20260811portalIso2";
 
   function pathNow() {
     return String(location.pathname || "/").replace(/\\/g, "/");

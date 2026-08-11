@@ -25,6 +25,14 @@ const ANON = env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY;
 const PASS = "McjTest@12345678";
 const BASE = "https://meow-cuijiao-homepage-staging.vercel.app";
 
+const ALLOW_CREATE = process.env.ALLOW_CREATE_TEST_ACCOUNTS === "1";
+const CANONICAL = new Set([
+  "boss@meow.test",
+  "companion@meow.test",
+  "service@meow.test",
+  "admin@meow.test",
+]);
+
 const TARGETS = [
   { email: "boss@meow.test", role: "boss", display: "P0 Boss" },
   { email: "boss.final.1785714993009@meow.test", role: "boss", display: "Boss Final" },
@@ -73,6 +81,9 @@ async function ensureAuthUser(email) {
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(`reset ${email}: ${JSON.stringify(j).slice(0, 200)}`);
     return existing.id;
+  }
+  if (!ALLOW_CREATE && (/\.final\.|unified\./i.test(String(email||"")) || !CANONICAL.has(String(email||"").toLowerCase()))) {
+    throw new Error("Refusing to auto-create test account: "+email+". Set ALLOW_CREATE_TEST_ACCOUNTS=1 only when explicitly required.");
   }
   const created = await fetch(`${URL}/auth/v1/admin/users`, {
     method: "POST",

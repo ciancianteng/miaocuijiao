@@ -48,8 +48,12 @@ function uniq(list) {
   return out;
 }
 
-/** Derive roles from profile row + optional companion row + auth metadata. */
-export function resolveRoles(profile = {}, { companion = null, authUser = null, grantBossWithCompanion = true } = {}) {
+/**
+ * Derive roles from profile row + optional companion row + auth metadata.
+ * Dual boss+companion must be explicit in DB (profiles.role / profiles.roles / companion row).
+ * Do NOT auto-grant boss to every companion — that forced needRolePick on all portals.
+ */
+export function resolveRoles(profile = {}, { companion = null, authUser = null, grantBossWithCompanion = false } = {}) {
   const collected = [];
   const fromCol = profile?.roles;
   if (Array.isArray(fromCol)) collected.push(...fromCol);
@@ -71,7 +75,7 @@ export function resolveRoles(profile = {}, { companion = null, authUser = null, 
   if (companion && companion.id) collected.push("companion");
 
   let roles = uniq(collected);
-  // Product rule: companion accounts may use boss portal (shop/order) on the same user_id.
+  // Opt-in only (default false). Legacy callers may still pass true.
   if (grantBossWithCompanion && roles.includes("companion") && !roles.includes("boss")) {
     roles = uniq([...roles, "boss"]);
   }
@@ -122,7 +126,27 @@ export async function loadCompanionRowForUser(userId) {
 export async function enrichProfileRoles(profile, authUser = null) {
   if (!profile?.id) return { profile, companion: null, roles: [], ...publicRolesPayload({}, {}) };
   const companion = await loadCompanionRowForUser(profile.id);
-  const rolesInfo = publicRolesPayload(profile, { companion, authUser });
+  let rolesInfo = publicRolesPayload(profile, { companion, authUser, grantBossWithCompanion: false });
+  const primary = normalizeRoleName(profile?.role);
+  // Heal legacy companion register that stamped roles:["companion","boss"] while primary stayed companion.
+  // True dual accounts keep primary role "boss" (or aliases) and also have companion_profiles.
+  if (
+    primary === "companion" &&
+    rolesInfo.hasBoss &&
+    Array.isArray(rolesInfo.roles) &&
+    rolesInfo.roles.includes("boss")
+  ) {
+    const healed = uniq(rolesInfo.roles.filter((r) => r !== "boss"));
+    try {
+      await persistRoles(profile.id, healed.length ? healed : ["companion"], { primaryRole: "companion" });
+    } catch {
+      /* best-effort */
+    }
+    rolesInfo = publicRolesPayload(
+      { ...profile, roles: healed.length ? healed : ["companion"], role: "companion" },
+      { companion, authUser, grantBossWithCompanion: false }
+    );
+  }
   return {
     profile: { ...profile, roles: rolesInfo.roles },
     companion,

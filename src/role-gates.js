@@ -286,8 +286,32 @@
   }
   function refreshAuthUi() {
     if (!document.body) return;
-    document.body.classList.toggle("is-logged-in", isLogged("customer") || isLogged("boss"));
-    window.dispatchEvent(new CustomEvent("mcj:auth-updated"));
+    if (window.__mcjAuthUiRefreshing) return;
+    window.__mcjAuthUiRefreshing = true;
+    try {
+      document.body.classList.toggle("is-logged-in", isLogged("customer") || isLogged("boss"));
+      window.dispatchEvent(new CustomEvent("mcj:auth-updated"));
+    } finally {
+      window.__mcjAuthUiRefreshing = false;
+    }
+  }
+
+  function inferPortalFromPage() {
+    var p = path();
+    if (/\/companion(\/|$)/i.test(p)) return "companion";
+    if (/\/customer-service(\/|$)/i.test(p)) return "customer_service";
+    if (/\/admin(\/|\.html|$)/i.test(p)) return "admin";
+    // Boss dedicated surfaces (homepage modal / login.html / mine) — never role-pick here.
+    if (/^\/?$|\/index\.html$/i.test(p) || /\/login\.html$/i.test(p) || /\/mine\.html$/i.test(p)) return "boss";
+    return "";
+  }
+
+  function portalDeniedMessage(portal) {
+    if (portal === "boss") return "该账号暂无老板端权限";
+    if (portal === "companion") return "该账号暂无陪玩端权限";
+    if (portal === "customer_service") return "该账号暂无客服权限";
+    if (portal === "admin") return "该账号暂无管理员权限";
+    return "账号角色与当前入口不匹配。";
   }
 
   function isAdminRole(role) {
@@ -621,52 +645,88 @@
   async function loginWithDatabase(account, password, remember, options) {
     options = options || {};
     var expectedPortal = profileRole(options.expectedPortal || options.expectedRole || "");
-    var body = await postAuth({ action: "login", email: account, password: password });
+    // Dedicated portal pages never show the boss/companion picker.
+    if (!expectedPortal && !options.allowRolePick) {
+      expectedPortal = inferPortalFromPage();
+    }
+    if (options.allowRolePick) expectedPortal = "";
+    var staffPortal =
+      expectedPortal === "customer_service" || expectedPortal === "admin" || expectedPortal === "super_admin";
+    var body = await postAuth({
+      action: "login",
+      email: account,
+      password: password,
+      loginPortal: expectedPortal || undefined,
+      role: expectedPortal || undefined,
+    });
     var u = (body.session && body.session.user) || {};
-    // Portal-scoped login: skip role pick and bind to the entry portal.
+
     if (expectedPortal === "companion") {
       if (!(u.hasCompanion || profileRole(u.role) === "companion")) {
-        throw new Error("无权访问陪玩端。");
+        throw new Error(portalDeniedMessage("companion"));
       }
       var companionUser = Object.assign({}, u, { role: "companion" });
       body.session = Object.assign({}, body.session, { user: companionUser });
       writeCompanionPortalSession(body.session, remember !== false);
-      body.redirect = "/companion/review-status";
+      // Do not copy companion JWT into boss soft session.
+      body.redirect = body.redirect || "/companion/review-status";
       body._pickedRole = "companion";
+      body.needRolePick = false;
       return body;
     }
     if (expectedPortal === "customer_service") {
       if (profileRole(u.role) !== "customer_service") {
-        throw new Error("无权访问客服端。");
+        throw new Error(portalDeniedMessage("customer_service"));
       }
       saveSession(body.session, remember !== false);
       syncPortalSessions(body.session, remember !== false);
+      body.needRolePick = false;
       return body;
     }
     if (expectedPortal === "admin") {
       if (!isAdminRole(u.role)) {
-        throw new Error("非管理员账号不得进入后台中心。");
+        throw new Error(portalDeniedMessage("admin"));
       }
       saveSession(body.session, remember !== false);
+      body.needRolePick = false;
       return body;
     }
+    if (expectedPortal === "boss") {
+      if (!(u.hasBoss || profileRole(u.role) === "boss")) {
+        throw new Error(portalDeniedMessage("boss"));
+      }
+      var bossUser = Object.assign({}, u, { role: "boss" });
+      body.session = Object.assign({}, body.session, { user: bossUser });
+      saveSession(body.session, remember !== false);
+      body.redirect = body.redirect || "/index.html";
+      body._pickedRole = "boss";
+      body.needRolePick = false;
+      return body;
+    }
+
+    // Public unified login only: role picker when account truly has both consumer portals.
     var needPick =
-      !expectedPortal &&
+      !staffPortal &&
+      !!options.allowRolePick &&
       (body.needRolePick ||
         (!!u.hasBoss && !!u.hasCompanion) ||
         (Array.isArray(u.roles) && u.roles.indexOf("boss") >= 0 && u.roles.indexOf("companion") >= 0));
     if (needPick && typeof document !== "undefined") {
       body = await showRolePickModal(body, remember);
     } else {
-      // Default boss-surface login.
       if (body.session && body.session.user) {
+        var fallbackRole = u.hasBoss || profileRole(u.role) === "boss" ? "boss" : u.hasCompanion ? "companion" : u.role;
         body.session = Object.assign({}, body.session, {
-          user: Object.assign({}, body.session.user, {
-            role: u.hasBoss || profileRole(u.role) === "boss" ? "boss" : u.role,
-          }),
+          user: Object.assign({}, body.session.user, { role: fallbackRole }),
         });
+        if (profileRole(fallbackRole) === "companion") {
+          writeCompanionPortalSession(body.session, remember !== false);
+          body.redirect = body.redirect || "/companion/review-status";
+          body._pickedRole = "companion";
+        } else {
+          saveSession(body.session, remember !== false);
+        }
       }
-      saveSession(body.session, remember);
     }
     return body;
   }
@@ -778,6 +838,8 @@
 
   function afterAuthSuccess(result, options) {
     options = options || {};
+    if (window.__mcjAfterAuthBusy) return;
+    window.__mcjAfterAuthBusy = true;
     showAuthBootOverlay("正在登录…");
     // Session must already be saved by caller; re-confirm dual-write before navigate.
     var picked = result && result._pickedRole;
@@ -791,6 +853,7 @@
       } catch (e) {}
     }
     if (!sessionReadable()) {
+      window.__mcjAfterAuthBusy = false;
       hideAuthBootOverlay();
       setLoginMessage(document.body, "登录态保存失败，请重试。");
       return;
@@ -829,19 +892,27 @@
     // Yield one frame so storage flush is visible to the next document before navigate.
     var go = function () {
       if (!sessionReadable()) {
+        window.__mcjAfterAuthBusy = false;
         hideAuthBootOverlay();
         setLoginMessage(document.body, "登录态保存失败，请重试。");
         return;
       }
-      if (dest !== here && dest + ".html" !== here && here + "/" !== dest) {
+      var destPath = String(dest || "/").split("?")[0].split("#")[0].replace(/\/+$/, "") || "/";
+      var herePath = String(here || "/").split("?")[0].split("#")[0].replace(/\/+$/, "") || "/";
+      var sameDoc =
+        destPath === herePath ||
+        destPath + ".html" === herePath ||
+        herePath + ".html" === destPath ||
+        (herePath === "/" && /index\.html$/i.test(destPath)) ||
+        (destPath === "/" && /index\.html$/i.test(herePath));
+      if (!sameDoc) {
         location.href = String(redirect || "/").replace(/#(login|register)$/i, "");
         return;
       }
-      if (profileRole(role) === "boss") {
-        location.replace((location.pathname || "/") + (location.search || ""));
-        return;
-      }
+      // Same document: do NOT location.replace(self) — that re-booted auth listeners and
+      // caused Maximum call stack / login flicker loops on boss homepage.
       hideAuthBootOverlay();
+      window.__mcjAfterAuthBusy = false;
     };
     if (typeof requestAnimationFrame === "function") {
       requestAnimationFrame(function () {
@@ -871,26 +942,22 @@
     if (want === "admin") {
       if (!isAdminRole(role)) {
         logout("admin");
-        throw new Error("非管理员账号不得进入后台中心。");
+        throw new Error(portalDeniedMessage("admin"));
       }
     } else if (want === "companion") {
       if (!(u.hasCompanion || got === "companion")) {
         clearCompanionPortalSession();
-        throw new Error("无权访问陪玩端。");
+        throw new Error(portalDeniedMessage("companion"));
       }
     } else if (want === "boss") {
       if (!(u.hasBoss || got === "boss")) {
         logout("boss");
-        throw new Error("非老板账号，请使用对应入口登录。");
+        throw new Error(portalDeniedMessage("boss"));
       }
     } else if (got !== want) {
       logout(got);
       logout(want);
-      throw new Error(
-        want === "customer_service"
-          ? "无权访问客服端。"
-          : "账号角色与当前入口不匹配。"
-      );
+      throw new Error(portalDeniedMessage(want) || "账号角色与当前入口不匹配。");
     }
     if (want === "companion") {
       syncPortalSessions(body.session, remember !== false);
@@ -1408,6 +1475,11 @@
         target.disabled = true;
         var oldOtpText = target.textContent;
         target.textContent = "登录中...";
+        var otpPortal =
+          profileRole(target.getAttribute("data-login-portal") || target.getAttribute("data-login-role") || "") ||
+          inferPortalFromPage() ||
+          "boss";
+        var allowPick = String(target.getAttribute("data-login-portal") || "").toLowerCase() === "public";
         fetch("/api/auth", {
           method: "POST",
           headers: { "Content-Type": "application/json", Accept: "application/json" },
@@ -1415,7 +1487,8 @@
             action: "login_with_otp",
             email: otpAccount,
             code: otpCode,
-            role: target.getAttribute("data-login-role") || "boss",
+            role: allowPick ? "boss" : otpPortal,
+            loginPortal: allowPick ? undefined : otpPortal,
           }),
         })
           .then(function (r) {
@@ -1424,8 +1497,28 @@
               return j;
             });
           })
-          .then(function (result) {
-            saveSession(result.session, true);
+          .then(async function (result) {
+            var u = (result.session && result.session.user) || {};
+            if (!allowPick) {
+              if (otpPortal === "companion") {
+                if (!(u.hasCompanion || profileRole(u.role) === "companion")) throw new Error(portalDeniedMessage("companion"));
+                result.session = Object.assign({}, result.session, { user: Object.assign({}, u, { role: "companion" }) });
+                writeCompanionPortalSession(result.session, true);
+                result._pickedRole = "companion";
+                result.redirect = result.redirect || "/companion/review-status";
+              } else if (otpPortal === "boss") {
+                if (!(u.hasBoss || profileRole(u.role) === "boss")) throw new Error(portalDeniedMessage("boss"));
+                result.session = Object.assign({}, result.session, { user: Object.assign({}, u, { role: "boss" }) });
+                saveSession(result.session, true);
+                result._pickedRole = "boss";
+              } else {
+                saveSession(result.session, true);
+              }
+            } else if (result.needRolePick && u.hasBoss && u.hasCompanion) {
+              result = await showRolePickModal(result, true);
+            } else {
+              saveSession(result.session, true);
+            }
             afterAuthSuccess(result, { remember: true });
           })
           .catch(function (error) {
@@ -1444,7 +1537,12 @@
       target.disabled = true;
       var oldText = target.textContent;
       target.textContent = "登录中...";
-      loginWithDatabase(account, passwordLogin, true)
+      var passPortalAttr = String(target.getAttribute("data-login-portal") || "").toLowerCase();
+      var passOpts =
+        passPortalAttr === "public"
+          ? { allowRolePick: true }
+          : { expectedPortal: profileRole(passPortalAttr || inferPortalFromPage() || "boss") };
+      loginWithDatabase(account, passwordLogin, true, passOpts)
         .then(function (result) {
           afterAuthSuccess(result, { remember: true });
         })
@@ -1469,6 +1567,8 @@
     saveSession: saveSession,
     switchActivePortal: switchActivePortal,
     showRolePickModal: showRolePickModal,
+    inferPortalFromPage: inferPortalFromPage,
+    portalDeniedMessage: portalDeniedMessage,
     logout: logout,
     isLogged: isLogged,
     user: user,

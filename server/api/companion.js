@@ -2951,7 +2951,7 @@ export default async function handler(req, res) {
         expiresAt:auth.expires_at || "",
         user:safePlayer(playerProfile, companion || {}),
         remember:!!body.remember
-      },needRolePick:!!(playerProfile?.roles || []).includes("boss")});
+      },needRolePick:false});
     }
     if (action === "forgot_password" || action === "send_reset_code") {
       const body = await parseBody(req);
@@ -3186,10 +3186,10 @@ export default async function handler(req, res) {
             has_password: wantsPassword,
             email_verified: true,
             email_verified_at: nowIso(),
-            roles: ["companion", "boss"],
+            roles: ["companion"],
             ...(wantsPassword ? { password_set_at: nowIso() } : {}),
           },
-          app_metadata: { has_password: wantsPassword, email_verified: true, roles: ["companion", "boss"] },
+          app_metadata: { has_password: wantsPassword, email_verified: true, roles: ["companion"] },
         }),
       });
       const companionProfilePayload = {
@@ -3217,7 +3217,7 @@ export default async function handler(req, res) {
       }
       try {
         const { persistRoles } = await import("./_account-roles.js");
-        await persistRoles(created.id, ["companion", "boss"], { primaryRole: "companion" });
+        await persistRoles(created.id, ["companion"], { primaryRole: "companion" });
       } catch { /* optional */ }
       await supabaseJson(restUrl("companion_profiles"), { method:"POST", headers: serviceHeaders(), body: JSON.stringify({ user_id: created.id, nickname, contact_phone: "", verification_status: "pending", deposit_status: "pending", application_status: "draft", allow_orders: false, online_status: "offline", created_at: nowIso(), updated_at: nowIso() }) });
       try {

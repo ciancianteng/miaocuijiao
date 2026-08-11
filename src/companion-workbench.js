@@ -4707,18 +4707,30 @@
         var code=String(fd.get('code')||'').trim();
         if(!account||!/^\S+@\S+\.\S+$/.test(account)){state.loginBusy=false;state.loginError='请输入有效邮箱。';if(Auth&&Auth.setLoading)Auth.setLoading(btn,false,'验证码登录');else if(btn){btn.disabled=false;btn.textContent='验证码登录';}if(Auth&&Auth.setFormError)Auth.setFormError(form,state.loginError);else{var e1=form.querySelector('[data-auth-error]');if(e1)e1.textContent=state.loginError;}return;}
         if(!/^\d{4,8}$/.test(code)){state.loginBusy=false;state.loginError='请输入验证码。';if(Auth&&Auth.setLoading)Auth.setLoading(btn,false,'验证码登录');else if(btn){btn.disabled=false;btn.textContent='验证码登录';}if(Auth&&Auth.setFormError)Auth.setFormError(form,state.loginError);else{var e2=form.querySelector('[data-auth-error]');if(e2)e2.textContent=state.loginError;}return;}
-        run=fetch('/api/auth',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify({action:'login_with_otp',email:account,code:code,role:'companion'})}).then(function(r){return r.json().then(function(j){if(!r.ok||j.ok===false)throw new Error((j&&j.message)||'登录失败');return j;});});
+        run=fetch('/api/auth',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify({action:'login_with_otp',email:account,code:code,role:'companion',loginPortal:'companion'})}).then(function(r){return r.json().then(function(j){if(!r.ok||j.ok===false)throw new Error((j&&j.message)||'登录失败');return j;});});
       }else{
         var password=String(fd.get('password')||'');
         run=Gate&&typeof Gate.loginPortal==='function'?Gate.loginPortal('companion',account,password,remember):api('login',{account:account,password:password,remember:remember});
       }
       run.then(function(res){
         var sess=res.session||{};
+        var user=Object.assign({},sess.user||{},{role:'companion'});
+        if(!(user.hasCompanion||user.role==='companion')){
+          throw new Error((Gate&&Gate.portalDeniedMessage?Gate.portalDeniedMessage('companion'):null)||'该账号暂无陪玩端权限');
+        }
+        if(Gate&&typeof Gate.writeCompanionPortalSession==='function'){
+          Gate.writeCompanionPortalSession({
+            accessToken:sess.accessToken||sess.token||'',
+            refreshToken:sess.refreshToken||sess.refresh_token||'',
+            expiresAt:sess.expiresAt||sess.expires_at||'',
+            user:user
+          },remember);
+        }
         saveSession({
           token:sess.accessToken||sess.token||'',
           refreshToken:sess.refreshToken||sess.refresh_token||'',
           expiresAt:sess.expiresAt||sess.expires_at||'',
-          user:sess.user||{},
+          user:user,
           remember:remember
         },remember);
         state.loginBusy=false;state.loginError='';go('/companion/review-status');return loadData();

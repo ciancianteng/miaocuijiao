@@ -205,6 +205,44 @@ function redirectFor(role) {
   }[key] || "/index.html";
 }
 
+function normalizeLoginPortal(raw) {
+  const p = String(raw || "")
+    .trim()
+    .toLowerCase();
+  if (!p || p === "public" || p === "unified" || p === "auto" || p === "any") return "";
+  if (p === "cs" || p === "service" || p === "customer-service") return "customer_service";
+  if (p === "player" || p === "pw") return "companion";
+  if (p === "customer" || p === "owner" || p === "user") return "boss";
+  if (p === "super_admin" || p === "superadmin") return "admin";
+  if (p === "boss" || p === "companion" || p === "customer_service" || p === "admin") return p;
+  return "";
+}
+
+function portalDeniedMessage(portal) {
+  if (portal === "boss") return "该账号暂无老板端权限";
+  if (portal === "companion") return "该账号暂无陪玩端权限";
+  if (portal === "customer_service") return "该账号暂无客服权限";
+  if (portal === "admin") return "该账号暂无管理员权限";
+  return "账号角色与当前入口不匹配。";
+}
+
+function userHasPortalAccess(user, portal) {
+  const role = String(user?.role || "").toLowerCase();
+  if (portal === "boss") return !!(user?.hasBoss || role === "boss" || role === "customer" || role === "owner" || role === "user");
+  if (portal === "companion") return !!(user?.hasCompanion || role === "companion" || role === "player");
+  if (portal === "customer_service") return role === "customer_service" || role === "service";
+  if (portal === "admin") return role === "admin" || role === "super_admin";
+  return false;
+}
+
+/** Role picker only for public unified login when account truly has boss+companion (never staff). */
+function computeNeedRolePick(user, loginPortal) {
+  if (loginPortal) return false;
+  const role = String(user?.role || "").toLowerCase();
+  if (role === "admin" || role === "super_admin" || role === "customer_service" || role === "service") return false;
+  return !!(user?.hasBoss && user?.hasCompanion);
+}
+
 function metaBossUid(authUser = {}) {
   return String(authUser?.user_metadata?.boss_uid || authUser?.app_metadata?.boss_uid || "").trim();
 }
@@ -639,7 +677,7 @@ async function handleLoginSendOtp(body, res) {
 }
 
 async function handleLoginWithOtp(body, res) {
-  const role = normalizeForgotRole(body.role || "boss");
+  const role = normalizeForgotRole(body.role || body.loginPortal || "boss");
   if (role === "customer_service" || role === "admin" || role === "super_admin") {
     return json(res, 400, { ok: false, message: "该端请使用邮箱密码登录。" });
   }
@@ -647,10 +685,17 @@ async function handleLoginWithOtp(body, res) {
   const code = String(body.code || body.otp || "").trim();
   if (!email || !/^\S+@\S+\.\S+$/.test(email)) return json(res, 400, { ok: false, message: "请输入有效邮箱。" });
   if (!/^\d{4,8}$/.test(code)) return json(res, 400, { ok: false, message: "验证码无效或已过期" });
-  const resolved = await resolveForgotAccount(email, role);
-  if (!resolved?.profile) return json(res, 400, { ok: false, message: "验证码无效或已过期" });
-  const profile0 = resolved.profile;
-  if (!canLoginWithStatus(profile0, role)) {
+  const loginPortal = normalizeLoginPortal(body.loginPortal || body.portal || body.role || "");
+  // OTP is portal-scoped: find account by email, then enforce portal capability (supports dual-role users).
+  const byEmail = await profilesLookup(
+    `?email=eq.${encodeURIComponent(email)}&select=id,email,phone,phone_e164,display_name,status,role,boss_uid&limit=5`
+  ).catch(() => []);
+  const profile0 =
+    (Array.isArray(byEmail) && byEmail[0]) ||
+    (await resolveForgotAccount(email, loginPortal || role).catch(() => null))?.profile ||
+    null;
+  if (!profile0) return json(res, 400, { ok: false, message: "验证码无效或已过期" });
+  if (!canLoginWithStatus(profile0, loginPortal || role || profile0.role)) {
     return json(res, 403, { ok: false, message: "账号未启用或正在审核。" });
   }
   try {
@@ -659,7 +704,8 @@ async function handleLoginWithOtp(body, res) {
     return json(res, err.status || 403, { ok: false, message: err.message || "请先完成邮箱验证。", code: "EMAIL_NOT_VERIFIED" });
   }
   const key = forgotAccountKey(profile0);
-  const stored = await findForgotOtp(key, role, "login_otp");
+  const otpRoleKey = loginPortal || role || "boss";
+  const stored = await findForgotOtp(key, otpRoleKey, "login_otp");
   if (!stored?.code || String(stored.code) !== code || Number(stored.exp) <= Date.now()) {
     return json(res, 400, { ok: false, message: "验证码无效或已过期" });
   }
@@ -678,8 +724,21 @@ async function handleLoginWithOtp(body, res) {
     ...(auth.user || {}),
     user_metadata: { ...((auth.user && auth.user.user_metadata) || {}), boss_uid: profile.boss_uid || metaBossUid(auth.user) },
   });
-  if (!VALID_ROLES.has(user.role)) return json(res, 403, { ok: false, message: "账号角色无效。" });
-  if (!canLoginWithStatus(profile, user.role)) return json(res, 403, { ok: false, message: "账号未启用或正在审核。" });
+  if (!VALID_ROLES.has(user.role) && !(user.hasBoss || user.hasCompanion)) {
+    return json(res, 403, { ok: false, message: "账号角色无效。" });
+  }
+  if (!canLoginWithStatus(profile, user.role || (user.hasCompanion ? "companion" : "boss"))) {
+    return json(res, 403, { ok: false, message: "账号未启用或正在审核。" });
+  }
+  if (loginPortal && !userHasPortalAccess(user, loginPortal)) {
+    return json(res, 403, { ok: false, message: portalDeniedMessage(loginPortal), code: "PORTAL_DENIED" });
+  }
+  // Bind session active role to the portal when provided.
+  let sessionUser = user;
+  if (loginPortal === "boss") sessionUser = { ...user, role: "boss" };
+  else if (loginPortal === "companion") sessionUser = { ...user, role: "companion" };
+  else if (loginPortal === "customer_service") sessionUser = { ...user, role: "customer_service" };
+  else if (loginPortal === "admin") sessionUser = { ...user, role: user.role === "super_admin" ? "super_admin" : "admin" };
   if (stored.id) {
     await supabaseJson(restUrl("password_reset_requests", `?id=eq.${encodeURIComponent(stored.id)}`), {
       method: "PATCH",
@@ -687,17 +746,30 @@ async function handleLoginWithOtp(body, res) {
       body: JSON.stringify({ status: `used_login:${Date.now()}` }),
     }).catch(() => null);
   }
+  const needRolePick = computeNeedRolePick(sessionUser, loginPortal);
+  const defaultRedirect = loginPortal
+    ? redirectFor(loginPortal === "admin" ? sessionUser.role : loginPortal)
+    : sessionUser.hasBoss
+      ? redirectFor("boss")
+      : sessionUser.hasCompanion
+        ? redirectFor("companion")
+        : redirectFor(sessionUser.role);
   return json(res, 200, {
     ok: true,
-    message: user.hasPassword ? "登录成功" : "登录成功。建议前往账号安全设置密码。",
-    promptSetPassword: user.hasPassword !== true,
+    message: sessionUser.hasPassword ? "登录成功" : "登录成功。建议前往账号安全设置密码。",
+    promptSetPassword: sessionUser.hasPassword !== true,
+    needRolePick,
     session: {
       accessToken: auth.access_token,
       refreshToken: auth.refresh_token,
       expiresAt: auth.expires_at,
-      user,
+      user: sessionUser,
     },
-    redirect: redirectFor(user.role),
+    redirect: defaultRedirect,
+    portals: {
+      boss: sessionUser.hasBoss ? redirectFor("boss") : "",
+      companion: sessionUser.hasCompanion ? redirectFor("companion") : "",
+    },
   });
 }
 
@@ -1238,7 +1310,7 @@ export default async function handler(req, res) {
           boss: user.hasBoss ? redirectFor("boss") : "",
           companion: user.hasCompanion ? redirectFor("companion") : "",
         },
-        needRolePick: !!(user.hasBoss && user.hasCompanion),
+        needRolePick: false,
         pendingForced,
         forcedAckRequired,
         passwordHint: PASSWORD_RULE_HINT,
@@ -1842,8 +1914,17 @@ export default async function handler(req, res) {
     const password = String(body.password || "");
     if (!email || !password) return json(res, 400, { ok: false, message: "请输入邮箱和密码。" });
 
-    const loginRole = normalizeForgotRole(body.role || body.loginPortal || body.portal || "boss");
-    const pre = await resolveForgotAccount(email, loginRole).catch(() => null);
+    const loginPortal = normalizeLoginPortal(body.loginPortal || body.portal || body.role || "");
+    // Forgot pre-check: use portal when provided, else any profile for this email.
+    const prePortal = loginPortal || "";
+    const pre = prePortal
+      ? await resolveForgotAccount(email, prePortal).catch(() => null)
+      : await (async () => {
+          const rows = await profilesLookup(
+            `?email=eq.${encodeURIComponent(email)}&select=id,email,phone,phone_e164,display_name,status,role,boss_uid&limit=3`
+          ).catch(() => []);
+          return Array.isArray(rows) && rows[0] ? { profile: rows[0], via: "email", role: rows[0].role } : null;
+        })();
     if (pre?.profile && String(pre.profile.status || "").toLowerCase() === "disabled") {
       return json(res, 403, { ok: false, message: "账号已停用，请联系客服。" });
     }
@@ -1911,13 +1992,23 @@ export default async function handler(req, res) {
     if (!canLoginWithStatus(profile, user.role || (user.hasCompanion ? "companion" : "boss"))) {
       return json(res, 403, { ok: false, message: "账号未启用或正在审核。" });
     }
+    if (loginPortal && !userHasPortalAccess(user, loginPortal)) {
+      return json(res, 403, { ok: false, message: portalDeniedMessage(loginPortal), code: "PORTAL_DENIED" });
+    }
+    let sessionUser = user;
+    if (loginPortal === "boss") sessionUser = { ...user, role: "boss" };
+    else if (loginPortal === "companion") sessionUser = { ...user, role: "companion" };
+    else if (loginPortal === "customer_service") sessionUser = { ...user, role: "customer_service" };
+    else if (loginPortal === "admin") sessionUser = { ...user, role: user.role === "super_admin" ? "super_admin" : "admin" };
     await touchLastLogin(profile.id, clientIp(req));
-    const needRolePick = !!(user.hasBoss && user.hasCompanion);
-    const defaultRedirect = user.hasBoss
-      ? redirectFor("boss")
-      : user.hasCompanion
-        ? redirectFor("companion")
-        : redirectFor(user.role);
+    const needRolePick = computeNeedRolePick(sessionUser, loginPortal);
+    const defaultRedirect = loginPortal
+      ? redirectFor(loginPortal === "admin" ? sessionUser.role : loginPortal)
+      : sessionUser.hasBoss
+        ? redirectFor("boss")
+        : sessionUser.hasCompanion
+          ? redirectFor("companion")
+          : redirectFor(sessionUser.role);
     if (resolveMustChangePassword(profile, authUser)) {
       return json(res, 200, {
         ok: true,
@@ -1928,12 +2019,12 @@ export default async function handler(req, res) {
           accessToken: auth.access_token,
           refreshToken: auth.refresh_token,
           expiresAt: auth.expires_at,
-          user: { ...user, mustChangePassword: true, must_change_password: true },
+          user: { ...sessionUser, mustChangePassword: true, must_change_password: true },
         },
         redirect: defaultRedirect,
         portals: {
-          boss: user.hasBoss ? redirectFor("boss") : "",
-          companion: user.hasCompanion ? redirectFor("companion") : "",
+          boss: sessionUser.hasBoss ? redirectFor("boss") : "",
+          companion: sessionUser.hasCompanion ? redirectFor("companion") : "",
         },
       });
     }
@@ -1945,12 +2036,12 @@ export default async function handler(req, res) {
         accessToken: auth.access_token,
         refreshToken: auth.refresh_token,
         expiresAt: auth.expires_at,
-        user,
+        user: sessionUser,
       },
       redirect: defaultRedirect,
       portals: {
-        boss: user.hasBoss ? redirectFor("boss") : "",
-        companion: user.hasCompanion ? redirectFor("companion") : "",
+        boss: sessionUser.hasBoss ? redirectFor("boss") : "",
+        companion: sessionUser.hasCompanion ? redirectFor("companion") : "",
       },
     });
   } catch (error) {
