@@ -171,7 +171,8 @@
     if(!accessLabel){
       if(accessSt==='approved'||perms.canWork===true)accessLabel='认证条件已满足，可正常接单。';
       else if(accessSt==='incomplete')accessLabel='请完成身份证认证或押金认证（二选一）';
-      else accessLabel=perms.lockReason||auditHint();
+      // Never call auditHint() here — it calls isCredentialIncomplete → isProfileApproved → unifiedAccess (stack overflow).
+      else accessLabel=perms.lockReason||'资料审核中，请耐心等待。';
     }
     return {
       profile_review_status:profileReview,
@@ -403,9 +404,20 @@
     return true;
   }
   function isProfileApproved(){
-    var ua=unifiedAccess();
+    // Read review status directly — do NOT call unifiedAccess() here
+    // (unifiedAccess → auditHint → isCredentialIncomplete → isProfileApproved would recurse).
+    var p=(state.data&&state.data.player)||{};
+    var raw=p.raw||{};
     var perm=(state.data||{}).permissions||{};
-    var st=String(ua.profile_review_status||perm.applicationStatus||perm.profile_review_status||'').toLowerCase();
+    var st=String(
+      p.profile_review_status||
+      p.profileReviewStatus||
+      p.auditStatus||
+      raw.application_status||
+      perm.applicationStatus||
+      perm.profile_review_status||
+      ""
+    ).toLowerCase();
     return /approved|verified|passed/.test(st);
   }
   function isForcedAckLocked(){
@@ -425,11 +437,28 @@
   function isCredentialIncomplete(){
     if(isIsolationMode()||!isProfileApproved())return false;
     if(isForcedAckLocked())return false;
-    var ua=unifiedAccess();
+    // Prefer permission flags / stored access status — avoid re-entering unifiedAccess().
     var perm=(state.data||{}).permissions||{};
-    if(ua.credentialOrOk||perm.credentialOrOk||perm.canWork===true)return false;
-    var st=String(ua.account_access_status||'').toLowerCase();
-    return st==='incomplete'||perm.canWork===false||perm.canSetAvailable===false;
+    var p=(state.data&&state.data.player)||{};
+    var v=(state.data&&state.data.verification)||{};
+    var d=(state.data&&state.data.deposit)||{};
+    var raw=p.raw||{};
+    if(perm.credentialOrOk===true||p.credentialOrOk===true||v.credentialOrOk===true||perm.canWork===true)return false;
+    var identitySt=String(p.identity_status||p.identityStatus||v.identityStatus||raw.identity_status||"").trim();
+    var depositSt=String(p.deposit_status||p.depositStatus||d.status||v.depositStatus||raw.deposit_status||"").trim();
+    var identityVerified=
+      perm.identityVerified===true||
+      p.identityVerified===true||
+      v.identityVerified===true||
+      /approved|verified|passed/.test(identitySt.toLowerCase());
+    var depositVerified=
+      perm.depositVerified===true||
+      p.depositVerified===true||
+      v.depositVerified===true||
+      /approved|verified|passed|paid|received/.test(depositSt.toLowerCase());
+    if(identityVerified||depositVerified)return false;
+    var accessSt=String(p.account_access_status||p.accountAccessStatus||"").toLowerCase();
+    return accessSt==="incomplete"||perm.canWork===false||perm.canSetAvailable===false;
   }
   function todayStatusLockLabel(){
     // Never show「审核中」for approved profile locked only by credential/forced.
@@ -4733,7 +4762,12 @@
           user:user,
           remember:remember
         },remember);
-        state.loginBusy=false;state.loginError='';go('/companion/review-status');return loadData();
+        state.loginBusy=false;state.loginError='';
+        // Prefer API redirect; fall back to review-status for isolation / dashboard for approved.
+        var next=String((res&&res.redirect)||'/companion/review-status');
+        if(!/^\/companion\//.test(next))next='/companion/review-status';
+        go(next);
+        return loadData();
       }).catch(function(err){
         state.loginBusy=false;
         state.loginError=(Gate&&Gate.humanizeAuthError?Gate.humanizeAuthError(err):null)||err.message||'账号或密码错误。';
