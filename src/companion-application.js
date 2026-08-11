@@ -1257,18 +1257,23 @@
   var SCROLL_KEY = "mcjCompanionApplyScroll.v1";
 
   function statusLabelOf(code) {
+    var key = String(code || "").toLowerCase().trim();
     var map = {
-      pending: "待审核",
-      review: "待审核",
-      submitted: "待审核",
+      draft: "草稿中",
+      pending: "审核中",
+      review: "审核中",
+      submitted: "审核中",
       resubmit: "需要补资料",
       need_more: "需要补资料",
-      approved: "已通过",
-      verified: "已通过",
-      passed: "已通过",
-      rejected: "已拒绝",
+      approved: "审核通过",
+      verified: "审核通过",
+      passed: "审核通过",
+      rejected: "审核未通过",
     };
-    return map[String(code || "").toLowerCase()] || code || "草稿";
+    if (map[key]) return map[key];
+    // Never leak raw English DB enums (draft/pending/…) to the UI.
+    if (!key || /^[a-z][a-z0-9_]*$/i.test(key)) return "草稿中";
+    return String(code);
   }
   function saveApplyScroll() {
     try {
@@ -1527,7 +1532,7 @@
   function showSuccess() {
     var modal = document.createElement("div");
     modal.className = "apply-submit-modal";
-    modal.innerHTML = '<div><h2>申请已提交，等待后台审核。</h2><p>当前状态：待审核。你可随时回到本页查看审核进度。</p><div class="apply-actions"><a class="apply-btn" href="companion-apply.html">查看审核进度</a><a class="apply-btn primary" href="index.html">返回首页</a></div></div>';
+    modal.innerHTML = '<div><h2>申请已提交，等待后台审核。</h2><p>当前状态：审核中。你可随时回到本页查看审核进度。</p><div class="apply-actions"><a class="apply-btn" href="companion-apply.html">查看审核进度</a><a class="apply-btn primary" href="index.html">返回首页</a></div></div>';
     document.body.appendChild(modal);
   }
   function hasPlayableVoiceDraft() {

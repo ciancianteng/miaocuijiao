@@ -106,20 +106,24 @@
   var STATUS_CN={
     verification:function(s){
       var v=String(s||'').trim().toLowerCase();
-      if(!v||/none|not_submitted|missing|unsubmitted|draft|uploaded/.test(v))return '资料未完成';
-      if(/approved|verified|passed|active/.test(v))return '已通过';
+      if(!v||/none|not_submitted|missing|unsubmitted|uploaded/.test(v))return '资料未完成';
+      if(/^draft$/.test(v))return '草稿中';
+      if(/approved|verified|passed|active/.test(v))return '审核通过';
       if(/reject|declin|fail/.test(v))return '审核未通过';
       if(/resubmit|need_more/.test(v))return '需补资料';
       if(/pending|review|submit/.test(v))return '审核中';
-      return s||'资料未完成';
+      // Never leak raw English DB enums to the companion UI.
+      if(/^[a-z][a-z0-9_]*$/i.test(v))return '资料未完成';
+      return '资料未完成';
     },
     deposit:function(s){
       var v=String(s||'').trim().toLowerCase();
       if(!v||/none|not_submitted|missing|unsubmitted|draft|uploaded|unpaid|未缴/.test(v))return '未缴纳';
       if(/reject|declin|fail/.test(v))return '审核未通过';
       if(/^(approved|verified|passed|paid|active|completed|received)$|已通过|已缴纳/.test(v))return '已通过';
-      if(/pending|review|submit|待审/.test(v))return '待审核';
-      return s||'未缴纳';
+      if(/pending|review|submit|待审/.test(v))return '审核中';
+      if(/^[a-z][a-z0-9_]*$/i.test(v))return '未缴纳';
+      return '未缴纳';
     },
     identity:function(s){
       var v=String(s||'').trim().toLowerCase();
@@ -127,16 +131,18 @@
       if(/approved|verified|passed/.test(v))return '已通过';
       if(/reject|declin|fail/.test(v))return '审核未通过';
       if(/pending|review|submit|uploaded/.test(v))return '审核中';
-      return s||'未提交';
+      if(/^[a-z][a-z0-9_]*$/i.test(v))return '未提交';
+      return '未提交';
     },
     accountAccess:function(s){
       var v=String(s||'').trim().toLowerCase();
-      if(!v)return '待审核';
+      if(!v)return '审核中';
       if(/approved|verified|passed|active/.test(v))return '可正常接单';
       if(/incomplete|credential/.test(v))return '认证未完成';
       if(/reject|declin|fail|blocked/.test(v))return '暂不可接单';
       if(/pending|review|submit/.test(v))return '审核中';
-      return s||'待审核';
+      if(/^[a-z][a-z0-9_]*$/i.test(v))return '审核中';
+      return '审核中';
     }
   };
   var CONSULT_TYPE_CN={order_dock:'订单对接',profile_audit:'资料审核',deposit_auth:'押金认证',withdraw:'提现问题',earnings:'收益问题',other:'其他'};

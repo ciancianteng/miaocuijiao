@@ -31,18 +31,22 @@
     return String(row.application_status || row.applicationStatus || row.verification_status || row.auditStatus || "pending").toLowerCase();
   }
   function statusLabel(code) {
+    var key = String(code || "").toLowerCase().trim();
     var map = {
-      pending: "待审核",
-      review: "待审核",
-      submitted: "待审核",
+      draft: "草稿中",
+      pending: "审核中",
+      review: "审核中",
+      submitted: "审核中",
       resubmit: "需要补资料",
       need_more: "需要补资料",
-      approved: "已通过",
-      verified: "已通过",
-      passed: "已通过",
-      rejected: "已拒绝",
+      approved: "审核通过",
+      verified: "审核通过",
+      passed: "审核通过",
+      rejected: "审核未通过",
     };
-    return map[code] || code || "-";
+    if (map[key]) return map[key];
+    if (!key || /^[a-z][a-z0-9_]*$/i.test(key)) return "-";
+    return String(code);
   }
   function isApplicationQueue(row) {
     var code = statusCode(row);
@@ -115,10 +119,10 @@
       '<div class="admin-section-head compact"><div><h3>陪玩申请审核</h3><p>查看申请人完整资料、媒体与敏感认证信息；通过后开通陪玩端登录（默认离线，须完成身份与押金后才可接单）。</p></div>' +
       '<div class="content-admin-toolbar compact"><select data-capp-filter>' +
       [
-        ["pending", "待审核"],
+        ["pending", "审核中"],
         ["resubmit", "需要补资料"],
-        ["approved", "已通过"],
-        ["rejected", "已拒绝"],
+        ["approved", "审核通过"],
+        ["rejected", "审核未通过"],
         ["all", "全部"],
       ]
         .map(function (pair) {
