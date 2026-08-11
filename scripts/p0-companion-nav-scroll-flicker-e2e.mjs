@@ -8,11 +8,14 @@ import fs from "node:fs";
 import path from "node:path";
 import { chromium, devices } from "playwright-core";
 
-const BASE = (process.env.MCJ_STAGING_URL || "https://meow-cuijiao-homepage-staging.vercel.app").replace(/\/$/, "");
-const PASS = process.env.MCJ_TEST_PASSWORD || "McjTest@12345678";
+const BASE = (process.env.MCJ_STAGING_URL || process.env.PREVIEW || "https://meow-cuijiao-homepage-staging.vercel.app").replace(
+  /\/$/,
+  ""
+);
+const PASS = process.env.MCJ_TEST_PASSWORD || process.env.PASS || "McjTest@12345678";
 const COMP = process.env.E2E_COMPANION_EMAIL || "companion@meow.test";
 const OUT = path.join(process.cwd(), "artifacts", "companion-nav-scroll-flicker-e2e");
-const CHROME = process.env.CHROME_PATH || "/usr/local/bin/google-chrome";
+const CHROME = process.env.CHROME_PATH || process.env.PLAYWRIGHT_CHROMIUM_PATH || "/usr/local/bin/google-chrome";
 
 fs.mkdirSync(OUT, { recursive: true });
 
@@ -20,6 +23,78 @@ const results = [];
 function step(name, ok, detail = "") {
   results.push({ step: name, result: ok ? "PASS" : "FAIL", detail: String(detail || "").slice(0, 500) });
   console.log(`[${ok ? "PASS" : "FAIL"}] ${name}${detail ? " — " + String(detail).slice(0, 240) : ""}`);
+}
+
+async function apiLogin(email) {
+  const res = await fetch(`${BASE}/api/auth`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ action: "login", email, password: PASS, role: "companion", loginPortal: "companion" }),
+  });
+  const json = await res.json().catch(() => ({}));
+  return { ok: res.ok && json.ok !== false, json };
+}
+
+async function injectCompanionSession(page, session) {
+  await page.goto(`${BASE}/companion/dashboard?t=${Date.now()}`, { waitUntil: "domcontentloaded", timeout: 60000 });
+  await page.evaluate((sess) => {
+    const user = Object.assign({}, (sess && sess.user) || {}, { role: "companion" });
+    const blob = {
+      token: sess.accessToken || sess.token || "",
+      accessToken: sess.accessToken || sess.token || "",
+      refreshToken: sess.refreshToken || "",
+      expiresAt: sess.expiresAt || "",
+      user,
+    };
+    const raw = JSON.stringify(blob);
+    localStorage.setItem("mcjCompanionSession", raw);
+    sessionStorage.setItem("mcjCompanionSession", raw);
+    const soft = "companion_session_v4_" + Date.now();
+    localStorage.setItem("companionAuthToken", soft);
+    sessionStorage.setItem("companionAuthToken", soft);
+    localStorage.setItem("companionUser", JSON.stringify(user));
+    sessionStorage.setItem("companionUser", JSON.stringify(user));
+  }, session);
+  await page.goto(`${BASE}/companion/dashboard?t=${Date.now()}`, { waitUntil: "domcontentloaded", timeout: 60000 });
+  await page.waitForTimeout(800);
+}
+
+async function loginCompanion(page) {
+  await page.goto(`${BASE}/companion/login/?t=${Date.now()}`, { waitUntil: "domcontentloaded", timeout: 90000 });
+  await page.waitForTimeout(800);
+  try {
+    const passTab = page.locator('[data-login-method-tab="password"]').first();
+    if ((await passTab.count()) > 0) {
+      await passTab.click();
+      await page.waitForTimeout(300);
+    }
+    const account = page.locator('form[data-login-method="password"] input[name="account"], form[data-login] input[name="account"], input[name="email"]').first();
+    const password = page.locator('form[data-login-method="password"] input[name="password"], form[data-login] input[name="password"], input[name="password"]').first();
+    await account.waitFor({ timeout: 8000 });
+    await account.fill(COMP);
+    await password.fill(PASS);
+    await page.locator('form[data-login-method="password"] button[type="submit"], form[data-login] button[type="submit"], button[type="submit"]').first().click();
+    await page.waitForTimeout(2500);
+  } catch (err) {
+    console.log("[login-ui-fallback]", err.message);
+  }
+  const shell = page.locator(".pw-shell");
+  if ((await shell.count()) === 0 || /\/login/i.test(page.url())) {
+    const login = await apiLogin(COMP);
+    if (!login.ok || !(login.json?.session || login.json?.token || login.json?.accessToken)) {
+      throw new Error("companion login failed: " + (login.json?.message || login.json?.error || "unknown"));
+    }
+    const session =
+      login.json.session ||
+      {
+        accessToken: login.json.accessToken || login.json.token,
+        refreshToken: login.json.refreshToken || "",
+        expiresAt: login.json.expiresAt || "",
+        user: login.json.user || login.json.profile || { email: COMP, role: "companion" },
+      };
+    await injectCompanionSession(page, session);
+  }
+  await shell.waitFor({ timeout: 20000 });
 }
 
 const ROUTES = [
@@ -32,26 +107,6 @@ const ROUTES = [
   ["/companion/messages", "消息中心"],
   ["/companion/rules", "陪玩规则"],
 ];
-
-async function loginCompanion(page) {
-  await page.goto(BASE + "/companion/login", { waitUntil: "domcontentloaded", timeout: 60000 });
-  await page.waitForTimeout(600);
-  const pwdTab = page.locator('[data-login-method-tab="password"]');
-  if (await pwdTab.count()) {
-    await pwdTab.click();
-    await page.waitForTimeout(200);
-  }
-  await page.fill('form[data-login] input[name="email"], input[name="email"]', COMP);
-  await page.fill('form[data-login] input[name="password"], input[name="password"]', PASS);
-  await Promise.all([
-    page.waitForURL(/\/companion\//, { timeout: 30000 }).catch(() => null),
-    page.click('form[data-login] button[type="submit"], button[type="submit"]'),
-  ]);
-  await page.waitForTimeout(1200);
-  // Isolation may land on review-status; still has shell.
-  const shell = page.locator(".pw-shell");
-  await shell.waitFor({ timeout: 20000 });
-}
 
 async function scrollPageToBottom(page, isMobile) {
   await page.evaluate((mobile) => {
