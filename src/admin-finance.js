@@ -32,6 +32,37 @@
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
     });
   }
+  function toast(msg) {
+    var el = document.getElementById("adminFinalToast");
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "adminFinalToast";
+      el.className = "admin-final-toast";
+      document.body.appendChild(el);
+    }
+    el.textContent = String(msg || "");
+    el.classList.add("show");
+    clearTimeout(el._t);
+    el._t = setTimeout(function () {
+      el.classList.remove("show");
+    }, 2800);
+  }
+  function openAdminUi(title, html) {
+    if (window.MCJAdminModal && window.MCJAdminModal.open) {
+      window.MCJAdminModal.open(title, html);
+      return true;
+    }
+    var modal = document.getElementById("adminModal");
+    if (!modal) return false;
+    modal.classList.add("show");
+    modal.hidden = false;
+    modal.setAttribute("aria-hidden", "false");
+    var body = document.getElementById("modalBody") || modal.querySelector("[data-admin-modal-body], .modal-body, .admin-modal-body");
+    var titleEl = modal.querySelector("h3, .modal-title, .admin-modal-head strong, .admin-modal-head h3");
+    if (titleEl) titleEl.textContent = title;
+    if (body) body.innerHTML = html;
+    return true;
+  }
   function role() {
     try {
       var u = JSON.parse(localStorage.getItem("adminUser") || sessionStorage.getItem("adminUser") || "{}");
@@ -180,6 +211,7 @@
   }
 
   function withdrawPayeeCard(w) {
+    var masked = "*****" + esc(w.accountLast4 || "----");
     return (
       '<div class="fin-payee-card" style="display:grid;gap:6px;min-width:220px;padding:10px 12px;border:1px solid rgba(255,255,255,.10);border-radius:12px;background:rgba(255,255,255,.03);text-align:left">' +
       '<div style="display:flex;justify-content:space-between;gap:8px"><span style="color:#9ca3af;font-size:12px">银行</span><strong style="font-size:13px">' +
@@ -188,15 +220,17 @@
       '<div style="display:flex;justify-content:space-between;gap:8px"><span style="color:#9ca3af;font-size:12px">户名</span><strong style="font-size:13px">' +
       esc(w.accountHolder || "-") +
       "</strong></div>" +
-      '<div style="display:flex;justify-content:space-between;gap:8px"><span style="color:#9ca3af;font-size:12px">账号</span><strong style="font-size:13px;letter-spacing:.08em">*****' +
-      esc(w.accountLast4 || "----") +
+      '<div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><span style="color:#9ca3af;font-size:12px">账号</span><strong class="fin-account-value" data-fin-account-display data-masked="' +
+      masked +
+      '" style="font-size:13px;letter-spacing:.08em">' +
+      masked +
       "</strong></div>" +
       (w.paymentAccountId && state.canReveal
         ? '<button class="mini-btn" type="button" data-fin-reveal="' +
           esc(w.paymentAccountId) +
           '" data-fin-reveal-wd="' +
           esc(w.id) +
-          '" style="margin-top:4px">查看完整账号</button>'
+          '" data-fin-reveal-state="masked" style="margin-top:4px">查看完整账号</button>'
         : w.paymentAccountId
           ? '<div class="admin-sync-note" style="margin-top:4px;font-size:11px">完整账号仅超级管理员/财务可查看</div>'
           : "") +
@@ -1173,6 +1207,7 @@
         .then(function (res) {
           var w = res.item || res.withdrawal || res.detail || res || {};
           var a = res.account || w.paymentAccount || {};
+          var masked = w.accountLast4 ? "*****" + w.accountLast4 : "*****----";
           var html =
             '<div style="display:grid;gap:10px;text-align:left">' +
             "<div><span style=\"color:#9ca3af\">提现单号</span><br><strong>" +
@@ -1188,7 +1223,7 @@
             "（" +
             esc(w.catFoodAmount != null ? w.catFoodAmount : "-") +
             " 猫粮）</strong></div>" +
-            '<div style="padding:12px;border:1px solid rgba(255,255,255,.12);border-radius:12px;background:rgba(255,255,255,.03)">' +
+            '<div class="fin-payee-card" style="padding:12px;border:1px solid rgba(255,255,255,.12);border-radius:12px;background:rgba(255,255,255,.03)">' +
             "<div style=\"margin-bottom:8px;font-weight:700\">打款信息</div>" +
             "<div>银行：<strong>" +
             esc(a.bankName || w.bankName || "-") +
@@ -1196,66 +1231,73 @@
             "<div>户名：<strong>" +
             esc(a.accountHolder || w.accountHolder || "-") +
             "</strong></div>" +
-            "<div>账号：<strong>" +
-            esc(w.accountLast4 ? "*****" + w.accountLast4 : "*****----") +
+            '<div>账号：<strong class="fin-account-value" data-fin-account-display data-masked="' +
+            esc(masked) +
+            '" style="letter-spacing:.08em">' +
+            esc(masked) +
             "</strong></div>" +
             (state.canReveal && (w.paymentAccountId || w.id)
               ? '<button class="mini-btn" type="button" data-fin-reveal="' +
                 esc(w.paymentAccountId || "") +
                 '" data-fin-reveal-wd="' +
                 esc(w.id || viewWd.dataset.finViewWd) +
-                '" style="margin-top:8px">查看完整账号</button>'
+                '" data-fin-reveal-state="masked" style="margin-top:8px">查看完整账号</button>'
               : '<div class="admin-sync-note" style="margin-top:8px">完整账号需超级管理员/财务点击「查看完整账号」</div>') +
             "</div>" +
             "<div><span style=\"color:#9ca3af\">状态</span><br><strong>" +
             esc(w.statusText || w.status || "-") +
             "</strong></div></div>";
-          if (window.MCJAdminModal && window.MCJAdminModal.open) {
-            window.MCJAdminModal.open("打款信息详情", html);
-          } else {
-            var modal = document.getElementById("adminModal");
-            if (modal) {
-              modal.classList.add("show");
-              modal.hidden = false;
-              var body = modal.querySelector("[data-admin-modal-body], .modal-body, .admin-modal-body") || modal;
-              var title = modal.querySelector("h3, .modal-title");
-              if (title) title.textContent = "打款信息详情";
-              if (body) body.innerHTML = html;
-            } else {
-              alert(
-                "银行：" +
-                  (a.bankName || w.bankName || "") +
-                  "\n户名：" +
-                  (a.accountHolder || w.accountHolder || "") +
-                  "\n账号：" +
-                  (a.accountNumber || "****" + (w.accountLast4 || ""))
-              );
-            }
-          }
+          if (!openAdminUi("打款信息详情", html)) toast("无法打开打款信息详情");
         })
         .catch(function (err) {
-          // Fallback: use list row fields when detail API unavailable
-          var w = (state.withdrawals || []).find(function (x) {
-            return String(x.id) === String(viewWd.dataset.finViewWd);
-          }) || {};
-          alert(
-            "银行：" +
-              (w.bankName || "") +
-              "\n户名：" +
-              (w.accountHolder || "") +
-              "\n账号后四位：****" +
-              (w.accountLast4 || "") +
-              (err && err.message ? "\n(" + err.message + ")" : "")
-          );
+          var w =
+            (state.withdrawals || []).find(function (x) {
+              return String(x.id) === String(viewWd.dataset.finViewWd);
+            }) || {};
+          var masked = w.accountLast4 ? "*****" + w.accountLast4 : "*****----";
+          var html =
+            '<div style="display:grid;gap:10px;text-align:left">' +
+            "<div>银行：<strong>" +
+            esc(w.bankName || "-") +
+            "</strong></div>" +
+            "<div>户名：<strong>" +
+            esc(w.accountHolder || "-") +
+            "</strong></div>" +
+            '<div>账号：<strong class="fin-account-value" data-fin-account-display data-masked="' +
+            esc(masked) +
+            '">' +
+            esc(masked) +
+            "</strong></div>" +
+            (err && err.message ? '<div class="admin-sync-note">' + esc(err.message) + "</div>" : "") +
+            "</div>";
+          if (!openAdminUi("打款信息详情", html)) toast(err.message || "读取打款信息失败");
         });
       return;
     }
     var reveal = e.target.closest("[data-fin-reveal]");
     if (reveal) {
       if (!state.canReveal) {
-        alert("仅超级管理员或财务管理员可查看完整账号");
+        toast("仅超级管理员或财务管理员可查看完整账号");
         return;
       }
+      var card = reveal.closest(".fin-payee-card") || reveal.parentElement;
+      var display = card ? card.querySelector("[data-fin-account-display]") : null;
+      var stateNow = String(reveal.getAttribute("data-fin-reveal-state") || "masked");
+      if (stateNow === "revealed" && display) {
+        display.textContent = display.getAttribute("data-masked") || "*****----";
+        reveal.setAttribute("data-fin-reveal-state", "masked");
+        reveal.textContent = "查看完整账号";
+        return;
+      }
+      if (reveal.dataset.finFullAccount && display) {
+        display.textContent = reveal.dataset.finFullAccount;
+        reveal.setAttribute("data-fin-reveal-state", "revealed");
+        reveal.textContent = "隐藏完整账号";
+        return;
+      }
+      reveal.disabled = true;
+      var prev = reveal.textContent;
+      reveal.textContent = "读取中…";
       post("reveal_account", {
         paymentAccountId: reveal.dataset.finReveal,
         withdrawalId: reveal.dataset.finRevealWd || "",
@@ -1263,62 +1305,19 @@
       })
         .then(function (res) {
           var a = res.account || {};
-          var w = res.withdrawal || {};
-          var viewer = res.viewer || {};
-          var html =
-            '<div style="display:grid;gap:8px;text-align:left">' +
-            "<div>陪玩昵称：<strong>" +
-            esc(w.companionName || "-") +
-            "</strong></div>" +
-            "<div>陪玩 ID：<strong>" +
-            esc(w.companionUid || w.companionId || "-") +
-            "</strong></div>" +
-            "<div>提现单号：<strong>" +
-            esc(w.withdrawalNo || "-") +
-            "</strong></div>" +
-            "<div>提现金额：<strong>RM " +
-            esc(w.netAmountRm != null ? w.netAmountRm : "-") +
-            "</strong></div>" +
-            "<div>银行：<strong>" +
-            esc(a.bankName || "") +
-            "</strong></div>" +
-            "<div>户名：<strong>" +
-            esc(a.accountHolder || "") +
-            "</strong></div>" +
-            "<div>完整银行账号：<strong style=\"letter-spacing:.04em\">" +
-            esc(a.accountNumber || "") +
-            "</strong></div>" +
-            (a.duitnowId
-              ? "<div>DuitNow ID：<strong>" + esc(a.duitnowId) + "</strong></div>"
-              : "") +
-            '<div class="admin-sync-note">查看人：' +
-            esc(viewer.name || viewer.roleLabel || "admin") +
-            " · " +
-            esc(res.viewedAt || "") +
-            "（已写入操作日志）</div></div>";
-          if (window.MCJAdminModal && window.MCJAdminModal.open) window.MCJAdminModal.open("完整收款资料", html);
-          else
-            alert(
-              "陪玩：" +
-                (w.companionName || "") +
-                "\nID：" +
-                (w.companionUid || w.companionId || "") +
-                "\n银行：" +
-                (a.bankName || "") +
-                "\n户名：" +
-                (a.accountHolder || "") +
-                "\n完整账号：" +
-                (a.accountNumber || "") +
-                (a.duitnowId ? "\nDuitNow：" + a.duitnowId : "") +
-                "\n提现单号：" +
-                (w.withdrawalNo || "") +
-                "\n金额：RM " +
-                (w.netAmountRm != null ? w.netAmountRm : "") +
-                "\n（已写入操作日志）"
-            );
+          var full = String(a.accountNumber || "").replace(/\s+/g, "");
+          if (!full) throw new Error("未返回完整账号");
+          reveal.dataset.finFullAccount = full;
+          if (display) display.textContent = full;
+          reveal.setAttribute("data-fin-reveal-state", "revealed");
+          reveal.textContent = "隐藏完整账号";
+          reveal.disabled = false;
+          toast("已写入操作日志");
         })
         .catch(function (err) {
-          alert(err.message);
+          reveal.disabled = false;
+          reveal.textContent = prev || "查看完整账号";
+          toast(err.message || "查看失败");
         });
       return;
     }

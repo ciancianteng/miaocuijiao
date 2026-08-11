@@ -4,6 +4,21 @@ import {
   formatRemainingLabel,
   parseCompletionMethod,
 } from "../_order-complete.js";
+import {
+  isDbUuid,
+  publicDisplayName,
+  resolveBossPublicCode,
+  resolveCompanionPublicCode,
+  resolveOrderPublicNo,
+} from "../_account-codes.js";
+import {
+  hydrateReceiptReviewers,
+  latestApprovedForOrders,
+  latestRejectedForOrders,
+  receiptReviewerFields,
+  signedProofUrl,
+  staffReviewerNameFromProfile,
+} from "../_payment-receipts.js";
 const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY"];
 const ADMIN_ROLES = new Set(["admin", "super_admin"]);
 const ORDER_STATUS_TEXT = { ...ORDER_STATUS_LABELS };
@@ -102,10 +117,101 @@ function money(v) {
   const n = Number(String(v ?? "").replace(/[^\d.-]/g, ""));
   return Number.isFinite(n) ? n : 0;
 }
+function formatCsCode(profile = {}) {
+  const direct = String(profile.cs_code || profile.staff_code || profile.csCode || "").trim();
+  if (/^CS\d+$/i.test(direct)) return direct.toUpperCase();
+  const name = String(profile.display_name || profile.nickname || profile.name || "").trim();
+  const m = name.match(/(\d{3,8})$/);
+  if (m) return `CS${String(m[1]).padStart(6, "0")}`;
+  return "";
+}
+function paymentMethodFrom(row = {}, receipt = null) {
+  const raw = String(
+    receipt?.payment_method ||
+      receipt?.paymentMethod ||
+      row.payment_method ||
+      row.paymentMethod ||
+      ""
+  ).trim();
+  if (raw) {
+    if (/duitnow/i.test(raw)) return "DuitNow";
+    if (/tng/i.test(raw)) return "TNG";
+    if (/bank|银行/i.test(raw)) return "银行卡";
+    if (/alipay|支付宝/i.test(raw)) return "支付宝";
+    if (/cat.?food|wallet|猫粮|余额/i.test(raw)) return "猫粮余额";
+    return raw;
+  }
+  const text = String(row.description || row.note || "");
+  const hit = text.match(/付款方式[：:]\s*([^\n；;]+)/i);
+  return (hit ? hit[1] : "").trim() || "-";
+}
+function paymentStatusLabel(status, reviewStatus) {
+  const st = String(status || "");
+  const rv = String(reviewStatus || "").toLowerCase();
+  if (rv === "approved") return "已支付";
+  if (rv === "rejected") return "付款已拒绝";
+  if (rv === "pending") return "待审核付款";
+  if (st === "awaiting_payment") return "待付款";
+  if (st === "cancelled") return "已取消";
+  if (st && !["awaiting_payment", "cancelled"].includes(st)) return "已支付";
+  return "未支付";
+}
+function reviewResultLabel(reviewStatus) {
+  const rv = String(reviewStatus || "").toLowerCase();
+  if (rv === "approved") return "已通过";
+  if (rv === "rejected") return "已拒绝";
+  if (rv === "pending") return "待审核";
+  return "";
+}
+async function loadCompanionProfileMap(userIds = []) {
+  const ids = [...new Set((userIds || []).filter(Boolean))];
+  if (!ids.length) return {};
+  const rows = await supabaseJson(
+    restUrl(
+      "companion_profiles",
+      `?user_id=in.(${ids.map(encodeURIComponent).join(",")})&select=user_id,nickname,companion_uid,companion_code,main_service,game&limit=500`
+    ),
+    { headers: serviceHeaders() }
+  ).catch(() => []);
+  return (rows || []).reduce((m, row) => {
+    if (row?.user_id) m[row.user_id] = row;
+    return m;
+  }, {});
+}
+async function loadPaymentReviewMap(orderIds = []) {
+  const ids = [...new Set((orderIds || []).filter(Boolean))];
+  if (!ids.length) return {};
+  const [approved, rejected, pendingRaw] = await Promise.all([
+    latestApprovedForOrders(ids).catch(() => ({})),
+    latestRejectedForOrders(ids).catch(() => ({})),
+    supabaseJson(
+      restUrl(
+        "payment_receipts",
+        `?order_id=in.(${ids.map(encodeURIComponent).join(",")})&status=eq.pending&order=uploaded_at.desc&limit=800`
+      ),
+      { headers: serviceHeaders() }
+    ).catch(() => []),
+  ]);
+  const pendingHydrated = await hydrateReceiptReviewers(pendingRaw || []).catch(() => pendingRaw || []);
+  const pending = {};
+  for (const row of pendingHydrated || []) {
+    if (!row?.order_id || pending[row.order_id]) continue;
+    pending[row.order_id] = row;
+  }
+  const map = {};
+  for (const id of ids) {
+    map[id] = approved[id] || rejected[id] || pending[id] || null;
+  }
+  return map;
+}
 function safeOrder(row, profiles, extras = {}) {
   const boss = profiles[row.boss_id] || {};
   const companion = profiles[row.companion_id] || {};
   const service = profiles[row.customer_service_id] || {};
+  const companionExtra = extras.companionProfile || {};
+  const receipt = extras.paymentReceipt || null;
+  const review = receipt ? receiptReviewerFields(receipt) : {};
+  const reviewerProfile = profiles[review.paymentReviewedByStaffId] || {};
   const status = row.status || "";
   const completionPending =
     String(row.note || "").includes("[[COMPLETION_PENDING]]") ||
@@ -117,7 +223,26 @@ function safeOrder(row, profiles, extras = {}) {
     statusText = countdown.autoConfirmPaused ? "等待处理订单问题" : "已申请完成，等待老板确认";
     orderStatus = "待确认完成";
   }
-  const paid = !["awaiting_payment", "cancelled"].includes(status);
+  const orderNo = resolveOrderPublicNo(row) || "";
+  const bossUid = resolveBossPublicCode(boss) || "";
+  const bossName = publicDisplayName(boss, bossUid || "-");
+  const companionCode =
+    resolveCompanionPublicCode(companionExtra, companion) ||
+    resolveCompanionPublicCode(companion) ||
+    "";
+  const companionName =
+    publicDisplayName(
+      { display_name: companionExtra.nickname || companion.display_name, email: companion.email },
+      companionCode || "待分配"
+    ) || companionCode || "-";
+  const serviceName = staffReviewerNameFromProfile(service) || publicDisplayName(service, "-");
+  const serviceCode = formatCsCode(service);
+  const reviewerName =
+    String(review.paymentReviewedByName || "").trim() ||
+    staffReviewerNameFromProfile(reviewerProfile) ||
+    "";
+  const reviewerCode = formatCsCode(reviewerProfile) || formatCsCode({ display_name: reviewerName });
+  const reviewStatus = String(review.paymentReviewStatus || receipt?.status || "").toLowerCase();
   const flowStatus =
     extras.flowStatus ||
     ({
@@ -132,20 +257,38 @@ function safeOrder(row, profiles, extras = {}) {
     }[status] || status);
   return {
     id: row.id || row.uuid || "",
-    orderNo: row.order_no || row.orderNo || row.id || row.uuid || "",
+    orderNo,
+    orderNoDisplay: orderNo || "历史订单",
+    hasFormalOrderNo: !!orderNo,
     bossId: row.boss_id || "",
-    bossUid: boss.boss_uid || "",
-    bossName: boss.display_name || boss.email || boss.boss_uid || "-",
-    playerName: companion.display_name || companion.email || "待分配",
-    companionName: companion.display_name || companion.email || "-",
-    playerUid: companion.boss_uid || companion.id || "-",
-    serviceStaff: service.display_name || service.email || "-",
-    serviceName: service.display_name || service.email || "-",
-    game: row.game || "",
-    serviceContent: row.service_name || row.title || row.description || "-",
+    bossUid,
+    bossName: isDbUuid(bossName) ? bossUid || "-" : bossName,
+    playerName: companionName,
+    companionName,
+    companionCode,
+    playerUid: companionCode || "-",
+    serviceStaff: serviceName,
+    serviceName,
+    serviceCode,
+    serviceStaffCode: serviceCode,
+    game: row.game || companionExtra.game || "",
+    serviceContent: row.service_name || row.title || companionExtra.main_service || row.description || "-",
     amount: money(row.total_amount),
     totalAmount: money(row.total_amount),
-    paymentStatus: paid ? "已支付" : "未支付",
+    paymentMethod: paymentMethodFrom(row, receipt),
+    paymentStatus: paymentStatusLabel(status, reviewStatus),
+    paymentProofUrl: extras.paymentProofUrl || "",
+    paymentUploadedAt: receipt?.uploaded_at || receipt?.created_at || "",
+    paymentReceiptId: receipt?.id || "",
+    paymentReviewedByStaffId: review.paymentReviewedByStaffId || "",
+    paymentReviewedByName: reviewerName,
+    paymentReviewerName: reviewerName,
+    paymentReviewedByCode: reviewerCode,
+    paymentReviewerCode: reviewerCode,
+    paymentReviewedAt: review.paymentReviewedAt || "",
+    paymentReviewStatus: reviewStatus,
+    paymentReviewResult: reviewResultLabel(reviewStatus),
+    paymentRejectReason: review.paymentRejectReason || "",
     orderStatus,
     status,
     flowStatus,
@@ -163,13 +306,64 @@ function safeOrder(row, profiles, extras = {}) {
     bossIntent: extras.bossIntent || null,
     preferredCompanionId: extras.bossIntent?.companionId || "",
     createdAt: row.created_at || "",
+    acceptedAt: row.accepted_at || "",
+    startedAt: row.started_at || "",
+    completedAt: row.completed_at || "",
+    cancelledAt: row.cancelled_at || "",
+    assignedAt: row.accepted_at || row.claimed_at || "",
     serviceTime: row.scheduled_at || row.started_at || "-",
     description: row.description || "",
     orderType: row.order_type || "普通陪玩订单",
     type: row.order_type || "普通陪玩订单",
     companion_id: row.companion_id || "",
     customer_service_id: row.customer_service_id || "",
+    afterSaleStatus: status === "refund_requested" || status === "after_sale" ? "售后中" : status === "refunded" ? "已退款" : "无",
+    reviewStatus: extras.reviewed ? "已评价" : "未评价",
+    reviewed: !!extras.reviewed,
+    reviewRating: extras.reviewRating ?? null,
+    reviewContent: extras.reviewContent || "",
   };
+}
+async function enrichSafeOrders(orders, profiles, baseExtrasById = {}) {
+  const list = Array.isArray(orders) ? orders : [];
+  if (!list.length) return [];
+  const companionIds = list.map((o) => o.companion_id).filter(Boolean);
+  const orderIds = list.map((o) => o.id).filter(Boolean);
+  const [companionMap, reviewMap] = await Promise.all([
+    loadCompanionProfileMap(companionIds),
+    loadPaymentReviewMap(orderIds),
+  ]);
+  const reviewerIds = [
+    ...new Set(
+      Object.values(reviewMap)
+        .map((r) => r && (r.reviewed_by_staff_id || r.reviewed_by || r.confirmed_by))
+        .filter(Boolean)
+    ),
+  ];
+  const missingReviewerIds = reviewerIds.filter((id) => !profiles[id]);
+  if (missingReviewerIds.length) {
+    const extra = await supabaseJson(
+      restUrl("profiles", `?id=in.(${missingReviewerIds.map(encodeURIComponent).join(",")})`),
+      { headers: serviceHeaders() }
+    ).catch(() => []);
+    for (const p of extra || []) profiles[p.id] = p;
+  }
+  const withProof = await Promise.all(
+    list.map(async (row) => {
+      const receipt = reviewMap[row.id] || null;
+      let paymentProofUrl = "";
+      if (receipt) {
+        paymentProofUrl = await signedProofUrl(receipt).catch(() => "");
+      }
+      return safeOrder(row, profiles, {
+        ...(baseExtrasById[row.id] || {}),
+        companionProfile: companionMap[row.companion_id] || {},
+        paymentReceipt: receipt,
+        paymentProofUrl,
+      });
+    })
+  );
+  return withProof;
 }
 async function addSystem(order, adminId, text) {
   try {
@@ -357,19 +551,27 @@ export default async function handler(req, res) {
           createdAt: r.created_at || "",
         }));
         const latest = reviews[0] || null;
-        const viewed = safeOrder(order, map);
+        const [viewed] = await enrichSafeOrders([order], map, {
+          [order.id]: {
+            reviewed: !!latest,
+            reviewRating: latest?.rating ?? null,
+            reviewContent: latest?.content || "",
+          },
+        });
         if (latest) {
           viewed.reviewed = true;
           viewed.reviewId = latest.id;
           viewed.reviewRating = latest.rating;
           viewed.reviewContent = latest.content;
           viewed.review = latest;
+          viewed.reviewStatus = "已评价";
         } else {
           viewed.reviewed = false;
           viewed.reviewId = "";
           viewed.reviewRating = null;
           viewed.reviewContent = "";
           viewed.review = null;
+          viewed.reviewStatus = "未评价";
         }
         viewed.reviews = reviews;
         return json(res, 200, { ok: true, configured: true, order: viewed, reviews });
@@ -385,7 +587,8 @@ export default async function handler(req, res) {
       const { createOrderGrabHelpers } = await import("../_order-grabs.js");
       const { parseBossIntent, toFlowStatus } = await import("../_order-flow.js");
       const grabsApi = createOrderGrabHelpers({ restUrl, supabaseJson, serviceHeaders });
-      const list = await Promise.all(
+      const baseExtras = {};
+      await Promise.all(
         (orders || []).slice(0, 200).map(async (o) => {
           let grabCount = 0;
           let bossIntent = null;
@@ -398,13 +601,14 @@ export default async function handler(req, res) {
           } catch {
             /* ignore */
           }
-          return safeOrder(o, map, {
+          baseExtras[o.id] = {
             grabCount,
             bossIntent,
             flowStatus: toFlowStatus(o.status),
-          });
+          };
         })
       );
+      const list = await enrichSafeOrders((orders || []).slice(0, 200), map, baseExtras);
       const summary = {
         total: list.length,
         todayOrders: 0,
