@@ -2760,12 +2760,12 @@
           '<div class="pw-voice-edit-row">'+
           '<button type="button" class="pw-media-chip" data-voice-rerecord '+(busy||recording?'disabled':'')+'>重录</button>'+
           (hasLocal
-            ? '<button type="button" class="pw-media-chip primary" data-voice-upload-local '+(busy||recording?'disabled':'')+'>确认上传</button>'
+            ? '<button type="button" class="pw-media-chip primary" data-voice-upload-local '+(busy||recording?'disabled':'')+'>'+(busy?'上传中…':'确认上传')+'</button>'
             : '')+
           '<button type="button" class="pw-media-chip danger" data-delete-voice '+(busy||recording?'disabled':'')+'>删除</button>'+
           '</div>'
         : (hasLocal
-          ? '<div class="pw-voice-empty">录音已生成，请点击「确认上传」保存到云端</div><div class="pw-voice-edit-row"><button type="button" class="pw-media-chip primary" data-voice-upload-local>确认上传</button><button type="button" class="pw-media-chip" data-voice-rerecord>重录</button><button type="button" class="pw-media-chip danger" data-delete-voice>删除</button></div>'
+          ? '<div class="pw-voice-empty">录音已生成，请点击「确认上传」保存到云端</div><div class="pw-voice-edit-row"><button type="button" class="pw-media-chip primary" data-voice-upload-local '+(busy?'disabled':'')+'>'+(busy?'上传中…':'确认上传')+'</button><button type="button" class="pw-media-chip" data-voice-rerecord '+(busy?'disabled':'')+'>重录</button><button type="button" class="pw-media-chip danger" data-delete-voice '+(busy?'disabled':'')+'>删除</button></div>'
           : '<div class="pw-voice-empty">尚未录制或上传语音试听</div>'))+
       '</div></div>';
   }
@@ -4207,11 +4207,23 @@
     });
   }
   function uploadLocalVoiceRecording(){
-    if(!voiceRec.localBlob){toast('请先录音');return Promise.resolve()}
+    if(state.uploadBusy){toast('请等待当前上传完成');return Promise.resolve()}
+    if(!voiceRec.localBlob){
+      toast('本地录音已失效，请重新录制后再确认上传');
+      try{console.warn('[companion-media] confirm upload without localBlob')}catch(e){}
+      return Promise.resolve();
+    }
+    if(!voiceRec.localBlob.size){
+      toast('录音文件为空，请重新录制');
+      return Promise.resolve();
+    }
     var ext=/mp4|aac/i.test(voiceRec.mimeType||'')?'m4a':(/ogg/i.test(voiceRec.mimeType||'')?'ogg':'webm');
     var file=new File([voiceRec.localBlob],'voice-record.'+ext,{type:voiceRec.mimeType||'audio/webm'});
-    return uploadImage('voice',file).then(function(){
+    toast('上传中…');
+    return uploadImage('voice',file).then(function(res){
       clearVoiceLocal();
+      if(res&&(res.url||res.path))toast(res.message||'上传成功 / 已保存');
+      return res;
     });
   }
   function openGalleryLightbox(url){

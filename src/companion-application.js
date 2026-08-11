@@ -185,7 +185,28 @@
       delete draft.uploads.card_cover;
       delete draft.uploads.profile_cover;
     }
-    return scrubDraftForStorage(draft);
+    draft = scrubDraftForStorage(draft);
+    // Drop stale hasLocal markers when in-memory blob is gone (refresh / bfcache).
+    if (
+      draft.voice &&
+      draft.voice.hasLocal &&
+      !liveVoiceBlob &&
+      !liveVoiceObjectUrl &&
+      !hasDurableUpload(draft.voice) &&
+      !hasDurableUpload(draft.voice.url) &&
+      !hasDurableUpload(draft.voice.fileUpload)
+    ) {
+      draft.voice = Object.assign({}, draft.voice, {
+        hasLocal: false,
+        listened: false,
+        confirmed: false,
+        uploaded: false,
+        status: draft.voice.status && /失效|尚未/.test(String(draft.voice.status))
+          ? draft.voice.status
+          : "本地录音已失效，请重新录制",
+      });
+    }
+    return draft;
   }
   function saveDraft(patch) {
     var draft = readDraft();
@@ -928,11 +949,21 @@
   function voiceHtml(draft) {
     var v = draft.voice || {};
     var q = v.quality || {};
-    var voiceSrc = liveVoiceObjectUrl || v.url || "";
-    var hasLocalVoice = !!(liveVoiceBlob || liveVoiceObjectUrl || v.hasLocal);
-    var hasVoice = !!(voiceSrc || hasLocalVoice || hasDurableUpload(v) || hasDurableUpload(v.url) || hasDurableUpload(v.fileUpload));
+    // Local blob lives only in memory — never treat draft.hasLocal alone as playable/uploadable.
+    var hasLiveLocal = !!(liveVoiceBlob || liveVoiceObjectUrl);
+    var voiceSrc = liveVoiceObjectUrl || (!isEphemeralMediaUrl(v.url) ? v.url : "") || "";
+    var hasLocalVoice = hasLiveLocal;
+    var staleLocal = !!(v.hasLocal && !hasLiveLocal && !hasDurableUpload(v) && !hasDurableUpload(v.url) && !hasDurableUpload(v.fileUpload));
+    var hasVoice = !!(voiceSrc || hasLiveLocal || hasDurableUpload(v) || hasDurableUpload(v.url) || hasDurableUpload(v.fileUpload));
     var uploadedOk = !!(v.uploaded && (hasDurableUpload(v) || hasDurableUpload(v.url) || hasDurableUpload(v.fileUpload)));
-    var canConfirm = hasVoice && !uploadedOk && v.listened && q.volumeOk && q.durationOk && q.notBlank;
+    var canConfirm =
+      hasLiveLocal &&
+      !uploadedOk &&
+      !!v.listened &&
+      !!q.volumeOk &&
+      !!q.durationOk &&
+      !!q.notBlank &&
+      !uploadBusy.voice;
     var waveform = Array.isArray(q.waveform) && q.waveform.length ? q.waveform : [18, 30, 44, 24, 38, 28, 48];
     var reasons = Array.isArray(q.reasons) ? q.reasons : [];
     var template =
@@ -945,7 +976,9 @@
       "。我可以陪你上分、娱乐或者聊天，希望能给你带来轻松开心的游戏体验。";
     var statusText = v.status || "尚未录制";
     if (uploadBusy.voice) statusText = "正在上传试音…";
-    else if (uploadedOk) statusText = "已上传";
+    else if (uploadedOk) statusText = "上传成功 / 已保存";
+    else if (staleLocal) statusText = "本地录音已失效，请重新录制";
+    else if (uploadErrors.voice) statusText = "上传失败，请重试";
 
     var fileUploadCard = fileField("voiceFile", "上传已有音频（备用）", {
       kind: "audio",
@@ -995,15 +1028,20 @@
       (!hasVoice ? "disabled" : "") +
       ">删除</button>" +
       '<button class="apply-btn primary" type="button" data-record-confirm ' +
-      (!canConfirm || uploadBusy.voice ? "disabled" : "") +
-      ">" +
-      (uploadBusy.voice ? "上传中…" : uploadedOk ? "已上传" : "✅ 确认上传") +
+      (!canConfirm ? "disabled" : "") +
+      ' aria-busy="' +
+      (uploadBusy.voice ? "true" : "false") +
+      '">' +
+      (uploadBusy.voice ? "上传中…" : uploadedOk ? "上传成功 / 已保存" : "✅ 确认上传") +
       "</button>" +
       "</div>" +
       (voiceSrc
         ? '<audio id="voicePreview" controls preload="metadata" src="' + esc(voiceSrc) + '"></audio>'
         : '<audio id="voicePreview" controls hidden></audio>') +
-      (uploadedOk ? '<p class="pay-success apply-voice-uploaded" role="status">试音已上传，可播放；可重录或改用下方上传文件替换。</p>' : "") +
+      (uploadedOk ? '<p class="pay-success apply-voice-uploaded" role="status">上传成功 / 已保存。可播放；可重录或改用下方上传文件替换。</p>' : "") +
+      (uploadErrors.voice
+        ? '<p class="voice-errors apply-voice-upload-error" role="alert">上传失败，请重试：' + esc(uploadErrors.voice) + "</p>"
+        : "") +
       '<div class="voice-quality"><span class="' +
       (q.durationOk ? "ok" : "bad") +
       '">✔ 时长' +
@@ -1030,14 +1068,18 @@
             .join("") +
           "</div>"
         : "") +
-      '<div class="voice-tip">' +
-      (uploadedOk
-        ? "试音已上传到云端。如需更换，请重录并再次确认上传，或使用下方上传已有音频。"
-        : hasVoice
-          ? canConfirm
-            ? "试听完成，请点击「确认上传」保存到云端。"
-            : "请播放完整试听，确认音量和内容正常后再上传。"
-          : "点击「开始录音」后允许麦克风权限，录制 10～60 秒自我介绍。") +
+      '<div class="voice-tip" data-voice-tip>' +
+      (uploadBusy.voice
+        ? "试音上传中，请稍候…"
+        : uploadedOk
+          ? "上传成功 / 已保存到云端。如需更换，请重录并再次确认上传，或使用下方上传已有音频。"
+          : staleLocal
+            ? "录音仅保存在当前页面。刷新或离开后需重新录制，再点击「确认上传」。"
+            : hasVoice
+              ? canConfirm
+                ? "试听完成，请点击「确认上传」保存到云端。"
+                : "请播放完整试听，确认音量和内容正常后再上传。"
+              : "点击「开始录音」后允许麦克风权限，录制 10～60 秒自我介绍。") +
       "</div></div>" +
       '<div class="voice-alt-upload"><div class="voice-method-title">方式 B：上传已有音频</div>' +
       '<p class="apply-note">若浏览器不支持录音，或你已有音频文件，可在此上传。</p>' +
@@ -1527,8 +1569,8 @@
     document.body.appendChild(modal);
   }
   function hasPlayableVoiceDraft() {
-    var v = (readDraft().voice || {});
-    return !!(liveVoiceObjectUrl || liveVoiceBlob || v.hasLocal || hasDurableUpload(v) || hasDurableUpload(v.url) || hasDurableUpload(v.fileUpload));
+    var v = readDraft().voice || {};
+    return !!(liveVoiceObjectUrl || liveVoiceBlob || hasDurableUpload(v) || hasDurableUpload(v.url) || hasDurableUpload(v.fileUpload));
   }
   function setVoiceState(text, seconds) {
     var state = document.getElementById("voiceState");
@@ -1613,21 +1655,25 @@
       liveVoiceBlob = blob;
       liveVoiceObjectUrl = URL.createObjectURL(blob);
       // Never persist base64 voice into localStorage (QuotaExceeded on mobile).
-      saveDraft({
-        voice: {
-          status: quality.passed ? "已录制，请先试听" : "检测未通过，请重新录制",
-          url: "",
-          hasLocal: true,
-          duration: quality.duration,
-          confirmed: false,
-          listened: false,
-          uploaded: false,
-          uploadedAt: "",
-          mimeType: blob.type,
-          size: blob.size,
-          quality: quality,
-        },
-      });
+      // Replace voice object entirely so stale path/url/bucket from a prior upload cannot
+      // short-circuit「确认上传」into a fake local-only success.
+      var draftAfterRec = readDraft();
+      draftAfterRec.voice = {
+        status: quality.passed ? "已录制，请先试听" : "检测未通过，请重新录制",
+        url: "",
+        path: "",
+        bucket: "",
+        hasLocal: true,
+        duration: quality.duration,
+        confirmed: false,
+        listened: false,
+        uploaded: false,
+        uploadedAt: "",
+        mimeType: blob.type,
+        size: blob.size,
+        quality: quality,
+      };
+      writeRaw(DRAFT_KEY, draftAfterRec);
       setVoiceState(quality.passed ? "已录制，待试听确认" : "检测未通过", quality.duration);
       document.body.classList.remove("voice-recording-active");
       render(3);
@@ -1748,76 +1794,176 @@
     render(3);
   }
   function confirmVoice() {
-    var d = readDraft();
-    var duration = Number((d.voice || {}).duration || 0);
-    if (duration < MIN_VOICE_SECONDS) { showApplyTip("试音不能少于 10 秒，请重新录制。"); return; }
-    if (!((d.voice || {}).listened)) { showApplyTip("请先播放完整试听，再确认使用。"); return; }
-    var q = (d.voice || {}).quality || {};
-    if (!q.volumeOk || !q.durationOk || !q.notBlank) { showApplyTip("录音质量检测未通过，请重新录制。"); return; }
-    if (!companionToken()) { showApplyTip("请先登录陪玩账号后再上传试音。"); return; }
-    if (hasDurableUpload(d.voice) || hasDurableUpload(d.voice.url)) {
-      d.voice.status = "已确认";
-      d.voice.confirmed = true;
-      d.voice.confirmedAt = now();
-      d.voice.uploaded = true;
-      d.voice.uploadedAt = now();
-      writeRaw(DRAFT_KEY, d);
-      render(3);
-      return;
-    }
-    if (!d.voice.url && !liveVoiceBlob && !liveVoiceObjectUrl) { showApplyTip("请先完成录音。"); return; }
-    uploadBusy.voice = true;
-    render(3);
-    var dataUrlPromise = /^data:/i.test(String(d.voice.url || ""))
-      ? Promise.resolve(d.voice.url)
-      : liveVoiceBlob
-        ? fileToDataURL(liveVoiceBlob)
-        : fetch(liveVoiceObjectUrl || d.voice.url).then(function (r) { return r.blob(); }).then(function (blob) {
-            return fileToDataURL(blob);
-          });
-    dataUrlPromise
-      .then(function (dataUrl) {
-        return postCompanion("upload_media", {
-          media_type: "voice",
-          data_url: dataUrl,
-          filename: /mp4/i.test(String((d.voice && d.voice.mimeType) || "")) ? "voice.m4a" : "voice.webm",
-          content_type: (d.voice && d.voice.mimeType) || "",
-          duration_seconds: duration,
-        });
-      })
-      .then(function (res) {
-        uploadBusy.voice = false;
+    try {
+      if (uploadBusy.voice) {
+        showApplyTip("试音正在上传中，请稍候…", "ok");
+        return;
+      }
+      var d = readDraft();
+      d.voice = d.voice || {};
+      var duration = Number((d.voice || {}).duration || 0);
+      if (duration < MIN_VOICE_SECONDS) {
+        showApplyTip("试音不能少于 10 秒，请重新录制。");
+        return;
+      }
+      if (!((d.voice || {}).listened)) {
+        showApplyTip("请先播放完整试听，再确认使用。");
+        return;
+      }
+      var q = (d.voice || {}).quality || {};
+      if (!q.volumeOk || !q.durationOk || !q.notBlank) {
+        showApplyTip("录音质量检测未通过，请重新录制。");
+        return;
+      }
+      if (!companionToken()) {
+        showApplyTip("请先登录陪玩账号后再上传试音。");
+        return;
+      }
+
+      var hasLive = !!(liveVoiceBlob || liveVoiceObjectUrl);
+      var alreadyDurable = !!(hasDurableUpload(d.voice) || hasDurableUpload(d.voice.url) || hasDurableUpload(d.voice.fileUpload));
+
+      // Only skip network upload when cloud asset already exists AND there is no new local blob to push.
+      if (alreadyDurable && !hasLive) {
+        d.voice.status = "上传成功 / 已保存";
+        d.voice.confirmed = true;
+        d.voice.confirmedAt = now();
+        d.voice.uploaded = true;
+        d.voice.uploadedAt = now();
+        d.voice.hasLocal = false;
+        writeRaw(DRAFT_KEY, d);
         delete uploadErrors.voice;
-        liveVoiceBlob = null;
-        if (liveVoiceObjectUrl) {
-          try { URL.revokeObjectURL(liveVoiceObjectUrl); } catch (e) {}
-          liveVoiceObjectUrl = "";
-        }
-        var next = readDraft();
-        next.voice = Object.assign({}, next.voice || {}, {
-          status: "已确认",
-          confirmed: true,
-          confirmedAt: now(),
-          uploaded: true,
-          uploadedAt: now(),
+        showApplyTip("上传成功 / 已保存", "ok");
+        render(3);
+        return;
+      }
+
+      if (!hasLive && !/^data:/i.test(String(d.voice.url || ""))) {
+        // Stale hasLocal after refresh/navigation — never silently no-op.
+        d.voice = Object.assign({}, d.voice, {
           hasLocal: false,
-          url: (res && res.url) || (res && res.media && res.media.url) || "",
-          path: (res && res.path) || (res && res.media && res.media.path) || next.voice.path || "",
-          bucket: (res && res.bucket) || (res && res.media && res.media.bucket) || next.voice.bucket || "",
-          storageOk: true,
+          listened: false,
+          confirmed: false,
+          uploaded: false,
+          status: "本地录音已失效，请重新录制",
         });
-        writeRaw(DRAFT_KEY, next);
+        writeRaw(DRAFT_KEY, d);
+        showApplyTip("本地录音已失效（刷新后需重录）。请重新录制后再点「确认上传」。");
         render(3);
-      })
-      .catch(function (err) {
-        uploadBusy.voice = false;
-        uploadErrors.voice = err.message || "上传失败";
-        var next = readDraft();
-        next.voice = Object.assign({}, next.voice || {}, { status: "上传失败，请重新确认", confirmed: false, uploaded: false });
-        writeRaw(DRAFT_KEY, next);
-        showApplyTip("试音上传失败：" + (err.message || "请重试"));
+        return;
+      }
+
+      uploadBusy.voice = true;
+      delete uploadErrors.voice;
+      render(3);
+
+      var mime = String((d.voice && d.voice.mimeType) || (liveVoiceBlob && liveVoiceBlob.type) || "");
+      var filename = /mp4|aac|m4a/i.test(mime) ? "voice.m4a" : /ogg/i.test(mime) ? "voice.ogg" : "voice.webm";
+      var dataUrlPromise = /^data:/i.test(String(d.voice.url || ""))
+        ? Promise.resolve(d.voice.url)
+        : liveVoiceBlob
+          ? fileToDataURL(liveVoiceBlob)
+          : fetch(liveVoiceObjectUrl)
+              .then(function (r) {
+                if (!r.ok) throw new Error("读取本地录音失败");
+                return r.blob();
+              })
+              .then(function (blob) {
+                if (!blob || !blob.size) throw new Error("录音文件为空，请重新录制");
+                liveVoiceBlob = blob;
+                return fileToDataURL(blob);
+              });
+
+      dataUrlPromise
+        .then(function (dataUrl) {
+          if (!dataUrl || !/^data:audio\/|^data:application\/octet-stream|;base64,/i.test(String(dataUrl))) {
+            throw new Error("录音数据无效，请重新录制");
+          }
+          if (String(dataUrl).length < 1000) {
+            throw new Error("录音文件过小或为空，请重新录制");
+          }
+          try {
+            console.info("[apply-voice] uploading", {
+              bytesApprox: Math.round(String(dataUrl).length * 0.75),
+              mime: mime,
+              filename: filename,
+              duration: duration,
+            });
+          } catch (eLog) {}
+          return postCompanion("upload_media", {
+            media_type: "voice",
+            data_url: dataUrl,
+            filename: filename,
+            content_type: mime || "",
+            duration_seconds: duration,
+          });
+        })
+        .then(function (res) {
+          uploadBusy.voice = false;
+          delete uploadErrors.voice;
+          liveVoiceBlob = null;
+          if (liveVoiceObjectUrl) {
+            try {
+              URL.revokeObjectURL(liveVoiceObjectUrl);
+            } catch (e) {}
+            liveVoiceObjectUrl = "";
+          }
+          var next = readDraft();
+          var durableUrl =
+            (res && res.url) || (res && res.media && res.media.url) || "";
+          var durablePath =
+            (res && res.path) || (res && res.media && res.media.path) || "";
+          var durableBucket =
+            (res && res.bucket) || (res && res.media && res.media.bucket) || "";
+          if (!durablePath && !durableUrl) {
+            throw new Error("上传成功但未返回云端地址，请重试");
+          }
+          next.voice = Object.assign({}, next.voice || {}, {
+            status: "上传成功 / 已保存",
+            confirmed: true,
+            confirmedAt: now(),
+            uploaded: true,
+            uploadedAt: now(),
+            hasLocal: false,
+            url: durableUrl,
+            path: durablePath,
+            bucket: durableBucket,
+            storageOk: true,
+            id: (res && res.media && res.media.id) || next.voice.id || "",
+          });
+          writeRaw(DRAFT_KEY, next);
+          showApplyTip("上传成功 / 已保存", "ok");
+          render(3);
+        })
+        .catch(function (err) {
+          uploadBusy.voice = false;
+          var msg = (err && err.message) || "上传失败，请重试";
+          uploadErrors.voice = msg;
+          try {
+            console.error("[apply-voice] upload failed", err);
+          } catch (e2) {}
+          var next = readDraft();
+          next.voice = Object.assign({}, next.voice || {}, {
+            status: "上传失败，请重试",
+            confirmed: false,
+            uploaded: false,
+          });
+          writeRaw(DRAFT_KEY, next);
+          showApplyTip("上传失败，请重试：" + msg);
+          render(3);
+        });
+    } catch (err) {
+      uploadBusy.voice = false;
+      var failMsg = (err && err.message) || "上传失败，请重试";
+      uploadErrors.voice = failMsg;
+      try {
+        console.error("[apply-voice] confirmVoice threw", err);
+      } catch (e3) {}
+      showApplyTip("上传失败，请重试：" + failMsg);
+      try {
         render(3);
-      });
+      } catch (e4) {}
+    }
   }
   function clearUpload(key) {
     var draft = readDraft();
@@ -2616,7 +2762,17 @@
       }
       if (e.target.closest("[data-record-reset]")) clearVoiceRecording();
       if (e.target.closest("[data-record-delete]")) clearVoiceRecording();
-      if (e.target.closest("[data-record-confirm]")) confirmVoice();
+      if (e.target.closest("[data-record-confirm]")) {
+        e.preventDefault();
+        var confirmBtn = e.target.closest("[data-record-confirm]");
+        if (confirmBtn && confirmBtn.disabled) {
+          if (uploadBusy.voice) showApplyTip("试音正在上传中，请稍候…", "ok");
+          else showApplyTip("请先完成录音并试听后，再确认上传。");
+          return;
+        }
+        confirmVoice();
+        return;
+      }
       if (e.target.closest("[data-apply-save]")) { e.preventDefault(); await collect(root); showApplyTip("草稿已保存", "ok"); return; }
       var addTag = e.target.closest("[data-add-custom-tag]");
       if (addTag) {
