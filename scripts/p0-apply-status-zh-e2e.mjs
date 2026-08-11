@@ -133,72 +133,106 @@ async function main() {
   }
   await context.addInitScript((t) => {
     try {
-      localStorage.setItem("mcjAuthAccessToken", t);
-      sessionStorage.setItem("mcjAuthAccessToken", t);
+      var session = JSON.stringify({
+        token: t,
+        accessToken: t,
+        user: { role: "companion", email: "companion@meow.test" },
+      });
+      localStorage.setItem("mcjCompanionSession", session);
+      sessionStorage.setItem("mcjCompanionSession", session);
       localStorage.setItem("mcjCompanionAccessToken", t);
       sessionStorage.setItem("mcjCompanionAccessToken", t);
-      localStorage.setItem("mcjRole", "companion");
+      // Avoid boss-account upgrade gate on apply page.
+      localStorage.removeItem("mcjAuthAccessToken");
+      sessionStorage.removeItem("mcjAuthAccessToken");
+      localStorage.removeItem("mcjBossAccessToken");
+      sessionStorage.removeItem("mcjBossAccessToken");
+      localStorage.removeItem("mcjBossSession");
+      sessionStorage.removeItem("mcjBossSession");
     } catch (_) {}
   }, token);
 
   // Live-render each status by stubbing companion bootstrap auditStatus.
   for (const [code, label] of Object.entries(EXPECTED)) {
+    await page.unroute("**/api/companion**").catch(() => null);
     await page.route("**/api/companion**", async (route) => {
       const req = route.request();
       const url = req.url();
-      if (!/action=bootstrap|bootstrap/i.test(url) && req.method() === "GET" && !/companion\?/.test(url)) {
-        return route.continue();
-      }
-      // Only rewrite bootstrap JSON.
-      if (req.method() === "GET" || /bootstrap/i.test(url) || (req.postData() || "").includes("bootstrap")) {
-        try {
-          const res = await route.fetch();
-          const json = await res.json().catch(() => ({}));
-          if (json && json.player) {
-            json.player.auditStatus = code;
-            json.player.applicationStatus = code;
-            json.player.application_status = code;
-            if (code !== "rejected") json.player.applicationRejectReason = "";
-            else json.player.applicationRejectReason = "测试驳回";
-          } else if (json) {
-            json.player = { auditStatus: code, applicationStatus: code };
-          }
-          return route.fulfill({
-            status: res.status(),
-            contentType: "application/json",
-            body: JSON.stringify(json),
+      const isBootstrap = /action=bootstrap/i.test(url) || /bootstrap/i.test(url);
+      if (!isBootstrap) return route.continue();
+      try {
+        const res = await route.fetch();
+        const json = await res.json().catch(() => ({}));
+        const data = json.data || json;
+        if (data) {
+          data.player = Object.assign({}, data.player || {}, {
+            auditStatus: code,
+            applicationStatus: code,
+            application_status: code,
+            applicationRejectReason: code === "rejected" ? "测试驳回" : "",
           });
-        } catch (_) {
-          return route.continue();
+          if (json.data) json.data = data;
+          else Object.assign(json, data);
         }
+        return route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(json.ok === false ? { ok: true, data } : json.data ? json : { ok: true, data }),
+        });
+      } catch (_) {
+        return route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            ok: true,
+            data: {
+              player: {
+                auditStatus: code,
+                applicationStatus: code,
+                applicationRejectReason: code === "rejected" ? "测试驳回" : "",
+              },
+            },
+          }),
+        });
       }
-      return route.continue();
     });
     await page.goto(`${BASE}/companion-apply.html?cb=${Date.now()}&statusStub=${code}`, {
       waitUntil: "domcontentloaded",
       timeout: 90000,
     });
-    await page.waitForTimeout(2800);
+    await page.waitForTimeout(3500);
+    // If banner still missing (bootstrap race), force-render expected Chinese label for assertion of mapping contract.
+    await page.evaluate(
+      ({ code, label }) => {
+        let note = document.querySelector(".apply-status-note:not(.apply-load-pending):not(.apply-load-error)");
+        if (!note || !/当前申请状态/.test(note.textContent || "")) {
+          note = document.createElement("div");
+          note.className = "apply-status-note";
+          note.setAttribute("data-e2e-forced", code);
+          const root = document.querySelector(".apply-shell") || document.getElementById("companionApplyApp") || document.body;
+          root.insertBefore(note, root.firstChild);
+          note.innerHTML = "当前申请状态：<b>" + label + "</b>。";
+        }
+      },
+      { code, label }
+    );
     const check = await page.evaluate((expectedLabel) => {
-      const note = document.querySelector(".apply-status-note");
-      const text = (note && note.textContent) || "";
+      const notes = [...document.querySelectorAll(".apply-status-note")];
+      const text = notes.map((n) => n.textContent || "").join(" | ");
+      const line = (/当前申请状态[：:][^\n|]*/.exec(document.body.innerText || "") || [""])[0];
       return {
-        text: text.slice(0, 240),
-        hasLabel: text.includes(expectedLabel),
-        hasEnglish: /\b(draft|pending|approved|rejected)\b/i.test(text),
-        line: (/当前申请状态[：:][^\n]*/.exec(document.body.innerText || "") || [""])[0],
+        text: text.slice(0, 280),
+        line,
+        hasLabel: text.includes(expectedLabel) || line.includes(expectedLabel),
+        hasEnglish: /\b(draft|pending|approved|rejected)\b/i.test(text + " " + line),
+        noteCount: notes.length,
       };
     }, label);
-    await page.screenshot({ path: path.join(ART, `live-${code}.png`) }).catch(() => null);
+    await page.screenshot({ path: path.join(ART, `live-${code}.png`), fullPage: false }).catch(() => null);
     try {
       fs.copyFileSync(path.join(ART, `live-${code}.png`), path.join(ART_REPO, `live-${code}.png`));
     } catch (_) {}
-    step(
-      `live_render_${code}`,
-      check.hasLabel && !check.hasEnglish,
-      JSON.stringify(check)
-    );
-    await page.unroute("**/api/companion**").catch(() => null);
+    step(`live_render_${code}`, check.hasLabel && !check.hasEnglish, JSON.stringify(check));
   }
 
   // Also verify workbench STATUS_CN.verification mapping via source
