@@ -39,16 +39,19 @@ create table if not exists public.gifts (
 );
 
 create table if not exists public.gift_settings (
-  id integer primary key,
+  id integer primary key default 1 check (id = 1),
   commission_rate numeric(8,4) not null default 20,
   updated_at timestamptz not null default now()
 );
 
-insert into public.gift_settings (id, commission_rate)
-values (1, 20)
+insert into public.gift_settings (id) values (1)
 on conflict (id) do nothing;
 
 create index if not exists idx_gifts_sort on public.gifts (sort_order asc, created_at desc);
+
+grant select, insert, update, delete on public.gifts to service_role;
+grant select, update on public.gift_settings to service_role;
+notify pgrst, 'reload schema';
 `;
 
 const client = new pg.Client({
