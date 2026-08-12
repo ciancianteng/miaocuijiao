@@ -1092,7 +1092,7 @@ async function loadBootstrap(serviceProfile) {
     .map((row) => row.id)
     .filter(Boolean);
   const approvedByOrder = paidIds.length ? await latestApprovedForOrders(paidIds).catch(() => ({})) : {};
-  const ordersUnsorted = ordersRaw.map((row) => {
+  const ordersUnsorted = (Array.isArray(ordersRaw) ? ordersRaw : []).map((row) => {
     const extra = grabMap[row.id] || {};
     const receipt = receiptByOrder[row.id] || null;
     const approved = approvedByOrder[row.id] || null;
