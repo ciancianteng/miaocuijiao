@@ -376,6 +376,9 @@ export default async function handler(req, res) {
 
       if (action === "create") {
         const item = normalizeItem(payload, type);
+        if (!String(item.title || "").trim()) {
+          return json(res, 400, { ok: false, message: "名称/标题不能为空" });
+        }
         item.created_by = role;
         item.created_at = new Date().toISOString();
         if (!item.id) item.id = `pc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -426,6 +429,9 @@ export default async function handler(req, res) {
         };
         const item = normalizeItem(mergedPayload, before.type);
         item.id = before.id || id;
+        if (!String(item.title || "").trim() && !String(item.draft?.name || item.draft?.content || "").trim()) {
+          return json(res, 400, { ok: false, message: "名称/标题不能为空" });
+        }
         if ((before.type === "banners" || before.type === "player_rules") && item.enabled !== false) {
           item.status = "published";
           item.published = item.draft || {};

@@ -44,6 +44,25 @@ function nextLevelNumber(list) {
   return max + 1;
 }
 
+function assertLevelWritable(row, index = 0) {
+  const name = String(row?.name || "").trim();
+  if (!name) {
+    throw Object.assign(new Error(`等级名称不能为空${index != null ? `（第 ${index + 1} 项）` : ""}。`), { status: 400 });
+  }
+  const min = Number(row?.min ?? row?.minPrice);
+  const max = Number(row?.max ?? row?.maxPrice);
+  if (!Number.isFinite(min) || min < 0) {
+    throw Object.assign(new Error(`最低价格无效（${name || "未命名"}）。`), { status: 400 });
+  }
+  if (!Number.isFinite(max) || max < min) {
+    throw Object.assign(new Error(`最高价格必须 ≥ 最低价格（${name}）。`), { status: 400 });
+  }
+  const commission = Number(row?.commissionRate ?? row?.commission);
+  if (Number.isFinite(commission) && (commission < 0 || commission > 100)) {
+    throw Object.assign(new Error(`抽成比例须在 0–100（${name}）。`), { status: 400 });
+  }
+}
+
 function verifyPublished(levels, expected) {
   const got = (Array.isArray(levels) ? levels : []).map((row) => normalizeLevelRow(row));
   const want = (Array.isArray(expected) ? expected : []).map((row) => normalizeLevelRow(row));
@@ -72,7 +91,8 @@ export default async function handler(req, res) {
     if (!requireAdmin(req, res)) return;
 
     if (req.method === "GET") {
-      const levels = await readLocalLevels();
+      // Do not silently hydrate defaults on DB failure — publishing those would wipe prod.
+      const levels = await readLocalLevels({ allowSilentFallback: false });
       return json(res, 200, {
         ok: true,
         source: "companion_levels",
@@ -94,6 +114,7 @@ export default async function handler(req, res) {
       if (!incoming || typeof incoming !== "object") {
         return json(res, 400, { ok: false, message: "请提交当前等级数据。" });
       }
+      assertLevelWritable(incoming);
       const levels = await upsertLocalLevel(incoming);
       const saved = levels.find((row) => String(row.id) === String(normalizeLevelRow(incoming).id));
       return json(res, 200, {
@@ -109,6 +130,7 @@ export default async function handler(req, res) {
     if (action === "publish" || action === "publish_all") {
       const incoming = Array.isArray(body.levels) ? body.levels : [];
       if (!incoming.length) return json(res, 400, { ok: false, message: "请提交等级列表。" });
+      for (let i = 0; i < incoming.length; i += 1) assertLevelWritable(incoming[i], i);
       const normalized = incoming.map((row, index) => normalizeLevelRow(row, index));
       let levels;
       try {
@@ -175,6 +197,7 @@ export default async function handler(req, res) {
     if (action === "save_all" || action === "save") {
       const incoming = Array.isArray(body.levels) ? body.levels : [];
       if (!incoming.length) return json(res, 400, { ok: false, message: "请提交等级列表。" });
+      for (let i = 0; i < incoming.length; i += 1) assertLevelWritable(incoming[i], i);
       const levels = await writeLocalLevels(incoming.map((row, index) => normalizeLevelRow(row, index)));
       return json(res, 200, {
         ok: true,

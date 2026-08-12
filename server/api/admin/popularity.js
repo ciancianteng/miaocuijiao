@@ -85,21 +85,25 @@ export default async function handler(req, res) {
     const role = roleFrom(req);
 
     if (action === "save_rules") {
+      const clampNonNeg = (v, fallback) => {
+        const n = money(v ?? fallback);
+        return Number.isFinite(n) && n >= 0 ? Math.min(n, 1_000_000) : money(fallback);
+      };
       const payload = {
         id: 1,
-        completed_order_points: money(body.completedOrderPoints ?? body.completed_order_points ?? 20),
-        five_star_points: money(body.fiveStarPoints ?? body.five_star_points ?? 15),
-        four_star_points: money(body.fourStarPoints ?? body.four_star_points ?? 8),
-        gift_points_per_10_cat_food: money(body.giftPointsPer10CatFood ?? body.gift_points_per_10_cat_food ?? 1),
-        online_hour_points: money(body.onlineHourPoints ?? body.online_hour_points ?? 1),
-        streak_day_points: money(body.streakDayPoints ?? body.streak_day_points ?? 3),
-        favorite_points: money(body.favoritePoints ?? body.favorite_points ?? 2),
-        cancel_penalty: money(body.cancelPenalty ?? body.cancel_penalty ?? 10),
-        complaint_penalty: money(body.complaintPenalty ?? body.complaint_penalty ?? 30),
-        reject_penalty: money(body.rejectPenalty ?? body.reject_penalty ?? 5),
-        timeout_penalty: money(body.timeoutPenalty ?? body.timeout_penalty ?? 3),
-        gift_daily_cap_points: money(body.giftDailyCapPoints ?? body.gift_daily_cap_points ?? 50),
-        display_count: Math.max(1, Number(body.displayCount ?? body.display_count ?? 10)),
+        completed_order_points: clampNonNeg(body.completedOrderPoints ?? body.completed_order_points, 20),
+        five_star_points: clampNonNeg(body.fiveStarPoints ?? body.five_star_points, 15),
+        four_star_points: clampNonNeg(body.fourStarPoints ?? body.four_star_points, 8),
+        gift_points_per_10_cat_food: clampNonNeg(body.giftPointsPer10CatFood ?? body.gift_points_per_10_cat_food, 1),
+        online_hour_points: clampNonNeg(body.onlineHourPoints ?? body.online_hour_points, 1),
+        streak_day_points: clampNonNeg(body.streakDayPoints ?? body.streak_day_points, 3),
+        favorite_points: clampNonNeg(body.favoritePoints ?? body.favorite_points, 2),
+        cancel_penalty: clampNonNeg(body.cancelPenalty ?? body.cancel_penalty, 10),
+        complaint_penalty: clampNonNeg(body.complaintPenalty ?? body.complaint_penalty, 30),
+        reject_penalty: clampNonNeg(body.rejectPenalty ?? body.reject_penalty, 5),
+        timeout_penalty: clampNonNeg(body.timeoutPenalty ?? body.timeout_penalty, 3),
+        gift_daily_cap_points: clampNonNeg(body.giftDailyCapPoints ?? body.gift_daily_cap_points, 50),
+        display_count: Math.max(1, Math.min(100, Number(body.displayCount ?? body.display_count ?? 10) || 10)),
         show_score: body.showScore !== false && body.show_score !== false && body.showScore !== "false",
         show_orders: body.showOrders !== false && body.show_orders !== false && body.showOrders !== "false",
         show_gifts: body.showGifts !== false && body.show_gifts !== false && body.showGifts !== "false",
@@ -110,9 +114,9 @@ export default async function handler(req, res) {
         enable_daily: body.enableDaily === true || body.enable_daily === true || body.enableDaily === "true",
         enabled: body.enabled !== false && body.enabled !== "false",
         rewards_enabled: body.rewardsEnabled === true || body.rewards_enabled === true || body.rewardsEnabled === "true",
-        reward_top1: money(body.rewardTop1 ?? body.reward_top1 ?? 100),
-        reward_top2: money(body.rewardTop2 ?? body.reward_top2 ?? 60),
-        reward_top3: money(body.rewardTop3 ?? body.reward_top3 ?? 30),
+        reward_top1: clampNonNeg(body.rewardTop1 ?? body.reward_top1, 100),
+        reward_top2: clampNonNeg(body.rewardTop2 ?? body.reward_top2, 60),
+        reward_top3: clampNonNeg(body.rewardTop3 ?? body.reward_top3, 30),
         updated_at: nowIso(),
       };
       await db("popularity_rules", "?on_conflict=id", {

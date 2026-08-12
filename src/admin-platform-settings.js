@@ -645,8 +645,32 @@
     e.preventDefault();
     var action = form.getAttribute("data-ps-form");
     var payload = collectForm(form);
+    if (payload.defaultCommissionRate != null && (payload.defaultCommissionRate < 0 || payload.defaultCommissionRate > 100 || !Number.isFinite(payload.defaultCommissionRate))) {
+      alert("默认抽成比例须在 0–100");
+      return;
+    }
+    if (payload.defaultRebateRate != null && (payload.defaultRebateRate < 0 || payload.defaultRebateRate > 100 || !Number.isFinite(payload.defaultRebateRate))) {
+      alert("默认返点比例须在 0–100");
+      return;
+    }
+    if (payload.defaultDeposit != null && (!Number.isFinite(payload.defaultDeposit) || payload.defaultDeposit < 0)) {
+      alert("默认保证金不能为负数");
+      return;
+    }
+    if (payload.sessionHours != null && (!Number.isFinite(payload.sessionHours) || payload.sessionHours < 1)) {
+      alert("会话时长须 ≥ 1");
+      return;
+    }
+    if (payload.loginFailLockCount != null && (!Number.isFinite(payload.loginFailLockCount) || payload.loginFailLockCount < 1)) {
+      alert("登录失败锁定次数须 ≥ 1");
+      return;
+    }
     var settings = Object.assign({}, s(), payload);
     if (action === "save_payments_public") {
+      if (payload.bankEnabled === true && (!String(payload.bankName || "").trim() || !String(payload.accountName || "").trim())) {
+        alert("启用银行公开信息前请填写银行名称与户名");
+        return;
+      }
       var channels = Object.assign({}, settings.paymentChannelsPublic || {});
       var existingQr =
         ((settings.paymentChannelsPublic || {})["bank-my"] && (settings.paymentChannelsPublic || {})["bank-my"].qrUrl) ||

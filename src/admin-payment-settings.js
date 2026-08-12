@@ -519,6 +519,25 @@
       alert("请选择渠道类型或填写自定义渠道名称");
       return;
     }
+    if (!payload.bank.accountName) {
+      alert("户名不能为空");
+      return;
+    }
+    if (!payload.bank.accountNumber && !payload.bank.id) {
+      alert("银行账号不能为空");
+      return;
+    }
+    if (payload.bank.enabled && (!payload.bank.accountName || !payload.bank.accountNumber)) {
+      // Existing rows may keep encrypted account; still require name. Number empty only OK if editing existing.
+      if (!payload.bank.accountNumber && !payload.bank.id) {
+        alert("启用前必须填写户名与银行账号");
+        return;
+      }
+      if (!payload.bank.accountName) {
+        alert("启用前必须填写户名");
+        return;
+      }
+    }
     var btn = form.querySelector('[type="submit"]');
     if (btn) {
       btn.disabled = true;
@@ -651,6 +670,21 @@
 
   function save(form) {
     var payload = collectForm(form);
+    var data = (payload.channel && payload.channel.data) || {};
+    var minAmount = Number(data.minAmount);
+    var maxAmount = Number(data.maxAmount);
+    if (!Number.isFinite(minAmount) || minAmount < 0) {
+      alert("最低充值金额须为 ≥ 0 的数字");
+      return;
+    }
+    if (!Number.isFinite(maxAmount) || maxAmount < 0) {
+      alert("最高充值金额须为 ≥ 0 的数字");
+      return;
+    }
+    if (maxAmount > 0 && minAmount > maxAmount) {
+      alert("最低充值金额不能高于最高充值金额");
+      return;
+    }
     var btn = form.querySelector('[type="submit"]');
     if (btn) {
       btn.disabled = true;

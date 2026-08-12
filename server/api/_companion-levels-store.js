@@ -293,14 +293,20 @@ export function normalizeLevelRow(row = {}, index = 0) {
   };
 }
 
-export async function readLocalLevels() {
+export async function readLocalLevels({ allowSilentFallback = true } = {}) {
   try {
     const dbRows = await readDbLevels();
     if (Array.isArray(dbRows) && dbRows.length) {
       return dbRows.sort((a, b) => a.sort - b.sort || a.level - b.level);
     }
   } catch (error) {
-    if (!isMissingTable(error)) console.error("[companion-levels] DB read failed, fallback local", error.message || error);
+    if (!isMissingTable(error)) {
+      console.error("[companion-levels] DB read failed, fallback local", error.message || error);
+      // Production risk: silent defaults → admin publish overwrites live levels.
+      if (!allowSilentFallback) {
+        throw Object.assign(new Error(`读取等级失败：${error.message || error}`), { status: 503 });
+      }
+    }
   }
   try {
     await ensureDir();

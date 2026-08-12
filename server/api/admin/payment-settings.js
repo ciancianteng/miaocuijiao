@@ -1209,6 +1209,25 @@ async function handler(req, res) {
         qrUrl,
         manual: { ...incomingManual, qrUrl },
       };
+      const minAmount = Number(data.minAmount);
+      const maxAmount = Number(data.maxAmount);
+      if (data.minAmount != null && data.minAmount !== "" && !Number.isFinite(minAmount)) {
+        return json(res, 400, { ok: false, message: "最低充值金额必须是数字" });
+      }
+      if (data.maxAmount != null && data.maxAmount !== "" && !Number.isFinite(maxAmount)) {
+        return json(res, 400, { ok: false, message: "最高充值金额必须是数字" });
+      }
+      if (Number.isFinite(minAmount) && minAmount < 0) {
+        return json(res, 400, { ok: false, message: "最低充值金额不能为负数" });
+      }
+      if (Number.isFinite(maxAmount) && maxAmount < 0) {
+        return json(res, 400, { ok: false, message: "最高充值金额不能为负数" });
+      }
+      if (Number.isFinite(minAmount) && Number.isFinite(maxAmount) && maxAmount > 0 && minAmount > maxAmount) {
+        return json(res, 400, { ok: false, message: "最低充值金额不能高于最高充值金额" });
+      }
+      if (Number.isFinite(minAmount)) data.minAmount = minAmount;
+      if (Number.isFinite(maxAmount)) data.maxAmount = maxAmount;
       const channel = {
         id: tpl.id,
         channel_id: tpl.id,
@@ -1224,6 +1243,28 @@ async function handler(req, res) {
         data,
         updated_at: new Date().toISOString(),
       };
+      // Align with toggle_channel: cannot enable without required manual/API fields.
+      if (channel.enabled) {
+        if (channel.category === "manual") {
+          const manual = data.manual || {};
+          const missing = (tpl.requiredManual || []).filter((key) => !String(manual[key] || "").trim());
+          if (missing.length) {
+            return json(res, 400, { ok: false, message: `请先填写收款资料（缺少：${missing.join("、")}）再启用。` });
+          }
+          if (tpl.id === "tng" && !String(manual.phone || "").trim() && !String(manual.qrUrl || "").trim()) {
+            return json(res, 400, { ok: false, message: "请先保存 TNG 手机号或收款二维码后再启用。" });
+          }
+          if (tpl.id === "duitnow" && !String(manual.qrUrl || "").trim()) {
+            return json(res, 400, { ok: false, message: "请先上传 DuitNow 收款二维码后再启用（老板端需要二维码才可见）。" });
+          }
+        }
+        if (channel.category === "api") {
+          const missingApi = (tpl.requiredApi || []).filter((key) => !String(mergedCreds[key] || "").trim());
+          if (missingApi.length) {
+            return json(res, 400, { ok: false, message: `请先填写 API 凭证（缺少：${missingApi.join("、")}）再启用。` });
+          }
+        }
+      }
       channel.config_status = computeStatus(channel, credentialKeys);
       let rows;
       let saveSource = "payment_channels";
@@ -1418,10 +1459,21 @@ async function handler(req, res) {
         }
       }
       const accountNumber = String(bank.accountNumber || bank.account_number || "").trim();
+      const accountName = String(bank.accountName || bank.account_name || "").trim();
+      const bankName = String(bank.bankName || bank.bank_name || bank.provider || (existing && existing.bank_name) || "").trim();
+      if (!bankName) {
+        return json(res, 400, { ok: false, message: "请填写渠道/银行名称" });
+      }
+      if (!accountName) {
+        return json(res, 400, { ok: false, message: "户名不能为空" });
+      }
+      if (!accountNumber && !(existing && existing.encrypted_payload)) {
+        return json(res, 400, { ok: false, message: "银行账号不能为空" });
+      }
       const row = {
         id: id || `bank-${Date.now()}`,
-        bank_name: String(bank.bankName || bank.bank_name || bank.provider || (existing && existing.bank_name) || ""),
-        account_name: String(bank.accountName || bank.account_name || ""),
+        bank_name: bankName,
+        account_name: accountName || String((existing && existing.account_name) || ""),
         enterprise_name: String(bank.enterpriseName || bank.enterprise_name || ""),
         account_number_mask: accountNumber
           ? accountNumber.replace(/\s+/g, "").replace(/^(.+)(.{4})$/, "**** $2")
@@ -1435,6 +1487,9 @@ async function handler(req, res) {
         enabled: bank.enabled !== false,
         updated_at: new Date().toISOString(),
       };
+      if (row.enabled && (!row.account_name || !(row.encrypted_payload || accountNumber))) {
+        return json(res, 400, { ok: false, message: "启用前必须填写户名与银行账号" });
+      }
       if (!BANK_PROVIDERS.includes(row.bank_name) && row.bank_name !== "其他") {
         // Allow custom but keep known providers first.
       }
@@ -1472,6 +1527,20 @@ async function handler(req, res) {
       const id = String(body.id || "").trim();
       if (!id) return json(res, 400, { ok: false, message: "缺少收款渠道 ID" });
       const enabled = Boolean(body.enabled);
+      if (enabled) {
+        let existingBank = null;
+        try {
+          const found = await supabaseFetch(TABLES.banks, `?id=eq.${encodeURIComponent(id)}&limit=1`);
+          existingBank = found?.[0] || null;
+        } catch (error) {
+          if (!isMissingTable(error)) throw error;
+          existingBank = (await readPlatformBanks()).find((b) => String(b.id) === id) || null;
+        }
+        if (!existingBank) return json(res, 404, { ok: false, message: "收款渠道不存在" });
+        if (!String(existingBank.account_name || "").trim() || !(existingBank.encrypted_payload || existingBank.account_number_mask)) {
+          return json(res, 400, { ok: false, message: "启用前必须填写户名与银行账号" });
+        }
+      }
       try {
         const rows = await supabaseFetch(TABLES.banks, `?id=eq.${encodeURIComponent(id)}`, {
           method: "PATCH",

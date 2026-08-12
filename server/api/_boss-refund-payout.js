@@ -244,7 +244,16 @@ export async function confirmBossCatFoodRefund(db, {
     return { ok: false, message: "已驳回/取消的退款不可确认。" };
   }
 
-  const creditAmount = money(amount != null ? amount : row.amount_rm);
+  const requested = money(amount != null ? amount : row.amount_rm);
+  const maxCredit = money(row.amount_rm);
+  if (requested <= 0) {
+    return { ok: false, message: "退款猫粮必须大于 0。" };
+  }
+  // Never over-credit beyond the approved refund request amount (prevents abnormal wallet data).
+  if (maxCredit > 0 && requested > maxCredit + 0.001) {
+    return { ok: false, message: `退款猫粮不能超过申请金额（最多 ${maxCredit}）。` };
+  }
+  const creditAmount = maxCredit > 0 ? Math.min(requested, maxCredit) : requested;
   if (creditAmount <= 0) {
     return { ok: false, message: "退款猫粮必须大于 0。" };
   }
