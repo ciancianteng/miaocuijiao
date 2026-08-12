@@ -46,6 +46,15 @@ export default async function handler(req, res) {
       const action = String(req.query.action || "bootstrap").trim();
       if (action === "bootstrap" || action === "rules") {
         const rules = await loadRules();
+        if (rules._missing) {
+          return json(res, 503, {
+            ok: false,
+            message: "请先执行 supabase/popularity-ranking.sql",
+            rules: viewRules(rules),
+            rawRules: null,
+            schemaReady: false,
+          });
+        }
         const anomalies = await db(
           "popularity_anomaly_logs",
           "?order=created_at.desc&limit=50"
@@ -64,8 +73,9 @@ export default async function handler(req, res) {
         ).catch((e) => (isMissingRelation(e) ? [] : Promise.reject(e)));
         return json(res, 200, {
           ok: true,
+          schemaReady: true,
           rules: viewRules(rules),
-          rawRules: rules._missing ? null : rules,
+          rawRules: rules,
           anomalies: anomalies || [],
           adjustments: adjustments || [],
           rewards: rewards || [],
