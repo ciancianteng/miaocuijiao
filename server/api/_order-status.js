@@ -263,19 +263,34 @@ export async function transitionOrderStatus(
   if (!isCanonicalOrderStatus(next) || next === "reviewed") {
     throw Object.assign(new Error(`无效订单状态：${toStatus}`), { status: 400 });
   }
-  const body = { ...patch, status: next };
+  const nowIso = new Date().toISOString();
+  const body = { ...patch, status: next, updated_at: patch.updated_at || nowIso };
   let q = filterQuery || `?id=eq.${encodeURIComponent(orderId)}`;
   // Optimistic CAS: when fromStatus known and filter lacks status=, require current status match.
   const from = fromStatus ? normalizeOrderStatus(fromStatus) : "";
   if (from && !/status=eq\./i.test(q)) {
     q += (q.includes("?") ? "&" : "?") + `status=eq.${encodeURIComponent(from)}`;
   }
-  const rows = await supabaseJson(restUrl("orders", q), {
-    method: "PATCH",
-    headers: serviceHeaders(),
-    body: JSON.stringify(body),
-  });
-  const saved = Array.isArray(rows) ? rows[0] : null;
+  async function patchOnce(payload) {
+    const rows = await supabaseJson(restUrl("orders", q), {
+      method: "PATCH",
+      headers: serviceHeaders(),
+      body: JSON.stringify(payload),
+    });
+    return Array.isArray(rows) ? rows[0] : null;
+  }
+  let saved = null;
+  try {
+    saved = await patchOnce(body);
+  } catch (error) {
+    const msg = String(error?.message || error || "");
+    if (/updated_at|PGRST204|schema cache|column/i.test(msg) && body.updated_at) {
+      const { updated_at: _drop, ...rest } = body;
+      saved = await patchOnce(rest);
+    } else {
+      throw error;
+    }
+  }
   if (!saved) {
     throw Object.assign(new Error("订单状态已变更，请刷新后重试。"), { status: 409 });
   }
@@ -288,4 +303,57 @@ export async function transitionOrderStatus(
     note,
   });
   return saved;
+}
+
+/** Prefer latest activity (updated/paid/reviewed) then created_at — newest operated/created first. */
+export function orderActivityMs(row = {}) {
+  const candidates = [
+    row.updated_at,
+    row.updatedAt,
+    row.paid_at,
+    row.paidAt,
+    row.paymentReviewedAt,
+    row.payment_reviewed_at,
+    row.accepted_at,
+    row.acceptedAt,
+    row.created_at,
+    row.createdAt,
+  ];
+  let best = 0;
+  for (const value of candidates) {
+    const n = Date.parse(String(value || ""));
+    if (Number.isFinite(n) && n > best) best = n;
+  }
+  return best;
+}
+
+export function sortOrdersByActivityDesc(rows = []) {
+  return (Array.isArray(rows) ? rows.slice() : []).sort((a, b) => {
+    const tb = orderActivityMs(b);
+    const ta = orderActivityMs(a);
+    if (tb !== ta) return tb - ta;
+    const cb = Date.parse(String(b.created_at || b.createdAt || "")) || 0;
+    const ca = Date.parse(String(a.created_at || a.createdAt || "")) || 0;
+    return cb - ca;
+  });
+}
+
+/** Fetch orders with updated_at,created_at DESC; soft-fallback if updated_at missing. */
+export async function fetchOrdersActivityDesc(deps, { limit = 500 } = {}) {
+  const { restUrl, supabaseJson, serviceHeaders } = deps;
+  const lim = Math.max(1, Math.min(Number(limit) || 500, 1000));
+  try {
+    const rows = await supabaseJson(
+      restUrl("orders", `?order=updated_at.desc.nullslast,created_at.desc&limit=${lim}`),
+      { headers: serviceHeaders() }
+    );
+    return sortOrdersByActivityDesc(Array.isArray(rows) ? rows : []);
+  } catch (error) {
+    const msg = String(error?.message || error || "");
+    if (!/updated_at|PGRST204|schema cache|column/i.test(msg)) throw error;
+    const rows = await supabaseJson(restUrl("orders", `?order=created_at.desc&limit=${lim}`), {
+      headers: serviceHeaders(),
+    }).catch(() => []);
+    return sortOrdersByActivityDesc(Array.isArray(rows) ? rows : []);
+  }
 }

@@ -1,4 +1,4 @@
-import { ORDER_STATUS_LABELS } from "../_order-status.js";
+import { ORDER_STATUS_LABELS, fetchOrdersActivityDesc, sortOrdersByActivityDesc } from "../_order-status.js";
 import {
   completionCountdown,
   formatRemainingLabel,
@@ -306,6 +306,8 @@ function safeOrder(row, profiles, extras = {}) {
     bossIntent: extras.bossIntent || null,
     preferredCompanionId: extras.bossIntent?.companionId || "",
     createdAt: row.created_at || "",
+    updatedAt: row.updated_at || row.paid_at || review.paymentReviewedAt || row.created_at || "",
+    paidAt: row.paid_at || "",
     acceptedAt: row.accepted_at || "",
     startedAt: row.started_at || "",
     completedAt: row.completed_at || "",
@@ -577,7 +579,10 @@ export default async function handler(req, res) {
         return json(res, 200, { ok: true, configured: true, order: viewed, reviews });
       }
       const [orders, profiles] = await Promise.all([
-        supabaseJson(restUrl("orders", "?order=created_at.desc&limit=500"), { headers: serviceHeaders() }).catch(() => []),
+        fetchOrdersActivityDesc(
+          { restUrl, supabaseJson, serviceHeaders },
+          { limit: 500 }
+        ).catch(() => []),
         supabaseJson(restUrl("profiles", "?limit=1000"), { headers: serviceHeaders() }).catch(() => []),
       ]);
       const map = (profiles || []).reduce((m, p) => {
@@ -608,7 +613,7 @@ export default async function handler(req, res) {
           };
         })
       );
-      const list = await enrichSafeOrders((orders || []).slice(0, 200), map, baseExtras);
+      const list = sortOrdersByActivityDesc(await enrichSafeOrders((orders || []).slice(0, 200), map, baseExtras));
       const summary = {
         total: list.length,
         todayOrders: 0,

@@ -998,7 +998,14 @@ async function loadBootstrap(serviceProfile) {
     /* best-effort */
   }
   const [ordersRaw, conversationsRaw, profilesRaw, companionsRaw, reportsRaw, payrollsRaw, workData] = await Promise.all([
-    maybeRows("orders", "?order=created_at.desc&limit=300"),
+    (async () => {
+      try {
+        const { fetchOrdersActivityDesc } = await import("./_order-status.js");
+        return await fetchOrdersActivityDesc({ restUrl, supabaseJson, serviceHeaders }, { limit: 300 });
+      } catch {
+        return maybeRows("orders", "?order=created_at.desc&limit=300");
+      }
+    })(),
     maybeRows("conversations", "?order=updated_at.desc&limit=300"),
     maybeRows("profiles", "?limit=1000"),
     maybeRows("companion_profiles", "?limit=1000"),
@@ -1085,7 +1092,7 @@ async function loadBootstrap(serviceProfile) {
     .map((row) => row.id)
     .filter(Boolean);
   const approvedByOrder = paidIds.length ? await latestApprovedForOrders(paidIds).catch(() => ({})) : {};
-  const orders = ordersRaw.map((row) => {
+  const ordersUnsorted = ordersRaw.map((row) => {
     const extra = grabMap[row.id] || {};
     const receipt = receiptByOrder[row.id] || null;
     const approved = approvedByOrder[row.id] || null;
@@ -1101,7 +1108,14 @@ async function loadBootstrap(serviceProfile) {
         : "",
       ...reviewFields,
     });
-  }); const msgByConv = messagesRaw.reduce((map, msg) => { (map[msg.conversation_id] = map[msg.conversation_id] || []).push(msg); return map; }, {}); const conversationsMapped = conversationsRaw.map((row) => { const boss = profiles[row.boss_id] || {}; const companionProf = profiles[row.companion_id] || {}; const service = profiles[row.customer_service_id] || {}; const msgs = msgByConv[row.id] || []; const last = msgs[msgs.length - 1] || {}; const bossUid = bossForCs(boss).bossUid; const isCompanionSupport = String(row.conversation_type || "") === "companion_support" || (!row.boss_id && row.companion_id); const isClosed = row.status === "closed" || row.status === "ended"; const convStatus = isClosed ? "已结束" : (row.customer_service_id ? "正在接待" : "待接待"); const lastReadAt = row.last_read_at || ""; const unreadRoles = isCompanionSupport ? ["companion"] : ["boss"];   const unreadBoss = isClosed ? [] : msgs.filter((m) => {
+  });
+  let orders = ordersUnsorted;
+  try {
+    const { sortOrdersByActivityDesc } = await import("./_order-status.js");
+    orders = sortOrdersByActivityDesc(ordersUnsorted);
+  } catch {
+    orders = ordersUnsorted;
+  } const msgByConv = messagesRaw.reduce((map, msg) => { (map[msg.conversation_id] = map[msg.conversation_id] || []).push(msg); return map; }, {}); const conversationsMapped = conversationsRaw.map((row) => { const boss = profiles[row.boss_id] || {}; const companionProf = profiles[row.companion_id] || {}; const service = profiles[row.customer_service_id] || {}; const msgs = msgByConv[row.id] || []; const last = msgs[msgs.length - 1] || {}; const bossUid = bossForCs(boss).bossUid; const isCompanionSupport = String(row.conversation_type || "") === "companion_support" || (!row.boss_id && row.companion_id); const isClosed = row.status === "closed" || row.status === "ended"; const convStatus = isClosed ? "已结束" : (row.customer_service_id ? "正在接待" : "待接待"); const lastReadAt = row.last_read_at || ""; const unreadRoles = isCompanionSupport ? ["companion"] : ["boss"];   const unreadBoss = isClosed ? [] : msgs.filter((m) => {
     if (!unreadRoles.includes(m.sender_role) || m.read_at) return false;
     if (lastReadAt && String(m.created_at || "") <= String(lastReadAt)) return false;
     return true;
