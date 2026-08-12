@@ -161,7 +161,12 @@ export default async function handler(req, res) {
     return json(res, 400, { ok: false, message: "未知操作" });
   } catch (error) {
     if (isMissingRelation(error)) {
-      return json(res, 503, { ok: false, message: "请先执行 supabase/companion-marketplace.sql" });
+      return json(res, 503, {
+        ok: false,
+        message: "请先执行 supabase/companion-marketplace.sql",
+        detail: String(error?.message || "").slice(0, 240),
+        table: error?.table || "gifts",
+      });
     }
     return json(res, error.status || 500, { ok: false, message: error.message || "礼物管理异常" });
   }
