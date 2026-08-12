@@ -89,12 +89,29 @@
   }
   function saveGift(seed) {
     seed = seed || {};
-    var name = prompt("礼物名称", seed.name || "");
-    if (!name) return;
-    var price = prompt("猫粮价格", seed.catFoodPrice || "10");
-    var sort = prompt("排序", seed.sortOrder || "100");
-    var featured = confirm("是否推荐？");
-    var enabled = confirm("是否启用？");
+    var isCreate = !seed.id;
+    var nameRaw = prompt("礼物名称", seed.name || "");
+    if (nameRaw == null) return; // user cancelled
+    var name = String(nameRaw).trim();
+    if (!name) {
+      alert("礼物名称不能为空");
+      return;
+    }
+    var dup = (state.gifts || []).some(function (g) {
+      if (!g || (seed.id && String(g.id) === String(seed.id))) return false;
+      return String(g.name || "").trim().toLowerCase() === name.toLowerCase();
+    });
+    if (dup) {
+      alert("礼物名称已存在，请换一个名称");
+      return;
+    }
+    var price = prompt("猫粮价格", seed.catFoodPrice != null ? String(seed.catFoodPrice) : "10");
+    if (price == null) return;
+    var sort = prompt("排序", seed.sortOrder != null ? String(seed.sortOrder) : "100");
+    if (sort == null) return;
+    // Create defaults: 推荐关闭、状态启用. Edit keeps existing confirm prompts (UI unchanged).
+    var featured = isCreate ? false : confirm("是否推荐？");
+    var enabled = isCreate ? true : confirm("是否启用？");
     api("/api/admin/gifts", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -110,11 +127,11 @@
       }),
     })
       .then(function (res) {
-        state.message = res.message;
+        state.message = res.message || (isCreate ? "礼物已新增（状态：启用，推荐：否）" : "礼物已保存");
         load();
       })
       .catch(function (err) {
-        alert(err.message);
+        alert(err.message || "保存失败");
       });
   }
   document.addEventListener("click", function (e) {

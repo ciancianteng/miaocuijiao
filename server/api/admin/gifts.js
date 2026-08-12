@@ -59,19 +59,49 @@ export default async function handler(req, res) {
     const action = String(body.action || "save").trim();
     if (action === "save") {
       const id = String(body.id || "").trim();
+      const name = String(body.name || "").trim();
+      if (!name) {
+        return json(res, 400, { ok: false, message: "礼物名称不能为空" });
+      }
+      const isCreate = !id;
+      // Create defaults: enabled=true（启用）, featured=false（推荐关闭）. Explicit body values still win.
+      const enabled =
+        body.enabled === undefined || body.enabled === null || body.enabled === ""
+          ? true
+          : body.enabled !== false && body.enabled !== "false";
+      const featured =
+        body.featured === undefined || body.featured === null || body.featured === ""
+          ? false
+          : body.featured === true || body.featured === "true";
       const payload = {
-        name: String(body.name || "").trim(),
+        name,
         icon_url: String(body.iconUrl || body.icon_url || ""),
         cat_food_price: money(body.catFoodPrice || body.cat_food_price),
-        enabled: body.enabled !== false && body.enabled !== "false",
-        featured: body.featured === true || body.featured === "true",
+        enabled,
+        featured,
         sort_order: Number(body.sortOrder || body.sort_order || 100),
         animation_level: String(body.animationLevel || "normal"),
         updated_at: new Date().toISOString(),
       };
-      if (!payload.name || payload.cat_food_price <= 0) {
-        return json(res, 400, { ok: false, message: "请填写礼物名称和有效猫粮价格" });
+      if (payload.cat_food_price <= 0) {
+        return json(res, 400, { ok: false, message: "请填写有效猫粮价格" });
       }
+
+      // Prevent duplicate gift names among non-deleted rows (case-insensitive, trimmed).
+      const existing = await companionDb("gifts", "?select=id,name,deleted_at&limit=500").catch((e) => {
+        if (isMissingRelation(e)) return [];
+        throw e;
+      });
+      const nameKey = name.toLowerCase();
+      const dup = (existing || []).find((g) => {
+        if (g.deleted_at) return false;
+        if (id && String(g.id) === id) return false;
+        return String(g.name || "").trim().toLowerCase() === nameKey;
+      });
+      if (dup) {
+        return json(res, 409, { ok: false, message: "礼物名称已存在，请换一个名称" });
+      }
+
       let rows;
       if (id) {
         rows = await companionDb("gifts", `?id=eq.${encodeURIComponent(id)}`, {
@@ -91,7 +121,26 @@ export default async function handler(req, res) {
         targetId: rows?.[0]?.id || id,
         operatorRole: roleFrom(req),
       });
-      return json(res, 200, { ok: true, message: "礼物已保存", gift: rows?.[0] });
+      const saved = rows?.[0] || payload;
+      const statusText = (saved.enabled !== false && saved.enabled !== "false" ? "启用" : "停用");
+      const featuredText = saved.featured === true || saved.featured === "true" ? "是" : "否";
+      const message = isCreate
+        ? `礼物已新增（状态：${statusText}，推荐：${featuredText}）`
+        : "礼物已保存";
+      return json(res, 200, {
+        ok: true,
+        message,
+        gift: {
+          id: saved.id,
+          name: saved.name || payload.name,
+          iconUrl: saved.icon_url || payload.icon_url || "",
+          catFoodPrice: money(saved.cat_food_price ?? payload.cat_food_price),
+          enabled: saved.enabled !== false && saved.enabled !== "false",
+          featured: saved.featured === true || saved.featured === "true",
+          sortOrder: Number(saved.sort_order ?? payload.sort_order ?? 100),
+          animationLevel: saved.animation_level || payload.animation_level || "normal",
+        },
+      });
     }
     if (action === "soft_delete") {
       const id = String(body.id || "").trim();
