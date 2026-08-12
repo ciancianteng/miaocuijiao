@@ -156,7 +156,7 @@ async function main() {
   ) {
     failed += 1;
   }
-  if (!step("CS list sorted created_at DESC", isDescBy(csOrders1, ["createdAt", "created_at"]), `n=${csOrders1.length} first=${csOrders1[0]?.id || ""}`)) {
+  if (!step("CS list activity DESC (created_at tie-break)", isDescBy(csOrders1, ["updatedAt", "paymentReviewedAt", "paidAt", "createdAt", "created_at"]), `n=${csOrders1.length} first=${csOrders1[0]?.id || ""}`)) {
     failed += 1;
   }
   // Newest created should be first (or near top within first rows)
@@ -176,7 +176,13 @@ async function main() {
   ) {
     failed += 1;
   }
-  if (!step("Admin list sorted created_at DESC", isDescBy(adminOrdersBefore, ["createdAt", "created_at"]), `n=${adminOrdersBefore.length}`)) {
+  if (
+    !step(
+      "Admin list activity DESC (created_at tie-break)",
+      isDescBy(adminOrdersBefore, ["updatedAt", "paymentReviewedAt", "paidAt", "createdAt", "created_at"]),
+      `n=${adminOrdersBefore.length}`
+    )
+  ) {
     failed += 1;
   }
 
@@ -196,7 +202,47 @@ async function main() {
     failed += 1;
   }
 
-  // ---------- CS confirm ----------
+  // ---------- Create B BEFORE confirming A (so confirm bumps A above B) ----------
+  const createB = await api("/api/orders", bossTok, {
+    action: "create",
+    order: {
+      title: `订单同步验收B ${MARKER}`,
+      game: "VALORANT",
+      game_id: MARKER + "-B",
+      description: `order sync accept B ${MARKER}`,
+      unit_price: Number(comp.priceValue || comp.price || 10),
+      hours: 1,
+      total_amount: Number(comp.priceValue || comp.price || 10),
+      companion_id: comp.id,
+      payment_method: "duitnow",
+    },
+  });
+  const orderB = createB.json?.order?.id || "";
+  if (orderB) {
+    await api("/api/orders", bossTok, {
+      action: "submit_payment_proof",
+      id: orderB,
+      proofDataUrl: tinyPng(),
+      paymentMethod: "duitnow",
+    });
+  }
+  if (!step("boss create order B", !!orderB, `id=${orderB} msg=${createB.json?.message || ""}`)) failed += 1;
+
+  const adminPre = await api("/api/admin/orders", adminTok, null, { "x-mcj-admin-role": "admin" });
+  const listPre = adminPre.json?.orders || [];
+  const preA = listPre.findIndex((o) => String(o.id) === String(orderId));
+  const preB = listPre.findIndex((o) => String(o.id) === String(orderB));
+  if (
+    !step(
+      "Admin before confirm: newer B above older A",
+      !!orderB && preB >= 0 && preA >= 0 && preB < preA,
+      `Bidx=${preB} Aidx=${preA}`
+    )
+  ) {
+    failed += 1;
+  }
+
+  // ---------- CS confirm A (after B exists) ----------
   const confirm = await api("/api/customer-service", csTok, { action: "confirm_payment", id: orderId });
   const confirmed = confirm.json?.order || {};
   const nextStatus = confirmed.status || confirm.json?.status || "";
@@ -319,33 +365,8 @@ async function main() {
     failed += 1;
   }
 
-  // ---------- Sort after status update: older A confirmed must rise above newer B ----------
-  const createB = await api("/api/orders", bossTok, {
-    action: "create",
-    order: {
-      title: `订单同步验收B ${MARKER}`,
-      game: "VALORANT",
-      game_id: MARKER + "-B",
-      description: `order sync accept B ${MARKER}`,
-      unit_price: Number(comp.priceValue || comp.price || 10),
-      hours: 1,
-      total_amount: Number(comp.priceValue || comp.price || 10),
-      companion_id: comp.id,
-      payment_method: "duitnow",
-    },
-  });
-  const orderB = createB.json?.order?.id || "";
-  if (orderB) {
-    await api("/api/orders", bossTok, {
-      action: "submit_payment_proof",
-      id: orderB,
-      proofDataUrl: tinyPng(),
-      paymentMethod: "duitnow",
-    });
-  }
-  // Re-confirm path already done for A (orderId). B stays awaiting_payment.
-  const adminSort = await api("/api/admin/orders", adminTok, null, { "x-mcj-admin-role": "admin" });
-  const adminSortList = adminSort.json?.orders || [];
+  // ---------- Sort after confirm: A must rise above B ----------
+  const adminSortList = adminOrdersAfter;
   const idxA = adminSortList.findIndex((o) => String(o.id) === String(orderId));
   const idxB = adminSortList.findIndex((o) => String(o.id) === String(orderB));
   if (
@@ -358,15 +379,13 @@ async function main() {
     failed += 1;
   }
 
-  const csSortBoot = await api("/api/customer-service", csTok, { action: "bootstrap" });
-  const csSortList = csSortBoot.json?.orders || csSortBoot.json?.data?.orders || [];
-  const csIdxA = csSortList.findIndex((o) => String(o.id) === String(orderId));
-  const csIdxB = csSortList.findIndex((o) => String(o.id) === String(orderB));
+  const csIdxA = csOrders2.findIndex((o) => String(o.id) === String(orderId));
+  const csIdxB = csOrders2.findIndex((o) => String(o.id) === String(orderB));
   if (
     !step(
       "CS: confirmed older A above newer awaiting B (updated/activity DESC)",
       !!orderB && csIdxA >= 0 && csIdxB >= 0 && csIdxA < csIdxB,
-      `Aidx=${csIdxA} Bidx=${csIdxB} Astatus=${csSortList[csIdxA]?.status || ""} Bstatus=${csSortList[csIdxB]?.status || ""}`
+      `Aidx=${csIdxA} Bidx=${csIdxB} Astatus=${csOrders2[csIdxA]?.status || ""} Bstatus=${csOrders2[csIdxB]?.status || ""}`
     )
   ) {
     failed += 1;
