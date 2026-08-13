@@ -223,6 +223,83 @@ async function main() {
     !guestTipBlocked && !afterReload.hasGate,
     guestTipBlocked ? tipText : "no guest tip; " + tipText.slice(0, 240)
   );
+
+  // Submit path must use the same apply-session resolver (not bare companionToken guest tip).
+  const submitProbe = await page.evaluate(async () => {
+    const s0 = JSON.parse(localStorage.getItem("mcjCompanionSession") || "null") || {};
+    // Clear access again to force refresh-on-submit path.
+    s0.token = "";
+    s0.accessToken = "";
+    const raw = JSON.stringify(s0);
+    localStorage.setItem("mcjCompanionSession", raw);
+    sessionStorage.setItem("mcjCompanionSession", raw);
+
+    // Call the same API stack submit uses via a tiny probe of session recovery.
+    const before = JSON.parse(localStorage.getItem("mcjCompanionSession") || "null") || {};
+    const refresh = String(before.refreshToken || before.refresh_token || "");
+    let recovered = false;
+    let submitStatus = 0;
+    let submitMsg = "";
+    let guestTip = false;
+    try {
+      const refreshRes = await fetch("/api/auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ action: "refresh", refreshToken: refresh }),
+      });
+      const refreshBody = await refreshRes.json().catch(() => ({}));
+      const access = String((refreshBody.session && (refreshBody.session.accessToken || refreshBody.session.token)) || "");
+      recovered = !!(refreshRes.ok && access);
+      if (recovered) {
+        const next = Object.assign({}, before, {
+          token: access,
+          accessToken: access,
+          refreshToken: (refreshBody.session && refreshBody.session.refreshToken) || refresh,
+          expiresAt: (refreshBody.session && (refreshBody.session.expiresAt || refreshBody.session.expires_at)) || before.expiresAt || "",
+        });
+        localStorage.setItem("mcjCompanionSession", JSON.stringify(next));
+        sessionStorage.setItem("mcjCompanionSession", JSON.stringify(next));
+        const submitRes = await fetch("/api/companion", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+            "x-mcj-companion-token": access,
+            Authorization: "Bearer " + access,
+          },
+          body: JSON.stringify({
+            action: "submit_application",
+            nickname: "[TEST] upload-guard submit",
+            main_game: "VALORANT",
+            service_type: "陪玩服务",
+            note: "upload-guard submit probe",
+          }),
+        });
+        const submitBody = await submitRes.json().catch(() => ({}));
+        submitStatus = submitRes.status;
+        submitMsg = String(submitBody.message || submitBody.error || "");
+        guestTip = /请先登录或注册/.test(submitMsg);
+      } else {
+        submitMsg = String(refreshBody.message || "refresh failed");
+        guestTip = /请先登录或注册/.test(submitMsg);
+      }
+    } catch (e) {
+      submitMsg = String(e && e.message);
+      guestTip = /请先登录或注册/.test(submitMsg);
+    }
+    return {
+      hadRefresh: !!refresh,
+      recovered,
+      submitStatus,
+      submitMsg: String(submitMsg).slice(0, 200),
+      guestTip,
+    };
+  });
+  step(
+    "submit_application_via_apply_session",
+    submitProbe.recovered && !submitProbe.guestTip && submitProbe.submitStatus > 0 && submitProbe.submitStatus < 500,
+    JSON.stringify(submitProbe)
+  );
   await page.screenshot({ path: path.join(ART, "02-refresh-only-upload.png"), fullPage: true });
 
   // Pure guest after wiping session
