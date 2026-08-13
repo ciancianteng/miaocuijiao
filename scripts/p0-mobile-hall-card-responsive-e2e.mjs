@@ -60,6 +60,8 @@ async function main() {
     const card = document.querySelector(".companion-hall-grid .player-card");
     const media = card && card.querySelector(".companion-card-media");
     const img = media && media.querySelector("img");
+    const price = card && card.querySelector(".companion-price");
+    const status = card && card.querySelector(".companion-status-inline");
     const pageEl = document.querySelector(".companion-hall-page");
     const nav = document.querySelector(".bottom-nav");
     const grid = document.querySelector(".companion-hall-grid");
@@ -82,6 +84,11 @@ async function main() {
       objectFit: imgFit,
       navFixed: nav ? getComputedStyle(nav).position === "fixed" : false,
       navDisplay: nav ? getComputedStyle(nav).display : "",
+      priceFs: price ? parseFloat(getComputedStyle(price).fontSize) : 0,
+      pricePad: price ? getComputedStyle(price).padding : "",
+      statusDot: status ? getComputedStyle(status, "::before").width : "",
+      cardShadow: card ? getComputedStyle(card).boxShadow : "",
+      gap: gb ? gb.gap || gb.rowGap : "",
     };
   });
   await page.screenshot({ path: path.join(ART, "hall-390.png"), fullPage: true });
@@ -99,7 +106,7 @@ async function main() {
   );
   step(
     "hall_media_height_capped",
-    hall.mediaH > 0 && hall.mediaH <= 180 && hall.mediaRatio <= 0.45,
+    hall.mediaH > 0 && hall.mediaH <= 120 && hall.mediaRatio <= 0.42,
     JSON.stringify({ mediaH: hall.mediaH, ratio: hall.mediaRatio, cardH: hall.cardH })
   );
   step("hall_object_fit_cover", hall.objectFit === "cover", hall.objectFit);
@@ -109,6 +116,10 @@ async function main() {
     hall.pagePadBottom
   );
   step("hall_bottom_nav_fixed", hall.navFixed && hall.navDisplay !== "none", JSON.stringify({ fixed: hall.navFixed, display: hall.navDisplay }));
+  step("hall_price_emphasis", hall.priceFs >= 17 && /px/.test(hall.pricePad || ""), JSON.stringify({ fs: hall.priceFs, pad: hall.pricePad }));
+  step("hall_status_dot", parseFloat(hall.statusDot || "0") >= 7, hall.statusDot);
+  step("hall_card_depth", /rgba?\(/.test(hall.cardShadow || "") || /px/.test(hall.cardShadow || ""), (hall.cardShadow || "").slice(0, 80));
+  step("hall_tighter_gap", parseFloat(hall.gap || "0") <= 14, hall.gap);
 
   // Desktop sanity: 1280 should not use mobile media height
   await page.setViewportSize({ width: 1280, height: 800 });

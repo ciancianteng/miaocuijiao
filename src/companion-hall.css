@@ -503,16 +503,16 @@ body{background:radial-gradient(circle at 76% 4%,rgba(255,145,195,.055),transpar
   }
 
   .companion-hall-page {
-    padding-top: 14px !important;
+    padding-top: 12px !important;
     /* Clear fixed bottom nav + iOS safe area so last card is fully visible */
-    padding-bottom: calc(128px + env(safe-area-inset-bottom, 0px)) !important;
+    padding-bottom: calc(132px + env(safe-area-inset-bottom, 0px)) !important;
     box-sizing: border-box !important;
   }
 
   .companion-hall-grid {
     display: grid !important;
     grid-template-columns: 1fr !important;
-    gap: 16px !important;
+    gap: 12px !important;
     width: 100% !important;
     justify-items: stretch !important;
   }
@@ -526,18 +526,25 @@ body{background:radial-gradient(circle at 76% 4%,rgba(255,145,195,.055),transpar
     flex-direction: column !important;
     border-radius: 16px !important;
     overflow: hidden !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.015)),
+      rgba(16, 14, 20, 0.94) !important;
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, 0.04) inset,
+      0 10px 28px rgba(0, 0, 0, 0.28) !important;
   }
 
-  /* Cover: capped height so image stays ~≤40% of a typical card; never portrait 4:5 blowout */
+  /* Cover ~20% shorter than prior mobile cap; keep cover crop, no stretch */
   .companion-hall-grid .companion-card-media,
   .companion-card-media {
     position: relative !important;
     width: 100% !important;
     flex: 0 0 auto !important;
     aspect-ratio: auto !important;
-    height: clamp(120px, 34vw, 140px) !important;
-    max-height: 140px !important;
-    min-height: 112px !important;
+    height: clamp(96px, 28vw, 112px) !important;
+    max-height: 112px !important;
+    min-height: 96px !important;
     overflow: hidden !important;
     background: #16131a !important;
   }
@@ -551,21 +558,216 @@ body{background:radial-gradient(circle at 76% 4%,rgba(255,145,195,.055),transpar
     object-position: var(--mcj-cover-pos, center 22%) !important;
   }
 
+  .companion-hall-grid .companion-card-media::after {
+    content: "" !important;
+    position: absolute !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    height: 42% !important;
+    pointer-events: none !important;
+    background: linear-gradient(180deg, transparent, rgba(8, 6, 12, 0.55)) !important;
+  }
+
   .companion-hall-grid .companion-card-body {
     display: flex !important;
     flex-direction: column !important;
     align-items: stretch !important;
-    gap: 8px !important;
-    padding: 12px 14px 14px !important;
+    gap: 7px !important;
+    padding: 11px 13px 12px !important;
     flex: 1 1 auto !important;
   }
 
+  /* Title + online status */
+  .companion-hall-grid .companion-card-title-row {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: 8px !important;
+    width: 100% !important;
+  }
+
   .companion-hall-grid .companion-card-title-row h3 {
-    font-size: 16px !important;
+    font-size: 17px !important;
+    font-weight: 800 !important;
+    letter-spacing: 0.01em !important;
+    color: #fff !important;
+    line-height: 1.2 !important;
+  }
+
+  .companion-hall-grid .companion-status-inline {
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 7px !important;
+    height: 26px !important;
+    min-height: 26px !important;
+    max-height: 26px !important;
+    padding: 0 10px !important;
+    border-radius: 999px !important;
+    border: 1px solid rgba(94, 230, 189, 0.28) !important;
+    background: rgba(94, 230, 189, 0.1) !important;
+    color: #dffcf0 !important;
+    font-size: 11px !important;
+    font-weight: 750 !important;
+  }
+
+  .companion-hall-grid .companion-status-inline:before {
+    content: "" !important;
+    width: 8px !important;
+    height: 8px !important;
+    border-radius: 50% !important;
+    background: #5ee6bd !important;
+    box-shadow: 0 0 0 3px rgba(94, 230, 189, 0.18), 0 0 10px rgba(94, 230, 189, 0.55) !important;
+    flex: 0 0 auto !important;
+  }
+
+  .companion-hall-grid .companion-status-inline.is-busy {
+    border-color: rgba(245, 158, 11, 0.35) !important;
+    background: rgba(245, 158, 11, 0.12) !important;
+    color: #ffe8c2 !important;
+  }
+
+  .companion-hall-grid .companion-status-inline.is-busy:before {
+    background: #f59e0b !important;
+    box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.18), 0 0 10px rgba(245, 158, 11, 0.5) !important;
+  }
+
+  .companion-hall-grid .companion-status-inline.is-paused:before,
+  .companion-hall-grid .companion-status-inline.is-offline:before {
+    background: rgba(203, 213, 225, 0.72) !important;
+    box-shadow: 0 0 0 3px rgba(148, 163, 184, 0.14) !important;
+  }
+
+  .companion-hall-grid .companion-status-inline.is-offline,
+  .companion-hall-grid .companion-status-inline.is-paused {
+    border-color: rgba(255, 255, 255, 0.14) !important;
+    background: rgba(255, 255, 255, 0.05) !important;
+    color: rgba(255, 255, 255, 0.72) !important;
+  }
+
+  /* Price = primary visual focus (after name / tags) */
+  .companion-hall-grid .companion-card-title-row {
+    order: 1 !important;
+  }
+
+  .companion-hall-grid .companion-identity-row {
+    order: 2 !important;
+  }
+
+  .companion-hall-grid .companion-games-row {
+    order: 3 !important;
   }
 
   .companion-hall-grid .companion-price {
-    font-size: 15px !important;
+    order: 4 !important;
+    width: 100% !important;
+    margin: 2px 0 0 !important;
+    padding: 8px 10px !important;
+    border-radius: 12px !important;
+    border: 1px solid rgba(255, 158, 207, 0.28) !important;
+    background: linear-gradient(180deg, rgba(255, 158, 207, 0.16), rgba(255, 158, 207, 0.06)) !important;
+    color: #ffe4f1 !important;
+    font-size: 18px !important;
+    font-weight: 850 !important;
+    letter-spacing: 0.01em !important;
+    line-height: 1.2 !important;
+    text-align: left !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
+  }
+
+  .companion-hall-grid .companion-price .price-fx-approx {
+    display: inline !important;
+    margin-left: 6px !important;
+    margin-top: 0 !important;
+    font-size: 11px !important;
+    font-weight: 600 !important;
+    opacity: 0.72 !important;
+    color: rgba(255, 214, 232, 0.8) !important;
+  }
+
+  .companion-hall-grid .companion-id {
+    order: 5 !important;
+    opacity: 0.5 !important;
+    font-size: 11px !important;
+  }
+
+  .companion-hall-grid .companion-card-actions {
+    order: 6 !important;
+    margin-top: 2px !important;
+  }
+
+  /* Tag hierarchy: level / official / voice / games */
+  .companion-hall-grid .companion-identity-row,
+  .companion-hall-grid .companion-games-row {
+    gap: 6px !important;
+    row-gap: 6px !important;
+  }
+
+  .companion-hall-grid .companion-level-pill,
+  .companion-hall-grid .mcj-level-tag {
+    height: 24px !important;
+    min-height: 24px !important;
+    max-height: 24px !important;
+    padding: 0 9px !important;
+    font-size: 11px !important;
+    font-weight: 850 !important;
+    letter-spacing: 0.02em !important;
+    box-shadow: 0 0 0 1px rgba(255, 215, 233, 0.08) !important;
+  }
+
+  .companion-hall-grid .mcj-voice-tag {
+    border-style: dashed !important;
+    border-color: rgba(255, 180, 210, 0.5) !important;
+    background: rgba(255, 120, 180, 0.1) !important;
+    color: #ffd0e4 !important;
+    height: 24px !important;
+    min-height: 24px !important;
+    max-height: 24px !important;
+    font-size: 11px !important;
+  }
+
+  .companion-hall-grid .companion-games-row .mcj-service-tag,
+  .companion-hall-grid .mcj-service-tag {
+    height: 24px !important;
+    min-height: 24px !important;
+    max-height: 24px !important;
+    border-color: rgba(255, 255, 255, 0.14) !important;
+    background: rgba(255, 255, 255, 0.06) !important;
+    color: rgba(255, 245, 250, 0.82) !important;
+    font-size: 11px !important;
+    font-weight: 700 !important;
+  }
+
+  .companion-hall-grid .mcj-cert-badge.is-official,
+  .companion-hall-grid .mcj-cert-tag.is-official {
+    height: 24px !important;
+    min-height: 24px !important;
+    max-height: 24px !important;
+    font-size: 11px !important;
+  }
+
+  /* CTA: keep positions; emphasize 立即下单 */
+  .companion-hall-grid .companion-card-action {
+    height: 40px !important;
+    min-height: 40px !important;
+    max-height: 40px !important;
+    border-radius: 12px !important;
+    font-size: 13px !important;
+    font-weight: 800 !important;
+  }
+
+  .companion-hall-grid .companion-card-action.primary,
+  .companion-hall-grid button.companion-card-action.primary {
+    border-color: transparent !important;
+    background: linear-gradient(180deg, #ffe2ef, #ff9ecf) !important;
+    color: #1b0712 !important;
+    box-shadow: 0 8px 18px rgba(255, 143, 197, 0.22) !important;
+  }
+
+  .companion-hall-grid a.companion-card-action:not(.primary) {
+    border-color: rgba(255, 255, 255, 0.14) !important;
+    background: rgba(255, 255, 255, 0.04) !important;
+    color: rgba(255, 245, 250, 0.9) !important;
   }
 
   /* Search / filter: compact, not full-bleed forms */
@@ -617,7 +819,16 @@ body{background:radial-gradient(circle at 76% 4%,rgba(255,145,195,.055),transpar
     font-size: 16px !important;
   }
 
-  /* Hall page bottom nav: 3 tabs, stay clear of content */
+  .hall-intro h1 {
+    font-size: 28px !important;
+  }
+
+  .hall-intro p {
+    font-size: 13px !important;
+    opacity: 0.85 !important;
+  }
+
+  /* Hall page bottom nav: keep design, clear content */
   body .bottom-nav {
     position: fixed !important;
     left: 16px !important;
