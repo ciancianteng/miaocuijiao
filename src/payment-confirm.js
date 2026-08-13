@@ -221,14 +221,33 @@
     root.querySelectorAll("[data-mcj-pay-qr],[data-pay-qr-img]").forEach(function (img) {
       if (img.getAttribute("data-bound-pay-qr") === "1") return;
       img.setAttribute("data-bound-pay-qr", "1");
+      img.setAttribute("data-pay-qr-load", "pending");
+      img.addEventListener("load", function () {
+        img.setAttribute("data-pay-qr-load", "ok");
+        img.style.display = "";
+        img.style.visibility = "";
+        img.style.opacity = "";
+        var panel = img.closest("[data-pay-qr]");
+        if (panel) panel.setAttribute("data-pay-qr-img-status", "ok");
+      });
       img.addEventListener("error", function () {
+        // Never silently hide the QR on mobile/PC — keep the image slot visible for diagnosis + retry.
+        img.setAttribute("data-pay-qr-load", "error");
+        img.style.display = "block";
+        img.style.visibility = "visible";
+        img.style.opacity = "1";
+        img.style.minWidth = "180px";
+        img.style.minHeight = "180px";
+        img.style.outline = "1px dashed rgba(255,143,197,.55)";
         var frame = img.parentNode;
-        img.style.display = "none";
-        if (frame && !frame.querySelector(".pay-alert")) {
+        var panel = img.closest("[data-pay-qr]");
+        if (panel) panel.setAttribute("data-pay-qr-img-status", "error");
+        if (frame && !frame.querySelector("[data-pay-qr-load-error]")) {
           var p = document.createElement("p");
           p.className = "pay-alert";
           p.setAttribute("role", "status");
-          p.textContent = "平台暂未配置收款二维码，请联系客服";
+          p.setAttribute("data-pay-qr-load-error", "1");
+          p.textContent = "二维码图片加载失败，请点击重试或联系客服（图片槽位仍保留，不会隐藏）。";
           frame.appendChild(p);
         }
       });
@@ -279,12 +298,12 @@
     }
     var payLabel = methodLabel(order);
     var channelId = String((info && info.channelId) || "").toLowerCase();
-    var html = '<div class="pay-qr" data-pay-qr data-pay-channel="' + esc(channelId || methodCode(order)) + '">';
-    html += "<h2>" + esc((info && info.title) || payLabel || "平台收款") + "</h2>";
-    var hasQr = !!(info && info.qrUrl && info.enabled !== false && info.unavailable !== true);
+    var qrUrlRaw = String((info && info.qrUrl) || "").trim();
+    var hasQr = !!(info && qrUrlRaw && info.enabled !== false && info.unavailable !== true);
+    var mismatch = false;
     if (hasQr && channelId && /tng|duitnow|alipay|bank|stripe|hitpay/.test(methodCode(order))) {
       var methodKey = methodCode(order);
-      var mismatch =
+      mismatch =
         (/tng/.test(methodKey) && channelId !== "tng") ||
         (/duitnow/.test(methodKey) && channelId !== "duitnow") ||
         (/alipay|支付宝/.test(methodKey) && channelId !== "alipay") ||
@@ -293,17 +312,44 @@
         (/bank|银行/.test(methodKey) && channelId !== "bank-transfer" && channelId !== "bank-my" && channelId !== "bank");
       if (mismatch) hasQr = false;
     }
+    var html =
+      '<div class="pay-qr" data-pay-qr data-pay-channel="' +
+      esc(channelId || methodCode(order)) +
+      '" data-pay-has-qr="' +
+      (hasQr ? "1" : "0") +
+      '" data-pay-qr-mismatch="' +
+      (mismatch ? "1" : "0") +
+      '" data-pay-qr-url-len="' +
+      esc(String(qrUrlRaw.length)) +
+      '">';
+    html += "<h2>" + esc((info && info.title) || payLabel || "平台收款") + "</h2>";
+    // Lightweight debug strip (no secrets): helps confirm mobile render path without guessing.
+    html +=
+      '<p class="pay-qr-debug" data-pay-qr-debug hidden>' +
+      "hasQr=" +
+      (hasQr ? "1" : "0") +
+      " mismatch=" +
+      (mismatch ? "1" : "0") +
+      " urlLen=" +
+      esc(String(qrUrlRaw.length)) +
+      " live=" +
+      (info && info.__live ? "1" : "0") +
+      "</p>";
     if (hasQr) {
       html +=
         '<p class="pay-hint">' +
         esc((info && info.instructions) || "请扫描下方收款二维码完成付款。仅本支付页显示，首页不公开收款码。") +
         "</p>";
-      html +=
-        '<div class="pay-qr-frame"><img src="' +
-        esc(info.qrUrl) +
-        '" alt="' +
-        esc(payLabel + " 收款二维码") +
-        '" data-mcj-pay-qr="1" referrerpolicy="no-referrer" data-pay-qr-img="1"></div>';
+      if (window.McjPayQrPreview && typeof window.McjPayQrPreview.frameHtml === "function") {
+        html += window.McjPayQrPreview.frameHtml(qrUrlRaw, payLabel + " 收款二维码");
+      } else {
+        html +=
+          '<div class="pay-qr-frame" data-pay-qr-zoom="1" role="button" tabindex="0" aria-label="点击放大收款二维码"><img src="' +
+          esc(qrUrlRaw) +
+          '" alt="' +
+          esc(payLabel + " 收款二维码") +
+          '" data-mcj-pay-qr="1" referrerpolicy="no-referrer" data-pay-qr-img="1" draggable="false"></div>';
+      }
     } else {
       var closedMsg = (info && info.instructions) || payLabel + " 暂未开放，请选择其他支付方式";
       html += '<p class="pay-alert" role="status" data-pay-unavailable="1">' + esc(closedMsg) + "</p>";
