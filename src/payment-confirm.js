@@ -815,6 +815,9 @@
         "</p><p>" +
         esc(guide.next) +
         "</p></div>" +
+        // Mobile-first: show QR immediately after status so it is in the first viewport
+        // (previously it sat below a long order grid and appeared "missing" on phones).
+        qrPanelHtml(order) +
         '<div class="pay-grid">' +
         '<div class="pay-row"><span>订单号</span><strong>' +
         esc(order.orderNo || order.order_no || order.id) +
@@ -845,7 +848,6 @@
           : needsManualProof
             ? '<p class="pay-hint">请先按本单支付方式完成付款，再上传截图并点击「我已付款」。</p>'
             : "") +
-        qrPanelHtml(order) +
         proofPanelHtml(order) +
         actions +
         (opts.fromCache ? '<p class="pay-sync">正在同步最新订单状态…</p>' : "") +

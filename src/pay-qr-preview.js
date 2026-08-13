@@ -93,6 +93,20 @@
       },
       true
     );
+    // Direct close binding — more reliable than delegated click alone on mobile/headless.
+    var closeBtn = box.querySelector("[data-pay-qr-close]");
+    if (closeBtn && !closeBtn.__mcjBound) {
+      closeBtn.__mcjBound = true;
+      closeBtn.addEventListener(
+        "click",
+        function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          close();
+        },
+        true
+      );
+    }
     // Touch-friendly close on backdrop (some mobile browsers delay click).
     box.addEventListener(
       "touchend",
