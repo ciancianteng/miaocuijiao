@@ -408,12 +408,14 @@
     if (goodRateText) {
       statChips.push('<span class="pd-mall-stat">👍 ' + esc(goodRateText) + "</span>");
     }
-    statChips.push(onlineChip);
-    var statsHtml = isNewcomer && !hasRating && completedOrders <= 0
-      ? '<div class="pd-mall-stats is-newcomer"><span class="pd-mall-stat">⭐ 新人陪玩</span>' +
-        onlineChip +
-        "</div>"
-      : '<div class="pd-mall-stats" aria-label="信任信息">' + statChips.join("") + "</div>";
+    // Online is already next to nickname; only echo when live/busy for shop-style trust row.
+    if (isLiveOnline || isBusy) statChips.push(onlineChip);
+    var statsHtml =
+      isNewcomer && !hasRating && completedOrders <= 0
+        ? '<div class="pd-mall-stats is-newcomer"><span class="pd-mall-stat">⭐ 新人陪玩</span></div>'
+        : statChips.length
+          ? '<div class="pd-mall-stats" aria-label="信任信息">' + statChips.join("") + "</div>"
+          : "";
 
     var mallChips = [];
     if (isNewcomer) mallChips.push('<span class="pd-chip pd-chip--new">⭐ 新人</span>');
@@ -436,7 +438,6 @@
       .forEach(function (g) {
         mallChips.push('<span class="pd-chip pd-chip--game">' + esc(g) + "</span>");
       });
-    if (rangeText) mallChips.push('<span class="pd-chip">' + esc(rangeText) + "</span>");
     if (popScoreText) mallChips.push('<span class="pd-chip">人气 ' + esc(popScoreText) + "</span>");
     if (weeklyRankText) mallChips.push('<span class="pd-chip">本周 ' + esc(weeklyRankText) + "</span>");
     if (monthlyRankText) mallChips.push('<span class="pd-chip">本月 ' + esc(monthlyRankText) + "</span>");
