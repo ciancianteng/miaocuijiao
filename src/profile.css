@@ -421,7 +421,7 @@
 
   .profile-bottom-bar.pd-bottom-bar{
     width:calc(100% - 16px);
-    grid-template-columns:1fr 1.35fr;
+    grid-template-columns:minmax(0,3fr) minmax(0,7fr);
     bottom:calc(8px + env(safe-area-inset-bottom));
   }
 
@@ -431,4 +431,128 @@
     min-height:44px;
     font-size:14px;
   }
+}
+
+/* —— Phase 1 conversion profile card (mobile-first) —— */
+.profile-detail-page .pd-bottom-bar--convert{
+  grid-template-columns:minmax(0,3fr) minmax(0,7fr) !important;
+}
+.profile-detail-page .pd-profile-card{
+  display:block;
+  padding:16px;
+}
+.profile-detail-page .pd-profile-top{
+  display:grid;
+  grid-template-columns:88px minmax(0,1fr);
+  gap:12px;
+  align-items:start;
+}
+.profile-detail-page .pd-profile-card .profile-avatar{
+  width:88px;
+  height:88px;
+  border-radius:22px;
+  object-fit:cover;
+}
+.profile-detail-page .pd-name-row{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:8px;
+  margin:0 0 6px;
+}
+.profile-detail-page .pd-nickname{
+  margin:0;
+  font-size:24px;
+  line-height:1.15;
+  font-weight:1000;
+  color:var(--pd-text);
+}
+.profile-detail-page .pd-level-badge{
+  display:inline-flex;
+  align-items:center;
+  min-height:24px;
+  padding:0 10px;
+  border-radius:999px;
+  font-size:12px;
+  font-weight:900;
+}
+.profile-detail-page .pd-game-line{
+  margin:0 0 6px;
+  color:var(--pd-muted);
+  font-size:13px;
+  font-weight:800;
+}
+.profile-detail-page .pd-price-hero{
+  margin:2px 0 10px;
+  font-size:22px;
+  font-weight:1000;
+  letter-spacing:.01em;
+  color:#ffe2ef;
+  text-shadow:0 0 16px rgba(255,140,190,.25);
+}
+.profile-detail-page .pd-game-tags{
+  margin:0 0 4px;
+}
+.profile-detail-page .pd-trust-strip{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:8px;
+  margin-top:10px;
+}
+.profile-detail-page .pd-trust-strip.is-newcomer{
+  grid-template-columns:1fr;
+}
+.profile-detail-page .pd-trust-item{
+  border:1px solid rgba(243,168,203,.22);
+  border-radius:14px;
+  background:rgba(255,255,255,.04);
+  padding:10px;
+  min-width:0;
+}
+.profile-detail-page .pd-trust-label{
+  display:block;
+  color:var(--pd-muted);
+  font-size:11px;
+  font-weight:800;
+  margin-bottom:4px;
+}
+.profile-detail-page .pd-trust-item strong{
+  display:block;
+  color:var(--pd-text);
+  font-size:15px;
+  font-weight:1000;
+  line-height:1.25;
+  word-break:break-word;
+}
+.profile-detail-page .pd-bio{
+  margin:14px 0 0;
+  color:#e8d0dc;
+  line-height:1.6;
+  font-weight:650;
+}
+.profile-detail-page .profile-pop-badges{
+  display:flex;
+  gap:6px;
+  flex-wrap:wrap;
+  margin:0 0 8px;
+}
+.profile-detail-page .pd-profile-card .profile-id,
+.profile-detail-page .pd-profile-card .detail-label{
+  display:none !important;
+}
+
+@media(min-width:761px){
+  .profile-detail-page .pd-profile-card{padding:20px}
+  .profile-detail-page .pd-profile-top{
+    grid-template-columns:120px minmax(0,1fr);
+    gap:18px;
+  }
+  .profile-detail-page .pd-profile-card .profile-avatar{
+    width:120px;
+    height:120px;
+    border-radius:26px;
+  }
+  .profile-detail-page .pd-nickname{font-size:30px}
+  .profile-detail-page .pd-price-hero{font-size:26px}
+  .profile-detail-page .pd-trust-item strong{font-size:17px}
 }
