@@ -176,6 +176,25 @@ async function runViewport(browser, label, viewportOrDevice, token, user, orderI
   await page.screenshot({ path: path.join(ART, `${label}-page.png`), fullPage: true });
 
   // Click open — require click path (not API fallback) for PASS of open step.
+  // Prove the durable proof input is not covering the QR (historical click-steal bug).
+  const hit = await page.evaluate(() => {
+    const zoom = document.querySelector("[data-pay-qr-zoom]");
+    if (!zoom) return { ok: false, reason: "no-zoom" };
+    const r = zoom.getBoundingClientRect();
+    const x = r.left + r.width / 2;
+    const y = r.top + r.height / 2;
+    const top = document.elementFromPoint(x, y);
+    return {
+      ok: !!(top && top.closest && top.closest("[data-pay-qr-zoom]")),
+      topTag: top && top.tagName,
+      topId: top && top.id,
+      topClass: top && top.className,
+      x,
+      y,
+    };
+  });
+  step(`${label}_qr_hit_target`, hit.ok === true, JSON.stringify(hit));
+
   const zoom = page.locator("[data-pay-qr-zoom]").first();
   await zoom.scrollIntoViewIfNeeded();
   await zoom.click({ timeout: 8000 });
@@ -191,6 +210,12 @@ async function runViewport(browser, label, viewportOrDevice, token, user, orderI
       installed: !!document.getElementById("payQrLightbox"),
       zoomCount: document.querySelectorAll("[data-pay-qr-zoom]").length,
       api: typeof window.McjPayQrPreview,
+      durable: (() => {
+        const el = document.getElementById("mcjDurableProofInput");
+        if (!el) return null;
+        const cs = getComputedStyle(el);
+        return { className: el.className, pe: cs.pointerEvents, w: cs.width, h: cs.height, pos: cs.position };
+      })(),
     }));
     step(`${label}_lightbox_open_diag`, false, JSON.stringify(diag));
     await page.evaluate(() => {

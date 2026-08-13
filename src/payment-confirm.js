@@ -112,11 +112,13 @@
     el.accept = "image/png,image/jpeg,image/webp,image/jpg,.png,.jpg,.jpeg,.webp";
     el.setAttribute("data-payment-proof", "");
     el.setAttribute("data-mcj-durable-proof", "1");
-    el.className = "pay-proof-file";
+    // Do not use .pay-proof-file here: that class is an absolute inset:0 overlay for
+    // in-button picks and would cover the whole page (blocking QR zoom clicks).
+    el.className = "pay-proof-file-durable";
     el.setAttribute("aria-hidden", "true");
     el.tabIndex = -1;
     el.style.cssText =
-      "position:fixed;left:0;top:0;width:1px;height:1px;opacity:0;overflow:hidden;z-index:2147483000;pointer-events:none;";
+      "position:fixed!important;left:0!important;top:0!important;width:1px!important;height:1px!important;opacity:0!important;overflow:hidden!important;z-index:2147483000!important;pointer-events:none!important;border:0!important;margin:0!important;padding:0!important;";
     document.body.appendChild(el);
     ["pointerdown", "touchstart", "mousedown", "click", "focus"].forEach(function (evName) {
       el.addEventListener(
@@ -150,7 +152,7 @@
       el.value = "";
     } catch (err) {}
     // Re-enable pointer events only for the native picker gesture.
-    el.style.pointerEvents = "auto";
+    el.style.setProperty("pointer-events", "auto", "important");
     try {
       if (typeof el.showPicker === "function") el.showPicker();
       else el.click();
@@ -160,7 +162,7 @@
       } catch (e2) {}
     }
     setTimeout(function () {
-      el.style.pointerEvents = "none";
+      el.style.setProperty("pointer-events", "none", "important");
     }, 0);
   }
 
