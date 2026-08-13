@@ -35,20 +35,27 @@ function step(name, pass, detail) {
 }
 
 async function injectPayPage(page, label) {
-  await page.goto(`${BASE}/payment-confirm.html`, { waitUntil: "domcontentloaded", timeout: 30000 });
+  // Auth gate redirects /payment-confirm.html → login; use harness that loads the shared module only.
+  const html =
+    "<!doctype html><html><head><meta charset='utf-8'>" +
+    "<meta name='viewport' content='width=device-width, initial-scale=1'>" +
+    `<link rel="stylesheet" href="${BASE}/src/pay-qr-preview.css?v=test">` +
+    `<script src="${BASE}/src/pay-qr-preview.js?v=test"></script>` +
+    "<style>body{margin:0;background:#08070a;color:#fff;font-family:sans-serif;padding:24px}.pay-card{max-width:720px;margin:0 auto}</style>" +
+    "</head><body><div id='paymentConfirmApp' class='pay-card'></div></body></html>";
+  await page.setContent(html, { waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => !!window.McjPayQrPreview, null, { timeout: 10000 });
   await page.evaluate((qr) => {
     const root = document.getElementById("paymentConfirmApp");
     root.innerHTML =
-      '<section class="pay-card"><h1>支付确认（测试）</h1>' +
+      "<h1>支付确认（测试）</h1>" +
       '<div class="pay-qr" data-pay-qr data-pay-channel="duitnow">' +
       "<h2>DuitNow QR</h2>" +
-      '<p class="pay-hint">请扫描下方收款二维码完成付款。</p>' +
+      "<p>请扫描下方收款二维码完成付款。</p>" +
       (window.McjPayQrPreview.frameHtml(qr, "DuitNow 收款二维码") || "") +
       '<div class="pay-qr-meta"><div class="pay-row"><span>收款人</span><strong>测试</strong></div></div>' +
       "</div>" +
-      '<div class="pay-proof"><h2>上传付款截图</h2><button type="button" class="pay-btn" data-proof-pick="test">选择截图</button></div>' +
-      "</section>";
+      '<div class="pay-proof"><h2>上传付款截图</h2><button type="button" data-proof-pick="test">选择截图</button></div>';
   }, SAMPLE_QR);
   await page.waitForSelector("[data-pay-qr-zoom] img[data-mcj-pay-qr]", { timeout: 5000 });
   step(`${label}_module_loaded`, true, "McjPayQrPreview + QR frame");
