@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <script src="/portal-early-gate.js?v=20260811authUnify2"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>支付确认 | MEOW CUI JIAO</title>
+  <link rel="stylesheet" href="src/style.css">
+  <link rel="stylesheet" href="src/boss-header.css">
+  <style>
+    .pay-shell{width:min(720px,calc(100% - 32px));margin:0 auto;padding:28px 0 80px}
+    .pay-card{border:1px solid rgba(255,255,255,.1);border-radius:18px;background:rgba(255,255,255,.045);padding:22px}
+    .pay-card h1{margin:0 0 8px;font-size:26px}
+    .pay-card p{margin:0;color:#9ca3af}
+    .pay-grid{display:grid;gap:10px;margin-top:18px}
+    .pay-row{border:1px solid rgba(255,255,255,.08);border-radius:12px;background:rgba(0,0,0,.18);padding:12px;display:flex;justify-content:space-between;gap:12px}
+    .pay-row span{color:#9ca3af;font-size:13px}.pay-row strong{color:#fff;word-break:break-word;text-align:right}
+    .pay-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:18px}
+    .pay-btn{border:1px solid rgba(255,158,207,.55);border-radius:12px;background:rgba(255,143,197,.18);color:#ffe6f2;padding:10px 14px;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;font-weight:800;min-height:44px;opacity:1;box-shadow:inset 0 1px 0 rgba(255,255,255,.08)}
+    .pay-btn.primary{border-color:transparent;background:linear-gradient(180deg,#ffe2ef,#ff9ecf);color:#1b0712;box-shadow:0 0 18px rgba(255,158,207,.28),inset 0 1px 0 rgba(255,255,255,.45)}
+    .pay-btn:hover:not(:disabled):not(.is-disabled){border-color:rgba(255,212,230,.8);filter:brightness(1.06)}
+    .pay-btn.primary:hover:not(:disabled):not(.is-disabled){filter:brightness(1.05)}
+    .pay-btn:disabled,.pay-btn.is-disabled{opacity:.45;cursor:not-allowed;pointer-events:none;filter:saturate(.5);background:rgba(255,255,255,.06)!important;border-color:rgba(255,255,255,.12)!important;color:#9ca3af!important;box-shadow:none!important}
+    .pay-alert{margin-top:14px;color:#ffb9d6;font-weight:600}
+    .pay-status-box{margin-top:14px;border:1px solid rgba(255,143,197,.35);border-radius:12px;background:rgba(255,143,197,.12);padding:12px 14px}
+    .pay-status-box strong{display:block;color:#ffd6e7;font-size:15px}
+    .pay-status-box p{margin:6px 0 0;color:#f3e6ee;font-size:13px;line-height:1.5}
+    .pay-hint{margin:10px 0 0;color:#ffd6e7;font-size:13px;line-height:1.5}
+    .pay-sync{margin-top:8px;color:#9ca3af;font-size:12px}
+    .pay-skel{display:grid;gap:10px;margin:16px 0}
+    .pay-skel-line{height:14px;border-radius:8px;background:linear-gradient(90deg,rgba(255,255,255,.06),rgba(255,255,255,.14),rgba(255,255,255,.06));background-size:200% 100%;animation:payShimmer 1.2s linear infinite}
+    .pay-skel-line.short{width:55%}
+    .pay-proof{margin-top:18px;border:1px solid rgba(255,143,197,.28);border-radius:14px;background:rgba(255,143,197,.08);padding:14px}
+    .pay-proof h2{margin:0 0 8px;font-size:16px;color:#ffd6e7}
+    .pay-qr{margin-top:14px;border:1px solid rgba(255,143,197,.28);border-radius:14px;background:rgba(255,143,197,.08);padding:14px;display:flex;flex-direction:column;align-items:stretch}
+    .pay-qr h2{margin:0 0 8px;font-size:16px;color:#ffd6e7}
+    .pay-grid{margin-top:14px}
+    /* DuitNow QR display: no white plate / white outer frame.
+       Wrapper is theme-fused (transparent) and only hugs the asset.
+       Necessary QR quiet-zone white inside the uploaded image is kept for scan. */
+    .pay-qr-frame{
+      margin:12px auto 0;
+      display:inline-block;
+      max-width:100%;
+      box-sizing:border-box;
+      padding:0;
+      border-radius:0;
+      background:transparent;
+      border:0;
+      box-shadow:none;
+      outline:none;
+      overflow:visible;
+      align-self:center;
+      line-height:0;
+    }
+    .pay-qr-frame[data-pay-qr-zoom]{cursor:zoom-in;touch-action:manipulation}
+    .pay-qr-frame img,
+    .pay-qr-frame img[data-mcj-pay-qr],
+    .pay-qr-frame img[data-pay-qr-img]{
+      width:240px;
+      max-width:100%;
+      height:auto;
+      /* Never crop/cover QR modules — keep every uploaded pixel scannable. */
+      object-fit:contain;
+      object-position:center;
+      display:block !important;
+      visibility:visible !important;
+      opacity:1 !important;
+      margin:0 auto;
+      padding:0;
+      background:transparent!important;
+      border:0!important;
+      outline:0!important;
+      box-shadow:none!important;
+      border-radius:0!important;
+      image-rendering:auto;
+      -webkit-tap-highlight-color:transparent;
+      cursor:zoom-in;
+      touch-action:manipulation;
+    }
+    .pay-qr-meta{display:grid;gap:8px;margin-top:12px}
+    .pay-qr-debug{margin:6px 0 0;color:#9ca3af;font-size:11px;word-break:break-all}
+    .pay-proof-pick{margin-top:8px;position:relative;overflow:hidden}
+    .pay-proof-preview{margin-top:10px;display:grid;gap:10px}
+    .pay-proof-preview img{width:min(100%,320px);max-height:240px;object-fit:contain;border-radius:12px;border:1px solid rgba(255,255,255,.14);background:rgba(0,0,0,.24)}
+    .pay-proof-name{margin:0;color:#ffd6e7;font-size:13px;word-break:break-all}
+    .pay-proof-preview-actions,.pay-proof-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+    .pay-proof-preview-actions .pay-btn{position:relative;overflow:hidden}
+    /* Mobile Safari: never use display:none / [hidden] on file inputs — picker won't open. */
+    .pay-proof-file{
+      position:absolute!important;
+      inset:0!important;
+      width:100%!important;
+      height:100%!important;
+      margin:0!important;
+      padding:0!important;
+      border:0!important;
+      opacity:0!important;
+      cursor:pointer!important;
+      pointer-events:auto!important;
+      font-size:0!important;
+      appearance:none!important;
+      -webkit-appearance:none!important;
+      background:transparent!important;
+    }
+    .pay-progress{position:relative;margin-top:12px;height:22px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden}
+    .pay-progress-bar{height:100%;background:linear-gradient(90deg,rgba(255,143,197,.55),rgba(255,143,197,.95));transition:width .2s ease}
+    .pay-progress span{position:absolute;inset:0;display:grid;place-items:center;font-size:12px;color:#fff;font-weight:700}
+    .pay-success{margin:10px 0 0;color:#9dffc1;font-weight:700}
+    @keyframes payShimmer{0%{background-position:100% 0}100%{background-position:-100% 0}}
+    @media(max-width:560px){
+      .pay-actions{display:grid}
+      .pay-btn{width:100%;justify-content:center}
+      .pay-qr{padding:14px 12px 16px}
+      .pay-qr-frame{
+        width:100%;
+        max-width:100%;
+        display:flex !important;
+        justify-content:center;
+      }
+      .pay-qr-frame img,
+      .pay-qr-frame img[data-mcj-pay-qr],
+      .pay-qr-frame img[data-pay-qr-img]{
+        width:min(88vw,320px);
+        max-width:min(88vw,320px);
+        min-width:180px;
+        min-height:180px;
+      }
+    }
+  </style>
+</head>
+<body style="background:#08070a;color:#fff">
+  <header class="topbar"><a class="brand" href="index.html"><span>MEOW CUI JIAO</span></a><nav class="boss-nav"><a href="index.html">首页</a><a href="companion-center.html">陪玩大厅</a><a href="orders.html">我的订单</a></nav></header>
+  <main class="pay-shell" id="paymentConfirmApp"><section class="pay-card"><h1>支付确认</h1><p>正在读取订单…</p></section></main>
+  <link rel="stylesheet" href="/src/pay-qr-preview.css?v=20260813payQrConfirmZoom3">
+  <script src="src/role-gates.js?v=20260811authUnify1"></script>
+  <script src="src/boss-header.js" defer></script>
+  <script src="src/currency.js"></script>
+  <script src="src/order-status.js"></script>
+  <script src="/src/pay-qr-preview.js?v=20260813payQrConfirmZoom3"></script>
+  <script src="/src/payment-confirm.js?v=20260813payQrConfirmZoom3" defer></script>
+</body>
+</html>

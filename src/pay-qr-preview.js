@@ -34,7 +34,7 @@
       ".pay-qr-lightbox.is-open[hidden]{display:flex!important}" +
       ".pay-qr-lightbox-panel{position:relative;width:min(92vw,560px);max-width:100%;max-height:min(92vh,92dvh);display:grid;gap:12px;justify-items:center;align-content:center;box-sizing:border-box}" +
       ".pay-qr-lightbox-panel img{width:min(86vw,520px);max-width:100%;height:auto;max-height:min(78vh,78dvh);object-fit:contain;background:#fff;border-radius:12px;padding:12px;box-sizing:border-box;pointer-events:none;user-select:none}" +
-      ".pay-qr-lightbox-close{position:absolute;top:-10px;right:-10px;width:44px;height:44px;border:0;border-radius:999px;background:#fff;color:#1b0712;font-size:22px;font-weight:800;line-height:1;cursor:pointer;box-shadow:0 8px 24px rgba(0,0,0,.35);z-index:2;touch-action:manipulation}" +
+      ".pay-qr-lightbox-close{position:fixed;top:max(12px,env(safe-area-inset-top));right:max(12px,env(safe-area-inset-right));width:44px;height:44px;border:0;border-radius:999px;background:#fff;color:#1b0712;font-size:22px;font-weight:800;line-height:1;cursor:pointer;box-shadow:0 8px 24px rgba(0,0,0,.35);z-index:100000;touch-action:manipulation}" +
       ".pay-qr-lightbox-hint{margin:0;color:#c4b5c0;font-size:13px;text-align:center}";
     document.head.appendChild(style);
   }
@@ -121,8 +121,13 @@
     return box;
   }
 
-  function open(src) {
-    var url = String(src || "").trim();
+  function open(srcOrOpts) {
+    var url = "";
+    if (srcOrOpts && typeof srcOrOpts === "object") {
+      url = String(srcOrOpts.src || srcOrOpts.url || "").trim();
+    } else {
+      url = String(srcOrOpts || "").trim();
+    }
     if (!url) return false;
     var box = ensureLightbox();
     var img = box.querySelector("[data-pay-qr-lightbox-img]");
@@ -199,6 +204,7 @@
   }
 
   function onActivate(e) {
+    if (isOpen()) return;
     var zoom = resolveZoomTarget(e.target);
     if (!zoom) return;
     var src = srcFromZoom(zoom);
@@ -212,7 +218,23 @@
     if (installed) return api;
     installed = true;
     ensureStyles();
-    document.addEventListener("click", onActivate, false);
+    // Capture phase: survive pages that stopPropagation on bubble (recharge/payment handlers).
+    document.addEventListener("click", onActivate, true);
+    // Mobile/WebKit: some taps never synthesize a reliable click on nested img.
+    document.addEventListener(
+      "touchend",
+      function (e) {
+        if (isOpen()) return;
+        if (!e || !e.changedTouches || e.changedTouches.length !== 1) return;
+        var zoom = resolveZoomTarget(e.target);
+        if (!zoom) return;
+        var src = srcFromZoom(zoom);
+        if (!src) return;
+        e.preventDefault();
+        open(src);
+      },
+      { capture: true, passive: false }
+    );
     document.addEventListener(
       "keydown",
       function (e) {
@@ -228,7 +250,7 @@
         e.preventDefault();
         open(srcFromZoom(zoom));
       },
-      false
+      true
     );
     return api;
   }
