@@ -482,7 +482,7 @@
     }
     var user = Object.assign({}, session.user || {}, { role: "companion" });
     if (window.MCJRoleGate && typeof window.MCJRoleGate.writeCompanionPortalSession === "function") {
-      window.MCJRoleGate.writeCompanionPortalSession(
+      var written = window.MCJRoleGate.writeCompanionPortalSession(
         {
           accessToken: token,
           refreshToken: refreshToken,
@@ -491,7 +491,8 @@
         },
         session.remember !== false
       );
-      return;
+      // RoleGate refuses when neither access JWT nor refresh is present; otherwise trust it.
+      if (written || companionToken() || refreshToken) return;
     }
     var normalized = {
       token: token,
@@ -523,6 +524,28 @@
     var session = readCompanionSession();
     if (!session) return "";
     return String(session.token || session.accessToken || "").trim();
+  }
+
+  /** Companion-portal refresh only (do not treat a bare boss refresh as apply auth). */
+  function companionSessionRefreshToken() {
+    var session = readCompanionSession() || {};
+    return String(session.refreshToken || session.refresh_token || "").trim();
+  }
+
+  /**
+   * Upload/submit auth for apply flow.
+   * Allow when the user already registered/logged into the apply portal (access JWT
+   * or a refreshable companion session that owns the draft application).
+   * Pure guests (no companion session) must login/register first.
+   */
+  function hasApplyUploadAuth() {
+    if (companionToken()) return true;
+    var session = readCompanionSession();
+    if (!session) return false;
+    if (companionSessionRefreshToken()) return true;
+    if (session.portal === "companion") return true;
+    if (session.user && (session.user.id || session.user.user_id || session.user.email)) return true;
+    return false;
   }
 
   function clearCompanionAccessOnly() {
@@ -576,7 +599,18 @@
   function ensureFreshApplySession() {
     var session = readCompanionSession() || {};
     var token = String(session.token || session.accessToken || "").trim();
+    // Access may have been cleared after expiry while refresh remains (clearCompanionAccessOnly).
+    // In-apply users must recover via refresh — do not force a full re-login for uploads.
     if (!token) {
+      if (!hasApplyUploadAuth()) {
+        return Promise.reject(new Error("请先登录或注册陪玩账号后再提交，以便资料同步到后台。"));
+      }
+      var recoveryRefresh = companionSessionRefreshToken() || readAnyRefreshToken(session);
+      if (recoveryRefresh) {
+        return refreshApplySession().then(function () {
+          return readCompanionSession();
+        });
+      }
       return Promise.reject(new Error("请先登录或注册陪玩账号后再提交，以便资料同步到后台。"));
     }
     var expRaw = readAnyExpiresAt(session);
@@ -721,7 +755,8 @@
   }
 
   function authGateHtml() {
-    if (companionToken()) return "";
+    // Hide auth gate for in-apply users (fresh JWT or refreshable companion session).
+    if (hasApplyUploadAuth()) return "";
     var bossTok = bossAccessToken();
     var mode = authUi.mode === "login" ? "login" : "register";
     if (bossTok && mode !== "login") {
@@ -1255,7 +1290,7 @@
     root.dataset.step = String(activeIndex);
     draft = readDraft();
     preservePageScroll(function () {
-      root.innerHTML = loadingBannerHtml() + statusNotice() + authGateHtml() + '<div class="apply-layout"' + (!companionToken() ? ' hidden' : '') + '>' + stepNav(activeIndex, draft) + '<div>' + stepHtml(activeIndex, draft) + '<div class="step-complete-mark">' + (stepComplete(activeIndex, draft) ? "已完成 ✔" : "未完成 ○") + '</div><div class="apply-actions"><button class="apply-btn" data-apply-prev type="button" ' + (activeIndex === 0 ? "disabled" : "") + '>上一步</button><button class="apply-btn" data-apply-save type="button">保存草稿</button><button class="apply-btn primary" data-apply-next type="button">' + (activeIndex === steps.length - 1 ? "提交审核" : "下一步") + '</button></div><p class="apply-note">每填写一个输入框都会自动保存草稿，刷新网页或返回修改后会自动恢复。</p></div></div>';
+      root.innerHTML = loadingBannerHtml() + statusNotice() + authGateHtml() + '<div class="apply-layout"' + (!hasApplyUploadAuth() ? ' hidden' : '') + '>' + stepNav(activeIndex, draft) + '<div>' + stepHtml(activeIndex, draft) + '<div class="step-complete-mark">' + (stepComplete(activeIndex, draft) ? "已完成 ✔" : "未完成 ○") + '</div><div class="apply-actions"><button class="apply-btn" data-apply-prev type="button" ' + (activeIndex === 0 ? "disabled" : "") + '>上一步</button><button class="apply-btn" data-apply-save type="button">保存草稿</button><button class="apply-btn primary" data-apply-next type="button">' + (activeIndex === steps.length - 1 ? "提交审核" : "下一步") + '</button></div><p class="apply-note">每填写一个输入框都会自动保存草稿，刷新网页或返回修改后会自动恢复。</p></div></div>';
       if (opts.alignStepNav) syncStepNavOnly(root);
     });
   }
@@ -1858,8 +1893,8 @@
         showApplyTip("录音质量检测未通过，请重新录制。");
         return;
       }
-      if (!companionToken()) {
-        showApplyTip("请先登录陪玩账号后再上传试音。");
+      if (!hasApplyUploadAuth()) {
+        showApplyTip("请先登录或注册陪玩账号后再上传试音。");
         return;
       }
 
@@ -2076,7 +2111,7 @@
       delete draft.uploads[key];
     }
     writeRaw(DRAFT_KEY, draft);
-    if (existing && (existing.id || key === "avatar") && companionToken()) {
+    if (existing && (existing.id || key === "avatar") && hasApplyUploadAuth()) {
       var mt =
         key === "avatar"
           ? "avatar"
@@ -2164,7 +2199,10 @@
       }
       return Promise.resolve();
     }
-    if (!companionToken()) {
+    // Guests only: require login/register. In-apply users (registered session / refreshable
+    // companion portal session bound to the draft application) may upload avatar/gallery/
+    // records/video/voice without forcing a prior fresh access token.
+    if (!hasApplyUploadAuth()) {
       showApplyTip("请先登录或注册陪玩账号后再上传，以便同步到云端存储。");
       return Promise.resolve();
     }
@@ -2882,7 +2920,7 @@
           gd.uploads.photos = glist;
           writeRaw(DRAFT_KEY, gd);
           render(Number(root.dataset.step || 0));
-          if (removed && removed.id && companionToken()) {
+          if (removed && removed.id && hasApplyUploadAuth()) {
             postCompanion("delete_media", { media_id: removed.id, media_type: "gallery" }).catch(function () {});
           }
         }
