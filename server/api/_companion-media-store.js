@@ -190,6 +190,26 @@ export async function ensurePublicBucket(bucket, mimeTypes) {
   return bucket;
 }
 
+const MAX_VIDEO_BYTES = 40 * 1024 * 1024;
+const MAX_VIDEO_SECONDS = 30;
+/** Storage allowlist — keep in sync with ensureCompanionBuckets(video). */
+const STORAGE_VIDEO_MIME = new Set([
+  "video/mp4",
+  "video/quicktime",
+  "video/webm",
+  "video/x-m4v",
+  "video/3gpp",
+  "video/3gpp2",
+  "application/octet-stream",
+]);
+const ALLOWED_VIDEO_MIME = new Set([
+  ...STORAGE_VIDEO_MIME,
+  "video/hevc",
+  "video/h265",
+  "video/avc",
+  "video/x-quicktime",
+]);
+
 export async function ensureCompanionBuckets() {
   await ensurePrivateBucket(PRIVATE_BUCKETS.identity, ["image/jpeg", "image/png", "image/webp"]);
   await ensurePrivateBucket(PRIVATE_BUCKETS.gallery, ["image/jpeg", "image/png", "image/webp"]);
@@ -203,8 +223,16 @@ export async function ensureCompanionBuckets() {
   ]);
   await ensurePrivateBucket(
     PRIVATE_BUCKETS.video,
-    ["video/mp4", "video/quicktime", "video/webm", "video/x-m4v", "application/octet-stream"],
-    40 * 1024 * 1024
+    [
+      "video/mp4",
+      "video/quicktime",
+      "video/webm",
+      "video/x-m4v",
+      "video/3gpp",
+      "video/3gpp2",
+      "application/octet-stream",
+    ],
+    MAX_VIDEO_BYTES
   );
   await ensurePrivateBucket(PRIVATE_BUCKETS.payment, ["image/jpeg", "image/png", "image/webp", "application/pdf"]);
   try {
@@ -215,31 +243,125 @@ export async function ensureCompanionBuckets() {
   return PRIVATE_BUCKETS;
 }
 
-const MAX_VIDEO_BYTES = 40 * 1024 * 1024;
-const ALLOWED_VIDEO_MIME = new Set([
-  "video/mp4",
-  "video/quicktime",
-  "video/webm",
-  "video/x-m4v",
-  "application/octet-stream",
-]);
+/** Strip codec params; map iPhone HEVC/MOV aliases onto Storage-safe MIME. */
+export function normalizeVideoContentType(rawMime, filename = "") {
+  const base = String(rawMime || "")
+    .toLowerCase()
+    .split(";")[0]
+    .trim();
+  const name = String(filename || "").toLowerCase();
+  const ext = (name.match(/\.([a-z0-9]+)$/) || [])[1] || "";
+  let mime = base;
+  if (!mime || mime === "application/octet-stream") {
+    if (ext === "mov" || ext === "qt") mime = "video/quicktime";
+    else if (ext === "webm") mime = "video/webm";
+    else if (ext === "m4v") mime = "video/x-m4v";
+    else if (ext === "3gp" || ext === "3gpp") mime = "video/3gpp";
+    else mime = "video/mp4";
+  }
+  // HEVC often arrives as video/hevc or inside .mov/.mp4 — Storage allowlist uses container MIME.
+  if (mime === "video/hevc" || mime === "video/h265" || mime === "video/avc" || mime === "video/x-quicktime") {
+    mime = ext === "mov" || ext === "qt" ? "video/quicktime" : "video/mp4";
+  }
+  if (!STORAGE_VIDEO_MIME.has(mime) && /^video\//.test(mime)) {
+    mime = ext === "mov" || ext === "qt" ? "video/quicktime" : "video/mp4";
+  }
+  return mime;
+}
 
-export function assertVideoUpload(decoded) {
+export function assertVideoMeta({ contentType, filename, size, durationSeconds } = {}) {
+  const mime = normalizeVideoContentType(contentType, filename);
+  const name = String(filename || "").toLowerCase();
+  const extOk = /\.(mp4|mov|m4v|webm|3gp|3gpp|qt)$/i.test(name);
+  const mimeOk =
+    ALLOWED_VIDEO_MIME.has(mime) || /^video\//.test(mime) || (!String(contentType || "").trim() && extOk);
+  if (!mimeOk && !extOk) {
+    throw Object.assign(new Error("格式错误：仅支持 mp4 / mov（H.264 或 HEVC）"), {
+      status: 400,
+      code: "video_format",
+    });
+  }
+  const bytes = Number(size);
+  if (Number.isFinite(bytes) && bytes > MAX_VIDEO_BYTES) {
+    throw Object.assign(new Error(`文件太大：视频不能超过 40MB（当前约 ${(bytes / (1024 * 1024)).toFixed(1)}MB）`), {
+      status: 413,
+      code: "video_too_large",
+    });
+  }
+  const dur = durationSeconds != null ? Number(durationSeconds) : null;
+  if (Number.isFinite(dur) && dur > MAX_VIDEO_SECONDS + 0.5) {
+    throw Object.assign(new Error(`视频太长：最长 ${MAX_VIDEO_SECONDS} 秒（当前约 ${Math.round(dur)} 秒）`), {
+      status: 400,
+      code: "video_too_long",
+    });
+  }
+  return { contentType: mime, maxBytes: MAX_VIDEO_BYTES, maxSeconds: MAX_VIDEO_SECONDS };
+}
+
+export function assertVideoUpload(decoded, filename = "") {
   if (!decoded || !decoded.buffer) {
-    throw Object.assign(new Error("文件格式无效，请选择 mp4 / mov 视频"), { status: 400 });
+    throw Object.assign(new Error("格式错误：请选择 mp4 / mov 视频"), { status: 400, code: "video_format" });
   }
-  const mime = String(decoded.contentType || "").toLowerCase() || "video/mp4";
-  const ok = ALLOWED_VIDEO_MIME.has(mime) || /^video\//.test(mime);
-  if (!ok) {
-    throw Object.assign(new Error("仅支持 mp4 / mov / webm 视频"), { status: 400 });
-  }
-  if (decoded.buffer.length > MAX_VIDEO_BYTES) {
-    throw Object.assign(new Error("视频不能超过 40MB"), { status: 413 });
-  }
+  const meta = assertVideoMeta({
+    contentType: decoded.contentType,
+    filename,
+    size: decoded.buffer.length,
+  });
   return {
     ...decoded,
-    contentType: mime.startsWith("video/") ? mime : "video/mp4",
+    contentType: meta.contentType,
   };
+}
+
+export async function createSignedUploadUrl(bucket, objectPath, { upsert = true } = {}) {
+  if (!bucket || !objectPath) throw new Error("缺少上传路径");
+  const response = await fetch(
+    `${process.env.SUPABASE_URL}/storage/v1/object/upload/sign/${bucket}/${String(objectPath).replace(/^\/+/, "")}`,
+    {
+      method: "POST",
+      headers: {
+        ...companionServiceHeaders({ "x-upsert": upsert ? "true" : "false" }),
+      },
+      body: "{}",
+    }
+  );
+  const text = await response.text();
+  let body = null;
+  try {
+    body = text ? JSON.parse(text) : null;
+  } catch {
+    body = null;
+  }
+  if (!response.ok) {
+    throw new Error(body?.message || text || `签发上传地址失败 HTTP ${response.status}`);
+  }
+  const rel = String(body?.url || "").trim();
+  const token = String(body?.token || "").trim();
+  if (!rel && !token) throw new Error("签发上传地址失败：未返回 url");
+  const uploadUrl = /^https?:\/\//i.test(rel)
+    ? rel
+    : `${process.env.SUPABASE_URL}/storage/v1${rel.startsWith("/") ? "" : "/"}${rel}`;
+  return { uploadUrl, token, path: objectPath, bucket };
+}
+
+export async function storageObjectInfo(bucket, objectPath) {
+  if (!bucket || !objectPath) return null;
+  const response = await fetch(
+    `${process.env.SUPABASE_URL}/storage/v1/object/info/${bucket}/${String(objectPath).replace(/^\/+/, "")}`,
+    { headers: companionServiceHeaders() }
+  );
+  if (response.status === 404) return null;
+  const text = await response.text();
+  let body = null;
+  try {
+    body = text ? JSON.parse(text) : null;
+  } catch {
+    body = null;
+  }
+  if (!response.ok) {
+    throw new Error(body?.message || text || `读取文件信息失败 HTTP ${response.status}`);
+  }
+  return body;
 }
 
 export function publicObjectUrl(bucket, objectPath) {
@@ -304,11 +426,16 @@ export function assertAudioUpload(decoded) {
 
 export async function deleteStorageObject(bucket, objectPath) {
   if (!bucket || !objectPath || /^https?:\/\//i.test(objectPath) || String(objectPath).startsWith("data:")) return;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   const response = await fetch(
     `${process.env.SUPABASE_URL}/storage/v1/object/${bucket}/${String(objectPath).replace(/^\/+/, "")}`,
     {
       method: "DELETE",
-      headers: companionServiceHeaders(),
+      headers: {
+        apikey: key,
+        Authorization: `Bearer ${key}`,
+        "User-Agent": "MCJ-Server/1.0",
+      },
     }
   );
   if (!response.ok && response.status !== 404) {
@@ -381,4 +508,13 @@ export function maskBankAccount(value) {
   return `${"*".repeat(Math.max(4, text.length - 4))}${text.slice(-4)}`;
 }
 
-export { PRIVATE_BUCKETS, PUBLIC_BUCKETS, MAX_IMAGE_BYTES, ALLOWED_IMAGE_MIME };
+export {
+  PRIVATE_BUCKETS,
+  PUBLIC_BUCKETS,
+  MAX_IMAGE_BYTES,
+  MAX_VIDEO_BYTES,
+  MAX_VIDEO_SECONDS,
+  ALLOWED_IMAGE_MIME,
+  ALLOWED_VIDEO_MIME,
+  STORAGE_VIDEO_MIME,
+};

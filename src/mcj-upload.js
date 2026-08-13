@@ -9,7 +9,8 @@
   var IMAGE_ACCEPT = "image/*,image/jpeg,image/jpg,image/png,image/webp";
   var AUDIO_ACCEPT =
     "audio/mpeg,audio/mp3,audio/mp4,audio/aac,audio/x-m4a,audio/webm,audio/ogg,audio/wav,audio/wave,audio/x-wav,.mp3,.m4a,.aac,.webm,.ogg,.wav";
-  var VIDEO_ACCEPT = "video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm";
+  var VIDEO_ACCEPT =
+    "video/mp4,video/quicktime,video/webm,video/x-m4v,video/3gpp,video/*,.mp4,.mov,.m4v,.webm,.3gp";
   var MAX_IMAGE_BYTES = 10 * 1024 * 1024;
   var MAX_AUDIO_BYTES = 20 * 1024 * 1024;
   var MAX_VIDEO_BYTES = 40 * 1024 * 1024;
@@ -31,7 +32,38 @@
     "video/mp4": 1,
     "video/quicktime": 1,
     "video/webm": 1,
+    "video/x-m4v": 1,
+    "video/3gpp": 1,
+    "video/3gpp2": 1,
+    "video/hevc": 1,
+    "video/h265": 1,
+    "application/octet-stream": 1,
   };
+
+  function stripMimeParams(mime) {
+    return String(mime || "")
+      .toLowerCase()
+      .split(";")[0]
+      .trim();
+  }
+
+  function normalizeVideoMime(rawMime, filename) {
+    var mime = stripMimeParams(rawMime);
+    var name = String(filename || "").toLowerCase();
+    var ext = extFromName(name, "");
+    if (!mime || mime === "application/octet-stream") {
+      if (ext === "mov" || ext === "qt") return "video/quicktime";
+      if (ext === "webm") return "video/webm";
+      if (ext === "m4v") return "video/x-m4v";
+      if (ext === "3gp" || ext === "3gpp") return "video/3gpp";
+      if (ext === "mp4") return "video/mp4";
+      return "video/mp4";
+    }
+    if (mime === "video/hevc" || mime === "video/h265" || mime === "video/x-quicktime") {
+      return ext === "mov" || ext === "qt" ? "video/quicktime" : "video/mp4";
+    }
+    return mime;
+  }
 
   function esc(v) {
     return String(v == null ? "" : v)
@@ -126,16 +158,34 @@
       return { ok: true };
     }
     if (kind === "video") {
+      var mimeBase = stripMimeParams(mime);
       var videoOk =
-        VIDEO_MIME[mime] ||
-        !mime ||
-        /\.(mp4|mov|webm)$/i.test(name) ||
+        VIDEO_MIME[mimeBase] ||
+        /^video\//.test(mimeBase) ||
+        !mimeBase ||
+        /\.(mp4|mov|m4v|webm|3gp|3gpp|qt)$/i.test(name) ||
         ext === "mp4" ||
         ext === "mov" ||
-        ext === "webm";
-      if (!videoOk) return { ok: false, error: "仅支持 mp4 / mov 视频" };
-      if (file.size > MAX_VIDEO_BYTES) return { ok: false, error: "视频不能超过 40MB" };
-      return { ok: true, maxSeconds: MAX_VIDEO_SECONDS };
+        ext === "m4v" ||
+        ext === "webm" ||
+        ext === "3gp" ||
+        ext === "3gpp" ||
+        ext === "qt";
+      if (!videoOk) {
+        return { ok: false, code: "video_format", error: "格式错误：仅支持 mp4 / mov（H.264 或 HEVC）" };
+      }
+      if (file.size > MAX_VIDEO_BYTES) {
+        return {
+          ok: false,
+          code: "video_too_large",
+          error: "文件太大：视频不能超过 40MB（当前约 " + (file.size / (1024 * 1024)).toFixed(1) + "MB）",
+        };
+      }
+      return {
+        ok: true,
+        maxSeconds: MAX_VIDEO_SECONDS,
+        contentType: normalizeVideoMime(mime, name),
+      };
     }
     var imageOk =
       IMAGE_MIME[mime] ||
@@ -163,6 +213,82 @@
         reject(new Error("读取文件失败，请重试"));
       };
       reader.readAsDataURL(file);
+    });
+  }
+
+  /** Probe duration for apply-page video; clear too-long errors for iPhone MOV/MP4. */
+  function probeVideoDuration(file, opts) {
+    opts = opts || {};
+    var maxSeconds = Number(opts.maxSeconds) || MAX_VIDEO_SECONDS;
+    return new Promise(function (resolve, reject) {
+      if (!file) return reject(Object.assign(new Error("请选择视频文件"), { code: "video_format" }));
+      var url = "";
+      try {
+        url = URL.createObjectURL(file);
+      } catch (e) {
+        resolve({ ok: true, seconds: null, contentType: normalizeVideoMime(file.type, file.name) });
+        return;
+      }
+      var vid = document.createElement("video");
+      vid.preload = "metadata";
+      vid.muted = true;
+      vid.playsInline = true;
+      var settled = false;
+      function cleanup() {
+        try {
+          URL.revokeObjectURL(url);
+        } catch (e2) {}
+      }
+      function done(result) {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        cleanup();
+        resolve(result);
+      }
+      function fail(err) {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        cleanup();
+        reject(err);
+      }
+      var timer = setTimeout(function () {
+        // Metadata stall — still allow upload (HEVC edge cases); duration checked server-side when known.
+        done({
+          ok: true,
+          seconds: null,
+          contentType: normalizeVideoMime(file.type, file.name),
+          warning: "无法读取视频时长，请确保不超过 " + maxSeconds + " 秒",
+        });
+      }, 10000);
+      vid.onloadedmetadata = function () {
+        var dur = Number(vid.duration);
+        if (!isFinite(dur) || dur <= 0) {
+          done({ ok: true, seconds: null, contentType: normalizeVideoMime(file.type, file.name) });
+          return;
+        }
+        if (dur > maxSeconds + 0.5) {
+          fail(
+            Object.assign(
+              new Error("视频太长：最长 " + maxSeconds + " 秒（当前约 " + Math.round(dur) + " 秒）"),
+              { code: "video_too_long", seconds: dur }
+            )
+          );
+          return;
+        }
+        done({ ok: true, seconds: dur, contentType: normalizeVideoMime(file.type, file.name) });
+      };
+      vid.onerror = function () {
+        // Desktop browsers may fail HEVC decode; iPhone Safari usually succeeds.
+        done({
+          ok: true,
+          seconds: null,
+          contentType: normalizeVideoMime(file.type, file.name),
+          warning: "浏览器无法预览该编码，仍将尝试上传（请使用 H.264/HEVC 的 mp4/mov）",
+        });
+      };
+      vid.src = url;
     });
   }
 
@@ -599,6 +725,7 @@
     IMAGE_ACCEPT: IMAGE_ACCEPT,
     AUDIO_ACCEPT: AUDIO_ACCEPT,
     VIDEO_ACCEPT: VIDEO_ACCEPT,
+    MAX_VIDEO_BYTES: MAX_VIDEO_BYTES,
     MAX_VIDEO_SECONDS: MAX_VIDEO_SECONDS,
     esc: esc,
     isHttpUrl: isHttpUrl,
@@ -609,6 +736,8 @@
     hasAsset: hasAsset,
     hasDurableAsset: hasDurableAsset,
     validateFile: validateFile,
+    normalizeVideoMime: normalizeVideoMime,
+    probeVideoDuration: probeVideoDuration,
     readAsDataUrl: readAsDataUrl,
     compressImageFile: compressImageFile,
     renderCard: renderCard,
