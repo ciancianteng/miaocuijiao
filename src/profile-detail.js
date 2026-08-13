@@ -375,119 +375,118 @@
     var weeklyRankText = Number(weeklyRank) > 0 ? rankText(weeklyRank) : "";
     var monthlyRankText = Number(monthlyRank) > 0 ? rankText(monthlyRank) : "";
     var popScoreText = Number(popScore) > 0 ? String(popScore) : "";
-    var newcomerBadge = isNewcomer ? '<span class="pd-newcomer-badge">⭐ 新人陪玩</span>' : "";
     var priceNum = Number(c.priceValue != null ? c.priceValue : c.price);
     if (!Number.isFinite(priceNum) || priceNum < 0) priceNum = 0;
     var pricePlain =
       window.MCJCurrency && typeof window.MCJCurrency.formatPlain === "function"
         ? String(window.MCJCurrency.formatPlain(priceNum)).replace(/\s*猫粮\s*$/i, "").trim()
         : String(priceNum % 1 ? priceNum.toFixed(2) : priceNum);
-    var priceHero = "🐱 " + pricePlain + " 猫粮 / 小时";
-    var levelBadge = levelText
-      ? '<span class="pd-level-badge companion-level-pill" data-level-id="' +
-        esc(c.levelId || "") +
-        '">' +
-        esc(levelText) +
-        "</span>"
-      : "";
+    var priceHero = "🐱 " + pricePlain + " 猫粮/小时";
     var gameLine = String(c.game || c.mainGame || "").trim();
+    var presenceCode = String(c.availabilityStatus || "").toLowerCase();
+    var presenceLabel = String(c.availabilityText || c.onlineStatusLabel || c.onlineStatus || c.status || "").trim();
+    var isLiveOnline = presenceCode === "online" || /在线/.test(presenceLabel);
+    var isBusy = presenceCode === "busy" || /忙碌/.test(presenceLabel);
+    var onlineChip = isLiveOnline
+      ? '<span class="pd-mall-stat is-online">🟢 在线</span>'
+      : isBusy
+        ? '<span class="pd-mall-stat is-busy">🟡 忙碌</span>'
+        : '<span class="pd-mall-stat is-offline">⚫ 离线</span>';
+    var onlineHero = isLiveOnline
+      ? '<span class="pd-mall-online is-online">🟢 在线</span>'
+      : isBusy
+        ? '<span class="pd-mall-online is-busy">🟡 忙碌</span>'
+        : '<span class="pd-mall-online is-offline">离线</span>';
 
-    var trustItems = [];
+    var statChips = [];
     if (hasRating) {
-      trustItems.push(
-        '<div class="pd-trust-item"><span class="pd-trust-label">⭐ Rating</span><strong>' +
-          esc(ratingValue) +
-          "</strong></div>"
-      );
+      statChips.push('<span class="pd-mall-stat">⭐ ' + esc(ratingValue) + "</span>");
     }
     if (completedOrders > 0) {
-      trustItems.push(
-        '<div class="pd-trust-item"><span class="pd-trust-label">完成订单</span><strong>' +
-          esc(String(completedOrders)) +
-          "</strong></div>"
-      );
+      statChips.push('<span class="pd-mall-stat">📦 ' + esc(String(completedOrders)) + "</span>");
     }
     if (goodRateText) {
-      trustItems.push(
-        '<div class="pd-trust-item"><span class="pd-trust-label">好评率</span><strong>' +
-          esc(goodRateText) +
-          "</strong></div>"
+      statChips.push('<span class="pd-mall-stat">👍 ' + esc(goodRateText) + "</span>");
+    }
+    statChips.push(onlineChip);
+    var statsHtml = isNewcomer && !hasRating && completedOrders <= 0
+      ? '<div class="pd-mall-stats is-newcomer"><span class="pd-mall-stat">⭐ 新人陪玩</span>' +
+        onlineChip +
+        "</div>"
+      : '<div class="pd-mall-stats" aria-label="信任信息">' + statChips.join("") + "</div>";
+
+    var mallChips = [];
+    if (isNewcomer) mallChips.push('<span class="pd-chip pd-chip--new">⭐ 新人</span>');
+    if (levelText) {
+      mallChips.push(
+        '<span class="pd-chip pd-chip--level companion-level-pill" data-level-id="' +
+          esc(c.levelId || "") +
+          '">' +
+          esc(levelText) +
+          "</span>"
       );
     }
-    var trustHtml = trustItems.length
-      ? '<div class="pd-trust-strip" aria-label="信任信息">' + trustItems.join("") + "</div>"
-      : isNewcomer
-        ? '<div class="pd-trust-strip is-newcomer"><div class="pd-trust-item"><span class="pd-trust-label">信任信息</span><strong>新人陪玩 · 完成真实订单后展示评分</strong></div></div>'
-        : "";
-
-    // Meta: only real non-empty values (no placeholder "暂无数据" rows).
-    var metaRows = "";
-    if (gameLine) metaRows += metaRow("游戏", esc(gameLine));
-    if (levelBadge) metaRows += metaRow("等级", levelBadge);
-    if (hasRating) metaRows += metaRow("评分", esc("⭐ " + ratingText));
-    if (goodCount > 0) metaRows += metaRow("好评数", esc(String(goodCount)));
-    if (goodRateText) metaRows += metaRow("好评率", esc(goodRateText));
-    if (completedOrders > 0) metaRows += metaRow("完成订单", esc(String(completedOrders)));
-    if (popScoreText) metaRows += metaRow("人气值", esc(popScoreText));
-    if (weeklyRankText) metaRows += metaRow("本周排名", esc(weeklyRankText));
-    if (monthlyRankText) metaRows += metaRow("本月排名", esc(monthlyRankText));
-    if (rangeText) metaRows += metaRow("价格区间", esc(rangeText));
+    gameLine
+      .split(/[、,，/|]+/)
+      .map(function (g) {
+        return String(g || "").trim();
+      })
+      .filter(Boolean)
+      .slice(0, 6)
+      .forEach(function (g) {
+        mallChips.push('<span class="pd-chip pd-chip--game">' + esc(g) + "</span>");
+      });
+    if (rangeText) mallChips.push('<span class="pd-chip">' + esc(rangeText) + "</span>");
+    if (popScoreText) mallChips.push('<span class="pd-chip">人气 ' + esc(popScoreText) + "</span>");
+    if (weeklyRankText) mallChips.push('<span class="pd-chip">本周 ' + esc(weeklyRankText) + "</span>");
+    if (monthlyRankText) mallChips.push('<span class="pd-chip">本月 ' + esc(monthlyRankText) + "</span>");
+    if (goodCount > 0) mallChips.push('<span class="pd-chip">好评 ' + esc(String(goodCount)) + "</span>");
 
     s.setAttribute("data-companion-level", c.levelId || "");
     s.innerHTML =
-      '<section class="profile-hero detail-card pd-profile-card" data-companion-level="' +
+      '<section class="profile-hero detail-card pd-mall-hero" data-companion-level="' +
       esc(c.levelId || "") +
       '">' +
-      '<div class="pd-profile-top">' +
-      '<div class="profile-avatar-wrap"><img class="profile-avatar" src="' +
+      '<div class="pd-mall-hero-main">' +
+      '<div class="pd-mall-avatar-wrap"><img class="profile-avatar pd-mall-avatar" src="' +
       esc(image) +
       '" alt="' +
       esc(c.name || c.nickname || "陪玩") +
       ' 头像" onerror="this.onerror=null;this.src=\'/default-avatar.png\'"></div>' +
-      '<div class="profile-info-panel">' +
-      '<div class="pd-name-row">' +
-      '<h1 class="pd-nickname">' +
+      '<div class="pd-mall-identity">' +
+      '<div class="pd-mall-name-row">' +
+      '<h1 class="pd-mall-name">' +
       esc(c.name || c.nickname || "陪玩") +
       "</h1>" +
-      statusHtml(c) +
-      (levelBadge || "") +
-      (newcomerBadge || "") +
+      onlineHero +
       "</div>" +
-      (popBadges ? '<div class="profile-pop-badges">' + popBadges + "</div>" : "") +
-      (gameLine ? '<p class="pd-game-line">' + esc(gameLine) + "</p>" : "") +
-      '<div class="pd-price-hero" aria-label="时薪">' +
+      statsHtml +
+      '<div class="pd-mall-price" aria-label="时薪">' +
       esc(priceHero) +
       "</div>" +
+      (mallChips.length ? '<div class="pd-mall-chips">' + mallChips.join("") + "</div>" : "") +
       (tagsHtml || "") +
-      trustHtml +
+      (popBadges ? '<div class="profile-pop-badges">' + popBadges + "</div>" : "") +
       "</div></div>" +
-      (bioRaw ? '<p class="profile-bio pd-bio">' + esc(bioRaw) + "</p>" : "") +
-      '<div class="detail-card price-card pd-voice-card pd-voice-in-hero' +
-      (hasVoice ? "" : " is-empty") +
-      '"><div class="section-head"><h2>语音介绍</h2></div><div class="pd-voice-body">' +
-      voiceBody +
-      "</div></div>" +
-      (hasVideo
-        ? '<div class="detail-card pd-video-card"><div class="section-head"><h2>个人展示视频</h2></div>' +
-          videoHtml +
-          "</div>"
-        : "") +
+      (bioRaw ? '<p class="profile-bio pd-mall-bio">' + esc(bioRaw) + "</p>" : "") +
+      (giftActions ? '<div class="pd-mall-gift-row">' + giftActions + "</div>" : "") +
       "</section>" +
-      (metaRows
-        ? '<section class="detail-card info-card pd-info-card pd-info-card--full"><div class="section-head"><h2>资料亮点</h2></div><div class="pd-meta-list">' +
-          metaRows +
-          "</div>" +
-          giftActions +
+      '<section class="detail-card pd-mall-section pd-voice-card' +
+      (hasVoice ? "" : " is-empty") +
+      '"><div class="section-head"><h2>🎤 语音介绍</h2></div><div class="pd-voice-body">' +
+      voiceBody +
+      "</div></section>" +
+      (hasVideo
+        ? '<section class="detail-card pd-mall-section pd-video-card"><div class="section-head"><h2>🎬 个人展示</h2></div>' +
+          videoHtml +
           "</section>"
-        : giftActions
-          ? '<section class="detail-card info-card pd-info-card">' + giftActions + "</section>"
-          : "") +
+        : "") +
       (galleryList.length
-        ? '<section class="detail-card game-wall"><div class="section-head"><h2>相册</h2></div><div class="wall-grid" data-profile-album>' +
+        ? '<section class="detail-card pd-mall-section game-wall"><div class="section-head"><h2>📷 相册</h2></div><div class="wall-grid" data-profile-album>' +
           galleryWall +
           "</div></section>"
         : "") +
-      '<section class="detail-card real-review-wall"><div class="section-head"><h2>真实订单评价</h2><span>' +
+      '<section class="detail-card pd-mall-section real-review-wall"><div class="section-head"><h2>💬 真实评价</h2><span>' +
       (isNewcomer
         ? "新人陪玩"
         : (goodRateText ? "好评率 " + esc(goodRateText) + " · " : "") +
@@ -507,7 +506,7 @@
     var b = bottom();
     if (b) {
       b.hidden = false;
-      b.className = "profile-bottom-bar pd-bottom-bar pd-bottom-bar--convert";
+      b.className = "profile-bottom-bar pd-bottom-bar pd-bottom-bar--mall";
       b.innerHTML =
         '<a class="pd-bottom-secondary" href="support.html?start=1">咨询客服</a>' +
         '<button type="button" class="order-now mcj-primary pd-bottom-primary" data-open-order>立即预约</button>';
