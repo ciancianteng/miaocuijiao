@@ -7,7 +7,6 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import http from "node:http";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 
@@ -33,106 +32,119 @@ function step(name, ok, detail) {
 
 function makePng(seed) {
   const b64 =
-    "iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMsN9AAAAFUlEQVR42mP8z8BQz0AEYBxSF+FABJADveWkH6oAAAAAElFRkSuQmCC";
+    "iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMsN9AAAAFUlEQVR42mP8z8BQz0AEYBxVSF+FABJADveWkH6oAAAAAElFTkSuQmCC";
   const buf = Buffer.from(b64, "base64");
   if (Number.isFinite(seed)) buf[buf.length - 8] = seed & 0xff;
   return buf;
 }
 
-async function startLocalAssetServer() {
-  const mime = {
-    ".js": "text/javascript; charset=utf-8",
-    ".css": "text/css; charset=utf-8",
-    ".html": "text/html; charset=utf-8",
+async function installLocalAssets(page) {
+  if (!USE_LOCAL_JS) return;
+  const localHtml = fs.readFileSync(path.join(ROOT, "companion-apply.html"), "utf8");
+  const map = {
+    "companion-application.js": fs.readFileSync(path.join(ROOT, "src/companion-application.js"), "utf8"),
+    "companion-application.css": fs.readFileSync(path.join(ROOT, "src/companion-application.css"), "utf8"),
+    "mcj-upload.js": fs.readFileSync(path.join(ROOT, "src/mcj-upload.js"), "utf8"),
+    "mcj-upload.css": fs.readFileSync(path.join(ROOT, "src/mcj-upload.css"), "utf8"),
+    "role-gates.js": fs.readFileSync(path.join(ROOT, "src/role-gates.js"), "utf8"),
   };
-  const server = http.createServer((req, res) => {
-    const urlPath = decodeURIComponent(String(req.url || "/").split("?")[0]);
-    const filePath = path.join(ROOT, urlPath.replace(/^\//, ""));
-    if (!filePath.startsWith(ROOT) || !fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
-      res.writeHead(404);
-      res.end("not found");
-      return;
-    }
-    const ext = path.extname(filePath);
-    res.writeHead(200, { "Content-Type": mime[ext] || "application/octet-stream", "Cache-Control": "no-store" });
-    fs.createReadStream(filePath).pipe(res);
+  await page.route("**/companion-apply.html**", async (route) => {
+    await route.fulfill({ status: 200, contentType: "text/html; charset=utf-8", body: localHtml });
   });
-  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-  const { port } = server.address();
-  return { server, origin: `http://127.0.0.1:${port}` };
+  for (const name of Object.keys(map)) {
+    const body = map[name];
+    const isCss = name.endsWith(".css");
+    await page.route(`**/src/${name}**`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: isCss ? "text/css; charset=utf-8" : "text/javascript; charset=utf-8",
+        body,
+        headers: { "Cache-Control": "no-store" },
+      });
+    });
+  }
 }
 
 async function main() {
-  let local = null;
-  if (USE_LOCAL_JS) local = await startLocalAssetServer();
-
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  await installLocalAssets(page);
 
-  await page.route("**/*", async (route) => {
-    const req = route.request();
-    const url = req.url();
-    if (USE_LOCAL_JS && local && /\/src\/(companion-application\.(js|css)|mcj-upload\.(js|css)|role-gates\.js)/.test(url)) {
-      const name = url.match(/\/src\/[^?]+/)[0];
-      return route.fulfill({
-        status: 200,
-        contentType: name.endsWith(".css") ? "text/css" : "application/javascript",
-        body: fs.readFileSync(path.join(ROOT, name.slice(1))),
-        headers: { "Cache-Control": "no-store" },
-      });
-    }
-    return route.continue();
-  });
-
-  // --- Guest: apply layout must be gated; upload tip only for guests ---
+  // --- Guest: apply layout must be gated ---
   await page.goto(`${BASE}/companion-apply.html`, { waitUntil: "domcontentloaded", timeout: 60000 });
-  await page.waitForTimeout(1200);
+  await page.waitForTimeout(1500);
+  const helperOk = await page.evaluate(() => typeof window !== "undefined");
   const guest = await page.evaluate(() => {
     const layout = document.querySelector(".apply-layout");
     const gate = document.querySelector(".apply-auth-gate");
-    const hidden = !layout || layout.hasAttribute("hidden") || getComputedStyle(layout).display === "none";
+    const hiddenAttr = !!(layout && layout.hasAttribute("hidden"));
+    const display = layout ? getComputedStyle(layout).display : "none";
     return {
       hasGate: !!gate,
-      layoutHidden: hidden,
-      tip: "",
+      hiddenAttr,
+      display,
+      layoutHidden: !layout || hiddenAttr || display === "none",
+      hasHelperInPage: /hasApplyUploadAuth/.test(document.documentElement.innerHTML) || true,
     };
   });
+  // Confirm CSS gate: create probe node
+  const cssGate = await page.evaluate(() => {
+    const el = document.createElement("div");
+    el.className = "apply-layout";
+    el.setAttribute("hidden", "");
+    document.body.appendChild(el);
+    const d = getComputedStyle(el).display;
+    el.remove();
+    return d;
+  });
+  step("local_css_hidden_gate", cssGate === "none", "display=" + cssGate);
   step("guest_auth_gate_visible", guest.hasGate, JSON.stringify(guest));
-  step("guest_apply_layout_hidden", guest.layoutHidden, JSON.stringify(guest));
+  step("guest_apply_layout_hidden", guest.layoutHidden && guest.display === "none", JSON.stringify(guest));
   await page.screenshot({ path: path.join(ART, "01-guest.png"), fullPage: true });
 
-  // --- Login companion, clear access only, keep refresh: upload must still be allowed ---
-  await page.goto(`${BASE}/companion-apply.html`, { waitUntil: "domcontentloaded", timeout: 60000 });
-  await page.waitForTimeout(800);
+  // --- Login companion ---
   await page.evaluate(() => {
     try {
-      localStorage.removeItem("mcjCompanionSession");
-      sessionStorage.removeItem("mcjCompanionSession");
+      localStorage.clear();
+      sessionStorage.clear();
     } catch (e) {}
   });
+  await page.goto(`${BASE}/companion-apply.html`, { waitUntil: "domcontentloaded", timeout: 60000 });
+  await page.waitForTimeout(800);
   await page.click('[data-apply-auth-mode="login"]');
   await page.waitForTimeout(200);
   await page.click('[data-apply-login-method="password"]');
   await page.fill('[data-apply-auth-form="login-password"] input[name="authEmail"]', COMP);
   await page.fill('[data-apply-auth-form="login-password"] input[name="authPassword"]', PASS);
   await page.click("[data-apply-login-password]");
-  await page.waitForTimeout(2500);
+  await page.waitForFunction(
+    () => {
+      try {
+        const s = JSON.parse(localStorage.getItem("mcjCompanionSession") || sessionStorage.getItem("mcjCompanionSession") || "null");
+        return !!(s && (s.token || s.accessToken || s.refreshToken || s.refresh_token));
+      } catch (e) {
+        return false;
+      }
+    },
+    { timeout: 20000 }
+  ).catch(() => {});
+  await page.waitForTimeout(1500);
 
   const afterLogin = await page.evaluate(() => {
     const s = JSON.parse(localStorage.getItem("mcjCompanionSession") || sessionStorage.getItem("mcjCompanionSession") || "null");
+    const layout = document.querySelector(".apply-layout");
     return {
       hasToken: !!(s && (s.token || s.accessToken)),
       hasRefresh: !!(s && (s.refreshToken || s.refresh_token)),
-      layoutHidden: (() => {
-        const layout = document.querySelector(".apply-layout");
-        return !layout || layout.hasAttribute("hidden") || getComputedStyle(layout).display === "none";
-      })(),
+      refreshLen: s ? String(s.refreshToken || s.refresh_token || "").length : 0,
+      hasGate: !!document.querySelector(".apply-auth-gate"),
+      layoutHidden: !layout || layout.hasAttribute("hidden") || getComputedStyle(layout).display === "none",
     };
   });
   step("login_session_present", afterLogin.hasToken || afterLogin.hasRefresh, JSON.stringify(afterLogin));
-  step("login_apply_layout_visible", !afterLogin.layoutHidden, JSON.stringify(afterLogin));
+  step("login_apply_layout_visible", !afterLogin.layoutHidden && !afterLogin.hasGate, JSON.stringify(afterLogin));
 
-  // Clear access token only (simulate expiry wipe used by clearCompanionAccessOnly)
+  // Clear access token only (simulate clearCompanionAccessOnly)
   await page.evaluate(() => {
     const raw = localStorage.getItem("mcjCompanionSession") || sessionStorage.getItem("mcjCompanionSession");
     if (!raw) return;
@@ -149,24 +161,43 @@ async function main() {
     return {
       token: String(s.token || s.accessToken || ""),
       refresh: String(s.refreshToken || s.refresh_token || ""),
+      refreshLen: String(s.refreshToken || s.refresh_token || "").length,
+      user: s.user || null,
     };
   });
   step("access_cleared_refresh_kept", !cleared.token && !!cleared.refresh, JSON.stringify(cleared));
 
-  // Navigate to upload step if possible and try avatar pick — should NOT show guest tip
+  // Re-render without full navigation wipe: trigger apply render by soft reload with session intact
   await page.evaluate(() => {
     try {
       const draft = JSON.parse(localStorage.getItem("mcjCompanionApplicationDraft.v1") || "{}");
       draft.step = 3;
-      draft.rulesAgreement = draft.rulesAgreement || { accepted: true };
+      draft.rulesAgreement = Object.assign({}, draft.rulesAgreement || {}, { accepted: true });
       localStorage.setItem("mcjCompanionApplicationDraft.v1", JSON.stringify(draft));
     } catch (e) {}
   });
   await page.reload({ waitUntil: "domcontentloaded" });
-  await page.waitForTimeout(1500);
+  await page.waitForTimeout(2000);
 
-  // Trigger upload via file input if present
-  const fileInput = page.locator('input[type="file"][data-upload-key="avatar"], input[type="file"][name="avatar"], [data-upload="avatar"] input[type="file"]').first();
+  const afterReload = await page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem("mcjCompanionSession") || sessionStorage.getItem("mcjCompanionSession") || "null");
+    const layout = document.querySelector(".apply-layout");
+    const gate = document.querySelector(".apply-auth-gate");
+    return {
+      hasToken: !!(s && (s.token || s.accessToken)),
+      hasRefresh: !!(s && (s.refreshToken || s.refresh_token)),
+      hasGate: !!gate,
+      layoutHidden: !layout || layout.hasAttribute("hidden") || getComputedStyle(layout).display === "none",
+      bodyHasGuestTip: /请先登录或注册陪玩账号后再上传/.test(document.body.innerText || ""),
+    };
+  });
+  step(
+    "in_apply_refresh_keeps_layout",
+    !afterReload.hasGate && !afterReload.layoutHidden,
+    JSON.stringify(afterReload)
+  );
+
+  // Try file upload — must not show guest tip
   let tipText = "";
   try {
     const inputs = page.locator('input[type="file"]');
@@ -177,25 +208,24 @@ async function main() {
         mimeType: "image/png",
         buffer: makePng(7),
       });
-      await page.waitForTimeout(2000);
+      await page.waitForTimeout(2500);
     }
     tipText = await page.evaluate(() => {
-      const tip = document.querySelector(".apply-tip, [data-apply-tip], .apply-toast");
-      return tip ? String(tip.textContent || "") : String(document.body.innerText || "").slice(0, 500);
+      const tip = document.querySelector(".apply-tip, [data-apply-tip], .apply-toast, .apply-auth-msg");
+      return (tip ? String(tip.textContent || "") : "") + "\n" + String(document.body.innerText || "").slice(0, 400);
     });
   } catch (e) {
     tipText = String(e && e.message);
   }
-
   const guestTipBlocked = /请先登录或注册陪玩账号后再上传/.test(tipText);
   step(
     "in_apply_refresh_session_no_guest_upload_tip",
-    !guestTipBlocked,
-    guestTipBlocked ? tipText : "no guest tip; body=" + tipText.slice(0, 200)
+    !guestTipBlocked && !afterReload.hasGate,
+    guestTipBlocked ? tipText : "no guest tip; " + tipText.slice(0, 240)
   );
   await page.screenshot({ path: path.join(ART, "02-refresh-only-upload.png"), fullPage: true });
 
-  // Pure guest again after wiping session entirely
+  // Pure guest after wiping session
   await page.evaluate(() => {
     ["mcjCompanionSession", "companionAuthToken", "companionUser"].forEach((k) => {
       try {
@@ -205,17 +235,19 @@ async function main() {
     });
   });
   await page.reload({ waitUntil: "domcontentloaded" });
-  await page.waitForTimeout(1000);
+  await page.waitForTimeout(1200);
   const guest2 = await page.evaluate(() => {
     const layout = document.querySelector(".apply-layout");
     return {
       hasGate: !!document.querySelector(".apply-auth-gate"),
+      display: layout ? getComputedStyle(layout).display : "none",
       layoutHidden: !layout || layout.hasAttribute("hidden") || getComputedStyle(layout).display === "none",
     };
   });
-  step("guest_after_wipe_gate", guest2.hasGate && guest2.layoutHidden, JSON.stringify(guest2));
+  step("guest_after_wipe_gate", guest2.hasGate && guest2.display === "none", JSON.stringify(guest2));
   await page.screenshot({ path: path.join(ART, "03-guest-after-wipe.png"), fullPage: true });
 
+  void helperOk;
   fs.writeFileSync(path.join(ART, "results.json"), JSON.stringify({ results, base: BASE, useLocal: USE_LOCAL_JS }, null, 2));
   fs.writeFileSync(path.join(ART_REPO, "results.json"), JSON.stringify({ results, base: BASE, useLocal: USE_LOCAL_JS }, null, 2));
   for (const name of ["01-guest.png", "02-refresh-only-upload.png", "03-guest-after-wipe.png"]) {
@@ -224,8 +256,6 @@ async function main() {
   }
 
   await browser.close();
-  if (local) local.server.close();
-
   const failed = results.filter((r) => r.result === "FAIL");
   console.log(JSON.stringify({ failed: failed.length, results }, null, 2));
   process.exit(failed.length ? 1 : 0);
