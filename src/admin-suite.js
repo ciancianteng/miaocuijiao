@@ -1,28 +1,30 @@
 (function(){
   var DB_KEYS=['users','bosses','clubs','players','orders','wallets','wallet_transactions','recharge_requests','withdraw_requests','invite_rebates','customer_tickets','reviews','games','banners','announcements','admin_logs','role_permissions','companionLevels'];
-  var defaultDb={
-    users:[{id:'U001',name:'夜色老板',role:'boss',status:'正常',balance:'320喵币'},{id:'U002',name:'MOMO',role:'player',status:'在线',balance:'RM860'},{id:'U003',name:'小鱼管理',role:'admin',status:'正常',balance:'-'}],
-    bosses:[{nickname:'夜色老板',uid:'BOSS-1001',phone:'6012-888-1024',registered_at:'2026-06-18',vip:'VIP3',total_spent:'RM1,680',balance:'320喵币',club:'妙脆角主俱乐部',status:'正常',invite:'上级：无 / 已邀请 6 人'},{nickname:'Cheese老板',uid:'BOSS-1002',phone:'6016-520-3344',registered_at:'2026-06-22',vip:'VIP2',total_spent:'RM860',balance:'180喵币',club:'Lian Miao Club',status:'正常',invite:'上级：夜色老板 / 已邀请 2 人'},{nickname:'Moon老板',uid:'BOSS-1003',phone:'6018-777-6633',registered_at:'2026-06-29',vip:'VIP1',total_spent:'RM230',balance:'60喵币',club:'妙脆角主俱乐部',status:'冻结',invite:'上级：Cheese老板 / 已邀请 0 人'}],
-    clubs:[{id:'C001',name:'妙脆角主俱乐部',owner:'17三角洲电竞',status:'已通过',revenue:'RM86,500'},{id:'C002',name:'Lian Miao Club',owner:'LianMiao',status:'待审核',revenue:'RM12,300'}],
-    players:[{id:'P001',uid:'PW-2001',name:'MOMO',phone:'6011-222-1024',id_card:'已上传',bank:'Maybank **** 1024',game:'VALORANT',levelId:'lv1',price:'RM25/小时',rating:'5.0',status:'在线',audit:'已通过',order_status:'可接单',total_income:'RM8,600',withdrawable:'RM860',club:'妙脆角主俱乐部',avatar:'assets/meow-cuijiao-brand.jpg'},{id:'P002',uid:'PW-2002',name:'NANA',phone:'6013-666-3322',id_card:'待补充',bank:'CIMB **** 2201',game:'APEX',levelId:'lv2',price:'RM35/小时',rating:'4.9',status:'忙碌',audit:'待审核',order_status:'忙碌中',total_income:'RM5,420',withdrawable:'RM520',club:'妙脆角主俱乐部',avatar:'assets/lianmiao-club-ad.png'},{id:'P003',uid:'PW-2003',name:'CHEESE',phone:'6017-999-7788',id_card:'已上传',bank:'TNG **** 7788',game:'LOL',levelId:'lv3',price:'RM42/小时',rating:'5.0',status:'休息',audit:'已通过',order_status:'休息中',total_income:'RM12,300',withdrawable:'RM1,230',club:'Lian Miao Club',avatar:'assets/lianmiao-club-ad.png'}],
-    orders:[{id:'O1024',boss:'夜色老板',player:'MOMO',club:'妙脆角主俱乐部',game:'VALORANT',amount:'RM48',status:'进行中',time:'2026-07-03 14:20'},{id:'O1025',boss:'Cheese',player:'NANA',club:'妙脆角主俱乐部',game:'APEX',amount:'RM30',status:'待付款',time:'2026-07-03 15:05'},{id:'O1026',boss:'Moon',player:'CHEESE',club:'Lian Miao Club',game:'LOL',amount:'RM72',status:'已完成',time:'2026-07-03 16:18'}],
-    wallets:[{owner:'夜色老板',type:'老板钱包',balance:'320喵币',frozen:'0'},{owner:'MOMO',type:'陪玩钱包',balance:'RM860',frozen:'RM60'},{owner:'妙脆角主俱乐部',type:'俱乐部钱包',balance:'RM12,800',frozen:'RM420'}],
-    wallet_transactions:[{id:'T001',owner:'夜色老板',type:'充值',amount:'RM100',status:'成功'},{id:'T002',owner:'MOMO',type:'订单收入',amount:'RM48',status:'入账'}],
-    recharge_requests:[{id:'R001',user:'夜色老板',amount:'RM100',coins:'1000喵币',status:'成功'}],
-    withdraw_requests:[{id:'W001',owner:'MOMO',role:'陪玩',amount:'RM500',bank:'Maybank **** 1024',status:'待审核'},{id:'W002',owner:'妙脆角主俱乐部',role:'俱乐部',amount:'RM3000',bank:'Public Bank **** 8866',status:'待审核'}],
-    invite_rebates:[{id:'IB001',inviter:'夜色老板',invitee:'Cheese老板',relation:'老板邀请老板',rebate:'RM32',status:'已发放'},{id:'IB002',inviter:'Cheese老板',invitee:'Moon老板',relation:'二级邀请',rebate:'RM8',status:'待结算'},{id:'IB003',inviter:'MOMO',invitee:'LULU',relation:'陪玩邀请陪玩',rebate:'RM50',status:'审核中'}],
-    customer_tickets:[{id:'CS001',user:'夜色老板',channel:'WhatsApp',topic:'充值未到账',status:'处理中',remark:'已核对流水'},{id:'CS002',user:'NANA',channel:'Discord',topic:'订单纠纷',status:'待回复',remark:'等待老板补充截图'},{id:'CS003',user:'Moon老板',channel:'站内反馈',topic:'申请退款',status:'已关闭',remark:'已完成退款说明'}],
-    reviews:[{id:'RV001',order_id:'O1026',user_id:'U001',player_id:'P003',player:'CHEESE',rating:'5',content:'声音好听，带飞很稳',status:'显示中'},{id:'RV002',order_id:'O1018',user_id:'U004',player_id:'P001',player:'MOMO',rating:'5',content:'报点非常细',status:'显示中'}],
-    games:[{id:'G001',name:'VALORANT',logo:'assets/valorant-bg.jpg',sort:1,visible:'显示'},{id:'G002',name:'APEX',logo:'assets/apex-bg.jpg',sort:2,visible:'显示'},{id:'G003',name:'LOL',logo:'assets/lol-bg.jpg',sort:3,visible:'显示'}],
-    banners:[{id:'B001',title:'首页主封面',image:'assets/homepage-cat-cover.png',enabled:'开启',sort:1},{id:'B002',title:'官方广告位',image:'assets/lianmiao-club-ad.png',enabled:'开启',sort:2}],
-    announcements:[{id:'A001',title:'新人福利开启',content:'老板充值送积分，热门陪玩限时推荐',enabled:'开启'},{id:'A002',title:'招聘陪玩中',content:'欢迎优秀陪玩加入妙脆角电竞',enabled:'开启'}],
-    admin_logs:[{id:'L001',admin:'super_admin',action:'更新首页广告位',time:'2026-07-03 16:30'},{id:'L002',admin:'club_owner',action:'调整陪玩建议价',time:'2026-07-03 17:05'}],
-    role_permissions:[{role:'super_admin',scope:'平台全局管理'},{role:'club_owner',scope:'仅自己的俱乐部'},{role:'player',scope:'仅个人资料与订单'}],
-    companionLevels:[]
-  };
+  // Legacy localStorage demo seed REMOVED — never inject fake bosses/orders/stats.
+  var defaultDb={};
+  DB_KEYS.forEach(function(k){ defaultDb[k]=[]; });
   function read(key){try{var v=JSON.parse(localStorage.getItem('mcj_'+key)||'null');if(Array.isArray(v))return v;}catch(e){}return [];}
   function write(key,val){localStorage.setItem('mcj_'+key,JSON.stringify(val));log('保存 '+key)}
   function log(action){var logs=read('admin_logs');logs.unshift({id:'L'+Date.now(),admin:getRole(),action:action,time:new Date().toLocaleString()});localStorage.setItem('mcj_admin_logs',JSON.stringify(logs.slice(0,60)));}
+  var DEMO_FINGERPRINTS=/^(U001|U002|U003|BOSS-1001|BOSS-1002|BOSS-1003|P001|P002|P003|O1024|O1025|O1026|C001|C002|T001|T002|R001|W001|W002|IB001|IB002|IB003|CS001|CS002|CS003|RV001|RV002|G001|G002|G003|B001|B002|A001|A002|L001|L002|夜色老板|Cheese老板|Moon老板|MOMO|NANA|CHEESE|妙脆角主俱乐部|Lian Miao Club)$/;
+  function looksLikeDemoRow(row){
+    if(!row||typeof row!=='object')return false;
+    var keys=['id','uid','name','nickname','player','boss','owner','user','club','admin'];
+    for(var i=0;i<keys.length;i++){
+      var v=String(row[keys[i]]==null?'':row[keys[i]]).trim();
+      if(v&&DEMO_FINGERPRINTS.test(v))return true;
+    }
+    return false;
+  }
+  function purgeLegacyDemoLocalDb(){
+    DB_KEYS.forEach(function(key){
+      var data=read(key);
+      if(!data.length)return;
+      if(data.some(looksLikeDemoRow)){
+        try{localStorage.removeItem('mcj_'+key)}catch(e){}
+      }
+    });
+  }
   function readStorageItem(key){return localStorage.getItem(key)||sessionStorage.getItem(key)||''}
   function readJsonKey(key){try{return JSON.parse(readStorageItem(key)||'{}')||{}}catch(e){return {}}}
   function isAdminRoleName(role){role=String(role||'');return role==='admin'||role==='super_admin'||role==='finance_admin'}
@@ -2290,35 +2292,49 @@
   }
   function renderDashboardExperience(){
     var dash=document.getElementById('section-dashboard');
-    if(!dash||dash.dataset.enhanced)return;
-    dash.dataset.enhanced='1';
+    if(!dash)return;
     var pending=document.getElementById('dashboardPending');
-    if(pending){
-      var players=read('players'), withdraws=read('withdraw_requests'), refunds=read('refunds'), tickets=read('customer_tickets'), reviews=read('reviews');
-      var items=[
-        ['待审核陪玩',players.filter(function(x){return /待|审核中/.test(String(x.audit||x.status||''))}).length,'players'],
-        ['待审核提现',withdraws.filter(function(x){return /待|审核中/.test(String(x.status||''))}).length,'service-reports'],
-        ['待处理退款',refunds.filter(function(x){return /待|退款中|处理中/.test(String(x.status||''))}).length,'refunds'],
-        ['待回复工单',tickets.filter(function(x){return /待|处理中/.test(String(x.status||''))}).length,'service'],
-        ['待审核评论',reviews.filter(function(x){return /待|审核/.test(String(x.status||''))}).length,'logs']
-      ];
-      pending.innerHTML='<div class="todo-list">'+items.map(function(item){return '<button class="todo-item" type="button" data-section="'+item[2]+'"><span class="todo-icon">'+item[1]+'</span><span><strong>'+esc(item[0])+'</strong><span>点击进入对应模块处理</span></span><span class="status '+(item[1]?'wait':'ok')+'">'+(item[1]?'待处理':'已清空')+'</span></button>'}).join('')+'</div>';
-    }
     var logsTarget=document.getElementById('table-admin_logs');
-    if(logsTarget){
-      var logs=read('admin_logs').slice(0,6);
-      logsTarget.innerHTML='<div class="activity-list">'+(logs.length?logs.map(function(item){return '<button class="activity-item" type="button" data-section="logs"><span class="activity-avatar">'+esc(String(item.admin||'A').slice(0,1).toUpperCase())+'</span><span><strong>'+esc(item.admin||'admin')+'</strong><span>'+esc(item.action||'-')+'</span><small>'+esc(item.time||'-')+' · 当前设备 · 内网 IP</small></span><span class="status info">详情</span></button>'}).join(''):'<div class="empty">暂无操作记录</div>')+'</div>';
-    }
-    var orders=read('orders');
-    var walletRows=read('wallet_transactions').concat(read('recharge_requests'));
-    var orderSeries=dashboardSeries(orders,function(){return 1});
-    var revenueSeries=dashboardSeries(orders,function(row){return moneyNumber(row.actual_paid||row.actualPaid||row.paid_amount||row.amount||row.total)});
-    var profitSeries=dashboardSeries(orders.concat(walletRows),function(row){return moneyNumber(row.platform_profit||row.platformProfit||row.profit||0)});
-    dash.insertAdjacentHTML('beforeend','<div class="admin-chart-grid dashboard-trends">'+
-      dashboardTrendCard('今日订单趋势',orderSeries,'待系统产生真实订单后自动生成趋势图。')+
-      dashboardTrendCard('营业额趋势',revenueSeries,'待系统产生真实订单后自动生成趋势图。')+
-      dashboardTrendCard('平台利润趋势',profitSeries,'待系统产生真实利润记录后自动生成趋势图。')+
-    '</div>');
+    if(pending)pending.innerHTML='<div class="empty">正在读取真实待办…</div>';
+    adminFetch('/api/admin/dashboard',{headers:adminApiHeaders()}).then(function(res){
+      return res.json().catch(function(){return {ok:false,message:'统计接口返回异常'}});
+    }).then(function(body){
+      if(!body||body.ok===false){
+        if(pending)pending.innerHTML='<div class="empty">'+esc((body&&body.message)||'待办加载失败')+'</div>';
+        return;
+      }
+      var p=body.pending||{};
+      var s=body.stats||{};
+      var items=[
+        ['待审核陪玩',Number(p.companionAudits||0)||0,'players'],
+        ['待审核提现',Number(p.withdrawals||0)||0,'service-reports'],
+        ['退款/售后订单',Number(p.refunds||s.refunds||0)||0,'orders'],
+        ['待付款订单',Number(s.awaitingPayment||0)||0,'orders'],
+        ['等待抢单',Number(s.pendingOrders||0)||0,'orders']
+      ];
+      if(pending){
+        pending.innerHTML='<div class="todo-list">'+items.map(function(item){
+          return '<button class="todo-item" type="button" data-section="'+item[2]+'"><span class="todo-icon">'+item[1]+'</span><span><strong>'+esc(item[0])+'</strong><span>来自数据库实时统计</span></span><span class="status '+(item[1]?'wait':'ok')+'">'+(item[1]?'待处理':'已清空')+'</span></button>';
+        }).join('')+'</div>';
+      }
+      if(logsTarget&&!logsTarget.dataset.realOwned){
+        logsTarget.dataset.realOwned='1';
+        logsTarget.innerHTML='<div class="empty">操作日志以服务端记录为准；本地演示日志已停用。</div>';
+      }
+      if(dash.dataset.trendOwned)return;
+      dash.dataset.trendOwned='1';
+      var t=body.trends||{};
+      var orderSeries=Array.isArray(t.orders)?t.orders:[];
+      var revenueSeries=Array.isArray(t.revenue)?t.revenue:[];
+      var profitSeries=Array.isArray(t.profit)?t.profit:[];
+      dash.insertAdjacentHTML('beforeend','<div class="admin-chart-grid dashboard-trends">'+
+        dashboardTrendCard('近7日订单趋势',orderSeries,'待系统产生真实订单后自动生成趋势图。')+
+        dashboardTrendCard('近7日营业额趋势',revenueSeries,'待系统产生真实订单后自动生成趋势图。')+
+        dashboardTrendCard('近7日平台利润趋势',profitSeries,'待系统产生真实利润记录后自动生成趋势图。')+
+      '</div>');
+    }).catch(function(err){
+      if(pending)pending.innerHTML='<div class="empty">'+esc(err.message||'待办加载失败')+'</div>';
+    });
   }
   function dashboardRowDate(row){
     var raw=row&& (row.created_at||row.createdAt||row.paid_at||row.paidAt||row.completed_at||row.completedAt||'');
@@ -2407,12 +2423,7 @@
     if(dash && !dash.getAttribute('data-admin-final-owned')){
       dash.setAttribute('data-admin-final-owned','1');
     }
-    var orders=read('orders'), bosses=read('bosses'), players=read('players'), withdraws=read('withdraw_requests'), refunds=read('refunds'), logs=read('admin_logs'), tickets=read('customer_tickets');
-    var today=new Date().toLocaleDateString('zh-CN');
-    var todayOrders=orders.filter(function(o){return String(o.time||o.created_at||o.createdAt||'').indexOf(today)>-1});
-    var completedToday=todayOrders.filter(function(o){return /完成|已完成/.test(String(o.status||''))});
-    var pending=document.getElementById('dashboardPending');
-    if(pending)pending.innerHTML='<div class="detail-list"><div><span>今日完成订单</span><strong>'+completedToday.length+'</strong></div><div><span>待审核提现</span><strong>'+withdraws.filter(function(x){return /待审核|审核中/.test(String(x.status||''))}).length+'</strong></div><div><span>待处理退款</span><strong>'+refunds.filter(function(x){return /待审核|退款中|处理中/.test(String(x.status||''))}).length+'</strong></div></div>';
+    // dashboardPending + trends owned by renderDashboardExperience (API).
     var tables={
       bosses:[{key:'nickname',label:'老板昵称'},{key:'uid',label:'系统 UID'},{key:'phone',label:'手机号'},{key:'email',label:'邮箱'},{key:'game',label:'游戏'},{key:'gameId',label:'游戏 ID / 游戏昵称'},{key:'registered_at',label:'注册时间'},{key:'vip',label:'VIP等级'},{key:'total_spent',label:'累计消费'},{key:'balance',label:'当前余额'},{key:'status',label:'账号状态',type:'status'},{key:'invite',label:'邀请人'},{key:'actions',label:'详情',type:'actions'}],
       players:[{key:'avatar',label:'头像',type:'avatar'},{key:'name',label:'陪玩昵称'},{key:'uid',label:'UID'},{key:'phone',label:'联系电话'},{key:'id_card',label:'身份证资料'},{key:'bank',label:'结款银行账户'},{key:'audit',label:'审核状态',type:'status'},{key:'order_status',label:'接单状态',type:'status'},{key:'total_income',label:'总收入'},{key:'withdrawable',label:'可提现金额'},{key:'club',label:'所属俱乐部'},{key:'actions',label:'详情',type:'actions'}],
@@ -2475,8 +2486,8 @@
     
     enhanceAdminShell();
   }
-  function initClubAdmin(){var dash=document.getElementById('clubStats');if(dash)statCards(dash,[{label:'今日营业额',value:'RM3,820'},{label:'今日订单',value:'42'},{label:'本月营业额',value:'RM86,500'},{label:'陪玩人数',value:'36'},{label:'待处理订单',value:'9'},{label:'可提现余额',value:'RM12,800'}]);var clubPlayers=read('players').filter(function(p){return p.club==='妙脆角主俱乐部'});var target=document.getElementById('clubPlayers');if(target)target.innerHTML=table(['头像','昵称','游戏','建议价','评分','状态','操作'],clubPlayers.map(function(p){return '<tr><td><img class="avatar" src="'+esc(p.avatar)+'"></td><td>'+esc(p.name)+'</td><td>'+esc(p.game)+'</td><td>'+esc(p.price)+'</td><td>'+esc(p.rating)+'</td><td>'+statusChip(p.status)+'</td><td>'+actionButtons(p.id)+'</td></tr>'}));var orders=read('orders').filter(function(o){return o.club==='妙脆角主俱乐部'});var ot=document.getElementById('clubOrders');if(ot)ot.innerHTML=table(['订单','老板','陪玩','游戏','金额','状态','时间','操作'],orders.map(function(o){return '<tr><td>'+o.id+'</td><td>'+o.boss+'</td><td>'+o.player+'</td><td>'+o.game+'</td><td>'+o.amount+'</td><td>'+statusChip(o.status)+'</td><td>'+o.time+'</td><td>'+actionButtons(o.id)+'</td></tr>'}))}
-  function initPlayerAdmin(){var dash=document.getElementById('playerStats');if(dash)statCards(dash,[{label:'今日订单',value:'6'},{label:'本月订单',value:'84'},{label:'收入',value:'RM3,260'},{label:'评分',value:'5.0'},{label:'完成率',value:'99%'},{label:'可提现余额',value:'RM860'}]);var myOrders=read('orders').filter(function(o){return o.player==='MOMO'});var ot=document.getElementById('playerOrders');if(ot)ot.innerHTML=table(['订单','老板','游戏','金额','状态','时间','接单操作'],myOrders.map(function(o){return '<tr><td>'+o.id+'</td><td>'+o.boss+'</td><td>'+o.game+'</td><td>'+o.amount+'</td><td>'+statusChip(o.status)+'</td><td>'+o.time+'</td><td><div class="row"><button class="btn small primary" data-action="accept" data-id="'+o.id+'">接受</button><button class="btn small danger" data-action="reject" data-id="'+o.id+'">拒绝</button><button class="btn small" data-action="complete" data-id="'+o.id+'">完成</button></div></td></tr>'}));var reviews=read('reviews').filter(function(r){return r.player==='MOMO'});var rt=document.getElementById('playerReviews');if(rt)rt.innerHTML=table(['订单','评分','评价','状态'],reviews.map(function(r){return '<tr><td>'+r.order_id+'</td><td>'+r.rating+'</td><td>'+r.content+'</td><td>'+statusChip(r.status)+'</td></tr>'}))}
+  function initClubAdmin(){var dash=document.getElementById('clubStats');if(dash)dash.innerHTML='<div class="empty">俱乐部演示统计已移除，请使用控制台真实数据。</div>';}
+  function initPlayerAdmin(){var dash=document.getElementById('playerStats');if(dash)dash.innerHTML='<div class="empty">陪玩端演示统计已移除，请使用陪玩工作台真实数据。</div>';}
   function refreshAdminIdentityFromServer(){
     var Auth=window.MCJAdminAuthFetch;
     if(!Auth||!Auth.getAccessToken||!Auth.getAccessToken())return Promise.resolve(null);
@@ -2526,7 +2537,7 @@
       .catch(function(){return null});
   }
   document.addEventListener('DOMContentLoaded',function(){
-    function boot(){if(enforceRole()===false)return;initTabs();bindGlobal();bindPaymentAdmin();initForms();initSuperAdmin();renderHomeEntryManager();initClubAdmin();initPlayerAdmin();initTableSearch();bindV1AccountManagement();}
+    function boot(){if(enforceRole()===false)return;purgeLegacyDemoLocalDb();initTabs();bindGlobal();bindPaymentAdmin();initForms();initSuperAdmin();renderHomeEntryManager();initClubAdmin();initPlayerAdmin();initTableSearch();bindV1AccountManagement();}
     function startVerified(){
       refreshAdminIdentityFromServer().then(function(identity){
         if(!identity){
