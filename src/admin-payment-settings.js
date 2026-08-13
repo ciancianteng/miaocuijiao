@@ -152,9 +152,11 @@
       '<p class="muted">老板端支付页唯一数据源。更换并保存后，刷新支付页即可看到新图（无需重新部署）。</p>' +
       (available
         ? '<div class="payment-qr-preview" style="margin-top:10px">' +
+          '<div class="pay-qr-frame" data-pay-qr-zoom="1" role="button" tabindex="0" aria-label="点击放大收款二维码">' +
           '<img src="' +
           esc(info.qrUrl) +
-          '" alt="当前启用收款二维码" data-mcj-pay-qr="1" style="max-width:220px;max-height:220px;border-radius:12px;border:1px solid rgba(255,255,255,.12);background:#fff;padding:8px">' +
+          '" alt="当前启用收款二维码" data-mcj-pay-qr="1" style="max-width:220px;max-height:220px;border-radius:12px;border:1px solid rgba(255,255,255,.12);background:#fff;padding:8px;cursor:zoom-in">' +
+          "</div>" +
           '<p style="margin:8px 0 0">通道：<strong>' +
           esc(info.channelId || "-") +
           "</strong> · " +
@@ -305,9 +307,9 @@
       '<div class="wide payment-qr-preview">' +
       "<span>收款二维码（仅支付页显示）</span>" +
       (qrUrl
-        ? '<div style="margin:8px 0"><img src="' +
+        ? '<div style="margin:8px 0"><div class="pay-qr-frame" data-pay-qr-zoom="1" role="button" tabindex="0" aria-label="点击放大收款二维码"><img src="' +
           esc(qrUrl) +
-          '" alt="收款二维码预览" data-mcj-pay-qr="1" style="max-width:220px;max-height:220px;border-radius:12px;border:1px solid rgba(255,255,255,.12);background:#fff;padding:8px"></div>'
+          '" alt="收款二维码预览" data-mcj-pay-qr="1" style="max-width:220px;max-height:220px;border-radius:12px;border:1px solid rgba(255,255,255,.12);background:#fff;padding:8px;cursor:zoom-in"></div></div>'
         : '<p class="muted" style="margin:8px 0">尚未上传。上传后自动保存到 Storage 并写入支付配置。</p>') +
       '<input type="hidden" name="qrUrl" value="' +
       esc(qrUrl) +

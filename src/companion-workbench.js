@@ -1,6 +1,24 @@
 (function(){
   var root=document.getElementById('companionApp');
   if(!root)return;
+  // Shared QR lightbox for deposit / any payment QR in companion portal.
+  (function ensurePayQrPreviewAssets(){
+    try{
+      if(!document.querySelector('link[href*="pay-qr-preview.css"]')){
+        var link=document.createElement('link');
+        link.rel='stylesheet';
+        link.href='/src/pay-qr-preview.css?v=20260813payQrPreview1';
+        document.head.appendChild(link);
+      }
+      if(!window.McjPayQrPreview && !document.querySelector('script[src*="pay-qr-preview.js"]')){
+        var s=document.createElement('script');
+        s.src='/src/pay-qr-preview.js?v=20260813payQrPreview1';
+        document.head.appendChild(s);
+      }else if(window.McjPayQrPreview&&typeof window.McjPayQrPreview.install==='function'){
+        window.McjPayQrPreview.install();
+      }
+    }catch(e){}
+  })();
   function fmtContentTime(v){
     if(window.MCJContentTime&&window.MCJContentTime.fmtContentTime)return window.MCJContentTime.fmtContentTime(v);
     if(!v)return '';
@@ -2281,15 +2299,22 @@
       '</div>'+
       (qr
         ?('<div class="pw-deposit-qr-block"><p class="pw-note">收款二维码（点击可放大扫码）</p>'+
-          '<div class="pay-qr-frame" data-pay-qr-zoom="1" role="button" tabindex="0" aria-label="点击放大收款二维码">'+
-          '<img src="'+esc(qr)+'" alt="押金收款二维码" data-mcj-pay-qr="1" referrerpolicy="no-referrer">'+
-          '</div></div>')
+          (window.McjPayQrPreview&&typeof window.McjPayQrPreview.frameHtml==='function'
+            ?window.McjPayQrPreview.frameHtml(qr,'押金收款二维码')
+            :('<div class="pay-qr-frame" data-pay-qr-zoom="1" role="button" tabindex="0" aria-label="点击放大收款二维码">'+
+              '<img src="'+esc(qr)+'" alt="押金收款二维码" data-mcj-pay-qr="1" referrerpolicy="no-referrer" draggable="false">'+
+              '</div>'))+
+          '</div>')
         :'<p class="pw-note">该渠道暂无二维码，请按上方账号信息转账。</p>')+
       (info.instructions?'<p class="pw-note">'+esc(info.instructions)+'</p>':'')+
       '</div></label>';
   }
   function openDepositQrLightbox(src){
     if(!src)return;
+    if(window.McjPayQrPreview&&typeof window.McjPayQrPreview.open==='function'){
+      window.McjPayQrPreview.open(src);
+      return;
+    }
     var box=document.getElementById('pwDepositQrLightbox');
     if(!box){
       box=document.createElement('div');
@@ -3812,8 +3837,9 @@
     api('reorder_media',{ordered_ids:media.map(function(m){return m.id})}).then(function(res){toast(res.message||'顺序已更新');return loadData()}).catch(function(err){toast(err.message)});
   }
   document.addEventListener('click',function(e){
+    // QR zoom handled by shared McjPayQrPreview; keep deposit-scoped fallback if module missing.
     var qrZoom=e.target.closest('[data-pay-qr-zoom], [data-mcj-pay-qr]');
-    if(qrZoom && (e.target.closest('[data-deposit-form], [data-deposit-view], [data-deposit-channels]')||qrZoom.closest('.pw-deposit-qr-block'))){
+    if(qrZoom && !window.McjPayQrPreview && (e.target.closest('[data-deposit-form], [data-deposit-view], [data-deposit-channels]')||qrZoom.closest('.pw-deposit-qr-block'))){
       var qImg=qrZoom.tagName==='IMG'?qrZoom:qrZoom.querySelector('img[data-mcj-pay-qr], img');
       if(qImg&&qImg.src){e.preventDefault();openDepositQrLightbox(qImg.src);return}
     }

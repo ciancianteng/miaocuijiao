@@ -298,12 +298,16 @@
         '<p class="pay-hint">' +
         esc((info && info.instructions) || "请扫描下方收款二维码完成付款。仅本支付页显示，首页不公开收款码。") +
         "</p>";
-      html +=
-        '<div class="pay-qr-frame"><img src="' +
-        esc(info.qrUrl) +
-        '" alt="' +
-        esc(payLabel + " 收款二维码") +
-        '" data-mcj-pay-qr="1" referrerpolicy="no-referrer" data-pay-qr-img="1"></div>';
+      if (window.McjPayQrPreview && typeof window.McjPayQrPreview.frameHtml === "function") {
+        html += window.McjPayQrPreview.frameHtml(info.qrUrl, payLabel + " 收款二维码");
+      } else {
+        html +=
+          '<div class="pay-qr-frame" data-pay-qr-zoom="1" role="button" tabindex="0" aria-label="点击放大收款二维码"><img src="' +
+          esc(info.qrUrl) +
+          '" alt="' +
+          esc(payLabel + " 收款二维码") +
+          '" data-mcj-pay-qr="1" referrerpolicy="no-referrer" data-pay-qr-img="1" draggable="false"></div>';
+      }
     } else {
       var closedMsg = (info && info.instructions) || payLabel + " 暂未开放，请选择其他支付方式";
       html += '<p class="pay-alert" role="status" data-pay-unavailable="1">' + esc(closedMsg) + "</p>";
