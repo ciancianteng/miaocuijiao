@@ -52,6 +52,7 @@
       align-self:center;
       line-height:0;
     }
+    .pay-qr-frame[data-pay-qr-zoom]{cursor:zoom-in;touch-action:manipulation}
     .pay-qr-frame img,
     .pay-qr-frame img[data-mcj-pay-qr],
     .pay-qr-frame img[data-pay-qr-img]{
@@ -71,6 +72,8 @@
       border-radius:0!important;
       image-rendering:auto;
       -webkit-tap-highlight-color:transparent;
+      cursor:zoom-in;
+      touch-action:manipulation;
     }
     .pay-qr-meta{display:grid;gap:8px;margin-top:12px}
     .pay-proof-pick{margin-top:8px;position:relative;overflow:hidden}
@@ -107,10 +110,12 @@
 <body style="background:#08070a;color:#fff">
   <header class="topbar"><a class="brand" href="index.html"><span>MEOW CUI JIAO</span></a><nav class="boss-nav"><a href="index.html">首页</a><a href="companion-center.html">陪玩大厅</a><a href="orders.html">我的订单</a></nav></header>
   <main class="pay-shell" id="paymentConfirmApp"><section class="pay-card"><h1>支付确认</h1><p>正在读取订单…</p></section></main>
+  <link rel="stylesheet" href="/src/pay-qr-preview.css?v=20260813payQrPreview1">
   <script src="src/role-gates.js?v=20260811authUnify1"></script>
   <script src="src/boss-header.js" defer></script>
   <script src="src/currency.js"></script>
   <script src="src/order-status.js"></script>
-  <script src="/src/payment-confirm.js?v=20260809payProofUpload2" defer></script>
+  <script src="/src/pay-qr-preview.js?v=20260813payQrPreview1"></script>
+  <script src="/src/payment-confirm.js?v=20260813payQrPreview1" defer></script>
 </body>
 </html>

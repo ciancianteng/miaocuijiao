@@ -271,9 +271,9 @@
       '<div class="payment-qr-preview" style="margin:10px 0">' +
       "<strong>收款二维码</strong>" +
       (qrUrl
-        ? '<div style="margin:8px 0"><img src="' +
+        ? '<div style="margin:8px 0"><div class="pay-qr-frame" data-pay-qr-zoom="1" role="button" tabindex="0" aria-label="点击放大收款二维码"><img src="' +
           esc(qrUrl) +
-          '" alt="收款二维码" style="max-width:200px;max-height:200px;border-radius:12px;background:#fff;padding:8px;border:1px solid rgba(255,255,255,.12)"></div>'
+          '" alt="收款二维码" data-mcj-pay-qr="1" style="max-width:200px;max-height:200px;border-radius:12px;background:#fff;padding:8px;border:1px solid rgba(255,255,255,.12);cursor:zoom-in"></div></div>'
         : '<p style="opacity:.75;margin:8px 0">尚未上传。请上传 PNG / JPG / WEBP，系统会自动保存并生成公开链接。</p>') +
       '<input type="hidden" name="qrUrl" value="' +
       esc(qrUrl) +
