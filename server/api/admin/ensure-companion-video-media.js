@@ -36,7 +36,7 @@ export default async function handler(req, res) {
       ok: false,
       skipped: true,
       message:
-        "未配置 DATABASE_URL。Storage 桶已尽量确保；请在 Supabase SQL Editor 执行 supabase/migrations/20260809_companion_media_video.sql。",
+        "未配置 DATABASE_URL。Storage 桶已尽量确保；请在 Supabase SQL Editor 执行 supabase/migrations/20260809_companion_media_video.sql 与 20260814_companion_video_direct_upload.sql。",
     };
     return json(res, 200, out);
   }
@@ -49,8 +49,10 @@ export default async function handler(req, res) {
     const fs = await import("node:fs");
     const path = await import("node:path");
     const { default: pg } = await import("pg");
-    const sqlPath = path.join(process.cwd(), "supabase", "migrations", "20260809_companion_media_video.sql");
-    const sql = fs.readFileSync(sqlPath, "utf8");
+    const sqlFiles = [
+      path.join(process.cwd(), "supabase", "migrations", "20260809_companion_media_video.sql"),
+      path.join(process.cwd(), "supabase", "migrations", "20260814_companion_video_direct_upload.sql"),
+    ];
     const client = new pg.Client({
       connectionString: databaseUrl,
       ssl: { rejectUnauthorized: false },
@@ -58,11 +60,15 @@ export default async function handler(req, res) {
     });
     await client.connect();
     try {
-      await client.query(sql);
+      for (const sqlPath of sqlFiles) {
+        if (!fs.existsSync(sqlPath)) continue;
+        const sql = fs.readFileSync(sqlPath, "utf8");
+        await client.query(sql);
+      }
     } finally {
       await client.end();
     }
-    out.ddl = { ok: true, message: "已执行 companion_media video migration。" };
+    out.ddl = { ok: true, message: "已执行 companion_media video + direct-upload migrations。" };
     return json(res, 200, out);
   } catch (err) {
     out.ok = false;

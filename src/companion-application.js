@@ -595,8 +595,25 @@
   }
 
   function postCompanion(action, payload, retried) {
+    function safeErrText(value, fallback) {
+      if (window.McjCompanionVideoUpload && typeof window.McjCompanionVideoUpload.safeErrText === "function") {
+        return window.McjCompanionVideoUpload.safeErrText(value, fallback || "");
+      }
+      if (value == null || value === "") return fallback || "";
+      if (typeof value === "string") return value;
+      if (typeof value === "number" || typeof value === "boolean") return String(value);
+      if (value && typeof value.message === "string") return value.message;
+      try {
+        var s = JSON.stringify(value);
+        if (s && s !== "{}" && s !== "null") return s.slice(0, 240);
+      } catch (e) {}
+      return fallback || "";
+    }
     function humanize(msg, status) {
-      var text = String(msg || "").trim();
+      var text = safeErrText(msg, "").trim();
+      if (status === 413 || /413|Payload Too Large|request entity too large|entity too large|VERCEL_BODY_LIMIT/i.test(text)) {
+        return "视频文件过大或上传通道限制，请稍后重试。";
+      }
       if (/invalid JWT|token is expired|unable to parse or verify|jwt|登录态无效|请先登录|登录已过期|refreshToken 已失效/i.test(text)) {
         return "登录状态已过期，请重新登录后继续。";
       }
@@ -609,6 +626,9 @@
       // Never surface raw JS runtime dumps on the apply page.
       if (/Assignment to constant variable|TypeError|ReferenceError|SyntaxError|is not defined|Cannot read propert/i.test(text)) {
         return "操作失败，请稍后重试。";
+      }
+      if (/\[object Object\]/i.test(text)) {
+        return status === 413 ? "视频文件过大或上传通道限制，请稍后重试。" : "操作失败，请稍后重试。";
       }
       return text || "提交失败";
     }
@@ -627,16 +647,26 @@
         body: JSON.stringify(Object.assign({ action: action }, payload || {})),
       }).then(function (res) {
         return res
-          .json()
-          .catch(function () {
-            return {};
-          })
-          .then(function (body) {
+          .text()
+          .then(function (raw) {
+            var body = {};
+            if (raw) {
+              try {
+                body = JSON.parse(raw);
+              } catch (e) {
+                body = { message: String(raw).slice(0, 200) };
+              }
+            }
             if (!res.ok || body.ok === false) {
-              var serverMsg = String((body && (body.message || body.error)) || "").trim();
+              var serverMsg = safeErrText(body && (body.message || body.error), "").trim();
               var errMsg = humanize(serverMsg || "提交失败", res.status);
-              if (action === "upload_media" && res.status && !/登录状态已过期|操作失败，请稍后重试/.test(errMsg)) {
+              if (
+                (action === "upload_media" || action === "prepare_video_upload") &&
+                res.status &&
+                !/登录状态已过期|操作失败，请稍后重试|视频文件过大或上传通道限制/.test(errMsg)
+              ) {
                 errMsg = "HTTP " + res.status + (serverMsg ? " · " + serverMsg : " · 上传失败");
+                errMsg = humanize(errMsg, res.status);
               }
               var err = new Error(errMsg);
               err.status = res.status;
@@ -977,7 +1007,7 @@
         value: u.showcaseVideo || null,
         accept: U() && U().VIDEO_ACCEPT ? U().VIDEO_ACCEPT : "video/mp4,video/quicktime,.mp4,.mov",
         capture: false,
-        hint: "支持 mp4 / mov，最长约 30 秒；选填",
+        hint: "支持 mp4 / mov，最长 30 秒；直传云端（最大约 50MB），选填",
       }) +
       '<p class="apply-note full">头像、相册与试音会上传到云端 Storage。老板大厅卡面统一使用头像/相册。刷新后仍可恢复。</p>' +
       '<p class="apply-note full"><a href="#applyVoicePanel" style="color:#ffd6e8;font-weight:1000">↓ 试音（必填）</a>：支持【现场录音】或【上传已有音频】，请完成其中一种。</p></form></section>' +
@@ -2198,6 +2228,91 @@
       localPreview = "";
     }
     render(step);
+
+    // Showcase video: browser → Supabase direct (signed PUT / TUS). Never POST binary via Vercel.
+    if (kind === "video" || cfg.mediaType === "video") {
+      var accessToken = companionToken();
+      return postCompanion("prepare_video_upload", {
+        filename: file.name || "showcase.mp4",
+        content_type: file.type || "video/mp4",
+        byte_length: file.size,
+        duration_seconds: durationSeconds != null ? durationSeconds : undefined,
+      })
+        .then(function (prep) {
+          if (!prep || !prep.path || !prep.signedUrl) {
+            throw new Error("直传凭证签发失败，请稍后重试");
+          }
+          if (key !== "photos") {
+            setUploadAsset(key, { url: "", path: "", status: "uploading" });
+            render(step);
+          }
+          var uploader =
+            window.McjCompanionVideoUpload && typeof window.McjCompanionVideoUpload.upload === "function"
+              ? window.McjCompanionVideoUpload.upload
+              : null;
+          if (!uploader) throw new Error("视频直传组件未加载，请刷新后重试");
+          return uploader({
+            file: file,
+            prep: prep,
+            accessToken: accessToken,
+            onProgress: function () {},
+          }).then(function () {
+            return postCompanion("upload_media", {
+              media_type: "video",
+              storage_path: prep.path,
+              storage_bucket: prep.bucket || "companion-video",
+              content_type: prep.contentType || file.type || "video/mp4",
+              filename: file.name || "showcase.mp4",
+              byte_length: file.size,
+              duration_seconds: durationSeconds != null ? durationSeconds : undefined,
+            });
+          });
+        })
+        .then(function (res) {
+          uploadBusy[key] = false;
+          delete uploadErrors[key];
+          var asset = {
+            url: (res && res.url) || (res && res.media && res.media.url) || "",
+            path: (res && res.path) || (res && res.media && res.media.path) || "",
+            bucket: (res && res.bucket) || (res && res.media && res.media.bucket) || "",
+            id: (res && res.media && res.media.id) || "",
+            status: "ok",
+          };
+          if (!asset.url && !asset.path) throw new Error("上传成功但未返回地址，请重新上传");
+          if (asset.url && isEphemeralMediaUrl(asset.url) && !asset.path) {
+            throw new Error("云端未返回可访问地址，请重新上传");
+          }
+          if (asset.url && !isEphemeralMediaUrl(asset.url)) {
+            clearLivePreview(key);
+          }
+          setUploadAsset(key, asset);
+          showApplyTip("展示视频上传成功");
+          render(Number(document.getElementById("companionApplyRoot").dataset.step || 0));
+        })
+        .catch(function (err) {
+          uploadBusy[key] = false;
+          var friendly = String((err && err.message) || "上传失败");
+          if (
+            err &&
+            (err.status === 413 || /413|Payload Too Large|上传通道限制|VERCEL_BODY_LIMIT/i.test(friendly))
+          ) {
+            friendly = "视频文件过大或上传通道限制，请稍后重试。";
+          }
+          if (/\[object Object\]/i.test(friendly)) {
+            friendly = "视频上传失败，请稍后重试。";
+          }
+          uploadErrors[key] = friendly;
+          clearLivePreview(key);
+          var du = readDraft();
+          du.uploads = du.uploads || {};
+          delete du.uploads[key];
+          writeRaw(DRAFT_KEY, du);
+          showApplyTip("上传失败：" + friendly);
+          render(Number(document.getElementById("companionApplyRoot").dataset.step || 0));
+          return Promise.reject(err);
+        });
+    }
+
     var prepare =
       kind === "image" && U() && U().compressImageFile
         ? U().compressImageFile(file)
@@ -2252,6 +2367,12 @@
           friendly =
             "浏览器本地草稿空间已满（不是云端 Storage）。请刷新后重试；图片只会上传到云端，不再写入本地大图。";
         }
+        if (err && err.status === 413) {
+          friendly = "视频文件过大或上传通道限制，请稍后重试。";
+        }
+        if (/\[object Object\]/i.test(friendly)) {
+          friendly = "上传失败，请稍后重试。";
+        }
         uploadErrors[key] = friendly;
         clearLivePreview(key);
         if (key === "idFront" || key === "idBack" || key === "depositProof") {
@@ -2265,10 +2386,10 @@
           delete dv.voice.fileUpload;
           writeRaw(DRAFT_KEY, dv);
         } else if (key !== "photos") {
-          var du = readDraft();
-          du.uploads = du.uploads || {};
-          delete du.uploads[key];
-          writeRaw(DRAFT_KEY, du);
+          var du2 = readDraft();
+          du2.uploads = du2.uploads || {};
+          delete du2.uploads[key];
+          writeRaw(DRAFT_KEY, du2);
         }
         showApplyTip("上传失败：" + friendly);
         render(Number(document.getElementById("companionApplyRoot").dataset.step || 0));
