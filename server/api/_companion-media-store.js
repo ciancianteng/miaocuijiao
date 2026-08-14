@@ -71,17 +71,15 @@ export async function companionDb(table, query = "", init = {}) {
   }
   if (!response.ok) {
     const message =
-      [
-        body?.error_description,
-        body?.msg,
-        body?.message,
-        body?.error,
-        body?.hint,
-        body?.details,
-        body?.code ? `code=${body.code}` : "",
-        typeof body === "string" ? body.slice(0, 240) : "",
-      ]
-        .filter(Boolean)[0] || `Supabase 请求失败 (HTTP ${response.status}; ${table}${query ? "?" + String(query).slice(0, 80) : ""})`;
+      stringifyApiErrorValue(body?.error_description) ||
+      stringifyApiErrorValue(body?.msg) ||
+      stringifyApiErrorValue(body?.message) ||
+      stringifyApiErrorValue(body?.error) ||
+      stringifyApiErrorValue(body?.hint) ||
+      stringifyApiErrorValue(body?.details) ||
+      (body?.code ? `code=${body.code}` : "") ||
+      (typeof body === "string" ? body.slice(0, 240) : "") ||
+      `Supabase 请求失败 (HTTP ${response.status}; ${table}${query ? "?" + String(query).slice(0, 80) : ""})`;
     throw Object.assign(new Error(message), { status: response.status, body, table });
   }
   return body;
@@ -204,7 +202,7 @@ export async function ensureCompanionBuckets() {
   await ensurePrivateBucket(
     PRIVATE_BUCKETS.video,
     ["video/mp4", "video/quicktime", "video/webm", "video/x-m4v", "application/octet-stream"],
-    40 * 1024 * 1024
+    50 * 1024 * 1024
   );
   await ensurePrivateBucket(PRIVATE_BUCKETS.payment, ["image/jpeg", "image/png", "image/webp", "application/pdf"]);
   try {
@@ -215,7 +213,7 @@ export async function ensureCompanionBuckets() {
   return PRIVATE_BUCKETS;
 }
 
-const MAX_VIDEO_BYTES = 40 * 1024 * 1024;
+const MAX_VIDEO_BYTES = 50 * 1024 * 1024;
 const ALLOWED_VIDEO_MIME = new Set([
   "video/mp4",
   "video/quicktime",
@@ -224,22 +222,115 @@ const ALLOWED_VIDEO_MIME = new Set([
   "application/octet-stream",
 ]);
 
-export function assertVideoUpload(decoded) {
-  if (!decoded || !decoded.buffer) {
-    throw Object.assign(new Error("文件格式无效，请选择 mp4 / mov 视频"), { status: 400 });
-  }
-  const mime = String(decoded.contentType || "").toLowerCase() || "video/mp4";
+export function assertVideoMeta({ contentType, byteLength } = {}) {
+  const mime = String(contentType || "").toLowerCase().split(";")[0].trim() || "video/mp4";
   const ok = ALLOWED_VIDEO_MIME.has(mime) || /^video\//.test(mime);
   if (!ok) {
     throw Object.assign(new Error("仅支持 mp4 / mov / webm 视频"), { status: 400 });
   }
-  if (decoded.buffer.length > MAX_VIDEO_BYTES) {
-    throw Object.assign(new Error("视频不能超过 40MB"), { status: 413 });
+  const size = Number(byteLength);
+  if (Number.isFinite(size) && size > MAX_VIDEO_BYTES) {
+    throw Object.assign(new Error("视频不能超过 50MB"), { status: 413 });
   }
+  return { contentType: mime.startsWith("video/") ? mime : "video/mp4" };
+}
+
+export function assertVideoUpload(decoded) {
+  if (!decoded || !decoded.buffer) {
+    throw Object.assign(new Error("文件格式无效，请选择 mp4 / mov 视频"), { status: 400 });
+  }
+  const checked = assertVideoMeta({
+    contentType: decoded.contentType,
+    byteLength: decoded.buffer.length,
+  });
   return {
     ...decoded,
-    contentType: mime.startsWith("video/") ? mime : "video/mp4",
+    contentType: checked.contentType,
   };
+}
+
+/** Coerce Supabase / nested error values so UI never shows [object Object]. */
+export function stringifyApiErrorValue(value, fallback = "") {
+  if (value == null || value === "") return fallback;
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (value instanceof Error) return value.message || fallback;
+  if (typeof value === "object") {
+    if (typeof value.message === "string" && value.message.trim()) return value.message;
+    if (typeof value.error === "string" && value.error.trim()) return value.error;
+    if (typeof value.msg === "string" && value.msg.trim()) return value.msg;
+    try {
+      const s = JSON.stringify(value);
+      if (s && s !== "{}" && s !== "null") return s.slice(0, 240);
+    } catch {
+      /* ignore */
+    }
+  }
+  return fallback;
+}
+
+/**
+ * Mint a short-lived signed upload URL so the browser can PUT the video
+ * straight to Supabase Storage (never through the Vercel function body).
+ */
+export async function createSignedUploadUrl(bucket, objectPath, expiresIn = 600) {
+  await ensureCompanionBuckets();
+  const path = String(objectPath || "").replace(/^\/+/, "");
+  if (!bucket || !path) {
+    throw Object.assign(new Error("缺少上传路径"), { status: 400 });
+  }
+  const response = await fetch(
+    `${process.env.SUPABASE_URL}/storage/v1/object/upload/sign/${bucket}/${path}`,
+    {
+      method: "POST",
+      headers: companionServiceHeaders(),
+      body: JSON.stringify({ expiresIn: Number(expiresIn) || 600 }),
+    }
+  );
+  const text = await response.text();
+  let body = null;
+  try {
+    body = text ? JSON.parse(text) : null;
+  } catch {
+    body = null;
+  }
+  if (!response.ok) {
+    throw Object.assign(
+      new Error(stringifyApiErrorValue(body?.message || body?.error || text, `签发上传凭证失败 HTTP ${response.status}`)),
+      { status: response.status, body }
+    );
+  }
+  const token = String(body?.token || "").trim();
+  let signedUrl = String(body?.signedUrl || body?.signedURL || body?.url || "").trim();
+  if (signedUrl && !/^https?:\/\//i.test(signedUrl)) {
+    signedUrl = `${process.env.SUPABASE_URL}/storage/v1${signedUrl.startsWith("/") ? "" : "/"}${signedUrl}`;
+  }
+  if (!signedUrl && token) {
+    signedUrl = `${process.env.SUPABASE_URL}/storage/v1/object/upload/sign/${bucket}/${path}?token=${encodeURIComponent(token)}`;
+  }
+  if (!signedUrl) {
+    throw Object.assign(new Error("签发上传凭证失败：未返回 signedUrl"), { status: 502, body });
+  }
+  return { bucket, path, token, signedUrl, expiresIn: Number(expiresIn) || 600 };
+}
+
+/** Confirm object landed in Storage before writing companion_media metadata. */
+export async function assertStorageObjectPresent(bucket, objectPath) {
+  const path = String(objectPath || "").replace(/^\/+/, "");
+  if (!bucket || !path) {
+    throw Object.assign(new Error("缺少存储路径"), { status: 400 });
+  }
+  // Prefer signed download — fails cleanly when the object is missing.
+  try {
+    const url = await createSignedUrl(bucket, path, 60);
+    if (!url) throw new Error("missing");
+    return true;
+  } catch (err) {
+    throw Object.assign(new Error("视频尚未上传到云端，请重试直传后再提交"), {
+      status: 400,
+      cause: err,
+    });
+  }
 }
 
 export function publicObjectUrl(bucket, objectPath) {
@@ -381,4 +472,11 @@ export function maskBankAccount(value) {
   return `${"*".repeat(Math.max(4, text.length - 4))}${text.slice(-4)}`;
 }
 
-export { PRIVATE_BUCKETS, PUBLIC_BUCKETS, MAX_IMAGE_BYTES, ALLOWED_IMAGE_MIME };
+export {
+  PRIVATE_BUCKETS,
+  PUBLIC_BUCKETS,
+  MAX_IMAGE_BYTES,
+  MAX_VIDEO_BYTES,
+  ALLOWED_IMAGE_MIME,
+  ALLOWED_VIDEO_MIME,
+};

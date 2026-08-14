@@ -12,7 +12,7 @@
   var VIDEO_ACCEPT = "video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm";
   var MAX_IMAGE_BYTES = 10 * 1024 * 1024;
   var MAX_AUDIO_BYTES = 20 * 1024 * 1024;
-  var MAX_VIDEO_BYTES = 40 * 1024 * 1024;
+  var MAX_VIDEO_BYTES = 50 * 1024 * 1024;
   var MAX_VIDEO_SECONDS = 30;
   var IMAGE_MIME = { "image/jpeg": 1, "image/jpg": 1, "image/png": 1, "image/webp": 1 };
   var AUDIO_MIME = {
@@ -134,7 +134,7 @@
         ext === "mov" ||
         ext === "webm";
       if (!videoOk) return { ok: false, error: "仅支持 mp4 / mov 视频" };
-      if (file.size > MAX_VIDEO_BYTES) return { ok: false, error: "视频不能超过 40MB" };
+      if (file.size > MAX_VIDEO_BYTES) return { ok: false, error: "视频不能超过 50MB" };
       return { ok: true, maxSeconds: MAX_VIDEO_SECONDS };
     }
     var imageOk =
