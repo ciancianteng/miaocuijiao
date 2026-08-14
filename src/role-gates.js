@@ -967,11 +967,25 @@
     return body;
   }
   function user(role) { return readUser(role); }
+  function purgeUnscopedCompanionApplyDraft() {
+    try {
+      localStorage.removeItem("mcjCompanionApplicationDraft.v1");
+      sessionStorage.removeItem("mcjCompanionApplicationDraft.v1");
+      localStorage.removeItem("mcjCompanionApplicantId.v1");
+      sessionStorage.removeItem("mcjCompanionApplicantId.v1");
+    } catch (e) {}
+    if (window.MCJCompanionApplyDraft && typeof window.MCJCompanionApplyDraft.purgeUnscopedDraftKeys === "function") {
+      try {
+        window.MCJCompanionApplyDraft.purgeUnscopedDraftKeys();
+      } catch (e2) {}
+    }
+  }
   function logout(role) {
     var storageKey = storageRole(role);
     if (!role) {
       clearCompanionPortalSession();
       clearBossPortalSession();
+      purgeUnscopedCompanionApplyDraft();
       if (window.MCJServiceAuth && typeof window.MCJServiceAuth.clearSession === "function") {
         window.MCJServiceAuth.clearSession("logout");
       } else {
@@ -986,6 +1000,7 @@
     }
     if (storageKey === "companion") {
       clearCompanionPortalSession();
+      purgeUnscopedCompanionApplyDraft();
       refreshAuthUi();
       return;
     }
@@ -1008,6 +1023,7 @@
     }
     if (storageKey === "customer" || role === "boss") {
       clearBossPortalSession();
+      purgeUnscopedCompanionApplyDraft();
       refreshAuthUi();
       return;
     }

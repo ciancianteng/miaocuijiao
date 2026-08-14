@@ -705,6 +705,18 @@
       localStorage.removeItem(key);
       sessionStorage.removeItem(key);
     });
+    // Never leave the unscoped apply draft readable by the next guest/account.
+    try {
+      localStorage.removeItem("mcjCompanionApplicationDraft.v1");
+      sessionStorage.removeItem("mcjCompanionApplicationDraft.v1");
+      localStorage.removeItem("mcjCompanionApplicantId.v1");
+      sessionStorage.removeItem("mcjCompanionApplicantId.v1");
+    } catch (eDraft) {}
+    if (window.MCJCompanionApplyDraft && typeof window.MCJCompanionApplyDraft.purgeUnscopedDraftKeys === "function") {
+      try {
+        window.MCJCompanionApplyDraft.purgeUnscopedDraftKeys();
+      } catch (e2) {}
+    }
     if (window.MCJBossAuth && typeof window.MCJBossAuth.clearSession === "function") {
       try { window.MCJBossAuth.clearSession(); } catch (e) {}
     }

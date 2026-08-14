@@ -1,7 +1,10 @@
 (function () {
   var DB_KEY = "mcjRealDB.v1";
   var PLATFORM_KEY = "mcjPlatformData.v1";
-  var DRAFT_KEY = "mcjCompanionApplicationDraft.v1";
+  /** @deprecated Unscoped draft key — never read for display; migrate-or-purge only. */
+  var DRAFT_KEY_LEGACY = "mcjCompanionApplicationDraft.v1";
+  var DRAFT_KEY_PREFIX = "mcjCompanionApplicationDraft.v1.u:";
+  var DRAFT_LAST_AUTH_UID = "mcjCompanionApplicationDraft.lastAuthUserId";
   var APPLICANT_KEY = "mcjCompanionApplicantId.v1";
   var MIN_VOICE_SECONDS = 10;
   var MAX_VOICE_SECONDS = 60;
@@ -100,23 +103,174 @@
     if (next.voice.fileUpload) next.voice.fileUpload = scrubAssetForStorage(next.voice.fileUpload);
     return next;
   }
+  function isDraftStorageKey(key) {
+    var k = String(key || "");
+    return k === DRAFT_KEY_LEGACY || k.indexOf(DRAFT_KEY_PREFIX) === 0;
+  }
+  function jwtSub(token) {
+    try {
+      var part = String(token || "").split(".")[1];
+      if (!part) return "";
+      var b64 = part.replace(/-/g, "+").replace(/_/g, "/");
+      while (b64.length % 4) b64 += "=";
+      var payload = JSON.parse(atob(b64));
+      return String((payload && (payload.sub || payload.user_id || payload.userId)) || "").trim();
+    } catch (e) {
+      return "";
+    }
+  }
+  function emptyDraft() {
+    return {
+      step: 0,
+      data: {},
+      uploads: {},
+      gameCards: [],
+      voice: {},
+      rulesAgreement: {},
+      ownerUserId: "",
+    };
+  }
+  /** Stable Supabase/auth user id for the current apply session. Empty = guest. */
+  function authUserId() {
+    try {
+      var session = readCompanionSession();
+      var fromComp =
+        session &&
+        session.user &&
+        (session.user.id || session.user.user_id || session.user.userId || "");
+      if (fromComp) return String(fromComp).trim();
+    } catch (e) {}
+    try {
+      var raw =
+        sessionStorage.getItem("customerUser") ||
+        localStorage.getItem("customerUser") ||
+        sessionStorage.getItem("mcjCurrentUser") ||
+        localStorage.getItem("mcjCurrentUser") ||
+        "";
+      if (raw) {
+        var u = JSON.parse(raw);
+        var fromBoss = u && (u.id || u.user_id || u.userId || "");
+        if (fromBoss) return String(fromBoss).trim();
+      }
+    } catch (e2) {}
+    try {
+      var tok =
+        (typeof companionToken === "function" ? companionToken() : "") ||
+        sessionStorage.getItem("mcjAuthAccessToken") ||
+        localStorage.getItem("mcjAuthAccessToken") ||
+        "";
+      var sub = jwtSub(tok);
+      if (sub) return sub;
+    } catch (e3) {}
+    return "";
+  }
+  function draftKeyForUser(userId) {
+    var id = String(userId || "").trim();
+    if (!id) return "";
+    return DRAFT_KEY_PREFIX + id;
+  }
+  function purgeUnscopedDraftKeys() {
+    try {
+      localStorage.removeItem(DRAFT_KEY_LEGACY);
+    } catch (e) {}
+    try {
+      sessionStorage.removeItem(DRAFT_KEY_LEGACY);
+    } catch (e2) {}
+  }
+  function clearLiveApplyMedia() {
+    Object.keys(livePreviews).forEach(function (key) {
+      clearLivePreview(key);
+    });
+    liveVoiceBlob = null;
+    if (liveVoiceObjectUrl) {
+      try {
+        URL.revokeObjectURL(liveVoiceObjectUrl);
+      } catch (e) {}
+      liveVoiceObjectUrl = "";
+    }
+  }
+  function migrateLegacyDraftForUser(userId) {
+    var uid = String(userId || "").trim();
+    if (!uid) {
+      purgeUnscopedDraftKeys();
+      return;
+    }
+    var scopedKey = draftKeyForUser(uid);
+    var hasScoped = false;
+    try {
+      hasScoped = !!localStorage.getItem(scopedKey);
+    } catch (e) {}
+    var legacyRaw = "";
+    try {
+      legacyRaw = localStorage.getItem(DRAFT_KEY_LEGACY) || sessionStorage.getItem(DRAFT_KEY_LEGACY) || "";
+    } catch (e2) {}
+    if (!hasScoped && legacyRaw) {
+      try {
+        var legacy = JSON.parse(legacyRaw) || {};
+        var owner = String(legacy.ownerUserId || "").trim();
+        var lastUid = "";
+        try {
+          lastUid = String(localStorage.getItem(DRAFT_LAST_AUTH_UID) || "").trim();
+        } catch (e3) {}
+        var canClaim = owner === uid || (!owner && lastUid === uid);
+        if (canClaim) {
+          legacy.ownerUserId = uid;
+          localStorage.setItem(scopedKey, JSON.stringify(scrubDraftForStorage(legacy)));
+        }
+      } catch (e4) {}
+    }
+    purgeUnscopedDraftKeys();
+  }
+  function writeDraftRecord(draft) {
+    var uid = authUserId();
+    if (!uid) {
+      // Guests must never persist apply drafts into shared localStorage.
+      purgeUnscopedDraftKeys();
+      return;
+    }
+    var payload = scrubDraftForStorage(Object.assign({}, draft || {}, { ownerUserId: uid }));
+    var key = draftKeyForUser(uid);
+    var text = JSON.stringify(payload);
+    try {
+      localStorage.setItem(key, text);
+      localStorage.setItem(DRAFT_LAST_AUTH_UID, uid);
+    } catch (err) {
+      var msg = String((err && err.name) || "") + " " + String((err && err.message) || err || "");
+      if (/quota|QuotaExceeded|NS_ERROR_DOM_QUOTA/i.test(msg)) {
+        try {
+          localStorage.setItem(key, JSON.stringify(scrubDraftForStorage(payload)));
+          localStorage.setItem(DRAFT_LAST_AUTH_UID, uid);
+          return;
+        } catch (e2) {}
+        throw new Error(
+          "浏览器本地草稿空间已满（不是云端 Storage 配额）。已改为仅保存图片云端地址；请刷新后重新上传头像/相册。"
+        );
+      }
+      throw err;
+    }
+    purgeUnscopedDraftKeys();
+  }
+  function clearCurrentUserDraft() {
+    var uid = authUserId();
+    if (uid) {
+      try {
+        localStorage.removeItem(draftKeyForUser(uid));
+      } catch (e) {}
+    }
+    purgeUnscopedDraftKeys();
+  }
   function writeRaw(key, data) {
+    if (isDraftStorageKey(key) || key === DRAFT_KEY_LEGACY) {
+      writeDraftRecord(data);
+      return;
+    }
     var payload = data || {};
-    if (key === DRAFT_KEY) payload = scrubDraftForStorage(payload);
     var text = JSON.stringify(payload);
     try {
       localStorage.setItem(key, text);
     } catch (err) {
       var msg = String((err && err.name) || "") + " " + String((err && err.message) || err || "");
       if (/quota|QuotaExceeded|NS_ERROR_DOM_QUOTA/i.test(msg)) {
-        // Last resort: drop ephemeral media leftovers and retry once.
-        if (key === DRAFT_KEY) {
-          try {
-            var lean = scrubDraftForStorage(payload);
-            localStorage.setItem(key, JSON.stringify(lean));
-            return;
-          } catch (e2) {}
-        }
         throw new Error(
           "浏览器本地草稿空间已满（不是云端 Storage 配额）。已改为仅保存图片云端地址；请刷新后重新上传头像/相册。"
         );
@@ -162,22 +316,53 @@
     window.dispatchEvent(new CustomEvent("mcj:platform-data-updated"));
   }
   function applicantId() {
-    var id = localStorage.getItem(APPLICANT_KEY);
-    if (!id) { id = "boss_" + Date.now(); localStorage.setItem(APPLICANT_KEY, id); }
+    var authId = authUserId();
+    if (authId) return authId;
+    // Guest-only ephemeral marker — never reuse a sticky boss_* across accounts.
+    var id = "";
+    try {
+      id = sessionStorage.getItem(APPLICANT_KEY) || "";
+    } catch (e) {}
+    if (!id) {
+      id = "guest_" + Date.now().toString(36);
+      try {
+        sessionStorage.setItem(APPLICANT_KEY, id);
+      } catch (e2) {}
+    }
     return id;
   }
   function currentUser() {
     try {
-      var u = JSON.parse(localStorage.getItem("customerUser") || localStorage.getItem("mcjCurrentUser") || "null");
-      if (u) return { id: u.id || u.user_id || applicantId(), name: u.name || u.nickname || "当前账号" };
+      var authId = authUserId();
+      var u = JSON.parse(
+        sessionStorage.getItem("customerUser") ||
+          localStorage.getItem("customerUser") ||
+          localStorage.getItem("mcjCurrentUser") ||
+          "null"
+      );
+      if (authId || u) {
+        return {
+          id: authId || (u && (u.id || u.user_id)) || "",
+          name: (u && (u.name || u.nickname || u.email)) || "当前账号",
+        };
+      }
     } catch (e) {}
-    return { id: applicantId(), name: "当前账号" };
+    return { id: "", name: "当前账号" };
   }
   function readDraft() {
-    var draft = Object.assign(
-      { step: 0, data: {}, uploads: {}, gameCards: [], voice: {}, rulesAgreement: {} },
-      readRaw(DRAFT_KEY)
-    );
+    var uid = authUserId();
+    if (!uid) {
+      // Guest / logged-out: never surface another account's draft.
+      purgeUnscopedDraftKeys();
+      return emptyDraft();
+    }
+    migrateLegacyDraftForUser(uid);
+    var scoped = readRaw(draftKeyForUser(uid));
+    var draft = Object.assign(emptyDraft(), scoped);
+    if (draft.ownerUserId && draft.ownerUserId !== uid) {
+      return emptyDraft();
+    }
+    draft.ownerUserId = uid;
     // One-time cleanup of legacy base64 drafts that caused QuotaExceededError.
     if (draft.uploads) {
       delete draft.uploads.cover;
@@ -214,7 +399,7 @@
       if (typeof patch[key] === "object" && !Array.isArray(patch[key]) && patch[key] !== null) draft[key] = Object.assign(draft[key] || {}, patch[key]);
       else draft[key] = patch[key];
     });
-    writeRaw(DRAFT_KEY, draft);
+    writeDraftRecord(draft);
   }
   function publishedRule() {
     if (remoteRuleCache && remoteRuleCache.body) return remoteRuleCache;
@@ -1721,7 +1906,7 @@
         syncPlatform(db);
         // Formal submit: clear editable local draft so it won't look like a parallel draft.
         try {
-          localStorage.removeItem(DRAFT_KEY);
+          clearCurrentUserDraft();
         } catch (e) { /* ignore */ }
         remoteStatus = { applicationStatus: "pending", rejectReason: "" };
         showSuccess();
@@ -1841,7 +2026,7 @@
         size: blob.size,
         quality: quality,
       };
-      writeRaw(DRAFT_KEY, draftAfterRec);
+      writeDraftRecord(draftAfterRec);
       setVoiceState(quality.passed ? "已录制，待试听确认" : "检测未通过", quality.duration);
       document.body.classList.remove("voice-recording-active");
       render(3);
@@ -1950,7 +2135,7 @@
     }
     var draft = readDraft();
     draft.voice = { status: "尚未录制" };
-    writeRaw(DRAFT_KEY, draft);
+    writeDraftRecord(draft);
     var db = readDB();
     var app = (db.companionApplications || []).find(function (a) { return a.applicantId === applicantId(); });
     if (app && app.status !== "approved") {
@@ -1999,7 +2184,7 @@
         d.voice.uploaded = true;
         d.voice.uploadedAt = now();
         d.voice.hasLocal = false;
-        writeRaw(DRAFT_KEY, d);
+        writeDraftRecord(d);
         delete uploadErrors.voice;
         showApplyTip("上传成功 / 已保存", "ok");
         render(3);
@@ -2015,7 +2200,7 @@
           uploaded: false,
           status: "本地录音已失效，请重新录制",
         });
-        writeRaw(DRAFT_KEY, d);
+        writeDraftRecord(d);
         showApplyTip("本地录音已失效（刷新后需重录）。请重新录制后再点「确认上传」。");
         render(3);
         return;
@@ -2134,7 +2319,7 @@
             storageOk: true,
             id: (res && res.media && res.media.id) || next.voice.id || "",
           });
-          writeRaw(DRAFT_KEY, next);
+          writeDraftRecord(next);
           showApplyTip("上传成功 / 已保存", "ok");
           render(3);
         })
@@ -2161,7 +2346,7 @@
             confirmed: false,
             uploaded: false,
           });
-          writeRaw(DRAFT_KEY, next);
+          writeDraftRecord(next);
           showApplyTip("上传失败，请重试：" + msg);
           render(3);
         });
@@ -2200,7 +2385,7 @@
       existing = draft.uploads[key];
       delete draft.uploads[key];
     }
-    writeRaw(DRAFT_KEY, draft);
+    writeDraftRecord(draft);
     if (existing && (existing.id || key === "avatar") && companionToken()) {
       var mt =
         key === "avatar"
@@ -2264,7 +2449,7 @@
     } else {
       draft.uploads[key] = safe;
     }
-    writeRaw(DRAFT_KEY, draft);
+    writeDraftRecord(draft);
   }
   function uploadKeyConfig(key) {
     var map = {
@@ -2401,7 +2586,7 @@
           var du = readDraft();
           du.uploads = du.uploads || {};
           delete du.uploads[key];
-          writeRaw(DRAFT_KEY, du);
+          writeDraftRecord(du);
           showApplyTip("上传失败：" + friendly);
           render(Number(document.getElementById("companionApplyRoot").dataset.step || 0));
           return Promise.reject(err);
@@ -2474,17 +2659,17 @@
           var d = readDraft();
           d.identity = d.identity || {};
           delete d.identity[key];
-          writeRaw(DRAFT_KEY, d);
+          writeDraftRecord(d);
         } else if (key === "voiceFile") {
           var dv = readDraft();
           dv.voice = dv.voice || {};
           delete dv.voice.fileUpload;
-          writeRaw(DRAFT_KEY, dv);
+          writeDraftRecord(dv);
         } else if (key !== "photos") {
           var du2 = readDraft();
           du2.uploads = du2.uploads || {};
           delete du2.uploads[key];
-          writeRaw(DRAFT_KEY, du2);
+          writeDraftRecord(du2);
         }
         showApplyTip("上传失败：" + friendly);
         render(Number(document.getElementById("companionApplyRoot").dataset.step || 0));
@@ -3121,7 +3306,7 @@
           glist.splice(gIdx, 1);
           gd.uploads = gd.uploads || {};
           gd.uploads.photos = glist;
-          writeRaw(DRAFT_KEY, gd);
+          writeDraftRecord(gd);
           render(Number(root.dataset.step || 0));
           if (removed && removed.id && companionToken()) {
             postCompanion("delete_media", { media_id: removed.id, media_type: "gallery" }).catch(function () {});
@@ -3145,7 +3330,7 @@
           delete cur.identity.idBack;
           delete cur.identity.documentType;
         }
-        writeRaw(DRAFT_KEY, cur);
+        writeDraftRecord(cur);
         render(4);
         return;
       }
@@ -3180,7 +3365,7 @@
         draft.voice = draft.voice || {};
         draft.voice.listened = true;
         draft.voice.status = "已试听，可确认";
-        writeRaw(DRAFT_KEY, draft);
+        writeDraftRecord(draft);
         render(3);
       }
     }, true);
@@ -3194,7 +3379,7 @@
       if (!draft.voice || draft.voice.listened) return;
       draft.voice.listened = true;
       draft.voice.status = "已试听，可确认";
-      writeRaw(DRAFT_KEY, draft);
+      writeDraftRecord(draft);
       render(3);
     }, true);
   }
@@ -3265,7 +3450,7 @@
         status: "ok",
       };
     }
-    writeRaw(DRAFT_KEY, draft);
+    writeDraftRecord(draft);
   }
   function initHomeEntry() {
     var entry = document.querySelector("[data-companion-entry]");
@@ -3367,6 +3552,12 @@
     // Paint skeleton immediately — never wait for serial API chain.
     initLoading = true;
     initLoadError = "";
+    // Scoped drafts: purge legacy unscoped key; migrate only for the current auth user.
+    try {
+      var bootUid = authUserId();
+      if (bootUid) migrateLegacyDraftForUser(bootUid);
+      else purgeUnscopedDraftKeys();
+    } catch (eBootDraft) {}
     render(readDraft().step || 0);
     bind();
     // Restore boss JWT (refresh if needed) BEFORE final auth-gate paint so logged-in
@@ -3393,13 +3584,37 @@
     }
     restoreApplyScroll();
   });
-  window.addEventListener("mcj:auth-updated", function () {
+  function onApplyAuthIdentityChanged() {
     if (!document.getElementById("companionApplyRoot")) return;
-    if (companionToken() || authUi.preferOtherAccount || authUi.busy) return;
+    var uid = authUserId();
+    if (!uid) {
+      clearLiveApplyMedia();
+      purgeUnscopedDraftKeys();
+      try {
+        sessionStorage.removeItem(APPLICANT_KEY);
+      } catch (e) {}
+      render(0);
+      return;
+    }
+    migrateLegacyDraftForUser(uid);
+    if (companionToken() || authUi.preferOtherAccount || authUi.busy) {
+      render(Number(document.getElementById("companionApplyRoot").dataset.step || readDraft().step || 0));
+      return;
+    }
     if (hasBossSession()) {
       render(Number(document.getElementById("companionApplyRoot").dataset.step || 0));
     }
-  });
+  }
+  window.addEventListener("mcj:auth-updated", onApplyAuthIdentityChanged);
+  window.addEventListener("mcj:auth-changed", onApplyAuthIdentityChanged);
+  window.addEventListener("mcj:auth-expired", onApplyAuthIdentityChanged);
+  window.MCJCompanionApplyDraft = {
+    authUserId: authUserId,
+    readDraft: readDraft,
+    clearCurrentUserDraft: clearCurrentUserDraft,
+    purgeUnscopedDraftKeys: purgeUnscopedDraftKeys,
+    draftKeyForUser: draftKeyForUser,
+  };
 })();
 
 
