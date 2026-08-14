@@ -32,8 +32,11 @@
     .pay-skel-line.short{width:55%}
     .pay-proof{margin-top:18px;border:1px solid rgba(255,143,197,.28);border-radius:14px;background:rgba(255,143,197,.08);padding:14px}
     .pay-proof h2{margin:0 0 8px;font-size:16px;color:#ffd6e7}
-    .pay-qr{margin-top:18px;border:1px solid rgba(255,143,197,.28);border-radius:14px;background:rgba(255,143,197,.08);padding:14px;display:flex;flex-direction:column;align-items:stretch}
+    .pay-qr{margin-top:14px;border:1px solid rgba(255,143,197,.28);border-radius:14px;background:rgba(255,143,197,.08);padding:14px;display:flex;flex-direction:column;align-items:stretch;overflow:visible;min-width:0}
     .pay-qr h2{margin:0 0 8px;font-size:16px;color:#ffd6e7}
+    .pay-grid{margin-top:14px}
+    .pay-qr-load-fail{margin-top:8px;display:grid;gap:8px;justify-items:center;text-align:center;overflow:visible}
+    .pay-card,.pay-shell{overflow:visible}
     /* DuitNow QR display: no white plate / white outer frame.
        Wrapper is theme-fused (transparent) and only hugs the asset.
        Necessary QR quiet-zone white inside the uploaded image is kept for scan. */
@@ -52,6 +55,7 @@
       align-self:center;
       line-height:0;
     }
+    .pay-qr-frame[data-pay-qr-zoom]{cursor:zoom-in;touch-action:manipulation}
     .pay-qr-frame img,
     .pay-qr-frame img[data-mcj-pay-qr],
     .pay-qr-frame img[data-pay-qr-img]{
@@ -61,7 +65,9 @@
       /* Never crop/cover QR modules — keep every uploaded pixel scannable. */
       object-fit:contain;
       object-position:center;
-      display:block;
+      display:block !important;
+      visibility:visible !important;
+      opacity:1 !important;
       margin:0 auto;
       padding:0;
       background:transparent!important;
@@ -71,16 +77,21 @@
       border-radius:0!important;
       image-rendering:auto;
       -webkit-tap-highlight-color:transparent;
+      cursor:zoom-in;
+      touch-action:manipulation;
     }
     .pay-qr-meta{display:grid;gap:8px;margin-top:12px}
+    .pay-qr-debug{margin:6px 0 0;color:#9ca3af;font-size:11px;word-break:break-all}
     .pay-proof-pick{margin-top:8px;position:relative;overflow:hidden}
     .pay-proof-preview{margin-top:10px;display:grid;gap:10px}
     .pay-proof-preview img{width:min(100%,320px);max-height:240px;object-fit:contain;border-radius:12px;border:1px solid rgba(255,255,255,.14);background:rgba(0,0,0,.24)}
     .pay-proof-name{margin:0;color:#ffd6e7;font-size:13px;word-break:break-all}
     .pay-proof-preview-actions,.pay-proof-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
     .pay-proof-preview-actions .pay-btn{position:relative;overflow:hidden}
-    /* Mobile Safari: never use display:none / [hidden] on file inputs — picker won't open. */
-    .pay-proof-file{
+    /* Nested pick-button overlay only — NEVER apply to body-level durable input
+       (#mcjDurableProofInput). Unscoped inset:0 + pointer-events:auto covered the
+       whole viewport and stole QR lightbox clicks. */
+    .pay-proof-pick .pay-proof-file{
       position:absolute!important;
       inset:0!important;
       width:100%!important;
@@ -96,21 +107,66 @@
       -webkit-appearance:none!important;
       background:transparent!important;
     }
+    /* Durable proof input lives on <body>; keep it out of the hit-test tree until showPicker. */
+    #mcjDurableProofInput.pay-proof-file-durable{
+      position:fixed!important;
+      left:0!important;
+      top:0!important;
+      width:1px!important;
+      height:1px!important;
+      margin:0!important;
+      padding:0!important;
+      opacity:0!important;
+      overflow:hidden!important;
+      border:0!important;
+      z-index:2147483000!important;
+      pointer-events:none!important;
+      font-size:0!important;
+      background:transparent!important;
+    }
     .pay-progress{position:relative;margin-top:12px;height:22px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden}
     .pay-progress-bar{height:100%;background:linear-gradient(90deg,rgba(255,143,197,.55),rgba(255,143,197,.95));transition:width .2s ease}
     .pay-progress span{position:absolute;inset:0;display:grid;place-items:center;font-size:12px;color:#fff;font-weight:700}
     .pay-success{margin:10px 0 0;color:#9dffc1;font-weight:700}
     @keyframes payShimmer{0%{background-position:100% 0}100%{background-position:-100% 0}}
-    @media(max-width:560px){.pay-actions{display:grid}.pay-btn{width:100%;justify-content:center}}
+    @media(max-width:560px){
+      .pay-actions{display:grid}
+      .pay-btn{width:100%;justify-content:center}
+      .pay-qr{padding:14px 12px 16px;overflow:visible;min-height:220px}
+      .pay-qr-frame{
+        width:100%;
+        max-width:100%;
+        min-width:180px;
+        min-height:180px;
+        display:flex !important;
+        flex-direction:column;
+        align-items:center;
+        justify-content:center;
+        overflow:visible !important;
+      }
+      .pay-qr-frame img,
+      .pay-qr-frame img[data-mcj-pay-qr],
+      .pay-qr-frame img[data-pay-qr-img]{
+        width:min(88vw,320px);
+        max-width:min(88vw,320px);
+        min-width:180px;
+        min-height:180px;
+        /* Prefer contain — never crop QR modules on narrow phones. */
+        object-fit:contain !important;
+        flex-shrink:0;
+      }
+    }
   </style>
 </head>
 <body style="background:#08070a;color:#fff">
   <header class="topbar"><a class="brand" href="index.html"><span>MEOW CUI JIAO</span></a><nav class="boss-nav"><a href="index.html">首页</a><a href="companion-center.html">陪玩大厅</a><a href="orders.html">我的订单</a></nav></header>
   <main class="pay-shell" id="paymentConfirmApp"><section class="pay-card"><h1>支付确认</h1><p>正在读取订单…</p></section></main>
+  <link rel="stylesheet" href="/src/pay-qr-preview.css?v=20260813payQrConfirmZoom5">
   <script src="src/role-gates.js?v=20260811authUnify1"></script>
   <script src="src/boss-header.js" defer></script>
   <script src="src/currency.js"></script>
   <script src="src/order-status.js"></script>
-  <script src="/src/payment-confirm.js?v=20260809payProofUpload2" defer></script>
+  <script src="/src/pay-qr-preview.js?v=20260813payQrConfirmZoom5"></script>
+  <script src="/src/payment-confirm.js?v=20260813payQrConfirmZoom5" defer></script>
 </body>
 </html>

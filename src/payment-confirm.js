@@ -105,18 +105,26 @@
   /** Persistent <input type=file> lives outside #paymentConfirmApp so poll/paint never kills it. */
   function ensureDurableProofInput() {
     var el = document.getElementById("mcjDurableProofInput");
-    if (el) return el;
+    if (el) {
+      // Heal older sessions that used .pay-proof-file (full-viewport click steal).
+      el.className = "pay-proof-file-durable";
+      el.style.cssText =
+        "position:fixed!important;left:0!important;top:0!important;width:1px!important;height:1px!important;opacity:0!important;overflow:hidden!important;z-index:2147483000!important;pointer-events:none!important;border:0!important;margin:0!important;padding:0!important;";
+      return el;
+    }
     el = document.createElement("input");
     el.id = "mcjDurableProofInput";
     el.type = "file";
     el.accept = "image/png,image/jpeg,image/webp,image/jpg,.png,.jpg,.jpeg,.webp";
     el.setAttribute("data-payment-proof", "");
     el.setAttribute("data-mcj-durable-proof", "1");
-    el.className = "pay-proof-file";
+    // Do not use .pay-proof-file here: that class is an absolute inset:0 overlay for
+    // in-button picks and would cover the whole page (blocking QR zoom clicks).
+    el.className = "pay-proof-file-durable";
     el.setAttribute("aria-hidden", "true");
     el.tabIndex = -1;
     el.style.cssText =
-      "position:fixed;left:0;top:0;width:1px;height:1px;opacity:0;overflow:hidden;z-index:2147483000;pointer-events:none;";
+      "position:fixed!important;left:0!important;top:0!important;width:1px!important;height:1px!important;opacity:0!important;overflow:hidden!important;z-index:2147483000!important;pointer-events:none!important;border:0!important;margin:0!important;padding:0!important;";
     document.body.appendChild(el);
     ["pointerdown", "touchstart", "mousedown", "click", "focus"].forEach(function (evName) {
       el.addEventListener(
@@ -150,7 +158,7 @@
       el.value = "";
     } catch (err) {}
     // Re-enable pointer events only for the native picker gesture.
-    el.style.pointerEvents = "auto";
+    el.style.setProperty("pointer-events", "auto", "important");
     try {
       if (typeof el.showPicker === "function") el.showPicker();
       else el.click();
@@ -160,7 +168,7 @@
       } catch (e2) {}
     }
     setTimeout(function () {
-      el.style.pointerEvents = "none";
+      el.style.setProperty("pointer-events", "none", "important");
     }, 0);
   }
 
@@ -217,19 +225,80 @@
       "已选择：" + (proofDraft.fileName || file.name || "付款截图") + "，请确认预览后点击「我已付款」";
     renderOrder(readCache(orderId) || { id: orderId, status: "awaiting_payment" });
   }
+  function retryPayQrImage(img) {
+    if (!img) return;
+    var raw = String(img.getAttribute("data-pay-qr-src") || img.currentSrc || img.src || "").trim();
+    if (!raw) return;
+    var base = raw.replace(/([?&])mcjQrRetry=\d+/g, "").replace(/[?&]$/, "");
+    var join = base.indexOf("?") >= 0 ? "&" : "?";
+    img.setAttribute("data-pay-qr-load", "pending");
+    img.style.outline = "";
+    var frame = img.parentNode;
+    if (frame) {
+      var oldErr = frame.querySelector("[data-pay-qr-load-error]");
+      if (oldErr) oldErr.remove();
+      var oldRetry = frame.querySelector("[data-pay-qr-retry]");
+      if (oldRetry) oldRetry.remove();
+    }
+    var panel = img.closest("[data-pay-qr]");
+    if (panel) panel.setAttribute("data-pay-qr-img-status", "pending");
+    // Bust cache so a previously-failed URL can reload.
+    img.src = base + join + "mcjQrRetry=" + Date.now();
+  }
+
   function bindPayQrFallback() {
     root.querySelectorAll("[data-mcj-pay-qr],[data-pay-qr-img]").forEach(function (img) {
       if (img.getAttribute("data-bound-pay-qr") === "1") return;
       img.setAttribute("data-bound-pay-qr", "1");
-      img.addEventListener("error", function () {
+      if (!img.getAttribute("data-pay-qr-src")) {
+        img.setAttribute("data-pay-qr-src", img.currentSrc || img.src || "");
+      }
+      img.setAttribute("data-pay-qr-load", "pending");
+      img.addEventListener("load", function () {
+        img.setAttribute("data-pay-qr-load", "ok");
+        img.style.display = "";
+        img.style.visibility = "";
+        img.style.opacity = "";
+        img.style.outline = "";
         var frame = img.parentNode;
-        img.style.display = "none";
-        if (frame && !frame.querySelector(".pay-alert")) {
+        if (frame) {
+          var oldErr = frame.querySelector("[data-pay-qr-load-error]");
+          if (oldErr) oldErr.remove();
+          var oldRetry = frame.querySelector("[data-pay-qr-retry]");
+          if (oldRetry) oldRetry.remove();
+        }
+        var panel = img.closest("[data-pay-qr]");
+        if (panel) panel.setAttribute("data-pay-qr-img-status", "ok");
+      });
+      img.addEventListener("error", function () {
+        // Never silently hide the QR on mobile/PC — keep the image slot visible for diagnosis + retry.
+        img.setAttribute("data-pay-qr-load", "error");
+        img.style.display = "block";
+        img.style.visibility = "visible";
+        img.style.opacity = "1";
+        img.style.minWidth = "180px";
+        img.style.minHeight = "180px";
+        img.style.outline = "1px dashed rgba(255,143,197,.55)";
+        var frame = img.parentNode;
+        var panel = img.closest("[data-pay-qr]");
+        if (panel) panel.setAttribute("data-pay-qr-img-status", "error");
+        if (frame && !frame.querySelector("[data-pay-qr-load-error]")) {
+          var wrap = document.createElement("div");
+          wrap.className = "pay-qr-load-fail";
+          wrap.setAttribute("data-pay-qr-load-error", "1");
+          wrap.setAttribute("role", "status");
           var p = document.createElement("p");
           p.className = "pay-alert";
-          p.setAttribute("role", "status");
-          p.textContent = "平台暂未配置收款二维码，请联系客服";
-          frame.appendChild(p);
+          p.style.margin = "10px 0 8px";
+          p.textContent = "二维码图片加载失败。图片区域已保留，不会隐藏。请点击重试，或联系客服。";
+          var btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "pay-btn";
+          btn.setAttribute("data-pay-qr-retry", "1");
+          btn.textContent = "重新加载二维码";
+          wrap.appendChild(p);
+          wrap.appendChild(btn);
+          frame.appendChild(wrap);
         }
       });
     });
@@ -279,12 +348,12 @@
     }
     var payLabel = methodLabel(order);
     var channelId = String((info && info.channelId) || "").toLowerCase();
-    var html = '<div class="pay-qr" data-pay-qr data-pay-channel="' + esc(channelId || methodCode(order)) + '">';
-    html += "<h2>" + esc((info && info.title) || payLabel || "平台收款") + "</h2>";
-    var hasQr = !!(info && info.qrUrl && info.enabled !== false && info.unavailable !== true);
+    var qrUrlRaw = String((info && info.qrUrl) || "").trim();
+    var hasQr = !!(info && qrUrlRaw && info.enabled !== false && info.unavailable !== true);
+    var mismatch = false;
     if (hasQr && channelId && /tng|duitnow|alipay|bank|stripe|hitpay/.test(methodCode(order))) {
       var methodKey = methodCode(order);
-      var mismatch =
+      mismatch =
         (/tng/.test(methodKey) && channelId !== "tng") ||
         (/duitnow/.test(methodKey) && channelId !== "duitnow") ||
         (/alipay|支付宝/.test(methodKey) && channelId !== "alipay") ||
@@ -293,17 +362,44 @@
         (/bank|银行/.test(methodKey) && channelId !== "bank-transfer" && channelId !== "bank-my" && channelId !== "bank");
       if (mismatch) hasQr = false;
     }
+    var html =
+      '<div class="pay-qr" data-pay-qr data-pay-channel="' +
+      esc(channelId || methodCode(order)) +
+      '" data-pay-has-qr="' +
+      (hasQr ? "1" : "0") +
+      '" data-pay-qr-mismatch="' +
+      (mismatch ? "1" : "0") +
+      '" data-pay-qr-url-len="' +
+      esc(String(qrUrlRaw.length)) +
+      '">';
+    html += "<h2>" + esc((info && info.title) || payLabel || "平台收款") + "</h2>";
+    // Lightweight debug strip (no secrets): helps confirm mobile render path without guessing.
+    html +=
+      '<p class="pay-qr-debug" data-pay-qr-debug hidden>' +
+      "hasQr=" +
+      (hasQr ? "1" : "0") +
+      " mismatch=" +
+      (mismatch ? "1" : "0") +
+      " urlLen=" +
+      esc(String(qrUrlRaw.length)) +
+      " live=" +
+      (info && info.__live ? "1" : "0") +
+      "</p>";
     if (hasQr) {
       html +=
         '<p class="pay-hint">' +
         esc((info && info.instructions) || "请扫描下方收款二维码完成付款。仅本支付页显示，首页不公开收款码。") +
         "</p>";
-      html +=
-        '<div class="pay-qr-frame"><img src="' +
-        esc(info.qrUrl) +
-        '" alt="' +
-        esc(payLabel + " 收款二维码") +
-        '" data-mcj-pay-qr="1" referrerpolicy="no-referrer" data-pay-qr-img="1"></div>';
+      if (window.McjPayQrPreview && typeof window.McjPayQrPreview.frameHtml === "function") {
+        html += window.McjPayQrPreview.frameHtml(qrUrlRaw, payLabel + " 收款二维码");
+      } else {
+        html +=
+          '<div class="pay-qr-frame" data-pay-qr-zoom="1" role="button" tabindex="0" aria-label="点击放大收款二维码"><img src="' +
+          esc(qrUrlRaw) +
+          '" alt="' +
+          esc(payLabel + " 收款二维码") +
+          '" data-mcj-pay-qr="1" referrerpolicy="no-referrer" data-pay-qr-img="1" draggable="false"></div>';
+      }
     } else {
       var closedMsg = (info && info.instructions) || payLabel + " 暂未开放，请选择其他支付方式";
       html += '<p class="pay-alert" role="status" data-pay-unavailable="1">' + esc(closedMsg) + "</p>";
@@ -769,6 +865,9 @@
         "</p><p>" +
         esc(guide.next) +
         "</p></div>" +
+        // Mobile-first: show QR immediately after status so it is in the first viewport
+        // (previously it sat below a long order grid and appeared "missing" on phones).
+        qrPanelHtml(order) +
         '<div class="pay-grid">' +
         '<div class="pay-row"><span>订单号</span><strong>' +
         esc(order.orderNo || order.order_no || order.id) +
@@ -799,7 +898,6 @@
           : needsManualProof
             ? '<p class="pay-hint">请先按本单支付方式完成付款，再上传截图并点击「我已付款」。</p>'
             : "") +
-        qrPanelHtml(order) +
         proofPanelHtml(order) +
         actions +
         (opts.fromCache ? '<p class="pay-sync">正在同步最新订单状态…</p>' : "") +
@@ -1066,6 +1164,15 @@
   }
 
   root.addEventListener("click", function (e) {
+    var qrRetry = e.target.closest("[data-pay-qr-retry]");
+    if (qrRetry) {
+      e.preventDefault();
+      e.stopPropagation();
+      var frame = qrRetry.closest(".pay-qr-frame") || qrRetry.parentNode;
+      var img = frame && frame.querySelector("[data-mcj-pay-qr], [data-pay-qr-img], img");
+      retryPayQrImage(img);
+      return;
+    }
     var btn = e.target.closest("[data-reload]");
     if (btn) {
       e.preventDefault();
