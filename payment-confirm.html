@@ -32,9 +32,11 @@
     .pay-skel-line.short{width:55%}
     .pay-proof{margin-top:18px;border:1px solid rgba(255,143,197,.28);border-radius:14px;background:rgba(255,143,197,.08);padding:14px}
     .pay-proof h2{margin:0 0 8px;font-size:16px;color:#ffd6e7}
-    .pay-qr{margin-top:14px;border:1px solid rgba(255,143,197,.28);border-radius:14px;background:rgba(255,143,197,.08);padding:14px;display:flex;flex-direction:column;align-items:stretch}
+    .pay-qr{margin-top:14px;border:1px solid rgba(255,143,197,.28);border-radius:14px;background:rgba(255,143,197,.08);padding:14px;display:flex;flex-direction:column;align-items:stretch;overflow:visible;min-width:0}
     .pay-qr h2{margin:0 0 8px;font-size:16px;color:#ffd6e7}
     .pay-grid{margin-top:14px}
+    .pay-qr-load-fail{margin-top:8px;display:grid;gap:8px;justify-items:center;text-align:center;overflow:visible}
+    .pay-card,.pay-shell{overflow:visible}
     /* DuitNow QR display: no white plate / white outer frame.
        Wrapper is theme-fused (transparent) and only hugs the asset.
        Necessary QR quiet-zone white inside the uploaded image is kept for scan. */
@@ -130,12 +132,17 @@
     @media(max-width:560px){
       .pay-actions{display:grid}
       .pay-btn{width:100%;justify-content:center}
-      .pay-qr{padding:14px 12px 16px}
+      .pay-qr{padding:14px 12px 16px;overflow:visible;min-height:220px}
       .pay-qr-frame{
         width:100%;
         max-width:100%;
+        min-width:180px;
+        min-height:180px;
         display:flex !important;
+        flex-direction:column;
+        align-items:center;
         justify-content:center;
+        overflow:visible !important;
       }
       .pay-qr-frame img,
       .pay-qr-frame img[data-mcj-pay-qr],
@@ -144,6 +151,9 @@
         max-width:min(88vw,320px);
         min-width:180px;
         min-height:180px;
+        /* Prefer contain — never crop QR modules on narrow phones. */
+        object-fit:contain !important;
+        flex-shrink:0;
       }
     }
   </style>
@@ -151,12 +161,12 @@
 <body style="background:#08070a;color:#fff">
   <header class="topbar"><a class="brand" href="index.html"><span>MEOW CUI JIAO</span></a><nav class="boss-nav"><a href="index.html">首页</a><a href="companion-center.html">陪玩大厅</a><a href="orders.html">我的订单</a></nav></header>
   <main class="pay-shell" id="paymentConfirmApp"><section class="pay-card"><h1>支付确认</h1><p>正在读取订单…</p></section></main>
-  <link rel="stylesheet" href="/src/pay-qr-preview.css?v=20260813payQrConfirmZoom4">
+  <link rel="stylesheet" href="/src/pay-qr-preview.css?v=20260813payQrConfirmZoom5">
   <script src="src/role-gates.js?v=20260811authUnify1"></script>
   <script src="src/boss-header.js" defer></script>
   <script src="src/currency.js"></script>
   <script src="src/order-status.js"></script>
-  <script src="/src/pay-qr-preview.js?v=20260813payQrConfirmZoom4"></script>
-  <script src="/src/payment-confirm.js?v=20260813payQrConfirmZoom4" defer></script>
+  <script src="/src/pay-qr-preview.js?v=20260813payQrConfirmZoom5"></script>
+  <script src="/src/payment-confirm.js?v=20260813payQrConfirmZoom5" defer></script>
 </body>
 </html>

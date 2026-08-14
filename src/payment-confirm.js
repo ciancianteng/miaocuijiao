@@ -105,7 +105,13 @@
   /** Persistent <input type=file> lives outside #paymentConfirmApp so poll/paint never kills it. */
   function ensureDurableProofInput() {
     var el = document.getElementById("mcjDurableProofInput");
-    if (el) return el;
+    if (el) {
+      // Heal older sessions that used .pay-proof-file (full-viewport click steal).
+      el.className = "pay-proof-file-durable";
+      el.style.cssText =
+        "position:fixed!important;left:0!important;top:0!important;width:1px!important;height:1px!important;opacity:0!important;overflow:hidden!important;z-index:2147483000!important;pointer-events:none!important;border:0!important;margin:0!important;padding:0!important;";
+      return el;
+    }
     el = document.createElement("input");
     el.id = "mcjDurableProofInput";
     el.type = "file";
@@ -219,16 +225,48 @@
       "已选择：" + (proofDraft.fileName || file.name || "付款截图") + "，请确认预览后点击「我已付款」";
     renderOrder(readCache(orderId) || { id: orderId, status: "awaiting_payment" });
   }
+  function retryPayQrImage(img) {
+    if (!img) return;
+    var raw = String(img.getAttribute("data-pay-qr-src") || img.currentSrc || img.src || "").trim();
+    if (!raw) return;
+    var base = raw.replace(/([?&])mcjQrRetry=\d+/g, "").replace(/[?&]$/, "");
+    var join = base.indexOf("?") >= 0 ? "&" : "?";
+    img.setAttribute("data-pay-qr-load", "pending");
+    img.style.outline = "";
+    var frame = img.parentNode;
+    if (frame) {
+      var oldErr = frame.querySelector("[data-pay-qr-load-error]");
+      if (oldErr) oldErr.remove();
+      var oldRetry = frame.querySelector("[data-pay-qr-retry]");
+      if (oldRetry) oldRetry.remove();
+    }
+    var panel = img.closest("[data-pay-qr]");
+    if (panel) panel.setAttribute("data-pay-qr-img-status", "pending");
+    // Bust cache so a previously-failed URL can reload.
+    img.src = base + join + "mcjQrRetry=" + Date.now();
+  }
+
   function bindPayQrFallback() {
     root.querySelectorAll("[data-mcj-pay-qr],[data-pay-qr-img]").forEach(function (img) {
       if (img.getAttribute("data-bound-pay-qr") === "1") return;
       img.setAttribute("data-bound-pay-qr", "1");
+      if (!img.getAttribute("data-pay-qr-src")) {
+        img.setAttribute("data-pay-qr-src", img.currentSrc || img.src || "");
+      }
       img.setAttribute("data-pay-qr-load", "pending");
       img.addEventListener("load", function () {
         img.setAttribute("data-pay-qr-load", "ok");
         img.style.display = "";
         img.style.visibility = "";
         img.style.opacity = "";
+        img.style.outline = "";
+        var frame = img.parentNode;
+        if (frame) {
+          var oldErr = frame.querySelector("[data-pay-qr-load-error]");
+          if (oldErr) oldErr.remove();
+          var oldRetry = frame.querySelector("[data-pay-qr-retry]");
+          if (oldRetry) oldRetry.remove();
+        }
         var panel = img.closest("[data-pay-qr]");
         if (panel) panel.setAttribute("data-pay-qr-img-status", "ok");
       });
@@ -245,12 +283,22 @@
         var panel = img.closest("[data-pay-qr]");
         if (panel) panel.setAttribute("data-pay-qr-img-status", "error");
         if (frame && !frame.querySelector("[data-pay-qr-load-error]")) {
+          var wrap = document.createElement("div");
+          wrap.className = "pay-qr-load-fail";
+          wrap.setAttribute("data-pay-qr-load-error", "1");
+          wrap.setAttribute("role", "status");
           var p = document.createElement("p");
           p.className = "pay-alert";
-          p.setAttribute("role", "status");
-          p.setAttribute("data-pay-qr-load-error", "1");
-          p.textContent = "二维码图片加载失败，请点击重试或联系客服（图片槽位仍保留，不会隐藏）。";
-          frame.appendChild(p);
+          p.style.margin = "10px 0 8px";
+          p.textContent = "二维码图片加载失败。图片区域已保留，不会隐藏。请点击重试，或联系客服。";
+          var btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "pay-btn";
+          btn.setAttribute("data-pay-qr-retry", "1");
+          btn.textContent = "重新加载二维码";
+          wrap.appendChild(p);
+          wrap.appendChild(btn);
+          frame.appendChild(wrap);
         }
       });
     });
@@ -1116,6 +1164,15 @@
   }
 
   root.addEventListener("click", function (e) {
+    var qrRetry = e.target.closest("[data-pay-qr-retry]");
+    if (qrRetry) {
+      e.preventDefault();
+      e.stopPropagation();
+      var frame = qrRetry.closest(".pay-qr-frame") || qrRetry.parentNode;
+      var img = frame && frame.querySelector("[data-mcj-pay-qr], [data-pay-qr-img], img");
+      retryPayQrImage(img);
+      return;
+    }
     var btn = e.target.closest("[data-reload]");
     if (btn) {
       e.preventDefault();

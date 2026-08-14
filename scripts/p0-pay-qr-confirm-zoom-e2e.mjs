@@ -164,7 +164,10 @@ async function runViewport(browser, label, viewportOrDevice, token, user, orderI
   }, { timeout: 30000 }).catch(() => {});
 
   let st = await qrState(page);
-  step(`${label}_img_in_first_viewport`, st.inFirstViewport === true, JSON.stringify(st));
+  step(`${label}_url_normal_visible`, st.hasQr === "1" && st.load === "ok" && st.w >= 160, JSON.stringify({
+    hasQr: st.hasQr, load: st.load, w: st.w, h: st.h, y: st.y, inFirstViewport: st.inFirstViewport, urlLen: st.urlLen
+  }));
+  step(`${label}_img_in_first_viewport`, st.inFirstViewport === true, JSON.stringify({ y: st.y, vh: st.vh, h: st.h }));
   step(
     `${label}_img_visible`,
     st.hasQr === "1" && st.w >= 160 && st.display !== "none" && st.visibility !== "hidden" && Number(st.opacity) > 0,
@@ -173,10 +176,30 @@ async function runViewport(browser, label, viewportOrDevice, token, user, orderI
   step(`${label}_cursor_zoom`, /zoom-in/i.test(st.cursor || ""), st.cursor || "");
   step(`${label}_preview_lib`, st.hasPreviewLib === true, String(st.hasPreviewLib));
 
+  // Mobile: min size + not clipped by parent overflow.
+  const clip = await page.evaluate(() => {
+    const img = document.querySelector("[data-mcj-pay-qr], [data-pay-qr-img]");
+    const frame = document.querySelector(".pay-qr-frame");
+    const panel = document.querySelector("[data-pay-qr]");
+    if (!img || !frame || !panel) return { ok: false };
+    const ir = img.getBoundingClientRect();
+    const fr = frame.getBoundingClientRect();
+    const pr = panel.getBoundingClientRect();
+    const pcs = getComputedStyle(panel);
+    const fcs = getComputedStyle(frame);
+    return {
+      ok: ir.width >= 180 && ir.height >= 180 && pcs.overflow !== "hidden" && fcs.overflow !== "hidden",
+      imgW: ir.width,
+      imgH: ir.height,
+      frameOverflow: fcs.overflow,
+      panelOverflow: pcs.overflow,
+      clippedByFrame: ir.bottom > fr.bottom + 1 || ir.right > fr.right + 1,
+    };
+  });
+  step(`${label}_min_size_no_clip`, clip.ok === true && clip.clippedByFrame !== true, JSON.stringify(clip));
+
   await page.screenshot({ path: path.join(ART, `${label}-page.png`), fullPage: true });
 
-  // Click open — require click path (not API fallback) for PASS of open step.
-  // Prove the durable proof input is not covering the QR (historical click-steal bug).
   const hit = await page.evaluate(() => {
     const zoom = document.querySelector("[data-pay-qr-zoom]");
     if (!zoom) return { ok: false, reason: "no-zoom" };
@@ -197,7 +220,11 @@ async function runViewport(browser, label, viewportOrDevice, token, user, orderI
 
   const zoom = page.locator("[data-pay-qr-zoom]").first();
   await zoom.scrollIntoViewIfNeeded();
-  await zoom.click({ timeout: 8000 });
+  if (/android|iphone|mobile/i.test(label)) {
+    await zoom.tap({ timeout: 8000 }).catch(async () => zoom.click({ timeout: 8000 }));
+  } else {
+    await zoom.click({ timeout: 8000 });
+  }
   await page.waitForTimeout(400);
   st = await qrState(page);
   const openOk = st.lightboxOpen && st.lightboxImgW > 100;
@@ -205,7 +232,6 @@ async function runViewport(browser, label, viewportOrDevice, token, user, orderI
   if (openOk) await page.screenshot({ path: path.join(ART, `${label}-lightbox.png`) });
 
   if (!openOk) {
-    // Diagnose then force-open for close test.
     const diag = await page.evaluate(() => ({
       installed: !!document.getElementById("payQrLightbox"),
       zoomCount: document.querySelectorAll("[data-pay-qr-zoom]").length,
@@ -229,20 +255,51 @@ async function runViewport(browser, label, viewportOrDevice, token, user, orderI
   st = await closeLightbox(page);
   step(`${label}_lightbox_close`, st.lightboxOpen === false, st._closedViaApi ? "closed_via_api" : "closed");
 
-  // Error path: break src, keep slot visible.
+  // Image load failure: keep slot + explicit retry control (not display:none).
   await page.evaluate(() => {
     const img = document.querySelector("[data-mcj-pay-qr], [data-pay-qr-img]");
     if (!img) return;
     img.setAttribute("src", "https://invalid.example/missing-qr-" + Date.now() + ".png");
   });
-  await page.waitForTimeout(800);
+  await page.waitForTimeout(900);
   st = await qrState(page);
+  const retryVisible = await page.locator("[data-pay-qr-retry]").count();
   step(
-    `${label}_error_keeps_visible`,
-    st.load === "error" && st.display !== "none" && st.w > 0 && st.errMsg === true,
-    JSON.stringify({ load: st.load, display: st.display, w: st.w, errMsg: st.errMsg })
+    `${label}_load_fail_keeps_visible`,
+    st.load === "error" && st.display !== "none" && st.w > 0 && st.errMsg === true && retryVisible > 0,
+    JSON.stringify({ load: st.load, display: st.display, w: st.w, errMsg: st.errMsg, retryVisible })
   );
   await page.screenshot({ path: path.join(ART, `${label}-error.png`), fullPage: true });
+
+  // Invalid / empty QR URL path (frontend only — mutate live panel, do not change API).
+  await page.evaluate(() => {
+    const panel = document.querySelector("[data-pay-qr]");
+    if (!panel) return;
+    panel.setAttribute("data-pay-has-qr", "0");
+    panel.setAttribute("data-pay-qr-url-len", "0");
+    panel.innerHTML =
+      "<h2>平台收款</h2>" +
+      '<p class="pay-alert" role="status" data-pay-unavailable="1">收款二维码暂不可用，请选择其他支付方式或联系客服。</p>' +
+      '<p class="pay-hint">不会自动切换到其他支付通道的二维码。</p>';
+  });
+  const unavailable = await page.evaluate(() => {
+    const panel = document.querySelector("[data-pay-qr]");
+    const msg = document.querySelector("[data-pay-unavailable]");
+    const img = document.querySelector("[data-pay-qr] [data-mcj-pay-qr], [data-pay-qr] [data-pay-qr-img]");
+    return {
+      hasQr: panel?.getAttribute("data-pay-has-qr") || "",
+      msg: !!(msg && String(msg.textContent || "").trim()),
+      msgText: msg ? String(msg.textContent || "").slice(0, 80) : "",
+      imgGone: !img,
+      display: panel ? getComputedStyle(panel).display : "",
+    };
+  });
+  step(
+    `${label}_url_invalid_shows_status`,
+    unavailable.hasQr === "0" && unavailable.msg === true && unavailable.display !== "none",
+    JSON.stringify(unavailable)
+  );
+  await page.screenshot({ path: path.join(ART, `${label}-invalid-url.png`), fullPage: true });
 
   await context.close();
 }
@@ -316,11 +373,72 @@ async function runViewport(browser, label, viewportOrDevice, token, user, orderI
   });
 
   await runViewport(browser, "desktop", { width: 1440, height: 800 }, bossToken, bossUser, orderId);
-  await runViewport(browser, "mobile", devices["iPhone 13"], bossToken, bossUser, orderId);
+  await runViewport(browser, "iphone", devices["iPhone 13"], bossToken, bossUser, orderId);
+  await runViewport(browser, "android", devices["Pixel 5"], bossToken, bossUser, orderId);
+
+  // Real render path: empty/invalid qrUrl from order payload (frontend only; API code untouched).
+  {
+    const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    const page = await context.newPage();
+    await seedAuth(page, bossToken, bossUser);
+    await page.route("**/api/orders**", async (route) => {
+      if (route.request().method() !== "GET") return route.continue();
+      const res = await route.fetch();
+      const json = await res.json().catch(() => ({}));
+      if (json && json.platformPayInfo) {
+        json.platformPayInfo = {
+          ...json.platformPayInfo,
+          qrUrl: "",
+          enabled: false,
+          unavailable: true,
+          instructions: "收款二维码暂不可用（测试：空 qrUrl）",
+        };
+      }
+      if (json && json.order && json.order.platformPayInfo) {
+        json.order.platformPayInfo = {
+          ...json.order.platformPayInfo,
+          qrUrl: "",
+          enabled: false,
+          unavailable: true,
+          instructions: "收款二维码暂不可用（测试：空 qrUrl）",
+        };
+      }
+      await route.fulfill({
+        status: res.status(),
+        contentType: "application/json",
+        body: JSON.stringify(json),
+      });
+    });
+    await page.goto(`${BASE}/payment-confirm.html?order=${encodeURIComponent(orderId)}&t=${Date.now()}`, {
+      waitUntil: "domcontentloaded",
+      timeout: 60000,
+    });
+    await page.waitForSelector("[data-pay-qr]", { timeout: 45000 });
+    await page.waitForTimeout(800);
+    const empty = await page.evaluate(() => {
+      const panel = document.querySelector("[data-pay-qr]");
+      const msg = document.querySelector("[data-pay-unavailable]");
+      const img = document.querySelector("[data-pay-qr] img");
+      return {
+        hasQr: panel?.getAttribute("data-pay-has-qr") || "",
+        urlLen: panel?.getAttribute("data-pay-qr-url-len") || "",
+        msg: msg ? String(msg.textContent || "").trim() : "",
+        hasImg: !!img,
+        panelDisplay: panel ? getComputedStyle(panel).display : "",
+      };
+    });
+    step(
+      "empty_qrUrl_render_path",
+      empty.hasQr === "0" && empty.urlLen === "0" && !!empty.msg && empty.hasImg === false && empty.panelDisplay !== "none",
+      JSON.stringify(empty)
+    );
+    await page.screenshot({ path: path.join(ART, "empty-qrurl-panel.png"), fullPage: true });
+    await context.close();
+  }
 
   await browser.close();
 
-  fs.writeFileSync(path.join(ART, "results-v3.json"), JSON.stringify(results, null, 2));
+  fs.writeFileSync(path.join(ART, "results-v4.json"), JSON.stringify(results, null, 2));
   const failed = results.filter((r) => r.result === "FAIL");
   console.log(`\nDone. ${results.length - failed.length}/${results.length} PASS. artifacts=${ART}`);
   process.exit(failed.length ? 1 : 0);
