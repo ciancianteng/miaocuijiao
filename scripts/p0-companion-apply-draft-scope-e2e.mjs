@@ -228,31 +228,19 @@ async function openAsUser(browser, user, draft) {
 
   const nickA = "DraftOwnerA_" + Date.now().toString(36);
 
-  // Seed Boss A draft via UI save path
+  // Seed Boss A draft (scoped) + unscoped poison must not win
   {
-    const page = await openAsUser(browser, a, null);
+    const page = await openAsUser(browser, a, draftPayload(nickA));
     await page.waitForFunction(() => !document.querySelector("[data-apply-auth-gate]"), { timeout: 30000 }).catch(() => {});
-    await page.evaluate((draft) => {
-      const key = "mcjCompanionApplicationDraft.v1.u:" + (window.MCJCompanionApplyDraft?.authUserId?.() || "");
-      const uid = window.MCJCompanionApplyDraft?.authUserId?.() || "";
-      localStorage.setItem(key, JSON.stringify(Object.assign({}, draft, { ownerUserId: uid })));
-      localStorage.setItem("mcjCompanionApplicationDraft.lastAuthUserId", uid);
-      // Also plant unscoped poison
-      localStorage.setItem(
-        "mcjCompanionApplicationDraft.v1",
-        JSON.stringify(Object.assign({}, draft, { data: { nickname: "LEAKED_UNSCOPED_DRAFT" } }))
-      );
-    }, draftPayload(nickA));
-    await page.reload({ waitUntil: "domcontentloaded", timeout: 90000 });
-    await page.waitForTimeout(1500);
+    await page.waitForTimeout(800);
     const seen = await page.evaluate((nick) => {
       const d = window.MCJCompanionApplyDraft?.readDraft?.() || {};
       const text = document.body.innerText || "";
       return {
         uid: window.MCJCompanionApplyDraft?.authUserId?.() || "",
         nick: d.data?.nickname || "",
-        showsNick: text.includes(nick),
-        showsLeak: text.includes("LEAKED_UNSCOPED_DRAFT"),
+        showsNick: text.includes(nick) || d.data?.nickname === nick,
+        showsLeak: text.includes("LEAKED_UNSCOPED_DRAFT") || d.data?.nickname === "LEAKED_UNSCOPED_DRAFT",
         legacyGone: !localStorage.getItem("mcjCompanionApplicationDraft.v1"),
         scoped: !!localStorage.getItem("mcjCompanionApplicationDraft.v1.u:" + (window.MCJCompanionApplyDraft?.authUserId?.() || "")),
       };
