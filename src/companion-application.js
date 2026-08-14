@@ -370,6 +370,8 @@
 
   var authUi = {
     mode: "register", // register | login
+    // Only show email register/login when user explicitly opts out of the current boss account.
+    preferOtherAccount: false,
     loginMethod: "password", // password | otp
     emailVerified: false,
     verifiedEmail: "",
@@ -381,6 +383,7 @@
     busy: false,
     message: "",
     messageTone: "error",
+    bossSessionPending: false,
   };
 
   function setAuthMessage(msg, tone) {
@@ -399,6 +402,10 @@
 
   function bossAccessToken() {
     try {
+      if (window.MCJBossAuth && typeof window.MCJBossAuth.getAccessToken === "function") {
+        var fromAuth = String(window.MCJBossAuth.getAccessToken() || "").trim();
+        if (fromAuth) return fromAuth;
+      }
       return (
         sessionStorage.getItem("mcjAuthAccessToken") ||
         localStorage.getItem("mcjAuthAccessToken") ||
@@ -407,6 +414,80 @@
     } catch (e) {
       return "";
     }
+  }
+
+  function bossRefreshToken() {
+    try {
+      if (window.MCJBossAuth && typeof window.MCJBossAuth.getRefreshToken === "function") {
+        var fromAuth = String(window.MCJBossAuth.getRefreshToken() || "").trim();
+        if (fromAuth) return fromAuth;
+      }
+      return (
+        sessionStorage.getItem("mcjAuthRefreshToken") ||
+        localStorage.getItem("mcjAuthRefreshToken") ||
+        ""
+      );
+    } catch (e) {
+      return "";
+    }
+  }
+
+  function hasBossSession() {
+    if (companionToken()) return false;
+    if (window.MCJBossAuth && typeof window.MCJBossAuth.canRestoreSession === "function") {
+      try {
+        if (window.MCJBossAuth.canRestoreSession()) return true;
+      } catch (e) {}
+    }
+    if (window.MCJBossAuth && typeof window.MCJBossAuth.hasValidAccessToken === "function") {
+      try {
+        if (window.MCJBossAuth.hasValidAccessToken()) return true;
+      } catch (e2) {}
+    }
+    return !!(bossAccessToken() || bossRefreshToken());
+  }
+
+  function ensureBossAuthModule() {
+    if (window.MCJBossAuth) return Promise.resolve(window.MCJBossAuth);
+    return new Promise(function (resolve) {
+      var existing = document.querySelector('script[data-mcj-boss-auth],script[src*="boss-auth-session.js"]');
+      var done = function () {
+        resolve(window.MCJBossAuth || null);
+      };
+      if (existing) {
+        var tries = 0;
+        var timer = setInterval(function () {
+          tries += 1;
+          if (window.MCJBossAuth || tries > 40) {
+            clearInterval(timer);
+            done();
+          }
+        }, 50);
+        return;
+      }
+      var s = document.createElement("script");
+      s.src = "/src/boss-auth-session.js?v=20260814applyBossAuth1";
+      s.setAttribute("data-mcj-boss-auth", "1");
+      s.onload = done;
+      s.onerror = done;
+      document.head.appendChild(s);
+    });
+  }
+
+  function ensureBossSessionForApply() {
+    authUi.bossSessionPending = true;
+    return ensureBossAuthModule()
+      .then(function (Auth) {
+        if (Auth && typeof Auth.ensureSession === "function") {
+          return Auth.ensureSession().catch(function () {
+            return null;
+          });
+        }
+        return null;
+      })
+      .finally(function () {
+        authUi.bossSessionPending = false;
+      });
   }
 
   function storageGet(key) {
@@ -752,17 +833,21 @@
 
   function authGateHtml() {
     if (companionToken()) return "";
-    var bossTok = bossAccessToken();
     var mode = authUi.mode === "login" ? "login" : "register";
-    if (bossTok && mode !== "login") {
+    var bossPresent = hasBossSession();
+    if (bossPresent && !authUi.preferOtherAccount) {
       // Prefer upgrading the logged-in boss account instead of creating a second Auth user.
       return (
-        '<section class="apply-panel apply-auth-gate">' +
+        '<section class="apply-panel apply-auth-gate" data-apply-auth-gate="boss">' +
         "<h2>使用当前老板账号申请陪玩</h2>" +
         "<p class=\"apply-note\">检测到你已登录老板端。将在<strong>同一 User ID</strong>下开通陪玩资料，不会新建账号，也不会丢失老板订单/充值/聊天。</p>" +
         '<div class="apply-actions apply-auth-actions">' +
-        '<button class="apply-btn primary" type="button" data-apply-from-boss' + (authUi.busy ? " disabled" : "") + ">使用当前账号申请陪玩</button>" +
-        '<button class="apply-btn" type="button" data-apply-auth-mode="login">改用其他陪玩账号登录</button>' +
+        '<button class="apply-btn primary" type="button" data-apply-from-boss' +
+        (authUi.busy || authUi.bossSessionPending ? " disabled" : "") +
+        ">" +
+        (authUi.bossSessionPending ? "正在恢复登录…" : "使用当前账号申请陪玩") +
+        "</button>" +
+        '<button class="apply-btn" type="button" data-apply-prefer-other>改用其他陪玩账号登录</button>' +
         "</div>" +
         authMessageHtml() +
         "</section>"
@@ -832,10 +917,20 @@
       '<div class="apply-actions apply-auth-actions full"><button class="apply-btn primary" type="button" data-apply-login-otp' + (authUi.busy ? " disabled" : "") + ">验证码登录</button></div>" +
       "</form>";
 
+    var backToBoss =
+      bossPresent
+        ? '<p class="apply-note"><button class="apply-btn" type="button" data-apply-use-current-boss>← 使用当前老板账号申请陪玩</button></p>'
+        : "";
+
     return (
-      '<section class="apply-panel apply-auth-gate">' +
-      "<h2>先创建 / 登录陪玩账号</h2>" +
-      "<p>申请资料会写入平台数据库，审核通过后可直接用此邮箱登录陪玩端。MVP 仅支持邮箱验证码，不再使用手机号。</p>" +
+      '<section class="apply-panel apply-auth-gate" data-apply-auth-gate="' + (bossPresent ? "other" : "guest") + '">' +
+      "<h2>" + (bossPresent ? "改用其他陪玩账号" : "先创建 / 登录陪玩账号") + "</h2>" +
+      "<p>" +
+      (bossPresent
+        ? "仅在你要换另一个账号申请时使用。同一邮箱请回到上方「使用当前老板账号」，避免误以为要注册第二个账号。"
+        : "申请资料会写入平台数据库，审核通过后可直接用此邮箱登录陪玩端。MVP 仅支持邮箱验证码，不再使用手机号。") +
+      "</p>" +
+      backToBoss +
       tabs +
       (mode === "register" ? registerPanel : loginTabs + loginPwd + loginOtp + authMessageHtml()) +
       '<p class="apply-note">新用户：邮箱 → 发送验证码 → 验证成功 → 设置密码与昵称 → 注册并进入 1/5 申请流程。</p>' +
@@ -2597,6 +2692,8 @@
       if (authModeBtn) {
         e.preventDefault();
         authUi.mode = authModeBtn.getAttribute("data-apply-auth-mode") === "login" ? "login" : "register";
+        // Switching tabs inside the other-account UI must keep preferOtherAccount on.
+        if (hasBossSession()) authUi.preferOtherAccount = true;
         setAuthMessage("");
         render(Number(root.dataset.step || 0));
         if (window.MCJAuthShell && window.MCJAuthShell.clearAuthFields) {
@@ -2605,47 +2702,70 @@
         return;
       }
 
+      if (e.target.closest("[data-apply-prefer-other]")) {
+        e.preventDefault();
+        authUi.preferOtherAccount = true;
+        authUi.mode = "login";
+        setAuthMessage("");
+        render(Number(root.dataset.step || 0));
+        if (window.MCJAuthShell && window.MCJAuthShell.clearAuthFields) {
+          window.MCJAuthShell.clearAuthFields(root, { clearCode: true, clearPassword: true, clearAccount: false });
+        }
+        return;
+      }
+
+      if (e.target.closest("[data-apply-use-current-boss]")) {
+        e.preventDefault();
+        authUi.preferOtherAccount = false;
+        authUi.mode = "register";
+        setAuthMessage("");
+        render(Number(root.dataset.step || 0));
+        return;
+      }
+
       if (e.target.closest("[data-apply-from-boss]")) {
         e.preventDefault();
-        var bossTok = bossAccessToken();
-        if (!bossTok) {
-          setAuthMessage("请先登录老板账号。", "error");
-          render(Number(root.dataset.step || 0));
-          return;
-        }
         authUi.busy = true;
-        setAuthMessage("正在当前账号下开通陪玩资料…", "ok");
+        setAuthMessage("正在恢复登录并开通陪玩资料…", "ok");
         render(Number(root.dataset.step || 0));
-        var bossRefresh = readAnyRefreshToken();
-        var bossExpires = readAnyExpiresAt();
-        fetch("/api/companion", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Accept: "application/json",
-            Authorization: "Bearer " + bossTok,
-            "x-mcj-companion-token": bossTok,
-          },
-          body: JSON.stringify({
-            action: "apply_companion_role",
-            refreshToken: bossRefresh,
-            expiresAt: bossExpires,
-          }),
-        })
-          .then(function (res) {
-            return res.json().then(function (body) {
-              if (!res.ok || body.ok === false) throw new Error((body && body.message) || "申请失败");
-              return body;
+        ensureBossSessionForApply()
+          .then(function () {
+            var bossTok = bossAccessToken();
+            if (!bossTok) {
+              throw new Error("请先登录老板账号。");
+            }
+            var bossRefresh = bossRefreshToken() || readAnyRefreshToken();
+            var bossExpires = readAnyExpiresAt();
+            return fetch("/api/companion", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Accept: "application/json",
+                Authorization: "Bearer " + bossTok,
+                "x-mcj-companion-token": bossTok,
+              },
+              body: JSON.stringify({
+                action: "apply_companion_role",
+                refreshToken: bossRefresh,
+                expiresAt: bossExpires,
+              }),
+            }).then(function (res) {
+              return res.json().then(function (body) {
+                if (!res.ok || body.ok === false) throw new Error((body && body.message) || "申请失败");
+                return { body: body, bossTok: bossTok, bossRefresh: bossRefresh, bossExpires: bossExpires };
+              });
             });
           })
-          .then(function (body) {
+          .then(function (pack) {
+            var body = pack.body;
             var sess = body.session || {
-              token: bossTok,
-              accessToken: bossTok,
+              token: pack.bossTok,
+              accessToken: pack.bossTok,
               user: (body.session && body.session.user) || {},
             };
-            if (!sess.refreshToken) sess.refreshToken = bossRefresh;
-            if (sess.expiresAt == null || sess.expiresAt === "") sess.expiresAt = bossExpires;
+            if (!sess.refreshToken) sess.refreshToken = pack.bossRefresh;
+            if (sess.expiresAt == null || sess.expiresAt === "") sess.expiresAt = pack.bossExpires;
+            authUi.preferOtherAccount = false;
             return afterCompanionAuthSuccess(sess, "", "");
           })
           .catch(function (err) {
@@ -3249,7 +3369,19 @@
     initLoadError = "";
     render(readDraft().step || 0);
     bind();
-    runApplyBootstrap(false);
+    // Restore boss JWT (refresh if needed) BEFORE final auth-gate paint so logged-in
+    // bosses see「使用当前老板账号」instead of the register form.
+    ensureBossSessionForApply()
+      .then(function () {
+        if (!companionToken() && hasBossSession()) {
+          authUi.preferOtherAccount = false;
+          render(readDraft().step || 0);
+        }
+      })
+      .catch(function () {})
+      .then(function () {
+        runApplyBootstrap(false);
+      });
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
   else init();
@@ -3260,6 +3392,13 @@
       return;
     }
     restoreApplyScroll();
+  });
+  window.addEventListener("mcj:auth-updated", function () {
+    if (!document.getElementById("companionApplyRoot")) return;
+    if (companionToken() || authUi.preferOtherAccount || authUi.busy) return;
+    if (hasBossSession()) {
+      render(Number(document.getElementById("companionApplyRoot").dataset.step || 0));
+    }
   });
 })();
 

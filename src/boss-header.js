@@ -153,7 +153,6 @@
     if (window.MCJBossAuth && typeof window.MCJBossAuth.hasValidAccessToken === "function") {
       try {
         if (window.MCJBossAuth.hasValidAccessToken()) return true;
-        return false;
       } catch (e) {}
     }
     if (window.MCJBossAuth && typeof window.MCJBossAuth.hasSession === "function") {
@@ -177,9 +176,28 @@
     return true;
   }
 
+  function canRestoreBossSession() {
+    if (window.MCJBossAuth && typeof window.MCJBossAuth.canRestoreSession === "function") {
+      try {
+        if (window.MCJBossAuth.canRestoreSession()) return true;
+      } catch (e) {}
+    }
+    try {
+      return !!(
+        sessionStorage.getItem("mcjAuthRefreshToken") ||
+        localStorage.getItem("mcjAuthRefreshToken") ||
+        accessToken()
+      );
+    } catch (e2) {
+      return false;
+    }
+  }
+
   function purgeGuestAuthArtifacts() {
-    // Keep persisted login across refresh; only clear when no valid JWT remains.
-    if (hasValidBossJwt()) return;
+    // Keep persisted login across refresh. Never wipe a refreshable boss session —
+    // companion-apply remounts this header and used to clear JWT before ensureSession,
+    // which forced the register form even when the boss was still logged in.
+    if (hasValidBossJwt() || canRestoreBossSession()) return;
     [
       "customerAuthToken",
       "customerUser",
