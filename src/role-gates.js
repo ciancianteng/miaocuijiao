@@ -372,8 +372,74 @@
     });
   }
 
+  function readStoredUserIdFrom(raw) {
+    try {
+      var u = typeof raw === "string" ? JSON.parse(raw || "null") : raw;
+      if (!u || typeof u !== "object") return "";
+      return String(u.id || u.user_id || u.userId || "").trim();
+    } catch (e) {
+      return "";
+    }
+  }
+
+  function readCompanionPortalUserId() {
+    try {
+      var raw = localStorage.getItem("mcjCompanionSession") || sessionStorage.getItem("mcjCompanionSession") || "";
+      if (!raw) return "";
+      var sess = JSON.parse(raw);
+      return readStoredUserIdFrom(sess && sess.user);
+    } catch (e) {
+      return "";
+    }
+  }
+
+  function readBossPortalUserId() {
+    try {
+      var raw =
+        sessionStorage.getItem("customerUser") ||
+        localStorage.getItem("customerUser") ||
+        sessionStorage.getItem("mcjCurrentUser") ||
+        localStorage.getItem("mcjCurrentUser") ||
+        "";
+      var id = readStoredUserIdFrom(raw);
+      if (id) return id;
+    } catch (e) {}
+    try {
+      var tok =
+        sessionStorage.getItem("mcjAuthAccessToken") ||
+        localStorage.getItem("mcjAuthAccessToken") ||
+        "";
+      var part = String(tok || "").split(".")[1];
+      if (!part) return "";
+      var b64 = part.replace(/-/g, "+").replace(/_/g, "/");
+      while (b64.length % 4) b64 += "=";
+      var payload = JSON.parse(atob(b64));
+      return String((payload && (payload.sub || payload.user_id || payload.userId)) || "").trim();
+    } catch (e2) {
+      return "";
+    }
+  }
+
+  /**
+   * Boss logout must drop a same-User-ID companion apply session.
+   * Otherwise header shows guest while companion-apply still restores that
+   * user's draft via mcjCompanionSession (portal isolation leftover).
+   * Different-user companion sessions are kept (true dual-login).
+   */
+  function clearCompanionSessionIfSameUser(bossUserId) {
+    var bossId = String(bossUserId || "").trim() || readBossPortalUserId();
+    if (!bossId) return false;
+    var companionId = readCompanionPortalUserId();
+    if (!companionId || companionId !== bossId) return false;
+    clearCompanionPortalSession();
+    return true;
+  }
+
   function clearBossPortalSession() {
-    // Boss-only keys. Never touch companion / CS / dedicated admin JWT.
+    // Capture boss uid before wiping keys — needed to clear same-user apply session.
+    var bossUid = readBossPortalUserId();
+    // Boss-only keys. Never touch CS / dedicated admin JWT.
+    // Same-user companion apply session is cleared below (draft isolation).
     var adminSoft = hasAdminSoftSession();
     [
       "customerAuthToken",
@@ -394,6 +460,7 @@
         window.MCJBossAuth.clearSession();
       } catch (e2) {}
     }
+    clearCompanionSessionIfSameUser(bossUid);
   }
 
   function saveSession(session, remember) {
@@ -1660,6 +1727,7 @@
     clearOtherRoleSessions: clearOtherRoleSessions,
     clearSharedAuthMirrors: clearSharedAuthMirrors,
     clearCompanionPortalSession: clearCompanionPortalSession,
+    clearCompanionSessionIfSameUser: clearCompanionSessionIfSameUser,
     clearBossPortalSession: clearBossPortalSession,
     writeCompanionPortalSession: writeCompanionPortalSession,
   };
