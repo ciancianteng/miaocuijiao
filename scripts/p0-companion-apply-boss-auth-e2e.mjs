@@ -315,16 +315,65 @@ async function injectExpiredBossKeepRefresh(page, { token, refreshToken, email }
       gameCards: [],
     };
     await page.addInitScript((d) => {
+      // Runs after injectBossOnly clear — seed draft without wiping boss tokens.
       localStorage.setItem("mcjCompanionApplicationDraft.v1", JSON.stringify(d));
     }, draft);
     await page.goto(`${BASE}/companion-apply.html?t=${Date.now() + 3}`, { waitUntil: "domcontentloaded", timeout: 90000 });
     await page.waitForSelector("[data-apply-from-boss]", { timeout: 20000 });
     await page.click("[data-apply-from-boss]");
-    await page.waitForFunction(() => !document.querySelector("[data-apply-auth-gate]"), { timeout: 30000 }).catch(() => {});
-    await page.waitForTimeout(800);
-    await page.reload({ waitUntil: "domcontentloaded", timeout: 90000 });
-    await page.waitForTimeout(1500);
-    const resumed = await page.evaluate(() => {
+    await page.waitForFunction(
+      () => {
+        try {
+          const sess = JSON.parse(localStorage.getItem("mcjCompanionSession") || "null");
+          return !!(sess && (sess.token || sess.accessToken)) && !document.querySelector("[data-apply-auth-gate]");
+        } catch (e) {
+          return false;
+        }
+      },
+      { timeout: 45000 }
+    );
+    await page.waitForTimeout(600);
+    const snap = await page.evaluate(() => {
+      return {
+        companion: localStorage.getItem("mcjCompanionSession"),
+        draft: localStorage.getItem("mcjCompanionApplicationDraft.v1"),
+        access: localStorage.getItem("mcjAuthAccessToken"),
+        refresh: localStorage.getItem("mcjAuthRefreshToken"),
+        expires: localStorage.getItem("mcjAuthExpiresAt"),
+      };
+    });
+    await page.close();
+
+    // Fresh page: re-inject persisted companion + boss session (initScript clear would wipe reload).
+    const page2 = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+    await installLocalJs(page2);
+    await page2.addInitScript((snap) => {
+      localStorage.clear();
+      sessionStorage.clear();
+      if (snap.access) {
+        localStorage.setItem("mcjAuthAccessToken", snap.access);
+        sessionStorage.setItem("mcjAuthAccessToken", snap.access);
+      }
+      if (snap.refresh) {
+        localStorage.setItem("mcjAuthRefreshToken", snap.refresh);
+        sessionStorage.setItem("mcjAuthRefreshToken", snap.refresh);
+      }
+      if (snap.expires) {
+        localStorage.setItem("mcjAuthExpiresAt", snap.expires);
+        sessionStorage.setItem("mcjAuthExpiresAt", snap.expires);
+      }
+      localStorage.setItem("mcjRole", "boss");
+      if (snap.companion) {
+        localStorage.setItem("mcjCompanionSession", snap.companion);
+        sessionStorage.setItem("mcjCompanionSession", snap.companion);
+      }
+      if (snap.draft) {
+        localStorage.setItem("mcjCompanionApplicationDraft.v1", snap.draft);
+      }
+    }, snap);
+    await page2.goto(`${BASE}/companion-apply.html?t=${Date.now() + 5}`, { waitUntil: "domcontentloaded", timeout: 90000 });
+    await page2.waitForTimeout(1800);
+    const resumed = await page2.evaluate(() => {
       const d = JSON.parse(localStorage.getItem("mcjCompanionApplicationDraft.v1") || "{}");
       const sess = JSON.parse(localStorage.getItem("mcjCompanionSession") || "null");
       const text = document.body.innerText || "";
@@ -332,17 +381,21 @@ async function injectExpiredBossKeepRefresh(page, { token, refreshToken, email }
         step: d.step,
         nickname: d.data?.nickname || "",
         hasSession: !!(sess && (sess.token || sess.accessToken)),
-        showsNick: /BossApplyDraft/.test(text) || /基本资料|第\s*2\s*步/.test(text),
+        showsNick: /BossApplyDraft/.test(text),
         noAuthGate: !document.querySelector("[data-apply-auth-gate]"),
+        layoutVisible: !!document.querySelector(".apply-layout:not([hidden])"),
       };
     });
-    await shot(page, "D-draft-resume");
+    await shot(page2, "D-draft-resume");
     step(
       "D_draft_resume_after_refresh",
-      resumed.hasSession && resumed.noAuthGate && (resumed.nickname === "BossApplyDraft" || resumed.showsNick),
+      resumed.hasSession &&
+        resumed.noAuthGate &&
+        resumed.layoutVisible &&
+        (resumed.nickname === "BossApplyDraft" || resumed.showsNick),
       JSON.stringify(resumed)
     );
-    await page.close();
+    await page2.close();
   }
 
   // --- Expired JWT + refresh must NOT wipe into register form ---
