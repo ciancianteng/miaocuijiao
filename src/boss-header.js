@@ -688,6 +688,35 @@
   }
 
   function clearBossSession() {
+    var bossUid = "";
+    try {
+      var raw =
+        sessionStorage.getItem("customerUser") ||
+        localStorage.getItem("customerUser") ||
+        sessionStorage.getItem("mcjCurrentUser") ||
+        localStorage.getItem("mcjCurrentUser") ||
+        "";
+      if (raw) {
+        var u = JSON.parse(raw);
+        bossUid = String((u && (u.id || u.user_id || u.userId)) || "").trim();
+      }
+    } catch (eUid) {}
+    if (!bossUid) {
+      try {
+        var tok =
+          sessionStorage.getItem("mcjAuthAccessToken") ||
+          localStorage.getItem("mcjAuthAccessToken") ||
+          "";
+        var part = String(tok || "").split(".")[1];
+        if (part) {
+          var b64 = part.replace(/-/g, "+").replace(/_/g, "/");
+          while (b64.length % 4) b64 += "=";
+          var payload = JSON.parse(atob(b64));
+          bossUid = String((payload && (payload.sub || payload.user_id)) || "").trim();
+        }
+      } catch (eJwt) {}
+    }
+
     if (window.MCJRoleGate && typeof window.MCJRoleGate.logout === "function") {
       window.MCJRoleGate.logout("customer");
       window.MCJRoleGate.logout("boss");
@@ -705,6 +734,26 @@
       localStorage.removeItem(key);
       sessionStorage.removeItem(key);
     });
+    // Same User ID companion apply session must not survive boss logout —
+    // otherwise companion-apply restores that draft while the header shows guest.
+    try {
+      var compRaw = localStorage.getItem("mcjCompanionSession") || sessionStorage.getItem("mcjCompanionSession") || "";
+      if (compRaw && bossUid) {
+        var comp = JSON.parse(compRaw);
+        var compUid = String((comp && comp.user && (comp.user.id || comp.user.user_id || comp.user.userId)) || "").trim();
+        if (compUid && compUid === bossUid) {
+          ["mcjCompanionSession", "companionAuthToken", "companionUser"].forEach(function (key) {
+            localStorage.removeItem(key);
+            sessionStorage.removeItem(key);
+          });
+        }
+      }
+    } catch (eComp) {}
+    if (window.MCJRoleGate && typeof window.MCJRoleGate.clearCompanionSessionIfSameUser === "function") {
+      try {
+        window.MCJRoleGate.clearCompanionSessionIfSameUser(bossUid);
+      } catch (eSame) {}
+    }
     // Never leave the unscoped apply draft readable by the next guest/account.
     try {
       localStorage.removeItem("mcjCompanionApplicationDraft.v1");

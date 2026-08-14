@@ -3596,6 +3596,9 @@
       render(0);
       return;
     }
+    // Header guest + leftover same-user companion session should already be
+    // cleared on boss logout. If companion remains without boss, keep it only
+    // when it is an explicit apply-gate companion login (token present).
     migrateLegacyDraftForUser(uid);
     if (companionToken() || authUi.preferOtherAccount || authUi.busy) {
       render(Number(document.getElementById("companionApplyRoot").dataset.step || readDraft().step || 0));
@@ -3603,6 +3606,9 @@
     }
     if (hasBossSession()) {
       render(Number(document.getElementById("companionApplyRoot").dataset.step || 0));
+    } else {
+      // No boss and no companion token path — show guest/boss gate, not draft.
+      render(0);
     }
   }
   window.addEventListener("mcj:auth-updated", onApplyAuthIdentityChanged);
