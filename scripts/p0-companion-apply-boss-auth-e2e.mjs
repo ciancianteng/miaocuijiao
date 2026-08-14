@@ -79,6 +79,10 @@ async function installLocalJs(page) {
       type: "text/html; charset=utf-8",
       body: fs.readFileSync(path.join(ROOT, "companion-apply.html"), "utf8"),
     },
+    "**/src/companion-application.css**": {
+      type: "text/css; charset=utf-8",
+      body: fs.readFileSync(path.join(ROOT, "src/companion-application.css"), "utf8"),
+    },
     "**/src/companion-application.js**": {
       type: "text/javascript; charset=utf-8",
       body: fs.readFileSync(path.join(ROOT, "src/companion-application.js"), "utf8"),
@@ -193,16 +197,26 @@ async function injectExpiredBossKeepRefresh(page, { token, refreshToken, email }
     await page.waitForTimeout(1500);
     const gate = await page.evaluate(() => {
       const text = document.body.innerText || "";
+      const layout = document.querySelector(".apply-layout");
+      const layoutHidden =
+        !layout ||
+        layout.hasAttribute("hidden") ||
+        getComputedStyle(layout).display === "none";
       return {
         bossTitle: /使用当前老板账号申请陪玩/.test(text),
         registerTitle: /先创建\s*\/\s*登录陪玩账号/.test(text),
         preferOther: !!document.querySelector("[data-apply-prefer-other]"),
         applyBtn: !!document.querySelector("[data-apply-from-boss]"),
         gate: document.querySelector("[data-apply-auth-gate]")?.getAttribute("data-apply-auth-gate") || "",
+        layoutHidden,
       };
     });
     await shot(page, "A-boss-gate");
-    step("A_boss_gate_default", gate.bossTitle && gate.applyBtn && !gate.registerTitle, JSON.stringify(gate));
+    step(
+      "A_boss_gate_default",
+      gate.bossTitle && gate.applyBtn && !gate.registerTitle && gate.layoutHidden,
+      JSON.stringify(gate)
+    );
 
     await page.click("[data-apply-from-boss]");
     await page.waitForTimeout(2500);
