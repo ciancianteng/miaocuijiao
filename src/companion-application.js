@@ -635,8 +635,12 @@
             if (!res.ok || body.ok === false) {
               var serverMsg = String((body && (body.message || body.error)) || "").trim();
               var errMsg = humanize(serverMsg || "提交失败", res.status);
-              if (action === "upload_media" && res.status && !/登录状态已过期|操作失败，请稍后重试/.test(errMsg)) {
-                errMsg = "HTTP " + res.status + (serverMsg ? " · " + serverMsg : " · 上传失败");
+              if (action === "upload_media" || action === "prepare_media_upload" || action === "finalize_media_upload") {
+                if (res.status && !/登录状态已过期|操作失败，请稍后重试/.test(errMsg)) {
+                  if (!/格式错误|文件太大|视频太长|直传/.test(errMsg)) {
+                    errMsg = "HTTP " + res.status + (serverMsg ? " · " + serverMsg : " · 上传失败");
+                  }
+                }
               }
               var err = new Error(errMsg);
               err.status = res.status;
@@ -975,9 +979,9 @@
       fileField("showcaseVideo", "个人展示视频（可选）", {
         kind: "video",
         value: u.showcaseVideo || null,
-        accept: U() && U().VIDEO_ACCEPT ? U().VIDEO_ACCEPT : "video/mp4,video/quicktime,.mp4,.mov",
+        accept: U() && U().VIDEO_ACCEPT ? U().VIDEO_ACCEPT : "video/mp4,video/quicktime,video/*,.mp4,.mov",
         capture: false,
-        hint: "支持 mp4 / mov，最长约 30 秒；选填",
+        hint: "支持 iPhone MOV/MP4（H.264 / HEVC），最长 30 秒、最大 40MB；选填",
       }) +
       '<p class="apply-note full">头像、相册与试音会上传到云端 Storage。老板大厅卡面统一使用头像/相册。刷新后仍可恢复。</p>' +
       '<p class="apply-note full"><a href="#applyVoicePanel" style="color:#ffd6e8;font-weight:1000">↓ 试音（必填）</a>：支持【现场录音】或【上传已有音频】，请完成其中一种。</p></form></section>' +
@@ -2198,6 +2202,119 @@
       localPreview = "";
     }
     render(step);
+
+    function finishOk(res) {
+      uploadBusy[key] = false;
+      delete uploadErrors[key];
+      var asset = {
+        url: (res && res.url) || (res && res.media && res.media.url) || "",
+        path: (res && res.path) || (res && res.media && res.media.path) || "",
+        bucket: (res && res.bucket) || (res && res.media && res.media.bucket) || "",
+        id: (res && res.media && res.media.id) || "",
+        status: "ok",
+      };
+      if (!asset.url && !asset.path) throw new Error("上传成功但未返回地址，请重新上传");
+      if (asset.url && isEphemeralMediaUrl(asset.url) && !asset.path) {
+        throw new Error("云端未返回可访问地址，请重新上传");
+      }
+      if (asset.url && !isEphemeralMediaUrl(asset.url)) {
+        clearLivePreview(key);
+      }
+      setUploadAsset(key, asset);
+      if (key === "avatar") showApplyTip("头像上传成功");
+      if (key === "showcaseVideo") showApplyTip("展示视频上传成功");
+      render(Number(document.getElementById("companionApplyRoot").dataset.step || 0));
+    }
+
+    function failUpload(err) {
+      uploadBusy[key] = false;
+      var friendly = String(err && err.message || "上传失败");
+      if (/quota has been exceeded|QuotaExceeded/i.test(friendly)) {
+        friendly =
+          "浏览器本地草稿空间已满（不是云端 Storage）。请刷新后重试；图片只会上传到云端，不再写入本地大图。";
+      }
+      uploadErrors[key] = friendly;
+      clearLivePreview(key);
+      if (key === "idFront" || key === "idBack" || key === "depositProof") {
+        var d = readDraft();
+        d.identity = d.identity || {};
+        delete d.identity[key];
+        writeRaw(DRAFT_KEY, d);
+      } else if (key === "voiceFile") {
+        var dv = readDraft();
+        dv.voice = dv.voice || {};
+        delete dv.voice.fileUpload;
+        writeRaw(DRAFT_KEY, dv);
+      } else if (key !== "photos") {
+        var du = readDraft();
+        du.uploads = du.uploads || {};
+        delete du.uploads[key];
+        writeRaw(DRAFT_KEY, du);
+      }
+      showApplyTip("上传失败：" + friendly);
+      render(Number(document.getElementById("companionApplyRoot").dataset.step || 0));
+      return Promise.reject(err);
+    }
+
+    // Video: direct-to-Storage signed upload (avoids Vercel ~4.5MB JSON body limit).
+    if (kind === "video") {
+      var contentType =
+        (U() && U().normalizeVideoMime ? U().normalizeVideoMime(file.type, file.name) : "") ||
+        file.type ||
+        "video/mp4";
+      var videoName = file.name || "showcase.mp4";
+      if (key !== "photos") {
+        setUploadAsset(key, { url: "", path: "", status: "uploading" });
+        render(step);
+      }
+      return postCompanion("prepare_media_upload", {
+        media_type: "video",
+        filename: videoName,
+        content_type: contentType,
+        size: file.size,
+        duration_seconds: durationSeconds != null ? durationSeconds : undefined,
+      })
+        .then(function (prep) {
+          if (!prep || !prep.uploadUrl) throw new Error("无法准备视频直传，请稍后重试");
+          return fetch(prep.uploadUrl, {
+            method: "PUT",
+            headers: {
+              "Content-Type": prep.contentType || contentType || "video/mp4",
+            },
+            body: file,
+          }).then(function (putRes) {
+            return putRes.text().then(function (putText) {
+              if (!putRes.ok) {
+                var putMsg = putText || "HTTP " + putRes.status;
+                if (/mime|content.?type|not allowed|invalid/i.test(putMsg)) {
+                  throw new Error("格式错误：Storage 未接受该视频类型，请导出为 mp4/mov 后重试");
+                }
+                if (/size|too large|413|Payload/i.test(putMsg)) {
+                  throw new Error("文件太大：视频不能超过 40MB");
+                }
+                throw new Error("视频直传失败：" + putMsg.slice(0, 160));
+              }
+              return prep;
+            });
+          });
+        })
+        .then(function (prep) {
+          return postCompanion("finalize_media_upload", {
+            media_type: "video",
+            filename: videoName,
+            content_type: prep.contentType || contentType,
+            storage_bucket: prep.bucket,
+            storage_path: prep.path,
+            bucket: prep.bucket,
+            path: prep.path,
+            size: file.size,
+            duration_seconds: durationSeconds != null ? durationSeconds : undefined,
+          });
+        })
+        .then(finishOk)
+        .catch(failUpload);
+    }
+
     var prepare =
       kind === "image" && U() && U().compressImageFile
         ? U().compressImageFile(file)
@@ -2223,80 +2340,26 @@
               };
         return postCompanion(cfg.api, body);
       })
-      .then(function (res) {
-        uploadBusy[key] = false;
-        delete uploadErrors[key];
-        var asset = {
-          url: (res && res.url) || (res && res.media && res.media.url) || "",
-          path: (res && res.path) || (res && res.media && res.media.path) || "",
-          bucket: (res && res.bucket) || (res && res.media && res.media.bucket) || "",
-          id: (res && res.media && res.media.id) || "",
-          status: "ok",
-        };
-        if (!asset.url && !asset.path) throw new Error("上传成功但未返回地址，请重新上传");
-        if (asset.url && isEphemeralMediaUrl(asset.url) && !asset.path) {
-          throw new Error("云端未返回可访问地址，请重新上传");
-        }
-        // Prefer durable cloud URL for preview; drop temporary blob.
-        if (asset.url && !isEphemeralMediaUrl(asset.url)) {
-          clearLivePreview(key);
-        }
-        setUploadAsset(key, asset);
-        if (key === "avatar") showApplyTip("头像上传成功");
-        render(Number(document.getElementById("companionApplyRoot").dataset.step || 0));
-      })
-      .catch(function (err) {
-        uploadBusy[key] = false;
-        var friendly = String(err && err.message || "上传失败");
-        if (/quota has been exceeded|QuotaExceeded/i.test(friendly)) {
-          friendly =
-            "浏览器本地草稿空间已满（不是云端 Storage）。请刷新后重试；图片只会上传到云端，不再写入本地大图。";
-        }
-        uploadErrors[key] = friendly;
-        clearLivePreview(key);
-        if (key === "idFront" || key === "idBack" || key === "depositProof") {
-          var d = readDraft();
-          d.identity = d.identity || {};
-          delete d.identity[key];
-          writeRaw(DRAFT_KEY, d);
-        } else if (key === "voiceFile") {
-          var dv = readDraft();
-          dv.voice = dv.voice || {};
-          delete dv.voice.fileUpload;
-          writeRaw(DRAFT_KEY, dv);
-        } else if (key !== "photos") {
-          var du = readDraft();
-          du.uploads = du.uploads || {};
-          delete du.uploads[key];
-          writeRaw(DRAFT_KEY, du);
-        }
-        showApplyTip("上传失败：" + friendly);
-        render(Number(document.getElementById("companionApplyRoot").dataset.step || 0));
-        return Promise.reject(err);
-      });
+      .then(finishOk)
+      .catch(failUpload);
     }
     if (kind === "video") {
-      return new Promise(function (resolve) {
-        var url = URL.createObjectURL(file);
-        var vid = document.createElement("video");
-        vid.preload = "metadata";
-        vid.onloadedmetadata = function () {
-          var dur = Number(vid.duration || 0);
-          try { URL.revokeObjectURL(url); } catch (e) {}
-          if (dur && dur > 30.5) {
-            uploadErrors[key] = "视频最长 30 秒";
-            showApplyTip("视频最长 30 秒，请裁剪后再上传");
-            resolve(Promise.resolve());
-            return;
-          }
-          resolve(continueUpload(dur || null));
-        };
-        vid.onerror = function () {
-          try { URL.revokeObjectURL(url); } catch (e) {}
-          resolve(continueUpload(null));
-        };
-        vid.src = url;
-      });
+      var probe =
+        U() && U().probeVideoDuration
+          ? U().probeVideoDuration(file, { maxSeconds: (U() && U().MAX_VIDEO_SECONDS) || 30 })
+          : Promise.resolve({ ok: true, seconds: null });
+      return probe
+        .then(function (meta) {
+          if (meta && meta.warning) showApplyTip(meta.warning);
+          return continueUpload(meta && meta.seconds != null ? meta.seconds : null);
+        })
+        .catch(function (err) {
+          var msg = String((err && err.message) || "视频校验失败");
+          uploadErrors[key] = msg;
+          showApplyTip(msg);
+          render(Number(document.getElementById("companionApplyRoot").dataset.step || 0));
+          return Promise.resolve();
+        });
     }
     return continueUpload(null);
   }

@@ -3,16 +3,20 @@
   PUBLIC_BUCKETS,
   assertAudioUpload,
   assertImageUpload,
+  assertVideoMeta,
   assertVideoUpload,
   buildObjectPath,
   companionDb,
+  createSignedUploadUrl,
   createSignedUrl,
   decodeDataUrl,
   deleteStorageObject,
   ensureCompanionBuckets,
   isMissingRelation,
   maskBankAccount,
+  normalizeVideoContentType,
   publicObjectUrl,
+  storageObjectInfo,
   uploadPrivateObject,
 } from "./_companion-media-store.js";
 import { companionPopularityMe, recordOnlineSession, scheduleRecomputeSoft } from "./_popularity.js";
@@ -928,6 +932,8 @@ const COMPANION_ISOLATION_ALLOWED_ACTIONS = new Set([
   "submit_deposit",
   "submit_deposit_proof",
   "upload_media",
+  "prepare_media_upload",
+  "finalize_media_upload",
   "delete_media",
   "reorder_media",
   "start_cs_consult",
@@ -4608,7 +4614,43 @@ export default async function handler(req, res) {
       });
     }
 
-    if (action === "upload_media") {
+    if (action === "prepare_media_upload") {
+      const row = await ensureCompanionRow(auth.profile, companion);
+      await ensureCompanionBuckets();
+      const mediaType = String(body.media_type || body.mediaType || "").trim();
+      if (mediaType !== "video") {
+        return json(res, 400, { ok: false, message: "当前仅支持视频直传准备" });
+      }
+      const filename = String(body.filename || "showcase.mp4").trim() || "showcase.mp4";
+      const contentType = normalizeVideoContentType(body.content_type || body.contentType || "", filename);
+      try {
+        assertVideoMeta({
+          contentType,
+          filename,
+          size: body.size != null ? Number(body.size) : body.byte_size,
+          durationSeconds: body.duration_seconds != null ? body.duration_seconds : body.durationSeconds,
+        });
+      } catch (ve) {
+        return json(res, ve.status || 400, { ok: false, code: ve.code || "", message: ve.message || "视频校验失败" });
+      }
+      const objectPath = buildObjectPath(auth.profile.id, "video", filename);
+      const bucket = PRIVATE_BUCKETS.video;
+      const signed = await createSignedUploadUrl(bucket, objectPath, { upsert: true });
+      return json(res, 200, {
+        ok: true,
+        message: "已准备视频直传",
+        bucket,
+        path: objectPath,
+        contentType,
+        uploadUrl: signed.uploadUrl,
+        token: signed.token,
+        companionProfileId: row.id,
+        maxBytes: 40 * 1024 * 1024,
+        maxSeconds: 30,
+      });
+    }
+
+    if (action === "upload_media" || action === "finalize_media_upload") {
       const row = await ensureCompanionRow(auth.profile, companion);
       await ensureCompanionBuckets();
       let mediaType = String(body.media_type || body.mediaType || "gallery");
@@ -4616,8 +4658,13 @@ export default async function handler(req, res) {
       if (!["avatar", "cover", "gallery", "voice", "video"].includes(mediaType)) {
         return json(res, 400, { ok: false, message: "不支持的媒体类型" });
       }
+      if (action === "finalize_media_upload" && mediaType !== "video") {
+        return json(res, 400, { ok: false, message: "当前仅支持视频直传确认" });
+      }
       const dataUrl = body.data_url || body.dataUrl || body.file;
-      if (!dataUrl) return json(res, 400, { ok: false, message: "请选择要上传的文件" });
+      if (action !== "finalize_media_upload" && !dataUrl && !(body.storage_path || body.path)) {
+        return json(res, 400, { ok: false, message: "请选择要上传的文件" });
+      }
 
       const galleryFallback = readGalleryFallback(row.tags || companion.tags || "");
       if (mediaType === "gallery") {
@@ -4639,7 +4686,46 @@ export default async function handler(req, res) {
 
       let uploaded;
       let publicUrl = "";
-      if (mediaType === "voice") {
+      if (action === "finalize_media_upload" || (mediaType === "video" && (body.storage_path || body.path) && !dataUrl)) {
+        const bucket = String(body.storage_bucket || body.bucket || PRIVATE_BUCKETS.video).trim();
+        const objectPath = String(body.storage_path || body.path || "").trim();
+        const filename = String(body.filename || "showcase.mp4").trim() || "showcase.mp4";
+        if (!objectPath || bucket !== PRIVATE_BUCKETS.video) {
+          return json(res, 400, { ok: false, message: "视频直传路径无效" });
+        }
+        if (!objectPath.startsWith(`${auth.profile.id}/`)) {
+          return json(res, 403, { ok: false, message: "无权确认该视频文件" });
+        }
+        const contentType = normalizeVideoContentType(body.content_type || body.contentType || "", filename);
+        try {
+          assertVideoMeta({
+            contentType,
+            filename,
+            size: body.size != null ? Number(body.size) : undefined,
+            durationSeconds: body.duration_seconds,
+          });
+        } catch (ve) {
+          return json(res, ve.status || 400, { ok: false, code: ve.code || "", message: ve.message || "视频校验失败" });
+        }
+        const info = await storageObjectInfo(bucket, objectPath);
+        if (!info) {
+          return json(res, 400, { ok: false, message: "未找到已上传的视频，请重新上传" });
+        }
+        const storedBytes = Number(info.metadata?.size || info.size || 0);
+        if (storedBytes > 40 * 1024 * 1024) {
+          try {
+            await deleteStorageObject(bucket, objectPath);
+          } catch {
+            /* ignore */
+          }
+          return json(res, 413, {
+            ok: false,
+            code: "video_too_large",
+            message: "文件太大：视频不能超过 40MB",
+          });
+        }
+        uploaded = { bucket, path: objectPath, contentType };
+      } else if (mediaType === "voice") {
         const decoded = decodeDataUrl(dataUrl);
         if (!decoded) {
           return json(res, 400, {
@@ -4655,9 +4741,26 @@ export default async function handler(req, res) {
       } else if (mediaType === "video") {
         const decoded = decodeDataUrl(dataUrl);
         if (!decoded) return json(res, 400, { ok: false, message: "请选择要上传的视频文件" });
-        const checked = assertVideoUpload(decoded);
-        const dur = body.duration_seconds != null ? Number(body.duration_seconds) : null;
-        if (dur && dur > 30.5) return json(res, 400, { ok: false, message: "视频最长 30 秒" });
+        // JSON data_url path is limited by serverless body size (~4.5MB). Prefer prepare_media_upload.
+        if (decoded.buffer.length > 2.8 * 1024 * 1024) {
+          return json(res, 413, {
+            ok: false,
+            code: "video_use_direct_upload",
+            message: "文件太大：请使用直传通道重新上传（支持最大 40MB）",
+          });
+        }
+        let checked;
+        try {
+          checked = assertVideoUpload(decoded, body.filename || "showcase.mp4");
+          assertVideoMeta({
+            contentType: checked.contentType,
+            filename: body.filename || "showcase.mp4",
+            size: checked.buffer.length,
+            durationSeconds: body.duration_seconds,
+          });
+        } catch (ve) {
+          return json(res, ve.status || 400, { ok: false, code: ve.code || "", message: ve.message || "视频校验失败" });
+        }
         const objectPath = buildObjectPath(auth.profile.id, "video", body.filename || "showcase.mp4");
         const bucket = PRIVATE_BUCKETS.video;
         await uploadPrivateObject(bucket, objectPath, checked.buffer, checked.contentType);
