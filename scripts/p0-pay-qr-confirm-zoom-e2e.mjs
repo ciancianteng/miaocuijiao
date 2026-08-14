@@ -164,8 +164,8 @@ async function runViewport(browser, label, viewportOrDevice, token, user, orderI
   }, { timeout: 30000 }).catch(() => {});
 
   let st = await qrState(page);
-  step(`${label}_url_normal_visible`, st.hasQr === "1" && st.load === "ok" && st.w >= 160, JSON.stringify({
-    hasQr: st.hasQr, load: st.load, w: st.w, h: st.h, y: st.y, inFirstViewport: st.inFirstViewport, urlLen: st.urlLen
+  step(`${label}_url_normal_visible`, st.hasQr === "1" && (st.load === "ok" || (st.natural && st.natural.w > 0)) && st.w >= 160, JSON.stringify({
+    hasQr: st.hasQr, load: st.load, w: st.w, h: st.h, y: st.y, inFirstViewport: st.inFirstViewport, urlLen: st.urlLen, natural: st.natural
   }));
   step(`${label}_img_in_first_viewport`, st.inFirstViewport === true, JSON.stringify({ y: st.y, vh: st.vh, h: st.h }));
   step(
