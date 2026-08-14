@@ -482,7 +482,7 @@
     }
     var user = Object.assign({}, session.user || {}, { role: "companion" });
     if (window.MCJRoleGate && typeof window.MCJRoleGate.writeCompanionPortalSession === "function") {
-      window.MCJRoleGate.writeCompanionPortalSession(
+      var written = window.MCJRoleGate.writeCompanionPortalSession(
         {
           accessToken: token,
           refreshToken: refreshToken,
@@ -491,7 +491,8 @@
         },
         session.remember !== false
       );
-      return;
+      // RoleGate refuses when neither access JWT nor refresh is present; otherwise trust it.
+      if (written || companionToken() || refreshToken) return;
     }
     var normalized = {
       token: token,
@@ -523,6 +524,41 @@
     var session = readCompanionSession();
     if (!session) return "";
     return String(session.token || session.accessToken || "").trim();
+  }
+
+  /** Companion-portal refresh only (do not treat a bare boss refresh as apply auth). */
+  function companionSessionRefreshToken() {
+    var session = readCompanionSession() || {};
+    return String(session.refreshToken || session.refresh_token || "").trim();
+  }
+
+  /**
+   * Shared apply-portal session gate (upload + submit + delete).
+   * Allow when the application session can still mint API access:
+   * live access JWT, or refreshable companion session bound to the draft application.
+   * Pure guests (no companion access/refresh) must login/register first.
+   * Note: a leftover user blob without access/refresh is NOT enough — that cannot
+   * call submit_application / upload_media and must not hide the auth gate.
+   */
+  function hasApplySessionAuth() {
+    if (companionToken()) return true;
+    if (companionSessionRefreshToken()) return true;
+    return false;
+  }
+  // Back-compat alias used by upload handlers.
+  function hasApplyUploadAuth() {
+    return hasApplySessionAuth();
+  }
+
+  function guestApplyAuthError(kind) {
+    if (kind === "upload") {
+      return new Error("请先登录或注册陪玩账号后再上传，以便同步到云端存储。");
+    }
+    return new Error("请先登录或注册陪玩账号后再提交，以便资料同步到后台。");
+  }
+
+  function applySessionExpiredError() {
+    return new Error("登录状态已过期，请重新登录后继续。");
   }
 
   function clearCompanionAccessOnly() {
@@ -576,8 +612,24 @@
   function ensureFreshApplySession() {
     var session = readCompanionSession() || {};
     var token = String(session.token || session.accessToken || "").trim();
+    // Access may have been cleared after expiry while refresh remains (clearCompanionAccessOnly).
+    // In-apply users must recover via refresh — do not treat them as guests on submit/upload.
     if (!token) {
-      return Promise.reject(new Error("请先登录或注册陪玩账号后再提交，以便资料同步到后台。"));
+      if (!hasApplySessionAuth()) {
+        return Promise.reject(guestApplyAuthError("submit"));
+      }
+      var recoveryRefresh = companionSessionRefreshToken() || readAnyRefreshToken(session);
+      if (recoveryRefresh) {
+        return refreshApplySession().then(function () {
+          var next = readCompanionSession() || {};
+          if (!String(next.token || next.accessToken || "").trim()) {
+            throw applySessionExpiredError();
+          }
+          return next;
+        });
+      }
+      // Bound apply session exists but cannot mint access — not a guest.
+      return Promise.reject(applySessionExpiredError());
     }
     var expRaw = readAnyExpiresAt(session);
     var exp = Number(expRaw) || 0;
@@ -592,6 +644,24 @@
     }
     // No expiry metadata but we have a refresh token: still OK to proceed; reactive refresh covers 401.
     return Promise.resolve(session);
+  }
+
+  /** Resolve a usable access JWT for apply upload/submit from the application session. */
+  function resolveApplyAccessToken() {
+    return ensureFreshApplySession()
+      .catch(function (freshErr) {
+        // If proactive refresh failed, still try once with any remaining access token.
+        var existing = companionToken();
+        if (existing) return { token: existing, accessToken: existing };
+        throw freshErr;
+      })
+      .then(function (session) {
+        var s = session || readCompanionSession() || {};
+        var token = String(s.token || s.accessToken || companionToken() || "").trim();
+        if (token) return token;
+        if (hasApplySessionAuth()) throw applySessionExpiredError();
+        throw guestApplyAuthError("submit");
+      });
   }
 
   function postCompanion(action, payload, retried) {
@@ -612,17 +682,20 @@
       }
       return text || "提交失败";
     }
-    function sendOnce() {
-      var token = companionToken();
-      if (!token) return Promise.reject(new Error("请先登录或注册陪玩账号后再提交，以便资料同步到后台。"));
+    function sendOnce(token) {
+      var access = String(token || companionToken() || "").trim();
+      if (!access) {
+        if (hasApplySessionAuth()) return Promise.reject(applySessionExpiredError());
+        return Promise.reject(guestApplyAuthError("submit"));
+      }
       var uploadUrl = "/api/companion";
       return fetch(uploadUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Accept: "application/json",
-          "x-mcj-companion-token": token,
-          Authorization: "Bearer " + token,
+          "x-mcj-companion-token": access,
+          Authorization: "Bearer " + access,
         },
         body: JSON.stringify(Object.assign({ action: action }, payload || {})),
       }).then(function (res) {
@@ -648,43 +721,41 @@
           });
       });
     }
-    return ensureFreshApplySession()
-      .catch(function (freshErr) {
-        // If proactive refresh failed, still try once with current token then reactive path.
-        if (companionToken()) return null;
-        throw freshErr;
-      })
-      .then(function () {
-        return sendOnce().catch(function (err) {
-          var errMsg = humanize((err && err.message) || "", err && err.status);
-          if (!retried && /登录状态已过期/.test(errMsg)) {
-            return refreshApplySession()
-              .then(function () {
-                return postCompanion(action, payload, true);
-              })
-              .catch(function (refreshErr) {
-                clearCompanionAccessOnly();
+    return resolveApplyAccessToken().then(function (token) {
+      return sendOnce(token).catch(function (err) {
+        var errMsg = humanize((err && err.message) || "", err && err.status);
+        if (!retried && /登录状态已过期/.test(errMsg)) {
+          return refreshApplySession()
+            .then(function () {
+              return postCompanion(action, payload, true);
+            })
+            .catch(function (refreshErr) {
+              clearCompanionAccessOnly();
+              // In-apply users keep "session expired"; only true guests see register tip.
+              if (hasApplySessionAuth()) {
                 throw new Error(humanize((refreshErr && refreshErr.message) || errMsg));
-              });
-          }
-          var out = new Error(errMsg);
-          out.status = err && err.status;
-          out.uploadUrl = err && err.uploadUrl;
-          out.serverMessage = err && err.serverMessage;
-          throw out;
-        });
+              }
+              throw guestApplyAuthError("submit");
+            });
+        }
+        var out = new Error(errMsg);
+        out.status = err && err.status;
+        out.uploadUrl = err && err.uploadUrl;
+        out.serverMessage = err && err.serverMessage;
+        throw out;
       });
+    });
   }
 
   function fetchCompanionBootstrap() {
-    function loadOnce() {
-      var token = companionToken();
-      if (!token) return Promise.resolve(null);
+    function loadOnce(token) {
+      var access = String(token || companionToken() || "").trim();
+      if (!access) return Promise.resolve(null);
       return fetch("/api/companion?action=bootstrap", {
         headers: {
           Accept: "application/json",
-          "x-mcj-companion-token": token,
-          Authorization: "Bearer " + token,
+          "x-mcj-companion-token": access,
+          Authorization: "Bearer " + access,
         },
         cache: "no-store",
       }).then(function (res) {
@@ -699,16 +770,17 @@
         });
       });
     }
-    return ensureFreshApplySession()
+    return resolveApplyAccessToken()
       .catch(function () {
-        return null;
+        return "";
       })
-      .then(function () {
-        return loadOnce().catch(function (err) {
+      .then(function (token) {
+        if (!token) return null;
+        return loadOnce(token).catch(function (err) {
           if (err && (err.status === 401 || /登录状态已过期|jwt|token is expired/i.test(String(err.message || "")))) {
             return refreshApplySession()
               .then(function () {
-                return loadOnce();
+                return loadOnce(companionToken());
               })
               .catch(function () {
                 clearCompanionAccessOnly();
@@ -721,7 +793,8 @@
   }
 
   function authGateHtml() {
-    if (companionToken()) return "";
+    // Hide auth gate for in-apply users (fresh JWT or refreshable companion session).
+    if (hasApplySessionAuth()) return "";
     var bossTok = bossAccessToken();
     var mode = authUi.mode === "login" ? "login" : "register";
     if (bossTok && mode !== "login") {
@@ -1255,7 +1328,7 @@
     root.dataset.step = String(activeIndex);
     draft = readDraft();
     preservePageScroll(function () {
-      root.innerHTML = loadingBannerHtml() + statusNotice() + authGateHtml() + '<div class="apply-layout"' + (!companionToken() ? ' hidden' : '') + '>' + stepNav(activeIndex, draft) + '<div>' + stepHtml(activeIndex, draft) + '<div class="step-complete-mark">' + (stepComplete(activeIndex, draft) ? "已完成 ✔" : "未完成 ○") + '</div><div class="apply-actions"><button class="apply-btn" data-apply-prev type="button" ' + (activeIndex === 0 ? "disabled" : "") + '>上一步</button><button class="apply-btn" data-apply-save type="button">保存草稿</button><button class="apply-btn primary" data-apply-next type="button">' + (activeIndex === steps.length - 1 ? "提交审核" : "下一步") + '</button></div><p class="apply-note">每填写一个输入框都会自动保存草稿，刷新网页或返回修改后会自动恢复。</p></div></div>';
+      root.innerHTML = loadingBannerHtml() + statusNotice() + authGateHtml() + '<div class="apply-layout"' + (!hasApplySessionAuth() ? ' hidden' : '') + '>' + stepNav(activeIndex, draft) + '<div>' + stepHtml(activeIndex, draft) + '<div class="step-complete-mark">' + (stepComplete(activeIndex, draft) ? "已完成 ✔" : "未完成 ○") + '</div><div class="apply-actions"><button class="apply-btn" data-apply-prev type="button" ' + (activeIndex === 0 ? "disabled" : "") + '>上一步</button><button class="apply-btn" data-apply-save type="button">保存草稿</button><button class="apply-btn primary" data-apply-next type="button">' + (activeIndex === steps.length - 1 ? "提交审核" : "下一步") + '</button></div><p class="apply-note">每填写一个输入框都会自动保存草稿，刷新网页或返回修改后会自动恢复。</p></div></div>';
       if (opts.alignStepNav) syncStepNavOnly(root);
     });
   }
@@ -1481,6 +1554,12 @@
   function submitApplication() {
     var missing = validateBeforeSubmit();
     if (missing.length) { showApplyTip("还有以下资料没有完成：\n" + missing.join("\n")); return; }
+    // Same apply-session gate as uploads: guests must register/login; in-apply users proceed
+    // via resolveApplyAccessToken / postCompanion (refreshable application session).
+    if (!hasApplySessionAuth()) {
+      showApplyTip(guestApplyAuthError("submit").message);
+      return;
+    }
     var draft = readDraft();
     var user = currentUser();
     var identity = draft.identity || {};
@@ -1488,7 +1567,9 @@
     var voice = draft.voice || {};
     var mainGames = draft.data.mainGames || [];
     var modes = draft.data.modes || [];
-    var chain = Promise.resolve();
+    var chain = resolveApplyAccessToken().then(function () {
+      return null;
+    });
     var authMode = String(identity.authMode || "").trim();
     chain = chain.then(function () {
       return postCompanion("submit_application", {
@@ -1602,7 +1683,14 @@
         showSuccess();
       })
       .catch(function (err) {
-        showApplyTip(err.message || "提交失败。请先注册/登录陪玩端后再提交申请，以便写入数据库。");
+        var msg = String((err && err.message) || "").trim();
+        // Never rephrase in-apply session failures as "please register" — that is guest-only.
+        if (!msg) {
+          msg = hasApplySessionAuth()
+            ? "提交失败，请稍后重试。"
+            : "提交失败。请先注册/登录陪玩端后再提交申请，以便写入数据库。";
+        }
+        showApplyTip(msg);
       });
   }
   function showSuccess() {
@@ -1858,8 +1946,8 @@
         showApplyTip("录音质量检测未通过，请重新录制。");
         return;
       }
-      if (!companionToken()) {
-        showApplyTip("请先登录陪玩账号后再上传试音。");
+      if (!hasApplySessionAuth()) {
+        showApplyTip(guestApplyAuthError("upload").message.replace("上传，以便同步到云端存储。", "上传试音。"));
         return;
       }
 
@@ -2076,7 +2164,7 @@
       delete draft.uploads[key];
     }
     writeRaw(DRAFT_KEY, draft);
-    if (existing && (existing.id || key === "avatar") && companionToken()) {
+    if (existing && (existing.id || key === "avatar") && hasApplySessionAuth()) {
       var mt =
         key === "avatar"
           ? "avatar"
@@ -2164,8 +2252,11 @@
       }
       return Promise.resolve();
     }
-    if (!companionToken()) {
-      showApplyTip("请先登录或注册陪玩账号后再上传，以便同步到云端存储。");
+    // Guests only: require login/register. In-apply users (registered session / refreshable
+    // companion portal session bound to the draft application) may upload avatar/gallery/
+    // records/video/voice without forcing a prior fresh access token.
+    if (!hasApplySessionAuth()) {
+      showApplyTip(guestApplyAuthError("upload").message);
       return Promise.resolve();
     }
     if (!payload._queued && Object.keys(uploadBusy).some(function (k) { return uploadBusy[k]; })) {
@@ -2882,7 +2973,7 @@
           gd.uploads.photos = glist;
           writeRaw(DRAFT_KEY, gd);
           render(Number(root.dataset.step || 0));
-          if (removed && removed.id && companionToken()) {
+          if (removed && removed.id && hasApplySessionAuth()) {
             postCompanion("delete_media", { media_id: removed.id, media_type: "gallery" }).catch(function () {});
           }
         }
