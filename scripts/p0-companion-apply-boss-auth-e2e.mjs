@@ -19,7 +19,7 @@ const BASE = (process.env.PREVIEW || process.env.MCJ_STAGING_URL || "https://meo
   /\/$/,
   ""
 );
-const USE_LOCAL_JS = process.env.USE_LOCAL_JS === "1" || process.env.USE_LOCAL_JS === "true" || true;
+const USE_LOCAL_JS = process.env.USE_LOCAL_JS !== "0" && process.env.USE_LOCAL_JS !== "false";
 const PASS = process.env.PASS || process.env.MCJ_TEST_PASSWORD || "McjTest@12345678";
 const BOSS = process.env.E2E_BOSS_EMAIL || "boss.final.1785714993009@meow.test";
 const OTHER = process.env.E2E_OTHER_EMAIL || "companion@meow.test";
