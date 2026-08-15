@@ -106,6 +106,9 @@ function bannerItem(row) {
     mobile_crop: mobileCrop,
     mobile_crop_meta: mobileCrop,
     objectPosition: `${50 + crop.x * 50}% ${50 + crop.y * 50}%`,
+    created_at: row.created_at || null,
+    createdAt: row.created_at || null,
+    updated_at: row.updated_at || null,
   };
 }
 function announcementItem(row) {
@@ -458,18 +461,22 @@ export default async function handler(req, res) {
         try {
           bannerRows = await rows(
             "banners",
-            "?is_active=eq.true&order=is_main.desc,sort_order.asc.nullslast,updated_at.desc&limit=100"
+            "?is_active=eq.true&order=sort_order.asc.nullslast,created_at.asc.nullslast,id.asc&limit=100"
           );
         } catch {
-          bannerRows = await rows("banners", "?is_active=eq.true&order=sort_order.asc,updated_at.desc&limit=100");
+          bannerRows = await rows("banners", "?is_active=eq.true&order=sort_order.asc,created_at.asc&limit=100");
         }
         byType.banners = bannerRows
           .filter((row) => !/__team_lobby__/i.test(String(row.subtitle || "")))
           .map(bannerItem)
           .sort((a, b) => {
-            const mainDiff = Number(!!b.isMain) - Number(!!a.isMain);
-            if (mainDiff) return mainDiff;
-            return Number(a.sort || 100) - Number(b.sort || 100);
+            const sortDiff = Number(a.sort ?? a.sort_order ?? 100) - Number(b.sort ?? b.sort_order ?? 100);
+            if (sortDiff) return sortDiff;
+            const createdDiff = String(a.created_at || a.createdAt || "").localeCompare(
+              String(b.created_at || b.createdAt || "")
+            );
+            if (createdDiff) return createdDiff;
+            return String(a.id || "").localeCompare(String(b.id || ""));
           });
       }
       if (needAnnouncements) {

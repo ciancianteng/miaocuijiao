@@ -304,24 +304,25 @@ function mapBanner(row) {
   };
 }
 function sortBanners(list) {
+  // Formal rule: smaller sort_order first. Never let is_main override carousel order.
+  // Stable tie-break: created_at ASC, then id ASC.
   return list.slice().sort((a, b) => {
-    const mainDiff = Number(!!b.is_main) - Number(!!a.is_main);
-    if (mainDiff) return mainDiff;
     const sortDiff = Number(a.sort_order ?? 100) - Number(b.sort_order ?? 100);
     if (sortDiff) return sortDiff;
-    return String(b.updated_at || "").localeCompare(String(a.updated_at || ""));
+    const createdDiff = String(a.created_at || "").localeCompare(String(b.created_at || ""));
+    if (createdDiff) return createdDiff;
+    return String(a.id || "").localeCompare(String(b.id || ""));
   });
 }
 async function listBanners() {
   let rows;
   try {
     rows = await supabaseJson(
-      restUrl("banners", "?order=is_main.desc,sort_order.asc.nullslast,updated_at.desc&limit=200"),
+      restUrl("banners", "?order=sort_order.asc.nullslast,created_at.asc.nullslast,id.asc&limit=200"),
       { headers: serviceHeaders() }
     );
   } catch (error) {
-    if (!isMissingMainColumn(error)) throw error;
-    rows = await supabaseJson(restUrl("banners", "?order=sort_order.asc.nullslast,updated_at.desc&limit=200"), {
+    rows = await supabaseJson(restUrl("banners", "?order=sort_order.asc.nullslast,updated_at.asc&limit=200"), {
       headers: serviceHeaders(),
     });
   }
@@ -472,11 +473,13 @@ export default async function handler(req, res) {
           button_link: "",
           is_active: true,
           sort_order: 100,
-          is_main: true,
+          is_main: false,
           crop_meta: normalizeCropMeta({}, DESKTOP_RATIO),
           mobile_crop_meta: normalizeCropMeta({}, MOBILE_RATIO),
         },
       });
+      // Do NOT force is_main on publish — sort_order is the public carousel order.
+      // is_main remains an optional "当前" pointer via set_current only.
       const payload = {
         title: meta.title,
         subtitle: meta.subtitle,
@@ -488,19 +491,19 @@ export default async function handler(req, res) {
         sort_order: meta.sort_order,
         crop_meta: meta.crop_meta,
         mobile_crop_meta: meta.mobile_crop_meta,
-        is_main: meta.is_active !== false,
+        is_main: meta.is_main === true,
         created_at: now,
         updated_at: now,
       };
       if (payload.is_main) await clearOtherMain(null);
       const rows = await writeBannerRow("POST", restUrl("banners"), payload);
       let banner = mapBanner(rows[0] || payload);
-      // Ensure homepage current pointer even if is_main column soft-fails.
-      // Respect admin "enabled" choice: do not force inactive banners onto homepage.
       try {
-        if (payload.is_active) {
-          const promoted = await setMainBanner(banner.id, { ensureActive: true });
+        if (payload.is_main) {
+          const promoted = await setMainBanner(banner.id, { ensureActive: !!payload.is_active });
           if (promoted) banner = mapBanner(promoted);
+        } else {
+          await promoteMainIfNeeded();
         }
       } catch {
         /* best effort */
@@ -646,9 +649,30 @@ export default async function handler(req, res) {
       });
       if (!existing[0]) return json(res, 404, { ok: false, message: "Banner 不存在。" });
       const wasMain = existing[0].is_main === true;
-      // Best-effort remove Storage objects so homepage cannot keep serving orphan files.
-      for (const field of ["image_url", "mobile_image_url"]) {
-        const url = String(existing[0][field] || "").trim();
+      const urlsToMaybeDelete = ["image_url", "mobile_image_url"]
+        .map((field) => String(existing[0][field] || "").trim())
+        .filter(Boolean);
+      // Check other rows BEFORE deleting, so shared Storage objects are kept.
+      let others = [];
+      try {
+        others = await supabaseJson(
+          restUrl("banners", "?select=id,image_url,mobile_image_url&limit=500"),
+          { headers: serviceHeaders() }
+        );
+      } catch {
+        others = [];
+      }
+      await supabaseJson(restUrl("banners", `?id=eq.${encodeURIComponent(id)}`), {
+        method: "DELETE",
+        headers: serviceHeaders(),
+      });
+      for (const url of urlsToMaybeDelete) {
+        const stillUsed = (Array.isArray(others) ? others : []).some(
+          (row) =>
+            String(row.id) !== String(id) &&
+            (String(row.image_url || "") === url || String(row.mobile_image_url || "") === url)
+        );
+        if (stillUsed) continue;
         const m = url.match(/\/storage\/v1\/object\/public\/([^/]+)\/(.+)$/i);
         if (!m) continue;
         try {
@@ -663,10 +687,6 @@ export default async function handler(req, res) {
           /* ignore storage cleanup failures */
         }
       }
-      await supabaseJson(restUrl("banners", `?id=eq.${encodeURIComponent(id)}`), {
-        method: "DELETE",
-        headers: serviceHeaders(),
-      });
       let data = await listBanners();
       if (wasMain) data = await promoteMainIfNeeded();
       return json(res, 200, { ok: true, message: "Banner 已删除。", ...data });
