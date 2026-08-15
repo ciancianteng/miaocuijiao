@@ -617,6 +617,72 @@
     }
   }
 
+  function looksLikeJwt(token) {
+    var t = String(token || "").trim();
+    if (!t || t.length < 20) return false;
+    var parts = t.split(".");
+    return parts.length === 3 && parts.every(function (part) {
+      return part.length > 0;
+    });
+  }
+
+  /**
+   * companion-apply is a boss-public page: header chrome reads mcjAuth* via MCJBossAuth,
+   * while the apply form may only retain the SAME Supabase JWT in mcjCompanionSession
+   * (after「使用当前老板账号申请」or a later boss-key wipe from failed refresh).
+   * Re-home those tokens into MCJBossAuth — not a second session.
+   */
+  function syncBossAuthFromCompanionTokens(session, remember) {
+    var s = session || readCompanionSession() || {};
+    var access = String(s.token || s.accessToken || s.access_token || "").trim();
+    var refresh = String(s.refreshToken || s.refresh_token || "").trim();
+    if (!access && !refresh) return false;
+    if (access && !looksLikeJwt(access) && !refresh) return false;
+    if (access && /^companion_session_/i.test(access) && !refresh) return false;
+    var expiresAt = s.expiresAt != null && s.expiresAt !== "" ? s.expiresAt : s.expires_at;
+    if ((expiresAt == null || expiresAt === "") && access) {
+      var exp = jwtExpSec(access);
+      if (exp) expiresAt = exp;
+    }
+    var persist = remember !== false;
+    if (window.MCJBossAuth && typeof window.MCJBossAuth.saveSession === "function") {
+      try {
+        window.MCJBossAuth.saveSession(
+          {
+            accessToken: access || undefined,
+            refreshToken: refresh || undefined,
+            expiresAt: expiresAt,
+          },
+          persist
+        );
+        return true;
+      } catch (e) {}
+    }
+    try {
+      var stores = persist ? [sessionStorage, localStorage] : [sessionStorage];
+      stores.forEach(function (store) {
+        try {
+          if (access) store.setItem("mcjAuthAccessToken", access);
+          if (refresh) store.setItem("mcjAuthRefreshToken", refresh);
+          if (expiresAt != null && expiresAt !== "") store.setItem("mcjAuthExpiresAt", String(expiresAt));
+        } catch (e2) {}
+      });
+      try {
+        window.dispatchEvent(
+          new CustomEvent("mcj:auth-updated", { detail: { reason: "sync-boss-from-companion" } })
+        );
+      } catch (e3) {}
+      return true;
+    } catch (e4) {
+      return false;
+    }
+  }
+
+  function hydrateBossAuthFromCompanionSession() {
+    if (bossAccessToken() || bossRefreshToken()) return false;
+    return syncBossAuthFromCompanionTokens(readCompanionSession(), true);
+  }
+
   function hasBossSession() {
     if (companionToken()) return false;
     if (window.MCJBossAuth && typeof window.MCJBossAuth.canRestoreSession === "function") {
@@ -651,7 +717,7 @@
         return;
       }
       var s = document.createElement("script");
-      s.src = "/src/boss-auth-session.js?v=20260814applyBossAuth1";
+      s.src = "/src/boss-auth-session.js?v=20260815applyBossHeader2";
       s.setAttribute("data-mcj-boss-auth", "1");
       s.onload = done;
       s.onerror = done;
@@ -661,10 +727,14 @@
 
   function ensureBossSessionForApply() {
     authUi.bossSessionPending = true;
+    // Form may already hold the boss JWT only in mcjCompanionSession.
+    hydrateBossAuthFromCompanionSession();
     return ensureBossAuthModule()
       .then(function (Auth) {
         if (Auth && typeof Auth.ensureSession === "function") {
           return Auth.ensureSession().catch(function () {
+            // Failed boss refresh must not leave header guest while companion JWT remains.
+            hydrateBossAuthFromCompanionSession();
             return null;
           });
         }
@@ -830,6 +900,16 @@
             user: sess.user || session.user || {},
             remember: session.remember !== false,
           });
+          // Keep boss header on the same refreshed JWT.
+          syncBossAuthFromCompanionTokens(
+            {
+              token: sess.accessToken || sess.token || "",
+              accessToken: sess.accessToken || sess.token || "",
+              refreshToken: sess.refreshToken || refreshToken,
+              expiresAt: sess.expiresAt || sess.expires_at || "",
+            },
+            session.remember !== false
+          );
           return true;
         });
       })
@@ -2777,6 +2857,9 @@
       merged.expiresAt = readAnyExpiresAt(merged);
     }
     saveCompanionSession(merged);
+    // Boss header reads mcjAuth*; apply-from-boss / companion login must keep
+    // the SAME JWT visible there (portal isolation still uses separate companion session object).
+    syncBossAuthFromCompanionTokens(merged, merged.remember !== false);
     if (nickname || email) {
       try { saveDraft({ data: { nickname: nickname || "", email: email || "" } }); } catch (e) {}
     }
