@@ -195,7 +195,9 @@
     return !!(el && el.checked);
   }
   function formNum(form, name) {
-    return Number(form.elements[name] && form.elements[name].value);
+    var raw = form.elements[name] && form.elements[name].value;
+    var n = Number(raw);
+    return Number.isFinite(n) ? n : 0;
   }
   document.addEventListener("click", function (e) {
     if (e.target.closest("[data-pop-reload]")) {

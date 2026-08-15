@@ -131,7 +131,7 @@ function cleanProduct(input = {}, { keepId = "" } = {}) {
   else if (["unpublished", "下架", "disabled"].includes(status) || input.enabled === false) status = "unpublished";
   else if (["deleted"].includes(status)) status = "deleted";
   else status = "published";
-  return normalizeProductRow({
+  const product = normalizeProductRow({
     ...input,
     id: keepId || input.id || randomUUID(),
     name,
@@ -139,6 +139,14 @@ function cleanProduct(input = {}, { keepId = "" } = {}) {
     status,
     updatedAt: new Date().toISOString(),
   });
+  // Published products with price 0 create free-order risk / abnormal marketplace data.
+  if (status === "published" && !(Number(product.price) > 0)) {
+    const pkgOk = Array.isArray(product.packages) && product.packages.some((p) => Number(p?.price) > 0);
+    if (!pkgOk) {
+      throw Object.assign(new Error("上架商品价格必须大于 0。"), { status: 400 });
+    }
+  }
+  return product;
 }
 
 async function listProducts() {
@@ -231,6 +239,14 @@ async function saveProduct(body) {
 async function setStatus(id, status) {
   if (!id) throw Object.assign(new Error("缺少商品 ID。"), { status: 400 });
   const next = status === "published" ? "published" : status === "draft" ? "draft" : "unpublished";
+  if (next === "published") {
+    const listed = await listProducts();
+    const hit = (listed.products || []).find((p) => String(p.id) === String(id));
+    if (hit && !(Number(hit.price) > 0)) {
+      const pkgOk = Array.isArray(hit.packages) && hit.packages.some((p) => Number(p?.price) > 0);
+      if (!pkgOk) throw Object.assign(new Error("上架商品价格必须大于 0。"), { status: 400 });
+    }
+  }
   if (hasDb()) {
     try {
       const rows = await supabaseJson(restUrl("gameplay_products", `?id=eq.${encodeURIComponent(id)}`), {

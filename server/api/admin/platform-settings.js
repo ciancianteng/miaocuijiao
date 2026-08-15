@@ -1112,7 +1112,52 @@ export default async function handler(req, res) {
     }
 
     if (action === "save" || action === "save_platform_info" || action === "save_features" || action === "save_security" || action === "save_mail_public" || action === "save_ai_public" || action === "save_payments_public") {
-      const next = normalizeSettings({ ...current, ...(body.settings || body) });
+      const patch = { ...(body.settings || body) };
+      // Critical: paymentChannelsPublic saves are often single-channel patches from Admin.
+      // Never replace the whole map with a partial object — that wipes other channels in DB.
+      if (action === "save_payments_public" && patch.paymentChannelsPublic && typeof patch.paymentChannelsPublic === "object") {
+        const curMap =
+          current.paymentChannelsPublic && typeof current.paymentChannelsPublic === "object"
+            ? current.paymentChannelsPublic
+            : {};
+        const merged = { ...curMap };
+        for (const [channelId, cfg] of Object.entries(patch.paymentChannelsPublic)) {
+          if (!cfg || typeof cfg !== "object") continue;
+          const prev = curMap[channelId] && typeof curMap[channelId] === "object" ? curMap[channelId] : {};
+          const nextCfg = { ...prev, ...cfg };
+          if (cfg.manual && typeof cfg.manual === "object") {
+            nextCfg.manual = {
+              ...(prev.manual && typeof prev.manual === "object" ? prev.manual : {}),
+              ...cfg.manual,
+            };
+          }
+          const minAmount = Number(nextCfg.minAmount);
+          const maxAmount = Number(nextCfg.maxAmount);
+          if (Number.isFinite(minAmount)) {
+            if (minAmount < 0) {
+              return json(res, 400, { ok: false, message: "最低充值金额不能为负数" });
+            }
+            nextCfg.minAmount = minAmount;
+          }
+          if (Number.isFinite(maxAmount)) {
+            if (maxAmount < 0) {
+              return json(res, 400, { ok: false, message: "最高充值金额不能为负数" });
+            }
+            nextCfg.maxAmount = maxAmount;
+          }
+          if (
+            Number.isFinite(minAmount) &&
+            Number.isFinite(maxAmount) &&
+            maxAmount > 0 &&
+            minAmount > maxAmount
+          ) {
+            return json(res, 400, { ok: false, message: "最低充值金额不能高于最高充值金额" });
+          }
+          merged[channelId] = nextCfg;
+        }
+        patch.paymentChannelsPublic = merged;
+      }
+      const next = normalizeSettings({ ...current, ...patch });
       // Never accept secret fields from settings payload
       delete next.smtpPass;
       delete next.aiApiKey;

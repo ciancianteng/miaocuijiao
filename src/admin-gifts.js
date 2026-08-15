@@ -107,8 +107,18 @@
     }
     var price = prompt("猫粮价格", seed.catFoodPrice != null ? String(seed.catFoodPrice) : "10");
     if (price == null) return;
+    var priceN = Number(String(price).replace(/[^\d.-]/g, ""));
+    if (!Number.isFinite(priceN) || priceN <= 0) {
+      alert("请填写有效猫粮价格");
+      return;
+    }
     var sort = prompt("排序", seed.sortOrder != null ? String(seed.sortOrder) : "100");
     if (sort == null) return;
+    var sortN = Number(String(sort).replace(/[^\d.-]/g, ""));
+    if (!Number.isFinite(sortN)) {
+      alert("排序必须是数字");
+      return;
+    }
     // Create defaults: 推荐关闭、状态启用. Edit keeps existing confirm prompts (UI unchanged).
     var featured = isCreate ? false : confirm("是否推荐？");
     var enabled = isCreate ? true : confirm("是否启用？");
@@ -119,8 +129,8 @@
         action: "save",
         id: seed.id || "",
         name: name,
-        catFoodPrice: price,
-        sortOrder: sort,
+        catFoodPrice: priceN,
+        sortOrder: sortN,
         featured: featured,
         enabled: enabled,
         iconUrl: seed.iconUrl || "",
@@ -166,10 +176,15 @@
     if (e.target.closest("[data-gift-commission]")) {
       var rate = prompt("默认礼物抽成 %", "20");
       if (rate == null) return;
+      var n = Number(String(rate).replace(/[^\d.-]/g, ""));
+      if (!Number.isFinite(n) || n < 0 || n > 100) {
+        alert("抽成比例须在 0–100 之间");
+        return;
+      }
       api("/api/admin/gifts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "save_commission", commissionRate: rate }),
+        body: JSON.stringify({ action: "save_commission", commissionRate: n }),
       })
         .then(function (res) {
           alert(res.message || "已保存");

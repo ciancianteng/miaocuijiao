@@ -22,6 +22,7 @@
     formOpen: false,
     dirty: false,
     lastPublish: null,
+    loadFailed: false,
   };
 
   function esc(v) {
@@ -373,18 +374,21 @@
   function load() {
     state.loading = true;
     state.error = "";
+    state.loadFailed = false;
     render();
     apiGet()
       .then(function (result) {
         applyLocal(result.levels || []);
         state.loading = false;
         state.dirty = false;
+        state.loadFailed = false;
         state.message = "已加载全站等级配置（companion_levels）";
         render();
       })
       .catch(function (err) {
         applyLocal(Levels && Levels.read ? Levels.read() : []);
         state.loading = false;
+        state.loadFailed = true;
         state.error = err.message || "读取失败，已使用本地默认等级";
         render();
       });
@@ -398,9 +402,17 @@
   function saveCurrent() {
     var form = findEditorForm();
     if (form) patchSelectedFromForm(form);
+    if (state.loadFailed) {
+      alert("等级配置未从服务器加载成功，禁止保存以免覆盖线上数据。请刷新后重试。");
+      return Promise.resolve();
+    }
     var level = selected();
     if (!level) {
       alert("请先选择要保存的等级");
+      return Promise.resolve();
+    }
+    if (!String(level.name || "").trim()) {
+      alert("等级名称不能为空");
       return Promise.resolve();
     }
     state.saving = true;
@@ -429,6 +441,10 @@
   function publishAll() {
     var form = findEditorForm();
     if (form) patchSelectedFromForm(form);
+    if (state.loadFailed) {
+      alert("等级配置未从服务器加载成功，禁止发布以免覆盖线上数据。请刷新后重试。");
+      return Promise.resolve();
+    }
     state.levels = state.levels.map(function (item, index) {
       item.sort = index + 1;
       return item;

@@ -73,13 +73,15 @@ export default async function handler(req, res) {
         body.featured === undefined || body.featured === null || body.featured === ""
           ? false
           : body.featured === true || body.featured === "true";
+      const sortRaw = Number(body.sortOrder ?? body.sort_order ?? 100);
+      const sortOrder = Number.isFinite(sortRaw) ? Math.max(0, Math.min(999999, Math.round(sortRaw))) : 100;
       const payload = {
         name,
         icon_url: String(body.iconUrl || body.icon_url || ""),
         cat_food_price: money(body.catFoodPrice || body.cat_food_price),
         enabled,
         featured,
-        sort_order: Number(body.sortOrder || body.sort_order || 100),
+        sort_order: sortOrder,
         animation_level: String(body.animationLevel || "normal"),
         updated_at: new Date().toISOString(),
       };
@@ -151,7 +153,14 @@ export default async function handler(req, res) {
       return json(res, 200, { ok: true, message: "礼物已下架（软删除）" });
     }
     if (action === "save_commission") {
-      const rate = money(body.commissionRate ?? body.rate ?? 20);
+      const rateRaw = money(body.commissionRate ?? body.rate ?? 20);
+      if (!Number.isFinite(rateRaw)) {
+        return json(res, 400, { ok: false, message: "抽成比例必须是数字" });
+      }
+      if (rateRaw < 0 || rateRaw > 100) {
+        return json(res, 400, { ok: false, message: "抽成比例须在 0–100 之间" });
+      }
+      const rate = Math.round(rateRaw * 100) / 100;
       await companionDb("gift_settings", "?on_conflict=id", {
         method: "POST",
         body: JSON.stringify({ id: 1, commission_rate: rate, updated_at: new Date().toISOString() }),
