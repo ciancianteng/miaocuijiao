@@ -173,6 +173,7 @@ async function injectGuest(page) {
   const browser = await chromium.launch({
     headless: true,
     executablePath: process.env.CHROME_PATH || "/usr/bin/google-chrome" || "/usr/local/bin/chrome",
+    args: ["--no-sandbox", "--disable-dev-shm-usage"],
   });
 
   // Guest
