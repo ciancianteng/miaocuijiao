@@ -3568,6 +3568,17 @@
           authUi.preferOtherAccount = false;
           render(readDraft().step || 0);
         }
+        // Apply form restored boss session — keep header chrome in sync
+        // (「个人中心」+「退出登录」, not stale「登录」).
+        if (window.MCJBossHeader && typeof window.MCJBossHeader.sync === "function") {
+          return window.MCJBossHeader.sync();
+        }
+        try {
+          window.dispatchEvent(
+            new CustomEvent("mcj:auth-updated", { detail: { reason: "companion-apply-boss-sync" } })
+          );
+        } catch (eSync) {}
+        return null;
       })
       .catch(function () {})
       .then(function () {

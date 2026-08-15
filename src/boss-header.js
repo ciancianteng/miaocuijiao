@@ -221,8 +221,24 @@
     return hasValidBossJwt();
   }
 
+  // Chrome must match product login state: a refreshable boss session is still
+  // "logged in" even when the access JWT is briefly expired (companion-apply
+  // restores via ensureSession, but used to leave the header on「登录」).
   function isLoggedIn() {
-    return hasValidBossJwt();
+    if (hasValidBossJwt()) return true;
+    if (window.MCJBossAuth && typeof window.MCJBossAuth.canRestoreSession === "function") {
+      try {
+        if (window.MCJBossAuth.canRestoreSession()) return true;
+      } catch (e) {}
+    }
+    try {
+      return !!(
+        sessionStorage.getItem("mcjAuthRefreshToken") ||
+        localStorage.getItem("mcjAuthRefreshToken")
+      );
+    } catch (e2) {
+      return false;
+    }
   }
 
   function deskAuthLinkHtml() {
@@ -237,6 +253,45 @@
       (activeHref("login.html") ? ' class="active"' : "") +
       ">登录</a>"
     );
+  }
+
+  var authChromeSyncPromise = null;
+
+  function syncAuthChrome() {
+    if (authChromeSyncPromise) return authChromeSyncPromise;
+    authChromeSyncPromise = Promise.resolve()
+      .then(function () {
+        if (!(hasValidBossJwt() || canRestoreBossSession())) return null;
+        return ensureBossAuthScript()
+          .then(function (Auth) {
+            if (Auth && typeof Auth.ensureSession === "function") {
+              return Auth.ensureSession().catch(function () {
+                return null;
+              });
+            }
+            return null;
+          })
+          .catch(function () {
+            return null;
+          });
+      })
+      .then(function () {
+        scheduleAuthVisibility();
+        if (isLoggedIn()) {
+          loadNotifications({ silent: true });
+          refreshChatUnread();
+        } else {
+          notifyState.items = [];
+          notifyState.unread = 0;
+          notifyState.open = false;
+          setChatUnread(0);
+          renderNotifyPanel();
+        }
+      })
+      .finally(function () {
+        authChromeSyncPromise = null;
+      });
+    return authChromeSyncPromise;
   }
 
   function applyAuthVisibility() {
@@ -651,7 +706,7 @@
   function mount() {
     if (!isBossPublicPage() || !document.body) return;
     // Always rebuild header markup for tab-nav-only layout
-    ensureCss("/src/boss-header.css?v=20260804navAuth4", "data-mcj-boss-header-css");
+    ensureCss("/src/boss-header.css?v=20260815applyBossHeader1", "data-mcj-boss-header-css");
     ensureCss("/src/mcj-safe-area.css?v=20260802mobileP0c", "data-mcj-safe-area-css");
     ensureCss("/src/home-mobile.css?v=20260802mobileP0c", "data-mcj-home-mobile-css");
     document.body.classList.add("mcj-boss-shell");
@@ -672,10 +727,12 @@
       document.body.insertBefore(header, document.body.firstChild);
     }
 
+    // Paint from current storage immediately (incl. refreshable sessions), then
+    // ensureSession so expired JWTs refresh before chrome settles on guest.
     scheduleAuthVisibility();
+    syncAuthChrome();
     ensureMobileNavSheet();
     renderNotifyPanel();
-    if (isLoggedIn()) loadNotifications({ silent: true });
     window.addEventListener("mcj:auth-expired", function () {
       notifyState.items = [];
       notifyState.unread = 0;
@@ -903,7 +960,11 @@
       if (logout) {
         e.preventDefault();
         clearBossSession();
-        location.href = "index.html";
+        // Stay on companion-apply so the page can re-render the guest auth gate
+        // and header「登录」immediately; other public pages keep index redirect.
+        if (!/companion-apply\.html$/i.test(fileName())) {
+          location.href = "index.html";
+        }
         return;
       }
 
@@ -968,15 +1029,15 @@
     });
 
     window.addEventListener("storage", function () {
-      scheduleAuthVisibility();
+      syncAuthChrome();
     });
 
     window.addEventListener("focus", function () {
-      scheduleAuthVisibility();
+      syncAuthChrome();
     });
 
     document.addEventListener("visibilitychange", function () {
-      if (!document.hidden) scheduleAuthVisibility();
+      if (!document.hidden) syncAuthChrome();
     });
   }
 
@@ -1055,16 +1116,16 @@
     ensureAvatarFallback();
     mount();
     bind();
-    scheduleAuthVisibility();
-    ensureMeowButler();
-    if (isLoggedIn()) {
+    syncAuthChrome().then(function () {
+      if (!isLoggedIn()) return;
       startNotifyPoll();
       refreshChatUnread();
       if (chatUnreadState.pollTimer) clearInterval(chatUnreadState.pollTimer);
       chatUnreadState.pollTimer = setInterval(function () {
         if (!document.hidden && isLoggedIn()) refreshChatUnread();
       }, 20000);
-    }
+    });
+    ensureMeowButler();
     window.addEventListener("mcj-boss-chat-unread", function (ev) {
       var n = ev && ev.detail ? ev.detail.unread : 0;
       setChatUnread(n);
@@ -1073,7 +1134,7 @@
 
   window.MCJBossHeader = {
     mount: mount,
-    sync: scheduleAuthVisibility,
+    sync: syncAuthChrome,
     clearSession: clearBossSession,
     openLogin: openLogin,
     setChatUnread: setChatUnread,
