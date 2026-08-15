@@ -1733,7 +1733,7 @@
   };
 
   (function loadBossHeader() {
-    if (window.__MCJBossHeaderScript) return;
+    if (window.__MCJBossHeaderScript || window.__MCJBossHeaderLoaded || window.MCJBossHeader) return;
     var p = String(location.pathname || "").replace(/\\/g, "/");
     if (/\/admin(\/|\.html|$)/i.test(p) || /\/companion\//i.test(p) || /\/customer-service(\/|\.html|$)/i.test(p)) return;
     window.__MCJBossHeaderScript = true;
