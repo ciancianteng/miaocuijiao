@@ -1,18 +1,95 @@
 (function(){
-  // Legacy localStorage business keys. Admin UI must NEVER render these as live data.
-  var DB_KEYS=['users','bosses','clubs','players','orders','wallets','wallet_transactions','recharge_requests','withdraw_requests','invite_rebates','customer_tickets','reviews','games','banners','announcements','admin_logs','role_permissions','companionLevels','refunds'];
+  /**
+   * Legacy admin-suite collection short-names (old defaultDb tables).
+   * Generic read()/write() must never treat these as live business data.
+   */
+  var LOCAL_BUSINESS_COLLECTION_KEYS=[
+    'users','bosses','clubs','players','orders','wallets','wallet_transactions',
+    'recharge_requests','withdraw_requests','invite_rebates','customer_tickets',
+    'reviews','games','banners','announcements','admin_logs','role_permissions',
+    'companionLevels','refunds'
+  ];
+  /**
+   * Exact localStorage/sessionStorage keys allowed to be purged on admin boot.
+   * Whitelist ONLY — never fuzzy-match / never delete all mcj_*.
+   * Source: former defaultDb mock/demo business collections (+ refunds alias).
+   * Intentionally EXCLUDES mcj_companionLevels / mcj_player_levels (still used by
+   * MCJCompanionLevels as local level-cache, not mock table rows).
+   */
+  var STALE_MOCK_BUSINESS_STORAGE_KEYS=[
+    'mcj_users',
+    'mcj_bosses',
+    'mcj_clubs',
+    'mcj_players',
+    'mcj_orders',
+    'mcj_wallets',
+    'mcj_wallet_transactions',
+    'mcj_recharge_requests',
+    'mcj_withdraw_requests',
+    'mcj_invite_rebates',
+    'mcj_customer_tickets',
+    'mcj_reviews',
+    'mcj_games',
+    'mcj_banners',
+    'mcj_announcements',
+    'mcj_admin_logs',
+    'mcj_role_permissions',
+    'mcj_refunds'
+  ];
+  /**
+   * Hard deny-list: purge must never remove these even if mistakenly listed above.
+   * Covers login session, remember-login / auth, portal role, theme / UI prefs.
+   */
+  var PURGE_NEVER_TOUCH_KEYS=[
+    // Admin / shared auth session
+    'adminAuthToken','adminUser',
+    'mcjAdminAccessToken','mcjAdminRefreshToken','mcjAdminExpiresAt','mcjAdminLoginNotice',
+    'mcjAuthAccessToken','mcjAuthRefreshToken','mcjAuthExpiresAt',
+    'mcjRole','mcjCurrentUser','mcjActivePortal','mcjAfterLoginRedirect',
+    // Other portal auth / remember-login
+    'mcjCompanionSession','companionAuthToken','companionUser',
+    'mcjServiceSession','customerServiceAuthToken','customerServiceUser',
+    'customerUser','customerUser','bossAuthToken','bossUser',
+    // Theme / language / UI prefs / site chrome (not mock business tables)
+    'mcjTheme','mcjLang','mcjLocale','mcj_siteSettings',
+    // Companion level local cache (real config helper — not defaultDb mock rows)
+    'mcj_companionLevels','mcj_player_levels',
+    // Banner / platform-content tooling keys (not defaultDb mock tables)
+    'mcj_local_banner_assets_v1','mcj_banner_published_at',
+    // Legacy V1 account helper stores (not defaultDb mock tables)
+    'mcj_v1_accounts','mcj_v1_profiles'
+  ];
   // Removed defaultDb mock payload (fake users/orders/wallets/chat/ranking seeds).
   // Formal admin only accepts REAL API / Supabase — empty DB → 0 / 暂无数据.
   var defaultDb=null;
+  var DB_KEYS=LOCAL_BUSINESS_COLLECTION_KEYS;
   function isLocalBusinessKey(key){
-    return DB_KEYS.indexOf(String(key||''))>-1;
+    return LOCAL_BUSINESS_COLLECTION_KEYS.indexOf(String(key||''))>-1;
+  }
+  function isPurgeNeverTouchKey(fullKey){
+    var k=String(fullKey||'');
+    if(PURGE_NEVER_TOUCH_KEYS.indexOf(k)>-1)return true;
+    // Extra safety: never wipe auth/session/remember markers by prefix accident.
+    if(/^(adminAuth|adminUser|mcjAdmin|mcjAuth|mcjRole|mcjCurrentUser|mcjActivePortal|mcjCompanion|mcjService|companionAuth|companionUser|customerService|bossAuth|bossUser|customerUser|playerUser)/i.test(k))return true;
+    if(/^(mcjTheme|mcjLang|mcjLocale|mcj_siteSettings)/i.test(k))return true;
+    return false;
   }
   function purgeStaleLocalBusinessData(){
-    DB_KEYS.forEach(function(key){
-      try{localStorage.removeItem('mcj_'+key);}catch(e){}
-      try{sessionStorage.removeItem('mcj_'+key);}catch(e2){}
+    // Explicit whitelist delete only. Does NOT scan / clear all mcj_* keys.
+    STALE_MOCK_BUSINESS_STORAGE_KEYS.forEach(function(fullKey){
+      if(isPurgeNeverTouchKey(fullKey))return;
+      try{localStorage.removeItem(fullKey);}catch(e){}
+      try{sessionStorage.removeItem(fullKey);}catch(e2){}
     });
   }
+  // Expose audit helpers for acceptance (read-only).
+  try{
+    window.MCJAdminLocalDataPurge={
+      deletedKeys:STALE_MOCK_BUSINESS_STORAGE_KEYS.slice(),
+      neverTouchKeys:PURGE_NEVER_TOUCH_KEYS.slice(),
+      mode:'exact-whitelist'
+    };
+  }catch(eAudit){}
   function read(key){
     // Hard block: never surface mcj_* business arrays (stale demos / defaultDb leftovers).
     if(isLocalBusinessKey(key))return [];
