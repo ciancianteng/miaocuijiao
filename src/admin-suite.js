@@ -2293,33 +2293,41 @@
     if(!actions)return;
     actions.querySelectorAll('.admin-search,.admin-top-stat,#adminName,#adminClock,.notice-pill,.ghost-btn').forEach(function(el){el.remove();});
   }
+  function paintDashboardPendingEmpty(pending){
+    if(!pending)return;
+    // No pending-aggregation API yet. Never paint hardcoded 0 as a real todo count.
+    // Never fall back to localStorage / defaultDb / mock todo rows.
+    pending.dataset.pendingSource='unwired';
+    pending.dataset.realOnly='1';
+    pending.innerHTML=
+      '<div class="dashboard-pending-empty dashboard-chart-empty" role="status" aria-live="polite">'+
+      '<strong>待办统计暂未接入</strong>'+
+      '<span>暂无待办统计数据。上方真实统计卡片来自 Dashboard API；本区不展示硬编码 0，也不读取本地假数据。</span>'+
+      '</div>';
+  }
+  function paintDashboardTrendsEmpty(dash){
+    if(!dash)return;
+    var existing=dash.querySelector('.dashboard-trends');
+    if(existing)existing.remove();
+    // No time-series API yet. Do not feed [0,0,0...] into charts.
+    dash.insertAdjacentHTML('beforeend',
+      '<div class="admin-chart-grid dashboard-trends" data-trend-source="unwired">'+
+      dashboardTrendCard('7日订单趋势',null,'7日趋势统计暂未接入')+
+      dashboardTrendCard('7日营业额趋势',null,'7日趋势统计暂未接入')+
+      dashboardTrendCard('7日平台利润趋势',null,'7日趋势统计暂未接入')+
+      '</div>'
+    );
+  }
   function renderDashboardExperience(){
     var dash=document.getElementById('section-dashboard');
     if(!dash||dash.dataset.enhanced)return;
     dash.dataset.enhanced='1';
-    var pending=document.getElementById('dashboardPending');
-    if(pending){
-      // Do NOT count localStorage mcj_* rows. Live counts live in #superStats (REAL API).
-      var items=[
-        ['待审核陪玩',0,'players'],
-        ['待审核提现',0,'service-reports'],
-        ['待处理退款',0,'refunds'],
-        ['待回复工单',0,'service'],
-        ['待审核评论',0,'logs']
-      ];
-      pending.innerHTML='<div class="todo-list">'+items.map(function(item){return '<button class="todo-item" type="button" data-section="'+item[2]+'"><span class="todo-icon">'+item[1]+'</span><span><strong>'+esc(item[0])+'</strong><span>以上方真实统计为准；本地假数据已禁用</span></span><span class="status ok">已清空</span></button>'}).join('')+'</div>';
-    }
+    paintDashboardPendingEmpty(document.getElementById('dashboardPending'));
     var logsTarget=document.getElementById('table-admin_logs');
     if(logsTarget){
       logsTarget.innerHTML='<div class="activity-list"><div class="empty">暂无操作记录</div></div>';
     }
-    // Charts: never feed localStorage orders/wallets — always empty until a real series API exists.
-    var emptySeries=[0,0,0,0,0,0,0];
-    dash.insertAdjacentHTML('beforeend','<div class="admin-chart-grid dashboard-trends">'+
-      dashboardTrendCard('今日订单趋势',emptySeries,'待真实订单产生后由后台接口生成趋势图。')+
-      dashboardTrendCard('营业额趋势',emptySeries,'待真实订单产生后由后台接口生成趋势图。')+
-      dashboardTrendCard('平台利润趋势',emptySeries,'待真实利润记录产生后由后台接口生成趋势图。')+
-    '</div>');
+    paintDashboardTrendsEmpty(dash);
   }
   function dashboardRowDate(row){
     var raw=row&& (row.created_at||row.createdAt||row.paid_at||row.paidAt||row.completed_at||row.completedAt||'');
@@ -2329,20 +2337,28 @@
   }
   function dashboardDayKey(date){return date.getFullYear()+'-'+String(date.getMonth()+1).padStart(2,'0')+'-'+String(date.getDate()).padStart(2,'0')}
   function dashboardSeries(rows,valueFn){
+    // Helper kept for a future real series API. Callers must pass REAL rows only — never localStorage.
     var days=[], map={};
     for(var i=6;i>=0;i--){var d=new Date();d.setHours(0,0,0,0);d.setDate(d.getDate()-i);var key=dashboardDayKey(d);days.push(key);map[key]=0;}
     (rows||[]).forEach(function(row){var d=dashboardRowDate(row);if(!d)return;var key=dashboardDayKey(d);if(Object.prototype.hasOwnProperty.call(map,key))map[key]+=Number(valueFn(row)||0);});
     return days.map(function(key){return map[key]||0});
   }
   function moneyNumber(value){return Number(String(value||0).replace(/[^\d.-]/g,''))||0}
-  function hasTrendData(values){return (values||[]).some(function(v){return Number(v)>0})}
+  function hasTrendData(values){
+    if(!values||!values.length)return false;
+    return values.some(function(v){return Number(v)>0});
+  }
   function dashboardTrendCard(title,values,emptyText){
-    return '<details class="admin-chart-card dashboard-trend-card"><summary><span>📈 '+esc(title)+'</span><small>▶ 点击展开</small></summary>'+(hasTrendData(values)?chartBars(values):'<div class="dashboard-chart-empty"><strong>暂无统计数据</strong><span>'+esc(emptyText||'待系统产生真实订单后自动生成趋势图。')+'</span></div>')+'</details>';
+    var wired=hasTrendData(values);
+    var body=wired
+      ? chartBars(values)
+      : '<div class="dashboard-chart-empty"><strong>暂无统计数据</strong><span>'+esc(emptyText||'7日趋势统计暂未接入')+'</span></div>';
+    return '<details class="admin-chart-card dashboard-trend-card"'+(wired?'':' open')+'><summary><span>'+esc(title)+'</span><small>'+(wired?'点击展开':'未接入')+'</small></summary>'+body+'</details>';
   }
   function chartBars(values){
-    if(!hasTrendData(values))return '<div class="dashboard-chart-empty"><strong>暂无统计数据</strong><span>待系统产生真实订单后自动生成趋势图。</span></div>';
+    if(!hasTrendData(values))return '<div class="dashboard-chart-empty"><strong>暂无统计数据</strong><span>7日趋势统计暂未接入</span></div>';
     var max=Math.max.apply(null,values.concat([1]));
-    return '<div class="admin-bars" aria-label="最近7天">'+values.map(function(v){return '<i style="height:'+Math.max(6,Math.round(v/max*100))+'%"></i>'}).join('')+'</div><div class="table-footer"><span>最近7天</span><span>真实数据自动生成</span></div>';
+    return '<div class="admin-bars" aria-label="最近7天">'+values.map(function(v){return '<i style="height:'+Math.max(6,Math.round(v/max*100))+'%"></i>'}).join('')+'</div><div class="table-footer"><span>最近7天</span><span>真实数据</span></div>';
   }
   function enhanceTables(){
     document.querySelectorAll('.table-wrap').forEach(function(wrap){
@@ -2409,11 +2425,9 @@
     if(dash && !dash.getAttribute('data-admin-final-owned')){
       dash.setAttribute('data-admin-final-owned','1');
     }
-    var pending=document.getElementById('dashboardPending');
-    if(pending && !pending.dataset.realOnly){
-      pending.dataset.realOnly='1';
-      pending.innerHTML='<div class="detail-list"><div><span>今日完成订单</span><strong>0</strong></div><div><span>待审核提现</span><strong>0</strong></div><div><span>待处理退款</span><strong>0</strong></div></div><p class="admin-sync-note">待办计数不再读取 localStorage；请以上方真实 Dashboard 卡片为准。</p>';
-    }
+    // Pending todos / 7-day trends: empty/unwired state only (see paintDashboardPendingEmpty).
+    // Do not paint hardcoded 0 counts that look like real aggregation results.
+    paintDashboardPendingEmpty(document.getElementById('dashboardPending'));
     var tables={
       bosses:[{key:'nickname',label:'老板昵称'},{key:'uid',label:'系统 UID'},{key:'phone',label:'手机号'},{key:'email',label:'邮箱'},{key:'game',label:'游戏'},{key:'gameId',label:'游戏 ID / 游戏昵称'},{key:'registered_at',label:'注册时间'},{key:'vip',label:'VIP等级'},{key:'total_spent',label:'累计消费'},{key:'balance',label:'当前余额'},{key:'status',label:'账号状态',type:'status'},{key:'invite',label:'邀请人'},{key:'actions',label:'详情',type:'actions'}],
       players:[{key:'avatar',label:'头像',type:'avatar'},{key:'name',label:'陪玩昵称'},{key:'uid',label:'UID'},{key:'phone',label:'联系电话'},{key:'id_card',label:'身份证资料'},{key:'bank',label:'结款银行账户'},{key:'audit',label:'审核状态',type:'status'},{key:'order_status',label:'接单状态',type:'status'},{key:'total_income',label:'总收入'},{key:'withdrawable',label:'可提现金额'},{key:'club',label:'所属俱乐部'},{key:'actions',label:'详情',type:'actions'}],
