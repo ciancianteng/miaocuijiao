@@ -190,16 +190,14 @@ async function inboxHasOrder(compTok, orderId) {
   return { ok: !!row, via: row ? "db" : "none", hit: row || null, inboxStatus: inbox.status };
 }
 
-async function mailLogForOrder(adminTok, orderId, recipient) {
+async function mailLogForOrder(adminTok, orderId) {
   const logs = await api(`/api/admin/mail-logs?limit=80`, adminTok, null, "GET");
   const list = logs.json?.logs || [];
-  const related = list.filter(
-    (l) =>
-      (orderId && (l.orderId === orderId || String(l.notificationKey || "").startsWith(orderId))) ||
-      (recipient && String(l.recipient || l.email || "").toLowerCase() === recipient.toLowerCase())
+  // Strict: only rows for this order (never match by recipient alone — that leaks prior path mails).
+  const forOrder = list.filter(
+    (l) => orderId && (l.orderId === orderId || String(l.notificationKey || "").startsWith(`${orderId}:`))
   );
-  const forOrder = related.filter((l) => orderId && (l.orderId === orderId || String(l.notificationKey || "").startsWith(orderId)));
-  return { ok: !!logs.json?.ok, logs: forOrder.length ? forOrder : related, allCount: list.length, message: logs.json?.message };
+  return { ok: !!logs.json?.ok, logs: forOrder, allCount: list.length, message: logs.json?.message };
 }
 
 async function verifyNotifyBundle({ label, orderId, companionId, compTok, adminTok, rt, expectMailTo }) {
@@ -216,10 +214,10 @@ async function verifyNotifyBundle({ label, orderId, companionId, compTok, adminT
   out.realtime = await rt.waitForOrder(orderId, 10000);
   step(`${label}.realtime`, out.realtime, `ready=${rt.got.ready} err=${rt.got.error || ""} assigned=${!!rt.got.assigned}`);
 
-  let mail = await mailLogForOrder(adminTok, orderId, expectMailTo);
+  let mail = await mailLogForOrder(adminTok, orderId);
   for (let i = 0; i < 8 && !(mail.logs || []).length; i++) {
     await sleep(1500);
-    mail = await mailLogForOrder(adminTok, orderId, expectMailTo);
+    mail = await mailLogForOrder(adminTok, orderId);
   }
   const top = (mail.logs || [])[0];
   out.mailStatus = top?.status || "";
@@ -239,6 +237,7 @@ async function verifyNotifyBundle({ label, orderId, companionId, compTok, adminT
 }
 
 async function ensureCompanionReady(compId, compTok) {
+  await ackForcedAll(compTok);
   await api("/api/companion", compTok, { action: "set_online_status", online_status: "online", status: "online" });
   await rest(`companion_profiles?user_id=eq.${encodeURIComponent(compId)}`, "", {
     method: "PATCH",
@@ -249,32 +248,50 @@ async function ensureCompanionReady(compId, compTok) {
       allow_orders: true,
       online_status: "online",
       availability_status: "online",
+      // marketplace create_and_pay falls back to game_prices when companion_services table is absent
+      game_prices: { VALORANT: 18 },
+      game: "VALORANT",
+      price: 18,
+      pricing_unit: "小时",
       updated_at: new Date().toISOString(),
     },
   }).catch(() => null);
 }
 
+async function ackForcedAll(token) {
+  for (let i = 0; i < 8; i++) {
+    const pendingRes = await api("/api/companion", token, { action: "pending_forced" });
+    const list = pendingRes.json?.pendingForced || [];
+    if (!list.length) return true;
+    for (const item of list) {
+      await api("/api/companion", token, {
+        action: "acknowledge_forced",
+        content_id: item.id || item.contentId,
+        content_type: item.contentType || "announcement",
+        content_version: String(item.version || item.contentVersion || 1),
+      });
+    }
+  }
+  const again = await api("/api/companion", token, { action: "pending_forced" });
+  return !(again.json?.pendingForced || []).length;
+}
+
 async function ensureMarketplaceService(compId) {
-  const existing = await rest(
-    "companion_services",
-    `?companion_id=eq.${encodeURIComponent(compId)}&enabled=eq.true&limit=3`
-  ).catch(() => []);
-  if (Array.isArray(existing) && existing[0]) return existing[0];
-  const created = await rest("companion_services", "", {
-    method: "POST",
+  // Prefer game_prices fallback (companion_services may be missing on staging schema).
+  await rest(`companion_profiles?user_id=eq.${encodeURIComponent(compId)}`, "", {
+    method: "PATCH",
     body: {
-      companion_id: compId,
-      service_name: "E2E指定陪玩",
+      game_prices: { VALORANT: 18 },
+      game: "VALORANT",
       price: 18,
       pricing_unit: "小时",
-      enabled: true,
-      review_status: "approved",
-      requires_game_id: false,
+      verification_status: "approved",
+      online_status: "online",
+      availability_status: "online",
       updated_at: new Date().toISOString(),
-      created_at: new Date().toISOString(),
     },
-  }).catch(() => null);
-  return Array.isArray(created) ? created[0] : created;
+  });
+  return { id: "VALORANT", price: 18 };
 }
 
 async function main() {
@@ -397,7 +414,7 @@ async function main() {
       // Idempotency retry
       await api("/api/orders", bossT, { action: "pay_order", id: oid, paymentMethod: "catfood" }).catch(() => null);
       await sleep(2000);
-      const mail = await mailLogForOrder(adminT, oid, MAIL_TO);
+      const mail = await mailLogForOrder(adminT, oid);
       const assignKeys = (mail.logs || [])
         .map((l) => l.notificationKey)
         .filter((k) => String(k || "").includes(":assign"));
@@ -408,6 +425,7 @@ async function main() {
   // ── B: want_him / confirm_companion ──
   {
     const label = "B_want_him";
+    await ackForcedAll(compT);
     const create = await api("/api/orders", bossT, {
       action: "create",
       order: {
@@ -445,7 +463,7 @@ async function main() {
       await verifyNotifyBundle({ label, orderId: oid, companionId: compId, compTok: compT, adminTok: adminT, rt, expectMailTo: MAIL_TO });
       await api("/api/orders", bossT, { action: "want_him", id: oid, companion_id: compId });
       await sleep(1500);
-      const mail = await mailLogForOrder(adminT, oid, MAIL_TO);
+      const mail = await mailLogForOrder(adminT, oid);
       const assignKeys = (mail.logs || [])
         .map((l) => l.notificationKey)
         .filter((k) => String(k || "").includes(":assign"));
@@ -458,8 +476,8 @@ async function main() {
     const label = "C_marketplace";
     const svc = await ensureMarketplaceService(compId);
     const catalog = await api(`/api/boss/marketplace?action=catalog&companionId=${encodeURIComponent(compId)}`, bossT, null, "GET");
-    const serviceId = catalog.json?.services?.[0]?.id || svc?.id || "";
-    step(`${label}.catalog`, !!serviceId, `svc=${serviceId} msg=${catalog.json?.message || catalog.status}`);
+    const serviceId = catalog.json?.services?.[0]?.id || svc?.id || "VALORANT";
+    step(`${label}.catalog`, !!serviceId && (catalog.json?.services || []).length > 0, `svc=${serviceId} n=${(catalog.json?.services || []).length} msg=${catalog.json?.message || catalog.status}`);
     await creditBoss(bossId, 100).catch(() => null);
     rt.got.assigned = null;
     const idem = `mkt-notify-${Date.now()}`;
@@ -490,7 +508,7 @@ async function main() {
         idempotencyKey: idem,
       });
       await sleep(2000);
-      const mail = await mailLogForOrder(adminT, oid, MAIL_TO);
+      const mail = await mailLogForOrder(adminT, oid);
       const assignKeys = (mail.logs || [])
         .map((l) => l.notificationKey)
         .filter((k) => String(k || "").includes(":assign"));
@@ -502,9 +520,9 @@ async function main() {
   // Restore companion profile email (login account email stays COMP)
   await rest(`profiles?id=eq.${encodeURIComponent(compId)}`, "", {
     method: "PATCH",
-    body: { email: priorEmail },
+    body: { email: COMP },
   }).catch(() => null);
-  step("staging.mail_target_restored", true, priorEmail);
+  step("staging.mail_target_restored", true, COMP);
 
   const failed = results.filter((r) => r.result === "FAIL");
   console.log("\nSUMMARY", { pass: results.length - failed.length, fail: failed.length, total: results.length, base: BASE });
