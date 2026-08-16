@@ -695,12 +695,27 @@
       .catch(function () {});
   }
 
-  function startNotifyPoll() {
-    // MVP 止血：通知推送未完成，不加载/轮询，避免干扰主流程。
+  function stopNotifyPoll() {
     if (notifyState.pollTimer) {
       clearInterval(notifyState.pollTimer);
       notifyState.pollTimer = null;
     }
+  }
+
+  function startNotifyPoll() {
+    // Boss header has no Supabase Realtime client on public pages; poll /api/notifications.
+    // Single timer only — cleared before recreate; skips ticks while tab is hidden.
+    stopNotifyPoll();
+    if (!isLoggedIn() || !hasAuthSession()) return;
+    loadNotifications({ silent: true });
+    notifyState.pollTimer = setInterval(function () {
+      if (document.hidden) return;
+      if (!isLoggedIn() || !hasAuthSession()) {
+        stopNotifyPoll();
+        return;
+      }
+      loadNotifications({ silent: true });
+    }, 12000);
   }
 
   function mount() {
@@ -734,6 +749,7 @@
     ensureMobileNavSheet();
     renderNotifyPanel();
     window.addEventListener("mcj:auth-expired", function () {
+      stopNotifyPoll();
       notifyState.items = [];
       notifyState.unread = 0;
       notifyState.error = window.MCJBossAuth && window.MCJBossAuth.expiredMessage
@@ -1014,9 +1030,9 @@
     window.addEventListener("mcj:auth-updated", function () {
       scheduleAuthVisibility();
       if (isLoggedIn()) {
-        loadNotifications({ silent: true });
         startNotifyPoll();
       } else {
+        stopNotifyPoll();
         notifyState.items = [];
         notifyState.unread = 0;
         notifyState.open = false;
@@ -1034,10 +1050,17 @@
 
     window.addEventListener("focus", function () {
       syncAuthChrome();
+      if (!document.hidden && isLoggedIn() && hasAuthSession()) {
+        loadNotifications({ silent: true });
+      }
     });
 
     document.addEventListener("visibilitychange", function () {
-      if (!document.hidden) syncAuthChrome();
+      if (document.hidden) return;
+      syncAuthChrome();
+      if (!isLoggedIn() || !hasAuthSession()) return;
+      loadNotifications({ silent: true });
+      if (!notifyState.pollTimer) startNotifyPoll();
     });
   }
 

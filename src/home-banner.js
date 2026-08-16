@@ -161,10 +161,15 @@
       if (!inSchedule(item)) return false;
       return !!(item.image || item.desktopImage || item.mobileImage || item.image_url);
     });
+    // Formal rule: smaller sort_order first. Do not let is_main override public order.
     list.sort(function (a, b) {
-      var mainDiff = Number(isMainBanner(b)) - Number(isMainBanner(a));
-      if (mainDiff) return mainDiff;
-      return Number(a.sort ?? a.sort_order ?? 99) - Number(b.sort ?? b.sort_order ?? 99);
+      var sortDiff = Number(a.sort ?? a.sort_order ?? 100) - Number(b.sort ?? b.sort_order ?? 100);
+      if (sortDiff) return sortDiff;
+      var createdDiff = String(a.created_at || a.createdAt || "").localeCompare(
+        String(b.created_at || b.createdAt || "")
+      );
+      if (createdDiff) return createdDiff;
+      return String(a.id || "").localeCompare(String(b.id || ""));
     });
     return list;
   }

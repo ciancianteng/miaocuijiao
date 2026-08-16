@@ -507,8 +507,9 @@ async function sendOrderMailOnce({
 
   try {
     const preferredFrom = env("RESEND_ORDERS_FROM") || "Meow Cui Jiao <orders@meowcuijiao.com>";
+    let sendResult = null;
     try {
-      await sendMail({
+      sendResult = await sendMail({
         to,
         subject,
         text,
@@ -520,7 +521,7 @@ async function sendOrderMailOnce({
       const msg = String(err?.message || err || "");
       if (/domain is not verified|not verified/i.test(msg) && preferredFrom) {
         // Staging / unverified custom domain → fall back to configured RESEND_FROM.
-        await sendMail({
+        sendResult = await sendMail({
           to,
           subject,
           text,
@@ -531,14 +532,15 @@ async function sendOrderMailOnce({
         throw err;
       }
     }
+    const providerId = String(sendResult?.id || "").trim();
     await patchEmailLog(logId, {
       email_status: "sent",
-      detail: "sent",
+      detail: providerId ? `sent:${providerId}` : "sent",
       sent_at: nowIso(),
       retry_count: retryCount,
       email: to,
     });
-    return { ok: true, notificationKey, emailStatus: "sent", logId };
+    return { ok: true, notificationKey, emailStatus: "sent", logId, providerMessageId: providerId };
   } catch (err) {
     const detail = String(err?.message || err || "send failed").slice(0, 500);
     await patchEmailLog(logId, {
@@ -796,6 +798,7 @@ export async function listCompanionNotificationEmails({ limit = 100, status = ""
       status: row.email_status || "",
       success: String(row.email_status || "") === "sent",
       failReason: String(row.email_status || "") === "sent" ? "" : row.detail || "",
+      detail: row.detail || "",
       retryCount: Number(row.retry_count || 0) || 0,
       subject: row.subject || "",
       companionId: row.companion_id || "",
@@ -833,6 +836,7 @@ export async function listCompanionNotificationEmails({ limit = 100, status = ""
           status: meta.emailStatus || "",
           success: String(meta.emailStatus || "") === "sent",
           failReason: String(meta.emailStatus || "") === "sent" ? "" : meta.detail || "",
+          detail: meta.detail || "",
           retryCount: Number(meta.retryCount || 0) || 0,
           subject: meta.subject || row.title || "",
           companionId: row.companion_id || "",

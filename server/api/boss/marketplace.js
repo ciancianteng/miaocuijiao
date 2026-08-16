@@ -294,7 +294,22 @@ export default async function handler(req, res) {
           { headers: serviceHeaders() }
         );
         if (existing?.[0]) {
-          return json(res, 200, { ok: true, message: "订单已存在（防重复提交）", order: existing[0], replayed: true });
+          // Recover missed companion notify on retry (inbox/mail are idempotent by notice_key).
+          const replayed = existing[0];
+          if (String(replayed.status || "") === "claimed" && replayed.companion_id) {
+            try {
+              const { notifyCompanionOrderAssigned } = await import("../_companion-order-notify.js");
+              await Promise.race([
+                notifyCompanionOrderAssigned(replayed, { eventType: "assign", email: "" }).catch((err) =>
+                  console.warn("[marketplace/create_and_pay] companion notify replay", err?.message || err)
+                ),
+                new Promise((resolve) => setTimeout(resolve, 3500)),
+              ]);
+            } catch (err) {
+              console.warn("[marketplace/create_and_pay] companion notify replay import", err?.message || err);
+            }
+          }
+          return json(res, 200, { ok: true, message: "订单已存在（防重复提交）", order: replayed, replayed: true });
         }
       } catch (e) {
         if (!/idempotency|column/i.test(String(e.message || ""))) {
@@ -342,7 +357,7 @@ export default async function handler(req, res) {
       }
 
       const wallet = await getWallet(boss.id).catch(() => null);
-      const { viewWallet } = await import("./_wallet.js");
+      const { viewWallet } = await import("../_wallet.js");
       const vw = viewWallet(wallet || {}, boss.id);
       if (vw.frozen) return json(res, 400, { ok: false, message: "钱包已冻结，无法支付" });
       const available = money(vw.totalBalance);
@@ -458,20 +473,51 @@ export default async function handler(req, res) {
         throw e;
       }
 
-      const paid = await supabaseJson(rest("orders", `?id=eq.${encodeURIComponent(created.id)}`), {
-        method: "PATCH",
-        headers: serviceHeaders(),
-        body: JSON.stringify({
-          status: "claimed",
-          paid_cat_food: total,
-          accepted_at: null,
-        }),
-      });
+      let paid;
+      try {
+        paid = await supabaseJson(rest("orders", `?id=eq.${encodeURIComponent(created.id)}`), {
+          method: "PATCH",
+          headers: serviceHeaders(),
+          body: JSON.stringify({
+            status: "claimed",
+            paid_cat_food: total,
+            accepted_at: null,
+          }),
+        });
+      } catch (e) {
+        // Staging schema drift: paid_cat_food / accepted_at may be missing — still mark claimed.
+        if (/column|PGRST/i.test(String(e.message || ""))) {
+          paid = await supabaseJson(rest("orders", `?id=eq.${encodeURIComponent(created.id)}`), {
+            method: "PATCH",
+            headers: serviceHeaders(),
+            body: JSON.stringify({ status: "claimed" }),
+          });
+        } else {
+          throw e;
+        }
+      }
+
+      const claimedOrder = paid?.[0] || { ...created, status: "claimed", companion_id: companionId, paid_cat_food: total };
+      // Paid + companion bound → same inbox / Realtime / Email path as orders pay_order / want_him.
+      // Mail failure must not roll back the already-paid order.
+      if (claimedOrder?.companion_id) {
+        try {
+          const { notifyCompanionOrderAssigned } = await import("../_companion-order-notify.js");
+          await Promise.race([
+            notifyCompanionOrderAssigned(claimedOrder, { eventType: "assign", email: "" }).catch((err) =>
+              console.warn("[marketplace/create_and_pay] companion notify", err?.message || err)
+            ),
+            new Promise((resolve) => setTimeout(resolve, 3500)),
+          ]);
+        } catch (err) {
+          console.warn("[marketplace/create_and_pay] companion notify import", err?.message || err);
+        }
+      }
 
       return json(res, 200, {
         ok: true,
         message: "支付成功，等待陪玩确认",
-        order: paid?.[0] || created,
+        order: claimedOrder,
         statusText: "已支付待陪玩确认",
       });
     }
