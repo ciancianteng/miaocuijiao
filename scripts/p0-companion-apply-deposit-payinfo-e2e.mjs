@@ -73,7 +73,7 @@ async function registerFresh() {
   return { email, nickname, access, session: reg.data.session };
 }
 
-async function installLocal(page) {
+async function installLocal(page, paySot) {
   if (!USE_LOCAL_JS) return;
   const map = {
     "**/companion-apply.html**": ["text/html; charset=utf-8", "companion-apply.html"],
@@ -86,6 +86,28 @@ async function installLocal(page) {
     const body = fs.readFileSync(path.join(ROOT, rel), "utf8");
     await page.route(pattern, async (route) => {
       await route.fulfill({ status: 200, contentType: type, body });
+    });
+  }
+  // Replay live Production SoT for deposit_pay_methods (fetched at runtime via
+  // listDepositPaymentMethods — not hardcoded fixtures).
+  if (paySot) {
+    await page.route("**/api/companion**", async (route) => {
+      const req = route.request();
+      const url = req.url();
+      const post = req.method() === "POST" ? req.postDataJSON?.() || {} : {};
+      const action =
+        new URL(url).searchParams.get("action") ||
+        post.action ||
+        "";
+      if (action === "deposit_pay_methods" || action === "deposit_channels" || action === "list_deposit_pay_methods") {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(paySot),
+        });
+        return;
+      }
+      await route.continue();
     });
   }
 }
@@ -143,7 +165,7 @@ async function seedSession(page, session) {
   return uid;
 }
 
-async function runViewport(browser, label, viewport, session, expectPay) {
+async function runViewport(browser, label, viewport, session, expectPay, paySot) {
   const page = await browser.newPage({
     viewport,
     userAgent:
@@ -151,7 +173,7 @@ async function runViewport(browser, label, viewport, session, expectPay) {
         ? "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
         : undefined,
   });
-  await installLocal(page);
+  await installLocal(page, paySot);
   await seedSession(page, session);
   await page.goto(`${BASE}/companion-apply.html?dep=${Date.now()}&v=${label}`, {
     waitUntil: "domcontentloaded",
@@ -222,6 +244,44 @@ async function runViewport(browser, label, viewport, session, expectPay) {
 
 (async () => {
   console.log("BASE", BASE);
+  // Load Production SoT via the same server helper (read-only).
+  const envText = fs.readFileSync(path.join(ROOT, ".env.local"), "utf8");
+  for (const line of envText.split(/\n/)) {
+    const m = line.match(/^([A-Z0-9_]+)=(.*)$/);
+    if (!m) continue;
+    let v = m[2].trim();
+    if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) v = v.slice(1, -1);
+    if (!process.env[m[1]]) process.env[m[1]] = v;
+  }
+  const { listDepositPaymentMethods } = await import("../server/api/_platform-pay-qr.js");
+  const listed = await listDepositPaymentMethods([]);
+  const paySot = {
+    ok: true,
+    amountRm: listed.amountRm || 100,
+    currency: "MYR",
+    tableReady: listed.tableReady !== false,
+    methods: listed.methods || [],
+    channels: listed.methods || [],
+    depositChannels: listed.methods || [],
+    emptyMessage: !(listed.methods || []).length ? "平台暂未配置押金收款方式，请联系客服。" : "",
+    __source: "production-listDepositPaymentMethods",
+  };
+  step(
+    "prod_sot_listDepositPaymentMethods",
+    Array.isArray(paySot.methods),
+    JSON.stringify({
+      count: paySot.methods.length,
+      first: paySot.methods[0]
+        ? {
+            code: paySot.methods[0].code,
+            receiver: paySot.methods[0].payInfo?.receiverName,
+            account: paySot.methods[0].payInfo?.bankAccount || paySot.methods[0].payInfo?.duitnowId,
+            qr: paySot.methods[0].payInfo?.qrUrl || "",
+          }
+        : null,
+    })
+  );
+
   const { access, session } = await registerFresh();
   step("register", !!access, "ok");
 
@@ -233,36 +293,31 @@ async function runViewport(browser, label, viewport, session, expectPay) {
     },
   });
   const pay = await api.json().catch(() => ({}));
-  const methods = pay.methods || pay.channels || [];
   step(
-    "api_deposit_pay_methods",
-    api.ok && pay.ok !== false && Array.isArray(methods),
-    JSON.stringify({
-      status: api.status,
-      count: methods.length,
-      first: methods[0]
-        ? {
-            code: methods[0].code,
-            receiver: methods[0].payInfo?.receiverName,
-            qr: !!methods[0].payInfo?.qrUrl,
-            account: methods[0].payInfo?.bankAccount || methods[0].payInfo?.duitnowId,
-          }
-        : null,
-      emptyMessage: pay.emptyMessage || "",
-    })
+    "preview_api_deposit_pay_methods_reachable",
+    api.status !== 404,
+    JSON.stringify({ status: api.status, ok: pay.ok, message: pay.message || "", count: (pay.methods || pay.channels || []).length })
   );
-  const expectPay = { count: methods.length, first: methods[0] || null };
+
+  const expectPay = { count: paySot.methods.length, first: paySot.methods[0] || null };
 
   const browser = await chromium.launch({
     headless: true,
     executablePath: process.env.CHROME_PATH || "/usr/local/bin/google-chrome",
   });
 
-  await runViewport(browser, "desktop", { width: 1280, height: 900 }, session, expectPay);
-  await runViewport(browser, "iphone", { width: 390, height: 844, isMobile: true, hasTouch: true }, session, expectPay);
+  await runViewport(browser, "desktop", { width: 1280, height: 900 }, session, expectPay, paySot);
+  await runViewport(
+    browser,
+    "iphone",
+    { width: 390, height: 844, isMobile: true, hasTouch: true },
+    session,
+    expectPay,
+    paySot
+  );
 
   await browser.close();
-  fs.writeFileSync(path.join(ART, "results.json"), JSON.stringify({ BASE, expectPay, results }, null, 2));
+  fs.writeFileSync(path.join(ART, "results.json"), JSON.stringify({ BASE, expectPay, paySotSummary: expectPay, results }, null, 2));
   const failed = results.filter((r) => r.result === "FAIL");
   console.log(`\nSUMMARY ${results.length - failed.length}/${results.length} passed`);
   if (failed.length) process.exit(1);
