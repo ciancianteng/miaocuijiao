@@ -147,6 +147,13 @@
   };
   var CONSULT_TYPE_CN={order_dock:'订单对接',profile_audit:'资料审核',deposit_auth:'押金认证',withdraw:'提现问题',earnings:'收益问题',other:'其他'};
   function consultTypeLabel(key){return CONSULT_TYPE_CN[key]||CONSULT_TYPE_CN.other}
+  /** True only for real deposit pass — never match "unpaid" via /paid/ substring. */
+  function isDepositApprovedStatus(s){
+    var v=String(s||'').trim().toLowerCase();
+    if(!v||/unpaid|draft|none|not_submitted|missing|未缴/.test(v))return false;
+    if(/reject|驳回|拒绝/.test(v))return false;
+    return /^(approved|verified|passed|paid|active|completed|received)$|已通过|已缴纳|已到账/.test(v);
+  }
   function unifiedAccess(){
     var p=(state.data&&state.data.player)||{};
     var d=(state.data&&state.data.deposit)||{};
@@ -157,7 +164,7 @@
     var depositSt=String(p.deposit_status||p.depositStatus||d.status||v.depositStatus||raw.deposit_status||'').trim();
     var identitySt=String(p.identity_status||p.identityStatus||v.identityStatus||raw.identity_status||'').trim();
     var identityVerified=perms.identityVerified===true||p.identityVerified===true||v.identityVerified===true||/approved|verified|passed/.test(identitySt.toLowerCase());
-    var depositVerified=perms.depositVerified===true||p.depositVerified===true||v.depositVerified===true||/approved|verified|passed|paid|received/.test(depositSt.toLowerCase());
+    var depositVerified=perms.depositVerified===true||p.depositVerified===true||v.depositVerified===true||isDepositApprovedStatus(depositSt);
     var credentialOrOk=perms.credentialOrOk===true||p.credentialOrOk===true||v.credentialOrOk===true||identityVerified||depositVerified;
     var accessSt=String(p.account_access_status||p.accountAccessStatus||'').trim();
     var accessLabel=String(p.accountAccessLabel||'').trim();
@@ -455,7 +462,7 @@
       perm.depositVerified===true||
       p.depositVerified===true||
       v.depositVerified===true||
-      /approved|verified|passed|paid|received/.test(depositSt.toLowerCase());
+      isDepositApprovedStatus(depositSt);
     if(identityVerified||depositVerified)return false;
     var accessSt=String(p.account_access_status||p.accountAccessStatus||"").toLowerCase();
     return accessSt==="incomplete"||perm.canWork===false||perm.canSetAvailable===false;
@@ -794,7 +801,9 @@
     opts=opts||{};
     var s=String(status||'').trim().toLowerCase();
     var submitted=!!opts.submitted;
-    if(/approved|verified|passed|active|paid|completed/.test(s))return 'approved';
+    // "unpaid" contains "paid" — check unpaid / use anchored tokens before /paid/.
+    if(/unpaid|draft|none|not_submitted|missing|未缴/.test(s))return 'editable';
+    if(/^(approved|verified|passed|active|paid|completed|received)$|已通过|已缴纳|已到账/.test(s))return 'approved';
     if(/reject|declin|fail|resubmit|need_more/.test(s))return 'rejected';
     if(submitted&&/pending|review|submit/.test(s))return 'pending';
     return 'editable';
@@ -2315,7 +2324,7 @@
   function depositBadgeHtml(){
     var ua=unifiedAccess();
     var d=(state.data&&state.data.deposit)||{};
-    if(!(ua.depositVerified||/paid|approved|verified|passed|已缴纳/.test(String(ua.deposit_status||d.status||'').toLowerCase())))return '';
+    if(!(ua.depositVerified||isDepositApprovedStatus(ua.deposit_status||d.status)))return '';
     return '<section class="pw-card pad pw-deposit-badge" data-deposit-badge style="margin-top:14px">'+
       '<h3>押金证明</h3>'+
       '<div class="pw-info-list">'+
