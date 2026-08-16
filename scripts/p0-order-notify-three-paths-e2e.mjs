@@ -397,7 +397,7 @@ async function main() {
       // Idempotency retry
       await api("/api/orders", bossT, { action: "pay_order", id: oid, paymentMethod: "catfood" }).catch(() => null);
       await sleep(2000);
-      const mail = await mailLogForOrder(adminTok, oid, MAIL_TO);
+      const mail = await mailLogForOrder(adminT, oid, MAIL_TO);
       const assignKeys = (mail.logs || [])
         .map((l) => l.notificationKey)
         .filter((k) => String(k || "").includes(":assign"));
@@ -445,7 +445,7 @@ async function main() {
       await verifyNotifyBundle({ label, orderId: oid, companionId: compId, compTok: compT, adminTok: adminT, rt, expectMailTo: MAIL_TO });
       await api("/api/orders", bossT, { action: "want_him", id: oid, companion_id: compId });
       await sleep(1500);
-      const mail = await mailLogForOrder(adminTok, oid, MAIL_TO);
+      const mail = await mailLogForOrder(adminT, oid, MAIL_TO);
       const assignKeys = (mail.logs || [])
         .map((l) => l.notificationKey)
         .filter((k) => String(k || "").includes(":assign"));
@@ -490,7 +490,7 @@ async function main() {
         idempotencyKey: idem,
       });
       await sleep(2000);
-      const mail = await mailLogForOrder(adminTok, oid, MAIL_TO);
+      const mail = await mailLogForOrder(adminT, oid, MAIL_TO);
       const assignKeys = (mail.logs || [])
         .map((l) => l.notificationKey)
         .filter((k) => String(k || "").includes(":assign"));
