@@ -473,15 +473,29 @@ export default async function handler(req, res) {
         throw e;
       }
 
-      const paid = await supabaseJson(rest("orders", `?id=eq.${encodeURIComponent(created.id)}`), {
-        method: "PATCH",
-        headers: serviceHeaders(),
-        body: JSON.stringify({
-          status: "claimed",
-          paid_cat_food: total,
-          accepted_at: null,
-        }),
-      });
+      let paid;
+      try {
+        paid = await supabaseJson(rest("orders", `?id=eq.${encodeURIComponent(created.id)}`), {
+          method: "PATCH",
+          headers: serviceHeaders(),
+          body: JSON.stringify({
+            status: "claimed",
+            paid_cat_food: total,
+            accepted_at: null,
+          }),
+        });
+      } catch (e) {
+        // Staging schema drift: paid_cat_food / accepted_at may be missing — still mark claimed.
+        if (/column|PGRST/i.test(String(e.message || ""))) {
+          paid = await supabaseJson(rest("orders", `?id=eq.${encodeURIComponent(created.id)}`), {
+            method: "PATCH",
+            headers: serviceHeaders(),
+            body: JSON.stringify({ status: "claimed" }),
+          });
+        } else {
+          throw e;
+        }
+      }
 
       const claimedOrder = paid?.[0] || { ...created, status: "claimed", companion_id: companionId, paid_cat_food: total };
       // Paid + companion bound → same inbox / Realtime / Email path as orders pay_order / want_him.
