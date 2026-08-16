@@ -938,6 +938,9 @@ const COMPANION_ISOLATION_ALLOWED_ACTIONS = new Set([
   "delete_private_doc",
   "submit_deposit",
   "submit_deposit_proof",
+  "deposit_pay_methods",
+  "deposit_channels",
+  "list_deposit_pay_methods",
   "upload_media",
   "prepare_video_upload",
   "delete_media",
@@ -3355,6 +3358,38 @@ export default async function handler(req, res) {
       });
     }
     if (req.method === "GET" && action === "bootstrap") return json(res,200,{ok:true,data:await bootstrapData(auth.profile, companion)});
+    // Apply-page deposit step: same SoT as companion workbench / submit_deposit_proof.
+    // Reads payment_channels when present, else platform_settings.paymentChannelsPublic.
+    if (
+      (req.method === "GET" || req.method === "POST") &&
+      (action === "deposit_pay_methods" || action === "deposit_channels" || action === "list_deposit_pay_methods")
+    ) {
+      try {
+        const listed = await listDepositPaymentMethods([]);
+        return json(res, 200, {
+          ok: true,
+          amountRm: Number(listed.amountRm || DEPOSIT_AMOUNT_RM) || DEPOSIT_AMOUNT_RM,
+          currency: "MYR",
+          tableReady: listed.tableReady !== false,
+          methods: listed.methods || [],
+          channels: listed.methods || [],
+          depositChannels: listed.methods || [],
+          emptyMessage:
+            !(listed.methods || []).length
+              ? "平台暂未配置押金收款方式，请联系客服。"
+              : "",
+        });
+      } catch (err) {
+        return json(res, 500, {
+          ok: false,
+          message: err?.message || "押金收款信息加载失败，请稍后重试。",
+          methods: [],
+          channels: [],
+          depositChannels: [],
+          emptyMessage: "平台暂未配置押金收款方式，请联系客服。",
+        });
+      }
+    }
     if (req.method === "GET" && action === "inbox") {
       const activeConversationId = String(req.query.conversation_id || req.query.conversationId || "").trim();
       const light =

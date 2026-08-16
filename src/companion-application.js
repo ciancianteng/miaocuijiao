@@ -408,6 +408,94 @@
   function depositSettings() {
     return Object.assign(defaultDeposit(), readDB().depositSettings || readPlatform().depositSettings || {});
   }
+
+  function depositChannels() {
+    return Array.isArray(remoteDepositPay.channels) ? remoteDepositPay.channels : [];
+  }
+
+  function applyDepositChannelsFromPayload(payload) {
+    if (!payload || typeof payload !== "object") return;
+    var list = payload.depositChannels || payload.channels || payload.methods || [];
+    if (!Array.isArray(list)) list = [];
+    remoteDepositPay.channels = list.filter(function (ch) {
+      if (!ch) return false;
+      var info = ch.payInfo || {};
+      return !!(info.qrUrl || info.bankAccount || info.duitnowId || info.phone || ch.qrUrl);
+    });
+    var amt = Number(payload.amountRm != null ? payload.amountRm : payload.requiredAmount);
+    if (amt > 0) remoteDepositPay.amountRm = amt;
+    remoteDepositPay.emptyMessage = String(payload.emptyMessage || "").trim();
+    remoteDepositPay.error = "";
+    remoteDepositPay.loaded = true;
+  }
+
+  function fetchDepositPayMethods(force) {
+    if (remoteDepositPay.loading) return Promise.resolve(remoteDepositPay);
+    if (remoteDepositPay.loaded && !force) return Promise.resolve(remoteDepositPay);
+    if (!companionToken()) {
+      remoteDepositPay.loaded = true;
+      remoteDepositPay.channels = [];
+      remoteDepositPay.emptyMessage = "请先登录陪玩账号后再查看押金收款信息。";
+      return Promise.resolve(remoteDepositPay);
+    }
+    remoteDepositPay.loading = true;
+    return fetch("/api/companion?action=deposit_pay_methods", {
+      headers: {
+        Accept: "application/json",
+        "x-mcj-companion-token": companionToken(),
+        Authorization: "Bearer " + companionToken(),
+      },
+      cache: "no-store",
+    })
+      .then(function (res) {
+        return res.json().then(function (body) {
+          if (!res.ok || body.ok === false) {
+            throw new Error((body && body.message) || "押金收款信息加载失败");
+          }
+          applyDepositChannelsFromPayload(body);
+          if (!remoteDepositPay.channels.length && !remoteDepositPay.emptyMessage) {
+            remoteDepositPay.emptyMessage = "平台暂未配置押金收款方式，请联系客服。";
+          }
+          return remoteDepositPay;
+        });
+      })
+      .catch(function (err) {
+        remoteDepositPay.loaded = true;
+        remoteDepositPay.error = String((err && err.message) || "押金收款信息加载失败");
+        if (!remoteDepositPay.channels.length) {
+          remoteDepositPay.emptyMessage = "平台暂未配置押金收款方式，请联系客服。";
+        }
+        return remoteDepositPay;
+      })
+      .finally(function () {
+        remoteDepositPay.loading = false;
+      });
+  }
+
+  function openApplyDepositQrLightbox(src) {
+    if (!src) return;
+    var box = document.getElementById("applyDepositQrLightbox");
+    if (!box) {
+      box = document.createElement("div");
+      box.id = "applyDepositQrLightbox";
+      box.className = "apply-deposit-qr-lightbox";
+      box.innerHTML =
+        '<div class="apply-deposit-qr-lightbox-panel" role="dialog" aria-modal="true" aria-label="收款二维码放大预览">' +
+        '<button type="button" class="apply-deposit-qr-lightbox-close" data-apply-deposit-qr-close aria-label="关闭">×</button>' +
+        '<img alt="收款二维码大图" data-apply-deposit-qr-lightbox-img="1" referrerpolicy="no-referrer">' +
+        '<p class="apply-note">点击遮罩或关闭按钮可关闭</p>' +
+        "</div>";
+      box.addEventListener("click", function (ev) {
+        if (ev.target === box || (ev.target && ev.target.closest && ev.target.closest("[data-apply-deposit-qr-close]"))) {
+          box.classList.remove("is-open");
+        }
+      });
+      document.body.appendChild(box);
+    }
+    var img = box.querySelector("[data-apply-deposit-qr-lightbox-img]");
+    if (img) img.src = src;
+    box.classList.add("is-open");
+  }
   function voiceTypeOptions() {
     var db = readDB();
     var rows = (db.voiceTypes || readPlatform().voiceTypes || []).filter(function (item) { return item.enabled !== false; });
@@ -514,6 +602,16 @@
       }
       if (mode === "deposit") {
         if (!hasDurableUpload(identity.depositProof)) missing.push("押金付款凭证");
+        var chans = depositChannels();
+        if (chans.length) {
+          var chId = String(identity.depositChannelId || identity.depositMethod || "").trim();
+          var matched = chans.some(function (c) {
+            return String(c.id || c.code || "") === chId;
+          });
+          if (!matched && chans.length > 1) missing.push("选择押金收款渠道");
+        } else if (remoteDepositPay.loaded) {
+          missing.push(remoteDepositPay.emptyMessage || "平台暂未配置押金收款方式，请联系客服");
+        }
       }
       [["settlementMethod", "结款方式"], ["settlementName", "结款户名"], ["settlementAccount", "结款账号"]].forEach(function (item) {
         if (!hasText(identity, item[0])) missing.push(item[1]);
@@ -569,6 +667,16 @@
     message: "",
     messageTone: "error",
     bossSessionPending: false,
+  };
+
+  /** Live deposit pay channels from payment settings SoT (not player_deposit_settings). */
+  var remoteDepositPay = {
+    loaded: false,
+    loading: false,
+    amountRm: 100,
+    channels: [],
+    emptyMessage: "",
+    error: "",
   };
 
   function setAuthMessage(msg, tone) {
@@ -1533,10 +1641,125 @@
     if (set.payeeNote || set.paymentNote) lines.push("<li>" + esc(set.payeeNote || set.paymentNote) + "</li>");
     return lines.length ? "<ul>" + lines.join("") + "</ul>" : "";
   }
+
+  function depositChannelPayInfoHtml(channel, selectedId) {
+    if (!channel) return "";
+    var info = channel.payInfo || {};
+    var id = String(channel.id || channel.code || "").trim();
+    var checked = selectedId ? id === String(selectedId) : true;
+    var qr = String(info.qrUrl || channel.qrUrl || "").trim();
+    var accountLabel = /duitnow/i.test(id + String(channel.label || channel.name || ""))
+      ? "DuitNow ID"
+      : "银行账号 / 收款账号";
+    var accountVal = String(info.duitnowId || info.bankAccount || info.phone || "").trim();
+    return (
+      '<label class="apply-deposit-channel' +
+      (checked ? " is-active" : "") +
+      '" data-deposit-channel-card="' +
+      esc(id) +
+      '">' +
+      '<input type="radio" name="depositChannelId" data-deposit-channel value="' +
+      esc(id) +
+      '" ' +
+      (checked ? "checked" : "") +
+      " required>" +
+      '<div class="apply-deposit-channel-body">' +
+      "<strong>" +
+      esc(channel.label || channel.name || id) +
+      "</strong>" +
+      '<ul class="apply-deposit-info">' +
+      "<li>支付方式：" +
+      esc(channel.label || channel.name || "-") +
+      "</li>" +
+      "<li>收款人：" +
+      esc(info.receiverName || "-") +
+      "</li>" +
+      "<li>银行：" +
+      esc(info.bankName || "-") +
+      "</li>" +
+      "<li>" +
+      esc(accountLabel) +
+      "：" +
+      esc(accountVal || "-") +
+      "</li>" +
+      "<li>应付金额：RM " +
+      esc(String(info.amountRm != null ? info.amountRm : remoteDepositPay.amountRm || 100)) +
+      "</li>" +
+      "</ul>" +
+      (qr
+        ? '<div class="apply-deposit-qr"><p class="apply-note">收款二维码（点击可放大）</p>' +
+          '<button type="button" class="apply-deposit-qr-btn" data-apply-deposit-qr-zoom="' +
+          esc(qr) +
+          '" aria-label="放大收款二维码">' +
+          '<img src="' +
+          esc(qr) +
+          '" alt="押金收款二维码" referrerpolicy="no-referrer">' +
+          "</button></div>"
+        : '<p class="apply-note">该渠道暂无二维码，请按上方账号信息转账。</p>') +
+      (info.instructions ? '<p class="apply-note">' + esc(info.instructions) + "</p>" : "") +
+      "</div></label>"
+    );
+  }
+
+  function depositPayPanelHtml(id) {
+    var set = depositSettings();
+    var channels = depositChannels();
+    var amount = Number(remoteDepositPay.amountRm || set.amount || 100) || 100;
+    var currency = set.currency === "MYR" ? "RM" : set.currency || "RM";
+    var selectedId = String(id.depositChannelId || id.depositMethod || "").trim();
+    if (!selectedId && channels.length === 1) {
+      selectedId = String(channels[0].id || channels[0].code || "").trim();
+    }
+    var head =
+      "<h3>认证押金：" +
+      esc(currency) +
+      amount.toFixed(0) +
+      "</h3>" +
+      "<p class=\"apply-note\">请向平台收款账号转账后上传付款凭证。收款信息来自后台「支付设置」中已启用且支持押金的渠道。</p>";
+
+    if (remoteDepositPay.loading && !channels.length) {
+      return '<div class="apply-subcard apply-deposit-pay">' + head + '<p class="apply-note">正在加载平台收款信息…</p></div>';
+    }
+
+    if (!channels.length) {
+      var empty =
+        remoteDepositPay.emptyMessage ||
+        remoteDepositPay.error ||
+        "平台暂未配置押金收款方式，请联系客服。";
+      // Legacy player_deposit_settings payee text only as secondary hint when present.
+      var legacy = depositPayeeHtml(set);
+      return (
+        '<div class="apply-subcard apply-deposit-pay">' +
+        head +
+        '<p class="apply-deposit-empty" role="alert">' +
+        esc(empty) +
+        "</p>" +
+        (legacy ? '<div class="apply-note">备用说明：</div>' + legacy : "") +
+        '<form class="apply-grid">' +
+        fileField("depositProof", "押金付款凭证", { value: id.depositProof }) +
+        "</form></div>"
+      );
+    }
+
+    return (
+      '<div class="apply-subcard apply-deposit-pay">' +
+      head +
+      '<div class="apply-deposit-channels" data-deposit-channels>' +
+      channels
+        .map(function (ch) {
+          return depositChannelPayInfoHtml(ch, selectedId);
+        })
+        .join("") +
+      "</div>" +
+      '<form class="apply-grid">' +
+      fileField("depositProof", "押金付款凭证", { value: id.depositProof }) +
+      "</form></div>"
+    );
+  }
+
   function identityHtml(draft) {
     var id = draft.identity || {};
     var mode = String(id.authMode || "").trim();
-    var set = depositSettings();
     var choice =
       '<div class="apply-split">' +
       '<button class="apply-subcard" type="button" data-auth-mode="id_card" aria-pressed="' + (mode === "id_card" ? "true" : "false") + '"><h3>身份证认证</h3><p>上传证件正反面完成认证。选择后无需缴纳押金。</p><strong>' + (mode === "id_card" ? "已选择" : "点击选择") + "</strong></button>" +
@@ -1551,15 +1774,7 @@
         fileField("idBack", "身份证 / 证件背面", { value: id.idBack }) +
         "</form></div>";
     } else if (mode === "deposit") {
-      modeForm =
-        '<div class="apply-subcard"><h3>认证押金：' + esc(set.currency || "RM") + Number(set.amount || 100).toFixed(0) + "</h3>" +
-        "<ul><li>请向平台收款账号转账后上传付款凭证</li><li>支持方式：" + esc((set.methods || []).join("、") || "TNG / DuitNow / Alipay") + "</li></ul>" +
-        (set.description ? "<p>" + esc(set.description) + "</p>" : "") +
-        depositPayeeHtml(set) +
-        '<form class="apply-grid">' +
-        selectField("depositMethod", "押金支付方式", id.depositMethod, set.methods || ["TNG", "DuitNow", "Alipay"]) +
-        fileField("depositProof", "押金付款凭证", { value: id.depositProof }) +
-        "</form></div>";
+      modeForm = depositPayPanelHtml(id);
     }
     var settlement =
       mode === "id_card" || mode === "deposit"
@@ -1951,8 +2166,10 @@
       chain = chain.then(function () {
         var proof = storagePayloadForSubmit(identity.depositProof);
         return postCompanion("submit_deposit_proof", {
-          paid_amount: (depositSettings().amount || 100),
-          payment_method: identity.depositMethod || "",
+          paid_amount: (remoteDepositPay.amountRm || depositSettings().amount || 100),
+          payment_method: identity.depositMethod || identity.depositChannelId || "",
+          channel_id: identity.depositChannelId || identity.depositMethod || "",
+          channelId: identity.depositChannelId || identity.depositMethod || "",
           proof_url: proof || "",
           remark: "陪玩申请一并提交",
           settlementMethod: identity.settlementMethod || "",
@@ -3408,6 +3625,7 @@
         if (nextMode === "id_card") {
           delete cur.identity.depositProof;
           delete cur.identity.depositMethod;
+          delete cur.identity.depositChannelId;
         } else {
           delete cur.identity.idFront;
           delete cur.identity.idBack;
@@ -3415,6 +3633,48 @@
         }
         writeDraftRecord(cur);
         render(4);
+        if (nextMode === "deposit") {
+          fetchDepositPayMethods(true).then(function () {
+            var d = readDraft();
+            var chans = depositChannels();
+            if (chans.length === 1) {
+              d.identity = Object.assign({}, d.identity || {});
+              var onlyId = String(chans[0].id || chans[0].code || "").trim();
+              d.identity.depositChannelId = onlyId;
+              d.identity.depositMethod = onlyId;
+              writeDraftRecord(d);
+            }
+            render(4);
+          });
+        }
+        return;
+      }
+      var depositChannel = e.target.closest("[data-deposit-channel-card], [data-deposit-channel]");
+      if (depositChannel) {
+        var input =
+          depositChannel.matches && depositChannel.matches("[data-deposit-channel]")
+            ? depositChannel
+            : depositChannel.querySelector("[data-deposit-channel]");
+        var channelId = String((input && input.value) || depositChannel.getAttribute("data-deposit-channel-card") || "").trim();
+        if (channelId) {
+          var dCh = readDraft();
+          dCh.identity = Object.assign({}, dCh.identity || {});
+          dCh.identity.depositChannelId = channelId;
+          dCh.identity.depositMethod = channelId;
+          writeDraftRecord(dCh);
+          render(4);
+        }
+        return;
+      }
+      var qrZoomBtn = e.target.closest("[data-apply-deposit-qr-zoom]");
+      if (qrZoomBtn) {
+        e.preventDefault();
+        var src = qrZoomBtn.getAttribute("data-apply-deposit-qr-zoom") || "";
+        if (!src) {
+          var img = qrZoomBtn.querySelector("img");
+          src = (img && img.getAttribute("src")) || "";
+        }
+        if (src) openApplyDepositQrLightbox(src);
         return;
       }
     });
@@ -3475,6 +3735,7 @@
     var player = boot.player || {};
     var verification = boot.verification || {};
     var deposit = boot.deposit || {};
+    applyDepositChannelsFromPayload(deposit);
     var mediaList = Array.isArray(boot.media) ? boot.media : [];
     var mediaMap = {
       avatarUrl: "",
@@ -3621,6 +3882,13 @@
       remoteConfigLoaded = true;
       render(readDraft().step || 0);
       restoreApplyScroll();
+      var idMode = String(((readDraft().identity || {}).authMode) || "");
+      if (idMode === "deposit" || Number(readDraft().step || 0) === 4) {
+        return fetchDepositPayMethods(false).then(function () {
+          render(readDraft().step || 0);
+        });
+      }
+      return null;
     }).catch(function () {
       initLoading = false;
       initLoadError = "资料加载失败，请重试";
