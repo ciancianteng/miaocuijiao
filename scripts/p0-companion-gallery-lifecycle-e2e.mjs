@@ -263,14 +263,22 @@ async function main() {
 
   const records = await api(token, {
     action: "upload_media",
-    media_type: "gallery",
+    media_type: "cover",
     data_url: tinyPngDataUrl(11),
-    filename: "records.png",
+    filename: "game-cover.png",
   });
   boot = await bootstrap(token);
   g = galleryOf(boot);
-  report.records_gallery_append = records.ok && g.length >= 4 ? "PASS" : "FAIL";
-  step("records_gallery_append", report.records_gallery_append === "PASS", `count=${g.length}`);
+  const coverOf = (b) =>
+    (Array.isArray(b?.media) ? b.media : []).filter((m) => String(m.mediaType || m.media_type || "") === "cover");
+  const covers = coverOf(boot);
+  // Game cover is independent — must NOT increase album count.
+  report.records_gallery_append = records.ok && g.length === 3 && covers.length >= 1 ? "PASS" : "FAIL";
+  step(
+    "records_as_cover_independent",
+    report.records_gallery_append === "PASS",
+    `gallery=${g.length} cover=${covers.length} ok=${records.ok}`
+  );
 
   writeOut(meta);
   const failed = results.filter((r) => r.result === "FAIL" && !/^video_upload$/.test(r.step));
