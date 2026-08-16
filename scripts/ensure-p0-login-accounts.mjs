@@ -6,6 +6,7 @@
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import { guardAfterEnvLoad } from "./lib/prod-guard.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const env = Object.fromEntries(
@@ -18,6 +19,11 @@ const env = Object.fromEntries(
       return [l.slice(0, i), l.slice(i + 1).replace(/^['"]|['"]$/g, "")];
     })
 );
+
+for (const [k, v] of Object.entries(env)) {
+  if (k && v != null && process.env[k] == null) process.env[k] = String(v);
+}
+guardAfterEnvLoad("ensure-p0-login-accounts.mjs");
 
 const URL = (env.SUPABASE_URL || env.VITE_SUPABASE_URL || "").replace(/\/$/, "");
 const SERVICE = env.SUPABASE_SERVICE_ROLE_KEY;

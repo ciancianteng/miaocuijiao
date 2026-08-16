@@ -16,6 +16,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createClient } from "@supabase/supabase-js";
+import { guardAfterEnvLoad } from "./lib/prod-guard.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const env = Object.fromEntries(
@@ -28,6 +29,10 @@ const env = Object.fromEntries(
       return [l.slice(0, i), l.slice(i + 1).replace(/^['"]|['"]$/g, "")];
     })
 );
+for (const [k, v] of Object.entries(env)) {
+  if (k && v != null && process.env[k] == null) process.env[k] = String(v);
+}
+guardAfterEnvLoad("p0-order-notify-three-paths-e2e.mjs");
 
 const SUPABASE_URL = (env.SUPABASE_URL || env.VITE_SUPABASE_URL || "").replace(/\/$/, "");
 const ANON = env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY || env.VITE_SUPABASE_PUBLISHABLE_KEY;
