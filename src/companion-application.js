@@ -3639,7 +3639,14 @@
     try {
       var bootUid = authUserId();
       if (bootUid) migrateLegacyDraftForUser(bootUid);
-      else purgeUnscopedDraftKeys();
+      else {
+        purgeUnscopedDraftKeys();
+        authUi.emailVerified = false;
+        authUi.verifiedEmail = "";
+        authUi.registerToken = "";
+        authUi.draftEmail = "";
+        authUi.loginEmail = "";
+      }
     } catch (eBootDraft) {}
     render(readDraft().step || 0);
     bind();
@@ -3687,6 +3694,14 @@
       try {
         sessionStorage.removeItem(APPLICANT_KEY);
       } catch (e) {}
+      // Logout / guest: never keep prior account verified-email UI state.
+      authUi.emailVerified = false;
+      authUi.verifiedEmail = "";
+      authUi.registerToken = "";
+      authUi.draftEmail = "";
+      authUi.loginEmail = "";
+      authUi.message = "";
+      authUi.busy = false;
       render(0);
       return;
     }
