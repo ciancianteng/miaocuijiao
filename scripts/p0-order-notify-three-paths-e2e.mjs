@@ -247,15 +247,25 @@ async function ensureCompanionReady(compId, compTok) {
       deposit_status: "approved",
       allow_orders: true,
       online_status: "online",
-      availability_status: "online",
-      // marketplace create_and_pay falls back to game_prices when companion_services table is absent
       game_prices: { VALORANT: 18 },
       game: "VALORANT",
       price: 18,
       pricing_unit: "小时",
       updated_at: new Date().toISOString(),
     },
-  }).catch(() => null);
+  }).catch(async () => {
+    // Column drift: retry lean patch
+    await rest(`companion_profiles?user_id=eq.${encodeURIComponent(compId)}`, "", {
+      method: "PATCH",
+      body: {
+        verification_status: "approved",
+        online_status: "online",
+        game_prices: { VALORANT: 18 },
+        game: "VALORANT",
+        price: 18,
+      },
+    }).catch(() => null);
+  });
 }
 
 async function ackForcedAll(token) {
@@ -278,19 +288,26 @@ async function ackForcedAll(token) {
 
 async function ensureMarketplaceService(compId) {
   // Prefer game_prices fallback (companion_services may be missing on staging schema).
-  await rest(`companion_profiles?user_id=eq.${encodeURIComponent(compId)}`, "", {
-    method: "PATCH",
-    body: {
+  const tryPatch = async (body) =>
+    rest(`companion_profiles?user_id=eq.${encodeURIComponent(compId)}`, "", { method: "PATCH", body });
+  try {
+    await tryPatch({
       game_prices: { VALORANT: 18 },
       game: "VALORANT",
       price: 18,
       pricing_unit: "小时",
       verification_status: "approved",
       online_status: "online",
-      availability_status: "online",
       updated_at: new Date().toISOString(),
-    },
-  });
+    });
+  } catch {
+    await tryPatch({
+      game_prices: { VALORANT: 18 },
+      game: "VALORANT",
+      price: 18,
+      online_status: "online",
+    }).catch(() => null);
+  }
   return { id: "VALORANT", price: 18 };
 }
 
