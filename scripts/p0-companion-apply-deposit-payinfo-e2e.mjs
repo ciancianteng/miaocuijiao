@@ -88,22 +88,77 @@ async function installLocal(page, paySot) {
       await route.fulfill({ status: 200, contentType: type, body });
     });
   }
+  // Minimal published rule so step 4 is reachable (not payment data).
+  await page.route("**/api/platform/content**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        ok: true,
+        configured: true,
+        byType: {
+          player_rules: [
+            {
+              id: "e2e-apply-rule",
+              slug: "apply-step1",
+              status: "published",
+              enabled: true,
+              published: {
+                title: "陪玩制度",
+                body: "E2E rule body for deposit payinfo.",
+                version: "e2e-1",
+              },
+            },
+          ],
+          voice_types: [],
+          player_deposit_settings: [],
+        },
+      }),
+    });
+  });
   // Replay live Production SoT for deposit_pay_methods (fetched at runtime via
   // listDepositPaymentMethods — not hardcoded fixtures).
   if (paySot) {
     await page.route("**/api/companion**", async (route) => {
       const req = route.request();
       const url = req.url();
-      const post = req.method() === "POST" ? req.postDataJSON?.() || {} : {};
-      const action =
-        new URL(url).searchParams.get("action") ||
-        post.action ||
-        "";
+      const post =
+        req.method() === "POST"
+          ? (() => {
+              try {
+                return JSON.parse(req.postData() || "{}");
+              } catch {
+                return {};
+              }
+            })()
+          : {};
+      const action = new URL(url).searchParams.get("action") || post.action || "";
       if (action === "deposit_pay_methods" || action === "deposit_channels" || action === "list_deposit_pay_methods") {
         await route.fulfill({
           status: 200,
           contentType: "application/json",
           body: JSON.stringify(paySot),
+        });
+        return;
+      }
+      // Bootstrap: keep session usable; inject deposit channels from SoT.
+      if (action === "bootstrap" || (!action && req.method() === "GET")) {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            ok: true,
+            data: {
+              player: { applicationStatus: "draft" },
+              deposit: {
+                amountRm: paySot.amountRm || 100,
+                depositChannels: paySot.methods || [],
+                channels: paySot.methods || [],
+              },
+              media: [],
+              verification: {},
+            },
+          }),
         });
         return;
       }
@@ -148,9 +203,41 @@ async function seedSession(page, session) {
         JSON.stringify({
           step: 4,
           ownerUserId: uid,
-          data: { nickname: profile.name || profile.display_name || "E2E", gender: "女", age: "22" },
+          data: {
+            nickname: "E2EDep",
+            gender: "女",
+            age: "22",
+            region: "KL",
+            phone: "0123456789",
+            email: "e2e@example.com",
+            contactPublic: "不公开，仅平台可见",
+            personalTags: ["随和"],
+            gameNickname: "E2EGameNick",
+            mainGames: ["王者荣耀"],
+            positions: ["中路"],
+            modes: ["陪玩服务"],
+            rank: "黄金",
+            voiceType: "甜妹",
+            onlineStart: "18:00",
+            onlineEnd: "23:00",
+            intro: "hello e2e",
+          },
           identity: {},
-          rulesAgreement: { accepted: true },
+          uploads: {
+            avatar: { url: "https://example.com/a.jpg", path: "a.jpg", status: "ok" },
+            photos: [{ url: "https://example.com/p.jpg", path: "p.jpg", status: "ok" }],
+          },
+          voice: {
+            url: "https://example.com/v.webm",
+            path: "v.webm",
+            status: "已确认",
+            confirmed: true,
+            listened: true,
+            uploaded: true,
+            duration: 15,
+            quality: { passed: true, volumeOk: true, durationOk: true, notBlank: true, humanVoice: true },
+          },
+          rulesAgreement: { accepted: true, version: "e2e-1", ruleId: "e2e-apply-rule" },
         })
       );
     },
@@ -179,20 +266,41 @@ async function runViewport(browser, label, viewport, session, expectPay, paySot)
     waitUntil: "domcontentloaded",
     timeout: 90000,
   });
-  await page.waitForTimeout(2500);
+  await page.waitForSelector("#companionApplyRoot", { timeout: 30000 });
+  await page.waitForTimeout(2800);
+  // Prefer step-nav jump (avoids form collect wiping seeded tags).
+  const stepBtn = page.locator('[data-apply-step="4"]');
+  if (await stepBtn.count()) {
+    await stepBtn.click({ force: true }).catch(() => {});
+    await page.waitForTimeout(900);
+  }
+  if (!(await page.locator("[data-auth-mode]").count())) {
+    for (let i = 0; i < 6; i++) {
+      if (await page.locator("[data-auth-mode]").count()) break;
+      await page.locator("[data-apply-next]").click().catch(() => {});
+      await page.waitForTimeout(700);
+    }
+  }
+  await page.waitForSelector('[data-auth-mode="deposit"]', { timeout: 20000 });
 
-  // ID card path
+  // ID card path (assert panel DOM, not body text — settlementMethod options include "DuitNow")
   await page.locator('[data-auth-mode="id_card"]').click();
   await page.waitForTimeout(600);
   const idView = await page.evaluate(() => {
     const html = document.body.innerText || "";
     return {
       hasIdForm: /身份证资料|证件正面|证件背面/.test(html),
-      hasDepositPay: /收款二维码|DuitNow|收款人|平台暂未配置押金/.test(html),
+      hasDepositPayPanel: !!document.querySelector(".apply-deposit-pay"),
+      depositSelected: document.querySelector('[data-auth-mode="deposit"]')?.getAttribute("aria-pressed") === "true",
+      idSelected: document.querySelector('[data-auth-mode="id_card"]')?.getAttribute("aria-pressed") === "true",
     };
   });
   await page.screenshot({ path: path.join(ART, `${label}-id-card.png`), fullPage: true });
-  step(`${label}_id_card_ok`, idView.hasIdForm && !idView.hasDepositPay, JSON.stringify(idView));
+  step(
+    `${label}_id_card_ok`,
+    idView.hasIdForm && !idView.hasDepositPayPanel && idView.idSelected && !idView.depositSelected,
+    JSON.stringify(idView)
+  );
 
   // Deposit path
   await page.locator('[data-auth-mode="deposit"]').click();
@@ -232,8 +340,8 @@ async function runViewport(browser, label, viewport, session, expectPay, paySot)
   step(`${label}_deposit_payinfo`, ok, JSON.stringify(detail));
 
   if (depView.hasQr) {
-    await page.locator("[data-apply-deposit-qr-zoom]").first().click();
-    await page.waitForTimeout(400);
+    await page.locator("[data-apply-deposit-qr-zoom]").first().click({ force: true });
+    await page.waitForSelector("#applyDepositQrLightbox.is-open", { timeout: 5000 }).catch(() => null);
     const open = await page.evaluate(() => !!document.querySelector("#applyDepositQrLightbox.is-open"));
     await page.screenshot({ path: path.join(ART, `${label}-qr-zoom.png`), fullPage: true });
     step(`${label}_qr_zoom`, open, `lightbox=${open}`);
