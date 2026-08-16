@@ -746,54 +746,76 @@
       acceptMobileFile
     );
   }
-  function readFileAsDataUrl(file) {
-    return new Promise(function (resolve, reject) {
-      if (!file) return reject(new Error("没有可发布的图片文件"));
-      var reader = new FileReader();
-      reader.onload = function () {
-        resolve(reader.result);
-      };
-      reader.onerror = function () {
-        reject(new Error("图片读取失败"));
-      };
-      reader.readAsDataURL(file);
+  function uploadBannerFileDirect(file, slot) {
+    if (!file) return Promise.reject(new Error("没有可上传的图片文件"));
+    if (file.size > 10 * 1024 * 1024) return Promise.reject(new Error("Banner 图片不能超过 10MB"));
+    var kind = slot === "mobile" ? "mobile" : "desktop";
+    state.message = kind === "mobile" ? "正在直传手机端 Banner…" : "正在直传电脑端 Banner…";
+    render();
+    return apiPost({
+      action: "prepare_upload",
+      slot: kind,
+      filename: file.name || "banner-" + kind + ".jpg",
+      mimeType: file.type || "image/jpeg",
+      size: file.size || 0,
+    }).then(function (prep) {
+      if (!prep || !prep.signedUrl || !prep.path) throw new Error("签发直传凭证失败");
+      return new Promise(function (resolve, reject) {
+        var xhr = new XMLHttpRequest();
+        xhr.open("PUT", prep.signedUrl, true);
+        xhr.setRequestHeader("Content-Type", file.type || prep.contentType || "image/jpeg");
+        xhr.setRequestHeader("x-upsert", "true");
+        xhr.onload = function () {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve(prep);
+            return;
+          }
+          var detail = "";
+          try {
+            detail = xhr.responseText ? String(xhr.responseText).slice(0, 200) : "";
+          } catch (e) {}
+          reject(new Error(detail || "Banner 直传失败：HTTP " + xhr.status));
+        };
+        xhr.onerror = function () {
+          reject(new Error("Banner 直传网络失败，请稍后重试"));
+        };
+        xhr.send(file);
+      }).then(function (prepDone) {
+        return apiPost({
+          action: "confirm_upload",
+          bucket: prepDone.bucket,
+          path: prepDone.path,
+        }).then(function (confirmed) {
+          return {
+            url: (confirmed && (confirmed.publicUrl || confirmed.url)) || prepDone.publicUrl,
+            path: prepDone.path,
+            bucket: prepDone.bucket,
+            slot: kind,
+          };
+        });
+      });
     });
   }
-  function resolvePublishImageData() {
+  function resolveDesktopUpload() {
     if (!state.draft) return Promise.reject(new Error("没有可发布的图片"));
     // Crop-only update on existing banner: persist crop_meta without re-uploading bytes.
     if (state.draft.reused && state.editingId) {
       return Promise.resolve(null);
     }
-    if (state.draft.file) return readFileAsDataUrl(state.draft.file);
-    return fetch(state.draft.url, { mode: "cors", credentials: "omit" })
-      .then(function (res) {
-        if (!res.ok) throw new Error("无法读取原图，请重新上传图片后再保存");
-        return res.blob();
-      })
-      .then(function (blob) {
-        var type = blob.type || "image/jpeg";
-        var file = new File([blob], "homepage-banner.jpg", { type: type });
-        state.draft.file = file;
-        return readFileAsDataUrl(file);
-      });
+    if (state.draft.file) return uploadBannerFileDirect(state.draft.file, "desktop");
+    if (state.draft.url && /^https?:\/\//i.test(state.draft.url)) {
+      return Promise.resolve({ url: state.draft.url, path: "", bucket: "", slot: "desktop" });
+    }
+    return Promise.reject(new Error("请先上传电脑端 Banner 图片"));
   }
-  function resolveMobileImageData() {
+  function resolveMobileUpload() {
     if (!state.mobileDraft) return Promise.resolve(null);
     if (state.mobileDraft.reused) return Promise.resolve(null);
-    if (state.mobileDraft.file) return readFileAsDataUrl(state.mobileDraft.file);
-    if (!state.mobileDraft.url) return Promise.resolve(null);
-    return fetch(state.mobileDraft.url, { mode: "cors", credentials: "omit" })
-      .then(function (res) {
-        if (!res.ok) throw new Error("无法读取手机端原图，请重新上传后再保存");
-        return res.blob();
-      })
-      .then(function (blob) {
-        var type = blob.type || "image/jpeg";
-        var file = new File([blob], "homepage-banner-mobile.jpg", { type: type });
-        state.mobileDraft.file = file;
-        return readFileAsDataUrl(file);
-      });
+    if (state.mobileDraft.file) return uploadBannerFileDirect(state.mobileDraft.file, "mobile");
+    if (state.mobileDraft.url && /^https?:\/\//i.test(state.mobileDraft.url)) {
+      return Promise.resolve({ url: state.mobileDraft.url, path: "", bucket: "", slot: "mobile" });
+    }
+    return Promise.resolve(null);
   }
   function applyDraftImage(file, url) {
     var img = new Image();
@@ -934,10 +956,10 @@
     state.error = "";
     state.message = state.editingId ? "保存修改中…" : "上传中/发布中…";
     render();
-    Promise.all([resolvePublishImageData(), resolveMobileImageData()])
+    Promise.all([resolveDesktopUpload(), resolveMobileUpload()])
       .then(function (results) {
-        var dataUrl = results[0];
-        var mobileDataUrl = results[1];
+        var desktopUp = results[0];
+        var mobileUp = results[1];
         var editingId = state.editingId;
         var crop = cropPayload();
         var mobileCrop = mobileCropPayload();
@@ -967,30 +989,45 @@
             },
             shared
           );
-          if (dataUrl) body.image_data = dataUrl;
-          if (mobileDataUrl) {
-            body.mobile_image_data = mobileDataUrl;
-            body.mobile_filename =
-              (state.mobileDraft && state.mobileDraft.file && state.mobileDraft.file.name) ||
-              "homepage-banner-mobile.jpg";
+          if (desktopUp && desktopUp.path) {
+            body.storage_path = desktopUp.path;
+            body.bucket = desktopUp.bucket;
+            body.image_url = desktopUp.url;
+          } else if (desktopUp && desktopUp.url) {
+            body.image_url = desktopUp.url;
+          }
+          if (mobileUp && mobileUp.path) {
+            body.mobile_storage_path = mobileUp.path;
+            body.mobile_bucket = mobileUp.bucket;
+            body.mobile_image_url = mobileUp.url;
+          } else if (mobileUp && mobileUp.url) {
+            body.mobile_image_url = mobileUp.url;
           }
           if (state.clearMobile) body.clear_mobile_image = true;
           return apiPost(body);
         }
-        if (!dataUrl) throw new Error("请先上传电脑端 Banner 图片");
+        if (!desktopUp || !desktopUp.url) throw new Error("请先上传电脑端 Banner 图片");
         var publishBody = Object.assign(
           {
             action: "publish",
-            image_data: dataUrl,
             filename: (state.draft.file && state.draft.file.name) || "homepage-banner.jpg",
+            image_url: desktopUp.url,
           },
           shared
         );
-        if (mobileDataUrl) {
-          publishBody.mobile_image_data = mobileDataUrl;
+        if (desktopUp.path) {
+          publishBody.storage_path = desktopUp.path;
+          publishBody.bucket = desktopUp.bucket;
+        }
+        if (mobileUp && mobileUp.url) {
+          publishBody.mobile_image_url = mobileUp.url;
           publishBody.mobile_filename =
             (state.mobileDraft && state.mobileDraft.file && state.mobileDraft.file.name) ||
             "homepage-banner-mobile.jpg";
+          if (mobileUp.path) {
+            publishBody.mobile_storage_path = mobileUp.path;
+            publishBody.mobile_bucket = mobileUp.bucket;
+          }
         }
         return apiPost(publishBody);
       })

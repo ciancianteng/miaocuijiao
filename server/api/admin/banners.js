@@ -255,6 +255,13 @@ async function ensureBannerBucket() {
 async function uploadBannerImage(dataUrl, filename = "banner") {
   const file = decodeDataUrl(dataUrl);
   if (!file) throw new Error("图片数据无效，请重新上传。");
+  // Legacy tiny data_url path only (e2e / old clients). Real Banner images must use prepare_upload.
+  if (file.buffer.length > 100 * 1024) {
+    throw Object.assign(
+      new Error("Banner 图片请使用直传（prepare_upload），勿将完整图片 POST 到本接口。"),
+      { status: 413, code: "BANNER_USE_DIRECT_UPLOAD" }
+    );
+  }
   const bucket = await ensureBannerBucket();
   const ext = (file.contentType.split("/")[1] || "png").replace("jpeg", "jpg");
   const rawName = String(filename || "homepage-banner");
@@ -276,6 +283,104 @@ async function uploadBannerImage(dataUrl, filename = "banner") {
     throw new Error(`Banner 图片上传失败：${text || response.status}`);
   }
   return publicStorageUrl(bucket, objectPath);
+}
+
+function safeBannerObjectName(filename = "homepage-banner", mimeType = "image/jpeg") {
+  const extFromMime = String(mimeType || "")
+    .split("/")[1]
+    ?.replace("jpeg", "jpg")
+    ?.replace(/[^a-z0-9]/gi, "");
+  const rawName = String(filename || "homepage-banner");
+  const baseName = rawName.replace(/\.[a-z0-9]+$/i, "");
+  const safeName = baseName.replace(/[^a-z0-9.-]/gi, "-") || "homepage-banner";
+  const ext = extFromMime || "jpg";
+  return `${safeName}.${ext}`;
+}
+
+/**
+ * Mint a short-lived signed upload URL so the browser PUTs Banner bytes
+ * straight to Supabase Storage (never through the Vercel function body).
+ */
+async function createBannerSignedUpload({ slot = "desktop", filename = "", mimeType = "image/jpeg", size = 0 } = {}) {
+  const bytes = Number(size) || 0;
+  if (bytes > 10 * 1024 * 1024) {
+    throw Object.assign(new Error("Banner 图片不能超过 10MB"), { status: 413 });
+  }
+  const mime = String(mimeType || "image/jpeg").toLowerCase();
+  const allowed = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp"]);
+  if (!allowed.has(mime)) {
+    throw Object.assign(new Error("仅支持 JPG / PNG / WEBP 图片"), { status: 400 });
+  }
+  const bucket = await ensureBannerBucket();
+  const slotKey = String(slot || "desktop").toLowerCase() === "mobile" ? "mobile" : "desktop";
+  const objectPath = `homepage/${slotKey}/${Date.now()}-${safeBannerObjectName(filename || `banner-${slotKey}`, mime)}`;
+  const response = await fetch(
+    `${process.env.SUPABASE_URL}/storage/v1/object/upload/sign/${bucket}/${objectPath}`,
+    {
+      method: "POST",
+      headers: serviceHeaders(),
+      body: JSON.stringify({ expiresIn: 15 * 60 }),
+    }
+  );
+  const text = await response.text();
+  let body = null;
+  try {
+    body = text ? JSON.parse(text) : null;
+  } catch {
+    body = null;
+  }
+  if (!response.ok) {
+    throw Object.assign(new Error(body?.message || body?.error || text || `签发上传凭证失败 HTTP ${response.status}`), {
+      status: response.status || 502,
+    });
+  }
+  const token = String(body?.token || "").trim();
+  let signedUrl = String(body?.signedUrl || body?.signedURL || body?.url || "").trim();
+  if (signedUrl && !/^https?:\/\//i.test(signedUrl)) {
+    signedUrl = `${process.env.SUPABASE_URL}/storage/v1${signedUrl.startsWith("/") ? "" : "/"}${signedUrl}`;
+  }
+  if (!signedUrl && token) {
+    signedUrl = `${process.env.SUPABASE_URL}/storage/v1/object/upload/sign/${bucket}/${objectPath}?token=${encodeURIComponent(token)}`;
+  }
+  if (!signedUrl) {
+    throw Object.assign(new Error("签发上传凭证失败：未返回 signedUrl"), { status: 502 });
+  }
+  return {
+    bucket,
+    path: objectPath,
+    token,
+    signedUrl,
+    publicUrl: publicStorageUrl(bucket, objectPath),
+    contentType: mime === "image/jpg" ? "image/jpeg" : mime,
+    expiresIn: 15 * 60,
+  };
+}
+
+async function assertBannerObjectPresent(bucket, objectPath) {
+  const path = String(objectPath || "").replace(/^\/+/, "");
+  if (!bucket || !path) throw Object.assign(new Error("缺少存储路径"), { status: 400 });
+  const response = await fetch(storageObjectUrl(bucket, path), {
+    method: "HEAD",
+    headers: {
+      apikey: process.env.SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+    },
+  });
+  if (!response.ok) {
+    // Some Storage deployments reject HEAD — fall back to a tiny range GET.
+    const getRes = await fetch(storageObjectUrl(bucket, path), {
+      method: "GET",
+      headers: {
+        apikey: process.env.SUPABASE_SERVICE_ROLE_KEY,
+        Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+        Range: "bytes=0-0",
+      },
+    });
+    if (!getRes.ok) {
+      throw Object.assign(new Error("Banner 图片尚未上传到云端，请重试直传后再保存"), { status: 400 });
+    }
+  }
+  return true;
 }
 function mapBanner(row) {
   if (!row) return null;
@@ -431,6 +536,35 @@ export default async function handler(req, res) {
     const body = await parseBody(req);
     const action = String(body.action || "");
 
+    if (action === "prepare_upload") {
+      const prep = await createBannerSignedUpload({
+        slot: body.slot || body.kind || "desktop",
+        filename: body.filename || body.fileName || body.name || "banner.jpg",
+        mimeType: body.mimeType || body.contentType || body.type || "image/jpeg",
+        size: body.size || body.bytes || 0,
+      });
+      return json(res, 200, {
+        ok: true,
+        message: "已签发 Banner 直传凭证",
+        ...prep,
+      });
+    }
+
+    if (action === "confirm_upload") {
+      const bucket = String(body.bucket || BANNER_BUCKET()).trim() || BANNER_BUCKET();
+      const path = String(body.path || body.storage_path || body.objectPath || "").replace(/^\/+/, "");
+      if (!path) return json(res, 400, { ok: false, message: "缺少 storage path" });
+      await assertBannerObjectPresent(bucket, path);
+      return json(res, 200, {
+        ok: true,
+        message: "Banner 图片已确认上传",
+        bucket,
+        path,
+        publicUrl: publicStorageUrl(bucket, path),
+        url: publicStorageUrl(bucket, path),
+      });
+    }
+
     if (action === "upload") {
       const imageData = String(body.image_data || body.imageData || "");
       if (!imageData) return json(res, 400, { ok: false, message: "请先选择 Banner 图片。" });
@@ -446,8 +580,13 @@ export default async function handler(req, res) {
     if (action === "publish") {
       const desktopData = String(body.image_data || body.imageData || body.desktop_image_data || body.desktopImageData || "");
       const existingUrl = String(body.image_url || body.imageUrl || body.desktop_image_url || body.desktopImageUrl || "").trim();
+      const desktopPath = String(body.storage_path || body.desktop_storage_path || body.desktopStoragePath || "").replace(/^\/+/, "");
+      const desktopBucket = String(body.bucket || body.desktop_bucket || BANNER_BUCKET()).trim() || BANNER_BUCKET();
       let imageUrl = existingUrl;
-      if (desktopData) {
+      if (desktopPath) {
+        await assertBannerObjectPresent(desktopBucket, desktopPath);
+        imageUrl = publicStorageUrl(desktopBucket, desktopPath);
+      } else if (desktopData) {
         imageUrl = await uploadBannerImage(desktopData, body.filename || body.desktop_filename || "homepage-banner-desktop");
       }
       if (!imageUrl) return json(res, 400, { ok: false, message: "请先上传电脑端 Banner 图片。" });
@@ -457,7 +596,12 @@ export default async function handler(req, res) {
 
       const mobileData = String(body.mobile_image_data || body.mobileImageData || "");
       let mobileImageUrl = String(body.mobile_image_url || body.mobileImageUrl || "").trim();
-      if (mobileData) {
+      const mobilePath = String(body.mobile_storage_path || body.mobileStoragePath || "").replace(/^\/+/, "");
+      const mobileBucket = String(body.mobile_bucket || body.bucket || BANNER_BUCKET()).trim() || BANNER_BUCKET();
+      if (mobilePath) {
+        await assertBannerObjectPresent(mobileBucket, mobilePath);
+        mobileImageUrl = publicStorageUrl(mobileBucket, mobilePath);
+      } else if (mobileData) {
         mobileImageUrl = await uploadBannerImage(mobileData, body.mobile_filename || "homepage-banner-mobile");
       }
       if (mobileImageUrl && !/^https?:\/\//i.test(mobileImageUrl) && !mobileImageUrl.startsWith("/")) {
@@ -555,7 +699,12 @@ export default async function handler(req, res) {
 
       const desktopData = String(body.image_data || body.imageData || body.desktop_image_data || body.desktopImageData || "");
       const nextDesktopUrl = String(body.image_url || body.imageUrl || body.desktop_image_url || body.desktopImageUrl || "").trim();
-      if (desktopData) {
+      const desktopPath = String(body.storage_path || body.desktop_storage_path || body.desktopStoragePath || "").replace(/^\/+/, "");
+      const desktopBucket = String(body.bucket || body.desktop_bucket || BANNER_BUCKET()).trim() || BANNER_BUCKET();
+      if (desktopPath) {
+        await assertBannerObjectPresent(desktopBucket, desktopPath);
+        patch.image_url = publicStorageUrl(desktopBucket, desktopPath);
+      } else if (desktopData) {
         patch.image_url = await uploadBannerImage(desktopData, body.filename || body.desktop_filename || "homepage-banner-desktop");
       } else if (nextDesktopUrl) {
         if (!/^https?:\/\//i.test(nextDesktopUrl) && !nextDesktopUrl.startsWith("/")) {
@@ -570,9 +719,14 @@ export default async function handler(req, res) {
         body.mobileImageUrl === "";
       const mobileData = String(body.mobile_image_data || body.mobileImageData || "");
       const nextMobileUrl = String(body.mobile_image_url || body.mobileImageUrl || "").trim();
-      if (clearMobile && !mobileData) {
+      const mobilePath = String(body.mobile_storage_path || body.mobileStoragePath || "").replace(/^\/+/, "");
+      const mobileBucket = String(body.mobile_bucket || body.bucket || BANNER_BUCKET()).trim() || BANNER_BUCKET();
+      if (clearMobile && !mobileData && !mobilePath) {
         patch.mobile_image_url = null;
         patch.mobile_crop_meta = normalizeCropMeta({}, MOBILE_RATIO);
+      } else if (mobilePath) {
+        await assertBannerObjectPresent(mobileBucket, mobilePath);
+        patch.mobile_image_url = publicStorageUrl(mobileBucket, mobilePath);
       } else if (mobileData) {
         patch.mobile_image_url = await uploadBannerImage(mobileData, body.mobile_filename || "homepage-banner-mobile");
       } else if (nextMobileUrl) {
