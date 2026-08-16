@@ -17,7 +17,30 @@
 .apply-note{margin-top:12px;color:#cdb8c4;font-size:13px}.apply-success{padding:30px;text-align:center}.apply-success h2{font-size:30px;margin:0 0 10px}.apply-success p{color:#d9bfcd;line-height:1.7}.apply-success .apply-actions{justify-content:center}
 .mcj-application-admin{margin:18px 0;border:1px solid rgba(255,144,204,.22);border-radius:20px;background:rgba(255,255,255,.035);padding:18px;color:#fff5fa}.mcj-application-admin h2{margin:0 0 6px}.mcj-application-admin p{margin:0 0 14px;color:#d9bfcd}.mcj-application-table-wrap{overflow:auto}.mcj-application-table{width:100%;border-collapse:collapse;min-width:1060px}.mcj-application-table th,.mcj-application-table td{padding:12px;border-bottom:1px solid rgba(255,144,204,.12);text-align:left;font-size:13px}.mcj-application-table img{width:42px;height:42px;border-radius:12px;object-fit:cover}.mcj-app-actions{display:flex;gap:8px;flex-wrap:wrap}.mcj-app-actions button{height:32px;border-radius:999px;border:1px solid rgba(255,144,204,.28);background:rgba(255,255,255,.05);color:#ffe2f0;font-weight:900;padding:0 10px;cursor:pointer}.mcj-app-actions .ok{background:rgba(114,239,180,.14);color:#b8ffd7}.mcj-app-actions .bad{background:rgba(255,99,132,.12);color:#ffb3c2}.mcj-app-status{font-weight:1000}.mcj-app-status.review{color:#ffd166}.mcj-app-status.approved{color:#72efb4}.mcj-app-status.rejected{color:#ff9aae}.mcj-app-detail{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.mcj-app-detail div{border:1px solid rgba(255,144,204,.14);border-radius:12px;padding:10px;background:rgba(0,0,0,.14)}.mcj-app-detail span{display:block;color:#cdb8c4;font-size:12px}.mcj-app-detail b{display:block;margin-top:4px}
 .admin-voice-audit{display:grid;gap:7px;min-width:220px}.admin-voice-audit audio{width:220px;max-width:100%}.admin-voice-audit small{display:block;color:#d9bfcd;font-weight:850}.admin-voice-wave{height:42px;border:1px solid rgba(243,168,203,.16);border-radius:12px;background:rgba(0,0,0,.18);display:flex;align-items:center;justify-content:center;gap:4px;padding:0 8px}.admin-voice-wave i{width:4px;border-radius:99px;background:linear-gradient(180deg,#ffe2ef,#f06fb0);opacity:.78}
-@media(max-width:760px){.companion-apply-guide-card,.apply-top{align-items:flex-start;flex-direction:column}.apply-layout{grid-template-columns:1fr}.apply-steps{position:static;display:flex;overflow:auto}.apply-step{flex:0 0 auto;width:auto}.apply-grid,.mcj-app-detail{grid-template-columns:1fr}.companion-apply-page{padding:16px}.apply-hero h1{font-size:26px}}
+@media(max-width:760px){
+  /* Keep site header brand only — hide duplicate Logo+MEOW CUI JIAO under nav. */
+  .apply-brand{display:none!important}
+  .apply-top{
+    align-items:center;
+    justify-content:flex-start;
+    flex-direction:row;
+    margin:0 0 10px;
+    gap:0;
+  }
+  .apply-top .apply-btn{
+    height:36px;
+    padding:0 14px;
+    font-size:13px;
+  }
+  .companion-apply-guide-card{align-items:flex-start;flex-direction:column}
+  .apply-layout{grid-template-columns:1fr}
+  .apply-steps{position:static;display:flex;overflow:auto}
+  .apply-step{flex:0 0 auto;width:auto}
+  .apply-grid,.mcj-app-detail{grid-template-columns:1fr}
+  .companion-apply-page{padding:10px 16px 16px}
+  .apply-hero{margin-bottom:14px;padding:22px 18px}
+  .apply-hero h1{font-size:26px}
+}
 
 .apply-mobile-step{display:none;border:1px solid rgba(243,168,203,.22);border-radius:18px;background:rgba(255,255,255,.035);padding:12px;margin-bottom:12px}
 .apply-mobile-step span{display:block;color:#d9bfcd;font-size:12px;font-weight:900}.apply-mobile-step strong{display:block;margin-top:5px;color:#fff5fa;font-size:18px}.apply-mobile-step small{display:block;margin-top:6px;color:#cdb8c4;line-height:1.45}
