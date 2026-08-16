@@ -295,7 +295,6 @@ async function ensureMarketplaceService(compId) {
       game_prices: { VALORANT: 18 },
       game: "VALORANT",
       price: 18,
-      pricing_unit: "小时",
       verification_status: "approved",
       online_status: "online",
       updated_at: new Date().toISOString(),

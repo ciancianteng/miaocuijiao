@@ -357,7 +357,7 @@ export default async function handler(req, res) {
       }
 
       const wallet = await getWallet(boss.id).catch(() => null);
-      const { viewWallet } = await import("./_wallet.js");
+      const { viewWallet } = await import("../_wallet.js");
       const vw = viewWallet(wallet || {}, boss.id);
       if (vw.frozen) return json(res, 400, { ok: false, message: "钱包已冻结，无法支付" });
       const available = money(vw.totalBalance);
