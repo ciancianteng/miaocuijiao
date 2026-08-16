@@ -21,3 +21,4 @@ BUTTON_AUDIT.md
 .vercel/
 .vercel/**
 dist
+supabase/.temp/
