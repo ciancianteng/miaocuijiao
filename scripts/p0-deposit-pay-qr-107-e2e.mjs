@@ -142,22 +142,113 @@ async function seedSession(page, session) {
 
 async function jumpToDepositStep(page) {
   await page.waitForSelector("#companionApplyRoot", { timeout: 30000 });
-  await page.waitForTimeout(2200);
-  const stepBtn = page.locator('[data-apply-step="4"]');
-  if (await stepBtn.count()) {
-    await stepBtn.click({ force: true }).catch(() => {});
-    await page.waitForTimeout(900);
+  // Wait for published rules + deposit_pay_methods so agreement version matches SoT.
+  await page.waitForTimeout(2800);
+  await page.evaluate(() => {
+    const uid = (JSON.parse(localStorage.getItem("mcjCompanionSession") || "{}").user || {}).id;
+    if (!uid) return;
+    const key = "mcjCompanionApplicationDraft.v1.u:" + uid;
+    const d = JSON.parse(localStorage.getItem(key) || "{}");
+    // Prefer live published rule id/version from DOM meta if present; else keep accepted flag and let UI re-bind.
+    const versionEl = document.querySelector(".rules-updated");
+    const versionText = versionEl ? String(versionEl.textContent || "") : "";
+    const verMatch = versionText.match(/版本\s+([^\s·]+)/);
+    const version = verMatch ? verMatch[1] : (d.rulesAgreement && d.rulesAgreement.version) || "1.0";
+    d.step = 4;
+    d.rulesAgreement = Object.assign({}, d.rulesAgreement || {}, {
+      accepted: true,
+      version,
+      ruleId: (d.rulesAgreement && d.rulesAgreement.ruleId) || "live",
+      agreedAt: new Date().toISOString(),
+    });
+    localStorage.setItem(key, JSON.stringify(d));
+  });
+  // Check agree box if still on rules step, then force-open step 4 via draft + reload.
+  const agree = page.locator("[data-rule-agree]");
+  if (await agree.count()) {
+    const checked = await agree.isChecked().catch(() => false);
+    if (!checked) await agree.check({ force: true }).catch(() => {});
+    await page.waitForTimeout(400);
   }
-  if (!(await page.locator("[data-auth-mode]").count())) {
-    for (let i = 0; i < 6; i++) {
-      if (await page.locator("[data-auth-mode]").count()) break;
-      await page.locator("[data-apply-next]").click().catch(() => {});
-      await page.waitForTimeout(700);
+  // Re-bind agreement to the exact published rule id/version after remote config load.
+  await page.evaluate(() => {
+    const uid = (JSON.parse(localStorage.getItem("mcjCompanionSession") || "{}").user || {}).id;
+    if (!uid) return;
+    const key = "mcjCompanionApplicationDraft.v1.u:" + uid;
+    const d = JSON.parse(localStorage.getItem(key) || "{}");
+    // companion-application exposes no globals; scrape from checkbox re-save path by reading DB mirror if any.
+    let ruleId = "";
+    let version = "";
+    try {
+      const db = JSON.parse(localStorage.getItem("mcj_site_data_v1") || localStorage.getItem("mcjSiteData") || "{}");
+      const rules = (db && db.companionRules) || [];
+      const published = rules.find((r) => r && (r.status === "published" || r.published)) || rules[0];
+      if (published) {
+        ruleId = String(published.id || published.ruleId || "");
+        version = String(published.version || "");
+      }
+    } catch {}
+    if (!ruleId || !version) {
+      const versionEl = document.querySelector(".rules-updated");
+      const versionText = versionEl ? String(versionEl.textContent || "") : "";
+      const verMatch = versionText.match(/版本\s+([^\s·]+)/);
+      version = verMatch ? verMatch[1] : "1.0";
+      ruleId = "any";
     }
+    d.step = 4;
+    d.rulesAgreement = { accepted: true, version, ruleId, agreedAt: new Date().toISOString() };
+    localStorage.setItem(key, JSON.stringify(d));
+  });
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.waitForSelector("#companionApplyRoot", { timeout: 30000 });
+  await page.waitForTimeout(2600);
+  // If rules version gate still blocks, tick agree then jump via step buttons / next.
+  if (await page.locator("[data-rule-agree]").count()) {
+    await page.locator("[data-rule-agree]").check({ force: true }).catch(() => {});
+    await page.waitForTimeout(300);
   }
-  await page.waitForSelector('[data-auth-mode="deposit"]', { timeout: 20000 });
+  // Directly mark all prior steps complete by ensuring draft fields exist, then click step 4.
+  await page.evaluate(() => {
+    const uid = (JSON.parse(localStorage.getItem("mcjCompanionSession") || "{}").user || {}).id;
+    if (!uid) return;
+    const key = "mcjCompanionApplicationDraft.v1.u:" + uid;
+    const d = JSON.parse(localStorage.getItem(key) || "{}");
+    // Capture rule ids from the just-checked agreement if app rewrote them.
+    const agr = d.rulesAgreement || {};
+    d.step = 4;
+    d.rulesAgreement = Object.assign({}, agr, { accepted: true, agreedAt: new Date().toISOString() });
+    localStorage.setItem(key, JSON.stringify(d));
+  });
+  // Soft-navigate: click unlocked step 4 or advance.
+  for (let i = 0; i < 12 && !(await page.locator("[data-auth-mode]").count()); i++) {
+    const step4 = page.locator('[data-apply-step="4"]:not(.locked)');
+    if (await step4.count()) {
+      await step4.click({ force: true }).catch(() => {});
+    } else {
+      await page.locator("[data-apply-next]").click({ force: true }).catch(() => {});
+    }
+    await page.waitForTimeout(500);
+  }
+  // Last resort: force render auth step by setting draft.step and reloading once more after agree.
+  if (!(await page.locator("[data-auth-mode]").count())) {
+    await page.locator("[data-rule-agree]").check({ force: true }).catch(() => {});
+    await page.waitForTimeout(400);
+    await page.evaluate(() => {
+      const uid = (JSON.parse(localStorage.getItem("mcjCompanionSession") || "{}").user || {}).id;
+      const key = "mcjCompanionApplicationDraft.v1.u:" + uid;
+      const d = JSON.parse(localStorage.getItem(key) || "{}");
+      d.step = 4;
+      d.rulesAgreement = Object.assign({}, d.rulesAgreement || {}, { accepted: true });
+      localStorage.setItem(key, JSON.stringify(d));
+    });
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.waitForTimeout(2800);
+    await page.locator('[data-apply-step="4"]').click({ force: true }).catch(() => {});
+    await page.waitForTimeout(800);
+  }
+  await page.waitForSelector('[data-auth-mode="deposit"]', { timeout: 25000 });
   await page.locator('[data-auth-mode="deposit"]').click();
-  await page.waitForTimeout(2200);
+  await page.waitForTimeout(2400);
 }
 
 async function assertApplyDepositQr(page, label) {
@@ -206,27 +297,63 @@ async function assertApplyDepositQr(page, label) {
   return view;
 }
 
+async function openCompanionAccount(page) {
+  // Isolation mode may bounce /companion/account → login → review-status when session
+  // is injected via addInitScript; open via in-app「账号资料」route which is allowed.
+  await page.goto(`${BASE}/companion/review-status`, { waitUntil: "domcontentloaded", timeout: 90000 });
+  await page.waitForTimeout(2800);
+  const accountBtn = page.locator('[data-route="/companion/account"]').first();
+  await accountBtn.click({ force: true });
+  await page.waitForTimeout(2800);
+  if (!/\/companion\/account/.test(page.url())) {
+    await page.goto(`${BASE}/companion/account`, { waitUntil: "domcontentloaded", timeout: 90000 });
+    await page.waitForTimeout(2500);
+    if (!/\/companion\/account/.test(page.url())) {
+      await page.locator('[data-route="/companion/account"]').first().click({ force: true });
+      await page.waitForTimeout(2500);
+    }
+  }
+}
+
 async function assertWorkbenchDepositQr(page, label) {
-  await page.goto(`${BASE}/companion/account`, { waitUntil: "networkidle", timeout: 90000 });
-  await page.waitForTimeout(2500);
+  await openCompanionAccount(page);
+  await page.evaluate(() => {
+    const el = document.querySelector("[data-deposit-form], .pw-deposit-qr-block, .pw-account-deposit");
+    if (el) el.scrollIntoView({ block: "center" });
+  });
+  await page.waitForTimeout(500);
   const view = await page.evaluate(() => {
     const html = document.body.innerText || "";
     const qr = document.querySelector(".pw-deposit-qr-block img[data-mcj-pay-qr], .pw-deposit-qr-block img");
     const channel = document.querySelector("[data-deposit-channel-card], .pw-deposit-channel");
+    const r = qr ? qr.getBoundingClientRect() : null;
     return {
+      url: location.pathname,
       hasForm: !!document.querySelector("[data-deposit-form]"),
       hasChannel: !!channel,
       hasQr: !!(qr && String(qr.getAttribute("src") || "").trim()),
       qrSrc: qr ? String(qr.getAttribute("src") || "") : "",
+      natural: qr ? { w: qr.naturalWidth, h: qr.naturalHeight, complete: qr.complete } : null,
+      box: r
+        ? {
+            h: Math.round(r.height),
+            inView: r.top < window.innerHeight && r.bottom > 0 && r.height > 40,
+          }
+        : null,
       amount: /RM\s*100|押金认证（RM100）/.test(html),
       receiver: /MEOW CUI JIAO ENTERPRISE|收款人/.test(html),
+      falsePaid: /押金认证已通过/.test(html),
       scrollWidth: document.documentElement.scrollWidth,
       vw: window.innerWidth,
     };
   });
-  await page.screenshot({ path: path.join(ART, `${label}-workbench-deposit.png`), fullPage: false });
+  await page.screenshot({ path: path.join(ART, `${label}-workbench-deposit.png`), fullPage: true });
   const qrOk =
+    view.hasForm &&
     view.hasQr &&
+    !view.falsePaid &&
+    (view.natural?.w || 0) > 20 &&
+    view.box?.inView &&
     /cfccwysniduwkjskiqgy\.supabase\.co\/storage\/v1\/object\/public\/platform-payment\/qr\//i.test(view.qrSrc);
   step(`${label}_workbench_qr_visible`, qrOk, JSON.stringify(view));
   if (view.hasQr) {
