@@ -309,10 +309,22 @@
       }
       // Trigger suite player_rules mount when on rules — levels uses companionLevelSettings id
     }
-    if (state.tab === "rules" && window.MCJAdminSuite && window.MCJAdminSuite.loadPlatformContent) {
-      try {
-        window.MCJAdminSuite.loadPlatformContent("companion-rules");
-      } catch (e) {}
+    if (state.tab === "rules") {
+      // Mount apply-page player_rules editor into #table-companion_rules.
+      // loadPlatformContent accepts module key or cfg; MCJAdminSuite must be exported by admin-suite.
+      var mountApplyRules = function () {
+        if (!window.MCJAdminSuite || typeof window.MCJAdminSuite.loadPlatformContent !== "function") return false;
+        try {
+          window.MCJAdminSuite.loadPlatformContent("companion-rules");
+          return true;
+        } catch (e) {
+          return false;
+        }
+      };
+      if (!mountApplyRules()) {
+        setTimeout(mountApplyRules, 80);
+        setTimeout(mountApplyRules, 400);
+      }
     }
     if (state.tab === "forced") loadForcedList();
   }

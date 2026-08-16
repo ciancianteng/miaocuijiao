@@ -1743,7 +1743,20 @@
     } else saveLocalPlatformContent(type,payload||{},id||'');
     if(action==='delete')localStorage.setItem(localPlatformContentKey(type),JSON.stringify(list));
   }
-  function loadPlatformContent(cfg){
+  function resolvePlatformContentCfg(cfgOrKey){
+    if(!cfgOrKey)return null;
+    if(typeof cfgOrKey==='string'){
+      return platformContentModules[cfgOrKey]||platformContentConfig(cfgOrKey)||null;
+    }
+    if(cfgOrKey&&cfgOrKey.type&&!cfgOrKey.target){
+      var byType=platformContentConfig(cfgOrKey.type);
+      return byType?Object.assign({},byType,cfgOrKey):cfgOrKey;
+    }
+    return cfgOrKey;
+  }
+  function loadPlatformContent(cfgOrKey){
+    var cfg=resolvePlatformContentCfg(cfgOrKey);
+    if(!cfg||!cfg.target||!cfg.type)return;
     var target=document.getElementById(cfg.target);
     if(!target)return;
     target.innerHTML='<div class="content-loading">正在读取真实数据库...</div>';
@@ -2674,6 +2687,11 @@
       }
     }
   });
+  window.MCJAdminSuite={
+    loadPlatformContent:loadPlatformContent,
+    platformContentConfig:platformContentConfig,
+    platformContentModules:platformContentModules
+  };
   window.MCJAdmin={read:read,write:write,routeByRole:routeByRole};
 })();
 
