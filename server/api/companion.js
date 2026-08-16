@@ -4817,6 +4817,7 @@ export default async function handler(req, res) {
           `?companion_profile_id=eq.${encodeURIComponent(row.id)}&media_type=eq.${encodeURIComponent(mediaType)}`
         ).catch(() => []);
         let legacyVideoRows = [];
+        let legacyCoverRows = [];
         if (mediaType === "video") {
           // Older DBs may store showcase video as gallery + video/* content_type.
           const galleryRows = await companionDb(
@@ -4830,7 +4831,19 @@ export default async function handler(req, res) {
               String(g.storage_bucket || "") === PRIVATE_BUCKETS.video
           );
         }
-        for (const old of [...(oldRows || []), ...legacyVideoRows]) {
+        if (mediaType === "cover") {
+          // Legacy DB check may persist cover as gallery sort_order=1 — replace must clear those too.
+          const galleryRows = await companionDb(
+            "companion_media",
+            `?companion_profile_id=eq.${encodeURIComponent(row.id)}&media_type=eq.gallery&select=*`
+          ).catch(() => []);
+          legacyCoverRows = (galleryRows || []).filter(
+            (g) =>
+              Number(g.sort_order) === 1 ||
+              /\/cover\//i.test(String(g.storage_path || ""))
+          );
+        }
+        for (const old of [...(oldRows || []), ...legacyVideoRows, ...legacyCoverRows]) {
           try {
             await deleteStorageObject(old.storage_bucket, old.storage_path);
           } catch {
