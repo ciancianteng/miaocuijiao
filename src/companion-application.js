@@ -3649,6 +3649,21 @@
         }
         return;
       }
+      // QR zoom must run before channel-card selection: the QR button lives inside the
+      // channel <label>, so closest("[data-deposit-channel-card]") would otherwise steal
+      // the click, re-render, and never open the lightbox.
+      var qrZoomBtn = e.target.closest("[data-apply-deposit-qr-zoom]");
+      if (qrZoomBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        var src = qrZoomBtn.getAttribute("data-apply-deposit-qr-zoom") || "";
+        if (!src) {
+          var img = qrZoomBtn.querySelector("img");
+          src = (img && img.getAttribute("src")) || "";
+        }
+        if (src) openApplyDepositQrLightbox(src);
+        return;
+      }
       var depositChannel = e.target.closest("[data-deposit-channel-card], [data-deposit-channel]");
       if (depositChannel) {
         var input =
@@ -3664,17 +3679,6 @@
           writeDraftRecord(dCh);
           render(4);
         }
-        return;
-      }
-      var qrZoomBtn = e.target.closest("[data-apply-deposit-qr-zoom]");
-      if (qrZoomBtn) {
-        e.preventDefault();
-        var src = qrZoomBtn.getAttribute("data-apply-deposit-qr-zoom") || "";
-        if (!src) {
-          var img = qrZoomBtn.querySelector("img");
-          src = (img && img.getAttribute("src")) || "";
-        }
-        if (src) openApplyDepositQrLightbox(src);
         return;
       }
     });
