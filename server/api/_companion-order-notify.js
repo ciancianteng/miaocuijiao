@@ -507,8 +507,9 @@ async function sendOrderMailOnce({
 
   try {
     const preferredFrom = env("RESEND_ORDERS_FROM") || "Meow Cui Jiao <orders@meowcuijiao.com>";
+    let sendResult = null;
     try {
-      await sendMail({
+      sendResult = await sendMail({
         to,
         subject,
         text,
@@ -520,7 +521,7 @@ async function sendOrderMailOnce({
       const msg = String(err?.message || err || "");
       if (/domain is not verified|not verified/i.test(msg) && preferredFrom) {
         // Staging / unverified custom domain → fall back to configured RESEND_FROM.
-        await sendMail({
+        sendResult = await sendMail({
           to,
           subject,
           text,
@@ -531,14 +532,15 @@ async function sendOrderMailOnce({
         throw err;
       }
     }
+    const providerId = String(sendResult?.id || "").trim();
     await patchEmailLog(logId, {
       email_status: "sent",
-      detail: "sent",
+      detail: providerId ? `sent:${providerId}` : "sent",
       sent_at: nowIso(),
       retry_count: retryCount,
       email: to,
     });
-    return { ok: true, notificationKey, emailStatus: "sent", logId };
+    return { ok: true, notificationKey, emailStatus: "sent", logId, providerMessageId: providerId };
   } catch (err) {
     const detail = String(err?.message || err || "send failed").slice(0, 500);
     await patchEmailLog(logId, {
