@@ -1004,15 +1004,27 @@
               }
             }
             if (!res.ok || body.ok === false) {
-              var serverMsg = safeErrText(body && (body.message || body.error), "").trim();
+              var serverMsg = safeErrText(
+                body && (body.message || body.error || body.hint || body.details),
+                ""
+              ).trim();
+              if (!serverMsg && body && typeof body.error === "object") {
+                serverMsg = safeErrText(body.error.message || body.error.code || body.error, "").trim();
+              }
               var errMsg = humanize(serverMsg || "提交失败", res.status);
               if (
                 (action === "upload_media" || action === "prepare_video_upload") &&
                 res.status &&
-                !/登录状态已过期|操作失败，请稍后重试|视频文件过大或上传通道限制/.test(errMsg)
+                !/登录状态已过期|操作失败，请稍后重试|视频文件过大或上传通道限制|请使用直传/.test(errMsg)
               ) {
                 errMsg = "HTTP " + res.status + (serverMsg ? " · " + serverMsg : " · 上传失败");
                 errMsg = humanize(errMsg, res.status);
+              }
+              if (/\[object Object\]/i.test(errMsg)) {
+                errMsg =
+                  res.status === 413
+                    ? "视频文件过大或上传通道限制，请稍后重试。"
+                    : "上传失败，请稍后重试。";
               }
               var err = new Error(errMsg);
               err.status = res.status;
@@ -1361,7 +1373,11 @@
       '<section class="apply-panel"><h2>上传头像与资料</h2><form class="apply-grid">' +
       fileField("avatar", "头像", { value: u.avatar, accept: "image/*", hint: "支持 jpg / jpeg / png / webp；可从相册选择或拍照；上传成功后可替换" }) +
       galleryUploadHtml(u) +
-      fileField("records", "游戏战绩图", { value: u.records, accept: "image/*", hint: "选填；支持 jpg / png / webp" }) +
+      fileField("records", "游戏照封面图", {
+        value: u.records,
+        accept: "image/*",
+        hint: "选填；独立 1 张，不占用相册 6 张额度；支持 jpg / png / webp",
+      }) +
       fileField("showcaseVideo", "个人展示视频（可选）", {
         kind: "video",
         value: u.showcaseVideo || null,
@@ -1934,7 +1950,11 @@
     });
     if (needsMediaUpload(uploads.records)) {
       chain = chain.then(function () {
-        return postCompanion("upload_media", { media_type: "gallery", data_url: normalizeUploadAsset(uploads.records).url, filename: "records.jpg" });
+        return postCompanion("upload_media", {
+          media_type: "cover",
+          data_url: normalizeUploadAsset(uploads.records).url,
+          filename: "game-cover.jpg",
+        });
       });
     }
     if (needsMediaUpload(voice.url) || (voice.url && /^data:/i.test(String(voice.url)))) {
@@ -2474,7 +2494,9 @@
             ? "video"
             : key === "voiceFile"
               ? "voice"
-              : "gallery";
+              : key === "records"
+                ? "cover"
+                : "gallery";
       postCompanion("delete_media", {
         media_id: existing.id || "",
         media_type: mt,
@@ -2535,7 +2557,7 @@
     var map = {
       avatar: { api: "upload_media", mediaType: "avatar", kind: "image" },
       photos: { api: "upload_media", mediaType: "gallery", kind: "image" },
-      records: { api: "upload_media", mediaType: "gallery", kind: "image" },
+      records: { api: "upload_media", mediaType: "cover", kind: "image" },
       voiceFile: { api: "upload_media", mediaType: "voice", kind: "audio" },
       showcaseVideo: { api: "upload_media", mediaType: "video", kind: "video" },
       idFront: { api: "upload_private_doc", docType: "id_front", kind: "image" },
@@ -2718,6 +2740,7 @@
         }
         setUploadAsset(key, asset);
         if (key === "avatar") showApplyTip("头像上传成功");
+        if (key === "records") showApplyTip("游戏照封面上传成功");
         render(Number(document.getElementById("companionApplyRoot").dataset.step || 0));
       })
       .catch(function (err) {
@@ -3506,12 +3529,27 @@
     if (!hasDurableUpload(draft.uploads.avatar) && (mediaMap.avatarUrl || player.avatar)) {
       draft.uploads.avatar = { url: mediaMap.avatarUrl || player.avatar, status: "ok" };
     }
-    // Card cover upload removed — do not hydrate into draft.uploads.cover.
+    // Card-cover UI removed; game-cover field is draft.uploads.records (media_type=cover).
+    if (!hasDurableUpload(draft.uploads.records) && mediaMap.coverUrl) {
+      var coverRow = mediaList.find(function (m) {
+        var mt = String((m && (m.mediaType || m.media_type)) || "").toLowerCase();
+        return mt === "cover";
+      });
+      draft.uploads.records = {
+        url: mediaMap.coverUrl,
+        id: (coverRow && coverRow.id) || "",
+        path: (coverRow && (coverRow.path || coverRow.storage_path || coverRow.storagePath)) || "",
+        status: "ok",
+      };
+    }
     if (!hasDurableUpload(draft.uploads.showcaseVideo) && mediaMap.videoUrl) {
       draft.uploads.showcaseVideo = { url: mediaMap.videoUrl, status: "ok" };
     }
     if (!photoListOf(draft.uploads).length && mediaMap.gallery.length) {
-      draft.uploads.photos = mediaMap.gallery;
+      // Album only — cover must never land in photos[].
+      draft.uploads.photos = mediaMap.gallery.filter(function (g) {
+        return g && !/\/cover\//i.test(String(g.path || g.url || ""));
+      });
     }
     if (!hasDurableUpload(draft.voice) && !hasDurableUpload(draft.voice.url) && (mediaMap.voiceUrl || player.voiceUrl)) {
       draft.voice.url = mediaMap.voiceUrl || player.voiceUrl;

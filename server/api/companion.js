@@ -588,6 +588,17 @@ function isSyntheticMediaId(value) {
   return /^(storage-gallery-|legacy-gallery-|legacy-avatar|legacy-voice|fb-|legacy-)/i.test(id);
 }
 
+/** Album (gallery) quota rows only — exclude video + legacy cover-as-gallery. */
+function isAlbumGalleryRow(row) {
+  if (!row) return false;
+  if (/^video\//i.test(String(row.content_type || row.contentType || ""))) return false;
+  const path = String(row.storage_path || row.storagePath || "");
+  if (/\/cover\//i.test(path)) return false;
+  // Legacy cover fallback stored as gallery with sort_order=1.
+  if (Number(row.sort_order ?? row.sortOrder) === 1) return false;
+  return true;
+}
+
 function humanizeCompanionApiError(error) {
   const raw = stringifyApiErrorValue(error?.message || error, "");
   const status = Number(error?.status) || 500;
@@ -2180,8 +2191,11 @@ async function bootstrapData(profile, companion) {
   for (const g of signedMediaRaw
     .filter((m) => {
       if (m.mediaType !== "gallery") return false;
-      const ctype = String(m.contentType || m.content_type || "").toLowerCase();
-      return !/^video\//.test(ctype);
+      return isAlbumGalleryRow({
+        content_type: m.contentType,
+        storage_path: m.storagePath,
+        sort_order: m.sortOrder,
+      });
     })
     .sort((a, b) => Number(a.sortOrder ?? 100) - Number(b.sortOrder ?? 100))) {
     const key = String(g.storagePath || g.url || g.id || "").trim();
@@ -2202,11 +2216,18 @@ async function bootstrapData(profile, companion) {
     signedMedia.push(voicesOnly[0]);
     seenTypes.voice = true;
   }
-  for (const m of signedMediaRaw) {
-    if (m.mediaType === "cover") {
-      signedMedia.push(m);
-      seenTypes.cover = true;
-    }
+  // Prefer native cover rows; also promote legacy cover-as-gallery (sort 1 /cover/).
+  const coverCandidates = signedMediaRaw
+    .filter((m) => {
+      if (m.mediaType === "cover") return true;
+      if (m.mediaType !== "gallery") return false;
+      if (/^video\//i.test(String(m.contentType || ""))) return false;
+      return Number(m.sortOrder) === 1 || /\/cover\//i.test(String(m.storagePath || ""));
+    })
+    .sort(byUploadedDesc);
+  if (coverCandidates[0]) {
+    signedMedia.push({ ...coverCandidates[0], mediaType: "cover" });
+    seenTypes.cover = true;
   }
   const videosOnly = signedMediaRaw
     .filter((m) => {
@@ -4668,7 +4689,18 @@ export default async function handler(req, res) {
       const row = await ensureCompanionRow(auth.profile, companion);
       await ensureCompanionBuckets();
       let mediaType = String(body.media_type || body.mediaType || "gallery");
-      if (mediaType === "card" || mediaType === "card_image") mediaType = "cover";
+      // Game-cover / 游戏照封面 / legacy card image → independent single-slot "cover"
+      // (must NOT consume the album/gallery 6 quota).
+      if (
+        mediaType === "card" ||
+        mediaType === "card_image" ||
+        mediaType === "records" ||
+        mediaType === "game_cover" ||
+        mediaType === "gameCover" ||
+        mediaType === "game_records"
+      ) {
+        mediaType = "cover";
+      }
       if (!["avatar", "cover", "gallery", "voice", "video"].includes(mediaType)) {
         return json(res, 400, { ok: false, message: "不支持的媒体类型" });
       }
@@ -4678,6 +4710,14 @@ export default async function handler(req, res) {
       if (!dataUrl && !(mediaType === "video" && directPath)) {
         return json(res, 400, { ok: false, message: "请选择要上传的文件" });
       }
+      // Video binary must never travel through the Vercel Function body.
+      if (mediaType === "video" && dataUrl && !directPath) {
+        return json(res, 400, {
+          ok: false,
+          message: "请使用直传上传展示视频（prepare_video_upload），勿将完整视频 POST 到本接口。",
+          code: "USE_DIRECT_VIDEO_UPLOAD",
+        });
+      }
 
       const galleryFallback = readGalleryFallback(row.tags || companion.tags || "");
       if (mediaType === "gallery") {
@@ -4685,7 +4725,8 @@ export default async function handler(req, res) {
           "companion_media",
           `?companion_profile_id=eq.${encodeURIComponent(row.id)}&media_type=eq.gallery&select=id,sort_order,content_type,storage_path`
         ).catch((e) => (isMissingRelation(e) ? null : Promise.reject(e)));
-        const galleryRows = (existing || []).filter((g) => !/^video\//i.test(String(g.content_type || "")));
+        // Album quota only: exclude video rows and legacy cover-as-gallery (sort 1 /cover/).
+        const galleryRows = (existing || []).filter((g) => isAlbumGalleryRow(g));
         const galleryCount = existing == null ? galleryFallback.items.length : galleryRows.length;
         if (galleryCount >= 6) {
           return json(res, 400, { ok: false, message: "相册最多上传 6 张，请先删除后再上传" });
@@ -4776,6 +4817,7 @@ export default async function handler(req, res) {
           `?companion_profile_id=eq.${encodeURIComponent(row.id)}&media_type=eq.${encodeURIComponent(mediaType)}`
         ).catch(() => []);
         let legacyVideoRows = [];
+        let legacyCoverRows = [];
         if (mediaType === "video") {
           // Older DBs may store showcase video as gallery + video/* content_type.
           const galleryRows = await companionDb(
@@ -4789,7 +4831,19 @@ export default async function handler(req, res) {
               String(g.storage_bucket || "") === PRIVATE_BUCKETS.video
           );
         }
-        for (const old of [...(oldRows || []), ...legacyVideoRows]) {
+        if (mediaType === "cover") {
+          // Legacy DB check may persist cover as gallery sort_order=1 — replace must clear those too.
+          const galleryRows = await companionDb(
+            "companion_media",
+            `?companion_profile_id=eq.${encodeURIComponent(row.id)}&media_type=eq.gallery&select=*`
+          ).catch(() => []);
+          legacyCoverRows = (galleryRows || []).filter(
+            (g) =>
+              Number(g.sort_order) === 1 ||
+              /\/cover\//i.test(String(g.storage_path || ""))
+          );
+        }
+        for (const old of [...(oldRows || []), ...legacyVideoRows, ...legacyCoverRows]) {
           try {
             await deleteStorageObject(old.storage_bucket, old.storage_path);
           } catch {
@@ -4939,7 +4993,7 @@ export default async function handler(req, res) {
           mediaType === "avatar"
             ? "头像上传成功"
             : mediaType === "cover"
-              ? "卡面上传成功"
+              ? "游戏照封面上传成功"
             : mediaType === "gallery"
               ? "相册照片上传成功"
               : mediaType === "voice"
@@ -5068,7 +5122,7 @@ export default async function handler(req, res) {
             "companion_media",
             `?id=eq.${encodeURIComponent(mediaId)}&user_id=eq.${encodeURIComponent(auth.profile.id)}`
           );
-        } else if (mediaType === "avatar" || mediaType === "voice" || mediaType === "video") {
+        } else if (mediaType === "avatar" || mediaType === "cover" || mediaType === "voice" || mediaType === "video") {
           items = await companionDb(
             "companion_media",
             `?companion_profile_id=eq.${encodeURIComponent(row.id)}&media_type=eq.${encodeURIComponent(mediaType)}`
@@ -5083,6 +5137,18 @@ export default async function handler(req, res) {
                 /^video\//i.test(String(g.content_type || "")) ||
                 /\/video\//i.test(String(g.storage_path || "")) ||
                 String(g.storage_bucket || "") === PRIVATE_BUCKETS.video
+            );
+          }
+          if (mediaType === "cover" && !(items || []).length) {
+            // Legacy DB may have stored cover as gallery sort_order=1.
+            const galleryRows = await companionDb(
+              "companion_media",
+              `?companion_profile_id=eq.${encodeURIComponent(row.id)}&media_type=eq.gallery`
+            ).catch(() => []);
+            items = (galleryRows || []).filter(
+              (g) =>
+                Number(g.sort_order) === 1 ||
+                /\/cover\//i.test(String(g.storage_path || ""))
             );
           }
         } else {
@@ -5128,6 +5194,13 @@ export default async function handler(req, res) {
         }
       }
       const deletedAvatar = deletedTypes.has("avatar");
+      const deletedCover =
+        deletedTypes.has("cover") ||
+        (items || []).some(
+          (i) =>
+            Number(i.sort_order) === 1 ||
+            /\/cover\//i.test(String(i.storage_path || ""))
+        );
       if (deletedAvatar) {
         await supabaseJson(restUrl("profiles", `?id=eq.${encodeURIComponent(auth.profile.id)}`), {
           method: "PATCH",
@@ -5139,6 +5212,11 @@ export default async function handler(req, res) {
           headers: serviceHeaders(),
           body: JSON.stringify({ card_image_url: "", updated_at: nowIso() }),
         });
+      } else if (deletedCover) {
+        await patchCompanionProfile(`?id=eq.${encodeURIComponent(row.id)}`, {
+          card_image_url: "",
+          updated_at: nowIso(),
+        }).catch(() => null);
       }
       // Voice/video must unbind profile fields so public + self views cannot resurrect old files.
       if (deletedTypes.has("voice")) {
