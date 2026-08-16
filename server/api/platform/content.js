@@ -6,9 +6,27 @@ import { readVoiceTypes, toPublicVoiceType } from "../_companion-voice-types-sto
 const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"];
 
 function hasDatabaseConfig() { return REQUIRED_ENV.every((key) => process.env[key]); }
+function supabaseHostFingerprint() {
+  try {
+    const raw = String(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "").trim();
+    if (!raw) return "";
+    const host = new URL(raw).hostname || "";
+    // e.g. jqfaknpmcnqwqvatrwgo.supabase.co → jqfaknpmcnqwqvatrwgo
+    return String(host.split(".")[0] || "").slice(0, 64);
+  } catch {
+    return "";
+  }
+}
+
 function json(res, status, data) {
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
   res.setHeader("Pragma", "no-cache");
+  const ref = supabaseHostFingerprint();
+  if (ref) {
+    // Non-secret project ref only — helps Preview/Staging/Prod audits without leaking keys.
+    res.setHeader("X-MCJ-Supabase-Ref", ref);
+    res.setHeader("X-MCJ-Vercel-Env", String(process.env.VERCEL_ENV || process.env.NODE_ENV || ""));
+  }
   res.status(status).json(data);
 }
 function headers() {
@@ -543,7 +561,16 @@ export default async function handler(req, res) {
     }
 
     const items = Object.keys(byType).flatMap((type) => byType[type].map((item) => ({ id: item.id, type, title: item.title || item.name, sort: item.sort, enabled: item.enabled, data: item })));
-    return json(res, 200, { ok: true, configured: true, items, byType });
+    const supabaseRef = supabaseHostFingerprint();
+    return json(res, 200, {
+      ok: true,
+      configured: true,
+      items,
+      byType,
+      // Audit helpers (non-secret): which Supabase project this Preview/Prod reads.
+      supabaseRef: supabaseRef || undefined,
+      vercelEnv: process.env.VERCEL_ENV || undefined,
+    });
   } catch (error) {
     return json(res, 500, { ok: false, message: error.message || "平台内容接口异常" });
   }

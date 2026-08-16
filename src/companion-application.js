@@ -1096,6 +1096,34 @@
       });
   }
 
+  function guestRulesPreviewHtml() {
+    var rule = null;
+    try {
+      rule = publishedRule();
+    } catch (e) {
+      rule = null;
+    }
+    if (!rule) {
+      return (
+        '<details class="apply-auth-rules-preview" data-apply-rules-preview>' +
+        "<summary>预览陪玩制度（只读）</summary>" +
+        '<p class="apply-note">后台暂未发布陪玩制度。验证邮箱并登录后才能开始申请步骤。</p>' +
+        "</details>"
+      );
+    }
+    return (
+      '<details class="apply-auth-rules-preview" data-apply-rules-preview>' +
+      "<summary>预览陪玩制度（只读，验证邮箱后才能勾选同意并进入第 1 步）</summary>" +
+      '<div class="rules-reader"><h3>' +
+      esc(rule.title || "陪玩制度") +
+      "</h3><pre>" +
+      esc(rule.body || "") +
+      "</pre></div>" +
+      '<p class="apply-note">未验证邮箱仅可预览制度内容，不能完成第 1 步，也不能进入第 2 步。</p>' +
+      "</details>"
+    );
+  }
+
   function authGateHtml() {
     if (companionToken()) return "";
     var mode = authUi.mode === "login" ? "login" : "register";
@@ -1106,6 +1134,7 @@
         '<section class="apply-panel apply-auth-gate" data-apply-auth-gate="boss">' +
         "<h2>使用当前老板账号申请陪玩</h2>" +
         "<p class=\"apply-note\">检测到你已登录老板端。将在<strong>同一 User ID</strong>下开通陪玩资料，不会新建账号，也不会丢失老板订单/充值/聊天。</p>" +
+        guestRulesPreviewHtml() +
         '<div class="apply-actions apply-auth-actions">' +
         '<button class="apply-btn primary" type="button" data-apply-from-boss' +
         (authUi.busy || authUi.bossSessionPending ? " disabled" : "") +
@@ -1199,6 +1228,7 @@
       tabs +
       (mode === "register" ? registerPanel : loginTabs + loginPwd + loginOtp + authMessageHtml()) +
       '<p class="apply-note">新用户：邮箱 → 发送验证码 → 验证成功 → 设置密码与昵称 → 注册并进入 1/5 申请流程。</p>' +
+      guestRulesPreviewHtml() +
       "</section>"
     );
   }
@@ -3314,6 +3344,10 @@
       var stepBtn = e.target.closest("[data-apply-step]");
       if (stepBtn) {
         e.preventDefault();
+        if (!companionToken()) {
+          showApplyTip("请先验证邮箱并登录陪玩账号后，再开始申请步骤。");
+          return;
+        }
         var targetStep = Number(stepBtn.dataset.applyStep);
         await collect(root);
         var draftAfterClick = readDraft();
@@ -3321,9 +3355,34 @@
         render(targetStep, { alignStepNav: true });
         return;
       }
-      if (e.target.closest("[data-apply-next]")) { e.preventDefault(); await collect(root); var idx = Number(root.dataset.step || 0); var missing = missingForStep(idx, readDraft()); if (missing.length) { showMissing(missing); return; } if (idx === steps.length - 1) submitApplication(); else render(idx + 1, { alignStepNav: true }); return; }
-      if (e.target.closest("[data-apply-prev]")) { e.preventDefault(); await collect(root); render(Math.max(0, Number(root.dataset.step || 0) - 1), { alignStepNav: true }); return; }
+      if (e.target.closest("[data-apply-next]")) {
+        e.preventDefault();
+        if (!companionToken()) {
+          showApplyTip("请先验证邮箱并登录陪玩账号后，再开始申请步骤。");
+          return;
+        }
+        await collect(root);
+        var idx = Number(root.dataset.step || 0);
+        var missing = missingForStep(idx, readDraft());
+        if (missing.length) { showMissing(missing); return; }
+        if (idx === steps.length - 1) submitApplication();
+        else render(idx + 1, { alignStepNav: true });
+        return;
+      }
+      if (e.target.closest("[data-apply-prev]")) {
+        e.preventDefault();
+        if (!companionToken()) return;
+        await collect(root);
+        render(Math.max(0, Number(root.dataset.step || 0) - 1), { alignStepNav: true });
+        return;
+      }
       if (e.target.closest("[data-rule-agree]")) {
+        if (!companionToken()) {
+          showApplyTip("请先验证邮箱并登录后，才能勾选同意并完成第 1 步。");
+          var rogue = e.target.closest("[data-rule-agree]");
+          if (rogue) rogue.checked = false;
+          return;
+        }
         var rule = publishedRule();
         if (!rule) return;
         saveDraft({ rulesAgreement: { accepted: e.target.checked, version: rule.version, ruleId: rule.id, agreedAt: e.target.checked ? now() : "", applicantId: applicantId(), device: navigator.userAgent } });
