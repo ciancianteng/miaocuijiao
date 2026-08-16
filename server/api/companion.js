@@ -913,9 +913,15 @@ function normalizeDepositStatus(companion = {}, depositRow = null) {
   if (/unpaid|draft|none|not_submitted|missing|未缴/.test(raw) || !raw) return "unpaid";
   if (/reject|驳回|拒绝/.test(raw)) return "rejected";
   if (/^(approved|verified|passed|paid|received)$|已通过|已缴纳|已到账/.test(raw)) return "approved";
-  if (/pending|review|submit|待审|审核中/.test(raw)) return "pending";
+  if (/pending|review|submit|待审|审核中/.test(raw)) {
+    // companion_profiles.deposit_status defaults to "pending" at register time.
+    // Without a companion_deposits ledger row this means unpaid — NOT under review.
+    // Showing "审核中" here hides the live payment QR / deposit form.
+    if (!depositRow || !String(depositRow.id || "").trim()) return "unpaid";
+    return "pending";
+  }
   if (/refund/.test(raw)) return "refunded";
-  return "pending";
+  return "unpaid";
 }
 function profileReviewApproved(companion = {}) {
   return normalizeProfileReviewStatus(companion) === "approved";
@@ -2612,7 +2618,7 @@ async function ensureCompanionRow(profile, companion) {
       nickname: profile.display_name || "",
       contact_phone: String(profile.phone || profile.phone_e164 || "").trim() || "",
       verification_status: "pending",
-      deposit_status: "pending",
+      deposit_status: "unpaid",
       application_status: "draft",
       allow_orders: false,
       online_status: "offline",
@@ -3238,7 +3244,7 @@ export default async function handler(req, res) {
         const { persistRoles } = await import("./_account-roles.js");
         await persistRoles(created.id, ["companion"], { primaryRole: "companion" });
       } catch { /* optional */ }
-      await supabaseJson(restUrl("companion_profiles"), { method:"POST", headers: serviceHeaders(), body: JSON.stringify({ user_id: created.id, nickname, contact_phone: "", verification_status: "pending", deposit_status: "pending", application_status: "draft", allow_orders: false, online_status: "offline", created_at: nowIso(), updated_at: nowIso() }) });
+      await supabaseJson(restUrl("companion_profiles"), { method:"POST", headers: serviceHeaders(), body: JSON.stringify({ user_id: created.id, nickname, contact_phone: "", verification_status: "pending", deposit_status: "unpaid", application_status: "draft", allow_orders: false, online_status: "offline", created_at: nowIso(), updated_at: nowIso() }) });
       try {
         const { stampPasswordSet, stampPasswordUnset } = await import("./_account-security.js");
         if (wantsPassword) await stampPasswordSet(created.id, { mustChangePassword: false });
@@ -4188,7 +4194,7 @@ export default async function handler(req, res) {
           await supabaseJson(restUrl("companion_profiles"), {
             method: "POST",
             headers: serviceHeaders(),
-            body: JSON.stringify({ user_id: auth.profile.id, ...patch, deposit_status: "pending", online_status: "offline", created_at: nowIso() }),
+            body: JSON.stringify({ user_id: auth.profile.id, ...patch, deposit_status: "unpaid", online_status: "offline", created_at: nowIso() }),
           });
         } else {
           await patchCompanionProfile(`?user_id=eq.${encodeURIComponent(auth.profile.id)}`, patch);
