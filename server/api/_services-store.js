@@ -56,8 +56,9 @@ export function normalizeServiceRow(row = {}) {
   if (!positions.length) positions = defaultPositionsFromFlags(row);
   if (showHome && !positions.includes("home")) positions.push("home");
   if (!showHome) positions = positions.filter((key) => key !== "home");
+  const rawId = row.id != null && String(row.id).trim() ? String(row.id).trim() : "";
   return {
-    id: String(row.id || randomUUID()),
+    id: rawId,
     name: String(row.name || "").trim(),
     category: String(row.category || "其他").trim() || "其他",
     icon: String(row.icon || "🎮").trim() || "🎮",
@@ -89,7 +90,11 @@ export async function readLocalServices() {
 }
 
 export async function writeLocalServices(rows) {
-  const list = (Array.isArray(rows) ? rows : []).map(normalizeServiceRow);
+  const list = (Array.isArray(rows) ? rows : []).map((row) => {
+    const normalized = normalizeServiceRow(row);
+    if (!normalized.id) normalized.id = randomUUID();
+    return normalized;
+  });
   if (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME) {
     throw Object.assign(new Error("服务分类必须写入数据库，请确认 services 表已迁移。"), { status: 503 });
   }
