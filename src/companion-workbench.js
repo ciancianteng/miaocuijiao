@@ -3343,7 +3343,7 @@
     var selectedChannelId=accountDraftVal('channel_id',d.channelId||(depositChannelList[0]&&(depositChannelList[0].id||depositChannelList[0].code))||'');
     var idPhase=privacyReviewPhase(idStatusRaw,{submitted:idSubmitted});
     var verifyLocked=idPhase==='pending'||idPhase==='approved';
-    var depositLocked=depositPhase==='pending'||depositPhase==='approved';
+    var depositLocked = depositPhase === "approved" || (depositPhase === "pending" && depositSubmitted);
     var verifyView=
       '<section class="pw-card pad pw-form-narrow pw-account-verify" style="margin-top:14px" data-verification-view>'+
       '<h3>A. 身份证认证</h3>'+
