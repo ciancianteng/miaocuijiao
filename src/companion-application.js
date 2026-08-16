@@ -3645,6 +3645,18 @@
               writeDraftRecord(d);
             }
             render(4);
+            // Mobile: bring live QR into view so payment info is not below the fold.
+            try {
+              var qrEl =
+                document.querySelector(".apply-deposit-qr") ||
+                document.querySelector("[data-apply-deposit-qr-zoom]") ||
+                document.querySelector(".apply-deposit-pay");
+              if (qrEl && qrEl.scrollIntoView) {
+                setTimeout(function () {
+                  qrEl.scrollIntoView({ behavior: "smooth", block: "center" });
+                }, 80);
+              }
+            } catch (scrollErr) {}
           });
         }
         return;
