@@ -3994,6 +3994,11 @@
       try {
         sessionStorage.removeItem(APPLICANT_KEY);
       } catch (e) {}
+      // Logged out while on apply → leave page (do not show guest fill form).
+      if (!companionToken() && !hasBossSession()) {
+        redirectGuestToLogin();
+        return;
+      }
       render(0);
       return;
     }
