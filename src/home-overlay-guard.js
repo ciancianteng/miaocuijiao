@@ -23,6 +23,14 @@
     "[data-mcj-mnav-sheet].open",
   ];
 
+  function viewportSize() {
+    var vv = window.visualViewport;
+    return {
+      w: (vv && vv.width) || window.innerWidth || document.documentElement.clientWidth || 0,
+      h: (vv && vv.height) || window.innerHeight || document.documentElement.clientHeight || 0,
+    };
+  }
+
   function hasUsableDialog(root) {
     if (!root) return false;
     var dialog = root.querySelector(
@@ -31,9 +39,11 @@
     // A bare full-screen mask with no dialog child is stuck — not usable.
     if (!dialog) return false;
     var r = dialog.getBoundingClientRect();
-    if (r.width < 80 || r.height < 80) return false;
-    if (r.bottom < 40 || r.top > window.innerHeight - 40) return false;
-    if (r.right < 40 || r.left > window.innerWidth - 40) return false;
+    var vp = viewportSize();
+    if (r.width < 80 || r.height < 40) return false;
+    // Forced-ack / modals must be inside the *visual* viewport (Safari URL bar safe).
+    if (r.bottom < 24 || r.top > vp.h - 24) return false;
+    if (r.right < 24 || r.left > vp.w - 24) return false;
     var s = window.getComputedStyle(dialog);
     if (s.display === "none" || s.visibility === "hidden" || parseFloat(s.opacity || "1") < 0.05) return false;
     return true;
@@ -156,6 +166,14 @@
     var anyOpen = SELECTORS.some(function (sel) {
       return !!document.querySelector(sel);
     });
+
+    // Never unlock while a usable forced-ack / modal is still open.
+    var forcedOpen = !!document.querySelector("[data-pw-forced-mask]");
+    var forcedOk = forcedOpen && hasUsableDialog(document.querySelector("[data-pw-forced-mask]"));
+
+    if (forcedOk) {
+      return cleaned;
+    }
 
     if (scrollLocked && !anyOpen) {
       unlockScroll();
