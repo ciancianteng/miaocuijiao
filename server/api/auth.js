@@ -476,7 +476,28 @@ async function resolveForgotAccount(accountRaw, roleRaw) {
     const byEmail = await profilesLookup(
       `?email=eq.${encodeURIComponent(account.toLowerCase())}&select=${select}&limit=3`
     );
-    const hit = (byEmail || []).find((row) => profileMatchesRole(row, role));
+    let hit = (byEmail || []).find((row) => profileMatchesRole(row, role));
+    // Dual-role / staff-primary (e.g. admin + companion_profiles): primary role alone
+    // must not block companion/boss portal OTP. Match portal capability via enrichment.
+    if (!hit?.id && (role === "companion" || role === "boss") && Array.isArray(byEmail)) {
+      for (const row of byEmail) {
+        if (!row?.id) continue;
+        try {
+          const { enrichProfileRoles } = await import("./_account-roles.js");
+          const enriched = await enrichProfileRoles(row);
+          if (role === "companion" && enriched?.hasCompanion) {
+            hit = row;
+            break;
+          }
+          if (role === "boss" && enriched?.hasBoss) {
+            hit = row;
+            break;
+          }
+        } catch {
+          /* best-effort capability lookup */
+        }
+      }
+    }
     if (hit?.id) return { profile: hit, via: "email", role };
   }
 

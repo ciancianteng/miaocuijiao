@@ -1,7 +1,10 @@
 (function () {
   var DB_KEY = "mcjRealDB.v1";
   var PLATFORM_KEY = "mcjPlatformData.v1";
-  var DRAFT_KEY = "mcjCompanionApplicationDraft.v1";
+  /** @deprecated Unscoped draft key — never read for display; migrate-or-purge only. */
+  var DRAFT_KEY_LEGACY = "mcjCompanionApplicationDraft.v1";
+  var DRAFT_KEY_PREFIX = "mcjCompanionApplicationDraft.v1.u:";
+  var DRAFT_LAST_AUTH_UID = "mcjCompanionApplicationDraft.lastAuthUserId";
   var APPLICANT_KEY = "mcjCompanionApplicantId.v1";
   var MIN_VOICE_SECONDS = 10;
   var MAX_VOICE_SECONDS = 60;
@@ -100,23 +103,174 @@
     if (next.voice.fileUpload) next.voice.fileUpload = scrubAssetForStorage(next.voice.fileUpload);
     return next;
   }
+  function isDraftStorageKey(key) {
+    var k = String(key || "");
+    return k === DRAFT_KEY_LEGACY || k.indexOf(DRAFT_KEY_PREFIX) === 0;
+  }
+  function jwtSub(token) {
+    try {
+      var part = String(token || "").split(".")[1];
+      if (!part) return "";
+      var b64 = part.replace(/-/g, "+").replace(/_/g, "/");
+      while (b64.length % 4) b64 += "=";
+      var payload = JSON.parse(atob(b64));
+      return String((payload && (payload.sub || payload.user_id || payload.userId)) || "").trim();
+    } catch (e) {
+      return "";
+    }
+  }
+  function emptyDraft() {
+    return {
+      step: 0,
+      data: {},
+      uploads: {},
+      gameCards: [],
+      voice: {},
+      rulesAgreement: {},
+      ownerUserId: "",
+    };
+  }
+  /** Stable Supabase/auth user id for the current apply session. Empty = guest. */
+  function authUserId() {
+    try {
+      var session = readCompanionSession();
+      var fromComp =
+        session &&
+        session.user &&
+        (session.user.id || session.user.user_id || session.user.userId || "");
+      if (fromComp) return String(fromComp).trim();
+    } catch (e) {}
+    try {
+      var raw =
+        sessionStorage.getItem("customerUser") ||
+        localStorage.getItem("customerUser") ||
+        sessionStorage.getItem("mcjCurrentUser") ||
+        localStorage.getItem("mcjCurrentUser") ||
+        "";
+      if (raw) {
+        var u = JSON.parse(raw);
+        var fromBoss = u && (u.id || u.user_id || u.userId || "");
+        if (fromBoss) return String(fromBoss).trim();
+      }
+    } catch (e2) {}
+    try {
+      var tok =
+        (typeof companionToken === "function" ? companionToken() : "") ||
+        sessionStorage.getItem("mcjAuthAccessToken") ||
+        localStorage.getItem("mcjAuthAccessToken") ||
+        "";
+      var sub = jwtSub(tok);
+      if (sub) return sub;
+    } catch (e3) {}
+    return "";
+  }
+  function draftKeyForUser(userId) {
+    var id = String(userId || "").trim();
+    if (!id) return "";
+    return DRAFT_KEY_PREFIX + id;
+  }
+  function purgeUnscopedDraftKeys() {
+    try {
+      localStorage.removeItem(DRAFT_KEY_LEGACY);
+    } catch (e) {}
+    try {
+      sessionStorage.removeItem(DRAFT_KEY_LEGACY);
+    } catch (e2) {}
+  }
+  function clearLiveApplyMedia() {
+    Object.keys(livePreviews).forEach(function (key) {
+      clearLivePreview(key);
+    });
+    liveVoiceBlob = null;
+    if (liveVoiceObjectUrl) {
+      try {
+        URL.revokeObjectURL(liveVoiceObjectUrl);
+      } catch (e) {}
+      liveVoiceObjectUrl = "";
+    }
+  }
+  function migrateLegacyDraftForUser(userId) {
+    var uid = String(userId || "").trim();
+    if (!uid) {
+      purgeUnscopedDraftKeys();
+      return;
+    }
+    var scopedKey = draftKeyForUser(uid);
+    var hasScoped = false;
+    try {
+      hasScoped = !!localStorage.getItem(scopedKey);
+    } catch (e) {}
+    var legacyRaw = "";
+    try {
+      legacyRaw = localStorage.getItem(DRAFT_KEY_LEGACY) || sessionStorage.getItem(DRAFT_KEY_LEGACY) || "";
+    } catch (e2) {}
+    if (!hasScoped && legacyRaw) {
+      try {
+        var legacy = JSON.parse(legacyRaw) || {};
+        var owner = String(legacy.ownerUserId || "").trim();
+        var lastUid = "";
+        try {
+          lastUid = String(localStorage.getItem(DRAFT_LAST_AUTH_UID) || "").trim();
+        } catch (e3) {}
+        var canClaim = owner === uid || (!owner && lastUid === uid);
+        if (canClaim) {
+          legacy.ownerUserId = uid;
+          localStorage.setItem(scopedKey, JSON.stringify(scrubDraftForStorage(legacy)));
+        }
+      } catch (e4) {}
+    }
+    purgeUnscopedDraftKeys();
+  }
+  function writeDraftRecord(draft) {
+    var uid = authUserId();
+    if (!uid) {
+      // Guests must never persist apply drafts into shared localStorage.
+      purgeUnscopedDraftKeys();
+      return;
+    }
+    var payload = scrubDraftForStorage(Object.assign({}, draft || {}, { ownerUserId: uid }));
+    var key = draftKeyForUser(uid);
+    var text = JSON.stringify(payload);
+    try {
+      localStorage.setItem(key, text);
+      localStorage.setItem(DRAFT_LAST_AUTH_UID, uid);
+    } catch (err) {
+      var msg = String((err && err.name) || "") + " " + String((err && err.message) || err || "");
+      if (/quota|QuotaExceeded|NS_ERROR_DOM_QUOTA/i.test(msg)) {
+        try {
+          localStorage.setItem(key, JSON.stringify(scrubDraftForStorage(payload)));
+          localStorage.setItem(DRAFT_LAST_AUTH_UID, uid);
+          return;
+        } catch (e2) {}
+        throw new Error(
+          "浏览器本地草稿空间已满（不是云端 Storage 配额）。已改为仅保存图片云端地址；请刷新后重新上传头像/相册。"
+        );
+      }
+      throw err;
+    }
+    purgeUnscopedDraftKeys();
+  }
+  function clearCurrentUserDraft() {
+    var uid = authUserId();
+    if (uid) {
+      try {
+        localStorage.removeItem(draftKeyForUser(uid));
+      } catch (e) {}
+    }
+    purgeUnscopedDraftKeys();
+  }
   function writeRaw(key, data) {
+    if (isDraftStorageKey(key) || key === DRAFT_KEY_LEGACY) {
+      writeDraftRecord(data);
+      return;
+    }
     var payload = data || {};
-    if (key === DRAFT_KEY) payload = scrubDraftForStorage(payload);
     var text = JSON.stringify(payload);
     try {
       localStorage.setItem(key, text);
     } catch (err) {
       var msg = String((err && err.name) || "") + " " + String((err && err.message) || err || "");
       if (/quota|QuotaExceeded|NS_ERROR_DOM_QUOTA/i.test(msg)) {
-        // Last resort: drop ephemeral media leftovers and retry once.
-        if (key === DRAFT_KEY) {
-          try {
-            var lean = scrubDraftForStorage(payload);
-            localStorage.setItem(key, JSON.stringify(lean));
-            return;
-          } catch (e2) {}
-        }
         throw new Error(
           "浏览器本地草稿空间已满（不是云端 Storage 配额）。已改为仅保存图片云端地址；请刷新后重新上传头像/相册。"
         );
@@ -162,22 +316,53 @@
     window.dispatchEvent(new CustomEvent("mcj:platform-data-updated"));
   }
   function applicantId() {
-    var id = localStorage.getItem(APPLICANT_KEY);
-    if (!id) { id = "boss_" + Date.now(); localStorage.setItem(APPLICANT_KEY, id); }
+    var authId = authUserId();
+    if (authId) return authId;
+    // Guest-only ephemeral marker — never reuse a sticky boss_* across accounts.
+    var id = "";
+    try {
+      id = sessionStorage.getItem(APPLICANT_KEY) || "";
+    } catch (e) {}
+    if (!id) {
+      id = "guest_" + Date.now().toString(36);
+      try {
+        sessionStorage.setItem(APPLICANT_KEY, id);
+      } catch (e2) {}
+    }
     return id;
   }
   function currentUser() {
     try {
-      var u = JSON.parse(localStorage.getItem("customerUser") || localStorage.getItem("mcjCurrentUser") || "null");
-      if (u) return { id: u.id || u.user_id || applicantId(), name: u.name || u.nickname || "当前账号" };
+      var authId = authUserId();
+      var u = JSON.parse(
+        sessionStorage.getItem("customerUser") ||
+          localStorage.getItem("customerUser") ||
+          localStorage.getItem("mcjCurrentUser") ||
+          "null"
+      );
+      if (authId || u) {
+        return {
+          id: authId || (u && (u.id || u.user_id)) || "",
+          name: (u && (u.name || u.nickname || u.email)) || "当前账号",
+        };
+      }
     } catch (e) {}
-    return { id: applicantId(), name: "当前账号" };
+    return { id: "", name: "当前账号" };
   }
   function readDraft() {
-    var draft = Object.assign(
-      { step: 0, data: {}, uploads: {}, gameCards: [], voice: {}, rulesAgreement: {} },
-      readRaw(DRAFT_KEY)
-    );
+    var uid = authUserId();
+    if (!uid) {
+      // Guest / logged-out: never surface another account's draft.
+      purgeUnscopedDraftKeys();
+      return emptyDraft();
+    }
+    migrateLegacyDraftForUser(uid);
+    var scoped = readRaw(draftKeyForUser(uid));
+    var draft = Object.assign(emptyDraft(), scoped);
+    if (draft.ownerUserId && draft.ownerUserId !== uid) {
+      return emptyDraft();
+    }
+    draft.ownerUserId = uid;
     // One-time cleanup of legacy base64 drafts that caused QuotaExceededError.
     if (draft.uploads) {
       delete draft.uploads.cover;
@@ -214,7 +399,7 @@
       if (typeof patch[key] === "object" && !Array.isArray(patch[key]) && patch[key] !== null) draft[key] = Object.assign(draft[key] || {}, patch[key]);
       else draft[key] = patch[key];
     });
-    writeRaw(DRAFT_KEY, draft);
+    writeDraftRecord(draft);
   }
   function publishedRule() {
     if (remoteRuleCache && remoteRuleCache.body) return remoteRuleCache;
@@ -222,6 +407,94 @@
   }
   function depositSettings() {
     return Object.assign(defaultDeposit(), readDB().depositSettings || readPlatform().depositSettings || {});
+  }
+
+  function depositChannels() {
+    return Array.isArray(remoteDepositPay.channels) ? remoteDepositPay.channels : [];
+  }
+
+  function applyDepositChannelsFromPayload(payload) {
+    if (!payload || typeof payload !== "object") return;
+    var list = payload.depositChannels || payload.channels || payload.methods || [];
+    if (!Array.isArray(list)) list = [];
+    remoteDepositPay.channels = list.filter(function (ch) {
+      if (!ch) return false;
+      var info = ch.payInfo || {};
+      return !!(info.qrUrl || info.bankAccount || info.duitnowId || info.phone || ch.qrUrl);
+    });
+    var amt = Number(payload.amountRm != null ? payload.amountRm : payload.requiredAmount);
+    if (amt > 0) remoteDepositPay.amountRm = amt;
+    remoteDepositPay.emptyMessage = String(payload.emptyMessage || "").trim();
+    remoteDepositPay.error = "";
+    remoteDepositPay.loaded = true;
+  }
+
+  function fetchDepositPayMethods(force) {
+    if (remoteDepositPay.loading) return Promise.resolve(remoteDepositPay);
+    if (remoteDepositPay.loaded && !force) return Promise.resolve(remoteDepositPay);
+    if (!companionToken()) {
+      remoteDepositPay.loaded = true;
+      remoteDepositPay.channels = [];
+      remoteDepositPay.emptyMessage = "请先登录陪玩账号后再查看押金收款信息。";
+      return Promise.resolve(remoteDepositPay);
+    }
+    remoteDepositPay.loading = true;
+    return fetch("/api/companion?action=deposit_pay_methods", {
+      headers: {
+        Accept: "application/json",
+        "x-mcj-companion-token": companionToken(),
+        Authorization: "Bearer " + companionToken(),
+      },
+      cache: "no-store",
+    })
+      .then(function (res) {
+        return res.json().then(function (body) {
+          if (!res.ok || body.ok === false) {
+            throw new Error((body && body.message) || "押金收款信息加载失败");
+          }
+          applyDepositChannelsFromPayload(body);
+          if (!remoteDepositPay.channels.length && !remoteDepositPay.emptyMessage) {
+            remoteDepositPay.emptyMessage = "平台暂未配置押金收款方式，请联系客服。";
+          }
+          return remoteDepositPay;
+        });
+      })
+      .catch(function (err) {
+        remoteDepositPay.loaded = true;
+        remoteDepositPay.error = String((err && err.message) || "押金收款信息加载失败");
+        if (!remoteDepositPay.channels.length) {
+          remoteDepositPay.emptyMessage = "平台暂未配置押金收款方式，请联系客服。";
+        }
+        return remoteDepositPay;
+      })
+      .finally(function () {
+        remoteDepositPay.loading = false;
+      });
+  }
+
+  function openApplyDepositQrLightbox(src) {
+    if (!src) return;
+    var box = document.getElementById("applyDepositQrLightbox");
+    if (!box) {
+      box = document.createElement("div");
+      box.id = "applyDepositQrLightbox";
+      box.className = "apply-deposit-qr-lightbox";
+      box.innerHTML =
+        '<div class="apply-deposit-qr-lightbox-panel" role="dialog" aria-modal="true" aria-label="收款二维码放大预览">' +
+        '<button type="button" class="apply-deposit-qr-lightbox-close" data-apply-deposit-qr-close aria-label="关闭">×</button>' +
+        '<img alt="收款二维码大图" data-apply-deposit-qr-lightbox-img="1" referrerpolicy="no-referrer">' +
+        '<p class="apply-note">点击遮罩或关闭按钮可关闭</p>' +
+        "</div>";
+      box.addEventListener("click", function (ev) {
+        if (ev.target === box || (ev.target && ev.target.closest && ev.target.closest("[data-apply-deposit-qr-close]"))) {
+          box.classList.remove("is-open");
+        }
+      });
+      document.body.appendChild(box);
+    }
+    var img = box.querySelector("[data-apply-deposit-qr-lightbox-img]");
+    if (img) img.src = src;
+    box.classList.add("is-open");
   }
   function voiceTypeOptions() {
     var db = readDB();
@@ -329,6 +602,16 @@
       }
       if (mode === "deposit") {
         if (!hasDurableUpload(identity.depositProof)) missing.push("押金付款凭证");
+        var chans = depositChannels();
+        if (chans.length) {
+          var chId = String(identity.depositChannelId || identity.depositMethod || "").trim();
+          var matched = chans.some(function (c) {
+            return String(c.id || c.code || "") === chId;
+          });
+          if (!matched && chans.length > 1) missing.push("选择押金收款渠道");
+        } else if (remoteDepositPay.loaded) {
+          missing.push(remoteDepositPay.emptyMessage || "平台暂未配置押金收款方式，请联系客服");
+        }
       }
       [["settlementMethod", "结款方式"], ["settlementName", "结款户名"], ["settlementAccount", "结款账号"]].forEach(function (item) {
         if (!hasText(identity, item[0])) missing.push(item[1]);
@@ -370,6 +653,8 @@
 
   var authUi = {
     mode: "register", // register | login
+    // Only show email register/login when user explicitly opts out of the current boss account.
+    preferOtherAccount: false,
     loginMethod: "password", // password | otp
     emailVerified: false,
     verifiedEmail: "",
@@ -381,6 +666,17 @@
     busy: false,
     message: "",
     messageTone: "error",
+    bossSessionPending: false,
+  };
+
+  /** Live deposit pay channels from payment settings SoT (not player_deposit_settings). */
+  var remoteDepositPay = {
+    loaded: false,
+    loading: false,
+    amountRm: 100,
+    channels: [],
+    emptyMessage: "",
+    error: "",
   };
 
   function setAuthMessage(msg, tone) {
@@ -399,6 +695,10 @@
 
   function bossAccessToken() {
     try {
+      if (window.MCJBossAuth && typeof window.MCJBossAuth.getAccessToken === "function") {
+        var fromAuth = String(window.MCJBossAuth.getAccessToken() || "").trim();
+        if (fromAuth) return fromAuth;
+      }
       return (
         sessionStorage.getItem("mcjAuthAccessToken") ||
         localStorage.getItem("mcjAuthAccessToken") ||
@@ -407,6 +707,150 @@
     } catch (e) {
       return "";
     }
+  }
+
+  function bossRefreshToken() {
+    try {
+      if (window.MCJBossAuth && typeof window.MCJBossAuth.getRefreshToken === "function") {
+        var fromAuth = String(window.MCJBossAuth.getRefreshToken() || "").trim();
+        if (fromAuth) return fromAuth;
+      }
+      return (
+        sessionStorage.getItem("mcjAuthRefreshToken") ||
+        localStorage.getItem("mcjAuthRefreshToken") ||
+        ""
+      );
+    } catch (e) {
+      return "";
+    }
+  }
+
+  function looksLikeJwt(token) {
+    var t = String(token || "").trim();
+    if (!t || t.length < 20) return false;
+    var parts = t.split(".");
+    return parts.length === 3 && parts.every(function (part) {
+      return part.length > 0;
+    });
+  }
+
+  /**
+   * companion-apply is a boss-public page: header chrome reads mcjAuth* via MCJBossAuth,
+   * while the apply form may only retain the SAME Supabase JWT in mcjCompanionSession
+   * (after「使用当前老板账号申请」or a later boss-key wipe from failed refresh).
+   * Re-home those tokens into MCJBossAuth — not a second session.
+   */
+  function syncBossAuthFromCompanionTokens(session, remember) {
+    var s = session || readCompanionSession() || {};
+    var access = String(s.token || s.accessToken || s.access_token || "").trim();
+    var refresh = String(s.refreshToken || s.refresh_token || "").trim();
+    if (!access && !refresh) return false;
+    if (access && !looksLikeJwt(access) && !refresh) return false;
+    if (access && /^companion_session_/i.test(access) && !refresh) return false;
+    var expiresAt = s.expiresAt != null && s.expiresAt !== "" ? s.expiresAt : s.expires_at;
+    if ((expiresAt == null || expiresAt === "") && access) {
+      var exp = jwtExpSec(access);
+      if (exp) expiresAt = exp;
+    }
+    var persist = remember !== false;
+    if (window.MCJBossAuth && typeof window.MCJBossAuth.saveSession === "function") {
+      try {
+        window.MCJBossAuth.saveSession(
+          {
+            accessToken: access || undefined,
+            refreshToken: refresh || undefined,
+            expiresAt: expiresAt,
+          },
+          persist
+        );
+        return true;
+      } catch (e) {}
+    }
+    try {
+      var stores = persist ? [sessionStorage, localStorage] : [sessionStorage];
+      stores.forEach(function (store) {
+        try {
+          if (access) store.setItem("mcjAuthAccessToken", access);
+          if (refresh) store.setItem("mcjAuthRefreshToken", refresh);
+          if (expiresAt != null && expiresAt !== "") store.setItem("mcjAuthExpiresAt", String(expiresAt));
+        } catch (e2) {}
+      });
+      try {
+        window.dispatchEvent(
+          new CustomEvent("mcj:auth-updated", { detail: { reason: "sync-boss-from-companion" } })
+        );
+      } catch (e3) {}
+      return true;
+    } catch (e4) {
+      return false;
+    }
+  }
+
+  function hydrateBossAuthFromCompanionSession() {
+    if (bossAccessToken() || bossRefreshToken()) return false;
+    return syncBossAuthFromCompanionTokens(readCompanionSession(), true);
+  }
+
+  function hasBossSession() {
+    if (companionToken()) return false;
+    if (window.MCJBossAuth && typeof window.MCJBossAuth.canRestoreSession === "function") {
+      try {
+        if (window.MCJBossAuth.canRestoreSession()) return true;
+      } catch (e) {}
+    }
+    if (window.MCJBossAuth && typeof window.MCJBossAuth.hasValidAccessToken === "function") {
+      try {
+        if (window.MCJBossAuth.hasValidAccessToken()) return true;
+      } catch (e2) {}
+    }
+    return !!(bossAccessToken() || bossRefreshToken());
+  }
+
+  function ensureBossAuthModule() {
+    if (window.MCJBossAuth) return Promise.resolve(window.MCJBossAuth);
+    return new Promise(function (resolve) {
+      var existing = document.querySelector('script[data-mcj-boss-auth],script[src*="boss-auth-session.js"]');
+      var done = function () {
+        resolve(window.MCJBossAuth || null);
+      };
+      if (existing) {
+        var tries = 0;
+        var timer = setInterval(function () {
+          tries += 1;
+          if (window.MCJBossAuth || tries > 40) {
+            clearInterval(timer);
+            done();
+          }
+        }, 50);
+        return;
+      }
+      var s = document.createElement("script");
+      s.src = "/src/boss-auth-session.js?v=20260815applyBossHeader2";
+      s.setAttribute("data-mcj-boss-auth", "1");
+      s.onload = done;
+      s.onerror = done;
+      document.head.appendChild(s);
+    });
+  }
+
+  function ensureBossSessionForApply() {
+    authUi.bossSessionPending = true;
+    // Form may already hold the boss JWT only in mcjCompanionSession.
+    hydrateBossAuthFromCompanionSession();
+    return ensureBossAuthModule()
+      .then(function (Auth) {
+        if (Auth && typeof Auth.ensureSession === "function") {
+          return Auth.ensureSession().catch(function () {
+            // Failed boss refresh must not leave header guest while companion JWT remains.
+            hydrateBossAuthFromCompanionSession();
+            return null;
+          });
+        }
+        return null;
+      })
+      .finally(function () {
+        authUi.bossSessionPending = false;
+      });
   }
 
   function storageGet(key) {
@@ -564,6 +1008,16 @@
             user: sess.user || session.user || {},
             remember: session.remember !== false,
           });
+          // Keep boss header on the same refreshed JWT.
+          syncBossAuthFromCompanionTokens(
+            {
+              token: sess.accessToken || sess.token || "",
+              accessToken: sess.accessToken || sess.token || "",
+              refreshToken: sess.refreshToken || refreshToken,
+              expiresAt: sess.expiresAt || sess.expires_at || "",
+            },
+            session.remember !== false
+          );
           return true;
         });
       })
@@ -595,8 +1049,25 @@
   }
 
   function postCompanion(action, payload, retried) {
+    function safeErrText(value, fallback) {
+      if (window.McjCompanionVideoUpload && typeof window.McjCompanionVideoUpload.safeErrText === "function") {
+        return window.McjCompanionVideoUpload.safeErrText(value, fallback || "");
+      }
+      if (value == null || value === "") return fallback || "";
+      if (typeof value === "string") return value;
+      if (typeof value === "number" || typeof value === "boolean") return String(value);
+      if (value && typeof value.message === "string") return value.message;
+      try {
+        var s = JSON.stringify(value);
+        if (s && s !== "{}" && s !== "null") return s.slice(0, 240);
+      } catch (e) {}
+      return fallback || "";
+    }
     function humanize(msg, status) {
-      var text = String(msg || "").trim();
+      var text = safeErrText(msg, "").trim();
+      if (status === 413 || /413|Payload Too Large|request entity too large|entity too large|VERCEL_BODY_LIMIT/i.test(text)) {
+        return "视频文件过大或上传通道限制，请稍后重试。";
+      }
       if (/invalid JWT|token is expired|unable to parse or verify|jwt|登录态无效|请先登录|登录已过期|refreshToken 已失效/i.test(text)) {
         return "登录状态已过期，请重新登录后继续。";
       }
@@ -609,6 +1080,9 @@
       // Never surface raw JS runtime dumps on the apply page.
       if (/Assignment to constant variable|TypeError|ReferenceError|SyntaxError|is not defined|Cannot read propert/i.test(text)) {
         return "操作失败，请稍后重试。";
+      }
+      if (/\[object Object\]/i.test(text)) {
+        return status === 413 ? "视频文件过大或上传通道限制，请稍后重试。" : "操作失败，请稍后重试。";
       }
       return text || "提交失败";
     }
@@ -627,16 +1101,26 @@
         body: JSON.stringify(Object.assign({ action: action }, payload || {})),
       }).then(function (res) {
         return res
-          .json()
-          .catch(function () {
-            return {};
-          })
-          .then(function (body) {
+          .text()
+          .then(function (raw) {
+            var body = {};
+            if (raw) {
+              try {
+                body = JSON.parse(raw);
+              } catch (e) {
+                body = { message: String(raw).slice(0, 200) };
+              }
+            }
             if (!res.ok || body.ok === false) {
-              var serverMsg = String((body && (body.message || body.error)) || "").trim();
+              var serverMsg = safeErrText(body && (body.message || body.error), "").trim();
               var errMsg = humanize(serverMsg || "提交失败", res.status);
-              if (action === "upload_media" && res.status && !/登录状态已过期|操作失败，请稍后重试/.test(errMsg)) {
+              if (
+                (action === "upload_media" || action === "prepare_video_upload") &&
+                res.status &&
+                !/登录状态已过期|操作失败，请稍后重试|视频文件过大或上传通道限制/.test(errMsg)
+              ) {
                 errMsg = "HTTP " + res.status + (serverMsg ? " · " + serverMsg : " · 上传失败");
+                errMsg = humanize(errMsg, res.status);
               }
               var err = new Error(errMsg);
               err.status = res.status;
@@ -722,17 +1206,21 @@
 
   function authGateHtml() {
     if (companionToken()) return "";
-    var bossTok = bossAccessToken();
     var mode = authUi.mode === "login" ? "login" : "register";
-    if (bossTok && mode !== "login") {
+    var bossPresent = hasBossSession();
+    if (bossPresent && !authUi.preferOtherAccount) {
       // Prefer upgrading the logged-in boss account instead of creating a second Auth user.
       return (
-        '<section class="apply-panel apply-auth-gate">' +
+        '<section class="apply-panel apply-auth-gate" data-apply-auth-gate="boss">' +
         "<h2>使用当前老板账号申请陪玩</h2>" +
         "<p class=\"apply-note\">检测到你已登录老板端。将在<strong>同一 User ID</strong>下开通陪玩资料，不会新建账号，也不会丢失老板订单/充值/聊天。</p>" +
         '<div class="apply-actions apply-auth-actions">' +
-        '<button class="apply-btn primary" type="button" data-apply-from-boss' + (authUi.busy ? " disabled" : "") + ">使用当前账号申请陪玩</button>" +
-        '<button class="apply-btn" type="button" data-apply-auth-mode="login">改用其他陪玩账号登录</button>' +
+        '<button class="apply-btn primary" type="button" data-apply-from-boss' +
+        (authUi.busy || authUi.bossSessionPending ? " disabled" : "") +
+        ">" +
+        (authUi.bossSessionPending ? "正在恢复登录…" : "使用当前账号申请陪玩") +
+        "</button>" +
+        '<button class="apply-btn" type="button" data-apply-prefer-other>改用其他陪玩账号登录</button>' +
         "</div>" +
         authMessageHtml() +
         "</section>"
@@ -802,10 +1290,20 @@
       '<div class="apply-actions apply-auth-actions full"><button class="apply-btn primary" type="button" data-apply-login-otp' + (authUi.busy ? " disabled" : "") + ">验证码登录</button></div>" +
       "</form>";
 
+    var backToBoss =
+      bossPresent
+        ? '<p class="apply-note"><button class="apply-btn" type="button" data-apply-use-current-boss>← 使用当前老板账号申请陪玩</button></p>'
+        : "";
+
     return (
-      '<section class="apply-panel apply-auth-gate">' +
-      "<h2>先创建 / 登录陪玩账号</h2>" +
-      "<p>申请资料会写入平台数据库，审核通过后可直接用此邮箱登录陪玩端。MVP 仅支持邮箱验证码，不再使用手机号。</p>" +
+      '<section class="apply-panel apply-auth-gate" data-apply-auth-gate="' + (bossPresent ? "other" : "guest") + '">' +
+      "<h2>" + (bossPresent ? "改用其他陪玩账号" : "先创建 / 登录陪玩账号") + "</h2>" +
+      "<p>" +
+      (bossPresent
+        ? "仅在你要换另一个账号申请时使用。同一邮箱请回到上方「使用当前老板账号」，避免误以为要注册第二个账号。"
+        : "申请资料会写入平台数据库，审核通过后可直接用此邮箱登录陪玩端。MVP 仅支持邮箱验证码，不再使用手机号。") +
+      "</p>" +
+      backToBoss +
       tabs +
       (mode === "register" ? registerPanel : loginTabs + loginPwd + loginOtp + authMessageHtml()) +
       '<p class="apply-note">新用户：邮箱 → 发送验证码 → 验证成功 → 设置密码与昵称 → 注册并进入 1/5 申请流程。</p>' +
@@ -977,7 +1475,7 @@
         value: u.showcaseVideo || null,
         accept: U() && U().VIDEO_ACCEPT ? U().VIDEO_ACCEPT : "video/mp4,video/quicktime,.mp4,.mov",
         capture: false,
-        hint: "支持 mp4 / mov，最长约 30 秒；选填",
+        hint: "支持 mp4 / mov，最长 30 秒；直传云端（最大约 50MB），选填",
       }) +
       '<p class="apply-note full">头像、相册与试音会上传到云端 Storage。老板大厅卡面统一使用头像/相册。刷新后仍可恢复。</p>' +
       '<p class="apply-note full"><a href="#applyVoicePanel" style="color:#ffd6e8;font-weight:1000">↓ 试音（必填）</a>：支持【现场录音】或【上传已有音频】，请完成其中一种。</p></form></section>' +
@@ -1143,10 +1641,125 @@
     if (set.payeeNote || set.paymentNote) lines.push("<li>" + esc(set.payeeNote || set.paymentNote) + "</li>");
     return lines.length ? "<ul>" + lines.join("") + "</ul>" : "";
   }
+
+  function depositChannelPayInfoHtml(channel, selectedId) {
+    if (!channel) return "";
+    var info = channel.payInfo || {};
+    var id = String(channel.id || channel.code || "").trim();
+    var checked = selectedId ? id === String(selectedId) : true;
+    var qr = String(info.qrUrl || channel.qrUrl || "").trim();
+    var accountLabel = /duitnow/i.test(id + String(channel.label || channel.name || ""))
+      ? "DuitNow ID"
+      : "银行账号 / 收款账号";
+    var accountVal = String(info.duitnowId || info.bankAccount || info.phone || "").trim();
+    return (
+      '<label class="apply-deposit-channel' +
+      (checked ? " is-active" : "") +
+      '" data-deposit-channel-card="' +
+      esc(id) +
+      '">' +
+      '<input type="radio" name="depositChannelId" data-deposit-channel value="' +
+      esc(id) +
+      '" ' +
+      (checked ? "checked" : "") +
+      " required>" +
+      '<div class="apply-deposit-channel-body">' +
+      "<strong>" +
+      esc(channel.label || channel.name || id) +
+      "</strong>" +
+      '<ul class="apply-deposit-info">' +
+      "<li>支付方式：" +
+      esc(channel.label || channel.name || "-") +
+      "</li>" +
+      "<li>收款人：" +
+      esc(info.receiverName || "-") +
+      "</li>" +
+      "<li>银行：" +
+      esc(info.bankName || "-") +
+      "</li>" +
+      "<li>" +
+      esc(accountLabel) +
+      "：" +
+      esc(accountVal || "-") +
+      "</li>" +
+      "<li>应付金额：RM " +
+      esc(String(info.amountRm != null ? info.amountRm : remoteDepositPay.amountRm || 100)) +
+      "</li>" +
+      "</ul>" +
+      (qr
+        ? '<div class="apply-deposit-qr"><p class="apply-note">收款二维码（点击可放大）</p>' +
+          '<button type="button" class="apply-deposit-qr-btn" data-apply-deposit-qr-zoom="' +
+          esc(qr) +
+          '" aria-label="放大收款二维码">' +
+          '<img src="' +
+          esc(qr) +
+          '" alt="押金收款二维码" referrerpolicy="no-referrer">' +
+          "</button></div>"
+        : '<p class="apply-note">该渠道暂无二维码，请按上方账号信息转账。</p>') +
+      (info.instructions ? '<p class="apply-note">' + esc(info.instructions) + "</p>" : "") +
+      "</div></label>"
+    );
+  }
+
+  function depositPayPanelHtml(id) {
+    var set = depositSettings();
+    var channels = depositChannels();
+    var amount = Number(remoteDepositPay.amountRm || set.amount || 100) || 100;
+    var currency = set.currency === "MYR" ? "RM" : set.currency || "RM";
+    var selectedId = String(id.depositChannelId || id.depositMethod || "").trim();
+    if (!selectedId && channels.length === 1) {
+      selectedId = String(channels[0].id || channels[0].code || "").trim();
+    }
+    var head =
+      "<h3>认证押金：" +
+      esc(currency) +
+      amount.toFixed(0) +
+      "</h3>" +
+      "<p class=\"apply-note\">请向平台收款账号转账后上传付款凭证。收款信息来自后台「支付设置」中已启用且支持押金的渠道。</p>";
+
+    if (remoteDepositPay.loading && !channels.length) {
+      return '<div class="apply-subcard apply-deposit-pay">' + head + '<p class="apply-note">正在加载平台收款信息…</p></div>';
+    }
+
+    if (!channels.length) {
+      var empty =
+        remoteDepositPay.emptyMessage ||
+        remoteDepositPay.error ||
+        "平台暂未配置押金收款方式，请联系客服。";
+      // Legacy player_deposit_settings payee text only as secondary hint when present.
+      var legacy = depositPayeeHtml(set);
+      return (
+        '<div class="apply-subcard apply-deposit-pay">' +
+        head +
+        '<p class="apply-deposit-empty" role="alert">' +
+        esc(empty) +
+        "</p>" +
+        (legacy ? '<div class="apply-note">备用说明：</div>' + legacy : "") +
+        '<form class="apply-grid">' +
+        fileField("depositProof", "押金付款凭证", { value: id.depositProof }) +
+        "</form></div>"
+      );
+    }
+
+    return (
+      '<div class="apply-subcard apply-deposit-pay">' +
+      head +
+      '<div class="apply-deposit-channels" data-deposit-channels>' +
+      channels
+        .map(function (ch) {
+          return depositChannelPayInfoHtml(ch, selectedId);
+        })
+        .join("") +
+      "</div>" +
+      '<form class="apply-grid">' +
+      fileField("depositProof", "押金付款凭证", { value: id.depositProof }) +
+      "</form></div>"
+    );
+  }
+
   function identityHtml(draft) {
     var id = draft.identity || {};
     var mode = String(id.authMode || "").trim();
-    var set = depositSettings();
     var choice =
       '<div class="apply-split">' +
       '<button class="apply-subcard" type="button" data-auth-mode="id_card" aria-pressed="' + (mode === "id_card" ? "true" : "false") + '"><h3>身份证认证</h3><p>上传证件正反面完成认证。选择后无需缴纳押金。</p><strong>' + (mode === "id_card" ? "已选择" : "点击选择") + "</strong></button>" +
@@ -1161,15 +1774,7 @@
         fileField("idBack", "身份证 / 证件背面", { value: id.idBack }) +
         "</form></div>";
     } else if (mode === "deposit") {
-      modeForm =
-        '<div class="apply-subcard"><h3>认证押金：' + esc(set.currency || "RM") + Number(set.amount || 100).toFixed(0) + "</h3>" +
-        "<ul><li>请向平台收款账号转账后上传付款凭证</li><li>支持方式：" + esc((set.methods || []).join("、") || "TNG / DuitNow / Alipay") + "</li></ul>" +
-        (set.description ? "<p>" + esc(set.description) + "</p>" : "") +
-        depositPayeeHtml(set) +
-        '<form class="apply-grid">' +
-        selectField("depositMethod", "押金支付方式", id.depositMethod, set.methods || ["TNG", "DuitNow", "Alipay"]) +
-        fileField("depositProof", "押金付款凭证", { value: id.depositProof }) +
-        "</form></div>";
+      modeForm = depositPayPanelHtml(id);
     }
     var settlement =
       mode === "id_card" || mode === "deposit"
@@ -1561,8 +2166,10 @@
       chain = chain.then(function () {
         var proof = storagePayloadForSubmit(identity.depositProof);
         return postCompanion("submit_deposit_proof", {
-          paid_amount: (depositSettings().amount || 100),
-          payment_method: identity.depositMethod || "",
+          paid_amount: (remoteDepositPay.amountRm || depositSettings().amount || 100),
+          payment_method: identity.depositMethod || identity.depositChannelId || "",
+          channel_id: identity.depositChannelId || identity.depositMethod || "",
+          channelId: identity.depositChannelId || identity.depositMethod || "",
           proof_url: proof || "",
           remark: "陪玩申请一并提交",
           settlementMethod: identity.settlementMethod || "",
@@ -1596,7 +2203,7 @@
         syncPlatform(db);
         // Formal submit: clear editable local draft so it won't look like a parallel draft.
         try {
-          localStorage.removeItem(DRAFT_KEY);
+          clearCurrentUserDraft();
         } catch (e) { /* ignore */ }
         remoteStatus = { applicationStatus: "pending", rejectReason: "" };
         showSuccess();
@@ -1716,7 +2323,7 @@
         size: blob.size,
         quality: quality,
       };
-      writeRaw(DRAFT_KEY, draftAfterRec);
+      writeDraftRecord(draftAfterRec);
       setVoiceState(quality.passed ? "已录制，待试听确认" : "检测未通过", quality.duration);
       document.body.classList.remove("voice-recording-active");
       render(3);
@@ -1825,7 +2432,7 @@
     }
     var draft = readDraft();
     draft.voice = { status: "尚未录制" };
-    writeRaw(DRAFT_KEY, draft);
+    writeDraftRecord(draft);
     var db = readDB();
     var app = (db.companionApplications || []).find(function (a) { return a.applicantId === applicantId(); });
     if (app && app.status !== "approved") {
@@ -1874,7 +2481,7 @@
         d.voice.uploaded = true;
         d.voice.uploadedAt = now();
         d.voice.hasLocal = false;
-        writeRaw(DRAFT_KEY, d);
+        writeDraftRecord(d);
         delete uploadErrors.voice;
         showApplyTip("上传成功 / 已保存", "ok");
         render(3);
@@ -1890,7 +2497,7 @@
           uploaded: false,
           status: "本地录音已失效，请重新录制",
         });
-        writeRaw(DRAFT_KEY, d);
+        writeDraftRecord(d);
         showApplyTip("本地录音已失效（刷新后需重录）。请重新录制后再点「确认上传」。");
         render(3);
         return;
@@ -2009,7 +2616,7 @@
             storageOk: true,
             id: (res && res.media && res.media.id) || next.voice.id || "",
           });
-          writeRaw(DRAFT_KEY, next);
+          writeDraftRecord(next);
           showApplyTip("上传成功 / 已保存", "ok");
           render(3);
         })
@@ -2036,7 +2643,7 @@
             confirmed: false,
             uploaded: false,
           });
-          writeRaw(DRAFT_KEY, next);
+          writeDraftRecord(next);
           showApplyTip("上传失败，请重试：" + msg);
           render(3);
         });
@@ -2075,7 +2682,7 @@
       existing = draft.uploads[key];
       delete draft.uploads[key];
     }
-    writeRaw(DRAFT_KEY, draft);
+    writeDraftRecord(draft);
     if (existing && (existing.id || key === "avatar") && companionToken()) {
       var mt =
         key === "avatar"
@@ -2139,7 +2746,7 @@
     } else {
       draft.uploads[key] = safe;
     }
-    writeRaw(DRAFT_KEY, draft);
+    writeDraftRecord(draft);
   }
   function uploadKeyConfig(key) {
     var map = {
@@ -2198,6 +2805,91 @@
       localPreview = "";
     }
     render(step);
+
+    // Showcase video: browser → Supabase direct (signed PUT / TUS). Never POST binary via Vercel.
+    if (kind === "video" || cfg.mediaType === "video") {
+      var accessToken = companionToken();
+      return postCompanion("prepare_video_upload", {
+        filename: file.name || "showcase.mp4",
+        content_type: file.type || "video/mp4",
+        byte_length: file.size,
+        duration_seconds: durationSeconds != null ? durationSeconds : undefined,
+      })
+        .then(function (prep) {
+          if (!prep || !prep.path || !prep.signedUrl) {
+            throw new Error("直传凭证签发失败，请稍后重试");
+          }
+          if (key !== "photos") {
+            setUploadAsset(key, { url: "", path: "", status: "uploading" });
+            render(step);
+          }
+          var uploader =
+            window.McjCompanionVideoUpload && typeof window.McjCompanionVideoUpload.upload === "function"
+              ? window.McjCompanionVideoUpload.upload
+              : null;
+          if (!uploader) throw new Error("视频直传组件未加载，请刷新后重试");
+          return uploader({
+            file: file,
+            prep: prep,
+            accessToken: accessToken,
+            onProgress: function () {},
+          }).then(function () {
+            return postCompanion("upload_media", {
+              media_type: "video",
+              storage_path: prep.path,
+              storage_bucket: prep.bucket || "companion-video",
+              content_type: prep.contentType || file.type || "video/mp4",
+              filename: file.name || "showcase.mp4",
+              byte_length: file.size,
+              duration_seconds: durationSeconds != null ? durationSeconds : undefined,
+            });
+          });
+        })
+        .then(function (res) {
+          uploadBusy[key] = false;
+          delete uploadErrors[key];
+          var asset = {
+            url: (res && res.url) || (res && res.media && res.media.url) || "",
+            path: (res && res.path) || (res && res.media && res.media.path) || "",
+            bucket: (res && res.bucket) || (res && res.media && res.media.bucket) || "",
+            id: (res && res.media && res.media.id) || "",
+            status: "ok",
+          };
+          if (!asset.url && !asset.path) throw new Error("上传成功但未返回地址，请重新上传");
+          if (asset.url && isEphemeralMediaUrl(asset.url) && !asset.path) {
+            throw new Error("云端未返回可访问地址，请重新上传");
+          }
+          if (asset.url && !isEphemeralMediaUrl(asset.url)) {
+            clearLivePreview(key);
+          }
+          setUploadAsset(key, asset);
+          showApplyTip("展示视频上传成功");
+          render(Number(document.getElementById("companionApplyRoot").dataset.step || 0));
+        })
+        .catch(function (err) {
+          uploadBusy[key] = false;
+          var friendly = String((err && err.message) || "上传失败");
+          if (
+            err &&
+            (err.status === 413 || /413|Payload Too Large|上传通道限制|VERCEL_BODY_LIMIT/i.test(friendly))
+          ) {
+            friendly = "视频文件过大或上传通道限制，请稍后重试。";
+          }
+          if (/\[object Object\]/i.test(friendly)) {
+            friendly = "视频上传失败，请稍后重试。";
+          }
+          uploadErrors[key] = friendly;
+          clearLivePreview(key);
+          var du = readDraft();
+          du.uploads = du.uploads || {};
+          delete du.uploads[key];
+          writeDraftRecord(du);
+          showApplyTip("上传失败：" + friendly);
+          render(Number(document.getElementById("companionApplyRoot").dataset.step || 0));
+          return Promise.reject(err);
+        });
+    }
+
     var prepare =
       kind === "image" && U() && U().compressImageFile
         ? U().compressImageFile(file)
@@ -2252,23 +2944,29 @@
           friendly =
             "浏览器本地草稿空间已满（不是云端 Storage）。请刷新后重试；图片只会上传到云端，不再写入本地大图。";
         }
+        if (err && err.status === 413) {
+          friendly = "视频文件过大或上传通道限制，请稍后重试。";
+        }
+        if (/\[object Object\]/i.test(friendly)) {
+          friendly = "上传失败，请稍后重试。";
+        }
         uploadErrors[key] = friendly;
         clearLivePreview(key);
         if (key === "idFront" || key === "idBack" || key === "depositProof") {
           var d = readDraft();
           d.identity = d.identity || {};
           delete d.identity[key];
-          writeRaw(DRAFT_KEY, d);
+          writeDraftRecord(d);
         } else if (key === "voiceFile") {
           var dv = readDraft();
           dv.voice = dv.voice || {};
           delete dv.voice.fileUpload;
-          writeRaw(DRAFT_KEY, dv);
+          writeDraftRecord(dv);
         } else if (key !== "photos") {
-          var du = readDraft();
-          du.uploads = du.uploads || {};
-          delete du.uploads[key];
-          writeRaw(DRAFT_KEY, du);
+          var du2 = readDraft();
+          du2.uploads = du2.uploads || {};
+          delete du2.uploads[key];
+          writeDraftRecord(du2);
         }
         showApplyTip("上传失败：" + friendly);
         render(Number(document.getElementById("companionApplyRoot").dataset.step || 0));
@@ -2376,6 +3074,9 @@
       merged.expiresAt = readAnyExpiresAt(merged);
     }
     saveCompanionSession(merged);
+    // Boss header reads mcjAuth*; apply-from-boss / companion login must keep
+    // the SAME JWT visible there (portal isolation still uses separate companion session object).
+    syncBossAuthFromCompanionTokens(merged, merged.remember !== false);
     if (nickname || email) {
       try { saveDraft({ data: { nickname: nickname || "", email: email || "" } }); } catch (e) {}
     }
@@ -2476,6 +3177,8 @@
       if (authModeBtn) {
         e.preventDefault();
         authUi.mode = authModeBtn.getAttribute("data-apply-auth-mode") === "login" ? "login" : "register";
+        // Switching tabs inside the other-account UI must keep preferOtherAccount on.
+        if (hasBossSession()) authUi.preferOtherAccount = true;
         setAuthMessage("");
         render(Number(root.dataset.step || 0));
         if (window.MCJAuthShell && window.MCJAuthShell.clearAuthFields) {
@@ -2484,47 +3187,70 @@
         return;
       }
 
+      if (e.target.closest("[data-apply-prefer-other]")) {
+        e.preventDefault();
+        authUi.preferOtherAccount = true;
+        authUi.mode = "login";
+        setAuthMessage("");
+        render(Number(root.dataset.step || 0));
+        if (window.MCJAuthShell && window.MCJAuthShell.clearAuthFields) {
+          window.MCJAuthShell.clearAuthFields(root, { clearCode: true, clearPassword: true, clearAccount: false });
+        }
+        return;
+      }
+
+      if (e.target.closest("[data-apply-use-current-boss]")) {
+        e.preventDefault();
+        authUi.preferOtherAccount = false;
+        authUi.mode = "register";
+        setAuthMessage("");
+        render(Number(root.dataset.step || 0));
+        return;
+      }
+
       if (e.target.closest("[data-apply-from-boss]")) {
         e.preventDefault();
-        var bossTok = bossAccessToken();
-        if (!bossTok) {
-          setAuthMessage("请先登录老板账号。", "error");
-          render(Number(root.dataset.step || 0));
-          return;
-        }
         authUi.busy = true;
-        setAuthMessage("正在当前账号下开通陪玩资料…", "ok");
+        setAuthMessage("正在恢复登录并开通陪玩资料…", "ok");
         render(Number(root.dataset.step || 0));
-        var bossRefresh = readAnyRefreshToken();
-        var bossExpires = readAnyExpiresAt();
-        fetch("/api/companion", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Accept: "application/json",
-            Authorization: "Bearer " + bossTok,
-            "x-mcj-companion-token": bossTok,
-          },
-          body: JSON.stringify({
-            action: "apply_companion_role",
-            refreshToken: bossRefresh,
-            expiresAt: bossExpires,
-          }),
-        })
-          .then(function (res) {
-            return res.json().then(function (body) {
-              if (!res.ok || body.ok === false) throw new Error((body && body.message) || "申请失败");
-              return body;
+        ensureBossSessionForApply()
+          .then(function () {
+            var bossTok = bossAccessToken();
+            if (!bossTok) {
+              throw new Error("请先登录老板账号。");
+            }
+            var bossRefresh = bossRefreshToken() || readAnyRefreshToken();
+            var bossExpires = readAnyExpiresAt();
+            return fetch("/api/companion", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Accept: "application/json",
+                Authorization: "Bearer " + bossTok,
+                "x-mcj-companion-token": bossTok,
+              },
+              body: JSON.stringify({
+                action: "apply_companion_role",
+                refreshToken: bossRefresh,
+                expiresAt: bossExpires,
+              }),
+            }).then(function (res) {
+              return res.json().then(function (body) {
+                if (!res.ok || body.ok === false) throw new Error((body && body.message) || "申请失败");
+                return { body: body, bossTok: bossTok, bossRefresh: bossRefresh, bossExpires: bossExpires };
+              });
             });
           })
-          .then(function (body) {
+          .then(function (pack) {
+            var body = pack.body;
             var sess = body.session || {
-              token: bossTok,
-              accessToken: bossTok,
+              token: pack.bossTok,
+              accessToken: pack.bossTok,
               user: (body.session && body.session.user) || {},
             };
-            if (!sess.refreshToken) sess.refreshToken = bossRefresh;
-            if (sess.expiresAt == null || sess.expiresAt === "") sess.expiresAt = bossExpires;
+            if (!sess.refreshToken) sess.refreshToken = pack.bossRefresh;
+            if (sess.expiresAt == null || sess.expiresAt === "") sess.expiresAt = pack.bossExpires;
+            authUi.preferOtherAccount = false;
             return afterCompanionAuthSuccess(sess, "", "");
           })
           .catch(function (err) {
@@ -2880,7 +3606,7 @@
           glist.splice(gIdx, 1);
           gd.uploads = gd.uploads || {};
           gd.uploads.photos = glist;
-          writeRaw(DRAFT_KEY, gd);
+          writeDraftRecord(gd);
           render(Number(root.dataset.step || 0));
           if (removed && removed.id && companionToken()) {
             postCompanion("delete_media", { media_id: removed.id, media_type: "gallery" }).catch(function () {});
@@ -2899,13 +3625,72 @@
         if (nextMode === "id_card") {
           delete cur.identity.depositProof;
           delete cur.identity.depositMethod;
+          delete cur.identity.depositChannelId;
         } else {
           delete cur.identity.idFront;
           delete cur.identity.idBack;
           delete cur.identity.documentType;
         }
-        writeRaw(DRAFT_KEY, cur);
+        writeDraftRecord(cur);
         render(4);
+        if (nextMode === "deposit") {
+          fetchDepositPayMethods(true).then(function () {
+            var d = readDraft();
+            var chans = depositChannels();
+            if (chans.length === 1) {
+              d.identity = Object.assign({}, d.identity || {});
+              var onlyId = String(chans[0].id || chans[0].code || "").trim();
+              d.identity.depositChannelId = onlyId;
+              d.identity.depositMethod = onlyId;
+              writeDraftRecord(d);
+            }
+            render(4);
+            // Mobile: bring live QR into view so payment info is not below the fold.
+            try {
+              var qrEl =
+                document.querySelector(".apply-deposit-qr") ||
+                document.querySelector("[data-apply-deposit-qr-zoom]") ||
+                document.querySelector(".apply-deposit-pay");
+              if (qrEl && qrEl.scrollIntoView) {
+                setTimeout(function () {
+                  qrEl.scrollIntoView({ behavior: "smooth", block: "center" });
+                }, 80);
+              }
+            } catch (scrollErr) {}
+          });
+        }
+        return;
+      }
+      // QR zoom must run before channel-card selection: the QR button lives inside the
+      // channel <label>, so closest("[data-deposit-channel-card]") would otherwise steal
+      // the click, re-render, and never open the lightbox.
+      var qrZoomBtn = e.target.closest("[data-apply-deposit-qr-zoom]");
+      if (qrZoomBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        var src = qrZoomBtn.getAttribute("data-apply-deposit-qr-zoom") || "";
+        if (!src) {
+          var img = qrZoomBtn.querySelector("img");
+          src = (img && img.getAttribute("src")) || "";
+        }
+        if (src) openApplyDepositQrLightbox(src);
+        return;
+      }
+      var depositChannel = e.target.closest("[data-deposit-channel-card], [data-deposit-channel]");
+      if (depositChannel) {
+        var input =
+          depositChannel.matches && depositChannel.matches("[data-deposit-channel]")
+            ? depositChannel
+            : depositChannel.querySelector("[data-deposit-channel]");
+        var channelId = String((input && input.value) || depositChannel.getAttribute("data-deposit-channel-card") || "").trim();
+        if (channelId) {
+          var dCh = readDraft();
+          dCh.identity = Object.assign({}, dCh.identity || {});
+          dCh.identity.depositChannelId = channelId;
+          dCh.identity.depositMethod = channelId;
+          writeDraftRecord(dCh);
+          render(4);
+        }
         return;
       }
     });
@@ -2939,7 +3724,7 @@
         draft.voice = draft.voice || {};
         draft.voice.listened = true;
         draft.voice.status = "已试听，可确认";
-        writeRaw(DRAFT_KEY, draft);
+        writeDraftRecord(draft);
         render(3);
       }
     }, true);
@@ -2953,7 +3738,7 @@
       if (!draft.voice || draft.voice.listened) return;
       draft.voice.listened = true;
       draft.voice.status = "已试听，可确认";
-      writeRaw(DRAFT_KEY, draft);
+      writeDraftRecord(draft);
       render(3);
     }, true);
   }
@@ -2966,6 +3751,7 @@
     var player = boot.player || {};
     var verification = boot.verification || {};
     var deposit = boot.deposit || {};
+    applyDepositChannelsFromPayload(deposit);
     var mediaList = Array.isArray(boot.media) ? boot.media : [];
     var mediaMap = {
       avatarUrl: "",
@@ -3024,7 +3810,7 @@
         status: "ok",
       };
     }
-    writeRaw(DRAFT_KEY, draft);
+    writeDraftRecord(draft);
   }
   function initHomeEntry() {
     var entry = document.querySelector("[data-companion-entry]");
@@ -3112,6 +3898,13 @@
       remoteConfigLoaded = true;
       render(readDraft().step || 0);
       restoreApplyScroll();
+      var idMode = String(((readDraft().identity || {}).authMode) || "");
+      if (idMode === "deposit" || Number(readDraft().step || 0) === 4) {
+        return fetchDepositPayMethods(false).then(function () {
+          render(readDraft().step || 0);
+        });
+      }
+      return null;
     }).catch(function () {
       initLoading = false;
       initLoadError = "资料加载失败，请重试";
@@ -3119,16 +3912,68 @@
       render(readDraft().step || 0);
     });
   }
+  /** Guest must not stay on apply page — redirect to site login, then return here. */
+  function redirectGuestToLogin() {
+    var ret =
+      String(location.pathname || "/companion-apply.html") +
+      String(location.search || "") +
+      String(location.hash || "");
+    try {
+      sessionStorage.setItem("mcjAfterLoginRedirect", ret);
+    } catch (e) {}
+    location.replace("/login.html?return=" + encodeURIComponent(ret || "/companion-apply.html"));
+  }
+
   function init() {
     if (!document.getElementById("companionApplyRoot")) return;
+    // Auth guard (defense in depth with portal-early-gate): no companion JWT and no boss JWT → login.
+    if (!companionToken() && !hasBossSession() && !looksLikeJwt(bossAccessToken()) && !bossRefreshToken()) {
+      redirectGuestToLogin();
+      return;
+    }
     ensureDefaultApplicationConfig();
     initHomeEntry();
     // Paint skeleton immediately — never wait for serial API chain.
     initLoading = true;
     initLoadError = "";
+    // Scoped drafts: purge legacy unscoped key; migrate only for the current auth user.
+    try {
+      var bootUid = authUserId();
+      if (bootUid) migrateLegacyDraftForUser(bootUid);
+      else purgeUnscopedDraftKeys();
+    } catch (eBootDraft) {}
     render(readDraft().step || 0);
     bind();
-    runApplyBootstrap(false);
+    // Restore boss JWT (refresh if needed) BEFORE final auth-gate paint so logged-in
+    // bosses see「使用当前老板账号」instead of the register form.
+    ensureBossSessionForApply()
+      .then(function () {
+        // After refresh attempt, still no session → guest; leave apply page.
+        if (!companionToken() && !hasBossSession()) {
+          redirectGuestToLogin();
+          return null;
+        }
+        if (!companionToken() && hasBossSession()) {
+          authUi.preferOtherAccount = false;
+          render(readDraft().step || 0);
+        }
+        // Apply form restored boss session — keep header chrome in sync
+        // (「个人中心」+「退出登录」, not stale「登录」).
+        if (window.MCJBossHeader && typeof window.MCJBossHeader.sync === "function") {
+          return window.MCJBossHeader.sync();
+        }
+        try {
+          window.dispatchEvent(
+            new CustomEvent("mcj:auth-updated", { detail: { reason: "companion-apply-boss-sync" } })
+          );
+        } catch (eSync) {}
+        return null;
+      })
+      .catch(function () {})
+      .then(function () {
+        if (!companionToken() && !hasBossSession()) return;
+        runApplyBootstrap(false);
+      });
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
   else init();
@@ -3140,6 +3985,48 @@
     }
     restoreApplyScroll();
   });
+  function onApplyAuthIdentityChanged() {
+    if (!document.getElementById("companionApplyRoot")) return;
+    var uid = authUserId();
+    if (!uid) {
+      clearLiveApplyMedia();
+      purgeUnscopedDraftKeys();
+      try {
+        sessionStorage.removeItem(APPLICANT_KEY);
+      } catch (e) {}
+      // Logged out while on apply → leave page (do not show guest fill form).
+      if (!companionToken() && !hasBossSession()) {
+        redirectGuestToLogin();
+        return;
+      }
+      render(0);
+      return;
+    }
+    // Header guest + leftover same-user companion session should already be
+    // cleared on boss logout. If companion remains without boss, keep it only
+    // when it is an explicit apply-gate companion login (token present).
+    migrateLegacyDraftForUser(uid);
+    if (companionToken() || authUi.preferOtherAccount || authUi.busy) {
+      render(Number(document.getElementById("companionApplyRoot").dataset.step || readDraft().step || 0));
+      return;
+    }
+    if (hasBossSession()) {
+      render(Number(document.getElementById("companionApplyRoot").dataset.step || 0));
+    } else {
+      // No boss and no companion token path — show guest/boss gate, not draft.
+      render(0);
+    }
+  }
+  window.addEventListener("mcj:auth-updated", onApplyAuthIdentityChanged);
+  window.addEventListener("mcj:auth-changed", onApplyAuthIdentityChanged);
+  window.addEventListener("mcj:auth-expired", onApplyAuthIdentityChanged);
+  window.MCJCompanionApplyDraft = {
+    authUserId: authUserId,
+    readDraft: readDraft,
+    clearCurrentUserDraft: clearCurrentUserDraft,
+    purgeUnscopedDraftKeys: purgeUnscopedDraftKeys,
+    draftKeyForUser: draftKeyForUser,
+  };
 })();
 
 

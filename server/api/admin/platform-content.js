@@ -373,6 +373,7 @@ export default async function handler(req, res) {
       const type = sanitizeType(req.body?.type);
       const id = req.body?.id ? String(req.body.id) : "";
       const payload = req.body?.payload || {};
+      const role = roleFromRequest(req) || "admin";
 
       if (action === "create") {
         const item = normalizeItem(payload, type);

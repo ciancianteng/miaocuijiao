@@ -313,7 +313,11 @@ async function listServices() {
 async function saveService(body, categories) {
   const payload = clean(body.service || body, categories);
   await ensureCategory(payload.category);
-  const id = String(body.id || body.service?.id || payload.id || "").trim();
+  // Only treat as update when the client sends an explicit id.
+  // normalizeServiceRow() used to invent a randomUUID for missing ids, which made
+  // every "create" take the PATCH branch against a non-existent row (200 + []) and
+  // return a fake success that never INSERTed.
+  const id = String(body.id || body.service?.id || "").trim();
   const dbBody = dbPayload(payload);
 
   if (!hasDb()) {
@@ -327,14 +331,22 @@ async function saveService(body, categories) {
         headers: serviceHeaders(),
         body: JSON.stringify(dbBody),
       });
-      return { service: view(rows?.[0] || { ...dbBody, id }), source: "supabase" };
+      const saved = Array.isArray(rows) ? rows[0] : rows;
+      if (!saved?.id) {
+        throw Object.assign(new Error("服务不存在或未写入，请刷新后重试。"), { status: 404 });
+      }
+      return { service: view(saved), source: "supabase" };
     }
     const rows = await supabaseJson(restUrl("services"), {
       method: "POST",
       headers: serviceHeaders(),
       body: JSON.stringify({ ...dbBody, created_at: new Date().toISOString() }),
     });
-    return { service: view(rows?.[0] || dbBody), source: "supabase" };
+    const saved = Array.isArray(rows) ? rows[0] : rows;
+    if (!saved?.id) {
+      throw Object.assign(new Error("服务保存失败：数据库未返回新记录。"), { status: 502 });
+    }
+    return { service: view(saved), source: "supabase" };
   } catch (error) {
     if (isMissingTable(error)) {
       throw Object.assign(new Error("services 表未初始化。请先执行 supabase/services.sql。"), { status: 503 });

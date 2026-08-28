@@ -56,8 +56,9 @@ export function normalizeServiceRow(row = {}) {
   if (!positions.length) positions = defaultPositionsFromFlags(row);
   if (showHome && !positions.includes("home")) positions.push("home");
   if (!showHome) positions = positions.filter((key) => key !== "home");
+  const rawId = row.id != null && String(row.id).trim() ? String(row.id).trim() : "";
   return {
-    id: String(row.id || randomUUID()),
+    id: rawId,
     name: String(row.name || "").trim(),
     category: String(row.category || "其他").trim() || "其他",
     icon: String(row.icon || "🎮").trim() || "🎮",

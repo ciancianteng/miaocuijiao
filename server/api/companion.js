@@ -1,18 +1,23 @@
 ﻿import {
   PRIVATE_BUCKETS,
   PUBLIC_BUCKETS,
+  MAX_VIDEO_BYTES,
   assertAudioUpload,
   assertImageUpload,
   assertVideoUpload,
+  assertVideoMeta,
+  assertStorageObjectPresent,
   buildObjectPath,
   companionDb,
   createSignedUrl,
+  createSignedUploadUrl,
   decodeDataUrl,
   deleteStorageObject,
   ensureCompanionBuckets,
   isMissingRelation,
   maskBankAccount,
   publicObjectUrl,
+  stringifyApiErrorValue,
   uploadPrivateObject,
 } from "./_companion-media-store.js";
 import { companionPopularityMe, recordOnlineSession, scheduleRecomputeSoft } from "./_popularity.js";
@@ -256,12 +261,12 @@ function money(value) { const n = Number(String(value ?? "").replace(/[^\d.-]/g,
 function roundMoney(value) { return Math.round(money(value) * 100) / 100; }
 function formatSupabaseError(body, response, url = "") {
   const parts = [
-    body?.error_description,
-    body?.msg,
-    body?.message,
-    body?.error,
-    body?.hint,
-    body?.details,
+    stringifyApiErrorValue(body?.error_description),
+    stringifyApiErrorValue(body?.msg),
+    stringifyApiErrorValue(body?.message),
+    stringifyApiErrorValue(body?.error),
+    stringifyApiErrorValue(body?.hint),
+    stringifyApiErrorValue(body?.details),
     body?.code ? `code=${body.code}` : "",
     typeof body === "string" ? body.slice(0, 240) : "",
   ].filter(Boolean);
@@ -584,9 +589,12 @@ function isSyntheticMediaId(value) {
 }
 
 function humanizeCompanionApiError(error) {
-  const raw = String(error?.message || error || "");
+  const raw = stringifyApiErrorValue(error?.message || error, "");
   const status = Number(error?.status) || 500;
-  const blob = `${raw} ${typeof error?.body === "string" ? error.body : JSON.stringify(error?.body || "")}`;
+  const blob = `${raw} ${stringifyApiErrorValue(error?.body, "")}`;
+  if (status === 413 || /413|Payload Too Large|request entity too large|VERCEL_BODY_LIMIT|上传通道限制/i.test(blob)) {
+    return { status: 413, message: "视频文件过大或上传通道限制，请稍后重试。" };
+  }
   if (
     status === 401 ||
     /jwt|token is expired|invalid jwt|unable to parse or verify|unauthorized|登录态无效|请先登录|登录已过期/i.test(blob)
@@ -605,6 +613,9 @@ function humanizeCompanionApiError(error) {
   // Never leak raw JS/runtime dumps (e.g. "Assignment to constant variable") to companion UI.
   if (/Assignment to constant variable|TypeError|ReferenceError|SyntaxError|is not defined|Cannot read propert/i.test(raw)) {
     return { status: 500, message: "操作失败，请稍后重试。" };
+  }
+  if (/\[object Object\]/i.test(raw)) {
+    return { status: status >= 400 && status < 600 ? status : 500, message: "操作失败，请稍后重试。" };
   }
   // Never leak raw HTTP / JWT / UUID dumps to companion UI.
   if (/invalid JWT|HTTP\s*\d{3}|invalid input syntax/i.test(raw)) {
@@ -902,9 +913,15 @@ function normalizeDepositStatus(companion = {}, depositRow = null) {
   if (/unpaid|draft|none|not_submitted|missing|未缴/.test(raw) || !raw) return "unpaid";
   if (/reject|驳回|拒绝/.test(raw)) return "rejected";
   if (/^(approved|verified|passed|paid|received)$|已通过|已缴纳|已到账/.test(raw)) return "approved";
-  if (/pending|review|submit|待审|审核中/.test(raw)) return "pending";
+  if (/pending|review|submit|待审|审核中/.test(raw)) {
+    // companion_profiles.deposit_status defaults to "pending" at register time.
+    // Without a companion_deposits ledger row this means unpaid — NOT under review.
+    // Showing "审核中" here hides the live payment QR / deposit form.
+    if (!depositRow || !String(depositRow.id || "").trim()) return "unpaid";
+    return "pending";
+  }
   if (/refund/.test(raw)) return "refunded";
-  return "pending";
+  return "unpaid";
 }
 function profileReviewApproved(companion = {}) {
   return normalizeProfileReviewStatus(companion) === "approved";
@@ -927,7 +944,11 @@ const COMPANION_ISOLATION_ALLOWED_ACTIONS = new Set([
   "delete_private_doc",
   "submit_deposit",
   "submit_deposit_proof",
+  "deposit_pay_methods",
+  "deposit_channels",
+  "list_deposit_pay_methods",
   "upload_media",
+  "prepare_video_upload",
   "delete_media",
   "reorder_media",
   "start_cs_consult",
@@ -2597,7 +2618,7 @@ async function ensureCompanionRow(profile, companion) {
       nickname: profile.display_name || "",
       contact_phone: String(profile.phone || profile.phone_e164 || "").trim() || "",
       verification_status: "pending",
-      deposit_status: "pending",
+      deposit_status: "unpaid",
       application_status: "draft",
       allow_orders: false,
       online_status: "offline",
@@ -3223,7 +3244,7 @@ export default async function handler(req, res) {
         const { persistRoles } = await import("./_account-roles.js");
         await persistRoles(created.id, ["companion"], { primaryRole: "companion" });
       } catch { /* optional */ }
-      await supabaseJson(restUrl("companion_profiles"), { method:"POST", headers: serviceHeaders(), body: JSON.stringify({ user_id: created.id, nickname, contact_phone: "", verification_status: "pending", deposit_status: "pending", application_status: "draft", allow_orders: false, online_status: "offline", created_at: nowIso(), updated_at: nowIso() }) });
+      await supabaseJson(restUrl("companion_profiles"), { method:"POST", headers: serviceHeaders(), body: JSON.stringify({ user_id: created.id, nickname, contact_phone: "", verification_status: "pending", deposit_status: "unpaid", application_status: "draft", allow_orders: false, online_status: "offline", created_at: nowIso(), updated_at: nowIso() }) });
       try {
         const { stampPasswordSet, stampPasswordUnset } = await import("./_account-security.js");
         if (wantsPassword) await stampPasswordSet(created.id, { mustChangePassword: false });
@@ -3343,6 +3364,38 @@ export default async function handler(req, res) {
       });
     }
     if (req.method === "GET" && action === "bootstrap") return json(res,200,{ok:true,data:await bootstrapData(auth.profile, companion)});
+    // Apply-page deposit step: same SoT as companion workbench / submit_deposit_proof.
+    // Reads payment_channels when present, else platform_settings.paymentChannelsPublic.
+    if (
+      (req.method === "GET" || req.method === "POST") &&
+      (action === "deposit_pay_methods" || action === "deposit_channels" || action === "list_deposit_pay_methods")
+    ) {
+      try {
+        const listed = await listDepositPaymentMethods([]);
+        return json(res, 200, {
+          ok: true,
+          amountRm: Number(listed.amountRm || DEPOSIT_AMOUNT_RM) || DEPOSIT_AMOUNT_RM,
+          currency: "MYR",
+          tableReady: listed.tableReady !== false,
+          methods: listed.methods || [],
+          channels: listed.methods || [],
+          depositChannels: listed.methods || [],
+          emptyMessage:
+            !(listed.methods || []).length
+              ? "平台暂未配置押金收款方式，请联系客服。"
+              : "",
+        });
+      } catch (err) {
+        return json(res, 500, {
+          ok: false,
+          message: err?.message || "押金收款信息加载失败，请稍后重试。",
+          methods: [],
+          channels: [],
+          depositChannels: [],
+          emptyMessage: "平台暂未配置押金收款方式，请联系客服。",
+        });
+      }
+    }
     if (req.method === "GET" && action === "inbox") {
       const activeConversationId = String(req.query.conversation_id || req.query.conversationId || "").trim();
       const light =
@@ -4141,7 +4194,7 @@ export default async function handler(req, res) {
           await supabaseJson(restUrl("companion_profiles"), {
             method: "POST",
             headers: serviceHeaders(),
-            body: JSON.stringify({ user_id: auth.profile.id, ...patch, deposit_status: "pending", online_status: "offline", created_at: nowIso() }),
+            body: JSON.stringify({ user_id: auth.profile.id, ...patch, deposit_status: "unpaid", online_status: "offline", created_at: nowIso() }),
           });
         } else {
           await patchCompanionProfile(`?user_id=eq.${encodeURIComponent(auth.profile.id)}`, patch);
@@ -4608,6 +4661,50 @@ export default async function handler(req, res) {
       });
     }
 
+    if (action === "prepare_video_upload") {
+      // Browser uploads the binary straight to Supabase (signed PUT / TUS).
+      // This endpoint only mints credentials + object path — never accepts video bytes.
+      const row = await ensureCompanionRow(auth.profile, companion);
+      await ensureCompanionBuckets();
+      const filename = String(body.filename || body.fileName || "showcase.mp4").slice(0, 80);
+      const contentType = assertVideoMeta({
+        contentType: body.content_type || body.contentType || body.mime || "video/mp4",
+        byteLength: body.byte_length != null ? body.byte_length : body.byteLength,
+      }).contentType;
+      const dur = body.duration_seconds != null ? Number(body.duration_seconds) : null;
+      if (dur && dur > 30.5) return json(res, 400, { ok: false, message: "视频最长 30 秒" });
+      const size = Number(body.byte_length != null ? body.byte_length : body.byteLength);
+      if (Number.isFinite(size) && size > MAX_VIDEO_BYTES) {
+        return json(res, 413, { ok: false, message: "视频不能超过 50MB" });
+      }
+      const objectPath = buildObjectPath(auth.profile.id, "video", filename);
+      const signed = await createSignedUploadUrl(PRIVATE_BUCKETS.video, objectPath, 15 * 60);
+      const anonKey =
+        process.env.SUPABASE_ANON_KEY ||
+        process.env.SUPABASE_PUBLISHABLE_KEY ||
+        process.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
+        process.env.VITE_SUPABASE_ANON_KEY ||
+        "";
+      return json(res, 200, {
+        ok: true,
+        message: "已签发直传凭证",
+        companionProfileId: row.id,
+        bucket: PRIVATE_BUCKETS.video,
+        path: objectPath,
+        contentType,
+        signedUrl: signed.signedUrl,
+        token: signed.token,
+        expiresIn: signed.expiresIn,
+        supabaseUrl: process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "",
+        anonKey,
+        maxBytes: MAX_VIDEO_BYTES,
+        maxSeconds: 30,
+        resumableEndpoint: `${(process.env.SUPABASE_URL || "").replace(/\/$/, "")}/storage/v1/upload/resumable`,
+        // Prefer TUS for larger phone videos (chunked, resumable).
+        preferResumable: Number.isFinite(size) ? size >= 6 * 1024 * 1024 : true,
+      });
+    }
+
     if (action === "upload_media") {
       const row = await ensureCompanionRow(auth.profile, companion);
       await ensureCompanionBuckets();
@@ -4617,7 +4714,11 @@ export default async function handler(req, res) {
         return json(res, 400, { ok: false, message: "不支持的媒体类型" });
       }
       const dataUrl = body.data_url || body.dataUrl || body.file;
-      if (!dataUrl) return json(res, 400, { ok: false, message: "请选择要上传的文件" });
+      const directPath = String(body.storage_path || body.storagePath || body.path || "").trim();
+      const directBucket = String(body.storage_bucket || body.storageBucket || body.bucket || "").trim();
+      if (!dataUrl && !(mediaType === "video" && directPath)) {
+        return json(res, 400, { ok: false, message: "请选择要上传的文件" });
+      }
 
       const galleryFallback = readGalleryFallback(row.tags || companion.tags || "");
       if (mediaType === "gallery") {
@@ -4653,15 +4754,42 @@ export default async function handler(req, res) {
         await uploadPrivateObject(PRIVATE_BUCKETS.audio, objectPath, checked.buffer, checked.contentType);
         uploaded = { bucket: PRIVATE_BUCKETS.audio, path: objectPath, contentType: checked.contentType };
       } else if (mediaType === "video") {
-        const decoded = decodeDataUrl(dataUrl);
-        if (!decoded) return json(res, 400, { ok: false, message: "请选择要上传的视频文件" });
-        const checked = assertVideoUpload(decoded);
         const dur = body.duration_seconds != null ? Number(body.duration_seconds) : null;
         if (dur && dur > 30.5) return json(res, 400, { ok: false, message: "视频最长 30 秒" });
-        const objectPath = buildObjectPath(auth.profile.id, "video", body.filename || "showcase.mp4");
-        const bucket = PRIVATE_BUCKETS.video;
-        await uploadPrivateObject(bucket, objectPath, checked.buffer, checked.contentType);
-        uploaded = { bucket, path: objectPath, contentType: checked.contentType };
+        if (directPath) {
+          // Direct browser → Supabase upload: only register metadata here.
+          const bucket = directBucket || PRIVATE_BUCKETS.video;
+          if (bucket !== PRIVATE_BUCKETS.video) {
+            return json(res, 400, { ok: false, message: "视频存储桶不正确" });
+          }
+          const uidPrefix = `${auth.profile.id}/`;
+          if (!directPath.startsWith(uidPrefix)) {
+            return json(res, 403, { ok: false, message: "视频路径无权写入" });
+          }
+          const contentType = assertVideoMeta({
+            contentType: body.content_type || body.contentType || "video/mp4",
+            byteLength: body.byte_length != null ? body.byte_length : body.byteLength,
+          }).contentType;
+          await assertStorageObjectPresent(bucket, directPath);
+          uploaded = { bucket, path: directPath, contentType };
+        } else {
+          // Legacy tiny data_url path (e2e / old clients). Large videos must use prepare_video_upload.
+          const decoded = decodeDataUrl(dataUrl);
+          if (!decoded) return json(res, 400, { ok: false, message: "请选择要上传的视频文件" });
+          if (decoded.buffer.length > 3 * 1024 * 1024) {
+            return json(res, 413, {
+              ok: false,
+              message: "视频文件过大或上传通道限制，请稍后重试。",
+              code: "VERCEL_BODY_LIMIT",
+              hint: "请使用直传（prepare_video_upload）上传视频，勿将完整视频 POST 到本接口。",
+            });
+          }
+          const checked = assertVideoUpload(decoded);
+          const objectPath = buildObjectPath(auth.profile.id, "video", body.filename || "showcase.mp4");
+          const bucket = PRIVATE_BUCKETS.video;
+          await uploadPrivateObject(bucket, objectPath, checked.buffer, checked.contentType);
+          uploaded = { bucket, path: objectPath, contentType: checked.contentType };
+        }
       } else {
         const decoded = assertImageUpload(decodeDataUrl(dataUrl));
         const objectPath = buildObjectPath(auth.profile.id, mediaType, body.filename || `${mediaType}.jpg`);

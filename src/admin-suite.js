@@ -1,28 +1,110 @@
 (function(){
-  var DB_KEYS=['users','bosses','clubs','players','orders','wallets','wallet_transactions','recharge_requests','withdraw_requests','invite_rebates','customer_tickets','reviews','games','banners','announcements','admin_logs','role_permissions','companionLevels'];
-  var defaultDb={
-    users:[{id:'U001',name:'夜色老板',role:'boss',status:'正常',balance:'320喵币'},{id:'U002',name:'MOMO',role:'player',status:'在线',balance:'RM860'},{id:'U003',name:'小鱼管理',role:'admin',status:'正常',balance:'-'}],
-    bosses:[{nickname:'夜色老板',uid:'BOSS-1001',phone:'6012-888-1024',registered_at:'2026-06-18',vip:'VIP3',total_spent:'RM1,680',balance:'320喵币',club:'妙脆角主俱乐部',status:'正常',invite:'上级：无 / 已邀请 6 人'},{nickname:'Cheese老板',uid:'BOSS-1002',phone:'6016-520-3344',registered_at:'2026-06-22',vip:'VIP2',total_spent:'RM860',balance:'180喵币',club:'Lian Miao Club',status:'正常',invite:'上级：夜色老板 / 已邀请 2 人'},{nickname:'Moon老板',uid:'BOSS-1003',phone:'6018-777-6633',registered_at:'2026-06-29',vip:'VIP1',total_spent:'RM230',balance:'60喵币',club:'妙脆角主俱乐部',status:'冻结',invite:'上级：Cheese老板 / 已邀请 0 人'}],
-    clubs:[{id:'C001',name:'妙脆角主俱乐部',owner:'17三角洲电竞',status:'已通过',revenue:'RM86,500'},{id:'C002',name:'Lian Miao Club',owner:'LianMiao',status:'待审核',revenue:'RM12,300'}],
-    players:[{id:'P001',uid:'PW-2001',name:'MOMO',phone:'6011-222-1024',id_card:'已上传',bank:'Maybank **** 1024',game:'VALORANT',levelId:'lv1',price:'RM25/小时',rating:'5.0',status:'在线',audit:'已通过',order_status:'可接单',total_income:'RM8,600',withdrawable:'RM860',club:'妙脆角主俱乐部',avatar:'assets/meow-cuijiao-brand.jpg'},{id:'P002',uid:'PW-2002',name:'NANA',phone:'6013-666-3322',id_card:'待补充',bank:'CIMB **** 2201',game:'APEX',levelId:'lv2',price:'RM35/小时',rating:'4.9',status:'忙碌',audit:'待审核',order_status:'忙碌中',total_income:'RM5,420',withdrawable:'RM520',club:'妙脆角主俱乐部',avatar:'assets/lianmiao-club-ad.png'},{id:'P003',uid:'PW-2003',name:'CHEESE',phone:'6017-999-7788',id_card:'已上传',bank:'TNG **** 7788',game:'LOL',levelId:'lv3',price:'RM42/小时',rating:'5.0',status:'休息',audit:'已通过',order_status:'休息中',total_income:'RM12,300',withdrawable:'RM1,230',club:'Lian Miao Club',avatar:'assets/lianmiao-club-ad.png'}],
-    orders:[{id:'O1024',boss:'夜色老板',player:'MOMO',club:'妙脆角主俱乐部',game:'VALORANT',amount:'RM48',status:'进行中',time:'2026-07-03 14:20'},{id:'O1025',boss:'Cheese',player:'NANA',club:'妙脆角主俱乐部',game:'APEX',amount:'RM30',status:'待付款',time:'2026-07-03 15:05'},{id:'O1026',boss:'Moon',player:'CHEESE',club:'Lian Miao Club',game:'LOL',amount:'RM72',status:'已完成',time:'2026-07-03 16:18'}],
-    wallets:[{owner:'夜色老板',type:'老板钱包',balance:'320喵币',frozen:'0'},{owner:'MOMO',type:'陪玩钱包',balance:'RM860',frozen:'RM60'},{owner:'妙脆角主俱乐部',type:'俱乐部钱包',balance:'RM12,800',frozen:'RM420'}],
-    wallet_transactions:[{id:'T001',owner:'夜色老板',type:'充值',amount:'RM100',status:'成功'},{id:'T002',owner:'MOMO',type:'订单收入',amount:'RM48',status:'入账'}],
-    recharge_requests:[{id:'R001',user:'夜色老板',amount:'RM100',coins:'1000喵币',status:'成功'}],
-    withdraw_requests:[{id:'W001',owner:'MOMO',role:'陪玩',amount:'RM500',bank:'Maybank **** 1024',status:'待审核'},{id:'W002',owner:'妙脆角主俱乐部',role:'俱乐部',amount:'RM3000',bank:'Public Bank **** 8866',status:'待审核'}],
-    invite_rebates:[{id:'IB001',inviter:'夜色老板',invitee:'Cheese老板',relation:'老板邀请老板',rebate:'RM32',status:'已发放'},{id:'IB002',inviter:'Cheese老板',invitee:'Moon老板',relation:'二级邀请',rebate:'RM8',status:'待结算'},{id:'IB003',inviter:'MOMO',invitee:'LULU',relation:'陪玩邀请陪玩',rebate:'RM50',status:'审核中'}],
-    customer_tickets:[{id:'CS001',user:'夜色老板',channel:'WhatsApp',topic:'充值未到账',status:'处理中',remark:'已核对流水'},{id:'CS002',user:'NANA',channel:'Discord',topic:'订单纠纷',status:'待回复',remark:'等待老板补充截图'},{id:'CS003',user:'Moon老板',channel:'站内反馈',topic:'申请退款',status:'已关闭',remark:'已完成退款说明'}],
-    reviews:[{id:'RV001',order_id:'O1026',user_id:'U001',player_id:'P003',player:'CHEESE',rating:'5',content:'声音好听，带飞很稳',status:'显示中'},{id:'RV002',order_id:'O1018',user_id:'U004',player_id:'P001',player:'MOMO',rating:'5',content:'报点非常细',status:'显示中'}],
-    games:[{id:'G001',name:'VALORANT',logo:'assets/valorant-bg.jpg',sort:1,visible:'显示'},{id:'G002',name:'APEX',logo:'assets/apex-bg.jpg',sort:2,visible:'显示'},{id:'G003',name:'LOL',logo:'assets/lol-bg.jpg',sort:3,visible:'显示'}],
-    banners:[{id:'B001',title:'首页主封面',image:'assets/homepage-cat-cover.png',enabled:'开启',sort:1},{id:'B002',title:'官方广告位',image:'assets/lianmiao-club-ad.png',enabled:'开启',sort:2}],
-    announcements:[{id:'A001',title:'新人福利开启',content:'老板充值送积分，热门陪玩限时推荐',enabled:'开启'},{id:'A002',title:'招聘陪玩中',content:'欢迎优秀陪玩加入妙脆角电竞',enabled:'开启'}],
-    admin_logs:[{id:'L001',admin:'super_admin',action:'更新首页广告位',time:'2026-07-03 16:30'},{id:'L002',admin:'club_owner',action:'调整陪玩建议价',time:'2026-07-03 17:05'}],
-    role_permissions:[{role:'super_admin',scope:'平台全局管理'},{role:'club_owner',scope:'仅自己的俱乐部'},{role:'player',scope:'仅个人资料与订单'}],
-    companionLevels:[]
-  };
-  function read(key){try{var v=JSON.parse(localStorage.getItem('mcj_'+key)||'null');if(Array.isArray(v))return v;}catch(e){}return [];}
-  function write(key,val){localStorage.setItem('mcj_'+key,JSON.stringify(val));log('保存 '+key)}
-  function log(action){var logs=read('admin_logs');logs.unshift({id:'L'+Date.now(),admin:getRole(),action:action,time:new Date().toLocaleString()});localStorage.setItem('mcj_admin_logs',JSON.stringify(logs.slice(0,60)));}
+  /**
+   * Legacy admin-suite collection short-names (old defaultDb tables).
+   * Generic read()/write() must never treat these as live business data.
+   */
+  var LOCAL_BUSINESS_COLLECTION_KEYS=[
+    'users','bosses','clubs','players','orders','wallets','wallet_transactions',
+    'recharge_requests','withdraw_requests','invite_rebates','customer_tickets',
+    'reviews','games','banners','announcements','admin_logs','role_permissions',
+    'companionLevels','refunds'
+  ];
+  /**
+   * Exact localStorage/sessionStorage keys allowed to be purged on admin boot.
+   * Whitelist ONLY — never fuzzy-match / never delete all mcj_*.
+   * Source: former defaultDb mock/demo business collections (+ refunds alias).
+   * Intentionally EXCLUDES mcj_companionLevels / mcj_player_levels (still used by
+   * MCJCompanionLevels as local level-cache, not mock table rows).
+   */
+  var STALE_MOCK_BUSINESS_STORAGE_KEYS=[
+    'mcj_users',
+    'mcj_bosses',
+    'mcj_clubs',
+    'mcj_players',
+    'mcj_orders',
+    'mcj_wallets',
+    'mcj_wallet_transactions',
+    'mcj_recharge_requests',
+    'mcj_withdraw_requests',
+    'mcj_invite_rebates',
+    'mcj_customer_tickets',
+    'mcj_reviews',
+    'mcj_games',
+    'mcj_banners',
+    'mcj_announcements',
+    'mcj_admin_logs',
+    'mcj_role_permissions',
+    'mcj_refunds'
+  ];
+  /**
+   * Hard deny-list: purge must never remove these even if mistakenly listed above.
+   * Covers login session, remember-login / auth, portal role, theme / UI prefs.
+   */
+  var PURGE_NEVER_TOUCH_KEYS=[
+    // Admin / shared auth session
+    'adminAuthToken','adminUser',
+    'mcjAdminAccessToken','mcjAdminRefreshToken','mcjAdminExpiresAt','mcjAdminLoginNotice',
+    'mcjAuthAccessToken','mcjAuthRefreshToken','mcjAuthExpiresAt',
+    'mcjRole','mcjCurrentUser','mcjActivePortal','mcjAfterLoginRedirect',
+    // Other portal auth / remember-login
+    'mcjCompanionSession','companionAuthToken','companionUser',
+    'mcjServiceSession','customerServiceAuthToken','customerServiceUser',
+    'customerUser','customerUser','bossAuthToken','bossUser',
+    // Theme / language / UI prefs / site chrome (not mock business tables)
+    'mcjTheme','mcjLang','mcjLocale','mcj_siteSettings',
+    // Companion level local cache (real config helper — not defaultDb mock rows)
+    'mcj_companionLevels','mcj_player_levels',
+    // Banner / platform-content tooling keys (not defaultDb mock tables)
+    'mcj_local_banner_assets_v1','mcj_banner_published_at',
+    // Legacy V1 account helper stores (not defaultDb mock tables)
+    'mcj_v1_accounts','mcj_v1_profiles'
+  ];
+  // Removed defaultDb mock payload (fake users/orders/wallets/chat/ranking seeds).
+  // Formal admin only accepts REAL API / Supabase — empty DB → 0 / 暂无数据.
+  var defaultDb=null;
+  var DB_KEYS=LOCAL_BUSINESS_COLLECTION_KEYS;
+  function isLocalBusinessKey(key){
+    return LOCAL_BUSINESS_COLLECTION_KEYS.indexOf(String(key||''))>-1;
+  }
+  function isPurgeNeverTouchKey(fullKey){
+    var k=String(fullKey||'');
+    if(PURGE_NEVER_TOUCH_KEYS.indexOf(k)>-1)return true;
+    // Extra safety: never wipe auth/session/remember markers by prefix accident.
+    if(/^(adminAuth|adminUser|mcjAdmin|mcjAuth|mcjRole|mcjCurrentUser|mcjActivePortal|mcjCompanion|mcjService|companionAuth|companionUser|customerService|bossAuth|bossUser|customerUser|playerUser)/i.test(k))return true;
+    if(/^(mcjTheme|mcjLang|mcjLocale|mcj_siteSettings)/i.test(k))return true;
+    return false;
+  }
+  function purgeStaleLocalBusinessData(){
+    // Explicit whitelist delete only. Does NOT scan / clear all mcj_* keys.
+    STALE_MOCK_BUSINESS_STORAGE_KEYS.forEach(function(fullKey){
+      if(isPurgeNeverTouchKey(fullKey))return;
+      try{localStorage.removeItem(fullKey);}catch(e){}
+      try{sessionStorage.removeItem(fullKey);}catch(e2){}
+    });
+  }
+  // Expose audit helpers for acceptance (read-only).
+  try{
+    window.MCJAdminLocalDataPurge={
+      deletedKeys:STALE_MOCK_BUSINESS_STORAGE_KEYS.slice(),
+      neverTouchKeys:PURGE_NEVER_TOUCH_KEYS.slice(),
+      mode:'exact-whitelist'
+    };
+  }catch(eAudit){}
+  function read(key){
+    // Hard block: never surface mcj_* business arrays (stale demos / defaultDb leftovers).
+    if(isLocalBusinessKey(key))return [];
+    try{var v=JSON.parse(localStorage.getItem('mcj_'+key)||'null');if(Array.isArray(v))return v;}catch(e){}
+    return [];
+  }
+  function write(key,val){
+    // Refuse writing business collections to localStorage (no mock seed / no fake CRUD).
+    if(isLocalBusinessKey(key))return;
+    localStorage.setItem('mcj_'+key,JSON.stringify(val));
+  }
+  function log(action){
+    // Operational note only — do not persist fake activity feeds into mcj_admin_logs.
+    try{if(window.console&&console.info)console.info('[admin]',action);}catch(e){}
+  }
   function readStorageItem(key){return localStorage.getItem(key)||sessionStorage.getItem(key)||''}
   function readJsonKey(key){try{return JSON.parse(readStorageItem(key)||'{}')||{}}catch(e){return {}}}
   function isAdminRoleName(role){role=String(role||'');return role==='admin'||role==='super_admin'||role==='finance_admin'}
@@ -151,7 +233,7 @@
     return '<div class="table-wrap"><table><thead><tr>'+headers.map(function(h){return '<th>'+h+'</th>'}).join('')+'</tr></thead><tbody>'+(body||('<tr><td colspan="'+headers.length+'"><div class="empty">暂无数据</div></td></tr>'))+'</tbody></table></div>';
   }
   function actionButtons(id){return '<div class="row"><button class="btn small" data-action="view" data-id="'+id+'">查看</button><button class="btn small primary" data-action="approve" data-id="'+id+'">通过</button><button class="btn small danger" data-action="reject" data-id="'+id+'">拒绝</button></div>'}
-  function renderGenericTable(key,target,columns){var data=read(key);var rows=data.map(function(item){return '<tr>'+columns.map(function(c){var v=item[c.key];if(c.type==='avatar')return '<td><img class="avatar" src="'+esc(v||'assets/meow-cuijiao-brand.jpg')+'"></td>';if(c.type==='status')return '<td>'+statusChip(v)+'</td>';if(c.type==='actions')return '<td>'+actionButtons(item.id||item.name||item.owner)+'</td>';return '<td>'+esc(v)+'</td>';}).join('')+'</tr>'});target.innerHTML=table(columns.map(function(c){return c.label}),rows)}
+  function renderGenericTable(key,target,columns,rowsOverride){var data=Array.isArray(rowsOverride)?rowsOverride:read(key);var rows=data.map(function(item){return '<tr>'+columns.map(function(c){var v=item[c.key];if(c.type==='avatar')return '<td><img class="avatar" src="'+esc(v||'assets/meow-cuijiao-brand.jpg')+'"></td>';if(c.type==='status')return '<td>'+statusChip(v)+'</td>';if(c.type==='actions')return '<td>'+actionButtons(item.id||item.name||item.owner)+'</td>';return '<td>'+esc(v)+'</td>';}).join('')+'</tr>'});target.innerHTML=table(columns.map(function(c){return c.label}),rows.length?rows:['<tr><td colspan="'+columns.length+'"><div class="empty">暂无数据</div></td></tr>'])}
   function statCards(target,stats){target.innerHTML='<div class="metric-grid">'+stats.map(function(s){return '<div class="metric-card"><span>'+esc(s.label)+'</span><strong>'+esc(s.value)+'</strong>'+(s.sub?'<small>'+esc(s.sub)+'</small>':'')+'</div>'}).join('')+'</div>'}
   function renderCrud(key,target){var data=read(key);target.innerHTML='<div class="crud-list">'+data.map(function(item,i){return '<div class="mini-card"><img src="'+esc(item.image||item.avatar||'assets/meow-cuijiao-brand.jpg')+'"><h4>'+esc(item.title||item.name||item.id||'未命名')+'</h4><p>'+esc(item.sub||item.content||item.description||item.game||item.status||'可编辑内容')+'</p><div class="row"><button class="btn small" data-edit="'+key+'" data-index="'+i+'">编辑</button><button class="btn small danger" data-delete="'+key+'" data-index="'+i+'">删除</button></div></div>'}).join('')+'</div>'}
   function emptyPanel(id, text){
@@ -1661,7 +1743,20 @@
     } else saveLocalPlatformContent(type,payload||{},id||'');
     if(action==='delete')localStorage.setItem(localPlatformContentKey(type),JSON.stringify(list));
   }
-  function loadPlatformContent(cfg){
+  function resolvePlatformContentCfg(cfgOrKey){
+    if(!cfgOrKey)return null;
+    if(typeof cfgOrKey==='string'){
+      return platformContentModules[cfgOrKey]||platformContentConfig(cfgOrKey)||null;
+    }
+    if(cfgOrKey&&cfgOrKey.type&&!cfgOrKey.target){
+      var byType=platformContentConfig(cfgOrKey.type);
+      return byType?Object.assign({},byType,cfgOrKey):cfgOrKey;
+    }
+    return cfgOrKey;
+  }
+  function loadPlatformContent(cfgOrKey){
+    var cfg=resolvePlatformContentCfg(cfgOrKey);
+    if(!cfg||!cfg.target||!cfg.type)return;
     var target=document.getElementById(cfg.target);
     if(!target)return;
     target.innerHTML='<div class="content-loading">正在读取真实数据库...</div>';
@@ -1889,7 +1984,7 @@
     payment:['支付设置','支付渠道、收款资料和启用状态'],
     'mail-logs':['邮件通知记录','指定订单与状态变更邮件发送日志'],
     gifts:['礼物管理','礼物商城配置、猫粮价格与启用状态'],
-    popularity:['人气榜设置','综合计分规则、防刷、历史榜与奖励审核'],
+    popularity:['人气榜设置','暂未开放 · 礼物/收藏/在线时长链路未验收，禁止重算与写榜'],
     settings:['系统设置','平台基础配置'],
     logs:['操作日志','管理员登录、编辑、审核和敏感操作记录']
   };
@@ -2038,7 +2133,7 @@
     });
   }
   function bindGlobal(){document.addEventListener('click',function(e){var role=e.target.closest('[data-role-login]');if(role){localStorage.setItem('mcjRole',role.dataset.roleLogin);routeByRole(role.dataset.roleLogin);return;}var logout=e.target.closest('[data-admin-logout]');if(logout){e.preventDefault();denyAdminToLogin('已退出后台登录');return;}var preview=e.target.closest('[data-preview-home]');if(preview){location.href='index.html';return;}var saveLevels=e.target.closest('[data-save-companion-levels]');if(saveLevels&&levelApi()){levelApi().save(collectCompanionLevels());log('保存陪玩等级与价格设置');alert('已保存陪玩等级与价格设置');renderCompanionLevels();return;}var deleteLevel=e.target.closest('[data-delete-companion-level]');if(deleteLevel&&levelApi()){var levels=getLevels();var level=levelApi().find(deleteLevel.dataset.deleteCompanionLevel);if(playerLevelCount(level)>0){alert('该等级已有陪玩，不能直接删除。请先停用该等级或迁移陪玩等级。');return;}if(confirm('确认删除 '+levelLabel(level.id)+'？')){levelApi().save(levels.filter(function(item){return item.id!==level.id}));log('删除陪玩等级 '+levelLabel(level.id));renderCompanionLevels();}return;}var action=e.target.closest('[data-action]');if(action){alert('已执行：'+action.dataset.action+' / '+(action.dataset.id||''));log('执行 '+action.dataset.action);return;}var del=e.target.closest('[data-delete]');if(del){var arr=read(del.dataset.delete);arr.splice(Number(del.dataset.index),1);write(del.dataset.delete,arr);location.reload();return;}})}
-  function initForms(){document.querySelectorAll('[data-save-settings]').forEach(function(btn){btn.addEventListener('click',function(){var settings={siteName:val('siteName'),logoUrl:val('logoUrl'),customerServiceUrl:val('customerServiceUrl'),discordInviteUrl:val('discordInviteUrl'),whatsappUrl:val('whatsappUrl'),maintenanceMode:val('maintenanceMode'),registerOpen:val('registerOpen'),seoTitle:val('seoTitle')};localStorage.setItem('mcj_siteSettings',JSON.stringify(settings));log('保存平台设置');alert('已保存平台设置');})});document.querySelectorAll('[data-add-row]').forEach(function(btn){btn.addEventListener('click',function(){var key=btn.dataset.addRow;var arr=read(key);arr.unshift({id:key.toUpperCase().slice(0,2)+Date.now(),title:val('crudTitle'),name:val('crudTitle'),content:val('crudDesc'),description:val('crudDesc'),image:val('crudImage')||'assets/meow-cuijiao-brand.jpg',status:'开启',sort:arr.length+1});write(key,arr);alert('已新增');location.reload();})})}
+  function initForms(){document.querySelectorAll('[data-save-settings]').forEach(function(btn){btn.addEventListener('click',function(){var settings={siteName:val('siteName'),logoUrl:val('logoUrl'),customerServiceUrl:val('customerServiceUrl'),discordInviteUrl:val('discordInviteUrl'),whatsappUrl:val('whatsappUrl'),maintenanceMode:val('maintenanceMode'),registerOpen:val('registerOpen'),seoTitle:val('seoTitle')};localStorage.setItem('mcj_siteSettings',JSON.stringify(settings));log('保存平台设置');alert('已保存平台设置');})});document.querySelectorAll('[data-add-row]').forEach(function(btn){btn.addEventListener('click',function(){var key=btn.dataset.addRow;if(isLocalBusinessKey(key)){alert('已禁用本地假数据新增。请通过真实后台接口维护业务数据。');return;}var arr=read(key);arr.unshift({id:key.toUpperCase().slice(0,2)+Date.now(),title:val('crudTitle'),name:val('crudTitle'),content:val('crudDesc'),description:val('crudDesc'),image:val('crudImage')||'assets/meow-cuijiao-brand.jpg',status:'开启',sort:arr.length+1});write(key,arr);alert('已新增');location.reload();})})}
   function bindPaymentAdmin(){
     document.addEventListener('click',function(e){
       var saveLevels=e.target.closest('[data-save-companion-levels]');
@@ -2288,37 +2383,41 @@
     if(!actions)return;
     actions.querySelectorAll('.admin-search,.admin-top-stat,#adminName,#adminClock,.notice-pill,.ghost-btn').forEach(function(el){el.remove();});
   }
+  function paintDashboardPendingEmpty(pending){
+    if(!pending)return;
+    // No pending-aggregation API yet. Never paint hardcoded 0 as a real todo count.
+    // Never fall back to localStorage / defaultDb / mock todo rows.
+    pending.dataset.pendingSource='unwired';
+    pending.dataset.realOnly='1';
+    pending.innerHTML=
+      '<div class="dashboard-pending-empty dashboard-chart-empty" role="status" aria-live="polite">'+
+      '<strong>待办统计暂未接入</strong>'+
+      '<span>暂无待办统计数据。上方真实统计卡片来自 Dashboard API；本区不展示硬编码 0，也不读取本地假数据。</span>'+
+      '</div>';
+  }
+  function paintDashboardTrendsEmpty(dash){
+    if(!dash)return;
+    var existing=dash.querySelector('.dashboard-trends');
+    if(existing)existing.remove();
+    // No time-series API yet. Do not feed [0,0,0...] into charts.
+    dash.insertAdjacentHTML('beforeend',
+      '<div class="admin-chart-grid dashboard-trends" data-trend-source="unwired">'+
+      dashboardTrendCard('7日订单趋势',null,'7日趋势统计暂未接入')+
+      dashboardTrendCard('7日营业额趋势',null,'7日趋势统计暂未接入')+
+      dashboardTrendCard('7日平台利润趋势',null,'7日趋势统计暂未接入')+
+      '</div>'
+    );
+  }
   function renderDashboardExperience(){
     var dash=document.getElementById('section-dashboard');
     if(!dash||dash.dataset.enhanced)return;
     dash.dataset.enhanced='1';
-    var pending=document.getElementById('dashboardPending');
-    if(pending){
-      var players=read('players'), withdraws=read('withdraw_requests'), refunds=read('refunds'), tickets=read('customer_tickets'), reviews=read('reviews');
-      var items=[
-        ['待审核陪玩',players.filter(function(x){return /待|审核中/.test(String(x.audit||x.status||''))}).length,'players'],
-        ['待审核提现',withdraws.filter(function(x){return /待|审核中/.test(String(x.status||''))}).length,'service-reports'],
-        ['待处理退款',refunds.filter(function(x){return /待|退款中|处理中/.test(String(x.status||''))}).length,'refunds'],
-        ['待回复工单',tickets.filter(function(x){return /待|处理中/.test(String(x.status||''))}).length,'service'],
-        ['待审核评论',reviews.filter(function(x){return /待|审核/.test(String(x.status||''))}).length,'logs']
-      ];
-      pending.innerHTML='<div class="todo-list">'+items.map(function(item){return '<button class="todo-item" type="button" data-section="'+item[2]+'"><span class="todo-icon">'+item[1]+'</span><span><strong>'+esc(item[0])+'</strong><span>点击进入对应模块处理</span></span><span class="status '+(item[1]?'wait':'ok')+'">'+(item[1]?'待处理':'已清空')+'</span></button>'}).join('')+'</div>';
-    }
+    paintDashboardPendingEmpty(document.getElementById('dashboardPending'));
     var logsTarget=document.getElementById('table-admin_logs');
     if(logsTarget){
-      var logs=read('admin_logs').slice(0,6);
-      logsTarget.innerHTML='<div class="activity-list">'+(logs.length?logs.map(function(item){return '<button class="activity-item" type="button" data-section="logs"><span class="activity-avatar">'+esc(String(item.admin||'A').slice(0,1).toUpperCase())+'</span><span><strong>'+esc(item.admin||'admin')+'</strong><span>'+esc(item.action||'-')+'</span><small>'+esc(item.time||'-')+' · 当前设备 · 内网 IP</small></span><span class="status info">详情</span></button>'}).join(''):'<div class="empty">暂无操作记录</div>')+'</div>';
+      logsTarget.innerHTML='<div class="activity-list"><div class="empty">暂无操作记录</div></div>';
     }
-    var orders=read('orders');
-    var walletRows=read('wallet_transactions').concat(read('recharge_requests'));
-    var orderSeries=dashboardSeries(orders,function(){return 1});
-    var revenueSeries=dashboardSeries(orders,function(row){return moneyNumber(row.actual_paid||row.actualPaid||row.paid_amount||row.amount||row.total)});
-    var profitSeries=dashboardSeries(orders.concat(walletRows),function(row){return moneyNumber(row.platform_profit||row.platformProfit||row.profit||0)});
-    dash.insertAdjacentHTML('beforeend','<div class="admin-chart-grid dashboard-trends">'+
-      dashboardTrendCard('今日订单趋势',orderSeries,'待系统产生真实订单后自动生成趋势图。')+
-      dashboardTrendCard('营业额趋势',revenueSeries,'待系统产生真实订单后自动生成趋势图。')+
-      dashboardTrendCard('平台利润趋势',profitSeries,'待系统产生真实利润记录后自动生成趋势图。')+
-    '</div>');
+    paintDashboardTrendsEmpty(dash);
   }
   function dashboardRowDate(row){
     var raw=row&& (row.created_at||row.createdAt||row.paid_at||row.paidAt||row.completed_at||row.completedAt||'');
@@ -2328,20 +2427,28 @@
   }
   function dashboardDayKey(date){return date.getFullYear()+'-'+String(date.getMonth()+1).padStart(2,'0')+'-'+String(date.getDate()).padStart(2,'0')}
   function dashboardSeries(rows,valueFn){
+    // Helper kept for a future real series API. Callers must pass REAL rows only — never localStorage.
     var days=[], map={};
     for(var i=6;i>=0;i--){var d=new Date();d.setHours(0,0,0,0);d.setDate(d.getDate()-i);var key=dashboardDayKey(d);days.push(key);map[key]=0;}
     (rows||[]).forEach(function(row){var d=dashboardRowDate(row);if(!d)return;var key=dashboardDayKey(d);if(Object.prototype.hasOwnProperty.call(map,key))map[key]+=Number(valueFn(row)||0);});
     return days.map(function(key){return map[key]||0});
   }
   function moneyNumber(value){return Number(String(value||0).replace(/[^\d.-]/g,''))||0}
-  function hasTrendData(values){return (values||[]).some(function(v){return Number(v)>0})}
+  function hasTrendData(values){
+    if(!values||!values.length)return false;
+    return values.some(function(v){return Number(v)>0});
+  }
   function dashboardTrendCard(title,values,emptyText){
-    return '<details class="admin-chart-card dashboard-trend-card"><summary><span>📈 '+esc(title)+'</span><small>▶ 点击展开</small></summary>'+(hasTrendData(values)?chartBars(values):'<div class="dashboard-chart-empty"><strong>暂无统计数据</strong><span>'+esc(emptyText||'待系统产生真实订单后自动生成趋势图。')+'</span></div>')+'</details>';
+    var wired=hasTrendData(values);
+    var body=wired
+      ? chartBars(values)
+      : '<div class="dashboard-chart-empty"><strong>暂无统计数据</strong><span>'+esc(emptyText||'7日趋势统计暂未接入')+'</span></div>';
+    return '<details class="admin-chart-card dashboard-trend-card"'+(wired?'':' open')+'><summary><span>'+esc(title)+'</span><small>'+(wired?'点击展开':'未接入')+'</small></summary>'+body+'</details>';
   }
   function chartBars(values){
-    if(!hasTrendData(values))return '<div class="dashboard-chart-empty"><strong>暂无统计数据</strong><span>待系统产生真实订单后自动生成趋势图。</span></div>';
+    if(!hasTrendData(values))return '<div class="dashboard-chart-empty"><strong>暂无统计数据</strong><span>7日趋势统计暂未接入</span></div>';
     var max=Math.max.apply(null,values.concat([1]));
-    return '<div class="admin-bars" aria-label="最近7天">'+values.map(function(v){return '<i style="height:'+Math.max(6,Math.round(v/max*100))+'%"></i>'}).join('')+'</div><div class="table-footer"><span>最近7天</span><span>真实数据自动生成</span></div>';
+    return '<div class="admin-bars" aria-label="最近7天">'+values.map(function(v){return '<i style="height:'+Math.max(6,Math.round(v/max*100))+'%"></i>'}).join('')+'</div><div class="table-footer"><span>最近7天</span><span>真实数据</span></div>';
   }
   function enhanceTables(){
     document.querySelectorAll('.table-wrap').forEach(function(wrap){
@@ -2402,17 +2509,15 @@
     });
   }
   function initSuperAdmin(){
+    purgeStaleLocalBusinessData();
     var dash=document.getElementById('superStats');
     // Real stats are owned by admin-final-v1 renderDashboard — do not overwrite with localStorage fake cards.
     if(dash && !dash.getAttribute('data-admin-final-owned')){
       dash.setAttribute('data-admin-final-owned','1');
     }
-    var orders=read('orders'), bosses=read('bosses'), players=read('players'), withdraws=read('withdraw_requests'), refunds=read('refunds'), logs=read('admin_logs'), tickets=read('customer_tickets');
-    var today=new Date().toLocaleDateString('zh-CN');
-    var todayOrders=orders.filter(function(o){return String(o.time||o.created_at||o.createdAt||'').indexOf(today)>-1});
-    var completedToday=todayOrders.filter(function(o){return /完成|已完成/.test(String(o.status||''))});
-    var pending=document.getElementById('dashboardPending');
-    if(pending)pending.innerHTML='<div class="detail-list"><div><span>今日完成订单</span><strong>'+completedToday.length+'</strong></div><div><span>待审核提现</span><strong>'+withdraws.filter(function(x){return /待审核|审核中/.test(String(x.status||''))}).length+'</strong></div><div><span>待处理退款</span><strong>'+refunds.filter(function(x){return /待审核|退款中|处理中/.test(String(x.status||''))}).length+'</strong></div></div>';
+    // Pending todos / 7-day trends: empty/unwired state only (see paintDashboardPendingEmpty).
+    // Do not paint hardcoded 0 counts that look like real aggregation results.
+    paintDashboardPendingEmpty(document.getElementById('dashboardPending'));
     var tables={
       bosses:[{key:'nickname',label:'老板昵称'},{key:'uid',label:'系统 UID'},{key:'phone',label:'手机号'},{key:'email',label:'邮箱'},{key:'game',label:'游戏'},{key:'gameId',label:'游戏 ID / 游戏昵称'},{key:'registered_at',label:'注册时间'},{key:'vip',label:'VIP等级'},{key:'total_spent',label:'累计消费'},{key:'balance',label:'当前余额'},{key:'status',label:'账号状态',type:'status'},{key:'invite',label:'邀请人'},{key:'actions',label:'详情',type:'actions'}],
       players:[{key:'avatar',label:'头像',type:'avatar'},{key:'name',label:'陪玩昵称'},{key:'uid',label:'UID'},{key:'phone',label:'联系电话'},{key:'id_card',label:'身份证资料'},{key:'bank',label:'结款银行账户'},{key:'audit',label:'审核状态',type:'status'},{key:'order_status',label:'接单状态',type:'status'},{key:'total_income',label:'总收入'},{key:'withdrawable',label:'可提现金额'},{key:'club',label:'所属俱乐部'},{key:'actions',label:'详情',type:'actions'}],
@@ -2429,8 +2534,8 @@
       refunds:[{key:'id',label:'退款单号'},{key:'order_id',label:'订单号'},{key:'user',label:'用户'},{key:'amount',label:'金额'},{key:'status',label:'状态',type:'status'},{key:'actions',label:'操作',type:'actions'}],
       role_permissions:[{key:'role',label:'角色'},{key:'scope',label:'权限范围'},{key:'actions',label:'操作',type:'actions'}]
     };
-    Object.keys(tables).forEach(function(key){var target=document.getElementById('table-'+key);if(target)renderGenericTable(key,target,tables[key]);});
-    // Load real companion reviews into existing reviews table (no layout change).
+    Object.keys(tables).forEach(function(key){var target=document.getElementById('table-'+key);if(target)renderGenericTable(key,target,tables[key],[]);});
+    // Load real companion reviews into existing reviews table (memory only — never write mcj_reviews).
     (function loadRealReviews(){
       var target=document.getElementById('table-reviews');
       if(!target)return;
@@ -2439,17 +2544,21 @@
         if(ct.indexOf('application/json')<0)return null;
         return res.json().catch(function(){return null});
       }).then(function(result){
-        if(!result||!result.ok||!Array.isArray(result.reviews))return;
-        write('reviews',result.reviews);
-        renderGenericTable('reviews',target,tables.reviews);
-      }).catch(function(){});
+        if(!result||!result.ok||!Array.isArray(result.reviews)){
+          renderGenericTable('reviews',target,tables.reviews,[]);
+          return;
+        }
+        renderGenericTable('reviews',target,tables.reviews,result.reviews);
+      }).catch(function(){
+        renderGenericTable('reviews',target,tables.reviews,[]);
+      });
     })();
-    var rechargeAlt=document.getElementById('table-recharge_requests_alt');if(rechargeAlt)renderGenericTable('recharge_requests',rechargeAlt,tables.recharge_requests);
-    var logsFull=document.getElementById('table-admin_logs_full');if(logsFull)renderGenericTable('admin_logs',logsFull,tables.admin_logs);
+    var rechargeAlt=document.getElementById('table-recharge_requests_alt');if(rechargeAlt)renderGenericTable('recharge_requests',rechargeAlt,tables.recharge_requests,[]);
+    var logsFull=document.getElementById('table-admin_logs_full');if(logsFull)renderGenericTable('admin_logs',logsFull,tables.admin_logs,[]);
     var dashboardBosses=document.getElementById('table-dashboard-bosses');
-    if(dashboardBosses)renderGenericTable('bosses',dashboardBosses,tables.bosses);
+    if(dashboardBosses)renderGenericTable('bosses',dashboardBosses,tables.bosses,[]);
     var dashboardPlayers=document.getElementById('table-dashboard-players');
-    if(dashboardPlayers)renderGenericTable('players',dashboardPlayers,tables.players);
+    if(dashboardPlayers)renderGenericTable('players',dashboardPlayers,tables.players,[]);
     ['players'].forEach(function(key){var t=document.getElementById('crud-'+key);if(t)renderCrud(key,t)});
     [
       ['crud-ads','暂无广告位数据'],
@@ -2475,8 +2584,23 @@
     
     enhanceAdminShell();
   }
-  function initClubAdmin(){var dash=document.getElementById('clubStats');if(dash)statCards(dash,[{label:'今日营业额',value:'RM3,820'},{label:'今日订单',value:'42'},{label:'本月营业额',value:'RM86,500'},{label:'陪玩人数',value:'36'},{label:'待处理订单',value:'9'},{label:'可提现余额',value:'RM12,800'}]);var clubPlayers=read('players').filter(function(p){return p.club==='妙脆角主俱乐部'});var target=document.getElementById('clubPlayers');if(target)target.innerHTML=table(['头像','昵称','游戏','建议价','评分','状态','操作'],clubPlayers.map(function(p){return '<tr><td><img class="avatar" src="'+esc(p.avatar)+'"></td><td>'+esc(p.name)+'</td><td>'+esc(p.game)+'</td><td>'+esc(p.price)+'</td><td>'+esc(p.rating)+'</td><td>'+statusChip(p.status)+'</td><td>'+actionButtons(p.id)+'</td></tr>'}));var orders=read('orders').filter(function(o){return o.club==='妙脆角主俱乐部'});var ot=document.getElementById('clubOrders');if(ot)ot.innerHTML=table(['订单','老板','陪玩','游戏','金额','状态','时间','操作'],orders.map(function(o){return '<tr><td>'+o.id+'</td><td>'+o.boss+'</td><td>'+o.player+'</td><td>'+o.game+'</td><td>'+o.amount+'</td><td>'+statusChip(o.status)+'</td><td>'+o.time+'</td><td>'+actionButtons(o.id)+'</td></tr>'}))}
-  function initPlayerAdmin(){var dash=document.getElementById('playerStats');if(dash)statCards(dash,[{label:'今日订单',value:'6'},{label:'本月订单',value:'84'},{label:'收入',value:'RM3,260'},{label:'评分',value:'5.0'},{label:'完成率',value:'99%'},{label:'可提现余额',value:'RM860'}]);var myOrders=read('orders').filter(function(o){return o.player==='MOMO'});var ot=document.getElementById('playerOrders');if(ot)ot.innerHTML=table(['订单','老板','游戏','金额','状态','时间','接单操作'],myOrders.map(function(o){return '<tr><td>'+o.id+'</td><td>'+o.boss+'</td><td>'+o.game+'</td><td>'+o.amount+'</td><td>'+statusChip(o.status)+'</td><td>'+o.time+'</td><td><div class="row"><button class="btn small primary" data-action="accept" data-id="'+o.id+'">接受</button><button class="btn small danger" data-action="reject" data-id="'+o.id+'">拒绝</button><button class="btn small" data-action="complete" data-id="'+o.id+'">完成</button></div></td></tr>'}));var reviews=read('reviews').filter(function(r){return r.player==='MOMO'});var rt=document.getElementById('playerReviews');if(rt)rt.innerHTML=table(['订单','评分','评价','状态'],reviews.map(function(r){return '<tr><td>'+r.order_id+'</td><td>'+r.rating+'</td><td>'+r.content+'</td><td>'+statusChip(r.status)+'</td></tr>'}))}
+  function initClubAdmin(){
+    // Hardcoded club demo metrics removed. Empty/zero only if those legacy DOM nodes exist.
+    var dash=document.getElementById('clubStats');
+    if(dash)statCards(dash,[{label:'今日营业额',value:'RM0'},{label:'今日订单',value:'0'},{label:'本月营业额',value:'RM0'},{label:'陪玩人数',value:'0'},{label:'待处理订单',value:'0'},{label:'可提现余额',value:'RM0'}]);
+    var target=document.getElementById('clubPlayers');
+    if(target)target.innerHTML='<div class="empty">暂无数据</div>';
+    var ot=document.getElementById('clubOrders');
+    if(ot)ot.innerHTML='<div class="empty">暂无数据</div>';
+  }
+  function initPlayerAdmin(){
+    var dash=document.getElementById('playerStats');
+    if(dash)statCards(dash,[{label:'今日订单',value:'0'},{label:'本月订单',value:'0'},{label:'收入',value:'RM0'},{label:'评分',value:'-'},{label:'完成率',value:'-'},{label:'可提现余额',value:'RM0'}]);
+    var ot=document.getElementById('playerOrders');
+    if(ot)ot.innerHTML='<div class="empty">暂无数据</div>';
+    var rt=document.getElementById('playerReviews');
+    if(rt)rt.innerHTML='<div class="empty">暂无数据</div>';
+  }
   function refreshAdminIdentityFromServer(){
     var Auth=window.MCJAdminAuthFetch;
     if(!Auth||!Auth.getAccessToken||!Auth.getAccessToken())return Promise.resolve(null);
@@ -2563,6 +2687,11 @@
       }
     }
   });
+  window.MCJAdminSuite={
+    loadPlatformContent:loadPlatformContent,
+    platformContentConfig:platformContentConfig,
+    platformContentModules:platformContentModules
+  };
   window.MCJAdmin={read:read,write:write,routeByRole:routeByRole};
 })();
 
