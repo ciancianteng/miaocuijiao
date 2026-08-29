@@ -441,6 +441,14 @@ export default async function handler(req, res) {
         return json(res, 403, { ok: false, message: "仅测试模式支付订单允许模拟到账" });
       }
       const result = await creditRechargePayment(paymentNo, `SIM-${Date.now()}`, `simulate:${paymentNo}`);
+      let referralReward = null;
+      try {
+        if (!result?.duplicate) {
+          referralReward = await (await import("../_referral.js")).creditReferralForRecharge(order);
+        }
+      } catch {
+        referralReward = { ok: false, skipped: true };
+      }
       await writeAdminLog({
         module: "wallet",
         action: "simulate_paid",
@@ -448,12 +456,13 @@ export default async function handler(req, res) {
         targetId: paymentNo,
         operatorId,
         operatorRole: admin.role || "admin",
-        after: result,
+        after: { ...result, referralReward },
       });
       return json(res, 200, {
         ok: true,
         message: result?.duplicate ? "已到账（重复模拟被忽略）" : "模拟支付成功，猫粮已入账",
         result,
+        referralReward,
       });
     }
 
@@ -543,6 +552,14 @@ export default async function handler(req, res) {
       }
       const tradeNo = String(body.tradeNo || body.trade_no || body.providerTradeNo || `MANUAL-${Date.now()}`).trim();
       const result = await creditRechargePayment(order.payment_no, tradeNo, `admin-confirm:${order.payment_no}`);
+      let referralReward = null;
+      try {
+        if (!result?.duplicate) {
+          referralReward = await (await import("../_referral.js")).creditReferralForRecharge(order);
+        }
+      } catch {
+        referralReward = { ok: false, skipped: true };
+      }
       await writeAdminLog({
         module: "wallet",
         action: "confirm_manual_recharge",
@@ -551,7 +568,7 @@ export default async function handler(req, res) {
         operatorId,
         operatorRole: admin.role || "admin",
         reason: String(body.reason || "确认线下转账到账"),
-        after: { ...result, reviewedByStaffId: operatorId, reviewedByStaffName: staffName },
+        after: { ...result, reviewedByStaffId: operatorId, reviewedByStaffName: staffName, referralReward },
       });
       try {
         await notifyBoss(
@@ -567,6 +584,7 @@ export default async function handler(req, res) {
       return json(res, 200, {
         ok: true,
         message: result?.duplicate ? "已到账（重复确认被忽略）" : "已确认到账，猫粮已入账",
+        referralReward,
         result,
         paymentNo: order.payment_no,
         reviewedByStaffId: operatorId,

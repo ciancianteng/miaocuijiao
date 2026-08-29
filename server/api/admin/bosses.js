@@ -172,6 +172,8 @@ function mapBoss(row, wallet, extras = {}) {
     walletBalance: money(w.total_balance),
     paidBalance: money(w.paid_balance),
     bonusBalance: money(w.bonus_balance),
+    totalPoints: money(extras.totalPoints),
+    total_points: money(extras.totalPoints),
     totalRecharge: `RM${money(w.total_recharge_rm).toFixed(2)}`,
     total_recharge: money(w.total_recharge_rm),
     totalSpent: `${money(w.total_spent)}猫粮`,
@@ -375,6 +377,17 @@ async function loadBossDetail(bossId) {
   } catch {
     /* keep flags */
   }
+
+  let pointsView = { userId: id, totalPoints: 0, createdAt: "", updatedAt: "" };
+  let pointTxViews = [];
+  try {
+    const { getUserPoints, listPointTransactions, viewPoints, viewPointTx } = await import("../_points.js");
+    pointsView = viewPoints(await getUserPoints(id), id);
+    pointTxViews = (await listPointTransactions(id, { limit: 50 })).map(viewPointTx);
+  } catch {
+    /* points tables may be missing */
+  }
+
   const boss = mapBoss(profile, wallet, {
     vip: vip.current,
     totalOrders: orderViews.length,
@@ -385,6 +398,7 @@ async function loadBossDetail(bossId) {
     passwordSetAt: profile.password_set_at || "",
     emailVerified,
     emailVerifiedLabel,
+    totalPoints: pointsView.totalPoints,
   });
 
   return {
@@ -400,6 +414,8 @@ async function loadBossDetail(bossId) {
           frozen: !!wallet.frozen,
         }
       : null,
+    points: pointsView,
+    pointTransactions: pointTxViews,
     orders: orderViews,
     recharges: rechargeViews,
     spends: spendViews,

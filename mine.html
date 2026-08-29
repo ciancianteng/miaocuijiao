@@ -8,39 +8,71 @@
   <link rel="stylesheet" href="src/style.css">
   <link rel="stylesheet" href="src/boss-header.css">
   <style>
-    body{background:#08070a;color:#fff}.boss-shell{width:min(920px,calc(100% - 32px));margin:0 auto;padding:26px 0 76px}.account-card,.empty-card{border:1px solid rgba(255,255,255,.1);border-radius:18px;background:rgba(255,255,255,.045);padding:22px}.account-head{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-bottom:18px}.profile-main{display:flex;align-items:center;gap:16px;min-width:0}.avatar{width:74px;height:74px;border-radius:18px;border:1px solid rgba(255,143,197,.28);background:rgba(255,143,197,.12);display:grid;place-items:center;overflow:hidden;color:#ffd6e7;font-weight:1000;font-size:24px}.avatar img{width:100%;height:100%;object-fit:cover}.profile-title h1{margin:0;font-size:26px}.profile-title p{margin:6px 0 0;color:#9ca3af}.info-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}.info-item{border:1px solid rgba(255,255,255,.08);border-radius:12px;background:rgba(0,0,0,.18);padding:13px}.info-item span{display:block;color:#9ca3af;font-size:12px}.info-item strong{display:block;margin-top:5px;color:#fff;word-break:break-word}.action-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}.boss-btn{border:1px solid rgba(255,143,197,.36);border-radius:12px;background:rgba(255,143,197,.13);color:#fff;padding:10px 14px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center}.boss-btn.ghost{border-color:rgba(255,255,255,.12);background:rgba(255,255,255,.055)}.modal{position:fixed;inset:0;background:rgba(0,0,0,.68);display:none;align-items:center;justify-content:center;padding:18px;z-index:40}.modal.open{display:flex}.modal-box{width:min(520px,100%);border:1px solid rgba(255,143,197,.26);border-radius:18px;background:#111014;padding:20px}.modal-head{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:12px}.modal-head h2{margin:0}.close{width:36px;height:36px;border:1px solid rgba(255,255,255,.12);border-radius:10px;background:rgba(255,255,255,.06);color:#fff;cursor:pointer}.form-grid{display:grid;gap:12px}.form-grid label{display:grid;gap:7px;color:#ffd6e7;font-weight:800}.form-grid input{height:42px;border:1px solid rgba(255,255,255,.12);border-radius:10px;background:rgba(0,0,0,.24);color:#fff;padding:0 12px}.state{margin-top:10px;color:#ffb9d6;min-height:20px}@media(max-width:720px){.account-head{align-items:flex-start;flex-direction:column}.info-grid{grid-template-columns:1fr}.boss-btn{width:100%}}
-  
-    /* Page-scoped: ghost/account actions must not look disabled */
-    .boss-btn:not(:disabled){opacity:1;cursor:pointer}
-    .boss-btn.ghost:not(:disabled){
-      border:1px solid rgba(255,158,207,.55);
-      background:rgba(255,143,197,.14);
-      color:#ffe6f2;
-      opacity:1;
-      cursor:pointer;
-      box-shadow:inset 0 1px 0 rgba(255,255,255,.08);
-    }
-    .boss-btn.ghost:not(:disabled):hover{border-color:rgba(255,212,230,.8);filter:brightness(1.06)}
-    .boss-btn:disabled,.boss-btn.is-disabled{
-      opacity:.45!important;cursor:not-allowed!important;filter:saturate(.5);
-      background:rgba(255,255,255,.06)!important;border-color:rgba(255,255,255,.12)!important;color:#9ca3af!important;box-shadow:none!important;
-    }
-    .review-tip{
-      margin:0 0 14px;padding:12px 14px;border:1px solid rgba(255,143,197,.35);
-      border-radius:14px;background:rgba(255,143,197,.1);color:#ffd6e7;
-      display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;
-    }
+    body{background:#0a1220;color:#fff}
+    .boss-shell{width:min(920px,calc(100% - 32px));margin:0 auto;padding:26px 0 76px}
+    .empty-card{border:1px solid rgba(255,255,255,.1);border-radius:18px;background:rgba(255,255,255,.045);padding:22px}
+    .pc-card{border:1px solid rgba(80,140,255,.18);border-radius:18px;background:linear-gradient(160deg,rgba(20,36,64,.95),rgba(12,20,36,.98));padding:18px;margin-bottom:14px}
+    .pc-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+    .pc-main{display:flex;align-items:center;gap:14px;min-width:0}
+    .avatar{width:72px;height:72px;border-radius:50%;border:2px solid rgba(90,170,255,.45);background:rgba(255,255,255,.92);display:grid;place-items:center;overflow:hidden;color:#1e3a5f;font-weight:1000;font-size:24px;flex-shrink:0;box-shadow:0 0 0 4px rgba(56,140,255,.12)}
+    .avatar img{width:100%;height:100%;object-fit:cover}
+    .pc-title{min-width:0}
+    .pc-title h1{margin:0;font-size:22px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+    .pc-meta{margin:6px 0 0;color:#9eb2d0;font-size:13px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+    .badge{display:inline-flex;align-items:center;padding:2px 10px;border-radius:999px;background:linear-gradient(90deg,#3b82f6,#60a5fa);color:#fff;font-size:12px;font-weight:800}
+    .edit-btn{border:1px solid rgba(120,180,255,.35);border-radius:10px;background:rgba(59,130,246,.16);color:#dbeafe;padding:8px 14px;cursor:pointer;font-weight:800}
+    .level-box{margin-top:14px;border-radius:14px;background:rgba(8,16,32,.55);border:1px solid rgba(90,150,255,.16);padding:14px}
+    .level-row{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px}
+    .level-row strong{font-size:15px}
+    .level-row a{color:#93c5fd;text-decoration:none;font-size:13px;font-weight:800}
+    .prog{height:8px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden}
+    .prog>i{display:block;height:100%;width:0;background:linear-gradient(90deg,#2563eb,#60a5fa);border-radius:999px;transition:width .35s ease}
+    .level-hint{margin:8px 0 0;color:#9eb2d0;font-size:12px}
+    .promo{display:flex;align-items:center;gap:12px;border-radius:16px;padding:14px 16px;margin-bottom:14px;background:linear-gradient(105deg,#1e3a8a 0%,#2563eb 45%,#f59e0b 160%);border:1px solid rgba(255,200,100,.25);text-decoration:none;color:#fff}
+    .promo-ico{width:44px;height:44px;border-radius:50%;background:radial-gradient(circle at 30% 30%,#fde68a,#f59e0b);color:#7c2d12;display:grid;place-items:center;font-weight:1000;font-size:18px;flex-shrink:0}
+    .promo-body{flex:1;min-width:0}
+    .promo-body strong{display:block;font-size:15px}
+    .promo-body span{display:block;margin-top:4px;font-size:12px;color:rgba(255,255,255,.82)}
+    .promo-cta{border:0;border-radius:999px;background:rgba(255,255,255,.18);color:#fff;padding:8px 12px;font-size:12px;font-weight:800;white-space:nowrap}
+    .sec-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+    .sec-head h2{margin:0;font-size:16px}
+    .sec-head a{color:#93c5fd;text-decoration:none;font-size:13px}
+    .order-row{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+    .order-chip{display:flex;flex-direction:column;align-items:center;gap:8px;padding:10px 4px;border-radius:12px;background:rgba(255,255,255,.03);border:1px solid transparent;color:#dbeafe;text-decoration:none;font-size:12px;position:relative}
+    .order-chip .ico{width:40px;height:40px;border-radius:12px;background:rgba(59,130,246,.14);display:grid;place-items:center;font-size:18px}
+    .order-chip .cnt{position:absolute;top:4px;right:8px;min-width:16px;height:16px;padding:0 4px;border-radius:999px;background:#ef4444;color:#fff;font-size:10px;font-weight:800;display:grid;place-items:center}
+    .order-chip .cnt[data-zero="1"]{display:none}
+    .menu-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+    .menu-item{display:flex;flex-direction:column;align-items:center;gap:8px;padding:14px 6px;border-radius:14px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);color:#e2e8f0;text-decoration:none;font-size:12px;cursor:pointer}
+    .menu-item .ico{width:42px;height:42px;border-radius:14px;background:rgba(59,130,246,.12);display:grid;place-items:center;font-size:18px}
+    .wallet-strip{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}
+    .wallet-strip div{border-radius:12px;background:rgba(0,0,0,.22);border:1px solid rgba(255,255,255,.06);padding:10px;text-align:center}
+    .wallet-strip span{display:block;color:#9eb2d0;font-size:11px}
+    .wallet-strip strong{display:block;margin-top:4px;font-size:16px;color:#fde68a}
+    .boss-btn{border:1px solid rgba(255,143,197,.36);border-radius:12px;background:rgba(255,143,197,.13);color:#fff;padding:10px 14px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center}
+    .boss-btn.ghost{border-color:rgba(255,255,255,.12);background:rgba(255,255,255,.055)}
+    .modal{position:fixed;inset:0;background:rgba(0,0,0,.68);display:none;align-items:center;justify-content:center;padding:18px;z-index:40}
+    .modal.open{display:flex}
+    .modal-box{width:min(520px,100%);border:1px solid rgba(90,150,255,.26);border-radius:18px;background:#0f172a;padding:20px}
+    .modal-head{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:12px}
+    .modal-head h2{margin:0}
+    .close{width:36px;height:36px;border:1px solid rgba(255,255,255,.12);border-radius:10px;background:rgba(255,255,255,.06);color:#fff;cursor:pointer}
+    .form-grid{display:grid;gap:12px}
+    .form-grid label{display:grid;gap:7px;color:#bfdbfe;font-weight:800}
+    .form-grid input{height:42px;border:1px solid rgba(255,255,255,.12);border-radius:10px;background:rgba(0,0,0,.24);color:#fff;padding:0 12px}
+    .state{margin-top:10px;color:#93c5fd;min-height:20px}
+    .review-tip{margin:0 0 14px;padding:12px 14px;border:1px solid rgba(255,143,197,.35);border-radius:14px;background:rgba(255,143,197,.1);color:#ffd6e7;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
     .review-tip p{margin:0;font-size:14px;line-height:1.45}
     .review-tip .tip-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-    .review-tip .tip-link{
-      border:0;background:transparent;color:#ffe6f2;font-weight:800;cursor:pointer;
-      text-decoration:underline;padding:0;font:inherit;
+    .review-tip .tip-link{border:0;background:transparent;color:#ffe6f2;font-weight:800;cursor:pointer;text-decoration:underline;padding:0;font:inherit}
+    .review-tip .tip-dismiss{width:32px;height:32px;border:1px solid rgba(255,255,255,.14);border-radius:10px;background:rgba(255,255,255,.06);color:#fff;cursor:pointer}
+    #bossAccountSecurity{margin-top:14px}
+    @media(max-width:720px){
+      .menu-grid{grid-template-columns:repeat(4,1fr)}
+      .order-row{gap:4px}
+      .wallet-strip{grid-template-columns:1fr}
     }
-    .review-tip .tip-dismiss{
-      width:32px;height:32px;border:1px solid rgba(255,255,255,.14);border-radius:10px;
-      background:rgba(255,255,255,.06);color:#fff;cursor:pointer;
-    }
-</style>
+  </style>
 </head>
 <body>
   <header class="topbar"><a class="brand" href="index.html"><img src="assets/meow-cuijiao-brand.jpg" alt="MEOW CUI JIAO"><span>MEOW CUI JIAO</span></a><nav class="boss-nav"><a href="index.html">首页</a><a href="companion-center.html">陪玩大厅</a><a href="orders.html">我的订单</a><a href="support.html?start=1">在线客服</a></nav></header>
@@ -66,7 +98,7 @@
       var modal=document.getElementById('editModal');
       var form=document.getElementById('profileForm');
       var editState=document.getElementById('editState');
-      var state={loading:true,error:'',user:null,wallet:null,passwordHint:'',pendingReviewTipId:''};
+      var state={loading:true,error:'',user:null,wallet:null,points:null,level:null,referral:null,orderCounts:null,passwordHint:'',pendingReviewTipId:''};
       var TIP_KEY='mcjBossPendingReviewTipShown';
       function tipAlreadyShown(){try{return sessionStorage.getItem(TIP_KEY)==='1'}catch(e){return false}}
       function markTipShown(){try{sessionStorage.setItem(TIP_KEY,'1')}catch(e){}}
@@ -91,31 +123,60 @@
       function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
       function date(v){if(!v)return '-';try{return new Date(v).toLocaleString('zh-CN',{hour12:false})}catch(e){return v}}
       function avatarHtml(user){var src=user&&user.avatarUrl;if(src)return '<img src="'+esc(src)+'" alt="头像">';var name=(user&&user.displayName)||'老板';return esc(name.slice(0,1)||'B')}
-      function statusText(s){return {active:'正常',disabled:'停用',pending:'待审核'}[s]||s||'-'}
+      function cntBadge(n){var v=Number(n)||0;return '<span class="cnt" data-zero="'+(v?'0':'1')+'">'+esc(v)+'</span>'}
       function paint(){
         if(!token()){root.innerHTML='<section class="empty-card"><h1>请先登录</h1><p style="color:#9ca3af">登录后可以查看账号资料、订单和在线客服。</p><a class="boss-btn" href="index.html">返回首页登录</a></section>';return}
-        if(state.loading){root.innerHTML='<section class="empty-card">正在登录…</section>';return}
+        if(state.loading){root.innerHTML='<section class="empty-card">正在加载个人中心…</section>';return}
         if(state.error){root.innerHTML='<section class="empty-card"><h1>账号资料读取失败</h1><p style="color:#ffb9d6">'+esc(state.error)+'</p><button class="boss-btn" data-refresh>重试</button></section>';return}
         var u=state.user||{};
         var publicUid=u.bossUid||u.boss_uid||u.uid||'-';
-        var techHtml=(location.hostname==='127.0.0.1'||location.hostname==='localhost')?'<details class="info-item" style="grid-column:1/-1"><summary style="cursor:pointer;color:#9ca3af;font-size:12px">技术信息（开发环境）</summary><strong style="display:block;margin-top:8px;word-break:break-all">内部 UUID：'+esc(u.id||'-')+'</strong></details>':'';
         var wallet=state.wallet||{};
-        var totalBal=wallet.totalBalance!=null?wallet.totalBalance:(wallet.balance!=null?wallet.balance:'-');
-        var paidBal=wallet.paidBalance!=null?wallet.paidBalance:'-';
-        var bonusBal=wallet.bonusBalance!=null?wallet.bonusBalance:'-';
-        var setHint=u.hasPassword===true||u.has_password===true?'':'<p style="margin:12px 0 0;color:#fbbf24;font-size:13px">提示：建议设置登录密码，便于下次邮箱+密码登录（不强制）。</p>';
+        var totalBal=wallet.totalBalance!=null?wallet.totalBalance:(wallet.balance!=null?wallet.balance:0);
+        var paidBal=wallet.paidBalance!=null?wallet.paidBalance:0;
+        var bonusBal=wallet.bonusBalance!=null?wallet.bonusBalance:0;
+        var pointsTotal=state.points&&state.points.totalPoints!=null?state.points.totalPoints:0;
+        var level=state.level||{};
+        var levelLabel=level.levelLabel||(level.current&&level.current.badgeLabel)||'萌新老板';
+        var levelRank=level.levelRank||(level.current&&level.current.levelRank)||1;
+        var progress=Math.max(0,Math.min(100,Number(level.progressPercent)||0));
+        var nextHint=level.nextHint||('当前积分 '+pointsTotal);
+        var banner=(state.referral&&state.referral.banner)||{title:'推广返利 · 邀请好友',subtitle:'双方得奖励 · 最高返利 30%'};
+        var oc=state.orderCounts||{};
         var tipHtml=state.pendingReviewTipId
           ?('<div class="review-tip" role="status"><p>您有订单还未评价陪玩</p><div class="tip-actions"><button class="tip-link" type="button" data-open-pending-review>去评价</button><button class="tip-dismiss" type="button" data-dismiss-review-tip aria-label="关闭">×</button></div></div>')
           :'';
-        root.innerHTML=tipHtml+'<section class="account-card"><div class="account-head"><div class="profile-main"><div class="avatar">'+avatarHtml(u)+'</div><div class="profile-title"><h1>'+esc(u.displayName||'老板账号')+'</h1><p>我的账号'+(u.hasCompanion?' · 多角色':'')+'</p></div></div><button class="boss-btn" data-edit type="button">编辑资料</button></div><div class="info-grid"><div class="info-item"><span>老板 UID</span><strong>'+esc(publicUid)+'</strong></div><div class="info-item"><span>User ID</span><strong style="font-size:12px;word-break:break-all">'+esc(u.id||'-')+'</strong></div><div class="info-item"><span>角色</span><strong>'+esc((u.hasBoss?'老板':'')+(u.hasBoss&&u.hasCompanion?' + ':'')+(u.hasCompanion?'陪玩':(!u.hasBoss&&!u.hasCompanion?(u.role||'-'):'')))+'</strong></div><div class="info-item"><span>总猫粮</span><strong>'+esc(totalBal)+'</strong></div><div class="info-item"><span>充值猫粮</span><strong>'+esc(paidBal)+'</strong></div><div class="info-item"><span>赠送猫粮</span><strong>'+esc(bonusBal)+'</strong></div><div class="info-item"><span>邮箱</span><strong>'+esc(u.email||'-')+'</strong></div><div class="info-item"><span>手机号</span><strong>'+esc(u.phone||'-')+'</strong></div><div class="info-item"><span>注册时间</span><strong>'+esc(date(u.createdAt))+'</strong></div><div class="info-item"><span>账号状态</span><strong>'+esc(statusText(u.status))+'</strong></div>'+techHtml+'</div>'+setHint+'<div class="action-row"><a class="boss-btn ghost" href="recharge.html">充值中心 / 钱包流水</a><a class="boss-btn ghost" href="orders.html">查看我的订单</a><a class="boss-btn ghost" href="support.html">联系在线客服</a>'+(u.hasCompanion?'<button class="boss-btn ghost" type="button" data-switch-portal="companion">切换到陪玩端</button>':'<a class="boss-btn ghost" href="companion-apply.html">申请成为陪玩</a>')+'<button class="boss-btn ghost" type="button" data-logout>退出登录</button></div><div id="bossAccountSecurity"></div></section>';
+        root.innerHTML=tipHtml+
+          '<section class="pc-card">'+
+            '<div class="pc-head"><div class="pc-main"><div class="avatar">'+avatarHtml(u)+'</div><div class="pc-title"><h1>'+esc(u.displayName||'老板账号')+' <span class="badge">'+esc(levelLabel)+'</span></h1><p class="pc-meta"><span>ID:'+esc(publicUid)+'</span>'+(u.hasCompanion?'<span>· 多角色</span>':'')+'</p></div></div><button class="edit-btn" data-edit type="button">编辑</button></div>'+
+            '<div class="level-box"><div class="level-row"><strong>'+esc(levelLabel)+' Lv.'+esc(levelRank)+'</strong><a href="points.html">我的积分 &gt;</a></div><div class="prog" aria-label="等级进度"><i style="width:'+progress+'%"></i></div><p class="level-hint">'+esc(nextHint)+' · 当前 '+esc(pointsTotal)+' 积分</p></div>'+
+            '<div class="wallet-strip"><div><span>总猫粮</span><strong>'+esc(totalBal)+'</strong></div><div><span>充值猫粮</span><strong>'+esc(paidBal)+'</strong></div><div><span>赠送猫粮</span><strong>'+esc(bonusBal)+'</strong></div></div>'+
+          '</section>'+
+          '<a class="promo" href="invite.html"><div class="promo-ico">返</div><div class="promo-body"><strong>'+esc(banner.title||'推广返利 · 邀请好友')+'</strong><span>'+esc(banner.subtitle||'双方得奖励 · 最高返利 30%')+'</span></div><span class="promo-cta">立即推广 &gt;</span></a>'+
+          '<section class="pc-card"><div class="sec-head"><h2>我的订单</h2><a href="orders.html">查看全部 &gt;</a></div><div class="order-row">'+
+            '<a class="order-chip" href="orders.html?filter=awaiting_payment"><span class="ico">💳</span>'+cntBadge(oc.awaitingPayment)+'<span>待付款</span></a>'+
+            '<a class="order-chip" href="orders.html?filter=arranging"><span class="ico">⏱️</span>'+cntBadge(oc.pendingAccept)+'<span>待接单</span></a>'+
+            '<a class="order-chip" href="orders.html?filter=active"><span class="ico">📅</span>'+cntBadge(oc.inService)+'<span>服务中</span></a>'+
+            '<a class="order-chip" href="orders.html?filter=active"><span class="ico">✅</span>'+cntBadge(oc.pendingSettle)+'<span>待结算</span></a>'+
+            '<a class="order-chip" href="orders.html?filter=completed"><span class="ico">🛡️</span>'+cntBadge(oc.completed)+'<span>已完成</span></a>'+
+          '</div></section>'+
+          '<section class="pc-card"><div class="menu-grid">'+
+            '<button class="menu-item" type="button" data-edit><span class="ico">📝</span><span>我的资料</span></button>'+
+            '<a class="menu-item" href="points.html"><span class="ico">¥</span><span>积分详情</span></a>'+
+            '<a class="menu-item" href="support.html?start=1"><span class="ico">💬</span><span>聊天消息</span></a>'+
+            '<a class="menu-item" href="invite.html"><span class="ico">🎁</span><span>推广中心</span></a>'+
+            '<a class="menu-item" href="support.html"><span class="ico">❓</span><span>帮助中心</span></a>'+
+            '<a class="menu-item" href="recharge.html"><span class="ico">👛</span><span>我的钱包</span></a>'+
+            (u.hasCompanion?'<button class="menu-item" type="button" data-switch-portal="companion"><span class="ico">🔁</span><span>切陪玩端</span></button>':'<a class="menu-item" href="companion-apply.html"><span class="ico">🎮</span><span>申请陪玩</span></a>')+
+            '<button class="menu-item" type="button" data-logout><span class="ico">🚪</span><span>退出登录</span></button>'+
+          '</div><div id="bossAccountSecurity"></div></section>';
         if(window.MCJAccountSecurity){
           window.MCJAccountSecurity.mount('#bossAccountSecurity',u,{role:'boss',passwordHint:state.passwordHint,onUpdated:function(data){if(data&&data.user)state.user=data.user;paint();}});
         }
       }
       function paintRegister(){
-        root.innerHTML='<section class="account-card"><h1>注册老板账号</h1><p style="color:#9ca3af">必须先完成邮箱验证码验证，成功后系统会自动分配老板 UID。密码至少 8 位且含字母和数字。</p><form class="form-grid" data-register-form style="margin-top:16px"><label>昵称<input name="displayName" maxlength="40" required placeholder="请输入昵称"></label><label>邮箱<div style="display:flex;gap:8px;align-items:center"><input name="email" type="email" inputmode="email" required autocomplete="email" style="flex:1"><button class="boss-btn ghost" type="button" data-mine-send-register-otp>获取验证码</button></div></label><label>邮箱验证码<div style="display:flex;gap:8px;align-items:center"><input name="otp" type="text" inputmode="numeric" maxlength="6" autocomplete="one-time-code" data-auth-code="1" placeholder="6 位验证码" style="flex:1"><button class="boss-btn ghost" type="button" data-mine-verify-register-otp>验证邮箱</button></div></label><input type="hidden" name="registerToken" value=""><p class="state" data-register-verified-hint style="color:#9ca3af">请先完成邮箱验证，验证成功后才能注册。</p><label>密码<input name="password" type="password" required minlength="8" autocomplete="new-password"></label><label>确认密码<input name="confirmPassword" type="password" required minlength="8" autocomplete="new-password"></label><button class="boss-btn" type="submit" data-register-submit disabled>注册</button><p class="state" data-register-state></p><p style="color:#9ca3af;font-size:13px">已有账号？<a href="index.html" style="color:#ffd6e7">返回登录</a></p></form></section>';
+        root.innerHTML='<section class="pc-card"><h1>注册老板账号</h1><p style="color:#9ca3af">必须先完成邮箱验证码验证，成功后系统会自动分配老板 UID。密码至少 8 位且含字母和数字。</p><form class="form-grid" data-register-form style="margin-top:16px"><label>昵称<input name="displayName" maxlength="40" required placeholder="请输入昵称"></label><label>邮箱<div style="display:flex;gap:8px;align-items:center"><input name="email" type="email" inputmode="email" required autocomplete="email" style="flex:1"><button class="boss-btn ghost" type="button" data-mine-send-register-otp>获取验证码</button></div></label><label>邮箱验证码<div style="display:flex;gap:8px;align-items:center"><input name="otp" type="text" inputmode="numeric" maxlength="6" autocomplete="one-time-code" data-auth-code="1" placeholder="6 位验证码" style="flex:1"><button class="boss-btn ghost" type="button" data-mine-verify-register-otp>验证邮箱</button></div></label><input type="hidden" name="registerToken" value=""><p class="state" data-register-verified-hint style="color:#9ca3af">请先完成邮箱验证，验证成功后才能注册。</p><label>密码<input name="password" type="password" required minlength="8" autocomplete="new-password"></label><label>确认密码<input name="confirmPassword" type="password" required minlength="8" autocomplete="new-password"></label><button class="boss-btn" type="submit" data-register-submit disabled>注册</button><p class="state" data-register-state></p><p style="color:#9ca3af;font-size:13px">已有账号？<a href="index.html" style="color:#93c5fd">返回登录</a></p></form></section>';
       }
-async function load(){
+      async function load(){
         var params=new URLSearchParams(location.search);
         if(params.get('register')==='1'&&!token()){state.loading=false;paintRegister();return}
         state.loading=true;state.error='';paint();
@@ -133,10 +194,24 @@ async function load(){
             var secBody=await sec.json().catch(function(){return {}});
             if(sec.ok&&secBody.ok&&secBody.user){state.user=Object.assign({},state.user,secBody.user);state.passwordHint=secBody.passwordHint||state.passwordHint;}
           }catch(e){}
-          try{var wr=await fetch('/api/recharge',{headers:{Authorization:'Bearer '+token(),Accept:'application/json'}});var wb=await wr.json().catch(function(){return {}});if(wr.ok&&wb.ok)state.wallet=wb.wallet||wb.summary||null;}catch(e){state.wallet=null}
+          try{
+            var pr=await fetch('/api/boss-portal',{headers:{Authorization:'Bearer '+token(),Accept:'application/json'},cache:'no-store'});
+            var pb=await pr.json().catch(function(){return {}});
+            if(pr.ok&&pb.ok){
+              state.wallet=pb.wallet||null;
+              state.points=pb.points||{totalPoints:0};
+              state.level=pb.level||null;
+              state.referral=pb.referral||null;
+              state.orderCounts=pb.orderCounts||null;
+            }else{
+              throw new Error(pb.message||'portal');
+            }
+          }catch(e){
+            try{var wr=await fetch('/api/recharge',{headers:{Authorization:'Bearer '+token(),Accept:'application/json'}});var wb=await wr.json().catch(function(){return {}});if(wr.ok&&wb.ok)state.wallet=wb.wallet||wb.summary||null;}catch(err){state.wallet=null}
+            try{var pts=await fetch('/api/points',{headers:{Authorization:'Bearer '+token(),Accept:'application/json'}});var ptsb=await pts.json().catch(function(){return {}});if(pts.ok&&ptsb.ok){state.points=ptsb.points||null;state.level=ptsb.level||null;}else state.points={totalPoints:0}}catch(err){state.points={totalPoints:0}}
+          }
         }catch(err){
           var msg=String(err&&err.message||'账号资料读取失败');
-          // Keep valid session on profile init failure — never treat as logged out.
           if(/账号初始化失败|PROFILE_INIT_FAILED|未绑定平台资料/.test(msg)){
             state.error='账号初始化失败，请刷新重试或联系客服。';
           }else if(/未登录|登录已过期|401/.test(msg) && !token()){
@@ -253,4 +328,3 @@ async function load(){
   </script>
 </body>
 </html>
-

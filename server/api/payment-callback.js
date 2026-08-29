@@ -120,12 +120,24 @@ export default async function handler(req, res) {
     }
 
     const result = await creditRechargePayment(paymentNo, tradeNo, `callback:${paymentNo}`);
+    let referralReward = null;
+    try {
+      if (!result?.duplicate) {
+        const order = await loadPaymentOrder(paymentNo);
+        if (order) {
+          referralReward = await (await import("./_referral.js")).creditReferralForRecharge(order);
+        }
+      }
+    } catch {
+      referralReward = { ok: false, skipped: true };
+    }
     return json(res, 200, {
       ok: true,
       credited: !result?.duplicate,
       duplicate: !!result?.duplicate,
       message: result?.duplicate ? "重复回调，未再次入账。" : "充值猫粮已到账。",
       paymentNo,
+      referralReward,
     });
   } catch (error) {
     if (isMissingRelation(error)) {

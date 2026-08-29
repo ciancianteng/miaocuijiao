@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <script src="/portal-early-gate.js?v=20260811authUnify2"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>积分记录 - MEOW CUI JIAO</title>
+  <style>
+    *{box-sizing:border-box}
+    body{margin:0;background:#08070a;color:#fff;font-family:"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+    .boss-nav{display:flex;gap:18px;flex:1;flex-wrap:wrap;align-items:center}
+    .boss-nav a,.boss-nav button{border:0;background:transparent;color:#cdb8c4;cursor:pointer;font:inherit;font-size:14px;padding:0;text-decoration:none}
+    .boss-nav a.active{color:#ffd6e7;font-weight:900}
+    .shell{width:min(960px,calc(100% - 32px));margin:0 auto;padding:24px 0 80px;display:grid;gap:16px}
+    .panel{border:1px solid rgba(255,255,255,.10);border-radius:18px;background:rgba(255,255,255,.045);padding:18px}
+    .panel h1{margin:0;font-size:26px}.panel p{margin:8px 0 0;color:#9ca3af;line-height:1.55}
+    .stat{margin-top:16px;border:1px solid rgba(255,255,255,.08);border-radius:14px;background:rgba(0,0,0,.22);padding:14px;display:flex;justify-content:space-between;align-items:center;gap:12px}
+    .stat span{color:#9ca3af;font-size:13px}.stat strong{font-size:28px;color:#ffd6e7}
+    .tx{display:grid;grid-template-columns:1.2fr .7fr 1.4fr .9fr;gap:10px;align-items:start;border:1px solid rgba(255,255,255,.08);border-radius:12px;background:rgba(0,0,0,.18);padding:12px;margin-top:8px}
+    .tx span{color:#9ca3af;font-size:13px}.tx strong{color:#fff}.tx .pos{color:#8ff0bd}.tx .neg{color:#ff9db7}
+    .empty,.err{padding:24px;text-align:center;color:#9ca3af}
+    .err{color:#ff9db7}
+    .ghost-btn{display:inline-flex;align-items:center;justify-content:center;min-height:40px;padding:0 14px;border-radius:12px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.055);color:#fff;text-decoration:none;font-weight:800}
+    @media(max-width:720px){.tx{grid-template-columns:1fr}.shell{width:calc(100% - 24px)}}
+  </style>
+  <link rel="stylesheet" crossorigin href="/src/style.css">
+  <link rel="stylesheet" crossorigin href="/src/boss-header.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="index.html"><img src="/assets/meow-cuijiao-brand.jpg" alt="MEOW CUI JIAO"><span>MEOW CUI JIAO</span></a>
+    <nav class="boss-nav">
+      <a href="index.html">首页</a>
+      <a href="companion-center.html">陪玩大厅</a>
+      <a href="recharge.html">充值中心</a>
+      <a href="orders.html">我的订单</a>
+      <a class="active" href="points.html">积分记录</a>
+      <a href="mine.html">我的账号</a>
+      <button type="button" data-logout>退出登录</button>
+    </nav>
+  </header>
+  <main class="shell" id="pointsRoot">
+    <section class="panel"><p class="empty">加载中…</p></section>
+  </main>
+  <script type="module" src="/src/role-gates.js"></script>
+  <script type="module" src="/src/boss-header.js"></script>
+  <script>
+    (function () {
+      var root = document.getElementById("pointsRoot");
+      function token() {
+        try {
+          return sessionStorage.getItem("mcjAuthAccessToken") || localStorage.getItem("mcjAuthAccessToken") || "";
+        } catch (e) {
+          return "";
+        }
+      }
+      function esc(v) {
+        return String(v == null ? "" : v).replace(/[&<>"']/g, function (c) {
+          return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+        });
+      }
+      function date(v) {
+        if (!v) return "-";
+        try {
+          return new Date(v).toLocaleString("zh-CN", { hour12: false });
+        } catch (e) {
+          return v;
+        }
+      }
+      async function load() {
+        if (!token()) {
+          root.innerHTML =
+            '<section class="panel"><h1>积分记录</h1><p class="err">请先登录后查看真实积分。</p><p style="margin-top:16px"><a class="ghost-btn" href="index.html">返回首页登录</a></p></section>';
+          return;
+        }
+        try {
+          var res = await fetch("/api/points?action=transactions&limit=100", {
+            headers: { Authorization: "Bearer " + token(), Accept: "application/json" },
+          });
+          var body = await res.json().catch(function () {
+            return {};
+          });
+          if (!res.ok || !body.ok) throw new Error(body.message || "积分读取失败");
+          var total = body.points && body.points.totalPoints != null ? body.points.totalPoints : 0;
+          var items = Array.isArray(body.items) ? body.items : [];
+          var rows = items
+            .map(function (t) {
+              var pts = Number(t.points || 0);
+              var cls = pts >= 0 ? "pos" : "neg";
+              var sign = pts > 0 ? "+" : "";
+              return (
+                '<article class="tx"><div><span>时间</span><strong>' +
+                esc(date(t.createdAt)) +
+                "</strong></div><div><span>类型</span><strong>" +
+                esc(t.typeText || t.type) +
+                '</strong></div><div><span>说明</span><strong>' +
+                esc(t.description || "-") +
+                (t.orderId ? '<br><span>订单 ' + esc(t.orderId) + "</span>" : "") +
+                '</strong></div><div><span>积分变动</span><strong class="' +
+                cls +
+                '">' +
+                esc(sign + pts) +
+                "</strong></div></article>"
+              );
+            })
+            .join("");
+          root.innerHTML =
+            '<section class="panel"><h1>积分记录</h1><p>积分来自真实已完成订单实付金额（1 猫粮 / ≈RM1 = 10 积分），无假数据。</p><div class="stat"><span>当前积分（Supabase user_points）</span><strong>' +
+            esc(total) +
+            '</strong></div><p style="margin-top:14px"><a class="ghost-btn" href="mine.html">返回我的账号</a></p></section><section class="panel"><h2 style="margin:0 0 8px;font-size:18px">流水（point_transactions）</h2>' +
+            (rows || '<p class="empty">暂无积分记录</p>') +
+            "</section>";
+        } catch (err) {
+          root.innerHTML =
+            '<section class="panel"><h1>积分记录</h1><p class="err">' +
+            esc(err.message || "读取失败") +
+            '</p><p style="margin-top:16px"><a class="ghost-btn" href="mine.html">返回我的账号</a></p></section>';
+        }
+      }
+      document.addEventListener("click", function (e) {
+        var btn = e.target.closest && e.target.closest("[data-logout]");
+        if (!btn) return;
+        if (window.MCJRoleGate && typeof window.MCJRoleGate.logout === "function") {
+          window.MCJRoleGate.logout("boss");
+        }
+        location.href = "index.html";
+      });
+      if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", load);
+      else load();
+    })();
+  </script>
+</body>
+</html>
