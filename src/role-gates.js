@@ -1805,12 +1805,20 @@
       var a = event.target && event.target.closest && event.target.closest("a[href]");
       if (!a) return;
       var href = String(a.getAttribute("href") || "");
-      var wantsApply = /companion-apply\.html/i.test(href);
+      var resolved = "";
+      try {
+        resolved = String(a.href || "");
+      } catch (eRes) {}
+      var wantsApply =
+        /companion-apply\.html/i.test(href) ||
+        /companion-apply\.html/i.test(resolved) ||
+        !!(a.closest && a.closest("[data-companion-apply-guide]"));
       if (
         !wantsApply &&
         !/mine\.html|orders\.html|support\.html|recharge\.html|messages\.html|favorites\.html|profile\.html|gifts\.html/i.test(
           href
-        )
+        ) &&
+        !/\/(mine|orders|support|recharge|messages|favorites|profile|gifts)\.html/i.test(resolved)
       ) {
         return;
       }
