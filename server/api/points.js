@@ -79,9 +79,16 @@ export default async function handler(req, res) {
     }
 
     const row = await getUserPoints(userId);
+    let level = null;
+    try {
+      level = await (await import("./_boss-level.js")).getBossLevelProgress(userId);
+    } catch {
+      level = null;
+    }
     return json(res, 200, {
       ok: true,
       points: viewPoints(row, userId),
+      level,
     });
   } catch (error) {
     if (isMissingRelation(error)) {

@@ -441,19 +441,25 @@ export function createOrderCompleteHelpers({ restUrl, supabaseJson, serviceHeade
 
     // Loyalty points: paid_cat_food (fallback total_amount) × 10; idempotent per order_id.
     let pointsEarn = null;
+    let referralReward = null;
+    const completedOrder = {
+      ...before,
+      ...saved,
+      status: "completed",
+      completed_at: completedAt,
+      paid_cat_food: saved.paid_cat_food ?? before.paid_cat_food,
+      total_amount: saved.total_amount ?? before.total_amount,
+      boss_id: saved.boss_id || before.boss_id,
+    };
     try {
-      const completedOrder = {
-        ...before,
-        ...saved,
-        status: "completed",
-        completed_at: completedAt,
-        paid_cat_food: saved.paid_cat_food ?? before.paid_cat_food,
-        total_amount: saved.total_amount ?? before.total_amount,
-        boss_id: saved.boss_id || before.boss_id,
-      };
       pointsEarn = await (await import("./_points.js")).earnPointsForCompletedOrder(completedOrder);
     } catch (_) {
       pointsEarn = { ok: false, skipped: true, message: "积分发放失败（不影响订单完成）" };
+    }
+    try {
+      referralReward = await (await import("./_referral.js")).creditReferralForCompletedOrder(completedOrder);
+    } catch (_) {
+      referralReward = { ok: false, skipped: true, message: "推广返利失败（不影响订单完成）" };
     }
 
     return {
@@ -474,6 +480,7 @@ export function createOrderCompleteHelpers({ restUrl, supabaseJson, serviceHeade
       settlement,
       reward,
       pointsEarn,
+      referralReward,
       completionMethod: method,
     };
   }

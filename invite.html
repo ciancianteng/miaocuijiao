@@ -1,12 +1,192 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
+  <script src="/portal-early-gate.js?v=20260811authUnify2"></script>
   <meta charset="UTF-8">
-  <meta http-equiv="refresh" content="0;url=mine.html">
-  <title>邀请假奖励已移除</title>
-  <script>location.replace('mine.html');</script>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>推广中心 - MEOW CUI JIAO</title>
+  <link rel="stylesheet" href="src/style.css">
+  <link rel="stylesheet" href="src/boss-header.css">
+  <style>
+    body{background:#0a1220;color:#fff}
+    .shell{width:min(920px,calc(100% - 32px));margin:0 auto;padding:24px 0 80px;display:grid;gap:14px}
+    .panel{border:1px solid rgba(80,140,255,.18);border-radius:18px;background:linear-gradient(160deg,rgba(20,36,64,.95),rgba(12,20,36,.98));padding:18px}
+    .panel h1{margin:0;font-size:24px}
+    .panel p{margin:8px 0 0;color:#9eb2d0;line-height:1.55}
+    .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:16px}
+    .stat{border-radius:12px;background:rgba(0,0,0,.22);border:1px solid rgba(255,255,255,.06);padding:12px;text-align:center}
+    .stat span{display:block;color:#9eb2d0;font-size:12px}
+    .stat strong{display:block;margin-top:6px;font-size:22px;color:#fde68a}
+    .code-box{margin-top:16px;display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+    .code{font-size:22px;font-weight:1000;letter-spacing:.08em;color:#93c5fd}
+    .btn{border:1px solid rgba(120,180,255,.35);border-radius:12px;background:rgba(59,130,246,.18);color:#fff;padding:10px 14px;cursor:pointer;font-weight:800}
+    .btn.ghost{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.14)}
+    .bind{display:grid;gap:10px;margin-top:12px}
+    .bind input{height:42px;border:1px solid rgba(255,255,255,.12);border-radius:10px;background:rgba(0,0,0,.24);color:#fff;padding:0 12px}
+    .tx{margin-top:10px;border:1px solid rgba(255,255,255,.08);border-radius:12px;background:rgba(0,0,0,.18);padding:12px;display:grid;gap:4px}
+    .tx span{color:#9eb2d0;font-size:12px}.tx strong{color:#fff}
+    .err{color:#ff9db7}.ok{color:#8ff0bd}
+    .empty{padding:20px;text-align:center;color:#9eb2d0}
+    @media(max-width:720px){.stats{grid-template-columns:1fr}}
+  </style>
 </head>
 <body>
-  <p>静态邀请假猫粮页面已移除。请返回<a href="mine.html">我的账号</a>查看真实资产与积分。</p>
+  <header class="topbar">
+    <a class="brand" href="index.html"><img src="assets/meow-cuijiao-brand.jpg" alt="MEOW CUI JIAO"><span>MEOW CUI JIAO</span></a>
+    <nav class="boss-nav">
+      <a href="index.html">首页</a>
+      <a href="recharge.html">充值中心</a>
+      <a href="points.html">积分记录</a>
+      <a class="active" href="invite.html">推广中心</a>
+      <a href="mine.html">我的账号</a>
+    </nav>
+  </header>
+  <main class="shell" id="inviteRoot"><section class="panel"><p class="empty">加载中…</p></section></main>
+  <script src="src/role-gates.js"></script>
+  <script src="src/boss-header.js" defer></script>
+  <script>
+    (function () {
+      var root = document.getElementById("inviteRoot");
+      function token() {
+        try {
+          return sessionStorage.getItem("mcjAuthAccessToken") || localStorage.getItem("mcjAuthAccessToken") || "";
+        } catch (e) {
+          return "";
+        }
+      }
+      function esc(v) {
+        return String(v == null ? "" : v).replace(/[&<>"']/g, function (c) {
+          return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+        });
+      }
+      function date(v) {
+        if (!v) return "-";
+        try {
+          return new Date(v).toLocaleString("zh-CN", { hour12: false });
+        } catch (e) {
+          return v;
+        }
+      }
+      async function load() {
+        if (!token()) {
+          root.innerHTML =
+            '<section class="panel"><h1>推广中心</h1><p class="err">请先登录后查看真实推广数据。</p><p style="margin-top:16px"><a class="btn" href="index.html">返回首页登录</a></p></section>';
+          return;
+        }
+        try {
+          var res = await fetch("/api/referral?action=rewards&limit=50", {
+            headers: { Authorization: "Bearer " + token(), Accept: "application/json" },
+            cache: "no-store",
+          });
+          var body = await res.json().catch(function () {
+            return {};
+          });
+          if (!res.ok || body.ok === false) throw new Error(body.message || "读取失败");
+          var s = body.summary || body.referral || {};
+          var items = Array.isArray(body.items) ? body.items : [];
+          var warn = s.schemaMissing
+            ? '<p class="err">推广表尚未在数据库创建。请先在 Supabase 执行 migration：20260829_boss_levels_and_referral.sql</p>'
+            : "";
+          var list =
+            items.length === 0
+              ? '<p class="empty">暂无奖励记录。好友绑定邀请码并完成真实充值/订单后，返利会写入这里。</p>'
+              : items
+                  .map(function (r) {
+                    return (
+                      '<div class="tx"><strong>' +
+                      esc(r.rewardAmount) +
+                      " " +
+                      esc(r.rewardAsset === "points" ? "积分" : "猫粮") +
+                      "</strong><span>" +
+                      esc(r.description || r.triggerEvent) +
+                      "</span><span>" +
+                      esc(date(r.createdAt)) +
+                      " · " +
+                      esc(r.status) +
+                      "</span></div>"
+                    );
+                  })
+                  .join("");
+          root.innerHTML =
+            '<section class="panel"><h1>推广中心</h1><p>' +
+            esc((s.banner && s.banner.subtitle) || "双方得奖励 · 真实订单/充值触发返利") +
+            "</p>" +
+            warn +
+            '<div class="stats"><div class="stat"><span>我的邀请码</span><strong style="font-size:16px">' +
+            esc(s.inviteCode || "-") +
+            '</strong></div><div class="stat"><span>已邀请人数</span><strong>' +
+            esc(s.inviteeCount || 0) +
+            '</strong></div><div class="stat"><span>累计奖励</span><strong>' +
+            esc(s.totalEarnedCatFood || 0) +
+            "</strong></div></div>" +
+            '<div class="code-box"><span class="code">' +
+            esc(s.inviteCode || "") +
+            '</span><button class="btn" type="button" data-copy>复制邀请码</button></div></section>' +
+            '<section class="panel"><h2 style="margin:0 0 8px;font-size:18px">绑定他人邀请码</h2><p>每位老板只能绑定一次；绑定后，你的首充与完成订单可为邀请人产生真实返利。</p><form class="bind" data-bind><input name="code" placeholder="输入好友邀请码" autocomplete="off" required><button class="btn" type="submit">确认绑定</button><p class="state" data-bind-state></p></form></section>' +
+            '<section class="panel"><h2 style="margin:0 0 8px;font-size:18px">奖励明细</h2>' +
+            list +
+            "</section>";
+          var copyBtn = root.querySelector("[data-copy]");
+          if (copyBtn) {
+            copyBtn.addEventListener("click", function () {
+              var code = s.inviteCode || "";
+              if (!code) return;
+              if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(code).then(function () {
+                  copyBtn.textContent = "已复制";
+                });
+              } else {
+                copyBtn.textContent = code;
+              }
+            });
+          }
+          var bindForm = root.querySelector("[data-bind]");
+          if (bindForm) {
+            bindForm.addEventListener("submit", async function (e) {
+              e.preventDefault();
+              var box = bindForm.querySelector("[data-bind-state]");
+              var code = String(bindForm.elements.code.value || "").trim();
+              if (!code) {
+                if (box) box.textContent = "请输入邀请码";
+                return;
+              }
+              if (box) box.textContent = "绑定中…";
+              try {
+                var br = await fetch("/api/referral", {
+                  method: "POST",
+                  headers: {
+                    Authorization: "Bearer " + token(),
+                    "Content-Type": "application/json",
+                    Accept: "application/json",
+                  },
+                  body: JSON.stringify({ action: "bind", inviteCode: code }),
+                });
+                var bb = await br.json().catch(function () {
+                  return {};
+                });
+                if (!br.ok || bb.ok === false) throw new Error(bb.message || "绑定失败");
+                if (box) {
+                  box.className = "ok";
+                  box.textContent = bb.message || (bb.duplicate ? "已绑定" : "绑定成功");
+                }
+                setTimeout(load, 600);
+              } catch (err) {
+                if (box) {
+                  box.className = "err";
+                  box.textContent = err.message || "绑定失败";
+                }
+              }
+            });
+          }
+        } catch (err) {
+          root.innerHTML =
+            '<section class="panel"><h1>推广中心</h1><p class="err">' +
+            esc(err.message || "读取失败") +
+            '</p><p style="margin-top:12px"><button class="btn" type="button" onclick="location.reload()">重试</button></p></section>';
+        }
+      }
+      load();
+    })();
+  </script>
 </body>
 </html>
