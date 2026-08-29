@@ -3919,7 +3919,10 @@
       String(location.search || "") +
       String(location.hash || "");
     try {
-      sessionStorage.setItem("mcjAfterLoginRedirect", ret);
+      sessionStorage.setItem("mcjAfterLoginRedirect", "/companion-apply.html");
+      localStorage.setItem("mcjAfterLoginRedirect", "/companion-apply.html");
+      sessionStorage.setItem("mcjCompanionApplyAfterLogin", "1");
+      localStorage.setItem("mcjCompanionApplyAfterLogin", "1");
     } catch (e) {}
     location.replace("/login.html?return=" + encodeURIComponent(ret || "/companion-apply.html"));
   }

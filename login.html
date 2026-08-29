@@ -17,6 +17,11 @@
       if (ret) {
         try {
           sessionStorage.setItem("mcjAfterLoginRedirect", ret);
+          localStorage.setItem("mcjAfterLoginRedirect", ret);
+          if (/companion-apply\.html/i.test(ret)) {
+            sessionStorage.setItem("mcjCompanionApplyAfterLogin", "1");
+            localStorage.setItem("mcjCompanionApplyAfterLogin", "1");
+          }
         } catch (e2) {}
       }
       location.replace("/index.html#" + mode);
