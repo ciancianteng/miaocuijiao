@@ -4293,7 +4293,7 @@ export default async function handler(req, res) {
         }
         identityNo = "";
       }
-      const bankAccountRaw = String(body.bank_account || body.bankAccount || "").trim();
+      const bankAccountRaw = String(body.bank_account || body.bankAccount || body.settlementAccount || "").trim();
       const bankAccount =
         !bankAccountRaw || /^\*+\d{0,4}$/.test(bankAccountRaw)
           ? String(existingPayment?.bank_account || "")
@@ -4308,7 +4308,7 @@ export default async function handler(req, res) {
         reject_reason: "",
         submitted_at: nowIso(),
       });
-      if (body.bank_name || bankAccount || body.settlementMethod || body.method || body.tng_account || body.alipay_account) {
+      if (body.bank_name || body.settlementBank || bankAccount || body.settlementMethod || body.method || body.tng_account || body.alipay_account) {
         const methodLabel = String(body.settlementMethod || body.method || body.payment_method || "bank").trim();
         const bankName = String(body.bank_name || body.bankName || body.settlementBank || "").trim();
         const isBank =
@@ -4319,7 +4319,7 @@ export default async function handler(req, res) {
         await upsertByCompanion("companion_payment_accounts", row.id, auth.profile.id, {
           method: methodLabel || "银行卡",
           bank_name: bankName,
-          account_name: String(body.account_name || body.accountName || body.real_name || ""),
+          account_name: String(body.account_name || body.accountName || body.settlementName || body.real_name || ""),
           bank_account: bankAccount,
           account_last4: String(bankAccount || "")
             .replace(/\s+/g, "")
