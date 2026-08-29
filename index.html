@@ -3475,7 +3475,7 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
   <link rel="stylesheet" href="src/login-modal.css?v=20260805loginUi1">
   <link rel="stylesheet" href="src/place-order-modal.css">
   <link rel="stylesheet" href="src/notify-system.css">
-  <script type="module" src="src/role-gates.js?v=20260829applyEntry1"></script>
+  <script type="module" src="src/role-gates.js?v=20260829applyEntry2"></script>
   <script type="module" src="src/boss-auth-session.js?v=20260811authUnify2"></script>
   <script type="module" src="src/forgot-password.js?v=20260806forgotP0"></script>
   <script type="module" src="src/avatar-fallback.js"></script>
@@ -4408,7 +4408,25 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
     (function guardHomeOrderLinks(){
       if(window.__mcjOrderLinkGuardReady)return;
       window.__mcjOrderLinkGuardReady=true;
-      function loggedIn(){return window.MCJRoleGate ? window.MCJRoleGate.isLogged('customer') : false}
+      function loggedIn(){
+        try{
+          if(window.MCJRoleGate){
+            if(window.MCJRoleGate.isLogged('boss')||window.MCJRoleGate.isLogged('customer'))return true;
+          }
+          var tok=sessionStorage.getItem('mcjAuthAccessToken')||localStorage.getItem('mcjAuthAccessToken')||'';
+          return String(tok).split('.').length===3&&tok.length>20;
+        }catch(err){return false;}
+      }
+      function rememberAfterLogin(path, applyFlag){
+        try{
+          sessionStorage.setItem('mcjAfterLoginRedirect',path);
+          localStorage.setItem('mcjAfterLoginRedirect',path);
+          if(applyFlag){
+            sessionStorage.setItem('mcjCompanionApplyAfterLogin','1');
+            localStorage.setItem('mcjCompanionApplyAfterLogin','1');
+          }
+        }catch(err){}
+      }
       function openLogin(){
         if(window.MCJModal&&typeof window.MCJModal.openLogin==='function'){
           window.MCJModal.openLogin('login');
@@ -4431,27 +4449,26 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
       document.addEventListener('click',function(e){
         var link=e.target.closest&&e.target.closest('a[href]');
         if(!link)return;
+        // Prefer attribute; fall back to resolved URL (site-data may absolutize href).
         var href=link.getAttribute('href')||'';
-        if(!/^(orders|mine|companion-apply)\.html(?:[?#].*)?$/.test(href))return;
+        var resolved='';
+        try{resolved=String(link.href||'');}catch(err){}
+        var wantsApply=/companion-apply\.html/i.test(href)||/companion-apply\.html/i.test(resolved)||!!link.closest('[data-companion-apply-guide]');
+        var wantsBossPage=/^(?:\.?\/)?(orders|mine)\.html(?:[?#].*)?$/i.test(href)||/\/(orders|mine)\.html(?:[?#]|$)/i.test(resolved);
+        if(!wantsApply&&!wantsBossPage)return;
         if(loggedIn())return;
         e.preventDefault();
         e.stopPropagation();
         if(e.stopImmediatePropagation)e.stopImmediatePropagation();
-        sessionStorage.setItem('mcjAfterLoginRedirect',href.indexOf('companion-apply')>=0?'/companion-apply.html':href);
+        var returnTo=wantsApply?'/companion-apply.html':(wantsBossPage?(href.match(/(orders|mine)\.html/i)||['mine.html'])[0]:href);
+        if(wantsApply)rememberAfterLogin('/companion-apply.html',true);
+        else rememberAfterLogin(returnTo.indexOf('/')===0?returnTo:'/'+String(returnTo).replace(/^\.\//,''),false);
         openLogin();
+        // Re-assert after openLogin in case modal/boot wiped keys.
+        if(wantsApply)rememberAfterLogin('/companion-apply.html',true);
+        else rememberAfterLogin(returnTo.indexOf('/')===0?returnTo:'/'+String(returnTo).replace(/^\.\//,''),false);
       },true);
-      document.addEventListener('click',function(e){
-        var confirm=e.target.closest&&e.target.closest('[data-login-confirm]');
-        if(!confirm)return;
-        var redirect=sessionStorage.getItem('mcjAfterLoginRedirect');
-        if(!redirect)return;
-        return;
-        sessionStorage.removeItem('mcjAfterLoginRedirect');
-        e.preventDefault();
-        e.stopPropagation();
-        if(e.stopImmediatePropagation)e.stopImmediatePropagation();
-        location.href=redirect;
-      },true);
+      // Login success redirect is owned by role-gates afterAuthSuccess (reads mcjAfterLoginRedirect).
     })();
   </script>
 
