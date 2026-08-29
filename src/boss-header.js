@@ -866,11 +866,13 @@
       return;
     }
     if (isHomePage()) {
-      location.hash = "login";
-      setTimeout(function () {
-        if (window.MCJModal && typeof window.MCJModal.openLogin === "function") window.MCJModal.openLogin("login");
-        else if (typeof window.loginRequiredModal === "function") window.loginRequiredModal();
-      }, 30);
+      // Do NOT set location.hash = "login" — that pushes a history entry and makes
+      // every browser Back re-open the login modal (and wipe in-progress OTP state).
+      if (window.MCJModal && typeof window.MCJModal.openLogin === "function") {
+        window.MCJModal.openLogin("login");
+      } else if (typeof window.loginRequiredModal === "function") {
+        window.loginRequiredModal();
+      }
       return;
     }
     location.href = "/login.html";
