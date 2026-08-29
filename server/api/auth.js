@@ -504,6 +504,45 @@ async function resolveForgotAccount(accountRaw, roleRaw) {
   return null;
 }
 
+/** Auth user by email (GoTrue admin). Used by login OTP send — not profiles. */
+async function findAuthUserByEmail(email) {
+  const target = String(email || "").trim().toLowerCase();
+  if (!target || !/@/.test(target)) return null;
+  try {
+    const body = await supabaseJson(authUrl(`admin/users?email=${encodeURIComponent(target)}`), {
+      headers: headersWithServiceRole(),
+    });
+    if (Array.isArray(body?.users) && body.users.length) {
+      return body.users.find((u) => String(u.email || "").toLowerCase() === target) || null;
+    }
+    if (body?.id && String(body.email || "").toLowerCase() === target) return body;
+  } catch (_) {
+    /* fall through */
+  }
+  try {
+    const body = await supabaseJson(authUrl("admin/users?page=1&per_page=200"), {
+      headers: headersWithServiceRole(),
+    });
+    const users = Array.isArray(body?.users) ? body.users : [];
+    return users.find((u) => String(u.email || "").toLowerCase() === target) || null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function isAuthUserBanned(authUser = {}) {
+  const until = authUser?.banned_until || authUser?.ban_duration;
+  if (!until) return !!authUser?.banned;
+  const ts = Date.parse(String(until));
+  if (!Number.isFinite(ts)) return !!authUser?.banned;
+  return ts > Date.now();
+}
+
+/** Login OTP is keyed by email so send does not require a profiles row. */
+function loginOtpAccountKey(email) {
+  return String(email || "").trim().toLowerCase();
+}
+
 function forgotAccountKey(profile) {
   return String(profile?.id || profile?.email || "").trim().toLowerCase();
 }
@@ -629,7 +668,7 @@ async function handleLoginSendOtp(body, res) {
   if (role === "customer_service" || role === "admin" || role === "super_admin") {
     return json(res, 400, { ok: false, message: "该端请使用邮箱密码登录。" });
   }
-  const email = String(body.email || body.account || "").trim().toLowerCase();
+  const email = loginOtpAccountKey(body.email || body.account);
   if (!email || !/^\S+@\S+\.\S+$/.test(email)) {
     return json(res, 400, { ok: false, message: "请输入有效邮箱。" });
   }
@@ -639,14 +678,13 @@ async function handleLoginSendOtp(body, res) {
     channel: "email",
     expiresInSec: Math.floor(OTP_TTL_MS / 1000),
   };
-  const resolved = await resolveForgotAccount(email, role);
-  if (!resolved?.profile || resolved.profile.status === "disabled") return json(res, 200, generic);
-  if (!resolveEmailVerified(resolved.profile, {})) {
-    return json(res, 403, { ok: false, message: "请先完成邮箱验证。", code: "EMAIL_NOT_VERIFIED" });
-  }
-  const profile = resolved.profile;
+  // Send gate: auth.users only. Do NOT require profiles / role / email_verified here.
+  // Portal role checks run after OTP verify (handleLoginWithOtp).
+  const authUser = await findAuthUserByEmail(email);
+  if (!authUser?.id || isAuthUserBanned(authUser)) return json(res, 200, generic);
+
   try {
-    await assertOtpResendCooldown(forgotAccountKey(profile), role, "login_otp");
+    await assertOtpResendCooldown(email, role, "login_otp");
   } catch (err) {
     return json(res, err.status || 429, {
       ok: false,
@@ -655,7 +693,7 @@ async function handleLoginSendOtp(body, res) {
     });
   }
   const code = randomOtpCode();
-  const key = forgotAccountKey(profile);
+  const key = loginOtpAccountKey(email);
   try {
     await storeForgotOtp(key, role, code, "login_otp");
   } catch (storeErr) {
@@ -665,11 +703,11 @@ async function handleLoginSendOtp(body, res) {
       mail: mailProviderStatus(),
     });
   }
-  void sendSmsOtp({ phone: profile.phone || "", code, purpose: "login" });
+  void sendSmsOtp({ phone: "", code, purpose: "login" });
   let mailOk = false;
   let mailError = "";
   try {
-    await sendEmailOtp({ to: String(profile.email || email).toLowerCase(), code, purpose: "login", roleLabel: roleLabelOf(role) });
+    await sendEmailOtp({ to: email, code, purpose: "login", roleLabel: roleLabelOf(role) });
     mailOk = true;
   } catch (err) {
     mailError = String(err?.message || err || "");
@@ -678,14 +716,14 @@ async function handleLoginSendOtp(body, res) {
   const out = {
     ok: true,
     message: mailOk
-      ? `登录验证码已发送至 ${maskEmailHint(profile.email || email)}。`
+      ? `登录验证码已发送至 ${maskEmailHint(email)}。`
       : allowStagingOtp()
         ? mailStatus.resend
           ? `验证码邮件发送失败：${mailError || "Resend 错误"}。已生成 Staging 调试验证码。`
           : "邮件服务暂不可用（未读到 RESEND_API_KEY），已生成 Staging 调试验证码。"
         : generic.message,
     channel: "email",
-    emailMasked: maskEmailHint(profile.email || email),
+    emailMasked: maskEmailHint(email),
     expiresInSec: Math.floor(OTP_TTL_MS / 1000),
     role,
     mail: mailStatus,
@@ -707,30 +745,45 @@ async function handleLoginWithOtp(body, res) {
   if (!email || !/^\S+@\S+\.\S+$/.test(email)) return json(res, 400, { ok: false, message: "请输入有效邮箱。" });
   if (!/^\d{4,8}$/.test(code)) return json(res, 400, { ok: false, message: "验证码无效或已过期" });
   const loginPortal = normalizeLoginPortal(body.loginPortal || body.portal || body.role || "");
-  // OTP is portal-scoped: find account by email, then enforce portal capability (supports dual-role users).
+  // OTP is stored by email at send time (no profiles required). Role/portal gates run after verify.
+  const otpRoleKey = loginPortal || role || "boss";
+  let stored = await findForgotOtp(loginOtpAccountKey(email), otpRoleKey, "login_otp");
+  // Backward compat: older sends keyed OTP by profile.id
+  if (!stored?.code) {
+    const byEmailEarly = await profilesLookup(
+      `?email=eq.${encodeURIComponent(email)}&select=id,email&limit=5`
+    ).catch(() => []);
+    const legacyId = Array.isArray(byEmailEarly) && byEmailEarly[0]?.id ? byEmailEarly[0].id : "";
+    if (legacyId) stored = await findForgotOtp(forgotAccountKey({ id: legacyId }), otpRoleKey, "login_otp");
+  }
+  if (!stored?.code || String(stored.code) !== code || Number(stored.exp) <= Date.now()) {
+    return json(res, 400, { ok: false, message: "验证码无效或已过期" });
+  }
+  const authUser = await findAuthUserByEmail(email);
+  if (!authUser?.id || isAuthUserBanned(authUser)) {
+    return json(res, 400, { ok: false, message: "验证码无效或已过期" });
+  }
+  const auth = await createSessionForUserId(authUser.id, authUser.email || email);
+  // After session: resolve profiles and keep boss/companion portal permission checks.
   const byEmail = await profilesLookup(
     `?email=eq.${encodeURIComponent(email)}&select=id,email,phone,phone_e164,display_name,status,role,boss_uid&limit=5`
   ).catch(() => []);
   const profile0 =
     (Array.isArray(byEmail) && byEmail[0]) ||
     (await resolveForgotAccount(email, loginPortal || role).catch(() => null))?.profile ||
+    (await profileFor(auth.user?.id || authUser.id).catch(() => null)) ||
     null;
-  if (!profile0) return json(res, 400, { ok: false, message: "验证码无效或已过期" });
+  if (!profile0) {
+    return json(res, 403, { ok: false, message: "账号未绑定平台资料。", code: "PROFILE_MISSING" });
+  }
   if (!canLoginWithStatus(profile0, loginPortal || role || profile0.role)) {
     return json(res, 403, { ok: false, message: "账号未启用或正在审核。" });
   }
   try {
-    assertEmailVerifiedOrThrow(profile0, {});
+    assertEmailVerifiedOrThrow(profile0, auth.user || authUser || {});
   } catch (err) {
     return json(res, err.status || 403, { ok: false, message: err.message || "请先完成邮箱验证。", code: "EMAIL_NOT_VERIFIED" });
   }
-  const key = forgotAccountKey(profile0);
-  const otpRoleKey = loginPortal || role || "boss";
-  const stored = await findForgotOtp(key, otpRoleKey, "login_otp");
-  if (!stored?.code || String(stored.code) !== code || Number(stored.exp) <= Date.now()) {
-    return json(res, 400, { ok: false, message: "验证码无效或已过期" });
-  }
-  const auth = await createSessionForUserId(profile0.id, profile0.email || email);
   let profile = await profileFor(auth.user?.id || profile0.id);
   if (!profile) profile = profile0;
   if (["boss", "customer", "owner", "user"].includes(String(profile.role || "").trim().toLowerCase())) {
