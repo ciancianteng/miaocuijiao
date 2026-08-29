@@ -433,7 +433,7 @@
     var registered=bossValue(boss,['registered_at','registeredAt','created_at','createdAt'],'-');
     var lastLogin=bossValue(boss,['lastLoginAt','last_login_at','lastLogin','last_login'],'-');
     var search=[uid,bossId,internalId,name,boss.phone,boss.email,status,boss.vip,boss.vipLevel].join(' ').toLowerCase();
-    return {raw:boss,id:internalId||uid,internalId:internalId||'',uid:uid,bossUid:bossUid||uid,bossId:bossId,name:name,phone:bossValue(boss,['phone','mobile'],'-'),email:bossValue(boss,['email'],'-'),avatar:boss.avatar||boss.avatar_url||'assets/meow-cuijiao-brand.jpg',vip:bossValue(boss,['vip','vipLevel'],'VIP0'),balance:bossValue(boss,['balance','walletBalance','wallet_balance'],'0猫粮'),paidBalance:bossValue(boss,['paidBalance','paid_balance'],'0'),bonusBalance:bossValue(boss,['bonusBalance','bonus_balance'],'0'),totalRecharge:bossValue(boss,['totalRecharge','total_recharge','rechargeTotal'],'RM0'),totalSpent:bossValue(boss,['total_spent','totalSpent','totalConsume','total_consume'],'0猫粮'),totalCompensation:bossValue(boss,['totalCompensation','total_compensation'],'0'),totalOrders:bossValue(boss,['totalOrders','total_orders','orderCount'],'0'),refundAmount:bossValue(boss,['refundAmount','refund_amount','totalRefund'],'RM0'),registered:registered,lastLogin:lastLogin,status:status,remark:bossValue(boss,['remark','note','adminRemark'],''),search:search};
+    return {raw:boss,id:internalId||uid,internalId:internalId||'',uid:uid,bossUid:bossUid||uid,bossId:bossId,name:name,phone:bossValue(boss,['phone','mobile'],'-'),email:bossValue(boss,['email'],'-'),avatar:boss.avatar||boss.avatar_url||'assets/meow-cuijiao-brand.jpg',vip:bossValue(boss,['vip','vipLevel'],'VIP0'),balance:bossValue(boss,['balance','walletBalance','wallet_balance'],'0猫粮'),paidBalance:bossValue(boss,['paidBalance','paid_balance'],'0'),bonusBalance:bossValue(boss,['bonusBalance','bonus_balance'],'0'),totalPoints:bossValue(boss,['totalPoints','total_points'],0),totalRecharge:bossValue(boss,['totalRecharge','total_recharge','rechargeTotal'],'RM0'),totalSpent:bossValue(boss,['total_spent','totalSpent','totalConsume','total_consume'],'0猫粮'),totalCompensation:bossValue(boss,['totalCompensation','total_compensation'],'0'),totalOrders:bossValue(boss,['totalOrders','total_orders','orderCount'],'0'),refundAmount:bossValue(boss,['refundAmount','refund_amount','totalRefund'],'RM0'),registered:registered,lastLogin:lastLogin,status:status,remark:bossValue(boss,['remark','note','adminRemark'],''),search:search};
   }
   function visibleBossRows(){
     var keyword=((document.querySelector('[data-boss-search]')||{}).value||'').trim().toLowerCase();
@@ -540,7 +540,8 @@
             '<div><span>累计充值 RM</span><strong>'+esc(item.totalRecharge)+'</strong></div>'+
             '<div><span>累计消费</span><strong>'+esc(item.totalSpent)+'</strong></div>'+
             '<div><span>累计补偿</span><strong>'+esc(item.totalCompensation)+'</strong></div>'+
-          '</div><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><button class="mini-btn primary-lite" type="button" data-boss-wallet-grant="'+esc(item.id)+'">发放猫粮</button><button class="mini-btn" type="button" data-boss-wallet-deduct="'+esc(item.id)+'">扣减猫粮</button><button class="mini-btn" type="button" data-boss-wallet-ledger="'+esc(item.id)+'">查看流水</button></div></section></div>'+
+            '<div><span>积分</span><strong data-boss-points-total>'+esc(item.totalPoints!=null?item.totalPoints:0)+'</strong></div>'+
+          '</div><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><button class="mini-btn primary-lite" type="button" data-boss-wallet-grant="'+esc(item.id)+'">发放猫粮</button><button class="mini-btn" type="button" data-boss-wallet-deduct="'+esc(item.id)+'">扣减猫粮</button><button class="mini-btn" type="button" data-boss-wallet-ledger="'+esc(item.id)+'">查看流水</button><button class="mini-btn primary-lite" type="button" data-boss-points-grant="'+esc(item.id)+'">增加积分</button><button class="mini-btn" type="button" data-boss-points-deduct="'+esc(item.id)+'">扣除积分</button><button class="mini-btn" type="button" data-boss-points-ledger="'+esc(item.id)+'">积分记录</button></div></section></div>'+
         '</section>'+
         '<section class="boss-detail-panel'+(activeTab==='orders'?' active':'')+'" data-boss-panel="orders"><h3>订单记录</h3><div data-boss-panel-body="orders"><div class="boss-record-empty">加载中...</div></div></section>'+
         '<section class="boss-detail-panel'+(activeTab==='recharge'?' active':'')+'" data-boss-panel="recharge"><h3>充值记录</h3><div data-boss-panel-body="recharge"><div class="boss-record-empty">加载中...</div></div></section>'+
@@ -573,12 +574,15 @@
     if(!detail||!data)return;
     var boss=data.boss||{};
     var wallet=data.wallet;
-    if(wallet){
+    var points=data.points||{};
+    if(wallet||points){
       var list=detail.querySelector('[data-boss-wallet-list]');
       if(list){
-        list.innerHTML='<div><span>总猫粮</span><strong>'+esc(wallet.totalBalance)+'</strong></div><div><span>充值猫粮</span><strong>'+esc(wallet.paidBalance)+'</strong></div><div><span>赠送猫粮</span><strong>'+esc(wallet.bonusBalance)+'</strong></div><div><span>累计充值 RM</span><strong>RM'+esc(Number(wallet.totalRechargeRm||0).toFixed(2))+'</strong></div><div><span>累计消费</span><strong>'+esc(wallet.totalSpent)+'</strong></div><div><span>累计补偿</span><strong>'+esc(wallet.totalCompensation)+'</strong></div>';
+        list.innerHTML='<div><span>总猫粮</span><strong>'+esc(wallet?wallet.totalBalance:0)+'</strong></div><div><span>充值猫粮</span><strong>'+esc(wallet?wallet.paidBalance:0)+'</strong></div><div><span>赠送猫粮</span><strong>'+esc(wallet?wallet.bonusBalance:0)+'</strong></div><div><span>累计充值 RM</span><strong>RM'+esc(Number((wallet&&wallet.totalRechargeRm)||0).toFixed(2))+'</strong></div><div><span>累计消费</span><strong>'+esc(wallet?wallet.totalSpent:0)+'</strong></div><div><span>累计补偿</span><strong>'+esc(wallet?wallet.totalCompensation:0)+'</strong></div><div><span>积分</span><strong data-boss-points-total>'+esc(points.totalPoints!=null?points.totalPoints:(boss.totalPoints||0))+'</strong></div>';
       }
     }
+    var pointsTotalEl=detail.querySelector('[data-boss-points-total]');
+    if(pointsTotalEl&&points.totalPoints!=null)pointsTotalEl.textContent=String(points.totalPoints);
     detail.querySelectorAll('[data-boss-status-text]').forEach(function(el){el.textContent=boss.status||boss.accountStatus||'-'});
     detail.querySelectorAll('[data-boss-vip-text]').forEach(function(el){el.textContent=boss.vip||boss.vipLevel||'VIP0'});
     detail.querySelectorAll('[data-boss-remark-text]').forEach(function(el){el.textContent=boss.remark||'-'});
@@ -688,6 +692,25 @@
       if(grantType==='bad_review')payload.balanceType='bonus';
     }
     adminFetch('/api/admin/wallet',{method:'POST',headers:{'Content-Type':'application/json','x-mcj-admin-role':getRole()},body:JSON.stringify(payload)}).then(function(res){return res.json().catch(function(){return {ok:false,message:'钱包接口异常'}})}).then(function(result){if(!result.ok)throw new Error(result.message||'操作失败');alert(result.message||'已完成');loadBossDetailData(bossId);loadBossAdminRows();}).catch(function(err){alert(err.message||'操作失败');});
+  }
+  function submitBossPointsAction(action,bossId){
+    if(action==='ledger'){
+      adminFetch('/api/admin/points?action=transactions&userId='+encodeURIComponent(bossId)+'&limit=50',{headers:{'x-mcj-admin-role':getRole()}}).then(function(res){return res.json().catch(function(){return {ok:false}})}).then(function(result){
+        if(!result.ok)throw new Error(result.message||'积分记录读取失败');
+        var lines=(result.items||[]).map(function(t){return (t.createdAt||'')+' | '+t.typeText+' | '+(t.points>0?'+':'')+t.points+' | '+(t.description||'')+(t.orderId?' | order='+t.orderId:'');});
+        alert('当前积分：'+(result.points&&result.points.totalPoints!=null?result.points.totalPoints:0)+'\n\n'+(lines.length?lines.join('\n'):'暂无积分记录'));
+      }).catch(function(err){alert(err.message||'读取失败');});
+      return;
+    }
+    var amount=prompt(action==='grant'?'增加积分数量':'扣除积分数量','');
+    if(amount==null)return;
+    var n=Number(amount);
+    if(!(n>0)){alert('数量必须大于 0');return;}
+    var reason=prompt('请填写原因（必填，将写入 point_transactions）','');
+    if(!reason||!String(reason).trim()){alert('必须填写原因');return;}
+    if(!confirm('确认对老板'+(action==='grant'?'增加':'扣除')+' '+n+' 积分？'))return;
+    var payload={action:action==='grant'?'grant':'deduct',userId:bossId,points:n,description:String(reason).trim()};
+    adminFetch('/api/admin/points',{method:'POST',headers:{'Content-Type':'application/json','x-mcj-admin-role':getRole()},body:JSON.stringify(payload)}).then(function(res){return res.json().catch(function(){return {ok:false,message:'积分接口异常'}})}).then(function(result){if(!result.ok)throw new Error(result.message||'操作失败');alert(result.message||'已完成');loadBossDetailData(bossId);loadBossAdminRows();}).catch(function(err){alert(err.message||'操作失败');});
   }
   function submitBossSecure(action,id,payload){
     adminFetch('/api/admin/bosses',{method:'POST',headers:{'Content-Type':'application/json','x-mcj-admin-role':getRole()},body:JSON.stringify({action:action,id:id,payload:payload||{}})}).then(function(res){return res.json().catch(function(){return {ok:false,message:'老板管理接口返回异常'}})}).then(function(result){if(!result.ok)throw new Error(result.message||'保存失败');alert(result.message||'已提交到真实数据库');loadBossAdminRows();if(document.querySelector('[data-boss-detail="'+String(id).replace(/"/g,'')+'"]'))loadBossDetailData(id);}).catch(function(err){alert('保存失败：'+err.message+'。未写入本地假数据。');});
@@ -2173,6 +2196,9 @@
       var bossGrant=e.target.closest('[data-boss-wallet-grant]');if(bossGrant){submitBossWalletAction('grant',bossGrant.dataset.bossWalletGrant);return;}
       var bossDeduct=e.target.closest('[data-boss-wallet-deduct]');if(bossDeduct){submitBossWalletAction('deduct',bossDeduct.dataset.bossWalletDeduct);return;}
       var bossLedger=e.target.closest('[data-boss-wallet-ledger]');if(bossLedger){submitBossWalletAction('ledger',bossLedger.dataset.bossWalletLedger);return;}
+      var bossPtsGrant=e.target.closest('[data-boss-points-grant]');if(bossPtsGrant){submitBossPointsAction('grant',bossPtsGrant.dataset.bossPointsGrant);return;}
+      var bossPtsDeduct=e.target.closest('[data-boss-points-deduct]');if(bossPtsDeduct){submitBossPointsAction('deduct',bossPtsDeduct.dataset.bossPointsDeduct);return;}
+      var bossPtsLedger=e.target.closest('[data-boss-points-ledger]');if(bossPtsLedger){submitBossPointsAction('ledger',bossPtsLedger.dataset.bossPointsLedger);return;}
       var bossBulk=e.target.closest('[data-boss-bulk]');if(bossBulk){var ids=selectedBossIds();if(!ids.length)return;if(/freeze|blacklist/.test(bossBulk.dataset.bossBulk)&&!confirm('确认执行批量操作？'))return;if(bossBulk.dataset.bossBulk==='export'){exportBossRows(visibleBossRows().filter(function(row){return ids.indexOf(String(row.id))>-1;}));return;}submitBossSecure('bulk-'+bossBulk.dataset.bossBulk,ids,{ids:ids});return;}
       var orderTab=e.target.closest('[data-order-status-tab]');if(orderTab){var wrap=orderTab.closest('.order-status-tabs');if(wrap)wrap.querySelectorAll('[data-order-status-tab]').forEach(function(btn){btn.classList.remove('active')});orderTab.classList.add('active');filterOrders();return;}
       var orderAction=e.target.closest('[data-order-action]');if(orderAction){var orderAct=orderAction.dataset.orderAction,orderId=orderAction.dataset.orderId;if(orderAct==='view'||orderAct==='review'){openOrderDetail(orderId);return;}var payload={};if(orderAct==='assign-player'||orderAct==='change-player'){var companionId=prompt('请输入陪玩用户 UUID（profiles.id / companion user_id）：')||'';if(!String(companionId).trim())return;payload.companion_id=String(companionId).trim();}var risky=/cancel|refund|early-end|confirm-complete|return-service|blacklist|compensate|reject|approve|partial/.test(orderAct);var reason='';if(risky){reason=prompt('该订单操作需要记录原因，请填写原因：')||'';if(!reason.trim())return;payload.reason=reason;}submitOrderAction(orderAct,orderId,payload);return;}

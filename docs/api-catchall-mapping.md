@@ -31,6 +31,7 @@ Public URL paths stay unchanged (e.g. `/api/auth`). The catch-all resolves them 
 | `api/admin/service-records.js` | `/api/admin/service-records` | `server/api/admin/service-records.js` | yes |
 | `api/admin/services.js` | `/api/admin/services` | `server/api/admin/services.js` | yes |
 | `api/admin/wallet.js` | `/api/admin/wallet` | `server/api/admin/wallet.js` | yes |
+| `api/admin/points.js` | `/api/admin/points` | `server/api/admin/points.js` | yes |
 | `api/auth.js` | `/api/auth` | `server/api/auth.js` | yes |
 | `api/boss/marketplace.js` | `/api/boss/marketplace` | `server/api/boss/marketplace.js` | yes |
 | `api/chat.js` | `/api/chat` | `server/api/chat.js` | yes |
@@ -51,6 +52,7 @@ Public URL paths stay unchanged (e.g. `/api/auth`). The catch-all resolves them 
 | `api/popularity.js` | `/api/popularity` | `server/api/popularity.js` | yes |
 | `api/public/companions.js` | `/api/public/companions` | `server/api/public/companions.js` | yes |
 | `api/recharge.js` | `/api/recharge` | `server/api/recharge.js` | yes |
+| `api/points.js` | `/api/points` | `server/api/points.js` | yes |
 | `api/reports.js` | `/api/reports` | `server/api/reports.js` | yes |
 | `api/service-packages.js` | `/api/service-packages` | `server/api/service-packages.js` | yes |
 
@@ -105,5 +107,7 @@ Public URL paths stay unchanged (e.g. `/api/auth`). The catch-all resolves them 
 - `api/popularity.js` → `server/api/popularity.js`
 - `api/public/companions.js` → `server/api/public/companions.js`
 - `api/recharge.js` → `server/api/recharge.js`
+- `api/points.js` → `server/api/points.js`
+- `api/admin/points.js` → `server/api/admin/points.js`
 - `api/reports.js` → `server/api/reports.js`
 - `api/service-packages.js` → `server/api/service-packages.js`

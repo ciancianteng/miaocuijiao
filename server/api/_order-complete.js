@@ -439,6 +439,23 @@ export function createOrderCompleteHelpers({ restUrl, supabaseJson, serviceHeade
       );
     } catch (_) {}
 
+    // Loyalty points: paid_cat_food (fallback total_amount) × 10; idempotent per order_id.
+    let pointsEarn = null;
+    try {
+      const completedOrder = {
+        ...before,
+        ...saved,
+        status: "completed",
+        completed_at: completedAt,
+        paid_cat_food: saved.paid_cat_food ?? before.paid_cat_food,
+        total_amount: saved.total_amount ?? before.total_amount,
+        boss_id: saved.boss_id || before.boss_id,
+      };
+      pointsEarn = await (await import("./_points.js")).earnPointsForCompletedOrder(completedOrder);
+    } catch (_) {
+      pointsEarn = { ok: false, skipped: true, message: "积分发放失败（不影响订单完成）" };
+    }
+
     return {
       ok: true,
       duplicate: false,
@@ -456,6 +473,7 @@ export function createOrderCompleteHelpers({ restUrl, supabaseJson, serviceHeade
       },
       settlement,
       reward,
+      pointsEarn,
       completionMethod: method,
     };
   }
