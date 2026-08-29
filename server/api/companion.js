@@ -4309,9 +4309,16 @@ export default async function handler(req, res) {
         submitted_at: nowIso(),
       });
       if (body.bank_name || bankAccount || body.settlementMethod || body.method || body.tng_account || body.alipay_account) {
+        const methodLabel = String(body.settlementMethod || body.method || body.payment_method || "bank").trim();
+        const bankName = String(body.bank_name || body.bankName || body.settlementBank || "").trim();
+        const isBank =
+          methodLabel === "银行卡" || /^bank$/i.test(methodLabel) || (!methodLabel && !!bankAccount);
+        if (isBank && !bankName) {
+          return json(res, 400, { ok: false, message: "请选择开户银行。" });
+        }
         await upsertByCompanion("companion_payment_accounts", row.id, auth.profile.id, {
-          method: String(body.settlementMethod || body.method || body.payment_method || "bank"),
-          bank_name: String(body.bank_name || body.bankName || ""),
+          method: methodLabel || "银行卡",
+          bank_name: bankName,
           account_name: String(body.account_name || body.accountName || body.real_name || ""),
           bank_account: bankAccount,
           account_last4: String(bankAccount || "")
@@ -4640,6 +4647,44 @@ export default async function handler(req, res) {
         paid_at: nowIso(),
       });
       const savedRow = Array.isArray(saved) ? saved[0] : saved;
+      // Persist settlement / payout account from apply form (bank_name required for 银行卡).
+      const bankAccountRaw = String(body.bank_account || body.bankAccount || body.settlementAccount || "").trim();
+      const bankName = String(body.bank_name || body.bankName || body.settlementBank || "").trim();
+      const accountName = String(
+        body.account_name || body.accountName || body.settlementName || body.real_name || ""
+      ).trim();
+      const settlementMethod = String(body.settlementMethod || body.method || body.payment_method || "").trim();
+      if (bankName || bankAccountRaw || settlementMethod || body.tng_account || body.alipay_account) {
+        const isBankMethod =
+          settlementMethod === "银行卡" || /^bank$/i.test(settlementMethod) || (!settlementMethod && !!bankAccountRaw);
+        if (isBankMethod && !bankName) {
+          return json(res, 400, { ok: false, message: "请选择开户银行。" });
+        }
+        const existingPayment = (
+          await companionDb(
+            "companion_payment_accounts",
+            `?companion_profile_id=eq.${encodeURIComponent(row.id)}&limit=1`
+          ).catch(() => [])
+        )?.[0];
+        const bankAccount =
+          !bankAccountRaw || /^\*+\d{0,4}$/.test(bankAccountRaw)
+            ? String(existingPayment?.bank_account || "")
+            : bankAccountRaw;
+        await upsertByCompanion("companion_payment_accounts", row.id, auth.profile.id, {
+          method: settlementMethod || existingPayment?.method || "银行卡",
+          bank_name: isBankMethod ? bankName : bankName || "",
+          account_name: accountName || existingPayment?.account_name || "",
+          bank_account: bankAccount,
+          account_last4: String(bankAccount || "")
+            .replace(/\s+/g, "")
+            .slice(-4),
+          tng_account: String(body.tng_account || body.tngAccount || existingPayment?.tng_account || ""),
+          alipay_account: String(body.alipay_account || body.alipayAccount || existingPayment?.alipay_account || ""),
+          status: "pending",
+          reject_reason: "",
+          submitted_at: nowIso(),
+        }).catch(() => null);
+      }
       await supabaseJson(restUrl("companion_profiles", `?id=eq.${encodeURIComponent(row.id)}`), {
         method: "PATCH",
         headers: serviceHeaders(),
