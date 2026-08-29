@@ -1753,21 +1753,42 @@
   bootRouteProtection();
 
   // Guest clicks to auth-required boss pages → login.html (covers homepage quick entries / bottom nav).
+  // companion-apply entry: open login first (not portal-early-gate); resume apply after success.
   document.addEventListener(
     "click",
     function (event) {
       var a = event.target && event.target.closest && event.target.closest("a[href]");
       if (!a) return;
       var href = String(a.getAttribute("href") || "");
-      if (!/mine\.html|orders\.html|support\.html|recharge\.html|messages\.html|favorites\.html|profile\.html|gifts\.html/i.test(href)) return;
+      var wantsApply = /companion-apply\.html/i.test(href);
+      if (
+        !wantsApply &&
+        !/mine\.html|orders\.html|support\.html|recharge\.html|messages\.html|favorites\.html|profile\.html|gifts\.html/i.test(
+          href
+        )
+      ) {
+        return;
+      }
       if (hasValidBossAccessToken()) return;
+      if (wantsApply && hasPortalSession("companion")) return;
       event.preventDefault();
       wipeBossGuestArtifacts();
+      var returnTo = wantsApply ? "/companion-apply.html" : href;
       try {
         var abs = new URL(href, location.href);
-        sessionStorage.setItem("mcjAfterLoginRedirect", abs.pathname + abs.search + abs.hash);
+        returnTo = abs.pathname + abs.search + abs.hash;
+        sessionStorage.setItem("mcjAfterLoginRedirect", returnTo);
       } catch (e) {
-        sessionStorage.setItem("mcjAfterLoginRedirect", href);
+        sessionStorage.setItem("mcjAfterLoginRedirect", returnTo);
+      }
+      if (wantsApply) {
+        var onHome = /^\/?$|\/index\.html$/i.test(path());
+        if (onHome && window.MCJModal && typeof window.MCJModal.openLogin === "function") {
+          window.MCJModal.openLogin("login");
+          return;
+        }
+        location.href = "/login.html?return=" + encodeURIComponent(returnTo || "/companion-apply.html");
+        return;
       }
       location.href = "/login.html";
     },

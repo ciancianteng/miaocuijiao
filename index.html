@@ -3475,7 +3475,7 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
   <link rel="stylesheet" href="src/login-modal.css?v=20260805loginUi1">
   <link rel="stylesheet" href="src/place-order-modal.css">
   <link rel="stylesheet" href="src/notify-system.css">
-  <script type="module" src="src/role-gates.js?v=20260811authUnify1"></script>
+  <script type="module" src="src/role-gates.js?v=20260829applyEntry1"></script>
   <script type="module" src="src/boss-auth-session.js?v=20260811authUnify2"></script>
   <script type="module" src="src/forgot-password.js?v=20260806forgotP0"></script>
   <script type="module" src="src/avatar-fallback.js"></script>
@@ -4432,12 +4432,12 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
         var link=e.target.closest&&e.target.closest('a[href]');
         if(!link)return;
         var href=link.getAttribute('href')||'';
-        if(!/^(orders|mine)\.html(?:[?#].*)?$/.test(href))return;
+        if(!/^(orders|mine|companion-apply)\.html(?:[?#].*)?$/.test(href))return;
         if(loggedIn())return;
         e.preventDefault();
         e.stopPropagation();
         if(e.stopImmediatePropagation)e.stopImmediatePropagation();
-        sessionStorage.setItem('mcjAfterLoginRedirect',href);
+        sessionStorage.setItem('mcjAfterLoginRedirect',href.indexOf('companion-apply')>=0?'/companion-apply.html':href);
         openLogin();
       },true);
       document.addEventListener('click',function(e){
