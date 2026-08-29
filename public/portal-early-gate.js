@@ -132,12 +132,12 @@
 
   function wipeBossIdentity() {
     // Never touch dedicated admin JWT. Keep shared mcjAuth* when admin soft session is live.
+    // Do NOT clear mcjAfterLoginRedirect / apply resume flags — login must resume companion-apply.
     var preserveSharedAuth = hasAdminSoftSession();
     [
       "customerAuthToken",
       "customerUser",
       "mcjCurrentUser",
-      "mcjAfterLoginRedirect",
     ]
       .concat(
         preserveSharedAuth
@@ -161,18 +161,36 @@
     } catch (e) {}
   }
 
+  function rememberAfterLoginRedirect(ret, applyFlag) {
+    var path = String(ret || "/") || "/";
+    try {
+      sessionStorage.setItem("mcjAfterLoginRedirect", path);
+      localStorage.setItem("mcjAfterLoginRedirect", path);
+      if (applyFlag) {
+        sessionStorage.setItem("mcjCompanionApplyAfterLogin", "1");
+        localStorage.setItem("mcjCompanionApplyAfterLogin", "1");
+      }
+    } catch (e) {}
+  }
+
   function deny(loginHref) {
     hideShell();
     try {
       if (document.body) document.body.innerHTML = "";
     } catch (e) {}
-    try {
-      sessionStorage.setItem(
-        "mcjAfterLoginRedirect",
-        String(location.pathname || "/") + String(location.search || "") + String(location.hash || "")
-      );
-    } catch (e2) {}
-    location.replace(loginHref);
+    var ret =
+      String(location.pathname || "/") + String(location.search || "") + String(location.hash || "");
+    var isApply = /\/companion-apply\.html$/i.test(String(location.pathname || ""));
+    rememberAfterLoginRedirect(isApply ? "/companion-apply.html" : ret, isApply);
+    var href = String(loginHref || "/login.html");
+    if (isApply && href.indexOf("return=") < 0) {
+      href =
+        href.split("#")[0] +
+        (href.indexOf("?") >= 0 ? "&" : "?") +
+        "return=" +
+        encodeURIComponent("/companion-apply.html");
+    }
+    location.replace(href);
     return false;
   }
 
