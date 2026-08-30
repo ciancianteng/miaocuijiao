@@ -8,6 +8,7 @@ import {
   createOrderGrabHelpers,
   stripInternalOrderMarkers,
 } from "./_order-grabs.js";
+import { awardBossPointsForCompletedOrder } from "./_user-points.js";
 
 export const COMPLETION_AUTO_CONFIRM_MS = 24 * 60 * 60 * 1000;
 export const COMPLETION_PENDING_MARKER = "[[COMPLETION_PENDING]]";
@@ -321,11 +322,20 @@ export function createOrderCompleteHelpers({ restUrl, supabaseJson, serviceHeade
   async function finalizeOrderCompletion(before, { method = "boss_manual", actorId = "", message = "" } = {}) {
     if (!before?.id) throw Object.assign(new Error("订单不存在。"), { status: 404 });
     if (String(before.status) === "completed" || String(before.settlement_status || "") === "settled") {
+      // Idempotent recovery: if a prior complete settled but points write failed, retry once.
+      let bossPoints = null;
+      try {
+        bossPoints = await awardBossPointsForCompletedOrder(before, {
+          method,
+          operatorId: actorId || null,
+        });
+      } catch (_) {}
       return {
         ok: true,
         duplicate: true,
         message: "订单已完成/已结算，无需重复处理。",
         order: before,
+        bossPoints,
       };
     }
     if (String(before.status) !== "in_progress") {
@@ -400,7 +410,14 @@ export function createOrderCompleteHelpers({ restUrl, supabaseJson, serviceHeade
         })
       )?.[0];
       if (fresh?.status === "completed") {
-        return { ok: true, duplicate: true, message: "订单已完成。", order: fresh };
+        let bossPoints = null;
+        try {
+          bossPoints = await awardBossPointsForCompletedOrder(fresh, {
+            method,
+            operatorId: actorId || null,
+          });
+        } catch (_) {}
+        return { ok: true, duplicate: true, message: "订单已完成。", order: fresh, bossPoints };
       }
     }
 
@@ -418,10 +435,25 @@ export function createOrderCompleteHelpers({ restUrl, supabaseJson, serviceHeade
     }
 
     let settlement = null;
+    let settlementOk = false;
     try {
       settlement = await settleCompanionIncome(saved, completedAt, method);
-    } catch (_) {}
+      settlementOk = true;
+    } catch (_) {
+      settlementOk = false;
+    }
 
+    // Boss points (phase 1): only after companion income settle succeeds (or no-op).
+    // Idempotency: order_points:{order_id} — boss / 24h auto / admin force share one key.
+    let bossPoints = null;
+    if (settlementOk) {
+      try {
+        bossPoints = await awardBossPointsForCompletedOrder(saved, {
+          method,
+          operatorId: actorId || null,
+        });
+      } catch (_) {}
+    }
     let reward = null;
     try {
       reward = await (
@@ -455,6 +487,7 @@ export function createOrderCompleteHelpers({ restUrl, supabaseJson, serviceHeade
         completed_at: completedAt,
       },
       settlement,
+      bossPoints,
       reward,
       completionMethod: method,
     };
