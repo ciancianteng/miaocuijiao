@@ -592,6 +592,26 @@ function humanizeCompanionApiError(error) {
   const raw = stringifyApiErrorValue(error?.message || error, "");
   const status = Number(error?.status) || 500;
   const blob = `${raw} ${stringifyApiErrorValue(error?.body, "")}`;
+  // Signup / Auth user creation — map before generic HTTP/supabase redaction.
+  if (
+    /user already registered|already[\s_-]*(registered|exists)|email[\s_-]*(already|exists)|duplicate.*(email|key)|unique.*(email|constraint)|23505/i.test(
+      blob
+    )
+  ) {
+    return { status: 409, message: "该邮箱已注册，请切换到「已有账号登录」。" };
+  }
+  if (
+    /weak[_ ]?password|password.*(too short|at least|should contain|must contain|invalid)|invalid password/i.test(blob)
+  ) {
+    return { status: 400, message: "密码不符合要求，请使用至少 8 位且包含字母和数字的密码。" };
+  }
+  if (
+    /failed to fetch|fetch failed|networkerror|network request failed|econnrefused|econnreset|enotfound|etimedout|timeout|socket hang up/i.test(
+      blob
+    )
+  ) {
+    return { status: 503, message: "网络或服务器异常，请稍后重试。" };
+  }
   if (status === 413 || /413|Payload Too Large|request entity too large|VERCEL_BODY_LIMIT|上传通道限制/i.test(blob)) {
     return { status: 413, message: "视频文件过大或上传通道限制，请稍后重试。" };
   }
@@ -3176,7 +3196,7 @@ export default async function handler(req, res) {
           return json(res, 409, {
             ok: false,
             code: "EMAIL_EXISTS_LOGIN_THEN_APPLY",
-            message: "该邮箱已注册，请直接登录。已登录老板可在当前账号下申请陪玩身份，不会创建新账号。",
+            message: "该邮箱已注册，请切换到「已有账号登录」。已登录老板可在当前账号下申请陪玩身份，不会创建新账号。",
           });
         }
         // Also probe Auth uniqueness soft-fail path via profiles role filter (legacy).
@@ -3199,24 +3219,67 @@ export default async function handler(req, res) {
       } catch (uniqErr) {
         console.warn("[companion/register] uniqueness probe:", uniqErr?.message || uniqErr);
       }
-      const created = await supabaseJson(authUrl("admin/users"), {
-        method:"POST",
-        headers: serviceHeaders(),
-        body: JSON.stringify({
-          email,
-          password: authPassword,
-          email_confirm: true,
-          user_metadata: {
-            display_name: nickname,
-            has_password: wantsPassword,
-            email_verified: true,
-            email_verified_at: nowIso(),
-            roles: ["companion"],
-            ...(wantsPassword ? { password_set_at: nowIso() } : {}),
-          },
-          app_metadata: { has_password: wantsPassword, email_verified: true, roles: ["companion"] },
-        }),
-      });
+      let created;
+      try {
+        created = await supabaseJson(authUrl("admin/users"), {
+          method:"POST",
+          headers: serviceHeaders(),
+          body: JSON.stringify({
+            email,
+            password: authPassword,
+            email_confirm: true,
+            user_metadata: {
+              display_name: nickname,
+              has_password: wantsPassword,
+              email_verified: true,
+              email_verified_at: nowIso(),
+              roles: ["companion"],
+              ...(wantsPassword ? { password_set_at: nowIso() } : {}),
+            },
+            app_metadata: { has_password: wantsPassword, email_verified: true, roles: ["companion"] },
+          }),
+        });
+      } catch (createErr) {
+        const createMsg = `${stringifyApiErrorValue(createErr?.message, "")} ${stringifyApiErrorValue(createErr?.body, "")}`;
+        if (
+          /user already registered|already[\s_-]*(registered|exists)|email[\s_-]*(already|exists)|duplicate.*(email|key)|unique.*(email|constraint)|23505/i.test(
+            createMsg
+          )
+        ) {
+          return json(res, 409, {
+            ok: false,
+            code: "EMAIL_ALREADY_REGISTERED",
+            message: "该邮箱已注册，请切换到「已有账号登录」。",
+          });
+        }
+        if (/weak[_ ]?password|password.*(too short|at least|should contain|must contain|invalid)|invalid password/i.test(createMsg)) {
+          return json(res, 400, {
+            ok: false,
+            code: "INVALID_PASSWORD",
+            message: "密码不符合要求，请使用至少 8 位且包含字母和数字的密码。",
+          });
+        }
+        if (
+          /failed to fetch|fetch failed|networkerror|network request failed|econnrefused|econnreset|enotfound|etimedout|timeout|socket hang up/i.test(
+            createMsg
+          )
+        ) {
+          return json(res, 503, {
+            ok: false,
+            code: "NETWORK_ERROR",
+            message: "网络或服务器异常，请稍后重试。",
+          });
+        }
+        console.error("[companion/register] auth user create failed:", createMsg.slice(0, 300));
+        return json(res, createErr?.status && createErr.status >= 400 ? createErr.status : 500, {
+          ok: false,
+          code: "REGISTER_FAILED",
+          message: "注册失败，请稍后重试。若邮箱已注册，请改用「已有账号登录」。",
+        });
+      }
+      if (!created?.id) {
+        return json(res, 500, { ok: false, message: "注册失败：未返回用户 ID，请稍后重试。" });
+      }
       const companionProfilePayload = {
         id: created.id,
         role: "companion",

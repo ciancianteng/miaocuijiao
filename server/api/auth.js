@@ -1713,10 +1713,34 @@ export default async function handler(req, res) {
         });
       } catch (error) {
         let message = String(error.message || "").trim();
-        if (/user already registered|already.*(registered|exists)|duplicate|unique/i.test(message)) {
-          message = "该邮箱已注册，请直接登录。";
+        const blob = `${message} ${JSON.stringify(error.body || "")}`;
+        if (/user already registered|already[\s_-]*(registered|exists)|email[\s_-]*(already|exists)|duplicate.*(email|key)|unique.*(email|constraint)|23505/i.test(blob)) {
+          return json(res, 409, {
+            ok: false,
+            code: "EMAIL_ALREADY_REGISTERED",
+            message: "该邮箱已注册，请切换到「已有账号登录」。",
+          });
         }
-        return json(res, 400, { ok: false, message: message || "注册失败，请检查邮箱是否已存在。" });
+        if (/weak[_ ]?password|password.*(too short|at least|should contain|must contain|invalid)|invalid password/i.test(blob)) {
+          return json(res, 400, {
+            ok: false,
+            code: "INVALID_PASSWORD",
+            message: "密码不符合要求，请使用至少 8 位且包含字母和数字的密码。",
+          });
+        }
+        if (/failed to fetch|fetch failed|networkerror|econnrefused|enotfound|timeout|socket hang up/i.test(blob)) {
+          return json(res, 503, {
+            ok: false,
+            code: "NETWORK_ERROR",
+            message: "网络或服务器异常，请稍后重试。",
+          });
+        }
+        // Strip " (HTTP 422; /auth/...)" wrappers before falling through.
+        message = message.replace(/\s*\(HTTP\s*\d{3}[^)]*\)\s*$/i, "").trim();
+        return json(res, 400, {
+          ok: false,
+          message: message || "注册失败，请稍后重试。若邮箱已注册，请改用「已有账号登录」。",
+        });
       }
       const userId = created?.id || created?.user?.id;
       if (!userId) return json(res, 500, { ok: false, message: "Auth 账号创建失败，未返回用户 ID。" });

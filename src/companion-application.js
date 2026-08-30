@@ -684,6 +684,30 @@
     authUi.messageTone = tone === "ok" ? "ok" : "error";
   }
 
+  /** Map register/signUp failures to explicit Chinese copy (never generic「操作失败」). */
+  function humanizeSignupError(msg) {
+    var text = String(msg || "").trim();
+    if (!text) return "注册失败，请稍后重试。";
+    if (/failed to fetch|fetch failed|networkerror|network request failed|暂时无法连接|网络或服务器/i.test(text)) {
+      return "网络或服务器异常，请稍后重试。";
+    }
+    if (
+      /user already registered|already[\s_-]*(registered|exists)|email[\s_-]*(already|exists)|duplicate|邮箱.*已注册|EMAIL_ALREADY_REGISTERED|已有账号登录/i.test(
+        text
+      )
+    ) {
+      return "该邮箱已注册，请切换到「已有账号登录」。";
+    }
+    if (/weak[_ ]?password|password.*(too short|at least|should contain|must contain|invalid)|INVALID_PASSWORD|密码不符合|密码至少/i.test(text)) {
+      return "密码不符合要求，请使用至少 8 位且包含字母和数字的密码。";
+    }
+    text = text.replace(/\s*\(HTTP\s*\d{3}[^)]*\)\s*$/i, "").trim();
+    if (/操作失败，请稍后重试/i.test(text)) {
+      return "注册失败，请稍后重试。若邮箱已注册，请改用「已有账号登录」。";
+    }
+    return text;
+  }
+
   function authCooldownLeft(until) {
     return Math.max(0, Math.ceil((Number(until || 0) - Date.now()) / 1000));
   }
@@ -3429,7 +3453,7 @@
           await afterCompanionAuthSuccess(regBody.session, rEmail, rNickname);
         } catch (err) {
           authUi.busy = false;
-          setAuthMessage(err.message || "注册失败");
+          setAuthMessage(humanizeSignupError((err && err.message) || "注册失败"));
           render(Number(root.dataset.step || 0));
         }
         return;

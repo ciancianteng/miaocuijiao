@@ -237,8 +237,11 @@
     if (/尚未设置密码|NO_PASSWORD/i.test(msg) || /请使用验证码登录后前往账号安全/i.test(msg)) {
       return "该账号尚未设置密码，请使用验证码登录后前往账号安全设置密码。";
     }
-    if (/user already registered|already.*(registered|exists)|duplicate|邮箱.*已/i.test(msg)) {
-      return "该邮箱已注册，请直接登录。";
+    if (/user already registered|already[\s_-]*(registered|exists)|email[\s_-]*(already|exists)|duplicate|邮箱.*已注册|EMAIL_ALREADY_REGISTERED/i.test(msg)) {
+      return "该邮箱已注册，请切换到「已有账号登录」。";
+    }
+    if (/weak[_ ]?password|password.*(too short|at least|should contain|must contain|invalid)|INVALID_PASSWORD|密码不符合/i.test(msg)) {
+      return "密码不符合要求，请使用至少 8 位且包含字母和数字的密码。";
     }
     return msg;
   }
