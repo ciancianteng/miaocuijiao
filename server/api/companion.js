@@ -2401,9 +2401,12 @@ async function bootstrapData(profile, companion) {
       realName: identity?.real_name || "",
       // Self-view: full plaintext for the authenticated companion only.
       identityNo: identity?.identity_no || "",
-      bankName: payment?.bank_name || "",
-      accountName: payment?.account_name || "",
-      bankAccount: payment?.bank_account || "",
+      bankName: payment?.payout_bank_name || payment?.bank_name || "",
+      accountName: payment?.payout_account_holder || payment?.account_name || "",
+      bankAccount: payment?.payout_account_number || payment?.bank_account || "",
+      payoutBankName: payment?.payout_bank_name || payment?.bank_name || "",
+      payoutAccountNumber: payment?.payout_account_number || payment?.bank_account || "",
+      payoutAccountHolder: payment?.payout_account_holder || payment?.account_name || "",
       phone: companion?.contact_phone || "",
       tngAccount: payment?.tng_account || "",
       identityNoMasked: identity?.identity_no
@@ -2411,11 +2414,11 @@ async function bootstrapData(profile, companion) {
         : "",
       bankAccountMasked: payment?.account_last4
         ? `****${String(payment.account_last4)}`
-        : payment?.bank_account
-          ? `****${String(payment.bank_account).replace(/\s+/g, "").slice(-4)}`
+        : payment?.payout_account_number || payment?.bank_account
+          ? `****${String(payment.payout_account_number || payment.bank_account).replace(/\s+/g, "").slice(-4)}`
           : "",
       hasIdentityNo: !!String(identity?.identity_no || "").trim(),
-      hasBankAccount: !!String(payment?.bank_account || payment?.account_last4 || "").trim(),
+      hasBankAccount: !!String(payment?.payout_account_number || payment?.bank_account || payment?.account_last4 || "").trim(),
       identitySubmitted: !!(
         String(identity?.real_name || "").trim() &&
         String(identity?.identity_no || "").trim() &&
@@ -2424,8 +2427,9 @@ async function bootstrapData(profile, companion) {
         !/draft|uploaded|none|not_submitted/i.test(String(identity?.status || ""))
       ),
       paymentSubmitted: !!(
-        String(payment?.bank_name || "").trim() &&
-        String(payment?.bank_account || payment?.account_last4 || "").trim() &&
+        String(payment?.payout_bank_name || payment?.bank_name || "").trim() &&
+        String(payment?.payout_account_number || payment?.bank_account || payment?.account_last4 || "").trim() &&
+        String(payment?.payout_account_holder || payment?.account_name || "").trim() &&
         !/draft|uploaded|none|not_submitted/i.test(String(payment?.status || ""))
       ),
       identityRejectReason: identity?.reject_reason || "",
