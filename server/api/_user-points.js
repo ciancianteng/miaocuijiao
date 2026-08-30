@@ -299,7 +299,7 @@ export async function awardBossPointsForCompletedOrder(order, { method = "boss_m
   });
 }
 
-/** Read helpers (no UI yet; useful for tests / admin). */
+/** Read helpers for Boss portal / tests. Always scope by authenticated user_id server-side. */
 export async function getUserPointsAccount(userId) {
   if (!userId || !hasPointsDb()) return null;
   try {
@@ -312,6 +312,74 @@ export async function getUserPointsAccount(userId) {
     if (isMissingRelation(error)) return null;
     throw error;
   }
+}
+
+/** Empty account shape when Boss has never earned points (tables may be empty). */
+export function emptyPointsAccountView(userId = "") {
+  return {
+    userId: userId || "",
+    balance: 0,
+    lifetimeEarned: 0,
+    lifetimeSpent: 0,
+    updatedAt: "",
+  };
+}
+
+export function viewPointsAccount(row, userId = "") {
+  if (!row) return emptyPointsAccountView(userId);
+  return {
+    userId: row.user_id || userId || "",
+    balance: asInt(row.balance, 0),
+    lifetimeEarned: asInt(row.lifetime_earned, 0),
+    lifetimeSpent: asInt(row.lifetime_spent, 0),
+    updatedAt: row.updated_at || "",
+  };
+}
+
+export async function listUserPointsLedger(userId, { limit = 50 } = {}) {
+  if (!userId || !hasPointsDb()) return [];
+  const lim = Math.min(200, Math.max(1, asInt(limit, 50)));
+  try {
+    const rows = await supabaseJson(
+      restUrl(
+        "user_points_ledger",
+        `?user_id=eq.${encodeURIComponent(userId)}&order=created_at.desc&limit=${lim}`
+      ),
+      { headers: serviceHeaders() }
+    );
+    return Array.isArray(rows) ? rows : [];
+  } catch (error) {
+    if (isMissingRelation(error)) return [];
+    throw error;
+  }
+}
+
+function sourceLabel(source) {
+  const s = String(source || "");
+  if (s === "order_complete_boss") return "订单完成（老板确认）";
+  if (s === "order_complete_auto") return "订单完成（系统自动）";
+  if (s === "order_complete_admin") return "订单完成（后台）";
+  if (/order_complete/i.test(s)) return "订单完成奖励";
+  return s || "积分变动";
+}
+
+export function viewPointsLedgerRow(row) {
+  const delta = asInt(row?.delta, 0);
+  return {
+    id: row?.id || "",
+    createdAt: row?.created_at || "",
+    delta,
+    deltaText: delta > 0 ? `+${delta}` : String(delta),
+    balanceAfter: asInt(row?.balance_after, 0),
+    reason: row?.reason || sourceLabel(row?.source),
+    source: row?.source || "",
+    sourceLabel: sourceLabel(row?.source),
+    relatedOrderId: row?.related_order_id || "",
+    idempotencyKey: row?.idempotency_key || "",
+    // Ledger rows are append-only credits already committed.
+    status: "posted",
+    statusText: "已入账",
+  };
 }
 
 export async function getPointsLedgerByIdempotencyKey(key) {
