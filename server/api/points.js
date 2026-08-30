@@ -7,7 +7,7 @@ import path from "node:path";
 import { hasBossRole } from "./_account-roles.js";
 import {
   emptyPointsAccountView,
-  getUserPointsAccount,
+  ensureUserPointsAccount,
   hasPointsDb,
   listUserPointsLedger,
   viewPointsAccount,
@@ -168,8 +168,9 @@ export default async function handler(req, res) {
       let accountRow = null;
       let ledgerRows = [];
       try {
+        // Any Boss (old or new): ensure 0-balance account if missing, then list own ledger only.
         [accountRow, ledgerRows] = await Promise.all([
-          getUserPointsAccount(userId),
+          ensureUserPointsAccount(userId),
           listUserPointsLedger(userId, { limit }),
         ]);
       } catch (error) {

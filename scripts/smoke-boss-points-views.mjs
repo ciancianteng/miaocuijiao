@@ -41,4 +41,13 @@ assert(ledger.statusText === "已入账", "status text");
 assert(ledger.relatedOrderId === "ord-1", "order id");
 assert(ledger.sourceLabel.includes("订单完成"), "source label");
 
+// Universal (no hardcoded emails / UUIDs in read helpers).
+const src = await import("node:fs").then((fs) =>
+  fs.readFileSync(new URL("../server/api/points.js", import.meta.url), "utf8")
+);
+assert(!/ciancianteng@gmail\.com/i.test(src), "points API must not hardcode test email");
+assert(!/boss@meow\.test/i.test(src), "points API must not hardcode test boss");
+assert(/profile\.id/.test(src), "points API must use token profile.id");
+assert(!/req\.query\.user_id|body\.user_id/.test(src), "must not trust client user_id");
+
 console.log("OK smoke-boss-points-views");

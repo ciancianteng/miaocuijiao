@@ -314,6 +314,39 @@ export async function getUserPointsAccount(userId) {
   }
 }
 
+/**
+ * Ensure a points account row exists for any Boss (existing or newly registered).
+ * Safe no-op if already present. Never awards points — only creates balance=0.
+ */
+export async function ensureUserPointsAccount(userId) {
+  if (!userId || !hasPointsDb()) return null;
+  try {
+    const existing = await getUserPointsAccount(userId);
+    if (existing) return existing;
+    const created = await supabaseJson(restUrl("user_points_accounts"), {
+      method: "POST",
+      headers: serviceHeaders({ Prefer: "resolution=merge-duplicates,return=representation" }),
+      body: JSON.stringify({
+        user_id: userId,
+        balance: 0,
+        lifetime_earned: 0,
+        lifetime_spent: 0,
+      }),
+    });
+    const row = Array.isArray(created) ? created[0] : created;
+    if (row?.user_id) return row;
+    return getUserPointsAccount(userId);
+  } catch (error) {
+    if (isMissingRelation(error)) return null;
+    // Concurrent first-visit create: re-read.
+    try {
+      return await getUserPointsAccount(userId);
+    } catch {
+      throw error;
+    }
+  }
+}
+
 /** Empty account shape when Boss has never earned points (tables may be empty). */
 export function emptyPointsAccountView(userId = "") {
   return {
