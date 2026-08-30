@@ -13,8 +13,87 @@ import {
   restUrl,
 } from "./_wallet.js";
 
-/** Fixed phase-1 rule: +100 on order completion. */
-export const ORDER_COMPLETION_POINTS = 100;
+/** Fallback when points_settings is missing / unreadable. Not a hard award value. */
+export const DEFAULT_ORDER_COMPLETION_POINTS = 100;
+/** @deprecated Use DEFAULT_ORDER_COMPLETION_POINTS / getOrderCompletionPoints(). Kept for smoke. */
+export const ORDER_COMPLETION_POINTS = DEFAULT_ORDER_COMPLETION_POINTS;
+
+export function parseOrderCompletionPoints(raw) {
+  if (raw === null || raw === undefined || raw === "") {
+    return { ok: false, message: "请填写 Boss 完成订单奖励积分。" };
+  }
+  if (typeof raw === "boolean") {
+    return { ok: false, message: "积分必须为大于等于 0 的整数。" };
+  }
+  if (typeof raw === "number") {
+    if (!Number.isFinite(raw) || !Number.isInteger(raw) || raw < 0) {
+      return { ok: false, message: "积分必须为大于等于 0 的整数。" };
+    }
+    return { ok: true, value: raw };
+  }
+  const text = String(raw).trim();
+  if (!/^\d+$/.test(text)) {
+    return { ok: false, message: "积分必须为大于等于 0 的整数。" };
+  }
+  const value = Number(text);
+  if (!Number.isInteger(value) || value < 0) {
+    return { ok: false, message: "积分必须为大于等于 0 的整数。" };
+  }
+  return { ok: true, value };
+}
+
+export function viewPointsSettings(row) {
+  const points =
+    row && row.order_completion_points != null
+      ? Number(row.order_completion_points)
+      : DEFAULT_ORDER_COMPLETION_POINTS;
+  const safe =
+    Number.isFinite(points) && points >= 0 && Number.isInteger(points)
+      ? points
+      : DEFAULT_ORDER_COMPLETION_POINTS;
+  return {
+    id: 1,
+    orderCompletionPoints: safe,
+    order_completion_points: safe,
+    updatedAt: row?.updated_at || row?.updatedAt || null,
+    createdAt: row?.created_at || row?.createdAt || null,
+  };
+}
+
+export async function getPointsSettingsRow() {
+  if (!hasPointsDb()) return null;
+  try {
+    const rows = await supabaseJson(
+      restUrl("points_settings", "?id=eq.1&limit=1"),
+      { headers: serviceHeaders() }
+    );
+    return Array.isArray(rows) ? rows[0] || null : null;
+  } catch (error) {
+    if (isMissingRelation(error)) return null;
+    throw error;
+  }
+}
+
+/**
+ * Read Boss order-completion award from points_settings.
+ * Never throws for award path callers — returns fallback 100 on any issue.
+ */
+export async function getOrderCompletionPoints() {
+  try {
+    if (!hasPointsDb()) return DEFAULT_ORDER_COMPLETION_POINTS;
+    const row = await getPointsSettingsRow();
+    if (!row || row.order_completion_points == null || row.order_completion_points === "") {
+      return DEFAULT_ORDER_COMPLETION_POINTS;
+    }
+    const n = Number(row.order_completion_points);
+    if (!Number.isFinite(n) || !Number.isInteger(n) || n < 0) {
+      return DEFAULT_ORDER_COMPLETION_POINTS;
+    }
+    return n;
+  } catch {
+    return DEFAULT_ORDER_COMPLETION_POINTS;
+  }
+}
 
 export function orderPointsIdempotencyKey(orderId) {
   return `order_points:${String(orderId || "").trim()}`;
@@ -271,8 +350,9 @@ async function awardPointsRestFallback({
 }
 
 /**
- * Phase-1 helper: +100 Boss points when an order reaches completed.
- * Idempotency key: order_points:{order_id}
+ * Award Boss loyalty points when an order reaches completed.
+ * Points amount comes from points_settings.order_completion_points (fallback 100).
+ * Idempotency key: order_points:{order_id} — amount changes do not re-award old orders.
  */
 export async function awardBossPointsForCompletedOrder(order, { method = "boss_manual", operatorId = null } = {}) {
   const orderId = order?.id;
@@ -288,9 +368,86 @@ export async function awardBossPointsForCompletedOrder(order, { method = "boss_m
         ? "order_complete_admin"
         : "order_complete_boss";
 
+  let points = DEFAULT_ORDER_COMPLETION_POINTS;
+  try {
+    points = await getOrderCompletionPoints();
+  } catch {
+    points = DEFAULT_ORDER_COMPLETION_POINTS;
+  }
+  if (!Number.isFinite(points) || points < 0) {
+    points = DEFAULT_ORDER_COMPLETION_POINTS;
+  }
+
+  // Configured 0: do not credit, but still reserve idempotency so later config bumps
+  // cannot re-award the same completed order.
+  if (points === 0) {
+    try {
+      const key = orderPointsIdempotencyKey(orderId);
+      const existing = await supabaseJson(
+        restUrl(
+          "user_points_ledger",
+          `?idempotency_key=eq.${encodeURIComponent(key)}&limit=1`
+        ),
+        { headers: serviceHeaders() }
+      );
+      if (Array.isArray(existing) && existing[0]) {
+        return {
+          ok: true,
+          duplicate: true,
+          skipped: true,
+          points: 0,
+          ledger_id: existing[0].id,
+          idempotency_key: key,
+        };
+      }
+      await ensureUserPointsAccount(bossId);
+      const account = await getUserPointsAccount(bossId);
+      const balanceAfter = asInt(account?.balance, 0);
+      const inserted = await supabaseJson(restUrl("user_points_ledger"), {
+        method: "POST",
+        headers: serviceHeaders({ Prefer: "return=representation" }),
+        body: JSON.stringify({
+          user_id: bossId,
+          delta: 0,
+          balance_after: balanceAfter,
+          reason: "订单完成奖励（配置为 0）",
+          source,
+          related_order_id: orderId,
+          idempotency_key: key,
+          operator_id: operatorId || null,
+        }),
+      });
+      const row = Array.isArray(inserted) ? inserted[0] : inserted;
+      return {
+        ok: true,
+        duplicate: false,
+        skipped: true,
+        points: 0,
+        ledger_id: row?.id || null,
+        balance_after: balanceAfter,
+        idempotency_key: key,
+      };
+    } catch (error) {
+      if (isMissingRelation(error)) {
+        return { ok: true, skipped: true, points: 0, error: "points_table_missing" };
+      }
+      // Unique race → treat as already marked
+      if (/duplicate|unique|23505/i.test(String(error?.message || ""))) {
+        return {
+          ok: true,
+          duplicate: true,
+          skipped: true,
+          points: 0,
+          idempotency_key: orderPointsIdempotencyKey(orderId),
+        };
+      }
+      return { ok: false, skipped: true, points: 0, error: error?.message || "zero_mark_failed" };
+    }
+  }
+
   return awardPoints({
     user_id: bossId,
-    points: ORDER_COMPLETION_POINTS,
+    points,
     reason: "订单完成奖励",
     source,
     related_order_id: orderId,

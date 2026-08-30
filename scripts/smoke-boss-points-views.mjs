@@ -6,16 +6,27 @@ import {
   emptyPointsAccountView,
   orderPointsIdempotencyKey,
   ORDER_COMPLETION_POINTS,
+  DEFAULT_ORDER_COMPLETION_POINTS,
+  parseOrderCompletionPoints,
   viewPointsAccount,
   viewPointsLedgerRow,
+  viewPointsSettings,
 } from "../server/api/_user-points.js";
 
 function assert(cond, msg) {
   if (!cond) throw new Error(msg || "assert failed");
 }
 
-assert(ORDER_COMPLETION_POINTS === 100, "phase1 award is +100");
+assert(ORDER_COMPLETION_POINTS === 100, "fallback default is +100");
+assert(DEFAULT_ORDER_COMPLETION_POINTS === 100, "DEFAULT_ORDER_COMPLETION_POINTS is 100");
 assert(orderPointsIdempotencyKey("abc") === "order_points:abc", "idempotency key shape");
+assert(parseOrderCompletionPoints(150).ok && parseOrderCompletionPoints(150).value === 150, "parse 150");
+assert(parseOrderCompletionPoints(0).ok && parseOrderCompletionPoints(0).value === 0, "parse 0");
+assert(!parseOrderCompletionPoints(-1).ok, "reject negative");
+assert(!parseOrderCompletionPoints(1.5).ok, "reject float");
+assert(!parseOrderCompletionPoints("12.0").ok, "reject decimal string");
+assert(viewPointsSettings(null).orderCompletionPoints === 100, "settings fallback");
+assert(viewPointsSettings({ order_completion_points: 80 }).orderCompletionPoints === 80, "settings row");
 
 const empty = emptyPointsAccountView("u1");
 assert(empty.balance === 0 && empty.lifetimeEarned === 0, "empty account is zero");

@@ -6,8 +6,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { hasBossRole } from "./_account-roles.js";
 import {
+  DEFAULT_ORDER_COMPLETION_POINTS,
   emptyPointsAccountView,
   ensureUserPointsAccount,
+  getOrderCompletionPoints,
   hasPointsDb,
   listUserPointsLedger,
   viewPointsAccount,
@@ -155,10 +157,15 @@ export default async function handler(req, res) {
       const limitRaw = Number(req.query?.limit || 50);
       const limit = Number.isFinite(limitRaw) ? limitRaw : 50;
 
+      const orderCompletionPoints = await getOrderCompletionPoints().catch(
+        () => DEFAULT_ORDER_COMPLETION_POINTS
+      );
+
       if (!hasPointsDb()) {
         return json(res, 200, {
           ok: true,
           tablesReady: false,
+          orderCompletionPoints,
           account: emptyPointsAccountView(userId),
           ledger: [],
           message: "积分表未初始化，当前显示为 0。",
@@ -178,6 +185,7 @@ export default async function handler(req, res) {
           return json(res, 200, {
             ok: true,
             tablesReady: false,
+            orderCompletionPoints,
             account: emptyPointsAccountView(userId),
             ledger: [],
             message: "积分表未初始化，当前显示为 0。",
@@ -189,6 +197,7 @@ export default async function handler(req, res) {
       return json(res, 200, {
         ok: true,
         tablesReady: true,
+        orderCompletionPoints,
         account: viewPointsAccount(accountRow, userId),
         ledger: (ledgerRows || []).map(viewPointsLedgerRow),
         message: "",

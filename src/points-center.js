@@ -14,6 +14,7 @@
     account: { balance: 0, lifetimeEarned: 0, lifetimeSpent: 0 },
     ledger: [],
     tablesReady: true,
+    orderCompletionPoints: 100,
   };
 
   function looksLikeJwt(raw) {
@@ -86,10 +87,14 @@
         : "";
 
     var rows = state.ledger || [];
+    var awardPts = Number(state.orderCompletionPoints);
+    if (!Number.isFinite(awardPts) || awardPts < 0) awardPts = 100;
     var ledgerHtml;
     if (!rows.length) {
       ledgerHtml =
-        '<div class="empty">暂无积分记录<br>订单完成后将自动获得 +100 积分。</div>';
+        '<div class="empty">暂无积分记录<br>订单完成后将自动获得 +' +
+        esc(awardPts) +
+        " 积分。</div>";
     } else {
       ledgerHtml =
         '<div class="tx-head"><span>时间</span><span>变动</span><span>来源 / 原因</span><span>关联订单</span><span>状态</span></div><div class="ledger">' +
@@ -178,6 +183,8 @@
       state.ledger = Array.isArray(body.ledger) ? body.ledger : [];
       state.tablesReady = body.tablesReady !== false;
       state.message = body.message || "";
+      var pts = Number(body.orderCompletionPoints);
+      state.orderCompletionPoints = Number.isFinite(pts) && pts >= 0 ? pts : 100;
     } catch (err) {
       state.error = (err && err.message) || "积分读取失败";
       state.account = { balance: 0, lifetimeEarned: 0, lifetimeSpent: 0 };
