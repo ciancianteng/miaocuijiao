@@ -940,14 +940,44 @@
     if (profileRole(role) !== "companion") {
       syncPortalSessions(result.session, options.remember !== false);
     }
-    var pending = sessionStorage.getItem("mcjAfterLoginRedirect") || localStorage.getItem("mcjAfterLoginRedirect");
+    var pending = sessionStorage.getItem("mcjAfterLoginRedirect") || localStorage.getItem("mcjAfterLoginRedirect") || "";
+    var applyAfterLogin = false;
+    try {
+      applyAfterLogin =
+        sessionStorage.getItem("mcjCompanionApplyAfterLogin") === "1" ||
+        localStorage.getItem("mcjCompanionApplyAfterLogin") === "1";
+    } catch (eApplyFlag) {}
     try {
       sessionStorage.removeItem("mcjAfterLoginRedirect");
       localStorage.removeItem("mcjAfterLoginRedirect");
+      sessionStorage.removeItem("mcjCompanionApplyAfterLogin");
+      localStorage.removeItem("mcjCompanionApplyAfterLogin");
     } catch (e2) {}
+    try {
+      if (pending) {
+        if (/^https?:/i.test(pending)) {
+          var pendingUrl = new URL(pending, location.href);
+          if (pendingUrl.origin === location.origin) {
+            pending = pendingUrl.pathname + pendingUrl.search + pendingUrl.hash;
+          }
+        } else if (pending.charAt(0) !== "/" && pending.charAt(0) !== "#") {
+          pending = "/" + String(pending).replace(/^\.\//, "");
+        }
+      }
+    } catch (eNorm) {}
+    if (applyAfterLogin || /companion-apply\.html/i.test(pending)) {
+      pending = "/companion-apply.html";
+      applyAfterLogin = true;
+    }
     var roleHome = result.redirect || routeFor(role);
-    // Boss may resume a pending page; other roles always land on their portal.
-    var redirect = profileRole(role) === "boss" && pending ? pending : roleHome;
+    // Boss may resume a pending page; companion-apply entry must always resume after homepage login.
+    var roleKey = profileRole(role);
+    var redirect = roleHome;
+    if (applyAfterLogin && (roleKey === "boss" || roleKey === "customer" || roleKey === "companion")) {
+      redirect = "/companion-apply.html";
+    } else if (roleKey === "boss" && pending) {
+      redirect = pending;
+    }
     var here = String(location.pathname || "").replace(/\/+$/, "") || "/";
     var dest = String(redirect || "/").replace(/\/+$/, "") || "/";
     // Never reopen login/register after success (clear #login / #register).
@@ -962,6 +992,10 @@
         window.__mcjAfterAuthBusy = false;
         hideAuthBootOverlay();
         setLoginMessage(document.body, "登录态保存失败，请重试。");
+        return;
+      }
+      if (applyAfterLogin) {
+        location.href = "/companion-apply.html";
         return;
       }
       var destPath = String(dest || "/").split("?")[0].split("#")[0].replace(/\/+$/, "") || "/";
@@ -1752,22 +1786,77 @@
   bindLoginButtons();
   bootRouteProtection();
 
+  function rememberCompanionApplyAfterLogin() {
+    try {
+      sessionStorage.setItem("mcjAfterLoginRedirect", "/companion-apply.html");
+      localStorage.setItem("mcjAfterLoginRedirect", "/companion-apply.html");
+      sessionStorage.setItem("mcjCompanionApplyAfterLogin", "1");
+      localStorage.setItem("mcjCompanionApplyAfterLogin", "1");
+    } catch (e) {}
+  }
+
   // Guest clicks to auth-required boss pages → login.html (covers homepage quick entries / bottom nav).
+  // 「申请陪玩」: on homepage open login modal (not /login.html → #login); success → companion-apply.
   document.addEventListener(
     "click",
     function (event) {
       var a = event.target && event.target.closest && event.target.closest("a[href]");
       if (!a) return;
       var href = String(a.getAttribute("href") || "");
-      if (!/mine\.html|orders\.html|support\.html|recharge\.html|messages\.html|favorites\.html|profile\.html|gifts\.html/i.test(href)) return;
+      var resolved = "";
+      try {
+        resolved = String(a.href || "");
+      } catch (eRes) {}
+      var wantsApply =
+        /companion-apply\.html/i.test(href) ||
+        /companion-apply\.html/i.test(resolved) ||
+        !!(a.closest && a.closest("[data-companion-apply-guide]"));
+      if (
+        !wantsApply &&
+        !/mine\.html|orders\.html|support\.html|recharge\.html|messages\.html|favorites\.html|profile\.html|gifts\.html/i.test(
+          href
+        ) &&
+        !/\/(mine|orders|support|recharge|messages|favorites|profile|gifts)\.html/i.test(resolved)
+      ) {
+        return;
+      }
+      // Logged-in boss or companion may enter apply / protected pages freely.
       if (hasValidBossAccessToken()) return;
+      if (wantsApply && hasPortalSession("companion")) return;
       event.preventDefault();
+      if (wantsApply && typeof event.stopImmediatePropagation === "function") {
+        event.stopImmediatePropagation();
+      }
       wipeBossGuestArtifacts();
+      var returnTo = wantsApply ? "/companion-apply.html" : href;
       try {
         var abs = new URL(href, location.href);
-        sessionStorage.setItem("mcjAfterLoginRedirect", abs.pathname + abs.search + abs.hash);
+        returnTo = abs.pathname + abs.search + abs.hash;
+        if (wantsApply) returnTo = "/companion-apply.html";
+        sessionStorage.setItem("mcjAfterLoginRedirect", returnTo);
+        localStorage.setItem("mcjAfterLoginRedirect", returnTo);
       } catch (e) {
-        sessionStorage.setItem("mcjAfterLoginRedirect", href);
+        try {
+          sessionStorage.setItem("mcjAfterLoginRedirect", returnTo);
+          localStorage.setItem("mcjAfterLoginRedirect", returnTo);
+        } catch (e2) {}
+      }
+      if (wantsApply) {
+        rememberCompanionApplyAfterLogin();
+        var onHome = /^\/?$|\/index\.html$/i.test(path());
+        if (onHome && window.MCJModal && typeof window.MCJModal.openLogin === "function") {
+          window.MCJModal.openLogin("login");
+          rememberCompanionApplyAfterLogin();
+          return;
+        }
+        // Non-home entry: still avoid raw #login bounce when possible.
+        if (window.MCJModal && typeof window.MCJModal.openLogin === "function") {
+          window.MCJModal.openLogin("login");
+          rememberCompanionApplyAfterLogin();
+          return;
+        }
+        location.href = "/login.html?return=" + encodeURIComponent("/companion-apply.html");
+        return;
       }
       location.href = "/login.html";
     },
