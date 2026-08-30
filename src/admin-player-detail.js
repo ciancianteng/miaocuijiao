@@ -275,20 +275,18 @@
     var paymentHtml = payment.empty
       ? emptyText("尚未填写结款账户")
       : rows([
-          ["收款方式", payment.method || "—"],
-          ["银行名称", payment.bankName || "—"],
-          ["账户姓名", payment.accountName || "—"],
+          ["结款资料", "银行账户"],
+          ["银行名称", payment.payoutBankName || payment.bankName || "—"],
           {
-            0: "银行账号",
+            0: "户口号码",
             1:
-              esc(payment.bankAccountMasked || "—") +
+              esc(payment.payoutAccountNumberMasked || payment.bankAccountMasked || "—") +
               (payment.hasBankAccount
                 ? ' <button class="mini-btn" type="button" data-player-reveal="bank">查看完整资料</button><span data-player-bank-full></span>'
                 : ""),
             html: true,
           },
-          ["TNG 账号", payment.tngAccount || "—"],
-          ["支付宝账号", payment.alipayAccount || "—"],
+          ["户口持有人姓名", payment.payoutAccountHolder || payment.accountName || "—"],
           ["提交时间", payment.submittedAt || "—"],
           ["审核状态", payment.statusLabel || payment.status],
           ["驳回原因", payment.rejectReason || "无"],

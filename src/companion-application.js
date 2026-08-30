@@ -613,8 +613,14 @@
           missing.push(remoteDepositPay.emptyMessage || "平台暂未配置押金收款方式，请联系客服");
         }
       }
-      [["settlementMethod", "结款方式"], ["settlementName", "结款户名"], ["settlementAccount", "结款账号"]].forEach(function (item) {
-        if (!hasText(identity, item[0])) missing.push(item[1]);
+      var payoutChecks = [
+        ["payout_bank_name", "请输入银行名称"],
+        ["payout_account_number", "请输入户口号码"],
+        ["payout_account_holder", "请输入户口持有人姓名"],
+      ];
+      payoutChecks.forEach(function (item) {
+        var v = String(identity[item[0]] || "").trim();
+        if (!v) missing.push(item[1]);
       });
       return missing;
     }
@@ -1779,10 +1785,10 @@
     var settlement =
       mode === "id_card" || mode === "deposit"
         ? '<div class="apply-subcard"><h3>结款资料（必填）</h3><form class="apply-grid">' +
-          selectField("settlementMethod", "结款方式", id.settlementMethod, ["银行卡", "DuitNow", "TNG Wallet", "支付宝"]) +
-          field("settlementName", "结款户名", "text", id.settlementName) +
-          field("settlementAccount", "结款账号", "text", id.settlementAccount) +
-          '</form><div class="deposit-status"><strong>审核通过后即可成为陪玩</strong><p>认证方式为二选一，审核对应方式通过后即可接单。</p></div></div>'
+          field("payout_bank_name", "银行名称 *", "text", id.payout_bank_name || id.settlementBank || id.bankName || "", 'placeholder="请输入银行名称" autocomplete="organization"') +
+          field("payout_account_number", "户口号码 *", "text", id.payout_account_number || id.settlementAccount || "", 'placeholder="请输入银行户口号码" inputmode="numeric" autocomplete="off"') +
+          field("payout_account_holder", "户口持有人姓名 *", "text", id.payout_account_holder || id.settlementName || "", 'placeholder="请输入与银行账户一致的姓名" autocomplete="name"') +
+          '</form><p class="apply-note full">请确保银行资料正确，审核通过后将按照此资料进行结款。</p><div class="deposit-status"><strong>审核通过后即可成为陪玩</strong><p>认证方式为二选一，审核对应方式通过后即可接单。</p></div></div>'
         : "";
     return (
       '<section class="apply-panel"><h2>选择认证方式</h2><p class="apply-note full">请先选择一种认证方式（身份证认证 或 押金认证，二选一）。结款资料为必填项。</p>' +
@@ -2127,11 +2133,15 @@
         id_front: storagePayloadForSubmit(identity.idFront),
         id_back: storagePayloadForSubmit(identity.idBack),
         id_handheld: storagePayloadForSubmit(identity.idHandheld),
-        bank_name: identity.settlementBank || identity.bankName || "",
-        account_name: identity.settlementName || "",
-        bank_account: identity.settlementAccount || "",
+        bank_name: identity.payout_bank_name || identity.settlementBank || identity.bankName || "",
+        account_name: identity.payout_account_holder || identity.settlementName || "",
+        bank_account: identity.payout_account_number || identity.settlementAccount || "",
+        payout_bank_name: identity.payout_bank_name || "",
+        payout_account_number: identity.payout_account_number || "",
+        payout_account_holder: identity.payout_account_holder || "",
         tng_account: identity.tngAccount || "",
-        method: identity.settlementMethod || "bank",
+        method: "bank",
+        payment_method: "bank",
         phone: draft.data.phone || "",
       });
     });
@@ -2172,14 +2182,14 @@
           channelId: identity.depositChannelId || identity.depositMethod || "",
           proof_url: proof || "",
           remark: "陪玩申请一并提交",
-          settlementMethod: identity.settlementMethod || "",
-          settlementName: identity.settlementName || "",
-          settlementAccount: identity.settlementAccount || "",
-          bank_name: identity.settlementBank || identity.bankName || "",
-          account_name: identity.settlementName || "",
-          bank_account: identity.settlementAccount || "",
+          payout_bank_name: identity.payout_bank_name || "",
+          payout_account_number: identity.payout_account_number || "",
+          payout_account_holder: identity.payout_account_holder || "",
+          bank_name: identity.payout_bank_name || identity.settlementBank || identity.bankName || "",
+          account_name: identity.payout_account_holder || identity.settlementName || "",
+          bank_account: identity.payout_account_number || identity.settlementAccount || "",
           tng_account: identity.tngAccount || "",
-          method: identity.settlementMethod || "bank",
+          method: "bank",
         });
       });
     }
@@ -3809,6 +3819,19 @@
         path: deposit.proofPath || "",
         status: "ok",
       };
+    }
+    var payment = boot.payment || boot.paymentAccount || {};
+    if (!draft.identity.payout_bank_name && (payment.payoutBankName || payment.payout_bank_name || payment.bankName || payment.bank_name)) {
+      draft.identity.payout_bank_name =
+        payment.payoutBankName || payment.payout_bank_name || payment.bankName || payment.bank_name || "";
+    }
+    if (!draft.identity.payout_account_number && (payment.payoutAccountNumber || payment.payout_account_number || payment.bankAccount || payment.bank_account)) {
+      draft.identity.payout_account_number =
+        payment.payoutAccountNumber || payment.payout_account_number || payment.bankAccount || payment.bank_account || "";
+    }
+    if (!draft.identity.payout_account_holder && (payment.payoutAccountHolder || payment.payout_account_holder || payment.accountName || payment.account_name)) {
+      draft.identity.payout_account_holder =
+        payment.payoutAccountHolder || payment.payout_account_holder || payment.accountName || payment.account_name || "";
     }
     writeDraftRecord(draft);
   }

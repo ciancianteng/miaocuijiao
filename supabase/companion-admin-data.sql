@@ -77,6 +77,9 @@ alter table public.companion_payment_accounts add column if not exists tng_accou
 alter table public.companion_payment_accounts add column if not exists alipay_account text not null default '';
 alter table public.companion_payment_accounts add column if not exists reject_reason text not null default '';
 alter table public.companion_payment_accounts add column if not exists submitted_at timestamptz not null default now();
+alter table public.companion_payment_accounts add column if not exists payout_bank_name text not null default '';
+alter table public.companion_payment_accounts add column if not exists payout_account_number text not null default '';
+alter table public.companion_payment_accounts add column if not exists payout_account_holder text not null default '';
 
 -- 4) Media: avatar / gallery / voice
 create table if not exists public.companion_media (

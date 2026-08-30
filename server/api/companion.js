@@ -4308,13 +4308,56 @@ export default async function handler(req, res) {
         reject_reason: "",
         submitted_at: nowIso(),
       });
-      if (body.bank_name || bankAccount || body.settlementMethod || body.method || body.tng_account || body.alipay_account) {
+      if (
+        body.payout_bank_name ||
+        body.payout_account_number ||
+        body.payout_account_holder ||
+        body.bank_name ||
+        bankAccount ||
+        body.settlementMethod ||
+        body.method ||
+        body.tng_account ||
+        body.alipay_account
+      ) {
+        const payoutBankName = String(
+          body.payout_bank_name || body.payoutBankName || body.bank_name || body.bankName || ""
+        ).trim();
+        const payoutAccountNumber = String(
+          body.payout_account_number || body.payoutAccountNumber || bankAccount || ""
+        ).trim();
+        const payoutAccountHolder = String(
+          body.payout_account_holder ||
+            body.payoutAccountHolder ||
+            body.account_name ||
+            body.accountName ||
+            body.settlementName ||
+            body.real_name ||
+            ""
+        ).trim();
+        const resolvedAccount =
+          !payoutAccountNumber || /^\*+\d{0,4}$/.test(payoutAccountNumber)
+            ? String(existingPayment?.bank_account || existingPayment?.payout_account_number || "")
+            : payoutAccountNumber;
+        if (!payoutBankName || !resolvedAccount || !payoutAccountHolder) {
+          return json(res, 400, {
+            ok: false,
+            message: !payoutBankName
+              ? "请输入银行名称"
+              : !resolvedAccount
+                ? "请输入户口号码"
+                : "请输入户口持有人姓名",
+          });
+        }
         await upsertByCompanion("companion_payment_accounts", row.id, auth.profile.id, {
-          method: String(body.settlementMethod || body.method || body.payment_method || "bank"),
-          bank_name: String(body.bank_name || body.bankName || ""),
-          account_name: String(body.account_name || body.accountName || body.real_name || ""),
-          bank_account: bankAccount,
-          account_last4: String(bankAccount || "")
+          // Keep legacy method for compatibility; apply form is bank-only now.
+          method: String(body.settlementMethod || body.method || body.payment_method || existingPayment?.method || "bank"),
+          bank_name: payoutBankName,
+          account_name: payoutAccountHolder,
+          bank_account: resolvedAccount,
+          payout_bank_name: payoutBankName,
+          payout_account_number: resolvedAccount,
+          payout_account_holder: payoutAccountHolder,
+          account_last4: String(resolvedAccount || "")
             .replace(/\s+/g, "")
             .slice(-4),
           tng_account: String(body.tng_account || body.tngAccount || existingPayment?.tng_account || ""),
@@ -4640,6 +4683,60 @@ export default async function handler(req, res) {
         paid_at: nowIso(),
       });
       const savedRow = Array.isArray(saved) ? saved[0] : saved;
+      // Persist payout bank details from apply form (keep legacy method column).
+      const payoutBankName = String(
+        body.payout_bank_name || body.payoutBankName || body.bank_name || body.bankName || ""
+      ).trim();
+      const payoutAccountNumber = String(
+        body.payout_account_number || body.payoutAccountNumber || body.bank_account || body.bankAccount || body.settlementAccount || ""
+      ).trim();
+      const payoutAccountHolder = String(
+        body.payout_account_holder ||
+          body.payoutAccountHolder ||
+          body.account_name ||
+          body.accountName ||
+          body.settlementName ||
+          ""
+      ).trim();
+      if (payoutBankName || payoutAccountNumber || payoutAccountHolder) {
+        if (!payoutBankName || !payoutAccountNumber || !payoutAccountHolder) {
+          return json(res, 400, {
+            ok: false,
+            message: !payoutBankName
+              ? "请输入银行名称"
+              : !payoutAccountNumber
+                ? "请输入户口号码"
+                : "请输入户口持有人姓名",
+          });
+        }
+        const existingPayment = (
+          await companionDb(
+            "companion_payment_accounts",
+            `?companion_profile_id=eq.${encodeURIComponent(row.id)}&limit=1`
+          ).catch(() => [])
+        )?.[0];
+        const resolvedAccount =
+          !payoutAccountNumber || /^\*+\d{0,4}$/.test(payoutAccountNumber)
+            ? String(existingPayment?.bank_account || existingPayment?.payout_account_number || "")
+            : payoutAccountNumber;
+        await upsertByCompanion("companion_payment_accounts", row.id, auth.profile.id, {
+          method: String(body.method || existingPayment?.method || "bank"),
+          bank_name: payoutBankName,
+          account_name: payoutAccountHolder,
+          bank_account: resolvedAccount,
+          payout_bank_name: payoutBankName,
+          payout_account_number: resolvedAccount,
+          payout_account_holder: payoutAccountHolder,
+          account_last4: String(resolvedAccount || "")
+            .replace(/\s+/g, "")
+            .slice(-4),
+          tng_account: String(body.tng_account || body.tngAccount || existingPayment?.tng_account || ""),
+          alipay_account: String(body.alipay_account || body.alipayAccount || existingPayment?.alipay_account || ""),
+          status: "pending",
+          reject_reason: "",
+          submitted_at: nowIso(),
+        }).catch(() => null);
+      }
       await supabaseJson(restUrl("companion_profiles", `?id=eq.${encodeURIComponent(row.id)}`), {
         method: "PATCH",
         headers: serviceHeaders(),
