@@ -17,7 +17,9 @@
     orderCompletionPoints: 10,
     orderPointsRule: {
       enabled: true,
+      pointsPerCatFood: 10,
       pointsPerRm: 10,
+      minOrderCatFood: 0,
       minOrderAmount: 0,
       maxRewardPoints: 0,
       roundingMode: "floor",
@@ -88,18 +90,26 @@
 
     var bal = Number(state.account.balance) || 0;
     var earned = Number(state.account.lifetimeEarned) || 0;
+    var debt = Number(state.account.outstandingDebt) || 0;
     var warn =
       state.message
         ? '<div class="message show warn">' + esc(state.message) + "</div>"
         : "";
+    if (debt > 0) {
+      warn +=
+        '<div class="message show warn">积分欠款 ' +
+        esc(debt) +
+        "：后续获得的积分会先抵扣欠款后再入可用余额。</div>";
+    }
 
     var rows = state.ledger || [];
     var rule = state.orderPointsRule || {};
-    var perRm = Number(rule.pointsPerRm);
-    if (!Number.isFinite(perRm) || perRm < 0) perRm = 10;
-    var ruleText = rule.enabled === false
-      ? "当前未启用订单积分奖励。"
-      : "完成订单可获得积分，当前规则：每消费 RM1 获得 " + perRm + " 积分。";
+    var perCat = Number(rule.pointsPerCatFood != null ? rule.pointsPerCatFood : rule.pointsPerRm);
+    if (!Number.isFinite(perCat) || perCat < 0) perCat = 10;
+    var ruleText =
+      rule.enabled === false
+        ? "当前未启用订单积分奖励。"
+        : "完成订单可获得积分，当前规则：每消费 1 猫粮获得 " + perCat + " 积分。";
     var ledgerHtml;
     if (!rows.length) {
       ledgerHtml =
@@ -112,6 +122,12 @@
             var delta = Number(row.delta) || 0;
             var cls = delta >= 0 ? "plus" : "minus";
             var deltaText = row.deltaText || (delta > 0 ? "+" + delta : String(delta));
+            var debtNote =
+              Number(row.debtDelta) > 0
+                ? " · 欠款+" + row.debtDelta
+                : Number(row.debtDelta) < 0
+                  ? " · 抵欠" + Math.abs(row.debtDelta)
+                  : "";
             var reason = row.reason || row.sourceLabel || "-";
             var oid = row.relatedOrderId || "";
             var orderCell = oid
@@ -132,6 +148,7 @@
               cls +
               '">' +
               esc(deltaText) +
+              esc(debtNote) +
               "</strong>" +
               "<span>" +
               esc(reason) +
@@ -158,6 +175,8 @@
       warn +
       '<section class="stats"><div class="stat"><span>当前积分余额</span><strong>' +
       esc(bal) +
+      '</strong></div><div class="stat"><span>积分欠款</span><strong>' +
+      esc(debt) +
       '</strong></div><div class="stat"><span>累计获得积分</span><strong>' +
       esc(earned) +
       "</strong></div></section>" +
@@ -190,22 +209,28 @@
       if (!res.ok || body.ok === false) {
         throw new Error(body.message || "积分读取失败");
       }
-      state.account = body.account || { balance: 0, lifetimeEarned: 0, lifetimeSpent: 0 };
+      state.account = body.account || { balance: 0, outstandingDebt: 0, lifetimeEarned: 0, lifetimeSpent: 0 };
       state.ledger = Array.isArray(body.ledger) ? body.ledger : [];
       state.tablesReady = body.tablesReady !== false;
       state.message = body.message || "";
       state.orderPointsRule = body.orderPointsRule || {
         enabled: true,
+        pointsPerCatFood: Number(body.orderCompletionPoints) || 10,
         pointsPerRm: Number(body.orderCompletionPoints) || 10,
+        minOrderCatFood: 0,
         minOrderAmount: 0,
         maxRewardPoints: 0,
         roundingMode: "floor",
       };
-      var pts = Number(state.orderPointsRule.pointsPerRm);
+      var pts = Number(
+        state.orderPointsRule.pointsPerCatFood != null
+          ? state.orderPointsRule.pointsPerCatFood
+          : state.orderPointsRule.pointsPerRm
+      );
       state.orderCompletionPoints = Number.isFinite(pts) && pts >= 0 ? pts : 10;
     } catch (err) {
       state.error = (err && err.message) || "积分读取失败";
-      state.account = { balance: 0, lifetimeEarned: 0, lifetimeSpent: 0 };
+      state.account = { balance: 0, outstandingDebt: 0, lifetimeEarned: 0, lifetimeSpent: 0 };
       state.ledger = [];
     } finally {
       state.loading = false;

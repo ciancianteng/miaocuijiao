@@ -1,5 +1,5 @@
 /**
- * Admin · Boss order points settings (amount × rate).
+ * Admin · Boss order points settings (猫粮 spend × rate).
  * Independent from companion popularity.
  */
 (function () {
@@ -13,8 +13,8 @@
     message: "",
     tablesReady: true,
     enabled: true,
-    pointsPerRm: 10,
-    minOrderAmount: 0,
+    pointsPerCatFood: 10,
+    minOrderCatFood: 0,
     maxRewardPoints: 0,
     roundingMode: "floor",
     examples: [],
@@ -58,13 +58,17 @@
   function applySettings(s) {
     s = s || {};
     state.enabled = s.enabled !== false;
-    state.pointsPerRm = Number(s.pointsPerRm != null ? s.pointsPerRm : 10);
-    state.minOrderAmount = Number(s.minOrderAmount != null ? s.minOrderAmount : 0);
+    state.pointsPerCatFood = Number(
+      s.pointsPerCatFood != null ? s.pointsPerCatFood : s.pointsPerRm != null ? s.pointsPerRm : 10
+    );
+    state.minOrderCatFood = Number(
+      s.minOrderCatFood != null ? s.minOrderCatFood : s.minOrderAmount != null ? s.minOrderAmount : 0
+    );
     state.maxRewardPoints = Number(s.maxRewardPoints != null ? s.maxRewardPoints : 0);
     state.roundingMode = s.roundingMode || "floor";
     state.examples = Array.isArray(s.examples) ? s.examples : [];
-    if (!Number.isFinite(state.pointsPerRm) || state.pointsPerRm < 0) state.pointsPerRm = 10;
-    if (!Number.isFinite(state.minOrderAmount) || state.minOrderAmount < 0) state.minOrderAmount = 0;
+    if (!Number.isFinite(state.pointsPerCatFood) || state.pointsPerCatFood < 0) state.pointsPerCatFood = 10;
+    if (!Number.isFinite(state.minOrderCatFood) || state.minOrderCatFood < 0) state.minOrderCatFood = 0;
     if (!Number.isFinite(state.maxRewardPoints) || state.maxRewardPoints < 0) state.maxRewardPoints = 0;
   }
 
@@ -90,10 +94,10 @@
           return "<li>" + esc(ex.label || "") + "</li>";
         })
         .join("") ||
-      "<li>RM10 × " +
-        esc(state.pointsPerRm) +
+      "<li>10猫粮 × " +
+        esc(state.pointsPerCatFood) +
         " = " +
-        esc(Math.floor(10 * state.pointsPerRm)) +
+        esc(Math.floor(10 * state.pointsPerCatFood)) +
         "积分</li>";
 
     box.innerHTML =
@@ -101,7 +105,7 @@
       '<form class="payment-editor" data-points-settings-form>' +
       '<section class="panel" style="margin:0;padding:0;border:0;background:transparent">' +
       '<h3 style="margin:0 0 8px;font-size:16px">Boss 订单积分</h3>' +
-      '<p class="admin-sync-note" style="margin:0 0 14px">按订单实付金额 × 倍率计算。金额字段：paid_cat_food（有值）否则 total_amount。仅影响之后新完成的订单；已完成订单不补发。关闭后仍会写入幂等标记，避免再开启时旧单补发。与陪玩人气无关。</p>' +
+      '<p class="admin-sync-note" style="margin:0 0 14px">按订单<strong>猫粮</strong>实付 × 倍率计算（paid_cat_food，否则 total_amount）。订单不存银行 MYR；充值活动/赠送可能使「实付 RM ≠ 到账猫粮」。退款会完整回收积分义务（余额不足记入积分欠款，后续奖励先抵欠款）。仅影响之后新完成的订单。与陪玩人气无关。</p>' +
       '<div class="payment-field-grid" style="max-width:520px">' +
       "<label><span>启用 Boss 订单积分</span>" +
       '<select name="enabled">' +
@@ -112,13 +116,13 @@
       (!state.enabled ? " selected" : "") +
       ">关</option>" +
       "</select></label>" +
-      "<label><span>每消费 RM1 获得多少积分</span>" +
-      '<input name="pointsPerRm" type="number" inputmode="decimal" min="0" step="0.0001" required value="' +
-      esc(state.pointsPerRm) +
+      "<label><span>每消费 1 猫粮获得多少积分</span>" +
+      '<input name="pointsPerCatFood" type="number" inputmode="decimal" min="0" step="0.0001" required value="' +
+      esc(state.pointsPerCatFood) +
       '"></label>' +
-      "<label><span>每单最低消费金额</span>" +
-      '<input name="minOrderAmount" type="number" inputmode="decimal" min="0" step="0.01" required value="' +
-      esc(state.minOrderAmount) +
+      "<label><span>每单最低消费猫粮</span>" +
+      '<input name="minOrderCatFood" type="number" inputmode="decimal" min="0" step="0.01" required value="' +
+      esc(state.minOrderCatFood) +
       '"></label>' +
       "<label><span>每单最高奖励积分（0=不限制）</span>" +
       '<input name="maxRewardPoints" type="number" inputmode="numeric" min="0" step="1" required value="' +
@@ -142,7 +146,7 @@
       "</ul>" +
       "<p style=\"margin:8px 0 0\">公式：rewardPoints = " +
       esc(state.roundingMode) +
-      "(订单实付金额 × pointsPerRM)</p></div>" +
+      "(订单猫粮实付 × points_per_cat_food)</p></div>" +
       '<div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">' +
       '<button class="mini-btn primary-lite" type="submit" data-points-save' +
       (state.saving ? " disabled" : "") +
@@ -179,19 +183,19 @@
   function save(form) {
     if (state.saving) return;
     var enabled = form.elements.enabled.value === "true";
-    var pointsPerRm = Number(form.elements.pointsPerRm.value);
-    var minOrderAmount = Number(form.elements.minOrderAmount.value);
+    var pointsPerCatFood = Number(form.elements.pointsPerCatFood.value);
+    var minOrderCatFood = Number(form.elements.minOrderCatFood.value);
     var maxRewardPoints = Number(form.elements.maxRewardPoints.value);
     var roundingMode = form.elements.roundingMode.value || "floor";
 
-    if (!Number.isFinite(pointsPerRm) || pointsPerRm < 0) {
-      state.error = "每消费 RM1 获得积分必须 ≥ 0。";
+    if (!Number.isFinite(pointsPerCatFood) || pointsPerCatFood < 0) {
+      state.error = "每消费 1 猫粮获得积分必须 ≥ 0。";
       state.message = "";
       paint();
       return;
     }
-    if (!Number.isFinite(minOrderAmount) || minOrderAmount < 0) {
-      state.error = "最低消费金额必须 ≥ 0。";
+    if (!Number.isFinite(minOrderCatFood) || minOrderCatFood < 0) {
+      state.error = "最低消费猫粮必须 ≥ 0。";
       state.message = "";
       paint();
       return;
@@ -212,8 +216,8 @@
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         enabled: enabled,
-        pointsPerRm: pointsPerRm,
-        minOrderAmount: minOrderAmount,
+        pointsPerCatFood: pointsPerCatFood,
+        minOrderCatFood: minOrderCatFood,
         maxRewardPoints: maxRewardPoints,
         roundingMode: roundingMode,
       }),

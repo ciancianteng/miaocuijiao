@@ -158,7 +158,10 @@ export default async function handler(req, res) {
       const limit = Number.isFinite(limitRaw) ? limitRaw : 50;
 
       const settings = await getBossPointsSettings().catch(() => defaultBossPointsSettings());
-      const orderCompletionPoints = Number(settings.pointsPerRm) >= 0 ? Number(settings.pointsPerRm) : 10;
+      const orderCompletionPoints =
+        Number(settings.pointsPerCatFood != null ? settings.pointsPerCatFood : settings.pointsPerRm) >= 0
+          ? Number(settings.pointsPerCatFood != null ? settings.pointsPerCatFood : settings.pointsPerRm)
+          : 10;
 
       if (!hasPointsDb()) {
         return json(res, 200, {

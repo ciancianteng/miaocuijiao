@@ -1,5 +1,5 @@
 /**
- * Admin Boss loyalty points settings (amount × rate).
+ * Admin Boss loyalty points settings (猫粮 spend × rate + refund debt).
  * Independent from companion popularity rules.
  */
 import { requireAdmin } from "../_admin-auth.js";
@@ -48,8 +48,8 @@ async function ensureDefaultRow() {
       id: 1,
       order_completion_points: DEFAULT_ORDER_COMPLETION_POINTS,
       enabled: defaults.enabled,
-      points_per_rm: defaults.pointsPerRm,
-      min_order_amount: defaults.minOrderAmount,
+      points_per_cat_food: defaults.pointsPerCatFood,
+      min_order_cat_food: defaults.minOrderCatFood,
       max_reward_points: defaults.maxRewardPoints,
       rounding_mode: defaults.roundingMode,
     }),
@@ -105,14 +105,20 @@ export default async function handler(req, res) {
         return json(res, 400, { ok: false, message: "启用开关不合法。" });
       }
 
-      const perRm = parseNonNegNumber(body.pointsPerRm ?? body.points_per_rm ?? body.pointsPerRM, {
-        fieldLabel: "每消费 RM1 获得积分",
-      });
-      if (!perRm.ok) return json(res, 400, { ok: false, message: perRm.message });
+      const perCat = parseNonNegNumber(
+        body.pointsPerCatFood ??
+          body.points_per_cat_food ??
+          body.pointsPerRm ??
+          body.points_per_rm ??
+          body.pointsPerRM,
+        { fieldLabel: "每消费 1 猫粮获得积分" }
+      );
+      if (!perCat.ok) return json(res, 400, { ok: false, message: perCat.message });
 
-      const minAmt = parseNonNegNumber(body.minOrderAmount ?? body.min_order_amount, {
-        fieldLabel: "每单最低消费金额",
-      });
+      const minAmt = parseNonNegNumber(
+        body.minOrderCatFood ?? body.min_order_cat_food ?? body.minOrderAmount ?? body.min_order_amount,
+        { fieldLabel: "每单最低消费猫粮" }
+      );
       if (!minAmt.ok) return json(res, 400, { ok: false, message: minAmt.message });
 
       const maxPts = parseNonNegNumber(body.maxRewardPoints ?? body.max_reward_points, {
@@ -134,8 +140,8 @@ export default async function handler(req, res) {
         await ensureDefaultRow();
         const patch = {
           enabled: enabled == null ? true : enabled,
-          points_per_rm: perRm.value,
-          min_order_amount: minAmt.value,
+          points_per_cat_food: perCat.value,
+          min_order_cat_food: minAmt.value,
           max_reward_points: maxPts.value,
           rounding_mode: roundingMode,
           updated_at: new Date().toISOString(),
@@ -153,11 +159,10 @@ export default async function handler(req, res) {
               "积分设置表未初始化，请先执行 supabase/migrations/20260831_points_settings.sql 与 20260831_points_settings_rate.sql",
           });
         }
-        // Column missing → rate migration not applied yet
-        if (/points_per_rm|schema cache|Could not find/i.test(String(error?.message || ""))) {
+        if (/points_per_cat_food|schema cache|Could not find/i.test(String(error?.message || ""))) {
           return json(res, 503, {
             ok: false,
-            message: "请先在 Staging 执行 supabase/migrations/20260831_points_settings_rate.sql",
+            message: "请先在 Staging 执行 supabase/migrations/20260831_points_settings_rate.sql（猫粮计分 + 积分欠款版）",
           });
         }
         throw error;
