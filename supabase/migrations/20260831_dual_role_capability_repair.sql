@@ -34,6 +34,8 @@ WHERE lower(trim(p.role)) = 'companion'
 ORDER BY p.updated_at DESC NULLS LAST;
 
 -- Counter-example: companion + boss_uid but NO Boss business evidence (must NOT auto-repair)
+-- Real Production example shape (lawrachel0853@gmail.com): role=companion, boss_uid=MCJ00013,
+-- auth roles=["companion"], orders_as_boss=0 → keep hasBoss=false; do not promote.
 SELECT
   p.id,
   p.email,
