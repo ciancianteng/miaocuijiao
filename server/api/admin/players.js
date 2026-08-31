@@ -985,18 +985,18 @@ async function reviewApplication(req, companion, payload) {
   });
   if (status === "approved" && companion.user_id) {
     try {
-      // Multi-role: keep existing primary role (e.g. boss) and add companion capability on same user_id.
-      const { addRoleToUser, loadCompanionRowForUser } = await import("../_account-roles.js");
+      // Multi-role: never demote Boss primary; attach companion capability on same user_id.
+      const { addRoleToUser, preferredPrimaryRole, hasBossRole } = await import("../_account-roles.js");
       const profileRows = await companionDb("profiles", `?id=eq.${encodeURIComponent(companion.user_id)}&limit=1`).catch(() => []);
       const existingProfile = Array.isArray(profileRows) ? profileRows[0] : null;
       const primary =
-        existingProfile?.role && String(existingProfile.role).toLowerCase() !== "companion"
-          ? existingProfile.role
-          : "companion";
+        preferredPrimaryRole(existingProfile || { id: companion.user_id }, { companion }) ||
+        (hasBossRole(existingProfile || {}) ? "boss" : existingProfile?.role || "companion");
       await addRoleToUser(companion.user_id, "companion", {
         primaryRole: primary,
         existingProfile: existingProfile || { id: companion.user_id, role: primary },
       });
+      // Status only — do not overwrite profiles.role here.
       await companionDb("profiles", `?id=eq.${encodeURIComponent(companion.user_id)}`, {
         method: "PATCH",
         body: JSON.stringify({
@@ -1004,7 +1004,6 @@ async function reviewApplication(req, companion, payload) {
           updated_at: new Date().toISOString(),
         }),
       });
-      void loadCompanionRowForUser;
     } catch {
       try {
         await companionDb("profiles", `?id=eq.${encodeURIComponent(companion.user_id)}`, {

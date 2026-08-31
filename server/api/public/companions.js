@@ -532,7 +532,7 @@ async function loadCompanions(id = "") {
   const profileIds = companions.map((row) => row.id).filter(Boolean);
   const [profiles, levels, servicesBundle, mediaMap] = await Promise.all([
     supabaseJson(
-      restUrl("profiles", `?id=in.(${userIds.map(encodeURIComponent).join(",")})&role=eq.companion&status=eq.active&select=id,display_name,avatar_url,email,status,role`),
+      restUrl("profiles", `?id=in.(${userIds.map(encodeURIComponent).join(",")})&status=eq.active&select=id,display_name,avatar_url,email,status,role`),
       { headers: headers() }
     ),
     readLocalLevels().catch(() => []),

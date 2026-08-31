@@ -219,10 +219,13 @@ export function unlistListingPatch({ status, reason = "" } = {}) {
   };
 }
 
-/** Profile patch so public list join + gate see an active companion. */
+/**
+ * Profile patch so listing gates see an active companion account.
+ * NEVER overwrites profiles.role — dual-role Boss+Companion must keep primary boss.
+ * Companion capability lives on companion_profiles / roles[], not by demoting primary.
+ */
 export function activeCompanionProfilePatch() {
   return {
-    role: "companion",
     status: "active",
   };
 }
