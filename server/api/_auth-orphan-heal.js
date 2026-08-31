@@ -39,26 +39,33 @@ export function collectAuthRoleHints(authUser = {}) {
 
 /**
  * Classify an Auth-only (or Auth+missing profile) user for heal eligibility.
+ * Empty metadata is NOT treated as Boss — requires explicit boss role hints.
+ * Any companion / staff trace blocks Boss auto-heal.
  * @returns {'boss'|'companion'|'staff'|'unknown'}
  */
-export function classifyAuthPortalIntent(authUser = {}) {
+export function classifyAuthPortalIntent(authUser = {}, extras = {}) {
   const roles = collectAuthRoleHints(authUser);
   const hasStaff = [...roles].some((r) => r === "admin" || r === "super_admin" || r === "customer_service" || r === "cs");
   if (hasStaff) return "staff";
-  const hasCompanion = roles.has("companion") || roles.has("player") || roles.has("pw");
+
+  const hasCompanionMeta = roles.has("companion") || roles.has("player") || roles.has("pw");
+  const hasCompanionTrace =
+    hasCompanionMeta || extras?.companionProfileExists === true || extras?.hasCompanionTrace === true;
+  // Any companion trace → never Boss-heal (even if dual-role metadata also lists boss).
+  if (hasCompanionTrace) return "companion";
+
   const hasBoss = [...roles].some((r) => r === "boss" || r === "customer" || r === "owner" || r === "user");
-  if (hasCompanion && !hasBoss) return "companion";
   if (hasBoss) return "boss";
-  // Boss register historically may leave empty roles — treat as boss-eligible orphan.
-  if (roles.size === 0) return "boss";
+  // Empty / unrecognized metadata → do not guess Boss.
   return "unknown";
 }
 
 /** True only when it is safe to auto-create a Boss profiles row. */
-export function shouldHealAsBoss(authUser = {}) {
+export function shouldHealAsBoss(authUser = {}, extras = {}) {
   if (!authUser?.id) return false;
   if (authUser?.banned_until || authUser?.banned === true) return false;
-  return classifyAuthPortalIntent(authUser) === "boss";
+  if (extras?.companionProfileExists === true || extras?.hasCompanionTrace === true) return false;
+  return classifyAuthPortalIntent(authUser, extras) === "boss";
 }
 
 export function repairDeniedMessage(intent) {
@@ -85,6 +92,24 @@ export function maxBossUidNumberFromList(uids, parseBossCodeNumber) {
   return max;
 }
 
+/**
+ * Sync target must never regress sequence.
+ * @returns {{ target: number, shouldSetval: boolean, setvalTo: number|null }}
+ */
+export function computeBossUidSeqSyncPlan(lastValue, profilesMax) {
+  const cur = Math.max(0, Number(lastValue) || 0);
+  const maxN = Math.max(0, Number(profilesMax) || 0);
+  const target = Math.max(cur, maxN);
+  if (target < 1) {
+    return { target: 0, shouldSetval: true, setvalTo: 1, isCalled: false };
+  }
+  // Only bump when profiles max is ahead of sequence.
+  if (maxN > cur) {
+    return { target, shouldSetval: true, setvalTo: maxN, isCalled: true };
+  }
+  return { target, shouldSetval: false, setvalTo: null, isCalled: null };
+}
+
 /** Next sequence last_value semantics: setval(max, true) ⇒ next nextval is max+1. */
 export function nextBossUidAfterMax(maxN) {
   const max = Math.max(0, Number(maxN) || 0);
@@ -97,5 +122,6 @@ export default {
   shouldHealAsBoss,
   repairDeniedMessage,
   maxBossUidNumberFromList,
+  computeBossUidSeqSyncPlan,
   nextBossUidAfterMax,
 };

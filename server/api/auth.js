@@ -599,6 +599,39 @@ function loginOtpAccountKey(email) {
   return String(email || "").trim().toLowerCase();
 }
 
+/** Detect companion traces that must block Boss auto-heal. */
+async function loadHealExtrasForAuthUser(authUser = {}) {
+  const userId = String(authUser?.id || "").trim();
+  const extras = { companionProfileExists: false, hasCompanionTrace: false };
+  if (!userId) return extras;
+  try {
+    const rows = await supabaseJson(
+      restUrl("companion_profiles", `?user_id=eq.${encodeURIComponent(userId)}&select=id,user_id&limit=1`),
+      { headers: headersWithServiceRole() }
+    ).catch(() => []);
+    if (Array.isArray(rows) && rows[0]?.id) {
+      extras.companionProfileExists = true;
+      extras.hasCompanionTrace = true;
+    }
+  } catch {
+    /* best-effort */
+  }
+  return extras;
+}
+
+async function assertCanHealBossOrThrow(authUser) {
+  const extras = await loadHealExtrasForAuthUser(authUser);
+  if (!shouldHealAsBoss(authUser, extras)) {
+    const intent = classifyAuthPortalIntent(authUser, extras);
+    throw Object.assign(new Error(repairDeniedMessage(intent)), {
+      status: 403,
+      code: "ACCOUNT_NEEDS_REPAIR",
+      intent,
+    });
+  }
+  return extras;
+}
+
 function forgotAccountKey(profile) {
   return String(profile?.id || profile?.email || "").trim().toLowerCase();
 }
@@ -728,6 +761,7 @@ async function handleLoginSendOtp(body, res) {
   if (!email || !/^\S+@\S+\.\S+$/.test(email)) {
     return json(res, 400, { ok: false, message: "请输入有效邮箱。", mailSent: false });
   }
+  // Unified public shape for non-send paths — reduces account enumeration; frontend must not countdown.
   const privacy = {
     ok: true,
     mailSent: false,
@@ -738,39 +772,21 @@ async function handleLoginSendOtp(body, res) {
 
   const authUser = await findAuthUserByEmail(email);
   if (!authUser?.id || isAuthUserBanned(authUser)) {
-    // Privacy: do not reveal missing accounts; frontend must NOT countdown when mailSent=false.
     return json(res, 200, privacy);
   }
 
   let profile = (await resolveForgotAccount(email, role))?.profile || (await profileFor(authUser.id));
   if (!profile) {
     if (role === "companion") {
-      return json(res, 403, {
-        ok: false,
-        mailSent: false,
-        code: "ACCOUNT_NEEDS_REPAIR",
-        message: repairDeniedMessage("companion"),
-      });
-    }
-    if (!shouldHealAsBoss(authUser)) {
-      const intent = classifyAuthPortalIntent(authUser);
-      return json(res, 403, {
-        ok: false,
-        mailSent: false,
-        code: "ACCOUNT_NEEDS_REPAIR",
-        message: repairDeniedMessage(intent),
-      });
+      console.warn("[auth/send_login_otp] companion portal orphan — no auto boss heal");
+      return json(res, 200, privacy);
     }
     try {
+      await assertCanHealBossOrThrow(authUser);
       profile = await ensureBossProfileForAuthUser(authUser);
     } catch (healErr) {
-      console.error("[auth/send_login_otp] orphan heal failed", healErr?.message || healErr);
-      return json(res, healErr?.status || 500, {
-        ok: false,
-        mailSent: false,
-        code: healErr?.code || "PROFILE_MISSING",
-        message: healErr?.message || "账号资料修复失败，请稍后重试或联系客服。",
-      });
+      console.error("[auth/send_login_otp] orphan heal skipped/failed", healErr?.code || "", healErr?.message || healErr);
+      return json(res, 200, privacy);
     }
   }
 
@@ -778,7 +794,7 @@ async function handleLoginSendOtp(body, res) {
     return json(res, 200, privacy);
   }
   if (!resolveEmailVerified(profile, authUser)) {
-    return json(res, 403, { ok: false, mailSent: false, message: "请先完成邮箱验证。", code: "EMAIL_NOT_VERIFIED" });
+    return json(res, 200, privacy);
   }
 
   const otpKey = forgotAccountKey(profile) || loginOtpAccountKey(email);
@@ -796,12 +812,8 @@ async function handleLoginSendOtp(body, res) {
   try {
     await storeForgotOtp(otpKey, role, code, "login_otp");
   } catch (storeErr) {
-    return json(res, storeErr?.status || 503, {
-      ok: false,
-      mailSent: false,
-      message: storeErr?.message || "验证码存储失败，请稍后重试。",
-      mail: mailProviderStatus(),
-    });
+    console.error("[auth/send_login_otp] store failed", storeErr?.message || storeErr);
+    return json(res, 200, privacy);
   }
   void sendSmsOtp({ phone: profile.phone || "", code, purpose: "login" });
   let mailOk = false;
@@ -822,37 +834,24 @@ async function handleLoginSendOtp(body, res) {
     console.error("[auth/send_login_otp] mail failed", mailError, mailStatus);
     if (allowStagingOtp()) {
       return json(res, 200, {
-        ok: true,
-        mailSent: false,
+        ...privacy,
         message: mailStatus.resend
           ? `验证码邮件发送失败：${mailError || "Resend 错误"}。已生成 Staging 调试验证码。`
           : "邮件服务暂不可用（未读到 RESEND_API_KEY），已生成 Staging 调试验证码。",
-        channel: "email",
-        emailMasked: maskEmailHint(profile.email || email),
-        expiresInSec: Math.floor(OTP_TTL_MS / 1000),
-        role,
         mail: mailStatus,
         devCode: code,
         mailWarning: mailError || undefined,
       });
     }
-    return json(res, 502, {
-      ok: false,
-      mailSent: false,
-      message: "验证码发送失败，请稍后重试。",
-      code: "MAIL_SEND_FAILED",
-      mail: mailStatus,
-    });
+    return json(res, 200, privacy);
   }
   return json(res, 200, {
     ok: true,
     mailSent: true,
-    message: `登录验证码已发送至 ${maskEmailHint(profile.email || email)}。`,
+    message: privacy.message,
     channel: "email",
-    emailMasked: maskEmailHint(profile.email || email),
     expiresInSec: Math.floor(OTP_TTL_MS / 1000),
     role,
-    mail: mailStatus,
   });
 }
 
@@ -876,14 +875,14 @@ async function handleLoginWithOtp(body, res) {
     null;
   if (!profile0) {
     const authOnly = await findAuthUserByEmail(email);
-    if (authOnly?.id && shouldHealAsBoss(authOnly) && (loginPortal || role) !== "companion") {
+    if (authOnly?.id && (loginPortal || role) !== "companion") {
       try {
         profile0 = await ensureBossProfileForAuthUser(authOnly);
       } catch (healErr) {
-        console.error("[auth/login_with_otp] orphan heal failed", healErr?.message || healErr);
+        console.error("[auth/login_with_otp] orphan heal failed", healErr?.code || "", healErr?.message || healErr);
         return json(res, healErr?.status || 403, {
           ok: false,
-          code: healErr?.code || "PROFILE_MISSING",
+          code: healErr?.code || "ACCOUNT_NEEDS_REPAIR",
           message: healErr?.message || "账号资料不完整，请联系客服。",
         });
       }
@@ -1056,7 +1055,8 @@ async function handleSendRegisterOtp(body, res) {
   // Auth orphan: Auth exists but profiles missing — do not continue register OTP flow.
   const authExisting = await findAuthUserByEmail(email);
   if (authExisting?.id) {
-    const intent = classifyAuthPortalIntent(authExisting);
+    const extras = await loadHealExtrasForAuthUser(authExisting);
+    const intent = classifyAuthPortalIntent(authExisting, extras);
     return json(res, 409, {
       ok: false,
       mailSent: false,
@@ -1374,14 +1374,8 @@ async function ensureBossProfileForAuthUser(authUser = {}) {
   let profile = await profileFor(userId);
   if (profile) return profile;
 
-  if (!shouldHealAsBoss(authUser)) {
-    const intent = classifyAuthPortalIntent(authUser);
-    throw Object.assign(new Error(repairDeniedMessage(intent)), {
-      status: 403,
-      code: intent === "staff" || intent === "companion" ? "ACCOUNT_NEEDS_REPAIR" : "PROFILE_MISSING",
-      intent,
-    });
-  }
+  // Companion / staff / empty-metadata orphans must not become Boss here.
+  await assertCanHealBossOrThrow(authUser);
   if (isAuthUserBanned(authUser)) {
     throw Object.assign(new Error("账号不可用。"), { status: 403, code: "ACCOUNT_DISABLED" });
   }
@@ -1536,11 +1530,11 @@ export default async function handler(req, res) {
         try {
           profile = await ensureBossProfileForAuthUser(authUser);
         } catch (initErr) {
-          console.error("[auth/me] profile auto-init failed", initErr?.message || initErr);
-          return json(res, 503, {
+          console.error("[auth/me] profile auto-init failed", initErr?.code || "", initErr?.message || initErr);
+          return json(res, initErr?.status || 503, {
             ok: false,
-            message: "账号初始化失败，请刷新重试或联系客服。",
-            code: "PROFILE_INIT_FAILED",
+            message: initErr?.message || "账号初始化失败，请刷新重试或联系客服。",
+            code: initErr?.code || "PROFILE_INIT_FAILED",
           });
         }
       }
@@ -1960,16 +1954,9 @@ export default async function handler(req, res) {
         if (existingProfile) {
           return json(res, 400, { ok: false, message: "该邮箱已注册，请直接登录。" });
         }
-        if (!shouldHealAsBoss(preexistingAuth)) {
-          const intent = classifyAuthPortalIntent(preexistingAuth);
-          return json(res, 409, {
-            ok: false,
-            code: "ACCOUNT_NEEDS_REPAIR",
-            message: repairDeniedMessage(intent),
-          });
-        }
         let healed;
         try {
+          // Only explicit Boss orphans heal; companion/staff/empty metadata → ACCOUNT_NEEDS_REPAIR.
           healed = await ensureBossProfileForAuthUser({
             ...preexistingAuth,
             email,
@@ -2063,11 +2050,19 @@ export default async function handler(req, res) {
         if (/user already registered|already.*(registered|exists)|duplicate|unique/i.test(message)) {
           // Race: Auth appeared between our probe and create — do not leave caller guessing.
           const raced = await findAuthUserByEmail(email);
-          if (raced?.id && !(await profileFor(raced.id)) && shouldHealAsBoss(raced)) {
+          if (raced?.id && !(await profileFor(raced.id))) {
+            const extras = await loadHealExtrasForAuthUser(raced);
+            if (shouldHealAsBoss(raced, extras)) {
+              return json(res, 409, {
+                ok: false,
+                code: "ACCOUNT_NEEDS_REPAIR",
+                message: "该邮箱已有登录账号但资料不完整，请直接登录以修复，不要重复注册。",
+              });
+            }
             return json(res, 409, {
               ok: false,
               code: "ACCOUNT_NEEDS_REPAIR",
-              message: "该邮箱已有登录账号但资料不完整，请直接登录以修复，不要重复注册。",
+              message: repairDeniedMessage(classifyAuthPortalIntent(raced, extras)),
             });
           }
           message = "该邮箱已注册，请直接登录。";
@@ -2329,21 +2324,13 @@ export default async function handler(req, res) {
     const authUser = auth.user;
     let profile = await profileFor(authUser.id);
     if (!profile) {
-      if (!shouldHealAsBoss(authUser)) {
-        const intent = classifyAuthPortalIntent(authUser);
-        return json(res, 403, {
-          ok: false,
-          code: "ACCOUNT_NEEDS_REPAIR",
-          message: repairDeniedMessage(intent),
-        });
-      }
       try {
         profile = await ensureBossProfileForAuthUser(authUser);
       } catch (healErr) {
-        console.error("[auth/login] orphan heal failed", healErr?.message || healErr);
-        return json(res, healErr?.status || 500, {
+        console.error("[auth/login] orphan heal failed", healErr?.code || "", healErr?.message || healErr);
+        return json(res, healErr?.status || 403, {
           ok: false,
-          code: healErr?.code || "PROFILE_MISSING",
+          code: healErr?.code || "ACCOUNT_NEEDS_REPAIR",
           message: healErr?.message || "账号未绑定平台资料，请联系管理员。",
         });
       }
