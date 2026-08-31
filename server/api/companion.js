@@ -3301,9 +3301,13 @@ export default async function handler(req, res) {
         companion = await ensureCompanionRow(profile, null);
       }
       // Keep primary role as-is when already boss; only attach companion capability on same user_id.
-      const { addRoleToUser, enrichProfileRoles } = await import("./_account-roles.js");
+      // Never overwrite Boss primary with companion.
+      const { addRoleToUser, enrichProfileRoles, preferredPrimaryRole, hasBossRole } = await import("./_account-roles.js");
+      const keepPrimary =
+        preferredPrimaryRole(profile, { authUser }) ||
+        (hasBossRole(profile, { authUser }) ? "boss" : profile.role || "boss");
       const nextRoles = await addRoleToUser(profile.id, "companion", {
-        primaryRole: profile.role || "boss",
+        primaryRole: keepPrimary,
         existingProfile: profile,
         authUser,
       });

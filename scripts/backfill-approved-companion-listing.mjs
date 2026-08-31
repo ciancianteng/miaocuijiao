@@ -163,6 +163,7 @@ async function main() {
 
     if (row.user_id) {
       try {
+        // Status-only patch — must not overwrite profiles.role (dual-role safe).
         await rest(`profiles?id=eq.${encodeURIComponent(row.user_id)}`, {
           method: "PATCH",
           body: JSON.stringify(activeCompanionProfilePatch()),

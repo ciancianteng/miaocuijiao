@@ -1,12 +1,13 @@
 /**
- * Unified account roles: one email → one profiles.id (auth user id).
- * Roles may include boss + companion on the same user_id.
+ * Unified account roles / capabilities: one email → one profiles.id (auth user id).
+ * Capabilities may include boss + companion on the same user_id (additive, not exclusive).
  *
  * SoT:
  * - auth.users email uniqueness (platform)
  * - profiles.id = auth user id
  * - companion_profiles.user_id unique → companion capability
  * - optional profiles.roles text[] / auth app_metadata.roles
+ * - hasBoss / hasCompanion are the portal gate authorities (not primary role alone)
  */
 import { envValue, restUrl, serviceHeaders, supabaseJson } from "./_wallet.js";
 
@@ -48,12 +49,7 @@ function uniq(list) {
   return out;
 }
 
-/**
- * Derive roles from profile row + optional companion row + auth metadata.
- * Dual boss+companion must be explicit in DB (profiles.role / profiles.roles / companion row).
- * Do NOT auto-grant boss to every companion — that forced needRolePick on all portals.
- */
-export function resolveRoles(profile = {}, { companion = null, authUser = null, grantBossWithCompanion = false } = {}) {
+function collectRoleHints(profile = {}, authUser = null) {
   const collected = [];
   const fromCol = profile?.roles;
   if (Array.isArray(fromCol)) collected.push(...fromCol);
@@ -68,13 +64,50 @@ export function resolveRoles(profile = {}, { companion = null, authUser = null, 
   }
   const metaRoles = authUser?.app_metadata?.roles || authUser?.user_metadata?.roles;
   if (Array.isArray(metaRoles)) collected.push(...metaRoles);
-
+  const primaryMeta = authUser?.app_metadata?.primary_role || authUser?.user_metadata?.primary_role;
+  if (primaryMeta) collected.push(primaryMeta);
   const primary = normalizeRoleName(profile?.role);
   if (primary) collected.push(primary);
+  return uniq(collected);
+}
 
+function hasValidBossUid(profile = {}, authUser = null) {
+  const raw = String(
+    profile?.boss_uid || authUser?.user_metadata?.boss_uid || authUser?.app_metadata?.boss_uid || ""
+  ).trim();
+  return /^MCJ[0-9]+$/i.test(raw) || /^B[0-9]+$/i.test(raw);
+}
+
+/**
+ * Explicit Boss capability evidence (never boss_uid alone).
+ * @typedef {object} BossEvidence
+ * @property {boolean} [hasBossOrders] — user appeared as orders.boss_id
+ * @property {number} [bossOrderCount]
+ * @property {boolean} [hasBossWallet] — reserved for wallet/account proof
+ * @property {boolean} [forceBoss] — explicit operator / repair flag
+ */
+export function evaluateBossEvidence(evidence = {}) {
+  if (evidence?.forceBoss === true) return true;
+  if (evidence?.hasBossOrders === true) return true;
+  if (Number(evidence?.bossOrderCount || 0) > 0) return true;
+  if (evidence?.hasBossWallet === true) return true;
+  return false;
+}
+
+/**
+ * Derive role list from profile + companion + auth metadata (+ optional evidence).
+ * Additive: boss and companion may both be present.
+ * Do NOT auto-grant boss to every companion (boss_uid alone is insufficient).
+ */
+export function resolveRoles(profile = {}, { companion = null, authUser = null, grantBossWithCompanion = false, evidence = null } = {}) {
+  const collected = collectRoleHints(profile, authUser);
   if (companion && companion.id) collected.push("companion");
 
   let roles = uniq(collected);
+  // Strong Boss business evidence upgrades capability even when primary was overwritten to companion.
+  if (evaluateBossEvidence(evidence) && !roles.includes("boss")) {
+    roles = uniq([...roles, "boss"]);
+  }
   // Opt-in only (default false). Legacy callers may still pass true.
   if (grantBossWithCompanion && roles.includes("companion") && !roles.includes("boss")) {
     roles = uniq([...roles, "boss"]);
@@ -83,8 +116,52 @@ export function resolveRoles(profile = {}, { companion = null, authUser = null, 
   if (roles.includes("admin") || roles.includes("super_admin") || roles.includes("customer_service")) {
     return roles;
   }
+  const primary = normalizeRoleName(profile?.role);
   if (!roles.length && primary) roles = [primary];
   return roles;
+}
+
+/**
+ * Authoritative capability computation for portal gates.
+ *
+ * hasCompanion:
+ *   companion_profiles row exists OR role/roles/meta say companion
+ *
+ * hasBoss:
+ *   role/roles/meta say boss  OR  evaluateBossEvidence(evidence)
+ *   NOT: boss_uid alone
+ *   (boss_uid + Boss orders/wallet/meta/roles is covered via evidence or role hints)
+ */
+export function computeCapabilities(profile = {}, opts = {}) {
+  const companion = opts.companion || null;
+  const authUser = opts.authUser || null;
+  const evidence = opts.evidence || null;
+  const roles = resolveRoles(profile, { companion, authUser, grantBossWithCompanion: !!opts.grantBossWithCompanion, evidence });
+  const hasCompanion =
+    !!(companion && companion.id) ||
+    roles.includes("companion") ||
+    normalizeRoleName(profile?.role) === "companion";
+  const hasBoss =
+    roles.includes("boss") ||
+    BOSS_ALIASES.has(normalizeRoleName(profile?.role)) ||
+    evaluateBossEvidence(evidence);
+  // Preferred primary for dual accounts: keep boss when hasBoss.
+  let primaryRole = normalizeRoleName(profile?.role) || roles[0] || "";
+  if (hasBoss && primaryRole === "companion") {
+    primaryRole = "boss";
+  }
+  return {
+    roles: uniq([
+      ...roles,
+      ...(hasBoss ? ["boss"] : []),
+      ...(hasCompanion ? ["companion"] : []),
+    ]),
+    hasBoss: !!hasBoss,
+    hasCompanion: !!hasCompanion,
+    primaryRole,
+    hasBossUid: hasValidBossUid(profile, authUser),
+    bossUidAlone: hasValidBossUid(profile, authUser) && !hasBoss,
+  };
 }
 
 export function hasRole(profile, role, opts) {
@@ -92,22 +169,35 @@ export function hasRole(profile, role, opts) {
   return resolveRoles(profile, opts).includes(want);
 }
 
-export function hasBossRole(profile, opts) {
-  return hasRole(profile, "boss", opts);
+export function hasBossRole(profile, opts = {}) {
+  return computeCapabilities(profile, opts).hasBoss;
 }
 
-export function hasCompanionRole(profile, opts) {
-  return hasRole(profile, "companion", opts);
+export function hasCompanionRole(profile, opts = {}) {
+  return computeCapabilities(profile, opts).hasCompanion;
 }
 
-export function publicRolesPayload(profile, opts) {
-  const roles = resolveRoles(profile, opts);
-  return {
-    roles,
-    hasBoss: roles.includes("boss"),
-    hasCompanion: roles.includes("companion"),
-    primaryRole: normalizeRoleName(profile?.role) || roles[0] || "",
-  };
+export function publicRolesPayload(profile, opts = {}) {
+  return computeCapabilities(profile, opts);
+}
+
+/** Prefer boss primary when user already has Boss capability. */
+export function preferredPrimaryRole(profile = {}, opts = {}) {
+  const caps = computeCapabilities(profile, opts);
+  if (caps.hasBoss) return "boss";
+  if (caps.hasCompanion) return "companion";
+  return normalizeRoleName(profile?.role) || caps.primaryRole || "";
+}
+
+/**
+ * Profile patch when activating a companion listing.
+ * NEVER overwrites profiles.role — status only.
+ */
+export function companionActivationProfilePatch({ hasBossCapability = false } = {}) {
+  const patch = { status: "active" };
+  // Callers that still need a role for brand-new companion-only rows pass role separately.
+  void hasBossCapability;
+  return patch;
 }
 
 export async function loadCompanionRowForUser(userId) {
@@ -123,33 +213,70 @@ export async function loadCompanionRowForUser(userId) {
   }
 }
 
-export async function enrichProfileRoles(profile, authUser = null) {
+/** Best-effort: did this user ever place orders as Boss? */
+export async function loadBossOrderEvidence(userId) {
+  const id = String(userId || "").trim();
+  if (!id) return { hasBossOrders: false, bossOrderCount: 0 };
+  try {
+    const rows = await supabaseJson(
+      restUrl("orders", `?boss_id=eq.${encodeURIComponent(id)}&select=id&limit=1`),
+      { headers: headersWithServiceRole() }
+    );
+    const count = Array.isArray(rows) ? rows.length : 0;
+    return { hasBossOrders: count > 0, bossOrderCount: count };
+  } catch {
+    return { hasBossOrders: false, bossOrderCount: 0 };
+  }
+}
+
+/**
+ * Enrich profile with additive capabilities.
+ * Does NOT strip boss when primary is companion.
+ * When primary=companion and boss_uid exists, probe Boss order evidence so dual users regain hasBoss at login.
+ */
+export async function enrichProfileRoles(profile, authUser = null, options = {}) {
   if (!profile?.id) return { profile, companion: null, roles: [], ...publicRolesPayload({}, {}) };
-  const companion = await loadCompanionRowForUser(profile.id);
-  let rolesInfo = publicRolesPayload(profile, { companion, authUser, grantBossWithCompanion: false });
+  const companion = options.companion !== undefined ? options.companion : await loadCompanionRowForUser(profile.id);
+  let evidence = options.evidence || null;
   const primary = normalizeRoleName(profile?.role);
-  // Heal legacy companion register that stamped roles:["companion","boss"] while primary stayed companion.
-  // True dual accounts keep primary role "boss" (or aliases) and also have companion_profiles.
-  if (
+  const needsEvidenceProbe =
+    !evidence &&
     primary === "companion" &&
+    hasValidBossUid(profile, authUser) &&
+    options.skipOrderProbe !== true;
+  if (needsEvidenceProbe) {
+    evidence = await loadBossOrderEvidence(profile.id);
+  }
+  const rolesInfo = publicRolesPayload(profile, {
+    companion,
+    authUser,
+    grantBossWithCompanion: false,
+    evidence,
+  });
+
+  // Soft repair preference: if dual capability but primary stuck on companion, persist boss primary.
+  // Never deletes companion capability. Best-effort only.
+  if (
+    options.persistPrimaryRepair !== false &&
     rolesInfo.hasBoss &&
-    Array.isArray(rolesInfo.roles) &&
-    rolesInfo.roles.includes("boss")
+    rolesInfo.hasCompanion &&
+    primary === "companion"
   ) {
-    const healed = uniq(rolesInfo.roles.filter((r) => r !== "boss"));
     try {
-      await persistRoles(profile.id, healed.length ? healed : ["companion"], { primaryRole: "companion" });
+      await persistRoles(profile.id, rolesInfo.roles, { primaryRole: "boss" });
     } catch {
       /* best-effort */
     }
-    rolesInfo = publicRolesPayload(
-      { ...profile, roles: healed.length ? healed : ["companion"], role: "companion" },
-      { companion, authUser, grantBossWithCompanion: false }
-    );
   }
+
   return {
-    profile: { ...profile, roles: rolesInfo.roles },
+    profile: {
+      ...profile,
+      roles: rolesInfo.roles,
+      role: rolesInfo.hasBoss && primary === "companion" ? "boss" : profile.role,
+    },
     companion,
+    evidence: evidence || null,
     ...rolesInfo,
   };
 }
@@ -158,6 +285,11 @@ export async function enrichProfileRoles(profile, authUser = null) {
 export async function persistRoles(userId, rolesInput, { primaryRole = "" } = {}) {
   const roles = uniq(rolesInput);
   if (!userId || !roles.length) return roles;
+  // Never demote boss primary when roles still include boss.
+  let nextPrimary = primaryRole ? normalizeRoleName(primaryRole) : "";
+  if (roles.includes("boss") && nextPrimary === "companion") {
+    nextPrimary = "boss";
+  }
   try {
     await supabaseJson(authUrl(`admin/users/${userId}`), {
       method: "PUT",
@@ -168,7 +300,6 @@ export async function persistRoles(userId, rolesInput, { primaryRole = "" } = {}
       }),
     });
   } catch (err) {
-    // Some projects require PATCH merge — try best-effort.
     try {
       await supabaseJson(authUrl(`admin/users/${userId}`), {
         method: "PATCH",
@@ -180,7 +311,7 @@ export async function persistRoles(userId, rolesInput, { primaryRole = "" } = {}
     }
   }
   const patch = { roles };
-  if (primaryRole) patch.role = normalizeRoleName(primaryRole);
+  if (nextPrimary) patch.role = nextPrimary;
   try {
     await supabaseJson(restUrl("profiles", `?id=eq.${encodeURIComponent(userId)}`), {
       method: "PATCH",
@@ -189,12 +320,12 @@ export async function persistRoles(userId, rolesInput, { primaryRole = "" } = {}
     });
   } catch (err) {
     if (/roles|column|schema cache|PGRST/i.test(String(err?.message || ""))) {
-      if (primaryRole) {
+      if (nextPrimary) {
         try {
           await supabaseJson(restUrl("profiles", `?id=eq.${encodeURIComponent(userId)}`), {
             method: "PATCH",
             headers: headersWithServiceRole({ Prefer: "return=minimal" }),
-            body: JSON.stringify({ role: normalizeRoleName(primaryRole) }),
+            body: JSON.stringify({ role: nextPrimary }),
           });
         } catch {
           /* ignore */
@@ -212,7 +343,13 @@ export async function addRoleToUser(userId, roleToAdd, { primaryRole = "", exist
   const companion = add === "companion" ? await loadCompanionRowForUser(userId) : null;
   const current = resolveRoles(existingProfile || { id: userId, role: primaryRole }, { companion, authUser });
   const next = uniq([...current, add]);
-  await persistRoles(userId, next, { primaryRole: primaryRole || existingProfile?.role || add });
+  // If adding companion to an existing Boss, keep boss primary.
+  const existingPrimary = normalizeRoleName(existingProfile?.role || primaryRole || "");
+  const keepPrimary =
+    current.includes("boss") || BOSS_ALIASES.has(existingPrimary)
+      ? "boss"
+      : primaryRole || existingProfile?.role || add;
+  await persistRoles(userId, next, { primaryRole: keepPrimary });
   return next;
 }
 
@@ -237,7 +374,6 @@ export function assertNotSelfTrade(bossUserId, companionUserId, actionLabel = "�
 export async function resolveCompanionUserIdFlexible(rawId) {
   const id = String(rawId || "").trim();
   if (!id) return "";
-  // Direct profile id
   try {
     const byUser = await supabaseJson(
       restUrl("profiles", `?id=eq.${encodeURIComponent(id)}&select=id,role&limit=1`),
@@ -341,3 +477,15 @@ export async function scanDuplicateEmails({ limit = 2000 } = {}) {
   }
   return { scanned: Array.isArray(rows) ? rows.length : 0, duplicateGroups: duplicates };
 }
+
+export default {
+  computeCapabilities,
+  evaluateBossEvidence,
+  preferredPrimaryRole,
+  companionActivationProfilePatch,
+  hasBossRole,
+  hasCompanionRole,
+  enrichProfileRoles,
+  resolveRoles,
+  publicRolesPayload,
+};

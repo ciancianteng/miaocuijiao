@@ -227,9 +227,14 @@ function portalDeniedMessage(portal) {
 }
 
 function userHasPortalAccess(user, portal) {
+  // Capability-first: hasBoss / hasCompanion are authoritative for dual-role accounts.
   const role = String(user?.role || "").toLowerCase();
-  if (portal === "boss") return !!(user?.hasBoss || role === "boss" || role === "customer" || role === "owner" || role === "user");
-  if (portal === "companion") return !!(user?.hasCompanion || role === "companion" || role === "player");
+  if (portal === "boss") {
+    return !!(user?.hasBoss === true || role === "boss" || role === "customer" || role === "owner" || role === "user");
+  }
+  if (portal === "companion") {
+    return !!(user?.hasCompanion === true || role === "companion" || role === "player");
+  }
   if (portal === "customer_service") return role === "customer_service" || role === "service";
   if (portal === "admin") return role === "admin" || role === "super_admin";
   return false;
@@ -733,12 +738,10 @@ async function handleLoginWithOtp(body, res) {
   const auth = await createSessionForUserId(profile0.id, profile0.email || email);
   let profile = await profileFor(auth.user?.id || profile0.id);
   if (!profile) profile = profile0;
-  if (["boss", "customer", "owner", "user"].includes(String(profile.role || "").trim().toLowerCase())) {
-    try {
-      profile = await ensureBossUid({ ...profile, role: "boss" }, auth.user);
-    } catch {
-      /* keep login usable */
-    }
+  try {
+    profile = await ensureBossUid(profile, auth.user);
+  } catch {
+    /* keep login usable */
   }
   await touchLastLogin(profile.id, "");
   const user = await enrichSafeProfile(profile, {
@@ -1085,6 +1088,7 @@ async function ensureBossUid(profile, authUser = null) {
   } else if (existing) {
     existing = resolveBossPublicCode({ boss_uid: existing }) || existing;
   }
+  // Preserve any existing Production UID (do not delete). Only gate NEW allocation.
   if (existing) {
     if (!profile.boss_uid || profile.boss_uid !== existing) {
       try {
@@ -1108,6 +1112,22 @@ async function ensureBossUid(profile, authUser = null) {
     }
     return { ...profile, boss_uid: existing };
   }
+
+  // No UID yet: allocate only when Boss capability is confirmed (never for pure Companion).
+  try {
+    const { hasBossRole, loadCompanionRowForUser } = await import("./_account-roles.js");
+    const companion = await loadCompanionRowForUser(profile.id).catch(() => null);
+    if (!hasBossRole(profile, { authUser, companion })) {
+      return profile;
+    }
+  } catch {
+    // If capability module unavailable, fall through only for explicit boss-like primary.
+    const r = String(profile.role || "").trim().toLowerCase();
+    if (!(r === "boss" || r === "customer" || r === "owner" || r === "user")) {
+      return profile;
+    }
+  }
+
   let lastError = null;
   let columnMissing = false;
   for (let attempt = 0; attempt < 5; attempt += 1) {
@@ -1291,19 +1311,11 @@ export default async function handler(req, res) {
           code: "PROFILE_INIT_FAILED",
         });
       }
-      if (
-        ["boss", "customer", "owner", "user", "companion", "player"].includes(
-          String(profile.role || "").trim().toLowerCase()
-        )
-      ) {
-        try {
-          profile = await ensureBossUid(
-            { ...profile, role: ["companion", "player"].includes(String(profile.role || "").toLowerCase()) ? profile.role : "boss" },
-            authUser
-          );
-        } catch {
-          /* keep session usable */
-        }
+      // Preserve existing boss_uid; allocate only when hasBoss (ensureBossUid gates pure companion).
+      try {
+        profile = await ensureBossUid(profile, authUser);
+      } catch {
+        /* keep session usable */
       }
       const user = await enrichSafeProfile(profile, authUser);
       if (!VALID_ROLES.has(user.role) && !(user.hasBoss || user.hasCompanion)) {
@@ -1988,16 +2000,10 @@ export default async function handler(req, res) {
         code: "EMAIL_NOT_VERIFIED",
       });
     }
-    if (
-      ["boss", "customer", "owner", "user", "companion", "player"].includes(
-        String(profile.role || "").trim().toLowerCase()
-      )
-    ) {
-      try {
-        profile = await ensureBossUid({ ...profile, role: profile.role === "companion" ? profile.role : "boss" }, authUser);
-      } catch {
-        /* keep login usable even if UID backfill fails */
-      }
+    try {
+      profile = await ensureBossUid(profile, authUser);
+    } catch {
+      /* keep login usable even if UID backfill fails */
     }
     // Successful password login proves password exists — stamp for future probes.
     await stampPasswordSet(authUser.id, {

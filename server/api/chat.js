@@ -84,6 +84,14 @@ async function allocateBossUid() {
 async function ensureBossUid(profile) {
   if (!profile?.id) return profile;
   if (profile.boss_uid && String(profile.boss_uid).trim()) return profile;
+  try {
+    const { hasBossRole, loadCompanionRowForUser } = await import("./_account-roles.js");
+    const companion = await loadCompanionRowForUser(profile.id).catch(() => null);
+    if (!hasBossRole(profile, { companion })) return profile;
+  } catch {
+    const r = String(profile.role || "").trim().toLowerCase();
+    if (!(r === "boss" || r === "customer" || r === "owner" || r === "user")) return profile;
+  }
   for (let attempt = 0; attempt < 5; attempt += 1) {
     const bossUid = await allocateBossUid();
     try {

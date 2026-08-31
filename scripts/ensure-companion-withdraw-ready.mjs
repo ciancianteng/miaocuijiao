@@ -30,7 +30,13 @@ const profileRes = await client.query(
 );
 if (!profileRes.rowCount) throw new Error("profile missing");
 const userId = profileRes.rows[0].id;
-await client.query(`update public.profiles set status='active', role='companion' where id=$1`, [userId]);
+const existingRole = String(profileRes.rows[0].role || "").trim().toLowerCase();
+// Never demote an existing Boss primary to companion (dual-role safe).
+if (existingRole === "boss" || existingRole === "customer" || existingRole === "owner" || existingRole === "user") {
+  await client.query(`update public.profiles set status='active' where id=$1`, [userId]);
+} else {
+  await client.query(`update public.profiles set status='active', role='companion' where id=$1`, [userId]);
+}
 
 const cpRes = await client.query(
   `select id from public.companion_profiles where user_id=$1 limit 1`,
