@@ -4314,7 +4314,7 @@ export default async function handler(req, res) {
         const isBank =
           methodLabel === "银行卡" || /^bank$/i.test(methodLabel) || (!methodLabel && !!bankAccount);
         if (isBank && !bankName) {
-          return json(res, 400, { ok: false, message: "请选择开户银行。" });
+          return json(res, 400, { ok: false, message: "请填写银行名称。" });
         }
         await upsertByCompanion("companion_payment_accounts", row.id, auth.profile.id, {
           method: methodLabel || "银行卡",
@@ -4658,7 +4658,7 @@ export default async function handler(req, res) {
         const isBankMethod =
           settlementMethod === "银行卡" || /^bank$/i.test(settlementMethod) || (!settlementMethod && !!bankAccountRaw);
         if (isBankMethod && !bankName) {
-          return json(res, 400, { ok: false, message: "请选择开户银行。" });
+          return json(res, 400, { ok: false, message: "请填写银行名称。" });
         }
         const existingPayment = (
           await companionDb(
