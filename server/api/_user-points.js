@@ -13,51 +13,168 @@ import {
   restUrl,
 } from "./_wallet.js";
 
-/** Fallback when points_settings is missing / unreadable. Not a hard award value. */
-export const DEFAULT_ORDER_COMPLETION_POINTS = 100;
-/** @deprecated Use DEFAULT_ORDER_COMPLETION_POINTS / getOrderCompletionPoints(). Kept for smoke. */
+/** Fallback defaults when points_settings is missing / unreadable. */
+export const DEFAULT_ORDER_COMPLETION_POINTS = 100; // deprecated fixed award fallback (legacy)
+export const DEFAULT_POINTS_PER_RM = 10;
+export const DEFAULT_MIN_ORDER_AMOUNT = 0;
+export const DEFAULT_MAX_REWARD_POINTS = 0; // 0 = unlimited
+export const DEFAULT_ROUNDING_MODE = "floor";
+export const DEFAULT_POINTS_ENABLED = true;
+
+/** @deprecated Fixed award constant retained for smoke / legacy imports. */
 export const ORDER_COMPLETION_POINTS = DEFAULT_ORDER_COMPLETION_POINTS;
 
-export function parseOrderCompletionPoints(raw) {
+const ROUNDING_MODES = new Set(["floor", "ceil", "round"]);
+
+export function orderPointsIdempotencyKey(orderId) {
+  return `order_points:${String(orderId || "").trim()}`;
+}
+
+export function orderPointsClawbackIdempotencyKey(orderId) {
+  return `order_points_clawback:${String(orderId || "").trim()}`;
+}
+
+/**
+ * Boss effective spend for loyalty points.
+ * Matches refund「实付」: paid_cat_food if > 0, else total_amount.
+ * In this product these order amounts are RM-equivalent (refund uses currency MYR).
+ */
+export function orderEffectiveSpendAmount(order) {
+  if (!order || typeof order !== "object") return 0;
+  const paid = Number(order.paid_cat_food);
+  if (Number.isFinite(paid) && paid > 0) return paid;
+  const total = Number(order.total_amount);
+  if (Number.isFinite(total) && total > 0) return total;
+  const amount = Number(order.amount);
+  if (Number.isFinite(amount) && amount > 0) return amount;
+  return 0;
+}
+
+export function parseNonNegNumber(raw, { integer = false, fieldLabel = "数值" } = {}) {
   if (raw === null || raw === undefined || raw === "") {
-    return { ok: false, message: "请填写 Boss 完成订单奖励积分。" };
+    return { ok: false, message: `请填写${fieldLabel}。` };
   }
   if (typeof raw === "boolean") {
-    return { ok: false, message: "积分必须为大于等于 0 的整数。" };
+    return { ok: false, message: `${fieldLabel}不合法。` };
   }
-  if (typeof raw === "number") {
-    if (!Number.isFinite(raw) || !Number.isInteger(raw) || raw < 0) {
-      return { ok: false, message: "积分必须为大于等于 0 的整数。" };
-    }
-    return { ok: true, value: raw };
+  const n = typeof raw === "number" ? raw : Number(String(raw).trim());
+  if (!Number.isFinite(n) || n < 0) {
+    return { ok: false, message: `${fieldLabel}必须为大于等于 0 的${integer ? "整数" : "数字"}。` };
   }
-  const text = String(raw).trim();
-  if (!/^\d+$/.test(text)) {
-    return { ok: false, message: "积分必须为大于等于 0 的整数。" };
+  if (integer && !Number.isInteger(n)) {
+    return { ok: false, message: `${fieldLabel}必须为大于等于 0 的整数。` };
   }
-  const value = Number(text);
-  if (!Number.isInteger(value) || value < 0) {
-    return { ok: false, message: "积分必须为大于等于 0 的整数。" };
+  return { ok: true, value: n };
+}
+
+/** @deprecated Prefer parseNonNegNumber for rate fields. */
+export function parseOrderCompletionPoints(raw) {
+  const parsed = parseNonNegNumber(raw, { integer: true, fieldLabel: "积分" });
+  if (!parsed.ok) {
+    return { ok: false, message: parsed.message || "积分必须为大于等于 0 的整数。" };
   }
-  return { ok: true, value };
+  return parsed;
+}
+
+export function normalizeRoundingMode(raw) {
+  const mode = String(raw || DEFAULT_ROUNDING_MODE).trim().toLowerCase();
+  return ROUNDING_MODES.has(mode) ? mode : DEFAULT_ROUNDING_MODE;
+}
+
+export function applyRounding(value, mode) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 0;
+  const m = normalizeRoundingMode(mode);
+  if (m === "ceil") return Math.ceil(n);
+  if (m === "round") return Math.round(n);
+  return Math.floor(n);
+}
+
+export function defaultBossPointsSettings() {
+  return {
+    id: 1,
+    enabled: DEFAULT_POINTS_ENABLED,
+    pointsPerRm: DEFAULT_POINTS_PER_RM,
+    minOrderAmount: DEFAULT_MIN_ORDER_AMOUNT,
+    maxRewardPoints: DEFAULT_MAX_REWARD_POINTS,
+    roundingMode: DEFAULT_ROUNDING_MODE,
+    // legacy field kept in API for older clients
+    orderCompletionPoints: DEFAULT_ORDER_COMPLETION_POINTS,
+    order_completion_points: DEFAULT_ORDER_COMPLETION_POINTS,
+    examples: buildPointsExamples(DEFAULT_POINTS_PER_RM, DEFAULT_ROUNDING_MODE),
+    updatedAt: null,
+    createdAt: null,
+  };
+}
+
+export function buildPointsExamples(pointsPerRm, roundingMode = DEFAULT_ROUNDING_MODE) {
+  const rate = Number(pointsPerRm);
+  const safeRate = Number.isFinite(rate) && rate >= 0 ? rate : DEFAULT_POINTS_PER_RM;
+  return [10, 50, 100].map((rm) => {
+    const points = applyRounding(rm * safeRate, roundingMode);
+    return {
+      amount: rm,
+      points,
+      label: `RM${rm} × ${safeRate} = ${points}积分`,
+    };
+  });
 }
 
 export function viewPointsSettings(row) {
-  const points =
-    row && row.order_completion_points != null
-      ? Number(row.order_completion_points)
-      : DEFAULT_ORDER_COMPLETION_POINTS;
-  const safe =
-    Number.isFinite(points) && points >= 0 && Number.isInteger(points)
-      ? points
+  if (!row) return defaultBossPointsSettings();
+  const enabled = row.enabled == null ? true : !!row.enabled;
+  const pointsPerRmRaw = Number(row.points_per_rm);
+  const pointsPerRm =
+    Number.isFinite(pointsPerRmRaw) && pointsPerRmRaw >= 0 ? pointsPerRmRaw : DEFAULT_POINTS_PER_RM;
+  const minRaw = Number(row.min_order_amount);
+  const minOrderAmount =
+    Number.isFinite(minRaw) && minRaw >= 0 ? minRaw : DEFAULT_MIN_ORDER_AMOUNT;
+  const maxRaw = Number(row.max_reward_points);
+  const maxRewardPoints =
+    Number.isFinite(maxRaw) && Number.isInteger(maxRaw) && maxRaw >= 0
+      ? maxRaw
+      : DEFAULT_MAX_REWARD_POINTS;
+  const roundingMode = normalizeRoundingMode(row.rounding_mode);
+  const legacy = Number(row.order_completion_points);
+  const orderCompletionPoints =
+    Number.isFinite(legacy) && Number.isInteger(legacy) && legacy >= 0
+      ? legacy
       : DEFAULT_ORDER_COMPLETION_POINTS;
   return {
     id: 1,
-    orderCompletionPoints: safe,
-    order_completion_points: safe,
-    updatedAt: row?.updated_at || row?.updatedAt || null,
-    createdAt: row?.created_at || row?.createdAt || null,
+    enabled,
+    pointsPerRm,
+    points_per_rm: pointsPerRm,
+    minOrderAmount,
+    min_order_amount: minOrderAmount,
+    maxRewardPoints,
+    max_reward_points: maxRewardPoints,
+    roundingMode,
+    rounding_mode: roundingMode,
+    orderCompletionPoints,
+    order_completion_points: orderCompletionPoints,
+    examples: buildPointsExamples(pointsPerRm, roundingMode),
+    updatedAt: row.updated_at || row.updatedAt || null,
+    createdAt: row.created_at || row.createdAt || null,
   };
+}
+
+/**
+ * rewardPoints from effective spend × rate (with min / max / rounding).
+ */
+export function computeOrderRewardPoints(amount, settingsView) {
+  const cfg = settingsView || defaultBossPointsSettings();
+  if (!cfg.enabled) return 0;
+  const spend = Number(amount);
+  if (!Number.isFinite(spend) || spend <= 0) return 0;
+  if (spend < Number(cfg.minOrderAmount || 0)) return 0;
+  const rate = Number(cfg.pointsPerRm);
+  if (!Number.isFinite(rate) || rate < 0) return 0;
+  let points = applyRounding(spend * rate, cfg.roundingMode);
+  if (!Number.isFinite(points) || points < 0) points = 0;
+  const max = Number(cfg.maxRewardPoints);
+  if (Number.isFinite(max) && max > 0) points = Math.min(points, max);
+  return Math.trunc(points);
 }
 
 export async function getPointsSettingsRow() {
@@ -75,28 +192,30 @@ export async function getPointsSettingsRow() {
 }
 
 /**
- * Read Boss order-completion award from points_settings.
- * Never throws for award path callers — returns fallback 100 on any issue.
+ * Load Boss points rules. Never throws for award callers — returns defaults on failure.
  */
-export async function getOrderCompletionPoints() {
+export async function getBossPointsSettings() {
   try {
-    if (!hasPointsDb()) return DEFAULT_ORDER_COMPLETION_POINTS;
+    if (!hasPointsDb()) return defaultBossPointsSettings();
     const row = await getPointsSettingsRow();
-    if (!row || row.order_completion_points == null || row.order_completion_points === "") {
-      return DEFAULT_ORDER_COMPLETION_POINTS;
-    }
-    const n = Number(row.order_completion_points);
-    if (!Number.isFinite(n) || !Number.isInteger(n) || n < 0) {
-      return DEFAULT_ORDER_COMPLETION_POINTS;
-    }
-    return n;
+    return viewPointsSettings(row);
   } catch {
-    return DEFAULT_ORDER_COMPLETION_POINTS;
+    return defaultBossPointsSettings();
   }
 }
 
-export function orderPointsIdempotencyKey(orderId) {
-  return `order_points:${String(orderId || "").trim()}`;
+/**
+ * @deprecated Use getBossPointsSettings + computeOrderRewardPoints.
+ * Kept so older call sites still get a numeric fallback.
+ */
+export async function getOrderCompletionPoints() {
+  try {
+    const settings = await getBossPointsSettings();
+    // Example RM10 preview for legacy consumers
+    return computeOrderRewardPoints(10, settings) || DEFAULT_ORDER_COMPLETION_POINTS;
+  } catch {
+    return DEFAULT_ORDER_COMPLETION_POINTS;
+  }
 }
 
 export function hasPointsDb() {
@@ -349,10 +468,62 @@ async function awardPointsRestFallback({
   }
 }
 
+async function reserveOrderPointsIdempotency({
+  orderId,
+  bossId,
+  source,
+  operatorId = null,
+  reason = "订单完成奖励（0 分）",
+}) {
+  const key = orderPointsIdempotencyKey(orderId);
+  const existing = await supabaseJson(
+    restUrl("user_points_ledger", `?idempotency_key=eq.${encodeURIComponent(key)}&limit=1`),
+    { headers: serviceHeaders() }
+  );
+  if (Array.isArray(existing) && existing[0]) {
+    return {
+      ok: true,
+      duplicate: true,
+      skipped: true,
+      points: 0,
+      ledger_id: existing[0].id,
+      idempotency_key: key,
+    };
+  }
+  await ensureUserPointsAccount(bossId);
+  const account = await getUserPointsAccount(bossId);
+  const balanceAfter = asInt(account?.balance, 0);
+  const inserted = await supabaseJson(restUrl("user_points_ledger"), {
+    method: "POST",
+    headers: serviceHeaders({ Prefer: "return=representation" }),
+    body: JSON.stringify({
+      user_id: bossId,
+      delta: 0,
+      balance_after: balanceAfter,
+      reason,
+      source,
+      related_order_id: orderId,
+      idempotency_key: key,
+      operator_id: operatorId || null,
+    }),
+  });
+  const row = Array.isArray(inserted) ? inserted[0] : inserted;
+  return {
+    ok: true,
+    duplicate: false,
+    skipped: true,
+    points: 0,
+    ledger_id: row?.id || null,
+    balance_after: balanceAfter,
+    idempotency_key: key,
+  };
+}
+
 /**
  * Award Boss loyalty points when an order reaches completed.
- * Points amount comes from points_settings.order_completion_points (fallback 100).
- * Idempotency key: order_points:{order_id} — amount changes do not re-award old orders.
+ * Formula: floor(effectiveSpend × points_per_rm) with min/max/rounding from points_settings.
+ * Amount field: paid_cat_food > 0 ? paid_cat_food : total_amount (refund「实付」同源).
+ * Idempotency key: order_points:{order_id}
  */
 export async function awardBossPointsForCompletedOrder(order, { method = "boss_manual", operatorId = null } = {}) {
   const orderId = order?.id;
@@ -368,70 +539,65 @@ export async function awardBossPointsForCompletedOrder(order, { method = "boss_m
         ? "order_complete_admin"
         : "order_complete_boss";
 
-  let points = DEFAULT_ORDER_COMPLETION_POINTS;
+  let settings;
   try {
-    points = await getOrderCompletionPoints();
+    settings = await getBossPointsSettings();
   } catch {
-    points = DEFAULT_ORDER_COMPLETION_POINTS;
-  }
-  if (!Number.isFinite(points) || points < 0) {
-    points = DEFAULT_ORDER_COMPLETION_POINTS;
+    settings = defaultBossPointsSettings();
   }
 
-  // Configured 0: do not credit, but still reserve idempotency so later config bumps
-  // cannot re-award the same completed order.
-  if (points === 0) {
+  const spend = orderEffectiveSpendAmount(order);
+  let points = 0;
+  try {
+    points = computeOrderRewardPoints(spend, settings);
+  } catch {
+    // Fail closed to 0-mark path rather than inventing a fixed 100 for wrong amount.
+    points = 0;
+  }
+  if (!Number.isFinite(points) || points < 0) points = 0;
+
+  if (!settings.enabled) {
     try {
-      const key = orderPointsIdempotencyKey(orderId);
-      const existing = await supabaseJson(
-        restUrl(
-          "user_points_ledger",
-          `?idempotency_key=eq.${encodeURIComponent(key)}&limit=1`
-        ),
-        { headers: serviceHeaders() }
-      );
-      if (Array.isArray(existing) && existing[0]) {
+      return await reserveOrderPointsIdempotency({
+        orderId,
+        bossId,
+        source,
+        operatorId,
+        reason: "订单完成奖励（积分已关闭）",
+      });
+    } catch (error) {
+      if (isMissingRelation(error)) {
+        return { ok: true, skipped: true, points: 0, error: "points_table_missing" };
+      }
+      if (/duplicate|unique|23505/i.test(String(error?.message || ""))) {
         return {
           ok: true,
           duplicate: true,
           skipped: true,
           points: 0,
-          ledger_id: existing[0].id,
-          idempotency_key: key,
+          idempotency_key: orderPointsIdempotencyKey(orderId),
         };
       }
-      await ensureUserPointsAccount(bossId);
-      const account = await getUserPointsAccount(bossId);
-      const balanceAfter = asInt(account?.balance, 0);
-      const inserted = await supabaseJson(restUrl("user_points_ledger"), {
-        method: "POST",
-        headers: serviceHeaders({ Prefer: "return=representation" }),
-        body: JSON.stringify({
-          user_id: bossId,
-          delta: 0,
-          balance_after: balanceAfter,
-          reason: "订单完成奖励（配置为 0）",
-          source,
-          related_order_id: orderId,
-          idempotency_key: key,
-          operator_id: operatorId || null,
-        }),
+      return { ok: false, skipped: true, points: 0, error: error?.message || "disabled_mark_failed" };
+    }
+  }
+
+  if (points === 0) {
+    try {
+      return await reserveOrderPointsIdempotency({
+        orderId,
+        bossId,
+        source,
+        operatorId,
+        reason:
+          spend < Number(settings.minOrderAmount || 0)
+            ? "订单完成奖励（未达最低消费）"
+            : "订单完成奖励（计算结果为 0）",
       });
-      const row = Array.isArray(inserted) ? inserted[0] : inserted;
-      return {
-        ok: true,
-        duplicate: false,
-        skipped: true,
-        points: 0,
-        ledger_id: row?.id || null,
-        balance_after: balanceAfter,
-        idempotency_key: key,
-      };
     } catch (error) {
       if (isMissingRelation(error)) {
         return { ok: true, skipped: true, points: 0, error: "points_table_missing" };
       }
-      // Unique race → treat as already marked
       if (/duplicate|unique|23505/i.test(String(error?.message || ""))) {
         return {
           ok: true,
@@ -448,12 +614,116 @@ export async function awardBossPointsForCompletedOrder(order, { method = "boss_m
   return awardPoints({
     user_id: bossId,
     points,
-    reason: "订单完成奖励",
+    reason: `订单完成奖励（消费 ${spend} × ${settings.pointsPerRm}）`,
     source,
     related_order_id: orderId,
     idempotency_key: orderPointsIdempotencyKey(orderId),
     operator_id: operatorId || null,
   });
+}
+
+/**
+ * Clawback Boss points after a completed order is refunded (cat-food refund confirmed).
+ * Idempotent: order_points_clawback:{order_id}. Non-positive original award → no-op.
+ * Never throws to refund callers — returns { ok, skipped }.
+ */
+export async function clawbackBossPointsForRefundedOrder(
+  order,
+  { operatorId = null, reason = "订单退款回退积分" } = {}
+) {
+  const orderId = order?.id || order;
+  const bossId = typeof order === "object" ? order?.boss_id : null;
+  if (!orderId) return { ok: false, skipped: true, error: "missing_order" };
+
+  try {
+    if (!hasPointsDb()) return { ok: true, skipped: true, error: "points_db_unavailable" };
+
+    const awardKey = orderPointsIdempotencyKey(orderId);
+    const clawKey = orderPointsClawbackIdempotencyKey(orderId);
+
+    const existingClaw = await supabaseJson(
+      restUrl("user_points_ledger", `?idempotency_key=eq.${encodeURIComponent(clawKey)}&limit=1`),
+      { headers: serviceHeaders() }
+    );
+    if (Array.isArray(existingClaw) && existingClaw[0]) {
+      return {
+        ok: true,
+        duplicate: true,
+        skipped: true,
+        ledger_id: existingClaw[0].id,
+        idempotency_key: clawKey,
+      };
+    }
+
+    const awardRows = await supabaseJson(
+      restUrl("user_points_ledger", `?idempotency_key=eq.${encodeURIComponent(awardKey)}&limit=1`),
+      { headers: serviceHeaders() }
+    );
+    const award = Array.isArray(awardRows) ? awardRows[0] : null;
+    if (!award) {
+      return { ok: true, skipped: true, error: "no_award_ledger" };
+    }
+    const awarded = asInt(award.delta, 0);
+    if (awarded <= 0) {
+      return { ok: true, skipped: true, error: "award_was_zero", idempotency_key: awardKey };
+    }
+
+    const userId = bossId || award.user_id;
+    if (!userId) return { ok: false, skipped: true, error: "missing_boss" };
+
+    await ensureUserPointsAccount(userId);
+    const account = await getUserPointsAccount(userId);
+    const balance = asInt(account?.balance, 0);
+    const debit = Math.min(awarded, Math.max(0, balance));
+    const balanceAfter = balance - debit;
+
+    await supabaseJson(restUrl("user_points_accounts", `?user_id=eq.${encodeURIComponent(userId)}`), {
+      method: "PATCH",
+      headers: serviceHeaders(),
+      body: JSON.stringify({
+        balance: balanceAfter,
+        lifetime_spent: asInt(account?.lifetime_spent, 0) + debit,
+        updated_at: new Date().toISOString(),
+      }),
+    });
+
+    const inserted = await supabaseJson(restUrl("user_points_ledger"), {
+      method: "POST",
+      headers: serviceHeaders({ Prefer: "return=representation" }),
+      body: JSON.stringify({
+        user_id: userId,
+        delta: -debit,
+        balance_after: balanceAfter,
+        reason,
+        source: "order_refund_clawback",
+        related_order_id: orderId,
+        idempotency_key: clawKey,
+        operator_id: operatorId || null,
+      }),
+    });
+    const row = Array.isArray(inserted) ? inserted[0] : inserted;
+    return {
+      ok: true,
+      duplicate: false,
+      points: -debit,
+      ledger_id: row?.id || null,
+      balance_after: balanceAfter,
+      idempotency_key: clawKey,
+    };
+  } catch (error) {
+    if (isMissingRelation(error)) {
+      return { ok: true, skipped: true, error: "points_table_missing" };
+    }
+    if (/duplicate|unique|23505/i.test(String(error?.message || ""))) {
+      return {
+        ok: true,
+        duplicate: true,
+        skipped: true,
+        idempotency_key: orderPointsClawbackIdempotencyKey(orderId),
+      };
+    }
+    return { ok: false, skipped: true, error: error?.message || "clawback_failed" };
+  }
 }
 
 /** Read helpers for Boss portal / tests. Always scope by authenticated user_id server-side. */

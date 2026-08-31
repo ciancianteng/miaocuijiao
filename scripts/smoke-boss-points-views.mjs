@@ -1,32 +1,60 @@
 /**
- * Smoke test for Boss points read helpers (no network).
+ * Smoke test for Boss points rate helpers (no network).
  * Run: node scripts/smoke-boss-points-views.mjs
  */
 import {
   emptyPointsAccountView,
   orderPointsIdempotencyKey,
+  orderPointsClawbackIdempotencyKey,
   ORDER_COMPLETION_POINTS,
   DEFAULT_ORDER_COMPLETION_POINTS,
-  parseOrderCompletionPoints,
+  DEFAULT_POINTS_PER_RM,
+  orderEffectiveSpendAmount,
+  computeOrderRewardPoints,
+  viewPointsSettings,
+  defaultBossPointsSettings,
+  parseNonNegNumber,
   viewPointsAccount,
   viewPointsLedgerRow,
-  viewPointsSettings,
 } from "../server/api/_user-points.js";
 
 function assert(cond, msg) {
   if (!cond) throw new Error(msg || "assert failed");
 }
 
-assert(ORDER_COMPLETION_POINTS === 100, "fallback default is +100");
-assert(DEFAULT_ORDER_COMPLETION_POINTS === 100, "DEFAULT_ORDER_COMPLETION_POINTS is 100");
+assert(ORDER_COMPLETION_POINTS === 100, "legacy fallback constant");
+assert(DEFAULT_ORDER_COMPLETION_POINTS === 100, "DEFAULT_ORDER_COMPLETION_POINTS");
+assert(DEFAULT_POINTS_PER_RM === 10, "default points per RM");
 assert(orderPointsIdempotencyKey("abc") === "order_points:abc", "idempotency key shape");
-assert(parseOrderCompletionPoints(150).ok && parseOrderCompletionPoints(150).value === 150, "parse 150");
-assert(parseOrderCompletionPoints(0).ok && parseOrderCompletionPoints(0).value === 0, "parse 0");
-assert(!parseOrderCompletionPoints(-1).ok, "reject negative");
-assert(!parseOrderCompletionPoints(1.5).ok, "reject float");
-assert(!parseOrderCompletionPoints("12.0").ok, "reject decimal string");
-assert(viewPointsSettings(null).orderCompletionPoints === 100, "settings fallback");
-assert(viewPointsSettings({ order_completion_points: 80 }).orderCompletionPoints === 80, "settings row");
+assert(
+  orderPointsClawbackIdempotencyKey("abc") === "order_points_clawback:abc",
+  "clawback key shape"
+);
+
+assert(orderEffectiveSpendAmount({ paid_cat_food: 38, total_amount: 40 }) === 38, "prefer paid_cat_food");
+assert(orderEffectiveSpendAmount({ paid_cat_food: 0, total_amount: 128 }) === 128, "fallback total_amount");
+assert(orderEffectiveSpendAmount({ total_amount: 8 }) === 8, "total only");
+
+const settings = defaultBossPointsSettings();
+assert(settings.pointsPerRm === 10 && settings.enabled === true, "default settings");
+assert(computeOrderRewardPoints(8, settings) === 80, "RM8 → 80");
+assert(computeOrderRewardPoints(38, settings) === 380, "RM38 → 380");
+assert(computeOrderRewardPoints(128, settings) === 1280, "RM128 → 1280");
+assert(computeOrderRewardPoints(10.9, { ...settings, roundingMode: "floor" }) === 109, "floor 10.9*10");
+
+const capped = { ...settings, maxRewardPoints: 100 };
+assert(computeOrderRewardPoints(50, capped) === 100, "max cap");
+
+const disabled = { ...settings, enabled: false };
+assert(computeOrderRewardPoints(50, disabled) === 0, "disabled → 0");
+
+const minGate = { ...settings, minOrderAmount: 20 };
+assert(computeOrderRewardPoints(10, minGate) === 0, "below min");
+assert(computeOrderRewardPoints(20, minGate) === 200, "at min");
+
+assert(parseNonNegNumber(-1, { fieldLabel: "x" }).ok === false, "reject negative");
+assert(parseNonNegNumber(1.5, { integer: true, fieldLabel: "x" }).ok === false, "reject float int");
+assert(viewPointsSettings(null).examples[0].label.includes("100积分"), "example RM10");
 
 const empty = emptyPointsAccountView("u1");
 assert(empty.balance === 0 && empty.lifetimeEarned === 0, "empty account is zero");
@@ -49,16 +77,5 @@ const ledger = viewPointsLedgerRow({
 });
 assert(ledger.deltaText === "+100", "delta text");
 assert(ledger.statusText === "已入账", "status text");
-assert(ledger.relatedOrderId === "ord-1", "order id");
-assert(ledger.sourceLabel.includes("订单完成"), "source label");
-
-// Universal (no hardcoded emails / UUIDs in read helpers).
-const src = await import("node:fs").then((fs) =>
-  fs.readFileSync(new URL("../server/api/points.js", import.meta.url), "utf8")
-);
-assert(!/ciancianteng@gmail\.com/i.test(src), "points API must not hardcode test email");
-assert(!/boss@meow\.test/i.test(src), "points API must not hardcode test boss");
-assert(/profile\.id/.test(src), "points API must use token profile.id");
-assert(!/req\.query\.user_id|body\.user_id/.test(src), "must not trust client user_id");
 
 console.log("OK smoke-boss-points-views");

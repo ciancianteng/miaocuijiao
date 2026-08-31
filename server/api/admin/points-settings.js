@@ -1,13 +1,15 @@
 /**
- * Admin Boss loyalty points settings.
+ * Admin Boss loyalty points settings (amount × rate).
  * Independent from companion popularity rules.
  */
 import { requireAdmin } from "../_admin-auth.js";
 import {
   DEFAULT_ORDER_COMPLETION_POINTS,
+  defaultBossPointsSettings,
   getPointsSettingsRow,
   hasPointsDb,
-  parseOrderCompletionPoints,
+  normalizeRoundingMode,
+  parseNonNegNumber,
   viewPointsSettings,
 } from "../_user-points.js";
 import { isMissingRelation, restUrl, serviceHeaders, supabaseJson } from "../_wallet.js";
@@ -31,13 +33,25 @@ async function parseBody(req) {
   }
 }
 
+function parseEnabled(raw) {
+  if (raw === true || raw === 1 || raw === "1" || raw === "true" || raw === "on") return true;
+  if (raw === false || raw === 0 || raw === "0" || raw === "false" || raw === "off") return false;
+  return null;
+}
+
 async function ensureDefaultRow() {
+  const defaults = defaultBossPointsSettings();
   await supabaseJson(restUrl("points_settings"), {
     method: "POST",
     headers: serviceHeaders({ Prefer: "resolution=ignore-duplicates,return=representation" }),
     body: JSON.stringify({
       id: 1,
       order_completion_points: DEFAULT_ORDER_COMPLETION_POINTS,
+      enabled: defaults.enabled,
+      points_per_rm: defaults.pointsPerRm,
+      min_order_amount: defaults.minOrderAmount,
+      max_reward_points: defaults.maxRewardPoints,
+      rounding_mode: defaults.roundingMode,
     }),
   });
 }
@@ -67,8 +81,9 @@ export default async function handler(req, res) {
           return json(res, 200, {
             ok: true,
             tablesReady: false,
-            settings: viewPointsSettings(null),
-            message: "积分设置表未初始化，请先执行 supabase/migrations/20260831_points_settings.sql",
+            settings: defaultBossPointsSettings(),
+            message:
+              "积分设置表未初始化，请先执行 supabase/migrations/20260831_points_settings.sql 与 20260831_points_settings_rate.sql",
           });
         }
         throw error;
@@ -83,29 +98,66 @@ export default async function handler(req, res) {
 
     if (req.method === "PUT" || req.method === "POST") {
       const body = await parseBody(req);
-      const parsed = parseOrderCompletionPoints(
-        body.orderCompletionPoints ?? body.order_completion_points
-      );
-      if (!parsed.ok) {
-        return json(res, 400, { ok: false, message: parsed.message || "积分值不合法" });
+
+      const enabledRaw = body.enabled ?? body.orderPointsEnabled;
+      const enabled = parseEnabled(enabledRaw);
+      if (enabledRaw != null && enabled === null) {
+        return json(res, 400, { ok: false, message: "启用开关不合法。" });
+      }
+
+      const perRm = parseNonNegNumber(body.pointsPerRm ?? body.points_per_rm ?? body.pointsPerRM, {
+        fieldLabel: "每消费 RM1 获得积分",
+      });
+      if (!perRm.ok) return json(res, 400, { ok: false, message: perRm.message });
+
+      const minAmt = parseNonNegNumber(body.minOrderAmount ?? body.min_order_amount, {
+        fieldLabel: "每单最低消费金额",
+      });
+      if (!minAmt.ok) return json(res, 400, { ok: false, message: minAmt.message });
+
+      const maxPts = parseNonNegNumber(body.maxRewardPoints ?? body.max_reward_points, {
+        integer: true,
+        fieldLabel: "每单最高奖励积分",
+      });
+      if (!maxPts.ok) return json(res, 400, { ok: false, message: maxPts.message });
+
+      const roundingMode = normalizeRoundingMode(body.roundingMode ?? body.rounding_mode);
+      if (
+        body.roundingMode != null &&
+        !["floor", "ceil", "round"].includes(String(body.roundingMode).trim().toLowerCase())
+      ) {
+        return json(res, 400, { ok: false, message: "小数积分处理方式不合法（floor/ceil/round）。" });
       }
 
       let rows;
       try {
         await ensureDefaultRow();
+        const patch = {
+          enabled: enabled == null ? true : enabled,
+          points_per_rm: perRm.value,
+          min_order_amount: minAmt.value,
+          max_reward_points: maxPts.value,
+          rounding_mode: roundingMode,
+          updated_at: new Date().toISOString(),
+        };
         rows = await supabaseJson(restUrl("points_settings", "?id=eq.1"), {
           method: "PATCH",
           headers: serviceHeaders({ Prefer: "return=representation" }),
-          body: JSON.stringify({
-            order_completion_points: parsed.value,
-            updated_at: new Date().toISOString(),
-          }),
+          body: JSON.stringify(patch),
         });
       } catch (error) {
         if (isMissingRelation(error)) {
           return json(res, 503, {
             ok: false,
-            message: "积分设置表未初始化，请先执行 supabase/migrations/20260831_points_settings.sql",
+            message:
+              "积分设置表未初始化，请先执行 supabase/migrations/20260831_points_settings.sql 与 20260831_points_settings_rate.sql",
+          });
+        }
+        // Column missing → rate migration not applied yet
+        if (/points_per_rm|schema cache|Could not find/i.test(String(error?.message || ""))) {
+          return json(res, 503, {
+            ok: false,
+            message: "请先在 Staging 执行 supabase/migrations/20260831_points_settings_rate.sql",
           });
         }
         throw error;
@@ -115,7 +167,7 @@ export default async function handler(req, res) {
       return json(res, 200, {
         ok: true,
         tablesReady: true,
-        settings: viewPointsSettings(row || { id: 1, order_completion_points: parsed.value }),
+        settings: viewPointsSettings(row),
         message: "积分设置已保存",
       });
     }

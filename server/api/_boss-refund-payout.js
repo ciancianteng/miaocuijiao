@@ -348,6 +348,23 @@ export async function confirmBossCatFoodRefund(db, {
     } catch (e) {
       console.warn("[refund-meow] payment_transactions:", e?.message || e);
     }
+
+    // Boss loyalty points clawback (non-blocking). Idempotent: order_points_clawback:{order_id}.
+    try {
+      const pointsApi = await import("./_user-points.js");
+      const claw = await pointsApi.clawbackBossPointsForRefundedOrder(
+        { id: saved.order_id, boss_id: saved.boss_id || row.boss_id },
+        {
+          operatorId: adminId || null,
+          reason: "订单退款回退积分",
+        }
+      );
+      if (claw && claw.ok === false) {
+        console.warn("[refund-meow] points clawback:", claw.error || "failed");
+      }
+    } catch (e) {
+      console.warn("[refund-meow] points clawback:", e?.message || e);
+    }
   }
 
   if (saved.batch_id || row.batch_id) {

@@ -14,7 +14,14 @@
     account: { balance: 0, lifetimeEarned: 0, lifetimeSpent: 0 },
     ledger: [],
     tablesReady: true,
-    orderCompletionPoints: 100,
+    orderCompletionPoints: 10,
+    orderPointsRule: {
+      enabled: true,
+      pointsPerRm: 10,
+      minOrderAmount: 0,
+      maxRewardPoints: 0,
+      roundingMode: "floor",
+    },
   };
 
   function looksLikeJwt(raw) {
@@ -87,14 +94,16 @@
         : "";
 
     var rows = state.ledger || [];
-    var awardPts = Number(state.orderCompletionPoints);
-    if (!Number.isFinite(awardPts) || awardPts < 0) awardPts = 100;
+    var rule = state.orderPointsRule || {};
+    var perRm = Number(rule.pointsPerRm);
+    if (!Number.isFinite(perRm) || perRm < 0) perRm = 10;
+    var ruleText = rule.enabled === false
+      ? "当前未启用订单积分奖励。"
+      : "完成订单可获得积分，当前规则：每消费 RM1 获得 " + perRm + " 积分。";
     var ledgerHtml;
     if (!rows.length) {
       ledgerHtml =
-        '<div class="empty">暂无积分记录<br>订单完成后将自动获得 +' +
-        esc(awardPts) +
-        " 积分。</div>";
+        '<div class="empty">暂无积分记录<br>' + esc(ruleText) + "</div>";
     } else {
       ledgerHtml =
         '<div class="tx-head"><span>时间</span><span>变动</span><span>来源 / 原因</span><span>关联订单</span><span>状态</span></div><div class="ledger">' +
@@ -142,7 +151,9 @@
     }
 
     root.innerHTML =
-      '<section class="page-head"><div><h1>我的积分</h1><p>订单完成后自动到账。积分与猫粮钱包相互独立。</p></div>' +
+      '<section class="page-head"><div><h1>我的积分</h1><p>' +
+      esc(ruleText) +
+      " 积分与猫粮钱包相互独立。</p></div>" +
       '<div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="ghost-btn" data-points-refresh>刷新</button><a class="ghost-btn" href="mine.html">返回我的账号</a><a class="ghost-btn" href="orders.html">我的订单</a></div></section>' +
       warn +
       '<section class="stats"><div class="stat"><span>当前积分余额</span><strong>' +
@@ -183,8 +194,15 @@
       state.ledger = Array.isArray(body.ledger) ? body.ledger : [];
       state.tablesReady = body.tablesReady !== false;
       state.message = body.message || "";
-      var pts = Number(body.orderCompletionPoints);
-      state.orderCompletionPoints = Number.isFinite(pts) && pts >= 0 ? pts : 100;
+      state.orderPointsRule = body.orderPointsRule || {
+        enabled: true,
+        pointsPerRm: Number(body.orderCompletionPoints) || 10,
+        minOrderAmount: 0,
+        maxRewardPoints: 0,
+        roundingMode: "floor",
+      };
+      var pts = Number(state.orderPointsRule.pointsPerRm);
+      state.orderCompletionPoints = Number.isFinite(pts) && pts >= 0 ? pts : 10;
     } catch (err) {
       state.error = (err && err.message) || "积分读取失败";
       state.account = { balance: 0, lifetimeEarned: 0, lifetimeSpent: 0 };
