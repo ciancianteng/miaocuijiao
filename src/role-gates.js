@@ -240,6 +240,9 @@
     if (/user already registered|already.*(registered|exists)|duplicate|邮箱.*已/i.test(msg)) {
       return "该邮箱已注册，请直接登录。";
     }
+    if (/ACCOUNT_NEEDS_REPAIR|PROFILE_MISSING|资料不完整|未绑定平台资料/i.test(msg)) {
+      return msg;
+    }
     return msg;
   }
 
@@ -1425,7 +1428,15 @@
             var tip = j.message || "验证码已发送";
             if (j.devCode) tip += "（测试 " + j.devCode + "）";
             setLoginMessage(sendOtpBtn, tip);
-            var left = Number(j.retryAfterSec) || 60;
+            // Only countdown when mail was actually sent (or Staging exposed a debug code).
+            var mailed = j.mailSent === true || !!j.devCode;
+            if (!mailed) {
+              sendOtpBtn.disabled = false;
+              sendOtpBtn.textContent = oldSend || "获取验证码";
+              return;
+            }
+            var left = Number(j.retryAfterSec) || Number(j.expiresInSec) || 60;
+            if (left > 120) left = 60;
             sendOtpBtn.textContent = left + "s";
             var timer = setInterval(function () {
               left -= 1;
@@ -1482,6 +1493,12 @@
             var tip = j.message || "验证码已发送";
             if (j.devCode) tip += "（测试 " + j.devCode + "）";
             setLoginMessage(sendRegOtpBtn, tip);
+            var mailed = j.mailSent === true || !!j.devCode;
+            if (!mailed) {
+              sendRegOtpBtn.disabled = false;
+              sendRegOtpBtn.textContent = oldRegSend || "获取验证码";
+              return;
+            }
             var left = Number(j.retryAfterSec) || 60;
             sendRegOtpBtn.textContent = left + "s";
             var timer = setInterval(function () {
