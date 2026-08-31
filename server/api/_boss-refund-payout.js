@@ -208,35 +208,123 @@ export async function csSuggestRefund(db, {
 }
 
 /**
+ * Whether a clawbackBossPointsForRefundedOrder result means the obligation is settled
+ * (success, already done, or nothing to claw). ok===false means retry is still needed.
+ */
+export function isRefundPointsClawbackSettled(claw) {
+  if (!claw || typeof claw !== "object") return false;
+  if (claw.ok === false) return false;
+  return true;
+}
+
+/**
+ * Run Boss points clawback for a refunded order.
+ * Idempotent via order_points_clawback:{order_id} inside clawbackBossPointsForRefundedOrder.
+ * Safe to call again after refund.status is already paid.
+ */
+export async function runRefundPointsClawback(
+  order,
+  { operatorId = null, reason = "订单退款回退积分", clawbackFn = null } = {}
+) {
+  const orderId = order?.id || order?.order_id || "";
+  const bossId = order?.boss_id || order?.bossId || null;
+  if (!orderId) return { ok: true, skipped: true, error: "no_order" };
+
+  try {
+    const fn =
+      typeof clawbackFn === "function"
+        ? clawbackFn
+        : (await import("./_user-points.js")).clawbackBossPointsForRefundedOrder;
+    const claw = await fn(
+      { id: orderId, boss_id: bossId },
+      { operatorId: operatorId || null, reason }
+    );
+    if (claw && claw.ok === false) {
+      console.warn("[refund-meow] points clawback:", claw.error || "failed");
+    }
+    return claw && typeof claw === "object" ? claw : { ok: false, error: "empty_clawback_result" };
+  } catch (e) {
+    console.warn("[refund-meow] points clawback:", e?.message || e);
+    return { ok: false, error: String(e?.message || e || "clawback_failed") };
+  }
+}
+
+/**
  * P0：确认退款猫粮 — 真实 creditWallet + 幂等 + 更新订单。
  * 禁止现金/银行/原路退款。
+ *
+ * If refund is already paid: never re-credit wallet / re-write payout;
+ * still ensure points clawback (idempotent, retry-safe).
+ *
+ * Optional deps (tests): { creditWallet, getWallet, notifyBoss, clawbackBossPointsForRefundedOrder, syncPayout }
  */
-export async function confirmBossCatFoodRefund(db, {
-  refundId,
-  amount,
-  adminId,
-  adminName,
-  reason,
-} = {}) {
+export async function confirmBossCatFoodRefund(
+  db,
+  { refundId, amount, adminId, adminName, reason } = {},
+  deps = {}
+) {
   const rows = await db("boss_refund_requests", `?id=eq.${encodeURIComponent(refundId)}&limit=1`);
   const row = rows?.[0];
   if (!row) return { ok: false, message: "退款记录不存在" };
 
+  const clawbackDeps = {
+    operatorId: adminId || null,
+    reason: "订单退款回退积分",
+    clawbackFn: deps.clawbackBossPointsForRefundedOrder || null,
+  };
+
+  // Already paid: do NOT re-credit 猫粮 / payout / payment_transactions.
+  // DO ensure points clawback can retry if the first attempt failed after paid.
   if (String(row.status || "") === "paid") {
     let wallet = null;
     try {
-      const walletApi = await import("./_wallet.js");
-      wallet = await walletApi.getWallet(row.boss_id);
+      if (typeof deps.getWallet === "function") {
+        wallet = await deps.getWallet(row.boss_id);
+      } else {
+        const walletApi = await import("./_wallet.js");
+        wallet = await walletApi.getWallet(row.boss_id);
+      }
     } catch {
       /* optional */
     }
+
+    let pointsClawback = { ok: true, skipped: true, error: "no_order" };
+    if (row.order_id) {
+      pointsClawback = await runRefundPointsClawback(
+        { id: row.order_id, boss_id: row.boss_id },
+        clawbackDeps
+      );
+    }
+
+    const clawSettled = isRefundPointsClawbackSettled(pointsClawback);
+    if (!clawSettled) {
+      return {
+        ok: false,
+        message: `猫粮已退款，但积分回收未完成（${pointsClawback?.error || "clawback_failed"}）。请再次点击「确认退款」以重试积分回收（不会重复退猫粮）。`,
+        refund: viewBossRefund(row),
+        duplicate: true,
+        alreadyRefunded: true,
+        wallet,
+        pointsClawback,
+        clawbackRetried: true,
+        clawbackSettled: false,
+      };
+    }
+
     return {
       ok: true,
-      message: "已退款（幂等，未重复入账）",
+      message: pointsClawback?.duplicate
+        ? "已退款（幂等，未重复入账；积分回收已完成）"
+        : pointsClawback?.skipped && pointsClawback?.error
+          ? "已退款（幂等，未重复入账）"
+          : "已退款（幂等，未重复入账；积分回收已确认）",
       refund: viewBossRefund(row),
       duplicate: true,
       alreadyRefunded: true,
       wallet,
+      pointsClawback,
+      clawbackRetried: true,
+      clawbackSettled: true,
     };
   }
 
@@ -253,25 +341,40 @@ export async function confirmBossCatFoodRefund(db, {
   }
 
   const idempotencyKey = `refund-meow:${row.id}`;
-  const walletApi = await import("./_wallet.js");
+  let walletApi = null;
   let creditResult;
   try {
-    creditResult = await walletApi.creditWallet({
-      bossId: row.boss_id,
-      transactionType: "refund",
-      amount: creditAmount,
-      balanceType: "paid",
-      idempotencyKey,
-      reason: String(reason || row.cs_note || row.reason || "订单退款退回猫粮").slice(0, 240),
-      internalNote: `confirmBossCatFoodRefund by ${adminName || adminId || "admin"}`,
-      relatedOrderId: row.order_id || null,
-      operatorId: adminId || null,
-    });
+    if (typeof deps.creditWallet === "function") {
+      creditResult = await deps.creditWallet({
+        bossId: row.boss_id,
+        transactionType: "refund",
+        amount: creditAmount,
+        balanceType: "paid",
+        idempotencyKey,
+        reason: String(reason || row.cs_note || row.reason || "订单退款退回猫粮").slice(0, 240),
+        internalNote: `confirmBossCatFoodRefund by ${adminName || adminId || "admin"}`,
+        relatedOrderId: row.order_id || null,
+        operatorId: adminId || null,
+      });
+    } else {
+      walletApi = await import("./_wallet.js");
+      creditResult = await walletApi.creditWallet({
+        bossId: row.boss_id,
+        transactionType: "refund",
+        amount: creditAmount,
+        balanceType: "paid",
+        idempotencyKey,
+        reason: String(reason || row.cs_note || row.reason || "订单退款退回猫粮").slice(0, 240),
+        internalNote: `confirmBossCatFoodRefund by ${adminName || adminId || "admin"}`,
+        relatedOrderId: row.order_id || null,
+        operatorId: adminId || null,
+      });
+    }
   } catch (e) {
     return { ok: false, message: `猫粮入账失败：${e?.message || e}` };
   }
 
-  const duplicateCredit = !!(creditResult && (creditResult.duplicate === true || creditResult.ok === true && creditResult.duplicate));
+  const duplicateCredit = !!(creditResult && (creditResult.duplicate === true || (creditResult.ok === true && creditResult.duplicate)));
 
   const patch = {
     status: "paid",
@@ -292,18 +395,22 @@ export async function confirmBossCatFoodRefund(db, {
 
   // Cancel any legacy Friday payout queue rows (cash path retired).
   try {
-    await syncPayoutRequestStatus(db, {
-      relatedTable: "boss_refund_requests",
-      relatedRecordId: refundId,
-      status: "completed",
-      patch: {
-        paid_at: patch.paid_at,
-        paid_by: adminId || null,
-        transaction_no: "MEOW_WALLET",
-        receipt_url: "meowcoin-wallet",
-        meta: { refund_method: "meowcoin", cash_refund: false },
-      },
-    });
+    if (typeof deps.syncPayout !== "function") {
+      await syncPayoutRequestStatus(db, {
+        relatedTable: "boss_refund_requests",
+        relatedRecordId: refundId,
+        status: "completed",
+        patch: {
+          paid_at: patch.paid_at,
+          paid_by: adminId || null,
+          transaction_no: "MEOW_WALLET",
+          receipt_url: "meowcoin-wallet",
+          meta: { refund_method: "meowcoin", cash_refund: false },
+        },
+      });
+    } else {
+      await deps.syncPayout();
+    }
   } catch {
     /* optional */
   }
@@ -318,7 +425,7 @@ export async function confirmBossCatFoodRefund(db, {
     } catch (e) {
       console.warn("[refund-meow] order status:", e?.message || e);
       try {
-        const walletApiForOrder = await import("./_wallet.js");
+        const walletApiForOrder = walletApi || (await import("./_wallet.js"));
         await walletApiForOrder.supabaseJson(
           walletApiForOrder.restUrl("orders", `?id=eq.${encodeURIComponent(saved.order_id)}`),
           {
@@ -350,6 +457,16 @@ export async function confirmBossCatFoodRefund(db, {
     }
   }
 
+  // Boss loyalty points clawback. Idempotent: order_points_clawback:{order_id}.
+  // If this fails after paid, a later confirm retry (paid branch) will re-attempt clawback only.
+  let pointsClawback = { ok: true, skipped: true, error: "no_order" };
+  if (saved.order_id) {
+    pointsClawback = await runRefundPointsClawback(
+      { id: saved.order_id, boss_id: saved.boss_id || row.boss_id },
+      clawbackDeps
+    );
+  }
+
   if (saved.batch_id || row.batch_id) {
     try {
       await refreshBatchTotals(db, saved.batch_id || row.batch_id);
@@ -360,21 +477,53 @@ export async function confirmBossCatFoodRefund(db, {
 
   let wallet = creditResult?.wallet || null;
   try {
-    wallet = (await walletApi.getWallet(row.boss_id)) || wallet;
+    if (typeof deps.getWallet === "function") {
+      wallet = (await deps.getWallet(row.boss_id)) || wallet;
+    } else {
+      if (!walletApi) walletApi = await import("./_wallet.js");
+      wallet = (await walletApi.getWallet(row.boss_id)) || wallet;
+    }
   } catch {
     /* optional */
   }
 
   try {
-    await walletApi.notifyBoss(
-      saved.boss_id,
-      "退款成功",
-      `订单 ${saved.order_no || ""} 已退回 ${creditAmount} 猫粮到您的平台余额，可继续用于平台消费，不支持提现或现金退款。`,
-      "refund",
-      saved.id
-    );
+    if (typeof deps.notifyBoss === "function") {
+      await deps.notifyBoss(
+        saved.boss_id,
+        "退款成功",
+        `订单 ${saved.order_no || ""} 已退回 ${creditAmount} 猫粮到您的平台余额，可继续用于平台消费，不支持提现或现金退款。`,
+        "refund",
+        saved.id
+      );
+    } else {
+      if (!walletApi) walletApi = await import("./_wallet.js");
+      await walletApi.notifyBoss(
+        saved.boss_id,
+        "退款成功",
+        `订单 ${saved.order_no || ""} 已退回 ${creditAmount} 猫粮到您的平台余额，可继续用于平台消费，不支持提现或现金退款。`,
+        "refund",
+        saved.id
+      );
+    }
   } catch {
     /* optional */
+  }
+
+  const clawSettled = isRefundPointsClawbackSettled(pointsClawback);
+  if (!clawSettled) {
+    return {
+      ok: false,
+      message: `已退回 ${creditAmount} 猫粮，但积分回收未完成（${pointsClawback?.error || "clawback_failed"}）。请再次点击「确认退款」以重试积分回收（不会重复退猫粮）。`,
+      refund: viewBossRefund(saved),
+      duplicate: !!duplicateCredit,
+      alreadyRefunded: true,
+      wallet,
+      creditedCatFood: creditAmount,
+      adminName: adminName || "",
+      pointsClawback,
+      clawbackSettled: false,
+    };
   }
 
   return {
@@ -388,6 +537,8 @@ export async function confirmBossCatFoodRefund(db, {
     wallet,
     creditedCatFood: creditAmount,
     adminName: adminName || "",
+    pointsClawback,
+    clawbackSettled: true,
   };
 }
 

@@ -613,9 +613,17 @@
           missing.push(remoteDepositPay.emptyMessage || "平台暂未配置押金收款方式，请联系客服");
         }
       }
-      [["settlementMethod", "结款方式"], ["settlementName", "结款户名"], ["settlementAccount", "结款账号"]].forEach(function (item) {
+      [["settlementMethod", "结款方式"], ["settlementName", "银行户名"], ["settlementAccount", "银行账号"]].forEach(function (item) {
         if (!hasText(identity, item[0])) missing.push(item[1]);
       });
+      if (isBankSettlementMethod(identity.settlementMethod)) {
+        var bankSel = String(identity.settlementBank || "").trim();
+        if (bankSel === SETTLEMENT_BANK_OTHER && !String(identity.settlementBankOther || "").trim()) {
+          missing.push("其他银行名称");
+        } else if (!effectiveSettlementBankName(identity)) {
+          missing.push("银行名称");
+        }
+      }
       return missing;
     }
     return missing;
@@ -1346,10 +1354,88 @@
     if (type === "textarea") return '<label class="form-field full">' + esc(label) + '<textarea name="' + esc(name) + '" data-apply-field ' + attrs + '>' + esc(value || "") + '</textarea></label>';
     return '<label class="form-field">' + esc(label) + '<input name="' + esc(name) + '" data-apply-field type="' + esc(type) + '" value="' + esc(value || "") + '" ' + attrs + '></label>';
   }
-  function selectField(name, label, value, options) {
-    return '<label class="form-field">' + esc(label) + '<select name="' + esc(name) + '" data-apply-field>' + options.map(function (o) {
-      return '<option value="' + esc(o) + '"' + (o === value ? " selected" : "") + '>' + esc(o) + '</option>';
-    }).join("") + '</select></label>';
+  function selectField(name, label, value, options, opts) {
+    opts = opts || {};
+    var placeholder = opts.placeholder ? String(opts.placeholder) : "";
+    var html =
+      '<label class="form-field' +
+      (opts.full ? " full" : "") +
+      '"' +
+      (opts.hidden ? " hidden" : "") +
+      (opts.attrs || "") +
+      ">" +
+      esc(label) +
+      '<select name="' +
+      esc(name) +
+      '" data-apply-field>';
+    if (placeholder) {
+      html += '<option value=""' + (!value ? " selected" : "") + ">" + esc(placeholder) + "</option>";
+    }
+    html +=
+      (options || [])
+        .map(function (o) {
+          return '<option value="' + esc(o) + '"' + (o === value ? " selected" : "") + ">" + esc(o) + "</option>";
+        })
+        .join("") +
+      "</select></label>";
+    return html;
+  }
+  /** Malaysia banks for companion settlement (银行卡). Last option is free-text Other. */
+  var SETTLEMENT_BANK_OTHER = "Other / 其他";
+  var SETTLEMENT_BANKS = [
+    "Maybank",
+    "CIMB Bank",
+    "Public Bank",
+    "RHB Bank",
+    "Hong Leong Bank",
+    "AmBank",
+    "Bank Islam",
+    "Bank Rakyat",
+    "BSN",
+    "Affin Bank",
+    "Alliance Bank",
+    "UOB Malaysia",
+    "OCBC Malaysia",
+    "HSBC Malaysia",
+    "Standard Chartered Malaysia",
+    SETTLEMENT_BANK_OTHER,
+  ];
+  var SETTLEMENT_METHODS = ["银行卡", "DuitNow", "TNG Wallet", "支付宝"];
+  function isBankSettlementMethod(method) {
+    return String(method || "").trim() === "银行卡" || /^bank$/i.test(String(method || "").trim());
+  }
+  /** Resolve select + optional「其他」into the bank_name string persisted to API/DB. */
+  function effectiveSettlementBankName(identity) {
+    identity = identity || {};
+    var sel = String(identity.settlementBank || "").trim();
+    var other = String(identity.settlementBankOther || "").trim();
+    if (sel === SETTLEMENT_BANK_OTHER) return other;
+    if (sel && SETTLEMENT_BANKS.indexOf(sel) >= 0) return sel;
+    // Legacy / resume: free-text bank_name not in the dropdown list.
+    return other || String(identity.bankName || "").trim() || sel;
+  }
+  /** Split a stored bank_name into dropdown value + optional custom text. */
+  function splitSettlementBankFields(storedName) {
+    var name = String(storedName || "").trim();
+    if (!name) return { settlementBank: "", settlementBankOther: "" };
+    if (name === SETTLEMENT_BANK_OTHER || name === "其他" || /^other/i.test(name)) {
+      return { settlementBank: SETTLEMENT_BANK_OTHER, settlementBankOther: "" };
+    }
+    if (SETTLEMENT_BANKS.indexOf(name) >= 0) {
+      return { settlementBank: name, settlementBankOther: "" };
+    }
+    var aliases = {
+      Ambank: "AmBank",
+      "OCBC Bank": "OCBC Malaysia",
+      "UOB Bank": "UOB Malaysia",
+      "HSBC Bank": "HSBC Malaysia",
+      "Standard Chartered Bank": "Standard Chartered Malaysia",
+      其他: SETTLEMENT_BANK_OTHER,
+    };
+    if (aliases[name] && SETTLEMENT_BANKS.indexOf(aliases[name]) >= 0) {
+      return { settlementBank: aliases[name], settlementBankOther: "" };
+    }
+    return { settlementBank: SETTLEMENT_BANK_OTHER, settlementBankOther: name };
   }
   function fileField(name, label, opts) {
     opts = opts || {};
@@ -1778,11 +1864,37 @@
     }
     var settlement =
       mode === "id_card" || mode === "deposit"
-        ? '<div class="apply-subcard"><h3>结款资料（必填）</h3><form class="apply-grid">' +
-          selectField("settlementMethod", "结款方式", id.settlementMethod, ["银行卡", "DuitNow", "TNG Wallet", "支付宝"]) +
-          field("settlementName", "结款户名", "text", id.settlementName) +
-          field("settlementAccount", "结款账号", "text", id.settlementAccount) +
-          '</form><div class="deposit-status"><strong>审核通过后即可成为陪玩</strong><p>认证方式为二选一，审核对应方式通过后即可接单。</p></div></div>'
+        ? (function () {
+            var method = String(id.settlementMethod || "银行卡").trim() || "银行卡";
+            var bankBlock = "";
+            if (isBankSettlementMethod(method)) {
+              var split = splitSettlementBankFields(id.settlementBank || id.bankName || "");
+              var bankSelect = String(id.settlementBank || "").trim();
+              var bankOther = String(id.settlementBankOther || "").trim();
+              if (!bankSelect && (id.bankName || split.settlementBank)) {
+                bankSelect = split.settlementBank;
+                if (!bankOther) bankOther = split.settlementBankOther;
+              } else if (bankSelect && SETTLEMENT_BANKS.indexOf(bankSelect) < 0) {
+                bankOther = bankOther || bankSelect;
+                bankSelect = SETTLEMENT_BANK_OTHER;
+              }
+              bankBlock =
+                selectField("settlementBank", "银行名称", bankSelect, SETTLEMENT_BANKS, {
+                  placeholder: "请选择银行",
+                }) +
+                (bankSelect === SETTLEMENT_BANK_OTHER
+                  ? field("settlementBankOther", "其他银行名称", "text", bankOther)
+                  : "");
+            }
+            return (
+              '<div class="apply-subcard"><h3>结款资料（必填）</h3><form class="apply-grid">' +
+              selectField("settlementMethod", "结款方式", method, SETTLEMENT_METHODS) +
+              bankBlock +
+              field("settlementName", "银行户名", "text", id.settlementName) +
+              field("settlementAccount", "银行账号", "text", id.settlementAccount) +
+              '</form><div class="deposit-status"><strong>审核通过后即可成为陪玩</strong><p>认证方式为二选一，审核对应方式通过后即可接单。选择银行卡时须填写银行名称、银行户名与银行账号；DuitNow / TNG / 支付宝无需填写银行名称。</p></div></div>'
+            );
+          })()
         : "";
     return (
       '<section class="apply-panel"><h2>选择认证方式</h2><p class="apply-note full">请先选择一种认证方式（身份证认证 或 押金认证，二选一）。结款资料为必填项。</p>' +
@@ -1899,6 +2011,15 @@
     Array.prototype.slice.call(root.querySelectorAll("select[name],input[name]:not([type=file]),textarea[name]")).forEach(function (el) {
       if (step === 4) identity[el.name] = el.value.trim ? el.value.trim() : el.value;
     });
+    if (step === 4) {
+      if (isBankSettlementMethod(identity.settlementMethod)) {
+        identity.bankName = effectiveSettlementBankName(identity);
+      } else {
+        identity.settlementBank = identity.settlementBank || "";
+        identity.settlementBankOther = "";
+        identity.bankName = "";
+      }
+    }
     saveDraft({ data: data, identity: identity, uploads: uploads });
   }
   function storagePayloadForSubmit(asset) {
@@ -2121,17 +2242,20 @@
     });
     chain = chain.then(function () {
       if (authMode !== "id_card") return null;
+      var bankName = effectiveSettlementBankName(identity);
       return postCompanion("submit_verification", {
         real_name: identity.realName || identity.name || draft.data.realName || user.name || "",
         identity_no: identity.idNumber || identity.identityNo || "",
         id_front: storagePayloadForSubmit(identity.idFront),
         id_back: storagePayloadForSubmit(identity.idBack),
         id_handheld: storagePayloadForSubmit(identity.idHandheld),
-        bank_name: identity.settlementBank || identity.bankName || "",
+        bank_name: bankName,
         account_name: identity.settlementName || "",
         bank_account: identity.settlementAccount || "",
         tng_account: identity.tngAccount || "",
         method: identity.settlementMethod || "bank",
+        settlementMethod: identity.settlementMethod || "",
+        settlementBank: bankName,
         phone: draft.data.phone || "",
       });
     });
@@ -2165,6 +2289,7 @@
     if (authMode === "deposit" && (hasDurableUpload(identity.depositProof) || needsMediaUpload(identity.depositProof))) {
       chain = chain.then(function () {
         var proof = storagePayloadForSubmit(identity.depositProof);
+        var bankName = effectiveSettlementBankName(identity);
         return postCompanion("submit_deposit_proof", {
           paid_amount: (remoteDepositPay.amountRm || depositSettings().amount || 100),
           payment_method: identity.depositMethod || identity.depositChannelId || "",
@@ -2175,7 +2300,8 @@
           settlementMethod: identity.settlementMethod || "",
           settlementName: identity.settlementName || "",
           settlementAccount: identity.settlementAccount || "",
-          bank_name: identity.settlementBank || identity.bankName || "",
+          settlementBank: bankName,
+          bank_name: bankName,
           account_name: identity.settlementName || "",
           bank_account: identity.settlementAccount || "",
           tng_account: identity.tngAccount || "",
@@ -3718,6 +3844,39 @@
     document.addEventListener("input", function (e) {
       if (e.target && e.target.closest && e.target.closest("#companionApplyRoot")) collect(root);
     });
+    document.addEventListener("change", function (e) {
+      if (!(e.target && e.target.closest && e.target.closest("#companionApplyRoot"))) return;
+      var name = e.target.getAttribute("name") || "";
+      if (name === "settlementMethod") {
+        collect(root).then(function () {
+          var d = readDraft();
+          d.identity = d.identity || {};
+          if (!isBankSettlementMethod(d.identity.settlementMethod)) {
+            d.identity.settlementBank = "";
+            d.identity.settlementBankOther = "";
+            d.identity.bankName = "";
+            writeDraftRecord(d);
+          }
+          render(Number(root.dataset.step || 0));
+        });
+        return;
+      }
+      if (name === "settlementBank") {
+        collect(root).then(function () {
+          var d = readDraft();
+          d.identity = d.identity || {};
+          if (d.identity.settlementBank !== SETTLEMENT_BANK_OTHER) {
+            d.identity.settlementBankOther = "";
+            writeDraftRecord(d);
+          }
+          render(Number(root.dataset.step || 0));
+        });
+        return;
+      }
+      if (name === "settlementBankOther" || name === "settlementName" || name === "settlementAccount") {
+        collect(root);
+      }
+    });
     document.addEventListener("ended", function (e) {
       if (e.target && e.target.id === "voicePreview") {
         var draft = readDraft();
@@ -3809,6 +3968,56 @@
         path: deposit.proofPath || "",
         status: "ok",
       };
+    }
+    // Restore settlement / payout account from bootstrap (verification + optional payment).
+    var payment = boot.payment || boot.paymentAccount || {};
+    var method =
+      payment.method ||
+      payment.settlementMethod ||
+      verification.method ||
+      verification.settlementMethod ||
+      "";
+    var bankName =
+      payment.bankName ||
+      payment.bank_name ||
+      verification.bankName ||
+      verification.bank_name ||
+      "";
+    var accountName =
+      payment.accountName ||
+      payment.account_name ||
+      verification.accountName ||
+      verification.account_name ||
+      "";
+    var bankAccount =
+      payment.bankAccount ||
+      payment.bank_account ||
+      verification.bankAccount ||
+      verification.bank_account ||
+      "";
+    if (!draft.identity.settlementMethod && method) {
+      draft.identity.settlementMethod = method;
+    }
+    if (!draft.identity.settlementBank && bankName) {
+      var bankSplit = splitSettlementBankFields(bankName);
+      draft.identity.settlementBank = bankSplit.settlementBank;
+      if (!draft.identity.settlementBankOther) {
+        draft.identity.settlementBankOther = bankSplit.settlementBankOther;
+      }
+      draft.identity.bankName = bankName;
+    } else if (
+      draft.identity.settlementBank &&
+      SETTLEMENT_BANKS.indexOf(String(draft.identity.settlementBank).trim()) < 0
+    ) {
+      var coerce = splitSettlementBankFields(draft.identity.settlementBank);
+      draft.identity.settlementBank = coerce.settlementBank;
+      if (!draft.identity.settlementBankOther) draft.identity.settlementBankOther = coerce.settlementBankOther;
+    }
+    if (!draft.identity.settlementName && accountName) {
+      draft.identity.settlementName = accountName;
+    }
+    if (!draft.identity.settlementAccount && bankAccount) {
+      draft.identity.settlementAccount = bankAccount;
     }
     writeDraftRecord(draft);
   }

@@ -277,7 +277,7 @@
       : rows([
           ["收款方式", payment.method || "—"],
           ["银行名称", payment.bankName || "—"],
-          ["账户姓名", payment.accountName || "—"],
+          ["银行户名", payment.accountName || "—"],
           {
             0: "银行账号",
             1:

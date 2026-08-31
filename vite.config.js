@@ -76,6 +76,7 @@ const pages = [
   "payment-confirm.html",
   "place-order.html",
   "player.html",
+  "points.html",
   "preview.html",
   "profile.html",
   "ranking.html",
