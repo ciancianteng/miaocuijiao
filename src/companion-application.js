@@ -4121,8 +4121,25 @@
       render(readDraft().step || 0);
     });
   }
+  /** Guest must not stay on apply page — redirect to site login, then return here. */
+  function redirectGuestToLogin() {
+    var ret =
+      String(location.pathname || "/companion-apply.html") +
+      String(location.search || "") +
+      String(location.hash || "");
+    try {
+      sessionStorage.setItem("mcjAfterLoginRedirect", ret);
+    } catch (e) {}
+    location.replace("/login.html?return=" + encodeURIComponent(ret || "/companion-apply.html"));
+  }
+
   function init() {
     if (!document.getElementById("companionApplyRoot")) return;
+    // Auth guard (defense in depth with portal-early-gate): no companion JWT and no boss JWT → login.
+    if (!companionToken() && !hasBossSession() && !looksLikeJwt(bossAccessToken()) && !bossRefreshToken()) {
+      redirectGuestToLogin();
+      return;
+    }
     ensureDefaultApplicationConfig();
     initHomeEntry();
     // Paint skeleton immediately — never wait for serial API chain.
@@ -4140,6 +4157,11 @@
     // bosses see「使用当前老板账号」instead of the register form.
     ensureBossSessionForApply()
       .then(function () {
+        // After refresh attempt, still no session → guest; leave apply page.
+        if (!companionToken() && !hasBossSession()) {
+          redirectGuestToLogin();
+          return null;
+        }
         if (!companionToken() && hasBossSession()) {
           authUi.preferOtherAccount = false;
           render(readDraft().step || 0);
@@ -4158,6 +4180,7 @@
       })
       .catch(function () {})
       .then(function () {
+        if (!companionToken() && !hasBossSession()) return;
         runApplyBootstrap(false);
       });
   }
@@ -4180,6 +4203,11 @@
       try {
         sessionStorage.removeItem(APPLICANT_KEY);
       } catch (e) {}
+      // Logged out while on apply → leave page (do not show guest fill form).
+      if (!companionToken() && !hasBossSession()) {
+        redirectGuestToLogin();
+        return;
+      }
       render(0);
       return;
     }

@@ -8,7 +8,7 @@
 (function () {
   "use strict";
 
-  var GATE_VERSION = "20260811portalIso2";
+  var GATE_VERSION = "20260828applyLogin1";
 
   function pathNow() {
     return String(location.pathname || "/").replace(/\\/g, "/");
@@ -230,6 +230,26 @@
       // Expired access JWT without refresh → login.
       if (looksLikeJwt(adminAccess) && !hasValidAccessJwt(adminAccess) && !String(adminRefresh || "").trim()) {
         return deny("/admin/login/");
+      }
+      revealShell();
+      return true;
+    }
+
+    // —— Companion apply (root URL; must login first) ——
+    // Guests must not fill the apply form. Accept companion session OR boss JWT.
+    // Logged-in bosses keep「使用当前老板账号申请」; pure guests → /login.html.
+    if (/\/companion-apply\.html$/i.test(p)) {
+      hideShell();
+      var applyPw = readJson("mcjCompanionSession");
+      var applyPwAccess = applyPw && (applyPw.token || applyPw.accessToken || applyPw.access_token);
+      var applyPwRefresh = applyPw && (applyPw.refreshToken || applyPw.refresh_token);
+      var applyCompanionOk = hasJwtOrRefresh(applyPwAccess, applyPwRefresh);
+      var applyBossAccess = bossItem("mcjAuthAccessToken");
+      var applyBossRefresh = bossItem("mcjAuthRefreshToken");
+      var applyBossOk =
+        hasValidAccessJwt(applyBossAccess) || !!String(applyBossRefresh || "").trim();
+      if (!applyCompanionOk && !applyBossOk) {
+        return deny("/login.html");
       }
       revealShell();
       return true;
