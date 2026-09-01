@@ -17,7 +17,24 @@
     if (role === "super_admin") return "admin";
     return role;
   }
-  function profileRole(role) { role = String(role || ""); if (role === "customer") return "boss"; if (role === "service") return "customer_service"; if (role === "player") return "companion"; if (role === "super_admin") return "admin"; return role; }
+  function profileRole(role) {
+    role = String(role || "").trim().toLowerCase();
+    if (role === "customer" || role === "owner" || role === "user") return "boss";
+    if (role === "service" || role === "cs") return "customer_service";
+    if (role === "player" || role === "pw") return "companion";
+    if (role === "super_admin" || role === "superadmin") return "admin";
+    return role;
+  }
+  function hasBossCapability(u) {
+    if (!u) return false;
+    if (u.hasBoss === true) return true;
+    return profileRole(u.role) === "boss" || profileRole(u.primaryRole) === "boss";
+  }
+  function hasCompanionCapability(u) {
+    if (!u) return false;
+    if (u.hasCompanion === true) return true;
+    return profileRole(u.role) === "companion" || profileRole(u.primaryRole) === "companion";
+  }
   function roleMatches(expected, actual) { return profileRole(expected) === profileRole(actual); }
   function routeFor(role) {
     var key = profileRole(role);
@@ -732,7 +749,7 @@
     var u = (body.session && body.session.user) || {};
 
     if (expectedPortal === "companion") {
-      if (!(u.hasCompanion || profileRole(u.role) === "companion")) {
+      if (!hasCompanionCapability(u)) {
         throw new Error(portalDeniedMessage("companion"));
       }
       var companionUser = Object.assign({}, u, { role: "companion" });
@@ -762,7 +779,7 @@
       return body;
     }
     if (expectedPortal === "boss") {
-      if (!(u.hasBoss || profileRole(u.role) === "boss")) {
+      if (!hasBossCapability(u)) {
         throw new Error(portalDeniedMessage("boss"));
       }
       var bossUser = Object.assign({}, u, { role: "boss" });
@@ -785,7 +802,7 @@
       body = await showRolePickModal(body, remember);
     } else {
       if (body.session && body.session.user) {
-        var fallbackRole = u.hasBoss || profileRole(u.role) === "boss" ? "boss" : u.hasCompanion ? "companion" : u.role;
+        var fallbackRole = hasBossCapability(u) ? "boss" : hasCompanionCapability(u) ? "companion" : u.role;
         body.session = Object.assign({}, body.session, {
           user: Object.assign({}, body.session.user, { role: fallbackRole }),
         });
@@ -1015,12 +1032,12 @@
         throw new Error(portalDeniedMessage("admin"));
       }
     } else if (want === "companion") {
-      if (!(u.hasCompanion || got === "companion")) {
+      if (!hasCompanionCapability(u)) {
         clearCompanionPortalSession();
         throw new Error(portalDeniedMessage("companion"));
       }
     } else if (want === "boss") {
-      if (!(u.hasBoss || got === "boss")) {
+      if (!hasBossCapability(u)) {
         logout("boss");
         throw new Error(portalDeniedMessage("boss"));
       }
@@ -1664,13 +1681,13 @@
             var u = (result.session && result.session.user) || {};
             if (!allowPick) {
               if (otpPortal === "companion") {
-                if (!(u.hasCompanion || profileRole(u.role) === "companion")) throw new Error(portalDeniedMessage("companion"));
+                if (!hasCompanionCapability(u)) throw new Error(portalDeniedMessage("companion"));
                 result.session = Object.assign({}, result.session, { user: Object.assign({}, u, { role: "companion" }) });
                 writeCompanionPortalSession(result.session, true);
                 result._pickedRole = "companion";
                 result.redirect = result.redirect || "/companion/review-status";
               } else if (otpPortal === "boss") {
-                if (!(u.hasBoss || profileRole(u.role) === "boss")) throw new Error(portalDeniedMessage("boss"));
+                if (!hasBossCapability(u)) throw new Error(portalDeniedMessage("boss"));
                 result.session = Object.assign({}, result.session, { user: Object.assign({}, u, { role: "boss" }) });
                 saveSession(result.session, true);
                 result._pickedRole = "boss";

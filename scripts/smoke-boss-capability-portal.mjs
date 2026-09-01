@@ -72,10 +72,27 @@ section("collectRoleHints reads singular metadata role");
   assert.ok(hints.includes("companion"));
 }
 
-section("hasBossRole mirrors computeCapabilities");
+section("raw_app_meta_data boss role → hasBoss");
 {
-  assert.equal(hasBossRole({ role: "boss" }), true);
-  assert.equal(hasCompanionRole({ role: "companion" }, { companion: { id: "x" } }), true);
+  const caps = computeCapabilities(
+    { id: "6", role: "companion", status: "active" },
+    { authUser: { raw_app_meta_data: { roles: ["boss"] }, raw_user_meta_data: {} } }
+  );
+  assert.equal(caps.hasBoss, true);
+}
+
+section("customer alias → Boss portal");
+{
+  const caps = computeCapabilities({ id: "7", role: "customer", status: "active" });
+  assert.equal(caps.hasBoss, true);
+  assert.equal(userCanAccessPortal({ hasBoss: true, role: "boss" }, "boss"), true);
+}
+
+section("admin must not get Boss portal from staff role alone");
+{
+  const caps = computeCapabilities({ id: "8", role: "admin", status: "active" });
+  assert.equal(caps.hasBoss, false);
+  assert.equal(userCanAccessPortal({ hasBoss: false, role: "admin" }, "boss"), false);
 }
 
 console.log("\nOK smoke-boss-capability-portal");

@@ -39,6 +39,12 @@ import {
   repairDeniedMessage,
   maxBossUidNumberFromList,
 } from "./_auth-orphan-heal.js";
+import {
+  userCanAccessPortal as sharedUserCanAccessPortal,
+  computeCapabilities,
+  isBossLikeRole,
+  enrichProfileRoles,
+} from "./_account-roles.js";
 
 function opaqueSystemPassword() {
   // Never shown to users/admins — only satisfies GoTrue's password requirement
@@ -232,26 +238,34 @@ function portalDeniedMessage(portal) {
   return "账号角色与当前入口不匹配。";
 }
 
-/** Unified portal gate — delegates to shared capability resolver. */
+/** Unified portal gate — single capability resolver (same as _account-roles.userCanAccessPortal). */
 function userHasPortalAccess(user, portal) {
-  // Inline mirror of userCanAccessPortal for sync path; keep hasBoss/hasCompanion authoritative.
-  const p = String(portal || "").trim().toLowerCase();
-  const role = String(user?.role || "").trim().toLowerCase();
-  if (p === "boss") {
-    return !!(
-      user?.hasBoss === true ||
-      role === "boss" ||
-      role === "customer" ||
-      role === "owner" ||
-      role === "user"
-    );
+  return sharedUserCanAccessPortal(user, portal);
+}
+
+/** Merge GoTrue session user with admin user so app_metadata roles are never dropped. */
+async function authUserForCapabilities(sessionUser = {}, fallbackId = "") {
+  const sid = String(sessionUser?.id || fallbackId || "").trim();
+  let full = null;
+  if (sid) {
+    try {
+      full = await findAuthUserById(sid);
+    } catch {
+      full = null;
+    }
   }
-  if (p === "companion") {
-    return !!(user?.hasCompanion === true || role === "companion" || role === "player");
-  }
-  if (p === "customer_service") return role === "customer_service" || role === "service";
-  if (p === "admin") return role === "admin" || role === "super_admin";
-  return false;
+  const base = full && typeof full === "object" ? full : {};
+  const session = sessionUser && typeof sessionUser === "object" ? sessionUser : {};
+  return {
+    ...base,
+    ...session,
+    id: session.id || base.id || sid,
+    email: session.email || base.email || "",
+    app_metadata: { ...(base.app_metadata || {}), ...(session.app_metadata || {}) },
+    user_metadata: { ...(base.user_metadata || {}), ...(session.user_metadata || {}) },
+    raw_app_meta_data: base.raw_app_meta_data || session.raw_app_meta_data,
+    raw_user_meta_data: base.raw_user_meta_data || session.raw_user_meta_data,
+  };
 }
 
 /** Role picker only for public unified login when account truly has boss+companion (never staff). */
@@ -329,17 +343,22 @@ function safeProfile(profile = {}, authUser = {}, security = null, rolesInfo = n
 }
 
 async function enrichSafeProfile(profile = {}, authUser = {}) {
-  const hasPassword = await resolveHasPassword(profile, authUser, { probeAuth: true });
+  const mergedAuth = await authUserForCapabilities(authUser, profile?.id);
+  const hasPassword = await resolveHasPassword(profile, mergedAuth, { probeAuth: true });
   let rolesInfo = null;
   try {
-    const { enrichProfileRoles } = await import("./_account-roles.js");
-    const enriched = await enrichProfileRoles(profile, authUser);
+    const enriched = await enrichProfileRoles(profile, mergedAuth);
     rolesInfo = enriched;
     profile = enriched.profile || profile;
   } catch {
-    /* optional — still fall back to profiles.role */
+    /* optional — still fall back to profiles.role via computeCapabilities */
+    try {
+      rolesInfo = computeCapabilities(profile, { authUser: mergedAuth });
+    } catch {
+      rolesInfo = null;
+    }
   }
-  return safeProfile(profile, authUser, { hasPassword }, rolesInfo);
+  return safeProfile(profile, mergedAuth, { hasPassword }, rolesInfo);
 }
 
 /** Prefer the profile row that matches the login portal capability. */
@@ -348,20 +367,16 @@ function pickProfileForLoginPortal(rows, portal, authUser = null) {
   if (!list.length) return null;
   const want = String(portal || "").trim().toLowerCase();
   if (want === "boss") {
-    const hit = list.find((row) => {
-      const r = String(row?.role || "").trim().toLowerCase();
-      return r === "boss" || r === "customer" || r === "owner" || r === "user";
-    });
+    const hit = list.find((row) => isBossLikeRole(row?.role) || computeCapabilities(row, { authUser }).hasBoss);
     if (hit) return hit;
   }
   if (want === "companion") {
     const hit = list.find((row) => {
-      const r = String(row?.role || "").trim().toLowerCase();
-      return r === "companion" || r === "player";
+      const caps = computeCapabilities(row, { authUser });
+      return caps.hasCompanion || String(row?.role || "").trim().toLowerCase() === "companion";
     });
     if (hit) return hit;
   }
-  void authUser;
   return list[0];
 }
 
@@ -535,7 +550,6 @@ async function resolveForgotAccount(accountRaw, roleRaw) {
       for (const row of byEmail) {
         if (!row?.id) continue;
         try {
-          const { enrichProfileRoles } = await import("./_account-roles.js");
           const enriched = await enrichProfileRoles(row);
           if (role === "companion" && enriched?.hasCompanion) {
             hit = row;
@@ -911,20 +925,21 @@ async function handleLoginWithOtp(body, res) {
   if (!email || !/^\S+@\S+\.\S+$/.test(email)) return json(res, 400, { ok: false, message: "请输入有效邮箱。" });
   if (!/^\d{4,8}$/.test(code)) return json(res, 400, { ok: false, message: "验证码无效或已过期" });
   const loginPortal = normalizeLoginPortal(body.loginPortal || body.portal || body.role || "");
-  // OTP is portal-scoped: find account by email, then enforce portal capability (supports dual-role users).
+  // Same resolution order as send_login_otp: email rows → forgot resolve → Auth id profile → Boss orphan heal.
   // Select only real columns (profiles.role exists; do not require profiles.roles).
+  const authUserEarly = await findAuthUserByEmail(email);
   const byEmail = await profilesLookup(
     `?email=eq.${encodeURIComponent(email)}&select=id,email,phone,phone_e164,display_name,status,role,boss_uid&limit=5`
   ).catch(() => []);
   let profile0 =
-    pickProfileForLoginPortal(byEmail, loginPortal || role) ||
+    pickProfileForLoginPortal(byEmail, loginPortal || role, authUserEarly) ||
     (await resolveForgotAccount(email, loginPortal || role).catch(() => null))?.profile ||
+    (authUserEarly?.id ? await profileFor(authUserEarly.id) : null) ||
     null;
   if (!profile0) {
-    const authOnly = await findAuthUserByEmail(email);
-    if (authOnly?.id && (loginPortal || role) !== "companion") {
+    if (authUserEarly?.id && (loginPortal || role) !== "companion") {
       try {
-        profile0 = await ensureBossProfileForAuthUser(authOnly);
+        profile0 = await ensureBossProfileForAuthUser(authUserEarly);
       } catch (healErr) {
         console.error("[auth/login_with_otp] orphan heal failed", healErr?.code || "", healErr?.message || healErr);
         return json(res, healErr?.status || 403, {
@@ -940,7 +955,7 @@ async function handleLoginWithOtp(body, res) {
     return json(res, 403, { ok: false, message: "账号未启用或正在审核。" });
   }
   try {
-    assertEmailVerifiedOrThrow(profile0, {});
+    assertEmailVerifiedOrThrow(profile0, authUserEarly || {});
   } catch (err) {
     return json(res, err.status || 403, { ok: false, message: err.message || "请先完成邮箱验证。", code: "EMAIL_NOT_VERIFIED" });
   }
@@ -953,6 +968,19 @@ async function handleLoginWithOtp(body, res) {
   const auth = await createSessionForUserId(profile0.id, profile0.email || email);
   let profile = await profileFor(auth.user?.id || profile0.id);
   if (!profile) profile = profile0;
+  // Keep Auth email on profile when blank so future email lookups match (no role change).
+  if (email && !String(profile.email || "").trim()) {
+    try {
+      await supabaseJson(restUrl("profiles", `?id=eq.${encodeURIComponent(profile.id)}`), {
+        method: "PATCH",
+        headers: headersWithServiceRole({ Prefer: "return=minimal" }),
+        body: JSON.stringify({ email }),
+      });
+      profile = { ...profile, email };
+    } catch {
+      /* non-fatal */
+    }
+  }
   if (["boss", "customer", "owner", "user"].includes(String(profile.role || "").trim().toLowerCase())) {
     try {
       profile = await ensureBossUid({ ...profile, role: "boss" }, auth.user);
@@ -961,10 +989,19 @@ async function handleLoginWithOtp(body, res) {
     }
   }
   await touchLastLogin(profile.id, "");
-  const user = await enrichSafeProfile(profile, {
-    ...(auth.user || {}),
-    user_metadata: { ...((auth.user && auth.user.user_metadata) || {}), boss_uid: profile.boss_uid || metaBossUid(auth.user) },
-  });
+  const capabilityAuth = await authUserForCapabilities(
+    {
+      ...(auth.user || {}),
+      ...(authUserEarly || {}),
+      user_metadata: {
+        ...((authUserEarly && authUserEarly.user_metadata) || {}),
+        ...((auth.user && auth.user.user_metadata) || {}),
+        boss_uid: profile.boss_uid || metaBossUid(auth.user) || metaBossUid(authUserEarly),
+      },
+    },
+    profile.id
+  );
+  const user = await enrichSafeProfile(profile, capabilityAuth);
   if (!VALID_ROLES.has(user.role) && !(user.hasBoss || user.hasCompanion)) {
     return json(res, 403, { ok: false, message: "账号角色无效。" });
   }
@@ -972,12 +1009,28 @@ async function handleLoginWithOtp(body, res) {
     return json(res, 403, { ok: false, message: "账号未启用或正在审核。" });
   }
   if (loginPortal && !userHasPortalAccess(user, loginPortal)) {
-    return json(res, 403, { ok: false, message: portalDeniedMessage(loginPortal), code: "PORTAL_DENIED" });
+    const denied = {
+      ok: false,
+      message: portalDeniedMessage(loginPortal),
+      code: "PORTAL_DENIED",
+    };
+    if (allowStagingOtp()) {
+      denied.debug = {
+        loginPortal,
+        profileRole: profile.role || "",
+        status: profile.status || "",
+        hasBoss: !!user.hasBoss,
+        hasCompanion: !!user.hasCompanion,
+        roles: Array.isArray(user.roles) ? user.roles : [],
+        sessionRole: user.role || "",
+      };
+    }
+    return json(res, 403, denied);
   }
   // Bind session active role to the portal when provided.
   let sessionUser = user;
-  if (loginPortal === "boss") sessionUser = { ...user, role: "boss" };
-  else if (loginPortal === "companion") sessionUser = { ...user, role: "companion" };
+  if (loginPortal === "boss") sessionUser = { ...user, role: "boss", hasBoss: true };
+  else if (loginPortal === "companion") sessionUser = { ...user, role: "companion", hasCompanion: true };
   else if (loginPortal === "customer_service") sessionUser = { ...user, role: "customer_service" };
   else if (loginPortal === "admin") sessionUser = { ...user, role: user.role === "super_admin" ? "super_admin" : "admin" };
   if (stored.id) {
@@ -2296,6 +2349,72 @@ export default async function handler(req, res) {
     if (requestedAction === "mail_status") {
       return json(res, 200, { ok: true, mail: mailProviderStatus() });
     }
+    if (requestedAction === "probe_portal_capability") {
+      // Staging / Preview only — diagnose Boss portal gates without mutating data.
+      if (!allowStagingOtp()) {
+        return json(res, 403, { ok: false, message: "probe_portal_capability 仅 Staging / Preview 可用。" });
+      }
+      const email = String(body.email || body.account || "").trim().toLowerCase();
+      const loginPortal = normalizeLoginPortal(body.loginPortal || body.portal || body.role || "boss") || "boss";
+      if (!email || !/^\S+@\S+\.\S+$/.test(email)) {
+        return json(res, 400, { ok: false, message: "请输入有效邮箱。" });
+      }
+      const authUser = await findAuthUserByEmail(email);
+      const byEmail = await profilesLookup(
+        `?email=eq.${encodeURIComponent(email)}&select=id,email,phone,phone_e164,display_name,status,role,boss_uid&limit=5`
+      ).catch(() => []);
+      const profile =
+        pickProfileForLoginPortal(byEmail, loginPortal, authUser) ||
+        (await resolveForgotAccount(email, loginPortal).catch(() => null))?.profile ||
+        (authUser?.id ? await profileFor(authUser.id) : null) ||
+        null;
+      if (!profile) {
+        return json(res, 200, {
+          ok: true,
+          found: false,
+          authExists: !!authUser?.id,
+          hasBoss: false,
+          hasCompanion: false,
+          userHasPortalAccess: false,
+          loginPortal,
+        });
+      }
+      const capabilityAuth = await authUserForCapabilities(authUser || {}, profile.id);
+      const enriched = await enrichProfileRoles(profile, capabilityAuth);
+      const sessionUser = await enrichSafeProfile(profile, capabilityAuth);
+      return json(res, 200, {
+        ok: true,
+        found: true,
+        authExists: !!authUser?.id,
+        loginPortal,
+        profile: {
+          id: profile.id,
+          email: profile.email || "",
+          role: profile.role || "",
+          status: profile.status || "",
+          boss_uid: profile.boss_uid || "",
+        },
+        authMeta: {
+          app_roles: capabilityAuth?.app_metadata?.roles || null,
+          app_role: capabilityAuth?.app_metadata?.role || null,
+          user_roles: capabilityAuth?.user_metadata?.roles || null,
+          user_role: capabilityAuth?.user_metadata?.role || null,
+        },
+        caps: {
+          roles: enriched.roles || [],
+          hasBoss: !!enriched.hasBoss,
+          hasCompanion: !!enriched.hasCompanion,
+          primaryRole: enriched.primaryRole || "",
+        },
+        session: {
+          role: sessionUser.role || "",
+          hasBoss: !!sessionUser.hasBoss,
+          hasCompanion: !!sessionUser.hasCompanion,
+          roles: sessionUser.roles || [],
+        },
+        userHasPortalAccess: userHasPortalAccess(sessionUser, loginPortal),
+      });
+    }
     if (requestedAction === "mail_ping") {
       if (!allowStagingOtp()) {
         return json(res, 403, { ok: false, message: "mail_ping 仅 Staging / Preview 可用。" });
@@ -2417,11 +2536,27 @@ export default async function handler(req, res) {
       return json(res, 403, { ok: false, message: "账号未启用或正在审核。" });
     }
     if (loginPortal && !userHasPortalAccess(user, loginPortal)) {
-      return json(res, 403, { ok: false, message: portalDeniedMessage(loginPortal), code: "PORTAL_DENIED" });
+      const denied = {
+        ok: false,
+        message: portalDeniedMessage(loginPortal),
+        code: "PORTAL_DENIED",
+      };
+      if (allowStagingOtp()) {
+        denied.debug = {
+          loginPortal,
+          profileRole: profile.role || "",
+          status: profile.status || "",
+          hasBoss: !!user.hasBoss,
+          hasCompanion: !!user.hasCompanion,
+          roles: Array.isArray(user.roles) ? user.roles : [],
+          sessionRole: user.role || "",
+        };
+      }
+      return json(res, 403, denied);
     }
     let sessionUser = user;
-    if (loginPortal === "boss") sessionUser = { ...user, role: "boss" };
-    else if (loginPortal === "companion") sessionUser = { ...user, role: "companion" };
+    if (loginPortal === "boss") sessionUser = { ...user, role: "boss", hasBoss: true };
+    else if (loginPortal === "companion") sessionUser = { ...user, role: "companion", hasCompanion: true };
     else if (loginPortal === "customer_service") sessionUser = { ...user, role: "customer_service" };
     else if (loginPortal === "admin") sessionUser = { ...user, role: user.role === "super_admin" ? "super_admin" : "admin" };
     await touchLastLogin(profile.id, clientIp(req));
