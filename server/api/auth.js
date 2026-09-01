@@ -33,6 +33,18 @@ import {
   RESET_EMAIL_GENERIC_MESSAGE,
   logSecurityAdminAction,
 } from "./_account-security.js";
+import {
+  classifyAuthPortalIntent,
+  shouldHealAsBoss,
+  repairDeniedMessage,
+  maxBossUidNumberFromList,
+} from "./_auth-orphan-heal.js";
+import {
+  userCanAccessPortal as sharedUserCanAccessPortal,
+  computeCapabilities,
+  isBossLikeRole,
+  enrichProfileRoles,
+} from "./_account-roles.js";
 
 function opaqueSystemPassword() {
   // Never shown to users/admins — only satisfies GoTrue's password requirement
@@ -226,13 +238,34 @@ function portalDeniedMessage(portal) {
   return "账号角色与当前入口不匹配。";
 }
 
+/** Unified portal gate — single capability resolver (same as _account-roles.userCanAccessPortal). */
 function userHasPortalAccess(user, portal) {
-  const role = String(user?.role || "").toLowerCase();
-  if (portal === "boss") return !!(user?.hasBoss || role === "boss" || role === "customer" || role === "owner" || role === "user");
-  if (portal === "companion") return !!(user?.hasCompanion || role === "companion" || role === "player");
-  if (portal === "customer_service") return role === "customer_service" || role === "service";
-  if (portal === "admin") return role === "admin" || role === "super_admin";
-  return false;
+  return sharedUserCanAccessPortal(user, portal);
+}
+
+/** Merge GoTrue session user with admin user so app_metadata roles are never dropped. */
+async function authUserForCapabilities(sessionUser = {}, fallbackId = "") {
+  const sid = String(sessionUser?.id || fallbackId || "").trim();
+  let full = null;
+  if (sid) {
+    try {
+      full = await findAuthUserById(sid);
+    } catch {
+      full = null;
+    }
+  }
+  const base = full && typeof full === "object" ? full : {};
+  const session = sessionUser && typeof sessionUser === "object" ? sessionUser : {};
+  return {
+    ...base,
+    ...session,
+    id: session.id || base.id || sid,
+    email: session.email || base.email || "",
+    app_metadata: { ...(base.app_metadata || {}), ...(session.app_metadata || {}) },
+    user_metadata: { ...(base.user_metadata || {}), ...(session.user_metadata || {}) },
+    raw_app_meta_data: base.raw_app_meta_data || session.raw_app_meta_data,
+    raw_user_meta_data: base.raw_user_meta_data || session.raw_user_meta_data,
+  };
 }
 
 /** Role picker only for public unified login when account truly has boss+companion (never staff). */
@@ -262,10 +295,20 @@ function safeProfile(profile = {}, authUser = {}, security = null, rolesInfo = n
     : Array.isArray(profile.roles)
       ? profile.roles
       : role
-        ? [role]
+        ? [roleLower === "boss" ? "boss" : roleLower]
         : [];
-  const hasBoss = rolesInfo ? !!rolesInfo.hasBoss : roles.includes("boss") || role === "boss";
-  const hasCompanion = rolesInfo ? !!rolesInfo.hasCompanion : roles.includes("companion") || role === "companion";
+  // Single source: rolesInfo from computeCapabilities / enrichProfileRoles.
+  // Belt-and-suspenders: profiles.role boss-like always grants hasBoss.
+  let hasBoss = rolesInfo ? !!rolesInfo.hasBoss : roles.includes("boss") || role === "boss";
+  let hasCompanion = rolesInfo ? !!rolesInfo.hasCompanion : roles.includes("companion") || roleLower === "companion";
+  if (role === "boss" || roleLower === "boss" || roleLower === "customer" || roleLower === "owner" || roleLower === "user") {
+    hasBoss = true;
+    if (!roles.includes("boss")) roles.push("boss");
+  }
+  if (hasBoss && roleLower === "companion") {
+    // Session-facing role for Boss portal compatibility when capability says Boss.
+    role = "boss";
+  }
   const out = {
     id: profile.id || authUser.id || "",
     bossUid,
@@ -300,17 +343,41 @@ function safeProfile(profile = {}, authUser = {}, security = null, rolesInfo = n
 }
 
 async function enrichSafeProfile(profile = {}, authUser = {}) {
-  const hasPassword = await resolveHasPassword(profile, authUser, { probeAuth: true });
+  const mergedAuth = await authUserForCapabilities(authUser, profile?.id);
+  const hasPassword = await resolveHasPassword(profile, mergedAuth, { probeAuth: true });
   let rolesInfo = null;
   try {
-    const { enrichProfileRoles } = await import("./_account-roles.js");
-    const enriched = await enrichProfileRoles(profile, authUser);
+    const enriched = await enrichProfileRoles(profile, mergedAuth);
     rolesInfo = enriched;
     profile = enriched.profile || profile;
   } catch {
-    /* optional */
+    /* optional — still fall back to profiles.role via computeCapabilities */
+    try {
+      rolesInfo = computeCapabilities(profile, { authUser: mergedAuth });
+    } catch {
+      rolesInfo = null;
+    }
   }
-  return safeProfile(profile, authUser, { hasPassword }, rolesInfo);
+  return safeProfile(profile, mergedAuth, { hasPassword }, rolesInfo);
+}
+
+/** Prefer the profile row that matches the login portal capability. */
+function pickProfileForLoginPortal(rows, portal, authUser = null) {
+  const list = Array.isArray(rows) ? rows.filter(Boolean) : [];
+  if (!list.length) return null;
+  const want = String(portal || "").trim().toLowerCase();
+  if (want === "boss") {
+    const hit = list.find((row) => isBossLikeRole(row?.role) || computeCapabilities(row, { authUser }).hasBoss);
+    if (hit) return hit;
+  }
+  if (want === "companion") {
+    const hit = list.find((row) => {
+      const caps = computeCapabilities(row, { authUser });
+      return caps.hasCompanion || String(row?.role || "").trim().toLowerCase() === "companion";
+    });
+    if (hit) return hit;
+  }
+  return list[0];
 }
 
 function canManagePassword(profile = {}) {
@@ -483,7 +550,6 @@ async function resolveForgotAccount(accountRaw, roleRaw) {
       for (const row of byEmail) {
         if (!row?.id) continue;
         try {
-          const { enrichProfileRoles } = await import("./_account-roles.js");
           const enriched = await enrichProfileRoles(row);
           if (role === "companion" && enriched?.hasCompanion) {
             hit = row;
@@ -502,6 +568,128 @@ async function resolveForgotAccount(accountRaw, roleRaw) {
   }
 
   return null;
+}
+
+/** Auth user by email (GoTrue admin). Used by register/OTP orphan gates. */
+async function findAuthUserByEmail(email) {
+  const target = String(email || "").trim().toLowerCase();
+  if (!target || !/@/.test(target)) return null;
+  try {
+    const body = await supabaseJson(authUrl(`admin/users?email=${encodeURIComponent(target)}`), {
+      headers: headersWithServiceRole(),
+    });
+    if (Array.isArray(body?.users) && body.users.length) {
+      return body.users.find((u) => String(u.email || "").toLowerCase() === target) || null;
+    }
+    if (body?.id && String(body.email || "").toLowerCase() === target) return body;
+  } catch {
+    /* fall through */
+  }
+  try {
+    const body = await supabaseJson(authUrl("admin/users?page=1&per_page=200"), {
+      headers: headersWithServiceRole(),
+    });
+    const users = Array.isArray(body?.users) ? body.users : [];
+    return users.find((u) => String(u.email || "").toLowerCase() === target) || null;
+  } catch {
+    return null;
+  }
+}
+
+async function findAuthUserById(userId) {
+  const id = String(userId || "").trim();
+  if (!id) return null;
+  try {
+    const raw = await supabaseJson(authUrl(`admin/users/${encodeURIComponent(id)}`), {
+      headers: headersWithServiceRole(),
+    });
+    return raw?.user && typeof raw.user === "object" ? raw.user : raw;
+  } catch {
+    return null;
+  }
+}
+
+function isAuthUserBanned(authUser = {}) {
+  if (authUser?.banned === true) return true;
+  const until = authUser?.banned_until || authUser?.ban_duration;
+  if (!until) return false;
+  const ts = Date.parse(String(until));
+  if (!Number.isFinite(ts)) return !!authUser?.banned;
+  return ts > Date.now();
+}
+
+/**
+ * Delete an Auth user we just created in THIS request. Verifies deletion.
+ * Never call for pre-existing accounts.
+ */
+async function rollbackCreatedAuthUser(userId, context = "") {
+  const id = String(userId || "").trim();
+  if (!id) {
+    throw Object.assign(new Error("Auth 回滚失败：缺少用户 ID。"), {
+      status: 500,
+      code: "AUTH_ROLLBACK_FAILED",
+    });
+  }
+  let deleteErr = null;
+  try {
+    await supabaseJson(authUrl(`admin/users/${encodeURIComponent(id)}`), {
+      method: "DELETE",
+      headers: headersWithServiceRole(),
+    });
+  } catch (err) {
+    deleteErr = err;
+    console.error("[auth/rollback] DELETE failed", context, id, err?.message || err);
+  }
+  const still = await findAuthUserById(id);
+  if (still?.id) {
+    console.error("[auth/rollback] Auth user still present after DELETE", context, id);
+    throw Object.assign(
+      new Error("老板资料创建失败，且 Auth 账号回滚未成功。请联系客服，勿重复注册。"),
+      { status: 500, code: "AUTH_ROLLBACK_FAILED", cause: deleteErr }
+    );
+  }
+  if (deleteErr) {
+    // DELETE threw but user is gone — treat as success with log.
+    console.warn("[auth/rollback] DELETE errored but user gone", context, id, deleteErr?.message || deleteErr);
+  }
+  return { ok: true, rolledBack: true };
+}
+
+function loginOtpAccountKey(email) {
+  return String(email || "").trim().toLowerCase();
+}
+
+/** Detect companion traces that must block Boss auto-heal. */
+async function loadHealExtrasForAuthUser(authUser = {}) {
+  const userId = String(authUser?.id || "").trim();
+  const extras = { companionProfileExists: false, hasCompanionTrace: false };
+  if (!userId) return extras;
+  try {
+    const rows = await supabaseJson(
+      restUrl("companion_profiles", `?user_id=eq.${encodeURIComponent(userId)}&select=id,user_id&limit=1`),
+      { headers: headersWithServiceRole() }
+    ).catch(() => []);
+    if (Array.isArray(rows) && rows[0]?.id) {
+      extras.companionProfileExists = true;
+      extras.hasCompanionTrace = true;
+    }
+  } catch {
+    /* best-effort */
+  }
+  return extras;
+}
+
+async function assertCanHealBossOrThrow(authUser) {
+  const extras = await loadHealExtrasForAuthUser(authUser);
+  if (!shouldHealAsBoss(authUser, extras)) {
+    const intent = classifyAuthPortalIntent(authUser, extras);
+    throw Object.assign(new Error(repairDeniedMessage(intent)), {
+      status: 403,
+      code: "ACCOUNT_NEEDS_REPAIR",
+      intent,
+    });
+  }
+  return extras;
 }
 
 function forgotAccountKey(profile) {
@@ -627,74 +815,104 @@ async function handleForgotSendOtp(body, res) {
 async function handleLoginSendOtp(body, res) {
   const role = normalizeForgotRole(body.role || "boss");
   if (role === "customer_service" || role === "admin" || role === "super_admin") {
-    return json(res, 400, { ok: false, message: "该端请使用邮箱密码登录。" });
+    return json(res, 400, { ok: false, message: "该端请使用邮箱密码登录。", mailSent: false });
   }
-  const email = String(body.email || body.account || "").trim().toLowerCase();
+  const email = loginOtpAccountKey(body.email || body.account);
   if (!email || !/^\S+@\S+\.\S+$/.test(email)) {
-    return json(res, 400, { ok: false, message: "请输入有效邮箱。" });
+    return json(res, 400, { ok: false, message: "请输入有效邮箱。", mailSent: false });
   }
-  const generic = {
+  // Unified public shape for non-send paths — reduces account enumeration; frontend must not countdown.
+  const privacy = {
     ok: true,
+    mailSent: false,
     message: "如该邮箱已注册，将收到登录验证码。",
     channel: "email",
     expiresInSec: Math.floor(OTP_TTL_MS / 1000),
   };
-  const resolved = await resolveForgotAccount(email, role);
-  if (!resolved?.profile || resolved.profile.status === "disabled") return json(res, 200, generic);
-  if (!resolveEmailVerified(resolved.profile, {})) {
-    return json(res, 403, { ok: false, message: "请先完成邮箱验证。", code: "EMAIL_NOT_VERIFIED" });
+
+  const authUser = await findAuthUserByEmail(email);
+  if (!authUser?.id || isAuthUserBanned(authUser)) {
+    return json(res, 200, privacy);
   }
-  const profile = resolved.profile;
+
+  let profile = (await resolveForgotAccount(email, role))?.profile || (await profileFor(authUser.id));
+  if (!profile) {
+    if (role === "companion") {
+      console.warn("[auth/send_login_otp] companion portal orphan — no auto boss heal");
+      return json(res, 200, privacy);
+    }
+    try {
+      await assertCanHealBossOrThrow(authUser);
+      profile = await ensureBossProfileForAuthUser(authUser);
+    } catch (healErr) {
+      console.error("[auth/send_login_otp] orphan heal skipped/failed", healErr?.code || "", healErr?.message || healErr);
+      return json(res, 200, privacy);
+    }
+  }
+
+  if (String(profile.status || "").toLowerCase() === "disabled") {
+    return json(res, 200, privacy);
+  }
+  if (!resolveEmailVerified(profile, authUser)) {
+    return json(res, 200, privacy);
+  }
+
+  const otpKey = forgotAccountKey(profile) || loginOtpAccountKey(email);
   try {
-    await assertOtpResendCooldown(forgotAccountKey(profile), role, "login_otp");
+    await assertOtpResendCooldown(otpKey, role, "login_otp");
   } catch (err) {
     return json(res, err.status || 429, {
       ok: false,
+      mailSent: false,
       message: err.message || "发送过于频繁，请稍后再试。",
       retryAfterSec: err.retryAfterSec || 60,
     });
   }
   const code = randomOtpCode();
-  const key = forgotAccountKey(profile);
   try {
-    await storeForgotOtp(key, role, code, "login_otp");
+    await storeForgotOtp(otpKey, role, code, "login_otp");
   } catch (storeErr) {
-    return json(res, storeErr?.status || 503, {
-      ok: false,
-      message: storeErr?.message || "验证码存储失败，请稍后重试。",
-      mail: mailProviderStatus(),
-    });
+    console.error("[auth/send_login_otp] store failed", storeErr?.message || storeErr);
+    return json(res, 200, privacy);
   }
   void sendSmsOtp({ phone: profile.phone || "", code, purpose: "login" });
   let mailOk = false;
   let mailError = "";
   try {
-    await sendEmailOtp({ to: String(profile.email || email).toLowerCase(), code, purpose: "login", roleLabel: roleLabelOf(role) });
+    await sendEmailOtp({
+      to: String(profile.email || email).toLowerCase(),
+      code,
+      purpose: "login",
+      roleLabel: roleLabelOf(role),
+    });
     mailOk = true;
   } catch (err) {
     mailError = String(err?.message || err || "");
   }
   const mailStatus = mailProviderStatus();
-  const out = {
-    ok: true,
-    message: mailOk
-      ? `登录验证码已发送至 ${maskEmailHint(profile.email || email)}。`
-      : allowStagingOtp()
-        ? mailStatus.resend
+  if (!mailOk) {
+    console.error("[auth/send_login_otp] mail failed", mailError, mailStatus);
+    if (allowStagingOtp()) {
+      return json(res, 200, {
+        ...privacy,
+        message: mailStatus.resend
           ? `验证码邮件发送失败：${mailError || "Resend 错误"}。已生成 Staging 调试验证码。`
-          : "邮件服务暂不可用（未读到 RESEND_API_KEY），已生成 Staging 调试验证码。"
-        : generic.message,
+          : "邮件服务暂不可用（未读到 RESEND_API_KEY），已生成 Staging 调试验证码。",
+        mail: mailStatus,
+        devCode: code,
+        mailWarning: mailError || undefined,
+      });
+    }
+    return json(res, 200, privacy);
+  }
+  return json(res, 200, {
+    ok: true,
+    mailSent: true,
+    message: privacy.message,
     channel: "email",
-    emailMasked: maskEmailHint(profile.email || email),
     expiresInSec: Math.floor(OTP_TTL_MS / 1000),
     role,
-    mail: mailStatus,
-  };
-  // Only expose Staging debug OTP when mail actually failed.
-  if (!mailOk && allowStagingOtp()) out.devCode = code;
-  if (!mailOk && allowStagingOtp() && mailError) out.mailWarning = mailError;
-  if (!mailOk) console.error("[auth/send_login_otp] mail failed", mailError, mailStatus);
-  return json(res, 200, out);
+  });
 }
 
 async function handleLoginWithOtp(body, res) {
@@ -707,20 +925,37 @@ async function handleLoginWithOtp(body, res) {
   if (!email || !/^\S+@\S+\.\S+$/.test(email)) return json(res, 400, { ok: false, message: "请输入有效邮箱。" });
   if (!/^\d{4,8}$/.test(code)) return json(res, 400, { ok: false, message: "验证码无效或已过期" });
   const loginPortal = normalizeLoginPortal(body.loginPortal || body.portal || body.role || "");
-  // OTP is portal-scoped: find account by email, then enforce portal capability (supports dual-role users).
+  // Same resolution order as send_login_otp: email rows → forgot resolve → Auth id profile → Boss orphan heal.
+  // Select only real columns (profiles.role exists; do not require profiles.roles).
+  const authUserEarly = await findAuthUserByEmail(email);
   const byEmail = await profilesLookup(
     `?email=eq.${encodeURIComponent(email)}&select=id,email,phone,phone_e164,display_name,status,role,boss_uid&limit=5`
   ).catch(() => []);
-  const profile0 =
-    (Array.isArray(byEmail) && byEmail[0]) ||
+  let profile0 =
+    pickProfileForLoginPortal(byEmail, loginPortal || role, authUserEarly) ||
     (await resolveForgotAccount(email, loginPortal || role).catch(() => null))?.profile ||
+    (authUserEarly?.id ? await profileFor(authUserEarly.id) : null) ||
     null;
+  if (!profile0) {
+    if (authUserEarly?.id && (loginPortal || role) !== "companion") {
+      try {
+        profile0 = await ensureBossProfileForAuthUser(authUserEarly);
+      } catch (healErr) {
+        console.error("[auth/login_with_otp] orphan heal failed", healErr?.code || "", healErr?.message || healErr);
+        return json(res, healErr?.status || 403, {
+          ok: false,
+          code: healErr?.code || "ACCOUNT_NEEDS_REPAIR",
+          message: healErr?.message || "账号资料不完整，请联系客服。",
+        });
+      }
+    }
+  }
   if (!profile0) return json(res, 400, { ok: false, message: "验证码无效或已过期" });
   if (!canLoginWithStatus(profile0, loginPortal || role || profile0.role)) {
     return json(res, 403, { ok: false, message: "账号未启用或正在审核。" });
   }
   try {
-    assertEmailVerifiedOrThrow(profile0, {});
+    assertEmailVerifiedOrThrow(profile0, authUserEarly || {});
   } catch (err) {
     return json(res, err.status || 403, { ok: false, message: err.message || "请先完成邮箱验证。", code: "EMAIL_NOT_VERIFIED" });
   }
@@ -733,6 +968,19 @@ async function handleLoginWithOtp(body, res) {
   const auth = await createSessionForUserId(profile0.id, profile0.email || email);
   let profile = await profileFor(auth.user?.id || profile0.id);
   if (!profile) profile = profile0;
+  // Keep Auth email on profile when blank so future email lookups match (no role change).
+  if (email && !String(profile.email || "").trim()) {
+    try {
+      await supabaseJson(restUrl("profiles", `?id=eq.${encodeURIComponent(profile.id)}`), {
+        method: "PATCH",
+        headers: headersWithServiceRole({ Prefer: "return=minimal" }),
+        body: JSON.stringify({ email }),
+      });
+      profile = { ...profile, email };
+    } catch {
+      /* non-fatal */
+    }
+  }
   if (["boss", "customer", "owner", "user"].includes(String(profile.role || "").trim().toLowerCase())) {
     try {
       profile = await ensureBossUid({ ...profile, role: "boss" }, auth.user);
@@ -741,10 +989,19 @@ async function handleLoginWithOtp(body, res) {
     }
   }
   await touchLastLogin(profile.id, "");
-  const user = await enrichSafeProfile(profile, {
-    ...(auth.user || {}),
-    user_metadata: { ...((auth.user && auth.user.user_metadata) || {}), boss_uid: profile.boss_uid || metaBossUid(auth.user) },
-  });
+  const capabilityAuth = await authUserForCapabilities(
+    {
+      ...(auth.user || {}),
+      ...(authUserEarly || {}),
+      user_metadata: {
+        ...((authUserEarly && authUserEarly.user_metadata) || {}),
+        ...((auth.user && auth.user.user_metadata) || {}),
+        boss_uid: profile.boss_uid || metaBossUid(auth.user) || metaBossUid(authUserEarly),
+      },
+    },
+    profile.id
+  );
+  const user = await enrichSafeProfile(profile, capabilityAuth);
   if (!VALID_ROLES.has(user.role) && !(user.hasBoss || user.hasCompanion)) {
     return json(res, 403, { ok: false, message: "账号角色无效。" });
   }
@@ -752,12 +1009,28 @@ async function handleLoginWithOtp(body, res) {
     return json(res, 403, { ok: false, message: "账号未启用或正在审核。" });
   }
   if (loginPortal && !userHasPortalAccess(user, loginPortal)) {
-    return json(res, 403, { ok: false, message: portalDeniedMessage(loginPortal), code: "PORTAL_DENIED" });
+    const denied = {
+      ok: false,
+      message: portalDeniedMessage(loginPortal),
+      code: "PORTAL_DENIED",
+    };
+    if (allowStagingOtp()) {
+      denied.debug = {
+        loginPortal,
+        profileRole: profile.role || "",
+        status: profile.status || "",
+        hasBoss: !!user.hasBoss,
+        hasCompanion: !!user.hasCompanion,
+        roles: Array.isArray(user.roles) ? user.roles : [],
+        sessionRole: user.role || "",
+      };
+    }
+    return json(res, 403, denied);
   }
   // Bind session active role to the portal when provided.
   let sessionUser = user;
-  if (loginPortal === "boss") sessionUser = { ...user, role: "boss" };
-  else if (loginPortal === "companion") sessionUser = { ...user, role: "companion" };
+  if (loginPortal === "boss") sessionUser = { ...user, role: "boss", hasBoss: true };
+  else if (loginPortal === "companion") sessionUser = { ...user, role: "companion", hasCompanion: true };
   else if (loginPortal === "customer_service") sessionUser = { ...user, role: "customer_service" };
   else if (loginPortal === "admin") sessionUser = { ...user, role: user.role === "super_admin" ? "super_admin" : "admin" };
   if (stored.id) {
@@ -860,22 +1133,39 @@ async function handleSendRegisterOtp(body, res) {
   // Unified account: one normalized email → one user_id. Never create a second Auth user for role switch.
   if ((existing || []).length) {
     if (role === "boss") {
-      return json(res, 409, { ok: false, message: "该邮箱已注册，请直接登录。" });
+      return json(res, 409, { ok: false, mailSent: false, message: "该邮箱已注册，请直接登录。" });
     }
     if (companionHit) {
-      return json(res, 409, { ok: false, message: "该邮箱已有陪玩账号，请切换到「已有账号登录」。" });
+      return json(res, 409, { ok: false, mailSent: false, message: "该邮箱已有陪玩账号，请切换到「已有账号登录」。" });
     }
     if (bossHit) {
       return json(res, 409, {
         ok: false,
+        mailSent: false,
         code: "EMAIL_EXISTS_LOGIN_THEN_APPLY",
         message: "该邮箱已注册，请直接登录；登录后可在当前账号下申请陪玩身份，不会创建新账号。",
       });
     }
     if (otherHit) {
-      return json(res, 409, { ok: false, message: "该邮箱已被其他角色占用，请直接登录。" });
+      return json(res, 409, { ok: false, mailSent: false, message: "该邮箱已被其他角色占用，请直接登录。" });
     }
-    return json(res, 409, { ok: false, message: "该邮箱已注册，请直接登录。" });
+    return json(res, 409, { ok: false, mailSent: false, message: "该邮箱已注册，请直接登录。" });
+  }
+
+  // Auth orphan: Auth exists but profiles missing — do not continue register OTP flow.
+  const authExisting = await findAuthUserByEmail(email);
+  if (authExisting?.id) {
+    const extras = await loadHealExtrasForAuthUser(authExisting);
+    const intent = classifyAuthPortalIntent(authExisting, extras);
+    return json(res, 409, {
+      ok: false,
+      mailSent: false,
+      code: "ACCOUNT_NEEDS_REPAIR",
+      message:
+        intent === "boss"
+          ? "该邮箱已有登录账号但资料不完整，请直接使用验证码或密码登录以修复，不要重复注册。"
+          : repairDeniedMessage(intent),
+    });
   }
   const code = randomOtpCode();
   try {
@@ -896,26 +1186,44 @@ async function handleSendRegisterOtp(body, res) {
     mailError = String(err?.message || err || "");
   }
   const mailStatus = mailProviderStatus();
-  const out = {
-    ok: true,
-    message: mailOk
-      ? `注册验证码已发送至 ${maskEmailHint(email)}。`
-      : allowStagingOtp()
-        ? mailStatus.resend
+  if (!mailOk) {
+    console.error("[auth/send_register_otp] mail failed", mailError, mailStatus);
+    if (allowStagingOtp()) {
+      return json(res, 200, {
+        ok: true,
+        mailSent: false,
+        message: mailStatus.resend
           ? `验证码邮件发送失败：${mailError || "Resend 错误"}。已生成 Staging 调试验证码。`
-          : "邮件服务暂不可用（未读到 RESEND_API_KEY），已生成 Staging 调试验证码。"
-        : "如邮箱可用，将收到注册验证码，请查收后继续。",
+          : "邮件服务暂不可用（未读到 RESEND_API_KEY），已生成 Staging 调试验证码。",
+        channel: "email",
+        emailMasked: maskEmailHint(email),
+        expiresInSec: Math.floor(OTP_TTL_MS / 1000),
+        retryAfterSec: Math.floor(OTP_RESEND_COOLDOWN_MS / 1000),
+        role,
+        mail: mailStatus,
+        devCode: code,
+        mailWarning: mailError || undefined,
+      });
+    }
+    return json(res, 502, {
+      ok: false,
+      mailSent: false,
+      message: "验证码发送失败，请稍后重试。",
+      code: "MAIL_SEND_FAILED",
+      mail: mailStatus,
+    });
+  }
+  return json(res, 200, {
+    ok: true,
+    mailSent: true,
+    message: `注册验证码已发送至 ${maskEmailHint(email)}。`,
     channel: "email",
     emailMasked: maskEmailHint(email),
     expiresInSec: Math.floor(OTP_TTL_MS / 1000),
     retryAfterSec: Math.floor(OTP_RESEND_COOLDOWN_MS / 1000),
     role,
     mail: mailStatus,
-  };
-  if (!mailOk && allowStagingOtp()) out.devCode = code;
-  if (!mailOk && allowStagingOtp() && mailError) out.mailWarning = mailError;
-  if (!mailOk) console.error("[auth/send_register_otp] mail failed", mailError, mailStatus);
-  return json(res, 200, out);
+  });
 }
 
 async function handleVerifyRegisterOtp(body, res) {
@@ -1035,27 +1343,28 @@ async function handleForgotResetPassword(body, res) {
 
 async function allocateBossUid() {
   const rows = await supabaseJson(
-    restUrl("profiles", "?role=eq.boss&select=boss_uid&boss_uid=not.is.null&order=created_at.desc&limit=500"),
+    restUrl("profiles", "?select=boss_uid&boss_uid=not.is.null&limit=2000"),
     { headers: headersWithServiceRole() }
   ).catch(() => []);
-  let next = 1;
-  for (const row of Array.isArray(rows) ? rows : []) {
-    const n = parseBossCodeNumber(row?.boss_uid);
-    if (n) next = Math.max(next, n + 1);
-  }
+  const list = Array.isArray(rows) ? rows.map((r) => r?.boss_uid).filter(Boolean) : [];
+  let next = maxBossUidNumberFromList(list, parseBossCodeNumber) + 1;
+  if (next < 1) next = 1;
   try {
     const authUsers = await supabaseJson(authUrl("admin/users?page=1&per_page=200"), {
       headers: headersWithServiceRole(),
     });
-    const list = authUsers?.users || authUsers || [];
-    for (const u of Array.isArray(list) ? list : []) {
-      const n = parseBossCodeNumber(metaBossUid(u));
-      if (n) next = Math.max(next, n + 1);
+    const users = authUsers?.users || authUsers || [];
+    const metaUids = [];
+    for (const u of Array.isArray(users) ? users : []) {
+      const m = metaBossUid(u);
+      if (m) metaUids.push(m);
     }
+    const metaMax = maxBossUidNumberFromList(metaUids, parseBossCodeNumber);
+    if (metaMax + 1 > next) next = metaMax + 1;
   } catch {
     /* optional */
   }
-  for (let attempt = 0; attempt < 12; attempt += 1) {
+  for (let attempt = 0; attempt < 24; attempt += 1) {
     const candidate = formatBossCode(next + attempt);
     const existing = await supabaseJson(
       restUrl("profiles", `?boss_uid=eq.${encodeURIComponent(candidate)}&select=id&limit=1`),
@@ -1063,7 +1372,7 @@ async function allocateBossUid() {
     ).catch(() => []);
     if (!Array.isArray(existing) || existing.length === 0) return candidate;
   }
-  return formatBossCode(next + Date.now() % 1000);
+  return formatBossCode(next + (Date.now() % 1000));
 }
 
 async function persistBossUidMeta(userId, bossUid, authUser = {}) {
@@ -1156,8 +1465,8 @@ async function ensureBossUid(profile, authUser = null) {
 }
 
 /**
- * If Auth user has no profiles row yet (race / partial register), create a default boss profile
- * instead of treating the user as logged-out. Never sign the user out for missing profile.
+ * Create a Boss profiles row for an Auth user that is missing one.
+ * Idempotent. Refuses companion/staff escalation. Does not steal another email's profile.
  */
 async function ensureBossProfileForAuthUser(authUser = {}) {
   const userId = String(authUser.id || "").trim();
@@ -1165,29 +1474,48 @@ async function ensureBossProfileForAuthUser(authUser = {}) {
   let profile = await profileFor(userId);
   if (profile) return profile;
 
+  // Companion / staff / empty-metadata orphans must not become Boss here.
+  await assertCanHealBossOrThrow(authUser);
+  if (isAuthUserBanned(authUser)) {
+    throw Object.assign(new Error("账号不可用。"), { status: 403, code: "ACCOUNT_DISABLED" });
+  }
+
   const email = String(authUser.email || "").trim().toLowerCase();
+  if (email) {
+    const emailHits = await profilesLookup(
+      `?email=eq.${encodeURIComponent(email)}&select=id,email,role&limit=5`
+    ).catch(() => []);
+    const other = (emailHits || []).find((row) => String(row?.id || "") !== userId);
+    if (other?.id) {
+      throw Object.assign(new Error("该邮箱已绑定其他账号资料，请联系客服。"), {
+        status: 409,
+        code: "EMAIL_PROFILE_CONFLICT",
+      });
+    }
+  }
+
   const displayName =
     String(authUser.user_metadata?.display_name || authUser.user_metadata?.nickname || "").trim() ||
     (email ? email.split("@")[0] : "") ||
     "老板";
-  const baseProfile = {
+  const createdAt = new Date().toISOString();
+  // Prefer omitting boss_uid so DB trigger + synced sequence allocate uniquely.
+  const slim = {
     id: userId,
     role: "boss",
     display_name: displayName.slice(0, 40),
-    email,
+    email: email || "",
     phone: "",
     avatar_url: "",
     status: "active",
-    created_at: new Date().toISOString(),
-    email_verified: true,
-    email_verified_at: new Date().toISOString(),
+    created_at: createdAt,
   };
-  let bossUid = "";
-  try {
-    bossUid = await allocateBossUid();
-  } catch {
-    bossUid = "";
-  }
+  const withVerified = {
+    ...slim,
+    email_verified: true,
+    email_verified_at: createdAt,
+  };
+
   async function insertProfile(payload) {
     return supabaseJson(restUrl("profiles"), {
       method: "POST",
@@ -1195,45 +1523,71 @@ async function ensureBossProfileForAuthUser(authUser = {}) {
       body: JSON.stringify(payload),
     });
   }
+
   let rows;
-  try {
-    rows = await insertProfile(bossUid ? { ...baseProfile, boss_uid: bossUid } : baseProfile);
-  } catch (err) {
-    const detail = String(err?.message || "");
-    if (isMissingColumnError(err) || /email_verified|boss_uid|schema cache/i.test(detail)) {
-      const slim = {
-        id: userId,
-        role: "boss",
-        display_name: baseProfile.display_name,
-        email,
-        phone: "",
-        avatar_url: "",
-        status: "active",
-        created_at: baseProfile.created_at,
-      };
-      try {
-        rows = await insertProfile(bossUid ? { ...slim, boss_uid: bossUid } : slim);
-      } catch (err2) {
-        if (/boss_uid|schema cache/i.test(String(err2?.message || "")) && bossUid) {
-          rows = await insertProfile(slim);
-        } else if (/duplicate|unique|already exists/i.test(String(err2?.message || ""))) {
-          return profileFor(userId);
-        } else {
-          throw err2;
-        }
+  let lastErr = null;
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    let payload;
+    if (attempt === 0) payload = withVerified;
+    else if (attempt === 1) payload = slim;
+    else {
+      const bossUid = await allocateBossUid().catch(() => "");
+      payload = bossUid ? { ...slim, boss_uid: bossUid } : { ...slim };
+    }
+    try {
+      rows = await insertProfile(payload);
+      lastErr = null;
+      break;
+    } catch (err) {
+      lastErr = err;
+      const detail = String(err?.message || "");
+      if (/duplicate|unique|already exists/i.test(detail) && /id|profiles_pkey|pkey/i.test(detail)) {
+        return profileFor(userId);
       }
-    } else if (/duplicate|unique|already exists/i.test(detail)) {
-      return profileFor(userId);
-    } else {
+      if (/duplicate|unique|already exists/i.test(detail) && /email/i.test(detail)) {
+        const again = await profileFor(userId);
+        if (again) return again;
+        throw Object.assign(new Error("该邮箱已绑定其他账号资料，请联系客服。"), {
+          status: 409,
+          code: "EMAIL_PROFILE_CONFLICT",
+        });
+      }
+      if (/boss_uid|unique/i.test(detail) && attempt < 3) {
+        console.error("[auth/ensureBossProfile] boss_uid conflict, retry", attempt, detail);
+        continue;
+      }
+      if (isMissingColumnError(err) || /email_verified|schema cache|boss_uid|PGRST204|42703/i.test(detail)) {
+        continue;
+      }
       throw err;
     }
   }
+  if (lastErr && !rows) {
+    console.error("[auth/ensureBossProfile] insert failed", lastErr?.message || lastErr);
+    throw Object.assign(new Error(`老板资料创建失败：${lastErr?.message || "未知错误"}`), {
+      status: 500,
+      code: "PROFILE_CREATE_FAILED",
+      cause: lastErr,
+    });
+  }
+
   profile = Array.isArray(rows) ? rows[0] : rows;
+  profile = (await profileFor(userId)) || profile;
   try {
-    profile = await ensureBossUid(profile || baseProfile, authUser);
+    profile = await ensureBossUid(profile || slim, authUser);
   } catch (uidErr) {
-    console.error("[auth/me] ensureBossUid after auto-create failed", uidErr?.message || uidErr);
-    profile = { ...(profile || baseProfile), boss_uid: profile?.boss_uid || bossUid || "" };
+    console.error("[auth/ensureBossProfile] ensureBossUid failed", uidErr?.message || uidErr);
+    throw Object.assign(new Error(`老板 UID 分配失败：${uidErr?.message || "请重试"}`), {
+      status: 500,
+      code: "BOSS_UID_ASSIGN_FAILED",
+      cause: uidErr,
+    });
+  }
+  try {
+    const { persistRoles } = await import("./_account-roles.js");
+    await persistRoles(userId, ["boss"], { primaryRole: "boss" });
+  } catch {
+    /* optional */
   }
   return profile;
 }
@@ -1276,11 +1630,11 @@ export default async function handler(req, res) {
         try {
           profile = await ensureBossProfileForAuthUser(authUser);
         } catch (initErr) {
-          console.error("[auth/me] profile auto-init failed", initErr?.message || initErr);
-          return json(res, 503, {
+          console.error("[auth/me] profile auto-init failed", initErr?.code || "", initErr?.message || initErr);
+          return json(res, initErr?.status || 503, {
             ok: false,
-            message: "账号初始化失败，请刷新重试或联系客服。",
-            code: "PROFILE_INIT_FAILED",
+            message: initErr?.message || "账号初始化失败，请刷新重试或联系客服。",
+            code: initErr?.code || "PROFILE_INIT_FAILED",
           });
         }
       }
@@ -1692,7 +2046,86 @@ export default async function handler(req, res) {
       if (!policy.ok) return json(res, 400, { ok: false, message: policy.message });
       const authPassword = password;
       const verifiedAt = new Date().toISOString();
+
+      // Idempotent register: never create a second Auth user for the same email.
+      const preexistingAuth = await findAuthUserByEmail(email);
+      if (preexistingAuth?.id) {
+        const existingProfile = await profileFor(preexistingAuth.id);
+        if (existingProfile) {
+          return json(res, 400, { ok: false, message: "该邮箱已注册，请直接登录。" });
+        }
+        let healed;
+        try {
+          // Only explicit Boss orphans heal; companion/staff/empty metadata → ACCOUNT_NEEDS_REPAIR.
+          healed = await ensureBossProfileForAuthUser({
+            ...preexistingAuth,
+            email,
+            user_metadata: {
+              ...(preexistingAuth.user_metadata || {}),
+              display_name: displayName || preexistingAuth.user_metadata?.display_name || email.split("@")[0],
+            },
+          });
+          await supabaseJson(authUrl(`admin/users/${encodeURIComponent(preexistingAuth.id)}`), {
+            method: "PUT",
+            headers: headersWithServiceRole(),
+            body: JSON.stringify({
+              password: authPassword,
+              email_confirm: true,
+              user_metadata: {
+                ...(preexistingAuth.user_metadata || {}),
+                display_name: displayName || email.split("@")[0] || "老板",
+                has_password: true,
+                password_set_at: verifiedAt,
+                email_verified: true,
+                email_verified_at: verifiedAt,
+              },
+              app_metadata: {
+                ...(preexistingAuth.app_metadata || {}),
+                has_password: true,
+                email_verified: true,
+              },
+            }),
+          });
+        } catch (healErr) {
+          console.error("[auth/register] orphan heal failed", healErr?.message || healErr);
+          return json(res, healErr?.status || 500, {
+            ok: false,
+            code: healErr?.code || "ACCOUNT_NEEDS_REPAIR",
+            message: healErr?.message || "账号资料修复失败，请联系客服。",
+          });
+        }
+        const auth = await supabaseJson(authUrl("token?grant_type=password"), {
+          method: "POST",
+          headers: authHeaders(),
+          body: JSON.stringify({ email, password: authPassword }),
+        });
+        await stampPasswordSet(preexistingAuth.id, { mustChangePassword: false });
+        await touchLastLogin(preexistingAuth.id, clientIp(req));
+        const user = await enrichSafeProfile(
+          { ...(healed || {}), has_password: true, email_verified: true },
+          auth.user || preexistingAuth
+        );
+        const bossUidOut = user.bossUid || user.boss_uid || "";
+        return json(res, 200, {
+          ok: true,
+          repaired: true,
+          message: bossUidOut
+            ? `账号资料已修复并注册完成。您的老板 UID：${bossUidOut}。`
+            : "账号资料已修复并注册完成。",
+          bossUid: bossUidOut || undefined,
+          emailVerified: true,
+          session: {
+            accessToken: auth.access_token,
+            refreshToken: auth.refresh_token,
+            expiresAt: auth.expires_at,
+            user,
+          },
+          redirect: redirectFor("boss"),
+        });
+      }
+
       let created;
+      let createdAuthId = "";
       try {
         created = await supabaseJson(authUrl("admin/users"), {
           method: "POST",
@@ -1707,18 +2140,37 @@ export default async function handler(req, res) {
               password_set_at: verifiedAt,
               email_verified: true,
               email_verified_at: verifiedAt,
+              roles: ["boss"],
             },
-            app_metadata: { has_password: true, email_verified: true },
+            app_metadata: { has_password: true, email_verified: true, roles: ["boss"] },
           }),
         });
       } catch (error) {
         let message = String(error.message || "").trim();
         if (/user already registered|already.*(registered|exists)|duplicate|unique/i.test(message)) {
+          // Race: Auth appeared between our probe and create — do not leave caller guessing.
+          const raced = await findAuthUserByEmail(email);
+          if (raced?.id && !(await profileFor(raced.id))) {
+            const extras = await loadHealExtrasForAuthUser(raced);
+            if (shouldHealAsBoss(raced, extras)) {
+              return json(res, 409, {
+                ok: false,
+                code: "ACCOUNT_NEEDS_REPAIR",
+                message: "该邮箱已有登录账号但资料不完整，请直接登录以修复，不要重复注册。",
+              });
+            }
+            return json(res, 409, {
+              ok: false,
+              code: "ACCOUNT_NEEDS_REPAIR",
+              message: repairDeniedMessage(classifyAuthPortalIntent(raced, extras)),
+            });
+          }
           message = "该邮箱已注册，请直接登录。";
         }
         return json(res, 400, { ok: false, message: message || "注册失败，请检查邮箱是否已存在。" });
       }
       const userId = created?.id || created?.user?.id;
+      createdAuthId = String(userId || "");
       if (!userId) return json(res, 500, { ok: false, message: "Auth 账号创建失败，未返回用户 ID。" });
       let profile;
       try {
@@ -1739,12 +2191,7 @@ export default async function handler(req, res) {
           email_verified: true,
           email_verified_at: verifiedAt,
         };
-        let bossUid = "";
-        try {
-          bossUid = await allocateBossUid();
-        } catch {
-          bossUid = "";
-        }
+        // Prefer trigger-assigned boss_uid (synced sequence). Fallback to allocateBossUid on conflict.
         let rows;
         async function insertProfile(payload) {
           return supabaseJson(restUrl("profiles"), {
@@ -1754,7 +2201,7 @@ export default async function handler(req, res) {
           });
         }
         try {
-          rows = await insertProfile(bossUid ? { ...intlProfile, boss_uid: bossUid } : intlProfile);
+          rows = await insertProfile(intlProfile);
         } catch (insertError) {
           const detail = String(insertError.message || "");
           if (isMissingColumnError(insertError) || /email_verified/i.test(detail)) {
@@ -1762,32 +2209,26 @@ export default async function handler(req, res) {
             delete withoutVerified.email_verified;
             delete withoutVerified.email_verified_at;
             try {
-              rows = await insertProfile(bossUid ? { ...withoutVerified, boss_uid: bossUid } : withoutVerified);
+              rows = await insertProfile(withoutVerified);
             } catch (retryMissing) {
-              if (isMissingColumnError(retryMissing)) {
-                try {
-                  rows = await insertProfile(bossUid ? { ...baseProfile, boss_uid: bossUid } : baseProfile);
-                } catch (retryError) {
-                  if (/boss_uid|schema cache/i.test(String(retryError.message || "")) && bossUid) {
-                    rows = await insertProfile(baseProfile);
-                  } else {
-                    throw retryError;
-                  }
-                }
-              } else if (/boss_uid|schema cache/i.test(String(retryMissing.message || "")) && bossUid) {
+              if (isMissingColumnError(retryMissing) || /country_code|phone_e164|PGRST204|42703/i.test(String(retryMissing.message || ""))) {
                 rows = await insertProfile(baseProfile);
+              } else if (/boss_uid|unique/i.test(String(retryMissing.message || ""))) {
+                const bossUid = await allocateBossUid().catch(() => "");
+                rows = await insertProfile(bossUid ? { ...baseProfile, boss_uid: bossUid } : baseProfile);
               } else {
                 throw retryMissing;
               }
             }
-          } else if (/boss_uid|schema cache/i.test(detail) && bossUid) {
+          } else if (/boss_uid|unique/i.test(detail)) {
+            const bossUid = await allocateBossUid().catch(() => "");
             try {
-              rows = await insertProfile(intlProfile);
-            } catch (retryIntl) {
-              if (isMissingColumnError(retryIntl) || /email_verified/i.test(String(retryIntl.message || ""))) {
-                rows = await insertProfile(baseProfile);
+              rows = await insertProfile(bossUid ? { ...intlProfile, boss_uid: bossUid } : baseProfile);
+            } catch (retryUid) {
+              if (isMissingColumnError(retryUid) || /email_verified|PGRST204|42703/i.test(String(retryUid.message || ""))) {
+                rows = await insertProfile(bossUid ? { ...baseProfile, boss_uid: bossUid } : baseProfile);
               } else {
-                throw retryIntl;
+                throw retryUid;
               }
             }
           } else {
@@ -1795,14 +2236,16 @@ export default async function handler(req, res) {
           }
         }
         profile = Array.isArray(rows) ? rows[0] : rows;
+        profile = (await profileFor(userId)) || profile;
         profile = { ...(profile || baseProfile), email_verified: true, email_verified_at: verifiedAt };
         try {
           profile = await ensureBossUid(profile, created?.user || created || { id: userId, user_metadata: { display_name: displayName } });
         } catch (uidError) {
-          // Last resort: still register, but surface empty UID only if metadata also fails.
-          const detail = String(uidError.message || "");
-          if (!/boss_uid|schema cache|Could not find|Auth|metadata|user/i.test(detail)) throw uidError;
-          profile = { ...(profile || baseProfile), boss_uid: profile?.boss_uid || "" };
+          throw Object.assign(new Error(`老板 UID 分配失败：${uidError.message || "请重试"}`), {
+            status: 500,
+            code: "BOSS_UID_ASSIGN_FAILED",
+            cause: uidError,
+          });
         }
         try {
           const { persistRoles } = await import("./_account-roles.js");
@@ -1813,15 +2256,17 @@ export default async function handler(req, res) {
         }
       } catch (error) {
         try {
-          await supabaseJson(authUrl(`admin/users/${encodeURIComponent(userId)}`), {
-            method: "DELETE",
-            headers: headersWithServiceRole(),
+          await rollbackCreatedAuthUser(createdAuthId || userId, "boss-register-profile-fail");
+        } catch (rollbackErr) {
+          return json(res, 500, {
+            ok: false,
+            code: rollbackErr?.code || "AUTH_ROLLBACK_FAILED",
+            message: rollbackErr?.message || "老板资料创建失败，且 Auth 回滚未成功。请联系客服。",
           });
-        } catch {
-          /* best-effort rollback */
         }
         return json(res, 500, {
           ok: false,
+          code: error?.code || "PROFILE_CREATE_FAILED",
           message: `老板资料创建失败：${error.message || "未知错误"}。Auth 账号已回滚，请重试。`,
         });
       }
@@ -1904,6 +2349,72 @@ export default async function handler(req, res) {
     if (requestedAction === "mail_status") {
       return json(res, 200, { ok: true, mail: mailProviderStatus() });
     }
+    if (requestedAction === "probe_portal_capability") {
+      // Staging / Preview only — diagnose Boss portal gates without mutating data.
+      if (!allowStagingOtp()) {
+        return json(res, 403, { ok: false, message: "probe_portal_capability 仅 Staging / Preview 可用。" });
+      }
+      const email = String(body.email || body.account || "").trim().toLowerCase();
+      const loginPortal = normalizeLoginPortal(body.loginPortal || body.portal || body.role || "boss") || "boss";
+      if (!email || !/^\S+@\S+\.\S+$/.test(email)) {
+        return json(res, 400, { ok: false, message: "请输入有效邮箱。" });
+      }
+      const authUser = await findAuthUserByEmail(email);
+      const byEmail = await profilesLookup(
+        `?email=eq.${encodeURIComponent(email)}&select=id,email,phone,phone_e164,display_name,status,role,boss_uid&limit=5`
+      ).catch(() => []);
+      const profile =
+        pickProfileForLoginPortal(byEmail, loginPortal, authUser) ||
+        (await resolveForgotAccount(email, loginPortal).catch(() => null))?.profile ||
+        (authUser?.id ? await profileFor(authUser.id) : null) ||
+        null;
+      if (!profile) {
+        return json(res, 200, {
+          ok: true,
+          found: false,
+          authExists: !!authUser?.id,
+          hasBoss: false,
+          hasCompanion: false,
+          userHasPortalAccess: false,
+          loginPortal,
+        });
+      }
+      const capabilityAuth = await authUserForCapabilities(authUser || {}, profile.id);
+      const enriched = await enrichProfileRoles(profile, capabilityAuth);
+      const sessionUser = await enrichSafeProfile(profile, capabilityAuth);
+      return json(res, 200, {
+        ok: true,
+        found: true,
+        authExists: !!authUser?.id,
+        loginPortal,
+        profile: {
+          id: profile.id,
+          email: profile.email || "",
+          role: profile.role || "",
+          status: profile.status || "",
+          boss_uid: profile.boss_uid || "",
+        },
+        authMeta: {
+          app_roles: capabilityAuth?.app_metadata?.roles || null,
+          app_role: capabilityAuth?.app_metadata?.role || null,
+          user_roles: capabilityAuth?.user_metadata?.roles || null,
+          user_role: capabilityAuth?.user_metadata?.role || null,
+        },
+        caps: {
+          roles: enriched.roles || [],
+          hasBoss: !!enriched.hasBoss,
+          hasCompanion: !!enriched.hasCompanion,
+          primaryRole: enriched.primaryRole || "",
+        },
+        session: {
+          role: sessionUser.role || "",
+          hasBoss: !!sessionUser.hasBoss,
+          hasCompanion: !!sessionUser.hasCompanion,
+          roles: sessionUser.roles || [],
+        },
+        userHasPortalAccess: userHasPortalAccess(sessionUser, loginPortal),
+      });
+    }
     if (requestedAction === "mail_ping") {
       if (!allowStagingOtp()) {
         return json(res, 403, { ok: false, message: "mail_ping 仅 Staging / Preview 可用。" });
@@ -1978,7 +2489,18 @@ export default async function handler(req, res) {
     }
     const authUser = auth.user;
     let profile = await profileFor(authUser.id);
-    if (!profile) return json(res, 403, { ok: false, message: "账号未绑定平台资料，请联系管理员。" });
+    if (!profile) {
+      try {
+        profile = await ensureBossProfileForAuthUser(authUser);
+      } catch (healErr) {
+        console.error("[auth/login] orphan heal failed", healErr?.code || "", healErr?.message || healErr);
+        return json(res, healErr?.status || 403, {
+          ok: false,
+          code: healErr?.code || "ACCOUNT_NEEDS_REPAIR",
+          message: healErr?.message || "账号未绑定平台资料，请联系管理员。",
+        });
+      }
+    }
     try {
       assertEmailVerifiedOrThrow(profile, authUser);
     } catch (err) {
@@ -2014,11 +2536,27 @@ export default async function handler(req, res) {
       return json(res, 403, { ok: false, message: "账号未启用或正在审核。" });
     }
     if (loginPortal && !userHasPortalAccess(user, loginPortal)) {
-      return json(res, 403, { ok: false, message: portalDeniedMessage(loginPortal), code: "PORTAL_DENIED" });
+      const denied = {
+        ok: false,
+        message: portalDeniedMessage(loginPortal),
+        code: "PORTAL_DENIED",
+      };
+      if (allowStagingOtp()) {
+        denied.debug = {
+          loginPortal,
+          profileRole: profile.role || "",
+          status: profile.status || "",
+          hasBoss: !!user.hasBoss,
+          hasCompanion: !!user.hasCompanion,
+          roles: Array.isArray(user.roles) ? user.roles : [],
+          sessionRole: user.role || "",
+        };
+      }
+      return json(res, 403, denied);
     }
     let sessionUser = user;
-    if (loginPortal === "boss") sessionUser = { ...user, role: "boss" };
-    else if (loginPortal === "companion") sessionUser = { ...user, role: "companion" };
+    if (loginPortal === "boss") sessionUser = { ...user, role: "boss", hasBoss: true };
+    else if (loginPortal === "companion") sessionUser = { ...user, role: "companion", hasCompanion: true };
     else if (loginPortal === "customer_service") sessionUser = { ...user, role: "customer_service" };
     else if (loginPortal === "admin") sessionUser = { ...user, role: user.role === "super_admin" ? "super_admin" : "admin" };
     await touchLastLogin(profile.id, clientIp(req));
