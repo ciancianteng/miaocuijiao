@@ -4,6 +4,7 @@
  *
  * Usage:
  *   DATABASE_URL=... node scripts/apply-boss-companion-relations.mjs
+ *   STAGING_DB_PASSWORD=... node scripts/apply-boss-companion-relations.mjs
  *   SUPABASE_ACCESS_TOKEN=... node scripts/apply-boss-companion-relations.mjs
  *     (Management API database/query — Staging ref only)
  */
@@ -152,10 +153,29 @@ async function applyViaManagementApi(token, sql) {
   return { apply: json, verify: verifyJson };
 }
 
+function buildStagingPoolerUrl(password, region = "ap-southeast-1") {
+  const pass = String(password || "").trim();
+  if (!pass) return "";
+  const u = new URL(`postgresql://x@aws-0-${region}.pooler.supabase.com:5432/postgres`);
+  u.username = `postgres.${STAGING_REF}`;
+  u.password = pass;
+  return u.toString();
+}
+
 loadEnv();
 
 const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "";
-const dbUrl = process.env.DATABASE_URL || process.env.SUPABASE_DB_URL || process.env.POSTGRES_URL || process.env.DIRECT_URL || "";
+const oneshotPassword =
+  process.env.STAGING_DB_PASSWORD ||
+  process.env.SUPABASE_DB_PASSWORD ||
+  process.env.DATABASE_PASSWORD ||
+  process.env.DB_PASSWORD ||
+  "";
+let dbUrl = process.env.DATABASE_URL || process.env.SUPABASE_DB_URL || process.env.POSTGRES_URL || process.env.DIRECT_URL || "";
+if (!dbUrl && oneshotPassword) {
+  dbUrl = buildStagingPoolerUrl(oneshotPassword);
+  console.log("Constructed Staging pooler URI from STAGING_DB_PASSWORD / SUPABASE_DB_PASSWORD");
+}
 const accessToken =
   process.env.SUPABASE_ACCESS_TOKEN ||
   process.env.SUPABASE_MANAGEMENT_TOKEN ||
@@ -184,8 +204,30 @@ if (dbUrl) {
     console.error("FAIL: cannot confirm project ref from SUPABASE_URL / DATABASE_URL");
     process.exit(2);
   }
-  console.log("Applying via Postgres", redactDbUrl(dbUrl));
-  const check = await applyViaPg(dbUrl, sql);
+  const candidates = [dbUrl];
+  if (oneshotPassword) {
+    for (const region of ["ap-southeast-1", "ap-northeast-1", "us-east-1", "eu-west-1"]) {
+      const next = buildStagingPoolerUrl(oneshotPassword, region);
+      if (next && !candidates.includes(next)) candidates.push(next);
+    }
+  }
+  let check = null;
+  let lastErr = null;
+  for (const candidate of candidates) {
+    try {
+      console.log("Applying via Postgres", redactDbUrl(candidate));
+      check = await applyViaPg(candidate, sql);
+      lastErr = null;
+      break;
+    } catch (err) {
+      lastErr = err;
+      console.error("Postgres attempt failed:", String(err?.message || err).slice(0, 200));
+    }
+  }
+  if (!check) {
+    console.error("FAIL: Postgres apply failed:", String(lastErr?.message || lastErr).slice(0, 400));
+    process.exit(1);
+  }
   console.log("OK: migration applied on Staging", STAGING_REF);
   console.log(JSON.stringify(check, null, 2));
 } else if (accessToken) {
@@ -194,8 +236,12 @@ if (dbUrl) {
   console.log("OK: migration applied via Management API on Staging", STAGING_REF);
   console.log(JSON.stringify(result.verify ?? result, null, 2));
 } else {
-  console.error("FAIL: DATABASE_URL and SUPABASE_ACCESS_TOKEN both missing — cannot apply SQL.");
-  console.error(`Paste ${SQL_REL} into Staging Supabase SQL Editor (${STAGING_REF}).`);
+  console.error("FAIL: DATABASE_URL / STAGING_DB_PASSWORD / SUPABASE_ACCESS_TOKEN all missing — cannot apply SQL.");
+  console.error("Examples:");
+  console.error(`  STAGING_DB_PASSWORD='…' node scripts/apply-boss-companion-relations.mjs`);
+  console.error(`  DATABASE_URL='postgresql://postgres.${STAGING_REF}:…@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres' node scripts/apply-boss-companion-relations.mjs`);
+  console.error(`  SUPABASE_ACCESS_TOKEN='sbp_…' node scripts/apply-boss-companion-relations.mjs`);
+  console.error(`Or paste ${SQL_REL} into Staging SQL Editor (${STAGING_REF}).`);
   process.exit(2);
 }
 
