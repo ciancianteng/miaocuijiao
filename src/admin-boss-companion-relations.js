@@ -243,9 +243,10 @@
       .then(function (body) {
         state.tablesReady = body.tablesReady !== false;
         state.relations = body.relations || [];
-        state.message = body.message || "";
+        state.message = body.message || state.message || "";
         state.loading = false;
         paint();
+        if (!state.tablesReady && !state.migrationSql) return fetchMigrationSql();
       })
       .catch(function (err) {
         state.loading = false;

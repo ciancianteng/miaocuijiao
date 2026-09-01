@@ -108,7 +108,7 @@ async function ensureMigration() {
       sqlPreview = "";
     }
     return {
-      ok: false,
+      ok: true,
       skipped: true,
       tablesReady: false,
       message:
