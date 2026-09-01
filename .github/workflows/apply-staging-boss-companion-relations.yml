@@ -264,7 +264,7 @@ jobs:
           if [ -z "${DATABASE_URL}" ] && [ -z "${SUPABASE_ACCESS_TOKEN:-}" ]; then
             echo "FAIL: could not resolve Staging DATABASE_URL or SUPABASE_ACCESS_TOKEN"
             echo "Human unlock options:"
-            echo "  1) Actions → this workflow → Run workflow → paste staging_database_url (one-shot)"
+            echo "  1) Actions → Run workflow → paste staging_db_password OR staging_database_url"
             echo "  2) Set Actions secret STAGING_DATABASE_URL (Postgres URI containing $STAGING_REF)"
             echo "  3) Run workflow / secret with SUPABASE_ACCESS_TOKEN (Supabase PAT)"
             echo "  4) Paste supabase/migrations/20260901_boss_companion_relations.sql into"
@@ -288,4 +288,4 @@ jobs:
 
           node scripts/apply-boss-companion-relations.mjs
 
-# trigger: workflow_dispatch input paste unlock 20260901T123800Z
+# trigger: staging_db_password oneshot 20260901T132000Z
