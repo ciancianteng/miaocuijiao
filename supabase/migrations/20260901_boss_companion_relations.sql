@@ -73,22 +73,28 @@ drop policy if exists bcr_admin_all on public.boss_companion_relations;
 drop policy if exists bcr_boss_select_own_active on public.boss_companion_relations;
 drop policy if exists bcr_companion_select_own_active on public.boss_companion_relations;
 drop policy if exists bcre_admin_all on public.boss_companion_relation_events;
+drop policy if exists bcre_admin_select on public.boss_companion_relation_events;
+drop policy if exists bcre_admin_insert on public.boss_companion_relation_events;
 drop policy if exists bcre_boss_select_own on public.boss_companion_relation_events;
 drop policy if exists bcre_companion_select_own on public.boss_companion_relation_events;
 
--- Admin: full access (role = admin)
+-- Admin / super_admin helper (JWT role via profiles)
+-- Writes for v1 go through service_role API after requireAdmin; these policies cover direct JWT access.
+
 create policy bcr_admin_all on public.boss_companion_relations
   for all
   using (
     exists (
       select 1 from public.profiles p
-      where p.id = auth.uid() and lower(coalesce(p.role, '')) = 'admin'
+      where p.id = auth.uid()
+        and lower(coalesce(p.role, '')) in ('admin', 'super_admin')
     )
   )
   with check (
     exists (
       select 1 from public.profiles p
-      where p.id = auth.uid() and lower(coalesce(p.role, '')) = 'admin'
+      where p.id = auth.uid()
+        and lower(coalesce(p.role, '')) in ('admin', 'super_admin')
     )
   );
 
@@ -108,19 +114,24 @@ create policy bcr_companion_select_own_active on public.boss_companion_relations
     and status = 'active'
   );
 
--- Events: admin all; boss/companion read rows involving themselves
-create policy bcre_admin_all on public.boss_companion_relation_events
-  for all
+-- Events: append-only for JWT roles (SELECT + INSERT). No UPDATE/DELETE policies.
+create policy bcre_admin_select on public.boss_companion_relation_events
+  for select
   using (
     exists (
       select 1 from public.profiles p
-      where p.id = auth.uid() and lower(coalesce(p.role, '')) = 'admin'
+      where p.id = auth.uid()
+        and lower(coalesce(p.role, '')) in ('admin', 'super_admin')
     )
-  )
+  );
+
+create policy bcre_admin_insert on public.boss_companion_relation_events
+  for insert
   with check (
     exists (
       select 1 from public.profiles p
-      where p.id = auth.uid() and lower(coalesce(p.role, '')) = 'admin'
+      where p.id = auth.uid()
+        and lower(coalesce(p.role, '')) in ('admin', 'super_admin')
     )
   );
 
@@ -133,6 +144,26 @@ create policy bcre_boss_select_own on public.boss_companion_relation_events
 create policy bcre_companion_select_own on public.boss_companion_relation_events
   for select
   using (companion_id = auth.uid());
+
+-- Harden append-only even for service_role / table owners
+create or replace function public.bcr_forbid_event_mutation()
+returns trigger
+language plpgsql
+as $$
+begin
+  raise exception 'boss_companion_relation_events is append-only';
+end;
+$$;
+
+drop trigger if exists trg_bcre_no_update on public.boss_companion_relation_events;
+create trigger trg_bcre_no_update
+before update on public.boss_companion_relation_events
+for each row execute function public.bcr_forbid_event_mutation();
+
+drop trigger if exists trg_bcre_no_delete on public.boss_companion_relation_events;
+create trigger trg_bcre_no_delete
+before delete on public.boss_companion_relation_events
+for each row execute function public.bcr_forbid_event_mutation();
 
 grant select on public.boss_companion_relations to authenticated;
 grant select on public.boss_companion_relation_events to authenticated;

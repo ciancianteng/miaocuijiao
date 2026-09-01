@@ -289,3 +289,5 @@ jobs:
           node scripts/apply-boss-companion-relations.mjs
 
 # trigger: staging_db_password oneshot 20260901T132000Z
+
+# trigger: rls-harden 20260901T134621Z
