@@ -37,7 +37,10 @@ do $$ begin
   create role authenticated nologin;
 exception when duplicate_object then null;
 end $$;
-create table public.profiles (id uuid primary key, role text);
+-- Mirror Staging: profiles.role is enum mcj_user_role (not text).
+-- coalesce(role, '') must not be used — '' is not a valid enum value (22P02).
+create type public.mcj_user_role as enum ('boss', 'companion', 'customer_service', 'admin');
+create table public.profiles (id uuid primary key, role public.mcj_user_role);
 create schema if not exists auth;
 create or replace function auth.uid() returns uuid language sql stable as $$ select null::uuid $$;
 `,

@@ -78,7 +78,8 @@ drop policy if exists bcre_admin_insert on public.boss_companion_relation_events
 drop policy if exists bcre_boss_select_own on public.boss_companion_relation_events;
 drop policy if exists bcre_companion_select_own on public.boss_companion_relation_events;
 
--- Admin / super_admin helper (JWT role via profiles)
+-- Admin helper (JWT via profiles). Staging `profiles.role` is enum `mcj_user_role`.
+-- Must cast to text before coalesce — `coalesce(p.role, '')` is 22P02 ('' not in enum).
 -- Writes for v1 go through service_role API after requireAdmin; these policies cover direct JWT access.
 
 create policy bcr_admin_all on public.boss_companion_relations
@@ -87,14 +88,14 @@ create policy bcr_admin_all on public.boss_companion_relations
     exists (
       select 1 from public.profiles p
       where p.id = auth.uid()
-        and lower(coalesce(p.role, '')) in ('admin', 'super_admin')
+        and lower(coalesce(p.role::text, '')) in ('admin', 'super_admin')
     )
   )
   with check (
     exists (
       select 1 from public.profiles p
       where p.id = auth.uid()
-        and lower(coalesce(p.role, '')) in ('admin', 'super_admin')
+        and lower(coalesce(p.role::text, '')) in ('admin', 'super_admin')
     )
   );
 
@@ -121,7 +122,7 @@ create policy bcre_admin_select on public.boss_companion_relation_events
     exists (
       select 1 from public.profiles p
       where p.id = auth.uid()
-        and lower(coalesce(p.role, '')) in ('admin', 'super_admin')
+        and lower(coalesce(p.role::text, '')) in ('admin', 'super_admin')
     )
   );
 
@@ -131,7 +132,7 @@ create policy bcre_admin_insert on public.boss_companion_relation_events
     exists (
       select 1 from public.profiles p
       where p.id = auth.uid()
-        and lower(coalesce(p.role, '')) in ('admin', 'super_admin')
+        and lower(coalesce(p.role::text, '')) in ('admin', 'super_admin')
     )
   );
 

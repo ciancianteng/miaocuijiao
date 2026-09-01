@@ -33,6 +33,9 @@ section("migration file exists + RLS + unique active companion");
   assert.match(mig, /companion_id = auth\.uid\(\)/);
   assert.match(mig, /append|bind|rebind|unbind/i);
   assert.match(mig, /super_admin/);
+  // Staging profiles.role is enum mcj_user_role — never coalesce(role, '')
+  assert.match(mig, /p\.role::text/);
+  assert.doesNotMatch(mig, /coalesce\(p\.role,\s*''\)/);
   assert.match(mig, /bcre_admin_select/);
   assert.match(mig, /bcre_admin_insert/);
   assert.match(mig, /bcr_forbid_event_mutation/);
