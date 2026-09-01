@@ -25,9 +25,11 @@ jobs:
 
       - name: Apply migration (Staging only)
         env:
-          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL || secrets.DATABASE_URL }}
+          STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+          DATABASE_URL_SECRET: ${{ secrets.DATABASE_URL }}
           SUPABASE_URL: https://cfccwysniduwkjskiqgy.supabase.co
         run: |
+          export DATABASE_URL="${STAGING_DATABASE_URL:-$DATABASE_URL_SECRET}"
           if [ -z "$DATABASE_URL" ]; then
             echo "FAIL: missing secret STAGING_DATABASE_URL / DATABASE_URL"
             echo "Add the Staging Postgres URI as a GitHub Actions secret, then re-run."
