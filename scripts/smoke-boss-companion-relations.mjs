@@ -32,6 +32,13 @@ section("migration file exists + RLS + unique active companion");
   assert.match(mig, /boss_id = auth\.uid\(\)/);
   assert.match(mig, /companion_id = auth\.uid\(\)/);
   assert.match(mig, /append|bind|rebind|unbind/i);
+  assert.match(mig, /super_admin/);
+  assert.match(mig, /bcre_admin_select/);
+  assert.match(mig, /bcre_admin_insert/);
+  assert.match(mig, /bcr_forbid_event_mutation/);
+  assert.match(mig, /trg_bcre_no_update/);
+  assert.match(mig, /trg_bcre_no_delete/);
+  assert.doesNotMatch(mig, /create policy bcre_admin_all/);
   assert.doesNotMatch(mig, /referral_/);
 }
 
