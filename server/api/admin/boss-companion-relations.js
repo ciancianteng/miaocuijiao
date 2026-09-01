@@ -79,11 +79,75 @@ function projectRefFromDatabaseUrl(dbUrl) {
   }
 }
 
-async function ensureMigration() {
+function migrationSqlPreview() {
+  try {
+    const sqlPath = path.join(process.cwd(), MIGRATION_REL);
+    if (fs.existsSync(sqlPath)) return fs.readFileSync(sqlPath, "utf8");
+  } catch {
+    /* ignore */
+  }
+  return "";
+}
+
+function skippedNeedCredential(message) {
+  return {
+    ok: true,
+    skipped: true,
+    tablesReady: false,
+    message,
+    stagingRef: STAGING_PROJECT_REF,
+    migration: MIGRATION_REL,
+    sqlEditorUrl: `https://supabase.com/dashboard/project/${STAGING_PROJECT_REF}/sql/new`,
+    sql: migrationSqlPreview(),
+    acceptOneShot: true,
+  };
+}
+
+async function applyViaManagementApi(accessToken, sql) {
+  const endpoint = `https://api.supabase.com/v1/projects/${STAGING_PROJECT_REF}/database/query`;
+  const res = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify({ query: sql }),
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    let msg = text.slice(0, 400);
+    try {
+      const j = JSON.parse(text);
+      msg = j.message || j.error || msg;
+    } catch {
+      /* keep */
+    }
+    throw new Error(`Management API ${res.status}: ${msg}`);
+  }
+}
+
+/**
+ * @param {{ databaseUrl?: string, accessToken?: string }} [oneshot]
+ * One-shot credentials from Admin POST body are used only for this request (never stored).
+ */
+async function ensureMigration(oneshot = {}) {
   const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "";
-  const databaseUrl = String(process.env.DATABASE_URL || process.env.SUPABASE_DB_URL || process.env.POSTGRES_URL || "").trim();
+  const oneshotDb = String(oneshot.databaseUrl || "").trim();
+  const oneshotToken = String(oneshot.accessToken || "").trim();
+  const databaseUrl = String(
+    oneshotDb || process.env.DATABASE_URL || process.env.SUPABASE_DB_URL || process.env.POSTGRES_URL || ""
+  ).trim();
+  const accessToken = String(
+    oneshotToken ||
+      process.env.SUPABASE_ACCESS_TOKEN ||
+      process.env.SUPABASE_MANAGEMENT_TOKEN ||
+      process.env.SUPABASE_PAT ||
+      ""
+  ).trim();
   const urlRef = projectRefFromUrl(supabaseUrl);
   const dbRef = projectRefFromDatabaseUrl(databaseUrl);
+  const usedOneshot = Boolean(oneshotDb || oneshotToken);
 
   if (urlRef && urlRef !== STAGING_PROJECT_REF) {
     return {
@@ -99,31 +163,12 @@ async function ensureMigration() {
       message: `拒绝执行：DATABASE_URL 项目 ${dbRef} 不是 Staging（${STAGING_PROJECT_REF}）。Production 禁止触碰。`,
     };
   }
-  if (!databaseUrl) {
-    let sqlPreview = "";
-    try {
-      const sqlPath = path.join(process.cwd(), MIGRATION_REL);
-      if (fs.existsSync(sqlPath)) sqlPreview = fs.readFileSync(sqlPath, "utf8");
-    } catch {
-      sqlPreview = "";
-    }
-    return {
-      ok: true,
-      skipped: true,
-      tablesReady: false,
-      message:
-        "未配置 DATABASE_URL，无法在线执行 DDL。请在 Staging Supabase SQL Editor（cfccwysniduwkjskiqgy）粘贴下方 SQL 执行。",
-      stagingRef: STAGING_PROJECT_REF,
-      migration: MIGRATION_REL,
-      sqlEditorUrl: `https://supabase.com/dashboard/project/${STAGING_PROJECT_REF}/sql/new`,
-      sql: sqlPreview,
-    };
-  }
-  if (!urlRef && !dbRef) {
+  if (dbRef === "" && databaseUrl) {
+    // URI present but ref not parseable — refuse rather than guess.
     return {
       ok: false,
       skipped: true,
-      message: "无法从 SUPABASE_URL / DATABASE_URL 确认项目 ref，拒绝执行",
+      message: "无法从 DATABASE_URL 解析 Staging project ref，拒绝执行",
     };
   }
 
@@ -132,25 +177,61 @@ async function ensureMigration() {
     return { ok: false, message: `migration 文件不存在：${MIGRATION_REL}` };
   }
   const sql = fs.readFileSync(sqlPath, "utf8");
-  const { default: pg } = await import("pg");
-  const client = new pg.Client({
-    connectionString: databaseUrl,
-    ssl: { rejectUnauthorized: false },
-    connectionTimeoutMillis: 20000,
-  });
-  await client.connect();
-  try {
-    await client.query(sql);
-  } finally {
-    await client.end();
+
+  if (databaseUrl) {
+    if (!urlRef && !dbRef) {
+      return {
+        ok: false,
+        skipped: true,
+        message: "无法从 SUPABASE_URL / DATABASE_URL 确认项目 ref，拒绝执行",
+      };
+    }
+    const { default: pg } = await import("pg");
+    const client = new pg.Client({
+      connectionString: databaseUrl,
+      ssl: { rejectUnauthorized: false },
+      connectionTimeoutMillis: 20000,
+    });
+    await client.connect();
+    try {
+      await client.query(sql);
+      try {
+        await client.query("notify pgrst, 'reload schema'");
+      } catch {
+        /* optional */
+      }
+    } finally {
+      await client.end();
+    }
+    return {
+      ok: true,
+      tablesReady: true,
+      message: usedOneshot
+        ? "已用一次性 Staging DATABASE_URL 执行 migration（未落库保存）"
+        : "已在 Staging 执行 boss_companion_relations migration",
+      stagingRef: STAGING_PROJECT_REF,
+      migration: MIGRATION_REL,
+      via: "postgres",
+    };
   }
-  return {
-    ok: true,
-    tablesReady: true,
-    message: "已在 Staging 执行 boss_companion_relations migration",
-    stagingRef: STAGING_PROJECT_REF,
-    migration: MIGRATION_REL,
-  };
+
+  if (accessToken) {
+    await applyViaManagementApi(accessToken, sql);
+    return {
+      ok: true,
+      tablesReady: true,
+      message: usedOneshot
+        ? "已用一次性 Supabase PAT 经 Management API 执行 Staging migration（未落库保存）"
+        : "已经 Management API 执行 Staging boss_companion_relations migration",
+      stagingRef: STAGING_PROJECT_REF,
+      migration: MIGRATION_REL,
+      via: "management_api",
+    };
+  }
+
+  return skippedNeedCredential(
+    "未配置 DATABASE_URL / SUPABASE_ACCESS_TOKEN。可在下方一次性粘贴 Staging Postgres URI 或 PAT 后点「执行 Staging Migration」；或打开 Staging SQL Editor 粘贴 SQL。"
+  );
 }
 
 export default async function handler(req, res) {
@@ -166,8 +247,12 @@ export default async function handler(req, res) {
 
   try {
     if (action === "ensure" && (req.method === "POST" || req.method === "PUT")) {
-      const result = await ensureMigration();
-      return json(res, result.ok ? 200 : 200, result);
+      const result = await ensureMigration({
+        databaseUrl: body.databaseUrl || body.DATABASE_URL || body.stagingDatabaseUrl || "",
+        accessToken:
+          body.accessToken || body.supabaseAccessToken || body.SUPABASE_ACCESS_TOKEN || body.pat || "",
+      });
+      return json(res, 200, result);
     }
 
     if (action === "list" || action === "search") {
