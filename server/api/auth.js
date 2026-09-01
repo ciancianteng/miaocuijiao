@@ -232,12 +232,25 @@ function portalDeniedMessage(portal) {
   return "账号角色与当前入口不匹配。";
 }
 
+/** Unified portal gate — delegates to shared capability resolver. */
 function userHasPortalAccess(user, portal) {
-  const role = String(user?.role || "").toLowerCase();
-  if (portal === "boss") return !!(user?.hasBoss || role === "boss" || role === "customer" || role === "owner" || role === "user");
-  if (portal === "companion") return !!(user?.hasCompanion || role === "companion" || role === "player");
-  if (portal === "customer_service") return role === "customer_service" || role === "service";
-  if (portal === "admin") return role === "admin" || role === "super_admin";
+  // Inline mirror of userCanAccessPortal for sync path; keep hasBoss/hasCompanion authoritative.
+  const p = String(portal || "").trim().toLowerCase();
+  const role = String(user?.role || "").trim().toLowerCase();
+  if (p === "boss") {
+    return !!(
+      user?.hasBoss === true ||
+      role === "boss" ||
+      role === "customer" ||
+      role === "owner" ||
+      role === "user"
+    );
+  }
+  if (p === "companion") {
+    return !!(user?.hasCompanion === true || role === "companion" || role === "player");
+  }
+  if (p === "customer_service") return role === "customer_service" || role === "service";
+  if (p === "admin") return role === "admin" || role === "super_admin";
   return false;
 }
 
@@ -268,10 +281,20 @@ function safeProfile(profile = {}, authUser = {}, security = null, rolesInfo = n
     : Array.isArray(profile.roles)
       ? profile.roles
       : role
-        ? [role]
+        ? [roleLower === "boss" ? "boss" : roleLower]
         : [];
-  const hasBoss = rolesInfo ? !!rolesInfo.hasBoss : roles.includes("boss") || role === "boss";
-  const hasCompanion = rolesInfo ? !!rolesInfo.hasCompanion : roles.includes("companion") || role === "companion";
+  // Single source: rolesInfo from computeCapabilities / enrichProfileRoles.
+  // Belt-and-suspenders: profiles.role boss-like always grants hasBoss.
+  let hasBoss = rolesInfo ? !!rolesInfo.hasBoss : roles.includes("boss") || role === "boss";
+  let hasCompanion = rolesInfo ? !!rolesInfo.hasCompanion : roles.includes("companion") || roleLower === "companion";
+  if (role === "boss" || roleLower === "boss" || roleLower === "customer" || roleLower === "owner" || roleLower === "user") {
+    hasBoss = true;
+    if (!roles.includes("boss")) roles.push("boss");
+  }
+  if (hasBoss && roleLower === "companion") {
+    // Session-facing role for Boss portal compatibility when capability says Boss.
+    role = "boss";
+  }
   const out = {
     id: profile.id || authUser.id || "",
     bossUid,
@@ -314,9 +337,32 @@ async function enrichSafeProfile(profile = {}, authUser = {}) {
     rolesInfo = enriched;
     profile = enriched.profile || profile;
   } catch {
-    /* optional */
+    /* optional — still fall back to profiles.role */
   }
   return safeProfile(profile, authUser, { hasPassword }, rolesInfo);
+}
+
+/** Prefer the profile row that matches the login portal capability. */
+function pickProfileForLoginPortal(rows, portal, authUser = null) {
+  const list = Array.isArray(rows) ? rows.filter(Boolean) : [];
+  if (!list.length) return null;
+  const want = String(portal || "").trim().toLowerCase();
+  if (want === "boss") {
+    const hit = list.find((row) => {
+      const r = String(row?.role || "").trim().toLowerCase();
+      return r === "boss" || r === "customer" || r === "owner" || r === "user";
+    });
+    if (hit) return hit;
+  }
+  if (want === "companion") {
+    const hit = list.find((row) => {
+      const r = String(row?.role || "").trim().toLowerCase();
+      return r === "companion" || r === "player";
+    });
+    if (hit) return hit;
+  }
+  void authUser;
+  return list[0];
 }
 
 function canManagePassword(profile = {}) {
@@ -866,11 +912,12 @@ async function handleLoginWithOtp(body, res) {
   if (!/^\d{4,8}$/.test(code)) return json(res, 400, { ok: false, message: "验证码无效或已过期" });
   const loginPortal = normalizeLoginPortal(body.loginPortal || body.portal || body.role || "");
   // OTP is portal-scoped: find account by email, then enforce portal capability (supports dual-role users).
+  // Select only real columns (profiles.role exists; do not require profiles.roles).
   const byEmail = await profilesLookup(
     `?email=eq.${encodeURIComponent(email)}&select=id,email,phone,phone_e164,display_name,status,role,boss_uid&limit=5`
   ).catch(() => []);
   let profile0 =
-    (Array.isArray(byEmail) && byEmail[0]) ||
+    pickProfileForLoginPortal(byEmail, loginPortal || role) ||
     (await resolveForgotAccount(email, loginPortal || role).catch(() => null))?.profile ||
     null;
   if (!profile0) {
