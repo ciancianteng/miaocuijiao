@@ -140,6 +140,7 @@ section("staging guard refuses production ref in apply script");
   assert.match(apply, /cfccwysniduwkjskiqgy/);
   assert.match(apply, /jqfaknpmcnqwqvatrwgo/);
   assert.match(apply, /refusing Production|PRODUCTION_REF/);
+  assert.match(apply, /STAGING_DB_PASSWORD|buildStagingPoolerUrl/);
 }
 
 section("#128 files untouched (capability rules / OTP / portal gate)");
