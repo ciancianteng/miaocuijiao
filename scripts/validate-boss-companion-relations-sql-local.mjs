@@ -33,7 +33,10 @@ psql(["-c", `DROP DATABASE IF EXISTS ${DB};`]);
 psql(["-c", `CREATE DATABASE ${DB};`]);
 psql(["-d", DB, "-v", "ON_ERROR_STOP=1"], {
   input: `
-create role authenticated nologin;
+do $$ begin
+  create role authenticated nologin;
+exception when duplicate_object then null;
+end $$;
 create table public.profiles (id uuid primary key, role text);
 create schema if not exists auth;
 create or replace function auth.uid() returns uuid language sql stable as $$ select null::uuid $$;
