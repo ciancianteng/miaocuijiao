@@ -1,10 +1,19 @@
 name: Apply Staging boss-companion-relations migration
 
-# Manual only. Staging Supabase (cfccwysniduwkjskiqgy) — never Production.
+# Staging Supabase (cfccwysniduwkjskiqgy) — never Production.
 # Prefers STAGING_DATABASE_URL / DATABASE_URL secrets.
 # Fallback: VERCEL_TOKEN → env pull → URI whose host/user matches Staging ref only.
+# Also runs on push to default branch when this workflow / apply script / SQL changes
+# (so agents without workflow_dispatch permission can still trigger apply).
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - repair/restore-confirmed-home-and-auth-data
+    paths:
+      - ".github/workflows/apply-staging-boss-companion-relations.yml"
+      - "scripts/apply-boss-companion-relations.mjs"
+      - "supabase/migrations/20260901_boss_companion_relations.sql"
 
 permissions:
   contents: read
@@ -108,3 +117,5 @@ jobs:
 
           echo "Applying migration with $(redact "$DATABASE_URL")"
           node scripts/apply-boss-companion-relations.mjs
+
+# trigger: auto-apply attempt 20260901T122059Z
