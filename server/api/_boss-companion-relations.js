@@ -333,7 +333,7 @@ export async function searchProfileIds({ q = "", roleHint = "" } = {}) {
     for (const row of rows || []) {
       ids.add(row.id);
       if (hasBossRole(row)) bossIds.add(row.id);
-      if (String(row.role || "").toLowerCase() === "companion") companionIds.add(row.id);
+      if (hasCompanionRole(row)) companionIds.add(row.id);
     }
   } catch {
     /* ignore */
