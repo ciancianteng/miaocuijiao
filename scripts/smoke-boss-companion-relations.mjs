@@ -152,4 +152,9 @@ section("#128 files untouched (capability rules / OTP / portal gate)");
   assert.equal(typeof computeCapabilities, "function");
 }
 
+section("local SQL validate script present");
+{
+  assert.ok(fs.existsSync(path.resolve("scripts/validate-boss-companion-relations-sql-local.mjs")));
+}
+
 console.log("\nOK smoke-boss-companion-relations");
