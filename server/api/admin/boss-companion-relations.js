@@ -127,17 +127,30 @@ async function applyViaManagementApi(accessToken, sql) {
   }
 }
 
+function buildStagingPoolerUrl(password) {
+  const pass = String(password || "").trim();
+  if (!pass) return "";
+  const u = new URL("postgresql://x@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres");
+  u.username = `postgres.${STAGING_PROJECT_REF}`;
+  u.password = pass;
+  return u.toString();
+}
+
 /**
- * @param {{ databaseUrl?: string, accessToken?: string }} [oneshot]
+ * @param {{ databaseUrl?: string, accessToken?: string, databasePassword?: string }} [oneshot]
  * One-shot credentials from Admin POST body are used only for this request (never stored).
  */
 async function ensureMigration(oneshot = {}) {
   const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "";
   const oneshotDb = String(oneshot.databaseUrl || "").trim();
   const oneshotToken = String(oneshot.accessToken || "").trim();
-  const databaseUrl = String(
+  const oneshotPassword = String(oneshot.databasePassword || "").trim();
+  let databaseUrl = String(
     oneshotDb || process.env.DATABASE_URL || process.env.SUPABASE_DB_URL || process.env.POSTGRES_URL || ""
   ).trim();
+  if (!databaseUrl && oneshotPassword) {
+    databaseUrl = buildStagingPoolerUrl(oneshotPassword);
+  }
   const accessToken = String(
     oneshotToken ||
       process.env.SUPABASE_ACCESS_TOKEN ||
@@ -147,7 +160,7 @@ async function ensureMigration(oneshot = {}) {
   ).trim();
   const urlRef = projectRefFromUrl(supabaseUrl);
   const dbRef = projectRefFromDatabaseUrl(databaseUrl);
-  const usedOneshot = Boolean(oneshotDb || oneshotToken);
+  const usedOneshot = Boolean(oneshotDb || oneshotToken || oneshotPassword);
 
   if (urlRef && urlRef !== STAGING_PROJECT_REF) {
     return {
@@ -187,32 +200,57 @@ async function ensureMigration(oneshot = {}) {
       };
     }
     const { default: pg } = await import("pg");
-    const client = new pg.Client({
-      connectionString: databaseUrl,
-      ssl: { rejectUnauthorized: false },
-      connectionTimeoutMillis: 20000,
-    });
-    await client.connect();
-    try {
-      await client.query(sql);
-      try {
-        await client.query("notify pgrst, 'reload schema'");
-      } catch {
-        /* optional */
+    const candidates = [databaseUrl];
+    // If password-derived pooler URI fails, try common region hosts (same user/password).
+    if (oneshotPassword && !oneshotDb) {
+      for (const region of ["ap-southeast-1", "ap-northeast-1", "us-east-1", "eu-west-1"]) {
+        const u = new URL(databaseUrl);
+        u.hostname = `aws-0-${region}.pooler.supabase.com`;
+        const next = u.toString();
+        if (!candidates.includes(next)) candidates.push(next);
       }
-    } finally {
-      await client.end();
     }
-    return {
-      ok: true,
-      tablesReady: true,
-      message: usedOneshot
-        ? "已用一次性 Staging DATABASE_URL 执行 migration（未落库保存）"
-        : "已在 Staging 执行 boss_companion_relations migration",
-      stagingRef: STAGING_PROJECT_REF,
-      migration: MIGRATION_REL,
-      via: "postgres",
-    };
+    let lastErr = null;
+    for (const candidate of candidates) {
+      const client = new pg.Client({
+        connectionString: candidate,
+        ssl: { rejectUnauthorized: false },
+        connectionTimeoutMillis: 12000,
+      });
+      try {
+        await client.connect();
+        try {
+          await client.query(sql);
+          try {
+            await client.query("notify pgrst, 'reload schema'");
+          } catch {
+            /* optional */
+          }
+        } finally {
+          await client.end();
+        }
+        return {
+          ok: true,
+          tablesReady: true,
+          message: usedOneshot
+            ? oneshotPassword && !oneshotDb
+              ? "已用一次性 Staging DB password 构造 pooler URI 执行 migration（未落库保存）"
+              : "已用一次性 Staging DATABASE_URL 执行 migration（未落库保存）"
+            : "已在 Staging 执行 boss_companion_relations migration",
+          stagingRef: STAGING_PROJECT_REF,
+          migration: MIGRATION_REL,
+          via: "postgres",
+        };
+      } catch (err) {
+        lastErr = err;
+        try {
+          await client.end();
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+    throw lastErr || new Error("Postgres apply failed");
   }
 
   if (accessToken) {
@@ -230,7 +268,7 @@ async function ensureMigration(oneshot = {}) {
   }
 
   return skippedNeedCredential(
-    "未配置 DATABASE_URL / SUPABASE_ACCESS_TOKEN。可在下方一次性粘贴 Staging Postgres URI 或 PAT 后点「执行 Staging Migration」；或打开 Staging SQL Editor 粘贴 SQL。"
+    "未配置 DATABASE_URL / SUPABASE_ACCESS_TOKEN。可在下方一次性粘贴 Staging DB password、Postgres URI 或 PAT 后点「执行 Staging Migration」；或打开 Staging SQL Editor 粘贴 SQL。"
   );
 }
 
@@ -251,6 +289,12 @@ export default async function handler(req, res) {
         databaseUrl: body.databaseUrl || body.DATABASE_URL || body.stagingDatabaseUrl || "",
         accessToken:
           body.accessToken || body.supabaseAccessToken || body.SUPABASE_ACCESS_TOKEN || body.pat || "",
+        databasePassword:
+          body.databasePassword ||
+          body.dbPassword ||
+          body.SUPABASE_DB_PASSWORD ||
+          body.password ||
+          "",
       });
       return json(res, 200, result);
     }

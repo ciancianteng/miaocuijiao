@@ -75,11 +75,14 @@
     if (state.message) tip += '<p class="admin-sync-note" style="color:#86efac">' + esc(state.message) + "</p>";
     if (!state.tablesReady) {
       tip +=
-        '<p class="admin-sync-note">表未初始化。可点「执行 Staging Migration」；服务器无 DATABASE_URL 时，可在下方<strong>一次性</strong>粘贴 Staging Postgres URI 或 Supabase PAT（仅本次请求，不落库），或打开 SQL Editor 粘贴 SQL。</p>' +
+        '<p class="admin-sync-note">表未初始化。可点「执行 Staging Migration」；服务器无 DATABASE_URL 时，可在下方<strong>一次性</strong>粘贴 Staging DB password / Postgres URI / Supabase PAT（仅本次请求，不落库），或打开 SQL Editor 粘贴 SQL。</p>' +
         '<p class="admin-sync-note"><a href="' +
         esc(state.sqlEditorUrl) +
         '" target="_blank" rel="noopener">打开 Staging SQL Editor</a> · project <code>cfccwysniduwkjskiqgy</code></p>' +
         '<div style="margin:10px 0 12px;display:grid;gap:8px;max-width:720px">' +
+        '<label class="admin-sync-note">一次性 Staging DB password（可选，自动拼 pooler URI）' +
+        '<input id="bcrOneshotDbPass" type="password" autocomplete="off" placeholder="Database password from Staging project settings" style="display:block;width:100%;margin-top:4px;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,.14);background:rgba(0,0,0,.35);color:#e5e7eb" />' +
+        "</label>" +
         '<label class="admin-sync-note">一次性 Staging DATABASE_URL（可选）' +
         '<input id="bcrOneshotDbUrl" type="password" autocomplete="off" placeholder="postgresql://postgres.cfccwysniduwkjskiqgy:***@…pooler.supabase.com:5432/postgres" style="display:block;width:100%;margin-top:4px;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,.14);background:rgba(0,0,0,.35);color:#e5e7eb" />' +
         "</label>" +
@@ -360,10 +363,12 @@
     if (e.target.closest("[data-bcr-ensure]")) {
       var dbEl = document.getElementById("bcrOneshotDbUrl");
       var patEl = document.getElementById("bcrOneshotPat");
+      var passEl = document.getElementById("bcrOneshotDbPass");
       runMutation("ensure", {
         action: "ensure",
         databaseUrl: (dbEl && dbEl.value) || "",
         accessToken: (patEl && patEl.value) || "",
+        databasePassword: (passEl && passEl.value) || "",
       });
       return;
     }
