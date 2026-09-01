@@ -50,6 +50,7 @@
         <button type="button" data-section="team-lobby-links">组队大厅管理</button>
         <button type="button" data-section="gifts">礼物管理</button>
         <button type="button" data-section="points-settings">积分设置</button>
+        <button type="button" data-section="boss-companion-relations">直属关系管理</button>
         <button type="button" data-section="popularity">人气榜设置</button>
         <button type="button" data-section="payment">支付设置</button>
         <button type="button" data-section="mail-logs">邮件通知记录</button>
@@ -137,6 +138,7 @@
         <section class="section" id="section-mail-logs"><section class="panel"><h2>邮件通知记录</h2><div id="mailNotificationLogs"></div></section></section>
         <section class="section" id="section-gifts"><section class="panel"><h2>礼物管理</h2><div id="giftManagement"></div></section></section>
         <section class="section" id="section-points-settings"><section class="panel"><h2>积分设置</h2><p class="admin-sync-note" style="margin:0 0 12px">Boss 订单积分：按实付金额 × 倍率（与陪玩人气无关）。已完成订单不补发。</p><div id="pointsSettingsMount"></div></section></section>
+        <section class="section" id="section-boss-companion-relations"><section class="panel"><h2>直属关系管理</h2><p class="admin-sync-note" style="margin:0 0 12px">Boss ↔ Companion 运营直属关系（独立于邀请/返佣）。仅管理员可绑定 / 换绑 / 解绑；Boss / Companion 端只读。</p><div id="bossCompanionRelationsMount"></div></section></section>
         <section class="section" id="section-popularity"><section class="panel"><h2>人气榜设置</h2><div id="popularityManagement" data-mcj-popularity-disabled="1" aria-live="polite"><div class="admin-sync-note" style="padding:18px;line-height:1.75" data-mcj-popularity-disabled-notice="1"><strong>人气榜功能暂未开放</strong><p style="margin:10px 0 0">当前真实礼物 / 收藏 / 在线时长等数据链路尚未完整验收，暂不提供榜单重算。</p><p style="margin:8px 0 0" class="empty">已停用 · 不展示旧榜单 / mock 排名 · 不可保存规则 / 调分 / 手动加减分</p></div></div></section></section>
         <section class="section" id="section-settings"><section class="panel"><h2>系统设置</h2><p class="admin-sync-note" style="margin:0 0 12px">平台配置与接入中心：普通配置可编辑；敏感密钥仅服务端管理。</p><div id="systemSettings"></div></section></section>
         <section class="section" id="section-logs"><section class="panel"><h2>操作日志</h2><div id="table-admin_logs_full"></div></section></section>
@@ -171,6 +173,7 @@
   <script src="/src/admin-finance.js?v=20260811ordersPayout1"></script>
   <script src="/src/admin-gifts.js"></script>
   <script src="/src/admin-points-settings.js?v=20260831pointsRate1"></script>
+  <script src="/src/admin-boss-companion-relations.js?v=20260901bcr1"></script>
   <script src="/src/admin-popularity.js?v=20260815adminPopDisabled2"></script>
   <script src="/src/admin-suite.js?v=20260816applyPolicyUi1"></script>
   <script src="/src/admin-companion-applications.js?v=20260806p0final1"></script>

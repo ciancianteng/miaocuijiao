@@ -77,6 +77,7 @@ const pages = [
   "place-order.html",
   "player.html",
   "points.html",
+  "my-direct-companions.html",
   "preview.html",
   "profile.html",
   "ranking.html",
