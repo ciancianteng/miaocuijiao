@@ -1,6 +1,7 @@
 name: Apply Staging boss-companion-relations migration
 
 # Staging Supabase (cfccwysniduwkjskiqgy) — never Production.
+# retrig 2026-09-01T16:05 — check if STAGING_DATABASE_URL secret was added
 # Credential resolution order:
 #   1) workflow_dispatch inputs (paste once in Actions UI — no permanent secret required)
 #   2) secrets.STAGING_DATABASE_URL / secrets.DATABASE_URL
