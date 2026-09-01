@@ -1,7 +1,8 @@
 name: Apply Staging boss-companion-relations migration
 
 # Manual only. Staging Supabase (cfccwysniduwkjskiqgy) — never Production.
-# Requires repo secret: STAGING_DATABASE_URL (or DATABASE_URL) pointing at Staging Postgres.
+# Prefers STAGING_DATABASE_URL / DATABASE_URL secrets.
+# Fallback: VERCEL_TOKEN → env pull → URI whose host/user matches Staging ref only.
 on:
   workflow_dispatch:
 
@@ -20,19 +21,90 @@ jobs:
         with:
           node-version: "22"
 
-      - name: Install pg
-        run: npm install pg@8.22.0 --no-save
+      - name: Install pg + vercel
+        run: |
+          npm install pg@8.22.0 --no-save
+          npm install -g vercel@58.5.1
 
-      - name: Apply migration (Staging only)
+      - name: Resolve Staging DATABASE_URL + apply
         env:
           STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
           DATABASE_URL_SECRET: ${{ secrets.DATABASE_URL }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           SUPABASE_URL: https://cfccwysniduwkjskiqgy.supabase.co
+          STAGING_REF: cfccwysniduwkjskiqgy
+          PRODUCTION_REF: jqfaknpmcnqwqvatrwgo
         run: |
-          export DATABASE_URL="${STAGING_DATABASE_URL:-$DATABASE_URL_SECRET}"
-          if [ -z "$DATABASE_URL" ]; then
-            echo "FAIL: missing secret STAGING_DATABASE_URL / DATABASE_URL"
-            echo "Add the Staging Postgres URI as a GitHub Actions secret, then re-run."
+          set -euo pipefail
+          export DATABASE_URL="${STAGING_DATABASE_URL:-${DATABASE_URL_SECRET:-}}"
+
+          redact() {
+            node -e "const u=process.argv[1]||''; try{const x=new URL(u); console.log(x.protocol+'//'+x.username+':***@'+x.hostname+':'+x.port+x.pathname)}catch{console.log('(unparseable)')}" "$1"
+          }
+
+          looks_staging() {
+            local u="$1"
+            echo "$u" | grep -qi "$STAGING_REF"
+          }
+          looks_production() {
+            local u="$1"
+            echo "$u" | grep -qi "$PRODUCTION_REF"
+          }
+
+          if [ -n "${DATABASE_URL}" ] && looks_production "$DATABASE_URL"; then
+            echo "FAIL: secret DATABASE_URL points at Production — refused"
             exit 2
           fi
+
+          if [ -z "${DATABASE_URL}" ] && [ -n "${VERCEL_TOKEN:-}" ]; then
+            echo "No STAGING_DATABASE_URL secret — trying Vercel env pull via VERCEL_TOKEN"
+            mkdir -p /tmp/vercel-envs
+            for envname in preview development production; do
+              out="/tmp/vercel-envs/${envname}.env"
+              echo "pull $envname..."
+              vercel env pull "$out" --yes --environment "$envname" --token "$VERCEL_TOKEN" --scope ciancianteng-4581s-projects 2>"/tmp/vercel-envs/${envname}.err" || true
+              if [ -f "$out" ]; then
+                # Extract candidate URLs without printing secrets
+                while IFS= read -r line; do
+                  case "$line" in
+                    DATABASE_URL=*|POSTGRES_URL=*|SUPABASE_DB_URL=*|DIRECT_URL=*)
+                      val="${line#*=}"
+                      val="${val%\"}"; val="${val#\"}"
+                      val="${val%\'}"; val="${val#\'}"
+                      if looks_production "$val"; then
+                        echo "skip $envname ${line%%=*} (Production ref)"
+                        continue
+                      fi
+                      if looks_staging "$val"; then
+                        echo "found Staging URI from vercel $envname ${line%%=*}=$(redact "$val")"
+                        export DATABASE_URL="$val"
+                        break 2
+                      else
+                        echo "skip $envname ${line%%=*} (not Staging ref)"
+                      fi
+                      ;;
+                  esac
+                done < "$out"
+              else
+                echo "pull $envname failed: $(head -c 200 /tmp/vercel-envs/${envname}.err || true)"
+              fi
+            done
+          fi
+
+          if [ -z "${DATABASE_URL}" ]; then
+            echo "FAIL: could not resolve Staging DATABASE_URL"
+            echo "Set secret STAGING_DATABASE_URL, or ensure Vercel env has a Postgres URI for $STAGING_REF"
+            exit 2
+          fi
+
+          if looks_production "$DATABASE_URL"; then
+            echo "FAIL: resolved URI is Production — refused"
+            exit 2
+          fi
+          if ! looks_staging "$DATABASE_URL"; then
+            echo "FAIL: resolved URI does not reference Staging $STAGING_REF — refused"
+            exit 2
+          fi
+
+          echo "Applying migration with $(redact "$DATABASE_URL")"
           node scripts/apply-boss-companion-relations.mjs
