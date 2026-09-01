@@ -87,6 +87,11 @@ const client = new pg.Client({ connectionString: dbUrl, ssl: { rejectUnauthorize
 await client.connect();
 try {
   await client.query(sql);
+  try {
+    await client.query("notify pgrst, 'reload schema'");
+  } catch {
+    /* optional */
+  }
   const check = await client.query(`
     select to_regclass('public.boss_companion_relations') as relations,
            to_regclass('public.boss_companion_relation_events') as events

@@ -137,3 +137,6 @@ create policy bcre_companion_select_own on public.boss_companion_relation_events
 grant select on public.boss_companion_relations to authenticated;
 grant select on public.boss_companion_relation_events to authenticated;
 -- writes go through service_role API after admin assert (no direct client insert/update)
+
+-- Refresh PostgREST schema cache so /rest/v1/boss_companion_* is visible immediately
+notify pgrst, 'reload schema';
