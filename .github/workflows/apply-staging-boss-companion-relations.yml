@@ -15,6 +15,10 @@ on:
         description: "Staging Postgres URI (must contain cfccwysniduwkjskiqgy; never Production)"
         required: false
         type: string
+      staging_db_password:
+        description: "Optional Staging DB password only — constructs pooler URI for cfccwysniduwkjskiqgy"
+        required: false
+        type: string
       supabase_access_token:
         description: "Optional Supabase PAT for Management API database/query on Staging"
         required: false
@@ -50,6 +54,7 @@ jobs:
       - name: Resolve Staging credentials + apply
         env:
           INPUT_DATABASE_URL: ${{ inputs.staging_database_url }}
+          INPUT_DB_PASSWORD: ${{ inputs.staging_db_password }}
           INPUT_SUPABASE_ACCESS_TOKEN: ${{ inputs.supabase_access_token }}
           STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
           DATABASE_URL_SECRET: ${{ secrets.DATABASE_URL }}
@@ -66,6 +71,17 @@ jobs:
           # Prefer one-shot workflow_dispatch paste over stored secrets.
           export DATABASE_URL="${INPUT_DATABASE_URL:-${STAGING_DATABASE_URL:-${DATABASE_URL_SECRET:-}}}"
           export SUPABASE_ACCESS_TOKEN="${INPUT_SUPABASE_ACCESS_TOKEN:-${SUPABASE_ACCESS_TOKEN_SECRET:-${SUPABASE_MANAGEMENT_TOKEN:-}}}"
+          if [ -z "${DATABASE_URL}" ] && [ -n "${INPUT_DB_PASSWORD:-}" ]; then
+            export DATABASE_URL="$(node -e '
+              const ref=process.env.STAGING_REF;
+              const pass=process.env.INPUT_DB_PASSWORD;
+              const u=new URL("postgresql://x@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres");
+              u.username="postgres."+ref;
+              u.password=pass;
+              console.log(u.toString());
+            ')"
+            echo "Constructed Staging pooler URI from staging_db_password input"
+          fi
           if [ -n "${INPUT_DATABASE_URL:-}" ]; then
             echo "Using staging_database_url from workflow_dispatch input (redacted later)"
           fi
