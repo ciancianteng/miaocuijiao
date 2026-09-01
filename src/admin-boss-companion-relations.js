@@ -19,6 +19,8 @@
     history: [],
     historyCompanionId: "",
     form: { boss: "", companion: "", newBoss: "", remark: "" },
+    migrationSql: "",
+    sqlEditorUrl: "https://supabase.com/dashboard/project/cfccwysniduwkjskiqgy/sql/new",
   };
 
   function esc(v) {
@@ -73,7 +75,18 @@
     if (state.message) tip += '<p class="admin-sync-note" style="color:#86efac">' + esc(state.message) + "</p>";
     if (!state.tablesReady) {
       tip +=
-        '<p class="admin-sync-note">表未初始化。可点击「执行 Staging Migration」，或在 Staging SQL Editor 执行 20260901_boss_companion_relations.sql。</p>';
+        '<p class="admin-sync-note">表未初始化。可点「执行 Staging Migration」（需服务器 DATABASE_URL）；若 skipped，请打开 Staging SQL Editor 粘贴下方 SQL。</p>' +
+        '<p class="admin-sync-note"><a href="' +
+        esc(state.sqlEditorUrl) +
+        '" target="_blank" rel="noopener">打开 Staging SQL Editor</a> · project <code>cfccwysniduwkjskiqgy</code></p>';
+      if (state.migrationSql) {
+        tip +=
+          '<div style="margin:10px 0 14px">' +
+          '<button type="button" class="ghost-btn" data-bcr-copy-sql>复制 Migration SQL</button>' +
+          '<textarea id="bcrMigrationSql" readonly rows="8" style="width:100%;margin-top:8px;font:12px/1.4 ui-monospace,monospace;background:rgba(0,0,0,.35);color:#e5e7eb;border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:10px">' +
+          esc(state.migrationSql) +
+          "</textarea></div>";
+      }
     }
 
     var rows =
@@ -269,11 +282,41 @@
         state.busy = false;
         state.message = body.message || "完成";
         state.tablesReady = body.tablesReady !== false;
-        return loadList();
+        if (body.sql) state.migrationSql = body.sql;
+        if (body.sqlEditorUrl) state.sqlEditorUrl = body.sqlEditorUrl;
+        return loadList().then(function () {
+          if (!state.tablesReady && !state.migrationSql) return fetchMigrationSql();
+        });
       })
       .catch(function (err) {
         state.busy = false;
+        // ensure may return ok:false with sql payload via throw path — try dedicated fetch
+        if (action === "ensure") return fetchMigrationSql().then(function () {
+          state.error = err.message || "操作失败";
+          paint();
+        });
         state.error = err.message || "操作失败";
+        paint();
+      });
+  }
+
+  function fetchMigrationSql() {
+    return api("/api/admin/boss-companion-relations?action=ensure", {
+      method: "POST",
+      body: JSON.stringify({ action: "ensure" }),
+    })
+      .then(function (body) {
+        if (body.sql) state.migrationSql = body.sql;
+        if (body.sqlEditorUrl) state.sqlEditorUrl = body.sqlEditorUrl;
+        if (body.message) state.message = body.message;
+        if (body.tablesReady === true) state.tablesReady = true;
+        paint();
+        return body;
+      })
+      .catch(function (err) {
+        // Some fetch wrappers throw on ok:false — body may be on err
+        var msg = err && err.message ? String(err.message) : "";
+        if (/DATABASE_URL|SQL Editor|migration/i.test(msg)) state.message = msg;
         paint();
       });
   }
@@ -283,6 +326,27 @@
     if (e.target.closest("[data-bcr-search]")) {
       readForm();
       loadList();
+      return;
+    }
+    if (e.target.closest("[data-bcr-copy-sql]")) {
+      var ta = document.getElementById("bcrMigrationSql");
+      var text = (ta && ta.value) || state.migrationSql || "";
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(function () {
+          state.message = "Migration SQL 已复制";
+          paint();
+        });
+      } else if (ta) {
+        ta.focus();
+        ta.select();
+        try {
+          document.execCommand("copy");
+          state.message = "Migration SQL 已复制";
+        } catch (err) {
+          state.error = "复制失败，请手动全选复制";
+        }
+        paint();
+      }
       return;
     }
     if (e.target.closest("[data-bcr-ensure]")) {

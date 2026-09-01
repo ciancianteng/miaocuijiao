@@ -100,14 +100,23 @@ async function ensureMigration() {
     };
   }
   if (!databaseUrl) {
+    let sqlPreview = "";
+    try {
+      const sqlPath = path.join(process.cwd(), MIGRATION_REL);
+      if (fs.existsSync(sqlPath)) sqlPreview = fs.readFileSync(sqlPath, "utf8");
+    } catch {
+      sqlPreview = "";
+    }
     return {
       ok: false,
       skipped: true,
       tablesReady: false,
       message:
-        "未配置 DATABASE_URL，无法在线执行 DDL。请在 Staging Supabase SQL Editor（cfccwysniduwkjskiqgy）执行 supabase/migrations/20260901_boss_companion_relations.sql",
+        "未配置 DATABASE_URL，无法在线执行 DDL。请在 Staging Supabase SQL Editor（cfccwysniduwkjskiqgy）粘贴下方 SQL 执行。",
       stagingRef: STAGING_PROJECT_REF,
       migration: MIGRATION_REL,
+      sqlEditorUrl: `https://supabase.com/dashboard/project/${STAGING_PROJECT_REF}/sql/new`,
+      sql: sqlPreview,
     };
   }
   if (!urlRef && !dbRef) {
