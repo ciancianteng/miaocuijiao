@@ -5,11 +5,28 @@
  * Requires env: BASE, PASS, ADMIN_EMAIL, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
  * Seeded accounts are ephemeral *@mcj-prod-smoke.invalid
  */
+import fs from "node:fs";
+
 const BASE = (process.env.BASE || "https://www.meowcuijiao.com").replace(/\/$/, "");
 const PASS = process.env.PASS || "McjTest@12345678";
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || "admin@meow.test";
-const URL = (process.env.SUPABASE_URL || "").replace(/\/$/, "");
-const SERVICE = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+function loadSmokeEnv() {
+  const fromFile = process.env.SMOKE_ENV_JSON || "";
+  if (fromFile && fs.existsSync(fromFile)) {
+    try {
+      return JSON.parse(fs.readFileSync(fromFile, "utf8"));
+    } catch {
+      /* fall through */
+    }
+  }
+  return {
+    SUPABASE_URL: process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "",
+    SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY || "",
+  };
+}
+const smokeEnv = loadSmokeEnv();
+const URL = String(smokeEnv.SUPABASE_URL || "").replace(/\/$/, "");
+const SERVICE = String(smokeEnv.SUPABASE_SERVICE_ROLE_KEY || "");
 const PNG =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 const stamp = Date.now();
