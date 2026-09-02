@@ -49,6 +49,8 @@
     }
     .mine-acc.is-open .mine-acc-panel{grid-template-rows:1fr;border-top:1px solid rgba(255,255,255,.08)}
     .mine-acc-panel-inner{overflow:hidden;min-height:0}
+    .mine-acc:not(.is-open) .mine-acc-panel{display:none}
+    .mine-acc.is-open .mine-acc-panel{display:grid}
     .mine-acc-body{padding:14px 16px 16px}
     .info-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
     .info-item{border:1px solid rgba(255,255,255,.08);border-radius:12px;background:rgba(0,0,0,.18);padding:12px;min-width:0}
@@ -237,6 +239,7 @@
           infoItem('总猫粮',esc(totalBal))+
           infoItem('充值猫粮',esc(paidBal))+
           infoItem('赠送猫粮',esc(bonusBal))+
+          
           '</div><div class="action-row"><a class="boss-btn ghost" href="recharge.html">充值中心 / 钱包流水</a></div>';
         var ordersBody=
           '<div class="action-row">'+

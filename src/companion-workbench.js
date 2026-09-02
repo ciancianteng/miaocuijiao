@@ -54,7 +54,7 @@
   };
   var COMPANION_ISOLATION_MSG='您的陪玩认证尚未通过，目前只能查看审核进度。';
   var HIDDEN_MVP_ROUTES={};
-  var state={route:'dashboard',session:null,data:null,notice:'',loading:false,error:'',walletWarning:'',authTab:'login',loginMethod:'otp',loginError:'',loginBusy:false,registerToken:'',registerVerifiedEmail:'',registerCooldownUntil:0,registerBusy:false,forgotStep:'',forgotAccount:'',forgotBusy:false,forgotMsg:'',forgotResetToken:'',profileServices:[],profileVoiceTypes:[],profileCompanionTags:[],profileErrors:{},profileDraft:null,accountDraft:null,uploadBusy:'',galleryPending:[],statusBusy:false,pendingOnlineStatus:null,settlement:null,orderFilter:'all',pollTimer:null,rulesPollTimer:null,ordersCacheAt:0,msgFilter:'all',settings:null,earningsTab:'overview',chatSession:'cs',chatConversationId:'',chatBusy:false,withdrawBusy:false,inbox:null,inboxError:'',hallOrderType:'all',hallGame:'all',drawerOpen:false,_prevDesignated:null,_prevAuditLocked:null,_toastTimer:null,_ordersRtReady:false,_alertedOrderIds:null,_baseDocTitle:'',_focusOrderId:''};
+  var state={route:'dashboard',session:null,data:null,notice:'',loading:false,error:'',walletWarning:'',authTab:'login',loginMethod:'otp',loginError:'',loginBusy:false,registerToken:'',registerVerifiedEmail:'',registerCooldownUntil:0,registerBusy:false,forgotStep:'',forgotAccount:'',forgotBusy:false,forgotMsg:'',forgotResetToken:'',profileServices:[],profileVoiceTypes:[],profileCompanionTags:[],profileErrors:{},profileDraft:null,accountDraft:null,uploadBusy:'',galleryPending:[],statusBusy:false,pendingOnlineStatus:null,settlement:null,orderFilter:'all',pollTimer:null,rulesPollTimer:null,ordersCacheAt:0,msgFilter:'all',settings:null,earningsTab:'overview',chatSession:'cs',chatConversationId:'',chatBusy:false,withdrawBusy:false,inbox:null,inboxError:'',hallOrderType:'all',hallGame:'all',drawerOpen:false,accountAccordion:'',_prevDesignated:null,_prevAuditLocked:null,_toastTimer:null,_ordersRtReady:false,_alertedOrderIds:null,_baseDocTitle:'',_focusOrderId:''};
   var IMAGE_ACCEPT='image/jpeg,image/jpg,image/png,image/webp,image/*';
   /** Companion self-select voice lines — not from admin「声线管理」. */
   var FIXED_VOICE_OPTIONS=['甜妹','御姐','少御','萝莉','温柔','清冷','慵懒','磁性','少年','青叔','大叔','其他'];
@@ -3630,41 +3630,66 @@
       '<label>备注（可选）<textarea name="remark">'+esc((depositRemark||'').replace(/\[\[DEPOSIT_PAY\]\][\s\S]*?\[\[\/DEPOSIT_PAY\]\]/g,'').trim())+'</textarea></label>'+
       '<button class="pw-btn primary" type="submit" '+(depositChannelList.length?'':'disabled')+'>'+(depositPhase==='rejected'?'重新提交押金审核':'提交押金审核')+'</button></form>';
     var depositBlock=depositPhase==='approved'?depositPaidView:(depositLocked?depositPendingView:depositForm);
+    function accountAcc(key,title,bodyHtml){
+      var open=state.accountAccordion===key;
+      return '<section class="pw-mine-acc'+(open?' is-open':'')+'" data-pw-acc="'+esc(key)+'">'+
+        '<button type="button" class="pw-mine-acc-trigger" data-pw-acc-toggle="'+esc(key)+'" aria-expanded="'+(open?'true':'false')+'">'+
+        '<span class="pw-mine-acc-title">'+esc(title)+'</span>'+
+        '<span class="pw-mine-acc-chevron" aria-hidden="true"></span></button>'+
+        '<div class="pw-mine-acc-panel" role="region" aria-hidden="'+(open?'false':'true')+'"'+(open?'':' hidden')+'>'+
+        '<div class="pw-mine-acc-body">'+bodyHtml+'</div></div></section>';
+    }
+    var u=state.session&&state.session.user||{};
+    var canSwitchBoss=!!(u.hasBoss||u.has_boss||(Array.isArray(u.roles)&&u.roles.indexOf('boss')>=0)||u.role==='boss');
+    var profileBody=
+      '<div class="pw-alert" style="margin:0 0 12px"><strong>隐私提示</strong><span>本页面仅本人和平台后台可见，不会公开给老板。</span></div>'+
+      '<section class="pw-card pad" style="border:0;background:rgba(0,0,0,.18);padding:12px"><h3>账号信息</h3><div class="pw-info-list">'+
+        infoRow('登录邮箱',p.email||p.uid||'-')+
+        infoRow('联系方式',raw.contact_phone||v.phone||'未填写')+
+        infoRow('身份证认证',idStatus)+
+        infoRow('真实姓名',v.realName||'未填写')+
+        infoRow('资料审核状态',STATUS_CN.verification(ua.profile_review_status))+
+      '</div></section>'+
+      '<form class="pw-card pad pw-form pw-form-narrow" style="margin-top:12px;border:0;background:rgba(0,0,0,.18)" data-private-contact-form><h3>联系方式</h3>'+
+      '<label>联系方式（WhatsApp / 手机）<input name="contact_phone" value="'+esc(contactPhone)+'" required placeholder="仅后台/客服可见"></label>'+
+      '<button class="pw-btn primary" type="submit">保存联系方式</button></form>'+
+      (verifyLocked?verifyView:verifyForm);
+    var assetsBody=
+      '<section class="pw-card pad" style="border:0;background:rgba(0,0,0,.18);padding:12px"><h3>提现与押金</h3><div class="pw-info-list">'+
+        infoRow('收款账户审核',STATUS_CN.verification(bankStatusRaw))+
+        infoRow('银行名称',v.bankName||'未填写')+
+        infoRow('当前提现账户',rules.currentAccount||'未绑定')+
+        infoRow('押金',depositPhase==='approved'?('RM '+(d.requiredAmount||d.amountRm||100)):'RM 100')+
+        infoRow('押金状态',STATUS_CN.deposit(ua.deposit_status))+
+        infoRow('账号接单权限',STATUS_CN.accountAccess(ua.account_access_status))+
+        infoRow('当前等级',level.level||p.level||'未设置')+
+      '</div>'+
+      '<div class="pw-actions" style="margin-top:12px"><button class="pw-btn primary" type="button" data-route="/companion/earnings" data-earnings-tab="withdraw">去提现</button>'+
+      (depositPhase==='approved'?'<button class="pw-btn" type="button" data-view-deposit-record>查看押金记录</button>':'')+
+      '</div></section>'+depositBlock;
+    var securityBody='<div id="pwAccountSecurityMount"><div class="pw-empty">加载中…</div></div>';
+    var ordersBody=
+      '<div class="pw-actions pw-mine-acc-actions">'+
+      '<button class="pw-btn" type="button" data-route="/companion/orders">查看我的订单</button>'+
+      '<a class="pw-btn" href="/support.html">联系在线客服</a>'+
+      (canSwitchBoss
+        ?'<button class="pw-btn" type="button" data-switch-portal="boss">切换到老板端</button>'
+        :'<button class="pw-btn" type="button" data-route="/companion/dashboard">返回工作台</button>')+
+      '</div>';
     return '<div class="pw-page-head"><div><h2>账号中心（隐私）</h2><p>仅本人 / 客服 / 后台可见，老板永远看不到。</p></div><button class="pw-btn" type="button" data-route="/companion/profile">公开资料</button></div>'+
       accountAccessBannerHtml()+
       reviewRejectBannerHtml('/companion/account')+
       credentialBanner+
       (depositPhase==='approved'?depositBadgeHtml():'')+
-      '<div class="pw-alert"><strong>隐私提示</strong><span>本页面仅本人和平台后台可见，不会公开给老板。</span></div>'+
-      '<div class="pw-two-col">'+
-        '<section class="pw-card pad"><h3>账号信息</h3><div class="pw-info-list">'+
-          infoRow('登录邮箱',p.email||p.uid||'-')+
-          infoRow('联系方式',raw.contact_phone||v.phone||'未填写')+
-          infoRow('身份证认证',idStatus)+
-          infoRow('真实姓名',v.realName||'未填写')+
-          infoRow('资料审核状态',STATUS_CN.verification(ua.profile_review_status))+
-        '</div></section>'+
-        '<section class="pw-card pad"><h3>提现与押金</h3><div class="pw-info-list">'+
-          infoRow('收款账户审核',STATUS_CN.verification(bankStatusRaw))+
-          infoRow('银行名称',v.bankName||'未填写')+
-          infoRow('当前提现账户',rules.currentAccount||'未绑定')+
-          infoRow('押金',depositPhase==='approved'?('RM '+(d.requiredAmount||d.amountRm||100)):'RM 100')+
-          infoRow('押金状态',STATUS_CN.deposit(ua.deposit_status))+
-          infoRow('账号接单权限',STATUS_CN.accountAccess(ua.account_access_status))+
-          infoRow('当前等级',level.level||p.level||'未设置')+
-        '</div>'+
-        '<div class="pw-actions" style="margin-top:12px"><button class="pw-btn primary" type="button" data-route="/companion/earnings" data-earnings-tab="withdraw">去提现</button>'+
-        (depositPhase==='approved'?'<button class="pw-btn" type="button" data-view-deposit-record>查看押金记录</button>':'')+
-        '</div>'+
-        '</section>'+
+      '<div class="pw-mine-stack">'+
+      accountAcc('profile','我的资料',profileBody)+
+      accountAcc('assets','我的资产',assetsBody)+
+      accountAcc('security','账号安全',securityBody)+
+      accountAcc('orders','订单与服务',ordersBody)+
       '</div>'+
-      '<form class="pw-card pad pw-form pw-form-narrow" style="margin-top:14px" data-private-contact-form><h3>联系方式</h3>'+
-      '<label>联系方式（WhatsApp / 手机）<input name="contact_phone" value="'+esc(contactPhone)+'" required placeholder="仅后台/客服可见"></label>'+
-      '<button class="pw-btn primary" type="submit">保存联系方式</button></form>'+
-      (verifyLocked?verifyView:verifyForm)+
-      depositBlock+
-      '<section class="pw-card pad pw-form-narrow" style="margin-top:14px" id="pwAccountSecurityMount"><h3>账号安全</h3><div class="pw-empty">加载中…</div></section>';
+      '<div class="pw-mine-logout-wrap"><button class="pw-btn danger" type="button" data-logout style="width:100%">退出登录</button></div>';
   }
+
   function rulesHtml(){
     var rules=state.workRules||[];
     if(state.rulesLoading)return '<div class="pw-empty">正在加载陪玩规则…</div>';
@@ -4038,6 +4063,39 @@
     api('reorder_media',{ordered_ids:media.map(function(m){return m.id})}).then(function(res){toast(res.message||'顺序已更新');return loadData()}).catch(function(err){toast(err.message)});
   }
   document.addEventListener('click',function(e){
+    var accToggle=e.target.closest('[data-pw-acc-toggle]');
+    if(accToggle){
+      e.preventDefault();
+      var key=accToggle.getAttribute('data-pw-acc-toggle')||'';
+      state.accountAccordion=(state.accountAccordion===key)?'':key;
+      document.querySelectorAll('[data-pw-acc]').forEach(function(sec){
+        var k=sec.getAttribute('data-pw-acc')||'';
+        var open=k===state.accountAccordion;
+        sec.classList.toggle('is-open',open);
+        var btn=sec.querySelector('[data-pw-acc-toggle]');
+        if(btn)btn.setAttribute('aria-expanded',open?'true':'false');
+        var panel=sec.querySelector('.pw-mine-acc-panel');
+        if(panel){
+          panel.setAttribute('aria-hidden',open?'false':'true');
+          if(open)panel.removeAttribute('hidden'); else panel.setAttribute('hidden','');
+        }
+      });
+      if(key==='security'&&state.accountAccordion==='security'){
+        try{mountCompanionAccountSecurity();}catch(err){}
+      }
+      return;
+    }
+    var switchPortal=e.target.closest('[data-switch-portal]');
+    if(switchPortal){
+      e.preventDefault();
+      var portal=switchPortal.getAttribute('data-switch-portal')||'boss';
+      if(window.MCJRoleGate&&typeof window.MCJRoleGate.switchActivePortal==='function'){
+        var sw=window.MCJRoleGate.switchActivePortal(portal);
+        if(sw&&sw.ok){location.href=sw.redirect||(portal==='boss'?'/mine.html':'/companion/');return}
+      }
+      location.href=(portal==='boss'?'/mine.html':'/companion/');
+      return;
+    }
     var qrZoom=e.target.closest('[data-pay-qr-zoom], [data-mcj-pay-qr]');
     if(qrZoom && (e.target.closest('[data-deposit-form], [data-deposit-view], [data-deposit-channels]')||qrZoom.closest('.pw-deposit-qr-block'))){
       var qImg=qrZoom.tagName==='IMG'?qrZoom:qrZoom.querySelector('img[data-mcj-pay-qr], img');

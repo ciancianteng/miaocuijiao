@@ -876,3 +876,39 @@ a.pw-btn{display:inline-flex;align-items:center;justify-content:center;text-deco
   .pw-gallery-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
 
+
+
+/* Boss-style accordion cards on Companion account page */
+.pw-mine-stack{display:grid;gap:12px;margin-top:14px}
+.pw-mine-acc{
+  border:1px solid rgba(255,255,255,.1);border-radius:16px;background:rgba(255,255,255,.045);
+  overflow:hidden;
+}
+.pw-mine-acc-trigger{
+  width:100%;display:flex;align-items:center;justify-content:space-between;gap:12px;
+  min-height:52px;padding:14px 16px;border:0;background:transparent;color:#fff;
+  font:inherit;font-weight:800;font-size:16px;text-align:left;cursor:pointer;
+  -webkit-tap-highlight-color:transparent;
+}
+.pw-mine-acc-trigger:focus-visible{outline:2px solid rgba(255,143,197,.55);outline-offset:-2px}
+.pw-mine-acc-title{min-width:0;word-break:break-word}
+.pw-mine-acc-chevron{
+  flex:0 0 22px;width:22px;height:22px;border-radius:999px;
+  border:1px solid rgba(255,143,197,.35);background:rgba(255,143,197,.1);
+  display:grid;place-items:center;transition:transform .2s ease;
+}
+.pw-mine-acc-chevron::before{
+  content:"";width:7px;height:7px;border-right:2px solid #ffd6e7;border-bottom:2px solid #ffd6e7;
+  transform:rotate(45deg) translate(-1px,-1px);
+}
+.pw-mine-acc.is-open .pw-mine-acc-chevron{transform:rotate(180deg);border-color:rgba(255,212,230,.55)}
+.pw-mine-acc-panel{border-top:1px solid rgba(255,255,255,.08)}
+.pw-mine-acc-body{padding:14px 16px 16px}
+.pw-mine-acc-actions{display:grid;gap:10px}
+.pw-mine-acc-actions .pw-btn{width:100%;justify-content:center;text-decoration:none}
+.pw-mine-logout-wrap{margin-top:14px}
+.pw-sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+@media(max-width:720px){
+  .pw-mine-acc-trigger{min-height:50px;padding:13px 14px}
+  .pw-mine-acc-body{padding:12px 14px 14px}
+}
