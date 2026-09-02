@@ -23,7 +23,10 @@ async function resolvePlayableUrl(raw) {
   const s = String(raw || "").trim();
   if (!s) return "";
   let url = "";
-  if (/^https?:\/\//i.test(s) && !/\/storage\/v1\/object\/sign\//i.test(s)) {
+  // Never treat expired/private signed links as durable — re-sign from storage:// instead.
+  const looksSigned =
+    /\/storage\/v1\/object\/sign\//i.test(s) || (/[?&]token=/i.test(s) && /\/storage\/v1\//i.test(s));
+  if (/^https?:\/\//i.test(s) && !looksSigned) {
     url = s;
   } else if (/^storage:\/\//i.test(s)) {
     const rest = s.replace(/^storage:\/\//i, "");
@@ -42,14 +45,16 @@ async function resolvePlayableUrl(raw) {
       console.warn("[public/companions] resolvePlayableUrl failed", bucket, objectPath, err?.message || err);
       return "";
     }
-  } else if (/^https?:\/\//i.test(s)) {
-    // Fresh signed URLs from companion_media are allowed through size gate below.
+  } else if (/^https?:\/\//i.test(s) && looksSigned) {
+    // Keep a still-fresh signed URL from companion_media for the size gate below.
     url = s;
   }
   if (!url) return "";
   // Drop empty / header-only audio stubs (WAV header alone is 44 bytes).
+  // Also drop expired/invalid signed URLs (non-OK HEAD) so callers can fall back to storage://.
   try {
     const head = await fetch(url, { method: "HEAD" });
+    if (!head.ok && looksSigned) return "";
     const len = Number(head.headers.get("content-length") || 0);
     if (Number.isFinite(len) && len > 0 && len < 512) return "";
   } catch {
@@ -203,6 +208,8 @@ function publicCompanion(row = {}, profile = {}, levels = [], catalog = [], medi
     pickStableMediaUrl(mediaExtras.voiceUrl) ||
     (String(mediaExtras.voiceUrl || "").trim().startsWith("http") ? String(mediaExtras.voiceUrl).trim() : "") ||
     "";
+  // Signed private-audio URLs are playable but intentionally "unstable" for avatar/cover
+  // pickers — keep them for voice so public detail can play after resolvePlayableUrl.
   const videoPlayable =
     pickStableMediaUrl(mediaExtras.videoUrl, mediaExtras.showcaseVideoUrl) ||
     (String(mediaExtras.videoUrl || mediaExtras.showcaseVideoUrl || "").trim().startsWith("http")
@@ -549,7 +556,10 @@ async function loadCompanions(id = "") {
     if (!profile) continue;
     const media = { ...(mediaMap[row.id] || {}) };
     // Prefer companion_media voice, else durable storage:// / legacy URL — always size-gate.
-    media.voiceUrl = await resolvePlayableUrl(media.voiceUrl || row.voice_url);
+    // If media signed URL is expired/invalid, fall back to companion_profiles.voice_url.
+    const fromMedia = await resolvePlayableUrl(media.voiceUrl);
+    const fromProfile = fromMedia ? "" : await resolvePlayableUrl(row.voice_url);
+    media.voiceUrl = fromMedia || fromProfile;
     media.videoUrl = await resolvePlayableUrl(media.videoUrl || media.showcaseVideoUrl || "");
     media.showcaseVideoUrl = media.videoUrl;
     // Parse legacy gallery tags when companion_media has no gallery rows.

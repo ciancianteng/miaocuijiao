@@ -380,6 +380,21 @@
       : "暂无数据";
     var goodCount = Number(c.goodReviewCount != null ? c.goodReviewCount : 0) || 0;
     var goodText = plainEmptyMetric(goodCount);
+    var favCount =
+      Number(
+        c.favorites != null
+          ? c.favorites
+          : c.favoriteCount != null
+            ? c.favoriteCount
+            : c.favorite_count != null
+              ? c.favorite_count
+              : (pop && (pop.favorites || (pop.total && pop.total.favorites) || (pop.weekly && pop.weekly.favorites))) || 0
+      ) || 0;
+    var favText = plainEmptyMetric(favCount);
+    var orderSummaryText =
+      completedOrders > 0
+        ? "完成 " + plainEmptyMetric(completedOrders) + " 单 · 好评 " + goodText
+        : "暂无订单记录";
     var bioRaw = String(c.desc || c.description || "").trim();
     var bioText = bioRaw || "该陪玩暂未填写个人介绍";
     var bioEmpty = !bioRaw;
@@ -433,8 +448,10 @@
       ) +
       metaRow("评分", esc(ratingText), !hasRating) +
       metaRow("好评数", esc(goodText), !(goodCount > 0)) +
+      metaRow("收藏数", esc(favText), !(favCount > 0)) +
       metaRow("人气值", esc(popScoreText), !(Number(popScore) > 0)) +
       metaRow("在线状态", statusHtml(c)) +
+      metaRow("订单摘要", esc(orderSummaryText), !(completedOrders > 0)) +
       metaRow("价格区间", esc(rangeText), rangeText === "暂无数据") +
       metaRow("本周排名", esc(weeklyRankText), !(Number(weeklyRank) > 0)) +
       metaRow("本月排名", esc(monthlyRankText), !(Number(monthlyRank) > 0)) +
@@ -444,20 +461,20 @@
       '">' +
       esc(ratingText) +
       "</strong></div>" +
-      '<div class="pd-stat-cell"><span>人气值</span><strong class="' +
-      (Number(popScore) > 0 ? "" : "is-empty") +
+      '<div class="pd-stat-cell"><span>收藏</span><strong class="' +
+      (favCount > 0 ? "" : "is-empty") +
       '">' +
-      esc(popScoreText) +
-      "</strong></div>" +
-      '<div class="pd-stat-cell"><span>本周排名</span><strong class="' +
-      (Number(weeklyRank) > 0 ? "" : "is-empty") +
-      '">' +
-      esc(weeklyRankText) +
+      esc(favText) +
       "</strong></div>" +
       '<div class="pd-stat-cell"><span>完成订单</span><strong class="' +
       (completedOrders > 0 ? "" : "is-empty") +
       '">' +
       esc(plainEmptyMetric(completedOrders)) +
+      "</strong></div>" +
+      '<div class="pd-stat-cell"><span>人气值</span><strong class="' +
+      (Number(popScore) > 0 ? "" : "is-empty") +
+      '">' +
+      esc(popScoreText) +
       "</strong></div>" +
       "</div>" +
       giftActions +
