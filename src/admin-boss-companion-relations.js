@@ -18,7 +18,7 @@
     relations: [],
     history: [],
     historyCompanionId: "",
-    form: { boss: "", companion: "", newBoss: "", remark: "" },
+    form: { boss: "", companion: "", newBoss: "", remark: "", commissionRate: "" },
     migrationSql: "",
     sqlEditorUrl: "https://supabase.com/dashboard/project/cfccwysniduwkjskiqgy/sql/new",
   };
@@ -120,6 +120,9 @@
             esc(statusLabel(r.status)) +
             "</td>" +
             "<td>" +
+            esc(r.commissionRate == null || r.commissionRate === "" ? "默认" : r.commissionRate + "%") +
+            "</td>" +
+            "<td>" +
             esc(r.boundAt ? String(r.boundAt).replace("T", " ").slice(0, 19) : "-") +
             "</td>" +
             "<td>" +
@@ -127,7 +130,14 @@
             esc(r.companionId) +
             '">历史</button> ' +
             (r.status === "active"
-              ? '<button type="button" class="ghost-btn" data-bcr-unbind="' +
+              ? '<button type="button" class="ghost-btn" data-bcr-set-rate="' +
+                esc(r.id) +
+                '" data-companion="' +
+                esc(r.companionId) +
+                '" data-rate="' +
+                esc(r.commissionRate == null ? "" : r.commissionRate) +
+                '">设分成</button> ' +
+                '<button type="button" class="ghost-btn" data-bcr-unbind="' +
                 esc(r.companionId) +
                 '">解绑</button>'
               : "") +
@@ -136,7 +146,7 @@
           );
         })
         .join("") ||
-      '<tr><td colspan="5" class="empty">暂无直属关系</td></tr>';
+      '<tr><td colspan="6" class="empty">暂无直属关系</td></tr>';
 
     var historyRows =
       (state.history || [])
@@ -208,6 +218,9 @@
       '<label>备注<input id="bcrRemark" value="' +
       esc(state.form.remark) +
       '"></label>' +
+      '<label>直属分成%（占平台抽成，可空=用平台默认）<input id="bcrCommissionRate" type="number" min="0" max="100" step="0.01" value="' +
+      esc(state.form.commissionRate) +
+      '"></label>' +
       "</div>" +
       '<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">' +
       '<button type="button" class="primary-btn" data-bcr-bind' +
@@ -219,7 +232,7 @@
       "</div>" +
       '<p class="admin-sync-note" style="margin:8px 0 0">仅 Admin 可写。绑定前校验 hasBoss / hasCompanion（#128 resolver）。不改 capability。</p>' +
       "</div>" +
-      '<div class="table-wrap"><table class="data-table"><thead><tr><th>老板</th><th>陪玩</th><th>状态</th><th>绑定时间</th><th>操作</th></tr></thead><tbody>' +
+      '<div class="table-wrap"><table class="data-table"><thead><tr><th>老板</th><th>陪玩</th><th>状态</th><th>分成%</th><th>绑定时间</th><th>操作</th></tr></thead><tbody>' +
       rows +
       "</tbody></table></div>" +
       '<h3 style="margin:18px 0 8px;font-size:16px">关系历史' +
@@ -379,6 +392,7 @@
         bossId: state.form.boss,
         companionId: state.form.companion,
         remark: state.form.remark,
+        commissionRate: state.form.commissionRate,
       });
       return;
     }
@@ -389,7 +403,45 @@
         companionId: state.form.companion,
         newBossId: state.form.newBoss || state.form.boss,
         remark: state.form.remark,
+        commissionRate: state.form.commissionRate,
       });
+      return;
+    }
+
+    var setRateBtn = e.target.closest("[data-bcr-set-rate]");
+    if (setRateBtn) {
+      var rid = setRateBtn.getAttribute("data-bcr-set-rate") || "";
+      var cid = setRateBtn.getAttribute("data-companion") || "";
+      var cur = setRateBtn.getAttribute("data-rate") || "";
+      var input = window.prompt("设置该直属关系的老板分成%（占平台抽成；留空取消）", cur);
+      if (input == null) return;
+      var rate = String(input).trim();
+      if (rate === "" || Number.isNaN(Number(rate))) {
+        state.error = "请输入 0-100 的数字";
+        paint();
+        return;
+      }
+      state.busy = true;
+      paint();
+      api("/api/admin/boss-companion-relations", {
+        method: "POST",
+        body: JSON.stringify({
+          action: "set-commission",
+          relationId: rid,
+          companionId: cid,
+          commissionRate: rate,
+        }),
+      })
+        .then(function () {
+          state.busy = false;
+          state.message = "分成比例已更新";
+          return loadList();
+        })
+        .catch(function (err) {
+          state.busy = false;
+          state.error = err.message || "更新失败";
+          paint();
+        });
       return;
     }
     var unbind = e.target.closest("[data-bcr-unbind]");

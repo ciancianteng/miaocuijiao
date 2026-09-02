@@ -33,6 +33,14 @@ function httpError(message, status = 400, extra = {}) {
   return Object.assign(new Error(message), { status, ...extra });
 }
 
+
+function normalizeCommissionRate(value) {
+  if (value == null || value === "") return null;
+  const n = Number(String(value).replace(/[^\d.-]/g, ""));
+  if (!Number.isFinite(n)) return null;
+  return Math.min(100, Math.max(0, Math.round(n * 100) / 100));
+}
+
 export function isRelationsMissing(error) {
   return isMissingRelation(error);
 }
@@ -50,6 +58,7 @@ export function viewRelation(row = {}, extras = {}) {
     unboundAt: row.unbound_at || null,
     boundBy: row.bound_by || null,
     remark: row.remark || "",
+    commissionRate: row.commission_rate == null || row.commission_rate === "" ? null : Number(row.commission_rate),
     createdAt: row.created_at || "",
     updatedAt: row.updated_at || "",
     boss: boss
@@ -376,7 +385,7 @@ export async function adminSearchRelations({ q = "", status = "", limit = 100 } 
   return enrichRelations(Array.isArray(rows) ? rows : []);
 }
 
-export async function bindRelation({ bossId, companionId, operatorId, remark = "" } = {}) {
+export async function bindRelation({ bossId, companionId, operatorId, remark = "", commissionRate = null } = {}) {
   const caps = await assertBindCapabilities(bossId, companionId);
   const existing = await getActiveRelationForCompanion(companionId);
   if (existing) {
@@ -399,6 +408,8 @@ export async function bindRelation({ bossId, companionId, operatorId, remark = "
     bound_by: operatorId || null,
     remark: String(remark || "").trim() || null,
   };
+  const rateNum = normalizeCommissionRate(commissionRate);
+  if (rateNum != null) payload.commission_rate = rateNum;
   let created;
   try {
     const rows = await supabaseJson(restUrl(REL_TABLE), {
@@ -428,7 +439,7 @@ export async function bindRelation({ bossId, companionId, operatorId, remark = "
   return { relation: enriched, boss: caps.boss, companion: caps.companion };
 }
 
-export async function rebindRelation({ companionId, newBossId, operatorId, remark = "" } = {}) {
+export async function rebindRelation({ companionId, newBossId, operatorId, remark = "", commissionRate = null } = {}) {
   const caps = await assertBindCapabilities(newBossId, companionId);
   const existing = await getActiveRelationForCompanion(companionId);
   if (!existing) {
@@ -453,15 +464,25 @@ export async function rebindRelation({ companionId, newBossId, operatorId, remar
   const rows = await supabaseJson(restUrl(REL_TABLE), {
     method: "POST",
     headers: serviceHeaders(),
-    body: JSON.stringify({
-      boss_id: newBossId,
-      companion_id: companionId,
-      status: ACTIVE,
-      bound_at: ts,
-      unbound_at: null,
-      bound_by: operatorId || null,
-      remark: String(remark || "").trim() || null,
-    }),
+    body: JSON.stringify((() => {
+      const payload = {
+        boss_id: newBossId,
+        companion_id: companionId,
+        status: ACTIVE,
+        bound_at: ts,
+        unbound_at: null,
+        bound_by: operatorId || null,
+        remark: String(remark || "").trim() || null,
+      };
+      const rateNum =
+        commissionRate != null && commissionRate !== ""
+          ? normalizeCommissionRate(commissionRate)
+          : existing.commission_rate != null
+            ? normalizeCommissionRate(existing.commission_rate)
+            : null;
+      if (rateNum != null) payload.commission_rate = rateNum;
+      return payload;
+    })()),
   });
   const created = Array.isArray(rows) ? rows[0] : rows;
 
@@ -512,6 +533,46 @@ export async function unbindRelation({ companionId, operatorId, remark = "" } = 
 
   const updated = { ...existing, status: UNBOUND, unbound_at: ts };
   const [enriched] = await enrichRelations([updated]);
+  return { relation: enriched };
+}
+
+
+export async function updateRelationCommissionRate({ relationId, companionId, commissionRate, operatorId, remark = "" } = {}) {
+  let row = null;
+  if (relationId) {
+    const rows = await supabaseJson(
+      restUrl(REL_TABLE, `?id=eq.${encodeURIComponent(relationId)}&limit=1`),
+      { headers: serviceHeaders() }
+    );
+    row = rows?.[0] || null;
+  } else if (companionId) {
+    row = await getActiveRelationForCompanion(companionId);
+  }
+  if (!row) throw httpError("直属关系不存在", 404, { code: "NOT_FOUND" });
+  if (String(row.status) !== ACTIVE) {
+    throw httpError("只能修改 active 直属关系的分成比例", 409, { code: "NOT_ACTIVE" });
+  }
+  const rateNum = normalizeCommissionRate(commissionRate);
+  if (rateNum == null) throw httpError("分成比例无效（0-100）", 400, { code: "BAD_RATE" });
+
+  const rows = await supabaseJson(restUrl(REL_TABLE, `?id=eq.${encodeURIComponent(row.id)}`), {
+    method: "PATCH",
+    headers: serviceHeaders(),
+    body: JSON.stringify({ commission_rate: rateNum }),
+  });
+  const updated = Array.isArray(rows) ? rows[0] : rows;
+
+  await insertEvent({
+    relation_id: row.id,
+    companion_id: row.companion_id,
+    from_boss_id: row.boss_id,
+    to_boss_id: row.boss_id,
+    action: "bind",
+    operator_id: operatorId || null,
+    remark: String(remark || "").trim() || `更新直属分成比例为 ${rateNum}%`,
+  }).catch(() => null);
+
+  const [enriched] = await enrichRelations([updated || { ...row, commission_rate: rateNum }]);
   return { relation: enriched };
 }
 

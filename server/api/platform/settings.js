@@ -28,6 +28,7 @@ const DEFAULT_SETTINGS = {
   showAnnouncements: true,
   gameplayMallOpen: true,
   defaultCommissionRate: 20,
+  defaultBossCommissionRate: 0,
   defaultRebateRate: 0,
   defaultDeposit: 100,
   defaultLevel: "Lv1",

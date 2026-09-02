@@ -19,6 +19,7 @@ import {
   resolveBossIdFromInput,
   resolveCompanionIdFromInput,
   unbindRelation,
+  updateRelationCommissionRate,
 } from "../_boss-companion-relations.js";
 import { loadLocalEnv } from "../_load-env.js";
 
@@ -27,6 +28,7 @@ loadLocalEnv();
 /** Staging Supabase project — refuse Production. */
 const STAGING_PROJECT_REF = "cfccwysniduwkjskiqgy";
 const MIGRATION_REL = "supabase/migrations/20260901_boss_companion_relations.sql";
+const COMMISSION_MIGRATION_REL = "supabase/migrations/20260902_boss_commission_from_platform_fee.sql";
 
 function json(res, status, data) {
   if (typeof res.setHeader === "function") {
@@ -81,8 +83,12 @@ function projectRefFromDatabaseUrl(dbUrl) {
 
 function migrationSqlPreview() {
   try {
-    const sqlPath = path.join(process.cwd(), MIGRATION_REL);
-    if (fs.existsSync(sqlPath)) return fs.readFileSync(sqlPath, "utf8");
+    const parts = [];
+    for (const rel of [MIGRATION_REL, COMMISSION_MIGRATION_REL]) {
+      const sqlPath = path.join(process.cwd(), rel);
+      if (fs.existsSync(sqlPath)) parts.push(fs.readFileSync(sqlPath, "utf8"));
+    }
+    return parts.join("\n\n");
   } catch {
     /* ignore */
   }
@@ -185,11 +191,15 @@ async function ensureMigration(oneshot = {}) {
     };
   }
 
-  const sqlPath = path.join(process.cwd(), MIGRATION_REL);
-  if (!fs.existsSync(sqlPath)) {
-    return { ok: false, message: `migration 文件不存在：${MIGRATION_REL}` };
+  const parts = [];
+  for (const rel of [MIGRATION_REL, COMMISSION_MIGRATION_REL]) {
+    const sqlPath = path.join(process.cwd(), rel);
+    if (!fs.existsSync(sqlPath)) {
+      return { ok: false, message: `migration 文件不存在：${rel}` };
+    }
+    parts.push(fs.readFileSync(sqlPath, "utf8"));
   }
-  const sql = fs.readFileSync(sqlPath, "utf8");
+  const sql = parts.join("\n\n");
 
   if (databaseUrl) {
     if (!urlRef && !dbRef) {
@@ -361,6 +371,7 @@ export default async function handler(req, res) {
         companionId,
         operatorId: admin.id,
         remark: body.remark || "",
+        commissionRate: body.commissionRate ?? body.commission_rate ?? null,
       });
       return json(res, 200, { ok: true, ...result, message: "绑定成功" });
     }
@@ -379,6 +390,7 @@ export default async function handler(req, res) {
         newBossId,
         operatorId: admin.id,
         remark: body.remark || "",
+        commissionRate: body.commissionRate ?? body.commission_rate ?? null,
       });
       return json(res, 200, { ok: true, ...result, message: "换绑成功" });
     }
@@ -396,9 +408,28 @@ export default async function handler(req, res) {
       return json(res, 200, { ok: true, ...result, message: "已解绑" });
     }
 
-    return json(res, 400, {
+    
+    if ((action === "set-commission" || action === "set_commission" || action === "update-commission") && (req.method === "POST" || req.method === "PUT" || req.method === "PATCH")) {
+      const companionId = await resolveCompanionIdFromInput(
+        body.companionId || body.companion_id || body.companionCode || body.companion_code
+      );
+      const relationId = String(body.relationId || body.relation_id || "").trim();
+      if (!companionId && !relationId) {
+        return json(res, 400, { ok: false, message: "请提供 relationId 或 companionId" });
+      }
+      const result = await updateRelationCommissionRate({
+        relationId,
+        companionId,
+        commissionRate: body.commissionRate ?? body.commission_rate,
+        operatorId: admin.id,
+        remark: body.remark || "",
+      });
+      return json(res, 200, { ok: true, ...result, message: "直属分成比例已更新" });
+    }
+
+return json(res, 400, {
       ok: false,
-      message: "未知操作。支持：list/search/history/bind/rebind/unbind/ensure",
+      message: "未知操作。支持：list/search/history/bind/rebind/unbind/set-commission/ensure",
       action,
     });
   } catch (err) {

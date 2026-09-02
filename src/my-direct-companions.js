@@ -1,5 +1,6 @@
 /**
- * Boss · 我的直属陪玩（只读）
+ * Boss · 我的直属陪玩（只读）+ 直属分成摘要
+ * 分成从平台抽成支付，不扣陪玩收入。
  */
 (function () {
   "use strict";
@@ -35,23 +36,40 @@
       );
       return;
     }
-    paint('<section class="page-head"><h1>我的直属陪玩</h1><p>仅显示当前生效的直属陪玩（只读）</p></section><div class="empty">加载中…</div>');
-    fetch("/api/boss/direct-companions", {
-      headers: { Accept: "application/json", Authorization: "Bearer " + token() },
-      cache: "no-store",
-    })
-      .then(function (res) {
+    paint(
+      '<section class="page-head"><h1>我的直属陪玩</h1><p>仅显示当前生效的直属陪玩（只读）</p></section><div class="empty">加载中…</div>'
+    );
+    var headers = { Accept: "application/json", Authorization: "Bearer " + token() };
+    Promise.all([
+      fetch("/api/boss/direct-companions", { headers: headers, cache: "no-store" }).then(function (res) {
         return res.json().then(function (body) {
-          if (!res.ok || body.ok === false) throw new Error(body.message || "读取失败");
+          if (!res.ok || body.ok === false) throw new Error(body.message || "读取直属陪玩失败");
           return body;
         });
-      })
-      .then(function (body) {
+      }),
+      fetch("/api/boss/commission-earnings?limit=20", { headers: headers, cache: "no-store" })
+        .then(function (res) {
+          return res.json().then(function (body) {
+            if (!res.ok) return { ok: false, earnings: [], summary: {} };
+            return body;
+          });
+        })
+        .catch(function () {
+          return { ok: false, earnings: [], summary: {} };
+        }),
+    ])
+      .then(function (pair) {
+        var body = pair[0] || {};
+        var earningsBody = pair[1] || {};
         var list = body.companions || [];
         var rows =
           list
             .map(function (r) {
               var c = r.companion || {};
+              var rateText =
+                r.commissionRate == null || r.commissionRate === ""
+                  ? "平台默认"
+                  : String(r.commissionRate) + "%";
               return (
                 '<div class="row">' +
                 "<div><strong>" +
@@ -61,6 +79,9 @@
                 "</span></div>" +
                 "<div><span>状态</span><strong style='display:block;margin-top:4px'>" +
                 esc(r.status === "active" ? "生效中" : r.status || "-") +
+                "</strong></div>" +
+                "<div><span>分成</span><strong style='display:block;margin-top:4px'>" +
+                esc(rateText) +
                 "</strong></div>" +
                 "<div><span>绑定时间</span><strong style='display:block;margin-top:4px'>" +
                 esc(r.boundAt ? String(r.boundAt).replace("T", " ").slice(0, 19) : "-") +
@@ -75,10 +96,47 @@
           note = '<p class="message">直属关系功能尚未开通</p>';
         }
 
+        var summary = earningsBody.summary || {};
+        var earnings = earningsBody.earnings || [];
+        var earningsRows =
+          earnings
+            .slice(0, 10)
+            .map(function (e) {
+              return (
+                '<div class="row">' +
+                "<div><strong>订单 " +
+                esc(String(e.orderId || "").slice(0, 8)) +
+                '</strong><span style="display:block;margin-top:4px">' +
+                esc(e.settledAt ? String(e.settledAt).replace("T", " ").slice(0, 19) : "-") +
+                "</span></div>" +
+                "<div><span>平台抽成</span><strong style='display:block;margin-top:4px'>" +
+                esc(e.platformFeeAmount) +
+                " (" +
+                esc(e.platformFeeRate) +
+                "%)</strong></div>" +
+                "<div><span>直属分成</span><strong style='display:block;margin-top:4px'>" +
+                esc(e.bossCommissionAmount) +
+                " (" +
+                esc(e.bossCommissionRate) +
+                "%)</strong></div>" +
+                "</div>"
+              );
+            })
+            .join("") || '<div class="empty">暂无直属分成记录</div>';
+
         paint(
-          '<section class="page-head"><div><h1>我的直属陪玩</h1><p>仅显示当前生效的直属陪玩（只读）。解绑/换绑由后台操作。</p></div>' +
+          '<section class="page-head"><div><h1>我的直属陪玩</h1><p>仅显示当前生效的直属陪玩（只读）。解绑/换绑由后台操作。直属分成从平台抽成支付，不扣陪玩收入。</p></div>' +
             '<a class="ghost-btn" href="mine.html">返回我的账号</a></section>' +
             note +
+            '<section class="panel"><h2>直属分成（平台抽成内）</h2>' +
+            '<p class="message">累计 ' +
+            esc(summary.totalBossCommission != null ? summary.totalBossCommission : 0) +
+            " · 近 " +
+            esc(summary.count || earnings.length || 0) +
+            " 笔 · 公式：平台抽成金额 × 分成%</p>" +
+            '<div class="list">' +
+            earningsRows +
+            "</div></section>" +
             '<section class="panel"><h2>生效中（' +
             list.length +
             '）</h2><div class="list">' +

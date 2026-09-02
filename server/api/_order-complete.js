@@ -9,6 +9,7 @@ import {
   stripInternalOrderMarkers,
 } from "./_order-grabs.js";
 import { awardBossPointsForCompletedOrder } from "./_user-points.js";
+import { settleBossCommissionFromPlatformFee } from "./_boss-commission.js";
 
 export const COMPLETION_AUTO_CONFIRM_MS = 24 * 60 * 60 * 1000;
 export const COMPLETION_PENDING_MARKER = "[[COMPLETION_PENDING]]";
@@ -257,7 +258,21 @@ export function createOrderCompleteHelpers({ restUrl, supabaseJson, serviceHeade
       ),
       { headers: serviceHeaders() }
     ).catch(() => []);
-    if (existingTx?.[0]) return { duplicate: true, transaction: existingTx[0] };
+    if (existingTx?.[0]) {
+      let bossCommission = null;
+      try {
+        bossCommission = await settleBossCommissionFromPlatformFee(saved, {
+          platformFeeRate: null,
+          platformFeeAmount: saved.platform_fee,
+          companionIncomeAmount: saved.companion_income,
+          completedAt,
+          method,
+        });
+      } catch (_) {
+        bossCommission = { skipped: true, reason: "boss_commission_error" };
+      }
+      return { duplicate: true, transaction: existingTx[0], bossCommission };
+    }
 
     const cp =
       (
@@ -309,10 +324,33 @@ export function createOrderCompleteHelpers({ restUrl, supabaseJson, serviceHeade
         settlement_note: `MCJ_SETTLEMENT:${JSON.stringify(settlement)}`,
         companion_income: companionNet,
         platform_fee: platformFee,
+        platform_fee_rate: platformRate,
         settlement_status: "settled",
       });
     } catch (_) {}
-    return { duplicate: false, settlement };
+
+    // Boss commission from platform fee — does NOT reduce companionNet.
+    // boss_commission = platform_fee * boss_commission_rate / 100
+    let bossCommission = null;
+    try {
+      bossCommission = await settleBossCommissionFromPlatformFee(saved, {
+        platformFeeRate: platformRate,
+        platformFeeAmount: platformFee,
+        companionIncomeAmount: companionNet,
+        completedAt,
+        method,
+      });
+      if (bossCommission && !bossCommission.skipped && !bossCommission.duplicate) {
+        settlement.bossCommissionRate = bossCommission.calc?.bossCommissionRate;
+        settlement.bossCommissionCatFood = bossCommission.calc?.bossCommissionAmount;
+        settlement.bossCommissionRateSource = bossCommission.rateSource;
+        settlement.companionIncomeUnchanged = true;
+      }
+    } catch (_) {
+      bossCommission = { skipped: true, reason: "boss_commission_error" };
+    }
+
+    return { duplicate: false, settlement, bossCommission };
   }
 
   /**
