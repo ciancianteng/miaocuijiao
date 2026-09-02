@@ -1,0 +1,53 @@
+name: Production smoke companion referral rebate
+
+# Runs only on this promote branch. Uses Vercel Production env (service_role)
+# to seed ephemeral test users, then smokes invite→order→rebate→wallet→withdraw
+# against https://www.meowcuijiao.com. Does not modify application business logic.
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - cursor/prod-promote-cc56689-36a7
+    paths:
+      - .github/workflows/production-smoke-companion-referral.yml
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Pull Production env + run smoke
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_SCOPE: ciancianteng-4581s-projects
+          VERCEL_PROJECT: meow-cuijiao-homepage
+          BASE: https://www.meowcuijiao.com
+          PASS: McjTest@12345678
+          ADMIN_EMAIL: admin@meow.test
+        run: |
+          set -euo pipefail
+          if [ -z "${VERCEL_TOKEN:-}" ]; then
+            echo "::error::VERCEL_TOKEN missing"
+            exit 1
+          fi
+          npm i -g vercel@58.5.1
+          mkdir -p /tmp/prod-smoke
+          echo "y" | vercel link --yes --project "$VERCEL_PROJECT" --scope "$VERCEL_SCOPE" --token "$VERCEL_TOKEN" \
+            >/tmp/prod-smoke/link.out 2>/tmp/prod-smoke/link.err || true
+          vercel env pull /tmp/prod-smoke/.env.production --yes --environment production \
+            --token "$VERCEL_TOKEN" --scope "$VERCEL_SCOPE"
+          # Load only needed keys (do not print secrets)
+          set -a
+          # shellcheck disable=SC1091
+          source /tmp/prod-smoke/.env.production
+          set +a
+          test -n "${SUPABASE_URL:-}"
+          test -n "${SUPABASE_SERVICE_ROLE_KEY:-}"
+          echo "SUPABASE_URL host=$(node -e 'try{console.log(new URL(process.env.SUPABASE_URL).host)}catch{console.log("bad")}')"
+          echo "build-info:"; curl -sS "$BASE/api/build-info"; echo
+          node .github/workflows/_prod-smoke-companion-referral.mjs
