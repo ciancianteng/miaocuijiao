@@ -6,6 +6,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { requireAdmin } from "../_admin-auth.js";
 import {
   adminSearchRelations,
@@ -31,6 +32,35 @@ const MIGRATION_REL = "supabase/migrations/20260901_boss_companion_relations.sql
 const COMMISSION_MIGRATION_REL = "supabase/migrations/20260902_boss_commission_from_platform_fee.sql";
 const LEVELS_MIGRATION_REL = "supabase/migrations/20260903_boss_levels_invites_safeguards.sql";
 const MIGRATION_RELS = [MIGRATION_REL, COMMISSION_MIGRATION_REL, LEVELS_MIGRATION_REL];
+/** Bundled copies under server/api/_sql for Vercel serverless (cwd may omit supabase/). */
+const BUNDLED_SQL_RELS = [
+  "server/api/_sql/20260901_boss_companion_relations.sql",
+  "server/api/_sql/20260902_boss_commission_from_platform_fee.sql",
+  "server/api/_sql/20260903_boss_levels_invites_safeguards.sql",
+];
+
+function resolveMigrationPaths() {
+  const pairs = MIGRATION_RELS.map((rel, i) => [rel, BUNDLED_SQL_RELS[i]]);
+  const found = [];
+  for (const [canonical, bundled] of pairs) {
+    const candidates = [
+      path.join(process.cwd(), canonical),
+      path.join(process.cwd(), bundled),
+      path.join(path.dirname(fileURLToPath(import.meta.url)), "_sql", path.basename(canonical)),
+      path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..", canonical),
+    ];
+    let hit = "";
+    for (const c of candidates) {
+      if (fs.existsSync(c)) {
+        hit = c;
+        break;
+      }
+    }
+    if (!hit) return { ok: false, missing: canonical, found };
+    found.push({ rel: canonical, path: hit });
+  }
+  return { ok: true, found };
+}
 
 function json(res, status, data) {
   if (typeof res.setHeader === "function") {
@@ -85,12 +115,9 @@ function projectRefFromDatabaseUrl(dbUrl) {
 
 function migrationSqlPreview() {
   try {
-    const parts = [];
-    for (const rel of MIGRATION_RELS) {
-      const sqlPath = path.join(process.cwd(), rel);
-      if (fs.existsSync(sqlPath)) parts.push(fs.readFileSync(sqlPath, "utf8"));
-    }
-    return parts.join("\n\n");
+    const resolved = resolveMigrationPaths();
+    if (!resolved.ok) return "";
+    return resolved.found.map((f) => fs.readFileSync(f.path, "utf8")).join("\n\n");
   } catch {
     /* ignore */
   }
@@ -194,12 +221,12 @@ async function ensureMigration(oneshot = {}) {
   }
 
   const parts = [];
-  for (const rel of MIGRATION_RELS) {
-    const sqlPath = path.join(process.cwd(), rel);
-    if (!fs.existsSync(sqlPath)) {
-      return { ok: false, message: `migration 文件不存在：${rel}` };
-    }
-    parts.push(fs.readFileSync(sqlPath, "utf8"));
+  const resolved = resolveMigrationPaths();
+  if (!resolved.ok) {
+    return { ok: false, message: `migration 文件不存在：${resolved.missing}` };
+  }
+  for (const f of resolved.found) {
+    parts.push(fs.readFileSync(f.path, "utf8"));
   }
   const sql = parts.join("\n\n");
 
