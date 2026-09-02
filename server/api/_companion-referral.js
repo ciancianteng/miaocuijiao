@@ -485,6 +485,11 @@ export async function completeReferralWithdraw(userId, amount) {
 }
 
 export function parseWithdrawalReferralAmount(row = {}) {
+  if (row.referral_rebate_withdrawn_amount != null && row.referral_rebate_withdrawn_amount !== "") {
+    const n = Number(row.referral_rebate_withdrawn_amount);
+    return Number.isFinite(n) ? Math.round(n * 100) / 100 : 0;
+  }
+  // Legacy fallback only
   const remark = String(row.remark || row.note || "");
   const m = remark.match(/\[\[WD_ALLOC\]\]([\s\S]*?)\[\[\/WD_ALLOC\]\]/);
   if (!m) return 0;

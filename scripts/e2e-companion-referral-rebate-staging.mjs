@@ -475,24 +475,19 @@ async function main() {
       },
     });
     wdId = wd.json?.item?.id || wd.json?.withdrawal?.id || wd.json?.data?.id || "";
-    fromService = Number(wd.json?.item?.serviceAmount ?? wd.json?.streamAlloc?.serviceAmount ?? 0);
-    fromReferral = Number(wd.json?.item?.referralAmount ?? wd.json?.streamAlloc?.referralAmount ?? 0);
-    // Parse from remark if needed
-    const remark = wd.json?.item?.remark || "";
-    const m = String(remark).match(/\[\[WD_ALLOC\]\]([\s\S]*?)\[\[\/WD_ALLOC\]\]/);
-    if (m) {
-      try {
-        const j = JSON.parse(m[1]);
-        fromService = Number(j.serviceAmount ?? fromService);
-        fromReferral = Number(j.referralAmount ?? fromReferral);
-      } catch {
-        /* ignore */
-      }
-    }
+    fromService = Number(wd.json?.item?.service_income_withdrawn_amount ?? wd.json?.item?.serviceIncomeWithdrawnAmount ?? wd.json?.streamAlloc?.serviceAmount ?? 0);
+    fromReferral = Number(wd.json?.item?.referral_rebate_withdrawn_amount ?? wd.json?.item?.referralRebateWithdrawnAmount ?? wd.json?.streamAlloc?.referralAmount ?? 0);
     step(
       "request_withdrawal_both_streams",
       !!wdId && wd.json?.ok !== false,
       `id=${wdId} amt=${withdrawAmt} service=${fromService} referral=${fromReferral} msg=${wd.json?.message || ""}`
+    );
+    step(
+      "withdrawal_structured_alloc_columns",
+      wd.json?.item?.service_income_withdrawn_amount != null ||
+        wd.json?.item?.serviceIncomeWithdrawnAmount != null ||
+        (fromService > 0 && fromReferral >= 0 && !/WD_ALLOC/.test(String(wd.json?.item?.remark || ""))),
+      `service_col=${wd.json?.item?.service_income_withdrawn_amount ?? wd.json?.item?.serviceIncomeWithdrawnAmount} referral_col=${wd.json?.item?.referral_rebate_withdrawn_amount ?? wd.json?.item?.referralRebateWithdrawnAmount}`
     );
     step(
       "withdrawal_alloc_includes_referral",

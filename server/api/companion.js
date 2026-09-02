@@ -1879,6 +1879,17 @@ async function loadWalletBundle(profile, myOrders = []) {
   };
 }
 function parseWithdrawalStreamAlloc(row = {}) {
+  // Prefer structured columns (admin audit source of truth).
+  const hasServiceCol =
+    row.service_income_withdrawn_amount != null && row.service_income_withdrawn_amount !== "";
+  const hasReferralCol =
+    row.referral_rebate_withdrawn_amount != null && row.referral_rebate_withdrawn_amount !== "";
+  if (hasServiceCol || hasReferralCol) {
+    const serviceAmount = money(row.service_income_withdrawn_amount);
+    const referralAmount = money(row.referral_rebate_withdrawn_amount);
+    return { serviceAmount, referralAmount };
+  }
+  // Legacy fallback only for rows created before stream columns existed.
   const remark = String(row.remark || row.note || "");
   const m = remark.match(/\[\[WD_ALLOC\]\]([\s\S]*?)\[\[\/WD_ALLOC\]\]/);
   if (m) {
@@ -1892,18 +1903,8 @@ function parseWithdrawalStreamAlloc(row = {}) {
       /* fall through */
     }
   }
-  // Legacy rows: entire amount is companion_income stream.
   const total = money(row.cat_food_amount ?? row.amount);
   return { serviceAmount: total, referralAmount: 0 };
-}
-
-function withWithdrawalAllocRemark(remark, alloc) {
-  const base = String(remark || "").replace(/\[\[WD_ALLOC\]\][\s\S]*?\[\[\/WD_ALLOC\]\]/g, "").trim();
-  const tag = `[[WD_ALLOC]]${JSON.stringify({
-    serviceAmount: money(alloc.serviceAmount),
-    referralAmount: money(alloc.referralAmount),
-  })}[[/WD_ALLOC]]`;
-  return base ? `${base}\n${tag}` : tag;
 }
 
 function summaryFrom(myOrders, transactions, withdrawals = []) {
@@ -2854,10 +2855,15 @@ async function viewCompanionWithdrawal(w) {
     ? await signedPrivateDocUrl("finance-receipts", receiptPath)
     : "";
   const statusKey = normalizePayoutStatus(w.status);
+  const stream = parseWithdrawalStreamAlloc(w);
   return {
     id: w.id,
     withdrawalNo: w.withdrawal_no,
     catFoodAmount: money(w.cat_food_amount || w.amount),
+    serviceIncomeWithdrawnAmount: stream.serviceAmount,
+    referralRebateWithdrawnAmount: stream.referralAmount,
+    service_income_withdrawn_amount: stream.serviceAmount,
+    referral_rebate_withdrawn_amount: stream.referralAmount,
     grossAmountRm: money(w.gross_amount_rm),
     feeRm: money(w.fee_rm),
     netAmountRm: money(w.net_amount_rm),
@@ -5880,7 +5886,6 @@ export default async function handler(req, res) {
         () => `WD${String(Date.now()).slice(-6)}`
       );
       const streamAlloc = { serviceAmount: fromService, referralAmount: fromReferral };
-      const remarkWithAlloc = withWithdrawalAllocRemark(remark, streamAlloc);
 
       // Freeze referral stream first (separate wallet). Fail closed before writing withdrawal.
       if (fromReferral > 0) {
@@ -5901,6 +5906,9 @@ export default async function handler(req, res) {
         payment_account_id: full.id,
         amount,
         cat_food_amount: amount,
+        // Structured dual-stream allocation (admin audit — not derived from remark).
+        service_income_withdrawn_amount: fromService,
+        referral_rebate_withdrawn_amount: fromReferral,
         exchange_rate: rate,
         gross_amount_rm: gross,
         fee_rm: fee,
@@ -5910,7 +5918,7 @@ export default async function handler(req, res) {
         account_holder: holder,
         account_number: accountNumber,
         account_last4: last4,
-        remark: remarkWithAlloc,
+        remark: remark || null,
         status: "pending_friday",
         settlement_date: settlementDate,
         source_ledger_ids: [],
@@ -5943,6 +5951,23 @@ export default async function handler(req, res) {
             }
             const m = msg.match(/Could not find the '([^']+)' column/i);
             if (!m || !(m[1] in payload)) throw error;
+            // Stream alloc columns are required for dual-stream withdrawals — fail closed.
+            if (
+              /service_income_withdrawn_amount|referral_rebate_withdrawn_amount/.test(m[1]) &&
+              fromReferral > 0
+            ) {
+              try {
+                await unfreezeReferralForWithdraw(auth.profile.id, fromReferral);
+              } catch {
+                /* best effort */
+              }
+              return json(res, 503, {
+                ok: false,
+                message:
+                  "提现分流字段未就绪，请先执行 supabase/migrations/20260904_companion_referral_rebate.sql（service_income_withdrawn_amount / referral_rebate_withdrawn_amount）",
+                code: "WITHDRAW_STREAM_COLUMNS_MISSING",
+              });
+            }
             delete payload[m[1]];
           }
         }
@@ -5958,6 +5983,19 @@ export default async function handler(req, res) {
         }
         return json(res, 500, { ok: false, message: "提现申请写入失败，请稍后重试" });
       }
+
+      // Ensure API response always exposes structured alloc (even if Prefer representation omitted cols).
+      item = {
+        ...item,
+        service_income_withdrawn_amount:
+          item.service_income_withdrawn_amount != null ? money(item.service_income_withdrawn_amount) : fromService,
+        referral_rebate_withdrawn_amount:
+          item.referral_rebate_withdrawn_amount != null ? money(item.referral_rebate_withdrawn_amount) : fromReferral,
+        serviceIncomeWithdrawnAmount:
+          item.service_income_withdrawn_amount != null ? money(item.service_income_withdrawn_amount) : fromService,
+        referralRebateWithdrawnAmount:
+          item.referral_rebate_withdrawn_amount != null ? money(item.referral_rebate_withdrawn_amount) : fromReferral,
+      };
 
       let freezeTxId = null;
       // companion_income freeze only for the service allocation (unchanged stream semantics).

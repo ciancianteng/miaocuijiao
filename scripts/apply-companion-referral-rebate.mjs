@@ -91,7 +91,15 @@ async function applyViaPg(dbUrl, sql) {
       select to_regclass('public.referral_relations')::text as relations,
              to_regclass('public.referral_commission_rules')::text as rules,
              to_regclass('public.referral_commission_records')::text as records,
-             to_regclass('public.referral_wallets')::text as wallets
+             to_regclass('public.referral_wallets')::text as wallets,
+             (
+               select count(*)::int from information_schema.columns
+               where table_schema = 'public' and table_name = 'companion_withdrawals'
+                 and column_name in (
+                   'service_income_withdrawn_amount',
+                   'referral_rebate_withdrawn_amount'
+                 )
+             ) as withdrawal_stream_cols
     `);
     return check.rows[0];
   } finally {

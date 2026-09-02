@@ -242,3 +242,60 @@ comment on table public.referral_commission_records is
   'Immutable Companion referral rebate ledger per paid/completed Boss order.';
 comment on table public.referral_wallets is
   'Companion referral rebate balances. Never mixed with companion_income transactions or Boss 猫粮/积分.';
+
+-- ---------------------------------------------------------------------------
+-- 5) companion_withdrawals — structured dual-stream allocation (audit)
+--    Do NOT rely on remark text for service vs referral amounts.
+-- ---------------------------------------------------------------------------
+alter table public.companion_withdrawals
+  add column if not exists service_income_withdrawn_amount numeric(12,2);
+
+alter table public.companion_withdrawals
+  add column if not exists referral_rebate_withdrawn_amount numeric(12,2);
+
+-- Backfill legacy rows: entire cat_food_amount is service income
+update public.companion_withdrawals
+set
+  service_income_withdrawn_amount = coalesce(service_income_withdrawn_amount, cat_food_amount, amount, 0),
+  referral_rebate_withdrawn_amount = coalesce(referral_rebate_withdrawn_amount, 0)
+where service_income_withdrawn_amount is null
+   or referral_rebate_withdrawn_amount is null;
+
+alter table public.companion_withdrawals
+  alter column service_income_withdrawn_amount set default 0;
+
+alter table public.companion_withdrawals
+  alter column referral_rebate_withdrawn_amount set default 0;
+
+alter table public.companion_withdrawals
+  alter column service_income_withdrawn_amount set not null;
+
+alter table public.companion_withdrawals
+  alter column referral_rebate_withdrawn_amount set not null;
+
+alter table public.companion_withdrawals
+  drop constraint if exists companion_withdrawals_stream_alloc_nonneg;
+
+alter table public.companion_withdrawals
+  add constraint companion_withdrawals_stream_alloc_nonneg
+  check (
+    service_income_withdrawn_amount >= 0
+    and referral_rebate_withdrawn_amount >= 0
+  );
+
+alter table public.companion_withdrawals
+  drop constraint if exists companion_withdrawals_stream_alloc_sum;
+
+alter table public.companion_withdrawals
+  add constraint companion_withdrawals_stream_alloc_sum
+  check (
+    abs(
+      (service_income_withdrawn_amount + referral_rebate_withdrawn_amount)
+      - coalesce(cat_food_amount, amount, 0)
+    ) < 0.011
+  );
+
+comment on column public.companion_withdrawals.service_income_withdrawn_amount is
+  'Structured allocation: companion_income (service) portion of this withdrawal.';
+comment on column public.companion_withdrawals.referral_rebate_withdrawn_amount is
+  'Structured allocation: referral rebate portion of this withdrawal (referral_wallets).';
