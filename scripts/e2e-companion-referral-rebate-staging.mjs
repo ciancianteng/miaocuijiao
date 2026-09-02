@@ -405,8 +405,11 @@ async function main() {
   const serviceId = uid(serviceLogin.json);
   step("service_companion_login", !!(serviceToken && serviceId), serviceId || serviceLogin.json?.message || "");
 
-  // Order amount: rebate = platformFee(20%) * 5% = 1% of order. Need >= min withdraw 50 → amount 5000.
-  const orderAmount = Number(process.env.ORDER_AMOUNT || 5000);
+  // Catalog unit price for this companion is RM30 — scale hours for rebate >= min withdraw 50
+  // rebate ≈ order*20%*5% = order*1% → need order >= 5000 → hours >= 167
+  const unitPrice = Number(process.env.UNIT_PRICE || 30);
+  const hours = Number(process.env.ORDER_HOURS || 200);
+  const orderAmount = Number(process.env.ORDER_AMOUNT || unitPrice * hours);
   const place = await api("/api/orders", {
     method: "POST",
     token: invitedBoss.token,
@@ -418,8 +421,8 @@ async function main() {
       game: "VALORANT",
       gameId: "REF-E2E-" + stamp,
       game_id: "REF-E2E-" + stamp,
-      unitPrice: orderAmount,
-      hours: 1,
+      unitPrice,
+      hours,
       quantity: 1,
       totalAmount: orderAmount,
       paymentMethod: "duitnow",
@@ -428,7 +431,7 @@ async function main() {
     },
   });
   const orderId = place.json?.order?.id || "";
-  step("place_boss_order", !!orderId, orderId || place.json?.message || "");
+  step("place_boss_order", !!orderId, orderId || place.json?.message || `unit=${unitPrice} hours=${hours}`);
 
   if (orderId) {
     await api("/api/orders", {
