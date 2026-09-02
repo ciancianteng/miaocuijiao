@@ -420,11 +420,13 @@ async function main() {
       serviceType: "VALORANT",
       service: "VALORANT",
       game: "VALORANT",
+      gameId: "REF-E2E-" + stamp,
+      game_id: "REF-E2E-" + stamp,
       unitPrice: orderAmount,
       hours: 1,
       quantity: 1,
       totalAmount: orderAmount,
-      paymentMethod: "tng",
+      paymentMethod: "duitnow",
       notes: "REFERRAL-REBATE-E2E",
       idempotencyKey: "ref-rebate-" + stamp,
     },
@@ -436,7 +438,7 @@ async function main() {
     await api("/api/orders", {
       method: "POST",
       token: invitedBoss.token,
-      body: { action: "submit_payment_proof", id: orderId, proofDataUrl: PNG, paymentMethod: "tng" },
+      body: { action: "submit_payment_proof", id: orderId, proofDataUrl: PNG, paymentMethod: "duitnow" },
     });
 
     const csLogin = await api("/api/customer-service", {
