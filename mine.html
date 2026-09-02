@@ -8,87 +8,154 @@
   <link rel="stylesheet" href="src/style.css">
   <link rel="stylesheet" href="src/boss-header.css">
   <style>
-    body{background:#08070a;color:#fff}.boss-shell{width:min(920px,calc(100% - 32px));margin:0 auto;padding:26px 0 76px}.account-card,.empty-card{border:1px solid rgba(255,255,255,.1);border-radius:18px;background:rgba(255,255,255,.045);padding:22px}.account-head{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-bottom:18px}.profile-main{display:flex;align-items:center;gap:16px;min-width:0}.avatar{width:74px;height:74px;border-radius:18px;border:1px solid rgba(255,143,197,.28);background:rgba(255,143,197,.12);display:grid;place-items:center;overflow:hidden;color:#ffd6e7;font-weight:1000;font-size:24px}.avatar img{width:100%;height:100%;object-fit:cover}.profile-title h1{margin:0;font-size:26px}.profile-title p{margin:6px 0 0;color:#9ca3af}.info-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}.info-item{border:1px solid rgba(255,255,255,.08);border-radius:12px;background:rgba(0,0,0,.18);padding:13px}.info-item span{display:block;color:#9ca3af;font-size:12px}.info-item strong{display:block;margin-top:5px;color:#fff;word-break:break-word}.action-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}.boss-btn{border:1px solid rgba(255,143,197,.36);border-radius:12px;background:rgba(255,143,197,.13);color:#fff;padding:10px 14px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center}.boss-btn.ghost{border-color:rgba(255,255,255,.12);background:rgba(255,255,255,.055)}.modal{position:fixed;inset:0;background:rgba(0,0,0,.68);display:none;align-items:center;justify-content:center;padding:18px;z-index:40}.modal.open{display:flex}.modal-box{width:min(520px,100%);border:1px solid rgba(255,143,197,.26);border-radius:18px;background:#111014;padding:20px}.modal-head{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:12px}.modal-head h2{margin:0}.close{width:36px;height:36px;border:1px solid rgba(255,255,255,.12);border-radius:10px;background:rgba(255,255,255,.06);color:#fff;cursor:pointer}.form-grid{display:grid;gap:12px}.form-grid label{display:grid;gap:7px;color:#ffd6e7;font-weight:800}.form-grid input{height:42px;border:1px solid rgba(255,255,255,.12);border-radius:10px;background:rgba(0,0,0,.24);color:#fff;padding:0 12px}.state{margin-top:10px;color:#ffb9d6;min-height:20px}@media(max-width:720px){.account-head{align-items:flex-start;flex-direction:column}.info-grid{grid-template-columns:1fr}.boss-btn{width:100%}}
-  
-    /* Page-scoped: ghost/account actions must not look disabled */
-    .boss-btn:not(:disabled){opacity:1;cursor:pointer}
-    .boss-btn.ghost:not(:disabled){
-      border:1px solid rgba(255,158,207,.55);
-      background:rgba(255,143,197,.14);
-      color:#ffe6f2;
-      opacity:1;
-      cursor:pointer;
-      box-shadow:inset 0 1px 0 rgba(255,255,255,.08);
+    :root{
+      --mine-bg:#050406;
+      --mine-card:#111015;
+      --mine-line:rgba(255,255,255,.07);
+      --mine-pink:#ff8fc5;
+      --mine-pink-soft:rgba(255,143,197,.14);
+      --mine-text:#f7f5fa;
+      --mine-muted:rgba(255,255,255,.52);
     }
-    .boss-btn.ghost:not(:disabled):hover{border-color:rgba(255,212,230,.8);filter:brightness(1.06)}
-    .boss-btn:disabled,.boss-btn.is-disabled{
-      opacity:.45!important;cursor:not-allowed!important;filter:saturate(.5);
-      background:rgba(255,255,255,.06)!important;border-color:rgba(255,255,255,.12)!important;color:#9ca3af!important;box-shadow:none!important;
+    body{background:var(--mine-bg);color:var(--mine-text)}
+    .boss-shell{width:min(420px,calc(100% - 32px));margin:0 auto;padding:22px 0 110px;box-sizing:border-box}
+    .empty-card{border:1px solid var(--mine-line);border-radius:24px;background:var(--mine-card);padding:28px 22px}
+    .empty-card h1{margin:0 0 8px;font-size:22px}
+    .empty-card p{margin:0 0 16px;color:var(--mine-muted);line-height:1.5}
+
+    /* Flat profile row — no info-grid boxes */
+    .profile-hero{
+      display:flex;align-items:center;gap:16px;
+      padding:8px 4px 28px;margin:0;
+      border:0;background:transparent;
     }
-    .review-tip{
-      margin:0 0 14px;padding:12px 14px;border:1px solid rgba(255,143,197,.35);
-      border-radius:14px;background:rgba(255,143,197,.1);color:#ffd6e7;
-      display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;
+    .avatar{
+      width:72px;height:72px;flex:0 0 72px;border-radius:22px;
+      border:0;background:rgba(255,143,197,.12);
+      display:grid;place-items:center;overflow:hidden;color:#ffd6e7;font-weight:900;font-size:28px;
     }
-    .review-tip p{margin:0;font-size:14px;line-height:1.45}
-    .review-tip .tip-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-    .review-tip .tip-link{
-      border:0;background:transparent;color:#ffe6f2;font-weight:800;cursor:pointer;
-      text-decoration:underline;padding:0;font:inherit;
-    }
-    .review-tip .tip-dismiss{
-      width:32px;height:32px;border:1px solid rgba(255,255,255,.14);border-radius:10px;
-      background:rgba(255,255,255,.06);color:#fff;cursor:pointer;
+    .avatar img{width:100%;height:100%;object-fit:cover}
+    .profile-meta{min-width:0;flex:1}
+    .profile-meta h1{margin:0;font-size:26px;line-height:1.15;letter-spacing:.01em;font-weight:800}
+    .profile-meta p{margin:8px 0 0;color:var(--mine-muted);font-size:13px;line-height:1.45}
+    .profile-balance{margin:0;color:rgba(255,214,231,.9);font-size:13px;font-weight:700}
+    .profile-edit{
+      flex:0 0 auto;height:40px;padding:0 16px;border-radius:999px;
+      border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);
+      color:var(--mine-text);font:inherit;font-size:13px;font-weight:700;cursor:pointer;
     }
 
-    /* Action accordion — keep profile card, collapse action groups */
-    .mine-stack{display:grid;gap:10px;margin-top:16px}
+    /* Large dark accordion cards — pink accent on chevron only */
+    .mine-stack{display:grid;gap:16px;margin-top:2px}
     .mine-acc{
-      border:1px solid rgba(255,255,255,.12);border-radius:14px;background:rgba(0,0,0,.35);
+      border:1px solid var(--mine-line);
+      border-radius:24px;
+      background:linear-gradient(180deg,rgba(255,255,255,.035),rgba(255,255,255,.015));
+      background-color:var(--mine-card);
       overflow:hidden;
+      box-shadow:0 14px 36px rgba(0,0,0,.32);
     }
     .mine-acc-trigger{
-      width:100%;display:flex;align-items:center;justify-content:space-between;gap:12px;
-      min-height:50px;padding:13px 14px;border:0;background:transparent;color:#fff;
-      font:inherit;font-weight:800;font-size:15px;text-align:left;cursor:pointer;
+      width:100%;display:flex;align-items:center;justify-content:space-between;gap:16px;
+      min-height:76px;padding:22px 22px;border:0;background:transparent;color:var(--mine-text);
+      font:inherit;font-weight:800;font-size:17px;letter-spacing:.01em;text-align:left;cursor:pointer;
       -webkit-tap-highlight-color:transparent;
     }
-    .mine-acc-trigger:focus-visible{outline:2px solid rgba(255,143,197,.55);outline-offset:-2px}
-    .mine-acc-title{min-width:0;word-break:break-word}
+    .mine-acc-trigger:focus-visible{outline:2px solid rgba(255,143,197,.4);outline-offset:-3px}
+    .mine-acc-title{min-width:0}
     .mine-acc-chevron{
-      flex:0 0 22px;width:22px;height:22px;border-radius:999px;
-      border:1px solid rgba(255,143,197,.4);background:rgba(0,0,0,.25);
+      flex:0 0 30px;width:30px;height:30px;border-radius:999px;
+      border:1px solid rgba(255,143,197,.32);background:var(--mine-pink-soft);
       display:grid;place-items:center;transition:transform .2s ease;
     }
     .mine-acc-chevron::before{
-      content:"";width:7px;height:7px;border-right:2px solid #ffd6e7;border-bottom:2px solid #ffd6e7;
+      content:"";width:8px;height:8px;border-right:2px solid #ffd6e7;border-bottom:2px solid #ffd6e7;
       transform:rotate(45deg) translate(-1px,-1px);
     }
-    .mine-acc.is-open .mine-acc-chevron{transform:rotate(180deg);border-color:rgba(255,212,230,.6)}
-    .mine-acc-panel{display:none;border-top:1px solid rgba(255,255,255,.08)}
-    .mine-acc.is-open .mine-acc-panel{display:block}
-    .mine-acc-body{padding:12px 14px 14px}
-    .mine-acc-body .action-row{margin-top:0;display:grid;gap:10px}
-    .mine-acc-body .boss-btn{width:100%}
-    .mine-logout-wrap{margin-top:14px}
-    /* Dark buttons, pink outline only (no pink fill) */
-    .boss-btn{
-      border:1px solid rgba(255,158,207,.55)!important;
-      background:rgba(0,0,0,.45)!important;
-      color:#ffe6f2!important;
-      box-shadow:none!important;
-    }
-    .boss-btn.ghost,.boss-btn.ghost:not(:disabled){
-      border:1px solid rgba(255,158,207,.55)!important;
-      background:rgba(0,0,0,.45)!important;
-      color:#ffe6f2!important;
-    }
-    .boss-btn:not(:disabled):hover,.boss-btn.ghost:not(:disabled):hover{
-      border-color:rgba(255,212,230,.85)!important;filter:brightness(1.08);
-      background:rgba(255,143,197,.08)!important;
-    }
+    .mine-acc.is-open .mine-acc-chevron{transform:rotate(180deg)}
+    .mine-acc-panel{display:none}
+    .mine-acc.is-open .mine-acc-panel{display:block;border-top:1px solid var(--mine-line)}
+    .mine-acc-body{padding:8px 12px 14px}
 
-</style>
+    /* Flat list rows — no nested boxes */
+    .mine-link{
+      display:flex;align-items:center;justify-content:space-between;gap:12px;
+      width:100%;min-height:56px;padding:16px 12px;margin:0;
+      border:0;border-radius:14px;background:transparent;
+      color:var(--mine-text);font:inherit;font-size:16px;font-weight:650;
+      text-decoration:none;cursor:pointer;text-align:left;box-sizing:border-box;
+    }
+    .mine-link:hover,.mine-link:active{background:rgba(255,255,255,.04)}
+    .mine-link::after{
+      content:"";width:7px;height:7px;flex:0 0 7px;
+      border-right:2px solid rgba(255,255,255,.26);border-bottom:2px solid rgba(255,255,255,.26);
+      transform:rotate(-45deg);
+    }
+    .mine-link-note{display:block;margin:0 12px 12px;color:var(--mine-muted);font-size:12px;line-height:1.5}
+
+    /* Flatten account-security when nested in accordion */
+    #bossAccountSecurity{padding:4px 8px 10px}
+    #bossAccountSecurity .mcj-account-security{
+      margin:0!important;padding:0!important;border:0!important;background:transparent!important;border-radius:0!important;
+    }
+    #bossAccountSecurity .mcj-account-security > h3{display:none}
+    #bossAccountSecurity .mcj-sec-grid{display:grid;gap:0;grid-template-columns:1fr!important}
+    #bossAccountSecurity .mcj-sec-grid div{
+      padding:14px 12px!important;border:0!important;border-radius:0!important;background:transparent!important;
+      border-bottom:1px solid var(--mine-line)!important;
+    }
+    #bossAccountSecurity .mcj-sec-grid div:last-child{border-bottom:0!important}
+    #bossAccountSecurity .mcj-sec-form button,
+    #bossAccountSecurity .mcj-sec-actions button{
+      border:1px solid rgba(255,255,255,.12)!important;
+      background:rgba(255,255,255,.05)!important;
+      color:var(--mine-text)!important;
+      border-radius:14px!important;min-height:46px!important;
+    }
+    #bossAccountSecurity .mcj-sec-link{
+      border:0!important;background:transparent!important;min-height:48px!important;
+      justify-content:flex-start;padding:12px!important;width:100%;
+    }
+    #bossAccountSecurity .mcj-sec-actions{display:grid;gap:4px;margin-top:8px}
+
+    .mine-logout-wrap{margin-top:28px}
+    .mine-logout{
+      width:100%;min-height:56px;border-radius:18px;
+      border:1px solid var(--mine-line);background:transparent;
+      color:var(--mine-muted);font:inherit;font-size:15px;font-weight:700;cursor:pointer;
+    }
+    .mine-logout:hover{color:#ffd6e7;border-color:rgba(255,255,255,.16)}
+
+    .boss-btn{
+      border:1px solid rgba(255,255,255,.14);border-radius:14px;background:rgba(255,255,255,.05);
+      color:#fff;min-height:44px;padding:10px 14px;cursor:pointer;
+      display:inline-flex;align-items:center;justify-content:center;text-decoration:none;
+    }
+    .boss-btn.ghost{background:transparent}
+    .modal{position:fixed;inset:0;background:rgba(0,0,0,.72);display:none;align-items:center;justify-content:center;padding:18px;z-index:40}
+    .modal.open{display:flex}
+    .modal-box{width:min(520px,100%);border:1px solid rgba(255,255,255,.1);border-radius:20px;background:#121016;padding:20px;box-sizing:border-box}
+    .modal-head{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:12px}
+    .modal-head h2{margin:0;font-size:18px}
+    .close{width:36px;height:36px;border:1px solid rgba(255,255,255,.12);border-radius:10px;background:rgba(255,255,255,.06);color:#fff;cursor:pointer}
+    .form-grid{display:grid;gap:12px}
+    .form-grid label{display:grid;gap:7px;color:#ffd6e7;font-weight:700;font-size:13px}
+    .form-grid input{height:44px;border:1px solid rgba(255,255,255,.12);border-radius:12px;background:rgba(0,0,0,.28);color:#fff;padding:0 12px}
+    .state{margin-top:10px;color:#ffb9d6;min-height:20px}
+    .review-tip{
+      margin:0 0 18px;padding:14px 16px;border:1px solid rgba(255,143,197,.22);
+      border-radius:18px;background:rgba(255,143,197,.07);color:#ffd6e7;
+      display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;
+    }
+    .review-tip p{margin:0;font-size:14px;line-height:1.45}
+    .review-tip .tip-actions{display:flex;gap:8px;align-items:center}
+    .review-tip .tip-link{border:0;background:transparent;color:#ffe6f2;font-weight:800;cursor:pointer;text-decoration:underline;padding:0;font:inherit}
+    .review-tip .tip-dismiss{width:32px;height:32px;border:1px solid rgba(255,255,255,.12);border-radius:10px;background:rgba(255,255,255,.05);color:#fff;cursor:pointer}
+    @media(max-width:720px){
+      .boss-shell{width:calc(100% - 28px);padding:18px 0 112px}
+      .mine-acc-trigger{min-height:72px;padding:20px 20px;font-size:16px}
+    }
+  </style>
 </head>
 <body>
   <header class="topbar"><a class="brand" href="index.html"><img src="assets/meow-cuijiao-brand.jpg" alt="MEOW CUI JIAO"><span>MEOW CUI JIAO</span></a><nav class="boss-nav"><a href="index.html">首页</a><a href="companion-center.html">陪玩大厅</a><a href="orders.html">我的订单</a><a href="support.html?start=1">在线客服</a></nav></header>
@@ -168,30 +235,38 @@ function paint(){
         if(state.error){root.innerHTML='<section class="empty-card"><h1>账号资料读取失败</h1><p style="color:#ffb9d6">'+esc(state.error)+'</p><button class="boss-btn" data-refresh>重试</button></section>';return}
         var u=state.user||{};
         var publicUid=u.bossUid||u.boss_uid||u.uid||'-';
-        var techHtml=(location.hostname==='127.0.0.1'||location.hostname==='localhost')?'<details class="info-item" style="grid-column:1/-1"><summary style="cursor:pointer;color:#9ca3af;font-size:12px">技术信息（开发环境）</summary><strong style="display:block;margin-top:8px;word-break:break-all">内部 UUID：'+esc(u.id||'-')+'</strong></details>':'';
         var wallet=state.wallet||{};
         var totalBal=wallet.totalBalance!=null?wallet.totalBalance:(wallet.balance!=null?wallet.balance:'-');
         var paidBal=wallet.paidBalance!=null?wallet.paidBalance:'-';
         var bonusBal=wallet.bonusBalance!=null?wallet.bonusBalance:'-';
-        var setHint=u.hasPassword===true||u.has_password===true?'':'<p style="margin:12px 0 0;color:#fbbf24;font-size:13px">提示：建议设置登录密码，便于下次邮箱+密码登录（不强制）。</p>';
+        var setHint=u.hasPassword===true||u.has_password===true?'':'建议设置登录密码，便于下次邮箱+密码登录（不强制）。';
         var tipHtml=state.pendingReviewTipId
           ?('<div class="review-tip" role="status"><p>您有订单还未评价陪玩</p><div class="tip-actions"><button class="tip-link" type="button" data-open-pending-review>去评价</button><button class="tip-dismiss" type="button" data-dismiss-review-tip aria-label="关闭">×</button></div></div>')
           :'';
-        root.innerHTML=tipHtml+'<section class="account-card"><div class="account-head"><div class="profile-main"><div class="avatar">'+avatarHtml(u)+'</div><div class="profile-title"><h1>'+esc(u.displayName||'老板账号')+'</h1><p>我的账号'+(u.hasCompanion?' · 多角色':'')+'</p></div></div><button class="boss-btn" data-edit type="button">编辑资料</button></div><div class="info-grid"><div class="info-item"><span>老板 UID</span><strong>'+esc(publicUid)+'</strong></div><div class="info-item"><span>User ID</span><strong style="font-size:12px;word-break:break-all">'+esc(u.id||'-')+'</strong></div><div class="info-item"><span>角色</span><strong>'+esc((u.hasBoss?'老板':'')+(u.hasBoss&&u.hasCompanion?' + ':'')+(u.hasCompanion?'陪玩':(!u.hasBoss&&!u.hasCompanion?(u.role||'-'):'')))+'</strong></div><div class="info-item"><span>总猫粮</span><strong>'+esc(totalBal)+'</strong></div><div class="info-item"><span>充值猫粮</span><strong>'+esc(paidBal)+'</strong></div><div class="info-item"><span>赠送猫粮</span><strong>'+esc(bonusBal)+'</strong></div><div class="info-item"><span>邮箱</span><strong>'+esc(u.email||'-')+'</strong></div><div class="info-item"><span>手机号</span><strong>'+esc(u.phone||'-')+'</strong></div><div class="info-item"><span>注册时间</span><strong>'+esc(date(u.createdAt))+'</strong></div><div class="info-item"><span>账号状态</span><strong>'+esc(statusText(u.status))+'</strong></div>'+techHtml+'</div>'+setHint+
+        root.innerHTML=tipHtml+
+          '<section class="profile-hero">'+
+            '<div class="avatar">'+avatarHtml(u)+'</div>'+
+            '<div class="profile-meta">'+
+              '<h1>'+esc(u.displayName||'老板账号')+'</h1>'+
+              '<p>UID '+esc(publicUid)+(u.hasCompanion?' · 多角色':'')+'</p>'+
+              '<p class="profile-balance">猫粮 '+esc(totalBal)+'</p>'+
+            '</div>'+
+            '<button class="profile-edit" data-edit type="button">编辑</button>'+
+          '</section>'+
+          (setHint?'<p style="margin:0 0 18px;color:#fbbf24;font-size:12px;line-height:1.45">'+esc(setHint)+'</p>':'')+
           '<div class="mine-stack">'+
           accordion('recharge','充值中心 / 钱包流水',
-            '<div class="action-row"><a class="boss-btn ghost" href="recharge.html">进入充值中心 / 钱包流水</a></div>')+
+            '<a class="mine-link" href="recharge.html">进入充值与流水</a>'+
+            '<span class="mine-link-note">充值猫粮 '+esc(paidBal)+' · 赠送 '+esc(bonusBal)+'</span>')+
           accordion('orders','订单与服务',
-            '<div class="action-row">'+
-            '<a class="boss-btn ghost" href="orders.html">查看我的订单</a>'+
-            '<a class="boss-btn ghost" href="support.html">联系客服</a>'+
+            '<a class="mine-link" href="orders.html">查看我的订单</a>'+
+            '<a class="mine-link" href="support.html">联系客服</a>'+
             (u.hasCompanion
-              ?'<button class="boss-btn ghost" type="button" data-switch-portal="companion">切换到陪玩端</button>'
-              :'<a class="boss-btn ghost" href="companion-apply.html">申请成为陪玩</a>')+
-            '</div>')+
+              ?'<button class="mine-link" type="button" data-switch-portal="companion">切换到陪玩端</button>'
+              :'<a class="mine-link" href="companion-apply.html">申请成为陪玩</a>'))+
           accordion('security','账号安全','<div id="bossAccountSecurity"></div>')+
           '</div>'+
-          '<div class="mine-logout-wrap"><button class="boss-btn ghost" type="button" data-logout style="width:100%">退出登录</button></div></section>';
+          '<div class="mine-logout-wrap"><button class="mine-logout" type="button" data-logout>退出登录</button></div>';
         if(window.MCJAccountSecurity){
           window.MCJAccountSecurity.mount('#bossAccountSecurity',u,{role:'boss',passwordHint:state.passwordHint,onUpdated:function(data){if(data&&data.user)state.user=data.user;paint();}});
         }
