@@ -1933,7 +1933,7 @@
     if(Auth&&Auth.bindPasswordToggles)Auth.bindPasswordToggles(root);
     if(Auth&&Auth.prepareAuthForm)Auth.prepareAuthForm(root,{clearAccount:!state.loginError&&!state.loginBusy,keepErrors:!!state.loginError});
   }
-  function title(){return ({dashboard:'工作台',hall:'抢单大厅',orders:'我的订单',earnings:'收益中心',wallet:'收益中心',profile:isIsolationMode()?'申请资料':'我的资料（公开）',account:isIsolationMode()?'账号资料':'账号中心（隐私）',mine:'账号中心（隐私）',withdraw:'提现',messages:'消息中心',settings:'设置',popularity:'我的人气',rules:'陪玩规则','review-status':'审核状态'})[state.route]||'陪玩端'}
+  function title(){return ({dashboard:'工作台',hall:'抢单大厅',orders:'我的订单',earnings:'收益中心',wallet:'收益中心',profile:isIsolationMode()?'申请资料':'编辑公开资料',account:isIsolationMode()?'账号资料':'账号中心（隐私）',mine:'账号中心（隐私）',withdraw:'提现',messages:'消息中心',settings:'设置',popularity:'我的人气',rules:'陪玩规则','review-status':'审核状态'})[state.route]||'陪玩端'}
   function maintenanceHtml(name){return '<div class="pw-page-head"><div><h2>'+esc(name||'模块已合并')+'</h2><p>该模块已合并到工作台其他页面，请从工作台进入相应功能。</p></div><button class="pw-btn primary" type="button" data-route="/companion/dashboard">返回工作台</button></div>'}
   function bottomNavHtml(){
     var items=isIsolationMode()?ISOLATION_BOTTOM_NAV:BOTTOM_NAV;
@@ -2893,12 +2893,6 @@
       '<section class="pw-card pad" style="margin-top:14px"><h3>声音</h3><label class="pw-check"><input type="checkbox" data-setting="sound" '+(s.sound?'checked':'')+'> 提示音（新消息 / 订单 / 抢单 / 审核）</label></section>'+
       '<section class="pw-card pad" style="margin-top:14px"><h3>账号</h3><button class="pw-btn danger" type="button" data-logout>退出登录</button></section>';
   }
-  function reviewStars(rating){
-    var n=Math.max(0,Math.min(5,Math.round(Number(rating)||0)));
-    var out='';
-    for(var i=0;i<5;i++)out+=i<n?'★':'☆';
-    return out;
-  }
   function fieldErr(name){var msg=state.profileErrors&&state.profileErrors[name];return msg?'<span class="pw-field-error" data-field-error="'+esc(name)+'">'+esc(msg)+'</span>':''}
   function fieldLabel(text,required){return '<span class="pw-field-label">'+esc(text)+(required?'<i class="pw-req">*</i>':'')+'</span>'}
 
@@ -3192,7 +3186,7 @@
     }).join(''):'';
     var galleryHtml=""; // rendered via pwGalleryUploadHtml
     var previewId=encodeURIComponent(p.id||p.uid||'');
-    return '<div class="pw-page-head"><div><h2>我的资料（公开）</h2><p>老板可见。联系方式 / 身份证 / 押金 / 收款请到「账号中心」。</p></div><div class="pw-actions">'+
+    return '<div class="pw-page-head"><div><h2>编辑公开资料</h2><p>仅编辑老板可见的可填写字段。在线状态 / 收藏 / 评价 / 订单摘要请点「预览老板端展示」查看。</p></div><div class="pw-actions">'+
       (previewId?'<a class="pw-btn" href="/profile.html?player='+previewId+'" target="_blank" rel="noopener">预览老板端展示</a>':'')+
       '<button class="pw-btn" type="button" data-route="/companion/account">账号中心</button>'+
       '</div></div>'+
@@ -3249,32 +3243,8 @@
       pwVoiceUploadHtml(p,raw,uploadBusy)+
       fieldErr('voice')+
       '</div>'+
-      '<div class="pw-field">'+fieldLabel('在线状态',false)+'<p class="pw-field-hint">当前：'+esc((STATUS_META[currentOnlineStatus()]||{}).label||'离线')+'（只读，审核通过后可在工作台切换）</p></div>'+
-      (function(){
-        var reviews=(state.data&&state.data.reviews)||[];
-        var fav=num((state.data&&state.data.summary&&state.data.summary.favorites)||p.favorites||0);
-        var list=reviews.slice(0,8).map(function(r){
-          var code=String(r.bossCode||r.bossUid||'').trim();
-          if(!code||/@/.test(code)||/^[0-9a-f-]{20,}$/i.test(code))code='';
-          var bossLabel=code||String(r.bossName||'').replace(/^老板\s*/,'')||'老板';
-          if(code&&bossLabel.indexOf('MCJ')===-1&&!/^老板/.test(bossLabel))bossLabel=code;
-          if(code)bossLabel=code;
-          var orderLabel=String(r.orderNo||r.orderId||'').trim();
-          var gameLabel=String(r.gameName||r.game||'').trim()||'-';
-          return '<article class="pw-review-card">'+
-            '<p class="pw-review-stars">'+reviewStars(r.rating)+'</p>'+
-            '<p class="pw-review-name"><span class="pw-review-avatar">'+(bossLabel.slice(0,1)||'匿')+'</span><span>'+esc(bossLabel)+'</span></p>'+
-            '<p class="pw-review-body">'+esc(r.content||'无文字评价')+'</p>'+
-            '<p class="pw-review-meta">订单 '+esc(orderLabel||'-')+' · '+esc(gameLabel)+'</p>'+
-            '<p class="pw-review-date">'+esc(fmtTime(r.createdAt||r.date))+'</p>'+
-            '</article>';
-        }).join('');
-        return '<div class="pw-field"><span class="pw-field-label">评价 / 收藏（公开只读）</span>'+
-          '<div class="pw-info-list" style="margin-bottom:10px"><div><span>收藏数</span><strong>'+esc(fav)+'</strong></div></div>'+
-          (list?'<div class="pw-review-list">'+list+'</div>':'<div class="pw-empty tiny">暂无真实订单评价</div>')+
-          '</div>';
-      })()+
       '</section>'+
+      '<p class="pw-field-hint" style="margin:0 0 12px">在线状态、收藏、评价与完成订单等公开只读信息请在「预览老板端展示」查看；接单状态请在工作台切换。</p>'+
       '<button class="pw-btn primary" type="submit">保存公开资料</button>'+
       '</form>';
   }
