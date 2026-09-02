@@ -30,6 +30,7 @@ jobs:
           BASE: https://www.meowcuijiao.com
           PASS: McjTest@12345678
           ADMIN_EMAIL: admin@meow.test
+          PRODUCTION_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.PRODUCTION_SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           set -euo pipefail
           if [ -z "${VERCEL_TOKEN:-}" ]; then
@@ -83,7 +84,8 @@ jobs:
           }
           console.log("live host", new URL(liveUrl).host);
 
-          let key = String(env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
+          let key = String(process.env.PRODUCTION_SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
+          console.log("rawFileBytes", raw.length, "literalSensitive", raw.includes("SENSITIVE"), "literalBracket", raw.includes("["));
           // If env-pull value looks corrupted/redacted, decode from raw base64 line scan
           if (!key || key.length < 20 || key.startsWith("[")) {
             const decoded = Buffer.from(fs.readFileSync("/tmp/prod-smoke/env.b64", "utf8"), "base64").toString("utf8");
