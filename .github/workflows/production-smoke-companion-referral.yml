@@ -53,18 +53,43 @@ jobs:
             const k = t.slice(0, i).trim();
             let v = t.slice(i + 1).trim();
             if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) v = v.slice(1, -1);
+            // Vercel sometimes writes JSON-escaped values
+            v = v.replace(/\\n/g, "\n").replace(/\\"/g, '"');
             env[k] = v;
           }
-          const url = env.SUPABASE_URL || env.VITE_SUPABASE_URL || "";
+          const urlRaw = env.SUPABASE_URL || env.VITE_SUPABASE_URL || "";
           const key = env.SUPABASE_SERVICE_ROLE_KEY || "";
+          const url = String(urlRaw || "").trim().replace(/^['"]|['"]$/g, "");
+          console.log(
+            "env debug:",
+            "keys=",
+            Object.keys(env).filter((k) => /SUPABASE|DATABASE|URL|POSTGRES/i.test(k)).sort().join(","),
+            "urlLen=",
+            url.length,
+            "urlHasHttp=",
+            /^https?:\/\//i.test(url),
+            "urlCode0=",
+            url ? url.charCodeAt(0) : -1,
+            "keyLen=",
+            key.length
+          );
           if (!url || !key) {
             console.error("Missing SUPABASE_URL/VITE_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in Production env pull");
-            console.error("keys present:", Object.keys(env).filter((k) => /SUPABASE|DATABASE|URL/i.test(k)).join(", "));
             process.exit(1);
           }
           let host = "bad";
-          try { host = new URL(url).host; } catch {}
+          try {
+            host = new URL(url).host;
+          } catch (e) {
+            console.error("URL parse failed; prefix=", JSON.stringify(url.slice(0, 12)));
+            process.exit(1);
+          }
           console.log("SUPABASE_URL host=" + host);
+          // Refuse if Production env somehow points at Staging project
+          if (host.startsWith("cfccwysniduwkjskiqgy")) {
+            console.error("Refusing Staging Supabase host in Production env pull");
+            process.exit(1);
+          }
           fs.writeFileSync(
             "/tmp/prod-smoke/smoke.env.json",
             JSON.stringify({ SUPABASE_URL: url, SUPABASE_SERVICE_ROLE_KEY: key })

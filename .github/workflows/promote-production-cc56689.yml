@@ -6,6 +6,8 @@ on:
   push:
     branches:
       - cursor/prod-promote-cc56689-36a7
+    paths:
+      - .github/workflows/promote-production-cc56689.yml
   workflow_dispatch:
 
 permissions:
