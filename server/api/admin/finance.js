@@ -35,6 +35,11 @@ import {
 } from "../_account-codes.js";
 import { exportCsv as exportPaymentReceiptsCsv, listPaidForAdmin, listPendingForAdmin, listRejectedForAdmin, enrichReceiptAudit, approveAndLedger, rejectProof, staffReviewerNameFromProfile, stripReviewStaffMark } from "../_payment-receipts.js";
 import { normalizeAdminRole } from "../_admin-auth.js";
+import {
+  completeReferralWithdraw,
+  parseWithdrawalReferralAmount,
+  unfreezeReferralForWithdraw,
+} from "../_companion-referral.js";
 
 const FINANCE_BUCKET = "finance-receipts";
 const FINANCE_ROLES = new Set(["admin", "super_admin", "finance_admin"]);
@@ -334,6 +339,21 @@ function viewWithdraw(row, profile = {}, account = {}, adminMap = {}, companionE
     { display_name: companionExtra.nickname || profile.display_name, email: profile.email },
     companionCode || "-"
   );
+  const totalCat = money(row.cat_food_amount);
+  const hasServiceCol =
+    row.service_income_withdrawn_amount != null && row.service_income_withdrawn_amount !== "";
+  const hasReferralCol =
+    row.referral_rebate_withdrawn_amount != null && row.referral_rebate_withdrawn_amount !== "";
+  let serviceIncomeWithdrawnAmount = hasServiceCol ? money(row.service_income_withdrawn_amount) : totalCat;
+  let referralRebateWithdrawnAmount = hasReferralCol ? money(row.referral_rebate_withdrawn_amount) : 0;
+  if (!hasServiceCol && !hasReferralCol) {
+    // Legacy remark fallback only when columns absent
+    const referralFromLegacy = parseWithdrawalReferralAmount(row);
+    if (referralFromLegacy > 0) {
+      referralRebateWithdrawnAmount = referralFromLegacy;
+      serviceIncomeWithdrawnAmount = money(Math.max(0, totalCat - referralFromLegacy));
+    }
+  }
   return {
     id,
     withdrawalId: id,
@@ -342,7 +362,11 @@ function viewWithdraw(row, profile = {}, account = {}, adminMap = {}, companionE
     companionUid: companionCode || "",
     companionCode: companionCode || "",
     companionName,
-    catFoodAmount: money(row.cat_food_amount),
+    catFoodAmount: totalCat,
+    serviceIncomeWithdrawnAmount,
+    referralRebateWithdrawnAmount,
+    service_income_withdrawn_amount: serviceIncomeWithdrawnAmount,
+    referral_rebate_withdrawn_amount: referralRebateWithdrawnAmount,
     exchangeRate: money(row.exchange_rate),
     grossAmountRm: money(row.gross_amount_rm),
     feeRm: money(row.fee_rm),
@@ -1110,6 +1134,15 @@ export default async function handler(req, res) {
           /* optional ledger */
         }
       }
+      // Referral stream: return frozen rebate to available (separate from companion_income).
+      try {
+        const referralAmt = parseWithdrawalReferralAmount(row);
+        if (referralAmt > 0 && row.companion_id) {
+          await unfreezeReferralForWithdraw(row.companion_id, referralAmt);
+        }
+      } catch {
+        /* optional */
+      }
       await writeAdminLog({
         module: "finance",
         action: "reject_withdraw",
@@ -1300,6 +1333,15 @@ export default async function handler(req, res) {
         } catch {
           /* optional */
         }
+      }
+      // Referral stream: finalize frozen → total_withdrawn (separate wallet).
+      try {
+        const referralAmt = parseWithdrawalReferralAmount(row);
+        if (referralAmt > 0 && row.companion_id) {
+          await completeReferralWithdraw(row.companion_id, referralAmt);
+        }
+      } catch {
+        /* optional */
       }
 
       let receiptRow = null;

@@ -10,6 +10,7 @@ import {
 } from "./_order-grabs.js";
 import { awardBossPointsForCompletedOrder } from "./_user-points.js";
 import { settleBossCommissionFromPlatformFee } from "./_boss-commission.js";
+import { settleReferralRebateForOrder } from "./_companion-referral.js";
 
 export const COMPLETION_AUTO_CONFIRM_MS = 24 * 60 * 60 * 1000;
 export const COMPLETION_PENDING_MARKER = "[[COMPLETION_PENDING]]";
@@ -494,6 +495,25 @@ export function createOrderCompleteHelpers({ restUrl, supabaseJson, serviceHeade
         });
       } catch (_) {}
     }
+
+    // Companion referral rebate (inviter Companion ← invited Boss paid order).
+    // Separate ledger from companion_income / boss_commission / Boss points.
+    let referralRebate = null;
+    if (settlementOk) {
+      try {
+        const settled = settlement?.settlement || settlement || {};
+        referralRebate = await settleReferralRebateForOrder(saved, {
+          method,
+          completedAt,
+          platformFeeAmount:
+            settled.platformCommissionCatFood ?? saved.platform_fee ?? null,
+          companionIncomeAmount:
+            settled.companionNetCatFood ?? saved.companion_income ?? null,
+        });
+      } catch (_) {
+        referralRebate = { skipped: true, reason: "referral_settle_error" };
+      }
+    }
     let reward = null;
     try {
       reward = await (
@@ -528,6 +548,7 @@ export function createOrderCompleteHelpers({ restUrl, supabaseJson, serviceHeade
       },
       settlement,
       bossPoints,
+      referralRebate,
       reward,
       completionMethod: method,
     };

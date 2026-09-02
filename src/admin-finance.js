@@ -252,6 +252,13 @@
           esc(w.companionUid) +
           "</small></td><td>" +
           esc(w.catFoodAmount) +
+          (Number(w.referralRebateWithdrawnAmount || 0) > 0
+            ? "<br><small>服务 " +
+              esc(w.serviceIncomeWithdrawnAmount) +
+              " / 返点 " +
+              esc(w.referralRebateWithdrawnAmount) +
+              "</small>"
+            : "") +
           "</td><td>" +
           esc(w.netAmountRm) +
           "</td><td>" +
@@ -1223,6 +1230,24 @@
             "（" +
             esc(w.catFoodAmount != null ? w.catFoodAmount : "-") +
             " 猫粮）</strong></div>" +
+            "<div><span style=\"color:#9ca3af\">服务收入提现</span><br><strong>" +
+            esc(
+              w.serviceIncomeWithdrawnAmount != null
+                ? w.serviceIncomeWithdrawnAmount
+                : w.service_income_withdrawn_amount != null
+                  ? w.service_income_withdrawn_amount
+                  : "-"
+            ) +
+            "</strong></div>" +
+            "<div><span style=\"color:#9ca3af\">邀请返点提现</span><br><strong>" +
+            esc(
+              w.referralRebateWithdrawnAmount != null
+                ? w.referralRebateWithdrawnAmount
+                : w.referral_rebate_withdrawn_amount != null
+                  ? w.referral_rebate_withdrawn_amount
+                  : "-"
+            ) +
+            "</strong></div>" +
             '<div class="fin-payee-card" style="padding:12px;border:1px solid rgba(255,255,255,.12);border-radius:12px;background:rgba(255,255,255,.03)">' +
             "<div style=\"margin-bottom:8px;font-weight:700\">打款信息</div>" +
             "<div>银行：<strong>" +
