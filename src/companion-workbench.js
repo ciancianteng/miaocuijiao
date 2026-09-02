@@ -3182,8 +3182,9 @@
     var mime=String(file.type||voiceRec.mimeType||'').toLowerCase();
     var base=mime.split(';')[0].trim();
     // Safari MediaRecorder audio/mp4(+timeslice) often fails <audio> after Storage upload.
-    // Remux to WAV for durable cross-browser playback (profile + public).
-    var shouldRemux=/mp4|aac|m4a|mpeg|x-m4a|quicktime|webm|ogg/i.test(base||String(file.name||''));
+    // Remux recorder containers to WAV for durable cross-browser playback (profile + public).
+    // Skip already-stable library formats (wav/mp3) to avoid needless decode.
+    var shouldRemux=/^(audio\/)?(mp4|aac|x-m4a|webm|ogg)/i.test(base||'') || /\.(m4a|mp4|webm|ogg|aac)$/i.test(String(file.name||''));
     if(!shouldRemux)return Promise.resolve(file);
     return remuxVoiceBlobToWav(file).then(function(wavFile){
       if(wavFile&&wavFile.size>44)return wavFile;
