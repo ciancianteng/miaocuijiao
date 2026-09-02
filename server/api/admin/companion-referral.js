@@ -264,9 +264,15 @@ async function ensureMigration(oneshot = {}) {
 
 async function probeTables() {
   const out = {};
-  for (const table of [REL_TABLE, RULE_TABLE, REC_TABLE, WALLET_TABLE]) {
+  const probes = [
+    [REL_TABLE, "id"],
+    [RULE_TABLE, "id"],
+    [REC_TABLE, "id"],
+    [WALLET_TABLE, "user_id"],
+  ];
+  for (const [table, col] of probes) {
     try {
-      await supabaseJson(restUrl(table, "?select=id&limit=1"), { headers: serviceHeaders() });
+      await supabaseJson(restUrl(table, `?select=${col}&limit=1`), { headers: serviceHeaders() });
       out[table] = { ok: true };
     } catch (err) {
       out[table] = {

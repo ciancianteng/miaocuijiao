@@ -164,7 +164,8 @@ async function verifyViaRest() {
   if (!anon) return { checked: false };
   const probes = {};
   for (const table of ["referral_relations", "referral_commission_rules", "referral_commission_records", "referral_wallets"]) {
-    const url = `${supabaseUrl.replace(/\/$/, "")}/rest/v1/${table}?select=id&limit=1`;
+    const col = table === "referral_wallets" ? "user_id" : "id";
+    const url = `${supabaseUrl.replace(/\/$/, "")}/rest/v1/${table}?select=${col}&limit=1`;
     const res = await fetch(url, {
       headers: { apikey: anon, Authorization: `Bearer ${anon}` },
     });
