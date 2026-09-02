@@ -1353,6 +1353,8 @@
       var walletResult=results[3];
       var inboxResult=results[4];
       state.data=Object.assign({},state.data||{},result.data||{});
+      // Drop stale client media errors once bootstrap shows durable avatar/gallery/voice.
+      reconcileProfileMediaFlags();
       state.ordersCacheAt=Date.now();
       if(inboxResult&&inboxResult.ok){
         applyInboxPayload(inboxResult.data||inboxResult.inbox||emptyInboxShell());
@@ -2982,6 +2984,38 @@
   function savedGalleryCount(){
     return ((state.data&&state.data.media)||[]).filter(function(m){return m.mediaType==='gallery'}).length;
   }
+  function reconcileProfileMediaFlags(){
+    var p=(state.data&&state.data.player)||{};
+    var media=(state.data&&state.data.media)||[];
+    var hasAvatar=media.some(function(m){return m.mediaType==='avatar'&&(m.url||m.storagePath||m.storage_path)})||!!(p.hasCustomAvatar&&p.avatar&&p.avatar!=='/default-avatar.png');
+    var hasGallery=media.some(function(m){return m.mediaType==='gallery'&&(m.url||m.storagePath||m.storage_path)})||
+      (state.galleryPending||[]).some(function(g){return g&&!g._failed&&(g.url||g._uploading||g._done)});
+    var voiceMedia=media.some(function(m){return m.mediaType==='voice'&&(m.url||m.storagePath||m.storage_path)});
+    var rawVoice=p.raw&&(p.raw.voice_url||p.raw.voiceUrl);
+    var hasVoice=voiceMedia||!!(p.voiceUrl&&String(p.voiceUrl).trim())||!!(rawVoice&&String(rawVoice).trim());
+    if(state.profileErrors){
+      if(hasAvatar)delete state.profileErrors.avatar;
+      if(hasGallery)delete state.profileErrors.gallery;
+      if(hasVoice)delete state.profileErrors.voice;
+    }
+    if(state.profileMissing&&state.profileMissing.length){
+      state.profileMissing=state.profileMissing.filter(function(x){
+        if(hasAvatar&&x==='缺少头像')return false;
+        if(hasGallery&&x==='缺少相册')return false;
+        if(hasVoice&&x==='缺少录音')return false;
+        return true;
+      });
+    }
+    // Soft publish banner: strip media gaps that bootstrap already has on disk.
+    if(state.data&&Array.isArray(state.data.publishMissing)&&state.data.publishMissing.length){
+      state.data.publishMissing=state.data.publishMissing.filter(function(x){
+        if(hasAvatar&&x==='缺少头像')return false;
+        if(hasGallery&&x==='缺少相册')return false;
+        if(hasVoice&&x==='缺少录音')return false;
+        return true;
+      });
+    }
+  }
   function pendingGallerySlots(){
     return (state.galleryPending||[]).filter(function(p){return p&&(p._uploading||(!p._failed&&!p._done))}).length;
   }
@@ -3704,6 +3738,17 @@
     }).then(function(res){
       toast(res.message||'上传成功');
       state.uploadBusy='';
+      // Clear related soft validation errors so save is not blocked by stale 缺少相册/录音.
+      if(state.profileErrors){
+        if(mediaType==='avatar')delete state.profileErrors.avatar;
+        if(mediaType==='gallery')delete state.profileErrors.gallery;
+        if(mediaType==='voice')delete state.profileErrors.voice;
+      }
+      if(state.profileMissing&&state.profileMissing.length){
+        var dropMap={avatar:'缺少头像',gallery:'缺少相册',voice:'缺少录音'};
+        var drop=dropMap[mediaType];
+        if(drop)state.profileMissing=state.profileMissing.filter(function(x){return x!==drop});
+      }
       // Keep draft + force paint so thumbnails / voice player refresh without wiping fields.
       if(res&&res.url&&mediaType==='avatar'&&state.data&&state.data.player){
         state.data.player.avatar=res.url;
@@ -3801,8 +3846,9 @@
 
     var p=(state.data&&state.data.player)||{};
     var media=(state.data&&state.data.media)||[];
-    var hasAvatar=media.some(function(m){return m.mediaType==='avatar'&&m.url})||!!(p.hasCustomAvatar&&p.avatar&&p.avatar!=='/default-avatar.png');
-    var hasGallery=media.some(function(m){return m.mediaType==='gallery'&&m.url});
+    var pendingGal=(state.galleryPending||[]).filter(function(g){return g&&!g._failed&&(g.url||g._uploading||g._done)});
+    var hasAvatar=media.some(function(m){return m.mediaType==='avatar'&&(m.url||m.storagePath||m.storage_path)})||!!(p.hasCustomAvatar&&p.avatar&&p.avatar!=='/default-avatar.png');
+    var hasGallery=media.some(function(m){return m.mediaType==='gallery'&&(m.url||m.storagePath||m.storage_path)})||pendingGal.length>0;
     var voiceMedia=media.filter(function(m){return m.mediaType==='voice'&&(m.url||m.storagePath||m.storage_path)})[0];
     var rawVoice=p.raw&&(p.raw.voice_url||p.raw.voiceUrl);
     var hasVoice=!!(voiceMedia)||!!(p.voiceUrl&&String(p.voiceUrl).trim())||!!(rawVoice&&String(rawVoice).trim());
@@ -4411,9 +4457,15 @@
       state.galleryPending=(state.galleryPending||[]).filter(function(p){return p&&p._localId!==pending._localId});
       if(res&&res.media&&state.data&&Array.isArray(state.data.media)){
         // Optimistic insert so next file's room count is accurate before reload finishes.
-        var row=Object.assign({mediaType:'gallery'},res.media,{url:res.url||(res.media&&res.media.url)||pending.url});
+        var row=Object.assign({mediaType:'gallery'},res.media,{
+          url:res.url||(res.media&&res.media.url)||pending.url,
+          storagePath:res.path||(res.media&&(res.media.path||res.media.storagePath))||'',
+          storageRef:res.storageRef||(res.media&&res.media.storageRef)||''
+        });
         state.data.media=state.data.media.concat([row]);
       }
+      if(state.profileErrors)delete state.profileErrors.gallery;
+      if(state.profileMissing)state.profileMissing=state.profileMissing.filter(function(x){return x!=='缺少相册'});
       return res;
     }).catch(function(err){
       pending._uploading=false;

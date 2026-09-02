@@ -2433,10 +2433,22 @@ async function bootstrapData(profile, companion) {
     permissions.forcedAckReason = "请先阅读并确认最新强制公告";
   }
 
+  // Count durable gallery/voice even when a signed preview URL failed — empty url must
+  // not surface false 「缺少相册/录音」 after a successful upload_media persist.
   const mediaExtrasForGate = {
-    avatarUrl: signedMedia.find((m) => m.mediaType === "avatar" && m.url)?.url || "",
-    voiceUrl: player.voiceUrl || "",
-    gallery: signedMedia.filter((m) => m.mediaType === "gallery" && m.url).map((m) => ({ id: m.id, url: m.url })),
+    avatarUrl:
+      signedMedia.find((m) => m.mediaType === "avatar" && m.url)?.url ||
+      (signedMedia.find((m) => m.mediaType === "avatar" && m.storagePath)
+        ? `storage://present/${signedMedia.find((m) => m.mediaType === "avatar" && m.storagePath).storagePath}`
+        : ""),
+    voiceUrl:
+      player.voiceUrl ||
+      (signedMedia.find((m) => m.mediaType === "voice" && m.storagePath)
+        ? `storage://present/${signedMedia.find((m) => m.mediaType === "voice" && m.storagePath).storagePath}`
+        : ""),
+    gallery: signedMedia
+      .filter((m) => m.mediaType === "gallery" && (m.url || m.storagePath || m.id))
+      .map((m) => ({ id: m.id, url: m.url || m.storagePath || "" })),
   };
   const publishGate = evaluatePublishGate(companionRow, profile, mediaExtrasForGate);
   permissions.publishReady = publishGate.publishReady;
