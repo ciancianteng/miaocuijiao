@@ -15,6 +15,7 @@ const BASE = (process.env.BASE || process.env.MCJ_STAGING_URL || "https://meow-c
 const PASS = process.env.PASS || process.env.MCJ_TEST_PASSWORD || "McjTest@12345678";
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || "admin@meow.test";
 const CS_EMAIL = process.env.CS_EMAIL || "service.final.1785714993009@meow.test";
+const SERVICE_COMP_EMAIL = process.env.SERVICE_COMP_EMAIL || "pr122-accept-1788112659@example.com";
 const PNG =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 const stamp = Date.now();
@@ -343,7 +344,6 @@ async function main() {
 
   const inviterEmail = `comp.ref.inviter.${stamp}@example.com`;
   const invitedBossEmail = `boss.ref.invited.${stamp}@example.com`;
-  const serviceCompEmail = process.env.COMP_EMAIL || "companion.final.1785714993009@meow.test";
 
   const inviter = await registerCompanion(inviterEmail, "返点邀请人");
   step("register_inviter_companion", !!inviter.token, inviter.id || inviter.login.json?.message || "");
@@ -396,21 +396,17 @@ async function main() {
     ensureRel.json?.message || ensureRel.json?.code || String(ensureRel.status)
   );
 
-  // Service companion for order fulfillment (may be inviter itself if online & approved)
-  let serviceToken = inviter.token;
-  let serviceId = inviter.id;
+  // Service companion: published account fulfills the order; inviter earns referral only.
   const serviceLogin = await api("/api/companion", {
     method: "POST",
-    body: { action: "login", account: serviceCompEmail, password: PASS },
+    body: { action: "login", account: SERVICE_COMP_EMAIL, password: PASS },
   });
-  if (tok(serviceLogin.json)) {
-    // Prefer inviter as service companion so wallet shows both streams on same account
-    serviceToken = inviter.token;
-    serviceId = inviter.id;
-  }
+  const serviceToken = tok(serviceLogin.json);
+  const serviceId = uid(serviceLogin.json);
+  step("service_companion_login", !!(serviceToken && serviceId), serviceId || serviceLogin.json?.message || "");
 
-  // Place paid order as invited Boss → complete → referral rebate
-  const orderAmount = Number(process.env.ORDER_AMOUNT || 100);
+  // Order amount: rebate = platformFee(20%) * 5% = 1% of order. Need >= min withdraw 50 → amount 5000.
+  const orderAmount = Number(process.env.ORDER_AMOUNT || 5000);
   const place = await api("/api/orders", {
     method: "POST",
     token: invitedBoss.token,
