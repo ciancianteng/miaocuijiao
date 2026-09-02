@@ -63,8 +63,13 @@ export async function supabaseJson(url, init = {}) {
 }
 
 export function isMissingRelation(error) {
-  const text = `${error?.message || ""} ${JSON.stringify(error?.body || "")}`;
-  return error?.status === 404 || /Could not find the table|schema cache|PGRST205|does not exist|function .* does not exist/i.test(text);
+  // Do NOT treat application 404 (e.g. "账号不存在") as missing DDL —
+  // that masked real BCR bind errors as "表未初始化".
+  const text = `${error?.message || ""} ${JSON.stringify(error?.body || "")} ${error?.code || ""}`;
+  if (error?.code === "PGRST205" || /PGRST205/i.test(text)) return true;
+  if (/Could not find the table|relation ["'].+["'] does not exist|schema cache/i.test(text)) return true;
+  // Column-missing is NOT table-missing (migration partial) — leave to callers.
+  return false;
 }
 
 export function money(value) {

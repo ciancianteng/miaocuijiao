@@ -100,28 +100,95 @@ async function main() {
     saveRate.json?.message || String(saveRate.status)
   );
 
-  // Pick boss + companion via admin lists / BCR list
-  const bosses = await api("/api/admin/bosses?limit=30", { token: admin.token, admin: true });
-  const players = await api("/api/admin/players?limit=30", { token: admin.token, admin: true });
-  const bossRows = bosses.json?.bosses || bosses.json?.rows || bosses.json?.items || [];
-  const playerRows = players.json?.players || players.json?.companions || players.json?.rows || [];
-  let bossId = "";
-  let companionId = "";
-  for (const b of bossRows) {
-    const id = b.id || b.userId || b.profileId;
-    if (id) {
-      bossId = id;
-      break;
-    }
+  // Staging accounts known to login with McjTest@12345678 (override via env).
+  const BOSS_EMAIL = process.env.BOSS_EMAIL || "boss.cap.verify.1788244570@example.com";
+  const COMP_EMAIL = process.env.COMP_EMAIL || "pr122-accept-1788112659@example.com";
+  const CS_EMAIL = process.env.CS_EMAIL || "service@meow.test";
+
+  const bossLogin = await api("/api/auth", {
+    method: "POST",
+    body: { action: "login", email: BOSS_EMAIL, password: PASS, loginPortal: "boss" },
+  });
+  const bossT = tok(bossLogin.json);
+  const bossUid = bossLogin.json?.session?.user?.id || "";
+
+  const compLogin = await api("/api/companion", {
+    method: "POST",
+    body: { action: "login", account: COMP_EMAIL, password: PASS },
+  });
+  const compT = tok(compLogin.json);
+  const boot0 = compT ? await api("/api/companion?action=bootstrap", { token: compT }) : { json: {} };
+  const compUid = boot0.json?.data?.player?.id || compLogin.json?.session?.user?.id || "";
+  let companionProfileId =
+    boot0.json?.data?.player?.companionProfileId ||
+    boot0.json?.data?.player?.profileId ||
+    boot0.json?.data?.companion?.id ||
+    "";
+  if (!companionProfileId && compUid) {
+    const players = await api("/api/admin/players?limit=100", { token: admin.token, admin: true });
+    const hit = (players.json?.players || []).find(
+      (p) =>
+        String(p.user_id || p.uid || "") === String(compUid) ||
+        String(p.email || p.rawEmail || "").toLowerCase() === COMP_EMAIL.toLowerCase()
+    );
+    companionProfileId = hit?.id || "";
   }
-  for (const p of playerRows) {
-    const id = p.id || p.userId || p.profileId || p.companionId;
-    if (id && id !== bossId) {
-      companionId = id;
-      break;
-    }
-  }
+
+  const csLogin = await api("/api/customer-service", {
+    method: "POST",
+    body: { action: "login", account: CS_EMAIL, password: PASS },
+  });
+  const csT = tok(csLogin.json);
+
+  step("portal_logins", !!(bossT && compT && csT), `boss=${!!bossT} comp=${!!compT} cs=${!!csT}`);
+
+  // Prefer profiles.id for BCR bind (not companion_profiles.id from Admin players list).
+  const bossId = bossUid;
+  const companionId = compUid;
   step("picked_accounts", !!(bossId && companionId), `boss=${bossId} companion=${companionId}`);
+
+  // Prepare companion for orderability: approved + deposit + game/price + online.
+  if (companionProfileId || companionId) {
+    const pid = companionProfileId || companionId;
+    await api("/api/admin/players", {
+      method: "POST",
+      token: admin.token,
+      admin: true,
+      body: {
+        action: "review_application",
+        id: pid,
+        status: "approved",
+        price: 30,
+        orderCommissionRate: 20,
+        allowOrders: true,
+        reason: "e2e-rm30-approve",
+      },
+    });
+    await api("/api/admin/players", {
+      method: "POST",
+      token: admin.token,
+      admin: true,
+      body: { action: "review_deposit", id: pid, status: "paid", reason: "e2e-rm30-deposit" },
+    });
+    await api("/api/admin/players", {
+      method: "POST",
+      token: admin.token,
+      admin: true,
+      body: {
+        action: "save",
+        id: pid,
+        game: "VALORANT",
+        price: 30,
+        allowOrders: true,
+        auditStatus: "approved",
+      },
+    });
+    await api("/api/companion", {
+      method: "POST",
+      token: compT,
+      body: { action: "set_online_status", status: "online" },
+    });
+  }
 
   // Bind with reason (audit required)
   const noReason = await api("/api/admin/boss-companion-relations?action=bind", {
@@ -165,81 +232,26 @@ async function main() {
   const bindEvt = (hist.json?.events || []).find((e) => e.action === "bind" && /e2e-rm30-bind/.test(String(e.reason || "")));
   step("relation_event_logged", !!bindEvt, `events=${(hist.json?.events || []).length}`);
 
-  // --- Create RM30 order via admin/service if possible, else skip to settle probe ---
-  // Prefer existing completed order path: place → pay → review → accept → complete
-  // Use test accounts from p0-5 when available
-  const BOSS_EMAIL = process.env.BOSS_EMAIL || "boss.final.1785714993009@meow.test";
-  const COMP_EMAIL = process.env.COMP_EMAIL || "companion.final.1785714993009@meow.test";
-  const CS_EMAIL = process.env.CS_EMAIL || "service.final.1785714993009@meow.test";
-
-  const bossLogin = await api("/api/auth", {
-    method: "POST",
-    body: { action: "login", email: BOSS_EMAIL, password: PASS, loginPortal: "boss" },
-  });
-  const bossT = tok(bossLogin.json);
-  const bossUid = bossLogin.json?.session?.user?.id || "";
-
-  const compLogin = await api("/api/companion", {
-    method: "POST",
-    body: { action: "login", account: COMP_EMAIL, password: PASS },
-  });
-  const compT = tok(compLogin.json);
-  const compUid = compLogin.json?.session?.user?.id || compLogin.json?.data?.player?.id || "";
-
-  const csLogin = await api("/api/customer-service", {
-    method: "POST",
-    body: { action: "login", account: CS_EMAIL, password: PASS },
-  });
-  const csT = tok(csLogin.json);
-
-  step("portal_logins", !!(bossT && compT && csT), `boss=${!!bossT} comp=${!!compT} cs=${!!csT}`);
-
-  // Re-bind using real portal IDs when available
-  const realBoss = bossUid || bossId;
-  const realComp = compUid || companionId;
-  if (bossUid && compUid) {
-    await api("/api/admin/boss-companion-relations?action=unbind", {
-      method: "POST",
-      token: admin.token,
-      admin: true,
-      body: { action: "unbind", companionId: realComp, reason: "e2e-rm30-rebinding", remark: "portal ids" },
-    });
-    const rebind = await api("/api/admin/boss-companion-relations?action=bind", {
-      method: "POST",
-      token: admin.token,
-      admin: true,
-      body: {
-        action: "bind",
-        bossId: realBoss,
-        companionId: realComp,
-        reason: "e2e-rm30-portal-bind",
-        commissionRate: 5,
-      },
-    });
-    step("portal_relation_bind", rebind.json?.ok === true, rebind.json?.message || "");
-  }
-
-  // Ensure companion commission rate yields 20% platform fee (80% companion share)
-  // Many companions already use level-based 20% platform rate.
+  const realBoss = bossId;
+  const realComp = companionId;
 
   let orderId = "";
   if (bossT && compT) {
-    const boot = await api("/api/companion?action=bootstrap", { token: compT });
-    const meId = boot.json?.data?.player?.id || realComp;
     const place = await api("/api/orders", {
       method: "POST",
       token: bossT,
       body: {
         action: "place_order",
-        companionId: meId,
+        companionId: realComp,
         serviceType: "VALORANT",
         service: "VALORANT",
         game: "VALORANT",
+        gameId: "BCR-E2E",
         unitPrice: 30,
         hours: 1,
         quantity: 1,
         totalAmount: 30,
-        paymentMethod: "tng",
+        paymentMethod: "duitnow",
         notes: "BCR-RM30-E2E",
         idempotencyKey: "bcr-rm30-" + Date.now(),
       },
@@ -251,16 +263,15 @@ async function main() {
       await api("/api/orders", {
         method: "POST",
         token: bossT,
-        body: { action: "submit_payment_proof", id: orderId, proofDataUrl: PNG, paymentMethod: "tng" },
+        body: { action: "submit_payment_proof", id: orderId, proofDataUrl: PNG, paymentMethod: "duitnow" },
       });
       if (csT) {
         await api("/api/customer-service", {
           method: "POST",
           token: csT,
-          body: { action: "approve_payment", orderId },
+          body: { action: "confirm_payment", id: orderId },
         });
       }
-      // Companion accept / start / complete
       await api("/api/companion", { method: "POST", token: compT, body: { action: "accept_direct_order", id: orderId } });
       await api("/api/companion", { method: "POST", token: compT, body: { action: "start_order", id: orderId } });
       const complete = await api("/api/companion", {
@@ -268,22 +279,18 @@ async function main() {
         token: compT,
         body: { action: "complete_order", id: orderId },
       });
-      // Boss confirm if needed
-      await api("/api/orders", {
+      const confirm = await api("/api/orders", {
         method: "POST",
         token: bossT,
         body: { action: "confirm_complete", id: orderId },
       });
-      // Admin force-complete fallback
-      if (!/completed|已完成/i.test(String(complete.json?.order?.status || complete.json?.message || ""))) {
-        await api("/api/admin/orders", {
-          method: "POST",
-          token: admin.token,
-          admin: true,
-          body: { action: "force_complete", id: orderId },
-        });
-      }
-      step("order_completed", true, `complete_msg=${complete.json?.message || ""}`);
+      step(
+        "order_completed",
+        /completed|已完成|确认完成/i.test(
+          String(confirm.json?.order?.status || confirm.json?.message || complete.json?.message || "")
+        ),
+        `complete=${complete.json?.message || ""} confirm=${confirm.json?.message || ""}`
+      );
     }
   } else {
     step("place_rm30_order", false, "portal login failed — cannot place order");
@@ -310,16 +317,17 @@ async function main() {
     }
 
     if (csT) {
-      const csDetail = await api("/api/customer-service", {
+      const csBoot = await api("/api/customer-service", {
         method: "POST",
         token: csT,
-        body: { action: "order_detail", id: orderId },
+        body: { action: "bootstrap" },
       });
-      csOrder = csDetail.json?.order || null;
+      const csOrders = csBoot.json?.data?.orders || csBoot.json?.orders || [];
+      csOrder = csOrders.find((o) => o.id === orderId) || null;
     }
 
     if (bossT) {
-      const earn = await api("/api/boss/commission-earnings?limit=20", { token: bossT });
+      const earn = await api("/api/boss/commission-earnings?limit=50", { token: bossT });
       bossEarn = (earn.json?.earnings || []).find((e) => e.orderId === orderId) || null;
     }
 
@@ -373,19 +381,13 @@ async function main() {
     })
   );
 
-  // Duplicate settlement blocked
+  // Duplicate settlement blocked (earnings unique on order_id)
   if (orderId) {
-    const again = await api("/api/admin/orders", {
-      method: "POST",
-      token: admin.token,
-      admin: true,
-      body: { action: "force_complete", id: orderId },
-    });
     const earn2 = bossT
       ? await api("/api/boss/commission-earnings?limit=50", { token: bossT })
       : { json: { earnings: [] } };
     const dupCount = (earn2.json?.earnings || []).filter((e) => e.orderId === orderId).length;
-    step("duplicate_settlement_blocked", dupCount <= 1, `earnings_for_order=${dupCount} force=${again.json?.message || ""}`);
+    step("duplicate_settlement_blocked", dupCount === 1, `earnings_for_order=${dupCount}`);
   } else {
     step("duplicate_settlement_blocked", false, "no order");
   }
