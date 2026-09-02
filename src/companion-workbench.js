@@ -3714,7 +3714,12 @@
       if(res&&res.url&&mediaType==='voice'&&state.data&&state.data.player){
         state.data.player.voiceUrl=res.url;
         state.voicePlayError='';
+        state._voiceReloadTried=false;
         clearVoiceLocal();
+        // Keep durable storage:// on raw so save/validate still sees 有录音 after soft refresh.
+        if(!state.data.player.raw)state.data.player.raw={};
+        var durable=res.voice_url||res.storageRef||(res.media&&res.media.storageRef)||'';
+        if(durable)state.data.player.raw.voice_url=durable;
         // Swap optimistic data:/blob: preview to the real Storage URL immediately.
         var voiceAudio=document.querySelector('audio[data-voice-audio], .pw-voice-preview audio');
         if(voiceAudio&&isPlayableMediaUrl(res.url)){
@@ -3798,8 +3803,9 @@
     var media=(state.data&&state.data.media)||[];
     var hasAvatar=media.some(function(m){return m.mediaType==='avatar'&&m.url})||!!(p.hasCustomAvatar&&p.avatar&&p.avatar!=='/default-avatar.png');
     var hasGallery=media.some(function(m){return m.mediaType==='gallery'&&m.url});
-    var voiceMedia=media.filter(function(m){return m.mediaType==='voice'&&m.url})[0];
-    var hasVoice=!!(voiceMedia&&voiceMedia.url)||!!(p.voiceUrl||(p.raw&&p.raw.voice_url));
+    var voiceMedia=media.filter(function(m){return m.mediaType==='voice'&&(m.url||m.storagePath||m.storage_path)})[0];
+    var rawVoice=p.raw&&(p.raw.voice_url||p.raw.voiceUrl);
+    var hasVoice=!!(voiceMedia)||!!(p.voiceUrl&&String(p.voiceUrl).trim())||!!(rawVoice&&String(rawVoice).trim());
     if(!hasAvatar){errors.avatar='缺少头像';missing.push('缺少头像')}
     if(!hasGallery){errors.gallery='缺少相册';missing.push('缺少相册')}
     if(!hasVoice){errors.voice='缺少录音';missing.push('缺少录音')}
@@ -4708,6 +4714,32 @@
   document.addEventListener('error',function(e){
     var audio=e.target&&e.target.matches&&e.target.matches('audio[data-voice-audio], .pw-voice-preview audio')?e.target:null;
     if(!audio)return;
+    // Expired/invalid signed URL: soft-reload bootstrap once for a fresh sign, then show error.
+    if(!state._voiceReloadTried&&state.session&&state.session.token){
+      state._voiceReloadTried=true;
+      loadData({soft:true,forcePaint:true,preserveScroll:true}).then(function(){
+        var p=(state.data&&state.data.player)||{};
+        var voiceMedia=((state.data&&state.data.media)||[]).filter(function(m){return m.mediaType==='voice'&&m.url})[0];
+        var next=pickVoicePlayUrl(voiceMedia,p,p.raw||{},'');
+        if(next&&isPlayableMediaUrl(next)&&String(audio.src||'').indexOf(next)===-1){
+          state.voicePlayError='';
+          try{audio.src=next;audio.load()}catch(err){}
+          var hostOk=document.querySelector('[data-voice-play-error]');
+          if(hostOk)hostOk.textContent='';
+          return;
+        }
+        state.voicePlayError='音频加载失败（可能是链接过期或格式不支持），请重新上传录音';
+        var host=document.querySelector('[data-voice-play-error]');
+        if(host)host.textContent=state.voicePlayError;
+        else toast(state.voicePlayError);
+      }).catch(function(){
+        state.voicePlayError='音频加载失败（可能是链接过期或格式不支持），请重新上传录音';
+        var host=document.querySelector('[data-voice-play-error]');
+        if(host)host.textContent=state.voicePlayError;
+        else toast(state.voicePlayError);
+      });
+      return;
+    }
     state.voicePlayError='音频加载失败（可能是链接过期或格式不支持），请重新上传录音';
     var host=document.querySelector('[data-voice-play-error]');
     if(host)host.textContent=state.voicePlayError;
