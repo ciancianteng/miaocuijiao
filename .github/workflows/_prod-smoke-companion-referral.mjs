@@ -25,20 +25,39 @@ function loadSmokeEnv() {
   };
 }
 const smokeEnv = loadSmokeEnv();
-const URL = String(smokeEnv.SUPABASE_URL || "").replace(/\/$/, "");
+let URL = String(smokeEnv.SUPABASE_URL || "").replace(/\/$/, "");
 const SERVICE = String(smokeEnv.SUPABASE_SERVICE_ROLE_KEY || "");
 const PNG =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 const stamp = Date.now();
 const DOMAIN = "mcj-prod-smoke.invalid";
 
-if (!URL || !SERVICE) {
-  console.error("Missing SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY");
+if (!SERVICE) {
+  console.error("Missing SUPABASE_SERVICE_ROLE_KEY");
   process.exit(2);
 }
 if (!/meowcuijiao\.com/i.test(BASE)) {
   console.error("Refusing non-production BASE", BASE);
   process.exit(2);
+}
+
+async function resolveSupabaseUrl() {
+  const candidates = [URL, smokeEnv.SUPABASE_URL, process.env.SUPABASE_URL, process.env.VITE_SUPABASE_URL];
+  for (const c of candidates) {
+    const u = String(c || "").trim().replace(/^['"]|['"]$/g, "").replace(/\/$/, "");
+    try {
+      if (u && /^https?:\/\//i.test(u)) {
+        const host = new URL(u).host;
+        if (host) return u;
+      }
+    } catch {
+      /* next */
+    }
+  }
+  const cfg = await fetch(BASE + "/api/public/realtime-config").then((r) => r.json()).catch(() => ({}));
+  const live = String(cfg?.url || "").trim().replace(/\/$/, "");
+  if (!live) throw new Error("Could not resolve SUPABASE_URL from env pull or /api/public/realtime-config");
+  return live;
 }
 
 const results = [];
@@ -221,6 +240,8 @@ async function ensurePaymentAccountRow(companionProfileId, userId) {
 
 async function main() {
   console.log("BASE", BASE);
+  URL = await resolveSupabaseUrl();
+  console.log("SUPABASE host", new URL(URL).host);
   const build = await api("/api/build-info");
   if (!step("build_info_cc56689", build.json?.short === "cc56689" || String(build.json?.sha || "").startsWith("cc56689"), JSON.stringify(build.json))) {
     process.exit(1);
