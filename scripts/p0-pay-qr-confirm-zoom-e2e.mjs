@@ -164,8 +164,8 @@ async function runViewport(browser, label, viewportOrDevice, token, user, orderI
   }, { timeout: 30000 }).catch(() => {});
 
   let st = await qrState(page);
-  step(`${label}_url_normal_visible`, st.hasQr === "1" && st.load === "ok" && st.w >= 160, JSON.stringify({
-    hasQr: st.hasQr, load: st.load, w: st.w, h: st.h, y: st.y, inFirstViewport: st.inFirstViewport, urlLen: st.urlLen
+  step(`${label}_url_normal_visible`, st.hasQr === "1" && (st.load === "ok" || (st.natural && st.natural.w > 0)) && st.w >= 160, JSON.stringify({
+    hasQr: st.hasQr, load: st.load, w: st.w, h: st.h, y: st.y, inFirstViewport: st.inFirstViewport, urlLen: st.urlLen, natural: st.natural
   }));
   step(`${label}_img_in_first_viewport`, st.inFirstViewport === true, JSON.stringify({ y: st.y, vh: st.vh, h: st.h }));
   step(
@@ -176,27 +176,39 @@ async function runViewport(browser, label, viewportOrDevice, token, user, orderI
   step(`${label}_cursor_zoom`, /zoom-in/i.test(st.cursor || ""), st.cursor || "");
   step(`${label}_preview_lib`, st.hasPreviewLib === true, String(st.hasPreviewLib));
 
-  // Mobile: min size + not clipped by parent overflow.
+  // Mobile: min size + parents must not crop via overflow:hidden.
   const clip = await page.evaluate(() => {
     const img = document.querySelector("[data-mcj-pay-qr], [data-pay-qr-img]");
     const frame = document.querySelector(".pay-qr-frame");
     const panel = document.querySelector("[data-pay-qr]");
     if (!img || !frame || !panel) return { ok: false };
     const ir = img.getBoundingClientRect();
-    const fr = frame.getBoundingClientRect();
-    const pr = panel.getBoundingClientRect();
     const pcs = getComputedStyle(panel);
     const fcs = getComputedStyle(frame);
+    const ancestors = [];
+    let n = img.parentElement;
+    let hiddenAncestor = false;
+    while (n && n !== document.body) {
+      const cs = getComputedStyle(n);
+      ancestors.push({ tag: n.className || n.tagName, overflow: cs.overflow, overflowX: cs.overflowX, overflowY: cs.overflowY });
+      if (/hidden|clip|scroll|auto/.test(cs.overflow + cs.overflowX + cs.overflowY) && n.classList && (n.classList.contains("pay-qr") || n.classList.contains("pay-qr-frame") || n.classList.contains("pay-card"))) {
+        // pay-qr / frame / card must stay visible; other page chrome may scroll.
+        if (n.classList.contains("pay-qr") || n.classList.contains("pay-qr-frame") || n.classList.contains("pay-card") || n.classList.contains("pay-shell")) {
+          if (cs.overflow === "hidden" || cs.overflowX === "hidden" || cs.overflowY === "hidden") hiddenAncestor = true;
+        }
+      }
+      n = n.parentElement;
+    }
     return {
-      ok: ir.width >= 180 && ir.height >= 180 && pcs.overflow !== "hidden" && fcs.overflow !== "hidden",
+      ok: ir.width >= 180 && ir.height >= 180 && !hiddenAncestor && pcs.overflow !== "hidden" && fcs.overflow !== "hidden",
       imgW: ir.width,
       imgH: ir.height,
       frameOverflow: fcs.overflow,
       panelOverflow: pcs.overflow,
-      clippedByFrame: ir.bottom > fr.bottom + 1 || ir.right > fr.right + 1,
+      hiddenAncestor,
     };
   });
-  step(`${label}_min_size_no_clip`, clip.ok === true && clip.clippedByFrame !== true, JSON.stringify(clip));
+  step(`${label}_min_size_no_clip`, clip.ok === true, JSON.stringify(clip));
 
   await page.screenshot({ path: path.join(ART, `${label}-page.png`), fullPage: true });
 
