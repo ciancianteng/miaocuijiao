@@ -16,7 +16,13 @@ import { fileURLToPath } from "node:url";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const STAGING_REF = "cfccwysniduwkjskiqgy";
 const PRODUCTION_REF = "jqfaknpmcnqwqvatrwgo";
-const SQL_REL = "supabase/migrations/20260901_boss_companion_relations.sql";
+const SQL_RELS = [
+  "supabase/migrations/20260901_boss_companion_relations.sql",
+  "supabase/migrations/20260902_boss_commission_from_platform_fee.sql",
+  "supabase/migrations/20260903_boss_levels_invites_safeguards.sql",
+];
+/** @deprecated use SQL_RELS — kept for log compatibility */
+const SQL_REL = SQL_RELS[0];
 const MGMT_QUERY = `https://api.supabase.com/v1/projects/${STAGING_REF}/database/query`;
 
 function loadEnv() {
@@ -75,12 +81,21 @@ async function verifyViaRest() {
     process.env.SUPABASE_PUBLISHABLE_KEY ||
     "";
   if (!anon) return { checked: false };
-  const url = `${supabaseUrl.replace(/\/$/, "")}/rest/v1/boss_companion_relations?select=id&limit=1`;
-  const res = await fetch(url, {
-    headers: { apikey: anon, Authorization: `Bearer ${anon}` },
-  });
-  const body = await res.text();
-  return { checked: true, status: res.status, body: body.slice(0, 240) };
+  const probes = {};
+  for (const table of [
+    "boss_companion_relations",
+    "boss_commission_earnings",
+    "boss_levels",
+    "boss_companion_invitations",
+  ]) {
+    const url = `${supabaseUrl.replace(/\/$/, "")}/rest/v1/${table}?select=id&limit=1`;
+    const res = await fetch(url, {
+      headers: { apikey: anon, Authorization: `Bearer ${anon}` },
+    });
+    const body = await res.text();
+    probes[table] = { status: res.status, body: body.slice(0, 120) };
+  }
+  return { checked: true, probes };
 }
 
 async function applyViaPg(dbUrl, sql) {
@@ -99,7 +114,10 @@ async function applyViaPg(dbUrl, sql) {
     }
     const check = await client.query(`
       select to_regclass('public.boss_companion_relations') as relations,
-             to_regclass('public.boss_companion_relation_events') as events
+             to_regclass('public.boss_companion_relation_events') as events,
+             to_regclass('public.boss_commission_earnings') as earnings,
+             to_regclass('public.boss_levels') as levels,
+             to_regclass('public.boss_companion_invitations') as invitations
     `);
     return check.rows[0];
   } finally {
@@ -139,7 +157,10 @@ async function applyViaManagementApi(token, sql) {
     body: JSON.stringify({
       query: `
         select to_regclass('public.boss_companion_relations')::text as relations,
-               to_regclass('public.boss_companion_relation_events')::text as events
+               to_regclass('public.boss_companion_relation_events')::text as events,
+               to_regclass('public.boss_commission_earnings')::text as earnings,
+               to_regclass('public.boss_levels')::text as levels,
+               to_regclass('public.boss_companion_invitations')::text as invitations
       `,
     }),
   });
@@ -197,7 +218,12 @@ if (dbRef && dbRef !== STAGING_REF) {
   process.exit(2);
 }
 
-const sql = fs.readFileSync(path.join(ROOT, SQL_REL), "utf8");
+const sql = SQL_RELS.map((rel) => {
+  const p = path.join(ROOT, rel);
+  if (!fs.existsSync(p)) throw new Error(`missing migration: ${rel}`);
+  return `-- >>> ${rel}\n` + fs.readFileSync(p, "utf8");
+}).join("\n\n");
+console.log("Applying migrations:", SQL_RELS.join(" + "));
 
 if (dbUrl) {
   if (!urlRef && !dbRef) {
@@ -241,7 +267,7 @@ if (dbUrl) {
   console.error(`  STAGING_DB_PASSWORD='…' node scripts/apply-boss-companion-relations.mjs`);
   console.error(`  DATABASE_URL='postgresql://postgres.${STAGING_REF}:…@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres' node scripts/apply-boss-companion-relations.mjs`);
   console.error(`  SUPABASE_ACCESS_TOKEN='sbp_…' node scripts/apply-boss-companion-relations.mjs`);
-  console.error(`Or paste ${SQL_REL} into Staging SQL Editor (${STAGING_REF}).`);
+  console.error(`Or paste migrations 20260901+20260902+20260903 into Staging SQL Editor (${STAGING_REF}).`);
   process.exit(2);
 }
 

@@ -25,11 +25,14 @@ on:
         type: string
   push:
     branches:
+      - staging
       - repair/restore-confirmed-home-and-auth-data
     paths:
       - ".github/workflows/apply-staging-boss-companion-relations.yml"
       - "scripts/apply-boss-companion-relations.mjs"
       - "supabase/migrations/20260901_boss_companion_relations.sql"
+      - "supabase/migrations/20260902_boss_commission_from_platform_fee.sql"
+      - "supabase/migrations/20260903_boss_levels_invites_safeguards.sql"
 
 permissions:
   contents: read

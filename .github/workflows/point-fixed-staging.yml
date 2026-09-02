@@ -12,17 +12,8 @@ on:
   push:
     branches:
       - staging
-      - cursor/payment-linkage-unify-28a8
-    paths:
-      - ".github/workflows/point-fixed-staging.yml"
-      - "scripts/deploy-staging.mjs"
-      - "src/place-order-modal.js"
-      - "src/place-order-page.js"
-      - "src/gameplay-product.js"
-      - "recharge.html"
-      - "custom-order.html"
-      - "server/api/_platform-pay-qr.js"
-      - "server/api/recharge.js"
+    # Any staging push re-points the fixed alias to git-staging Preview host.
+    # (Previously path-filtered; BCR launch needs alias after every staging merge.)
 
 permissions:
   contents: read
