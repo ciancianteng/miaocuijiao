@@ -8,81 +8,8 @@
   <link rel="stylesheet" href="src/style.css">
   <link rel="stylesheet" href="src/boss-header.css">
   <style>
-    body{background:#08070a;color:#fff}
-    .boss-shell{width:min(920px,calc(100% - 32px));margin:0 auto;padding:26px 0 76px;box-sizing:border-box}
-    .account-card,.empty-card,.profile-hero{border:1px solid rgba(255,255,255,.1);border-radius:18px;background:rgba(255,255,255,.045);padding:22px;box-sizing:border-box}
-    .profile-hero{margin-bottom:14px}
-    .account-head{display:flex;align-items:center;gap:16px;min-width:0}
-    .profile-main{display:flex;align-items:center;gap:16px;min-width:0;flex:1}
-    .avatar{width:74px;height:74px;flex:0 0 74px;border-radius:18px;border:1px solid rgba(255,143,197,.28);background:rgba(255,143,197,.12);display:grid;place-items:center;overflow:hidden;color:#ffd6e7;font-weight:1000;font-size:24px}
-    .avatar img{width:100%;height:100%;object-fit:cover}
-    .profile-title{min-width:0}
-    .profile-title h1{margin:0;font-size:24px;line-height:1.25;word-break:break-word}
-    .profile-title p{margin:6px 0 0;color:#9ca3af;font-size:14px;line-height:1.4;word-break:break-word}
-    .mine-stack{display:grid;gap:12px}
-    .mine-acc{
-      border:1px solid rgba(255,255,255,.1);border-radius:16px;background:rgba(255,255,255,.045);
-      overflow:hidden;
-    }
-    .mine-acc-trigger{
-      width:100%;display:flex;align-items:center;justify-content:space-between;gap:12px;
-      min-height:52px;padding:14px 16px;border:0;background:transparent;color:#fff;
-      font:inherit;font-weight:800;font-size:16px;text-align:left;cursor:pointer;
-      -webkit-tap-highlight-color:transparent;
-    }
-    .mine-acc-trigger:focus-visible{outline:2px solid rgba(255,143,197,.55);outline-offset:-2px}
-    .mine-acc-title{display:flex;align-items:center;gap:10px;min-width:0}
-    .mine-acc-title span{min-width:0;word-break:break-word}
-    .mine-acc-chevron{
-      flex:0 0 22px;width:22px;height:22px;border-radius:999px;
-      border:1px solid rgba(255,143,197,.35);background:rgba(255,143,197,.1);
-      display:grid;place-items:center;transition:transform .2s ease;
-    }
-    .mine-acc-chevron::before{
-      content:"";width:7px;height:7px;border-right:2px solid #ffd6e7;border-bottom:2px solid #ffd6e7;
-      transform:rotate(45deg) translate(-1px,-1px);
-    }
-    .mine-acc.is-open .mine-acc-chevron{transform:rotate(180deg);border-color:rgba(255,212,230,.55)}
-    .mine-acc-panel{
-      display:grid;grid-template-rows:0fr;transition:grid-template-rows .22s ease;
-      border-top:0 solid transparent;
-    }
-    .mine-acc.is-open .mine-acc-panel{grid-template-rows:1fr;border-top:1px solid rgba(255,255,255,.08)}
-    .mine-acc-panel-inner{overflow:hidden;min-height:0}
-    .mine-acc:not(.is-open) .mine-acc-panel{display:none}
-    .mine-acc.is-open .mine-acc-panel{display:grid}
-    .mine-acc-body{padding:14px 16px 16px}
-    .info-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
-    .info-item{border:1px solid rgba(255,255,255,.08);border-radius:12px;background:rgba(0,0,0,.18);padding:12px;min-width:0}
-    .info-item span{display:block;color:#9ca3af;font-size:12px}
-    .info-item strong{display:block;margin-top:5px;color:#fff;word-break:break-word}
-    .action-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
-    .action-row:first-child{margin-top:0}
-    .boss-btn{
-      border:1px solid rgba(255,143,197,.36);border-radius:12px;background:rgba(255,143,197,.13);
-      color:#fff;min-height:44px;padding:10px 14px;cursor:pointer;
-      display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;text-decoration:none;
-    }
-    .boss-btn.ghost{border-color:rgba(255,255,255,.12);background:rgba(255,255,255,.055)}
-    .mine-logout-wrap{margin-top:14px}
-    .modal{position:fixed;inset:0;background:rgba(0,0,0,.68);display:none;align-items:center;justify-content:center;padding:18px;z-index:40}
-    .modal.open{display:flex}
-    .modal-box{width:min(520px,100%);border:1px solid rgba(255,143,197,.26);border-radius:18px;background:#111014;padding:20px;box-sizing:border-box}
-    .modal-head{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:12px}
-    .modal-head h2{margin:0}
-    .close{width:36px;height:36px;border:1px solid rgba(255,255,255,.12);border-radius:10px;background:rgba(255,255,255,.06);color:#fff;cursor:pointer}
-    .form-grid{display:grid;gap:12px}
-    .form-grid label{display:grid;gap:7px;color:#ffd6e7;font-weight:800}
-    .form-grid input{height:42px;border:1px solid rgba(255,255,255,.12);border-radius:10px;background:rgba(0,0,0,.24);color:#fff;padding:0 12px}
-    .state{margin-top:10px;color:#ffb9d6;min-height:20px}
-    /* Nest account-security into accordion without double card chrome */
-    #bossAccountSecurity .mcj-account-security{
-      margin:0;padding:0;border:0;background:transparent;border-radius:0;
-    }
-    #bossAccountSecurity .mcj-account-security > h3{display:none}
-    #bossAccountSecurity .mcj-sec-form button,
-    #bossAccountSecurity .mcj-sec-actions button{min-height:44px}
-
+    body{background:#08070a;color:#fff}.boss-shell{width:min(920px,calc(100% - 32px));margin:0 auto;padding:26px 0 76px}.account-card,.empty-card{border:1px solid rgba(255,255,255,.1);border-radius:18px;background:rgba(255,255,255,.045);padding:22px}.account-head{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-bottom:18px}.profile-main{display:flex;align-items:center;gap:16px;min-width:0}.avatar{width:74px;height:74px;border-radius:18px;border:1px solid rgba(255,143,197,.28);background:rgba(255,143,197,.12);display:grid;place-items:center;overflow:hidden;color:#ffd6e7;font-weight:1000;font-size:24px}.avatar img{width:100%;height:100%;object-fit:cover}.profile-title h1{margin:0;font-size:26px}.profile-title p{margin:6px 0 0;color:#9ca3af}.info-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}.info-item{border:1px solid rgba(255,255,255,.08);border-radius:12px;background:rgba(0,0,0,.18);padding:13px}.info-item span{display:block;color:#9ca3af;font-size:12px}.info-item strong{display:block;margin-top:5px;color:#fff;word-break:break-word}.action-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}.boss-btn{border:1px solid rgba(255,143,197,.36);border-radius:12px;background:rgba(255,143,197,.13);color:#fff;padding:10px 14px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center}.boss-btn.ghost{border-color:rgba(255,255,255,.12);background:rgba(255,255,255,.055)}.modal{position:fixed;inset:0;background:rgba(0,0,0,.68);display:none;align-items:center;justify-content:center;padding:18px;z-index:40}.modal.open{display:flex}.modal-box{width:min(520px,100%);border:1px solid rgba(255,143,197,.26);border-radius:18px;background:#111014;padding:20px}.modal-head{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:12px}.modal-head h2{margin:0}.close{width:36px;height:36px;border:1px solid rgba(255,255,255,.12);border-radius:10px;background:rgba(255,255,255,.06);color:#fff;cursor:pointer}.form-grid{display:grid;gap:12px}.form-grid label{display:grid;gap:7px;color:#ffd6e7;font-weight:800}.form-grid input{height:42px;border:1px solid rgba(255,255,255,.12);border-radius:10px;background:rgba(0,0,0,.24);color:#fff;padding:0 12px}.state{margin-top:10px;color:#ffb9d6;min-height:20px}@media(max-width:720px){.account-head{align-items:flex-start;flex-direction:column}.info-grid{grid-template-columns:1fr}.boss-btn{width:100%}}
+  
     /* Page-scoped: ghost/account actions must not look disabled */
     .boss-btn:not(:disabled){opacity:1;cursor:pointer}
     .boss-btn.ghost:not(:disabled){
@@ -113,16 +40,54 @@
       width:32px;height:32px;border:1px solid rgba(255,255,255,.14);border-radius:10px;
       background:rgba(255,255,255,.06);color:#fff;cursor:pointer;
     }
-    @media(max-width:720px){
-      .boss-shell{width:calc(100% - 24px);padding:18px 0 88px}
-      .profile-hero,.account-card,.empty-card{padding:16px}
-      .avatar{width:64px;height:64px;flex-basis:64px;border-radius:16px;font-size:22px}
-      .profile-title h1{font-size:22px}
-      .info-grid{grid-template-columns:1fr}
-      .boss-btn,.action-row .boss-btn{width:100%}
-      .mine-acc-trigger{min-height:50px;padding:13px 14px}
-      .mine-acc-body{padding:12px 14px 14px}
+
+    /* Action accordion — keep profile card, collapse action groups */
+    .mine-stack{display:grid;gap:10px;margin-top:16px}
+    .mine-acc{
+      border:1px solid rgba(255,255,255,.12);border-radius:14px;background:rgba(0,0,0,.35);
+      overflow:hidden;
     }
+    .mine-acc-trigger{
+      width:100%;display:flex;align-items:center;justify-content:space-between;gap:12px;
+      min-height:50px;padding:13px 14px;border:0;background:transparent;color:#fff;
+      font:inherit;font-weight:800;font-size:15px;text-align:left;cursor:pointer;
+      -webkit-tap-highlight-color:transparent;
+    }
+    .mine-acc-trigger:focus-visible{outline:2px solid rgba(255,143,197,.55);outline-offset:-2px}
+    .mine-acc-title{min-width:0;word-break:break-word}
+    .mine-acc-chevron{
+      flex:0 0 22px;width:22px;height:22px;border-radius:999px;
+      border:1px solid rgba(255,143,197,.4);background:rgba(0,0,0,.25);
+      display:grid;place-items:center;transition:transform .2s ease;
+    }
+    .mine-acc-chevron::before{
+      content:"";width:7px;height:7px;border-right:2px solid #ffd6e7;border-bottom:2px solid #ffd6e7;
+      transform:rotate(45deg) translate(-1px,-1px);
+    }
+    .mine-acc.is-open .mine-acc-chevron{transform:rotate(180deg);border-color:rgba(255,212,230,.6)}
+    .mine-acc-panel{display:none;border-top:1px solid rgba(255,255,255,.08)}
+    .mine-acc.is-open .mine-acc-panel{display:block}
+    .mine-acc-body{padding:12px 14px 14px}
+    .mine-acc-body .action-row{margin-top:0;display:grid;gap:10px}
+    .mine-acc-body .boss-btn{width:100%}
+    .mine-logout-wrap{margin-top:14px}
+    /* Dark buttons, pink outline only (no pink fill) */
+    .boss-btn{
+      border:1px solid rgba(255,158,207,.55)!important;
+      background:rgba(0,0,0,.45)!important;
+      color:#ffe6f2!important;
+      box-shadow:none!important;
+    }
+    .boss-btn.ghost,.boss-btn.ghost:not(:disabled){
+      border:1px solid rgba(255,158,207,.55)!important;
+      background:rgba(0,0,0,.45)!important;
+      color:#ffe6f2!important;
+    }
+    .boss-btn:not(:disabled):hover,.boss-btn.ghost:not(:disabled):hover{
+      border-color:rgba(255,212,230,.85)!important;filter:brightness(1.08);
+      background:rgba(255,143,197,.08)!important;
+    }
+
 </style>
 </head>
 <body>
@@ -175,26 +140,17 @@
       function date(v){if(!v)return '-';try{return new Date(v).toLocaleString('zh-CN',{hour12:false})}catch(e){return v}}
       function avatarHtml(user){var src=user&&user.avatarUrl;if(src)return '<img src="'+esc(src)+'" alt="头像">';var name=(user&&user.displayName)||'老板';return esc(name.slice(0,1)||'B')}
       function statusText(s){return {active:'正常',disabled:'停用',pending:'待审核'}[s]||s||'-'}
-      function roleLabel(u){
-        var parts=[];
-        if(u.hasBoss)parts.push('老板');
-        if(u.hasCompanion)parts.push('陪玩');
-        if(!parts.length)return u.role||'-';
-        return parts.join(' + ');
-      }
-      function infoItem(label,value,extraStrongStyle){
-        return '<div class="info-item"><span>'+esc(label)+'</span><strong'+(extraStrongStyle?' style="'+extraStrongStyle+'"':'')+'>'+value+'</strong></div>';
-      }
+      
       function accordion(key,title,bodyHtml){
         var open=state.openAccordion===key;
         return '<section class="mine-acc'+(open?' is-open':'')+'" data-mine-acc="'+esc(key)+'">'+
           '<button type="button" class="mine-acc-trigger" data-mine-acc-toggle="'+esc(key)+'" aria-expanded="'+(open?'true':'false')+'">'+
-          '<span class="mine-acc-title"><span>'+esc(title)+'</span></span>'+
+          '<span class="mine-acc-title">'+esc(title)+'</span>'+
           '<span class="mine-acc-chevron" aria-hidden="true"></span></button>'+
-          '<div class="mine-acc-panel" id="mine-acc-panel-'+esc(key)+'" role="region" aria-hidden="'+(open?'false':'true')+'">'+
-          '<div class="mine-acc-panel-inner"><div class="mine-acc-body">'+bodyHtml+'</div></div></div></section>';
+          '<div class="mine-acc-panel" role="region" aria-hidden="'+(open?'false':'true')+'">'+
+          '<div class="mine-acc-body">'+bodyHtml+'</div></div></section>';
       }
-      function applyAccordionDom(){
+      function syncAccordionDom(){
         var openKey=state.openAccordion||'';
         document.querySelectorAll('[data-mine-acc]').forEach(function(sec){
           var key=sec.getAttribute('data-mine-acc')||'';
@@ -206,7 +162,7 @@
           if(panel)panel.setAttribute('aria-hidden',isOpen?'false':'true');
         });
       }
-      function paint(){
+function paint(){
         if(!token()){root.innerHTML='<section class="empty-card"><h1>请先登录</h1><p style="color:#9ca3af">登录后可以查看账号资料、订单和在线客服。</p><a class="boss-btn" href="index.html">返回首页登录</a></section>';return}
         if(state.loading){root.innerHTML='<section class="empty-card">正在登录…</section>';return}
         if(state.error){root.innerHTML='<section class="empty-card"><h1>账号资料读取失败</h1><p style="color:#ffb9d6">'+esc(state.error)+'</p><button class="boss-btn" data-refresh>重试</button></section>';return}
@@ -217,49 +173,25 @@
         var totalBal=wallet.totalBalance!=null?wallet.totalBalance:(wallet.balance!=null?wallet.balance:'-');
         var paidBal=wallet.paidBalance!=null?wallet.paidBalance:'-';
         var bonusBal=wallet.bonusBalance!=null?wallet.bonusBalance:'-';
-        var setHint=u.hasPassword===true||u.has_password===true?'':'<p style="margin:12px 0 0;color:#fbbf24;font-size:13px;line-height:1.45">提示：建议设置登录密码，便于下次邮箱+密码登录（不强制）。</p>';
+        var setHint=u.hasPassword===true||u.has_password===true?'':'<p style="margin:12px 0 0;color:#fbbf24;font-size:13px">提示：建议设置登录密码，便于下次邮箱+密码登录（不强制）。</p>';
         var tipHtml=state.pendingReviewTipId
           ?('<div class="review-tip" role="status"><p>您有订单还未评价陪玩</p><div class="tip-actions"><button class="tip-link" type="button" data-open-pending-review>去评价</button><button class="tip-dismiss" type="button" data-dismiss-review-tip aria-label="关闭">×</button></div></div>')
           :'';
-        var heroSub='老板 UID '+esc(publicUid)+(u.hasCompanion?' · 多角色':'');
-        var profileBody=
-          '<div class="info-grid">'+
-          infoItem('Boss 名称',esc(u.displayName||'老板账号'))+
-          infoItem('老板 UID',esc(publicUid))+
-          infoItem('User ID',esc(u.id||'-'),'font-size:12px;word-break:break-all')+
-          infoItem('角色',esc(roleLabel(u)))+
-          infoItem('邮箱',esc(u.email||'-'))+
-          infoItem('手机号',esc(u.phone||'-'))+
-          infoItem('注册时间',esc(date(u.createdAt)))+
-          infoItem('账号状态',esc(statusText(u.status)))+
-          techHtml+
-          '</div><div class="action-row"><button class="boss-btn" data-edit type="button">编辑资料</button></div>';
-        var assetsBody=
-          '<div class="info-grid">'+
-          infoItem('总猫粮',esc(totalBal))+
-          infoItem('充值猫粮',esc(paidBal))+
-          infoItem('赠送猫粮',esc(bonusBal))+
-          
-          '</div><div class="action-row"><a class="boss-btn ghost" href="recharge.html">充值中心 / 钱包流水</a></div>';
-        var ordersBody=
-          '<div class="action-row">'+
-          '<a class="boss-btn ghost" href="orders.html">查看我的订单</a>'+
-          '<a class="boss-btn ghost" href="support.html">联系在线客服</a>'+
-          (u.hasCompanion
-            ?'<button class="boss-btn ghost" type="button" data-switch-portal="companion">切换到陪玩端</button>'
-            :'<a class="boss-btn ghost" href="companion-apply.html">申请成为陪玩</a>')+
-          '</div>';
-        var securityBody='<div id="bossAccountSecurity"></div>'+setHint;
-        root.innerHTML=
-          tipHtml+
-          '<section class="profile-hero"><div class="account-head"><div class="profile-main"><div class="avatar">'+avatarHtml(u)+'</div><div class="profile-title"><h1>'+esc(u.displayName||'老板账号')+'</h1><p>'+heroSub+'</p></div></div></div></section>'+
+        root.innerHTML=tipHtml+'<section class="account-card"><div class="account-head"><div class="profile-main"><div class="avatar">'+avatarHtml(u)+'</div><div class="profile-title"><h1>'+esc(u.displayName||'老板账号')+'</h1><p>我的账号'+(u.hasCompanion?' · 多角色':'')+'</p></div></div><button class="boss-btn" data-edit type="button">编辑资料</button></div><div class="info-grid"><div class="info-item"><span>老板 UID</span><strong>'+esc(publicUid)+'</strong></div><div class="info-item"><span>User ID</span><strong style="font-size:12px;word-break:break-all">'+esc(u.id||'-')+'</strong></div><div class="info-item"><span>角色</span><strong>'+esc((u.hasBoss?'老板':'')+(u.hasBoss&&u.hasCompanion?' + ':'')+(u.hasCompanion?'陪玩':(!u.hasBoss&&!u.hasCompanion?(u.role||'-'):'')))+'</strong></div><div class="info-item"><span>总猫粮</span><strong>'+esc(totalBal)+'</strong></div><div class="info-item"><span>充值猫粮</span><strong>'+esc(paidBal)+'</strong></div><div class="info-item"><span>赠送猫粮</span><strong>'+esc(bonusBal)+'</strong></div><div class="info-item"><span>邮箱</span><strong>'+esc(u.email||'-')+'</strong></div><div class="info-item"><span>手机号</span><strong>'+esc(u.phone||'-')+'</strong></div><div class="info-item"><span>注册时间</span><strong>'+esc(date(u.createdAt))+'</strong></div><div class="info-item"><span>账号状态</span><strong>'+esc(statusText(u.status))+'</strong></div>'+techHtml+'</div>'+setHint+
           '<div class="mine-stack">'+
-          accordion('profile','我的资料',profileBody)+
-          accordion('assets','我的资产',assetsBody)+
-          accordion('security','账号安全',securityBody)+
-          accordion('orders','订单与服务',ordersBody)+
+          accordion('recharge','充值中心 / 钱包流水',
+            '<div class="action-row"><a class="boss-btn ghost" href="recharge.html">进入充值中心 / 钱包流水</a></div>')+
+          accordion('orders','订单与服务',
+            '<div class="action-row">'+
+            '<a class="boss-btn ghost" href="orders.html">查看我的订单</a>'+
+            '<a class="boss-btn ghost" href="support.html">联系客服</a>'+
+            (u.hasCompanion
+              ?'<button class="boss-btn ghost" type="button" data-switch-portal="companion">切换到陪玩端</button>'
+              :'<a class="boss-btn ghost" href="companion-apply.html">申请成为陪玩</a>')+
+            '</div>')+
+          accordion('security','账号安全','<div id="bossAccountSecurity"></div>')+
           '</div>'+
-          '<div class="mine-logout-wrap"><button class="boss-btn ghost" type="button" data-logout style="width:100%">退出登录</button></div>';
+          '<div class="mine-logout-wrap"><button class="boss-btn ghost" type="button" data-logout style="width:100%">退出登录</button></div></section>';
         if(window.MCJAccountSecurity){
           window.MCJAccountSecurity.mount('#bossAccountSecurity',u,{role:'boss',passwordHint:state.passwordHint,onUpdated:function(data){if(data&&data.user)state.user=data.user;paint();}});
         }
@@ -299,13 +231,6 @@ async function load(){
         }finally{state.loading=false;paint();checkPendingReviewTip()}
       }
       document.addEventListener('click',async function(e){
-        var accToggle=e.target.closest('[data-mine-acc-toggle]');
-        if(accToggle){
-          var key=accToggle.getAttribute('data-mine-acc-toggle')||'';
-          state.openAccordion=(state.openAccordion===key)?'':key;
-          applyAccordionDom();
-          return;
-        }
         var openTip=e.target.closest('[data-open-pending-review]');
         if(openTip){
           var oid=state.pendingReviewTipId;
@@ -389,7 +314,15 @@ async function load(){
         }catch(err){if(box)box.textContent=err.message||'注册失败'}
       });
       document.addEventListener('click',function(e){
-        if(e.target.closest('[data-refresh]')){load();return}
+        
+        var accToggle=e.target.closest('[data-mine-acc-toggle]');
+        if(accToggle){
+          var key=accToggle.getAttribute('data-mine-acc-toggle')||'';
+          state.openAccordion=(state.openAccordion===key)?'':key;
+          syncAccordionDom();
+          return;
+        }
+if(e.target.closest('[data-refresh]')){load();return}
         if(e.target.closest('[data-edit]')){var u=state.user||{};form.elements.avatarUrl.value=u.avatarUrl||'';form.elements.displayName.value=u.displayName||'';form.elements.phone.value=u.phone||'';editState.textContent='';modal.classList.add('open');return}
         if(e.target.closest('[data-close]')||e.target===modal){modal.classList.remove('open');return}
         if(e.target.closest('[data-switch-portal]')){
