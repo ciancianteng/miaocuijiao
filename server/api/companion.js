@@ -2292,10 +2292,22 @@ async function bootstrapData(profile, companion) {
     permissions.forcedAckReason = "请先阅读并确认最新强制公告";
   }
 
+  // Count durable gallery/voice even when a signed preview URL failed — empty url must
+  // not surface false 「缺少相册/录音」 after a successful upload_media persist.
   const mediaExtrasForGate = {
-    avatarUrl: signedMedia.find((m) => m.mediaType === "avatar" && m.url)?.url || "",
-    voiceUrl: player.voiceUrl || "",
-    gallery: signedMedia.filter((m) => m.mediaType === "gallery" && m.url).map((m) => ({ id: m.id, url: m.url })),
+    avatarUrl:
+      signedMedia.find((m) => m.mediaType === "avatar" && m.url)?.url ||
+      (signedMedia.find((m) => m.mediaType === "avatar" && m.storagePath)
+        ? `storage://present/${signedMedia.find((m) => m.mediaType === "avatar" && m.storagePath).storagePath}`
+        : ""),
+    voiceUrl:
+      player.voiceUrl ||
+      (signedMedia.find((m) => m.mediaType === "voice" && m.storagePath)
+        ? `storage://present/${signedMedia.find((m) => m.mediaType === "voice" && m.storagePath).storagePath}`
+        : ""),
+    gallery: signedMedia
+      .filter((m) => m.mediaType === "gallery" && (m.url || m.storagePath || m.id))
+      .map((m) => ({ id: m.id, url: m.url || m.storagePath || "" })),
   };
   const publishGate = evaluatePublishGate(companionRow, profile, mediaExtrasForGate);
   permissions.publishReady = publishGate.publishReady;
@@ -4164,7 +4176,6 @@ export default async function handler(req, res) {
         service_type: serviceTypes.join(","),
         service_ids: serviceIds,
         description: String(body.bio || body.description || ""),
-        voice_url: String(body.voice_url || companion.voice_url || ""),
         voice_type: voiceTypeValue,
         price: priceValue != null ? priceValue : money(companion.price),
         game_prices: nextGamePrices,
@@ -4183,6 +4194,18 @@ export default async function handler(req, res) {
           : "pending",
         updated_at: nowIso(),
       };
+      // voice_url is owned by upload_media / delete_media. Never rewrite it from a
+      // request-start snapshot — concurrent save after upload was wiping storage:// refs
+      // (or writing ""), so public profile kept showing 缺少录音 / 音频加载失败.
+      if (body.voice_url != null || body.voiceUrl != null) {
+        const nextVoice = String(body.voice_url != null ? body.voice_url : body.voiceUrl || "").trim();
+        const isSigned =
+          /\/storage\/v1\/object\/sign\//i.test(nextVoice) ||
+          (/[?&]token=/i.test(nextVoice) && /\/storage\/v1\//i.test(nextVoice));
+        if (nextVoice && !isSigned) {
+          patch.voice_url = nextVoice;
+        }
+      }
       if (!/approved|verified|passed/i.test(String(companion.application_status || ""))) {
         patch.application_reject_reason = "";
       }
@@ -4205,12 +4228,12 @@ export default async function handler(req, res) {
           nickname: patch.nickname,
           game: patch.game,
           description: patch.description,
-          voice_url: patch.voice_url,
           voice_type: patch.voice_type,
           price: patch.price,
           updated_at: patch.updated_at,
           tags: writeGamePricesMarker(String(patch.tags || ""), nextGamePrices),
         };
+        if (patch.voice_url != null) core.voice_url = patch.voice_url;
         if (patch.card_image_url) core.card_image_url = patch.card_image_url;
         const tagBits = [core.tags];
         if (gameId) tagBits.push(`游戏ID:${gameId}`);
@@ -4908,9 +4931,10 @@ export default async function handler(req, res) {
           if (uploaded.bucket === PUBLIC_BUCKETS.profile || /public/i.test(uploaded.bucket)) {
             publicUrl = publicObjectUrl(uploaded.bucket, uploaded.path);
           } else {
-            // Request response may include a short-lived signed URL for immediate preview,
-            // but profile.avatar_url / card_image_url stay empty so public pages resolve via companion_media.
-            publicUrl = await createSignedUrl(uploaded.bucket, uploaded.path, 60 * 60);
+            // Preview signed URL for the client player (same TTL as bootstrap). Durable
+            // profile fields still store storage:// — never this signed URL.
+            const previewTtl = mediaType === "voice" ? 60 * 60 * 24 * 7 : 60 * 60;
+            publicUrl = await createSignedUrl(uploaded.bucket, uploaded.path, previewTtl);
           }
         } catch {
           publicUrl = "";
@@ -4974,6 +4998,10 @@ export default async function handler(req, res) {
       }
 
       await patchCompanionProfile(`?id=eq.${encodeURIComponent(row.id)}`, companionPatch);
+      const storageRef =
+        mediaType === "voice"
+          ? companionPatch.voice_url || durableStorageRef || ""
+          : durableStorageRef || "";
       return json(res, 200, {
         ok: true,
         message:
@@ -4991,12 +5019,15 @@ export default async function handler(req, res) {
         url: publicUrl,
         path: uploaded.path,
         bucket: uploaded.bucket,
+        storageRef: storageRef || undefined,
+        voice_url: mediaType === "voice" ? storageRef || undefined : undefined,
         media: {
           id: fallbackMediaId || `legacy-${mediaType}`,
           mediaType: persistedMediaType || mediaType,
           url: publicUrl,
           path: uploaded.path,
           bucket: uploaded.bucket,
+          storageRef: storageRef || undefined,
           sortOrder,
         },
       });
