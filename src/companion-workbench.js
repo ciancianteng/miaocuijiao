@@ -54,7 +54,7 @@
   };
   var COMPANION_ISOLATION_MSG='您的陪玩认证尚未通过，目前只能查看审核进度。';
   var HIDDEN_MVP_ROUTES={};
-  var state={route:'dashboard',session:null,data:null,notice:'',loading:false,error:'',walletWarning:'',authTab:'login',loginMethod:'otp',loginError:'',loginBusy:false,registerToken:'',registerVerifiedEmail:'',registerCooldownUntil:0,registerBusy:false,forgotStep:'',forgotAccount:'',forgotBusy:false,forgotMsg:'',forgotResetToken:'',profileServices:[],profileVoiceTypes:[],profileCompanionTags:[],profileErrors:{},profileDraft:null,accountDraft:null,uploadBusy:'',galleryPending:[],statusBusy:false,pendingOnlineStatus:null,settlement:null,orderFilter:'all',pollTimer:null,rulesPollTimer:null,ordersCacheAt:0,msgFilter:'all',settings:null,earningsTab:'overview',chatSession:'cs',chatConversationId:'',chatBusy:false,withdrawBusy:false,inbox:null,inboxError:'',hallOrderType:'all',hallGame:'all',_prevDesignated:null,_prevAuditLocked:null,_toastTimer:null,_ordersRtReady:false,_alertedOrderIds:null,_baseDocTitle:'',_focusOrderId:''};
+  var state={route:'dashboard',session:null,data:null,notice:'',loading:false,error:'',walletWarning:'',authTab:'login',loginMethod:'otp',loginError:'',loginBusy:false,registerToken:'',registerVerifiedEmail:'',registerCooldownUntil:0,registerBusy:false,forgotStep:'',forgotAccount:'',forgotBusy:false,forgotMsg:'',forgotResetToken:'',profileServices:[],profileVoiceTypes:[],profileCompanionTags:[],profileErrors:{},profileDraft:null,accountDraft:null,uploadBusy:'',galleryPending:[],statusBusy:false,pendingOnlineStatus:null,settlement:null,orderFilter:'all',pollTimer:null,rulesPollTimer:null,ordersCacheAt:0,msgFilter:'all',settings:null,earningsTab:'overview',chatSession:'cs',chatConversationId:'',chatBusy:false,withdrawBusy:false,inbox:null,inboxError:'',hallOrderType:'all',hallGame:'all',drawerOpen:false,_prevDesignated:null,_prevAuditLocked:null,_toastTimer:null,_ordersRtReady:false,_alertedOrderIds:null,_baseDocTitle:'',_focusOrderId:''};
   var IMAGE_ACCEPT='image/jpeg,image/jpg,image/png,image/webp,image/*';
   /** Companion self-select voice lines — not from admin「声线管理」. */
   var FIXED_VOICE_OPTIONS=['甜妹','御姐','少御','萝莉','温柔','清冷','慵懒','磁性','少年','青叔','大叔','其他'];
@@ -636,6 +636,24 @@
     return buildInbox().filter(function(m){return m.unread}).length;
   }
   function route(){var p=location.pathname.replace(/\/$/,'')||'/companion';if(p==='/companion')p='/companion/';return ROUTES[p]||'dashboard'}
+  function closeAccountMenu(){
+    root.querySelectorAll('.pw-account.open').forEach(function(el){el.classList.remove('open')});
+  }
+  function setDrawerOpen(open){
+    state.drawerOpen=!!open;
+    var shell=root.querySelector('.pw-shell');
+    if(shell)shell.classList.toggle('is-drawer-open',state.drawerOpen);
+    try{document.body.classList.toggle('pw-drawer-open',state.drawerOpen)}catch(e){}
+    var btn=root.querySelector('[data-pw-drawer-toggle]');
+    if(btn){
+      btn.setAttribute('aria-expanded',state.drawerOpen?'true':'false');
+      btn.setAttribute('aria-label',state.drawerOpen?'关闭菜单':'打开菜单');
+    }
+  }
+  function closeMobileMenus(){
+    closeAccountMenu();
+    setDrawerOpen(false);
+  }
   function go(path){
     var next=String(path||'');
     if(isIsolationMode()&&state.session){
@@ -650,6 +668,7 @@
     if(leavingProfile)state.profileDraft=null;
     var leavingAccount=isAccountRoute(state.route)&&!/\/companion\/(account|mine|verification)(\/|$)/.test(next);
     if(leavingAccount)state.accountDraft=null;
+    closeMobileMenus();
     history.pushState(null,'',next);
     paint({routeChange:true});
   }
@@ -1353,6 +1372,8 @@
       var walletResult=results[3];
       var inboxResult=results[4];
       state.data=Object.assign({},state.data||{},result.data||{});
+      // Drop stale client media errors once bootstrap shows durable avatar/gallery/voice.
+      reconcileProfileMediaFlags();
       state.ordersCacheAt=Date.now();
       if(inboxResult&&inboxResult.ok){
         applyInboxPayload(inboxResult.data||inboxResult.inbox||emptyInboxShell());
@@ -1760,9 +1781,12 @@
     var subtitle=isolated
       ? isolationHint()
       : (lock?String(lock):'抢单 → 服务 → 完成订单 → 收益提现');
-    var h1=root.querySelector('.pw-top h1');
-    var sub=root.querySelector('.pw-top p');
-    if(h1)h1.textContent=title();
+    var h1=root.querySelector('.pw-top-titles h1');
+    var sub=root.querySelector('.pw-top-sub')||root.querySelector('.pw-top p');
+    var pageLabel=root.querySelector('.pw-top-page');
+    var pageTitle=title();
+    if(h1)h1.textContent=pageTitle;
+    if(pageLabel)pageLabel.textContent=pageTitle;
     if(sub)sub.textContent=subtitle;
     root.querySelectorAll('.pw-nav [data-route], .pw-bottom-nav [data-route]').forEach(function(btn){
       var path=btn.getAttribute('data-route')||'';
@@ -1807,6 +1831,7 @@
     captureLiveForms();
     var prevRoute=state.route;
     state.route=route();
+    if(opts.routeChange||prevRoute!==state.route)closeMobileMenus();
     if(state.route!=='profile')state.profileDraft=null;
     if(!isAccountRoute())state.accountDraft=null;
     if(state.session&&isIsolationMode()){
@@ -1931,7 +1956,7 @@
     if(Auth&&Auth.bindPasswordToggles)Auth.bindPasswordToggles(root);
     if(Auth&&Auth.prepareAuthForm)Auth.prepareAuthForm(root,{clearAccount:!state.loginError&&!state.loginBusy,keepErrors:!!state.loginError});
   }
-  function title(){return ({dashboard:'工作台',hall:'抢单大厅',orders:'我的订单',earnings:'收益中心',wallet:'收益中心',profile:isIsolationMode()?'申请资料':'我的资料（公开）',account:isIsolationMode()?'账号资料':'账号中心（隐私）',mine:'账号中心（隐私）',withdraw:'提现',messages:'消息中心',settings:'设置',popularity:'我的人气',rules:'陪玩规则','review-status':'审核状态'})[state.route]||'陪玩端'}
+  function title(){return ({dashboard:'工作台',hall:'抢单大厅',orders:'我的订单',earnings:'收益中心',wallet:'收益中心',profile:isIsolationMode()?'申请资料':'编辑公开资料',account:isIsolationMode()?'账号资料':'账号中心（隐私）',mine:'账号中心（隐私）',withdraw:'提现',messages:'消息中心',settings:'设置',popularity:'我的人气',rules:'陪玩规则','review-status':'审核状态'})[state.route]||'陪玩端'}
   function maintenanceHtml(name){return '<div class="pw-page-head"><div><h2>'+esc(name||'模块已合并')+'</h2><p>该模块已合并到工作台其他页面，请从工作台进入相应功能。</p></div><button class="pw-btn primary" type="button" data-route="/companion/dashboard">返回工作台</button></div>'}
   function bottomNavHtml(){
     var items=isIsolationMode()?ISOLATION_BOTTOM_NAV:BOTTOM_NAV;
@@ -1995,9 +2020,10 @@
     var subtitle=isolated
       ? isolationHint()
       : (lock?esc(lock):'抢单 → 服务 → 完成订单 → 收益提现');
+    // Account dropdown: secondary only. Primary destinations live in side drawer / bottom nav.
     var accountMenu=isolated
-      ? '<button type="button" data-route="/companion/review-status">审核状态</button><button type="button" data-route="/companion/profile">申请资料</button><button type="button" data-route="/companion/account">账号资料</button><button class="danger" type="button" data-logout>退出登录</button>'
-      : '<button type="button" data-route="/companion/profile">我的资料</button><button type="button" data-route="/companion/account">账号中心</button><button type="button" data-route="/companion/settings">设置</button><button class="danger" type="button" data-logout>退出登录</button>';
+      ? '<button class="danger" type="button" data-logout>退出登录</button>'
+      : '<button type="button" data-route="/companion/settings">设置</button><button class="danger" type="button" data-logout>退出登录</button>';
 
     var existing=root.querySelector('.pw-shell');
     var canPatch=!!existing
@@ -2007,6 +2033,7 @@
     if(canPatch){
       // Keep sidebar/header DOM stable — only swap main page content + chrome labels.
       syncShellChrome(isolated);
+      setDrawerOpen(false);
       // Reset scroll BEFORE content swap so the new page never paints at the old offset.
       if(routeChanged)resetRouteScroll();
       var pageEl=existing.querySelector('.pw-page');
@@ -2039,10 +2066,33 @@
       return;
     }
 
-    root.innerHTML='<div class="pw-shell'+(isolated?' is-isolation':'')+'"><aside class="pw-side"><div class="pw-brand"><strong>MEOW CUI JIAO</strong><span>'+(isolated?'审核隔离模式':'Companion Workbench')+'</span></div><nav class="pw-nav">'+navItems.map(function(n){
-      var badge=n[0]==='messages'&&unread?' <em class="pw-nav-badge">'+unread+'</em>':'';
-      return '<button class="'+(state.route===n[0]||(n[0]==='account'&&(state.route==='mine'||state.route==='verification'))||(n[0]==='earnings'&&state.route==='wallet')?'active':'')+'" data-route="'+n[2]+'">'+n[1]+badge+'</button>';
-    }).join('')+'</nav></aside><section class="pw-main"><header class="pw-top"><div><h1>'+title()+'</h1><p>'+subtitle+'</p></div><div class="pw-account"><button class="pw-avatar" data-account-toggle>'+esc(String(player.name||player.uid||'P').slice(0,1).toUpperCase())+'</button><div class="pw-menu">'+accountMenu+'</div></div></header>'+(isolated?'':(window.MCJCompanionAnnouncements&&window.MCJCompanionAnnouncements.hostHtml?window.MCJCompanionAnnouncements.hostHtml():'<div class="pw-announcement-host" data-pw-announcement-host hidden></div>'))+'<main class="pw-page">'+pageHtml()+'</main></section>'+bottomNavHtml()+'</div>'+noticeHtml()+settlementModalHtml();
+    state.drawerOpen=false;
+    try{document.body.classList.remove('pw-drawer-open')}catch(e){}
+    root.innerHTML='<div class="pw-shell'+(isolated?' is-isolation':'')+'">'+
+      '<aside class="pw-side" id="pwSideNav" aria-label="陪玩端导航">'+
+      '<div class="pw-brand"><strong>MEOW CUI JIAO</strong><span>'+(isolated?'审核隔离模式':'Companion Workbench')+'</span></div>'+
+      '<nav class="pw-nav">'+navItems.map(function(n){
+        var badge=n[0]==='messages'&&unread?' <em class="pw-nav-badge">'+unread+'</em>':'';
+        return '<button type="button" class="'+(state.route===n[0]||(n[0]==='account'&&(state.route==='mine'||state.route==='verification'))||(n[0]==='earnings'&&state.route==='wallet')?'active':'')+'" data-route="'+n[2]+'">'+n[1]+badge+'</button>';
+      }).join('')+'</nav>'+
+      (!isolated?'<div class="pw-side-extra"><button type="button" class="pw-btn" data-route="/companion/rules">规则与制度</button></div>':'')+
+      '</aside>'+
+      '<button type="button" class="pw-drawer-backdrop" data-pw-drawer-close aria-label="关闭菜单" tabindex="-1"></button>'+
+      '<section class="pw-main"><header class="pw-top">'+
+      '<div class="pw-top-left">'+
+      '<button type="button" class="pw-drawer-toggle" data-pw-drawer-toggle aria-expanded="false" aria-controls="pwSideNav" aria-label="打开菜单"><span class="pw-drawer-toggle-bars" aria-hidden="true"></span></button>'+
+      '<div class="pw-top-brand" aria-label="妙脆角陪玩端">'+
+      '<strong class="pw-top-logo">MEOW CUI JIAO</strong>'+
+      '<span class="pw-top-brand-cn">妙脆角 · 陪玩端</span>'+
+      '<span class="pw-top-page">'+esc(title())+'</span>'+
+      '</div>'+
+      '<div class="pw-top-titles"><h1>'+title()+'</h1><p class="pw-top-sub">'+subtitle+'</p></div>'+
+      '</div>'+
+      '<div class="pw-account"><button type="button" class="pw-avatar" data-account-toggle aria-label="账号菜单">'+esc(String(player.name||player.uid||'P').slice(0,1).toUpperCase())+'</button><div class="pw-menu">'+accountMenu+'</div></div>'+
+      '</header>'+
+      (isolated?'':(window.MCJCompanionAnnouncements&&window.MCJCompanionAnnouncements.hostHtml?window.MCJCompanionAnnouncements.hostHtml():'<div class="pw-announcement-host" data-pw-announcement-host hidden></div>'))+
+      '<main class="pw-page">'+pageHtml()+'</main></section>'+bottomNavHtml()+
+      '</div>'+noticeHtml()+settlementModalHtml();
     if(routeChanged)resetRouteScroll();
     else if(scrollPos)applyScrollPos(scrollPos);
     if(!isolated&&window.MCJCompanionAnnouncements){
@@ -2188,7 +2238,7 @@
     var csComposer=csActive
       ? '<form class="pw-form" style="margin-top:12px" data-isolation-cs-send><label>发送消息<textarea name="content" rows="2" required placeholder="询问审核进度…"></textarea></label><button class="pw-btn primary" type="submit"'+(state.chatBusy?' disabled':'')+'>发送</button></form>'
       : '';
-    return '<div class="pw-page-head"><div><h2>审核状态</h2><p>'+esc(isolationHint())+'</p></div><div class="pw-actions"><button class="pw-btn" type="button" data-logout>退出登录</button></div></div>'+
+    return '<div class="pw-page-head"><div><h2>审核状态</h2></div><div class="pw-actions"><button class="pw-btn" type="button" data-logout>退出登录</button></div></div>'+
       '<section class="pw-alert" data-review-isolation="'+esc(statusTone)+'" role="status"><strong>'+esc(statusLabel)+'</strong><span>'+esc(statusDetail)+'</span>'+
       (statusTone==='rejected'||statusTone==='draft'
         ?'<button class="pw-btn primary" type="button" data-route="/companion/profile">'+(statusTone==='draft'?'继续填写申请':'修改资料并重新提交')+'</button>'
@@ -2410,15 +2460,24 @@
     var online=currentOnlineStatus()==='online';
     var locked=isAuditLocked();
     var designated=num(s.waitingConfirm||s.designatedPending);
-    var reviewBanner=reviewStatusBannerHtml();
     var uaTop=unifiedAccess();
     var stTop=String(uaTop.profile_review_status||'').toLowerCase();
-    var showDesignated=!locked&&designated>0&&/approved|verified|passed/.test(stTop);
+    var approved=/approved|verified|passed/.test(stTop);
+    // One audit/publish banner at a time — avoid stacked「审核中 / 尚未公开」duplicates.
+    var reviewBanner='';
+    var publishBanner='';
+    if(approved){
+      publishBanner=publishGateBannerHtml();
+      if(isForcedAckLocked()||isCredentialIncomplete())reviewBanner=reviewStatusBannerHtml();
+    }else{
+      reviewBanner=reviewStatusBannerHtml();
+    }
+    var showDesignated=!locked&&designated>0&&approved;
     var extra=showDesignated
       ?'<div class="pw-alert designated" role="status"><strong>你有新的指定订单</strong><span>共 '+esc(designated)+' 单等待确认接单</span><button class="pw-btn primary" type="button" data-route="/companion/orders" data-order-filter="waiting_confirm">去处理</button></div>'
       :'';
     return '<div class="pw-page-head"><div><h2>工作台</h2><p>先切换今日状态，再处理订单。收益与提现请到独立页面。</p></div><div class="pw-actions"><button class="pw-btn primary" type="button" data-enter-hall '+(locked?'disabled':'')+'>进入抢单大厅</button><button class="pw-btn" data-route="/companion/orders">我的订单</button></div></div>'+
-      publishGateBannerHtml()+
+      publishBanner+
       reviewBanner+
       extra+
       depositBadgeHtml()+
@@ -2891,12 +2950,6 @@
       '<section class="pw-card pad" style="margin-top:14px"><h3>声音</h3><label class="pw-check"><input type="checkbox" data-setting="sound" '+(s.sound?'checked':'')+'> 提示音（新消息 / 订单 / 抢单 / 审核）</label></section>'+
       '<section class="pw-card pad" style="margin-top:14px"><h3>账号</h3><button class="pw-btn danger" type="button" data-logout>退出登录</button></section>';
   }
-  function reviewStars(rating){
-    var n=Math.max(0,Math.min(5,Math.round(Number(rating)||0)));
-    var out='';
-    for(var i=0;i<5;i++)out+=i<n?'★':'☆';
-    return out;
-  }
   function fieldErr(name){var msg=state.profileErrors&&state.profileErrors[name];return msg?'<span class="pw-field-error" data-field-error="'+esc(name)+'">'+esc(msg)+'</span>':''}
   function fieldLabel(text,required){return '<span class="pw-field-label">'+esc(text)+(required?'<i class="pw-req">*</i>':'')+'</span>'}
 
@@ -2982,6 +3035,38 @@
   function savedGalleryCount(){
     return ((state.data&&state.data.media)||[]).filter(function(m){return m.mediaType==='gallery'}).length;
   }
+  function reconcileProfileMediaFlags(){
+    var p=(state.data&&state.data.player)||{};
+    var media=(state.data&&state.data.media)||[];
+    var hasAvatar=media.some(function(m){return m.mediaType==='avatar'&&(m.url||m.storagePath||m.storage_path)})||!!(p.hasCustomAvatar&&p.avatar&&p.avatar!=='/default-avatar.png');
+    var hasGallery=media.some(function(m){return m.mediaType==='gallery'&&(m.url||m.storagePath||m.storage_path)})||
+      (state.galleryPending||[]).some(function(g){return g&&!g._failed&&(g.url||g._uploading||g._done)});
+    var voiceMedia=media.some(function(m){return m.mediaType==='voice'&&(m.url||m.storagePath||m.storage_path)});
+    var rawVoice=p.raw&&(p.raw.voice_url||p.raw.voiceUrl);
+    var hasVoice=voiceMedia||!!(p.voiceUrl&&String(p.voiceUrl).trim())||!!(rawVoice&&String(rawVoice).trim());
+    if(state.profileErrors){
+      if(hasAvatar)delete state.profileErrors.avatar;
+      if(hasGallery)delete state.profileErrors.gallery;
+      if(hasVoice)delete state.profileErrors.voice;
+    }
+    if(state.profileMissing&&state.profileMissing.length){
+      state.profileMissing=state.profileMissing.filter(function(x){
+        if(hasAvatar&&x==='缺少头像')return false;
+        if(hasGallery&&x==='缺少相册')return false;
+        if(hasVoice&&x==='缺少录音')return false;
+        return true;
+      });
+    }
+    // Soft publish banner: strip media gaps that bootstrap already has on disk.
+    if(state.data&&Array.isArray(state.data.publishMissing)&&state.data.publishMissing.length){
+      state.data.publishMissing=state.data.publishMissing.filter(function(x){
+        if(hasAvatar&&x==='缺少头像')return false;
+        if(hasGallery&&x==='缺少相册')return false;
+        if(hasVoice&&x==='缺少录音')return false;
+        return true;
+      });
+    }
+  }
   function pendingGallerySlots(){
     return (state.galleryPending||[]).filter(function(p){return p&&(p._uploading||(!p._failed&&!p._done))}).length;
   }
@@ -3021,6 +3106,7 @@
     return /^(https?:\/\/|blob:|data:audio\/)/i.test(String(u||'').trim());
   }
   function pickVoicePlayUrl(voiceMedia,p,raw,localUrl){
+    // Prefer local blob while remote URL is still verifying (Safari mp4 timeslice uploads).
     if(localUrl&&isPlayableMediaUrl(localUrl))return String(localUrl);
     var list=[
       voiceMedia&&voiceMedia.url,
@@ -3033,6 +3119,141 @@
       if(isPlayableMediaUrl(list[i]))return String(list[i]).trim();
     }
     return '';
+  }
+  function encodeWavFromAudioBuffer(buffer){
+    var numChannels=buffer.numberOfChannels||1;
+    var sampleRate=buffer.sampleRate||44100;
+    var samples=buffer.length||0;
+    var bytesPerSample=2;
+    var blockAlign=numChannels*bytesPerSample;
+    var dataSize=samples*blockAlign;
+    var ab=new ArrayBuffer(44+dataSize);
+    var view=new DataView(ab);
+    function writeStr(offset,str){
+      for(var i=0;i<str.length;i++)view.setUint8(offset+i,str.charCodeAt(i));
+    }
+    writeStr(0,'RIFF');
+    view.setUint32(4,36+dataSize,true);
+    writeStr(8,'WAVE');
+    writeStr(12,'fmt ');
+    view.setUint32(16,16,true);
+    view.setUint16(20,1,true);
+    view.setUint16(22,numChannels,true);
+    view.setUint32(24,sampleRate,true);
+    view.setUint32(28,sampleRate*blockAlign,true);
+    view.setUint16(32,blockAlign,true);
+    view.setUint16(34,16,true);
+    writeStr(36,'data');
+    view.setUint32(40,dataSize,true);
+    var offset=44;
+    var chans=[];
+    for(var c=0;c<numChannels;c++)chans.push(buffer.getChannelData(c));
+    for(var i=0;i<samples;i++){
+      for(var ch=0;ch<numChannels;ch++){
+        var s=Math.max(-1,Math.min(1,chans[ch][i]||0));
+        view.setInt16(offset,s<0?s*0x8000:s*0x7fff,true);
+        offset+=2;
+      }
+    }
+    return ab;
+  }
+  function remuxVoiceBlobToWav(blob){
+    if(!blob||!blob.size)return Promise.resolve(null);
+    var AudioCtx=window.AudioContext||window.webkitAudioContext;
+    if(!AudioCtx)return Promise.resolve(null);
+    var ctx=null;
+    return Promise.resolve().then(function(){
+      ctx=new AudioCtx();
+      return blob.arrayBuffer();
+    }).then(function(ab){
+      return ctx.decodeAudioData(ab.slice(0));
+    }).then(function(decoded){
+      var wav=encodeWavFromAudioBuffer(decoded);
+      try{if(ctx&&ctx.close)ctx.close()}catch(e){}
+      return new File([wav],'voice-record.wav',{type:'audio/wav'});
+    }).catch(function(err){
+      try{if(ctx&&ctx.close)ctx.close()}catch(e){}
+      try{console.warn('[companion-media] wav remux skipped',err)}catch(e){}
+      return null;
+    });
+  }
+  function normalizeVoiceUploadFile(file){
+    if(!file)return Promise.resolve(file);
+    var mime=String(file.type||voiceRec.mimeType||'').toLowerCase();
+    var base=mime.split(';')[0].trim();
+    // Safari MediaRecorder audio/mp4(+timeslice) often fails <audio> after Storage upload.
+    // Remux recorder containers to WAV for durable cross-browser playback (profile + public).
+    // Skip already-stable library formats (wav/mp3) to avoid needless decode.
+    var shouldRemux=/^(audio\/)?(mp4|aac|x-m4a|webm|ogg)/i.test(base||'') || /\.(m4a|mp4|webm|ogg|aac)$/i.test(String(file.name||''));
+    if(!shouldRemux)return Promise.resolve(file);
+    return remuxVoiceBlobToWav(file).then(function(wavFile){
+      if(wavFile&&wavFile.size>44)return wavFile;
+      // Fallback: strip codec params so Storage Content-Type is clean.
+      if(base&&base!==file.type)return new File([file],'voice-record.'+(/mp4|aac|m4a/i.test(base)?'m4a':(/ogg/i.test(base)?'ogg':'webm')),{type:base});
+      return file;
+    });
+  }
+  function probeVoiceUrlPlayable(url){
+    return new Promise(function(resolve){
+      if(!isPlayableMediaUrl(url)||!/^https?:\/\//i.test(String(url))){resolve(false);return}
+      var a=document.createElement('audio');
+      var done=false;
+      var finish=function(ok){
+        if(done)return;
+        done=true;
+        try{a.removeAttribute('src');a.load()}catch(e){}
+        resolve(!!ok);
+      };
+      var t=setTimeout(function(){finish(false)},8000);
+      a.preload='metadata';
+      a.onloadedmetadata=function(){clearTimeout(t);finish(true)};
+      a.oncanplay=function(){clearTimeout(t);finish(true)};
+      a.onerror=function(){clearTimeout(t);finish(false)};
+      try{a.src=url;a.load()}catch(e){clearTimeout(t);finish(false)}
+    });
+  }
+  function settleVoiceAfterUpload(remoteUrl){
+    var url=String(remoteUrl||'').trim();
+    if(!url){
+      // Keep local preview if remote URL missing.
+      state.voicePlayError='';
+      return Promise.resolve();
+    }
+    return probeVoiceUrlPlayable(url).then(function(ok){
+      if(ok){
+        state.voicePlayError='';
+        state._voiceReloadTried=false;
+        clearVoiceLocal();
+        paint({preserveScroll:true});
+        return;
+      }
+      // Fresh sign once, then keep local blob as playable fallback.
+      if(!state._voiceReloadTried&&state.session&&state.session.token){
+        state._voiceReloadTried=true;
+        return loadData({soft:true,forcePaint:true,preserveScroll:true}).then(function(){
+          var p=(state.data&&state.data.player)||{};
+          var voiceMedia=((state.data&&state.data.media)||[]).filter(function(m){return m.mediaType==='voice'&&m.url})[0];
+          var next=pickVoicePlayUrl(voiceMedia,p,p.raw||{},voiceRec.localUrl||'');
+          if(next&&/^https?:\/\//i.test(next)){
+            return probeVoiceUrlPlayable(next).then(function(ok2){
+              if(ok2){
+                state.voicePlayError='';
+                clearVoiceLocal();
+                paint({preserveScroll:true});
+              }else{
+                state.voicePlayError='';
+                // Keep local blob; do not flash 错误 while local still plays.
+                paint({preserveScroll:true});
+              }
+            });
+          }
+          state.voicePlayError='';
+          paint({preserveScroll:true});
+        });
+      }
+      state.voicePlayError='';
+      paint({preserveScroll:true});
+    });
   }
   function pwVoiceUploadHtml(p,raw,uploadBusy){
     var busy=uploadBusy==='voice';
@@ -3158,7 +3379,7 @@
     }).join(''):'';
     var galleryHtml=""; // rendered via pwGalleryUploadHtml
     var previewId=encodeURIComponent(p.id||p.uid||'');
-    return '<div class="pw-page-head"><div><h2>我的资料（公开）</h2><p>老板可见。联系方式 / 身份证 / 押金 / 收款请到「账号中心」。</p></div><div class="pw-actions">'+
+    return '<div class="pw-page-head"><div><h2>编辑公开资料</h2><p>仅编辑老板可见的可填写字段。在线状态 / 收藏 / 评价 / 订单摘要请点「预览老板端展示」查看。</p></div><div class="pw-actions">'+
       (previewId?'<a class="pw-btn" href="/profile.html?player='+previewId+'" target="_blank" rel="noopener">预览老板端展示</a>':'')+
       '<button class="pw-btn" type="button" data-route="/companion/account">账号中心</button>'+
       '</div></div>'+
@@ -3215,32 +3436,8 @@
       pwVoiceUploadHtml(p,raw,uploadBusy)+
       fieldErr('voice')+
       '</div>'+
-      '<div class="pw-field">'+fieldLabel('在线状态',false)+'<p class="pw-field-hint">当前：'+esc((STATUS_META[currentOnlineStatus()]||{}).label||'离线')+'（只读，审核通过后可在工作台切换）</p></div>'+
-      (function(){
-        var reviews=(state.data&&state.data.reviews)||[];
-        var fav=num((state.data&&state.data.summary&&state.data.summary.favorites)||p.favorites||0);
-        var list=reviews.slice(0,8).map(function(r){
-          var code=String(r.bossCode||r.bossUid||'').trim();
-          if(!code||/@/.test(code)||/^[0-9a-f-]{20,}$/i.test(code))code='';
-          var bossLabel=code||String(r.bossName||'').replace(/^老板\s*/,'')||'老板';
-          if(code&&bossLabel.indexOf('MCJ')===-1&&!/^老板/.test(bossLabel))bossLabel=code;
-          if(code)bossLabel=code;
-          var orderLabel=String(r.orderNo||r.orderId||'').trim();
-          var gameLabel=String(r.gameName||r.game||'').trim()||'-';
-          return '<article class="pw-review-card">'+
-            '<p class="pw-review-stars">'+reviewStars(r.rating)+'</p>'+
-            '<p class="pw-review-name"><span class="pw-review-avatar">'+(bossLabel.slice(0,1)||'匿')+'</span><span>'+esc(bossLabel)+'</span></p>'+
-            '<p class="pw-review-body">'+esc(r.content||'无文字评价')+'</p>'+
-            '<p class="pw-review-meta">订单 '+esc(orderLabel||'-')+' · '+esc(gameLabel)+'</p>'+
-            '<p class="pw-review-date">'+esc(fmtTime(r.createdAt||r.date))+'</p>'+
-            '</article>';
-        }).join('');
-        return '<div class="pw-field"><span class="pw-field-label">评价 / 收藏（公开只读）</span>'+
-          '<div class="pw-info-list" style="margin-bottom:10px"><div><span>收藏数</span><strong>'+esc(fav)+'</strong></div></div>'+
-          (list?'<div class="pw-review-list">'+list+'</div>':'<div class="pw-empty tiny">暂无真实订单评价</div>')+
-          '</div>';
-      })()+
       '</section>'+
+      '<p class="pw-field-hint" style="margin:0 0 12px">在线状态、收藏、评价与完成订单等公开只读信息请在「预览老板端展示」查看；接单状态请在工作台切换。</p>'+
       '<button class="pw-btn primary" type="submit">保存公开资料</button>'+
       '</form>';
   }
@@ -3677,7 +3874,11 @@
     state.uploadBusy=mediaType;
     var localPreview='';
     paint();
-    return ensureFreshCompanionSession().then(function(){
+    var prepare=mediaType==='voice'?normalizeVoiceUploadFile(file):Promise.resolve(file);
+    return prepare.then(function(normalized){
+      file=normalized||file;
+      return ensureFreshCompanionSession();
+    }).then(function(){
       return withTimeout(readFileAsDataUrl(file,mediaType==='voice'?'voice':'image').then(function(dataUrl){
       localPreview=dataUrl;
       var preview=document.querySelector('[data-avatar-preview]');
@@ -3704,6 +3905,17 @@
     }).then(function(res){
       toast(res.message||'上传成功');
       state.uploadBusy='';
+      // Clear related soft validation errors so save is not blocked by stale 缺少相册/录音.
+      if(state.profileErrors){
+        if(mediaType==='avatar')delete state.profileErrors.avatar;
+        if(mediaType==='gallery')delete state.profileErrors.gallery;
+        if(mediaType==='voice')delete state.profileErrors.voice;
+      }
+      if(state.profileMissing&&state.profileMissing.length){
+        var dropMap={avatar:'缺少头像',gallery:'缺少相册',voice:'缺少录音'};
+        var drop=dropMap[mediaType];
+        if(drop)state.profileMissing=state.profileMissing.filter(function(x){return x!==drop});
+      }
       // Keep draft + force paint so thumbnails / voice player refresh without wiping fields.
       if(res&&res.url&&mediaType==='avatar'&&state.data&&state.data.player){
         state.data.player.avatar=res.url;
@@ -3714,14 +3926,17 @@
       if(res&&res.url&&mediaType==='voice'&&state.data&&state.data.player){
         state.data.player.voiceUrl=res.url;
         state.voicePlayError='';
-        clearVoiceLocal();
-        // Swap optimistic data:/blob: preview to the real Storage URL immediately.
-        var voiceAudio=document.querySelector('audio[data-voice-audio], .pw-voice-preview audio');
-        if(voiceAudio&&isPlayableMediaUrl(res.url)){
-          try{voiceAudio.src=res.url}catch(e){}
-        }
+        state._voiceReloadTried=false;
+        // Keep local blob until remote https URL actually loads (Safari mp4 upload quirk).
+        // Keep durable storage:// on raw so save/validate still sees 有录音 after soft refresh.
+        if(!state.data.player.raw)state.data.player.raw={};
+        var durable=res.voice_url||res.storageRef||(res.media&&res.media.storageRef)||'';
+        if(durable)state.data.player.raw.voice_url=durable;
       }
-      return loadData({soft:true,forcePaint:true});
+      return loadData({soft:true,forcePaint:true,preserveScroll:true}).then(function(){
+        if(mediaType==='voice')return settleVoiceAfterUpload(res&&res.url);
+        return res;
+      }).then(function(){return res});
     }).catch(function(err){
       state.uploadBusy='';
       captureLiveForms(true);
@@ -3796,10 +4011,12 @@
 
     var p=(state.data&&state.data.player)||{};
     var media=(state.data&&state.data.media)||[];
-    var hasAvatar=media.some(function(m){return m.mediaType==='avatar'&&m.url})||!!(p.hasCustomAvatar&&p.avatar&&p.avatar!=='/default-avatar.png');
-    var hasGallery=media.some(function(m){return m.mediaType==='gallery'&&m.url});
-    var voiceMedia=media.filter(function(m){return m.mediaType==='voice'&&m.url})[0];
-    var hasVoice=!!(voiceMedia&&voiceMedia.url)||!!(p.voiceUrl||(p.raw&&p.raw.voice_url));
+    var pendingGal=(state.galleryPending||[]).filter(function(g){return g&&!g._failed&&(g.url||g._uploading||g._done)});
+    var hasAvatar=media.some(function(m){return m.mediaType==='avatar'&&(m.url||m.storagePath||m.storage_path)})||!!(p.hasCustomAvatar&&p.avatar&&p.avatar!=='/default-avatar.png');
+    var hasGallery=media.some(function(m){return m.mediaType==='gallery'&&(m.url||m.storagePath||m.storage_path)})||pendingGal.length>0;
+    var voiceMedia=media.filter(function(m){return m.mediaType==='voice'&&(m.url||m.storagePath||m.storage_path)})[0];
+    var rawVoice=p.raw&&(p.raw.voice_url||p.raw.voiceUrl);
+    var hasVoice=!!(voiceMedia)||!!(p.voiceUrl&&String(p.voiceUrl).trim())||!!(rawVoice&&String(rawVoice).trim());
     if(!hasAvatar){errors.avatar='缺少头像';missing.push('缺少头像')}
     if(!hasGallery){errors.gallery='缺少相册';missing.push('缺少相册')}
     if(!hasVoice){errors.voice='缺少录音';missing.push('缺少录音')}
@@ -4061,7 +4278,26 @@
     var hallType=e.target.closest('[data-hall-type]');
     if(hallType){state.hallOrderType=hallType.dataset.hallType||'all';paint();return}
     if(e.target.closest('[data-hall-refresh]')){loadData({soft:true});return}
-    if(e.target.closest('[data-account-toggle]')){e.target.closest('.pw-account').classList.toggle('open');return}
+    if(e.target.closest('[data-pw-drawer-toggle]')){
+      e.preventDefault();
+      closeAccountMenu();
+      setDrawerOpen(!state.drawerOpen);
+      return;
+    }
+    if(e.target.closest('[data-pw-drawer-close]')){
+      e.preventDefault();
+      setDrawerOpen(false);
+      return;
+    }
+    if(e.target.closest('[data-account-toggle]')){
+      var account=e.target.closest('.pw-account');
+      if(!account)return;
+      var willOpen=!account.classList.contains('open');
+      if(willOpen)setDrawerOpen(false);
+      closeAccountMenu();
+      if(willOpen)account.classList.add('open');
+      return;
+    }
     if(e.target.closest('[data-logout]')){clearSession();location.replace('/companion/login/');return}
     if(e.target.closest('[data-reload-inbox]')){reloadInbox().then(function(){return loadActiveThread({force:true});});return}
     if(e.target.closest('[data-reload-thread]')){loadActiveThread({force:true,clear:false});return}
@@ -4405,9 +4641,15 @@
       state.galleryPending=(state.galleryPending||[]).filter(function(p){return p&&p._localId!==pending._localId});
       if(res&&res.media&&state.data&&Array.isArray(state.data.media)){
         // Optimistic insert so next file's room count is accurate before reload finishes.
-        var row=Object.assign({mediaType:'gallery'},res.media,{url:res.url||(res.media&&res.media.url)||pending.url});
+        var row=Object.assign({mediaType:'gallery'},res.media,{
+          url:res.url||(res.media&&res.media.url)||pending.url,
+          storagePath:res.path||(res.media&&(res.media.path||res.media.storagePath))||'',
+          storageRef:res.storageRef||(res.media&&res.media.storageRef)||''
+        });
         state.data.media=state.data.media.concat([row]);
       }
+      if(state.profileErrors)delete state.profileErrors.gallery;
+      if(state.profileMissing)state.profileMissing=state.profileMissing.filter(function(x){return x!=='缺少相册'});
       return res;
     }).catch(function(err){
       pending._uploading=false;
@@ -4523,7 +4765,12 @@
       voiceRec.stream=stream;
       voiceRec.chunks=[];
       var mime='';
-      var candidates=['audio/mp4','audio/aac','audio/webm;codecs=opus','audio/webm','audio/ogg;codecs=opus'];
+      // Prefer webm on Chromium; Safari only supports audio/mp4|aac.
+      var ua=String(navigator.userAgent||'');
+      var isApple=/iPhone|iPad|iPod|Macintosh/i.test(ua)&&/Safari/i.test(ua)&&!/Chrom(e|ium)|CriOS|Edg/i.test(ua);
+      var candidates=isApple
+        ? ['audio/mp4','audio/aac','audio/wav']
+        : ['audio/webm;codecs=opus','audio/webm','audio/ogg;codecs=opus','audio/mp4','audio/aac'];
       for(var i=0;i<candidates.length;i++){
         try{
           if(window.MediaRecorder.isTypeSupported&&MediaRecorder.isTypeSupported(candidates[i])){mime=candidates[i];break}
@@ -4533,7 +4780,7 @@
       try{recorder=mime?new MediaRecorder(stream,{mimeType:mime}):new MediaRecorder(stream)}
       catch(err){recorder=new MediaRecorder(stream)}
       voiceRec.recorder=recorder;
-      voiceRec.mimeType=recorder.mimeType||mime||'audio/webm';
+      voiceRec.mimeType=(recorder.mimeType||mime||'audio/webm').split(';')[0].trim();
       voiceRec.startedAt=Date.now();
       voiceRec.recording=true;
       recorder.ondataavailable=function(e){if(e.data&&e.data.size)voiceRec.chunks.push(e.data)};
@@ -4542,7 +4789,8 @@
         voiceRec.recording=false;
         stopVoiceTimer();
         var duration=Math.max(1,Math.round((Date.now()-voiceRec.startedAt)/1000));
-        var blob=new Blob(voiceRec.chunks,{type:voiceRec.mimeType||'audio/webm'});
+        var blobType=(voiceRec.mimeType||'audio/webm').split(';')[0].trim();
+        var blob=new Blob(voiceRec.chunks,{type:blobType});
         voiceRec.chunks=[];
         voiceRec.recorder=null;
         if(!blob.size){
@@ -4553,11 +4801,19 @@
         clearVoiceLocal();
         voiceRec.localBlob=blob;
         voiceRec.localUrl=URL.createObjectURL(blob);
+        voiceRec.mimeType=blobType;
         voiceRec.duration=duration;
         paint({preserveScroll:true});
         toast('录音完成，可试听后确认上传');
       };
-      recorder.start(250);
+      // Safari audio/mp4 with timeslice → fragmented file that plays as blob: but fails after HTTPS upload.
+      var useTimeslice=!/mp4|aac|m4a|wav/i.test(voiceRec.mimeType||'');
+      try{
+        if(useTimeslice)recorder.start(250);
+        else recorder.start();
+      }catch(eStart){
+        try{recorder.start()}catch(e2){throw e2}
+      }
       stopVoiceTimer();
       voiceRec.timer=setInterval(syncVoiceTimerUi,250);
       paint({preserveScroll:true});
@@ -4582,11 +4838,12 @@
       toast('录音文件为空，请重新录制');
       return Promise.resolve();
     }
-    var ext=/mp4|aac/i.test(voiceRec.mimeType||'')?'m4a':(/ogg/i.test(voiceRec.mimeType||'')?'ogg':'webm');
-    var file=new File([voiceRec.localBlob],'voice-record.'+ext,{type:voiceRec.mimeType||'audio/webm'});
+    var mime=String(voiceRec.mimeType||voiceRec.localBlob.type||'audio/webm').split(';')[0].trim();
+    var ext=/wav/i.test(mime)?'wav':(/mp4|aac|m4a/i.test(mime)?'m4a':(/ogg/i.test(mime)?'ogg':'webm'));
+    var file=new File([voiceRec.localBlob],'voice-record.'+ext,{type:mime||'audio/webm'});
     toast('上传中…');
     return uploadImage('voice',file).then(function(res){
-      clearVoiceLocal();
+      // clearVoiceLocal happens in settleVoiceAfterUpload once remote plays.
       if(res&&(res.url||res.path))toast(res.message||'上传成功 / 已保存');
       return res;
     });
@@ -4708,6 +4965,65 @@
   document.addEventListener('error',function(e){
     var audio=e.target&&e.target.matches&&e.target.matches('audio[data-voice-audio], .pw-voice-preview audio')?e.target:null;
     if(!audio)return;
+    // Prefer still-valid local blob over flashing 错误 (common right after Safari upload).
+    if(voiceRec.localUrl&&isPlayableMediaUrl(voiceRec.localUrl)){
+      var cur=String(audio.currentSrc||audio.src||'');
+      if(cur.indexOf(voiceRec.localUrl)===-1){
+        state.voicePlayError='';
+        try{audio.src=voiceRec.localUrl;audio.load()}catch(err){}
+        var hostLocal=document.querySelector('[data-voice-play-error]');
+        if(hostLocal)hostLocal.textContent='';
+        return;
+      }
+    }
+    // Expired/invalid signed URL: soft-reload bootstrap once for a fresh sign, then show error.
+    if(!state._voiceReloadTried&&state.session&&state.session.token){
+      state._voiceReloadTried=true;
+      loadData({soft:true,forcePaint:true,preserveScroll:true}).then(function(){
+        var p=(state.data&&state.data.player)||{};
+        var voiceMedia=((state.data&&state.data.media)||[]).filter(function(m){return m.mediaType==='voice'&&m.url})[0];
+        var next=pickVoicePlayUrl(voiceMedia,p,p.raw||{},voiceRec.localUrl||'');
+        var live=document.querySelector('audio[data-voice-audio], .pw-voice-preview audio');
+        if(next&&isPlayableMediaUrl(next)){
+          state.voicePlayError='';
+          if(live){
+            try{live.src=next;live.load()}catch(err){}
+          }else{
+            paint({preserveScroll:true});
+          }
+          var hostOk=document.querySelector('[data-voice-play-error]');
+          if(hostOk)hostOk.textContent='';
+          if(/^https?:\/\//i.test(next)&&voiceRec.localUrl){
+            probeVoiceUrlPlayable(next).then(function(ok){if(ok){clearVoiceLocal();paint({preserveScroll:true})}});
+          }
+          return;
+        }
+        if(voiceRec.localUrl){
+          state.voicePlayError='';
+          paint({preserveScroll:true});
+          return;
+        }
+        state.voicePlayError='音频加载失败（可能是链接过期或格式不支持），请重新上传录音';
+        var host=document.querySelector('[data-voice-play-error]');
+        if(host)host.textContent=state.voicePlayError;
+        else toast(state.voicePlayError);
+      }).catch(function(){
+        if(voiceRec.localUrl){
+          state.voicePlayError='';
+          paint({preserveScroll:true});
+          return;
+        }
+        state.voicePlayError='音频加载失败（可能是链接过期或格式不支持），请重新上传录音';
+        var host=document.querySelector('[data-voice-play-error]');
+        if(host)host.textContent=state.voicePlayError;
+        else toast(state.voicePlayError);
+      });
+      return;
+    }
+    if(voiceRec.localUrl){
+      state.voicePlayError='';
+      return;
+    }
     state.voicePlayError='音频加载失败（可能是链接过期或格式不支持），请重新上传录音';
     var host=document.querySelector('[data-voice-play-error]');
     if(host)host.textContent=state.voicePlayError;
@@ -4797,6 +5113,12 @@
     },280);
   });
   document.addEventListener('keydown',function(e){
+    if(e.key==='Escape'){
+      if(state.drawerOpen||root.querySelector('.pw-account.open')){
+        closeMobileMenus();
+        return;
+      }
+    }
     var input=e.target.closest('[data-chat-input]');
     if(!input)return;
     if(e.key==='Enter'&&!e.shiftKey){
@@ -4808,6 +5130,11 @@
       }
     }
   });
+  document.addEventListener('click',function(e){
+    if(!root.querySelector('.pw-account.open'))return;
+    if(e.target.closest('.pw-account'))return;
+    closeAccountMenu();
+  },true);
   document.addEventListener('submit',function(e){
     if(e.target.matches('[data-login]')){
       e.preventDefault();
