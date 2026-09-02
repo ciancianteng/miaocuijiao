@@ -75,8 +75,44 @@
         '<p class="admin-sync-note">表未初始化。请到「直属关系管理」执行 Staging Migration（含 20260903 levels/invites/safeguards）。</p>';
     }
 
+    var levels = state.levels || [];
+    var enabledCount = levels.filter(function (lv) {
+      return lv.isEnabled !== false;
+    }).length;
+    var cards =
+      levels
+        .map(function (lv) {
+          return (
+            '<article class="bcr-level-card">' +
+            '<div class="code">' +
+            esc(lv.code) +
+            "</div>" +
+            '<div class="name">' +
+            esc(lv.name) +
+            "</div>" +
+            '<div class="meta">' +
+            '<span class="bcr-pill rate">分成 ' +
+            esc(lv.commissionRate) +
+            "%</span>" +
+            '<span class="bcr-pill">门槛 ' +
+            esc(lv.requiredActiveCompanions) +
+            "</span>" +
+            '<span class="bcr-pill ' +
+            (lv.isEnabled ? "on" : "off") +
+            '">' +
+            (lv.isEnabled ? "启用" : "停用") +
+            "</span>" +
+            "</div>" +
+            '<div class="bcr-actions"><button type="button" class="ghost-btn" data-bl-edit="' +
+            esc(lv.id) +
+            '">编辑</button></div>' +
+            "</article>"
+          );
+        })
+        .join("") || '<div class="empty">暂无等级</div>';
+
     var rows =
-      (state.levels || [])
+      levels
         .map(function (lv) {
           return (
             "<tr>" +
@@ -107,7 +143,16 @@
 
     box.innerHTML =
       tip +
-      '<p class="admin-sync-note" style="margin:0 0 12px">Boss 分成 = 平台抽成 × 等级/关系费率。等级变更<strong>不改</strong>历史已结算订单快照。手动钉选可选永久或到期。</p>' +
+      '<div class="bcr-hero"><h3>Boss 等级经营面板</h3><p>Boss 分成 = 平台抽成 × 等级/关系费率。等级变更<strong>不改</strong>历史已结算订单快照。手动钉选支持永久或到期。</p></div>' +
+      '<div class="bcr-kpis">' +
+      '<div class="bcr-kpi"><span>等级总数</span><strong>' +
+      levels.length +
+      "</strong></div>" +
+      '<div class="bcr-kpi"><span>启用中</span><strong>' +
+      enabledCount +
+      "</strong></div>" +
+      '<div class="bcr-kpi"><span>结算口径</span><strong style="font-size:14px">平台抽成内</strong></div>' +
+      "</div>" +
       '<div class="admin-toolbar" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px">' +
       '<button type="button" class="primary-btn" data-bl-reload' +
       (state.busy ? " disabled" : "") +
@@ -116,12 +161,15 @@
       (state.busy ? " disabled" : "") +
       ">新建等级</button>" +
       "</div>" +
+      '<div class="bcr-level-grid">' +
+      cards +
+      "</div>" +
       '<div class="table-wrap"><table class="data-table"><thead><tr><th>code</th><th>名称</th><th>直属陪玩门槛</th><th>分成%(占平台抽成)</th><th>状态</th><th></th></tr></thead><tbody>' +
       rows +
       "</tbody></table></div>" +
-      '<div class="admin-card" style="margin:16px 0;padding:12px;border:1px solid rgba(255,255,255,.08);border-radius:12px">' +
-      "<h3 style='margin:0 0 10px;font-size:16px'>编辑等级规则</h3>" +
-      '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px">' +
+      '<div class="bcr-panel">' +
+      "<h3>编辑等级规则</h3>" +
+      '<div class="bcr-form-grid">' +
       '<label>id<input id="blId" value="' +
       esc(state.form.id) +
       '"></label>' +
@@ -142,17 +190,17 @@
       '"></label>' +
       '<label>启用<select id="blEnabled"><option value="1"' +
       (state.form.isEnabled ? " selected" : "") +
-      ">是</option><option value=\"0\"" +
+      '>是</option><option value="0"' +
       (!state.form.isEnabled ? " selected" : "") +
       ">否</option></select></label>" +
       "</div>" +
-      '<div style="margin-top:10px"><button type="button" class="primary-btn" data-bl-save' +
+      '<div class="bcr-actions"><button type="button" class="primary-btn" data-bl-save' +
       (state.busy ? " disabled" : "") +
       ">保存等级</button></div>" +
       "</div>" +
-      '<div class="admin-card" style="margin:16px 0;padding:12px;border:1px solid rgba(255,255,255,.08);border-radius:12px">' +
-      "<h3 style='margin:0 0 10px;font-size:16px'>手动钉选 / 重评</h3>" +
-      '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px">' +
+      '<div class="bcr-panel">' +
+      "<h3>手动钉选 / 重评</h3>" +
+      '<div class="bcr-form-grid">' +
       '<label>老板 id / boss_uid<input id="blPinBoss" value="' +
       esc(state.pin.bossId) +
       '"></label>' +
@@ -161,17 +209,17 @@
       '"></label>' +
       '<label>钉选模式<select id="blPinMode"><option value="permanent"' +
       (state.pin.pinMode === "permanent" ? " selected" : "") +
-      ">永久</option><option value=\"until_expiry\"" +
+      '>永久</option><option value="until_expiry"' +
       (state.pin.pinMode === "until_expiry" ? " selected" : "") +
       ">到期</option></select></label>" +
       '<label>到期时间（until_expiry）<input id="blPinExp" type="datetime-local" value="' +
       esc(state.pin.expiresAt) +
       '"></label>' +
-      '<label>审计 reason（必填）<input id="blPinReason" value="' +
+      '<label class="reason-field">审计 reason（必填）<input id="blPinReason" value="' +
       esc(state.pin.reason) +
       '"></label>' +
       "</div>" +
-      '<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">' +
+      '<div class="bcr-actions">' +
       '<button type="button" class="primary-btn" data-bl-set-level' +
       (state.busy ? " disabled" : "") +
       ">手动设级</button>" +

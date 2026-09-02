@@ -1,0 +1,233 @@
+/* BCR Admin module polish — scoped to mounts only; does not change admin shell/layout */
+
+.bcr-hero {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 16px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 210, 230, 0.16);
+  background:
+    linear-gradient(135deg, rgba(255, 143, 197, 0.12), rgba(99, 215, 255, 0.06) 55%, transparent),
+    rgba(0, 0, 0, 0.22);
+}
+
+.bcr-hero h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.bcr-hero p {
+  margin: 0;
+  color: #b7b7c4;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.bcr-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+  margin: 0 0 16px;
+}
+
+.bcr-kpi {
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.bcr-kpi span {
+  display: block;
+  color: #9ca3af;
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+
+.bcr-kpi strong {
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.bcr-level-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+  margin: 0 0 16px;
+}
+
+.bcr-level-card {
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: rgba(18, 16, 24, 0.75);
+  display: grid;
+  gap: 8px;
+}
+
+.bcr-level-card .code {
+  color: #9ca3af;
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.bcr-level-card .name {
+  font-size: 17px;
+  font-weight: 800;
+}
+
+.bcr-level-card .meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.bcr-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+  color: #e5e7eb;
+}
+
+.bcr-pill.on {
+  border-color: rgba(64, 211, 154, 0.35);
+  background: rgba(64, 211, 154, 0.12);
+  color: #86efac;
+}
+
+.bcr-pill.off {
+  border-color: rgba(255, 107, 122, 0.3);
+  background: rgba(255, 107, 122, 0.1);
+  color: #fda4af;
+}
+
+.bcr-pill.rate {
+  border-color: rgba(255, 143, 197, 0.35);
+  background: rgba(255, 143, 197, 0.12);
+  color: #ffd0e4;
+}
+
+.bcr-panel {
+  margin: 0 0 16px;
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.bcr-panel h3 {
+  margin: 0 0 12px;
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.bcr-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+}
+
+.bcr-form-grid label {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+  color: #b7b7c4;
+}
+
+.bcr-form-grid input,
+.bcr-form-grid select {
+  width: 100%;
+  min-height: 38px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.28);
+  color: #f3f4f6;
+  padding: 8px 10px;
+}
+
+.bcr-form-grid .reason-field input {
+  border-color: rgba(255, 210, 122, 0.35);
+  box-shadow: inset 0 0 0 1px rgba(255, 210, 122, 0.08);
+}
+
+.bcr-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.bcr-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.bcr-status.active {
+  background: rgba(64, 211, 154, 0.14);
+  color: #86efac;
+}
+
+.bcr-status.unbound,
+.bcr-status.replaced {
+  background: rgba(156, 163, 175, 0.14);
+  color: #d1d5db;
+}
+
+.bcr-money-split {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0 0 14px;
+}
+
+.bcr-money-split .step {
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.bcr-money-split .step span {
+  display: block;
+  color: #9ca3af;
+  font-size: 11px;
+  margin-bottom: 4px;
+}
+
+.bcr-money-split .step strong {
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.bcr-money-split .step.fee strong {
+  color: #63d7ff;
+}
+
+.bcr-money-split .step.boss strong {
+  color: #ffd0e4;
+}
+
+.bcr-money-split .step.comp strong {
+  color: #86efac;
+}
+
+@media (max-width: 720px) {
+  .bcr-money-split {
+    grid-template-columns: 1fr 1fr;
+  }
+}

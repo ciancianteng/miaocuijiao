@@ -12,17 +12,40 @@
     .boss-nav a,.boss-nav button{border:0;background:transparent;color:#cdb8c4;cursor:pointer;font:inherit;font-size:14px;padding:0;text-decoration:none}
     .boss-nav a.active{color:#ffd6e7;font-weight:900}
     .shell{width:min(1080px,calc(100% - 32px));margin:0 auto;padding:24px 0 80px;display:grid;gap:16px}
-    .page-head,.panel{border:1px solid rgba(255,255,255,.10);border-radius:18px;background:rgba(255,255,255,.045);padding:18px}
-    .page-head h1{margin:0;font-size:28px}.page-head p{margin:6px 0 0;color:#9ca3af}
-    .panel h2{margin:0 0 14px;font-size:20px}
+    .page-head,.panel,.level-card{border:1px solid rgba(255,255,255,.10);border-radius:18px;background:rgba(255,255,255,.045);padding:18px}
+    .page-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;background:linear-gradient(135deg,rgba(255,143,197,.10),rgba(99,215,255,.05) 60%,transparent),rgba(255,255,255,.045)}
+    .page-head h1{margin:0;font-size:28px}.page-head p{margin:6px 0 0;color:#9ca3af;line-height:1.55}
+    .panel h2{margin:0 0 14px;font-size:20px;display:flex;align-items:center;gap:10px}
+    .panel h2 .soft{font-size:13px;color:#9ca3af;font-weight:600}
     .ghost-btn{padding:0 14px;min-height:40px;border-radius:12px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.055);color:#fff;cursor:pointer;font-weight:800;display:inline-flex;align-items:center;text-decoration:none}
     .list{display:grid;gap:10px}
-    .row{display:grid;grid-template-columns:1.2fr .8fr 1fr;gap:10px;align-items:center;border:1px solid rgba(255,255,255,.08);border-radius:12px;background:rgba(0,0,0,.18);padding:12px}
+    .row{display:grid;grid-template-columns:1.2fr .8fr 1fr 1fr;gap:10px;align-items:center;border:1px solid rgba(255,255,255,.08);border-radius:12px;background:rgba(0,0,0,.18);padding:12px}
     .row span{color:#9ca3af;font-size:13px;word-break:break-word}
     .empty{padding:28px 16px;text-align:center;color:#9ca3af;line-height:1.6}
     .message{border-radius:12px;padding:12px;line-height:1.55;border:1px solid rgba(255,210,122,.22);background:rgba(255,210,122,.08);color:#ffd27a}
     .message.bad{border-color:rgba(255,113,145,.24);background:rgba(255,113,145,.08);color:#ff9db7}
-    @media(max-width:720px){.row{grid-template-columns:1fr}.shell{width:calc(100% - 24px)}}
+    .level-card{display:grid;grid-template-columns:1.4fr .9fr;gap:16px;background:radial-gradient(circle at 12% 20%,rgba(255,143,197,.16),transparent 42%),rgba(255,255,255,.045)}
+    .level-card .eyebrow{display:block;color:#ffd0e4;font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;margin-bottom:8px}
+    .level-card-main strong{display:block;font-size:28px;font-weight:900;letter-spacing:-.02em}
+    .level-card-main p{margin:8px 0 0;color:#b7b7c4;line-height:1.5}
+    .level-card-side{padding:14px;border-radius:14px;border:1px solid rgba(255,255,255,.08);background:rgba(0,0,0,.22)}
+    .level-card-side span{color:#9ca3af;font-size:12px}
+    .level-card-side strong{display:block;margin-top:6px;font-size:15px}
+    .money-flow{display:flex;flex-wrap:wrap;gap:8px;align-items:stretch}
+    .flow-step{flex:1 1 120px;padding:12px;border-radius:12px;border:1px solid rgba(255,255,255,.08);background:rgba(0,0,0,.2)}
+    .flow-step span{display:block;color:#9ca3af;font-size:12px;margin-bottom:6px}
+    .flow-step strong{font-size:18px;font-weight:900}
+    .flow-step.fee strong{color:#63d7ff}
+    .flow-step.boss strong{color:#ffd0e4}
+    .flow-step.comp strong{color:#86efac}
+    .flow-arrow{display:grid;place-items:center;color:#6b7280;font-weight:800;min-width:18px}
+    .invite-form{display:grid;grid-template-columns:1.2fr 1fr auto;gap:8px;margin-bottom:12px}
+    .invite-form input{min-height:40px;border-radius:12px;border:1px solid rgba(255,255,255,.12);background:rgba(0,0,0,.28);color:#fff;padding:0 12px}
+    @media(max-width:720px){
+      .row,.level-card,.invite-form{grid-template-columns:1fr}
+      .shell{width:calc(100% - 24px)}
+      .flow-arrow{display:none}
+    }
   </style>
   <link rel="stylesheet" crossorigin href="/src/style.css">
   <link rel="stylesheet" crossorigin href="/src/boss-header.css">
@@ -47,6 +70,6 @@
   <script src="src/boss-auth-session.js?v=20260811authUnify2"></script>
   <script src="src/boss-header.js" defer></script>
   <script src="src/avatar-fallback.js"></script>
-  <script src="src/my-direct-companions.js?v=20260902bosscomm1" defer></script>
+  <script src="src/my-direct-companions.js?v=20260902bcrUi1" defer></script>
 </body>
 </html>

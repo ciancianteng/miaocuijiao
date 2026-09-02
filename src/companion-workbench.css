@@ -815,3 +815,19 @@ a.pw-btn{display:inline-flex;align-items:center;justify-content:center;text-deco
   .pw-gallery-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
 
+
+/* BCR relation + settlement polish */
+.pw-direct-boss{display:grid;gap:12px}
+.pw-direct-boss-hero{display:flex;align-items:center;gap:12px;padding:12px;border-radius:14px;border:1px solid rgba(255,145,195,.22);background:linear-gradient(135deg,rgba(255,143,197,.12),rgba(99,215,255,.05))}
+.pw-direct-boss-avatar{width:42px;height:42px;border-radius:12px;display:grid;place-items:center;font-weight:800;background:rgba(255,143,197,.18);color:#ffd0e4}
+.pw-direct-boss-uid{color:var(--pw-muted);font-size:12px;margin-top:3px}
+.pw-direct-boss-pill{margin-left:auto;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:700;background:rgba(64,211,154,.14);color:#86efac}
+.pw-money-split{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:0 0 14px}
+.pw-money-step{padding:10px;border-radius:12px;border:1px solid rgba(255,255,255,.08);background:rgba(0,0,0,.2)}
+.pw-money-step span{display:block;color:var(--pw-muted);font-size:11px;margin-bottom:4px}
+.pw-money-step strong{font-size:15px;font-weight:800}
+.pw-money-step.fee strong{color:#63d7ff}
+.pw-money-step.boss strong{color:#ffd0e4}
+.pw-money-step.comp strong{color:#86efac}
+.pw-settle-note{margin:12px 0 0;text-align:left;padding:10px 12px;border-radius:12px;border:1px solid rgba(255,210,122,.2);background:rgba(255,210,122,.08);color:#ffd27a}
+@media (max-width:720px){.pw-money-split{grid-template-columns:1fr 1fr}}
