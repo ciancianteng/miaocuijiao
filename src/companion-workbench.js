@@ -3636,14 +3636,19 @@
         '<button type="button" class="pw-mine-acc-trigger" data-pw-acc-toggle="'+esc(key)+'" aria-expanded="'+(open?'true':'false')+'">'+
         '<span class="pw-mine-acc-title">'+esc(title)+'</span>'+
         '<span class="pw-mine-acc-chevron" aria-hidden="true"></span></button>'+
-        '<div class="pw-mine-acc-panel" role="region" aria-hidden="'+(open?'false':'true')+'"'+(open?'':' hidden')+'>'+
-        '<div class="pw-mine-acc-body">'+bodyHtml+'</div></div></section>';
+        '<div class="pw-mine-acc-panel"'+(open?'':' hidden')+' role="region" aria-hidden="'+(open?'false':'true')+'">'+
+        '<div class="pw-mine-acc-inner"><div class="pw-mine-acc-body">'+bodyHtml+'</div></div></div></section>';
     }
     var u=state.session&&state.session.user||{};
     var canSwitchBoss=!!(u.hasBoss||u.has_boss||(Array.isArray(u.roles)&&u.roles.indexOf('boss')>=0)||u.role==='boss');
+    var displayName=p.displayName||p.nickname||p.name||raw.nickname||'陪玩账号';
+    var heroSub='陪玩 UID '+esc(p.uid||p.playerUid||p.id||'-')+(canSwitchBoss?' · 多角色':'');
+    // Keep banners/forms INSIDE cards so default page stays compact (Boss-like).
     var profileBody=
-      '<div class="pw-alert" style="margin:0 0 12px"><strong>隐私提示</strong><span>本页面仅本人和平台后台可见，不会公开给老板。</span></div>'+
-      '<section class="pw-card pad" style="border:0;background:rgba(0,0,0,.18);padding:12px"><h3>账号信息</h3><div class="pw-info-list">'+
+      accountAccessBannerHtml()+
+      reviewRejectBannerHtml('/companion/account')+
+      credentialBanner+
+      '<section class="pw-card pad" style="border:0;background:rgba(0,0,0,.18);padding:12px;margin-top:12px"><h3>账号信息</h3><div class="pw-info-list">'+
         infoRow('登录邮箱',p.email||p.uid||'-')+
         infoRow('联系方式',raw.contact_phone||v.phone||'未填写')+
         infoRow('身份证认证',idStatus)+
@@ -3653,8 +3658,10 @@
       '<form class="pw-card pad pw-form pw-form-narrow" style="margin-top:12px;border:0;background:rgba(0,0,0,.18)" data-private-contact-form><h3>联系方式</h3>'+
       '<label>联系方式（WhatsApp / 手机）<input name="contact_phone" value="'+esc(contactPhone)+'" required placeholder="仅后台/客服可见"></label>'+
       '<button class="pw-btn primary" type="submit">保存联系方式</button></form>'+
-      (verifyLocked?verifyView:verifyForm);
+      (verifyLocked?verifyView:verifyForm)+
+      '<div class="pw-actions" style="margin-top:12px"><button class="pw-btn" type="button" data-route="/companion/profile">编辑公开资料</button></div>';
     var assetsBody=
+      (depositPhase==='approved'?depositBadgeHtml():'')+
       '<section class="pw-card pad" style="border:0;background:rgba(0,0,0,.18);padding:12px"><h3>提现与押金</h3><div class="pw-info-list">'+
         infoRow('收款账户审核',STATUS_CN.verification(bankStatusRaw))+
         infoRow('银行名称',v.bankName||'未填写')+
@@ -3676,11 +3683,8 @@
         ?'<button class="pw-btn" type="button" data-switch-portal="boss">切换到老板端</button>'
         :'<button class="pw-btn" type="button" data-route="/companion/dashboard">返回工作台</button>')+
       '</div>';
-    return '<div class="pw-page-head"><div><h2>账号中心（隐私）</h2><p>仅本人 / 客服 / 后台可见，老板永远看不到。</p></div><button class="pw-btn" type="button" data-route="/companion/profile">公开资料</button></div>'+
-      accountAccessBannerHtml()+
-      reviewRejectBannerHtml('/companion/account')+
-      credentialBanner+
-      (depositPhase==='approved'?depositBadgeHtml():'')+
+    // Boss-exact default chrome: compact hero + 4 collapsed cards + logout only.
+    return '<section class="pw-mine-hero"><div class="pw-mine-hero-main"><div class="pw-mine-avatar">'+(p.avatarUrl?'<img src="'+esc(p.avatarUrl)+'" alt="">':esc(String(displayName).slice(0,1)||'P'))+'</div><div class="pw-mine-hero-text"><h1>'+esc(displayName)+'</h1><p>'+heroSub+'</p></div></div></section>'+
       '<div class="pw-mine-stack">'+
       accountAcc('profile','我的资料',profileBody)+
       accountAcc('assets','我的资产',assetsBody)+
@@ -4067,6 +4071,7 @@
     if(accToggle){
       e.preventDefault();
       var key=accToggle.getAttribute('data-pw-acc-toggle')||'';
+      // Independent cards: only one open at a time (Boss mine behavior); click again to collapse.
       state.accountAccordion=(state.accountAccordion===key)?'':key;
       document.querySelectorAll('[data-pw-acc]').forEach(function(sec){
         var k=sec.getAttribute('data-pw-acc')||'';
@@ -4077,10 +4082,11 @@
         var panel=sec.querySelector('.pw-mine-acc-panel');
         if(panel){
           panel.setAttribute('aria-hidden',open?'false':'true');
-          if(open)panel.removeAttribute('hidden'); else panel.setAttribute('hidden','');
+          if(open)panel.removeAttribute('hidden');
+          else panel.setAttribute('hidden','');
         }
       });
-      if(key==='security'&&state.accountAccordion==='security'){
+      if(state.accountAccordion==='security'){
         try{mountCompanionAccountSecurity();}catch(err){}
       }
       return;
