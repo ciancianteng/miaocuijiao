@@ -3482,7 +3482,7 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
   <script type="module" src="src/companion-media.js?v=20260802mediaSync"></script>
   <script type="module" src="src/launch-feature-freeze.js"></script>
   <script type="module" src="src/notify-system.js" defer></script>
-  <script type="module" src="src/boss-header.js?v=20260805p0home1" defer></script>
+  <script type="module" src="src/boss-header.js?v=20260829backLogin1" defer></script>
   <script type="module" src="src/boss-forced-ack.js?v=20260805p0home1" defer></script>
   <link rel="stylesheet" href="src/boss-header.css?v=20260805p0home1">
   <link rel="stylesheet" href="/src/mcj-safe-area.css?v=20260802mobileP0c">
@@ -3633,7 +3633,7 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
   <script type="module" src="src/unified-api.js"></script>
   <script type="module" src="src/currency.js"></script>
   <script src="src/auth-shell.js?v=20260806emailKeyboard1"></script>
-  <script type="module" src="src/login-modal-portal.js?v=20260805loginUi1"></script>
+  <script type="module" src="src/login-modal-portal.js?v=20260829backLogin1"></script>
   <script>
     const modal=document.getElementById('modal');const modalBody=document.getElementById('modalBody');
     function isLoggedIn(){return window.MCJRoleGate ? !!(window.MCJRoleGate.isLogged('customer')||window.MCJRoleGate.isLogged('boss')) : !!(function(){var t=localStorage.getItem('mcjAuthAccessToken')||sessionStorage.getItem('mcjAuthAccessToken')||'';return t&&t.split('.').length===3;})()}
@@ -4355,6 +4355,8 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
         } else {
           var y = window.scrollY || 0;
           window.MCJModal.openLogin(hash === 'register' ? 'register' : 'login');
+          // Consume #login/#register so Back does not reopen the auth dialog.
+          try { history.replaceState(null, '', location.pathname + location.search); } catch (e3) {}
           window.scrollTo(0, y);
         }
       }
