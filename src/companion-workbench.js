@@ -1942,6 +1942,7 @@
   }
   function settlementModalHtml(){
     var s=state.settlement;if(!s)return '';
+    var bossAmt=s.bossCommissionCatFood!=null?s.bossCommissionCatFood:(s.bossCommissionAmount!=null?s.bossCommissionAmount:null);
     var rows=[
       ['订单编号',s.orderNo||humanId(s.orderId)],
       ['老板', (s.bossName||'-')+(s.bossUid?' / '+s.bossUid:'')],
@@ -1955,8 +1956,17 @@
       ['完成时间',s.completedAt||'-'],
       ['结算状态',s.settlementStatus||'已结算']
     ];
+    if(bossAmt!=null&&bossAmt!==''){
+      rows.splice(8,0,['老板分成(平台抽成内)',bossAmt+(s.bossCommissionRate!=null?' · '+s.bossCommissionRate+'%':'')]);
+    }
     var note=s.bossCommissionTransparencyNote||'老板直属分成由平台抽成支付，不扣陪玩收入';
-    return '<div class="pw-modal" data-close-settlement><div class="pw-dialog" data-settlement-dialog><div class="pw-dialog-head"><h3>订单结算详情</h3><button type="button" class="pw-btn" data-close-settlement>关闭</button></div><div class="pw-info-list">'+rows.map(function(r){return '<div><span>'+esc(r[0])+'</span><strong>'+esc(r[1])+'</strong></div>'}).join('')+'</div><p class="pw-empty" style="margin:12px 0 0;text-align:left">'+esc(note)+'</p><div class="pw-actions" style="margin-top:14px"><button class="pw-btn primary" type="button" data-route="/companion/earnings" data-earnings-tab="overview">查看收入</button><button class="pw-btn" type="button" data-close-settlement>关闭</button></div></div></div>';
+    var split='<div class="pw-money-split" aria-label="结算拆分">'+
+      '<div class="pw-money-step"><span>订单</span><strong>'+esc(s.totalCatFood!=null?s.totalCatFood:'-')+'</strong></div>'+
+      '<div class="pw-money-step fee"><span>平台抽成</span><strong>'+esc(s.platformCommissionCatFood!=null?s.platformCommissionCatFood:'-')+'</strong></div>'+
+      '<div class="pw-money-step boss"><span>老板分成</span><strong>'+esc(bossAmt!=null?bossAmt:'0')+'</strong></div>'+
+      '<div class="pw-money-step comp"><span>你的到手</span><strong>'+esc(s.companionNetCatFood!=null?s.companionNetCatFood:'-')+'</strong></div>'+
+      '</div>';
+    return '<div class="pw-modal" data-close-settlement><div class="pw-dialog" data-settlement-dialog><div class="pw-dialog-head"><h3>订单结算详情</h3><button type="button" class="pw-btn" data-close-settlement>关闭</button></div>'+split+'<div class="pw-info-list">'+rows.map(function(r){return '<div><span>'+esc(r[0])+'</span><strong>'+esc(r[1])+'</strong></div>'}).join('')+'</div><p class="pw-note pw-settle-note">'+esc(note)+'</p><div class="pw-actions" style="margin-top:14px"><button class="pw-btn primary" type="button" data-route="/companion/earnings" data-earnings-tab="overview">查看收入</button><button class="pw-btn" type="button" data-close-settlement>关闭</button></div></div></div>';
   }
   function syncPwKeyboardInset(){
     try{
@@ -2086,12 +2096,17 @@
         mount.innerHTML='<h3>直属负责人</h3><div class="pw-empty">暂无直属负责人<br>由后台管理员绑定后显示</div>';
         return;
       }
-      mount.innerHTML='<h3>直属负责人</h3><div class="pw-info-list">'+
+      mount.innerHTML='<h3>直属负责人</h3>'+
+        '<div class="pw-direct-boss">' +
+        '<div class="pw-direct-boss-hero"><span class="pw-direct-boss-avatar">'+esc(String(boss.displayName||'B').slice(0,1).toUpperCase())+'</span>'+
+        '<div><strong>'+esc(boss.displayName||'-')+'</strong><div class="pw-direct-boss-uid">'+esc(boss.bossUid||'-')+'</div></div>'+
+        '<span class="pw-direct-boss-pill">'+(boss.status==='active'?'生效中':esc(boss.status||'-'))+'</span></div>'+
+        '<div class="pw-info-list">'+
         infoRow('老板昵称',boss.displayName||'-')+
         infoRow('老板 UID',boss.bossUid||'-')+
         infoRow('状态',boss.status==='active'?'生效中':(boss.status||'-'))+
         infoRow('绑定时间',boss.boundAt?String(boss.boundAt).replace('T',' ').slice(0,19):'-')+
-        '</div><p class="pw-note" style="margin-top:10px;margin-bottom:0">只读。换绑 / 解绑由后台操作。</p>';
+        '</div><p class="pw-note" style="margin-top:10px;margin-bottom:0">只读。换绑 / 解绑由后台操作。老板分成从平台抽成支付，不扣你的收入。</p></div>';
     }).catch(function(){
       if(!mount.isConnected)return;
       mount.innerHTML='<h3>直属负责人</h3><div class="pw-empty">读取失败</div>';

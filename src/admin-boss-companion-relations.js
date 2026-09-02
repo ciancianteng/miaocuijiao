@@ -99,11 +99,14 @@
       }
     }
 
+    var relations = state.relations || [];
+    var activeCount = relations.filter(function (r) { return r.status === "active"; }).length;
     var rows =
-      (state.relations || [])
+      relations
         .map(function (r) {
           var boss = r.boss || {};
           var companion = r.companion || {};
+          var st = r.status || "";
           return (
             "<tr>" +
             "<td>" +
@@ -116,12 +119,14 @@
             "<div class='admin-sync-note'>" +
             esc(companion.companionCode || companion.id || "") +
             "</div></td>" +
-            "<td>" +
-            esc(statusLabel(r.status)) +
-            "</td>" +
-            "<td>" +
+            "<td><span class='bcr-status " +
+            esc(st) +
+            "'>" +
+            esc(statusLabel(st)) +
+            "</span></td>" +
+            "<td><span class='bcr-pill rate'>" +
             esc(r.commissionRate == null || r.commissionRate === "" ? "默认" : r.commissionRate + "%") +
-            "</td>" +
+            "</span></td>" +
             "<td>" +
             esc(r.boundAt ? String(r.boundAt).replace("T", " ").slice(0, 19) : "-") +
             "</td>" +
@@ -181,6 +186,12 @@
 
     box.innerHTML =
       tip +
+      '<div class="bcr-hero"><h3>直属关系运营台</h3><p>Boss ↔ Companion 运营直属关系（独立于邀请/返佣）。绑定/换绑/解绑/设分成必须填写 reason。≤1 活跃直属老板/陪玩。历史事件不可变。</p></div>' +
+      '<div class="bcr-kpis">' +
+      '<div class="bcr-kpi"><span>当前列表</span><strong>' + relations.length + '</strong></div>' +
+      '<div class="bcr-kpi"><span>生效中</span><strong>' + activeCount + '</strong></div>' +
+      '<div class="bcr-kpi"><span>审计</span><strong style="font-size:14px">reason 必填</strong></div>' +
+      '</div>' +
       '<div class="admin-toolbar" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;align-items:center">' +
       '<input id="bcrSearch" placeholder="搜索 boss_uid / PW编码 / 邮箱 / 昵称" value="' +
       esc(state.q) +
@@ -206,9 +217,9 @@
       (state.busy ? " disabled" : "") +
       ">执行 Staging Migration</button>" +
       "</div>" +
-      '<div class="admin-card" style="margin-bottom:16px;padding:12px;border:1px solid rgba(255,255,255,.08);border-radius:12px">' +
-      "<h3 style='margin:0 0 10px;font-size:16px'>绑定 / 换绑</h3>" +
-      '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px">' +
+      '<div class="bcr-panel">' +
+      "<h3>绑定 / 换绑</h3>" +
+      '<div class="bcr-form-grid">' +
       '<label>老板（id / boss_uid）<input id="bcrBoss" value="' +
       esc(state.form.boss) +
       '"></label>' +
@@ -224,11 +235,11 @@
       '<label>直属分成%（占平台抽成，可空=用平台默认）<input id="bcrCommissionRate" type="number" min="0" max="100" step="0.01" value="' +
       esc(state.form.commissionRate) +
       '"></label>' +
-      '<label>审计原因 reason（必填）<input id="bcrReason" required placeholder="谁/为何操作" value="' +
+      '<label class="reason-field">审计原因 reason（必填）<input id="bcrReason" required placeholder="谁/为何操作" value="' +
       esc(state.form.reason) +
       '"></label>' +
       "</div>" +
-      '<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">' +
+      '<div class="bcr-actions">' +
       '<button type="button" class="primary-btn" data-bcr-bind' +
       (state.busy ? " disabled" : "") +
       ">绑定</button>" +
@@ -236,7 +247,7 @@
       (state.busy ? " disabled" : "") +
       ">换绑</button>" +
       "</div>" +
-      '<p class="admin-sync-note" style="margin:8px 0 0">仅 Admin 可写。绑定/换绑/解绑/设分成必须填写 reason（审计）。≤1 活跃直属老板/陪玩。历史事件不可变。</p>' +
+      '<p class="admin-sync-note" style="margin:8px 0 0">仅 Admin 可写。分成从平台抽成支付，不扣陪玩收入。</p>' +
       "</div>" +
       '<div class="table-wrap"><table class="data-table"><thead><tr><th>老板</th><th>陪玩</th><th>状态</th><th>分成%</th><th>绑定时间</th><th>操作</th></tr></thead><tbody>' +
       rows +

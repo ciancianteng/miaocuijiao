@@ -2765,7 +2765,16 @@ import './mcj-chat-realtime.js';
       '<div data-cs-virt-body>'+virtualListHtml(list,active,data,state.listScrollTop||0,560)+'</div>'+
       '</aside>';
     var orderPanel=order
-      ?('<div class="cs-info-list">'+
+      ?((function(){
+        var split=(order.platformFee!=null&&order.platformFee!=='')||(order.companionIncome!=null&&order.companionIncome!=='')||(order.bossCommissionAmount!=null&&Number(order.bossCommissionAmount)>0)
+          ?('<div class="cs-money-split">'+
+            '<div class="cs-money-step"><span>订单金额</span><strong>'+money(order.totalAmount)+'</strong></div>'+
+            '<div class="cs-money-step fee"><span>平台抽成</span><strong>'+money(order.platformFee)+(order.platformFeeRate!=null?' <small>('+esc(order.platformFeeRate)+'%)</small>':'')+'</strong></div>'+
+            '<div class="cs-money-step boss"><span>老板分成</span><strong>'+money(order.bossCommissionAmount||0)+(order.bossCommissionRate!=null?' <small>('+esc(order.bossCommissionRate)+'%)</small>':'')+'</strong></div>'+
+            '<div class="cs-money-step comp"><span>陪玩收入</span><strong>'+money(order.companionIncome)+'</strong></div>'+
+            '</div>'+(Number(order.bossCommissionAmount)>0?'<p class="cs-money-note">老板分成由平台抽成支付，不扣陪玩收入</p>':''))
+          :'';
+        return '<div class="cs-info-list">'+
         '<div><span>订单编号</span><strong title="'+esc(order.orderNo||'')+'">'+esc(order.orderNo)+'</strong></div>'+
         '<div><span>付款状态</span><strong>'+esc(paymentStatusLabel(order))+'</strong></div>'+
         (order.paymentReviewedByName?('<div><span>审核人</span><strong>'+esc(order.paymentReviewedByName)+'</strong></div>'):'')+
@@ -2784,7 +2793,8 @@ import './mcj-chat-realtime.js';
         (order.settlementNote?'<div><span>结算说明</span><strong>'+esc(order.settlementNote)+'</strong></div>':'')+
         '<div><span>订单状态</span><strong>'+esc(order.statusText||'-')+'</strong></div>'+
         (order.needsReassign?'<div><span>待处理</span><strong style="color:#ff6b7a">需要重新安排</strong></div>':'')+
-        '</div><button class="cs-btn" type="button" data-route="/customer-service/orders">查看订单</button>')
+        '</div>'+split+'<button class="cs-btn" type="button" data-route="/customer-service/orders">查看订单</button>';
+      })())
       :(!activeProduct?'<div class="cs-empty">暂无关联订单</div>':'');
     return '<div class="cs-chat-layout'+(listOpen?' list-open':'')+'">'+
       (listOpen?'<div class="cs-chat-list-backdrop" data-close-conv-list></div>':'')+
@@ -2908,7 +2918,13 @@ import './mcj-chat-realtime.js';
     var proof=(mode==='pay'||mode==='refund')&&hasProof
       ?('<div style="margin-top:12px"><button type="button" class="cs-btn ghost" data-proof-lightbox="'+(esc(o.paymentProofUrl||''))+'" data-proof-order-id="'+esc(o.id)+'" data-proof-receipt-id="'+esc(o.paymentReceiptId||'')+'">查看凭证图片</button></div>')
       :'';
-    modal('<div class="cs-dialog-head"><h3>'+esc(title)+'</h3><button class="cs-btn ghost" type="button" data-close-modal>关闭</button></div><div class="cs-info-list">'+
+    var splitHtml='<div class="cs-money-split">'+
+      '<div class="cs-money-step"><span>订单金额</span><strong>'+money(o.totalAmount)+'</strong></div>'+
+      '<div class="cs-money-step fee"><span>平台抽成</span><strong>'+(o.platformFee!=null?money(o.platformFee):'-')+(o.platformFeeRate!=null?' <small>('+esc(o.platformFeeRate)+'%)</small>':'')+'</strong></div>'+
+      '<div class="cs-money-step boss"><span>老板分成</span><strong>'+(o.bossCommissionAmount!=null?money(o.bossCommissionAmount):'-')+(o.bossCommissionRate!=null?' <small>('+esc(o.bossCommissionRate)+'%)</small>':'')+'</strong></div>'+
+      '<div class="cs-money-step comp"><span>陪玩收入</span><strong>'+(o.companionIncome!=null?money(o.companionIncome):'-')+'</strong></div>'+
+      '</div>'+(Number(o.bossCommissionAmount)>0?'<p class="cs-money-note">老板分成由平台抽成支付，不扣陪玩收入</p>':'');
+    modal('<div class="cs-dialog-head"><h3>'+esc(title)+'</h3><button class="cs-btn ghost" type="button" data-close-modal>关闭</button></div>'+splitHtml+'<div class="cs-info-list">'+
       rows.map(function(r){return '<div><span>'+esc(r[0])+'</span><strong>'+esc(String(r[1]==null?'-':r[1]))+'</strong></div>';}).join('')+
       '</div>'+proof);
   }
