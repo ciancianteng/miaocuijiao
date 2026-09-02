@@ -1,7 +1,7 @@
 /**
  * Admin · 直属关系管理（Boss ↔ Companion）
- * list / search / bind / rebind / unbind / history
- * 塞进现有 admin shell，不改布局壳子。
+ * Business UI only: list / search / bind / rebind / unbind / set-commission / history.
+ * Developer migration / DB credential tools are intentionally not shown.
  */
 (function () {
   "use strict";
@@ -19,8 +19,6 @@
     history: [],
     historyCompanionId: "",
     form: { boss: "", companion: "", newBoss: "", remark: "", commissionRate: "", reason: "" },
-    migrationSql: "",
-    sqlEditorUrl: "https://supabase.com/dashboard/project/cfccwysniduwkjskiqgy/sql/new",
   };
 
   function esc(v) {
@@ -75,28 +73,7 @@
     if (state.message) tip += '<p class="admin-sync-note" style="color:#86efac">' + esc(state.message) + "</p>";
     if (!state.tablesReady) {
       tip +=
-        '<p class="admin-sync-note">表未初始化。可点「执行 Staging Migration」；服务器无 DATABASE_URL 时，可在下方<strong>一次性</strong>粘贴 Staging DB password / Postgres URI / Supabase PAT（仅本次请求，不落库），或打开 SQL Editor 粘贴 SQL。</p>' +
-        '<p class="admin-sync-note"><a href="' +
-        esc(state.sqlEditorUrl) +
-        '" target="_blank" rel="noopener">打开 Staging SQL Editor</a> · project <code>cfccwysniduwkjskiqgy</code></p>' +
-        '<div style="margin:10px 0 12px;display:grid;gap:8px;max-width:720px">' +
-        '<label class="admin-sync-note">一次性 Staging DB password（可选，自动拼 pooler URI）' +
-        '<input id="bcrOneshotDbPass" type="password" autocomplete="off" placeholder="Database password from Staging project settings" style="display:block;width:100%;margin-top:4px;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,.14);background:rgba(0,0,0,.35);color:#e5e7eb" />' +
-        "</label>" +
-        '<label class="admin-sync-note">一次性 Staging DATABASE_URL（可选）' +
-        '<input id="bcrOneshotDbUrl" type="password" autocomplete="off" placeholder="postgresql://postgres.cfccwysniduwkjskiqgy:***@…pooler.supabase.com:5432/postgres" style="display:block;width:100%;margin-top:4px;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,.14);background:rgba(0,0,0,.35);color:#e5e7eb" />' +
-        "</label>" +
-        '<label class="admin-sync-note">一次性 SUPABASE_ACCESS_TOKEN / PAT（可选）' +
-        '<input id="bcrOneshotPat" type="password" autocomplete="off" placeholder="sbp_…" style="display:block;width:100%;margin-top:4px;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,.14);background:rgba(0,0,0,.35);color:#e5e7eb" />' +
-        "</label></div>";
-      if (state.migrationSql) {
-        tip +=
-          '<div style="margin:10px 0 14px">' +
-          '<button type="button" class="ghost-btn" data-bcr-copy-sql>复制 Migration SQL</button>' +
-          '<textarea id="bcrMigrationSql" readonly rows="8" style="width:100%;margin-top:8px;font:12px/1.4 ui-monospace,monospace;background:rgba(0,0,0,.35);color:#e5e7eb;border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:10px">' +
-          esc(state.migrationSql) +
-          "</textarea></div>";
-      }
+        '<p class="admin-sync-note">直属关系功能暂未就绪。请联系技术同学完成表初始化后再进行绑定操作。</p>';
     }
 
     var rows =
@@ -202,9 +179,6 @@
       '<button type="button" class="primary-btn" data-bcr-search' +
       (state.busy ? " disabled" : "") +
       ">查询</button>" +
-      '<button type="button" class="ghost-btn" data-bcr-ensure' +
-      (state.busy ? " disabled" : "") +
-      ">执行 Staging Migration</button>" +
       "</div>" +
       '<div class="admin-card" style="margin-bottom:16px;padding:12px;border:1px solid rgba(255,255,255,.08);border-radius:12px">' +
       "<h3 style='margin:0 0 10px;font-size:16px'>绑定 / 换绑</h3>" +
@@ -230,10 +204,10 @@
       "</div>" +
       '<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">' +
       '<button type="button" class="primary-btn" data-bcr-bind' +
-      (state.busy ? " disabled" : "") +
+      (state.busy || !state.tablesReady ? " disabled" : "") +
       ">绑定</button>" +
       '<button type="button" class="ghost-btn" data-bcr-rebind' +
-      (state.busy ? " disabled" : "") +
+      (state.busy || !state.tablesReady ? " disabled" : "") +
       ">换绑</button>" +
       "</div>" +
       '<p class="admin-sync-note" style="margin:8px 0 0">仅 Admin 可写。绑定/换绑/解绑/设分成必须填写 reason（审计）。≤1 活跃直属老板/陪玩。历史事件不可变。</p>' +
@@ -277,7 +251,6 @@
         state.message = body.message || state.message || "";
         state.loading = false;
         paint();
-        if (!state.tablesReady && !state.migrationSql) return fetchMigrationSql();
       })
       .catch(function (err) {
         state.loading = false;
@@ -314,41 +287,11 @@
         state.busy = false;
         state.message = body.message || "完成";
         state.tablesReady = body.tablesReady !== false;
-        if (body.sql) state.migrationSql = body.sql;
-        if (body.sqlEditorUrl) state.sqlEditorUrl = body.sqlEditorUrl;
-        return loadList().then(function () {
-          if (!state.tablesReady && !state.migrationSql) return fetchMigrationSql();
-        });
+        return loadList();
       })
       .catch(function (err) {
         state.busy = false;
-        // ensure may return ok:false with sql payload via throw path — try dedicated fetch
-        if (action === "ensure") return fetchMigrationSql().then(function () {
-          state.error = err.message || "操作失败";
-          paint();
-        });
         state.error = err.message || "操作失败";
-        paint();
-      });
-  }
-
-  function fetchMigrationSql() {
-    return api("/api/admin/boss-companion-relations?action=ensure", {
-      method: "POST",
-      body: JSON.stringify({ action: "ensure" }),
-    })
-      .then(function (body) {
-        if (body.sql) state.migrationSql = body.sql;
-        if (body.sqlEditorUrl) state.sqlEditorUrl = body.sqlEditorUrl;
-        if (body.message) state.message = body.message;
-        if (body.tablesReady === true) state.tablesReady = true;
-        paint();
-        return body;
-      })
-      .catch(function (err) {
-        // Some fetch wrappers throw on ok:false — body may be on err
-        var msg = err && err.message ? String(err.message) : "";
-        if (/DATABASE_URL|SQL Editor|migration/i.test(msg)) state.message = msg;
         paint();
       });
   }
@@ -358,39 +301,6 @@
     if (e.target.closest("[data-bcr-search]")) {
       readForm();
       loadList();
-      return;
-    }
-    if (e.target.closest("[data-bcr-copy-sql]")) {
-      var ta = document.getElementById("bcrMigrationSql");
-      var text = (ta && ta.value) || state.migrationSql || "";
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(text).then(function () {
-          state.message = "Migration SQL 已复制";
-          paint();
-        });
-      } else if (ta) {
-        ta.focus();
-        ta.select();
-        try {
-          document.execCommand("copy");
-          state.message = "Migration SQL 已复制";
-        } catch (err) {
-          state.error = "复制失败，请手动全选复制";
-        }
-        paint();
-      }
-      return;
-    }
-    if (e.target.closest("[data-bcr-ensure]")) {
-      var dbEl = document.getElementById("bcrOneshotDbUrl");
-      var patEl = document.getElementById("bcrOneshotPat");
-      var passEl = document.getElementById("bcrOneshotDbPass");
-      runMutation("ensure", {
-        action: "ensure",
-        databaseUrl: (dbEl && dbEl.value) || "",
-        accessToken: (patEl && patEl.value) || "",
-        databasePassword: (passEl && passEl.value) || "",
-      });
       return;
     }
     if (e.target.closest("[data-bcr-bind]")) {

@@ -72,7 +72,7 @@
     if (state.message) tip += '<p class="admin-sync-note" style="color:#86efac">' + esc(state.message) + "</p>";
     if (!state.tablesReady) {
       tip +=
-        '<p class="admin-sync-note">表未初始化。请到「直属关系管理」执行 Staging Migration（含 20260903 levels/invites/safeguards）。</p>';
+        '<p class="admin-sync-note">Boss 等级表暂未就绪。请联系技术同学完成初始化后再配置等级。</p>';
     }
 
     var rows =
