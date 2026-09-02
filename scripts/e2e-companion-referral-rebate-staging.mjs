@@ -30,6 +30,19 @@ function nearly(a, b, eps = 0.02) {
   return Math.abs(Number(a) - Number(b)) <= eps;
 }
 
+function referralTablesReadyFromStatus(json = {}) {
+  if (json?.tablesReady === true) return true;
+  const tbl = json?.tables || {};
+  const coreOk =
+    tbl.referral_relations?.ok &&
+    tbl.referral_commission_rules?.ok &&
+    tbl.referral_commission_records?.ok;
+  if (!coreOk) return false;
+  // Wallets PK is user_id; older admin probe used select=id and false-negatives.
+  if (tbl.referral_wallets?.ok) return true;
+  return /user_id|column referral_wallets\.id/i.test(String(tbl.referral_wallets?.message || ""));
+}
+
 async function api(path, { method = "GET", token, body, admin = false } = {}) {
   const res = await fetch(BASE + path, {
     method,
@@ -65,28 +78,87 @@ async function loginAdmin() {
   return { token: tok(r.json), id: uid(r.json), raw: r.json };
 }
 
+async function obtainRegisterToken(email, role) {
+  const send = await api("/api/auth", {
+    method: "POST",
+    body: { action: "send_register_otp", email, role },
+  });
+  const code = send.json?.devCode;
+  if (!code) {
+    return {
+      ok: false,
+      message: send.json?.message || "no_devCode (use @example.com so Resend fails open)",
+      send,
+    };
+  }
+  const ver = await api("/api/auth", {
+    method: "POST",
+    body: { action: "verify_register_otp", email, role, code: String(code) },
+  });
+  const registerToken = ver.json?.registerToken || "";
+  return { ok: !!registerToken, registerToken, send, ver, message: ver.json?.message || "" };
+}
+
 async function registerCompanion(email, nickname) {
+  const otp = await obtainRegisterToken(email, "companion");
+  if (!otp.ok) {
+    return { reg: { json: { message: otp.message } }, login: { json: {} }, token: "", id: "" };
+  }
   const reg = await api("/api/companion", {
     method: "POST",
-    body: { action: "register", email, password: PASS, nickname },
+    body: {
+      action: "register",
+      email,
+      password: PASS,
+      confirmPassword: PASS,
+      nickname,
+      registerToken: otp.registerToken,
+    },
   });
-  const login = await api("/api/companion", {
-    method: "POST",
-    body: { action: "login", account: email, password: PASS },
-  });
-  return { reg, login, token: tok(login.json), id: uid(login.json) || uid(reg.json) };
+  let token = tok(reg.json);
+  let id = uid(reg.json);
+  if (!token) {
+    const login = await api("/api/companion", {
+      method: "POST",
+      body: { action: "login", account: email, password: PASS },
+    });
+    token = tok(login.json);
+    id = uid(login.json) || id;
+    return { reg, login, token, id };
+  }
+  return { reg, login: reg, token, id };
 }
 
 async function registerBoss(email, displayName) {
+  const otp = await obtainRegisterToken(email, "boss");
+  if (!otp.ok) {
+    return { reg: { json: { message: otp.message } }, login: { json: {} }, token: "", id: "" };
+  }
   const reg = await api("/api/auth", {
     method: "POST",
-    body: { action: "register", email, password: PASS, display_name: displayName, role: "boss" },
+    body: {
+      action: "register",
+      email,
+      password: PASS,
+      confirmPassword: PASS,
+      display_name: displayName,
+      displayName,
+      role: "boss",
+      registerToken: otp.registerToken,
+    },
   });
-  const login = await api("/api/auth", {
-    method: "POST",
-    body: { action: "login", email, password: PASS, loginPortal: "boss", role: "boss" },
-  });
-  return { reg, login, token: tok(login.json), id: uid(login.json) || uid(reg.json) };
+  let token = tok(reg.json);
+  let id = uid(reg.json);
+  if (!token) {
+    const login = await api("/api/auth", {
+      method: "POST",
+      body: { action: "login", email, password: PASS, loginPortal: "boss", role: "boss" },
+    });
+    token = tok(login.json);
+    id = uid(login.json) || id;
+    return { reg, login, token, id };
+  }
+  return { reg, login: reg, token, id };
 }
 
 async function approveCompanion(adminToken, companionToken, companionUserId) {
@@ -231,17 +303,7 @@ async function main() {
     token: admin.token,
     admin: true,
   });
-  let tablesReady = status.json?.tablesReady === true;
-  // Soft-pass: wallets PK is user_id; older probe false-negatives are ignored if core tables ok
-  const tbl = status.json?.tables || {};
-  if (!tablesReady) {
-    const coreOk =
-      tbl.referral_relations?.ok &&
-      tbl.referral_commission_rules?.ok &&
-      tbl.referral_commission_records?.ok &&
-      (tbl.referral_wallets?.ok || /user_id|column referral_wallets\.id/i.test(String(tbl.referral_wallets?.message || "")));
-    if (coreOk) tablesReady = true;
-  }
+  let tablesReady = referralTablesReadyFromStatus(status.json);
   step(
     "referral_tables_status",
     status.status < 500,
@@ -255,7 +317,10 @@ async function main() {
       admin: true,
       body: { action: "ensure" },
     });
-    tablesReady = ensure.json?.tablesReady === true || ensure.json?.probe?.tablesReady === true;
+    tablesReady =
+      ensure.json?.tablesReady === true ||
+      ensure.json?.probe?.tablesReady === true ||
+      referralTablesReadyFromStatus(ensure.json?.probe || ensure.json || {});
     step(
       "referral_tables_ensure",
       tablesReady || ensure.json?.skipped === true,
@@ -270,7 +335,7 @@ async function main() {
     token: admin.token,
     admin: true,
   });
-  tablesReady = status2.json?.tablesReady === true;
+  tablesReady = referralTablesReadyFromStatus(status2.json);
   if (!step("referral_tables_ready", tablesReady, JSON.stringify(status2.json?.tables || {}).slice(0, 300))) {
     console.log(JSON.stringify({ ok: false, results, hint: "Apply supabase/migrations/20260904_companion_referral_rebate.sql on Staging" }, null, 2));
     process.exit(1);
