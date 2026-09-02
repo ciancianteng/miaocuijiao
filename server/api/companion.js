@@ -353,6 +353,8 @@ function buildSettlement({ order, boss = {}, companion = {}, rates, completedAt 
     settlementStatus: "已结算",
     levelId: rates.level?.id || companion.level_id || "",
     levelName: rates.level ? `${rates.level.code || ""} ${rates.level.name || ""}`.trim() : companion.level_name || "",
+    bossCommissionTransparencyNote: "老板直属分成由平台抽成支付，不扣陪玩收入",
+    companionIncomeUnchangedByBossCommission: true,
   };
 }
 function ledgerTypeLabel(row = {}) {

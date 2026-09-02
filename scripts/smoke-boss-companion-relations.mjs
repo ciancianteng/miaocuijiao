@@ -33,9 +33,9 @@ section("migration file exists + RLS + unique active companion");
   assert.match(mig, /companion_id = auth\.uid\(\)/);
   assert.match(mig, /append|bind|rebind|unbind/i);
   assert.match(mig, /super_admin/);
-  // Staging profiles.role is enum mcj_user_role — never coalesce(role, '')
+  // Staging profiles.role is enum mcj_user_role — policies must cast ::text before coalesce
   assert.match(mig, /p\.role::text/);
-  assert.doesNotMatch(mig, /coalesce\(p\.role,\s*''\)/);
+  assert.match(mig, /coalesce\(p\.role::text,\s*''\)/);
   assert.match(mig, /bcre_admin_select/);
   assert.match(mig, /bcre_admin_insert/);
   assert.match(mig, /bcr_forbid_event_mutation/);
@@ -115,24 +115,46 @@ section("API routes + UI entry points present");
 {
   for (const f of [
     "server/api/admin/boss-companion-relations.js",
+    "server/api/admin/boss-levels.js",
+    "server/api/_boss-commission.js",
+    "server/api/_boss-levels.js",
+    "server/api/_boss-companion-invitations.js",
     "server/api/boss/direct-companions.js",
+    "server/api/boss/companion-invitations.js",
     "server/api/companion/direct-boss.js",
+    "server/api/companion/boss-invitations.js",
     "src/admin-boss-companion-relations.js",
+    "src/admin-boss-levels.js",
     "my-direct-companions.html",
     "src/my-direct-companions.js",
     "scripts/apply-boss-companion-relations.mjs",
+    "supabase/migrations/20260902_boss_commission_from_platform_fee.sql",
+    "supabase/migrations/20260903_boss_levels_invites_safeguards.sql",
   ]) {
     assert.ok(fs.existsSync(path.resolve(f)), `missing ${f}`);
   }
   const adminHtml = fs.readFileSync(path.resolve("admin.html"), "utf8");
   assert.match(adminHtml, /boss-companion-relations/);
+  assert.match(adminHtml, /boss-levels/);
   assert.match(adminHtml, /直属关系管理/);
+  const mig3 = fs.readFileSync(
+    path.resolve("supabase/migrations/20260903_boss_levels_invites_safeguards.sql"),
+    "utf8"
+  );
+  assert.match(mig3, /uq_boss_commission_earnings_order_id/);
+  assert.match(mig3, /mcj_forbid_boss_earnings_money_rewrite/);
+  assert.match(mig3, /pin_mode/);
+  assert.match(mig3, /boss_companion_invitations/);
+  assert.match(mig3, /reason text/);
+  const core = fs.readFileSync(path.resolve("server/api/_boss-companion-relations.js"), "utf8");
+  assert.match(core, /requireAdminReason/);
   const mine = fs.readFileSync(path.resolve("mine.html"), "utf8");
   assert.match(mine, /my-direct-companions\.html/);
   assert.match(mine, /我的直属陪玩/);
   const wb = fs.readFileSync(path.resolve("src/companion-workbench.js"), "utf8");
   assert.match(wb, /pwDirectBossCard/);
   assert.match(wb, /\/api\/companion\/direct-boss/);
+  assert.match(wb, /老板直属分成由平台抽成支付/);
   const vite = fs.readFileSync(path.resolve("vite.config.js"), "utf8");
   assert.match(vite, /my-direct-companions\.html/);
 }

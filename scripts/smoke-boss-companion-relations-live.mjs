@@ -143,7 +143,12 @@ if (!picked.bossId || !picked.companionId) {
 await api("/api/admin/boss-companion-relations?action=unbind", {
   method: "POST",
   token: admin.token,
-  body: { action: "unbind", companionId: picked.companionId, remark: "live-smoke-cleanup" },
+  body: {
+    action: "unbind",
+    companionId: picked.companionId,
+    remark: "live-smoke-cleanup",
+    reason: "live-smoke-cleanup",
+  },
 });
 
 const bind = await api("/api/admin/boss-companion-relations?action=bind", {
@@ -154,6 +159,7 @@ const bind = await api("/api/admin/boss-companion-relations?action=bind", {
     bossId: picked.bossId,
     companionId: picked.companionId,
     remark: "live-smoke-bind",
+    reason: "live-smoke-bind",
   },
 });
 step("bind", bind.json?.ok === true, bind.json?.message || JSON.stringify(bind.json).slice(0, 240));
@@ -164,7 +170,7 @@ const hist1 = await api(
 );
 step(
   "history_after_bind",
-  (hist1.json?.events || []).some((e) => e.action === "bind"),
+  (hist1.json?.events || []).some((e) => e.action === "bind" && String(e.reason || "").includes("live-smoke")),
   `events=${(hist1.json?.events || []).length}`
 );
 
@@ -202,6 +208,7 @@ if (picked.boss2Id) {
       companionId: picked.companionId,
       newBossId: picked.boss2Id,
       remark: "live-smoke-rebind",
+      reason: "live-smoke-rebind",
     },
   });
   step("rebind", rebind.json?.ok === true, rebind.json?.message || JSON.stringify(rebind.json).slice(0, 240));
@@ -212,7 +219,12 @@ if (picked.boss2Id) {
 const unbind = await api("/api/admin/boss-companion-relations?action=unbind", {
   method: "POST",
   token: admin.token,
-  body: { action: "unbind", companionId: picked.companionId, remark: "live-smoke-unbind" },
+  body: {
+    action: "unbind",
+    companionId: picked.companionId,
+    remark: "live-smoke-unbind",
+    reason: "live-smoke-unbind",
+  },
 });
 step("unbind", unbind.json?.ok === true, unbind.json?.message || "");
 

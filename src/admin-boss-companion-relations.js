@@ -18,7 +18,7 @@
     relations: [],
     history: [],
     historyCompanionId: "",
-    form: { boss: "", companion: "", newBoss: "", remark: "", commissionRate: "" },
+    form: { boss: "", companion: "", newBoss: "", remark: "", commissionRate: "", reason: "" },
     migrationSql: "",
     sqlEditorUrl: "https://supabase.com/dashboard/project/cfccwysniduwkjskiqgy/sql/new",
   };
@@ -166,6 +166,9 @@
             esc(e.remark || "-") +
             "</td>" +
             "<td>" +
+            esc(e.reason || "-") +
+            "</td>" +
+            "<td>" +
             esc(e.createdAt ? String(e.createdAt).replace("T", " ").slice(0, 19) : "-") +
             "</td>" +
             "</tr>"
@@ -173,8 +176,8 @@
         })
         .join("") ||
       (state.historyCompanionId
-        ? '<tr><td colspan="5" class="empty">暂无历史事件</td></tr>'
-        : '<tr><td colspan="5" class="empty">点击列表「历史」查看</td></tr>');
+        ? '<tr><td colspan="6" class="empty">暂无历史事件</td></tr>'
+        : '<tr><td colspan="6" class="empty">点击列表「历史」查看</td></tr>');
 
     box.innerHTML =
       tip +
@@ -221,6 +224,9 @@
       '<label>直属分成%（占平台抽成，可空=用平台默认）<input id="bcrCommissionRate" type="number" min="0" max="100" step="0.01" value="' +
       esc(state.form.commissionRate) +
       '"></label>' +
+      '<label>审计原因 reason（必填）<input id="bcrReason" required placeholder="谁/为何操作" value="' +
+      esc(state.form.reason) +
+      '"></label>' +
       "</div>" +
       '<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">' +
       '<button type="button" class="primary-btn" data-bcr-bind' +
@@ -230,7 +236,7 @@
       (state.busy ? " disabled" : "") +
       ">换绑</button>" +
       "</div>" +
-      '<p class="admin-sync-note" style="margin:8px 0 0">仅 Admin 可写。绑定前校验 hasBoss / hasCompanion（#128 resolver）。不改 capability。</p>' +
+      '<p class="admin-sync-note" style="margin:8px 0 0">仅 Admin 可写。绑定/换绑/解绑/设分成必须填写 reason（审计）。≤1 活跃直属老板/陪玩。历史事件不可变。</p>' +
       "</div>" +
       '<div class="table-wrap"><table class="data-table"><thead><tr><th>老板</th><th>陪玩</th><th>状态</th><th>分成%</th><th>绑定时间</th><th>操作</th></tr></thead><tbody>' +
       rows +
@@ -238,7 +244,7 @@
       '<h3 style="margin:18px 0 8px;font-size:16px">关系历史' +
       (state.historyCompanionId ? " · " + esc(state.historyCompanionId) : "") +
       "</h3>" +
-      '<div class="table-wrap"><table class="data-table"><thead><tr><th>动作</th><th>原老板</th><th>新老板</th><th>备注</th><th>时间</th></tr></thead><tbody>' +
+      '<div class="table-wrap"><table class="data-table"><thead><tr><th>动作</th><th>原老板</th><th>新老板</th><th>备注</th><th>原因</th><th>时间</th></tr></thead><tbody>' +
       historyRows +
       "</tbody></table></div>";
   }
@@ -251,6 +257,8 @@
     state.form.companion = (document.getElementById("bcrCompanion") || {}).value || "";
     state.form.newBoss = (document.getElementById("bcrNewBoss") || {}).value || "";
     state.form.remark = (document.getElementById("bcrRemark") || {}).value || "";
+    state.form.commissionRate = (document.getElementById("bcrCommissionRate") || {}).value || "";
+    state.form.reason = (document.getElementById("bcrReason") || {}).value || "";
   }
 
   function loadList() {
@@ -387,23 +395,35 @@
     }
     if (e.target.closest("[data-bcr-bind]")) {
       readForm();
+      if (!String(state.form.reason || "").trim()) {
+        state.error = "绑定必须填写审计原因 reason";
+        paint();
+        return;
+      }
       runMutation("bind", {
         action: "bind",
         bossId: state.form.boss,
         companionId: state.form.companion,
         remark: state.form.remark,
         commissionRate: state.form.commissionRate,
+        reason: state.form.reason,
       });
       return;
     }
     if (e.target.closest("[data-bcr-rebind]")) {
       readForm();
+      if (!String(state.form.reason || "").trim()) {
+        state.error = "换绑必须填写审计原因 reason";
+        paint();
+        return;
+      }
       runMutation("rebind", {
         action: "rebind",
         companionId: state.form.companion,
         newBossId: state.form.newBoss || state.form.boss,
         remark: state.form.remark,
         commissionRate: state.form.commissionRate,
+        reason: state.form.reason,
       });
       return;
     }
@@ -421,6 +441,12 @@
         paint();
         return;
       }
+      var reason = window.prompt("审计原因 reason（必填）", state.form.reason || "");
+      if (reason == null || !String(reason).trim()) {
+        state.error = "设分成必须填写 reason";
+        paint();
+        return;
+      }
       state.busy = true;
       paint();
       api("/api/admin/boss-companion-relations", {
@@ -430,6 +456,7 @@
           relationId: rid,
           companionId: cid,
           commissionRate: rate,
+          reason: String(reason).trim(),
         }),
       })
         .then(function () {
@@ -447,7 +474,21 @@
     var unbind = e.target.closest("[data-bcr-unbind]");
     if (unbind) {
       if (!confirm("确认解绑该陪玩的直属关系？历史将保留。")) return;
-      runMutation("unbind", { action: "unbind", companionId: unbind.getAttribute("data-bcr-unbind") });
+      readForm();
+      var unbindReason =
+        String(state.form.reason || "").trim() ||
+        window.prompt("审计原因 reason（必填）", "") ||
+        "";
+      if (!String(unbindReason).trim()) {
+        state.error = "解绑必须填写 reason";
+        paint();
+        return;
+      }
+      runMutation("unbind", {
+        action: "unbind",
+        companionId: unbind.getAttribute("data-bcr-unbind"),
+        reason: String(unbindReason).trim(),
+      });
       return;
     }
     var hist = e.target.closest("[data-bcr-history]");

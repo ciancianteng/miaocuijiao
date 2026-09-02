@@ -305,6 +305,8 @@ export function createOrderCompleteHelpers({ restUrl, supabaseJson, serviceHeade
       companionShareRate,
       completedAt,
       completionMethod: method,
+      bossCommissionTransparencyNote: "老板直属分成由平台抽成支付，不扣陪玩收入",
+      companionIncomeUnchangedByBossCommission: true,
     };
     await supabaseJson(restUrl("transactions"), {
       method: "POST",

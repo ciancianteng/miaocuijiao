@@ -41,6 +41,24 @@ function normalizeCommissionRate(value) {
   return Math.min(100, Math.max(0, Math.round(n * 100) / 100));
 }
 
+function requireAdminReason(reason, actionLabel = "操作") {
+  const text = String(reason || "").trim();
+  if (!text) {
+    throw httpError(`管理员${actionLabel}必须填写 reason（审计：谁/何时/原因）`, 400, { code: "REASON_REQUIRED" });
+  }
+  return text;
+}
+
+async function maybeReevalBossLevel(bossId, operatorId, reason) {
+  if (!bossId) return;
+  try {
+    const { reevaluateBossLevel } = await import("./_boss-levels.js");
+    await reevaluateBossLevel({ bossId, operatorId, reason: reason || "relation_change" });
+  } catch (_) {
+    /* levels optional until migration applied */
+  }
+}
+
 export function isRelationsMissing(error) {
   return isMissingRelation(error);
 }
@@ -92,6 +110,7 @@ export function viewEvent(row = {}, extras = {}) {
     action: row.action || "",
     operatorId: row.operator_id || null,
     remark: row.remark || "",
+    reason: row.reason || "",
     createdAt: row.created_at || "",
     fromBoss: extras.fromBoss
       ? {
@@ -385,7 +404,8 @@ export async function adminSearchRelations({ q = "", status = "", limit = 100 } 
   return enrichRelations(Array.isArray(rows) ? rows : []);
 }
 
-export async function bindRelation({ bossId, companionId, operatorId, remark = "", commissionRate = null } = {}) {
+export async function bindRelation({ bossId, companionId, operatorId, remark = "", commissionRate = null, reason = "" } = {}) {
+  const auditReason = requireAdminReason(reason, "绑定");
   const caps = await assertBindCapabilities(bossId, companionId);
   const existing = await getActiveRelationForCompanion(companionId);
   if (existing) {
@@ -433,13 +453,17 @@ export async function bindRelation({ bossId, companionId, operatorId, remark = "
     action: "bind",
     operator_id: operatorId || null,
     remark: String(remark || "").trim() || null,
+    reason: auditReason,
   });
+
+  await maybeReevalBossLevel(bossId, operatorId, auditReason);
 
   const [enriched] = await enrichRelations([created]);
   return { relation: enriched, boss: caps.boss, companion: caps.companion };
 }
 
-export async function rebindRelation({ companionId, newBossId, operatorId, remark = "", commissionRate = null } = {}) {
+export async function rebindRelation({ companionId, newBossId, operatorId, remark = "", commissionRate = null, reason = "" } = {}) {
+  const auditReason = requireAdminReason(reason, "换绑");
   const caps = await assertBindCapabilities(newBossId, companionId);
   const existing = await getActiveRelationForCompanion(companionId);
   if (!existing) {
@@ -494,7 +518,10 @@ export async function rebindRelation({ companionId, newBossId, operatorId, remar
     action: "rebind",
     operator_id: operatorId || null,
     remark: String(remark || "").trim() || null,
+    reason: auditReason,
   });
+  await maybeReevalBossLevel(existing.boss_id, operatorId, auditReason);
+  await maybeReevalBossLevel(newBossId, operatorId, auditReason);
 
   const [enriched] = await enrichRelations([created]);
   return {
@@ -506,7 +533,8 @@ export async function rebindRelation({ companionId, newBossId, operatorId, remar
   };
 }
 
-export async function unbindRelation({ companionId, operatorId, remark = "" } = {}) {
+export async function unbindRelation({ companionId, operatorId, remark = "", reason = "" } = {}) {
+  const auditReason = requireAdminReason(reason, "解绑");
   const existing = await getActiveRelationForCompanion(companionId);
   if (!existing) {
     throw httpError("该陪玩当前没有 active 直属关系", 404, { code: "NO_ACTIVE" });
@@ -529,7 +557,9 @@ export async function unbindRelation({ companionId, operatorId, remark = "" } = 
     action: "unbind",
     operator_id: operatorId || null,
     remark: String(remark || "").trim() || null,
+    reason: auditReason,
   });
+  await maybeReevalBossLevel(existing.boss_id, operatorId, auditReason);
 
   const updated = { ...existing, status: UNBOUND, unbound_at: ts };
   const [enriched] = await enrichRelations([updated]);
@@ -537,7 +567,8 @@ export async function unbindRelation({ companionId, operatorId, remark = "" } = 
 }
 
 
-export async function updateRelationCommissionRate({ relationId, companionId, commissionRate, operatorId, remark = "" } = {}) {
+export async function updateRelationCommissionRate({ relationId, companionId, commissionRate, operatorId, remark = "", reason = "" } = {}) {
+  const auditReason = requireAdminReason(reason, "设置分成");
   let row = null;
   if (relationId) {
     const rows = await supabaseJson(
@@ -570,6 +601,7 @@ export async function updateRelationCommissionRate({ relationId, companionId, co
     action: "bind",
     operator_id: operatorId || null,
     remark: String(remark || "").trim() || `更新直属分成比例为 ${rateNum}%`,
+    reason: auditReason,
   }).catch(() => null);
 
   const [enriched] = await enrichRelations([updated || { ...row, commission_rate: rateNum }]);

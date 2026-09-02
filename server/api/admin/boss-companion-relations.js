@@ -29,6 +29,8 @@ loadLocalEnv();
 const STAGING_PROJECT_REF = "cfccwysniduwkjskiqgy";
 const MIGRATION_REL = "supabase/migrations/20260901_boss_companion_relations.sql";
 const COMMISSION_MIGRATION_REL = "supabase/migrations/20260902_boss_commission_from_platform_fee.sql";
+const LEVELS_MIGRATION_REL = "supabase/migrations/20260903_boss_levels_invites_safeguards.sql";
+const MIGRATION_RELS = [MIGRATION_REL, COMMISSION_MIGRATION_REL, LEVELS_MIGRATION_REL];
 
 function json(res, status, data) {
   if (typeof res.setHeader === "function") {
@@ -84,7 +86,7 @@ function projectRefFromDatabaseUrl(dbUrl) {
 function migrationSqlPreview() {
   try {
     const parts = [];
-    for (const rel of [MIGRATION_REL, COMMISSION_MIGRATION_REL]) {
+    for (const rel of MIGRATION_RELS) {
       const sqlPath = path.join(process.cwd(), rel);
       if (fs.existsSync(sqlPath)) parts.push(fs.readFileSync(sqlPath, "utf8"));
     }
@@ -192,7 +194,7 @@ async function ensureMigration(oneshot = {}) {
   }
 
   const parts = [];
-  for (const rel of [MIGRATION_REL, COMMISSION_MIGRATION_REL]) {
+  for (const rel of MIGRATION_RELS) {
     const sqlPath = path.join(process.cwd(), rel);
     if (!fs.existsSync(sqlPath)) {
       return { ok: false, message: `migration 文件不存在：${rel}` };
@@ -372,6 +374,7 @@ export default async function handler(req, res) {
         operatorId: admin.id,
         remark: body.remark || "",
         commissionRate: body.commissionRate ?? body.commission_rate ?? null,
+        reason: body.reason || body.auditReason || "",
       });
       return json(res, 200, { ok: true, ...result, message: "绑定成功" });
     }
@@ -391,6 +394,7 @@ export default async function handler(req, res) {
         operatorId: admin.id,
         remark: body.remark || "",
         commissionRate: body.commissionRate ?? body.commission_rate ?? null,
+        reason: body.reason || body.auditReason || "",
       });
       return json(res, 200, { ok: true, ...result, message: "换绑成功" });
     }
@@ -404,6 +408,7 @@ export default async function handler(req, res) {
         companionId,
         operatorId: admin.id,
         remark: body.remark || "",
+        reason: body.reason || body.auditReason || "",
       });
       return json(res, 200, { ok: true, ...result, message: "已解绑" });
     }
@@ -423,6 +428,7 @@ export default async function handler(req, res) {
         commissionRate: body.commissionRate ?? body.commission_rate,
         operatorId: admin.id,
         remark: body.remark || "",
+        reason: body.reason || body.auditReason || "",
       });
       return json(res, 200, { ok: true, ...result, message: "直属分成比例已更新" });
     }

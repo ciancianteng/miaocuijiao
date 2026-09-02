@@ -1955,7 +1955,8 @@
       ['完成时间',s.completedAt||'-'],
       ['结算状态',s.settlementStatus||'已结算']
     ];
-    return '<div class="pw-modal" data-close-settlement><div class="pw-dialog" data-settlement-dialog><div class="pw-dialog-head"><h3>订单结算详情</h3><button type="button" class="pw-btn" data-close-settlement>关闭</button></div><div class="pw-info-list">'+rows.map(function(r){return '<div><span>'+esc(r[0])+'</span><strong>'+esc(r[1])+'</strong></div>'}).join('')+'</div><div class="pw-actions" style="margin-top:14px"><button class="pw-btn primary" type="button" data-route="/companion/earnings" data-earnings-tab="overview">查看收入</button><button class="pw-btn" type="button" data-close-settlement>关闭</button></div></div></div>';
+    var note=s.bossCommissionTransparencyNote||'老板直属分成由平台抽成支付，不扣陪玩收入';
+    return '<div class="pw-modal" data-close-settlement><div class="pw-dialog" data-settlement-dialog><div class="pw-dialog-head"><h3>订单结算详情</h3><button type="button" class="pw-btn" data-close-settlement>关闭</button></div><div class="pw-info-list">'+rows.map(function(r){return '<div><span>'+esc(r[0])+'</span><strong>'+esc(r[1])+'</strong></div>'}).join('')+'</div><p class="pw-empty" style="margin:12px 0 0;text-align:left">'+esc(note)+'</p><div class="pw-actions" style="margin-top:14px"><button class="pw-btn primary" type="button" data-route="/companion/earnings" data-earnings-tab="overview">查看收入</button><button class="pw-btn" type="button" data-close-settlement>关闭</button></div></div></div>';
   }
   function syncPwKeyboardInset(){
     try{

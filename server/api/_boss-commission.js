@@ -8,15 +8,20 @@
  *   companion income is UNCHANGED (boss paid from platform revenue)
  *
  * Rate resolution:
- *   1) active relation.commission_rate (if not null)
- *   2) platform_settings.defaultBossCommissionRate
- *   3) missing → skip boss commission (fail closed; never invent a business default in settle)
+ *   1) active relation.commission_rate (admin override)
+ *   2) boss current level.commission_rate
+ *   3) platform_settings.defaultBossCommissionRate
+ *   4) missing → skip (fail closed)
+ *
+ * SAFEGUARD: boss_commission ALWAYS = platform_fee * rate / 100 (never companion income).
+ * Snapshots frozen after settle; level changes do not rewrite historical earnings.
  */
 import { money, roundMoney } from "./_commission-rates.js";
 import {
   getActiveRelationForCompanion,
   isRelationsMissing,
 } from "./_boss-companion-relations.js";
+import { getEffectiveBossLevelForSettle } from "./_boss-levels.js";
 import { isMissingRelation, restUrl, serviceHeaders, supabaseJson } from "./_wallet.js";
 
 const EARNINGS_TABLE = "boss_commission_earnings";
@@ -26,18 +31,24 @@ export function calcBossCommissionFromPlatformFee({
   orderAmount,
   platformFeeRate,
   bossCommissionRate,
+  companionIncomeAmount = null, // accepted only for transparency; NEVER used in boss calc
 } = {}) {
   const gross = roundMoney(orderAmount);
   const platformRate = Math.min(100, Math.max(0, money(platformFeeRate)));
   const bossRate = Math.min(100, Math.max(0, money(bossCommissionRate)));
+  // SAFETY: platform fee from order gross only
   const platformFeeAmount = roundMoney((gross * platformRate) / 100);
+  // SAFETY: boss commission from platform_fee only — never from companion income
   const bossCommissionAmount = roundMoney((platformFeeAmount * bossRate) / 100);
+  void companionIncomeAmount;
   return {
     orderAmount: gross,
     platformFeeRate: platformRate,
     platformFeeAmount,
     bossCommissionRate: bossRate,
     bossCommissionAmount,
+    companionIncomeUnchanged: true,
+    calculatedFrom: "platform_fee_only",
   };
 }
 
@@ -83,15 +94,33 @@ export async function resolveBossCommissionRateForCompanion(companionId) {
         rate: Math.min(100, Math.max(0, n)),
         source: "relation",
         relation,
+        bossLevel: null,
       };
     }
   }
 
+  let bossLevel = null;
+  try {
+    const effective = await getEffectiveBossLevelForSettle(relation.boss_id);
+    bossLevel = effective?.level || null;
+    const levelRate = money(bossLevel?.commission_rate ?? bossLevel?.commissionRate);
+    if (bossLevel && Number.isFinite(levelRate) && levelRate >= 0) {
+      return {
+        rate: Math.min(100, Math.max(0, levelRate)),
+        source: "boss_level",
+        relation,
+        bossLevel,
+      };
+    }
+  } catch (_) {
+    /* level table may be missing mid-rollout */
+  }
+
   const platformDefault = await readDefaultBossCommissionRate();
   if (platformDefault == null) {
-    return { rate: null, source: "none", relation };
+    return { rate: null, source: "none", relation, bossLevel };
   }
-  return { rate: platformDefault, source: "platform_default", relation };
+  return { rate: platformDefault, source: "platform_default", relation, bossLevel };
 }
 
 export function viewBossCommissionEarning(row = {}) {
@@ -106,6 +135,10 @@ export function viewBossCommissionEarning(row = {}) {
     platformFeeAmount: money(row.platform_fee_amount),
     bossCommissionRate: money(row.boss_commission_rate),
     bossCommissionAmount: money(row.boss_commission_amount),
+    companionIncomeAmount: money(row.companion_income_amount),
+    rateSource: row.rate_source || "",
+    bossLevelId: row.boss_level_id || null,
+    bossLevelCode: row.boss_level_code || null,
     status: row.status || "",
     note: row.note || "",
     meta: row.meta || {},
@@ -209,12 +242,16 @@ export async function settleBossCommissionFromPlatformFee(
   }
 
   const settledAt = completedAt || new Date().toISOString();
+  const level = resolved.bossLevel || null;
   const meta = {
     formula: "boss_commission = platform_fee * boss_commission_rate / 100",
+    calculatedFrom: "platform_fee_only",
     rateSource: resolved.source,
     completionMethod: method || "",
     companionIncomeUnchanged: true,
     companionIncomeAmount: money(companionIncomeAmount),
+    bossLevelId: level?.id || null,
+    bossLevelCode: level?.code || null,
   };
 
   const earningPayload = {
@@ -227,6 +264,10 @@ export async function settleBossCommissionFromPlatformFee(
     platform_fee_amount: calc.platformFeeAmount,
     boss_commission_rate: calc.bossCommissionRate,
     boss_commission_amount: calc.bossCommissionAmount,
+    companion_income_amount: money(companionIncomeAmount),
+    rate_source: resolved.source,
+    boss_level_id: level?.id || null,
+    boss_level_code: level?.code || null,
     status: "settled",
     note: `MCJ_BOSS_COMMISSION:${JSON.stringify(meta)}`,
     meta,
@@ -285,6 +326,9 @@ export async function settleBossCommissionFromPlatformFee(
         platform_fee: calc.platformFeeAmount,
         boss_commission_rate: calc.bossCommissionRate,
         boss_commission_amount: calc.bossCommissionAmount,
+        boss_commission_rate_source: resolved.source,
+        boss_level_id: level?.id || null,
+        boss_level_code: level?.code || null,
         direct_boss_id: resolved.relation.boss_id,
         boss_commission_relation_id: resolved.relation.id,
       }),
