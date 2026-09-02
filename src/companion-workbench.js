@@ -1781,9 +1781,12 @@
     var subtitle=isolated
       ? isolationHint()
       : (lock?String(lock):'抢单 → 服务 → 完成订单 → 收益提现');
-    var h1=root.querySelector('.pw-top h1');
+    var h1=root.querySelector('.pw-top-titles h1');
     var sub=root.querySelector('.pw-top-sub')||root.querySelector('.pw-top p');
-    if(h1)h1.textContent=title();
+    var pageLabel=root.querySelector('.pw-top-page');
+    var pageTitle=title();
+    if(h1)h1.textContent=pageTitle;
+    if(pageLabel)pageLabel.textContent=pageTitle;
     if(sub)sub.textContent=subtitle;
     root.querySelectorAll('.pw-nav [data-route], .pw-bottom-nav [data-route]').forEach(function(btn){
       var path=btn.getAttribute('data-route')||'';
@@ -2078,6 +2081,11 @@
       '<section class="pw-main"><header class="pw-top">'+
       '<div class="pw-top-left">'+
       '<button type="button" class="pw-drawer-toggle" data-pw-drawer-toggle aria-expanded="false" aria-controls="pwSideNav" aria-label="打开菜单"><span class="pw-drawer-toggle-bars" aria-hidden="true"></span></button>'+
+      '<div class="pw-top-brand" aria-label="妙脆角陪玩端">'+
+      '<strong class="pw-top-logo">MEOW CUI JIAO</strong>'+
+      '<span class="pw-top-brand-cn">妙脆角 · 陪玩端</span>'+
+      '<span class="pw-top-page">'+esc(title())+'</span>'+
+      '</div>'+
       '<div class="pw-top-titles"><h1>'+title()+'</h1><p class="pw-top-sub">'+subtitle+'</p></div>'+
       '</div>'+
       '<div class="pw-account"><button type="button" class="pw-avatar" data-account-toggle aria-label="账号菜单">'+esc(String(player.name||player.uid||'P').slice(0,1).toUpperCase())+'</button><div class="pw-menu">'+accountMenu+'</div></div>'+
@@ -3098,6 +3106,7 @@
     return /^(https?:\/\/|blob:|data:audio\/)/i.test(String(u||'').trim());
   }
   function pickVoicePlayUrl(voiceMedia,p,raw,localUrl){
+    // Prefer local blob while remote URL is still verifying (Safari mp4 timeslice uploads).
     if(localUrl&&isPlayableMediaUrl(localUrl))return String(localUrl);
     var list=[
       voiceMedia&&voiceMedia.url,
@@ -3110,6 +3119,140 @@
       if(isPlayableMediaUrl(list[i]))return String(list[i]).trim();
     }
     return '';
+  }
+  function encodeWavFromAudioBuffer(buffer){
+    var numChannels=buffer.numberOfChannels||1;
+    var sampleRate=buffer.sampleRate||44100;
+    var samples=buffer.length||0;
+    var bytesPerSample=2;
+    var blockAlign=numChannels*bytesPerSample;
+    var dataSize=samples*blockAlign;
+    var ab=new ArrayBuffer(44+dataSize);
+    var view=new DataView(ab);
+    function writeStr(offset,str){
+      for(var i=0;i<str.length;i++)view.setUint8(offset+i,str.charCodeAt(i));
+    }
+    writeStr(0,'RIFF');
+    view.setUint32(4,36+dataSize,true);
+    writeStr(8,'WAVE');
+    writeStr(12,'fmt ');
+    view.setUint32(16,16,true);
+    view.setUint16(20,1,true);
+    view.setUint16(22,numChannels,true);
+    view.setUint32(24,sampleRate,true);
+    view.setUint32(28,sampleRate*blockAlign,true);
+    view.setUint16(32,blockAlign,true);
+    view.setUint16(34,16,true);
+    writeStr(36,'data');
+    view.setUint32(40,dataSize,true);
+    var offset=44;
+    var chans=[];
+    for(var c=0;c<numChannels;c++)chans.push(buffer.getChannelData(c));
+    for(var i=0;i<samples;i++){
+      for(var ch=0;ch<numChannels;ch++){
+        var s=Math.max(-1,Math.min(1,chans[ch][i]||0));
+        view.setInt16(offset,s<0?s*0x8000:s*0x7fff,true);
+        offset+=2;
+      }
+    }
+    return ab;
+  }
+  function remuxVoiceBlobToWav(blob){
+    if(!blob||!blob.size)return Promise.resolve(null);
+    var AudioCtx=window.AudioContext||window.webkitAudioContext;
+    if(!AudioCtx)return Promise.resolve(null);
+    var ctx=null;
+    return Promise.resolve().then(function(){
+      ctx=new AudioCtx();
+      return blob.arrayBuffer();
+    }).then(function(ab){
+      return ctx.decodeAudioData(ab.slice(0));
+    }).then(function(decoded){
+      var wav=encodeWavFromAudioBuffer(decoded);
+      try{if(ctx&&ctx.close)ctx.close()}catch(e){}
+      return new File([wav],'voice-record.wav',{type:'audio/wav'});
+    }).catch(function(err){
+      try{if(ctx&&ctx.close)ctx.close()}catch(e){}
+      try{console.warn('[companion-media] wav remux skipped',err)}catch(e){}
+      return null;
+    });
+  }
+  function normalizeVoiceUploadFile(file){
+    if(!file)return Promise.resolve(file);
+    var mime=String(file.type||voiceRec.mimeType||'').toLowerCase();
+    var base=mime.split(';')[0].trim();
+    // Safari MediaRecorder audio/mp4(+timeslice) often fails <audio> after Storage upload.
+    // Remux to WAV for durable cross-browser playback (profile + public).
+    var shouldRemux=/mp4|aac|m4a|mpeg|x-m4a|quicktime|webm|ogg/i.test(base||String(file.name||''));
+    if(!shouldRemux)return Promise.resolve(file);
+    return remuxVoiceBlobToWav(file).then(function(wavFile){
+      if(wavFile&&wavFile.size>44)return wavFile;
+      // Fallback: strip codec params so Storage Content-Type is clean.
+      if(base&&base!==file.type)return new File([file],'voice-record.'+(/mp4|aac|m4a/i.test(base)?'m4a':(/ogg/i.test(base)?'ogg':'webm')),{type:base});
+      return file;
+    });
+  }
+  function probeVoiceUrlPlayable(url){
+    return new Promise(function(resolve){
+      if(!isPlayableMediaUrl(url)||!/^https?:\/\//i.test(String(url))){resolve(false);return}
+      var a=document.createElement('audio');
+      var done=false;
+      var finish=function(ok){
+        if(done)return;
+        done=true;
+        try{a.removeAttribute('src');a.load()}catch(e){}
+        resolve(!!ok);
+      };
+      var t=setTimeout(function(){finish(false)},8000);
+      a.preload='metadata';
+      a.onloadedmetadata=function(){clearTimeout(t);finish(true)};
+      a.oncanplay=function(){clearTimeout(t);finish(true)};
+      a.onerror=function(){clearTimeout(t);finish(false)};
+      try{a.src=url;a.load()}catch(e){clearTimeout(t);finish(false)}
+    });
+  }
+  function settleVoiceAfterUpload(remoteUrl){
+    var url=String(remoteUrl||'').trim();
+    if(!url){
+      // Keep local preview if remote URL missing.
+      state.voicePlayError='';
+      return Promise.resolve();
+    }
+    return probeVoiceUrlPlayable(url).then(function(ok){
+      if(ok){
+        state.voicePlayError='';
+        state._voiceReloadTried=false;
+        clearVoiceLocal();
+        paint({preserveScroll:true});
+        return;
+      }
+      // Fresh sign once, then keep local blob as playable fallback.
+      if(!state._voiceReloadTried&&state.session&&state.session.token){
+        state._voiceReloadTried=true;
+        return loadData({soft:true,forcePaint:true,preserveScroll:true}).then(function(){
+          var p=(state.data&&state.data.player)||{};
+          var voiceMedia=((state.data&&state.data.media)||[]).filter(function(m){return m.mediaType==='voice'&&m.url})[0];
+          var next=pickVoicePlayUrl(voiceMedia,p,p.raw||{},voiceRec.localUrl||'');
+          if(next&&/^https?:\/\//i.test(next)){
+            return probeVoiceUrlPlayable(next).then(function(ok2){
+              if(ok2){
+                state.voicePlayError='';
+                clearVoiceLocal();
+                paint({preserveScroll:true});
+              }else{
+                state.voicePlayError='';
+                // Keep local blob; do not flash 错误 while local still plays.
+                paint({preserveScroll:true});
+              }
+            });
+          }
+          state.voicePlayError='';
+          paint({preserveScroll:true});
+        });
+      }
+      state.voicePlayError='';
+      paint({preserveScroll:true});
+    });
   }
   function pwVoiceUploadHtml(p,raw,uploadBusy){
     var busy=uploadBusy==='voice';
@@ -3730,7 +3873,11 @@
     state.uploadBusy=mediaType;
     var localPreview='';
     paint();
-    return ensureFreshCompanionSession().then(function(){
+    var prepare=mediaType==='voice'?normalizeVoiceUploadFile(file):Promise.resolve(file);
+    return prepare.then(function(normalized){
+      file=normalized||file;
+      return ensureFreshCompanionSession();
+    }).then(function(){
       return withTimeout(readFileAsDataUrl(file,mediaType==='voice'?'voice':'image').then(function(dataUrl){
       localPreview=dataUrl;
       var preview=document.querySelector('[data-avatar-preview]');
@@ -3779,18 +3926,16 @@
         state.data.player.voiceUrl=res.url;
         state.voicePlayError='';
         state._voiceReloadTried=false;
-        clearVoiceLocal();
+        // Keep local blob until remote https URL actually loads (Safari mp4 upload quirk).
         // Keep durable storage:// on raw so save/validate still sees 有录音 after soft refresh.
         if(!state.data.player.raw)state.data.player.raw={};
         var durable=res.voice_url||res.storageRef||(res.media&&res.media.storageRef)||'';
         if(durable)state.data.player.raw.voice_url=durable;
-        // Swap optimistic data:/blob: preview to the real Storage URL immediately.
-        var voiceAudio=document.querySelector('audio[data-voice-audio], .pw-voice-preview audio');
-        if(voiceAudio&&isPlayableMediaUrl(res.url)){
-          try{voiceAudio.src=res.url}catch(e){}
-        }
       }
-      return loadData({soft:true,forcePaint:true});
+      return loadData({soft:true,forcePaint:true,preserveScroll:true}).then(function(){
+        if(mediaType==='voice')return settleVoiceAfterUpload(res&&res.url);
+        return res;
+      }).then(function(){return res});
     }).catch(function(err){
       state.uploadBusy='';
       captureLiveForms(true);
@@ -4619,7 +4764,12 @@
       voiceRec.stream=stream;
       voiceRec.chunks=[];
       var mime='';
-      var candidates=['audio/mp4','audio/aac','audio/webm;codecs=opus','audio/webm','audio/ogg;codecs=opus'];
+      // Prefer webm on Chromium; Safari only supports audio/mp4|aac.
+      var ua=String(navigator.userAgent||'');
+      var isApple=/iPhone|iPad|iPod|Macintosh/i.test(ua)&&/Safari/i.test(ua)&&!/Chrom(e|ium)|CriOS|Edg/i.test(ua);
+      var candidates=isApple
+        ? ['audio/mp4','audio/aac','audio/wav']
+        : ['audio/webm;codecs=opus','audio/webm','audio/ogg;codecs=opus','audio/mp4','audio/aac'];
       for(var i=0;i<candidates.length;i++){
         try{
           if(window.MediaRecorder.isTypeSupported&&MediaRecorder.isTypeSupported(candidates[i])){mime=candidates[i];break}
@@ -4629,7 +4779,7 @@
       try{recorder=mime?new MediaRecorder(stream,{mimeType:mime}):new MediaRecorder(stream)}
       catch(err){recorder=new MediaRecorder(stream)}
       voiceRec.recorder=recorder;
-      voiceRec.mimeType=recorder.mimeType||mime||'audio/webm';
+      voiceRec.mimeType=(recorder.mimeType||mime||'audio/webm').split(';')[0].trim();
       voiceRec.startedAt=Date.now();
       voiceRec.recording=true;
       recorder.ondataavailable=function(e){if(e.data&&e.data.size)voiceRec.chunks.push(e.data)};
@@ -4638,7 +4788,8 @@
         voiceRec.recording=false;
         stopVoiceTimer();
         var duration=Math.max(1,Math.round((Date.now()-voiceRec.startedAt)/1000));
-        var blob=new Blob(voiceRec.chunks,{type:voiceRec.mimeType||'audio/webm'});
+        var blobType=(voiceRec.mimeType||'audio/webm').split(';')[0].trim();
+        var blob=new Blob(voiceRec.chunks,{type:blobType});
         voiceRec.chunks=[];
         voiceRec.recorder=null;
         if(!blob.size){
@@ -4649,11 +4800,19 @@
         clearVoiceLocal();
         voiceRec.localBlob=blob;
         voiceRec.localUrl=URL.createObjectURL(blob);
+        voiceRec.mimeType=blobType;
         voiceRec.duration=duration;
         paint({preserveScroll:true});
         toast('录音完成，可试听后确认上传');
       };
-      recorder.start(250);
+      // Safari audio/mp4 with timeslice → fragmented file that plays as blob: but fails after HTTPS upload.
+      var useTimeslice=!/mp4|aac|m4a|wav/i.test(voiceRec.mimeType||'');
+      try{
+        if(useTimeslice)recorder.start(250);
+        else recorder.start();
+      }catch(eStart){
+        try{recorder.start()}catch(e2){throw e2}
+      }
       stopVoiceTimer();
       voiceRec.timer=setInterval(syncVoiceTimerUi,250);
       paint({preserveScroll:true});
@@ -4678,11 +4837,12 @@
       toast('录音文件为空，请重新录制');
       return Promise.resolve();
     }
-    var ext=/mp4|aac/i.test(voiceRec.mimeType||'')?'m4a':(/ogg/i.test(voiceRec.mimeType||'')?'ogg':'webm');
-    var file=new File([voiceRec.localBlob],'voice-record.'+ext,{type:voiceRec.mimeType||'audio/webm'});
+    var mime=String(voiceRec.mimeType||voiceRec.localBlob.type||'audio/webm').split(';')[0].trim();
+    var ext=/wav/i.test(mime)?'wav':(/mp4|aac|m4a/i.test(mime)?'m4a':(/ogg/i.test(mime)?'ogg':'webm'));
+    var file=new File([voiceRec.localBlob],'voice-record.'+ext,{type:mime||'audio/webm'});
     toast('上传中…');
     return uploadImage('voice',file).then(function(res){
-      clearVoiceLocal();
+      // clearVoiceLocal happens in settleVoiceAfterUpload once remote plays.
       if(res&&(res.url||res.path))toast(res.message||'上传成功 / 已保存');
       return res;
     });
@@ -4804,18 +4964,42 @@
   document.addEventListener('error',function(e){
     var audio=e.target&&e.target.matches&&e.target.matches('audio[data-voice-audio], .pw-voice-preview audio')?e.target:null;
     if(!audio)return;
+    // Prefer still-valid local blob over flashing 错误 (common right after Safari upload).
+    if(voiceRec.localUrl&&isPlayableMediaUrl(voiceRec.localUrl)){
+      var cur=String(audio.currentSrc||audio.src||'');
+      if(cur.indexOf(voiceRec.localUrl)===-1){
+        state.voicePlayError='';
+        try{audio.src=voiceRec.localUrl;audio.load()}catch(err){}
+        var hostLocal=document.querySelector('[data-voice-play-error]');
+        if(hostLocal)hostLocal.textContent='';
+        return;
+      }
+    }
     // Expired/invalid signed URL: soft-reload bootstrap once for a fresh sign, then show error.
     if(!state._voiceReloadTried&&state.session&&state.session.token){
       state._voiceReloadTried=true;
       loadData({soft:true,forcePaint:true,preserveScroll:true}).then(function(){
         var p=(state.data&&state.data.player)||{};
         var voiceMedia=((state.data&&state.data.media)||[]).filter(function(m){return m.mediaType==='voice'&&m.url})[0];
-        var next=pickVoicePlayUrl(voiceMedia,p,p.raw||{},'');
-        if(next&&isPlayableMediaUrl(next)&&String(audio.src||'').indexOf(next)===-1){
+        var next=pickVoicePlayUrl(voiceMedia,p,p.raw||{},voiceRec.localUrl||'');
+        var live=document.querySelector('audio[data-voice-audio], .pw-voice-preview audio');
+        if(next&&isPlayableMediaUrl(next)){
           state.voicePlayError='';
-          try{audio.src=next;audio.load()}catch(err){}
+          if(live){
+            try{live.src=next;live.load()}catch(err){}
+          }else{
+            paint({preserveScroll:true});
+          }
           var hostOk=document.querySelector('[data-voice-play-error]');
           if(hostOk)hostOk.textContent='';
+          if(/^https?:\/\//i.test(next)&&voiceRec.localUrl){
+            probeVoiceUrlPlayable(next).then(function(ok){if(ok){clearVoiceLocal();paint({preserveScroll:true})}});
+          }
+          return;
+        }
+        if(voiceRec.localUrl){
+          state.voicePlayError='';
+          paint({preserveScroll:true});
           return;
         }
         state.voicePlayError='音频加载失败（可能是链接过期或格式不支持），请重新上传录音';
@@ -4823,11 +5007,20 @@
         if(host)host.textContent=state.voicePlayError;
         else toast(state.voicePlayError);
       }).catch(function(){
+        if(voiceRec.localUrl){
+          state.voicePlayError='';
+          paint({preserveScroll:true});
+          return;
+        }
         state.voicePlayError='音频加载失败（可能是链接过期或格式不支持），请重新上传录音';
         var host=document.querySelector('[data-voice-play-error]');
         if(host)host.textContent=state.voicePlayError;
         else toast(state.voicePlayError);
       });
+      return;
+    }
+    if(voiceRec.localUrl){
+      state.voicePlayError='';
       return;
     }
     state.voicePlayError='音频加载失败（可能是链接过期或格式不支持），请重新上传录音';

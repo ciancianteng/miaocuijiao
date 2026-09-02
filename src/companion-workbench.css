@@ -381,6 +381,10 @@ a.pw-btn{display:inline-flex;align-items:center;justify-content:center;text-deco
 .pw-drawer-backdrop{display:none}
 .pw-top-left{display:flex;align-items:flex-start;gap:12px;min-width:0;flex:1 1 auto}
 .pw-top-titles{min-width:0}
+.pw-top-brand{display:none;min-width:0;gap:2px}
+.pw-top-logo{display:block;font-size:15px;font-weight:800;letter-spacing:.04em;line-height:1.2;color:#fff}
+.pw-top-brand-cn{display:block;font-size:12px;color:rgba(255,214,231,.9);line-height:1.3}
+.pw-top-page{display:block;font-size:11px;color:var(--pw-muted);line-height:1.3;margin-top:2px}
 .pw-side-extra{margin-top:18px;padding:0 6px}
 .pw-side-extra .pw-btn{width:100%;justify-content:center}
 @media (max-width:1100px){
@@ -431,7 +435,9 @@ a.pw-btn{display:inline-flex;align-items:center;justify-content:center;text-deco
   }
   .pw-main{height:auto;min-height:100vh;min-height:100dvh;display:block}
   .pw-top{height:auto;min-height:64px;padding:12px 14px;position:sticky;top:0;z-index:40;align-items:center;background:rgba(12,11,16,.96);backdrop-filter:blur(10px)}
-  .pw-top h1{font-size:18px}
+  .pw-top-left{align-items:center}
+  .pw-top-brand{display:grid}
+  .pw-top-titles{display:none}
   .pw-top-sub{display:none}
   .pw-page{flex:none;min-height:0;padding:16px 14px calc(28px + env(safe-area-inset-bottom));overflow:visible}
   .pw-page-head{display:grid}
