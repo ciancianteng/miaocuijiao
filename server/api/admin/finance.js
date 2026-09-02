@@ -35,6 +35,11 @@ import {
 } from "../_account-codes.js";
 import { exportCsv as exportPaymentReceiptsCsv, listPaidForAdmin, listPendingForAdmin, listRejectedForAdmin, enrichReceiptAudit, approveAndLedger, rejectProof, staffReviewerNameFromProfile, stripReviewStaffMark } from "../_payment-receipts.js";
 import { normalizeAdminRole } from "../_admin-auth.js";
+import {
+  completeReferralWithdraw,
+  parseWithdrawalReferralAmount,
+  unfreezeReferralForWithdraw,
+} from "../_companion-referral.js";
 
 const FINANCE_BUCKET = "finance-receipts";
 const FINANCE_ROLES = new Set(["admin", "super_admin", "finance_admin"]);
@@ -1110,6 +1115,15 @@ export default async function handler(req, res) {
           /* optional ledger */
         }
       }
+      // Referral stream: return frozen rebate to available (separate from companion_income).
+      try {
+        const referralAmt = parseWithdrawalReferralAmount(row);
+        if (referralAmt > 0 && row.companion_id) {
+          await unfreezeReferralForWithdraw(row.companion_id, referralAmt);
+        }
+      } catch {
+        /* optional */
+      }
       await writeAdminLog({
         module: "finance",
         action: "reject_withdraw",
@@ -1300,6 +1314,15 @@ export default async function handler(req, res) {
         } catch {
           /* optional */
         }
+      }
+      // Referral stream: finalize frozen → total_withdrawn (separate wallet).
+      try {
+        const referralAmt = parseWithdrawalReferralAmount(row);
+        if (referralAmt > 0 && row.companion_id) {
+          await completeReferralWithdraw(row.companion_id, referralAmt);
+        }
+      } catch {
+        /* optional */
       }
 
       let receiptRow = null;

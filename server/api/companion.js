@@ -82,6 +82,16 @@ import {
   upsertPayoutRequest,
 } from "./_payout-requests.js";
 import { listDepositPaymentMethods } from "./_platform-pay-qr.js";
+import {
+  freezeReferralForWithdraw,
+  getReferralWallet,
+  listReferralRecordsForInviter,
+  listReferralRelationsForInviter,
+  upsertCompanionBossReferral,
+  isReferralMissing,
+  unfreezeReferralForWithdraw,
+  completeReferralWithdraw,
+} from "./_companion-referral.js";
 
 const DEPOSIT_AMOUNT_RM = 100;
 const DEPOSIT_CHANNEL_MARK_START = "[[DEPOSIT_PAY]]";
@@ -1663,11 +1673,22 @@ function emptyWalletBundle() {
       weekIncome: 0,
       monthIncome: 0,
       totalIncome: 0,
+      serviceIncome: 0,
+      referralIncome: 0,
+      serviceWithdrawable: 0,
+      referralWithdrawable: 0,
       withdrawable: 0,
       available: 0,
       frozen: 0,
       pendingSettlement: 0,
       withdrawn: 0,
+      serviceWithdrawn: 0,
+      referralWithdrawn: 0,
+    },
+    referral: {
+      tablesReady: false,
+      wallet: null,
+      records: [],
     },
   };
 }
@@ -1732,15 +1753,13 @@ async function loadWalletBundle(profile, myOrders = []) {
     }
     return rows;
   });
-  const walletLedger = [...ledgerFromTx, ...ledgerFromWithdraw].sort((a, b) =>
-    String(b.createdAt || "").localeCompare(String(a.createdAt || ""))
-  );
   const earningDetails = ledgerFromTx
     .filter((row) => row.typeCode === "companion_income")
     .map((row) => {
       const settlement = row.settlement || parseSettlementNote(row.note) || {};
       return {
         ...row,
+        stream: "service",
         orderNo: settlement.orderNo || settlement.order_no || "",
         grossAmount: money(settlement.orderAmountCatFood || settlement.gross || row.amount),
         platformFee: money(settlement.platformCommissionCatFood || settlement.platformFee || 0),
@@ -1748,27 +1767,145 @@ async function loadWalletBundle(profile, myOrders = []) {
         statusText: row.status === "completed" ? "已完成" : row.status === "pending" ? "待处理" : row.status || "-",
       };
     });
+
+  // Referral rebate stream (separate tables; never mixed into companion_income calc).
+  let referralWallet = {
+    userId: profile.id,
+    pendingAmount: 0,
+    availableAmount: 0,
+    frozenAmount: 0,
+    totalEarned: 0,
+    totalWithdrawn: 0,
+    tablesReady: true,
+  };
+  let referralRecords = [];
+  try {
+    referralWallet = { tablesReady: true, ...(await getReferralWallet(profile.id)) };
+    referralRecords = await listReferralRecordsForInviter(profile.id, { limit: 100 });
+  } catch (error) {
+    if (isReferralMissing(error) || error?.tablesReady === false) {
+      referralWallet.tablesReady = false;
+      warnings.push("referral: tables not ready");
+    } else {
+      warnings.push(`referral: ${error.message || error}`);
+    }
+  }
+
+  const referralDetails = (referralRecords || []).map((row) => ({
+    id: row.id,
+    orderId: row.orderId || "",
+    type: "邀请返点",
+    typeCode: "referral_rebate",
+    stream: "referral",
+    amount: money(row.rebateAmount),
+    direction: "in",
+    status: row.status || "settled",
+    statusText: row.status === "settled" ? "已入账" : row.status || "-",
+    note: `邀请返点 ${money(row.rebateRate)}% × 基数 ${money(row.baseAmount)}（${row.rebateSource || "PLATFORM_PROFIT"}）`,
+    createdAt: row.settledAt || row.createdAt,
+    settlement: {
+      rebateRate: row.rebateRate,
+      baseAmount: row.baseAmount,
+      rebateAmount: row.rebateAmount,
+      rebateSource: row.rebateSource,
+      invitedUserId: row.invitedUserId,
+    },
+    orderNo: "",
+    grossAmount: money(row.baseAmount),
+    platformFee: 0,
+    netIncome: money(row.rebateAmount),
+  }));
+
+  const referralLedger = referralDetails.map((row) => ({
+    id: row.id,
+    orderId: row.orderId,
+    type: row.type,
+    typeCode: row.typeCode,
+    stream: "referral",
+    amount: row.amount,
+    direction: "in",
+    status: row.status,
+    note: row.note,
+    createdAt: row.createdAt,
+    settlement: row.settlement,
+  }));
+
+  const serviceWithdrawable = money(summary.withdrawable || 0);
+  const referralAvailable = money(referralWallet.availableAmount || 0);
+  const referralFrozen = money(referralWallet.frozenAmount || 0);
+  const totalWithdrawable = money(serviceWithdrawable + referralAvailable);
+
+  const walletLedger = [...ledgerFromTx, ...ledgerFromWithdraw, ...referralLedger].sort((a, b) =>
+    String(b.createdAt || "").localeCompare(String(a.createdAt || ""))
+  );
+
   return {
     transactions,
     withdrawalRows,
-    summary,
+    summary: {
+      ...summary,
+      serviceWithdrawable,
+      referralWithdrawable: referralAvailable,
+      withdrawable: totalWithdrawable,
+    },
     walletLedger,
-    earningDetails,
+    earningDetails: [...earningDetails, ...referralDetails].sort((a, b) =>
+      String(b.createdAt || "").localeCompare(String(a.createdAt || ""))
+    ),
+    referral: {
+      tablesReady: referralWallet.tablesReady !== false,
+      wallet: referralWallet,
+      records: referralRecords,
+    },
     earnings: {
       todayIncome: summary.todayIncome || 0,
       yesterdayIncome: summary.yesterdayIncome || 0,
       weekIncome: summary.weekIncome || 0,
       monthIncome: summary.monthIncome || 0,
-      totalIncome: summary.totalIncome || 0,
-      withdrawable: summary.withdrawable || 0,
-      available: summary.withdrawable || 0,
-      frozen: summary.frozen || 0,
+      totalIncome: money((summary.totalIncome || 0) + money(referralWallet.totalEarned || 0)),
+      serviceIncome: summary.totalIncome || 0,
+      referralIncome: money(referralWallet.totalEarned || 0),
+      serviceWithdrawable,
+      referralWithdrawable: referralAvailable,
+      withdrawable: totalWithdrawable,
+      available: totalWithdrawable,
+      frozen: money((summary.frozen || 0) + referralFrozen),
       pendingSettlement: summary.pendingSettlement || 0,
-      withdrawn: summary.withdrawn || 0,
+      withdrawn: money((summary.withdrawn || 0) + money(referralWallet.totalWithdrawn || 0)),
+      serviceWithdrawn: summary.withdrawn || 0,
+      referralWithdrawn: money(referralWallet.totalWithdrawn || 0),
     },
     warnings,
   };
 }
+function parseWithdrawalStreamAlloc(row = {}) {
+  const remark = String(row.remark || row.note || "");
+  const m = remark.match(/\[\[WD_ALLOC\]\]([\s\S]*?)\[\[\/WD_ALLOC\]\]/);
+  if (m) {
+    try {
+      const j = JSON.parse(m[1]);
+      return {
+        serviceAmount: money(j.serviceAmount ?? j.fromService),
+        referralAmount: money(j.referralAmount ?? j.fromReferral),
+      };
+    } catch {
+      /* fall through */
+    }
+  }
+  // Legacy rows: entire amount is companion_income stream.
+  const total = money(row.cat_food_amount ?? row.amount);
+  return { serviceAmount: total, referralAmount: 0 };
+}
+
+function withWithdrawalAllocRemark(remark, alloc) {
+  const base = String(remark || "").replace(/\[\[WD_ALLOC\]\][\s\S]*?\[\[\/WD_ALLOC\]\]/g, "").trim();
+  const tag = `[[WD_ALLOC]]${JSON.stringify({
+    serviceAmount: money(alloc.serviceAmount),
+    referralAmount: money(alloc.referralAmount),
+  })}[[/WD_ALLOC]]`;
+  return base ? `${base}\n${tag}` : tag;
+}
+
 function summaryFrom(myOrders, transactions, withdrawals = []) {
   const today = todayKey();
   const month = monthKey();
@@ -1781,15 +1918,16 @@ function summaryFrom(myOrders, transactions, withdrawals = []) {
   })();
   const incomeRows = (transactions || []).filter((row) => row.transaction_type === "companion_income" && row.status !== "cancelled");
   const refundRows = (transactions || []).filter((row) => row.transaction_type === "refund" && row.status !== "cancelled");
+  // companion_income lock/withdrawn only count the service allocation of each withdrawal.
   const frozen = (withdrawals || [])
     .filter((w) => WITHDRAW_FROZEN.has(w.status))
-    .reduce((n, w) => n + money(w.cat_food_amount), 0);
+    .reduce((n, w) => n + money(parseWithdrawalStreamAlloc(w).serviceAmount), 0);
   const withdrawn = (withdrawals || [])
     .filter((w) => w.status === "completed")
-    .reduce((n, w) => n + money(w.cat_food_amount), 0);
+    .reduce((n, w) => n + money(parseWithdrawalStreamAlloc(w).serviceAmount), 0);
   const locked = (withdrawals || [])
     .filter((w) => WITHDRAW_ACTIVE.has(w.status))
-    .reduce((n, w) => n + money(w.cat_food_amount), 0);
+    .reduce((n, w) => n + money(parseWithdrawalStreamAlloc(w).serviceAmount), 0);
   const gross = incomeRows.reduce((n, row) => n + money(row.amount), 0);
   const refundTotal = refundRows.reduce((n, row) => n + money(row.amount), 0);
   const netGross = Math.max(0, roundMoney(gross - refundTotal));
@@ -1923,7 +2061,7 @@ async function bootstrapData(profile, companion) {
     wallet = await loadWalletBundle(profile, myOrders);
     if (wallet.warnings?.length) warnings.push(...wallet.warnings);
   }
-  const { summary, walletLedger, earningDetails, earnings, withdrawalRows } = wallet;
+  const { summary, walletLedger, earningDetails, earnings, withdrawalRows, referral } = wallet;
 
   player.priceNeedsReset = levelBundle.priceNeedsReset;
   player.priceInRange = levelBundle.priceInRange;
@@ -2329,7 +2467,7 @@ async function bootstrapData(profile, companion) {
     messages: [],
     earnings: permissions.isolationMode
       ? emptyWalletBundle().earnings
-      : {
+      : earnings || {
           todayIncome: summary.todayIncome || 0,
           yesterdayIncome: summary.yesterdayIncome || 0,
           weekIncome: summary.weekIncome || 0,
@@ -2341,6 +2479,7 @@ async function bootstrapData(profile, companion) {
           pendingSettlement: summary.pendingSettlement || 0,
           withdrawn: summary.withdrawn || 0,
         },
+    referral: permissions.isolationMode ? null : referral || null,
     earningDetails: permissions.isolationMode ? [] : earningDetails,
     walletLedger: permissions.isolationMode ? [] : walletLedger,
     walletWarnings: warnings,
@@ -5603,6 +5742,43 @@ export default async function handler(req, res) {
       return json(res, 200, { ok: true, message: "已标记已读" });
     }
 
+    if (action === "ensure_referral_relation" || action === "bind_referral_boss") {
+      try {
+        assertCompanionBusinessAccess(auth.profile, companion || {});
+      } catch (err) {
+        return isolationForbiddenResponse(res, err);
+      }
+      const bossId = String(body.bossId || body.boss_id || body.invitedUserId || "").trim();
+      if (!bossId) return json(res, 400, { ok: false, message: "请提供 bossId" });
+      try {
+        const row = await upsertCompanionBossReferral({
+          companionId: auth.profile.id,
+          bossId,
+          invitationId: body.invitationId || null,
+          remark: String(body.remark || "api:ensure_referral_relation").trim(),
+          boundByAdmin: false,
+        });
+        const relations = await listReferralRelationsForInviter(auth.profile.id);
+        const wallet = await getReferralWallet(auth.profile.id);
+        return json(res, 200, {
+          ok: true,
+          message: "邀请返点关系已建立",
+          relation: row,
+          relations,
+          wallet,
+        });
+      } catch (err) {
+        if (isReferralMissing(err)) {
+          return json(res, 503, {
+            ok: false,
+            message: "邀请返点表未初始化，请先执行 supabase/migrations/20260904_companion_referral_rebate.sql",
+            code: "REFERRAL_TABLES_MISSING",
+          });
+        }
+        return json(res, err.status || 400, { ok: false, message: err.message || "绑定失败", code: err.code || "" });
+      }
+    }
+
     if (action === "request_withdrawal") {
       try {
         assertCompanionBusinessAccess(auth.profile, companion || {});
@@ -5623,6 +5799,17 @@ export default async function handler(req, res) {
       if (amount > money(data.earnings.withdrawable)) {
         return json(res, 400, { ok: false, message: "可提现余额不足" });
       }
+
+      // Allocate across streams without changing companion_income lock math:
+      // service portion uses existing freeze_tx path; referral portion freezes referral_wallets.
+      const serviceAvail = money(data.earnings.serviceWithdrawable ?? data.summary?.serviceWithdrawable ?? 0);
+      const referralAvail = money(data.earnings.referralWithdrawable ?? data.referral?.wallet?.availableAmount ?? 0);
+      const fromService = Math.min(amount, serviceAvail);
+      const fromReferral = money(amount - fromService);
+      if (fromReferral > referralAvail + 0.001) {
+        return json(res, 400, { ok: false, message: "邀请返点可提现余额不足" });
+      }
+
       if (Number(data.withdrawalRules.remainingThisWeek ?? data.withdrawalRules.remainingThisMonth ?? 0) <= 0) {
         return json(res, 400, { ok: false, message: "本周提现次数已用完" });
       }
@@ -5692,6 +5879,22 @@ export default async function handler(req, res) {
       const withdrawalNo = await allocateWithdrawalNo(companionDb).catch(
         () => `WD${String(Date.now()).slice(-6)}`
       );
+      const streamAlloc = { serviceAmount: fromService, referralAmount: fromReferral };
+      const remarkWithAlloc = withWithdrawalAllocRemark(remark, streamAlloc);
+
+      // Freeze referral stream first (separate wallet). Fail closed before writing withdrawal.
+      if (fromReferral > 0) {
+        try {
+          await freezeReferralForWithdraw(auth.profile.id, fromReferral);
+        } catch (err) {
+          return json(res, err.status || 400, {
+            ok: false,
+            message: err.message || "邀请返点冻结失败",
+            code: err.code || "",
+          });
+        }
+      }
+
       const withdrawalPayload = {
         withdrawal_no: withdrawalNo,
         companion_id: auth.profile.id,
@@ -5707,7 +5910,7 @@ export default async function handler(req, res) {
         account_holder: holder,
         account_number: accountNumber,
         account_last4: last4,
-        remark,
+        remark: remarkWithAlloc,
         status: "pending_friday",
         settlement_date: settlementDate,
         source_ledger_ids: [],
@@ -5744,33 +5947,48 @@ export default async function handler(req, res) {
           }
         }
       }
-      if (!item) return json(res, 500, { ok: false, message: "提现申请写入失败，请稍后重试" });
+      if (!item) {
+        if (fromReferral > 0) {
+          try {
+            const { unfreezeReferralForWithdraw } = await import("./_companion-referral.js");
+            await unfreezeReferralForWithdraw(auth.profile.id, fromReferral);
+          } catch {
+            /* best effort */
+          }
+        }
+        return json(res, 500, { ok: false, message: "提现申请写入失败，请稍后重试" });
+      }
 
       let freezeTxId = null;
-      try {
-        const txRows = await supabaseJson(restUrl("transactions"), {
-          method: "POST",
-          headers: serviceHeaders(),
-          body: JSON.stringify({
-            user_id: auth.profile.id,
-            order_id: null,
-            transaction_type: "withdrawal",
-            amount,
-            status: "pending",
-            note: `提现申请冻结 ${item?.withdrawal_no || ""} 预计发放 ${settlementDate}`.trim(),
-            created_at: nowIso(),
-          }),
-        });
-        freezeTxId = txRows?.[0]?.id || null;
-        if (freezeTxId && item?.id) {
-          await companionDb("companion_withdrawals", `?id=eq.${encodeURIComponent(item.id)}`, {
-            method: "PATCH",
-            body: JSON.stringify({ freeze_tx_id: freezeTxId, updated_at: nowIso() }),
-          }).catch(() => null);
-          item = { ...item, freeze_tx_id: freezeTxId };
+      // companion_income freeze only for the service allocation (unchanged stream semantics).
+      if (fromService > 0) {
+        try {
+          const txRows = await supabaseJson(restUrl("transactions"), {
+            method: "POST",
+            headers: serviceHeaders(),
+            body: JSON.stringify({
+              user_id: auth.profile.id,
+              order_id: null,
+              transaction_type: "withdrawal",
+              amount: fromService,
+              status: "pending",
+              note: `提现申请冻结(订单收入 ${fromService}` +
+                (fromReferral > 0 ? ` + 邀请返点 ${fromReferral}` : "") +
+                `) ${item?.withdrawal_no || ""} 预计发放 ${settlementDate}`.trim(),
+              created_at: nowIso(),
+            }),
+          });
+          freezeTxId = txRows?.[0]?.id || null;
+          if (freezeTxId && item?.id) {
+            await companionDb("companion_withdrawals", `?id=eq.${encodeURIComponent(item.id)}`, {
+              method: "PATCH",
+              body: JSON.stringify({ freeze_tx_id: freezeTxId, updated_at: nowIso() }),
+            }).catch(() => null);
+            item = { ...item, freeze_tx_id: freezeTxId };
+          }
+        } catch {
+          /* ledger marker optional */
         }
-      } catch {
-        /* ledger marker optional */
       }
 
       // Anti-duplicate: period-level lock for this withdrawal row (amount freeze via freeze_tx).
@@ -5797,7 +6015,14 @@ export default async function handler(req, res) {
         payoutType: "companion_wage",
         relatedTable: "companion_withdrawals",
         relatedRecordId: item.id,
-        meta: { payout_type: "companion_wage", catFoodAmount: amount, grossRm: gross, feeRm: fee },
+        meta: {
+          payout_type: "companion_wage",
+          catFoodAmount: amount,
+          grossRm: gross,
+          feeRm: fee,
+          serviceAmount: fromService,
+          referralAmount: fromReferral,
+        },
       });
 
       try {
@@ -5843,13 +6068,18 @@ export default async function handler(req, res) {
           settlementDate,
           status: item.status || "pending_friday",
           statusText: WITHDRAW_STATUS_TEXT[item.status || "pending_friday"] || "待周五结算",
+          serviceAmount: fromService,
+          referralAmount: fromReferral,
         },
+        streamAlloc,
         item,
         data: {
           withdrawalId: item.id,
           withdrawalNo: item.withdrawal_no,
           status: item.status || "pending_friday",
           settlementDate,
+          serviceAmount: fromService,
+          referralAmount: fromReferral,
         },
       });
     }

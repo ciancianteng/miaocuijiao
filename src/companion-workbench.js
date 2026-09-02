@@ -2564,15 +2564,23 @@
       metric('本月收入',money(num(e.monthIncome||summary.monthIncome)))+
       metric('累计收入',money(num(e.totalIncome||summary.totalIncome)))+
       metric('可提现猫粮',money(num(available)))+
+      metric('订单收入可提',money(num(e.serviceWithdrawable!=null?e.serviceWithdrawable:available)))+
+      metric('邀请返点可提',money(num(e.referralWithdrawable||0)))+
       metric('冻结中',money(num(frozen)))+
       metric('平台抽成',esc(commission)+'%')+
       '</section>'+
-      '<section class="pw-card pad" style="margin-top:14px"><h3>奖励 / 其它</h3><div class="pw-info-list">'+infoRow('奖励猫粮',money(num(e.bonus||e.reward||0)))+infoRow('已提现',money(num(e.withdrawn||summary.withdrawn)))+'</div></section>'+
+      '<section class="pw-card pad" style="margin-top:14px"><h3>奖励 / 其它</h3><div class="pw-info-list">'+
+      infoRow('订单服务收入',money(num(e.serviceIncome!=null?e.serviceIncome:e.totalIncome)))+
+      infoRow('邀请返点累计',money(num(e.referralIncome||0)))+
+      infoRow('奖励猫粮',money(num(e.bonus||e.reward||0)))+
+      infoRow('已提现',money(num(e.withdrawn||summary.withdrawn)))+
+      '</div></section>'+
       '<section class="pw-card pad" style="margin-top:14px"><h3>收入明细</h3>'+(details.length?'<div class="pw-table-wrap"><table class="pw-table"><thead><tr><th>类型</th><th>订单</th><th>订单总额</th><th>平台抽成</th><th>实际到账</th><th>状态</th><th>时间</th></tr></thead><tbody>'+details.map(function(x){
         var s=x.settlement||{};
-        var gross=s.totalCatFood!=null?s.totalCatFood:x.amount;
-        var fee=s.platformCommissionCatFood!=null?s.platformCommissionCatFood:0;
-        var net=s.companionNetCatFood!=null?s.companionNetCatFood:x.amount;
+        var isReferral=x.typeCode==='referral_rebate'||x.stream==='referral';
+        var gross=isReferral?(s.baseAmount!=null?s.baseAmount:x.grossAmount): (s.totalCatFood!=null?s.totalCatFood:x.amount);
+        var fee=isReferral?0:(s.platformCommissionCatFood!=null?s.platformCommissionCatFood:0);
+        var net=isReferral?(s.rebateAmount!=null?s.rebateAmount:x.amount):(s.companionNetCatFood!=null?s.companionNetCatFood:x.amount);
         var no=x.orderId?(noMap[x.orderId]||humanId(x.orderId)):'-';
         return '<tr><td data-label="类型">'+esc(x.type||'订单收入')+'</td><td data-label="订单">'+esc(no)+'</td><td data-label="订单总额">'+money(num(gross))+'</td><td data-label="平台抽成">'+money(num(fee))+'</td><td data-label="实际到账">'+money(num(net))+'</td><td data-label="状态">'+esc(ledgerStatusCN(x.status))+'</td><td data-label="时间">'+esc(fmtTime(x.createdAt))+'</td></tr>';
       }).join('')+'</tbody></table></div>':'<div class="pw-empty">暂无收入明细</div>')+'</section>';
@@ -2597,6 +2605,8 @@
       '<form class="pw-card pad pw-form" data-withdraw-form novalidate>'+
       '<div class="pw-info-list" style="margin-bottom:14px">'+
       infoRow('可提现余额',money(num(available)))+
+      infoRow('其中订单收入',money(num(e.serviceWithdrawable||0)))+
+      infoRow('其中邀请返点',money(num(e.referralWithdrawable||0)))+
       infoRow('最低提现金额',(rules.minAmount||0)+' 猫粮')+
       infoRow('预计发放日期',(rules.nextSettlementDate||'-')+(rules.nextSettlementDate?'（星期五）':''))+
       infoRow('提现账户',rules.currentAccount||'未绑定')+

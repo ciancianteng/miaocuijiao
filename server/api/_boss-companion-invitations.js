@@ -8,6 +8,7 @@ import {
   getActiveRelationForCompanion,
   isRelationsMissing,
 } from "./_boss-companion-relations.js";
+import { isReferralMissing, upsertCompanionBossReferral } from "./_companion-referral.js";
 import { isMissingRelation, restUrl, serviceHeaders, supabaseJson } from "./_wallet.js";
 
 const TABLE = "boss_companion_invitations";
@@ -155,14 +156,46 @@ export async function respondInvitation({
     return { invitation: viewInvitation(Array.isArray(updated) ? updated[0] : updated), relation: null };
   }
 
-  // Accept → bind. Use system operator = actor; reason for event log.
-  const bind = await bindRelation({
-    bossId: inv.boss_id,
-    companionId: inv.companion_id,
-    operatorId: actorId,
-    remark: `invite:${invitationId}`,
-    reason: `invite_accepted:${inv.from_role}`,
-  });
+  // Companion → Boss invite: referral graph is independent of 直属 BCR.
+  // Upsert referral first so rebate binding succeeds even if BCR bind is blocked.
+  let referral = null;
+  if (inv.from_role === "companion") {
+    try {
+      referral = await upsertCompanionBossReferral({
+        companionId: inv.companion_id,
+        bossId: inv.boss_id,
+        invitationId,
+        remark: `invite_accepted:${invitationId}`,
+        boundByAdmin: false,
+      });
+    } catch (err) {
+      if (!isReferralMissing(err)) {
+        referral = { error: err.message || "referral_upsert_failed" };
+      } else {
+        referral = { skipped: true, reason: "tables_missing" };
+      }
+    }
+  }
+
+  // Accept → BCR bind (直属). Soft-fail when companion already has another Boss —
+  // referral may still have been established above.
+  let bind = null;
+  let bindWarning = null;
+  try {
+    bind = await bindRelation({
+      bossId: inv.boss_id,
+      companionId: inv.companion_id,
+      operatorId: actorId,
+      remark: `invite:${invitationId}`,
+      reason: `invite_accepted:${inv.from_role}`,
+    });
+  } catch (err) {
+    if (inv.from_role === "companion" && referral && !referral.error && !referral.skipped) {
+      bindWarning = err.message || "bcr_bind_failed";
+    } else {
+      throw err;
+    }
+  }
 
   const updated = await supabaseJson(restUrl(TABLE, `?id=eq.${encodeURIComponent(invitationId)}`), {
     method: "PATCH",
@@ -178,6 +211,8 @@ export async function respondInvitation({
   return {
     invitation: viewInvitation(Array.isArray(updated) ? updated[0] : updated),
     relation: bind?.relation || bind || null,
+    referral,
+    bindWarning,
   };
 }
 
