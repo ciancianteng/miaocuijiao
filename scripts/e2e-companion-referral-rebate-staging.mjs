@@ -14,7 +14,7 @@ const BASE = (process.env.BASE || process.env.MCJ_STAGING_URL || "https://meow-c
 );
 const PASS = process.env.PASS || process.env.MCJ_TEST_PASSWORD || "McjTest@12345678";
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || "admin@meow.test";
-const CS_EMAIL = process.env.CS_EMAIL || "service.final.1785714993009@meow.test";
+const CS_EMAIL = process.env.CS_EMAIL || "service@meow.test";
 const SERVICE_COMP_EMAIL = process.env.SERVICE_COMP_EMAIL || "pr122-accept-1788112659@example.com";
 const PNG =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
@@ -446,17 +446,19 @@ async function main() {
     });
     const csT = tok(csLogin.json);
     if (csT) {
-      await api("/api/customer-service", {
+      const payOk = await api("/api/customer-service", {
         method: "POST",
         token: csT,
-        body: { action: "approve_payment", orderId },
+        body: { action: "confirm_payment", orderId, id: orderId },
       });
+      step("cs_confirm_payment", payOk.json?.ok !== false, payOk.json?.message || String(payOk.status));
     } else {
+      step("cs_confirm_payment", false, csLogin.json?.message || "cs login failed");
       await api("/api/admin/orders", {
         method: "POST",
         token: admin.token,
         admin: true,
-        body: { action: "approve_payment", id: orderId },
+        body: { action: "update_status", id: orderId, status: "claimed" },
       });
     }
 
@@ -475,24 +477,37 @@ async function main() {
       token: serviceToken,
       body: { action: "complete_order", id: orderId },
     });
-    await api("/api/orders", {
+    const bossConfirm = await api("/api/orders", {
       method: "POST",
       token: invitedBoss.token,
       body: { action: "confirm_complete", id: orderId },
     });
-    // Admin force-complete fallback
-    const force = await api("/api/admin/orders", {
+    // Admin confirm_complete fallback
+    const adminConfirm = await api("/api/admin/orders", {
       method: "POST",
       token: admin.token,
       admin: true,
-      body: { action: "force_complete", id: orderId },
+      body: { action: "confirm_complete", id: orderId },
     });
     const referralRebate =
-      complete.json?.referralRebate || force.json?.referralRebate || force.json?.result?.referralRebate || null;
+      complete.json?.referralRebate ||
+      bossConfirm.json?.referralRebate ||
+      adminConfirm.json?.referralRebate ||
+      adminConfirm.json?.result?.referralRebate ||
+      null;
+    const statusProbe = await api("/api/admin/orders?id=" + encodeURIComponent(orderId), {
+      token: admin.token,
+      admin: true,
+    });
+    const finalStatus =
+      statusProbe.json?.order?.status ||
+      statusProbe.json?.orders?.[0]?.status ||
+      complete.json?.order?.status ||
+      "";
     step(
       "order_complete_settled",
-      true,
-      `complete=${complete.json?.message || ""} force=${force.json?.message || ""} rebateOk=${!!referralRebate?.ok} skip=${referralRebate?.skipped || referralRebate?.reason || ""}`
+      String(finalStatus) === "completed" || !!referralRebate?.ok,
+      `status=${finalStatus} complete=${complete.json?.message || ""} boss=${bossConfirm.json?.message || ""} admin=${adminConfirm.json?.message || ""} rebateOk=${!!referralRebate?.ok} skip=${referralRebate?.skipped || referralRebate?.reason || ""}`
     );
   }
 
