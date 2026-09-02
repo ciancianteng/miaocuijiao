@@ -10,6 +10,7 @@ on:
       - cursor/prod-promote-cc56689-36a7
     paths:
       - .github/workflows/production-smoke-companion-referral.yml
+      - .github/workflows/_prod-smoke-companion-referral.mjs
 
 permissions:
   contents: read
@@ -90,18 +91,9 @@ jobs:
             console.error("Refusing Staging Supabase host in Production env pull");
             process.exit(1);
           }
-          // Prefer live Production URL from the site (public), keep service_role from env pull.
-          let liveUrl = url;
-          try {
-            const cfg = JSON.parse(require("child_process").execSync("curl -sS https://www.meowcuijiao.com/api/public/realtime-config", {encoding:"utf8"}));
-            if (cfg && cfg.url) liveUrl = String(cfg.url).replace(/\/$/, "");
-          } catch (e) {
-            console.log("realtime-config fetch soft-fail", String(e && e.message || e));
-          }
-          console.log("using host", new URL(liveUrl).host);
           fs.writeFileSync(
             "/tmp/prod-smoke/smoke.env.json",
-            JSON.stringify({ SUPABASE_URL: liveUrl, SUPABASE_SERVICE_ROLE_KEY: key })
+            JSON.stringify({ SUPABASE_URL: url, SUPABASE_SERVICE_ROLE_KEY: key })
           );
           NODE
           echo "build-info:"; curl -sS "$BASE/api/build-info"; echo
