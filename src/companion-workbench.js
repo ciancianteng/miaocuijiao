@@ -3632,12 +3632,13 @@
     var depositBlock=depositPhase==='approved'?depositPaidView:(depositLocked?depositPendingView:depositForm);
     function accountAcc(key,title,bodyHtml){
       var open=state.accountAccordion===key;
-      return '<section class="pw-mine-acc'+(open?' is-open':'')+'" data-pw-acc="'+esc(key)+'">'+
-        '<button type="button" class="pw-mine-acc-trigger" data-pw-acc-toggle="'+esc(key)+'" aria-expanded="'+(open?'true':'false')+'">'+
-        '<span class="pw-mine-acc-title">'+esc(title)+'</span>'+
-        '<span class="pw-mine-acc-chevron" aria-hidden="true"></span></button>'+
-        '<div class="pw-mine-acc-panel"'+(open?'':' hidden')+' role="region" aria-hidden="'+(open?'false':'true')+'">'+
-        '<div class="pw-mine-acc-inner"><div class="pw-mine-acc-body">'+bodyHtml+'</div></div></div></section>';
+      // Match Boss mine.html accordion markup exactly (class names + default collapsed).
+      return '<section class="mine-acc'+(open?' is-open':'')+'" data-mine-acc="'+esc(key)+'">'+
+        '<button type="button" class="mine-acc-trigger" data-mine-acc-toggle="'+esc(key)+'" aria-expanded="'+(open?'true':'false')+'">'+
+        '<span class="mine-acc-title"><span>'+esc(title)+'</span></span>'+
+        '<span class="mine-acc-chevron" aria-hidden="true"></span></button>'+
+        '<div class="mine-acc-panel" id="mine-acc-panel-'+esc(key)+'" role="region" aria-hidden="'+(open?'false':'true')+'">'+
+        '<div class="mine-acc-panel-inner"><div class="mine-acc-body">'+bodyHtml+'</div></div></div></section>';
     }
     var u=state.session&&state.session.user||{};
     var canSwitchBoss=!!(u.hasBoss||u.has_boss||(Array.isArray(u.roles)&&u.roles.indexOf('boss')>=0)||u.role==='boss');
@@ -3676,7 +3677,7 @@
       '</div></section>'+depositBlock;
     var securityBody='<div id="pwAccountSecurityMount"><div class="pw-empty">加载中…</div></div>';
     var ordersBody=
-      '<div class="pw-actions pw-mine-acc-actions">'+
+      '<div class="action-row">'+
       '<button class="pw-btn" type="button" data-route="/companion/orders">查看我的订单</button>'+
       '<a class="pw-btn" href="/support.html">联系在线客服</a>'+
       (canSwitchBoss
@@ -3684,14 +3685,15 @@
         :'<button class="pw-btn" type="button" data-route="/companion/dashboard">返回工作台</button>')+
       '</div>';
     // Boss-exact default chrome: compact hero + 4 collapsed cards + logout only.
-    return '<section class="pw-mine-hero"><div class="pw-mine-hero-main"><div class="pw-mine-avatar">'+(p.avatarUrl?'<img src="'+esc(p.avatarUrl)+'" alt="">':esc(String(displayName).slice(0,1)||'P'))+'</div><div class="pw-mine-hero-text"><h1>'+esc(displayName)+'</h1><p>'+heroSub+'</p></div></div></section>'+
-      '<div class="pw-mine-stack">'+
+    return '<section class="profile-hero"><div class="account-head"><div class="profile-main"><div class="avatar">'+(p.avatarUrl?'<img src="'+esc(p.avatarUrl)+'" alt="">':esc(String(displayName).slice(0,1)||'P'))+'</div><div class="profile-title"><h1>'+esc(displayName)+'</h1><p>'+heroSub+'</p></div></div></div></section>'+
+      '<div class="mine-stack">'+
       accountAcc('profile','我的资料',profileBody)+
       accountAcc('assets','我的资产',assetsBody)+
       accountAcc('security','账号安全',securityBody)+
       accountAcc('orders','订单与服务',ordersBody)+
       '</div>'+
-      '<div class="pw-mine-logout-wrap"><button class="pw-btn danger" type="button" data-logout style="width:100%">退出登录</button></div>';
+      '<div class="mine-logout-wrap"><button class="pw-btn ghost" type="button" data-logout style="width:100%">退出登录</button></div>';
+
   }
 
   function rulesHtml(){
@@ -4067,24 +4069,20 @@
     api('reorder_media',{ordered_ids:media.map(function(m){return m.id})}).then(function(res){toast(res.message||'顺序已更新');return loadData()}).catch(function(err){toast(err.message)});
   }
   document.addEventListener('click',function(e){
-    var accToggle=e.target.closest('[data-pw-acc-toggle]');
+    var accToggle=e.target.closest('[data-mine-acc-toggle]');
     if(accToggle){
       e.preventDefault();
-      var key=accToggle.getAttribute('data-pw-acc-toggle')||'';
+      var key=accToggle.getAttribute('data-mine-acc-toggle')||'';
       // Independent cards: only one open at a time (Boss mine behavior); click again to collapse.
       state.accountAccordion=(state.accountAccordion===key)?'':key;
-      document.querySelectorAll('[data-pw-acc]').forEach(function(sec){
-        var k=sec.getAttribute('data-pw-acc')||'';
+      document.querySelectorAll('[data-mine-acc]').forEach(function(sec){
+        var k=sec.getAttribute('data-mine-acc')||'';
         var open=k===state.accountAccordion;
         sec.classList.toggle('is-open',open);
-        var btn=sec.querySelector('[data-pw-acc-toggle]');
+        var btn=sec.querySelector('[data-mine-acc-toggle]');
         if(btn)btn.setAttribute('aria-expanded',open?'true':'false');
-        var panel=sec.querySelector('.pw-mine-acc-panel');
-        if(panel){
-          panel.setAttribute('aria-hidden',open?'false':'true');
-          if(open)panel.removeAttribute('hidden');
-          else panel.setAttribute('hidden','');
-        }
+        var panel=sec.querySelector('.mine-acc-panel');
+        if(panel)panel.setAttribute('aria-hidden',open?'false':'true');
       });
       if(state.accountAccordion==='security'){
         try{mountCompanionAccountSecurity();}catch(err){}

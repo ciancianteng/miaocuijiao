@@ -878,69 +878,66 @@ a.pw-btn{display:inline-flex;align-items:center;justify-content:center;text-deco
 
 
 
-/* Boss-style accordion cards on Companion account page — match mine.html exactly */
-.pw-mine-hero{
+/* Boss portal mine accordion — copied classnames for exact Companion match */
+.profile-hero{
   border:1px solid rgba(255,255,255,.1);border-radius:18px;background:rgba(255,255,255,.045);
   padding:16px;margin-bottom:14px;box-sizing:border-box;
 }
-.pw-mine-hero-main{display:flex;align-items:center;gap:14px;min-width:0}
-.pw-mine-avatar{
+.profile-hero .account-head{display:flex;align-items:center;gap:16px;min-width:0}
+.profile-hero .profile-main{display:flex;align-items:center;gap:16px;min-width:0;flex:1}
+.profile-hero .avatar{
   width:64px;height:64px;flex:0 0 64px;border-radius:16px;border:1px solid rgba(255,143,197,.28);
   background:rgba(255,143,197,.12);display:grid;place-items:center;overflow:hidden;
   color:#ffd6e7;font-weight:1000;font-size:22px;
 }
-.pw-mine-avatar img{width:100%;height:100%;object-fit:cover}
-.pw-mine-hero-text{min-width:0}
-.pw-mine-hero-text h1{margin:0;font-size:22px;line-height:1.25;word-break:break-word}
-.pw-mine-hero-text p{margin:6px 0 0;color:rgba(255,255,255,.58);font-size:14px;line-height:1.4}
-.pw-mine-stack{display:grid;gap:12px}
-.pw-mine-acc{
+.profile-hero .avatar img{width:100%;height:100%;object-fit:cover}
+.profile-hero .profile-title{min-width:0}
+.profile-hero .profile-title h1{margin:0;font-size:22px;line-height:1.25;word-break:break-word}
+.profile-hero .profile-title p{margin:6px 0 0;color:#9ca3af;font-size:14px;line-height:1.4}
+.mine-stack{display:grid;gap:12px}
+.mine-acc{
   border:1px solid rgba(255,255,255,.1);border-radius:16px;background:rgba(255,255,255,.045);
   overflow:hidden;
 }
-.pw-mine-acc-trigger{
+.mine-acc-trigger{
   width:100%;display:flex;align-items:center;justify-content:space-between;gap:12px;
   min-height:52px;padding:14px 16px;border:0;background:transparent;color:#fff;
   font:inherit;font-weight:800;font-size:16px;text-align:left;cursor:pointer;
   -webkit-tap-highlight-color:transparent;
 }
-.pw-mine-acc-trigger:focus-visible{outline:2px solid rgba(255,143,197,.55);outline-offset:-2px}
-.pw-mine-acc-title{min-width:0;word-break:break-word}
-.pw-mine-acc-chevron{
+.mine-acc-trigger:focus-visible{outline:2px solid rgba(255,143,197,.55);outline-offset:-2px}
+.mine-acc-title{display:flex;align-items:center;gap:10px;min-width:0}
+.mine-acc-title span{min-width:0;word-break:break-word}
+.mine-acc-chevron{
   flex:0 0 22px;width:22px;height:22px;border-radius:999px;
   border:1px solid rgba(255,143,197,.35);background:rgba(255,143,197,.1);
   display:grid;place-items:center;transition:transform .2s ease;
 }
-.pw-mine-acc-chevron::before{
+.mine-acc-chevron::before{
   content:"";width:7px;height:7px;border-right:2px solid #ffd6e7;border-bottom:2px solid #ffd6e7;
   transform:rotate(45deg) translate(-1px,-1px);
 }
-.pw-mine-acc.is-open .pw-mine-acc-chevron{transform:rotate(180deg);border-color:rgba(255,212,230,.55)}
-/* Hard collapse: every card independent; default closed */
-.pw-mine-acc-panel,
-.pw-mine-acc:not(.is-open) .pw-mine-acc-panel,
-.pw-mine-acc-panel[hidden]{
-  display:none!important;
+.mine-acc.is-open .mine-acc-chevron{transform:rotate(180deg);border-color:rgba(255,212,230,.55)}
+.mine-acc-panel{
+  display:grid;grid-template-rows:0fr;transition:grid-template-rows .22s ease;
   border-top:0 solid transparent;
 }
-.pw-mine-acc.is-open .pw-mine-acc-panel{
-  display:block!important;
-  border-top:1px solid rgba(255,255,255,.08);
-}
-.pw-mine-acc-inner{overflow:hidden;min-height:0}
-.pw-mine-acc-body{padding:14px 16px 16px}
-.pw-mine-acc-actions{display:grid;gap:10px}
-.pw-mine-acc-actions .pw-btn{width:100%;justify-content:center;text-decoration:none;min-height:44px}
-.pw-mine-logout-wrap{margin-top:14px}
-.pw-mine-logout-wrap .pw-btn{
+.mine-acc.is-open .mine-acc-panel{grid-template-rows:1fr;border-top:1px solid rgba(255,255,255,.08)}
+.mine-acc:not(.is-open) .mine-acc-panel{display:none}
+.mine-acc.is-open .mine-acc-panel{display:grid}
+.mine-acc-panel-inner{overflow:hidden;min-height:0}
+.mine-acc-body{padding:14px 16px 16px}
+.mine-acc-body .action-row{display:grid;gap:10px;margin:0}
+.mine-acc-body .action-row .pw-btn{width:100%;min-height:44px;justify-content:center;text-decoration:none}
+.mine-logout-wrap{margin-top:14px}
+.mine-logout-wrap .pw-btn.ghost{
   border:1px solid rgba(255,158,207,.55);background:rgba(255,143,197,.14);color:#ffe6f2;
   min-height:44px;border-radius:12px;
 }
-.pw-sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 @media(max-width:720px){
-  .pw-mine-hero{padding:14px}
-  .pw-mine-avatar{width:56px;height:56px;flex-basis:56px;border-radius:14px;font-size:20px}
-  .pw-mine-hero-text h1{font-size:20px}
-  .pw-mine-acc-trigger{min-height:50px;padding:13px 14px}
-  .pw-mine-acc-body{padding:12px 14px 14px}
+  .profile-hero{padding:14px}
+  .profile-hero .avatar{width:56px;height:56px;flex-basis:56px;border-radius:14px;font-size:20px}
+  .profile-hero .profile-title h1{font-size:20px}
+  .mine-acc-trigger{min-height:50px;padding:13px 14px}
+  .mine-acc-body{padding:12px 14px 14px}
 }
