@@ -16,8 +16,15 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createClient } from "@supabase/supabase-js";
+import { guardSmokeScript } from "./lib/prod-guard.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+try {
+  guardSmokeScript("p0-order-notify-three-paths-e2e.mjs", root);
+} catch (guardErr) {
+  console.error(String(guardErr?.message || guardErr));
+  process.exit(1);
+}
 const env = Object.fromEntries(
   fs
     .readFileSync(path.join(root, ".env.local"), "utf8")

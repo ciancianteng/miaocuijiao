@@ -280,6 +280,18 @@ export default async function handler(req, res) {
     }
 
     const boss = await requireBoss(req);
+    {
+      const { isProductionRuntime, isTestAccountRecord, PROD_TEST_ACCOUNT_BLOCK_MESSAGE } = await import(
+        "../_test-accounts.js"
+      );
+      if (isProductionRuntime() && isTestAccountRecord(boss || {})) {
+        return json(res, 403, {
+          ok: false,
+          message: PROD_TEST_ACCOUNT_BLOCK_MESSAGE,
+          code: "PROD_TEST_ACCOUNT_BLOCKED",
+        });
+      }
+    }
 
     if (action === "create_and_pay") {
       const companionId = String(body.companionId || body.companion_id || "").trim();

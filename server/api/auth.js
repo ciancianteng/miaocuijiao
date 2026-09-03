@@ -33,6 +33,10 @@ import {
   RESET_EMAIL_GENERIC_MESSAGE,
   logSecurityAdminAction,
 } from "./_account-security.js";
+import {
+  PROD_TEST_ACCOUNT_BLOCK_MESSAGE,
+  shouldBlockTestIdentityOnProduction,
+} from "./_test-accounts.js";
 
 function opaqueSystemPassword() {
   // Never shown to users/admins — only satisfies GoTrue's password requirement
@@ -633,6 +637,8 @@ async function handleLoginSendOtp(body, res) {
   if (!email || !/^\S+@\S+\.\S+$/.test(email)) {
     return json(res, 400, { ok: false, message: "请输入有效邮箱。" });
   }
+  const blockedSend = rejectProductionTestIdentity(res, { email });
+  if (blockedSend) return blockedSend;
   const generic = {
     ok: true,
     message: "如该邮箱已注册，将收到登录验证码。",
@@ -697,6 +703,15 @@ async function handleLoginSendOtp(body, res) {
   return json(res, 200, out);
 }
 
+function rejectProductionTestIdentity(res, { email = "", displayName = "" } = {}) {
+  if (!shouldBlockTestIdentityOnProduction({ email, displayName })) return null;
+  return json(res, 403, {
+    ok: false,
+    message: PROD_TEST_ACCOUNT_BLOCK_MESSAGE,
+    code: "PROD_TEST_ACCOUNT_BLOCKED",
+  });
+}
+
 async function handleLoginWithOtp(body, res) {
   const role = normalizeForgotRole(body.role || body.loginPortal || "boss");
   if (role === "customer_service" || role === "admin" || role === "super_admin") {
@@ -706,6 +721,8 @@ async function handleLoginWithOtp(body, res) {
   const code = String(body.code || body.otp || "").trim();
   if (!email || !/^\S+@\S+\.\S+$/.test(email)) return json(res, 400, { ok: false, message: "请输入有效邮箱。" });
   if (!/^\d{4,8}$/.test(code)) return json(res, 400, { ok: false, message: "验证码无效或已过期" });
+  const blockedOtp = rejectProductionTestIdentity(res, { email });
+  if (blockedOtp) return blockedOtp;
   const loginPortal = normalizeLoginPortal(body.loginPortal || body.portal || body.role || "");
   // OTP is portal-scoped: find account by email, then enforce portal capability (supports dual-role users).
   const byEmail = await profilesLookup(
@@ -716,6 +733,11 @@ async function handleLoginWithOtp(body, res) {
     (await resolveForgotAccount(email, loginPortal || role).catch(() => null))?.profile ||
     null;
   if (!profile0) return json(res, 400, { ok: false, message: "验证码无效或已过期" });
+  const blockedOtpName = rejectProductionTestIdentity(res, {
+    email: profile0.email || email,
+    displayName: profile0.display_name || "",
+  });
+  if (blockedOtpName) return blockedOtpName;
   if (!canLoginWithStatus(profile0, loginPortal || role || profile0.role)) {
     return json(res, 403, { ok: false, message: "账号未启用或正在审核。" });
   }
@@ -1673,6 +1695,8 @@ export default async function handler(req, res) {
       void body.phoneE164;
       void body.phone_e164;
       if (!email) return json(res, 400, { ok: false, message: "请输入邮箱。" });
+      const blockedRegister = rejectProductionTestIdentity(res, { email, displayName });
+      if (blockedRegister) return blockedRegister;
       if (!registerToken) {
         return json(res, 400, { ok: false, message: "请先完成邮箱验证。" });
       }
@@ -1934,6 +1958,8 @@ export default async function handler(req, res) {
     const email = String(body.email || body.account || "").trim().toLowerCase();
     const password = String(body.password || "");
     if (!email || !password) return json(res, 400, { ok: false, message: "请输入邮箱和密码。" });
+    const blockedLogin = rejectProductionTestIdentity(res, { email });
+    if (blockedLogin) return blockedLogin;
 
     const loginPortal = normalizeLoginPortal(body.loginPortal || body.portal || body.role || "");
     // Forgot pre-check: use portal when provided, else any profile for this email.
@@ -1949,6 +1975,11 @@ export default async function handler(req, res) {
     if (pre?.profile && String(pre.profile.status || "").toLowerCase() === "disabled") {
       return json(res, 403, { ok: false, message: "账号已停用，请联系客服。" });
     }
+    const blockedLoginName = rejectProductionTestIdentity(res, {
+      email: pre?.profile?.email || email,
+      displayName: pre?.profile?.display_name || "",
+    });
+    if (blockedLoginName) return blockedLoginName;
 
     let auth;
     try {
