@@ -628,6 +628,15 @@ async function handleForgotSendOtp(body, res) {
   return json(res, 200, out);
 }
 
+function rejectProductionTestIdentity(res, { email = "", displayName = "" } = {}) {
+  if (!shouldBlockTestIdentityOnProduction({ email, displayName })) return null;
+  return json(res, 403, {
+    ok: false,
+    message: PROD_TEST_ACCOUNT_BLOCK_MESSAGE,
+    code: "PROD_TEST_ACCOUNT_BLOCKED",
+  });
+}
+
 async function handleLoginSendOtp(body, res) {
   const role = normalizeForgotRole(body.role || "boss");
   if (role === "customer_service" || role === "admin" || role === "super_admin") {
@@ -860,6 +869,9 @@ async function handleSendRegisterOtp(body, res) {
   if (!email || !/^\S+@\S+\.\S+$/.test(email)) {
     return json(res, 400, { ok: false, message: "请输入有效邮箱。" });
   }
+  const displayName = String(body.displayName || body.nickname || body.name || "").trim();
+  const blockedRegOtp = rejectProductionTestIdentity(res, { email, displayName });
+  if (blockedRegOtp) return blockedRegOtp;
   try {
     await assertOtpResendCooldown(email, role, "register_otp");
   } catch (err) {

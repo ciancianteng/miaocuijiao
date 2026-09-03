@@ -1,25 +1,34 @@
 /**
  * Production-safe test / smoke account detection for dashboard aggregation
- * and runtime guards. Does not delete or mutate data.
+ * and runtime write guards. Does not delete or mutate data.
  *
  * Match rules (any one → test):
  * - email contains @meow.test (case-insensitive)
+ * - email domain used by prod-smoke fixtures (@mcj-prod-smoke.invalid)
  * - display_name / nickname / username contains Smoke or ProdSmoke
  * - is_test_account / is_test === true
  */
 
 const MEOW_TEST_EMAIL_RE = /@meow\.test\b/i;
+const PROD_SMOKE_EMAIL_RE = /@mcj-prod-smoke\.invalid\b/i;
 /** Username / display markers used by ProdSmoke* and *Smoke* E2E fixtures */
 const SMOKE_NAME_RE = /prodsmoke|smoke/i;
 
 export function isProductionRuntime(env = process.env) {
   const vercel = String(env.VERCEL_ENV || "").toLowerCase();
   const app = String(env.APP_ENV || "").toLowerCase();
-  return vercel === "production" || app === "production";
+  const nodeEnv = String(env.NODE_ENV || "").toLowerCase();
+  if (vercel === "production" || app === "production") return true;
+  // Prefer Vercel/APP env; never treat plain NODE_ENV alone as prod when VERCEL_ENV=preview.
+  if (vercel === "preview" || vercel === "development") return false;
+  if (app === "staging" || app === "preview" || app === "development") return false;
+  return nodeEnv === "production" && !vercel && !app;
 }
 
 export function isTestEmail(email = "") {
-  return MEOW_TEST_EMAIL_RE.test(String(email || "").trim());
+  const e = String(email || "").trim();
+  if (!e) return false;
+  return MEOW_TEST_EMAIL_RE.test(e) || PROD_SMOKE_EMAIL_RE.test(e);
 }
 
 export function isTestUsername(...parts) {
@@ -37,7 +46,8 @@ export function isTestAccountFlag(row = {}) {
 }
 
 /**
- * True when a profile / companion row should be excluded from production business stats.
+ * True when a profile / companion row should be excluded from production business stats
+ * and blocked from Production write paths.
  * @param {object} row profile-like object
  * @param {object} [extra] optional companion_profiles / denormalized fields
  */
@@ -88,7 +98,7 @@ export function indexProfilesForStats(profiles = []) {
   const byId = new Map();
   const testIds = new Set();
   for (const p of profiles || []) {
-    if (!p || !p.id) continue;
+    if (!p?.id) continue;
     byId.set(p.id, p);
     if (isTestAccountRecord(p)) testIds.add(p.id);
   }
@@ -96,11 +106,12 @@ export function indexProfilesForStats(profiles = []) {
 }
 
 /**
- * Exclude orders that touch any test boss / companion / CS party.
- * Also checks denormalized name fields when present.
+ * True when an order involves a known test party (by id set or denormalized names).
  */
 export function isTestTouchedOrder(order = {}, testIds = new Set(), byId = new Map()) {
-  const partyIds = [order.boss_id, order.companion_id, order.customer_service_id, order.player_id].filter(Boolean);
+  const partyIds = [order.boss_id, order.companion_id, order.customer_service_id, order.player_id].filter(
+    Boolean
+  );
   for (const id of partyIds) {
     if (testIds.has(id)) return true;
     const p = byId.get(id);
@@ -118,6 +129,11 @@ export function isTestTouchedOrder(order = {}, testIds = new Set(), byId = new M
     return true;
   }
   return false;
+}
+
+/** Alias used by some callers. */
+export function isTestOrderRecord(order = {}, testIds = new Set(), byId = new Map()) {
+  return isTestTouchedOrder(order, testIds, byId);
 }
 
 export function filterBusinessProfiles(profiles = [], role) {

@@ -1,0 +1,44 @@
+name: Forbid production smoke workflows
+
+# Hard policy: automated tests/smoke must never target Production.
+# If a PR reintroduces production-smoke workflows (e.g. PR #136 artifacts), fail CI.
+on:
+  pull_request:
+  push:
+    branches:
+      - staging
+      - main
+      - repair/**
+
+permissions:
+  contents: read
+
+jobs:
+  forbid-production-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Refuse production smoke artifacts
+        run: |
+          set -euo pipefail
+          bad=0
+          for f in \
+            .github/workflows/production-smoke-companion-referral.yml \
+            .github/workflows/_prod-smoke-companion-referral.mjs \
+            .github/workflows/promote-production-cc56689.yml
+          do
+            if [ -f "$f" ]; then
+              echo "::error file=$f::Production smoke/promote workflow is forbidden. Testing must target Staging only."
+              bad=1
+            fi
+          done
+          if [ "$bad" -ne 0 ]; then
+            echo "FAIL: remove production smoke workflows before merge"
+            exit 1
+          fi
+          echo "OK: no production smoke workflows present"
+          test -s scripts/lib/prod-guard.mjs
+          node scripts/smoke-prod-guard.mjs
+          node scripts/smoke-test-accounts-guard.mjs

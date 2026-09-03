@@ -1,0 +1,48 @@
+---
+description: NEVER write smoke/E2E/test data into Production
+alwaysApply: true
+---
+
+# Production write ban for automated testing
+
+## Hard rule
+
+ALL smoke tests, E2E scripts, seed scripts, and ad-hoc agent Node heredocs that **create accounts or orders** must run **ONLY on Staging**.
+
+Production (`https://www.meowcuijiao.com`, Supabase `jqfaknpmcnqwqvatrwgo`) must **NEVER** receive smoke/E2E generated data.
+
+## Fixed Staging target
+
+- App: `https://meow-cuijiao-homepage-staging.vercel.app`
+- Supabase: `cfccwysniduwkjskiqgy`
+
+## Must do
+
+1. Before any write smoke/E2E, call `assertSmokeTargetAllowed` / `guardSmokeAfterEnvLoad` from `scripts/lib/prod-guard.mjs`.
+2. Use Staging BASE URL only.
+3. Confirm Supabase URL project ref is Staging, not Production.
+4. Tear down or clearly mark test data on Staging when finished.
+
+## Forbidden
+
+```
+// ❌ BASE=https://www.meowcuijiao.com for smoke/E2E
+// ❌ Creating ProdSmoke* / @meow.test / Guerrilla-mail accounts on Production
+// ❌ Ad-hoc `node <<'NODE'` OTP smokes against Production APIs
+// ❌ CI workflows named production-smoke-* that seed Production
+// ❌ Setting ALLOW_PROD_* overrides without explicit human emergency approval
+```
+
+```
+// ✅ Staging alias + Staging Supabase + prod-guard
+```
+
+## Emergency Production writes
+
+Only with **both** flags set by a human:
+
+- `ALLOW_PROD_SUPABASE_WRITE=1` and `CONFIRM_PROD_WRITE=I_UNDERSTAND_PROD_RISK`
+  or
+- `ALLOW_PROD_MUTATION=1` and `CONFIRM_PROD_MUTATION=I_UNDERSTAND_PROD_RISK`
+
+Never invent these flags in agent automation.

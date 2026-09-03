@@ -5,6 +5,7 @@
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import { assertSmokeTargetAllowed } from "./lib/prod-guard.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const BASE = (process.argv[2] || "").replace(/\/$/, "");
@@ -58,6 +59,11 @@ if (!BASE) {
   process.exit(1);
 }
 loadEnv();
+assertSmokeTargetAllowed({
+  script: "smoke-preview-safe.mjs",
+  base: BASE,
+  supabaseUrl: process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "",
+});
 console.log("Preview:", BASE);
 
 const boss = await login("boss@meow.test");

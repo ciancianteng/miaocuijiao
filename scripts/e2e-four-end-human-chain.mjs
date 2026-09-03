@@ -12,6 +12,7 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { computeSettlementDate, mergeWeeklySettings } from "../server/api/_weekly-settlement.js";
+import { assertSmokeTargetAllowed } from "./lib/prod-guard.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const env = Object.fromEntries(
@@ -24,6 +25,10 @@ const env = Object.fromEntries(
       return [l.slice(0, i), l.slice(i + 1).replace(/^['"]|['"]$/g, "")];
     })
 );
+
+for (const [k, v] of Object.entries(env)) {
+  if (k && v != null && process.env[k] == null) process.env[k] = String(v);
+}
 
 const SUPABASE_URL = (env.SUPABASE_URL || env.VITE_SUPABASE_URL || "").replace(/\/$/, "");
 const ANON = env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY;
@@ -41,6 +46,11 @@ const BASE = (
 ).replace(/\/$/, "");
 
 if (/localhost|127\.0\.0\.1/i.test(BASE)) throw new Error("Refuse localhost — Staging only");
+assertSmokeTargetAllowed({
+  script: "e2e-four-end-human-chain.mjs",
+  base: BASE,
+  supabaseUrl: SUPABASE_URL,
+});
 
 const results = [];
 const meta = {

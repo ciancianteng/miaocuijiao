@@ -8,6 +8,11 @@ import { scheduleRecomputeSoft } from "../_popularity.js";
 import { servicesFromGamePrices, readGamePrices } from "../_game-prices.js";
 import { hasBossRole } from "../_account-roles.js";
 import { allocateOrderNo } from "../_account-codes.js";
+import {
+  isProductionRuntime,
+  isTestAccountRecord,
+  PROD_TEST_ACCOUNT_BLOCK_MESSAGE,
+} from "../_test-accounts.js";
 
 const REQUIRED = ["SUPABASE_URL", "SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY"];
 
@@ -294,6 +299,13 @@ export default async function handler(req, res) {
     }
 
     if (action === "create_and_pay") {
+      if (isProductionRuntime() && isTestAccountRecord(boss || {})) {
+        return json(res, 403, {
+          ok: false,
+          message: PROD_TEST_ACCOUNT_BLOCK_MESSAGE,
+          code: "PROD_TEST_ACCOUNT_BLOCKED",
+        });
+      }
       const companionId = String(body.companionId || body.companion_id || "").trim();
       const idempotencyKey = String(body.idempotencyKey || body.idempotency_key || "").trim();
       if (!companionId) return json(res, 400, { ok: false, message: "缺少陪玩" });
