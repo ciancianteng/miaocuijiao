@@ -324,6 +324,18 @@ function safeOrder(row, profiles, extras = {}) {
     reviewed: !!extras.reviewed,
     reviewRating: extras.reviewRating ?? null,
     reviewContent: extras.reviewContent || "",
+    // Settlement snapshot (DB SoT) — four-end same numbers
+    platformFee: money(row.platform_fee),
+    platformFeeRate: money(row.platform_fee_rate ?? row.platform_commission_rate),
+    companionIncome: money(row.companion_income),
+    playerIncome: money(row.companion_income),
+    bossCommissionAmount: money(row.boss_commission_amount),
+    bossCommissionRate: money(row.boss_commission_rate),
+    bossCommissionRateSource: row.boss_commission_rate_source || "",
+    bossLevelId: row.boss_level_id || "",
+    bossLevelCode: row.boss_level_code || "",
+    directBossId: row.direct_boss_id || "",
+    settlementStatus: row.settlement_status || "",
   };
 }
 async function enrichSafeOrders(orders, profiles, baseExtrasById = {}) {

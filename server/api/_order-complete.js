@@ -8,6 +8,8 @@ import {
   createOrderGrabHelpers,
   stripInternalOrderMarkers,
 } from "./_order-grabs.js";
+import { awardBossPointsForCompletedOrder } from "./_user-points.js";
+import { settleBossCommissionFromPlatformFee } from "./_boss-commission.js";
 
 export const COMPLETION_AUTO_CONFIRM_MS = 24 * 60 * 60 * 1000;
 export const COMPLETION_PENDING_MARKER = "[[COMPLETION_PENDING]]";
@@ -256,7 +258,21 @@ export function createOrderCompleteHelpers({ restUrl, supabaseJson, serviceHeade
       ),
       { headers: serviceHeaders() }
     ).catch(() => []);
-    if (existingTx?.[0]) return { duplicate: true, transaction: existingTx[0] };
+    if (existingTx?.[0]) {
+      let bossCommission = null;
+      try {
+        bossCommission = await settleBossCommissionFromPlatformFee(saved, {
+          platformFeeRate: null,
+          platformFeeAmount: saved.platform_fee,
+          companionIncomeAmount: saved.companion_income,
+          completedAt,
+          method,
+        });
+      } catch (_) {
+        bossCommission = { skipped: true, reason: "boss_commission_error" };
+      }
+      return { duplicate: true, transaction: existingTx[0], bossCommission };
+    }
 
     const cp =
       (
@@ -289,6 +305,8 @@ export function createOrderCompleteHelpers({ restUrl, supabaseJson, serviceHeade
       companionShareRate,
       completedAt,
       completionMethod: method,
+      bossCommissionTransparencyNote: "老板直属分成由平台抽成支付，不扣陪玩收入",
+      companionIncomeUnchangedByBossCommission: true,
     };
     await supabaseJson(restUrl("transactions"), {
       method: "POST",
@@ -308,10 +326,33 @@ export function createOrderCompleteHelpers({ restUrl, supabaseJson, serviceHeade
         settlement_note: `MCJ_SETTLEMENT:${JSON.stringify(settlement)}`,
         companion_income: companionNet,
         platform_fee: platformFee,
+        platform_fee_rate: platformRate,
         settlement_status: "settled",
       });
     } catch (_) {}
-    return { duplicate: false, settlement };
+
+    // Boss commission from platform fee — does NOT reduce companionNet.
+    // boss_commission = platform_fee * boss_commission_rate / 100
+    let bossCommission = null;
+    try {
+      bossCommission = await settleBossCommissionFromPlatformFee(saved, {
+        platformFeeRate: platformRate,
+        platformFeeAmount: platformFee,
+        companionIncomeAmount: companionNet,
+        completedAt,
+        method,
+      });
+      if (bossCommission && !bossCommission.skipped && !bossCommission.duplicate) {
+        settlement.bossCommissionRate = bossCommission.calc?.bossCommissionRate;
+        settlement.bossCommissionCatFood = bossCommission.calc?.bossCommissionAmount;
+        settlement.bossCommissionRateSource = bossCommission.rateSource;
+        settlement.companionIncomeUnchanged = true;
+      }
+    } catch (_) {
+      bossCommission = { skipped: true, reason: "boss_commission_error" };
+    }
+
+    return { duplicate: false, settlement, bossCommission };
   }
 
   /**
@@ -321,11 +362,19 @@ export function createOrderCompleteHelpers({ restUrl, supabaseJson, serviceHeade
   async function finalizeOrderCompletion(before, { method = "boss_manual", actorId = "", message = "" } = {}) {
     if (!before?.id) throw Object.assign(new Error("订单不存在。"), { status: 404 });
     if (String(before.status) === "completed" || String(before.settlement_status || "") === "settled") {
+      let bossPoints = null;
+      try {
+        bossPoints = await awardBossPointsForCompletedOrder(before, {
+          method,
+          operatorId: actorId || null,
+        });
+      } catch (_) {}
       return {
         ok: true,
         duplicate: true,
         message: "订单已完成/已结算，无需重复处理。",
         order: before,
+        bossPoints,
       };
     }
     if (String(before.status) !== "in_progress") {
@@ -400,7 +449,14 @@ export function createOrderCompleteHelpers({ restUrl, supabaseJson, serviceHeade
         })
       )?.[0];
       if (fresh?.status === "completed") {
-        return { ok: true, duplicate: true, message: "订单已完成。", order: fresh };
+        let bossPoints = null;
+        try {
+          bossPoints = await awardBossPointsForCompletedOrder(fresh, {
+            method,
+            operatorId: actorId || null,
+          });
+        } catch (_) {}
+        return { ok: true, duplicate: true, message: "订单已完成。", order: fresh, bossPoints };
       }
     }
 
@@ -418,9 +474,23 @@ export function createOrderCompleteHelpers({ restUrl, supabaseJson, serviceHeade
     }
 
     let settlement = null;
+    let settlementOk = false;
     try {
       settlement = await settleCompanionIncome(saved, completedAt, method);
-    } catch (_) {}
+      settlementOk = true;
+    } catch (_) {
+      settlementOk = false;
+    }
+
+    let bossPoints = null;
+    if (settlementOk) {
+      try {
+        bossPoints = await awardBossPointsForCompletedOrder(saved, {
+          method,
+          operatorId: actorId || null,
+        });
+      } catch (_) {}
+    }
 
     let reward = null;
     try {
@@ -455,6 +525,7 @@ export function createOrderCompleteHelpers({ restUrl, supabaseJson, serviceHeade
         completed_at: completedAt,
       },
       settlement,
+      bossPoints,
       reward,
       completionMethod: method,
     };

@@ -1980,7 +1980,8 @@
       ['完成时间',s.completedAt||'-'],
       ['结算状态',s.settlementStatus||'已结算']
     ];
-    return '<div class="pw-modal" data-close-settlement><div class="pw-dialog" data-settlement-dialog><div class="pw-dialog-head"><h3>订单结算详情</h3><button type="button" class="pw-btn" data-close-settlement>关闭</button></div><div class="pw-info-list">'+rows.map(function(r){return '<div><span>'+esc(r[0])+'</span><strong>'+esc(r[1])+'</strong></div>'}).join('')+'</div><div class="pw-actions" style="margin-top:14px"><button class="pw-btn primary" type="button" data-route="/companion/earnings" data-earnings-tab="overview">查看收入</button><button class="pw-btn" type="button" data-close-settlement>关闭</button></div></div></div>';
+    var note=s.bossCommissionTransparencyNote||'老板直属分成由平台抽成支付，不扣陪玩收入';
+    return '<div class="pw-modal" data-close-settlement><div class="pw-dialog" data-settlement-dialog><div class="pw-dialog-head"><h3>订单结算详情</h3><button type="button" class="pw-btn" data-close-settlement>关闭</button></div><div class="pw-info-list">'+rows.map(function(r){return '<div><span>'+esc(r[0])+'</span><strong>'+esc(r[1])+'</strong></div>'}).join('')+'</div><p class="pw-empty" style="margin:12px 0 0;text-align:left">'+esc(note)+'</p><div class="pw-actions" style="margin-top:14px"><button class="pw-btn primary" type="button" data-route="/companion/earnings" data-earnings-tab="overview">查看收入</button><button class="pw-btn" type="button" data-close-settlement>关闭</button></div></div></div>';
   }
   function syncPwKeyboardInset(){
     try{
@@ -2060,6 +2061,7 @@
       if(isAccountRoute()){
         restoreAccountFocus();
         mountCompanionAccountSecurity();
+        mountDirectBossCard();
       }
       return;
     }
@@ -2103,7 +2105,47 @@
     if(isAccountRoute()){
       restoreAccountFocus();
       mountCompanionAccountSecurity();
+      mountDirectBossCard();
     }
+  }
+  function mountDirectBossCard(){
+    var mount=document.getElementById('pwDirectBossCard');
+    if(!mount)return;
+    var token='';
+    try{token=sessionStorage.getItem('companionAuthToken')||localStorage.getItem('companionAuthToken')||'';}catch(e){}
+    if(!token&&state.session)token=String(state.session.token||state.session.accessToken||'').trim();
+    if(!token){
+      mount.innerHTML='<h3>直属负责人</h3><div class="pw-empty">请先登录</div>';
+      return;
+    }
+    fetch('/api/companion/direct-boss',{
+      headers:{Accept:'application/json',Authorization:'Bearer '+token,'x-mcj-companion-token':token},
+      cache:'no-store'
+    }).then(function(r){return r.json().catch(function(){return {};});}).then(function(body){
+      if(!mount.isConnected)return;
+      if(!body||body.ok===false){
+        mount.innerHTML='<h3>直属负责人</h3><div class="pw-empty">'+esc((body&&body.message)||'读取失败')+'</div>';
+        return;
+      }
+      if(body.tablesReady===false){
+        mount.innerHTML='<h3>直属负责人</h3><div class="pw-empty">直属关系尚未开通</div>';
+        return;
+      }
+      var boss=body.boss;
+      if(!boss){
+        mount.innerHTML='<h3>直属负责人</h3><div class="pw-empty">暂无直属负责人<br>由后台管理员绑定后显示</div>';
+        return;
+      }
+      mount.innerHTML='<h3>直属负责人</h3><div class="pw-info-list">'+
+        infoRow('老板昵称',boss.displayName||'-')+
+        infoRow('老板 UID',boss.bossUid||'-')+
+        infoRow('状态',boss.status==='active'?'生效中':(boss.status||'-'))+
+        infoRow('绑定时间',boss.boundAt?String(boss.boundAt).replace('T',' ').slice(0,19):'-')+
+        '</div><p class="pw-note" style="margin-top:10px;margin-bottom:0">只读。换绑 / 解绑由后台操作。老板分成由平台抽成支付，不扣陪玩收入。</p>';
+    }).catch(function(){
+      if(!mount.isConnected)return;
+      mount.innerHTML='<h3>直属负责人</h3><div class="pw-empty">读取失败</div>';
+    });
   }
   function mountCompanionAccountSecurity(){
     var mount=document.getElementById('pwAccountSecurityMount');
@@ -3636,6 +3678,7 @@
       credentialBanner+
       (depositPhase==='approved'?depositBadgeHtml():'')+
       '<div class="pw-alert"><strong>隐私提示</strong><span>本页面仅本人和平台后台可见，不会公开给老板。</span></div>'+
+      '<section class="pw-card pad" style="margin-bottom:14px" id="pwDirectBossCard" data-direct-boss-card><h3>直属负责人</h3><div class="pw-empty">加载中…</div></section>'+
       '<div class="pw-two-col">'+
         '<section class="pw-card pad"><h3>账号信息</h3><div class="pw-info-list">'+
           infoRow('登录邮箱',p.email||p.uid||'-')+

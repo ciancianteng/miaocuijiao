@@ -477,6 +477,18 @@ function safeOrder(row, profiles = {}, extras = {}) {
     startedAt: row.started_at || "",
     completedAt: row.completed_at || "",
     cancelledAt: row.cancelled_at || "",
+    // Settlement snapshot — same DB fields as Admin/Boss/Companion
+    platformFee: money(row.platform_fee),
+    platformFeeRate: money(row.platform_fee_rate ?? row.platform_commission_rate),
+    companionIncome: money(row.companion_income),
+    bossCommissionAmount: money(row.boss_commission_amount),
+    bossCommissionRate: money(row.boss_commission_rate),
+    bossCommissionRateSource: row.boss_commission_rate_source || "",
+    bossLevelCode: row.boss_level_code || "",
+    settlementNote:
+      row.boss_commission_amount != null && Number(row.boss_commission_amount) > 0
+        ? "老板分成由平台抽成支付，不扣陪玩收入"
+        : "",
   };
 }
 function safeMessage(row, profiles = {}) {

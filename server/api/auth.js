@@ -1459,14 +1459,39 @@ export default async function handler(req, res) {
       if (!publicUrl) {
         return json(res, 502, { ok: false, message: "上传成功但无法生成头像地址，请重试。" });
       }
+      const shouldPersist =
+        body.persist === true ||
+        body.save === true ||
+        body.persistProfile === true ||
+        String(body.persist || body.save || "").toLowerCase() === "true";
+      let savedUser = null;
+      if (shouldPersist) {
+        try {
+          const savedRows = await supabaseJson(restUrl("profiles", `?id=eq.${encodeURIComponent(authUser.id)}`), {
+            method: "PATCH",
+            headers: headersWithServiceRole({ Prefer: "return=representation" }),
+            body: JSON.stringify({ avatar_url: publicUrl, updated_at: new Date().toISOString() }),
+          });
+          const saved = Array.isArray(savedRows) ? savedRows[0] : { ...profile, avatar_url: publicUrl };
+          savedUser = safeProfile(saved, authUser);
+        } catch (persistErr) {
+          return json(res, 502, {
+            ok: false,
+            message: `头像已上传但保存资料失败：${persistErr.message || "请重试"}`,
+            url: publicUrl,
+            avatarUrl: publicUrl,
+          });
+        }
+      }
       return json(res, 200, {
         ok: true,
-        message: "头像上传成功",
+        message: shouldPersist ? "头像已上传并保存" : "头像上传成功",
         url: publicUrl,
         avatarUrl: publicUrl,
         bucket: BOSS_AVATAR_BUCKET,
         path: objectPath,
         storage: "supabase_storage",
+        user: savedUser,
       });
     }
     if (requestedAction === "update_profile") {
