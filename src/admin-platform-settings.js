@@ -143,6 +143,9 @@
       boolSelect("maintenanceMode", "维护模式", x.maintenanceMode === true) +
       boolSelect("showAnnouncements", "公告显示", x.showAnnouncements !== false) +
       boolSelect("gameplayMallOpen", "更多玩法商城开放", x.gameplayMallOpen !== false) +
+      field("defaultCommissionRate", "默认平台抽成 %（订单）", x.defaultCommissionRate != null ? x.defaultCommissionRate : 20, "number") +
+      field("defaultBossCommissionRate", "默认直属老板分成 %（占平台抽成）", x.defaultBossCommissionRate != null ? x.defaultBossCommissionRate : 0, "number") +
+      '<p class="admin-sync-note">直属老板分成从平台抽成支付，不扣陪玩收入。老板收益 = 平台抽成金额 × 分成%。关系级比例优先于默认值。</p>' +
       '<button class="primary-btn" type="submit">保存功能开关</button></form>'
     );
   }
@@ -481,7 +484,7 @@
     ["registerOpen", "allowBossOrder", "allowCompanionApply", "allowCustomerServiceLogin", "allowCompanionGrab", "allowWithdraw", "allowRecharge", "maintenanceMode", "showAnnouncements", "gameplayMallOpen", "smtpTls", "aiEnabled", "adminTwoFactorRequired", "sensitiveChangeReverify", "bankEnabled"].forEach(function (k) {
       if (Object.prototype.hasOwnProperty.call(out, k)) out[k] = out[k] === "true";
     });
-    ["smtpPort", "sessionHours", "loginFailLockCount", "aiDailyLimit", "defaultCommissionRate", "defaultRebateRate", "defaultDeposit"].forEach(function (k) {
+    ["smtpPort", "sessionHours", "loginFailLockCount", "aiDailyLimit", "defaultCommissionRate", "defaultBossCommissionRate", "defaultRebateRate", "defaultDeposit"].forEach(function (k) {
       if (Object.prototype.hasOwnProperty.call(out, k)) out[k] = Number(out[k]);
     });
     return out;
