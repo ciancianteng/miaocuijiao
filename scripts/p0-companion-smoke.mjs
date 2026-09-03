@@ -6,6 +6,7 @@ import { readFileSync, existsSync, writeFileSync } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
 import { randomUUID } from "crypto";
+import { assertSmokeTargetAllowed } from "./lib/prod-guard.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const BASE = (process.argv[2] || "").replace(/\/$/, "");
@@ -46,6 +47,12 @@ function fail(msg) {
 }
 if (!url || !key || !anon) fail("missing supabase env");
 if (!BASE) fail("pass Preview base URL");
+assertSmokeTargetAllowed({
+  script: "p0-companion-smoke",
+  base: BASE,
+  supabaseUrl: url,
+  requireStagingSupabase: true,
+});
 
 const svc = { apikey: key, Authorization: `Bearer ${key}`, "Content-Type": "application/json", Prefer: "return=representation" };
 
