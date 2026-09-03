@@ -712,15 +712,6 @@ async function handleLoginSendOtp(body, res) {
   return json(res, 200, out);
 }
 
-function rejectProductionTestIdentity(res, { email = "", displayName = "" } = {}) {
-  if (!shouldBlockTestIdentityOnProduction({ email, displayName })) return null;
-  return json(res, 403, {
-    ok: false,
-    message: PROD_TEST_ACCOUNT_BLOCK_MESSAGE,
-    code: "PROD_TEST_ACCOUNT_BLOCKED",
-  });
-}
-
 async function handleLoginWithOtp(body, res) {
   const role = normalizeForgotRole(body.role || body.loginPortal || "boss");
   if (role === "customer_service" || role === "admin" || role === "super_admin") {
