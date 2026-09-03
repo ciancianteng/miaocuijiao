@@ -11,6 +11,7 @@ import { readLocalLevels } from "../_companion-levels-store.js";
 import { resolvePlatformCommission } from "../_commission-rates.js";
 import { resolveCompanionAvatar, resolveCompanionCover } from "../_companion-public-map.js";
 import { requireAdmin as requireAdminJwt, ADMIN_ROLES as SHARED_ADMIN_ROLES } from "../_admin-auth.js";
+import { resolveCredentialOrderEligibility } from "../_companion-order-eligibility.js";
 
 const ADMIN_ROLES = SHARED_ADMIN_ROLES;
 const PLAYER_TABLE = "companion_profiles";
@@ -204,6 +205,11 @@ function mapListPlayer(row = {}, profile = {}) {
   const applicationRaw = row.application_status || row.verification_status || "pending";
   const depositRaw = row.deposit_status || "unpaid";
   const mediaRaw = row.media_status || "pending";
+  // 接单资格 credential gate: 实名 OR 押金（满足任一即可，不是同时满足）
+  const eligibility = resolveCredentialOrderEligibility({
+    identity_status: identityRaw,
+    deposit_status: depositRaw,
+  });
   return {
     id: row.id,
     uid: row.user_id,
@@ -253,6 +259,17 @@ function mapListPlayer(row = {}, profile = {}) {
     mediaStatus: labelStatus(mediaRaw),
     application_status: applicationRaw,
     applicationStatus: labelStatus(applicationRaw),
+    identityVerified: eligibility.identityVerified,
+    depositVerified: eligibility.depositVerified,
+    credentialOrOk: eligibility.credentialOrOk,
+    orderEligible: eligibility.orderEligible,
+    order_eligible: eligibility.order_eligible,
+    orderEligibility: eligibility.orderEligibility,
+    order_eligibility: eligibility.order_eligibility,
+    orderEligibilityLabel: eligibility.orderEligibilityLabel,
+    order_eligibility_label: eligibility.order_eligibility_label,
+    orderEligibilityReason: eligibility.orderEligibilityReason,
+    order_eligibility_reason: eligibility.order_eligibility_reason,
     online_status: (() => {
       const verified = /approved|verified|passed/.test(String(row.verification_status || applicationRaw || ""));
       if (!verified) return "offline";

@@ -224,7 +224,7 @@
     ].forEach(function(k){try{localStorage.removeItem(k);sessionStorage.removeItem(k)}catch(e){}});
     location.replace('/admin/login/');
   }
-  function statusChip(text){var t=String(text||'');var cls=/通过|完成|成功|在线|正常|开启|显示/.test(t)?'ok':/拒绝|冻结|异常|取消|离线|关闭|隐藏/.test(t)?'bad':'wait';return '<span class="chip '+cls+'">'+esc(t)+'</span>'}
+  function statusChip(text){var t=String(text||'');var cls=/通过|完成|成功|在线|正常|开启|显示|可以接单/.test(t)?'ok':/拒绝|冻结|异常|取消|离线|关闭|隐藏|不可接单/.test(t)?'bad':'wait';return '<span class="chip '+cls+'">'+esc(t)+'</span>'}
   function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
   function table(headers,rows){
     var body='';
@@ -867,12 +867,13 @@
     var target=document.getElementById('playerManagement');
     if(!target)return;
     target.innerHTML='<div class="player-admin-page">'+
-      '<div class="admin-section-head compact"><div><h3>陪玩列表</h3><p>集中查看陪玩资料、认证、押金、抽成、返点、收入与账号状态。</p></div><span class="admin-count-pill" data-player-count>0 条</span></div>'+
+      '<div class="admin-section-head compact"><div><h3>陪玩列表</h3><p>接单资格 = 实名认证通过 <strong>或</strong> 押金已缴纳（满足任一即可，无需同时满足）。抽成 / 返点独立展示。</p></div><span class="admin-count-pill" data-player-count>0 条</span></div>'+
       '<div class="player-filter-panel">'+
         '<div class="player-filter-row player-filter-main">'+
           '<input class="player-keyword" data-player-search placeholder="搜索陪玩名字或ID">'+
           '<select data-player-filter="game"><option value="">游戏筛选</option></select>'+
           '<select data-player-filter="level"><option value="">等级筛选</option></select>'+
+          '<select data-player-filter="eligibility"><option value="">接单资格</option><option value="可以接单">✅ 可以接单</option><option value="不可接单">❌ 不可接单</option></select>'+
           '<select data-player-filter="identity"><option value="">实名状态</option><option>已认证</option><option>已上传</option><option>审核中</option><option>未认证</option><option>待补充</option></select>'+
           '<select data-player-filter="audit"><option value="">审核状态</option><option>未审核</option><option>待审核</option><option>审核中</option><option>已通过</option><option>已拒绝</option><option>已停用</option></select>'+
           '<select data-player-filter="deposit"><option value="">押金状态</option><option>已缴纳</option><option>已到账</option><option>待审核</option><option>未缴纳</option><option>已退回</option></select>'+
@@ -936,6 +937,44 @@
     selected=String(selected||'正常');
     return ['正常','暂停接单','封禁','冻结','停用','启用'].map(function(item){return '<option '+(item===selected?'selected':'')+'>'+esc(item)+'</option>'}).join('');
   }
+  function playerCredentialApproved(value){
+    var text=String(value==null?'':value).trim();
+    if(!text)return false;
+    if(/未缴纳|未认证|待补充|审核中|待审核|已驳回|已拒绝|已退回|unpaid|pending|rejected|refunded|unverified/i.test(text))return false;
+    return /已通过|已认证|已缴纳|已到账|approved|verified|paid/i.test(text);
+  }
+  function resolvePlayerOrderEligibility(player,identity,deposit){
+    player=player||{};
+    if(player.orderEligible===true||player.order_eligible===true||player.credentialOrOk===true){
+      return {
+        eligible:true,
+        label:player.orderEligibilityLabel||player.order_eligibility_label||'✅ 可以接单',
+        status:player.orderEligibility||player.order_eligibility||'可以接单',
+        reason:player.orderEligibilityReason||player.order_eligibility_reason||'实名或押金已满足（二选一）'
+      };
+    }
+    if(player.orderEligible===false||player.order_eligible===false||player.credentialOrOk===false){
+      return {
+        eligible:false,
+        label:player.orderEligibilityLabel||player.order_eligibility_label||'❌ 不可接单',
+        status:player.orderEligibility||player.order_eligibility||'不可接单',
+        reason:player.orderEligibilityReason||player.order_eligibility_reason||'需实名认证通过或押金已缴纳（满足任一即可）'
+      };
+    }
+    var identityOk=player.identityVerified===true||playerCredentialApproved(identity);
+    var depositOk=player.depositVerified===true||playerCredentialApproved(deposit);
+    // OR rule — never require both
+    var eligible=identityOk||depositOk;
+    var reason=eligible
+      ?(identityOk&&depositOk?'实名与押金均已通过（满足二选一）':(identityOk?'实名认证已通过':'押金已缴纳'))
+      :'需实名认证通过或押金已缴纳（满足任一即可）';
+    return {
+      eligible:eligible,
+      label:eligible?'✅ 可以接单':'❌ 不可接单',
+      status:eligible?'可以接单':'不可接单',
+      reason:reason
+    };
+  }
   function normalizePlayerAdmin(player){
     player=player||{};
     var level=levelApi()?levelApi().find(player.levelId||player.level_id||player.level||player.level_name):null;
@@ -948,6 +987,7 @@
     var audit=playerValue(player,['audit','auditStatus','audit_status','reviewStatus'],'未审核');
     var identity=playerValue(player,['identityStatus','identity_status','id_card','realNameStatus'],'未认证');
     var deposit=playerValue(player,['depositStatus','deposit_status','deposit'],'未缴纳');
+    var eligibility=resolvePlayerOrderEligibility(player,identity,deposit);
     var account=playerValue(player,['accountStatus','account_status','status'],'正常');
     var online=playerValue(player,['onlineStatus','online_status','order_status','workStatus'],'离线');
     var registered=playerValue(player,['registered_at','registeredAt','created_at','createdAt'],'-');
@@ -955,8 +995,8 @@
     var updated=playerValue(player,['updated_at','updatedAt','lastUpdated','last_online','lastOnline'],lastLogin);
     var name=playerValue(player,['name','nickname','displayName'],'-');
     var tags=playerArrayValue(player.tags||player.serviceTags||player.labels||'');
-    var search=[id,playerId,player.uid,name,player.phone,player.email,mainGame,gameId,levelText,audit,identity,deposit,account,tags.join(' ')].join(' ').toLowerCase();
-    return {raw:player,id:id,uid:player.uid||playerId,playerId:playerId,name:name,phone:player.phone||player.contact_phone||'-',email:player.email||'-',avatar:player.avatar||player.avatar_url||'assets/meow-cuijiao-brand.jpg',mainGame:mainGame,gameId:gameId,levelRaw:levelRaw,levelText:levelText,audit:audit,identity:identity,deposit:deposit,account:account,online:online,updated:updated,price:playerValue(player,['price','current_price','defaultPrice'],'-'),commission:normalizePercent(playerValue(player,['orderCommissionRate','order_commission_rate','commission','commissionRate'],'-'),'-'),giftCommission:normalizePercent(playerValue(player,['giftCommissionRate','gift_commission_rate'],'-'),'-'),directRebate:normalizePercent(playerValue(player,['directRebateRate','direct_rebate_rate','directRebate','direct_rebate','rebateRate'],'-'),'-'),totalOrders:playerValue(player,['totalOrders','total_orders','orders'],'0'),todayOrders:playerValue(player,['todayOrders','today_orders'],'0'),refundOrders:playerValue(player,['refundOrders','refund_orders'],'0'),totalIncome:playerValue(player,['total_income','totalIncome','income'],'RM0'),platformShare:playerValue(player,['platformShare','platform_share','platformCommission'],'RM0'),withdrawable:playerValue(player,['withdrawable','withdrawableAmount','withdrawable_amount'],'RM0'),withdrawn:playerValue(player,['totalWithdraw','total_withdraw','withdrawnAmount','withdrawn_amount'],'RM0'),withdrawStatus:playerValue(player,['withdrawStatus','withdraw_status','payoutStatus','settlementStatus','settlement_status'],'无提现'),registered:registered,lastLogin:lastLogin,tags:tags,featured:normalizeBool(player.featured||player.isFeatured||player.homeRecommended),pinned:normalizeBool(player.pinned||player.isPinned),bank:playerValue(player,['bank','bankAccount','bank_account','settlementAccount'],'-'),search:search};
+    var search=[id,playerId,player.uid,name,player.phone,player.email,mainGame,gameId,levelText,eligibility.status,eligibility.label,eligibility.reason,audit,identity,deposit,account,tags.join(' ')].join(' ').toLowerCase();
+    return {raw:player,id:id,uid:player.uid||playerId,playerId:playerId,name:name,phone:player.phone||player.contact_phone||'-',email:player.email||'-',avatar:player.avatar||player.avatar_url||'assets/meow-cuijiao-brand.jpg',mainGame:mainGame,gameId:gameId,levelRaw:levelRaw,levelText:levelText,audit:audit,identity:identity,deposit:deposit,orderEligible:eligibility.eligible,orderEligibility:eligibility.status,orderEligibilityLabel:eligibility.label,orderEligibilityReason:eligibility.reason,account:account,online:online,updated:updated,price:playerValue(player,['price','current_price','defaultPrice'],'-'),commission:normalizePercent(playerValue(player,['orderCommissionRate','order_commission_rate','commission','commissionRate'],'-'),'-'),giftCommission:normalizePercent(playerValue(player,['giftCommissionRate','gift_commission_rate'],'-'),'-'),directRebate:normalizePercent(playerValue(player,['directRebateRate','direct_rebate_rate','directRebate','direct_rebate','rebateRate'],'-'),'-'),totalOrders:playerValue(player,['totalOrders','total_orders','orders'],'0'),todayOrders:playerValue(player,['todayOrders','today_orders'],'0'),refundOrders:playerValue(player,['refundOrders','refund_orders'],'0'),totalIncome:playerValue(player,['total_income','totalIncome','income'],'RM0'),platformShare:playerValue(player,['platformShare','platform_share','platformCommission'],'RM0'),withdrawable:playerValue(player,['withdrawable','withdrawableAmount','withdrawable_amount'],'RM0'),withdrawn:playerValue(player,['totalWithdraw','total_withdraw','withdrawnAmount','withdrawn_amount'],'RM0'),withdrawStatus:playerValue(player,['withdrawStatus','withdraw_status','payoutStatus','settlementStatus','settlement_status'],'无提现'),registered:registered,lastLogin:lastLogin,tags:tags,featured:normalizeBool(player.featured||player.isFeatured||player.homeRecommended),pinned:normalizeBool(player.pinned||player.isPinned),bank:playerValue(player,['bank','bankAccount','bank_account','settlementAccount'],'-'),search:search};
   }
   function renderPlayerFilterOptions(){
     var gameSelect=document.querySelector('[data-player-filter="game"]');
@@ -972,6 +1012,7 @@
       if(ok&&filters.game)ok=item.mainGame===filters.game;
       if(ok&&filters.level)ok=(item.levelRaw===filters.level||item.levelText.indexOf(filters.level)>-1);
       if(ok&&filters.audit)ok=item.audit.indexOf(filters.audit)>-1;
+      if(ok&&filters.eligibility)ok=item.orderEligibility===filters.eligibility||item.orderEligibilityLabel.indexOf(filters.eligibility)>-1;
       if(ok&&filters.identity)ok=item.identity.indexOf(filters.identity)>-1;
       if(ok&&filters.deposit)ok=item.deposit.indexOf(filters.deposit)>-1;
       if(ok&&filters.account)ok=item.account.indexOf(filters.account)>-1;
@@ -1009,13 +1050,14 @@
     playerAdminState.page=Math.min(Math.max(1,playerAdminState.page),pages);
     var start=(playerAdminState.page-1)*playerAdminState.pageSize;
     var pageRows=rows.slice(start,start+playerAdminState.pageSize);
-    var headers=['头像','昵称','陪玩ID','主接游戏','等级','实名状态','押金状态','抽成比例','直属陪返点','账号状态','注册时间','操作'];
+    var headers=['头像','昵称','陪玩ID','主接游戏','等级','接单资格','实名状态','押金状态','抽成比例','直属陪返点','账号状态','注册时间','操作'];
     var body=pageRows.map(function(item){return '<tr class="player-list-row" data-player-open="'+esc(item.id)+'">'+
       '<td data-label="头像" class="avatar-cell"><button class="player-avatar-btn" type="button" data-player-action="view" data-player-id="'+esc(item.id)+'"><img class="avatar player-avatar" src="'+esc(playerAvatarSrc(item))+'" alt="" onerror="this.onerror=null;this.src=\'/assets/meow-cuijiao-brand.jpg\'"></button></td>'+
       '<td data-label="昵称" class="player-name-cell" title="'+esc(item.name)+'"><button class="player-name-link" type="button" data-player-action="view" data-player-id="'+esc(item.id)+'">'+esc(item.name)+'</button><span class="player-name-meta">'+playerContactLine(item)+'</span></td>'+
       playerTableCell('陪玩ID',esc(item.playerId))+
       playerTableCell('主接游戏',esc(item.mainGame))+
       playerTableCell('等级',esc(item.levelText))+
+      '<td data-label="接单资格" class="player-eligibility-cell" title="'+esc(item.orderEligibilityReason)+'"><span class="player-eligibility-chip '+(item.orderEligible?'ok':'bad')+'">'+esc(item.orderEligibilityLabel)+'</span><small class="player-eligibility-hint">'+esc(item.orderEligibilityReason)+'</small></td>'+
       '<td data-label="实名状态">'+statusChip(item.identity)+'</td>'+
       '<td data-label="押金状态">'+statusChip(item.deposit)+'</td>'+
       playerTableCell('抽成比例',esc(item.commission))+
@@ -1030,8 +1072,8 @@
   function filterPlayerManagement(){playerAdminState.page=1;renderPlayerTableRows();}
   function exportPlayerRows(){
     var rows=visiblePlayerRows();
-    var headers=['头像','陪玩名字','陪玩ID','主接游戏','等级','资料审核状态','实名状态','押金状态','当前抽成','直属陪返点','总收入','可提现余额','账号状态'];
-    var lines=[headers].concat(rows.map(function(item){return [item.avatar,item.name,item.playerId,item.mainGame,item.levelText,item.audit,item.identity,item.deposit,item.commission,item.directRebate,item.totalIncome,item.withdrawable,item.account]}));
+    var headers=['头像','陪玩名字','陪玩ID','主接游戏','等级','接单资格','资料审核状态','实名状态','押金状态','当前抽成','直属陪返点','总收入','可提现余额','账号状态'];
+    var lines=[headers].concat(rows.map(function(item){return [item.avatar,item.name,item.playerId,item.mainGame,item.levelText,item.orderEligibilityLabel,item.audit,item.identity,item.deposit,item.commission,item.directRebate,item.totalIncome,item.withdrawable,item.account]}));
     var csv=lines.map(function(line){return line.map(function(cell){return '"'+String(cell==null?'':cell).replace(/"/g,'""')+'"'}).join(',')}).join('\n');
     var blob=new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'});
     var url=URL.createObjectURL(blob);var a=document.createElement('a');a.href=url;a.download='players.csv';a.click();URL.revokeObjectURL(url);
@@ -1048,15 +1090,15 @@
     var raw=item.raw||{};
     var edit=mode==='edit';
     var basic=playerDetailRows([['头像',item.avatar],['昵称',item.name],['ID',item.playerId],['联系方式',item.phone],['邮箱',item.email],['注册时间',item.registered],['主接游戏',item.mainGame+' / '+item.gameId],['陪玩标签',item.tags.join('、')||'-']]);
-    var verify=playerDetailRows([['陪玩申请资料',playerValue(raw,['applicationNo','application_no','applicationStatus'],'-')],['身份证认证',item.identity],['结款账户',item.bank],['头像 / 相册 / 语音',playerValue(raw,['mediaStatus','galleryStatus','voiceStatus'],'-')],['审核状态',item.audit],['驳回原因',playerValue(raw,['rejectReason','reject_reason','reviewRemark'],'-')]])+
+    var verify=playerDetailRows([['接单资格',item.orderEligibilityLabel+' · '+item.orderEligibilityReason],['陪玩申请资料',playerValue(raw,['applicationNo','application_no','applicationStatus'],'-')],['身份证认证',item.identity],['结款账户',item.bank],['头像 / 相册 / 语音',playerValue(raw,['mediaStatus','galleryStatus','voiceStatus'],'-')],['审核状态',item.audit],['驳回原因',playerValue(raw,['rejectReason','reject_reason','reviewRemark'],'-')]])+
       (edit?'<div class="player-edit-grid">'+playerSelectField('资料审核状态','auditStatus','<option '+(item.audit==='未审核'?'selected':'')+'>未审核</option><option '+(item.audit==='待审核'?'selected':'')+'>待审核</option><option '+(item.audit==='已通过'?'selected':'')+'>已通过</option><option '+(item.audit==='已拒绝'?'selected':'')+'>已拒绝</option>')+playerSelectField('实名状态','identityStatus','<option '+(item.identity==='未认证'?'selected':'')+'>未认证</option><option '+(item.identity==='审核中'?'selected':'')+'>审核中</option><option '+(item.identity==='已认证'?'selected':'')+'>已认证</option><option '+(item.identity==='待补充'?'selected':'')+'>待补充</option>')+playerFormField('驳回原因','rejectReason',playerValue(raw,['rejectReason','reject_reason'],''))+'</div>':'');
-    var split='<div class="player-edit-grid">'+playerSelectField('当前等级','levelId',playerLevelOptions(item.levelRaw))+playerFormField('订单抽成比例','orderCommissionRate',item.commission)+playerFormField('礼物抽成比例','giftCommissionRate',item.giftCommission)+playerFormField('直属陪返点比例','directRebateRate',item.directRebate)+playerSelectField('是否首页推荐','featured','<option value="false" '+(!item.featured?'selected':'')+'>否</option><option value="true" '+(item.featured?'selected':'')+'>是</option>')+playerSelectField('是否置顶','pinned','<option value="false" '+(!item.pinned?'selected':'')+'>否</option><option value="true" '+(item.pinned?'selected':'')+'>是</option>')+'</div>';
+    var split='<div class="player-edit-grid">'+playerSelectField('当前等级','levelId',playerLevelOptions(item.levelRaw))+playerFormField('订单抽成比例','orderCommissionRate',item.commission)+playerFormField('礼物抽成比例','giftCommissionRate',item.giftCommission)+playerFormField('直属陪返点比例','directRebateRate',item.directRebate)+playerSelectField('是否首页推荐','featured','<option value="false" '+(!item.featured?'selected':'')+'>否</option><option value="true" '+(item.featured?'selected':'')+'>是</option>')+playerSelectField('是否置顶','pinned','<option value="false" '+(!item.pinned?'selected':'')+'>否</option><option value="true" '+(item.pinned?'selected':'')+'>是</option>')+'</div><div class="admin-sync-note">抽成 / 直属返点与接单资格独立；接单资格仅看实名或押金（二选一）。</div>';
     var deposit=playerDetailRows([['应缴押金',playerValue(raw,['depositDue','deposit_due'],'RM100')],['已缴金额',playerValue(raw,['depositPaid','deposit_paid'],'RM0')],['缴纳时间',playerValue(raw,['depositTime','deposit_time'],'-')],['当前状态',item.deposit],['退款记录',playerValue(raw,['depositRefund','deposit_refund'],'暂无')]])+(edit?'<div class="player-edit-grid">'+playerSelectField('押金状态','depositStatus','<option '+(item.deposit==='未缴纳'?'selected':'')+'>未缴纳</option><option '+(item.deposit==='待审核'?'selected':'')+'>待审核</option><option '+(item.deposit==='已到账'?'selected':'')+'>已到账</option><option '+(item.deposit==='已缴纳'?'selected':'')+'>已缴纳</option><option '+(item.deposit==='已退回'?'selected':'')+'>已退回</option>')+playerFormField('手动确认到账备注','depositConfirmRemark','')+'</div>':'');
     var income=playerDetailRows([['完成订单数',item.totalOrders],['退款订单',item.refundOrders],['总收入',item.totalIncome],['平台抽成',item.platformShare],['可提现余额',item.withdrawable],['已提现金额',item.withdrawn]])+playerRecordTable(['订单号','服务','金额','状态','时间'],playerOrdersRows(item),'暂无真实历史订单')+playerRecordTable(['流水号','类型','金额','状态','时间'],playerIncomeRows(item),'暂无真实收入流水');
     var withdraw=playerDetailRows([['收款账户',item.bank],['最近提现状态',item.withdrawStatus],['可提现余额',item.withdrawable]])+playerRecordTable(['提现单号','收款账户','申请金额','审核状态','拒绝原因'],playerWithdrawRows(item),'暂无真实提现申请')+(edit?'<div class="player-edit-grid">'+playerSelectField('提现审核状态','withdrawStatus','<option '+(item.withdrawStatus==='无提现'?'selected':'')+'>无提现</option><option '+(item.withdrawStatus==='待审核'?'selected':'')+'>待审核</option><option '+(item.withdrawStatus==='已通过'?'selected':'')+'>已通过</option><option '+(item.withdrawStatus==='已拒绝'?'selected':'')+'>已拒绝</option>')+playerFormField('拒绝原因','withdrawRejectReason','')+'</div>':'');
     var complaints=playerDetailRows([['退款记录',playerValue(raw,['refundCount','refund_count','refundOrders'],item.refundOrders||'0')],['投诉记录',playerValue(raw,['complaintCount','complaint_count','complaints'],'暂无')]]);
     var account=playerDetailRows([['当前在线状态',item.online],['账号状态',item.account],['是否已设置密码',(item.raw&&(item.raw.hasPassword||item.raw.has_password))?'是':'否'],['注册邮箱',item.email||'-'],['邮箱验证状态',(item.raw&&(item.raw.emailVerifiedLabel||item.raw.email_verified_label))||((item.raw&&(item.raw.emailVerified===false||item.raw.email_verified===false))?'❌ 未验证':'✅ 已验证')],['最近密码重置',(item.raw&&(item.raw.passwordSetAt||item.raw.password_set_at))||'-']])+(edit?'<div class="player-edit-grid">'+playerSelectField('账号状态','accountStatus',playerAccountOptions(item.account))+'</div>':'')+'<div class="player-edit-grid" style="margin-top:10px"><button class="mini-btn" type="button" data-player-sec="send_password_reset" data-player-id="'+esc(item.id)+'">发送密码重置邮件</button><button class="mini-btn" type="button" data-player-sec="force_change_password" data-player-id="'+esc(item.id)+'">强制下次改密</button><button class="mini-btn" type="button" data-player-sec="revoke_sessions" data-player-id="'+esc(item.id)+'">注销全部会话</button><button class="mini-btn" type="button" data-player-sec="enable" data-player-id="'+esc(item.id)+'">解封账号</button></div><div class="admin-sync-note">后台不可查看真实密码或哈希；重置仅发送邮箱验证码由用户自行设置。邮箱验证状态来自注册验证码流程。</div>';
-    return '<div class="player-drawer-head"><div><h2>'+esc(edit?'编辑陪玩':'陪玩详情')+'</h2><p>'+esc(item.name)+' · '+esc(item.playerId)+'</p></div><button class="mini-btn" type="button" data-player-drawer-close>关闭</button></div><form data-player-detail-form data-player-id="'+esc(item.id)+'"><div class="player-detail-hero"><img src="'+esc(playerAvatarSrc(item))+'" alt="" onerror="this.onerror=null;this.src=\'/assets/meow-cuijiao-brand.jpg\'"><div><strong>'+esc(item.name)+'</strong><span>'+esc(item.levelText)+' · '+esc(item.mainGame)+'</span></div>'+statusChip(item.account)+'</div>'+playerDetailSection('basic','基本资料',basic)+playerDetailSection('verify','资料与认证',verify)+playerDetailSection('split','等级与分成',split)+playerDetailSection('deposit','押金',deposit)+playerDetailSection('income','订单与收入',income)+playerDetailSection('withdraw','提现',withdraw)+playerDetailSection('complaints','退款和投诉',complaints)+playerDetailSection('account','账号管理',account)+'<div class="player-drawer-actions"><button class="btn primary" type="button" data-player-action="save-detail" data-player-id="'+esc(item.id)+'">保存修改</button><button class="btn" type="button" data-player-drawer-close>取消</button></div></form>';
+    return '<div class="player-drawer-head"><div><h2>'+esc(edit?'编辑陪玩':'陪玩详情')+'</h2><p>'+esc(item.name)+' · '+esc(item.playerId)+'</p></div><button class="mini-btn" type="button" data-player-drawer-close>关闭</button></div><form data-player-detail-form data-player-id="'+esc(item.id)+'"><div class="player-detail-hero"><img src="'+esc(playerAvatarSrc(item))+'" alt="" onerror="this.onerror=null;this.src=\'/assets/meow-cuijiao-brand.jpg\'"><div><strong>'+esc(item.name)+'</strong><span>'+esc(item.levelText)+' · '+esc(item.mainGame)+'</span><small class="player-eligibility-hint">'+esc(item.orderEligibilityReason)+'</small></div><span class="player-eligibility-chip '+(item.orderEligible?'ok':'bad')+'" title="'+esc(item.orderEligibilityReason)+'">'+esc(item.orderEligibilityLabel)+'</span></div>'+playerDetailSection('basic','基本资料',basic)+playerDetailSection('verify','资料与认证',verify)+playerDetailSection('split','等级与分成',split)+playerDetailSection('deposit','押金',deposit)+playerDetailSection('income','订单与收入',income)+playerDetailSection('withdraw','提现',withdraw)+playerDetailSection('complaints','退款和投诉',complaints)+playerDetailSection('account','账号管理',account)+'<div class="player-drawer-actions"><button class="btn primary" type="button" data-player-action="save-detail" data-player-id="'+esc(item.id)+'">保存修改</button><button class="btn" type="button" data-player-drawer-close>取消</button></div></form>';
   }
   function openPlayerDetail(playerId,mode,focus){
     var drawer=document.getElementById('playerDetailDrawer');
