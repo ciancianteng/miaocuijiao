@@ -10,91 +10,134 @@
   <style>
     :root{
       --mine-bg:#050406;
-      --mine-card:#111015;
-      --mine-line:rgba(255,255,255,.07);
+      --mine-card:#141218;
+      --mine-line:rgba(255,255,255,.08);
       --mine-pink:#ff8fc5;
-      --mine-pink-soft:rgba(255,143,197,.14);
+      --mine-pink-soft:rgba(255,143,197,.12);
       --mine-text:#f7f5fa;
       --mine-muted:rgba(255,255,255,.52);
+      --mine-subtle:rgba(255,255,255,.34);
     }
-    body{background:var(--mine-bg);color:var(--mine-text)}
-    .boss-shell{width:min(420px,calc(100% - 32px));margin:0 auto;padding:22px 0 110px;box-sizing:border-box}
-    .empty-card{border:1px solid var(--mine-line);border-radius:24px;background:var(--mine-card);padding:28px 22px}
+    body{
+      background:
+        radial-gradient(ellipse 80% 42% at 50% -10%,rgba(255,143,197,.07),transparent 56%),
+        var(--mine-bg);
+      color:var(--mine-text);
+    }
+    .boss-shell{width:min(420px,calc(100% - 32px));margin:0 auto;padding:20px 0 120px;box-sizing:border-box}
+    .empty-card{border:1px solid var(--mine-line);border-radius:26px;background:var(--mine-card);padding:28px 22px}
     .empty-card h1{margin:0 0 8px;font-size:22px}
     .empty-card p{margin:0 0 16px;color:var(--mine-muted);line-height:1.5}
 
-    /* Flat profile row — no info-grid boxes */
+    /* Premium user-center header */
     .profile-hero{
-      display:flex;align-items:center;gap:16px;
-      padding:8px 4px 28px;margin:0;
-      border:0;background:transparent;
+      position:relative;display:grid;grid-template-columns:auto 1fr auto;gap:16px;align-items:center;
+      margin:0 0 22px;padding:20px 18px 18px;
+      border:1px solid var(--mine-line);border-radius:28px;
+      background:
+        linear-gradient(155deg,rgba(255,255,255,.06) 0%,rgba(255,255,255,.015) 44%,rgba(0,0,0,.18) 100%),
+        linear-gradient(180deg,#1a1620,#121016);
+      box-shadow:0 18px 40px rgba(0,0,0,.38),inset 0 1px 0 rgba(255,255,255,.06);
     }
     .avatar{
-      width:72px;height:72px;flex:0 0 72px;border-radius:22px;
-      border:0;background:rgba(255,143,197,.12);
-      display:grid;place-items:center;overflow:hidden;color:#ffd6e7;font-weight:900;font-size:28px;
+      width:76px;height:76px;border-radius:24px;
+      border:1px solid rgba(255,255,255,.1);
+      background:linear-gradient(160deg,rgba(255,143,197,.18),rgba(255,255,255,.04));
+      display:grid;place-items:center;overflow:hidden;color:#ffd6e7;font-weight:900;font-size:30px;
+      box-shadow:0 10px 24px rgba(0,0,0,.28);
     }
     .avatar img{width:100%;height:100%;object-fit:cover}
-    .profile-meta{min-width:0;flex:1}
-    .profile-meta h1{margin:0;font-size:26px;line-height:1.15;letter-spacing:.01em;font-weight:800}
-    .profile-meta p{margin:8px 0 0;color:var(--mine-muted);font-size:13px;line-height:1.45}
-    .profile-balance{margin:0;color:rgba(255,214,231,.9);font-size:13px;font-weight:700}
+    .profile-meta{min-width:0}
+    .profile-meta h1{margin:0;font-size:24px;line-height:1.15;letter-spacing:.01em;font-weight:800}
+    .profile-uid{
+      display:inline-flex;align-items:center;gap:6px;margin:8px 0 0;
+      color:var(--mine-muted);font-size:12px;line-height:1.3;font-weight:600;
+    }
+    .profile-uid span{
+      display:inline-flex;align-items:center;padding:3px 8px;border-radius:999px;
+      border:1px solid rgba(255,255,255,.08);background:rgba(0,0,0,.22);
+      color:rgba(255,255,255,.72);font-size:11px;font-weight:700;letter-spacing:.02em;
+    }
+    .profile-stats{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;grid-column:1 / -1}
+    .profile-chip{
+      display:inline-flex;align-items:center;gap:8px;min-height:34px;padding:0 12px;
+      border-radius:999px;border:1px solid rgba(255,255,255,.08);
+      background:rgba(255,255,255,.035);color:rgba(255,255,255,.78);
+      font-size:12px;font-weight:700;
+    }
+    .profile-chip em{font-style:normal;color:var(--mine-subtle);font-weight:600}
+    .profile-chip.balance{color:#ffe0ef;border-color:rgba(255,143,197,.18);background:rgba(255,143,197,.08)}
     .profile-edit{
-      flex:0 0 auto;height:40px;padding:0 16px;border-radius:999px;
-      border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);
+      align-self:start;height:38px;padding:0 14px;border-radius:999px;
+      border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);
       color:var(--mine-text);font:inherit;font-size:13px;font-weight:700;cursor:pointer;
     }
 
-    /* Large dark accordion cards — pink accent on chevron only */
-    .mine-stack{display:grid;gap:16px;margin-top:2px}
+    /* Premium accordion cards — depth + soft gradient, pink on chevron only */
+    .mine-stack{display:grid;gap:14px}
     .mine-acc{
-      border:1px solid var(--mine-line);
-      border-radius:24px;
-      background:linear-gradient(180deg,rgba(255,255,255,.035),rgba(255,255,255,.015));
-      background-color:var(--mine-card);
+      border:1px solid rgba(255,255,255,.08);
+      border-radius:26px;
+      background:
+        linear-gradient(180deg,rgba(255,255,255,.055) 0%,rgba(255,255,255,.018) 28%,rgba(0,0,0,.12) 100%),
+        linear-gradient(180deg,#19151f,#111015);
       overflow:hidden;
-      box-shadow:0 14px 36px rgba(0,0,0,.32);
+      box-shadow:
+        0 16px 36px rgba(0,0,0,.42),
+        0 2px 0 rgba(255,255,255,.04) inset,
+        0 -18px 28px rgba(0,0,0,.18) inset;
     }
     .mine-acc-trigger{
       width:100%;display:flex;align-items:center;justify-content:space-between;gap:16px;
-      min-height:76px;padding:22px 22px;border:0;background:transparent;color:var(--mine-text);
+      min-height:78px;padding:22px 22px;border:0;background:transparent;color:var(--mine-text);
       font:inherit;font-weight:800;font-size:17px;letter-spacing:.01em;text-align:left;cursor:pointer;
       -webkit-tap-highlight-color:transparent;
     }
-    .mine-acc-trigger:focus-visible{outline:2px solid rgba(255,143,197,.4);outline-offset:-3px}
+    .mine-acc-trigger:focus-visible{outline:2px solid rgba(255,143,197,.35);outline-offset:-3px}
     .mine-acc-title{min-width:0}
     .mine-acc-chevron{
-      flex:0 0 30px;width:30px;height:30px;border-radius:999px;
-      border:1px solid rgba(255,143,197,.32);background:var(--mine-pink-soft);
-      display:grid;place-items:center;transition:transform .2s ease;
+      flex:0 0 28px;width:28px;height:28px;border-radius:999px;
+      border:1px solid rgba(255,143,197,.22);background:rgba(255,143,197,.1);
+      display:grid;place-items:center;transition:transform .22s ease;
     }
     .mine-acc-chevron::before{
-      content:"";width:8px;height:8px;border-right:2px solid #ffd6e7;border-bottom:2px solid #ffd6e7;
+      content:"";width:7px;height:7px;border-right:2px solid rgba(255,214,231,.9);border-bottom:2px solid rgba(255,214,231,.9);
       transform:rotate(45deg) translate(-1px,-1px);
     }
     .mine-acc.is-open .mine-acc-chevron{transform:rotate(180deg)}
     .mine-acc-panel{display:none}
-    .mine-acc.is-open .mine-acc-panel{display:block;border-top:1px solid var(--mine-line)}
-    .mine-acc-body{padding:8px 12px 14px}
+    .mine-acc.is-open .mine-acc-panel{display:block;border-top:1px solid rgba(255,255,255,.06)}
+    .mine-acc-body{padding:10px 12px 14px;display:grid;gap:4px}
 
-    /* Flat list rows — no nested boxes */
-    .mine-link{
-      display:flex;align-items:center;justify-content:space-between;gap:12px;
-      width:100%;min-height:56px;padding:16px 12px;margin:0;
-      border:0;border-radius:14px;background:transparent;
-      color:var(--mine-text);font:inherit;font-size:16px;font-weight:650;
-      text-decoration:none;cursor:pointer;text-align:left;box-sizing:border-box;
+    /* Polished menu items: icon · title · desc · arrow */
+    .mine-item{
+      display:grid;grid-template-columns:44px 1fr auto;align-items:center;gap:12px;
+      width:100%;min-height:68px;padding:12px 10px;margin:0;
+      border:0;border-radius:18px;background:transparent;
+      color:var(--mine-text);font:inherit;text-decoration:none;cursor:pointer;text-align:left;
+      box-sizing:border-box;-webkit-tap-highlight-color:transparent;
     }
-    .mine-link:hover,.mine-link:active{background:rgba(255,255,255,.04)}
-    .mine-link::after{
-      content:"";width:7px;height:7px;flex:0 0 7px;
-      border-right:2px solid rgba(255,255,255,.26);border-bottom:2px solid rgba(255,255,255,.26);
+    .mine-item:hover,.mine-item:active{background:rgba(255,255,255,.035)}
+    .mine-item-icon{
+      width:44px;height:44px;border-radius:14px;
+      border:1px solid rgba(255,255,255,.08);
+      background:linear-gradient(160deg,rgba(255,255,255,.07),rgba(255,255,255,.02));
+      display:grid;place-items:center;color:rgba(255,214,231,.88);
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.05);
+    }
+    .mine-item-icon svg{width:20px;height:20px;display:block}
+    .mine-item-copy{min-width:0;display:grid;gap:3px}
+    .mine-item-copy strong{font-size:15px;font-weight:750;line-height:1.25;letter-spacing:.01em}
+    .mine-item-copy small{color:var(--mine-muted);font-size:12px;line-height:1.35;font-weight:500}
+    .mine-item-arrow{width:18px;height:18px;display:grid;place-items:center;opacity:.55}
+    .mine-item-arrow::before{
+      content:"";width:7px;height:7px;
+      border-right:2px solid rgba(255,255,255,.55);border-bottom:2px solid rgba(255,255,255,.55);
       transform:rotate(-45deg);
     }
-    .mine-link-note{display:block;margin:0 12px 12px;color:var(--mine-muted);font-size:12px;line-height:1.5}
 
     /* Flatten account-security when nested in accordion */
-    #bossAccountSecurity{padding:4px 8px 10px}
+    #bossAccountSecurity{padding:2px 4px 6px}
     #bossAccountSecurity .mcj-account-security{
       margin:0!important;padding:0!important;border:0!important;background:transparent!important;border-radius:0!important;
     }
@@ -118,13 +161,15 @@
     }
     #bossAccountSecurity .mcj-sec-actions{display:grid;gap:4px;margin-top:8px}
 
-    .mine-logout-wrap{margin-top:28px}
+    .mine-logout-wrap{margin-top:26px}
     .mine-logout{
       width:100%;min-height:56px;border-radius:18px;
-      border:1px solid var(--mine-line);background:transparent;
-      color:var(--mine-muted);font:inherit;font-size:15px;font-weight:700;cursor:pointer;
+      border:1px solid rgba(255,255,255,.1);
+      background:linear-gradient(180deg,rgba(255,255,255,.07),rgba(255,255,255,.03));
+      color:rgba(255,255,255,.84);font:inherit;font-size:15px;font-weight:750;cursor:pointer;
+      box-shadow:0 10px 24px rgba(0,0,0,.28),inset 0 1px 0 rgba(255,255,255,.05);
     }
-    .mine-logout:hover{color:#ffd6e7;border-color:rgba(255,255,255,.16)}
+    .mine-logout:hover{color:#fff;border-color:rgba(255,255,255,.16)}
 
     .boss-btn{
       border:1px solid rgba(255,255,255,.14);border-radius:14px;background:rgba(255,255,255,.05);
@@ -143,8 +188,8 @@
     .form-grid input{height:44px;border:1px solid rgba(255,255,255,.12);border-radius:12px;background:rgba(0,0,0,.28);color:#fff;padding:0 12px}
     .state{margin-top:10px;color:#ffb9d6;min-height:20px}
     .review-tip{
-      margin:0 0 18px;padding:14px 16px;border:1px solid rgba(255,143,197,.22);
-      border-radius:18px;background:rgba(255,143,197,.07);color:#ffd6e7;
+      margin:0 0 18px;padding:14px 16px;border:1px solid rgba(255,143,197,.18);
+      border-radius:18px;background:rgba(255,143,197,.06);color:#ffd6e7;
       display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;
     }
     .review-tip p{margin:0;font-size:14px;line-height:1.45}
@@ -152,8 +197,9 @@
     .review-tip .tip-link{border:0;background:transparent;color:#ffe6f2;font-weight:800;cursor:pointer;text-decoration:underline;padding:0;font:inherit}
     .review-tip .tip-dismiss{width:32px;height:32px;border:1px solid rgba(255,255,255,.12);border-radius:10px;background:rgba(255,255,255,.05);color:#fff;cursor:pointer}
     @media(max-width:720px){
-      .boss-shell{width:calc(100% - 28px);padding:18px 0 112px}
-      .mine-acc-trigger{min-height:72px;padding:20px 20px;font-size:16px}
+      .boss-shell{width:calc(100% - 28px);padding:16px 0 118px}
+      .mine-acc-trigger{min-height:74px;padding:20px 20px;font-size:16px}
+      .profile-hero{padding:18px 16px 16px;gap:14px}
     }
   </style>
 </head>
@@ -208,6 +254,26 @@
       function avatarHtml(user){var src=user&&user.avatarUrl;if(src)return '<img src="'+esc(src)+'" alt="头像">';var name=(user&&user.displayName)||'老板';return esc(name.slice(0,1)||'B')}
       function statusText(s){return {active:'正常',disabled:'停用',pending:'待审核'}[s]||s||'-'}
       
+      
+      function menuIcon(kind){
+        var icons={
+          wallet:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="13" rx="3"/><path d="M3 10h18"/><path d="M16 14h2"/></svg>',
+          orders:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg>',
+          support:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12a8 8 0 0 1 16 0"/><path d="M4 12v2a2 2 0 0 0 2 2h1v-4"/><path d="M20 12v2a2 2 0 0 1-2 2h-1v-4"/><path d="M12 18v2"/><path d="M9 20h6"/></svg>',
+          switch:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3h5v5"/><path d="M21 3l-7 7"/><path d="M8 21H3v-5"/><path d="M3 21l7-7"/></svg>',
+          apply:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>'
+        };
+        return icons[kind]||icons.orders;
+      }
+      function menuItem(opts){
+        var tag=opts.tag||'a';
+        var attrs=opts.attrs||'';
+        return '<'+tag+' class="mine-item" '+attrs+'>'+
+          '<span class="mine-item-icon" aria-hidden="true">'+menuIcon(opts.icon||'orders')+'</span>'+
+          '<span class="mine-item-copy"><strong>'+esc(opts.title)+'</strong><small>'+esc(opts.desc||'')+'</small></span>'+
+          '<span class="mine-item-arrow" aria-hidden="true"></span></'+tag+'>';
+      }
+
       function accordion(key,title,bodyHtml){
         var open=state.openAccordion===key;
         return '<section class="mine-acc'+(open?' is-open':'')+'" data-mine-acc="'+esc(key)+'">'+
@@ -243,27 +309,32 @@ function paint(){
         var tipHtml=state.pendingReviewTipId
           ?('<div class="review-tip" role="status"><p>您有订单还未评价陪玩</p><div class="tip-actions"><button class="tip-link" type="button" data-open-pending-review>去评价</button><button class="tip-dismiss" type="button" data-dismiss-review-tip aria-label="关闭">×</button></div></div>')
           :'';
+                var statusLabel=statusText(u.status||u.accountStatus||'active');
+        var roleLabel=u.hasCompanion?'多角色':'老板';
         root.innerHTML=tipHtml+
           '<section class="profile-hero">'+
             '<div class="avatar">'+avatarHtml(u)+'</div>'+
             '<div class="profile-meta">'+
               '<h1>'+esc(u.displayName||'老板账号')+'</h1>'+
-              '<p>UID '+esc(publicUid)+(u.hasCompanion?' · 多角色':'')+'</p>'+
-              '<p class="profile-balance">猫粮 '+esc(totalBal)+'</p>'+
+              '<p class="profile-uid">UID <span>'+esc(publicUid)+'</span></p>'+
             '</div>'+
             '<button class="profile-edit" data-edit type="button">编辑</button>'+
+            '<div class="profile-stats">'+
+              '<span class="profile-chip balance"><em>猫粮</em> '+esc(totalBal)+'</span>'+
+              '<span class="profile-chip"><em>状态</em> '+esc(statusLabel)+'</span>'+
+              '<span class="profile-chip"><em>身份</em> '+esc(roleLabel)+'</span>'+
+            '</div>'+
           '</section>'+
           (setHint?'<p style="margin:0 0 18px;color:#fbbf24;font-size:12px;line-height:1.45">'+esc(setHint)+'</p>':'')+
           '<div class="mine-stack">'+
           accordion('recharge','充值中心 / 钱包流水',
-            '<a class="mine-link" href="recharge.html">进入充值与流水</a>'+
-            '<span class="mine-link-note">充值猫粮 '+esc(paidBal)+' · 赠送 '+esc(bonusBal)+'</span>')+
+            menuItem({tag:'a',icon:'wallet',title:'进入充值与流水',desc:'充值猫粮 '+paidBal+' · 赠送 '+bonusBal,attrs:'href="recharge.html"'}) )+
           accordion('orders','订单与服务',
-            '<a class="mine-link" href="orders.html">查看我的订单</a>'+
-            '<a class="mine-link" href="support.html">联系客服</a>'+
+            menuItem({tag:'a',icon:'orders',title:'查看我的订单',desc:'查看历史订单与服务记录',attrs:'href="orders.html"'})+
+            menuItem({tag:'a',icon:'support',title:'联系客服',desc:'获取平台帮助',attrs:'href="support.html"'})+
             (u.hasCompanion
-              ?'<button class="mine-link" type="button" data-switch-portal="companion">切换到陪玩端</button>'
-              :'<a class="mine-link" href="companion-apply.html">申请成为陪玩</a>'))+
+              ?menuItem({tag:'button',icon:'switch',title:'切换到陪玩端',desc:'切换身份管理',attrs:'type="button" data-switch-portal="companion"'})
+              :menuItem({tag:'a',icon:'apply',title:'申请成为陪玩',desc:'开通陪玩身份',attrs:'href="companion-apply.html"'})))+
           accordion('security','账号安全','<div id="bossAccountSecurity"></div>')+
           '</div>'+
           '<div class="mine-logout-wrap"><button class="mine-logout" type="button" data-logout>退出登录</button></div>';
