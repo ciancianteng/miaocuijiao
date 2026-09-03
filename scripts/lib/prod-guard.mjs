@@ -1,11 +1,9 @@
 /**
  * Runtime guard: refuse destructive/seed/E2E write scripts against known Production
- * Supabase projects.
+ * Supabase projects and production hostnames.
  *
- * Staging and Production currently share project ref `jqfaknpmcnqwqvatrwgo`
- * (www.meowcuijiao.com realtime-config === staging realtime-config).
- * Until Staging has an isolated project, E2E seed/write/cleanup must not run
- * against this ref unless explicitly overridden.
+ * Production ref: jqfaknpmcnqwqvatrwgo (www.meowcuijiao.com)
+ * Staging ref (isolated): cfccwysniduwkjskiqgy
  *
  * Override (emergency only) — either pair works:
  *   ALLOW_PROD_SUPABASE_WRITE=1 CONFIRM_PROD_WRITE=I_UNDERSTAND_PROD_RISK
@@ -15,8 +13,11 @@ import fs from "node:fs";
 import path from "node:path";
 
 const KNOWN_PRODUCTION_PROJECT_REFS = Object.freeze([
-  "jqfaknpmcnqwqvatrwgo", // www.meowcuijiao.com (also currently used by staging Vercel)
+  "jqfaknpmcnqwqvatrwgo", // www.meowcuijiao.com
 ]);
+
+const KNOWN_PRODUCTION_HOST_RE =
+  /(^|\.)meowcuijiao\.com$/i;
 
 export function supabaseProjectRef(url = "") {
   const host = String(url || "")
@@ -36,6 +37,23 @@ export function isKnownProductionSupabase(url = process.env.SUPABASE_URL || proc
     .filter(Boolean);
   const deny = new Set([...KNOWN_PRODUCTION_PROJECT_REFS, ...extra]);
   return deny.has(ref);
+}
+
+export function isProductionHostname(urlOrHost = "") {
+  const raw = String(urlOrHost || "").trim();
+  if (!raw) return false;
+  try {
+    const host = raw.includes("://") ? new URL(raw).hostname : raw.split("/")[0];
+    return KNOWN_PRODUCTION_HOST_RE.test(host.replace(/^www\./i, "www.")) || /^www\.meowcuijiao\.com$/i.test(host) || /^meowcuijiao\.com$/i.test(host);
+  } catch {
+    return /meowcuijiao\.com/i.test(raw) && !/staging|preview|vercel\.app/i.test(raw);
+  }
+}
+
+export function isProductionEnvFlag(env = process.env) {
+  const vercel = String(env.VERCEL_ENV || "").toLowerCase();
+  const app = String(env.APP_ENV || "").toLowerCase();
+  return vercel === "production" || app === "production";
 }
 
 function prodWriteOverrideAllowed() {
@@ -62,25 +80,38 @@ export function loadEnvFiles(root = process.cwd()) {
       const eq = line.indexOf("=");
       if (eq <= 0) continue;
       const key = line.slice(0, eq).trim();
-      const value = line.slice(eq + 1).trim().replace(/^['"]|['"]$/g, "");
+      const value = line.slice(eq + 1).trim().replace(/^['"]|["']$/g, "");
       if (key && process.env[key] == null) process.env[key] = value;
     }
   }
 }
 
+function productionTargetReason(url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "") {
+  if (isProductionEnvFlag()) return `APP/VERCEL_ENV=production`;
+  if (isKnownProductionSupabase(url)) return `Supabase ref=${supabaseProjectRef(url)}`;
+  const base =
+    process.env.BASE_URL ||
+    process.env.PREVIEW ||
+    process.env.MCJ_STAGING_URL ||
+    process.env.PRODUCTION_URL ||
+    "";
+  if (base && isProductionHostname(base)) return `BASE_URL host=${base}`;
+  return "";
+}
+
 export function assertNonProductionSupabase(scriptName = "script", url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "") {
-  if (!isKnownProductionSupabase(url)) return { ok: true, ref: supabaseProjectRef(url), bypassed: false };
+  const reason = productionTargetReason(url);
+  if (!reason) return { ok: true, ref: supabaseProjectRef(url), bypassed: false };
   if (prodWriteOverrideAllowed()) {
     console.warn(
-      `[prod-guard] ALLOWED write to production Supabase by explicit override (${scriptName}) ref=${supabaseProjectRef(url)}`
+      `[prod-guard] ALLOWED write to production by explicit override (${scriptName}) reason=${reason}`
     );
     return { ok: true, ref: supabaseProjectRef(url), bypassed: true };
   }
-  const ref = supabaseProjectRef(url);
   const msg =
-    `[prod-guard] Refusing ${scriptName}: Supabase project "${ref}" is a known Production ref ` +
-    `(www.meowcuijiao.com). Staging must use an isolated project, or set ` +
-    `ALLOW_PROD_SUPABASE_WRITE=1 CONFIRM_PROD_WRITE=I_UNDERSTAND_PROD_RISK for emergency only.`;
+    `[prod-guard] Refusing ${scriptName}: target looks like Production (${reason}). ` +
+    `Smoke/E2E/seed scripts must not write to www.meowcuijiao.com. ` +
+    `Use Staging, or set ALLOW_PROD_SUPABASE_WRITE=1 CONFIRM_PROD_WRITE=I_UNDERSTAND_PROD_RISK for emergency only.`;
   throw new Error(msg);
 }
 
@@ -97,4 +128,12 @@ export function assertSafeDbTarget(opts = {}) {
   const script = opts.script || opts.name || "script";
   const url = opts.url || process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "";
   return assertNonProductionSupabase(script, url);
+}
+
+/**
+ * Convenience for smoke/E2E entrypoints: load env then refuse production writes.
+ */
+export function guardSmokeScript(scriptName = "smoke-script", root = process.cwd()) {
+  loadEnvFiles(root);
+  return assertNonProductionSupabase(scriptName);
 }

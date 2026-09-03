@@ -5,6 +5,7 @@
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import { guardSmokeScript } from "./lib/prod-guard.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const BASE = (process.argv[2] || "").replace(/\/$/, "");
@@ -74,6 +75,12 @@ async function main() {
     process.exit(1);
   }
   loadEnv();
+  try {
+    guardSmokeScript("smoke-preview-four-roles.mjs", root);
+  } catch (guardErr) {
+    console.error(String(guardErr?.message || guardErr));
+    process.exit(1);
+  }
   console.log("Preview:", BASE);
 
   // Entry pages

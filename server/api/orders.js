@@ -1001,6 +1001,20 @@ export default async function handler(req, res) {
     }
     const body = await parseBody(req);
     const action = String(body.action || "create");
+    if (
+      ["create", "place_order", "pay_order", "want_him", "grab", "claim"].includes(action)
+    ) {
+      const { isProductionRuntime, isTestAccountRecord, PROD_TEST_ACCOUNT_BLOCK_MESSAGE } = await import(
+        "./_test-accounts.js"
+      );
+      if (isProductionRuntime() && isTestAccountRecord(profile || {})) {
+        return json(res, 403, {
+          ok: false,
+          message: PROD_TEST_ACCOUNT_BLOCK_MESSAGE,
+          code: "PROD_TEST_ACCOUNT_BLOCKED",
+        });
+      }
+    }
     if (action === "list_my_refunds" || action === "my_refunds") {
       try {
         const refundApi = await import("./_boss-refund-payout.js");

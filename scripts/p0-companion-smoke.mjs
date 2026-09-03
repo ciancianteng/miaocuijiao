@@ -6,6 +6,7 @@ import { readFileSync, existsSync, writeFileSync } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
 import { randomUUID } from "crypto";
+import { guardSmokeScript } from "./lib/prod-guard.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const BASE = (process.argv[2] || "").replace(/\/$/, "");
@@ -26,6 +27,12 @@ function loadEnv(name) {
 }
 loadEnv(".env.local");
 loadEnv(".env");
+try {
+  guardSmokeScript("p0-companion-smoke.mjs", root);
+} catch (guardErr) {
+  console.error(String(guardErr?.message || guardErr));
+  process.exit(1);
+}
 
 const url = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "").replace(/\/$/, "");
 const key = process.env.SUPABASE_SERVICE_ROLE_KEY || "";

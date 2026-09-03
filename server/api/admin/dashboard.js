@@ -1,3 +1,9 @@
+import {
+  filterBusinessProfiles,
+  indexProfilesForStats,
+  isTestTouchedOrder,
+} from "../_test-accounts.js";
+
 const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY"];
 const ADMIN_ROLES = new Set(["admin", "super_admin"]);
 const ZERO = {
@@ -62,6 +68,10 @@ async function supabaseJson(url, init = {}) {
   if (!response.ok) throw Object.assign(new Error(supabaseError(body, response)), { status: response.status });
   return body;
 }
+function isMissingColumnError(error) {
+  const msg = String(error?.message || error || "");
+  return /is_test_account|Could not find the '|schema cache|PGRST204|42703/i.test(msg);
+}
 function tokenFrom(req) {
   return String(req.headers.authorization || req.headers["x-mcj-access-token"] || "")
     .replace(/^Bearer\s+/i, "")
@@ -100,6 +110,68 @@ function platformProfitOf(order = {}) {
   // default 20% platform share when breakdown missing
   return Math.round(gross * 0.2 * 100) / 100;
 }
+
+async function loadProfilesForStats() {
+  const withFlag =
+    "?select=id,role,email,display_name,is_test_account&limit=5000";
+  const withoutFlag = "?select=id,role,email,display_name&limit=5000";
+  try {
+    return await supabaseJson(restUrl("profiles", withFlag), { headers: serviceHeaders() });
+  } catch (error) {
+    if (!isMissingColumnError(error)) throw error;
+    return await supabaseJson(restUrl("profiles", withoutFlag), { headers: serviceHeaders() });
+  }
+}
+
+/**
+ * Aggregate dashboard stats with smoke / @meow.test / is_test_account excluded.
+ * Exported for unit verification without HTTP.
+ */
+export function buildDashboardStats({ profiles = [], orders = [], withdrawals = [], now = new Date() } = {}) {
+  const { byId, testIds } = indexProfilesForStats(profiles);
+  const businessOrders = (orders || []).filter((o) => !isTestTouchedOrder(o, testIds, byId));
+  const today = now.toISOString().slice(0, 10);
+  const revenueOrders = businessOrders.filter((o) => countsAsRevenue(o));
+  const paidToday = revenueOrders.filter((o) => String(o.created_at || "").slice(0, 10) === today);
+  const wd = Array.isArray(withdrawals) ? withdrawals : [];
+  const withdrawPending = wd
+    .filter((w) => !["completed", "paid", "rejected", "cancelled", "pay_failed"].includes(String(w.status || "")))
+    .reduce((sum, w) => sum + money(w.net_amount_rm != null ? w.net_amount_rm : w.amount_rm), 0);
+  const withdrawPaid = wd
+    .filter((w) => ["completed", "paid", "paid_pending_receipt"].includes(String(w.status || "")))
+    .reduce((sum, w) => sum + money(w.net_amount_rm != null ? w.net_amount_rm : w.amount_rm), 0);
+  const platformProfit = revenueOrders.reduce((sum, o) => sum + platformProfitOf(o), 0);
+  const bosses = filterBusinessProfiles(profiles, "boss");
+  const companions = filterBusinessProfiles(profiles, "companion");
+  const customerServices = filterBusinessProfiles(profiles, "customer_service");
+  return {
+    stats: {
+      bosses: bosses.length,
+      companions: companions.length,
+      customerServices: customerServices.length,
+      todayOrders: paidToday.length,
+      awaitingPayment: businessOrders.filter((o) => o.status === "awaiting_payment").length,
+      pendingOrders: businessOrders.filter((o) => o.status === "pending").length,
+      inProgress: businessOrders.filter((o) => o.status === "in_progress").length,
+      completed: businessOrders.filter((o) => o.status === "completed").length,
+      refunds: businessOrders.filter((o) => o.status === "refund_requested" || o.status === "refunded").length,
+      totalAmount: revenueOrders.reduce((sum, o) => sum + money(o.total_amount), 0),
+      todayAmount: paidToday.reduce((sum, o) => sum + money(o.total_amount), 0),
+      platformProfit: Math.round(platformProfit * 100) / 100,
+      withdrawPending: Math.round(withdrawPending * 100) / 100,
+      withdrawPaid: Math.round(withdrawPaid * 100) / 100,
+    },
+    filter: {
+      testAccountsExcluded: true,
+      excludedBosses: (profiles || []).filter((p) => p.role === "boss").length - bosses.length,
+      excludedCompanions: (profiles || []).filter((p) => p.role === "companion").length - companions.length,
+      excludedCustomerServices:
+        (profiles || []).filter((p) => p.role === "customer_service").length - customerServices.length,
+      excludedOrders: (orders || []).length - businessOrders.length,
+    },
+  };
+}
+
 export default async function handler(req, res) {
   if (!hasDb()) {
     return json(res, 200, {
@@ -112,39 +184,27 @@ export default async function handler(req, res) {
   try {
     await requireAdmin(req);
     const [profiles, orders, withdrawals] = await Promise.all([
-      supabaseJson(restUrl("profiles", "?limit=1000"), { headers: serviceHeaders() }),
-      supabaseJson(restUrl("orders", "?order=created_at.desc&limit=1000"), { headers: serviceHeaders() }).catch(() => []),
-      supabaseJson(restUrl("withdrawals", "?select=id,status,net_amount_rm,cat_food_amount,amount_rm&limit=2000"), { headers: serviceHeaders() }).catch(() => []),
+      loadProfilesForStats(),
+      loadOrdersForStats(),
+      supabaseJson(restUrl("withdrawals", "?select=id,status,net_amount_rm,cat_food_amount,amount_rm&limit=2000"), {
+        headers: serviceHeaders(),
+      }).catch(() => []),
     ]);
-    const today = new Date().toISOString().slice(0, 10);
-    const revenueOrders = orders.filter((o) => countsAsRevenue(o));
-    const paidToday = revenueOrders.filter((o) => String(o.created_at || "").slice(0, 10) === today);
-    const wd = Array.isArray(withdrawals) ? withdrawals : [];
-    const withdrawPending = wd
-      .filter((w) => !["completed", "paid", "rejected", "cancelled", "pay_failed"].includes(String(w.status || "")))
-      .reduce((sum, w) => sum + money(w.net_amount_rm != null ? w.net_amount_rm : w.amount_rm), 0);
-    const withdrawPaid = wd
-      .filter((w) => ["completed", "paid", "paid_pending_receipt"].includes(String(w.status || "")))
-      .reduce((sum, w) => sum + money(w.net_amount_rm != null ? w.net_amount_rm : w.amount_rm), 0);
-    const platformProfit = revenueOrders.reduce((sum, o) => sum + platformProfitOf(o), 0);
-    const stats = {
-      bosses: profiles.filter((p) => p.role === "boss").length,
-      companions: profiles.filter((p) => p.role === "companion").length,
-      customerServices: profiles.filter((p) => p.role === "customer_service").length,
-      todayOrders: paidToday.length,
-      awaitingPayment: orders.filter((o) => o.status === "awaiting_payment").length,
-      pendingOrders: orders.filter((o) => o.status === "pending").length,
-      inProgress: orders.filter((o) => o.status === "in_progress").length,
-      completed: orders.filter((o) => o.status === "completed").length,
-      refunds: orders.filter((o) => o.status === "refund_requested" || o.status === "refunded").length,
-      totalAmount: revenueOrders.reduce((sum, o) => sum + money(o.total_amount), 0),
-      todayAmount: paidToday.reduce((sum, o) => sum + money(o.total_amount), 0),
-      platformProfit: Math.round(platformProfit * 100) / 100,
-      withdrawPending: Math.round(withdrawPending * 100) / 100,
-      withdrawPaid: Math.round(withdrawPaid * 100) / 100,
-    };
-    return json(res, 200, { ok: true, configured: true, stats });
+    const { stats, filter } = buildDashboardStats({ profiles, orders, withdrawals });
+    return json(res, 200, { ok: true, configured: true, stats, filter });
   } catch (error) {
     return json(res, error.status || 500, { ok: false, message: error.message || "后台统计接口异常。" });
+  }
+}
+
+async function loadOrdersForStats() {
+  const full =
+    "?select=id,status,total_amount,created_at,boss_id,companion_id,customer_service_id,player_income,companion_income,platform_fee,platform_commission&order=created_at.desc&limit=5000";
+  const basic =
+    "?select=id,status,total_amount,created_at,boss_id,companion_id,customer_service_id&order=created_at.desc&limit=5000";
+  try {
+    return await supabaseJson(restUrl("orders", full), { headers: serviceHeaders() });
+  } catch {
+    return await supabaseJson(restUrl("orders", basic), { headers: serviceHeaders() }).catch(() => []);
   }
 }
