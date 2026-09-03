@@ -9,134 +9,199 @@
   <link rel="stylesheet" href="src/boss-header.css">
   <style>
     :root{
-      --mine-bg:#050406;
-      --mine-card:#141218;
-      --mine-line:rgba(255,255,255,.08);
+      --mine-bg:#040308;
+      --mine-card:rgba(24,20,32,.72);
+      --mine-line:rgba(255,255,255,.06);
       --mine-pink:#ff8fc5;
-      --mine-pink-soft:rgba(255,143,197,.12);
-      --mine-text:#f7f5fa;
-      --mine-muted:rgba(255,255,255,.52);
-      --mine-subtle:rgba(255,255,255,.34);
+      --mine-pink-soft:rgba(255,143,197,.14);
+      --mine-text:#f8f4fa;
+      --mine-muted:rgba(255,255,255,.55);
+      --mine-subtle:rgba(255,255,255,.36);
+      --mine-radius:28px;
     }
     body{
+      min-height:100vh;
       background:
-        radial-gradient(ellipse 80% 42% at 50% -10%,rgba(255,143,197,.07),transparent 56%),
-        var(--mine-bg);
+        radial-gradient(ellipse 90% 55% at 50% -18%,rgba(255,120,180,.16),transparent 58%),
+        radial-gradient(ellipse 55% 40% at 12% 18%,rgba(120,90,180,.12),transparent 62%),
+        radial-gradient(ellipse 50% 36% at 92% 72%,rgba(255,110,170,.08),transparent 60%),
+        linear-gradient(180deg,#0a0710 0%,#050308 48%,#040208 100%);
       color:var(--mine-text);
     }
-    .boss-shell{width:min(420px,calc(100% - 32px));margin:0 auto;padding:20px 0 120px;box-sizing:border-box}
-    .empty-card{border:1px solid var(--mine-line);border-radius:26px;background:var(--mine-card);padding:28px 22px}
+    body::before{
+      content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+      background:
+        radial-gradient(circle at 70% 12%,rgba(255,143,197,.08),transparent 28%),
+        radial-gradient(circle at 18% 78%,rgba(140,110,220,.06),transparent 30%);
+    }
+    .boss-shell,.topbar,.modal{position:relative;z-index:1}
+    .boss-shell{width:min(420px,calc(100% - 32px));margin:0 auto;padding:18px 0 128px;box-sizing:border-box}
+    .empty-card{
+      border:1px solid var(--mine-line);border-radius:var(--mine-radius);
+      background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,.02)),rgba(18,14,24,.8);
+      backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
+      box-shadow:0 20px 48px rgba(0,0,0,.4);padding:28px 22px;
+    }
     .empty-card h1{margin:0 0 8px;font-size:22px}
     .empty-card p{margin:0 0 16px;color:var(--mine-muted);line-height:1.5}
 
-    /* Premium user-center header */
+    /* Game-style profile card */
     .profile-hero{
-      position:relative;display:grid;grid-template-columns:auto 1fr auto;gap:16px;align-items:center;
-      margin:0 0 22px;padding:20px 18px 18px;
-      border:1px solid var(--mine-line);border-radius:28px;
+      position:relative;overflow:hidden;
+      display:grid;grid-template-columns:auto 1fr auto;gap:14px 16px;align-items:center;
+      margin:0 0 20px;padding:22px 18px 18px;
+      border:1px solid rgba(255,255,255,.08);border-radius:32px;
       background:
-        linear-gradient(155deg,rgba(255,255,255,.06) 0%,rgba(255,255,255,.015) 44%,rgba(0,0,0,.18) 100%),
-        linear-gradient(180deg,#1a1620,#121016);
-      box-shadow:0 18px 40px rgba(0,0,0,.38),inset 0 1px 0 rgba(255,255,255,.06);
+        linear-gradient(135deg,rgba(255,143,197,.12) 0%,rgba(255,255,255,.03) 38%,rgba(0,0,0,.2) 100%),
+        linear-gradient(180deg,rgba(36,28,46,.92),rgba(16,12,22,.88));
+      box-shadow:
+        0 22px 50px rgba(0,0,0,.45),
+        0 0 0 1px rgba(255,143,197,.06),
+        inset 0 1px 0 rgba(255,255,255,.1);
+      backdrop-filter:blur(20px) saturate(1.15);-webkit-backdrop-filter:blur(20px) saturate(1.15);
+    }
+    .profile-hero::before{
+      content:"";position:absolute;right:-20%;top:-40%;width:220px;height:220px;border-radius:50%;
+      background:radial-gradient(circle,rgba(255,143,197,.18),transparent 68%);pointer-events:none;
     }
     .avatar{
-      width:76px;height:76px;border-radius:24px;
-      border:1px solid rgba(255,255,255,.1);
-      background:linear-gradient(160deg,rgba(255,143,197,.18),rgba(255,255,255,.04));
-      display:grid;place-items:center;overflow:hidden;color:#ffd6e7;font-weight:900;font-size:30px;
-      box-shadow:0 10px 24px rgba(0,0,0,.28);
+      position:relative;z-index:1;width:78px;height:78px;border-radius:26px;
+      border:2px solid rgba(255,214,231,.28);
+      background:linear-gradient(160deg,rgba(255,143,197,.28),rgba(80,50,90,.35));
+      display:grid;place-items:center;overflow:hidden;color:#ffe0ef;font-weight:900;font-size:30px;
+      box-shadow:0 12px 28px rgba(0,0,0,.35),0 0 24px rgba(255,143,197,.12);
     }
     .avatar img{width:100%;height:100%;object-fit:cover}
-    .profile-meta{min-width:0}
+    .profile-meta{position:relative;z-index:1;min-width:0}
+    .profile-name-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
     .profile-meta h1{margin:0;font-size:24px;line-height:1.15;letter-spacing:.01em;font-weight:800}
+    .profile-role{
+      display:inline-flex;align-items:center;height:22px;padding:0 9px;border-radius:999px;
+      border:1px solid rgba(255,143,197,.28);background:rgba(255,143,197,.12);
+      color:#ffd6e7;font-size:11px;font-weight:800;letter-spacing:.04em;
+    }
     .profile-uid{
-      display:inline-flex;align-items:center;gap:6px;margin:8px 0 0;
+      display:inline-flex;align-items:center;gap:6px;margin:9px 0 0;
       color:var(--mine-muted);font-size:12px;line-height:1.3;font-weight:600;
     }
     .profile-uid span{
-      display:inline-flex;align-items:center;padding:3px 8px;border-radius:999px;
-      border:1px solid rgba(255,255,255,.08);background:rgba(0,0,0,.22);
-      color:rgba(255,255,255,.72);font-size:11px;font-weight:700;letter-spacing:.02em;
+      display:inline-flex;align-items:center;padding:3px 9px;border-radius:999px;
+      border:1px solid rgba(255,255,255,.08);background:rgba(0,0,0,.28);
+      color:rgba(255,255,255,.78);font-size:11px;font-weight:700;letter-spacing:.03em;
+      font-variant-numeric:tabular-nums;
     }
-    .profile-stats{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;grid-column:1 / -1}
+    .profile-stats{position:relative;z-index:1;display:flex;flex-wrap:wrap;gap:8px;margin-top:2px;grid-column:1 / -1}
     .profile-chip{
-      display:inline-flex;align-items:center;gap:8px;min-height:34px;padding:0 12px;
-      border-radius:999px;border:1px solid rgba(255,255,255,.08);
-      background:rgba(255,255,255,.035);color:rgba(255,255,255,.78);
-      font-size:12px;font-weight:700;
+      display:inline-flex;align-items:center;gap:7px;min-height:36px;padding:0 13px;
+      border-radius:999px;border:1px solid rgba(255,255,255,.07);
+      background:rgba(255,255,255,.04);color:rgba(255,255,255,.82);
+      font-size:12px;font-weight:700;backdrop-filter:blur(8px);
     }
     .profile-chip em{font-style:normal;color:var(--mine-subtle);font-weight:600}
-    .profile-chip.balance{color:#ffe0ef;border-color:rgba(255,143,197,.18);background:rgba(255,143,197,.08)}
+    .profile-chip.balance{
+      color:#ffe4f1;border-color:rgba(255,143,197,.22);
+      background:linear-gradient(180deg,rgba(255,143,197,.16),rgba(255,143,197,.07));
+      box-shadow:0 0 18px rgba(255,143,197,.1);
+    }
     .profile-edit{
-      align-self:start;height:38px;padding:0 14px;border-radius:999px;
-      border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);
+      position:relative;z-index:1;align-self:start;height:38px;padding:0 14px;border-radius:999px;
+      border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);
       color:var(--mine-text);font:inherit;font-size:13px;font-weight:700;cursor:pointer;
+      backdrop-filter:blur(8px);
     }
 
-    /* Premium accordion cards — depth + soft gradient, pink on chevron only */
+    /* Glass accordion cards */
     .mine-stack{display:grid;gap:14px}
     .mine-acc{
-      border:1px solid rgba(255,255,255,.08);
-      border-radius:26px;
+      border:1px solid rgba(255,255,255,.07);
+      border-radius:30px;
       background:
-        linear-gradient(180deg,rgba(255,255,255,.055) 0%,rgba(255,255,255,.018) 28%,rgba(0,0,0,.12) 100%),
-        linear-gradient(180deg,#19151f,#111015);
+        linear-gradient(180deg,rgba(255,255,255,.07) 0%,rgba(255,255,255,.02) 42%,rgba(0,0,0,.14) 100%),
+        rgba(20,16,28,.78);
       overflow:hidden;
       box-shadow:
-        0 16px 36px rgba(0,0,0,.42),
-        0 2px 0 rgba(255,255,255,.04) inset,
-        0 -18px 28px rgba(0,0,0,.18) inset;
+        0 18px 42px rgba(0,0,0,.42),
+        0 0 0 1px rgba(255,255,255,.02),
+        inset 0 1px 0 rgba(255,255,255,.08);
+      backdrop-filter:blur(18px) saturate(1.1);-webkit-backdrop-filter:blur(18px) saturate(1.1);
+      transition:box-shadow .25s ease,border-color .25s ease,transform .25s ease;
+    }
+    .mine-acc.is-open{
+      border-color:rgba(255,143,197,.16);
+      box-shadow:
+        0 22px 48px rgba(0,0,0,.48),
+        0 0 28px rgba(255,143,197,.06),
+        inset 0 1px 0 rgba(255,255,255,.1);
     }
     .mine-acc-trigger{
-      width:100%;display:flex;align-items:center;justify-content:space-between;gap:16px;
-      min-height:78px;padding:22px 22px;border:0;background:transparent;color:var(--mine-text);
-      font:inherit;font-weight:800;font-size:17px;letter-spacing:.01em;text-align:left;cursor:pointer;
+      width:100%;display:flex;align-items:center;justify-content:space-between;gap:14px;
+      min-height:80px;padding:22px 20px;border:0;background:transparent;color:var(--mine-text);
+      font:inherit;font-weight:800;font-size:16.5px;letter-spacing:.015em;text-align:left;cursor:pointer;
       -webkit-tap-highlight-color:transparent;
     }
     .mine-acc-trigger:focus-visible{outline:2px solid rgba(255,143,197,.35);outline-offset:-3px}
-    .mine-acc-title{min-width:0}
+    .mine-acc-heading{display:flex;align-items:center;gap:12px;min-width:0}
+    .mine-acc-icon{
+      flex:0 0 40px;width:40px;height:40px;border-radius:14px;
+      border:1px solid rgba(255,255,255,.08);
+      background:linear-gradient(160deg,rgba(255,255,255,.08),rgba(255,255,255,.02));
+      display:grid;place-items:center;color:rgba(255,214,231,.9);
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.06);
+    }
+    .mine-acc-icon svg{width:18px;height:18px;display:block}
+    .mine-acc-title{min-width:0;line-height:1.25}
     .mine-acc-chevron{
       flex:0 0 28px;width:28px;height:28px;border-radius:999px;
-      border:1px solid rgba(255,143,197,.22);background:rgba(255,143,197,.1);
-      display:grid;place-items:center;transition:transform .22s ease;
+      border:1px solid rgba(255,143,197,.2);background:rgba(255,143,197,.1);
+      display:grid;place-items:center;transition:transform .28s cubic-bezier(.22,.7,.25,1);
     }
     .mine-acc-chevron::before{
-      content:"";width:7px;height:7px;border-right:2px solid rgba(255,214,231,.9);border-bottom:2px solid rgba(255,214,231,.9);
+      content:"";width:7px;height:7px;border-right:2px solid rgba(255,214,231,.92);border-bottom:2px solid rgba(255,214,231,.92);
       transform:rotate(45deg) translate(-1px,-1px);
     }
     .mine-acc.is-open .mine-acc-chevron{transform:rotate(180deg)}
-    .mine-acc-panel{display:none}
-    .mine-acc.is-open .mine-acc-panel{display:block;border-top:1px solid rgba(255,255,255,.06)}
-    .mine-acc-body{padding:10px 12px 14px;display:grid;gap:4px}
 
-    /* Polished menu items: icon · title · desc · arrow */
+    /* Smooth expand without changing toggle logic */
+    .mine-acc-panel{
+      display:grid;grid-template-rows:0fr;opacity:0;
+      border-top:1px solid transparent;
+      transition:grid-template-rows .32s cubic-bezier(.22,.7,.25,1),opacity .24s ease,border-color .24s ease;
+    }
+    .mine-acc.is-open .mine-acc-panel{
+      grid-template-rows:1fr;opacity:1;
+      border-top-color:rgba(255,255,255,.06);
+    }
+    .mine-acc-body{overflow:hidden;padding:0 10px;display:grid;gap:2px}
+    .mine-acc.is-open .mine-acc-body{padding:8px 10px 14px}
+
+    /* Menu rows */
     .mine-item{
       display:grid;grid-template-columns:44px 1fr auto;align-items:center;gap:12px;
-      width:100%;min-height:68px;padding:12px 10px;margin:0;
+      width:100%;min-height:70px;padding:13px 10px;margin:0;
       border:0;border-radius:18px;background:transparent;
       color:var(--mine-text);font:inherit;text-decoration:none;cursor:pointer;text-align:left;
       box-sizing:border-box;-webkit-tap-highlight-color:transparent;
+      transition:background .18s ease;
     }
-    .mine-item:hover,.mine-item:active{background:rgba(255,255,255,.035)}
+    .mine-item:hover,.mine-item:active{background:rgba(255,255,255,.04)}
     .mine-item-icon{
-      width:44px;height:44px;border-radius:14px;
+      width:44px;height:44px;border-radius:15px;
       border:1px solid rgba(255,255,255,.08);
-      background:linear-gradient(160deg,rgba(255,255,255,.07),rgba(255,255,255,.02));
-      display:grid;place-items:center;color:rgba(255,214,231,.88);
+      background:linear-gradient(160deg,rgba(255,255,255,.08),rgba(255,255,255,.02));
+      display:grid;place-items:center;color:rgba(255,214,231,.9);
       box-shadow:inset 0 1px 0 rgba(255,255,255,.05);
     }
     .mine-item-icon svg{width:20px;height:20px;display:block}
-    .mine-item-copy{min-width:0;display:grid;gap:3px}
-    .mine-item-copy strong{font-size:15px;font-weight:750;line-height:1.25;letter-spacing:.01em}
+    .mine-item-copy{min-width:0;display:grid;gap:4px}
+    .mine-item-copy strong{font-size:15px;font-weight:760;line-height:1.25;letter-spacing:.01em}
     .mine-item-copy small{color:var(--mine-muted);font-size:12px;line-height:1.35;font-weight:500}
-    .mine-item-arrow{width:18px;height:18px;display:grid;place-items:center;opacity:.55}
+    .mine-item-arrow{width:18px;height:18px;display:grid;place-items:center;opacity:.5}
     .mine-item-arrow::before{
       content:"";width:7px;height:7px;
       border-right:2px solid rgba(255,255,255,.55);border-bottom:2px solid rgba(255,255,255,.55);
       transform:rotate(-45deg);
     }
 
-    /* Flatten account-security when nested in accordion */
     #bossAccountSecurity{padding:2px 4px 6px}
     #bossAccountSecurity .mcj-account-security{
       margin:0!important;padding:0!important;border:0!important;background:transparent!important;border-radius:0!important;
@@ -161,15 +226,20 @@
     }
     #bossAccountSecurity .mcj-sec-actions{display:grid;gap:4px;margin-top:8px}
 
-    .mine-logout-wrap{margin-top:26px}
+    .mine-logout-wrap{margin-top:28px}
     .mine-logout{
-      width:100%;min-height:56px;border-radius:18px;
+      width:100%;min-height:58px;border-radius:20px;
       border:1px solid rgba(255,255,255,.1);
-      background:linear-gradient(180deg,rgba(255,255,255,.07),rgba(255,255,255,.03));
-      color:rgba(255,255,255,.84);font:inherit;font-size:15px;font-weight:750;cursor:pointer;
-      box-shadow:0 10px 24px rgba(0,0,0,.28),inset 0 1px 0 rgba(255,255,255,.05);
+      background:
+        linear-gradient(180deg,rgba(255,255,255,.1),rgba(255,255,255,.03)),
+        rgba(18,14,24,.7);
+      color:rgba(255,255,255,.9);font:inherit;font-size:15px;font-weight:780;letter-spacing:.02em;cursor:pointer;
+      box-shadow:0 14px 30px rgba(0,0,0,.34),inset 0 1px 0 rgba(255,255,255,.08);
+      backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+      transition:transform .18s ease,border-color .18s ease,color .18s ease;
     }
-    .mine-logout:hover{color:#fff;border-color:rgba(255,255,255,.16)}
+    .mine-logout:hover{color:#fff;border-color:rgba(255,143,197,.28);transform:translateY(-1px)}
+    .mine-logout:active{transform:translateY(0)}
 
     .boss-btn{
       border:1px solid rgba(255,255,255,.14);border-radius:14px;background:rgba(255,255,255,.05);
@@ -188,18 +258,20 @@
     .form-grid input{height:44px;border:1px solid rgba(255,255,255,.12);border-radius:12px;background:rgba(0,0,0,.28);color:#fff;padding:0 12px}
     .state{margin-top:10px;color:#ffb9d6;min-height:20px}
     .review-tip{
-      margin:0 0 18px;padding:14px 16px;border:1px solid rgba(255,143,197,.18);
-      border-radius:18px;background:rgba(255,143,197,.06);color:#ffd6e7;
+      margin:0 0 16px;padding:14px 16px;border:1px solid rgba(255,143,197,.18);
+      border-radius:20px;background:rgba(255,143,197,.07);color:#ffd6e7;
       display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;
+      backdrop-filter:blur(10px);
     }
     .review-tip p{margin:0;font-size:14px;line-height:1.45}
     .review-tip .tip-actions{display:flex;gap:8px;align-items:center}
     .review-tip .tip-link{border:0;background:transparent;color:#ffe6f2;font-weight:800;cursor:pointer;text-decoration:underline;padding:0;font:inherit}
     .review-tip .tip-dismiss{width:32px;height:32px;border:1px solid rgba(255,255,255,.12);border-radius:10px;background:rgba(255,255,255,.05);color:#fff;cursor:pointer}
     @media(max-width:720px){
-      .boss-shell{width:calc(100% - 28px);padding:16px 0 118px}
-      .mine-acc-trigger{min-height:74px;padding:20px 20px;font-size:16px}
-      .profile-hero{padding:18px 16px 16px;gap:14px}
+      .boss-shell{width:calc(100% - 28px);padding:14px 0 122px}
+      .mine-acc-trigger{min-height:76px;padding:20px 18px;font-size:16px}
+      .profile-hero{padding:20px 16px 16px;gap:12px 14px;border-radius:28px}
+      .avatar{width:72px;height:72px;border-radius:24px}
     }
   </style>
 </head>
@@ -261,7 +333,8 @@
           orders:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg>',
           support:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12a8 8 0 0 1 16 0"/><path d="M4 12v2a2 2 0 0 0 2 2h1v-4"/><path d="M20 12v2a2 2 0 0 1-2 2h-1v-4"/><path d="M12 18v2"/><path d="M9 20h6"/></svg>',
           switch:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3h5v5"/><path d="M21 3l-7 7"/><path d="M8 21H3v-5"/><path d="M3 21l7-7"/></svg>',
-          apply:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>'
+          apply:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>',
+          security:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>'
         };
         return icons[kind]||icons.orders;
       }
@@ -276,9 +349,10 @@
 
       function accordion(key,title,bodyHtml){
         var open=state.openAccordion===key;
+        var iconKey={recharge:'wallet',orders:'orders',security:'security'}[key]||'orders';
         return '<section class="mine-acc'+(open?' is-open':'')+'" data-mine-acc="'+esc(key)+'">'+
           '<button type="button" class="mine-acc-trigger" data-mine-acc-toggle="'+esc(key)+'" aria-expanded="'+(open?'true':'false')+'">'+
-          '<span class="mine-acc-title">'+esc(title)+'</span>'+
+          '<span class="mine-acc-heading"><span class="mine-acc-icon" aria-hidden="true">'+menuIcon(iconKey)+'</span><span class="mine-acc-title">'+esc(title)+'</span></span>'+
           '<span class="mine-acc-chevron" aria-hidden="true"></span></button>'+
           '<div class="mine-acc-panel" role="region" aria-hidden="'+(open?'false':'true')+'">'+
           '<div class="mine-acc-body">'+bodyHtml+'</div></div></section>';
@@ -315,14 +389,13 @@ function paint(){
           '<section class="profile-hero">'+
             '<div class="avatar">'+avatarHtml(u)+'</div>'+
             '<div class="profile-meta">'+
-              '<h1>'+esc(u.displayName||'老板账号')+'</h1>'+
+              '<div class="profile-name-row"><h1>'+esc(u.displayName||'老板账号')+'</h1><span class="profile-role">'+esc(roleLabel)+'</span></div>'+
               '<p class="profile-uid">UID <span>'+esc(publicUid)+'</span></p>'+
             '</div>'+
             '<button class="profile-edit" data-edit type="button">编辑</button>'+
             '<div class="profile-stats">'+
               '<span class="profile-chip balance"><em>猫粮</em> '+esc(totalBal)+'</span>'+
               '<span class="profile-chip"><em>状态</em> '+esc(statusLabel)+'</span>'+
-              '<span class="profile-chip"><em>身份</em> '+esc(roleLabel)+'</span>'+
             '</div>'+
           '</section>'+
           (setHint?'<p style="margin:0 0 18px;color:#fbbf24;font-size:12px;line-height:1.45">'+esc(setHint)+'</p>':'')+
