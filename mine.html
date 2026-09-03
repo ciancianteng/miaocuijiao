@@ -8,39 +8,166 @@
   <link rel="stylesheet" href="src/style.css">
   <link rel="stylesheet" href="src/boss-header.css">
   <style>
-    body{background:#08070a;color:#fff}.boss-shell{width:min(920px,calc(100% - 32px));margin:0 auto;padding:26px 0 76px}.account-card,.empty-card{border:1px solid rgba(255,255,255,.1);border-radius:18px;background:rgba(255,255,255,.045);padding:22px}.account-head{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-bottom:18px}.profile-main{display:flex;align-items:center;gap:16px;min-width:0}.avatar{width:74px;height:74px;border-radius:18px;border:1px solid rgba(255,143,197,.28);background:rgba(255,143,197,.12);display:grid;place-items:center;overflow:hidden;color:#ffd6e7;font-weight:1000;font-size:24px}.avatar img{width:100%;height:100%;object-fit:cover}.profile-title h1{margin:0;font-size:26px}.profile-title p{margin:6px 0 0;color:#9ca3af}.info-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}.info-item{border:1px solid rgba(255,255,255,.08);border-radius:12px;background:rgba(0,0,0,.18);padding:13px}.info-item span{display:block;color:#9ca3af;font-size:12px}.info-item strong{display:block;margin-top:5px;color:#fff;word-break:break-word}.action-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}.boss-btn{border:1px solid rgba(255,143,197,.36);border-radius:12px;background:rgba(255,143,197,.13);color:#fff;padding:10px 14px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center}.boss-btn.ghost{border-color:rgba(255,255,255,.12);background:rgba(255,255,255,.055)}.modal{position:fixed;inset:0;background:rgba(0,0,0,.68);display:none;align-items:center;justify-content:center;padding:18px;z-index:40}.modal.open{display:flex}.modal-box{width:min(520px,100%);border:1px solid rgba(255,143,197,.26);border-radius:18px;background:#111014;padding:20px}.modal-head{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:12px}.modal-head h2{margin:0}.close{width:36px;height:36px;border:1px solid rgba(255,255,255,.12);border-radius:10px;background:rgba(255,255,255,.06);color:#fff;cursor:pointer}.form-grid{display:grid;gap:12px}.form-grid label{display:grid;gap:7px;color:#ffd6e7;font-weight:800}.form-grid input{height:42px;border:1px solid rgba(255,255,255,.12);border-radius:10px;background:rgba(0,0,0,.24);color:#fff;padding:0 12px}.state{margin-top:10px;color:#ffb9d6;min-height:20px}@media(max-width:720px){.account-head{align-items:flex-start;flex-direction:column}.info-grid{grid-template-columns:1fr}.boss-btn{width:100%}}
-  
-    /* Page-scoped: ghost/account actions must not look disabled */
-    .boss-btn:not(:disabled){opacity:1;cursor:pointer}
-    .boss-btn.ghost:not(:disabled){
-      border:1px solid rgba(255,158,207,.55);
-      background:rgba(255,143,197,.14);
-      color:#ffe6f2;
-      opacity:1;
-      cursor:pointer;
-      box-shadow:inset 0 1px 0 rgba(255,255,255,.08);
+    :root{
+      --bg:#050505;
+      --card:#0d0d0f;
+      --text:#f5f5f7;
+      --muted:rgba(255,255,255,.48);
+      --line:rgba(232,154,196,.34);
+      --pink:#e89ac4;
     }
-    .boss-btn.ghost:not(:disabled):hover{border-color:rgba(255,212,230,.8);filter:brightness(1.06)}
-    .boss-btn:disabled,.boss-btn.is-disabled{
-      opacity:.45!important;cursor:not-allowed!important;filter:saturate(.5);
-      background:rgba(255,255,255,.06)!important;border-color:rgba(255,255,255,.12)!important;color:#9ca3af!important;box-shadow:none!important;
+    body{
+      min-height:100vh;
+      background:#050505;
+      color:var(--text);
     }
-    .review-tip{
-      margin:0 0 14px;padding:12px 14px;border:1px solid rgba(255,143,197,.35);
-      border-radius:14px;background:rgba(255,143,197,.1);color:#ffd6e7;
-      display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;
+    /* Header ~70px, small brand only */
+    .topbar{
+      min-height:70px;height:70px;display:flex;align-items:center;
+      padding:0 16px!important;margin:0;border:0!important;
+      background:transparent!important;box-shadow:none!important;
     }
-    .review-tip p{margin:0;font-size:14px;line-height:1.45}
-    .review-tip .tip-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-    .review-tip .tip-link{
-      border:0;background:transparent;color:#ffe6f2;font-weight:800;cursor:pointer;
-      text-decoration:underline;padding:0;font:inherit;
+    .topbar .brand{
+      display:inline-flex;align-items:center;gap:8px;text-decoration:none;color:var(--text);
+      font-size:12px;font-weight:700;letter-spacing:.04em;opacity:.85;
     }
-    .review-tip .tip-dismiss{
-      width:32px;height:32px;border:1px solid rgba(255,255,255,.14);border-radius:10px;
-      background:rgba(255,255,255,.06);color:#fff;cursor:pointer;
+    .topbar .brand img{width:24px;height:24px;border-radius:8px;object-fit:cover}
+    .topbar .boss-nav{display:none!important}
+    body.mcj-boss-shell header.mcj-boss-header{
+      min-height:70px!important;height:70px!important;padding:0 16px!important;
+      background:transparent!important;border:0!important;box-shadow:none!important;
     }
-</style>
+    body.mcj-boss-shell header.mcj-boss-header .mcj-header-brand-logo{width:24px!important;height:24px!important;border-radius:8px!important}
+    body.mcj-boss-shell header.mcj-boss-header .mcj-header-brand-en{font-size:12px!important;opacity:.85}
+    body.mcj-boss-shell header.mcj-boss-header .mcj-header-brand-zh{display:none!important}
+
+    .boss-shell{
+      width:min(400px,calc(100% - 28px));margin:0 auto;padding:8px 0 100px;box-sizing:border-box;
+    }
+    .empty-card{
+      border:1px solid var(--line);border-radius:18px;background:rgba(13,13,15,.92);
+      padding:28px 22px;
+    }
+    .empty-card h1{margin:0 0 8px;font-size:20px}
+    .empty-card p{margin:0 0 16px;color:var(--muted);line-height:1.5}
+
+    /* Boss identity card ~160px */
+    .boss-id{
+      display:flex;align-items:center;gap:16px;
+      min-height:160px;height:160px;padding:0 20px;margin:0 0 28px;
+      border-radius:22px;border:1px solid var(--line);
+      background:rgba(10,10,12,.88);
+      box-shadow:0 0 0 1px rgba(0,0,0,.4),0 12px 40px rgba(0,0,0,.35);
+    }
+    .boss-id-avatar{
+      width:72px;height:72px;flex:0 0 72px;border-radius:18px;overflow:hidden;
+      border:1px solid rgba(232,154,196,.4);
+      background:rgba(232,154,196,.08);
+      display:grid;place-items:center;color:#ffd6e7;font-weight:900;font-size:28px;
+    }
+    .boss-id-avatar img{width:100%;height:100%;object-fit:cover}
+    .boss-id-meta{min-width:0;flex:1}
+    .boss-id-meta h1{
+      margin:0;font-size:22px;line-height:1.2;font-weight:800;letter-spacing:.01em;
+    }
+    .boss-id-meta p{
+      margin:10px 0 0;color:var(--muted);font-size:13px;font-weight:600;line-height:1.35;
+    }
+
+    /* 4 entry buttons */
+    .entry-stack{display:grid;gap:14px}
+    .entry{
+      border-radius:18px;border:1px solid var(--line);overflow:hidden;
+      background:rgba(10,10,12,.9);
+      box-shadow:0 10px 28px rgba(0,0,0,.28);
+    }
+    .entry-trigger{
+      width:100%;min-height:70px;height:70px;padding:0 18px;
+      display:flex;align-items:center;justify-content:space-between;gap:12px;
+      border:0;background:transparent;color:var(--text);
+      font:inherit;font-size:16px;font-weight:750;letter-spacing:.01em;
+      text-align:left;cursor:pointer;-webkit-tap-highlight-color:transparent;
+    }
+    .entry-trigger:focus-visible{outline:2px solid rgba(232,154,196,.35);outline-offset:-3px}
+    .entry-title{min-width:0}
+    .entry-arrow{
+      flex:0 0 30px;width:30px;height:30px;border-radius:999px;
+      border:1px solid rgba(232,154,196,.4);
+      background:rgba(232,154,196,.08);
+      display:grid;place-items:center;
+      transition:transform .25s ease;
+    }
+    .entry-arrow::before{
+      content:"";width:7px;height:7px;
+      border-right:2px solid #ffd6e7;border-bottom:2px solid #ffd6e7;
+      transform:rotate(-45deg);
+    }
+    .entry.is-open .entry-arrow{transform:rotate(90deg)}
+    .entry-panel{
+      display:grid;grid-template-rows:0fr;opacity:0;
+      border-top:1px solid transparent;
+      transition:grid-template-rows .28s ease,opacity .2s ease,border-color .2s ease;
+    }
+    .entry.is-open .entry-panel{
+      grid-template-rows:1fr;opacity:1;border-top-color:rgba(232,154,196,.18);
+    }
+    .entry-body{overflow:hidden;padding:0 14px;display:grid;gap:2px}
+    .entry.is-open .entry-body{padding:8px 14px 14px}
+
+    .entry-link{
+      display:flex;align-items:center;justify-content:space-between;gap:10px;
+      min-height:48px;padding:10px 6px;border:0;border-radius:12px;background:transparent;
+      color:var(--text);font:inherit;font-size:14px;font-weight:650;
+      text-decoration:none;cursor:pointer;text-align:left;
+    }
+    .entry-link:hover,.entry-link:active{background:rgba(255,255,255,.03)}
+    .entry-link::after{
+      content:"";width:6px;height:6px;flex:0 0 6px;
+      border-right:1.5px solid rgba(255,255,255,.35);border-bottom:1.5px solid rgba(255,255,255,.35);
+      transform:rotate(-45deg);
+    }
+
+    #bossAccountSecurity{padding:2px 2px 6px}
+    #bossAccountSecurity .mcj-account-security{margin:0!important;padding:0!important;border:0!important;background:transparent!important;border-radius:0!important}
+    #bossAccountSecurity .mcj-account-security > h3{display:none}
+    #bossAccountSecurity .mcj-sec-grid{display:grid;gap:0;grid-template-columns:1fr!important}
+    #bossAccountSecurity .mcj-sec-grid div{
+      padding:12px 6px!important;border:0!important;border-radius:0!important;background:transparent!important;
+      border-bottom:1px solid rgba(255,255,255,.06)!important;
+    }
+    #bossAccountSecurity .mcj-sec-grid div:last-child{border-bottom:0!important}
+    #bossAccountSecurity .mcj-sec-form button,
+    #bossAccountSecurity .mcj-sec-actions button{
+      border:1px solid rgba(232,154,196,.28)!important;background:rgba(232,154,196,.08)!important;
+      color:var(--text)!important;border-radius:12px!important;min-height:42px!important;
+    }
+    #bossAccountSecurity .mcj-sec-link{border:0!important;background:transparent!important;width:100%;justify-content:flex-start;padding:10px 6px!important}
+
+    .mine-logout-wrap{margin-top:28px;display:flex;justify-content:center}
+    .mine-logout{
+      border:0;background:transparent;color:rgba(255,255,255,.4);
+      font:inherit;font-size:13px;font-weight:600;cursor:pointer;padding:10px 16px;
+    }
+    .mine-logout:hover{color:rgba(255,255,255,.62)}
+
+    .boss-btn{border:1px solid rgba(232,154,196,.35);border-radius:12px;background:rgba(232,154,196,.1);color:#fff;min-height:42px;padding:10px 14px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;text-decoration:none}
+    .boss-btn.ghost{background:transparent}
+    .modal{position:fixed;inset:0;background:rgba(0,0,0,.72);display:none;align-items:center;justify-content:center;padding:18px;z-index:40}
+    .modal.open{display:flex}
+    .modal-box{width:min(520px,100%);border:1px solid rgba(232,154,196,.26);border-radius:18px;background:#111014;padding:20px;box-sizing:border-box}
+    .modal-head{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:12px}
+    .modal-head h2{margin:0;font-size:18px}
+    .close{width:36px;height:36px;border:1px solid rgba(255,255,255,.12);border-radius:10px;background:rgba(255,255,255,.06);color:#fff;cursor:pointer}
+    .form-grid{display:grid;gap:12px}
+    .form-grid label{display:grid;gap:7px;color:#ffd6e7;font-weight:700;font-size:13px}
+    .form-grid input{height:44px;border:1px solid rgba(255,255,255,.12);border-radius:12px;background:rgba(0,0,0,.28);color:#fff;padding:0 12px}
+    .state{margin-top:10px;color:#ffb9d6;min-height:20px}
+    .review-tip{margin:0 0 14px;padding:12px 14px;border:1px solid rgba(232,154,196,.28);border-radius:14px;background:rgba(232,154,196,.08);color:#ffd6e7;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+    .review-tip p{margin:0;font-size:13px;line-height:1.45}
+    .review-tip .tip-actions{display:flex;gap:8px;align-items:center}
+    .review-tip .tip-link{border:0;background:transparent;color:#ffe6f2;font-weight:800;cursor:pointer;text-decoration:underline;padding:0;font:inherit}
+    .review-tip .tip-dismiss{width:32px;height:32px;border:1px solid rgba(255,255,255,.12);border-radius:10px;background:rgba(255,255,255,.05);color:#fff;cursor:pointer}
+  </style>
 </head>
 <body>
   <header class="topbar"><a class="brand" href="index.html"><img src="assets/meow-cuijiao-brand.jpg" alt="MEOW CUI JIAO"><span>MEOW CUI JIAO</span></a><nav class="boss-nav"><a href="index.html">首页</a><a href="companion-center.html">陪玩大厅</a><a href="orders.html">我的订单</a><a href="support.html?start=1">在线客服</a></nav></header>
@@ -66,7 +193,7 @@
       var modal=document.getElementById('editModal');
       var form=document.getElementById('profileForm');
       var editState=document.getElementById('editState');
-      var state={loading:true,error:'',user:null,wallet:null,passwordHint:'',pendingReviewTipId:''};
+      var state={loading:true,error:'',user:null,wallet:null,passwordHint:'',pendingReviewTipId:'',openAccordion:''};
       var TIP_KEY='mcjBossPendingReviewTipShown';
       function tipAlreadyShown(){try{return sessionStorage.getItem(TIP_KEY)==='1'}catch(e){return false}}
       function markTipShown(){try{sessionStorage.setItem(TIP_KEY,'1')}catch(e){}}
@@ -92,22 +219,69 @@
       function date(v){if(!v)return '-';try{return new Date(v).toLocaleString('zh-CN',{hour12:false})}catch(e){return v}}
       function avatarHtml(user){var src=user&&user.avatarUrl;if(src)return '<img src="'+esc(src)+'" alt="头像">';var name=(user&&user.displayName)||'老板';return esc(name.slice(0,1)||'B')}
       function statusText(s){return {active:'正常',disabled:'停用',pending:'待审核'}[s]||s||'-'}
-      function paint(){
+
+      function entryLink(opts){
+        var tag=opts.tag||'a';
+        return '<'+tag+' class="entry-link" '+(opts.attrs||'')+'>'+esc(opts.title)+'</'+tag+'>';
+      }
+      function accordion(key,title,bodyHtml){
+        var open=state.openAccordion===key;
+        return '<section class="entry'+(open?' is-open':'')+'" data-mine-acc="'+esc(key)+'">'+
+          '<button type="button" class="entry-trigger" data-mine-acc-toggle="'+esc(key)+'" aria-expanded="'+(open?'true':'false')+'">'+
+          '<span class="entry-title">'+esc(title)+'</span>'+
+          '<span class="entry-arrow" aria-hidden="true"></span></button>'+
+          '<div class="entry-panel" role="region" aria-hidden="'+(open?'false':'true')+'">'+
+          '<div class="entry-body">'+bodyHtml+'</div></div></section>';
+      }
+      function syncAccordionDom(){
+        var openKey=state.openAccordion||'';
+        document.querySelectorAll('[data-mine-acc]').forEach(function(sec){
+          var key=sec.getAttribute('data-mine-acc')||'';
+          var isOpen=key===openKey;
+          sec.classList.toggle('is-open',isOpen);
+          var btn=sec.querySelector('[data-mine-acc-toggle]');
+          if(btn)btn.setAttribute('aria-expanded',isOpen?'true':'false');
+          var panel=sec.querySelector('.entry-panel');
+          if(panel)panel.setAttribute('aria-hidden',isOpen?'false':'true');
+        });
+      }
+function paint(){
         if(!token()){root.innerHTML='<section class="empty-card"><h1>请先登录</h1><p style="color:#9ca3af">登录后可以查看账号资料、订单和在线客服。</p><a class="boss-btn" href="index.html">返回首页登录</a></section>';return}
         if(state.loading){root.innerHTML='<section class="empty-card">正在登录…</section>';return}
         if(state.error){root.innerHTML='<section class="empty-card"><h1>账号资料读取失败</h1><p style="color:#ffb9d6">'+esc(state.error)+'</p><button class="boss-btn" data-refresh>重试</button></section>';return}
         var u=state.user||{};
         var publicUid=u.bossUid||u.boss_uid||u.uid||'-';
-        var techHtml=(location.hostname==='127.0.0.1'||location.hostname==='localhost')?'<details class="info-item" style="grid-column:1/-1"><summary style="cursor:pointer;color:#9ca3af;font-size:12px">技术信息（开发环境）</summary><strong style="display:block;margin-top:8px;word-break:break-all">内部 UUID：'+esc(u.id||'-')+'</strong></details>':'';
         var wallet=state.wallet||{};
         var totalBal=wallet.totalBalance!=null?wallet.totalBalance:(wallet.balance!=null?wallet.balance:'-');
         var paidBal=wallet.paidBalance!=null?wallet.paidBalance:'-';
         var bonusBal=wallet.bonusBalance!=null?wallet.bonusBalance:'-';
-        var setHint=u.hasPassword===true||u.has_password===true?'':'<p style="margin:12px 0 0;color:#fbbf24;font-size:13px">提示：建议设置登录密码，便于下次邮箱+密码登录（不强制）。</p>';
+        var setHint=u.hasPassword===true||u.has_password===true?'':'建议设置登录密码，便于下次邮箱+密码登录（不强制）。';
         var tipHtml=state.pendingReviewTipId
           ?('<div class="review-tip" role="status"><p>您有订单还未评价陪玩</p><div class="tip-actions"><button class="tip-link" type="button" data-open-pending-review>去评价</button><button class="tip-dismiss" type="button" data-dismiss-review-tip aria-label="关闭">×</button></div></div>')
           :'';
-        root.innerHTML=tipHtml+'<section class="account-card"><div class="account-head"><div class="profile-main"><div class="avatar">'+avatarHtml(u)+'</div><div class="profile-title"><h1>'+esc(u.displayName||'老板账号')+'</h1><p>我的账号'+(u.hasCompanion?' · 多角色':'')+'</p></div></div><button class="boss-btn" data-edit type="button">编辑资料</button></div><div class="info-grid"><div class="info-item"><span>老板 UID</span><strong>'+esc(publicUid)+'</strong></div><div class="info-item"><span>User ID</span><strong style="font-size:12px;word-break:break-all">'+esc(u.id||'-')+'</strong></div><div class="info-item"><span>角色</span><strong>'+esc((u.hasBoss?'老板':'')+(u.hasBoss&&u.hasCompanion?' + ':'')+(u.hasCompanion?'陪玩':(!u.hasBoss&&!u.hasCompanion?(u.role||'-'):'')))+'</strong></div><div class="info-item"><span>总猫粮</span><strong>'+esc(totalBal)+'</strong></div><div class="info-item"><span>充值猫粮</span><strong>'+esc(paidBal)+'</strong></div><div class="info-item"><span>赠送猫粮</span><strong>'+esc(bonusBal)+'</strong></div><div class="info-item"><span>邮箱</span><strong>'+esc(u.email||'-')+'</strong></div><div class="info-item"><span>手机号</span><strong>'+esc(u.phone||'-')+'</strong></div><div class="info-item"><span>注册时间</span><strong>'+esc(date(u.createdAt))+'</strong></div><div class="info-item"><span>账号状态</span><strong>'+esc(statusText(u.status))+'</strong></div>'+techHtml+'</div>'+setHint+'<div class="action-row"><a class="boss-btn ghost" href="recharge.html">充值中心 / 钱包流水</a><a class="boss-btn ghost" href="orders.html">查看我的订单</a><a class="boss-btn ghost" href="support.html">联系在线客服</a>'+(u.hasCompanion?'<button class="boss-btn ghost" type="button" data-switch-portal="companion">切换到陪玩端</button>':'<a class="boss-btn ghost" href="companion-apply.html">申请成为陪玩</a>')+'<button class="boss-btn ghost" type="button" data-logout>退出登录</button></div><div id="bossAccountSecurity"></div></section>';
+                root.innerHTML=tipHtml+
+          '<section class="boss-id">'+
+            '<div class="boss-id-avatar">'+avatarHtml(u)+'</div>'+
+            '<div class="boss-id-meta">'+
+              '<h1>'+esc(u.displayName||'老板账号')+'</h1>'+
+              '<p>老板 UID '+esc(publicUid)+'</p>'+
+            '</div>'+
+          '</section>'+
+          (setHint?'<p style="margin:0 0 14px;color:#fbbf24;font-size:12px;line-height:1.45">'+esc(setHint)+'</p>':'')+
+          '<div class="entry-stack">'+
+          accordion('profile','我的资料',
+            entryLink({tag:'button',title:'编辑资料',attrs:'type="button" data-edit'}) )+
+          accordion('assets','我的资产',
+            entryLink({tag:'a',title:'充值中心 / 钱包流水',attrs:'href="recharge.html"'}) )+
+          accordion('security','账号安全','<div id="bossAccountSecurity"></div>')+
+          accordion('orders','订单与服务',
+            entryLink({tag:'a',title:'查看我的订单',attrs:'href="orders.html"'})+
+            entryLink({tag:'a',title:'联系客服',attrs:'href="support.html"'})+
+            (u.hasCompanion
+              ?entryLink({tag:'button',title:'切换到陪玩端',attrs:'type="button" data-switch-portal="companion"'})
+              :entryLink({tag:'a',title:'申请成为陪玩',attrs:'href="companion-apply.html"'})))+
+          '</div>'+
+          '<div class="mine-logout-wrap"><button class="mine-logout" type="button" data-logout>退出登录</button></div>';
         if(window.MCJAccountSecurity){
           window.MCJAccountSecurity.mount('#bossAccountSecurity',u,{role:'boss',passwordHint:state.passwordHint,onUpdated:function(data){if(data&&data.user)state.user=data.user;paint();}});
         }
@@ -230,7 +404,15 @@ async function load(){
         }catch(err){if(box)box.textContent=err.message||'注册失败'}
       });
       document.addEventListener('click',function(e){
-        if(e.target.closest('[data-refresh]')){load();return}
+        
+        var accToggle=e.target.closest('[data-mine-acc-toggle]');
+        if(accToggle){
+          var key=accToggle.getAttribute('data-mine-acc-toggle')||'';
+          state.openAccordion=(state.openAccordion===key)?'':key;
+          syncAccordionDom();
+          return;
+        }
+if(e.target.closest('[data-refresh]')){load();return}
         if(e.target.closest('[data-edit]')){var u=state.user||{};form.elements.avatarUrl.value=u.avatarUrl||'';form.elements.displayName.value=u.displayName||'';form.elements.phone.value=u.phone||'';editState.textContent='';modal.classList.add('open');return}
         if(e.target.closest('[data-close]')||e.target===modal){modal.classList.remove('open');return}
         if(e.target.closest('[data-switch-portal]')){
