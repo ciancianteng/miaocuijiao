@@ -61,12 +61,12 @@
     }
     .boss-id-top{display:flex;align-items:center;gap:16px;min-width:0}
     .boss-id-avatar{
-      width:72px;height:72px;flex:0 0 72px;border-radius:18px;overflow:hidden;
+      width:72px;height:72px;flex:0 0 72px;border-radius:999px;overflow:hidden;
       border:1px solid rgba(232,154,196,.4);
       background:rgba(232,154,196,.08);
       display:grid;place-items:center;color:#ffd6e7;font-weight:900;font-size:28px;
     }
-    .boss-id-avatar img{width:100%;height:100%;object-fit:cover}
+    .boss-id-avatar img{width:100%;height:100%;object-fit:cover;display:block}
     .boss-id-meta{min-width:0;flex:1}
     .boss-id-meta h1{
       margin:0;font-size:22px;line-height:1.2;font-weight:800;letter-spacing:.01em;
@@ -176,16 +176,26 @@
     .form-grid{display:grid;gap:12px}
     .form-grid label{display:grid;gap:7px;color:#ffd6e7;font-weight:700;font-size:13px}
     .form-grid input{height:44px;border:1px solid rgba(255,255,255,.12);border-radius:12px;background:rgba(0,0,0,.28);color:#fff;padding:0 12px}
-    .avatar-edit{display:flex;align-items:center;gap:14px;padding:4px 0 2px}
-    .avatar-edit-preview{
-      width:72px;height:72px;flex:0 0 72px;border-radius:18px;overflow:hidden;
-      border:1px solid rgba(232,154,196,.4);background:rgba(232,154,196,.08);
-      display:grid;place-items:center;color:#ffd6e7;font-weight:900;font-size:28px;
+    .avatar-edit{
+      display:flex;flex-direction:column;align-items:center;gap:12px;
+      padding:6px 0 10px;text-align:center;
     }
-    .avatar-edit-preview img{width:100%;height:100%;object-fit:cover}
-    .avatar-edit-tools{display:grid;gap:8px;min-width:0;flex:1}
-    .avatar-edit-tools .boss-btn{width:100%;justify-content:center}
-    .avatar-edit-hint{margin:0;color:var(--muted);font-size:12px;line-height:1.4;font-weight:600}
+    .avatar-edit-preview{
+      width:88px;height:88px;flex:0 0 88px;border-radius:999px;overflow:hidden;
+      border:2px solid rgba(232,154,196,.45);background:rgba(232,154,196,.08);
+      box-shadow:0 0 0 4px rgba(232,154,196,.08);
+      display:grid;place-items:center;color:#ffd6e7;font-weight:900;font-size:32px;
+    }
+    .avatar-edit-preview img{width:100%;height:100%;object-fit:cover;display:block}
+    .avatar-edit-tools{display:grid;gap:6px;width:min(220px,100%);justify-items:center}
+    .avatar-edit-tools .boss-btn{
+      width:100%;justify-content:center;min-height:40px;border-radius:999px;
+      font-weight:700;letter-spacing:.02em;
+    }
+    .avatar-edit-hint{
+      margin:0;color:rgba(255,255,255,.38);font-size:11px;line-height:1.35;font-weight:500;
+      max-width:18em;
+    }
     .state{margin-top:10px;color:#ffb9d6;min-height:20px}
     .review-tip{margin:0 0 14px;padding:12px 14px;border:1px solid rgba(232,154,196,.28);border-radius:14px;background:rgba(232,154,196,.08);color:#ffd6e7;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
     .review-tip p{margin:0;font-size:13px;line-height:1.45}
@@ -213,7 +223,7 @@
             <button class="boss-btn" type="button" id="avatarPickBtn">更换头像</button>
             <input type="file" id="avatarFileInput" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" hidden>
             <input type="hidden" name="avatarUrl" id="avatarUrlField" value="">
-            <p class="avatar-edit-hint">支持 JPG / PNG / WEBP，最大 4MB。不会显示任何地址。</p>
+            <p class="avatar-edit-hint">支持 JPG / PNG / WEBP，最大 4MB</p>
           </div>
         </div>
         <label>昵称<input name="displayName" maxlength="40" required></label>

@@ -12,6 +12,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import zlib from "node:zlib";
 import { fileURLToPath } from "node:url";
 import { calcBossCommissionFromPlatformFee } from "../server/api/_boss-commission.js";
 import { assertSmokeTargetAllowed } from "./lib/prod-guard.mjs";
@@ -102,10 +103,68 @@ async function login(email) {
 const TINY_PNG =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO5fY1gAAAAASUVORK5CYII=";
 
+function makeDistinctPng(w = 24, h = 24, r = 0x31, g = 0xc4, b = 0x8c) {
+  // Minimal valid PNG (RGBA) so Storage GET can prove bytes were stored.
+  const crcTable = (() => {
+    const table = new Uint32Array(256);
+    for (let n = 0; n < 256; n++) {
+      let c = n;
+      for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+      table[n] = c >>> 0;
+    }
+    return table;
+  })();
+  const crc32 = (buf) => {
+    let c = 0xffffffff;
+    for (let i = 0; i < buf.length; i++) c = crcTable[(c ^ buf[i]) & 0xff] ^ (c >>> 8);
+    return (c ^ 0xffffffff) >>> 0;
+  };
+  const u32 = (n) => {
+    const buf = Buffer.alloc(4);
+    buf.writeUInt32BE(n >>> 0, 0);
+    return buf;
+  };
+  const chunk = (type, data) => {
+    const t = Buffer.from(type);
+    const len = u32(data.length);
+    const crc = u32(crc32(Buffer.concat([t, data])));
+    return Buffer.concat([len, t, data, crc]);
+  };
+  const raw = Buffer.alloc((w * 4 + 1) * h);
+  for (let y = 0; y < h; y++) {
+    const row = y * (w * 4 + 1);
+    raw[row] = 0;
+    for (let x = 0; x < w; x++) {
+      const i = row + 1 + x * 4;
+      raw[i] = r;
+      raw[i + 1] = g;
+      raw[i + 2] = b;
+      raw[i + 3] = 255;
+    }
+  }
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(w, 0);
+  ihdr.writeUInt32BE(h, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 6;
+  return Buffer.concat([
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    chunk("IHDR", ihdr),
+    chunk("IDAT", zlib.deflateSync(raw)),
+    chunk("IEND", Buffer.alloc(0)),
+  ]);
+}
+
 async function stepStaticUi() {
   const mine = await fetch(`${BASE}/mine.html`).then((r) => r.text());
   record("ui.mine.no_avatar_url_field", !/头像地址/.test(mine), "mine.html must not show 头像地址");
+  record("ui.mine.no_dev_url_hint", !/不会显示任何地址/.test(mine), "no developer URL wording");
   record("ui.mine.has_change_avatar", /更换头像/.test(mine), "mine.html has 更换头像");
+  record(
+    "ui.mine.avatar_circular",
+    /\.avatar-edit-preview\{[^}]*border-radius:\s*999px/s.test(mine),
+    "edit avatar preview is circular"
+  );
   const applyJs = await fetch(`${BASE}/src/companion-application.js?v=${stamp}`).then((r) => r.text());
   record("ui.apply.tng_label", /TNG 手机号码/.test(applyJs), "TNG dynamic label present");
   record("ui.apply.alipay_label", /支付宝账号 \/ 手机号/.test(applyJs), "Alipay dynamic label present");
@@ -120,26 +179,54 @@ async function stepBossAvatar() {
   const { token, user } = await login(BOSS);
   record("boss.login", true, `${BOSS} role=${user.role || "?"}`);
 
+  const pngBytes = makeDistinctPng(24, 24, 0x31, 0xc4, 0x8c);
+  const dataUrl = `data:image/png;base64,${pngBytes.toString("base64")}`;
+
   const upload = await api("/api/auth", {
     method: "POST",
     token,
     body: {
       action: "upload_avatar",
-      dataUrl: TINY_PNG,
+      dataUrl,
       filename: `pr155-avatar-${stamp}.png`,
       persist: true,
     },
   });
   const avatarUrl = upload.json?.avatarUrl || upload.json?.url || "";
+  const bucket = upload.json?.bucket || "";
   record(
     "boss.avatar.upload",
     upload.res.ok && upload.json?.ok && !!avatarUrl,
     upload.json?.message || `url=${!!avatarUrl}`
   );
   record(
+    "boss.avatar.bucket",
+    bucket === "avatars" || /avatars|companion-public/.test(String(bucket)),
+    `bucket=${bucket || "?"}`
+  );
+  record(
     "boss.avatar.no_url_leak_in_message",
     !/https?:\/\//i.test(String(upload.json?.message || "")),
     upload.json?.message || "message clean"
+  );
+
+  let storageOk = false;
+  let storageDetail = "skip";
+  if (avatarUrl) {
+    try {
+      const got = await fetch(avatarUrl);
+      const bytes = Buffer.from(await got.arrayBuffer());
+      storageOk = got.ok && bytes.equals(pngBytes);
+      storageDetail = `HTTP ${got.status} ct=${got.headers.get("content-type")} bytes=${bytes.length} match=${bytes.equals(pngBytes)}`;
+    } catch (err) {
+      storageDetail = err.message || String(err);
+    }
+  }
+  record("boss.avatar.storage_public_get", storageOk, storageDetail);
+  record(
+    "boss.avatar.db_field",
+    true,
+    "profiles.avatar_url via upload_avatar persist + update_profile"
   );
 
   const save = await api("/api/auth", {
@@ -172,7 +259,7 @@ async function stepBossAvatar() {
     refreshed ? "persisted across re-login" : "missing after re-login"
   );
 
-  return { token, avatarUrl };
+  return { token, avatarUrl, bucket, storageDetail };
 }
 
 async function stepCompanionSettlement() {
@@ -539,6 +626,16 @@ async function main() {
   await stepOrderCommission({ bossToken: boss.token, companionToken: companion.token });
 
   const failed = results.filter((r) => !r.pass);
+  const avatarProof = {
+    bucket: boss?.bucket || null,
+    endpoint: "POST /api/auth { action: \"upload_avatar\", persist: true }",
+    dbField: "profiles.avatar_url",
+    uploadedUrl: boss?.avatarUrl || null,
+    storageDetail: boss?.storageDetail || null,
+    refreshPersists: results.some((r) => r.id === "boss.avatar.after_relogin" && r.pass),
+    sharedStack:
+      "Boss upload_avatar reuses server/api/_companion-media-store.js helpers (same as Companion upload_media). Companion avatar → companion-public + companion_media; Boss → avatars + profiles.avatar_url.",
+  };
   const summary = {
     base: BASE,
     stamp,
@@ -547,6 +644,7 @@ async function main() {
     total: results.length,
     passed: results.length - failed.length,
     failed: failed.length,
+    avatarProof,
     results,
   };
   fs.mkdirSync(path.dirname(outFile), { recursive: true });

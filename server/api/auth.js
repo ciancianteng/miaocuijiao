@@ -8,6 +8,8 @@ import {
   uploadPrivateObject,
   publicObjectUrl,
   buildObjectPath,
+  assertImageUpload,
+  PUBLIC_BUCKETS,
 } from "./_companion-media-store.js";
 import { sendEmailOtp, sendSmsOtp, mailProviderStatus } from "./_mail.js";
 import {
@@ -49,9 +51,14 @@ const OTP_MAX_FAILS = 8;
 
 const VALID_ROLES = new Set(["boss", "companion", "customer_service", "admin", "super_admin"]);
 const TABLES = ["profiles", "companion_profiles", "orders", "conversations", "messages", "transactions", "banners", "announcements", "customer_service_reports"];
-const BOSS_AVATAR_BUCKET = String(process.env.SUPABASE_AVATAR_BUCKET || "avatars").trim() || "avatars";
+// Boss avatar reuses the Companion media-store helpers (decode / ensurePublicBucket /
+// uploadPrivateObject / publicObjectUrl). Dedicated public bucket `avatars` keeps Boss
+// profile images separate from companion-public gallery assets; override with SUPABASE_AVATAR_BUCKET.
+const BOSS_AVATAR_BUCKET =
+  String(process.env.SUPABASE_AVATAR_BUCKET || "avatars").trim() ||
+  PUBLIC_BUCKETS.profile ||
+  "avatars";
 const BOSS_AVATAR_MAX_BYTES = 4 * 1024 * 1024;
-const BOSS_AVATAR_MIME = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp"]);
 const COUNTRY_DIAL = {
   MY: "+60",
   CN: "+86",
@@ -1426,18 +1433,21 @@ export default async function handler(req, res) {
       if (profile.role !== "boss") return json(res, 403, { ok: false, message: "仅老板账号可上传头像。" });
       const dataUrl = body.data_url || body.dataUrl || body.file;
       if (!dataUrl) return json(res, 400, { ok: false, message: "请选择要上传的头像图片。" });
-      const decoded = decodeDataUrl(dataUrl);
-      if (!decoded || !decoded.buffer) {
-        return json(res, 400, { ok: false, message: "文件格式无效，请选择 jpg / png / webp 图片。" });
-      }
-      const mime = String(decoded.contentType || "").toLowerCase();
-      const normalized = mime === "image/jpg" ? "image/jpeg" : mime;
-      if (!BOSS_AVATAR_MIME.has(normalized) && !BOSS_AVATAR_MIME.has(mime)) {
-        return json(res, 400, { ok: false, message: "仅支持 JPG、PNG、WEBP 格式，最大 4MB。" });
+      let decoded;
+      try {
+        // Same image validation path as Companion upload_media (assertImageUpload).
+        decoded = assertImageUpload(decodeDataUrl(dataUrl));
+      } catch (imgErr) {
+        const status = Number(imgErr?.status) || 400;
+        return json(res, status, {
+          ok: false,
+          message: imgErr?.message || "文件格式无效，请选择 jpg / png / webp 图片。",
+        });
       }
       if (decoded.buffer.length > BOSS_AVATAR_MAX_BYTES) {
         return json(res, 413, { ok: false, message: "头像不能超过 4MB，请压缩后再试。" });
       }
+      const normalized = String(decoded.contentType || "image/jpeg").toLowerCase();
       try {
         await ensurePublicBucket(BOSS_AVATAR_BUCKET, ["image/jpeg", "image/png", "image/webp"]);
       } catch (bucketErr) {
