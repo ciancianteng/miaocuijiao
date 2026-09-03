@@ -330,8 +330,10 @@ function buildSettlement({ order, boss = {}, companion = {}, rates, completedAt 
   const companionShare = money(rates.companionShareRate);
   const rebateRate = money(companion.direct_rebate_rate);
   const platformFee = roundMoney((total * platformRate) / 100);
-  const rebateDeduction = roundMoney((total * rebateRate) / 100);
-  const netIncome = roundMoney(Math.max(0, (total * companionShare) / 100 - rebateDeduction));
+  // Locked: 直属返点 / 老板佣金 = 平台服务费 × 比例（禁止订单金额 × 比例）
+  // Companion service income is NOT reduced by rebate (rebate paid from platform fee).
+  const rebateFromPlatformFee = roundMoney((platformFee * rebateRate) / 100);
+  const netIncome = roundMoney(Math.max(0, (total * companionShare) / 100));
   return {
     orderId: order.id,
     orderNo: order.order_no || order.id,
@@ -346,7 +348,10 @@ function buildSettlement({ order, boss = {}, companion = {}, rates, completedAt 
     platformCommissionRate: platformRate,
     platformCommissionCatFood: platformFee,
     rebateRate,
-    rebateOrOtherDeduction: rebateDeduction,
+    // Keep legacy key for UI, but value is platform_fee × rate (not order × rate)
+    rebateOrOtherDeduction: rebateFromPlatformFee,
+    directRebateAmount: rebateFromPlatformFee,
+    directRebateBase: "platform_fee",
     companionShareRate: companionShare,
     companionNetCatFood: netIncome,
     completedAt: completedAt || order.completed_at || nowIso(),
