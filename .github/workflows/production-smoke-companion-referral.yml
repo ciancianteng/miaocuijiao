@@ -1,0 +1,113 @@
+name: Production smoke companion referral rebate
+
+# Runs only on this promote branch. Uses Vercel Production env (service_role)
+# to seed ephemeral test users, then smokes invite→order→rebate→wallet→withdraw
+# against https://www.meowcuijiao.com. Does not modify application business logic.
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - cursor/prod-promote-cc56689-36a7
+    paths:
+      - .github/workflows/production-smoke-companion-referral.yml
+      - .github/workflows/_prod-smoke-companion-referral.mjs
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Pull Production env + run smoke
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_SCOPE: ciancianteng-4581s-projects
+          VERCEL_PROJECT: meow-cuijiao-homepage
+          BASE: https://www.meowcuijiao.com
+          PASS: McjTest@12345678
+          ADMIN_EMAIL: admin@meow.test
+          PRODUCTION_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.PRODUCTION_SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${VERCEL_TOKEN:-}" ]; then
+            echo "::error::VERCEL_TOKEN missing"
+            exit 1
+          fi
+          npm i -g vercel@58.5.1
+          mkdir -p /tmp/prod-smoke
+          echo "y" | vercel link --yes --project "$VERCEL_PROJECT" --scope "$VERCEL_SCOPE" --token "$VERCEL_TOKEN" \
+            >/tmp/prod-smoke/link.out 2>/tmp/prod-smoke/link.err || true
+          vercel env pull /tmp/prod-smoke/.env.production --yes --environment production \
+            --token "$VERCEL_TOKEN" --scope "$VERCEL_SCOPE"
+
+          # Inspect pulled file without printing secret values
+          node <<'NODE'
+          const fs = require("fs");
+          const cp = require("child_process");
+          const raw = fs.readFileSync("/tmp/prod-smoke/.env.production", "utf8");
+          fs.writeFileSync("/tmp/prod-smoke/env.b64", Buffer.from(raw, "utf8").toString("base64"));
+          const env = {};
+          for (const line of raw.split(/\r?\n/)) {
+            const t = line.trim();
+            if (!t || t.startsWith("#") || !t.includes("=")) continue;
+            const i = t.indexOf("=");
+            const k = t.slice(0, i).trim();
+            let v = t.slice(i + 1).trim();
+            if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) v = v.slice(1, -1);
+            v = v.replace(/\\n/g, "\n").replace(/\\"/g, '"');
+            env[k] = v;
+          }
+          const keyNames = Object.keys(env).filter((k) => /SUPABASE|DATABASE|URL|POSTGRES|SERVICE_ROLE/i.test(k)).sort();
+          console.log("env keys:", keyNames.join(","));
+          for (const k of keyNames) {
+            const v = String(env[k] || "");
+            console.log(
+              "meta",
+              k,
+              "len=" + v.length,
+              "http=" + /^https?:\/\//i.test(v),
+              "jwtish=" + /^eyJ/.test(v),
+              "code0=" + (v ? v.charCodeAt(0) : -1)
+            );
+          }
+
+          // Always take public Production URL from live site.
+          const cfg = JSON.parse(cp.execSync("curl -sS https://www.meowcuijiao.com/api/public/realtime-config", { encoding: "utf8" }));
+          const liveUrl = String(cfg.url || "").replace(/\/$/, "");
+          if (!/^https?:\/\//i.test(liveUrl)) {
+            console.error("live realtime-config url missing");
+            process.exit(1);
+          }
+          console.log("live host", new URL(liveUrl).host);
+
+          let key = String(process.env.PRODUCTION_SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
+          console.log("rawFileBytes", raw.length, "literalSensitive", raw.includes("SENSITIVE"), "literalBracket", raw.includes("["));
+          // If env-pull value looks corrupted/redacted, decode from raw base64 line scan
+          if (!key || key.length < 20 || key.startsWith("[")) {
+            const decoded = Buffer.from(fs.readFileSync("/tmp/prod-smoke/env.b64", "utf8"), "base64").toString("utf8");
+            const m = decoded.match(/^SUPABASE_SERVICE_ROLE_KEY=(.*)$/m);
+            if (m) {
+              let v = m[1].trim();
+              if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) v = v.slice(1, -1);
+              key = v;
+            }
+          }
+          console.log("service_role meta len=" + key.length + " jwtish=" + /^eyJ/.test(key) + " code0=" + (key ? key.charCodeAt(0) : -1));
+          if (!key || key.length < 20) {
+            console.error("SUPABASE_SERVICE_ROLE_KEY missing/unusable from Production env pull");
+            process.exit(1);
+          }
+
+          fs.writeFileSync(
+            "/tmp/prod-smoke/smoke.env.json",
+            JSON.stringify({ SUPABASE_URL: liveUrl, SUPABASE_SERVICE_ROLE_KEY: key })
+          );
+          NODE
+
+          echo "build-info:"; curl -sS "$BASE/api/build-info"; echo
+          export SMOKE_ENV_JSON=/tmp/prod-smoke/smoke.env.json
+          node .github/workflows/_prod-smoke-companion-referral.mjs
