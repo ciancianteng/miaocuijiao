@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <script src="/portal-early-gate.js?v=20260811authUnify2"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>我的积分 - MEOW CUI JIAO</title>
+  <style>
+    *{box-sizing:border-box}
+    body{margin:0;background:#08070a;color:#fff;font-family:"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+    .boss-nav{display:flex;gap:18px;flex:1;flex-wrap:wrap;align-items:center}
+    .boss-nav a,.boss-nav button{border:0;background:transparent;color:#cdb8c4;cursor:pointer;font:inherit;font-size:14px;padding:0;text-decoration:none}
+    .boss-nav a.active{color:#ffd6e7;font-weight:900}
+    .points-shell{width:min(1080px,calc(100% - 32px));margin:0 auto;padding:24px 0 80px;display:grid;gap:16px}
+    .page-head,.panel{border:1px solid rgba(255,255,255,.10);border-radius:18px;background:rgba(255,255,255,.045);padding:18px}
+    .page-head{display:flex;align-items:end;justify-content:space-between;gap:16px;flex-wrap:wrap}
+    .page-head h1{margin:0;font-size:28px}.page-head p{margin:6px 0 0;color:#9ca3af}
+    .stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+    .stat{border:1px solid rgba(255,255,255,.08);border-radius:14px;background:rgba(0,0,0,.22);padding:14px}
+    .stat span{display:block;color:#9ca3af;font-size:13px}.stat strong{display:block;margin-top:8px;font-size:28px}
+    .panel h2{margin:0 0 14px;font-size:20px}
+    .ghost-btn{padding:0 14px;min-height:40px;border-radius:12px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.055);color:#fff;cursor:pointer;font-weight:800;display:inline-flex;align-items:center}
+    .ledger{display:grid;gap:8px}
+    .tx{display:grid;grid-template-columns:1.3fr .7fr 1.2fr 1fr .7fr;gap:10px;align-items:center;border:1px solid rgba(255,255,255,.08);border-radius:12px;background:rgba(0,0,0,.18);padding:12px}
+    .tx span{color:#9ca3af;font-size:13px;word-break:break-word}
+    .tx strong.plus{color:#8ff0bd}.tx strong.minus{color:#ff9db7}
+    .tx a{color:#ffd6e7;text-decoration:none}
+    .tx-head{display:grid;grid-template-columns:1.3fr .7fr 1.2fr 1fr .7fr;gap:10px;padding:0 12px 8px;color:#9ca3af;font-size:12px}
+    .empty{padding:28px 16px;text-align:center;color:#9ca3af;line-height:1.6}
+    .message{display:none;border-radius:12px;padding:12px;line-height:1.55}
+    .message.show{display:block}
+    .message.warn{border:1px solid rgba(255,210,122,.22);background:rgba(255,210,122,.08);color:#ffd27a}
+    .message.bad{border:1px solid rgba(255,113,145,.24);background:rgba(255,113,145,.08);color:#ff9db7}
+    @media(max-width:860px){
+      .stats{grid-template-columns:1fr}
+      .tx,.tx-head{grid-template-columns:1fr}
+      .tx-head{display:none}
+      .page-head{display:block}
+    }
+    @media(max-width:520px){.points-shell{width:calc(100% - 24px);padding-top:16px}.page-head h1{font-size:24px}}
+  </style>
+  <link rel="stylesheet" crossorigin href="/src/style.css">
+  <link rel="stylesheet" crossorigin href="/src/boss-header.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="index.html"><img src="/assets/meow-cuijiao-brand.jpg" alt="MEOW CUI JIAO"><span>MEOW CUI JIAO</span></a>
+    <nav class="boss-nav">
+      <a href="index.html">首页</a>
+      <a href="companion-center.html">陪玩大厅</a>
+      <a href="recharge.html">充值中心</a>
+      <a href="orders.html">我的订单</a>
+      <a href="support.html">在线客服</a>
+      <a class="active" href="points.html">我的积分</a>
+      <a href="mine.html">我的账号</a>
+      <button type="button" data-logout>退出登录</button>
+    </nav>
+  </header>
+
+  <main class="points-shell" id="pointsApp"></main>
+
+  <script src="src/role-gates.js?v=20260811authUnify1"></script>
+  <script src="src/boss-auth-session.js?v=20260811authUnify2"></script>
+  <script src="src/boss-header.js" defer></script>
+  <script src="src/avatar-fallback.js"></script>
+  <script src="src/points-center.js?v=20260830bossPoints1" defer></script>
+</body>
+</html>
