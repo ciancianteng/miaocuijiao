@@ -8,6 +8,8 @@
  * Optional: ADMIN_EMAIL, ADMIN_PASS, BOSS_EMAIL, COMPANION_EMAIL, PASS
  * Never touches Production.
  */
+import { assertSmokeTargetAllowed } from "./lib/prod-guard.mjs";
+
 const BASE = (process.env.BASE || process.env.MCJ_PREVIEW_URL || "").replace(/\/$/, "");
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || "admin@meow.test";
 const ADMIN_PASS = process.env.ADMIN_PASS || process.env.PASS || "McjTest@12345678";
@@ -19,6 +21,7 @@ if (!BASE) {
   console.error("FAIL: set BASE to Preview URL");
   process.exit(2);
 }
+assertSmokeTargetAllowed({ script: "smoke-boss-companion-relations-live", base: BASE });
 
 const results = [];
 function step(name, ok, detail = "") {

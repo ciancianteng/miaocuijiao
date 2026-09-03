@@ -5,10 +5,13 @@
  * Usage:
  *   BASE=https://meow-cuijiao-homepage-staging.vercel.app node scripts/e2e-boss-commission-rm30-staging.mjs
  */
+import { assertSmokeTargetAllowed } from "./lib/prod-guard.mjs";
+
 const BASE = (process.env.BASE || process.env.MCJ_STAGING_URL || "https://meow-cuijiao-homepage-staging.vercel.app").replace(
   /\/$/,
   ""
 );
+assertSmokeTargetAllowed({ script: "e2e-boss-commission-rm30-staging", base: BASE });
 const PASS = process.env.PASS || process.env.MCJ_TEST_PASSWORD || "McjTest@12345678";
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || "admin@meow.test";
 const PNG =

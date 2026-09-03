@@ -8,10 +8,13 @@
  *   BASE=https://meow-cuijiao-homepage-staging.vercel.app node scripts/e2e-companion-referral-rebate-staging.mjs
  *   BASE=<preview-url> node scripts/e2e-companion-referral-rebate-staging.mjs
  */
+import { assertSmokeTargetAllowed } from "./lib/prod-guard.mjs";
+
 const BASE = (process.env.BASE || process.env.MCJ_STAGING_URL || "https://meow-cuijiao-homepage-staging.vercel.app").replace(
   /\/$/,
   ""
 );
+assertSmokeTargetAllowed({ script: "e2e-companion-referral-rebate-staging", base: BASE });
 const PASS = process.env.PASS || process.env.MCJ_TEST_PASSWORD || "McjTest@12345678";
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || "admin@meow.test";
 const CS_EMAIL = process.env.CS_EMAIL || "service@meow.test";
