@@ -1467,10 +1467,11 @@ export default async function handler(req, res) {
       let savedUser = null;
       if (shouldPersist) {
         try {
+          // Some Staging/Preview profiles schemas omit updated_at — patch avatar only.
           const savedRows = await supabaseJson(restUrl("profiles", `?id=eq.${encodeURIComponent(authUser.id)}`), {
             method: "PATCH",
             headers: headersWithServiceRole({ Prefer: "return=representation" }),
-            body: JSON.stringify({ avatar_url: publicUrl, updated_at: new Date().toISOString() }),
+            body: JSON.stringify({ avatar_url: publicUrl }),
           });
           const saved = Array.isArray(savedRows) ? savedRows[0] : { ...profile, avatar_url: publicUrl };
           savedUser = safeProfile(saved, authUser);
