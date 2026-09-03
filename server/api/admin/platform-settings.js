@@ -146,6 +146,8 @@ const DEFAULT_SETTINGS = {
   showAnnouncements: true,
   gameplayMallOpen: true,
   defaultCommissionRate: 20,
+  /** Boss share of platform_fee (%). 0 allowed; settle skips when null/empty and no relation override. */
+  defaultBossCommissionRate: 0,
   defaultRebateRate: 0,
   defaultDeposit: 100,
   defaultLevel: "Lv1",
@@ -306,6 +308,19 @@ function normalizeSettings(input = {}) {
     showAnnouncements: bool(input.showAnnouncements, true),
     gameplayMallOpen: bool(input.gameplayMallOpen, true),
     defaultCommissionRate: Math.max(0, Math.min(100, Number(input.defaultCommissionRate ?? 20) || 20)),
+    defaultBossCommissionRate: Math.max(
+      0,
+      Math.min(
+        100,
+        Number(
+          input.defaultBossCommissionRate != null
+            ? input.defaultBossCommissionRate
+            : input.default_boss_commission_rate != null
+              ? input.default_boss_commission_rate
+              : 0
+        ) || 0
+      )
+    ),
     defaultRebateRate: Math.max(0, Math.min(100, Number(input.defaultRebateRate ?? 0) || 0)),
     defaultDeposit: Math.max(0, Number(input.defaultDeposit ?? 100) || 100),
     defaultLevel: String(input.defaultLevel || "Lv1"),
