@@ -3,7 +3,10 @@
  *
  * Does NOT delete the auth user or profile. Sets profiles.status=disabled and
  * rotates Auth password to a random opaque value so the known McjTest password
- * can no longer sign in (auth.js also blocks @meow.test on Production).
+ * can no longer sign in.
+ *
+ * Runtime gate (no DB change): set DISABLE_PROD_TEST_ADMIN=1 (or ALLOW_PROD_TEST_ADMIN=0)
+ * on Production to refuse admin@meow.test Admin Portal login after a formal admin exists.
  *
  * Emergency override required (this targets Production):
  *   ALLOW_PROD_SUPABASE_WRITE=1 CONFIRM_PROD_WRITE=I_UNDERSTAND_PROD_RISK \

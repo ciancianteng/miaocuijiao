@@ -1004,16 +1004,9 @@ export default async function handler(req, res) {
     if (
       ["create", "place_order", "pay_order", "want_him", "grab", "claim"].includes(action)
     ) {
-      const { isProductionRuntime, isTestAccountRecord, PROD_TEST_ACCOUNT_BLOCK_MESSAGE } = await import(
-        "./_test-accounts.js"
-      );
-      if (isProductionRuntime() && isTestAccountRecord(profile || {})) {
-        return json(res, 403, {
-          ok: false,
-          message: PROD_TEST_ACCOUNT_BLOCK_MESSAGE,
-          code: "PROD_TEST_ACCOUNT_BLOCKED",
-        });
-      }
+      const { productionTestAccountWriteBlock } = await import("./_test-accounts.js");
+      const blockedWrite = productionTestAccountWriteBlock(profile || {});
+      if (blockedWrite) return json(res, 403, blockedWrite);
     }
     if (action === "list_my_refunds" || action === "my_refunds") {
       try {

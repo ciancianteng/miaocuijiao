@@ -635,8 +635,11 @@ async function handleForgotSendOtp(body, res) {
   return json(res, 200, out);
 }
 
-function rejectProductionTestIdentity(res, { email = "", displayName = "" } = {}) {
-  if (!shouldBlockTestIdentityOnProduction({ email, displayName })) return null;
+function rejectProductionTestIdentity(
+  res,
+  { email = "", displayName = "", loginPortal = "", purpose = "", row = null } = {}
+) {
+  if (!shouldBlockTestIdentityOnProduction({ email, displayName, loginPortal, purpose, row })) return null;
   return json(res, 403, {
     ok: false,
     message: PROD_TEST_ACCOUNT_BLOCK_MESSAGE,
@@ -653,7 +656,7 @@ async function handleLoginSendOtp(body, res) {
   if (!email || !/^\S+@\S+\.\S+$/.test(email)) {
     return json(res, 400, { ok: false, message: "请输入有效邮箱。" });
   }
-  const blockedSend = rejectProductionTestIdentity(res, { email });
+  const blockedSend = rejectProductionTestIdentity(res, { email, purpose: "login", loginPortal: role });
   if (blockedSend) return blockedSend;
   const generic = {
     ok: true,
@@ -728,9 +731,13 @@ async function handleLoginWithOtp(body, res) {
   const code = String(body.code || body.otp || "").trim();
   if (!email || !/^\S+@\S+\.\S+$/.test(email)) return json(res, 400, { ok: false, message: "请输入有效邮箱。" });
   if (!/^\d{4,8}$/.test(code)) return json(res, 400, { ok: false, message: "验证码无效或已过期" });
-  const blockedOtp = rejectProductionTestIdentity(res, { email });
-  if (blockedOtp) return blockedOtp;
   const loginPortal = normalizeLoginPortal(body.loginPortal || body.portal || body.role || "");
+  const blockedOtp = rejectProductionTestIdentity(res, {
+    email,
+    loginPortal: loginPortal || role,
+    purpose: "login",
+  });
+  if (blockedOtp) return blockedOtp;
   // OTP is portal-scoped: find account by email, then enforce portal capability (supports dual-role users).
   const byEmail = await profilesLookup(
     `?email=eq.${encodeURIComponent(email)}&select=id,email,phone,phone_e164,display_name,status,role,boss_uid&limit=5`
@@ -743,6 +750,9 @@ async function handleLoginWithOtp(body, res) {
   const blockedOtpName = rejectProductionTestIdentity(res, {
     email: profile0.email || email,
     displayName: profile0.display_name || "",
+    loginPortal: loginPortal || role,
+    purpose: "login",
+    row: profile0,
   });
   if (blockedOtpName) return blockedOtpName;
   if (!canLoginWithStatus(profile0, loginPortal || role || profile0.role)) {
@@ -868,7 +878,12 @@ async function handleSendRegisterOtp(body, res) {
     return json(res, 400, { ok: false, message: "请输入有效邮箱。" });
   }
   const displayName = String(body.displayName || body.nickname || body.name || "").trim();
-  const blockedRegOtp = rejectProductionTestIdentity(res, { email, displayName });
+  const blockedRegOtp = rejectProductionTestIdentity(res, {
+    email,
+    displayName,
+    purpose: "register",
+    loginPortal: role,
+  });
   if (blockedRegOtp) return blockedRegOtp;
   try {
     await assertOtpResendCooldown(email, role, "register_otp");
@@ -1734,7 +1749,12 @@ export default async function handler(req, res) {
       void body.phoneE164;
       void body.phone_e164;
       if (!email) return json(res, 400, { ok: false, message: "请输入邮箱。" });
-      const blockedRegister = rejectProductionTestIdentity(res, { email, displayName });
+      const blockedRegister = rejectProductionTestIdentity(res, {
+        email,
+        displayName,
+        purpose: "register",
+        loginPortal: "boss",
+      });
       if (blockedRegister) return blockedRegister;
       if (!registerToken) {
         return json(res, 400, { ok: false, message: "请先完成邮箱验证。" });
@@ -1997,10 +2017,15 @@ export default async function handler(req, res) {
     const email = String(body.email || body.account || "").trim().toLowerCase();
     const password = String(body.password || "");
     if (!email || !password) return json(res, 400, { ok: false, message: "请输入邮箱和密码。" });
-    const blockedLogin = rejectProductionTestIdentity(res, { email });
-    if (blockedLogin) return blockedLogin;
 
     const loginPortal = normalizeLoginPortal(body.loginPortal || body.portal || body.role || "");
+    const blockedLogin = rejectProductionTestIdentity(res, {
+      email,
+      loginPortal,
+      purpose: "login",
+    });
+    if (blockedLogin) return blockedLogin;
+
     // Forgot pre-check: use portal when provided, else any profile for this email.
     const prePortal = loginPortal || "";
     const pre = prePortal
@@ -2017,6 +2042,9 @@ export default async function handler(req, res) {
     const blockedLoginName = rejectProductionTestIdentity(res, {
       email: pre?.profile?.email || email,
       displayName: pre?.profile?.display_name || "",
+      loginPortal,
+      purpose: "login",
+      row: pre?.profile || null,
     });
     if (blockedLoginName) return blockedLoginName;
 
