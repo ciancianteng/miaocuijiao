@@ -297,8 +297,20 @@ export default async function handler(req, res) {
     return json(res, 405, { ok: false, message: "Method Not Allowed" });
   }
   const vercelEnv = String(process.env.VERCEL_ENV || "").toLowerCase();
-  if (vercelEnv === "production") {
-    return json(res, 403, { ok: false, message: "正式环境禁止执行种子脚本。" });
+  const appEnv = String(process.env.APP_ENV || "").toLowerCase();
+  const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "";
+  const supabaseHost = String(supabaseUrl || "")
+    .replace(/^https?:\/\//i, "")
+    .split("/")[0]
+    .toLowerCase();
+  const supabaseRef = (supabaseHost.match(/^([a-z0-9-]+)\.supabase\.co$/i) || [])[1] || "";
+  // Hard block: never seed Production (by Vercel/APP env OR by Supabase project ref).
+  if (vercelEnv === "production" || appEnv === "production" || supabaseRef === "jqfaknpmcnqwqvatrwgo") {
+    return json(res, 403, {
+      ok: false,
+      message: "正式环境禁止执行种子脚本。",
+      code: "PROD_SEED_FORBIDDEN",
+    });
   }
   const seedKey = String(process.env.MCJ_SEED_KEY || "").trim();
   // On any Vercel deployment (preview included), require seed key — no anonymous DB writes.

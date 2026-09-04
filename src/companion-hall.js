@@ -556,8 +556,14 @@
   async function start() {
     var count = document.getElementById("resultCount");
     if (count) count.textContent = "正在加载陪玩…";
-    // Fire-and-forget seed; never block the hall list on it.
-    fetch("/api/dev/seed-p03-preview", { method: "POST", headers: { "Content-Type": "application/json" } }).catch(function () {});
+    // Never auto-seed on Production hosts. Preview/local may call the gated seed endpoint.
+    try {
+      var host = String(location.hostname || "").toLowerCase();
+      var isProdHost = /(^|\.)meowcuijiao\.com$/.test(host);
+      if (!isProdHost) {
+        fetch("/api/dev/seed-p03-preview", { method: "POST", headers: { "Content-Type": "application/json" } }).catch(function () {});
+      }
+    } catch (e) { /* ignore */ }
     // Hydrate admin levels before building the level/price dropdowns.
     if (window.MCJCompanionLevels && typeof window.MCJCompanionLevels.hydrateFromApi === "function") {
       try { await window.MCJCompanionLevels.hydrateFromApi(); } catch (e) { /* keep last known */ }

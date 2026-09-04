@@ -116,6 +116,39 @@ function prodWriteOverrideAllowed() {
   return a || b;
 }
 
+function prodReadOverrideAllowed() {
+  return (
+    process.env.ALLOW_PROD_SUPABASE_READ === "1" &&
+    process.env.CONFIRM_PROD_READ === "I_UNDERSTAND_PROD_READ"
+  );
+}
+
+/**
+ * Allow read-only Production inventory when dual-read flags are set.
+ * Writes still require prodWriteOverrideAllowed().
+ */
+export function assertProductionSupabaseReadAllowed(
+  scriptName = "script",
+  url = process.env.PROD_SUPABASE_URL || process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || ""
+) {
+  if (!isKnownProductionSupabase(url)) {
+    throw new Error(
+      `[prod-guard] ${scriptName}: expected Production Supabase (${PRODUCTION_SUPABASE_REF}), got "${supabaseProjectRef(url) || url || "empty"}"`
+    );
+  }
+  if (prodReadOverrideAllowed() || prodWriteOverrideAllowed()) {
+    console.warn(
+      `[prod-guard] ALLOWED read of production Supabase (${scriptName}) ref=${supabaseProjectRef(url)}`
+    );
+    return { ok: true, ref: supabaseProjectRef(url), bypassed: true };
+  }
+  throw new Error(
+    `[prod-guard] Refusing ${scriptName}: Production read requires ` +
+      `ALLOW_PROD_SUPABASE_READ=1 CONFIRM_PROD_READ=I_UNDERSTAND_PROD_READ ` +
+      `(or the write override pair).`
+  );
+}
+
 /**
  * Load .env / .env.local into process.env (does not overwrite existing keys).
  * @param {string} root repo root
