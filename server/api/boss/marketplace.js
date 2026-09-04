@@ -9,9 +9,7 @@ import { servicesFromGamePrices, readGamePrices } from "../_game-prices.js";
 import { hasBossRole } from "../_account-roles.js";
 import { allocateOrderNo } from "../_account-codes.js";
 import {
-  isProductionRuntime,
-  isTestAccountRecord,
-  PROD_TEST_ACCOUNT_BLOCK_MESSAGE,
+  productionTestAccountWriteBlock,
 } from "../_test-accounts.js";
 
 const REQUIRED = ["SUPABASE_URL", "SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY"];
@@ -285,13 +283,8 @@ export default async function handler(req, res) {
     }
 
     const boss = await requireBoss(req);
-    if (isProductionRuntime() && isTestAccountRecord(boss || {})) {
-      return json(res, 403, {
-        ok: false,
-        message: PROD_TEST_ACCOUNT_BLOCK_MESSAGE,
-        code: "PROD_TEST_ACCOUNT_BLOCKED",
-      });
-    }
+    const blockedWrite = productionTestAccountWriteBlock(boss || {});
+    if (blockedWrite) return json(res, 403, blockedWrite);
 
     if (action === "create_and_pay") {
       const companionId = String(body.companionId || body.companion_id || "").trim();

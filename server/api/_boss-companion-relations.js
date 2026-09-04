@@ -213,6 +213,21 @@ export async function assertBindCapabilities(bossId, companionId) {
   if (!companion) throw httpError("陪玩账号不存在", 404);
   if (bossId === companionId) throw httpError("不能绑定自己", 400);
 
+  try {
+    const { productionTestAccountWriteBlock } = await import("./_test-accounts.js");
+    const blockedBoss = productionTestAccountWriteBlock(boss);
+    if (blockedBoss) {
+      throw httpError(blockedBoss.message, 403, { code: blockedBoss.code });
+    }
+    const blockedComp = productionTestAccountWriteBlock(companion);
+    if (blockedComp) {
+      throw httpError(blockedComp.message, 403, { code: blockedComp.code });
+    }
+  } catch (err) {
+    if (err?.status) throw err;
+    /* ignore import failures */
+  }
+
   if (!hasBossRole(boss)) {
     throw httpError("目标账号没有 Boss 能力（hasBoss=false），禁止绑定", 400, {
       code: "BOSS_CAPABILITY_REQUIRED",

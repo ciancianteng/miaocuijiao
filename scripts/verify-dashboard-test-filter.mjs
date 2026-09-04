@@ -23,7 +23,24 @@ assert.equal(isTestAccountRecord({ email: "x@gmail.com", display_name: "凝梦" 
 
 assert.equal(
   shouldBlockTestIdentityOnProduction({ email: "admin@meow.test" }, { VERCEL_ENV: "production" }),
-  true
+  true,
+  "admin@meow.test blocked without admin portal context"
+);
+assert.equal(
+  shouldBlockTestIdentityOnProduction(
+    { email: "admin@meow.test", loginPortal: "admin" },
+    { VERCEL_ENV: "production" }
+  ),
+  false,
+  "admin@meow.test allowed for Admin Portal bootstrap login"
+);
+assert.equal(
+  shouldBlockTestIdentityOnProduction(
+    { email: "admin@meow.test", loginPortal: "admin" },
+    { VERCEL_ENV: "production", DISABLE_PROD_TEST_ADMIN: "1" }
+  ),
+  true,
+  "admin bootstrap can be disabled via env"
 );
 assert.equal(
   shouldBlockTestIdentityOnProduction({ email: "admin@meow.test" }, { VERCEL_ENV: "preview" }),

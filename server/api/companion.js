@@ -3309,6 +3309,12 @@ export default async function handler(req, res) {
       const body = await parseBody(req); const email=String(body.email || body.account || "").trim().toLowerCase(); const password=String(body.password || ""); const nickname=String(body.nickname || body.name || "").trim();
       const registerToken = String(body.registerToken || body.emailOtpToken || body.otpToken || "").trim();
       if (!email || !/^\S+@\S+\.\S+$/.test(email)) return json(res,400,{ok:false,message:"请输入有效邮箱"});
+      {
+        const { shouldBlockTestIdentityOnProduction, PROD_TEST_ACCOUNT_BLOCK_MESSAGE } = await import("./_test-accounts.js");
+        if (shouldBlockTestIdentityOnProduction({ email, displayName: nickname, purpose: "register", loginPortal: "companion" })) {
+          return json(res, 403, { ok: false, message: PROD_TEST_ACCOUNT_BLOCK_MESSAGE, code: "PROD_TEST_ACCOUNT_BLOCKED" });
+        }
+      }
       if (!registerToken) return json(res,400,{ok:false,message:"请先完成邮箱验证。"});
       if (!nickname) return json(res,400,{ok:false,message:"请输入陪玩昵称"});
       if (!password) return json(res,400,{ok:false,message:"请设置登录密码。"});
@@ -5746,6 +5752,13 @@ export default async function handler(req, res) {
         assertCompanionBusinessAccess(auth.profile, companion || {});
       } catch (err) {
         return isolationForbiddenResponse(res, err);
+      }
+      try {
+        const { productionTestAccountWriteBlock } = await import("./_test-accounts.js");
+        const blockedWrite = productionTestAccountWriteBlock(auth.profile || {});
+        if (blockedWrite) return json(res, 403, blockedWrite);
+      } catch {
+        /* keep withdraw usable if guard module fails to load */
       }
       const amount = money(body.amount || body.cat_food_amount || body.catFoodAmount);
       const remark = String(body.remark || body.note || "").trim();
