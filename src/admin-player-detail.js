@@ -165,6 +165,27 @@
     var deposit = d.deposit || {};
     var stats = d.stats || {};
     var levels = getLevels();
+    var identityOk = /approved|verified|passed|已通过|已认证/i.test(String((identity && (identity.statusLabel || identity.status)) || d.identityStatus || d.identity_status || ""));
+    var depositOk = /approved|verified|passed|paid|已通过|已缴纳|已到账/i.test(String((deposit && (deposit.statusLabel || deposit.status)) || d.depositStatus || d.deposit_status || ""));
+    var orderEligible;
+    if (d.orderEligible === true || d.order_eligible === true || d.credentialOrOk === true) {
+      orderEligible = true;
+    } else if (d.orderEligible === false || d.order_eligible === false || d.credentialOrOk === false) {
+      orderEligible = false;
+    } else {
+      orderEligible = identityOk || depositOk;
+    }
+    var orderEligibilityLabel = d.orderEligibilityLabel || d.order_eligibility_label || (orderEligible ? "✅ 可以接单" : "❌ 不可接单");
+    var orderEligibilityReason =
+      d.orderEligibilityReason ||
+      d.order_eligibility_reason ||
+      (orderEligible
+        ? identityOk && depositOk
+          ? "实名与押金均已通过（满足二选一）"
+          : identityOk
+            ? "实名认证已通过"
+            : "押金已缴纳"
+        : "需实名认证通过或押金已缴纳（满足任一即可）");
 
     var basic = rows([
       { 0: "头像", 1: media.avatarUrl ? thumb(media.avatarUrl, "头像") : "", 2: "尚未上传头像", html: true },
@@ -180,6 +201,7 @@
       },
       ["昵称", d.name || d.nickname],
       ["陪玩 ID", d.playerId || d.id],
+      ["接单资格", orderEligibilityLabel + " · " + orderEligibilityReason],
       ["邮箱", d.email || "尚未填写邮箱"],
       ["手机号 / 联系方式", d.phone || d.contact_phone || "尚未填写联系方式"],
       ["年龄", d.age || "尚未填写"],
@@ -559,8 +581,14 @@
       esc(d.levelName || d.level_name || "未设置等级") +
       " · " +
       esc(d.mainGame || d.game || "未设置服务") +
-      "</span></div><span class=\"status ok\">" +
-      esc(d.accountStatus || d.status || "正常") +
+      '</span><small class="player-eligibility-hint">' +
+      esc(orderEligibilityReason) +
+      '</small></div><span class="player-eligibility-chip ' +
+      (orderEligible ? "ok" : "bad") +
+      '" title="' +
+      esc(orderEligibilityReason) +
+      '">' +
+      esc(orderEligibilityLabel) +
       "</span></div>" +
       section("basic", "基础资料", basic) +
       section("application", "陪玩申请资料", applicationHtml) +
