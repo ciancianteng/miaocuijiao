@@ -2777,7 +2777,11 @@ import './mcj-chat-realtime.js';
         '<div><span>拒绝原因</span><strong>'+esc((/无法接单[：:]?\s*(.+)/.exec(String(order.cancelReason||order.note||''))||[])[1]||'-')+'</strong></div>'+
         '<div><span>当前处理人</span><strong>'+esc(active&&active.currentServiceName?active.currentServiceName:'待接待')+'</strong></div>'+
         '<div><span>游戏</span><strong>'+esc(order.game||'-')+'</strong></div>'+
-        '<div><span>金额</span><strong>'+money(order.totalAmount)+'</strong></div>'+
+        '<div><span>订单金额</span><strong>'+money(order.totalAmount)+'</strong></div>'+
+        (order.platformFee!=null&&order.platformFee!==''?'<div><span>平台手续费</span><strong>'+money(order.platformFee)+(order.platformFeeRate!=null?' ('+esc(order.platformFeeRate)+'%)':'')+'</strong></div>':'')+
+        (order.bossCommissionAmount!=null&&Number(order.bossCommissionAmount)>0?'<div><span>Boss 分成</span><strong>'+money(order.bossCommissionAmount)+(order.bossCommissionRate!=null?' ('+esc(order.bossCommissionRate)+'% · 平台手续费内)':'')+'</strong></div>':'')+
+        (order.companionIncome!=null&&order.companionIncome!==''?'<div><span>陪玩收入</span><strong>'+money(order.companionIncome)+'</strong></div>':'')+
+        (order.settlementNote?'<div><span>结算说明</span><strong>'+esc(order.settlementNote)+'</strong></div>':'')+
         '<div><span>订单状态</span><strong>'+esc(order.statusText||'-')+'</strong></div>'+
         (order.needsReassign?'<div><span>待处理</span><strong style="color:#ff6b7a">需要重新安排</strong></div>':'')+
         '</div><button class="cs-btn" type="button" data-route="/customer-service/orders">查看订单</button>')
@@ -2879,7 +2883,11 @@ import './mcj-chat-realtime.js';
       ['老板',sanitizeBossLabel(o.bossName,publicBossCode(o))],
       ['陪玩',o.companionName||'-'],
       ['游戏',o.game||'-'],
-      ['金额',money(o.totalAmount)],
+      ['订单金额',money(o.totalAmount)],
+      ['平台手续费',o.platformFee!=null?money(o.platformFee)+(o.platformFeeRate!=null?' ('+o.platformFeeRate+'%)':''):'-'],
+      ['Boss 分成',o.bossCommissionAmount!=null?money(o.bossCommissionAmount)+(o.bossCommissionRate!=null?' · '+o.bossCommissionRate+'%':''):'-'],
+      ['陪玩收入',o.companionIncome!=null?money(o.companionIncome):'-'],
+      ['结算说明',o.settlementNote||(Number(o.bossCommissionAmount)>0?'老板分成由平台抽成支付，不扣陪玩收入':'-')],
       ['创建时间',fmtOrderDateTime(o.createdAt)]
     ];
     if(mode==='cancel')rows.push(['取消原因',o.cancelReason||o.note||'-']);

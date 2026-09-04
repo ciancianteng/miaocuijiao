@@ -61,12 +61,12 @@
     }
     .boss-id-top{display:flex;align-items:center;gap:16px;min-width:0}
     .boss-id-avatar{
-      width:72px;height:72px;flex:0 0 72px;border-radius:18px;overflow:hidden;
+      width:72px;height:72px;flex:0 0 72px;border-radius:999px;overflow:hidden;
       border:1px solid rgba(232,154,196,.4);
       background:rgba(232,154,196,.08);
       display:grid;place-items:center;color:#ffd6e7;font-weight:900;font-size:28px;
     }
-    .boss-id-avatar img{width:100%;height:100%;object-fit:cover}
+    .boss-id-avatar img{width:100%;height:100%;object-fit:cover;display:block}
     .boss-id-meta{min-width:0;flex:1}
     .boss-id-meta h1{
       margin:0;font-size:22px;line-height:1.2;font-weight:800;letter-spacing:.01em;
@@ -176,6 +176,26 @@
     .form-grid{display:grid;gap:12px}
     .form-grid label{display:grid;gap:7px;color:#ffd6e7;font-weight:700;font-size:13px}
     .form-grid input{height:44px;border:1px solid rgba(255,255,255,.12);border-radius:12px;background:rgba(0,0,0,.28);color:#fff;padding:0 12px}
+    .avatar-edit{
+      display:flex;flex-direction:column;align-items:center;gap:12px;
+      padding:6px 0 10px;text-align:center;
+    }
+    .avatar-edit-preview{
+      width:88px;height:88px;flex:0 0 88px;border-radius:999px;overflow:hidden;
+      border:2px solid rgba(232,154,196,.45);background:rgba(232,154,196,.08);
+      box-shadow:0 0 0 4px rgba(232,154,196,.08);
+      display:grid;place-items:center;color:#ffd6e7;font-weight:900;font-size:32px;
+    }
+    .avatar-edit-preview img{width:100%;height:100%;object-fit:cover;display:block}
+    .avatar-edit-tools{display:grid;gap:6px;width:min(220px,100%);justify-items:center}
+    .avatar-edit-tools .boss-btn{
+      width:100%;justify-content:center;min-height:40px;border-radius:999px;
+      font-weight:700;letter-spacing:.02em;
+    }
+    .avatar-edit-hint{
+      margin:0;color:rgba(255,255,255,.38);font-size:11px;line-height:1.35;font-weight:500;
+      max-width:18em;
+    }
     .state{margin-top:10px;color:#ffb9d6;min-height:20px}
     .review-tip{margin:0 0 14px;padding:12px 14px;border:1px solid rgba(232,154,196,.28);border-radius:14px;background:rgba(232,154,196,.08);color:#ffd6e7;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
     .review-tip p{margin:0;font-size:13px;line-height:1.45}
@@ -197,7 +217,15 @@
     <form class="modal-box" id="profileForm">
       <div class="modal-head"><h2>编辑资料</h2><button class="close" type="button" data-close>×</button></div>
       <div class="form-grid">
-        <label>头像地址<input name="avatarUrl" placeholder="https://..." autocomplete="off"></label>
+        <div class="avatar-edit" data-avatar-edit>
+          <div class="avatar-edit-preview" id="avatarPreview" aria-label="当前头像">B</div>
+          <div class="avatar-edit-tools">
+            <button class="boss-btn" type="button" id="avatarPickBtn">更换头像</button>
+            <input type="file" id="avatarFileInput" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" hidden>
+            <input type="hidden" name="avatarUrl" id="avatarUrlField" value="">
+            <p class="avatar-edit-hint">支持 JPG / PNG / WEBP，最大 4MB</p>
+          </div>
+        </div>
         <label>昵称<input name="displayName" maxlength="40" required></label>
         <label>手机号<input name="phone" maxlength="30" autocomplete="tel"></label>
         <button class="boss-btn" type="submit">保存资料</button>
@@ -217,6 +245,11 @@
       var featureModalBody=document.getElementById('featureModalBody');
       var form=document.getElementById('profileForm');
       var editState=document.getElementById('editState');
+      var avatarPreview=document.getElementById('avatarPreview');
+      var avatarPickBtn=document.getElementById('avatarPickBtn');
+      var avatarFileInput=document.getElementById('avatarFileInput');
+      var avatarUrlField=document.getElementById('avatarUrlField');
+      var avatarUploading=false;
       var state={loading:true,error:'',user:null,wallet:null,points:null,directCount:null,passwordHint:'',pendingReviewTipId:'',openFeature:''};
       var TIP_KEY='mcjBossPendingReviewTipShown';
       function tipAlreadyShown(){try{return sessionStorage.getItem(TIP_KEY)==='1'}catch(e){return false}}
@@ -243,6 +276,47 @@
       function date(v){if(!v)return '-';try{return new Date(v).toLocaleString('zh-CN',{hour12:false})}catch(e){return v}}
       function avatarHtml(user){var src=user&&user.avatarUrl;if(src)return '<img src="'+esc(src)+'" alt="头像">';var name=(user&&user.displayName)||'老板';return esc(name.slice(0,1)||'B')}
       function statusText(s){return {active:'正常',disabled:'停用',pending:'待审核'}[s]||s||'-'}
+      function setAvatarPreview(url,displayName){
+        var src=String(url||'').trim();
+        if(avatarUrlField)avatarUrlField.value=src;
+        if(!avatarPreview)return;
+        if(src){avatarPreview.innerHTML='<img src="'+esc(src)+'" alt="当前头像">';return}
+        var name=String(displayName||(state.user&&state.user.displayName)||'老板');
+        avatarPreview.textContent=name.slice(0,1)||'B';
+      }
+      function fileToDataUrl(file){
+        return new Promise(function(resolve,reject){
+          var reader=new FileReader();
+          reader.onload=function(){resolve(String(reader.result||''))};
+          reader.onerror=function(){reject(new Error('读取图片失败'))};
+          reader.readAsDataURL(file);
+        });
+      }
+      async function uploadBossAvatar(file){
+        if(!file)throw new Error('请选择图片');
+        if(!/^image\/(jpeg|png|webp|jpg)$/i.test(file.type)&&!/\.(jpe?g|png|webp)$/i.test(file.name||'')){
+          throw new Error('仅支持 JPG、PNG、WEBP 格式');
+        }
+        if(file.size>4*1024*1024)throw new Error('头像不能超过 4MB');
+        var dataUrl=await fileToDataUrl(file);
+        var res=await fetch('/api/auth',{
+          method:'POST',
+          headers:{'Content-Type':'application/json',Authorization:'Bearer '+token()},
+          body:JSON.stringify({action:'upload_avatar',dataUrl:dataUrl,filename:file.name||'avatar.jpg',persist:true})
+        });
+        var body=await res.json().catch(function(){return{}});
+        if(!res.ok||!body.ok)throw new Error(body.message||'头像上传失败');
+        var url=body.avatarUrl||body.url||'';
+        if(!url)throw new Error('上传成功但未返回头像');
+        if(body.user)state.user=body.user;
+        else if(state.user)state.user=Object.assign({},state.user,{avatarUrl:url});
+        if(window.MCJRoleGate&&window.MCJRoleGate.saveSession){
+          window.MCJRoleGate.saveSession({user:state.user,accessToken:token(),refreshToken:sessionStorage.getItem('mcjAuthRefreshToken')||''},true);
+        }
+        setAvatarPreview(url,state.user&&state.user.displayName);
+        paint();
+        return url;
+      }
 
       function entryLink(opts){
         var tag=opts.tag||'a';
@@ -273,7 +347,7 @@
         var titles={profile:'编辑资料',assets:'我的资产',security:'账号安全',orders:'订单与服务'};
         var body='';
         if(key==='profile'){
-          body='<p class="feature-modal-note">修改头像、昵称与手机号。</p>'+
+          body='<p class="feature-modal-note">上传头像、修改昵称与手机号。</p>'+
             entryLink({tag:'button',title:'打开编辑资料',attrs:'type="button" data-edit'});
         }else if(key==='assets'){
           body='<p class="feature-modal-note">钱包与积分入口。</p>'+
@@ -471,13 +545,18 @@ async function load(){
         if(e.target.closest('[data-refresh]')){load();return}
         if(e.target.closest('[data-edit]')){
           var u=state.user||{};
-          form.elements.avatarUrl.value=u.avatarUrl||'';
+          setAvatarPreview(u.avatarUrl||'',u.displayName||'');
           form.elements.displayName.value=u.displayName||'';
           form.elements.phone.value=u.phone||'';
           editState.textContent='';
           closeFeatureModal();
           modal.classList.add('open');
           document.body.style.overflow='hidden';
+          return;
+        }
+        if(e.target.closest('#avatarPickBtn')||e.target.closest('[data-pick-avatar]')){
+          if(avatarUploading)return;
+          if(avatarFileInput)avatarFileInput.click();
           return;
         }
         if(e.target.closest('[data-close]')||e.target===modal){
@@ -496,9 +575,76 @@ async function load(){
         }
         if(e.target.closest('[data-logout]')){if(window.MCJBossAuth&&window.MCJBossAuth.clearSession)window.MCJBossAuth.clearSession();if(window.MCJRoleGate){window.MCJRoleGate.logout('boss');window.MCJRoleGate.logout('customer')}['mcjAuthAccessToken','mcjAuthRefreshToken','mcjAuthExpiresAt','customerAuthToken','customerUser','mcjCurrentUser','mcjRole'].forEach(function(k){try{localStorage.removeItem(k);sessionStorage.removeItem(k)}catch(e){}});location.href='index.html';return}
       });
+      if(avatarFileInput){
+        avatarFileInput.addEventListener('change',async function(){
+          var file=avatarFileInput.files&&avatarFileInput.files[0];
+          avatarFileInput.value='';
+          if(!file)return;
+          avatarUploading=true;
+          if(avatarPickBtn){avatarPickBtn.disabled=true;avatarPickBtn.textContent='上传中…'}
+          editState.textContent='正在上传头像…';
+          try{
+            await uploadBossAvatar(file);
+            editState.textContent='头像已更新，可继续修改昵称/手机号后保存';
+          }catch(err){
+            editState.textContent=err.message||'头像上传失败';
+          }finally{
+            avatarUploading=false;
+            if(avatarPickBtn){avatarPickBtn.disabled=false;avatarPickBtn.textContent='更换头像'}
+          }
+        });
+      }
       form.addEventListener('submit',async function(e){
-        e.preventDefault();editState.textContent='保存中...';
-        try{var res=await fetch('/api/auth',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token()},body:JSON.stringify({action:'update_profile',avatarUrl:form.elements.avatarUrl.value,displayName:form.elements.displayName.value,phone:form.elements.phone.value})});var body=await res.json().catch(function(){return {}});if(!res.ok||!body.ok)throw new Error(body.message||'保存失败');state.user=body.user;if(window.MCJRoleGate&&window.MCJRoleGate.saveSession)window.MCJRoleGate.saveSession({user:body.user,accessToken:token(),refreshToken:sessionStorage.getItem('mcjAuthRefreshToken')||''},true);editState.textContent='资料已保存';setTimeout(function(){modal.classList.remove('open');document.body.style.overflow='';paint()},450)}catch(err){editState.textContent=err.message||'保存失败'}
+        e.preventDefault();
+        if(avatarUploading){editState.textContent='头像上传中，请稍候…';return}
+        editState.textContent='保存中...';
+        try{
+          var payload={
+            action:'update_profile',
+            displayName:form.elements.displayName.value,
+            phone:form.elements.phone.value
+          };
+          var avatarVal=avatarUrlField?String(avatarUrlField.value||'').trim():'';
+          if(avatarVal)payload.avatarUrl=avatarVal;
+          var res=await fetch('/api/auth',{
+            method:'POST',
+            headers:{'Content-Type':'application/json',Authorization:'Bearer '+token()},
+            body:JSON.stringify(payload)
+          });
+          var body=await res.json().catch(function(){return {}});
+          if(!res.ok||!body.ok)throw new Error(body.message||'保存失败');
+          state.user=body.user||Object.assign({},state.user,{
+            displayName:payload.displayName,
+            phone:payload.phone,
+            avatarUrl:avatarVal||(state.user&&state.user.avatarUrl)||''
+          });
+          if(window.MCJRoleGate&&window.MCJRoleGate.saveSession){
+            window.MCJRoleGate.saveSession({
+              user:state.user,
+              accessToken:token(),
+              refreshToken:sessionStorage.getItem('mcjAuthRefreshToken')||''
+            },true);
+          }
+          setAvatarPreview(state.user.avatarUrl||'',state.user.displayName||'');
+          editState.textContent='资料已保存';
+          setTimeout(function(){
+            modal.classList.remove('open');
+            document.body.style.overflow='';
+            paint();
+          },450);
+          // Re-fetch from API so refresh/login always matches DB.
+          try{
+            var me=await fetch('/api/auth?action=me',{headers:{Authorization:'Bearer '+token()},cache:'no-store'});
+            var meBody=await me.json().catch(function(){return{}});
+            if(me.ok&&meBody.ok&&meBody.user){
+              state.user=meBody.user;
+              if(window.MCJRoleGate&&window.MCJRoleGate.saveSession){
+                window.MCJRoleGate.saveSession({user:state.user,accessToken:token(),refreshToken:sessionStorage.getItem('mcjAuthRefreshToken')||''},true);
+              }
+              paint();
+            }
+          }catch(syncErr){}
+        }catch(err){editState.textContent=err.message||'保存失败'}
       });
       load();
     })();

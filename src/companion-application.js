@@ -613,16 +613,31 @@
           missing.push(remoteDepositPay.emptyMessage || "平台暂未配置押金收款方式，请联系客服");
         }
       }
-      [["settlementMethod", "结款方式"], ["settlementName", "银行户名"], ["settlementAccount", "银行账号"]].forEach(function (item) {
+      [["settlementMethod", "结款方式"]].forEach(function (item) {
         if (!hasText(identity, item[0])) missing.push(item[1]);
       });
-      if (isBankSettlementMethod(identity.settlementMethod)) {
+      var settleMethod = String(identity.settlementMethod || "").trim();
+      if (isBankSettlementMethod(settleMethod)) {
+        if (!hasText(identity, "settlementName")) missing.push("银行户名");
+        if (!hasText(identity, "settlementAccount")) missing.push("银行账号");
         var bankSel = String(identity.settlementBank || "").trim();
         if (bankSel === SETTLEMENT_BANK_OTHER && !String(identity.settlementBankOther || "").trim()) {
           missing.push("自定义银行名称");
         } else if (!effectiveSettlementBankName(identity)) {
           missing.push("银行名称");
         }
+      } else if (isTngSettlementMethod(settleMethod)) {
+        if (!String(identity.tngAccount || identity.settlementAccount || "").trim()) {
+          missing.push("TNG 手机号码");
+        }
+      } else if (isAlipaySettlementMethod(settleMethod)) {
+        if (!String(identity.alipayAccount || identity.settlementAccount || "").trim()) {
+          missing.push("支付宝账号 / 手机号");
+        }
+      } else if (isDuitNowSettlementMethod(settleMethod)) {
+        if (!hasText(identity, "settlementAccount")) missing.push("DuitNow 账号");
+      } else if (settleMethod) {
+        if (!hasText(identity, "settlementAccount")) missing.push(settlementAccountLabel(settleMethod));
       }
       return missing;
     }
@@ -1390,6 +1405,74 @@
   function isBankSettlementMethod(method) {
     return String(method || "").trim() === "银行卡" || /^bank$/i.test(String(method || "").trim());
   }
+  function isTngSettlementMethod(method) {
+    var m = String(method || "").trim().toLowerCase();
+    return m === "tng wallet" || m === "tng" || m === "touch n go";
+  }
+  function isAlipaySettlementMethod(method) {
+    var m = String(method || "").trim().toLowerCase();
+    return m === "支付宝" || m === "alipay";
+  }
+  function isDuitNowSettlementMethod(method) {
+    var m = String(method || "").trim().toLowerCase();
+    return m === "duitnow" || m === "duit now";
+  }
+  function settlementAccountLabel(method) {
+    if (isTngSettlementMethod(method)) return "TNG 手机号码";
+    if (isAlipaySettlementMethod(method)) return "支付宝账号 / 手机号";
+    if (isDuitNowSettlementMethod(method)) return "DuitNow 账号";
+    return "银行账号";
+  }
+  function settlementNameLabel(method) {
+    if (isTngSettlementMethod(method) || isAlipaySettlementMethod(method) || isDuitNowSettlementMethod(method)) {
+      return "收款户名（选填）";
+    }
+    return "银行户名";
+  }
+  /** Normalize draft identity settlement fields into API/DB payload. */
+  function settlementPayloadFromIdentity(identity) {
+    identity = identity || {};
+    var method = String(identity.settlementMethod || "").trim() || "银行卡";
+    var bankName = isBankSettlementMethod(method) ? effectiveSettlementBankName(identity) : "";
+    var accountName = String(identity.settlementName || "").trim();
+    var tng = String(identity.tngAccount || identity.paymentPhone || "").trim();
+    var alipay = String(identity.alipayAccount || "").trim();
+    var bankAccount = String(identity.settlementAccount || "").trim();
+    if (isTngSettlementMethod(method)) {
+      tng = tng || bankAccount;
+      bankAccount = "";
+    } else if (isAlipaySettlementMethod(method)) {
+      alipay = alipay || bankAccount;
+      bankAccount = "";
+    } else if (isDuitNowSettlementMethod(method)) {
+      // DuitNow keeps account in bank_account / payment_account for compatibility.
+      bankAccount = bankAccount || tng || alipay;
+    }
+    var paymentAccount = bankAccount || tng || alipay || "";
+    var paymentPhone = isTngSettlementMethod(method) ? tng : (identity.paymentPhone || "");
+    return {
+      method: method,
+      settlementMethod: method,
+      payment_method: method,
+      bank_name: bankName,
+      bankName: bankName,
+      settlementBank: bankName,
+      account_name: accountName,
+      accountName: accountName,
+      settlementName: accountName,
+      bank_account: bankAccount,
+      bankAccount: bankAccount,
+      settlementAccount: bankAccount,
+      tng_account: tng,
+      tngAccount: tng,
+      alipay_account: alipay,
+      alipayAccount: alipay,
+      payment_account: paymentAccount,
+      paymentAccount: paymentAccount,
+      payment_phone: paymentPhone,
+      paymentPhone: paymentPhone,
+    };
+  }
   /** Resolve select + optional「其他」into the bank_name string persisted to API/DB. */
   function effectiveSettlementBankName(identity) {
     identity = identity || {};
@@ -1853,6 +1936,7 @@
         ? (function () {
             var method = String(id.settlementMethod || "银行卡").trim() || "银行卡";
             var bankBlock = "";
+            var accountBlock = "";
             if (isBankSettlementMethod(method)) {
               var split = splitSettlementBankFields(
                 id.settlementBank || id.bankName || ""
@@ -1875,14 +1959,41 @@
                 (bankSelect === SETTLEMENT_BANK_OTHER
                   ? field("settlementBankOther", "自定义银行名称", "text", bankOther)
                   : "");
+              accountBlock =
+                field("settlementName", "银行户名", "text", id.settlementName) +
+                field("settlementAccount", "银行账号", "text", id.settlementAccount);
+            } else if (isTngSettlementMethod(method)) {
+              accountBlock =
+                field("tngAccount", "TNG 手机号码", "tel", id.tngAccount || id.settlementAccount || id.paymentPhone || "") +
+                field("settlementName", settlementNameLabel(method), "text", id.settlementName);
+            } else if (isAlipaySettlementMethod(method)) {
+              accountBlock =
+                field("alipayAccount", "支付宝账号 / 手机号", "text", id.alipayAccount || id.settlementAccount || "") +
+                field("settlementName", settlementNameLabel(method), "text", id.settlementName);
+            } else if (isDuitNowSettlementMethod(method)) {
+              accountBlock =
+                field("settlementAccount", "DuitNow 账号", "text", id.settlementAccount) +
+                field("settlementName", settlementNameLabel(method), "text", id.settlementName);
+            } else {
+              accountBlock =
+                field("settlementAccount", settlementAccountLabel(method), "text", id.settlementAccount) +
+                field("settlementName", settlementNameLabel(method), "text", id.settlementName);
             }
+            var hint = isBankSettlementMethod(method)
+              ? "选择银行卡时须填写银行名称、银行户名与银行账号。"
+              : isTngSettlementMethod(method)
+                ? "选择 TNG Wallet 时请填写 TNG 绑定手机号码。"
+                : isAlipaySettlementMethod(method)
+                  ? "选择支付宝时请填写支付宝账号或手机号。"
+                  : "请按所选结款方式填写对应账号。";
             return (
               '<div class="apply-subcard"><h3>结款资料（必填）</h3><form class="apply-grid">' +
               selectField("settlementMethod", "结款方式", method, SETTLEMENT_METHODS) +
               bankBlock +
-              field("settlementName", "银行户名", "text", id.settlementName) +
-              field("settlementAccount", "银行账号", "text", id.settlementAccount) +
-              '</form><div class="deposit-status"><strong>审核通过后即可成为陪玩</strong><p>认证方式为二选一，审核对应方式通过后即可接单。选择银行卡时须填写银行名称、银行户名与银行账号。</p></div></div>'
+              accountBlock +
+              '</form><div class="deposit-status"><strong>审核通过后即可成为陪玩</strong><p>认证方式为二选一，审核对应方式通过后即可接单。' +
+              hint +
+              "</p></div></div>"
             );
           })()
         : "";
@@ -2005,10 +2116,32 @@
       // Keep bankName as the effective persisted label (dropdown value or「其他」custom text).
       if (isBankSettlementMethod(identity.settlementMethod)) {
         identity.bankName = effectiveSettlementBankName(identity);
+        identity.tngAccount = "";
+        identity.alipayAccount = "";
+        identity.paymentPhone = "";
+      } else if (isTngSettlementMethod(identity.settlementMethod)) {
+        identity.settlementBank = "";
+        identity.settlementBankOther = "";
+        identity.bankName = "";
+        identity.tngAccount = String(identity.tngAccount || identity.settlementAccount || "").trim();
+        identity.paymentPhone = identity.tngAccount;
+        identity.alipayAccount = "";
+        identity.settlementAccount = "";
+      } else if (isAlipaySettlementMethod(identity.settlementMethod)) {
+        identity.settlementBank = "";
+        identity.settlementBankOther = "";
+        identity.bankName = "";
+        identity.alipayAccount = String(identity.alipayAccount || identity.settlementAccount || "").trim();
+        identity.tngAccount = "";
+        identity.paymentPhone = "";
+        identity.settlementAccount = "";
       } else {
         identity.settlementBank = identity.settlementBank || "";
         identity.settlementBankOther = "";
         identity.bankName = "";
+        identity.tngAccount = "";
+        identity.alipayAccount = "";
+        identity.paymentPhone = "";
       }
     }
     saveDraft({ data: data, identity: identity, uploads: uploads });
@@ -2233,20 +2366,24 @@
     });
     chain = chain.then(function () {
       if (authMode !== "id_card") return null;
-      var bankName = effectiveSettlementBankName(identity);
+      var pay = settlementPayloadFromIdentity(identity);
       return postCompanion("submit_verification", {
         real_name: identity.realName || identity.name || draft.data.realName || user.name || "",
         identity_no: identity.idNumber || identity.identityNo || "",
         id_front: storagePayloadForSubmit(identity.idFront),
         id_back: storagePayloadForSubmit(identity.idBack),
         id_handheld: storagePayloadForSubmit(identity.idHandheld),
-        bank_name: bankName,
-        account_name: identity.settlementName || "",
-        bank_account: identity.settlementAccount || "",
-        tng_account: identity.tngAccount || "",
-        method: identity.settlementMethod || "bank",
-        settlementMethod: identity.settlementMethod || "",
-        settlementBank: bankName,
+        bank_name: pay.bank_name,
+        account_name: pay.account_name,
+        bank_account: pay.bank_account,
+        tng_account: pay.tng_account,
+        alipay_account: pay.alipay_account,
+        payment_method: pay.payment_method,
+        payment_account: pay.payment_account,
+        payment_phone: pay.payment_phone,
+        method: pay.method,
+        settlementMethod: pay.settlementMethod,
+        settlementBank: pay.settlementBank,
         phone: draft.data.phone || "",
       });
     });
@@ -2280,7 +2417,7 @@
     if (authMode === "deposit" && (hasDurableUpload(identity.depositProof) || needsMediaUpload(identity.depositProof))) {
       chain = chain.then(function () {
         var proof = storagePayloadForSubmit(identity.depositProof);
-        var bankName = effectiveSettlementBankName(identity);
+        var pay = settlementPayloadFromIdentity(identity);
         return postCompanion("submit_deposit_proof", {
           paid_amount: (remoteDepositPay.amountRm || depositSettings().amount || 100),
           payment_method: identity.depositMethod || identity.depositChannelId || "",
@@ -2288,15 +2425,18 @@
           channelId: identity.depositChannelId || identity.depositMethod || "",
           proof_url: proof || "",
           remark: "陪玩申请一并提交",
-          settlementMethod: identity.settlementMethod || "",
-          settlementName: identity.settlementName || "",
-          settlementAccount: identity.settlementAccount || "",
-          settlementBank: bankName,
-          bank_name: bankName,
-          account_name: identity.settlementName || "",
-          bank_account: identity.settlementAccount || "",
-          tng_account: identity.tngAccount || "",
-          method: identity.settlementMethod || "bank",
+          settlementMethod: pay.settlementMethod,
+          settlementName: pay.settlementName,
+          settlementAccount: pay.settlementAccount,
+          settlementBank: pay.settlementBank,
+          bank_name: pay.bank_name,
+          account_name: pay.account_name,
+          bank_account: pay.bank_account,
+          tng_account: pay.tng_account,
+          alipay_account: pay.alipay_account,
+          payment_account: pay.payment_account,
+          payment_phone: pay.payment_phone,
+          method: pay.method,
         });
       });
     }
@@ -3846,8 +3986,15 @@
             d.identity.settlementBank = "";
             d.identity.settlementBankOther = "";
             d.identity.bankName = "";
-            writeDraftRecord(d);
           }
+          if (!isTngSettlementMethod(d.identity.settlementMethod)) {
+            d.identity.tngAccount = "";
+            d.identity.paymentPhone = "";
+          }
+          if (!isAlipaySettlementMethod(d.identity.settlementMethod)) {
+            d.identity.alipayAccount = "";
+          }
+          writeDraftRecord(d);
           render(Number(root.dataset.step || 0));
         });
         return;
@@ -3864,7 +4011,7 @@
         });
         return;
       }
-      if (name === "settlementBankOther" || name === "settlementName" || name === "settlementAccount") {
+      if (name === "settlementBankOther" || name === "settlementName" || name === "settlementAccount" || name === "tngAccount" || name === "alipayAccount") {
         collect(root);
       }
     });
@@ -3982,6 +4129,21 @@
     }
     if (!draft.identity.settlementAccount && (payment.bankAccount || payment.bank_account)) {
       draft.identity.settlementAccount = payment.bankAccount || payment.bank_account || "";
+    }
+    if (!draft.identity.tngAccount && (payment.tngAccount || payment.tng_account || payment.paymentPhone || payment.payment_phone)) {
+      draft.identity.tngAccount = payment.tngAccount || payment.tng_account || payment.paymentPhone || payment.payment_phone || "";
+      draft.identity.paymentPhone = draft.identity.tngAccount;
+    }
+    if (!draft.identity.alipayAccount && (payment.alipayAccount || payment.alipay_account)) {
+      draft.identity.alipayAccount = payment.alipayAccount || payment.alipay_account || "";
+    }
+    // Legacy: if method is TNG/支付宝 but value only lived in bank_account, hydrate method-specific fields.
+    if (isTngSettlementMethod(draft.identity.settlementMethod) && !draft.identity.tngAccount && draft.identity.settlementAccount) {
+      draft.identity.tngAccount = draft.identity.settlementAccount;
+      draft.identity.paymentPhone = draft.identity.settlementAccount;
+    }
+    if (isAlipaySettlementMethod(draft.identity.settlementMethod) && !draft.identity.alipayAccount && draft.identity.settlementAccount) {
+      draft.identity.alipayAccount = draft.identity.settlementAccount;
     }
     writeDraftRecord(draft);
   }

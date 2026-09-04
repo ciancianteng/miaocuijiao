@@ -4,25 +4,63 @@
   <script src="/portal-early-gate.js?v=20260811authUnify2"></script>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>我的直属陪玩 - MEOW CUI JIAO</title>
+  <title>直属分成中心 - MEOW CUI JIAO</title>
   <style>
     *{box-sizing:border-box}
     body{margin:0;background:#08070a;color:#fff;font-family:"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
     .boss-nav{display:flex;gap:18px;flex:1;flex-wrap:wrap;align-items:center}
     .boss-nav a,.boss-nav button{border:0;background:transparent;color:#cdb8c4;cursor:pointer;font:inherit;font-size:14px;padding:0;text-decoration:none}
     .boss-nav a.active{color:#ffd6e7;font-weight:900}
-    .shell{width:min(1080px,calc(100% - 32px));margin:0 auto;padding:24px 0 80px;display:grid;gap:16px}
+    .shell{width:min(1120px,calc(100% - 32px));margin:0 auto;padding:24px 0 80px;display:grid;gap:16px}
     .page-head,.panel{border:1px solid rgba(255,255,255,.10);border-radius:18px;background:rgba(255,255,255,.045);padding:18px}
-    .page-head h1{margin:0;font-size:28px}.page-head p{margin:6px 0 0;color:#9ca3af}
-    .panel h2{margin:0 0 14px;font-size:20px}
-    .ghost-btn{padding:0 14px;min-height:40px;border-radius:12px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.055);color:#fff;cursor:pointer;font-weight:800;display:inline-flex;align-items:center;text-decoration:none}
-    .list{display:grid;gap:10px}
-    .row{display:grid;grid-template-columns:1.2fr .8fr 1fr;gap:10px;align-items:center;border:1px solid rgba(255,255,255,.08);border-radius:12px;background:rgba(0,0,0,.18);padding:12px}
-    .row span{color:#9ca3af;font-size:13px;word-break:break-word}
+    .page-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap}
+    .page-head h1{margin:0;font-size:28px}
+    .page-head p{margin:6px 0 0;color:#9ca3af;line-height:1.55;max-width:52ch}
+    .panel h2{margin:0 0 6px;font-size:18px}
+    .panel .sub{margin:0 0 14px;color:#9ca3af;font-size:13px;line-height:1.5}
+    .ghost-btn,.boss-btn{padding:0 14px;min-height:40px;border-radius:12px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.055);color:#fff;cursor:pointer;font-weight:800;display:inline-flex;align-items:center;justify-content:center;text-decoration:none;gap:8px}
+    .boss-btn.primary{border-color:transparent;background:linear-gradient(180deg,#ffe2ef,#ff9ecf);color:#1b0712}
+    .boss-btn:disabled,.ghost-btn:disabled{opacity:.48;cursor:not-allowed}
+    .cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+    .stat-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+    .stat{border:1px solid rgba(255,255,255,.08);border-radius:14px;background:rgba(0,0,0,.18);padding:12px 14px}
+    .stat span{display:block;color:#9ca3af;font-size:12px;margin-bottom:6px}
+    .stat strong{display:block;font-size:22px;letter-spacing:.02em}
+    .stat em{display:block;margin-top:6px;font-style:normal;color:#cdb8c4;font-size:12px;line-height:1.45}
+    .badge{display:inline-flex;align-items:center;min-height:26px;padding:0 10px;border-radius:999px;font-size:12px;font-weight:800;border:1px solid rgba(255,158,207,.28);background:rgba(255,158,207,.10);color:#ffd6e7}
+    .badge.ok{border-color:rgba(110,231,183,.28);background:rgba(110,231,183,.10);color:#a7f3d0}
+    .badge.warn{border-color:rgba(255,210,122,.28);background:rgba(255,210,122,.10);color:#ffd27a}
+    .badge.muted{border-color:rgba(255,255,255,.12);background:rgba(255,255,255,.05);color:#cdb8c4}
+    .formula{border:1px dashed rgba(255,158,207,.28);border-radius:12px;padding:12px 14px;background:rgba(255,158,207,.06);color:#ffd6e7;font-size:13px;line-height:1.55}
+    .formula code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#ffe2ef}
+    .progress{height:10px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden;margin-top:10px}
+    .progress > i{display:block;height:100%;width:0;background:linear-gradient(90deg,#ff9ecf,#ffd6e7);border-radius:inherit}
+    .rel-list,.hist-list{display:grid;gap:10px}
+    .rel-row{display:grid;grid-template-columns:1.4fr .9fr .9fr 1fr;gap:10px;align-items:center;border:1px solid rgba(255,255,255,.08);border-radius:12px;background:rgba(0,0,0,.18);padding:12px 14px}
+    .rel-row span,.cell-muted{color:#9ca3af;font-size:12px}
+    .rel-row strong{display:block;margin-top:4px;word-break:break-word}
+    .table-wrap{overflow:auto;border:1px solid rgba(255,255,255,.08);border-radius:14px;background:rgba(0,0,0,.16)}
+    table.earn{width:100%;border-collapse:collapse;min-width:760px}
+    table.earn th,table.earn td{padding:12px 14px;text-align:left;border-bottom:1px solid rgba(255,255,255,.06);font-size:13px}
+    table.earn th{color:#9ca3af;font-weight:700;background:rgba(255,255,255,.03);white-space:nowrap}
+    table.earn td{vertical-align:top}
+    table.earn tr:last-child td{border-bottom:0}
+    .money{font-variant-numeric:tabular-nums;font-weight:800}
     .empty{padding:28px 16px;text-align:center;color:#9ca3af;line-height:1.6}
     .message{border-radius:12px;padding:12px;line-height:1.55;border:1px solid rgba(255,210,122,.22);background:rgba(255,210,122,.08);color:#ffd27a}
     .message.bad{border-color:rgba(255,113,145,.24);background:rgba(255,113,145,.08);color:#ff9db7}
-    @media(max-width:720px){.row{grid-template-columns:1fr}.shell{width:calc(100% - 24px)}}
+    .message.ok{border-color:rgba(110,231,183,.24);background:rgba(110,231,183,.08);color:#a7f3d0}
+    .wallet-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px}
+    .hint{margin:10px 0 0;color:#9ca3af;font-size:12px;line-height:1.5}
+    @media(max-width:960px){
+      .cards{grid-template-columns:1fr}
+      .rel-row{grid-template-columns:1fr 1fr}
+    }
+    @media(max-width:720px){
+      .shell{width:calc(100% - 24px)}
+      .stat-grid{grid-template-columns:1fr}
+      .rel-row{grid-template-columns:1fr}
+    }
   </style>
   <link rel="stylesheet" crossorigin href="/src/style.css">
   <link rel="stylesheet" crossorigin href="/src/boss-header.css">
@@ -35,7 +73,7 @@
       <a href="companion-center.html">陪玩大厅</a>
       <a href="orders.html">我的订单</a>
       <a href="support.html">在线客服</a>
-      <a class="active" href="my-direct-companions.html">我的直属陪玩</a>
+      <a class="active" href="my-direct-companions.html">直属分成</a>
       <a href="mine.html">我的账号</a>
       <button type="button" data-logout>退出登录</button>
     </nav>
@@ -47,6 +85,6 @@
   <script src="src/boss-auth-session.js?v=20260811authUnify2"></script>
   <script src="src/boss-header.js" defer></script>
   <script src="src/avatar-fallback.js"></script>
-  <script src="src/my-direct-companions.js?v=20260902bosscomm1" defer></script>
+  <script src="src/my-direct-companions.js?v=20260902bossDashUi1" defer></script>
 </body>
 </html>
