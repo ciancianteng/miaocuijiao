@@ -1,0 +1,45 @@
+-- =============================================================================
+-- Production 缺失 Migration 清单（只生成 / 不执行）
+-- =============================================================================
+-- 状态：DRAFT FOR REVIEW ONLY
+-- 禁止：在本轮对 Production 执行本目录任何 SQL
+-- 禁止：INSERT/UPDATE/DELETE/migration apply（除非另行明确授权）
+-- 依据：仓库 SoT supabase/migrations/* + 只读探测（表缺失）
+-- 目标库指纹（只读确认）：jqfaknpmcnqwqvatrwgo.supabase.co
+--
+-- 命名对照（你列的名字 → 仓库实际表名）
+--   1. boss_companion_relations     → public.boss_companion_relations
+--   2. boss_commission_earnings     → public.boss_commission_earnings
+--   3. boss_levels                  → public.boss_levels
+--                                      (+ boss_level_assignments / boss_level_events)
+--   4. boss_companion_invitations   → public.boss_companion_invitations
+--   5. user_points                  → public.user_points_accounts
+--   6. user_points_ledger           → public.user_points_ledger
+--   7. points_settings              → public.points_settings
+--   8. orders.platform_fee          → alter public.orders add platform_fee ...
+--
+-- 建议执行顺序（未来授权后）：
+--   01 → 02（含 platform_fee）→ 03 → 04 → 05
+-- =============================================================================
+
+-- ---------------------------------------------------------------------------
+-- 条目总览
+-- ---------------------------------------------------------------------------
+-- | # | 对象 | 用途 | 风险等级 | SQL 文件 |
+-- |---|---|---|---|---|
+-- | 1 | boss_companion_relations (+ events) | Boss↔陪玩直属关系 SoT；佣金归属前提 | P0 | 01_... |
+-- | 2 | boss_commission_earnings | Boss 佣金入账账本（来自平台抽成） | P0 | 02_... |
+-- | 3 | boss_levels (+ assignments/events) | Boss 等级与佣金率档位 | P0 | 03_... |
+-- | 4 | boss_companion_invitations | 邀请绑定流程状态机 | P0 | 03_... |
+-- | 5 | user_points_accounts | Boss 积分余额账户 | P0 | 04_... |
+-- | 6 | user_points_ledger | 积分流水（幂等入账/回退） | P0 | 04_... |
+-- | 7 | points_settings | 积分规则配置（猫粮×倍率等） | P0 | 05_... |
+-- | 8 | orders.platform_fee (+结算快照列) | 订单平台费快照；Boss 佣金计算输入 | P0 | 02_... |
+--
+-- 共性风险：
+--   R1 缺表会导致对应 API 降级/报缺 relation，功能不可用
+--   R2 若错误对“已有脏数据/测试账号”的库启用结算，可能产生错误佣金/积分
+--   R3 RLS 开启后，若客户端直连而 policy 不完整，会出现读不到数据（服务端 service_role 通常不受阻）
+--   R4 本清单 SQL 含 seed/可选 settings 更新；真正执行前必须人工确认目标库
+--   R5 related_order_id / order_id 类型依赖现网 orders.id（仓库 SoT 为 uuid；佣金表 order_id 为 text）
+-- =============================================================================
