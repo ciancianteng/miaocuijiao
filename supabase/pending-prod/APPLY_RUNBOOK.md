@@ -224,6 +224,7 @@ alter table public.orders drop column if exists boss_commission_amount;
 alter table public.orders drop column if exists direct_boss_id;
 alter table public.orders drop column if exists boss_commission_relation_id;
 -- 恢复 platform_settings.global JSON：从 backup 还原整行，勿手工猜
+-- 尤其检查 data.defaultBossCommissionRate 是否被写入 0
 ```
 
 #### 若失败于 Step03 后 / Step04 前
