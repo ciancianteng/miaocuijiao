@@ -3,14 +3,18 @@
  * and runtime write guards. Does not delete or mutate data.
  *
  * Match rules (any one → test):
+ * - is_test_account / is_test === true (authoritative DB flag)
  * - email contains @meow.test (case-insensitive)
  * - email domain used by prod-smoke fixtures (@mcj-prod-smoke.invalid)
+ * - disposable / guerrilla inbox domains used by ProdSmoke fixtures
  * - display_name / nickname / username contains Smoke or ProdSmoke
- * - is_test_account / is_test === true
  */
 
 const MEOW_TEST_EMAIL_RE = /@meow\.test\b/i;
 const PROD_SMOKE_EMAIL_RE = /@mcj-prod-smoke\.invalid\b/i;
+/** Disposable domains observed on Production smoke fixtures (and common guerrilla aliases). */
+const DISPOSABLE_TEST_EMAIL_RE =
+  /@(?:guerrillamailblock\.com|guerrillamail\.com|guerrillamail\.de|guerrillamail\.net|guerrillamail\.org|sharklasers\.com|grr\.la|pokemail\.net|spam4\.me)\b/i;
 /** Username / display markers used by ProdSmoke* and *Smoke* E2E fixtures */
 const SMOKE_NAME_RE = /prodsmoke|smoke/i;
 
@@ -28,7 +32,11 @@ export function isProductionRuntime(env = process.env) {
 export function isTestEmail(email = "") {
   const e = String(email || "").trim();
   if (!e) return false;
-  return MEOW_TEST_EMAIL_RE.test(e) || PROD_SMOKE_EMAIL_RE.test(e);
+  return (
+    MEOW_TEST_EMAIL_RE.test(e) ||
+    PROD_SMOKE_EMAIL_RE.test(e) ||
+    DISPOSABLE_TEST_EMAIL_RE.test(e)
+  );
 }
 
 export function isTestUsername(...parts) {
@@ -141,4 +149,34 @@ export function filterBusinessProfiles(profiles = [], role) {
     if (role && p.role !== role) return false;
     return !isTestAccountRecord(p);
   });
+}
+
+/**
+ * Fail-closed helper for settlement / points writers.
+ * Returns a skip payload when any party looks like a test account.
+ */
+export function assertNotTestPartiesForSettlement({
+  bossProfile = null,
+  companionProfile = null,
+  customerServiceProfile = null,
+  order = null,
+  testIds = null,
+  byId = null,
+} = {}) {
+  if (bossProfile && isTestAccountRecord(bossProfile)) {
+    return { ok: false, skipped: true, reason: "test_boss" };
+  }
+  if (companionProfile && isTestAccountRecord(companionProfile)) {
+    return { ok: false, skipped: true, reason: "test_companion" };
+  }
+  if (customerServiceProfile && isTestAccountRecord(customerServiceProfile)) {
+    return { ok: false, skipped: true, reason: "test_customer_service" };
+  }
+  if (order && testIds && byId && isTestTouchedOrder(order, testIds, byId)) {
+    return { ok: false, skipped: true, reason: "test_touched_order" };
+  }
+  if (order && (isTestUsername(order.boss_name, order.companion_name, order.customer_service_name))) {
+    return { ok: false, skipped: true, reason: "test_order_names" };
+  }
+  return { ok: true, skipped: false, reason: null };
 }

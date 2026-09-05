@@ -10,6 +10,12 @@ import {
 } from "./_order-grabs.js";
 import { awardBossPointsForCompletedOrder } from "./_user-points.js";
 import { settleBossCommissionFromPlatformFee } from "./_boss-commission.js";
+import { isSettlementEnabled, settlementDisabledReason } from "./_feature-flags.js";
+import {
+  assertNotTestPartiesForSettlement,
+  isProductionRuntime,
+  isTestAccountRecord,
+} from "./_test-accounts.js";
 
 export const COMPLETION_AUTO_CONFIRM_MS = 24 * 60 * 60 * 1000;
 export const COMPLETION_PENDING_MARKER = "[[COMPLETION_PENDING]]";
@@ -251,6 +257,62 @@ export function createOrderCompleteHelpers({ restUrl, supabaseJson, serviceHeade
 
   async function settleCompanionIncome(saved, completedAt, method) {
     if (!saved?.companion_id) return null;
+
+    // G8: keep Production settlement writes off until flag is explicitly enabled.
+    if (!isSettlementEnabled()) {
+      return {
+        skipped: true,
+        reason: settlementDisabledReason() || "settlement_flag_disabled",
+      };
+    }
+
+    // G5/G7: never settle smoke/test-touched orders (incl. RM6000 smoke fixtures).
+    try {
+      const ids = [saved.boss_id, saved.companion_id, saved.customer_service_id].filter(Boolean);
+      const profiles = [];
+      for (const id of ids) {
+        try {
+          const withFlag = await supabaseJson(
+            restUrl(
+              "profiles",
+              `?id=eq.${encodeURIComponent(id)}&select=id,role,email,display_name,is_test_account&limit=1`
+            ),
+            { headers: serviceHeaders() }
+          );
+          if (withFlag?.[0]) profiles.push(withFlag[0]);
+        } catch (error) {
+          const msg = String(error?.message || "");
+          if (!/is_test_account|PGRST204|42703|schema cache/i.test(msg)) throw error;
+          const withoutFlag = await supabaseJson(
+            restUrl(
+              "profiles",
+              `?id=eq.${encodeURIComponent(id)}&select=id,role,email,display_name&limit=1`
+            ),
+            { headers: serviceHeaders() }
+          );
+          if (withoutFlag?.[0]) profiles.push(withoutFlag[0]);
+        }
+      }
+      const byId = new Map(profiles.map((p) => [p.id, p]));
+      const partyGuard = assertNotTestPartiesForSettlement({
+        bossProfile: byId.get(saved.boss_id) || null,
+        companionProfile: byId.get(saved.companion_id) || null,
+        customerServiceProfile: byId.get(saved.customer_service_id) || null,
+        order: saved,
+      });
+      if (!partyGuard.ok) {
+        return { skipped: true, reason: partyGuard.reason || "test_party" };
+      }
+      // Extra: any loaded party flagged test → skip (covers relation mismatches).
+      if (profiles.some((p) => isTestAccountRecord(p))) {
+        return { skipped: true, reason: "test_party" };
+      }
+    } catch (_) {
+      if (isProductionRuntime()) {
+        return { skipped: true, reason: "test_guard_error" };
+      }
+    }
+
     const existingTx = await supabaseJson(
       restUrl(
         "transactions",

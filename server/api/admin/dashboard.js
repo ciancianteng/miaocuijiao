@@ -133,7 +133,13 @@ export function buildDashboardStats({ profiles = [], orders = [], withdrawals = 
   const today = now.toISOString().slice(0, 10);
   const revenueOrders = businessOrders.filter((o) => countsAsRevenue(o));
   const paidToday = revenueOrders.filter((o) => String(o.created_at || "").slice(0, 10) === today);
-  const wd = Array.isArray(withdrawals) ? withdrawals : [];
+  const wd = (Array.isArray(withdrawals) ? withdrawals : []).filter((w) => {
+    const uid = w.user_id || w.companion_id || w.boss_id || w.profile_id;
+    if (uid && testIds.has(uid)) return false;
+    const p = uid ? byId.get(uid) : null;
+    if (p && (p.is_test_account === true || p.is_test === true)) return false;
+    return true;
+  });
   const withdrawPending = wd
     .filter((w) => !["completed", "paid", "rejected", "cancelled", "pay_failed"].includes(String(w.status || "")))
     .reduce((sum, w) => sum + money(w.net_amount_rm != null ? w.net_amount_rm : w.amount_rm), 0);
@@ -168,6 +174,8 @@ export function buildDashboardStats({ profiles = [], orders = [], withdrawals = 
       excludedCustomerServices:
         (profiles || []).filter((p) => p.role === "customer_service").length - customerServices.length,
       excludedOrders: (orders || []).length - businessOrders.length,
+      // RM6000 smoke completed orders must never inflate GMV (totalAmount).
+      smokeGmvExcluded: true,
     },
   };
 }
@@ -186,15 +194,29 @@ export default async function handler(req, res) {
     const [profiles, orders, withdrawals] = await Promise.all([
       loadProfilesForStats(),
       loadOrdersForStats(),
-      supabaseJson(restUrl("withdrawals", "?select=id,status,net_amount_rm,cat_food_amount,amount_rm&limit=2000"), {
-        headers: serviceHeaders(),
-      }).catch(() => []),
+      loadWithdrawalsForStats(),
     ]);
     const { stats, filter } = buildDashboardStats({ profiles, orders, withdrawals });
     return json(res, 200, { ok: true, configured: true, stats, filter });
   } catch (error) {
     return json(res, error.status || 500, { ok: false, message: error.message || "后台统计接口异常。" });
   }
+}
+
+async function loadWithdrawalsForStats() {
+  const queries = [
+    "?select=id,status,user_id,companion_id,net_amount_rm,cat_food_amount,amount_rm&limit=2000",
+    "?select=id,status,user_id,net_amount_rm,cat_food_amount,amount_rm&limit=2000",
+    "?select=id,status,net_amount_rm,cat_food_amount,amount_rm&limit=2000",
+  ];
+  for (const q of queries) {
+    try {
+      return await supabaseJson(restUrl("withdrawals", q), { headers: serviceHeaders() });
+    } catch {
+      /* try next */
+    }
+  }
+  return [];
 }
 
 async function loadOrdersForStats() {
