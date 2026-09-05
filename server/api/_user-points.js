@@ -12,6 +12,53 @@ import {
   supabaseJson,
   restUrl,
 } from "./_wallet.js";
+import { isPointsAwardEnabled, pointsAwardDisabledReason } from "./_feature-flags.js";
+import {
+  assertNotTestPartiesForSettlement,
+  isProductionRuntime,
+  isTestAccountRecord,
+} from "./_test-accounts.js";
+
+async function loadProfileForPointsGuard(userId) {
+  if (!userId) return null;
+  const withFlag =
+    `?id=eq.${encodeURIComponent(userId)}&select=id,role,email,display_name,nickname,is_test_account&limit=1`;
+  const withoutFlag =
+    `?id=eq.${encodeURIComponent(userId)}&select=id,role,email,display_name,nickname&limit=1`;
+  try {
+    const rows = await supabaseJson(restUrl("profiles", withFlag), { headers: serviceHeaders() });
+    return rows?.[0] || null;
+  } catch (error) {
+    const msg = String(error?.message || error || "");
+    if (!/is_test_account|PGRST204|42703|schema cache/i.test(msg)) throw error;
+    const rows = await supabaseJson(restUrl("profiles", withoutFlag), { headers: serviceHeaders() });
+    return rows?.[0] || null;
+  }
+}
+
+async function skipIfTestBossForPoints(order) {
+  const bossId = order?.boss_id;
+  if (!bossId && !order) return { ok: true };
+  try {
+    const bossProfile = bossId ? await loadProfileForPointsGuard(bossId) : null;
+    if (bossProfile && isTestAccountRecord(bossProfile)) {
+      return { ok: false, skipped: true, reason: "test_boss" };
+    }
+    const partyGuard = assertNotTestPartiesForSettlement({
+      bossProfile,
+      order: typeof order === "object" ? order : null,
+    });
+    if (!partyGuard.ok) {
+      return { ok: false, skipped: true, reason: partyGuard.reason || "test_party" };
+    }
+    return { ok: true };
+  } catch (_) {
+    if (isProductionRuntime()) {
+      return { ok: false, skipped: true, reason: "test_guard_error" };
+    }
+    return { ok: true };
+  }
+}
 
 /** Fallback defaults when points_settings is missing / unreadable. */
 export const DEFAULT_ORDER_COMPLETION_POINTS = 100; // deprecated fixed award fallback (legacy)
@@ -580,6 +627,27 @@ export async function awardBossPointsForCompletedOrder(order, { method = "boss_m
     return { ok: false, skipped: true, error: "missing_order_or_boss" };
   }
 
+  // G8: Production points writes stay off until flag explicitly enabled.
+  if (!isPointsAwardEnabled()) {
+    return {
+      ok: true,
+      skipped: true,
+      points: 0,
+      error: pointsAwardDisabledReason() || "points_award_flag_disabled",
+    };
+  }
+
+  // G6: fail-closed — test / smoke bosses must not receive ledger awards.
+  const testGuard = await skipIfTestBossForPoints(order);
+  if (!testGuard.ok) {
+    return {
+      ok: true,
+      skipped: true,
+      points: 0,
+      error: testGuard.reason || "test_account",
+    };
+  }
+
   const source =
     method === "system_auto_24h"
       ? "order_complete_auto"
@@ -686,6 +754,27 @@ export async function clawbackBossPointsForRefundedOrder(
   const orderId = order?.id || order;
   const bossId = typeof order === "object" ? order?.boss_id : null;
   if (!orderId) return { ok: false, skipped: true, error: "missing_order" };
+
+  // G8 / G6: when points award is disabled, do not open clawback ledgers either.
+  if (!isPointsAwardEnabled()) {
+    return {
+      ok: true,
+      skipped: true,
+      error: pointsAwardDisabledReason() || "points_award_flag_disabled",
+    };
+  }
+
+  if (typeof order === "object") {
+    const testGuard = await skipIfTestBossForPoints(order);
+    if (!testGuard.ok) {
+      return { ok: true, skipped: true, error: testGuard.reason || "test_account" };
+    }
+  } else if (bossId) {
+    const testGuard = await skipIfTestBossForPoints({ boss_id: bossId, id: orderId });
+    if (!testGuard.ok) {
+      return { ok: true, skipped: true, error: testGuard.reason || "test_account" };
+    }
+  }
 
   try {
     if (!hasPointsDb()) return { ok: true, skipped: true, error: "points_db_unavailable" };
