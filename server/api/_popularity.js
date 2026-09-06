@@ -14,6 +14,7 @@ import {
   resolveCompanionCover,
   resolveCompanionName,
 } from "./_companion-public-map.js";
+import { isTestAccountRecord } from "./_test-accounts.js";
 
 const TZ = "Asia/Kuala_Lumpur";
 const BRUSH_ORDER_LIMIT_24H = 5;
@@ -315,7 +316,12 @@ export async function recomputePopularity({ periods, gameKeys, operatorId, opera
   const [companions, reviews, favorites, complaints, sessions, adjustments] = await Promise.all([
     dbMaybe(
       "companion_profiles",
-      "?verification_status=eq.approved&select=user_id,nickname,game,main_service,level_name,level_id,price,card_image_url,availability_status,online_status,companion_uid,application_status,application_submitted_at&limit=3000"
+      "?verification_status=eq.approved&select=user_id,nickname,game,main_service,level_name,level_id,price,card_image_url,availability_status,online_status,companion_uid,application_status,application_submitted_at,is_test_account&limit=3000"
+    ).catch(async () =>
+      dbMaybe(
+        "companion_profiles",
+        "?verification_status=eq.approved&select=user_id,nickname,game,main_service,level_name,level_id,price,card_image_url,availability_status,online_status,companion_uid,application_status,application_submitted_at&limit=3000"
+      )
     ),
     dbMaybe("companion_reviews", "?select=id,companion_id,boss_id,rating,status,created_at&order=created_at.desc&limit=5000"),
     dbMaybe("companion_favorites", "?select=id,boss_id,companion_id,created_at&limit=8000"),
@@ -324,9 +330,28 @@ export async function recomputePopularity({ periods, gameKeys, operatorId, opera
     dbMaybe("popularity_adjustments", "?select=companion_id,points,created_at&order=created_at.desc&limit=3000"),
   ]);
 
+  const companionUserIds = [...new Set((companions || []).map((c) => c.user_id).filter(Boolean))];
+  const companionProfiles = companionUserIds.length
+    ? await dbMaybe(
+        "profiles",
+        `?id=in.(${companionUserIds.map(encodeURIComponent).join(",")})&select=id,display_name,email,is_test_account&limit=3000`
+      ).catch(async () =>
+        dbMaybe(
+          "profiles",
+          `?id=in.(${companionUserIds.map(encodeURIComponent).join(",")})&select=id,display_name,email&limit=3000`
+        )
+      )
+    : [];
+  const companionProfileMap = Object.fromEntries((companionProfiles || []).map((p) => [p.id, p]));
+
   const companionMap = {};
   for (const c of companions || []) {
     if (!c?.user_id) continue;
+    const profile = companionProfileMap[c.user_id] || {};
+    // Never rank smoke/test companions on homepage popularity (no deletes).
+    if (isTestAccountRecord(profile, c) || c.is_test_account === true || profile.is_test_account === true) {
+      continue;
+    }
     const appSt = String(c.application_status || "").trim().toLowerCase();
     if (/^(draft|archived|deleted)$/.test(appSt)) continue;
     if (appSt && !/approved|verified|passed/.test(appSt)) continue;
@@ -625,14 +650,30 @@ export async function listBoard({ period = "weekly", gameKey = "", limit, online
   let profiles = [];
   if (ids.length) {
     const inList = ids.map(encodeURIComponent).join(",");
-    companions = await dbMaybe("companion_profiles", `?user_id=in.(${inList})&limit=500`);
-    profiles = await dbMaybe("profiles", `?id=in.(${inList})&select=id,display_name,avatar_url&limit=500`);
+    companions = await dbMaybe(
+      "companion_profiles",
+      `?user_id=in.(${inList})&select=*,is_test_account&limit=500`
+    ).catch(async () => dbMaybe("companion_profiles", `?user_id=in.(${inList})&limit=500`));
+    profiles = await dbMaybe(
+      "profiles",
+      `?id=in.(${inList})&select=id,display_name,avatar_url,email,is_test_account&limit=500`
+    ).catch(async () =>
+      dbMaybe("profiles", `?id=in.(${inList})&select=id,display_name,avatar_url,email&limit=500`)
+    );
   }
   const cMap = Object.fromEntries((companions || []).map((c) => [c.user_id, c]));
   const pMap = Object.fromEntries((profiles || []).map((p) => [p.id, p]));
 
   let items = rows
     .filter((r) => r.rank > 0)
+    .filter((r) => {
+      const c = cMap[r.companion_id] || {};
+      const p = pMap[r.companion_id] || {};
+      // Homepage popularity must match admin: hide is_test_account / ProdSmoke* (no deletes).
+      if (isTestAccountRecord(p, c)) return false;
+      if (p.is_test_account === true || c.is_test_account === true) return false;
+      return true;
+    })
     .map((r) => {
       const c = cMap[r.companion_id] || {};
       const p = pMap[r.companion_id] || {};
