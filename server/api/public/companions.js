@@ -629,9 +629,9 @@ async function loadCompanions(id = "") {
       }
     }
     const gate = evaluatePublishGate(row, profile, media);
-    // Only hard-block non-approved / disabled / banned / rejected. Keep audit-approved real profiles.
-    if (!gate.adminApproved || !gate.accountEnabled) continue;
-    if (gate.blockReasons.some((r) => /封禁|停用|驳回|归档/.test(r))) continue;
+    // Homepage / hall: hallVisible requires approved + active + (identity OR deposit) + critical profile.
+    // Never require identity AND deposit.
+    if (!gate.hallVisible) continue;
     mapped.push(publicCompanion(row, profile, levelList, catalog, media));
   }
   return attachReviews(mapped);

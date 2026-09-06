@@ -6,6 +6,7 @@
  *   application approved + allow_orders + active + not archived/banned
  *   + NOT is_test_account
  *   + critical profile complete (nickname, ≥1 game, price > 0)
+ *   + (identity_verified OR deposit_verified)  — never require both
  * Level missing is soft: sync/approve writes platform default level.
  * Soft media (avatar / gallery / voice) never blocks listing.
  */
@@ -15,6 +16,7 @@ import {
   resolveCompanionAvatar,
   DEFAULT_COMPANION_AVATAR,
 } from "./_companion-public-map.js";
+import { isCredentialOrOk } from "./_companion-credential-gate.js";
 
 export const MIN_GALLERY = 1;
 
@@ -96,9 +98,6 @@ function hasVoice(row = {}, mediaExtras = {}) {
   return true;
 }
 
-function identityOk(row = {}) {
-  return /approved|verified|passed/i.test(String(row.verification_status || ""));
-}
 function applicationApproved(row = {}) {
   return /approved|verified|passed/i.test(String(row.application_status || ""));
 }
@@ -235,22 +234,29 @@ export function evaluatePublishGate(row = {}, profile = {}, mediaExtras = {}) {
   const testAccount = isTestAccount(row, profile || {});
   if (testAccount) blockReasons.push("测试账号");
 
+  // Credential is OR: identity OR deposit. Never require both for hall / homepage.
+  const credentialOrOk = isCredentialOrOk(row, mediaExtras?.identityRow || null, mediaExtras?.depositRow || null);
+  if (adminApproved && accountEnabled && allowOrders && !testAccount && !credentialOrOk) {
+    blockReasons.push("认证未完成（身份证或押金二选一）");
+  }
+
   const crit = criticalMissing(row, profile || {});
   const soft = [...softProfileMissing(row), ...softMediaMissing(row, profile || {}, mediaExtras)];
   const profileComplete = crit.length === 0 && soft.length === 0;
   const criticalComplete = crit.length === 0;
 
-  if (adminApproved && accountEnabled && allowOrders && !testAccount && !criticalComplete) {
+  if (adminApproved && accountEnabled && allowOrders && !testAccount && credentialOrOk && !criticalComplete) {
     blockReasons.push("资料不完整，暂未发布");
   }
 
-  // Work eligibility (companion端 / admin): approved + active + allow + not test.
+  // Work eligibility (companion端 / admin): approved + active + allow + not test + credential OR.
   // Public publish still requires criticalComplete.
   const canWorkBase =
     accountEnabled &&
     adminApproved &&
     allowOrders &&
     !testAccount &&
+    credentialOrOk &&
     !applicationRejected(row) &&
     !applicationArchived(row) &&
     !isBannedOrDisabled(profile || {});
@@ -278,6 +284,8 @@ export function evaluatePublishGate(row = {}, profile = {}, mediaExtras = {}) {
     statusLabel = "待审核";
   } else if (!allowOrders) {
     statusLabel = "禁止接单";
+  } else if (!credentialOrOk) {
+    statusLabel = "认证未完成（身份证或押金二选一）";
   } else if (!criticalComplete) {
     statusLabel = "资料不完整，暂未发布";
   } else if (soft.length) {
@@ -295,6 +303,7 @@ export function evaluatePublishGate(row = {}, profile = {}, mediaExtras = {}) {
     adminApproved,
     accountEnabled,
     isTestAccount: testAccount,
+    credentialOrOk,
     canOrder,
     canWork,
     hallVisible,

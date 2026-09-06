@@ -2075,6 +2075,25 @@ async function bootstrapData(profile, companion) {
     }
   }
 
+  if (identity?.status && companionRow?.id) {
+    const tableId = String(identity.status || "").trim();
+    const profileId = String(companionRow.identity_status || "").trim();
+    if (tableId && tableId !== profileId) {
+      try {
+        await patchCompanionProfile(`?id=eq.${encodeURIComponent(companionRow.id)}`, {
+          identity_status: tableId,
+          updated_at: nowIso(),
+        });
+        companionRow = { ...companionRow, identity_status: tableId };
+      } catch (error) {
+        // identity_status may be absent on older schemas
+        if (!/identity_status|column|schema cache|PGRST/i.test(String(error?.message || error || ""))) {
+          warnings.push(`identity_status_sync: ${error.message || error}`);
+        }
+      }
+    }
+  }
+
   const unifiedAccess = applyUnifiedAccessFields(player, profile, companionRow, deposit, identity);
   permissions.canWork = canWork(profile, companionRow, deposit, identity);
   permissions.canSetAvailable = permissions.canWork;
@@ -2933,11 +2952,20 @@ async function claimOrder(profile, companion, id) {
   // Self-trade first (user_id), before work-eligibility gates.
   const { assertNotSelfTrade } = await import("./_account-roles.js");
   assertNotSelfTrade(before.boss_id, profile.id, "抢自己的订单");
-  if (!canAccept(profile, companion)) {
+  // Load identity/deposit rows so eligibility is identity OR deposit (not profile columns alone).
+  let authRows = { identity: null, deposit: null };
+  try {
+    authRows = await assertCompanionOrderEligibility(profile, companion);
+  } catch (err) {
+    throw Object.assign(new Error(err?.message || COMPANION_AUTH_LOCK_MSG), {
+      status: err?.status || 403,
+      code: err?.code || "COMPANION_AUTH_LOCKED",
+    });
+  }
+  if (!canAccept(profile, companion, authRows.deposit, authRows.identity)) {
     const status = normalizeOnlineStatus(companion.availability_status || companion.online_status);
-    const reason = !canWork(profile, companion)
-      ? COMPANION_AUTH_LOCK_MSG
-      : status === "busy"
+    const reason =
+      status === "busy"
         ? "忙碌中，无法抢新订单。"
         : status === "paused"
           ? "已暂停接单，无法抢新订单。"
