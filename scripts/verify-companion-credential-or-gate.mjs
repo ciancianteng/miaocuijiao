@@ -1,0 +1,107 @@
+/**
+ * Unit tests: companion credential OR gate for accept-order + homepage visibility.
+ *
+ * Case 1: identity=true, deposit=false  => visible + can accept
+ * Case 2: identity=false, deposit=true  => visible + can accept
+ * Case 3: identity=false, deposit=false => hidden + cannot accept
+ *
+ * Usage: node scripts/verify-companion-credential-or-gate.mjs
+ */
+import assert from "node:assert/strict";
+import {
+  isIdentityVerified,
+  isDepositVerified,
+  isCredentialOrOk,
+  evaluateCredentialMatrix,
+} from "../server/api/_companion-credential-gate.js";
+import { evaluatePublishGate } from "../server/api/_companion-publish-gate.js";
+
+const profile = { role: "companion", status: "active", display_name: "验收陪玩" };
+const baseRow = {
+  application_status: "approved",
+  verification_status: "approved",
+  allow_orders: true,
+  featured: true,
+  nickname: "验收陪玩",
+  game: "王者荣耀",
+  price: 68,
+  is_test_account: false,
+};
+
+function runCase(name, rowPatch, expectVisible, expectAccept) {
+  const row = { ...baseRow, ...rowPatch };
+  const matrix = evaluateCredentialMatrix(row);
+  const gate = evaluatePublishGate(row, profile, {});
+  assert.equal(matrix.canAccept, expectAccept, `${name}: canAccept`);
+  assert.equal(matrix.homepageVisible, expectVisible, `${name}: homepageVisible (credential)`);
+  assert.equal(gate.credentialOrOk, expectAccept, `${name}: gate.credentialOrOk`);
+  assert.equal(gate.canWork, expectAccept, `${name}: gate.canWork`);
+  assert.equal(gate.hallVisible, expectVisible, `${name}: gate.hallVisible`);
+  assert.equal(isCredentialOrOk(row), expectAccept, `${name}: isCredentialOrOk`);
+  console.log(`PASS ${name}`);
+}
+
+// Case 1: identity only
+runCase(
+  "case1_identity_only",
+  { identity_status: "approved", deposit_status: "unpaid" },
+  true,
+  true
+);
+assert.equal(isIdentityVerified({ identity_status: "approved" }), true);
+assert.equal(isDepositVerified({ deposit_status: "unpaid" }), false);
+
+// Case 2: deposit only
+runCase(
+  "case2_deposit_only",
+  { identity_status: "draft", deposit_status: "approved" },
+  true,
+  true
+);
+assert.equal(isIdentityVerified({ identity_status: "draft" }), false);
+assert.equal(isDepositVerified({ deposit_status: "approved" }), true);
+
+// Case 3: neither
+runCase(
+  "case3_neither",
+  { identity_status: "draft", deposit_status: "unpaid" },
+  false,
+  false
+);
+assert.equal(isIdentityVerified({ identity_status: "draft" }), false);
+assert.equal(isDepositVerified({ deposit_status: "unpaid" }), false);
+assert.equal(isCredentialOrOk({ identity_status: "draft", deposit_status: "unpaid" }), false);
+
+// Explicitly prove AND is NOT required: both true still works
+runCase(
+  "both_approved_still_ok",
+  { identity_status: "approved", deposit_status: "approved" },
+  true,
+  true
+);
+
+// Auth-row override: profile columns unpaid, but deposit ledger approved
+{
+  const row = { ...baseRow, identity_status: "draft", deposit_status: "unpaid" };
+  const matrix = evaluateCredentialMatrix(row, null, { status: "approved" });
+  const gate = evaluatePublishGate(row, profile, { depositRow: { status: "approved" } });
+  assert.equal(matrix.canAccept, true);
+  assert.equal(gate.hallVisible, true);
+  console.log("PASS auth_row_deposit_overrides_profile_column");
+}
+
+// Featured + recommend homepage style row with only identity still lists
+{
+  const row = {
+    ...baseRow,
+    featured: true,
+    identity_status: "approved",
+    deposit_status: "unpaid",
+  };
+  const gate = evaluatePublishGate(row, profile, {});
+  assert.equal(gate.hallVisible, true);
+  assert.equal(gate.credentialOrOk, true);
+  console.log("PASS featured_identity_only_lists_on_homepage");
+}
+
+console.log("verify-companion-credential-or-gate: ok");
