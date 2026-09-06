@@ -1,7 +1,22 @@
 # FROZEN FINAL REVIEW — Convert admin → `meowcuijiao@gmail.com`
 
-**Status:** EXACT ACTIONS FOR YOUR APPROVAL — **NOT EXECUTED**  
+**Status:** READY FOR YOUR `EXECUTE CONVERT ADMIN` — **NOT EXECUTED**  
+**Updated:** 2026-09-06 (continued review; read-only re-check)  
 **G2:** **BLOCKED** until convert login verification succeeds + separate G2 approve  
+
+---
+
+## Review conclusion
+
+| Gate | Status |
+|---|---|
+| Target email free | ✅ `meowcuijiao@gmail.com` unused in Auth + profiles |
+| Admin UUID stable | ✅ `6f31b706-…` still `admin@meow.test` |
+| Boss protected | ✅ `ciancianteng@gmail.com` / `458ce9ad-…` not in mutate list |
+| G2 | ✅ remains blocked in this plan |
+| Agent execution | ❌ waiting for exact EXECUTE paste below |
+
+**Order if approved:** A backup → B Auth → C profiles → D0 G1 column → D1 flag false → E login verify → (later) G2 list edit.
 
 ---
 
@@ -14,7 +29,7 @@
 | Do not touch boss | `458ce9ad-3425-42b1-ab66-24bca342f971` / `ciancianteng@gmail.com` = **YES** |
 | G2 blocked until verify | **YES** |
 
-## Read-only preflight (just now)
+## Read-only preflight (re-checked)
 
 | Check | Result |
 |---|---|
