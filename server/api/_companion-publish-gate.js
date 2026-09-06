@@ -39,10 +39,69 @@ function readGamePrices(row = {}) {
   return {};
 }
 
-function hasPositivePrice(row = {}) {
+/** True when listing/public-ready pricing exists: price > 0 OR any game_prices value > 0. */
+export function hasPositivePrice(row = {}) {
   if (money(row.price) > 0) return true;
-  const gp = readGamePrices(row);
+  const gp = readGamePrices({
+    game_prices: row.game_prices ?? row.gamePrices ?? row.game_price_map ?? row.gamePriceMap,
+  });
   return Object.keys(gp).some((k) => money(gp[k]) > 0);
+}
+
+/** Normalize request/body/draft into a price-check row. */
+export function priceCheckRow(source = {}, existing = {}) {
+  const gamePrices =
+    source.game_prices ??
+    source.gamePrices ??
+    source.game_price_map ??
+    source.gamePriceMap ??
+    existing.game_prices ??
+    existing.gamePrices ??
+    {};
+  const price =
+    source.price ??
+    source.hourly_price ??
+    source.hourlyPrice ??
+    existing.price ??
+    existing.hourly_price;
+  return { price, game_prices: gamePrices };
+}
+
+export const MISSING_PRICE_MESSAGE =
+  "请先设置接单价格：单价 price > 0，或至少一个游戏价格 game_prices > 0。";
+
+export function assertHasPositivePrice(source = {}, existing = {}, message = MISSING_PRICE_MESSAGE) {
+  if (hasPositivePrice(priceCheckRow(source, existing))) return true;
+  const err = new Error(message);
+  err.status = 400;
+  err.code = "MISSING_PRICE";
+  throw err;
+}
+
+/**
+ * PERMANENT RULE — price validation scope:
+ * - Enforce on: companion application submit, and first transition into approved.
+ * - Never enforce on: admin correction/edit of an already-approved companion
+ *   (profile, avatar, game/service, pricing, payment review, deposit/identity,
+ *   allow_orders, featured, etc. must remain editable even when price is missing).
+ * Public listing gate is separate and unchanged.
+ */
+export function isApprovedApplicationStatus(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  return raw === "approved" || raw === "verified" || raw === "passed" || /已通过|已认证/.test(String(value || ""));
+}
+
+/** True only when moving into approved from a non-approved state. */
+export function isFirstApprovalTransition(existing = {}, nextStatus = "") {
+  if (!isApprovedApplicationStatus(nextStatus)) return false;
+  const current =
+    existing.application_status ??
+    existing.applicationStatus ??
+    existing.verification_status ??
+    existing.verificationStatus ??
+    existing.auditStatus ??
+    "";
+  return !isApprovedApplicationStatus(current);
 }
 
 function hasGameSet(row = {}) {

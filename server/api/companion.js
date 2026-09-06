@@ -48,7 +48,11 @@ import {
 import {
   normalizeSelectedVoiceTypes,
 } from "./_companion-voice-types-store.js";
-import { evaluatePublishGate } from "./_companion-publish-gate.js";
+import {
+  evaluatePublishGate,
+  assertHasPositivePrice,
+  MISSING_PRICE_MESSAGE,
+} from "./_companion-publish-gate.js";
 import { resolveCertTagsForProfiles } from "./_companion-cert-tags-store.js";
 import {
   buildCompanionInbox,
@@ -5408,6 +5412,18 @@ export default async function handler(req, res) {
 
     if (action === "submit_application") {
       const row = await ensureCompanionRow(auth.profile, companion);
+      // PERMANENT: price required on new application submit only.
+      // Admin edits of already-approved companions are handled separately and must not reuse this as a lock.
+      try {
+        assertHasPositivePrice(body, row, MISSING_PRICE_MESSAGE);
+      } catch (priceErr) {
+        return json(res, 400, {
+          ok: false,
+          code: "MISSING_PRICE",
+          message: priceErr?.message || MISSING_PRICE_MESSAGE,
+          field: "price",
+        });
+      }
       const applyGameNames = splitGames(body.main_game || body.game || body.mainGame || "");
       const servicesBundle = await loadPublicServices().catch(() => ({ services: [] }));
       const catalog = Array.isArray(servicesBundle?.services) ? servicesBundle.services : [];

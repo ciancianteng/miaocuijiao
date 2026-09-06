@@ -12,6 +12,18 @@ import { resolvePlatformCommission } from "../_commission-rates.js";
 import { resolveCompanionAvatar, resolveCompanionCover } from "../_companion-public-map.js";
 import { requireAdmin as requireAdminJwt, ADMIN_ROLES as SHARED_ADMIN_ROLES } from "../_admin-auth.js";
 import { isTestAccountRecord } from "../_test-accounts.js";
+import {
+  hasPositivePrice,
+  assertHasPositivePrice,
+  isFirstApprovalTransition,
+  isApprovedApplicationStatus,
+  MISSING_PRICE_MESSAGE,
+} from "../_companion-publish-gate.js";
+
+// PERMANENT: price checks apply only to new submit + first approval.
+// Admin edits of already-approved companions must never be blocked by this.
+const APPROVE_MISSING_PRICE_MESSAGE =
+  "无法通过审核：该陪玩尚未设置接单价格（单价 price > 0，或至少一个游戏价格 game_prices > 0）。请先填写价格后再通过。";
 
 const ADMIN_ROLES = SHARED_ADMIN_ROLES;
 const PLAYER_TABLE = "companion_profiles";
@@ -231,6 +243,10 @@ function mapListPlayer(row = {}, profile = {}) {
     level_name: row.level_name || "",
     levelName: row.level_name || "",
     price: row.price,
+    game_prices: row.game_prices || {},
+    gamePrices: row.game_prices || {},
+    missingPrice: !hasPositivePrice(row),
+    missing_price: !hasPositivePrice(row),
     commission_rate: resolvePlatformCommission(row.commission_rate).platformRate,
     orderCommissionRate: resolvePlatformCommission(row.commission_rate).platformRate,
     gift_commission_rate: row.gift_commission_rate,
@@ -959,6 +975,17 @@ async function reviewApplication(req, companion, payload) {
   const { approveListingPatchForRow, unlistListingPatch } = await import("../_companion-listing-sync.js");
   let patch;
   if (status === "approved") {
+    // First approval only — re-saving an already-approved row must not be blocked.
+    if (isFirstApprovalTransition(companion, status)) {
+      try {
+        assertHasPositivePrice(payload, companion, APPROVE_MISSING_PRICE_MESSAGE);
+      } catch (priceErr) {
+        throw Object.assign(new Error(priceErr?.message || APPROVE_MISSING_PRICE_MESSAGE), {
+          status: 400,
+          code: "MISSING_PRICE",
+        });
+      }
+    }
     const extras = {
       online_status: "offline",
       application_reject_reason: "",
@@ -1346,6 +1373,20 @@ export default async function handler(req, res) {
 
     // default save / edit / quick-edit
     const companionPatch = companionEditablePatch(payload);
+    // PERMANENT RULE: submission/first-approval validation must never block
+    // admin corrections on already-approved companions.
+    if (isFirstApprovalTransition(companion, companionPatch.application_status)) {
+      try {
+        assertHasPositivePrice(companionPatch, companion, APPROVE_MISSING_PRICE_MESSAGE);
+      } catch (priceErr) {
+        return json(res, 400, {
+          ok: false,
+          code: "MISSING_PRICE",
+          message: priceErr?.message || APPROVE_MISSING_PRICE_MESSAGE,
+          field: "price",
+        });
+      }
+    }
     if (companionPatch.commission_rate != null) {
       companionPatch.commission_rate = resolvePlatformCommission(companionPatch.commission_rate).platformRate;
     }

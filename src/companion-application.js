@@ -584,6 +584,7 @@
       [["rank", "游戏段位"], ["voiceType", "声线"], ["onlineStart", "常在线开始时间"], ["onlineEnd", "常在线结束时间"], ["intro", "自我介绍"]].forEach(function (item) {
         if (!hasText(data, item[0])) missing.push(item[1]);
       });
+      if (!draftHasPositivePrice(data)) missing.push("接单价格（单价 > 0 或至少一个游戏价格 > 0）");
       return missing;
     }
     if (index === 3) {
@@ -1604,6 +1605,56 @@
       tagPicker("personalTags", "个人标签（必填，最多 10 个）", data.personalTags, tagGroups.personalTags, 10) +
       '</form></section>';
   }
+  function draftHasPositivePrice(data) {
+    data = data || {};
+    var hourly = Number(data.hourlyPrice);
+    if (Number.isFinite(hourly) && hourly > 0) return true;
+    var map = data.gamePriceMap || {};
+    return Object.keys(map).some(function (k) {
+      var n = Number(map[k]);
+      return Number.isFinite(n) && n > 0;
+    });
+  }
+  function applyPriceFieldsHtml(data) {
+    data = data || {};
+    var games = Array.isArray(data.mainGames) ? data.mainGames.filter(Boolean) : [];
+    var map = data.gamePriceMap || {};
+    var rows = games.length
+      ? games
+          .map(function (g) {
+            return (
+              '<label class="form-field">' +
+              esc(g) +
+              "（RM/小时）" +
+              '<input data-game-price="' +
+              esc(g) +
+              '" type="number" inputmode="decimal" step="0.01" min="0" value="' +
+              esc(map[g] != null ? map[g] : "") +
+              '" placeholder="例如 25"></label>'
+            );
+          })
+          .join("")
+      : field("hourlyPrice", "接单单价（RM/小时）", "number", data.hourlyPrice, 'min="0" step="0.01" inputmode="decimal" placeholder="例如 25"');
+    return (
+      '<div class="form-field full" data-apply-price-block>' +
+      "<span>接单价格（必填）</span>" +
+      '<p class="apply-note">提交申请前须设置价格：填写单价，或为至少一个已选游戏填写价格（> 0）。审核通过后仍可在陪玩工作台按等级区间调整。</p>' +
+      '<div class="apply-grid" data-apply-price-grid>' +
+      rows +
+      "</div></div>"
+    );
+  }
+  function syncApplyPriceGrid(root) {
+    if (!root) return;
+    var block = root.querySelector("[data-apply-price-block]");
+    if (!block) return;
+    var draft = readDraft();
+    var html = applyPriceFieldsHtml(draft.data || {});
+    var tmp = document.createElement("div");
+    tmp.innerHTML = html;
+    var next = tmp.firstChild;
+    if (next) block.replaceWith(next);
+  }
   function gameHtml(data) {
     return '<section class="apply-panel"><h2>填写游戏资料</h2><form class="apply-grid">' +
       '<label class="form-field">游戏昵称<div class="copy-field"><input name="gameNickname" data-apply-field type="text" value="' + esc(data.gameNickname || "") + '"><button class="apply-btn small" type="button" data-copy-nickname>复制</button></div></label>' +
@@ -1614,7 +1665,7 @@
       selectField("voiceType", "声线", data.voiceType, voiceTypeOptions()) +
       field("onlineStart", "常在线开始时间", "time", data.onlineStart) +
       field("onlineEnd", "常在线结束时间", "time", data.onlineEnd) +
-      '<p class="apply-note full">申请阶段无需填写报价。审核通过后，请到陪玩工作台按等级价格区间设置接单价格。</p>' +
+      applyPriceFieldsHtml(data) +
       field("intro", "自我介绍", "textarea", data.intro) +
       '</form></section>';
   }
@@ -2100,8 +2151,8 @@
       var v = String(el.value || "").trim();
       if (g && v) priceMap[g] = v;
     });
+    data.gamePriceMap = priceMap;
     if (Object.keys(priceMap).length) {
-      data.gamePriceMap = priceMap;
       if (!data.hourlyPrice) data.hourlyPrice = priceMap[Object.keys(priceMap)[0]] || "";
     }
     Array.prototype.slice.call(root.querySelectorAll("[data-tag-picker]")).forEach(function (picker) {
@@ -3967,6 +4018,10 @@
         var countEl = picker.querySelector('[data-tag-count="' + (picker.dataset.tagPicker || "") + '"]');
         if (countEl) countEl.textContent = String(checked.length);
         await collect(root);
+        if (picker.dataset.tagPicker === "mainGames") {
+          syncApplyPriceGrid(root);
+          await collect(root);
+        }
         var mark = root.querySelector(".step-complete-mark");
         if (mark) mark.textContent = stepComplete(Number(root.dataset.step || 0), readDraft()) ? "已完成 ✔" : "未完成 ○";
         // Do NOT full re-render — keeps scroll position on mobile.
