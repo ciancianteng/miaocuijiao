@@ -12,7 +12,7 @@
 | Column `companion_profiles.is_test_account` | ✅ exists |
 | Admin `6f31b706-…` / `meowcuijiao@gmail.com` | ✅ `admin` / `active` / `is_test_account=false` |
 | Boss `458ce9ad-…` / `ciancianteng@gmail.com` | ✅ `boss` / `active` / `is_test_account=false` |
-| All profiles marked test | ✅ **0** marked / 24 unmarked (expected pre-G2) |
+| Profiles marked test (pre-G2 snapshot) | was **0** marked / unmarked rest |
 | G2 Production UPDATE | ✅ applied (10 smoke; admin/boss false) |
 
 ## Next

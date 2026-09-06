@@ -48,11 +48,11 @@ Step 0  Confirm target DB = Production you logged into as meowcuijiao@gmail.com
 Step 1  Confirm backup / PITR (human)
 Step 2  Apply D0/D1 (G1 DDL + admin false)  ← DONE
 Step 3  Verify G1             ← DONE (column exists; real admin false)
-Step 4  Apply G2 DML          ← BLOCKED until EXECUTE G2 (10 smoke ids)
-Step 5  Verify G2             ← marked=10; real admin still false; login still OK
+Step 4  Apply G2 DML          ← DONE (10 smoke ids)
+Step 5  Verify G2             ← DONE (marked=10; admin/boss false)
 ```
 
-G2 **ready for approve** but **not executed**.
+G2 **APPLIED** and agent-verified. See `G2_APPLY_STATUS.md`.
 
 ---
 
@@ -168,20 +168,14 @@ Manual: log in again as `meowcuijiao@gmail.com` → must still succeed.
 
 ---
 
-## 7. Approval needed to proceed
+## 7. Post-apply status
 
-**D0/D1 done.** For G2 — reply with all of:
+**G2 APPLIED (human):** smoke cleaned = 10 · real admin untouched = YES · boss unchanged = YES  
 
-```text
-EXECUTE G2
-- D0/D1 APPLIED: YES
-- admin is_test_account: false
-- mark count: 10 smoke ids (admin excluded)
-- Backup/PITR confirmed: YES — T0 ___
-- Approve G2 UPDATE apply: YES
-- Approve pending-prod 01-05 in this same window: NO
-- G2 still requires commit after verify: YES
-```
+Further Production changes still need **separate** approve:
 
-**Until that reply: Agent will not execute G2 Production SQL.**
-Note: Agent still has no `DATABASE_URL`; G2 UPDATE may need human SQL Editor even after approve (same as D0/D1).
+- pending-prod **01→05**
+- Settlement / points flag enable
+- Smoke row deletion (do not by default)
+
+Agent has no `DATABASE_URL`; future DDL/DML still via human SQL Editor when approved.
