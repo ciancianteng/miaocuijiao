@@ -25,6 +25,8 @@ function check(id, cond, detail = "") {
 
 check("email-meow-test", isTestEmail("boss@meow.test"));
 check("email-prod-smoke-domain", isTestEmail("x@mcj-prod-smoke.invalid"));
+check("email-guerrilla", isTestEmail("brnwxnfv@guerrillamailblock.com"));
+check("email-sharklasers", isTestEmail("x@sharklasers.com"));
 check("email-normal", !isTestEmail("user@example.com"));
 check("name-prodsmoke", isTestUsername("ProdSmokeBoss2"));
 check("name-service", isTestUsername("ProdSmokeService2"));

@@ -1,0 +1,67 @@
+-- =============================================================================
+-- G0 SQL REVIEW — Migration 01–05 apply 清单（只生成 / 不执行）
+-- =============================================================================
+-- 状态：REVIEW ONLY — 禁止对本文件或 pending-prod/01–05 执行 Production apply
+-- 约束：不 DROP；不 DELETE smoke；不 UPDATE 业务行；不开启 SETTLEMENT / POINTS flag
+-- 只读复核（2026-09-05）：下列对象在 Production 均为缺失（REST 404 / platform_fee 400）
+-- =============================================================================
+
+-- ---------------------------------------------------------------------------
+-- 1) 完整性结论（代码层审查）
+-- ---------------------------------------------------------------------------
+-- | # | 文件 | 对象 | 安全写法 | Seed / 配置风险 | 完整 |
+-- |---|---|---|---|---|---|
+-- | 01 | 01_boss_companion_relations.sql | boss_companion_relations + events | CREATE IF NOT EXISTS | 无业务 UPDATE | ✅ |
+-- | 02 | 02_boss_commission_earnings_and_orders_platform_fee.sql | boss_commission_earnings；orders.platform_fee* | CREATE IF NOT EXISTS + ADD COLUMN IF NOT EXISTS（可空） | 末尾可选 platform_settings UPDATE | ✅（执行前确认 settings） |
+-- | 03 | 03_boss_levels_and_invitations.sql | boss_levels / assignments / events / invitations | CREATE IF NOT EXISTS | levels seed INSERT | ✅ |
+-- | 04 | 04_user_points_accounts_and_ledger.sql | user_points_accounts / ledger | CREATE IF NOT EXISTS | 无历史回填 | ✅ |
+-- | 05 | 05_points_settings_and_debt_rpcs.sql | points_settings + debt RPCs | CREATE IF NOT EXISTS | settings seed | ✅ |
+--
+-- Production 缺失对象（只读）：
+--   boss_companion_relations, boss_companion_relation_events,
+--   boss_commission_earnings, boss_levels, boss_level_assignments, boss_level_events,
+--   boss_companion_invitations, user_points_accounts, user_points_ledger, points_settings,
+--   orders.platform_fee（及 02 内其他结算快照列）
+--
+-- 不在 01–05 内、需单独 Gate：
+--   G1 profiles.is_test_account / companion_profiles.is_test_account
+--     → supabase/migrations/20260903_profiles_is_test_account.sql
+
+-- ---------------------------------------------------------------------------
+-- 2) 建议未来授权后的 apply 顺序（仍不在本轮执行）
+-- ---------------------------------------------------------------------------
+--   01 → 02 → 03 → 04 → 05 → (G1 is_test_account) → (G2 精确回填 11 ids)
+--   详见 APPLY_RUNBOOK.md
+
+-- ---------------------------------------------------------------------------
+-- 3) 不会覆盖已有 Production 数据的依据
+-- ---------------------------------------------------------------------------
+-- A. CREATE TABLE IF NOT EXISTS：已存在同名表则跳过建表，不重建、不 TRUNCATE。
+-- B. ALTER TABLE ... ADD COLUMN IF NOT EXISTS：仅追加列；
+--    orders.platform_fee 等为可空列 → 旧行保持 NULL，不改写金额/状态。
+-- C. 无 DROP TABLE / DROP COLUMN / DELETE FROM。
+-- D. 无对 orders / profiles 的历史金额 UPDATE。
+-- E. Seed：
+--    - boss_levels / points_settings：INSERT 缺省配置行，不覆盖业务订单。
+--    - 02 末尾 platform_settings 可选 UPDATE：**执行前必须人工确认**（配置变更）。
+-- F. Smoke 订单（含 MCJO000344 / RM6000）不会因 DDL 被删除或改金额。
+
+-- ---------------------------------------------------------------------------
+-- 4) 授权前只读核验 SQL（可在只读会话跑；本 agent 本轮不连库执行写操作）
+-- ---------------------------------------------------------------------------
+-- select to_regclass('public.boss_companion_relations');
+-- select to_regclass('public.boss_commission_earnings');
+-- select to_regclass('public.boss_levels');
+-- select to_regclass('public.boss_companion_invitations');
+-- select to_regclass('public.user_points_accounts');
+-- select to_regclass('public.user_points_ledger');
+-- select to_regclass('public.points_settings');
+-- select column_name from information_schema.columns
+--  where table_schema='public' and table_name='orders' and column_name='platform_fee';
+
+-- ---------------------------------------------------------------------------
+-- 5) 本轮状态
+-- ---------------------------------------------------------------------------
+-- G0 代码/文档准备：✅ 清单完整、风险已标注、01–05 SQL 草稿齐全
+-- G0 Production apply：❌ 未执行（需人工批准）
+-- =============================================================================

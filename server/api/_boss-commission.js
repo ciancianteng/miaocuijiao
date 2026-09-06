@@ -22,7 +22,30 @@ import {
   isRelationsMissing,
 } from "./_boss-companion-relations.js";
 import { getEffectiveBossLevelForSettle } from "./_boss-levels.js";
+import { isSettlementEnabled, settlementDisabledReason } from "./_feature-flags.js";
+import {
+  assertNotTestPartiesForSettlement,
+  isProductionRuntime,
+  isTestAccountRecord,
+} from "./_test-accounts.js";
 import { isMissingRelation, restUrl, serviceHeaders, supabaseJson } from "./_wallet.js";
+
+async function loadProfileForSettlementGuard(userId) {
+  if (!userId) return null;
+  const withFlag =
+    `?id=eq.${encodeURIComponent(userId)}&select=id,role,email,display_name,nickname,is_test_account&limit=1`;
+  const withoutFlag =
+    `?id=eq.${encodeURIComponent(userId)}&select=id,role,email,display_name,nickname&limit=1`;
+  try {
+    const rows = await supabaseJson(restUrl("profiles", withFlag), { headers: serviceHeaders() });
+    return rows?.[0] || null;
+  } catch (error) {
+    const msg = String(error?.message || error || "");
+    if (!/is_test_account|PGRST204|42703|schema cache/i.test(msg)) throw error;
+    const rows = await supabaseJson(restUrl("profiles", withoutFlag), { headers: serviceHeaders() });
+    return rows?.[0] || null;
+  }
+}
 
 const EARNINGS_TABLE = "boss_commission_earnings";
 const SETTINGS_ID = "global";
@@ -165,6 +188,32 @@ export async function settleBossCommissionFromPlatformFee(
     return { skipped: true, reason: "no_order_or_companion" };
   }
 
+  // G8: Production settlement writes stay off until flag explicitly enabled.
+  if (!isSettlementEnabled()) {
+    return { skipped: true, reason: settlementDisabledReason() || "settlement_flag_disabled" };
+  }
+
+  // G5: fail-closed — never write earnings for smoke / test parties.
+  try {
+    const companionProfile = await loadProfileForSettlementGuard(order.companion_id);
+    const bossProfile = order.boss_id
+      ? await loadProfileForSettlementGuard(order.boss_id)
+      : null;
+    const partyGuard = assertNotTestPartiesForSettlement({
+      bossProfile,
+      companionProfile,
+      order,
+    });
+    if (!partyGuard.ok) {
+      return { skipped: true, reason: partyGuard.reason || "test_party" };
+    }
+  } catch (_) {
+    // Production: refuse to invent earnings when guard lookup fails.
+    if (isProductionRuntime()) {
+      return { skipped: true, reason: "test_guard_error" };
+    }
+  }
+
   try {
     const existing = await supabaseJson(
       restUrl(
@@ -205,6 +254,18 @@ export async function settleBossCommissionFromPlatformFee(
       reason: !resolved.relation ? "no_active_relation" : "no_commission_rate",
       relation: resolved.relation || null,
     };
+  }
+
+  // Re-check relation boss after rate resolve (authoritative earning recipient).
+  try {
+    const earningBoss = await loadProfileForSettlementGuard(resolved.relation.boss_id);
+    if (earningBoss && isTestAccountRecord(earningBoss)) {
+      return { skipped: true, reason: "test_boss", relation: resolved.relation };
+    }
+  } catch (_) {
+    if (isProductionRuntime()) {
+      return { skipped: true, reason: "test_guard_error" };
+    }
   }
 
   const orderAmount = roundMoney(order.total_amount);
