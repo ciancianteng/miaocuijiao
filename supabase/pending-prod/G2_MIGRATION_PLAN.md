@@ -1,9 +1,9 @@
-# G2 Migration Plan (show-only — not executed)
+# G2 Migration Plan
 
 **Date:** 2026-09-06  
-**Trigger:** Convert-admin **CONVERT VERIFY SUCCESS** (`meowcuijiao@gmail.com` login OK).  
-**This document:** Plan only. **No G2 Production SQL has been executed.**  
-**Mark list:** **10** smoke IDs (converted admin `6f31b706-…` **excluded**).
+**Status:** **APPLIED** (human SQL Editor) — agent verified post-apply  
+**Mark list:** **10** smoke IDs (converted admin `6f31b706-…` **excluded**)  
+**Report:** `G2_APPLY_STATUS.md`
 
 ---
 
@@ -12,20 +12,18 @@
 | Gate | Status | Notes |
 |---|---|---|
 | Real admin login | ✅ `meowcuijiao@gmail.com` CONVERT VERIFY SUCCESS | Human confirmed |
-| Boss unchanged | ✅ `ciancianteng@gmail.com` | Human + agent re-check |
-| G1 / D0+D1 `is_test_account` | ✅ Applied | Human D0/D1 APPLIED; agent verified column + admin `false` |
-| G2 UPDATE | ❌ Blocked until explicit `EXECUTE G2` | Column ready; mark list = 10 smoke ids |
+| Boss unchanged | ✅ `ciancianteng@gmail.com` / `is_test_account=false` | Post-G2 re-check |
+| G1 / D0+D1 `is_test_account` | ✅ Applied | Column exists; admin `false` |
+| G2 UPDATE | ✅ Applied | Exactly 10 smoke IDs marked |
 | pending-prod 01–05 | Out of G2 scope unless separately approved | Not part of G2 |
 | Settlement / points flags | Remain **OFF** | Not part of G2 |
 
-### Live Production (agent re-check)
+### Live Production (agent re-check after G2 APPLIED)
 
-- Admin: `6f31b706-…` / `meowcuijiao@gmail.com` / `admin` / `active`
-- Boss: `458ce9ad-…` / `ciancianteng@gmail.com` / `boss` / `active`
-- `profiles.is_test_account` → **exists**; all rows currently `false` (0 marked)
-- Admin `meowcuijiao@gmail.com` → `is_test_account=false`
-
-**Do not run G2 until you paste an explicit `EXECUTE G2` approve.**
+- Marked profiles: **10** (exact planned smoke ID set)
+- Admin: `6f31b706-…` / `meowcuijiao@gmail.com` / `admin` / `is_test_account=false`
+- Boss: `458ce9ad-…` / `ciancianteng@gmail.com` / `boss` / `is_test_account=false`
+- Companion mirror: 4 smoke companions `true`
 
 ---
 

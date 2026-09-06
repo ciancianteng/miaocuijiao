@@ -1,12 +1,13 @@
 -- =============================================================================
 -- G2 SQL REVIEW — 标记 10 个 smoke/test 账号（只生成 / 不执行）
 -- =============================================================================
--- 状态：REVIEW ONLY — 禁止对本文件执行 Production UPDATE
+-- 状态：APPLIED（human SQL Editor 2026-09-06）— agent 已复核 marked=10
 -- 依据：SMOKE_TEST_ISOLATION_DESIGN.md §1.1 + convert-admin verify
 -- 更新：2026-09-06 — 已从 mark 列表移除真实 admin UUID
 --       6f31b706-11e7-42df-8db1-d2caccd796de = meowcuijiao@gmail.com（正式 admin，勿标 test）
 -- 前置：G1 / convert D0+D1 ✅ 已应用（列存在；真实 admin is_test_account=false）
--- G2 Production UPDATE：❌ BLOCKED（需单独 EXECUTE G2 批准）
+-- G2 Production UPDATE：✅ APPLIED（10 smoke ids；admin/boss 未改）
+-- 报告：G2_APPLY_STATUS.md
 -- =============================================================================
 
 -- ---------------------------------------------------------------------------
@@ -101,7 +102,7 @@ rollback; -- REVIEW TEMPLATE ends with rollback; real apply must be explicit COM
 -- 4) 本轮状态
 -- ---------------------------------------------------------------------------
 -- CONVERT VERIFY：✅ login meowcuijiao@gmail.com OK；boss unchanged
--- D0/D1 (G1 column)：✅ APPLIED（admin false；0 marked pre-G2）
+-- D0/D1 (G1 column)：✅ APPLIED（admin false）
 -- G2 SQL review（10 ids，已排除正式 admin）：✅
--- G2 Production UPDATE：❌ 未执行（BLOCKED：需单独批准）
+-- G2 Production UPDATE：✅ APPLIED（marked=10；admin/boss false）
 -- =============================================================================
