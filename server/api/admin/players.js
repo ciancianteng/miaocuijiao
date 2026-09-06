@@ -11,6 +11,7 @@ import { readLocalLevels } from "../_companion-levels-store.js";
 import { resolvePlatformCommission } from "../_commission-rates.js";
 import { resolveCompanionAvatar, resolveCompanionCover } from "../_companion-public-map.js";
 import { requireAdmin as requireAdminJwt, ADMIN_ROLES as SHARED_ADMIN_ROLES } from "../_admin-auth.js";
+import { isTestAccountRecord } from "../_test-accounts.js";
 
 const ADMIN_ROLES = SHARED_ADMIN_ROLES;
 const PLAYER_TABLE = "companion_profiles";
@@ -776,7 +777,10 @@ async function listPlayers() {
     m[p.id] = p;
     return m;
   }, {});
-  return (Array.isArray(companions) ? companions : []).map((row) => mapListPlayer(row, profileMap[row.user_id] || {}));
+  // Hide smoke / is_test_account rows from admin companion management (no deletes).
+  return (Array.isArray(companions) ? companions : [])
+    .filter((row) => !isTestAccountRecord(profileMap[row.user_id] || {}, row))
+    .map((row) => mapListPlayer(row, profileMap[row.user_id] || {}));
 }
 
 async function reviewIdentity(req, companion, payload) {

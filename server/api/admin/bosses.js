@@ -1,4 +1,5 @@
 import { resolveBossPublicCode, publicDisplayName, isDevLogin, isDbUuid } from "../_account-codes.js";
+import { isTestAccountRecord } from "../_test-accounts.js";
 
 const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"];
 const RESERVED_BOSS_IDS = ["admin", "system", "official", "root", "support", "service"];
@@ -658,11 +659,12 @@ export default async function handler(req, res) {
           httpStatus: response.status,
         });
       }
+      // Hide smoke / is_test_account rows from admin boss management (no deletes).
+      const list = (Array.isArray(rows) ? rows : []).filter((row) => !isTestAccountRecord(row));
       let walletByBoss = {};
       let orderCountByBoss = {};
       try {
         const { getWallet } = await import("../_wallet.js");
-        const list = Array.isArray(rows) ? rows : [];
         const wallets = await Promise.all(list.map((row) => getWallet(row.id).catch(() => null)));
         list.forEach((row, i) => {
           walletByBoss[row.id] = wallets[i] || null;
@@ -682,13 +684,11 @@ export default async function handler(req, res) {
       return json(res, 200, {
         ok: true,
         configured: true,
-        bosses: Array.isArray(rows)
-          ? rows.map((row) => {
-              const w = walletByBoss[row.id];
-              const vip = computeVip(w?.total_spent, vipLevels);
-              return mapBoss(row, w, { vip: vip.current, totalOrders: orderCountByBoss[row.id] || 0 });
-            })
-          : [],
+        bosses: list.map((row) => {
+          const w = walletByBoss[row.id];
+          const vip = computeVip(w?.total_spent, vipLevels);
+          return mapBoss(row, w, { vip: vip.current, totalOrders: orderCountByBoss[row.id] || 0 });
+        }),
         accountStatuses: ["正常", "限制下单", "限制充值", "冻结", "已注销", "黑名单"],
         loginStatuses: ["在线", "离线"],
         reservedBossIds: RESERVED_BOSS_IDS,
