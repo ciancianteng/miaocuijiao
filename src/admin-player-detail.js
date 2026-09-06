@@ -296,6 +296,26 @@
     );
   }
 
+  function playerMissingPrice(d) {
+    d = d || {};
+    if (d.missingPrice === true || d.missing_price === true) return true;
+    if (d.missingPrice === false || d.missing_price === false) return false;
+    var p = Number(d.price);
+    if (Number.isFinite(p) && p > 0) return false;
+    var gp = d.game_prices || d.gamePrices || {};
+    if (typeof gp === "string") {
+      try {
+        gp = JSON.parse(gp);
+      } catch (e) {
+        gp = {};
+      }
+    }
+    return !Object.keys(gp || {}).some(function (k) {
+      var n = Number(gp[k]);
+      return Number.isFinite(n) && n > 0;
+    });
+  }
+
   function levelOptions(selected, levels) {
     var html = '<option value="">未设置</option>';
     (levels || []).forEach(function (level) {
@@ -551,6 +571,7 @@
         ["直属陪返点", (d.directRebateRate != null ? d.directRebateRate : d.direct_rebate_rate || 0) + "%"],
         ["等级生效时间", d.level_effective_at || "—"],
         ["抽成生效时间", d.commission_effective_at || "—"],
+        ["价格完整性", playerMissingPrice(d) ? "缺少接单价格（无法公开上架）" : "已设置"],
       ]) +
       (edit
         ? '<div class="player-edit-grid" data-player-section-split>' +
@@ -562,6 +583,9 @@
           field("礼物抽成 %", "giftCommissionRate", d.giftCommissionRate != null ? d.giftCommissionRate : d.gift_commission_rate || 0) +
           field("直属陪返点 %", "directRebateRate", d.directRebateRate != null ? d.directRebateRate : d.direct_rebate_rate || 0) +
           field("调整原因", "reason", "") +
+          (playerMissingPrice(d)
+            ? '<p class="admin-sync-note error" style="grid-column:1/-1">未设置接单价格：通过申请前请先填写单价（> 0），否则审核将被拦截。</p>'
+            : "") +
           "</div>"
         : "");
 
@@ -697,6 +721,8 @@
       esc(d.id) +
       '" data-player-mode="' +
       esc(mode || "view") +
+      '" data-missing-price="' +
+      (playerMissingPrice(d) ? "1" : "0") +
       '">' +
       '<div class="player-detail-hero"><img src="' +
       esc(media.avatarUrl || d.avatar || "/assets/meow-cuijiao-brand.jpg") +
@@ -888,6 +914,15 @@
         alert("驳回时必须填写原因");
         return;
       }
+      if (kind2 === "application" && status === "approved") {
+        var priceInput = form3.querySelector('[name="price"]');
+        var formPrice = priceInput ? Number(priceInput.value) : NaN;
+        var hasFormPrice = Number.isFinite(formPrice) && formPrice > 0;
+        if (!hasFormPrice && form3.getAttribute("data-missing-price") === "1") {
+          alert("无法通过：该陪玩尚未设置接单价格（单价 > 0 或至少一个游戏价格 > 0）。请先在「等级与价格」填写单价后再通过。");
+          return;
+        }
+      }
       var action =
         kind2 === "identity"
           ? "review_identity"
@@ -898,10 +933,17 @@
               : kind2 === "deposit"
                 ? "review_deposit"
                 : "review_application";
+      var payload = { status: status, rejectReason: reason };
+      if (kind2 === "application" && status === "approved") {
+        var priceEl = form3.querySelector('[name="price"]');
+        if (priceEl && String(priceEl.value || "").trim() !== "") {
+          payload.price = priceEl.value;
+        }
+      }
       apiPost({
         action: action,
         id: form3.getAttribute("data-player-id"),
-        payload: { status: status, rejectReason: reason },
+        payload: payload,
       })
         .then(function (res) {
           alert(res.message || "审核已保存");

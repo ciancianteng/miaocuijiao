@@ -39,10 +39,43 @@ function readGamePrices(row = {}) {
   return {};
 }
 
-function hasPositivePrice(row = {}) {
+/** True when listing/public-ready pricing exists: price > 0 OR any game_prices value > 0. */
+export function hasPositivePrice(row = {}) {
   if (money(row.price) > 0) return true;
-  const gp = readGamePrices(row);
+  const gp = readGamePrices({
+    game_prices: row.game_prices ?? row.gamePrices ?? row.game_price_map ?? row.gamePriceMap,
+  });
   return Object.keys(gp).some((k) => money(gp[k]) > 0);
+}
+
+/** Normalize request/body/draft into a price-check row. */
+export function priceCheckRow(source = {}, existing = {}) {
+  const gamePrices =
+    source.game_prices ??
+    source.gamePrices ??
+    source.game_price_map ??
+    source.gamePriceMap ??
+    existing.game_prices ??
+    existing.gamePrices ??
+    {};
+  const price =
+    source.price ??
+    source.hourly_price ??
+    source.hourlyPrice ??
+    existing.price ??
+    existing.hourly_price;
+  return { price, game_prices: gamePrices };
+}
+
+export const MISSING_PRICE_MESSAGE =
+  "请先设置接单价格：单价 price > 0，或至少一个游戏价格 game_prices > 0。";
+
+export function assertHasPositivePrice(source = {}, existing = {}, message = MISSING_PRICE_MESSAGE) {
+  if (hasPositivePrice(priceCheckRow(source, existing))) return true;
+  const err = new Error(message);
+  err.status = 400;
+  err.code = "MISSING_PRICE";
+  throw err;
 }
 
 function hasGameSet(row = {}) {

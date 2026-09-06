@@ -55,6 +55,25 @@
     }
     return !!row.id && (row.application_submitted_at || row.applicationSubmittedAt || row.game || row.mainGame || row.main_service || /pending|resubmit|rejected|approved|review|submitted/.test(code));
   }
+  function missingPrice(row) {
+    if (!row) return true;
+    if (row.missingPrice === true || row.missing_price === true) return true;
+    if (row.missingPrice === false || row.missing_price === false) return false;
+    var p = Number(row.price);
+    if (Number.isFinite(p) && p > 0) return false;
+    var gp = row.game_prices || row.gamePrices || {};
+    if (typeof gp === "string") {
+      try {
+        gp = JSON.parse(gp);
+      } catch (e) {
+        gp = {};
+      }
+    }
+    return !Object.keys(gp || {}).some(function (k) {
+      var n = Number(gp[k]);
+      return Number.isFinite(n) && n > 0;
+    });
+  }
   function filteredRows() {
     var list = (state.rows || []).filter(isApplicationQueue);
     var f = state.filter || "all";
@@ -62,6 +81,11 @@
     if (f === "pending") return list.filter(function (r) { return /pending|review|submitted/.test(statusCode(r)); });
     if (f === "resubmit") return list.filter(function (r) { return /resubmit|need_more/.test(statusCode(r)); });
     if (f === "approved") return list.filter(function (r) { return /approved|verified|passed/.test(statusCode(r)); });
+    if (f === "approved_missing_price") {
+      return list.filter(function (r) {
+        return /approved|verified|passed/.test(statusCode(r)) && missingPrice(r);
+      });
+    }
     if (f === "rejected") return list.filter(function (r) { return /rejected/.test(statusCode(r)); });
     return list;
   }
@@ -84,6 +108,8 @@
       .map(function (item) {
         var code = statusCode(item);
         var id = item.id || item.playerId || "";
+        var noPrice = missingPrice(item);
+        var statusText = statusLabel(code) + (noPrice ? " · 缺价格" : "");
         return (
           "<tr>" +
           "<td>" +
@@ -95,7 +121,7 @@
           "</td><td>" +
           esc(item.game || item.mainGame || item.main_service || "-") +
           "</td><td>" +
-          esc(statusLabel(code)) +
+          esc(statusText) +
           "</td><td>" +
           esc(item.depositStatus || item.deposit_status || "-") +
           "</td><td>" +
@@ -122,6 +148,7 @@
         ["pending", "审核中"],
         ["resubmit", "需要补资料"],
         ["approved", "审核通过"],
+        ["approved_missing_price", "已通过但缺价格"],
         ["rejected", "审核未通过"],
         ["all", "全部"],
       ]
@@ -197,8 +224,16 @@
     }
     var approve = e.target.closest("[data-capp-approve]");
     if (approve) {
+      var approveId = approve.getAttribute("data-capp-approve");
+      var approveRow = (state.rows || []).find(function (r) {
+        return String(r.id || r.playerId || "") === String(approveId || "");
+      });
+      if (approveRow && missingPrice(approveRow)) {
+        alert("无法通过：该陪玩尚未设置接单价格（单价 > 0 或至少一个游戏价格 > 0）。请先在资料中填写价格后再通过。");
+        return;
+      }
       if (!confirm("确认通过该陪玩申请？通过后可登录陪玩端，默认离线。")) return;
-      review(approve.getAttribute("data-capp-approve"), "approved", "")
+      review(approveId, "approved", "")
         .then(function () {
           alert("已通过。申请人可登录陪玩端；完成身份认证与押金审核后才可接单。");
         })
