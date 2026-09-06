@@ -769,17 +769,28 @@ function profileEditablePatch(payload = {}) {
 }
 
 async function listPlayers() {
-  const [companions, profiles] = await Promise.all([
-    companionDb(PLAYER_TABLE, "?order=updated_at.desc,created_at.desc&limit=500"),
-    companionDb("profiles", "?role=eq.companion&limit=800").catch(() => []),
-  ]);
+  // Prefer DB-level exclude of is_test_account=true; fall back if column missing.
+  let companions;
+  try {
+    companions = await companionDb(
+      PLAYER_TABLE,
+      "?is_test_account=eq.false&order=updated_at.desc,created_at.desc&limit=500"
+    );
+  } catch (error) {
+    if (!/is_test_account|42703|PGRST204|schema cache/i.test(String(error?.message || error || ""))) {
+      throw error;
+    }
+    companions = await companionDb(PLAYER_TABLE, "?order=updated_at.desc,created_at.desc&limit=500");
+  }
+  const profiles = await companionDb("profiles", "?role=eq.companion&limit=800").catch(() => []);
   const profileMap = (Array.isArray(profiles) ? profiles : []).reduce((m, p) => {
     m[p.id] = p;
     return m;
   }, {});
-  // Hide smoke / is_test_account rows from admin companion management (no deletes).
+  // JS safety net: also drop rows whose linked profile is_test_account=true (no deletes).
   return (Array.isArray(companions) ? companions : [])
     .filter((row) => !isTestAccountRecord(profileMap[row.user_id] || {}, row))
+    .filter((row) => row.is_test_account !== true && profileMap[row.user_id]?.is_test_account !== true)
     .map((row) => mapListPlayer(row, profileMap[row.user_id] || {}));
 }
 

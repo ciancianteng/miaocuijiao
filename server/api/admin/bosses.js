@@ -637,20 +637,35 @@ export default async function handler(req, res) {
         return json(res, 200, { ok: true, configured: true, ...detail });
       }
 
-      const response = await fetch(
-        `${process.env.SUPABASE_URL}/rest/v1/profiles?role=eq.boss&order=created_at.desc&limit=300`,
-        {
-          headers: {
-            apikey: process.env.SUPABASE_SERVICE_ROLE_KEY,
-            Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
-          },
-        }
+      const bossHeaders = {
+        apikey: process.env.SUPABASE_SERVICE_ROLE_KEY,
+        Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+      };
+      // Prefer DB-level exclude of is_test_account=true; fall back if column missing.
+      let response = await fetch(
+        `${process.env.SUPABASE_URL}/rest/v1/profiles?role=eq.boss&is_test_account=eq.false&order=created_at.desc&limit=300`,
+        { headers: bossHeaders }
       );
-      const text = await response.text();
+      let text = await response.text();
       let rows = [];
       try {
         rows = text ? JSON.parse(text) : [];
       } catch (e) {}
+      if (
+        !response.ok &&
+        /is_test_account|42703|PGRST204|schema cache/i.test(String(text || rows?.message || ""))
+      ) {
+        response = await fetch(
+          `${process.env.SUPABASE_URL}/rest/v1/profiles?role=eq.boss&order=created_at.desc&limit=300`,
+          { headers: bossHeaders }
+        );
+        text = await response.text();
+        try {
+          rows = text ? JSON.parse(text) : [];
+        } catch (e) {
+          rows = [];
+        }
+      }
       if (!response.ok) {
         return json(res, response.status || 500, {
           ok: false,
@@ -659,8 +674,10 @@ export default async function handler(req, res) {
           httpStatus: response.status,
         });
       }
-      // Hide smoke / is_test_account rows from admin boss management (no deletes).
-      const list = (Array.isArray(rows) ? rows : []).filter((row) => !isTestAccountRecord(row));
+      // JS safety net: hide is_test_account=true (and shared smoke heuristics). No deletes.
+      const list = (Array.isArray(rows) ? rows : []).filter(
+        (row) => row.is_test_account !== true && !isTestAccountRecord(row)
+      );
       let walletByBoss = {};
       let orderCountByBoss = {};
       try {
