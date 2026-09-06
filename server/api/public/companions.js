@@ -70,6 +70,7 @@ import {
   resolveCompanionPublicCode,
 } from "../_account-codes.js";
 import { evaluatePublishGate } from "../_companion-publish-gate.js";
+import { isTestAccountRecord } from "../_test-accounts.js";
 
 /** Boss-facing: only audit-approved companion applications (not draft/pending). */
 function isAuditApprovedCompanion(row = {}) {
@@ -477,6 +478,22 @@ async function fetchCompanionRows(query) {
   return supabaseJson(restUrl("companion_profiles", query), { headers: headers() }).catch(() => []);
 }
 
+/** Prefer DB-level exclude of smoke/test companions; fall back if column missing. */
+async function fetchCompanionRowsHideTest(query) {
+  const q = String(query || "");
+  const withFlag = q.includes("?")
+    ? q.replace("?", "?is_test_account=eq.false&")
+    : `?is_test_account=eq.false${q ? `&${q.replace(/^\?/, "")}` : ""}`;
+  try {
+    return await supabaseJson(restUrl("companion_profiles", withFlag), { headers: headers() });
+  } catch (error) {
+    if (!/is_test_account|42703|PGRST204|schema cache/i.test(String(error?.message || error || ""))) {
+      throw error;
+    }
+    return fetchCompanionRows(query);
+  }
+}
+
 /**
  * Resolve one companion profile row by internal UUID or public PW/P code.
  * Never pass a non-UUID value into a UUID column filter.
@@ -486,12 +503,12 @@ async function resolveCompanionProfileRows(idRaw = "") {
   if (!id) return null;
 
   if (isDbUuid(id)) {
-    const byUser = await fetchCompanionRows(
+    const byUser = await fetchCompanionRowsHideTest(
       `?user_id=eq.${encodeURIComponent(id)}&verification_status=eq.approved&limit=1`
     );
     if (byUser?.[0]) return byUser;
     // Some callers may pass companion_profiles.id
-    return fetchCompanionRows(
+    return fetchCompanionRowsHideTest(
       `?id=eq.${encodeURIComponent(id)}&verification_status=eq.approved&limit=1`
     );
   }
@@ -499,20 +516,20 @@ async function resolveCompanionProfileRows(idRaw = "") {
   if (isCompanionCode(id)) {
     const seq = parseCompanionCodeNumber(id);
     const code = formatCompanionCode(seq);
-    const byCode = await fetchCompanionRows(
+    const byCode = await fetchCompanionRowsHideTest(
       `?companion_code=eq.${encodeURIComponent(code)}&verification_status=eq.approved&limit=1`
     );
     if (byCode?.[0]) return byCode;
 
     for (const uid of [seq, seq + 100000]) {
-      const byUid = await fetchCompanionRows(
+      const byUid = await fetchCompanionRowsHideTest(
         `?companion_uid=eq.${encodeURIComponent(uid)}&verification_status=eq.approved&limit=1`
       );
       if (byUid?.[0]) return byUid;
     }
 
     // Scan fallback for rows with missing companion_code but resolvable public code.
-    const pool = await fetchCompanionRows(
+    const pool = await fetchCompanionRowsHideTest(
       "?verification_status=eq.approved&select=*&order=updated_at.desc&limit=500"
     );
     const hit = (Array.isArray(pool) ? pool : []).find((row) => resolveCompanionPublicCode(row) === code);
@@ -529,19 +546,46 @@ async function loadCompanions(id = "") {
     companions = await resolveCompanionProfileRows(id);
     if (!Array.isArray(companions)) companions = [];
   } else {
-    const rows = await fetchCompanionRows(
+    const rows = await fetchCompanionRowsHideTest(
       "?or=(verification_status.eq.approved,application_status.eq.approved)&order=updated_at.desc&limit=300"
     );
     companions = Array.isArray(rows) ? rows : [];
   }
+  // JS safety net (no deletes): drop smoke/test companions even if DB filter unavailable.
+  companions = companions.filter((row) => row && row.is_test_account !== true);
   const userIds = [...new Set(companions.map((row) => row.user_id).filter(Boolean))];
   if (!userIds.length) return [];
   const profileIds = companions.map((row) => row.id).filter(Boolean);
-  const [profiles, levels, servicesBundle, mediaMap] = await Promise.all([
-    supabaseJson(
-      restUrl("profiles", `?id=in.(${userIds.map(encodeURIComponent).join(",")})&role=eq.companion&status=eq.active&select=id,display_name,avatar_url,email,status,role`),
+  let profiles = [];
+  try {
+    profiles = await supabaseJson(
+      restUrl(
+        "profiles",
+        `?id=in.(${userIds.map(encodeURIComponent).join(",")})&role=eq.companion&status=eq.active&is_test_account=eq.false&select=id,display_name,avatar_url,email,status,role,is_test_account`
+      ),
       { headers: headers() }
-    ),
+    );
+  } catch (error) {
+    if (!/is_test_account|42703|PGRST204|schema cache/i.test(String(error?.message || error || ""))) {
+      throw error;
+    }
+    profiles = await supabaseJson(
+      restUrl(
+        "profiles",
+        `?id=in.(${userIds.map(encodeURIComponent).join(",")})&role=eq.companion&status=eq.active&select=id,display_name,avatar_url,email,status,role,is_test_account`
+      ),
+      { headers: headers() }
+    ).catch(async () =>
+      supabaseJson(
+        restUrl(
+          "profiles",
+          `?id=in.(${userIds.map(encodeURIComponent).join(",")})&role=eq.companion&status=eq.active&select=id,display_name,avatar_url,email,status,role`
+        ),
+        { headers: headers() }
+      )
+    );
+  }
+  const [levels, servicesBundle, mediaMap] = await Promise.all([
     readLocalLevels().catch(() => []),
     loadPublicServices().catch(() => ({ services: [] })),
     mediaExtrasByProfile(profileIds).catch(() => ({})),
@@ -554,6 +598,9 @@ async function loadCompanions(id = "") {
     if (!isAuditApprovedCompanion(row)) continue;
     const profile = profileMap[row.user_id];
     if (!profile) continue;
+    // Hide smoke/test accounts from homepage / hall / public detail (matches admin filter).
+    if (isTestAccountRecord(profile, row)) continue;
+    if (profile.is_test_account === true || row.is_test_account === true) continue;
     const media = { ...(mediaMap[row.id] || {}) };
     // Prefer companion_media voice, else durable storage:// / legacy URL — always size-gate.
     // If media signed URL is expired/invalid, fall back to companion_profiles.voice_url.
