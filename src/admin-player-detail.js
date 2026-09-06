@@ -17,6 +17,173 @@
     return '<div class="admin-sync-note">' + esc(msg) + "</div>";
   }
 
+  function paymentMethodLabel(method) {
+    var m = String(method || "").trim().toLowerCase();
+    if (/tng|touch\s*n\s*go|touch'?n'?go/.test(m)) return "TNG Wallet";
+    if (/alipay|支付宝/.test(m)) return "Alipay";
+    if (/bank|transfer|duitnow|银行|转账/.test(m)) return "Bank Transfer";
+    return String(method || "").trim() || "—";
+  }
+
+  function paymentMethodChips(method) {
+    var active = paymentMethodLabel(method);
+    return ["Bank Transfer", "TNG Wallet", "Alipay"]
+      .map(function (label) {
+        return (
+          '<span class="payout-method-chip' +
+          (active === label ? " is-active" : "") +
+          '">' +
+          esc(label) +
+          "</span>"
+        );
+      })
+      .join("");
+  }
+
+  function payoutFieldCard(opts) {
+    var value = opts.value == null || opts.value === "" ? "—" : String(opts.value);
+    var fullSlot = opts.fullKey
+      ? '<div class="payout-field-full" data-payout-full="' +
+        esc(opts.fullKey) +
+        '" hidden></div>'
+      : "";
+    var actions = "";
+    if (opts.copyable) {
+      actions +=
+        '<button class="mini-btn payout-copy-btn" type="button" data-payout-copy="' +
+        esc(opts.fullKey || opts.copyKey || "") +
+        '" hidden>复制</button>';
+    }
+    return (
+      '<div class="payout-field-card">' +
+      '<div class="payout-field-label">' +
+      esc(opts.label) +
+      "</div>" +
+      '<div class="payout-field-value" data-payout-masked="' +
+      esc(opts.fullKey || "") +
+      '">' +
+      esc(value) +
+      "</div>" +
+      fullSlot +
+      (actions ? '<div class="payout-field-actions">' + actions + "</div>" : "") +
+      "</div>"
+    );
+  }
+
+  function paymentCardsHtml(payment) {
+    var methodLabel = paymentMethodLabel(payment.method);
+    var canReveal =
+      !!payment.hasBankAccount ||
+      !!(payment.tngAccount && payment.tngAccount !== "—") ||
+      !!(payment.alipayAccount && payment.alipayAccount !== "—");
+    return (
+      '<div class="payout-pay-panel" data-payout-payment-panel>' +
+      '<div class="payout-field-card payout-method-card">' +
+      '<div class="payout-field-label">收款方式</div>' +
+      '<div class="payout-field-value">' +
+      esc(methodLabel) +
+      "</div>" +
+      '<div class="payout-method-chips" aria-label="收款方式">' +
+      paymentMethodChips(payment.method) +
+      "</div>" +
+      "</div>" +
+      '<div class="payout-pay-grid">' +
+      payoutFieldCard({ label: "收款人姓名", value: payment.accountName || "—" }) +
+      payoutFieldCard({ label: "银行名称", value: payment.bankName || "—" }) +
+      payoutFieldCard({
+        label: "银行账号",
+        value: payment.bankAccountMasked || (payment.hasBankAccount ? "已绑定（已脱敏）" : "—"),
+        fullKey: "bank",
+        copyable: true,
+      }) +
+      payoutFieldCard({
+        label: "TNG账号",
+        value: payment.tngAccount || "—",
+        fullKey: "tng",
+        copyable: true,
+      }) +
+      payoutFieldCard({
+        label: "支付宝账号",
+        value: payment.alipayAccount || "—",
+        fullKey: "alipay",
+        copyable: true,
+      }) +
+      "</div>" +
+      (canReveal
+        ? '<div class="payout-reveal-bar"><button class="mini-btn primary-lite" type="button" data-player-reveal="bank">查看完整收款资料</button><span class="admin-sync-note">仅管理员可见 · 写入审计日志</span></div>'
+        : "") +
+      '<div class="payout-pay-meta">' +
+      rows([
+        ["提交时间", payment.submittedAt || "—"],
+        ["审核状态", payment.statusLabel || payment.status],
+        ["驳回原因", payment.rejectReason || "无"],
+      ]) +
+      "</div>" +
+      '<p class="admin-sync-note payout-security-note">完整银行 / TNG / 支付宝账号仅管理员可查看。陪玩端与列表默认只显示脱敏信息。</p>' +
+      "</div>"
+    );
+  }
+
+  function fillRevealedPayment(form, payment) {
+    if (!form || !payment) return;
+    var map = {
+      bank: payment.bankAccount || payment.bank_account || "",
+      tng: payment.tngAccount || payment.tng_account || "",
+      alipay: payment.alipayAccount || payment.alipay_account || "",
+    };
+    Object.keys(map).forEach(function (key) {
+      var full = String(map[key] || "").trim();
+      var slot = form.querySelector('[data-payout-full="' + key + '"]');
+      var masked = form.querySelector('[data-payout-masked="' + key + '"]');
+      var copyBtn = form.querySelector('[data-payout-copy="' + key + '"]');
+      if (slot) {
+        if (full) {
+          slot.hidden = false;
+          slot.textContent = full;
+          slot.dataset.copyValue = full;
+        } else {
+          slot.hidden = false;
+          slot.textContent = "—";
+          delete slot.dataset.copyValue;
+        }
+      }
+      if (masked && full) masked.classList.add("is-revealed-masked");
+      if (copyBtn) {
+        if (full) {
+          copyBtn.hidden = false;
+          copyBtn.dataset.copyValue = full;
+        } else {
+          copyBtn.hidden = true;
+        }
+      }
+    });
+  }
+
+  function copyText(value) {
+    var text = String(value || "");
+    if (!text) return Promise.reject(new Error("无可复制内容"));
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(text);
+    }
+    return new Promise(function (resolve, reject) {
+      var ta = document.createElement("textarea");
+      ta.value = text;
+      ta.setAttribute("readonly", "");
+      ta.style.position = "fixed";
+      ta.style.left = "-9999px";
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        document.execCommand("copy");
+        resolve();
+      } catch (err) {
+        reject(err);
+      } finally {
+        document.body.removeChild(ta);
+      }
+    });
+  }
+
   function rows(list) {
     return (
       '<div class="detail-list player-detail-list">' +
@@ -272,27 +439,7 @@
         ]);
     if (edit && !identity.empty) identityHtml += reviewBox("identity", identity.status);
 
-    var paymentHtml = payment.empty
-      ? emptyText("尚未填写结款账户")
-      : rows([
-          ["收款方式", payment.method || "—"],
-          ["银行名称", payment.bankName || "—"],
-          ["账户姓名", payment.accountName || "—"],
-          {
-            0: "银行账号",
-            1:
-              esc(payment.bankAccountMasked || "—") +
-              (payment.hasBankAccount
-                ? ' <button class="mini-btn" type="button" data-player-reveal="bank">查看完整资料</button><span data-player-bank-full></span>'
-                : ""),
-            html: true,
-          },
-          ["TNG 账号", payment.tngAccount || "—"],
-          ["支付宝账号", payment.alipayAccount || "—"],
-          ["提交时间", payment.submittedAt || "—"],
-          ["审核状态", payment.statusLabel || payment.status],
-          ["驳回原因", payment.rejectReason || "无"],
-        ]);
+    var paymentHtml = payment.empty ? emptyText("尚未填写结款账户") : paymentCardsHtml(payment);
     if (edit && !payment.empty) paymentHtml += reviewBox("payment", payment.status);
 
     var galleryHtml =
@@ -682,6 +829,9 @@
       if (!form2) return;
       var pid = form2.getAttribute("data-player-id");
       var kind = reveal.getAttribute("data-player-reveal");
+      reveal.disabled = true;
+      var prevLabel = reveal.textContent;
+      reveal.textContent = "读取中…";
       apiPost({
         action: kind === "bank" ? "reveal_bank_account" : "reveal_identity_no",
         id: pid,
@@ -691,22 +841,38 @@
           if (kind === "identity") {
             var box = form2.querySelector("[data-player-identity-full]");
             if (box) box.textContent = " " + (res.identityNo || "");
+            reveal.textContent = prevLabel || "查看完整号码";
           } else {
-            var bank = form2.querySelector("[data-player-bank-full]");
-            var p = res.payment || {};
-            if (bank)
-              bank.textContent =
-                " 银行:" +
-                (p.bankAccount || "-") +
-                " / TNG:" +
-                (p.tngAccount || "-") +
-                " / 支付宝:" +
-                (p.alipayAccount || "-");
+            fillRevealedPayment(form2, res.payment || {});
+            reveal.textContent = "已显示完整资料";
           }
           alert(res.message || "已显示完整资料（已记入操作日志）");
         })
         .catch(function (err) {
+          reveal.textContent = prevLabel || "查看完整收款资料";
           alert(err.message || "查看失败");
+        })
+        .finally(function () {
+          reveal.disabled = false;
+        });
+      return;
+    }
+    var copyBtn = e.target.closest("[data-payout-copy]");
+    if (copyBtn) {
+      var key = copyBtn.getAttribute("data-payout-copy") || "";
+      var formCopy = copyBtn.closest("[data-player-detail-form]");
+      var slot = formCopy && formCopy.querySelector('[data-payout-full="' + key + '"]');
+      var value = copyBtn.dataset.copyValue || (slot && (slot.dataset.copyValue || slot.textContent)) || "";
+      copyText(value)
+        .then(function () {
+          var old = copyBtn.textContent;
+          copyBtn.textContent = "已复制";
+          setTimeout(function () {
+            copyBtn.textContent = old || "复制";
+          }, 1200);
+        })
+        .catch(function (err) {
+          alert(err.message || "复制失败");
         });
       return;
     }
