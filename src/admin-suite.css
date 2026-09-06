@@ -2134,3 +2134,111 @@ body[data-admin-section="players"] .player-data-table th:last-child{z-index:8!im
 body[data-admin-section="players"] .player-action-cell .player-ops,
 body[data-admin-section="players"] .player-more-wrap{overflow:visible!important;}
 .player-more-menu.is-portal-open{display:grid!important;position:fixed!important;right:auto!important;bottom:auto!important;z-index:10050!important;}
+
+/* ── Admin payout payment cards (companion detail + finance) ── */
+.payout-pay-panel{display:grid;gap:12px}
+.payout-pay-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.payout-field-card{
+  border:1px solid rgba(255,255,255,.10);
+  border-radius:12px;
+  background:rgba(255,255,255,.03);
+  padding:12px;
+  display:grid;
+  gap:6px;
+  min-width:0;
+}
+.payout-method-card{grid-column:1/-1}
+.payout-field-label{color:#9ca3af;font-size:12px;font-weight:700}
+.payout-field-value{
+  color:#fff;
+  font-size:14px;
+  font-weight:760;
+  word-break:break-word;
+  line-height:1.35;
+}
+.payout-field-value.is-revealed-masked{opacity:.55;text-decoration:line-through}
+.payout-field-full{
+  margin-top:2px;
+  padding:8px 10px;
+  border-radius:8px;
+  background:rgba(243,168,203,.10);
+  border:1px solid rgba(243,168,203,.22);
+  color:#ffe9f3;
+  font-size:14px;
+  font-weight:800;
+  letter-spacing:.04em;
+  word-break:break-all;
+}
+.payout-field-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+.payout-method-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+.payout-method-chip{
+  display:inline-flex;
+  align-items:center;
+  min-height:26px;
+  padding:0 10px;
+  border-radius:999px;
+  border:1px solid rgba(255,255,255,.10);
+  background:rgba(255,255,255,.03);
+  color:#b7aeb5;
+  font-size:12px;
+  font-weight:700;
+}
+.payout-method-chip.is-active,.payout-method-chip.is-active{
+  border-color:rgba(243,168,203,.35);
+  background:rgba(243,168,203,.14);
+  color:#fff;
+}
+.payout-reveal-bar{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:10px;
+}
+.payout-pay-meta .detail-list,
+.payout-pay-meta .player-detail-list{margin-top:0}
+.payout-security-note{margin:0}
+.payout-detail-card{display:grid;gap:6px;padding:12px;border:1px solid rgba(255,255,255,.12);border-radius:12px;background:rgba(255,255,255,.03)}
+.fin-payee-card.payout-field-card{padding:10px 12px}
+
+.payout-confirm-overlay{
+  position:fixed;inset:0;z-index:10060;
+  display:flex;align-items:flex-end;justify-content:center;
+  padding:12px;
+  background:rgba(0,0,0,.55);
+}
+.payout-confirm-modal{
+  width:min(440px,100%);
+  max-height:min(88vh,640px);
+  overflow:auto;
+  border-radius:16px 16px 12px 12px;
+  border:1px solid rgba(255,255,255,.12);
+  background:#141418;
+  box-shadow:0 24px 80px rgba(0,0,0,.45);
+  padding:14px;
+  display:grid;
+  gap:12px;
+}
+.payout-confirm-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.payout-confirm-head h3{margin:0;color:#fff;font-size:17px}
+.payout-confirm-body{display:grid;gap:10px}
+.payout-confirm-row{
+  display:grid;gap:4px;
+  padding:10px 12px;
+  border-radius:10px;
+  border:1px solid rgba(255,255,255,.08);
+  background:rgba(255,255,255,.03);
+}
+.payout-confirm-row span{color:#9ca3af;font-size:12px;font-weight:700}
+.payout-confirm-row strong{color:#fff;font-size:14px;word-break:break-word}
+.payout-confirm-account{letter-spacing:.05em}
+.payout-confirm-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+
+@media (min-width:720px){
+  .payout-confirm-overlay{align-items:center}
+  .payout-confirm-modal{border-radius:16px}
+}
+@media (max-width:720px){
+  .payout-pay-grid{grid-template-columns:1fr}
+  .player-detail-drawer .payout-field-card{padding:12px}
+  .payout-confirm-actions .mini-btn{min-height:40px;flex:1 1 120px}
+}

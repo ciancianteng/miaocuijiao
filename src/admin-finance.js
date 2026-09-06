@@ -63,6 +63,133 @@
     if (body) body.innerHTML = html;
     return true;
   }
+  function paymentMethodLabel(method) {
+    var m = String(method || "").trim().toLowerCase();
+    if (/tng|touch\s*n\s*go|touch'?n'?go/.test(m)) return "TNG Wallet";
+    if (/alipay|支付宝/.test(m)) return "Alipay";
+    if (/bank|transfer|duitnow|银行|转账/.test(m)) return "Bank Transfer";
+    return String(method || "").trim() || "—";
+  }
+  function closePayoutConfirmModal() {
+    var el = document.getElementById("payoutConfirmModal");
+    if (el) el.remove();
+  }
+  function openPayoutConfirmModal(opts) {
+    opts = opts || {};
+    closePayoutConfirmModal();
+    var overlay = document.createElement("div");
+    overlay.id = "payoutConfirmModal";
+    overlay.className = "payout-confirm-overlay";
+    overlay.innerHTML =
+      '<div class="payout-confirm-modal" role="dialog" aria-modal="true" aria-label="确认打款">' +
+      '<div class="payout-confirm-head"><h3>确认打款</h3><button type="button" class="mini-btn" data-payout-confirm-cancel>关闭</button></div>' +
+      '<div class="payout-confirm-body">' +
+      '<div class="payout-confirm-row"><span>姓名</span><strong>' +
+      esc(opts.name || "—") +
+      "</strong></div>" +
+      '<div class="payout-confirm-row"><span>收款方式</span><strong>' +
+      esc(opts.method || "—") +
+      "</strong></div>" +
+      '<div class="payout-confirm-row"><span>银行 / TNG / 支付宝</span><strong>' +
+      esc(opts.channel || "—") +
+      "</strong></div>" +
+      '<div class="payout-confirm-row"><span>账号</span><strong class="payout-confirm-account">' +
+      esc(opts.account || "—") +
+      "</strong></div>" +
+      (opts.amount
+        ? '<div class="payout-confirm-row"><span>金额</span><strong>RM ' + esc(opts.amount) + "</strong></div>"
+        : "") +
+      (opts.note ? '<p class="admin-sync-note">' + esc(opts.note) + "</p>" : "") +
+      "</div>" +
+      '<div class="payout-confirm-actions">' +
+      '<button type="button" class="mini-btn" data-payout-confirm-cancel>取消</button>' +
+      '<button type="button" class="mini-btn primary-lite" data-payout-confirm-ok>确认打款</button>' +
+      "</div></div>";
+    document.body.appendChild(overlay);
+    function cleanup() {
+      closePayoutConfirmModal();
+    }
+    overlay.addEventListener("click", function (e) {
+      if (e.target === overlay || e.target.closest("[data-payout-confirm-cancel]")) cleanup();
+    });
+    overlay.querySelector("[data-payout-confirm-ok]").addEventListener("click", function () {
+      cleanup();
+      if (typeof opts.onConfirm === "function") opts.onConfirm();
+    });
+  }
+  function buildPayoutConfirmFromWithdraw(w, account) {
+    account = account || {};
+    var method = paymentMethodLabel(account.method || w.payoutMethod || w.method || "");
+    var bankName = account.bankName || w.bankName || "";
+    var tng = account.tngAccount || w.tngAccount || "";
+    var alipay = account.alipayAccount || w.alipayAccount || "";
+    var channel = "—";
+    if (/tng/i.test(method) && tng) channel = "TNG · " + tng;
+    else if (/alipay/i.test(method) && alipay) channel = "Alipay · " + alipay;
+    else if (bankName) channel = bankName;
+    else if (tng) channel = "TNG · " + tng;
+    else if (alipay) channel = "Alipay · " + alipay;
+    var accountNo =
+      account.accountNumber ||
+      account.bankAccount ||
+      tng ||
+      alipay ||
+      (w.accountLast4 ? "*****" + w.accountLast4 : "—");
+    return {
+      name: account.accountHolder || w.accountHolder || w.companionName || "—",
+      method: method,
+      channel: channel,
+      account: accountNo,
+      amount: w.netAmountRm != null ? w.netAmountRm : w.amountRm || "",
+    };
+  }
+  function confirmWithdrawAction(withdrawalId, note, onConfirm) {
+    var local =
+      (state.withdrawals || []).find(function (x) {
+        return String(x.id) === String(withdrawalId);
+      }) || { id: withdrawalId };
+    var finish = function (w, account) {
+      var info = buildPayoutConfirmFromWithdraw(w || local, account || {});
+      info.note = note || "";
+      info.onConfirm = onConfirm;
+      openPayoutConfirmModal(info);
+    };
+    post("view_withdraw_detail", { id: withdrawalId })
+      .then(function (res) {
+        var w = res.item || res.withdrawal || res.detail || local;
+        var account = Object.assign(
+          {
+            id: w.paymentAccountId || "",
+            bankName: w.bankName || "",
+            accountHolder: w.accountHolder || "",
+            accountLast4: w.accountLast4 || "",
+            method: w.payoutMethod || w.method || "",
+            tngAccount: w.tngAccount || "",
+            alipayAccount: w.alipayAccount || "",
+          },
+          res.account || w.paymentAccount || {}
+        );
+        if (!state.canReveal || !(w.paymentAccountId || account.id)) {
+          finish(w, account);
+          return;
+        }
+        return post("reveal_account", {
+          paymentAccountId: w.paymentAccountId || account.id || "",
+          withdrawalId: w.id || withdrawalId,
+          reason: "打款前核对收款账号",
+        })
+          .then(function (revealed) {
+            finish(w, Object.assign({}, account, revealed.account || {}));
+          })
+          .catch(function () {
+            finish(w, account);
+          });
+      })
+      .catch(function () {
+        finish(local, {});
+      });
+  }
+
   function role() {
     try {
       var u = JSON.parse(localStorage.getItem("adminUser") || sessionStorage.getItem("adminUser") || "{}");
@@ -212,31 +339,35 @@
 
   function withdrawPayeeCard(w) {
     var masked = "*****" + esc(w.accountLast4 || "----");
+    var method = paymentMethodLabel(w.payoutMethod || w.method || "");
     return (
-      '<div class="fin-payee-card" style="display:grid;gap:6px;min-width:220px;padding:10px 12px;border:1px solid rgba(255,255,255,.10);border-radius:12px;background:rgba(255,255,255,.03);text-align:left">' +
-      '<div style="display:flex;justify-content:space-between;gap:8px"><span style="color:#9ca3af;font-size:12px">银行</span><strong style="font-size:13px">' +
-      esc(w.bankName || "-") +
-      "</strong></div>" +
-      '<div style="display:flex;justify-content:space-between;gap:8px"><span style="color:#9ca3af;font-size:12px">户名</span><strong style="font-size:13px">' +
-      esc(w.accountHolder || "-") +
-      "</strong></div>" +
-      '<div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><span style="color:#9ca3af;font-size:12px">账号</span><strong class="fin-account-value" data-fin-account-display data-masked="' +
+      '<div class="fin-payee-card payout-field-card" style="min-width:220px;text-align:left">' +
+      '<div class="payout-field-label">收款方式</div><div class="payout-field-value">' +
+      esc(method) +
+      "</div>" +
+      '<div class="payout-field-label">银行名称</div><div class="payout-field-value">' +
+      esc(w.bankName || "—") +
+      "</div>" +
+      '<div class="payout-field-label">收款人姓名</div><div class="payout-field-value">' +
+      esc(w.accountHolder || "—") +
+      "</div>" +
+      '<div class="payout-field-label">银行账号</div><div class="payout-field-value fin-account-value" data-fin-account-display data-masked="' +
       masked +
-      '" style="font-size:13px;letter-spacing:.08em">' +
+      '" style="letter-spacing:.08em">' +
       masked +
-      "</strong></div>" +
+      "</div>" +
       (w.paymentAccountId && state.canReveal
         ? '<button class="mini-btn" type="button" data-fin-reveal="' +
           esc(w.paymentAccountId) +
           '" data-fin-reveal-wd="' +
           esc(w.id) +
-          '" data-fin-reveal-state="masked" style="margin-top:4px">查看完整账号</button>'
+          '" data-fin-reveal-state="masked" style="margin-top:6px">查看完整账号</button>'
         : w.paymentAccountId
-          ? '<div class="admin-sync-note" style="margin-top:4px;font-size:11px">完整账号仅超级管理员/财务可查看</div>'
+          ? '<div class="admin-sync-note" style="margin-top:6px;font-size:11px">完整账号仅超级管理员/财务可查看</div>'
           : "") +
       '<button class="mini-btn" type="button" data-fin-view-wd="' +
       esc(w.id) +
-      '">打款信息详情</button>' +
+      '" style="margin-top:6px">打款信息详情</button>' +
       "</div>"
     );
   }
@@ -1109,15 +1240,17 @@
     }
     var approveWd = e.target.closest("[data-fin-approve-wd]");
     if (approveWd) {
-      if (!confirm("确认审核通过？通过后进入待付款，不会直接视为已付款。")) return;
-      post("approve_withdraw", { id: approveWd.dataset.finApproveWd })
-        .then(function (res) {
-          state.message = res.message;
-          load();
-        })
-        .catch(function (err) {
-          alert(err.message);
-        });
+      var approveId = approveWd.dataset.finApproveWd;
+      confirmWithdrawAction(approveId, "审核通过后进入待付款，不会直接视为已付款。请核对收款信息。", function () {
+        post("approve_withdraw", { id: approveId })
+          .then(function (res) {
+            state.message = res.message;
+            load();
+          })
+          .catch(function (err) {
+            alert(err.message);
+          });
+      });
       return;
     }
     var rejectWd = e.target.closest("[data-fin-reject-wd]");
@@ -1136,7 +1269,10 @@
     }
     var paidWd = e.target.closest("[data-fin-paid-wd]");
     if (paidWd) {
-      openWithdrawPaidUploader(paidWd.dataset.finPaidWd);
+      var paidId = paidWd.dataset.finPaidWd;
+      confirmWithdrawAction(paidId, "请确认已向以下账户完成真实转账，再上传凭证并标记打款完成。", function () {
+        openWithdrawPaidUploader(paidId);
+      });
       return;
     }
     var approvePay = e.target.closest("[data-fin-approve-pay]");
@@ -1223,19 +1359,27 @@
             "（" +
             esc(w.catFoodAmount != null ? w.catFoodAmount : "-") +
             " 猫粮）</strong></div>" +
-            '<div class="fin-payee-card" style="padding:12px;border:1px solid rgba(255,255,255,.12);border-radius:12px;background:rgba(255,255,255,.03)">' +
-            "<div style=\"margin-bottom:8px;font-weight:700\">打款信息</div>" +
-            "<div>银行：<strong>" +
-            esc(a.bankName || w.bankName || "-") +
-            "</strong></div>" +
-            "<div>户名：<strong>" +
-            esc(a.accountHolder || w.accountHolder || "-") +
-            "</strong></div>" +
-            '<div>账号：<strong class="fin-account-value" data-fin-account-display data-masked="' +
+            '<div class="fin-payee-card payout-detail-card">' +
+            '<div class="payout-field-label">收款方式</div><div class="payout-field-value">' +
+            esc(paymentMethodLabel(a.method || w.payoutMethod || w.method || "")) +
+            "</div>" +
+            '<div class="payout-field-label">银行名称</div><div class="payout-field-value">' +
+            esc(a.bankName || w.bankName || "—") +
+            "</div>" +
+            '<div class="payout-field-label">收款人姓名</div><div class="payout-field-value">' +
+            esc(a.accountHolder || w.accountHolder || "—") +
+            "</div>" +
+            '<div class="payout-field-label">银行账号</div><div class="payout-field-value fin-account-value" data-fin-account-display data-masked="' +
             esc(masked) +
             '" style="letter-spacing:.08em">' +
             esc(masked) +
-            "</strong></div>" +
+            "</div>" +
+            '<div class="payout-field-label">TNG账号</div><div class="payout-field-value">' +
+            esc(a.tngAccount || w.tngAccount || "—") +
+            "</div>" +
+            '<div class="payout-field-label">支付宝账号</div><div class="payout-field-value">' +
+            esc(a.alipayAccount || w.alipayAccount || "—") +
+            "</div>" +
             (state.canReveal && (w.paymentAccountId || w.id)
               ? '<button class="mini-btn" type="button" data-fin-reveal="' +
                 esc(w.paymentAccountId || "") +
