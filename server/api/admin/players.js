@@ -155,6 +155,10 @@ function labelStatus(value, fallback = "待审核") {
   return raw || fallback;
 }
 
+function isApprovedStatus(value) {
+  return /^(approved|verified|passed)$/i.test(String(normalizeStatusInput(value, "") || value || "").trim());
+}
+
 function money(value) {
   const n = Number(String(value ?? "").replace(/[^\d.-]/g, ""));
   return Number.isFinite(n) ? n : 0;
@@ -1366,7 +1370,13 @@ export default async function handler(req, res) {
 
     // default save / edit / quick-edit
     const companionPatch = companionEditablePatch(payload);
-    if (companionPatch.application_status === "approved") {
+    // Price required only when *transitioning into* approved.
+    // Already-approved companions must remain fully editable (profile/price/featured/etc.)
+    // even if they currently have missing price — admins need to correct them.
+    const approvingNow =
+      companionPatch.application_status === "approved" &&
+      !isApprovedStatus(companion.application_status || companion.verification_status);
+    if (approvingNow) {
       try {
         assertHasPositivePrice(companionPatch, companion, APPROVE_MISSING_PRICE_MESSAGE);
       } catch (priceErr) {
