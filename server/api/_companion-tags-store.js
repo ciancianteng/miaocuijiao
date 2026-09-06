@@ -60,7 +60,7 @@ function rowToDb(row) {
     updated_at: new Date().toISOString(),
   };
 }
-async function readDbTags() {
+export async function readDbTags() {
   if (!hasDb()) return null;
   const response = await fetch(restUrl("?order=sort_order.asc,name.asc"), { headers: serviceHeaders() });
   const text = await response.text();

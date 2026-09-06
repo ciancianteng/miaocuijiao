@@ -71,36 +71,36 @@
     var border = level.badgeBorder || level.color || "#9CA3AF";
     var avatarBorder = level.color || border;
     return (
-      '<div style="display:grid;gap:14px">' +
-        '<div class="level-preview-card" data-companion-level="' + esc(level.id) + '" style="background:' + esc(bg) + ";border:1.5px solid " + esc(level.color) + "66;border-radius:16px;padding:16px;display:grid;gap:12px\">" +
-          '<div style="display:flex;align-items:center;gap:12px">' +
-            '<div style="width:56px;height:56px;border-radius:50%;border:2.5px solid ' + esc(avatarBorder) + ";box-shadow:0 0 14px " + esc(avatarBorder) + "55;background:linear-gradient(145deg,#2a2733,#1a1820);display:grid;place-items:center;color:" + esc(level.badgeIcon) + ';font-size:22px">' + esc(level.icon || "●") + "</div>" +
-            '<div style="flex:1;min-width:0">' +
-              '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">' +
-                '<strong style="font-size:16px;color:#fff">示例陪玩</strong>' +
-                '<span class="companion-level-pill" data-level-id="' + esc(level.id) + '" style="display:inline-flex;align-items:center;gap:5px;min-height:26px;padding:0 10px;border-radius:999px;border:1.5px solid ' + esc(border) + ";color:" + esc(level.badgeText) + ";background:" + esc(level.color) + '22;font-size:12px;font-weight:800">' +
+      '<div class="level-preview-stack">' +
+        '<div class="level-preview-card" data-companion-level="' + esc(level.id) + '" style="background:' + esc(bg) + ";border-color:" + esc(level.color) + "66\">" +
+          '<div class="level-preview-hero">' +
+            '<div class="level-preview-avatar" style="border-color:' + esc(avatarBorder) + ";box-shadow:0 0 14px " + esc(avatarBorder) + "55;color:" + esc(level.badgeIcon) + '">' + esc(level.icon || "●") + "</div>" +
+            '<div class="level-preview-hero-copy">' +
+              '<div class="level-preview-title-row">' +
+                '<strong>示例陪玩</strong>' +
+                '<span class="companion-level-pill" data-level-id="' + esc(level.id) + '" style="border-color:' + esc(border) + ";color:" + esc(level.badgeText) + ";background:" + esc(level.color) + '22">' +
                   '<span style="color:' + esc(level.badgeIcon) + '">' + esc(level.icon || "●") + "</span>" +
                   esc(level.code) + " " + esc(level.name) +
                 "</span>" +
               "</div>" +
-              '<div style="margin-top:6px;color:' + esc(level.displayColor) + ';font-weight:800;font-size:15px">' + esc(rangeText(level)) + " / 小时</div>" +
+              '<div class="level-preview-rate" style="color:' + esc(level.displayColor) + '">' + esc(rangeText(level)) + " / 小时</div>" +
             "</div>" +
           "</div>" +
-          '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px;color:rgba(255,255,255,.62)">' +
-            "<div>卡片背景：" + esc(cardBgLabel(level.cardBackground)) + "</div>" +
-            "<div>平台抽成：" + esc(level.commissionRate) + "%</div>" +
-            "<div>状态：" + (level.enabled ? "启用" : "停用") + " · " + (level.open ? "开放申请" : "关闭申请") + "</div>" +
-            "<div>边框色：" + esc(border) + "</div>" +
+          '<div class="level-preview-meta">' +
+            '<div class="level-preview-meta-card"><span>卡片背景</span><strong>' + esc(cardBgLabel(level.cardBackground)) + "</strong></div>" +
+            '<div class="level-preview-meta-card"><span>平台抽成</span><strong>' + esc(level.commissionRate) + "%</strong></div>" +
+            '<div class="level-preview-meta-card"><span>状态</span><strong>' + (level.enabled ? "启用" : "停用") + " · " + (level.open ? "开放申请" : "关闭申请") + "</strong></div>" +
+            '<div class="level-preview-meta-card"><span>边框色</span><strong>' + esc(border) + "</strong></div>" +
           "</div>" +
           (level.upgradeCondition
-            ? '<div style="color:rgba(255,255,255,.55);font-size:12px;line-height:1.55;white-space:pre-wrap;border-top:1px solid rgba(255,255,255,.08);padding-top:10px">' + esc(level.upgradeCondition) + "</div>"
+            ? '<div class="level-preview-upgrade">' + esc(level.upgradeCondition) + "</div>"
             : "") +
         "</div>" +
-        '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">' +
-          '<span class="mcj-level-tag" data-level-id="' + esc(level.id) + '" style="display:inline-flex;align-items:center;gap:5px;min-height:28px;padding:0 12px;border-radius:999px;border:1.5px solid ' + esc(border) + ";color:" + esc(level.badgeText) + ";background:" + esc(level.color) + '22;font-size:12px;font-weight:800">' +
+        '<div class="level-preview-tag-row">' +
+          '<span class="mcj-level-tag" data-level-id="' + esc(level.id) + '" style="border-color:' + esc(border) + ";color:" + esc(level.badgeText) + ";background:" + esc(level.color) + '22">' +
             '<span style="color:' + esc(level.badgeIcon) + '">' + esc(level.icon || "●") + "</span>" + esc(level.code) +
           "</span>" +
-          '<span class="muted" style="font-size:11px">等级标签 · 与前台真实样式同源变量</span>' +
+          '<span class="muted level-preview-tag-hint">等级标签 · 与前台真实样式同源变量</span>' +
         "</div>" +
       "</div>"
     );
@@ -111,11 +111,11 @@
     return state.levels.map(function (level) {
       var active = String(level.id) === String(state.selectedId);
       return (
-        '<button type="button" class="mini-btn' + (active ? " primary-lite" : "") + '" data-level-edit="' + esc(level.id) + '" draggable="true" data-level-drag="' + esc(level.id) + '" style="justify-content:flex-start;width:100%;text-align:left">' +
-          '<span style="opacity:.55;margin-right:8px">⋮⋮</span>' +
-          '<span style="width:10px;height:10px;border-radius:50%;background:' + esc(level.color || "#9CA3AF") + ';display:inline-block;margin-right:8px;flex-shrink:0"></span>' +
-          esc(level.code) + " " + esc(level.name) +
-          '<span style="margin-left:auto;opacity:.65">' + esc(rangeText(level)) + "</span>" +
+        '<button type="button" class="mini-btn level-list-item' + (active ? " primary-lite" : "") + '" data-level-edit="' + esc(level.id) + '" draggable="true" data-level-drag="' + esc(level.id) + '">' +
+          '<span class="level-list-drag">⋮⋮</span>' +
+          '<span class="level-list-dot" style="background:' + esc(level.color || "#9CA3AF") + '"></span>' +
+          '<span class="level-list-name">' + esc(level.code) + " " + esc(level.name) + "</span>" +
+          '<span class="level-list-range">' + esc(rangeText(level)) + "</span>" +
         "</button>"
       );
     }).join("");
@@ -155,9 +155,9 @@
           '<label class="wide"><span>升级条件</span><textarea name="upgradeCondition" rows="4" placeholder="订单数 / 好评率 / 认证完成">' + esc(level.upgradeCondition || "") + "</textarea></label>" +
           '<label class="wide"><span>等级说明</span><textarea name="description" rows="3">' + esc(level.description || "") + "</textarea></label>"
         ) +
-        '<div class="row" style="margin-top:4px;gap:10px;flex-wrap:wrap">' +
+        '<div class="row level-editor-actions">' +
           '<button class="primary-btn" type="submit" data-level-save-current' + (state.saving || state.publishing ? " disabled" : "") + ">保存当前等级</button>" +
-          '<button class="primary-btn" type="button" data-level-publish' + (state.saving || state.publishing ? " disabled" : "") + ' style="background:linear-gradient(135deg,#34d399,#10b981)">发布到全站</button>' +
+          '<button class="primary-btn level-publish-btn" type="button" data-level-publish' + (state.saving || state.publishing ? " disabled" : "") + '>发布到全站</button>' +
           '<button class="ghost-btn" type="button" data-level-add>新增下一级</button>' +
           '<button class="ghost-btn" type="button" data-level-delete="' + esc(level.id) + '">删除</button>' +
         "</div>" +
@@ -172,27 +172,30 @@
     var ok = result.ok !== false;
     var rows = list.map(function (item) {
       return (
-        '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.06);font-size:13px">' +
-          '<span style="color:' + (item.ok ? "#34d399" : "#fb7185") + ';font-weight:800">' + (item.ok ? "✓" : "✗") + "</span>" +
+        '<div class="level-publish-row">' +
+          '<span class="level-publish-ok" style="color:' + (item.ok ? "#34d399" : "#fb7185") + '">' + (item.ok ? "✓" : "✗") + "</span>" +
           "<span>" + esc(item.label || item.key) + "</span>" +
-          (item.detail ? '<span class="muted" style="margin-left:auto;font-size:11px">' + esc(item.detail) + "</span>" : "") +
+          (item.detail ? '<span class="muted level-publish-detail">' + esc(item.detail) + "</span>" : "") +
         "</div>"
       );
     }).join("");
     return (
       '<div class="admin-sync-note' + (ok ? "" : " error") + '" data-level-publish-result style="margin-top:12px">' +
         "<strong>" + esc(ok ? "已同步全站" : (result.message || "发布未完全成功")) + "</strong>" +
-        '<div style="margin-top:8px">' + rows + "</div>" +
+        '<div class="level-publish-list">' + rows + "</div>" +
       "</div>"
     );
   }
 
   function overlayBodyHtml(level) {
     return (
-      '<div style="display:grid;grid-template-columns:minmax(0,1.15fr) minmax(260px,.85fr);gap:16px;align-items:start">' +
-        '<div>' + editorHtml(level) + (state.lastPublish ? publishResultHtml(state.lastPublish) : "") + "</div>" +
-        '<div><h4 style="margin:0 0 10px;color:rgba(255,255,255,.72);font-size:13px;font-weight:700">⑤ 实时预览</h4><div data-level-preview>' + previewHtml(level) + "</div>" +
-          '<p class="muted" style="margin:10px 0 0;font-size:11px">改颜色 / 价格 / 抽成后右侧即时预览；发布后刷新各端即可一致。</p></div>' +
+      '<div class="level-admin-overlay-layout">' +
+        '<div class="level-admin-editor-col">' + editorHtml(level) + (state.lastPublish ? publishResultHtml(state.lastPublish) : "") + "</div>" +
+        '<section class="level-admin-preview-col">' +
+          '<h4 class="level-preview-heading">⑤ 实时预览</h4>' +
+          '<div data-level-preview>' + previewHtml(level) + "</div>" +
+          '<p class="muted level-preview-hint">改颜色 / 价格 / 抽成后右侧即时预览；发布后刷新各端即可一致。</p>' +
+        "</section>" +
       "</div>"
     );
   }
@@ -210,27 +213,27 @@
         '<div class="content-version-meta"><span>' + esc(state.levels.length) + " 个等级</span><span>" + esc(statusText) + "</span></div></div>"
     );
     var toolbar = (
-      '<div class="content-admin-toolbar compact">' +
+      '<div class="content-admin-toolbar compact level-admin-toolbar">' +
         '<button class="btn primary" type="button" data-level-add>新增下一级</button>' +
         '<button class="btn" type="button" data-level-edit-selected' + (level ? "" : " disabled") + '>编辑选中等级</button>' +
         '<button class="btn" type="button" data-level-publish-page' + (state.levels.length ? "" : " disabled") + '>发布到全站</button>' +
       "</div>"
     );
     var listSection = (
-      '<section class="panel" style="margin:0"><h2>等级列表</h2><div data-level-list style="display:grid;gap:8px">' + listHtml() + "</div>" +
-        '<p class="muted" style="margin:10px 0 0;font-size:12px">拖动手柄调整排序；编辑面板按基础 / 前台显示 / 接单规则 / 升级规则分组，右侧实时预览。</p></section>'
+      '<section class="panel level-admin-list-panel"><h2>等级列表</h2><div class="level-admin-list" data-level-list>' + listHtml() + "</div>" +
+        '<p class="muted level-admin-list-hint">拖动手柄调整排序；编辑面板按基础 / 前台显示 / 接单规则 / 升级规则分组，右侧实时预览。</p></section>'
     );
     if (!window.MCJAdminOverlay) {
       return (
-        head + toolbar +
-        '<div style="display:grid;grid-template-columns:minmax(220px,.7fr) minmax(0,1.4fr) minmax(260px,.9fr);gap:14px;align-items:start;margin-top:14px">' +
+        '<div class="level-admin-page">' + head + toolbar +
+        '<div class="level-admin-layout">' +
           listSection +
-          '<div>' + editorHtml(level) + (state.lastPublish ? publishResultHtml(state.lastPublish) : "") + "</div>" +
-          '<section class="panel" style="margin:0"><h2>⑤ 实时预览</h2><div data-level-preview>' + previewHtml(level) + "</div></section>" +
-        "</div>"
+          '<div class="level-admin-editor-col">' + editorHtml(level) + (state.lastPublish ? publishResultHtml(state.lastPublish) : "") + "</div>" +
+          '<section class="panel level-admin-preview-panel"><h2>⑤ 实时预览</h2><div data-level-preview>' + previewHtml(level) + "</div></section>" +
+        "</div></div>"
       );
     }
-    return head + toolbar + listSection + (state.lastPublish && !state.formOpen ? publishResultHtml(state.lastPublish) : "");
+    return '<div class="level-admin-page">' + head + toolbar + listSection + (state.lastPublish && !state.formOpen ? publishResultHtml(state.lastPublish) : "") + "</div>";
   }
 
   function openLevelEditor(id) {
