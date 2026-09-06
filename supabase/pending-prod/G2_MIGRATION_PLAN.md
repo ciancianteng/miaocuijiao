@@ -128,8 +128,7 @@ Review file currently ends with `rollback` on purpose so it cannot be pasted bli
 |---|---|
 | Rows deleted | **None** |
 | Orders mutated | **None** |
-| `admin@meow.test` | Marked test (already login-blocked on Prod) |
-| Real admin (new UUID) | **Unchanged** (`false`) if not in the 11-id list |
+| Real admin `meowcuijiao@gmail.com` | **Not in mark list** — stays `false` |
 | Smoke GMV (e.g. RM 6000) | Excluded once app filters use the flag |
 | Settlement flags | Unchanged / stay off |
 
@@ -138,7 +137,7 @@ Review file currently ends with `rollback` on purpose so it cannot be pasted bli
 ## 5. Post-apply verification
 
 ```sql
--- G1
+-- G1 / D0
 select count(*) filter (where is_test_account) as marked,
        count(*) filter (where not is_test_account) as unmarked
 from public.profiles;
@@ -148,16 +147,16 @@ select id, email, role, is_test_account
 from public.profiles
 where is_test_account = true
 order by role, email;
--- expect exactly 11 rows
+-- expect exactly 10 rows
 
 -- Real admin must remain false
 select id, email, role, is_test_account
 from public.profiles
-where role in ('admin', 'super_admin')
-  and email not ilike '%@meow.test';
+where id = '6f31b706-11e7-42df-8db1-d2caccd796de';
+-- expect: meowcuijiao@gmail.com / admin / false
 ```
 
-Manual: log in again with the **real** admin (C2 repeat) → must still succeed.
+Manual: log in again as `meowcuijiao@gmail.com` → must still succeed.
 
 ---
 
@@ -172,17 +171,20 @@ Manual: log in again with the **real** admin (C2 repeat) → must still succeed.
 
 ## 7. Approval needed to proceed
 
-Reply with **all** of the following before any apply:
+**Now:** apply D0/D1 only (SQL in `G3_CONVERT_ADMIN_EXECUTION_REPORT.md`).
+
+**Later G2** — reply with all of:
 
 ```text
-G2 PLAN ACK
-- C2 SUCCESS: confirmed
-- PROD_SUPABASE_URL project matches the site I logged into: YES / NO
-- Read-only discrepancy (only admin@meow.test visible to agent): explained / fixed — ___
+EXECUTE G2
+- D0/D1 APPLIED: YES
+- admin is_test_account: false
+- mark count: 10 smoke ids (admin excluded)
 - Backup/PITR confirmed: YES — T0 ___
-- Approve G1 DDL apply: YES / NO
-- Approve G2 UPDATE apply (after G1): YES / NO
-- Approve pending-prod 01-05 in this same window: YES / NO (default NO)
+- Approve G2 UPDATE apply: YES
+- Approve pending-prod 01-05 in this same window: NO
+- G2 still requires commit after verify: YES
 ```
 
-**Until that reply: Agent will not execute Production SQL.**
+**Until that reply: Agent will not execute G2 Production SQL.**
+**Until D0/D1 applied: G2 cannot run even with approve.**
