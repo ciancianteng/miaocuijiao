@@ -13,8 +13,8 @@
 |---|---|---|
 | Real admin login | ✅ `meowcuijiao@gmail.com` CONVERT VERIFY SUCCESS | Human confirmed |
 | Boss unchanged | ✅ `ciancianteng@gmail.com` | Human + agent re-check |
-| G1 / D0+D1 `is_test_account` | ❌ **MISSING** / pending | Agent probe still `42703`; human said D0/D1 NO |
-| G2 UPDATE | ❌ Blocked until D0/D1 + explicit `EXECUTE G2` | Cannot set flag before column exists |
+| G1 / D0+D1 `is_test_account` | ✅ Applied | Human D0/D1 APPLIED; agent verified column + admin `false` |
+| G2 UPDATE | ❌ Blocked until explicit `EXECUTE G2` | Column ready; mark list = 10 smoke ids |
 | pending-prod 01–05 | Out of G2 scope unless separately approved | Not part of G2 |
 | Settlement / points flags | Remain **OFF** | Not part of G2 |
 
@@ -22,9 +22,10 @@
 
 - Admin: `6f31b706-…` / `meowcuijiao@gmail.com` / `admin` / `active`
 - Boss: `458ce9ad-…` / `ciancianteng@gmail.com` / `boss` / `active`
-- `profiles.is_test_account` → **does not exist** until D0/D1
+- `profiles.is_test_account` → **exists**; all rows currently `false` (0 marked)
+- Admin `meowcuijiao@gmail.com` → `is_test_account=false`
 
-**Do not run G2 until D0/D1 applied and you paste an explicit `EXECUTE G2` approve.**
+**Do not run G2 until you paste an explicit `EXECUTE G2` approve.**
 
 ---
 
@@ -47,13 +48,13 @@
 ```text
 Step 0  Confirm target DB = Production you logged into as meowcuijiao@gmail.com
 Step 1  Confirm backup / PITR (human)
-Step 2  Apply D0/D1 (G1 DDL + admin false)  ← still PENDING
-Step 3  Verify G1             ← column exists; real admin false
-Step 4  Apply G2 DML          ← UPDATE 10 smoke ids (+ companion_profiles mirror)
+Step 2  Apply D0/D1 (G1 DDL + admin false)  ← DONE
+Step 3  Verify G1             ← DONE (column exists; real admin false)
+Step 4  Apply G2 DML          ← BLOCKED until EXECUTE G2 (10 smoke ids)
 Step 5  Verify G2             ← marked=10; real admin still false; login still OK
 ```
 
-G2 **cannot** run before D0/D1.
+G2 **ready for approve** but **not executed**.
 
 ---
 
@@ -171,9 +172,7 @@ Manual: log in again as `meowcuijiao@gmail.com` → must still succeed.
 
 ## 7. Approval needed to proceed
 
-**Now:** apply D0/D1 only (SQL in `G3_CONVERT_ADMIN_EXECUTION_REPORT.md`).
-
-**Later G2** — reply with all of:
+**D0/D1 done.** For G2 — reply with all of:
 
 ```text
 EXECUTE G2
@@ -187,4 +186,4 @@ EXECUTE G2
 ```
 
 **Until that reply: Agent will not execute G2 Production SQL.**
-**Until D0/D1 applied: G2 cannot run even with approve.**
+Note: Agent still has no `DATABASE_URL`; G2 UPDATE may need human SQL Editor even after approve (same as D0/D1).

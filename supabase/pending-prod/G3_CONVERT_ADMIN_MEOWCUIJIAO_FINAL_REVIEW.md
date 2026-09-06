@@ -1,10 +1,10 @@
 # FROZEN FINAL REVIEW — Convert admin → `meowcuijiao@gmail.com`
 
-**Status:** **CONVERT VERIFY SUCCESS** (login OK; D0/D1 pending; G2 blocked)  
-**Updated:** 2026-09-06 (post VERIFY)  
-**G2:** **BLOCKED** until D0/D1 + separate `EXECUTE G2`  
-**Report:** `G3_CONVERT_ADMIN_EXECUTION_REPORT.md`  
-**G2 list:** docs updated — **10** smoke ids (admin UUID removed)
+**Status:** **CONVERT + D0/D1 COMPLETE** (G2 still blocked)  
+**Updated:** 2026-09-06 (post D0/D1 APPLIED)  
+**G2:** **BLOCKED** until separate `EXECUTE G2`  
+**Report:** `G3_D0_D1_APPLY_STATUS.md`  
+**G2 list:** **10** smoke ids (admin UUID removed)
 
 ---
 
@@ -15,7 +15,7 @@
 | Admin Auth/profile convert | ✅ `meowcuijiao@gmail.com` / admin / active |
 | Login verify | ✅ Human CONVERT VERIFY SUCCESS |
 | Boss protected | ✅ `ciancianteng@gmail.com` unchanged |
-| G1 `is_test_account` | ❌ D0/D1 still pending |
+| G1 `is_test_account` | ✅ D0/D1 applied; admin `false` |
 | G2 | ✅ remains blocked (mark list prepped, 10 ids) |
 
 ---
