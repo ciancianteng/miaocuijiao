@@ -557,11 +557,13 @@ async function loadCompanions(id = "") {
   if (!userIds.length) return [];
   const profileIds = companions.map((row) => row.id).filter(Boolean);
   let profiles = [];
+  // Do not require profiles.role=companion. Dual-role accounts (e.g. boss who also
+  // has an approved companion_profiles row) must still appear when hallVisible.
   try {
     profiles = await supabaseJson(
       restUrl(
         "profiles",
-        `?id=in.(${userIds.map(encodeURIComponent).join(",")})&role=eq.companion&status=eq.active&is_test_account=eq.false&select=id,display_name,avatar_url,email,status,role,is_test_account`
+        `?id=in.(${userIds.map(encodeURIComponent).join(",")})&status=eq.active&is_test_account=eq.false&select=id,display_name,avatar_url,email,status,role,is_test_account`
       ),
       { headers: headers() }
     );
@@ -572,14 +574,14 @@ async function loadCompanions(id = "") {
     profiles = await supabaseJson(
       restUrl(
         "profiles",
-        `?id=in.(${userIds.map(encodeURIComponent).join(",")})&role=eq.companion&status=eq.active&select=id,display_name,avatar_url,email,status,role,is_test_account`
+        `?id=in.(${userIds.map(encodeURIComponent).join(",")})&status=eq.active&select=id,display_name,avatar_url,email,status,role,is_test_account`
       ),
       { headers: headers() }
     ).catch(async () =>
       supabaseJson(
         restUrl(
           "profiles",
-          `?id=in.(${userIds.map(encodeURIComponent).join(",")})&role=eq.companion&status=eq.active&select=id,display_name,avatar_url,email,status,role`
+          `?id=in.(${userIds.map(encodeURIComponent).join(",")})&status=eq.active&select=id,display_name,avatar_url,email,status,role`
         ),
         { headers: headers() }
       )

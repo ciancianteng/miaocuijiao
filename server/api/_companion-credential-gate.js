@@ -11,14 +11,28 @@ function statusText(...values) {
   return "";
 }
 
+function isApprovedStatus(raw = "") {
+  return /approved|verified|passed/.test(String(raw || "").toLowerCase());
+}
+
+/**
+ * Identity is verified when ANY authoritative source says approved.
+ * Do not let a pending identity row shadow companion_profiles.verification_status
+ * (admin may approve via profile while the verification row stays pending).
+ */
 export function isIdentityVerified(row = {}, identityRow = null) {
-  const raw = statusText(
+  const sources = [
     identityRow?.status,
     identityRow?.verification_status,
     row.identity_status,
-    row.identityStatus
-  ).toLowerCase();
-  return /approved|verified|passed/.test(raw);
+    row.identityStatus,
+    // Production stores admin identity approval on companion_profiles.verification_status
+    row.verification_status,
+    row.verificationStatus,
+  ];
+  if (sources.some((value) => isApprovedStatus(value))) return true;
+  const raw = statusText(...sources).toLowerCase();
+  return isApprovedStatus(raw);
 }
 
 export function isDepositVerified(row = {}, depositRow = null) {

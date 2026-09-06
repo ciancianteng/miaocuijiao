@@ -18,8 +18,9 @@ import { evaluatePublishGate } from "../server/api/_companion-publish-gate.js";
 
 const profile = { role: "companion", status: "active", display_name: "验收陪玩" };
 const baseRow = {
+  id: "cp-test-1",
+  user_id: "user-test-1",
   application_status: "approved",
-  verification_status: "approved",
   allow_orders: true,
   featured: true,
   nickname: "验收陪玩",
@@ -54,23 +55,26 @@ assert.equal(isDepositVerified({ deposit_status: "unpaid" }), false);
 // Case 2: deposit only
 runCase(
   "case2_deposit_only",
-  { identity_status: "draft", deposit_status: "approved" },
+  { identity_status: "draft", deposit_status: "approved", verification_status: "pending" },
   true,
   true
 );
-assert.equal(isIdentityVerified({ identity_status: "draft" }), false);
+assert.equal(isIdentityVerified({ identity_status: "draft", verification_status: "pending" }), false);
 assert.equal(isDepositVerified({ deposit_status: "approved" }), true);
 
-// Case 3: neither
+// Case 3: neither (explicitly clear verification_status — production identity column)
 runCase(
   "case3_neither",
-  { identity_status: "draft", deposit_status: "unpaid" },
+  { identity_status: "draft", deposit_status: "unpaid", verification_status: "pending" },
   false,
   false
 );
-assert.equal(isIdentityVerified({ identity_status: "draft" }), false);
+assert.equal(isIdentityVerified({ identity_status: "draft", verification_status: "pending" }), false);
 assert.equal(isDepositVerified({ deposit_status: "unpaid" }), false);
-assert.equal(isCredentialOrOk({ identity_status: "draft", deposit_status: "unpaid" }), false);
+assert.equal(
+  isCredentialOrOk({ identity_status: "draft", deposit_status: "unpaid", verification_status: "pending" }),
+  false
+);
 
 // Explicitly prove AND is NOT required: both true still works
 runCase(
@@ -82,7 +86,12 @@ runCase(
 
 // Auth-row override: profile columns unpaid, but deposit ledger approved
 {
-  const row = { ...baseRow, identity_status: "draft", deposit_status: "unpaid" };
+  const row = {
+    ...baseRow,
+    identity_status: "draft",
+    deposit_status: "unpaid",
+    verification_status: "pending",
+  };
   const matrix = evaluateCredentialMatrix(row, null, { status: "approved" });
   const gate = evaluatePublishGate(row, profile, { depositRow: { status: "approved" } });
   assert.equal(matrix.canAccept, true);
@@ -102,6 +111,38 @@ runCase(
   assert.equal(gate.hallVisible, true);
   assert.equal(gate.credentialOrOk, true);
   console.log("PASS featured_identity_only_lists_on_homepage");
+}
+
+// Production path: verification_status=approved counts as identity even when identity row is pending
+{
+  const row = {
+    ...baseRow,
+    deposit_status: "unpaid",
+    verification_status: "approved",
+  };
+  const identityRow = { status: "pending" };
+  assert.equal(isIdentityVerified(row, identityRow), true);
+  assert.equal(isCredentialOrOk(row, identityRow, null), true);
+  const gate = evaluatePublishGate(row, profile, { identityRow });
+  assert.equal(gate.credentialOrOk, true);
+  assert.equal(gate.hallVisible, true);
+  assert.equal(gate.canWork, true);
+  console.log("PASS verification_status_approved_overrides_pending_identity_row");
+}
+
+// Dual-role boss profile with approved companion row still hall-visible
+{
+  const row = {
+    ...baseRow,
+    verification_status: "approved",
+    deposit_status: "unpaid",
+  };
+  const bossProfile = { id: row.user_id, role: "boss", status: "active", is_test_account: false };
+  const gate = evaluatePublishGate(row, bossProfile, { identityRow: { status: "pending" } });
+  assert.equal(gate.credentialOrOk, true);
+  assert.equal(gate.hallVisible, true);
+  assert.equal(gate.canWork, true);
+  console.log("PASS boss_dual_role_companion_hall_visible");
 }
 
 console.log("verify-companion-credential-or-gate: ok");
