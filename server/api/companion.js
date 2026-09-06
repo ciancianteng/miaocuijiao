@@ -1029,14 +1029,25 @@ function resolveCredentialMode(companion = {}, depositRow = null) {
   return "id_card";
 }
 function normalizeIdentityStatus(identityRow = null, companion = {}) {
-  // Prefer dedicated identity verification row — "uploaded/pending" ≠ approved.
+  // Any approved source wins (identity row OR profile columns). A pending row must
+  // not override companion_profiles.verification_status / identity_status = approved.
+  const sources = [
+    identityRow?.status,
+    identityRow?.verification_status,
+    companion?.identity_status,
+    companion?.verification_status,
+  ];
+  if (sources.some((value) => /approved|verified|passed/i.test(String(value || "").trim()))) {
+    return "approved";
+  }
+  if (sources.some((value) => /reject/i.test(String(value || "").trim()))) {
+    return "rejected";
+  }
   const raw = String(
-    identityRow?.status || companion?.identity_status || ""
+    identityRow?.status || companion?.identity_status || companion?.verification_status || ""
   )
     .trim()
     .toLowerCase();
-  if (/approved|verified|passed/.test(raw)) return "approved";
-  if (/reject/.test(raw)) return "rejected";
   if (/pending|review|submit|uploaded/.test(raw)) return "pending";
   if (!raw || /draft|none|not_submitted|missing|unsubmitted/.test(raw)) return "draft";
   return "pending";
