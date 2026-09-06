@@ -3982,17 +3982,35 @@
         collect(root).then(function () {
           var d = readDraft();
           d.identity = d.identity || {};
-          if (!isBankSettlementMethod(d.identity.settlementMethod)) {
+          var method = d.identity.settlementMethod || "";
+          if (!isBankSettlementMethod(method)) {
             d.identity.settlementBank = "";
             d.identity.settlementBankOther = "";
             d.identity.bankName = "";
           }
-          if (!isTngSettlementMethod(d.identity.settlementMethod)) {
+          if (isTngSettlementMethod(method)) {
+            // Prefer dedicated tng field; migrate legacy shared settlementAccount if needed.
+            d.identity.tngAccount = String(d.identity.tngAccount || d.identity.settlementAccount || d.identity.paymentPhone || "").trim();
+            d.identity.paymentPhone = d.identity.tngAccount;
+            d.identity.settlementAccount = "";
+            d.identity.alipayAccount = "";
+          } else if (isAlipaySettlementMethod(method)) {
+            d.identity.alipayAccount = String(d.identity.alipayAccount || d.identity.settlementAccount || "").trim();
+            d.identity.settlementAccount = "";
             d.identity.tngAccount = "";
             d.identity.paymentPhone = "";
-          }
-          if (!isAlipaySettlementMethod(d.identity.settlementMethod)) {
+          } else if (isBankSettlementMethod(method) || isDuitNowSettlementMethod(method)) {
+            d.identity.tngAccount = "";
+            d.identity.paymentPhone = "";
             d.identity.alipayAccount = "";
+          } else {
+            if (!isTngSettlementMethod(method)) {
+              d.identity.tngAccount = "";
+              d.identity.paymentPhone = "";
+            }
+            if (!isAlipaySettlementMethod(method)) {
+              d.identity.alipayAccount = "";
+            }
           }
           writeDraftRecord(d);
           render(Number(root.dataset.step || 0));

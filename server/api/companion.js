@@ -82,6 +82,14 @@ import {
   upsertPayoutRequest,
 } from "./_payout-requests.js";
 import { listDepositPaymentMethods } from "./_platform-pay-qr.js";
+import {
+  normalizeSettlementMethod,
+  normalizePaymentAccountRecord,
+  buildPaymentAccountPayload as buildSettlementPaymentPayload,
+  hasSettlementPaymentInput,
+  formatSettlementAccountLabel,
+  formatSettlementAccountMasked,
+} from "./_settlement-payment.js";
 
 const DEPOSIT_AMOUNT_RM = 100;
 const DEPOSIT_CHANNEL_MARK_START = "[[DEPOSIT_PAY]]";
@@ -2004,6 +2012,34 @@ async function bootstrapData(profile, companion) {
     identity = identityRows?.[0] || null;
     paymentAccounts = Array.isArray(paymentRows) ? paymentRows : [];
     payment = paymentAccounts.find((a) => a.status === "approved" || a.status === "verified") || paymentAccounts[0] || null;
+    // Soft-repair legacy misfiled TNG/Alipay values that landed in bank_account.
+    if (payment) {
+      const repaired = normalizePaymentAccountRecord(payment);
+      if (repaired?._repaired) {
+        try {
+          const { _repaired, ...patch } = repaired;
+          const saved = await companionDb("companion_payment_accounts", `?id=eq.${encodeURIComponent(payment.id)}`, {
+            method: "PATCH",
+            body: JSON.stringify({
+              method: patch.method,
+              bank_name: patch.bank_name,
+              bank_account: patch.bank_account,
+              tng_account: patch.tng_account,
+              alipay_account: patch.alipay_account,
+              payment_account: patch.payment_account,
+              payment_phone: patch.payment_phone,
+              account_last4: patch.account_last4,
+              updated_at: nowIso(),
+            }),
+          });
+          payment = Array.isArray(saved) && saved[0] ? saved[0] : { ...payment, ...patch };
+          paymentAccounts = paymentAccounts.map((row) => (String(row.id) === String(payment.id) ? payment : row));
+        } catch {
+          payment = { ...payment, ...repaired };
+          delete payment._repaired;
+        }
+      }
+    }
     // Prefer a paid/approved ledger row when present so permanent deposit proof survives later drafts.
     const depositList = Array.isArray(depositRows) ? depositRows : [];
     depositHistoryRows = depositList;
@@ -2326,6 +2362,7 @@ async function bootstrapData(profile, companion) {
     certTags = [];
   }
 
+  const paymentView = normalizePaymentAccountRecord(payment) || payment || {};
   return {
     serverTime: nowIso(),
     player: { ...player, certTags },
@@ -2393,11 +2430,9 @@ async function bootstrapData(profile, companion) {
           nextSettlementDate: nextSettlement,
           settlementHint: `预计发放日期：${nextSettlement}（星期五）`,
           weeklyBanner: viewWeeklyRules(weeklyCfg),
-          currentAccount: payment
-            ? `${payment.bank_name || ""} ${payment.account_name || ""} ${payment.bank_account || ""}`.trim()
-            : "",
+          currentAccount: payment ? formatSettlementAccountLabel(payment) : "",
           currentAccountMasked: payment
-            ? `${payment.bank_name || ""} ${payment.account_name || ""} ****${payment.account_last4 || maskBankAccount(payment.bank_account).slice(-4)}`.trim()
+            ? formatSettlementAccountMasked(payment, maskBankAccount)
             : "",
           approvedAccounts,
         },
@@ -2419,27 +2454,32 @@ async function bootstrapData(profile, companion) {
       realName: identity?.real_name || "",
       // Self-view: full plaintext for the authenticated companion only.
       identityNo: identity?.identity_no || "",
-      bankName: payment?.bank_name || "",
-      accountName: payment?.account_name || "",
-      bankAccount: payment?.bank_account || "",
+      bankName: paymentView.bank_name || "",
+      accountName: payment?.account_name || paymentView.account_name || "",
+      bankAccount: paymentView.bank_account || "",
       phone: companion?.contact_phone || "",
-      tngAccount: payment?.tng_account || "",
-      alipayAccount: payment?.alipay_account || "",
-      paymentMethod: payment?.method || "",
-      method: payment?.method || "",
-      paymentAccount: payment?.payment_account || payment?.bank_account || payment?.tng_account || payment?.alipay_account || "",
-      paymentPhone: payment?.payment_phone || payment?.tng_account || "",
+      tngAccount: paymentView.tng_account || "",
+      alipayAccount: paymentView.alipay_account || "",
+      paymentMethod: paymentView.method || "",
+      method: paymentView.method || "",
+      paymentAccount:
+        paymentView.payment_account ||
+        paymentView.bank_account ||
+        paymentView.tng_account ||
+        paymentView.alipay_account ||
+        "",
+      paymentPhone: paymentView.payment_phone || paymentView.tng_account || "",
       identityNoMasked: identity?.identity_no
         ? `****${String(identity.identity_no).replace(/\s+/g, "").slice(-4)}`
         : "",
-      bankAccountMasked: payment?.account_last4
-        ? `****${String(payment.account_last4)}`
-        : payment?.bank_account || payment?.tng_account || payment?.alipay_account
-          ? `****${String(payment.bank_account || payment.tng_account || payment.alipay_account).replace(/\s+/g, "").slice(-4)}`
+      bankAccountMasked: paymentView.account_last4
+        ? `****${String(paymentView.account_last4)}`
+        : (paymentView.bank_account || paymentView.tng_account || paymentView.alipay_account)
+          ? `****${String(paymentView.bank_account || paymentView.tng_account || paymentView.alipay_account).replace(/\s+/g, "").slice(-4)}`
           : "",
       hasIdentityNo: !!String(identity?.identity_no || "").trim(),
       hasBankAccount: !!String(
-        payment?.bank_account || payment?.tng_account || payment?.alipay_account || payment?.account_last4 || ""
+        paymentView.bank_account || paymentView.tng_account || paymentView.alipay_account || paymentView.account_last4 || ""
       ).trim(),
       identitySubmitted: !!(
         String(identity?.real_name || "").trim() &&
@@ -2449,13 +2489,13 @@ async function bootstrapData(profile, companion) {
         !/draft|uploaded|none|not_submitted/i.test(String(identity?.status || ""))
       ),
       paymentSubmitted: !!(
-        (String(payment?.method || "").trim() || String(payment?.bank_name || "").trim()) &&
+        (String(paymentView.method || "").trim() || String(paymentView.bank_name || "").trim()) &&
         String(
-          payment?.bank_account ||
-            payment?.tng_account ||
-            payment?.alipay_account ||
-            payment?.payment_account ||
-            payment?.account_last4 ||
+          paymentView.bank_account ||
+            paymentView.tng_account ||
+            paymentView.alipay_account ||
+            paymentView.payment_account ||
+            paymentView.account_last4 ||
             ""
         ).trim() &&
         !/draft|uploaded|none|not_submitted/i.test(String(payment?.status || ""))
@@ -2695,97 +2735,8 @@ async function ensureCompanionRow(profile, companion) {
   return rows?.[0] || companion || {};
 }
 
-function normalizeSettlementMethod(raw) {
-  const m = String(raw || "").trim();
-  if (!m) return "";
-  if (/^bank$/i.test(m) || m === "银行卡") return "银行卡";
-  if (/^tng/i.test(m) || /touch\s*n\s*go/i.test(m) || m === "TNG Wallet") return "TNG Wallet";
-  if (/支付宝|alipay/i.test(m)) return "支付宝";
-  if (/duit\s*now/i.test(m)) return "DuitNow";
-  return m;
-}
-
 function buildPaymentAccountPayload(body = {}, existingPayment = null) {
-  const method = normalizeSettlementMethod(
-    body.settlementMethod || body.method || body.payment_method || body.paymentMethod || existingPayment?.method || ""
-  );
-  const accountName = String(
-    body.account_name || body.accountName || body.settlementName || body.real_name || existingPayment?.account_name || ""
-  ).trim();
-  let bankName = String(body.bank_name || body.bankName || body.settlementBank || "").trim();
-  let bankAccountRaw = String(body.bank_account || body.bankAccount || body.settlementAccount || "").trim();
-  let tngRaw = String(body.tng_account || body.tngAccount || body.payment_phone || body.paymentPhone || "").trim();
-  let alipayRaw = String(body.alipay_account || body.alipayAccount || "").trim();
-  const paymentAccountRaw = String(body.payment_account || body.paymentAccount || "").trim();
-
-  if (/^\*+\d{0,4}$/.test(bankAccountRaw)) bankAccountRaw = String(existingPayment?.bank_account || "");
-  if (/^\*+\d{0,4}$/.test(tngRaw)) tngRaw = String(existingPayment?.tng_account || existingPayment?.payment_phone || "");
-  if (/^\*+\d{0,4}$/.test(alipayRaw)) alipayRaw = String(existingPayment?.alipay_account || "");
-
-  let bankAccount = "";
-  let tngAccount = "";
-  let alipayAccount = "";
-  let paymentPhone = "";
-  let paymentAccount = "";
-
-  if (method === "TNG Wallet") {
-    tngAccount = tngRaw || paymentAccountRaw || bankAccountRaw || String(existingPayment?.tng_account || "");
-    paymentPhone = tngAccount;
-    paymentAccount = tngAccount;
-    bankName = "";
-  } else if (method === "支付宝") {
-    alipayAccount = alipayRaw || paymentAccountRaw || bankAccountRaw || String(existingPayment?.alipay_account || "");
-    paymentAccount = alipayAccount;
-    bankName = "";
-  } else if (method === "DuitNow") {
-    bankAccount = bankAccountRaw || paymentAccountRaw || String(existingPayment?.bank_account || "");
-    paymentAccount = bankAccount;
-    bankName = bankName || "DuitNow";
-  } else {
-    // 银行卡 / legacy bank
-    bankAccount = bankAccountRaw || paymentAccountRaw || String(existingPayment?.bank_account || "");
-    paymentAccount = bankAccount;
-    tngAccount = "";
-    alipayAccount = "";
-  }
-
-  const last4Source = String(paymentAccount || bankAccount || tngAccount || alipayAccount || "").replace(/\s+/g, "");
-  return {
-    method: method || String(existingPayment?.method || "银行卡"),
-    bank_name: bankName,
-    account_name: accountName,
-    bank_account: bankAccount,
-    account_last4: last4Source.slice(-4),
-    tng_account: tngAccount,
-    alipay_account: alipayAccount,
-    payment_account: paymentAccount,
-    payment_phone: paymentPhone,
-    status: "pending",
-    reject_reason: "",
-    submitted_at: nowIso(),
-  };
-}
-
-function hasSettlementPaymentInput(body = {}) {
-  return !!(
-    body.bank_name ||
-    body.bankName ||
-    body.bank_account ||
-    body.bankAccount ||
-    body.settlementAccount ||
-    body.settlementMethod ||
-    body.method ||
-    body.payment_method ||
-    body.paymentMethod ||
-    body.tng_account ||
-    body.tngAccount ||
-    body.alipay_account ||
-    body.alipayAccount ||
-    body.payment_account ||
-    body.paymentAccount ||
-    body.payment_phone ||
-    body.paymentPhone
-  );
+  return buildSettlementPaymentPayload(body, existingPayment, nowIso);
 }
 
 async function upsertByCompanion(table, companionId, userId, payload) {
@@ -3694,12 +3645,10 @@ export default async function handler(req, res) {
             exchangeRate: money(cfg.cat_food_to_rm_rate) || 1,
             feeRm: money(cfg.withdraw_fee_rm),
             feePercent: money(cfg.withdraw_fee_percent),
-            currentAccount: payment
-              ? `${payment.bank_name || ""} ${payment.account_name || ""} ${payment.bank_account || ""}`.trim()
-              : "",
-            currentAccountMasked: payment
-              ? `${payment.bank_name || ""} ${payment.account_name || ""} ****${payment.account_last4 || maskBankAccount(payment.bank_account).slice(-4)}`.trim()
-              : "",
+            currentAccount: payment ? formatSettlementAccountLabel(payment) : "",
+          currentAccountMasked: payment
+            ? formatSettlementAccountMasked(payment, maskBankAccount)
+            : "",
             approvedAccounts,
           },
           warnings: wallet.warnings || [],
