@@ -5,8 +5,8 @@
 -- 依据：SMOKE_TEST_ISOLATION_DESIGN.md §1.1 + convert-admin verify
 -- 更新：2026-09-06 — 已从 mark 列表移除真实 admin UUID
 --       6f31b706-11e7-42df-8db1-d2caccd796de = meowcuijiao@gmail.com（正式 admin，勿标 test）
--- 前置：必须先完成 G1 / convert D0+D1（列存在；真实 admin is_test_account=false）
--- G2 Production UPDATE：❌ BLOCKED（需 D0/D1 + 单独 EXECUTE G2 批准）
+-- 前置：G1 / convert D0+D1 ✅ 已应用（列存在；真实 admin is_test_account=false）
+-- G2 Production UPDATE：❌ BLOCKED（需单独 EXECUTE G2 批准）
 -- =============================================================================
 
 -- ---------------------------------------------------------------------------
@@ -101,7 +101,7 @@ rollback; -- REVIEW TEMPLATE ends with rollback; real apply must be explicit COM
 -- 4) 本轮状态
 -- ---------------------------------------------------------------------------
 -- CONVERT VERIFY：✅ login meowcuijiao@gmail.com OK；boss unchanged
--- D0/D1 (G1 column)：❌ pending（human SQL Editor）
+-- D0/D1 (G1 column)：✅ APPLIED（admin false；0 marked pre-G2）
 -- G2 SQL review（10 ids，已排除正式 admin）：✅
--- G2 Production UPDATE：❌ 未执行（BLOCKED：需 D0/D1 + 单独批准）
+-- G2 Production UPDATE：❌ 未执行（BLOCKED：需单独批准）
 -- =============================================================================
