@@ -232,7 +232,10 @@
     else body=String(rows||'');
     return '<div class="table-wrap"><table><thead><tr>'+headers.map(function(h){return '<th>'+h+'</th>'}).join('')+'</tr></thead><tbody>'+(body||('<tr><td colspan="'+headers.length+'"><div class="empty">暂无数据</div></td></tr>'))+'</tbody></table></div>';
   }
-  function actionButtons(id){return '<div class="row"><button class="btn small" data-action="view" data-id="'+id+'">查看</button><button class="btn small primary" data-action="approve" data-id="'+id+'">通过</button><button class="btn small danger" data-action="reject" data-id="'+id+'">拒绝</button></div>'}
+  function actionButtons(id){
+    // Generic approve/reject stubs removed — they previously alerted fake success with no API.
+    return '<div class="row"><span class="muted">请在对应业务模块操作真实数据</span></div>';
+  }
   function renderGenericTable(key,target,columns,rowsOverride){var data=Array.isArray(rowsOverride)?rowsOverride:read(key);var rows=data.map(function(item){return '<tr>'+columns.map(function(c){var v=item[c.key];if(c.type==='avatar')return '<td><img class="avatar" src="'+esc(v||'assets/meow-cuijiao-brand.jpg')+'"></td>';if(c.type==='status')return '<td>'+statusChip(v)+'</td>';if(c.type==='actions')return '<td>'+actionButtons(item.id||item.name||item.owner)+'</td>';return '<td>'+esc(v)+'</td>';}).join('')+'</tr>'});target.innerHTML=table(columns.map(function(c){return c.label}),rows.length?rows:['<tr><td colspan="'+columns.length+'"><div class="empty">暂无数据</div></td></tr>'])}
   function statCards(target,stats){target.innerHTML='<div class="metric-grid">'+stats.map(function(s){return '<div class="metric-card"><span>'+esc(s.label)+'</span><strong>'+esc(s.value)+'</strong>'+(s.sub?'<small>'+esc(s.sub)+'</small>':'')+'</div>'}).join('')+'</div>'}
   function renderCrud(key,target){var data=read(key);target.innerHTML='<div class="crud-list">'+data.map(function(item,i){return '<div class="mini-card"><img src="'+esc(item.image||item.avatar||'assets/meow-cuijiao-brand.jpg')+'"><h4>'+esc(item.title||item.name||item.id||'未命名')+'</h4><p>'+esc(item.sub||item.content||item.description||item.game||item.status||'可编辑内容')+'</p><div class="row"><button class="btn small" data-edit="'+key+'" data-index="'+i+'">编辑</button><button class="btn small danger" data-delete="'+key+'" data-index="'+i+'">删除</button></div></div>'}).join('')+'</div>'}
@@ -790,18 +793,26 @@
     '</div>';
   }
   function orderActions(order){
-    var map={
-      '待支付':[['view-payment','查看支付'],['cancel','取消订单',true]],
-      '待接单':[['assign-player','指派陪玩'],['cancel','取消订单',true],['push-hall','发送到抢单大厅']],
-      '待老板确认陪玩':[['change-player','更换陪玩'],['resend-player-card','重新发送陪玩卡片'],['cancel','取消订单',true]],
-      '待开始':[['confirm-start','确认开始'],['delay-start','延迟开始'],['change-player','更换陪玩']],
-      '进行中':[['timer','查看计时'],['early-end','提前结束',true],['extend','延长服务'],['after-sale','发起售后']],
-      '待确认完成':[['confirm-complete','确认完成'],['return-service','退回继续服务'],['after-sale','发起售后']],
-      '已完成':[['review','查看评价'],['settlement','查看结算'],['after-sale','发起售后']],
-      '售后处理中':[['after-sale-view','查看售后'],['refund-approve','确认退款猫粮',true],['refund-reject','拒绝退款',true],['partial-refund','部分退款猫粮',true],['change-player','更换陪玩'],['compensate','补偿余额',true]]
+    // Only expose actions that map to real /api/admin/orders handlers (see UI_ACTION_MAP).
+    var implemented={
+      view:1,review:1,cancel:1,refund:1,'refund-approve':1,'assign-service':1,'assign-player':1,
+      'change-player':1,'push-hall':1,'confirm-start':1,'confirm-complete':1,'early-end':1,
+      freeze:1,'freeze-order':1,unfreeze:1,'unfreeze-order':1
     };
-    var base=[['view','查看'],['remark','编辑备注'],['chat','查看聊天'],['payment','查看支付'],['settlement','查看结算'],['assign-service','分配客服']];
-    return base.concat(map[order.orderStatus]||[['cancel','取消订单',true]]).map(function(x){return {key:x[0],label:x[1],danger:!!x[2]}});
+    var map={
+      '待支付':[['cancel','取消订单',true]],
+      '待接单':[['assign-player','指派陪玩'],['cancel','取消订单',true],['push-hall','发送到抢单大厅']],
+      '待老板确认陪玩':[['change-player','更换陪玩'],['cancel','取消订单',true]],
+      '待开始':[['confirm-start','确认开始'],['change-player','更换陪玩']],
+      '进行中':[['early-end','提前结束',true]],
+      '待确认完成':[['confirm-complete','确认完成']],
+      '已完成':[['review','查看评价']],
+      '售后处理中':[['refund-approve','确认退款猫粮',true],['change-player','更换陪玩']]
+    };
+    var base=[['view','查看'],['assign-service','分配客服']];
+    return base.concat(map[order.orderStatus]||[['cancel','取消订单',true]])
+      .filter(function(x){return !!implemented[x[0]];})
+      .map(function(x){return {key:x[0],label:x[1],danger:!!x[2]}});
   }
   function openOrderDetail(orderId){
     adminFetch('/api/admin/orders?id='+encodeURIComponent(orderId),{headers:{'x-mcj-admin-role':getRole(),Accept:'application/json'}}).then(function(res){var ct=res.headers.get('content-type')||'';if(ct.indexOf('application/json')<0)return {ok:true,order:orderState.orders.find(function(x){return x.id===orderId})};return res.json();}).then(function(result){if(!result.ok)throw new Error(result.message||'读取详情失败');var ord=normalizeOrder(result.order||orderState.orders.find(function(x){return x.id===orderId})||{});if(result.reviews)ord.reviews=result.reviews;if(result.order&&result.order.review)ord.review=result.order.review;if(result.order&&result.order.reviewRating!=null)ord.reviewRating=result.order.reviewRating;if(result.order&&result.order.reviewContent!=null)ord.reviewContent=result.order.reviewContent;if(result.order&&result.order.reviewed!=null)ord.reviewed=result.order.reviewed;renderOrderDetail(ord);}).catch(function(err){alert('读取订单详情失败：'+err.message);});
@@ -1190,7 +1201,17 @@
     });
   }
   ensurePlayerMorePopoverBound();
-  function collectPlayerEditForm(form){var data={};if(!form)return data;new FormData(form).forEach(function(value,key){data[key]=value});return data;}
+  function collectPlayerEditForm(form){
+    var data={};
+    if(!form)return data;
+    // Exclude review-box fields so Save never overwrites application_reject_reason with empty review inputs.
+    var skip={reviewStatus:1,rejectReason:1};
+    new FormData(form).forEach(function(value,key){
+      if(skip[key])return;
+      data[key]=value;
+    });
+    return data;
+  }
   function updatePlayerRowInMemory(id,payload){
     (playerAdminState.rows||[]).forEach(function(row){var rid=String(row.id||row.uid||row.playerId||row.player_id||row.name||row.nickname);if(rid!==String(id))return;Object.keys(payload||{}).forEach(function(key){var value=payload[key];if(key==='orderCommissionRate')row.orderCommissionRate=value;if(key==='directRebateRate')row.directRebateRate=value;if(key==='giftCommissionRate')row.giftCommissionRate=value;if(key==='accountStatus')row.accountStatus=value;if(key==='auditStatus')row.auditStatus=value;if(key==='identityStatus')row.identityStatus=value;if(key==='depositStatus')row.depositStatus=value;if(key==='withdrawStatus')row.withdrawStatus=value;if(key==='levelId')row.levelId=value;if(key==='featured')row.featured=value==='true'||value===true;if(key==='pinned')row.pinned=value==='true'||value===true;if(key==='workStatus')row.workStatus=value;if(key==='rejectReason')row.rejectReason=value;if(key==='depositConfirmRemark')row.depositConfirmRemark=value;if(key==='withdrawRejectReason')row.withdrawRejectReason=value;});row.updatedAt=new Date().toISOString();});
   }
@@ -2135,8 +2156,8 @@
       });
     });
   }
-  function bindGlobal(){document.addEventListener('click',function(e){var role=e.target.closest('[data-role-login]');if(role){localStorage.setItem('mcjRole',role.dataset.roleLogin);routeByRole(role.dataset.roleLogin);return;}var logout=e.target.closest('[data-admin-logout]');if(logout){e.preventDefault();denyAdminToLogin('已退出后台登录');return;}var preview=e.target.closest('[data-preview-home]');if(preview){location.href='index.html';return;}var saveLevels=e.target.closest('[data-save-companion-levels]');if(saveLevels&&levelApi()){levelApi().save(collectCompanionLevels());log('保存陪玩等级与价格设置');alert('已保存陪玩等级与价格设置');renderCompanionLevels();return;}var deleteLevel=e.target.closest('[data-delete-companion-level]');if(deleteLevel&&levelApi()){var levels=getLevels();var level=levelApi().find(deleteLevel.dataset.deleteCompanionLevel);if(playerLevelCount(level)>0){alert('该等级已有陪玩，不能直接删除。请先停用该等级或迁移陪玩等级。');return;}if(confirm('确认删除 '+levelLabel(level.id)+'？')){levelApi().save(levels.filter(function(item){return item.id!==level.id}));log('删除陪玩等级 '+levelLabel(level.id));renderCompanionLevels();}return;}var action=e.target.closest('[data-action]');if(action){alert('已执行：'+action.dataset.action+' / '+(action.dataset.id||''));log('执行 '+action.dataset.action);return;}var del=e.target.closest('[data-delete]');if(del){var arr=read(del.dataset.delete);arr.splice(Number(del.dataset.index),1);write(del.dataset.delete,arr);location.reload();return;}})}
-  function initForms(){document.querySelectorAll('[data-save-settings]').forEach(function(btn){btn.addEventListener('click',function(){var settings={siteName:val('siteName'),logoUrl:val('logoUrl'),customerServiceUrl:val('customerServiceUrl'),discordInviteUrl:val('discordInviteUrl'),whatsappUrl:val('whatsappUrl'),maintenanceMode:val('maintenanceMode'),registerOpen:val('registerOpen'),seoTitle:val('seoTitle')};localStorage.setItem('mcj_siteSettings',JSON.stringify(settings));log('保存平台设置');alert('已保存平台设置');})});document.querySelectorAll('[data-add-row]').forEach(function(btn){btn.addEventListener('click',function(){var key=btn.dataset.addRow;if(isLocalBusinessKey(key)){alert('已禁用本地假数据新增。请通过真实后台接口维护业务数据。');return;}var arr=read(key);arr.unshift({id:key.toUpperCase().slice(0,2)+Date.now(),title:val('crudTitle'),name:val('crudTitle'),content:val('crudDesc'),description:val('crudDesc'),image:val('crudImage')||'assets/meow-cuijiao-brand.jpg',status:'开启',sort:arr.length+1});write(key,arr);alert('已新增');location.reload();})})}
+  function bindGlobal(){document.addEventListener('click',function(e){var role=e.target.closest('[data-role-login]');if(role){localStorage.setItem('mcjRole',role.dataset.roleLogin);routeByRole(role.dataset.roleLogin);return;}var logout=e.target.closest('[data-admin-logout]');if(logout){e.preventDefault();denyAdminToLogin('已退出后台登录');return;}var preview=e.target.closest('[data-preview-home]');if(preview){location.href='index.html';return;}var saveLevels=e.target.closest('[data-save-companion-levels]');if(saveLevels){/* real save handled by capture-phase submitCompanionLevelsSecure */return;}var deleteLevel=e.target.closest('[data-delete-companion-level]');if(deleteLevel){/* real delete handled by capture-phase submitCompanionLevelsSecure */return;}if(confirm('确认删除 '+levelLabel(level.id)+'？')){levelApi().save(levels.filter(function(item){return item.id!==level.id}));log('删除陪玩等级 '+levelLabel(level.id));renderCompanionLevels();}return;}var action=e.target.closest('[data-action]');if(action){alert('该操作未接入真实后台接口（'+action.dataset.action+'），未写入数据库。');log('拦截未实现操作 '+action.dataset.action);return;}var del=e.target.closest('[data-delete]');if(del){var arr=read(del.dataset.delete);arr.splice(Number(del.dataset.index),1);write(del.dataset.delete,arr);location.reload();return;}})}
+  function initForms(){document.querySelectorAll('[data-save-settings]').forEach(function(btn){btn.addEventListener('click',function(){alert('请使用「系统设置」模块保存。该旧入口不会写入数据库。');})});document.querySelectorAll('[data-add-row]').forEach(function(btn){btn.addEventListener('click',function(){alert('已禁用本地假数据新增。请通过真实后台接口维护业务数据。');})})}
   function bindPaymentAdmin(){
     document.addEventListener('click',function(e){
       var saveLevels=e.target.closest('[data-save-companion-levels]');
@@ -2170,7 +2191,24 @@
       var bossExport=e.target.closest('[data-boss-export]');if(bossExport){exportBossRows();return;}
       var bossPage=e.target.closest('[data-boss-page]');if(bossPage){closeBossMoreMenu();bossAdminState.page+=bossPage.dataset.bossPage==='next'?1:-1;renderBossTableRows();return;}
       var bossPageGo=e.target.closest('[data-boss-page-go]');if(bossPageGo){closeBossMoreMenu();var bj=document.querySelector('[data-boss-page-jump]');var bt=visibleBossRows().length;var bp=Math.max(1,Math.ceil(bt/bossAdminState.pageSize));bossAdminState.page=Math.min(Math.max(1,Number(bj&&bj.value)||1),bp);renderBossTableRows();return;}
-      var bossAction=e.target.closest('[data-boss-action]');if(bossAction){var bossAct=bossAction.dataset.bossAction,bossId=bossAction.dataset.bossId;closeBossMoreMenu();if(/view|orders|recharge|consume|refunds|coupon|chat|login|vip|invite|ban/.test(bossAct)){openBossDetail(bossId,bossAct);return;}if(bossAct==='remark'){var remark=prompt('编辑老板备注',((bossAdminState.rows||[]).find(function(r){return String(r.id)===String(bossId)})||{}).remark||'');if(remark==null)return;submitBossSecure('remark',bossId,{remark:remark});return;}if(bossAct==='reset_password'){toast('禁止在后台设置明文密码，请使用「发送密码重置邮件」。','error');return;}if(bossAct==='send_password_reset'||bossAct==='send_reset_email'){if(!confirm('向该老板注册邮箱发送密码重置验证码？管理员无法查看新密码。'))return;submitBossSecure('send_password_reset',bossId,{});return;}if(bossAct==='force_change_password'){if(!confirm('强制该老板下次登录后修改密码？'))return;submitBossSecure('force_change_password',bossId,{});return;}if(bossAct==='revoke_sessions'){if(!confirm('注销该老板全部登录会话？'))return;submitBossSecure('revoke_sessions',bossId,{});return;}if(bossAct==='unbind'){if(!confirm('确认解绑该老板手机号？'))return;submitBossSecure('unbind',bossId,{});return;}if(/freeze|blacklist|unban|ban/.test(bossAct)&&!confirm('确认执行该老板账号操作？'))return;submitBossSecure(bossAct,bossId,{});return;}
+      var bossAction=e.target.closest('[data-boss-action]');if(bossAction){var bossAct=bossAction.dataset.bossAction,bossId=bossAction.dataset.bossId;closeBossMoreMenu();
+        // Exact view-tab keys only — never substring-match "ban" (that swallowed ban/unban).
+        var bossViewTabs={view:1,profile:1,orders:1,recharge:1,consume:1,refunds:1,coupon:1,chat:1,login:1,vip:1,invite:1};
+        if(bossViewTabs[bossAct]){openBossDetail(bossId,bossAct);return;}
+        if(bossAct==='remark'){var remark=prompt('编辑老板备注',((bossAdminState.rows||[]).find(function(r){return String(r.id)===String(bossId)})||{}).remark||'');if(remark==null)return;submitBossSecure('remark',bossId,{remark:remark});return;}
+        if(bossAct==='reset_password'){toast('禁止在后台设置明文密码，请使用「发送密码重置邮件」。','error');return;}
+        if(bossAct==='send_password_reset'||bossAct==='send_reset_email'){if(!confirm('向该老板注册邮箱发送密码重置验证码？管理员无法查看新密码。'))return;submitBossSecure('send_password_reset',bossId,{});return;}
+        if(bossAct==='force_change_password'){if(!confirm('强制该老板下次登录后修改密码？'))return;submitBossSecure('force_change_password',bossId,{});return;}
+        if(bossAct==='revoke_sessions'){if(!confirm('注销该老板全部登录会话？'))return;submitBossSecure('revoke_sessions',bossId,{});return;}
+        if(bossAct==='unbind'){if(!confirm('确认解绑该老板手机号？'))return;submitBossSecure('unbind',bossId,{});return;}
+        // Real account mutations — must hit /api/admin/bosses (freeze/ban/blacklist/unban).
+        if(bossAct==='freeze'||bossAct==='ban'||bossAct==='blacklist'||bossAct==='unban'||bossAct==='enable'||bossAct==='unfreeze'){
+          if(!confirm('确认执行该老板账号操作？'))return;
+          submitBossSecure(bossAct,bossId,{});
+          return;
+        }
+        alert('该老板操作未接入真实接口（'+bossAct+'），未写入数据库。');
+        return;}
       var bossTab=e.target.closest('[data-boss-tab]');if(bossTab){switchBossDetailTab(bossTab.dataset.bossTab);return;}
       var bossOpen=e.target.closest('[data-boss-open]');if(bossOpen&&!e.target.closest('button,a,input,select')){openBossDetail(bossOpen.dataset.bossOpen);return;}
       var bossGrant=e.target.closest('[data-boss-wallet-grant]');if(bossGrant){submitBossWalletAction('grant',bossGrant.dataset.bossWalletGrant);return;}
@@ -2180,8 +2218,8 @@
       var orderTab=e.target.closest('[data-order-status-tab]');if(orderTab){var wrap=orderTab.closest('.order-status-tabs');if(wrap)wrap.querySelectorAll('[data-order-status-tab]').forEach(function(btn){btn.classList.remove('active')});orderTab.classList.add('active');filterOrders();return;}
       var orderAction=e.target.closest('[data-order-action]');if(orderAction){var orderAct=orderAction.dataset.orderAction,orderId=orderAction.dataset.orderId;if(orderAct==='view'||orderAct==='review'){openOrderDetail(orderId);return;}var payload={};if(orderAct==='assign-player'||orderAct==='change-player'){var companionId=prompt('请输入陪玩用户 UUID（profiles.id / companion user_id）：')||'';if(!String(companionId).trim())return;payload.companion_id=String(companionId).trim();}var risky=/cancel|refund|early-end|confirm-complete|return-service|blacklist|compensate|reject|approve|partial/.test(orderAct);var reason='';if(risky){reason=prompt('该订单操作需要记录原因，请填写原因：')||'';if(!reason.trim())return;payload.reason=reason;}submitOrderAction(orderAct,orderId,payload);return;}
       if(e.target.closest('[data-order-export]')){submitOrderAction('export','all',{});return;}
-      if(e.target.closest('[data-order-create-service]')){submitOrderAction('service-create','new',{});return;}
-      if(e.target.closest('[data-order-dev-test]')){submitOrderAction('create-test-order','dev',{});return;}
+      if(e.target.closest('[data-order-create-service]')){alert('「客服创建订单」尚未接入真实订单接口，未写入数据库。');return;}
+      if(e.target.closest('[data-order-dev-test]')){alert('测试下单入口已禁用，避免写入假/测试订单。');return;}
       var serviceRecordAction=e.target.closest('[data-service-record-action]');if(serviceRecordAction){openServiceRecordDetail(serviceRecordAction.dataset.serviceRecordId,serviceRecordAction.dataset.serviceRecordAction);return;}
       var serviceRecordOpen=e.target.closest('[data-service-record-open]');if(serviceRecordOpen&&!e.target.closest('button,a,input,select')){openServiceRecordDetail(serviceRecordOpen.dataset.serviceRecordOpen,'summary');return;}
       var serviceRecordSearchBtn=e.target.closest('[data-service-record-search-button]');if(serviceRecordSearchBtn){serviceRecordState.keyword=(document.querySelector('[data-service-record-search]')||{}).value||'';serviceRecordState.page=1;renderServiceRecordRows();return;}
@@ -2457,8 +2495,8 @@
     document.querySelectorAll('.table-wrap').forEach(function(wrap){
       if(wrap.dataset.enhanced)return;
       wrap.dataset.enhanced='1';
-      wrap.insertAdjacentHTML('beforebegin','<div class="table-tools"><button type="button" data-action="batch-select">批量操作</button><button type="button" data-action="export-csv">导出 CSV</button><button type="button" data-action="export-excel">导出 Excel</button></div>');
-      wrap.insertAdjacentHTML('afterend','<div class="table-footer"><span>已启用固定表头、搜索和排序样式</span><span>第 1 / 1 页</span></div>');
+      // Do not inject fake batch/export toolbars — those had no API and showed false success.
+      wrap.insertAdjacentHTML('afterend','<div class="table-footer"><span>已启用固定表头、搜索和排序样式</span><span>真实数据列表</span></div>');
     });
   }
   function val(id){var el=document.getElementById(id);return el?el.value:''}
