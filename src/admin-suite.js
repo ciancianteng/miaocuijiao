@@ -785,9 +785,9 @@
     return '<div class="order-admin">'+
       '<div class="order-metrics">'+metric.map(function(item){return '<div><span>'+esc(item[0])+'</span><strong>'+esc(item[1])+'</strong></div>'}).join('')+'</div>'+
       '<div class="order-status-tabs">'+statusTabs.map(function(x,i){return '<button class="mini-btn '+(i===0?'active':'')+'" type="button" data-order-status-tab="'+esc(x)+'">'+esc(x)+'</button>'}).join('')+'</div>'+
-      '<div class="order-toolbar"><input data-order-search placeholder="搜索订单号 / 老板 / 陪玩 / UID"><input type="date" data-order-filter="dateStart"><input type="date" data-order-filter="dateEnd"><select data-order-filter="type"><option value="">全部订单类型</option>'+orderTypes.map(function(x){return '<option>'+esc(x)+'</option>'}).join('')+'</select><select data-order-filter="orderStatus"><option value="">全部订单状态</option>'+orderStatuses.map(function(x){return '<option>'+esc(x)+'</option>'}).join('')+'</select><select data-order-filter="paymentStatus"><option value="">全部支付状态</option>'+paymentStatuses.map(function(x){return '<option>'+esc(x)+'</option>'}).join('')+'</select><input data-order-filter="game" placeholder="游戏"><input data-order-filter="service" placeholder="客服"><input data-order-filter="player" placeholder="陪玩"><input data-order-filter="amount" placeholder="金额范围，如 20-100"><select data-order-filter="afterSale"><option value="">是否售后</option><option>是</option><option>否</option></select><select data-order-filter="refund"><option value="">是否退款</option><option>是</option><option>否</option></select><select data-order-filter="source"><option value="">订单来源</option>'+orderSources.map(function(x){return '<option>'+esc(x)+'</option>'}).join('')+'</select><button class="btn" data-order-export type="button">导出</button><button class="btn primary" data-order-create-service type="button">客服创建订单</button></div>'+
+      '<div class="order-toolbar"><input data-order-search placeholder="搜索订单号 / 老板 / 陪玩 / UID"><input type="date" data-order-filter="dateStart"><input type="date" data-order-filter="dateEnd"><select data-order-filter="type"><option value="">全部订单类型</option>'+orderTypes.map(function(x){return '<option>'+esc(x)+'</option>'}).join('')+'</select><select data-order-filter="orderStatus"><option value="">全部订单状态</option>'+orderStatuses.map(function(x){return '<option>'+esc(x)+'</option>'}).join('')+'</select><select data-order-filter="paymentStatus"><option value="">全部支付状态</option>'+paymentStatuses.map(function(x){return '<option>'+esc(x)+'</option>'}).join('')+'</select><input data-order-filter="game" placeholder="游戏"><input data-order-filter="service" placeholder="客服"><input data-order-filter="player" placeholder="陪玩"><input data-order-filter="amount" placeholder="金额范围，如 20-100"><select data-order-filter="afterSale"><option value="">是否售后</option><option>是</option><option>否</option></select><select data-order-filter="refund"><option value="">是否退款</option><option>是</option><option>否</option></select><select data-order-filter="source"><option value="">订单来源</option>'+orderSources.map(function(x){return '<option>'+esc(x)+'</option>'}).join('')+'</select><button class="btn" type="button" disabled title="订单导出接口未接入">导出（未接入）</button><button class="btn" type="button" disabled title="客服创建订单未接入真实接口">客服创建订单（未接入）</button></div>'+
       '<div id="orderManagementTable">'+table(['订单号','订单类型','老板昵称','老板 UID','陪玩昵称','陪玩 UID','游戏','服务内容','客服','下单金额','陪玩收入','平台利润','支付状态','订单状态','创建时间','服务时间','操作'],rows)+'</div>'+
-      (!orders.length?'<div class="order-empty"><strong>暂无订单</strong><span>真实数据库没有订单时不生成虚假订单。开发环境可接入“创建测试订单”，正式环境禁用。</span><button class="btn" data-order-dev-test type="button">创建测试订单（仅开发环境）</button><button class="btn primary" data-order-create-service type="button">客服创建订单</button></div>':'')+
+      (!orders.length?'<div class="order-empty"><strong>暂无订单</strong><span>真实数据库没有订单时不生成虚假订单。开发环境可接入“创建测试订单”，正式环境禁用。</span><button class="btn" type="button" disabled title="正式环境禁止写入测试订单">创建测试订单（已禁用）</button><button class="btn" type="button" disabled title="客服创建订单未接入真实接口">客服创建订单（未接入）</button></div>':'')+
       '<div class="table-footer"><span>总订单数：'+esc(s.total||orders.length)+'</span><span>每页 20 条 · 第 1 / 1 页</span></div>'+
       '<div class="admin-sync-note">默认不显示“俱乐部”。订单来源统一为平台直营、合作俱乐部、推广渠道、客服创建、老板自助下单；只有多俱乐部模式启用且管理员主动显示时才展示来源俱乐部名称。</div>'+
     '</div>';
@@ -1461,15 +1461,15 @@
     return renderPaymentChannels(editId);
   }
   function renderPaymentChannels(editId){
-    var cards=paymentTemplates.map(function(tpl){var item=paymentChannel(tpl.id);return '<article class="payment-channel-card"><div class="payment-channel-icon">'+esc(item.icon)+'</div><div class="payment-channel-main"><h3>'+esc(item.name)+'</h3><p>'+esc(item.type)+' · '+esc(item.currencies)+'</p></div><div class="payment-card-meta">'+paymentStatusChip('未配置')+paymentStatusChip('已停用')+'<small>测试模式 · '+esc(item.updatedAt)+'</small></div><div class="payment-card-actions"><button class="mini-btn" type="button" data-payment-edit="'+esc(item.id)+'">编辑</button><button class="mini-btn" type="button" data-payment-toggle="'+esc(item.id)+'">启用</button></div></article>'}).join('');
+    var cards=paymentTemplates.map(function(tpl){var item=paymentChannel(tpl.id);return '<article class="payment-channel-card"><div class="payment-channel-icon">'+esc(item.icon)+'</div><div class="payment-channel-main"><h3>'+esc(item.name)+'</h3><p>'+esc(item.type)+' · '+esc(item.currencies)+'</p></div><div class="payment-card-meta">'+paymentStatusChip('未配置')+paymentStatusChip('已停用')+'<small>测试模式 · '+esc(item.updatedAt)+'</small></div><div class="payment-card-actions"><button class="mini-btn" type="button" data-payment-edit="'+esc(item.id)+'">编辑</button><button class="mini-btn" type="button" disabled title="请使用真实支付设置模块启停渠道">启用（未接入）</button></div></article>'}).join('');
     return '<div class="payment-channel-grid">'+cards+'</div>'+(editId?renderPaymentEditor(paymentChannel(editId)):'')+'<section class="panel payment-note"><h2>支付成功回调处理规则</h2><div class="payment-checks"><span>验证支付平台签名</span><span>验证订单编号</span><span>验证付款金额</span><span>验证币种</span><span>防止重复回调</span><span>更新充值记录</span><span>增加老板余额</span><span>更新累计消费与 VIP 进度</span><span>生成财务流水</span><span>记录第三方交易号</span><span>发送到账通知</span></div></section>';
   }
   function renderPaymentEditor(item){
     var api=item.api.length?'<section class="panel"><h2>API 配置</h2><div class="payment-field-grid">'+item.api.map(function(field){return '<label><span>'+esc(field[1])+'</span><div class="payment-secret-row"><input type="password" autocomplete="new-password" data-secret-field="'+esc(field[0])+'" placeholder="留空保持当前配置"><button type="button" class="mini-btn" data-payment-secret-toggle>显示</button></div><small>当前：未配置</small></label>'}).join('')+'</div><p class="payment-safe-copy">密钥只允许提交到服务器安全接口；前端不会保存完整密钥。</p></section>':'';
-    return '<form class="payment-editor" data-payment-form="'+esc(item.id)+'"><section class="panel"><h2>基础设置</h2><div class="payment-field-grid"><label><span>支付方式名称</span><input name="name" value="'+esc(item.name)+'"></label><label><span>后台显示名称</span><input name="adminLabel" value="'+esc(item.name)+'"></label><label><span>前台显示名称</span><input name="publicLabel" value="'+esc(item.name)+'"></label><label><span>支持币种</span><input name="currencies" value="'+esc(item.currencies)+'"></label><label><span>最低充值金额</span><input name="minAmount" inputmode="decimal" value="10"></label><label><span>最高充值金额</span><input name="maxAmount" inputmode="decimal" value="5000"></label><label><span>手续费类型</span><select name="feeType"><option value="none">无手续费</option><option value="fixed">固定手续费</option><option value="percent">百分比手续费</option><option value="mixed">固定 + 百分比</option></select></label><label><span>固定手续费</span><input name="fixedFee" inputmode="decimal" value="0"></label><label><span>百分比手续费</span><input name="percentFee" inputmode="decimal" value="0"></label><label><span>是否前台显示</span><select name="visible"><option value="false">隐藏</option><option value="true">显示</option></select></label><label><span>是否启用</span><select name="enabled"><option value="false">停用</option><option value="true">启用</option></select></label><label class="wide"><span>支付说明</span><textarea name="instructions"></textarea></label></div></section><section class="panel"><h2>运行模式</h2><div class="payment-field-grid"><label><span>当前使用模式</span><select name="mode"><option value="test">测试模式</option><option value="live">正式模式</option></select></label><label><span>测试环境地址</span><input name="testEndpoint"></label><label><span>正式环境地址</span><input name="liveEndpoint"></label></div></section>'+api+'<section class="panel"><h2>手动收款配置</h2><div class="payment-field-grid"><label><span>收款方式名称</span><input name="manualName" value="'+esc(item.name)+'"></label><label><span>收款人姓名</span><input name="receiverName"></label><label><span>企业名称</span><input name="enterpriseName"></label><label><span>银行名称</span><input name="bankName"></label><label><span>银行账号</span><input name="bankAccount"></label><label><span>TNG 手机号</span><input name="tngPhone"></label><label><span>DuitNow ID</span><input name="duitNowId"></label><label><span>支付宝账号</span><input name="alipayAccount"></label><label><span>微信收款账号</span><input name="wechatAccount"></label><label><span>显示顺序</span><input name="sort" inputmode="numeric" value="0"></label><label class="wide"><span>收款二维码上传</span><input type="file" accept="image/*" name="qrImage"></label><label class="wide"><span>收款说明</span><textarea name="manualInstructions"></textarea></label></div></section><div class="form-actions"><button class="primary-btn" type="submit">保存配置</button><button class="ghost-btn" type="button" data-payment-cancel>取消</button><button class="ghost-btn" type="button" data-payment-test="'+esc(item.id)+'">测试配置</button></div></form>';
+    return '<form class="payment-editor" data-payment-form="'+esc(item.id)+'"><section class="panel"><h2>基础设置</h2><div class="payment-field-grid"><label><span>支付方式名称</span><input name="name" value="'+esc(item.name)+'"></label><label><span>后台显示名称</span><input name="adminLabel" value="'+esc(item.name)+'"></label><label><span>前台显示名称</span><input name="publicLabel" value="'+esc(item.name)+'"></label><label><span>支持币种</span><input name="currencies" value="'+esc(item.currencies)+'"></label><label><span>最低充值金额</span><input name="minAmount" inputmode="decimal" value="10"></label><label><span>最高充值金额</span><input name="maxAmount" inputmode="decimal" value="5000"></label><label><span>手续费类型</span><select name="feeType"><option value="none">无手续费</option><option value="fixed">固定手续费</option><option value="percent">百分比手续费</option><option value="mixed">固定 + 百分比</option></select></label><label><span>固定手续费</span><input name="fixedFee" inputmode="decimal" value="0"></label><label><span>百分比手续费</span><input name="percentFee" inputmode="decimal" value="0"></label><label><span>是否前台显示</span><select name="visible"><option value="false">隐藏</option><option value="true">显示</option></select></label><label><span>是否启用</span><select name="enabled"><option value="false">停用</option><option value="true">启用</option></select></label><label class="wide"><span>支付说明</span><textarea name="instructions"></textarea></label></div></section><section class="panel"><h2>运行模式</h2><div class="payment-field-grid"><label><span>当前使用模式</span><select name="mode"><option value="test">测试模式</option><option value="live">正式模式</option></select></label><label><span>测试环境地址</span><input name="testEndpoint"></label><label><span>正式环境地址</span><input name="liveEndpoint"></label></div></section>'+api+'<section class="panel"><h2>手动收款配置</h2><div class="payment-field-grid"><label><span>收款方式名称</span><input name="manualName" value="'+esc(item.name)+'"></label><label><span>收款人姓名</span><input name="receiverName"></label><label><span>企业名称</span><input name="enterpriseName"></label><label><span>银行名称</span><input name="bankName"></label><label><span>银行账号</span><input name="bankAccount"></label><label><span>TNG 手机号</span><input name="tngPhone"></label><label><span>DuitNow ID</span><input name="duitNowId"></label><label><span>支付宝账号</span><input name="alipayAccount"></label><label><span>微信收款账号</span><input name="wechatAccount"></label><label><span>显示顺序</span><input name="sort" inputmode="numeric" value="0"></label><label class="wide"><span>收款二维码上传</span><input type="file" accept="image/*" name="qrImage"></label><label class="wide"><span>收款说明</span><textarea name="manualInstructions"></textarea></label></div></section><div class="form-actions"><button class="primary-btn" type="submit">保存配置</button><button class="ghost-btn" type="button" data-payment-cancel>取消</button><button class="ghost-btn" type="button" disabled title="支付安全测试接口未接入">测试配置（未接入）</button></div></form>';
   }
   function renderPaymentManual(){
-    var rows=paymentTemplates.filter(function(item){return /手动|银行|QR|转账/.test(item.type)}).map(function(item){return '<tr><td>'+esc(item.name)+'</td><td>未填写</td><td>-</td><td>-</td><td>未上传</td><td>'+paymentStatusChip('停用')+'</td><td><button class="mini-btn" type="button" data-payment-edit="'+esc(item.id)+'">编辑</button></td></tr>'}).join('');
+    var rows=paymentTemplates.filter(function(item){return /手动|银行|QR|转账/.test(item.type)}).map(function(item){return '<tr><td>'+esc(item.name)+'</td><td>未填写</td><td>-</td><td>-</td><td>未上传</td><td>'+paymentStatusChip('停用')+'</td><td><button class="mini-btn" type="button" disabled title="请使用真实支付设置模块">编辑（请用支付设置）</button></td></tr>'}).join('');
     return table(['收款方式','收款人 / 企业','银行','账号','二维码','状态','操作'],rows);
   }
   function renderPaymentBanks(){
@@ -1479,8 +1479,7 @@
     return '<section class="panel"><h2>MYR / CNY</h2><form class="payment-field-grid" data-payment-secure-form="rate"><label><span>基础币种</span><input name="base" value="MYR"></label><label><span>目标币种</span><input name="target" value="CNY"></label><label><span>当前接口汇率</span><input name="apiRate" inputmode="decimal"></label><label><span>自动更新</span><select name="auto"><option value="false">关闭</option><option value="true">开启</option></select></label><label><span>手动汇率</span><input name="manualRate" inputmode="decimal"></label><label><span>汇率浮动加成 %</span><input name="markup" inputmode="decimal" value="0"></label><label><span>汇率更新时间</span><input name="updatedAt" value="-"></label><label><span>前台最终使用汇率</span><input readonly value="-"></label><div class="form-actions wide"><button class="primary-btn" type="submit">保存汇率</button></div></form></section>';
   }
   function renderPaymentWebhooks(){
-    var rows=paymentEvents.map(function(event){return '<tr><td>'+esc(event)+'</td><td><input class="inline-input" data-webhook-url="'+esc(event)+'"></td><td><input class="inline-input" type="password" data-webhook-secret="'+esc(event)+'" placeholder="未配置"></td><td>'+paymentStatusChip('停用')+'</td><td>-</td><td>-</td><td>-</td><td><button class="mini-btn" data-webhook-save="'+esc(event)+'" type="button">保存</button><button class="mini-btn" data-webhook-test="'+esc(event)+'" type="button">测试</button></td></tr>'}).join('');
-    return '<section class="panel"><h2>Webhook 管理</h2>'+table(['事件名称','Webhook URL','Secret','状态','最近调用','最近状态','状态码','操作'],rows)+'</section>'+table(['时间','事件','URL','状态','状态码'],[]);
+    return '<section class="panel"><h2>Webhook 管理</h2><div class="admin-sync-note" style="padding:16px;line-height:1.75"><strong>Webhook 配置未接入生产安全接口</strong><p style="margin:10px 0 0">保存 / 测试不会写入浏览器，也不会调用未连接的支付安全接口。请在服务端环境变量中配置 Webhook Secret。</p><p style="margin:8px 0 0" class="empty">已停用占位按钮 · 无前端假成功</p></div></section>';
   }
   function renderPaymentRecords(){
     return '<div class="toolbar"><input placeholder="UID / 平台订单号 / 第三方交易号"><select>'+paymentStatuses.map(function(s){return '<option>'+s+'</option>'}).join('')+'</select><select><option>全部渠道</option>'+paymentTemplates.map(function(c){return '<option>'+esc(c.name)+'</option>'}).join('')+'</select><select><option>全部币种</option><option>MYR</option><option>CNY</option><option>USD</option></select></div>'+table(['平台订单号','第三方交易号','老板 UID','支付方式','币种','金额','手续费','实际到账','状态','支付时间','创建时间','回调状态','操作'],[]);
@@ -1753,7 +1752,7 @@
     localStorage.setItem(localPlatformContentKey(type),JSON.stringify(list));
     return item;
   }
-  function applyLocalPlatformContentAction(action,type,id,payload){
+  function applyLocalPlatformContentAction(action,type,id,payload){alert('已禁止平台内容写入 localStorage 假数据。');return;
     var list=readLocalPlatformContent(type);
     if(action==='delete')list=list.filter(function(row){return String(row.id)!==String(id)});
     else if(action==='unpublish'||action==='disable')saveLocalPlatformContent(type,Object.assign({},payload||{},{status:'已下架',enabled:false}),id);
@@ -2032,7 +2031,7 @@
       sec=document.createElement('section');
       sec.className='section';
       sec.id='section-'+name;
-      sec.innerHTML='<section class="panel"><h2>'+escHtml(label||name)+'</h2><div class="empty">该功能正在接入中</div></section>';
+      sec.innerHTML='<section class="panel"><h2>'+escHtml(label||name)+'</h2><div class="admin-sync-note" style="padding:16px;line-height:1.75"><strong>该功能未开放</strong><p style="margin:10px 0 0">当前没有真实后台接口，页面不提供可点击的占位操作。</p></div></section>';
       content.appendChild(sec);
       return sec;
     }
@@ -2156,7 +2155,7 @@
       });
     });
   }
-  function bindGlobal(){document.addEventListener('click',function(e){var role=e.target.closest('[data-role-login]');if(role){localStorage.setItem('mcjRole',role.dataset.roleLogin);routeByRole(role.dataset.roleLogin);return;}var logout=e.target.closest('[data-admin-logout]');if(logout){e.preventDefault();denyAdminToLogin('已退出后台登录');return;}var preview=e.target.closest('[data-preview-home]');if(preview){location.href='index.html';return;}var saveLevels=e.target.closest('[data-save-companion-levels]');if(saveLevels){/* real save handled by capture-phase submitCompanionLevelsSecure */return;}var deleteLevel=e.target.closest('[data-delete-companion-level]');if(deleteLevel){/* real delete handled by capture-phase submitCompanionLevelsSecure */return;}if(confirm('确认删除 '+levelLabel(level.id)+'？')){levelApi().save(levels.filter(function(item){return item.id!==level.id}));log('删除陪玩等级 '+levelLabel(level.id));renderCompanionLevels();}return;}var action=e.target.closest('[data-action]');if(action){alert('该操作未接入真实后台接口（'+action.dataset.action+'），未写入数据库。');log('拦截未实现操作 '+action.dataset.action);return;}var del=e.target.closest('[data-delete]');if(del){var arr=read(del.dataset.delete);arr.splice(Number(del.dataset.index),1);write(del.dataset.delete,arr);location.reload();return;}})}
+  function bindGlobal(){document.addEventListener('click',function(e){var role=e.target.closest('[data-role-login]');if(role){localStorage.setItem('mcjRole',role.dataset.roleLogin);routeByRole(role.dataset.roleLogin);return;}var logout=e.target.closest('[data-admin-logout]');if(logout){e.preventDefault();denyAdminToLogin('已退出后台登录');return;}var preview=e.target.closest('[data-preview-home]');if(preview){location.href='index.html';return;}var saveLevels=e.target.closest('[data-save-companion-levels]');if(saveLevels){/* real save handled by capture-phase submitCompanionLevelsSecure */return;}var deleteLevel=e.target.closest('[data-delete-companion-level]');if(deleteLevel){/* real delete handled by capture-phase submitCompanionLevelsSecure */return;}var action=e.target.closest('[data-action]');if(action){alert('该操作未接入真实后台接口（'+action.dataset.action+'），未写入数据库。');log('拦截未实现操作 '+action.dataset.action);return;}var del=e.target.closest('[data-delete]');if(del){alert('已禁用本地假数据删除（'+del.dataset.delete+'）。请通过真实后台接口维护业务数据，未写入数据库。');log('拦截本地 data-delete '+del.dataset.delete);return;}});}
   function initForms(){document.querySelectorAll('[data-save-settings]').forEach(function(btn){btn.addEventListener('click',function(){alert('请使用「系统设置」模块保存。该旧入口不会写入数据库。');})});document.querySelectorAll('[data-add-row]').forEach(function(btn){btn.addEventListener('click',function(){alert('已禁用本地假数据新增。请通过真实后台接口维护业务数据。');})})}
   function bindPaymentAdmin(){
     document.addEventListener('click',function(e){
@@ -2217,7 +2216,7 @@
       var bossBulk=e.target.closest('[data-boss-bulk]');if(bossBulk){var ids=selectedBossIds();if(!ids.length)return;if(/freeze|blacklist/.test(bossBulk.dataset.bossBulk)&&!confirm('确认执行批量操作？'))return;if(bossBulk.dataset.bossBulk==='export'){exportBossRows(visibleBossRows().filter(function(row){return ids.indexOf(String(row.id))>-1;}));return;}submitBossSecure('bulk-'+bossBulk.dataset.bossBulk,ids,{ids:ids});return;}
       var orderTab=e.target.closest('[data-order-status-tab]');if(orderTab){var wrap=orderTab.closest('.order-status-tabs');if(wrap)wrap.querySelectorAll('[data-order-status-tab]').forEach(function(btn){btn.classList.remove('active')});orderTab.classList.add('active');filterOrders();return;}
       var orderAction=e.target.closest('[data-order-action]');if(orderAction){var orderAct=orderAction.dataset.orderAction,orderId=orderAction.dataset.orderId;if(orderAct==='view'||orderAct==='review'){openOrderDetail(orderId);return;}var payload={};if(orderAct==='assign-player'||orderAct==='change-player'){var companionId=prompt('请输入陪玩用户 UUID（profiles.id / companion user_id）：')||'';if(!String(companionId).trim())return;payload.companion_id=String(companionId).trim();}var risky=/cancel|refund|early-end|confirm-complete|return-service|blacklist|compensate|reject|approve|partial/.test(orderAct);var reason='';if(risky){reason=prompt('该订单操作需要记录原因，请填写原因：')||'';if(!reason.trim())return;payload.reason=reason;}submitOrderAction(orderAct,orderId,payload);return;}
-      if(e.target.closest('[data-order-export]')){submitOrderAction('export','all',{});return;}
+      if(e.target.closest('[data-order-export]')){alert('订单导出尚未接入真实订单接口，未生成文件、未写入数据库。');return;}
       if(e.target.closest('[data-order-create-service]')){alert('「客服创建订单」尚未接入真实订单接口，未写入数据库。');return;}
       if(e.target.closest('[data-order-dev-test]')){alert('测试下单入口已禁用，避免写入假/测试订单。');return;}
       var serviceRecordAction=e.target.closest('[data-service-record-action]');if(serviceRecordAction){openServiceRecordDetail(serviceRecordAction.dataset.serviceRecordId,serviceRecordAction.dataset.serviceRecordAction);return;}
@@ -2501,7 +2500,7 @@
   }
   function val(id){var el=document.getElementById(id);return el?el.value:''}
   function v1Read(key,def){try{var v=JSON.parse(localStorage.getItem(key)||'null');return v==null?def:v}catch(e){return def}}
-  function v1Write(key,val){localStorage.setItem(key,JSON.stringify(val))}
+  function v1Write(key,val){/* Production guard: V1 account helper must not persist passwords/status in localStorage. */console.warn('[admin] blocked V1 localStorage write',key);return false}
   function v1Now(){return new Date().toLocaleString('zh-CN',{hour12:false})}
   function v1RoleLabel(role){return ({boss:'&#32769;&#26495;',service:'&#23458;&#26381;',companion:'&#38506;&#29609;',player:'&#38506;&#29609;'})[role]||esc(role||'-')}
   function v1StatusLabel(status){return status==='ENABLED'?'&#21551;&#29992;':'&#20572;&#29992;'}
@@ -2516,40 +2515,25 @@
   function renderV1AccountManagement(){
     var target=document.getElementById('table-admin_accounts');
     if(!target)return;
-    var list=v1Read('mcj_v1_accounts',[]);
-    target.innerHTML='<div class="table-tools"><button class="primary-btn" type="button" data-v1-new-account>&#26032;&#22686;&#36134;&#21495;</button><span>&#29992;&#20110; V1 &#23458;&#26381;&#31471;&#21644;&#38506;&#29609;&#31471;&#30331;&#24405;</span></div><form class="admin-account-form" data-v1-account-form hidden><input type="hidden" name="id"><div class="form-grid"><label>&#22995;&#21517;<input name="name" required></label><label>&#36134;&#21495;<input name="account" required></label><label>&#23494;&#30721;<input name="password" type="password" placeholder="&#26032;&#24314;&#24517;&#22635;&#65292;&#32534;&#36753;&#21487;&#30041;&#31354;"></label><label>&#36523;&#20221;<select name="role" required><option value="boss">&#32769;&#26495;</option><option value="service">&#23458;&#26381;</option><option value="companion">&#38506;&#29609;</option></select></label><label>&#29366;&#24577;<select name="status"><option value="ENABLED">&#21551;&#29992;</option><option value="DISABLED">&#20572;&#29992;</option></select></label></div><div class="row"><button class="primary-btn" type="submit">&#20445;&#23384;&#36134;&#21495;</button><button class="ghost-btn" type="button" data-v1-cancel-account>&#21462;&#28040;</button></div></form><div class="table-wrap"><table><thead><tr><th>&#22995;&#21517;</th><th>&#36134;&#21495;</th><th>&#36523;&#20221;</th><th>&#29366;&#24577;</th><th>&#23494;&#30721;</th><th>&#21019;&#24314;&#26102;&#38388;</th><th>&#26368;&#36817;&#20462;&#25913;</th><th>&#25805;&#20316;</th></tr></thead><tbody>'+(list.length?list.map(function(item){return '<tr><td>'+esc(item.name||'-')+'</td><td>'+esc(item.account||'-')+'</td><td>'+v1RoleLabel(item.role)+'</td><td><span class="chip '+(item.status==='ENABLED'?'ok':'bad')+'">'+v1StatusLabel(item.status)+'</span></td><td>&#24050;&#35774;&#32622;</td><td>'+esc(item.createdAt||'-')+'</td><td>'+esc(item.updatedAt||'-')+'</td><td><div class="row"><button class="ghost-btn" type="button" data-v1-edit-account="'+esc(item.id)+'">&#32534;&#36753;</button><button class="ghost-btn" type="button" data-v1-password-account="'+esc(item.id)+'">&#25913;&#23494;&#30721;</button><button class="ghost-btn" type="button" data-v1-toggle-account="'+esc(item.id)+'">'+(item.status==='ENABLED'?'&#20572;&#29992;':'&#21551;&#29992;')+'</button></div></td></tr>'}).join(''):'<tr><td colspan="8"><div class="empty">&#26242;&#26080;&#36134;&#21495;&#12290;&#28857;&#20987;&#26032;&#22686;&#36134;&#21495;&#24320;&#22987;&#21019;&#24314;&#12290;</div></td></tr>')+'</tbody></table></div>';
+    target.innerHTML='<div class="admin-sync-note" style="padding:18px;line-height:1.75"><strong>V1 本地账号管理已停用</strong><p style="margin:10px 0 0">该入口仅写入浏览器 localStorage，不会同步真实用户库，已禁止新增 / 改密 / 启停。</p><p style="margin:8px 0 0" class="empty">请使用「客服管理」或真实用户模块维护账号</p></div>';
   }
-  function resetV1AccountForm(){var form=document.querySelector('[data-v1-account-form]');if(!form)return;form.reset();form.elements.id.value='';form.hidden=true;}
+  function resetV1AccountFormfunction resetV1AccountForm(){var form=document.querySelector('[data-v1-account-form]');if(!form)return;form.reset();form.elements.id.value='';form.hidden=true;}
   function bindV1AccountManagement(){
     document.addEventListener('click',function(e){
-      if(e.target.closest('[data-v1-new-account]')){var form=document.querySelector('[data-v1-account-form]');if(form){form.hidden=false;form.reset();form.elements.id.value='';form.elements.status.value='ENABLED';form.elements.role.value='service';}return;}
-      if(e.target.closest('[data-v1-cancel-account]')){resetV1AccountForm();return;}
-      var edit=e.target.closest('[data-v1-edit-account]');
-      if(edit){var list=v1Read('mcj_v1_accounts',[]),item=list.find(function(x){return x.id===edit.dataset.v1EditAccount}),form=document.querySelector('[data-v1-account-form]');if(item&&form){form.hidden=false;form.elements.id.value=item.id;form.elements.name.value=item.name||'';form.elements.account.value=item.account||'';form.elements.password.value='';form.elements.role.value=item.role||'service';form.elements.status.value=item.status||'ENABLED';form.scrollIntoView({block:'nearest'});}return;}
-      var pass=e.target.closest('[data-v1-password-account]');
-      if(pass){var next=prompt('\u8f93\u5165\u65b0\u5bc6\u7801');if(!next)return;var rows=v1Read('mcj_v1_accounts',[]);rows.forEach(function(x){if(x.id===pass.dataset.v1PasswordAccount){x.password=next;x.updatedAt=v1Now();}});v1Write('mcj_v1_accounts',rows);log('\u4fee\u6539 V1 \u8d26\u53f7\u5bc6\u7801');return;}
-      var tog=e.target.closest('[data-v1-toggle-account]');
-      if(tog){var rows2=v1Read('mcj_v1_accounts',[]);rows2.forEach(function(x){if(x.id===tog.dataset.v1ToggleAccount){x.status=x.status==='ENABLED'?'DISABLED':'ENABLED';x.updatedAt=v1Now();}});v1Write('mcj_v1_accounts',rows2);log('\u5207\u6362 V1 \u8d26\u53f7\u72b6\u6001');return;}
+      if(e.target.closest('[data-v1-new-account],[data-v1-edit-account],[data-v1-password-account],[data-v1-toggle-account],[data-v1-cancel-account]')){
+        e.preventDefault();
+        alert('V1 本地账号管理已停用：不会写入 localStorage，也不会写入真实用户库。');
+        renderV1AccountManagement();
+      }
     });
     document.addEventListener('submit',function(e){
-      if(!e.target.matches('[data-v1-account-form]'))return;
+      if(!e.target.matches || !e.target.matches('[data-v1-account-form]'))return;
       e.preventDefault();
-      var form=e.target,fd=new FormData(form),id=String(fd.get('id')||''),name=String(fd.get('name')||'').trim(),account=String(fd.get('account')||'').trim(),password=String(fd.get('password')||''),role=String(fd.get('role')||'service'),status=String(fd.get('status')||'ENABLED');
-      if(!name||!account){alert('\u8bf7\u586b\u5199\u59d3\u540d\u548c\u8d26\u53f7\u3002');return;}
-      var list=v1Read('mcj_v1_accounts',[]);
-      if(list.some(function(x){return x.account===account&&x.id!==id})){alert('\u8d26\u53f7\u5df2\u5b58\u5728\u3002');return;}
-      var item=id?list.find(function(x){return x.id===id}):null;
-      if(!item&&!password){alert('\u7b2c\u4e00\u6b21\u521b\u5efa\u8d26\u53f7\u5fc5\u987b\u586b\u5199\u5bc6\u7801\u3002');return;}
-      if(!item){item={id:'ACC-'+Date.now().toString(36),createdAt:v1Now()};list.unshift(item);}
-      item.name=name;item.account=account;item.role=role;item.status=status;item.updatedAt=v1Now();if(password)item.password=password;
-      v1Write('mcj_v1_accounts',list);
-      v1EnsureCompanionProfile(item);
-      log(id?'\u7f16\u8f91 V1 \u8d26\u53f7':'\u521b\u5efa V1 \u8d26\u53f7');
-      resetV1AccountForm();
-      
+      alert('V1 本地账号管理已停用：表单不会保存。');
+      renderV1AccountManagement();
     });
   }
-  function initSuperAdmin(){
+  function initSuperAdminfunction initSuperAdmin(){
     purgeStaleLocalBusinessData();
     var dash=document.getElementById('superStats');
     // Real stats are owned by admin-final-v1 renderDashboard — do not overwrite with localStorage fake cards.
@@ -2602,17 +2586,17 @@
     if(dashboardPlayers)renderGenericTable('players',dashboardPlayers,tables.players,[]);
     ['players'].forEach(function(key){var t=document.getElementById('crud-'+key);if(t)renderCrud(key,t)});
     [
-      ['crud-ads','暂无广告位数据'],
-      ['table-meow_butler','暂无喵管家配置'],
-      ['table-sync_center','暂无同步记录'],
-      ['table-price_table','暂无价格表数据'],
-      ['table-custom_orders','暂无自定义订单设置'],
-      ['table-gameplay_qualifications','暂无玩法资格审核'],
-      ['table-companion_rules','暂无陪玩制度内容'],
-      ['table-voice_types','暂无声音类型数据'],
-      ['table-companion_deposit','暂无押金设置'],
-      ['statisticsPanel','暂无统计数据'],
-      ['table-vip_settings','暂无 VIP 设置'],
+      ['crud-ads','未开放 · 广告位无真实后台接口'],
+      ['table-meow_butler','未开放 · 喵管家无真实后台接口'],
+      ['table-sync_center','未开放 · 同步中心无真实后台接口'],
+      ['table-price_table','未开放 · 价格表无真实后台接口'],
+      ['table-custom_orders','未开放 · 自定义订单设置无真实后台接口'],
+      ['table-gameplay_qualifications','未开放 · 玩法资格审核无真实后台接口'],
+      ['table-companion_rules','未开放 · 请使用「制度与等级」'],
+      ['table-voice_types','未开放 · 声音类型无独立后台接口'],
+      ['table-companion_deposit','未开放 · 押金请在陪玩详情审核'],
+      ['statisticsPanel','未开放 · 统计中心接口未接入'],
+      ['table-vip_settings','未开放 · VIP 设置无真实后台接口'],
       ['paymentSettings','']
     ].forEach(function(item){if(item[1])emptyPanel(item[0],item[1])});
     renderBossManagement();
