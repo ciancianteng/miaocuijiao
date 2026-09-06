@@ -5,10 +5,25 @@ import {
   updateLocalTags,
   normalizeTagRow,
   toPublicTag,
+  readDbTags,
 } from "../_companion-tags-store.js";
 import { requireAdmin as requireAdminJwt } from "../_admin-auth.js";
+import {
+  STAGING_PROJECT_REF,
+  assertStagingOnly,
+  buildStagingPoolerUrl,
+  readSqlFile,
+  applySqlViaPostgres,
+  applySqlViaManagementApi,
+  projectRefFromSupabaseUrl,
+} from "../_staging-sql.js";
 
 const ADMIN_ROLES = new Set(["admin", "super_admin"]);
+const SQL_CANDIDATES = [
+  "supabase/companion-tags.sql",
+  "server/api/_sql/companion-tags.sql",
+  "companion-tags.sql",
+];
 
 function json(res, status, data) {
   res.status(status).json(data);
@@ -41,7 +56,30 @@ export default async function handler(req, res) {
 
     if (req.method === "GET") {
       const tags = await readLocalTags();
-      return json(res, 200, { ok: true, items: tags.map(toPublicTag), tags: tags.map(toPublicTag), source: "local" });
+      let tableReady = false;
+      try {
+        const dbRows = await readDbTags();
+        tableReady = Array.isArray(dbRows);
+      } catch {
+        tableReady = false;
+      }
+      let sqlPreview = "";
+      try {
+        sqlPreview = readSqlFile(SQL_CANDIDATES).sql;
+      } catch {
+        sqlPreview = "";
+      }
+      return json(res, 200, {
+        ok: true,
+        items: tags.map(toPublicTag),
+        tags: tags.map(toPublicTag),
+        source: tableReady ? "db" : "local",
+        tableReady,
+        stagingRef: STAGING_PROJECT_REF,
+        sqlEditorUrl: `https://supabase.com/dashboard/project/${STAGING_PROJECT_REF}/sql/new`,
+        migrationSql: sqlPreview,
+        acceptOneShot: true,
+      });
     }
 
     if (req.method !== "POST") {
@@ -57,23 +95,105 @@ export default async function handler(req, res) {
       return json(res, 200, { ok: true, items: tags.map(toPublicTag) });
     }
 
+    if (action === "ensure_schema" || action === "ensure" || action === "migrate") {
+      const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "";
+      const envRef = projectRefFromSupabaseUrl(supabaseUrl);
+      const oneshotDb = String(
+        body.databaseUrl || body.DATABASE_URL || body.stagingDatabaseUrl || ""
+      ).trim();
+      const oneshotPass = String(
+        body.databasePassword || body.dbPassword || body.SUPABASE_DB_PASSWORD || body.password || ""
+      ).trim();
+      const oneshotPat = String(
+        body.accessToken || body.supabaseAccessToken || body.SUPABASE_ACCESS_TOKEN || body.pat || ""
+      ).trim();
+      const envDb = String(process.env.DATABASE_URL || process.env.POSTGRES_URL || "").trim();
+      const envPat = String(process.env.SUPABASE_ACCESS_TOKEN || "").trim();
+
+      if (envRef && envRef !== STAGING_PROJECT_REF && !oneshotDb && !oneshotPass && !oneshotPat) {
+        return json(res, 403, {
+          ok: false,
+          message: `当前部署不是 Staging（got ${envRef}）。请仅对 Staging（${STAGING_PROJECT_REF}）执行，或粘贴一次性 Staging 凭证。`,
+          stagingRef: STAGING_PROJECT_REF,
+        });
+      }
+
+      const { sql } = readSqlFile(SQL_CANDIDATES);
+      const dbUrl =
+        oneshotDb ||
+        (oneshotPass ? buildStagingPoolerUrl(oneshotPass) : "") ||
+        (envRef === STAGING_PROJECT_REF ? envDb : "");
+      const pat = oneshotPat || (envRef === STAGING_PROJECT_REF ? envPat : "");
+
+      if (!dbUrl && !pat) {
+        return json(res, 200, {
+          ok: true,
+          skipped: true,
+          tableReady: false,
+          message:
+            "未配置 Staging DATABASE_URL / SUPABASE_ACCESS_TOKEN。请一次性粘贴 Staging DB password、Postgres URI 或 PAT 后重试；或打开 Staging SQL Editor 粘贴 supabase/companion-tags.sql。",
+          stagingRef: STAGING_PROJECT_REF,
+          sqlEditorUrl: `https://supabase.com/dashboard/project/${STAGING_PROJECT_REF}/sql/new`,
+          migrationSql: sql,
+          acceptOneShot: true,
+        });
+      }
+
+      assertStagingOnly({
+        supabaseUrl: envRef === STAGING_PROJECT_REF ? supabaseUrl : "",
+        databaseUrl: dbUrl,
+      });
+      const result = dbUrl
+        ? await applySqlViaPostgres(dbUrl, sql)
+        : await applySqlViaManagementApi(pat, sql);
+
+      let tableReady = false;
+      let count = 0;
+      try {
+        const rows = await readDbTags();
+        tableReady = Array.isArray(rows);
+        count = Array.isArray(rows) ? rows.length : 0;
+      } catch {
+        tableReady = false;
+      }
+      return json(res, 200, {
+        ok: true,
+        tableReady,
+        count,
+        message: tableReady
+          ? `Staging companion_tags 已就绪（${count} 条）`
+          : "SQL 已执行，但读取校验未通过；请稍后刷新或检查 schema cache。",
+        stagingRef: STAGING_PROJECT_REF,
+        via: result.via,
+        identity: result.identity || null,
+      });
+    }
+
     if (action === "create" || action === "save") {
       const draft = (body.payload && body.payload.draft) || body.tag || body.payload || {};
       const id = String(body.id || draft.id || "").trim();
       const result = await updateLocalTags(async (list) => {
-        const row = normalizeTagRow({
-          ...draft,
-          name: draft.name || (body.payload && body.payload.title) || "",
-          enabled: body.payload ? body.payload.enabled !== false : draft.enabled !== false,
-          id: id || randomUUID(),
-        }, list.length);
+        const row = normalizeTagRow(
+          {
+            ...draft,
+            name: draft.name || (body.payload && body.payload.title) || "",
+            enabled: body.payload ? body.payload.enabled !== false : draft.enabled !== false,
+            id: id || randomUUID(),
+          },
+          list.length
+        );
         if (!row.name) throw Object.assign(new Error("请填写标签名称。"), { status: 400 });
         const index = list.findIndex((item) => String(item.id) === String(row.id));
         if (index >= 0) list[index] = row;
         else list.push(row);
         return { tag: row };
       });
-      return json(res, 200, { ok: true, message: "标签已保存", item: toPublicTag(result.tag), items: (await readLocalTags()).map(toPublicTag) });
+      return json(res, 200, {
+        ok: true,
+        message: "标签已保存",
+        item: toPublicTag(result.tag),
+        items: (await readLocalTags()).map(toPublicTag),
+      });
     }
 
     if (action === "delete") {

@@ -11,6 +11,10 @@
     tags: [],
     editing: null,
     formOpen: false,
+    tableReady: true,
+    stagingRef: "cfccwysniduwkjskiqgy",
+    sqlEditorUrl: "https://supabase.com/dashboard/project/cfccwysniduwkjskiqgy/sql/new",
+    migrationSql: "",
   };
 
   function esc(v) {
@@ -133,11 +137,41 @@
     }).join("");
   }
 
+  function ensurePanelHtml() {
+    if (state.tableReady) return "";
+    return (
+      '<div class="panel" style="margin:0 0 14px;padding:14px 16px;border:1px solid rgba(251,113,133,.35);background:rgba(251,113,133,.08)">' +
+        "<h4 style=\"margin:0 0 8px;color:#fecdd3\">Staging 标签表未就绪</h4>" +
+        '<p class="muted" style="margin:0 0 10px;font-size:12px;line-height:1.55">请仅对 Staging（<code>' +
+        esc(state.stagingRef || "cfccwysniduwkjskiqgy") +
+        "</code>）执行 <code>supabase/companion-tags.sql</code>。禁止对 Production 执行。可在下方粘贴一次性 Staging DB password / Postgres URI / PAT（仅本次请求，不落库），或 " +
+        '<a href="' +
+        esc(state.sqlEditorUrl) +
+        '" target="_blank" rel="noopener">打开 Staging SQL Editor</a>。</p>' +
+        '<div style="display:grid;gap:8px;max-width:720px">' +
+          '<label class="muted" style="font-size:12px">一次性 Staging DB password' +
+            '<input data-tag-oneshot-pass type="password" autocomplete="off" placeholder="Staging database password" style="display:block;width:100%;margin-top:4px;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,.14);background:rgba(0,0,0,.35);color:#e5e7eb"></label>' +
+          '<label class="muted" style="font-size:12px">一次性 Staging DATABASE_URL' +
+            '<input data-tag-oneshot-db type="password" autocomplete="off" placeholder="postgresql://postgres.cfccwysniduwkjskiqgy:***@…pooler.supabase.com:5432/postgres" style="display:block;width:100%;margin-top:4px;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,.14);background:rgba(0,0,0,.35);color:#e5e7eb"></label>' +
+          '<label class="muted" style="font-size:12px">一次性 Supabase PAT' +
+            '<input data-tag-oneshot-pat type="password" autocomplete="off" placeholder="sbp_…" style="display:block;width:100%;margin-top:4px;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,.14);background:rgba(0,0,0,.35);color:#e5e7eb"></label>' +
+        "</div>" +
+        '<div class="row" style="margin-top:12px;gap:8px;flex-wrap:wrap">' +
+          '<button class="primary-btn" type="button" data-tag-ensure-schema>执行 Staging companion-tags.sql</button>' +
+          (state.migrationSql
+            ? '<button class="ghost-btn" type="button" data-tag-copy-sql>复制 SQL</button>'
+            : "") +
+        "</div>" +
+      "</div>"
+    );
+  }
+
   function pageHtml() {
     if (state.loading) return '<div class="content-loading">正在读取陪玩标签...</div>';
     return (
       '<div class="content-admin-head"><div><h3>陪玩标签管理</h3><p>这里管理普通标签（随和、技术流、话多等）。声线（甜妹/御姐等）请在下方「声线管理」维护，禁止混用。</p></div>' +
         '<div class="content-version-meta"><span>' + esc(state.tags.length) + " 个标签</span><span>" + esc(state.message || state.error || "保存后同步申请页与大厅筛选") + "</span></div></div>" +
+      ensurePanelHtml() +
       '<div class="content-admin-toolbar compact"><button class="btn primary" type="button" data-tag-new>新增标签</button><button class="btn" type="button" data-tag-reload>刷新</button></div>' +
       (!window.MCJAdminOverlay && state.formOpen ? '<div class="panel" style="margin-bottom:14px">' + formHtml(state.editing) + "</div>" : "") +
       '<div class="table-wrap"><table><thead><tr><th>标签名称</th><th>分组</th><th>陪玩可选</th><th>大厅展示</th><th>支持筛选</th><th>排序</th><th>状态</th><th>操作</th></tr></thead><tbody>' +
@@ -160,8 +194,12 @@
     apiGet()
       .then(function (result) {
         state.tags = result.items || result.tags || [];
+        state.tableReady = result.tableReady !== false;
+        state.stagingRef = result.stagingRef || state.stagingRef;
+        state.sqlEditorUrl = result.sqlEditorUrl || state.sqlEditorUrl;
+        state.migrationSql = result.migrationSql || "";
         state.loading = false;
-        state.message = "已加载标签";
+        state.message = state.tableReady ? "已加载标签" : "标签表未就绪（仅影响 Staging 写入）";
         state.error = "";
         render();
       })
@@ -206,6 +244,53 @@
       }
       if (e.target.closest("[data-tag-reload]")) {
         load();
+        return;
+      }
+      if (e.target.closest("[data-tag-copy-sql]")) {
+        if (!state.migrationSql) return;
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(state.migrationSql).then(function () {
+            alert("已复制 supabase/companion-tags.sql");
+          }).catch(function () {
+            alert("复制失败，请手动打开 SQL Editor");
+          });
+        } else {
+          alert("当前环境不支持剪贴板，请打开 SQL Editor 手动粘贴");
+        }
+        return;
+      }
+      if (e.target.closest("[data-tag-ensure-schema]")) {
+        var passEl = el.querySelector("[data-tag-oneshot-pass]");
+        var dbEl = el.querySelector("[data-tag-oneshot-db]");
+        var patEl = el.querySelector("[data-tag-oneshot-pat]");
+        var payload = {
+          action: "ensure_schema",
+          databasePassword: passEl ? passEl.value : "",
+          databaseUrl: dbEl ? dbEl.value : "",
+          accessToken: patEl ? patEl.value : "",
+        };
+        if (!payload.databasePassword && !payload.databaseUrl && !payload.accessToken) {
+          alert("请粘贴 Staging DB password / DATABASE_URL / PAT 之一，或打开 Staging SQL Editor 手动执行。");
+          return;
+        }
+        state.message = "正在执行 Staging companion-tags.sql…";
+        render();
+        apiPost(payload)
+          .then(function (result) {
+            if (result.skipped) {
+              alert(result.message || "缺少 Staging 凭证");
+              state.message = result.message || "";
+              render();
+              return;
+            }
+            alert(result.message || "已执行");
+            load();
+          })
+          .catch(function (err) {
+            alert(err.message || "迁移失败");
+            state.error = err.message || "迁移失败";
+            render();
+          });
         return;
       }
       var edit = e.target.closest("[data-tag-edit]");
