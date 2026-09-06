@@ -2029,21 +2029,33 @@ async function bootstrapData(profile, companion) {
       if (repaired?._repaired) {
         try {
           const { _repaired, ...patch } = repaired;
-          const saved = await companionDb("companion_payment_accounts", `?id=eq.${encodeURIComponent(payment.id)}`, {
-            method: "PATCH",
-            body: JSON.stringify({
-              method: patch.method,
-              bank_name: patch.bank_name,
-              bank_account: patch.bank_account,
-              tng_account: patch.tng_account,
-              alipay_account: patch.alipay_account,
-              payment_account: patch.payment_account,
-              payment_phone: patch.payment_phone,
-              account_last4: patch.account_last4,
-              updated_at: nowIso(),
-            }),
-          });
-          payment = Array.isArray(saved) && saved[0] ? saved[0] : { ...payment, ...patch };
+          // Only patch columns present on Production companion_payment_accounts.
+          // (payment_account / payment_phone are logical fields, not DB columns here.)
+          let next = {
+            method: patch.method,
+            bank_name: patch.bank_name,
+            bank_account: patch.bank_account,
+            tng_account: patch.tng_account,
+            alipay_account: patch.alipay_account,
+            account_last4: patch.account_last4,
+            updated_at: nowIso(),
+          };
+          let saved = null;
+          for (let i = 0; i < 6; i++) {
+            try {
+              saved = await companionDb("companion_payment_accounts", `?id=eq.${encodeURIComponent(payment.id)}`, {
+                method: "PATCH",
+                body: JSON.stringify(next),
+              });
+              break;
+            } catch (error) {
+              const msg = `${error?.message || ""} ${typeof error?.body === "string" ? error.body : JSON.stringify(error?.body || "")}`;
+              const m = msg.match(/Could not find the '([^']+)' column/i);
+              if (!m || !(m[1] in next)) throw error;
+              delete next[m[1]];
+            }
+          }
+          payment = Array.isArray(saved) && saved[0] ? saved[0] : { ...payment, ...patch, ...next };
           paymentAccounts = paymentAccounts.map((row) => (String(row.id) === String(payment.id) ? payment : row));
         } catch {
           payment = { ...payment, ...repaired };
