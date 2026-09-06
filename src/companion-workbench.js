@@ -760,6 +760,123 @@
       focus:captureFieldFocus(form)
     };
   }
+  var SETTLEMENT_METHODS=['银行卡','TNG Wallet','支付宝','DuitNow'];
+  function normalizeSettlementMethod(raw){
+    var m=String(raw||'').trim();
+    if(!m)return '';
+    if(/^bank$/i.test(m)||m==='银行卡'||/bank\s*transfer/i.test(m))return '银行卡';
+    if(/^tng/i.test(m)||/touch\s*n\s*go/i.test(m)||m==='TNG Wallet')return 'TNG Wallet';
+    if(/支付宝|alipay/i.test(m))return '支付宝';
+    if(/duit\s*now/i.test(m))return 'DuitNow';
+    return m;
+  }
+  function isBankSettlementMethod(method){
+    return normalizeSettlementMethod(method)==='银行卡';
+  }
+  function isTngSettlementMethod(method){
+    return normalizeSettlementMethod(method)==='TNG Wallet';
+  }
+  function isAlipaySettlementMethod(method){
+    return normalizeSettlementMethod(method)==='支付宝';
+  }
+  function isDuitNowSettlementMethod(method){
+    return normalizeSettlementMethod(method)==='DuitNow';
+  }
+  function looksLikeMobileAccount(raw){
+    var d=String(raw||'').replace(/[\s\-]/g,'');
+    if(!d)return false;
+    return /^(\+?60|0)?1\d{8,9}$/.test(d);
+  }
+  /** Remap draft so only the active settlement method keeps account values. */
+  function normalizeSettlementDraftFields(draft,opts){
+    draft=draft||{};
+    opts=opts||{};
+    var method=normalizeSettlementMethod(draft.payment_method||draft.method||draft.settlementMethod||'');
+    var bankName=String(draft.bank_name||'').trim();
+    var bankAccount=String(draft.bank_account||'').trim();
+    var tngAccount=String(draft.tng_account||'').trim();
+    var alipayAccount=String(draft.alipay_account||'').trim();
+    // Legacy workbench bug: TNG phone was saved into bank_account with method defaulting to 银行卡.
+    if(!method&&looksLikeMobileAccount(bankAccount)&&!bankName&&!tngAccount&&!alipayAccount){
+      method='TNG Wallet';
+    }
+    if(!method&&tngAccount&&!bankAccount&&!alipayAccount)method='TNG Wallet';
+    if(!method&&alipayAccount&&!bankAccount&&!tngAccount)method='支付宝';
+    if(!method)method='银行卡';
+    if(isTngSettlementMethod(method)){
+      tngAccount=tngAccount||bankAccount||String(draft.payment_phone||'').trim();
+      bankName='';
+      bankAccount='';
+      alipayAccount='';
+    }else if(isAlipaySettlementMethod(method)){
+      alipayAccount=alipayAccount||bankAccount;
+      bankName='';
+      bankAccount='';
+      tngAccount='';
+    }else if(isDuitNowSettlementMethod(method)){
+      bankAccount=bankAccount||tngAccount||alipayAccount;
+      bankName=bankName||'DuitNow';
+      tngAccount='';
+      alipayAccount='';
+    }else{
+      bankAccount=bankAccount||(!looksLikeMobileAccount(tngAccount)?tngAccount:'');
+      if(opts.clearOthers!==false){
+        tngAccount='';
+        alipayAccount='';
+      }
+    }
+    draft.payment_method=method;
+    draft.method=method;
+    draft.settlementMethod=method;
+    draft.bank_name=bankName;
+    draft.bank_account=bankAccount;
+    draft.tng_account=tngAccount;
+    draft.alipay_account=alipayAccount;
+    return draft;
+  }
+  function settlementFieldsHtml(method,vals){
+    vals=vals||{};
+    method=normalizeSettlementMethod(method)||'银行卡';
+    var html='<label>结款方式<select name="payment_method" required data-settlement-method>';
+    SETTLEMENT_METHODS.forEach(function(m){
+      html+='<option value="'+esc(m)+'"'+(m===method?' selected':'')+'>'+esc(m==='银行卡'?'银行卡转账':m)+'</option>';
+    });
+    html+='</select></label>';
+    if(isBankSettlementMethod(method)){
+      html+=
+        '<label>银行名称<input name="bank_name" value="'+esc(vals.bank_name||'')+'" required autocomplete="organization"></label>'+
+        '<label>银行账号<input name="bank_account" value="'+esc(vals.bank_account||'')+'" required autocomplete="off"></label>';
+    }else if(isTngSettlementMethod(method)){
+      html+='<label>TNG 账号 / 手机号<input name="tng_account" value="'+esc(vals.tng_account||'')+'" required inputmode="tel" autocomplete="tel"></label>';
+    }else if(isAlipaySettlementMethod(method)){
+      html+='<label>支付宝账号<input name="alipay_account" value="'+esc(vals.alipay_account||'')+'" required autocomplete="off"></label>';
+    }else if(isDuitNowSettlementMethod(method)){
+      html+=
+        '<input type="hidden" name="bank_name" value="DuitNow">'+
+        '<label>DuitNow 账号<input name="bank_account" value="'+esc(vals.bank_account||'')+'" required autocomplete="off"></label>';
+    }
+    return html;
+  }
+  function settlementInfoRowsHtml(v,rules){
+    v=v||{};
+    rules=rules||{};
+    var method=normalizeSettlementMethod(v.paymentMethod||v.method||'');
+    var rows=infoRow('结款方式',method||'-');
+    if(isTngSettlementMethod(method)){
+      rows+=infoRow('TNG 账号',v.tngAccount||v.paymentPhone||'-');
+    }else if(isAlipaySettlementMethod(method)){
+      rows+=infoRow('支付宝账号',v.alipayAccount||'-');
+    }else if(isDuitNowSettlementMethod(method)){
+      rows+=infoRow('DuitNow 账号',v.bankAccount||v.bankAccountMasked||rules.currentAccount||'-');
+    }else{
+      rows+=infoRow('银行名称',v.bankName||'-');
+      rows+=infoRow('银行账号',v.bankAccount||v.bankAccountMasked||rules.currentAccount||'-');
+      if(v.tngAccount)rows+=infoRow('TNG 账号',v.tngAccount);
+      if(v.alipayAccount)rows+=infoRow('支付宝账号',v.alipayAccount);
+    }
+    if(v.accountName)rows+=infoRow('账户户名',v.accountName);
+    return rows;
+  }
   function readAccountDraft(){
     var contact=document.querySelector('[data-private-contact-form]');
     var verify=document.querySelector('[data-verification-form]');
@@ -772,9 +889,10 @@
     }
     if(verify){
       var vfd=new FormData(verify);
-      ['real_name','identity_no','phone','bank_name','bank_account','tng_account','remark'].forEach(function(k){
+      ['real_name','identity_no','phone','payment_method','bank_name','bank_account','tng_account','alipay_account','remark'].forEach(function(k){
         draft[k]=String(vfd.get(k)||'');
       });
+      draft=normalizeSettlementDraftFields(draft);
     }
     if(deposit){
       var dfd=new FormData(deposit);
@@ -3580,12 +3698,22 @@
     // Self view: prefer full plaintext from bootstrap (not masked placeholders).
     var identityNo=accountDraftVal('identity_no',v.identityNo||'');
     var verifyPhone=accountDraftVal('phone',v.phone||raw.contact_phone||'');
-    var bankName=accountDraftVal('bank_name',v.bankName||'');
-    var bankAccount=accountDraftVal('bank_account',v.bankAccount||'');
-    var tngAccount=accountDraftVal('tng_account',v.tngAccount||'');
+    var settlementSeed=normalizeSettlementDraftFields({
+      payment_method:accountDraftVal('payment_method',v.paymentMethod||v.method||''),
+      bank_name:accountDraftVal('bank_name',v.bankName||''),
+      bank_account:accountDraftVal('bank_account',v.bankAccount||''),
+      tng_account:accountDraftVal('tng_account',v.tngAccount||v.paymentPhone||''),
+      alipay_account:accountDraftVal('alipay_account',v.alipayAccount||''),
+      payment_phone:v.paymentPhone||''
+    });
+    var bankName=settlementSeed.bank_name;
+    var bankAccount=settlementSeed.bank_account;
+    var tngAccount=settlementSeed.tng_account;
+    var alipayAccount=settlementSeed.alipay_account;
+    var settlementMethod=settlementSeed.payment_method;
     var verifyRemark=accountDraftVal('remark','');
     var paidAmount=accountDraftVal('paid_amount',d.paidAmount||'');
-    var paymentMethod=accountDraftVal('payment_method',d.paymentMethod||'');
+    var paymentMethod=accountDraftVal('deposit_payment_method',d.paymentMethod||'');
     var depositRemark=accountDraftVal('deposit_remark',d.remark||'');
     var depositChannelList=depositChannelsFromState();
     var selectedChannelId=accountDraftVal('channel_id',d.channelId||(depositChannelList[0]&&(depositChannelList[0].id||depositChannelList[0].code))||'');
@@ -3603,10 +3731,17 @@
         infoRow('身份证正面',(v.hasIdFront||v.idFrontUrl)?'已上传':'-')+
         infoRow('身份证反面',(v.hasIdBack||v.idBackUrl)?'已上传':'-')+
         infoRow('联系方式',v.phone||raw.contact_phone||'-')+
-        infoRow('银行名称',v.bankName||'-')+
-        infoRow('账户户名',v.accountName||'-')+
-        infoRow('收款账号',v.bankAccount||v.bankAccountMasked||rules.currentAccount||'-')+
-        infoRow('TNG 账号',v.tngAccount||'-')+
+        settlementInfoRowsHtml({
+          paymentMethod:settlementMethod||v.paymentMethod||v.method,
+          method:settlementMethod||v.paymentMethod||v.method,
+          bankName:bankName||v.bankName,
+          bankAccount:bankAccount||v.bankAccount,
+          bankAccountMasked:v.bankAccountMasked,
+          tngAccount:tngAccount||v.tngAccount,
+          alipayAccount:alipayAccount||v.alipayAccount,
+          paymentPhone:v.paymentPhone,
+          accountName:v.accountName
+        },rules)+
       '</div>'+
       ((v.idFrontUrl||v.idBackUrl)
         ?('<div class="pw-doc-preview-wrap" style="margin-top:12px">'+(v.idFrontUrl?'<img class="pw-doc-preview" src="'+esc(v.idFrontUrl)+'" alt="身份证正面">':'')+(v.idBackUrl?'<img class="pw-doc-preview" src="'+esc(v.idBackUrl)+'" alt="身份证反面">':'')+'</div>')
@@ -3622,9 +3757,12 @@
       accountDocCard({key:'id_front',label:'身份证正面',cta:'上传身份证正面',url:v.idFrontUrl||'',statusText:idStatus,rejectReason:v.identityRejectReason||''})+
       accountDocCard({key:'id_back',label:'身份证反面',cta:'上传身份证反面',url:v.idBackUrl||'',statusText:idStatus,rejectReason:v.identityRejectReason||''})+
       '<label>联系方式<input name="phone" value="'+esc(verifyPhone)+'" required></label>'+
-      '<label>银行名称<input name="bank_name" value="'+esc(bankName)+'" required></label>'+
-      '<label>收款账号 / 提现账户<input name="bank_account" value="'+esc(bankAccount)+'" required autocomplete="off"></label>'+
-      '<label>TNG 账号<input name="tng_account" value="'+esc(tngAccount)+'"></label>'+
+      settlementFieldsHtml(settlementMethod,{
+        bank_name:bankName,
+        bank_account:bankAccount,
+        tng_account:tngAccount,
+        alipay_account:alipayAccount
+      })+
       '<label>备注<textarea name="remark">'+esc(verifyRemark)+'</textarea></label>'+
       '<button class="pw-btn primary" type="submit">'+(privacyReviewPhase(idStatusRaw,{submitted:idSubmitted})==='rejected'?'重新提交身份证认证':'提交身份证认证')+'</button></form>';
     var depositPaidView=
@@ -3689,7 +3827,17 @@
         '</div></section>'+
         '<section class="pw-card pad"><h3>提现与押金</h3><div class="pw-info-list">'+
           infoRow('收款账户审核',STATUS_CN.verification(bankStatusRaw))+
-          infoRow('银行名称',v.bankName||'未填写')+
+          settlementInfoRowsHtml({
+            paymentMethod:v.paymentMethod||v.method||settlementMethod,
+            method:v.paymentMethod||v.method||settlementMethod,
+            bankName:v.bankName,
+            bankAccount:v.bankAccount,
+            bankAccountMasked:v.bankAccountMasked,
+            tngAccount:v.tngAccount,
+            alipayAccount:v.alipayAccount,
+            paymentPhone:v.paymentPhone,
+            accountName:v.accountName
+          },rules)+
           infoRow('当前提现账户',rules.currentAccount||'未绑定')+
           infoRow('押金',depositPhase==='approved'?('RM '+(d.requiredAmount||d.amountRm||100)):'RM 100')+
           infoRow('押金状态',STATUS_CN.deposit(ua.deposit_status))+
@@ -4539,7 +4687,7 @@
       if(form)state.profileDraft=readProfileDraft(form);
       return;
     }
-    var accountField=e.target.closest('[data-private-contact-form] input,[data-private-contact-form] textarea,[data-verification-form] input,[data-verification-form] textarea,[data-deposit-form] input,[data-deposit-form] textarea');
+    var accountField=e.target.closest('[data-private-contact-form] input,[data-private-contact-form] textarea,[data-private-contact-form] select,[data-verification-form] input,[data-verification-form] textarea,[data-verification-form] select,[data-deposit-form] input,[data-deposit-form] textarea,[data-deposit-form] select');
     if(accountField)state.accountDraft=readAccountDraft();
   });
   function isPwTouchUpload(){
@@ -5037,8 +5185,14 @@
         }
       }
     }
-    var accountChanged=e.target.closest('[data-private-contact-form] input,[data-private-contact-form] textarea,[data-verification-form] input,[data-verification-form] textarea,[data-deposit-form] input,[data-deposit-form] textarea');
-    if(accountChanged)state.accountDraft=readAccountDraft();
+    var accountChanged=e.target.closest('[data-private-contact-form] input,[data-private-contact-form] textarea,[data-private-contact-form] select,[data-verification-form] input,[data-verification-form] textarea,[data-verification-form] select,[data-deposit-form] input,[data-deposit-form] textarea,[data-deposit-form] select');
+    if(accountChanged){
+      state.accountDraft=readAccountDraft();
+      if(accountChanged.getAttribute('name')==='payment_method'||accountChanged.hasAttribute('data-settlement-method')){
+        paint({preserveScroll:true});
+        return;
+      }
+    }
     var setting=e.target.closest('[data-setting]');
     if(setting){
       var cur=state.settings||readSettings();
@@ -5089,7 +5243,7 @@
     }
   });
   document.addEventListener('focusin',function(e){
-    var field=e.target.closest('.pw-profile-form input,.pw-profile-form textarea,.pw-profile-form select,[data-private-contact-form] input,[data-private-contact-form] textarea,[data-verification-form] input,[data-verification-form] textarea,[data-deposit-form] input,[data-deposit-form] textarea');
+    var field=e.target.closest('.pw-profile-form input,.pw-profile-form textarea,.pw-profile-form select,[data-private-contact-form] input,[data-private-contact-form] textarea,[data-private-contact-form] select,[data-verification-form] input,[data-verification-form] textarea,[data-verification-form] select,[data-deposit-form] input,[data-deposit-form] textarea,[data-deposit-form] select');
     if(!field)return;
     // Only nudge into view when the field is off-screen — never force-scroll after poll/paint restore.
     if(state._skipFocusScrollOnce){state._skipFocusScrollOnce=false;return}
@@ -5296,6 +5450,12 @@
       captureLiveForms(true);
       var vf=new FormData(vForm),vp={};
       vf.forEach(function(v,k){vp[k]=String(v||'')});
+      vp=normalizeSettlementDraftFields(vp);
+      // Explicitly send cleared columns so backend does not keep stale bank/tng/alipay values.
+      vp.method=vp.payment_method;
+      vp.settlementMethod=vp.payment_method;
+      vp.paymentMethod=vp.payment_method;
+      ['bank_name','bank_account','tng_account','alipay_account'].forEach(function(k){ if(vp[k]==null) vp[k]=''; });
       var ver=(state.data&&state.data.verification)||{};
       if(!ver.hasIdFront&&!ver.idFrontUrl){toast('请先上传身份证正面');return}
       if(!ver.hasIdBack&&!ver.idBackUrl){toast('请先上传身份证反面');return}

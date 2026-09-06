@@ -8,7 +8,8 @@
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0",
     "verify:dashboard-test-filter": "node scripts/verify-dashboard-test-filter.mjs",
-    "verify:companion-credential-or-gate": "node scripts/verify-companion-credential-or-gate.mjs"
+    "verify:companion-credential-or-gate": "node scripts/verify-companion-credential-or-gate.mjs",
+    "verify:settlement-payment-fields": "node scripts/verify-settlement-payment-fields.mjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "latest",
