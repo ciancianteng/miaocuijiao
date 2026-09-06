@@ -1,8 +1,9 @@
 # G2 Migration Plan (show-only — not executed)
 
 **Date:** 2026-09-06  
-**Trigger:** Human reported **C2 SUCCESS** (Production admin login verified).  
-**This document:** Plan only. **No Production SQL has been executed.**
+**Trigger:** Convert-admin **CONVERT VERIFY SUCCESS** (`meowcuijiao@gmail.com` login OK).  
+**This document:** Plan only. **No G2 Production SQL has been executed.**  
+**Mark list:** **10** smoke IDs (converted admin `6f31b706-…` **excluded**).
 
 ---
 
@@ -10,29 +11,26 @@
 
 | Gate | Status | Notes |
 |---|---|---|
-| C2 real admin login | ✅ Human confirmed SUCCESS | Agent did **not** re-login as that user |
-| G1 `is_test_account` column | ❌ **MISSING** on current `PROD_SUPABASE_URL` | Read-only probe: `42703 column profiles.is_test_account does not exist` |
-| G2 UPDATE | ❌ Blocked until G1 + explicit apply approve | Cannot set flag before column exists |
+| Real admin login | ✅ `meowcuijiao@gmail.com` CONVERT VERIFY SUCCESS | Human confirmed |
+| Boss unchanged | ✅ `ciancianteng@gmail.com` | Human + agent re-check |
+| G1 / D0+D1 `is_test_account` | ❌ **MISSING** / pending | Agent probe still `42703`; human said D0/D1 NO |
+| G2 UPDATE | ❌ Blocked until D0/D1 + explicit `EXECUTE G2` | Cannot set flag before column exists |
 | pending-prod 01–05 | Out of G2 scope unless separately approved | Not part of G2 |
 | Settlement / points flags | Remain **OFF** | Not part of G2 |
 
-### Important read-only discrepancy
+### Live Production (agent re-check)
 
-Against the DB pointed to by **`PROD_SUPABASE_URL`** (service_role, read-only):
+- Admin: `6f31b706-…` / `meowcuijiao@gmail.com` / `admin` / `active`
+- Boss: `458ce9ad-…` / `ciancianteng@gmail.com` / `boss` / `active`
+- `profiles.is_test_account` → **does not exist** until D0/D1
 
-- `profiles.is_test_account` → **does not exist**
-- `role=admin` rows currently returned → **only** `admin@meow.test` (`6f31b706-11e7-42df-8db1-d2caccd796de`)
-
-If your C2 login used a **different** project/domain than this `PROD_SUPABASE_URL`, **stop** and align targets before any apply.  
-If the new admin is on this same DB but not visible as `role=admin` in this probe, confirm `profiles.role` / project ref before G2.
-
-**Do not run G2 until the same Production DB shows a non-`@meow.test` admin with `role=admin` (or `super_admin`) and `status=active`.**
+**Do not run G2 until D0/D1 applied and you paste an explicit `EXECUTE G2` approve.**
 
 ---
 
 ## 1. What G2 is
 
-**Purpose:** Mark exactly **11** known smoke/test profile IDs as `is_test_account = true` (plus companion mirror), so Dashboard GMV / commission / points exclude smoke (including RM 6000 order) without deleting data.
+**Purpose:** Mark exactly **10** known smoke/test profile IDs as `is_test_account = true` (plus companion mirror), so Dashboard GMV / commission / points exclude smoke (including RM 6000 order) without deleting data. Real admin stays unmarked.
 
 **Not included in G2:**
 
@@ -47,15 +45,15 @@ If the new admin is on this same DB but not visible as `role=admin` in this prob
 ## 2. Required order (strict)
 
 ```text
-Step 0  Confirm target DB = Production you logged into for C2
+Step 0  Confirm target DB = Production you logged into as meowcuijiao@gmail.com
 Step 1  Confirm backup / PITR (human)
-Step 2  Apply G1 DDL          ← ADD is_test_account default false
-Step 3  Verify G1             ← column exists; all rows false; real admin false
-Step 4  Apply G2 DML          ← UPDATE 11 ids (+ companion_profiles mirror)
-Step 5  Verify G2             ← marked=11; real admin still false; login still OK
+Step 2  Apply D0/D1 (G1 DDL + admin false)  ← still PENDING
+Step 3  Verify G1             ← column exists; real admin false
+Step 4  Apply G2 DML          ← UPDATE 10 smoke ids (+ companion_profiles mirror)
+Step 5  Verify G2             ← marked=10; real admin still false; login still OK
 ```
 
-G2 **cannot** run before G1.
+G2 **cannot** run before D0/D1.
 
 ---
 
@@ -89,21 +87,21 @@ create index if not exists idx_profiles_is_test_account
 
 **Source:** `supabase/pending-prod/G2_MARK_TEST_ACCOUNTS_SQL_REVIEW.sql`
 
-### 4.1 Exact IDs (11)
+### 4.1 Exact IDs (10 smoke — admin excluded)
 
 | # | id | email | role |
 |---|---|---|---|
-| 1 | `6f31b706-11e7-42df-8db1-d2caccd796de` | admin@meow.test | admin |
-| 2 | `b989960b-ddc2-4f1b-899f-12b2b0cac3b7` | boss@meow.test | boss |
-| 3 | `d397b7bb-826b-4e7a-8fdf-f14602dd92bb` | boss.final.1785714993009@meow.test | boss |
-| 4 | `5f20a7fe-3a48-4b42-82b9-82222bc81311` | cs.smoke.1788374622374@meow.test | customer_service |
-| 5 | `47178368-a3d4-44b3-97fe-8a648d951c66` | brnwxnfv@guerrillamailblock.com | companion |
-| 6 | `ed5054bd-93d2-434a-b468-68f75423d830` | swrfscrd@guerrillamailblock.com | companion |
-| 7 | `779db97b-9a5d-4a97-8be8-5d7bc6d24109` | qemvmuma@guerrillamailblock.com | boss |
-| 8 | `b9347ea4-3b45-400d-bf8d-ae2fbe05d690` | cs.smoke.1788374831089@meow.test | customer_service |
-| 9 | `6d368f4b-7f33-4923-9441-c63cecef2070` | shjqelap@guerrillamailblock.com | companion |
-| 10 | `9f7fb39a-bec8-47cc-974a-e314ac2f5cd5` | uuzkxxgk@guerrillamailblock.com | companion |
-| 11 | `0664ef55-de58-48e3-8dbb-ca8111318e91` | ijogepcg@guerrillamailblock.com | boss |
+| — | `6f31b706-11e7-42df-8db1-d2caccd796de` | meowcuijiao@gmail.com | admin — **DO NOT MARK** |
+| 1 | `b989960b-ddc2-4f1b-899f-12b2b0cac3b7` | boss@meow.test | boss |
+| 2 | `d397b7bb-826b-4e7a-8fdf-f14602dd92bb` | boss.final.1785714993009@meow.test | boss |
+| 3 | `5f20a7fe-3a48-4b42-82b9-82222bc81311` | cs.smoke.1788374622374@meow.test | customer_service |
+| 4 | `47178368-a3d4-44b3-97fe-8a648d951c66` | brnwxnfv@guerrillamailblock.com | companion |
+| 5 | `ed5054bd-93d2-434a-b468-68f75423d830` | swrfscrd@guerrillamailblock.com | companion |
+| 6 | `779db97b-9a5d-4a97-8be8-5d7bc6d24109` | qemvmuma@guerrillamailblock.com | boss |
+| 7 | `b9347ea4-3b45-400d-bf8d-ae2fbe05d690` | cs.smoke.1788374831089@meow.test | customer_service |
+| 8 | `6d368f4b-7f33-4923-9441-c63cecef2070` | shjqelap@guerrillamailblock.com | companion |
+| 9 | `9f7fb39a-bec8-47cc-974a-e314ac2f5cd5` | uuzkxxgk@guerrillamailblock.com | companion |
+| 10 | `0664ef55-de58-48e3-8dbb-ca8111318e91` | ijogepcg@guerrillamailblock.com | boss |
 
 ### 4.2 Statements (apply form — COMMIT only after verify)
 
@@ -112,11 +110,11 @@ begin;
 
 update public.profiles
 set is_test_account = true
-where id in ( /* 11 ids above */ );
+where id in ( /* 10 smoke ids above */ );
 
 update public.companion_profiles
 set is_test_account = true
-where user_id in ( /* same 11 ids */ );
+where user_id in ( /* same 10 ids */ );
 
 -- verify, then:
 commit;

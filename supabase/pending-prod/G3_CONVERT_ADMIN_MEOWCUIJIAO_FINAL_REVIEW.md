@@ -1,9 +1,10 @@
 # FROZEN FINAL REVIEW — Convert admin → `meowcuijiao@gmail.com`
 
-**Status:** **PARTIAL EXECUTE** (A–C done; D0/D1 need SQL Editor; E needs your login)  
-**Updated:** 2026-09-06 (post-EXECUTE live re-check)  
-**G2:** **BLOCKED** until convert login verification succeeds + separate G2 approve  
-**Report:** `G3_CONVERT_ADMIN_EXECUTION_REPORT.md`
+**Status:** **CONVERT VERIFY SUCCESS** (login OK; D0/D1 pending; G2 blocked)  
+**Updated:** 2026-09-06 (post VERIFY)  
+**G2:** **BLOCKED** until D0/D1 + separate `EXECUTE G2`  
+**Report:** `G3_CONVERT_ADMIN_EXECUTION_REPORT.md`  
+**G2 list:** docs updated — **10** smoke ids (admin UUID removed)
 
 ---
 
@@ -11,14 +12,11 @@
 
 | Gate | Status |
 |---|---|
-| Target email free (pre-convert) | ✅ was unused |
-| Admin Auth/profile convert | ✅ now `meowcuijiao@gmail.com` / admin / active |
-| Boss protected | ✅ `ciancianteng@gmail.com` / `458ce9ad-…` unchanged |
-| G1 `is_test_account` | ❌ column still missing — human D0/D1 SQL required |
-| G2 | ✅ remains blocked |
-| Agent execution | ✅ A–C done; ❌ D blocked (no `DATABASE_URL`); ⏳ E human |
-
-**Order:** A backup → B Auth → C profiles → ~~D0/D1~~ (human) → E login verify → (later) G2 list edit.
+| Admin Auth/profile convert | ✅ `meowcuijiao@gmail.com` / admin / active |
+| Login verify | ✅ Human CONVERT VERIFY SUCCESS |
+| Boss protected | ✅ `ciancianteng@gmail.com` unchanged |
+| G1 `is_test_account` | ❌ D0/D1 still pending |
+| G2 | ✅ remains blocked (mark list prepped, 10 ids) |
 
 ---
 

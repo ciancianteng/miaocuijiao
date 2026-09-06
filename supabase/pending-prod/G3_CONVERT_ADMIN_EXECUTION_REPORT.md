@@ -3,35 +3,50 @@
 **Executed:** 2026-09-06  
 **NEW_ADMIN_EMAIL:** `meowcuijiao@gmail.com`  
 **Convert UUID:** `6f31b706-11e7-42df-8db1-d2caccd796de`  
-**G2:** still **BLOCKED** (not run; list still includes this UUID until verify + separate approve)
+**G2:** still **BLOCKED** (SQL review updated to **10** smoke ids; Production UPDATE not run)
 
-## Live verify (re-checked after EXECUTE)
+## Human verify (received)
+
+```text
+CONVERT VERIFY SUCCESS
+Login: meowcuijiao@gmail.com OK
+D0/D1 applied: NO (pending)
+Boss unchanged: YES
+G2 still blocked: YES
+```
 
 | Check | Result |
 |---|---|
-| Auth admin email | ✅ `meowcuijiao@gmail.com` (confirmed) |
-| Auth `admin@meow.test` | ✅ gone (no Auth user with that email) |
+| E1 Login `meowcuijiao@gmail.com` | ✅ Human confirmed SUCCESS |
+| E2/E3 Boss unchanged | ✅ Human confirmed |
+| D0/D1 | ❌ still pending (agent probe: column missing) |
+| G2 | ❌ blocked |
+
+## Agent live re-check after verify message
+
+| Check | Result |
+|---|---|
+| Auth admin | ✅ `meowcuijiao@gmail.com` |
 | profiles admin | ✅ `meowcuijiao@gmail.com` / `admin` / `active` |
-| profiles `admin@meow.test` | ✅ 0 rows |
-| Boss Auth | ✅ `ciancianteng@gmail.com` / `458ce9ad-…` unchanged |
-| Boss profiles | ✅ `ciancianteng@gmail.com` / `boss` / `active` / `MCJ00015` |
-| `is_test_account` column | ❌ still **MISSING** on Production |
+| Boss profiles | ✅ `ciancianteng@gmail.com` / `boss` / `active` |
+| `is_test_account` | ❌ column still **MISSING** |
 
 ## Steps
 
 | Step | Result |
 |---|---|
-| A Backup snapshot | ✅ `supabase/pending-prod/G3_CONVERT_ADMIN_BACKUP_SNAPSHOT.json` (T0 `2026-09-06T10:53:44Z`) |
-| B Auth email | ✅ `admin@meow.test` → `meowcuijiao@gmail.com` |
-| C profiles sync | ✅ same id: email/role/status synced |
-| Boss untouched | ✅ no writes to boss Auth or profiles |
-| D0 G1 DDL | ❌ **not executed** — agent env has no `DATABASE_URL` / Postgres URL (DDL blocked) |
-| D1 `is_test_account=false` | ❌ blocked on D0 |
-| E login verify | ⏳ **your action** — agent cannot complete browser password login for you |
+| A Backup | ✅ `G3_CONVERT_ADMIN_BACKUP_SNAPSHOT.json` |
+| B Auth email | ✅ |
+| C profiles sync | ✅ |
+| Boss untouched | ✅ |
+| D0/D1 | ❌ pending — paste SQL below |
+| E login | ✅ |
+| G2 list edit (docs only) | ✅ removed `6f31b706-…` from mark list → 10 ids |
+| G2 Production UPDATE | ❌ not executed |
 
 ---
 
-## Human: paste D0 + D1 in Supabase SQL Editor (Production)
+## Next: paste D0 + D1 in Supabase SQL Editor (Production)
 
 ```sql
 begin;
@@ -74,24 +89,12 @@ where id = '458ce9ad-3425-42b1-ab66-24bca342f971';
 commit;
 ```
 
----
-
-## E — Your verify (required before G2)
-
-1. Login https://meow-cuijiao-homepage.vercel.app/admin/login/ as **`meowcuijiao@gmail.com`**  
-   - Password: existing password for this Auth user (same UUID; was set when still `admin@meow.test`), or reset via Supabase Dashboard → Authentication → Users → that UUID  
-2. `admin@meow.test` → expect FAIL  
-3. Boss `ciancianteng@gmail.com` unchanged  
-4. After D0/D1, confirm `is_test_account=false`
-
-Reply:
+After D0/D1, reply:
 
 ```text
-CONVERT VERIFY SUCCESS
-- login: meowcuijiao@gmail.com OK
-- D0/D1 applied: YES
-- boss unchanged: YES
+D0/D1 APPLIED: YES
+- admin is_test_account: false
 - G2 still blocked: YES
 ```
 
-**G2 not executed.** After verify, G2 mark list must **remove** `6f31b706-…` before any future `EXECUTE G2` approve.
+Only then can a separate `EXECUTE G2` approve mark the **10** remaining smoke ids.
