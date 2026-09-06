@@ -78,6 +78,32 @@ export function assertHasPositivePrice(source = {}, existing = {}, message = MIS
   throw err;
 }
 
+/**
+ * PERMANENT RULE — price validation scope:
+ * - Enforce on: companion application submit, and first transition into approved.
+ * - Never enforce on: admin correction/edit of an already-approved companion
+ *   (profile, avatar, game/service, pricing, payment review, deposit/identity,
+ *   allow_orders, featured, etc. must remain editable even when price is missing).
+ * Public listing gate is separate and unchanged.
+ */
+export function isApprovedApplicationStatus(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  return raw === "approved" || raw === "verified" || raw === "passed" || /已通过|已认证/.test(String(value || ""));
+}
+
+/** True only when moving into approved from a non-approved state. */
+export function isFirstApprovalTransition(existing = {}, nextStatus = "") {
+  if (!isApprovedApplicationStatus(nextStatus)) return false;
+  const current =
+    existing.application_status ??
+    existing.applicationStatus ??
+    existing.verification_status ??
+    existing.verificationStatus ??
+    existing.auditStatus ??
+    "";
+  return !isApprovedApplicationStatus(current);
+}
+
 function hasGameSet(row = {}) {
   if (String(row.game || "").trim()) return true;
   const ids = row.service_ids;

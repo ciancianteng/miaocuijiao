@@ -15,9 +15,13 @@ import { isTestAccountRecord } from "../_test-accounts.js";
 import {
   hasPositivePrice,
   assertHasPositivePrice,
+  isFirstApprovalTransition,
+  isApprovedApplicationStatus,
   MISSING_PRICE_MESSAGE,
 } from "../_companion-publish-gate.js";
 
+// PERMANENT: price checks apply only to new submit + first approval.
+// Admin edits of already-approved companions must never be blocked by this.
 const APPROVE_MISSING_PRICE_MESSAGE =
   "无法通过审核：该陪玩尚未设置接单价格（单价 price > 0，或至少一个游戏价格 game_prices > 0）。请先填写价格后再通过。";
 
@@ -153,10 +157,6 @@ function labelStatus(value, fallback = "待审核") {
   if (STATUS_LABEL[key]) return STATUS_LABEL[key];
   if (STATUS_LABEL[String(raw).toLowerCase()]) return STATUS_LABEL[String(raw).toLowerCase()];
   return raw || fallback;
-}
-
-function isApprovedStatus(value) {
-  return /^(approved|verified|passed)$/i.test(String(normalizeStatusInput(value, "") || value || "").trim());
 }
 
 function money(value) {
@@ -975,13 +975,16 @@ async function reviewApplication(req, companion, payload) {
   const { approveListingPatchForRow, unlistListingPatch } = await import("../_companion-listing-sync.js");
   let patch;
   if (status === "approved") {
-    try {
-      assertHasPositivePrice(payload, companion, APPROVE_MISSING_PRICE_MESSAGE);
-    } catch (priceErr) {
-      throw Object.assign(new Error(priceErr?.message || APPROVE_MISSING_PRICE_MESSAGE), {
-        status: 400,
-        code: "MISSING_PRICE",
-      });
+    // First approval only — re-saving an already-approved row must not be blocked.
+    if (isFirstApprovalTransition(companion, status)) {
+      try {
+        assertHasPositivePrice(payload, companion, APPROVE_MISSING_PRICE_MESSAGE);
+      } catch (priceErr) {
+        throw Object.assign(new Error(priceErr?.message || APPROVE_MISSING_PRICE_MESSAGE), {
+          status: 400,
+          code: "MISSING_PRICE",
+        });
+      }
     }
     const extras = {
       online_status: "offline",
@@ -1370,13 +1373,9 @@ export default async function handler(req, res) {
 
     // default save / edit / quick-edit
     const companionPatch = companionEditablePatch(payload);
-    // Price required only when *transitioning into* approved.
-    // Already-approved companions must remain fully editable (profile/price/featured/etc.)
-    // even if they currently have missing price — admins need to correct them.
-    const approvingNow =
-      companionPatch.application_status === "approved" &&
-      !isApprovedStatus(companion.application_status || companion.verification_status);
-    if (approvingNow) {
+    // PERMANENT RULE: submission/first-approval validation must never block
+    // admin corrections on already-approved companions.
+    if (isFirstApprovalTransition(companion, companionPatch.application_status)) {
       try {
         assertHasPositivePrice(companionPatch, companion, APPROVE_MISSING_PRICE_MESSAGE);
       } catch (priceErr) {

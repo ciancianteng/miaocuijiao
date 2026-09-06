@@ -5412,6 +5412,8 @@ export default async function handler(req, res) {
 
     if (action === "submit_application") {
       const row = await ensureCompanionRow(auth.profile, companion);
+      // PERMANENT: price required on new application submit only.
+      // Admin edits of already-approved companions are handled separately and must not reuse this as a lock.
       try {
         assertHasPositivePrice(body, row, MISSING_PRICE_MESSAGE);
       } catch (priceErr) {
