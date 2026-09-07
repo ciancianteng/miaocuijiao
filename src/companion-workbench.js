@@ -54,7 +54,7 @@
   };
   var COMPANION_ISOLATION_MSG='您的陪玩认证尚未通过，目前只能查看审核进度。';
   var HIDDEN_MVP_ROUTES={};
-  var state={route:'dashboard',session:null,data:null,notice:'',loading:false,error:'',walletWarning:'',authTab:'login',loginMethod:'otp',loginError:'',loginBusy:false,registerToken:'',registerVerifiedEmail:'',registerCooldownUntil:0,registerBusy:false,forgotStep:'',forgotAccount:'',forgotBusy:false,forgotMsg:'',forgotResetToken:'',profileServices:[],profileVoiceTypes:[],profileCompanionTags:[],profileErrors:{},profileDraft:null,accountDraft:null,uploadBusy:'',galleryPending:[],statusBusy:false,pendingOnlineStatus:null,settlement:null,orderFilter:'all',pollTimer:null,rulesPollTimer:null,ordersCacheAt:0,msgFilter:'all',settings:null,earningsTab:'overview',chatSession:'cs',chatConversationId:'',chatBusy:false,withdrawBusy:false,inbox:null,inboxError:'',hallOrderType:'all',hallGame:'all',drawerOpen:false,_prevDesignated:null,_prevAuditLocked:null,_toastTimer:null,_ordersRtReady:false,_alertedOrderIds:null,_baseDocTitle:'',_focusOrderId:''};
+  var state={route:'dashboard',session:null,data:null,notice:'',loading:false,error:'',walletWarning:'',authTab:'login',loginMethod:'otp',loginError:'',loginBusy:false,registerToken:'',registerVerifiedEmail:'',registerCooldownUntil:0,registerBusy:false,inviteCode:'',forgotStep:'',forgotAccount:'',forgotBusy:false,forgotMsg:'',forgotResetToken:'',profileServices:[],profileVoiceTypes:[],profileCompanionTags:[],profileErrors:{},profileDraft:null,accountDraft:null,uploadBusy:'',galleryPending:[],statusBusy:false,pendingOnlineStatus:null,settlement:null,orderFilter:'all',pollTimer:null,rulesPollTimer:null,ordersCacheAt:0,msgFilter:'all',settings:null,earningsTab:'overview',chatSession:'cs',chatConversationId:'',chatBusy:false,withdrawBusy:false,inbox:null,inboxError:'',hallOrderType:'all',hallGame:'all',drawerOpen:false,_prevDesignated:null,_prevAuditLocked:null,_toastTimer:null,_ordersRtReady:false,_alertedOrderIds:null,_baseDocTitle:'',_focusOrderId:''};
   var IMAGE_ACCEPT='image/jpeg,image/jpg,image/png,image/webp,image/*';
   /** Companion self-select voice lines — not from admin「声线管理」. */
   var FIXED_VOICE_OPTIONS=['甜妹','御姐','少御','萝莉','温柔','清冷','慵懒','磁性','少年','青叔','大叔','其他'];
@@ -1837,6 +1837,19 @@
     }
     state.route=route();
     applyFocusOrderFromQuery();
+    // Capture Boss invite code for companion register (from /invite.html or ?code=).
+    try{
+      var q=new URLSearchParams(location.search||'');
+      var fromQ=String(q.get('code')||q.get('inviteCode')||q.get('invite_code')||'').trim();
+      if(fromQ){
+        state.inviteCode=fromQ;
+        sessionStorage.setItem('mcj_boss_invite_code',fromQ);
+        state.authTab='register';
+      }else if(!state.inviteCode){
+        state.inviteCode=String(sessionStorage.getItem('mcj_boss_invite_code')||'').trim();
+        if(state.inviteCode)state.authTab='register';
+      }
+    }catch(e){}
     if(!state.session&&state.route!=='login'){go('/companion/login');return}
     if(state.session&&state.route==='login'){
       try{history.replaceState(null,'','/companion/review-status')}catch(e){}
@@ -2027,6 +2040,10 @@
           ? '<p class="mcj-auth-note">邮箱已验证 · '+esc(state.registerVerifiedEmail)+'，请设置密码并注册。</p>'
           : '<p class="mcj-auth-note">请先完成邮箱验证，验证成功后才能注册。</p>')+
         '<input type="hidden" name="registerToken" value="'+esc(state.registerToken||'')+'">'+
+        (state.inviteCode
+          ? '<input type="hidden" name="inviteCode" value="'+esc(state.inviteCode)+'">'+
+            '<p class="mcj-auth-note">邀请注册：完成后将自动绑定直属老板（邀请码 '+esc(state.inviteCode.slice(0,8))+'…）</p>'
+          : '')+
         regPwd+regConfirm+
         '<label class="mcj-auth-check"><input name="agree" type="checkbox" required> 我已阅读并同意服务条款</label>'+
         '<label class="mcj-auth-check"><input name="remember" type="checkbox" checked> 注册后保持登录</label>'+
@@ -5484,11 +5501,18 @@
         password:password,
         confirmPassword:confirm,
         registerToken:registerToken,
+        inviteCode:String(rd.get('inviteCode')||state.inviteCode||'').trim(),
         remember:!!rd.get('remember')
       }).then(function(res){
         state.registerBusy=false;
         state.registerToken='';
         state.registerVerifiedEmail='';
+        try{
+          if(res&&res.inviteRedeem&&res.inviteRedeem.outcome==='bound'){
+            sessionStorage.removeItem('mcj_boss_invite_code');
+            state.inviteCode='';
+          }
+        }catch(e){}
         saveSession(res.session,!!rd.get('remember'));
         go('/companion/profile');
         return loadData();

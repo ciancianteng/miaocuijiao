@@ -334,6 +334,46 @@
     );
   }
 
+  function renderInvitePanel(links, inviteMeta) {
+    var ready = !(inviteMeta && inviteMeta.disabled);
+    var rows = (links || [])
+      .map(function (l) {
+        return (
+          '<div class="rel-row">' +
+          "<div><span>邀请码</span><strong>" +
+          esc(l.code) +
+          "</strong></div>" +
+          "<div><span>状态</span><strong>" +
+          statusBadge(l.status) +
+          "</strong></div>" +
+          "<div><span>使用</span><strong>" +
+          esc(String(l.useCount || 0)) +
+          (l.maxUses != null ? " / " + esc(String(l.maxUses)) : "") +
+          "</strong></div>" +
+          '<div><span>操作</span><strong style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">' +
+          '<button type="button" class="ghost-btn" data-copy-invite="' +
+          esc(l.url || "") +
+          '">复制链接</button>' +
+          (String(l.status) === "active"
+            ? '<button type="button" class="ghost-btn" data-revoke-invite="' + esc(l.id) + '">撤销</button>'
+            : "") +
+          "</strong></div></div>"
+        );
+      })
+      .join("");
+    return (
+      '<section class="panel" data-invite-panel>' +
+      "<h2>邀请陪玩加入</h2>" +
+      '<p class="sub">生成专属邀请链接。陪玩通过链接注册后自动绑定为你的直属（结算仍走现有直属关系）。</p>' +
+      (ready
+        ? '<div class="wallet-actions"><button type="button" class="boss-btn primary" data-create-invite>生成邀请链接</button></div>'
+        : '<p class="message">' + esc((inviteMeta && inviteMeta.message) || "邀请链接功能尚未开通") + "</p>") +
+      '<div class="rel-list" style="margin-top:14px">' +
+      (rows || '<div class="empty">暂无邀请链接</div>') +
+      "</div></section>"
+    );
+  }
+
   function load() {
     if (!token()) {
       paint(
@@ -363,10 +403,26 @@
         .catch(function () {
           return { ok: false, earnings: [], summary: {} };
         }),
+      fetch("/api/boss/invite-links", { headers: headers, cache: "no-store" })
+        .then(function (res) {
+          return res.json().then(function (body) {
+            if (res.status === 503 || (body && body.code === "BOSS_INVITE_LINKS_DISABLED")) {
+              return { disabled: true, links: [], message: (body && body.message) || "邀请链接功能尚未开通" };
+            }
+            if (!res.ok || body.ok === false) {
+              return { disabled: true, links: [], message: (body && body.message) || "邀请链接暂不可用" };
+            }
+            return { disabled: false, links: body.links || [] };
+          });
+        })
+        .catch(function () {
+          return { disabled: true, links: [], message: "邀请链接暂不可用" };
+        }),
     ])
       .then(function (pair) {
         var body = pair[0] || {};
         var earningsBody = pair[1] || {};
+        var inviteMeta = pair[2] || { links: [] };
         var companions = body.companions || [];
         var earnings = earningsBody.earnings || [];
         var summary = earningsBody.summary || {};
@@ -394,6 +450,7 @@
             ) +
             "</strong><em>详见下方关系卡片</em></div></section>" +
             "</div>" +
+            renderInvitePanel(inviteMeta.links || [], inviteMeta) +
             renderRelationCard(companions, body.tablesReady) +
             renderHistoryTable(earnings, {}, companions) +
             renderWalletSection(summary, earnings)
@@ -410,12 +467,83 @@
   }
 
   document.addEventListener("click", function (e) {
-    var btn = e.target.closest("[data-logout]");
-    if (!btn) return;
-    if (window.MCJBossAuth && typeof window.MCJBossAuth.clearSession === "function") {
-      window.MCJBossAuth.clearSession();
+    var logout = e.target.closest("[data-logout]");
+    if (logout) {
+      if (window.MCJBossAuth && typeof window.MCJBossAuth.clearSession === "function") {
+        window.MCJBossAuth.clearSession();
+      }
+      location.href = "index.html";
+      return;
     }
-    location.href = "index.html";
+    var copy = e.target.closest("[data-copy-invite]");
+    if (copy) {
+      var url = copy.getAttribute("data-copy-invite") || "";
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(url).then(
+          function () {
+            alert("已复制邀请链接");
+          },
+          function () {
+            prompt("复制链接", url);
+          }
+        );
+      } else {
+        prompt("复制链接", url);
+      }
+      return;
+    }
+    var createBtn = e.target.closest("[data-create-invite]");
+    if (createBtn) {
+      createBtn.disabled = true;
+      fetch("/api/boss/invite-links", {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+          Authorization: "Bearer " + token(),
+        },
+        body: JSON.stringify({ action: "create" }),
+      })
+        .then(function (res) {
+          return res.json().then(function (body) {
+            if (!res.ok || body.ok === false) throw new Error(body.message || "生成失败");
+            return body;
+          });
+        })
+        .then(function () {
+          load();
+        })
+        .catch(function (err) {
+          alert(err.message || "生成失败");
+          createBtn.disabled = false;
+        });
+      return;
+    }
+    var revoke = e.target.closest("[data-revoke-invite]");
+    if (revoke) {
+      if (!confirm("确认撤销该邀请链接？已绑定的陪玩不受影响。")) return;
+      fetch("/api/boss/invite-links", {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+          Authorization: "Bearer " + token(),
+        },
+        body: JSON.stringify({ action: "revoke", id: revoke.getAttribute("data-revoke-invite") }),
+      })
+        .then(function (res) {
+          return res.json().then(function (body) {
+            if (!res.ok || body.ok === false) throw new Error(body.message || "撤销失败");
+            return body;
+          });
+        })
+        .then(function () {
+          load();
+        })
+        .catch(function (err) {
+          alert(err.message || "撤销失败");
+        });
+    }
   });
 
   load();

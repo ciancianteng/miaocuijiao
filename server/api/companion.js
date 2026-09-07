@@ -3338,6 +3338,21 @@ export default async function handler(req, res) {
         if (wantsPassword) await stampPasswordSet(created.id, { mustChangePassword: false });
         else await stampPasswordUnset(created.id);
       } catch { /* optional columns */ }
+      // Invite redeem ONLY after auth user + profiles + companion_profiles succeeded.
+      let inviteRedeem = null;
+      const inviteCode = String(body.inviteCode || body.invite_code || body.code || "").trim();
+      if (inviteCode) {
+        try {
+          const { redeemInviteAfterCompanionReady } = await import("./_boss-invite-links.js");
+          inviteRedeem = await redeemInviteAfterCompanionReady({
+            inviteCode,
+            inviteeId: created.id,
+          });
+        } catch (inviteErr) {
+          console.warn("[companion/register] invite redeem soft-fail:", inviteErr?.message || inviteErr);
+          inviteRedeem = { attempted: true, outcome: "error", detail: inviteErr?.message || "redeem_failed" };
+        }
+      }
       let auth;
       if (wantsPassword) {
         auth = await supabaseJson(authUrl("token?grant_type=password"), { method:"POST", headers: anonHeaders(), body: JSON.stringify({ email, password: authPassword }) });
@@ -3363,6 +3378,7 @@ export default async function handler(req, res) {
           ? "陪玩账号已创建，请继续填写资料。草稿不会出现在正式陪玩列表。"
           : "陪玩账号已创建。建议前往账号安全设置密码（审核状态不影响密码设置）。",
         suggestSetPassword: !wantsPassword,
+        inviteRedeem: inviteRedeem || null,
         session:{token:auth.access_token,accessToken:auth.access_token,refreshToken:auth.refresh_token||"",user:safePlayer(profile, companion || {}),remember:!!body.remember}
       });
     }
@@ -3417,6 +3433,21 @@ export default async function handler(req, res) {
       // Access token alone cannot mint a refresh token server-side.
       const refreshToken = String(body.refreshToken || body.refresh_token || "").trim();
       const expiresAt = body.expiresAt || body.expires_at || "";
+      // Optional invite redeem after companion capability exists (existing boss→companion apply).
+      let inviteRedeem = null;
+      const inviteCode = String(body.inviteCode || body.invite_code || body.code || "").trim();
+      if (inviteCode && (createdNewRow || companion?.id)) {
+        try {
+          const { redeemInviteAfterCompanionReady } = await import("./_boss-invite-links.js");
+          inviteRedeem = await redeemInviteAfterCompanionReady({
+            inviteCode,
+            inviteeId: profile.id,
+          });
+        } catch (inviteErr) {
+          console.warn("[companion/apply] invite redeem soft-fail:", inviteErr?.message || inviteErr);
+          inviteRedeem = { attempted: true, outcome: "error", detail: inviteErr?.message || "redeem_failed" };
+        }
+      }
       return json(res, 200, {
         ok: true,
         message: createdNewRow
@@ -3426,6 +3457,7 @@ export default async function handler(req, res) {
         sameUserId: true,
         createdNewAuthUser: false,
         roles: enriched.roles,
+        inviteRedeem: inviteRedeem || null,
         playerStatus: normalizeProfileReviewStatus(companion || {}),
         applicationStatus: String(companion?.application_status || "draft"),
         companion: companion || null,
