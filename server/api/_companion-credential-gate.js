@@ -1,6 +1,8 @@
 /**
  * Companion credential eligibility: identity OR deposit (never both required).
- * Used by accept-order gates and public homepage / hall listing.
+ * Used by accept-order / canWork gates.
+ * PR A: credential does NOT gate public hall / homepage visibility (see evaluatePublishGate.hallVisible).
+ * Status-field separation (identity_status / deposit_status) is PR B.
  */
 
 function statusText(...values) {
@@ -63,8 +65,9 @@ export function canAcceptByCredential(row = {}, identityRow = null, depositRow =
 }
 
 /**
- * Homepage / hall visibility credential portion.
- * Same OR rule as accept-order: either credential is enough; neither hides the companion.
+ * Homepage / hall visibility credential portion (legacy helper).
+ * PR A: hall listing uses evaluatePublishGate.hallVisible and does not require credential.
+ * Kept for diagnostics / older callers; prefer gate.hallVisible for public list filters.
  */
 export function canAppearOnHomepageByCredential(row = {}, identityRow = null, depositRow = null) {
   return isCredentialOrOk(row, identityRow, depositRow);

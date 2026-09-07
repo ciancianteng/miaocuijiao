@@ -1,13 +1,16 @@
 /**
- * Regression: admin approve ↔ public hall visibility (PR188).
+ * Regression: admin approve ↔ public hall visibility (PR A / PR188).
  * Run: node scripts/verify-approve-hall-visibility-sync.mjs
  *
  * Covers:
  * 1) approved non-test companion -> hallVisible=true
- * 2) missing price/game/nickname -> approval blocked (no projected approve)
+ * 2) missing price/game/nickname -> approval blocked (approve-time only)
+ * 2b) already-approved + missing price -> still hallVisible (no post-approve hide)
  * 3) test account approved -> stays hidden
  * 4) allow_orders=false -> explicit unlist / not hallVisible
+ * 5) approved without credential -> still hallVisible (credential is not a hall hide)
  * Plus: shared approve projection fields, friendly blockReasons, smoke heuristic align.
+ * Out of scope: verification_status field split (PR B).
  */
 import assert from "node:assert/strict";
 import {
@@ -100,6 +103,40 @@ function approvedRow(extra = {}) {
   assert.ok(err.blockReasons.includes("缺少游戏资料"));
   assert.ok(err.blockReasons.includes("缺少价格"));
   assert.equal(err.blockReasons.includes("资料不完整，暂未发布"), false);
+}
+
+// 2b) already-approved incomplete must NOT be silently hidden from hall (PR A).
+{
+  const incompleteApproved = approvedRow({ price: 0, game_prices: {} });
+  const gate = evaluatePublishGate(incompleteApproved, profile, {});
+  assert.equal(gate.hallVisible, true, "critical gaps must not hide after approve");
+  assert.equal(gate.criticalComplete, false);
+  const snap = adminPublishSnapshot(incompleteApproved, profile, {});
+  assert.equal(snap.hallVisible, true);
+  assert.equal(snap.approvedButHidden, false);
+  assert.equal(snap.blockReasons.includes("缺少价格"), false);
+  assert.ok(snap.criticalMissing.includes("缺少价格"));
+}
+
+// 5) approved without credential -> still hallVisible (PR A: credential is not a hall hide).
+// Note: verification_status=approved still counts as identity today (PR B will split fields).
+// Use application approved + verification pending to simulate no credential OR.
+{
+  const noCred = approvedRow({
+    verification_status: "pending",
+    identity_verified: false,
+    deposit_verified: false,
+    deposit_status: "",
+  });
+  const gate = evaluatePublishGate(noCred, profile, {});
+  assert.equal(gate.adminApproved, true);
+  assert.equal(gate.hallVisible, true);
+  assert.equal(gate.credentialOrOk, false);
+  assert.equal(gate.canWork, false);
+  const snap = adminPublishSnapshot(noCred, profile, {});
+  assert.equal(snap.hallVisible, true);
+  assert.equal(snap.approvedButHidden, false);
+  assert.equal(snap.blockReasons.includes("认证未完成（身份证或押金二选一）"), false);
 }
 
 // 3) test account approved -> stays hidden

@@ -660,8 +660,8 @@ async function loadCompanions(id = "") {
       }
     }
     const gate = evaluatePublishGate(row, profile, media);
-    // Homepage / hall: hallVisible requires approved + active + (identity OR deposit) + critical profile.
-    // Never require identity AND deposit.
+    // Homepage / hall (PR A): hallVisible = approved + active + allow_orders + !test.
+    // Critical profile is approve-time only; credential OR does not hide hall.
     if (!gate.hallVisible) continue;
     mapped.push(publicCompanion(row, profile, levelList, catalog, media, certMap[row.id] || []));
   }
