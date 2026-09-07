@@ -165,56 +165,50 @@
   async function establishRecoverySession(client) {
     var hash = parseHashParams();
     var q = parseQueryParams();
-    var ready = false;
-    var recoveryEvent = false;
+    var recoveryEvent = String(hash.type || q.type || "").toLowerCase() === "recovery";
 
-    var unsub = client.auth.onAuthStateChange(function (event) {
+    client.auth.onAuthStateChange(function (event) {
       if (event === "PASSWORD_RECOVERY") recoveryEvent = true;
-      if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED" || event === "PASSWORD_RECOVERY") {
-        ready = true;
-      }
     });
 
-    // Implicit grant: tokens in hash
-    if (hash.access_token && hash.refresh_token) {
+    // Give detectSessionInUrl a tick to consume the hash if present.
+    await new Promise(function (r) {
+      setTimeout(r, 0);
+    });
+
+    var sessionRes = await client.auth.getSession();
+    var session = sessionRes.data && sessionRes.data.session;
+
+    // Implicit grant fallback: tokens still in hash
+    if (!session && hash.access_token && hash.refresh_token) {
       var setRes = await client.auth.setSession({
         access_token: hash.access_token,
         refresh_token: hash.refresh_token,
       });
       if (setRes.error) throw setRes.error;
+      session = setRes.data && setRes.data.session;
       if (String(hash.type || "").toLowerCase() === "recovery") recoveryEvent = true;
-      clearHashKeepPath();
-    } else if (q.code) {
-      // PKCE code exchange (if enabled on project)
+    }
+
+    // PKCE code exchange (only on reset page)
+    if (!session && q.code) {
       var exch = await client.auth.exchangeCodeForSession(String(q.code));
       if (exch.error) throw exch.error;
+      session = exch.data && exch.data.session;
       try {
         history.replaceState(null, "", location.pathname);
       } catch (e) {}
-    } else {
-      // detectSessionInUrl may already have consumed; fall through to getSession
-      await new Promise(function (r) {
-        setTimeout(r, 50);
-      });
     }
 
-    var sessionRes = await client.auth.getSession();
-    if (sessionRes.error) throw sessionRes.error;
-    var session = sessionRes.data && sessionRes.data.session;
+    if (session) clearHashKeepPath();
+
     if (!session) {
-      try {
-        if (unsub && unsub.data && unsub.data.subscription) unsub.data.subscription.unsubscribe();
-      } catch (e) {}
       throw new Error("重置链接无效或已过期，请重新发送密码恢复邮件。");
     }
 
-    // Prefer PASSWORD_RECOVERY; allow type=recovery hash or any valid session from recovery link.
-    if (!recoveryEvent && String(hash.type || q.type || "").toLowerCase() !== "recovery") {
-      // Session exists from link — still allow password update (Dashboard recovery).
-      recoveryEvent = true;
-    }
-
-    return { session: session, recoveryEvent: recoveryEvent, unsub: unsub };
+    // Dashboard recovery links should carry type=recovery; still allow password update
+    // when a valid session was established from the email link.
+    return { session: session, recoveryEvent: recoveryEvent || true };
   }
 
   function loginPathForEmail(email) {
