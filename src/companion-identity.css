@@ -66,6 +66,7 @@
   background:color-mix(in srgb, var(--mcj-level-color, #9CA3AF) 18%, transparent) !important;
   color:var(--mcj-level-badge-text, #ffe8f4) !important;
   font-weight:800 !important;
+  box-shadow:0 0 calc(var(--mcj-level-glow-px, 12px) * 0.4) color-mix(in srgb, var(--mcj-level-color, #9CA3AF) calc(var(--mcj-level-glow-alpha, 0.2) * 50%), transparent) !important;
 }
 
 /* Gender chip */
