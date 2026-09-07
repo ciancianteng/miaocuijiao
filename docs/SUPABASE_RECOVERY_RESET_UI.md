@@ -19,5 +19,7 @@ Dashboard “Send password recovery” redirected to production, but the site ha
 ## Expected flow
 Email link → production (Site URL) → detect `type=recovery` → `/auth/reset-password/` → set password → `updateUser` → redirect `/admin/login/`
 
-## Note
-Do **not** change Supabase Site URL / Redirect URLs for this fix. Optional later improvement: set Site URL path to `/auth/reset-password/` so one less client redirect.
+## Production 404 note (fixed)
+`/auth/reset-password/` returned Vercel `NOT_FOUND` when the HTML was missing from the Vite MPA `pages` build input / `vercel.json` rewrites.
+Fix: include `auth/reset-password/index.html` in `vite.config.js` pages + rewrite `/auth/reset-password/` → that file.
+
