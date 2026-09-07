@@ -31,7 +31,10 @@
   }
 
   function target() {
-    return document.getElementById("companionLevelSettingsHub") || document.getElementById("companionLevelSettings");
+    // Prefer the rules-hub mount (single source of truth). Standalone #companionLevelSettings is hidden/legacy.
+    var hub = document.getElementById("companionLevelSettingsHub");
+    if (hub) return hub;
+    return document.getElementById("companionLevelSettings");
   }
 
   function normalize(row, index) {
@@ -209,7 +212,7 @@
     var level = selected();
     var statusText = state.error || state.message || (state.dirty ? "有未发布修改" : "修改后预览 → 保存当前 / 发布到全站");
     var head = (
-      '<div class="content-admin-head"><div><h3>全站等级配置中心</h3><p>陪玩大厅、更多玩法、陪玩详情、老板端、客服端、陪玩端统一读取 <code>companion_levels</code>，禁止各页自写一套。</p></div>' +
+      '<div class="content-admin-head"><div><h3>全站等级配置中心</h3><p>单一数据源 <code>companion_levels</code>：陪玩大厅、详情页、等级徽章、卡片展示与升级规则统一读取。入口仅「制度与等级」。</p></div>' +
         '<div class="content-version-meta"><span>' + esc(state.levels.length) + " 个等级</span><span>" + esc(statusText) + "</span></div></div>"
     );
     var toolbar = (
@@ -601,6 +604,16 @@
     bind();
     load();
   }
+
+  document.addEventListener("mcj:admin-section", function (e) {
+    var section = e && e.detail && e.detail.section;
+    if (section === "rules-hub" || section === "companion-levels") {
+      // Remount into hub after rules-hub re-renders the levels tab.
+      setTimeout(function () {
+        if (document.getElementById("companionLevelSettingsHub")) load();
+      }, 60);
+    }
+  });
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
   else boot();
