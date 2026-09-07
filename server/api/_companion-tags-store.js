@@ -77,6 +77,21 @@ export async function readDbTags() {
   }
   return (Array.isArray(body) ? body : []).map((row, index) => rowFromDb(row, index)).filter((row) => row.name);
 }
+
+/** Probe whether companion_tags exists and is readable via service role. */
+export async function getCompanionTagsTableStatus() {
+  if (!hasDb()) {
+    return { ready: false, reason: "no_db", rows: null };
+  }
+  try {
+    const rows = await readDbTags();
+    if (rows === null) return { ready: false, reason: "missing_table", rows: null };
+    return { ready: true, reason: "ok", rows };
+  } catch (error) {
+    if (isMissingTable(error)) return { ready: false, reason: "missing_table", rows: null };
+    return { ready: false, reason: "error", rows: null, message: error.message || String(error) };
+  }
+}
 async function writeDbTags(rows) {
   if (!hasDb()) return null;
   const list = (Array.isArray(rows) ? rows : []).map((row, index) => normalizeTagRow(row, index)).filter((row) => row.name);
@@ -152,18 +167,26 @@ function isServerlessFs() {
   return !!(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.NOW_REGION);
 }
 
-export async function readLocalTags() {
-  try {
-    const dbRows = await readDbTags();
-    if (Array.isArray(dbRows) && dbRows.length) {
-      return dbRows.sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name, "zh"));
+export async function readLocalTags(opts = {}) {
+  const preferDb = opts.preferDb !== false;
+  const allowSeed = opts.allowSeed !== false;
+  if (preferDb && hasDb()) {
+    try {
+      const dbRows = await readDbTags();
+      // Array (even empty) means table exists — never fall back to mock seed for admin.
+      if (Array.isArray(dbRows)) {
+        return dbRows.sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name, "zh"));
+      }
+      // null = missing table
+      if (!allowSeed) return [];
+    } catch (error) {
+      if (!isMissingTable(error)) console.error("[companion-tags] DB read failed, fallback defaults", error.message || error);
+      if (!allowSeed) return [];
     }
-  } catch (error) {
-    if (!isMissingTable(error)) console.error("[companion-tags] DB read failed, fallback defaults", error.message || error);
   }
-  // On Vercel/serverless, never mkdir cwd (.local-data) — return in-memory defaults.
+  // On Vercel/serverless, never mkdir cwd (.local-data) — return in-memory defaults only when allowed.
   if (isServerlessFs()) {
-    return DEFAULT_TAGS.map((row, index) => normalizeTagRow(row, index));
+    return allowSeed ? DEFAULT_TAGS.map((row, index) => normalizeTagRow(row, index)) : [];
   }
   await ensureDir();
   try {
@@ -174,26 +197,35 @@ export async function readLocalTags() {
   } catch (error) {
     if (error.code !== "ENOENT") throw error;
   }
+  if (!allowSeed) return [];
   const seeded = DEFAULT_TAGS.map((row, index) => normalizeTagRow(row, index));
-  await writeLocalTags(seeded);
+  await writeLocalTags(seeded, { requireDb: false });
   return seeded;
 }
 
-export async function writeLocalTags(rows) {
+export async function writeLocalTags(rows, opts = {}) {
+  const requireDb = opts.requireDb === true;
   const list = (Array.isArray(rows) ? rows : []).map((row, index) => normalizeTagRow(row, index)).filter((row) => row.name)
     .sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name, "zh"));
   try {
     const saved = await writeDbTags(list);
     if (Array.isArray(saved)) return saved.sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name, "zh"));
+    if (requireDb) {
+      throw Object.assign(new Error("标签表未就绪，无法写入数据库。请联系运维完成内部迁移。"), { status: 503 });
+    }
   } catch (error) {
+    if (error.status === 503) throw error;
     if (!isMissingTable(error)) {
       console.error("[companion-tags] DB write failed", error.message || error);
       throw Object.assign(new Error(`标签保存失败：${error.message || error}`), { status: 503 });
     }
+    if (requireDb) {
+      throw Object.assign(new Error("标签表未就绪，无法写入数据库。请联系运维完成内部迁移。"), { status: 503 });
+    }
   }
   if (isServerlessFs()) {
     throw Object.assign(
-      new Error("标签表未就绪，无法在 Staging 写入本地文件。请执行 supabase/companion-tags.sql 后重试。"),
+      new Error("标签表未就绪，无法写入。请由运维在内部执行 companion-tags 迁移脚本后重试。"),
       { status: 503 }
     );
   }
@@ -206,10 +238,13 @@ export async function writeLocalTags(rows) {
   return list;
 }
 
-export async function updateLocalTags(mutator) {
-  const list = await readLocalTags();
+export async function updateLocalTags(mutator, opts = {}) {
+  const list = await readLocalTags({
+    preferDb: true,
+    allowSeed: opts.requireDb !== true,
+  });
   const result = await mutator(list);
-  await writeLocalTags(list);
+  await writeLocalTags(list, opts);
   return result;
 }
 

@@ -3,6 +3,7 @@
 
   var Auth = window.MCJAdminAuthFetch;
   var TARGET_ID = "companionTagManagement";
+  var CATEGORIES = ["风格", "服务", "性格", "时段", "其它"];
   var state = {
     loading: true,
     saving: false,
@@ -12,9 +13,7 @@
     editing: null,
     formOpen: false,
     tableReady: true,
-    stagingRef: "cfccwysniduwkjskiqgy",
-    sqlEditorUrl: "https://supabase.com/dashboard/project/cfccwysniduwkjskiqgy/sql/new",
-    migrationSql: "",
+    source: "",
   };
 
   function esc(v) {
@@ -29,11 +28,14 @@
 
   function apiGet() {
     if (Auth && Auth.get) return Auth.get("/api/admin/companion-tags");
-    return fetch("/api/admin/companion-tags", { headers: { Accept: "application/json", "x-mcj-admin-role": "admin" } })
-      .then(function (res) { return res.json().then(function (body) {
+    return fetch("/api/admin/companion-tags", {
+      headers: { Accept: "application/json", "x-mcj-admin-role": "admin" },
+    }).then(function (res) {
+      return res.json().then(function (body) {
         if (!res.ok || body.ok === false) throw new Error(body.message || "读取失败");
         return body;
-      }); });
+      });
+    });
   }
 
   function apiPost(body) {
@@ -48,6 +50,25 @@
         return data;
       });
     });
+  }
+
+  function categoryOptions(selected) {
+    var current = String(selected || "风格").trim() || "风格";
+    var list = CATEGORIES.slice();
+    if (list.indexOf(current) < 0) list.push(current);
+    return list
+      .map(function (name) {
+        return (
+          '<option value="' +
+          esc(name) +
+          '"' +
+          (name === current ? " selected" : "") +
+          ">" +
+          esc(name) +
+          "</option>"
+        );
+      })
+      .join("");
   }
 
   function blank() {
@@ -67,6 +88,7 @@
   function tagFormTitle() {
     return state.editing && state.editing.id ? "编辑标签" : "新增标签";
   }
+
   function openFormOverlay() {
     if (!state.formOpen || !state.editing) return false;
     if (window.MCJAdminOverlay) {
@@ -82,6 +104,7 @@
     }
     return false;
   }
+
   function closeFormOverlay() {
     if (window.MCJAdminOverlay && window.MCJAdminOverlay.isOpen && window.MCJAdminOverlay.isOpen()) {
       window.MCJAdminOverlay.close();
@@ -96,19 +119,45 @@
     row = row || blank();
     return (
       '<form class="admin-self-form" data-tag-form>' +
-        '<input type="hidden" name="id" value="' + esc(row.id || "") + '">' +
+        '<input type="hidden" name="id" value="' +
+        esc(row.id || "") +
+        '">' +
         '<div class="form-grid">' +
-          '<label><span>标签名称</span><input name="name" required value="' + esc(row.name || "") + '" placeholder="随和 / 技术流 / 话多"></label>' +
-          '<label><span>分组</span><input name="group" value="' + esc(row.group || "风格") + '"></label>' +
-          '<label><span>排序</span><input name="sort" type="number" value="' + esc(row.sort || 100) + '"></label>' +
-          '<label><span>陪玩可多选</span><select name="selfSelectable" data-admin-control="switch"><option value="true"' + (row.selfSelectable !== false ? " selected" : "") + '>是</option><option value="false"' + (row.selfSelectable === false ? " selected" : "") + '>否</option></select></label>' +
-          '<label><span>需要审核</span><select name="requiresAudit" data-admin-control="switch"><option value="false"' + (!row.requiresAudit ? " selected" : "") + '>否</option><option value="true"' + (row.requiresAudit ? " selected" : "") + '>是</option></select></label>' +
-          '<label><span>大厅展示</span><select name="showInHall" data-admin-control="switch"><option value="true"' + (row.showInHall !== false ? " selected" : "") + '>显示</option><option value="false"' + (row.showInHall === false ? " selected" : "") + '>隐藏</option></select></label>' +
-          '<label><span>支持筛选</span><select name="supportsFilter" data-admin-control="switch"><option value="true"' + (row.supportsFilter !== false ? " selected" : "") + '>是</option><option value="false"' + (row.supportsFilter === false ? " selected" : "") + '>否</option></select></label>' +
-          '<label><span>状态</span><select name="enabled" data-admin-control="switch"><option value="true"' + (row.enabled !== false ? " selected" : "") + '>启用</option><option value="false"' + (row.enabled === false ? " selected" : "") + '>停用</option></select></label>' +
+          '<label><span>标签名称</span><input name="name" required maxlength="40" value="' +
+          esc(row.name || "") +
+          '" placeholder="例如：随和、技术流、话多"></label>' +
+          '<label><span>分类</span><select name="group">' +
+          categoryOptions(row.group) +
+          "</select></label>" +
+          '<label><span>排序</span><input name="sort" type="number" min="0" step="1" value="' +
+          esc(row.sort != null ? row.sort : 100) +
+          '"></label>' +
+          '<label><span>陪玩可选</span><select name="selfSelectable" data-admin-control="switch"><option value="true"' +
+          (row.selfSelectable !== false ? " selected" : "") +
+          '>开启</option><option value="false"' +
+          (row.selfSelectable === false ? " selected" : "") +
+          ">关闭</option></select></label>" +
+          '<label><span>公开展示</span><select name="showInHall" data-admin-control="switch"><option value="true"' +
+          (row.showInHall !== false ? " selected" : "") +
+          '>开启</option><option value="false"' +
+          (row.showInHall === false ? " selected" : "") +
+          ">关闭</option></select></label>" +
+          '<label><span>状态</span><select name="enabled" data-admin-control="switch"><option value="true"' +
+          (row.enabled !== false ? " selected" : "") +
+          '>启用</option><option value="false"' +
+          (row.enabled === false ? " selected" : "") +
+          ">停用</option></select></label>" +
+          '<input type="hidden" name="requiresAudit" value="' +
+          (row.requiresAudit ? "true" : "false") +
+          '">' +
+          '<input type="hidden" name="supportsFilter" value="' +
+          (row.supportsFilter === false ? "false" : "true") +
+          '">' +
         "</div>" +
         '<div class="row" style="margin-top:12px;gap:10px">' +
-          '<button class="primary-btn" type="submit">保存标签</button>' +
+          '<button class="primary-btn" type="submit"' +
+          (state.tableReady ? "" : " disabled") +
+          ">保存标签</button>" +
           '<button class="ghost-btn" type="button" data-tag-cancel>取消</button>' +
         "</div>" +
       "</form>"
@@ -117,51 +166,65 @@
 
   function rowsHtml() {
     if (!state.tags.length) {
-      return '<tr><td colspan="8"><div class="empty">暂无标签。点击新增，添加随和、技术流、话多等普通标签（声线请到「声线管理」）。</div></td></tr>';
-    }
-    return state.tags.map(function (tag) {
       return (
-        "<tr>" +
-          "<td><strong>" + esc(tag.name) + "</strong></td>" +
-          "<td>" + esc(tag.group || "-") + "</td>" +
-          "<td>" + (tag.selfSelectable !== false ? "是" : "否") + "</td>" +
-          "<td>" + (tag.showInHall !== false ? "显示" : "隐藏") + "</td>" +
-          "<td>" + (tag.supportsFilter !== false ? "是" : "否") + "</td>" +
-          "<td>" + esc(tag.sort) + "</td>" +
-          '<td><span class="status ' + (tag.enabled !== false ? "ok" : "wait") + '">' + (tag.enabled !== false ? "启用" : "停用") + "</span></td>" +
-          '<td><div class="row"><button class="mini-btn" type="button" data-tag-edit="' + esc(tag.id) + '">编辑</button>' +
-            '<button class="mini-btn" type="button" data-tag-toggle="' + esc(tag.id) + '" data-enabled="' + (tag.enabled !== false ? "false" : "true") + '">' + (tag.enabled !== false ? "停用" : "启用") + "</button>" +
-            '<button class="mini-btn" type="button" data-tag-delete="' + esc(tag.id) + '">删除</button></div></td>' +
-        "</tr>"
+        '<tr><td colspan="7"><div class="empty">' +
+        (state.tableReady
+          ? "暂无标签。点击「新增标签」开始配置。"
+          : "标签数据表尚未就绪，请联系运维完成内部迁移后再管理。") +
+        "</div></td></tr>"
       );
-    }).join("");
+    }
+    return state.tags
+      .map(function (tag) {
+        return (
+          "<tr>" +
+          "<td><strong>" +
+          esc(tag.name) +
+          "</strong></td>" +
+          "<td>" +
+          esc(tag.group || "-") +
+          "</td>" +
+          "<td>" +
+          (tag.selfSelectable !== false ? "开启" : "关闭") +
+          "</td>" +
+          "<td>" +
+          (tag.showInHall !== false ? "开启" : "关闭") +
+          "</td>" +
+          "<td>" +
+          esc(tag.sort) +
+          "</td>" +
+          '<td><span class="status ' +
+          (tag.enabled !== false ? "ok" : "wait") +
+          '">' +
+          (tag.enabled !== false ? "启用" : "停用") +
+          "</span></td>" +
+          '<td><div class="row"><button class="mini-btn" type="button" data-tag-edit="' +
+          esc(tag.id) +
+          '">编辑</button>' +
+          '<button class="mini-btn" type="button" data-tag-toggle="' +
+          esc(tag.id) +
+          '" data-enabled="' +
+          (tag.enabled !== false ? "false" : "true") +
+          '">' +
+          (tag.enabled !== false ? "停用" : "启用") +
+          "</button>" +
+          '<button class="mini-btn" type="button" data-tag-delete="' +
+          esc(tag.id) +
+          '" data-tag-name="' +
+          esc(tag.name) +
+          '">删除</button></div></td>' +
+          "</tr>"
+        );
+      })
+      .join("");
   }
 
-  function ensurePanelHtml() {
+  function statusNoteHtml() {
     if (state.tableReady) return "";
     return (
-      '<div class="panel" style="margin:0 0 14px;padding:14px 16px;border:1px solid rgba(251,113,133,.35);background:rgba(251,113,133,.08)">' +
-        "<h4 style=\"margin:0 0 8px;color:#fecdd3\">Staging 标签表未就绪</h4>" +
-        '<p class="muted" style="margin:0 0 10px;font-size:12px;line-height:1.55">请仅对 Staging（<code>' +
-        esc(state.stagingRef || "cfccwysniduwkjskiqgy") +
-        "</code>）执行 <code>supabase/companion-tags.sql</code>。禁止对 Production 执行。可在下方粘贴一次性 Staging DB password / Postgres URI / PAT（仅本次请求，不落库），或 " +
-        '<a href="' +
-        esc(state.sqlEditorUrl) +
-        '" target="_blank" rel="noopener">打开 Staging SQL Editor</a>。</p>' +
-        '<div style="display:grid;gap:8px;max-width:720px">' +
-          '<label class="muted" style="font-size:12px">一次性 Staging DB password' +
-            '<input data-tag-oneshot-pass type="password" autocomplete="off" placeholder="Staging database password" style="display:block;width:100%;margin-top:4px;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,.14);background:rgba(0,0,0,.35);color:#e5e7eb"></label>' +
-          '<label class="muted" style="font-size:12px">一次性 Staging DATABASE_URL' +
-            '<input data-tag-oneshot-db type="password" autocomplete="off" placeholder="postgresql://postgres.cfccwysniduwkjskiqgy:***@…pooler.supabase.com:5432/postgres" style="display:block;width:100%;margin-top:4px;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,.14);background:rgba(0,0,0,.35);color:#e5e7eb"></label>' +
-          '<label class="muted" style="font-size:12px">一次性 Supabase PAT' +
-            '<input data-tag-oneshot-pat type="password" autocomplete="off" placeholder="sbp_…" style="display:block;width:100%;margin-top:4px;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,.14);background:rgba(0,0,0,.35);color:#e5e7eb"></label>' +
-        "</div>" +
-        '<div class="row" style="margin-top:12px;gap:8px;flex-wrap:wrap">' +
-          '<button class="primary-btn" type="button" data-tag-ensure-schema>执行 Staging companion-tags.sql</button>' +
-          (state.migrationSql
-            ? '<button class="ghost-btn" type="button" data-tag-copy-sql>复制 SQL</button>'
-            : "") +
-        "</div>" +
+      '<div class="panel" style="margin:0 0 14px;padding:14px 16px;border:1px solid rgba(251,191,36,.35);background:rgba(251,191,36,.08)">' +
+      '<h4 style="margin:0 0 6px;color:#fde68a">标签表未就绪</h4>' +
+      '<p class="muted" style="margin:0;font-size:12px;line-height:1.55">生产管理页不提供 SQL / 数据库密码 / PAT 操作。请由运维在内部执行 companion-tags 迁移脚本后再使用本页。</p>' +
       "</div>"
     );
   }
@@ -169,13 +232,21 @@
   function pageHtml() {
     if (state.loading) return '<div class="content-loading">正在读取陪玩标签...</div>';
     return (
-      '<div class="content-admin-head"><div><h3>陪玩标签管理</h3><p>这里管理普通标签（随和、技术流、话多等）。声线（甜妹/御姐等）请在下方「声线管理」维护，禁止混用。</p></div>' +
-        '<div class="content-version-meta"><span>' + esc(state.tags.length) + " 个标签</span><span>" + esc(state.message || state.error || "保存后同步申请页与大厅筛选") + "</span></div></div>" +
-      ensurePanelHtml() +
-      '<div class="content-admin-toolbar compact"><button class="btn primary" type="button" data-tag-new>新增标签</button><button class="btn" type="button" data-tag-reload>刷新</button></div>' +
+      '<div class="content-admin-head"><div><h3>陪玩标签管理</h3><p>维护陪玩普通标签：新增、改名、分类、可选、公开展示与排序。声线请到「声线管理」。</p></div>' +
+      '<div class="content-version-meta"><span>' +
+      esc(state.tags.length) +
+      " 个标签</span><span>" +
+      esc(state.message || state.error || "保存后同步申请页与大厅筛选") +
+      "</span></div></div>" +
+      statusNoteHtml() +
+      '<div class="content-admin-toolbar compact">' +
+      '<button class="btn primary" type="button" data-tag-new' +
+      (state.tableReady ? "" : " disabled") +
+      ">新增标签</button>" +
+      '<button class="btn" type="button" data-tag-reload>刷新</button></div>' +
       (!window.MCJAdminOverlay && state.formOpen ? '<div class="panel" style="margin-bottom:14px">' + formHtml(state.editing) + "</div>" : "") +
-      '<div class="table-wrap"><table><thead><tr><th>标签名称</th><th>分组</th><th>陪玩可选</th><th>大厅展示</th><th>支持筛选</th><th>排序</th><th>状态</th><th>操作</th></tr></thead><tbody>' +
-        rowsHtml() +
+      '<div class="table-wrap"><table><thead><tr><th>标签名称</th><th>分类</th><th>陪玩可选</th><th>公开展示</th><th>排序</th><th>状态</th><th>操作</th></tr></thead><tbody>' +
+      rowsHtml() +
       "</tbody></table></div>"
     );
   }
@@ -195,11 +266,11 @@
       .then(function (result) {
         state.tags = result.items || result.tags || [];
         state.tableReady = result.tableReady !== false;
-        state.stagingRef = result.stagingRef || state.stagingRef;
-        state.sqlEditorUrl = result.sqlEditorUrl || state.sqlEditorUrl;
-        state.migrationSql = result.migrationSql || "";
+        state.source = result.source || "";
         state.loading = false;
-        state.message = state.tableReady ? "已加载标签" : "标签表未就绪（仅影响 Staging 写入）";
+        state.message = state.tableReady
+          ? "已从数据库加载标签"
+          : result.message || "标签表未就绪，请联系运维";
         state.error = "";
         render();
       })
@@ -207,6 +278,7 @@
         state.tags = [];
         state.loading = false;
         state.error = err.message || "读取失败";
+        state.message = "";
         render();
       });
   }
@@ -216,7 +288,7 @@
     return {
       id: String(fd.get("id") || "").trim(),
       name: String(fd.get("name") || "").trim(),
-      group: String(fd.get("group") || "风格").trim(),
+      group: String(fd.get("group") || "风格").trim() || "风格",
       sort: Number(fd.get("sort") || 100),
       selfSelectable: String(fd.get("selfSelectable")) !== "false",
       requiresAudit: String(fd.get("requiresAudit")) === "true",
@@ -233,6 +305,10 @@
 
     el.addEventListener("click", function (e) {
       if (e.target.closest("[data-tag-new]")) {
+        if (!state.tableReady) {
+          alert("标签表未就绪，无法新增。请联系运维完成内部迁移。");
+          return;
+        }
         state.editing = blank();
         state.formOpen = true;
         if (!openFormOverlay()) render();
@@ -246,74 +322,47 @@
         load();
         return;
       }
-      if (e.target.closest("[data-tag-copy-sql]")) {
-        if (!state.migrationSql) return;
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard.writeText(state.migrationSql).then(function () {
-            alert("已复制 supabase/companion-tags.sql");
-          }).catch(function () {
-            alert("复制失败，请手动打开 SQL Editor");
-          });
-        } else {
-          alert("当前环境不支持剪贴板，请打开 SQL Editor 手动粘贴");
-        }
-        return;
-      }
-      if (e.target.closest("[data-tag-ensure-schema]")) {
-        var passEl = el.querySelector("[data-tag-oneshot-pass]");
-        var dbEl = el.querySelector("[data-tag-oneshot-db]");
-        var patEl = el.querySelector("[data-tag-oneshot-pat]");
-        var payload = {
-          action: "ensure_schema",
-          databasePassword: passEl ? passEl.value : "",
-          databaseUrl: dbEl ? dbEl.value : "",
-          accessToken: patEl ? patEl.value : "",
-        };
-        if (!payload.databasePassword && !payload.databaseUrl && !payload.accessToken) {
-          alert("请粘贴 Staging DB password / DATABASE_URL / PAT 之一，或打开 Staging SQL Editor 手动执行。");
-          return;
-        }
-        state.message = "正在执行 Staging companion-tags.sql…";
-        render();
-        apiPost(payload)
-          .then(function (result) {
-            if (result.skipped) {
-              alert(result.message || "缺少 Staging 凭证");
-              state.message = result.message || "";
-              render();
-              return;
-            }
-            alert(result.message || "已执行");
-            load();
-          })
-          .catch(function (err) {
-            alert(err.message || "迁移失败");
-            state.error = err.message || "迁移失败";
-            render();
-          });
-        return;
-      }
       var edit = e.target.closest("[data-tag-edit]");
       if (edit) {
-        state.editing = state.tags.find(function (item) { return String(item.id) === String(edit.getAttribute("data-tag-edit")); }) || blank();
+        state.editing =
+          state.tags.find(function (item) {
+            return String(item.id) === String(edit.getAttribute("data-tag-edit"));
+          }) || blank();
         state.formOpen = true;
         if (!openFormOverlay()) render();
         return;
       }
       var tog = e.target.closest("[data-tag-toggle]");
       if (tog) {
+        if (!state.tableReady) {
+          alert("标签表未就绪，无法修改状态。");
+          return;
+        }
         var enabled = tog.getAttribute("data-enabled") === "true";
         apiPost({ action: enabled ? "enable" : "disable", id: tog.getAttribute("data-tag-toggle") })
-          .then(function () { load(); })
-          .catch(function (err) { alert(err.message || "操作失败"); });
+          .then(function () {
+            load();
+          })
+          .catch(function (err) {
+            alert(err.message || "操作失败");
+          });
         return;
       }
       var del = e.target.closest("[data-tag-delete]");
       if (del) {
-        if (!confirm("确认删除该标签？")) return;
+        if (!state.tableReady) {
+          alert("标签表未就绪，无法删除。");
+          return;
+        }
+        var tagName = del.getAttribute("data-tag-name") || "该标签";
+        if (!confirm('确认删除标签「' + tagName + '」？删除后不可恢复。')) return;
         apiPost({ action: "delete", id: del.getAttribute("data-tag-delete") })
-          .then(function () { load(); })
-          .catch(function (err) { alert(err.message || "删除失败"); });
+          .then(function () {
+            load();
+          })
+          .catch(function (err) {
+            alert(err.message || "删除失败");
+          });
       }
     });
 
@@ -321,6 +370,10 @@
       var form = e.target.closest("[data-tag-form]");
       if (!form) return;
       e.preventDefault();
+      if (!state.tableReady) {
+        alert("标签表未就绪，无法保存。");
+        return;
+      }
       var payload = collect(form);
       if (!payload.name) {
         alert("请填写标签名称");
