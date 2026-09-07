@@ -624,8 +624,12 @@ async function loadCompanions(id = "") {
   for (const row of companions) {
     if (!isAuditApprovedCompanion(row)) continue;
     const profile = profileMap[row.user_id];
+    // Approved companions drop here only when profile join missed (inactive/missing) —
+    // approve flow activates profile before writing application_status=approved.
     if (!profile) continue;
     // Hide smoke/test accounts from homepage / hall / public detail (matches admin filter).
+    // Heuristics are mirrored at approve-time (assertApproveCanPublish) so real approve
+    // cannot create a silent approved-but-hidden hall row via smoke name/email.
     if (isTestAccountRecord(profile, row)) continue;
     if (profile.is_test_account === true || row.is_test_account === true) continue;
     const media = { ...(mediaMap[row.id] || {}) };

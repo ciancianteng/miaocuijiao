@@ -17,6 +17,7 @@ import {
   DEFAULT_COMPANION_AVATAR,
 } from "./_companion-public-map.js";
 import { isCredentialOrOk } from "./_companion-credential-gate.js";
+import { isTestAccountRecord } from "./_test-accounts.js";
 
 export const MIN_GALLERY = 1;
 
@@ -398,18 +399,24 @@ export function listingBlockReason(gate = {}) {
  */
 export function adminPublishSnapshot(row = {}, profile = {}, mediaExtras = {}) {
   const gate = evaluatePublishGate(row, profile, mediaExtras);
-  const blockReasons = Array.isArray(gate.blockReasons) ? [...gate.blockReasons] : [];
   const crit = Array.isArray(gate.criticalMissing) ? gate.criticalMissing : [];
-  // Always surface critical field detail when approved-but-hidden for non-test accounts.
-  if (gate.adminApproved && !gate.isTestAccount && !gate.hallVisible) {
+  let blockReasons = Array.isArray(gate.blockReasons) ? [...gate.blockReasons] : [];
+  // Prefer concrete admin/UI reasons over the generic “资料不完整，暂未发布” umbrella.
+  if (crit.length) {
+    blockReasons = blockReasons.filter((r) => r !== "资料不完整，暂未发布");
     for (const item of crit) {
       if (item && !blockReasons.includes(item)) blockReasons.push(item);
     }
+  }
+  if (gate.adminApproved && !gate.isTestAccount && !gate.hallVisible) {
     if (!blockReasons.length) {
       blockReasons.push(listingBlockReason(gate) || "已通过但未进入公开大厅");
     }
   }
-  const reasonText = listingBlockReason({ ...gate, blockReasons }) || (blockReasons.length ? blockReasons.join("、") : "");
+  const reasonText =
+    blockReasons.length > 0
+      ? blockReasons.join("、")
+      : listingBlockReason({ ...gate, blockReasons }) || "";
   return {
     adminApproved: !!gate.adminApproved,
     hallVisible: !!gate.hallVisible,
@@ -473,19 +480,41 @@ export function assertApproveCanPublish(existing = {}, payload = {}, profile = {
     ...(profile || {}),
     status: "active",
   };
+  // Same smoke/test heuristics as public hall so approve cannot create silent hidden rows.
+  if (isTestAccount(projectedRow, projectedProfile) || isTestAccountRecord(projectedProfile, projectedRow)) {
+    const snap = adminPublishSnapshot(
+      { ...projectedRow, is_test_account: true },
+      { ...projectedProfile, is_test_account: true },
+      {}
+    );
+    return {
+      ...snap,
+      isTestAccount: true,
+      hallVisible: false,
+      approvedButHidden: false,
+      blockReasons: ["测试账号"],
+      listingBlockReason: "测试账号",
+      statusLabel: "测试账号",
+    };
+  }
   const snap = adminPublishSnapshot(projectedRow, projectedProfile, {});
-  if (snap.isTestAccount) return snap;
   if (snap.hallVisible) return snap;
-  const reasons = snap.blockReasons.length
-    ? snap.blockReasons
-    : snap.criticalMissing.length
-      ? snap.criticalMissing
-      : ["资料不完整，暂未发布"];
-  const err = new Error(`${APPROVE_INCOMPLETE_MESSAGE}（${reasons.join("、")}）`);
+  // Admin UI language: concrete missing fields only when possible.
+  const reasons = (snap.criticalMissing && snap.criticalMissing.length
+    ? snap.criticalMissing
+    : snap.blockReasons.length
+      ? snap.blockReasons.filter((r) => r !== "资料不完整，暂未发布")
+      : ["资料不完整，暂未发布"]
+  ).filter(Boolean);
+  const err = new Error(
+    reasons.length
+      ? `无法通过审核：${reasons.join("、")}。请先补齐后再通过。`
+      : APPROVE_INCOMPLETE_MESSAGE
+  );
   err.status = 400;
   err.code = "APPROVE_NOT_HALL_READY";
   err.blockReasons = reasons;
   err.criticalMissing = snap.criticalMissing;
-  err.publish = snap;
+  err.publish = { ...snap, blockReasons: reasons };
   throw err;
 }

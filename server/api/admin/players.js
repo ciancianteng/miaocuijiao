@@ -1053,6 +1053,32 @@ async function activateCompanionProfile(userId) {
   return Array.isArray(patched) ? patched[0] : existingProfile ? { ...existingProfile, status: "active" } : { id: userId, status: "active" };
 }
 
+
+/** Shared first-approval gate used by review_application AND edit/auditStatus paths. No bypass. */
+function ensureFirstApprovalReady(companion, payload, profile) {
+  try {
+    assertHasPositivePrice(payload, companion, APPROVE_MISSING_PRICE_MESSAGE);
+  } catch (priceErr) {
+    throw Object.assign(new Error(priceErr?.message || APPROVE_MISSING_PRICE_MESSAGE), {
+      status: 400,
+      code: "MISSING_PRICE",
+      blockReasons: ["缺少价格"],
+      criticalMissing: ["缺少价格"],
+    });
+  }
+  try {
+    return assertApproveCanPublish(companion, payload, profile || {});
+  } catch (readyErr) {
+    throw Object.assign(new Error(readyErr?.message || APPROVE_INCOMPLETE_MESSAGE), {
+      status: 400,
+      code: readyErr?.code || "APPROVE_NOT_HALL_READY",
+      blockReasons: readyErr?.blockReasons || readyErr?.criticalMissing || [],
+      criticalMissing: readyErr?.criticalMissing || [],
+      publish: readyErr?.publish || null,
+    });
+  }
+}
+
 async function reviewApplication(req, companion, payload) {
   const status = normalizeStatusInput(payload.status || payload.applicationStatus || payload.auditStatus, "pending");
   const reason = String(payload.rejectReason || payload.reason || "").trim();
@@ -1060,30 +1086,28 @@ async function reviewApplication(req, companion, payload) {
     throw Object.assign(new Error("驳回或要求补资料时必须填写原因。"), { status: 400 });
   }
   const { approveListingPatchForRow, unlistListingPatch } = await import("../_companion-listing-sync.js");
-  const profileBefore = companion.user_id ? await getProfile(companion.user_id) : {};
+  let profileBefore = companion.user_id ? await getProfile(companion.user_id) : {};
   let patch;
   if (status === "approved") {
     // First approval only — must be hall-ready for real (non-test) companions.
+    // Guards run BEFORE any companion_profiles write so failed approve leaves DB unchanged.
+    let publishPreview = null;
     if (isFirstApprovalTransition(companion, status)) {
-      try {
-        assertHasPositivePrice(payload, companion, APPROVE_MISSING_PRICE_MESSAGE);
-      } catch (priceErr) {
-        throw Object.assign(new Error(priceErr?.message || APPROVE_MISSING_PRICE_MESSAGE), {
-          status: 400,
-          code: "MISSING_PRICE",
-          blockReasons: ["缺少价格"],
-        });
-      }
-      try {
-        assertApproveCanPublish(companion, payload, profileBefore);
-      } catch (readyErr) {
-        throw Object.assign(new Error(readyErr?.message || APPROVE_INCOMPLETE_MESSAGE), {
-          status: 400,
-          code: readyErr?.code || "APPROVE_NOT_HALL_READY",
-          blockReasons: readyErr?.blockReasons || readyErr?.criticalMissing || [],
-          criticalMissing: readyErr?.criticalMissing || [],
-          publish: readyErr?.publish || null,
-        });
+      publishPreview = ensureFirstApprovalReady(companion, payload, profileBefore);
+      void publishPreview;
+      // Activate profile BEFORE writing application_status=approved (no partial approve).
+      if (companion.user_id) {
+        try {
+          profileBefore = (await activateCompanionProfile(companion.user_id)) || {
+            ...profileBefore,
+            status: "active",
+          };
+        } catch (err) {
+          throw Object.assign(
+            new Error(`审核通过失败：无法将账号设为 active（${err?.message || err}）。数据库未写入已通过状态。`),
+            { status: 500, code: "PROFILE_ACTIVATE_FAILED" }
+          );
+        }
       }
     }
     const extras = {
@@ -1125,13 +1149,22 @@ async function reviewApplication(req, companion, payload) {
   });
   let profileAfter = profileBefore;
   if (status === "approved" && companion.user_id) {
-    try {
-      profileAfter = (await activateCompanionProfile(companion.user_id)) || { ...profileBefore, status: "active" };
-    } catch (err) {
-      throw Object.assign(
-        new Error(`审核通过失败：无法将账号设为 active（${err?.message || err}）。`),
-        { status: 500, code: "PROFILE_ACTIVATE_FAILED" }
-      );
+    // Prefer already-activated profile from pre-write guard; otherwise activate now
+    // (re-approve / already-approved saves).
+    if (!profileAfter || String(profileAfter.status || "").toLowerCase() !== "active") {
+      try {
+        profileAfter = (await activateCompanionProfile(companion.user_id)) || {
+          ...(profileAfter || {}),
+          status: "active",
+        };
+      } catch (err) {
+        throw Object.assign(
+          new Error(`审核通过失败：无法将账号设为 active（${err?.message || err}）。`),
+          { status: 500, code: "PROFILE_ACTIVATE_FAILED" }
+        );
+      }
+    } else {
+      profileAfter = { ...profileAfter, status: "active" };
     }
   }
   await logOperation(req, "review_application", companion.id, companion, after?.[0], reason);
@@ -1472,34 +1505,29 @@ export default async function handler(req, res) {
     const companionPatch = companionEditablePatch(payload);
     // PERMANENT RULE: submission/first-approval validation must never block
     // admin corrections on already-approved companions.
-    if (isFirstApprovalTransition(companion, companionPatch.application_status)) {
-      try {
-        assertHasPositivePrice(companionPatch, companion, APPROVE_MISSING_PRICE_MESSAGE);
-      } catch (priceErr) {
-        return json(res, 400, {
-          ok: false,
-          code: "MISSING_PRICE",
-          message: priceErr?.message || APPROVE_MISSING_PRICE_MESSAGE,
-          field: "price",
-          blockReasons: ["缺少价格"],
-        });
-      }
-      const profileBefore = companion.user_id ? await getProfile(companion.user_id) : {};
-      try {
-        assertApproveCanPublish(companion, { ...payload, ...companionPatch }, profileBefore);
-      } catch (readyErr) {
-        return json(res, 400, {
-          ok: false,
-          code: readyErr?.code || "APPROVE_NOT_HALL_READY",
-          message: readyErr?.message || APPROVE_INCOMPLETE_MESSAGE,
-          blockReasons: readyErr?.blockReasons || readyErr?.criticalMissing || [],
-          criticalMissing: readyErr?.criticalMissing || [],
-          publish: readyErr?.publish || null,
-        });
-      }
+    const firstApproveViaEdit = isFirstApprovalTransition(companion, companionPatch.application_status);
+    let profileBeforeEdit = companion.user_id ? await getProfile(companion.user_id) : {};
+    if (firstApproveViaEdit) {
+      // Same shared guard as review_application — no bypass via auditStatus/edit.
+      ensureFirstApprovalReady(companion, { ...payload, ...companionPatch }, profileBeforeEdit);
       companionPatch.allow_orders = companionPatch.allow_orders === false ? false : true;
       companionPatch.verification_status = "approved";
       companionPatch.application_status = "approved";
+      // Activate BEFORE writing approved so failed activate leaves application_status unchanged.
+      if (companion.user_id) {
+        try {
+          profileBeforeEdit = (await activateCompanionProfile(companion.user_id)) || {
+            ...profileBeforeEdit,
+            status: "active",
+          };
+        } catch (err) {
+          return json(res, 500, {
+            ok: false,
+            code: "PROFILE_ACTIVATE_FAILED",
+            message: `审核通过失败：无法将账号设为 active（${err?.message || err}）。数据库未写入已通过状态。`,
+          });
+        }
+      }
     }
     if (companionPatch.commission_rate != null) {
       companionPatch.commission_rate = resolvePlatformCommission(companionPatch.commission_rate).platformRate;
@@ -1540,17 +1568,8 @@ export default async function handler(req, res) {
     }
 
     const profilePatch = profileEditablePatch(payload);
-    if (isFirstApprovalTransition(companion, companionPatch.application_status) && companion.user_id) {
+    if (firstApproveViaEdit && companion.user_id) {
       profilePatch.status = "active";
-      try {
-        await activateCompanionProfile(companion.user_id);
-      } catch (err) {
-        return json(res, 500, {
-          ok: false,
-          code: "PROFILE_ACTIVATE_FAILED",
-          message: `审核通过失败：无法将账号设为 active（${err?.message || err}）。`,
-        });
-      }
     }
     if (Object.keys(profilePatch).length && companion.user_id) {
       await companionDb("profiles", `?id=eq.${encodeURIComponent(companion.user_id)}`, {
