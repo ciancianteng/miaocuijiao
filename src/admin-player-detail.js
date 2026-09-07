@@ -710,6 +710,58 @@
       ]) +
       '<div class="admin-sync-note">在线状态由陪玩端维护；后台可停用账号与禁止接单。</div>';
 
+    var assignedCertIds = Array.isArray(d.certTagIds)
+      ? d.certTagIds.map(String)
+      : Array.isArray(d.certTags)
+        ? d.certTags.map(function (t) {
+            return String(t.id || t);
+          })
+        : [];
+    var certCatalog = Array.isArray(d.certCatalog) ? d.certCatalog : [];
+    var certHtml = !certCatalog.length
+      ? '<div class="admin-sync-note">暂无认证徽章目录。请先在「认证徽章」中启用标签。</div>'
+      : edit
+        ? '<div class="form-grid" style="grid-template-columns:repeat(auto-fill,minmax(160px,1fr))">' +
+          certCatalog
+            .map(function (tag) {
+              var checked = assignedCertIds.indexOf(String(tag.id)) >= 0 ? " checked" : "";
+              return (
+                '<label class="mini-card" style="display:flex;gap:8px;align-items:center;padding:10px 12px">' +
+                '<input type="checkbox" name="certTagIds" value="' +
+                esc(tag.id) +
+                '"' +
+                checked +
+                ">" +
+                '<span style="color:' +
+                esc(tag.color || "#f5c542") +
+                '">' +
+                esc(tag.icon || "🏅") +
+                " " +
+                esc(tag.name) +
+                "</span></label>"
+              );
+            })
+            .join("") +
+          "</div>" +
+          '<div class="admin-sync-note">勾选后保存，前台陪玩卡片会显示对应认证徽章（仅启用中的标签）。</div>'
+        : assignedCertIds.length
+          ? '<div class="row" style="flex-wrap:wrap;gap:8px">' +
+            (d.certTags || [])
+              .map(function (tag) {
+                return (
+                  '<span class="status ok" style="border-color:' +
+                  esc(tag.color || "#f5c542") +
+                  ";color:" +
+                  esc(tag.color || "#f5c542") +
+                  '">' +
+                  esc((tag.icon || "🏅") + " " + (tag.name || "")) +
+                  "</span>"
+                );
+              })
+              .join("") +
+            "</div>"
+          : emptyText("未分配认证徽章");
+
     return (
       '<div class="player-drawer-head"><div><h2>' +
       esc(edit ? "编辑陪玩" : "陪玩详情") +
@@ -742,6 +794,7 @@
       section("payment", "结款账户", paymentHtml) +
       section("media", "头像 / 相册 / 语音", mediaHtml) +
       section("split", "等级与价格", split) +
+      section("cert-badges", "认证徽章（前台卡片）", certHtml) +
       section("deposit", "押金记录", depositHtml) +
       section("income", "订单与收益", income) +
       section("account", "账号管理", account) +

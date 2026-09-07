@@ -487,3 +487,36 @@ body{background:radial-gradient(circle at 76% 4%,rgba(255,145,195,.055),transpar
   }
 }
 
+
+
+/* Functional level/price labels + cert badge sizing (no card chrome redesign) */
+.companion-level-price-range{
+  display:block!important;
+  margin-top:4px!important;
+  font-size:11px!important;
+  font-weight:650!important;
+  color:rgba(255,255,255,.72)!important;
+  opacity:.9!important;
+  white-space:normal!important;
+}
+.companion-selling-price-label{
+  display:inline-block!important;
+  margin-right:4px!important;
+  font-size:11px!important;
+  font-weight:650!important;
+  color:rgba(255,255,255,.55)!important;
+  vertical-align:middle!important;
+}
+.companion-hall-grid .mcj-cert-badge{
+  display:inline-flex!important;
+  align-items:center!important;
+  gap:4px!important;
+  padding:2px 8px!important;
+  border-radius:999px!important;
+  border:1px solid currentColor!important;
+  font-size:11px!important;
+  font-weight:700!important;
+  line-height:1.35!important;
+  background:color-mix(in srgb, currentColor 14%, transparent)!important;
+}
+.companion-hall-grid .mcj-cert-badge .mcj-cert-icon{font-size:12px!important;line-height:1!important}

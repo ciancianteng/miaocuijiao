@@ -271,8 +271,8 @@ export function normalizeLevelRow(row = {}, index = 0) {
     icon: String(row.icon || fallback.icon || "🩶"),
     color: String(row.color || row.levelColor || fallback.color || "#9CA3AF"),
     displayColor: String(row.displayColor || row.homeColor || row.color || fallback.displayColor || fallback.color || "#9CA3AF"),
-    cardBackground: ["solid", "gradient", "glass"].includes(String(row.cardBackground || row.cardStyle || ""))
-      ? String(row.cardBackground || row.cardStyle)
+    cardBackground: ["solid", "gradient", "glass"].includes(String(row.cardBackground || row.cardStyle || row.card_background || ""))
+      ? String(row.cardBackground || row.cardStyle || row.card_background)
       : fallback.cardBackground || "solid",
     badgeBorder: String(row.badgeBorder || row.badge_border || fallback.badgeBorder || fallback.color),
     badgeText: String(row.badgeText || row.badge_text || fallback.badgeText || "#fff"),
@@ -454,8 +454,94 @@ export function buildPublishSyncChecklist({ verified = false, commission = null,
   });
 }
 
+const HEX_COLOR_RE = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
+const CARD_BACKGROUNDS = new Set(["solid", "gradient", "glass"]);
+
+/** Validate admin/API level payload before DB write. */
+export function validateLevelConfig(row = {}, { requireId = false } = {}) {
+  const errors = [];
+  const item = normalizeLevelRow(row);
+  if (requireId && !String(row.id || "").trim()) errors.push("缺少等级 id");
+  if (!String(item.code || "").trim()) errors.push("缺少等级编号 code");
+  if (!String(item.name || "").trim()) errors.push("缺少等级名称 name");
+  for (const [key, label] of [
+    ["color", "主色 color"],
+    ["displayColor", "展示色 display_color"],
+    ["badgeBorder", "徽章边框 badge_border"],
+    ["badgeText", "徽章文字 badge_text"],
+    ["badgeIcon", "徽章图标色 badge_icon"],
+  ]) {
+    const value = String(item[key] || "").trim();
+    if (!HEX_COLOR_RE.test(value)) errors.push(`${label} 必须是 #RGB/#RRGGBB 颜色值`);
+  }
+  if (!CARD_BACKGROUNDS.has(String(item.cardBackground || ""))) {
+    errors.push("card_background 必须是 solid / gradient / glass");
+  }
+  if (!(Number(item.min) >= 0)) errors.push("min_price 必须 ≥ 0");
+  if (!(Number(item.max) >= Number(item.min))) errors.push("max_price 必须 ≥ min_price");
+  if (!(Number(item.commissionRate) >= 0 && Number(item.commissionRate) <= 100)) {
+    errors.push("commission_rate 必须在 0–100");
+  }
+  return {
+    ok: !errors.length,
+    errors,
+    message: errors[0] || "",
+    level: item,
+  };
+}
+
+export function validateLevelConfigList(rows = []) {
+  const list = Array.isArray(rows) ? rows : [];
+  if (!list.length) return { ok: false, errors: ["等级列表为空"], message: "等级列表为空", levels: [] };
+  const levels = [];
+  const errors = [];
+  const ids = new Set();
+  list.forEach((row, index) => {
+    const result = validateLevelConfig(row);
+    if (!result.ok) {
+      errors.push(`第 ${index + 1} 项：${result.message}`);
+      return;
+    }
+    if (ids.has(result.level.id)) errors.push(`重复等级 id：${result.level.id}`);
+    ids.add(result.level.id);
+    levels.push(result.level);
+  });
+  return { ok: !errors.length, errors, message: errors[0] || "", levels };
+}
+
+/** Compact visual/pricing payload embedded on public companion cards. */
+export function levelVisualConfig(level) {
+  if (!level) return null;
+  const item = normalizeLevelRow(level);
+  const priceRangeLabel = item.maxPlus ? `${item.min}–${item.max}+` : `${item.min}–${item.max}`;
+  return {
+    id: item.id,
+    level: item.level,
+    code: item.code,
+    name: item.name,
+    title: `${item.code} ${item.name}`.trim(),
+    icon: item.icon,
+    color: item.color,
+    displayColor: item.displayColor,
+    cardBackground: item.cardBackground,
+    cardStyle: item.cardBackground,
+    badgeBorder: item.badgeBorder,
+    badgeText: item.badgeText,
+    badgeIcon: item.badgeIcon,
+    min: item.min,
+    max: item.max,
+    minPrice: item.min,
+    maxPrice: item.max,
+    maxPlus: item.maxPlus,
+    priceRangeLabel,
+    priceRangeText: `${priceRangeLabel} 猫粮`,
+    commissionRate: item.commissionRate,
+  };
+}
+
 export function toPublicLevel(level) {
   const item = normalizeLevelRow(level);
+  const visual = levelVisualConfig(item);
   return {
     id: item.id,
     level: item.level,
@@ -466,6 +552,7 @@ export function toPublicLevel(level) {
     color: item.color,
     displayColor: item.displayColor,
     cardBackground: item.cardBackground,
+    cardStyle: item.cardBackground,
     badgeBorder: item.badgeBorder,
     badgeText: item.badgeText,
     badgeIcon: item.badgeIcon,
@@ -474,9 +561,14 @@ export function toPublicLevel(level) {
     minPrice: item.min,
     maxPrice: item.max,
     maxPlus: item.maxPlus,
+    priceRangeLabel: visual.priceRangeLabel,
+    priceRangeText: visual.priceRangeText,
     commissionRate: item.commissionRate,
     upgradeCondition: item.upgradeCondition,
     description: item.description,
+    requirements: item.requirements || "",
+    downgradeCondition: item.downgradeCondition || "",
+    benefits: item.benefits || "",
     sort: item.sort,
     open: item.open,
     enabled: item.enabled,

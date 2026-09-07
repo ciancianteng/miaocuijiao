@@ -8,6 +8,12 @@ import {
   maskIdentityNo,
 } from "../_companion-media-store.js";
 import { readLocalLevels } from "../_companion-levels-store.js";
+import {
+  getAssignmentsForProfiles,
+  readCertTags,
+  setAssignmentsForProfile,
+  toPublicCertTag,
+} from "../_companion-cert-tags-store.js";
 import { resolvePlatformCommission } from "../_commission-rates.js";
 import { resolveCompanionAvatar, resolveCompanionCover } from "../_companion-public-map.js";
 import { requireAdmin as requireAdminJwt, ADMIN_ROLES as SHARED_ADMIN_ROLES } from "../_admin-auth.js";
@@ -540,6 +546,22 @@ async function buildDetail(row, profile, opts = {}) {
   base.last_login_ip = base.lastLoginIp;
   base.email = profile?.email || base.email || "";
 
+  let certCatalog = [];
+  let certTagIds = [];
+  let certTags = [];
+  try {
+    const [catalog, assignMap] = await Promise.all([
+      readCertTags().catch(() => []),
+      getAssignmentsForProfiles([row.id]).catch(() => ({})),
+    ]);
+    certCatalog = (catalog || []).filter((t) => t && t.enabled !== false).map(toPublicCertTag);
+    certTagIds = Array.isArray(assignMap?.[row.id]) ? assignMap[row.id].map(String) : [];
+    const byId = new Map(certCatalog.map((t) => [String(t.id), t]));
+    certTags = certTagIds.map((id) => byId.get(String(id))).filter(Boolean);
+  } catch (err) {
+    console.error("[players] cert tags load failed", err?.message || err);
+  }
+
   return {
     ...base,
     age: row.age ?? "",
@@ -709,6 +731,9 @@ async function buildDetail(row, profile, opts = {}) {
       createdAt: r.created_at || "",
     })),
     schemaReady: true,
+    certCatalog,
+    certTags,
+    certTagIds,
   };
 }
 
@@ -1418,6 +1443,17 @@ export default async function handler(req, res) {
 
     companionPatch.updated_at = new Date().toISOString();
     const rows = await patchCompanionRow(id, companionPatch);
+
+    if (Object.prototype.hasOwnProperty.call(payload, "certTagIds") || Object.prototype.hasOwnProperty.call(payload, "certTags")) {
+      const raw = payload.certTagIds != null ? payload.certTagIds : payload.certTags;
+      const tagIds = Array.isArray(raw)
+        ? raw.map(String)
+        : String(raw || "")
+            .split(/[,，\s]+/)
+            .map((x) => x.trim())
+            .filter(Boolean);
+      await setAssignmentsForProfile(id, tagIds);
+    }
 
     const profilePatch = profileEditablePatch(payload);
     if (Object.keys(profilePatch).length && companion.user_id) {

@@ -3,52 +3,46 @@
 
   var STORAGE_KEYS = ["mcj_companionLevels", "mcj_player_levels"];
   var STYLE_ID = "mcj-companion-level-theme";
+  var CACHE_META_KEY = "mcj_companionLevels_meta";
+  var memoryLevels = null;
+  var hydratedFromApi = false;
 
+  // Structural seed only — never used for live card rendering once API hydrate succeeds.
   var DEFAULT_LEVELS = [
     {
       id: "lv1", level: 1, code: "Lv1", name: "萌喵", icon: "🩶",
       color: "#9CA3AF", displayColor: "#9CA3AF", cardBackground: "solid",
       badgeBorder: "#9CA3AF", badgeText: "#E5E7EB", badgeIcon: "#D1D5DB",
       min: 20, max: 30, maxPlus: false, commissionRate: 20,
-      description: "新加入平台，需要累积订单与评价。",
-      upgradeCondition: "完成基础资料审核并开始接单。\n订单数：达标\n好评率：达标\n认证完成：是",
-      sort: 1, open: true, enabled: true
+      description: "", upgradeCondition: "", sort: 1, open: true, enabled: true
     },
     {
       id: "lv2", level: 2, code: "Lv2", name: "灵喵", icon: "💙",
       color: "#3B82F6", displayColor: "#3B82F6", cardBackground: "gradient",
       badgeBorder: "#60A5FA", badgeText: "#DBEAFE", badgeIcon: "#93C5FD",
       min: 30, max: 40, maxPlus: false, commissionRate: 18,
-      description: "已有订单与基础好评，稳定接单。",
-      upgradeCondition: "累计订单与基础好评达到后台设置条件。\n订单数：达标\n好评率：达标\n认证完成：是",
-      sort: 2, open: true, enabled: true
+      description: "", upgradeCondition: "", sort: 2, open: true, enabled: true
     },
     {
       id: "lv3", level: 3, code: "Lv3", name: "猎喵", icon: "💜",
       color: "#A855F7", displayColor: "#A855F7", cardBackground: "gradient",
       badgeBorder: "#C084FC", badgeText: "#F3E8FF", badgeIcon: "#D8B4FE",
       min: 40, max: 45, maxPlus: false, commissionRate: 16,
-      description: "技术表现优秀、评价较高。",
-      upgradeCondition: "技术表现、评价和在线时长达到后台设置条件。\n订单数：达标\n好评率：达标\n认证完成：是",
-      sort: 3, open: true, enabled: true
+      description: "", upgradeCondition: "", sort: 3, open: true, enabled: true
     },
     {
       id: "lv4", level: 4, code: "Lv4", name: "喵神", icon: "💛",
       color: "#EAB308", displayColor: "#EAB308", cardBackground: "gradient",
       badgeBorder: "#FACC15", badgeText: "#FEF9C3", badgeIcon: "#FDE047",
       min: 60, max: 75, maxPlus: false, commissionRate: 14,
-      description: "热门游戏专精陪玩。",
-      upgradeCondition: "热门游戏专精表现通过后台审核。\n订单数：达标\n好评率：达标\n认证完成：是",
-      sort: 4, open: false, enabled: true
+      description: "", upgradeCondition: "", sort: 4, open: false, enabled: true
     },
     {
       id: "lv5", level: 5, code: "Lv5", name: "喵皇", icon: "👑",
       color: "#F59E0B", displayColor: "#EF4444", cardBackground: "glass",
       badgeBorder: "#F59E0B", badgeText: "#FEE2E2", badgeIcon: "#FBBF24",
       min: 75, max: 100, maxPlus: true, commissionRate: 12,
-      description: "俱乐部招牌、人气主播或大神级陪玩。",
-      upgradeCondition: "招牌陪玩、人气主播或大神级资质通过后台审核。\n订单数：达标\n好评率：达标\n认证完成：是",
-      sort: 5, open: false, enabled: true
+      description: "", upgradeCondition: "", sort: 5, open: false, enabled: true
     }
   ];
 
@@ -65,67 +59,117 @@
     }
   }
 
-  function normalizeLevelRecord(level) {
-    var fallback = DEFAULT_LEVELS[0];
-    var raw = Object.assign({}, fallback, level || {});
-    var levelNo = Number(raw.level || String(raw.id || raw.code || "").match(/\d+/) || fallback.level);
-    var official = DEFAULT_LEVELS.find(function (item) { return item.level === levelNo; }) || fallback;
-    var merged = Object.assign({}, official, raw);
-    merged.level = levelNo || official.level;
-    merged.id = merged.id || "lv" + merged.level;
-    merged.code = String(merged.code || "Lv" + merged.level).replace(/^Lv\.?/i, "Lv");
+  function isHexColor(value) {
+    return /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(String(value || "").trim());
+  }
+
+  function normalizeLevelRecord(level, opts) {
+    var fromApi = !!(opts && opts.fromApi);
+    var raw = level || {};
+    var levelNo = Number(raw.level || String(raw.id || raw.code || "").match(/\d+/) || 0) || 0;
+    var seed = (!fromApi && DEFAULT_LEVELS.find(function (item) { return item.level === levelNo; })) || null;
+    var base = seed ? Object.assign({}, seed) : {};
+    var merged = Object.assign({}, base, raw);
+
+    merged.level = levelNo || Number(base.level) || 1;
+    merged.id = String(merged.id || ("lv" + merged.level)).trim();
+    merged.code = String(merged.code || ("Lv" + merged.level)).replace(/^Lv\.?/i, "Lv");
     if (!/^Lv\d+/i.test(merged.code)) merged.code = "Lv" + merged.level;
-    merged.name = merged.name || official.name;
-    merged.icon = merged.icon || official.icon;
-    merged.color = merged.color || merged.levelColor || official.color;
-    merged.displayColor = merged.displayColor || merged.homeColor || merged.color;
+    merged.name = String(merged.name || base.name || "").trim() || ("等级" + merged.level);
+    merged.icon = String(merged.icon || base.icon || "").trim();
+
+    // Visuals: prefer API/DB values; only use neutral fallbacks when missing.
+    merged.color = isHexColor(merged.color || merged.levelColor)
+      ? String(merged.color || merged.levelColor).trim()
+      : (isHexColor(base.color) ? base.color : "#9CA3AF");
+    merged.displayColor = isHexColor(merged.displayColor || merged.homeColor)
+      ? String(merged.displayColor || merged.homeColor).trim()
+      : merged.color;
     merged.cardBackground = ["solid", "gradient", "glass"].indexOf(String(merged.cardBackground || merged.cardStyle || "")) > -1
       ? String(merged.cardBackground || merged.cardStyle)
-      : (official.cardBackground || "solid");
-    merged.badgeBorder = merged.badgeBorder || merged.badge_border || merged.color;
-    merged.badgeText = merged.badgeText || merged.badge_text || "#fff";
-    merged.badgeIcon = merged.badgeIcon || merged.badge_icon || merged.color;
-    merged.min = Math.max(0, Number(merged.min != null ? merged.min : (merged.minPrice != null ? merged.minPrice : official.min)));
-    merged.max = Math.max(merged.min, Number(merged.max != null ? merged.max : (merged.maxPrice != null ? merged.maxPrice : official.max)));
+      : (base.cardBackground || "solid");
+    merged.badgeBorder = isHexColor(merged.badgeBorder || merged.badge_border)
+      ? String(merged.badgeBorder || merged.badge_border).trim()
+      : merged.color;
+    merged.badgeText = isHexColor(merged.badgeText || merged.badge_text)
+      ? String(merged.badgeText || merged.badge_text).trim()
+      : "#FFFFFF";
+    merged.badgeIcon = isHexColor(merged.badgeIcon || merged.badge_icon)
+      ? String(merged.badgeIcon || merged.badge_icon).trim()
+      : merged.color;
+
+    merged.min = Math.max(0, Number(merged.min != null ? merged.min : (merged.minPrice != null ? merged.minPrice : (base.min != null ? base.min : 0))));
+    merged.max = Math.max(merged.min, Number(merged.max != null ? merged.max : (merged.maxPrice != null ? merged.maxPrice : (base.max != null ? base.max : merged.min))));
     merged.maxPlus = Boolean(merged.maxPlus || merged.allowAboveMax || merged.maximum_price_plus);
-    merged.commissionRate = Math.max(0, Math.min(100, Number(merged.commissionRate != null ? merged.commissionRate : (merged.commission != null ? merged.commission : official.commissionRate))));
-    merged.description = merged.description || merged.desc || official.description;
-    merged.upgradeCondition = merged.upgradeCondition || merged.upgrade_condition || official.upgradeCondition;
+    merged.commissionRate = Math.max(0, Math.min(100, Number(merged.commissionRate != null ? merged.commissionRate : (merged.commission != null ? merged.commission : (base.commissionRate != null ? base.commissionRate : 0)))));
+    merged.description = String(merged.description || merged.desc || base.description || "");
+    merged.upgradeCondition = String(merged.upgradeCondition || merged.upgrade_condition || base.upgradeCondition || "");
     merged.sort = Number(merged.sort || merged.sort_weight || merged.level);
     merged.open = merged.open !== false && merged.open !== "否" && merged.open !== "关闭";
     merged.enabled = merged.enabled !== false && merged.enabled !== "停用" && merged.status !== "disabled";
+    merged.priceRangeLabel = merged.maxPlus ? (merged.min + "–" + merged.max + "+") : (merged.min + "–" + merged.max);
+    merged.priceRangeText = merged.priceRangeLabel + " 猫粮";
+    merged.title = (merged.code + " " + merged.name).trim();
     return merged;
   }
 
-  function save(levels) {
-    var clean = levels.map(normalizeLevelRecord).sort(function (a, b) {
-      return Number(a.sort || a.level) - Number(b.sort || b.level);
-    });
+  function persistCache(levels) {
+    var clean = (levels || []).map(function (row) { return normalizeLevelRecord(row, { fromApi: true }); });
     STORAGE_KEYS.forEach(function (key) {
       localStorage.setItem(key, JSON.stringify(clean));
     });
+    localStorage.setItem(CACHE_META_KEY, JSON.stringify({ source: "api", updatedAt: Date.now() }));
+    return clean;
+  }
+
+  function readCachedApiLevels() {
+    var meta = parseJSON(localStorage.getItem(CACHE_META_KEY));
+    if (!meta || meta.source !== "api") return null;
+    for (var i = 0; i < STORAGE_KEYS.length; i += 1) {
+      var levels = parseJSON(localStorage.getItem(STORAGE_KEYS[i]));
+      if (levels && levels.length) {
+        return levels.map(function (row) { return normalizeLevelRecord(row, { fromApi: true }); });
+      }
+    }
+    return null;
+  }
+
+  function save(levels, opts) {
+    var fromApi = !!(opts && opts.fromApi);
+    var clean = (levels || []).map(function (row) {
+      return normalizeLevelRecord(row, { fromApi: fromApi });
+    }).sort(function (a, b) {
+      return Number(a.sort || a.level) - Number(b.sort || b.level);
+    });
+    memoryLevels = clean;
+    if (fromApi) {
+      hydratedFromApi = true;
+      persistCache(clean);
+    }
     applyTheme(clean);
     return clean;
   }
 
   function read() {
-    for (var i = 0; i < STORAGE_KEYS.length; i += 1) {
-      var levels = parseJSON(localStorage.getItem(STORAGE_KEYS[i]));
-      if (levels && levels.length) {
-        var clean = levels.map(normalizeLevelRecord);
-        applyTheme(clean);
-        return clean;
-      }
+    if (memoryLevels && memoryLevels.length) return memoryLevels;
+    var cached = readCachedApiLevels();
+    if (cached && cached.length) {
+      memoryLevels = cached;
+      applyTheme(cached);
+      return cached;
     }
-    return save(DEFAULT_LEVELS);
+    // No API cache yet — keep in-memory structural seed without writing mock data to localStorage.
+    memoryLevels = DEFAULT_LEVELS.map(function (row) { return normalizeLevelRecord(row); });
+    applyTheme(memoryLevels);
+    return memoryLevels;
   }
 
   function formatRange(level) {
-    var item = normalizeLevelRecord(level);
+    var item = normalizeLevelRecord(level, { fromApi: true });
     if (typeof window !== "undefined" && window.MCJCurrency) {
       return window.MCJCurrency.formatRange(item.min, item.max, item.maxPlus);
     }
-    return item.min + "–" + item.max + (item.maxPlus ? "+" : "") + " 猫粮";
+    return item.priceRangeText;
   }
 
   function formatHourlyPrice(value, lang) {
@@ -150,7 +194,6 @@
       .replace(/\s+/g, " ");
   }
 
-  /** Resolve a level from admin/API data. Returns null when unset/unknown — never invents Lv1. */
   function resolveLevel(value) {
     var levels = read();
     var text = String(value == null ? "" : value).trim();
@@ -210,26 +253,27 @@
   }
 
   function cardBackgroundCss(level) {
-    var item = normalizeLevelRecord(level);
+    var item = normalizeLevelRecord(level, { fromApi: true });
     var color = item.color || "#9CA3AF";
     var display = item.displayColor || color;
     if (item.cardBackground === "glass") {
-      return "linear-gradient(180deg, rgba(255,255,255,.10), rgba(255,255,255,.02)), rgba(14,13,18,.72)";
+      return "linear-gradient(165deg, " + color + "3a, rgba(255,255,255,.08) 42%, rgba(14,13,18,.78)), rgba(14,13,18,.70)";
     }
     if (item.cardBackground === "gradient") {
-      return "linear-gradient(145deg, " + color + "33, " + display + "18 48%, rgba(14,13,18,.92))";
+      return "linear-gradient(145deg, " + color + "40, " + display + "22 48%, rgba(14,13,18,.92))";
     }
-    return "linear-gradient(180deg, " + color + "22, rgba(14,13,18,.92))";
+    return "linear-gradient(180deg, " + color + "2e, rgba(14,13,18,.92))";
   }
 
   function themeCss(levels) {
     return (levels || []).map(function (level) {
-      var item = normalizeLevelRecord(level);
+      var item = normalizeLevelRecord(level, { fromApi: hydratedFromApi });
       var id = item.id;
+      var bg = cardBackgroundCss(item);
       return [
-        '[data-companion-level="' + id + '"],.player-card[data-level-id="' + id + '"]{--mcj-level-color:' + item.color + ';--mcj-level-display:' + item.displayColor + ';--mcj-level-badge-border:' + item.badgeBorder + ';--mcj-level-badge-text:' + item.badgeText + ';--mcj-level-badge-icon:' + item.badgeIcon + ';}',
-        '.player-card[data-level-id="' + id + '"]{border-color:' + item.color + '55!important;background:' + cardBackgroundCss(item) + '!important;}',
-        '.player-card[data-level-id="' + id + '"] .companion-level-pill,.companion-level-pill[data-level-id="' + id + '"],[data-companion-level="' + id + '"] .companion-level-pill{border:1px solid ' + item.badgeBorder + ';color:' + item.badgeText + ';background:' + item.color + '22;}',
+        '[data-companion-level="' + id + '"],.player-card[data-level-id="' + id + '"],.companion-hall-grid .player-card[data-level-id="' + id + '"],.hot-card[data-level-id="' + id + '"]{--mcj-level-color:' + item.color + ';--mcj-level-display:' + item.displayColor + ';--mcj-level-badge-border:' + item.badgeBorder + ';--mcj-level-badge-text:' + item.badgeText + ';--mcj-level-badge-icon:' + item.badgeIcon + ';--mcj-level-card-bg:' + bg + ';}',
+        '.player-card[data-level-id="' + id + '"],.hot-card[data-level-id="' + id + '"]{border-color:' + item.color + '55!important;background:' + bg + '!important;}',
+        '.companion-hall-grid .player-card[data-level-id="' + id + '"] .companion-level-pill,.player-card[data-level-id="' + id + '"] .companion-level-pill,.companion-level-pill[data-level-id="' + id + '"],[data-companion-level="' + id + '"] .companion-level-pill{border:1px solid ' + item.badgeBorder + '!important;color:' + item.badgeText + '!important;background:' + item.color + '33!important;}',
         '.mcj-level-badge[data-level-id="' + id + '"]{border-color:' + item.badgeBorder + ';color:' + item.badgeText + ';}'
       ].join("");
     }).join("");
@@ -246,18 +290,37 @@
     node.textContent = css;
   }
 
+  function inlineCardStyle(levelOrConfig) {
+    var cfg = levelOrConfig || {};
+    if (!cfg.color && cfg.levelConfig) cfg = cfg.levelConfig;
+    if (!cfg || !cfg.color) return "";
+    var item = normalizeLevelRecord(cfg, { fromApi: true });
+    var bg = cardBackgroundCss(item);
+    return [
+      "--mcj-level-color:" + item.color,
+      "--mcj-level-display:" + item.displayColor,
+      "--mcj-level-badge-border:" + item.badgeBorder,
+      "--mcj-level-badge-text:" + item.badgeText,
+      "--mcj-level-badge-icon:" + item.badgeIcon,
+      "--mcj-level-card-bg:" + bg,
+      "border-color:" + item.color + "55",
+      "background:" + bg
+    ].join(";");
+  }
+
+  function preferLevelConfig(source) {
+    var cfg = source && source.levelConfig ? source.levelConfig : null;
+    if (cfg && (cfg.id || cfg.color || cfg.min != null)) {
+      return normalizeLevelRecord(cfg, { fromApi: true });
+    }
+    return resolveLevel(
+      (source && (source.levelId || source.player_level_id || source.level_id || source.level || source.levelName || source.level_name || source.rank)) || ""
+    );
+  }
+
   function normalizeCompanion(item) {
     var source = item || {};
-    var level = resolveLevel(
-      source.levelId ||
-        source.player_level_id ||
-        source.level_id ||
-        source.level ||
-        source.levelName ||
-        source.level_name ||
-        source.rank
-    );
-    // Preserve the real DB/API price for hall filters — never invent/clamp display prices here.
+    var level = preferLevelConfig(source);
     var rawPrice =
       source.priceValue != null
         ? source.priceValue
@@ -279,16 +342,23 @@
       levelLabel: levelLabel,
       levelLabelWithIcon: level ? labelWithIcon(level.id) : levelLabel,
       levelRange: level ? formatRange(level) : "",
+      levelPriceRange: level ? level.priceRangeLabel : (source.levelPriceRange || ""),
+      levelPriceRangeText: level ? level.priceRangeText : (source.levelPriceRangeText || ""),
+      levelMinPrice: level ? level.min : source.levelMinPrice,
+      levelMaxPrice: level ? level.max : source.levelMaxPrice,
       levelDescription: level ? level.description : "",
-      levelColor: level ? level.color : "",
-      displayColor: level ? level.displayColor : "",
-      cardBackground: level ? level.cardBackground : "",
-      badgeBorder: level ? level.badgeBorder : "",
-      badgeText: level ? level.badgeText : "",
-      badgeIcon: level ? level.badgeIcon : "",
+      levelColor: level ? level.color : (source.levelColor || ""),
+      displayColor: level ? level.displayColor : (source.displayColor || ""),
+      cardBackground: level ? level.cardBackground : (source.cardBackground || source.cardStyle || ""),
+      cardStyle: level ? level.cardBackground : (source.cardStyle || source.cardBackground || ""),
+      badgeBorder: level ? level.badgeBorder : (source.badgeBorder || ""),
+      badgeText: level ? level.badgeText : (source.badgeText || ""),
+      badgeIcon: level ? level.badgeIcon : (source.badgeIcon || ""),
+      levelConfig: level || source.levelConfig || null,
       commissionRate: level ? level.commissionRate : source.commissionRate,
       priceValue: price,
-      priceDisplay: formatHourlyPrice(price)
+      priceDisplay: formatHourlyPrice(price),
+      cardStyleInline: level ? inlineCardStyle(level) : ""
     });
   }
 
@@ -302,32 +372,31 @@
 
   function hydrateFromList(list) {
     if (!Array.isArray(list) || !list.length) return read();
-    return save(list.map(normalizeLevelRecord));
+    return save(list, { fromApi: true });
   }
 
   function hydrateFromApi() {
-    return fetch("/api/platform/companion-levels", { headers: { Accept: "application/json" } })
+    return fetch("/api/platform/companion-levels", { headers: { Accept: "application/json" }, cache: "no-store" })
       .then(function (res) {
         return res.json().catch(function () { return {}; }).then(function (body) {
           if (!res.ok || body.ok === false) throw new Error(body.message || "等级读取失败");
-          return hydrateFromList(body.levels || []);
+          var levels = body.levels || [];
+          if (!levels.length) throw new Error("等级配置为空");
+          return hydrateFromList(levels);
         });
-      })
-      .catch(function () {
-        return read();
       });
   }
 
-  // Keep local defaults available immediately; refresh from server when possible.
+  // Prefer previous API cache; refresh from server when possible.
   read();
   if (typeof window !== "undefined") {
-    hydrateFromApi();
+    hydrateFromApi().catch(function () { /* keep API cache / structural seed */ });
   }
 
   window.MCJCompanionLevels = {
     defaults: DEFAULT_LEVELS.map(copy),
     read: read,
-    save: save,
+    save: function (levels) { return save(levels, { fromApi: true }); },
     find: findLevel,
     resolve: resolveLevel,
     label: label,
@@ -341,8 +410,10 @@
     selectOptions: selectOptions,
     applyTheme: applyTheme,
     cardBackgroundCss: cardBackgroundCss,
+    inlineCardStyle: inlineCardStyle,
     hydrateFromApi: hydrateFromApi,
     hydrateFromList: hydrateFromList,
-    normalizeLevelRecord: normalizeLevelRecord
+    normalizeLevelRecord: normalizeLevelRecord,
+    isHydratedFromApi: function () { return hydratedFromApi; }
   };
 })();
