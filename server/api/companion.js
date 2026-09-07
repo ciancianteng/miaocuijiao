@@ -3773,6 +3773,43 @@ export default async function handler(req, res) {
       const beforeRows = await supabaseJson(restUrl("orders", `?id=eq.${encodeURIComponent(id)}&companion_id=eq.${encodeURIComponent(auth.profile.id)}&limit=1`), { headers: serviceHeaders() });
       const before = beforeRows?.[0];
       if (!before || before.status !== "claimed") return json(res, 409, { ok: false, message: "当前订单不能确认接单" });
+      {
+        const {
+          assertE2eOrderPaymentSettlementAllowed,
+          e2eFreezeHttpResult,
+          looksLikeE2eAutomation,
+        } = await import("./_prod-e2e-freeze.js");
+        const markerCtx = {
+          headers: req.headers,
+          idempotencyKey: before.idempotency_key || "",
+          description: before.description || "",
+          note: before.note || "",
+        };
+        if (looksLikeE2eAutomation(markerCtx)) {
+          let bossProfile = null;
+          if (before.boss_id) {
+            try {
+              const rows = await supabaseJson(
+                restUrl(
+                  "profiles",
+                  `?id=eq.${encodeURIComponent(before.boss_id)}&select=id,email,display_name,is_test_account&limit=1`
+                ),
+                { headers: serviceHeaders() }
+              );
+              bossProfile = rows?.[0] || null;
+            } catch {
+              bossProfile = { id: before.boss_id, is_test_account: false };
+            }
+            if (!bossProfile) bossProfile = { id: before.boss_id, is_test_account: false };
+          }
+          const guard = assertE2eOrderPaymentSettlementAllowed({
+            ...markerCtx,
+            parties: [auth.profile, bossProfile].filter(Boolean),
+          });
+          const blocked = e2eFreezeHttpResult(guard);
+          if (blocked) return json(res, blocked.status, blocked.body);
+        }
+      }
       const now = nowIso();
       const order = await patchOwnOrder(
         auth.profile,
@@ -3969,6 +4006,42 @@ export default async function handler(req, res) {
       if (!before) return json(res, 404, { ok: false, message: "订单不存在。" });
       if (before.status !== "in_progress") {
         return json(res, 409, { ok: false, message: "当前订单状态不能完成。" });
+      }
+      {
+        const {
+          assertE2eOrderPaymentSettlementAllowed,
+          e2eFreezeHttpResult,
+          looksLikeE2eAutomation,
+        } = await import("./_prod-e2e-freeze.js");
+        const markerCtx = {
+          headers: req.headers,
+          idempotencyKey: before.idempotency_key || "",
+          description: before.description || "",
+          note: before.note || "",
+        };
+        if (looksLikeE2eAutomation(markerCtx)) {
+          let bossProfile = null;
+          if (before.boss_id) {
+            try {
+              const rows = await supabaseJson(
+                restUrl(
+                  "profiles",
+                  `?id=eq.${encodeURIComponent(before.boss_id)}&select=id,email,display_name,is_test_account&limit=1`
+                ),
+                { headers: serviceHeaders() }
+              );
+              bossProfile = rows?.[0] || null;
+            } catch {
+              bossProfile = null;
+            }
+          }
+          const guard = assertE2eOrderPaymentSettlementAllowed({
+            ...markerCtx,
+            parties: [auth.profile, bossProfile].filter(Boolean),
+          });
+          const blocked = e2eFreezeHttpResult(guard);
+          if (blocked) return json(res, blocked.status, blocked.body);
+        }
       }
       const { createOrderGrabHelpers } = await import("./_order-grabs.js");
       const grabsApi = createOrderGrabHelpers({ restUrl, supabaseJson, serviceHeaders });

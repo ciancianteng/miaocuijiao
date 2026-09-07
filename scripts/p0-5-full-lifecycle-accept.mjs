@@ -2,7 +2,13 @@
  * P0-5 full four-end lifecycle + admin probes on fixed Staging.
  * Usage: node scripts/p0-5-full-lifecycle-accept.mjs
  */
+import { assertProdE2eOrderPaymentSettlementFrozen } from "./lib/prod-guard.mjs";
+
 const STAGING = (process.env.MCJ_STAGING_URL || "https://meow-cuijiao-homepage-staging.vercel.app").replace(/\/$/, "");
+assertProdE2eOrderPaymentSettlementFrozen({
+  script: "p0-5-full-lifecycle-accept.mjs",
+  base: STAGING,
+});
 const PASS = process.env.MCJ_TEST_PASSWORD || "McjTest@12345678";
 const BOSS = "boss.final.1785714993009@meow.test";
 const CS = "service.final.1785714993009@meow.test";
