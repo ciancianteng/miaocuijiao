@@ -103,17 +103,27 @@
     state.countdown = 0;
   }
 
+  /** Update resend control only — never remount the OTP input (mobile keyboard / focus). */
+  function updateResendUi() {
+    if (!state.open || state.step !== "code" || !state.host) return;
+    var btn = state.host.querySelector("[data-forgot-resend]");
+    if (!btn) return;
+    var counting = state.countdown > 0;
+    btn.textContent = counting ? "重新发送（" + state.countdown + "s）" : "重新发送";
+    btn.disabled = !!(state.busy || counting);
+  }
+
   function startCountdown(sec) {
     stopCountdown();
     state.countdown = Math.max(0, Number(sec) || COUNTDOWN_SEC);
-    paint();
+    updateResendUi();
     state.countdownTimer = setInterval(function () {
       state.countdown -= 1;
       if (state.countdown <= 0) {
         stopCountdown();
         state.countdown = 0;
       }
-      paint();
+      updateResendUi();
     }, 1000);
   }
 
@@ -178,6 +188,22 @@
     host.hidden = false;
     var step = state.step;
     var busy = state.busy;
+    // Preserve OTP DOM state across rare full paints (busy / validation), not countdown ticks.
+    var prevCode = "";
+    var restoreCodeFocus = false;
+    var prevSelStart = null;
+    var prevSelEnd = null;
+    if (step === "code") {
+      var existingCode = host.querySelector('input[name="code"]');
+      if (existingCode) {
+        prevCode = String(existingCode.value || "");
+        restoreCodeFocus = document.activeElement === existingCode;
+        try {
+          prevSelStart = existingCode.selectionStart;
+          prevSelEnd = existingCode.selectionEnd;
+        } catch (e) {}
+      }
+    }
     var body = "";
     if (step === "email" || step === "phone") {
       body =
@@ -198,7 +224,9 @@
         '<p class="mcj-forgot-desc">验证码已发送至 ' +
         esc(state.emailMasked || state.email) +
         "。请输入 6 位验证码。</p>" +
-        '<label>验证码<input name="code" type="text" inputmode="numeric" maxlength="6" autocomplete="one-time-code" data-auth-code="1" data-auth-sensitive="1" placeholder="000000" required value=""></label>' +
+        '<label>验证码<input name="code" type="text" inputmode="numeric" maxlength="6" autocomplete="one-time-code" data-auth-code="1" data-auth-sensitive="1" placeholder="000000" required value="' +
+        esc(prevCode) +
+        '"></label>' +
         '<div class="mcj-forgot-actions">' +
         '<button class="mcj-forgot-btn primary" type="submit" data-forgot-submit' +
         (busy ? " disabled" : "") +
@@ -236,6 +264,23 @@
       esc(state.msg) +
       "</p>" +
       "</form>";
+    if (step === "code" && restoreCodeFocus) {
+      var codeInput = host.querySelector('input[name="code"]');
+      if (codeInput) {
+        try {
+          codeInput.focus({ preventScroll: true });
+        } catch (e2) {
+          try {
+            codeInput.focus();
+          } catch (e3) {}
+        }
+        try {
+          if (prevSelStart != null && prevSelEnd != null) {
+            codeInput.setSelectionRange(prevSelStart, prevSelEnd);
+          }
+        } catch (e4) {}
+      }
+    }
   }
 
   function close(opts) {
@@ -321,6 +366,18 @@
         setMsg(hint, true);
         startCountdown(COUNTDOWN_SEC);
         paint();
+        setTimeout(function () {
+          var codeInput = state.host && state.host.querySelector('input[name="code"]');
+          if (codeInput) {
+            try {
+              codeInput.focus({ preventScroll: true });
+            } catch (e) {
+              try {
+                codeInput.focus();
+              } catch (e2) {}
+            }
+          }
+        }, 40);
         return res;
       })
       .catch(function (err) {

@@ -253,7 +253,7 @@
         }
         if (!window.MCJForgotPassword) {
           var s = document.createElement("script");
-          s.src = "/src/forgot-password.js?v=20260805acctSec1";
+          s.src = "/src/forgot-password.js?v=20260907otpFocus1";
           s.onload = openForgot;
           document.head.appendChild(s);
         } else openForgot();
