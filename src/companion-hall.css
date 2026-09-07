@@ -173,13 +173,15 @@ body{background:radial-gradient(circle at 76% 4%,rgba(255,145,195,.055),transpar
   color:rgba(255,232,244,.86) !important;
 }
 
-/* Card body: name, id, badges, games (bottom), actions — no price on hall browse cards */
+/* Card body: name, id, brand, certs, level/voice, games, actions — no price; no media overlay */
 .companion-hall-grid .companion-card-body{
   display:grid !important;
   grid-template-columns:minmax(0,1fr) !important;
   grid-template-areas:
     "title"
     "id"
+    "brand"
+    "certs"
     "identity"
     "games"
     "actions" !important;
@@ -211,6 +213,31 @@ body{background:radial-gradient(circle at 76% 4%,rgba(255,145,195,.055),transpar
   font-size:12px !important;
   line-height:1.25 !important;
   margin:0 !important;
+}
+.companion-hall-grid .companion-brand-label,
+.companion-hall-grid .companion-card-body > .detail-label{
+  grid-area:brand !important;
+  margin:0 !important;
+  color:#ffb6d9 !important;
+  font-size:11px !important;
+  letter-spacing:.14em !important;
+  font-weight:800 !important;
+  line-height:1.2 !important;
+}
+.companion-hall-grid .companion-cert-row{
+  grid-area:certs !important;
+  display:flex !important;
+  flex-wrap:wrap !important;
+  align-items:center !important;
+  gap:8px !important;
+  row-gap:8px !important;
+  column-gap:8px !important;
+  margin:0 !important;
+  width:100% !important;
+  min-height:0 !important;
+}
+.companion-hall-grid .companion-cert-row:empty{
+  display:none !important;
 }
 .companion-hall-grid .companion-meta-desktop{
   display:none !important;
@@ -507,33 +534,3 @@ body{background:radial-gradient(circle at 76% 4%,rgba(255,145,195,.055),transpar
   background:color-mix(in srgb, currentColor 14%, transparent)!important;
 }
 .companion-hall-grid .mcj-cert-badge .mcj-cert-icon{font-size:12px!important;line-height:1!important}
-
-/* Identity watermark on hall media — same .mcj-cert-badge / .is-official as detail */
-.companion-hall-grid .companion-card-media .companion-identity-watermark{
-  position:absolute!important;
-  left:10px!important;
-  right:10px!important;
-  bottom:10px!important;
-  z-index:2!important;
-  display:flex!important;
-  flex-wrap:wrap!important;
-  align-items:center!important;
-  gap:6px!important;
-  margin:0!important;
-  padding:8px!important;
-  border-radius:12px!important;
-  border:0!important;
-  background:linear-gradient(180deg,rgba(8,6,12,.05),rgba(8,6,12,.72))!important;
-  box-shadow:none!important;
-  pointer-events:none!important;
-}
-.companion-hall-grid .companion-card-media .companion-identity-watermark .mcj-cert-badge,
-.companion-hall-grid .companion-card-media .companion-identity-watermark .mcj-cert-tag{
-  pointer-events:auto!important;
-  height:var(--mcj-badge-h, 28px)!important;
-  min-height:var(--mcj-badge-h, 28px)!important;
-  max-height:var(--mcj-badge-h, 28px)!important;
-  padding:0 var(--mcj-badge-pad-x, 10px)!important;
-  margin:0!important;
-  backdrop-filter:blur(8px)!important;
-}
