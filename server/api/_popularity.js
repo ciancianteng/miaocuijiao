@@ -14,6 +14,7 @@ import {
   resolveCompanionCover,
   resolveCompanionName,
 } from "./_companion-public-map.js";
+import { resolveCompanionPublicCode } from "./_account-codes.js";
 import { isTestAccountRecord } from "./_test-accounts.js";
 
 const TZ = "Asia/Kuala_Lumpur";
@@ -683,7 +684,7 @@ export async function listBoard({ period = "weekly", gameKey = "", limit, online
       return {
         rank: r.rank,
         companionId: r.companion_id,
-        publicId: c.companion_uid ? `P${c.companion_uid}` : "",
+        publicId: resolveCompanionPublicCode(c) || "",
         nickname: resolveCompanionName(c, p) || "未命名陪玩",
         avatar: resolveCompanionAvatar(p, c),
         cover: resolveCompanionCover(p, c),

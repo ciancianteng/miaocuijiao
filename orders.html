@@ -314,7 +314,7 @@
             '</div></div>'+
             '<div class="od-module"><h3>陪玩信息</h3><div class="od-fields">'+
               field('陪玩昵称',esc(companionName(o)))+
-              field('陪玩 ID',esc(o.companionId||o.companion_id||'-'))+
+              field('陪玩 ID',esc(o.companionPublicId||o.companionCode||o.publicId||((/^[0-9a-f-]{36}$/i.test(String(o.companionId||o.companion_id||'')))?'-':(o.companionId||o.companion_id))||'-'))+
             '</div></div>'+
             '<div class="od-module"><h3>服务信息</h3><div class="od-fields">'+
               field('游戏/服务',esc(o.serviceType||o.serviceName||o.game||o.title||'-'))+

@@ -82,7 +82,8 @@
     return Math.max(0, Math.min(100, v));
   }
   function resolveCoverFocus(item) {
-    var pub = String((item && (item.publicId || item.companionCode || item.id)) || "").toUpperCase();
+    var pub = String((item && (item.publicId || item.companionCode)) || "").toUpperCase();
+    if (/^[0-9A-F]{8}-[0-9A-F]{4}-/.test(pub)) pub = "";
     var preset = COVER_FOCUS_DEFAULTS[pub] || null;
     var x = item && (item.objectPositionX != null ? item.objectPositionX : item.object_position_x);
     var y = item && (item.objectPositionY != null ? item.objectPositionY : item.object_position_y);

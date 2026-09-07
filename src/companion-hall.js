@@ -438,22 +438,32 @@
       (fx ? ' <span class="price-fx-approx">' + esc(fx) + "</span>" : "") +
       "</div>";
     var badgeClass = statusBadgeClass(item.status);
-    var publicId = item.publicId || "未生成";
+    var publicId =
+      (window.MCJCompanionPublicId && window.MCJCompanionPublicId.customerFacingCompanionId
+        ? window.MCJCompanionPublicId.customerFacingCompanionId(item)
+        : "") ||
+      item.publicId ||
+      item.companionCode ||
+      "";
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(String(publicId))) publicId = "";
+    if (!publicId) publicId = "未生成";
     var uuid = String(item.id || "").trim();
     var detailHref = uuid ? ("profile.html?id=" + encodeURIComponent(uuid)) : "#";
     var focusX = item.objectPositionX != null ? item.objectPositionX : 50;
     var focusY = item.objectPositionY != null ? item.objectPositionY : 25;
     var pos = Number(focusX) + "% " + Number(focusY) + "%";
-    return '<article class="card player-card" data-player data-public-id="' + esc(String(publicId).toUpperCase()) + '" data-level-id="' + esc(item.levelId || "") + '" data-companion-level="' + esc(item.levelId || "") + '" data-companion-id="' + esc(uuid) + '" data-name="' + esc(item.name) + '" data-game="' + esc(item.game) + '" data-tags="' + esc(item.tags.join(",")) + '" data-price="' + esc(item.priceValue) + '" data-online="' + esc(item.status) + '" data-score="' + esc(item.rating) + '" data-gender="' + esc(item.gender) + '">' +
+    return '<article class="card player-card" data-player data-public-id="' + esc(String(publicId === "未生成" ? "" : publicId).toUpperCase()) + '" data-level-id="' + esc(item.levelId || "") + '" data-companion-level="' + esc(item.levelId || "") + '" data-companion-id="' + esc(uuid) + '" data-name="' + esc(item.name) + '" data-game="' + esc(item.game) + '" data-tags="' + esc(item.tags.join(",")) + '" data-price="' + esc(item.priceValue) + '" data-online="' + esc(item.status) + '" data-score="' + esc(item.rating) + '" data-gender="' + esc(item.gender) + '">' +
       '<div class="companion-card-media"><img src="' + esc(item.image) + '" alt="' + esc(item.name) + '" loading="lazy" decoding="async" style="object-position:' + esc(pos) + ';--mcj-cover-pos:' + esc(pos) + '" onerror="this.onerror=null;this.src=\'' + DEFAULT_AVATAR + '\'"><span class="companion-online-badge' + badgeClass + '">' + esc(item.status) + '</span></div>' +
       '<div class="companion-card-body">' +
         '<div class="row companion-card-head companion-card-title-row"><h3>' + esc(item.name) + '</h3><span class="companion-status-inline' + badgeClass + '">' + esc(item.status) + '</span></div>' +
-        '<p class="muted companion-id">陪玩 ID：' + esc(publicId) + '</p>' +
+        (publicId === "未生成"
+          ? ""
+          : '<p class="muted companion-id">陪玩 ID：' + esc(publicId) + "</p>") +
         '<div class="companion-meta companion-meta-desktop"><span class="companion-level-pill mcj-level-tag" data-level-id="' + esc(item.levelId || "") + '">' + esc(item.level) + '</span><span class="companion-game-text">' + esc(item.game) + '</span></div>' +
         identityRow +
         gamesRow +
         priceHtml +
-        '<div class="companion-card-actions"><a class="companion-card-action" href="' + esc(detailHref) + '">查看详情</a><button type="button" class="companion-card-action primary" data-hall-order="' + esc(uuid) + '" data-hall-name="' + esc(item.name || "") + '" data-hall-price="' + esc(item.priceValue || "") + '" data-hall-level="' + esc(item.levelId || "") + '" data-hall-game="' + esc(item.game || "") + '" data-hall-avatar="' + esc(item.image || "") + '" data-hall-public-id="' + esc(publicId || "") + '" data-hall-status="' + esc(item.availabilityStatus || "") + '" data-hall-status-text="' + esc(item.status || "") + '">立即下单</button></div>' +
+        '<div class="companion-card-actions"><a class="companion-card-action" href="' + esc(detailHref) + '">查看详情</a><button type="button" class="companion-card-action primary" data-hall-order="' + esc(uuid) + '" data-hall-name="' + esc(item.name || "") + '" data-hall-price="' + esc(item.priceValue || "") + '" data-hall-level="' + esc(item.levelId || "") + '" data-hall-game="' + esc(item.game || "") + '" data-hall-avatar="' + esc(item.image || "") + '" data-hall-public-id="' + esc(publicId === "未生成" ? "" : publicId) + '" data-hall-status="' + esc(item.availabilityStatus || "") + '" data-hall-status-text="' + esc(item.status || "") + '">立即下单</button></div>' +
       '</div>' +
     '</article>';
   }
