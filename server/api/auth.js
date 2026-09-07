@@ -11,13 +11,14 @@ import {
   assertImageUpload,
   PUBLIC_BUCKETS,
 } from "./_companion-media-store.js";
-import { sendEmailOtp, sendSmsOtp, mailProviderStatus } from "./_mail.js";
+import { sendEmailOtp, sendSmsOtp, mailProviderStatus, publicMailHint } from "./_mail.js";
 import {
   storeOtp,
   findOtp,
   markOtpVerified,
   findRegisterVerified as findRegisterVerifiedRow,
   consumeRegisterVerified,
+  invalidateOtp,
   randomOtpCode as sharedRandomOtpCode,
 } from "./_otp-store.js";
 import { validatePassword, PASSWORD_RULE_HINT } from "./_password-policy.js";
@@ -437,14 +438,54 @@ function maskEmailHint(email) {
   return `${s.slice(0, 1)}***${s.slice(at)}`;
 }
 
-function allowStagingOtp() {
+function allowDebugOtp() {
+  // Explicit opt-in only. Vercel Preview must fail closed like production so a mail
+  // outage never looks like a successful send (no silent ok + no client-visible codes).
   if (String(process.env.ALLOW_STAGING_OTP || "") === "1" || String(process.env.MCJ_OTP_DEBUG || "") === "1") {
     return true;
   }
-  // Never expose OTP codes on production deployments.
   if (String(process.env.VERCEL_ENV || "").toLowerCase() === "production") return false;
+  if (String(process.env.VERCEL_ENV || "").toLowerCase() === "preview") return false;
   const base = String(process.env.MCJ_PUBLIC_BASE || process.env.VERCEL_URL || "");
-  return /staging|localhost|127\.0\.0\.1/i.test(base) || String(process.env.VERCEL_ENV || "").toLowerCase() === "preview";
+  return /localhost|127\.0\.0\.1/i.test(base);
+}
+
+/** @deprecated use allowDebugOtp — kept for internal call sites during rename. */
+function allowStagingOtp() {
+  return allowDebugOtp();
+}
+
+const OTP_SEND_FAIL_MESSAGE = "验证码发送失败，请稍后重试。若持续失败请联系客服。";
+
+function clientOtpSendPayload({ mailOk, mailError, code, emailMasked, successMessage, genericMessage }) {
+  const mail = publicMailHint();
+  if (mailOk) {
+    return {
+      ok: true,
+      message: successMessage,
+      channel: "email",
+      emailMasked: emailMasked || "",
+      mail,
+    };
+  }
+  if (allowDebugOtp()) {
+    return {
+      ok: true,
+      message: "邮件暂不可用，已生成本地调试验证码。",
+      channel: "email",
+      emailMasked: emailMasked || "",
+      debugCode: code,
+      devCode: code, // legacy clients
+      mail,
+    };
+  }
+  return {
+    ok: false,
+    message: OTP_SEND_FAIL_MESSAGE,
+    channel: "email",
+    emailMasked: emailMasked || "",
+    mail,
+  };
 }
 
 function normalizeForgotRole(roleRaw) {
@@ -600,7 +641,15 @@ async function handleForgotSendOtp(body, res) {
   }
   const code = randomOtpCode();
   const key = forgotAccountKey(profile);
-  await storeForgotOtp(key, role, code, "otp");
+  try {
+    await storeForgotOtp(key, role, code, "otp");
+  } catch (storeErr) {
+    return json(res, storeErr?.status || 503, {
+      ok: false,
+      message: "验证码存储失败，请稍后重试。",
+      mail: publicMailHint(),
+    });
+  }
   // MVP: email only. SMS stub kept for later international release.
   void sendSmsOtp({ phone: profile.phone || profile.phone_e164 || "", code, purpose: "forgot" });
   let mailOk = false;
@@ -611,28 +660,21 @@ async function handleForgotSendOtp(body, res) {
   } catch (err) {
     mailError = String(err?.message || err || "");
   }
-  const mailStatus = mailProviderStatus();
-  const out = {
-    ok: true,
-    message: mailOk
-      ? `验证码已发送至邮箱 ${maskEmailHint(email)}。`
-      : allowStagingOtp()
-        ? mailStatus.resend
-          ? `验证码邮件发送失败：${mailError || "Resend 错误"}。已生成 Staging 调试验证码（${maskEmailHint(email)}）。`
-          : `邮件服务暂不可用（未读到 RESEND_API_KEY），已生成 Staging 调试验证码（${maskEmailHint(email)}）。`
-        : RESET_EMAIL_GENERIC_MESSAGE,
-    channel: "email",
+  if (!mailOk) console.error("[auth/forgot_send_otp] mail failed", mailError, mailProviderStatus());
+  const payload = clientOtpSendPayload({
+    mailOk,
+    mailError,
+    code,
     emailMasked: maskEmailHint(email),
+    successMessage: `验证码已发送至邮箱 ${maskEmailHint(email)}。`,
+    genericMessage: RESET_EMAIL_GENERIC_MESSAGE,
+  });
+  return json(res, payload.ok ? 200 : 503, {
+    ...payload,
     phoneMasked: "",
     expiresInSec: Math.floor(OTP_TTL_MS / 1000),
     role,
-    mail: mailStatus,
-  };
-  // Only expose Staging debug OTP when mail actually failed.
-  if (!mailOk && allowStagingOtp()) out.devCode = code;
-  if (!mailOk && allowStagingOtp() && mailError) out.mailWarning = mailError;
-  if (!mailOk) console.error("[auth/forgot_send_otp] mail failed", mailError, mailStatus);
-  return json(res, 200, out);
+  });
 }
 
 function rejectProductionTestIdentity(res, { email = "", displayName = "" } = {}) {
@@ -683,8 +725,8 @@ async function handleLoginSendOtp(body, res) {
   } catch (storeErr) {
     return json(res, storeErr?.status || 503, {
       ok: false,
-      message: storeErr?.message || "验证码存储失败，请稍后重试。",
-      mail: mailProviderStatus(),
+      message: "验证码存储失败，请稍后重试。",
+      mail: publicMailHint(),
     });
   }
   void sendSmsOtp({ phone: profile.phone || "", code, purpose: "login" });
@@ -696,27 +738,20 @@ async function handleLoginSendOtp(body, res) {
   } catch (err) {
     mailError = String(err?.message || err || "");
   }
-  const mailStatus = mailProviderStatus();
-  const out = {
-    ok: true,
-    message: mailOk
-      ? `登录验证码已发送至 ${maskEmailHint(profile.email || email)}。`
-      : allowStagingOtp()
-        ? mailStatus.resend
-          ? `验证码邮件发送失败：${mailError || "Resend 错误"}。已生成 Staging 调试验证码。`
-          : "邮件服务暂不可用（未读到 RESEND_API_KEY），已生成 Staging 调试验证码。"
-        : generic.message,
-    channel: "email",
+  if (!mailOk) console.error("[auth/send_login_otp] mail failed", mailError, mailProviderStatus());
+  const payload = clientOtpSendPayload({
+    mailOk,
+    mailError,
+    code,
     emailMasked: maskEmailHint(profile.email || email),
+    successMessage: `登录验证码已发送至 ${maskEmailHint(profile.email || email)}。`,
+    genericMessage: generic.message,
+  });
+  return json(res, payload.ok ? 200 : 503, {
+    ...payload,
     expiresInSec: Math.floor(OTP_TTL_MS / 1000),
     role,
-    mail: mailStatus,
-  };
-  // Only expose Staging debug OTP when mail actually failed.
-  if (!mailOk && allowStagingOtp()) out.devCode = code;
-  if (!mailOk && allowStagingOtp() && mailError) out.mailWarning = mailError;
-  if (!mailOk) console.error("[auth/send_login_otp] mail failed", mailError, mailStatus);
-  return json(res, 200, out);
+  });
 }
 
 async function handleLoginWithOtp(body, res) {
@@ -915,8 +950,8 @@ async function handleSendRegisterOtp(body, res) {
   } catch (storeErr) {
     return json(res, storeErr?.status || 503, {
       ok: false,
-      message: storeErr?.message || "验证码存储失败，请稍后重试。",
-      mail: mailProviderStatus(),
+      message: "验证码存储失败，请稍后重试。",
+      mail: publicMailHint(),
     });
   }
   let mailOk = false;
@@ -927,27 +962,21 @@ async function handleSendRegisterOtp(body, res) {
   } catch (err) {
     mailError = String(err?.message || err || "");
   }
-  const mailStatus = mailProviderStatus();
-  const out = {
-    ok: true,
-    message: mailOk
-      ? `注册验证码已发送至 ${maskEmailHint(email)}。`
-      : allowStagingOtp()
-        ? mailStatus.resend
-          ? `验证码邮件发送失败：${mailError || "Resend 错误"}。已生成 Staging 调试验证码。`
-          : "邮件服务暂不可用（未读到 RESEND_API_KEY），已生成 Staging 调试验证码。"
-        : "如邮箱可用，将收到注册验证码，请查收后继续。",
-    channel: "email",
+  if (!mailOk) console.error("[auth/send_register_otp] mail failed", mailError, mailProviderStatus());
+  const payload = clientOtpSendPayload({
+    mailOk,
+    mailError,
+    code,
     emailMasked: maskEmailHint(email),
+    successMessage: `注册验证码已发送至 ${maskEmailHint(email)}。`,
+    genericMessage: "如邮箱可用，将收到注册验证码，请查收后继续。",
+  });
+  return json(res, payload.ok ? 200 : 503, {
+    ...payload,
     expiresInSec: Math.floor(OTP_TTL_MS / 1000),
     retryAfterSec: Math.floor(OTP_RESEND_COOLDOWN_MS / 1000),
     role,
-    mail: mailStatus,
-  };
-  if (!mailOk && allowStagingOtp()) out.devCode = code;
-  if (!mailOk && allowStagingOtp() && mailError) out.mailWarning = mailError;
-  if (!mailOk) console.error("[auth/send_register_otp] mail failed", mailError, mailStatus);
-  return json(res, 200, out);
+  });
 }
 
 async function handleVerifyRegisterOtp(body, res) {
@@ -1051,17 +1080,7 @@ async function handleForgotResetPassword(body, res) {
   await stampPasswordSet(resolved.profile.id, { mustChangePassword: false });
   await markMustChangePassword(resolved.profile.id, false);
   await revokeUserSessions(resolved.profile.id);
-  if (globalThis.__mcjForgotResets) {
-    globalThis.__mcjForgotResets.delete(`${role}:otp:${key}`);
-    globalThis.__mcjForgotResets.delete(`${role}:${key}`);
-  }
-  if (stored.id) {
-    await supabaseJson(restUrl("password_reset_requests", `?id=eq.${encodeURIComponent(stored.id)}`), {
-      method: "PATCH",
-      headers: headersWithServiceRole(),
-      body: JSON.stringify({ status: `used:${Date.now()}` }),
-    }).catch(() => null);
-  }
+  await invalidateOtp(key, role, "otp").catch(() => null);
   return json(res, 200, { ok: true, message: "密码修改成功，请重新登录。" });
 }
 
@@ -1965,31 +1984,34 @@ export default async function handler(req, res) {
       return handleVerifyRegisterOtp(body, res);
     }
     if (requestedAction === "mail_status") {
-      return json(res, 200, { ok: true, mail: mailProviderStatus() });
+      if (!allowDebugOtp()) {
+        return json(res, 403, { ok: false, message: "无权限。" });
+      }
+      return json(res, 200, { ok: true, mail: publicMailHint() });
     }
     if (requestedAction === "mail_ping") {
-      if (!allowStagingOtp()) {
-        return json(res, 403, { ok: false, message: "mail_ping 仅 Staging / Preview 可用。" });
+      if (!allowDebugOtp()) {
+        return json(res, 403, { ok: false, message: "无权限。" });
       }
       const to = String(body.to || body.email || "").trim().toLowerCase();
       if (!to || !/^\S+@\S+\.\S+$/.test(to)) {
-        return json(res, 400, { ok: false, message: "请提供 to 邮箱。", mail: mailProviderStatus() });
+        return json(res, 400, { ok: false, message: "请提供 to 邮箱。", mail: publicMailHint() });
       }
       try {
         const { sendMail } = await import("./_mail.js");
         const result = await sendMail({
           to,
-          subject: "妙脆角 · Resend 探活邮件",
-          text: "这是 Staging mail_ping 探活邮件。若你收到此信，说明 RESEND_API_KEY / RESEND_FROM 已生效。",
-          html: "<p>这是 Staging <b>mail_ping</b> 探活邮件。若你收到此信，说明 Resend 已生效。</p>",
+          subject: "妙脆角 · 邮件探活",
+          text: "这是一封邮件探活测试信。若你收到此信，说明邮件发送已生效。",
+          html: "<p>这是一封邮件探活测试信。若你收到此信，说明邮件发送已生效。</p>",
           purpose: "mail_ping",
         });
-        return json(res, 200, { ok: true, message: "探活邮件已发送", result, mail: mailProviderStatus() });
+        return json(res, 200, { ok: true, message: "探活邮件已发送", result: { id: result?.id || "", provider: result?.provider || "" }, mail: publicMailHint() });
       } catch (err) {
         return json(res, 502, {
           ok: false,
-          message: String(err?.message || err || "发送失败"),
-          mail: mailProviderStatus(),
+          message: "探活邮件发送失败。",
+          mail: publicMailHint(),
         });
       }
     }

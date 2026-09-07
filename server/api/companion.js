@@ -3144,137 +3144,58 @@ export default async function handler(req, res) {
       },needRolePick:false});
     }
     if (action === "forgot_password" || action === "send_reset_code") {
-      const body = await parseBody(req);
-      const account = String(body.account || body.email || "").trim();
-      const genericOk = {
-        ok: true,
-        message: "如该邮箱已注册，将收到重设邮件或验证码，请查收后继续。",
-        emailMasked: "",
-        expiresInSec: 900,
+      // Unify with /api/auth forgot flow (same OTP store + auth.users password reset).
+      const body = bodyEarly || (await parseBody(req));
+      req.body = {
+        ...(body && typeof body === "object" ? body : {}),
+        action: "forgot_send_otp",
+        role: "companion",
+        email: String(body?.email || body?.account || "").trim(),
+        account: String(body?.account || body?.email || "").trim(),
       };
-      if (!account) return json(res, 400, { ok: false, message: "请输入注册邮箱" });
-      const resolved = await resolveCompanionAuthEmail(account);
-      const email = resolved && resolved.email;
-      // Anti-enumeration: always return the same success shape when lookup fails.
-      if (!email) return json(res, 200, genericOk);
-      const profile =
-        (resolved && resolved.profile) ||
-        (
-          await supabaseJson(
-            restUrl("profiles", `?role=eq.companion&email=eq.${encodeURIComponent(email)}&select=id,role,status&limit=1`),
-            { headers: serviceHeaders() }
-          ).catch(() => [])
-        )?.[0];
-      if (!profile || profile.status === "disabled") return json(res, 200, genericOk);
-      const code = randomOtpCode();
-      await storePasswordResetOtp(email, code);
-      const mailSent = await trySendResetCodeEmail(email, code);
-      const staging =
-        String(process.env.ALLOW_STAGING_OTP || "") === "1" ||
-        String(process.env.MCJ_OTP_DEBUG || "") === "1" ||
-        (String(process.env.VERCEL_ENV || "").toLowerCase() !== "production" &&
-          (/staging|localhost|127\.0\.0\.1/i.test(String(process.env.MCJ_PUBLIC_BASE || process.env.VERCEL_URL || "")) ||
-            String(process.env.VERCEL_ENV || "").toLowerCase() === "preview"));
-      const masked = maskEmailHint(email);
-      const out = {
-        ok: true,
-        message: mailSent
-          ? `如该邮箱已注册，验证码已发送至 ${masked || "你的邮箱"}。`
-          : staging
-            ? "邮件服务暂不可用，已生成 Staging 调试验证码。"
-            : "如该邮箱已注册，将收到验证码邮件，请查收后继续。",
-        emailMasked: masked,
-        expiresInSec: 900,
-      };
-      if (staging) out.devCode = code;
-      return json(res, 200, out);
+      const authHandler = (await import("./auth.js")).default;
+      return authHandler(req, res);
     }
     if (action === "verify_reset_code") {
-      const body = await parseBody(req);
-      const account = String(body.account || body.email || "").trim();
-      const code = String(body.code || body.otp || "").trim();
-      const resolvedV = await resolveCompanionAuthEmail(account);
-      const email = resolvedV && resolvedV.email;
-      if (!email || !/^\d{4,8}$/.test(code)) {
-        return json(res, 400, { ok: false, message: "验证码无效或已过期" });
-      }
-      const stored = await findPasswordResetOtp(email);
-      if (stored && stored.code && String(stored.code) === code && Number(stored.exp) > Date.now()) {
-        const token = "mcj_" + randomOtpCode() + Date.now().toString(36);
-        await markPasswordResetVerified(email, stored.id, token);
-        // One-time: wipe OTP code from memory after issue token
-        return json(res, 200, { ok: true, message: "验证成功，请设置新密码", resetToken: token, emailMasked: maskEmailHint(email) });
-      }
-      try {
-        const verified = await supabaseJson(authUrl("verify"), {
-          method: "POST",
-          headers: anonHeaders(),
-          body: JSON.stringify({ type: "email", email, token: code }),
-        });
-        if (verified?.access_token) {
-          return json(res, 200, {
-            ok: true,
-            message: "验证成功，请设置新密码",
-            resetToken: verified.access_token,
-            emailMasked: maskEmailHint(email),
-          });
-        }
-      } catch {
-        /* fall through */
-      }
-      try {
-        const verified = await supabaseJson(authUrl("verify"), {
-          method: "POST",
-          headers: anonHeaders(),
-          body: JSON.stringify({ type: "recovery", email, token: code }),
-        });
-        if (verified?.access_token) {
-          return json(res, 200, {
-            ok: true,
-            message: "验证成功，请设置新密码",
-            resetToken: verified.access_token,
-            emailMasked: maskEmailHint(email),
-          });
-        }
-      } catch {
-        /* fall through */
-      }
-      return json(res, 400, { ok: false, message: "验证码无效或已过期" });
+      const body = bodyEarly || (await parseBody(req));
+      req.body = {
+        ...(body && typeof body === "object" ? body : {}),
+        action: "forgot_verify_otp",
+        role: "companion",
+        email: String(body?.email || body?.account || "").trim(),
+        account: String(body?.account || body?.email || "").trim(),
+        code: String(body?.code || body?.otp || "").trim(),
+      };
+      const authHandler = (await import("./auth.js")).default;
+      return authHandler(req, res);
     }
     if (action === "reset_password") {
-      const body = await parseBody(req);
+      const body = bodyEarly || (await parseBody(req));
+      const resetToken = String(body?.resetToken || body?.token || "").trim();
+      // Shared auth OTP token path (mcj_…)
+      if (resetToken.startsWith("mcj_")) {
+        req.body = {
+          ...(body && typeof body === "object" ? body : {}),
+          action: "forgot_reset_password",
+          role: "companion",
+          email: String(body?.email || body?.account || "").trim(),
+          account: String(body?.account || body?.email || "").trim(),
+          resetToken,
+          newPassword: String(body?.newPassword || body?.password || ""),
+          confirmPassword: String(body?.confirmPassword || body?.confirm_password || body?.newPassword || body?.password || ""),
+        };
+        const authHandler = (await import("./auth.js")).default;
+        return authHandler(req, res);
+      }
+      // Legacy Supabase recovery / mcj: base64 token paths (kept for in-flight tokens).
       const newPassword = String(body.newPassword || body.password || "");
       const confirmPassword = String(body.confirmPassword || body.confirm_password || "");
       if (!newPassword || newPassword.length < 8) return json(res, 400, { ok: false, message: "新密码至少 8 位" });
       if (confirmPassword && confirmPassword !== newPassword) {
         return json(res, 400, { ok: false, message: "两次输入的新密码不一致" });
       }
-      const resetToken = String(body.resetToken || body.token || "").trim();
       if (!resetToken) return json(res, 400, { ok: false, message: "请先完成验证码校验" });
-      if (resetToken.startsWith("mcj_") || resetToken.startsWith("mcj:")) {
-        if (resetToken.startsWith("mcj_")) {
-          const resolvedR = await resolveCompanionAuthEmail(String(body.account || body.email || ""));
-          const emailR = resolvedR && resolvedR.email;
-          if (!emailR) return json(res, 400, { ok: false, message: "缺少账号信息" });
-          const storedR = await findPasswordResetOtp(emailR);
-          if (!storedR || storedR.verifiedToken !== resetToken || Number(storedR.exp) < Date.now()) {
-            return json(res, 400, { ok: false, message: "重置凭证无效或已过期，请重新获取验证码" });
-          }
-          const rowsR = await supabaseJson(
-            restUrl("profiles", "?role=eq.companion&email=eq." + encodeURIComponent(emailR) + "&select=id&limit=1"),
-            { headers: serviceHeaders() }
-          ).catch(() => []);
-          const profileR = (resolvedR && resolvedR.profile) || (rowsR && rowsR[0]);
-          if (!profileR || !profileR.id) return json(res, 404, { ok: false, message: "账号不存在" });
-          await supabaseJson(authUrl("admin/users/" + encodeURIComponent(profileR.id)), {
-            method: "PUT",
-            headers: serviceHeaders(),
-            body: JSON.stringify({ password: newPassword }),
-          });
-          if (globalThis.__mcjPwResets) globalThis.__mcjPwResets.delete(emailR);
-          return json(res, 200, { ok: true, message: "密码已重设，请使用新密码登录" });
-        }
-        if (resetToken.startsWith("mcj:")) {
+      if (resetToken.startsWith("mcj:")) {
         let payload;
         try {
           payload = JSON.parse(Buffer.from(resetToken.slice(4), "base64url").toString("utf8"));
@@ -3297,9 +3218,7 @@ export default async function handler(req, res) {
           body: JSON.stringify({ password: newPassword }),
         });
         return json(res, 200, { ok: true, message: "密码已重设，请使用新密码登录" });
-        }
       }
-      // Supabase recovery/session token path
       try {
         await supabaseJson(authUrl("user"), {
           method: "PUT",

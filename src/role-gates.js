@@ -1423,7 +1423,7 @@
           })
           .then(function (j) {
             var tip = j.message || "验证码已发送";
-            if (j.devCode) tip += "（测试 " + j.devCode + "）";
+            if (j.debugCode || j.devCode) tip += "（调试 " + (j.debugCode || j.devCode) + "）";
             setLoginMessage(sendOtpBtn, tip);
             var left = Number(j.retryAfterSec) || 60;
             sendOtpBtn.textContent = left + "s";
@@ -1480,7 +1480,7 @@
           })
           .then(function (j) {
             var tip = j.message || "验证码已发送";
-            if (j.devCode) tip += "（测试 " + j.devCode + "）";
+            if (j.debugCode || j.devCode) tip += "（调试 " + (j.debugCode || j.devCode) + "）";
             setLoginMessage(sendRegOtpBtn, tip);
             var left = Number(j.retryAfterSec) || 60;
             sendRegOtpBtn.textContent = left + "s";

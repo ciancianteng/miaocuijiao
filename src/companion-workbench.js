@@ -4277,7 +4277,7 @@
         .then(function(j){
           state.registerBusy=false;
           var tip=j.message||'验证码已发送';
-          if(j.devCode)tip+='（测试 '+j.devCode+'）';
+          if(j.debugCode||j.devCode)tip+='（调试 '+(j.debugCode||j.devCode)+'）';
           state.loginError=tip;
           state.registerCooldownUntil=Date.now()+(Number(j.retryAfterSec)||60)*1000;
           paint();
@@ -4444,9 +4444,22 @@
     }
     if(e.target.closest('[data-forgot-password]')){
       e.preventDefault();
+      e.stopPropagation();
+      var emailHint='';
+      try{
+        var form=e.target.closest('form')||root.querySelector('form[data-login]');
+        var input=form&&form.querySelector('input[name="account"],input[name="email"],input[type="email"],#loginOtpEmail');
+        if(input&&input.value)emailHint=String(input.value).trim();
+      }catch(err){}
       function openForgot(){
+        if(!window.MCJForgotPassword||typeof window.MCJForgotPassword.open!=='function'){
+          state.loginError='找回密码组件加载失败，请刷新页面后重试。';
+          paint();
+          return;
+        }
         window.MCJForgotPassword.open({
           role:'companion',
+          email:emailHint,
           onDone:function(){
             state.loginError=window.MCJForgotPassword.SUCCESS_TOAST||'密码修改成功，请重新登录。';
             state.authTab='login';
@@ -4459,17 +4472,17 @@
         return;
       }
       var s=document.createElement('script');
-      s.src='/src/forgot-password.js?v=20260806forgotP0';
-      s.onload=function(){ if(window.MCJForgotPassword) openForgot(); };
+      s.src='/src/forgot-password.js?v=20260907authUnify1';
+      s.onload=function(){ openForgot(); };
+      s.onerror=function(){
+        state.loginError='找回密码组件加载失败，请刷新页面后重试。';
+        paint();
+      };
       document.head.appendChild(s);
       return;
     }
     if(e.target.closest('[data-forgot-resend]')){
-      if(state.forgotBusy||!state.forgotAccount)return;
-      state.forgotBusy=true;state.forgotMsg='';paint();
-      api('send_reset_code',{account:state.forgotAccount}).then(function(x){
-        state.forgotBusy=false;state.forgotMsg=x.message||'验证码已重新发送';paint();
-      }).catch(function(err){state.forgotBusy=false;state.forgotMsg=err.message||'发送失败';paint();});
+      // Legacy inline dialog removed — MCJForgotPassword owns resend.
       return;
     }
     var accept=e.target.closest('[data-accept-order]');
@@ -5336,45 +5349,15 @@
       });
       return;
     }
-    if(e.target.matches('[data-forgot-email]')){
+    if(e.target.matches('[data-forgot-email]')||e.target.matches('[data-forgot-code]')||e.target.matches('[data-forgot-reset]')){
       e.preventDefault();
-      if(state.forgotBusy)return;
-      var fde=new FormData(e.target);
-      var faccount=String(fde.get('account')||'').trim();
-      if(!faccount){state.forgotMsg='请输入账号';paint();return}
-      state.forgotBusy=true;state.forgotMsg='';paint();
-      api('send_reset_code',{account:faccount}).then(function(x){
-        state.forgotBusy=false;state.forgotAccount=faccount;state.forgotStep='code';state.forgotMsg=x.message||'验证码已发送';paint();
-      }).catch(function(err){state.forgotBusy=false;state.forgotMsg=err.message||'发送失败';paint();});
-      return;
-    }
-    if(e.target.matches('[data-forgot-code]')){
-      e.preventDefault();
-      if(state.forgotBusy)return;
-      var fdc=new FormData(e.target);
-      var fcode=String(fdc.get('code')||'').trim();
-      if(!/^\d{6}$/.test(fcode)){state.forgotMsg='请输入 6 位验证码';paint();return}
-      state.forgotBusy=true;state.forgotMsg='';paint();
-      api('verify_reset_code',{account:state.forgotAccount,code:fcode}).then(function(x){
-        state.forgotBusy=false;state.forgotResetToken=x.resetToken||'';state.forgotStep='reset';state.forgotMsg=x.message||'验证成功';paint();
-      }).catch(function(err){state.forgotBusy=false;state.forgotMsg=err.message||'验证失败';paint();});
-      return;
-    }
-    if(e.target.matches('[data-forgot-reset]')){
-      e.preventDefault();
-      if(state.forgotBusy)return;
-      var fdr=new FormData(e.target);
-      var fnp=String(fdr.get('new_password')||'');
-      var fcp=String(fdr.get('confirm_password')||'');
-      if(fnp.length<8){state.forgotMsg='新密码至少 8 位';paint();return}
-      if(fnp!==fcp){state.forgotMsg='两次输入的新密码不一致';paint();return}
-      if(!state.forgotResetToken){state.forgotMsg='请先完成验证码校验';paint();return}
-      state.forgotBusy=true;state.forgotMsg='';paint();
-      api('reset_password',{account:state.forgotAccount,newPassword:fnp,confirmPassword:fcp,resetToken:state.forgotResetToken}).then(function(x){
-        state.forgotBusy=false;state.forgotStep='';state.forgotAccount='';state.forgotResetToken='';state.authTab='login';
-        toast(x.message||'密码已重置，请登录');
+      // Legacy inline forgot forms removed — route to shared overlay (/api/auth).
+      if(window.MCJForgotPassword&&typeof window.MCJForgotPassword.open==='function'){
+        window.MCJForgotPassword.open({role:'companion'});
+      }else{
+        state.loginError='请使用登录页「忘记密码」。';
         paint();
-      }).catch(function(err){state.forgotBusy=false;state.forgotMsg=err.message||'重置失败';paint();});
+      }
       return;
     }
     if(e.target.matches('[data-register]')){
