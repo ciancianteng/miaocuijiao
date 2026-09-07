@@ -819,14 +819,27 @@
   function apiPost(body) {
     var Auth = authApi();
     var headers = { "x-mcj-admin-role": (window.MCJAdminRole || localStorage.getItem("mcjAdminRole") || "admin") };
-    if (Auth && Auth.post) return Auth.post("/api/admin/players", body, headers);
+    function attachError(data, status) {
+      var err = new Error((data && data.message) || "请求失败");
+      err.code = (data && data.code) || "";
+      err.blockReasons = (data && (data.blockReasons || data.block_reasons)) || [];
+      err.publish = (data && data.publish) || null;
+      err.status = status;
+      return err;
+    }
+    if (Auth && Auth.post) {
+      return Auth.post("/api/admin/players", body, headers).catch(function (err) {
+        if (err && (err.blockReasons || err.publish || err.code)) throw err;
+        throw err;
+      });
+    }
     return fetch("/api/admin/players", {
       method: "POST",
       headers: Object.assign({ "Content-Type": "application/json", Accept: "application/json" }, headers),
       body: JSON.stringify(body || {}),
     }).then(function (res) {
       return res.json().then(function (data) {
-        if (!res.ok || data.ok === false) throw new Error(data.message || "请求失败");
+        if (!res.ok || data.ok === false) throw attachError(data, res.status);
         return data;
       });
     });
@@ -1002,13 +1015,26 @@
         payload: payload,
       })
         .then(function (res) {
-          alert(res.message || "审核已保存");
+          var msg = res.message || "审核已保存";
+          if (kind2 === "application" && status === "approved") {
+            if (res.hallVisible) msg = "已通过，已同步进入陪玩大厅";
+            else if (res.approvedButHidden) {
+              msg =
+                "已通过，但未进入大厅：" +
+                ((res.blockReasons && res.blockReasons.join("、")) || "请检查资料完整性");
+            }
+          }
+          alert(msg);
           if (window.MCJAdminPlayerBridge && window.MCJAdminPlayerBridge.reloadDetail) {
             window.MCJAdminPlayerBridge.reloadDetail(form3.getAttribute("data-player-id"), form3.getAttribute("data-player-mode") || "edit");
           }
         })
         .catch(function (err) {
-          alert(err.message || "审核失败");
+          var extra =
+            err && Array.isArray(err.blockReasons) && err.blockReasons.length
+              ? "\n原因：" + err.blockReasons.join("、")
+              : "";
+          alert((err.message || "审核失败") + extra);
         });
       return;
     }
