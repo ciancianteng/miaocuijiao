@@ -718,7 +718,7 @@
     order=order||{};
     var statusText=orderValue(order,['orderStatus','order_status','statusText','status_text'],'');
     var rawStatus=orderValue(order,['status'],'');
-    var STATUS_CN={awaiting_payment:'待付款',pending:'等待陪玩抢单',claimed:'等待陪玩确认',waiting_boss_confirm:'等待老板选择',confirmed:'进行中',in_progress:'进行中',completed:'已完成',cancelled:'已取消',refund_requested:'售后',refunded:'已退款',after_sale:'售后',reviewed:'已评价'};
+    var STATUS_CN={awaiting_payment:'待付款',pending:'等待陪玩抢单',claimed:'等待陪玩确认',waiting_boss_confirm:'等待老板选择',confirmed:'已接单',in_progress:'进行中',completed:'已完成',cancelled:'已取消',refund_requested:'售后',refunded:'已退款',after_sale:'售后',reviewed:'已评价'};
     if(!statusText||STATUS_CN[statusText])statusText=STATUS_CN[rawStatus]||STATUS_CN[statusText]||statusText||rawStatus||'待付款';
     return Object.assign({},order,{
       id:orderValue(order,['orderNo','order_no','id'],'-'),
