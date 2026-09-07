@@ -272,8 +272,7 @@
       var bg = cardBackgroundCss(item);
       return [
         '[data-companion-level="' + id + '"],.player-card[data-level-id="' + id + '"],.companion-hall-grid .player-card[data-level-id="' + id + '"],.hot-card[data-level-id="' + id + '"]{--mcj-level-color:' + item.color + ';--mcj-level-display:' + item.displayColor + ';--mcj-level-badge-border:' + item.badgeBorder + ';--mcj-level-badge-text:' + item.badgeText + ';--mcj-level-badge-icon:' + item.badgeIcon + ';--mcj-level-card-bg:' + bg + ';}',
-        '.companion-hall-grid .player-card[data-level-id="' + id + '"],.player-card[data-level-id="' + id + '"],.hot-card[data-level-id="' + id + '"]{border-color:' + item.color + '88!important;background:' + bg + '!important;}',
-        '.companion-hall-grid .player-card[data-level-id="' + id + '"]:hover,.player-card[data-level-id="' + id + '"]:hover{border-color:' + item.color + '!important;background:' + bg + '!important;}',
+        '.player-card[data-level-id="' + id + '"],.hot-card[data-level-id="' + id + '"]{border-color:' + item.color + '55!important;background:' + bg + '!important;}',
         '.companion-hall-grid .player-card[data-level-id="' + id + '"] .companion-level-pill,.player-card[data-level-id="' + id + '"] .companion-level-pill,.companion-level-pill[data-level-id="' + id + '"],[data-companion-level="' + id + '"] .companion-level-pill{border:1px solid ' + item.badgeBorder + '!important;color:' + item.badgeText + '!important;background:' + item.color + '33!important;}',
         '.mcj-level-badge[data-level-id="' + id + '"]{border-color:' + item.badgeBorder + ';color:' + item.badgeText + ';}'
       ].join("");
@@ -304,7 +303,7 @@
       "--mcj-level-badge-text:" + item.badgeText,
       "--mcj-level-badge-icon:" + item.badgeIcon,
       "--mcj-level-card-bg:" + bg,
-      "border-color:" + item.color + "88",
+      "border-color:" + item.color + "55",
       "background:" + bg
     ].join(";");
   }
