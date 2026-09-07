@@ -202,24 +202,6 @@ async function giftCommissionRate(companionRow) {
   }
 }
 
-async function creditCompanionIncome(companionId, amount, note, relatedId) {
-  if (amount <= 0) return null;
-  const rows = await supabaseJson(rest("transactions"), {
-    method: "POST",
-    headers: serviceHeaders(),
-    body: JSON.stringify({
-      user_id: companionId,
-      order_id: relatedId || null,
-      transaction_type: "companion_income",
-      amount,
-      status: "completed",
-      note: note || "礼物/打赏收益",
-      created_at: nowIso(),
-    }),
-  });
-  return Array.isArray(rows) ? rows[0] : rows;
-}
-
 async function tryRpcSendGiftTip(payload) {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!key || !url()) return null;
