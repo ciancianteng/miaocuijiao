@@ -1587,9 +1587,23 @@ export default async function handler(req, res) {
       detail = mapListPlayer(rows?.[0] || companion, profileAfter);
     }
     const publish = adminPublishSnapshot(rows?.[0] || companion, profileAfter || {}, {});
+    let message = "修改已保存";
+    if (firstApproveViaEdit) {
+      if (publish.isTestAccount) {
+        message = "已通过（测试账号，不会进入正式大厅）";
+      } else if (publish.hallVisible) {
+        message = "已通过，已同步进入陪玩大厅";
+      } else if (publish.approvedButHidden) {
+        message =
+          "已通过，但尚未进入陪玩大厅：" +
+          (publish.listingBlockReason || (publish.blockReasons || []).join("、") || "未知原因");
+      } else {
+        message = "已通过审核";
+      }
+    }
     return json(res, 200, {
       ok: true,
-      message: "修改已保存",
+      message,
       player: detail,
       publish,
       hallVisible: !!publish.hallVisible,

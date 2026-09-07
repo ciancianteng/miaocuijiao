@@ -404,6 +404,19 @@
         "</div>";
     }
 
+    var hallOn = d.hallVisible === true || d.hall_visible === true || d.publishReady === true;
+    var hallHidden =
+      d.approvedButHidden === true ||
+      d.approved_but_hidden === true ||
+      (!!d.adminApproved && !d.isTestAccount && !hallOn);
+    var hallReasons = d.blockReasons || d.block_reasons || [];
+    var hallStatusText = d.isTestAccount
+      ? "测试账号隔离"
+      : hallOn
+        ? "已上大厅"
+        : hallHidden
+          ? "已通过但未上大厅"
+          : d.publishStatusLabel || "未上大厅";
     var applicationHtml = app.empty
       ? emptyText("尚未提交陪玩申请资料")
       : rows([
@@ -417,6 +430,13 @@
           ["自我介绍（前台展示）", d.description || d.bio || d.intro || "尚未填写"],
           ["申请备注（仅后台）", app.note || "无"],
           ["当前申请状态", app.statusLabel || app.status],
+          ["大厅可见", hallStatusText + (hallOn ? "（hallVisible=true）" : "（hallVisible=false）")],
+          [
+            "未上大厅原因",
+            Array.isArray(hallReasons) && hallReasons.length
+              ? hallReasons.join("、")
+              : d.listingBlockReason || (hallOn || d.isTestAccount ? "无" : "—"),
+          ],
           ["驳回原因", app.rejectReason || "无"],
         ]);
     if (edit) applicationHtml += reviewBox("application", app.status);

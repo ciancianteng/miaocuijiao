@@ -238,7 +238,8 @@ function softProfileMissing(row = {}) {
 }
 
 /**
- * Critical boss-facing fields. Missing → block public hall/home until filled.
+ * Critical boss-facing fields. Missing → block FIRST APPROVE only
+ * (assertApproveCanPublish). PR A: does NOT hide hall after approve.
  * Avatar/card/voice are soft (brand default). Level is soft (default on sync).
  */
 function criticalMissing(row = {}, profile = {}) {
