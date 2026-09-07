@@ -18,6 +18,7 @@ import {
   markOtpVerified,
   findRegisterVerified as findRegisterVerifiedRow,
   consumeRegisterVerified,
+  invalidateOtp,
   randomOtpCode as sharedRandomOtpCode,
 } from "./_otp-store.js";
 import { validatePassword, PASSWORD_RULE_HINT } from "./_password-policy.js";
@@ -438,13 +439,15 @@ function maskEmailHint(email) {
 }
 
 function allowDebugOtp() {
+  // Explicit opt-in only. Vercel Preview must fail closed like production so a mail
+  // outage never looks like a successful send (no silent ok + no client-visible codes).
   if (String(process.env.ALLOW_STAGING_OTP || "") === "1" || String(process.env.MCJ_OTP_DEBUG || "") === "1") {
     return true;
   }
-  // Never expose OTP codes on production deployments.
   if (String(process.env.VERCEL_ENV || "").toLowerCase() === "production") return false;
+  if (String(process.env.VERCEL_ENV || "").toLowerCase() === "preview") return false;
   const base = String(process.env.MCJ_PUBLIC_BASE || process.env.VERCEL_URL || "");
-  return /localhost|127\.0\.0\.1/i.test(base) || String(process.env.VERCEL_ENV || "").toLowerCase() === "preview";
+  return /localhost|127\.0\.0\.1/i.test(base);
 }
 
 /** @deprecated use allowDebugOtp — kept for internal call sites during rename. */
@@ -1077,17 +1080,7 @@ async function handleForgotResetPassword(body, res) {
   await stampPasswordSet(resolved.profile.id, { mustChangePassword: false });
   await markMustChangePassword(resolved.profile.id, false);
   await revokeUserSessions(resolved.profile.id);
-  if (globalThis.__mcjForgotResets) {
-    globalThis.__mcjForgotResets.delete(`${role}:otp:${key}`);
-    globalThis.__mcjForgotResets.delete(`${role}:${key}`);
-  }
-  if (stored.id) {
-    await supabaseJson(restUrl("password_reset_requests", `?id=eq.${encodeURIComponent(stored.id)}`), {
-      method: "PATCH",
-      headers: headersWithServiceRole(),
-      body: JSON.stringify({ status: `used:${Date.now()}` }),
-    }).catch(() => null);
-  }
+  await invalidateOtp(key, role, "otp").catch(() => null);
   return json(res, 200, { ok: true, message: "密码修改成功，请重新登录。" });
 }
 

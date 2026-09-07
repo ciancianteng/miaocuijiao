@@ -296,6 +296,64 @@ export async function findRegisterVerified(accountKey, role, token) {
   return null;
 }
 
+export async function invalidateOtp(accountKey, role, kind = "otp") {
+  const key = String(accountKey || "").trim().toLowerCase();
+  const r = String(role || "").trim().toLowerCase();
+  const k = String(kind || "otp").trim();
+  try {
+    memMap().delete(`${r}:${k}:${key}`);
+    memMap().delete(`${r}:${key}`);
+  } catch {
+    /* ignore */
+  }
+
+  const usedStatus = `used:${Date.now()}`;
+  try {
+    const rows = await supabaseJson(
+      restUrl(
+        "password_reset_requests",
+        `?account=eq.${encodeURIComponent(key)}&role=eq.${encodeURIComponent(r)}&order=created_at.desc&limit=8`
+      ),
+      { headers: serviceHeaders({ Prefer: "return=representation" }) }
+    ).catch(() => []);
+    for (const row of rows || []) {
+      if (!row?.id) continue;
+      await supabaseJson(restUrl("password_reset_requests", `?id=eq.${encodeURIComponent(row.id)}`), {
+        method: "PATCH",
+        headers: serviceHeaders(),
+        body: JSON.stringify({ status: usedStatus }),
+      }).catch(() => null);
+    }
+  } catch {
+    /* table may be missing */
+  }
+
+  try {
+    const sid = settingsOtpId(r, k, key);
+    await supabaseJson(restUrl("platform_settings", `?id=eq.${encodeURIComponent(sid)}`), {
+      method: "PATCH",
+      headers: serviceHeaders(),
+      body: JSON.stringify({
+        data: {
+          otp: true,
+          account: key,
+          role: r,
+          kind: k,
+          status: usedStatus,
+          verifiedToken: "",
+          code: "",
+          exp: 0,
+          updatedAt: new Date().toISOString(),
+        },
+        updated_at: new Date().toISOString(),
+      }),
+    });
+  } catch {
+    /* best-effort */
+  }
+  return { ok: true };
+}
+
 export async function consumeRegisterVerified(accountKey, role, token) {
   const hit = await findRegisterVerified(accountKey, role, token);
   if (!hit) {
