@@ -12,7 +12,7 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { computeSettlementDate, mergeWeeklySettings } from "../server/api/_weekly-settlement.js";
-import { assertSmokeTargetAllowed } from "./lib/prod-guard.mjs";
+import { assertSmokeTargetAllowed, assertProdE2eOrderPaymentSettlementFrozen } from "./lib/prod-guard.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const env = Object.fromEntries(
@@ -46,6 +46,11 @@ const BASE = (
 ).replace(/\/$/, "");
 
 if (/localhost|127\.0\.0\.1/i.test(BASE)) throw new Error("Refuse localhost — Staging only");
+assertProdE2eOrderPaymentSettlementFrozen({
+  script: "e2e-four-end-human-chain.mjs",
+  base: BASE,
+  supabaseUrl: SUPABASE_URL,
+});
 assertSmokeTargetAllowed({
   script: "e2e-four-end-human-chain.mjs",
   base: BASE,

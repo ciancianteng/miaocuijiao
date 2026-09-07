@@ -317,6 +317,53 @@ function isWalletBalanceError(error) {
   const text = String(error?.message || "");
   return /余额不足|insufficient balance|wallet is frozen|账户冻结|钱包冻结/i.test(text);
 }
+
+async function loadProfileTestFlag(userId) {
+  if (!userId) return null;
+  try {
+    const rows = await supabaseJson(
+      restUrl(
+        "profiles",
+        `?id=eq.${encodeURIComponent(userId)}&select=id,email,display_name,is_test_account&limit=1`
+      ),
+      { headers: serviceHeaders() }
+    );
+    return Array.isArray(rows) ? rows[0] || null : null;
+  } catch (error) {
+    if (!/is_test_account|42703|PGRST204|schema cache/i.test(String(error?.message || ""))) throw error;
+    const rows = await supabaseJson(
+      restUrl("profiles", `?id=eq.${encodeURIComponent(userId)}&select=id,email,display_name&limit=1`),
+      { headers: serviceHeaders() }
+    );
+    const row = Array.isArray(rows) ? rows[0] : null;
+    return row ? { ...row, is_test_account: false } : null;
+  }
+}
+
+/** Production E2E freeze + non-prod test-account-only gate for order/pay/complete. */
+async function rejectFrozenE2eOrderPayment(req, res, ctx = {}) {
+  const { assertE2eOrderPaymentSettlementAllowed, e2eFreezeHttpResult, looksLikeE2eAutomation } = await import(
+    "./_prod-e2e-freeze.js"
+  );
+  if (!looksLikeE2eAutomation({ ...ctx, headers: req.headers })) return false;
+  const parties = Array.isArray(ctx.parties) ? [...ctx.parties] : [];
+  if (ctx.bossId && !parties.some((p) => p && p.id === ctx.bossId)) {
+    parties.push(await loadProfileTestFlag(ctx.bossId));
+  }
+  if (ctx.companionId && !parties.some((p) => p && p.id === ctx.companionId)) {
+    parties.push(await loadProfileTestFlag(ctx.companionId));
+  }
+  const guard = assertE2eOrderPaymentSettlementAllowed({
+    ...ctx,
+    headers: req.headers,
+    parties: parties.filter(Boolean),
+  });
+  const blocked = e2eFreezeHttpResult(guard);
+  if (!blocked) return false;
+  json(res, blocked.status, blocked.body);
+  return true;
+}
+
 function tokenFrom(req) {
   return String(req.headers.authorization || req.headers["x-mcj-access-token"] || "").replace(/^Bearer\s+/i, "").trim();
 }
@@ -1072,6 +1119,21 @@ export default async function handler(req, res) {
           });
         }
       }
+      if (
+        await rejectFrozenE2eOrderPayment(req, res, {
+          idempotencyKey,
+          description: String(order.description || order.notes || body.notes || ""),
+          notes: String(order.notes || body.notes || ""),
+          note: String(order.note || ""),
+          gameId: String(order.gameId || order.game_id || body.gameId || ""),
+          reason: String(body.reason || ""),
+          bossId: profile.id,
+          companionId: companionId || "",
+          parties: [profile],
+        })
+      ) {
+        return;
+      }
       const quantity = Math.max(1, Math.floor(money(order.quantity || 1) || 1));
       const baseHours = Math.max(0.5, money(order.hours || order.duration || 1));
       const hours = Math.round(baseHours * quantity * 100) / 100;
@@ -1338,6 +1400,19 @@ export default async function handler(req, res) {
       const beforeRows = await supabaseJson(restUrl(TABLE, `?id=eq.${encodeURIComponent(id)}&boss_id=eq.${encodeURIComponent(profile.id)}&limit=1`), { headers: serviceHeaders() });
       const before = Array.isArray(beforeRows) ? beforeRows[0] : null;
       if (!before) return json(res, 404, { ok: false, message: "订单不存在。" });
+      if (
+        await rejectFrozenE2eOrderPayment(req, res, {
+          idempotencyKey: before.idempotency_key || body.idempotencyKey || "",
+          description: before.description || "",
+          note: before.note || "",
+          reason: String(body.reason || ""),
+          bossId: profile.id,
+          companionId: before.companion_id || "",
+          parties: [profile],
+        })
+      ) {
+        return;
+      }
       if (normalizeOrderStatus(before.status) !== "awaiting_payment") {
         return json(res, 409, { ok: false, message: "当前订单无需再次支付。", order: viewOrder(before) });
       }
@@ -1852,6 +1927,19 @@ export default async function handler(req, res) {
       const beforeRows = await supabaseJson(restUrl(TABLE, `?id=eq.${encodeURIComponent(id)}&boss_id=eq.${encodeURIComponent(profile.id)}&limit=1`), { headers: serviceHeaders() });
       const before = Array.isArray(beforeRows) ? beforeRows[0] : null;
       if (!before) return json(res, 404, { ok: false, message: "订单不存在。" });
+      if (
+        await rejectFrozenE2eOrderPayment(req, res, {
+          idempotencyKey: before.idempotency_key || "",
+          description: before.description || "",
+          note: before.note || "",
+          reason: String(body.reason || ""),
+          bossId: profile.id,
+          companionId: before.companion_id || "",
+          parties: [profile],
+        })
+      ) {
+        return;
+      }
       const helpers = createOrderCompleteHelpers({
         restUrl,
         supabaseJson,

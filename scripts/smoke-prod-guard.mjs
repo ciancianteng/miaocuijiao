@@ -12,6 +12,8 @@ import {
   isStagingOrPreviewAppBase,
   assertNonProductionSupabase,
   assertSmokeTargetAllowed,
+  assertProdE2eOrderPaymentSettlementFrozen,
+  assertE2ePartiesAreDbTestAccounts,
 } from "./lib/prod-guard.mjs";
 
 let passed = 0;
@@ -67,6 +69,47 @@ check(
       base: "https://meow-cuijiao-homepage-staging.vercel.app",
       supabaseUrl: stagingUrl,
     })
+  )
+);
+
+check(
+  "freeze-prod-e2e-supabase",
+  throws(() => assertProdE2eOrderPaymentSettlementFrozen({ script: "unit", supabaseUrl: prodUrl }))
+);
+check(
+  "freeze-prod-e2e-host",
+  throws(() =>
+    assertProdE2eOrderPaymentSettlementFrozen({
+      script: "unit",
+      base: "https://www.meowcuijiao.com",
+      supabaseUrl: stagingUrl,
+    })
+  )
+);
+process.env.ALLOW_PROD_MUTATION = "1";
+process.env.CONFIRM_PROD_MUTATION = "I_UNDERSTAND_PROD_RISK";
+check(
+  "freeze-ignores-override",
+  throws(() => assertProdE2eOrderPaymentSettlementFrozen({ script: "unit", supabaseUrl: prodUrl }))
+);
+delete process.env.ALLOW_PROD_MUTATION;
+delete process.env.CONFIRM_PROD_MUTATION;
+check(
+  "e2e-parties-require-db-flag",
+  throws(() =>
+    assertE2ePartiesAreDbTestAccounts(
+      [{ email: "real@gmail.com", display_name: "九纹祥", is_test_account: false }],
+      "unit"
+    )
+  )
+);
+check(
+  "e2e-parties-ok-when-flagged",
+  !throws(() =>
+    assertE2ePartiesAreDbTestAccounts(
+      [{ email: "boss@meow.test", display_name: "Smoke", is_test_account: true }],
+      "unit"
+    )
   )
 );
 

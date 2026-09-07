@@ -12,7 +12,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "url";
-import { assertSafeDbTarget, loadEnvFiles } from "./lib/prod-guard.mjs";
+import { assertSafeDbTarget, loadEnvFiles, assertProdE2eOrderPaymentSettlementFrozen } from "./lib/prod-guard.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 loadEnvFiles(root);
@@ -23,6 +23,10 @@ const BASE = (
 ).replace(/\/$/, "");
 
 process.env.TARGET_URL = BASE;
+assertProdE2eOrderPaymentSettlementFrozen({
+  script: "accept-launch-order-path.mjs",
+  base: BASE,
+});
 assertSafeDbTarget({ script: "accept-launch-order-path.mjs" });
 
 const OUT = path.join(root, "scripts/accept-launch-order-path-results.json");

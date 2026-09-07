@@ -194,6 +194,44 @@ export default async function handler(req, res) {
       if (!bossId) return json(res, 400, { ok: false, message: "缺少老板 ID" });
       if (amount <= 0) return json(res, 400, { ok: false, message: "发放数量必须大于 0" });
       if (!reason) return json(res, 400, { ok: false, message: "必须填写发放原因" });
+      const idempotencyKey = String(body.idempotencyKey || `admin-grant:${bossId}:${Date.now()}:${amount}:${grantType}`).trim();
+      {
+        const {
+          assertE2eOrderPaymentSettlementAllowed,
+          e2eFreezeHttpResult,
+          looksLikeE2eAutomation,
+        } = await import("../_prod-e2e-freeze.js");
+        const markerCtx = {
+          headers: req.headers,
+          idempotencyKey,
+          reason,
+          internalNote,
+          description: reason,
+        };
+        if (looksLikeE2eAutomation(markerCtx)) {
+          let bossProfile = null;
+          try {
+            const rows = await supabaseJson(
+              restUrl("profiles", `?id=eq.${encodeURIComponent(bossId)}&select=id,email,display_name,is_test_account&limit=1`),
+              { headers: serviceHeaders() }
+            );
+            bossProfile = rows?.[0] || null;
+          } catch (error) {
+            if (!/is_test_account|42703|PGRST204|schema cache/i.test(String(error?.message || ""))) throw error;
+            const rows = await supabaseJson(
+              restUrl("profiles", `?id=eq.${encodeURIComponent(bossId)}&select=id,email,display_name&limit=1`),
+              { headers: serviceHeaders() }
+            );
+            bossProfile = rows?.[0] ? { ...rows[0], is_test_account: false } : null;
+          }
+          const guard = assertE2eOrderPaymentSettlementAllowed({
+            ...markerCtx,
+            parties: bossProfile ? [bossProfile] : [],
+          });
+          const blocked = e2eFreezeHttpResult(guard);
+          if (blocked) return json(res, blocked.status, blocked.body);
+        }
+      }
       if (grantType === "bad_review" && balanceType !== "bonus") {
         return json(res, 400, { ok: false, message: "差评安抚必须发放到赠送猫粮" });
       }
@@ -215,7 +253,6 @@ export default async function handler(req, res) {
         }
       }
 
-      const idempotencyKey = String(body.idempotencyKey || `admin-grant:${bossId}:${Date.now()}:${amount}:${grantType}`).trim();
       const before = viewWallet(await getWallet(bossId), bossId);
       const result = await creditWallet({
         bossId,

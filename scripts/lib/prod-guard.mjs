@@ -6,16 +6,24 @@
  * - Production (www.meowcuijiao.com / jqfaknpmcnqwqvatrwgo) is denied by default.
  * - Production data creation requires explicit dual confirmation (emergency only).
  *
+ * Settlement / payment / order E2E freeze (2026-09):
+ * - Production E2E that creates orders, wallet transactions, or completed settlements
+ *   is FROZEN with NO override (ALLOW_PROD_* does not unlock it).
+ * - When E2E does run (Staging/Preview), every party must have
+ *   profiles.is_test_account === true (strict DB flag).
+ *
  * Staging Supabase:  cfccwysniduwkjskiqgy
  * Production Supabase: jqfaknpmcnqwqvatrwgo
  *
- * Override (emergency only) — either pair:
+ * Override (emergency only, NOT for settlement/payment E2E) — either pair:
  *   ALLOW_PROD_SUPABASE_WRITE=1 CONFIRM_PROD_WRITE=I_UNDERSTAND_PROD_RISK
  *   ALLOW_PROD_MUTATION=1      CONFIRM_PROD_MUTATION=I_UNDERSTAND_PROD_RISK
  *
  * Staging-only smoke helpers:
  *   assertSmokeTargetAllowed({ script, base, supabaseUrl })
  *   guardSmokeScript(scriptName, root) — load env then enforce Staging-only policy
+ *   assertProdE2eOrderPaymentSettlementFrozen(...) — hard freeze, no override
+ *   assertE2ePartiesAreDbTestAccounts(parties) — require is_test_account=true
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -285,4 +293,133 @@ export function guardSmokeScript(scriptName = "smoke-script", root = process.cwd
 export function guardSmokeAfterEnvLoad(scriptName = "smoke", opts = {}) {
   loadEnvFiles(opts.root || process.cwd());
   return assertSmokeTargetAllowed({ script: scriptName, ...opts });
+}
+
+/**
+ * Hard freeze: order / wallet / settlement E2E must never target Production.
+ * ALLOW_PROD_* overrides do NOT unlock this path.
+ *
+ * @param {{ script?: string, name?: string, base?: string, supabaseUrl?: string, databaseUrl?: string }} opts
+ */
+export function assertProdE2eOrderPaymentSettlementFrozen(opts = {}) {
+  const script = opts.script || opts.name || "settlement-payment-e2e";
+  const base =
+    opts.base ||
+    process.env.BASE ||
+    process.env.BASE_URL ||
+    process.env.MCJ_STAGING_URL ||
+    process.env.MCJ_PREVIEW_URL ||
+    process.env.PREVIEW ||
+    process.env.TARGET_URL ||
+    "";
+  const supabaseUrl =
+    opts.supabaseUrl ||
+    process.env.PROD_SUPABASE_URL ||
+    process.env.SUPABASE_URL ||
+    process.env.VITE_SUPABASE_URL ||
+    "";
+  const databaseUrl =
+    opts.databaseUrl ||
+    process.env.DATABASE_URL ||
+    process.env.SUPABASE_DB_URL ||
+    process.env.POSTGRES_URL ||
+    process.env.DIRECT_URL ||
+    "";
+
+  if (base && isProductionAppBase(base)) {
+    throw new Error(
+      `[prod-e2e-freeze] Refusing ${script}: Production E2E order/wallet/settlement mutations are FROZEN. ` +
+        `Target Staging/Preview only. ALLOW_PROD_* does not unlock this.`
+    );
+  }
+  if (supabaseUrl && isKnownProductionSupabase(supabaseUrl)) {
+    throw new Error(
+      `[prod-e2e-freeze] Refusing ${script}: Production Supabase (${PRODUCTION_SUPABASE_REF}) E2E ` +
+        `order/wallet/settlement writes are FROZEN. Use Staging (${STAGING_SUPABASE_REF}). ` +
+        `ALLOW_PROD_* does not unlock this.`
+    );
+  }
+  const dbBlob = String(databaseUrl || "").toLowerCase();
+  if (dbBlob && dbBlob.includes(PRODUCTION_SUPABASE_REF)) {
+    throw new Error(
+      `[prod-e2e-freeze] Refusing ${script}: DATABASE_URL points at Production ref ${PRODUCTION_SUPABASE_REF}. ` +
+        `Order/wallet/settlement E2E is FROZEN on Production.`
+    );
+  }
+  if (isProductionEnvFlag() && !base && !supabaseUrl) {
+    // Ambiguous env claiming production with no explicit staging target.
+    throw new Error(
+      `[prod-e2e-freeze] Refusing ${script}: APP/VERCEL env is production and no Staging BASE/Supabase was provided.`
+    );
+  }
+  return {
+    ok: true,
+    frozenOnProduction: true,
+    base,
+    supabaseRef: supabaseProjectRef(supabaseUrl),
+    productionRef: PRODUCTION_SUPABASE_REF,
+    stagingRef: STAGING_SUPABASE_REF,
+  };
+}
+
+/**
+ * E2E may only mutate parties with profiles.is_test_account === true.
+ * Heuristic smoke emails alone are insufficient when the DB flag is false.
+ *
+ * @param {Array<object|null|undefined>} parties
+ */
+export function assertE2ePartiesAreDbTestAccounts(parties = [], scriptName = "e2e") {
+  const list = (Array.isArray(parties) ? parties : [parties]).filter(Boolean);
+  if (!list.length) {
+    throw new Error(
+      `[prod-e2e-freeze] Refusing ${scriptName}: E2E order/wallet/settlement requires party profiles with is_test_account=true.`
+    );
+  }
+  const offenders = [];
+  for (const p of list) {
+    if (p.is_test_account !== true && p.is_test !== true) {
+      offenders.push(p.email || p.id || p.display_name || p.nickname || "?");
+    }
+  }
+  if (offenders.length) {
+    throw new Error(
+      `[prod-e2e-freeze] Refusing ${scriptName}: E2E cannot create orders/wallet/settlements for ` +
+        `is_test_account=false users: ${offenders.join(", ")}`
+    );
+  }
+  return { ok: true, count: list.length };
+}
+
+/**
+ * Convenience entry for settlement/payment/order E2E scripts:
+ * load env → hard-freeze Production → optional party flag check.
+ */
+export function guardSettlementPaymentE2eScript(scriptName = "settlement-payment-e2e", root = process.cwd(), opts = {}) {
+  loadEnvFiles(root);
+  const argvBase = process.argv.find((a) => a.startsWith("--base="))?.slice(7) || "";
+  const base =
+    opts.base ||
+    process.env.BASE ||
+    process.env.BASE_URL ||
+    process.env.PREVIEW ||
+    process.env.MCJ_STAGING_URL ||
+    process.env.MCJ_PREVIEW_URL ||
+    process.env.TARGET_URL ||
+    (argvBase && !argvBase.startsWith("-") ? argvBase : "");
+  const frozen = assertProdE2eOrderPaymentSettlementFrozen({
+    script: scriptName,
+    base: base || undefined,
+    ...opts,
+  });
+  // Still enforce staging-only smoke policy (allows override for non-settlement paths,
+  // but Production is already rejected above with no override).
+  const smoke = assertSmokeTargetAllowed({
+    script: scriptName,
+    base: base || undefined,
+    ...opts,
+  });
+  if (opts.parties) {
+    assertE2ePartiesAreDbTestAccounts(opts.parties, scriptName);
+  }
+  return { ...frozen, smoke };
 }

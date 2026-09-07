@@ -15,7 +15,7 @@ import path from "node:path";
 import zlib from "node:zlib";
 import { fileURLToPath } from "node:url";
 import { calcBossCommissionFromPlatformFee } from "../server/api/_boss-commission.js";
-import { assertSmokeTargetAllowed } from "./lib/prod-guard.mjs";
+import { assertSmokeTargetAllowed, assertProdE2eOrderPaymentSettlementFrozen } from "./lib/prod-guard.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const BASE = (
@@ -31,6 +31,7 @@ if (!BASE) {
   process.exit(2);
 }
 
+assertProdE2eOrderPaymentSettlementFrozen({ script: "pr155-preview-e2e.mjs", base: BASE });
 assertSmokeTargetAllowed({ script: "pr155-preview-e2e.mjs", base: BASE });
 
 const PASS = process.env.MCJ_TEST_PASSWORD || "McjTest@12345678";

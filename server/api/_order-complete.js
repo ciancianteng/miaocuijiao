@@ -440,6 +440,65 @@ export function createOrderCompleteHelpers({ restUrl, supabaseJson, serviceHeade
    */
   async function finalizeOrderCompletion(before, { method = "boss_manual", actorId = "", message = "" } = {}) {
     if (!before?.id) throw Object.assign(new Error("订单不存在。"), { status: 404 });
+
+    // Production E2E freeze: never complete/settle automation-marked orders on prod,
+    // and never against is_test_account=false parties on non-prod E2E.
+    try {
+      const {
+        assertE2eOrderPaymentSettlementAllowed,
+        looksLikeE2eAutomation,
+      } = await import("./_prod-e2e-freeze.js");
+      const markerCtx = {
+        idempotencyKey: before.idempotency_key || "",
+        description: before.description || "",
+        note: before.note || "",
+        reason: message || "",
+        title: before.title || "",
+      };
+      if (looksLikeE2eAutomation(markerCtx)) {
+        const ids = [before.boss_id, before.companion_id, before.customer_service_id].filter(Boolean);
+        const parties = [];
+        for (const id of ids) {
+          try {
+            const withFlag = await supabaseJson(
+              restUrl(
+                "profiles",
+                `?id=eq.${encodeURIComponent(id)}&select=id,email,display_name,is_test_account&limit=1`
+              ),
+              { headers: serviceHeaders() }
+            );
+            if (withFlag?.[0]) parties.push(withFlag[0]);
+          } catch (error) {
+            if (!/is_test_account|PGRST204|42703|schema cache/i.test(String(error?.message || ""))) throw error;
+            const without = await supabaseJson(
+              restUrl("profiles", `?id=eq.${encodeURIComponent(id)}&select=id,email,display_name&limit=1`),
+              { headers: serviceHeaders() }
+            );
+            if (without?.[0]) parties.push({ ...without[0], is_test_account: false });
+          }
+        }
+        const guard = assertE2eOrderPaymentSettlementAllowed({ ...markerCtx, parties });
+        if (!guard.ok) {
+          throw Object.assign(new Error(guard.message || "E2E settlement frozen"), {
+            status: 403,
+            code: guard.code || "PROD_E2E_SETTLEMENT_FROZEN",
+            reason: guard.reason,
+            offenders: guard.offenders,
+          });
+        }
+      }
+    } catch (freezeErr) {
+      if (freezeErr?.status === 403 || freezeErr?.code) throw freezeErr;
+      // Fail closed on production if the freeze probe itself errors.
+      const { isProductionRuntime } = await import("./_test-accounts.js");
+      if (isProductionRuntime()) {
+        throw Object.assign(new Error("正式环境已冻结 E2E 结算写入。"), {
+          status: 403,
+          code: "PROD_E2E_SETTLEMENT_FROZEN",
+        });
+      }
+    }
+
     if (String(before.status) === "completed" || String(before.settlement_status || "") === "settled") {
       let bossPoints = null;
       try {
