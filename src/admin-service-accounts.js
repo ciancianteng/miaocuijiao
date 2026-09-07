@@ -83,7 +83,7 @@
     });
     if (!items.length) return "";
     return (
-      '<details class="admin-dev-info"><summary>开发信息</summary><div class="admin-dev-info-body">' +
+      '<details class="admin-dev-info"><summary>账号内部标识</summary><div class="admin-dev-info-body">' +
       items
         .map(function (r) {
           return "<div><span>" + esc(r[0]) + "</span><code>" + esc(r[1]) + "</code></div>";
