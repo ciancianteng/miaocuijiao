@@ -581,7 +581,7 @@
       method: "POST",
       headers: authHeaders(),
       body: JSON.stringify({
-        action: "create_order",
+        action: "place_order",
         companionId: c.companionId,
         serviceType: currentServiceLabel(),
         service: currentServiceLabel(),

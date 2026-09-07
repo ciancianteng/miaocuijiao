@@ -399,7 +399,8 @@ function acceptStatusLabel(row = {}) {
   const note = String(row.note || row.cancel_reason || "");
   if (s === "awaiting_payment") return "尚未付款";
   if (s === "claimed") return "等待陪玩确认";
-  if (s === "confirmed" || s === "in_progress") return "进行中";
+  if (s === "confirmed") return "已接单";
+  if (s === "in_progress") return "进行中";
   if (s === "waiting_boss_confirm") return "等待老板选择";
   if (s === "completed" || s === "reviewed") return "已完成";
   if (s === "pending" && /陪玩确认超时|确认超时/.test(note)) return "陪玩确认超时";
@@ -525,6 +526,10 @@ function viewOrder(row = {}) {
     paymentReviewedByStaffId: row.paymentReviewedByStaffId || "",
     paymentReviewStatus: row.paymentReviewStatus || "",
     paidAt: row.paid_at || row.paidAt || "",
+    settlementStatus: row.settlement_status || row.settlementStatus || "",
+    settlementSkipped:
+      String(row.settlement_status || "").toLowerCase() === "skipped" ||
+      /\[\[SETTLEMENT_SKIPPED\]\]/i.test(String(row.note || "") + String(row.description || "")),
     bossHint: bossHint(row),
     cancelReason: row.cancel_reason || "",
     note: cleanNote,
@@ -1000,9 +1005,11 @@ export default async function handler(req, res) {
       return json(res, 405, { ok: false, message: "Method Not Allowed" });
     }
     const body = await parseBody(req);
-    const action = String(body.action || "create");
+    // place-order-page historically posts create_order; treat as place_order (direct companion).
+    const actionRaw = String(body.action || "create");
+    const action = actionRaw === "create_order" ? "place_order" : actionRaw;
     if (
-      ["create", "place_order", "pay_order", "want_him", "grab", "claim"].includes(action)
+      ["create", "place_order", "create_order", "pay_order", "want_him", "grab", "claim"].includes(actionRaw)
     ) {
       const { isProductionRuntime, isTestAccountRecord, PROD_TEST_ACCOUNT_BLOCK_MESSAGE } = await import(
         "./_test-accounts.js"
@@ -1406,8 +1413,12 @@ export default async function handler(req, res) {
       const nextStatus = before.companion_id ? "claimed" : "pending";
       // Companion must confirm before accepted_at / start — never pre-stamp on pay.
       const deps = { restUrl, supabaseJson, serviceHeaders };
+      const paidAtIso = nowIso();
+      const paidAmount = money(before.total_amount);
       const payPatch = {
         accepted_at: null,
+        paid_at: paidAtIso,
+        paid_cat_food: paidAmount,
         assignment_type: before.companion_id ? "assigned" : "public",
         ...(before.companion_id
           ? { order_type: before.order_type || "direct_companion" }
@@ -1427,7 +1438,7 @@ export default async function handler(req, res) {
         });
       } catch (e) {
         // Retry without optional columns if schema missing.
-        if (!/accepted_at|assignment_type|order_type|column|schema cache|PGRST/i.test(String(e.message || ""))) throw e;
+        if (!/accepted_at|assignment_type|order_type|paid_at|paid_cat_food|column|schema cache|PGRST/i.test(String(e.message || ""))) throw e;
         saved = await transitionOrderStatus(deps, {
           orderId: before.id,
           filterQuery: `?id=eq.${encodeURIComponent(before.id)}&boss_id=eq.${encodeURIComponent(profile.id)}&status=eq.awaiting_payment`,
@@ -1453,6 +1464,31 @@ export default async function handler(req, res) {
           operatorId: profile.id,
           note: usedTestPay ? "TEST preview pay success (empty patch return)" : "boss pay success",
         });
+      }
+      // Best-effort payment stamps when transition fell back without optional columns.
+      if (saved && (!saved.paid_at || !(money(saved.paid_cat_food) > 0))) {
+        const stampAttempts = [
+          { paid_at: paidAtIso, paid_cat_food: paidAmount },
+          { paid_cat_food: paidAmount },
+          { paid_at: paidAtIso },
+        ];
+        for (const stamp of stampAttempts) {
+          try {
+            const stamped = await supabaseJson(
+              restUrl(TABLE, `?id=eq.${encodeURIComponent(before.id)}&boss_id=eq.${encodeURIComponent(profile.id)}`),
+              { method: "PATCH", headers: serviceHeaders(), body: JSON.stringify(stamp) }
+            );
+            if (stamped?.[0]) {
+              saved = { ...saved, ...stamped[0] };
+              break;
+            }
+          } catch (stampErr) {
+            if (!/paid_at|paid_cat_food|column|schema cache|PGRST/i.test(String(stampErr?.message || ""))) {
+              console.warn("[orders/pay_order] paid stamp", String(stampErr?.message || stampErr).slice(0, 160));
+              break;
+            }
+          }
+        }
       }
 
       const companionLabel =
@@ -1880,7 +1916,36 @@ export default async function handler(req, res) {
       });
     }
     if (action === "cancel_order") {
-      const order = await patchOwnedOrder(profile, id, ["awaiting_payment", "pending", "claimed", "waiting_boss_confirm", "confirmed"], { status: "cancelled", cancelled_at: nowIso() }, "老板已取消订单。");
+      const beforeRows = await supabaseJson(
+        restUrl(TABLE, `?id=eq.${encodeURIComponent(id)}&boss_id=eq.${encodeURIComponent(profile.id)}&limit=1`),
+        { headers: serviceHeaders() }
+      );
+      const before = Array.isArray(beforeRows) ? beforeRows[0] : null;
+      if (!before) return json(res, 404, { ok: false, message: "订单不存在。" });
+      const beforeStatus = normalizeOrderStatus(before.status);
+      // Paid / post-payment rows must use request_refund (wallet already debited).
+      if (
+        beforeStatus !== "awaiting_payment" ||
+        money(before.paid_cat_food) > 0 ||
+        !!before.paid_at
+      ) {
+        return json(res, 409, {
+          ok: false,
+          code: beforeStatus === "awaiting_payment" ? "PAID_CANCEL_USE_REFUND" : "PAID_CANCEL_USE_REFUND",
+          message:
+            beforeStatus === "awaiting_payment"
+              ? "订单已记录支付信息，无法直接取消。请申请退款或联系客服。"
+              : "订单已支付，无法直接取消。请申请退款；审核通过后猫粮将退回余额。",
+          order: viewOrder(before),
+        });
+      }
+      const order = await patchOwnedOrder(
+        profile,
+        id,
+        ["awaiting_payment"],
+        { status: "cancelled", cancelled_at: nowIso() },
+        "老板已取消订单。"
+      );
       try {
         await (await import("./_cs-commission-settle.js")).clawbackCsOrderIncome(
           { id: order?.id || id, status: "cancelled" },

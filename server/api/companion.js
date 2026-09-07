@@ -1362,7 +1362,11 @@ function viewOrder(row = {}, boss = {}, settlement = null) {
     createdAt: row.created_at || "",
     completedAt: row.completed_at || parsed?.completedAt || "",
     settlement,
-    hasSettlement: !!parsed || row.status === "completed",
+    settlementStatus: row.settlement_status || (parsed ? "settled" : ""),
+    settlementSkipped:
+      String(row.settlement_status || "").toLowerCase() === "skipped" ||
+      /\[\[SETTLEMENT_SKIPPED\]\]/i.test(String(row.note || "") + String(row.description || "")),
+    hasSettlement: !!parsed || String(row.settlement_status || "").toLowerCase() === "settled",
     isDesignatedConfirm: row.status === "claimed",
     assignmentType: row.assignment_type || "",
     raw: row
