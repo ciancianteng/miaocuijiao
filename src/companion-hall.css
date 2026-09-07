@@ -181,33 +181,23 @@ body{background:radial-gradient(circle at 76% 4%,rgba(255,145,195,.055),transpar
   color:rgba(255,232,244,.86) !important;
 }
 
-/* Card body hierarchy: number → nickname → id → certs → tags → actions (no price) */
+/* Card body hierarchy: brand title → nickname → full PW ID → certs → tags → actions */
 .companion-hall-grid .companion-card-body{
   display:grid !important;
   grid-template-columns:minmax(0,1fr) !important;
   grid-template-areas:
-    "number"
     "title"
+    "nickname"
     "id"
     "certs"
     "tags"
     "actions" !important;
-  row-gap:8px !important;
+  row-gap:6px !important;
   column-gap:10px !important;
   align-items:start !important;
   min-height:0 !important;
 }
 .companion-hall-grid .companion-number{
-  grid-area:number !important;
-  margin:0 !important;
-  padding:0 !important;
-  color:rgba(255,255,255,.42) !important;
-  font-size:12px !important;
-  font-weight:600 !important;
-  line-height:1.2 !important;
-  letter-spacing:.04em !important;
-}
-.companion-hall-grid .companion-number:empty{
   display:none !important;
 }
 .companion-hall-grid .companion-card-title-row{
@@ -219,7 +209,7 @@ body{background:radial-gradient(circle at 76% 4%,rgba(255,145,195,.055),transpar
   margin:0 !important;
 }
 .companion-hall-grid .companion-card-title-row h3,
-.companion-hall-grid .companion-nickname{
+.companion-hall-grid .companion-brand-title{
   margin:0 !important;
   min-width:0 !important;
   flex:1 1 auto !important;
@@ -227,6 +217,20 @@ body{background:radial-gradient(circle at 76% 4%,rgba(255,145,195,.055),transpar
   font-size:18px !important;
   font-weight:800 !important;
   color:#fff !important;
+  letter-spacing:.04em !important;
+  white-space:nowrap !important;
+  overflow:hidden !important;
+  text-overflow:ellipsis !important;
+}
+.companion-hall-grid .companion-nickname-line{
+  grid-area:nickname !important;
+  margin:0 !important;
+  padding:0 !important;
+  min-width:0 !important;
+  font-size:14px !important;
+  font-weight:650 !important;
+  line-height:1.3 !important;
+  color:rgba(255,232,244,.88) !important;
   white-space:nowrap !important;
   overflow:hidden !important;
   text-overflow:ellipsis !important;

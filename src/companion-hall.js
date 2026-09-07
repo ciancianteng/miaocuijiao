@@ -398,14 +398,6 @@
       return '<span class="mcj-service-tag companion-game-chip">' + esc(game) + "</span>";
     }).join("");
   }
-  /** Display number (弱化): companionUid, else digits from public PW code. Never hardcode per user. */
-  function companionDisplayNumber(item) {
-    var uid = item && item.companionUid != null ? String(item.companionUid).trim() : "";
-    if (uid && /^\d+$/.test(uid)) return uid;
-    var code = String((item && item.publicId) || "").trim().toUpperCase();
-    var m = code.match(/^PW0*([1-9]\d*)$/);
-    return m ? m[1] : "";
-  }
   /** Cert badges in card body (not photo overlay). Reuses detail `MCJCompanionIdentity.certHtml`. */
   function certBadgesHtml(item) {
     var certTags = item.certTags || item.certificationTags || [];
@@ -534,9 +526,6 @@
     var badgeClass = statusBadgeClass(item.status);
     var publicId = item.publicId || "未生成";
     var nickname = String(item.name || "").trim() || "未命名陪玩";
-    var displayNo = companionDisplayNumber(item);
-    // If nickname already is the numeric code, skip the weak number line (avoid 1717 / 1717).
-    if (displayNo && String(nickname).replace(/^#/, "") === displayNo) displayNo = "";
     var uuid = String(item.id || "").trim();
     var detailHref = uuid
       ? ("profile.html?id=" + encodeURIComponent(uuid) + (publicId && publicId !== "未生成" ? "&code=" + encodeURIComponent(publicId) : ""))
@@ -546,17 +535,16 @@
     var focusX = item.objectPositionX != null ? item.objectPositionX : 50;
     var focusY = item.objectPositionY != null ? item.objectPositionY : 25;
     var pos = Number(focusX) + "% " + Number(focusY) + "%";
-    // Hierarchy: avatar → number (weak) → nickname (title) → ID → certs → tags → actions.
-    // Hall browse card: no selling price. Pricing stays on detail / 立即下单.
-    var numberHtml = displayNo
-      ? '<p class="companion-number" aria-label="陪玩编号">' + esc(displayNo) + "</p>"
-      : "";
+    // Identity hierarchy (hall UI only):
+    // brand title → companion nickname → full PW ID (never split PW code into a standalone number).
+    // Brand label moved from former watermark/overlay into normal body flow.
+    var brandTitle = "MEOW CUI JIAO";
     return '<article class="card player-card" data-player data-public-id="' + esc(String(publicId).toUpperCase()) + '" data-level-id="' + esc(item.levelId || "") + '" data-companion-level="' + esc(item.levelId || "") + '" data-card-style="' + esc(item.cardBackground || "") + '" data-level-color="' + esc(item.levelColor || "") + '" data-companion-id="' + esc(uuid) + '" data-name="' + esc(nickname) + '" data-game="' + esc(item.game) + '" data-tags="' + esc(item.tags.join(",")) + '" data-price="' + esc(item.priceValue) + '" data-level-min="' + esc(item.levelMinPrice != null ? item.levelMinPrice : "") + '" data-level-max="' + esc(item.levelMaxPrice != null ? item.levelMaxPrice : "") + '" data-online="' + esc(item.status) + '" data-score="' + esc(item.rating) + '" data-gender="' + esc(item.gender) + '">' +
       '<div class="companion-card-media"><img src="' + esc(item.image) + '" alt="' + esc(nickname) + '" loading="lazy" decoding="async" style="object-position:' + esc(pos) + ';--mcj-cover-pos:' + esc(pos) + '" onerror="this.onerror=null;this.src=\'' + DEFAULT_AVATAR + '\'"><span class="companion-online-badge' + badgeClass + '">' + esc(item.status) + '</span></div>' +
       '<div class="companion-card-body">' +
-        numberHtml +
-        '<div class="row companion-card-head companion-card-title-row"><h3 class="companion-nickname">' + esc(nickname) + '</h3><span class="companion-status-inline' + badgeClass + '">' + esc(item.status) + '</span></div>' +
-        '<p class="muted companion-id">陪玩 ID：' + esc(publicId) + '</p>' +
+        '<div class="row companion-card-head companion-card-title-row"><h3 class="companion-brand-title">' + esc(brandTitle) + '</h3><span class="companion-status-inline' + badgeClass + '">' + esc(item.status) + '</span></div>' +
+        '<p class="companion-nickname-line">' + esc(nickname) + '</p>' +
+        '<p class="muted companion-id">陪玩ID：' + esc(publicId) + '</p>' +
         certRow +
         tagsRow +
         '<div class="companion-card-actions"><a class="companion-card-action" href="' + esc(detailHref) + '">查看详情</a><button type="button" class="companion-card-action primary" data-hall-order="' + esc(uuid) + '" data-hall-name="' + esc(nickname) + '" data-hall-price="' + esc(item.priceValue || "") + '" data-hall-level="' + esc(item.levelId || "") + '" data-hall-game="' + esc(item.game || "") + '" data-hall-avatar="' + esc(item.image || "") + '" data-hall-public-id="' + esc(publicId || "") + '" data-hall-status="' + esc(item.availabilityStatus || "") + '" data-hall-status-text="' + esc(item.status || "") + '">立即下单</button></div>' +
