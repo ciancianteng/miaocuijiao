@@ -973,8 +973,8 @@ async function loadState() {
         channelSource: "platform_settings",
         bankSource: "platform_settings",
         message: banks.length
-          ? "支付渠道表未建全；启用状态 / 收款二维码以 platform_settings.paymentChannelsPublic 为唯一数据源（与老板端同源）。"
-          : "支付渠道表未建全；启用状态 / 收款二维码写入 platform_settings.paymentChannelsPublic（与老板端同源）。请尽快执行 supabase/migrations/20260731_payment_settings.sql。",
+          ? "支付渠道表未建全；启用状态 / 收款二维码已使用平台配置兜底（与老板端同源）。"
+          : "支付渠道表未建全；启用状态 / 收款二维码已使用平台配置兜底（与老板端同源）。请联系运维完成内部初始化。",
       };
     }
     throw error;
@@ -1177,7 +1177,7 @@ async function handler(req, res) {
             return json(res, 503, {
               ok: false,
               message:
-                "支付设置数据表未初始化，且兜底写入失败。请先执行 supabase/migrations/20260731_payment_settings.sql。",
+                "支付设置数据表未初始化，且兜底写入失败。请联系运维完成内部初始化。",
               detail: String(syncErr?.message || syncErr).slice(0, 200),
             });
           }
@@ -1193,10 +1193,9 @@ async function handler(req, res) {
           return json(res, 200, {
             ok: true,
             message:
-              "支付渠道配置已保存（payment_channels 表未初始化，已写入 platform_settings；请尽快执行 supabase/migrations/20260731_payment_settings.sql）",
+              "支付渠道配置已保存（已写入 platform_settings 兜底；请联系运维完成支付表内部初始化）",
             channel,
             source: saveSource,
-            migration: "supabase/migrations/20260731_payment_settings.sql",
             activePublicQr: activePublicQrFallback,
           });
         }

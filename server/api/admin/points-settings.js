@@ -83,7 +83,7 @@ export default async function handler(req, res) {
             tablesReady: false,
             settings: defaultBossPointsSettings(),
             message:
-              "积分设置表未初始化，请先执行 supabase/migrations/20260831_points_settings.sql 与 20260831_points_settings_rate.sql",
+              "积分设置表未就绪，请联系运维完成内部初始化。",
           });
         }
         throw error;
@@ -156,13 +156,13 @@ export default async function handler(req, res) {
           return json(res, 503, {
             ok: false,
             message:
-              "积分设置表未初始化，请先执行 supabase/migrations/20260831_points_settings.sql 与 20260831_points_settings_rate.sql",
+              "积分设置表未就绪，请联系运维完成内部初始化。",
           });
         }
         if (/points_per_cat_food|schema cache|Could not find/i.test(String(error?.message || ""))) {
           return json(res, 503, {
             ok: false,
-            message: "请先在 Staging 执行 supabase/migrations/20260831_points_settings_rate.sql（猫粮计分 + 积分欠款版）",
+            message: "积分设置字段未就绪，请联系运维完成内部初始化。",
           });
         }
         throw error;
