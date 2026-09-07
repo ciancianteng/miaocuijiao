@@ -2,7 +2,7 @@
  * Companion marketplace verification badges (admin-controlled).
  * Keys: real_verified | game_verified | voice_verified | official_verified | recommended
  */
-import "../_load-env.js";
+import "./_load-env.js";
 
 export const BADGE_KEYS = [
   "real_verified",
