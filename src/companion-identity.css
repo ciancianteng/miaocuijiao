@@ -139,13 +139,13 @@
   transform:none !important;
 }
 
-/* Voice line — solid premium capsule (aligned with other badges) */
+/* Voice line — dashed pink capsule (original badge language) */
 .mcj-voice-tag{
   gap:4px !important;
-  border-style:solid !important;
-  border-color:rgba(255,255,255,.16) !important;
-  background:rgba(255,255,255,.06) !important;
-  color:rgba(255,232,244,.9) !important;
+  border-style:dashed !important;
+  border-color:rgba(255,180,210,.42) !important;
+  background:rgba(255,120,180,.08) !important;
+  color:#ffd0e4 !important;
   font-weight:750 !important;
 }
 .mcj-voice-tag .mcj-voice-label{
@@ -159,16 +159,14 @@
   border-radius:0 !important;
   background:transparent !important;
   box-shadow:none !important;
-  opacity:.7;
+  opacity:.72;
   font-weight:700;
   line-height:1 !important;
 }
 .mcj-voice-tag.is-unset{
-  opacity:.72;
-  border-style:solid !important;
-  border-color:rgba(255,255,255,.12) !important;
-  background:rgba(255,255,255,.035) !important;
-  color:rgba(255,232,244,.68) !important;
+  opacity:.78;
+  border-style:dotted !important;
+  color:rgba(255,208,228,.72) !important;
 }
 
 /* Service / style tags */

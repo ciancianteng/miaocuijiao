@@ -417,7 +417,28 @@
         '"';
     }
     var identityApi = window.MCJCompanionIdentity;
-    // Row 1: level + verification badges + voice only (no game/service mix).
+    // Top badge row: level + cert + voice + category (never games).
+    var categoryTags = (function () {
+      var voice = String(item.voiceType || "").trim().replace(/^声线\s*[:：]\s*/, "");
+      var game = String(item.game || "").trim();
+      var seen = {};
+      var out = [];
+      function pushTag(raw) {
+        var t = String(raw || "").trim();
+        if (!t) return;
+        if (voice && t === voice) return;
+        if (game && (t === game || game.indexOf(t) >= 0 || t.indexOf(game) >= 0)) return;
+        if (/未设置/.test(t)) return;
+        var key = t.toLowerCase();
+        if (seen[key]) return;
+        seen[key] = true;
+        out.push(t);
+      }
+      (item.serviceTypes || []).forEach(pushTag);
+      if (item.serviceType) pushTag(item.serviceType);
+      (item.tags || []).forEach(pushTag);
+      return out.slice(0, 3);
+    })();
     var identityRow = identityApi
       ? identityApi.renderTags({
           levelId: item.levelId || "",
@@ -428,12 +449,12 @@
           gender: "",
           voiceType: item.voiceType || "",
           certTags: item.certTags || [],
-          tags: [],
+          tags: categoryTags,
           className: "companion-identity-row companion-tags",
           includeLevel: true,
           includeGender: false,
           includeVoice: true,
-          serviceLimit: 0,
+          serviceLimit: 3,
           certLimit: 3,
         })
       : (function () {
@@ -456,12 +477,24 @@
             '"><span class="mcj-voice-label">声线：</span>' +
             esc(voiceParts.length ? voiceParts.join(" / ") : "未设置") +
             "</span>";
-          return '<div class="mcj-id-tags companion-identity-row companion-tags">' + level + cert + voiceHtml + "</div>";
+          var cats = categoryTags.map(function (t) {
+            return '<span class="mcj-service-tag mcj-category-tag">' + esc(t) + "</span>";
+          }).join("");
+          return '<div class="mcj-id-tags companion-identity-row companion-tags">' + level + cert + voiceHtml + cats + "</div>";
         })();
-    // Bottom row: game / service info only.
+    // Bottom row: game / service list only.
     var gamesRow = '<div class="mcj-id-tags companion-games-row companion-tags">' + gameChips(item) + "</div>";
-    // Marketplace card: hide price UI; keep data-hall-price on order button for checkout.
-    var priceHtml = "";
+    var fx = formatHourlyPriceFx(item.priceValue);
+    var levelRangeText = item.levelPriceRangeText || item.levelPriceRange || "";
+    var priceHtml =
+      '<div class="price companion-price">' +
+      '<span class="companion-selling-price-label">实际售价</span> ' +
+      esc(item.price) +
+      (fx ? ' <span class="price-fx-approx">' + esc(fx) + "</span>" : "") +
+      (levelRangeText
+        ? '<div class="companion-level-price-range" data-level-id="' + esc(item.levelId || "") + '" title="等级限价区间来自后台 companion_levels，不是陪玩售价">等级限价区间 ' + esc(levelRangeText) + "</div>"
+        : "") +
+      "</div>";
     var badgeClass = statusBadgeClass(item.status);
     var publicId = item.publicId || "未生成";
     var uuid = String(item.id || "").trim();
