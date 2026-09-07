@@ -110,10 +110,21 @@
     var services = filterServiceTags(opts.tags, voice).slice(0, opts.serviceLimit == null ? 6 : opts.serviceLimit);
     var parts = [];
     if (opts.includeLevel !== false && levelText) {
+      var pillStyle = "";
+      if (opts.badgeBorder || opts.levelColor || opts.badgeText) {
+        pillStyle =
+          ' style="' +
+          (opts.badgeBorder ? "border-color:" + esc(opts.badgeBorder) + ";" : "") +
+          (opts.badgeText ? "color:" + esc(opts.badgeText) + ";" : "") +
+          (opts.levelColor ? "background:" + esc(opts.levelColor) + "33;" : "") +
+          '"';
+      }
       parts.push(
         '<span class="companion-level-pill mcj-level-tag" data-level-id="' +
           esc(levelId) +
-          '">' +
+          '"' +
+          pillStyle +
+          ">" +
           esc(levelText) +
           "</span>"
       );

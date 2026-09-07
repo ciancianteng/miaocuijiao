@@ -8,6 +8,8 @@ import {
   syncCompanionCommissionsFromLevels,
   buildPublishSyncChecklist,
   toPublicLevel,
+  validateLevelConfig,
+  validateLevelConfigList,
 } from "../_companion-levels-store.js";
 
 import { requireAdmin as requireAdminJwt } from "../_admin-auth.js";
@@ -63,6 +65,12 @@ function verifyPublished(levels, expected) {
     if (String(match.badgeBorder || "").toLowerCase() !== String(item.badgeBorder || "").toLowerCase()) {
       return { ok: false, message: `校验失败：${item.code} 徽章边框色未写入。` };
     }
+    if (String(match.color || "").toLowerCase() !== String(item.color || "").toLowerCase()) {
+      return { ok: false, message: `校验失败：${item.code} 主色未写入。` };
+    }
+    if (String(match.cardBackground || "") !== String(item.cardBackground || "")) {
+      return { ok: false, message: `校验失败：${item.code} 卡片风格未写入。` };
+    }
   }
   return { ok: true };
 }
@@ -94,8 +102,12 @@ export default async function handler(req, res) {
       if (!incoming || typeof incoming !== "object") {
         return json(res, 400, { ok: false, message: "请提交当前等级数据。" });
       }
-      const levels = await upsertLocalLevel(incoming);
-      const saved = levels.find((row) => String(row.id) === String(normalizeLevelRow(incoming).id));
+      const checked = validateLevelConfig(incoming);
+      if (!checked.ok) {
+        return json(res, 400, { ok: false, message: checked.message || "等级配置校验失败", errors: checked.errors });
+      }
+      const levels = await upsertLocalLevel(checked.level);
+      const saved = levels.find((row) => String(row.id) === String(checked.level.id));
       return json(res, 200, {
         ok: true,
         message: "当前等级已保存。点击「发布到全站」后各端立即读取最新配置。",
@@ -109,7 +121,15 @@ export default async function handler(req, res) {
     if (action === "publish" || action === "publish_all") {
       const incoming = Array.isArray(body.levels) ? body.levels : [];
       if (!incoming.length) return json(res, 400, { ok: false, message: "请提交等级列表。" });
-      const normalized = incoming.map((row, index) => normalizeLevelRow(row, index));
+      const listCheck = validateLevelConfigList(incoming);
+      if (!listCheck.ok) {
+        return json(res, 400, {
+          ok: false,
+          message: listCheck.message || "等级配置校验失败",
+          errors: listCheck.errors,
+        });
+      }
+      const normalized = listCheck.levels;
       let levels;
       try {
         levels = await writeLocalLevels(normalized);
@@ -175,7 +195,15 @@ export default async function handler(req, res) {
     if (action === "save_all" || action === "save") {
       const incoming = Array.isArray(body.levels) ? body.levels : [];
       if (!incoming.length) return json(res, 400, { ok: false, message: "请提交等级列表。" });
-      const levels = await writeLocalLevels(incoming.map((row, index) => normalizeLevelRow(row, index)));
+      const listCheck = validateLevelConfigList(incoming);
+      if (!listCheck.ok) {
+        return json(res, 400, {
+          ok: false,
+          message: listCheck.message || "等级配置校验失败",
+          errors: listCheck.errors,
+        });
+      }
+      const levels = await writeLocalLevels(listCheck.levels);
       return json(res, 200, {
         ok: true,
         message: "陪玩等级已保存。建议使用「发布到全站」完成抽成同步与校验。",

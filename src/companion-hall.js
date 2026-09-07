@@ -154,6 +154,7 @@
       // Prefer API/admin-saved price; do not invent prices from level bands.
       var apiPrice = priceNumber(item.priceValue != null ? item.priceValue : item.price || item.hourlyPrice || item.servicePrice);
       var priceValue = apiPrice > 0 ? apiPrice : priceNumber(normalized.priceValue || normalized.price || normalized.servicePrice || normalized.hourlyPrice);
+      var levelConfig = normalized.levelConfig || item.levelConfig || null;
       return {
         id: normalized.uid || normalized.companionId || normalized.id || "",
         name: normalized.name || normalized.nickname || "未命名陪玩",
@@ -164,6 +165,19 @@
         level: levelLabel(Object.assign({}, normalized, { levelId: levelId })),
         levelId: levelId,
         levelNumber: normalized.levelNumber || Number(String(levelId).replace(/\D+/g, "")) || 0,
+        levelConfig: levelConfig,
+        levelColor: normalized.levelColor || (levelConfig && levelConfig.color) || item.levelColor || "",
+        displayColor: normalized.displayColor || (levelConfig && levelConfig.displayColor) || "",
+        cardBackground: normalized.cardBackground || (levelConfig && levelConfig.cardBackground) || item.cardBackground || "",
+        badgeBorder: normalized.badgeBorder || (levelConfig && levelConfig.badgeBorder) || "",
+        badgeText: normalized.badgeText || (levelConfig && levelConfig.badgeText) || "",
+        levelPriceRange: normalized.levelPriceRange || item.levelPriceRange || (levelConfig && levelConfig.priceRangeLabel) || "",
+        levelPriceRangeText: normalized.levelPriceRangeText || item.levelPriceRangeText || (levelConfig && levelConfig.priceRangeText) || "",
+        levelMinPrice: normalized.levelMinPrice != null ? normalized.levelMinPrice : item.levelMinPrice,
+        levelMaxPrice: normalized.levelMaxPrice != null ? normalized.levelMaxPrice : item.levelMaxPrice,
+        cardStyleInline: normalized.cardStyleInline || (window.MCJCompanionLevels && window.MCJCompanionLevels.inlineCardStyle
+          ? window.MCJCompanionLevels.inlineCardStyle(levelConfig || normalized)
+          : ""),
         gender: normalized.gender || "保密",
         voiceType: normalized.voiceType || normalized.voice_type || "",
         serviceType: (Array.isArray(normalized.serviceTypes) && normalized.serviceTypes[0])
@@ -393,11 +407,23 @@
     }).join("");
   }
   function card(item) {
+    var pillStyle = "";
+    if (item.badgeBorder || item.levelColor || item.badgeText) {
+      pillStyle =
+        ' style="' +
+        (item.badgeBorder ? "border-color:" + esc(item.badgeBorder) + ";" : "") +
+        (item.badgeText ? "color:" + esc(item.badgeText) + ";" : "") +
+        (item.levelColor ? "background:" + esc(item.levelColor) + "33;" : "") +
+        '"';
+    }
     var identityApi = window.MCJCompanionIdentity;
     var identityRow = identityApi
       ? identityApi.renderTags({
           levelId: item.levelId || "",
           levelLabel: item.level,
+          levelColor: item.levelColor || "",
+          badgeBorder: item.badgeBorder || "",
+          badgeText: item.badgeText || "",
           gender: item.gender,
           voiceType: item.voiceType || "",
           certTags: item.certTags || [],
@@ -410,7 +436,7 @@
         })
       : (function () {
           var level = item.level
-            ? '<span class="companion-level-pill mcj-level-tag" data-level-id="' + esc(item.levelId || "") + '">' + esc(item.level) + "</span>"
+            ? '<span class="companion-level-pill mcj-level-tag" data-level-id="' + esc(item.levelId || "") + '"' + pillStyle + '>' + esc(item.level) + "</span>"
             : "";
           var gender = item.gender && !/^(保密|不公开|未知|-|—)$/.test(String(item.gender))
             ? '<span class="mcj-gender-tag">' + esc(item.gender) + "</span>"
@@ -432,10 +458,14 @@
         })();
     var gamesRow = '<div class="mcj-id-tags companion-games-row companion-tags">' + gameChips(item) + "</div>";
     var fx = formatHourlyPriceFx(item.priceValue);
+    var levelRangeText = item.levelPriceRangeText || item.levelPriceRange || "";
     var priceHtml =
       '<div class="price companion-price">' +
       esc(item.price) +
       (fx ? ' <span class="price-fx-approx">' + esc(fx) + "</span>" : "") +
+      (levelRangeText
+        ? '<div class="companion-level-price-range" data-level-id="' + esc(item.levelId || "") + '">等级区间 ' + esc(levelRangeText) + "</div>"
+        : "") +
       "</div>";
     var badgeClass = statusBadgeClass(item.status);
     var publicId = item.publicId || "未生成";
@@ -444,12 +474,13 @@
     var focusX = item.objectPositionX != null ? item.objectPositionX : 50;
     var focusY = item.objectPositionY != null ? item.objectPositionY : 25;
     var pos = Number(focusX) + "% " + Number(focusY) + "%";
-    return '<article class="card player-card" data-player data-public-id="' + esc(String(publicId).toUpperCase()) + '" data-level-id="' + esc(item.levelId || "") + '" data-companion-level="' + esc(item.levelId || "") + '" data-companion-id="' + esc(uuid) + '" data-name="' + esc(item.name) + '" data-game="' + esc(item.game) + '" data-tags="' + esc(item.tags.join(",")) + '" data-price="' + esc(item.priceValue) + '" data-online="' + esc(item.status) + '" data-score="' + esc(item.rating) + '" data-gender="' + esc(item.gender) + '">' +
+    var styleAttr = item.cardStyleInline ? ' style="' + esc(item.cardStyleInline) + '"' : "";
+    return '<article class="card player-card" data-player data-public-id="' + esc(String(publicId).toUpperCase()) + '" data-level-id="' + esc(item.levelId || "") + '" data-companion-level="' + esc(item.levelId || "") + '" data-card-style="' + esc(item.cardBackground || "") + '" data-level-color="' + esc(item.levelColor || "") + '" data-companion-id="' + esc(uuid) + '" data-name="' + esc(item.name) + '" data-game="' + esc(item.game) + '" data-tags="' + esc(item.tags.join(",")) + '" data-price="' + esc(item.priceValue) + '" data-level-min="' + esc(item.levelMinPrice != null ? item.levelMinPrice : "") + '" data-level-max="' + esc(item.levelMaxPrice != null ? item.levelMaxPrice : "") + '" data-online="' + esc(item.status) + '" data-score="' + esc(item.rating) + '" data-gender="' + esc(item.gender) + '"' + styleAttr + '>' +
       '<div class="companion-card-media"><img src="' + esc(item.image) + '" alt="' + esc(item.name) + '" loading="lazy" decoding="async" style="object-position:' + esc(pos) + ';--mcj-cover-pos:' + esc(pos) + '" onerror="this.onerror=null;this.src=\'' + DEFAULT_AVATAR + '\'"><span class="companion-online-badge' + badgeClass + '">' + esc(item.status) + '</span></div>' +
       '<div class="companion-card-body">' +
         '<div class="row companion-card-head companion-card-title-row"><h3>' + esc(item.name) + '</h3><span class="companion-status-inline' + badgeClass + '">' + esc(item.status) + '</span></div>' +
         '<p class="muted companion-id">陪玩 ID：' + esc(publicId) + '</p>' +
-        '<div class="companion-meta companion-meta-desktop"><span class="companion-level-pill mcj-level-tag" data-level-id="' + esc(item.levelId || "") + '">' + esc(item.level) + '</span><span class="companion-game-text">' + esc(item.game) + '</span></div>' +
+        '<div class="companion-meta companion-meta-desktop"><span class="companion-level-pill mcj-level-tag" data-level-id="' + esc(item.levelId || "") + '"' + pillStyle + '>' + esc(item.level) + '</span><span class="companion-game-text">' + esc(item.game) + '</span></div>' +
         identityRow +
         gamesRow +
         priceHtml +

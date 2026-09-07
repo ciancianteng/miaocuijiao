@@ -1,5 +1,5 @@
 ﻿import "../_load-env.js";
-import { readLocalLevels, toPublicLevel } from "../_companion-levels-store.js";
+import { readLocalLevels, toPublicLevel, levelVisualConfig } from "../_companion-levels-store.js";
 import { resolvePlatformCommission } from "../_commission-rates.js";
 import {
   readGamePrices,
@@ -190,8 +190,9 @@ function publicCompanion(row = {}, profile = {}, levels = [], catalog = [], medi
   const cover = resolveCompanionCover(profile, row, mediaExtras) || avatar;
   const name = base.name || "未命名陪玩";
   const level = findLevelMeta(levels, row);
-  const levelName = level
-    ? `${level.code || ""} ${level.name || ""}`.trim()
+  const levelConfig = level ? levelVisualConfig(level) : null;
+  const levelName = levelConfig
+    ? levelConfig.title
     : row.level_name && !/^未设置/.test(String(row.level_name))
       ? row.level_name
       : "未设置等级";
@@ -249,7 +250,20 @@ function publicCompanion(row = {}, profile = {}, levels = [], catalog = [], medi
     ).filter((s) => s && s.name && !/^(陪玩|护航|跑刀|代肝|自定义)$/.test(String(s.name))),
     level: levelName,
     levelName,
-    levelId: level?.id || row.level_id || "",
+    levelId: levelConfig?.id || row.level_id || "",
+    levelConfig,
+    levelColor: levelConfig?.color || "",
+    displayColor: levelConfig?.displayColor || "",
+    cardBackground: levelConfig?.cardBackground || "",
+    cardStyle: levelConfig?.cardStyle || "",
+    badgeBorder: levelConfig?.badgeBorder || "",
+    badgeText: levelConfig?.badgeText || "",
+    badgeIcon: levelConfig?.badgeIcon || "",
+    levelMinPrice: levelConfig?.min ?? null,
+    levelMaxPrice: levelConfig?.max ?? null,
+    levelMaxPlus: levelConfig?.maxPlus === true,
+    levelPriceRange: levelConfig?.priceRangeLabel || "",
+    levelPriceRangeText: levelConfig?.priceRangeText || "",
     price: money(row.price),
     priceValue: money(row.price),
     hourlyPrice: money(row.price),
