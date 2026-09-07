@@ -192,7 +192,8 @@ async function purgeTestData() {
           await supabaseJson(restUrl("profiles", `?id=eq.${encodeURIComponent(id)}`), {
             method: "PATCH",
             headers: serviceHeaders({ Prefer: "return=representation" }),
-            body: JSON.stringify({ status: "disabled", email: `purged.${Date.now()}.${id.slice(0, 8)}@invalid.local`, updated_at: new Date().toISOString() }),
+            // Production profiles has no updated_at column.
+            body: JSON.stringify({ status: "disabled", email: `purged.${Date.now()}.${id.slice(0, 8)}@invalid.local` }),
           });
           counts.profiles_disabled = (counts.profiles_disabled || 0) + 1;
         } catch {

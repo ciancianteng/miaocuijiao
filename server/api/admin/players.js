@@ -1045,9 +1045,9 @@ async function activateCompanionProfile(userId) {
   }
   const patched = await companionDb("profiles", `?id=eq.${encodeURIComponent(userId)}`, {
     method: "PATCH",
+    // Production profiles has no updated_at — only write existing columns.
     body: JSON.stringify({
       status: "active",
-      updated_at: new Date().toISOString(),
     }),
   });
   return Array.isArray(patched) ? patched[0] : existingProfile ? { ...existingProfile, status: "active" } : { id: userId, status: "active" };
@@ -1572,9 +1572,11 @@ export default async function handler(req, res) {
       profilePatch.status = "active";
     }
     if (Object.keys(profilePatch).length && companion.user_id) {
+      // Production profiles has no updated_at — never inject it into profiles PATCH.
+      delete profilePatch.updated_at;
       await companionDb("profiles", `?id=eq.${encodeURIComponent(companion.user_id)}`, {
         method: "PATCH",
-        body: JSON.stringify({ ...profilePatch, updated_at: new Date().toISOString() }),
+        body: JSON.stringify(profilePatch),
       });
     }
 
