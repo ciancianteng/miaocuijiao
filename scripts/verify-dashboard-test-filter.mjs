@@ -96,6 +96,42 @@ assert.equal(filter.excludedBosses, 2);
 assert.equal(filter.excludedCompanions, 1);
 assert.equal(filter.excludedCustomerServices, 1);
 assert.equal(filter.excludedOrders, 2);
+assert.ok(Array.isArray(filter.todayRevenueOrderIds));
+
+// companion_profiles test flag must also exclude even if profiles.is_test_account is false
+{
+  const profiles2 = [
+    { id: "op-comp", role: "companion", email: "op@gmail.com", display_name: "1717", is_test_account: false },
+    { id: "real-boss", role: "boss", email: "boss@gmail.com", display_name: "老板", is_test_account: false },
+  ];
+  const orders2 = [
+    {
+      id: "keep",
+      status: "completed",
+      total_amount: 30,
+      created_at: "2026-09-07T14:47:24.901Z",
+      boss_id: "real-boss",
+      companion_id: "op-comp",
+    },
+  ];
+  const withFlag = buildDashboardStats({
+    profiles: profiles2,
+    orders: orders2,
+    extraTestUserIds: ["op-comp"],
+    now: new Date("2026-09-07T20:00:00.000Z"),
+  });
+  assert.equal(withFlag.stats.todayAmount, 0);
+  assert.equal(withFlag.stats.completed, 0);
+  const withoutFlag = buildDashboardStats({
+    profiles: profiles2,
+    orders: orders2,
+    extraTestUserIds: [],
+    now: new Date("2026-09-07T20:00:00.000Z"),
+  });
+  assert.equal(withoutFlag.stats.todayAmount, 30);
+  assert.equal(withoutFlag.stats.completed, 1);
+  assert.deepEqual(withoutFlag.filter.todayRevenueOrderIds, ["keep"]);
+}
 
 console.log(
   JSON.stringify(
