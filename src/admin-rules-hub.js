@@ -562,5 +562,9 @@
       setTimeout(maybeLoad, 40);
     }
   });
+  document.addEventListener("mcj:admin-section", function (e) {
+    var section = e && e.detail && e.detail.section;
+    if (section === "rules-hub" || section === "companion-rules") setTimeout(maybeLoad, 40);
+  });
   window.__MCJRenderRulesHub = maybeLoad;
 })();
