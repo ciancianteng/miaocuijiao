@@ -1190,7 +1190,7 @@
     });
   }
   ensurePlayerMorePopoverBound();
-  function collectPlayerEditForm(form){var data={};if(!form)return data;new FormData(form).forEach(function(value,key){data[key]=value});return data;}
+  function collectPlayerEditForm(form){var data={};if(!form)return data;new FormData(form).forEach(function(value,key){if(key==='certTagIds'){if(!Array.isArray(data.certTagIds))data.certTagIds=data.certTagIds!=null?[data.certTagIds]:[];data.certTagIds.push(value);return;}data[key]=value});if(form.querySelector('[name="certTagIds"]')&&!Object.prototype.hasOwnProperty.call(data,'certTagIds'))data.certTagIds=[];return data;}
   function updatePlayerRowInMemory(id,payload){
     (playerAdminState.rows||[]).forEach(function(row){var rid=String(row.id||row.uid||row.playerId||row.player_id||row.name||row.nickname);if(rid!==String(id))return;Object.keys(payload||{}).forEach(function(key){var value=payload[key];if(key==='orderCommissionRate')row.orderCommissionRate=value;if(key==='directRebateRate')row.directRebateRate=value;if(key==='giftCommissionRate')row.giftCommissionRate=value;if(key==='accountStatus')row.accountStatus=value;if(key==='auditStatus')row.auditStatus=value;if(key==='identityStatus')row.identityStatus=value;if(key==='depositStatus')row.depositStatus=value;if(key==='withdrawStatus')row.withdrawStatus=value;if(key==='levelId')row.levelId=value;if(key==='featured')row.featured=value==='true'||value===true;if(key==='pinned')row.pinned=value==='true'||value===true;if(key==='workStatus')row.workStatus=value;if(key==='rejectReason')row.rejectReason=value;if(key==='depositConfirmRemark')row.depositConfirmRemark=value;if(key==='withdrawRejectReason')row.withdrawRejectReason=value;});row.updatedAt=new Date().toISOString();});
   }

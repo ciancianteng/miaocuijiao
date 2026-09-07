@@ -1,5 +1,6 @@
 ﻿import "../_load-env.js";
 import { readLocalLevels, toPublicLevel, levelVisualConfig } from "../_companion-levels-store.js";
+import { resolveCertTagsForProfiles } from "../_companion-cert-tags-store.js";
 import { resolvePlatformCommission } from "../_commission-rates.js";
 import {
   readGamePrices,
@@ -182,7 +183,7 @@ function resolveCompanionServiceIds(row = {}, catalog = []) {
     .filter((svc) => names.has(String(svc.name || svc.title || "").trim()))
     .map((svc) => String(svc.id));
 }
-function publicCompanion(row = {}, profile = {}, levels = [], catalog = [], mediaExtras = {}) {
+function publicCompanion(row = {}, profile = {}, levels = [], catalog = [], mediaExtras = {}, certTags = []) {
   const base = mapCompanionPublicFields(row, profile, mediaExtras);
   const avail = base.availabilityStatus || availabilityCode(row);
   const publicId = base.publicId || (row.companion_uid ? `P${row.companion_uid}` : "");
@@ -262,11 +263,18 @@ function publicCompanion(row = {}, profile = {}, levels = [], catalog = [], medi
     levelMinPrice: levelConfig?.min ?? null,
     levelMaxPrice: levelConfig?.max ?? null,
     levelMaxPlus: levelConfig?.maxPlus === true,
+    // Level band = admin-configured limit/recommended range (NOT the companion's selling price).
     levelPriceRange: levelConfig?.priceRangeLabel || "",
     levelPriceRangeText: levelConfig?.priceRangeText || "",
+    levelPriceRangeRole: "level_limit",
+    // Selling price = companion_profiles.price (actual hourly quote on the card).
     price: money(row.price),
     priceValue: money(row.price),
     hourlyPrice: money(row.price),
+    sellingPrice: money(row.price),
+    priceRole: "companion_selling_price",
+    certTags: Array.isArray(certTags) ? certTags : [],
+    certificationTags: Array.isArray(certTags) ? certTags : [],
     gamePrices: readGamePrices(row),
     pricingUnit: row.pricing_unit || "小时",
     availabilityStatus: avail,
@@ -601,10 +609,11 @@ async function loadCompanions(id = "") {
       )
     );
   }
-  const [levels, servicesBundle, mediaMap] = await Promise.all([
+  const [levels, servicesBundle, mediaMap, certMap] = await Promise.all([
     readLocalLevels().catch(() => []),
     loadPublicServices().catch(() => ({ services: [] })),
     mediaExtrasByProfile(profileIds).catch(() => ({})),
+    resolveCertTagsForProfiles(profileIds).catch(() => ({})),
   ]);
   const catalog = Array.isArray(servicesBundle?.services) ? servicesBundle.services : [];
   const profileMap = Object.fromEntries((profiles || []).map((row) => [row.id, row]));
@@ -648,7 +657,7 @@ async function loadCompanions(id = "") {
     // Homepage / hall: hallVisible requires approved + active + (identity OR deposit) + critical profile.
     // Never require identity AND deposit.
     if (!gate.hallVisible) continue;
-    mapped.push(publicCompanion(row, profile, levelList, catalog, media));
+    mapped.push(publicCompanion(row, profile, levelList, catalog, media, certMap[row.id] || []));
   }
   return attachReviews(mapped);
 }

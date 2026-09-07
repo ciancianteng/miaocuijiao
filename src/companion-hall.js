@@ -461,10 +461,11 @@
     var levelRangeText = item.levelPriceRangeText || item.levelPriceRange || "";
     var priceHtml =
       '<div class="price companion-price">' +
+      '<span class="companion-selling-price-label">实际售价</span> ' +
       esc(item.price) +
       (fx ? ' <span class="price-fx-approx">' + esc(fx) + "</span>" : "") +
       (levelRangeText
-        ? '<div class="companion-level-price-range" data-level-id="' + esc(item.levelId || "") + '">等级区间 ' + esc(levelRangeText) + "</div>"
+        ? '<div class="companion-level-price-range" data-level-id="' + esc(item.levelId || "") + '" title="等级限价区间来自后台 companion_levels，不是陪玩售价">等级限价区间 ' + esc(levelRangeText) + "</div>"
         : "") +
       "</div>";
     var badgeClass = statusBadgeClass(item.status);

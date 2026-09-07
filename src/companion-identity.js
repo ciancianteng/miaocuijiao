@@ -82,11 +82,24 @@
         var name = typeof t === "string" ? t : t.name || t.title || "";
         if (!name) return "";
         var icon = typeof t === "object" && t.icon ? String(t.icon) : isOfficialCert(name) ? "🏅" : "🏷️";
+        var color = typeof t === "object" && t.color ? String(t.color) : "";
         var official = isOfficialCert(name) ? " is-official" : "";
+        var style =
+          color
+            ? ' style="border-color:' +
+              esc(color) +
+              ";color:" +
+              esc(color) +
+              ";--mcj-cert-color:" +
+              esc(color) +
+              ';"'
+            : "";
         return (
           '<span class="mcj-cert-badge' +
           official +
-          '" title="' +
+          '"' +
+          style +
+          ' title="' +
           esc(name) +
           '"><span class="mcj-cert-icon" aria-hidden="true">' +
           esc(icon) +
