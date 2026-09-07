@@ -8,7 +8,7 @@ Do **not** treat `docs/orders-schema.sql` Chinese drafts as live schema.
 | Required (product)     | DB `orders.status`                         | Notes |
 |------------------------|--------------------------------------------|-------|
 | Pending payment        | `awaiting_payment`                         | Created by `place_order` / `create` / marketplace before debit |
-| Paid                   | *(not a DB status)*                        | After wallet/CS pay: `paid_at` + `paid_cat_food`; status → `claimed` or `pending` |
+| Paid                   | *(not a DB status)*                        | After wallet/CS pay: status → `claimed`/`pending`; stamp `paid_at`+`paid_cat_food` when columns exist (`07_orders_paid_at_paid_cat_food.sql`) |
 | Waiting companion accept | `claimed`                                | Alias `paid` normalizes → `claimed` |
 | Accepted               | `confirmed` *(legacy)* or `in_progress`    | `accept_direct` jumps `claimed` → `in_progress` (Accepted ≡ In service) |
 | In service             | `in_progress`                              | Companion working; may have `[[COMPLETION_PENDING]]` |
