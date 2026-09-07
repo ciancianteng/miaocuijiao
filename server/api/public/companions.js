@@ -524,14 +524,16 @@ async function resolveCompanionProfileRows(idRaw = "") {
   const id = String(idRaw || "").trim();
   if (!id) return null;
 
+  const approvedFilter = "or=(verification_status.eq.approved,application_status.eq.approved)";
+
   if (isDbUuid(id)) {
     const byUser = await fetchCompanionRowsHideTest(
-      `?user_id=eq.${encodeURIComponent(id)}&verification_status=eq.approved&limit=1`
+      `?user_id=eq.${encodeURIComponent(id)}&${approvedFilter}&limit=1`
     );
     if (byUser?.[0]) return byUser;
     // Some callers may pass companion_profiles.id
     return fetchCompanionRowsHideTest(
-      `?id=eq.${encodeURIComponent(id)}&verification_status=eq.approved&limit=1`
+      `?id=eq.${encodeURIComponent(id)}&${approvedFilter}&limit=1`
     );
   }
 
@@ -539,20 +541,20 @@ async function resolveCompanionProfileRows(idRaw = "") {
     const seq = parseCompanionCodeNumber(id);
     const code = formatCompanionCode(seq);
     const byCode = await fetchCompanionRowsHideTest(
-      `?companion_code=eq.${encodeURIComponent(code)}&verification_status=eq.approved&limit=1`
+      `?companion_code=eq.${encodeURIComponent(code)}&${approvedFilter}&limit=1`
     );
     if (byCode?.[0]) return byCode;
 
     for (const uid of [seq, seq + 100000]) {
       const byUid = await fetchCompanionRowsHideTest(
-        `?companion_uid=eq.${encodeURIComponent(uid)}&verification_status=eq.approved&limit=1`
+        `?companion_uid=eq.${encodeURIComponent(uid)}&${approvedFilter}&limit=1`
       );
       if (byUid?.[0]) return byUid;
     }
 
     // Scan fallback for rows with missing companion_code but resolvable public code.
     const pool = await fetchCompanionRowsHideTest(
-      "?verification_status=eq.approved&select=*&order=updated_at.desc&limit=500"
+      `?${approvedFilter}&select=*&order=updated_at.desc&limit=500`
     );
     const hit = (Array.isArray(pool) ? pool : []).find((row) => resolveCompanionPublicCode(row) === code);
     return hit ? [hit] : [];

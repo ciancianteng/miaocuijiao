@@ -23,7 +23,18 @@
   }
   function param() {
     var p = new URLSearchParams(location.search);
-    return p.get("player") || p.get("id") || p.get("uid") || "";
+    return p.get("player") || p.get("id") || p.get("uid") || p.get("code") || p.get("publicId") || "";
+  }
+  function lookupCandidates() {
+    var p = new URLSearchParams(location.search);
+    var primary = param();
+    var extras = [p.get("code"), p.get("publicId"), p.get("player"), p.get("uid"), p.get("id")].filter(Boolean);
+    var out = [];
+    [primary].concat(extras).forEach(function (v) {
+      var s = String(v || "").trim();
+      if (s && out.indexOf(s) < 0) out.push(s);
+    });
+    return out;
   }
   function shell() {
     return document.querySelector(".profile-detail-shell");
@@ -243,28 +254,31 @@
     if (!rangeText || rangeText === "-") rangeText = "暂无数据";
     var publicId = c.publicId || (c.companionUid ? "P" + c.companionUid : "");
     var identityApi = window.MCJCompanionIdentity;
+    // Same badge order as hall: level + verification + voice (game shown in meta line below).
     var tagsHtml = identityApi
       ? identityApi.renderTags({
           levelId: c.levelId || "",
           levelLabel: levelText,
-          gender: c.gender || "",
+          levelColor: c.levelColor || (c.levelConfig && c.levelConfig.color) || "",
+          badgeBorder: c.badgeBorder || (c.levelConfig && c.levelConfig.badgeBorder) || "",
+          badgeText: c.badgeText || (c.levelConfig && c.levelConfig.badgeText) || "",
+          gender: "",
           voiceType: c.voiceType || c.voice_type || "",
           certTags: c.certTags || c.certificationTags || [],
-          tags: c.tags || [],
-          className: "tag-row companion-tags",
+          tags: [],
+          className: "tag-row companion-tags companion-identity-row",
           includeLevel: true,
-          includeGender: true,
-          serviceLimit: 8,
+          includeGender: false,
+          includeVoice: true,
+          serviceLimit: 0,
+          certLimit: 3,
         })
       : (function () {
-          var tags = (c.tags || [])
-            .slice(0, 6)
-            .map(function (t) {
-              return "<span class=\"mcj-service-tag\">" + esc(t) + "</span>";
-            })
-            .join("");
+          var level = levelText && levelText !== "-"
+            ? '<span class="companion-level-pill mcj-level-tag">' + esc(levelText) + "</span>"
+            : "";
           var certTags = (c.certTags || c.certificationTags || [])
-            .slice(0, 6)
+            .slice(0, 3)
             .map(function (t) {
               var name = typeof t === "string" ? t : t.name || t.title || "";
               if (!name) return "";
@@ -273,9 +287,14 @@
             })
             .filter(Boolean)
             .join("");
-          return certTags || tags
-            ? '<div class="mcj-id-tags tag-row companion-tags">' + certTags + tags + "</div>"
-            : "";
+          var voice = String(c.voiceType || c.voice_type || "").trim().replace(/^声线\s*[:：]\s*/, "");
+          var voiceHtml =
+            '<span class="mcj-voice-tag' +
+            (voice ? "" : " is-unset") +
+            '"><span class="mcj-voice-label">声线：</span>' +
+            esc(voice || "未设置") +
+            "</span>";
+          return '<div class="mcj-id-tags tag-row companion-tags companion-identity-row">' + level + certTags + voiceHtml + "</div>";
         })();
     var galleryUrls = galleryList.map(function (g) {
       return g.url;
@@ -877,9 +896,21 @@
     }
   });
 
+  function fetchCompanionById(id) {
+    return fetch("/api/public/companions?id=" + encodeURIComponent(id), {
+      headers: { Accept: "application/json" },
+      cache: "no-store",
+    }).then(function (res) {
+      return res.json().then(function (body) {
+        if (!res.ok || body.ok === false) throw new Error(body.message || "陪玩资料读取失败");
+        return body;
+      });
+    });
+  }
+
   function load() {
-    var id = param();
-    if (!id) {
+    var candidates = lookupCandidates();
+    if (!candidates.length) {
       renderError("缺少陪玩 ID");
       return;
     }
@@ -890,64 +921,69 @@
       settled = true;
       renderError("陪玩资料读取超时，请点击重新加载");
     }, 12000);
-    fetch("/api/public/companions?id=" + encodeURIComponent(id), {
-      headers: { Accept: "application/json" },
-      cache: "no-store",
-    })
-      .then(function (res) {
-        return res.json().then(function (body) {
-          if (!res.ok || body.ok === false) throw new Error(body.message || "陪玩资料读取失败");
-          return body;
-        });
-      })
-      .then(function (body) {
-        var c = (body.companions || [])[0];
-        if (!c) {
-          if (!settled) {
-            settled = true;
-            clearTimeout(failSafe);
-            renderError("该陪玩资料不存在", { retry: false });
-          }
-          return;
-        }
+
+    function tryNext(index) {
+      if (index >= candidates.length) {
         if (!settled) {
           settled = true;
           clearTimeout(failSafe);
-          render(syncPresence(c));
+          renderError("该陪玩资料不存在", { retry: false });
         }
-        var cid = c.id || c.uid || id;
-        var popCtl = typeof AbortController !== "undefined" ? new AbortController() : null;
-        var popTimer = setTimeout(function () {
-          if (popCtl) popCtl.abort();
-        }, 4000);
-        fetch("/api/popularity?action=companion&id=" + encodeURIComponent(cid), {
-          headers: { Accept: "application/json" },
-          cache: "no-store",
-          signal: popCtl ? popCtl.signal : undefined,
-        })
-          .then(function (res) {
-            return res.json().catch(function () {
-              return {};
+        return;
+      }
+      var id = candidates[index];
+      fetchCompanionById(id)
+        .then(function (body) {
+          var c = (body.companions || [])[0];
+          if (!c) {
+            tryNext(index + 1);
+            return;
+          }
+          if (!settled) {
+            settled = true;
+            clearTimeout(failSafe);
+            render(syncPresence(c));
+          }
+          var cid = c.id || c.uid || id;
+          var popCtl = typeof AbortController !== "undefined" ? new AbortController() : null;
+          var popTimer = setTimeout(function () {
+            if (popCtl) popCtl.abort();
+          }, 4000);
+          fetch("/api/popularity?action=companion&id=" + encodeURIComponent(cid), {
+            headers: { Accept: "application/json" },
+            cache: "no-store",
+            signal: popCtl ? popCtl.signal : undefined,
+          })
+            .then(function (res) {
+              return res.json().catch(function () {
+                return {};
+              });
+            })
+            .then(function (pop) {
+              clearTimeout(popTimer);
+              state.popularity = pop && pop.ok ? pop : null;
+              c.popularity = state.popularity;
+              if (state.companion && (state.companion.id === c.id || state.companion.uid === c.uid)) {
+                render(c);
+              }
+            })
+            .catch(function () {
+              clearTimeout(popTimer);
             });
-          })
-          .then(function (pop) {
-            clearTimeout(popTimer);
-            state.popularity = pop && pop.ok ? pop : null;
-            c.popularity = state.popularity;
-            if (state.companion && (state.companion.id === c.id || state.companion.uid === c.uid)) {
-              render(c);
-            }
-          })
-          .catch(function () {
-            clearTimeout(popTimer);
-          });
-      })
-      .catch(function (err) {
-        if (settled) return;
-        settled = true;
-        clearTimeout(failSafe);
-        renderError(err.message || "该陪玩资料不存在");
-      });
+        })
+        .catch(function (err) {
+          if (index + 1 < candidates.length) {
+            tryNext(index + 1);
+            return;
+          }
+          if (settled) return;
+          settled = true;
+          clearTimeout(failSafe);
+          renderError(err.message || "该陪玩资料不存在");
+        });
+    }
+
+    tryNext(0);
   }
 
   load();
