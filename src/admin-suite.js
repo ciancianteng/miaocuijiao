@@ -1495,7 +1495,7 @@
     games:{target:'gameManagement',title:'服务管理',type:'games',desc:'已迁移至服务管理模块（无图片字段）。',fields:['name','category','showOnHome','allowApply','allowOrder','sort'],disabled:true},
     'service-types':{target:'serviceTypeManagement',title:'服务类型管理',type:'service_types',desc:'新增、编辑、删除、排序、启用/停用服务类型；保存后同步陪玩大厅筛选、申请陪玩、老板下单、客服建单、固定单和抢单大厅。',fields:['name','game','allGames','description','icon','fixedPrice','minPrice','maxPrice','unit','allowCustomOrder','allowGrab','showInHallFilter','sort']},
     'companion-tags':{target:'companionTagManagement',title:'陪玩标签管理',type:'companion_tags',desc:'已迁移至专用陪玩标签管理模块。',fields:['name','group','selfSelectable','requiresAudit','showInHall','supportsFilter','sort'],disabled:true},
-    'companion-levels':{target:'companionLevelSettings',title:'陪玩等级管理',type:'companion_levels',desc:'已迁移至专用陪玩等级管理模块。',fields:['code','name','minPrice','maxPrice','icon','cardStyle','description','commissionRate','sort'],disabled:true},
+    'companion-levels':{target:'companionLevelSettings',title:'陪玩等级管理',type:'companion_levels',desc:'已合并到「制度与等级」。请在该入口维护等级、颜色、升级条件与抽成。',fields:['code','name','minPrice','maxPrice','icon','cardStyle','description','commissionRate','sort'],disabled:true},
     'featured-players':{target:'featuredPlayerManagement',title:'推荐陪玩管理',type:'featured_players',desc:'选择首页展示的推荐陪玩，控制排序、推荐理由和显示状态。',fields:['companionUid','nickname','reason','showOnHome','sort']},
     'hot-games':{target:'hotGameManagement',title:'热门游戏管理',type:'hot_games',desc:'管理首页热门游戏入口，支持新增、编辑、删除、排序和启用/停用。',fields:['name','game','icon','cover','description','showOnHome','sort']},
     banners:{target:'crud-banners',title:'Banner 管理',type:'banners',desc:'已迁移至专用 Banner 上传管理模块。',fields:['title','desktopImage','mobileImage','link','linkTarget','sort','startAt','endAt','autoPlay','intervalSeconds'],disabled:true},
@@ -1950,7 +1950,8 @@
     'companion-tags':['陪玩标签管理','维护甜妹、御姐、搞笑等普通标签，陪玩可多选'],
     'featured-players':['推荐陪玩管理','选择首页展示陪玩和排序'],
     'hot-games':['热门游戏管理','管理首页热门游戏和排序'],
-    'companion-levels':['陪玩等级管理','等级名称、颜色、卡片背景、徽章、价格区间、升级条件、抽成和排序'],
+    'companion-levels':['制度与等级（已合并）','陪玩等级已并入「制度与等级」，请勿在此维护'],
+    'companion-cert-tags':['认证徽章管理','创建/编辑前台卡片认证徽章：名称、颜色、图标、启用状态'],
     service:['客服管理','客服账号和工作统计'],
     orders:['订单管理','订单流程、状态和售后'],
     'recharge-campaigns':['充值活动管理','充值档位、基础猫粮与赠送猫粮'],
@@ -1975,7 +1976,7 @@
     'custom-order-settings':['自定义订单设置','自定义订单字段、规则和价格限制'],
     'gameplay-qualifications':['玩法资格审核','陪玩固定玩法服务资格审核'],
     'companion-rules':['制度管理 · 陪玩申请制度','编辑陪玩申请第 1 步制度标题、正文与启用状态'],
-    'rules-hub':['制度与等级','俱乐部等级说明、陪玩规则、强制公告与阅读记录'],
+    'rules-hub':['制度与等级','唯一等级配置入口：俱乐部等级说明、陪玩等级、升级规则、强制公告与阅读记录'],
     'voice-types':['声音类型管理','声音标签、分类和筛选项'],
     'companion-deposit':['陪玩押金设置','押金金额、审核规则和状态'],
     'companion-applications':['陪玩申请审核','陪玩入驻申请、资料和认证审核'],
@@ -2031,17 +2032,23 @@
     function activate(btn){
       var activeName=btn&&btn.dataset?btn.dataset.section:'';
       if(!activeName)return;
-      var target=targetName(btn);
+      // Legacy 「陪玩等级」entry removed — always open 制度与等级 (single source of truth).
+      if(activeName==='companion-levels'){
+        var rulesBtn=document.querySelector('.side-nav [data-section="rules-hub"]');
+        if(rulesBtn){activate(rulesBtn);return;}
+        activeName='rules-hub';
+      }
+      var target=activeName==='rules-hub'?'rules-hub':targetName(btn);
       document.body.dataset.adminSection=target;
-      var label=buttonLabel(btn);
-      var group=btn.closest('.nav-group');
+      var label=activeName==='rules-hub'?'制度与等级':buttonLabel(btn);
+      var group=btn.closest?btn.closest('.nav-group'):null;
       var parentLabel='';
       var sec=ensureSection(target,label);
       if(group){
         var parent=document.querySelector('[data-toggle-group="'+group.dataset.group+'"]');
         if(parent)parentLabel=buttonLabel(parent);
       }
-      sideButtons.forEach(function(b){b.classList.toggle('active',b.dataset.section===activeName)});
+      sideButtons.forEach(function(b){b.classList.toggle('active',b.dataset.section===activeName||(activeName==='rules-hub'&&b.dataset.section==='rules-hub'))});
       document.querySelectorAll('.nav-parent').forEach(function(parent){parent.classList.remove('active-parent')});
       document.querySelectorAll('.section').forEach(function(s){s.classList.toggle('active',sec&&s===sec)});
       if(group){
@@ -2094,10 +2101,15 @@
     });
     var orderSectionAliases={'order-waiting-accept':'orders','order-waiting-confirm':'orders','order-running':'orders','order-completed':'orders','refund-orders':'orders','pending-orders':'orders','after-sale-orders':'orders'};
     var headerOnlySections={'admin-accounts':1,'change-password':1};
-    function sectionFromHash(){return (location.hash||'#dashboard').replace('#','')||'dashboard'}
-    function buttonForSection(name){name=orderSectionAliases[name]||name;return document.querySelector('.side-nav [data-section="'+name+'"], .side-nav [data-target-section="'+name+'"]')}
+    function sectionFromHash(){
+      var name=(location.hash||'#dashboard').replace('#','')||'dashboard';
+      if(name==='companion-levels')return 'rules-hub';
+      return name;
+    }
+    function buttonForSection(name){name=orderSectionAliases[name]||name;if(name==='companion-levels')name='rules-hub';return document.querySelector('.side-nav [data-section="'+name+'"], .side-nav [data-target-section="'+name+'"]')}
     function activateByName(name){
       name=orderSectionAliases[name]||name;
+      if(name==='companion-levels')name='rules-hub';
       var btn=buttonForSection(name);
       if(btn){activate(btn);return true;}
       if(!headerOnlySections[name]&&!document.getElementById('section-'+name))return false;

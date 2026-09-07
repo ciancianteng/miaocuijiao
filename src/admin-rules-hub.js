@@ -79,7 +79,7 @@
 
   function tabsHtml() {
     var tabs = [
-      ["levels", "俱乐部等级说明"],
+      ["levels", "陪玩等级配置"],
       ["rules", "陪玩规则"],
       ["forced", "强制公告"],
       ["acks", "阅读记录"],
@@ -118,7 +118,7 @@
       "</div>" +
       '<div class="row" style="margin-top:10px"><button class="primary-btn" type="submit">保存页面文案</button></div>' +
       "</form>" +
-      '<p class="admin-sync-note">下方等级列表复用现有陪玩等级管理（价格、图标、升级条件等）。保存后首页「俱乐部等级说明」立即读取。</p>' +
+      '<p class="admin-sync-note">此处为<strong>唯一</strong>陪玩等级配置入口（已合并原「陪玩等级」菜单）。大厅 / 详情 / 徽章 / 卡片 / 升级规则统一读取 <code>companion_levels</code>，保存并「发布到全站」后立即生效。</p>' +
       '<div id="companionLevelSettingsHub"></div>' +
       "</div>"
     );
@@ -293,7 +293,7 @@
             : acksTab();
     box.innerHTML =
       '<section class="service-account-admin">' +
-      '<header class="service-account-head"><div><h2>平台制度与等级管理</h2><p>统一管理俱乐部等级说明、陪玩规则、强制公告与阅读记录。保存后前台实时读取，无需发版。</p></div></header>' +
+      '<header class="service-account-head"><div><h2>平台制度与等级管理</h2><p>单一数据源：陪玩等级、升级规则、俱乐部等级说明、陪玩规则与强制公告。请勿再使用已移除的「陪玩等级」独立菜单。</p></div></header>' +
       (state.error ? '<div class="admin-sync-note error">' + esc(state.error) + "</div>" : "") +
       (state.message ? '<div class="admin-sync-note">' + esc(state.message) + "</div>" : "") +
       tabsHtml() +
@@ -561,6 +561,10 @@
     if (e.target.closest('[data-section="rules-hub"],[data-section="companion-rules"]')) {
       setTimeout(maybeLoad, 40);
     }
+  });
+  document.addEventListener("mcj:admin-section", function (e) {
+    var section = e && e.detail && e.detail.section;
+    if (section === "rules-hub" || section === "companion-rules") setTimeout(maybeLoad, 40);
   });
   window.__MCJRenderRulesHub = maybeLoad;
 })();
