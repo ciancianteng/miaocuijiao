@@ -69,6 +69,8 @@ body{background:radial-gradient(circle at 76% 4%,rgba(255,145,195,.055),transpar
 .companion-hall-grid .companion-tags,
 .companion-hall-grid .mcj-id-tags,
 .companion-hall-grid .companion-identity-row,
+.companion-hall-grid .companion-cert-row,
+.companion-hall-grid .companion-capsule-row,
 .companion-hall-grid .companion-games-row{
   display:flex !important;
   flex-wrap:wrap !important;
@@ -87,6 +89,8 @@ body{background:radial-gradient(circle at 76% 4%,rgba(255,145,195,.055),transpar
 .companion-hall-grid .companion-tags > span,
 .companion-hall-grid .mcj-id-tags > span,
 .companion-hall-grid .companion-identity-row > span,
+.companion-hall-grid .companion-cert-row > span,
+.companion-hall-grid .companion-capsule-row > span,
 .companion-hall-grid .companion-games-row > span{
   display:inline-flex !important;
   align-items:center !important;
@@ -107,6 +111,8 @@ body{background:radial-gradient(circle at 76% 4%,rgba(255,145,195,.055),transpar
 .companion-hall-grid .companion-tags > span > span,
 .companion-hall-grid .mcj-id-tags > span > span,
 .companion-hall-grid .companion-identity-row > span > span,
+.companion-hall-grid .companion-cert-row > span > span,
+.companion-hall-grid .companion-capsule-row > span > span,
 .companion-hall-grid .companion-games-row > span > span{
   display:inline-flex !important;
   align-items:center !important;
@@ -138,7 +144,9 @@ body{background:radial-gradient(circle at 76% 4%,rgba(255,145,195,.055),transpar
 .companion-hall-grid .companion-tags .mcj-cert-badge,
 .companion-hall-grid .companion-tags .mcj-cert-tag,
 .companion-hall-grid .companion-identity-row .mcj-cert-badge,
-.companion-hall-grid .companion-identity-row .mcj-cert-tag{
+.companion-hall-grid .companion-identity-row .mcj-cert-tag,
+.companion-hall-grid .companion-cert-row .mcj-cert-badge,
+.companion-hall-grid .companion-cert-row .mcj-cert-tag{
   border-style:solid !important;
   border-width:var(--mcj-badge-bw, 1px) !important;
   border-color:rgba(255,142,200,.55) !important;
@@ -173,19 +181,34 @@ body{background:radial-gradient(circle at 76% 4%,rgba(255,145,195,.055),transpar
   color:rgba(255,232,244,.86) !important;
 }
 
-/* Card body: name, id, badges, games (bottom), actions — no price on hall browse cards */
+/* Card body hierarchy: number → nickname → id → certs → tags → actions (no price) */
 .companion-hall-grid .companion-card-body{
   display:grid !important;
   grid-template-columns:minmax(0,1fr) !important;
   grid-template-areas:
+    "number"
     "title"
     "id"
-    "identity"
-    "games"
+    "certs"
+    "tags"
     "actions" !important;
   row-gap:8px !important;
   column-gap:10px !important;
-  align-items:center !important;
+  align-items:start !important;
+  min-height:0 !important;
+}
+.companion-hall-grid .companion-number{
+  grid-area:number !important;
+  margin:0 !important;
+  padding:0 !important;
+  color:rgba(255,255,255,.42) !important;
+  font-size:12px !important;
+  font-weight:600 !important;
+  line-height:1.2 !important;
+  letter-spacing:.04em !important;
+}
+.companion-hall-grid .companion-number:empty{
+  display:none !important;
 }
 .companion-hall-grid .companion-card-title-row{
   grid-area:title !important;
@@ -195,11 +218,18 @@ body{background:radial-gradient(circle at 76% 4%,rgba(255,145,195,.055),transpar
   min-width:0 !important;
   margin:0 !important;
 }
-.companion-hall-grid .companion-card-title-row h3{
+.companion-hall-grid .companion-card-title-row h3,
+.companion-hall-grid .companion-nickname{
   margin:0 !important;
   min-width:0 !important;
   flex:1 1 auto !important;
   line-height:1.25 !important;
+  font-size:18px !important;
+  font-weight:800 !important;
+  color:#fff !important;
+  white-space:nowrap !important;
+  overflow:hidden !important;
+  text-overflow:ellipsis !important;
 }
 .companion-hall-grid .companion-status-inline{
   display:none !important;
@@ -207,10 +237,12 @@ body{background:radial-gradient(circle at 76% 4%,rgba(255,145,195,.055),transpar
 .companion-hall-grid .companion-id{
   grid-area:id !important;
   display:block !important;
-  opacity:.7 !important;
+  opacity:.62 !important;
   font-size:12px !important;
+  font-weight:500 !important;
   line-height:1.25 !important;
   margin:0 !important;
+  color:rgba(255,232,244,.72) !important;
 }
 .companion-hall-grid .companion-meta-desktop{
   display:none !important;
@@ -218,37 +250,42 @@ body{background:radial-gradient(circle at 76% 4%,rgba(255,145,195,.055),transpar
 .companion-hall-grid .companion-meta-desktop .companion-game-text{
   display:none !important;
 }
-/* Identity row: level + verification + voice (always show level here) */
-.companion-hall-grid .companion-identity-row > .companion-level-pill,
-.companion-hall-grid .companion-identity-row > .mcj-level-tag{
-  display:inline-flex !important;
-}
-.companion-hall-grid .companion-identity-row{
-  grid-area:identity !important;
+/* Cert row + tag capsules: horizontal flex + wrap, shared gap */
+.companion-hall-grid .companion-cert-row,
+.companion-hall-grid .companion-capsule-row,
+.companion-hall-grid .companion-identity-row,
+.companion-hall-grid .companion-games-row{
   display:flex !important;
   flex-wrap:wrap !important;
   align-items:center !important;
+  justify-content:flex-start !important;
   gap:8px !important;
   row-gap:8px !important;
   column-gap:8px !important;
   margin:0 !important;
   width:100% !important;
+  max-width:100% !important;
 }
-/* Keep game chips out of the top badge row; category tags stay with identity */
-.companion-hall-grid .companion-identity-row .companion-game-chip{
+.companion-hall-grid .companion-cert-row{
+  grid-area:certs !important;
+}
+.companion-hall-grid .companion-cert-row:empty{
   display:none !important;
 }
-/* Bottom: game / service chips only */
+.companion-hall-grid .companion-identity-row,
+.companion-hall-grid .companion-capsule-row.companion-identity-row{
+  grid-area:tags !important;
+}
+/* Games merged into identity capsule row — hide legacy standalone games area */
 .companion-hall-grid .companion-games-row{
-  grid-area:games !important;
-  display:flex !important;
-  flex-wrap:wrap !important;
-  align-items:center !important;
-  gap:8px !important;
-  row-gap:8px !important;
-  column-gap:8px !important;
-  margin:0 !important;
-  width:100% !important;
+  display:none !important;
+}
+.companion-hall-grid .companion-identity-row > .companion-level-pill,
+.companion-hall-grid .companion-identity-row > .mcj-level-tag,
+.companion-hall-grid .companion-identity-row .companion-game-chip,
+.companion-hall-grid .companion-identity-row .mcj-service-tag,
+.companion-hall-grid .companion-identity-row .mcj-category-tag{
+  display:inline-flex !important;
 }
 .companion-hall-grid .companion-price,
 .companion-hall-grid .companion-level-price-range,
@@ -262,8 +299,9 @@ body{background:radial-gradient(circle at 76% 4%,rgba(255,145,195,.055),transpar
   flex-direction:row !important;
   align-items:stretch !important;
   gap:8px !important;
-  margin:0 !important;
+  margin:4px 0 0 !important;
   width:100% !important;
+  flex-shrink:0 !important;
 }
 .companion-hall-grid .companion-card-action{
   flex:1 1 0% !important;
@@ -317,8 +355,9 @@ body{background:radial-gradient(circle at 76% 4%,rgba(255,145,195,.055),transpar
     gap:8px !important;
     width:100% !important;
   }
-  .companion-hall-grid .companion-card-title-row h3{
-    font-size:17px !important;
+  .companion-hall-grid .companion-card-title-row h3,
+  .companion-hall-grid .companion-nickname{
+    font-size:18px !important;
     white-space:nowrap !important;
     overflow:hidden !important;
     text-overflow:ellipsis !important;
@@ -373,29 +412,31 @@ body{background:radial-gradient(circle at 76% 4%,rgba(255,145,195,.055),transpar
     font-size:11px !important;
     line-height:1.25 !important;
   }
-  /* Mobile rows: hide desktop meta; show level inside identity + games chips */
+  .companion-hall-grid .companion-number{
+    font-size:11px !important;
+  }
+  /* Mobile: keep level + voice + service + games wrapping in one capsule row */
   .companion-hall-grid .companion-meta-desktop{
     display:none !important;
   }
   .companion-hall-grid .companion-identity-row > .companion-level-pill,
-  .companion-hall-grid .companion-identity-row > .mcj-level-tag{
+  .companion-hall-grid .companion-identity-row > .mcj-level-tag,
+  .companion-hall-grid .companion-identity-row .mcj-service-tag,
+  .companion-hall-grid .companion-identity-row .mcj-category-tag,
+  .companion-hall-grid .companion-identity-row .companion-game-chip{
     display:inline-flex !important;
   }
-  .companion-hall-grid .companion-identity-row .mcj-gender-tag,
-  .companion-hall-grid .companion-identity-row .mcj-service-tag{
+  .companion-hall-grid .companion-identity-row .mcj-gender-tag{
     display:none !important;
   }
   .companion-hall-grid .companion-games-row{
+    display:none !important;
+  }
+  .companion-hall-grid .companion-cert-row,
+  .companion-hall-grid .companion-identity-row{
     display:flex !important;
     flex-wrap:wrap !important;
     align-items:center !important;
-    gap:8px !important;
-    row-gap:8px !important;
-    column-gap:8px !important;
-    margin:0 !important;
-    width:100% !important;
-  }
-  .companion-hall-grid .companion-identity-row{
     gap:8px !important;
     row-gap:8px !important;
     column-gap:8px !important;
@@ -508,32 +549,7 @@ body{background:radial-gradient(circle at 76% 4%,rgba(255,145,195,.055),transpar
 }
 .companion-hall-grid .mcj-cert-badge .mcj-cert-icon{font-size:12px!important;line-height:1!important}
 
-/* Identity watermark on hall media — same .mcj-cert-badge / .is-official as detail */
+/* Cert badges live in card body — remove photo overlay watermark */
 .companion-hall-grid .companion-card-media .companion-identity-watermark{
-  position:absolute!important;
-  left:10px!important;
-  right:10px!important;
-  bottom:10px!important;
-  z-index:2!important;
-  display:flex!important;
-  flex-wrap:wrap!important;
-  align-items:center!important;
-  gap:6px!important;
-  margin:0!important;
-  padding:8px!important;
-  border-radius:12px!important;
-  border:0!important;
-  background:linear-gradient(180deg,rgba(8,6,12,.05),rgba(8,6,12,.72))!important;
-  box-shadow:none!important;
-  pointer-events:none!important;
-}
-.companion-hall-grid .companion-card-media .companion-identity-watermark .mcj-cert-badge,
-.companion-hall-grid .companion-card-media .companion-identity-watermark .mcj-cert-tag{
-  pointer-events:auto!important;
-  height:var(--mcj-badge-h, 28px)!important;
-  min-height:var(--mcj-badge-h, 28px)!important;
-  max-height:var(--mcj-badge-h, 28px)!important;
-  padding:0 var(--mcj-badge-pad-x, 10px)!important;
-  margin:0!important;
-  backdrop-filter:blur(8px)!important;
+  display:none !important;
 }
