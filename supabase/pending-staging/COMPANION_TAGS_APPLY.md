@@ -3,7 +3,10 @@
 **Target:** Staging Supabase `cfccwysniduwkjskiqgy`  
 **Do NOT run on Production** `jqfaknpmcnqwqvatrwgo`
 
-## Option A — SQL Editor (recommended if agent has no Staging DB secret)
+Admin UI no longer accepts DB passwords / DATABASE_URL / PAT / SQL execution.
+Apply migrations with SQL Editor or internal CLI only.
+
+## Option A — SQL Editor (recommended)
 
 1. Open: https://supabase.com/dashboard/project/cfccwysniduwkjskiqgy/sql/new  
 2. Paste contents of `supabase/companion-tags.sql`  
@@ -14,16 +17,7 @@
 select count(*) from public.companion_tags;
 ```
 
-## Option B — Admin UI (after this PR is on Preview/Staging)
-
-1. Open Staging admin → 陪玩标签  
-2. If banner “标签表未就绪” shows, paste **one** of:
-   - Staging DB password
-   - Staging `DATABASE_URL` (must include `cfccwysniduwkjskiqgy`)
-   - Supabase PAT
-3. Click **执行 Staging companion-tags.sql**
-
-## Option C — CLI
+## Option B — Internal CLI
 
 ```bash
 STAGING_DB_PASSWORD='…' node scripts/apply-companion-tags-staging.mjs
@@ -33,4 +27,5 @@ STAGING_DATABASE_URL='postgresql://postgres.cfccwysniduwkjskiqgy:***@…' node s
 
 ## Verify write path
 
-After apply, Staging admin tag save should succeed (no “标签表未就绪…” error).
+After apply, Staging/Production admin → 陪玩标签管理 should load from DB and allow CRUD
+(no migration credential inputs in the admin panel).
