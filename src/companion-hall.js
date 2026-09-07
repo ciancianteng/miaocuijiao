@@ -105,15 +105,6 @@
     if (window.MCJCurrency) return window.MCJCurrency.formatRate(value, "小时");
     return priceNumber(value) + " 猫粮/小时";
   }
-  function formatHourlyPriceFx(value) {
-    if (window.MCJCurrency && typeof window.MCJCurrency.formatCatFoodWithFx === "function") {
-      return window.MCJCurrency.formatCatFoodWithFx(value);
-    }
-    if (window.MCJCurrency && typeof window.MCJCurrency.formatRmWithFx === "function") {
-      return "≈ " + window.MCJCurrency.formatRmWithFx(value);
-    }
-    return "";
-  }
   function normalizeStatus(value) {
     if (window.MCJCompanionPresence) {
       return window.MCJCompanionPresence.label(value);
@@ -483,18 +474,9 @@
           return '<div class="mcj-id-tags companion-identity-row companion-tags">' + level + cert + voiceHtml + cats + "</div>";
         })();
     // Bottom row: game / service list only.
+    // Hall = browse card only — no selling price, FX conversion, or level price range.
+    // Pricing stays on detail / 立即下单 flows (data-hall-price + profile detail).
     var gamesRow = '<div class="mcj-id-tags companion-games-row companion-tags">' + gameChips(item) + "</div>";
-    var fx = formatHourlyPriceFx(item.priceValue);
-    var levelRangeText = item.levelPriceRangeText || item.levelPriceRange || "";
-    var priceHtml =
-      '<div class="price companion-price">' +
-      '<span class="companion-selling-price-label">实际售价</span> ' +
-      esc(item.price) +
-      (fx ? ' <span class="price-fx-approx">' + esc(fx) + "</span>" : "") +
-      (levelRangeText
-        ? '<div class="companion-level-price-range" data-level-id="' + esc(item.levelId || "") + '" title="等级限价区间来自后台 companion_levels，不是陪玩售价">等级限价区间 ' + esc(levelRangeText) + "</div>"
-        : "") +
-      "</div>";
     var badgeClass = statusBadgeClass(item.status);
     var publicId = item.publicId || "未生成";
     var uuid = String(item.id || "").trim();
@@ -514,7 +496,6 @@
         '<p class="muted companion-id">陪玩 ID：' + esc(publicId) + '</p>' +
         identityRow +
         gamesRow +
-        priceHtml +
         '<div class="companion-card-actions"><a class="companion-card-action" href="' + esc(detailHref) + '">查看详情</a><button type="button" class="companion-card-action primary" data-hall-order="' + esc(uuid) + '" data-hall-name="' + esc(item.name || "") + '" data-hall-price="' + esc(item.priceValue || "") + '" data-hall-level="' + esc(item.levelId || "") + '" data-hall-game="' + esc(item.game || "") + '" data-hall-avatar="' + esc(item.image || "") + '" data-hall-public-id="' + esc(publicId || "") + '" data-hall-status="' + esc(item.availabilityStatus || "") + '" data-hall-status-text="' + esc(item.status || "") + '">立即下单</button></div>' +
       '</div>' +
     '</article>';

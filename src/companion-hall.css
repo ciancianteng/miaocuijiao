@@ -173,16 +173,16 @@ body{background:radial-gradient(circle at 76% 4%,rgba(255,145,195,.055),transpar
   color:rgba(255,232,244,.86) !important;
 }
 
-/* Card body: name|price, then id, badges, games (bottom), actions */
+/* Card body: name, id, badges, games (bottom), actions — no price on hall browse cards */
 .companion-hall-grid .companion-card-body{
   display:grid !important;
-  grid-template-columns:minmax(0,1fr) auto !important;
+  grid-template-columns:minmax(0,1fr) !important;
   grid-template-areas:
-    "title price"
-    "id id"
-    "identity identity"
-    "games games"
-    "actions actions" !important;
+    "title"
+    "id"
+    "identity"
+    "games"
+    "actions" !important;
   row-gap:8px !important;
   column-gap:10px !important;
   align-items:center !important;
@@ -250,22 +250,11 @@ body{background:radial-gradient(circle at 76% 4%,rgba(255,145,195,.055),transpar
   margin:0 !important;
   width:100% !important;
 }
-.companion-hall-grid .companion-price{
-  grid-area:price !important;
-  display:block !important;
-  margin:0 !important;
-  text-align:right !important;
-  line-height:1.25 !important;
-  white-space:normal !important;
-  align-self:center !important;
-}
-.companion-hall-grid .companion-price .price-fx-approx{
-  display:inline-block !important;
-  opacity:.65 !important;
-  font-size:11px !important;
-  font-weight:500 !important;
-  line-height:1.25 !important;
-  margin:0 !important;
+.companion-hall-grid .companion-price,
+.companion-hall-grid .companion-level-price-range,
+.companion-hall-grid .price-fx-approx,
+.companion-hall-grid .companion-selling-price-label{
+  display:none !important;
 }
 .companion-hall-grid .companion-card-actions{
   grid-area:actions !important;
@@ -450,17 +439,10 @@ body{background:radial-gradient(circle at 76% 4%,rgba(255,145,195,.055),transpar
   .companion-hall-grid .mcj-cert-tag.is-official .mcj-cert-icon{
     filter:none !important;
   }
-  .companion-hall-grid .companion-price{
-    width:100% !important;
-    text-align:left !important;
-    font-size:16px !important;
-    margin:0 !important;
-    line-height:1.25 !important;
-  }
-  .companion-hall-grid .companion-price .price-fx-approx{
-    display:block !important;
-    margin-top:2px !important;
-    font-size:12px !important;
+  .companion-hall-grid .companion-price,
+  .companion-hall-grid .companion-level-price-range,
+  .companion-hall-grid .price-fx-approx{
+    display:none !important;
   }
   .companion-hall-grid .companion-card-actions{
     display:flex !important;
