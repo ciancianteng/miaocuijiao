@@ -224,7 +224,7 @@
     return (
       '<div class="panel" style="margin:0 0 14px;padding:14px 16px;border:1px solid rgba(251,191,36,.35);background:rgba(251,191,36,.08)">' +
       '<h4 style="margin:0 0 6px;color:#fde68a">标签表未就绪</h4>' +
-      '<p class="muted" style="margin:0;font-size:12px;line-height:1.55">生产管理页不提供 SQL / 数据库密码 / PAT 操作。请由运维在内部执行 companion-tags 迁移脚本后再使用本页。</p>' +
+      '<p class="muted" style="margin:0;font-size:12px;line-height:1.55">标签数据表尚未就绪。请联系运维完成内部初始化后，即可在本页新增、编辑、启停标签。</p>' +
       "</div>"
     );
   }

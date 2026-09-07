@@ -324,18 +324,11 @@ export default async function handler(req, res) {
 
   try {
     if (action === "ensure" && (req.method === "POST" || req.method === "PUT")) {
-      const result = await ensureMigration({
-        databaseUrl: body.databaseUrl || body.DATABASE_URL || body.stagingDatabaseUrl || "",
-        accessToken:
-          body.accessToken || body.supabaseAccessToken || body.SUPABASE_ACCESS_TOKEN || body.pat || "",
-        databasePassword:
-          body.databasePassword ||
-          body.dbPassword ||
-          body.SUPABASE_DB_PASSWORD ||
-          body.password ||
-          "",
+      // Production admin UI must never expose migration tooling or accept oneshot DB secrets.
+      return json(res, 403, {
+        ok: false,
+        message: "生产后台不支持在线 migration / SQL。请联系运维在内部完成表初始化。",
       });
-      return json(res, 200, result);
     }
 
     if (action === "list" || action === "search") {
@@ -354,7 +347,7 @@ export default async function handler(req, res) {
             ok: true,
             tablesReady: false,
             relations: [],
-            message: "直属关系表未初始化，请先执行 ensure / Staging migration",
+            message: "直属关系表未就绪，请联系运维完成内部初始化。",
           });
         }
         throw error;
@@ -470,7 +463,7 @@ return json(res, 400, {
       return json(res, 200, {
         ok: false,
         tablesReady: false,
-        message: "直属关系表未初始化，请先在 Staging 执行 migration / ensure",
+        message: "直属关系表未就绪，请联系运维完成内部初始化。",
       });
     }
     return json(res, err.status || 500, {

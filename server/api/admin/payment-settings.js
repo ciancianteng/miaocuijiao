@@ -1075,72 +1075,10 @@ async function handler(req, res) {
     const action = String(body.action || "");
 
     if (action === "ensure_schema" || action === "apply_migration") {
-      // Probe payment_channels; optionally apply SQL when DATABASE_URL is present on the server.
-      let tableReady = false;
-      let probeError = "";
-      try {
-        await supabaseFetch(TABLES.channels, "?select=id&limit=1");
-        tableReady = true;
-      } catch (error) {
-        tableReady = !isMissingTable(error);
-        if (!tableReady) probeError = String(error?.message || error).slice(0, 240);
-        else throw error;
-      }
-      if (tableReady) {
-        return json(res, 200, {
-          ok: true,
-          tableReady: true,
-          message: "payment_channels 已就绪",
-          migration: "supabase/migrations/20260731_payment_settings.sql",
-        });
-      }
-      const dbUrl =
-        process.env.DATABASE_URL ||
-        process.env.SUPABASE_DB_URL ||
-        process.env.POSTGRES_URL ||
-        process.env.DIRECT_URL ||
-        "";
-      if (!dbUrl) {
-        return json(res, 200, {
-          ok: true,
-          tableReady: false,
-          applied: false,
-          message:
-            "payment_channels 尚未创建。服务端未配置 DATABASE_URL，无法自动执行 DDL。请在 Supabase SQL Editor 执行 supabase/migrations/20260731_payment_settings.sql。保存接口已可写入 platform_settings 兜底。",
-          migration: "supabase/migrations/20260731_payment_settings.sql",
-          probeError,
-        });
-      }
-      try {
-        const { readFileSync } = await import("node:fs");
-        const { resolve } = await import("node:path");
-        const pg = await import("pg");
-        const sqlPath = resolve(process.cwd(), "supabase/migrations/20260731_payment_settings.sql");
-        const sql = readFileSync(sqlPath, "utf8");
-        const client = new pg.default.Client({ connectionString: dbUrl, ssl: { rejectUnauthorized: false } });
-        await client.connect();
-        try {
-          await client.query(sql);
-        } finally {
-          await client.end();
-        }
-        await supabaseFetch(TABLES.channels, "?select=id&limit=1");
-        return json(res, 200, {
-          ok: true,
-          tableReady: true,
-          applied: true,
-          message: "已执行 payment_settings 迁移，payment_channels 可用",
-          migration: "supabase/migrations/20260731_payment_settings.sql",
-        });
-      } catch (error) {
-        return json(res, 503, {
-          ok: false,
-          tableReady: false,
-          applied: false,
-          message: `自动迁移失败：${error.message || error}`,
-          migration: "supabase/migrations/20260731_payment_settings.sql",
-        });
-      }
+      return json(res, 403, {
+        ok: false,
+        message: "生产后台不支持在线 migration / SQL。请联系运维在内部完成表初始化。",
+      });
     }
 
     if (action === "upload_qr" || action === "upload_pay_qr") {
