@@ -608,6 +608,27 @@ export default async function handler(req, res) {
       const commissionAmount = Math.round(gross * (rate / 100) * 100) / 100;
       const companionIncome = Math.round((gross - commissionAmount) * 100) / 100;
       const message = String(body.message || "").trim();
+      const sourceChannel = String(body.sourceChannel || body.channel || "companion_detail").trim() || "companion_detail";
+
+      // Business rule: gifts/tips may only spend CS-approved recharge (paid_balance).
+      // Pending/rejected recharge never credits paid_balance; bonus cannot pay for gifts.
+      let walletRow = null;
+      try {
+        walletRow = await getWallet(boss.id);
+      } catch (err) {
+        return json(res, 503, { ok: false, message: "钱包读取失败，请稍后重试。" });
+      }
+      const paidBalance = money(walletRow?.paid_balance ?? walletRow?.paidBalance ?? 0);
+      if (paidBalance < gross) {
+        return json(res, 400, {
+          ok: false,
+          code: "INSUFFICIENT_PAID_BALANCE",
+          message: "可用充值猫粮不足。请先完成充值并等待客服确认到账后再赠送礼物。",
+          paidBalance,
+          required: gross,
+          rechargeUrl: "/recharge.html",
+        });
+      }
 
       try {
         await debitWallet({
@@ -617,17 +638,18 @@ export default async function handler(req, res) {
           idempotencyKey: `gift:${idempotencyKey}`,
           reason: `${giftName} x${quantity} → ${companion.nickname || companionId}`,
           operatorId: boss.id,
+          preferBalanceType: "paid",
         });
       } catch (e) {
-        if (/不足|insufficient|balance/i.test(String(e.message || ""))) {
+        if (/不足|insufficient|balance|paid/i.test(String(e.message || ""))) {
           return json(res, 400, {
             ok: false,
-            code: "INSUFFICIENT_BALANCE",
-            message: "猫粮余额不足",
+            code: "INSUFFICIENT_PAID_BALANCE",
+            message: "可用充值猫粮不足。请先完成充值并等待客服确认到账后再赠送礼物。",
             rechargeUrl: "/recharge.html",
           });
         }
-        // If transaction type not allowed by wallet RPC, retry as order_payment-like
+        // If gift/tip type not allowed by wallet RPC, retry as order_payment but still paid-only.
         try {
           await debitWallet({
             bossId: boss.id,
@@ -636,13 +658,14 @@ export default async function handler(req, res) {
             idempotencyKey: `gift:${idempotencyKey}`,
             reason: `${giftName} x${quantity}`,
             operatorId: boss.id,
+            preferBalanceType: "paid",
           });
         } catch (e2) {
-          if (/不足|insufficient|balance/i.test(String(e2.message || ""))) {
+          if (/不足|insufficient|balance|paid/i.test(String(e2.message || ""))) {
             return json(res, 400, {
               ok: false,
-              code: "INSUFFICIENT_BALANCE",
-              message: "猫粮余额不足",
+              code: "INSUFFICIENT_PAID_BALANCE",
+              message: "可用充值猫粮不足。请先完成充值并等待客服确认到账后再赠送礼物。",
               rechargeUrl: "/recharge.html",
             });
           }
@@ -650,30 +673,45 @@ export default async function handler(req, res) {
         }
       }
 
-      await creditCompanionIncome(companionId, companionIncome, `${giftName}收益`, null);
+      await creditCompanionIncome(companionId, companionIncome, `礼物收益：${giftName}`, null);
 
       let tx = null;
       try {
-        const rows = await companionDb("gift_transactions", "", {
-          method: "POST",
-          body: JSON.stringify({
-            tx_no: no("GIFT"),
-            sender_boss_id: boss.id,
-            receiver_companion_id: companionId,
-            gift_id: giftId,
-            gift_name: giftName,
-            quantity,
-            gross_cat_food: gross,
-            platform_commission_rate: rate,
-            platform_commission_amount: commissionAmount,
-            companion_income: companionIncome,
-            message,
-            related_order_id: body.relatedOrderId || null,
-            kind: action === "send_gift" ? "gift" : "tip",
-            idempotency_key: idempotencyKey,
-            created_at: nowIso(),
-          }),
-        });
+        const txPayload = {
+          tx_no: no("GIFT"),
+          sender_boss_id: boss.id,
+          receiver_companion_id: companionId,
+          gift_id: giftId,
+          gift_name: giftName,
+          quantity,
+          gross_cat_food: gross,
+          platform_commission_rate: rate,
+          platform_commission_amount: commissionAmount,
+          companion_income: companionIncome,
+          message,
+          related_order_id: body.relatedOrderId || null,
+          kind: action === "send_gift" ? "gift" : "tip",
+          idempotency_key: idempotencyKey,
+          source_channel: sourceChannel,
+          created_at: nowIso(),
+        };
+        let rows;
+        try {
+          rows = await companionDb("gift_transactions", "", {
+            method: "POST",
+            body: JSON.stringify(txPayload),
+          });
+        } catch (colErr) {
+          if (/source_channel|column/i.test(String(colErr?.message || ""))) {
+            const { source_channel: _sc, ...legacy } = txPayload;
+            rows = await companionDb("gift_transactions", "", {
+              method: "POST",
+              body: JSON.stringify(legacy),
+            });
+          } else {
+            throw colErr;
+          }
+        }
         tx = rows?.[0] || null;
       } catch (e) {
         if (!isMissingRelation(e)) throw e;
@@ -708,6 +746,8 @@ export default async function handler(req, res) {
           iconUrl: giftMeta.iconUrl,
           rarity: giftMeta.rarity,
           effectType: giftMeta.effectType,
+          sourceChannel,
+          paidBalanceOnly: true,
         },
       });
     }

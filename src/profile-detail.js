@@ -840,6 +840,7 @@
                 companionId: state.companion.id || state.companion.uid,
                 giftId: selected.id,
                 quantity: qty,
+                sourceChannel: "companion_detail",
                 idempotencyKey: idem(),
               }),
             })
@@ -871,8 +872,14 @@
                 });
               })
               .catch(function (err) {
-                if (err.code === "INSUFFICIENT_BALANCE" || /余额不足/.test(err.message || "")) {
-                  if (confirm("猫粮余额不足，是否去充值？")) location.href = err.rechargeUrl || "recharge.html";
+                if (
+                  err.code === "INSUFFICIENT_PAID_BALANCE" ||
+                  err.code === "INSUFFICIENT_BALANCE" ||
+                  /余额不足|充值猫粮不足|可用充值/.test(err.message || "")
+                ) {
+                  if (confirm((err.message || "可用充值猫粮不足") + "\n是否去充值？")) {
+                    location.href = err.rechargeUrl || "recharge.html";
+                  }
                   return;
                 }
                 alert(err.message || "赠送失败");
@@ -940,6 +947,7 @@
             companionId: state.companion.id || state.companion.uid,
             amount: amount,
             message: sheet.querySelector("[data-tip-msg]").value || "",
+            sourceChannel: "tip_sheet",
             idempotencyKey: idem(),
           }),
         })
@@ -952,10 +960,19 @@
           .then(function (body) {
             alert(body.message || "打赏成功");
             closeSheet();
+            loadGiftWall().then(function () {
+              if (state.companion) render(state.companion);
+            });
           })
           .catch(function (err) {
-            if (err.code === "INSUFFICIENT_BALANCE" || /余额不足/.test(err.message || "")) {
-              if (confirm("猫粮余额不足，是否去充值？")) location.href = err.rechargeUrl || "recharge.html";
+            if (
+              err.code === "INSUFFICIENT_PAID_BALANCE" ||
+              err.code === "INSUFFICIENT_BALANCE" ||
+              /余额不足|充值猫粮不足|可用充值/.test(err.message || "")
+            ) {
+              if (confirm((err.message || "可用充值猫粮不足") + "\n是否去充值？")) {
+                location.href = err.rechargeUrl || "recharge.html";
+              }
               return;
             }
             alert(err.message || "打赏失败");

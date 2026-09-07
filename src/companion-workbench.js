@@ -224,7 +224,7 @@
     return q;
   }
   var HALL_TYPE_FILTERS=[['all','全部'],['fixed','固定单'],['custom','自定义单']];
-  var EARNINGS_TABS=[['overview','收入'],['withdraw','提现'],['records','流水']];
+  var EARNINGS_TABS=[['overview','收入'],['gifts','礼物收入'],['withdraw','提现'],['records','流水']];
   var _audioCtx=null;
   function playCue(kind){
     if(!readSettings().sound)return;
@@ -1507,6 +1507,7 @@
         state.data.earnings=walletResult.data.earnings||state.data.earnings;
         state.data.walletLedger=walletResult.data.walletLedger||state.data.walletLedger||[];
         state.data.earningDetails=walletResult.data.earningDetails||state.data.earningDetails||[];
+        state.data.giftIncome=walletResult.data.giftIncome||state.data.giftIncome||{summary:{},transactions:[]};
         state.data.withdrawals=mergeWithdrawals(walletResult.data.withdrawals,state.data.withdrawals)||[];
         if(walletResult.data.withdrawalRules){
           state.data.withdrawalRules=Object.assign({},state.data.withdrawalRules||{},walletResult.data.withdrawalRules);
@@ -2719,12 +2720,46 @@
       ?'<div class="pw-form-narrow">'+earningsWithdrawTab()+'</div>'
       :(tab==='records'
         ?'<div class="pw-list-narrow">'+earningsRecordsTab()+'</div>'
-        :earningsOverviewTab());
-    return '<div class="pw-page-head"><div><h2>收益中心</h2><p>收入、提现与流水来自真实数据库，切换下方标签查看收入 / 提现 / 流水。</p></div></div>'+
+        :(tab==='gifts'
+          ?'<div class="pw-list-narrow">'+earningsGiftsTab()+'</div>'
+          :earningsOverviewTab()));
+    return '<div class="pw-page-head"><div><h2>收益中心</h2><p>收入、礼物打赏、提现与流水来自真实数据库。</p></div></div>'+
       '<div class="pw-tabs">'+EARNINGS_TABS.map(function(t){
         return '<button type="button" class="'+(tab===t[0]?'active':'')+'" data-earnings-tab="'+t[0]+'">'+t[1]+'</button>';
       }).join('')+'</div>'+
       body;
+  }
+  function earningsGiftsTab(){
+    var gift=(state.data&&state.data.giftIncome)||{};
+    var summary=gift.summary||{};
+    var rows=gift.transactions||[];
+    return '<section class="pw-grid">'+
+      metric('礼物累计收入',money(num(summary.totalGiftEarnings)))+
+      metric('今日礼物收入',money(num(summary.dailyEarnings)))+
+      metric('本月礼物收入',money(num(summary.monthlyEarnings)))+
+      metric('礼物流水笔数',esc(summary.transactionCount||0))+
+      '</section>'+
+      '<section class="pw-card pad" style="margin-top:14px"><h3>礼物 / 打赏流水</h3>'+
+      (rows.length
+        ?'<div class="pw-table-wrap"><table class="pw-table"><thead><tr><th>时间</th><th>发送方</th><th>陪玩ID</th><th>礼物</th><th>数量</th><th>价值</th><th>到账</th><th>交易号</th><th>来源</th></tr></thead><tbody>'+
+          rows.map(function(x){
+            var sender=x.senderCode||x.senderName||humanId(x.senderBossId)||'-';
+            var companionCode=x.companionCode||((state.data&&state.data.player&&(state.data.player.publicId||state.data.player.public_id))||'-');
+            return '<tr>'+
+              '<td data-label="时间">'+esc(fmtTime(x.createdAt))+'</td>'+
+              '<td data-label="发送方">'+esc(sender)+'</td>'+
+              '<td data-label="陪玩ID">'+esc(companionCode)+'</td>'+
+              '<td data-label="礼物">'+esc(x.giftName||'-')+'</td>'+
+              '<td data-label="数量">'+esc(x.quantity||1)+'</td>'+
+              '<td data-label="价值">'+money(num(x.value))+'</td>'+
+              '<td data-label="到账">'+money(num(x.companionIncome))+'</td>'+
+              '<td data-label="交易号">'+esc(x.transactionId||x.txNo||x.id||'-')+'</td>'+
+              '<td data-label="来源">'+esc(x.sourceChannel||x.kind||'-')+'</td>'+
+              '</tr>';
+          }).join('')+
+          '</tbody></table></div>'
+        :'<div class="pw-empty">暂无礼物收入记录</div>')+
+      '</section>';
   }
   function earningsOverviewTab(){
     var e=(state.data&&state.data.earnings)||{},summary=(state.data&&state.data.summary)||{},details=(state.data&&state.data.earningDetails)||[],level=(state.data&&state.data.levelInfo)||{},warn=state.walletWarning||'';
