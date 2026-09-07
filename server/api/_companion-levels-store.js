@@ -271,8 +271,8 @@ export function normalizeLevelRow(row = {}, index = 0) {
     icon: String(row.icon || fallback.icon || "🩶"),
     color: String(row.color || row.levelColor || fallback.color || "#9CA3AF"),
     displayColor: String(row.displayColor || row.homeColor || row.color || fallback.displayColor || fallback.color || "#9CA3AF"),
-    cardBackground: ["solid", "gradient", "glass"].includes(String(row.cardBackground || row.cardStyle || ""))
-      ? String(row.cardBackground || row.cardStyle)
+    cardBackground: ["solid", "gradient", "glass"].includes(String(row.cardBackground || row.cardStyle || row.card_background || ""))
+      ? String(row.cardBackground || row.cardStyle || row.card_background)
       : fallback.cardBackground || "solid",
     badgeBorder: String(row.badgeBorder || row.badge_border || fallback.badgeBorder || fallback.color),
     badgeText: String(row.badgeText || row.badge_text || fallback.badgeText || "#fff"),
