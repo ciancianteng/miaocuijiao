@@ -247,6 +247,9 @@
       ? identityApi.renderTags({
           levelId: c.levelId || "",
           levelLabel: levelText,
+          levelColor: c.levelColor || (c.levelConfig && c.levelConfig.color) || "",
+          badgeBorder: c.badgeBorder || (c.levelConfig && c.levelConfig.badgeBorder) || "",
+          badgeText: c.badgeText || (c.levelConfig && c.levelConfig.badgeText) || "",
           gender: c.gender || "",
           voiceType: c.voiceType || c.voice_type || "",
           certTags: c.certTags || c.certificationTags || [],

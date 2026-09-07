@@ -457,17 +457,8 @@
           return '<div class="mcj-id-tags companion-identity-row companion-tags">' + level + gender + voiceHtml + styleTags + "</div>";
         })();
     var gamesRow = '<div class="mcj-id-tags companion-games-row companion-tags">' + gameChips(item) + "</div>";
-    var fx = formatHourlyPriceFx(item.priceValue);
-    var levelRangeText = item.levelPriceRangeText || item.levelPriceRange || "";
-    var priceHtml =
-      '<div class="price companion-price">' +
-      '<span class="companion-selling-price-label">实际售价</span> ' +
-      esc(item.price) +
-      (fx ? ' <span class="price-fx-approx">' + esc(fx) + "</span>" : "") +
-      (levelRangeText
-        ? '<div class="companion-level-price-range" data-level-id="' + esc(item.levelId || "") + '" title="等级限价区间来自后台 companion_levels，不是陪玩售价">等级限价区间 ' + esc(levelRangeText) + "</div>"
-        : "") +
-      "</div>";
+    // Marketplace card: hide price UI; keep data-hall-price on order button for checkout.
+    var priceHtml = "";
     var badgeClass = statusBadgeClass(item.status);
     var publicId = item.publicId || "未生成";
     var uuid = String(item.id || "").trim();

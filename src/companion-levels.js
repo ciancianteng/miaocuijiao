@@ -252,6 +252,22 @@
     };
   }
 
+  /**
+   * Unified Level Color System — visual tier only.
+   * Lv1–3: shared soft treatment; Lv4–6: upgraded glow; Lv7+: premium glow.
+   * Hue still comes from admin levelConfig.color (purple stays level-only).
+   */
+  function levelVisualTier(levelNo) {
+    var n = Number(levelNo) || 1;
+    if (n >= 7) {
+      return { tier: 3, glowPx: 26, glowAlpha: 0.44, badgeBgAlpha: 0.3, mediaRing: 2.25, borderAlpha: "66" };
+    }
+    if (n >= 4) {
+      return { tier: 2, glowPx: 18, glowAlpha: 0.34, badgeBgAlpha: 0.24, mediaRing: 1.85, borderAlpha: "55" };
+    }
+    return { tier: 1, glowPx: 12, glowAlpha: 0.22, badgeBgAlpha: 0.16, mediaRing: 1.5, borderAlpha: "44" };
+  }
+
   function cardBackgroundCss(level) {
     var item = normalizeLevelRecord(level, { fromApi: true });
     var color = item.color || "#9CA3AF";
@@ -269,11 +285,14 @@
     return (levels || []).map(function (level) {
       var item = normalizeLevelRecord(level, { fromApi: hydratedFromApi });
       var id = item.id;
+      var tier = levelVisualTier(item.level);
       var bg = cardBackgroundCss(item);
+      var badgeBg = "color-mix(in srgb, " + item.color + " " + Math.round(tier.badgeBgAlpha * 100) + "%, transparent)";
+      // Scope to level surfaces only — do NOT recolor whole page / card body theme.
       return [
-        '[data-companion-level="' + id + '"],.player-card[data-level-id="' + id + '"],.companion-hall-grid .player-card[data-level-id="' + id + '"],.hot-card[data-level-id="' + id + '"]{--mcj-level-color:' + item.color + ';--mcj-level-display:' + item.displayColor + ';--mcj-level-badge-border:' + item.badgeBorder + ';--mcj-level-badge-text:' + item.badgeText + ';--mcj-level-badge-icon:' + item.badgeIcon + ';--mcj-level-card-bg:' + bg + ';}',
-        '.player-card[data-level-id="' + id + '"],.hot-card[data-level-id="' + id + '"]{border-color:' + item.color + '55!important;background:' + bg + '!important;}',
-        '.companion-hall-grid .player-card[data-level-id="' + id + '"] .companion-level-pill,.player-card[data-level-id="' + id + '"] .companion-level-pill,.companion-level-pill[data-level-id="' + id + '"],[data-companion-level="' + id + '"] .companion-level-pill{border:1px solid ' + item.badgeBorder + '!important;color:' + item.badgeText + '!important;background:' + item.color + '33!important;}',
+        '[data-companion-level="' + id + '"],.player-card[data-level-id="' + id + '"],.companion-hall-grid .player-card[data-level-id="' + id + '"],.hot-card[data-level-id="' + id + '"],.profile-hero[data-companion-level="' + id + '"]{--mcj-level-color:' + item.color + ';--mcj-level-display:' + item.displayColor + ';--mcj-level-badge-border:' + item.badgeBorder + ';--mcj-level-badge-text:' + item.badgeText + ';--mcj-level-badge-icon:' + item.badgeIcon + ';--mcj-level-card-bg:' + bg + ';--mcj-level-tier:' + tier.tier + ';--mcj-level-glow-px:' + tier.glowPx + 'px;--mcj-level-glow-alpha:' + tier.glowAlpha + ';--mcj-level-media-ring:' + tier.mediaRing + 'px;}',
+        '.player-card[data-level-id="' + id + '"],.hot-card[data-level-id="' + id + '"]{border-color:' + item.color + tier.borderAlpha + '!important;}',
+        '.companion-hall-grid .player-card[data-level-id="' + id + '"] .companion-level-pill,.player-card[data-level-id="' + id + '"] .companion-level-pill,.companion-level-pill[data-level-id="' + id + '"],[data-companion-level="' + id + '"] .companion-level-pill,.mcj-level-tag[data-level-id="' + id + '"]{border:1px solid ' + item.badgeBorder + '!important;color:' + item.badgeText + '!important;background:' + badgeBg + '!important;box-shadow:0 0 ' + Math.max(6, Math.round(tier.glowPx * 0.45)) + 'px color-mix(in srgb, ' + item.color + ' ' + Math.round(tier.glowAlpha * 55) + '%, transparent)!important;}',
         '.mcj-level-badge[data-level-id="' + id + '"]{border-color:' + item.badgeBorder + ';color:' + item.badgeText + ';}'
       ].join("");
     }).join("");
@@ -411,6 +430,7 @@
     applyTheme: applyTheme,
     cardBackgroundCss: cardBackgroundCss,
     inlineCardStyle: inlineCardStyle,
+    levelVisualTier: levelVisualTier,
     hydrateFromApi: hydrateFromApi,
     hydrateFromList: hydrateFromList,
     normalizeLevelRecord: normalizeLevelRecord,
