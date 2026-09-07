@@ -495,29 +495,52 @@ body{background:radial-gradient(circle at 76% 4%,rgba(255,145,195,.055),transpar
   align-items:start!important;
 }
 .companion-hall-grid .player-card.mcj-market-card{
+  --mcj-level-color: var(--mcj-level-color, #a78bfa);
+  position:relative!important;
   display:flex!important;
   flex-direction:column!important;
   height:auto!important;
   max-height:none!important;
-  border:1px solid color-mix(in srgb, var(--mcj-level-color, #a78bfa) 55%, rgba(255,255,255,.08))!important;
-  border-radius:22px!important;
+  padding:0!important;
+  border:1.5px solid color-mix(in srgb, var(--mcj-level-color, #a78bfa) 62%, rgba(255,255,255,.1))!important;
+  border-radius:24px!important;
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--mcj-level-color, #a78bfa) 12%, transparent), transparent 42%),
-    var(--mcj-level-card-bg, linear-gradient(165deg, rgba(255,255,255,.05), rgba(12,10,16,.92)))!important;
+    radial-gradient(120% 70% at 100% 0%, color-mix(in srgb, var(--mcj-level-color, #a78bfa) 22%, transparent), transparent 55%),
+    linear-gradient(180deg, color-mix(in srgb, var(--mcj-level-color, #a78bfa) 14%, rgba(18,14,24,.96)), rgba(10,8,14,.98) 48%, #0a090d)!important;
+  background-color:transparent!important;
   box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--mcj-level-color, transparent) 18%, transparent),
-    0 18px 42px rgba(0,0,0,.34)!important;
+    inset 0 1px 0 color-mix(in srgb, var(--mcj-level-color, #a78bfa) 28%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--mcj-level-color, transparent) 22%, transparent),
+    0 22px 48px rgba(0,0,0,.42)!important;
   overflow:hidden!important;
   isolation:isolate!important;
-  transition:transform .2s ease, border-color .2s ease, box-shadow .2s ease!important;
+  transition:transform .22s ease, border-color .22s ease, box-shadow .22s ease!important;
 }
 .companion-hall-grid .player-card.mcj-market-card:hover{
-  transform:translateY(-5px)!important;
-  border-color:color-mix(in srgb, var(--mcj-level-color, #c4b5fd) 78%, #fff)!important;
+  transform:translateY(-6px)!important;
+  border-color:color-mix(in srgb, var(--mcj-level-color, #c4b5fd) 85%, #fff)!important;
   box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--mcj-level-color, #a78bfa) 35%, transparent),
-    0 24px 56px rgba(0,0,0,.42),
-    0 0 36px color-mix(in srgb, var(--mcj-level-color, #a78bfa) 22%, transparent)!important;
+    inset 0 1px 0 color-mix(in srgb, var(--mcj-level-color, #a78bfa) 40%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--mcj-level-color, #a78bfa) 40%, transparent),
+    0 28px 60px rgba(0,0,0,.5),
+    0 0 42px color-mix(in srgb, var(--mcj-level-color, #a78bfa) 28%, transparent)!important;
+}
+
+/* Level color rail — structural accent, not a sticker */
+.mcj-market-level-rail{
+  position:absolute!important;
+  left:0!important;
+  top:0!important;
+  bottom:0!important;
+  width:4px!important;
+  z-index:6!important;
+  background:
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--mcj-level-color, #a78bfa) 95%, #fff),
+      var(--mcj-level-color, #a78bfa) 40%,
+      color-mix(in srgb, var(--mcj-level-color, #a78bfa) 35%, transparent))!important;
+  box-shadow:0 0 18px color-mix(in srgb, var(--mcj-level-color, #a78bfa) 55%, transparent)!important;
+  pointer-events:none!important;
 }
 
 .mcj-market-media{
@@ -525,62 +548,189 @@ body{background:radial-gradient(circle at 76% 4%,rgba(255,145,195,.055),transpar
   aspect-ratio:4/5!important;
   overflow:hidden!important;
   background:#120f16!important;
+  margin:0!important;
 }
 .mcj-market-media img{
   width:100%!important;
   height:100%!important;
   object-fit:cover!important;
-  transform:scale(1.01)!important;
+  transform:scale(1.02)!important;
 }
 .mcj-market-media-shade{
   position:absolute!important;
   inset:auto 0 0 0!important;
-  height:46%!important;
+  height:58%!important;
   background:
-    linear-gradient(180deg, transparent 0%, color-mix(in srgb, var(--mcj-level-color, #a78bfa) 18%, rgba(8,6,12,.18)) 42%, rgba(8,6,12,.88) 100%)!important;
+    linear-gradient(180deg,
+      transparent 0%,
+      color-mix(in srgb, var(--mcj-level-color, #a78bfa) 12%, rgba(8,6,12,.2)) 38%,
+      rgba(8,6,12,.94) 100%)!important;
   pointer-events:none!important;
+  z-index:1!important;
+}
+.mcj-market-media-frame{
+  position:absolute!important;
+  inset:10px!important;
+  border:1px solid color-mix(in srgb, var(--mcj-level-color, #a78bfa) 35%, rgba(255,255,255,.08))!important;
+  border-radius:16px!important;
+  pointer-events:none!important;
+  z-index:2!important;
+  box-shadow:inset 0 0 0 1px rgba(0,0,0,.18)!important;
 }
 .mcj-market-status{
-  top:14px!important;
-  left:14px!important;
-  z-index:3!important;
+  top:18px!important;
+  left:18px!important;
+  z-index:4!important;
 }
-.mcj-market-level-ribbon{
+
+/* Integrated level banner (top-right product flag) */
+.mcj-market-level-banner{
   position:absolute!important;
-  right:14px!important;
-  bottom:14px!important;
-  z-index:3!important;
+  top:0!important;
+  right:0!important;
+  z-index:5!important;
+  display:flex!important;
+  flex-direction:column!important;
+  align-items:flex-end!important;
+  gap:8px!important;
+  padding:0 0 0 18px!important;
+  pointer-events:none!important;
+}
+.mcj-market-level-code{
+  display:inline-flex!important;
+  align-items:center!important;
+  justify-content:center!important;
+  min-width:54px!important;
+  height:28px!important;
+  padding:0 12px 0 14px!important;
+  border-radius:0 0 0 14px!important;
+  background:linear-gradient(135deg, var(--mcj-level-color, #a78bfa), color-mix(in srgb, var(--mcj-level-color, #a78bfa) 55%, #1a0f22))!important;
+  color:#120814!important;
+  font-size:12px!important;
+  font-weight:900!important;
+  letter-spacing:.04em!important;
+  box-shadow:0 10px 24px color-mix(in srgb, var(--mcj-level-color, #a78bfa) 40%, transparent)!important;
+}
+.mcj-market-level-ribbon,
+.companion-hall-grid .mcj-market-card .mcj-market-level-ribbon{
+  position:relative!important;
+  right:auto!important;
+  bottom:auto!important;
+  top:auto!important;
+  margin-right:14px!important;
   height:30px!important;
   min-height:30px!important;
   max-height:30px!important;
   padding:0 12px!important;
   border-width:1.5px!important;
+  border-style:solid!important;
   border-radius:999px!important;
   font-size:12px!important;
   font-weight:800!important;
   letter-spacing:.02em!important;
-  backdrop-filter:blur(12px) saturate(1.15)!important;
-  box-shadow:0 8px 22px rgba(0,0,0,.35)!important;
+  backdrop-filter:blur(14px) saturate(1.2)!important;
+  box-shadow:
+    0 8px 22px rgba(0,0,0,.35),
+    0 0 0 1px color-mix(in srgb, var(--mcj-level-color, #a78bfa) 25%, transparent)!important;
 }
 
+/* Name integrated into photo hero */
+.mcj-market-hero-copy{
+  position:absolute!important;
+  left:18px!important;
+  right:18px!important;
+  bottom:16px!important;
+  z-index:4!important;
+  display:flex!important;
+  align-items:flex-end!important;
+  justify-content:space-between!important;
+  gap:10px!important;
+}
+.mcj-market-hero-copy h3{
+  margin:0!important;
+  min-width:0!important;
+  flex:1 1 auto!important;
+  color:#fff!important;
+  font-size:22px!important;
+  line-height:1.15!important;
+  font-weight:850!important;
+  letter-spacing:.01em!important;
+  text-shadow:0 8px 24px rgba(0,0,0,.55)!important;
+  overflow:hidden!important;
+  text-overflow:ellipsis!important;
+  white-space:nowrap!important;
+}
+.mcj-market-hero-copy .mcj-market-status-inline,
+.companion-hall-grid .mcj-market-card .mcj-market-hero-copy .companion-status-inline{
+  display:inline-flex!important;
+  align-items:center!important;
+  flex:0 0 auto!important;
+  height:26px!important;
+  padding:0 10px!important;
+  border-radius:999px!important;
+  border:1px solid rgba(255,255,255,.18)!important;
+  background:rgba(8,6,12,.55)!important;
+  color:rgba(255,255,255,.82)!important;
+  font-size:11px!important;
+  font-weight:700!important;
+  white-space:nowrap!important;
+  backdrop-filter:blur(8px)!important;
+}
+
+/* Dedicated verification band */
+.mcj-market-verify{
+  display:grid!important;
+  grid-template-columns:auto minmax(0,1fr)!important;
+  gap:10px!important;
+  align-items:center!important;
+  margin:-18px 12px 0!important;
+  padding:10px 12px!important;
+  position:relative!important;
+  z-index:5!important;
+  border:1px solid color-mix(in srgb, var(--mcj-level-color, rgba(255,255,255,.2)) 32%, rgba(255,255,255,.08))!important;
+  border-radius:16px!important;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--mcj-level-color, #a78bfa) 16%, rgba(12,10,16,.92)), rgba(12,10,16,.9))!important;
+  backdrop-filter:blur(16px)!important;
+  box-shadow:0 14px 32px rgba(0,0,0,.32)!important;
+}
+.mcj-market-verify.is-empty{
+  opacity:.78!important;
+}
+.mcj-market-verify-head{
+  display:flex!important;
+  align-items:center!important;
+  gap:7px!important;
+  flex:0 0 auto!important;
+  padding-right:10px!important;
+  border-right:1px solid color-mix(in srgb, var(--mcj-level-color, #a78bfa) 28%, rgba(255,255,255,.1))!important;
+}
+.mcj-market-verify-mark{
+  width:10px!important;
+  height:10px!important;
+  border-radius:50%!important;
+  background:var(--mcj-level-color, #a78bfa)!important;
+  box-shadow:0 0 12px color-mix(in srgb, var(--mcj-level-color, #a78bfa) 70%, transparent)!important;
+}
+.mcj-market-verify-label{
+  font-size:11px!important;
+  font-weight:800!important;
+  letter-spacing:.06em!important;
+  color:color-mix(in srgb, var(--mcj-level-color, #c4b5fd) 75%, #fff)!important;
+  white-space:nowrap!important;
+}
 .mcj-market-cert-row{
   display:flex!important;
   flex-wrap:wrap!important;
-  gap:8px!important;
+  gap:7px!important;
   align-items:center!important;
-  margin:-14px 12px 0!important;
-  padding:9px 11px!important;
-  position:relative!important;
-  z-index:4!important;
-  border:1px solid color-mix(in srgb, var(--mcj-level-color, rgba(255,255,255,.2)) 28%, rgba(255,255,255,.08))!important;
-  border-radius:14px!important;
-  background:rgba(12,10,16,.82)!important;
-  backdrop-filter:blur(14px)!important;
-  box-shadow:0 10px 28px rgba(0,0,0,.28)!important;
-}
-.mcj-market-cert-row.is-empty{
-  justify-content:center!important;
-  opacity:.72!important;
+  min-width:0!important;
+  margin:0!important;
+  padding:0!important;
+  border:0!important;
+  background:transparent!important;
+  box-shadow:none!important;
+  backdrop-filter:none!important;
 }
 .mcj-market-cert-empty{
   font-size:11px!important;
@@ -615,8 +765,8 @@ body{background:radial-gradient(circle at 76% 4%,rgba(255,145,195,.055),transpar
   grid-template-rows:none!important;
   row-gap:0!important;
   column-gap:0!important;
-  gap:10px!important;
-  padding:14px 14px 16px!important;
+  gap:12px!important;
+  padding:14px 14px 16px 18px!important;
   flex:1 1 auto!important;
   width:100%!important;
   min-width:0!important;
@@ -626,38 +776,6 @@ body{background:radial-gradient(circle at 76% 4%,rgba(255,145,195,.055),transpar
   width:100%!important;
   min-width:0!important;
   max-width:100%!important;
-}
-.mcj-market-title-row,
-.companion-hall-grid .mcj-market-card .mcj-market-title-row{
-  display:flex!important;
-  align-items:center!important;
-  justify-content:space-between!important;
-  gap:10px!important;
-  width:100%!important;
-  min-width:0!important;
-}
-.mcj-market-title-row h3,
-.companion-hall-grid .mcj-market-card .mcj-market-title-row h3{
-  margin:0!important;
-  min-width:0!important;
-  flex:1 1 auto!important;
-  color:#fff!important;
-  font-size:18px!important;
-  line-height:1.2!important;
-  font-weight:800!important;
-  overflow:hidden!important;
-  text-overflow:ellipsis!important;
-  white-space:nowrap!important;
-}
-.mcj-market-status-inline,
-.companion-hall-grid .mcj-market-card .mcj-market-status-inline.companion-status-inline{
-  display:inline-flex!important;
-  align-items:center!important;
-  flex:0 0 auto!important;
-  font-size:11px!important;
-  font-weight:700!important;
-  color:rgba(255,255,255,.55)!important;
-  white-space:nowrap!important;
 }
 .mcj-market-id,
 .companion-hall-grid .mcj-market-card .mcj-market-id.companion-id{
@@ -672,6 +790,11 @@ body{background:radial-gradient(circle at 76% 4%,rgba(255,145,195,.055),transpar
 .companion-hall-grid .mcj-market-card .mcj-market-id.companion-id[hidden],
 .companion-hall-grid .mcj-market-card .mcj-market-id.companion-id.is-hidden{
   display:none!important;
+}
+.mcj-market-meta-block{
+  display:flex!important;
+  flex-direction:column!important;
+  gap:8px!important;
 }
 .mcj-market-games,
 .mcj-market-style-row{
@@ -693,9 +816,9 @@ body{background:radial-gradient(circle at 76% 4%,rgba(255,145,195,.055),transpar
   line-height:1!important;
 }
 .mcj-market-chip-game{
-  border-color:color-mix(in srgb, var(--mcj-level-color, #a78bfa) 35%, rgba(255,255,255,.1))!important;
-  color:color-mix(in srgb, var(--mcj-level-color, #c4b5fd) 70%, #fff)!important;
-  background:color-mix(in srgb, var(--mcj-level-color, #a78bfa) 12%, transparent)!important;
+  border-color:color-mix(in srgb, var(--mcj-level-color, #a78bfa) 42%, rgba(255,255,255,.1))!important;
+  color:color-mix(in srgb, var(--mcj-level-color, #c4b5fd) 72%, #fff)!important;
+  background:color-mix(in srgb, var(--mcj-level-color, #a78bfa) 14%, transparent)!important;
 }
 .mcj-market-chip-voice{
   border-style:dashed!important;
@@ -709,17 +832,31 @@ body{background:radial-gradient(circle at 76% 4%,rgba(255,145,195,.055),transpar
 
 .mcj-market-price,
 .companion-hall-grid .mcj-market-card .mcj-market-price.companion-price{
+  position:relative!important;
   display:block!important;
   margin-top:2px!important;
-  padding:12px!important;
-  border-radius:14px!important;
+  padding:12px 12px 12px 16px!important;
+  border-radius:16px!important;
   white-space:normal!important;
+  text-align:left!important;
   color:inherit!important;
   font-size:inherit!important;
   font-weight:inherit!important;
-  border:1px solid color-mix(in srgb, var(--mcj-level-color, rgba(255,255,255,.2)) 24%, rgba(255,255,255,.06))!important;
+  overflow:hidden!important;
+  border:1px solid color-mix(in srgb, var(--mcj-level-color, rgba(255,255,255,.2)) 30%, rgba(255,255,255,.06))!important;
   background:
-    linear-gradient(135deg, color-mix(in srgb, var(--mcj-level-color, #a78bfa) 14%, transparent), rgba(255,255,255,.03))!important;
+    linear-gradient(135deg, color-mix(in srgb, var(--mcj-level-color, #a78bfa) 18%, transparent), rgba(255,255,255,.03)),
+    rgba(255,255,255,.02)!important;
+}
+.mcj-market-price-accent{
+  position:absolute!important;
+  left:0!important;
+  top:10px!important;
+  bottom:10px!important;
+  width:3px!important;
+  border-radius:999px!important;
+  background:var(--mcj-level-color, #a78bfa)!important;
+  box-shadow:0 0 12px color-mix(in srgb, var(--mcj-level-color, #a78bfa) 55%, transparent)!important;
 }
 .mcj-market-price-main{
   display:flex!important;
@@ -734,7 +871,7 @@ body{background:radial-gradient(circle at 76% 4%,rgba(255,145,195,.055),transpar
   color:rgba(255,255,255,.5)!important;
 }
 .mcj-market-price-main strong{
-  font-size:22px!important;
+  font-size:24px!important;
   font-weight:850!important;
   letter-spacing:.01em!important;
   color:#fff!important;
@@ -745,8 +882,9 @@ body{background:radial-gradient(circle at 76% 4%,rgba(255,145,195,.055),transpar
   color:rgba(255,255,255,.62)!important;
 }
 .mcj-market-price .price-fx-approx{
+  display:block!important;
   width:100%!important;
-  margin-top:2px!important;
+  margin-top:4px!important;
   font-size:11px!important;
   color:rgba(255,255,255,.42)!important;
   font-weight:600!important;
@@ -764,33 +902,54 @@ body{background:radial-gradient(circle at 76% 4%,rgba(255,145,195,.055),transpar
 
 .mcj-market-actions{
   margin-top:auto!important;
-  padding-top:4px!important;
+  padding-top:2px!important;
 }
 .mcj-market-actions .companion-card-action{
-  height:42px!important;
-  min-height:42px!important;
-  border-radius:13px!important;
+  height:44px!important;
+  min-height:44px!important;
+  max-height:44px!important;
+  border-radius:14px!important;
   font-weight:800!important;
 }
-.mcj-market-actions .companion-card-action.primary{
+.companion-hall-grid .mcj-market-card .mcj-market-actions .companion-card-action:not(.primary){
+  border-color:color-mix(in srgb, var(--mcj-level-color, #a78bfa) 28%, rgba(255,255,255,.12))!important;
+  background:rgba(255,255,255,.04)!important;
+  color:#fff!important;
+}
+.mcj-market-actions .companion-card-action.primary,
+.companion-hall-grid .mcj-market-card .mcj-market-actions .companion-card-action.primary{
+  width:0!important;
+  flex:1.15 1 0%!important;
   border-color:color-mix(in srgb, var(--mcj-level-color, #ff91c3) 55%, rgba(255,145,195,.4))!important;
   background:
     linear-gradient(135deg,
-      color-mix(in srgb, var(--mcj-level-color, #ff91c3) 42%, #ff8fc5),
-      color-mix(in srgb, var(--mcj-level-color, #a855f7) 35%, #ff6fb5))!important;
+      color-mix(in srgb, var(--mcj-level-color, #ff91c3) 55%, #ff8fc5),
+      color-mix(in srgb, var(--mcj-level-color, #a855f7) 48%, #ff6fb5))!important;
   color:#14060e!important;
-  box-shadow:0 10px 24px color-mix(in srgb, var(--mcj-level-color, #a855f7) 28%, transparent)!important;
+  box-shadow:0 12px 28px color-mix(in srgb, var(--mcj-level-color, #a855f7) 32%, transparent)!important;
 }
 
 @media(max-width:560px){
   .mcj-market-media{aspect-ratio:4/5!important}
-  .mcj-market-cert-row{margin:-16px 12px 0!important;padding:9px 10px!important}
+  .mcj-market-media-frame{inset:8px!important;border-radius:14px!important}
+  .mcj-market-hero-copy{left:14px!important;right:14px!important;bottom:14px!important}
+  .mcj-market-hero-copy h3{font-size:20px!important}
+  .mcj-market-verify{
+    margin:-16px 10px 0!important;
+    padding:9px 10px!important;
+    grid-template-columns:1fr!important;
+    gap:8px!important;
+  }
+  .mcj-market-verify-head{
+    border-right:0!important;
+    padding-right:0!important;
+    padding-bottom:6px!important;
+    border-bottom:1px solid color-mix(in srgb, var(--mcj-level-color, #a78bfa) 24%, rgba(255,255,255,.1))!important;
+  }
   .companion-hall-grid .player-card.mcj-market-card .companion-card-body.mcj-market-body,
   .companion-hall-grid .mcj-market-card .mcj-market-body{
-    padding:12px 12px 14px!important;
-    gap:9px!important;
+    padding:12px 12px 14px 16px!important;
+    gap:10px!important;
   }
-  .mcj-market-title-row h3,
-  .companion-hall-grid .mcj-market-card .mcj-market-title-row h3{font-size:17px!important}
-  .mcj-market-price-main strong{font-size:20px!important}
+  .mcj-market-price-main strong{font-size:22px!important}
 }

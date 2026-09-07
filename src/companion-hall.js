@@ -408,42 +408,48 @@
   }
   function certBadgesHtml(item) {
     var list = Array.isArray(item.certTags) ? item.certTags : [];
-    if (!list.length) {
-      return '<div class="mcj-market-cert-row is-empty"><span class="mcj-market-cert-empty">暂无认证徽章</span></div>';
-    }
+    var badges = list
+      .slice(0, 3)
+      .map(function (t) {
+        var name = typeof t === "string" ? t : t.name || t.title || "";
+        if (!name) return "";
+        var icon = typeof t === "object" && t.icon ? String(t.icon) : "🏅";
+        var color = typeof t === "object" && t.color ? String(t.color) : "";
+        var style = color
+          ? ' style="--mcj-cert-color:' +
+            esc(color) +
+            ";border-color:" +
+            esc(color) +
+            ";color:" +
+            esc(color) +
+            ';"'
+          : "";
+        return (
+          '<span class="mcj-cert-badge mcj-market-cert"' +
+          style +
+          ' title="' +
+          esc(name) +
+          '"><span class="mcj-cert-icon" aria-hidden="true">' +
+          esc(icon) +
+          "</span>" +
+          esc(name) +
+          "</span>"
+        );
+      })
+      .filter(Boolean)
+      .join("");
     return (
-      '<div class="mcj-market-cert-row" aria-label="认证徽章">' +
-      list
-        .slice(0, 3)
-        .map(function (t) {
-          var name = typeof t === "string" ? t : t.name || t.title || "";
-          if (!name) return "";
-          var icon = typeof t === "object" && t.icon ? String(t.icon) : "🏅";
-          var color = typeof t === "object" && t.color ? String(t.color) : "";
-          var style = color
-            ? ' style="--mcj-cert-color:' +
-              esc(color) +
-              ";border-color:" +
-              esc(color) +
-              ";color:" +
-              esc(color) +
-              ';"'
-            : "";
-          return (
-            '<span class="mcj-cert-badge mcj-market-cert"' +
-            style +
-            ' title="' +
-            esc(name) +
-            '"><span class="mcj-cert-icon" aria-hidden="true">' +
-            esc(icon) +
-            "</span>" +
-            esc(name) +
-            "</span>"
-          );
-        })
-        .filter(Boolean)
-        .join("") +
-      "</div>"
+      '<section class="mcj-market-verify' +
+      (badges ? "" : " is-empty") +
+      '" aria-label="认证徽章">' +
+        '<div class="mcj-market-verify-head">' +
+          '<span class="mcj-market-verify-mark" aria-hidden="true"></span>' +
+          '<span class="mcj-market-verify-label">平台认证</span>' +
+        "</div>" +
+        '<div class="mcj-market-cert-row">' +
+        (badges || '<span class="mcj-market-cert-empty">暂无认证徽章</span>') +
+        "</div>" +
+      "</section>"
     );
   }
   function styleTagsHtml(item) {
@@ -478,7 +484,7 @@
       ' style="' +
       (badgeBorder ? "border-color:" + esc(badgeBorder) + ";" : "") +
       (badgeText ? "color:" + esc(badgeText) + ";" : "") +
-      (levelColor ? "background:color-mix(in srgb, " + esc(levelColor) + " 28%, rgba(8,6,12,.72));" : "") +
+      (levelColor ? "background:color-mix(in srgb, " + esc(levelColor) + " 34%, rgba(8,6,12,.55));" : "") +
       '"';
     var fx = formatHourlyPriceFx(item.priceValue);
     var levelRangeText = item.levelPriceRange || item.levelPriceRangeText || "";
@@ -498,6 +504,8 @@
     }
     var styleAttr = inlineStyle ? ' style="' + esc(inlineStyle) + '"' : "";
     var levelLabel = item.level || "未设置等级";
+    var levelIdShort = String(item.levelId || "").replace(/^lv/i, "Lv") || "Lv";
+    var priceNum = String(item.price).replace(/\s*猫粮\/小时\s*$/, "") || item.priceValue || "0";
     return (
       '<article class="card player-card mcj-market-card" data-player data-public-id="' +
       esc(String(publicId).toUpperCase()) +
@@ -532,6 +540,7 @@
       '"' +
       styleAttr +
       ">" +
+      '<div class="mcj-market-level-rail" aria-hidden="true"></div>' +
       '<div class="mcj-market-media companion-card-media">' +
         '<img src="' +
         esc(item.image) +
@@ -545,22 +554,27 @@
         DEFAULT_AVATAR +
         "'\">" +
         '<div class="mcj-market-media-shade" aria-hidden="true"></div>' +
+        '<div class="mcj-market-media-frame" aria-hidden="true"></div>' +
         '<span class="mcj-market-status companion-online-badge' +
         badgeClass +
         '">' +
         esc(item.status) +
         "</span>" +
-        '<span class="mcj-market-level-ribbon companion-level-pill mcj-level-tag" data-level-id="' +
+        '<div class="mcj-market-level-banner" data-level-id="' +
         esc(item.levelId || "") +
-        '"' +
-        pillStyle +
-        ">" +
-        esc(levelLabel) +
-        "</span>" +
-      "</div>" +
-      certBadgesHtml(item) +
-      '<div class="mcj-market-body companion-card-body" data-market-body>' +
-        '<div class="mcj-market-title-row companion-card-title-row">' +
+        '">' +
+          '<span class="mcj-market-level-code">' +
+          esc(levelIdShort) +
+          "</span>" +
+          '<span class="mcj-market-level-ribbon companion-level-pill mcj-level-tag" data-level-id="' +
+          esc(item.levelId || "") +
+          '"' +
+          pillStyle +
+          ">" +
+          esc(levelLabel) +
+          "</span>" +
+        "</div>" +
+        '<div class="mcj-market-hero-copy">' +
           "<h3>" +
           esc(item.name) +
           "</h3>" +
@@ -570,6 +584,9 @@
           esc(item.status) +
           "</span>" +
         "</div>" +
+      "</div>" +
+      certBadgesHtml(item) +
+      '<div class="mcj-market-body companion-card-body" data-market-body>' +
         '<p class="mcj-market-id muted companion-id' +
         (publicId === "未生成" ? " is-hidden" : "") +
         '"' +
@@ -577,19 +594,22 @@
         ">陪玩 ID：" +
         esc(publicId) +
         "</p>" +
-        '<div class="mcj-market-games">' +
-        gameChips(item) +
+        '<div class="mcj-market-meta-block">' +
+          '<div class="mcj-market-games">' +
+          gameChips(item) +
+          "</div>" +
+          styleTagsHtml(item) +
         "</div>" +
-        styleTagsHtml(item) +
         '<div class="mcj-market-price companion-price">' +
+          '<div class="mcj-market-price-accent" aria-hidden="true"></div>' +
           '<div class="mcj-market-price-main">' +
             '<span class="companion-selling-price-label">实际售价</span>' +
-            '<strong>' +
-            esc(String(item.price).replace(/\s*猫粮\/小时\s*$/, "") || item.priceValue || "0") +
+            "<strong>" +
+            esc(priceNum) +
             "</strong>" +
             '<span class="mcj-market-price-unit">猫粮/小时</span>' +
-            (fx ? ' <span class="price-fx-approx">' + esc(fx) + "</span>" : "") +
           "</div>" +
+          (fx ? '<span class="price-fx-approx">' + esc(fx) + "</span>" : "") +
           (levelRangeText
             ? '<div class="companion-level-price-range mcj-market-level-limit" data-level-id="' +
               esc(item.levelId || "") +
