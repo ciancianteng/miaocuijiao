@@ -123,12 +123,39 @@ async function loadProfilesForStats() {
   }
 }
 
+/** companion_profiles.is_test_account may be set even when profiles.is_test_account is false. */
+async function loadTestCompanionUserIds() {
+  try {
+    const rows = await supabaseJson(
+      restUrl("companion_profiles", "?select=user_id,is_test_account&is_test_account=eq.true&limit=5000"),
+      { headers: serviceHeaders() }
+    );
+    return (Array.isArray(rows) ? rows : []).map((r) => r.user_id).filter(Boolean);
+  } catch (error) {
+    if (!isMissingColumnError(error)) {
+      // table/column missing → no extra ids
+      if (/companion_profiles|42703|PGRST/i.test(String(error?.message || ""))) return [];
+    }
+    return [];
+  }
+}
+
 /**
  * Aggregate dashboard stats with smoke / @meow.test / is_test_account excluded.
  * Exported for unit verification without HTTP.
+ * @param {{ profiles?: object[], orders?: object[], withdrawals?: object[], now?: Date, extraTestUserIds?: string[] }} args
  */
-export function buildDashboardStats({ profiles = [], orders = [], withdrawals = [], now = new Date() } = {}) {
+export function buildDashboardStats({
+  profiles = [],
+  orders = [],
+  withdrawals = [],
+  now = new Date(),
+  extraTestUserIds = [],
+} = {}) {
   const { byId, testIds } = indexProfilesForStats(profiles);
+  for (const id of extraTestUserIds || []) {
+    if (id) testIds.add(id);
+  }
   const businessOrders = (orders || []).filter((o) => !isTestTouchedOrder(o, testIds, byId));
   const today = now.toISOString().slice(0, 10);
   const revenueOrders = businessOrders.filter((o) => countsAsRevenue(o));
@@ -176,6 +203,8 @@ export function buildDashboardStats({ profiles = [], orders = [], withdrawals = 
       excludedOrders: (orders || []).length - businessOrders.length,
       // RM6000 smoke completed orders must never inflate GMV (totalAmount).
       smokeGmvExcluded: true,
+      // Diagnostic: which business orders contribute to 今日营业额 (not returned as mock).
+      todayRevenueOrderIds: paidToday.map((o) => o.id).filter(Boolean).slice(0, 50),
     },
   };
 }
@@ -191,12 +220,18 @@ export default async function handler(req, res) {
   }
   try {
     await requireAdmin(req);
-    const [profiles, orders, withdrawals] = await Promise.all([
+    const [profiles, orders, withdrawals, extraTestUserIds] = await Promise.all([
       loadProfilesForStats(),
       loadOrdersForStats(),
       loadWithdrawalsForStats(),
+      loadTestCompanionUserIds(),
     ]);
-    const { stats, filter } = buildDashboardStats({ profiles, orders, withdrawals });
+    const { stats, filter } = buildDashboardStats({
+      profiles,
+      orders,
+      withdrawals,
+      extraTestUserIds,
+    });
     return json(res, 200, { ok: true, configured: true, stats, filter });
   } catch (error) {
     return json(res, error.status || 500, { ok: false, message: error.message || "后台统计接口异常。" });
