@@ -252,6 +252,23 @@
     return '<label><span>' + esc(label) + "</span><select name=\"" + esc(name) + '">' + html + "</select></label>";
   }
 
+  function badgeOn(d, key) {
+    if (!d) return false;
+    if (d[key] === true) return true;
+    if (d.badges && d.badges[key] === true) return true;
+    return false;
+  }
+
+  function badgeStatusRows(d) {
+    return [
+      ["真人认证", badgeOn(d, "real_verified") ? "已开启" : "关闭"],
+      ["游戏认证", badgeOn(d, "game_verified") ? "已开启" : "关闭"],
+      ["声线认证", badgeOn(d, "voice_verified") ? "已开启" : "关闭"],
+      ["官方认证", badgeOn(d, "official_verified") ? "已开启" : "关闭"],
+      ["官方推荐", badgeOn(d, "recommended") ? "已开启" : "关闭"],
+    ];
+  }
+
   function statusOptions(selected) {
     return [
       { value: "pending", label: "待审核" },
@@ -401,6 +418,26 @@
           { value: "false", label: "否" },
           { value: "true", label: "是" },
         ], d.featured ? "true" : "false") +
+        select("真人认证", "real_verified", [
+          { value: "false", label: "关闭" },
+          { value: "true", label: "开启" },
+        ], badgeOn(d, "real_verified") ? "true" : "false") +
+        select("游戏认证", "game_verified", [
+          { value: "false", label: "关闭" },
+          { value: "true", label: "开启" },
+        ], badgeOn(d, "game_verified") ? "true" : "false") +
+        select("声线认证", "voice_verified", [
+          { value: "false", label: "关闭" },
+          { value: "true", label: "开启" },
+        ], badgeOn(d, "voice_verified") ? "true" : "false") +
+        select("官方认证", "official_verified", [
+          { value: "false", label: "关闭" },
+          { value: "true", label: "开启" },
+        ], badgeOn(d, "official_verified") ? "true" : "false") +
+        select("官方推荐", "recommended", [
+          { value: "false", label: "关闭" },
+          { value: "true", label: "开启" },
+        ], badgeOn(d, "recommended") ? "true" : "false") +
         "</div>";
     }
 
@@ -701,13 +738,15 @@
       "</tbody></table></div>";
 
     var account =
-      rows([
-        ["当前在线状态", d.onlineStatus || d.online_status || "—"],
-        ["账号状态", d.accountStatus || d.status || "—"],
-        ["是否允许接单", d.allowOrders === false ? "禁止" : "允许"],
-        ["首页推荐", d.featured ? "是" : "否"],
-      ]) +
-      '<div class="admin-sync-note">在线状态由陪玩端维护；后台可停用账号与禁止接单。</div>';
+      rows(
+        [
+          ["当前在线状态", d.onlineStatus || d.online_status || "—"],
+          ["账号状态", d.accountStatus || d.status || "—"],
+          ["是否允许接单", d.allowOrders === false ? "禁止" : "允许"],
+          ["首页推荐", d.featured ? "是" : "否"],
+        ].concat(badgeStatusRows(d))
+      ) +
+      '<div class="admin-sync-note">在线状态由陪玩端维护；认证徽章由管理员开关控制，写入 companion_badges。</div>';
 
     return (
       '<div class="player-drawer-head"><div><h2>' +

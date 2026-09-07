@@ -132,37 +132,72 @@
     var focus = resolveCoverFocus(item);
     var pos = focus.x + "% " + focus.y + "%";
     var certBadges = "";
-    var certList = item.certTags || item.certificationTags || [];
-    if (Array.isArray(certList) && certList.length) {
+    var verifyItems = Array.isArray(item.badgeItems) && item.badgeItems.length
+      ? item.badgeItems
+      : Array.isArray(item.badges && item.badges.items)
+        ? item.badges.items
+        : [];
+    if (verifyItems.length) {
       certBadges =
-        '<div class="hot-tags mcj-cert-tags">' +
-        certList
-          .slice(0, 4)
-          .map(function (t) {
-            var name = typeof t === "string" ? t : t.name || t.title || "";
-            if (!name) return "";
-            var icon = typeof t === "object" && t.icon ? t.icon + " " : "🏅 ";
-            return "<span>" + esc(icon + name) + "</span>";
+        '<div class="companion-verify-badges hot-verify-badges">' +
+        verifyItems
+          .slice(0, 5)
+          .map(function (b) {
+            var key = (b && b.key) || "";
+            var label = (b && (b.short || b.label)) || "";
+            if (!label) return "";
+            return '<span class="companion-verify-badge is-' + esc(key) + '">' + esc(label) + "</span>";
           })
           .filter(Boolean)
           .join("") +
         "</div>";
-    } else if (item.certificationStatus === "approved") {
-      certBadges =
-        '<div class="hot-tags mcj-cert-tags"><span>✔ 已认证</span></div>';
+    } else {
+      var certList = item.certTags || item.certificationTags || [];
+      if (Array.isArray(certList) && certList.length) {
+        certBadges =
+          '<div class="hot-tags mcj-cert-tags">' +
+          certList
+            .slice(0, 4)
+            .map(function (t) {
+              var name = typeof t === "string" ? t : t.name || t.title || "";
+              if (!name) return "";
+              var icon = typeof t === "object" && t.icon ? t.icon + " " : "🏅 ";
+              return "<span>" + esc(icon + name) + "</span>";
+            })
+            .filter(Boolean)
+            .join("") +
+          "</div>";
+      }
     }
+    var statusLabel = "";
+    if (window.MCJCompanionPresence) {
+      statusLabel = window.MCJCompanionPresence.fromCompanion(item).label;
+    } else {
+      var rawStatus = String(item.availabilityStatus || item.status || item.onlineStatus || "").trim();
+      if (/^online$/i.test(rawStatus) || /接单中|在线可接单/.test(rawStatus)) statusLabel = "接单中";
+      else if (/^busy$/i.test(rawStatus) || /游戏中|忙碌/.test(rawStatus)) statusLabel = "游戏中";
+      else statusLabel = "暂停接单";
+    }
+    var statusClass = window.MCJCompanionPresence
+      ? window.MCJCompanionPresence.badgeClass(item)
+      : statusLabel === "接单中"
+        ? " is-online"
+        : statusLabel === "游戏中"
+          ? " is-busy"
+          : " is-paused";
     var actionHtml = detail
       ? '<a class="mini-order" href="' + esc(detail) + '">查看详情</a>'
       : '<span class="mini-order" aria-disabled="true" style="opacity:.55;pointer-events:none">资料不可用</span>';
     return '<article class="neon-card companion-card hot-card" data-companion-id="' + esc(isUuid ? uuid : "") + '" data-public-id="' + esc(focus.publicId || item.publicId || "") + '">' +
-      '<div class="hot-cover"><img src="' + esc(cover || avatar || "/default-avatar.png") + '" alt="' + esc(displayName) + '" data-cover-fit="' + esc(focus.fit) + '" style="object-fit:' + esc(focus.fit) + ';object-position:' + esc(pos) + ';--mcj-cover-pos:' + esc(pos) + '" onerror="this.onerror=null;this.src=\'/default-avatar.png\'"><span class="online-dot"></span></div>' +
+      '<div class="hot-cover"><img src="' + esc(cover || avatar || "/default-avatar.png") + '" alt="' + esc(displayName) + '" data-cover-fit="' + esc(focus.fit) + '" style="object-fit:' + esc(focus.fit) + ';object-position:' + esc(pos) + ';--mcj-cover-pos:' + esc(pos) + '" onerror="this.onerror=null;this.src=\'/default-avatar.png\'"><span class="online-dot companion-online-badge' + statusClass + '">' + esc(statusLabel) + '</span></div>' +
       '<div class="hot-info">' +
       '<h3>' + esc(displayName) + '</h3>' +
-      '<p>' + esc(item.game || item.mainGame || "") + '</p>' +
-      '<div class="hot-meta"><span>' + esc(item.level || "未设置等级") + '</span><span>★ ' + esc(item.rating || "") + '</span></div>' +
-      '<div class="hot-orders">' + esc(price || "") + '</div>' +
       certBadges +
-      '<div class="hot-tags">' + tagsHtml(item.tags || item.serviceTags) + '</div>' +
+      '<p class="companion-status-line' + statusClass + '">' + esc(statusLabel) + '</p>' +
+      '<p>' + esc(item.game || item.mainGame || "") + '</p>' +
+      '<div class="hot-meta"><span>' + esc(item.level || "未设置等级") + '</span><span>★ ' + esc(item.rating || "暂无") + '</span></div>' +
+      '<div class="hot-orders">' + esc(price || "") + '</div>' +
+      '<div class="hot-tags">' + tagsHtml(item.tags || item.serviceTags || item.skills) + '</div>' +
       actionHtml +
       '</div>' +
       '</article>';
@@ -306,13 +341,18 @@
       objectPositionY: item.objectPositionY != null ? item.objectPositionY : item.object_position_y,
       focalPoint: item.focalPoint || item.focal_point || null,
       coverFit: item.coverFit || item.cover_fit || "",
-      tags: item.tags || item.serviceTags || [],
+      tags: item.tags || item.serviceTags || item.skills || [],
+      skills: item.skills || item.tags || item.serviceTags || [],
+      badgeItems: item.badgeItems || (item.badges && item.badges.items) || [],
+      badges: item.badges || null,
+      serviceStats: item.serviceStats || null,
       certTags: item.certTags || item.certificationTags || [],
       certificationStatus: item.verificationStatus || "",
       auditStatus: "approved",
       featured: item.featured === true || item.recommendationStatus === "featured",
       visible: true,
-      status: item.availabilityStatus || item.onlineStatus || item.status || "offline",
+      availabilityStatus: item.availabilityStatus || "",
+      status: item.availabilityText || item.availabilityStatus || item.onlineStatus || item.status || "offline",
       sort: Number(item.sort || 0)
     };
   }

@@ -48,11 +48,11 @@
       return window.MCJCompanionPresence.statusDotHtml(c, esc);
     }
     var code = String((c && c.availabilityStatus) || "offline");
-    var text = (c && (c.availabilityText || c.status || c.onlineStatus)) || "离线";
+    var text = (c && (c.availabilityText || c.status || c.onlineStatus)) || "暂停接单";
     var cls =
-      code === "online" || /在线/.test(text)
+      code === "online" || /接单中|在线/.test(text)
         ? "is-online"
-        : code === "busy" || /忙碌/.test(text)
+        : code === "busy" || /游戏中|忙碌/.test(text)
           ? "is-busy"
           : code === "paused" || /暂停/.test(text)
             ? "is-paused"
@@ -402,6 +402,84 @@
     var monthlyRankText = rankText(monthlyRank);
     var popScoreText = plainEmptyMetric(popScore);
     var newcomerBadge = isNewcomer ? '<span class="pd-newcomer-badge">⭐ 新人陪玩</span>' : "";
+    var badgeItems = Array.isArray(c.badgeItems) && c.badgeItems.length
+      ? c.badgeItems
+      : Array.isArray(c.badges && c.badges.items)
+        ? c.badges.items
+        : [];
+    var badgesSection =
+      '<section class="detail-card pd-badges-card"><div class="section-head"><h2>认证徽章</h2></div>' +
+      (badgeItems.length
+        ? '<div class="companion-verify-badges pd-verify-badges">' +
+          badgeItems
+            .map(function (b) {
+              var key = (b && b.key) || "";
+              var label = (b && (b.label || b.short)) || "";
+              if (!label) return "";
+              return '<span class="companion-verify-badge is-' + esc(key) + '">' + esc(label) + "</span>";
+            })
+            .filter(Boolean)
+            .join("") +
+          "</div>"
+        : '<p class="muted pd-empty-note">暂无认证徽章</p>') +
+      "</section>";
+    var stats = c.serviceStats || {};
+    var statsCompleted = Number(stats.completedOrders != null ? stats.completedOrders : completedOrders) || 0;
+    var statsReviews = Number(stats.reviewCount != null ? stats.reviewCount : reviewCount) || 0;
+    var statsRating = Number(stats.rating != null ? stats.rating : c.rating) || 0;
+    var statsGood = Number(stats.goodReviewCount != null ? stats.goodReviewCount : goodCount) || 0;
+    var statsGoodRate = Number(stats.goodRate != null ? stats.goodRate : c.goodRate) || 0;
+    var serviceStatsSection =
+      '<section class="detail-card pd-service-stats-card"><div class="section-head"><h2>服务数据</h2></div><div class="pd-stat-grid pd-service-stats-grid">' +
+      '<div class="pd-stat-cell"><span>完成订单</span><strong class="' +
+      (statsCompleted > 0 ? "" : "is-empty") +
+      '">' +
+      esc(statsCompleted > 0 ? String(statsCompleted) : "暂无数据") +
+      "</strong></div>" +
+      '<div class="pd-stat-cell"><span>评价数</span><strong class="' +
+      (statsReviews > 0 ? "" : "is-empty") +
+      '">' +
+      esc(statsReviews > 0 ? String(statsReviews) : "暂无数据") +
+      "</strong></div>" +
+      '<div class="pd-stat-cell"><span>好评数</span><strong class="' +
+      (statsGood > 0 ? "" : "is-empty") +
+      '">' +
+      esc(statsGood > 0 ? String(statsGood) : "暂无数据") +
+      "</strong></div>" +
+      '<div class="pd-stat-cell"><span>好评率</span><strong class="' +
+      (statsReviews > 0 ? "" : "is-empty") +
+      '">' +
+      esc(statsReviews > 0 ? statsGoodRate + "%" : "暂无数据") +
+      "</strong></div>" +
+      "</div></section>";
+    var skillList = Array.isArray(c.skills) && c.skills.length
+      ? c.skills
+      : Array.isArray(c.tags)
+        ? c.tags
+        : [];
+    var skillsSection =
+      '<section class="detail-card pd-skills-card"><div class="section-head"><h2>擅长技能</h2></div>' +
+      (skillList.length
+        ? '<div class="pd-skills-list">' +
+          skillList
+            .slice(0, 16)
+            .map(function (t) {
+              return '<span class="pd-skill-chip">' + esc(t) + "</span>";
+            })
+            .join("") +
+          "</div>"
+        : '<p class="muted pd-empty-note">暂未填写技能标签</p>') +
+      "</section>";
+    var ratingPlaceholderSection =
+      '<section class="detail-card pd-rating-card"><div class="section-head"><h2>评分</h2></div>' +
+      (statsRating > 0 && statsReviews > 0
+        ? '<div class="pd-rating-summary"><strong>' +
+          esc(Number(statsRating).toFixed(1)) +
+          '</strong><span>基于 ' +
+          esc(String(statsReviews)) +
+          " 条真实订单评价</span></div>"
+        : '<p class="muted pd-rating-placeholder">暂无评分 · 完成真实订单评价后展示</p>') +
+      "</section>";
 
     s.setAttribute("data-companion-level", c.levelId || "");
     s.innerHTML =
@@ -418,7 +496,21 @@
       " " +
       statusHtml(c) +
       (newcomerBadge ? " " + newcomerBadge : "") +
-      '</h1><div class="profile-id">ID：' +
+      '</h1>' +
+      (badgeItems.length
+        ? '<div class="companion-verify-badges pd-hero-badges">' +
+          badgeItems
+            .map(function (b) {
+              var key = (b && b.key) || "";
+              var label = (b && (b.short || b.label)) || "";
+              if (!label) return "";
+              return '<span class="companion-verify-badge is-' + esc(key) + '">' + esc(label) + "</span>";
+            })
+            .filter(Boolean)
+            .join("") +
+          "</div>"
+        : "") +
+      '<div class="profile-id">ID：' +
       esc(publicId || "待生成") +
       '</div><p class="profile-bio' +
       (bioEmpty ? " is-empty" : "") +
@@ -440,7 +532,12 @@
       (hasVideo
         ? '<div class="detail-card pd-video-card"><div class="section-head"><h2>个人展示视频</h2></div>' + videoHtml + "</div>"
         : "") +
-      '</div></section><section class="detail-card info-card pd-info-card pd-info-card--full"><div class="section-head"><h2>基本资料</h2></div><div class="pd-meta-list">' +
+      '</div></section>' +
+      badgesSection +
+      serviceStatsSection +
+      skillsSection +
+      ratingPlaceholderSection +
+      '<section class="detail-card info-card pd-info-card pd-info-card--full"><div class="section-head"><h2>基本资料</h2></div><div class="pd-meta-list">' +
       metaRow("游戏", esc(c.game || "综合游戏")) +
       metaRow(
         "等级",

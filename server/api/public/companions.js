@@ -71,6 +71,7 @@ import {
 } from "../_account-codes.js";
 import { evaluatePublishGate } from "../_companion-publish-gate.js";
 import { isTestAccountRecord } from "../_test-accounts.js";
+import { badgesByProfileIds, publicBadgesPayload } from "../_companion-badges-store.js";
 
 /** Boss-facing: only audit-approved companion applications (not draft/pending). */
 function isAuditApprovedCompanion(row = {}) {
@@ -124,7 +125,7 @@ function availabilityCode(row = {}) {
   return "offline";
 }
 function availabilityText(code) {
-  return ({ online: "在线可接单", busy: "忙碌中", paused: "暂停接单", offline: "离线" })[code] || "离线";
+  return ({ online: "接单中", busy: "游戏中", paused: "暂停接单", offline: "暂停接单" })[code] || "暂停接单";
 }
 function normalizeLevelLookupKey(value) {
   return String(value || "")
@@ -182,8 +183,9 @@ function resolveCompanionServiceIds(row = {}, catalog = []) {
     .filter((svc) => names.has(String(svc.name || svc.title || "").trim()))
     .map((svc) => String(svc.id));
 }
-function publicCompanion(row = {}, profile = {}, levels = [], catalog = [], mediaExtras = {}) {
+function publicCompanion(row = {}, profile = {}, levels = [], catalog = [], mediaExtras = {}, badgeRow = null) {
   const base = mapCompanionPublicFields(row, profile, mediaExtras);
+  const badges = publicBadgesPayload(badgeRow || {});
   const avail = base.availabilityStatus || availabilityCode(row);
   const publicId = base.publicId || (row.companion_uid ? `P${row.companion_uid}` : "");
   const avatar = resolveCompanionAvatar(profile, row, mediaExtras) || DEFAULT_COMPANION_AVATAR;
@@ -290,12 +292,27 @@ function publicCompanion(row = {}, profile = {}, levels = [], catalog = [], medi
     depositStatus: row.deposit_status || "",
     lastOnlineAt: row.last_online_at || "",
     statusUpdatedAt: row.status_updated_at || "",
+    featured: !!row.featured,
+    badges,
+    badgeItems: badges.items || [],
+    skills: stripGamePricesMarker(String(row.tags || ""))
+      .replace(/\[\[MCJ_GALLERY:[\s\S]*?\]\]/g, "")
+      .split(/[,，、]/)
+      .map((t) => t.trim())
+      .filter((t) => t && !/^游戏ID:|^联系:|^地区:|^性别:|^年龄:/.test(t)),
     rating: 0,
     score: 0,
     reviewCount: 0,
     goodReviewCount: 0,
     goodRate: 0,
     completedOrders: Number(row.completed_orders || row.total_orders || 0) || 0,
+    serviceStats: {
+      completedOrders: Number(row.completed_orders || row.total_orders || 0) || 0,
+      reviewCount: 0,
+      rating: 0,
+      goodReviewCount: 0,
+      goodRate: 0,
+    },
     reviews: [],
   };
 }
@@ -313,6 +330,43 @@ function summarizeReviews(list = []) {
     goodReviewCount: good,
     goodRate: count ? Math.round((good / count) * 1000) / 10 : 0,
   };
+}
+
+async function attachCompletedOrderCounts(companions = []) {
+  const ids = [...new Set((companions || []).map((c) => c.id || c.uid).filter(Boolean))];
+  if (!ids.length) return companions || [];
+  let rows = [];
+  try {
+    rows = await supabaseJson(
+      restUrl(
+        "orders",
+        `?companion_id=in.(${ids.map(encodeURIComponent).join(",")})&status=eq.completed&select=companion_id&limit=5000`
+      ),
+      { headers: headers() }
+    );
+  } catch (e) {
+    if (/orders|schema cache|PGRST|does not exist/i.test(String(e.message || e))) return companions;
+    throw e;
+  }
+  const counts = {};
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const cid = String(row.companion_id || "");
+    if (!cid) continue;
+    counts[cid] = (counts[cid] || 0) + 1;
+  }
+  return (companions || []).map((c) => {
+    const cid = c.id || c.uid;
+    const completedOrders = counts[cid] != null ? counts[cid] : Number(c.completedOrders || 0) || 0;
+    const serviceStats = {
+      ...(c.serviceStats || {}),
+      completedOrders,
+      reviewCount: Number(c.reviewCount || c.serviceStats?.reviewCount || 0) || 0,
+      rating: Number(c.rating || c.serviceStats?.rating || 0) || 0,
+      goodReviewCount: Number(c.goodReviewCount || c.serviceStats?.goodReviewCount || 0) || 0,
+      goodRate: Number(c.goodRate || c.serviceStats?.goodRate || 0) || 0,
+    };
+    return { ...c, completedOrders, serviceStats };
+  });
 }
 
 async function attachReviews(companions = []) {
@@ -372,9 +426,18 @@ async function attachReviews(companions = []) {
     const cid = c.id || c.uid;
     const list = byCid[cid] || [];
     const summary = summarizeReviews(list);
+    const completedOrders = Number(c.completedOrders || 0) || 0;
     return {
       ...c,
       ...summary,
+      completedOrders,
+      serviceStats: {
+        completedOrders,
+        reviewCount: summary.reviewCount,
+        rating: summary.rating,
+        goodReviewCount: summary.goodReviewCount,
+        goodRate: summary.goodRate,
+      },
       reviews: list.slice(0, 30).map((r) => {
         const boss = bosses[r.boss_id] || {};
         const order = orders[r.order_id] || {};
@@ -587,10 +650,11 @@ async function loadCompanions(id = "") {
       )
     );
   }
-  const [levels, servicesBundle, mediaMap] = await Promise.all([
+  const [levels, servicesBundle, mediaMap, badgeMap] = await Promise.all([
     readLocalLevels().catch(() => []),
     loadPublicServices().catch(() => ({ services: [] })),
     mediaExtrasByProfile(profileIds).catch(() => ({})),
+    badgesByProfileIds(profileIds).catch(() => ({})),
   ]);
   const catalog = Array.isArray(servicesBundle?.services) ? servicesBundle.services : [];
   const profileMap = Object.fromEntries((profiles || []).map((row) => [row.id, row]));
@@ -634,9 +698,9 @@ async function loadCompanions(id = "") {
     // Homepage / hall: hallVisible requires approved + active + (identity OR deposit) + critical profile.
     // Never require identity AND deposit.
     if (!gate.hallVisible) continue;
-    mapped.push(publicCompanion(row, profile, levelList, catalog, media));
+    mapped.push(publicCompanion(row, profile, levelList, catalog, media, badgeMap[row.id] || null));
   }
-  return attachReviews(mapped);
+  return attachReviews(mapped).then(attachCompletedOrderCounts);
 }
 
 export default async function handler(req, res) {
