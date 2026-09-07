@@ -125,9 +125,13 @@ npx vercel --prod
 
 1. Vercel → Project → Domains → 绑定正式域名。  
 2. DNS 按提示加 A / CNAME。  
-3. 更新 Supabase Auth Site URL、Redirect URLs。  
+3. 更新 Supabase Auth Site URL、Redirect URLs（详见 `docs/PROD_AUTH_RESET_REDIRECT.md`）：  
+   - **Site URL:** `https://meow-cuijiao-homepage.vercel.app`（或正式自定义域名）  
+   - **Redirect URLs:** 必须包含该主机下的 `/admin/login/` 与 `/**`；**禁止**把 Site URL 留在 `http://localhost:3000`（Dashboard「Send password recovery」会跳到本机）。  
+   - 可用脚本（需 Personal Access Token）：`SUPABASE_ACCESS_TOKEN=sbp_... node scripts/fix-prod-auth-redirects.mjs`  
 4. 更新 HitPay Live Webhook / redirect。  
-5. 如有跨域限制，设置 `FRONTEND_ORIGINS=https://your-domain.com`。
+5. 如有跨域限制，设置 `FRONTEND_ORIGINS=https://your-domain.com`。  
+6. 建议设置 `MCJ_PUBLIC_BASE` / `PUBLIC_SITE_URL` 为正式域名（勿用 localhost）。
 
 ## 7. 上线后冒烟（正式站）
 
