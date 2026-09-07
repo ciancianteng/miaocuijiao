@@ -119,6 +119,7 @@
     }
   ],
   "rewrites": [
+    { "source": "/invite/:code", "destination": "/invite.html?code=:code" },
     { "source": "/ranking", "destination": "/ranking.html" },
     { "source": "/leaderboard", "destination": "/ranking.html" },
     { "source": "/login", "destination": "/login.html" },

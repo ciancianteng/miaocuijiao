@@ -42,3 +42,19 @@ export function pointsAwardDisabledReason(env = process.env) {
   if (isPointsAwardEnabled(env)) return null;
   return "points_award_flag_disabled";
 }
+
+/**
+ * Boss open invite links (generate / resolve / redeem → existing 直属 bind).
+ * Env: BOSS_INVITE_LINKS_ENABLED
+ * Production fail-closed when unset; non-production defaults on (local/staging).
+ */
+export function isBossInviteLinksEnabled(env = process.env) {
+  const parsed = parseBoolFlag(env.BOSS_INVITE_LINKS_ENABLED);
+  if (parsed != null) return parsed;
+  return !isProductionRuntime(env);
+}
+
+export function bossInviteLinksDisabledReason(env = process.env) {
+  if (isBossInviteLinksEnabled(env)) return null;
+  return "boss_invite_links_flag_disabled";
+}
