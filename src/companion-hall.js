@@ -505,6 +505,10 @@
     var styleAttr = inlineStyle ? ' style="' + esc(inlineStyle) + '"' : "";
     var levelLabel = item.level || "未设置等级";
     var levelIdShort = String(item.levelId || "").replace(/^lv/i, "Lv") || "Lv";
+    var levelNameOnly = String(levelLabel)
+      .replace(/^Lv\s*\d+\s*/i, "")
+      .replace(/^等级\s*/, "")
+      .trim() || levelLabel;
     var priceNum = String(item.price).replace(/\s*猫粮\/小时\s*$/, "") || item.priceValue || "0";
     return (
       '<article class="card player-card mcj-market-card" data-player data-public-id="' +
@@ -571,7 +575,7 @@
           '"' +
           pillStyle +
           ">" +
-          esc(levelLabel) +
+          esc(levelNameOnly) +
           "</span>" +
         "</div>" +
         '<div class="mcj-market-hero-copy">' +
