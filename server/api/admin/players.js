@@ -19,6 +19,14 @@ import {
   isApprovedApplicationStatus,
   MISSING_PRICE_MESSAGE,
 } from "../_companion-publish-gate.js";
+import {
+  BADGE_KEYS,
+  badgesByProfileIds,
+  badgesPatchFromPayload,
+  getBadgesForProfile,
+  publicBadgesPayload,
+  upsertBadgesForProfile,
+} from "../_companion-badges-store.js";
 
 // PERMANENT: price checks apply only to new submit + first approval.
 // Admin edits of already-approved companions must never be blocked by this.
@@ -211,13 +219,23 @@ async function logOperation(req, action, targetId, beforeValue, afterValue, reas
   }
 }
 
-function mapListPlayer(row = {}, profile = {}) {
+function attachBadgeFields(player = {}, badgeRow = null) {
+  const badges = publicBadgesPayload(badgeRow || {});
+  player.badges = badges;
+  player.badgeItems = badges.items || [];
+  for (const key of BADGE_KEYS) {
+    player[key] = badges[key] === true;
+  }
+  return player;
+}
+
+function mapListPlayer(row = {}, profile = {}, badgeRow = null) {
   const accountRaw = profile.status || "active";
   const identityRaw = row.identity_status || row.verification_status || "pending";
   const applicationRaw = row.application_status || row.verification_status || "pending";
   const depositRaw = row.deposit_status || "unpaid";
   const mediaRaw = row.media_status || "pending";
-  return {
+  return attachBadgeFields({
     id: row.id,
     uid: row.user_id,
     user_id: row.user_id,
@@ -296,7 +314,7 @@ function mapListPlayer(row = {}, profile = {}) {
     password_set_at: profile.password_set_at || "",
     mustChangePassword: profile.must_change_password === true,
     must_change_password: profile.must_change_password === true,
-  };
+  }, badgeRow);
 }
 
 async function loadRelated(profileId, companionId) {
@@ -539,6 +557,9 @@ async function buildDetail(row, profile, opts = {}) {
   base.lastLoginIp = profile?.last_login_ip || "";
   base.last_login_ip = base.lastLoginIp;
   base.email = profile?.email || base.email || "";
+
+  const badgeRow = await getBadgesForProfile(row.id).catch(() => null);
+  attachBadgeFields(base, badgeRow);
 
   return {
     ...base,
@@ -804,10 +825,11 @@ async function listPlayers() {
     return m;
   }, {});
   // JS safety net: also drop rows whose linked profile is_test_account=true (no deletes).
-  return (Array.isArray(companions) ? companions : [])
+  const rows = (Array.isArray(companions) ? companions : [])
     .filter((row) => !isTestAccountRecord(profileMap[row.user_id] || {}, row))
-    .filter((row) => row.is_test_account !== true && profileMap[row.user_id]?.is_test_account !== true)
-    .map((row) => mapListPlayer(row, profileMap[row.user_id] || {}));
+    .filter((row) => row.is_test_account !== true && profileMap[row.user_id]?.is_test_account !== true);
+  const badgeMap = await badgesByProfileIds(rows.map((row) => row.id)).catch(() => ({}));
+  return rows.map((row) => mapListPlayer(row, profileMap[row.user_id] || {}, badgeMap[row.id] || null));
 }
 
 async function reviewIdentity(req, companion, payload) {
@@ -1420,6 +1442,17 @@ export default async function handler(req, res) {
         method: "PATCH",
         body: JSON.stringify(profilePatch),
       });
+    }
+
+    const badgePatch = badgesPatchFromPayload(payload);
+    if (Object.keys(badgePatch).length) {
+      try {
+        await upsertBadgesForProfile(id, badgePatch, admin?.id || null);
+      } catch (badgeErr) {
+        if (!/companion_badges|PGRST205|42P01|schema cache/i.test(String(badgeErr?.message || badgeErr || ""))) {
+          throw badgeErr;
+        }
+      }
     }
 
     await logOperation(req, action === "quick-edit" ? "quick_edit" : "edit", id, companion, rows?.[0], payload.reason || "");

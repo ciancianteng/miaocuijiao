@@ -118,21 +118,48 @@
     if (window.MCJCompanionPresence) {
       return window.MCJCompanionPresence.label(value);
     }
-    var text = String(value || "离线").trim();
-    if (/^online$/i.test(text) || /在线可接单|在线/.test(text)) return "在线可接单";
-    if (/^busy$/i.test(text) || /忙碌/.test(text)) return "忙碌中";
+    var text = String(value || "暂停接单").trim();
+    if (/^online$/i.test(text) || /在线可接单|^在线$|接单中/.test(text)) return "接单中";
+    if (/^busy$/i.test(text) || /忙碌|游戏中/.test(text)) return "游戏中";
     if (/^paused$/i.test(text) || /暂停/.test(text)) return "暂停接单";
-    if (/^offline$/i.test(text) || /离线/.test(text)) return "离线";
-    return text || "离线";
+    if (/^offline$/i.test(text) || /离线/.test(text)) return "暂停接单";
+    return text || "暂停接单";
   }
   function statusBadgeClass(status) {
     if (window.MCJCompanionPresence) {
       return window.MCJCompanionPresence.badgeClass({ availabilityText: status, status: status });
     }
-    if (status === "在线可接单") return " is-online";
-    if (status === "忙碌中") return " is-busy";
+    if (status === "接单中" || status === "在线可接单") return " is-online";
+    if (status === "游戏中" || status === "忙碌中") return " is-busy";
     if (status === "暂停接单") return " is-paused";
     return " is-offline";
+  }
+  function verificationBadgesHtml(item) {
+    var items = Array.isArray(item && item.badgeItems) && item.badgeItems.length
+      ? item.badgeItems
+      : Array.isArray(item && item.badges && item.badges.items)
+        ? item.badges.items
+        : [];
+    if (!items.length) return "";
+    return (
+      '<div class="companion-verify-badges" aria-label="认证徽章">' +
+      items
+        .map(function (b) {
+          var key = (b && b.key) || "";
+          var label = (b && (b.short || b.label)) || "";
+          if (!label) return "";
+          return (
+            '<span class="companion-verify-badge is-' +
+            esc(key) +
+            '">' +
+            esc(label) +
+            "</span>"
+          );
+        })
+        .filter(Boolean)
+        .join("") +
+      "</div>"
+    );
   }
   async function readItems() {
     var dataItems = [];
@@ -194,6 +221,17 @@
           ? normalized.certTags
           : Array.isArray(normalized.certificationTags)
             ? normalized.certificationTags
+            : [],
+        badgeItems: Array.isArray(normalized.badgeItems)
+          ? normalized.badgeItems
+          : Array.isArray(normalized.badges && normalized.badges.items)
+            ? normalized.badges.items
+            : [],
+        badges: normalized.badges || null,
+        skills: Array.isArray(normalized.skills)
+          ? normalized.skills
+          : Array.isArray(normalized.tags)
+            ? normalized.tags
             : [],
         desc: normalized.desc || normalized.description || ""
       };
@@ -444,10 +482,15 @@
     var focusX = item.objectPositionX != null ? item.objectPositionX : 50;
     var focusY = item.objectPositionY != null ? item.objectPositionY : 25;
     var pos = Number(focusX) + "% " + Number(focusY) + "%";
+    var verifyBadges = verificationBadgesHtml(item);
     return '<article class="card player-card" data-player data-public-id="' + esc(String(publicId).toUpperCase()) + '" data-level-id="' + esc(item.levelId || "") + '" data-companion-level="' + esc(item.levelId || "") + '" data-companion-id="' + esc(uuid) + '" data-name="' + esc(item.name) + '" data-game="' + esc(item.game) + '" data-tags="' + esc(item.tags.join(",")) + '" data-price="' + esc(item.priceValue) + '" data-online="' + esc(item.status) + '" data-score="' + esc(item.rating) + '" data-gender="' + esc(item.gender) + '">' +
       '<div class="companion-card-media"><img src="' + esc(item.image) + '" alt="' + esc(item.name) + '" loading="lazy" decoding="async" style="object-position:' + esc(pos) + ';--mcj-cover-pos:' + esc(pos) + '" onerror="this.onerror=null;this.src=\'' + DEFAULT_AVATAR + '\'"><span class="companion-online-badge' + badgeClass + '">' + esc(item.status) + '</span></div>' +
       '<div class="companion-card-body">' +
-        '<div class="row companion-card-head companion-card-title-row"><h3>' + esc(item.name) + '</h3><span class="companion-status-inline' + badgeClass + '">' + esc(item.status) + '</span></div>' +
+        '<div class="companion-card-head companion-card-title-stack">' +
+          '<h3>' + esc(item.name) + '</h3>' +
+          verifyBadges +
+          '<p class="companion-status-line' + badgeClass + '">' + esc(item.status) + '</p>' +
+        '</div>' +
         '<p class="muted companion-id">陪玩 ID：' + esc(publicId) + '</p>' +
         '<div class="companion-meta companion-meta-desktop"><span class="companion-level-pill mcj-level-tag" data-level-id="' + esc(item.levelId || "") + '">' + esc(item.level) + '</span><span class="companion-game-text">' + esc(item.game) + '</span></div>' +
         identityRow +

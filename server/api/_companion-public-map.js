@@ -89,7 +89,8 @@ export function availabilityCode(row = {}) {
 }
 
 export function availabilityText(code) {
-  return ({ online: "在线可接单", busy: "忙碌中", paused: "暂停接单", offline: "离线" })[code] || "离线";
+  // Marketplace card labels (public): online=接单中, busy=游戏中, offline/paused=暂停接单
+  return ({ online: "接单中", busy: "游戏中", paused: "暂停接单", offline: "暂停接单" })[code] || "暂停接单";
 }
 
 export function isGarbledName(value) {

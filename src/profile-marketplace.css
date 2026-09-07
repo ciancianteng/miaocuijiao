@@ -308,7 +308,120 @@
 .mcj-gift-card span{font-size:12px;color:#ffd7e9}
 .companion-online-badge.is-busy:before{background:#f59e0b!important;box-shadow:0 0 10px rgba(245,158,11,.45)!important}
 .companion-online-badge.is-paused:before{background:#cbd5e1!important;box-shadow:none!important}
+.companion-online-badge.is-offline:before{background:#cbd5e1!important;box-shadow:none!important}
 .companion-online-badge.is-online:before{background:#22c55e!important}
+
+.companion-verify-badges,
+.profile-detail-page .companion-verify-badges{
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+}
+.companion-verify-badge,
+.profile-detail-page .companion-verify-badge{
+  display:inline-flex;
+  align-items:center;
+  height:22px;
+  padding:0 8px;
+  border-radius:999px;
+  border:1px solid rgba(255,255,255,.14);
+  background:rgba(255,255,255,.06);
+  color:rgba(255,255,255,.88);
+  font-size:11px;
+  font-weight:700;
+  letter-spacing:.02em;
+  line-height:1;
+  white-space:nowrap;
+}
+.companion-verify-badge.is-real_verified{border-color:rgba(56,189,248,.35);background:rgba(56,189,248,.12);color:#bae6fd}
+.companion-verify-badge.is-game_verified{border-color:rgba(52,211,153,.35);background:rgba(52,211,153,.12);color:#bbf7d0}
+.companion-verify-badge.is-voice_verified{border-color:rgba(251,191,36,.35);background:rgba(251,191,36,.12);color:#fde68a}
+.companion-verify-badge.is-official_verified{border-color:rgba(255,143,197,.45);background:rgba(255,143,197,.14);color:#ffd7e8}
+.companion-verify-badge.is-recommended{border-color:rgba(196,181,253,.4);background:rgba(196,181,253,.14);color:#e9d5ff}
+.hot-card .hot-verify-badges{margin:4px 0 2px}
+.hot-card .companion-status-line{
+  margin:0 0 6px;
+  font-size:12px;
+  color:rgba(255,255,255,.62);
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+}
+.hot-card .companion-status-line:before{
+  content:"";
+  width:7px;
+  height:7px;
+  border-radius:50%;
+  background:#94a3b8;
+}
+.hot-card .companion-status-line.is-online:before{background:#22c55e}
+.hot-card .companion-status-line.is-busy:before{background:#f59e0b}
+.hot-card .companion-status-line.is-paused:before,
+.hot-card .companion-status-line.is-offline:before{background:#cbd5e1}
+.hot-card .hot-cover .companion-online-badge{
+  position:absolute;
+  left:10px;
+  bottom:10px;
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  height:24px;
+  padding:0 8px;
+  border-radius:999px;
+  border:1px solid rgba(255,255,255,.16);
+  background:rgba(4,4,7,.55);
+  color:#fff;
+  font-size:11px;
+  font-weight:700;
+}
+.hot-card .hot-cover .companion-online-badge:before{
+  content:"";
+  width:7px;
+  height:7px;
+  border-radius:50%;
+  background:#94a3b8;
+}
+.profile-detail-page .pd-hero-badges{margin:8px 0 4px}
+.profile-detail-page .pd-badges-card,
+.profile-detail-page .pd-service-stats-card,
+.profile-detail-page .pd-skills-card,
+.profile-detail-page .pd-rating-card{margin-top:12px}
+.profile-detail-page .pd-empty-note,
+.profile-detail-page .pd-rating-placeholder{
+  margin:0;
+  color:rgba(255,255,255,.55);
+  font-size:14px;
+}
+.profile-detail-page .pd-skills-list{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+}
+.profile-detail-page .pd-skill-chip{
+  display:inline-flex;
+  align-items:center;
+  height:28px;
+  padding:0 12px;
+  border-radius:999px;
+  border:1px solid rgba(255,255,255,.12);
+  background:rgba(255,255,255,.04);
+  color:rgba(255,255,255,.86);
+  font-size:13px;
+}
+.profile-detail-page .pd-rating-summary{
+  display:flex;
+  align-items:baseline;
+  gap:10px;
+}
+.profile-detail-page .pd-rating-summary strong{
+  font-size:28px;
+  line-height:1;
+  color:#ffd7e8;
+}
+.profile-detail-page .pd-rating-summary span{
+  color:rgba(255,255,255,.6);
+  font-size:13px;
+}
 
 /* Real order reviews — overflow-safe stacked cards */
 .profile-detail-page .real-review-wall{

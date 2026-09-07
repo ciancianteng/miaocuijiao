@@ -4,24 +4,24 @@
  * companion workbench (writes via companion API; reads same codes/labels).
  *
  * Codes: online | busy | paused | offline
- * Labels: 在线可接单 | 忙碌中 | 暂停接单 | 离线
+ * Public marketplace labels: 接单中 | 游戏中 | 暂停接单 | 暂停接单
  */
 (function (global) {
   "use strict";
 
   var LABELS = {
-    online: "在线可接单",
-    busy: "忙碌中",
+    online: "接单中",
+    busy: "游戏中",
     paused: "暂停接单",
-    offline: "离线",
+    offline: "暂停接单",
   };
 
   function codeFrom(raw) {
     var s = String(raw == null ? "" : raw).trim();
     if (!s) return "";
     var lower = s.toLowerCase();
-    if (lower === "online" || /在线可接单|^在线$|可接单/.test(s)) return "online";
-    if (lower === "busy" || /忙碌|接单中/.test(s)) return "busy";
+    if (lower === "online" || /在线可接单|^在线$|可接单|^接单中$/.test(s)) return "online";
+    if (lower === "busy" || /忙碌|^游戏中$/.test(s)) return "busy";
     if (lower === "paused" || /暂停/.test(s)) return "paused";
     if (lower === "offline" || /离线|下线/.test(s)) return "offline";
     return "";
