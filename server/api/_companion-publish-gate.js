@@ -391,3 +391,101 @@ export function listingBlockReason(gate = {}) {
   const missing = Array.isArray(gate.missing) ? gate.missing : [];
   return missing.filter((m) => !/^缺少/.test(m)).join("、") || "未进入公开列表";
 }
+
+/**
+ * Admin-facing publish snapshot.
+ * Contract: adminApproved && !isTestAccount && hallVisible=false MUST expose clear blockReasons.
+ */
+export function adminPublishSnapshot(row = {}, profile = {}, mediaExtras = {}) {
+  const gate = evaluatePublishGate(row, profile, mediaExtras);
+  const blockReasons = Array.isArray(gate.blockReasons) ? [...gate.blockReasons] : [];
+  const crit = Array.isArray(gate.criticalMissing) ? gate.criticalMissing : [];
+  // Always surface critical field detail when approved-but-hidden for non-test accounts.
+  if (gate.adminApproved && !gate.isTestAccount && !gate.hallVisible) {
+    for (const item of crit) {
+      if (item && !blockReasons.includes(item)) blockReasons.push(item);
+    }
+    if (!blockReasons.length) {
+      blockReasons.push(listingBlockReason(gate) || "已通过但未进入公开大厅");
+    }
+  }
+  const reasonText = listingBlockReason({ ...gate, blockReasons }) || (blockReasons.length ? blockReasons.join("、") : "");
+  return {
+    adminApproved: !!gate.adminApproved,
+    hallVisible: !!gate.hallVisible,
+    isTestAccount: !!gate.isTestAccount,
+    credentialOrOk: !!gate.credentialOrOk,
+    criticalComplete: !!gate.criticalComplete,
+    criticalMissing: crit,
+    blockReasons: [...new Set(blockReasons)],
+    statusLabel: gate.statusLabel || "",
+    listingBlockReason: reasonText,
+    publishReady: !!gate.hallVisible,
+    // True when approval and hall are out of sync for a real (non-test) companion.
+    approvedButHidden: !!(gate.adminApproved && !gate.isTestAccount && !gate.hallVisible),
+  };
+}
+
+/** Merge existing companion + approve/edit payload into the row that will be gated. */
+export function projectApprovedRow(existing = {}, payload = {}) {
+  const next = { ...existing };
+  const nickname = payload.nickname ?? payload.name ?? payload.display_name ?? payload.displayName;
+  if (nickname != null) next.nickname = String(nickname || "").trim();
+  const game = payload.game ?? payload.mainGame ?? payload.main_service ?? payload.mainService;
+  if (game != null) next.game = String(game || "").trim();
+  if (payload.service_ids != null || payload.serviceIds != null) {
+    next.service_ids = payload.service_ids ?? payload.serviceIds;
+  }
+  if (payload.service_type != null || payload.serviceType != null) {
+    next.service_type = payload.service_type ?? payload.serviceType;
+  }
+  if (payload.game_prices != null || payload.gamePrices != null) {
+    next.game_prices = payload.game_prices ?? payload.gamePrices;
+  }
+  if (payload.price != null) next.price = payload.price;
+  if (payload.price_min != null || payload.minPrice != null) {
+    next.price_min = payload.price_min ?? payload.minPrice;
+  }
+  if (payload.price_max != null || payload.maxPrice != null) {
+    next.price_max = payload.price_max ?? payload.maxPrice;
+  }
+  next.application_status = "approved";
+  next.verification_status = "approved";
+  if (payload.allowOrders != null || payload.allow_orders != null) {
+    next.allow_orders = payload.allowOrders !== false && payload.allow_orders !== false;
+  } else {
+    next.allow_orders = true;
+  }
+  return next;
+}
+
+export const APPROVE_INCOMPLETE_MESSAGE =
+  "无法通过审核：陪玩资料未满足大厅展示条件。请先补齐昵称、游戏与接单价格后再通过。";
+
+/**
+ * First transition into approved must be hall-ready for real accounts.
+ * Test accounts may still be marked approved (isolated from public hall).
+ * Throws Error with status=400, code, blockReasons, criticalMissing.
+ */
+export function assertApproveCanPublish(existing = {}, payload = {}, profile = {}) {
+  const projectedRow = projectApprovedRow(existing, payload);
+  const projectedProfile = {
+    ...(profile || {}),
+    status: "active",
+  };
+  const snap = adminPublishSnapshot(projectedRow, projectedProfile, {});
+  if (snap.isTestAccount) return snap;
+  if (snap.hallVisible) return snap;
+  const reasons = snap.blockReasons.length
+    ? snap.blockReasons
+    : snap.criticalMissing.length
+      ? snap.criticalMissing
+      : ["资料不完整，暂未发布"];
+  const err = new Error(`${APPROVE_INCOMPLETE_MESSAGE}（${reasons.join("、")}）`);
+  err.status = 400;
+  err.code = "APPROVE_NOT_HALL_READY";
+  err.blockReasons = reasons;
+  err.criticalMissing = snap.criticalMissing;
+  err.publish = snap;
+  throw err;
+}

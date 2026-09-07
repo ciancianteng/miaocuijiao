@@ -23,11 +23,12 @@ import {
   hasPositivePrice,
   assertHasPositivePrice,
   isFirstApprovalTransition,
-  isApprovedApplicationStatus,
-  MISSING_PRICE_MESSAGE,
+  adminPublishSnapshot,
+  assertApproveCanPublish,
+  APPROVE_INCOMPLETE_MESSAGE,
 } from "../_companion-publish-gate.js";
 
-// PERMANENT: price checks apply only to new submit + first approval.
+// PERMANENT: price / hall-critical checks apply only to new submit + first approval.
 // Admin edits of already-approved companions must never be blocked by this.
 const APPROVE_MISSING_PRICE_MESSAGE =
   "无法通过审核：该陪玩尚未设置接单价格（单价 price > 0，或至少一个游戏价格 game_prices > 0）。请先填写价格后再通过。";
@@ -218,6 +219,25 @@ async function logOperation(req, action, targetId, beforeValue, afterValue, reas
   }
 }
 
+function attachPublishFields(mapped = {}, row = {}, profile = {}) {
+  const snap = adminPublishSnapshot(row, profile || {}, {});
+  mapped.adminApproved = snap.adminApproved;
+  mapped.hallVisible = snap.hallVisible;
+  mapped.publishReady = snap.publishReady;
+  mapped.isTestAccount = snap.isTestAccount;
+  mapped.credentialOrOk = snap.credentialOrOk;
+  mapped.criticalComplete = snap.criticalComplete;
+  mapped.criticalMissing = snap.criticalMissing;
+  mapped.blockReasons = snap.blockReasons;
+  mapped.publishStatusLabel = snap.statusLabel;
+  mapped.listingBlockReason = snap.listingBlockReason;
+  mapped.approvedButHidden = snap.approvedButHidden;
+  mapped.hall_visible = snap.hallVisible;
+  mapped.block_reasons = snap.blockReasons;
+  mapped.approved_but_hidden = snap.approvedButHidden;
+  return mapped;
+}
+
 function mapListPlayer(row = {}, profile = {}) {
   const accountRaw = profile.status || "active";
   const identityRaw = row.identity_status || row.verification_status || "pending";
@@ -227,7 +247,7 @@ function mapListPlayer(row = {}, profile = {}) {
   // Same public companion ID source as marketplace hall (`mapCompanionPublicFields` /
   // `resolveCompanionPublicCode`). Keep `id` as DB UUID for internal admin actions only.
   const publicId = resolveCompanionPublicCode(row) || "";
-  return {
+  const mapped = {
     id: row.id,
     uid: row.user_id,
     user_id: row.user_id,
@@ -312,6 +332,7 @@ function mapListPlayer(row = {}, profile = {}) {
     mustChangePassword: profile.must_change_password === true,
     must_change_password: profile.must_change_password === true,
   };
+  return attachPublishFields(mapped, row, profile);
 }
 
 async function loadRelated(profileId, companionId) {
@@ -1005,6 +1026,33 @@ async function reviewDeposit(req, companion, payload, admin = null) {
   return { status: mapped, reason };
 }
 
+async function activateCompanionProfile(userId) {
+  if (!userId) return null;
+  const { addRoleToUser } = await import("../_account-roles.js");
+  const profileRows = await companionDb("profiles", `?id=eq.${encodeURIComponent(userId)}&limit=1`).catch(() => []);
+  const existingProfile = Array.isArray(profileRows) ? profileRows[0] : null;
+  const primary =
+    existingProfile?.role && String(existingProfile.role).toLowerCase() !== "companion"
+      ? existingProfile.role
+      : "companion";
+  try {
+    await addRoleToUser(userId, "companion", {
+      primaryRole: primary,
+      existingProfile: existingProfile || { id: userId, role: primary },
+    });
+  } catch {
+    /* role add best-effort; status activation below is required */
+  }
+  const patched = await companionDb("profiles", `?id=eq.${encodeURIComponent(userId)}`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      status: "active",
+      updated_at: new Date().toISOString(),
+    }),
+  });
+  return Array.isArray(patched) ? patched[0] : existingProfile ? { ...existingProfile, status: "active" } : { id: userId, status: "active" };
+}
+
 async function reviewApplication(req, companion, payload) {
   const status = normalizeStatusInput(payload.status || payload.applicationStatus || payload.auditStatus, "pending");
   const reason = String(payload.rejectReason || payload.reason || "").trim();
@@ -1012,9 +1060,10 @@ async function reviewApplication(req, companion, payload) {
     throw Object.assign(new Error("驳回或要求补资料时必须填写原因。"), { status: 400 });
   }
   const { approveListingPatchForRow, unlistListingPatch } = await import("../_companion-listing-sync.js");
+  const profileBefore = companion.user_id ? await getProfile(companion.user_id) : {};
   let patch;
   if (status === "approved") {
-    // First approval only — re-saving an already-approved row must not be blocked.
+    // First approval only — must be hall-ready for real (non-test) companions.
     if (isFirstApprovalTransition(companion, status)) {
       try {
         assertHasPositivePrice(payload, companion, APPROVE_MISSING_PRICE_MESSAGE);
@@ -1022,12 +1071,26 @@ async function reviewApplication(req, companion, payload) {
         throw Object.assign(new Error(priceErr?.message || APPROVE_MISSING_PRICE_MESSAGE), {
           status: 400,
           code: "MISSING_PRICE",
+          blockReasons: ["缺少价格"],
+        });
+      }
+      try {
+        assertApproveCanPublish(companion, payload, profileBefore);
+      } catch (readyErr) {
+        throw Object.assign(new Error(readyErr?.message || APPROVE_INCOMPLETE_MESSAGE), {
+          status: 400,
+          code: readyErr?.code || "APPROVE_NOT_HALL_READY",
+          blockReasons: readyErr?.blockReasons || readyErr?.criticalMissing || [],
+          criticalMissing: readyErr?.criticalMissing || [],
+          publish: readyErr?.publish || null,
         });
       }
     }
     const extras = {
       online_status: "offline",
       application_reject_reason: "",
+      // Approve workflow opens order permission unless payload explicitly disables it.
+      allow_orders: payload.allowOrders === false || payload.allow_orders === false ? false : true,
     };
     if (payload.levelId != null || payload.level_id != null) {
       extras.level_id = String(payload.levelId || payload.level_id || "").trim();
@@ -1048,14 +1111,10 @@ async function reviewApplication(req, companion, payload) {
     if (payload.maxPrice != null || payload.price_max != null) {
       extras.price_max = money(payload.maxPrice ?? payload.price_max);
     }
-    if (payload.allowOrders != null || payload.allow_orders != null) {
-      extras.allow_orders = bool(payload.allowOrders ?? payload.allow_orders, true);
-    }
-    // Must set verification_status=approved so /api/public/companions (filters by it) publishes the companion.
+    // Must set verification_status=approved so /api/public/companions publishes the companion.
     patch = approveListingPatchForRow(companion, extras);
   } else {
     patch = unlistListingPatch({ status, reason });
-    // Drop undefined verification_status from unlist when archived
     Object.keys(patch).forEach((k) => {
       if (patch[k] === undefined) delete patch[k];
     });
@@ -1064,40 +1123,15 @@ async function reviewApplication(req, companion, payload) {
     method: "PATCH",
     body: JSON.stringify(patch),
   });
+  let profileAfter = profileBefore;
   if (status === "approved" && companion.user_id) {
     try {
-      // Multi-role: keep existing primary role (e.g. boss) and add companion capability on same user_id.
-      const { addRoleToUser, loadCompanionRowForUser } = await import("../_account-roles.js");
-      const profileRows = await companionDb("profiles", `?id=eq.${encodeURIComponent(companion.user_id)}&limit=1`).catch(() => []);
-      const existingProfile = Array.isArray(profileRows) ? profileRows[0] : null;
-      const primary =
-        existingProfile?.role && String(existingProfile.role).toLowerCase() !== "companion"
-          ? existingProfile.role
-          : "companion";
-      await addRoleToUser(companion.user_id, "companion", {
-        primaryRole: primary,
-        existingProfile: existingProfile || { id: companion.user_id, role: primary },
-      });
-      await companionDb("profiles", `?id=eq.${encodeURIComponent(companion.user_id)}`, {
-        method: "PATCH",
-        body: JSON.stringify({
-          status: "active",
-          updated_at: new Date().toISOString(),
-        }),
-      });
-      void loadCompanionRowForUser;
-    } catch {
-      try {
-        await companionDb("profiles", `?id=eq.${encodeURIComponent(companion.user_id)}`, {
-          method: "PATCH",
-          body: JSON.stringify({
-            status: "active",
-            updated_at: new Date().toISOString(),
-          }),
-        });
-      } catch {
-        /* best effort */
-      }
+      profileAfter = (await activateCompanionProfile(companion.user_id)) || { ...profileBefore, status: "active" };
+    } catch (err) {
+      throw Object.assign(
+        new Error(`审核通过失败：无法将账号设为 active（${err?.message || err}）。`),
+        { status: 500, code: "PROFILE_ACTIVATE_FAILED" }
+      );
     }
   }
   await logOperation(req, "review_application", companion.id, companion, after?.[0], reason);
@@ -1114,7 +1148,9 @@ async function reviewApplication(req, companion, payload) {
       console.error("[players] review notify failed", err?.message || err);
     }
   }
-  return after?.[0];
+  const rowAfter = after?.[0] || { ...companion, ...patch };
+  const publish = adminPublishSnapshot(rowAfter, profileAfter || {}, {});
+  return { row: rowAfter, publish };
 }
 
 export default async function handler(req, res) {
@@ -1243,9 +1279,31 @@ export default async function handler(req, res) {
       return json(res, 200, { ok: true, message: "押金审核已保存", player: detail });
     }
     if (action === "review_application") {
-      await reviewApplication(req, companion, payload);
+      const result = await reviewApplication(req, companion, payload);
       const detail = await buildDetail(await getCompanion(id), await getProfile(companion.user_id));
-      return json(res, 200, { ok: true, message: "陪玩申请审核已保存", player: detail });
+      const publish = result?.publish || adminPublishSnapshot(detail, await getProfile(companion.user_id), {});
+      const status = normalizeStatusInput(payload.status || payload.applicationStatus || payload.auditStatus, "pending");
+      let message = "陪玩申请审核已保存";
+      if (status === "approved") {
+        if (publish.isTestAccount) {
+          message = "已通过（测试账号，不会进入正式大厅）";
+        } else if (publish.hallVisible) {
+          message = "已通过，已同步进入陪玩大厅";
+        } else if (publish.approvedButHidden) {
+          message =
+            "已通过，但尚未进入陪玩大厅：" +
+            (publish.listingBlockReason || (publish.blockReasons || []).join("、") || "未知原因");
+        }
+      }
+      return json(res, 200, {
+        ok: true,
+        message,
+        player: detail,
+        publish,
+        hallVisible: !!publish.hallVisible,
+        blockReasons: publish.blockReasons || [],
+        approvedButHidden: !!publish.approvedButHidden,
+      });
     }
 
     if (action === "set_level") {
@@ -1423,8 +1481,25 @@ export default async function handler(req, res) {
           code: "MISSING_PRICE",
           message: priceErr?.message || APPROVE_MISSING_PRICE_MESSAGE,
           field: "price",
+          blockReasons: ["缺少价格"],
         });
       }
+      const profileBefore = companion.user_id ? await getProfile(companion.user_id) : {};
+      try {
+        assertApproveCanPublish(companion, { ...payload, ...companionPatch }, profileBefore);
+      } catch (readyErr) {
+        return json(res, 400, {
+          ok: false,
+          code: readyErr?.code || "APPROVE_NOT_HALL_READY",
+          message: readyErr?.message || APPROVE_INCOMPLETE_MESSAGE,
+          blockReasons: readyErr?.blockReasons || readyErr?.criticalMissing || [],
+          criticalMissing: readyErr?.criticalMissing || [],
+          publish: readyErr?.publish || null,
+        });
+      }
+      companionPatch.allow_orders = companionPatch.allow_orders === false ? false : true;
+      companionPatch.verification_status = "approved";
+      companionPatch.application_status = "approved";
     }
     if (companionPatch.commission_rate != null) {
       companionPatch.commission_rate = resolvePlatformCommission(companionPatch.commission_rate).platformRate;
@@ -1465,25 +1540,51 @@ export default async function handler(req, res) {
     }
 
     const profilePatch = profileEditablePatch(payload);
+    if (isFirstApprovalTransition(companion, companionPatch.application_status) && companion.user_id) {
+      profilePatch.status = "active";
+      try {
+        await activateCompanionProfile(companion.user_id);
+      } catch (err) {
+        return json(res, 500, {
+          ok: false,
+          code: "PROFILE_ACTIVATE_FAILED",
+          message: `审核通过失败：无法将账号设为 active（${err?.message || err}）。`,
+        });
+      }
+    }
     if (Object.keys(profilePatch).length && companion.user_id) {
       await companionDb("profiles", `?id=eq.${encodeURIComponent(companion.user_id)}`, {
         method: "PATCH",
-        body: JSON.stringify(profilePatch),
+        body: JSON.stringify({ ...profilePatch, updated_at: new Date().toISOString() }),
       });
     }
 
     await logOperation(req, action === "quick-edit" ? "quick_edit" : "edit", id, companion, rows?.[0], payload.reason || "");
     let detail;
+    const profileAfter = await getProfile(companion.user_id);
     try {
-      detail = await buildDetail(rows?.[0] || (await getCompanion(id)), await getProfile(companion.user_id));
+      detail = await buildDetail(rows?.[0] || (await getCompanion(id)), profileAfter);
     } catch {
-      detail = mapListPlayer(rows?.[0] || companion, await getProfile(companion.user_id));
+      detail = mapListPlayer(rows?.[0] || companion, profileAfter);
     }
-    return json(res, 200, { ok: true, message: "修改已保存", player: detail });
+    const publish = adminPublishSnapshot(rows?.[0] || companion, profileAfter || {}, {});
+    return json(res, 200, {
+      ok: true,
+      message: "修改已保存",
+      player: detail,
+      publish,
+      hallVisible: !!publish.hallVisible,
+      blockReasons: publish.blockReasons || [],
+      approvedButHidden: !!publish.approvedButHidden,
+    });
   } catch (error) {
     return json(res, error.status || 500, {
       ok: false,
       message: error.message || "陪玩管理接口异常",
+      code: error.code || "",
+      blockReasons: error.blockReasons || error.criticalMissing || [],
+      criticalMissing: error.criticalMissing || [],
+      publish: error.publish || null,
       table: PLAYER_TABLE,
       migration: "supabase/companion-admin-data.sql",
     });
