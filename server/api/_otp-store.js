@@ -120,8 +120,10 @@ export async function storeOtp({ accountKey, role, code, kind = "otp", ttlMs = 1
     }
   }
 
-  if (!dbOk && (k === "register_otp" || k === "login_otp")) {
-    throw Object.assign(new Error(`验证码存储失败，请稍后重试。${dbError ? `（${dbError}）` : ""}`), {
+  if (!dbOk) {
+    // Never rely on process memory alone — serverless isolates would drop OTP.
+    console.error("[otp-store] durable store failed", { role: r, kind: k, dbError });
+    throw Object.assign(new Error("验证码存储失败，请稍后重试。"), {
       status: 503,
       code: "OTP_STORE_FAILED",
     });
@@ -292,6 +294,64 @@ export async function findRegisterVerified(accountKey, role, token) {
   const mem = memMap().get(`${r}:register_verified:${key}`);
   if (mem?.verifiedToken === want && Number(mem.exp) > Date.now()) return { ...mem, source: "memory" };
   return null;
+}
+
+export async function invalidateOtp(accountKey, role, kind = "otp") {
+  const key = String(accountKey || "").trim().toLowerCase();
+  const r = String(role || "").trim().toLowerCase();
+  const k = String(kind || "otp").trim();
+  try {
+    memMap().delete(`${r}:${k}:${key}`);
+    memMap().delete(`${r}:${key}`);
+  } catch {
+    /* ignore */
+  }
+
+  const usedStatus = `used:${Date.now()}`;
+  try {
+    const rows = await supabaseJson(
+      restUrl(
+        "password_reset_requests",
+        `?account=eq.${encodeURIComponent(key)}&role=eq.${encodeURIComponent(r)}&order=created_at.desc&limit=8`
+      ),
+      { headers: serviceHeaders({ Prefer: "return=representation" }) }
+    ).catch(() => []);
+    for (const row of rows || []) {
+      if (!row?.id) continue;
+      await supabaseJson(restUrl("password_reset_requests", `?id=eq.${encodeURIComponent(row.id)}`), {
+        method: "PATCH",
+        headers: serviceHeaders(),
+        body: JSON.stringify({ status: usedStatus }),
+      }).catch(() => null);
+    }
+  } catch {
+    /* table may be missing */
+  }
+
+  try {
+    const sid = settingsOtpId(r, k, key);
+    await supabaseJson(restUrl("platform_settings", `?id=eq.${encodeURIComponent(sid)}`), {
+      method: "PATCH",
+      headers: serviceHeaders(),
+      body: JSON.stringify({
+        data: {
+          otp: true,
+          account: key,
+          role: r,
+          kind: k,
+          status: usedStatus,
+          verifiedToken: "",
+          code: "",
+          exp: 0,
+          updatedAt: new Date().toISOString(),
+        },
+        updated_at: new Date().toISOString(),
+      }),
+    });
+  } catch {
+    /* best-effort */
+  }
+  return { ok: true };
 }
 
 export async function consumeRegisterVerified(accountKey, role, token) {
