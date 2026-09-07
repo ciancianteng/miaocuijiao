@@ -559,8 +559,8 @@
         "</span>" +
       "</div>" +
       certBadgesHtml(item) +
-      '<div class="mcj-market-body companion-card-body">' +
-        '<div class="mcj-market-title-row">' +
+      '<div class="mcj-market-body companion-card-body" data-market-body>' +
+        '<div class="mcj-market-title-row companion-card-title-row">' +
           "<h3>" +
           esc(item.name) +
           "</h3>" +

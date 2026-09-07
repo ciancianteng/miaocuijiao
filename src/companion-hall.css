@@ -603,22 +603,44 @@ body{background:radial-gradient(circle at 76% 4%,rgba(255,145,195,.055),transpar
   gap:5px!important;
 }
 
-.mcj-market-body{
+/* Beat legacy `.companion-hall-grid .companion-card-body` 2-col grid areas */
+.companion-hall-grid .player-card.mcj-market-card .companion-card-body.mcj-market-body,
+.companion-hall-grid .mcj-market-card .mcj-market-body{
   display:flex!important;
   flex-direction:column!important;
+  align-items:stretch!important;
+  justify-content:flex-start!important;
+  grid-template-columns:none!important;
+  grid-template-areas:none!important;
+  grid-template-rows:none!important;
+  row-gap:0!important;
+  column-gap:0!important;
   gap:10px!important;
   padding:14px 14px 16px!important;
   flex:1 1 auto!important;
+  width:100%!important;
+  min-width:0!important;
 }
-.mcj-market-title-row{
+.companion-hall-grid .mcj-market-card .mcj-market-body > *{
+  grid-area:auto!important;
+  width:100%!important;
+  min-width:0!important;
+  max-width:100%!important;
+}
+.mcj-market-title-row,
+.companion-hall-grid .mcj-market-card .mcj-market-title-row{
   display:flex!important;
   align-items:center!important;
   justify-content:space-between!important;
   gap:10px!important;
+  width:100%!important;
+  min-width:0!important;
 }
-.mcj-market-title-row h3{
+.mcj-market-title-row h3,
+.companion-hall-grid .mcj-market-card .mcj-market-title-row h3{
   margin:0!important;
   min-width:0!important;
+  flex:1 1 auto!important;
   color:#fff!important;
   font-size:18px!important;
   line-height:1.2!important;
@@ -627,21 +649,28 @@ body{background:radial-gradient(circle at 76% 4%,rgba(255,145,195,.055),transpar
   text-overflow:ellipsis!important;
   white-space:nowrap!important;
 }
-.mcj-market-status-inline{
+.mcj-market-status-inline,
+.companion-hall-grid .mcj-market-card .mcj-market-status-inline.companion-status-inline{
+  display:inline-flex!important;
+  align-items:center!important;
   flex:0 0 auto!important;
   font-size:11px!important;
   font-weight:700!important;
   color:rgba(255,255,255,.55)!important;
   white-space:nowrap!important;
 }
-.mcj-market-id{
+.mcj-market-id,
+.companion-hall-grid .mcj-market-card .mcj-market-id.companion-id{
   display:block!important;
   margin:0!important;
   font-size:11px!important;
   color:rgba(255,255,255,.42)!important;
+  width:100%!important;
 }
 .mcj-market-id[hidden],
-.mcj-market-id.is-hidden{
+.mcj-market-id.is-hidden,
+.companion-hall-grid .mcj-market-card .mcj-market-id.companion-id[hidden],
+.companion-hall-grid .mcj-market-card .mcj-market-id.companion-id.is-hidden{
   display:none!important;
 }
 .mcj-market-games,
@@ -678,10 +707,16 @@ body{background:radial-gradient(circle at 76% 4%,rgba(255,145,195,.055),transpar
   opacity:.7!important;
 }
 
-.mcj-market-price{
+.mcj-market-price,
+.companion-hall-grid .mcj-market-card .mcj-market-price.companion-price{
+  display:block!important;
   margin-top:2px!important;
   padding:12px!important;
   border-radius:14px!important;
+  white-space:normal!important;
+  color:inherit!important;
+  font-size:inherit!important;
+  font-weight:inherit!important;
   border:1px solid color-mix(in srgb, var(--mcj-level-color, rgba(255,255,255,.2)) 24%, rgba(255,255,255,.06))!important;
   background:
     linear-gradient(135deg, color-mix(in srgb, var(--mcj-level-color, #a78bfa) 14%, transparent), rgba(255,255,255,.03))!important;
@@ -750,7 +785,12 @@ body{background:radial-gradient(circle at 76% 4%,rgba(255,145,195,.055),transpar
 @media(max-width:560px){
   .mcj-market-media{aspect-ratio:4/5!important}
   .mcj-market-cert-row{margin:-16px 12px 0!important;padding:9px 10px!important}
-  .mcj-market-body{padding:12px 12px 14px!important;gap:9px!important}
-  .mcj-market-title-row h3{font-size:17px!important}
+  .companion-hall-grid .player-card.mcj-market-card .companion-card-body.mcj-market-body,
+  .companion-hall-grid .mcj-market-card .mcj-market-body{
+    padding:12px 12px 14px!important;
+    gap:9px!important;
+  }
+  .mcj-market-title-row h3,
+  .companion-hall-grid .mcj-market-card .mcj-market-title-row h3{font-size:17px!important}
   .mcj-market-price-main strong{font-size:20px!important}
 }
