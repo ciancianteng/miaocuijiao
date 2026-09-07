@@ -366,7 +366,7 @@
         html: true,
       },
       ["昵称", d.name || d.nickname],
-      ["陪玩 ID", d.playerId || d.id],
+      ["陪玩 ID", d.publicId || d.companionCode || d.companion_code || d.playerId || "未生成"],
       ["邮箱", d.email || "尚未填写邮箱"],
       ["手机号 / 联系方式", d.phone || d.contact_phone || "尚未填写联系方式"],
       ["年龄", d.age || "尚未填写"],
