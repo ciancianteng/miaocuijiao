@@ -283,7 +283,7 @@ export default async function handler(req, res) {
     if (isMissingRelation(error)) {
       return json(res, 503, {
         ok: false,
-        message: "请先执行 supabase/pending-prod/06_gift_tipping_system_v1.sql / companion-marketplace.sql",
+        message: "请先执行 supabase/pending-prod/08_gift_tipping_system_v1.sql / companion-marketplace.sql",
         detail: String(error?.message || "").slice(0, 240),
       });
     }
