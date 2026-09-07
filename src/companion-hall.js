@@ -397,6 +397,45 @@
       return '<span class="mcj-service-tag companion-game-chip">' + esc(game) + "</span>";
     }).join("");
   }
+  /** Same cert identity badges as detail (`MCJCompanionIdentity.certHtml` / `.mcj-cert-badge`). */
+  function identityWatermarkHtml(item) {
+    var certTags = item.certTags || item.certificationTags || [];
+    if (!Array.isArray(certTags) || !certTags.length) return "";
+    var identityApi = window.MCJCompanionIdentity;
+    var badges =
+      identityApi && typeof identityApi.certHtml === "function"
+        ? identityApi.certHtml(certTags, 3)
+        : certTags
+            .slice(0, 3)
+            .map(function (t) {
+              var name = typeof t === "string" ? t : t.name || t.title || "";
+              if (!name) return "";
+              var icon =
+                typeof t === "object" && t.icon
+                  ? String(t.icon)
+                  : /官方推荐/.test(name)
+                    ? "🏅"
+                    : "🏷️";
+              var official = /官方推荐/.test(name) ? " is-official" : "";
+              return (
+                '<span class="mcj-cert-badge' +
+                official +
+                '" title="' +
+                esc(name) +
+                '"><span class="mcj-cert-icon" aria-hidden="true">' +
+                esc(icon) +
+                "</span>" +
+                esc(name) +
+                "</span>"
+              );
+            })
+            .filter(Boolean)
+            .join("");
+    if (!badges) return "";
+    return (
+      '<div class="companion-identity-watermark" aria-label="认证徽章">' + badges + "</div>"
+    );
+  }
   function card(item) {
     var pillStyle = "";
     if (item.badgeBorder || item.levelColor || item.badgeText) {
@@ -408,7 +447,8 @@
         '"';
     }
     var identityApi = window.MCJCompanionIdentity;
-    // Top badge row: level + cert + voice + category (never games).
+    var identityWatermark = identityWatermarkHtml(item);
+    // Identity row: level + voice + category (certs live in watermark near name/avatar).
     var categoryTags = (function () {
       var voice = String(item.voiceType || "").trim().replace(/^声线\s*[:：]\s*/, "");
       var game = String(item.game || "").trim();
@@ -439,25 +479,19 @@
           badgeText: item.badgeText || "",
           gender: "",
           voiceType: item.voiceType || "",
-          certTags: item.certTags || [],
+          certTags: [],
           tags: categoryTags,
           className: "companion-identity-row companion-tags",
           includeLevel: true,
           includeGender: false,
           includeVoice: true,
           serviceLimit: 3,
-          certLimit: 3,
+          certLimit: 0,
         })
       : (function () {
           var level = item.level
             ? '<span class="companion-level-pill mcj-level-tag" data-level-id="' + esc(item.levelId || "") + '"' + pillStyle + '>' + esc(item.level) + "</span>"
             : "";
-          var cert = (item.certTags || []).slice(0, 3).map(function (t) {
-            var name = typeof t === "string" ? t : t.name || t.title || "";
-            if (!name) return "";
-            var icon = typeof t === "object" && t.icon ? t.icon + " " : "";
-            return '<span class="mcj-cert-badge">' + esc(icon + name) + "</span>";
-          }).filter(Boolean).join("");
           var voice = String(item.voiceType || "").trim().replace(/^声线\s*[:：]\s*/, "");
           var voiceParts = voice
             ? voice.split(/[,，、|/]+/).map(function (x) { return String(x || "").trim(); }).filter(Boolean)
@@ -471,7 +505,7 @@
           var cats = categoryTags.map(function (t) {
             return '<span class="mcj-service-tag mcj-category-tag">' + esc(t) + "</span>";
           }).join("");
-          return '<div class="mcj-id-tags companion-identity-row companion-tags">' + level + cert + voiceHtml + cats + "</div>";
+          return '<div class="mcj-id-tags companion-identity-row companion-tags">' + level + voiceHtml + cats + "</div>";
         })();
     // Bottom row: game / service list only.
     // Hall = browse card only — no selling price, FX conversion, or level price range.
@@ -490,7 +524,7 @@
     var pos = Number(focusX) + "% " + Number(focusY) + "%";
     // Keep existing card chrome: no inline border/glow redesign. Level data binds via data-* + applyTheme.
     return '<article class="card player-card" data-player data-public-id="' + esc(String(publicId).toUpperCase()) + '" data-level-id="' + esc(item.levelId || "") + '" data-companion-level="' + esc(item.levelId || "") + '" data-card-style="' + esc(item.cardBackground || "") + '" data-level-color="' + esc(item.levelColor || "") + '" data-companion-id="' + esc(uuid) + '" data-name="' + esc(item.name) + '" data-game="' + esc(item.game) + '" data-tags="' + esc(item.tags.join(",")) + '" data-price="' + esc(item.priceValue) + '" data-level-min="' + esc(item.levelMinPrice != null ? item.levelMinPrice : "") + '" data-level-max="' + esc(item.levelMaxPrice != null ? item.levelMaxPrice : "") + '" data-online="' + esc(item.status) + '" data-score="' + esc(item.rating) + '" data-gender="' + esc(item.gender) + '">' +
-      '<div class="companion-card-media"><img src="' + esc(item.image) + '" alt="' + esc(item.name) + '" loading="lazy" decoding="async" style="object-position:' + esc(pos) + ';--mcj-cover-pos:' + esc(pos) + '" onerror="this.onerror=null;this.src=\'' + DEFAULT_AVATAR + '\'"><span class="companion-online-badge' + badgeClass + '">' + esc(item.status) + '</span></div>' +
+      '<div class="companion-card-media"><img src="' + esc(item.image) + '" alt="' + esc(item.name) + '" loading="lazy" decoding="async" style="object-position:' + esc(pos) + ';--mcj-cover-pos:' + esc(pos) + '" onerror="this.onerror=null;this.src=\'' + DEFAULT_AVATAR + '\'"><span class="companion-online-badge' + badgeClass + '">' + esc(item.status) + '</span>' + identityWatermark + '</div>' +
       '<div class="companion-card-body">' +
         '<div class="row companion-card-head companion-card-title-row"><h3>' + esc(item.name) + '</h3><span class="companion-status-inline' + badgeClass + '">' + esc(item.status) + '</span></div>' +
         '<p class="muted companion-id">陪玩 ID：' + esc(publicId) + '</p>' +
