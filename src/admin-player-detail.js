@@ -366,7 +366,9 @@
         html: true,
       },
       ["昵称", d.name || d.nickname],
-      ["陪玩 ID", d.playerId || d.id],
+      ["陪玩 ID", d.companionCode || d.publicId || d.playerId || "未生成"],
+      ["内部 UUID", d.internalUuid || d.id || "—"],
+      ["用户 UUID", d.profileUuid || d.uid || d.user_id || "—"],
       ["邮箱", d.email || "尚未填写邮箱"],
       ["手机号 / 联系方式", d.phone || d.contact_phone || "尚未填写联系方式"],
       ["年龄", d.age || "尚未填写"],
@@ -715,7 +717,8 @@
       "</h2><p>" +
       esc(d.name || d.nickname || "-") +
       " · " +
-      esc(d.playerId || d.id) +
+      esc(d.companionCode || d.publicId || d.playerId || "未生成") +
+      (d.internalUuid || d.id ? " · UUID " + esc(String(d.internalUuid || d.id).slice(0, 8)) + "…" : "") +
       '</p></div><button class="mini-btn" type="button" data-player-drawer-close>关闭</button></div>' +
       '<form data-player-detail-form data-player-id="' +
       esc(d.id) +

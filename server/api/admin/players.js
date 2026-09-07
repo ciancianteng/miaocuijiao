@@ -221,7 +221,11 @@ function mapListPlayer(row = {}, profile = {}) {
     id: row.id,
     uid: row.user_id,
     user_id: row.user_id,
-    playerId: row.id,
+    playerId: row.companion_code || "",
+    publicId: row.companion_code || "",
+    companionCode: row.companion_code || "",
+    internalUuid: row.id,
+    profileUuid: row.user_id,
     nickname: row.nickname || profile.display_name || "-",
     name: row.nickname || profile.display_name || "-",
     email: profile.email || "",
@@ -1014,6 +1018,17 @@ async function reviewApplication(req, companion, payload) {
     }
     // Must set verification_status=approved so /api/public/companions (filters by it) publishes the companion.
     patch = approveListingPatchForRow(companion, extras);
+    if (!String(companion.companion_code || "").trim() && !patch.companion_code) {
+      try {
+        const { allocateCompanionCode, resolveCompanionPublicCode } = await import("../_account-codes.js");
+        if (!resolveCompanionPublicCode(companion)) {
+          const code = await allocateCompanionCode(companionDb);
+          if (code) patch.companion_code = code;
+        }
+      } catch (err) {
+        console.warn("[admin/players] companion_code allocate failed", err?.message || err);
+      }
+    }
   } else {
     patch = unlistListingPatch({ status, reason });
     // Drop undefined verification_status from unlist when archived

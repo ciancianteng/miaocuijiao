@@ -7,7 +7,7 @@ import { debitWallet, getWallet, money as walletMoney, writeAdminLog } from "../
 import { scheduleRecomputeSoft } from "../_popularity.js";
 import { servicesFromGamePrices, readGamePrices } from "../_game-prices.js";
 import { hasBossRole } from "../_account-roles.js";
-import { allocateOrderNo } from "../_account-codes.js";
+import { allocateOrderNo, resolveCompanionPublicCode } from "../_account-codes.js";
 import {
   isProductionRuntime,
   isTestAccountRecord,
@@ -117,8 +117,7 @@ function availabilityText(code) {
 }
 
 function publicId(companion = {}) {
-  if (companion.companion_uid) return `P${companion.companion_uid}`;
-  return "";
+  return resolveCompanionPublicCode(companion) || "";
 }
 
 async function loadCompanion(userId) {

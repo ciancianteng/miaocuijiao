@@ -376,7 +376,7 @@
       "<div>陪玩：<strong>" +
       esc(c.companionName) +
       "</strong>" +
-      (c.publicId ? " · " + esc(c.publicId) : "") +
+      (c.publicId && !/^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(String(c.publicId)) ? " · " + esc(c.publicId) : "") +
       "</div>" +
       '<div class="mcj-po-price-row"><span>单价</span><span class="mcj-po-price-hero" data-po-price-hero>' +
       esc(moneyText(c.unitPrice)) +

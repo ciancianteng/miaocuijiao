@@ -14,7 +14,7 @@ import {
   transitionOrderStatus,
 } from "./_order-status.js";
 import { evaluatePublishGate } from "./_companion-publish-gate.js";
-import { allocateOrderNo, resolveOrderPublicNo } from "./_account-codes.js";
+import { allocateOrderNo, resolveOrderPublicNo, resolveCompanionPublicCode, ensureCompanionPublicCode } from "./_account-codes.js";
 import { companionDb } from "./_companion-media-store.js";
 import { listPendingForCs, latestRejectedForOrders, latestApprovedForOrders, signedProofUrl, uploadProof, receiptReviewerFields } from "./_payment-receipts.js";
 import { loadPlatformPayQr, listBossOrderPaymentMethods, normalizePaymentChannelId, isWalletPayEnabled, loadPaymentChannelsContext } from "./_platform-pay-qr.js";
@@ -436,6 +436,21 @@ function viewOrder(row = {}) {
     row.companionName ||
     companionFromDesc ||
     "";
+  const companionPublicId = (() => {
+    const fromRow =
+      row.companionPublicId ||
+      row.companionCode ||
+      row.companion_code ||
+      (row.companion && (row.companion.companionCode || row.companion.publicId || row.companion.companion_code)) ||
+      "";
+    const s = String(fromRow || "").trim();
+    if (/^PW\d+$/i.test(s)) return s.toUpperCase().replace(/^pw/i, "PW");
+    if (/^P\d+$/i.test(s) && !/^[0-9a-f]{8}-/i.test(s)) return s.toUpperCase();
+    if (s && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s)) {
+      return s.length <= 24 ? s : "";
+    }
+    return "";
+  })();
   const bossNotes = String(row.notes || "").trim() || notesFromDesc;
   const completionPending =
     String(row.note || "").includes("[[COMPLETION_PENDING]]") ||
@@ -480,6 +495,9 @@ function viewOrder(row = {}) {
     bossId: row.boss_id || "",
     companionId: row.companion_id || "",
     companionName,
+    companionCode: companionPublicId,
+    companionPublicId,
+    publicId: companionPublicId,
     customerServiceId: row.customer_service_id || "",
     orderType: ORDER_TYPE_TEXT[row.order_type] || row.order_type || "自定义订单",
     orderTypeKey: row.order_type || "custom",
@@ -616,10 +634,19 @@ async function loadOrders(profile, id = "") {
   const serviceIds = [...new Set(orders.map((row) => row.customer_service_id).filter(Boolean))];
   const orderIds = orders.map((row) => row.id).filter(Boolean);
 
-  const [companions, services, reviews] = await Promise.all([
+  const [companions, companionProfiles, services, reviews] = await Promise.all([
     companionIds.length
       ? supabaseJson(
           restUrl("profiles", `?id=in.(${companionIds.map(encodeURIComponent).join(",")})&select=id,display_name,email,avatar_url,role`),
+          { headers: serviceHeaders() }
+        ).catch(() => [])
+      : Promise.resolve([]),
+    companionIds.length
+      ? supabaseJson(
+          restUrl(
+            "companion_profiles",
+            `?user_id=in.(${companionIds.map(encodeURIComponent).join(",")})&select=id,user_id,nickname,companion_code,companion_uid&limit=500`
+          ),
           { headers: serviceHeaders() }
         ).catch(() => [])
       : Promise.resolve([]),
@@ -640,7 +667,31 @@ async function loadOrders(profile, id = "") {
       : Promise.resolve([]),
   ]);
 
-  const companionMap = Object.fromEntries((companions || []).map((p) => [p.id, p]));
+  const codeByUserId = {};
+  for (const cp of Array.isArray(companionProfiles) ? companionProfiles : []) {
+    if (!cp?.user_id) continue;
+    if (!resolveCompanionPublicCode(cp)) {
+      try {
+        await ensureCompanionPublicCode(companionDb, cp);
+      } catch {
+        /* best effort */
+      }
+    }
+    const code = resolveCompanionPublicCode(cp);
+    if (code) codeByUserId[cp.user_id] = code;
+  }
+
+  const companionMap = Object.fromEntries(
+    (companions || []).map((p) => [
+      p.id,
+      {
+        ...p,
+        companion_code: codeByUserId[p.id] || "",
+        companionCode: codeByUserId[p.id] || "",
+        publicId: codeByUserId[p.id] || "",
+      },
+    ])
+  );
   const serviceMap = Object.fromEntries((services || []).map((p) => [p.id, p]));
   const reviewByOrder = {};
   for (const rev of Array.isArray(reviews) ? reviews : []) {

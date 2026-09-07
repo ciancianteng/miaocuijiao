@@ -62,6 +62,7 @@ async function resolvePlayableUrl(raw) {
   }
   return url;
 }
+import { resolveCertTagsForProfiles } from "../_companion-cert-tags-store.js";
 import {
   formatCompanionCode,
   isCompanionCode,
@@ -111,6 +112,14 @@ async function supabaseJson(url, init = {}) {
   }
   if (!response.ok) throw new Error(body?.message || body?.hint || body?.details || "陪玩数据库请求失败");
   return body;
+}
+/** Adapter for ensureCompanionPublicCode(dbFn, row). */
+async function companionDb(table, query = "", init = {}) {
+  const headersBag = {
+    ...headers(),
+    Prefer: init.method && init.method !== "GET" ? "return=representation" : undefined,
+  };
+  return supabaseJson(restUrl(table, query), { ...init, headers: { ...headersBag, ...(init.headers || {}) } });
 }
 function money(value) {
   const n = Number(String(value ?? "").replace(/[^\d.-]/g, ""));
@@ -182,10 +191,10 @@ function resolveCompanionServiceIds(row = {}, catalog = []) {
     .filter((svc) => names.has(String(svc.name || svc.title || "").trim()))
     .map((svc) => String(svc.id));
 }
-function publicCompanion(row = {}, profile = {}, levels = [], catalog = [], mediaExtras = {}) {
+function publicCompanion(row = {}, profile = {}, levels = [], catalog = [], mediaExtras = {}, certTags = []) {
   const base = mapCompanionPublicFields(row, profile, mediaExtras);
   const avail = base.availabilityStatus || availabilityCode(row);
-  const publicId = base.publicId || (row.companion_uid ? `P${row.companion_uid}` : "");
+  const publicId = base.publicId || "";
   const avatar = resolveCompanionAvatar(profile, row, mediaExtras) || DEFAULT_COMPANION_AVATAR;
   const cover = resolveCompanionCover(profile, row, mediaExtras) || avatar;
   const name = base.name || "未命名陪玩";
@@ -195,6 +204,12 @@ function publicCompanion(row = {}, profile = {}, levels = [], catalog = [], medi
     : row.level_name && !/^未设置/.test(String(row.level_name))
       ? row.level_name
       : "未设置等级";
+  const levelMin = level?.min ?? level?.minPrice ?? null;
+  const levelMax = level?.max ?? level?.maxPrice ?? null;
+  const levelPriceRange =
+    levelMin != null && levelMax != null
+      ? `${levelMin}–${levelMax}${level?.maxPlus ? "+" : ""}`
+      : "";
   const rates = resolvePlatformCommission(row.commission_rate, level?.commissionRate ?? 20);
   const serviceTypes = resolveServiceTypes(row);
   const serviceIds = resolveCompanionServiceIds(row, catalog);
@@ -250,9 +265,37 @@ function publicCompanion(row = {}, profile = {}, levels = [], catalog = [], medi
     level: levelName,
     levelName,
     levelId: level?.id || row.level_id || "",
+    levelColor: level?.color || "",
+    displayColor: level?.displayColor || level?.color || "",
+    cardBackground: level?.cardBackground || "",
+    badgeBorder: level?.badgeBorder || level?.color || "",
+    badgeText: level?.badgeText || level?.color || "",
+    badgeIcon: level?.badgeIcon || "",
+    levelMinPrice: levelMin,
+    levelMaxPrice: levelMax,
+    levelPriceRange,
+    levelPriceRangeText: levelPriceRange ? `${levelPriceRange} 猫粮` : "",
+    levelPriceRangeRole: "level_limit",
+    levelConfig: level
+      ? {
+          id: level.id || "",
+          color: level.color || "",
+          displayColor: level.displayColor || level.color || "",
+          cardBackground: level.cardBackground || "",
+          badgeBorder: level.badgeBorder || "",
+          badgeText: level.badgeText || "",
+          min: levelMin,
+          max: levelMax,
+          priceRangeLabel: levelPriceRange,
+        }
+      : null,
     price: money(row.price),
     priceValue: money(row.price),
     hourlyPrice: money(row.price),
+    sellingPrice: money(row.price),
+    priceRole: "companion_selling_price",
+    certTags: Array.isArray(certTags) ? certTags : [],
+    certificationTags: Array.isArray(certTags) ? certTags : [],
     gamePrices: readGamePrices(row),
     pricingUnit: row.pricing_unit || "小时",
     availabilityStatus: avail,
@@ -553,6 +596,13 @@ async function loadCompanions(id = "") {
   }
   // JS safety net (no deletes): drop smoke/test companions even if DB filter unavailable.
   companions = companions.filter((row) => row && row.is_test_account !== true);
+  // Soft-heal: allocate durable PW public IDs for customer-facing surfaces.
+  try {
+    const { ensureCompanionPublicCodes } = await import("../_account-codes.js");
+    await ensureCompanionPublicCodes(companionDb, companions);
+  } catch {
+    /* best effort */
+  }
   const userIds = [...new Set(companions.map((row) => row.user_id).filter(Boolean))];
   if (!userIds.length) return [];
   const profileIds = companions.map((row) => row.id).filter(Boolean);
@@ -587,10 +637,11 @@ async function loadCompanions(id = "") {
       )
     );
   }
-  const [levels, servicesBundle, mediaMap] = await Promise.all([
+  const [levels, servicesBundle, mediaMap, certMap] = await Promise.all([
     readLocalLevels().catch(() => []),
     loadPublicServices().catch(() => ({ services: [] })),
     mediaExtrasByProfile(profileIds).catch(() => ({})),
+    resolveCertTagsForProfiles(profileIds).catch(() => ({})),
   ]);
   const catalog = Array.isArray(servicesBundle?.services) ? servicesBundle.services : [];
   const profileMap = Object.fromEntries((profiles || []).map((row) => [row.id, row]));
@@ -634,7 +685,7 @@ async function loadCompanions(id = "") {
     // Homepage / hall: hallVisible requires approved + active + (identity OR deposit) + critical profile.
     // Never require identity AND deposit.
     if (!gate.hallVisible) continue;
-    mapped.push(publicCompanion(row, profile, levelList, catalog, media));
+    mapped.push(publicCompanion(row, profile, levelList, catalog, media, certMap[row.id] || []));
   }
   return attachReviews(mapped);
 }

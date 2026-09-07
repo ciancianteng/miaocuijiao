@@ -154,6 +154,7 @@
       // Prefer API/admin-saved price; do not invent prices from level bands.
       var apiPrice = priceNumber(item.priceValue != null ? item.priceValue : item.price || item.hourlyPrice || item.servicePrice);
       var priceValue = apiPrice > 0 ? apiPrice : priceNumber(normalized.priceValue || normalized.price || normalized.servicePrice || normalized.hourlyPrice);
+      var levelConfig = normalized.levelConfig || item.levelConfig || null;
       return {
         id: normalized.uid || normalized.companionId || normalized.id || "",
         name: normalized.name || normalized.nickname || "未命名陪玩",
@@ -164,6 +165,19 @@
         level: levelLabel(Object.assign({}, normalized, { levelId: levelId })),
         levelId: levelId,
         levelNumber: normalized.levelNumber || Number(String(levelId).replace(/\D+/g, "")) || 0,
+        levelConfig: levelConfig,
+        levelColor: normalized.levelColor || (levelConfig && levelConfig.color) || item.levelColor || "",
+        displayColor: normalized.displayColor || (levelConfig && levelConfig.displayColor) || "",
+        cardBackground: normalized.cardBackground || (levelConfig && levelConfig.cardBackground) || item.cardBackground || "",
+        badgeBorder: normalized.badgeBorder || (levelConfig && levelConfig.badgeBorder) || "",
+        badgeText: normalized.badgeText || (levelConfig && levelConfig.badgeText) || "",
+        levelPriceRange: normalized.levelPriceRange || item.levelPriceRange || (levelConfig && levelConfig.priceRangeLabel) || "",
+        levelPriceRangeText: normalized.levelPriceRangeText || item.levelPriceRangeText || (levelConfig && levelConfig.priceRangeText) || "",
+        levelMinPrice: normalized.levelMinPrice != null ? normalized.levelMinPrice : item.levelMinPrice,
+        levelMaxPrice: normalized.levelMaxPrice != null ? normalized.levelMaxPrice : item.levelMaxPrice,
+        cardStyleInline: normalized.cardStyleInline || (window.MCJCompanionLevels && window.MCJCompanionLevels.inlineCardStyle
+          ? window.MCJCompanionLevels.inlineCardStyle(levelConfig || normalized)
+          : ""),
         gender: normalized.gender || "保密",
         voiceType: normalized.voiceType || normalized.voice_type || "",
         serviceType: (Array.isArray(normalized.serviceTypes) && normalized.serviceTypes[0])
@@ -388,74 +402,261 @@
           .map(function (part) { return String(part || "").trim(); })
           .filter(Boolean);
     if (!list.length) list = ["未设置游戏"];
-    return list.slice(0, 4).map(function (game) {
-      return '<span class="mcj-service-tag companion-game-chip">' + esc(game) + "</span>";
+    return list.slice(0, 3).map(function (game) {
+      return '<span class="mcj-market-chip mcj-market-chip-game">' + esc(game) + "</span>";
     }).join("");
   }
-  function card(item) {
+  function certBadgesHtml(item) {
+    var list = Array.isArray(item.certTags) ? item.certTags : [];
+    var badges = list
+      .slice(0, 3)
+      .map(function (t) {
+        var name = typeof t === "string" ? t : t.name || t.title || "";
+        if (!name) return "";
+        var icon = typeof t === "object" && t.icon ? String(t.icon) : "🏅";
+        var color = typeof t === "object" && t.color ? String(t.color) : "";
+        var style = color
+          ? ' style="--mcj-cert-color:' +
+            esc(color) +
+            ";border-color:" +
+            esc(color) +
+            ";color:" +
+            esc(color) +
+            ';"'
+          : "";
+        return (
+          '<span class="mcj-cert-badge mcj-market-cert"' +
+          style +
+          ' title="' +
+          esc(name) +
+          '"><span class="mcj-cert-icon" aria-hidden="true">' +
+          esc(icon) +
+          "</span>" +
+          esc(name) +
+          "</span>"
+        );
+      })
+      .filter(Boolean)
+      .join("");
+    return (
+      '<section class="mcj-market-verify' +
+      (badges ? "" : " is-empty") +
+      '" aria-label="认证徽章">' +
+        '<div class="mcj-market-verify-head">' +
+          '<span class="mcj-market-verify-mark" aria-hidden="true"></span>' +
+          '<span class="mcj-market-verify-label">平台认证</span>' +
+        "</div>" +
+        '<div class="mcj-market-cert-row">' +
+        (badges || '<span class="mcj-market-cert-empty">暂无认证徽章</span>') +
+        "</div>" +
+      "</section>"
+    );
+  }
+  function styleTagsHtml(item) {
     var identityApi = window.MCJCompanionIdentity;
-    var identityRow = identityApi
-      ? identityApi.renderTags({
-          levelId: item.levelId || "",
-          levelLabel: item.level,
-          gender: item.gender,
-          voiceType: item.voiceType || "",
-          certTags: item.certTags || [],
-          tags: item.tags || [],
-          className: "companion-identity-row companion-tags",
-          includeLevel: true,
-          includeGender: true,
-          serviceLimit: 3,
-          certLimit: 2,
-        })
-      : (function () {
-          var level = item.level
-            ? '<span class="companion-level-pill mcj-level-tag" data-level-id="' + esc(item.levelId || "") + '">' + esc(item.level) + "</span>"
-            : "";
-          var gender = item.gender && !/^(保密|不公开|未知|-|—)$/.test(String(item.gender))
-            ? '<span class="mcj-gender-tag">' + esc(item.gender) + "</span>"
-            : "";
-          var styleTags = (item.tags || []).slice(0, 3).map(function (tag) {
-            return '<span class="mcj-service-tag">' + esc(tag) + "</span>";
-          }).join("");
-          var voice = String(item.voiceType || "").trim().replace(/^声线\s*[:：]\s*/, "");
-          var voiceParts = voice
-            ? voice.split(/[,，、|/]+/).map(function (x) { return String(x || "").trim(); }).filter(Boolean)
-            : [];
-          var voiceHtml =
-            '<span class="mcj-voice-tag' +
-            (voiceParts.length ? "" : " is-unset") +
-            '"><span class="mcj-voice-label">声线：</span>' +
-            esc(voiceParts.length ? voiceParts.join(" / ") : "未设置") +
-            "</span>";
-          return '<div class="mcj-id-tags companion-identity-row companion-tags">' + level + gender + voiceHtml + styleTags + "</div>";
-        })();
-    var gamesRow = '<div class="mcj-id-tags companion-games-row companion-tags">' + gameChips(item) + "</div>";
+    var tags = item.tags || [];
+    if (identityApi && identityApi.filterServiceTags) {
+      tags = identityApi.filterServiceTags(tags, item.voiceType || "");
+    }
+    var voice = String(item.voiceType || "").trim().replace(/^声线\s*[:：]\s*/, "");
+    var voiceParts = voice
+      ? voice.split(/[,，、|/]+/).map(function (x) { return String(x || "").trim(); }).filter(Boolean)
+      : [];
+    var parts = [];
+    if (voiceParts.length) {
+      parts.push(
+        '<span class="mcj-market-chip mcj-market-chip-voice"><span class="mcj-voice-label">声线</span>' +
+          esc(voiceParts.slice(0, 2).join(" / ")) +
+          "</span>"
+      );
+    }
+    tags.slice(0, 2).forEach(function (tag) {
+      parts.push('<span class="mcj-market-chip">' + esc(tag) + "</span>");
+    });
+    if (!parts.length) return "";
+    return '<div class="mcj-market-style-row">' + parts.join("") + "</div>";
+  }
+  function card(item) {
+    var levelColor = item.levelColor || (item.levelConfig && item.levelConfig.color) || "";
+    var badgeBorder = item.badgeBorder || levelColor || "";
+    var badgeText = item.badgeText || levelColor || "";
+    var pillStyle =
+      ' style="' +
+      (badgeBorder ? "border-color:" + esc(badgeBorder) + ";" : "") +
+      (badgeText ? "color:" + esc(badgeText) + ";" : "") +
+      (levelColor ? "background:color-mix(in srgb, " + esc(levelColor) + " 34%, rgba(8,6,12,.55));" : "") +
+      '"';
     var fx = formatHourlyPriceFx(item.priceValue);
-    var priceHtml =
-      '<div class="price companion-price">' +
-      esc(item.price) +
-      (fx ? ' <span class="price-fx-approx">' + esc(fx) + "</span>" : "") +
-      "</div>";
+    var levelRangeText = item.levelPriceRange || item.levelPriceRangeText || "";
+    if (levelRangeText && /猫粮/.test(levelRangeText)) {
+      levelRangeText = String(levelRangeText).replace(/\s*猫粮\s*$/, "");
+    }
     var badgeClass = statusBadgeClass(item.status);
-    var publicId = item.publicId || "未生成";
+    var publicId =
+      (window.MCJCompanionPublicId && window.MCJCompanionPublicId.customerFacingCompanionId
+        ? window.MCJCompanionPublicId.customerFacingCompanionId(item)
+        : "") ||
+      item.publicId ||
+      item.companionCode ||
+      "";
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(String(publicId))) publicId = "";
+    if (!publicId) publicId = "未生成";
     var uuid = String(item.id || "").trim();
     var detailHref = uuid ? ("profile.html?id=" + encodeURIComponent(uuid)) : "#";
     var focusX = item.objectPositionX != null ? item.objectPositionX : 50;
     var focusY = item.objectPositionY != null ? item.objectPositionY : 25;
     var pos = Number(focusX) + "% " + Number(focusY) + "%";
-    return '<article class="card player-card" data-player data-public-id="' + esc(String(publicId).toUpperCase()) + '" data-level-id="' + esc(item.levelId || "") + '" data-companion-level="' + esc(item.levelId || "") + '" data-companion-id="' + esc(uuid) + '" data-name="' + esc(item.name) + '" data-game="' + esc(item.game) + '" data-tags="' + esc(item.tags.join(",")) + '" data-price="' + esc(item.priceValue) + '" data-online="' + esc(item.status) + '" data-score="' + esc(item.rating) + '" data-gender="' + esc(item.gender) + '">' +
-      '<div class="companion-card-media"><img src="' + esc(item.image) + '" alt="' + esc(item.name) + '" loading="lazy" decoding="async" style="object-position:' + esc(pos) + ';--mcj-cover-pos:' + esc(pos) + '" onerror="this.onerror=null;this.src=\'' + DEFAULT_AVATAR + '\'"><span class="companion-online-badge' + badgeClass + '">' + esc(item.status) + '</span></div>' +
-      '<div class="companion-card-body">' +
-        '<div class="row companion-card-head companion-card-title-row"><h3>' + esc(item.name) + '</h3><span class="companion-status-inline' + badgeClass + '">' + esc(item.status) + '</span></div>' +
-        '<p class="muted companion-id">陪玩 ID：' + esc(publicId) + '</p>' +
-        '<div class="companion-meta companion-meta-desktop"><span class="companion-level-pill mcj-level-tag" data-level-id="' + esc(item.levelId || "") + '">' + esc(item.level) + '</span><span class="companion-game-text">' + esc(item.game) + '</span></div>' +
-        identityRow +
-        gamesRow +
-        priceHtml +
-        '<div class="companion-card-actions"><a class="companion-card-action" href="' + esc(detailHref) + '">查看详情</a><button type="button" class="companion-card-action primary" data-hall-order="' + esc(uuid) + '" data-hall-name="' + esc(item.name || "") + '" data-hall-price="' + esc(item.priceValue || "") + '" data-hall-level="' + esc(item.levelId || "") + '" data-hall-game="' + esc(item.game || "") + '" data-hall-avatar="' + esc(item.image || "") + '" data-hall-public-id="' + esc(publicId || "") + '" data-hall-status="' + esc(item.availabilityStatus || "") + '" data-hall-status-text="' + esc(item.status || "") + '">立即下单</button></div>' +
-      '</div>' +
-    '</article>';
+    var inlineStyle = item.cardStyleInline || "";
+    if (levelColor && inlineStyle.indexOf("--mcj-level-color") < 0) {
+      inlineStyle += (inlineStyle && inlineStyle.slice(-1) !== ";" ? ";" : "") + "--mcj-level-color:" + levelColor;
+    }
+    var styleAttr = inlineStyle ? ' style="' + esc(inlineStyle) + '"' : "";
+    var levelLabel = item.level || "未设置等级";
+    var levelIdShort = String(item.levelId || "").replace(/^lv/i, "Lv") || "Lv";
+    var levelNameOnly = String(levelLabel)
+      .replace(/^Lv\s*\d+\s*/i, "")
+      .replace(/^等级\s*/, "")
+      .trim() || levelLabel;
+    var priceNum = String(item.price).replace(/\s*猫粮\/小时\s*$/, "") || item.priceValue || "0";
+    return (
+      '<article class="card player-card mcj-market-card" data-player data-public-id="' +
+      esc(String(publicId === "未生成" ? "" : publicId).toUpperCase()) +
+      '" data-level-id="' +
+      esc(item.levelId || "") +
+      '" data-companion-level="' +
+      esc(item.levelId || "") +
+      '" data-card-style="' +
+      esc(item.cardBackground || "") +
+      '" data-level-color="' +
+      esc(levelColor) +
+      '" data-companion-id="' +
+      esc(uuid) +
+      '" data-name="' +
+      esc(item.name) +
+      '" data-game="' +
+      esc(item.game) +
+      '" data-tags="' +
+      esc(item.tags.join(",")) +
+      '" data-price="' +
+      esc(item.priceValue) +
+      '" data-level-min="' +
+      esc(item.levelMinPrice != null ? item.levelMinPrice : "") +
+      '" data-level-max="' +
+      esc(item.levelMaxPrice != null ? item.levelMaxPrice : "") +
+      '" data-online="' +
+      esc(item.status) +
+      '" data-score="' +
+      esc(item.rating) +
+      '" data-gender="' +
+      esc(item.gender) +
+      '"' +
+      styleAttr +
+      ">" +
+      '<div class="mcj-market-level-rail" aria-hidden="true"></div>' +
+      '<div class="mcj-market-media companion-card-media">' +
+        '<img src="' +
+        esc(item.image) +
+        '" alt="' +
+        esc(item.name) +
+        '" loading="lazy" decoding="async" style="object-position:' +
+        esc(pos) +
+        ";--mcj-cover-pos:" +
+        esc(pos) +
+        "\" onerror=\"this.onerror=null;this.src='" +
+        DEFAULT_AVATAR +
+        "'\">" +
+        '<div class="mcj-market-media-shade" aria-hidden="true"></div>' +
+        '<div class="mcj-market-media-frame" aria-hidden="true"></div>' +
+        '<span class="mcj-market-status companion-online-badge' +
+        badgeClass +
+        '">' +
+        esc(item.status) +
+        "</span>" +
+        '<div class="mcj-market-level-banner" data-level-id="' +
+        esc(item.levelId || "") +
+        '">' +
+          '<span class="mcj-market-level-code">' +
+          esc(levelIdShort) +
+          "</span>" +
+          '<span class="mcj-market-level-ribbon companion-level-pill mcj-level-tag" data-level-id="' +
+          esc(item.levelId || "") +
+          '"' +
+          pillStyle +
+          ">" +
+          esc(levelNameOnly) +
+          "</span>" +
+        "</div>" +
+        '<div class="mcj-market-hero-copy">' +
+          "<h3>" +
+          esc(item.name) +
+          "</h3>" +
+          '<span class="mcj-market-status-inline companion-status-inline' +
+          badgeClass +
+          '">' +
+          esc(item.status) +
+          "</span>" +
+        "</div>" +
+      "</div>" +
+      certBadgesHtml(item) +
+      '<div class="mcj-market-body companion-card-body" data-market-body>' +
+        '<p class="mcj-market-id muted companion-id' +
+        (publicId === "未生成" ? " is-hidden" : "") +
+        '"' +
+        (publicId === "未生成" ? " hidden" : "") +
+        ">陪玩 ID：" +
+        esc(publicId) +
+        "</p>" +
+        '<div class="mcj-market-meta-block">' +
+          '<div class="mcj-market-games">' +
+          gameChips(item) +
+          "</div>" +
+          styleTagsHtml(item) +
+        "</div>" +
+        '<div class="mcj-market-price companion-price">' +
+          '<div class="mcj-market-price-accent" aria-hidden="true"></div>' +
+          '<div class="mcj-market-price-main">' +
+            '<span class="companion-selling-price-label">实际售价</span>' +
+            "<strong>" +
+            esc(priceNum) +
+            "</strong>" +
+            '<span class="mcj-market-price-unit">猫粮/小时</span>' +
+          "</div>" +
+          (fx ? '<span class="price-fx-approx">' + esc(fx) + "</span>" : "") +
+          (levelRangeText
+            ? '<div class="companion-level-price-range mcj-market-level-limit" data-level-id="' +
+              esc(item.levelId || "") +
+              '">等级限价 ' +
+              esc(levelRangeText) +
+              " 猫粮</div>"
+            : "") +
+        "</div>" +
+        '<div class="companion-card-actions mcj-market-actions">' +
+          '<a class="companion-card-action" href="' +
+          esc(detailHref) +
+          '">查看详情</a>' +
+          '<button type="button" class="companion-card-action primary" data-hall-order="' +
+          esc(uuid) +
+          '" data-hall-name="' +
+          esc(item.name || "") +
+          '" data-hall-price="' +
+          esc(item.priceValue || "") +
+          '" data-hall-level="' +
+          esc(item.levelId || "") +
+          '" data-hall-game="' +
+          esc(item.game || "") +
+          '" data-hall-avatar="' +
+          esc(item.image || "") +
+          '" data-hall-public-id="' +
+          esc(publicId === "未生成" ? "" : publicId) +
+          '" data-hall-status="' +
+          esc(item.availabilityStatus || "") +
+          '" data-hall-status-text="' +
+          esc(item.status || "") +
+          '">立即下单</button>' +
+        "</div>" +
+      "</div>" +
+      "</article>"
+    );
   }
   function render() {
     var list = document.getElementById("playerList");

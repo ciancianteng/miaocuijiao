@@ -20,6 +20,15 @@
     return n.toFixed(2);
   }
 
+  function publicCompanionCode(v) {
+    var s = String(v || "").trim();
+    if (!s) return "";
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s)) return "";
+    if (/^PW\d+$/i.test(s)) return s.toUpperCase();
+    if (/^P\d+$/i.test(s)) return s.toUpperCase();
+    return s.length <= 24 ? s : "";
+  }
+
   function shortId(v) {
     var s = String(v || "");
     return s.length > 10 ? s.slice(0, 8) + "…" : s || "-";
@@ -75,7 +84,7 @@
     if (row && row.companion && row.companion.displayName) return row.companion.displayName;
     var hit = map[companionId];
     if (hit && hit.displayName) return hit.displayName;
-    return companionId ? shortId(companionId) : "-";
+    return companionId ? "陪玩" : "-";
   }
 
   function deriveLevel(companions, earnings) {
@@ -127,7 +136,7 @@
             "<div><span>直属陪玩</span><strong>" +
             esc(c.displayName || "陪玩") +
             '</strong><span style="display:block;margin-top:4px">' +
-            esc(c.companionCode || shortId(c.id || r.companionId)) +
+            esc(publicCompanionCode(c.companionCode || c.publicId) || "未生成") +
             "</span></div>" +
             "<div><span>绑定状态</span><strong>" +
             statusBadge(r.status || "active") +
@@ -243,7 +252,7 @@
           "<td>" +
           esc(name) +
           '<div class="cell-muted">' +
-          esc(shortId(e.companionId)) +
+          esc(companionName(map, e.companionId, e)) +
           "</div></td>" +
           '<td class="money">RM ' +
           esc(money(e.platformFeeAmount)) +
