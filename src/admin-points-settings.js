@@ -146,7 +146,7 @@
       "</ul>" +
       "<p style=\"margin:8px 0 0\">公式：rewardPoints = " +
       esc(state.roundingMode) +
-      "(订单猫粮实付 × points_per_cat_food)</p></div>" +
+      "(订单猫粮实付 × 每猫粮积分倍率)</p></div>" +
       '<div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">' +
       '<button class="mini-btn primary-lite" type="submit" data-points-save' +
       (state.saving ? " disabled" : "") +
