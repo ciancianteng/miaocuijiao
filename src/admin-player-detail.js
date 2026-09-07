@@ -366,7 +366,7 @@
         html: true,
       },
       ["昵称", d.name || d.nickname],
-      ["陪玩 ID", d.playerId || d.id],
+      ["陪玩 ID", d.publicId || d.companionCode || d.companion_code || d.playerId || "未生成"],
       ["邮箱", d.email || "尚未填写邮箱"],
       ["手机号 / 联系方式", d.phone || d.contact_phone || "尚未填写联系方式"],
       ["年龄", d.age || "尚未填写"],
@@ -719,7 +719,8 @@
         : [];
     var certCatalog = Array.isArray(d.certCatalog) ? d.certCatalog : [];
     var certHtml = !certCatalog.length
-      ? '<div class="admin-sync-note">暂无认证徽章目录。请先在「认证徽章」中启用标签。</div>'
+      ? '<div class="admin-sync-note">暂无认证徽章目录。请先在左侧「认证徽章管理」创建并启用徽章（名称 / 颜色 / 图标）。</div>' +
+        '<p style="margin:8px 0 0"><button class="mini-btn" type="button" data-section="companion-cert-tags">前往认证徽章管理</button></p>'
       : edit
         ? '<div class="form-grid" style="grid-template-columns:repeat(auto-fill,minmax(160px,1fr))">' +
           certCatalog
@@ -743,7 +744,8 @@
             })
             .join("") +
           "</div>" +
-          '<div class="admin-sync-note">勾选后保存，前台陪玩卡片会显示对应认证徽章（仅启用中的标签）。</div>'
+          '<div class="admin-sync-note">勾选后保存，前台陪玩卡片会显示对应认证徽章（仅启用中的标签）。徽章名称 / 颜色 / 图标请到「认证徽章管理」编辑。</div>' +
+          '<p style="margin:8px 0 0"><button class="mini-btn" type="button" data-section="companion-cert-tags">编辑徽章样式</button></p>'
         : assignedCertIds.length
           ? '<div class="row" style="flex-wrap:wrap;gap:8px">' +
             (d.certTags || [])

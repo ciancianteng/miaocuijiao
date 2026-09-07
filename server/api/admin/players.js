@@ -16,6 +16,7 @@ import {
 } from "../_companion-cert-tags-store.js";
 import { resolvePlatformCommission } from "../_commission-rates.js";
 import { resolveCompanionAvatar, resolveCompanionCover } from "../_companion-public-map.js";
+import { resolveCompanionPublicCode } from "../_account-codes.js";
 import { requireAdmin as requireAdminJwt, ADMIN_ROLES as SHARED_ADMIN_ROLES } from "../_admin-auth.js";
 import { isTestAccountRecord } from "../_test-accounts.js";
 import {
@@ -223,11 +224,19 @@ function mapListPlayer(row = {}, profile = {}) {
   const applicationRaw = row.application_status || row.verification_status || "pending";
   const depositRaw = row.deposit_status || "unpaid";
   const mediaRaw = row.media_status || "pending";
+  // Same public companion ID source as marketplace hall (`mapCompanionPublicFields` /
+  // `resolveCompanionPublicCode`). Keep `id` as DB UUID for internal admin actions only.
+  const publicId = resolveCompanionPublicCode(row) || "";
   return {
     id: row.id,
     uid: row.user_id,
     user_id: row.user_id,
-    playerId: row.id,
+    playerId: publicId || "未生成",
+    publicId,
+    companionCode: publicId,
+    companion_code: publicId || row.companion_code || "",
+    companionUid: row.companion_uid || null,
+    companion_uid: row.companion_uid || null,
     nickname: row.nickname || profile.display_name || "-",
     name: row.nickname || profile.display_name || "-",
     email: profile.email || "",

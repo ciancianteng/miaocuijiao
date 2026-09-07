@@ -60,6 +60,25 @@
     };
   }
 
+  function badgePreviewHtml(row) {
+    row = row || blank();
+    var color = row.color || "#f5c542";
+    return (
+      '<span class="mcj-cert-badge" style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;border:1px solid ' +
+      esc(color) +
+      ";color:" +
+      esc(color) +
+      ";background:color-mix(in srgb, " +
+      esc(color) +
+      ' 16%, transparent);font-size:12px;font-weight:700">' +
+      '<span aria-hidden="true">' +
+      esc(row.icon || "🏅") +
+      "</span>" +
+      esc(row.name || "徽章名称") +
+      "</span>"
+    );
+  }
+
   function formHtml(row) {
     row = row || blank();
     return (
@@ -67,27 +86,33 @@
       '<input type="hidden" name="id" value="' +
       esc(row.id || "") +
       '">' +
+      '<p class="admin-sync-note" style="margin:0 0 12px">自定义前台卡片认证徽章：名称、图标、颜色、启用状态。保存后可在陪玩详情勾选分配。</p>' +
       '<div class="form-grid">' +
-      '<label><span>标签名称</span><input name="name" required value="' +
+      '<label><span>徽章名称</span><input name="name" required value="' +
       esc(row.name || "") +
-      '" placeholder="官方推荐 / 金牌陪玩 / 实力认证"></label>' +
-      '<label><span>图标</span><input name="icon" value="' +
+      '" placeholder="官方推荐 / 金牌陪玩 / 实力认证" data-cert-live="name"></label>' +
+      '<label><span>徽章图标</span><input name="icon" value="' +
       esc(row.icon || "🏅") +
-      '" placeholder="🏅"></label>' +
-      '<label><span>颜色</span><input name="color" type="color" value="' +
+      '" placeholder="🏅" data-cert-live="icon"></label>' +
+      '<label><span>徽章颜色</span><input name="color" type="color" value="' +
       esc(row.color || "#f5c542") +
-      '"></label>' +
+      '" data-cert-live="color"></label>' +
       '<label><span>排序</span><input name="sort" type="number" value="' +
       esc(row.sort || 100) +
       '"></label>' +
-      '<label><span>状态</span><select name="enabled"><option value="true"' +
+      '<label><span>前台展示</span><select name="enabled"><option value="true"' +
       (row.enabled !== false ? " selected" : "") +
-      ">启用</option><option value=\"false\"" +
+      ">启用显示</option><option value=\"false\"" +
       (row.enabled === false ? " selected" : "") +
-      ">停用</option></select></label>" +
+      ">停用（前台不展示）</option></select></label>" +
+      '<label class="wide"><span>前台预览</span><div data-cert-preview style="padding:10px 0">' +
+      badgePreviewHtml(row) +
+      "</div></label>" +
       "</div>" +
       '<div class="row" style="margin-top:12px;gap:10px">' +
-      '<button class="primary-btn" type="submit">保存认证标签</button>' +
+      '<button class="primary-btn" type="submit">' +
+      (row.id ? "保存徽章" : "创建徽章") +
+      "</button>" +
       '<button class="ghost-btn" type="button" data-cert-tag-cancel>取消</button>' +
       "</div></form>"
     );
@@ -95,18 +120,21 @@
 
   function rowsHtml() {
     if (!state.tags.length) {
-      return '<tr><td colspan="6"><div class="empty">暂无认证标签。可新增「官方推荐」「金牌陪玩」等，仅后台可分配给陪玩。</div></td></tr>';
+      return '<tr><td colspan="7"><div class="empty">暂无认证徽章。点击「新增认证徽章」创建名称 / 颜色 / 图标，并启用后即可分配到陪玩卡片。</div></td></tr>';
     }
     return state.tags
       .map(function (tag) {
         return (
           "<tr>" +
-          "<td><strong>" +
-          esc((tag.icon ? tag.icon + " " : "") + tag.name) +
-          "</strong></td>" +
+          "<td>" +
+          badgePreviewHtml(tag) +
+          "</td>" +
+          "<td>" +
+          esc(tag.icon || "-") +
+          "</td>" +
           '<td><span style="display:inline-block;width:14px;height:14px;border-radius:3px;background:' +
           esc(tag.color || "#ccc") +
-          '"></span> ' +
+          ';vertical-align:middle"></span> ' +
           esc(tag.color || "-") +
           "</td>" +
           "<td>" +
@@ -115,7 +143,7 @@
           '<td><span class="status ' +
           (tag.enabled !== false ? "ok" : "wait") +
           '">' +
-          (tag.enabled !== false ? "启用" : "停用") +
+          (tag.enabled !== false ? "启用显示" : "已停用") +
           "</span></td>" +
           '<td><div class="row"><button class="mini-btn" type="button" data-cert-tag-edit="' +
           esc(tag.id) +
@@ -137,16 +165,16 @@
   }
 
   function pageHtml() {
-    if (state.loading) return '<div class="content-loading">正在读取认证标签...</div>';
+    if (state.loading) return '<div class="content-loading">正在读取认证徽章...</div>';
     return (
-      '<div class="content-admin-head"><div><h3>认证标签管理</h3><p>与风格标签、身份证/押金认证完全分开。仅后台可 CRUD 并分配到陪玩详情；老板端实时展示已启用标签。</p></div>' +
-      '<button class="primary-btn" type="button" data-cert-tag-add>新增认证标签</button></div>' +
+      '<div class="content-admin-head"><div><h3>认证徽章管理（前台卡片）</h3><p>自定义创建 / 编辑徽章名称、颜色、图标，并控制是否在陪玩大厅与详情卡片展示。风格标签请到「陪玩标签」；分配到具体陪玩请在陪玩详情勾选。</p></div>' +
+      '<button class="primary-btn" type="button" data-cert-tag-add>新增认证徽章</button></div>' +
       (state.error ? '<div class="admin-sync-note" style="color:#c00">' + esc(state.error) + "</div>" : "") +
       (state.message ? '<div class="admin-sync-note">' + esc(state.message) + "</div>" : "") +
       (state.formOpen && state.editing && !(window.MCJAdminOverlay && window.MCJAdminOverlay.isOpen && window.MCJAdminOverlay.isOpen())
         ? '<div class="panel" style="margin:12px 0">' + formHtml(state.editing) + "</div>"
         : "") +
-      '<div class="table-wrap"><table class="data-table"><thead><tr><th>名称</th><th>颜色</th><th>排序</th><th>状态</th><th>操作</th></tr></thead><tbody>' +
+      '<div class="table-wrap"><table class="data-table"><thead><tr><th>前台预览</th><th>图标</th><th>颜色</th><th>排序</th><th>展示</th><th>操作</th></tr></thead><tbody>' +
       rowsHtml() +
       "</tbody></table></div>"
     );
@@ -158,7 +186,7 @@
     el.innerHTML = pageHtml();
     if (state.formOpen && state.editing && window.MCJAdminOverlay) {
       window.MCJAdminOverlay.open({
-        title: state.editing.id ? "编辑认证标签" : "新增认证标签",
+        title: state.editing.id ? "编辑认证徽章" : "新增认证徽章",
         html: formHtml(state.editing),
         onClose: function () {
           state.formOpen = false;
@@ -185,12 +213,32 @@
       });
   }
 
+  function syncLivePreview(root) {
+    if (!root) return;
+    var preview = root.querySelector("[data-cert-preview]");
+    if (!preview) return;
+    var nameEl = root.querySelector('[name="name"]');
+    var iconEl = root.querySelector('[name="icon"]');
+    var colorEl = root.querySelector('[name="color"]');
+    preview.innerHTML = badgePreviewHtml({
+      name: nameEl ? nameEl.value : "",
+      icon: iconEl ? iconEl.value : "🏅",
+      color: colorEl ? colorEl.value : "#f5c542",
+    });
+  }
+
+  document.addEventListener("input", function (e) {
+    if (!e.target || !e.target.getAttribute || !e.target.getAttribute("data-cert-live")) return;
+    var form = e.target.closest("[data-cert-tag-form]");
+    if (form) syncLivePreview(form);
+  });
+  document.addEventListener("change", function (e) {
+    if (!e.target || !e.target.getAttribute || !e.target.getAttribute("data-cert-live")) return;
+    var form = e.target.closest("[data-cert-tag-form]");
+    if (form) syncLivePreview(form);
+  });
+
   document.addEventListener("click", function (e) {
-    if (!target() || !target().contains(e.target) && !(e.target.closest && e.target.closest("[data-cert-tag-form]"))) {
-      if (!e.target.closest || !e.target.closest("[data-cert-tag-form],[data-cert-tag-cancel]")) {
-        /* continue only for our controls below */
-      }
-    }
     var add = e.target.closest("[data-cert-tag-add]");
     if (add) {
       state.editing = blank();
@@ -201,9 +249,10 @@
     var edit = e.target.closest("[data-cert-tag-edit]");
     if (edit) {
       var id = edit.getAttribute("data-cert-tag-edit");
-      state.editing = state.tags.find(function (t) {
-        return String(t.id) === String(id);
-      }) || blank();
+      state.editing =
+        state.tags.find(function (t) {
+          return String(t.id) === String(id);
+        }) || blank();
       state.formOpen = true;
       render();
       return;
@@ -223,7 +272,7 @@
       apiPost({ action: en ? "enable" : "disable", id: tid })
         .then(function (body) {
           state.tags = body.items || state.tags;
-          state.message = body.message || "已更新";
+          state.message = body.message || "已更新展示状态";
           render();
         })
         .catch(function (err) {
@@ -233,7 +282,7 @@
     }
     var del = e.target.closest("[data-cert-tag-delete]");
     if (del) {
-      if (!confirm("确认删除该认证标签？已分配的陪玩将失去此标签。")) return;
+      if (!confirm("确认删除该认证徽章？已分配的陪玩将失去此徽章。")) return;
       apiPost({ action: "delete", id: del.getAttribute("data-cert-tag-delete") })
         .then(function (body) {
           state.tags = body.items || [];
@@ -259,18 +308,30 @@
       sort: Number(fd.get("sort") || 100),
       enabled: String(fd.get("enabled")) !== "false",
     };
+    if (!draft.name) {
+      alert("请填写徽章名称");
+      return;
+    }
+    state.saving = true;
     apiPost({ action: "save", tag: draft })
       .then(function (body) {
         state.tags = body.items || state.tags;
-        state.message = body.message || "已保存";
+        state.message = body.message || (draft.id ? "徽章已保存" : "徽章已创建");
         state.formOpen = false;
         state.editing = null;
+        state.saving = false;
         if (window.MCJAdminOverlay && window.MCJAdminOverlay.close) window.MCJAdminOverlay.close();
         render();
       })
       .catch(function (err) {
+        state.saving = false;
         alert(err.message || "保存失败");
       });
+  });
+
+  document.addEventListener("mcj:admin-section", function (e) {
+    var section = e && e.detail && e.detail.section;
+    if (section === "companion-cert-tags") load();
   });
 
   function boot() {
@@ -279,4 +340,6 @@
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
   else boot();
+
+  window.MCJAdminCompanionCertTags = { reload: load, render: render };
 })();
