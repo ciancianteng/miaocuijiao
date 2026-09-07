@@ -13,6 +13,7 @@ import {
   isTestAccountRecord,
   PROD_TEST_ACCOUNT_BLOCK_MESSAGE,
 } from "../_test-accounts.js";
+import { loadCompanionGiftWall, recordGiftWallReceipt } from "../_gift-wall.js";
 
 const REQUIRED = ["SUPABASE_URL", "SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY"];
 
@@ -275,7 +276,25 @@ export default async function handler(req, res) {
           catFoodPrice: money(g.cat_food_price),
           featured: !!g.featured,
           animationLevel: g.animation_level || "normal",
+          rarity: g.rarity || "common",
+          effectType: g.effect_type || g.animation_level || "float",
         })),
+      });
+    }
+
+    if (req.method === "GET" && (action === "gift_wall" || action === "giftWall")) {
+      const companionId = String(req.query.companionId || req.query.id || "").trim();
+      if (!companionId) return json(res, 400, { ok: false, message: "缺少陪玩 ID" });
+      const companion = await loadCompanion(companionId);
+      if (!companion) return json(res, 404, { ok: false, message: "陪玩不存在" });
+      const wall = await loadCompanionGiftWall(companion.user_id || companionId);
+      return json(res, 200, {
+        ok: true,
+        companionId: companion.user_id || companionId,
+        giftWall: wall.items,
+        totalCount: wall.totalCount,
+        totalValue: wall.totalValue,
+        source: wall.source,
       });
     }
 
@@ -559,6 +578,7 @@ export default async function handler(req, res) {
       let giftName = "打赏";
       let giftId = null;
       let quantity = 1;
+      let giftMeta = { iconUrl: "", rarity: "common", effectType: "float", unitValue: 0 };
 
       if (action === "send_gift") {
         giftId = String(body.giftId || body.gift_id || "").trim();
@@ -569,8 +589,15 @@ export default async function handler(req, res) {
         });
         const gift = gifts?.[0];
         if (!gift) return json(res, 400, { ok: false, message: "礼物不存在或已下架" });
+        if (gift.deleted_at) return json(res, 400, { ok: false, message: "礼物不存在或已下架" });
         giftName = gift.name;
         gross = money(gift.cat_food_price) * quantity;
+        giftMeta = {
+          iconUrl: gift.icon_url || "",
+          rarity: gift.rarity || "common",
+          effectType: gift.effect_type || gift.animation_level || "float",
+          unitValue: money(gift.cat_food_price),
+        };
       } else {
         gross = money(body.amount || body.catFood || body.cat_food);
         quantity = 1;
@@ -653,6 +680,20 @@ export default async function handler(req, res) {
       }
 
       scheduleRecomputeSoft();
+      if (action === "send_gift" && giftId) {
+        await recordGiftWallReceipt({
+          companionId,
+          giftId,
+          giftName,
+          iconUrl: giftMeta.iconUrl,
+          rarity: giftMeta.rarity,
+          effectType: giftMeta.effectType,
+          quantity,
+          unitValue: giftMeta.unitValue,
+        }).catch((err) => {
+          console.warn("[marketplace/send_gift] gift wall", err?.message || err);
+        });
+      }
       return json(res, 200, {
         ok: true,
         message: action === "send_gift" ? "礼物已送出" : "打赏成功",
@@ -664,6 +705,9 @@ export default async function handler(req, res) {
           companionIncome,
           giftName,
           quantity,
+          iconUrl: giftMeta.iconUrl,
+          rarity: giftMeta.rarity,
+          effectType: giftMeta.effectType,
         },
       });
     }

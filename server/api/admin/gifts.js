@@ -47,6 +47,8 @@ export default async function handler(req, res) {
             featured: !!g.featured,
             sortOrder: g.sort_order || 100,
             animationLevel: g.animation_level || "normal",
+            rarity: g.rarity || "common",
+            effectType: g.effect_type || g.animation_level || "float",
             createdAt: g.created_at,
           })),
       });
@@ -73,6 +75,18 @@ export default async function handler(req, res) {
         body.featured === undefined || body.featured === null || body.featured === ""
           ? false
           : body.featured === true || body.featured === "true";
+      const rarity = String(body.rarity || "common").trim().toLowerCase() || "common";
+      const effectType = String(body.effectType || body.effect_type || body.animationLevel || "float")
+        .trim()
+        .toLowerCase() || "float";
+      const allowedRarity = new Set(["common", "rare", "epic", "legendary"]);
+      const allowedEffect = new Set(["none", "float", "burst", "rain", "normal", "high", "ultra"]);
+      if (!allowedRarity.has(rarity)) {
+        return json(res, 400, { ok: false, message: "稀有度无效（common/rare/epic/legendary）" });
+      }
+      if (!allowedEffect.has(effectType)) {
+        return json(res, 400, { ok: false, message: "动效类型无效" });
+      }
       const payload = {
         name,
         icon_url: String(body.iconUrl || body.icon_url || ""),
@@ -80,7 +94,9 @@ export default async function handler(req, res) {
         enabled,
         featured,
         sort_order: Number(body.sortOrder || body.sort_order || 100),
-        animation_level: String(body.animationLevel || "normal"),
+        animation_level: effectType === "float" ? "normal" : effectType === "burst" ? "high" : effectType === "rain" ? "ultra" : effectType,
+        rarity,
+        effect_type: effectType === "normal" ? "float" : effectType === "high" ? "burst" : effectType === "ultra" ? "rain" : effectType,
         updated_at: new Date().toISOString(),
       };
       if (payload.cat_food_price <= 0) {
@@ -103,16 +119,30 @@ export default async function handler(req, res) {
       }
 
       let rows;
-      if (id) {
-        rows = await companionDb("gifts", `?id=eq.${encodeURIComponent(id)}`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        });
-      } else {
-        rows = await companionDb("gifts", "", {
+      const writePayload = { ...payload };
+      // Older DBs may lack rarity/effect_type until pending SQL is applied — retry without them.
+      async function writeGift(data) {
+        if (id) {
+          return companionDb("gifts", `?id=eq.${encodeURIComponent(id)}`, {
+            method: "PATCH",
+            body: JSON.stringify(data),
+          });
+        }
+        return companionDb("gifts", "", {
           method: "POST",
-          body: JSON.stringify({ ...payload, created_at: new Date().toISOString() }),
+          body: JSON.stringify({ ...data, created_at: new Date().toISOString() }),
         });
+      }
+      try {
+        rows = await writeGift(writePayload);
+      } catch (err) {
+        const msg = String(err?.message || err || "");
+        if (/rarity|effect_type|column/i.test(msg)) {
+          const { rarity: _r, effect_type: _e, ...legacy } = writePayload;
+          rows = await writeGift(legacy);
+        } else {
+          throw err;
+        }
       }
       await writeAdminLog({
         module: "gifts",
@@ -139,6 +169,8 @@ export default async function handler(req, res) {
           featured: saved.featured === true || saved.featured === "true",
           sortOrder: Number(saved.sort_order ?? payload.sort_order ?? 100),
           animationLevel: saved.animation_level || payload.animation_level || "normal",
+          rarity: saved.rarity || payload.rarity || "common",
+          effectType: saved.effect_type || payload.effect_type || "float",
         },
       });
     }
