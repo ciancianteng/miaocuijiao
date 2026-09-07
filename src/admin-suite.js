@@ -936,11 +936,16 @@
     selected=String(selected||'正常');
     return ['正常','暂停接单','封禁','冻结','停用','启用'].map(function(item){return '<option '+(item===selected?'selected':'')+'>'+esc(item)+'</option>'}).join('');
   }
+  function looksLikeDbUuid(value){
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value||'').trim());
+  }
   function normalizePlayerAdmin(player){
     player=player||{};
     var level=levelApi()?levelApi().find(player.levelId||player.level_id||player.level||player.level_name):null;
-    var id=player.id||player.uid||player.playerId||player.player_id||player.name||player.nickname;
-    var playerId=playerValue(player,['playerId','player_id','uid','id'],id||'-');
+    // Internal DB key stays UUID for edits/actions; display ID uses marketplace public code.
+    var id=player.id||player.uid||'-';
+    var playerId=playerValue(player,['publicId','public_id','companionCode','companion_code','playerId','player_id'],'');
+    if(!playerId||looksLikeDbUuid(playerId))playerId='未生成';
     var levelRaw=String(player.levelId||player.level_id||player.level||player.level_name||'');
     var levelText=level?level.code+' '+level.name:playerValue(player,['levelName','level_name','level','levelId','level_id'],'-');
     var mainGame=playerValue(player,['mainGame','main_game','game','gameName'],'-');
