@@ -120,8 +120,10 @@ export async function storeOtp({ accountKey, role, code, kind = "otp", ttlMs = 1
     }
   }
 
-  if (!dbOk && (k === "register_otp" || k === "login_otp")) {
-    throw Object.assign(new Error(`验证码存储失败，请稍后重试。${dbError ? `（${dbError}）` : ""}`), {
+  if (!dbOk) {
+    // Never rely on process memory alone — serverless isolates would drop OTP.
+    console.error("[otp-store] durable store failed", { role: r, kind: k, dbError });
+    throw Object.assign(new Error("验证码存储失败，请稍后重试。"), {
       status: 503,
       code: "OTP_STORE_FAILED",
     });

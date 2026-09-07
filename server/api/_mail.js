@@ -49,6 +49,11 @@ export function mailProviderStatus() {
   };
 }
 
+/** Safe for API clients — never expose provider keys, env names, or deploy labels. */
+export function publicMailHint() {
+  return { configured: hasResend() || hasSmtp() };
+}
+
 /** Reserved for later SMS OTP — MVP always returns disabled. */
 export async function sendSmsOtp({ phone, code, purpose } = {}) {
   return {

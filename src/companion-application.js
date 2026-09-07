@@ -1298,6 +1298,7 @@
       '<label class="form-field full">邮箱<input name="authEmail" type="email" inputmode="email" autocomplete="email" placeholder="name@example.com" required value="' + esc(authUi.loginEmail || "") + '"></label>' +
       '<label class="form-field full">密码<input name="authPassword" type="password" autocomplete="current-password" data-auth-sensitive="1" required value=""></label>' +
       '<div class="apply-actions apply-auth-actions full"><button class="apply-btn primary" type="button" data-apply-login-password' + (authUi.busy ? " disabled" : "") + ">登录并继续申请</button></div>" +
+      '<p class="apply-note"><button class="apply-btn" type="button" data-forgot-password data-forgot-role="companion">忘记密码</button></p>' +
       "</form>";
 
     var loginOtp =
@@ -3601,7 +3602,7 @@
           var sent = await postAuthJson("send_register_otp", { email: regEmail, role: "companion" });
           authUi.busy = false;
           var tip = sent.message || "验证码已发送";
-          if (sent.devCode) tip += "（测试 " + sent.devCode + "）";
+          if (sent.debugCode || sent.devCode) tip += "（调试 " + (sent.debugCode || sent.devCode) + "）";
           setAuthMessage(tip, "ok");
           startAuthCooldown("register", 60);
           render(Number(root.dataset.step || 0));
@@ -3672,7 +3673,7 @@
           var loginSent = await postAuthJson("send_login_otp", { email: loEmail, role: "companion" });
           authUi.busy = false;
           var loginTip = loginSent.message || "验证码已发送";
-          if (loginSent.devCode) loginTip += "（测试 " + loginSent.devCode + "）";
+          if (loginSent.debugCode || loginSent.devCode) loginTip += "（调试 " + (loginSent.debugCode || loginSent.devCode) + "）";
           setAuthMessage(loginTip, "ok");
           startAuthCooldown("login", 60);
           render(Number(root.dataset.step || 0));
