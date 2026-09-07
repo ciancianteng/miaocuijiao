@@ -448,3 +448,37 @@
   .profile-detail-page .pd-review-item{padding:12px 12px}
   .profile-detail-page .pd-review-stars{font-size:16px}
 }
+
+/* Gift wall + send animation (PR179) */
+.pd-gift-wall .section-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+.pd-gift-wall .section-head span{color:rgba(255,220,235,.72);font-size:13px;font-weight:700}
+.pd-gift-wall-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:10px;margin-top:12px}
+.pd-gift-wall-item{display:flex;flex-direction:column;align-items:center;gap:4px;padding:12px 8px;border-radius:14px;border:1px solid rgba(255,145,195,.28);background:rgba(20,12,22,.72);text-align:center}
+.pd-gift-wall-item strong{font-size:12px;color:#ffe6f1;font-weight:800;line-height:1.2}
+.pd-gift-wall-item span{font-size:12px;color:rgba(255,210,230,.78);font-weight:700}
+.pd-gift-wall-item[data-rarity="rare"]{border-color:rgba(120,180,255,.45)}
+.pd-gift-wall-item[data-rarity="epic"]{border-color:rgba(190,120,255,.5);box-shadow:0 0 12px rgba(160,90,255,.18)}
+.pd-gift-wall-item[data-rarity="legendary"]{border-color:rgba(255,190,80,.55);box-shadow:0 0 14px rgba(255,170,60,.22)}
+.pd-gift-wall-empty{margin:8px 0 0;color:rgba(255,220,235,.55)}
+.mcj-gift-card{display:flex;flex-direction:column;align-items:center;gap:6px}
+.mcj-gift-card .mcj-gift-icon,.mcj-gift-card .mcj-gift-icon-emoji{display:block}
+.mcj-gift-fx{position:fixed;inset:0;z-index:14000;pointer-events:none;display:flex;align-items:center;justify-content:center}
+.mcj-gift-fx-bit{font-size:56px;line-height:1;animation:mcjGiftFloat 1.4s ease-out forwards}
+.mcj-gift-fx-bit img{width:56px;height:56px;object-fit:contain}
+.mcj-gift-fx--burst .mcj-gift-fx-bit{animation-name:mcjGiftBurst;font-size:42px}
+.mcj-gift-fx--rain .mcj-gift-fx-bit{position:absolute;top:-10%;left:calc(8% + var(--i) * 7%);animation-name:mcjGiftRain;animation-duration:1.6s;font-size:34px}
+@keyframes mcjGiftFloat{
+  0%{transform:translateY(40px) scale(.6);opacity:0}
+  25%{opacity:1}
+  100%{transform:translateY(-120px) scale(1.15);opacity:0}
+}
+@keyframes mcjGiftBurst{
+  0%{transform:translate(0,0) scale(.4);opacity:0}
+  30%{opacity:1}
+  100%{transform:translate(calc((var(--i) - 2.5) * 48px), calc((var(--i) % 2 ? 1 : -1) * 70px)) scale(1.2);opacity:0}
+}
+@keyframes mcjGiftRain{
+  0%{transform:translateY(0) rotate(-8deg);opacity:0}
+  15%{opacity:1}
+  100%{transform:translateY(110vh) rotate(12deg);opacity:0}
+}

@@ -49,6 +49,7 @@
         <button type="button" data-section="gameplays">更多玩法管理</button>
         <button type="button" data-section="team-lobby-links">组队大厅管理</button>
         <button type="button" data-section="gifts">礼物管理</button>
+        <button type="button" data-section="gift-finance">礼物财务报告</button>
         <button type="button" data-section="points-settings">积分设置</button>
         <button type="button" data-section="boss-companion-relations">直属关系管理</button>
         <button type="button" data-section="boss-levels">Boss等级</button>
@@ -139,6 +140,7 @@
         <section class="section" id="section-payment"><section class="panel payment-shell-panel"><div id="paymentSettings"></div></section></section>
         <section class="section" id="section-mail-logs"><section class="panel"><h2>邮件通知记录</h2><div id="mailNotificationLogs"></div></section></section>
         <section class="section" id="section-gifts"><section class="panel"><h2>礼物管理</h2><div id="giftManagement"></div></section></section>
+        <section class="section" id="section-gift-finance"><section class="panel"><h2>礼物财务报告</h2><div id="giftFinanceManagement"></div></section></section>
         <section class="section" id="section-points-settings"><section class="panel"><h2>积分设置</h2><p class="admin-sync-note" style="margin:0 0 12px">Boss 订单积分：按实付金额 × 倍率（与陪玩人气无关）。已完成订单不补发。</p><div id="pointsSettingsMount"></div></section></section>
         <section class="section" id="section-boss-companion-relations"><section class="panel"><h2>直属关系管理</h2><p class="admin-sync-note" style="margin:0 0 12px">Boss ↔ Companion 运营直属关系（独立于邀请/返佣）。管理员绑定/换绑/解绑须填 reason 审计；Boss / Companion 端只读。</p><div id="bossCompanionRelationsMount"></div></section></section>
         <section class="section" id="section-boss-levels"><section class="panel"><h2>Boss 等级</h2><p class="admin-sync-note" style="margin:0 0 12px">可配置升级门槛与平台抽成内分成%；手动钉选支持永久/到期。历史已结算快照不变。</p><div id="bossLevelsMount"></div></section></section>
@@ -175,7 +177,8 @@
   <script src="/src/admin-recharge-review.js?v=20260810rechargeLoop1"></script>
   <script src="/src/admin-compensation-review.js"></script>
   <script src="/src/admin-finance.js?v=20260811ordersPayout1"></script>
-  <script src="/src/admin-gifts.js"></script>
+  <script src="/src/admin-gifts.js?v=20260907giftV1"></script>
+  <script src="/src/admin-gift-finance.js?v=20260907giftAcct1"></script>
   <script src="/src/admin-points-settings.js?v=20260907prodClean1"></script>
   <script src="/src/admin-boss-companion-relations.js?v=20260907prodClean1"></script>
   <script src="/src/admin-boss-levels.js?v=20260907prodClean1"></script>

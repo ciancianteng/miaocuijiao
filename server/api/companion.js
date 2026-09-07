@@ -21,6 +21,7 @@
   uploadPrivateObject,
 } from "./_companion-media-store.js";
 import { companionPopularityMe, recordOnlineSession, scheduleRecomputeSoft } from "./_popularity.js";
+import { listGiftTransactionsForCompanion, mapGiftIncomeRow, summarizeGiftIncome, markGiftIncomeWithdrawn } from "./_gift-income.js";
 import { readLocalLevels, toPublicLevel } from "./_companion-levels-store.js";
 import { resolvePlatformCommission } from "./_commission-rates.js";
 import { writeOrderStatusLog, COMPANION_STATUS_LABELS } from "./_order-status.js";
@@ -1775,12 +1776,55 @@ async function loadWalletBundle(profile, myOrders = []) {
         statusText: row.status === "completed" ? "已完成" : row.status === "pending" ? "待处理" : row.status || "-",
       };
     });
+
+  let giftIncome = {
+    summary: {
+      totalGiftEarnings: 0,
+      dailyEarnings: 0,
+      monthlyEarnings: 0,
+      totalGrossValue: 0,
+      transactionCount: 0,
+    },
+    transactions: [],
+  };
+  try {
+    const giftRows = await listGiftTransactionsForCompanion(profile.id, { limit: 200 });
+    const senderIds = [...new Set(giftRows.map((r) => r.sender_boss_id).filter(Boolean))];
+    const senderMap = new Map();
+    if (senderIds.length) {
+      try {
+        const profiles = await supabaseJson(
+          restUrl(
+            "profiles",
+            `?id=in.(${senderIds.map((id) => `"${id}"`).join(",")})&select=id,display_name,boss_uid&limit=200`
+          ),
+          { headers: serviceHeaders() }
+        );
+        for (const p of profiles || []) {
+          senderMap.set(p.id, {
+            senderName: p.display_name || "",
+            senderCode: p.boss_uid || "",
+          });
+        }
+      } catch {
+        /* optional enrichment */
+      }
+    }
+    giftIncome = {
+      summary: summarizeGiftIncome(giftRows),
+      transactions: giftRows.map((r) => mapGiftIncomeRow(r, senderMap.get(r.sender_boss_id) || {})),
+    };
+  } catch (error) {
+    warnings.push(`gift_transactions: ${error.message || error}`);
+  }
+
   return {
     transactions,
     withdrawalRows,
     summary,
     walletLedger,
     earningDetails,
+    giftIncome,
     earnings: {
       todayIncome: summary.todayIncome || 0,
       yesterdayIncome: summary.yesterdayIncome || 0,
@@ -1792,6 +1836,9 @@ async function loadWalletBundle(profile, myOrders = []) {
       frozen: summary.frozen || 0,
       pendingSettlement: summary.pendingSettlement || 0,
       withdrawn: summary.withdrawn || 0,
+      giftEarnings: giftIncome.summary.totalGiftEarnings,
+      giftDailyEarnings: giftIncome.summary.dailyEarnings,
+      giftMonthlyEarnings: giftIncome.summary.monthlyEarnings,
     },
     warnings,
   };
@@ -3614,6 +3661,7 @@ export default async function handler(req, res) {
           earnings: wallet.earnings,
           walletLedger: wallet.walletLedger,
           earningDetails: wallet.earningDetails,
+          giftIncome: wallet.giftIncome || { summary: {}, transactions: [] },
           withdrawals: await Promise.all((wallet.withdrawalRows || []).map((w) => viewCompanionWithdrawal(w))),
           withdrawalRules: {
             monthlyLimit,
@@ -5834,6 +5882,12 @@ export default async function handler(req, res) {
         }
       }
       if (!item) return json(res, 500, { ok: false, message: "提现申请写入失败，请稍后重试" });
+
+      try {
+        await markGiftIncomeWithdrawn(auth.profile.id, amount, item.id);
+      } catch (markErr) {
+        console.warn("[companion/request_withdrawal] gift settlement mark", markErr?.message || markErr);
+      }
 
       let freezeTxId = null;
       try {

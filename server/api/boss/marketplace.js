@@ -13,6 +13,7 @@ import {
   isTestAccountRecord,
   PROD_TEST_ACCOUNT_BLOCK_MESSAGE,
 } from "../_test-accounts.js";
+import { loadCompanionGiftWall, recordGiftWallReceipt } from "../_gift-wall.js";
 
 const REQUIRED = ["SUPABASE_URL", "SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY"];
 
@@ -201,21 +202,36 @@ async function giftCommissionRate(companionRow) {
   }
 }
 
-async function creditCompanionIncome(companionId, amount, note, relatedId) {
-  if (amount <= 0) return;
-  await supabaseJson(rest("transactions"), {
-    method: "POST",
-    headers: serviceHeaders(),
-    body: JSON.stringify({
-      user_id: companionId,
-      order_id: relatedId || null,
-      transaction_type: "companion_income",
-      amount,
-      status: "completed",
-      note: note || "礼物/打赏收益",
-      created_at: nowIso(),
-    }),
-  });
+async function tryRpcSendGiftTip(payload) {
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!key || !url()) return null;
+  try {
+    const response = await fetch(`${url().replace(/\/$/, "")}/rest/v1/rpc/mcj_send_gift_tip`, {
+      method: "POST",
+      headers: {
+        apikey: key,
+        Authorization: `Bearer ${key}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+    const text = await response.text();
+    let body = null;
+    try {
+      body = text ? JSON.parse(text) : null;
+    } catch {
+      body = text;
+    }
+    if (!response.ok) {
+      const msg = body?.message || body?.hint || body?.details || String(text || "").slice(0, 200);
+      if (/Could not find the function|PGRST202|404|does not exist/i.test(msg)) return null;
+      throw Object.assign(new Error(msg || "mcj_send_gift_tip failed"), { status: response.status, body });
+    }
+    return body;
+  } catch (err) {
+    if (/Could not find the function|PGRST202|404|does not exist/i.test(String(err?.message || ""))) return null;
+    throw err;
+  }
 }
 
 export default async function handler(req, res) {
@@ -275,7 +291,25 @@ export default async function handler(req, res) {
           catFoodPrice: money(g.cat_food_price),
           featured: !!g.featured,
           animationLevel: g.animation_level || "normal",
+          rarity: g.rarity || "common",
+          effectType: g.effect_type || g.animation_level || "float",
         })),
+      });
+    }
+
+    if (req.method === "GET" && (action === "gift_wall" || action === "giftWall")) {
+      const companionId = String(req.query.companionId || req.query.id || "").trim();
+      if (!companionId) return json(res, 400, { ok: false, message: "缺少陪玩 ID" });
+      const companion = await loadCompanion(companionId);
+      if (!companion) return json(res, 404, { ok: false, message: "陪玩不存在" });
+      const wall = await loadCompanionGiftWall(companion.user_id || companionId);
+      return json(res, 200, {
+        ok: true,
+        companionId: companion.user_id || companionId,
+        giftWall: wall.items,
+        totalCount: wall.totalCount,
+        totalValue: wall.totalValue,
+        source: wall.source,
       });
     }
 
@@ -562,7 +596,9 @@ export default async function handler(req, res) {
       const companionId = String(body.companionId || body.companion_id || "").trim();
       const idempotencyKey = String(body.idempotencyKey || body.idempotency_key || "").trim();
       if (!companionId) return json(res, 400, { ok: false, message: "缺少陪玩" });
-      if (!idempotencyKey) return json(res, 400, { ok: false, message: "缺少 idempotency_key" });
+      if (!idempotencyKey) {
+        return json(res, 400, { ok: false, message: "缺少 idempotency_key（防重复提交）", code: "IDEMPOTENCY_REQUIRED" });
+      }
 
       try {
         const existed = await companionDb(
@@ -570,7 +606,13 @@ export default async function handler(req, res) {
           `?idempotency_key=eq.${encodeURIComponent(idempotencyKey)}&limit=1`
         );
         if (existed?.[0]) {
-          return json(res, 200, { ok: true, message: "已处理（防重复）", transaction: existed[0], replayed: true });
+          return json(res, 200, {
+            ok: true,
+            message: "已处理（防重复）",
+            transaction: existed[0],
+            transactionId: existed[0].tx_no || existed[0].id,
+            replayed: true,
+          });
         }
       } catch (e) {
         if (!isMissingRelation(e)) throw e;
@@ -583,6 +625,7 @@ export default async function handler(req, res) {
       let giftName = "打赏";
       let giftId = null;
       let quantity = 1;
+      let giftMeta = { iconUrl: "", rarity: "common", effectType: "float", unitValue: 0 };
 
       if (action === "send_gift") {
         giftId = String(body.giftId || body.gift_id || "").trim();
@@ -593,8 +636,15 @@ export default async function handler(req, res) {
         });
         const gift = gifts?.[0];
         if (!gift) return json(res, 400, { ok: false, message: "礼物不存在或已下架" });
+        if (gift.deleted_at) return json(res, 400, { ok: false, message: "礼物不存在或已下架" });
         giftName = gift.name;
         gross = money(gift.cat_food_price) * quantity;
+        giftMeta = {
+          iconUrl: gift.icon_url || "",
+          rarity: gift.rarity || "common",
+          effectType: gift.effect_type || gift.animation_level || "float",
+          unitValue: money(gift.cat_food_price),
+        };
       } else {
         gross = money(body.amount || body.catFood || body.cat_food);
         quantity = 1;
@@ -605,90 +655,105 @@ export default async function handler(req, res) {
       const commissionAmount = Math.round(gross * (rate / 100) * 100) / 100;
       const companionIncome = Math.round((gross - commissionAmount) * 100) / 100;
       const message = String(body.message || "").trim();
+      const sourceChannel = String(body.sourceChannel || body.channel || "companion_detail").trim() || "companion_detail";
+      const txNo = no("GIFT");
+      const kind = action === "send_gift" ? "gift" : "tip";
+      const relatedOrderId = body.relatedOrderId || body.related_order_id || null;
 
+      // Business rule: gifts/tips may only spend CS-approved recharge (paid_balance).
+      let walletRow = null;
       try {
-        await debitWallet({
-          bossId: boss.id,
-          amount: gross,
-          transactionType: action === "send_gift" ? "gift" : "tip",
-          idempotencyKey: `gift:${idempotencyKey}`,
-          reason: `${giftName} x${quantity} → ${companion.nickname || companionId}`,
-          operatorId: boss.id,
+        walletRow = await getWallet(boss.id);
+      } catch (err) {
+        return json(res, 503, { ok: false, message: "钱包读取失败，请稍后重试。" });
+      }
+      const paidBalance = money(walletRow?.paid_balance ?? walletRow?.paidBalance ?? 0);
+      if (paidBalance < gross) {
+        return json(res, 400, {
+          ok: false,
+          code: "INSUFFICIENT_PAID_BALANCE",
+          message: "可用充值猫粮不足。请先完成充值并等待客服确认到账后再赠送礼物。",
+          paidBalance,
+          required: gross,
+          rechargeUrl: "/recharge.html",
         });
-      } catch (e) {
-        if (/不足|insufficient|balance/i.test(String(e.message || ""))) {
-          return json(res, 400, {
-            ok: false,
-            code: "INSUFFICIENT_BALANCE",
-            message: "猫粮余额不足",
-            rechargeUrl: "/recharge.html",
-          });
-        }
-        // If transaction type not allowed by wallet RPC, retry as order_payment-like
-        try {
-          await debitWallet({
-            bossId: boss.id,
-            amount: gross,
-            transactionType: "order_payment",
-            idempotencyKey: `gift:${idempotencyKey}`,
-            reason: `${giftName} x${quantity}`,
-            operatorId: boss.id,
-          });
-        } catch (e2) {
-          if (/不足|insufficient|balance/i.test(String(e2.message || ""))) {
-            return json(res, 400, {
-              ok: false,
-              code: "INSUFFICIENT_BALANCE",
-              message: "猫粮余额不足",
-              rechargeUrl: "/recharge.html",
-            });
-          }
-          throw e2;
-        }
       }
 
-      await creditCompanionIncome(companionId, companionIncome, `${giftName}收益`, null);
-
-      let tx = null;
-      try {
-        const rows = await companionDb("gift_transactions", "", {
-          method: "POST",
-          body: JSON.stringify({
-            tx_no: no("GIFT"),
-            sender_boss_id: boss.id,
-            receiver_companion_id: companionId,
-            gift_id: giftId,
-            gift_name: giftName,
+      // Prefer atomic DB RPC when migrated (wallet debit + gift_tx + income in one txn).
+      const rpcResult = await tryRpcSendGiftTip({
+        p_boss_id: boss.id,
+        p_companion_id: companionId,
+        p_idempotency_key: idempotencyKey,
+        p_kind: kind,
+        p_gift_id: giftId || null,
+        p_gift_name: giftName,
+        p_quantity: quantity,
+        p_gross: gross,
+        p_commission_rate: rate,
+        p_commission_amount: commissionAmount,
+        p_companion_income: companionIncome,
+        p_message: message,
+        p_source_channel: sourceChannel,
+        p_related_order_id: relatedOrderId,
+        p_tx_no: txNo,
+      }).catch((err) => {
+        if (/insufficient|paid|balance|不足/i.test(String(err?.message || ""))) {
+          return { __paidFail: true, message: err.message };
+        }
+        throw err;
+      });
+      if (rpcResult?.__paidFail) {
+        return json(res, 400, {
+          ok: false,
+          code: "INSUFFICIENT_PAID_BALANCE",
+          message: "可用充值猫粮不足。请先完成充值并等待客服确认到账后再赠送礼物。",
+          rechargeUrl: "/recharge.html",
+        });
+      }
+      if (rpcResult?.ok) {
+        const tx = rpcResult.transaction || null;
+        if (action === "send_gift" && giftId) {
+          await recordGiftWallReceipt({
+            companionId,
+            giftId,
+            giftName,
+            iconUrl: giftMeta.iconUrl,
+            rarity: giftMeta.rarity,
+            effectType: giftMeta.effectType,
             quantity,
-            gross_cat_food: gross,
-            platform_commission_rate: rate,
-            platform_commission_amount: commissionAmount,
-            companion_income: companionIncome,
-            message,
-            related_order_id: body.relatedOrderId || null,
-            kind: action === "send_gift" ? "gift" : "tip",
-            idempotency_key: idempotencyKey,
-            created_at: nowIso(),
-          }),
+            unitValue: giftMeta.unitValue,
+          }).catch((err) => console.warn("[marketplace/send_gift] gift wall", err?.message || err));
+        }
+        scheduleRecomputeSoft();
+        return json(res, 200, {
+          ok: true,
+          message: action === "send_gift" ? "礼物已送出" : "打赏成功",
+          transaction: tx,
+          transactionId: tx?.tx_no || tx?.id || rpcResult.tx_no || txNo,
+          replayed: !!rpcResult.duplicate,
+          snapshot: {
+            grossCatFood: gross,
+            platformCommissionRate: rate,
+            platformCommissionAmount: commissionAmount,
+            companionIncome,
+            giftName,
+            quantity,
+            iconUrl: giftMeta.iconUrl,
+            rarity: giftMeta.rarity,
+            effectType: giftMeta.effectType,
+            sourceChannel,
+            paidBalanceOnly: true,
+            settlementStatus: tx?.settlement_status || "available",
+          },
         });
-        tx = rows?.[0] || null;
-      } catch (e) {
-        if (!isMissingRelation(e)) throw e;
       }
 
-      scheduleRecomputeSoft();
-      return json(res, 200, {
-        ok: true,
-        message: action === "send_gift" ? "礼物已送出" : "打赏成功",
-        transaction: tx,
-        snapshot: {
-          grossCatFood: gross,
-          platformCommissionRate: rate,
-          platformCommissionAmount: commissionAmount,
-          companionIncome,
-          giftName,
-          quantity,
-        },
+      // Fail closed: never sequential-debit outside mcj_send_gift_tip (partial-write risk).
+      return json(res, 503, {
+        ok: false,
+        code: "GIFT_RPC_REQUIRED",
+        message:
+          "礼物记账未就绪：请先在 Production 执行 supabase/pending-prod/08_gift_tipping_system_v1.sql（原子扣款+礼物流水+陪玩收入）。",
       });
     }
 

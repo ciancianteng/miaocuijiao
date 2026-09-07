@@ -2,7 +2,26 @@
   "use strict";
   var Auth = window.MCJAdminAuthFetch;
   var TARGET = "giftManagement";
-  var state = { loading: true, gifts: [], error: "", message: "" };
+  var RARITY_OPTS = [
+    { id: "common", label: "普通" },
+    { id: "rare", label: "稀有" },
+    { id: "epic", label: "史诗" },
+    { id: "legendary", label: "传说" },
+  ];
+  var EFFECT_OPTS = [
+    { id: "none", label: "无动效" },
+    { id: "float", label: "飘浮" },
+    { id: "burst", label: "爆发" },
+    { id: "rain", label: "礼物雨" },
+  ];
+  var state = {
+    loading: true,
+    gifts: [],
+    error: "",
+    message: "",
+    formOpen: false,
+    editing: null,
+  };
 
   function esc(v) {
     return String(v == null ? "" : v).replace(/[&<>"']/g, function (c) {
@@ -29,6 +48,98 @@
   function target() {
     return document.getElementById(TARGET);
   }
+  function rarityLabel(id) {
+    var hit = RARITY_OPTS.find(function (x) {
+      return x.id === id;
+    });
+    return hit ? hit.label : id || "普通";
+  }
+  function effectLabel(id) {
+    var hit = EFFECT_OPTS.find(function (x) {
+      return x.id === id;
+    });
+    return hit ? hit.label : id || "飘浮";
+  }
+  function formTitle() {
+    return state.editing && state.editing.id ? "编辑礼物" : "新增礼物";
+  }
+  function formHtml() {
+    var g = state.editing || {};
+    return (
+      '<form class="admin-inline-form" data-gift-form>' +
+      '<label><span>礼物名称</span><input name="name" required maxlength="40" value="' +
+      esc(g.name || "") +
+      '" placeholder="例如：小鱼干"></label>' +
+      '<label><span>图标 URL / Emoji</span><input name="iconUrl" value="' +
+      esc(g.iconUrl || "") +
+      '" placeholder="https://… 或 🎁"></label>' +
+      '<label><span>猫粮价值</span><input name="catFoodPrice" type="number" min="1" step="1" required value="' +
+      esc(g.catFoodPrice != null ? g.catFoodPrice : 10) +
+      '"></label>' +
+      '<label><span>稀有度</span><select name="rarity">' +
+      RARITY_OPTS.map(function (o) {
+        return (
+          '<option value="' +
+          o.id +
+          '"' +
+          ((g.rarity || "common") === o.id ? " selected" : "") +
+          ">" +
+          esc(o.label) +
+          "</option>"
+        );
+      }).join("") +
+      "</select></label>" +
+      '<label><span>动效类型</span><select name="effectType">' +
+      EFFECT_OPTS.map(function (o) {
+        var cur = g.effectType || "float";
+        return (
+          '<option value="' +
+          o.id +
+          '"' +
+          (cur === o.id ? " selected" : "") +
+          ">" +
+          esc(o.label) +
+          "</option>"
+        );
+      }).join("") +
+      "</select></label>" +
+      '<label><span>排序</span><input name="sortOrder" type="number" value="' +
+      esc(g.sortOrder != null ? g.sortOrder : 100) +
+      '"></label>' +
+      '<label class="checkbox"><input name="enabled" type="checkbox"' +
+      (g.enabled === false ? "" : " checked") +
+      "> 启用</label>" +
+      '<label class="checkbox"><input name="featured" type="checkbox"' +
+      (g.featured ? " checked" : "") +
+      "> 推荐</label>" +
+      '<div class="form-actions"><button class="mini-btn primary-lite" type="submit">保存</button> ' +
+      '<button class="mini-btn" type="button" data-gift-cancel>取消</button></div></form>'
+    );
+  }
+  function openForm(seed) {
+    state.editing = seed || {};
+    state.formOpen = true;
+    if (window.MCJAdminOverlay) {
+      window.MCJAdminOverlay.open({
+        title: formTitle(),
+        html: formHtml(),
+        onClose: function () {
+          state.formOpen = false;
+          state.editing = null;
+        },
+      });
+      return;
+    }
+    paint();
+  }
+  function closeForm() {
+    if (window.MCJAdminOverlay && window.MCJAdminOverlay.isOpen && window.MCJAdminOverlay.isOpen()) {
+      window.MCJAdminOverlay.close();
+    }
+    state.formOpen = false;
+    state.editing = null;
+    paint();
+  }
   function paint() {
     var box = target();
     if (!box) return;
@@ -37,20 +148,32 @@
       return;
     }
     if (state.error) {
-      box.innerHTML = '<div class="admin-sync-note">' + esc(state.error) + ' <button class="mini-btn" data-gift-reload>重试</button></div>';
+      box.innerHTML =
+        '<div class="admin-sync-note">' +
+        esc(state.error) +
+        ' <button class="mini-btn" data-gift-reload>重试</button></div>';
       return;
     }
     var rows = (state.gifts || [])
       .map(function (g) {
+        var icon = g.iconUrl
+          ? /^https?:\/\//i.test(g.iconUrl)
+            ? '<img src="' + esc(g.iconUrl) + '" alt="" style="width:28px;height:28px;object-fit:contain;border-radius:6px">'
+            : '<span style="font-size:22px">' + esc(g.iconUrl) + "</span>"
+          : "🎁";
         return (
           "<tr><td>" +
+          icon +
+          "</td><td>" +
           esc(g.name) +
           "</td><td>" +
           esc(g.catFoodPrice) +
           "</td><td>" +
-          (g.enabled ? "启用" : "停用") +
+          esc(rarityLabel(g.rarity)) +
           "</td><td>" +
-          (g.featured ? "是" : "否") +
+          esc(effectLabel(g.effectType || g.animationLevel)) +
+          "</td><td>" +
+          (g.enabled ? "启用" : "停用") +
           "</td><td>" +
           esc(g.sortOrder) +
           "</td><td>" +
@@ -64,11 +187,12 @@
       })
       .join("");
     box.innerHTML =
-      '<div class="admin-section-head compact"><div><h3>礼物管理</h3><p>配置老板端礼物商城。修改后全站同步。抽成变更不影响历史流水。</p></div>' +
+      '<div class="admin-section-head compact"><div><h3>礼物管理</h3><p>后台配置礼物商城（名称 / 图标 / 猫粮价值 / 稀有度 / 动效 / 启停）。勿在前端硬编码礼物。</p></div>' +
       '<button class="mini-btn primary-lite" type="button" data-gift-new>新增礼物</button> <button class="mini-btn" type="button" data-gift-reload>刷新</button></div>' +
       (state.message ? '<div class="admin-sync-note">' + esc(state.message) + "</div>" : "") +
-      '<div class="table-wrap"><table><thead><tr><th>名称</th><th>猫粮价格</th><th>状态</th><th>推荐</th><th>排序</th><th>操作</th></tr></thead><tbody>' +
-      (rows || '<tr><td colspan="6">暂无礼物</td></tr>') +
+      (!window.MCJAdminOverlay && state.formOpen ? '<div class="admin-inline-panel">' + formHtml() + "</div>" : "") +
+      '<div class="table-wrap"><table><thead><tr><th>图标</th><th>名称</th><th>猫粮</th><th>稀有度</th><th>动效</th><th>状态</th><th>排序</th><th>操作</th></tr></thead><tbody>' +
+      (rows || '<tr><td colspan="8">暂无礼物</td></tr>') +
       "</tbody></table></div>" +
       '<div style="margin-top:12px"><button class="mini-btn" type="button" data-gift-commission>设置默认礼物抽成 %</button></div>';
   }
@@ -79,6 +203,7 @@
       .then(function (res) {
         state.gifts = res.gifts || [];
         state.loading = false;
+        state.error = "";
         paint();
       })
       .catch(function (err) {
@@ -87,47 +212,32 @@
         paint();
       });
   }
-  function saveGift(seed) {
-    seed = seed || {};
-    var isCreate = !seed.id;
-    var nameRaw = prompt("礼物名称", seed.name || "");
-    if (nameRaw == null) return; // user cancelled
-    var name = String(nameRaw).trim();
-    if (!name) {
+  function submitForm(form) {
+    var fd = new FormData(form);
+    var payload = {
+      action: "save",
+      id: (state.editing && state.editing.id) || "",
+      name: String(fd.get("name") || "").trim(),
+      iconUrl: String(fd.get("iconUrl") || "").trim(),
+      catFoodPrice: fd.get("catFoodPrice"),
+      rarity: fd.get("rarity") || "common",
+      effectType: fd.get("effectType") || "float",
+      sortOrder: fd.get("sortOrder") || 100,
+      enabled: !!form.querySelector('[name="enabled"]').checked,
+      featured: !!form.querySelector('[name="featured"]').checked,
+    };
+    if (!payload.name) {
       alert("礼物名称不能为空");
       return;
     }
-    var dup = (state.gifts || []).some(function (g) {
-      if (!g || (seed.id && String(g.id) === String(seed.id))) return false;
-      return String(g.name || "").trim().toLowerCase() === name.toLowerCase();
-    });
-    if (dup) {
-      alert("礼物名称已存在，请换一个名称");
-      return;
-    }
-    var price = prompt("猫粮价格", seed.catFoodPrice != null ? String(seed.catFoodPrice) : "10");
-    if (price == null) return;
-    var sort = prompt("排序", seed.sortOrder != null ? String(seed.sortOrder) : "100");
-    if (sort == null) return;
-    // Create defaults: 推荐关闭、状态启用. Edit keeps existing confirm prompts (UI unchanged).
-    var featured = isCreate ? false : confirm("是否推荐？");
-    var enabled = isCreate ? true : confirm("是否启用？");
     api("/api/admin/gifts", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        action: "save",
-        id: seed.id || "",
-        name: name,
-        catFoodPrice: price,
-        sortOrder: sort,
-        featured: featured,
-        enabled: enabled,
-        iconUrl: seed.iconUrl || "",
-      }),
+      body: JSON.stringify(payload),
     })
       .then(function (res) {
-        state.message = res.message || (isCreate ? "礼物已新增（状态：启用，推荐：否）" : "礼物已保存");
+        state.message = res.message || "礼物已保存";
+        closeForm();
         load();
       })
       .catch(function (err) {
@@ -135,13 +245,18 @@
       });
   }
   document.addEventListener("click", function (e) {
+    if (e.target.closest("[data-gift-cancel]")) {
+      e.preventDefault();
+      closeForm();
+      return;
+    }
     if (!target() || !target().contains(e.target)) return;
     if (e.target.closest("[data-gift-reload]")) return load();
-    if (e.target.closest("[data-gift-new]")) return saveGift({});
+    if (e.target.closest("[data-gift-new]")) return openForm({});
     var edit = e.target.closest("[data-gift-edit]");
     if (edit) {
       try {
-        saveGift(JSON.parse(edit.getAttribute("data-gift-edit")));
+        openForm(JSON.parse(edit.getAttribute("data-gift-edit")));
       } catch (err) {
         alert("解析失败");
       }
@@ -178,6 +293,12 @@
           alert(err.message);
         });
     }
+  });
+  document.addEventListener("submit", function (e) {
+    var form = e.target.closest("[data-gift-form]");
+    if (!form) return;
+    e.preventDefault();
+    submitForm(form);
   });
   document.addEventListener("DOMContentLoaded", function () {
     if (target()) load();

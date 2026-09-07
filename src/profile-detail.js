@@ -5,6 +5,7 @@
     companion: null,
     catalog: null,
     draft: null,
+    giftWall: null,
   };
 
   function esc(v) {
@@ -308,9 +309,8 @@
       else if (wr > 0 && wr <= 10) popBadges += '<span class="pop-medal" style="background:rgba(255,150,200,.2);color:#ffd6e8">TOP ' + esc(wr) + "</span>";
       if (wr > 0 && wr <= 20) popBadges += '<span class="pop-medal" style="background:rgba(255,150,200,.12);color:#ffd0e4">热门陪玩</span>';
     }
-    var giftActions = token()
-      ? '<div class="pd-info-actions"><button type="button" class="mcj-secondary" data-open-gift>送礼物</button><button type="button" data-open-tip>打赏猫粮</button></div>'
-      : "";
+    var giftActions =
+      '<div class="pd-info-actions"><button type="button" class="mcj-secondary" data-open-gift>送礼物</button><button type="button" data-open-tip>打赏猫粮</button></div>';
 
     var reviewList = Array.isArray(c.reviews) ? c.reviews : [];
     var reviewCount = Number(c.reviewCount != null ? c.reviewCount : reviewList.length) || 0;
@@ -479,6 +479,7 @@
       "</div>" +
       giftActions +
       "</section>" +
+      giftWallHtml(state.giftWall) +
       (galleryList.length
         ? '<section class="detail-card game-wall"><div class="section-head"><h2>相册</h2></div><div class="wall-grid" data-profile-album>' +
           galleryWall +
@@ -651,6 +652,107 @@
     tryOpen(0);
   }
 
+  function giftIconHtml(iconUrl, size) {
+    size = size || 28;
+    var raw = String(iconUrl || "").trim();
+    if (/^https?:\/\//i.test(raw)) {
+      return (
+        '<img class="mcj-gift-icon" src="' +
+        esc(raw) +
+        '" alt="" style="width:' +
+        size +
+        "px;height:" +
+        size +
+        'px;object-fit:contain" onerror="this.replaceWith(document.createTextNode(\'🎁\'))">'
+      );
+    }
+    return '<span class="mcj-gift-icon-emoji" style="font-size:' + size + 'px">' + esc(raw || "🎁") + "</span>";
+  }
+  function giftWallHtml(wall) {
+    wall = wall || { items: [], totalCount: 0, totalValue: 0 };
+    var items = Array.isArray(wall.items) ? wall.items : [];
+    var list = items.length
+      ? items
+          .slice(0, 24)
+          .map(function (g) {
+            return (
+              '<div class="pd-gift-wall-item" data-rarity="' +
+              esc(g.rarity || "common") +
+              '" title="' +
+              esc(g.giftName || "") +
+              " ×" +
+              esc(g.quantity) +
+              '">' +
+              giftIconHtml(g.iconUrl, 32) +
+              '<strong>' +
+              esc(g.giftName || "礼物") +
+              "</strong>" +
+              '<span>×' +
+              esc(g.quantity) +
+              "</span></div>"
+            );
+          })
+          .join("")
+      : '<p class="muted pd-gift-wall-empty">还没有收到礼物，来送一份鼓励吧</p>';
+    return (
+      '<section class="detail-card gift-wall pd-gift-wall" id="companionGiftWall"><div class="section-head"><h2>礼物墙</h2><span>共 ' +
+      esc(wall.totalCount || 0) +
+      " 份 · " +
+      esc(wall.totalValue || 0) +
+      ' 猫粮</span></div><div class="pd-gift-wall-grid">' +
+      list +
+      "</div></section>"
+    );
+  }
+  function playGiftAnimation(snapshot) {
+    snapshot = snapshot || {};
+    var effect = String(snapshot.effectType || snapshot.animationLevel || "float").toLowerCase();
+    var host = document.createElement("div");
+    host.className = "mcj-gift-fx mcj-gift-fx--" + (effect === "high" ? "burst" : effect === "ultra" ? "rain" : effect || "float");
+    host.setAttribute("aria-hidden", "true");
+    var icon = snapshot.iconUrl || "🎁";
+    var n = effect === "rain" ? 12 : effect === "burst" ? 6 : 1;
+    for (var i = 0; i < n; i++) {
+      var bit = document.createElement("div");
+      bit.className = "mcj-gift-fx-bit";
+      bit.style.setProperty("--i", String(i));
+      if (/^https?:\/\//i.test(String(icon))) {
+        bit.innerHTML = '<img src="' + esc(icon) + '" alt="">';
+      } else {
+        bit.textContent = icon || "🎁";
+      }
+      host.appendChild(bit);
+    }
+    document.body.appendChild(host);
+    setTimeout(function () {
+      host.remove();
+    }, 1800);
+  }
+  function loadGiftWall(companionId) {
+    var id = companionId || (state.companion && (state.companion.id || state.companion.uid)) || param();
+    if (!id) return Promise.resolve(null);
+    return fetch("/api/boss/marketplace?action=gift_wall&companionId=" + encodeURIComponent(id), {
+      headers: { Accept: "application/json" },
+    })
+      .then(function (res) {
+        return res.json().then(function (body) {
+          if (!res.ok || body.ok === false) throw new Error(body.message || "礼物墙加载失败");
+          return body;
+        });
+      })
+      .then(function (body) {
+        state.giftWall = {
+          items: body.giftWall || [],
+          totalCount: body.totalCount || 0,
+          totalValue: body.totalValue || 0,
+        };
+        return state.giftWall;
+      })
+      .catch(function () {
+        state.giftWall = state.giftWall || { items: [], totalCount: 0, totalValue: 0 };
+        return state.giftWall;
+      });
+  }
   function openGiftSheet() {
     loadCatalog()
       .then(function (cat) {
@@ -675,7 +777,9 @@
                     (g.id === selected.id ? " active" : "") +
                     '" data-gift="' +
                     esc(g.id) +
-                    '"><div style="font-size:28px">🎁</div><strong>' +
+                    '">' +
+                    giftIconHtml(g.iconUrl, 36) +
+                    "<strong>" +
                     esc(g.name) +
                     "</strong><span>" +
                     esc(g.catFoodPrice) +
@@ -713,6 +817,8 @@
             };
           });
           sheet.querySelector("[data-close-sheet]").onclick = closeSheet;
+          var giftIdem = idem();
+          var giftSending = false;
           sheet.querySelector("[data-send-gift]").onclick = function () {
         if (!token()) {
           if (window.MCJAuthContinue && typeof window.MCJAuthContinue.requireLogin === "function") {
@@ -728,6 +834,13 @@
           alert("请先登录老板账号");
           return;
         }
+            if (giftSending) return;
+            giftSending = true;
+            var sendBtn = sheet.querySelector("[data-send-gift]");
+            if (sendBtn) {
+              sendBtn.disabled = true;
+              sendBtn.textContent = "提交中…";
+            }
             fetch("/api/boss/marketplace", {
               method: "POST",
               headers: authHeaders(),
@@ -736,7 +849,8 @@
                 companionId: state.companion.id || state.companion.uid,
                 giftId: selected.id,
                 quantity: qty,
-                idempotencyKey: idem(),
+                sourceChannel: "companion_detail",
+                idempotencyKey: giftIdem,
               }),
             })
               .then(function (res) {
@@ -746,12 +860,40 @@
                 });
               })
               .then(function (body) {
-                alert(body.message || "礼物已送出");
+                playGiftAnimation(
+                  Object.assign({}, body.snapshot || {}, {
+                    iconUrl: (selected && selected.iconUrl) || (body.snapshot && body.snapshot.iconUrl) || "🎁",
+                    effectType:
+                      (selected && (selected.effectType || selected.animationLevel)) ||
+                      (body.snapshot && body.snapshot.effectType) ||
+                      "float",
+                  })
+                );
                 closeSheet();
+                loadGiftWall().then(function () {
+                  var wall = document.getElementById("companionGiftWall");
+                  if (wall && state.companion) {
+                    // Soft refresh wall without full page reload.
+                    var tmp = document.createElement("div");
+                    tmp.innerHTML = giftWallHtml(state.giftWall);
+                    wall.replaceWith(tmp.firstElementChild);
+                  }
+                });
               })
               .catch(function (err) {
-                if (err.code === "INSUFFICIENT_BALANCE" || /余额不足/.test(err.message || "")) {
-                  if (confirm("猫粮余额不足，是否去充值？")) location.href = err.rechargeUrl || "recharge.html";
+                giftSending = false;
+                if (sendBtn) {
+                  sendBtn.disabled = false;
+                  sendBtn.textContent = "确认赠送";
+                }
+                if (
+                  err.code === "INSUFFICIENT_PAID_BALANCE" ||
+                  err.code === "INSUFFICIENT_BALANCE" ||
+                  /余额不足|充值猫粮不足|可用充值/.test(err.message || "")
+                ) {
+                  if (confirm((err.message || "可用充值猫粮不足") + "\n是否去充值？")) {
+                    location.href = err.rechargeUrl || "recharge.html";
+                  }
                   return;
                 }
                 alert(err.message || "赠送失败");
@@ -795,6 +937,8 @@
       });
       sheet.querySelector("[data-tip-amount]").oninput = preview;
       sheet.querySelector("[data-close-sheet]").onclick = closeSheet;
+      var tipIdem = idem();
+      var tipSending = false;
       sheet.querySelector("[data-send-tip]").onclick = function () {
         if (!token()) {
           if (window.MCJAuthContinue && typeof window.MCJAuthContinue.requireLogin === "function") {
@@ -810,6 +954,13 @@
           alert("请先登录老板账号");
           return;
         }
+        if (tipSending) return;
+        tipSending = true;
+        var tipBtn = sheet.querySelector("[data-send-tip]");
+        if (tipBtn) {
+          tipBtn.disabled = true;
+          tipBtn.textContent = "提交中…";
+        }
         preview();
         fetch("/api/boss/marketplace", {
           method: "POST",
@@ -819,7 +970,8 @@
             companionId: state.companion.id || state.companion.uid,
             amount: amount,
             message: sheet.querySelector("[data-tip-msg]").value || "",
-            idempotencyKey: idem(),
+            sourceChannel: "tip_sheet",
+            idempotencyKey: tipIdem,
           }),
         })
           .then(function (res) {
@@ -831,10 +983,24 @@
           .then(function (body) {
             alert(body.message || "打赏成功");
             closeSheet();
+            loadGiftWall().then(function () {
+              if (state.companion) render(state.companion);
+            });
           })
           .catch(function (err) {
-            if (err.code === "INSUFFICIENT_BALANCE" || /余额不足/.test(err.message || "")) {
-              if (confirm("猫粮余额不足，是否去充值？")) location.href = err.rechargeUrl || "recharge.html";
+            tipSending = false;
+            if (tipBtn) {
+              tipBtn.disabled = false;
+              tipBtn.textContent = "确认打赏";
+            }
+            if (
+              err.code === "INSUFFICIENT_PAID_BALANCE" ||
+              err.code === "INSUFFICIENT_BALANCE" ||
+              /余额不足|充值猫粮不足|可用充值/.test(err.message || "")
+            ) {
+              if (confirm((err.message || "可用充值猫粮不足") + "\n是否去充值？")) {
+                location.href = err.rechargeUrl || "recharge.html";
+              }
               return;
             }
             alert(err.message || "打赏失败");
@@ -913,7 +1079,11 @@
         if (!settled) {
           settled = true;
           clearTimeout(failSafe);
-          render(syncPresence(c));
+          state.companion = syncPresence(c);
+          render(state.companion);
+          loadGiftWall(c.id || c.uid || id).then(function () {
+            if (state.companion) render(state.companion);
+          });
         }
         var cid = c.id || c.uid || id;
         var popCtl = typeof AbortController !== "undefined" ? new AbortController() : null;
