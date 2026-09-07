@@ -1,9 +1,10 @@
 /**
- * Unit tests: companion credential OR gate for accept-order + homepage visibility.
+ * Unit tests: companion credential OR gate for accept-order / canWork.
+ * PR A: hallVisible does NOT require credential; credential still gates canWork.
  *
- * Case 1: identity=true, deposit=false  => visible + can accept
- * Case 2: identity=false, deposit=true  => visible + can accept
- * Case 3: identity=false, deposit=false => hidden + cannot accept
+ * Case 1: identity=true, deposit=false  => hall visible + can work
+ * Case 2: identity=false, deposit=true  => hall visible + can work
+ * Case 3: identity=false, deposit=false => hall visible + cannot work
  *
  * Usage: node scripts/verify-companion-credential-or-gate.mjs
  */
@@ -29,15 +30,15 @@ const baseRow = {
   is_test_account: false,
 };
 
-function runCase(name, rowPatch, expectVisible, expectAccept) {
+function runCase(name, rowPatch, expectHallVisible, expectAccept) {
   const row = { ...baseRow, ...rowPatch };
   const matrix = evaluateCredentialMatrix(row);
   const gate = evaluatePublishGate(row, profile, {});
   assert.equal(matrix.canAccept, expectAccept, `${name}: canAccept`);
-  assert.equal(matrix.homepageVisible, expectVisible, `${name}: homepageVisible (credential)`);
+  assert.equal(matrix.homepageVisible, expectAccept, `${name}: homepageVisible (credential matrix)`);
   assert.equal(gate.credentialOrOk, expectAccept, `${name}: gate.credentialOrOk`);
   assert.equal(gate.canWork, expectAccept, `${name}: gate.canWork`);
-  assert.equal(gate.hallVisible, expectVisible, `${name}: gate.hallVisible`);
+  assert.equal(gate.hallVisible, expectHallVisible, `${name}: gate.hallVisible`);
   assert.equal(isCredentialOrOk(row), expectAccept, `${name}: isCredentialOrOk`);
   console.log(`PASS ${name}`);
 }
@@ -62,11 +63,11 @@ runCase(
 assert.equal(isIdentityVerified({ identity_status: "draft", verification_status: "pending" }), false);
 assert.equal(isDepositVerified({ deposit_status: "approved" }), true);
 
-// Case 3: neither (explicitly clear verification_status — production identity column)
+// Case 3: neither — hall stays visible (PR A); work locked without credential
 runCase(
   "case3_neither",
   { identity_status: "draft", deposit_status: "unpaid", verification_status: "pending" },
-  false,
+  true,
   false
 );
 assert.equal(isIdentityVerified({ identity_status: "draft", verification_status: "pending" }), false);

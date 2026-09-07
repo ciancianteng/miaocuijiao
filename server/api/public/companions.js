@@ -624,8 +624,12 @@ async function loadCompanions(id = "") {
   for (const row of companions) {
     if (!isAuditApprovedCompanion(row)) continue;
     const profile = profileMap[row.user_id];
+    // Approved companions drop here only when profile join missed (inactive/missing) —
+    // approve flow activates profile before writing application_status=approved.
     if (!profile) continue;
     // Hide smoke/test accounts from homepage / hall / public detail (matches admin filter).
+    // Heuristics are mirrored at approve-time (assertApproveCanPublish) so real approve
+    // cannot create a silent approved-but-hidden hall row via smoke name/email.
     if (isTestAccountRecord(profile, row)) continue;
     if (profile.is_test_account === true || row.is_test_account === true) continue;
     const media = { ...(mediaMap[row.id] || {}) };
@@ -656,8 +660,8 @@ async function loadCompanions(id = "") {
       }
     }
     const gate = evaluatePublishGate(row, profile, media);
-    // Homepage / hall: hallVisible requires approved + active + (identity OR deposit) + critical profile.
-    // Never require identity AND deposit.
+    // Homepage / hall (PR A): hallVisible = approved + active + allow_orders + !test.
+    // Critical profile is approve-time only; credential OR does not hide hall.
     if (!gate.hallVisible) continue;
     mapped.push(publicCompanion(row, profile, levelList, catalog, media, certMap[row.id] || []));
   }

@@ -2,12 +2,17 @@
  * Shared companion public-listing / orderability gate.
  * Boss home / hall / detail / place-order must all use this.
  *
- * hallVisible ≡ published:
- *   application approved + allow_orders + active + not archived/banned
+ * PR A — hallVisible ≡ published (approve → hall sync):
+ *   application approved
+ *   + profiles.status = active (not banned/disabled)
+ *   + allow_orders !== false
  *   + NOT is_test_account
- *   + critical profile complete (nickname, ≥1 game, price > 0)
- *   + (identity_verified OR deposit_verified)  — never require both
- * Level missing is soft: sync/approve writes platform default level.
+ *   + not rejected/archived
+ *
+ * Critical profile (nickname / game / price) is enforced at FIRST APPROVE only
+ * (assertApproveCanPublish) — never as a post-approve silent hall hide.
+ * Credential (identity OR deposit) does NOT block hall visibility in PR A;
+ * it may still gate companion-side canWork. Status-field separation is PR B.
  * Soft media (avatar / gallery / voice) never blocks listing.
  */
 import {
@@ -17,6 +22,7 @@ import {
   DEFAULT_COMPANION_AVATAR,
 } from "./_companion-public-map.js";
 import { isCredentialOrOk } from "./_companion-credential-gate.js";
+import { isTestAccountRecord } from "./_test-accounts.js";
 
 export const MIN_GALLERY = 1;
 
@@ -232,7 +238,8 @@ function softProfileMissing(row = {}) {
 }
 
 /**
- * Critical boss-facing fields. Missing → block public hall/home until filled.
+ * Critical boss-facing fields. Missing → block FIRST APPROVE only
+ * (assertApproveCanPublish). PR A: does NOT hide hall after approve.
  * Avatar/card/voice are soft (brand default). Level is soft (default on sync).
  */
 function criticalMissing(row = {}, profile = {}) {
@@ -293,42 +300,37 @@ export function evaluatePublishGate(row = {}, profile = {}, mediaExtras = {}) {
   const testAccount = isTestAccount(row, profile || {});
   if (testAccount) blockReasons.push("测试账号");
 
-  // Credential is OR: identity OR deposit. Never require both for hall / homepage.
+  // Credential is OR: identity OR deposit. Informational for canWork — does NOT hide hall (PR A).
   const credentialOrOk = isCredentialOrOk(row, mediaExtras?.identityRow || null, mediaExtras?.depositRow || null);
-  if (adminApproved && accountEnabled && allowOrders && !testAccount && !credentialOrOk) {
-    blockReasons.push("认证未完成（身份证或押金二选一）");
-  }
 
   const crit = criticalMissing(row, profile || {});
   const soft = [...softProfileMissing(row), ...softMediaMissing(row, profile || {}, mediaExtras)];
   const profileComplete = crit.length === 0 && soft.length === 0;
   const criticalComplete = crit.length === 0;
+  // Critical gaps are approve-time blockers only — never push as post-approve hall hides.
 
-  if (adminApproved && accountEnabled && allowOrders && !testAccount && credentialOrOk && !criticalComplete) {
-    blockReasons.push("资料不完整，暂未发布");
-  }
-
-  // Work eligibility (companion端 / admin): approved + active + allow + not test + credential OR.
-  // Public publish still requires criticalComplete.
-  const canWorkBase =
+  // Public publish / hall (PR A): approved + active + allow_orders + !test.
+  const hallVisible =
     accountEnabled &&
     adminApproved &&
     allowOrders &&
     !testAccount &&
-    credentialOrOk &&
     !applicationRejected(row) &&
     !applicationArchived(row) &&
     !isBannedOrDisabled(profile || {});
 
-  const hallVisible = canWorkBase && criticalComplete;
-  const canWork = canWorkBase;
+  // Companion-side work eligibility may still require credential OR (not a hall hide).
+  const canWork =
+    hallVisible &&
+    credentialOrOk;
+
   const canOrder = hallVisible;
   const publishReady = hallVisible;
   const ok = hallVisible;
 
   const missing = [...new Set([...blockReasons, ...crit, ...soft])];
 
-  let statusLabel = "可上架";
+  let statusLabel = "已上架大厅";
   if (testAccount) {
     statusLabel = "测试账号";
   } else if (!accountEnabled || isBannedOrDisabled(profile || {})) {
@@ -343,12 +345,13 @@ export function evaluatePublishGate(row = {}, profile = {}, mediaExtras = {}) {
     statusLabel = "待审核";
   } else if (!allowOrders) {
     statusLabel = "禁止接单";
-  } else if (!credentialOrOk) {
-    statusLabel = "认证未完成（身份证或押金二选一）";
-  } else if (!criticalComplete) {
-    statusLabel = "资料不完整，暂未发布";
+  } else if (hallVisible && !credentialOrOk) {
+    statusLabel = "已上架大厅";
+  } else if (hallVisible && !criticalComplete) {
+    // Should be rare after approve pre-check; still listed, not hidden.
+    statusLabel = "已上架大厅";
   } else if (soft.length) {
-    statusLabel = "可上架";
+    statusLabel = "已上架大厅";
   }
 
   return {
@@ -382,12 +385,148 @@ export function listingBlockReason(gate = {}) {
   if (gate.hallVisible || gate.ok) return "";
   if (gate.isTestAccount) return "测试账号";
   const reasons = Array.isArray(gate.blockReasons) ? gate.blockReasons : [];
-  const crit = Array.isArray(gate.criticalMissing) ? gate.criticalMissing : [];
-  if (reasons.includes("资料不完整，暂未发布") || (crit.length && gate.adminApproved)) {
-    const detail = crit.length ? crit.join("、") : "";
-    return detail ? `资料不完整，暂未发布（${detail}）` : "资料不完整，暂未发布";
-  }
   if (reasons.length) return reasons.join("、");
   const missing = Array.isArray(gate.missing) ? gate.missing : [];
+  // Hall hide reasons only — critical profile gaps are approve-time, not post-approve hall hides.
   return missing.filter((m) => !/^缺少/.test(m)).join("、") || "未进入公开列表";
+}
+
+/**
+ * Admin-facing publish snapshot.
+ * Contract: adminApproved && !isTestAccount && hallVisible=false MUST expose clear hall blockReasons
+ * (allow_orders / ban / inactive — not critical profile or credential).
+ * criticalMissing stays a separate approve-time field.
+ */
+export function adminPublishSnapshot(row = {}, profile = {}, mediaExtras = {}) {
+  const gate = evaluatePublishGate(row, profile, mediaExtras);
+  const crit = Array.isArray(gate.criticalMissing) ? gate.criticalMissing : [];
+  let blockReasons = Array.isArray(gate.blockReasons) ? [...gate.blockReasons] : [];
+  blockReasons = blockReasons.filter((r) => r !== "资料不完整，暂未发布");
+  if (gate.adminApproved && !gate.isTestAccount && !gate.hallVisible) {
+    if (!blockReasons.length) {
+      blockReasons.push(listingBlockReason(gate) || "已通过但未进入公开大厅");
+    }
+  }
+  const reasonText =
+    blockReasons.length > 0
+      ? blockReasons.join("、")
+      : listingBlockReason({ ...gate, blockReasons }) || "";
+  return {
+    adminApproved: !!gate.adminApproved,
+    hallVisible: !!gate.hallVisible,
+    isTestAccount: !!gate.isTestAccount,
+    credentialOrOk: !!gate.credentialOrOk,
+    criticalComplete: !!gate.criticalComplete,
+    criticalMissing: crit,
+    blockReasons: [...new Set(blockReasons)],
+    statusLabel: gate.statusLabel || "",
+    listingBlockReason: reasonText,
+    publishReady: !!gate.hallVisible,
+    // True when approval and hall are out of sync for a real (non-test) companion.
+    approvedButHidden: !!(gate.adminApproved && !gate.isTestAccount && !gate.hallVisible),
+  };
+}
+
+/** Merge existing companion + approve/edit payload into the row that will be gated. */
+export function projectApprovedRow(existing = {}, payload = {}) {
+  const next = { ...existing };
+  const nickname = payload.nickname ?? payload.name ?? payload.display_name ?? payload.displayName;
+  if (nickname != null) next.nickname = String(nickname || "").trim();
+  const game = payload.game ?? payload.mainGame ?? payload.main_service ?? payload.mainService;
+  if (game != null) next.game = String(game || "").trim();
+  if (payload.service_ids != null || payload.serviceIds != null) {
+    next.service_ids = payload.service_ids ?? payload.serviceIds;
+  }
+  if (payload.service_type != null || payload.serviceType != null) {
+    next.service_type = payload.service_type ?? payload.serviceType;
+  }
+  if (payload.game_prices != null || payload.gamePrices != null) {
+    next.game_prices = payload.game_prices ?? payload.gamePrices;
+  }
+  if (payload.price != null) next.price = payload.price;
+  if (payload.price_min != null || payload.minPrice != null) {
+    next.price_min = payload.price_min ?? payload.minPrice;
+  }
+  if (payload.price_max != null || payload.maxPrice != null) {
+    next.price_max = payload.price_max ?? payload.maxPrice;
+  }
+  next.application_status = "approved";
+  next.verification_status = "approved";
+  if (payload.allowOrders != null || payload.allow_orders != null) {
+    next.allow_orders = payload.allowOrders !== false && payload.allow_orders !== false;
+  } else {
+    next.allow_orders = true;
+  }
+  return next;
+}
+
+export const APPROVE_INCOMPLETE_MESSAGE =
+  "无法通过审核：陪玩资料未满足大厅展示条件。请先补齐昵称、游戏与接单价格后再通过。";
+
+/**
+ * First transition into approved must be hall-ready for real accounts.
+ * Test accounts may still be marked approved (isolated from public hall).
+ * Throws Error with status=400, code, blockReasons, criticalMissing.
+ */
+export function assertApproveCanPublish(existing = {}, payload = {}, profile = {}) {
+  const projectedRow = projectApprovedRow(existing, payload);
+  const projectedProfile = {
+    ...(profile || {}),
+    status: "active",
+  };
+  // Same smoke/test heuristics as public hall so approve cannot create silent hidden rows.
+  if (isTestAccount(projectedRow, projectedProfile) || isTestAccountRecord(projectedProfile, projectedRow)) {
+    const snap = adminPublishSnapshot(
+      { ...projectedRow, is_test_account: true },
+      { ...projectedProfile, is_test_account: true },
+      {}
+    );
+    return {
+      ...snap,
+      isTestAccount: true,
+      hallVisible: false,
+      approvedButHidden: false,
+      blockReasons: ["测试账号"],
+      listingBlockReason: "测试账号",
+      statusLabel: "测试账号",
+    };
+  }
+  // Critical profile is an approve-time gate independent of hallVisible.
+  // After PR A, incomplete approved rows would still evaluate hallVisible=true —
+  // so we must not rely on !hallVisible to catch missing nickname/game/price.
+  const crit = criticalMissing(projectedRow, projectedProfile);
+  if (crit.length) {
+    const err = new Error(`无法通过审核：${crit.join("、")}。请先补齐后再通过。`);
+    err.status = 400;
+    err.code = "APPROVE_NOT_HALL_READY";
+    err.blockReasons = crit;
+    err.criticalMissing = crit;
+    err.publish = {
+      ...adminPublishSnapshot(projectedRow, projectedProfile, {}),
+      hallVisible: false,
+      criticalComplete: false,
+      criticalMissing: crit,
+      blockReasons: crit,
+      listingBlockReason: crit.join("、"),
+      approvedButHidden: false,
+    };
+    throw err;
+  }
+  const snap = adminPublishSnapshot(projectedRow, projectedProfile, {});
+  if (snap.hallVisible) return snap;
+  const reasons = (snap.blockReasons.length
+    ? snap.blockReasons
+    : ["无法通过审核"]
+  ).filter(Boolean);
+  const err = new Error(
+    reasons.length
+      ? `无法通过审核：${reasons.join("、")}。请先补齐后再通过。`
+      : APPROVE_INCOMPLETE_MESSAGE
+  );
+  err.status = 400;
+  err.code = "APPROVE_NOT_HALL_READY";
+  err.blockReasons = reasons;
+  err.criticalMissing = snap.criticalMissing;
+  err.publish = { ...snap, blockReasons: reasons };
+  throw err;
 }

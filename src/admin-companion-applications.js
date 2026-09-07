@@ -22,7 +22,14 @@
     opts.headers = Object.assign({ Accept: "application/json", "x-mcj-admin-role": role() }, opts.headers || {});
     return (Auth && Auth.fetch ? Auth.fetch(path, opts) : fetch(path, opts)).then(function (res) {
       return res.json().then(function (body) {
-        if (!res.ok || body.ok === false) throw new Error(body.message || "请求失败");
+        if (!res.ok || body.ok === false) {
+          var err = new Error(body.message || "请求失败");
+          err.code = body.code || "";
+          err.blockReasons = body.blockReasons || body.block_reasons || [];
+          err.publish = body.publish || null;
+          err.status = res.status;
+          throw err;
+        }
         return body;
       });
     });
@@ -74,6 +81,25 @@
       return Number.isFinite(n) && n > 0;
     });
   }
+  function hallVisible(row) {
+    return row && (row.hallVisible === true || row.hall_visible === true || row.publishReady === true);
+  }
+  function approvedButHidden(row) {
+    if (!row) return false;
+    if (row.approvedButHidden === true || row.approved_but_hidden === true) return true;
+    var code = statusCode(row);
+    if (!/approved|verified|passed/.test(code)) return false;
+    if (row.isTestAccount === true || row.is_test_account === true) return false;
+    return !hallVisible(row);
+  }
+  function publishHint(row) {
+    if (!row) return "";
+    if (row.isTestAccount === true || row.is_test_account === true) return "测试账号隔离";
+    if (hallVisible(row)) return "已上大厅";
+    var reasons = row.blockReasons || row.block_reasons || row.criticalMissing || [];
+    if (Array.isArray(reasons) && reasons.length) return reasons.join("、");
+    return row.listingBlockReason || row.publishStatusLabel || "";
+  }
   function filteredRows() {
     var list = (state.rows || []).filter(isApplicationQueue);
     var f = state.filter || "all";
@@ -84,6 +110,11 @@
     if (f === "approved_missing_price") {
       return list.filter(function (r) {
         return /approved|verified|passed/.test(statusCode(r)) && missingPrice(r);
+      });
+    }
+    if (f === "approved_not_in_hall") {
+      return list.filter(function (r) {
+        return approvedButHidden(r);
       });
     }
     if (f === "rejected") return list.filter(function (r) { return /rejected/.test(statusCode(r)); });
@@ -109,7 +140,15 @@
         var code = statusCode(item);
         var id = item.id || item.playerId || "";
         var noPrice = missingPrice(item);
-        var statusText = statusLabel(code) + (noPrice ? " · 缺价格" : "");
+        var hidden = approvedButHidden(item);
+        var hint = publishHint(item);
+        var statusText = statusLabel(code);
+        if (noPrice) statusText += " · 缺价格";
+        if (/approved|verified|passed/.test(code)) {
+          if (item.isTestAccount === true || item.is_test_account === true) statusText += " · 测试隔离";
+          else if (hallVisible(item)) statusText += " · 已上大厅";
+          else if (hidden) statusText += " · 未上大厅";
+        }
         return (
           "<tr>" +
           "<td>" +
@@ -120,8 +159,11 @@
           esc(item.phone || item.email || "-") +
           "</td><td>" +
           esc(item.game || item.mainGame || item.main_service || "-") +
-          "</td><td>" +
+          "</td><td title=\"" +
+          esc(hint) +
+          "\">" +
           esc(statusText) +
+          (hidden && hint ? "<br><small>" + esc(hint) + "</small>" : "") +
           "</td><td>" +
           esc(item.depositStatus || item.deposit_status || "-") +
           "</td><td>" +
@@ -142,12 +184,13 @@
       })
       .join("");
     box.innerHTML =
-      '<div class="admin-section-head compact"><div><h3>陪玩申请审核</h3><p>查看申请人完整资料、媒体与敏感认证信息；通过后开通陪玩端登录（默认离线，须完成身份与押金后才可接单）。</p></div>' +
+      '<div class="admin-section-head compact"><div><h3>陪玩申请审核</h3><p>通过审核即同步大厅展示条件：真实用户须具备昵称、游戏、价格，且账号 active；测试账号保持隔离不进正式大厅。</p></div>' +
       '<div class="content-admin-toolbar compact"><select data-capp-filter>' +
       [
         ["pending", "审核中"],
         ["resubmit", "需要补资料"],
         ["approved", "审核通过"],
+        ["approved_not_in_hall", "已通过但未上大厅"],
         ["approved_missing_price", "已通过但缺价格"],
         ["rejected", "审核未通过"],
         ["all", "全部"],
@@ -166,7 +209,7 @@
         .join("") +
       '</select><button class="mini-btn" type="button" data-capp-reload>刷新</button></div></div>' +
       (state.message ? '<div class="admin-sync-note">' + esc(state.message) + "</div>" : "") +
-      '<div class="table-wrap"><table><thead><tr><th>申请ID</th><th>昵称</th><th>联系方式</th><th>游戏</th><th>申请状态</th><th>押金</th><th>操作</th></tr></thead><tbody>' +
+      '<div class="table-wrap"><table><thead><tr><th>申请ID</th><th>昵称</th><th>联系方式</th><th>游戏</th><th>申请/大厅状态</th><th>押金</th><th>操作</th></tr></thead><tbody>' +
       (body || '<tr><td colspan="7">暂无陪玩申请</td></tr>') +
       "</tbody></table></div>";
   }
@@ -197,6 +240,9 @@
       }),
     }).then(function (res) {
       state.message = res.message || "审核已保存";
+      if (res.approvedButHidden && Array.isArray(res.blockReasons) && res.blockReasons.length) {
+        state.message += "；未上大厅原因：" + res.blockReasons.join("、");
+      }
       if (window.MCJAdminPlayerBridge && window.MCJAdminPlayerBridge.reloadList) {
         window.MCJAdminPlayerBridge.reloadList();
       }
@@ -232,13 +278,24 @@
         alert("无法通过：该陪玩尚未设置接单价格（单价 > 0 或至少一个游戏价格 > 0）。请先在资料中填写价格后再通过。");
         return;
       }
-      if (!confirm("确认通过该陪玩申请？通过后可登录陪玩端，默认离线。")) return;
+      if (!confirm("确认通过该陪玩申请？通过后将同步大厅展示（需已具备昵称/游戏/价格）；测试账号仍隔离。")) return;
       review(approveId, "approved", "")
-        .then(function () {
-          alert("已通过。申请人可登录陪玩端；完成身份认证与押金审核后才可接单。");
+        .then(function (res) {
+          var msg = (res && res.message) || "已通过。";
+          if (res && res.hallVisible) msg = "已通过，已同步进入陪玩大厅。";
+          else if (res && res.approvedButHidden) {
+            msg =
+              "已通过，但未进入大厅：" +
+              ((res.blockReasons && res.blockReasons.join("、")) || "请检查资料完整性");
+          }
+          alert(msg);
         })
         .catch(function (err) {
-          alert(err.message || "操作失败");
+          var extra =
+            err && Array.isArray(err.blockReasons) && err.blockReasons.length
+              ? "\n原因：" + err.blockReasons.join("、")
+              : "";
+          alert((err.message || "操作失败") + extra);
         });
       return;
     }
