@@ -260,9 +260,26 @@ export function createOrderCompleteHelpers({ restUrl, supabaseJson, serviceHeade
 
     // G8: keep Production settlement writes off until flag is explicitly enabled.
     if (!isSettlementEnabled()) {
+      const reason = settlementDisabledReason() || "settlement_flag_disabled";
+      console.warn("[order-complete] settlement skipped", saved?.id || "", reason);
+      try {
+        await patchOrderFields(restUrl, supabaseJson, serviceHeaders, saved.id, {
+          settlement_status: "skipped",
+        });
+      } catch (_) {
+        /* settlement_status column may be missing */
+      }
+      try {
+        const nextNote = upsertMarker(String(saved.note || ""), "[[SETTLEMENT_SKIPPED]]", reason);
+        const nextDesc = upsertMarker(String(saved.description || ""), "[[SETTLEMENT_SKIPPED]]", reason);
+        await dualWriteText(restUrl, supabaseJson, serviceHeaders, saved, nextNote, nextDesc);
+      } catch (_) {
+        /* soft */
+      }
       return {
         skipped: true,
-        reason: settlementDisabledReason() || "settlement_flag_disabled",
+        reason,
+        message: `结算未入账：${reason}（需开启 SETTLEMENT_ENABLED）`,
       };
     }
 
@@ -540,12 +557,18 @@ export function createOrderCompleteHelpers({ restUrl, supabaseJson, serviceHeade
     try {
       settlement = await settleCompanionIncome(saved, completedAt, method);
       settlementOk = true;
-    } catch (_) {
+    } catch (settleErr) {
       settlementOk = false;
+      settlement = {
+        skipped: true,
+        reason: "settlement_error",
+        message: String(settleErr?.message || settleErr || "settlement_error").slice(0, 200),
+      };
+      console.warn("[order-complete] settlement error", saved?.id || "", settlement.message);
     }
 
     let bossPoints = null;
-    if (settlementOk) {
+    if (settlementOk && !settlement?.skipped) {
       try {
         bossPoints = await awardBossPointsForCompletedOrder(saved, {
           method,
@@ -571,13 +594,20 @@ export function createOrderCompleteHelpers({ restUrl, supabaseJson, serviceHeade
       );
     } catch (_) {}
 
+    const settleSkipMsg = settlement?.skipped
+      ? `（结算暂未入账：${settlement.reason || settlement.message || "skipped"}）`
+      : !settlementOk
+        ? "（结算写入失败，请后台核对）"
+        : "";
+    const baseMsg =
+      method === "system_auto_24h"
+        ? "已自动确认完成，订单已完成。"
+        : "已确认完成，订单已完成。";
+
     return {
       ok: true,
       duplicate: false,
-      message:
-        method === "system_auto_24h"
-          ? "已自动确认完成，订单已完成。"
-          : "已确认完成，订单已完成。",
+      message: `${baseMsg}${settleSkipMsg}`,
       order: {
         ...saved,
         note: methodLineNote,
@@ -585,6 +615,12 @@ export function createOrderCompleteHelpers({ restUrl, supabaseJson, serviceHeade
         completion_method: method,
         status: "completed",
         completed_at: completedAt,
+        settlement_status:
+          settlement?.skipped
+            ? "skipped"
+            : settlementOk && settlement && !settlement.duplicate
+              ? saved.settlement_status || "settled"
+              : saved.settlement_status || null,
       },
       settlement,
       bossPoints,

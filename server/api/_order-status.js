@@ -23,7 +23,7 @@ export const ORDER_STATUS_LABELS = Object.freeze({
   pending: "待客服处理",
   waiting_boss_confirm: "等待老板选择",
   claimed: "等待陪玩确认",
-  confirmed: "进行中", // legacy hop; new confirm path jumps to in_progress
+  confirmed: "已接单", // legacy hop; accept_direct usually jumps claimed → in_progress
   in_progress: "进行中",
   completed: "已完成",
   reviewed: "已评价",
@@ -39,7 +39,7 @@ export const COMPANION_STATUS_LABELS = Object.freeze({
   claimed: "等待陪玩确认",
   pending: "等待陪玩抢单",
   waiting_boss_confirm: "等待老板选择",
-  confirmed: "进行中",
+  confirmed: "已接单",
 });
 
 /**
@@ -74,7 +74,8 @@ export function bossFacingStatusText(row = {}, grabCountOverride) {
     return status === "waiting_boss_confirm" ? "等待老板选择" : "待客服处理";
   }
   if (status === "claimed") return "等待陪玩确认";
-  if (status === "confirmed" || status === "in_progress") {
+  if (status === "confirmed") return "已接单";
+  if (status === "in_progress") {
     if (
       String(row.note || "").includes("[[COMPLETION_PENDING]]") ||
       String(row.description || "").includes("[[COMPLETION_PENDING]]")
@@ -89,6 +90,14 @@ export function bossFacingStatusText(row = {}, grabCountOverride) {
       return "等待您确认完成";
     }
     return "进行中";
+  }
+  if (status === "completed") {
+    const settle = String(row.settlement_status || "").toLowerCase();
+    if (settle === "settled") return "已完成（已结算）";
+    if (settle === "skipped" || /\[\[SETTLEMENT_SKIPPED\]\]/i.test(String(row.note || "") + String(row.description || ""))) {
+      return "已完成（结算未入账）";
+    }
+    return "已完成";
   }
   return ORDER_STATUS_LABELS[status] || status || "待付款";
 }
@@ -165,7 +174,7 @@ export const CS_STATUS_ACTION_LABELS = Object.freeze({
   pending: "等待陪玩抢单",
   claimed: "等待陪玩确认",
   waiting_boss_confirm: "等待老板选择",
-  confirmed: "进行中",
+  confirmed: "已接单",
   in_progress: "进行中",
   completed: "已完成",
   cancelled: "已取消",
