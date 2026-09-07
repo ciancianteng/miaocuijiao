@@ -4472,7 +4472,7 @@
         return;
       }
       var s=document.createElement('script');
-      s.src='/src/forgot-password.js?v=20260907authUnify1';
+      s.src='/src/forgot-password.js?v=20260907otpFocus1';
       s.onload=function(){ openForgot(); };
       s.onerror=function(){
         state.loginError='找回密码组件加载失败，请刷新页面后重试。';
