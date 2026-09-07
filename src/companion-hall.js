@@ -417,6 +417,7 @@
         '"';
     }
     var identityApi = window.MCJCompanionIdentity;
+    // Row 1: level + verification badges + voice only (no game/service mix).
     var identityRow = identityApi
       ? identityApi.renderTags({
           levelId: item.levelId || "",
@@ -424,26 +425,27 @@
           levelColor: item.levelColor || "",
           badgeBorder: item.badgeBorder || "",
           badgeText: item.badgeText || "",
-          gender: item.gender,
+          gender: "",
           voiceType: item.voiceType || "",
           certTags: item.certTags || [],
-          tags: item.tags || [],
+          tags: [],
           className: "companion-identity-row companion-tags",
           includeLevel: true,
-          includeGender: true,
-          serviceLimit: 3,
-          certLimit: 2,
+          includeGender: false,
+          includeVoice: true,
+          serviceLimit: 0,
+          certLimit: 3,
         })
       : (function () {
           var level = item.level
             ? '<span class="companion-level-pill mcj-level-tag" data-level-id="' + esc(item.levelId || "") + '"' + pillStyle + '>' + esc(item.level) + "</span>"
             : "";
-          var gender = item.gender && !/^(保密|不公开|未知|-|—)$/.test(String(item.gender))
-            ? '<span class="mcj-gender-tag">' + esc(item.gender) + "</span>"
-            : "";
-          var styleTags = (item.tags || []).slice(0, 3).map(function (tag) {
-            return '<span class="mcj-service-tag">' + esc(tag) + "</span>";
-          }).join("");
+          var cert = (item.certTags || []).slice(0, 3).map(function (t) {
+            var name = typeof t === "string" ? t : t.name || t.title || "";
+            if (!name) return "";
+            var icon = typeof t === "object" && t.icon ? t.icon + " " : "";
+            return '<span class="mcj-cert-badge">' + esc(icon + name) + "</span>";
+          }).filter(Boolean).join("");
           var voice = String(item.voiceType || "").trim().replace(/^声线\s*[:：]\s*/, "");
           var voiceParts = voice
             ? voice.split(/[,，、|/]+/).map(function (x) { return String(x || "").trim(); }).filter(Boolean)
@@ -454,15 +456,20 @@
             '"><span class="mcj-voice-label">声线：</span>' +
             esc(voiceParts.length ? voiceParts.join(" / ") : "未设置") +
             "</span>";
-          return '<div class="mcj-id-tags companion-identity-row companion-tags">' + level + gender + voiceHtml + styleTags + "</div>";
+          return '<div class="mcj-id-tags companion-identity-row companion-tags">' + level + cert + voiceHtml + "</div>";
         })();
+    // Bottom row: game / service info only.
     var gamesRow = '<div class="mcj-id-tags companion-games-row companion-tags">' + gameChips(item) + "</div>";
     // Marketplace card: hide price UI; keep data-hall-price on order button for checkout.
     var priceHtml = "";
     var badgeClass = statusBadgeClass(item.status);
     var publicId = item.publicId || "未生成";
     var uuid = String(item.id || "").trim();
-    var detailHref = uuid ? ("profile.html?id=" + encodeURIComponent(uuid)) : "#";
+    var detailHref = uuid
+      ? ("profile.html?id=" + encodeURIComponent(uuid) + (publicId && publicId !== "未生成" ? "&code=" + encodeURIComponent(publicId) : ""))
+      : publicId && publicId !== "未生成"
+        ? ("profile.html?id=" + encodeURIComponent(publicId))
+        : "#";
     var focusX = item.objectPositionX != null ? item.objectPositionX : 50;
     var focusY = item.objectPositionY != null ? item.objectPositionY : 25;
     var pos = Number(focusX) + "% " + Number(focusY) + "%";
@@ -472,7 +479,6 @@
       '<div class="companion-card-body">' +
         '<div class="row companion-card-head companion-card-title-row"><h3>' + esc(item.name) + '</h3><span class="companion-status-inline' + badgeClass + '">' + esc(item.status) + '</span></div>' +
         '<p class="muted companion-id">陪玩 ID：' + esc(publicId) + '</p>' +
-        '<div class="companion-meta companion-meta-desktop"><span class="companion-level-pill mcj-level-tag" data-level-id="' + esc(item.levelId || "") + '"' + pillStyle + '>' + esc(item.level) + '</span><span class="companion-game-text">' + esc(item.game) + '</span></div>' +
         identityRow +
         gamesRow +
         priceHtml +
