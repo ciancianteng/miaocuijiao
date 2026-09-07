@@ -5445,8 +5445,19 @@ export default async function handler(req, res) {
         .trim()
         .toLowerCase();
       const authMode = authModeRaw === "id_card" || authModeRaw === "deposit" ? authModeRaw : "";
-      const rawNote = String(body.note || body.application_note || "").replace(/\[AUTH_MODE:(?:id_card|deposit)\]\s*/gi, "").trim();
-      const applicationNote = authMode ? `[AUTH_MODE:${authMode}]${rawNote ? ` ${rawNote}` : ""}` : rawNote;
+      // Personal intro/signature → public bio (description). Never store intro as application remark.
+      const bioText = String(body.bio || body.description || body.intro || "")
+        .replace(/\[AUTH_MODE:(?:id_card|deposit)\]\s*/gi, "")
+        .trim();
+      // Optional admin-only remark (explicit note/remark only — not intro/bio).
+      const rawRemark = String(body.remark || body.application_remark || body.applicationRemark || body.note || body.application_note || "")
+        .replace(/\[AUTH_MODE:(?:id_card|deposit)\]\s*/gi, "")
+        .trim();
+      // If client still sends intro via legacy `note`, treat it as bio when bio is empty and keep remark empty.
+      const legacyNoteLooksLikeIntro = !bioText && rawRemark && !body.remark && !body.application_remark && !body.applicationRemark;
+      const publicBio = bioText || (legacyNoteLooksLikeIntro ? rawRemark : "");
+      const adminRemark = legacyNoteLooksLikeIntro ? "" : rawRemark;
+      const applicationNote = authMode ? `[AUTH_MODE:${authMode}]${adminRemark ? ` ${adminRemark}` : ""}` : adminRemark;
       let applyVoiceType = "";
       try {
         applyVoiceType = await normalizeSelectedVoiceTypes(body.voice_type || body.voiceType || "", {
@@ -5464,6 +5475,7 @@ export default async function handler(req, res) {
         position: String(body.position || ""),
         voice_type: applyVoiceType,
         schedule: String(body.schedule || ""),
+        description: publicBio,
         application_note: applicationNote,
         tags: String(body.tags || ""),
         application_status: "pending",

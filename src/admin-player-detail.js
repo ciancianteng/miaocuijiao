@@ -414,7 +414,8 @@
           ["擅长位置", app.position || "尚未填写"],
           ["声音类型", app.voiceType || "尚未填写"],
           ["可接单时间", app.schedule || "尚未填写"],
-          ["申请备注", app.note || "无"],
+          ["自我介绍（前台展示）", d.description || d.bio || d.intro || "尚未填写"],
+          ["申请备注（仅后台）", app.note || "无"],
           ["当前申请状态", app.statusLabel || app.status],
           ["驳回原因", app.rejectReason || "无"],
         ]);
