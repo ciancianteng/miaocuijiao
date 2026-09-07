@@ -448,6 +448,7 @@
     var identityApi = window.MCJCompanionIdentity;
     var certRow = certBadgesHtml(item);
     // Capsule row: level + voice + category + games — horizontal flex wrap.
+    // Certs are a separate body row (not media overlay).
     var categoryTags = (function () {
       var voice = String(item.voiceType || "").trim().replace(/^声线\s*[:：]\s*/, "");
       var game = String(item.game || "").trim();
@@ -537,7 +538,7 @@
     var pos = Number(focusX) + "% " + Number(focusY) + "%";
     // Identity hierarchy (hall UI only):
     // brand title → companion nickname → full PW ID (never split PW code into a standalone number).
-    // Brand label moved from former watermark/overlay into normal body flow.
+    // Cert badges stay in card body (not photo overlay).
     var brandTitle = "MEOW CUI JIAO";
     return '<article class="card player-card" data-player data-public-id="' + esc(String(publicId).toUpperCase()) + '" data-level-id="' + esc(item.levelId || "") + '" data-companion-level="' + esc(item.levelId || "") + '" data-card-style="' + esc(item.cardBackground || "") + '" data-level-color="' + esc(item.levelColor || "") + '" data-companion-id="' + esc(uuid) + '" data-name="' + esc(nickname) + '" data-game="' + esc(item.game) + '" data-tags="' + esc(item.tags.join(",")) + '" data-price="' + esc(item.priceValue) + '" data-level-min="' + esc(item.levelMinPrice != null ? item.levelMinPrice : "") + '" data-level-max="' + esc(item.levelMaxPrice != null ? item.levelMaxPrice : "") + '" data-online="' + esc(item.status) + '" data-score="' + esc(item.rating) + '" data-gender="' + esc(item.gender) + '">' +
       '<div class="companion-card-media"><img src="' + esc(item.image) + '" alt="' + esc(nickname) + '" loading="lazy" decoding="async" style="object-position:' + esc(pos) + ';--mcj-cover-pos:' + esc(pos) + '" onerror="this.onerror=null;this.src=\'' + DEFAULT_AVATAR + '\'"><span class="companion-online-badge' + badgeClass + '">' + esc(item.status) + '</span></div>' +
