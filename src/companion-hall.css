@@ -492,10 +492,13 @@ body{background:radial-gradient(circle at 76% 4%,rgba(255,145,195,.055),transpar
 /* ===== Premium marketplace companion card ===== */
 .companion-hall-grid{
   gap:24px!important;
+  align-items:start!important;
 }
 .companion-hall-grid .player-card.mcj-market-card{
   display:flex!important;
   flex-direction:column!important;
+  height:auto!important;
+  max-height:none!important;
   border:1px solid color-mix(in srgb, var(--mcj-level-color, #a78bfa) 55%, rgba(255,255,255,.08))!important;
   border-radius:22px!important;
   background:
@@ -636,6 +639,10 @@ body{background:radial-gradient(circle at 76% 4%,rgba(255,145,195,.055),transpar
   margin:0!important;
   font-size:11px!important;
   color:rgba(255,255,255,.42)!important;
+}
+.mcj-market-id[hidden],
+.mcj-market-id.is-hidden{
+  display:none!important;
 }
 .mcj-market-games,
 .mcj-market-style-row{

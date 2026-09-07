@@ -570,8 +570,10 @@
           esc(item.status) +
           "</span>" +
         "</div>" +
-        '<p class="mcj-market-id muted companion-id"' +
-        (publicId === "未生成" ? ' hidden' : "") +
+        '<p class="mcj-market-id muted companion-id' +
+        (publicId === "未生成" ? " is-hidden" : "") +
+        '"' +
+        (publicId === "未生成" ? " hidden" : "") +
         ">陪玩 ID：" +
         esc(publicId) +
         "</p>" +
