@@ -763,8 +763,10 @@ function companionEditablePatch(payload = {}) {
     patch.application_status = normalizeStatusInput(payload.auditStatus || payload.applicationStatus, "pending");
     patch.verification_status = patch.application_status === "approved" ? "approved" : patch.application_status;
   }
-  if (payload.rejectReason != null || payload.applicationRejectReason != null) {
-    patch.application_reject_reason = String(payload.rejectReason || payload.applicationRejectReason || "");
+  // Only explicit applicationRejectReason may update reject text on generic edit.
+  // Bare rejectReason belongs to review boxes and must not wipe DB on Save.
+  if (payload.applicationRejectReason != null) {
+    patch.application_reject_reason = String(payload.applicationRejectReason || "");
   }
   if (payload.onlineStatus === "paused" || payload.accountStatus === "暂停接单") {
     patch.online_status = "paused";
