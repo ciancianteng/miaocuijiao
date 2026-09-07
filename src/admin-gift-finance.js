@@ -162,7 +162,7 @@
     } else {
       body =
         '<div style="margin-bottom:8px"><button class="mini-btn" type="button" data-gf-export="gifts">导出礼物流水 CSV</button></div>' +
-        '<div class="table-wrap"><table><thead><tr><th>时间</th><th>交易号</th><th>发送方</th><th>陪玩</th><th>礼物</th><th>数量</th><th>价值</th><th>到账</th><th>来源</th></tr></thead><tbody>' +
+        '<div class="table-wrap"><table><thead><tr><th>时间</th><th>交易号</th><th>发送方</th><th>陪玩</th><th>礼物</th><th>数量</th><th>价值</th><th>到账</th><th>结算状态</th><th>来源</th></tr></thead><tbody>' +
         ((state.transactions || [])
           .map(function (t) {
             return (
@@ -183,11 +183,13 @@
               "</td><td>" +
               esc(t.companionIncome) +
               "</td><td>" +
+              esc(t.settlementStatusText || t.settlementStatus || "-") +
+              "</td><td>" +
               esc(t.sourceChannel) +
               "</td></tr>"
             );
           })
-          .join("") || '<tr><td colspan="9">暂无礼物流水</td></tr>') +
+          .join("") || '<tr><td colspan="10">暂无礼物流水</td></tr>') +
         "</tbody></table></div>";
     }
 

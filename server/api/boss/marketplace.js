@@ -203,8 +203,8 @@ async function giftCommissionRate(companionRow) {
 }
 
 async function creditCompanionIncome(companionId, amount, note, relatedId) {
-  if (amount <= 0) return;
-  await supabaseJson(rest("transactions"), {
+  if (amount <= 0) return null;
+  const rows = await supabaseJson(rest("transactions"), {
     method: "POST",
     headers: serviceHeaders(),
     body: JSON.stringify({
@@ -217,6 +217,75 @@ async function creditCompanionIncome(companionId, amount, note, relatedId) {
       created_at: nowIso(),
     }),
   });
+  return Array.isArray(rows) ? rows[0] : rows;
+}
+
+/** Idempotent companion gift income credit keyed by gift tx_no in note. */
+async function creditCompanionGiftIncome(companionId, amount, giftTxNo) {
+  if (amount <= 0) return null;
+  const note = `MCJ_GIFT_INCOME:${giftTxNo}`;
+  try {
+    const existing = await supabaseJson(
+      rest(
+        "transactions",
+        `?user_id=eq.${encodeURIComponent(companionId)}&transaction_type=eq.companion_income&note=eq.${encodeURIComponent(note)}&limit=1`
+      ),
+      { headers: serviceHeaders() }
+    );
+    if (existing?.[0]) return { row: existing[0], duplicate: true };
+  } catch {
+    /* note filter may fail on older schemas — continue to insert */
+  }
+  const row = await creditCompanionIncome(companionId, amount, note, null);
+  return { row, duplicate: false };
+}
+
+async function patchGiftSettlement(txId, fields) {
+  if (!txId) return null;
+  try {
+    const rows = await companionDb("gift_transactions", `?id=eq.${encodeURIComponent(txId)}`, {
+      method: "PATCH",
+      body: JSON.stringify(fields),
+    });
+    return Array.isArray(rows) ? rows[0] : null;
+  } catch (err) {
+    if (/settlement_status|income_transaction|available_at|received_at|column|PGRST/i.test(String(err?.message || ""))) {
+      return null;
+    }
+    throw err;
+  }
+}
+
+async function tryRpcSendGiftTip(payload) {
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!key || !url()) return null;
+  try {
+    const response = await fetch(`${url().replace(/\/$/, "")}/rest/v1/rpc/mcj_send_gift_tip`, {
+      method: "POST",
+      headers: {
+        apikey: key,
+        Authorization: `Bearer ${key}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+    const text = await response.text();
+    let body = null;
+    try {
+      body = text ? JSON.parse(text) : null;
+    } catch {
+      body = text;
+    }
+    if (!response.ok) {
+      const msg = body?.message || body?.hint || body?.details || String(text || "").slice(0, 200);
+      if (/Could not find the function|PGRST202|404|does not exist/i.test(msg)) return null;
+      throw Object.assign(new Error(msg || "mcj_send_gift_tip failed"), { status: response.status, body });
+    }
+    return body;
+  } catch (err) {
+    if (/Could not find the function|PGRST202|404|does not exist/i.test(String(err?.message || ""))) return null;
+    throw err;
+  }
 }
 
 export default async function handler(req, res) {
@@ -557,7 +626,9 @@ export default async function handler(req, res) {
       const companionId = String(body.companionId || body.companion_id || "").trim();
       const idempotencyKey = String(body.idempotencyKey || body.idempotency_key || "").trim();
       if (!companionId) return json(res, 400, { ok: false, message: "缺少陪玩" });
-      if (!idempotencyKey) return json(res, 400, { ok: false, message: "缺少 idempotency_key" });
+      if (!idempotencyKey) {
+        return json(res, 400, { ok: false, message: "缺少 idempotency_key（防重复提交）", code: "IDEMPOTENCY_REQUIRED" });
+      }
 
       try {
         const existed = await companionDb(
@@ -565,7 +636,13 @@ export default async function handler(req, res) {
           `?idempotency_key=eq.${encodeURIComponent(idempotencyKey)}&limit=1`
         );
         if (existed?.[0]) {
-          return json(res, 200, { ok: true, message: "已处理（防重复）", transaction: existed[0], replayed: true });
+          return json(res, 200, {
+            ok: true,
+            message: "已处理（防重复）",
+            transaction: existed[0],
+            transactionId: existed[0].tx_no || existed[0].id,
+            replayed: true,
+          });
         }
       } catch (e) {
         if (!isMissingRelation(e)) throw e;
@@ -609,9 +686,11 @@ export default async function handler(req, res) {
       const companionIncome = Math.round((gross - commissionAmount) * 100) / 100;
       const message = String(body.message || "").trim();
       const sourceChannel = String(body.sourceChannel || body.channel || "companion_detail").trim() || "companion_detail";
+      const txNo = no("GIFT");
+      const kind = action === "send_gift" ? "gift" : "tip";
+      const relatedOrderId = body.relatedOrderId || body.related_order_id || null;
 
       // Business rule: gifts/tips may only spend CS-approved recharge (paid_balance).
-      // Pending/rejected recharge never credits paid_balance; bonus cannot pay for gifts.
       let walletRow = null;
       try {
         walletRow = await getWallet(boss.id);
@@ -630,11 +709,81 @@ export default async function handler(req, res) {
         });
       }
 
+      // Prefer atomic DB RPC when migrated (wallet debit + gift_tx + income in one txn).
+      const rpcResult = await tryRpcSendGiftTip({
+        p_boss_id: boss.id,
+        p_companion_id: companionId,
+        p_idempotency_key: idempotencyKey,
+        p_kind: kind,
+        p_gift_id: giftId || null,
+        p_gift_name: giftName,
+        p_quantity: quantity,
+        p_gross: gross,
+        p_commission_rate: rate,
+        p_commission_amount: commissionAmount,
+        p_companion_income: companionIncome,
+        p_message: message,
+        p_source_channel: sourceChannel,
+        p_related_order_id: relatedOrderId,
+        p_tx_no: txNo,
+      }).catch((err) => {
+        if (/insufficient|paid|balance|不足/i.test(String(err?.message || ""))) {
+          return { __paidFail: true, message: err.message };
+        }
+        throw err;
+      });
+      if (rpcResult?.__paidFail) {
+        return json(res, 400, {
+          ok: false,
+          code: "INSUFFICIENT_PAID_BALANCE",
+          message: "可用充值猫粮不足。请先完成充值并等待客服确认到账后再赠送礼物。",
+          rechargeUrl: "/recharge.html",
+        });
+      }
+      if (rpcResult?.ok) {
+        const tx = rpcResult.transaction || null;
+        if (action === "send_gift" && giftId) {
+          await recordGiftWallReceipt({
+            companionId,
+            giftId,
+            giftName,
+            iconUrl: giftMeta.iconUrl,
+            rarity: giftMeta.rarity,
+            effectType: giftMeta.effectType,
+            quantity,
+            unitValue: giftMeta.unitValue,
+          }).catch((err) => console.warn("[marketplace/send_gift] gift wall", err?.message || err));
+        }
+        scheduleRecomputeSoft();
+        return json(res, 200, {
+          ok: true,
+          message: action === "send_gift" ? "礼物已送出" : "打赏成功",
+          transaction: tx,
+          transactionId: tx?.tx_no || tx?.id || rpcResult.tx_no || txNo,
+          replayed: !!rpcResult.duplicate,
+          snapshot: {
+            grossCatFood: gross,
+            platformCommissionRate: rate,
+            platformCommissionAmount: commissionAmount,
+            companionIncome,
+            giftName,
+            quantity,
+            iconUrl: giftMeta.iconUrl,
+            rarity: giftMeta.rarity,
+            effectType: giftMeta.effectType,
+            sourceChannel,
+            paidBalanceOnly: true,
+            settlementStatus: tx?.settlement_status || "available",
+          },
+        });
+      }
+
+      // Fallback path (RPC not applied yet): wallet debit first (idempotent), then gift row + income.
       try {
         await debitWallet({
           bossId: boss.id,
           amount: gross,
-          transactionType: action === "send_gift" ? "gift" : "tip",
+          transactionType: kind === "gift" ? "gift" : "tip",
           idempotencyKey: `gift:${idempotencyKey}`,
           reason: `${giftName} x${quantity} → ${companion.nickname || companionId}`,
           operatorId: boss.id,
@@ -649,7 +798,6 @@ export default async function handler(req, res) {
             rechargeUrl: "/recharge.html",
           });
         }
-        // If gift/tip type not allowed by wallet RPC, retry as order_payment but still paid-only.
         try {
           await debitWallet({
             bossId: boss.id,
@@ -673,48 +821,104 @@ export default async function handler(req, res) {
         }
       }
 
-      await creditCompanionIncome(companionId, companionIncome, `礼物收益：${giftName}`, null);
-
+      const receivedAt = nowIso();
       let tx = null;
-      try {
-        const txPayload = {
-          tx_no: no("GIFT"),
-          sender_boss_id: boss.id,
-          receiver_companion_id: companionId,
-          gift_id: giftId,
-          gift_name: giftName,
-          quantity,
-          gross_cat_food: gross,
-          platform_commission_rate: rate,
-          platform_commission_amount: commissionAmount,
-          companion_income: companionIncome,
-          message,
-          related_order_id: body.relatedOrderId || null,
-          kind: action === "send_gift" ? "gift" : "tip",
-          idempotency_key: idempotencyKey,
-          source_channel: sourceChannel,
-          created_at: nowIso(),
-        };
-        let rows;
+      const txPayloadBase = {
+        tx_no: txNo,
+        sender_boss_id: boss.id,
+        receiver_companion_id: companionId,
+        gift_id: giftId,
+        gift_name: giftName,
+        quantity,
+        gross_cat_food: gross,
+        platform_commission_rate: rate,
+        platform_commission_amount: commissionAmount,
+        companion_income: companionIncome,
+        message,
+        related_order_id: relatedOrderId,
+        kind,
+        idempotency_key: idempotencyKey,
+        source_channel: sourceChannel,
+        settlement_status: "received",
+        received_at: receivedAt,
+        created_at: receivedAt,
+      };
+
+      const insertAttempts = [
+        txPayloadBase,
+        (({ settlement_status, received_at, ...rest }) => rest)(txPayloadBase),
+        (({ settlement_status, received_at, source_channel, ...rest }) => rest)(txPayloadBase),
+      ];
+      let insertErr = null;
+      for (const payload of insertAttempts) {
         try {
-          rows = await companionDb("gift_transactions", "", {
+          const rows = await companionDb("gift_transactions", "", {
             method: "POST",
-            body: JSON.stringify(txPayload),
+            body: JSON.stringify(payload),
           });
-        } catch (colErr) {
-          if (/source_channel|column/i.test(String(colErr?.message || ""))) {
-            const { source_channel: _sc, ...legacy } = txPayload;
-            rows = await companionDb("gift_transactions", "", {
-              method: "POST",
-              body: JSON.stringify(legacy),
-            });
-          } else {
-            throw colErr;
+          tx = rows?.[0] || null;
+          insertErr = null;
+          break;
+        } catch (err) {
+          insertErr = err;
+          const msg = String(err?.message || "");
+          if (/duplicate|unique|idempotency/i.test(msg)) {
+            const again = await companionDb(
+              "gift_transactions",
+              `?idempotency_key=eq.${encodeURIComponent(idempotencyKey)}&limit=1`
+            ).catch(() => []);
+            if (again?.[0]) {
+              return json(res, 200, {
+                ok: true,
+                message: "已处理（防重复）",
+                transaction: again[0],
+                transactionId: again[0].tx_no || again[0].id,
+                replayed: true,
+              });
+            }
           }
+          if (!/column|schema cache|PGRST|settlement_status|source_channel|received_at/i.test(msg)) break;
         }
-        tx = rows?.[0] || null;
-      } catch (e) {
-        if (!isMissingRelation(e)) throw e;
+      }
+      if (!tx && insertErr && !isMissingRelation(insertErr)) {
+        // Wallet already debited (idempotent). Surface hard failure so ops can reconcile.
+        console.error("[marketplace/send_gift] gift_tx insert after debit", insertErr?.message || insertErr);
+        throw Object.assign(new Error("礼物入账失败，请勿重复点击；若已扣款请联系客服并提供幂等键。"), {
+          status: 500,
+          code: "GIFT_TX_INSERT_FAILED",
+          idempotencyKey,
+        });
+      }
+
+      let incomeRow = null;
+      if (tx?.tx_no || txNo) {
+        try {
+          const credited = await creditCompanionGiftIncome(companionId, companionIncome, tx?.tx_no || txNo);
+          incomeRow = credited?.row || null;
+          const availableAt = nowIso();
+          const patched = await patchGiftSettlement(tx?.id, {
+            settlement_status: "available",
+            available_at: availableAt,
+            income_transaction_id: incomeRow?.id || null,
+            updated_at: availableAt,
+          });
+          if (patched) tx = { ...tx, ...patched };
+          else if (tx) {
+            tx = {
+              ...tx,
+              settlement_status: tx.settlement_status || "available",
+              income_transaction_id: incomeRow?.id || tx.income_transaction_id || null,
+            };
+          }
+        } catch (incomeErr) {
+          // Keep gift as received/pending_settlement for later reconcile — do not double-debit.
+          console.warn("[marketplace/send_gift] income credit", incomeErr?.message || incomeErr);
+          await patchGiftSettlement(tx?.id, {
+            settlement_status: "pending_settlement",
+            updated_at: nowIso(),
+          });
+          if (tx) tx = { ...tx, settlement_status: "pending_settlement" };
+        }
       }
 
       scheduleRecomputeSoft();
@@ -736,6 +940,7 @@ export default async function handler(req, res) {
         ok: true,
         message: action === "send_gift" ? "礼物已送出" : "打赏成功",
         transaction: tx,
+        transactionId: tx?.tx_no || tx?.id || txNo,
         snapshot: {
           grossCatFood: gross,
           platformCommissionRate: rate,
@@ -748,6 +953,7 @@ export default async function handler(req, res) {
           effectType: giftMeta.effectType,
           sourceChannel,
           paidBalanceOnly: true,
+          settlementStatus: tx?.settlement_status || "available",
         },
       });
     }

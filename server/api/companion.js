@@ -21,7 +21,7 @@
   uploadPrivateObject,
 } from "./_companion-media-store.js";
 import { companionPopularityMe, recordOnlineSession, scheduleRecomputeSoft } from "./_popularity.js";
-import { listGiftTransactionsForCompanion, mapGiftIncomeRow, summarizeGiftIncome } from "./_gift-income.js";
+import { listGiftTransactionsForCompanion, mapGiftIncomeRow, summarizeGiftIncome, markGiftIncomeWithdrawn } from "./_gift-income.js";
 import { readLocalLevels, toPublicLevel } from "./_companion-levels-store.js";
 import { resolvePlatformCommission } from "./_commission-rates.js";
 import { writeOrderStatusLog, COMPANION_STATUS_LABELS } from "./_order-status.js";
@@ -5878,6 +5878,12 @@ export default async function handler(req, res) {
         }
       }
       if (!item) return json(res, 500, { ok: false, message: "提现申请写入失败，请稍后重试" });
+
+      try {
+        await markGiftIncomeWithdrawn(auth.profile.id, amount, item.id);
+      } catch (markErr) {
+        console.warn("[companion/request_withdrawal] gift settlement mark", markErr?.message || markErr);
+      }
 
       let freezeTxId = null;
       try {

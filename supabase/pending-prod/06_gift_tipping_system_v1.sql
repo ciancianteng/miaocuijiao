@@ -177,4 +177,172 @@ begin
 end;
 $$;
 
+-- 6) Gift income settlement status (Received → Pending settlement → Available → Withdrawn)
+alter table public.gift_transactions
+  add column if not exists settlement_status text not null default 'received';
+alter table public.gift_transactions
+  add column if not exists income_transaction_id uuid;
+alter table public.gift_transactions
+  add column if not exists withdrawal_id uuid;
+alter table public.gift_transactions
+  add column if not exists received_at timestamptz;
+alter table public.gift_transactions
+  add column if not exists available_at timestamptz;
+alter table public.gift_transactions
+  add column if not exists withdrawn_at timestamptz;
+alter table public.gift_transactions
+  add column if not exists updated_at timestamptz not null default now();
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'gift_transactions_settlement_status_check'
+  ) then
+    alter table public.gift_transactions
+      add constraint gift_transactions_settlement_status_check
+      check (settlement_status in ('received', 'pending_settlement', 'available', 'withdrawn'));
+  end if;
+exception when others then
+  null;
+end $$;
+
+update public.gift_transactions
+  set settlement_status = 'available',
+      received_at = coalesce(received_at, created_at),
+      available_at = coalesce(available_at, created_at)
+  where settlement_status = 'received'
+    and available_at is null
+    and created_at < now() - interval '1 minute';
+
+create index if not exists idx_gift_tx_settlement
+  on public.gift_transactions (receiver_companion_id, settlement_status, created_at asc);
+
+comment on column public.gift_transactions.settlement_status is
+  'received|pending_settlement|available|withdrawn — companion gift income lifecycle';
+
+-- 7) Atomic gift/tip send: wallet debit + gift_transactions + companion income
+create or replace function public.mcj_send_gift_tip(
+  p_boss_id uuid,
+  p_companion_id uuid,
+  p_idempotency_key text,
+  p_kind text,
+  p_gift_id uuid,
+  p_gift_name text,
+  p_quantity integer,
+  p_gross numeric,
+  p_commission_rate numeric,
+  p_commission_amount numeric,
+  p_companion_income numeric,
+  p_message text default '',
+  p_source_channel text default 'companion_detail',
+  p_related_order_id uuid default null,
+  p_tx_no text default null
+) returns jsonb
+language plpgsql
+security definer
+as $$
+declare
+  existing public.gift_transactions%rowtype;
+  debit_result jsonb;
+  tx public.gift_transactions%rowtype;
+  income public.transactions%rowtype;
+  tx_no text;
+  now_ts timestamptz := now();
+begin
+  if coalesce(btrim(p_idempotency_key), '') = '' then
+    raise exception 'idempotency_key required';
+  end if;
+  if p_gross is null or p_gross <= 0 then
+    raise exception 'gross must be positive';
+  end if;
+  if coalesce(p_kind, '') not in ('gift', 'tip') then
+    raise exception 'kind must be gift or tip';
+  end if;
+
+  select * into existing
+    from public.gift_transactions
+   where idempotency_key = p_idempotency_key
+   limit 1;
+  if found then
+    return jsonb_build_object('ok', true, 'duplicate', true, 'transaction', to_jsonb(existing), 'tx_no', existing.tx_no);
+  end if;
+
+  debit_result := public.mcj_wallet_debit(
+    p_boss_id,
+    p_kind,
+    p_gross,
+    'gift:' || p_idempotency_key,
+    coalesce(p_gift_name, p_kind) || ' x' || coalesce(p_quantity, 1),
+    '',
+    p_boss_id,
+    p_related_order_id,
+    'paid'
+  );
+
+  tx_no := coalesce(nullif(btrim(p_tx_no), ''), 'GIFT' || to_char(now_ts, 'YYMMDDHH24MISS') || substr(md5(p_idempotency_key), 1, 6));
+
+  insert into public.gift_transactions (
+    tx_no, sender_boss_id, receiver_companion_id, gift_id, gift_name, quantity,
+    gross_cat_food, platform_commission_rate, platform_commission_amount, companion_income,
+    message, related_order_id, kind, idempotency_key, source_channel,
+    settlement_status, received_at, created_at, updated_at
+  ) values (
+    tx_no, p_boss_id, p_companion_id, p_gift_id, coalesce(p_gift_name, ''), greatest(coalesce(p_quantity, 1), 1),
+    p_gross, coalesce(p_commission_rate, 0), coalesce(p_commission_amount, 0), coalesce(p_companion_income, 0),
+    coalesce(p_message, ''), p_related_order_id, p_kind, p_idempotency_key, coalesce(nullif(btrim(p_source_channel), ''), 'companion_detail'),
+    'received', now_ts, now_ts, now_ts
+  )
+  on conflict (idempotency_key) do nothing
+  returning * into tx;
+
+  if tx.id is null then
+    select * into tx from public.gift_transactions where idempotency_key = p_idempotency_key limit 1;
+    return jsonb_build_object('ok', true, 'duplicate', true, 'transaction', to_jsonb(tx), 'tx_no', tx.tx_no, 'debit', debit_result);
+  end if;
+
+  if coalesce(p_companion_income, 0) > 0 then
+    select * into income
+      from public.transactions
+     where user_id = p_companion_id
+       and transaction_type = 'companion_income'
+       and note = 'MCJ_GIFT_INCOME:' || tx_no
+     limit 1;
+    if not found then
+      insert into public.transactions (
+        user_id, order_id, transaction_type, amount, status, note, created_at
+      ) values (
+        p_companion_id, null, 'companion_income', p_companion_income, 'completed',
+        'MCJ_GIFT_INCOME:' || tx_no, now_ts
+      ) returning * into income;
+    end if;
+
+    update public.gift_transactions
+       set settlement_status = 'available',
+           available_at = now_ts,
+           income_transaction_id = income.id,
+           updated_at = now_ts
+     where id = tx.id
+     returning * into tx;
+  end if;
+
+  return jsonb_build_object(
+    'ok', true,
+    'duplicate', false,
+    'transaction', to_jsonb(tx),
+    'tx_no', tx.tx_no,
+    'income', to_jsonb(income),
+    'debit', debit_result
+  );
+exception
+  when unique_violation then
+    select * into existing from public.gift_transactions where idempotency_key = p_idempotency_key limit 1;
+    return jsonb_build_object('ok', true, 'duplicate', true, 'transaction', to_jsonb(existing), 'tx_no', existing.tx_no);
+end;
+$$;
+
+grant execute on function public.mcj_send_gift_tip(
+  uuid, uuid, text, text, uuid, text, integer, numeric, numeric, numeric, numeric, text, text, uuid, text
+) to service_role;
+
 notify pgrst, 'reload schema';

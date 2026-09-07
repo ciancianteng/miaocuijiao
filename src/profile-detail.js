@@ -817,6 +817,8 @@
             };
           });
           sheet.querySelector("[data-close-sheet]").onclick = closeSheet;
+          var giftIdem = idem();
+          var giftSending = false;
           sheet.querySelector("[data-send-gift]").onclick = function () {
         if (!token()) {
           if (window.MCJAuthContinue && typeof window.MCJAuthContinue.requireLogin === "function") {
@@ -832,6 +834,13 @@
           alert("请先登录老板账号");
           return;
         }
+            if (giftSending) return;
+            giftSending = true;
+            var sendBtn = sheet.querySelector("[data-send-gift]");
+            if (sendBtn) {
+              sendBtn.disabled = true;
+              sendBtn.textContent = "提交中…";
+            }
             fetch("/api/boss/marketplace", {
               method: "POST",
               headers: authHeaders(),
@@ -841,7 +850,7 @@
                 giftId: selected.id,
                 quantity: qty,
                 sourceChannel: "companion_detail",
-                idempotencyKey: idem(),
+                idempotencyKey: giftIdem,
               }),
             })
               .then(function (res) {
@@ -872,6 +881,11 @@
                 });
               })
               .catch(function (err) {
+                giftSending = false;
+                if (sendBtn) {
+                  sendBtn.disabled = false;
+                  sendBtn.textContent = "确认赠送";
+                }
                 if (
                   err.code === "INSUFFICIENT_PAID_BALANCE" ||
                   err.code === "INSUFFICIENT_BALANCE" ||
@@ -923,6 +937,8 @@
       });
       sheet.querySelector("[data-tip-amount]").oninput = preview;
       sheet.querySelector("[data-close-sheet]").onclick = closeSheet;
+      var tipIdem = idem();
+      var tipSending = false;
       sheet.querySelector("[data-send-tip]").onclick = function () {
         if (!token()) {
           if (window.MCJAuthContinue && typeof window.MCJAuthContinue.requireLogin === "function") {
@@ -938,6 +954,13 @@
           alert("请先登录老板账号");
           return;
         }
+        if (tipSending) return;
+        tipSending = true;
+        var tipBtn = sheet.querySelector("[data-send-tip]");
+        if (tipBtn) {
+          tipBtn.disabled = true;
+          tipBtn.textContent = "提交中…";
+        }
         preview();
         fetch("/api/boss/marketplace", {
           method: "POST",
@@ -948,7 +971,7 @@
             amount: amount,
             message: sheet.querySelector("[data-tip-msg]").value || "",
             sourceChannel: "tip_sheet",
-            idempotencyKey: idem(),
+            idempotencyKey: tipIdem,
           }),
         })
           .then(function (res) {
@@ -965,6 +988,11 @@
             });
           })
           .catch(function (err) {
+            tipSending = false;
+            if (tipBtn) {
+              tipBtn.disabled = false;
+              tipBtn.textContent = "确认打赏";
+            }
             if (
               err.code === "INSUFFICIENT_PAID_BALANCE" ||
               err.code === "INSUFFICIENT_BALANCE" ||

@@ -2735,13 +2735,15 @@
     var rows=gift.transactions||[];
     return '<section class="pw-grid">'+
       metric('礼物累计收入',money(num(summary.totalGiftEarnings)))+
+      metric('可提现礼物',money(num(summary.availableAmount)))+
+      metric('待结算礼物',money(num(summary.pendingSettlementAmount)))+
+      metric('已提现礼物',money(num(summary.withdrawnAmount)))+
       metric('今日礼物收入',money(num(summary.dailyEarnings)))+
       metric('本月礼物收入',money(num(summary.monthlyEarnings)))+
-      metric('礼物流水笔数',esc(summary.transactionCount||0))+
       '</section>'+
       '<section class="pw-card pad" style="margin-top:14px"><h3>礼物 / 打赏流水</h3>'+
       (rows.length
-        ?'<div class="pw-table-wrap"><table class="pw-table"><thead><tr><th>时间</th><th>发送方</th><th>陪玩ID</th><th>礼物</th><th>数量</th><th>价值</th><th>到账</th><th>交易号</th><th>来源</th></tr></thead><tbody>'+
+        ?'<div class="pw-table-wrap"><table class="pw-table"><thead><tr><th>时间</th><th>发送方</th><th>陪玩ID</th><th>礼物</th><th>数量</th><th>价值</th><th>到账</th><th>结算状态</th><th>交易号</th><th>来源</th></tr></thead><tbody>'+
           rows.map(function(x){
             var sender=x.senderCode||x.senderName||humanId(x.senderBossId)||'-';
             var companionCode=x.companionCode||((state.data&&state.data.player&&(state.data.player.publicId||state.data.player.public_id))||'-');
@@ -2753,6 +2755,7 @@
               '<td data-label="数量">'+esc(x.quantity||1)+'</td>'+
               '<td data-label="价值">'+money(num(x.value))+'</td>'+
               '<td data-label="到账">'+money(num(x.companionIncome))+'</td>'+
+              '<td data-label="结算状态">'+esc(x.settlementStatusText||x.settlementStatus||'-')+'</td>'+
               '<td data-label="交易号">'+esc(x.transactionId||x.txNo||x.id||'-')+'</td>'+
               '<td data-label="来源">'+esc(x.sourceChannel||x.kind||'-')+'</td>'+
               '</tr>';
