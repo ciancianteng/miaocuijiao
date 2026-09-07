@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-CN" class="mcj-auth-html">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>设置新密码 | 妙脆角</title>
+  <meta name="robots" content="noindex,nofollow">
+  <link rel="stylesheet" href="/src/auth-shell.css?v=20260805loginUi1">
+  <script src="/src/supabase-recovery-reset.js?v=20260907recoveryReset1"></script>
+</head>
+<body>
+  <main id="recoveryResetApp" class="mcj-auth-page" aria-live="polite"></main>
+  <script>
+    (function () {
+      function boot() {
+        if (!window.MCJSupabaseRecoveryReset || !window.MCJSupabaseRecoveryReset.mount) {
+          document.getElementById("recoveryResetApp").innerHTML =
+            '<div style="padding:24px;color:#ffe6f1;font-family:sans-serif">重置脚本未加载，请刷新页面。</div>';
+          return;
+        }
+        window.MCJSupabaseRecoveryReset.mount("#recoveryResetApp");
+      }
+      if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
+      else boot();
+    })();
+  </script>
+</body>
+</html>
