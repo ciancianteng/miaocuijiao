@@ -413,7 +413,7 @@
       esc(c.name) +
       ' 头像" onerror="this.onerror=null;this.src=\'/default-avatar.png\'">' +
       (popBadges ? '<div class="profile-pop-badges" style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;justify-content:center">' + popBadges + "</div>" : "") +
-      '</div><div class="profile-info-panel"><p class="detail-label">MEOW CUI JIAO COMPANION</p><h1>' +
+      '</div><div class="profile-info-panel"><p class="detail-label">MEOW CUI JIAO</p><h1>' +
       esc(c.name || c.nickname || "陪玩") +
       " " +
       statusHtml(c) +

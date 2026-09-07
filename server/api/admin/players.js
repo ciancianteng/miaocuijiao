@@ -559,12 +559,17 @@ async function buildDetail(row, profile, opts = {}) {
       position: row.position || "",
       voiceType: row.voice_type || "",
       schedule: row.schedule || "",
-      note: row.application_note || "",
+      // Strip AUTH_MODE marker — admin-facing remark only (never public bio).
+      note: String(row.application_note || "")
+        .replace(/\[AUTH_MODE:(?:id_card|deposit)\]\s*/gi, "")
+        .trim(),
       status: row.application_status || row.verification_status || "pending",
       statusLabel: labelStatus(row.application_status || row.verification_status || "pending"),
       rejectReason: row.application_reject_reason || "",
       empty: !row.application_submitted_at && !row.main_service && !row.game,
     },
+    bio: row.description || "",
+    intro: row.description || "",
     identity: identity
       ? {
           realName: identity.real_name || "",

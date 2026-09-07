@@ -1666,7 +1666,7 @@
       field("onlineStart", "常在线开始时间", "time", data.onlineStart) +
       field("onlineEnd", "常在线结束时间", "time", data.onlineEnd) +
       applyPriceFieldsHtml(data) +
-      field("intro", "自我介绍", "textarea", data.intro) +
+      field("intro", "自我介绍（展示在个人主页）", "textarea", data.intro) +
       '</form></section>';
   }
   function uploadHtml(draft) {
@@ -2400,7 +2400,10 @@
         position: (draft.data.positions || [])[0] || "",
         voice_type: draft.data.voiceType || "",
         schedule: [draft.data.onlineStart, draft.data.onlineEnd].filter(Boolean).join(" - "),
-        note: draft.data.bio || draft.data.remark || draft.data.intro || "",
+        bio: draft.data.intro || draft.data.bio || "",
+        description: draft.data.intro || draft.data.bio || "",
+        // Optional admin-only remark — never send self-intro as application note.
+        note: draft.data.remark || draft.data.applicationRemark || "",
         tags: (draft.data.personalTags || []).join(","),
         price: draft.data.hourlyPrice || (draft.data.gamePriceMap && draft.data.gamePriceMap[mainGames[0]]) || "",
         game_prices: draft.data.gamePriceMap || {},
