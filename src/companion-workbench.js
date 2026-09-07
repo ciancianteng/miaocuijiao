@@ -3140,14 +3140,57 @@
       '<button type="button" class="pw-media-icon-btn danger" '+delAttr+' title="删除" aria-label="删除">×</button>'+
       '</div></article>';
   }
+  var GALLERY_MAX=6;
+  /** Match backend upload_media gallery count: media_type=gallery, exclude video/*, durable id/storagePath. */
+  function galleryDurableKey(m){
+    if(!m)return '';
+    return String(m.storagePath||m.storage_path||m.path||m.id||'').trim();
+  }
+  function isCountableGalleryMedia(m){
+    if(!m||String(m.mediaType||m.media_type||'')!=='gallery')return false;
+    var ctype=String(m.contentType||m.content_type||'').toLowerCase();
+    if(/^video\//.test(ctype))return false;
+    return !!galleryDurableKey(m);
+  }
   function savedGalleryCount(){
-    return ((state.data&&state.data.media)||[]).filter(function(m){return m.mediaType==='gallery'}).length;
+    var media=(state.data&&state.data.media)||[];
+    var seen=Object.create(null);
+    var n=0;
+    for(var i=0;i<media.length;i++){
+      var m=media[i];
+      if(!isCountableGalleryMedia(m))continue;
+      var key=galleryDurableKey(m);
+      if(seen[key])continue;
+      seen[key]=1;
+      n+=1;
+    }
+    return n;
+  }
+  function galleryFullMessage(remaining){
+    var left=Math.max(0,Number(remaining));
+    if(!isFinite(left))left=Math.max(0,GALLERY_MAX-savedGalleryCount());
+    return '相册最多 '+GALLERY_MAX+' 张，还可上传 '+left+' 张。请先删除后再上传';
+  }
+  /** Soft-refresh media from bootstrap so sequential uploads see latest durable gallery count. */
+  function refreshGalleryMediaCount(){
+    return api('bootstrap',{},'GET').then(function(result){
+      var data=(result&&result.data)||{};
+      if(Array.isArray(data.media)){
+        state.data=Object.assign({},state.data||{},{media:data.media});
+      }else if(data&&typeof data==='object'){
+        state.data=Object.assign({},state.data||{},data);
+      }
+      reconcileProfileMediaFlags();
+      return savedGalleryCount();
+    }).catch(function(){
+      return savedGalleryCount();
+    });
   }
   function reconcileProfileMediaFlags(){
     var p=(state.data&&state.data.player)||{};
     var media=(state.data&&state.data.media)||[];
     var hasAvatar=media.some(function(m){return m.mediaType==='avatar'&&(m.url||m.storagePath||m.storage_path)})||!!(p.hasCustomAvatar&&p.avatar&&p.avatar!=='/default-avatar.png');
-    var hasGallery=media.some(function(m){return m.mediaType==='gallery'&&(m.url||m.storagePath||m.storage_path)})||
+    var hasGallery=media.some(isCountableGalleryMedia)||
       (state.galleryPending||[]).some(function(g){return g&&!g._failed&&(g.url||g._uploading||g._done)});
     var voiceMedia=media.some(function(m){return m.mediaType==='voice'&&(m.url||m.storagePath||m.storage_path)});
     var rawVoice=p.raw&&(p.raw.voice_url||p.raw.voiceUrl);
@@ -3179,7 +3222,7 @@
     return (state.galleryPending||[]).filter(function(p){return p&&(p._uploading||(!p._failed&&!p._done))}).length;
   }
   function galleryRoomLeft(){
-    return Math.max(0,6-savedGalleryCount()-pendingGallerySlots());
+    return Math.max(0,GALLERY_MAX-savedGalleryCount()-pendingGallerySlots());
   }
   function mergeGalleryForPaint(saved){
     var pending=(state.galleryPending||[]).filter(Boolean);
@@ -3188,26 +3231,27 @@
   function pwGalleryUploadHtml(gallery,uploadBusy){
     var busy=uploadBusy==='gallery'||(state.galleryPending||[]).some(function(p){return p&&p._uploading});
     var display=mergeGalleryForPaint(gallery);
-    var full=display.filter(function(x){return x&&!x._failed}).length>=6;
     var room=galleryRoomLeft();
+    var full=room<=0;
     var items=display.map(function(item,idx){return pwGalleryItemHtml(item,idx,display.length)}).join('');
     // Native <label>+<input multiple> — required for iPhone Safari multi-select.
     // Do NOT open album via programmatic input.click() after a source sheet (often becomes single-file).
     var albumLabel='<label class="pw-media-chip primary pw-gallery-pick-label'+(busy?' is-busy':'')+(full?' is-disabled':'')+'" data-pw-gallery-album-label>'+
-      (busy?'上传中…':'从相册选择 / 上传照片')+
+      (busy?'请稍候…':'从相册选择 / 上传照片')+
       '<input type="file" accept="image/*" multiple data-pw-gallery-multi '+
       (busy||full?'disabled ':'')+
       'class="pw-gallery-native-input" tabindex="-1" aria-hidden="true">'+
       '</label>';
     var cameraBtn=
       '<button type="button" class="pw-media-chip pw-gallery-camera-btn'+(busy||full?' is-busy':'')+'" data-pw-pick-gallery-camera '+(busy||full?'disabled':'')+'>拍照</button>';
+    var statusText=state._galleryDeleting?'正在更新相册…':'正在上传相册照片…';
     return '<div class="pw-media-block pw-gallery-block">'+
-      '<p class="pw-field-hint">至少 1 张，最多 6 张。可一次多选（本次最多还能选 '+esc(String(room))+' 张）。手机点「从相册选择」打开系统相册多选。</p>'+
+      '<p class="pw-field-hint">至少 1 张，最多 '+GALLERY_MAX+' 张。可一次多选（本次最多还能选 '+esc(String(room))+' 张）。手机点「从相册选择」打开系统相册多选。</p>'+
       '<div class="pw-gallery-grid" data-gallery-list>'+
       (items||'')+
       '</div>'+
       (full?'':('<div class="pw-gallery-actions">'+albumLabel+cameraBtn+'</div>'))+
-      (busy?'<p class="pw-media-status" data-gallery-status>正在上传相册照片…</p>':'')+
+      (busy?'<p class="pw-media-status" data-gallery-status>'+statusText+'</p>':'')+
       '</div>';
   }
   function isPlayableMediaUrl(u){
@@ -4653,8 +4697,22 @@
     }
     var del=e.target.closest('[data-delete-media]');
     if(del){
+      if(state.uploadBusy){toast('请等待当前操作完成');return}
       captureLiveForms(true);
-      api('delete_media',{media_id:del.dataset.deleteMedia}).then(function(x){toast(x.message||'已删除');return loadData({soft:true,forcePaint:true})}).catch(function(err){toast(err.message)});
+      state.uploadBusy='gallery';
+      state._galleryDeleting=true;
+      paint({preserveScroll:true});
+      api('delete_media',{media_id:del.dataset.deleteMedia}).then(function(x){
+        toast(x.message||'已删除');
+        // Reload durable media before re-enabling upload so count matches companion_media.
+        return loadData({soft:true,forcePaint:true,preserveScroll:true});
+      }).catch(function(err){
+        toast(humanizeClientError((err&&err.message)||'删除失败'));
+      }).finally(function(){
+        state._galleryDeleting=false;
+        state.uploadBusy='';
+        paint({preserveScroll:true});
+      });
       return;
     }
     var move=e.target.closest('[data-gallery-move]');
@@ -4772,19 +4830,40 @@
   }
   function uploadOneGalleryFile(pending){
     if(!pending||!pending.file)return Promise.resolve();
+    if(state._galleryUploadStop){
+      pending._uploading=false;
+      pending._failed=true;
+      pending._done=false;
+      pending._skippedFull=true;
+      return Promise.resolve();
+    }
     pending._uploading=true;
     pending._failed=false;
-    return ensureFreshCompanionSession().then(function(){
-      return withTimeout(readFileAsDataUrl(pending.file,'image').then(function(dataUrl){
-        if(dataUrl)pending.url=dataUrl;
+    // Refresh durable gallery count before each sequential upload; stop when no slots remain.
+    return refreshGalleryMediaCount().then(function(saved){
+      if(saved>=GALLERY_MAX){
+        state._galleryUploadStop=true;
+        pending._uploading=false;
+        pending._failed=true;
+        pending._done=false;
+        pending._skippedFull=true;
+        toast(galleryFullMessage(0));
         paint({preserveScroll:true});
-        return api('upload_media',{
-          media_type:'gallery',
-          data_url:dataUrl,
-          filename:pending.file.name||('gallery-'+Date.now()+'.jpg')
-        });
-      }),45000,'上传超时，请检查网络后重试');
+        return null;
+      }
+      return ensureFreshCompanionSession().then(function(){
+        return withTimeout(readFileAsDataUrl(pending.file,'image').then(function(dataUrl){
+          if(dataUrl)pending.url=dataUrl;
+          paint({preserveScroll:true});
+          return api('upload_media',{
+            media_type:'gallery',
+            data_url:dataUrl,
+            filename:pending.file.name||('gallery-'+Date.now()+'.jpg')
+          });
+        }),45000,'上传超时，请检查网络后重试');
+      });
     }).then(function(res){
+      if(!res)return null;
       pending._uploading=false;
       pending._done=true;
       pending._failed=false;
@@ -4795,7 +4874,8 @@
         var row=Object.assign({mediaType:'gallery'},res.media,{
           url:res.url||(res.media&&res.media.url)||pending.url,
           storagePath:res.path||(res.media&&(res.media.path||res.media.storagePath))||'',
-          storageRef:res.storageRef||(res.media&&res.media.storageRef)||''
+          storageRef:res.storageRef||(res.media&&res.media.storageRef)||'',
+          contentType:res.media.contentType||res.media.content_type||(pending.file&&pending.file.type)||'image/jpeg'
         });
         state.data.media=state.data.media.concat([row]);
       }
@@ -4806,66 +4886,94 @@
       pending._uploading=false;
       pending._failed=true;
       pending._done=false;
+      var serverMsg=String((err&&(err.serverMessage||err.message))||'');
+      var isGalleryFull=err&&err.status===400&&/相册最多|请先删除后再上传/.test(serverMsg);
+      if(isGalleryFull){
+        state._galleryUploadStop=true;
+        return refreshGalleryMediaCount().then(function(){
+          toast(galleryFullMessage(Math.max(0,GALLERY_MAX-savedGalleryCount())));
+          paint({preserveScroll:true});
+        });
+      }
       var msg=humanizeClientError((err&&err.message)||'上传失败，请重试');
       toast('上传失败，请重试'+(msg&&msg!=='上传失败，请重试'?('：'+msg):''));
       try{console.error('[companion-media] gallery item failed',err)}catch(e){}
       paint({preserveScroll:true});
-      // Do not rethrow — other selected photos must continue uploading.
+      // Do not rethrow — other selected photos must continue uploading unless gallery is full.
     });
   }
   function uploadGalleryFiles(files){
     var list=Array.isArray(files)?files.filter(Boolean):[];
     if(!list.length)return Promise.resolve();
     captureLiveForms(true);
-    var room=galleryRoomLeft();
-    if(!room){toast('相册最多 6 张');return Promise.resolve()}
-    if(list.length>room)toast('最多还能上传 '+room+' 张，已自动截取');
-    list=list.slice(0,room);
-    var stamp=Date.now();
-    var pending=list.map(function(file,i){
-      return {
-        _localId:'gup-'+stamp+'-'+i,
-        _uploading:true,
-        _failed:false,
-        _done:false,
-        mediaType:'gallery',
-        url:'',
-        file:file,
-        id:''
-      };
-    });
-    state.galleryPending=(state.galleryPending||[]).concat(pending);
-    state.uploadBusy='gallery';
-    paint({preserveScroll:true});
-    // Show local thumbnails immediately, then upload sequentially (independent failures).
-    var previewChain=Promise.resolve();
-    pending.forEach(function(p){
-      previewChain=previewChain.then(function(){
-        return readFileAsDataUrl(p.file,'image').then(function(url){
-          p.url=url;
-          paint({preserveScroll:true});
-        }).catch(function(){ /* keep empty thumb */ });
+    state._galleryUploadStop=false;
+    return refreshGalleryMediaCount().then(function(){
+      var room=galleryRoomLeft();
+      if(!room){toast(galleryFullMessage(0));return null}
+      if(list.length>room)toast('最多还能上传 '+room+' 张，已自动截取');
+      list=list.slice(0,room);
+      var stamp=Date.now();
+      var pending=list.map(function(file,i){
+        return {
+          _localId:'gup-'+stamp+'-'+i,
+          _uploading:true,
+          _failed:false,
+          _done:false,
+          mediaType:'gallery',
+          url:'',
+          file:file,
+          id:''
+        };
       });
-    });
-    return previewChain.then(function(){
-      var uploadChain=Promise.resolve();
+      state.galleryPending=(state.galleryPending||[]).concat(pending);
+      state.uploadBusy='gallery';
+      paint({preserveScroll:true});
+      // Show local thumbnails immediately, then upload sequentially (independent failures).
+      var previewChain=Promise.resolve();
       pending.forEach(function(p){
-        uploadChain=uploadChain.then(function(){return uploadOneGalleryFile(p)});
+        previewChain=previewChain.then(function(){
+          return readFileAsDataUrl(p.file,'image').then(function(url){
+            p.url=url;
+            paint({preserveScroll:true});
+          }).catch(function(){ /* keep empty thumb */ });
+        });
       });
-      return uploadChain;
-    }).then(function(){
+      return previewChain.then(function(){
+        var uploadChain=Promise.resolve();
+        pending.forEach(function(p){
+          uploadChain=uploadChain.then(function(){
+            if(state._galleryUploadStop){
+              if(p&&!p._done&&!p._failed){
+                p._uploading=false;
+                p._failed=true;
+                p._skippedFull=true;
+              }
+              return null;
+            }
+            return uploadOneGalleryFile(p);
+          });
+        });
+        return uploadChain.then(function(){return {list:list,pending:pending}});
+      });
+    }).then(function(meta){
+      if(!meta)return;
+      var list=meta.list||[];
       var stillBusy=(state.galleryPending||[]).some(function(p){return p&&p._uploading});
       if(!stillBusy)state.uploadBusy='';
       return loadData({soft:true,forcePaint:true,preserveScroll:true}).then(function(){
-        var failed=(state.galleryPending||[]).filter(function(p){return p&&p._failed}).length;
-        var okCount=list.length-failed;
-        if(okCount>0&&failed===0)toast('已上传 '+okCount+' 张相册照片');
-        else if(okCount>0&&failed>0)toast('成功 '+okCount+' 张，失败 '+failed+' 张（可删除失败项后重试）');
+        var failed=(state.galleryPending||[]).filter(function(p){return p&&p._failed&&!p._skippedFull}).length;
+        var skipped=(state.galleryPending||[]).filter(function(p){return p&&p._skippedFull}).length;
+        var okCount=list.length-failed-skipped;
+        if(okCount>0&&failed===0&&skipped===0)toast('已上传 '+okCount+' 张相册照片');
+        else if(okCount>0&&(failed>0||skipped>0))toast('成功 '+okCount+' 张'+(failed?('，失败 '+failed+' 张'):'')+(skipped?('，已满跳过 '+skipped+' 张'):'')+'（可删除后重试）');
+        else if(skipped>0&&okCount===0)toast(galleryFullMessage(Math.max(0,GALLERY_MAX-savedGalleryCount())));
       });
     }).catch(function(err){
       state.uploadBusy='';
       paint({preserveScroll:true});
       toast(humanizeClientError((err&&err.message)||'上传失败，请重试'));
+    }).finally(function(){
+      state._galleryUploadStop=false;
     });
   }
   function clearVoiceLocal(){
@@ -5039,7 +5147,7 @@
   function pickCompanionGallery(){
     // Prefer native label+multiple input (iOS multi-select). Fallback: programmatic multiple pick.
     if(state.uploadBusy&&state.uploadBusy!=='gallery'){toast('请等待当前上传完成');return}
-    if(galleryRoomLeft()<=0){toast('相册最多 6 张');return}
+    if(galleryRoomLeft()<=0){toast(galleryFullMessage(0));return}
     var input=document.querySelector('[data-pw-gallery-multi]');
     if(input&&!input.disabled){
       try{input.value='';input.click();return}catch(err){}
@@ -5049,7 +5157,7 @@
   }
   function pickCompanionGalleryCamera(){
     if(state.uploadBusy){toast('请等待当前上传完成');return}
-    if(galleryRoomLeft()<=0){toast('相册最多 6 张');return}
+    if(galleryRoomLeft()<=0){toast(galleryFullMessage(0));return}
     triggerPwHiddenPick('image/*',true,function(file){
       if(file)uploadGalleryFiles([file]);
     },{multiple:false});
