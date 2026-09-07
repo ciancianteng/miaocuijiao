@@ -271,7 +271,19 @@
     state.open = true;
     state.role = normalizeRole(opts.role || "boss");
     state.step = "email";
-    state.email = String(opts.email || opts.phone || "").trim();
+    var seeded = String(opts.email || opts.phone || "").trim();
+    if (!seeded) {
+      try {
+        var loginEmail =
+          document.querySelector("#loginOtpEmail") ||
+          document.querySelector('form[data-login] input[name="account"]') ||
+          document.querySelector('form[data-login] input[type="email"]') ||
+          document.querySelector('input[name="authEmail"]') ||
+          document.querySelector('input[autocomplete="email"]');
+        if (loginEmail && loginEmail.value) seeded = String(loginEmail.value).trim();
+      } catch (e) {}
+    }
+    state.email = seeded;
     state.emailMasked = "";
     state.resetToken = "";
     state.busy = false;
@@ -304,7 +316,8 @@
         state.channel = res.channel || "email";
         state.step = "code";
         var hint = res.message || "验证码已发送";
-        if (res.devCode) hint += "（测试验证码 " + res.devCode + "）";
+        var debugCode = res.debugCode || res.devCode;
+        if (debugCode) hint += "（调试验证码 " + debugCode + "）";
         setMsg(hint, true);
         startCountdown(COUNTDOWN_SEC);
         paint();
@@ -408,8 +421,14 @@
       var btn = e.target && e.target.closest && e.target.closest("[data-forgot-password]");
       if (!btn) return;
       e.preventDefault();
-      e.stopPropagation();
-      open({ role: inferRole(btn) });
+      // Do not stopPropagation — page handlers may attach onDone / role overrides.
+      var emailHint = "";
+      try {
+        var form = btn.closest("form") || document.querySelector("form[data-login]");
+        var input = form && form.querySelector('input[name="account"], input[name="email"], input[type="email"], #loginOtpEmail');
+        if (input && input.value) emailHint = String(input.value).trim();
+      } catch (err) {}
+      open({ role: inferRole(btn), email: emailHint });
     },
     true
   );
