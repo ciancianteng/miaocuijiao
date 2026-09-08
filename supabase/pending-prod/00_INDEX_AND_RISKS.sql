@@ -36,6 +36,12 @@
 -- | 7 | points_settings | 积分规则配置（猫粮×倍率等） | P0 | 05_... |
 -- | 8 | orders.platform_fee (+结算快照列) | 订单平台费快照；Boss 佣金计算输入 | P0 | 02_... |
 -- | 9 | boss_invite_links (+ redemptions) | Boss 开放邀请链接 → 注册后绑定直属 | P1 | 09_... |
+-- | 10 | companion_tags | 陪玩风格标签 taxonomy（admin CRUD + public content） | P1 | COMPANION_TAGS_INIT.sql |
+--
+-- companion_tags 说明（COMPANION_TAGS_INIT.sql）：
+--   - 仅建表 + 索引 + 幂等 seed（甜妹/御姐/猛男/技术流/温柔/活泼/高冷/游戏大神）
+--   - 不改 companion_profiles.tags 自由文本字段
+--   - Apply 前 API 继续 DEFAULT_TAGS 内存回退；Apply 后走 DB
 --
 -- 共性风险：
 --   R1 缺表会导致对应 API 降级/报缺 relation，功能不可用
