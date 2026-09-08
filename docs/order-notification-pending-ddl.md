@@ -50,7 +50,7 @@ create table if not exists public.notification_outbox (
   audience text not null,
   order_id uuid,
   recipient_id uuid not null,
-  notice_key text not null,
+  notice_key text not null,  -- order:{orderId}:{recipientId}:{event}:{version}
   payload jsonb not null default '{}'::jsonb,
   channels text[] not null default '{inbox}',
   status text not null default 'pending',
@@ -59,10 +59,22 @@ create table if not exists public.notification_outbox (
   last_error text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  unique (notice_key, recipient_id)
+  unique (notice_key)
 );
 
 create index if not exists idx_notification_outbox_poll
   on public.notification_outbox (status, next_retry_at)
   where status in ('pending','failed');
+```
+
+## N6 — order_reminder_jobs (prestart idempotent claim)
+
+```sql
+create table if not exists public.order_reminder_jobs (
+  order_id uuid not null references public.orders(id) on delete cascade,
+  reminder_type text not null,
+  claimed_at timestamptz not null default now(),
+  notice_key text,
+  primary key (order_id, reminder_type)
+);
 ```
