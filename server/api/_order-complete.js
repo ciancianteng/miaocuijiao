@@ -369,10 +369,26 @@ export function createOrderCompleteHelpers({ restUrl, supabaseJson, serviceHeade
           String(l.code) === String(cp.level_id || "") ||
           String(l.name) === String(cp.level_name || "")
       ) || null;
-    const { platformRate, companionShareRate } = resolvePlatformCommission(
-      cp.commission_rate,
-      levelMeta?.commissionRate ?? 20
-    );
+
+    // Prefer gameplay product commission snapshot stamped at order create (orders.platform_fee_rate).
+    // Explicit 0% is valid. Non-gameplay orders keep companion/level commission rules unchanged.
+    const isGameplayOrder =
+      String(saved.order_type || "").toLowerCase() === "gameplay_product" ||
+      /更多玩法商品|商品ID：/i.test(blobOf(saved));
+    const hasProductFeeSnapshot =
+      isGameplayOrder && saved.platform_fee_rate != null && saved.platform_fee_rate !== "";
+    let platformRate;
+    let companionShareRate;
+    if (hasProductFeeSnapshot) {
+      const snap = money(saved.platform_fee_rate);
+      platformRate = Math.min(100, Math.max(0, Number.isFinite(snap) ? snap : 0));
+      companionShareRate = Math.round((100 - platformRate) * 100) / 100;
+    } else {
+      ({ platformRate, companionShareRate } = resolvePlatformCommission(
+        cp.commission_rate,
+        levelMeta?.commissionRate ?? 20
+      ));
+    }
     const companionNet = Math.round(((amount * companionShareRate) / 100) * 100) / 100;
     const platformFee = Math.round((amount - companionNet) * 100) / 100;
     const settlement = {

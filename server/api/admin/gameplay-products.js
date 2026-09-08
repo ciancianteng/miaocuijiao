@@ -172,46 +172,65 @@ async function saveProduct(body) {
   delete dbPayload.created_at;
   if (!id) dbPayload.created_at = new Date().toISOString();
 
+  // Persist commission_rate explicitly — never drop or coerce away a real 0–100 value.
+  const expectedRate = Number(product.commissionRate);
+  if (!Number.isFinite(expectedRate) || expectedRate < 0 || expectedRate > 100) {
+    throw Object.assign(new Error("商品抽成必须是 0–100 的数字。"), { status: 400 });
+  }
+  dbPayload.commission_rate = expectedRate;
+
   if (hasDb()) {
     try {
+      let rows;
       if (id) {
-        const rows = await supabaseJson(restUrl("gameplay_products", `?id=eq.${encodeURIComponent(id)}`), {
+        rows = await supabaseJson(restUrl("gameplay_products", `?id=eq.${encodeURIComponent(id)}`), {
           method: "PATCH",
           headers: serviceHeaders(),
           body: JSON.stringify(dbPayload),
         });
-        return { product: toPublicProduct(fromDbRow(rows?.[0] || dbPayload), { admin: true }), source: "supabase" };
+      } else {
+        rows = await supabaseJson(restUrl("gameplay_products"), {
+          method: "POST",
+          headers: serviceHeaders(),
+          body: JSON.stringify({ ...dbPayload, id: product.id, created_at: new Date().toISOString() }),
+        });
       }
-      const rows = await supabaseJson(restUrl("gameplay_products"), {
-        method: "POST",
-        headers: serviceHeaders(),
-        body: JSON.stringify({ ...dbPayload, id: product.id, created_at: new Date().toISOString() }),
-      });
-      return { product: toPublicProduct(fromDbRow(rows?.[0] || dbPayload), { admin: true }), source: "supabase" };
+      const saved = Array.isArray(rows) ? rows[0] : null;
+      if (!saved) {
+        throw Object.assign(
+          new Error("商品保存未写入数据库（UPDATE 未返回行）。请确认商品 ID 存在且管理员有写权限。"),
+          { status: 409 }
+        );
+      }
+      if (!Object.prototype.hasOwnProperty.call(saved, "commission_rate")) {
+        throw Object.assign(
+          new Error(
+            "数据库缺少 gameplay_products.commission_rate 列。请先在 Staging 执行 supabase/migrations/20260806_gameplay_commission_rate.sql（或 pending-prod/10_gameplay_products_commission_rate.sql）。"
+          ),
+          { status: 503, code: "MISSING_COMMISSION_RATE_COLUMN" }
+        );
+      }
+      const persistedRate = Number(saved.commission_rate);
+      if (!Number.isFinite(persistedRate) || Math.abs(persistedRate - expectedRate) > 0.0001) {
+        throw Object.assign(
+          new Error(
+            `商品抽成未正确保存：期望 ${expectedRate}，数据库返回 ${saved.commission_rate}。`
+          ),
+          { status: 500, code: "COMMISSION_RATE_MISMATCH" }
+        );
+      }
+      return { product: toPublicProduct(fromDbRow(saved), { admin: true }), source: "supabase" };
     } catch (error) {
-      if (/commission_rate|column|schema|PGRST204|42703/i.test(String(error?.message || ""))) {
-        const { commission_rate: _c, ...rest } = dbPayload;
-        try {
-          if (id) {
-            const rows = await supabaseJson(restUrl("gameplay_products", `?id=eq.${encodeURIComponent(id)}`), {
-              method: "PATCH",
-              headers: serviceHeaders(),
-              body: JSON.stringify(rest),
-            });
-            return { product: toPublicProduct(fromDbRow(rows?.[0] || rest), { admin: true }), source: "supabase" };
-          }
-          const rows = await supabaseJson(restUrl("gameplay_products"), {
-            method: "POST",
-            headers: serviceHeaders(),
-            body: JSON.stringify({ ...rest, id: product.id, created_at: new Date().toISOString() }),
-          });
-          return { product: toPublicProduct(fromDbRow(rows?.[0] || rest), { admin: true }), source: "supabase" };
-        } catch (err2) {
-          if (!isMissingTable(err2)) throw err2;
-        }
-      } else if (!isMissingTable(error)) {
-        throw error;
+      const msg = String(error?.message || "");
+      if (/commission_rate|42703|PGRST204/i.test(msg) && !/COMMISSION_RATE_MISMATCH|MISSING_COMMISSION_RATE/i.test(msg)) {
+        throw Object.assign(
+          new Error(
+            "无法保存商品抽成：数据库缺少 gameplay_products.commission_rate 列。请先执行 supabase/migrations/20260806_gameplay_commission_rate.sql，不要假装保存成功。"
+          ),
+          { status: 503, code: "MISSING_COMMISSION_RATE_COLUMN", cause: error }
+        );
       }
+      if (!isMissingTable(error)) throw error;
     }
   }
 

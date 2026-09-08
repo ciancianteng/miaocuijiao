@@ -306,7 +306,15 @@
       shortDescription: String(fd.get("shortDescription") || "").trim().slice(0, 40),
       description: String(fd.get("description") || "").trim(),
       price: Number(fd.get("price") || 0),
-      commissionRate: Number(fd.get("commissionRate") || 0),
+      commissionRate: (function () {
+        var raw = fd.get("commissionRate");
+        if (raw === null || raw === undefined || String(raw).trim() === "") return 0;
+        var n = Number(raw);
+        if (!Number.isFinite(n)) return 0;
+        if (n < 0) return 0;
+        if (n > 100) return 100;
+        return n;
+      })(),
       pricingUnit: String(fd.get("pricingUnit") || "每单").trim(),
       fixedPrice: String(fd.get("fixedPrice")) !== "false",
       status: status,
