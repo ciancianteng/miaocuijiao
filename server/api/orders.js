@@ -1200,6 +1200,36 @@ export default async function handler(req, res) {
         created_at: nowIso()
       };
       if (idempotencyKey) row.idempotency_key = idempotencyKey;
+
+      // Snapshot gameplay product commission into orders.platform_fee_rate at create time.
+      // Uses canonical gameplay_products.commission_rate (0 is valid). Never invent rates.
+      let productCommissionSnapshot = null;
+      const gameplayProductId = String(
+        order.gameplay_product_id || order.gameplayProductId || order.productId || order.product_id || ""
+      ).trim();
+      const isGameplayOrder =
+        String(row.order_type || "").toLowerCase() === "gameplay_product" || !!gameplayProductId;
+      if (isGameplayOrder && gameplayProductId) {
+        try {
+          const products = await supabaseJson(
+            restUrl(
+              "gameplay_products",
+              `?id=eq.${encodeURIComponent(gameplayProductId)}&select=id,commission_rate&limit=1`
+            ),
+            { headers: serviceHeaders() }
+          );
+          if (products?.[0] && Object.prototype.hasOwnProperty.call(products[0], "commission_rate")) {
+            const rate = Number(products[0].commission_rate);
+            if (Number.isFinite(rate)) {
+              productCommissionSnapshot = Math.min(100, Math.max(0, rate));
+            }
+          }
+        } catch (snapErr) {
+          // Column missing or product gone — do not block order create.
+          console.warn("[orders/create] gameplay commission snapshot", String(snapErr?.message || snapErr).slice(0, 160));
+        }
+      }
+
       // Optional marketplace columns (ignore if schema missing).
       const enriched = {
         ...row,
@@ -1210,6 +1240,9 @@ export default async function handler(req, res) {
         quantity,
         pricing_unit: String(order.pricingUnit || order.pricing_unit || "小时"),
       };
+      if (productCommissionSnapshot != null) {
+        enriched.platform_fee_rate = productCommissionSnapshot;
+      }
       let rows;
       try {
         rows = await supabaseJson(restUrl(TABLE), { method: "POST", headers: serviceHeaders(), body: JSON.stringify(enriched) });

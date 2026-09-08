@@ -165,6 +165,20 @@ function sanitizeCover(url) {
   return text;
 }
 
+/** Canonical product commission % (0–100). Preserves explicit 0. */
+export function normalizeCommissionRate(value, fallback = 0) {
+  if (value === undefined || value === null || value === "") {
+    const fb = Number(fallback);
+    return Number.isFinite(fb) ? Math.min(100, Math.max(0, fb)) : 0;
+  }
+  const n = Number(value);
+  if (!Number.isFinite(n)) {
+    const fb = Number(fallback);
+    return Number.isFinite(fb) ? Math.min(100, Math.max(0, fb)) : 0;
+  }
+  return Math.min(100, Math.max(0, n));
+}
+
 /** Reject preview / demo / mock / acceptance junk from public mall */
 export function isJunkGameplayProduct(item = {}) {
   const blob = [
@@ -226,9 +240,8 @@ export function normalizeProductRow(row = {}, index = 0) {
       ? Number(row.sortOrder ?? row.sort_order ?? row.sort)
       : (index + 1) * 10,
     dispatchToCs: truthy(row.dispatchToCs ?? row.dispatch_to_cs, true),
-    commissionRate: Math.min(
-      100,
-      Math.max(0, Number(row.commissionRate ?? row.commission_rate ?? row.platform_commission_rate ?? 0) || 0)
+    commissionRate: normalizeCommissionRate(
+      row.commissionRate ?? row.commission_rate ?? row.platform_commission_rate
     ),
     deletedAt: row.deletedAt || row.deleted_at || (status === "deleted" ? new Date().toISOString() : null),
     createdAt: row.createdAt || row.created_at || new Date().toISOString(),
@@ -258,11 +271,14 @@ export function toPublicProduct(row, { admin = false } = {}) {
     soldCount: item.soldCount,
     sortOrder: item.sortOrder,
     dispatchToCs: item.dispatchToCs,
-    commissionRate: item.commissionRate,
     createdAt: item.createdAt,
     updatedAt: item.updatedAt,
   };
-  if (admin) base.deletedAt = item.deletedAt;
+  // Platform commission is internal config — only expose to admin APIs.
+  if (admin) {
+    base.commissionRate = item.commissionRate;
+    base.deletedAt = item.deletedAt;
+  }
   return base;
 }
 
@@ -277,9 +293,12 @@ export function toDbRow(row) {
     cover_url: item.coverUrl,
     short_description: item.shortDescription,
     description: item.description,
+    rules: item.rules || "",
     price: item.price,
     pricing_unit: item.pricingUnit,
     fixed_price: item.fixedPrice,
+    show_server: item.showServer !== false,
+    packages: item.packages || [],
     status: item.status,
     featured: item.featured,
     sold_count: item.soldCount,

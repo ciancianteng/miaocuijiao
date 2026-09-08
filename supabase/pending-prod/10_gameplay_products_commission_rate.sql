@@ -1,5 +1,7 @@
--- Gameplay product platform commission % (idempotent).
--- Canonical field: public.gameplay_products.commission_rate (numeric 0–100).
+-- pending-prod: gameplay_products.commission_rate
+-- Staging-first. Do NOT apply to Production until Staging verified.
+-- Canonical product commission field = commission_rate (numeric 5,2, 0–100).
+
 ALTER TABLE public.gameplay_products
   ADD COLUMN IF NOT EXISTS commission_rate numeric(5,2) not null default 0;
 
@@ -13,6 +15,6 @@ EXCEPTION WHEN others THEN NULL;
 END $$;
 
 COMMENT ON COLUMN public.gameplay_products.commission_rate IS
-  'Platform commission percent for this gameplay product (0-100). Canonical field used by admin save/list and order settlement snapshot.';
+  'Platform commission percent for this gameplay product (0-100)';
 
 NOTIFY pgrst, 'reload schema';

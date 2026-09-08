@@ -20,6 +20,8 @@ create table if not exists public.gameplay_products (
   sold_count integer not null default 0,
   sort_order integer not null default 100,
   dispatch_to_cs boolean not null default true,
+  commission_rate numeric(5,2) not null default 0
+    check (commission_rate >= 0 and commission_rate <= 100),
   deleted_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -39,6 +41,20 @@ exception when others then null; end $$;
 do $$ begin
   alter table public.gameplay_products add column if not exists packages jsonb not null default '[]'::jsonb;
 exception when others then null; end $$;
+do $$ begin
+  alter table public.gameplay_products
+    add column if not exists commission_rate numeric(5,2) not null default 0;
+exception when others then null; end $$;
+do $$ begin
+  alter table public.gameplay_products
+    drop constraint if exists gameplay_products_commission_rate_check;
+  alter table public.gameplay_products
+    add constraint gameplay_products_commission_rate_check
+    check (commission_rate >= 0 and commission_rate <= 100);
+exception when others then null; end $$;
+
+comment on column public.gameplay_products.commission_rate is
+  'Platform commission percent for this gameplay product (0-100). Canonical field used by admin save/list and order settlement snapshot.';
 
 create index if not exists idx_gameplay_products_status_sort
   on public.gameplay_products(status, sort_order, updated_at desc);
