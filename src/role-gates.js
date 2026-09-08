@@ -944,11 +944,17 @@
     if (profileRole(role) !== "companion") {
       syncPortalSessions(result.session, options.remember !== false);
     }
-    var pending = sessionStorage.getItem("mcjAfterLoginRedirect") || localStorage.getItem("mcjAfterLoginRedirect");
+    var pending = "";
     try {
+      pending = sessionStorage.getItem("mcjAfterLoginRedirect") || localStorage.getItem("mcjAfterLoginRedirect") || "";
       sessionStorage.removeItem("mcjAfterLoginRedirect");
       localStorage.removeItem("mcjAfterLoginRedirect");
-    } catch (e2) {}
+    } catch (e2) {
+      try {
+        pending = localStorage.getItem("mcjAfterLoginRedirect") || pending || "";
+        localStorage.removeItem("mcjAfterLoginRedirect");
+      } catch (e3) {}
+    }
     var roleHome = result.redirect || routeFor(role);
     // Boss may resume a pending page; other roles always land on their portal.
     var redirect = profileRole(role) === "boss" && pending ? pending : roleHome;
@@ -1858,9 +1864,22 @@
       wipeBossGuestArtifacts();
       try {
         var abs = new URL(href, location.href);
-        sessionStorage.setItem("mcjAfterLoginRedirect", abs.pathname + abs.search + abs.hash);
+        var returnTo = abs.pathname + abs.search + abs.hash;
+        try {
+          sessionStorage.setItem("mcjAfterLoginRedirect", returnTo);
+        } catch (e1) {
+          try {
+            localStorage.setItem("mcjAfterLoginRedirect", returnTo);
+          } catch (e2) {}
+        }
       } catch (e) {
-        sessionStorage.setItem("mcjAfterLoginRedirect", href);
+        try {
+          sessionStorage.setItem("mcjAfterLoginRedirect", href);
+        } catch (e3) {
+          try {
+            localStorage.setItem("mcjAfterLoginRedirect", href);
+          } catch (e4) {}
+        }
       }
       location.href = "/login.html";
     },
