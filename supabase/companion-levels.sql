@@ -14,6 +14,7 @@ create table if not exists public.companion_levels (
   min_price numeric(10,2) not null default 0,
   max_price numeric(10,2) not null default 0,
   max_plus boolean not null default false,
+  base_price numeric(10,2),
   commission_rate numeric(5,2) not null default 20,
   upgrade_condition text not null default '',
   description text not null default '',
@@ -37,12 +38,12 @@ exception when duplicate_object then null; end $$;
 -- Seed defaults (safe upsert)
 insert into public.companion_levels (
   id, level, code, name, icon, color, display_color, card_background,
-  badge_border, badge_text, badge_icon, min_price, max_price, max_plus,
+  badge_border, badge_text, badge_icon, min_price, max_price, max_plus, base_price,
   commission_rate, upgrade_condition, description, sort_order, is_open, is_enabled
 ) values
-  ('lv1', 1, 'Lv1', '萌喵', '🩶', '#9CA3AF', '#9CA3AF', 'solid', '#9CA3AF', '#E5E7EB', '#D1D5DB', 20, 30, false, 20, '完成基础资料审核并开始接单。', '新加入平台，需要累积订单与评价。', 1, true, true),
-  ('lv2', 2, 'Lv2', '灵喵', '💙', '#3B82F6', '#3B82F6', 'gradient', '#60A5FA', '#DBEAFE', '#93C5FD', 30, 40, false, 18, '累计订单与基础好评达到后台设置条件。', '已有订单与基础好评，稳定接单。', 2, true, true),
-  ('lv3', 3, 'Lv3', '猎喵', '💜', '#A855F7', '#A855F7', 'gradient', '#C084FC', '#F3E8FF', '#D8B4FE', 40, 45, false, 16, '技术表现、评价和在线时长达到后台设置条件。', '技术表现优秀、评价较高。', 3, true, true),
-  ('lv4', 4, 'Lv4', '喵神', '💛', '#EAB308', '#EAB308', 'gradient', '#FACC15', '#FEF9C3', '#FDE047', 60, 75, false, 14, '热门游戏专精表现通过后台审核。', '热门游戏专精陪玩。', 4, false, true),
-  ('lv5', 5, 'Lv5', '喵皇', '👑', '#F59E0B', '#EF4444', 'glass', '#F59E0B', '#FEE2E2', '#FBBF24', 75, 100, true, 12, '招牌陪玩、人气主播或大神级资质通过后台审核。', '俱乐部招牌、人气主播或大神级陪玩。', 5, false, true)
+  ('lv1', 1, 'Lv1', '萌喵', '🩶', '#9CA3AF', '#9CA3AF', 'solid', '#9CA3AF', '#E5E7EB', '#D1D5DB', 20, 30, false, 20, 20, '完成基础资料审核并开始接单。', '新加入平台，需要累积订单与评价。', 1, true, true),
+  ('lv2', 2, 'Lv2', '灵喵', '💙', '#3B82F6', '#3B82F6', 'gradient', '#60A5FA', '#DBEAFE', '#93C5FD', 30, 40, false, 30, 18, '累计订单与基础好评达到后台设置条件。', '已有订单与基础好评，稳定接单。', 2, true, true),
+  ('lv3', 3, 'Lv3', '猎喵', '💜', '#A855F7', '#A855F7', 'gradient', '#C084FC', '#F3E8FF', '#D8B4FE', 40, 45, false, 40, 16, '技术表现、评价和在线时长达到后台设置条件。', '技术表现优秀、评价较高。', 3, true, true),
+  ('lv4', 4, 'Lv4', '喵神', '💛', '#EAB308', '#EAB308', 'gradient', '#FACC15', '#FEF9C3', '#FDE047', 60, 75, false, 60, 14, '热门游戏专精表现通过后台审核。', '热门游戏专精陪玩。', 4, false, true),
+  ('lv5', 5, 'Lv5', '喵皇', '👑', '#F59E0B', '#EF4444', 'glass', '#F59E0B', '#FEE2E2', '#FBBF24', 75, 100, true, 75, 12, '招牌陪玩、人气主播或大神级资质通过后台审核。', '俱乐部招牌、人气主播或大神级陪玩。', 5, false, true)
 on conflict (id) do nothing;

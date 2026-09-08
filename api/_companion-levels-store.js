@@ -27,6 +27,10 @@ function restUrl(query = "") {
 function isMissingTable(error) {
   return /PGRST205|Could not find the table|schema cache|does not exist/i.test(String(error?.message || error || ""));
 }
+function isMissingBasePriceColumn(error) {
+  const text = String(error?.message || error || "");
+  return /PGRST204/i.test(text) && /base_price/i.test(text);
+}
 function rowFromDb(row = {}, index = 0) {
   return normalizeLevelRow(
     {
@@ -44,6 +48,7 @@ function rowFromDb(row = {}, index = 0) {
       min: row.min_price,
       max: row.max_price,
       maxPlus: row.max_plus,
+      basePrice: row.base_price != null ? row.base_price : row.min_price,
       commissionRate: row.commission_rate,
       upgradeCondition: row.upgrade_condition,
       description: row.description,
@@ -75,6 +80,7 @@ function rowToDb(row) {
     min_price: item.min,
     max_price: item.max,
     max_plus: item.maxPlus,
+    base_price: item.basePrice,
     commission_rate: item.commissionRate,
     upgrade_condition: item.upgradeCondition,
     description: item.description,
@@ -133,6 +139,12 @@ async function writeDbLevels(rows) {
   }
   if (!response.ok) {
     const err = new Error(body?.message || body?.hint || text || `HTTP ${response.status}`);
+    if (isMissingBasePriceColumn(err) || (response.status === 400 && /base_price/i.test(text))) {
+      throw Object.assign(
+        new Error("等级表缺少 base_price 列，禁止静默保存。请先执行 pricing P1 Staging migration。"),
+        { status: 503, code: "MISSING_BASE_PRICE_COLUMN" }
+      );
+    }
     if (isMissingTable(err) || response.status === 404) return null;
     throw err;
   }
@@ -157,6 +169,7 @@ export const DEFAULT_LEVELS = [
     min: 20,
     max: 30,
     maxPlus: false,
+    basePrice: 20,
     commissionRate: 20,
     upgradeCondition: "完成基础资料审核并开始接单。\n订单数：达到后台设置门槛\n好评率：达到后台设置门槛\n认证完成：是",
     description: "新加入平台，需要累积订单与评价。",
@@ -179,6 +192,7 @@ export const DEFAULT_LEVELS = [
     min: 30,
     max: 40,
     maxPlus: false,
+    basePrice: 30,
     commissionRate: 18,
     upgradeCondition: "累计订单与基础好评达到后台设置条件。\n订单数：达标\n好评率：达标\n认证完成：是",
     description: "已有订单与基础好评，稳定接单。",
@@ -201,6 +215,7 @@ export const DEFAULT_LEVELS = [
     min: 40,
     max: 45,
     maxPlus: false,
+    basePrice: 40,
     commissionRate: 16,
     upgradeCondition: "技术表现、评价和在线时长达到后台设置条件。\n订单数：达标\n好评率：达标\n认证完成：是",
     description: "技术表现优秀、评价较高。",
@@ -223,6 +238,7 @@ export const DEFAULT_LEVELS = [
     min: 60,
     max: 75,
     maxPlus: false,
+    basePrice: 60,
     commissionRate: 14,
     upgradeCondition: "热门游戏专精表现通过后台审核。\n订单数：达标\n好评率：达标\n认证完成：是",
     description: "热门游戏专精陪玩。",
@@ -245,6 +261,7 @@ export const DEFAULT_LEVELS = [
     min: 75,
     max: 100,
     maxPlus: true,
+    basePrice: 75,
     commissionRate: 12,
     upgradeCondition: "招牌陪玩、人气主播或大神级资质通过后台审核。\n订单数：达标\n好评率：达标\n认证完成：是",
     description: "俱乐部招牌、人气主播或大神级陪玩。",
@@ -263,6 +280,11 @@ export function normalizeLevelRow(row = {}, index = 0) {
   const fallback = DEFAULT_LEVELS.find((item) => item.level === levelNo) || DEFAULT_LEVELS[0];
   const min = Math.max(0, Number(row.min ?? row.minPrice ?? row.minimum_price ?? fallback.min));
   const max = Math.max(min, Number(row.max ?? row.maxPrice ?? row.maximum_price ?? fallback.max));
+  const baseRaw = row.basePrice ?? row.base_price ?? row.base;
+  const basePrice = Math.max(
+    0,
+    Number(baseRaw != null && baseRaw !== "" ? baseRaw : fallback.basePrice ?? min)
+  );
   return {
     id: String(row.id || `lv${levelNo}`),
     level: levelNo,
@@ -280,6 +302,7 @@ export function normalizeLevelRow(row = {}, index = 0) {
     min,
     max,
     maxPlus: row.maxPlus === true || row.maxPlus === "true" || row.allowAboveMax === true || row.maximum_price_plus === true,
+    basePrice,
     commissionRate: Math.max(0, Math.min(100, Number(row.commissionRate ?? row.commission ?? fallback.commissionRate ?? 20))),
     upgradeCondition: String(row.upgradeCondition || row.upgrade_condition || fallback.upgradeCondition || ""),
     description: String(row.description || row.desc || fallback.description || ""),
@@ -479,6 +502,7 @@ export function validateLevelConfig(row = {}, { requireId = false } = {}) {
   }
   if (!(Number(item.min) >= 0)) errors.push("min_price 必须 ≥ 0");
   if (!(Number(item.max) >= Number(item.min))) errors.push("max_price 必须 ≥ min_price");
+  if (!(Number(item.basePrice) > 0)) errors.push("base_price（等级默认售价）必须 > 0");
   if (!(Number(item.commissionRate) >= 0 && Number(item.commissionRate) <= 100)) {
     errors.push("commission_rate 必须在 0–100");
   }
@@ -532,6 +556,7 @@ export function levelVisualConfig(level) {
     max: item.max,
     minPrice: item.min,
     maxPrice: item.max,
+    basePrice: item.basePrice,
     maxPlus: item.maxPlus,
     priceRangeLabel,
     priceRangeText: `${priceRangeLabel} 猫粮`,
@@ -560,6 +585,7 @@ export function toPublicLevel(level) {
     max: item.max,
     minPrice: item.min,
     maxPrice: item.max,
+    basePrice: item.basePrice,
     maxPlus: item.maxPlus,
     priceRangeLabel: visual.priceRangeLabel,
     priceRangeText: visual.priceRangeText,

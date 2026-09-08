@@ -6,6 +6,7 @@ import { resolveCompanionAvatar, resolveCompanionCover } from "../_companion-pub
 import { debitWallet, getWallet, money as walletMoney, writeAdminLog } from "../_wallet.js";
 import { scheduleRecomputeSoft } from "../_popularity.js";
 import { servicesFromGamePrices, readGamePrices } from "../_game-prices.js";
+import { resolveEffectiveServicePrice } from "../_resolve-effective-service-price.js";
 import { hasBossRole } from "../_account-roles.js";
 import { allocateOrderNo } from "../_account-codes.js";
 import {
@@ -140,27 +141,50 @@ async function loadCompanionServices(companionUserId, companionRow) {
     if (!isMissingRelation(e)) throw e;
   }
   if (rows?.length) {
-    return rows.map((r) => ({
-      id: r.id,
-      serviceId: r.service_id || "",
-      name: r.service_name || "服务",
-      price: money(r.price),
-      pricingUnit: r.pricing_unit || "小时",
-      specs: Array.isArray(r.specs) && r.specs.length ? r.specs : defaultSpecs(r.pricing_unit),
-      requiresGameId: r.requires_game_id !== false,
-      customFields: Array.isArray(r.custom_fields) ? r.custom_fields : [],
-    }));
+    return rows.map((r) => {
+      const resolved = resolveEffectiveServicePrice({
+        companion: companionRow || {},
+        companionId: companionUserId,
+        serviceId: r.service_id || "",
+        gameName: r.service_name || "",
+        serviceRowId: r.id,
+        serviceRows: rows,
+      });
+      return {
+        id: r.id,
+        serviceId: r.service_id || "",
+        name: r.service_name || "服务",
+        price: money(resolved.price || r.price),
+        pricingSource: resolved.source,
+        pricingUnit: r.pricing_unit || "小时",
+        specs: Array.isArray(r.specs) && r.specs.length ? r.specs : defaultSpecs(r.pricing_unit),
+        requiresGameId: r.requires_game_id !== false,
+        customFields: Array.isArray(r.custom_fields) ? r.custom_fields : [],
+      };
+    });
   }
   // Fallback: one service per game with its own price (boss picks game → auto price)
+  // P1: resolveEffectiveServicePrice keeps legacy equivalence when PRICE_V2 off.
   const fromGames = servicesFromGamePrices(companionRow || {});
   const unit = companionRow?.pricing_unit || "小时";
-  return fromGames.map((s) => ({
-    ...s,
-    pricingUnit: s.pricingUnit || unit,
-    specs: defaultSpecs(unit),
-    requiresGameId: !/语音|陪聊|聊天/i.test(s.name),
-    customFields: [],
-  }));
+  return fromGames.map((s) => {
+    const resolved = resolveEffectiveServicePrice({
+      companion: companionRow || {},
+      companionId: companionUserId,
+      serviceId: s.serviceId || "",
+      gameName: s.name || "",
+      serviceRows: [],
+    });
+    return {
+      ...s,
+      price: money(resolved.price || s.price),
+      pricingSource: resolved.source,
+      pricingUnit: s.pricingUnit || unit,
+      specs: defaultSpecs(unit),
+      requiresGameId: !/语音|陪聊|聊天/i.test(s.name),
+      customFields: [],
+    };
+  });
 }
 
 function defaultSpecs(unit) {

@@ -59,6 +59,9 @@ function verifyPublished(levels, expected) {
     if (Number(match.min) !== Number(item.min) || Number(match.max) !== Number(item.max)) {
       return { ok: false, message: `校验失败：${item.code} 价格区间未写入。` };
     }
+    if (Number(match.basePrice) !== Number(item.basePrice)) {
+      return { ok: false, message: `校验失败：${item.code} base_price 未写入。` };
+    }
     if (Number(match.commissionRate) !== Number(item.commissionRate)) {
       return { ok: false, message: `校验失败：${item.code} 抽成未写入。` };
     }

@@ -53,6 +53,14 @@ create table if not exists public.companion_services (
   custom_fields jsonb not null default '[]'::jsonb,
   enabled boolean not null default true,
   review_status text not null default 'approved',
+  base_price_snapshot numeric(12,2),
+  proposed_price numeric(12,2),
+  proposed_at timestamptz,
+  reviewed_at timestamptz,
+  reviewed_by uuid,
+  review_note text,
+  source text,
+  level_id_at_price text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
