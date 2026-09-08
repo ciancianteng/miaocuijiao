@@ -400,24 +400,100 @@
       });
   }
 
+  function revealCsPage() {
+    try {
+      document.documentElement.setAttribute("data-mcj-service-auth", "ready");
+      document.documentElement.style.visibility = "";
+      document.documentElement.removeAttribute("data-mcj-auth-gate");
+      document.documentElement.removeAttribute("data-mcj-auth-reason");
+      var overlay = document.getElementById("mcjAuthBootOverlay");
+      if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
+    } catch (e) {}
+  }
+
+  function showCsPendingGate() {
+    try {
+      document.documentElement.setAttribute("data-mcj-service-auth", "pending");
+      document.documentElement.setAttribute("data-mcj-auth-gate", "pending");
+      document.documentElement.setAttribute("data-mcj-auth-reason", "pending_restore");
+      // P0: never blank with visibility:hidden — show a visible verifying overlay.
+      document.documentElement.style.visibility = "";
+    } catch (e) {}
+    function paint() {
+      var body = document.body;
+      if (!body) {
+        document.addEventListener("DOMContentLoaded", paint, { once: true });
+        return;
+      }
+      var el = document.getElementById("mcjAuthBootOverlay");
+      if (!el) {
+        el = document.createElement("div");
+        el.id = "mcjAuthBootOverlay";
+        body.appendChild(el);
+      }
+      el.setAttribute("role", "status");
+      el.style.cssText =
+        "position:fixed;inset:0;z-index:2147483646;display:flex;align-items:center;justify-content:center;" +
+        "padding:24px;box-sizing:border-box;background:#0f1115;color:#f5f5f5;font-family:system-ui,-apple-system,sans-serif;" +
+        "visibility:visible!important;opacity:1!important;";
+      el.innerHTML =
+        '<div style="max-width:360px;text-align:center;line-height:1.5">' +
+        '<h1 style="margin:0 0 12px;font-size:20px;font-weight:700">正在验证登录状态</h1>' +
+        '<p style="margin:0;font-size:15px;opacity:.9">请稍候，正在确认客服会话…</p></div>';
+    }
+    paint();
+  }
+
   function redirectToLogin(returnTo) {
     try {
       if (returnTo) sessionStorage.setItem("mcjAfterLoginRedirect", returnTo);
-    } catch (e) {}
-    location.replace("/customer-service/login/");
+    } catch (e) {
+      try {
+        if (returnTo) localStorage.setItem("mcjAfterLoginRedirect", returnTo);
+      } catch (e2) {}
+    }
+    var href = "/customer-service/login/";
+    try {
+      document.documentElement.setAttribute("data-mcj-auth-gate", "1");
+      document.documentElement.style.visibility = "";
+    } catch (eGate) {}
+    function paint() {
+      var body = document.body;
+      if (!body) {
+        document.addEventListener("DOMContentLoaded", paint, { once: true });
+        return;
+      }
+      var el = document.getElementById("mcjAuthBootOverlay");
+      if (!el) {
+        el = document.createElement("div");
+        el.id = "mcjAuthBootOverlay";
+        body.appendChild(el);
+      }
+      el.innerHTML =
+        '<div style="max-width:360px;text-align:center;line-height:1.5;color:#f5f5f5;font-family:system-ui,-apple-system,sans-serif">' +
+        '<h1 style="margin:0 0 12px;font-size:20px">需要登录后继续</h1>' +
+        '<p style="margin:0;font-size:15px;opacity:.9">未登录或登录已失效，正在前往登录页…</p>' +
+        '<p style="margin:20px 0 0"><a href="' +
+        href +
+        '" style="color:#7dd3fc;font-size:16px;font-weight:600">点击前往登录</a></p></div>';
+      el.style.cssText =
+        "position:fixed;inset:0;z-index:2147483646;display:flex;align-items:center;justify-content:center;" +
+        "padding:24px;box-sizing:border-box;background:#0f1115;visibility:visible!important";
+    }
+    paint();
+    try {
+      location.replace(href);
+    } catch (eNav) {
+      try {
+        location.href = href;
+      } catch (eHref) {}
+    }
   }
 
   /**
    * Gate CS pages: wait for session restore/refresh before deciding redirect.
    * Never bounce to login solely because init is still in flight.
    */
-  function revealCsPage() {
-    try {
-      document.documentElement.setAttribute("data-mcj-service-auth", "ready");
-      document.documentElement.style.visibility = "";
-    } catch (e) {}
-  }
-
   function guardCustomerServicePages() {
     if (guardPromise) return guardPromise;
     var path = String(location.pathname || "").replace(/\\/g, "/");
@@ -439,11 +515,8 @@
         });
       return guardPromise;
     }
-    try {
-      document.documentElement.setAttribute("data-mcj-service-auth", "pending");
-      document.documentElement.style.visibility = "hidden";
-    } catch (e) {}
-    // Never leave the page permanently black if refresh hangs.
+    showCsPendingGate();
+    // Never leave the page permanently blank if refresh hangs.
     var safety = setTimeout(function () {
       if (!hasSession()) {
         revealCsPage();
