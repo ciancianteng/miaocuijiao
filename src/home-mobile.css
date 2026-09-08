@@ -139,6 +139,38 @@
     min-width: 72px !important;
     max-width: 72px !important;
   }
+
+  /* Homepage recommendation tracks: one readable column (not hall). */
+  #hotCompanionTrack,
+  #recentCompanionTrack,
+  #gameCompanionTrack,
+  #reviewCompanionTrack {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 14px !important;
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  #hotCompanionTrack .companion-card,
+  #recentCompanionTrack .companion-card,
+  #gameCompanionTrack .companion-card,
+  #reviewCompanionTrack .companion-card {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    flex: none !important;
+  }
+
+  /* Prefer full-height tags on mobile — do not clip second row. */
+  #hotCompanionTrack .hot-tags,
+  #recentCompanionTrack .hot-tags,
+  #gameCompanionTrack .hot-tags,
+  #reviewCompanionTrack .hot-tags,
+  .companion-track .hot-tags {
+    max-height: none !important;
+    overflow: visible !important;
+  }
 }
 
 @media (max-width: 360px) {

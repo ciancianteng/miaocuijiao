@@ -3488,7 +3488,7 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
   <script type="module" src="src/boss-forced-ack.js?v=20260805p0home1" defer></script>
   <link rel="stylesheet" href="src/boss-header.css?v=20260805p0home1">
   <link rel="stylesheet" href="/src/mcj-safe-area.css?v=20260802mobileP0c">
-  <link rel="stylesheet" href="src/home-mobile.css?v=20260804annMarquee3">
+  <link rel="stylesheet" href="src/home-mobile.css?v=20260908rec1col1">
 </head>
 <body>
   <div class="ambient-layer" aria-hidden="true"></div>
@@ -4641,6 +4641,42 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
   margin-top:auto!important;
   flex:0 0 auto!important;
   height:38px!important;
+}
+</style>
+<style id="mcj-home-rec-mobile-1col-v1">
+/* Homepage recommendation tracks — mobile one-column (hall unchanged).
+   Loaded after companion-card freeze so this wins on small viewports. */
+@media (max-width: 560px) {
+  #hotCompanionTrack,
+  #recentCompanionTrack,
+  #gameCompanionTrack,
+  #reviewCompanionTrack {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 14px !important;
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  #hotCompanionTrack .companion-card,
+  #recentCompanionTrack .companion-card,
+  #gameCompanionTrack .companion-card,
+  #reviewCompanionTrack .companion-card {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    flex: none !important;
+  }
+
+  /* Allow hot tags to wrap fully — no 40px clip on mobile. */
+  #hotCompanionTrack .hot-tags,
+  #recentCompanionTrack .hot-tags,
+  #gameCompanionTrack .hot-tags,
+  #reviewCompanionTrack .hot-tags,
+  .companion-track .hot-tags {
+    max-height: none !important;
+    overflow: visible !important;
+  }
 }
 </style>
 </body>
