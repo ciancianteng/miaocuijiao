@@ -91,6 +91,7 @@
           "</div>" +
           '<div class="level-preview-meta">' +
             '<div class="level-preview-meta-card"><span>卡片背景</span><strong>' + esc(cardBgLabel(level.cardBackground)) + "</strong></div>" +
+            '<div class="level-preview-meta-card"><span>基础售价</span><strong>' + esc(level.basePrice != null ? level.basePrice : level.min) + "</strong></div>" +
             '<div class="level-preview-meta-card"><span>平台抽成</span><strong>' + esc(level.commissionRate) + "%</strong></div>" +
             '<div class="level-preview-meta-card"><span>状态</span><strong>' + (level.enabled ? "启用" : "停用") + " · " + (level.open ? "开放申请" : "关闭申请") + "</strong></div>" +
             '<div class="level-preview-meta-card"><span>边框色</span><strong>' + esc(border) + "</strong></div>" +
@@ -148,9 +149,10 @@
           '<label><span>图标颜色</span><input name="badgeIcon" type="color" value="' + esc(level.badgeIcon || level.color || "#9CA3AF") + '"></label>' +
           '<label><span>卡片背景</span><select name="cardBackground" data-admin-control="select">' + bgOptions + "</select></label>"
         ) +
-        moduleBlock("③ 接单规则", "等级限价区间 · 平台抽成（新订单生效；卡片「实际售价」来自陪玩个人单价）",
-          '<label><span>等级最低限价（猫粮）</span><input name="min" type="number" min="0" step="1" value="' + esc(level.min) + '" required></label>' +
-          '<label><span>等级最高限价（猫粮）</span><input name="max" type="number" min="0" step="1" value="' + esc(level.max) + '" required></label>' +
+        moduleBlock("③ 接单规则", "基础售价 SoT · 自定义价区间限制 · 平台抽成（实际卖价来自服务行 / base_price，非 min/max）",
+          '<label><span>等级基础售价 base_price（猫粮）</span><input name="basePrice" type="number" min="0" step="1" value="' + esc(level.basePrice != null ? level.basePrice : level.min) + '" required><span class="muted" style="font-size:11px;font-weight:600">默认售价 SoT；审核通过后种子服务价</span></label>' +
+          '<label><span>自定义最低限价 min（猫粮）</span><input name="min" type="number" min="0" step="1" value="' + esc(level.min) + '" required></label>' +
+          '<label><span>自定义最高限价 max（猫粮）</span><input name="max" type="number" min="0" step="1" value="' + esc(level.max) + '" required></label>' +
           '<label><span>允许超过最高限价</span><select name="maxPlus" data-admin-control="switch"><option value="false"' + (!level.maxPlus ? " selected" : "") + '>否</option><option value="true"' + (level.maxPlus ? " selected" : "") + '>是</option></select></label>' +
           '<label><span>平台抽成 %</span><input name="commissionRate" type="number" min="0" max="100" step="0.1" value="' + esc(level.commissionRate) + '"><span class="muted" style="font-size:11px;font-weight:600">发布后同步该等级陪玩；历史已结算订单不变</span></label>'
         ) +
@@ -302,6 +304,7 @@
       badgeIcon: String(fd.get("badgeIcon") || "#9CA3AF"),
       min: Number(fd.get("min") || 0),
       max: Number(fd.get("max") || 0),
+      basePrice: Number(fd.get("basePrice") != null && String(fd.get("basePrice")).trim() !== "" ? fd.get("basePrice") : fd.get("min") || 0),
       maxPlus: String(fd.get("maxPlus")) === "true",
       commissionRate: Number(fd.get("commissionRate") || 0),
       sort: Number(fd.get("sort") || current.sort || 1),
@@ -498,6 +501,7 @@
       badgeIcon: "#D1D5DB",
       min: 20,
       max: 30,
+      basePrice: 20,
       commissionRate: 20,
       sort: state.levels.length + 1,
       open: true,

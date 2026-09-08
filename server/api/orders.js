@@ -4,6 +4,7 @@ import { assertBossProfile, identityView } from "./_boss-identity.js";
 import { resolvePlatformCommission } from "./_commission-rates.js";
 import { readLocalLevels } from "./_companion-levels-store.js";
 import { priceForGame } from "./_game-prices.js";
+import { resolveEffectiveServicePrice } from "./_resolve-effective-service-price.js";
 import {
   ORDER_STATUS_LABELS,
   allowPreviewTestPay,
@@ -1126,7 +1127,37 @@ export default async function handler(req, res) {
         const cp = orderable.cp;
         const serviceId = String(order.serviceId || order.service_id || "").trim();
         const gameHint = String(order.gameName || order.game_name || order.mainGame || order.main_game || game || "").trim();
-        unitPrice = money(priceForGame(cp, gameHint, serviceId));
+        // P1: unified resolver (approved service → level base → legacy). Pending proposed_price ignored.
+        let services = [];
+        try {
+          services = await companionDb(
+            "companion_services",
+            `?companion_id=eq.${encodeURIComponent(cp.user_id || companionId)}&enabled=eq.true&order=updated_at.desc`
+          );
+        } catch {
+          services = [];
+        }
+        let level = null;
+        try {
+          const levels = await readLocalLevels();
+          const levelKey = String(cp.level_id || cp.level_name || "").trim();
+          level =
+            (levels || []).find((l) => String(l.id) === levelKey || String(l.code) === levelKey || String(l.name) === levelKey) ||
+            null;
+        } catch {
+          level = null;
+        }
+        const resolved = resolveEffectiveServicePrice({
+          companion: cp,
+          companionId,
+          serviceId,
+          gameName: gameHint,
+          level,
+          services: Array.isArray(services) ? services : [],
+          allowLegacy: true,
+        });
+        unitPrice = money(resolved.price);
+        if (!(unitPrice > 0)) unitPrice = money(priceForGame(cp, gameHint, serviceId));
         if (!(unitPrice > 0)) unitPrice = money(cp.price);
         if (!(unitPrice > 0)) {
           // Prefer first positive game_prices entry when service/game labels don't match keys.

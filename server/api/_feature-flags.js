@@ -1,5 +1,5 @@
 /**
- * Go-live feature flags for settlement / points.
+ * Go-live feature flags for settlement / points / pricing.
  * Production fail-closed: unset → disabled when isProductionRuntime().
  * Non-production: unset → enabled (preserve local/staging behavior).
  */
@@ -57,4 +57,22 @@ export function isBossInviteLinksEnabled(env = process.env) {
 export function bossInviteLinksDisabledReason(env = process.env) {
   if (isBossInviteLinksEnabled(env)) return null;
   return "boss_invite_links_flag_disabled";
+}
+
+/**
+ * Companion pricing v2 read cutover (P4).
+ * Env: PRICE_V2 (alias PRICING_V2).
+ * Production fail-closed when unset (keep legacy reads until Staging PASS + explicit enable).
+ * Non-production defaults off as well for P1 safety — enable explicitly on Staging for cutover tests.
+ * P1: resolver exists with legacy fallback regardless; this flag is for P4 forcing resolver-only paths.
+ */
+export function isPricingV2Enabled(env = process.env) {
+  const parsed = parseBoolFlag(env.PRICE_V2 ?? env.PRICING_V2);
+  if (parsed != null) return parsed;
+  return false;
+}
+
+export function pricingV2DisabledReason(env = process.env) {
+  if (isPricingV2Enabled(env)) return null;
+  return "pricing_v2_flag_disabled";
 }
