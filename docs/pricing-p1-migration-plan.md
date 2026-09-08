@@ -1,8 +1,9 @@
 # P1 实施前计划：base_price + companion_services + resolveEffectiveServicePrice
 
 > **PR 目标：** `feat(pricing-p1): base_price + companion_services fields + resolveEffectiveServicePrice`  
-> **基线：** PR #200 产品终稿 R1–R9  
-> **硬约束：** **不执行 Production migration**；Staging 先行；不改 PR #198
+> **基线：** PR #200 产品终稿 R1–R9 + `docs/pricing-design-review-gate.md`  
+> **硬约束：** **不执行 Production migration**；Staging 先行；不改 PR #198  
+> **门禁：** 设计审核文档确认签字前 **不开始 P1 编码**
 
 ---
 
