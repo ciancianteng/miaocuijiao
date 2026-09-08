@@ -189,17 +189,67 @@ async function main() {
   // Do NOT use process.env.DATABASE_URL — often Production in this agent env.
   const oneshotPass = String(process.env.STAGING_DB_PASSWORD || "").trim();
   const oneshotPat = String(process.env.STAGING_SUPABASE_ACCESS_TOKEN || process.env.SUPABASE_ACCESS_TOKEN || "").trim();
-  const dbUrl = oneshotDb || (oneshotPass ? buildStagingPoolerUrl(oneshotPass) : "");
 
-  if (dbUrl) {
-    const ref = projectRefFromDatabaseUrl(dbUrl);
+  /**
+   * Cloud agents often lack IPv6 egress to Direct db.*.supabase.co (ENETUNREACH).
+   * Prefer Session pooler (IPv4). That is an egress shape issue — not a missing Staging secret.
+   */
+  function resolveStagingDbUrl() {
+    const candidates = [];
+    if (oneshotPass) candidates.push({ via: "STAGING_DB_PASSWORD+pooler", url: buildStagingPoolerUrl(oneshotPass) });
+    if (oneshotDb) {
+      try {
+        const u = new URL(oneshotDb);
+        const host = (u.hostname || "").toLowerCase();
+        const isDirect = /^db\./i.test(host);
+        const isPooler = /pooler\.supabase\.com$/i.test(host);
+        if (isPooler) {
+          candidates.push({ via: "STAGING_DATABASE_URL(pooler)", url: oneshotDb });
+        } else if (isDirect) {
+          const fromUrl = decodeURIComponent(u.password || "");
+          if (oneshotPass) {
+            candidates.push({
+              via: "STAGING_DATABASE_URL(direct)→pooler+STAGING_DB_PASSWORD",
+              url: buildStagingPoolerUrl(oneshotPass),
+            });
+          }
+          if (fromUrl && fromUrl !== oneshotPass) {
+            candidates.push({
+              via: "STAGING_DATABASE_URL(direct)→pooler+urlPassword",
+              url: buildStagingPoolerUrl(fromUrl),
+            });
+          }
+          // Keep Direct last (may ENETUNREACH on IPv6-only hosts).
+          candidates.push({ via: "STAGING_DATABASE_URL(direct)", url: oneshotDb });
+        } else {
+          candidates.push({ via: "STAGING_DATABASE_URL", url: oneshotDb });
+        }
+      } catch {
+        candidates.push({ via: "STAGING_DATABASE_URL", url: oneshotDb });
+      }
+    }
+    // Dedupe by URL string
+    const seen = new Set();
+    return candidates.filter((c) => {
+      if (!c.url || seen.has(c.url)) return false;
+      seen.add(c.url);
+      return true;
+    });
+  }
+
+  const dbCandidates = resolveStagingDbUrl();
+  let workingDbUrl = "";
+
+  for (const cand of dbCandidates) {
+    const ref = projectRefFromDatabaseUrl(cand.url);
     if (ref === PRODUCTION_PROJECT_REF) throw new Error("Refusing Production DATABASE_URL");
-    assertStagingOnly({ databaseUrl: dbUrl, supabaseUrl: STAGING_URL });
+    assertStagingOnly({ databaseUrl: cand.url, supabaseUrl: STAGING_URL });
   }
 
   console.log(`[verify] stagingRef=${STAGING_PROJECT_REF}`);
   console.log(`[verify] supabase=${STAGING_URL}`);
   console.log(`[verify] productionRef=${PRODUCTION_PROJECT_REF} (read-only / not touched)`);
+  console.log(`[verify] dbCandidates=${dbCandidates.map((c) => c.via).join(" | ") || "(none)"}`);
 
   // 0) Offline contract: missing column must not fake-success
   await verifyMissingColumnAdminSaveFails();
@@ -217,13 +267,39 @@ async function main() {
       "supabase/pending-prod/10_gameplay_products_commission_rate.sql",
     ]);
     console.log(`[apply] sql=${sqlPath}`);
-    if (dbUrl) {
-      console.log("[apply]", await applySqlViaPostgres(dbUrl, sql));
-    } else if (oneshotPat) {
+    let applied = false;
+    let lastErr = null;
+    for (const cand of dbCandidates) {
+      try {
+        console.log(`[apply] trying via=${cand.via}`);
+        console.log("[apply]", await applySqlViaPostgres(cand.url, sql));
+        workingDbUrl = cand.url;
+        applied = true;
+        break;
+      } catch (err) {
+        lastErr = err;
+        const msg = String(err?.message || err || "");
+        const code = err?.code || "";
+        // IPv6 Direct unreachable → try next (pooler). Wrong password → try next candidate.
+        if (/ENETUNREACH|EHOSTUNREACH|ETIMEDOUT|28P01|password authentication failed/i.test(msg + code)) {
+          console.warn(`[apply] via=${cand.via} failed: ${code || ""} ${msg.slice(0, 160)}`);
+          continue;
+        }
+        throw err;
+      }
+    }
+    if (!applied && oneshotPat) {
+      console.log("[apply] trying Management API");
       console.log("[apply]", await applySqlViaManagementApi(oneshotPat, sql));
-    } else {
+      applied = true;
+    }
+    if (!applied) {
+      const detail = lastErr ? String(lastErr.message || lastErr) : "no database candidates";
       throw new Error(
-        "commission_rate missing. Need STAGING_DATABASE_URL or STAGING_DB_PASSWORD to ADD COLUMN on Staging only."
+        `commission_rate missing; Staging DDL blocked. ${detail}. ` +
+          `Direct db.* ENETUNREACH is IPv6 egress (use Session pooler). ` +
+          `28P01 means STAGING_DB_PASSWORD / URL password do not match Staging. ` +
+          `Or set SUPABASE_ACCESS_TOKEN for Management API. Never use Production.`
       );
     }
     probe = await probeColumn();
@@ -231,12 +307,14 @@ async function main() {
     console.log("[PASS] Staging migration applied; commission_rate selectable");
   } else {
     console.log("[PASS] gameplay_products.commission_rate already exists");
+    // Prefer pooler candidates for optional metadata (skip Direct IPv6).
+    workingDbUrl = dbCandidates.find((c) => /pooler/i.test(c.via))?.url || dbCandidates[0]?.url || "";
   }
 
-  // Best-effort: confirm numeric via information_schema if DB URL present
-  if (dbUrl) {
+  // Best-effort: confirm numeric via information_schema if a working DB URL is available
+  if (workingDbUrl) {
     const { default: pg } = await import("pg");
-    const client = new pg.Client({ connectionString: dbUrl, ssl: { rejectUnauthorized: false } });
+    const client = new pg.Client({ connectionString: workingDbUrl, ssl: { rejectUnauthorized: false } });
     await client.connect();
     try {
       const meta = await client.query(`
