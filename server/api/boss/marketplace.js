@@ -6,6 +6,8 @@ import { resolveCompanionAvatar, resolveCompanionCover } from "../_companion-pub
 import { debitWallet, getWallet, money as walletMoney, writeAdminLog } from "../_wallet.js";
 import { scheduleRecomputeSoft } from "../_popularity.js";
 import { servicesFromGamePrices, readGamePrices } from "../_game-prices.js";
+import { resolveEffectiveServicePrice } from "../_resolve-effective-service-price.js";
+import { readLocalLevels } from "../_companion-levels-store.js";
 import { hasBossRole } from "../_account-roles.js";
 import { allocateOrderNo } from "../_account-codes.js";
 import {
@@ -349,8 +351,35 @@ export default async function handler(req, res) {
       if (!service) return json(res, 400, { ok: false, message: "没有可下单服务" });
 
       const quantity = Math.max(0.5, money(body.quantity || 1));
-      // Server-authoritative unit price from companion service listing — never trust client unitPrice.
-      const unitPrice = money(service.price);
+      // P1: server-authoritative via resolveEffectiveServicePrice (pending proposed ignored).
+      let level = null;
+      try {
+        const levels = await readLocalLevels();
+        const levelKey = String(companion.level_id || companion.level_name || "").trim();
+        level =
+          (levels || []).find((l) => String(l.id) === levelKey || String(l.code) === levelKey) || null;
+      } catch {
+        level = null;
+      }
+      let rawServices = [];
+      try {
+        rawServices = await companionDb(
+          "companion_services",
+          `?companion_id=eq.${encodeURIComponent(companionId)}&enabled=eq.true&order=updated_at.desc`
+        );
+      } catch {
+        rawServices = [];
+      }
+      const resolved = resolveEffectiveServicePrice({
+        companion,
+        companionId,
+        serviceId: String(service.serviceId || service.id || ""),
+        gameName: String(service.name || ""),
+        level,
+        services: Array.isArray(rawServices) ? rawServices : [],
+        allowLegacy: true,
+      });
+      const unitPrice = money(resolved.price > 0 ? resolved.price : service.price);
       if (unitPrice <= 0) return json(res, 400, { ok: false, message: "单价无效" });
       const clientUnit = money(body.unitPrice != null ? body.unitPrice : body.unit_price);
       if (clientUnit > 0 && Math.abs(clientUnit - unitPrice) > 0.05) {

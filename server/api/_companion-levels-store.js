@@ -44,6 +44,7 @@ function rowFromDb(row = {}, index = 0) {
       min: row.min_price,
       max: row.max_price,
       maxPlus: row.max_plus,
+      basePrice: row.base_price != null ? row.base_price : row.min_price,
       commissionRate: row.commission_rate,
       upgradeCondition: row.upgrade_condition,
       description: row.description,
@@ -75,6 +76,7 @@ function rowToDb(row) {
     min_price: item.min,
     max_price: item.max,
     max_plus: item.maxPlus,
+    base_price: item.basePrice,
     commission_rate: item.commissionRate,
     upgrade_condition: item.upgradeCondition,
     description: item.description,
@@ -156,6 +158,7 @@ export const DEFAULT_LEVELS = [
     badgeIcon: "#D1D5DB",
     min: 20,
     max: 30,
+    basePrice: 20,
     maxPlus: false,
     commissionRate: 20,
     upgradeCondition: "完成基础资料审核并开始接单。\n订单数：达到后台设置门槛\n好评率：达到后台设置门槛\n认证完成：是",
@@ -178,6 +181,7 @@ export const DEFAULT_LEVELS = [
     badgeIcon: "#93C5FD",
     min: 30,
     max: 40,
+    basePrice: 30,
     maxPlus: false,
     commissionRate: 18,
     upgradeCondition: "累计订单与基础好评达到后台设置条件。\n订单数：达标\n好评率：达标\n认证完成：是",
@@ -200,6 +204,7 @@ export const DEFAULT_LEVELS = [
     badgeIcon: "#D8B4FE",
     min: 40,
     max: 45,
+    basePrice: 40,
     maxPlus: false,
     commissionRate: 16,
     upgradeCondition: "技术表现、评价和在线时长达到后台设置条件。\n订单数：达标\n好评率：达标\n认证完成：是",
@@ -222,6 +227,7 @@ export const DEFAULT_LEVELS = [
     badgeIcon: "#FDE047",
     min: 60,
     max: 75,
+    basePrice: 60,
     maxPlus: false,
     commissionRate: 14,
     upgradeCondition: "热门游戏专精表现通过后台审核。\n订单数：达标\n好评率：达标\n认证完成：是",
@@ -244,6 +250,7 @@ export const DEFAULT_LEVELS = [
     badgeIcon: "#FBBF24",
     min: 75,
     max: 100,
+    basePrice: 75,
     maxPlus: true,
     commissionRate: 12,
     upgradeCondition: "招牌陪玩、人气主播或大神级资质通过后台审核。\n订单数：达标\n好评率：达标\n认证完成：是",
@@ -263,6 +270,11 @@ export function normalizeLevelRow(row = {}, index = 0) {
   const fallback = DEFAULT_LEVELS.find((item) => item.level === levelNo) || DEFAULT_LEVELS[0];
   const min = Math.max(0, Number(row.min ?? row.minPrice ?? row.minimum_price ?? fallback.min));
   const max = Math.max(min, Number(row.max ?? row.maxPrice ?? row.maximum_price ?? fallback.max));
+  const rawBase = row.basePrice ?? row.base_price ?? row.base;
+  const basePrice = Math.max(
+    0,
+    Number(rawBase != null && String(rawBase).trim() !== "" ? rawBase : fallback.basePrice ?? min)
+  );
   return {
     id: String(row.id || `lv${levelNo}`),
     level: levelNo,
@@ -279,6 +291,7 @@ export function normalizeLevelRow(row = {}, index = 0) {
     badgeIcon: String(row.badgeIcon || row.badge_icon || fallback.badgeIcon || fallback.color),
     min,
     max,
+    basePrice,
     maxPlus: row.maxPlus === true || row.maxPlus === "true" || row.allowAboveMax === true || row.maximum_price_plus === true,
     commissionRate: Math.max(0, Math.min(100, Number(row.commissionRate ?? row.commission ?? fallback.commissionRate ?? 20))),
     upgradeCondition: String(row.upgradeCondition || row.upgrade_condition || fallback.upgradeCondition || ""),
@@ -479,6 +492,7 @@ export function validateLevelConfig(row = {}, { requireId = false } = {}) {
   }
   if (!(Number(item.min) >= 0)) errors.push("min_price 必须 ≥ 0");
   if (!(Number(item.max) >= Number(item.min))) errors.push("max_price 必须 ≥ min_price");
+  if (!(Number(item.basePrice) >= 0)) errors.push("base_price 必须 ≥ 0（等级默认售价 SoT）");
   if (!(Number(item.commissionRate) >= 0 && Number(item.commissionRate) <= 100)) {
     errors.push("commission_rate 必须在 0–100");
   }
@@ -532,6 +546,7 @@ export function levelVisualConfig(level) {
     max: item.max,
     minPrice: item.min,
     maxPrice: item.max,
+    basePrice: item.basePrice,
     maxPlus: item.maxPlus,
     priceRangeLabel,
     priceRangeText: `${priceRangeLabel} 猫粮`,
@@ -560,6 +575,7 @@ export function toPublicLevel(level) {
     max: item.max,
     minPrice: item.min,
     maxPrice: item.max,
+    basePrice: item.basePrice,
     maxPlus: item.maxPlus,
     priceRangeLabel: visual.priceRangeLabel,
     priceRangeText: visual.priceRangeText,

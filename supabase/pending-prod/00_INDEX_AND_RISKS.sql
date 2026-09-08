@@ -36,6 +36,8 @@
 -- | 7 | points_settings | 积分规则配置（猫粮×倍率等） | P0 | 05_... |
 -- | 8 | orders.platform_fee (+结算快照列) | 订单平台费快照；Boss 佣金计算输入 | P0 | 02_... |
 -- | 9 | boss_invite_links (+ redemptions) | Boss 开放邀请链接 → 注册后绑定直属 | P1 | 09_... |
+-- | 10 | gameplay_products.commission_rate | 玩法商品抽成（见 PR #198；独立） | P0 | 10_... |
+-- | 11 | companion_levels.base_price + companion_services pricing cols | 陪玩定价 P1（见 docs/pricing-p1-migration-plan.md） | P0 | 11_... |
 --
 -- 共性风险：
 --   R1 缺表会导致对应 API 降级/报缺 relation，功能不可用
