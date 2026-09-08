@@ -227,6 +227,54 @@ create table if not exists public.order_reminder_jobs (
 | E13 | 结算入账 | `companion_income` | ⚠ 财务通知 | ❌ | ❌ | — | — | → |
 | E14 | 接单超时预警 | `_order-confirm-timeout` **已禁用** | 代码存在但 no-op | — | — | — | — | P3 再开 |
 
+### 3.1 Event catalog — required fields per emission（D0 checklist）
+
+**Rule:** every order-notification emission **must** specify all five fields. Missing any field = design incomplete; implementers must not invent ad-hoc keys/hrefs.
+
+**Shared payload schema (minimum):**
+
+```ts
+type OrderNotifyPayload = {
+  orderId: string;
+  event: string;                 // stable event code (see table)
+  version: number;               // notice_key version segment; default 1
+  recipientRole: "boss" | "companion";
+  recipientId: string;           // profiles.id
+  title: string;
+  body: string;
+  href: string;                  // in-app deep link
+  status?: string;               // orders.status snapshot after mutation
+  scheduledAt?: string | null;
+  companionId?: string | null;
+  customerId?: string | null;
+  meta?: Record<string, unknown>; // non-PII extras only
+};
+```
+
+`notice_key` always: `order:{orderId}:{recipientId}:{event}:{version}`.
+
+| Event code | Product (#) | Recipient role(s) | notice_key event segment | href destination | Payload notes |
+|------------|-------------|-------------------|--------------------------|------------------|---------------|
+| `order_created` | E1 | boss | `order_created` | `/orders.html?id={orderId}` | optional; unpaid |
+| `payment_success` | E2 | boss, companion* | `payment_success` | boss: `/orders.html?id={orderId}` · companion: `/companion/orders/` or order detail | *companion only if already assigned |
+| `assigned` | E2/E3 | companion, boss | `assigned` | companion: order-hall/orders detail · boss: `/orders.html?id={orderId}` | include assignee id in meta |
+| `unassigned` | E3 | companion (prev), boss | `unassigned` | same as assigned | version bump if re-emit after reassign |
+| `accepted` | E4 | boss, companion | `accepted` | boss `/orders.html?id={orderId}` · companion orders detail | status=`in_progress` |
+| `rejected` | E5 | boss, companion | `rejected` | boss `/orders.html?id={orderId}` · companion orders | optional reason in meta (non-PII) |
+| `started` | E6 | boss, companion | `started` | same | |
+| `prestart_reminder` | E7 | boss, companion | `prestart_reminder` | same | requires cron claim first |
+| `complete_requested` | E8 | boss, companion | `complete_requested` | boss confirm UI · companion orders | |
+| `completed` | E9/E10 | boss, companion | `completed` | orders detail | distinguish auto vs confirm in meta.source |
+| `cancelled` | E11 | boss | `cancelled` | `/orders.html?id={orderId}` | unpaid cancel |
+| `refund_requested` | E12 | boss, companion† | `refund_requested` | refund/order detail | †if companion affected |
+| `refund_completed` | E12 | boss, companion† | `refund_completed` | wallet/orders | |
+| `settlement_posted` | E13 | companion | `settlement_posted` | companion wallet | amount in meta as number only |
+| `review_reminder` | P3 | boss | `review_reminder` | review/order href | after complete |
+
+Rows with multiple recipient roles emit **one outbox/inbox row per recipient** (distinct `notice_key`).
+
+---
+
 ### Event flow（目标）
 
 ```
@@ -349,8 +397,9 @@ SW:    push event → showNotification → click → href deep link
 ### 7.3 原则
 
 - Push **不是** SoT；inbox 行才是。Push 失败不阻断订单。
+- **Single path only:** future Push (P4) **must** consume the same `emitOrderNotificationEvent` → `notification_outbox` model and fan-out as a channel writer. **Forbidden:** parallel “push-only” emitters, separate push event buses, or bypassing outbox/inbox SoT.
 - 尊重 `notification_preferences`（默认：订单类 on，营销 off）。
-- 不在 Push payload 放 PII  transient；仅 `title/body/orderId/href`。
+- 不在 Push payload 放 PII 敏感字段；仅 `title/body/orderId/href`（与 §3.1 payload 对齐）。
 
 ---
 
@@ -384,12 +433,24 @@ Feature flag 建议：`ORDER_NOTIFY_V2`（emit 全量）、`ORDER_NOTIFY_EMAIL_R
 | **N8** | **P4** | Web Push register + writer | 中 | N2、preferences |
 | **N9** | — | 清理派生 notices / e2e / 文档收尾 | 低 | N4–N6 |
 
-**Gate：** D0 设计文档更新并 **人工批准** 之前，**禁止** 开 N1+ 实现 PR。  
+**Gate：** D0 checklist 通过并批准后 → **仅** 进入 N1 **implementation planning**（§14）；开 N1 代码/DDL PR 仍需单独确认。  
 **禁止混入：** 定价 P2、OTP、#198 gameplay、Production migration 执行、#205 范围扩张。
 
 ---
 
-## 10. 验收标准（实现 PR 用）
+## 10. D0 review checklist（本轮确认）
+
+| # | Requirement | Status |
+|---|-------------|--------|
+| 1 | Every notification event has **event name**, **recipient role**, **notice_key**, **href destination**, **payload schema** | **PASS** — §3.1 catalog + shared `OrderNotifyPayload` |
+| 2 | Emission **never** before transaction success | **PASS** — §1.1 + event flow “commit FIRST” |
+| 3 | Future push consumes the **same** event/outbox model — no parallel path | **PASS** — §7.3 single-path rule; Push = outbox channel (P4) |
+
+**D0 decision: APPROVED** (2026-09-08). Next: **N1 implementation planning only** (§14). No N1 code/DDL PR in this change set.
+
+---
+
+## 11. 验收标准（实现 PR 用）
 
 1. Staging：`to_regclass('public.companion_notifications')` 非空且含 `notice_key` 唯一约束。  
 2. 指派三路径 e2e 仍 PASS（回归）。  
@@ -418,11 +479,13 @@ Feature flag 建议：`ORDER_NOTIFY_V2`（emit 全量）、`ORDER_NOTIFY_EMAIL_R
 
 ---
 
-## 12. 本 PR 交付清单
+## 13. 本 PR 交付清单
 
 - [x] Design-only 文档（本文）  
 - [x] Architecture principles 冻结（inbox SoT / fan-out / mutation-before-emit / no rollback）  
 - [x] Unified `notice_key` + idempotency + email ledger isolation + prestart claim + P0–P4 priority  
+- [x] Event catalog with event / role / notice_key / href / payload schema (§3.1)  
+- [x] Push single-path rule (§7.3)  
 - [x] Affected tables  
 - [x] Event flow + matrix  
 - [x] API changes  
@@ -431,5 +494,43 @@ Feature flag 建议：`ORDER_NOTIFY_V2`（emit 全量）、`ORDER_NOTIFY_EMAIL_R
 - [x] Push architecture  
 - [x] Rollback plan  
 - [x] PR 拆分计划（对齐 priority）  
-- [x] **无**生产代码改动、**无** migration 执行、**无**实现 PR  
-- [ ] **人工批准 D0 后**方可开 N1（P0 engine）
+- [x] D0 checklist PASS → **D0 APPROVED**  
+- [x] N1 implementation planning only (§14)  
+- [x] **无**生产代码改动、**无** migration 执行、**无** N1 实现 PR  
+
+---
+
+## 14. N1 implementation planning only（P0 schema fix — plan, do not implement here）
+
+### Goal
+Repair empty `supabase/migrations/20260804_companion_notifications.sql` with idempotent `CREATE TABLE IF NOT EXISTS` matching §2.3 / `docs/order-notification-pending-ddl.md` N1. **No emit hooks, no outbox, no product behavior.**
+
+### In scope
+1. Fill migration SQL (`CREATE IF NOT EXISTS` + index; **no DROP**).  
+2. Staging-only apply script (Session pooler; refuse Production / Direct-only if IPv6).  
+3. Offline verify: migration file non-empty; SQL contains `notice_key` + unique `(companion_id, notice_key)`.  
+4. Staging verify: `to_regclass('public.companion_notifications')` non-null; columns present.  
+5. Optional `pending-prod/` review copy — **do not apply to Production** in N1.
+
+### Out of scope (later PRs)
+- `emitOrderNotificationEvent` / outbox (N2)  
+- Boss column extensions (N3)  
+- Lifecycle event wiring (N4+)  
+- Email retry / prestart / push  
+
+### Acceptance (N1 PR)
+| Check | Pass criteria |
+|-------|----------------|
+| Migration | Non-empty; `IF NOT EXISTS`; unique on `(companion_id, notice_key)` |
+| Staging apply | Session pooler only; Production refused |
+| Staging probe | Table selectable; existing Prod-like data not destroyed |
+| Behavior | No new notify calls; assign three-path e2e still PASS |
+| Prod | No Production migration execution |
+
+### Suggested branch / PR title (when opening N1 later)
+- Branch: `cursor/order-notify-n1-companion-notifications-create-dcea`  
+- Title: `fix(db): companion_notifications CREATE IF NOT EXISTS (N1 / P0)`  
+- Base: `main` after D0 merge (or stacked on D0 if preferred)
+
+### Explicit hold
+**Do not open the N1 implementation PR until this planning section is acknowledged and D0 is merged/approved in GitHub.** This D0 revision only adds planning text.
