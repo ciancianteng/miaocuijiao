@@ -296,9 +296,30 @@ async function main() {
     }
     if (!applied) {
       const detail = lastErr ? String(lastErr.message || lastErr) : "no database candidates";
+      const code = String(lastErr?.code || "");
+      const isAuthFail = /28P01|password authentication failed/i.test(`${code} ${detail}`);
+      if (isAuthFail) {
+        const { createHash } = await import("node:crypto");
+        const fp = (v) =>
+          v ? createHash("sha256").update(String(v), "utf8").digest("hex").slice(0, 12) : "(empty)";
+        let urlPass = "";
+        try {
+          urlPass = decodeURIComponent(new URL(oneshotDb || "postgresql://x").password || "");
+        } catch {
+          urlPass = "";
+        }
+        console.error("[28P01] Session Pooler auth failed — password fingerprints (sha256 first 12 hex):");
+        console.error(`[28P01] STAGING_DB_PASSWORD fp=${fp(oneshotPass)} len=${oneshotPass.length}`);
+        console.error(`[28P01] STAGING_DATABASE_URL password fp=${fp(urlPass)} len=${urlPass.length}`);
+        console.error(`[28P01] passwordsMatch=${Boolean(oneshotPass && urlPass && oneshotPass === urlPass)}`);
+        console.error(
+          `[28P01] poolerHost=aws-0-ap-southeast-1.pooler.supabase.com user=postgres.${STAGING_PROJECT_REF} port=5432`
+        );
+        console.error("[28P01] Production was NOT touched; Direct db.* was NOT connected");
+      }
       throw new Error(
         `commission_rate missing; Staging DDL blocked. ${detail}. ` +
-          `Direct db.* ENETUNREACH is IPv6 egress (use Session pooler). ` +
+          `Direct db.* is refused (Session Pooler only). ` +
           `28P01 means STAGING_DB_PASSWORD / URL password do not match Staging. ` +
           `Or set SUPABASE_ACCESS_TOKEN for Management API. Never use Production.`
       );
