@@ -8,7 +8,12 @@
 (function () {
   "use strict";
 
-  var GATE_VERSION = "20260828applyLogin1";
+  var GATE_VERSION = "20260909authHangFix1";
+  var OVERLAY_ID = "mcjAuthBootOverlay";
+  /** Once true, deferred DOMContentLoaded overlay paint must no-op (auth hang fix). */
+  var gateClosed = false;
+  var pendingEnsureOverlay = null;
+  var PENDING_SAFETY_MS = 12000;
 
   function pathNow() {
     return String(location.pathname || "/").replace(/\\/g, "/");
@@ -18,6 +23,7 @@
     try {
       return localStorage.getItem(key) || sessionStorage.getItem(key) || "";
     } catch (e) {
+      // Private mode / WeChat WebView / QuotaExceeded / SecurityError
       return "";
     }
   }
@@ -38,6 +44,142 @@
       localStorage.removeItem(key);
       sessionStorage.removeItem(key);
     } catch (e) {}
+  }
+
+  function rememberReturnTo(returnTo) {
+    var value = String(returnTo || "");
+    if (!value) return false;
+    try {
+      sessionStorage.setItem("mcjAfterLoginRedirect", value);
+      return true;
+    } catch (e1) {
+      try {
+        localStorage.setItem("mcjAfterLoginRedirect", value);
+        return true;
+      } catch (e2) {
+        return false;
+      }
+    }
+  }
+
+  function escapeHtml(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+
+  /**
+   * P0 anti-blank: never clear body / never hide the whole document.
+   * Paint a visible overlay so users always see a login guide or verifying state.
+   */
+  function paintAuthGateOverlay(opts) {
+    opts = opts || {};
+    var mode = opts.mode === "pending" ? "pending" : "redirect";
+    var loginHref = String(opts.loginHref || "/login.html");
+    var title =
+      opts.title || (mode === "pending" ? "正在验证登录状态" : "需要登录后继续");
+    var message =
+      opts.message ||
+      (mode === "pending"
+        ? "请稍候，正在确认会话…"
+        : "未登录或登录已失效，正在前往登录页…");
+    var reason = String(opts.reason || "");
+
+    // Opening a gate paint cancels any prior "closed" latch so redirect/pending can show.
+    gateClosed = false;
+
+    try {
+      document.documentElement.setAttribute("data-mcj-auth-gate", mode === "pending" ? "pending" : "1");
+      if (reason) document.documentElement.setAttribute("data-mcj-auth-reason", reason);
+      // Critical: never blank the page with visibility:hidden on <html>.
+      document.documentElement.style.visibility = "";
+    } catch (eGate) {}
+
+    function ensureOverlay() {
+      // revealShell / clearAuthGate may have won the race before body existed.
+      if (gateClosed) {
+        pendingEnsureOverlay = null;
+        return;
+      }
+      var body = document.body;
+      if (!body) {
+        pendingEnsureOverlay = ensureOverlay;
+        document.addEventListener("DOMContentLoaded", ensureOverlay, { once: true });
+        return;
+      }
+      pendingEnsureOverlay = null;
+      if (gateClosed) return;
+      var el = document.getElementById(OVERLAY_ID);
+      if (!el) {
+        el = document.createElement("div");
+        el.id = OVERLAY_ID;
+        body.appendChild(el);
+      }
+      el.setAttribute("role", "status");
+      el.setAttribute("aria-live", "polite");
+      el.style.cssText =
+        "position:fixed;inset:0;z-index:2147483646;display:flex;align-items:center;justify-content:center;" +
+        "padding:24px;box-sizing:border-box;background:#0f1115;color:#f5f5f5;font-family:system-ui,-apple-system,sans-serif;" +
+        "visibility:visible!important;opacity:1!important;";
+      var linkHtml =
+        mode === "redirect"
+          ? '<p style="margin:20px 0 0"><a href="' +
+            escapeHtml(loginHref) +
+            '" style="color:#7dd3fc;font-size:16px;font-weight:600;text-decoration:underline">点击前往登录</a></p>' +
+            '<p style="margin:12px 0 0;font-size:13px;opacity:.75">若页面未自动跳转，请点上方链接</p>'
+          : "";
+      el.innerHTML =
+        '<div style="max-width:360px;text-align:center;line-height:1.5">' +
+        "<h1 style=\"margin:0 0 12px;font-size:20px;font-weight:700\">" +
+        escapeHtml(title) +
+        "</h1>" +
+        '<p style="margin:0;font-size:15px;opacity:.9">' +
+        escapeHtml(message) +
+        "</p>" +
+        linkHtml +
+        "</div>";
+    }
+    ensureOverlay();
+
+    // Safety: never leave a non-restore pending overlay forever if modules hang.
+    // pending_restore is owned by role-gates ensureSession (has its own timeout).
+    if (mode === "pending" && reason !== "pending_restore") {
+      var reasonSnap = reason;
+      setTimeout(function () {
+        if (gateClosed) return;
+        try {
+          var gate = document.documentElement.getAttribute("data-mcj-auth-gate") || "";
+          var why = document.documentElement.getAttribute("data-mcj-auth-reason") || "";
+          if (why === "pending_restore") return;
+          if (gate === "pending" && why === reasonSnap) {
+            clearAuthGate();
+          }
+        } catch (eSafe) {}
+      }, PENDING_SAFETY_MS);
+    }
+  }
+
+  function removeAuthGateOverlay() {
+    gateClosed = true;
+    if (pendingEnsureOverlay) {
+      try {
+        document.removeEventListener("DOMContentLoaded", pendingEnsureOverlay);
+      } catch (eRm) {}
+      pendingEnsureOverlay = null;
+    }
+    try {
+      var el = document.getElementById(OVERLAY_ID);
+      if (el && el.parentNode) el.parentNode.removeChild(el);
+    } catch (e) {}
+  }
+
+  function clearAuthGate() {
+    try {
+      document.documentElement.removeAttribute("data-mcj-auth-gate");
+      document.documentElement.removeAttribute("data-mcj-auth-reason");
+      document.documentElement.style.visibility = "";
+    } catch (e) {}
+    removeAuthGateOverlay();
   }
 
   function looksLikeJwt(token) {
@@ -147,33 +289,56 @@
       .forEach(removeItem);
   }
 
-  function hideShell() {
-    try {
-      document.documentElement.setAttribute("data-mcj-auth-gate", "1");
-      document.documentElement.style.visibility = "hidden";
-    } catch (e) {}
+  function hideShell(reason) {
+    // Pending check: cover private UI without blanking the document.
+    paintAuthGateOverlay({
+      mode: "pending",
+      title: "正在验证登录状态",
+      message: "请稍候，正在确认会话…",
+      reason: reason || "pending",
+    });
   }
 
   function revealShell() {
-    try {
-      document.documentElement.removeAttribute("data-mcj-auth-gate");
-      document.documentElement.style.visibility = "";
-    } catch (e) {}
+    clearAuthGate();
   }
 
-  function deny(loginHref) {
-    hideShell();
+  function deny(loginHref, reason) {
+    var returnTo =
+      String(location.pathname || "/") + String(location.search || "") + String(location.hash || "");
+    rememberReturnTo(returnTo);
+    paintAuthGateOverlay({
+      mode: "redirect",
+      loginHref: loginHref,
+      title: "需要登录后继续",
+      message: "未登录或登录已失效，正在前往登录页…",
+      reason: reason || "unauthenticated",
+    });
+    // Prefer replace; keep visible link as WeChat / storage-failure fallback.
     try {
-      if (document.body) document.body.innerHTML = "";
-    } catch (e) {}
-    try {
-      sessionStorage.setItem(
-        "mcjAfterLoginRedirect",
-        String(location.pathname || "/") + String(location.search || "") + String(location.hash || "")
-      );
-    } catch (e2) {}
-    location.replace(loginHref);
+      location.replace(loginHref);
+    } catch (eNav) {
+      try {
+        location.href = loginHref;
+      } catch (eHref) {}
+    }
     return false;
+  }
+
+  function classifyAuthFailure(access, refresh) {
+    try {
+      // Probe storage availability (private mode / WeChat ITP).
+      var probeKey = "__mcj_auth_probe__";
+      sessionStorage.setItem(probeKey, "1");
+      sessionStorage.removeItem(probeKey);
+    } catch (eStore) {
+      return "storage_unavailable";
+    }
+    if (!looksLikeJwt(access) && !String(refresh || "").trim()) return "token_missing";
+    if (looksLikeJwt(access) && !hasValidAccessJwt(access) && !String(refresh || "").trim()) {
+      return "token_expired";
+    }
+    return "unauthenticated";
   }
 
   function isAdminLogin(p) {
@@ -222,14 +387,14 @@
       // Soft session alone NEVER unlocks admin. Require admin-role marker + live JWT/refresh.
       // Never accept boss/companion/CS roles via shared mcjRole.
       if (sharedRole && !isAdminRole(sharedRole) && !adminOkSoft) {
-        return deny("/admin/login/");
+        return deny("/admin/login/", "role_mismatch");
       }
       if (!adminOkSoft || !adminRoleOk || !hasJwtOrRefresh(adminAccess, adminRefresh)) {
-        return deny("/admin/login/");
+        return deny("/admin/login/", classifyAuthFailure(adminAccess, adminRefresh));
       }
       // Expired access JWT without refresh → login.
       if (looksLikeJwt(adminAccess) && !hasValidAccessJwt(adminAccess) && !String(adminRefresh || "").trim()) {
-        return deny("/admin/login/");
+        return deny("/admin/login/", "token_expired");
       }
       revealShell();
       return true;
@@ -249,7 +414,7 @@
       var applyBossOk =
         hasValidAccessJwt(applyBossAccess) || !!String(applyBossRefresh || "").trim();
       if (!applyCompanionOk && !applyBossOk) {
-        return deny("/login.html");
+        return deny("/login.html", classifyAuthFailure(applyBossAccess, applyBossRefresh));
       }
       revealShell();
       return true;
@@ -267,7 +432,7 @@
       // Portal isolation: ignore shared mcjRole / boss JWT. Companion blob + soft only.
       var pwRoleOk = isCompanionRole(roleOf(pwUser)) || (pwSoftOk && !roleOf(pwUser));
       if (!pwSoftOk || !hasJwtOrRefresh(pwAccess, pwRefresh) || !pwRoleOk) {
-        return deny("/companion/login/");
+        return deny("/companion/login/", classifyAuthFailure(pwAccess, pwRefresh));
       }
       revealShell();
       return true;
@@ -284,27 +449,33 @@
       var csSoftOk = String(csSoft).indexOf("customer_service_session_") === 0;
       var csRoleOk = isCsRole(roleOf(csUser)) || (csSoftOk && !roleOf(csUser));
       var csCredOk = hasValidAccessJwt(csAccess) || !!String(csRefresh || "").trim();
-      if (!csSoftOk || !csCredOk || !csRoleOk) {
-        // Wipe CS half-sessions only — never touch boss mcjAuth*.
+      if (!csCredOk || !csRoleOk) {
+        // Only wipe when credentials/role are actually invalid — keep healable JWT blob
+        // if soft marker alone is missing (customer-service-auth can rebuild soft).
         ["mcjServiceSession", "customerServiceAuthToken", "customerServiceUser"].forEach(removeItem);
-        return deny("/customer-service/login/");
+        return deny("/customer-service/login/", classifyAuthFailure(csAccess, csRefresh));
+      }
+      if (!csSoftOk) {
+        // Soft marker missing but JWT/role OK — leave pending for module restore; do not wipe.
+        hideShell("cs_soft_pending");
+        return true;
       }
       revealShell();
       return true;
     }
 
     // —— Boss protected pages ——
-    // Soft / refresh / URL params NEVER unlock. Require non-expired access JWT.
+    // Soft session alone NEVER unlocks. Non-expired access JWT unlocks immediately.
+    // Expired access + refresh → keep pending overlay; role-gates/MCJBossAuth restores.
     // NOTE: profile.html is public companion detail — do NOT gate it.
     if (
       /\/(mine|orders|support|recharge|messages|favorites|payment-confirm|order-confirm|gifts)\.html$/i.test(
         p
       )
     ) {
-      hideShell();
-      try {
-        if (document.body) document.body.innerHTML = "";
-      } catch (e0) {}
+      // P0: never clear body here — blank DOM was the white-screen trigger for guests
+      // and for late-running scripts when body already existed.
+      hideShell("boss_private_pending");
       var bossUser = null;
       try {
         bossUser = JSON.parse(bossItem("customerUser") || "null") || {};
@@ -315,14 +486,21 @@
       var roleHint = roleOf(bossUser) || bossShared;
       if (roleHint && !isBossRole(roleHint)) {
         wipeBossIdentity();
-        return deny("/login.html");
+        return deny("/login.html", "role_mismatch");
       }
-      if (!hasValidAccessJwt(bossItem("mcjAuthAccessToken"))) {
-        wipeBossIdentity();
-        return deny("/login.html");
+      var bossAccess = bossItem("mcjAuthAccessToken");
+      var bossRefresh = bossItem("mcjAuthRefreshToken");
+      if (hasValidAccessJwt(bossAccess)) {
+        revealShell();
+        return true;
       }
-      revealShell();
-      return true;
+      // Token expired / missing access but refresh still present — do not wipe; let restore run.
+      if (String(bossRefresh || "").trim()) {
+        hideShell("pending_restore");
+        return true;
+      }
+      wipeBossIdentity();
+      return deny("/login.html", classifyAuthFailure(bossAccess, bossRefresh));
     }
 
     return true;
@@ -346,5 +524,9 @@
     looksLikeJwt: looksLikeJwt,
     hasValidAccessJwt: hasValidAccessJwt,
     wipeBossIdentity: wipeBossIdentity,
+    clearAuthGate: clearAuthGate,
+    removeAuthGateOverlay: removeAuthGateOverlay,
+    revealShell: revealShell,
+    hideShell: hideShell,
   };
 })();

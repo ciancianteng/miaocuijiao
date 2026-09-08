@@ -1186,15 +1186,123 @@
     // Companion/CS must not wipe boss JWT when claiming their own portal session.
   }
 
-  function denyUnauthed(loginHref, returnTo) {
+  function denyUnauthed(loginHref, returnTo, reason) {
+    try {
+      if (returnTo) {
+        try {
+          sessionStorage.setItem("mcjAfterLoginRedirect", returnTo);
+        } catch (e1) {
+          try {
+            localStorage.setItem("mcjAfterLoginRedirect", returnTo);
+          } catch (e2) {}
+        }
+      }
+    } catch (eRemember) {}
+
+    var overlayId = "mcjAuthBootOverlay";
+    var href = String(loginHref || "/login.html");
+    var why = String(reason || "unauthenticated");
     try {
       document.documentElement.setAttribute("data-mcj-auth-gate", "1");
-      document.documentElement.style.visibility = "hidden";
-      if (document.body) document.body.innerHTML = "";
-    } catch (e) {}
-    if (returnTo) sessionStorage.setItem("mcjAfterLoginRedirect", returnTo);
-    location.replace(loginHref);
+      document.documentElement.setAttribute("data-mcj-auth-reason", why);
+      // P0: never hide the whole document / never clear body (white-screen root cause).
+      document.documentElement.style.visibility = "";
+    } catch (eGate) {}
+
+    function paint() {
+      var body = document.body;
+      if (!body) {
+        document.addEventListener("DOMContentLoaded", paint, { once: true });
+        return;
+      }
+      var el = document.getElementById(overlayId);
+      if (!el) {
+        el = document.createElement("div");
+        el.id = overlayId;
+        body.appendChild(el);
+      }
+      el.setAttribute("role", "status");
+      el.setAttribute("aria-live", "polite");
+      el.style.cssText =
+        "position:fixed;inset:0;z-index:2147483646;display:flex;align-items:center;justify-content:center;" +
+        "padding:24px;box-sizing:border-box;background:#0f1115;color:#f5f5f5;font-family:system-ui,-apple-system,sans-serif;" +
+        "visibility:visible!important;opacity:1!important;";
+      el.innerHTML =
+        '<div style="max-width:360px;text-align:center;line-height:1.5">' +
+        '<h1 style="margin:0 0 12px;font-size:20px;font-weight:700">需要登录后继续</h1>' +
+        '<p style="margin:0;font-size:15px;opacity:.9">未登录或登录已失效，正在前往登录页…</p>' +
+        '<p style="margin:20px 0 0"><a href="' +
+        href.replace(/"/g, "&quot;") +
+        '" style="color:#7dd3fc;font-size:16px;font-weight:600;text-decoration:underline">点击前往登录</a></p>' +
+        '<p style="margin:12px 0 0;font-size:13px;opacity:.75">若页面未自动跳转，请点上方链接</p>' +
+        "</div>";
+    }
+    paint();
+
+    try {
+      location.replace(href);
+    } catch (eNav) {
+      try {
+        location.href = href;
+      } catch (eHref) {}
+    }
     return false;
+  }
+
+  function showPendingAuthGate(message) {
+    var overlayId = "mcjAuthBootOverlay";
+    try {
+      document.documentElement.setAttribute("data-mcj-auth-gate", "pending");
+      document.documentElement.setAttribute("data-mcj-auth-reason", "pending_restore");
+      document.documentElement.style.visibility = "";
+    } catch (e) {}
+    // Prefer early-gate clear latch reset if present.
+    try {
+      if (window.MCJPortalEarlyGate && typeof window.MCJPortalEarlyGate.hideShell === "function") {
+        // Keep pending_restore as the reason role-gates owns.
+      }
+    } catch (eEg) {}
+    function paint() {
+      var body = document.body;
+      if (!body) {
+        document.addEventListener("DOMContentLoaded", paint, { once: true });
+        return;
+      }
+      var el = document.getElementById(overlayId);
+      if (!el) {
+        el = document.createElement("div");
+        el.id = overlayId;
+        body.appendChild(el);
+      }
+      el.setAttribute("role", "status");
+      el.style.cssText =
+        "position:fixed;inset:0;z-index:2147483646;display:flex;align-items:center;justify-content:center;" +
+        "padding:24px;box-sizing:border-box;background:#0f1115;color:#f5f5f5;font-family:system-ui,-apple-system,sans-serif;" +
+        "visibility:visible!important;opacity:1!important;";
+      el.innerHTML =
+        '<div style="max-width:360px;text-align:center;line-height:1.5">' +
+        '<h1 style="margin:0 0 12px;font-size:20px;font-weight:700">正在验证登录状态</h1>' +
+        '<p style="margin:0;font-size:15px;opacity:.9">' +
+        String(message || "请稍候，正在确认会话…") +
+        "</p></div>";
+    }
+    paint();
+  }
+
+  function clearPendingAuthGate() {
+    try {
+      if (window.MCJPortalEarlyGate && typeof window.MCJPortalEarlyGate.clearAuthGate === "function") {
+        window.MCJPortalEarlyGate.clearAuthGate();
+        return;
+      }
+    } catch (eEg) {}
+    try {
+      document.documentElement.removeAttribute("data-mcj-auth-gate");
+      document.documentElement.removeAttribute("data-mcj-auth-reason");
+      document.documentElement.style.visibility = "";
+      var el = document.getElementById("mcjAuthBootOverlay");
+      if (el && el.parentNode) el.parentNode.removeChild(el);
+    } catch (e) {}
   }
 
   function returnPath() {
@@ -1203,46 +1311,61 @@
 
   function bootRouteProtection() {
     var p = path();
-    if (isAdminLoginPath()) return true;
+    if (isAdminLoginPath()) {
+      clearPendingAuthGate();
+      return true;
+    }
     if (/\/customer-service\/login/i.test(p)) {
       // Login page must not enter redirect races. Only reveal; login script owns submit→dashboard.
       try {
-        document.documentElement.removeAttribute("data-mcj-auth-gate");
-        document.documentElement.style.visibility = "";
+        clearPendingAuthGate();
         document.documentElement.setAttribute("data-mcj-service-auth", "ready");
       } catch (e) {}
       return true;
     }
-    if (/\/companion\/login/i.test(p)) return true;
-    if (/^\/?$|\/index\.html$/i.test(p) || /\/login\.html$/i.test(p)) return true;
+    if (/\/companion\/login/i.test(p)) {
+      clearPendingAuthGate();
+      return true;
+    }
+    if (/^\/?$|\/index\.html$/i.test(p) || /\/login\.html$/i.test(p)) {
+      clearPendingAuthGate();
+      return true;
+    }
 
     if (/\/admin\.html$/i.test(p) || /\/admin-(dashboard|center|audit)\.html$/i.test(p) || (/\/admin(\/|$)/i.test(p) && !isAdminLoginPath())) {
       if (!isLogged("admin")) {
         clearAdminClientSession();
         return denyUnauthed("/admin/login/", returnPath());
       }
+      clearPendingAuthGate();
       return true;
     }
 
     if (/\/customer-service(\/|$)/i.test(p)) {
       // Never sync-redirect before session restore/refresh finishes.
       if (window.MCJServiceAuth && typeof window.MCJServiceAuth.guardCustomerServicePages === "function") {
+        // CS guard owns pending→reveal/clear; do not clear here (restore may still be in flight).
         window.MCJServiceAuth.guardCustomerServicePages();
         return true;
       }
       if (!hasPortalSession("customer_service")) return denyUnauthed("/customer-service/login/", returnPath());
+      clearPendingAuthGate();
       return true;
     }
 
     if (/\/companion(\/|$)/i.test(p)) {
       if (!hasPortalSession("companion")) return denyUnauthed("/companion/login/", returnPath());
+      clearPendingAuthGate();
       return true;
     }
 
     if (/\/(mine|orders|support|recharge|messages|favorites|payment-confirm|order-confirm|gifts)\.html$/i.test(p)) {
       // Soft / refresh alone insufficient for sync deny — wait restoreSession before claiming guest.
       // profile.html is public companion detail and stays ungated.
-      if (hasValidBossAccessToken()) return true;
+      if (hasValidBossAccessToken()) {
+        clearPendingAuthGate();
+        return true;
+      }
       var canRestore = false;
       try {
         canRestore = !!(
@@ -1255,20 +1378,14 @@
       } catch (eRest) {}
       if (!canRestore) {
         wipeBossGuestArtifacts();
-        return denyUnauthed("/login.html", returnPath());
+        return denyUnauthed("/login.html", returnPath(), "token_missing");
       }
-      try {
-        document.documentElement.setAttribute("data-mcj-auth-gate", "pending");
-        document.documentElement.style.visibility = "hidden";
-      } catch (eHide) {}
+      showPendingAuthGate("请稍候，正在恢复登录会话…");
       var finishBossGate = function (ok) {
-        try {
-          document.documentElement.removeAttribute("data-mcj-auth-gate");
-          document.documentElement.style.visibility = "";
-        } catch (eShow) {}
+        clearPendingAuthGate();
         if (!ok) {
           wipeBossGuestArtifacts();
-          denyUnauthed("/login.html", returnPath());
+          denyUnauthed("/login.html", returnPath(), "token_expired");
         }
       };
       var safety = setTimeout(function () {
@@ -1298,6 +1415,7 @@
       })(0);
       return true;
     }
+    clearPendingAuthGate();
     return true;
   }
 
@@ -1321,7 +1439,10 @@
     }
     if (storageRole(role) === "customer" || role === "boss") {
       if (/\/(mine|orders|support|recharge|messages|favorites|payment-confirm|order-confirm|gifts)\.html$/i.test(path())) {
-        if (hasValidBossAccessToken()) return true;
+        if (hasValidBossAccessToken()) {
+          clearPendingAuthGate();
+          return true;
+        }
         var canRestoreGuard = false;
         try {
           canRestoreGuard = !!(
@@ -1348,12 +1469,14 @@
       if (!hasPortalSession("customer_service")) {
         return denyUnauthed("/customer-service/login/", returnPath());
       }
+      clearPendingAuthGate();
       return true;
     }
     if (storageRole(role) === "companion") {
       if (!hasPortalSession("companion")) {
         return denyUnauthed("/companion/login/", returnPath());
       }
+      clearPendingAuthGate();
       return true;
     }
     if (!isAllowed(role)) {
