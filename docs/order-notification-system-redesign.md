@@ -16,6 +16,87 @@
 | 明确缺口 | `companion_notifications` **CREATE migration 为空**；boss 无订单生命周期通知；accept/start/complete/confirm 多数无结构化通知；无 email retry cron；无开服前提醒；无原生 Push |
 | Redesign 目标 | 补齐订单生命周期双边（boss + companion）通知；修复 schema 源；可观测、可重试、可拆 PR 落地 |
 
+### 1.1 Architecture principles（已确认 — 实现前冻结）
+
+| 原则 | 说明 |
+|------|------|
+| **Inbox is source of truth** | `companion_notifications` / `boss_notifications`（及未来 outbox→inbox 写入）是用户可见通知的权威记录。Realtime / email / push **不是** SoT。 |
+| **Email / realtime / push are fan-out channels** | 渠道从 outbox（或等价 emit）扇出；任一渠道失败只标记该渠道，不删除 inbox 行。 |
+| **Order mutation succeeds before notification emission** | 订单状态机 / 支付 / 指派等业务写库 **先 commit 成功**，再 `emitOrderNotificationEvent`。禁止「先发通知再改单」。 |
+| **Notification failures never rollback orders** | emit / fan-out / cron retry 均在业务事务之外（或独立 try/catch）；通知错误 **不得** `ROLLBACK` 订单 mutation，也不得把订单 API 改为 5xx 仅因邮件失败。 |
+
+---
+
+## 1.2 Unified `notice_key` format
+
+**Canonical（订单类）：**
+
+```text
+order:{orderId}:{recipientId}:{event}:{version}
+```
+
+| 段 | 含义 |
+|----|------|
+| `order` | 固定前缀；与非订单 notice（钱包、审核等）命名空间隔离 |
+| `orderId` | `orders.id` |
+| `recipientId` | 收件人 `profiles.id`（boss 或 companion） |
+| `event` | 稳定事件码，如 `payment_success` / `assigned` / `accepted` / `rejected` / `cancelled` / `prestart_reminder` / `review_reminder` |
+| `version` | 整数版本，默认 `1`；同事件语义变更或产品要求「允许再通知一次」时递增 |
+
+示例：`order:ord_abc:uuid-boss:payment_success:1`
+
+**非订单类**（钱包、陪玩入驻审核等）**不使用**此前缀；保持既有 key 约定，避免碰撞。
+
+---
+
+## 1.3 Idempotency strategy
+
+| 层 | 策略 |
+|----|------|
+| Inbox | `UNIQUE (companion_id, notice_key)` / boss `UNIQUE (boss_id, notice_key)`（partial where notice_key 非空） |
+| Outbox | `UNIQUE (notice_key)`（key 已含 recipient；勿再叠 recipient 维度导致歧义） |
+| Emit | `INSERT … ON CONFLICT (notice_key) DO NOTHING`（或等价 upsert）；冲突 = 已投递过，**成功幂等** |
+| Email row | 订单邮件账本以同一 `notice_key`（或 1:1 派生 key）去重；已 `sent` 跳过 |
+| 二次 API | 用户重复点击 accept / cron 重跑 **不得** 产生第二条同 key 通知 |
+
+唯一约束是防重复的硬保证；应用层「先 SELECT」仅作优化，不可替代约束。
+
+---
+
+## 1.4 Email ledger decision
+
+| 决策 | 说明 |
+|------|------|
+| **订单邮件账本独立** | 订单生命周期邮件继续使用 / 扩展 **订单侧** 账本（现有 `companion_notification_emails` + 未来 boss 订单邮件表或 `audience` 扩展），**与陪玩入驻 / application review 邮件账本隔离**。 |
+| **不合并** | 除非未来显式引入统一 `notification_outbox`（及可选统一 delivery ledger）落地，否则 **不要** 把订单投递状态写入 application review email ledger，也勿反向污染。 |
+| **Outbox 关系** | `notification_outbox` 负责「要发什么」；订单 email ledger 负责「Resend/provider 投递结果」。二者可关联 `notice_key`，但表职责分离。 |
+
+---
+
+## 1.5 Cron safety — prestart reminder
+
+| 项 | 要求 |
+|----|------|
+| 窗口 | `scheduled_at` ∈ T−30m ±5m；状态 ∈ 可提醒集合 |
+| **Idempotent claim/insert** | Cron worker **必须** 先以唯一键 claim：`order_reminder_jobs(order_id, reminder_type='prestart')` **或** outbox `notice_key=order:{id}:{recipient}:prestart_reminder:1` 的 `INSERT … ON CONFLICT DO NOTHING` |
+| 并发 | 多实例 cron 同时跑时，只有 **一个** claim 成功者继续 fan-out；失败者视为已处理 |
+| 失败 | claim 成功但 email 失败 → 重试 email，**不** 再插第二条 inbox（同 notice_key） |
+| 禁止 | 先发邮件再写 job 行（会双发）；无唯一约束的「SELECT 再 INSERT」 |
+
+---
+
+## 1.6 Implementation priority（实现顺序；未批准前不开实现 PR）
+
+| Priority | Scope | 说明 |
+|----------|--------|------|
+| **P0** | Notification engine | Schema 修复（空 `companion_notifications` CREATE）、`notice_key` 约定、`emitOrderNotificationEvent`、inbox SoT 写入、outbox（或最小等价）、失败不回滚订单 |
+| **P1** | Payment success + assignment + accept | E2 支付成功、E2/E3 指派/改派加固、E4 陪玩接单 — 双边 inbox（+ 既有 companion email 路径） |
+| **P2** | Reject / cancel / refund | E5 拒单、E11 取消、E12 退款相关结构化通知 |
+| **P3** | Reminder / review | E7 开服前提醒（idempotent claim）、完成后评价/确认提醒类 |
+| **P4** | Push | Web Push register + writer；微信/原生更后 |
+
+PR 拆分（§9）应对齐本优先级；**D0 设计批准前不得开 N1+ 实现 PR。**
+
 ---
 
 ## 2. Affected tables
@@ -94,7 +175,7 @@ create table if not exists public.notification_outbox (
   audience text not null,             -- companion|boss|both
   order_id uuid,
   recipient_id uuid not null,
-  notice_key text not null,
+  notice_key text not null,           -- order:{orderId}:{recipientId}:{event}:{version}
   payload jsonb not null default '{}'::jsonb,
   channels text[] not null default '{inbox}',  -- inbox|email|realtime|push
   status text not null default 'pending',      -- pending|processing|sent|partial|failed|dead
@@ -103,11 +184,24 @@ create table if not exists public.notification_outbox (
   last_error text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  unique (notice_key, recipient_id)
+  unique (notice_key)                 -- key already includes recipientId
 );
 create index if not exists idx_notification_outbox_poll
   on public.notification_outbox (status, next_retry_at)
   where status in ('pending','failed');
+```
+
+### 2.6 Proposed `order_reminder_jobs`（prestart claim；**未执行**）
+
+```sql
+-- DESIGN ONLY — idempotent cron claim
+create table if not exists public.order_reminder_jobs (
+  order_id uuid not null references public.orders(id) on delete cascade,
+  reminder_type text not null,        -- prestart|review_reminder|…
+  claimed_at timestamptz not null default now(),
+  notice_key text,                    -- optional link to emitted key
+  primary key (order_id, reminder_type)
+);
 ```
 
 ---
@@ -138,22 +232,25 @@ create index if not exists idx_notification_outbox_poll
 ```
 Order mutation (orders / companion / boss / CS / admin / cron)
         │
+        │  ★ commit order mutation FIRST (success required)
         ▼
-  emitOrderNotificationEvent(event_type, order, actors)
-        │  notice_key = `{orderId}:{recipientId}:{event_type}`
+  emitOrderNotificationEvent(event_type, order, actors)   // never rolls back order
+        │  notice_key = order:{orderId}:{recipientId}:{event}:{version}
         ▼
-  notification_outbox (idempotent upsert)
+  notification_outbox (INSERT ON CONFLICT notice_key DO NOTHING)
         │
-        ├── inbox writer  → companion_notifications / boss_notifications
-        ├── email writer  → companion_notification_emails (+ 未来 boss_notification_emails)
-        ├── realtime      → broadcast topic mcj-{role}-orders:{uid}
-        └── push writer   → Web Push / 未来 FCM（读 push_device_tokens）
+        ├── inbox writer  → companion_notifications / boss_notifications   ★ SoT
+        ├── email writer  → order email ledger (NOT application-review ledger)
+        ├── realtime      → broadcast topic mcj-{role}-orders:{uid}        (fan-out)
+        └── push writer   → Web Push / 未来 FCM（读 push_device_tokens）   (fan-out, P4)
         │
         ▼
   delivery_attempts + status；失败 → next_retry_at（cron 捞取）
 ```
 
-**原则：**
+**原则（与 §1.1 一致）：**
+- **Inbox = SoT**；email / realtime / push = fan-out。
+- 业务 API **mutation 成功后再 emit**；emit 失败不影响订单结果。
 - 业务 API **只 emit**，不各自拼邮件 HTML（收敛到 `_order-notify-dispatch.js` 一类模块）。
 - `proposed` / 未读语义：inbox 行是 SoT；派生 `buildSystemNotices` 逐步降级为「无 DB 行时的只读补充」，最终以 outbox→inbox 为准。
 - **不改变权限规则**：谁能读通知仍按角色 JWT；不扩大订单可见性。
@@ -209,7 +306,8 @@ Order mutation (orders / companion / boss / CS / admin / cron)
 | 密钥 | `CRON_SECRET` / 现有 Vercel cron 鉴权模式 |
 | Webhook（P2） | Resend `email.delivered|bounced|complained` → 更新 `provider_event`，bounce 停重试 |
 
-Boss 订单邮件：P1 可先复用同一账本表加 `audience=boss` 列，或新建 `boss_notification_emails`（推荐分表以免污染 companion 管理页）。
+Boss 订单邮件：P1 可新建 `boss_notification_emails`（推荐分表），或给订单侧账本加 `audience=boss`。  
+**禁止**写入陪玩入驻 / application review 邮件账本（见 §1.4）。
 
 ---
 
@@ -218,9 +316,10 @@ Boss 订单邮件：P1 可先复用同一账本表加 `audience=boss` 列，或�
 | 项 | 方案 |
 |----|------|
 | Cron | `*/5 * * * *` → `/api/cron/order-prestart-reminder` |
-| 条件 | `orders.scheduled_at` 非空；状态 ∈ `claimed|confirmed|in_progress`；距开始 **30±5 分钟**；未发过 `event_type=prestart_reminder` |
+| 条件 | `orders.scheduled_at` 非空；状态 ∈ `claimed|confirmed|in_progress`；距开始 **30±5 分钟**；未 claim 过 `prestart` |
 | 接收方 | companion **必达** inbox+email；boss **必达** inbox（email 可配置） |
-| 幂等 | `order_reminder_jobs(order_id, reminder_type)` unique 或 outbox `notice_key` |
+| **Idempotent claim/insert** | 先 `INSERT INTO order_reminder_jobs(order_id, reminder_type) … ON CONFLICT DO NOTHING`（或 outbox `notice_key` 唯一插入）；**仅 claim 成功** 才 emit。见 §1.5 |
+| notice_key | `order:{orderId}:{recipientId}:prestart_reminder:1` |
 | 与 timeout | 不恢复已禁用的接单超时产品行为；reminder ≠ timeout cancel |
 
 依赖列：若 Staging/Prod 缺少可靠 `scheduled_at`，先在 schema 审计 PR 中确认（只读），再开实现 PR。
@@ -229,14 +328,14 @@ Boss 订单邮件：P1 可先复用同一账本表加 `audience=boss` 列，或�
 
 ## 7. Push architecture
 
-### 7.1 阶段
+### 7.1 阶段（对齐 §1.6；Push = P4）
 
 | Phase | 通道 | 说明 |
 |-------|------|------|
-| P0 | Inbox + Realtime + Email | 不引入原生推送也能补齐生命周期可见性 |
-| P1 | **Web Push**（VAPID） | Service Worker + `push_device_tokens`；老板/陪玩浏览器后台可达 |
-| P2 | 微信模板消息 / 订阅消息 | 仅微信 WebView 场景；需公众号配置（外部依赖） |
-| P3 | APNs / FCM | 仅当有原生 App；本仓库暂无 |
+| P0–P3 | Inbox + Realtime + Email | 引擎与订单事件优先；不依赖原生推送 |
+| **P4** | **Web Push**（VAPID） | Service Worker + `push_device_tokens`；老板/陪玩浏览器后台可达 |
+| 更后 | 微信模板消息 / 订阅消息 | 仅微信 WebView；需公众号配置（外部依赖） |
+| 更后 | APNs / FCM | 仅当有原生 App；本仓库暂无 |
 
 ### 7.2 Web Push 数据流
 
@@ -270,22 +369,23 @@ Feature flag 建议：`ORDER_NOTIFY_V2`（emit 全量）、`ORDER_NOTIFY_EMAIL_R
 
 ---
 
-## 9. PR 拆分计划
+## 9. PR 拆分计划（对齐 §1.6 priority）
 
-| PR | 范围 | 风险 | 依赖 |
-|----|------|------|------|
-| **D0（本 PR）** | Design-only 文档 | 无 | — |
-| **N1** | 修复 `companion_notifications` CREATE migration + Staging apply 脚本（只 DDL，无行为） | 低 | D0 |
-| **N2** | `boss_notifications` 扩展列 + boss inbox 读路径展示 `kind=order`（仍可不发事件） | 低 | N1 |
-| **N3** | `notification_outbox` + `emitOrderNotificationEvent`；挂 **E4/E5/E8/E9**（接单/拒单/完成申请/老板确认） | 中 | N1–N2 |
-| **N4** | Email retry cron + `next_retry_at` + admin 共用 | 中 | N3 |
-| **N5** | Pre-start reminder cron（E7） | 中 | N3、`scheduled_at` 审计 |
-| **N6** | Boss/companion 补齐 E2/E3/E6/E10/E12 全矩阵 | 中 | N3 |
-| **N7** | Resend webhook + 投递可观测 | 低 | N4 |
-| **N8** | Web Push register + writer（P1 push） | 中 | N3、preferences |
-| **N9** | 清理派生 notices / 文档与 e2e（扩展 `p0-order-notify-three-paths-e2e`） | 低 | N6 |
+| PR | Priority | 范围 | 风险 | 依赖 |
+|----|----------|------|------|------|
+| **D0（本 PR）** | — | Design-only 文档（含 architecture 冻结） | 无 | — |
+| **N1** | **P0** | 修复 `companion_notifications` CREATE + Staging apply 脚本（只 DDL） | 低 | D0 **批准** |
+| **N2** | **P0** | `notification_outbox` + `emitOrderNotificationEvent` + inbox SoT 写入；mutation 后 emit；失败不回滚 | 中 | N1 |
+| **N3** | **P0/P1** | `boss_notifications` 扩展列 + boss inbox 读 `kind=order` | 低 | N1 |
+| **N4** | **P1** | Payment success + assignment 加固 + accept（E2/E3/E4） | 中 | N2–N3 |
+| **N5** | **P2** | Reject / cancel / refund（E5/E11/E12） | 中 | N2 |
+| **N6** | **P3** | Prestart reminder cron（idempotent claim）+ review/confirm reminders | 中 | N2、`scheduled_at` |
+| **N7** | **P1–P2** | Email retry cron + 订单侧 ledger 扩展（**不**碰 application-review ledger） | 中 | N2 |
+| **N8** | **P4** | Web Push register + writer | 中 | N2、preferences |
+| **N9** | — | 清理派生 notices / e2e / 文档收尾 | 低 | N4–N6 |
 
-**禁止混入：** 定价 P2、OTP、#198 gameplay、Production migration 执行。
+**Gate：** D0 设计文档更新并 **人工批准** 之前，**禁止** 开 N1+ 实现 PR。  
+**禁止混入：** 定价 P2、OTP、#198 gameplay、Production migration 执行、#205 范围扩张。
 
 ---
 
@@ -293,10 +393,11 @@ Feature flag 建议：`ORDER_NOTIFY_V2`（emit 全量）、`ORDER_NOTIFY_EMAIL_R
 
 1. Staging：`to_regclass('public.companion_notifications')` 非空且含 `notice_key` 唯一约束。  
 2. 指派三路径 e2e 仍 PASS（回归）。  
-3. `accept_direct` / `complete_order` / `confirm_complete` 各产生 companion+boss inbox 行（幂等二次调用不双写）。  
-4. 故意失败的邮件在 ≤10 分钟内被 cron 重试并更新 `retry_count`。  
-5. 带 `scheduled_at` 的订单在 T−30m 窗口收到且仅一次 prestart 通知。  
-6. 全程无 Production 写入；Prod DDL 仅 `pending-prod/` 评审稿。
+3. `accept_direct` / `complete_order` / `confirm_complete` 各产生 companion+boss inbox 行；二次调用同 `notice_key` **不双写**（unique 冲突 = 幂等成功）。  
+4. 故意失败的**订单**邮件在 ≤10 分钟内被 cron 重试；application-review 账本行数不变。  
+5. 带 `scheduled_at` 的订单在 T−30m 窗口收到且仅一次 prestart（claim 表或 outbox unique）。  
+6. 模拟 email/push 失败时，订单 mutation 仍返回成功且订单状态已提交。  
+7. 全程无 Production 写入；Prod DDL 仅 `pending-prod/` 评审稿。
 
 ---
 
@@ -320,6 +421,8 @@ Feature flag 建议：`ORDER_NOTIFY_V2`（emit 全量）、`ORDER_NOTIFY_EMAIL_R
 ## 12. 本 PR 交付清单
 
 - [x] Design-only 文档（本文）  
+- [x] Architecture principles 冻结（inbox SoT / fan-out / mutation-before-emit / no rollback）  
+- [x] Unified `notice_key` + idempotency + email ledger isolation + prestart claim + P0–P4 priority  
 - [x] Affected tables  
 - [x] Event flow + matrix  
 - [x] API changes  
@@ -327,5 +430,6 @@ Feature flag 建议：`ORDER_NOTIFY_V2`（emit 全量）、`ORDER_NOTIFY_EMAIL_R
 - [x] Pre-start reminder cron 设计  
 - [x] Push architecture  
 - [x] Rollback plan  
-- [x] PR 拆分计划  
-- [x] **无**生产代码改动、**无** migration 执行  
+- [x] PR 拆分计划（对齐 priority）  
+- [x] **无**生产代码改动、**无** migration 执行、**无**实现 PR  
+- [ ] **人工批准 D0 后**方可开 N1（P0 engine）
