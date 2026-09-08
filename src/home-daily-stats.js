@@ -3,7 +3,7 @@
 
   var API_URL = "/api/gateway?path=" + encodeURIComponent("home/daily-stats");
   var fields = [
-    ["ordersCreated", "今日订单", ""],
+    ["ordersCreated", "今日有效订单", ""],
     ["onlineCompanions", "在线陪玩", ""],
     ["grossRevenue", "今日营业额", "currency"],
   ];

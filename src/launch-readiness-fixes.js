@@ -160,17 +160,9 @@
   }
 
   function hideTodayDataWithoutRealData() {
-    if (!/\/index\.html$|\/$/.test(location.pathname)) return;
-    var db = platformDb();
-    var hasOrders = Array.isArray(db.orders) && db.orders.length;
-    var hasPlayers = Array.isArray(db.companions) && db.companions.some(function (p) { return p.auditStatus === "approved" && p.visible !== false; });
-    var title = Array.prototype.find.call(document.querySelectorAll(".section-title h2"), function (el) { return /今日数据/.test(el.textContent || ""); });
-    var section = title && title.closest(".section");
-    if (section) {
-      var show = !!(hasOrders || hasPlayers);
-      section.classList.toggle("launch-hidden", !show);
-      section.style.display = show ? "" : "none";
-    }
+    // Homepage daily KPIs are owned by src/home-daily-stats.js → /api/home/daily-stats.
+    // Do NOT hide [data-home-daily-stats] based on localStorage mcjRealDB — that was fake gating.
+    return;
   }
 
   function bindQuickEntries() {

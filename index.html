@@ -3991,7 +3991,7 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
   <script src="src/banner-crop.js?v=20260809bannerCropSync1"></script>
   <script type="module" src="src/home-banner.js?v=20260815bannerMobileSort1"></script>
   <script type="module" src="src/home-announcements.js?v=20260805annRotate1"></script>
-  <script type="module" src="src/home-daily-stats.js?v=20260802mobileP0c"></script>
+  <script type="module" src="src/home-daily-stats.js?v=20260908dailyReal"></script>
   <script src="src/companion-presence.js?v=20260805profileLock1"></script>
   <script src="/src/place-order-modal.js?v=20260811authUnify1" defer></script>
   <script type="module" src="src/home-popularity.js?v=20260805profileLock1"></script>
@@ -4140,73 +4140,13 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
   </script>
 
   <script>
-    (function todayDataDetailScript(){/* today-data-detail-script-v1 */
+    (function todayDataDetailScript(){/* today-data-detail-script-v1 — DISABLED: no localStorage fake stats */
+      // Legacy cards ([data-today-detail]/[data-live-stat]) used mcjRealDB.v1 and fell back to
+      // "all orders = today" when empty. Homepage daily KPIs now come only from
+      // /api/gateway?path=home/daily-stats (server/api/home/daily-stats.js) with the same
+      // buildDashboardStats口径 as admin. Do not reintroduce localStorage/mock numbers.
       if (window.__mcjTodayDataDetailReady) return;
       window.__mcjTodayDataDetailReady = true;
-      var fallbackPlayers = [];
-      var fallbackOrders = [];
-      var fallbackReviews = [];
-      function safe(text){return String(text==null?'':text).replace(/[&<>"']/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]})}
-      function readJson(key,fallback){try{var data=JSON.parse(localStorage.getItem(key)||'null');if(Array.isArray(data)&&data.length)return data;if(data&&typeof data==='object')return data;}catch(e){}return fallback}
-      function firstArray(keys,fallback){for(var i=0;i<keys.length;i++){var data=readJson(keys[i],null);if(Array.isArray(data)&&data.length)return data;}return fallback}
-      function realDB(){try{return JSON.parse(localStorage.getItem('mcjRealDB.v1')||'{}')}catch(e){return {}}}
-      function numFromMoney(value){var n=String(value||'').replace(/,/g,'').match(/[\d.]+/);return n?Number(n[0]):0}
-      function isToday(value){if(!value)return true;var d=new Date(value);if(isNaN(d.getTime()))return true;var now=new Date();return d.getFullYear()===now.getFullYear()&&d.getMonth()===now.getMonth()&&d.getDate()===now.getDate()}
-      function enabled(list){return (list||[]).filter(function(x){return x&&x.enabled!==false})}
-      function orderAmount(order){return numFromMoney(order.amount||order.total||order.price||order.unit_price)}
-      function currentData(){
-        var db=realDB();
-        var players = enabled(Array.isArray(db.companions)?db.companions.filter(function(p){return p.auditStatus==='approved'&&p.visible!==false&&p.visible!=='false'}):[]);
-        var orders = Array.isArray(db.orders)?db.orders:[];
-        var todayOrders = orders.filter(function(order){return isToday(order.created_at||order.time||order.service_time)});
-        if(!todayOrders.length) todayOrders = orders;
-        var reviews = enabled(Array.isArray(db.reviews)?db.reviews.filter(function(r){return r.status==='通过'||r.status==='approved'||r.status==='已发布'}):[]);
-        var online = players.filter(function(p){return String(p.status||p.online||'在线').indexOf('离线')===-1});
-        var revenue = todayOrders.reduce(function(sum,order){return sum + orderAmount(order)},0);
-        var avgRating = reviews.length ? reviews.reduce(function(sum,item){return sum + (parseFloat(item.rating||item.score||5)||5)},0)/reviews.length : 0;
-        var goodRate = Math.min(100, Math.max(0, avgRating/5*100));
-        return {players:players,online:online,orders:todayOrders,reviews:reviews,revenue:revenue,goodRate:goodRate};
-      }
-      function setCounts(){
-        var data=currentData();
-        var map={players:data.online.length||data.players.length,orders:data.orders.length,revenue:data.revenue,reviews:data.goodRate.toFixed(1)};
-        document.querySelectorAll('[data-today-detail], [data-live-stat]').forEach(function(card){
-          var type=card.getAttribute('data-today-detail')||card.getAttribute('data-live-stat');
-          var strong=card.querySelector('strong');
-          if(!strong)return;
-          var value=map[type];
-          if(type==='reviews'){strong.dataset.count=String(value);strong.textContent=value+'%';}
-          else if(type==='revenue'){strong.dataset.count=String(value);strong.textContent=value>0?(Number(value).toFixed(2).replace(/\.00$/,'')+' 猫粮'):'';}
-          else{strong.dataset.count=String(value||0);strong.textContent=String(value||0);}
-        });
-        document.querySelectorAll('[data-live-stat="revenue"] strong').forEach(function(strong){if(!Number(strong.dataset.count||0))strong.textContent='';});
-      }
-      function summary(items){return '<div class="today-detail-summary">'+items.map(function(x){return '<div><span>'+safe(x[0])+'</span><strong>'+safe(x[1])+'</strong></div>'}).join('')+'</div>'}
-      function rows(list,mapper){if(!list.length)return '<div class="today-detail-empty">后台暂时没有更多实质数据，生成订单或在后台新增后会同步显示</div>';return '<div class="today-detail-list">'+list.slice(0,18).map(function(item){var r=mapper(item);return '<div class="today-detail-row"><div><strong>'+safe(r.title)+'</strong><span>'+safe(r.desc)+'</span></div><b>'+safe(r.value)+'</b></div>'}).join('')+'</div>'}
-      function modalHtml(type){
-        var data=currentData();
-        var title='今日数据明细',desc='这里直接读取平台数据，数字和明细保持一致。',actions='';
-        var body='';
-        if(type==='players'){
-          title='在线陪玩明细'; desc='显示当前可预约陪玩列表，可看到名字、游戏、价格、评分和今日单量。'; actions='<a class="primary" href="companion-center.html">查看陪玩大厅</a>';
-          body=summary([['在线陪玩',data.online.length||data.players.length],['全部陪玩',data.players.length],['可派单','实时同步']])+rows(data.online.length?data.online:data.players,function(p){return {title:(p.name||p.title||'未命名陪玩')+' / '+(p.game||'游戏未填'),desc:'价格 '+(p.price||'未填')+' · 评分 '+(p.rating||p.score||'5.0')+' · 标签 '+((Array.isArray(p.tags)?p.tags.join('、'):p.tags)||'后台未填'),value:(p.orders24h||p.orders||0)+' 单'}});
-        } else if(type==='orders'){
-          title='今日订单明细'; desc='显示今天创建的订单，可看到订单号、陪玩、游戏、状态和金额。'; actions='<a class="primary" href="orders.html">查看我的订单</a>';
-          body=summary([['今日订单',data.orders.length],['待处理',data.orders.filter(function(o){return /待|pending|匹配|支付/.test(String(o.status||''))}).length],['今日金额',Math.round(data.revenue)+' 猫粮']])+rows(data.orders,function(o){return {title:(o.order_id||o.id||'未编号订单')+' / '+(o.player_name||o.player||o.boss||'未知'),desc:'游戏 '+(o.game||o.service||'未填')+' · 时间 '+(o.service_time||o.time||o.created_at||'刚刚'),value:(o.status||'待处理')+' · '+(o.amount||o.total||'0 猫粮')}});
-        } else if(type==='revenue'){
-          title='今日营业额明细'; desc='按今日订单金额汇总。'; actions='<a class="primary" href="orders.html">订单列表</a>';
-          body=summary([['今日营业额',Math.round(data.revenue)+' 猫粮'],['订单',data.orders.length],['客单价',Math.round(data.revenue/Math.max(data.orders.length,1))+' 猫粮']])+rows(data.orders,function(o){return {title:(o.order_id||o.id||'未编号订单')+' / '+(o.player_name||o.player||'陪玩未填'),desc:'状态 '+(o.status||'待处理')+' · '+(o.game||o.service||'服务未填'),value:o.amount||o.total||'0 猫粮'}});
-        } else {
-          title='好评明细'; desc='显示已通过评价列表，可看到评分、评价内容和对应游戏。'; actions='<a class="primary" href="companion-center.html">查看陪玩评价</a>';
-          body=summary([['好评率',data.goodRate.toFixed(1)+'%'],['评价',data.reviews.length],['平均分',(data.goodRate/20).toFixed(1)]])+rows(data.reviews,function(r){return {title:(r.name||r.user||'老板')+' / '+(r.game||'游戏未填'),desc:r.comment||r.description||'后台暂无评价内容',value:(r.rating||r.score||'5.0')+' 分'}});
-        }
-        return '<div class="today-detail-head"><div><h2>'+safe(title)+'</h2><p>'+safe(desc)+'</p></div></div><div class="today-detail-actions">'+actions+'<button type="button" data-close>关闭</button></div>'+body;
-      }
-      function show(html){var modal=document.getElementById('modal'),body=document.getElementById('modalBody');if(!modal||!body)return;body.innerHTML=html;modal.classList.add('open');document.body.style.overflow='hidden'}
-      document.addEventListener('click',function(e){var card=e.target.closest&&e.target.closest('[data-today-detail]');if(!card)return;e.preventDefault();e.stopPropagation();if(e.stopImmediatePropagation)e.stopImmediatePropagation();show(modalHtml(card.getAttribute('data-today-detail')));},true);
-      setCounts();
-      setTimeout(setCounts,400);
-      window.addEventListener('mcj:data-updated',setCounts);
     })();
   </script>
 
