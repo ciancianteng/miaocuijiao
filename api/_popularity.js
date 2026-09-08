@@ -170,6 +170,15 @@ function gameKeyOf(order = {}, companion = {}) {
   return String(order.game || order.service_name || companion.game || companion.main_service || "").trim();
 }
 
+/** Weekly board eligibility: must have real weekly activity (not zero-fill). */
+function hasWeeklyBoardActivity(row = {}) {
+  return (
+    money(row.popularity_score ?? row.popularityScore) > 0 ||
+    Number(row.completed_orders ?? row.completedOrders ?? 0) > 0 ||
+    Number(row.five_star_reviews ?? row.fiveStarReviews ?? 0) > 0
+  );
+}
+
 function emptyBucket() {
   return {
     completed_orders: 0,
@@ -521,7 +530,13 @@ export async function recomputePopularity({ periods, gameKeys, operatorId, opera
 
       scored.sort((a, b) => b.popularity_score - a.popularity_score || b.completed_orders - a.completed_orders);
       scored.forEach((row, idx) => {
-        row.rank = row.popularity_score > 0 || row.completed_orders > 0 || row.gift_cat_food > 0 ? idx + 1 : 0;
+        // Weekly: only assign ranks when there is real weekly activity.
+        // Monthly / total keep prior eligibility (score / orders / gifts).
+        const eligible =
+          periodType === "weekly"
+            ? hasWeeklyBoardActivity(row)
+            : row.popularity_score > 0 || row.completed_orders > 0 || row.gift_cat_food > 0;
+        row.rank = eligible ? idx + 1 : 0;
       });
 
       // Upsert via delete+insert for this period+game slice (keeps ranks consistent)
@@ -660,6 +675,14 @@ export async function listBoard({ period = "weekly", gameKey = "", limit, online
 
   if (onlineOnly) items = items.filter((i) => i.availabilityStatus === "online");
   if (level) items = items.filter((i) => String(i.level).includes(String(level)) || String(i.levelId) === String(level));
+
+  // Homepage / weekly board: never surface zero-activity companions as 冠军/亚军.
+  if (bounds.periodType === "weekly") {
+    items = items.filter(hasWeeklyBoardActivity);
+    items.forEach((item, idx) => {
+      item.rank = idx + 1;
+    });
+  }
 
   items = items.slice(0, displayLimit);
   return {
