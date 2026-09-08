@@ -3,6 +3,7 @@ import {
   indexProfilesForStats,
   isTestTouchedOrder,
 } from "../_test-accounts.js";
+import { PLATFORM_STATS_TIMEZONE, isCreatedOnLocalDay, localDateYmd } from "../_platform-day.js";
 
 const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY"];
 const ADMIN_ROLES = new Set(["admin", "super_admin"]);
@@ -94,7 +95,7 @@ function money(v) {
   return Number.isFinite(n) ? n : 0;
 }
 /** Revenue: paid / in service / completed. Exclude unpaid drafts and cancelled. */
-function countsAsRevenue(order = {}) {
+export function countsAsRevenue(order = {}) {
   const s = String(order.status || "");
   if (!s) return false;
   if (["awaiting_payment", "cancelled", "expired", "refunded"].includes(s)) return false;
@@ -127,12 +128,19 @@ async function loadProfilesForStats() {
  * Aggregate dashboard stats with smoke / @meow.test / is_test_account excluded.
  * Exported for unit verification without HTTP.
  */
-export function buildDashboardStats({ profiles = [], orders = [], withdrawals = [], now = new Date() } = {}) {
+export function buildDashboardStats({
+  profiles = [],
+  orders = [],
+  withdrawals = [],
+  now = new Date(),
+  timeZone = PLATFORM_STATS_TIMEZONE,
+} = {}) {
   const { byId, testIds } = indexProfilesForStats(profiles);
   const businessOrders = (orders || []).filter((o) => !isTestTouchedOrder(o, testIds, byId));
-  const today = now.toISOString().slice(0, 10);
+  // Local business day (Asia/Kuala_Lumpur) — never use UTC date-slice for "today".
+  const today = localDateYmd(now, timeZone);
   const revenueOrders = businessOrders.filter((o) => countsAsRevenue(o));
-  const paidToday = revenueOrders.filter((o) => String(o.created_at || "").slice(0, 10) === today);
+  const paidToday = revenueOrders.filter((o) => isCreatedOnLocalDay(o.created_at, today, timeZone));
   const wd = (Array.isArray(withdrawals) ? withdrawals : []).filter((w) => {
     const uid = w.user_id || w.companion_id || w.boss_id || w.profile_id;
     if (uid && testIds.has(uid)) return false;
