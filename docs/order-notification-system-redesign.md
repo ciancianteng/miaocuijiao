@@ -462,7 +462,7 @@ Feature flag 建议：`ORDER_NOTIFY_V2`（emit 全量）、`ORDER_NOTIFY_EMAIL_R
 
 ---
 
-## 11. 关键文件索引（现状，供实现对照）
+## 12. 关键文件索引（现状，供实现对照）
 
 - `supabase/migrations/20260804_companion_notifications.sql` *(empty — N1 修复目标)*  
 - `supabase/migrations/20260804_companion_review_notify_email.sql`  
