@@ -113,19 +113,72 @@ async function probeSchema() {
   };
 }
 
-async function applyDdl() {
+/** Ensure base companion_services exists before P1 ALTER (Staging may lack marketplace DDL). */
+const ENSURE_COMPANION_SERVICES_SQL = `
+create table if not exists public.companion_services (
+  id uuid primary key default gen_random_uuid(),
+  companion_id uuid not null references public.profiles(id),
+  service_id uuid,
+  service_name text not null default '',
+  price numeric(12,2) not null default 0,
+  pricing_unit text not null default '小时',
+  specs jsonb not null default '[]'::jsonb,
+  requires_game_id boolean not null default true,
+  custom_fields jsonb not null default '[]'::jsonb,
+  enabled boolean not null default true,
+  review_status text not null default 'approved',
+  base_price_snapshot numeric(12,2),
+  proposed_price numeric(12,2),
+  proposed_at timestamptz,
+  reviewed_at timestamptz,
+  reviewed_by uuid,
+  review_note text,
+  source text,
+  level_id_at_price text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists idx_companion_services_companion
+  on public.companion_services (companion_id, enabled);
+`;
+
+function isDirectDbHost(dbUrl) {
+  try {
+    const host = new URL(String(dbUrl || "")).hostname.toLowerCase();
+    return /^db\.[a-z0-9]+\.supabase\.co$/.test(host);
+  } catch {
+    return false;
+  }
+}
+
+function resolveDdlDatabaseUrls() {
   const oneshotDb = String(process.env.STAGING_DATABASE_URL || "").trim();
   const oneshotPass = String(process.env.STAGING_DB_PASSWORD || "").trim();
+  const urls = [];
+  const push = (u, via) => {
+    const s = String(u || "").trim();
+    if (!s) return;
+    if (urls.some((x) => x.url === s)) return;
+    urls.push({ url: s, via });
+  };
+  // Prefer Session pooler on IPv4-capable hosts when password is available.
+  // Direct db.*.supabase.co is often IPv6-only and fails with ENETUNREACH in Cloud Agents.
+  if (oneshotPass) push(buildStagingPoolerUrl(oneshotPass), "pooler_password");
+  if (oneshotDb && !isDirectDbHost(oneshotDb)) push(oneshotDb, "database_url");
+  if (oneshotDb) push(oneshotDb, "database_url_direct");
+  return urls;
+}
+
+async function applyDdl() {
   const oneshotPat = String(process.env.SUPABASE_ACCESS_TOKEN || process.env.STAGING_SUPABASE_ACCESS_TOKEN || "").trim();
-  const dbUrl = oneshotDb || (oneshotPass ? buildStagingPoolerUrl(oneshotPass) : "");
-  if (dbUrl) {
-    const ref = projectRefFromDatabaseUrl(dbUrl);
+  const candidates = resolveDdlDatabaseUrls();
+  for (const c of candidates) {
+    const ref = projectRefFromDatabaseUrl(c.url);
     if (ref === PRODUCTION_PROJECT_REF) throw new Error(`Refusing Production DATABASE_URL.`);
-    assertStagingOnly({ supabaseUrl: STAGING_URL, databaseUrl: dbUrl });
-  } else {
-    assertStagingOnly({ supabaseUrl: STAGING_URL });
+    assertStagingOnly({ supabaseUrl: STAGING_URL, databaseUrl: c.url });
   }
-  if (!dbUrl && !oneshotPat) {
+  if (!candidates.length) assertStagingOnly({ supabaseUrl: STAGING_URL });
+  if (!candidates.length && !oneshotPat) {
     throw Object.assign(
       new Error(
         "Missing STAGING_DATABASE_URL / STAGING_DB_PASSWORD / SUPABASE_ACCESS_TOKEN for DDL apply."
@@ -133,13 +186,32 @@ async function applyDdl() {
       { status: 2 }
     );
   }
-  const { path: sqlPath, sql } = readSqlFile(SQL_CANDIDATES);
-  console.log(`[ddl] sql=${sqlPath}`);
+  const { path: sqlPath, sql: p1Sql } = readSqlFile(SQL_CANDIDATES);
+  const sql = `${ENSURE_COMPANION_SERVICES_SQL}\n${p1Sql}`;
+  console.log(`[ddl] sql=${sqlPath} (+ ensure companion_services)`);
   if (DRY_RUN) {
     console.log("[ddl] DRY_RUN skip apply");
     return { dryRun: true, sqlPath };
   }
-  return dbUrl ? applySqlViaPostgres(dbUrl, sql) : applySqlViaManagementApi(oneshotPat, sql);
+  const errors = [];
+  for (const c of candidates) {
+    try {
+      const result = await applySqlViaPostgres(c.url, sql);
+      return { ...result, viaDetail: c.via };
+    } catch (e) {
+      const msg = String(e && e.message ? e.message : e);
+      errors.push(`${c.via}: ${msg.slice(0, 180)}`);
+      console.warn(`[ddl] ${c.via} failed: ${msg.slice(0, 180)}`);
+    }
+  }
+  if (oneshotPat) {
+    return applySqlViaManagementApi(oneshotPat, sql);
+  }
+  throw new Error(
+    `DDL apply failed (no Production fallback). Tried: ${errors.join(" | ") || "none"}. ` +
+      `Need Session pooler STAGING_DATABASE_URL (aws-0-*.pooler.supabase.com / postgres.${STAGING_PROJECT_REF}) ` +
+      `or matching STAGING_DB_PASSWORD / SUPABASE_ACCESS_TOKEN.`
+  );
 }
 
 async function loadLevelsMap() {
