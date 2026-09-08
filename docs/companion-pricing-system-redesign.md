@@ -3,33 +3,48 @@
 > **范围：** 仅方案与 UI 页面设计 + **P1–P5 实现 PR 拆分**，**不包含实现代码**。  
 > **约束：** 不修改 PR #198（gameplay `commission_rate` 独立 / BLOCKED）；不在本 PR 改业务逻辑 / 跑 Production migration。  
 > **状态：** 产品规则已确认（§0）→ 按 P1–P5 分 PR 落地，禁止大改生产一锅端。  
-> **复核日期：** 2026-09-08c。
+> **复核日期：** 2026-09-08d · 产品终稿。
 
 ---
 
-## 0. 产品规则锁定（2026-09-08 确认）
+## 0. 产品规则锁定（2026-09-08 确认 · 终稿）
 
 | # | 规则 | 含义 |
 |---|------|------|
 | **R1** | 删除陪玩申请填写价格逻辑 | 申请阶段**不产生售价**；submit 忽略/拒绝 `price` / `game_prices` |
-| **R2** | 等级必须绑定 `base_price`；审核通过必须选等级 | 无 `base_price` 的等级不可用；无等级不可通过审核（禁止静默 Lv1） |
-| **R3** | 等级价格 = 默认售价 SoT | 审核通过后按等级 `base_price` 种子 `companion_services.price` |
-| **R4** | 陪玩自定义价只能提交 pending | **禁止**直接覆盖生效价；pending 期间下单仍用旧 effective |
+| **R2** | 等级必须绑定 `base_price`；审核通过必须选等级 | **`base_price` = 等级默认售价 SoT**；`min_price`/`max_price` 仅后台规则限制，**不是**售卖价来源；**禁止 silent Lv1** |
+| **R3** | 等级价格 = 默认售价 SoT | 审核通过后按 `base_price` 种子 `companion_services.price`（`source=level_default`） |
+| **R4** | 陪玩自定义价只能提交 pending | pending **不得**影响大厅价、订单金额、结算 |
 | **R5** | 后台新增自定义价审核 + 服务总览 | 独立审核队列 + 全量服务矩阵 |
-| **R6** | 下单 / 大厅 / 订单金额统一 `resolveEffectiveServicePrice` | 禁止各通道各自读 `profiles.price` |
-| **R7** | `profiles.price` / `game_prices` 降为缓存 | **不再作为业务来源**；仅派生展示兼容，P5 冻结写路径 |
+| **R6** | 大厅 / 下单 / 订单 / 客服统一 `resolveEffectiveServicePrice` | 禁止各通道各自读 `profiles.price` 作业务源 |
+| **R7** | `profiles.price` / `game_prices` 降为缓存 | P5 前仅兼容；**禁止新增业务读取**；P5 冻结写并移除 fallback |
+| **R8** | 改等级策略 | 已批准自定义价**保留**；无自定义服务**跟随新 `base_price`** |
+| **R9** | `PRICE_V2`（别名 `PRICING_V2`） | **P4** 灰度切读；Staging PASS 后再开 Production |
+
+### Effective price 优先级（锁定）
+
+```
+approved custom_price（companion_services 已启用且已批准的生效价）
+        ↓
+level base_price（level_default 行，或无行时取等级 base）
+        ↓
+legacy fallback（profiles.price / game_prices — 仅迁移期；P5 删除）
+```
+
+`proposed_price`（pending）**永不**进入 effective。
 
 ### 落地原则（防大改生产）
 
 1. **一阶段一 PR**，可独立 revert；禁止 P1–P5 打成一个巨型 PR。  
 2. **Staging 先行**：schema / 回填 / 读切流只在 Staging 验证 PASS 后再申请 Prod migration。  
-3. **Feature flag `PRICING_V2`**：读路径可回退；新表写入可保留不阻断旧路径，直到 P4/P5 切流完成。  
-4. **先加后切**：P1 引入解析器（内含 legacy fallback）→ P2–P3 改写路径 → P4 切读路径 → P5 删 fallback / 冻结缓存写。  
-5. **不改 PR #198**；玩法商品抽成与本体系隔离。
+3. **Feature flag `PRICE_V2`**：P4 切读；P1–P3 解析器可存在但默认仍等价/可回退。  
+4. **先加后切**：P1 引入解析器（含 legacy fallback）→ P2–P3 改写路径 → P4 flag 灰度 → P5 删 fallback。  
+5. **不改 PR #198**；玩法商品抽成与本体系隔离。  
+6. **禁止直接执行 Production migration。**
 
 ### 一句话目标模型
 
-**等级 `base_price` → 审核强制绑级并种子服务行 → 陪玩只能 pending 自定义价 → 后台审通过后再生效 → 全站只读 `resolveEffectiveServicePrice`；`profiles.price`/`game_prices` 仅缓存。**
+**等级 `base_price` → 审核强制绑级并种子服务行 → 陪玩只能 pending 自定义价 → 后台审通过后再生效 → 全站只读 `resolveEffectiveServicePrice`；改级保留已批准自定义价；`profiles.price`/`game_prices` 仅缓存。**
 
 ---
 
@@ -531,18 +546,17 @@ P0 设计 (#200) ──已确认──┐
 
 ---
 
-## 12. 仍待产品拍板（不影响 P1 开工）
+## 12. 已拍板默认（终稿）
 
-已锁定 R1–R7 后，以下 **不阻塞 P1**，建议在 P2/P3 前确认：
-
-| # | 问题 | 默认建议（若未另指示则按此做） |
-|---|------|-------------------------------|
-| O1 | `base_price` 与 `min_price` 关系 | **拆分**：`base_price` 为默认售价；`min/max` 仍约束自定义区间；迁移初值 `base=min` |
-| O2 | 改级后已通过自定义价 | **保留**自定义价；仅 `source=level_default` 的行重算为新 base |
+| # | 问题 | 确认 |
+|---|------|------|
+| O1 | `base_price` vs `min`/`max` | **拆分**：`base_price` = 默认售价 SoT；`min`/`max` 仅限制自定义区间 |
+| O2 | 改级后已通过自定义价 | **保留**；仅无自定义（`level_default`）的行跟随新 `base_price` |
 | O3 | 同等级多游戏不同自定义价 | **允许**，按服务行独立审核 |
-| O4 | 大厅主价口径 | **最低已启用有效服务价**（并写回派生缓存） |
-| O5 | 历史无等级陪玩 | Staging 回填时 **暂挂 `allow_orders=false`**，运营补级后再开；不静默假 Lv1 充数 |
+| O4 | 大厅主价口径 | **最低已启用有效服务价**（写回派生缓存） |
+| O5 | 历史无等级陪玩 | Staging 回填时 **暂挂 `allow_orders=false`**，运营补级后再开；不 silent Lv1 |
 | O6 | 「添加游戏」是否需审 | **新游戏行先以 `base_price` 生效**；仅自定义价需审 |
+| O7 | Flag 名 | **`PRICE_V2`**（代码兼容别名 `PRICING_V2`）；P4 灰度 |
 
 ---
 
@@ -565,4 +579,4 @@ P0 设计 (#200) ──已确认──┐
 
 ---
 
-*文档版本：2026-09-08b · PR #200 design-only · 代码复核通过*
+*文档版本：2026-09-08d · PR #200 design-only · 产品终稿 R1–R9 · P1–P5 拆分*
