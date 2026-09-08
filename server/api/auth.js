@@ -20,6 +20,13 @@ import {
   consumeRegisterVerified,
   invalidateOtp,
   randomOtpCode as sharedRandomOtpCode,
+  assertResendCooldown,
+  commitOtpAfterSuccessfulSend,
+  recordOtpSendFailure,
+  assertOtpVerifyNotLocked,
+  recordOtpVerifyFail,
+  clearOtpVerifyFails,
+  OTP_STORE_COOLDOWN_MS,
 } from "./_otp-store.js";
 import { validatePassword, PASSWORD_RULE_HINT } from "./_password-policy.js";
 import {
@@ -352,39 +359,43 @@ function clientIp(req) {
 }
 
 function otpFailBucket() {
+  // Legacy in-memory fail map kept only as non-authoritative cache; DB is SoT.
   globalThis.__mcjOtpFails = globalThis.__mcjOtpFails || new Map();
   return globalThis.__mcjOtpFails;
 }
 
-function assertOtpNotRateLimited(key) {
-  const row = otpFailBucket().get(key);
-  if (row && Number(row.fails || 0) >= OTP_MAX_FAILS && Date.now() - Number(row.at || 0) < OTP_TTL_MS) {
-    throw Object.assign(new Error("验证码错误次数过多，请稍后再试。"), { status: 429 });
-  }
+async function assertOtpNotRateLimited(accountKey, role, kind = "otp") {
+  await assertOtpVerifyNotLocked(accountKey, role, kind);
 }
 
-function recordOtpFail(key) {
+async function recordOtpFail(accountKey, role, kind = "otp") {
+  const key = `${String(role || "").toLowerCase()}:${String(kind || "otp")}:${String(accountKey || "").toLowerCase()}`;
   const map = otpFailBucket();
   const prev = map.get(key) || { fails: 0, at: Date.now() };
   map.set(key, { fails: Number(prev.fails || 0) + 1, at: Date.now() });
+  await recordOtpVerifyFail(accountKey, role, kind).catch(() => null);
 }
 
-function clearOtpFails(key) {
+async function clearOtpFails(accountKey, role, kind = "otp") {
+  const key = `${String(role || "").toLowerCase()}:${String(kind || "otp")}:${String(accountKey || "").toLowerCase()}`;
   otpFailBucket().delete(key);
+  await clearOtpVerifyFails(accountKey, role, kind).catch(() => null);
 }
 
 async function assertOtpResendCooldown(accountKey, role, kind = "otp") {
-  const key = `${String(role || "").toLowerCase()}:${String(kind || "otp")}:${String(accountKey || "").toLowerCase()}`;
-  globalThis.__mcjOtpCooldown = globalThis.__mcjOtpCooldown || new Map();
-  const last = Number(globalThis.__mcjOtpCooldown.get(key) || 0);
-  const wait = OTP_RESEND_COOLDOWN_MS - (Date.now() - last);
-  if (last && wait > 0) {
-    throw Object.assign(new Error(`发送过于频繁，请 ${Math.ceil(wait / 1000)} 秒后再试。`), {
-      status: 429,
-      retryAfterSec: Math.ceil(wait / 1000),
-    });
-  }
-  globalThis.__mcjOtpCooldown.set(key, Date.now());
+  // DB-persisted; does not stamp until mail succeeds (commitOtpAfterSuccessfulSend).
+  return assertResendCooldown({
+    accountKey,
+    role,
+    kind,
+    cooldownMs: OTP_RESEND_COOLDOWN_MS || OTP_STORE_COOLDOWN_MS,
+  });
+}
+
+function extractMailProviderMeta(sendResult) {
+  const id = String(sendResult?.id || sendResult?.messageId || "").trim();
+  const provider = id ? "resend" : sendResult?.messageId ? "smtp" : "mail";
+  return { providerMessageId: id, provider };
 }
 
 async function parseBody(req) {
@@ -439,12 +450,13 @@ function maskEmailHint(email) {
 }
 
 function allowDebugOtp() {
+  // Hard fail-closed on Vercel Production — never expose debug OTP even if MCJ_OTP_DEBUG is set.
+  if (String(process.env.VERCEL_ENV || "").toLowerCase() === "production") return false;
   // Explicit opt-in only. Vercel Preview must fail closed like production so a mail
   // outage never looks like a successful send (no silent ok + no client-visible codes).
   if (String(process.env.ALLOW_STAGING_OTP || "") === "1" || String(process.env.MCJ_OTP_DEBUG || "") === "1") {
     return true;
   }
-  if (String(process.env.VERCEL_ENV || "").toLowerCase() === "production") return false;
   if (String(process.env.VERCEL_ENV || "").toLowerCase() === "preview") return false;
   const base = String(process.env.MCJ_PUBLIC_BASE || process.env.VERCEL_URL || "");
   return /localhost|127\.0\.0\.1/i.test(base);
@@ -571,8 +583,24 @@ async function storeForgotOtp(accountKey, role, code, kind = "otp") {
   return storeOtp({ accountKey, role, code, kind, ttlMs: OTP_TTL_MS });
 }
 
+async function commitForgotOtpAfterSend(accountKey, role, code, kind, mailMeta = {}) {
+  return commitOtpAfterSuccessfulSend({
+    accountKey,
+    role,
+    code,
+    kind,
+    ttlMs: OTP_TTL_MS,
+    provider: mailMeta.provider || "resend",
+    providerMessageId: mailMeta.providerMessageId || "",
+  });
+}
+
 async function findForgotOtp(accountKey, role, kind = "otp") {
   return findOtp(accountKey, role, kind);
+}
+
+function otpRetryAfterSec() {
+  return Math.floor((OTP_RESEND_COOLDOWN_MS || OTP_STORE_COOLDOWN_MS) / 1000);
 }
 
 async function createSessionForUserId(userId, email) {
@@ -620,6 +648,7 @@ async function handleForgotSendOtp(body, res) {
     message: RESET_EMAIL_GENERIC_MESSAGE,
     channel: "email",
     expiresInSec: Math.floor(OTP_TTL_MS / 1000),
+    retryAfterSec: otpRetryAfterSec(),
   };
   if (!account) return json(res, 400, { ok: false, message: "请输入绑定邮箱。" });
   if (!/@/.test(account)) {
@@ -641,38 +670,53 @@ async function handleForgotSendOtp(body, res) {
   }
   const code = randomOtpCode();
   const key = forgotAccountKey(profile);
-  try {
-    await storeForgotOtp(key, role, code, "otp");
-  } catch (storeErr) {
-    return json(res, storeErr?.status || 503, {
-      ok: false,
-      message: "验证码存储失败，请稍后重试。",
-      mail: publicMailHint(),
-    });
-  }
   // MVP: email only. SMS stub kept for later international release.
   void sendSmsOtp({ phone: profile.phone || profile.phone_e164 || "", code, purpose: "forgot" });
   let mailOk = false;
   let mailError = "";
+  let mailMeta = { provider: "", providerMessageId: "" };
   try {
-    await sendEmailOtp({ to: email, code, purpose: "forgot", roleLabel: roleLabelOf(role) });
+    const sendResult = await sendEmailOtp({ to: email, code, purpose: "forgot", roleLabel: roleLabelOf(role) });
+    mailMeta = extractMailProviderMeta(sendResult);
     mailOk = true;
   } catch (err) {
     mailError = String(err?.message || err || "");
   }
-  if (!mailOk) console.error("[auth/forgot_send_otp] mail failed", mailError, mailProviderStatus());
+  if (mailOk) {
+    try {
+      await commitForgotOtpAfterSend(key, role, code, "otp", mailMeta);
+    } catch (storeErr) {
+      return json(res, storeErr?.status || 503, {
+        ok: false,
+        message: "验证码存储失败，请稍后重试。",
+        mail: publicMailHint(),
+        retryAfterSec: otpRetryAfterSec(),
+      });
+    }
+  } else {
+    console.error("[auth/forgot_send_otp] mail failed", mailError, mailProviderStatus());
+    await recordOtpSendFailure({
+      accountKey: key,
+      role,
+      kind: "otp",
+      code,
+      error: mailError,
+      provider: mailMeta.provider,
+    }).catch(() => null);
+  }
   const payload = clientOtpSendPayload({
     mailOk,
     mailError,
     code,
     emailMasked: maskEmailHint(email),
-    successMessage: `验证码已发送至邮箱 ${maskEmailHint(email)}。`,
+    successMessage: `验证码已发送至邮箱 ${maskEmailHint(email)}。请同时检查垃圾箱，并确认选择了正确的端。`,
     genericMessage: RESET_EMAIL_GENERIC_MESSAGE,
   });
   return json(res, payload.ok ? 200 : 503, {
     ...payload,
     phoneMasked: "",
     expiresInSec: Math.floor(OTP_TTL_MS / 1000),
+    retryAfterSec: otpRetryAfterSec(),
     role,
   });
 }
@@ -699,9 +743,10 @@ async function handleLoginSendOtp(body, res) {
   if (blockedSend) return blockedSend;
   const generic = {
     ok: true,
-    message: "如该邮箱已注册，将收到登录验证码。",
+    message: "如该邮箱已注册，将收到登录验证码。请确认邮箱与端一致，并检查垃圾箱。",
     channel: "email",
     expiresInSec: Math.floor(OTP_TTL_MS / 1000),
+    retryAfterSec: otpRetryAfterSec(),
   };
   const resolved = await resolveForgotAccount(email, role);
   if (!resolved?.profile || resolved.profile.status === "disabled") return json(res, 200, generic);
@@ -720,36 +765,56 @@ async function handleLoginSendOtp(body, res) {
   }
   const code = randomOtpCode();
   const key = forgotAccountKey(profile);
-  try {
-    await storeForgotOtp(key, role, code, "login_otp");
-  } catch (storeErr) {
-    return json(res, storeErr?.status || 503, {
-      ok: false,
-      message: "验证码存储失败，请稍后重试。",
-      mail: publicMailHint(),
-    });
-  }
   void sendSmsOtp({ phone: profile.phone || "", code, purpose: "login" });
   let mailOk = false;
   let mailError = "";
+  let mailMeta = { provider: "", providerMessageId: "" };
   try {
-    await sendEmailOtp({ to: String(profile.email || email).toLowerCase(), code, purpose: "login", roleLabel: roleLabelOf(role) });
+    const sendResult = await sendEmailOtp({
+      to: String(profile.email || email).toLowerCase(),
+      code,
+      purpose: "login",
+      roleLabel: roleLabelOf(role),
+    });
+    mailMeta = extractMailProviderMeta(sendResult);
     mailOk = true;
   } catch (err) {
     mailError = String(err?.message || err || "");
   }
-  if (!mailOk) console.error("[auth/send_login_otp] mail failed", mailError, mailProviderStatus());
+  if (mailOk) {
+    try {
+      await commitForgotOtpAfterSend(key, role, code, "login_otp", mailMeta);
+    } catch (storeErr) {
+      return json(res, storeErr?.status || 503, {
+        ok: false,
+        message: "验证码存储失败，请稍后重试。",
+        mail: publicMailHint(),
+        retryAfterSec: otpRetryAfterSec(),
+      });
+    }
+  } else {
+    console.error("[auth/send_login_otp] mail failed", mailError, mailProviderStatus());
+    await recordOtpSendFailure({
+      accountKey: key,
+      role,
+      kind: "login_otp",
+      code,
+      error: mailError,
+      provider: mailMeta.provider,
+    }).catch(() => null);
+  }
   const payload = clientOtpSendPayload({
     mailOk,
     mailError,
     code,
     emailMasked: maskEmailHint(profile.email || email),
-    successMessage: `登录验证码已发送至 ${maskEmailHint(profile.email || email)}。`,
+    successMessage: `登录验证码已发送至 ${maskEmailHint(profile.email || email)}。请同时检查垃圾箱，并确认选择了正确的端。`,
     genericMessage: generic.message,
   });
   return json(res, payload.ok ? 200 : 503, {
     ...payload,
     expiresInSec: Math.floor(OTP_TTL_MS / 1000),
+    retryAfterSec: otpRetryAfterSec(),
     role,
   });
 }
@@ -945,36 +1010,50 @@ async function handleSendRegisterOtp(body, res) {
     return json(res, 409, { ok: false, message: "该邮箱已注册，请直接登录。" });
   }
   const code = randomOtpCode();
-  try {
-    await storeForgotOtp(email, role, code, "register_otp");
-  } catch (storeErr) {
-    return json(res, storeErr?.status || 503, {
-      ok: false,
-      message: "验证码存储失败，请稍后重试。",
-      mail: publicMailHint(),
-    });
-  }
   let mailOk = false;
   let mailError = "";
+  let mailMeta = { provider: "", providerMessageId: "" };
   try {
-    await sendEmailOtp({ to: email, code, purpose: "register", roleLabel: roleLabelOf(role) });
+    const sendResult = await sendEmailOtp({ to: email, code, purpose: "register", roleLabel: roleLabelOf(role) });
+    mailMeta = extractMailProviderMeta(sendResult);
     mailOk = true;
   } catch (err) {
     mailError = String(err?.message || err || "");
   }
-  if (!mailOk) console.error("[auth/send_register_otp] mail failed", mailError, mailProviderStatus());
+  if (mailOk) {
+    try {
+      await commitForgotOtpAfterSend(email, role, code, "register_otp", mailMeta);
+    } catch (storeErr) {
+      return json(res, storeErr?.status || 503, {
+        ok: false,
+        message: "验证码存储失败，请稍后重试。",
+        mail: publicMailHint(),
+        retryAfterSec: otpRetryAfterSec(),
+      });
+    }
+  } else {
+    console.error("[auth/send_register_otp] mail failed", mailError, mailProviderStatus());
+    await recordOtpSendFailure({
+      accountKey: email,
+      role,
+      kind: "register_otp",
+      code,
+      error: mailError,
+      provider: mailMeta.provider,
+    }).catch(() => null);
+  }
   const payload = clientOtpSendPayload({
     mailOk,
     mailError,
     code,
     emailMasked: maskEmailHint(email),
-    successMessage: `注册验证码已发送至 ${maskEmailHint(email)}。`,
+    successMessage: `注册验证码已发送至 ${maskEmailHint(email)}。请同时检查垃圾箱。`,
     genericMessage: "如邮箱可用，将收到注册验证码，请查收后继续。",
   });
   return json(res, payload.ok ? 200 : 503, {
     ...payload,
     expiresInSec: Math.floor(OTP_TTL_MS / 1000),
-    retryAfterSec: Math.floor(OTP_RESEND_COOLDOWN_MS / 1000),
+    retryAfterSec: otpRetryAfterSec(),
     role,
   });
 }
@@ -989,22 +1068,21 @@ async function handleVerifyRegisterOtp(body, res) {
   if (!/^\d{6}$/.test(code)) {
     return json(res, 400, { ok: false, message: "请输入 6 位邮箱验证码。" });
   }
-  const failKey = `register:${role}:${email}`;
   try {
-    assertOtpNotRateLimited(failKey);
+    await assertOtpNotRateLimited(email, role, "register_otp");
   } catch (err) {
     return json(res, err.status || 429, { ok: false, message: err.message });
   }
   const stored = await findForgotOtp(email, role, "register_otp");
   if (!stored?.code || String(stored.code) !== code) {
-    recordOtpFail(failKey);
+    await recordOtpFail(email, role, "register_otp");
     return json(res, 400, { ok: false, message: "验证码错误，请重新输入。" });
   }
   if (Number(stored.exp) <= Date.now()) {
-    recordOtpFail(failKey);
+    await recordOtpFail(email, role, "register_otp");
     return json(res, 400, { ok: false, message: "验证码已过期，请重新发送。" });
   }
-  clearOtpFails(failKey);
+  await clearOtpFails(email, role, "register_otp");
   const token = `reg_${randomOtpCode()}${Date.now().toString(36)}`;
   await markRegisterVerified(email, role, stored.id, token);
   return json(res, 200, {
@@ -1019,7 +1097,7 @@ async function handleVerifyRegisterOtp(body, res) {
 }
 
 async function markForgotVerified(accountKey, role, rowId, token) {
-  // Durable verify stamp (DB + platform_settings + memory) for serverless isolates.
+  // Durable verify stamp on password_reset_requests (no platform_settings).
   return markOtpVerified(accountKey, role, "otp", rowId, token, 15 * 60 * 1000);
 }
 
@@ -1033,15 +1111,14 @@ async function handleForgotVerifyOtp(body, res) {
   const resolved = await resolveForgotAccount(account, role);
   if (!resolved?.profile) return json(res, 400, { ok: false, message: "验证码无效或已过期" });
   const key = forgotAccountKey(resolved.profile);
-  const failKey = `forgot:${role}:${key}`;
   try {
-    assertOtpNotRateLimited(failKey);
+    await assertOtpNotRateLimited(key, role, "otp");
   } catch (err) {
     return json(res, err.status || 429, { ok: false, message: err.message });
   }
   const stored = await findForgotOtp(key, role, "otp");
   if (stored && stored.code && String(stored.code) === code && Number(stored.exp) > Date.now()) {
-    clearOtpFails(failKey);
+    await clearOtpFails(key, role, "otp");
     const token = `mcj_${randomOtpCode()}${Date.now().toString(36)}`;
     await markForgotVerified(key, role, stored.id, token);
     return json(res, 200, {
@@ -1052,7 +1129,7 @@ async function handleForgotVerifyOtp(body, res) {
       phoneMasked: "",
     });
   }
-  recordOtpFail(failKey);
+  await recordOtpFail(key, role, "otp");
   return json(res, 400, { ok: false, message: "验证码无效或已过期" });
 }
 
