@@ -1,24 +1,35 @@
 # 陪玩定价体系重构方案（PR #200 · 设计稿）
 
-> **范围：** 仅方案与 UI 页面设计，**不包含实现代码**。  
+> **范围：** 仅方案与 UI 页面设计 + **P1–P5 实现 PR 拆分**，**不包含实现代码**。  
 > **约束：** 不修改 PR #198（gameplay `commission_rate` 独立 / BLOCKED）；不在本 PR 改业务逻辑 / 跑 Production migration。  
-> **状态：** Design only → 产品确认 §10 开放问题后，再开实现 PR（P1–P5）。  
-> **复核日期：** 2026-09-08（对照 `main` 代码事实再核验）。
+> **状态：** 产品规则已确认（§0）→ 按 P1–P5 分 PR 落地，禁止大改生产一锅端。  
+> **复核日期：** 2026-09-08c。
 
 ---
 
-## 0. 一句话结论
+## 0. 产品规则锁定（2026-09-08 确认）
 
-今天的「卖价」SoT = 陪玩申请自填的 `companion_profiles.price` / `game_prices`；后台 `companion_levels` 只有 **min/max 区间 + 抽成**，**不决定基础单价**，因此等级价形同失效。  
+| # | 规则 | 含义 |
+|---|------|------|
+| **R1** | 删除陪玩申请填写价格逻辑 | 申请阶段**不产生售价**；submit 忽略/拒绝 `price` / `game_prices` |
+| **R2** | 等级必须绑定 `base_price`；审核通过必须选等级 | 无 `base_price` 的等级不可用；无等级不可通过审核（禁止静默 Lv1） |
+| **R3** | 等级价格 = 默认售价 SoT | 审核通过后按等级 `base_price` 种子 `companion_services.price` |
+| **R4** | 陪玩自定义价只能提交 pending | **禁止**直接覆盖生效价；pending 期间下单仍用旧 effective |
+| **R5** | 后台新增自定义价审核 + 服务总览 | 独立审核队列 + 全量服务矩阵 |
+| **R6** | 下单 / 大厅 / 订单金额统一 `resolveEffectiveServicePrice` | 禁止各通道各自读 `profiles.price` |
+| **R7** | `profiles.price` / `game_prices` 降为缓存 | **不再作为业务来源**；仅派生展示兼容，P5 冻结写路径 |
 
-目标模型：
+### 落地原则（防大改生产）
 
-1. 申请页移除自由填写单价  
-2. 后台等级决定基础价（`base_price`）  
-3. 审核通过并绑等级后才能接单  
-4. 陪玩端「服务管理」：添加游戏 / 开闭接单 / 提交自定义价  
-5. 自定义价进后台审核中心  
-6. 老板/用户下单统一读 `resolveEffectiveServicePrice`
+1. **一阶段一 PR**，可独立 revert；禁止 P1–P5 打成一个巨型 PR。  
+2. **Staging 先行**：schema / 回填 / 读切流只在 Staging 验证 PASS 后再申请 Prod migration。  
+3. **Feature flag `PRICING_V2`**：读路径可回退；新表写入可保留不阻断旧路径，直到 P4/P5 切流完成。  
+4. **先加后切**：P1 引入解析器（内含 legacy fallback）→ P2–P3 改写路径 → P4 切读路径 → P5 删 fallback / 冻结缓存写。  
+5. **不改 PR #198**；玩法商品抽成与本体系隔离。
+
+### 一句话目标模型
+
+**等级 `base_price` → 审核强制绑级并种子服务行 → 陪玩只能 pending 自定义价 → 后台审通过后再生效 → 全站只读 `resolveEffectiveServicePrice`；`profiles.price`/`game_prices` 仅缓存。**
 
 ---
 
@@ -345,54 +356,193 @@ enabled=false → 不可选、不进大厅服务列表（行保留）
 
 ### 8.3 回滚
 
-Feature flag `PRICING_V2`：off 时回退旧 `price`/`game_prices` 读；新表保留不阻断。
+Feature flag `PRICING_V2`：off 时回退旧 `price`/`game_prices` 读；新表保留不阻断。  
+任一实现 PR 出问题：先关 flag / revert 该 PR，**不要**连带回滚已验证的前置阶段 schema（除非该阶段自身有缺陷）。
 
 ---
 
-## 9. 分阶段落地
+## 9. P1–P5 实现 PR 拆分（产品规则已锁定）
 
-| 阶段 | 内容 | 验收 |
-|------|------|------|
-| **P0 设计** | 本文档（本 PR #200） | 产品/工程评审 |
-| **P1 Schema + 解析器** | `base_price`；services 增强；`resolveEffectiveServicePrice`；Staging 回填 | schema diff + 下单单测 |
-| **P2 申请/审核** | 去申请价；强制等级并种子服务 | 无单价控件；无等级无法通过 |
-| **P3 陪玩服务页 + 待审** | N1 + N3 | 自定义价不即时生效；通过后三端同价 |
-| **P4 总览 + 大厅对齐** | N2；public 派生价 | 总览 = 下单 = 大厅 |
-| **P5 清理** | 冻结 `game_prices` 写；更新 verify 脚本 | 无法绕过直写卖价 |
+> **本 PR #200 = P0 设计 only。** 以下每个阶段单独开 PR、单独 Staging 验证、单独可 revert。  
+> 依赖只能向前：P1 → P2 → P3 → P4 → P5。  
+> **禁止**把读切流 + 写切流 + 删 fallback 塞进同一 PR。
 
-每阶段独立实现 PR；**本 PR 只含设计**。
+### 依赖与切流总览
+
+```
+P0 设计 (#200) ──已确认──┐
+                         ▼
+              P1 Schema + 解析器 + Staging 回填
+                 │  (读仍 fallback 旧价；写双写缓存)
+                 ▼
+              P2 申请去价 + 审核强制等级种子服务
+                 │  (新通过陪玩走新 SoT；存量靠回填)
+                 ▼
+              P3 陪玩服务管理 + 自定义价 pending + 审核队列
+                 │  (关闭陪玩直写生效价)
+                 ▼
+              P4 后台服务总览 + 大厅/下单全面切 resolve*
+                 │  (flag 默认开；legacy fallback 仍保留但应无命中)
+                 ▼
+              P5 冻结 profiles.price/game_prices 业务写 + 删 fallback
+```
 
 ---
 
-## 10. 验收标准（实现完成后）
+### P1 — Schema + `resolveEffectiveServicePrice` + Staging 回填
 
-1. 申请页无最终单价输入；submit payload 无有效卖价字段。  
-2. 审核无等级 → 失败；有等级 → 服务行 = `base_price`。  
-3. 未审核通过 / 无启用服务 → 不可接单、不可被下单。  
-4. 陪玩可添加游戏、按游戏开闭、提交自定义价；pending 期间下单仍为旧有效价。  
-5. 后台总览可筛：陪玩 / 游戏 / 等级 / 当前价 / 待审状态；可审自定义价。  
-6. 大厅、详情、直下单、Marketplace、CS **同价**（同源解析器）。  
-7. 旧 API 无法绕过直写生效卖价；缺列 fail-loud。
+| 项 | 内容 |
+|----|------|
+| **覆盖规则** | R2（`base_price` 列）、R3（等级默认价落表）、R6（解析器落地）、R7（开始把 profiles 当缓存双写） |
+| **目标** | 基础设施就位；**生产读行为不变或等价**（有 flag / fallback） |
+| **含** | |
+| Schema | `companion_levels.base_price`（NOT NULL，回填 `= min_price`）；`companion_services` 增强列（`proposed_*` / `source` / `base_price_snapshot` / `level_id_at_price` / review 审计字段） |
+| 代码 | 新 `resolveEffectiveServicePrice(companionId, serviceId)`：优先 enabled+approved 服务行 → fallback `priceForGame` / `profiles.price` |
+| 回填 | Staging only：存量服务行 `legacy_import`；无服务行则从 `game_prices`/`price` 生成；无价用 `base_price` |
+| 等级 Admin | 可编辑/校验 `base_price`（缺则 fail-loud） |
+| 测试 | 单测：解析器优先级；Staging schema diff；缺列 fail-loud（对齐 #198 教训，不改 #198） |
+| **不含** | 申请 UI 去价、审核强制等级、陪玩服务页、大厅强制切流、Prod 写迁移 |
+| **Prod 策略** | 仅提交 **pending-prod SQL 评审稿**；本 PR **不执行** Prod migration；flag 默认 off 或解析器默认仍走 fallback |
+| **验收** | Staging：每等级有 `base_price`；回填后 `allow_orders` 陪玩 ≥1 条服务；解析器单测绿；旧下单金额与回填前一致（等价） |
+| **回滚** | revert 代码；新列可留；flag off |
+
+**建议 PR 标题：** `feat(pricing-p1): base_price + companion_services fields + resolveEffectiveServicePrice`
+
+---
+
+### P2 — 申请去价 + 审核强制等级并种子服务
+
+| 项 | 内容 |
+|----|------|
+| **覆盖规则** | R1、R2、R3 |
+| **依赖** | P1 merged + Staging schema/回填 PASS |
+| **目标** | 新申请不再产生售价；新审核通过必须选级并以 `base_price` 生成服务行 |
+| **含** | |
+| 申请 UI | 删除「接单价格」控件与校验；信息条说明价格由等级设定 |
+| 申请 API | `submit_application` 忽略/拒绝 `price`/`game_prices`；取消 `assertHasPositivePrice` 申请硬挡 |
+| 审核 API/UI | `review_application` **强制 `levelId`**；取消静默 Lv1；取消「无价不可过」；通过时 upsert `companion_services`（`price=base_price`, `source=level_default`）；刷新派生缓存 `profiles.price` |
+| 接单门 | 审核通过 + 至少 1 条 enabled 服务才可接单（与现有 `allow_orders` 对齐） |
+| **不含** | 陪玩自定义价、后台总览页、删 legacy 读 |
+| **Prod 策略** | 行为变更仅影响**新申请/新审核**；存量已回填陪玩价格不变 |
+| **验收** | 申请页无单价；submit payload 无售价；无等级审核 → 400；有等级 → 服务行价 = 该级 `base_price`；新通过陪玩可被下单且单价 = base |
+| **回滚** | revert P2；P1 解析器/表保留 |
+
+**建议 PR 标题：** `feat(pricing-p2): remove apply price + require level on approve`
+
+---
+
+### P3 — 陪玩服务管理 + 自定义价 pending + 审核队列
+
+| 项 | 内容 |
+|----|------|
+| **覆盖规则** | R4、R5（审核队列部分） |
+| **依赖** | P2 |
+| **目标** | 陪玩可管服务，但**不能**直接改生效价；自定义价进 pending |
+| **含** | |
+| 陪玩端 N1 | 「我的服务/价格」：添加游戏、按游戏 `enabled` 开闭、查看有效价/基础价、提交/撤回自定义价 |
+| API | `list_my_services` / `add_service` / `toggle_service` / `propose_custom_price` / `withdraw_proposal` |
+| 关闭直写 | `update_profile` 等旧改价路径：**禁止**写生效 `price`/`game_prices`（或强制转 propose） |
+| 后台 N3 | 自定义价待审队列：通过（`price=proposed`，清 pending，`source=companion_custom`）/ 驳回（记 `review_note`） |
+| **不含** | 完整服务总览矩阵（留给 P4）；删 fallback |
+| **Prod 策略** | 新功能；旧直写关闭需配套工作台入口迁移，避免陪玩无路可改 |
+| **验收** | 提交自定义价后大厅/下单仍旧价；后台通过后变新价；直写生效价 API → 400；pending 可撤回 |
+| **回滚** | revert P3；恢复旧改价路径仅作应急（需显式），默认不长期保留 |
+
+**建议 PR 标题：** `feat(pricing-p3): companion service mgmt + custom price pending review`
+
+---
+
+### P4 — 后台服务总览 + 全通道切 `resolveEffectiveServicePrice`
+
+| 项 | 内容 |
+|----|------|
+| **覆盖规则** | R5（总览）、R6、R7（读路径不再以 profiles 为业务源） |
+| **依赖** | P3；Staging 上「解析器命中服务行率」足够高（目标 ≈100% 可接单陪玩） |
+| **目标** | 大厅、详情、直下单、Marketplace、CS **全部**走统一解析器；后台可看全量矩阵 |
+| **含** | |
+| 后台 N2 | 「陪玩服务与价格」总览：筛等级/游戏/状态；展示基础价/当前价/待审价；admin 强制改价（`admin_set`） |
+| 读切流 | `public/companions`、`orders.place_order`、`boss/marketplace`、CS 代下 → 只调 `resolveEffectiveServicePrice` |
+| 派生缓存 | 写服务行后同步刷新 `profiles.price`（缓存）；读业务忽略缓存 |
+| Flag | `PRICING_V2` 默认 on（Staging 先）；fallback 仍保留但打 metric/日志，便于 P5 确认零命中 |
+| **不含** | 删除 `game_prices` 列；删除 fallback 代码 |
+| **Prod 策略** | 灰度：先 Staging 全量 → Prod flag on → 观察 drift/400 与 fallback 命中 |
+| **验收** | 总览数字 = 大厅主价 = 下单单价；故意改缓存 `profiles.price` **不影响**下单；CS/Marketplace 同价 |
+| **回滚** | flag off → 解析器重新走 legacy fallback（P1 保留的路径） |
+
+**建议 PR 标题：** `feat(pricing-p4): admin service matrix + cut over all reads to resolver`
+
+---
+
+### P5 — 冻结缓存写 + 清理 legacy
+
+| 项 | 内容 |
+|----|------|
+| **覆盖规则** | R7 收尾 |
+| **依赖** | P4 生产稳定；fallback 命中 ≈ 0；无 #198 类静默缺列问题 |
+| **目标** | `profiles.price` / `game_prices` **不再作为任何业务写/读来源**（只读派生或只写缓存 helper） |
+| **含** | |
+| 冻结写 | 删除/拒绝业务路径对 `game_prices` 的写入；`price` 仅允许 `syncDerivedProfilePrice()` 内部写 |
+| 删 fallback | `resolveEffectiveServicePrice` 无服务行 → 明确 400（不可下单），不再读旧 JSON |
+| 脚本/文档 | 更新 verify / e2e / publish-gate；申请价相关断言删除 |
+| 可选 | DB comment 标注 deprecated；暂不 drop 列（避免大迁移） |
+| **不含** | drop 列、改 gameplay/PR #198、礼物经济 |
+| **Prod 策略** | 最后上；需 Prod 只读审计「无服务行却 allow_orders」= 0 |
+| **验收** | 旧 API 写 `game_prices` → 拒绝；无服务行不可下单；文档与脚本无「申请必填价」 |
+| **回滚** | 恢复 fallback 仅紧急（从 P4 tag）；正常应不需要 |
+
+**建议 PR 标题：** `feat(pricing-p5): freeze profile price cache writes + remove legacy fallback`
+
+---
+
+### 阶段边界检查清单（每个实现 PR 合并前）
+
+- [ ] 只包含本阶段「含」列表；无跨阶段偷跑  
+- [ ] Staging 验证记录附在 PR 描述  
+- [ ] 明确 **不执行** 未经评审的 Prod migration  
+- [ ] 声明与 PR #198 无交集  
+- [ ] 有回滚步骤（flag / revert）  
+- [ ] 验收标准可勾选
+
+---
+
+## 10. 验收标准（P1–P5 全部完成后）
+
+对齐已锁定规则 R1–R7：
+
+1. **R1** 申请页无最终单价；submit 不产生售价。  
+2. **R2** 审核无等级 → 失败；等级无 `base_price` → 不可用。  
+3. **R3** 新通过陪玩服务行默认价 = 等级 `base_price`。  
+4. **R4** 自定义价 pending 期间不改下单价；通过后再生效。  
+5. **R5** 后台可审自定义价 + 可看服务总览矩阵。  
+6. **R6** 大厅 / 详情 / 直下单 / Marketplace / CS 同价（同一解析器）。  
+7. **R7** 篡改 `profiles.price`/`game_prices` 不影响下单；业务写路径已冻结。  
+8. 未审核通过 / 无启用服务 → 不可接单、不可被下单。  
+9. Production 零静默缺列；缺列 fail-loud。
 
 ---
 
 ## 11. 明确非目标
 
 - **不修改 PR #198**（`gameplay_products.commission_rate`）。  
-- 不在本设计 PR 改 Production / 插测试订单。  
+- 不在本设计 PR / 任一实现 PR 中「一锅端」改 Production。  
 - 不重构玩法商城定价。  
-- 不改变猫粮/礼物经济（除非 snapshot 只读引用）。
+- 不改变猫粮/礼物经济（除非 snapshot 只读引用）。  
+- P5 不强制 DROP `price`/`game_prices` 列（可后续独立清理 PR）。
 
 ---
 
-## 12. 待产品确认的开放问题
+## 12. 仍待产品拍板（不影响 P1 开工）
 
-1. **`base_price` vs `min_price`：** 合并（min=base）还是允许基础价高于区间下限？  
-2. **改级策略：** 已通过自定义价保留还是作废重审？  
-3. **多服务不同价：** 是否允许同等级下各游戏不同自定义价？（建议：允许，按行审）  
-4. **大厅主价口径：** 最低有效价 / 主游戏价 / 展示区间？  
-5. **历史无等级陪玩：** 回填默认 Lv1 还是强制运营补级后再开放接单？  
-6. **「添加游戏」是否需审：** 仅新价需审，还是新增游戏本身也要后台确认？
+已锁定 R1–R7 后，以下 **不阻塞 P1**，建议在 P2/P3 前确认：
+
+| # | 问题 | 默认建议（若未另指示则按此做） |
+|---|------|-------------------------------|
+| O1 | `base_price` 与 `min_price` 关系 | **拆分**：`base_price` 为默认售价；`min/max` 仍约束自定义区间；迁移初值 `base=min` |
+| O2 | 改级后已通过自定义价 | **保留**自定义价；仅 `source=level_default` 的行重算为新 base |
+| O3 | 同等级多游戏不同自定义价 | **允许**，按服务行独立审核 |
+| O4 | 大厅主价口径 | **最低已启用有效服务价**（并写回派生缓存） |
+| O5 | 历史无等级陪玩 | Staging 回填时 **暂挂 `allow_orders=false`**，运营补级后再开；不静默假 Lv1 充数 |
+| O6 | 「添加游戏」是否需审 | **新游戏行先以 `base_price` 生效**；仅自定义价需审 |
 
 ---
 
