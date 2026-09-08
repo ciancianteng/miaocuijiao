@@ -195,76 +195,34 @@
     );
   }
 
-  function companionToRankItem(c, rank) {
-    var p =
-      window.MCJCompanionPresence && window.MCJCompanionPresence.fromCompanion
-        ? window.MCJCompanionPresence.fromCompanion(c)
-        : null;
-    return {
-      companionId: c.id || c.uid || "",
-      publicId: c.publicId || "",
-      nickname: c.nickname || c.name || "",
-      avatar: avatarUrl(c.avatar || c.cover || ""),
-      level: c.levelName || c.level || "",
-      levelId: c.levelId || c.level_id || "",
-      availabilityStatus: p ? p.code : c.availabilityStatus || "offline",
-      availabilityText: p ? p.label : c.availabilityText || c.status || c.onlineStatus || "",
-      popularityScore: 0,
-      completedOrders: 0,
-      fiveStarReviews: 0,
-      giftCatFood: 0,
-      price: c.priceValue != null ? c.priceValue : c.price || 0,
-      mainService: c.game || c.mainGame || "",
-      game: c.game || c.mainGame || "",
-      rank: rank,
-    };
+  /** Only companions with real weekly activity belong on 本周人气榜. */
+  function hasWeeklyActivity(item) {
+    if (!item) return false;
+    return (
+      money(item.popularityScore) > 0 ||
+      Number(item.completedOrders || 0) > 0 ||
+      Number(item.fiveStarReviews || 0) > 0
+    );
   }
 
-  function fillTopThree(items) {
-    var list = (items || []).filter(function (it) {
-      return it && (it.companionId || it.publicId) && !isGarbledName(it.nickname);
-    });
-    if (list.length >= 3) {
-      return Promise.resolve(
-        list.map(function (it, idx) {
-          // Keep API rank when present; only fill missing ranks by position.
-          if (!(Number(it.rank) > 0)) it.rank = idx + 1;
-          return it;
-        })
-      );
-    }
-    return fetch("/api/public/companions", { headers: { Accept: "application/json" }, cache: "no-store" })
-      .then(function (res) {
-        return res.json().catch(function () {
-          return {};
-        });
+  function normalizeWeeklyItems(items) {
+    return (items || [])
+      .filter(function (it) {
+        return it && (it.companionId || it.publicId) && !isGarbledName(it.nickname) && hasWeeklyActivity(it);
       })
-      .then(function (body) {
-        var seen = {};
-        list.forEach(function (it) {
-          seen[String(it.companionId || "")] = 1;
-        });
-        var comps = (body && body.companions) || [];
-        for (var i = 0; i < comps.length && list.length < 3; i++) {
-          var c = comps[i];
-          var id = String(c.id || c.uid || "");
-          var name = c.nickname || c.name || "";
-          if (!id || seen[id]) continue;
-          if (c.nameValid === false || isGarbledName(name)) continue;
-          seen[id] = 1;
-          list.push(companionToRankItem(c, list.length + 1));
-        }
-        return list.map(function (it, idx) {
-          it.rank = idx + 1;
-          return it;
-        });
-      })
-      .catch(function () {
-        return list.map(function (it, idx) {
-          it.rank = idx + 1;
-          return it;
-        });
+      .map(function (it, idx) {
+        it.rank = idx + 1;
+        return it;
       });
+  }
+
+  function emptyStateHtml() {
+    return (
+      '<div class="pop-empty pop-weekly-empty" role="status">' +
+      "<strong>本周暂无人气榜</strong>" +
+      "<p>完成接单、获得好评后，将有机会登上排行榜～</p>" +
+      "</div>"
+    );
   }
 
   function paint() {
@@ -279,9 +237,8 @@
       return;
     }
     if (!state.items.length) {
-      root.innerHTML =
-        '<div class="pop-desktop-grid"><div class="pop-empty pop-desktop-empty">暂无陪玩</div></div>' +
-        '<div class="pop-empty">暂无陪玩</div>';
+      // No zero-fill podium cards when nobody has weekly activity.
+      root.innerHTML = emptyStateHtml();
       return;
     }
     var top = state.items.slice(0, 3);
@@ -320,12 +277,10 @@
         if (body.enabled === false) {
           state.items = [];
           state.error = "人气榜暂未开启";
-          return null;
+          return;
         }
-        return fillTopThree(body.items || []);
-      })
-      .then(function (items) {
-        if (items) state.items = items;
+        // Never pad with hall companions that have 0 weekly score/orders/reviews.
+        state.items = normalizeWeeklyItems(body.items || []);
       })
       .catch(function (err) {
         state.items = [];

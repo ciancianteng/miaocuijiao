@@ -8,6 +8,12 @@
   background:linear-gradient(145deg,rgba(40,22,42,.72),rgba(12,8,16,.88));
   color:#d8c4cf;font-weight:850;
 }
+.pop-weekly-empty strong{
+  display:block;margin:0 0 8px;color:#fff5fa;font-size:17px;font-weight:1000;letter-spacing:.02em;
+}
+.pop-weekly-empty p{
+  margin:0;color:#d8c4cf;font-size:13px;font-weight:750;line-height:1.65;
+}
 .pop-podium{
   display:grid;grid-template-columns:1fr 1.12fr 1fr;gap:14px;align-items:end;margin-bottom:14px;
 }

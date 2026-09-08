@@ -74,7 +74,12 @@
     if (!box) return;
     var items = state.items || [];
     if (!items.length) {
-      box.innerHTML = '<div class="pop-empty">当前分类暂无上榜陪玩</div>';
+      if (state.period === "weekly") {
+        box.innerHTML =
+          '<div class="pop-empty pop-weekly-empty" role="status"><strong>本周暂无人气榜</strong><p>完成接单、获得好评后，将有机会登上排行榜～</p></div>';
+      } else {
+        box.innerHTML = '<div class="pop-empty">当前分类暂无上榜陪玩</div>';
+      }
       return;
     }
     var top = items.slice(0, 3);
