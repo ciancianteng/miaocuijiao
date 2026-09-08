@@ -1,3 +1,5 @@
+-- REVIEW ONLY — do not apply to Production in this PR. Staging apply uses Session Pooler via scripts/apply-companion-notifications-n1-staging.mjs.
+
 -- N1 / P0: companion_notifications CREATE (fixes empty migration).
 -- Idempotent: safe when table already exists (Staging/Prod).
 -- Does NOT drop data. No runtime notify behavior in this migration.
