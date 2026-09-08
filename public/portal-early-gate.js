@@ -406,17 +406,24 @@
       var csSoftOk = String(csSoft).indexOf("customer_service_session_") === 0;
       var csRoleOk = isCsRole(roleOf(csUser)) || (csSoftOk && !roleOf(csUser));
       var csCredOk = hasValidAccessJwt(csAccess) || !!String(csRefresh || "").trim();
-      if (!csSoftOk || !csCredOk || !csRoleOk) {
-        // Wipe CS half-sessions only — never touch boss mcjAuth*.
+      if (!csCredOk || !csRoleOk) {
+        // Only wipe when credentials/role are actually invalid — keep healable JWT blob
+        // if soft marker alone is missing (customer-service-auth can rebuild soft).
         ["mcjServiceSession", "customerServiceAuthToken", "customerServiceUser"].forEach(removeItem);
         return deny("/customer-service/login/", classifyAuthFailure(csAccess, csRefresh));
+      }
+      if (!csSoftOk) {
+        // Soft marker missing but JWT/role OK — leave pending for module restore; do not wipe.
+        hideShell("cs_soft_pending");
+        return true;
       }
       revealShell();
       return true;
     }
 
     // —— Boss protected pages ——
-    // Soft / refresh / URL params NEVER unlock. Require non-expired access JWT.
+    // Soft session alone NEVER unlocks. Non-expired access JWT unlocks immediately.
+    // Expired access + refresh → keep pending overlay; role-gates/MCJBossAuth restores.
     // NOTE: profile.html is public companion detail — do NOT gate it.
     if (
       /\/(mine|orders|support|recharge|messages|favorites|payment-confirm|order-confirm|gifts)\.html$/i.test(
@@ -440,12 +447,17 @@
       }
       var bossAccess = bossItem("mcjAuthAccessToken");
       var bossRefresh = bossItem("mcjAuthRefreshToken");
-      if (!hasValidAccessJwt(bossAccess)) {
-        wipeBossIdentity();
-        return deny("/login.html", classifyAuthFailure(bossAccess, bossRefresh));
+      if (hasValidAccessJwt(bossAccess)) {
+        revealShell();
+        return true;
       }
-      revealShell();
-      return true;
+      // Token expired / missing access but refresh still present — do not wipe; let restore run.
+      if (String(bossRefresh || "").trim()) {
+        hideShell("pending_restore");
+        return true;
+      }
+      wipeBossIdentity();
+      return deny("/login.html", classifyAuthFailure(bossAccess, bossRefresh));
     }
 
     return true;
