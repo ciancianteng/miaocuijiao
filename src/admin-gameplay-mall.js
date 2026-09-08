@@ -384,6 +384,21 @@
       });
   }
 
+  function assertCommissionPersisted(expectedRate, product, context) {
+    var got = product && (product.commissionRate != null ? product.commissionRate : product.commission_rate);
+    var n = Number(got);
+    if (!Number.isFinite(n) || Math.abs(n - Number(expectedRate)) > 0.0001) {
+      throw new Error(
+        (context || "保存校验失败") +
+          "：抽成未持久化为 " +
+          expectedRate +
+          "%（接口返回 " +
+          (got == null ? "缺失" : got) +
+          "%）。禁止假成功，请检查 gameplay_products.commission_rate。"
+      );
+    }
+  }
+
   function save(form, status) {
     var payload = collect(form, status);
     if (!payload.name) return alert("请填写商品名称");
@@ -391,7 +406,12 @@
     state.saving = true;
     render();
     apiPost({ action: "save", id: payload.id, product: payload })
-      .then(function () {
+      .then(function (result) {
+        // Never treat HTTP/ok alone as success — commission must round-trip in the response.
+        if (!result || !result.product) {
+          throw new Error("商品保存响应缺少 product，抽成无法确认已写入。");
+        }
+        assertCommissionPersisted(payload.commissionRate, result.product, "保存响应");
         state.saving = false;
         if (window.MCJAdminOverlay && window.MCJAdminOverlay.isOpen && window.MCJAdminOverlay.isOpen()) {
           window.MCJAdminOverlay.close();
@@ -399,7 +419,18 @@
           state.formOpen = false;
           state.editing = null;
         }
-        return load();
+        return load().then(function () {
+          var id = String((result.product && result.product.id) || payload.id || "");
+          var again = (state.products || []).find(function (row) {
+            return String(row.id) === id;
+          });
+          if (!again) {
+            throw new Error("刷新后未找到刚保存的商品，无法确认抽成已写入数据库。");
+          }
+          assertCommissionPersisted(payload.commissionRate, again, "刷新重读");
+          state.message = "已保存，抽成 " + payload.commissionRate + "% 已写入并完成刷新校验";
+          render();
+        });
       })
       .catch(function (err) {
         state.saving = false;
