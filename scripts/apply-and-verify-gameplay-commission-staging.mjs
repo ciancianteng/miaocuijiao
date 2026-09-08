@@ -195,6 +195,7 @@ async function main() {
    * Prefer Session pooler (IPv4). That is an egress shape issue — not a missing Staging secret.
    */
   function resolveStagingDbUrl() {
+    // Session Pooler ONLY — never connect to Direct db.*.supabase.co.
     const candidates = [];
     if (oneshotPass) candidates.push({ via: "STAGING_DB_PASSWORD+pooler", url: buildStagingPoolerUrl(oneshotPass) });
     if (oneshotDb) {
@@ -207,6 +208,7 @@ async function main() {
           candidates.push({ via: "STAGING_DATABASE_URL(pooler)", url: oneshotDb });
         } else if (isDirect) {
           const fromUrl = decodeURIComponent(u.password || "");
+          console.warn("[verify] ignoring Direct db.* STAGING_DATABASE_URL; Session Pooler only");
           if (oneshotPass) {
             candidates.push({
               via: "STAGING_DATABASE_URL(direct)→pooler+STAGING_DB_PASSWORD",
@@ -219,8 +221,7 @@ async function main() {
               url: buildStagingPoolerUrl(fromUrl),
             });
           }
-          // Keep Direct last (may ENETUNREACH on IPv6-only hosts).
-          candidates.push({ via: "STAGING_DATABASE_URL(direct)", url: oneshotDb });
+          // Intentionally omit Direct candidate (egress + policy: Session Pooler only).
         } else {
           candidates.push({ via: "STAGING_DATABASE_URL", url: oneshotDb });
         }
