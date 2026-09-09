@@ -32,12 +32,23 @@
   .container > .home-announcements,
   .container > .announcement-strip,
   .container > .home-daily-stats,
-  .container > [data-home-daily-stats] {
+  .container > [data-home-daily-stats],
+  .container > .home-brand-hero,
+  .container > [data-home-brand-hero] {
     width: 100% !important;
     max-width: 100% !important;
     margin-left: 0 !important;
     margin-right: 0 !important;
     box-sizing: border-box;
+  }
+
+  .container > .home-brand-hero,
+  .container > [data-home-brand-hero] {
+    --brand-hero-bleed: 32px;
+    width: calc(100% + 64px) !important;
+    max-width: none !important;
+    margin-left: -32px !important;
+    margin-right: -32px !important;
   }
 
   /* Banner: immersive edge-bleed via padding cancel; sizing in home-banner.css */

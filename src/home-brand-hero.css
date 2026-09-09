@@ -1,0 +1,404 @@
+/* Homepage brand hero — borderless IP layout (loads after banner / trust CSS) */
+
+.home-brand-hero,
+.container > .home-brand-hero {
+  --brand-hero-bleed: 24px;
+  position: relative !important;
+  display: block !important;
+  box-sizing: border-box !important;
+  width: calc(100% + (var(--brand-hero-bleed) * 2)) !important;
+  max-width: none !important;
+  margin-left: calc(var(--brand-hero-bleed) * -1) !important;
+  margin-right: calc(var(--brand-hero-bleed) * -1) !important;
+  margin-top: 4px !important;
+  margin-bottom: 12px !important;
+  min-height: 280px !important;
+  height: auto !important;
+  max-height: none !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  overflow: hidden !important;
+  isolation: isolate !important;
+  background:
+    radial-gradient(ellipse 55% 70% at 82% 48%, rgba(243, 168, 203, 0.22), transparent 62%),
+    radial-gradient(ellipse 40% 50% at 12% 20%, rgba(255, 158, 207, 0.12), transparent 55%),
+    radial-gradient(ellipse 50% 40% at 40% 100%, rgba(243, 168, 203, 0.08), transparent 50%),
+    linear-gradient(135deg, #0a070c 0%, #120a12 48%, #09060b 100%) !important;
+  box-shadow: none !important;
+}
+
+.home-brand-hero::before {
+  content: "" !important;
+  position: absolute !important;
+  inset: auto -8% -28% 35% !important;
+  height: 70% !important;
+  z-index: 0 !important;
+  pointer-events: none !important;
+  background: radial-gradient(ellipse at center, rgba(255, 126, 189, 0.28), transparent 68%) !important;
+  filter: blur(28px) !important;
+}
+
+.home-brand-hero::after {
+  content: "" !important;
+  position: absolute !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  height: 28% !important;
+  z-index: 2 !important;
+  pointer-events: none !important;
+  background: linear-gradient(to top, rgba(5, 4, 6, 0.72), transparent) !important;
+}
+
+.home-brand-hero-inner {
+  position: relative !important;
+  z-index: 3 !important;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1.05fr) minmax(220px, 0.95fr) !important;
+  align-items: center !important;
+  gap: 12px 20px !important;
+  min-height: 320px !important;
+  max-height: min(440px, 52vw) !important;
+  padding: 28px 32px 32px !important;
+  box-sizing: border-box !important;
+}
+
+.home-brand-hero-copy {
+  position: relative !important;
+  z-index: 4 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: flex-start !important;
+  gap: 14px !important;
+  max-width: 560px !important;
+  min-width: 0 !important;
+}
+
+.home-brand-hero-kicker {
+  margin: 0 !important;
+  padding: 0 !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.22em !important;
+  text-transform: uppercase !important;
+  color: rgba(255, 212, 230, 0.72) !important;
+}
+
+.home-brand-hero-title {
+  margin: 0 !important;
+  padding: 0 !important;
+  font-family: "Microsoft YaHei UI", "Segoe UI", Inter, sans-serif !important;
+  font-size: clamp(34px, 4.8vw, 56px) !important;
+  font-weight: 900 !important;
+  line-height: 1.05 !important;
+  letter-spacing: 0.01em !important;
+  color: #fff8fc !important;
+  text-shadow: 0 0 28px rgba(243, 168, 203, 0.22) !important;
+}
+
+.home-brand-hero-title span {
+  display: block !important;
+  margin-top: 6px !important;
+  font-size: 0.48em !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.18em !important;
+  color: rgba(255, 212, 230, 0.78) !important;
+  text-shadow: none !important;
+}
+
+.home-brand-hero-tagline {
+  margin: 0 !important;
+  max-width: 36em !important;
+  font-size: clamp(13px, 1.5vw, 16px) !important;
+  font-weight: 500 !important;
+  line-height: 1.55 !important;
+  color: rgba(255, 226, 239, 0.78) !important;
+}
+
+.home-brand-hero-stats,
+.home-brand-hero [data-home-daily-stats] {
+  width: 100% !important;
+  max-width: 100% !important;
+  margin: 4px 0 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.home-brand-hero .home-trust-strip {
+  padding: 12px 0 10px !important;
+  border-top: 1px solid rgba(255, 214, 232, 0.14) !important;
+  border-bottom: 1px solid rgba(255, 214, 232, 0.14) !important;
+  justify-content: flex-start !important;
+  gap: 0 !important;
+}
+
+.home-brand-hero .home-trust-item {
+  flex: 0 1 auto !important;
+  min-width: 0 !important;
+  align-items: flex-start !important;
+  text-align: left !important;
+  padding: 2px 28px 2px 0 !important;
+}
+
+.home-brand-hero .home-trust-item:not(:last-child)::after {
+  right: 14px !important;
+}
+
+.home-brand-hero .home-trust-value,
+.home-brand-hero .home-trust-item strong.home-trust-value {
+  font-size: clamp(22px, 2.8vw, 32px) !important;
+}
+
+.home-brand-hero .home-trust-label,
+.home-brand-hero .home-trust-item span.home-trust-label {
+  font-size: 11px !important;
+}
+
+.home-brand-hero .home-trust-meta {
+  display: none !important;
+}
+
+.home-brand-hero .home-trust-empty {
+  padding: 10px 0 !important;
+  border: 0 !important;
+  text-align: left !important;
+  font-size: 12px !important;
+}
+
+.home-brand-hero-actions {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  align-items: center !important;
+  gap: 10px !important;
+  margin-top: 4px !important;
+}
+
+.home-brand-hero-btn {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  min-height: 44px !important;
+  min-width: 132px !important;
+  padding: 0 18px !important;
+  border-radius: 14px !important;
+  border: 1px solid rgba(255, 212, 230, 0.28) !important;
+  background: rgba(255, 255, 255, 0.05) !important;
+  color: #ffeaf4 !important;
+  font-size: 14px !important;
+  font-weight: 800 !important;
+  text-decoration: none !important;
+  transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease !important;
+}
+
+.home-brand-hero-btn.primary {
+  border: 0 !important;
+  color: #1a0711 !important;
+  background: linear-gradient(180deg, #ffe3f0, #ff9ecf) !important;
+  box-shadow: 0 0 22px rgba(255, 158, 207, 0.28) !important;
+}
+
+.home-brand-hero-btn:hover {
+  transform: translateY(-1px) !important;
+  border-color: rgba(255, 212, 230, 0.55) !important;
+}
+
+.home-brand-hero-btn.primary:hover {
+  box-shadow: 0 0 28px rgba(255, 158, 207, 0.4) !important;
+}
+
+.home-brand-hero-visual {
+  position: relative !important;
+  z-index: 3 !important;
+  display: flex !important;
+  align-items: flex-end !important;
+  justify-content: center !important;
+  align-self: stretch !important;
+  min-height: 0 !important;
+  pointer-events: none !important;
+}
+
+.home-brand-hero-visual::before {
+  content: "" !important;
+  position: absolute !important;
+  left: 50% !important;
+  bottom: 8% !important;
+  width: 78% !important;
+  height: 42% !important;
+  transform: translateX(-50%) !important;
+  border-radius: 50% !important;
+  background: radial-gradient(ellipse at center, rgba(255, 126, 189, 0.38), transparent 70%) !important;
+  filter: blur(18px) !important;
+  z-index: 0 !important;
+}
+
+.home-brand-hero-visual img {
+  position: relative !important;
+  z-index: 1 !important;
+  display: block !important;
+  width: auto !important;
+  max-width: min(100%, 520px) !important;
+  height: auto !important;
+  max-height: min(400px, 46vw) !important;
+  object-fit: contain !important;
+  object-position: center bottom !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  filter: drop-shadow(0 18px 36px rgba(0, 0, 0, 0.35)) !important;
+  -webkit-mask-image: linear-gradient(180deg, #000 72%, transparent 100%) !important;
+  mask-image: linear-gradient(180deg, #000 72%, transparent 100%) !important;
+}
+
+/* Demoted CMS promo banner under brand hero */
+.container > .mcj-home-hero.mcj-home-hero--promo,
+.mcj-home-hero[data-mcj-home-hero].mcj-home-hero--promo {
+  --mcj-hero-bleed: 24px;
+  margin-top: 4px !important;
+  margin-bottom: 12px !important;
+  min-height: 140px !important;
+  max-height: min(240px, 28vw) !important;
+  aspect-ratio: 1920 / 560 !important;
+}
+
+@media (min-width: 1200px) {
+  .home-brand-hero,
+  .container > .home-brand-hero {
+    --brand-hero-bleed: 32px;
+  }
+
+  .home-brand-hero-inner {
+    padding: 36px 40px 40px !important;
+    min-height: 360px !important;
+  }
+}
+
+@media (max-width: 900px) {
+  .home-brand-hero-inner {
+    grid-template-columns: minmax(0, 1fr) minmax(180px, 0.72fr) !important;
+    min-height: 280px !important;
+    max-height: none !important;
+    padding: 22px 20px 24px !important;
+    gap: 10px !important;
+  }
+
+  .home-brand-hero-title {
+    font-size: clamp(28px, 7vw, 40px) !important;
+  }
+
+  .home-brand-hero-visual img {
+    max-height: min(280px, 48vw) !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .home-brand-hero,
+  .container > .home-brand-hero {
+    --brand-hero-bleed: 16px;
+    margin-bottom: 10px !important;
+    min-height: 0 !important;
+  }
+
+  .home-brand-hero-inner {
+    grid-template-columns: 1fr !important;
+    grid-template-rows: auto auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    padding: 18px 16px 0 !important;
+    gap: 0 !important;
+  }
+
+  .home-brand-hero-copy {
+    max-width: 100% !important;
+    padding-right: 38% !important;
+    gap: 10px !important;
+    padding-bottom: 12px !important;
+  }
+
+  .home-brand-hero-title {
+    font-size: clamp(26px, 8vw, 34px) !important;
+  }
+
+  .home-brand-hero-tagline {
+    font-size: 13px !important;
+    max-width: 22em !important;
+  }
+
+  .home-brand-hero .home-trust-item {
+    padding-right: 16px !important;
+  }
+
+  .home-brand-hero .home-trust-item:not(:last-child)::after {
+    right: 8px !important;
+  }
+
+  .home-brand-hero-actions {
+    width: 100% !important;
+  }
+
+  .home-brand-hero-btn {
+    flex: 1 1 calc(50% - 6px) !important;
+    min-width: 0 !important;
+    min-height: 42px !important;
+    font-size: 13px !important;
+  }
+
+  .home-brand-hero-visual {
+    position: absolute !important;
+    right: -4% !important;
+    bottom: 0 !important;
+    width: 48% !important;
+    height: 68% !important;
+    z-index: 2 !important;
+    align-items: flex-end !important;
+    justify-content: flex-end !important;
+  }
+
+  .home-brand-hero-visual img {
+    max-width: 100% !important;
+    max-height: 220px !important;
+    opacity: 0.96 !important;
+  }
+
+  .container > .mcj-home-hero.mcj-home-hero--promo,
+  .mcj-home-hero[data-mcj-home-hero].mcj-home-hero--promo {
+    --mcj-hero-bleed: 16px;
+    max-height: min(180px, 46vw) !important;
+    min-height: 120px !important;
+    aspect-ratio: 16 / 7 !important;
+  }
+}
+
+@media (max-width: 360px) {
+  .home-brand-hero-copy {
+    padding-right: 34% !important;
+  }
+
+  .home-brand-hero .home-trust-strip {
+    flex-wrap: wrap !important;
+    row-gap: 10px !important;
+  }
+
+  .home-brand-hero .home-trust-item {
+    flex: 1 1 calc(50% - 8px) !important;
+    padding-right: 8px !important;
+  }
+
+  .home-brand-hero .home-trust-item:nth-child(2)::after,
+  .home-brand-hero .home-trust-item:nth-child(3)::after {
+    display: none !important;
+  }
+
+  .home-brand-hero-btn {
+    flex: 1 1 100% !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-brand-hero-btn {
+    transition: none !important;
+  }
+}

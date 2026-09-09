@@ -3470,10 +3470,10 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
   <link rel="stylesheet" href="src/real-data-admin.css">
   <link rel="stylesheet" href="src/gameplay-flow.css">
   <link rel="stylesheet" href="src/design-system.css">
-  <link rel="stylesheet" href="src/home-banner.css?v=20260909bannerImmersive5">
+  <link rel="stylesheet" href="src/home-banner.css?v=20260909brandHero1">
   <link rel="stylesheet" href="src/home-announcements.css?v=20260805annRotate1">
   <link rel="stylesheet" href="src/home-popularity.css">
-  <link rel="stylesheet" href="src/home-desktop.css?v=20260909bannerImmersive5">
+  <link rel="stylesheet" href="src/home-desktop.css?v=20260909brandHero1">
   <link rel="stylesheet" href="src/login-modal.css?v=20260805loginUi1">
   <link rel="stylesheet" href="src/place-order-modal.css">
   <link rel="stylesheet" href="src/notify-system.css">
@@ -3488,8 +3488,9 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
   <script type="module" src="src/boss-forced-ack.js?v=20260805p0home1" defer></script>
   <link rel="stylesheet" href="src/boss-header.css?v=20260805p0home1">
   <link rel="stylesheet" href="/src/mcj-safe-area.css?v=20260802mobileP0c">
-  <link rel="stylesheet" href="src/home-mobile.css?v=20260909bannerImmersive5">
-  <link rel="stylesheet" href="src/home-trust-stats.css?v=20260909bannerImmersive5">
+  <link rel="stylesheet" href="src/home-mobile.css?v=20260909brandHero1">
+  <link rel="stylesheet" href="src/home-trust-stats.css?v=20260909brandHero1">
+  <link rel="stylesheet" href="src/home-brand-hero.css?v=20260909brandHero1">
 </head>
 <body>
   <div class="ambient-layer" aria-hidden="true"></div>
@@ -3515,18 +3516,34 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
     </div>
   </header>
   <main class="container">
-    <section class="mcj-home-hero" data-mcj-home-hero aria-label="MEOW CUI JIAO ?? Banner"></section>
+        <section class="home-brand-hero" data-home-brand-hero aria-label="MEOW CUI JIAO 品牌主视觉">
+      <div class="home-brand-hero-inner">
+        <div class="home-brand-hero-copy">
+          <p class="home-brand-hero-kicker">GAMING COMPANION PLATFORM</p>
+          <h1 class="home-brand-hero-title">妙脆角<span>MEOW CUI JIAO</span></h1>
+          <p class="home-brand-hero-tagline">专业陪玩 · 极速上分 · 快乐游戏</p>
+          <div class="home-brand-hero-stats home-trust-stats" data-home-brand-hero-stats data-home-daily-stats aria-label="平台实时数据" hidden></div>
+          <div class="home-brand-hero-actions">
+            <a class="home-brand-hero-btn primary" href="companion-center.html">进入陪玩大厅</a>
+            <a class="home-brand-hero-btn" href="companion-apply.html">申请陪玩</a>
+          </div>
+        </div>
+        <div class="home-brand-hero-visual" aria-hidden="true">
+          <img src="/default-home-banner.png" alt="" width="960" height="540" decoding="async" fetchpriority="high">
+        </div>
+      </div>
+    </section>
 
-    <div class="announcement-strip home-announcement-bar" id="homeAnnouncementBar" role="region" aria-label="????">
-      <div class="home-announcement-label"><span aria-hidden="true">??</span><strong>????</strong></div>
-      <div class="home-announcement-track-wrap" data-announcement-open data-empty="1" role="button" aria-label="??????">
-        <span class="home-announcement-static">???????</span>
+    <div class="announcement-strip home-announcement-bar" id="homeAnnouncementBar" role="region" aria-label="官方公告">
+      <div class="home-announcement-label"><span aria-hidden="true">📢</span><strong>官方公告</strong></div>
+      <div class="home-announcement-track-wrap" data-announcement-open data-empty="1" role="button" aria-label="查看公告">
+        <span class="home-announcement-static">暂无最新公告</span>
       </div>
     </div>
 
-    <section class="section home-trust-stats home-daily-stats" data-home-daily-stats aria-label="??????" hidden></section>
+    <section class="mcj-home-hero mcj-home-hero--promo" data-mcj-home-hero aria-label="MEOW CUI JIAO 活动 Banner"></section>
 
-    <section class="section quick-entry-section">
+<section class="section quick-entry-section">
       <div class="section-title compact-title"><div><h2>????</h2><p>QUICK ACCESS</p></div></div>
             <div class="quick-entry-grid">
         <a class="neon-card quick-entry-card" href="companion-center.html" data-home-entry="companion-hall"><div><strong>????</strong><span>????????????</span></div></a>
@@ -3990,9 +4007,9 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
   </script>
   <script type="module" src="src/site-data.js?v=20260804profileUuid1"></script>
   <script src="src/banner-crop.js?v=20260809bannerCropSync1"></script>
-  <script type="module" src="src/home-banner.js?v=20260909bannerImmersive5"></script>
+  <script type="module" src="src/home-banner.js?v=20260909brandHero1"></script>
   <script type="module" src="src/home-announcements.js?v=20260805annRotate1"></script>
-  <script type="module" src="src/home-daily-stats.js?v=20260909bannerImmersive5"></script>
+  <script type="module" src="src/home-daily-stats.js?v=20260909brandHero1"></script>
   <script src="src/companion-presence.js?v=20260805profileLock1"></script>
   <script src="/src/place-order-modal.js?v=20260811authUnify1" defer></script>
   <script type="module" src="src/home-popularity.js?v=20260805profileLock1"></script>
