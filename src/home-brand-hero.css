@@ -330,23 +330,24 @@
   position: relative !important;
   z-index: 3 !important;
   display: block !important;
-  width: min(100%, 480px) !important;
+  width: min(100%, 500px) !important;
   max-width: 100% !important;
   aspect-ratio: 1 !important;
   height: auto !important;
   margin: 0 !important;
   border: 0 !important;
-  border-radius: 50% !important;
+  border-radius: 0 !important;
   background: transparent !important;
   box-shadow: none !important;
-  /* Extreme zoom on fluffy cat face — exclude baked logo text */
   object-fit: cover !important;
-  object-position: 52% 2% !important;
-  transform: scale(1.72) !important;
+  object-position: 52% 0% !important;
+  transform: scale(1.85) !important;
   mix-blend-mode: normal !important;
-  -webkit-mask-image: radial-gradient(circle at 50% 45%, #000 36%, rgba(0, 0, 0, 0.7) 54%, transparent 70%) !important;
-  mask-image: radial-gradient(circle at 50% 45%, #000 36%, rgba(0, 0, 0, 0.7) 54%, transparent 70%) !important;
-  filter: drop-shadow(0 0 32px rgba(255, 110, 180, 0.5)) drop-shadow(0 28px 48px rgba(0, 0, 0, 0.55)) !important;
+  /* Hard face window — excludes logo text baked under the cat */
+  clip-path: circle(34% at 50% 28%) !important;
+  -webkit-mask-image: none !important;
+  mask-image: none !important;
+  filter: drop-shadow(0 0 34px rgba(255, 110, 180, 0.55)) drop-shadow(0 28px 50px rgba(0, 0, 0, 0.6)) !important;
   animation: homeBrandMascotFloat 4.8s ease-in-out infinite !important;
   transform-origin: center center !important;
 }
@@ -354,10 +355,10 @@
 @keyframes homeBrandMascotFloat {
   0%,
   100% {
-    transform: scale(1.72) translateY(0);
+    transform: scale(1.85) translateY(0);
   }
   50% {
-    transform: scale(1.72) translateY(-10px);
+    transform: scale(1.85) translateY(-10px);
   }
 }
 
