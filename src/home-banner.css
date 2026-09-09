@@ -194,16 +194,16 @@
   animation: none !important;
 }
 
-/* Text bottom-left inside image — clear dots row; stay inside safe frame */
+/* Text bottom-left inside image — keep clear of edges on desktop + iPhone */
 .mcj-home-hero .mcj-hero-overlay {
   position: absolute;
-  left: max(16px, env(safe-area-inset-left, 0px));
-  right: max(16px, env(safe-area-inset-right, 0px));
-  bottom: 36px;
+  left: max(28px, calc(12px + env(safe-area-inset-left, 0px)));
+  right: max(28px, calc(12px + env(safe-area-inset-right, 0px)));
+  bottom: 40px;
   z-index: 5;
   display: grid;
   gap: 8px;
-  max-width: min(520px, calc(100% - 48px));
+  max-width: min(560px, calc(100% - 56px));
   box-sizing: border-box;
   pointer-events: none;
   text-align: left;

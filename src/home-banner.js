@@ -132,8 +132,21 @@
       var img = slide.querySelector(".mcj-hero-image");
       var frame = slide.querySelector(".mcj-hero-image-link") || slide;
       var data = list[index] || normalized({});
-      if (!img) return;
+      if (!img || img.tagName !== "IMG") return;
       function run() {
+        /* Staging/test placeholders are often 32–48px solid swatches — not usable hero art. */
+        if (
+          img.dataset.mcjTinyReplaced !== "1" &&
+          img.naturalWidth > 0 &&
+          img.naturalHeight > 0 &&
+          img.naturalWidth < 96 &&
+          img.naturalHeight < 96
+        ) {
+          img.dataset.mcjTinyReplaced = "1";
+          img.addEventListener("load", run, { once: true });
+          img.src = resolveFallbackBanner();
+          return;
+        }
         applyCropToImg(img, frame, cropFor(data, device));
       }
       if (img.complete && img.naturalWidth) run();
