@@ -134,47 +134,66 @@
   box-shadow: none !important;
 }
 
-/* Trust module inside hero — dashboard feel, not plain text */
+/* Trust module inside hero — one premium strip, not three developer cards */
 .home-brand-hero .home-trust-strip {
-  display: grid !important;
-  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
-  gap: 10px !important;
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: stretch !important;
+  justify-content: space-between !important;
+  gap: 0 !important;
   width: 100% !important;
-  max-width: 480px !important;
-  padding: 0 !important;
+  max-width: 500px !important;
+  padding: 14px 4px 14px 0 !important;
   border: 0 !important;
-  justify-content: stretch !important;
+  border-top: 1px solid rgba(255, 214, 232, 0.14) !important;
+  border-bottom: 1px solid rgba(255, 214, 232, 0.14) !important;
+  border-radius: 0 !important;
   background: transparent !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
 }
 
 .home-brand-hero .home-trust-item {
   position: relative !important;
-  flex: none !important;
+  flex: 1 1 0 !important;
   display: flex !important;
   flex-direction: column !important;
   align-items: flex-start !important;
   justify-content: center !important;
   gap: 6px !important;
   min-width: 0 !important;
-  min-height: 72px !important;
-  padding: 12px 14px !important;
+  min-height: 0 !important;
+  padding: 2px 18px 2px 0 !important;
   text-align: left !important;
-  border: 1px solid rgba(255, 214, 232, 0.12) !important;
-  border-radius: 16px !important;
-  background:
-    linear-gradient(160deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.015)) !important;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04) !important;
-  backdrop-filter: blur(8px) !important;
-  -webkit-backdrop-filter: blur(8px) !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
 }
 
 .home-brand-hero .home-trust-item:not(:last-child)::after {
-  display: none !important;
+  content: "" !important;
+  display: block !important;
+  position: absolute !important;
+  top: 10% !important;
+  bottom: 10% !important;
+  right: 8px !important;
+  width: 1px !important;
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    rgba(255, 214, 232, 0.22) 20%,
+    rgba(255, 214, 232, 0.22) 80%,
+    transparent
+  ) !important;
 }
 
 .home-brand-hero .home-trust-value,
 .home-brand-hero .home-trust-item strong.home-trust-value {
-  font-size: clamp(22px, 2.6vw, 30px) !important;
+  font-size: clamp(24px, 2.8vw, 34px) !important;
   letter-spacing: -0.03em !important;
   text-shadow: 0 0 18px rgba(255, 158, 207, 0.18) !important;
   overflow: visible !important;
@@ -184,7 +203,7 @@
 .home-brand-hero .home-trust-label,
 .home-brand-hero .home-trust-item span.home-trust-label {
   font-size: 11px !important;
-  letter-spacing: 0.06em !important;
+  letter-spacing: 0.08em !important;
   color: rgba(255, 226, 239, 0.58) !important;
   white-space: nowrap !important;
   overflow: hidden !important;
@@ -197,13 +216,15 @@
 
 .home-brand-hero .home-trust-empty {
   width: 100% !important;
-  max-width: 480px !important;
-  padding: 14px 16px !important;
-  border: 1px solid rgba(255, 214, 232, 0.1) !important;
-  border-radius: 16px !important;
+  max-width: 500px !important;
+  padding: 12px 0 !important;
+  border: 0 !important;
+  border-top: 1px solid rgba(255, 214, 232, 0.12) !important;
+  border-bottom: 1px solid rgba(255, 214, 232, 0.12) !important;
+  border-radius: 0 !important;
   text-align: left !important;
   font-size: 12px !important;
-  background: rgba(255, 255, 255, 0.03) !important;
+  background: transparent !important;
 }
 
 .home-brand-hero-actions {
@@ -267,17 +288,17 @@
 .home-brand-hero-visual::before {
   content: "" !important;
   position: absolute !important;
-  left: 8% !important;
-  right: -6% !important;
-  bottom: 4% !important;
-  top: 18% !important;
+  left: 0 !important;
+  right: -10% !important;
+  bottom: -8% !important;
+  top: 8% !important;
   border-radius: 50% !important;
-  background: radial-gradient(ellipse at 55% 58%, rgba(255, 126, 189, 0.42), transparent 68%) !important;
-  filter: blur(28px) !important;
+  background: radial-gradient(ellipse at 58% 55%, rgba(255, 126, 189, 0.48), transparent 70%) !important;
+  filter: blur(32px) !important;
   z-index: 0 !important;
 }
 
-/* Edge dissolves into page ink — more reliable than dual mask-composite */
+/* Aggressive edge dissolve — kills PNG plate rectangle */
 .home-brand-hero-visual::after {
   content: "" !important;
   position: absolute !important;
@@ -285,10 +306,10 @@
   z-index: 2 !important;
   pointer-events: none !important;
   background:
-    linear-gradient(90deg, var(--brand-hero-ink) 0%, rgba(5, 4, 6, 0.72) 10%, transparent 28%),
-    linear-gradient(270deg, var(--brand-hero-ink) 0%, transparent 14%),
-    linear-gradient(180deg, var(--brand-hero-ink) 0%, transparent 18%),
-    linear-gradient(0deg, var(--brand-hero-ink) 0%, rgba(5, 4, 6, 0.55) 22%, transparent 48%) !important;
+    linear-gradient(90deg, var(--brand-hero-ink) 0%, rgba(5, 4, 6, 0.94) 12%, rgba(5, 4, 6, 0.45) 28%, transparent 46%),
+    linear-gradient(0deg, var(--brand-hero-ink) 0%, rgba(5, 4, 6, 0.9) 16%, rgba(5, 4, 6, 0.35) 34%, transparent 58%),
+    linear-gradient(180deg, var(--brand-hero-ink) 0%, rgba(5, 4, 6, 0.55) 10%, transparent 28%),
+    linear-gradient(270deg, rgba(5, 4, 6, 0.65) 0%, transparent 16%) !important;
 }
 
 .home-brand-hero-visual img {
@@ -296,18 +317,20 @@
   z-index: 1 !important;
   display: block !important;
   width: auto !important;
-  max-width: min(112%, 620px) !important;
+  max-width: none !important;
+  width: 118% !important;
   height: auto !important;
-  max-height: min(460px, 52vw) !important;
-  margin-right: -4% !important;
-  margin-bottom: -2% !important;
-  object-fit: contain !important;
-  object-position: center bottom !important;
+  max-height: none !important;
+  min-height: 108% !important;
+  margin-right: -10% !important;
+  margin-bottom: -8% !important;
+  object-fit: cover !important;
+  object-position: 58% 42% !important;
   border: 0 !important;
   border-radius: 0 !important;
   background: transparent !important;
   box-shadow: none !important;
-  filter: drop-shadow(0 22px 40px rgba(0, 0, 0, 0.42)) !important;
+  filter: saturate(1.05) contrast(1.02) !important;
   -webkit-mask-image: none !important;
   mask-image: none !important;
 }
@@ -344,8 +367,8 @@
   }
 
   .home-brand-hero-visual img {
-    max-width: min(118%, 680px) !important;
-    max-height: min(500px, 48vw) !important;
+    width: 124% !important;
+    min-height: 112% !important;
   }
 }
 
@@ -367,7 +390,7 @@
   }
 
   .home-brand-hero-visual img {
-    max-height: min(300px, 46vw) !important;
+    width: 120% !important;
   }
 }
 
@@ -419,26 +442,27 @@
   }
 
   .home-brand-hero .home-trust-strip {
-    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
-    gap: 8px !important;
     max-width: 100% !important;
+    padding: 12px 0 !important;
   }
 
   .home-brand-hero .home-trust-item {
-    min-height: 64px !important;
-    padding: 10px 10px !important;
-    border-radius: 14px !important;
+    padding-right: 12px !important;
+  }
+
+  .home-brand-hero .home-trust-item:not(:last-child)::after {
+    right: 4px !important;
   }
 
   .home-brand-hero .home-trust-value,
   .home-brand-hero .home-trust-item strong.home-trust-value {
-    font-size: 18px !important;
+    font-size: 20px !important;
   }
 
   .home-brand-hero .home-trust-label,
   .home-brand-hero .home-trust-item span.home-trust-label {
     font-size: 10px !important;
-    letter-spacing: 0.02em !important;
+    letter-spacing: 0.03em !important;
     white-space: normal !important;
     overflow: visible !important;
     text-overflow: clip !important;
@@ -471,15 +495,17 @@
 
   .home-brand-hero-visual::after {
     background:
-      linear-gradient(90deg, var(--brand-hero-ink) 0%, rgba(5, 4, 6, 0.85) 18%, transparent 42%),
-      linear-gradient(180deg, transparent 0%, transparent 45%, rgba(5, 4, 6, 0.55) 72%, var(--brand-hero-ink) 100%) !important;
+      linear-gradient(90deg, var(--brand-hero-ink) 0%, rgba(5, 4, 6, 0.92) 22%, transparent 48%),
+      linear-gradient(180deg, transparent 0%, transparent 40%, rgba(5, 4, 6, 0.7) 70%, var(--brand-hero-ink) 100%) !important;
   }
 
   .home-brand-hero-visual img {
-    max-width: 100% !important;
-    max-height: 220px !important;
-    margin: 0 !important;
-    opacity: 0.94 !important;
+    width: 130% !important;
+    min-height: 115% !important;
+    max-height: none !important;
+    margin: 0 -8% 0 0 !important;
+    opacity: 0.95 !important;
+    object-position: 60% 35% !important;
     -webkit-mask-image: none !important;
     mask-image: none !important;
   }
@@ -498,14 +524,6 @@
   .home-brand-hero-title,
   .home-brand-hero-tagline {
     max-width: 72% !important;
-  }
-
-  .home-brand-hero .home-trust-strip {
-    grid-template-columns: 1fr 1fr !important;
-  }
-
-  .home-brand-hero .home-trust-item:nth-child(3) {
-    grid-column: 1 / -1 !important;
   }
 
   .home-brand-hero-btn {
