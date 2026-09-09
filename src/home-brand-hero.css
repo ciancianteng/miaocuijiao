@@ -307,15 +307,24 @@
     grid-template-rows: auto auto !important;
     min-height: 0 !important;
     max-height: none !important;
-    padding: 18px 16px 0 !important;
-    gap: 0 !important;
+    padding: 18px 16px 12px !important;
+    gap: 8px !important;
   }
 
+  /* Keep IP as atmosphere on the right; copy stays readable above CTAs. */
   .home-brand-hero-copy {
+    position: relative !important;
+    z-index: 4 !important;
     max-width: 100% !important;
-    padding-right: 38% !important;
+    padding-right: 0 !important;
     gap: 10px !important;
-    padding-bottom: 12px !important;
+    padding-bottom: 4px !important;
+  }
+
+  .home-brand-hero-kicker,
+  .home-brand-hero-title,
+  .home-brand-hero-tagline {
+    max-width: 62% !important;
   }
 
   .home-brand-hero-title {
@@ -324,19 +333,47 @@
 
   .home-brand-hero-tagline {
     font-size: 13px !important;
-    max-width: 22em !important;
+  }
+
+  .home-brand-hero-stats,
+  .home-brand-hero [data-home-daily-stats],
+  .home-brand-hero-actions {
+    position: relative !important;
+    z-index: 5 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  .home-brand-hero .home-trust-strip {
+    flex-wrap: nowrap !important;
+    justify-content: space-between !important;
+    gap: 0 !important;
+    padding: 10px 0 !important;
   }
 
   .home-brand-hero .home-trust-item {
-    padding-right: 16px !important;
+    flex: 1 1 0 !important;
+    min-width: 0 !important;
+    padding: 2px 8px 2px 0 !important;
   }
 
   .home-brand-hero .home-trust-item:not(:last-child)::after {
-    right: 8px !important;
+    right: 4px !important;
   }
 
-  .home-brand-hero-actions {
-    width: 100% !important;
+  .home-brand-hero .home-trust-value,
+  .home-brand-hero .home-trust-item strong.home-trust-value {
+    font-size: 20px !important;
+    white-space: nowrap !important;
+  }
+
+  .home-brand-hero .home-trust-label,
+  .home-brand-hero .home-trust-item span.home-trust-label {
+    font-size: 10px !important;
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    line-height: 1.25 !important;
   }
 
   .home-brand-hero-btn {
@@ -348,19 +385,23 @@
 
   .home-brand-hero-visual {
     position: absolute !important;
-    right: -4% !important;
-    bottom: 0 !important;
-    width: 48% !important;
-    height: 68% !important;
-    z-index: 2 !important;
-    align-items: flex-end !important;
+    right: -6% !important;
+    top: 8px !important;
+    bottom: auto !important;
+    width: 46% !important;
+    height: 210px !important;
+    z-index: 1 !important;
+    align-items: flex-start !important;
     justify-content: flex-end !important;
+    pointer-events: none !important;
   }
 
   .home-brand-hero-visual img {
     max-width: 100% !important;
-    max-height: 220px !important;
-    opacity: 0.96 !important;
+    max-height: 210px !important;
+    opacity: 0.9 !important;
+    -webkit-mask-image: linear-gradient(180deg, #000 55%, transparent 100%) !important;
+    mask-image: linear-gradient(180deg, #000 55%, transparent 100%) !important;
   }
 
   .container > .mcj-home-hero.mcj-home-hero--promo,
@@ -373,23 +414,10 @@
 }
 
 @media (max-width: 360px) {
-  .home-brand-hero-copy {
-    padding-right: 34% !important;
-  }
-
-  .home-brand-hero .home-trust-strip {
-    flex-wrap: wrap !important;
-    row-gap: 10px !important;
-  }
-
-  .home-brand-hero .home-trust-item {
-    flex: 1 1 calc(50% - 8px) !important;
-    padding-right: 8px !important;
-  }
-
-  .home-brand-hero .home-trust-item:nth-child(2)::after,
-  .home-brand-hero .home-trust-item:nth-child(3)::after {
-    display: none !important;
+  .home-brand-hero-kicker,
+  .home-brand-hero-title,
+  .home-brand-hero-tagline {
+    max-width: 70% !important;
   }
 
   .home-brand-hero-btn {
