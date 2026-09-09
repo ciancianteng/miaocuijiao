@@ -316,9 +316,8 @@
   position: relative !important;
   z-index: 1 !important;
   display: block !important;
-  width: auto !important;
-  max-width: none !important;
   width: 118% !important;
+  max-width: none !important;
   height: auto !important;
   max-height: none !important;
   min-height: 108% !important;
