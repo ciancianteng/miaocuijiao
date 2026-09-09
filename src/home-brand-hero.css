@@ -330,20 +330,22 @@
   position: relative !important;
   z-index: 3 !important;
   display: block !important;
-  width: min(100%, 480px) !important;
+  width: min(92%, 440px) !important;
   max-width: 100% !important;
+  aspect-ratio: 1 !important;
   height: auto !important;
   margin: 0 !important;
   border: 0 !important;
-  border-radius: 0 !important;
+  border-radius: 50% !important;
   background: transparent !important;
   box-shadow: none !important;
-  mix-blend-mode: screen !important;
-  -webkit-mask-image: radial-gradient(circle at 50% 45%, #000 34%, rgba(0, 0, 0, 0.75) 48%, transparent 66%) !important;
-  mask-image: radial-gradient(circle at 50% 45%, #000 34%, rgba(0, 0, 0, 0.75) 48%, transparent 66%) !important;
-  filter: drop-shadow(0 0 34px rgba(255, 110, 180, 0.42)) drop-shadow(0 22px 48px rgba(255, 110, 180, 0.22)) !important;
-  object-fit: contain !important;
-  object-position: center !important;
+  /* Crop brand plate to cat face only — no promotional banner rectangle */
+  object-fit: cover !important;
+  object-position: 50% 28% !important;
+  mix-blend-mode: normal !important;
+  -webkit-mask-image: radial-gradient(circle at 50% 46%, #000 52%, rgba(0, 0, 0, 0.75) 68%, transparent 78%) !important;
+  mask-image: radial-gradient(circle at 50% 46%, #000 52%, rgba(0, 0, 0, 0.75) 68%, transparent 78%) !important;
+  filter: drop-shadow(0 0 28px rgba(255, 110, 180, 0.45)) drop-shadow(0 24px 42px rgba(0, 0, 0, 0.55)) !important;
   animation: homeBrandMascotFloat 4.8s ease-in-out infinite !important;
   transform-origin: center center !important;
 }
