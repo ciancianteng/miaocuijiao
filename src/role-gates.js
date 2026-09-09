@@ -1246,6 +1246,12 @@
       document.documentElement.setAttribute("data-mcj-auth-reason", "pending_restore");
       document.documentElement.style.visibility = "";
     } catch (e) {}
+    // Prefer early-gate clear latch reset if present.
+    try {
+      if (window.MCJPortalEarlyGate && typeof window.MCJPortalEarlyGate.hideShell === "function") {
+        // Keep pending_restore as the reason role-gates owns.
+      }
+    } catch (eEg) {}
     function paint() {
       var body = document.body;
       if (!body) {
@@ -1275,6 +1281,12 @@
 
   function clearPendingAuthGate() {
     try {
+      if (window.MCJPortalEarlyGate && typeof window.MCJPortalEarlyGate.clearAuthGate === "function") {
+        window.MCJPortalEarlyGate.clearAuthGate();
+        return;
+      }
+    } catch (eEg) {}
+    try {
       document.documentElement.removeAttribute("data-mcj-auth-gate");
       document.documentElement.removeAttribute("data-mcj-auth-reason");
       document.documentElement.style.visibility = "";
@@ -1289,7 +1301,10 @@
 
   function bootRouteProtection() {
     var p = path();
-    if (isAdminLoginPath()) return true;
+    if (isAdminLoginPath()) {
+      clearPendingAuthGate();
+      return true;
+    }
     if (/\/customer-service\/login/i.test(p)) {
       // Login page must not enter redirect races. Only reveal; login script owns submit→dashboard.
       try {
@@ -1298,36 +1313,49 @@
       } catch (e) {}
       return true;
     }
-    if (/\/companion\/login/i.test(p)) return true;
-    if (/^\/?$|\/index\.html$/i.test(p) || /\/login\.html$/i.test(p)) return true;
+    if (/\/companion\/login/i.test(p)) {
+      clearPendingAuthGate();
+      return true;
+    }
+    if (/^\/?$|\/index\.html$/i.test(p) || /\/login\.html$/i.test(p)) {
+      clearPendingAuthGate();
+      return true;
+    }
 
     if (/\/admin\.html$/i.test(p) || /\/admin-(dashboard|center|audit)\.html$/i.test(p) || (/\/admin(\/|$)/i.test(p) && !isAdminLoginPath())) {
       if (!isLogged("admin")) {
         clearAdminClientSession();
         return denyUnauthed("/admin/login/", returnPath());
       }
+      clearPendingAuthGate();
       return true;
     }
 
     if (/\/customer-service(\/|$)/i.test(p)) {
       // Never sync-redirect before session restore/refresh finishes.
       if (window.MCJServiceAuth && typeof window.MCJServiceAuth.guardCustomerServicePages === "function") {
+        // CS guard owns pending→reveal/clear; do not clear here (restore may still be in flight).
         window.MCJServiceAuth.guardCustomerServicePages();
         return true;
       }
       if (!hasPortalSession("customer_service")) return denyUnauthed("/customer-service/login/", returnPath());
+      clearPendingAuthGate();
       return true;
     }
 
     if (/\/companion(\/|$)/i.test(p)) {
       if (!hasPortalSession("companion")) return denyUnauthed("/companion/login/", returnPath());
+      clearPendingAuthGate();
       return true;
     }
 
     if (/\/(mine|orders|support|recharge|messages|favorites|payment-confirm|order-confirm|gifts)\.html$/i.test(p)) {
       // Soft / refresh alone insufficient for sync deny — wait restoreSession before claiming guest.
       // profile.html is public companion detail and stays ungated.
-      if (hasValidBossAccessToken()) return true;
+      if (hasValidBossAccessToken()) {
+        clearPendingAuthGate();
+        return true;
+      }
       var canRestore = false;
       try {
         canRestore = !!(
@@ -1377,6 +1405,7 @@
       })(0);
       return true;
     }
+    clearPendingAuthGate();
     return true;
   }
 
@@ -1400,7 +1429,10 @@
     }
     if (storageRole(role) === "customer" || role === "boss") {
       if (/\/(mine|orders|support|recharge|messages|favorites|payment-confirm|order-confirm|gifts)\.html$/i.test(path())) {
-        if (hasValidBossAccessToken()) return true;
+        if (hasValidBossAccessToken()) {
+          clearPendingAuthGate();
+          return true;
+        }
         var canRestoreGuard = false;
         try {
           canRestoreGuard = !!(
@@ -1427,12 +1459,14 @@
       if (!hasPortalSession("customer_service")) {
         return denyUnauthed("/customer-service/login/", returnPath());
       }
+      clearPendingAuthGate();
       return true;
     }
     if (storageRole(role) === "companion") {
       if (!hasPortalSession("companion")) {
         return denyUnauthed("/companion/login/", returnPath());
       }
+      clearPendingAuthGate();
       return true;
     }
     if (!isAllowed(role)) {
