@@ -40,19 +40,20 @@
     box-sizing: border-box;
   }
 
-  /* Banner: immersive edge-to-edge; sizing owned by home-banner.css */
+  /* Banner: immersive edge-bleed via padding cancel; sizing in home-banner.css */
   .container > .mcj-home-hero,
   .mcj-home-hero[data-mcj-home-hero] {
-    width: 100vw !important;
-    max-width: 100vw !important;
-    margin-left: calc(50% - 50vw) !important;
-    margin-right: calc(50% - 50vw) !important;
+    --mcj-hero-bleed: 32px;
+    width: calc(100% + 64px) !important;
+    max-width: none !important;
+    margin-left: -32px !important;
+    margin-right: -32px !important;
     height: auto !important;
     aspect-ratio: 1920 / 700 !important;
-    max-height: min(480px, calc(100vh - 240px)) !important;
-    min-height: 220px !important;
-    margin-top: 0 !important;
-    margin-bottom: 18px !important;
+    max-height: min(420px, 38vw) !important;
+    min-height: 200px !important;
+    margin-top: 8px !important;
+    margin-bottom: 16px !important;
     border-radius: 0 !important;
     border: 0 !important;
     box-shadow: none !important;
@@ -234,7 +235,7 @@
   .mcj-home-hero[data-mcj-home-hero] {
     height: auto !important;
     aspect-ratio: 1920 / 700 !important;
-    max-height: min(450px, calc(100vh - 260px)) !important;
-    min-height: 220px !important;
+    max-height: min(420px, 38vw) !important;
+    min-height: 200px !important;
   }
 }
