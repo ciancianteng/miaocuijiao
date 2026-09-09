@@ -27,7 +27,8 @@ import "./home-brand-hero.css";
     if (currencyKey) {
       var amount = numberValue(data, key);
       if (window.MCJCurrency) return esc(window.MCJCurrency.formatPlain(amount));
-      return esc(String(Math.round(amount))) + " 猫粮";
+      /* Compact number only — unit lives in the label (今日营业额). */
+      return esc(String(Math.round(amount)));
     }
     return String(Math.round(numberValue(data, key)));
   }
