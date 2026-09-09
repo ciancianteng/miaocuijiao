@@ -1,3 +1,7 @@
+import "./home-banner.css";
+import "./home-desktop.css";
+import "./home-mobile.css";
+
 (function () {
   "use strict";
 

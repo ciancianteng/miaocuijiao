@@ -1,3 +1,5 @@
+import "./home-trust-stats.css";
+
 (function () {
   "use strict";
 
