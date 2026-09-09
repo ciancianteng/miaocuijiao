@@ -330,7 +330,7 @@
   position: relative !important;
   z-index: 3 !important;
   display: block !important;
-  width: min(96%, 460px) !important;
+  width: min(100%, 480px) !important;
   max-width: 100% !important;
   aspect-ratio: 1 !important;
   height: auto !important;
@@ -339,14 +339,14 @@
   border-radius: 50% !important;
   background: transparent !important;
   box-shadow: none !important;
-  /* Zoom into fluffy cat face only — hide logo text / promo plate */
+  /* Extreme zoom on fluffy cat face — exclude baked logo text */
   object-fit: cover !important;
-  object-position: 50% 12% !important;
-  transform: scale(1.28) !important;
+  object-position: 52% 2% !important;
+  transform: scale(1.72) !important;
   mix-blend-mode: normal !important;
-  -webkit-mask-image: radial-gradient(circle at 50% 42%, #000 40%, rgba(0, 0, 0, 0.72) 58%, transparent 72%) !important;
-  mask-image: radial-gradient(circle at 50% 42%, #000 40%, rgba(0, 0, 0, 0.72) 58%, transparent 72%) !important;
-  filter: drop-shadow(0 0 30px rgba(255, 110, 180, 0.48)) drop-shadow(0 26px 44px rgba(0, 0, 0, 0.55)) !important;
+  -webkit-mask-image: radial-gradient(circle at 50% 45%, #000 36%, rgba(0, 0, 0, 0.7) 54%, transparent 70%) !important;
+  mask-image: radial-gradient(circle at 50% 45%, #000 36%, rgba(0, 0, 0, 0.7) 54%, transparent 70%) !important;
+  filter: drop-shadow(0 0 32px rgba(255, 110, 180, 0.5)) drop-shadow(0 28px 48px rgba(0, 0, 0, 0.55)) !important;
   animation: homeBrandMascotFloat 4.8s ease-in-out infinite !important;
   transform-origin: center center !important;
 }
@@ -354,10 +354,10 @@
 @keyframes homeBrandMascotFloat {
   0%,
   100% {
-    transform: scale(1.28) translateY(0);
+    transform: scale(1.72) translateY(0);
   }
   50% {
-    transform: scale(1.28) translateY(-12px);
+    transform: scale(1.72) translateY(-10px);
   }
 }
 
