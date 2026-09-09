@@ -32,9 +32,8 @@
     var root = document.querySelector("[data-home-daily-stats]");
     if (!root) return;
     root.hidden = false;
-    root.innerHTML =
-      '<div class="section-title compact-title"><div><h2>今日平台数据</h2><p>暂无平台数据</p></div></div>' +
-      '<div class="home-daily-empty" role="status">暂无平台数据</div>';
+    root.classList.add("home-trust-stats");
+    root.innerHTML = '<div class="home-trust-empty" role="status">暂无平台数据</div>';
   }
 
   function formatUpdatedLabel(data) {
@@ -54,24 +53,26 @@
       renderEmpty();
       return;
     }
-    var meta = "<p>" + esc(formatUpdatedLabel(data)) + "</p>";
+    root.classList.add("home-trust-stats");
     root.innerHTML =
-      '<div class="section-title compact-title"><div><h2>今日平台数据</h2>' +
-      meta +
-      "</div></div>" +
-      '<div class="home-daily-grid">' +
+      '<div class="home-trust-strip" role="group" aria-label="平台信任数据">' +
       fields
         .map(function (field) {
           return (
-            '<article class="home-daily-card"><span>' +
-            esc(field[1]) +
-            "</span><strong>" +
+            '<div class="home-trust-item">' +
+            '<strong class="home-trust-value">' +
             valueText(data, field[0], field[2]) +
-            "</strong></article>"
+            "</strong>" +
+            '<span class="home-trust-label">' +
+            esc(field[1]) +
+            "</span></div>"
           );
         })
         .join("") +
-      "</div>";
+      "</div>" +
+      '<p class="home-trust-meta">' +
+      esc(formatUpdatedLabel(data)) +
+      "</p>";
   }
 
   function fetchOnce() {

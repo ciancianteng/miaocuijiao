@@ -72,34 +72,10 @@
     min-width: 0 !important;
   }
 
-  /* Daily stats cards: shrink ~15–20% vs prior 104px mobile height */
+  .home-trust-stats,
   .home-daily-stats,
   [data-home-daily-stats] {
-    margin-bottom: 16px !important;
-  }
-
-  .home-daily-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
-    gap: 10px !important;
-  }
-
-  .home-daily-card {
-    height: auto !important;
-    min-height: 72px !important;
-    max-height: 84px !important;
-    padding: 10px 10px !important;
-    box-sizing: border-box !important;
-  }
-
-  .home-daily-card span {
-    font-size: 11px !important;
-    line-height: 1.25 !important;
-  }
-
-  .home-daily-card strong {
-    margin-top: 4px !important;
-    font-size: 20px !important;
-    line-height: 1.1 !important;
+    margin-bottom: 14px !important;
   }
 
   /* Preview / float widgets: right 16px, bottom ~90px */
@@ -122,22 +98,6 @@
 }
 
 @media (max-width: 560px) {
-  .home-daily-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
-    gap: 8px !important;
-  }
-
-  .home-daily-card {
-    min-height: 68px !important;
-    max-height: 80px !important;
-    padding: 8px 8px !important;
-    border-radius: 14px !important;
-  }
-
-  .home-daily-card strong {
-    font-size: 18px !important;
-  }
-
   .home-announcement-label span[aria-hidden="true"] {
     display: none !important;
   }
@@ -150,12 +110,3 @@
   }
 }
 
-@media (max-width: 360px) {
-  .home-daily-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
-  }
-
-  .home-daily-card strong {
-    font-size: 16px !important;
-  }
-}
