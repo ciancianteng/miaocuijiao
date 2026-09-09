@@ -406,8 +406,17 @@
       document.documentElement.style.visibility = "";
       document.documentElement.removeAttribute("data-mcj-auth-gate");
       document.documentElement.removeAttribute("data-mcj-auth-reason");
-      var overlay = document.getElementById("mcjAuthBootOverlay");
-      if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      try {
+        if (window.MCJPortalEarlyGate && typeof window.MCJPortalEarlyGate.clearAuthGate === "function") {
+          window.MCJPortalEarlyGate.clearAuthGate();
+        } else {
+          var overlay = document.getElementById("mcjAuthBootOverlay");
+          if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
+        }
+      } catch (eOv) {
+        var overlay2 = document.getElementById("mcjAuthBootOverlay");
+        if (overlay2 && overlay2.parentNode) overlay2.parentNode.removeChild(overlay2);
+      }
     } catch (e) {}
   }
 

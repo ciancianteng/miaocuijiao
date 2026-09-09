@@ -8,8 +8,12 @@
 (function () {
   "use strict";
 
-  var GATE_VERSION = "20260908antiBlank1";
+  var GATE_VERSION = "20260909authHangFix1";
   var OVERLAY_ID = "mcjAuthBootOverlay";
+  /** Once true, deferred DOMContentLoaded overlay paint must no-op (auth hang fix). */
+  var gateClosed = false;
+  var pendingEnsureOverlay = null;
+  var PENDING_SAFETY_MS = 12000;
 
   function pathNow() {
     return String(location.pathname || "/").replace(/\\/g, "/");
@@ -81,6 +85,9 @@
         : "未登录或登录已失效，正在前往登录页…");
     var reason = String(opts.reason || "");
 
+    // Opening a gate paint cancels any prior "closed" latch so redirect/pending can show.
+    gateClosed = false;
+
     try {
       document.documentElement.setAttribute("data-mcj-auth-gate", mode === "pending" ? "pending" : "1");
       if (reason) document.documentElement.setAttribute("data-mcj-auth-reason", reason);
@@ -89,11 +96,19 @@
     } catch (eGate) {}
 
     function ensureOverlay() {
+      // revealShell / clearAuthGate may have won the race before body existed.
+      if (gateClosed) {
+        pendingEnsureOverlay = null;
+        return;
+      }
       var body = document.body;
       if (!body) {
+        pendingEnsureOverlay = ensureOverlay;
         document.addEventListener("DOMContentLoaded", ensureOverlay, { once: true });
         return;
       }
+      pendingEnsureOverlay = null;
+      if (gateClosed) return;
       var el = document.getElementById(OVERLAY_ID);
       if (!el) {
         el = document.createElement("div");
@@ -125,13 +140,46 @@
         "</div>";
     }
     ensureOverlay();
+
+    // Safety: never leave a non-restore pending overlay forever if modules hang.
+    // pending_restore is owned by role-gates ensureSession (has its own timeout).
+    if (mode === "pending" && reason !== "pending_restore") {
+      var reasonSnap = reason;
+      setTimeout(function () {
+        if (gateClosed) return;
+        try {
+          var gate = document.documentElement.getAttribute("data-mcj-auth-gate") || "";
+          var why = document.documentElement.getAttribute("data-mcj-auth-reason") || "";
+          if (why === "pending_restore") return;
+          if (gate === "pending" && why === reasonSnap) {
+            clearAuthGate();
+          }
+        } catch (eSafe) {}
+      }, PENDING_SAFETY_MS);
+    }
   }
 
   function removeAuthGateOverlay() {
+    gateClosed = true;
+    if (pendingEnsureOverlay) {
+      try {
+        document.removeEventListener("DOMContentLoaded", pendingEnsureOverlay);
+      } catch (eRm) {}
+      pendingEnsureOverlay = null;
+    }
     try {
       var el = document.getElementById(OVERLAY_ID);
       if (el && el.parentNode) el.parentNode.removeChild(el);
     } catch (e) {}
+  }
+
+  function clearAuthGate() {
+    try {
+      document.documentElement.removeAttribute("data-mcj-auth-gate");
+      document.documentElement.removeAttribute("data-mcj-auth-reason");
+      document.documentElement.style.visibility = "";
+    } catch (e) {}
+    removeAuthGateOverlay();
   }
 
   function looksLikeJwt(token) {
@@ -252,12 +300,7 @@
   }
 
   function revealShell() {
-    try {
-      document.documentElement.removeAttribute("data-mcj-auth-gate");
-      document.documentElement.removeAttribute("data-mcj-auth-reason");
-      document.documentElement.style.visibility = "";
-    } catch (e) {}
-    removeAuthGateOverlay();
+    clearAuthGate();
   }
 
   function deny(loginHref, reason) {
@@ -481,5 +524,9 @@
     looksLikeJwt: looksLikeJwt,
     hasValidAccessJwt: hasValidAccessJwt,
     wipeBossIdentity: wipeBossIdentity,
+    clearAuthGate: clearAuthGate,
+    removeAuthGateOverlay: removeAuthGateOverlay,
+    revealShell: revealShell,
+    hideShell: hideShell,
   };
 })();
