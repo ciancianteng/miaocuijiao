@@ -306,30 +306,30 @@
   z-index: 2 !important;
   pointer-events: none !important;
   background:
-    linear-gradient(90deg, var(--brand-hero-ink) 0%, rgba(5, 4, 6, 0.94) 12%, rgba(5, 4, 6, 0.45) 28%, transparent 46%),
-    linear-gradient(0deg, var(--brand-hero-ink) 0%, rgba(5, 4, 6, 0.9) 16%, rgba(5, 4, 6, 0.35) 34%, transparent 58%),
-    linear-gradient(180deg, var(--brand-hero-ink) 0%, rgba(5, 4, 6, 0.55) 10%, transparent 28%),
-    linear-gradient(270deg, rgba(5, 4, 6, 0.65) 0%, transparent 16%) !important;
+    linear-gradient(90deg, var(--brand-hero-ink) 0%, rgba(5, 4, 6, 0.97) 8%, rgba(5, 4, 6, 0.72) 22%, rgba(5, 4, 6, 0.28) 42%, transparent 64%),
+    linear-gradient(0deg, var(--brand-hero-ink) 0%, rgba(5, 4, 6, 0.95) 12%, rgba(5, 4, 6, 0.4) 32%, transparent 62%),
+    linear-gradient(180deg, var(--brand-hero-ink) 0%, rgba(5, 4, 6, 0.7) 8%, transparent 26%),
+    linear-gradient(270deg, rgba(5, 4, 6, 0.75) 0%, transparent 20%) !important;
 }
 
 .home-brand-hero-visual img {
   position: relative !important;
   z-index: 1 !important;
   display: block !important;
-  width: 118% !important;
+  width: 128% !important;
   max-width: none !important;
   height: auto !important;
   max-height: none !important;
-  min-height: 108% !important;
-  margin-right: -10% !important;
-  margin-bottom: -8% !important;
+  min-height: 112% !important;
+  margin-right: -14% !important;
+  margin-bottom: -10% !important;
   object-fit: cover !important;
-  object-position: 58% 42% !important;
+  object-position: 68% 40% !important;
   border: 0 !important;
   border-radius: 0 !important;
   background: transparent !important;
   box-shadow: none !important;
-  filter: saturate(1.05) contrast(1.02) !important;
+  filter: saturate(1.06) contrast(1.03) !important;
   -webkit-mask-image: none !important;
   mask-image: none !important;
 }
