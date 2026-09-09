@@ -8,7 +8,11 @@
   var slideCache = new WeakMap();
   var remoteStore = { contents: { banners: [], notices: [] } };
   var remoteLoaded = false;
-  // No hardcoded /default-home-banner.png — homepage SoT is admin `banners` table only.
+  var FALLBACK_BANNER = "/default-home-banner.png";
+
+  function resolveFallbackBanner() {
+    return FALLBACK_BANNER;
+  }
 
   function contentApiUrl() {
     return "/api/gateway?path=" + encodeURIComponent("platform/content") + "&types=banners&_=" + Date.now();
