@@ -290,16 +290,7 @@
 }
 
 .home-brand-hero-ring {
-  position: absolute !important;
-  width: min(72%, 380px) !important;
-  aspect-ratio: 1 !important;
-  border-radius: 50% !important;
-  border: 1px solid rgba(255, 158, 207, 0.18) !important;
-  box-shadow:
-    0 0 24px rgba(255, 126, 189, 0.12),
-    inset 0 0 24px rgba(255, 126, 189, 0.06) !important;
-  z-index: 1 !important;
-  animation: homeBrandRingSpin 18s linear infinite !important;
+  display: none !important;
 }
 
 .home-brand-hero-spark {
@@ -339,7 +330,7 @@
   position: relative !important;
   z-index: 3 !important;
   display: block !important;
-  width: min(100%, 460px) !important;
+  width: min(100%, 480px) !important;
   max-width: 100% !important;
   height: auto !important;
   margin: 0 !important;
@@ -347,11 +338,10 @@
   border-radius: 0 !important;
   background: transparent !important;
   box-shadow: none !important;
-  /* Black plate dissolves into page; radial mask kills square corners */
   mix-blend-mode: screen !important;
-  -webkit-mask-image: radial-gradient(circle at 50% 46%, #000 38%, rgba(0, 0, 0, 0.85) 52%, transparent 70%) !important;
-  mask-image: radial-gradient(circle at 50% 46%, #000 38%, rgba(0, 0, 0, 0.85) 52%, transparent 70%) !important;
-  filter: drop-shadow(0 0 28px rgba(255, 110, 180, 0.35)) drop-shadow(0 18px 40px rgba(255, 110, 180, 0.2)) !important;
+  -webkit-mask-image: radial-gradient(circle at 50% 45%, #000 34%, rgba(0, 0, 0, 0.75) 48%, transparent 66%) !important;
+  mask-image: radial-gradient(circle at 50% 45%, #000 34%, rgba(0, 0, 0, 0.75) 48%, transparent 66%) !important;
+  filter: drop-shadow(0 0 34px rgba(255, 110, 180, 0.42)) drop-shadow(0 22px 48px rgba(255, 110, 180, 0.22)) !important;
   object-fit: contain !important;
   object-position: center !important;
   animation: homeBrandMascotFloat 4.8s ease-in-out infinite !important;
