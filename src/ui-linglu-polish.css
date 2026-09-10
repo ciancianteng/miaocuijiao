@@ -317,17 +317,7 @@
   color: rgba(255, 214, 232, 0.62);
 }
 
-.mcj-home-discord-cta-go {
-  flex: 0 0 auto;
-  font-size: 12px;
-  font-weight: 800;
-  color: rgba(255, 214, 232, 0.78);
-  white-space: nowrap;
-}
-
-.mcj-home-discord-cta.is-soon {
-  opacity: 0.88;
-}
+/* Right-side status label removed from home Community card (no 即将开放 / 加入 Discord →). */
 
 /* —— Profile detail: cleaner empty —— */
 .pd-perf-empty {
