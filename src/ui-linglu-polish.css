@@ -319,7 +319,7 @@
 
 /* Right-side status label removed from home Community card (no 即将开放 / 加入 Discord →). */
 
-/* —— Home dual entry: club levels + companion apply —— */
+/* —— Home dual entry: glass gradient cards (levels + apply) —— */
 .home-dual-entry {
   margin: 10px 0 14px !important;
   padding: 0 !important;
@@ -338,112 +338,106 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  justify-content: flex-start;
+  justify-content: flex-end;
   gap: 8px;
-  min-height: 142px;
+  min-height: 136px;
   height: 100%;
-  padding: 14px 14px 16px !important;
+  padding: 18px 16px 20px !important;
   border-radius: 22px !important;
   text-decoration: none !important;
   color: inherit;
   box-sizing: border-box;
-  border: 1px solid rgba(255, 158, 207, 0.22) !important;
+  overflow: hidden;
+  isolation: isolate;
+  border: 1px solid rgba(232, 180, 220, 0.18) !important;
   background:
-    radial-gradient(circle at 12% 10%, rgba(255, 126, 189, 0.14), transparent 42%),
-    linear-gradient(160deg, rgba(24, 14, 28, 0.96), rgba(10, 7, 14, 0.98) 58%) !important;
+    linear-gradient(155deg, rgba(255, 255, 255, 0.07) 0%, rgba(255, 255, 255, 0.02) 28%, transparent 55%),
+    linear-gradient(160deg, rgba(58, 32, 78, 0.42), rgba(22, 12, 34, 0.55) 45%, rgba(12, 8, 18, 0.62)) !important;
+  background-color: rgba(16, 10, 22, 0.38) !important;
+  -webkit-backdrop-filter: blur(18px) saturate(1.15);
+  backdrop-filter: blur(18px) saturate(1.15);
   box-shadow:
-    0 10px 28px rgba(0, 0, 0, 0.28),
-    0 0 18px rgba(255, 100, 170, 0.06),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05) !important;
-  transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+    0 12px 30px rgba(0, 0, 0, 0.26),
+    0 0 24px rgba(160, 90, 180, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 -1px 0 rgba(255, 140, 200, 0.04) !important;
+  transition:
+    transform 0.18s ease,
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    background 0.18s ease,
+    filter 0.18s ease;
   -webkit-tap-highlight-color: transparent;
+}
+
+.home-dual-entry-card--levels {
+  background:
+    linear-gradient(150deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0.015) 30%, transparent 58%),
+    linear-gradient(145deg, rgba(72, 38, 96, 0.4), rgba(28, 14, 42, 0.52) 48%, rgba(14, 9, 22, 0.64)) !important;
+  background-color: rgba(18, 11, 28, 0.36) !important;
 }
 
 .home-dual-entry-card--apply {
   background:
-    radial-gradient(circle at 88% 12%, rgba(255, 126, 189, 0.12), transparent 40%),
-    linear-gradient(160deg, rgba(26, 12, 28, 0.96), rgba(10, 7, 14, 0.98) 60%) !important;
+    linear-gradient(210deg, rgba(255, 255, 255, 0.07) 0%, rgba(255, 255, 255, 0.015) 32%, transparent 60%),
+    linear-gradient(200deg, rgba(64, 28, 72, 0.4), rgba(30, 14, 40, 0.52) 46%, rgba(12, 8, 20, 0.64)) !important;
+  background-color: rgba(16, 10, 24, 0.36) !important;
 }
 
 .home-dual-entry-card:hover,
 .home-dual-entry-card:focus-visible {
-  transform: translateY(-2px);
-  border-color: rgba(255, 190, 220, 0.42) !important;
+  transform: translateY(-1.5px);
+  filter: brightness(1.06);
+  border-color: rgba(245, 200, 230, 0.34) !important;
   box-shadow:
-    0 14px 32px rgba(0, 0, 0, 0.34),
-    0 0 22px rgba(255, 110, 180, 0.1),
-    inset 0 1px 0 rgba(255, 255, 255, 0.07) !important;
+    0 14px 34px rgba(0, 0, 0, 0.3),
+    0 0 28px rgba(170, 100, 190, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    inset 0 -1px 0 rgba(255, 150, 205, 0.06) !important;
   outline: none;
 }
 
-.home-dual-entry-icon {
-  width: 40px;
-  height: 40px;
-  border-radius: 14px;
-  display: grid;
-  place-items: center;
-  flex: 0 0 auto;
-  color: #ffd6e8;
-  background: linear-gradient(160deg, rgba(255, 158, 207, 0.22), rgba(255, 100, 170, 0.08));
-  border: 1px solid rgba(255, 214, 232, 0.16);
-  overflow: hidden;
-}
-
-.home-dual-entry-icon img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-
-.home-dual-entry-icon svg {
-  display: block;
+.home-dual-entry-icon,
+.home-dual-entry-arrow {
+  display: none !important;
 }
 
 .home-dual-entry-title {
   display: block;
-  margin: 2px 0 0;
-  font-size: 15px;
+  margin: 0;
+  font-size: 17px;
   font-weight: 800;
-  letter-spacing: 0.02em;
-  color: #fff6fb;
-  line-height: 1.25;
+  letter-spacing: 0.01em;
+  color: rgba(255, 246, 252, 0.96);
+  line-height: 1.2;
+  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.28);
 }
 
 .home-dual-entry-desc {
   display: block;
   margin: 0;
-  max-width: 12.5em;
+  max-width: 13em;
   font-size: 12px;
   line-height: 1.45;
-  color: rgba(255, 226, 239, 0.62);
-  font-weight: 600;
-}
-
-.home-dual-entry-arrow {
-  position: absolute;
-  right: 14px;
-  bottom: 12px;
-  font-size: 16px;
-  font-weight: 700;
-  color: rgba(255, 190, 220, 0.78);
-  line-height: 1;
+  color: rgba(235, 210, 230, 0.58);
+  font-weight: 500;
 }
 
 /* Kill legacy big pink CTA chrome when class is reused on dual cards */
 .home-dual-entry .companion-apply-guide-card,
 .home-dual-entry .companion-apply-guide-card:hover {
-  min-height: 142px !important;
+  min-height: 136px !important;
   display: flex !important;
   grid-template-columns: unset !important;
   align-items: flex-start !important;
+  justify-content: flex-end !important;
   gap: 8px !important;
   transform: none;
 }
 
 .home-dual-entry .companion-apply-guide-card:hover,
 .home-dual-entry .companion-apply-guide-card:focus-visible {
-  transform: translateY(-2px);
+  transform: translateY(-1.5px);
 }
 
 .home-dual-entry .companion-apply-guide-card .order-btn {
@@ -461,23 +455,17 @@
   }
 
   .home-dual-entry-card {
-    min-height: 132px;
-    padding: 12px 12px 14px !important;
+    min-height: 128px;
+    padding: 16px 14px 18px !important;
     border-radius: 20px !important;
   }
 
   .home-dual-entry-title {
-    font-size: 14px;
+    font-size: 16px;
   }
 
   .home-dual-entry-desc {
     font-size: 11px;
-  }
-
-  .home-dual-entry-icon {
-    width: 36px;
-    height: 36px;
-    border-radius: 12px;
   }
 }
 
@@ -492,8 +480,13 @@
   }
 
   .home-dual-entry-card {
-    min-height: 148px;
-    padding: 16px !important;
+    min-height: 142px;
+    padding: 20px 18px 22px !important;
+    border-radius: 24px !important;
+  }
+
+  .home-dual-entry-title {
+    font-size: 18px;
   }
 }
 
