@@ -391,24 +391,35 @@
 }
 
 @media (max-width: 980px) {
-  .container > .mcj-home-hero,
-  .mcj-home-hero[data-mcj-home-hero] {
+  .container > .mcj-home-hero:not(.mcj-home-hero--promo),
+  .mcj-home-hero[data-mcj-home-hero]:not(.mcj-home-hero--promo) {
     max-height: min(360px, calc(100vh - 240px)) !important;
     min-height: 200px !important;
   }
 }
 
 @media (max-width: 640px) {
-  .container > .mcj-home-hero,
-  .mcj-home-hero[data-mcj-home-hero] {
+  .container > .mcj-home-hero:not(.mcj-home-hero--promo),
+  .mcj-home-hero[data-mcj-home-hero]:not(.mcj-home-hero--promo) {
     width: 100% !important;
-    /* Mobile: fixed short strip (aspect alone would be too short on narrow screens) */
+    /* Legacy non-promo only — promo sizing owned by home-banner-promo.css */
     height: clamp(170px, 46vw, 210px) !important;
     max-height: 210px !important;
     min-height: 160px !important;
     aspect-ratio: auto !important;
     border-radius: 18px !important;
     margin: 12px 0 14px !important;
+  }
+
+  .container > .mcj-home-hero.mcj-home-hero--promo,
+  .mcj-home-hero[data-mcj-home-hero].mcj-home-hero--promo {
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    aspect-ratio: auto !important;
+    border-radius: 0 !important;
+    margin: 0 !important;
   }
 
   .mcj-home-hero .mcj-hero-overlay {

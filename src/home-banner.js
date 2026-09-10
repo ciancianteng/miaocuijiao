@@ -86,6 +86,33 @@
     return { w: frameW, h: frameW / Math.max(0.0001, imgRatio) };
   }
 
+  function applyCoverFillImg(img) {
+    if (!img) return;
+    [
+      "width",
+      "height",
+      "max-width",
+      "max-height",
+      "left",
+      "top",
+      "right",
+      "bottom",
+      "object-fit",
+      "object-position",
+      "transform",
+    ].forEach(function (prop) {
+      img.style.removeProperty(prop);
+    });
+    img.style.setProperty("inset", "0", "important");
+    img.style.setProperty("width", "100%", "important");
+    img.style.setProperty("height", "100%", "important");
+    img.style.setProperty("object-fit", "cover", "important");
+    img.style.setProperty("object-position", "center center", "important");
+    img.style.setProperty("transform", "none", "important");
+    img.setAttribute("data-crop-ready", "1");
+    img.setAttribute("data-crop-plain", "1");
+  }
+
   function applyCropToImg(img, frame, crop) {
     if (window.MCJBannerCrop && typeof window.MCJBannerCrop.applyCropToImg === "function") {
       return window.MCJBannerCrop.applyCropToImg(img, frame, crop);
@@ -125,6 +152,17 @@
 
   function applyAllCrops(root) {
     if (!root) return;
+    /* Promo / Linglu: keep flat 2.35:1 frame + object-fit cover — never pixel-stretch. */
+    if (root.classList && root.classList.contains("mcj-home-hero--promo")) {
+      root.querySelectorAll(".mcj-hero-image").forEach(function (img) {
+        function run() {
+          applyCoverFillImg(img);
+        }
+        if (img.complete && img.naturalWidth) run();
+        else img.addEventListener("load", run, { once: true });
+      });
+      return;
+    }
     var cache = slideCache.get(root);
     var list = (cache && cache.normalized) || [];
     var device = (cache && cache.device) || root.dataset.bannerDevice || currentDevice();
@@ -300,16 +338,25 @@
   }
 
   function applyVars(root, data, device) {
-    /* Sizing is owned by home-banner.css; crop applied per-slide via applyAllCrops. */
+    /* Sizing is owned by home-banner.css / home-banner-promo.css */
     var crop = cropFor(data, device);
-    root.style.setProperty("--hero-radius", data.radius + "px");
+    var isPromo = root.classList && root.classList.contains("mcj-home-hero--promo");
+    root.style.setProperty("--hero-radius", (isPromo ? 13 : data.radius) + "px");
     root.style.setProperty("--hero-fit", "cover");
     root.style.setProperty("--hero-position", 50 + crop.x * 50 + "% " + (50 + crop.y * 50) + "%");
     root.style.setProperty("--hero-crop-zoom", String(crop.zoom || 1));
     root.style.removeProperty("max-width");
     root.style.removeProperty("height");
-    root.style.marginTop = data.marginTop + "px";
-    root.style.marginBottom = data.marginBottom + "px";
+    root.style.removeProperty("min-height");
+    root.style.removeProperty("max-height");
+    if (isPromo) {
+      /* Rhythm CSS owns promo margins — do not inject admin spacing. */
+      root.style.removeProperty("margin-top");
+      root.style.removeProperty("margin-bottom");
+    } else {
+      root.style.marginTop = data.marginTop + "px";
+      root.style.marginBottom = data.marginBottom + "px";
+    }
     root.dataset.bannerId = data.id || "";
     root.dataset.bannerDevice = device || "";
   }

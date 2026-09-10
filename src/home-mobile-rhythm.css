@@ -1,0 +1,397 @@
+/**
+ * Mobile homepage vertical rhythm — authoritative spacing system.
+ * Loads last on mobile. Presentation only.
+ */
+
+@media (max-width: 720px) {
+  :root {
+    --mcj-home-pad-x: 16px;
+    --mcj-home-gap-xs: 10px;
+    --mcj-home-gap-sm: 16px;
+    --mcj-home-gap-md: 20px;
+    --mcj-home-gap-lg: 24px;
+    --mcj-home-card-gap: 20px;
+  }
+
+  /* —— Shell: unified 16px side padding —— */
+  main.container.mcj-app-home,
+  .container.mcj-app-home {
+    padding-left: var(--mcj-home-pad-x) !important;
+    padding-right: var(--mcj-home-pad-x) !important;
+    padding-top: 0 !important;
+  }
+
+  /* —— A→B: Header → Hero —— */
+  .mcj-app-home > .home-brand-hero,
+  .container.mcj-app-home > .home-brand-hero {
+    --brand-hero-bleed: 16px;
+    width: calc(100% + (var(--brand-hero-bleed) * 2)) !important;
+    margin-left: calc(var(--brand-hero-bleed) * -1) !important;
+    margin-right: calc(var(--brand-hero-bleed) * -1) !important;
+    margin-top: 22px !important;
+    margin-bottom: 0 !important;
+    border-radius: 0 0 18px 18px !important;
+    overflow: visible !important;
+  }
+
+  .mcj-app-home .home-brand-hero-inner {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1.15fr) minmax(148px, 0.68fr) !important;
+    grid-template-areas:
+      "copy mascot"
+      "actions actions" !important;
+    align-items: start !important;
+    column-gap: 10px !important;
+    row-gap: 0 !important;
+    padding: 4px 14px 0 16px !important;
+  }
+
+  .mcj-app-home .home-brand-hero-copy {
+    grid-area: copy !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 0 !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    padding-right: 0 !important;
+  }
+
+  .mcj-app-home .home-brand-hero-visual {
+    grid-area: mascot !important;
+    align-self: end !important;
+    justify-self: end !important;
+    width: 100% !important;
+    max-width: 172px !important;
+    margin: 0 -4px -4px 0 !important;
+    place-items: end center !important;
+    overflow: visible !important;
+  }
+
+  .mcj-app-home .home-brand-hero-mascot {
+    width: clamp(148px, 40vw, 172px) !important;
+    max-width: none !important;
+    margin: 0 !important;
+  }
+
+  .mcj-app-home .home-brand-hero-kicker {
+    margin: 0 0 8px !important;
+    font-size: 11px !important;
+    letter-spacing: 0.18em !important;
+  }
+
+  /* Hero title */
+  .mcj-app-home .home-brand-hero-title {
+    margin: 0 0 16px !important;
+    font-size: 26px !important;
+    line-height: 1.1 !important;
+    font-weight: 800 !important;
+    letter-spacing: 0.01em !important;
+  }
+
+  /* Stats: equal 3-col */
+  .mcj-app-home .home-brand-hero-stats,
+  .mcj-app-home .home-brand-hero .home-trust-stats,
+  .mcj-app-home .home-brand-hero [data-home-daily-stats] {
+    display: block !important;
+    width: 100% !important;
+    margin: 0 0 15px !important;
+    padding: 0 !important;
+  }
+
+  .mcj-app-home .home-brand-hero .home-trust-strip {
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 0 !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 14px 0 !important;
+    border-top: 1px solid rgba(255, 214, 232, 0.14) !important;
+    border-bottom: 1px solid rgba(255, 214, 232, 0.14) !important;
+  }
+
+  .mcj-app-home .home-brand-hero .home-trust-item {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 6px !important;
+    padding: 4px 10px !important;
+    text-align: center !important;
+  }
+
+  .mcj-app-home .home-brand-hero .home-trust-item:not(:last-child)::after {
+    top: 18% !important;
+    bottom: 18% !important;
+  }
+
+  .mcj-app-home .home-brand-hero .home-trust-value,
+  .mcj-app-home .home-brand-hero .home-trust-item strong.home-trust-value {
+    font-size: 20px !important;
+    line-height: 1.1 !important;
+  }
+
+  .mcj-app-home .home-brand-hero .home-trust-label,
+  .mcj-app-home .home-brand-hero .home-trust-item span.home-trust-label {
+    font-size: 11px !important;
+    line-height: 1.25 !important;
+  }
+
+  /* Tagline: stay in copy column (~55–60%), never collide with IP */
+  .mcj-app-home .home-brand-hero-tagline {
+    margin: 0 !important;
+    max-width: 100% !important;
+    font-size: 14px !important;
+    line-height: 1.55 !important;
+    color: rgba(255, 232, 242, 0.78) !important;
+  }
+
+  /* —— C: Primary CTAs full width under hero —— */
+  .mcj-app-home .home-brand-hero-actions.home-primary-ctas,
+  .mcj-app-home .home-primary-ctas {
+    grid-area: actions !important;
+    display: flex !important;
+    flex-wrap: nowrap !important;
+    gap: 12px !important;
+    width: 100% !important;
+    margin: 16px 0 0 !important;
+    padding: 0 0 0 !important;
+  }
+
+  .mcj-app-home .home-primary-ctas .home-brand-hero-btn {
+    flex: 1 1 0 !important;
+    min-width: 0 !important;
+    height: 46px !important;
+    min-height: 46px !important;
+    max-height: 46px !important;
+    font-size: 14px !important;
+    border-radius: 12px !important;
+  }
+
+  /* Hero shell ends flush under CTAs */
+  .mcj-app-home > .home-brand-hero,
+  .container.mcj-app-home > .home-brand-hero {
+    padding-bottom: 0 !important;
+  }
+
+  /* —— D: Banner after CTAs (22–26px) —— */
+  .mcj-app-home > .mcj-home-hero.mcj-home-hero--promo,
+  .container.mcj-app-home > .mcj-home-hero.mcj-home-hero--promo {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin-top: 24px !important;
+    margin-bottom: 0 !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+    padding-bottom: 0 !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+  }
+
+  /* Banner viewport locked flat */
+  .mcj-app-home .mcj-home-hero--promo .mcj-hero-viewport {
+    aspect-ratio: 2.35 / 1 !important;
+    max-height: 155px !important;
+    height: auto !important;
+    min-height: 0 !important;
+  }
+
+  /* —— E: Pagination ~10px under banner —— */
+  .mcj-app-home .mcj-home-hero--promo .mcj-hero-dots,
+  .container.mcj-app-home .mcj-home-hero--promo .mcj-hero-dots,
+  .mcj-app-home .mcj-home-hero[data-mcj-home-hero].mcj-home-hero--promo .mcj-hero-dots {
+    margin-top: 10px !important;
+    margin-bottom: 0 !important;
+  }
+
+  /* —— F: Announcement ~12px under pagination —— */
+  .mcj-app-home #homeAnnouncementBar.home-announcement-bar.announcement-strip,
+  .container.mcj-app-home #homeAnnouncementBar.home-announcement-bar.announcement-strip {
+    width: 100% !important;
+    height: 44px !important;
+    min-height: 44px !important;
+    max-height: 46px !important;
+    margin-top: 12px !important;
+    margin-bottom: 0 !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+    padding: 0 12px !important;
+    box-sizing: border-box !important;
+  }
+
+  /* —— G: Club levels 18px after announcement —— */
+  .mcj-app-home .club-level-section {
+    margin: 18px 0 0 !important;
+    padding: 0 !important;
+  }
+
+  .mcj-app-home .club-level-entry-card {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: 12px !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+    min-height: 76px !important;
+    height: auto !important;
+    max-height: 84px !important;
+    margin: 0 !important;
+    padding: 16px !important;
+    border-radius: 14px !important;
+    text-decoration: none !important;
+    border: 1px solid rgba(255, 214, 232, 0.14) !important;
+    box-shadow: none !important;
+  }
+
+  .mcj-app-home .club-level-entry-card strong {
+    display: block !important;
+    margin: 0 0 4px !important;
+    font-size: 16px !important;
+    font-weight: 800 !important;
+    color: #fff8fc !important;
+    line-height: 1.25 !important;
+  }
+
+  .mcj-app-home .club-level-entry-card span:not([style]) {
+    color: rgba(255, 228, 240, 0.7) !important;
+    font-size: 13px !important;
+  }
+
+  .mcj-app-home .club-level-entry-card > span:last-child {
+    flex: 0 0 auto !important;
+    color: #f9a8d4 !important;
+    font-size: 13px !important;
+    font-weight: 700 !important;
+    white-space: nowrap !important;
+  }
+
+  /* —— H: Apply companion 20px after levels; compact height —— */
+  .mcj-app-home .companion-apply-guide,
+  .mcj-app-home [data-companion-apply-section] {
+    margin: 20px 0 0 !important;
+    padding: 0 !important;
+  }
+
+  .mcj-app-home .companion-apply-guide-card {
+    display: grid !important;
+    grid-template-columns: auto 1fr !important;
+    grid-template-rows: auto auto !important;
+    align-items: center !important;
+    gap: 8px 10px !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+    min-height: 0 !important;
+    max-height: 118px !important;
+    height: auto !important;
+    margin: 0 !important;
+    padding: 12px !important;
+    border-radius: 12px !important;
+    border: 1px solid rgba(255, 214, 232, 0.14) !important;
+    background: rgba(14, 10, 18, 0.92) !important;
+    box-shadow: none !important;
+    transform: none !important;
+  }
+
+  .mcj-app-home .companion-apply-guide-card:hover {
+    transform: none !important;
+    box-shadow: none !important;
+  }
+
+  .mcj-app-home .companion-apply-guide-icon {
+    width: 36px !important;
+    height: 36px !important;
+    min-width: 36px !important;
+    min-height: 36px !important;
+    font-size: 18px !important;
+    border-radius: 10px !important;
+  }
+
+  .mcj-app-home .companion-apply-guide-icon img {
+    width: 22px !important;
+    height: 22px !important;
+  }
+
+  .mcj-app-home .companion-apply-guide-card h2 {
+    margin: 0 !important;
+    font-size: 15px !important;
+    line-height: 1.2 !important;
+    font-weight: 750 !important;
+  }
+
+  .mcj-app-home .companion-apply-guide-card p {
+    margin: 2px 0 0 !important;
+    font-size: 12px !important;
+    line-height: 1.35 !important;
+  }
+
+  .mcj-app-home .companion-apply-guide-card .order-btn {
+    grid-column: 1 / -1 !important;
+    width: 100% !important;
+    height: 36px !important;
+    min-height: 36px !important;
+    max-height: 36px !important;
+    margin: 2px 0 0 !important;
+    padding: 0 12px !important;
+    font-size: 13px !important;
+    border-radius: 10px !important;
+  }
+
+  /* —— I: Popularity 24px after apply —— */
+  .mcj-app-home .home-popularity-section {
+    margin-top: 24px !important;
+    margin-bottom: 0 !important;
+    padding-top: 0 !important;
+  }
+
+  .mcj-app-home .home-popularity-section .section-title,
+  .mcj-app-home .home-popularity-section .compact-title {
+    margin: 0 0 16px !important;
+    gap: 6px !important;
+  }
+
+  .mcj-app-home .home-popularity-section .section-title h2,
+  .mcj-app-home .home-popularity-section .compact-title h2 {
+    margin: 0 !important;
+    font-size: 22px !important;
+    font-weight: 800 !important;
+    line-height: 1.25 !important;
+  }
+
+  .mcj-app-home .home-popularity-section .section-title p,
+  .mcj-app-home .home-popularity-section .compact-title p {
+    margin: 4px 0 0 !important;
+    font-size: 13px !important;
+  }
+
+  /* —— J: Other sections share card gap —— */
+  .mcj-app-home .hot-recommend-section,
+  .mcj-app-home .section:not(.club-level-section):not(.companion-apply-guide):not(.home-popularity-section) {
+    margin-top: var(--mcj-home-card-gap) !important;
+  }
+
+  .mcj-app-home .section .compact-title h2,
+  .mcj-app-home .hot-recommend-section .compact-title h2 {
+    font-size: 22px !important;
+  }
+
+  .mcj-app-home .neon-card:not(.companion-card):not(.hot-card) {
+    border-radius: 14px !important;
+  }
+}
+
+@media (max-width: 360px) {
+  .mcj-app-home .home-brand-hero-inner {
+    grid-template-columns: minmax(0, 1.1fr) minmax(136px, 0.62fr) !important;
+    column-gap: 8px !important;
+  }
+
+  .mcj-app-home .home-brand-hero-mascot {
+    width: clamp(136px, 38vw, 156px) !important;
+  }
+
+  .mcj-app-home .home-brand-hero-title {
+    font-size: 24px !important;
+  }
+}

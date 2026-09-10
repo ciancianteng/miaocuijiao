@@ -1,0 +1,76 @@
+{
+  "home": {
+    "brand": {
+      "w": 390,
+      "h": 249,
+      "top": 84
+    },
+    "bannerRoot": {
+      "w": 358,
+      "h": 168,
+      "top": 357
+    },
+    "bannerVp": {
+      "w": 358,
+      "h": 152,
+      "top": 357
+    },
+    "dots": 2,
+    "promo": true,
+    "title": "???"
+  },
+  "hall": {
+    "teamTop": 2700,
+    "listTop": 432,
+    "introTop": 77,
+    "teamAfterList": true,
+    "moreBeforeTeam": true,
+    "priceTextInCard": false,
+    "priceVisible": false,
+    "nameFs": "17px",
+    "order": [
+      {
+        "cls": "hall-intro",
+        "top": 77,
+        "text": "陪玩大厅\n        找到喜欢的陪玩，立即开始游戏。"
+      },
+      {
+        "cls": "hall-search-panel",
+        "top": 164,
+        "text": "搜索\n          \n        \n        搜索\n      "
+      },
+      {
+        "cls": "hall-results",
+        "top": 286,
+        "text": "陪玩推荐\n          共 7 位陪玩\n        \n        "
+      },
+      {
+        "cls": "hall-secondary-entries hall-secondary-entries--after",
+        "top": 2700,
+        "text": "更多玩法\n          护航、跑刀、代肝、趣味单\n        \n   "
+      },
+      {
+        "cls": "hall-secondary-card",
+        "top": 2700,
+        "text": "更多玩法\n          护航、跑刀、代肝、趣味单\n        \n   "
+      },
+      {
+        "cls": "hall-secondary-card",
+        "top": 2700,
+        "text": "组队大厅\n          进入组队社区找队友\n        \n      "
+      }
+    ]
+  },
+  "profile": {
+    "scoreCount": 0,
+    "boxes": 0,
+    "boxesDisplay": [],
+    "metaLabels": [
+      "游戏",
+      "等级",
+      "在线状态",
+      "价格区间"
+    ],
+    "snippet": "MEOW CUI JIAO\n妙脆角\n☰\n\nMEOW CUI JIAO\n\n哦嗯调\n离线\n⭐ 新人陪玩\nID：PW00023\n\n哦嗯调nb666\n\n三角洲 手游 国服 · Lv4 喵神\nLv4 喵神\n🐣\n抽象主播\n声线：\n辣条\n语音介绍\n基本资料\n游戏\n三角洲 手游 国服\n等级\nLv4 喵神\n在线状态\n离线\n价格区间\n60–75 猫粮\n数据表现\n\n暂无数据，完成订单后将逐步生成表现数据。\n\n相册\n真实订单评价\n新人陪玩\n\n⭐ 新人陪玩 · 完成订单后将展示真实评价与排名\n\n咨询客服\n立即下单\n© 2026 Meow Cui Jiao\nSSM Registration No. 202603181917"
+  }
+}
