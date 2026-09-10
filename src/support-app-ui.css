@@ -307,3 +307,38 @@
     padding: 12px !important;
   }
 }
+
+
+/* Guest public Discord community card polish */
+.mcj-public-channels-label{
+  margin:0 0 8px;
+  padding:0 2px;
+  color:rgba(255,226,239,.48);
+  font-size:11px;
+  font-weight:750;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+}
+.mcj-discord-cta-foot{
+  margin:8px 2px 0;
+  color:rgba(255,226,239,.42);
+  font-size:11px;
+  line-height:1.4;
+}
+.mcj-discord-cta{
+  min-height:88px!important;
+  border-radius:18px!important;
+  border-color:rgba(255,158,207,.32)!important;
+  background:
+    radial-gradient(circle at 92% 18%,rgba(255,126,189,.22),transparent 42%),
+    linear-gradient(135deg,rgba(255,126,189,.16),rgba(14,10,18,.96) 52%)!important;
+}
+.mcj-discord-cta-logo{
+  width:48px!important;
+  height:48px!important;
+  border-radius:16px!important;
+}
+.mcj-discord-cta-copy strong{font-size:15px!important}
+.mcj-discord-cta-action i{width:40px!important;height:40px!important}
+.mcj-discord-cta-action small{font-weight:800!important;color:rgba(255,214,232,.72)!important}
+.support-guest-panel p{margin:0 0 16px!important}

@@ -1349,9 +1349,10 @@
       return true;
     }
 
-    if (/\/(mine|orders|support|recharge|messages|favorites|payment-confirm|order-confirm|gifts)\.html$/i.test(p)) {
+    if (/\/(mine|orders|recharge|messages|favorites|payment-confirm|order-confirm|gifts)\.html$/i.test(p)) {
       // Soft / refresh alone insufficient for sync deny — wait restoreSession before claiming guest.
       // profile.html is public companion detail and stays ungated.
+      // support.html is a public contact hub — guests may enter (login only for private actions).
       if (hasValidBossAccessToken()) {
         clearPendingAuthGate();
         return true;
@@ -1428,7 +1429,7 @@
       return true;
     }
     if (storageRole(role) === "customer" || role === "boss") {
-      if (/\/(mine|orders|support|recharge|messages|favorites|payment-confirm|order-confirm|gifts)\.html$/i.test(path())) {
+      if (/\/(mine|orders|recharge|messages|favorites|payment-confirm|order-confirm|gifts)\.html$/i.test(path())) {
         if (hasValidBossAccessToken()) {
           clearPendingAuthGate();
           return true;
@@ -1892,7 +1893,7 @@
       var a = event.target && event.target.closest && event.target.closest("a[href]");
       if (!a) return;
       var href = String(a.getAttribute("href") || "");
-      if (!/mine\.html|orders\.html|support\.html|recharge\.html|messages\.html|favorites\.html|profile\.html|gifts\.html/i.test(href)) return;
+      if (!/mine\.html|orders\.html|recharge\.html|messages\.html|favorites\.html|gifts\.html/i.test(href)) return;
       if (hasValidBossAccessToken()) return;
       event.preventDefault();
       wipeBossGuestArtifacts();
