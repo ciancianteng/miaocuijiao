@@ -1,10 +1,14 @@
+import "./home-trust-stats.css";
+import "./home-brand-hero.css";
+
 (function () {
   "use strict";
 
   var API_URL = "/api/gateway?path=" + encodeURIComponent("home/daily-stats");
+  /* Real daily-stats fields only — no invented rating. */
   var fields = [
-    ["ordersCreated", "今日有效订单", ""],
     ["onlineCompanions", "在线陪玩", ""],
+    ["ordersCreated", "今日有效订单", ""],
     ["grossRevenue", "今日营业额", "currency"],
   ];
 
@@ -23,51 +27,48 @@
     if (currencyKey) {
       var amount = numberValue(data, key);
       if (window.MCJCurrency) return esc(window.MCJCurrency.formatPlain(amount));
-      return esc(String(Math.round(amount))) + " 猫粮";
+      /* Compact number only — unit lives in the label (今日营业额). */
+      return esc(String(Math.round(amount)));
     }
     return String(Math.round(numberValue(data, key)));
   }
 
-  function renderEmpty() {
-    var root = document.querySelector("[data-home-daily-stats]");
-    if (!root) return;
-    root.hidden = false;
-    root.innerHTML =
-      '<div class="section-title compact-title"><div><h2>今日平台数据</h2><p>暂无平台数据</p></div></div>' +
-      '<div class="home-daily-empty" role="status">暂无平台数据</div>';
+  function statsRoot() {
+    return (
+      document.querySelector("[data-home-brand-hero-stats]") ||
+      document.querySelector("[data-home-daily-stats]")
+    );
   }
 
-  function formatUpdatedLabel(data) {
-    var raw = data && (data.updatedAt || data.updated_at || data.generatedAt || data.asOf);
-    var d = raw ? new Date(raw) : new Date();
-    if (Number.isNaN(d.getTime())) d = new Date();
-    var hh = String(d.getHours()).padStart(2, "0");
-    var mm = String(d.getMinutes()).padStart(2, "0");
-    return "最后更新 " + hh + ":" + mm;
+  function renderEmpty() {
+    var root = statsRoot();
+    if (!root) return;
+    root.hidden = false;
+    root.classList.add("home-trust-stats");
+    root.innerHTML = '<div class="home-trust-empty" role="status">暂无平台数据</div>';
   }
 
   function render(data) {
-    var root = document.querySelector("[data-home-daily-stats]");
+    var root = statsRoot();
     if (!root) return;
     root.hidden = false;
     if (!data || data.configured === false || data.ok === false) {
       renderEmpty();
       return;
     }
-    var meta = "<p>" + esc(formatUpdatedLabel(data)) + "</p>";
+    root.classList.add("home-trust-stats");
     root.innerHTML =
-      '<div class="section-title compact-title"><div><h2>今日平台数据</h2>' +
-      meta +
-      "</div></div>" +
-      '<div class="home-daily-grid">' +
+      '<div class="home-trust-strip" role="group" aria-label="平台实时数据">' +
       fields
         .map(function (field) {
           return (
-            '<article class="home-daily-card"><span>' +
-            esc(field[1]) +
-            "</span><strong>" +
+            '<div class="home-trust-item">' +
+            '<strong class="home-trust-value">' +
             valueText(data, field[0], field[2]) +
-            "</strong></article>"
+            "</strong>" +
+            '<span class="home-trust-label">' +
+            esc(field[1]) +
+            "</span></div>"
           );
         })
         .join("") +

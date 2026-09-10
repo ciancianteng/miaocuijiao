@@ -195,75 +195,15 @@
     );
   }
 
-  function companionToRankItem(c, rank) {
-    var p =
-      window.MCJCompanionPresence && window.MCJCompanionPresence.fromCompanion
-        ? window.MCJCompanionPresence.fromCompanion(c)
-        : null;
-    return {
-      companionId: c.id || c.uid || "",
-      publicId: c.publicId || "",
-      nickname: c.nickname || c.name || "",
-      avatar: avatarUrl(c.avatar || c.cover || ""),
-      level: c.levelName || c.level || "",
-      levelId: c.levelId || c.level_id || "",
-      availabilityStatus: p ? p.code : c.availabilityStatus || "offline",
-      availabilityText: p ? p.label : c.availabilityText || c.status || c.onlineStatus || "",
-      popularityScore: 0,
-      completedOrders: 0,
-      fiveStarReviews: 0,
-      giftCatFood: 0,
-      price: c.priceValue != null ? c.priceValue : c.price || 0,
-      mainService: c.game || c.mainGame || "",
-      game: c.game || c.mainGame || "",
-      rank: rank,
-    };
-  }
-
-  function fillTopThree(items) {
-    var list = (items || []).filter(function (it) {
-      return it && (it.companionId || it.publicId) && !isGarbledName(it.nickname);
-    });
-    if (list.length >= 3) {
-      return Promise.resolve(
-        list.map(function (it, idx) {
-          // Keep API rank when present; only fill missing ranks by position.
-          if (!(Number(it.rank) > 0)) it.rank = idx + 1;
-          return it;
-        })
-      );
-    }
-    return fetch("/api/public/companions", { headers: { Accept: "application/json" }, cache: "no-store" })
-      .then(function (res) {
-        return res.json().catch(function () {
-          return {};
-        });
+  /** Honest ranks only — never pad podium with zero-score public companions. */
+  function normalizeRankItems(items) {
+    return (items || [])
+      .filter(function (it) {
+        return it && (it.companionId || it.publicId) && !isGarbledName(it.nickname);
       })
-      .then(function (body) {
-        var seen = {};
-        list.forEach(function (it) {
-          seen[String(it.companionId || "")] = 1;
-        });
-        var comps = (body && body.companions) || [];
-        for (var i = 0; i < comps.length && list.length < 3; i++) {
-          var c = comps[i];
-          var id = String(c.id || c.uid || "");
-          var name = c.nickname || c.name || "";
-          if (!id || seen[id]) continue;
-          if (c.nameValid === false || isGarbledName(name)) continue;
-          seen[id] = 1;
-          list.push(companionToRankItem(c, list.length + 1));
-        }
-        return list.map(function (it, idx) {
-          it.rank = idx + 1;
-          return it;
-        });
-      })
-      .catch(function () {
-        return list.map(function (it, idx) {
-          it.rank = idx + 1;
-          return it;
-        });
+      .map(function (it, idx) {
+        if (!(Number(it.rank) > 0)) it.rank = idx + 1;
+        return it;
       });
   }
 
@@ -322,10 +262,7 @@
           state.error = "人气榜暂未开启";
           return null;
         }
-        return fillTopThree(body.items || []);
-      })
-      .then(function (items) {
-        if (items) state.items = items;
+        state.items = normalizeRankItems(body.items || []);
       })
       .catch(function (err) {
         state.items = [];
