@@ -221,15 +221,14 @@ body.mcj-app-shell {
   .mcj-app-home .club-level-entry-card,
   .mcj-app-home .companion-apply-guide-card {
     margin-top: 0 !important;
-    min-height: 134px !important;
+    min-height: 138px !important;
     height: auto !important;
-    padding: 18px 15px 20px !important;
+    padding: 22px 15px 20px !important;
     border-radius: 22px !important;
-    border: 1px solid rgba(232, 180, 220, 0.18) !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
     box-shadow:
-      0 12px 30px rgba(0, 0, 0, 0.26),
-      0 0 24px rgba(160, 90, 180, 0.08),
-      inset 0 1px 0 rgba(255, 255, 255, 0.12) !important;
+      0 10px 26px rgba(0, 0, 0, 0.22),
+      inset 0 1px 0 rgba(255, 255, 255, 0.14) !important;
   }
 
   .mcj-app-home .companion-apply-guide {

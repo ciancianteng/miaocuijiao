@@ -262,64 +262,7 @@
   opacity: 0.92;
 }
 
-/* —— Home footer light Discord CTA —— */
-.mcj-home-discord-cta {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-  margin: 10px 0 0;
-  padding: 10px 12px;
-  border-radius: 14px;
-  border: 1px solid rgba(255, 158, 207, 0.28);
-  background:
-    radial-gradient(circle at 92% 20%, rgba(255, 126, 189, 0.16), transparent 45%),
-    linear-gradient(135deg, rgba(255, 126, 189, 0.1), rgba(12, 8, 16, 0.96) 55%);
-  color: #fff8fc;
-  text-align: left;
-  cursor: pointer;
-  text-decoration: none;
-  box-sizing: border-box;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.mcj-home-discord-cta:hover {
-  border-color: rgba(255, 158, 207, 0.45);
-}
-
-.mcj-home-discord-cta-icon {
-  flex: 0 0 auto;
-  width: 36px;
-  height: 36px;
-  border-radius: 12px;
-  display: grid;
-  place-items: center;
-  background: linear-gradient(160deg, rgba(255, 158, 207, 0.28), rgba(255, 100, 170, 0.1));
-  border: 1px solid rgba(255, 214, 232, 0.2);
-  color: #ffd6e8;
-}
-
-.mcj-home-discord-cta-copy {
-  flex: 1 1 auto;
-  min-width: 0;
-  display: grid;
-  gap: 2px;
-}
-
-.mcj-home-discord-cta-copy strong {
-  font-size: 13px;
-  font-weight: 800;
-  letter-spacing: 0.02em;
-}
-
-.mcj-home-discord-cta-copy span {
-  font-size: 11px;
-  color: rgba(255, 214, 232, 0.62);
-}
-
-/* Right-side status label removed from home Community card (no 即将开放 / 加入 Discord →). */
-
-/* —— Home dual entry: glass gradient cards (levels + apply) —— */
+/* —— Home dual entry: premium glass gradient entry cards —— */
 .home-dual-entry {
   margin: 10px 0 14px !important;
   padding: 0 !important;
@@ -339,61 +282,64 @@
   flex-direction: column;
   align-items: flex-start;
   justify-content: flex-end;
-  gap: 8px;
-  min-height: 136px;
+  gap: 7px;
+  min-height: 138px;
   height: 100%;
-  padding: 18px 16px 20px !important;
+  padding: 22px 16px 20px !important;
   border-radius: 22px !important;
   text-decoration: none !important;
   color: inherit;
   box-sizing: border-box;
   overflow: hidden;
   isolation: isolate;
-  border: 1px solid rgba(232, 180, 220, 0.18) !important;
-  background:
-    linear-gradient(155deg, rgba(255, 255, 255, 0.07) 0%, rgba(255, 255, 255, 0.02) 28%, transparent 55%),
-    linear-gradient(160deg, rgba(58, 32, 78, 0.42), rgba(22, 12, 34, 0.55) 45%, rgba(12, 8, 18, 0.62)) !important;
-  background-color: rgba(16, 10, 22, 0.38) !important;
-  -webkit-backdrop-filter: blur(18px) saturate(1.15);
-  backdrop-filter: blur(18px) saturate(1.15);
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  background-color: rgba(8, 6, 12, 0.42) !important;
+  background-image:
+    linear-gradient(165deg, rgba(255, 255, 255, 0.075) 0%, rgba(255, 255, 255, 0.02) 24%, transparent 52%),
+    radial-gradient(ellipse 90% 70% at 12% 8%, rgba(168, 110, 210, 0.14), transparent 58%),
+    radial-gradient(ellipse 80% 60% at 50% 110%, rgba(120, 70, 160, 0.1), transparent 55%),
+    linear-gradient(160deg, rgba(28, 16, 40, 0.34), rgba(10, 7, 16, 0.5) 55%, rgba(6, 4, 10, 0.58)) !important;
+  -webkit-backdrop-filter: blur(22px) saturate(1.2);
+  backdrop-filter: blur(22px) saturate(1.2);
   box-shadow:
-    0 12px 30px rgba(0, 0, 0, 0.26),
-    0 0 24px rgba(160, 90, 180, 0.08),
-    inset 0 1px 0 rgba(255, 255, 255, 0.12),
-    inset 0 -1px 0 rgba(255, 140, 200, 0.04) !important;
+    0 10px 26px rgba(0, 0, 0, 0.22),
+    0 0 0 0.5px rgba(255, 255, 255, 0.04),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    inset 0 -12px 28px rgba(0, 0, 0, 0.12) !important;
   transition:
     transform 0.18s ease,
     border-color 0.18s ease,
     box-shadow 0.18s ease,
-    background 0.18s ease,
     filter 0.18s ease;
   -webkit-tap-highlight-color: transparent;
 }
 
 .home-dual-entry-card--levels {
-  background:
-    linear-gradient(150deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0.015) 30%, transparent 58%),
-    linear-gradient(145deg, rgba(72, 38, 96, 0.4), rgba(28, 14, 42, 0.52) 48%, rgba(14, 9, 22, 0.64)) !important;
-  background-color: rgba(18, 11, 28, 0.36) !important;
+  background-image:
+    linear-gradient(155deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0.018) 26%, transparent 54%),
+    radial-gradient(ellipse 95% 75% at 8% 6%, rgba(150, 100, 210, 0.16), transparent 60%),
+    radial-gradient(ellipse 85% 55% at 30% 108%, rgba(110, 70, 170, 0.12), transparent 58%),
+    linear-gradient(148deg, rgba(30, 18, 44, 0.32), rgba(10, 7, 16, 0.5) 58%, rgba(6, 4, 10, 0.58)) !important;
 }
 
 .home-dual-entry-card--apply {
-  background:
-    linear-gradient(210deg, rgba(255, 255, 255, 0.07) 0%, rgba(255, 255, 255, 0.015) 32%, transparent 60%),
-    linear-gradient(200deg, rgba(64, 28, 72, 0.4), rgba(30, 14, 40, 0.52) 46%, rgba(12, 8, 20, 0.64)) !important;
-  background-color: rgba(16, 10, 24, 0.36) !important;
+  background-image:
+    linear-gradient(205deg, rgba(255, 255, 255, 0.07) 0%, rgba(255, 255, 255, 0.016) 28%, transparent 56%),
+    radial-gradient(ellipse 95% 75% at 92% 4%, rgba(210, 100, 170, 0.13), transparent 58%),
+    radial-gradient(ellipse 85% 55% at 70% 110%, rgba(150, 70, 140, 0.1), transparent 58%),
+    linear-gradient(205deg, rgba(32, 14, 36, 0.32), rgba(10, 7, 16, 0.5) 58%, rgba(6, 4, 10, 0.58)) !important;
 }
 
 .home-dual-entry-card:hover,
 .home-dual-entry-card:focus-visible {
-  transform: translateY(-1.5px);
-  filter: brightness(1.06);
-  border-color: rgba(245, 200, 230, 0.34) !important;
+  transform: translateY(-1px);
+  filter: brightness(1.05);
+  border-color: rgba(255, 255, 255, 0.16) !important;
   box-shadow:
-    0 14px 34px rgba(0, 0, 0, 0.3),
-    0 0 28px rgba(170, 100, 190, 0.12),
-    inset 0 1px 0 rgba(255, 255, 255, 0.16),
-    inset 0 -1px 0 rgba(255, 150, 205, 0.06) !important;
+    0 12px 28px rgba(0, 0, 0, 0.26),
+    0 0 0 0.5px rgba(255, 255, 255, 0.07),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    inset 0 -12px 28px rgba(0, 0, 0, 0.1) !important;
   outline: none;
 }
 
@@ -406,38 +352,37 @@
   display: block;
   margin: 0;
   font-size: 17px;
-  font-weight: 800;
+  font-weight: 780;
   letter-spacing: 0.01em;
-  color: rgba(255, 246, 252, 0.96);
+  color: rgba(255, 248, 252, 0.95);
   line-height: 1.2;
-  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.28);
 }
 
 .home-dual-entry-desc {
   display: block;
   margin: 0;
-  max-width: 13em;
+  max-width: 12.8em;
   font-size: 12px;
   line-height: 1.45;
-  color: rgba(235, 210, 230, 0.58);
+  color: rgba(220, 190, 210, 0.52);
   font-weight: 500;
 }
 
 /* Kill legacy big pink CTA chrome when class is reused on dual cards */
 .home-dual-entry .companion-apply-guide-card,
 .home-dual-entry .companion-apply-guide-card:hover {
-  min-height: 136px !important;
+  min-height: 138px !important;
   display: flex !important;
   grid-template-columns: unset !important;
   align-items: flex-start !important;
   justify-content: flex-end !important;
-  gap: 8px !important;
+  gap: 7px !important;
   transform: none;
 }
 
 .home-dual-entry .companion-apply-guide-card:hover,
 .home-dual-entry .companion-apply-guide-card:focus-visible {
-  transform: translateY(-1.5px);
+  transform: translateY(-1px);
 }
 
 .home-dual-entry .companion-apply-guide-card .order-btn {
@@ -455,8 +400,8 @@
   }
 
   .home-dual-entry-card {
-    min-height: 128px;
-    padding: 16px 14px 18px !important;
+    min-height: 130px;
+    padding: 20px 14px 18px !important;
     border-radius: 20px !important;
   }
 
@@ -480,8 +425,8 @@
   }
 
   .home-dual-entry-card {
-    min-height: 142px;
-    padding: 20px 18px 22px !important;
+    min-height: 144px;
+    padding: 24px 18px 22px !important;
     border-radius: 24px !important;
   }
 
