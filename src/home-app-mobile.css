@@ -299,13 +299,16 @@ body.mcj-app-shell {
   .mcj-app-home #hotCompanionTrack .hot-info > p,
   .mcj-app-home #recentCompanionTrack .hot-info > p,
   .mcj-app-home #gameCompanionTrack .hot-info > p,
-  .mcj-app-home #reviewCompanionTrack .hot-info > p {
+  .mcj-app-home #reviewCompanionTrack .hot-info > p,
+  .mcj-app-home #hotCompanionTrack .hot-game {
     font-size: 11px !important;
     margin: 0 !important;
-    opacity: 0.7 !important;
-    white-space: nowrap !important;
+    opacity: 0.78 !important;
+    white-space: normal !important;
     overflow: hidden !important;
-    text-overflow: ellipsis !important;
+    display: -webkit-box !important;
+    -webkit-line-clamp: 2 !important;
+    -webkit-box-orient: vertical !important;
   }
 
   .mcj-app-home #hotCompanionTrack .hot-meta,

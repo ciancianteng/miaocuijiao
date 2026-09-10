@@ -317,7 +317,7 @@
   left: 56% !important;
   width: clamp(28px, 3.6vw, 44px) !important;
   transform: rotate(-34deg) scale(0.9) !important;
-  opacity: 0.68 !important;
+  opacity: 0.78 !important;
   z-index: 0 !important;
   animation: homeBrandSnackFloat 7s ease-in-out infinite 1.4s !important;
 }
@@ -461,27 +461,27 @@
   /* iPhone 14 / 390: 3 clearly visible snacks — avoid overlapping title/stats/buttons */
   .mcj-snack--1 {
     top: auto !important;
-    bottom: 6% !important;
-    left: 3% !important;
-    width: 48px !important;
-    opacity: 0.9 !important;
-    transform: rotate(-30deg) !important;
+    bottom: 8% !important;
+    left: 2% !important;
+    width: 54px !important;
+    opacity: 0.95 !important;
+    transform: rotate(-28deg) !important;
   }
 
   .mcj-snack--2 {
-    top: 7% !important;
+    top: 6% !important;
     left: auto !important;
-    right: 40% !important;
-    width: 34px !important;
-    opacity: 0.86 !important;
-    transform: rotate(18deg) !important;
+    right: 42% !important;
+    width: 38px !important;
+    opacity: 0.9 !important;
+    transform: rotate(16deg) !important;
   }
 
   .mcj-snack--3 {
-    top: 8% !important;
+    top: 7% !important;
     right: 2% !important;
-    width: 44px !important;
-    opacity: 0.94 !important;
+    width: 48px !important;
+    opacity: 0.95 !important;
     transform: rotate(22deg) !important;
   }
 

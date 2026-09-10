@@ -32,10 +32,11 @@
 .mcj-home-hero--promo .mcj-hero-viewport {
   position: relative !important;
   width: 100% !important;
-  aspect-ratio: 2.35 / 1 !important;
+  /* Match packaged brand banner ~1.87:1; avoid flat 2.35 + 155px crop that squashes art */
+  aspect-ratio: 16 / 9 !important;
   height: auto !important;
   min-height: 0 !important;
-  max-height: 155px !important;
+  max-height: 220px !important;
   border-radius: 12px !important;
   overflow: hidden !important;
   background: #0a070c !important;
@@ -122,7 +123,7 @@
   display: block !important;
   border-radius: 0 !important;
   object-fit: cover !important;
-  object-position: center center !important;
+  object-position: center 42% !important;
   opacity: 1 !important;
   z-index: 1 !important;
 }
@@ -223,7 +224,7 @@
   }
 
   .mcj-home-hero--promo .mcj-hero-viewport {
-    aspect-ratio: 2.35 / 1 !important;
+    aspect-ratio: 16 / 9 !important;
     max-height: none !important;
   }
 
@@ -247,9 +248,9 @@
   }
 
   .mcj-home-hero--promo .mcj-hero-viewport {
-    aspect-ratio: 2.35 / 1 !important;
+    aspect-ratio: 16 / 9 !important;
     height: auto !important;
-    max-height: 155px !important;
+    max-height: 200px !important;
     min-height: 0 !important;
     border-radius: 12px !important;
     overflow: hidden !important;

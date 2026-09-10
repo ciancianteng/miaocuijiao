@@ -159,7 +159,10 @@
         ? window.MCJCompanionPresence.fromCompanion(item)
         : null;
     var onlineClass = presence && (presence.code === "online" || presence.code === "busy") ? " is-online" : "";
-    // Home cards: no price / no status text / no verified row — name + level + tags + detail.
+    var gameLine = String(item.game || item.mainGame || item.serviceType || "").trim();
+    if (isGarbledName(gameLine)) gameLine = "";
+    var statusLabel = presence && presence.label ? String(presence.label).trim() : "";
+    // Home cards: real fields only — name + level + game + status + tags + detail (no price).
     return (
       '<article class="neon-card companion-card hot-card" data-companion-id="' +
       esc(isUuid ? uuid : "") +
@@ -199,9 +202,12 @@
       esc(levelId) +
       '">' +
       esc(item.level || "未设置等级") +
-      "</span></div>" +
+      "</span>" +
+      (statusLabel ? '<span class="hot-status">' + esc(statusLabel) + "</span>" : "") +
+      "</div>" +
+      (gameLine ? '<p class="hot-game">' + esc(gameLine) + "</p>" : "") +
       '<div class="hot-tags">' +
-      tagsHtml(item.tags || item.serviceTags, 3) +
+      tagsHtml(item.tags || item.serviceTags, 4) +
       "</div>" +
       actionHtml +
       "</div>" +

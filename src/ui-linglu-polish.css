@@ -79,8 +79,16 @@
   color: rgba(255, 214, 232, 0.55) !important;
 }
 
-.hot-recommend-section .hot-card .hot-info > p {
-  display: none !important; /* game line folded into meta for lighter home cards */
+.hot-recommend-section .hot-card .hot-info > p,
+.hot-recommend-section .hot-card .hot-game {
+  margin: 0 !important;
+  font-size: 12px !important;
+  line-height: 1.35 !important;
+  color: rgba(255, 226, 239, 0.72) !important;
+  overflow: hidden !important;
+  display: -webkit-box !important;
+  -webkit-line-clamp: 2 !important;
+  -webkit-box-orient: vertical !important;
 }
 
 .hot-recommend-section .hot-meta {
@@ -108,7 +116,14 @@
   border-radius: 999px !important;
 }
 
-.hot-recommend-section .hot-status,
+.hot-recommend-section .hot-status {
+  display: inline-flex !important;
+  align-items: center !important;
+  font-size: 11px !important;
+  font-weight: 650 !important;
+  color: rgba(255, 214, 232, 0.78) !important;
+}
+
 .hot-recommend-section .mcj-verified-badge {
   display: none !important;
 }
