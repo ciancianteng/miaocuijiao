@@ -472,7 +472,7 @@
     var focusX = item.objectPositionX != null ? item.objectPositionX : 50;
     var focusY = item.objectPositionY != null ? item.objectPositionY : 25;
     var pos = Number(focusX) + "% " + Number(focusY) + "%";
-    // Compact hall card: cover → name → weak watermark → badge → tags → actions. No price.
+    // Compact hall card: name-first, no price, weak brand watermark, unified verified badge.
     return (
       '<article class="card player-card" data-player data-public-id="' +
       esc(String(publicId).toUpperCase()) +
@@ -521,13 +521,17 @@
       esc(item.status) +
       "</span></div>" +
       '<div class="companion-card-body">' +
+      '<p class="companion-brand-watermark" aria-hidden="true">MEOW CUI JIAO</p>' +
       '<p class="companion-nickname-line">' +
       esc(nickname) +
       "</p>" +
-      '<p class="companion-brand-watermark" aria-hidden="true">MEOW CUI JIAO</p>' +
       '<div class="companion-card-head-meta">' +
       verifiedBadgeHtml(item) +
-      "</div>" +
+      '<span class="companion-status-inline' +
+      badgeClass +
+      '">' +
+      esc(item.status) +
+      "</span></div>" +
       tagsHtml +
       '<div class="companion-card-actions"><a class="companion-card-action" href="' +
       esc(detailHref) +

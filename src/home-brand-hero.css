@@ -39,9 +39,7 @@
   z-index: 2 !important;
   display: grid !important;
   grid-template-columns: minmax(0, 1.15fr) minmax(160px, 0.72fr) !important;
-  grid-template-areas:
-    "copy mascot"
-    "actions actions" !important;
+  grid-template-areas: "copy mascot" !important;
   align-items: center !important;
   gap: 8px 12px !important;
   min-height: 0 !important;
@@ -61,15 +59,6 @@
   gap: 10px !important;
   max-width: 520px !important;
   min-width: 0 !important;
-}
-
-.home-brand-hero-visual {
-  grid-area: mascot !important;
-}
-
-.home-brand-hero-actions,
-.home-primary-ctas {
-  grid-area: actions !important;
 }
 
 .home-brand-hero-kicker {
@@ -368,93 +357,78 @@
 }
 
 @media (max-width: 720px) {
-  /* Mobile rhythm owned by home-mobile-rhythm.css — keep soft defaults only */
   .home-brand-hero,
   .container > .home-brand-hero {
-    --brand-hero-bleed: 16px;
-    margin-bottom: 0 !important;
-    border-radius: 0 0 18px 18px !important;
-    overflow: visible !important;
+    --brand-hero-bleed: 14px;
+    margin-bottom: 6px !important;
+    border-radius: 0 0 20px 20px !important;
+    overflow: hidden !important;
   }
 
   .home-brand-hero-inner {
-    grid-template-columns: minmax(0, 1.15fr) minmax(148px, 0.68fr) !important;
-    grid-template-areas:
-      "copy mascot"
-      "actions actions" !important;
-    gap: 0 10px !important;
-    padding: 4px 14px 0 16px !important;
+    grid-template-columns: minmax(0, 1fr) clamp(112px, 34vw, 148px) !important;
+    gap: 4px 2px !important;
+    padding: 12px 14px 10px !important;
     align-items: start !important;
   }
 
   .home-brand-hero-copy {
-    gap: 0 !important;
-    max-width: 100% !important;
+    gap: 8px !important;
+    max-width: none !important;
     padding-right: 0 !important;
   }
 
   .home-brand-hero-kicker {
-    font-size: 11px !important;
-    letter-spacing: 0.18em !important;
-    margin: 0 0 10px !important;
+    font-size: 10px !important;
+    letter-spacing: 0.16em !important;
   }
 
   .home-brand-hero-title {
-    font-size: 26px !important;
-    margin: 0 0 14px !important;
-    font-weight: 800 !important;
+    font-size: clamp(26px, 7.2vw, 32px) !important;
   }
 
   .home-brand-hero-tagline {
-    font-size: 14px !important;
-    max-width: 100% !important;
+    font-size: 12px !important;
+    max-width: 16em !important;
   }
 
-  .home-brand-hero-actions,
-  .home-primary-ctas {
-    grid-area: actions !important;
-    gap: 12px !important;
-    margin-top: 20px !important;
+  .home-brand-hero-actions {
+    gap: 8px !important;
   }
 
   .home-brand-hero-btn {
-    flex: 1 1 0 !important;
-    min-height: 46px !important;
-    height: 46px !important;
-    font-size: 14px !important;
-    border-radius: 12px !important;
+    flex: 1 1 calc(50% - 4px) !important;
+    min-height: 36px !important;
+    font-size: 12px !important;
+    border-radius: 11px !important;
   }
 
   .home-brand-hero .home-trust-strip {
-    padding: 14px 0 !important;
+    padding: 8px 0 !important;
   }
 
   .home-brand-hero .home-trust-item {
-    padding: 4px 10px !important;
+    padding: 0 8px 0 0 !important;
   }
 
   .home-brand-hero .home-trust-value,
   .home-brand-hero .home-trust-item strong.home-trust-value {
-    font-size: 20px !important;
+    font-size: 17px !important;
   }
 
   .home-brand-hero .home-trust-label,
   .home-brand-hero .home-trust-item span.home-trust-label {
-    font-size: 11px !important;
+    font-size: 10px !important;
   }
 
   .home-brand-hero-visual {
-    grid-area: mascot !important;
     place-items: end center !important;
-    max-width: 172px !important;
-    margin: 0 -4px -4px 0 !important;
-    overflow: visible !important;
+    margin-right: -6px !important;
   }
 
   .home-brand-hero-mascot {
-    width: clamp(148px, 40vw, 172px) !important;
-    max-width: none !important;
-    margin: 0 !important;
+    width: clamp(108px, 32vw, 142px) !important;
+    margin: 0 -2% -2% 0 !important;
   }
 
   .mcj-chip--a,
@@ -467,21 +441,17 @@
 
 @media (max-width: 390px) {
   .home-brand-hero-title {
-    font-size: 24px !important;
+    font-size: 26px !important;
   }
 
   .home-brand-hero-mascot {
-    width: clamp(144px, 39vw, 168px) !important;
+    width: clamp(100px, 30vw, 128px) !important;
   }
 }
 
 @media (max-width: 360px) {
   .home-brand-hero-inner {
-    grid-template-columns: minmax(0, 1.1fr) minmax(136px, 0.62fr) !important;
-  }
-
-  .home-brand-hero-mascot {
-    width: clamp(136px, 38vw, 156px) !important;
+    grid-template-columns: minmax(0, 1fr) 100px !important;
   }
 
   .home-brand-hero-btn {

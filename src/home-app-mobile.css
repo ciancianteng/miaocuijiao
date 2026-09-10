@@ -102,23 +102,23 @@ body.mcj-app-shell {
     border: 1px solid rgba(255, 214, 232, 0.12) !important;
   }
 
-  /* Content shell — unified 16px (rhythm CSS owns final values) */
+  /* Content shell — denser, less website padding */
   main.container.mcj-app-home,
   .container.mcj-app-home {
     width: 100% !important;
     max-width: 100% !important;
     margin: 0 !important;
-    padding: 0 16px calc(88px + env(safe-area-inset-bottom, 0px)) !important;
+    padding: 0 14px calc(88px + env(safe-area-inset-bottom, 0px)) !important;
     box-sizing: border-box !important;
     overflow-x: hidden !important;
   }
 
-  /* Hero bleed matches 16px shell */
+  /* Hero / Banner sizing owned by home-brand-hero.css — only soft shell tweaks here */
   .home-brand-hero,
   .container > .home-brand-hero {
-    width: calc(100% + 32px) !important;
-    margin-left: -16px !important;
-    margin-right: -16px !important;
+    width: calc(100% + 28px) !important;
+    margin-left: -14px !important;
+    margin-right: -14px !important;
   }
 
   .home-brand-hero-visual,
@@ -127,10 +127,14 @@ body.mcj-app-shell {
     pointer-events: none !important;
   }
 
-  /* Announcement spacing owned by home-mobile-rhythm.css */
+  /* Announcement — compact App ticker */
   #homeAnnouncementBar.home-announcement-bar.announcement-strip,
   .home-announcement-bar.announcement-strip {
-    /* keep structural defaults; rhythm overrides margin/height */
+    height: 36px !important;
+    min-height: 36px !important;
+    max-height: 36px !important;
+    margin: 0 0 12px !important;
+    padding: 0 10px !important;
     border-radius: 12px !important;
     border: 1px solid rgba(255, 214, 232, 0.1) !important;
     box-shadow: none !important;

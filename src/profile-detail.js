@@ -410,6 +410,10 @@
               : (pop && (pop.favorites || (pop.total && pop.total.favorites) || (pop.weekly && pop.weekly.favorites))) || 0
       ) || 0;
     var favText = plainEmptyMetric(favCount);
+    var orderSummaryText =
+      completedOrders > 0
+        ? "完成 " + plainEmptyMetric(completedOrders) + " 单 · 好评 " + goodText
+        : "暂无订单记录";
     var bioRaw = String(c.desc || c.description || "").trim();
     var bioText = bioRaw || "该陪玩暂未填写个人介绍";
     var bioEmpty = !bioRaw;
@@ -461,6 +465,7 @@
       ) +
       metaRow("在线状态", statusHtml(c)) +
       metaRow("价格区间", esc(rangeText), rangeText === "暂无数据") +
+      metaRow("订单摘要", esc(orderSummaryText), !(completedOrders > 0)) +
       '</div></section><section class="detail-card info-card pd-info-card pd-info-card--full"><div class="section-head"><h2>数据表现</h2></div>' +
       (function () {
         var hasAny =

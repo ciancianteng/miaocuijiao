@@ -30,7 +30,7 @@
   color: #ff9ecf;
 }
 
-/* —— Home recommend cards —— */
+/* —— Home recommend cards: lighter, no price, larger name —— */
 .mcj-app-home .hot-card.companion-card,
 .hot-recommend-section .hot-card.companion-card {
   padding: 0 !important;
@@ -39,12 +39,12 @@
 
 .hot-recommend-section .hot-card .hot-cover {
   aspect-ratio: 1 / 1 !important;
-  max-height: 168px !important;
+  max-height: none !important;
 }
 
 .hot-recommend-section .hot-card .hot-info {
   padding: 10px 10px 12px !important;
-  gap: 5px !important;
+  gap: 6px !important;
   display: grid !important;
 }
 
@@ -59,8 +59,8 @@
   margin: 0 !important;
   flex: 1 1 auto !important;
   min-width: 0 !important;
-  font-size: 17px !important;
-  font-weight: 700 !important;
+  font-size: 16px !important;
+  font-weight: 800 !important;
   letter-spacing: 0.01em !important;
   line-height: 1.25 !important;
   color: #fff8fc !important;
@@ -69,21 +69,18 @@
   text-overflow: ellipsis !important;
 }
 
-/* Weak brand mark — never read as companion name */
 .hot-recommend-section .mcj-brand-mark {
-  opacity: 0.38 !important;
+  opacity: 0.42 !important;
   font-size: 8px !important;
   font-weight: 600 !important;
-  letter-spacing: 0.04em !important;
   padding: 1px 5px !important;
-  border-color: rgba(255, 182, 216, 0.14) !important;
-  background: rgba(255, 255, 255, 0.02) !important;
-  color: rgba(255, 214, 232, 0.48) !important;
-  text-transform: uppercase !important;
+  border-color: rgba(255, 182, 216, 0.18) !important;
+  background: rgba(255, 255, 255, 0.03) !important;
+  color: rgba(255, 214, 232, 0.55) !important;
 }
 
 .hot-recommend-section .hot-card .hot-info > p {
-  display: none !important;
+  display: none !important; /* game line folded into meta for lighter home cards */
 }
 
 .hot-recommend-section .hot-meta {
@@ -94,10 +91,7 @@
 }
 
 .hot-recommend-section .hot-orders,
-.hot-recommend-section .companion-level-price-range,
-.hot-recommend-section .companion-price,
-.hot-recommend-section [class*="price"],
-.hot-recommend-section .hot-status {
+.hot-recommend-section .companion-level-price-range {
   display: none !important;
 }
 
@@ -114,6 +108,11 @@
   border-radius: 999px !important;
 }
 
+.hot-recommend-section .hot-status,
+.hot-recommend-section .mcj-verified-badge {
+  display: none !important;
+}
+
 .hot-recommend-section .mini-order {
   margin-top: 2px !important;
   min-height: 34px !important;
@@ -123,8 +122,8 @@
 
 @media (max-width: 720px) {
   .mcj-app-home .hot-recommend-section .hot-name-row h3 {
-    font-size: 17px !important;
-    font-weight: 700 !important;
+    font-size: 15px !important;
+    font-weight: 800 !important;
   }
 }
 
@@ -135,8 +134,8 @@
 }
 
 .companion-hall-grid .companion-card-media {
-  aspect-ratio: 1 / 1 !important;
-  max-height: 156px !important;
+  aspect-ratio: 5 / 4 !important;
+  max-height: 168px !important;
   min-height: 0 !important;
   overflow: hidden !important;
 }
@@ -148,29 +147,19 @@
 }
 
 .companion-hall-grid .companion-card-body {
-  padding: 10px 10px 11px !important;
+  padding: 10px 10px 12px !important;
   display: grid !important;
-  gap: 5px !important;
-  grid-template-columns: minmax(0, 1fr) !important;
-  grid-template-areas:
-    "nickname"
-    "brand"
-    "certs"
-    "tags"
-    "actions" !important;
-  row-gap: 5px !important;
+  gap: 6px !important;
 }
 
 .companion-hall-grid .companion-card-title-row {
-  display: none !important;
+  display: none !important; /* brand moved to weak watermark */
 }
 
-/* Name = first visual after cover */
 .companion-hall-grid .companion-nickname-line {
-  grid-area: nickname !important;
   margin: 0 !important;
-  font-size: 17px !important;
-  font-weight: 700 !important;
+  font-size: 16px !important;
+  font-weight: 800 !important;
   line-height: 1.25 !important;
   color: #fff8fc !important;
   letter-spacing: 0.01em !important;
@@ -179,16 +168,13 @@
   text-overflow: ellipsis !important;
 }
 
-/* Watermark under name — weak brand ID only */
 .companion-hall-grid .companion-brand-watermark {
-  grid-area: brand !important;
   margin: 0 !important;
   font-size: 9px !important;
   font-weight: 600 !important;
-  letter-spacing: 0.08em !important;
-  color: rgba(255, 214, 232, 0.34) !important;
+  letter-spacing: 0.06em !important;
+  color: rgba(255, 214, 232, 0.38) !important;
   text-transform: uppercase !important;
-  line-height: 1.2 !important;
 }
 
 .companion-hall-grid .companion-id {
@@ -196,21 +182,18 @@
 }
 
 .companion-hall-grid .companion-card-head-meta {
-  grid-area: certs !important;
   display: flex !important;
   flex-wrap: wrap !important;
   align-items: center !important;
   gap: 6px !important;
 }
 
-/* Online status already on cover — hide body duplicate */
 .companion-hall-grid .companion-status-inline {
-  display: none !important;
+  font-size: 11px !important;
 }
 
 .companion-hall-grid .companion-identity-row,
 .companion-hall-grid .companion-capsule-row {
-  grid-area: tags !important;
   gap: 4px !important;
   margin: 0 !important;
 }
@@ -226,19 +209,14 @@
   margin: 0 !important;
 }
 
-/* Hide ALL hall card price UI (pricing still on order flow) */
 .companion-hall-grid .companion-price,
 .companion-hall-grid .companion-level-price-range,
-.companion-hall-grid .companion-selling-price-label,
-.companion-hall-grid .price-fx-approx,
-.companion-hall-grid [data-hall-price-label],
-.companion-hall-grid [class*="price-range"] {
+.companion-hall-grid [data-hall-price-label] {
   display: none !important;
 }
 
 .companion-hall-grid .companion-card-actions {
-  grid-area: actions !important;
-  margin-top: 2px !important;
+  margin-top: 4px !important;
   gap: 6px !important;
 }
 
@@ -251,48 +229,32 @@
 
 @media (max-width: 560px) {
   .companion-hall-grid .companion-nickname-line {
-    font-size: 17px !important;
+    font-size: 15px !important;
   }
 
   .companion-hall-grid .companion-card-body {
     padding: 8px 8px 10px !important;
-    gap: 4px !important;
-  }
-
-  .companion-hall-grid .companion-card-media {
-    max-height: 148px !important;
+    gap: 5px !important;
   }
 }
 
-/* —— Hall secondary entries AFTER list (never above 陪玩推荐) —— */
-.hall-secondary-entries--before {
-  display: none !important;
-}
-
+/* —— Hall secondary entries (after list) —— */
 .hall-secondary-entries--after {
   margin: 20px 0 8px !important;
-  order: 99;
 }
 
 .hall-secondary-entries--after .hall-secondary-card {
   opacity: 0.92;
-  min-height: 64px !important;
 }
 
 /* —— Home footer light Discord CTA —— */
-.mcj-home-discord-cta-wrap {
-  width: 100%;
-  margin: 20px 0 8px;
-  padding: 0 0;
-}
-
 .mcj-home-discord-cta {
   display: flex;
   align-items: center;
   gap: 12px;
   width: 100%;
-  margin: 0;
-  padding: 14px 14px;
+  margin: 14px 0 10px;
+  padding: 12px 14px;
   border-radius: 14px;
   border: 1px solid rgba(255, 158, 207, 0.28);
   background:
@@ -352,12 +314,7 @@
   opacity: 0.88;
 }
 
-/* —— Profile detail: never show duplicate 4-box stats —— */
-.profile-detail-page .pd-stat-grid,
-.pd-stat-grid {
-  display: none !important;
-}
-
+/* —— Profile detail: cleaner empty —— */
 .pd-perf-empty {
   margin: 0;
   padding: 16px 14px;
