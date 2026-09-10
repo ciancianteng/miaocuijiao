@@ -1262,7 +1262,8 @@ import {
   function discordCommunityCardHtml() {
     var ready = isDiscordInviteReady();
     var url = getDiscordInviteUrl();
-    var statusText = ready ? "寻找队友、交流游戏、参与社区活动" : "社区链接暂未配置";
+    var helpText = "寻找队友、交流游戏、参与社区活动";
+    var statusLine = ready ? helpText : helpText + " · 社区链接暂未配置";
     var actionHint = ready ? "加入" : "暂未配置";
     var logo =
       '<span class="mcj-discord-cta-logo" aria-hidden="true">' +
@@ -1286,7 +1287,7 @@ import {
       "<strong>MEOW CUI JIAO Discord 社区</strong>" +
       "<span>加入妙脆角玩家社区</span>" +
       "<em>" +
-      esc(statusText) +
+      esc(statusLine) +
       "</em>" +
       "</span>" +
       '<span class="mcj-discord-cta-action" aria-hidden="true">' +
