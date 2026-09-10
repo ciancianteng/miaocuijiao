@@ -1,5 +1,6 @@
 import "./home-trust-stats.css";
 import "./home-brand-hero.css";
+import "./home-app-mobile.css";
 
 (function () {
   "use strict";
