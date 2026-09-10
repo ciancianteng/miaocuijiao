@@ -1,5 +1,6 @@
 import './mcj-chat-media.js';
 import './mcj-chat-realtime.js';
+import './support-app-ui.css';
 
 (function () {
   var root = document.getElementById("supportApp");

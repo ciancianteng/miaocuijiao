@@ -127,15 +127,30 @@ body.mcj-app-shell {
     pointer-events: none !important;
   }
 
-  /* Announcement — light chip after banner */
+  /* Announcement — compact App ticker */
   #homeAnnouncementBar.home-announcement-bar.announcement-strip,
   .home-announcement-bar.announcement-strip {
+    height: 36px !important;
+    min-height: 36px !important;
+    max-height: 36px !important;
     margin: 0 0 12px !important;
-    padding: 8px 10px !important;
-    border-radius: 14px !important;
+    padding: 0 10px !important;
+    border-radius: 12px !important;
     border: 1px solid rgba(255, 214, 232, 0.1) !important;
     box-shadow: none !important;
     background: rgba(255, 255, 255, 0.03) !important;
+  }
+
+  #homeAnnouncementBar .home-announcement-label,
+  .home-announcement-bar .home-announcement-label {
+    flex: 0 0 auto !important;
+    width: auto !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    height: 24px !important;
+    padding: 0 8px !important;
+    border-radius: 8px !important;
+    font-size: 11px !important;
   }
 
   /* Promo banner clickability — never under cat layer */

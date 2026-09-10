@@ -484,6 +484,12 @@
     if (!total) return;
     index = ((index % total) + total) % total;
     root.dataset.heroIndex = String(index);
+    root.style.setProperty("--hero-index", String(index));
+    root.style.setProperty("--hero-count", String(total));
+    var track = root.querySelector(".mcj-hero-slides");
+    if (track && root.classList.contains("mcj-home-hero--promo")) {
+      track.style.transform = "translate3d(calc(-1 * var(--hero-index, 0) * (100% - var(--hero-peek, 28px))), 0, 0)";
+    }
     for (var i = 0; i < slides.length; i += 1) {
       var on = i === index;
       slides[i].classList.toggle("is-active", on);
@@ -654,7 +660,7 @@
       timer = setInterval(function () {
         var index = Number(root.dataset.heroIndex || 0) + 1;
         goTo(root, banners, device, index);
-      }, 5000);
+      }, 6500);
       timers.set(root, timer);
     }
     start();

@@ -1,5 +1,6 @@
 /**
- * Offline: homepage daily stats must match admin dashboard口径 + KL timezone day.
+ * Offline: homepage trust stats — online / completed / good-rate (real reviews).
+ * Legacy todayOrders/todayAmount remain in payload for tools but must not drive homepage UI.
  * node scripts/verify-home-daily-stats.mjs
  */
 import assert from "node:assert/strict";
@@ -16,7 +17,6 @@ const smokeBoss = {
   display_name: "ProdSmokeBoss2",
 };
 
-// KL midnight boundary: 2026-09-03 00:30 MYT = 2026-09-02T16:30:00.000Z
 const klMorningOrder = {
   id: "o-kl-morning",
   status: "completed",
@@ -29,7 +29,7 @@ const utcSameCalendarButPrevKlDay = {
   id: "o-utc-prev",
   status: "completed",
   total_amount: 100,
-  created_at: "2026-09-02T10:00:00.000Z", // still Sep 2 afternoon KL
+  created_at: "2026-09-02T10:00:00.000Z",
   boss_id: realBoss.id,
   companion_id: realComp.id,
 };
@@ -37,7 +37,7 @@ const unpaidToday = {
   id: "o-unpaid",
   status: "awaiting_payment",
   total_amount: 999,
-  created_at: "2026-09-02T18:00:00.000Z", // Sep 3 02:00 KL
+  created_at: "2026-09-02T18:00:00.000Z",
   boss_id: realBoss.id,
   companion_id: realComp.id,
 };
@@ -49,35 +49,62 @@ const smokeToday = {
   boss_id: smokeBoss.id,
   companion_id: realComp.id,
 };
+const olderCompleted = {
+  id: "o-old",
+  status: "completed",
+  total_amount: 50,
+  created_at: "2026-08-01T10:00:00.000Z",
+  boss_id: realBoss.id,
+  companion_id: realComp.id,
+};
 
-const now = new Date("2026-09-03T04:00:00.000Z"); // Sep 3 noon-ish KL
+const now = new Date("2026-09-03T04:00:00.000Z");
 assert.equal(localDateYmd(now, PLATFORM_STATS_TIMEZONE), "2026-09-03");
 assert.equal(isCreatedOnLocalDay(klMorningOrder.created_at, "2026-09-03"), true);
 assert.equal(isCreatedOnLocalDay(utcSameCalendarButPrevKlDay.created_at, "2026-09-03"), false);
 
 const profiles = [realBoss, realComp, smokeBoss];
-const orders = [klMorningOrder, utcSameCalendarButPrevKlDay, unpaidToday, smokeToday];
+const orders = [klMorningOrder, utcSameCalendarButPrevKlDay, unpaidToday, smokeToday, olderCompleted];
 
 const admin = buildDashboardStats({ profiles, orders, withdrawals: [], now });
+const reviews = [
+  { rating: 5, boss_id: realBoss.id, companion_id: realComp.id },
+  { rating: 4, boss_id: realBoss.id, companion_id: realComp.id },
+  { rating: 3, boss_id: realBoss.id, companion_id: realComp.id },
+  { rating: 5, boss_id: smokeBoss.id, companion_id: realComp.id }, // smoke boss filtered upstream normally; here unfiltered list for builder
+];
+
 const home = buildHomeDailyStatsPayload({
   profiles,
   orders,
   onlineCompanions: 2,
+  reviews: reviews.filter((r) => r.boss_id !== smokeBoss.id),
   now,
 });
 
 assert.equal(admin.stats.todayOrders, 1, "admin: only real completed KL-today order");
 assert.equal(admin.stats.todayAmount, 238, "admin: todayAmount from that order");
-assert.equal(home.ordersCreated, admin.stats.todayOrders, "home orders == admin todayOrders");
-assert.equal(home.todayOrders, admin.stats.todayOrders);
-assert.equal(home.grossRevenue, admin.stats.todayAmount, "home revenue == admin todayAmount");
-assert.equal(home.todayAmount, admin.stats.todayAmount);
+assert.equal(home.ordersCreated, admin.stats.todayOrders, "legacy field still aligned");
+assert.equal(home.grossRevenue, admin.stats.todayAmount, "legacy field still aligned");
 assert.equal(home.onlineCompanions, 2);
+assert.equal(home.completedOrders, admin.stats.completed, "completedOrders uses admin completed total");
 assert.equal(home.timezone, PLATFORM_STATS_TIMEZONE);
 assert.equal(home.date, "2026-09-03");
-assert.equal(home.filter.source, "admin_dashboard_buildDashboardStats");
+// 2 of 3 ratings >=4 => 66.7%
+assert.equal(home.goodRate, Math.round((2 / 3) * 1000) / 10);
+assert.equal(home.goodRateLabel, "66.7%");
+assert.equal(home.reviewCount, 3);
 
-// Unpaid + smoke must not inflate homepage "今日有效订单 / 今日营业额"
+const homeNoReviews = buildHomeDailyStatsPayload({
+  profiles,
+  orders,
+  onlineCompanions: 2,
+  reviews: [],
+  now,
+});
+assert.equal(homeNoReviews.goodRate, null);
+assert.equal(homeNoReviews.goodRateLabel, null);
+
 assert.notEqual(home.ordersCreated, 3);
 assert.notEqual(home.grossRevenue, 238 + 999 + 6000);
 
@@ -87,10 +114,12 @@ console.log(
       ok: true,
       timezone: home.timezone,
       date: home.date,
-      homeOrders: home.ordersCreated,
-      homeRevenue: home.grossRevenue,
-      adminTodayOrders: admin.stats.todayOrders,
-      adminTodayAmount: admin.stats.todayAmount,
+      onlineCompanions: home.onlineCompanions,
+      completedOrders: home.completedOrders,
+      goodRate: home.goodRate,
+      goodRateLabel: home.goodRateLabel,
+      legacyTodayOrders: home.ordersCreated,
+      legacyTodayAmount: home.grossRevenue,
       aligned: true,
     },
     null,

@@ -119,33 +119,88 @@ async function loadCompanionsOnline(profiles) {
   }).length;
 }
 
+async function loadReviews(profiles) {
+  const { byId, testIds } = indexProfilesForStats(profiles || []);
+  let rows = [];
+  try {
+    rows = await supabaseJson(
+      restUrl(
+        "companion_reviews",
+        "?select=id,companion_id,boss_id,rating,status&or=(status.eq.published,status.is.null)&limit=5000"
+      )
+    );
+  } catch (error) {
+    if (/companion_reviews|schema cache|PGRST|does not exist/i.test(String(error?.message || error || ""))) {
+      return [];
+    }
+    throw error;
+  }
+  return (rows || []).filter((r) => {
+    const bossId = r.boss_id;
+    const companionId = r.companion_id;
+    if (bossId && testIds.has(bossId)) return false;
+    if (companionId && testIds.has(companionId)) return false;
+    const boss = bossId ? byId.get(bossId) : null;
+    const companion = companionId ? byId.get(companionId) : null;
+    if (boss && isTestAccountRecord(boss)) return false;
+    if (companion && isTestAccountRecord(companion)) return false;
+    return true;
+  });
+}
+
 /** Pure builder — shared with offline verification. */
 export function buildHomeDailyStatsPayload({
   profiles = [],
   orders = [],
   onlineCompanions = 0,
+  reviews = null,
   now = new Date(),
   timeZone = PLATFORM_STATS_TIMEZONE,
 } = {}) {
   const { stats, filter } = buildDashboardStats({ profiles, orders, withdrawals: [], now, timeZone });
   const date = localDateYmd(now, timeZone);
+  const completedOrders = Math.max(0, Number(stats.completed) || 0);
+  let goodRate = null;
+  let goodRateLabel = null;
+  let reviewCount = 0;
+  let goodReviewCount = 0;
+  if (Array.isArray(reviews)) {
+    const ratings = reviews
+      .map((r) => Number(r && r.rating))
+      .filter((n) => Number.isFinite(n) && n >= 1 && n <= 5);
+    reviewCount = ratings.length;
+    goodReviewCount = ratings.filter((n) => n >= 4).length;
+    if (reviewCount > 0) {
+      goodRate = Math.round((goodReviewCount / reviewCount) * 1000) / 10;
+      goodRateLabel = `${goodRate}%`;
+    }
+  }
   return {
     ok: true,
     configured: true,
     date,
     timezone: timeZone,
     updatedAt: now instanceof Date ? now.toISOString() : new Date().toISOString(),
-    // Same口径 as admin dashboard (今日有效订单 / 今日营业额)
+    // Homepage trust metrics (real): online / completed / good-rate
+    onlineCompanions: Math.max(0, Number(onlineCompanions) || 0),
+    completedOrders,
+    goodRate,
+    goodRatePercent: goodRate,
+    goodRateLabel,
+    reviewCount,
+    goodReviewCount,
+    // Legacy daily fields kept for admin-aligned verification tools — homepage UI must not display these.
     ordersCreated: stats.todayOrders,
     todayOrders: stats.todayOrders,
     grossRevenue: stats.todayAmount,
     todayAmount: stats.todayAmount,
-    onlineCompanions: Math.max(0, Number(onlineCompanions) || 0),
     filter: {
       ...filter,
       source: "admin_dashboard_buildDashboardStats",
       revenueRule: "countsAsRevenue (excludes awaiting_payment/cancelled/expired/refunded)",
       dayRule: `local calendar day in ${timeZone}`,
+      completedRule: "business orders with status=completed (test accounts excluded)",
+      goodRateRule: "companion_reviews rating>=4 / total ratings (1-5); null when no reviews",
     },
     currency: "CATFOOD",
   };
@@ -180,11 +235,15 @@ export default async function handler(req, res) {
 
   try {
     const [profiles, orders] = await Promise.all([loadProfiles(), loadOrders()]);
-    const onlineCompanions = await loadCompanionsOnline(profiles);
+    const [onlineCompanions, reviews] = await Promise.all([
+      loadCompanionsOnline(profiles),
+      loadReviews(profiles).catch(() => []),
+    ]);
     const payload = buildHomeDailyStatsPayload({
       profiles,
       orders,
       onlineCompanions,
+      reviews,
       now,
       timeZone,
     });

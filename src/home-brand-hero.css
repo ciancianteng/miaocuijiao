@@ -88,10 +88,12 @@
 
 .home-brand-hero-tagline {
   margin: 0 !important;
-  max-width: 22em !important;
+  max-width: min(28em, 100%) !important;
   font-size: 13px !important;
   line-height: 1.55 !important;
-  color: rgba(255, 232, 242, 0.72) !important;
+  color: rgba(255, 232, 242, 0.78) !important;
+  white-space: normal !important;
+  overflow-wrap: anywhere !important;
 }
 
 .home-brand-hero-actions {
