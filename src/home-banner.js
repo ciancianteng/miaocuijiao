@@ -416,7 +416,7 @@
       '<button class="mcj-hero-arrow prev" type="button" data-hero-prev aria-label="上一张"></button>' +
       '<button class="mcj-hero-arrow next" type="button" data-hero-next aria-label="下一张"></button>' +
       "</div>" +
-      (banners.length > 1
+      (banners.length >= 1
         ? '<div class="mcj-hero-dots" role="tablist" aria-label="Banner 轮播状态">' +
           Array.from({ length: banners.length })
             .map(function (_, i) {
