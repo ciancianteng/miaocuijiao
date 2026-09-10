@@ -3492,8 +3492,8 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
   <link rel="stylesheet" href="src/boss-header.css?v=20260910appProto1">
   <link rel="stylesheet" href="/src/mcj-safe-area.css?v=20260802mobileP0c">
   <link rel="stylesheet" href="src/home-mobile.css?v=20260910appProto1">
-  <link rel="stylesheet" href="src/home-app-mobile.css?v=20260910homeFix1">
-  <link rel="stylesheet" href="src/ui-linglu-polish.css?v=20260911footerSlim2">
+  <link rel="stylesheet" href="src/home-app-mobile.css?v=20260911dualEntry1">
+  <link rel="stylesheet" href="src/ui-linglu-polish.css?v=20260911dualEntry1">
 </head>
 <body class="mcj-app-shell">
   <div class="ambient-layer" aria-hidden="true"></div>
@@ -3557,24 +3557,25 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
 
 
 
-    <section class="section club-level-section" aria-label="俱乐部等级">
-      <a class="neon-card club-level-entry-card" href="club-levels.html" data-home-entry="club-levels" style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:12px;padding:14px 16px;text-decoration:none;min-height:64px;width:100%;box-sizing:border-box">
-        <div><strong style="display:block;font-size:16px;color:#fff">了解俱乐部等级制度</strong><span style="color:rgba(255,228,240,.7);font-size:13px">萌喵到喵皇 · 价格区间与升级权益</span></div>
-        <span style="color:#f9a8d4;font-weight:700;white-space:nowrap">查看说明 →</span>
-      </a>
-    </section>
-
-
-    <section class="section companion-apply-guide" data-companion-apply-section>
-      <div class="neon-card companion-apply-guide-card">
-        <div class="companion-apply-guide-icon" aria-hidden="true"><img src="assets/companion-apply-cat-logo.png" alt=""></div>
-        <div>
-          <h2>申请成为陪玩</h2>
-          <p>提交资料，通过审核后即可接单</p>
-        </div>
-        <a class="order-btn" href="companion-apply.html" data-companion-apply-guide>申请成为陪玩</a>
+        <section class="section home-dual-entry companion-apply-guide" data-companion-apply-section aria-label="快捷入口">
+      <div class="home-dual-entry-grid">
+        <a class="home-dual-entry-card home-dual-entry-card--levels club-level-entry-card" href="club-levels.html" data-home-entry="club-levels">
+          <span class="home-dual-entry-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="22" height="22" focusable="false"><path fill="currentColor" d="M5 16L3 5l5.5 5L12 4l3.5 6L21 5l-2 11H5zm0 2h14v2H5v-2z"/></svg>
+          </span>
+          <strong class="home-dual-entry-title">俱乐部等级</strong>
+          <span class="home-dual-entry-desc">查看等级与价格权益</span>
+          <span class="home-dual-entry-arrow" aria-hidden="true">→</span>
+        </a>
+        <a class="home-dual-entry-card home-dual-entry-card--apply companion-apply-guide-card" href="companion-apply.html" data-companion-apply-guide>
+          <span class="home-dual-entry-icon" aria-hidden="true"><img src="assets/companion-apply-cat-logo.png" alt=""></span>
+          <strong class="home-dual-entry-title">申请陪玩</strong>
+          <span class="home-dual-entry-desc">提交资料，通过审核后接单</span>
+          <span class="home-dual-entry-arrow" aria-hidden="true">→</span>
+        </a>
       </div>
     </section>
+
 <section class="section official-ads" aria-label="首页活动" hidden>
       <div class="section-title"><div><h2>首页活动</h2><p>活动内容由后台配置</p></div></div>
       <div class="official-ad-slider" id="officialAdSlider">
@@ -4437,7 +4438,7 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
   <script type="module" src="src/dropdown-system.js" defer></script>
   <script type="module" src="src/real-data-admin.js" defer></script>
   <script type="module" src="src/discord-community-config.js?v=20260910linglu1"></script>
-  <script type="module" src="src/footer-system.js?v=20260911footerSlim2" defer></script>
+  <script type="module" src="src/footer-system.js?v=20260911dualEntry1" defer></script>
   <script type="module" src="src/text-guard.js?v=20260730home4" defer></script>
   <script type="module" src="src/design-system.js" defer></script>
 <script id="mcjBossLogoutHandler">

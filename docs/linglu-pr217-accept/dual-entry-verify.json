@@ -1,0 +1,22 @@
+{
+  "count": 2,
+  "gap": "10px",
+  "rects": [
+    {
+      "w": 176,
+      "h": 142,
+      "href": "club-levels.html",
+      "text": "俱乐部等级 查看等级与价格权益 →"
+    },
+    {
+      "w": 176,
+      "h": 142,
+      "href": "companion-apply.html",
+      "text": "申请陪玩 提交资料，通过审核后接单 →"
+    }
+  ],
+  "levelHref": "club-levels.html",
+  "applyHref": "companion-apply.html",
+  "hasOldBar": false,
+  "hasPinkBtn": false
+}
