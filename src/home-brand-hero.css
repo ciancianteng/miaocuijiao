@@ -59,6 +59,9 @@
   z-index: 3 !important;
   display: grid !important;
   grid-template-columns: minmax(0, 1.05fr) minmax(280px, 0.95fr) !important;
+  grid-template-areas:
+    "copy mascot"
+    "stats stats" !important;
   align-items: center !important;
   gap: 20px 36px !important;
   min-height: 420px !important;
@@ -68,6 +71,7 @@
 }
 
 .home-brand-hero-copy {
+  grid-area: copy !important;
   position: relative !important;
   z-index: 4 !important;
   display: flex !important;
@@ -76,6 +80,15 @@
   gap: 18px !important;
   max-width: 560px !important;
   min-width: 0 !important;
+}
+
+.home-brand-hero-visual {
+  grid-area: mascot !important;
+}
+
+.home-brand-hero-stats,
+.home-brand-hero [data-home-daily-stats] {
+  grid-area: stats !important;
 }
 
 .home-brand-hero-kicker {
