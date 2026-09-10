@@ -143,20 +143,9 @@
   }
 
   function rebuildHomeQuickEntries() {
-    if (!/\/index\.html$|\/$/.test(location.pathname)) return;
-    var firstQuick = document.querySelector(".quick-entry-card");
-    if (!firstQuick) return;
-    var grid = firstQuick.parentElement;
-    if (!grid || grid.dataset.launchQuickReady === "1") return;
-    addQuickEntryStyles();
-    grid.dataset.launchQuickReady = "1";
-    grid.classList.add("launch-entry-grid");
-    grid.innerHTML = [
-      quickButton("陪玩大厅", "浏览已上架陪玩，立即下单", 'data-href="companion-center.html" data-home-entry="companion-hall"'),
-      quickButton("更多玩法", "护航、跑刀、代肝、趣味单", 'data-href="more-gameplays.html" data-home-entry="more-gameplays"'),
-      quickButton("自定义订单", "填写需求，客服匹配陪玩", 'data-href="custom-order.html" data-home-entry="custom-order"'),
-      quickButton("组队大厅", "进入组队社区找队友", 'data-href="team-lobby.html" data-home-entry="team-lobby"')
-    ].join("");
+    // Homepage quick entries removed (PR #214): hall/orders own secondary entries.
+    // Do not reinject the 4 QUICK ACCESS cards.
+    return;
   }
 
   function hideTodayDataWithoutRealData() {

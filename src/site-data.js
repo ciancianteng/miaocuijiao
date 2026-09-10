@@ -279,7 +279,7 @@
     return homeEntryDefaults().map(function (def) { return mapped[def.slug] || def; }).sort(function (a, b) { return Number(a.sort || 0) - Number(b.sort || 0); });
   }
   function ensureCompanionApplyCard() {
-    /* Homepage grid: hall / gameplay / custom / team only. Orders & support are top-nav. */
+    /* Homepage QUICK ACCESS grid removed (PR #214). Hall/orders own secondary entries. */
   }
   function applyHomeEntries(entries) {
     ensureCompanionApplyCard();
