@@ -458,30 +458,31 @@
     margin: 0 -2% -2% 0 !important;
   }
 
-  /* iPhone 14 / 390: 3 clearly visible snacks behind copy/mascot */
+  /* iPhone 14 / 390: 3 clearly visible snacks — avoid overlapping title/stats/buttons */
   .mcj-snack--1 {
-    top: 42% !important;
-    left: 2% !important;
-    width: 52px !important;
-    opacity: 0.95 !important;
-    transform: rotate(-26deg) !important;
+    top: auto !important;
+    bottom: 6% !important;
+    left: 3% !important;
+    width: 48px !important;
+    opacity: 0.9 !important;
+    transform: rotate(-30deg) !important;
   }
 
   .mcj-snack--2 {
-    top: 8% !important;
+    top: 7% !important;
     left: auto !important;
-    right: 38% !important;
-    width: 36px !important;
-    opacity: 0.88 !important;
+    right: 40% !important;
+    width: 34px !important;
+    opacity: 0.86 !important;
     transform: rotate(18deg) !important;
   }
 
   .mcj-snack--3 {
-    top: 10% !important;
-    right: 3% !important;
-    width: 46px !important;
+    top: 8% !important;
+    right: 2% !important;
+    width: 44px !important;
     opacity: 0.94 !important;
-    transform: rotate(24deg) !important;
+    transform: rotate(22deg) !important;
   }
 
   .mcj-snack--4,

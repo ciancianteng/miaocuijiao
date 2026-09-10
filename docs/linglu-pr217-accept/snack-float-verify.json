@@ -4,18 +4,18 @@
     {
       "cls": "mcj-snack mcj-snack--1",
       "display": "block",
-      "opacity": 0.95,
-      "w": 70,
-      "h": 70,
+      "opacity": 0.9,
+      "w": 66,
+      "h": 66,
       "visible": true,
       "z": "auto"
     },
     {
       "cls": "mcj-snack mcj-snack--2",
       "display": "block",
-      "opacity": 0.88,
-      "w": 45,
-      "h": 45,
+      "opacity": 0.86,
+      "w": 43,
+      "h": 43,
       "visible": true,
       "z": "auto"
     },
@@ -23,8 +23,8 @@
       "cls": "mcj-snack mcj-snack--3",
       "display": "block",
       "opacity": 0.94,
-      "w": 61,
-      "h": 61,
+      "w": 57,
+      "h": 57,
       "visible": true,
       "z": "auto"
     },
