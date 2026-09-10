@@ -34,6 +34,8 @@ const DEFAULT_SETTINGS = {
   sessionHours: 168,
   teamLobbyEnabled: false,
   teamLobbyLink: "",
+  /** Public Discord permanent invite for boss-side community CTA (https://discord.gg/…) */
+  discordInviteUrl: "",
 };
 
 function json(res, status, data) {
