@@ -74,8 +74,28 @@
     return false;
   }
 
+  /** Decorative brand floaters (snack chips, etc.) — never swap to avatar. */
+  function isDecorImage(img) {
+    if (!img || img.tagName !== "IMG") return false;
+    if (img.getAttribute("data-mcj-decor") === "1") return true;
+    if (img.classList && img.classList.contains("mcj-snack")) return true;
+    if (typeof img.closest === "function" && img.closest(".home-brand-hero-snacks, [data-mcj-decor-layer]")) {
+      return true;
+    }
+    var src = String(img.getAttribute("src") || img.src || "");
+    if (/\/assets\/mcj-snack-/i.test(src)) return true;
+    return false;
+  }
+
   function shouldSkip(img) {
-    return isBrandLogo(img) || isProductCover(img) || isPayQr(img) || isPaymentProof(img) || isChatImage(img);
+    return (
+      isBrandLogo(img) ||
+      isProductCover(img) ||
+      isPayQr(img) ||
+      isPaymentProof(img) ||
+      isChatImage(img) ||
+      isDecorImage(img)
+    );
   }
 
   function isBadUrl(src) {
