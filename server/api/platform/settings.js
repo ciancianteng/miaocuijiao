@@ -74,6 +74,11 @@ function publicView(data = {}) {
   delete merged.duitnowId;
   delete merged.accountNumber;
   delete merged.bankAccount;
+  // Normalize community link aliases for support Discord CTA.
+  const community =
+    String(merged.discordInviteUrl || merged.discordInviteLink || merged.teamLobbyLink || "").trim();
+  merged.discordInviteUrl = community;
+  merged.discordInviteLink = community;
   return merged;
 }
 

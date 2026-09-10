@@ -1262,8 +1262,8 @@ import {
   function discordCommunityCardHtml() {
     var ready = isDiscordInviteReady();
     var url = getDiscordInviteUrl();
-    var cta = ready ? "加入 Discord" : "即将开放";
-    var hint = ready ? "找队友 · 聊游戏 · 获取最新活动" : "Discord 社区即将开放";
+    var statusText = ready ? "寻找队友、交流游戏、参与社区活动" : "社区链接暂未配置";
+    var actionHint = ready ? "加入" : "暂未配置";
     var logo =
       '<span class="mcj-discord-cta-logo" aria-hidden="true">' +
       '<svg viewBox="0 0 24 24" width="26" height="26" focusable="false">' +
@@ -1273,28 +1273,29 @@ import {
       '<section class="mcj-discord-cta-wrap" id="mcj-discord-community" aria-label="MEOW CUI JIAO Discord 社区">' +
       '<p class="mcj-public-channels-label">公开社区</p>' +
       '<button type="button" class="mcj-discord-cta' +
-      (ready ? "" : " is-soon") +
+      (ready ? "" : " is-unconfigured") +
       '" data-discord-community-cta' +
       (ready && url ? ' data-discord-url="' + esc(url) + '"' : "") +
       ' aria-label="' +
-      esc(ready ? "加入 MEOW CUI JIAO Discord 社区" : "Discord 社区即将开放") +
-      '">' +
+      esc(ready ? "加入 MEOW CUI JIAO Discord 社区" : "社区链接暂未配置") +
+      '"' +
+      (ready ? "" : ' aria-disabled="true"') +
+      ">" +
       logo +
       '<span class="mcj-discord-cta-copy">' +
       "<strong>MEOW CUI JIAO Discord 社区</strong>" +
       "<span>加入妙脆角玩家社区</span>" +
       "<em>" +
-      esc(hint) +
+      esc(statusText) +
       "</em>" +
       "</span>" +
       '<span class="mcj-discord-cta-action" aria-hidden="true">' +
-      "<i>↗</i>" +
+      "<i>→</i>" +
       "<small>" +
-      esc(cta) +
+      esc(actionHint) +
       "</small>" +
       "</span>" +
       "</button>" +
-      '<p class="mcj-discord-cta-foot">未登录也可加入社区 · 正式邀请链接配置后可直接跳转</p>' +
       "</section>"
     );
   }
@@ -1888,7 +1889,7 @@ import {
       e.stopPropagation();
       var result = openDiscordInvite();
       if (!result || !result.ok) {
-        toast("Discord 社区即将开放");
+        toast("社区链接暂未配置");
       }
       return;
     }

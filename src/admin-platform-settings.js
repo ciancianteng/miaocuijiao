@@ -124,6 +124,13 @@
       area("maintenanceMessage", "网站维护说明", x.maintenanceMessage) +
       field("termsUrl", "用户协议链接", x.termsUrl) +
       field("privacyUrl", "隐私政策链接", x.privacyUrl) +
+      field(
+        "discordInviteUrl",
+        "社区链接 / Discord Community URL",
+        x.discordInviteUrl || x.discordInviteLink || x.teamLobbyLink || "",
+        "url"
+      ) +
+      '<p class="admin-sync-note" style="margin-top:0">客服中心「Discord 社区」卡片读取此链接。仅支持 http:// 或 https://；留空表示暂未配置（前端可展示但不跳转）。保存后无需重新部署前端。</p>' +
       '<button class="primary-btn" type="submit">保存平台信息</button></form>'
     );
   }
