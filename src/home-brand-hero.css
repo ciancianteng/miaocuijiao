@@ -460,25 +460,28 @@
 
   /* iPhone 14 / 390: 3 clearly visible snacks behind copy/mascot */
   .mcj-snack--1 {
-    top: 6% !important;
+    top: 42% !important;
     left: 2% !important;
-    width: 48px !important;
-    opacity: 0.92 !important;
+    width: 52px !important;
+    opacity: 0.95 !important;
+    transform: rotate(-26deg) !important;
   }
 
   .mcj-snack--2 {
-    top: 12% !important;
+    top: 8% !important;
     left: auto !important;
-    right: 34% !important;
-    width: 34px !important;
-    opacity: 0.82 !important;
+    right: 38% !important;
+    width: 36px !important;
+    opacity: 0.88 !important;
+    transform: rotate(18deg) !important;
   }
 
   .mcj-snack--3 {
-    top: 4% !important;
-    right: 4% !important;
-    width: 42px !important;
-    opacity: 0.9 !important;
+    top: 10% !important;
+    right: 3% !important;
+    width: 46px !important;
+    opacity: 0.94 !important;
+    transform: rotate(24deg) !important;
   }
 
   .mcj-snack--4,
