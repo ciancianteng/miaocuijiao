@@ -123,7 +123,8 @@ body.mcj-app-shell {
 
   .home-brand-hero-visual,
   .home-brand-hero-mascot,
-  .mcj-chip {
+  .home-brand-hero-snacks,
+  .mcj-snack {
     pointer-events: none !important;
   }
 
