@@ -169,6 +169,8 @@ const DEFAULT_SETTINGS = {
   paymentCallbackUrl: "/api/payment-callback",
   discordGuildId: "",
   discordInviteLink: "",
+  /** Canonical public community link (support Discord CTA). */
+  discordInviteUrl: "",
   whatsappPhoneId: "",
   smsSender: "",
   paymentChannelsPublic: {},
@@ -280,9 +282,24 @@ function bool(v, fallback = false) {
   if (v === undefined || v === null || v === "") return fallback;
   return v === true || v === "true" || v === 1 || v === "1";
 }
+/** Public community URL: http(s) only; empty allowed. */
+function sanitizeCommunityHttpUrl(raw) {
+  const s = String(raw || "").trim();
+  if (!s) return "";
+  try {
+    const u = new URL(s);
+    if (u.protocol !== "http:" && u.protocol !== "https:") return "";
+    return u.toString();
+  } catch {
+    return "";
+  }
+}
 function normalizeSettings(input = {}) {
   const paymentChannelsPublic =
     input.paymentChannelsPublic && typeof input.paymentChannelsPublic === "object" ? input.paymentChannelsPublic : {};
+  const communityUrl = sanitizeCommunityHttpUrl(
+    input.discordInviteUrl || input.discordInviteLink || input.teamLobbyLink || ""
+  );
   return {
     siteName: String(input.siteName || DEFAULT_SETTINGS.siteName).trim() || DEFAULT_SETTINGS.siteName,
     siteNameEn: String(input.siteNameEn || DEFAULT_SETTINGS.siteNameEn).trim() || DEFAULT_SETTINGS.siteNameEn,
@@ -328,12 +345,16 @@ function normalizeSettings(input = {}) {
     paymentMerchantId: String(input.paymentMerchantId || "").trim(),
     paymentCallbackUrl: String(input.paymentCallbackUrl || DEFAULT_SETTINGS.paymentCallbackUrl).trim() || DEFAULT_SETTINGS.paymentCallbackUrl,
     discordGuildId: String(input.discordGuildId || "").trim(),
-    discordInviteLink: String(input.discordInviteLink || "").trim(),
+    /** Canonical public community link used by support Discord CTA. */
+    discordInviteUrl: communityUrl,
+    /** Legacy alias kept in sync for older admin modules. */
+    discordInviteLink: communityUrl,
     whatsappPhoneId: String(input.whatsappPhoneId || "").trim(),
     smsSender: String(input.smsSender || "").trim(),
     paymentChannelsPublic,
     teamLobbyEnabled: bool(input.teamLobbyEnabled, false),
-    teamLobbyLink: String(input.teamLobbyLink || input.discordInviteLink || "").trim(),
+    /** Keep teamLobbyLink synced so older team-lobby readers still work. */
+    teamLobbyLink: communityUrl || sanitizeCommunityHttpUrl(input.teamLobbyLink || ""),
   };
 }
 
@@ -1079,17 +1100,28 @@ export default async function handler(req, res) {
         return json(res, 403, { ok: false, message: "无权保存组队大厅设置" });
       }
       const enabled = bool(body.teamLobbyEnabled ?? body.enabled, false);
-      const link = String(body.teamLobbyLink ?? body.link ?? body.url ?? "").trim();
-      if (enabled && !link) {
-        return json(res, 400, { ok: false, message: "启用前必须填写跳转链接" });
+      const linkRaw = String(body.teamLobbyLink ?? body.discordInviteUrl ?? body.link ?? body.url ?? "").trim();
+      let link = "";
+      if (linkRaw) {
+        try {
+          const u = new URL(linkRaw);
+          if (u.protocol !== "http:" && u.protocol !== "https:") {
+            return json(res, 400, { ok: false, message: "社区链接必须是 http:// 或 https:// 开头的完整地址" });
+          }
+          link = u.toString();
+        } catch {
+          return json(res, 400, { ok: false, message: "社区链接格式无效" });
+        }
       }
-      if (link && !/^https:\/\//i.test(link)) {
-        return json(res, 400, { ok: false, message: "跳转链接必须是 https:// 开头的完整地址" });
+      if (enabled && !link) {
+        return json(res, 400, { ok: false, message: "启用前必须填写社区链接" });
       }
       const next = normalizeSettings({
         ...current,
         teamLobbyEnabled: enabled,
         teamLobbyLink: link,
+        discordInviteUrl: link,
+        discordInviteLink: link,
       });
       const saved = await saveSettings(next, profile.id);
       await writeConfigLog({
@@ -1103,10 +1135,12 @@ export default async function handler(req, res) {
       }).catch(() => null);
       return json(res, 200, {
         ok: true,
-        message: "组队大厅设置已保存",
+        message: "社区链接已保存",
         settings: {
           teamLobbyEnabled: saved.teamLobbyEnabled,
           teamLobbyLink: saved.teamLobbyLink,
+          discordInviteUrl: saved.discordInviteUrl,
+          discordInviteLink: saved.discordInviteLink,
         },
       });
     }

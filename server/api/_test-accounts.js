@@ -8,6 +8,7 @@
  * - email domain used by prod-smoke fixtures (@mcj-prod-smoke.invalid)
  * - disposable / guerrilla inbox domains used by ProdSmoke fixtures
  * - display_name / nickname / username contains Smoke or ProdSmoke
+ * - rebate / PR-accept / staging fixture nicknames used by E2E (返点陪玩####, PR122Accept, …)
  */
 
 const MEOW_TEST_EMAIL_RE = /@meow\.test\b/i;
@@ -17,6 +18,12 @@ const DISPOSABLE_TEST_EMAIL_RE =
   /@(?:guerrillamailblock\.com|guerrillamail\.com|guerrillamail\.de|guerrillamail\.net|guerrillamail\.org|sharklasers\.com|grr\.la|pokemail\.net|spam4\.me)\b/i;
 /** Username / display markers used by ProdSmoke* and *Smoke* E2E fixtures */
 const SMOKE_NAME_RE = /prodsmoke|smoke/i;
+/**
+ * Staging E2E / rebate fixtures that were left with is_test_account=false.
+ * These must never appear in public hall / homepage recommendations.
+ */
+const FIXTURE_NAME_RE =
+  /(?:^|\s)(?:返点陪玩\d+|pr\d*accept|staging\s*companion|\[?\s*test\s*\]?\s*验收陪玩|验收陪玩)(?:\s|$)/i;
 
 export function isProductionRuntime(env = process.env) {
   const vercel = String(env.VERCEL_ENV || "").toLowerCase();
@@ -45,7 +52,13 @@ export function isTestUsername(...parts) {
     .filter(Boolean)
     .join(" ");
   if (!joined) return false;
-  return SMOKE_NAME_RE.test(joined);
+  if (SMOKE_NAME_RE.test(joined)) return true;
+  if (FIXTURE_NAME_RE.test(joined)) return true;
+  // Compact forms without spaces: 返点陪玩6210 / PR122Accept
+  if (/^返点陪玩\d+$/u.test(joined.trim())) return true;
+  if (/^PR\d*Accept$/i.test(joined.trim())) return true;
+  if (/^Staging\s*Companion$/i.test(joined.trim())) return true;
+  return false;
 }
 
 export function isTestAccountFlag(row = {}) {

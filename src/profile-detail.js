@@ -446,9 +446,7 @@
       '</p><div class="game-line">' +
       esc(c.game || "未设置游戏") +
       " · " +
-      esc(priceText) +
-      " · ★ " +
-      esc(ratingText) +
+      esc(levelText) +
       "</div>" +
       (tagsHtml || "") +
       '<div class="detail-card price-card pd-voice-card pd-voice-in-hero' +
@@ -465,37 +463,34 @@
         "等级",
         '<span class="companion-level-pill" data-level-id="' + esc(c.levelId || "") + '">' + esc(levelText) + "</span>"
       ) +
-      metaRow("评分", esc(ratingText), !hasRating) +
-      metaRow("好评数", esc(goodText), !(goodCount > 0)) +
-      metaRow("收藏数", esc(favText), !(favCount > 0)) +
-      metaRow("人气值", esc(popScoreText), !(Number(popScore) > 0)) +
       metaRow("在线状态", statusHtml(c)) +
-      metaRow("订单摘要", esc(orderSummaryText), !(completedOrders > 0)) +
       metaRow("价格区间", esc(rangeText), rangeText === "暂无数据") +
-      metaRow("本周排名", esc(weeklyRankText), !(Number(weeklyRank) > 0)) +
-      metaRow("本月排名", esc(monthlyRankText), !(Number(monthlyRank) > 0)) +
-      '</div><div class="pd-stat-grid">' +
-      '<div class="pd-stat-cell"><span>评价</span><strong class="' +
-      (hasRating ? "" : "is-empty") +
-      '">' +
-      esc(ratingText) +
-      "</strong></div>" +
-      '<div class="pd-stat-cell"><span>收藏</span><strong class="' +
-      (favCount > 0 ? "" : "is-empty") +
-      '">' +
-      esc(favText) +
-      "</strong></div>" +
-      '<div class="pd-stat-cell"><span>完成订单</span><strong class="' +
-      (completedOrders > 0 ? "" : "is-empty") +
-      '">' +
-      esc(plainEmptyMetric(completedOrders)) +
-      "</strong></div>" +
-      '<div class="pd-stat-cell"><span>人气值</span><strong class="' +
-      (Number(popScore) > 0 ? "" : "is-empty") +
-      '">' +
-      esc(popScoreText) +
-      "</strong></div>" +
-      "</div>" +
+      metaRow("订单摘要", esc(orderSummaryText), !(completedOrders > 0)) +
+      '</div></section><section class="detail-card info-card pd-info-card pd-info-card--full"><div class="section-head"><h2>数据表现</h2></div>' +
+      (function () {
+        var hasAny =
+          hasRating ||
+          goodCount > 0 ||
+          favCount > 0 ||
+          completedOrders > 0 ||
+          Number(popScore) > 0 ||
+          Number(weeklyRank) > 0 ||
+          Number(monthlyRank) > 0;
+        if (!hasAny) {
+          return '<p class="pd-perf-empty">暂无数据，完成订单后将逐步生成表现数据。</p>';
+        }
+        return (
+          '<div class="pd-meta-list">' +
+          metaRow("评分", esc(ratingText), !hasRating) +
+          metaRow("好评数", esc(goodText), !(goodCount > 0)) +
+          metaRow("收藏", esc(favText), !(favCount > 0)) +
+          metaRow("完成订单", esc(plainEmptyMetric(completedOrders)), !(completedOrders > 0)) +
+          metaRow("人气值", esc(popScoreText), !(Number(popScore) > 0)) +
+          metaRow("本周排名", esc(weeklyRankText), !(Number(weeklyRank) > 0)) +
+          metaRow("本月排名", esc(monthlyRankText), !(Number(monthlyRank) > 0)) +
+          "</div>"
+        );
+      })() +
       giftActions +
       "</section>" +
       (galleryList.length

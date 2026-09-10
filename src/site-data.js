@@ -138,33 +138,12 @@
     }
     var displayName = String(item.name || "").trim();
     if (isGarbledName(displayName)) displayName = "未命名陪玩";
-    var price = item.price || item.servicePrice || "";
     var uuid = String(item.id || item.uid || item.companionId || "").trim();
     var isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(uuid);
-    // Always navigate by real companion/user UUID — never by PW public display code.
     var detail = isUuid ? ("profile.html?id=" + encodeURIComponent(uuid)) : "";
     var focus = resolveCoverFocus(item);
     var pos = focus.x + "% " + focus.y + "%";
-    var certBadges = "";
-    var certList = item.certTags || item.certificationTags || [];
-    if (Array.isArray(certList) && certList.length) {
-      certBadges =
-        '<div class="hot-tags mcj-cert-tags">' +
-        certList
-          .slice(0, 4)
-          .map(function (t) {
-            var name = typeof t === "string" ? t : t.name || t.title || "";
-            if (!name) return "";
-            var icon = typeof t === "object" && t.icon ? t.icon + " " : "🏅 ";
-            return "<span>" + esc(icon + name) + "</span>";
-          })
-          .filter(Boolean)
-          .join("") +
-        "</div>";
-    } else if (item.certificationStatus === "approved") {
-      certBadges =
-        '<div class="hot-tags mcj-cert-tags"><span>✔ 已认证</span></div>';
-    }
+    var verified = ""; // home cards: no verified badge clutter (hall keeps it)
     var actionHtml = detail
       ? '<a class="mini-order" href="' + esc(detail) + '">查看详情</a>'
       : '<span class="mini-order" aria-disabled="true" style="opacity:.55;pointer-events:none">资料不可用</span>';
@@ -174,31 +153,66 @@
     if (window.MCJCompanionLevels && window.MCJCompanionLevels.inlineCardStyle) {
       inlineStyle = window.MCJCompanionLevels.inlineCardStyle(levelCfg || item);
     }
-    var levelRange = item.levelPriceRangeText || item.levelPriceRange || (levelCfg && levelCfg.priceRangeText) || "";
     var styleAttr = inlineStyle ? ' style="' + esc(inlineStyle) + '"' : "";
     var presence =
       window.MCJCompanionPresence && window.MCJCompanionPresence.fromCompanion
         ? window.MCJCompanionPresence.fromCompanion(item)
         : null;
-    var statusLabel = (presence && presence.label) || item.availabilityText || item.onlineStatusLabel || "";
     var onlineClass = presence && (presence.code === "online" || presence.code === "busy") ? " is-online" : "";
-    return '<article class="neon-card companion-card hot-card" data-companion-id="' + esc(isUuid ? uuid : "") + '" data-public-id="' + esc(focus.publicId || item.publicId || "") + '" data-level-id="' + esc(levelId) + '" data-companion-level="' + esc(levelId) + '" data-card-style="' + esc(item.cardBackground || (levelCfg && levelCfg.cardBackground) || "") + '" data-level-color="' + esc(item.levelColor || (levelCfg && levelCfg.color) || "") + '"' + styleAttr + '>' +
-      '<div class="hot-cover"><img src="' + esc(cover || avatar || "/default-avatar.png") + '" alt="' + esc(displayName) + '" data-cover-fit="' + esc(focus.fit) + '" style="object-fit:' + esc(focus.fit) + ';object-position:' + esc(pos) + ';--mcj-cover-pos:' + esc(pos) + '" onerror="this.onerror=null;this.src=\'/default-avatar.png\'"><span class="online-dot' + onlineClass + '"></span></div>' +
+    var gameLine = String(item.game || item.mainGame || item.serviceType || "").trim();
+    if (isGarbledName(gameLine)) gameLine = "";
+    var statusLabel = presence && presence.label ? String(presence.label).trim() : "";
+    // Home cards: real fields only — name + level + game + status + tags + detail (no price).
+    return (
+      '<article class="neon-card companion-card hot-card" data-companion-id="' +
+      esc(isUuid ? uuid : "") +
+      '" data-public-id="' +
+      esc(focus.publicId || item.publicId || "") +
+      '" data-level-id="' +
+      esc(levelId) +
+      '" data-companion-level="' +
+      esc(levelId) +
+      '" data-card-style="' +
+      esc(item.cardBackground || (levelCfg && levelCfg.cardBackground) || "") +
+      '" data-level-color="' +
+      esc(item.levelColor || (levelCfg && levelCfg.color) || "") +
+      '"' +
+      styleAttr +
+      ">" +
+      '<div class="hot-cover"><img src="' +
+      esc(cover || avatar || "/default-avatar.png") +
+      '" alt="' +
+      esc(displayName) +
+      '" data-cover-fit="' +
+      esc(focus.fit) +
+      '" style="object-fit:' +
+      esc(focus.fit) +
+      ";object-position:" +
+      esc(pos) +
+      ";--mcj-cover-pos:" +
+      esc(pos) +
+      "\" onerror=\"this.onerror=null;this.src='/default-avatar.png'\"><span class=\"online-dot" +
+      onlineClass +
+      '"></span></div>' +
       '<div class="hot-info">' +
-      '<div class="hot-name-row"><h3>' + esc(displayName) + '</h3><span class="mcj-brand-mark" title="Meow Cui Jiao / 妙脆角">妙脆角</span></div>' +
-      '<p>' + esc(item.game || item.mainGame || "") + '</p>' +
-      '<div class="hot-meta"><span class="companion-level-pill" data-level-id="' + esc(levelId) + '">' + esc(item.level || "未设置等级") + '</span>' +
+      '<div class="hot-name-row"><h3>' +
+      esc(displayName) +
+      '</h3><span class="mcj-brand-mark" title="MEOW CUI JIAO">MCJ</span></div>' +
+      '<div class="hot-meta"><span class="companion-level-pill" data-level-id="' +
+      esc(levelId) +
+      '">' +
+      esc(item.level || "未设置等级") +
+      "</span>" +
       (statusLabel ? '<span class="hot-status">' + esc(statusLabel) + "</span>" : "") +
-      (item.rating ? "<span>★ " + esc(item.rating) + "</span>" : "") +
       "</div>" +
-      '<div class="hot-orders">' + esc(price || "") +
-      (levelRange ? '<div class="companion-level-price-range">等级区间 ' + esc(levelRange) + "</div>" : "") +
-      '</div>' +
-      certBadges +
-      '<div class="hot-tags">' + tagsHtml(item.tags || item.serviceTags, 3) + '</div>' +
+      (gameLine ? '<p class="hot-game">' + esc(gameLine) + "</p>" : "") +
+      '<div class="hot-tags">' +
+      tagsHtml(item.tags || item.serviceTags, 4) +
+      "</div>" +
       actionHtml +
-      '</div>' +
-      '</article>';
+      "</div>" +
+      "</article>"
+    );
   }
   function renderTopThreeTrack(id, companions, options) {
     options = options || {};

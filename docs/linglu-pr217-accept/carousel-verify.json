@@ -1,0 +1,75 @@
+{
+  "pass": true,
+  "checks": {
+    "autoplayPass": true,
+    "swipePass": true,
+    "loopPass": true,
+    "dotsPass": true,
+    "arrowsPass": true,
+    "sizePass": true
+  },
+  "report": {
+    "base": "https://meow-cuijiao-homepage-6la1cwfav-ciancianteng-4581s-projects.vercel.app",
+    "slideCount": 3,
+    "autoplayMs": 4500,
+    "arrowsVisible": 0,
+    "slide1": {
+      "index": 0,
+      "slideCount": 3,
+      "dots": 3,
+      "activeDot": 0,
+      "src": "https://meow-cuijiao-homepage-6la1cwfav-ciancianteng-4581s-projects.vercel.app/default-home-banner.png",
+      "badge": "Slide 1 · 妙脆角电竞",
+      "arrowsVisible": 0,
+      "autoplayMs": 4500,
+      "box": {
+        "w": 362,
+        "h": 154,
+        "top": 292
+      }
+    },
+    "afterAutoplay": {
+      "index": 1,
+      "slideCount": 3,
+      "dots": 3,
+      "activeDot": 1,
+      "src": "https://meow-cuijiao-homepage-6la1cwfav-ciancianteng-4581s-projects.vercel.app/default-home-banner.png",
+      "badge": "Preview 验证 · Slide 2",
+      "arrowsVisible": 0,
+      "autoplayMs": 4500,
+      "box": {
+        "w": 362,
+        "h": 154,
+        "top": 292
+      }
+    },
+    "afterSwipeTo3": {
+      "index": 2,
+      "slideCount": 3,
+      "dots": 3,
+      "activeDot": 2,
+      "src": "https://meow-cuijiao-homepage-6la1cwfav-ciancianteng-4581s-projects.vercel.app/default-home-banner.png",
+      "badge": "Preview 验证 · Slide 3",
+      "arrowsVisible": 0,
+      "autoplayMs": 4500,
+      "box": {
+        "w": 362,
+        "h": 154,
+        "top": 292
+      }
+    },
+    "pagination": {
+      "at0": 0,
+      "at1": 1,
+      "at2": 2,
+      "dots": 3
+    },
+    "loopToFirst": 0,
+    "swipeBackIndex": 2,
+    "box": {
+      "w": 362,
+      "h": 154,
+      "top": 292
+    }
+  }
+}

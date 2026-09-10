@@ -469,6 +469,30 @@
     maybeOpenForced();
   }
 
+  // Platform default home ticker copy (same as Production ops announcement).
+  // Used only when Staging/Preview has zero active home announcements so the
+  // marquee UI keeps working — not a second announcement system.
+  var PLATFORM_DEFAULT_HOME_ANNOUNCEMENTS = [
+    {
+      id: "mcj-default-home-ops-announcement",
+      title: "🎉 MEOW CUI JIAO 妙脆角开启试运营！",
+      content:
+        "欢迎来到妙脆角陪玩平台！目前平台已进入试运营阶段，我们将持续优化功能与服务体验。欢迎大家注册体验并提出宝贵建议。\n\n感谢您的支持，让我们一起玩得开心、赢得尽兴！💗",
+      text:
+        "欢迎来到妙脆角陪玩平台！目前平台已进入试运营阶段，我们将持续优化功能与服务体验。欢迎大家注册体验并提出宝贵建议。\n\n感谢您的支持，让我们一起玩得开心、赢得尽兴！💗",
+      category: "home",
+      audience: "home",
+      kind: "normal",
+      scroll: true,
+      is_scrolling: true,
+      enabled: true,
+      pinned: true,
+      published: true,
+      sort: 1,
+      platformDefault: true,
+    },
+  ];
+
   function load() {
     // Prefer audience=home; fallback keeps homepage from going blank on schema drift.
     return fetch("/api/platform/content?types=announcements&audience=home", {
@@ -501,16 +525,14 @@
           });
       })
       .then(function (rows) {
+        if (!rows || !rows.length) {
+          applyRows(PLATFORM_DEFAULT_HOME_ANNOUNCEMENTS);
+          return;
+        }
         applyRows(rows);
       })
       .catch(function () {
-        state.items = [];
-        state.forced = [];
-        state.itemsSig = "";
-        state.loaded = true;
-        state.index = 0;
-        state.currentId = "";
-        render(false);
+        applyRows(PLATFORM_DEFAULT_HOME_ANNOUNCEMENTS);
       });
   }
 

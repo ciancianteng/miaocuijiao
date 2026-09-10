@@ -1,13 +1,12 @@
 /**
- * MEOW CUI JIAO Discord community invite — single maintenance point.
+ * MEOW CUI JIAO public community link (Discord / other).
  *
- * Fill any ONE of (first match wins):
- * 1. window.__MCJ_DISCORD_INVITE_URL = "https://discord.gg/xxxx"
- * 2. Env: VITE_DISCORD_INVITE_URL (build-time, see .env.example)
- * 3. Platform settings: discordInviteUrl via /api/platform/settings
- * 4. Legacy local keys: discordInviteUrl / mcj_siteSettings / mcjPlatformSettings
+ * Source of truth: platform_settings via GET /api/platform/settings
+ * Fields (first non-empty wins after sanitize):
+ *   discordInviteUrl → discordInviteLink → teamLobbyLink
  *
- * Empty / invalid → UI shows「Discord 社区即将开放」, never opens a bad URL.
+ * Do not hardcode invite URLs in page HTML.
+ * Empty / invalid → UI shows「社区链接暂未配置」, never opens a bad URL.
  */
 var cachedPlatformUrl = "";
 
@@ -30,37 +29,39 @@ function readJsonField(storageKey, field) {
   }
 }
 
-/** Only allow https Discord invite hosts. */
-export function sanitizeDiscordInviteUrl(raw) {
+/**
+ * Allow only http(s) absolute URLs. Empty is valid (= not configured).
+ * Blocks javascript:, data:, etc.
+ */
+export function sanitizeCommunityUrl(raw) {
   var s = String(raw || "").trim();
   if (!s) return "";
   try {
     var u = new URL(s);
-    if (u.protocol !== "https:") return "";
-    var host = String(u.hostname || "")
-      .toLowerCase()
-      .replace(/^www\./, "");
-    if (host === "discord.gg" || host === "discord.com" || host.endsWith(".discord.com")) {
-      return u.toString();
-    }
-    return "";
+    if (u.protocol !== "http:" && u.protocol !== "https:") return "";
+    return u.toString();
   } catch (e) {
     return "";
   }
 }
 
+/** @deprecated alias — prefer sanitizeCommunityUrl */
+export function sanitizeDiscordInviteUrl(raw) {
+  return sanitizeCommunityUrl(raw);
+}
+
 export function getDiscordInviteUrl() {
   var candidates = [
-    typeof window !== "undefined" ? window.__MCJ_DISCORD_INVITE_URL : "",
-    typeof import.meta !== "undefined" && import.meta.env ? import.meta.env.VITE_DISCORD_INVITE_URL : "",
     cachedPlatformUrl,
     readLocal("discordInviteUrl"),
-    readLocal("DISCORD_INVITE_URL"),
     readJsonField("mcj_siteSettings", "discordInviteUrl"),
     readJsonField("mcjPlatformSettings", "discordInviteUrl"),
+    readJsonField("mcjPlatformSettings", "teamLobbyLink"),
+    typeof window !== "undefined" ? window.__MCJ_DISCORD_INVITE_URL : "",
+    typeof import.meta !== "undefined" && import.meta.env ? import.meta.env.VITE_DISCORD_INVITE_URL : "",
   ];
   for (var i = 0; i < candidates.length; i++) {
-    var ok = sanitizeDiscordInviteUrl(candidates[i]);
+    var ok = sanitizeCommunityUrl(candidates[i]);
     if (ok) return ok;
   }
   return "";
@@ -71,13 +72,12 @@ export function isDiscordInviteReady() {
 }
 
 export function setCachedPlatformDiscordInvite(url) {
-  cachedPlatformUrl = sanitizeDiscordInviteUrl(url);
+  cachedPlatformUrl = sanitizeCommunityUrl(url);
   return cachedPlatformUrl;
 }
 
 /**
  * Open invite safely. Returns { ok, reason }.
- * Mobile: window.open → Discord app / browser when possible.
  */
 export function openDiscordInvite() {
   var url = getDiscordInviteUrl();
@@ -94,7 +94,6 @@ export function openDiscordInvite() {
     }
   } catch (e) {}
   try {
-    // Popup blocked — same-tab fallback still keeps chat page replaceable via Back.
     location.href = url;
     return { ok: true, reason: "navigated" };
   } catch (e2) {
@@ -112,7 +111,13 @@ export function refreshDiscordInviteFromPlatform() {
     })
     .then(function (body) {
       var settings = (body && body.settings) || {};
-      return setCachedPlatformDiscordInvite(settings.discordInviteUrl || settings.DISCORD_INVITE_URL || "");
+      var raw =
+        settings.discordInviteUrl ||
+        settings.discordInviteLink ||
+        settings.teamLobbyLink ||
+        settings.DISCORD_INVITE_URL ||
+        "";
+      return setCachedPlatformDiscordInvite(raw);
     })
     .catch(function () {
       return "";
@@ -125,6 +130,7 @@ if (typeof window !== "undefined") {
     isDiscordInviteReady: isDiscordInviteReady,
     openDiscordInvite: openDiscordInvite,
     sanitizeDiscordInviteUrl: sanitizeDiscordInviteUrl,
+    sanitizeCommunityUrl: sanitizeCommunityUrl,
     refreshDiscordInviteFromPlatform: refreshDiscordInviteFromPlatform,
     setCachedPlatformDiscordInvite: setCachedPlatformDiscordInvite,
   };

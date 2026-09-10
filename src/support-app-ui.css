@@ -183,8 +183,14 @@
   border-color: rgba(255, 158, 207, 0.55);
 }
 
-.mcj-discord-cta.is-soon {
+.mcj-discord-cta.is-soon,
+.mcj-discord-cta.is-unconfigured {
   opacity: 0.92;
+  cursor: default;
+}
+
+.mcj-discord-cta.is-unconfigured:hover {
+  transform: none;
 }
 
 .mcj-discord-cta-logo {

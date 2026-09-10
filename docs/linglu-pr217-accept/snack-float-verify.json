@@ -1,0 +1,63 @@
+{
+  "base": "http://127.0.0.1:5173",
+  "snacks": [
+    {
+      "cls": "mcj-snack mcj-snack--1",
+      "display": "block",
+      "opacity": 0.9,
+      "w": 66,
+      "h": 66,
+      "visible": true,
+      "z": "auto"
+    },
+    {
+      "cls": "mcj-snack mcj-snack--2",
+      "display": "block",
+      "opacity": 0.86,
+      "w": 43,
+      "h": 43,
+      "visible": true,
+      "z": "auto"
+    },
+    {
+      "cls": "mcj-snack mcj-snack--3",
+      "display": "block",
+      "opacity": 0.94,
+      "w": 57,
+      "h": 57,
+      "visible": true,
+      "z": "auto"
+    },
+    {
+      "cls": "mcj-snack mcj-snack--4",
+      "display": "none",
+      "opacity": 0.84,
+      "w": 0,
+      "h": 0,
+      "visible": false,
+      "z": "auto"
+    },
+    {
+      "cls": "mcj-snack mcj-snack--5",
+      "display": "none",
+      "opacity": 0.9,
+      "w": 0,
+      "h": 0,
+      "visible": false,
+      "z": "auto"
+    },
+    {
+      "cls": "mcj-snack mcj-snack--6",
+      "display": "none",
+      "opacity": 0.68,
+      "w": 0,
+      "h": 0,
+      "visible": false,
+      "z": "0"
+    }
+  ],
+  "visibleCount": 3,
+  "copyZ": "4",
+  "snackZ": "1",
+  "heroOverflow": "visible"
+}

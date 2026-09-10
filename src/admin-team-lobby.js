@@ -51,7 +51,7 @@
     }
     el.innerHTML =
       '<div class="admin-team-lobby-panel">' +
-      '<header class="admin-section-head compact"><div><h3>组队大厅管理</h3><p>控制老板端首页「组队大厅」是否开放，以及点击后打开的跳转链接。保存后写入数据库（platform_settings），刷新/重新登录仍保留。</p></div></header>' +
+      '<header class="admin-section-head compact"><div><h3>组队大厅 / 社区链接</h3><p>控制跳转链接（与客服中心 Discord 社区共用同一社区链接字段）。保存写入 platform_settings，客服中心自动读取，无需重新部署。</p></div></header>' +
       (state.error ? '<div class="admin-sync-note" style="border-color:rgba(252,165,165,.35);color:#fecaca">' + esc(state.error) + "</div>" : "") +
       (state.message ? '<div class="admin-sync-note">' + esc(state.message) + "</div>" : "") +
       '<form class="admin-team-lobby-form" data-team-lobby-form>' +
@@ -64,9 +64,9 @@
       (state.enabled ? "" : " checked") +
       '> <span>停用</span></label>' +
       "</fieldset>" +
-      '<label class="tl-link-field"><span>跳转链接</span><input name="teamLobbyLink" type="url" inputmode="url" placeholder="https://discord.gg/xxx 或其他组队大厅链接" value="' +
+      '<label class="tl-link-field"><span>社区链接 / Discord Community URL</span><input name="teamLobbyLink" type="url" inputmode="url" placeholder="https://discord.gg/xxx 或其它 http(s) 社区链接" value="' +
       esc(state.link) +
-      '" autocomplete="off"><small>必须 https:// 开头。启用时必填；停用后老板端不可再进入旧链接。</small></label>' +
+      '" autocomplete="off"><small>仅支持 http:// 或 https://。留空表示暂未配置；启用时必填。与客服中心 Discord 社区共用同一字段。</small></label>' +
       '<div class="tl-actions">' +
       '<button class="mini-btn primary" type="submit" data-team-lobby-save' +
       (state.saving ? " disabled" : "") +
@@ -86,7 +86,9 @@
   function applySettings(settings) {
     settings = settings || {};
     state.enabled = settings.teamLobbyEnabled === true || settings.teamLobbyEnabled === "true";
-    state.link = String(settings.teamLobbyLink || "").trim();
+    state.link = String(
+      settings.discordInviteUrl || settings.discordInviteLink || settings.teamLobbyLink || ""
+    ).trim();
   }
 
   function load() {
@@ -114,11 +116,11 @@
     var enabled = String(fd.get("teamLobbyEnabled")) === "true";
     var link = String(fd.get("teamLobbyLink") || "").trim();
     if (enabled && !link) {
-      alert("启用前必须填写跳转链接");
+      alert("启用前必须填写社区链接");
       return;
     }
-    if (link && !/^https:\/\//i.test(link)) {
-      alert("跳转链接必须是 https:// 开头的完整地址");
+    if (link && !/^https?:\/\//i.test(link)) {
+      alert("社区链接必须是 http:// 或 https:// 开头的完整地址");
       return;
     }
     state.saving = true;
@@ -129,7 +131,8 @@
       action: "save_team_lobby",
       teamLobbyEnabled: enabled,
       teamLobbyLink: link,
-      reason: "后台组队大厅管理保存",
+      discordInviteUrl: link,
+      reason: "后台社区链接保存",
     })
       .then(function (res) {
         applySettings((res && res.settings) || { teamLobbyEnabled: enabled, teamLobbyLink: link });

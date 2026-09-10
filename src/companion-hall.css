@@ -586,52 +586,213 @@ body{background:radial-gradient(circle at 76% 4%,rgba(255,145,195,.055),transpar
   display:none !important;
 }
 
-/* Hall secondary entries — team lobby + more gameplays (moved from homepage QUICK ACCESS) */
-.hall-secondary-entries{
+/* Dual channel segment: 陪玩大厅 | 更多玩法 */
+.hall-channel-tabs{
+  position:relative;
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:4px;
+  margin:0 0 18px;
+  padding:4px;
+  border-radius:16px;
+  border:1px solid rgba(255,145,195,.22);
+  background:
+    linear-gradient(180deg,rgba(28,18,34,.92),rgba(10,8,14,.96));
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 10px 28px rgba(0,0,0,.28);
+}
+.hall-channel-tab{
+  position:relative;
+  z-index:1;
+  appearance:none;
+  border:0;
+  margin:0;
+  min-height:42px;
+  padding:0 12px;
+  border-radius:12px;
+  background:transparent;
+  color:rgba(255,230,242,.58);
+  font-size:14px;
+  font-weight:800;
+  letter-spacing:.02em;
+  cursor:pointer;
+  transition:color .2s ease,transform .18s ease;
+}
+.hall-channel-tab:hover{color:rgba(255,236,246,.88)}
+.hall-channel-tab.is-active{
+  color:#fff;
+  text-shadow:0 0 18px rgba(255,140,200,.35);
+}
+.hall-channel-indicator{
+  position:absolute;
+  top:4px;
+  bottom:4px;
+  left:4px;
+  width:calc(50% - 4px);
+  border-radius:12px;
+  background:
+    radial-gradient(circle at 30% 20%,rgba(255,170,220,.28),transparent 55%),
+    linear-gradient(135deg,rgba(255,110,190,.55),rgba(148,80,220,.42) 55%,rgba(90,50,160,.55));
+  box-shadow:
+    0 0 0 1px rgba(255,160,210,.28),
+    0 8px 22px rgba(180,70,160,.28),
+    inset 0 1px 0 rgba(255,255,255,.18);
+  transition:transform .24s cubic-bezier(.22,.7,.25,1);
+  pointer-events:none;
+}
+.hall-channel-tabs[data-active="services"] .hall-channel-indicator{
+  transform:translateX(100%);
+}
+.hall-channel-panel{
+  animation:hallChannelIn .22s ease;
+}
+.hall-channel-panel[hidden]{display:none!important}
+@keyframes hallChannelIn{
+  from{opacity:.35;transform:translateY(4px)}
+  to{opacity:1;transform:translateY(0)}
+}
+
+.hall-services-search{margin-bottom:14px!important}
+.hall-search-panel[hidden],
+.hall-services-search[hidden]{
+  display:none!important;
+}
+.hall-services-search-main{
+  grid-template-columns:minmax(0,1fr) 150px!important;
+}
+.hall-services-sort{width:100%!important}
+.hall-gp-cats{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  margin-top:2px;
+}
+.hall-gp-cat{
+  appearance:none;
+  border:1px solid rgba(255,145,195,.22);
+  background:rgba(255,255,255,.04);
+  color:rgba(255,230,242,.72);
+  border-radius:999px;
+  min-height:30px;
+  padding:0 12px;
+  font-size:12px;
+  font-weight:700;
+  cursor:pointer;
+}
+.hall-gp-cat.is-active{
+  color:#fff;
+  border-color:rgba(255,145,195,.45);
+  background:linear-gradient(135deg,rgba(255,110,190,.28),rgba(120,70,180,.28));
+  box-shadow:0 0 14px rgba(255,120,180,.18);
+}
+.hall-gp-grid{
   display:grid;
   grid-template-columns:repeat(2,minmax(0,1fr));
   gap:12px;
-  margin:0 0 18px;
 }
-.hall-secondary-card{
+.hall-gp-card{
+  display:flex;
+  flex-direction:column;
+  min-height:0;
+  border-radius:16px;
+  border:1px solid rgba(255,145,195,.26);
+  background:linear-gradient(165deg,rgba(42,22,48,.92),rgba(12,8,18,.96));
+  text-decoration:none;
+  color:#fff;
+  overflow:hidden;
+  box-shadow:0 10px 24px rgba(0,0,0,.28);
+  transition:transform .16s ease,border-color .16s ease;
+}
+.hall-gp-card:hover{
+  transform:translateY(-1px);
+  border-color:rgba(255,145,195,.46);
+}
+.hall-gp-cover{
+  aspect-ratio:16/9;
+  background:rgba(0,0,0,.28);
+  overflow:hidden;
+}
+.hall-gp-cover img{
+  width:100%;
+  height:100%;
+  object-fit:cover;
+  display:block;
+}
+.hall-gp-cover--empty{
+  display:grid;
+  place-items:center;
+  background:
+    radial-gradient(circle at 70% 20%,rgba(255,126,189,.18),transparent 50%),
+    linear-gradient(145deg,rgba(60,30,70,.8),rgba(20,12,28,.95));
+}
+.hall-gp-cover--empty span{
+  font-size:18px;
+  font-weight:800;
+  color:rgba(255,210,230,.86);
+}
+.hall-gp-body{
+  display:grid;
+  gap:4px;
+  padding:10px 12px 12px;
+}
+.hall-gp-body strong{
+  font-size:14px;
+  font-weight:800;
+  color:#ffeaf4;
+  line-height:1.25;
+}
+.hall-gp-body span{
+  font-size:11px;
+  line-height:1.35;
+  color:rgba(255,228,240,.62);
+  display:-webkit-box;
+  -webkit-line-clamp:2;
+  -webkit-box-orient:vertical;
+  overflow:hidden;
+  min-height:2.7em;
+}
+.hall-gp-body em{
   display:flex;
   align-items:center;
   justify-content:space-between;
-  gap:12px;
-  min-height:72px;
-  padding:14px 16px;
-  border:1px solid rgba(255,145,195,.26);
-  border-radius:16px;
-  background:linear-gradient(145deg,rgba(42,22,48,.72),rgba(12,8,18,.9));
-  color:#fff;
-  text-decoration:none;
-  box-shadow:0 10px 28px rgba(0,0,0,.28);
-}
-.hall-secondary-card strong{
-  display:block;
-  font-size:16px;
-  font-weight:800;
-  color:#ffeaf4;
-}
-.hall-secondary-card span{
-  display:block;
+  gap:8px;
   margin-top:4px;
-  font-size:12px;
-  line-height:1.35;
-  color:rgba(255,228,240,.68);
-}
-.hall-secondary-card em{
-  color:#f9a8d4;
   font-style:normal;
+}
+.hall-gp-body em i{
+  font-style:normal;
+  font-size:12px;
   font-weight:800;
+  color:#ffb7d8;
+}
+.hall-gp-body em b{
+  font-size:11px;
+  font-weight:700;
+  color:rgba(255,200,225,.78);
   white-space:nowrap;
 }
-.hall-secondary-card:hover{
-  border-color:rgba(255,145,195,.48);
-  background:linear-gradient(145deg,rgba(52,26,58,.82),rgba(14,10,20,.95));
+.hall-gp-loading{
+  grid-column:1/-1;
+  padding:28px 12px;
+  text-align:center;
+  color:rgba(255,230,242,.55);
+  font-size:13px;
+}
+
+@media(min-width:821px){
+  .hall-gp-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+  .hall-channel-tab{min-height:44px;font-size:15px}
+}
+@media(min-width:1180px){
+  .hall-gp-grid{grid-template-columns:repeat(4,minmax(0,1fr))}
 }
 @media(max-width:560px){
-  .hall-secondary-entries{gap:10px;margin-bottom:14px}
-  .hall-secondary-card{min-height:68px;padding:12px 14px;border-radius:14px}
-  .hall-secondary-card strong{font-size:15px}
+  .hall-channel-tabs{margin-bottom:14px;border-radius:14px;padding:3px}
+  .hall-channel-tab{min-height:38px;font-size:13px;border-radius:11px}
+  .hall-channel-indicator{border-radius:11px;top:3px;bottom:3px;left:3px;width:calc(50% - 3px)}
+  .hall-services-search-main{grid-template-columns:1fr!important}
+  .hall-services-sort{width:100%!important}
+  .hall-gp-grid{gap:10px}
+  .hall-gp-body{padding:9px 10px 11px}
+  .hall-gp-body strong{font-size:13px}
 }
+

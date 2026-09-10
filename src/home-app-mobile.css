@@ -123,7 +123,8 @@ body.mcj-app-shell {
 
   .home-brand-hero-visual,
   .home-brand-hero-mascot,
-  .mcj-chip {
+  .home-brand-hero-snacks,
+  .mcj-snack {
     pointer-events: none !important;
   }
 
@@ -207,20 +208,36 @@ body.mcj-app-shell {
     opacity: 0.7 !important;
   }
 
-  .mcj-app-home .club-level-entry-card {
-    margin-top: 8px !important;
-    min-height: 52px !important;
-    padding: 12px !important;
-    border-radius: 16px !important;
-    border: 1px solid rgba(255, 214, 232, 0.12) !important;
-    box-shadow: none !important;
+  .mcj-app-home .home-dual-entry {
+    margin: 8px 0 12px !important;
   }
 
+  .mcj-app-home .home-dual-entry-grid {
+    gap: 10px !important;
+    width: 100% !important;
+  }
+
+  .mcj-app-home .home-dual-entry-card,
+  .mcj-app-home .club-level-entry-card,
   .mcj-app-home .companion-apply-guide-card {
-    border-radius: 16px !important;
-    border: 1px solid rgba(255, 214, 232, 0.12) !important;
-    box-shadow: none !important;
-    padding: 12px !important;
+    margin-top: 0 !important;
+    min-height: 138px !important;
+    height: auto !important;
+    padding: 22px 15px 20px !important;
+    border-radius: 22px !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    box-shadow:
+      0 10px 26px rgba(0, 0, 0, 0.22),
+      inset 0 1px 0 rgba(255, 255, 255, 0.14) !important;
+  }
+
+  .mcj-app-home .companion-apply-guide {
+    margin-top: 8px !important;
+    margin-bottom: 12px !important;
+  }
+
+  .mcj-app-home .companion-apply-guide-card .order-btn {
+    display: none !important;
   }
 
   /* ---- Companion discovery: APP dual-column browse ---- */
@@ -298,13 +315,16 @@ body.mcj-app-shell {
   .mcj-app-home #hotCompanionTrack .hot-info > p,
   .mcj-app-home #recentCompanionTrack .hot-info > p,
   .mcj-app-home #gameCompanionTrack .hot-info > p,
-  .mcj-app-home #reviewCompanionTrack .hot-info > p {
+  .mcj-app-home #reviewCompanionTrack .hot-info > p,
+  .mcj-app-home #hotCompanionTrack .hot-game {
     font-size: 11px !important;
     margin: 0 !important;
-    opacity: 0.7 !important;
-    white-space: nowrap !important;
+    opacity: 0.78 !important;
+    white-space: normal !important;
     overflow: hidden !important;
-    text-overflow: ellipsis !important;
+    display: -webkit-box !important;
+    -webkit-line-clamp: 2 !important;
+    -webkit-box-orient: vertical !important;
   }
 
   .mcj-app-home #hotCompanionTrack .hot-meta,

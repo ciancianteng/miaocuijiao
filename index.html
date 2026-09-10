@@ -3,11 +3,7 @@
 <head>
   <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>妙脆角 MEOW CUI JIAO｜专业游戏陪玩</title>
-  <meta name="description" content="专业陪玩，每一场游戏认真对待每一位热爱电竞的你。">
-  <link rel="canonical" href="https://www.meowcuijiao.com/">
-  <meta name="robots" content="index,follow">
-  <!-- Open Graph / WeChat & WeCom link preview -->
+  <title>MEOW CUI JIAO GAMING CLUB</title>
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="妙脆角 MEOW CUI JIAO">
   <meta property="og:locale" content="zh_CN">
@@ -26,13 +22,8 @@
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="1200">
   <meta property="og:image:alt" content="妙脆角 MEOW CUI JIAO｜专业游戏陪玩">
-  <!-- Twitter Card -->
-  <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="妙脆角 MEOW CUI JIAO｜专业游戏陪玩">
-  <meta name="twitter:description" content="专业陪玩，每一场游戏认真对待每一位热爱电竞的你。">
-  <meta name="twitter:image" content="https://www.meowcuijiao.com/og/share-card-square-v2.jpg">
 
-<!-- Supabase password-recovery callback: #type=recovery → /auth/reset-password/ -->
+  <!-- Supabase password-recovery callback: #type=recovery → /auth/reset-password/ -->
   <script src="/src/supabase-recovery-reset.js?v=20260907recoveryReset1"></script>
   <style>
     :root{
@@ -3498,10 +3489,11 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
   <link rel="stylesheet" href="src/real-data-admin.css">
   <link rel="stylesheet" href="src/gameplay-flow.css">
   <link rel="stylesheet" href="src/design-system.css">
-  <link rel="stylesheet" href="src/home-banner.css?v=20260910appProto2">
-  <link rel="stylesheet" href="src/home-brand-hero.css?v=20260910appProto2">
+  <link rel="stylesheet" href="src/home-banner.css?v=20260910carousel1">
+  <link rel="stylesheet" href="src/home-brand-hero.css?v=20260910homeFix1">
+  <link rel="stylesheet" href="src/home-banner-promo.css?v=20260910homeFix1">
   <link rel="stylesheet" href="src/home-trust-stats.css?v=20260910appProto2">
-  <link rel="stylesheet" href="src/home-announcements.css?v=20260805annRotate1">
+  <link rel="stylesheet" href="src/home-announcements.css?v=20260910dataRestore1">
   <link rel="stylesheet" href="src/home-popularity.css">
   <link rel="stylesheet" href="src/home-desktop.css?v=20260910appProto1">
   <link rel="stylesheet" href="src/login-modal.css?v=20260805loginUi1">
@@ -3510,7 +3502,7 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
   <script type="module" src="src/role-gates.js?v=20260908antiBlank1"></script>
   <script type="module" src="src/boss-auth-session.js?v=20260811authUnify2"></script>
   <script type="module" src="src/forgot-password.js?v=20260907otpFocus1"></script>
-  <script type="module" src="src/avatar-fallback.js"></script>
+  <script type="module" src="src/avatar-fallback.js?v=20260910snackFloat5"></script>
   <script type="module" src="src/companion-media.js?v=20260802mediaSync"></script>
   <script type="module" src="src/launch-feature-freeze.js"></script>
   <script type="module" src="src/notify-system.js" defer></script>
@@ -3519,7 +3511,8 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
   <link rel="stylesheet" href="src/boss-header.css?v=20260910appProto1">
   <link rel="stylesheet" href="/src/mcj-safe-area.css?v=20260802mobileP0c">
   <link rel="stylesheet" href="src/home-mobile.css?v=20260910appProto1">
-  <link rel="stylesheet" href="src/home-app-mobile.css?v=20260910appProto2">
+  <link rel="stylesheet" href="src/home-app-mobile.css?v=20260911glassFooter1">
+  <link rel="stylesheet" href="src/ui-linglu-polish.css?v=20260911glassFooter1">
 </head>
 <body class="mcj-app-shell">
   <div class="ambient-layer" aria-hidden="true"></div>
@@ -3546,6 +3539,14 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
   </header>
   <main class="container mcj-app-home">
     <section class="home-brand-hero" data-home-brand-hero aria-label="妙脆角 APP 首页顶部">
+      <div class="home-brand-hero-snacks" aria-hidden="true">
+        <img class="mcj-snack mcj-snack--1" data-mcj-decor="1" src="assets/mcj-snack-chip.svg" alt="" width="80" height="80" decoding="async">
+        <img class="mcj-snack mcj-snack--2" data-mcj-decor="1" src="assets/mcj-snack-chip-pink.svg" alt="" width="80" height="80" decoding="async">
+        <img class="mcj-snack mcj-snack--3" data-mcj-decor="1" src="assets/mcj-snack-chip.svg" alt="" width="80" height="80" decoding="async">
+        <img class="mcj-snack mcj-snack--4" data-mcj-decor="1" src="assets/mcj-snack-chip-pink.svg" alt="" width="80" height="80" decoding="async">
+        <img class="mcj-snack mcj-snack--5" data-mcj-decor="1" src="assets/mcj-snack-chip.svg" alt="" width="80" height="80" decoding="async">
+        <img class="mcj-snack mcj-snack--6" data-mcj-decor="1" src="assets/mcj-snack-chip-pink.svg" alt="" width="80" height="80" decoding="async">
+      </div>
       <div class="home-brand-hero-inner">
         <div class="home-brand-hero-copy">
           <p class="home-brand-hero-kicker">MEOW CUI JIAO</p>
@@ -3559,10 +3560,6 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
         </div>
         <div class="home-brand-hero-visual" aria-hidden="true">
           <span class="home-brand-hero-aura"></span>
-          <span class="mcj-chip mcj-chip--a"></span>
-          <span class="mcj-chip mcj-chip--b"></span>
-          <span class="mcj-chip mcj-chip--c"></span>
-          <span class="mcj-chip mcj-chip--d"></span>
           <img class="home-brand-hero-mascot" src="assets/meow-cuijiao-hero-ip.webp" alt="" width="1024" height="1024" decoding="async" fetchpriority="high">
         </div>
       </div>
@@ -3579,24 +3576,19 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
 
 
 
-    <section class="section club-level-section" aria-label="俱乐部等级">
-      <a class="neon-card club-level-entry-card" href="club-levels.html" data-home-entry="club-levels" style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:12px;padding:14px 16px;text-decoration:none;min-height:64px;width:100%;box-sizing:border-box">
-        <div><strong style="display:block;font-size:16px;color:#fff">了解俱乐部等级制度</strong><span style="color:rgba(255,228,240,.7);font-size:13px">萌喵到喵皇 · 价格区间与升级权益</span></div>
-        <span style="color:#f9a8d4;font-weight:700;white-space:nowrap">查看说明 →</span>
-      </a>
-    </section>
-
-
-    <section class="section companion-apply-guide" data-companion-apply-section>
-      <div class="neon-card companion-apply-guide-card">
-        <div class="companion-apply-guide-icon" aria-hidden="true"><img src="assets/companion-apply-cat-logo.png" alt=""></div>
-        <div>
-          <h2>申请成为陪玩</h2>
-          <p>提交资料，通过审核后即可接单</p>
-        </div>
-        <a class="order-btn" href="companion-apply.html" data-companion-apply-guide>申请成为陪玩</a>
+        <section class="section home-dual-entry companion-apply-guide" data-companion-apply-section aria-label="快捷入口">
+      <div class="home-dual-entry-grid">
+        <a class="home-dual-entry-card home-dual-entry-card--levels club-level-entry-card" href="club-levels.html" data-home-entry="club-levels">
+          <strong class="home-dual-entry-title">俱乐部等级</strong>
+          <span class="home-dual-entry-desc">查看等级与价格权益</span>
+        </a>
+        <a class="home-dual-entry-card home-dual-entry-card--apply companion-apply-guide-card" href="companion-apply.html" data-companion-apply-guide>
+          <strong class="home-dual-entry-title">申请陪玩</strong>
+          <span class="home-dual-entry-desc">提交资料，通过审核后接单</span>
+        </a>
       </div>
     </section>
+
 <section class="section official-ads" aria-label="首页活动" hidden>
       <div class="section-title"><div><h2>首页活动</h2><p>活动内容由后台配置</p></div></div>
       <div class="official-ad-slider" id="officialAdSlider">
@@ -4035,10 +4027,10 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
     });
     document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal()});
   </script>
-  <script type="module" src="src/site-data.js?v=20260910appProto1"></script>
+  <script type="module" src="src/site-data.js?v=20260910homeFix1"></script>
   <script src="src/banner-crop.js?v=20260809bannerCropSync1"></script>
-  <script type="module" src="src/home-banner.js?v=20260910appProto2"></script>
-  <script type="module" src="src/home-announcements.js?v=20260805annRotate1"></script>
+  <script type="module" src="src/home-banner.js?v=20260910carousel1"></script>
+  <script type="module" src="src/home-announcements.js?v=20260910dataRestore1"></script>
   <script type="module" src="src/home-daily-stats.js?v=20260910appProto2"></script>
   <script src="src/companion-presence.js?v=20260805profileLock1"></script>
   <script src="/src/place-order-modal.js?v=20260811authUnify1" defer></script>
@@ -4458,7 +4450,8 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
   </script>
   <script type="module" src="src/dropdown-system.js" defer></script>
   <script type="module" src="src/real-data-admin.js" defer></script>
-  <script type="module" src="src/footer-system.js?v=20260805ssm1" defer></script>
+  <script type="module" src="src/discord-community-config.js?v=20260910linglu1"></script>
+  <script type="module" src="src/footer-system.js?v=20260911footerNoCommunity1" defer></script>
   <script type="module" src="src/text-guard.js?v=20260730home4" defer></script>
   <script type="module" src="src/design-system.js" defer></script>
 <script id="mcjBossLogoutHandler">

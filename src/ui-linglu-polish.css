@@ -1,0 +1,449 @@
+/* Unified companion UI polish — cards, verified badge, home/hall compact */
+
+/* —— Verified badge (single reusable) —— */
+.mcj-verified-badge {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 3px !important;
+  height: 20px !important;
+  min-height: 20px !important;
+  max-height: 20px !important;
+  padding: 0 7px !important;
+  border-radius: 999px !important;
+  border: 1px solid rgba(255, 182, 216, 0.28) !important;
+  background: rgba(255, 126, 189, 0.12) !important;
+  color: rgba(255, 226, 239, 0.88) !important;
+  font-size: 10px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.02em !important;
+  line-height: 1 !important;
+  white-space: nowrap !important;
+  box-sizing: border-box !important;
+  vertical-align: middle !important;
+  flex: 0 0 auto !important;
+}
+
+.mcj-verified-badge::before {
+  content: "✓";
+  font-size: 10px;
+  font-weight: 800;
+  color: #ff9ecf;
+}
+
+/* —— Home recommend cards: lighter, no price, larger name —— */
+.mcj-app-home .hot-card.companion-card,
+.hot-recommend-section .hot-card.companion-card {
+  padding: 0 !important;
+  overflow: hidden !important;
+}
+
+.hot-recommend-section .hot-card .hot-cover {
+  aspect-ratio: 1 / 1 !important;
+  max-height: none !important;
+}
+
+.hot-recommend-section .hot-card .hot-info {
+  padding: 10px 10px 12px !important;
+  gap: 6px !important;
+  display: grid !important;
+}
+
+.hot-recommend-section .hot-name-row {
+  display: flex !important;
+  align-items: baseline !important;
+  gap: 6px !important;
+  min-width: 0 !important;
+}
+
+.hot-recommend-section .hot-name-row h3 {
+  margin: 0 !important;
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+  font-size: 16px !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.01em !important;
+  line-height: 1.25 !important;
+  color: #fff8fc !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+.hot-recommend-section .mcj-brand-mark {
+  opacity: 0.42 !important;
+  font-size: 8px !important;
+  font-weight: 600 !important;
+  padding: 1px 5px !important;
+  border-color: rgba(255, 182, 216, 0.18) !important;
+  background: rgba(255, 255, 255, 0.03) !important;
+  color: rgba(255, 214, 232, 0.55) !important;
+}
+
+.hot-recommend-section .hot-card .hot-info > p,
+.hot-recommend-section .hot-card .hot-game {
+  margin: 0 !important;
+  font-size: 12px !important;
+  line-height: 1.35 !important;
+  color: rgba(255, 226, 239, 0.72) !important;
+  overflow: hidden !important;
+  display: -webkit-box !important;
+  -webkit-line-clamp: 2 !important;
+  -webkit-box-orient: vertical !important;
+}
+
+.hot-recommend-section .hot-meta {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 4px !important;
+  align-items: center !important;
+}
+
+.hot-recommend-section .hot-orders,
+.hot-recommend-section .companion-level-price-range {
+  display: none !important;
+}
+
+.hot-recommend-section .hot-tags {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 4px !important;
+  margin: 0 !important;
+}
+
+.hot-recommend-section .hot-tags span {
+  font-size: 10px !important;
+  padding: 2px 6px !important;
+  border-radius: 999px !important;
+}
+
+.hot-recommend-section .hot-status {
+  display: inline-flex !important;
+  align-items: center !important;
+  font-size: 11px !important;
+  font-weight: 650 !important;
+  color: rgba(255, 214, 232, 0.78) !important;
+}
+
+.hot-recommend-section .mcj-verified-badge {
+  display: none !important;
+}
+
+.hot-recommend-section .mini-order {
+  margin-top: 2px !important;
+  min-height: 34px !important;
+  height: 34px !important;
+  font-size: 12px !important;
+}
+
+@media (max-width: 720px) {
+  .mcj-app-home .hot-recommend-section .hot-name-row h3 {
+    font-size: 15px !important;
+    font-weight: 800 !important;
+  }
+}
+
+/* —— Hall cards: compact, name-first, no price —— */
+.companion-hall-grid .player-card {
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+.companion-hall-grid .companion-card-media {
+  aspect-ratio: 5 / 4 !important;
+  max-height: 168px !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+}
+
+.companion-hall-grid .companion-card-media img {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+}
+
+.companion-hall-grid .companion-card-body {
+  padding: 10px 10px 12px !important;
+  display: grid !important;
+  gap: 6px !important;
+}
+
+.companion-hall-grid .companion-card-title-row {
+  display: none !important; /* brand moved to weak watermark */
+}
+
+.companion-hall-grid .companion-nickname-line {
+  margin: 0 !important;
+  font-size: 16px !important;
+  font-weight: 800 !important;
+  line-height: 1.25 !important;
+  color: #fff8fc !important;
+  letter-spacing: 0.01em !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+.companion-hall-grid .companion-brand-watermark {
+  margin: 0 !important;
+  font-size: 9px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.06em !important;
+  color: rgba(255, 214, 232, 0.38) !important;
+  text-transform: uppercase !important;
+}
+
+.companion-hall-grid .companion-id {
+  display: none !important;
+}
+
+.companion-hall-grid .companion-card-head-meta {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  align-items: center !important;
+  gap: 6px !important;
+}
+
+.companion-hall-grid .companion-status-inline {
+  font-size: 11px !important;
+}
+
+.companion-hall-grid .companion-identity-row,
+.companion-hall-grid .companion-capsule-row {
+  gap: 4px !important;
+  margin: 0 !important;
+}
+
+.companion-hall-grid .companion-identity-row .mcj-service-tag,
+.companion-hall-grid .companion-identity-row .mcj-category-tag,
+.companion-hall-grid .companion-identity-row .mcj-voice-tag {
+  font-size: 10px !important;
+  padding: 2px 6px !important;
+}
+
+.companion-hall-grid .companion-cert-row {
+  margin: 0 !important;
+}
+
+.companion-hall-grid .companion-price,
+.companion-hall-grid .companion-level-price-range,
+.companion-hall-grid [data-hall-price-label] {
+  display: none !important;
+}
+
+.companion-hall-grid .companion-card-actions {
+  margin-top: 4px !important;
+  gap: 6px !important;
+}
+
+.companion-hall-grid .companion-card-action {
+  height: 34px !important;
+  min-height: 34px !important;
+  max-height: 34px !important;
+  font-size: 12px !important;
+}
+
+@media (max-width: 560px) {
+  .companion-hall-grid .companion-nickname-line {
+    font-size: 15px !important;
+  }
+
+  .companion-hall-grid .companion-card-body {
+    padding: 8px 8px 10px !important;
+    gap: 5px !important;
+  }
+}
+
+/* —— Hall secondary entries (after list) —— */
+.hall-secondary-entries--after {
+  margin: 20px 0 8px !important;
+}
+
+.hall-secondary-entries--after .hall-secondary-card {
+  opacity: 0.92;
+}
+
+/* —— Home dual entry: premium glass gradient entry cards —— */
+.home-dual-entry {
+  margin: 10px 0 14px !important;
+  padding: 0 !important;
+}
+
+.home-dual-entry-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 11px;
+  width: min(720px, 100%);
+  margin: 0 auto;
+}
+
+.home-dual-entry-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-end;
+  gap: 7px;
+  min-height: 138px;
+  height: 100%;
+  padding: 22px 16px 20px !important;
+  border-radius: 22px !important;
+  text-decoration: none !important;
+  color: inherit;
+  box-sizing: border-box;
+  overflow: hidden;
+  isolation: isolate;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  background-color: rgba(8, 6, 12, 0.42) !important;
+  background-image:
+    linear-gradient(165deg, rgba(255, 255, 255, 0.075) 0%, rgba(255, 255, 255, 0.02) 24%, transparent 52%),
+    radial-gradient(ellipse 90% 70% at 12% 8%, rgba(168, 110, 210, 0.14), transparent 58%),
+    radial-gradient(ellipse 80% 60% at 50% 110%, rgba(120, 70, 160, 0.1), transparent 55%),
+    linear-gradient(160deg, rgba(28, 16, 40, 0.34), rgba(10, 7, 16, 0.5) 55%, rgba(6, 4, 10, 0.58)) !important;
+  -webkit-backdrop-filter: blur(22px) saturate(1.2);
+  backdrop-filter: blur(22px) saturate(1.2);
+  box-shadow:
+    0 10px 26px rgba(0, 0, 0, 0.22),
+    0 0 0 0.5px rgba(255, 255, 255, 0.04),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    inset 0 -12px 28px rgba(0, 0, 0, 0.12) !important;
+  transition:
+    transform 0.18s ease,
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    filter 0.18s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.home-dual-entry-card--levels {
+  background-image:
+    linear-gradient(155deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0.018) 26%, transparent 54%),
+    radial-gradient(ellipse 95% 75% at 8% 6%, rgba(150, 100, 210, 0.16), transparent 60%),
+    radial-gradient(ellipse 85% 55% at 30% 108%, rgba(110, 70, 170, 0.12), transparent 58%),
+    linear-gradient(148deg, rgba(30, 18, 44, 0.32), rgba(10, 7, 16, 0.5) 58%, rgba(6, 4, 10, 0.58)) !important;
+}
+
+.home-dual-entry-card--apply {
+  background-image:
+    linear-gradient(205deg, rgba(255, 255, 255, 0.07) 0%, rgba(255, 255, 255, 0.016) 28%, transparent 56%),
+    radial-gradient(ellipse 95% 75% at 92% 4%, rgba(210, 100, 170, 0.13), transparent 58%),
+    radial-gradient(ellipse 85% 55% at 70% 110%, rgba(150, 70, 140, 0.1), transparent 58%),
+    linear-gradient(205deg, rgba(32, 14, 36, 0.32), rgba(10, 7, 16, 0.5) 58%, rgba(6, 4, 10, 0.58)) !important;
+}
+
+.home-dual-entry-card:hover,
+.home-dual-entry-card:focus-visible {
+  transform: translateY(-1px);
+  filter: brightness(1.05);
+  border-color: rgba(255, 255, 255, 0.16) !important;
+  box-shadow:
+    0 12px 28px rgba(0, 0, 0, 0.26),
+    0 0 0 0.5px rgba(255, 255, 255, 0.07),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    inset 0 -12px 28px rgba(0, 0, 0, 0.1) !important;
+  outline: none;
+}
+
+.home-dual-entry-icon,
+.home-dual-entry-arrow {
+  display: none !important;
+}
+
+.home-dual-entry-title {
+  display: block;
+  margin: 0;
+  font-size: 17px;
+  font-weight: 780;
+  letter-spacing: 0.01em;
+  color: rgba(255, 248, 252, 0.95);
+  line-height: 1.2;
+}
+
+.home-dual-entry-desc {
+  display: block;
+  margin: 0;
+  max-width: 12.8em;
+  font-size: 12px;
+  line-height: 1.45;
+  color: rgba(220, 190, 210, 0.52);
+  font-weight: 500;
+}
+
+/* Kill legacy big pink CTA chrome when class is reused on dual cards */
+.home-dual-entry .companion-apply-guide-card,
+.home-dual-entry .companion-apply-guide-card:hover {
+  min-height: 138px !important;
+  display: flex !important;
+  grid-template-columns: unset !important;
+  align-items: flex-start !important;
+  justify-content: flex-end !important;
+  gap: 7px !important;
+  transform: none;
+}
+
+.home-dual-entry .companion-apply-guide-card:hover,
+.home-dual-entry .companion-apply-guide-card:focus-visible {
+  transform: translateY(-1px);
+}
+
+.home-dual-entry .companion-apply-guide-card .order-btn {
+  display: none !important;
+}
+
+.home-dual-entry .companion-apply-guide-card h2,
+.home-dual-entry .companion-apply-guide-card p {
+  display: none !important;
+}
+
+@media (max-width: 360px) {
+  .home-dual-entry-grid {
+    gap: 8px;
+  }
+
+  .home-dual-entry-card {
+    min-height: 130px;
+    padding: 20px 14px 18px !important;
+    border-radius: 20px !important;
+  }
+
+  .home-dual-entry-title {
+    font-size: 16px;
+  }
+
+  .home-dual-entry-desc {
+    font-size: 11px;
+  }
+}
+
+@media (min-width: 961px) {
+  .home-dual-entry {
+    margin: 14px 0 18px !important;
+  }
+
+  .home-dual-entry-grid {
+    width: min(560px, 100%);
+    gap: 12px;
+  }
+
+  .home-dual-entry-card {
+    min-height: 144px;
+    padding: 24px 18px 22px !important;
+    border-radius: 24px !important;
+  }
+
+  .home-dual-entry-title {
+    font-size: 18px;
+  }
+}
+
+/* —— Profile detail: cleaner empty —— */
+.pd-perf-empty {
+  margin: 0;
+  padding: 16px 14px;
+  border-radius: 14px;
+  border: 1px dashed rgba(255, 214, 232, 0.16);
+  background: rgba(255, 255, 255, 0.03);
+  color: rgba(255, 226, 239, 0.58);
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: center;
+}
