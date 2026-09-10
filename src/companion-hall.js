@@ -657,8 +657,7 @@
   async function start() {
     var count = document.getElementById("resultCount");
     if (count) count.textContent = "正在加载陪玩…";
-    // Fire-and-forget seed; never block the hall list on it.
-    fetch("/api/dev/seed-p03-preview", { method: "POST", headers: { "Content-Type": "application/json" } }).catch(function () {});
+    // Do not auto-seed preview fixtures into the public hall path.
     // Hydrate admin levels before building the level/price dropdowns.
     if (window.MCJCompanionLevels && typeof window.MCJCompanionLevels.hydrateFromApi === "function") {
       try { await window.MCJCompanionLevels.hydrateFromApi(); } catch (e) { /* keep last known */ }
