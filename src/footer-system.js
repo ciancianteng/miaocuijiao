@@ -68,10 +68,8 @@
       '<h3>MEOW CUI JIAO ENTERPRISE</h3>' +
       '<p>✓ Registered Malaysian Enterprise</p>' +
       homeDiscordCtaHtml() +
-      '<div class="mcj-footer-actions">' +
+      '<div class="mcj-footer-actions mcj-footer-actions--single">' +
       '<button class="mcj-footer-link" type="button" data-open-coop>商务合作</button>' +
-      '<a class="mcj-footer-link" href="companion-apply.html">申请陪玩</a>' +
-      '<a class="mcj-footer-link" href="support.html#mcj-discord-community">Discord 社群</a>' +
       '</div></section>' +
       '</div><div class="mcj-footer-bottom"><span>© MEOW CUI JIAO ENTERPRISE. All rights reserved.</span>' + ssm + '</div></footer>';
   }
@@ -206,7 +204,7 @@
     if (!document.querySelector('link[href*="footer-system.css"]')) {
       var link = document.createElement("link");
       link.rel = "stylesheet";
-      link.href = "src/footer-system.css?v=20260805ssm1";
+      link.href = "src/footer-system.css?v=20260911footerSlim1";
       document.head.appendChild(link);
     }
     document.querySelectorAll("[data-mcj-footer], .site-footer, #mcjCoopModal").forEach(function (el) { el.remove(); });
