@@ -1,5 +1,12 @@
 import './mcj-chat-media.js';
 import './mcj-chat-realtime.js';
+import './support-app-ui.css';
+import {
+  getDiscordInviteUrl,
+  isDiscordInviteReady,
+  openDiscordInvite,
+  refreshDiscordInviteFromPlatform,
+} from './discord-community-config.js';
 
 (function () {
   var root = document.getElementById("supportApp");
@@ -1252,22 +1259,72 @@ import './mcj-chat-realtime.js';
     if (isClosedConversation(c)) return "会话已结束";
     return isOrderConversation(c) ? "订单咨询" : "人工客服咨询";
   }
+  function discordCommunityCardHtml() {
+    var ready = isDiscordInviteReady();
+    var url = getDiscordInviteUrl();
+    var cta = ready ? "加入 Discord" : "即将开放";
+    var hint = ready ? "找队友 · 聊游戏 · 获取最新活动" : "Discord 社区即将开放";
+    var logo =
+      '<span class="mcj-discord-cta-logo" aria-hidden="true">' +
+      '<svg viewBox="0 0 24 24" width="26" height="26" focusable="false">' +
+      '<path fill="currentColor" d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028 14.09 14.09 0 0 0 1.226-1.994.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/>' +
+      "</svg></span>";
+    return (
+      '<section class="mcj-discord-cta-wrap" id="mcj-discord-community" aria-label="MEOW CUI JIAO Discord 社区">' +
+      '<p class="mcj-public-channels-label">公开社区</p>' +
+      '<button type="button" class="mcj-discord-cta' +
+      (ready ? "" : " is-soon") +
+      '" data-discord-community-cta' +
+      (ready && url ? ' data-discord-url="' + esc(url) + '"' : "") +
+      ' aria-label="' +
+      esc(ready ? "加入 MEOW CUI JIAO Discord 社区" : "Discord 社区即将开放") +
+      '">' +
+      logo +
+      '<span class="mcj-discord-cta-copy">' +
+      "<strong>MEOW CUI JIAO Discord 社区</strong>" +
+      "<span>加入妙脆角玩家社区</span>" +
+      "<em>" +
+      esc(hint) +
+      "</em>" +
+      "</span>" +
+      '<span class="mcj-discord-cta-action" aria-hidden="true">' +
+      "<i>↗</i>" +
+      "<small>" +
+      esc(cta) +
+      "</small>" +
+      "</span>" +
+      "</button>" +
+      '<p class="mcj-discord-cta-foot">未登录也可加入社区 · 正式邀请链接配置后可直接跳转</p>' +
+      "</section>"
+    );
+  }
   function listHtml() {
     var activeId = state.conversation && state.conversation.id;
     var list = state.conversations || [];
+    var guest = !hasAuthSession();
+    var publicBlock = discordCommunityCardHtml();
     var actions =
       '<div class="support-list-actions"><button class="support-btn primary" type="button" data-contact-service' +
       (state.creatingGeneral ? " disabled" : "") +
       ">" +
-      (state.creatingGeneral ? "创建中…" : "新建客服咨询") +
+      (state.creatingGeneral ? "创建中…" : guest ? "登录后新建客服咨询" : "新建客服咨询") +
       "</button></div>";
+    if (guest) {
+      return (
+        publicBlock +
+        actions +
+        '<div class="support-empty-panel support-empty-list"><strong>人工客服需要登录</strong><span>公开 Discord 社区可直接加入。查询本人订单、售后与人工会话请先登录。</span></div>'
+      );
+    }
     if (!list.length) {
       return (
+        publicBlock +
         actions +
         '<div class="support-empty-panel support-empty-list"><strong>暂无客服会话</strong><span>需要帮助时，点击上方按钮新建咨询。从订单详情进入时会自动关联当前订单。</span></div>'
       );
     }
     return (
+      publicBlock +
       actions +
       '<section class="support-list-block"><div class="support-list-caption">我的会话</div>' +
       list
@@ -1314,7 +1371,16 @@ import './mcj-chat-realtime.js';
     if (state.authLoading || state.customerLoading) {
       return '<div class="support-empty-panel"><strong>正在加载账号资料</strong><span>请稍候，正在确认登录身份…</span></div>';
     }
-    if (!hasAuthSession() || /请先登录/.test(String(state.authError || ""))) {
+    if (!hasAuthSession()) {
+      return (
+        '<div class="support-login-panel support-guest-panel">' +
+        "<strong>欢迎来到客服中心</strong>" +
+        "<p>公开社区（Discord 等）无需登录，请看会话列表上方的社区卡片。查询本人订单、售后或发起人工客服会话时，再登录账号即可。</p>" +
+        '<button class="support-btn primary" type="button" data-support-login>登录后联系人工客服</button>' +
+        "</div>"
+      );
+    }
+    if (state.authError && /请先登录/.test(String(state.authError || ""))) {
       return (
         '<div class="support-login-panel"><strong>请先登录后使用在线客服</strong><br>' +
         '<button class="support-btn primary" type="button" data-support-login>立即登录</button></div>'
@@ -1569,13 +1635,18 @@ import './mcj-chat-realtime.js';
       '<section class="support-layout' +
       (state.mobileDetail ? " mobile-detail" : "") +
       '" aria-label="我的客服会话">' +
-      '<aside class="support-aside"><div class="support-aside-head"><div><h1>我的客服会话' +
+      '<aside class="support-aside"><div class="support-aside-head"><div><h1>客服中心' +
       (Number(state.totalUnread || 0) > 0
         ? '<em class="support-unread support-unread-total">' +
           esc(Number(state.totalUnread) > 99 ? "99+" : state.totalUnread) +
           "</em>"
         : "") +
-      '</h1><p>仅显示本人会话</p></div></div><div class="support-session-list">' +
+      '</h1><p>仅显示本人会话</p></div>' +
+      '<span class="support-online-chip' +
+      (state.serviceOnline ? " is-online" : "") +
+      '" aria-live="polite">' +
+      (state.serviceOnline ? "客服在线" : "客服忙碌/离线") +
+      '</span></div><div class="support-session-list">' +
       listHtml() +
       "</div></aside>" +
       '<div class="support-main">' +
@@ -1652,13 +1723,14 @@ import './mcj-chat-realtime.js';
       state.loading = false;
       state.authLoading = false;
       state.customerLoading = false;
-      state.authError = "请先登录后使用在线客服";
+      // Guest hub: public Discord / contact channels are visible.
+      // Do NOT force login modal / redirect — only private chat actions require auth.
+      state.authError = "";
       state.conversations = [];
       state.orders = [];
       state.conversation = null;
       state.messages = [];
       paint();
-      promptBossLogin();
       return Promise.resolve(null);
     }
     paint();
@@ -1810,6 +1882,16 @@ import './mcj-chat-realtime.js';
   }, true);
 
   document.addEventListener('click', function (e) {
+    var discordCta = e.target.closest('[data-discord-community-cta]');
+    if (discordCta) {
+      e.preventDefault();
+      e.stopPropagation();
+      var result = openDiscordInvite();
+      if (!result || !result.ok) {
+        toast("Discord 社区即将开放");
+      }
+      return;
+    }
     var loginBtn = e.target.closest('[data-support-login]');
     if (loginBtn) {
       e.preventDefault();
@@ -2232,5 +2314,8 @@ import './mcj-chat-realtime.js';
 
   if (window.MCJChatMedia) window.MCJChatMedia.bindLightboxClicks(root);
   paint();
+  refreshDiscordInviteFromPlatform().then(function () {
+    softUpdate({ keepScroll: true });
+  });
   bootstrap().then(startPoll);
 })();

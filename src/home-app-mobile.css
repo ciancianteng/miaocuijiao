@@ -1,0 +1,551 @@
+/* =========================================================
+   Meow Cui Jiao — Mobile APP / Mini-program homepage shell
+   Mobile-first. Desktop mostly untouched.
+   Presentation only — no API / business changes.
+   ========================================================= */
+
+/* Shared card identity (desktop + mobile) */
+.hot-name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.hot-name-row h3 {
+  margin: 0;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.mcj-brand-mark {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 182, 216, 0.35);
+  background: rgba(255, 120, 180, 0.12);
+  color: #ffd6e8;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.hot-tag-more {
+  opacity: 0.72;
+}
+
+html {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+body.mcj-app-shell {
+  max-width: 100%;
+  overflow-x: hidden;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  /* pageIn animation leaves transform matrix and breaks position:fixed tabbar */
+  animation: none !important;
+  transform: none !important;
+}
+
+/* ---- APP bottom tab bar (mobile) ---- */
+.mobile-bottom-nav.mcj-app-tabbar,
+.mcj-app-tabbar {
+  display: none;
+}
+
+@media (max-width: 720px) {
+  /* Slim sticky APP header */
+  header.mcj-boss-header {
+    border-bottom: 0 !important;
+    background: rgba(8, 6, 12, 0.92) !important;
+    backdrop-filter: blur(18px) saturate(1.1) !important;
+    -webkit-backdrop-filter: blur(18px) saturate(1.1) !important;
+  }
+
+  header.mcj-boss-header .mcj-boss-header-inner,
+  header.mcj-boss-header .header-inner {
+    min-height: 48px !important;
+    height: 48px !important;
+    padding-left: max(14px, env(safe-area-inset-left)) !important;
+    padding-right: max(10px, env(safe-area-inset-right)) !important;
+    gap: 10px !important;
+  }
+
+  header.mcj-boss-header .mcj-header-brand-logo {
+    width: 30px !important;
+    height: 30px !important;
+    border-radius: 10px !important;
+  }
+
+  header.mcj-boss-header .mcj-header-brand-en {
+    font-size: 13px !important;
+    letter-spacing: 0.02em !important;
+    line-height: 1.1 !important;
+  }
+
+  header.mcj-boss-header .mcj-header-brand-zh {
+    font-size: 10px !important;
+    opacity: 0.72 !important;
+    letter-spacing: 0.08em !important;
+  }
+
+  header.mcj-boss-header .mcj-mnav-toggle {
+    width: 40px !important;
+    height: 40px !important;
+    min-width: 40px !important;
+    border-radius: 12px !important;
+    font-size: 18px !important;
+    background: rgba(255, 255, 255, 0.04) !important;
+    border: 1px solid rgba(255, 214, 232, 0.12) !important;
+  }
+
+  /* Content shell — denser, less website padding */
+  main.container.mcj-app-home,
+  .container.mcj-app-home {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 14px calc(88px + env(safe-area-inset-bottom, 0px)) !important;
+    box-sizing: border-box !important;
+    overflow-x: hidden !important;
+  }
+
+  /* Hero / Banner sizing owned by home-brand-hero.css — only soft shell tweaks here */
+  .home-brand-hero,
+  .container > .home-brand-hero {
+    width: calc(100% + 28px) !important;
+    margin-left: -14px !important;
+    margin-right: -14px !important;
+  }
+
+  .home-brand-hero-visual,
+  .home-brand-hero-mascot,
+  .mcj-chip {
+    pointer-events: none !important;
+  }
+
+  /* Announcement — compact App ticker */
+  #homeAnnouncementBar.home-announcement-bar.announcement-strip,
+  .home-announcement-bar.announcement-strip {
+    height: 36px !important;
+    min-height: 36px !important;
+    max-height: 36px !important;
+    margin: 0 0 12px !important;
+    padding: 0 10px !important;
+    border-radius: 12px !important;
+    border: 1px solid rgba(255, 214, 232, 0.1) !important;
+    box-shadow: none !important;
+    background: rgba(255, 255, 255, 0.03) !important;
+  }
+
+  #homeAnnouncementBar .home-announcement-label,
+  .home-announcement-bar .home-announcement-label {
+    flex: 0 0 auto !important;
+    width: auto !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    height: 24px !important;
+    padding: 0 8px !important;
+    border-radius: 8px !important;
+    font-size: 11px !important;
+  }
+
+  /* Promo banner clickability — never under cat layer */
+  .container > .mcj-home-hero.mcj-home-hero--promo,
+  .mcj-home-hero[data-mcj-home-hero].mcj-home-hero--promo {
+    position: relative !important;
+    z-index: 6 !important;
+    pointer-events: auto !important;
+  }
+
+  .mcj-home-hero--promo .mcj-hero-image-link,
+  .mcj-home-hero--promo .mcj-hero-slide.is-active {
+    pointer-events: auto !important;
+  }
+
+  /* legacy height locks removed — aspect-ratio from home-brand-hero.css */
+  .container > .mcj-home-hero:not(.mcj-home-hero--promo) {
+    height: auto !important;
+  }
+
+  /* keep old selector quiet */
+  .____removed_legacy_promo_block {
+    display: none !important;
+  }
+
+  /* Quick entry — less card chrome */
+  .mcj-app-home .quick-entry-section {
+    margin-bottom: 16px !important;
+  }
+
+  .mcj-app-home .quick-entry-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 8px !important;
+  }
+
+  .mcj-app-home .quick-entry-card,
+  .mcj-app-home .neon-card.quick-entry-card {
+    min-height: 64px !important;
+    height: auto !important;
+    padding: 12px !important;
+    border-radius: 16px !important;
+    border: 1px solid rgba(255, 214, 232, 0.12) !important;
+    box-shadow: none !important;
+    background: rgba(255, 255, 255, 0.035) !important;
+  }
+
+  .mcj-app-home .quick-entry-card strong {
+    font-size: 14px !important;
+  }
+
+  .mcj-app-home .quick-entry-card span {
+    font-size: 11px !important;
+    line-height: 1.3 !important;
+    opacity: 0.7 !important;
+  }
+
+  .mcj-app-home .club-level-entry-card {
+    margin-top: 8px !important;
+    min-height: 52px !important;
+    padding: 12px !important;
+    border-radius: 16px !important;
+    border: 1px solid rgba(255, 214, 232, 0.12) !important;
+    box-shadow: none !important;
+  }
+
+  .mcj-app-home .companion-apply-guide-card {
+    border-radius: 16px !important;
+    border: 1px solid rgba(255, 214, 232, 0.12) !important;
+    box-shadow: none !important;
+    padding: 12px !important;
+  }
+
+  /* ---- Companion discovery: APP dual-column browse ---- */
+  .mcj-app-home .companion-track,
+  .mcj-app-home #hotCompanionTrack,
+  .mcj-app-home #recentCompanionTrack,
+  .mcj-app-home #gameCompanionTrack,
+  .mcj-app-home #reviewCompanionTrack {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 10px !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    overflow: visible !important;
+    padding: 0 !important;
+  }
+
+  .mcj-app-home #hotCompanionTrack .companion-card,
+  .mcj-app-home #recentCompanionTrack .companion-card,
+  .mcj-app-home #gameCompanionTrack .companion-card,
+  .mcj-app-home #reviewCompanionTrack .companion-card,
+  .mcj-app-home .companion-track .companion-card {
+    flex: none !important;
+    width: auto !important;
+    max-width: none !important;
+    min-width: 0 !important;
+    border-radius: 16px !important;
+    border: 1px solid rgba(255, 214, 232, 0.14) !important;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.22) !important;
+    background: linear-gradient(165deg, rgba(32, 20, 36, 0.96), rgba(10, 8, 14, 0.98)) !important;
+    overflow: hidden !important;
+  }
+
+  .mcj-app-home #hotCompanionTrack .hot-cover,
+  .mcj-app-home #recentCompanionTrack .hot-cover,
+  .mcj-app-home #gameCompanionTrack .hot-cover,
+  .mcj-app-home #reviewCompanionTrack .hot-cover,
+  .mcj-app-home .companion-track .hot-cover {
+    height: auto !important;
+    min-height: 0 !important;
+    aspect-ratio: 3 / 4 !important;
+    border-radius: 0 !important;
+  }
+
+  .mcj-app-home #hotCompanionTrack .hot-cover img,
+  .mcj-app-home #recentCompanionTrack .hot-cover img,
+  .mcj-app-home #gameCompanionTrack .hot-cover img,
+  .mcj-app-home #reviewCompanionTrack .hot-cover img {
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: cover !important;
+  }
+
+  .mcj-app-home #hotCompanionTrack .hot-info,
+  .mcj-app-home #recentCompanionTrack .hot-info,
+  .mcj-app-home #gameCompanionTrack .hot-info,
+  .mcj-app-home #reviewCompanionTrack .hot-info {
+    padding: 10px 10px 12px !important;
+    gap: 4px !important;
+  }
+
+  .mcj-app-home #hotCompanionTrack .hot-info h3,
+  .mcj-app-home #recentCompanionTrack .hot-info h3,
+  .mcj-app-home #gameCompanionTrack .hot-info h3,
+  .mcj-app-home #reviewCompanionTrack .hot-info h3 {
+    font-size: 14px !important;
+    line-height: 1.25 !important;
+    margin: 0 !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+
+  .mcj-app-home #hotCompanionTrack .hot-info > p,
+  .mcj-app-home #recentCompanionTrack .hot-info > p,
+  .mcj-app-home #gameCompanionTrack .hot-info > p,
+  .mcj-app-home #reviewCompanionTrack .hot-info > p {
+    font-size: 11px !important;
+    margin: 0 !important;
+    opacity: 0.7 !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+
+  .mcj-app-home #hotCompanionTrack .hot-meta,
+  .mcj-app-home #recentCompanionTrack .hot-meta,
+  .mcj-app-home #gameCompanionTrack .hot-meta,
+  .mcj-app-home #reviewCompanionTrack .hot-meta {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    gap: 4px !important;
+    align-items: center !important;
+  }
+
+  .mcj-app-home #hotCompanionTrack .hot-orders,
+  .mcj-app-home #recentCompanionTrack .hot-orders,
+  .mcj-app-home #gameCompanionTrack .hot-orders,
+  .mcj-app-home #reviewCompanionTrack .hot-orders {
+    font-size: 13px !important;
+    font-weight: 800 !important;
+    color: #ffd0e6 !important;
+  }
+
+  .mcj-app-home #hotCompanionTrack .hot-tags,
+  .mcj-app-home #recentCompanionTrack .hot-tags,
+  .mcj-app-home #gameCompanionTrack .hot-tags,
+  .mcj-app-home #reviewCompanionTrack .hot-tags,
+  .mcj-app-home .hot-tags {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    gap: 4px !important;
+    justify-content: flex-start !important;
+    max-height: 44px !important;
+    overflow: hidden !important;
+  }
+
+  .mcj-app-home #hotCompanionTrack .hot-tags span,
+  .mcj-app-home #recentCompanionTrack .hot-tags span,
+  .mcj-app-home #gameCompanionTrack .hot-tags span,
+  .mcj-app-home #reviewCompanionTrack .hot-tags span,
+  .mcj-app-home .hot-tags span {
+    display: inline-flex !important;
+    align-items: center !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 2px 7px !important;
+    border-radius: 999px !important;
+    border: 1px solid rgba(255, 214, 232, 0.16) !important;
+    background: rgba(255, 255, 255, 0.04) !important;
+    font-size: 10px !important;
+    line-height: 1.3 !important;
+    white-space: nowrap !important;
+  }
+
+  .mcj-app-home #hotCompanionTrack .mini-order,
+  .mcj-app-home #recentCompanionTrack .mini-order,
+  .mcj-app-home #gameCompanionTrack .mini-order,
+  .mcj-app-home #reviewCompanionTrack .mini-order {
+    width: 100% !important;
+    min-height: 34px !important;
+    height: 34px !important;
+    margin-top: 6px !important;
+    border-radius: 11px !important;
+    font-size: 12px !important;
+  }
+
+  .mcj-app-home #hotCompanionTrack .hot-more-card,
+  .mcj-app-home #recentCompanionTrack .hot-more-card,
+  .mcj-app-home #gameCompanionTrack .hot-more-card,
+  .mcj-app-home #reviewCompanionTrack .hot-more-card {
+    min-height: 160px !important;
+    display: grid !important;
+    place-items: center !important;
+  }
+
+  /* Hide heavy TOP badges on mobile APP cards — reduce website chrome */
+  .mcj-app-home #hotCompanionTrack .companion-card:nth-child(1):not(.hot-more-card)::after,
+  .mcj-app-home #hotCompanionTrack .companion-card:nth-child(2):not(.hot-more-card)::after,
+  .mcj-app-home #hotCompanionTrack .companion-card:nth-child(3):not(.hot-more-card)::after,
+  .mcj-app-home #recentCompanionTrack .companion-card:nth-child(1):not(.hot-more-card)::after,
+  .mcj-app-home #recentCompanionTrack .companion-card:nth-child(2):not(.hot-more-card)::after,
+  .mcj-app-home #recentCompanionTrack .companion-card:nth-child(3):not(.hot-more-card)::after,
+  .mcj-app-home #gameCompanionTrack .companion-card:nth-child(1):not(.hot-more-card)::after,
+  .mcj-app-home #gameCompanionTrack .companion-card:nth-child(2):not(.hot-more-card)::after,
+  .mcj-app-home #gameCompanionTrack .companion-card:nth-child(3):not(.hot-more-card)::after,
+  .mcj-app-home #reviewCompanionTrack .companion-card:nth-child(1):not(.hot-more-card)::after,
+  .mcj-app-home #reviewCompanionTrack .companion-card:nth-child(2):not(.hot-more-card)::after,
+  .mcj-app-home #reviewCompanionTrack .companion-card:nth-child(3):not(.hot-more-card)::after {
+    display: none !important;
+  }
+
+  /* Popularity board denser */
+  .mcj-app-home .home-popularity-section {
+    margin-bottom: 16px !important;
+  }
+
+  .mcj-app-home .pop-podium,
+  .mcj-app-home .pop-list {
+    gap: 8px !important;
+  }
+
+  /* Site footer quieter on mobile app */
+  .mcj-app-home .site-footer {
+    margin: 8px 0 12px !important;
+    padding: 12px !important;
+    font-size: 11px !important;
+    opacity: 0.55 !important;
+  }
+
+  /* True APP tab bar — must not be trapped by body transform */
+  .mobile-bottom-nav,
+  .mobile-bottom-nav.mcj-app-tabbar,
+  .mcj-app-tabbar {
+    position: fixed !important;
+    left: 0 !important;
+    right: 0 !important;
+    top: auto !important;
+    bottom: 0 !important;
+    inset: auto 0 0 0 !important;
+    z-index: 10050 !important;
+    display: grid !important;
+    grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+    gap: 0 !important;
+    width: 100% !important;
+    max-width: 100vw !important;
+    margin: 0 !important;
+    padding: 6px 4px calc(6px + env(safe-area-inset-bottom, 0px)) !important;
+    border: 0 !important;
+    border-top: 1px solid rgba(255, 214, 232, 0.12) !important;
+    border-radius: 0 !important;
+    background: rgba(8, 6, 12, 0.96) !important;
+    backdrop-filter: blur(18px) !important;
+    -webkit-backdrop-filter: blur(18px) !important;
+    box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.28) !important;
+    box-sizing: border-box !important;
+    overflow: hidden !important;
+    transform: none !important;
+    filter: none !important;
+  }
+
+  .mobile-bottom-nav a,
+  .mcj-app-tabbar a {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 2px !important;
+    min-width: 0 !important;
+    width: 100% !important;
+    height: 48px !important;
+    padding: 0 2px !important;
+    border: 0 !important;
+    border-radius: 12px !important;
+    background: transparent !important;
+    color: rgba(247, 220, 233, 0.62) !important;
+    text-decoration: none !important;
+    box-sizing: border-box !important;
+  }
+
+  .mobile-bottom-nav a.active,
+  .mcj-app-tabbar a.active {
+    background: rgba(255, 158, 207, 0.1) !important;
+    color: #fff5fa !important;
+  }
+
+  .mcj-app-tab-ico {
+    font-size: 16px !important;
+    line-height: 1 !important;
+  }
+
+  .mcj-app-tab-label {
+    font-size: 10px !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.02em !important;
+    line-height: 1.1 !important;
+    white-space: nowrap !important;
+  }
+
+  /* Kill website-feeling ambient noise slightly on mobile */
+  .ambient-layer {
+    opacity: 0.35 !important;
+  }
+
+  /* Name + brand identity close together */
+  .mcj-app-home .hot-name-row {
+    display: flex !important;
+    align-items: center !important;
+    gap: 6px !important;
+    min-width: 0 !important;
+  }
+
+  .mcj-app-home .hot-name-row h3 {
+    min-width: 0 !important;
+    flex: 1 1 auto !important;
+  }
+
+  .mcj-app-home .mcj-brand-mark {
+    flex: 0 0 auto !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    padding: 2px 6px !important;
+    border-radius: 999px !important;
+    border: 1px solid rgba(255, 182, 216, 0.35) !important;
+    background: rgba(255, 120, 180, 0.12) !important;
+    color: #ffd6e8 !important;
+    font-size: 9px !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.04em !important;
+    line-height: 1.2 !important;
+    white-space: nowrap !important;
+  }
+
+  .mcj-app-home .hot-status {
+    font-size: 10px !important;
+    opacity: 0.8 !important;
+  }
+
+  .mcj-app-home .hot-tag-more {
+    opacity: 0.7 !important;
+  }
+
+  /* Reduce duplicated companion sections on APP home — keep hot discovery */
+  .mcj-app-home section:has(#recentCompanionTrack),
+  .mcj-app-home section:has(#gameCompanionTrack),
+  .mcj-app-home section:has(#reviewCompanionTrack) {
+    display: none !important;
+  }
+}
+
+@media (max-width: 390px) {
+  /* sizing owned by home-brand-hero.css */
+}
+
+@media (max-width: 360px) {
+  .home-brand-hero-btn {
+    flex: 1 1 100% !important;
+  }
+}
+
+/* Desktop: keep existing header/footer behavior; hide app tabbar */
+@media (min-width: 721px) {
+  .mobile-bottom-nav.mcj-app-tabbar,
+  .mcj-app-tabbar {
+    display: none !important;
+  }
+}

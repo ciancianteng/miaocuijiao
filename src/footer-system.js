@@ -49,7 +49,7 @@
       '<div class="mcj-footer-actions">' +
       '<button class="mcj-footer-link" type="button" data-open-coop>商务合作</button>' +
       '<a class="mcj-footer-link" href="companion-apply.html">申请陪玩</a>' +
-      '<button class="mcj-footer-link" type="button" data-open-discord>Discord 社群</button>' +
+      '<a class="mcj-footer-link" href="support.html#mcj-discord-community">Discord 社群</a>' +
       '</div></section>' +
       '</div><div class="mcj-footer-bottom"><span>© MEOW CUI JIAO ENTERPRISE. All rights reserved.</span>' + ssm + '</div></footer>';
   }

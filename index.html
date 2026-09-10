@@ -3498,10 +3498,12 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
   <link rel="stylesheet" href="src/real-data-admin.css">
   <link rel="stylesheet" href="src/gameplay-flow.css">
   <link rel="stylesheet" href="src/design-system.css">
-  <link rel="stylesheet" href="src/home-banner.css?v=20260811bannerUnify1">
+  <link rel="stylesheet" href="src/home-banner.css?v=20260910appProto2">
+  <link rel="stylesheet" href="src/home-brand-hero.css?v=20260910appProto2">
+  <link rel="stylesheet" href="src/home-trust-stats.css?v=20260910appProto2">
   <link rel="stylesheet" href="src/home-announcements.css?v=20260805annRotate1">
   <link rel="stylesheet" href="src/home-popularity.css">
-  <link rel="stylesheet" href="src/home-desktop.css">
+  <link rel="stylesheet" href="src/home-desktop.css?v=20260910appProto1">
   <link rel="stylesheet" href="src/login-modal.css?v=20260805loginUi1">
   <link rel="stylesheet" href="src/place-order-modal.css">
   <link rel="stylesheet" href="src/notify-system.css">
@@ -3514,11 +3516,12 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
   <script type="module" src="src/notify-system.js" defer></script>
   <script type="module" src="src/boss-header.js?v=20260805p0home1" defer></script>
   <script type="module" src="src/boss-forced-ack.js?v=20260805p0home1" defer></script>
-  <link rel="stylesheet" href="src/boss-header.css?v=20260805p0home1">
+  <link rel="stylesheet" href="src/boss-header.css?v=20260910appProto1">
   <link rel="stylesheet" href="/src/mcj-safe-area.css?v=20260802mobileP0c">
-  <link rel="stylesheet" href="src/home-mobile.css?v=20260804annMarquee3">
+  <link rel="stylesheet" href="src/home-mobile.css?v=20260910appProto1">
+  <link rel="stylesheet" href="src/home-app-mobile.css?v=20260910appProto2">
 </head>
-<body>
+<body class="mcj-app-shell">
   <div class="ambient-layer" aria-hidden="true"></div>
   <header class="site-header mcj-boss-header" data-mcj-boss-header="1" aria-label="顶部导航">
     <div class="mcj-boss-header-inner header-inner">
@@ -3541,31 +3544,48 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
       </div>
     </div>
   </header>
-  <main class="container">
-    <section class="mcj-home-hero" data-mcj-home-hero aria-label="MEOW CUI JIAO 首页 Banner"></section>
+  <main class="container mcj-app-home">
+    <section class="home-brand-hero" data-home-brand-hero aria-label="妙脆角 APP 首页顶部">
+      <div class="home-brand-hero-inner">
+        <div class="home-brand-hero-copy">
+          <p class="home-brand-hero-kicker">MEOW CUI JIAO</p>
+          <h1 class="home-brand-hero-title">妙脆角</h1>
+          <div class="home-brand-hero-stats home-trust-stats" data-home-brand-hero-stats data-home-daily-stats aria-label="平台实时数据" hidden></div>
+          <p class="home-brand-hero-tagline">专业陪玩，每一场游戏认真对待，每一位热爱电竞的你。</p>
+          <div class="home-brand-hero-actions">
+            <a class="home-brand-hero-btn primary" href="companion-center.html">进入陪玩大厅</a>
+            <a class="home-brand-hero-btn" href="support.html?start=1">联系客服</a>
+          </div>
+        </div>
+        <div class="home-brand-hero-visual" aria-hidden="true">
+          <span class="home-brand-hero-aura"></span>
+          <span class="mcj-chip mcj-chip--a"></span>
+          <span class="mcj-chip mcj-chip--b"></span>
+          <span class="mcj-chip mcj-chip--c"></span>
+          <span class="mcj-chip mcj-chip--d"></span>
+          <img class="home-brand-hero-mascot" src="assets/meow-cuijiao-hero-ip.webp" alt="" width="1024" height="1024" decoding="async" fetchpriority="high">
+        </div>
+      </div>
+    </section>
 
-    <div class="announcement-strip home-announcement-bar" id="homeAnnouncementBar" role="region" aria-label="官方公告">
+    <section class="mcj-home-hero mcj-home-hero--promo" data-mcj-home-hero aria-label="活动轮播"></section>
+
+<div class="announcement-strip home-announcement-bar" id="homeAnnouncementBar" role="region" aria-label="官方公告">
       <div class="home-announcement-label"><span aria-hidden="true">📢</span><strong>官方公告</strong></div>
       <div class="home-announcement-track-wrap" data-announcement-open data-empty="1" role="button" aria-label="暂无最新公告">
         <span class="home-announcement-static">暂无最新公告。</span>
       </div>
     </div>
 
-    <section class="section home-daily-stats" data-home-daily-stats aria-label="今日平台数据" hidden></section>
 
-    <section class="section quick-entry-section">
-      <div class="section-title compact-title"><div><h2>快速入口</h2><p>QUICK ACCESS</p></div></div>
-            <div class="quick-entry-grid">
-        <a class="neon-card quick-entry-card" href="companion-center.html" data-home-entry="companion-hall"><div><strong>陪玩大厅</strong><span>浏览已上架陪玩，立即下单</span></div></a>
-        <a class="neon-card quick-entry-card" href="more-gameplays.html" data-home-entry="more-gameplays"><div><strong>更多玩法</strong><span>护航、跑刀、代肝、趣味单</span></div></a>
-        <a class="neon-card quick-entry-card" href="custom-order.html" data-home-entry="custom-order"><div><strong>自定义订单</strong><span>填写需求，客服匹配陪玩</span></div></a>
-        <a class="neon-card quick-entry-card" href="team-lobby.html" data-home-entry="team-lobby" data-team-lobby-entry="1"><div><strong>组队大厅</strong><span>进入组队社区找队友</span></div></a>
-      </div>
+
+    <section class="section club-level-section" aria-label="俱乐部等级">
       <a class="neon-card club-level-entry-card" href="club-levels.html" data-home-entry="club-levels" style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:12px;padding:14px 16px;text-decoration:none;min-height:64px;width:100%;box-sizing:border-box">
         <div><strong style="display:block;font-size:16px;color:#fff">了解俱乐部等级制度</strong><span style="color:rgba(255,228,240,.7);font-size:13px">萌喵到喵皇 · 价格区间与升级权益</span></div>
         <span style="color:#f9a8d4;font-weight:700;white-space:nowrap">查看说明 →</span>
       </a>
     </section>
+
 
     <section class="section companion-apply-guide" data-companion-apply-section>
       <div class="neon-card companion-apply-guide-card">
@@ -3646,12 +3666,12 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
 
     <footer class="site-footer"><strong>MEOW CUI JIAO ENTERPRISE</strong><br><span>✓ Registered Malaysian Enterprise</span><br><small>© MEOW CUI JIAO ENTERPRISE. All rights reserved.</small><br><small class="mcj-footer-ssm" style="display:inline-block;margin-top:4px;font-size:11px;line-height:1.35;opacity:.85">SSM Registration No. 202603181917</small></footer>
   </main>
-  <nav class="mobile-bottom-nav" aria-label="底部导航">
-    <a class="active" href="index.html">首页</a>
-    <a href="companion-center.html">陪玩</a>
-    <a href="companion-center.html?service=voice">语音</a>
-    <a href="more-gameplays.html">玩法</a>
-    <a href="mine.html" data-mobile-mine>我的</a>
+    <nav class="mobile-bottom-nav mcj-app-tabbar" aria-label="底部导航">
+    <a class="active" href="index.html" data-app-tab="home"><span class="mcj-app-tab-ico" aria-hidden="true">⌂</span><span class="mcj-app-tab-label">首页</span></a>
+    <a href="companion-center.html" data-app-tab="hall"><span class="mcj-app-tab-ico" aria-hidden="true">▦</span><span class="mcj-app-tab-label">大厅</span></a>
+    <a href="orders.html" data-app-tab="orders"><span class="mcj-app-tab-ico" aria-hidden="true">☰</span><span class="mcj-app-tab-label">订单</span></a>
+    <a href="support.html?start=1" data-app-tab="support"><span class="mcj-app-tab-ico" aria-hidden="true">💬</span><span class="mcj-app-tab-label">客服</span></a>
+    <a href="mine.html" data-app-tab="mine" data-mobile-mine><span class="mcj-app-tab-ico" aria-hidden="true">☺</span><span class="mcj-app-tab-label">我的</span></a>
   </nav>
 
   <div class="modal" id="modal"><div class="dialog"><button class="close" data-close>×</button><div id="modalBody"></div></div></div>
@@ -4015,14 +4035,14 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
     });
     document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal()});
   </script>
-  <script type="module" src="src/site-data.js?v=20260804profileUuid1"></script>
+  <script type="module" src="src/site-data.js?v=20260910appProto1"></script>
   <script src="src/banner-crop.js?v=20260809bannerCropSync1"></script>
-  <script type="module" src="src/home-banner.js?v=20260815bannerMobileSort1"></script>
+  <script type="module" src="src/home-banner.js?v=20260910appProto2"></script>
   <script type="module" src="src/home-announcements.js?v=20260805annRotate1"></script>
-  <script type="module" src="src/home-daily-stats.js?v=20260908dailyReal"></script>
+  <script type="module" src="src/home-daily-stats.js?v=20260910appProto2"></script>
   <script src="src/companion-presence.js?v=20260805profileLock1"></script>
   <script src="/src/place-order-modal.js?v=20260811authUnify1" defer></script>
-  <script type="module" src="src/home-popularity.js?v=20260805profileLock1"></script>
+  <script type="module" src="src/home-popularity.js?v=20260910appProto1"></script>
   <script type="module" src="src/home-services.js"></script>
   <script type="module" src="src/companion-application.js"></script>
   <script>

@@ -1,0 +1,344 @@
+/* Support shell visual polish — App-like; keep chat protocol untouched */
+
+.support-page .support-shell,
+#supportApp.support-shell {
+  background:
+    radial-gradient(ellipse 70% 40% at 50% -10%, rgba(255, 126, 189, 0.12), transparent 60%),
+    #08070a !important;
+}
+
+.support-login-panel,
+.support-empty-panel {
+  width: min(420px, calc(100% - 32px)) !important;
+  margin: 0 auto !important;
+  padding: 28px 20px !important;
+  border-radius: 20px !important;
+  border: 1px solid rgba(255, 214, 232, 0.14) !important;
+  background: rgba(14, 12, 18, 0.92) !important;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.35) !important;
+  text-align: left !important;
+}
+
+.support-login-panel strong,
+.support-empty-panel strong {
+  display: block !important;
+  margin-bottom: 8px !important;
+  font-size: 20px !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.02em !important;
+  color: #fff8fc !important;
+}
+
+.support-login-panel p,
+.support-empty-panel p,
+.support-login-panel span,
+.support-empty-panel span {
+  margin: 0 0 14px !important;
+  line-height: 1.5 !important;
+  color: rgba(255, 226, 239, 0.62) !important;
+  font-size: 13px !important;
+}
+
+.support-login-panel .boss-btn,
+.support-empty-panel .boss-btn,
+.support-login-panel button,
+.support-empty-panel button,
+.support-btn.primary,
+.support-inline-link {
+  min-height: 44px !important;
+  border-radius: 14px !important;
+  font-weight: 700 !important;
+}
+
+.support-layout {
+  border-color: rgba(255, 214, 232, 0.12) !important;
+  border-radius: 20px !important;
+  background: linear-gradient(165deg, rgba(24, 16, 24, 0.98), rgba(8, 7, 12, 0.99)) !important;
+}
+
+.support-aside-head {
+  display: flex !important;
+  align-items: flex-start !important;
+  justify-content: space-between !important;
+  gap: 10px !important;
+  padding: 14px 14px 12px !important;
+  border-bottom: 1px solid rgba(255, 214, 232, 0.1) !important;
+}
+
+.support-aside-head h1 {
+  margin: 0 !important;
+  font-size: 18px !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.02em !important;
+}
+
+.support-aside-head p {
+  margin: 4px 0 0 !important;
+  color: rgba(255, 226, 239, 0.5) !important;
+  font-size: 12px !important;
+}
+
+.support-online-chip {
+  flex: 0 0 auto;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  min-height: 28px !important;
+  padding: 0 10px !important;
+  border-radius: 999px !important;
+  border: 1px solid rgba(255, 214, 232, 0.16) !important;
+  background: rgba(255, 255, 255, 0.04) !important;
+  color: rgba(255, 226, 239, 0.72) !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  white-space: nowrap !important;
+}
+
+.support-online-chip::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: rgba(160, 160, 170, 0.9);
+}
+
+.support-online-chip.is-online {
+  border-color: rgba(90, 220, 160, 0.35) !important;
+  color: #c8ffe0 !important;
+  background: rgba(60, 180, 120, 0.12) !important;
+}
+
+.support-online-chip.is-online::before {
+  background: #4ade80;
+  box-shadow: 0 0 8px rgba(74, 222, 128, 0.55);
+}
+
+.support-list-actions {
+  padding: 12px 12px 8px !important;
+}
+
+.support-list-actions .support-btn.primary {
+  width: 100% !important;
+  min-height: 46px !important;
+  border-radius: 14px !important;
+  border: 0 !important;
+  background: linear-gradient(135deg, #ff8ec8, #ff6aad) !important;
+  color: #1a0a14 !important;
+}
+
+.support-session-list .support-session,
+.support-session-list [data-open-conversation] {
+  border-radius: 14px !important;
+  margin: 0 8px 8px !important;
+}
+
+.support-main-head {
+  border-bottom: 1px solid rgba(255, 214, 232, 0.1) !important;
+}
+
+.support-composer textarea {
+  border-radius: 14px !important;
+  min-height: 44px !important;
+}
+
+.support-send-btn {
+  min-height: 44px !important;
+  min-width: 72px !important;
+  border-radius: 14px !important;
+}
+
+/* Discord community CTA — external, does not replace CS */
+.mcj-discord-cta-wrap {
+  padding: 10px 12px 4px;
+}
+
+.mcj-discord-cta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 72px;
+  padding: 12px 12px 12px 14px;
+  border: 1px solid rgba(255, 158, 207, 0.28);
+  border-radius: 16px;
+  background:
+    linear-gradient(135deg, rgba(255, 126, 189, 0.14), rgba(18, 12, 22, 0.92) 55%),
+    rgba(16, 12, 18, 0.96);
+  color: #fff8fc;
+  text-align: left;
+  cursor: pointer;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
+  transition: transform 0.16s ease, border-color 0.16s ease, background 0.16s ease, box-shadow 0.16s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mcj-discord-cta:hover {
+  border-color: rgba(255, 158, 207, 0.48);
+  box-shadow: 0 12px 32px rgba(255, 100, 170, 0.12), 0 10px 28px rgba(0, 0, 0, 0.3);
+  transform: translateY(-1px);
+}
+
+.mcj-discord-cta:active {
+  transform: translateY(1px) scale(0.99);
+  border-color: rgba(255, 158, 207, 0.55);
+}
+
+.mcj-discord-cta.is-soon {
+  opacity: 0.92;
+}
+
+.mcj-discord-cta-logo {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  background: linear-gradient(160deg, rgba(255, 158, 207, 0.28), rgba(255, 100, 170, 0.12));
+  border: 1px solid rgba(255, 214, 232, 0.22);
+  color: #ffd6e8;
+}
+
+.mcj-discord-cta-copy {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.mcj-discord-cta-copy strong {
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  color: #fff8fc;
+  line-height: 1.25;
+}
+
+.mcj-discord-cta-copy > span {
+  font-size: 12px;
+  font-weight: 650;
+  color: rgba(255, 214, 232, 0.78);
+  line-height: 1.3;
+}
+
+.mcj-discord-cta-copy em {
+  font-style: normal;
+  font-size: 11px;
+  color: rgba(255, 214, 232, 0.48);
+  line-height: 1.3;
+}
+
+.mcj-discord-cta-action {
+  flex: 0 0 auto;
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  min-width: 52px;
+}
+
+.mcj-discord-cta-action i {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 158, 207, 0.35);
+  background: linear-gradient(180deg, #ffe2ef, #ff9ecf);
+  color: #1b0712;
+  font-style: normal;
+  font-weight: 800;
+  font-size: 15px;
+  line-height: 1;
+  box-shadow: 0 0 14px rgba(255, 158, 207, 0.28);
+}
+
+.mcj-discord-cta-action small {
+  font-size: 10px;
+  font-weight: 700;
+  color: rgba(255, 214, 232, 0.62);
+  white-space: nowrap;
+}
+
+.mcj-discord-cta.is-soon .mcj-discord-cta-action i {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 214, 232, 0.2);
+  color: rgba(255, 214, 232, 0.72);
+  box-shadow: none;
+}
+
+@media (max-width: 720px) {
+  .mcj-discord-cta-wrap {
+    padding: 8px 10px 2px;
+  }
+
+  .mcj-discord-cta {
+    min-height: 68px;
+    padding: 11px 11px 11px 12px;
+    border-radius: 14px;
+    gap: 10px;
+  }
+
+  .mcj-discord-cta-logo {
+    width: 38px;
+    height: 38px;
+    border-radius: 12px;
+  }
+
+  .mcj-discord-cta-copy strong {
+    font-size: 13px;
+  }
+
+  .support-login-panel,
+  .support-empty-panel {
+    width: calc(100% - 24px) !important;
+    padding: 22px 16px !important;
+    border-radius: 18px !important;
+  }
+
+  .support-shell {
+    padding: 8px 8px calc(10px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+
+  .support-layout {
+    border-radius: 16px !important;
+  }
+
+  .support-aside-head {
+    padding: 12px !important;
+  }
+}
+
+
+/* Guest public Discord community card polish */
+.mcj-public-channels-label{
+  margin:0 0 8px;
+  padding:0 2px;
+  color:rgba(255,226,239,.48);
+  font-size:11px;
+  font-weight:750;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+}
+.mcj-discord-cta-foot{
+  margin:8px 2px 0;
+  color:rgba(255,226,239,.42);
+  font-size:11px;
+  line-height:1.4;
+}
+.mcj-discord-cta{
+  min-height:88px!important;
+  border-radius:18px!important;
+  border-color:rgba(255,158,207,.32)!important;
+  background:
+    radial-gradient(circle at 92% 18%,rgba(255,126,189,.22),transparent 42%),
+    linear-gradient(135deg,rgba(255,126,189,.16),rgba(14,10,18,.96) 52%)!important;
+}
+.mcj-discord-cta-logo{
+  width:48px!important;
+  height:48px!important;
+  border-radius:16px!important;
+}
+.mcj-discord-cta-copy strong{font-size:15px!important}
+.mcj-discord-cta-action i{width:40px!important;height:40px!important}
+.mcj-discord-cta-action small{font-weight:800!important;color:rgba(255,214,232,.72)!important}
+.support-guest-panel p{margin:0 0 16px!important}

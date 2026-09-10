@@ -1,0 +1,13 @@
+{
+  "scrollWidth": 360,
+  "clientWidth": 360,
+  "overflowX": false,
+  "mascotSrc": "http://127.0.0.1:5179/assets/meow-cuijiao-hero-ip-ouEvZ9-k.webp",
+  "bannerH": 128,
+  "mascotW": 106,
+  "order": {
+    "hero": true,
+    "banner": true,
+    "ann": true
+  }
+}

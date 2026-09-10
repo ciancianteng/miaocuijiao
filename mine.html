@@ -94,6 +94,7 @@
       background:rgba(10,10,12,.9);
       box-shadow:0 10px 28px rgba(0,0,0,.28);
     }
+    .entry a.entry-trigger{text-decoration:none;color:inherit;box-sizing:border-box}
     .entry-trigger{
       width:100%;min-height:70px;height:70px;padding:0 18px;
       display:flex;align-items:center;justify-content:space-between;gap:12px;
@@ -197,6 +198,32 @@
       max-width:18em;
     }
     .state{margin-top:10px;color:#ffb9d6;min-height:20px}
+
+    /* App-style mine polish (features preserved) */
+    body{background:radial-gradient(ellipse 80% 40% at 50% -8%,rgba(255,126,189,.1),transparent 55%),#050505!important}
+    .boss-shell{width:min(430px,calc(100% - 24px));padding:4px 0 calc(28px + env(safe-area-inset-bottom,0px))}
+    .boss-id{gap:16px;padding:18px 16px;margin:0 0 16px;border-radius:20px;border:1px solid rgba(255,214,232,.14);background:linear-gradient(160deg,rgba(28,18,28,.95),rgba(10,10,12,.96));box-shadow:0 14px 36px rgba(0,0,0,.32)}
+    .boss-id-avatar{width:64px;height:64px;flex-basis:64px;border:2px solid rgba(255,158,207,.35)}
+    .boss-id-meta h1{font-size:20px}
+    .boss-stats{gap:8px}
+    .boss-stat{min-height:64px;border-radius:14px;padding:10px 12px;border-color:rgba(255,214,232,.16);background:rgba(255,255,255,.03)}
+    .boss-stat-value{font-size:20px}
+    .mine-quick{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:0 0 16px}
+    .mine-quick a,.mine-quick button{
+      display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;
+      min-height:72px;padding:10px 4px;border-radius:16px;border:1px solid rgba(255,214,232,.12);
+      background:rgba(255,255,255,.03);color:#fff8fc;text-decoration:none;font:inherit;cursor:pointer;
+      -webkit-tap-highlight-color:transparent;
+    }
+    .mine-quick-ico{width:28px;height:28px;border-radius:10px;display:grid;place-items:center;background:rgba(255,158,207,.12);font-size:14px}
+    .mine-quick-label{font-size:11px;font-weight:700;letter-spacing:.02em;color:rgba(255,232,242,.82)}
+    .mine-section-title{margin:4px 2px 8px;font-size:12px;font-weight:700;letter-spacing:.08em;color:rgba(255,214,232,.45);text-transform:uppercase}
+    .entry-stack{gap:10px}
+    .entry{border-radius:16px;border-color:rgba(255,214,232,.12);background:rgba(12,10,16,.92);box-shadow:none}
+    .entry-trigger{min-height:56px;height:56px;padding:0 14px;font-size:15px}
+    .entry-arrow{width:26px;height:26px;flex-basis:26px;border-color:rgba(255,214,232,.22)}
+    .empty-card{border-radius:18px;border-color:rgba(255,214,232,.14);background:rgba(14,12,18,.94)}
+
     .review-tip{margin:0 0 14px;padding:12px 14px;border:1px solid rgba(232,154,196,.28);border-radius:14px;background:rgba(232,154,196,.08);color:#ffd6e7;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
     .review-tip p{margin:0;font-size:13px;line-height:1.45}
     .review-tip .tip-actions{display:flex;gap:8px;align-items:center}
@@ -272,6 +299,13 @@
         }catch(e){}
       }
       function token(){try{return sessionStorage.getItem('mcjAuthAccessToken')||localStorage.getItem('mcjAuthAccessToken')||''}catch(e){return ''}}
+      function fetchWithTimeout(url,opts,ms){
+        var ctrl=typeof AbortController!=='undefined'?new AbortController():null;
+        var timer=setTimeout(function(){try{ctrl&&ctrl.abort()}catch(e){}},ms||10000);
+        var o=Object.assign({},opts||{});
+        if(ctrl)o.signal=ctrl.signal;
+        return fetch(url,o).finally(function(){clearTimeout(timer)});
+      }
       function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
       function date(v){if(!v)return '-';try{return new Date(v).toLocaleString('zh-CN',{hour12:false})}catch(e){return v}}
       function avatarHtml(user){var src=user&&user.avatarUrl;if(src)return '<img src="'+esc(src)+'" alt="头像">';var name=(user&&user.displayName)||'老板';return esc(name.slice(0,1)||'B')}
@@ -379,7 +413,7 @@
       }
       function paint(){
         if(!token()){root.innerHTML='<section class="empty-card"><h1>请先登录</h1><p style="color:#9ca3af">登录后可以查看账号资料、订单和在线客服。</p><a class="boss-btn" href="index.html">返回首页登录</a></section>';return}
-        if(state.loading){root.innerHTML='<section class="empty-card">正在登录…</section>';return}
+        if(state.loading){root.innerHTML='<section class="empty-card">加载中…</section>';return}
         if(state.error){root.innerHTML='<section class="empty-card"><h1>账号资料读取失败</h1><p style="color:#ffb9d6">'+esc(state.error)+'</p><button class="boss-btn" data-refresh>重试</button></section>';return}
         var u=state.user||{};
         var publicUid=u.bossUid||u.boss_uid||u.uid||'-';
@@ -399,16 +433,27 @@
               '</div>'+
             '</div>'+
             '<div class="boss-stats">'+
-              '<a class="boss-stat" href="points.html"><span class="boss-stat-label">⭐ 积分</span><strong class="boss-stat-value">'+esc(pointsBal)+'</strong></a>'+
-              '<a class="boss-stat" href="my-direct-companions.html"><span class="boss-stat-label">👥 直属</span><strong class="boss-stat-value">'+esc(directCount)+'</strong></a>'+
+              '<a class="boss-stat" href="points.html"><span class="boss-stat-label">积分</span><strong class="boss-stat-value">'+esc(pointsBal)+'</strong></a>'+
+              '<a class="boss-stat" href="my-direct-companions.html"><span class="boss-stat-label">直属</span><strong class="boss-stat-value">'+esc(directCount)+'</strong></a>'+
             '</div>'+
           '</section>'+
           (setHint?'<p style="margin:0 0 14px;color:#fbbf24;font-size:12px;line-height:1.45">'+esc(setHint)+'</p>':'')+
+          '<div class="mine-quick" aria-label="常用功能">'+
+            '<a href="orders.html"><span class="mine-quick-ico" aria-hidden="true">单</span><span class="mine-quick-label">订单</span></a>'+
+            '<a href="messages.html"><span class="mine-quick-ico" aria-hidden="true">信</span><span class="mine-quick-label">消息</span></a>'+
+            '<a href="support.html?start=1"><span class="mine-quick-ico" aria-hidden="true">客</span><span class="mine-quick-label">客服</span></a>'+
+            '<a href="recharge.html"><span class="mine-quick-ico" aria-hidden="true">充</span><span class="mine-quick-label">充值</span></a>'+
+          '</div>'+
+          '<p class="mine-section-title">账户与服务</p>'+
           '<div class="entry-stack">'+
           entryRow('profile','编辑资料')+
           entryRow('assets','我的资产')+
           entryRow('security','账号安全')+
           entryRow('orders','订单与服务')+
+          '<section class="entry"><a class="entry-trigger" href="messages.html"><span class="entry-title">消息中心</span><span class="entry-arrow" aria-hidden="true"></span></a></section>'+
+          '<section class="entry"><a class="entry-trigger" href="points.html"><span class="entry-title">我的积分</span><span class="entry-arrow" aria-hidden="true"></span></a></section>'+
+          '<section class="entry"><a class="entry-trigger" href="gifts.html"><span class="entry-title">礼物中心</span><span class="entry-arrow" aria-hidden="true"></span></a></section>'+
+          '<section class="entry"><a class="entry-trigger" href="my-direct-companions.html"><span class="entry-title">直属陪玩</span><span class="entry-arrow" aria-hidden="true"></span></a></section>'+
           '</div>'+
           '<div class="mine-logout-wrap"><button class="mine-logout" type="button" data-logout>退出登录</button></div>';
       }
@@ -420,7 +465,7 @@ async function load(){
         if(params.get('register')==='1'&&!token()){state.loading=false;paintRegister();return}
         state.loading=true;state.error='';paint();
         try{
-          var res=await fetch('/api/auth?action=me',{headers:{Authorization:'Bearer '+token()}});
+          var res=await fetchWithTimeout('/api/auth?action=me',{headers:{Authorization:'Bearer '+token()},cache:'no-store'},10000);
           var body=await res.json().catch(function(){return {}});
           if(!res.ok||!body.ok)throw new Error(body.message||'账号资料读取失败');
           if(!(body.user.hasBoss||body.user.role==='boss'||body.user.role==='customer'))throw new Error('当前账号不是老板角色。');
@@ -437,7 +482,7 @@ async function load(){
           try{var pr=await fetch('/api/points?limit=1',{headers:{Authorization:'Bearer '+token(),Accept:'application/json'},cache:'no-store'});var pb=await pr.json().catch(function(){return {}});if(pr.ok&&pb.ok)state.points=pb.account||{balance:0,lifetimeEarned:0};else state.points={balance:0,lifetimeEarned:0};}catch(e2){state.points={balance:0,lifetimeEarned:0}}
           try{var dr=await fetch('/api/boss/direct-companions',{headers:{Authorization:'Bearer '+token(),Accept:'application/json'},cache:'no-store'});var db=await dr.json().catch(function(){return {}});if(dr.ok&&db.ok&&Array.isArray(db.companions))state.directCount=db.companions.length;else state.directCount=0;}catch(e3){state.directCount=0}
         }catch(err){
-          var msg=String(err&&err.message||'账号资料读取失败');
+          var msg=String((err&&err.name==='AbortError')?'加载超时，请重试':(err&&err.message)||'账号资料读取失败');
           // Keep valid session on profile init failure — never treat as logged out.
           if(/账号初始化失败|PROFILE_INIT_FAILED|未绑定平台资料/.test(msg)){
             state.error='账号初始化失败，请刷新重试或联系客服。';

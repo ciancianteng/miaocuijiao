@@ -8,7 +8,7 @@
 (function () {
   "use strict";
 
-  var GATE_VERSION = "20260909authHangFix1";
+  var GATE_VERSION = "20260910supportGuest1";
   var OVERLAY_ID = "mcjAuthBootOverlay";
   /** Once true, deferred DOMContentLoaded overlay paint must no-op (auth hang fix). */
   var gateClosed = false;
@@ -468,8 +468,10 @@
     // Soft session alone NEVER unlocks. Non-expired access JWT unlocks immediately.
     // Expired access + refresh → keep pending overlay; role-gates/MCJBossAuth restores.
     // NOTE: profile.html is public companion detail — do NOT gate it.
+    // NOTE: support.html is a public contact hub (Discord / channels) — guests MUST enter.
+    //       Account-bound chat/order actions still require login inside the page.
     if (
-      /\/(mine|orders|support|recharge|messages|favorites|payment-confirm|order-confirm|gifts)\.html$/i.test(
+      /\/(mine|orders|recharge|messages|favorites|payment-confirm|order-confirm|gifts)\.html$/i.test(
         p
       )
     ) {

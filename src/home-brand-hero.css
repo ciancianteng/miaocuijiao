@@ -1,0 +1,511 @@
+/* Homepage brand hero — Reference B layout rhythm + Meow Cui Jiao IP (Reference A) */
+
+.home-brand-hero,
+.container > .home-brand-hero {
+  --brand-hero-bleed: 24px;
+  --brand-hero-ink: #07050a;
+  --brand-hero-pink: #ff7ebd;
+  position: relative !important;
+  display: block !important;
+  box-sizing: border-box !important;
+  width: calc(100% + (var(--brand-hero-bleed) * 2)) !important;
+  max-width: none !important;
+  margin-left: calc(var(--brand-hero-bleed) * -1) !important;
+  margin-right: calc(var(--brand-hero-bleed) * -1) !important;
+  margin-top: 0 !important;
+  margin-bottom: 10px !important;
+  min-height: 0 !important;
+  height: auto !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  overflow: visible !important;
+  isolation: isolate !important;
+  background:
+    radial-gradient(ellipse 42% 58% at 88% 42%, rgba(255, 126, 189, 0.16), transparent 70%),
+    radial-gradient(ellipse 28% 36% at 8% 18%, rgba(255, 158, 207, 0.06), transparent 62%),
+    linear-gradient(165deg, #09070c 0%, var(--brand-hero-ink) 55%, #050406 100%) !important;
+  box-shadow: none !important;
+}
+
+.home-brand-hero::before,
+.home-brand-hero::after {
+  content: none !important;
+  display: none !important;
+}
+
+.home-brand-hero-inner {
+  position: relative !important;
+  z-index: 2 !important;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1.15fr) minmax(160px, 0.72fr) !important;
+  grid-template-areas: "copy mascot" !important;
+  align-items: center !important;
+  gap: 8px 12px !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  padding: 22px 28px 18px !important;
+  box-sizing: border-box !important;
+  overflow: visible !important;
+}
+
+.home-brand-hero-copy {
+  grid-area: copy !important;
+  position: relative !important;
+  z-index: 4 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: flex-start !important;
+  gap: 10px !important;
+  max-width: 520px !important;
+  min-width: 0 !important;
+}
+
+.home-brand-hero-kicker {
+  margin: 0 !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.22em !important;
+  text-transform: uppercase !important;
+  color: rgba(255, 212, 230, 0.62) !important;
+}
+
+.home-brand-hero-title {
+  margin: 0 !important;
+  padding: 0 !important;
+  font-family: "Microsoft YaHei UI", "Segoe UI", Inter, sans-serif !important;
+  font-size: clamp(34px, 4.2vw, 52px) !important;
+  font-weight: 900 !important;
+  line-height: 1.05 !important;
+  letter-spacing: 0.02em !important;
+  color: #fff8fc !important;
+  text-shadow: none !important;
+}
+
+.home-brand-hero-title span {
+  display: none !important;
+}
+
+.home-brand-hero-tagline {
+  margin: 0 !important;
+  max-width: min(28em, 100%) !important;
+  font-size: 13px !important;
+  line-height: 1.55 !important;
+  color: rgba(255, 232, 242, 0.78) !important;
+  white-space: normal !important;
+  overflow-wrap: anywhere !important;
+}
+
+.home-brand-hero-actions {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 8px !important;
+  margin-top: 2px !important;
+  width: 100% !important;
+}
+
+.home-brand-hero-btn {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  min-height: 40px !important;
+  padding: 0 16px !important;
+  border-radius: 12px !important;
+  border: 1px solid rgba(255, 214, 232, 0.22) !important;
+  background: rgba(255, 255, 255, 0.04) !important;
+  color: #ffe8f2 !important;
+  font-size: 13px !important;
+  font-weight: 700 !important;
+  text-decoration: none !important;
+  box-shadow: none !important;
+}
+
+.home-brand-hero-btn.primary {
+  border: 0 !important;
+  background: linear-gradient(135deg, #ff8ec8 0%, #ff5eaa 55%, #e84d96 100%) !important;
+  color: #1a0610 !important;
+}
+
+/* Stats under title — Reference B compact strip, not cards */
+.home-brand-hero-stats,
+.home-brand-hero [data-home-daily-stats],
+.home-brand-hero .home-trust-stats {
+  width: 100% !important;
+  max-width: 100% !important;
+  margin: 2px 0 0 !important;
+  padding: 0 !important;
+}
+
+.home-brand-hero .home-trust-strip {
+  padding: 10px 0 !important;
+  border-top: 1px solid rgba(255, 214, 232, 0.12) !important;
+  border-bottom: 1px solid rgba(255, 214, 232, 0.12) !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.home-brand-hero .home-trust-item {
+  align-items: flex-start !important;
+  gap: 4px !important;
+  padding: 0 14px 0 0 !important;
+  text-align: left !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.home-brand-hero .home-trust-item:not(:last-child)::after {
+  content: "" !important;
+  position: absolute !important;
+  top: 14% !important;
+  bottom: 14% !important;
+  right: 6px !important;
+  width: 1px !important;
+  background: rgba(255, 214, 232, 0.18) !important;
+}
+
+.home-brand-hero .home-trust-value,
+.home-brand-hero .home-trust-item strong.home-trust-value {
+  font-size: clamp(20px, 2.4vw, 28px) !important;
+  letter-spacing: -0.02em !important;
+  text-shadow: none !important;
+}
+
+.home-brand-hero .home-trust-label,
+.home-brand-hero .home-trust-item span.home-trust-label {
+  font-size: 11px !important;
+  letter-spacing: 0.04em !important;
+  color: rgba(255, 226, 239, 0.55) !important;
+}
+
+.home-brand-hero .home-trust-empty {
+  padding: 8px 0 !important;
+  border: 0 !important;
+  border-top: 1px solid rgba(255, 214, 232, 0.12) !important;
+  border-bottom: 1px solid rgba(255, 214, 232, 0.12) !important;
+  background: transparent !important;
+  text-align: left !important;
+  font-size: 12px !important;
+}
+
+/* Floating cat IP — no square card, pointer-events none */
+.home-brand-hero-visual {
+  grid-area: mascot !important;
+  position: relative !important;
+  z-index: 3 !important;
+  display: grid !important;
+  place-items: end center !important;
+  align-self: stretch !important;
+  min-height: 0 !important;
+  height: 100% !important;
+  overflow: visible !important;
+  pointer-events: none !important;
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+.home-brand-hero-aura {
+  position: absolute !important;
+  width: 78% !important;
+  aspect-ratio: 1 !important;
+  right: 4% !important;
+  bottom: 6% !important;
+  border-radius: 50% !important;
+  background: radial-gradient(circle, rgba(255, 126, 189, 0.28) 0%, rgba(255, 126, 189, 0.06) 45%, transparent 72%) !important;
+  filter: blur(10px) !important;
+  z-index: 0 !important;
+  pointer-events: none !important;
+}
+
+.home-brand-hero-mascot {
+  position: relative !important;
+  z-index: 2 !important;
+  display: block !important;
+  width: clamp(168px, 28vw, 280px) !important;
+  max-width: 100% !important;
+  height: auto !important;
+  margin: 0 -4% -4% 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  object-fit: contain !important;
+  object-position: center bottom !important;
+  transform: none !important;
+  clip-path: none !important;
+  -webkit-mask-image: none !important;
+  mask-image: none !important;
+  filter: drop-shadow(0 12px 28px rgba(0, 0, 0, 0.45)) drop-shadow(0 0 18px rgba(255, 110, 180, 0.28)) !important;
+  animation: homeBrandMascotFloat 5.2s ease-in-out infinite !important;
+  pointer-events: none !important;
+}
+
+/* Triangle “妙脆角” chips — decorative only */
+.mcj-chip {
+  position: absolute !important;
+  z-index: 1 !important;
+  width: 14px !important;
+  height: 14px !important;
+  background: linear-gradient(145deg, #ff9ed0, #ff6fb0) !important;
+  clip-path: polygon(50% 6%, 94% 88%, 6% 88%) !important;
+  opacity: 0.85 !important;
+  pointer-events: none !important;
+  filter: drop-shadow(0 0 6px rgba(255, 126, 189, 0.45)) !important;
+}
+
+.mcj-chip--a {
+  top: 12% !important;
+  left: 8% !important;
+  transform: rotate(-18deg) !important;
+  animation: homeBrandChip 4.8s ease-in-out infinite !important;
+}
+
+.mcj-chip--b {
+  top: 28% !important;
+  right: 6% !important;
+  width: 11px !important;
+  height: 11px !important;
+  background: linear-gradient(145deg, #ffe08a, #ffb84d) !important;
+  transform: rotate(22deg) !important;
+  animation: homeBrandChip 5.4s ease-in-out infinite 0.4s !important;
+}
+
+.mcj-chip--c {
+  bottom: 22% !important;
+  left: 2% !important;
+  width: 10px !important;
+  height: 10px !important;
+  transform: rotate(8deg) !important;
+  animation: homeBrandChip 4.2s ease-in-out infinite 0.9s !important;
+}
+
+.mcj-chip--d {
+  bottom: 38% !important;
+  right: 18% !important;
+  width: 9px !important;
+  height: 9px !important;
+  background: linear-gradient(145deg, #ffe08a, #ff9ed0) !important;
+  transform: rotate(-28deg) !important;
+  opacity: 0.7 !important;
+  animation: homeBrandChip 5.8s ease-in-out infinite 1.2s !important;
+}
+
+@keyframes homeBrandMascotFloat {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+@keyframes homeBrandChip {
+  0%,
+  100% {
+    translate: 0 0;
+    opacity: 0.75;
+  }
+  50% {
+    translate: 0 -6px;
+    opacity: 1;
+  }
+}
+
+/* Compact promo carousel — Reference B short banner */
+.container > .mcj-home-hero.mcj-home-hero--promo,
+.mcj-home-hero[data-mcj-home-hero].mcj-home-hero--promo {
+  --mcj-hero-bleed: 24px;
+  position: relative !important;
+  z-index: 5 !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  margin: 4px 0 12px !important;
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  aspect-ratio: 2.35 / 1 !important;
+  border-radius: 18px !important;
+  border: 0 !important;
+  overflow: hidden !important;
+  isolation: isolate !important;
+  background: #0a070c !important;
+  box-shadow: none !important;
+  pointer-events: auto !important;
+}
+
+.container > .mcj-home-hero.mcj-home-hero--promo[hidden],
+.mcj-home-hero[data-mcj-home-hero].mcj-home-hero--promo[hidden] {
+  display: none !important;
+  margin: 0 !important;
+  min-height: 0 !important;
+}
+
+.mcj-home-hero--promo .mcj-hero-overlay {
+  display: none !important;
+}
+
+.mcj-home-hero--promo .mcj-hero-arrow {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+.mcj-home-hero--promo .mcj-hero-dots {
+  bottom: 8px !important;
+  gap: 6px !important;
+}
+
+.mcj-home-hero--promo .mcj-hero-dots button {
+  width: 6px !important;
+  height: 6px !important;
+  border-radius: 999px !important;
+  opacity: 0.45 !important;
+}
+
+.mcj-home-hero--promo .mcj-hero-dots button.is-active {
+  width: 14px !important;
+  opacity: 1 !important;
+  background: #ff8ec8 !important;
+}
+
+@media (min-width: 1024px) {
+  .home-brand-hero-inner {
+    padding: 28px 36px 22px !important;
+    gap: 16px 24px !important;
+  }
+
+  .home-brand-hero-mascot {
+    width: clamp(200px, 22vw, 300px) !important;
+  }
+
+  .container > .mcj-home-hero.mcj-home-hero--promo,
+  .mcj-home-hero[data-mcj-home-hero].mcj-home-hero--promo {
+    aspect-ratio: 2.6 / 1 !important;
+    max-height: 220px !important;
+  }
+}
+
+@media (max-width: 720px) {
+  .home-brand-hero,
+  .container > .home-brand-hero {
+    --brand-hero-bleed: 14px;
+    margin-bottom: 6px !important;
+    border-radius: 0 0 20px 20px !important;
+    overflow: hidden !important;
+  }
+
+  .home-brand-hero-inner {
+    grid-template-columns: minmax(0, 1fr) clamp(112px, 34vw, 148px) !important;
+    gap: 4px 2px !important;
+    padding: 12px 14px 10px !important;
+    align-items: start !important;
+  }
+
+  .home-brand-hero-copy {
+    gap: 8px !important;
+    max-width: none !important;
+    padding-right: 0 !important;
+  }
+
+  .home-brand-hero-kicker {
+    font-size: 10px !important;
+    letter-spacing: 0.16em !important;
+  }
+
+  .home-brand-hero-title {
+    font-size: clamp(26px, 7.2vw, 32px) !important;
+  }
+
+  .home-brand-hero-tagline {
+    font-size: 12px !important;
+    max-width: 16em !important;
+  }
+
+  .home-brand-hero-actions {
+    gap: 8px !important;
+  }
+
+  .home-brand-hero-btn {
+    flex: 1 1 calc(50% - 4px) !important;
+    min-height: 36px !important;
+    font-size: 12px !important;
+    border-radius: 11px !important;
+  }
+
+  .home-brand-hero .home-trust-strip {
+    padding: 8px 0 !important;
+  }
+
+  .home-brand-hero .home-trust-item {
+    padding: 0 8px 0 0 !important;
+  }
+
+  .home-brand-hero .home-trust-value,
+  .home-brand-hero .home-trust-item strong.home-trust-value {
+    font-size: 17px !important;
+  }
+
+  .home-brand-hero .home-trust-label,
+  .home-brand-hero .home-trust-item span.home-trust-label {
+    font-size: 10px !important;
+  }
+
+  .home-brand-hero-visual {
+    place-items: end center !important;
+    margin-right: -6px !important;
+  }
+
+  .home-brand-hero-mascot {
+    width: clamp(108px, 32vw, 142px) !important;
+    margin: 0 -2% -2% 0 !important;
+  }
+
+  .mcj-chip--a,
+  .mcj-chip--c {
+    display: none !important;
+  }
+
+  .container > .mcj-home-hero.mcj-home-hero--promo,
+  .mcj-home-hero[data-mcj-home-hero].mcj-home-hero--promo {
+    --mcj-hero-bleed: 14px;
+    width: calc(100% + 28px) !important;
+    margin-left: -14px !important;
+    margin-right: -14px !important;
+    margin-top: 2px !important;
+    margin-bottom: 10px !important;
+    aspect-ratio: 2.2 / 1 !important;
+    max-height: 128px !important;
+    min-height: 96px !important;
+    border-radius: 16px !important;
+    box-shadow: none !important;
+  }
+}
+
+@media (max-width: 390px) {
+  .home-brand-hero-title {
+    font-size: 26px !important;
+  }
+
+  .home-brand-hero-mascot {
+    width: clamp(100px, 30vw, 128px) !important;
+  }
+
+  .container > .mcj-home-hero.mcj-home-hero--promo,
+  .mcj-home-hero[data-mcj-home-hero].mcj-home-hero--promo {
+    max-height: 112px !important;
+  }
+}
+
+@media (max-width: 360px) {
+  .home-brand-hero-inner {
+    grid-template-columns: minmax(0, 1fr) 100px !important;
+  }
+
+  .home-brand-hero-btn {
+    flex: 1 1 100% !important;
+  }
+}
