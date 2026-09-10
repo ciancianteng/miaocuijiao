@@ -316,24 +316,18 @@
   }
 }
 
-/* Compact promo carousel — Reference B short banner */
+/* Promo carousel shell — size/ratio/dots owned by home-banner-promo.css (Linglu) */
 .container > .mcj-home-hero.mcj-home-hero--promo,
 .mcj-home-hero[data-mcj-home-hero].mcj-home-hero--promo {
-  --mcj-hero-bleed: 24px;
   position: relative !important;
-  z-index: 5 !important;
-  width: 100% !important;
-  max-width: 100% !important;
-  margin: 4px 0 12px !important;
+  z-index: 6 !important;
   height: auto !important;
   min-height: 0 !important;
   max-height: none !important;
-  aspect-ratio: 2.35 / 1 !important;
-  border-radius: 18px !important;
-  border: 0 !important;
-  overflow: hidden !important;
-  isolation: isolate !important;
-  background: #0a070c !important;
+  /* Do NOT set aspect-ratio / overflow:hidden here — viewport owns ratio; dots sit below */
+  aspect-ratio: auto !important;
+  overflow: visible !important;
+  background: transparent !important;
   box-shadow: none !important;
   pointer-events: auto !important;
 }
@@ -349,29 +343,6 @@
   display: none !important;
 }
 
-.mcj-home-hero--promo .mcj-hero-arrow {
-  opacity: 0 !important;
-  pointer-events: none !important;
-}
-
-.mcj-home-hero--promo .mcj-hero-dots {
-  bottom: 8px !important;
-  gap: 6px !important;
-}
-
-.mcj-home-hero--promo .mcj-hero-dots button {
-  width: 6px !important;
-  height: 6px !important;
-  border-radius: 999px !important;
-  opacity: 0.45 !important;
-}
-
-.mcj-home-hero--promo .mcj-hero-dots button.is-active {
-  width: 14px !important;
-  opacity: 1 !important;
-  background: #ff8ec8 !important;
-}
-
 @media (min-width: 1024px) {
   .home-brand-hero-inner {
     padding: 28px 36px 22px !important;
@@ -382,11 +353,7 @@
     width: clamp(200px, 22vw, 300px) !important;
   }
 
-  .container > .mcj-home-hero.mcj-home-hero--promo,
-  .mcj-home-hero[data-mcj-home-hero].mcj-home-hero--promo {
-    aspect-ratio: 2.6 / 1 !important;
-    max-height: 220px !important;
-  }
+  /* Desktop banner ratio owned by home-banner-promo.css */
 }
 
 @media (max-width: 720px) {
@@ -469,20 +436,7 @@
     display: none !important;
   }
 
-  .container > .mcj-home-hero.mcj-home-hero--promo,
-  .mcj-home-hero[data-mcj-home-hero].mcj-home-hero--promo {
-    --mcj-hero-bleed: 14px;
-    width: calc(100% + 28px) !important;
-    margin-left: -14px !important;
-    margin-right: -14px !important;
-    margin-top: 2px !important;
-    margin-bottom: 10px !important;
-    aspect-ratio: 2.2 / 1 !important;
-    max-height: 128px !important;
-    min-height: 96px !important;
-    border-radius: 16px !important;
-    box-shadow: none !important;
-  }
+  /* Banner size owned by home-banner-promo.css (Linglu 2.35:1) — do not override here */
 }
 
 @media (max-width: 390px) {
@@ -492,11 +446,6 @@
 
   .home-brand-hero-mascot {
     width: clamp(100px, 30vw, 128px) !important;
-  }
-
-  .container > .mcj-home-hero.mcj-home-hero--promo,
-  .mcj-home-hero[data-mcj-home-hero].mcj-home-hero--promo {
-    max-height: 112px !important;
   }
 }
 

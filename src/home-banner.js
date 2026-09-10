@@ -391,7 +391,7 @@
     return (
       '<button class="mcj-hero-arrow prev" type="button" data-hero-prev aria-label="上一张"></button>' +
       '<button class="mcj-hero-arrow next" type="button" data-hero-next aria-label="下一张"></button>' +
-      '<div class="mcj-hero-dots">' +
+      '<div class="mcj-hero-dots" role="tablist" aria-label="Banner 轮播状态">' +
       dots +
       "</div>"
     );
@@ -403,17 +403,44 @@
       var data = normalized(banners[i]);
       slides += slideHtml(data, sourceFor(data, device), i, i === index);
     }
-    return '<div class="mcj-hero-slides">' + slides + "</div>" + controlsHtml(index, banners.length);
+    // Viewport owns aspect-ratio; dots sit BELOW (Linglu pagination).
+    return (
+      '<div class="mcj-hero-viewport">' +
+      '<div class="mcj-hero-slides">' +
+      slides +
+      "</div>" +
+      '<button class="mcj-hero-arrow prev" type="button" data-hero-prev aria-label="上一张"></button>' +
+      '<button class="mcj-hero-arrow next" type="button" data-hero-next aria-label="下一张"></button>' +
+      "</div>" +
+      (banners.length > 1
+        ? '<div class="mcj-hero-dots" role="tablist" aria-label="Banner 轮播状态">' +
+          Array.from({ length: banners.length })
+            .map(function (_, i) {
+              return (
+                '<button type="button" class="mcj-hero-dot' +
+                (i === index ? " active" : "") +
+                '" data-hero-dot="' +
+                i +
+                '" aria-label="切换到 Banner ' +
+                (i + 1) +
+                '"></button>'
+              );
+            })
+            .join("") +
+          "</div>"
+        : "")
+    );
   }
 
   function emptyHeroHtml() {
     /* No packaged default banner — empty frame only when DB has zero active banners. */
     return (
+      '<div class="mcj-hero-viewport">' +
       '<div class="mcj-hero-slides" data-banner-empty="1">' +
       '<div class="mcj-hero-slide is-active" data-hero-slide="0">' +
       '<div class="mcj-hero-image-link" aria-label="暂无 Banner">' +
       '<div class="mcj-hero-image mcj-hero-image-missing" role="img" aria-label="暂无 Banner"></div>' +
-      "</div></div></div>"
+      "</div></div></div></div>"
     );
   }
 
@@ -487,8 +514,10 @@
     root.style.setProperty("--hero-index", String(index));
     root.style.setProperty("--hero-count", String(total));
     var track = root.querySelector(".mcj-hero-slides");
-    if (track && root.classList.contains("mcj-home-hero--promo")) {
-      track.style.transform = "translate3d(calc(-1 * var(--hero-index, 0) * (100% - var(--hero-peek, 28px))), 0, 0)";
+    if (track && (root.classList.contains("mcj-home-hero--promo") || root.querySelector(".mcj-hero-viewport"))) {
+      // Full-width slides (Linglu); peek optional via CSS var default 0.
+      track.style.transform =
+        "translate3d(calc(-1 * var(--hero-index, 0) * (100% - var(--hero-peek, 0px))), 0, 0)";
     }
     for (var i = 0; i < slides.length; i += 1) {
       var on = i === index;
@@ -567,6 +596,7 @@
     });
     wireBannerImageFallback(root);
     applyAllCrops(root);
+    setActiveSlide(root, current);
     /* Re-apply after layout (aspect-ratio height) settles */
     requestAnimationFrame(function () {
       applyAllCrops(root);
@@ -660,7 +690,7 @@
       timer = setInterval(function () {
         var index = Number(root.dataset.heroIndex || 0) + 1;
         goTo(root, banners, device, index);
-      }, 6500);
+      }, 4500);
       timers.set(root, timer);
     }
     start();
