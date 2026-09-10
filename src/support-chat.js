@@ -1570,13 +1570,18 @@ import './support-app-ui.css';
       '<section class="support-layout' +
       (state.mobileDetail ? " mobile-detail" : "") +
       '" aria-label="我的客服会话">' +
-      '<aside class="support-aside"><div class="support-aside-head"><div><h1>我的客服会话' +
+      '<aside class="support-aside"><div class="support-aside-head"><div><h1>客服中心' +
       (Number(state.totalUnread || 0) > 0
         ? '<em class="support-unread support-unread-total">' +
           esc(Number(state.totalUnread) > 99 ? "99+" : state.totalUnread) +
           "</em>"
         : "") +
-      '</h1><p>仅显示本人会话</p></div></div><div class="support-session-list">' +
+      '</h1><p>仅显示本人会话</p></div>' +
+      '<span class="support-online-chip' +
+      (state.serviceOnline ? " is-online" : "") +
+      '" aria-live="polite">' +
+      (state.serviceOnline ? "客服在线" : "客服忙碌/离线") +
+      '</span></div><div class="support-session-list">' +
       listHtml() +
       "</div></aside>" +
       '<div class="support-main">' +
