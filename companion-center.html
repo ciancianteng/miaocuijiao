@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="src/platform.css">
   <link rel="stylesheet" href="src/notify-system.css">
   <link rel="stylesheet" href="src/design-system.css">
-  <link rel="stylesheet" href="src/companion-hall.css?v=20260911community1">
+  <link rel="stylesheet" href="src/companion-hall.css?v=20260911channels1">
   <link rel="stylesheet" href="src/companion-identity.css?v=20260907capsuleFix1">
   <link rel="stylesheet" href="src/place-order-modal.css">
   <link rel="stylesheet" href="src/boss-header.css?v=20260810hallLevel1">
@@ -29,15 +29,15 @@
     </div>
   </header>
 
-  <main class="page companion-hall-page">
+  <main class="page companion-hall-page" data-hall-channel="companions">
     <section class="hall-intro" aria-labelledby="companionHallTitle">
       <div>
         <h1 id="companionHallTitle">陪玩大厅</h1>
-        <p>找到喜欢的陪玩，立即开始游戏。</p>
+        <p id="companionHallLead">找到喜欢的陪玩，立即开始游戏。</p>
       </div>
     </section>
 
-    <section class="hall-search-panel" aria-label="搜索陪玩">
+    <section class="hall-search-panel" data-hall-search="companions" aria-label="搜索陪玩">
       <div class="hall-search-main">
         <label class="hall-search-field" for="searchInput">
           <span>搜索</span>
@@ -92,39 +92,73 @@
       </div>
     </section>
 
-    <section class="hall-results" aria-labelledby="companionListTitle">
-      <div class="hall-results-head">
-        <div>
-          <h2 id="companionListTitle">陪玩推荐</h2>
-          <p id="resultCount">共 0 位陪玩</p>
-        </div>
-        <label class="hall-sort-field">
+    <section class="hall-search-panel hall-services-search" data-hall-search="services" aria-label="搜索玩法商品" hidden>
+      <div class="hall-search-main hall-services-search-main">
+        <label class="hall-search-field" for="hallGpSearch">
+          <span>搜索</span>
+          <input id="hallGpSearch" type="search" placeholder="搜索玩法商品、分类或游戏" autocomplete="off">
+        </label>
+        <label class="hall-sort-field hall-services-sort">
           <span>排序</span>
-          <select id="sortFilter">
-            <option value="recommend">默认推荐</option>
-            <option value="levelDesc">等级优先</option>
-            <option value="priceAsc">价格低到高</option>
-            <option value="priceDesc">价格高到低</option>
+          <select id="hallGpSort">
+            <option value="recommend">综合</option>
+            <option value="sold">销量</option>
+            <option value="priceAsc">价格从低到高</option>
+            <option value="priceDesc">价格从高到低</option>
+            <option value="newest">最新</option>
           </select>
         </label>
       </div>
-
-      <div class="companion-hall-grid" id="playerList"></div>
-      <div class="empty companion-empty" id="emptyState" hidden>
-        <strong>暂无符合条件的陪玩</strong>
-        <span>试试调整搜索词或筛选条件。</span>
-      </div>
-      <div class="companion-pagination" id="companionPagination"></div>
+      <div class="hall-gp-cats" id="hallGpCats" aria-label="玩法分类"></div>
     </section>
 
-    <section class="hall-secondary-entries hall-secondary-entries--after hall-secondary-entries--single" aria-label="大厅更多入口">
-      <a class="hall-secondary-card hall-secondary-card--full" href="more-gameplays.html" data-hall-entry="more-gameplays">
-        <div>
-          <strong>更多玩法</strong>
-          <span>护航 · 跑刀 · 代肝 · 趣味单</span>
+    <div class="hall-channel-tabs" role="tablist" aria-label="大厅频道">
+      <button type="button" class="hall-channel-tab is-active" role="tab" id="hallTabCompanions" aria-selected="true" aria-controls="hallPanelCompanions" data-hall-tab="companions">陪玩大厅</button>
+      <button type="button" class="hall-channel-tab" role="tab" id="hallTabServices" aria-selected="false" aria-controls="hallPanelServices" data-hall-tab="services">更多玩法</button>
+      <span class="hall-channel-indicator" aria-hidden="true"></span>
+    </div>
+
+    <section class="hall-channel-panel is-active" id="hallPanelCompanions" role="tabpanel" aria-labelledby="hallTabCompanions" data-hall-panel="companions">
+      <div class="hall-results" aria-labelledby="companionListTitle">
+        <div class="hall-results-head">
+          <div>
+            <h2 id="companionListTitle">陪玩推荐</h2>
+            <p id="resultCount">共 0 位陪玩</p>
+          </div>
+          <label class="hall-sort-field">
+            <span>排序</span>
+            <select id="sortFilter">
+              <option value="recommend">默认推荐</option>
+              <option value="levelDesc">等级优先</option>
+              <option value="priceAsc">价格低到高</option>
+              <option value="priceDesc">价格高到低</option>
+            </select>
+          </label>
         </div>
-        <em aria-hidden="true">→</em>
-      </a>
+
+        <div class="companion-hall-grid" id="playerList"></div>
+        <div class="empty companion-empty" id="emptyState" hidden>
+          <strong>暂无符合条件的陪玩</strong>
+          <span>试试调整搜索词或筛选条件。</span>
+        </div>
+        <div class="companion-pagination" id="companionPagination"></div>
+      </div>
+    </section>
+
+    <section class="hall-channel-panel" id="hallPanelServices" role="tabpanel" aria-labelledby="hallTabServices" data-hall-panel="services" hidden>
+      <div class="hall-results hall-services-results" aria-labelledby="hallServicesTitle">
+        <div class="hall-results-head">
+          <div>
+            <h2 id="hallServicesTitle">更多玩法</h2>
+            <p id="hallGpCount">读取真实商城商品中…</p>
+          </div>
+        </div>
+        <div class="hall-gp-grid" id="hallGpGrid"></div>
+        <div class="empty companion-empty" id="hallGpEmpty" hidden>
+          <strong>暂无玩法商品</strong>
+          <span>后台「更多玩法管理」发布后会显示在这里。</span>
+        </div>
+      </div>
     </section>
   </main>
 
@@ -152,11 +186,12 @@
   <script src="src/companion-presence.js?v=20260810hallLevel1"></script>
   <script src="/src/place-order-modal.js?v=20260811authUnify1" defer></script>
   <script src="src/companion-hall.js?v=20260910linglu1" defer></script>
+  <script src="src/companion-hall-channels.js?v=20260911channels1" defer></script>
   <script src="src/notify-system.js" defer></script>
   <script src="src/launch-readiness-fixes.js" defer></script>
 <script>
     (function () {
-      var panel = document.querySelector('.hall-search-panel');
+      var panel = document.querySelector('.hall-search-panel[data-hall-search="companions"]');
       var toggle = document.getElementById('filterToggle');
       var close = document.getElementById('filterClose');
       var reset = document.getElementById('resetFilter');
