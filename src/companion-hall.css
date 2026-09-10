@@ -652,6 +652,10 @@ body{background:radial-gradient(circle at 76% 4%,rgba(255,145,195,.055),transpar
 }
 
 .hall-services-search{margin-bottom:14px!important}
+.hall-search-panel[hidden],
+.hall-services-search[hidden]{
+  display:none!important;
+}
 .hall-services-search-main{
   grid-template-columns:minmax(0,1fr) 150px!important;
 }
