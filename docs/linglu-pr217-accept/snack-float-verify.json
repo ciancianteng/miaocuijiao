@@ -4,34 +4,34 @@
     {
       "cls": "mcj-snack mcj-snack--1",
       "display": "block",
-      "opacity": 0.8,
-      "w": 47,
-      "h": 47,
+      "opacity": 0.92,
+      "w": 62,
+      "h": 62,
       "visible": true,
       "z": "auto"
     },
     {
       "cls": "mcj-snack mcj-snack--2",
       "display": "block",
-      "opacity": 0.68,
-      "w": 30,
-      "h": 30,
+      "opacity": 0.82,
+      "w": 40,
+      "h": 40,
       "visible": true,
       "z": "auto"
     },
     {
       "cls": "mcj-snack mcj-snack--3",
       "display": "block",
-      "opacity": 0.76,
-      "w": 41,
-      "h": 41,
+      "opacity": 0.9,
+      "w": 57,
+      "h": 57,
       "visible": true,
       "z": "auto"
     },
     {
       "cls": "mcj-snack mcj-snack--4",
       "display": "none",
-      "opacity": 0.7,
+      "opacity": 0.84,
       "w": 0,
       "h": 0,
       "visible": false,
@@ -40,7 +40,7 @@
     {
       "cls": "mcj-snack mcj-snack--5",
       "display": "none",
-      "opacity": 0.8,
+      "opacity": 0.9,
       "w": 0,
       "h": 0,
       "visible": false,
@@ -49,7 +49,7 @@
     {
       "cls": "mcj-snack mcj-snack--6",
       "display": "none",
-      "opacity": 0.55,
+      "opacity": 0.68,
       "w": 0,
       "h": 0,
       "visible": false,
