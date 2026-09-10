@@ -113,221 +113,55 @@ body.mcj-app-shell {
     overflow-x: hidden !important;
   }
 
-  /* ---- Brand hero → compact APP header panel ---- */
+  /* Hero / Banner sizing owned by home-brand-hero.css — only soft shell tweaks here */
   .home-brand-hero,
   .container > .home-brand-hero {
-    --brand-hero-bleed: 14px;
     width: calc(100% + 28px) !important;
     margin-left: -14px !important;
     margin-right: -14px !important;
-    margin-top: 0 !important;
-    margin-bottom: 8px !important;
-    border-radius: 0 0 22px 22px !important;
-    overflow: hidden !important;
   }
 
-  .home-brand-hero-inner {
-    position: relative !important;
-    display: grid !important;
-    grid-template-columns: minmax(0, 1fr) 108px !important;
-    grid-template-areas:
-      "copy mascot"
-      "stats stats" !important;
-    align-items: start !important;
-    gap: 8px 6px !important;
-    min-height: 0 !important;
-    padding: 14px 14px 12px !important;
-  }
-
-  .home-brand-hero-copy {
-    grid-area: copy !important;
-    gap: 8px !important;
-    max-width: none !important;
-    padding-right: 4px !important;
-  }
-
-  .home-brand-hero-kicker {
-    font-size: 10px !important;
-    letter-spacing: 0.16em !important;
-  }
-
-  .home-brand-hero-title {
-    font-size: 28px !important;
-    line-height: 1.08 !important;
-  }
-
-  .home-brand-hero-title span {
-    margin-top: 4px !important;
-    font-size: 11px !important;
-    letter-spacing: 0.14em !important;
-  }
-
-  .home-brand-hero-tagline {
-    font-size: 12px !important;
-    line-height: 1.45 !important;
-    max-width: 18em !important;
-    opacity: 0.82 !important;
-  }
-
-  .home-brand-hero-actions {
-    gap: 8px !important;
-    margin-top: 2px !important;
-  }
-
-  .home-brand-hero-btn {
-    min-height: 38px !important;
-    min-width: 0 !important;
-    flex: 1 1 calc(50% - 4px) !important;
-    padding: 0 12px !important;
-    border-radius: 12px !important;
-    font-size: 12px !important;
-  }
-
-  .home-brand-hero-visual {
-    grid-area: mascot !important;
-    order: unset !important;
-    position: relative !important;
-    width: 108px !important;
-    height: 118px !important;
-    min-height: 0 !important;
-    margin: 0 !important;
-    align-self: start !important;
+  .home-brand-hero-visual,
+  .home-brand-hero-mascot,
+  .mcj-chip {
     pointer-events: none !important;
   }
 
-  .home-brand-hero-mascot {
-    width: 118px !important;
-    max-width: none !important;
-    transform: scale(1.05) !important;
-    animation: none !important;
-  }
-
-  .home-brand-hero-ring,
-  .home-brand-hero-spark {
-    display: none !important;
-  }
-
-  .home-brand-hero-aura {
-    width: 90% !important;
-    filter: blur(14px) !important;
-    opacity: 0.7 !important;
-  }
-
-  /* Stats inside hero — APP dashboard strip */
-  .home-brand-hero-stats,
-  .home-brand-hero [data-home-daily-stats],
-  .home-brand-hero .home-trust-stats {
-    grid-area: stats !important;
-    width: 100% !important;
-    max-width: 100% !important;
-    margin: 4px 0 0 !important;
-  }
-
-  .home-brand-hero .home-trust-strip {
-    padding: 10px 0 2px !important;
-    border-top: 1px solid rgba(255, 214, 232, 0.1) !important;
-    border-bottom: 0 !important;
-  }
-
-  .home-brand-hero .home-trust-item {
-    padding: 0 6px !important;
-    gap: 4px !important;
-  }
-
-  .home-brand-hero .home-trust-value,
-  .home-brand-hero .home-trust-item strong.home-trust-value {
-    font-size: 18px !important;
-    letter-spacing: -0.02em !important;
-  }
-
-  .home-brand-hero .home-trust-label,
-  .home-brand-hero .home-trust-item span.home-trust-label {
-    font-size: 10px !important;
-    white-space: nowrap !important;
-    overflow: hidden !important;
-    text-overflow: ellipsis !important;
-    max-width: 100% !important;
-  }
-
-  /* Announcement — thin app chip */
+  /* Announcement — light chip after banner */
   #homeAnnouncementBar.home-announcement-bar.announcement-strip,
   .home-announcement-bar.announcement-strip {
-    margin: 0 0 10px !important;
+    margin: 0 0 12px !important;
     padding: 8px 10px !important;
     border-radius: 14px !important;
-    border: 1px solid rgba(255, 214, 232, 0.12) !important;
+    border: 1px solid rgba(255, 214, 232, 0.1) !important;
     box-shadow: none !important;
     background: rgba(255, 255, 255, 0.03) !important;
   }
 
-  /* Promo banner — immersive, compact, no card chrome */
-  .container > .mcj-home-hero,
-  .mcj-home-hero[data-mcj-home-hero],
+  /* Promo banner clickability — never under cat layer */
   .container > .mcj-home-hero.mcj-home-hero--promo,
   .mcj-home-hero[data-mcj-home-hero].mcj-home-hero--promo {
-    --mcj-hero-bleed: 14px;
-    width: calc(100% + 28px) !important;
-    margin-left: -14px !important;
-    margin-right: -14px !important;
-    margin-top: 0 !important;
-    margin-bottom: 12px !important;
-    height: clamp(96px, 28vw, 132px) !important;
-    max-height: 132px !important;
-    min-height: 96px !important;
-    aspect-ratio: auto !important;
-    border-radius: 16px !important;
-    border: 0 !important;
-    box-shadow: none !important;
-    background: #0a070c !important;
+    position: relative !important;
+    z-index: 6 !important;
+    pointer-events: auto !important;
   }
 
-  .mcj-home-hero .mcj-hero-overlay {
-    display: none !important; /* avoid cropped text on compact mobile promo */
+  .mcj-home-hero--promo .mcj-hero-image-link,
+  .mcj-home-hero--promo .mcj-hero-slide.is-active {
+    pointer-events: auto !important;
   }
 
-  .mcj-home-hero .mcj-hero-arrow,
-  .mcj-home-hero .mcj-hero-arrow.prev,
-  .mcj-home-hero .mcj-hero-arrow.next,
-  .container > .mcj-home-hero .mcj-hero-arrow,
-  .mcj-home-hero[data-mcj-home-hero] .mcj-hero-arrow,
-  .container > .mcj-home-hero.mcj-home-hero--promo .mcj-hero-arrow,
-  .mcj-home-hero[data-mcj-home-hero].mcj-home-hero--promo .mcj-hero-arrow {
-    display: none !important; /* APP feel: swipe / dots only */
-    opacity: 0 !important;
-    pointer-events: none !important;
-    width: 0 !important;
-    height: 0 !important;
+  /* legacy height locks removed — aspect-ratio from home-brand-hero.css */
+  .container > .mcj-home-hero:not(.mcj-home-hero--promo) {
+    height: auto !important;
   }
 
-  .mcj-home-hero .mcj-hero-dots {
-    bottom: 8px !important;
+  /* keep old selector quiet */
+  .____removed_legacy_promo_block {
+    display: none !important;
   }
 
-  /* Section titles — mini-program style */
-  .mcj-app-home .section {
-    margin-bottom: 18px !important;
-  }
-
-  .mcj-app-home .section-title {
-    margin-bottom: 10px !important;
-    align-items: center !important;
-  }
-
-  .mcj-app-home .section-title h2 {
-    font-size: 17px !important;
-    font-weight: 800 !important;
-    letter-spacing: 0 !important;
-    text-shadow: none !important;
-  }
-
-  .mcj-app-home .section-title p {
-    margin-top: 2px !important;
-    font-size: 10px !important;
-    letter-spacing: 0.12em !important;
-    opacity: 0.55 !important;
-  }
-
-  /* Quick entry — compact 2×2 chips, less card chrome */
+  /* Quick entry — less card chrome */
   .mcj-app-home .quick-entry-section {
     margin-bottom: 16px !important;
   }
@@ -684,30 +518,10 @@ body.mcj-app-shell {
 }
 
 @media (max-width: 390px) {
-  .home-brand-hero-title {
-    font-size: 26px !important;
-  }
-
-  .home-brand-hero-visual {
-    width: 96px !important;
-    height: 108px !important;
-  }
-
-  .home-brand-hero-mascot {
-    width: 104px !important;
-  }
-
-  .home-brand-hero .home-trust-value,
-  .home-brand-hero .home-trust-item strong.home-trust-value {
-    font-size: 16px !important;
-  }
+  /* sizing owned by home-brand-hero.css */
 }
 
 @media (max-width: 360px) {
-  .home-brand-hero-inner {
-    grid-template-columns: minmax(0, 1fr) 88px !important;
-  }
-
   .home-brand-hero-btn {
     flex: 1 1 100% !important;
   }

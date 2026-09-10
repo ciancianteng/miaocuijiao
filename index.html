@@ -3470,9 +3470,9 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
   <link rel="stylesheet" href="src/real-data-admin.css">
   <link rel="stylesheet" href="src/gameplay-flow.css">
   <link rel="stylesheet" href="src/design-system.css">
-  <link rel="stylesheet" href="src/home-banner.css?v=20260910appProto1">
-  <link rel="stylesheet" href="src/home-brand-hero.css?v=20260910appProto1">
-  <link rel="stylesheet" href="src/home-trust-stats.css?v=20260910appProto1">
+  <link rel="stylesheet" href="src/home-banner.css?v=20260910appProto2">
+  <link rel="stylesheet" href="src/home-brand-hero.css?v=20260910appProto2">
+  <link rel="stylesheet" href="src/home-trust-stats.css?v=20260910appProto2">
   <link rel="stylesheet" href="src/home-announcements.css?v=20260805annRotate1">
   <link rel="stylesheet" href="src/home-popularity.css">
   <link rel="stylesheet" href="src/home-desktop.css?v=20260910appProto1">
@@ -3491,7 +3491,7 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
   <link rel="stylesheet" href="src/boss-header.css?v=20260910appProto1">
   <link rel="stylesheet" href="/src/mcj-safe-area.css?v=20260802mobileP0c">
   <link rel="stylesheet" href="src/home-mobile.css?v=20260910appProto1">
-  <link rel="stylesheet" href="src/home-app-mobile.css?v=20260910appProto1">
+  <link rel="stylesheet" href="src/home-app-mobile.css?v=20260910appProto2">
 </head>
 <body class="mcj-app-shell">
   <div class="ambient-layer" aria-hidden="true"></div>
@@ -3521,7 +3521,8 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
       <div class="home-brand-hero-inner">
         <div class="home-brand-hero-copy">
           <p class="home-brand-hero-kicker">MEOW CUI JIAO</p>
-          <h1 class="home-brand-hero-title">妙脆角<span>MEOW CUI JIAO</span></h1>
+          <h1 class="home-brand-hero-title">妙脆角</h1>
+          <div class="home-brand-hero-stats home-trust-stats" data-home-brand-hero-stats data-home-daily-stats aria-label="平台实时数据" hidden></div>
           <p class="home-brand-hero-tagline">精选陪玩 · 真实在线 · 安心下单</p>
           <div class="home-brand-hero-actions">
             <a class="home-brand-hero-btn primary" href="companion-center.html">进入陪玩大厅</a>
@@ -3530,11 +3531,16 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
         </div>
         <div class="home-brand-hero-visual" aria-hidden="true">
           <span class="home-brand-hero-aura"></span>
-          <img class="home-brand-hero-mascot" src="/assets/meow-cuijiao-brand.jpg" alt="" width="640" height="640" decoding="async" fetchpriority="high">
+          <span class="mcj-chip mcj-chip--a"></span>
+          <span class="mcj-chip mcj-chip--b"></span>
+          <span class="mcj-chip mcj-chip--c"></span>
+          <span class="mcj-chip mcj-chip--d"></span>
+          <img class="home-brand-hero-mascot" src="assets/meow-cuijiao-hero-ip.webp" alt="" width="1024" height="1024" decoding="async" fetchpriority="high">
         </div>
-        <div class="home-brand-hero-stats home-trust-stats" data-home-brand-hero-stats data-home-daily-stats aria-label="平台实时数据" hidden></div>
       </div>
     </section>
+
+    <section class="mcj-home-hero mcj-home-hero--promo" data-mcj-home-hero aria-label="活动轮播"></section>
 
 <div class="announcement-strip home-announcement-bar" id="homeAnnouncementBar" role="region" aria-label="官方公告">
       <div class="home-announcement-label"><span aria-hidden="true">📢</span><strong>官方公告</strong></div>
@@ -3543,7 +3549,7 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
       </div>
     </div>
 
-        <section class="mcj-home-hero mcj-home-hero--promo" data-mcj-home-hero aria-label="活动轮播"></section>
+
 
     <section class="section quick-entry-section">
       <div class="section-title compact-title"><div><h2>快速入口</h2><p>QUICK ACCESS</p></div></div>
@@ -4009,9 +4015,9 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
   </script>
   <script type="module" src="src/site-data.js?v=20260910appProto1"></script>
   <script src="src/banner-crop.js?v=20260809bannerCropSync1"></script>
-  <script type="module" src="src/home-banner.js?v=20260910appProto1"></script>
+  <script type="module" src="src/home-banner.js?v=20260910appProto2"></script>
   <script type="module" src="src/home-announcements.js?v=20260805annRotate1"></script>
-  <script type="module" src="src/home-daily-stats.js?v=20260910appProto1"></script>
+  <script type="module" src="src/home-daily-stats.js?v=20260910appProto2"></script>
   <script src="src/companion-presence.js?v=20260805profileLock1"></script>
   <script src="/src/place-order-modal.js?v=20260811authUnify1" defer></script>
   <script type="module" src="src/home-popularity.js?v=20260910appProto1"></script>
