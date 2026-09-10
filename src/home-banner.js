@@ -1,3 +1,7 @@
+import "./home-banner.css";
+import "./home-desktop.css";
+import "./home-mobile.css";
+
 (function () {
   "use strict";
 
@@ -8,7 +12,11 @@
   var slideCache = new WeakMap();
   var remoteStore = { contents: { banners: [], notices: [] } };
   var remoteLoaded = false;
-  // No hardcoded /default-home-banner.png — homepage SoT is admin `banners` table only.
+  var FALLBACK_BANNER = "/default-home-banner.png";
+
+  function resolveFallbackBanner() {
+    return FALLBACK_BANNER;
+  }
 
   function contentApiUrl() {
     return "/api/gateway?path=" + encodeURIComponent("platform/content") + "&types=banners&_=" + Date.now();
@@ -132,8 +140,21 @@
       var img = slide.querySelector(".mcj-hero-image");
       var frame = slide.querySelector(".mcj-hero-image-link") || slide;
       var data = list[index] || normalized({});
-      if (!img) return;
+      if (!img || img.tagName !== "IMG") return;
       function run() {
+        /* Staging/test placeholders are often 32–48px solid swatches — not usable hero art. */
+        if (
+          img.dataset.mcjTinyReplaced !== "1" &&
+          img.naturalWidth > 0 &&
+          img.naturalHeight > 0 &&
+          img.naturalWidth < 96 &&
+          img.naturalHeight < 96
+        ) {
+          img.dataset.mcjTinyReplaced = "1";
+          img.addEventListener("load", run, { once: true });
+          img.src = resolveFallbackBanner();
+          return;
+        }
         applyCropToImg(img, frame, cropFor(data, device));
       }
       if (img.complete && img.naturalWidth) run();
@@ -152,13 +173,48 @@
     return !!(item && (item.isMain === true || item.is_main === true));
   }
 
+  /* Production hosts only — staging / preview / localhost keep QA banners visible. */
+  function isProductionHost() {
+    var host = "";
+    try {
+      host = String((typeof location !== "undefined" && location.hostname) || "").toLowerCase();
+    } catch (e) {
+      host = "";
+    }
+    return (
+      host === "meowcuijiao.com" ||
+      host === "www.meowcuijiao.com" ||
+      (host.slice(-14) === ".meowcuijiao.com" && host.indexOf("staging") < 0)
+    );
+  }
+
+  function isStagingOnlyBanner(item) {
+    if (!item) return false;
+    var blob = [
+      item.title,
+      item.subtitle,
+      item.buttonText,
+      item.button_text,
+      item.name,
+      item.alt,
+      item.description,
+    ]
+      .map(function (value) {
+        return String(value || "");
+      })
+      .join("\n");
+    return /staging\s*(test|only|_only)?|STAGING_ONLY|do not promote to production/i.test(blob);
+  }
+
   function activeBanners() {
     var db = readStore();
+    var production = isProductionHost();
     var list = (((db.contents || {}).banners) || []).filter(function (item) {
       if (!item) return false;
       if (item.enabled === false) return false;
       if (item.published === false) return false;
       if (!inSchedule(item)) return false;
+      if (production && isStagingOnlyBanner(item)) return false;
       return !!(item.image || item.desktopImage || item.mobileImage || item.image_url);
     });
     // Formal rule: smaller sort_order first. Do not let is_main override public order.
@@ -501,6 +557,21 @@
   }
 
   function renderEmpty(root, data, device) {
+    /* Demoted promo slot: hide empty frame so production never shows a blank boxed band. */
+    if (root.classList.contains("mcj-home-hero--promo") || root.matches("[data-mcj-home-hero].mcj-home-hero--promo")) {
+      root.hidden = true;
+      root.classList.add("mcj-home-hero", "is-empty");
+      root.innerHTML = "";
+      root.removeAttribute("data-banner-id");
+      slideCache.set(root, {
+        signature: "empty-hidden",
+        banners: [],
+        normalized: [],
+        device: device || "desktop",
+        index: 0,
+      });
+      return null;
+    }
     root.hidden = false;
     root.classList.add("mcj-home-hero");
     root.classList.add("is-empty");

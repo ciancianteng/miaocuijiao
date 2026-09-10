@@ -58,7 +58,13 @@
   }
   function tagsHtml(tags) {
     if (!Array.isArray(tags)) tags = String(tags || "").split(/[，,]/).map(function (s) { return s.trim(); }).filter(Boolean);
-    return tags.map(function (tag) { return "<span>" + esc(tag) + "</span>"; }).join("");
+    var clean = tags.map(function (tag) { return String(tag || "").trim(); }).filter(Boolean);
+    var max = 3;
+    var shown = clean.slice(0, max);
+    var extra = clean.length - shown.length;
+    var html = shown.map(function (tag) { return "<span>" + esc(tag) + "</span>"; }).join("");
+    if (extra > 0) html += "<span class=\"hot-tag-more\">+" + extra + "</span>";
+    return html;
   }
   function isGarbledName(value) {
     var s = String(value == null ? "" : value).trim();
@@ -187,8 +193,9 @@
       var isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(uuid);
       return c && isUuid && !isGarbledName(c.name) && c.name;
     });
-    var items = source.slice(0, 3);
-    var cols = Math.max(1, items.length + 1); // companions + MORE
+    /* Home discovery: show more real companions for APP-style scroll browsing. */
+    var items = source.slice(0, 6);
+    var cols = Math.max(1, Math.min(4, items.length + 1)); // companions + MORE
     track.dataset.ready = "1";
     track.dataset.sourceCount = String(source.length);
     track.setAttribute("data-home-source-count", String(source.length));
