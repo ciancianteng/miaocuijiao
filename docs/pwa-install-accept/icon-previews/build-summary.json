@@ -1,0 +1,31 @@
+{
+  "generatedAt": "2026-09-11T00:58:12.161Z",
+  "source": "public/og/meowcuijiao-logo-transparent.png",
+  "background": {
+    "top": "#120818",
+    "accent": "#2a1030",
+    "bottom": "#1a0a18"
+  },
+  "padding": {
+    "any": 0.11,
+    "maskable": 0.2,
+    "ios": 0.1,
+    "favicon": 0.06
+  },
+  "outputs": [
+    "public/icons/icon-192.png",
+    "public/icons/icon-512.png",
+    "public/icons/icon-192-maskable.png",
+    "public/icons/icon-512-maskable.png",
+    "public/icons/apple-touch-icon.png",
+    "public/apple-touch-icon.png",
+    "public/favicon-32.png",
+    "public/favicon.ico",
+    "docs/pwa-install-accept/icon-previews/any-192.png",
+    "docs/pwa-install-accept/icon-previews/any-512.png",
+    "docs/pwa-install-accept/icon-previews/maskable-512-circle-overlay.png",
+    "docs/pwa-install-accept/icon-previews/maskable-192-circle-overlay.png",
+    "docs/pwa-install-accept/icon-previews/apple-touch-180.png",
+    "docs/pwa-install-accept/icon-previews/favicon-32.png"
+  ]
+}

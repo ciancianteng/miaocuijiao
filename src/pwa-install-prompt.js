@@ -100,18 +100,45 @@
 
   function ensurePwaMeta() {
     if (!document.head) return;
+    var iconV = "20260911pwaIcon2";
     ensureMetaTag('link[rel="manifest"][data-mcj-pwa-manifest]', function () {
       var l = document.createElement("link");
       l.rel = "manifest";
-      l.href = "/manifest.webmanifest";
+      l.href = "/manifest.webmanifest?v=" + iconV;
       l.setAttribute("data-mcj-pwa-manifest", "1");
       return l;
     });
     ensureMetaTag('link[rel="apple-touch-icon"][data-mcj-pwa-ati]', function () {
       var l = document.createElement("link");
       l.rel = "apple-touch-icon";
-      l.href = "/icons/apple-touch-icon.png";
+      l.href = "/apple-touch-icon.png?v=" + iconV;
       l.setAttribute("data-mcj-pwa-ati", "1");
+      return l;
+    });
+    ensureMetaTag('link[rel="apple-touch-icon"][data-mcj-pwa-ati-icons]', function () {
+      var l = document.createElement("link");
+      l.rel = "apple-touch-icon";
+      l.sizes = "180x180";
+      l.href = "/icons/apple-touch-icon.png?v=" + iconV;
+      l.setAttribute("data-mcj-pwa-ati-icons", "1");
+      return l;
+    });
+    ensureMetaTag('link[rel="icon"][data-mcj-pwa-favicon-32]', function () {
+      var l = document.createElement("link");
+      l.rel = "icon";
+      l.type = "image/png";
+      l.sizes = "32x32";
+      l.href = "/favicon-32.png?v=" + iconV;
+      l.setAttribute("data-mcj-pwa-favicon-32", "1");
+      return l;
+    });
+    ensureMetaTag('link[rel="icon"][data-mcj-pwa-favicon-192]', function () {
+      var l = document.createElement("link");
+      l.rel = "icon";
+      l.type = "image/png";
+      l.sizes = "192x192";
+      l.href = "/icons/icon-192.png?v=" + iconV;
+      l.setAttribute("data-mcj-pwa-favicon-192", "1");
       return l;
     });
     ensureMetaTag('meta[name="apple-mobile-web-app-capable"][data-mcj-pwa]', function () {
@@ -159,7 +186,7 @@
   }
 
   function logoSrc() {
-    return "/og/meowcuijiao-logo-transparent.png";
+    return "/icons/icon-192.png?v=20260911pwaIcon2";
   }
 
   function buildFlow(platform, hasBip) {

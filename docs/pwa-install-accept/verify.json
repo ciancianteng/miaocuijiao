@@ -1,0 +1,70 @@
+{
+  "ok": true,
+  "base": "http://127.0.0.1:5188",
+  "pr": 219,
+  "previewUrl": "https://meow-cuijiao-homepage-git-fe-0957cc-ciancianteng-4581s-projects.vercel.app",
+  "checks": {
+    "manifestStatus": 200,
+    "swStatus": 200,
+    "icon192": 200,
+    "icon512": 200,
+    "appleIcon": 200,
+    "iosHomeTeach": true,
+    "iosHallTeach": true,
+    "iosProfileTeach": true,
+    "dismissNoAutoWithin7d": true,
+    "installedNoAuto": true,
+    "standaloneSetsInstalled": true,
+    "androidHasInstallOrTeach": true,
+    "androidTeachFallback": true
+  },
+  "screenshots": {
+    "ios-home-teach.png": "docs/pwa-install-accept/ios-home-teach.png",
+    "ios-hall-teach.png": "docs/pwa-install-accept/ios-hall-teach.png",
+    "ios-profile-teach.png": "docs/pwa-install-accept/ios-profile-teach.png",
+    "ios-dismiss-no-auto.png": "docs/pwa-install-accept/ios-dismiss-no-auto.png",
+    "ios-installed-no-auto.png": "docs/pwa-install-accept/ios-installed-no-auto.png",
+    "ios-standalone-emulated.png": "docs/pwa-install-accept/ios-standalone-emulated.png",
+    "android-install-ui.png": "docs/pwa-install-accept/android-install-ui.png",
+    "android-teach-fallback.png": "docs/pwa-install-accept/android-teach-fallback.png"
+  },
+  "manifest": {
+    "name": "妙脆角 MEOW CUI JIAO",
+    "short_name": "妙脆角",
+    "description": "专业陪玩，每一场游戏认真对待每一位热爱电竞的你。",
+    "start_url": "/",
+    "scope": "/",
+    "display": "standalone",
+    "orientation": "portrait-primary",
+    "background_color": "#0a0610",
+    "theme_color": "#0a0610",
+    "lang": "zh-CN",
+    "icons": [
+      {
+        "src": "/icons/icon-192.png",
+        "sizes": "192x192",
+        "type": "image/png",
+        "purpose": "any"
+      },
+      {
+        "src": "/icons/icon-512.png",
+        "sizes": "512x512",
+        "type": "image/png",
+        "purpose": "any"
+      },
+      {
+        "src": "/icons/icon-192-maskable.png",
+        "sizes": "192x192",
+        "type": "image/png",
+        "purpose": "maskable"
+      },
+      {
+        "src": "/icons/icon-512-maskable.png",
+        "sizes": "512x512",
+        "type": "image/png",
+        "purpose": "maskable"
+      }
+    ]
+  },
+  "errors": []
+}
