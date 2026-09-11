@@ -2722,7 +2722,10 @@
     weekStart.setDate(weekStart.getDate()-dow);
     var yesterdayIncome=0,weekIncome=0;
     ledger.forEach(function(r){
+      // Only count valid settled order income — never cancelled-order leftovers or rewards.
       if(r.typeCode!=='companion_income')return;
+      if(r.incomeKind && r.incomeKind!=='order_income')return;
+      if(r.incomeKind==='void' || r.incomeKind==='reward_other')return;
       var day=String(r.createdAt||'').slice(0,10);
       if(!day)return;
       if(day===yesterday)yesterdayIncome+=num(r.amount);
@@ -2761,7 +2764,7 @@
       metric('冻结中',money(num(frozen)))+
       metric('平台抽成',esc(commission)+'%')+
       '</section>'+
-      '<section class="pw-card pad" style="margin-top:14px"><h3>奖励 / 其它</h3><div class="pw-info-list">'+infoRow('奖励猫粮',money(num(e.bonus||e.reward||0)))+infoRow('已提现',money(num(e.withdrawn||summary.withdrawn)))+'</div></section>'+
+      '<section class="pw-card pad" style="margin-top:14px"><h3>奖励 / 其它</h3><div class="pw-info-list">'+infoRow('奖励猫粮',money(num(e.bonus||e.reward||0)))+infoRow('是否可提现',esc(e.rewardWithdrawable?'可提现':'不可提现（默认）'))+infoRow('说明',esc(e.rewardNote||'奖励/其它不计入订单收入'))+infoRow('已提现',money(num(e.withdrawn||summary.withdrawn)))+'</div></section>'+
       '<section class="pw-card pad" style="margin-top:14px"><h3>收入明细</h3>'+(details.length?'<div class="pw-table-wrap"><table class="pw-table"><thead><tr><th>类型</th><th>订单</th><th>订单总额</th><th>平台抽成</th><th>实际到账</th><th>状态</th><th>时间</th></tr></thead><tbody>'+details.map(function(x){
         var s=x.settlement||{};
         var gross=s.totalCatFood!=null?s.totalCatFood:x.amount;

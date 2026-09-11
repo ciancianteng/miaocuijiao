@@ -4103,6 +4103,19 @@ async function handler(req, res) { if (!hasDb()) return json(res, req.method ===
       try {
         const settleApi = await import("./_cs-commission-settle.js");
         if (transition.to === "cancelled" || transition.to === "refunded") {
+          try {
+            const { clawbackCompanionIncomeForOrder } = await import("./_companion-income.js");
+            await clawbackCompanionIncomeForOrder(
+              { supabaseJson, restUrl, serviceHeaders },
+              patched || { ...order, status: transition.to },
+              {
+                reason: transition.to === "refunded" ? "订单退款扣回陪玩收入" : "订单取消扣回陪玩收入",
+                mode: transition.to === "refunded" ? "refund" : "cancel",
+              }
+            );
+          } catch (err) {
+            console.warn("[cs] companion income clawback", err?.message || err);
+          }
           reward = await settleApi.clawbackCsOrderIncome(patched || { ...order, status: transition.to }, {
             reason: transition.to === "refunded" ? "订单退款" : "订单取消",
             mode: transition.to === "refunded" ? "refund" : "cancel",

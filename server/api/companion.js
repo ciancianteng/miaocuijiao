@@ -39,6 +39,12 @@ import {
 } from "./_game-prices.js";
 import { loadPublicServices } from "./platform/services.js";
 import {
+  partitionCompanionIncome,
+  sumTxAmount,
+  money as incomeMoney,
+  clawbackCompanionIncomeForOrder,
+} from "./_companion-income.js";
+import {
   anonymousBossLabel,
   allocateWithdrawalNo,
   resolveBossPublicCode,
@@ -1695,8 +1701,50 @@ function emptyWalletBundle() {
       frozen: 0,
       pendingSettlement: 0,
       withdrawn: 0,
+      bonus: 0,
+      reward: 0,
+      rewardWithdrawable: false,
+      rewardNote: "",
     },
   };
+}
+
+async function ordersForIncomeTransactions(transactions = [], myOrders = []) {
+  const byId = new Map();
+  for (const o of myOrders || []) {
+    const id = o?.id || o?.orderId;
+    if (!id) continue;
+    byId.set(String(id), {
+      id: String(id),
+      status: o.status || o.orderStatus || "",
+      order_no: o.orderNo || o.order_no || "",
+    });
+  }
+  const missing = [];
+  for (const tx of transactions || []) {
+    if (String(tx.transaction_type || "") !== "companion_income") continue;
+    const oid = tx.order_id ? String(tx.order_id) : "";
+    if (!oid || byId.has(oid)) continue;
+    missing.push(oid);
+  }
+  const uniq = [...new Set(missing)].slice(0, 80);
+  if (uniq.length) {
+    try {
+      const rows = await supabaseJson(
+        restUrl(
+          "orders",
+          `?id=in.(${uniq.map(encodeURIComponent).join(",")})&select=id,status,order_no,companion_id,completed_at,cancelled_at`
+        ),
+        { headers: serviceHeaders() }
+      );
+      for (const row of Array.isArray(rows) ? rows : []) {
+        byId.set(String(row.id), row);
+      }
+    } catch {
+      /* soft-fail: missing order => settlement income treated as void */
+    }
+  }
+  return [...byId.values()];
 }
 
 async function loadWalletBundle(profile, myOrders = []) {
@@ -1715,19 +1763,30 @@ async function loadWalletBundle(profile, myOrders = []) {
     warnings.push(`companion_withdrawals: ${error.message || error}`);
     withdrawalRows = [];
   }
-  const summary = summaryFrom(myOrders, transactions, withdrawalRows);
-  const ledgerFromTx = (transactions || []).map((row) => ({
-    id: row.id,
-    orderId: row.order_id || "",
-    type: ledgerTypeLabel(row),
-    typeCode: row.transaction_type,
-    amount: money(row.amount),
-    direction: row.transaction_type === "refund" || row.transaction_type === "withdrawal" ? "out" : "in",
-    status: row.status || "completed",
-    note: row.note || "",
-    createdAt: row.created_at,
-    settlement: parseSettlementNote(row.note),
-  }));
+  const linkedOrders = await ordersForIncomeTransactions(transactions, myOrders);
+  const partitioned = partitionCompanionIncome(transactions, linkedOrders);
+  const summary = summaryFrom(myOrders, transactions, withdrawalRows, linkedOrders);
+  const incomeKindById = new Map();
+  for (const tx of partitioned.orderIncome) incomeKindById.set(String(tx.id), "order_income");
+  for (const tx of partitioned.rewardOther) incomeKindById.set(String(tx.id), "reward_other");
+  for (const item of partitioned.voided) incomeKindById.set(String(item.tx.id), "void");
+
+  const ledgerFromTx = (transactions || []).map((row) => {
+    const kind = incomeKindById.get(String(row.id)) || "";
+    return {
+      id: row.id,
+      orderId: row.order_id || "",
+      type: ledgerTypeLabel(row),
+      typeCode: row.transaction_type,
+      incomeKind: kind || (row.transaction_type === "companion_income" ? "void" : ""),
+      amount: money(row.amount),
+      direction: row.transaction_type === "refund" || row.transaction_type === "withdrawal" ? "out" : "in",
+      status: row.status || "completed",
+      note: row.note || "",
+      createdAt: row.created_at,
+      settlement: parseSettlementNote(row.note),
+    };
+  });
   const ledgerFromWithdraw = (withdrawalRows || []).flatMap((w) => {
     const rows = [
       {
@@ -1735,6 +1794,7 @@ async function loadWalletBundle(profile, myOrders = []) {
         orderId: "",
         type: "提现申请",
         typeCode: "withdrawal_request",
+        incomeKind: "",
         amount: money(w.cat_food_amount),
         direction: "out",
         status: w.status,
@@ -1749,6 +1809,7 @@ async function loadWalletBundle(profile, myOrders = []) {
         orderId: "",
         type: "提现驳回退回",
         typeCode: "withdrawal_reject_return",
+        incomeKind: "",
         amount: money(w.cat_food_amount),
         direction: "in",
         status: "completed",
@@ -1763,7 +1824,7 @@ async function loadWalletBundle(profile, myOrders = []) {
     String(b.createdAt || "").localeCompare(String(a.createdAt || ""))
   );
   const earningDetails = ledgerFromTx
-    .filter((row) => row.typeCode === "companion_income")
+    .filter((row) => row.typeCode === "companion_income" && row.incomeKind === "order_income")
     .map((row) => {
       const settlement = row.settlement || parseSettlementNote(row.note) || {};
       return {
@@ -1775,6 +1836,7 @@ async function loadWalletBundle(profile, myOrders = []) {
         statusText: row.status === "completed" ? "已完成" : row.status === "pending" ? "待处理" : row.status || "-",
       };
     });
+  const bonus = sumTxAmount(partitioned.rewardOther);
   return {
     transactions,
     withdrawalRows,
@@ -1792,11 +1854,15 @@ async function loadWalletBundle(profile, myOrders = []) {
       frozen: summary.frozen || 0,
       pendingSettlement: summary.pendingSettlement || 0,
       withdrawn: summary.withdrawn || 0,
+      bonus,
+      reward: bonus,
+      rewardWithdrawable: false,
+      rewardNote: "奖励/其它不计入订单收入，默认不可作为陪玩订单提现额度。",
     },
     warnings,
   };
 }
-function summaryFrom(myOrders, transactions, withdrawals = []) {
+function summaryFrom(myOrders, transactions, withdrawals = [], linkedOrders = []) {
   const today = todayKey();
   const month = monthKey();
   const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
@@ -1806,8 +1872,18 @@ function summaryFrom(myOrders, transactions, withdrawals = []) {
     d.setUTCDate(d.getUTCDate() - (day - 1));
     return d.toISOString().slice(0, 10);
   })();
-  const incomeRows = (transactions || []).filter((row) => row.transaction_type === "companion_income" && row.status !== "cancelled");
-  const refundRows = (transactions || []).filter((row) => row.transaction_type === "refund" && row.status !== "cancelled");
+  const { orderIncome, rewardOther } = partitionCompanionIncome(
+    transactions,
+    linkedOrders && linkedOrders.length ? linkedOrders : myOrders
+  );
+  const incomeRows = orderIncome;
+  const orderIncomeIds = new Set(incomeRows.map((r) => String(r.order_id || "")).filter(Boolean));
+  const refundRows = (transactions || []).filter((row) => {
+    if (row.transaction_type !== "refund" || row.status === "cancelled") return false;
+    const oid = row.order_id ? String(row.order_id) : "";
+    if (!oid) return true;
+    return orderIncomeIds.has(oid);
+  });
   const frozen = (withdrawals || [])
     .filter((w) => WITHDRAW_FROZEN.has(w.status))
     .reduce((n, w) => n + money(w.cat_food_amount), 0);
@@ -1820,6 +1896,7 @@ function summaryFrom(myOrders, transactions, withdrawals = []) {
   const gross = incomeRows.reduce((n, row) => n + money(row.amount), 0);
   const refundTotal = refundRows.reduce((n, row) => n + money(row.amount), 0);
   const netGross = Math.max(0, roundMoney(gross - refundTotal));
+  const bonus = sumTxAmount(rewardOther);
   const sumIncomeOn = (pred) => incomeRows.filter(pred).reduce((n, row) => n + money(row.amount), 0);
   return {
     todayOrders: myOrders.filter((o) => String(o.createdAt || "").slice(0,10) === today).length,
@@ -1837,6 +1914,8 @@ function summaryFrom(myOrders, transactions, withdrawals = []) {
       .reduce((n, o) => n + money(o.playerIncome), 0),
     monthIncome: sumIncomeOn((row) => String(row.created_at || "").slice(0, 7) === month),
     totalIncome: netGross,
+    bonus,
+    reward: bonus,
     withdrawn,
     frozen,
     pendingSettlement: frozen,
@@ -2443,6 +2522,10 @@ async function bootstrapData(profile, companion) {
           frozen: summary.frozen || 0,
           pendingSettlement: summary.pendingSettlement || 0,
           withdrawn: summary.withdrawn || 0,
+          bonus: summary.bonus || earnings?.bonus || 0,
+          reward: summary.reward || earnings?.reward || 0,
+          rewardWithdrawable: false,
+          rewardNote: earnings?.rewardNote || "奖励/其它不计入订单收入，默认不可作为陪玩订单提现额度。",
         },
     earningDetails: permissions.isolationMode ? [] : earningDetails,
     walletLedger: permissions.isolationMode ? [] : walletLedger,
