@@ -158,10 +158,20 @@
       window.MCJCompanionPresence && window.MCJCompanionPresence.fromCompanion
         ? window.MCJCompanionPresence.fromCompanion(item)
         : null;
-    var onlineClass = presence && (presence.code === "online" || presence.code === "busy") ? " is-online" : "";
+    /* Always emit is-* — never leave bare .online-dot (CSS used to default green = offline bug). */
+    var presenceCode =
+      presence && presence.code && /^(online|busy|paused|offline)$/.test(presence.code)
+        ? presence.code
+        : "offline";
+    var onlineClass = " is-" + presenceCode;
     var gameLine = String(item.game || item.mainGame || item.serviceType || "").trim();
     if (isGarbledName(gameLine)) gameLine = "";
-    var statusLabel = presence && presence.label ? String(presence.label).trim() : "";
+    var statusLabel =
+      presence && presence.label
+        ? String(presence.label).trim()
+        : presenceCode === "offline"
+          ? "离线"
+          : "";
     // Home cards: real fields only — name + level + game + status + tags + detail (no price).
     return (
       '<article class="neon-card companion-card hot-card" data-companion-id="' +
@@ -172,6 +182,8 @@
       esc(levelId) +
       '" data-companion-level="' +
       esc(levelId) +
+      '" data-online-status="' +
+      esc(presenceCode) +
       '" data-card-style="' +
       esc(item.cardBackground || (levelCfg && levelCfg.cardBackground) || "") +
       '" data-level-color="' +
@@ -193,7 +205,9 @@
       esc(pos) +
       "\" onerror=\"this.onerror=null;this.src='/default-avatar.png'\"><span class=\"online-dot" +
       onlineClass +
-      '"></span></div>' +
+      '" data-online-status="' +
+      esc(presenceCode) +
+      '" aria-hidden="true"></span></div>' +
       '<div class="hot-info">' +
       '<div class="hot-name-row"><h3>' +
       esc(displayName) +
