@@ -13,35 +13,35 @@
       id: "lv1", level: 1, code: "Lv1", name: "萌喵", icon: "🩶",
       color: "#9CA3AF", displayColor: "#9CA3AF", cardBackground: "solid",
       badgeBorder: "#9CA3AF", badgeText: "#E5E7EB", badgeIcon: "#D1D5DB",
-      min: 20, max: 30, maxPlus: false, commissionRate: 20,
+      min: 20, max: 30, maxPlus: false, basePrice: 20, commissionRate: 20,
       description: "", upgradeCondition: "", sort: 1, open: true, enabled: true
     },
     {
       id: "lv2", level: 2, code: "Lv2", name: "灵喵", icon: "💙",
       color: "#3B82F6", displayColor: "#3B82F6", cardBackground: "gradient",
       badgeBorder: "#60A5FA", badgeText: "#DBEAFE", badgeIcon: "#93C5FD",
-      min: 30, max: 40, maxPlus: false, commissionRate: 18,
+      min: 30, max: 40, maxPlus: false, basePrice: 30, commissionRate: 18,
       description: "", upgradeCondition: "", sort: 2, open: true, enabled: true
     },
     {
       id: "lv3", level: 3, code: "Lv3", name: "猎喵", icon: "💜",
       color: "#A855F7", displayColor: "#A855F7", cardBackground: "gradient",
       badgeBorder: "#C084FC", badgeText: "#F3E8FF", badgeIcon: "#D8B4FE",
-      min: 40, max: 45, maxPlus: false, commissionRate: 16,
+      min: 40, max: 45, maxPlus: false, basePrice: 40, commissionRate: 16,
       description: "", upgradeCondition: "", sort: 3, open: true, enabled: true
     },
     {
       id: "lv4", level: 4, code: "Lv4", name: "喵神", icon: "💛",
       color: "#EAB308", displayColor: "#EAB308", cardBackground: "gradient",
       badgeBorder: "#FACC15", badgeText: "#FEF9C3", badgeIcon: "#FDE047",
-      min: 60, max: 75, maxPlus: false, commissionRate: 14,
+      min: 60, max: 75, maxPlus: false, basePrice: 60, commissionRate: 14,
       description: "", upgradeCondition: "", sort: 4, open: false, enabled: true
     },
     {
       id: "lv5", level: 5, code: "Lv5", name: "喵皇", icon: "👑",
       color: "#F59E0B", displayColor: "#EF4444", cardBackground: "glass",
       badgeBorder: "#F59E0B", badgeText: "#FEE2E2", badgeIcon: "#FBBF24",
-      min: 75, max: 100, maxPlus: true, commissionRate: 12,
+      min: 75, max: 100, maxPlus: true, basePrice: 75, commissionRate: 12,
       description: "", upgradeCondition: "", sort: 5, open: false, enabled: true
     }
   ];
@@ -101,6 +101,11 @@
     merged.min = Math.max(0, Number(merged.min != null ? merged.min : (merged.minPrice != null ? merged.minPrice : (base.min != null ? base.min : 0))));
     merged.max = Math.max(merged.min, Number(merged.max != null ? merged.max : (merged.maxPrice != null ? merged.maxPrice : (base.max != null ? base.max : merged.min))));
     merged.maxPlus = Boolean(merged.maxPlus || merged.allowAboveMax || merged.maximum_price_plus);
+    var basePriceRaw = merged.basePrice != null ? merged.basePrice : (merged.base_price != null ? merged.base_price : null);
+    merged.basePrice = Math.max(
+      0,
+      Number(basePriceRaw != null && basePriceRaw !== "" ? basePriceRaw : (base.basePrice != null ? base.basePrice : merged.min))
+    );
     merged.commissionRate = Math.max(0, Math.min(100, Number(merged.commissionRate != null ? merged.commissionRate : (merged.commission != null ? merged.commission : (base.commissionRate != null ? base.commissionRate : 0)))));
     merged.description = String(merged.description || merged.desc || base.description || "");
     merged.upgradeCondition = String(merged.upgradeCondition || merged.upgrade_condition || base.upgradeCondition || "");

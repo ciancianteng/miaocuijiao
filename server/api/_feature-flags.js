@@ -58,3 +58,20 @@ export function bossInviteLinksDisabledReason(env = process.env) {
   if (isBossInviteLinksEnabled(env)) return null;
   return "boss_invite_links_flag_disabled";
 }
+
+/**
+ * Pricing V2 read cutover (P4). Alias: PRICING_V2.
+ * P1–P3: leave unset / false — resolver keeps legacy-first equivalence.
+ * P4: enable on Staging then Production gray. Never blast-enable in P1.
+ * Env: PRICE_V2 or PRICING_V2
+ */
+export function isPricingV2Enabled(env = process.env) {
+  const parsed = parseBoolFlag(env.PRICE_V2 ?? env.PRICING_V2);
+  if (parsed != null) return parsed;
+  return false;
+}
+
+export function pricingV2DisabledReason(env = process.env) {
+  if (isPricingV2Enabled(env)) return null;
+  return "pricing_v2_flag_disabled";
+}
