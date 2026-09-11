@@ -96,16 +96,19 @@
   function hasValidBossAccessToken() {
     var access = readAccessToken();
     if (!looksLikeJwt(access)) return false;
-    var expRaw = "";
-    try {
-      expRaw = sessionStorage.getItem("mcjAuthExpiresAt") || localStorage.getItem("mcjAuthExpiresAt") || "";
-    } catch (e) {}
-    var exp = 0;
-    if (expRaw) {
-      var n = Number(expRaw);
-      if (Number.isFinite(n) && n > 0) exp = n < 1e12 ? n * 1000 : n;
+    // JWT exp is source of truth. Stale mcjAuthExpiresAt must not force restore overlay
+    // on every navigation while the access token is still valid.
+    var exp = decodeJwtExpMs(access);
+    if (!exp) {
+      var expRaw = "";
+      try {
+        expRaw = sessionStorage.getItem("mcjAuthExpiresAt") || localStorage.getItem("mcjAuthExpiresAt") || "";
+      } catch (e) {}
+      if (expRaw) {
+        var n = Number(expRaw);
+        if (Number.isFinite(n) && n > 0) exp = n < 1e12 ? n * 1000 : n;
+      }
     }
-    if (!exp) exp = decodeJwtExpMs(access);
     if (exp && Date.now() >= exp) return false;
     return true;
   }
@@ -912,6 +915,11 @@
     if (window.__mcjAfterAuthBusy) return;
     window.__mcjAfterAuthBusy = true;
     showAuthBootOverlay("正在登录…");
+    // Never leave the login overlay stranded across navigations / bfcache.
+    try {
+      window.addEventListener("pagehide", hideAuthBootOverlay, { once: true });
+      window.addEventListener("pageshow", hideAuthBootOverlay, { once: true });
+    } catch (eHide) {}
     // Session must already be saved by caller; re-confirm dual-write before navigate.
     var picked = result && result._pickedRole;
     if (result && result.session) {
@@ -1371,8 +1379,19 @@
         wipeBossGuestArtifacts();
         return denyUnauthed("/login.html", returnPath(), "token_missing");
       }
-      showPendingAuthGate("请稍候，正在恢复登录会话…");
+      // Soft restore: do NOT full-screen lock. Logged-in page switches were stuck on
+      //「正在登录/验证」while ensureSession waited on deferred boss-auth-session.js.
+      // Shell stays usable; private data keeps in-page loading until refresh finishes.
+      clearPendingAuthGate();
+      try {
+        document.documentElement.setAttribute("data-mcj-auth-gate", "soft-restore");
+        document.documentElement.setAttribute("data-mcj-auth-reason", "pending_restore");
+      } catch (eSoft) {}
       var finishBossGate = function (ok) {
+        try {
+          document.documentElement.removeAttribute("data-mcj-auth-gate");
+          document.documentElement.removeAttribute("data-mcj-auth-reason");
+        } catch (eClr) {}
         clearPendingAuthGate();
         if (!ok) {
           wipeBossGuestArtifacts();

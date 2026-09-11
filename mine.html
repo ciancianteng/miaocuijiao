@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-  <script src="/portal-early-gate.js?v=20260909authHangFix1"></script>
+  <script src="/portal-early-gate.js?v=20260911authPerfP0"></script>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>我的账号 - MEOW CUI JIAO</title>
@@ -260,7 +260,8 @@
       </div>
     </form>
   </div>
-  <script src="src/role-gates.js"></script>
+  <script src="src/boss-auth-session.js?v=20260911authPerfP0"></script>
+  <script src="src/role-gates.js?v=20260911authPerfP0"></script>
   <script src="src/account-security.js?v=20260805acctSec1"></script>
   <script src="src/boss-header.js" defer></script>
   <script>
@@ -474,14 +475,36 @@ async function load(){
           state.passwordHint=body.passwordHint||'';
           var saved=window.MCJRoleGate&&window.MCJRoleGate.saveSession;
           if(saved)saved({user:body.user,accessToken:token()},true);
-          try{
-            var sec=await fetch('/api/auth',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token()},body:JSON.stringify({action:'account_security'})});
-            var secBody=await sec.json().catch(function(){return {}});
-            if(sec.ok&&secBody.ok&&secBody.user){state.user=Object.assign({},state.user,secBody.user);state.passwordHint=secBody.passwordHint||state.passwordHint;}
-          }catch(e){}
-          try{var wr=await fetch('/api/recharge',{headers:{Authorization:'Bearer '+token(),Accept:'application/json'}});var wb=await wr.json().catch(function(){return {}});if(wr.ok&&wb.ok)state.wallet=wb.wallet||wb.summary||null;}catch(e){state.wallet=null}
-          try{var pr=await fetch('/api/points?limit=1',{headers:{Authorization:'Bearer '+token(),Accept:'application/json'},cache:'no-store'});var pb=await pr.json().catch(function(){return {}});if(pr.ok&&pb.ok)state.points=pb.account||{balance:0,lifetimeEarned:0};else state.points={balance:0,lifetimeEarned:0};}catch(e2){state.points={balance:0,lifetimeEarned:0}}
-          try{var dr=await fetch('/api/boss/direct-companions',{headers:{Authorization:'Bearer '+token(),Accept:'application/json'},cache:'no-store'});var db=await dr.json().catch(function(){return {}});if(dr.ok&&db.ok&&Array.isArray(db.companions))state.directCount=db.companions.length;else state.directCount=0;}catch(e3){state.directCount=0}
+          // First usable UI: paint identity shell immediately after /me.
+          // Non-critical wallet/points/direct/security must not block first paint.
+          state.loading=false;paint();
+          var authHdr={Authorization:'Bearer '+token(),Accept:'application/json'};
+          var secondary=Promise.all([
+            fetch('/api/auth',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token()},body:JSON.stringify({action:'account_security'}),cache:'no-store'})
+              .then(function(r){return r.json().then(function(b){return {r:r,b:b}})}).catch(function(){return null}),
+            fetch('/api/recharge',{headers:authHdr,cache:'no-store'})
+              .then(function(r){return r.json().then(function(b){return {r:r,b:b}})}).catch(function(){return null}),
+            fetch('/api/points?limit=1',{headers:authHdr,cache:'no-store'})
+              .then(function(r){return r.json().then(function(b){return {r:r,b:b}})}).catch(function(){return null}),
+            fetch('/api/boss/direct-companions',{headers:authHdr,cache:'no-store'})
+              .then(function(r){return r.json().then(function(b){return {r:r,b:b}})}).catch(function(){return null})
+          ]);
+          secondary.then(function(rows){
+            var sec=rows[0], wr=rows[1], pr=rows[2], dr=rows[3];
+            if(sec&&sec.r&&sec.r.ok&&sec.b&&sec.b.ok&&sec.b.user){
+              state.user=Object.assign({},state.user,sec.b.user);
+              state.passwordHint=sec.b.passwordHint||state.passwordHint;
+            }
+            if(wr&&wr.r&&wr.r.ok&&wr.b&&wr.b.ok)state.wallet=wr.b.wallet||wr.b.summary||null;
+            else state.wallet=state.wallet||null;
+            if(pr&&pr.r&&pr.r.ok&&pr.b&&pr.b.ok)state.points=pr.b.account||{balance:0,lifetimeEarned:0};
+            else state.points=state.points||{balance:0,lifetimeEarned:0};
+            if(dr&&dr.r&&dr.r.ok&&dr.b&&dr.b.ok&&Array.isArray(dr.b.companions))state.directCount=dr.b.companions.length;
+            else state.directCount=state.directCount!=null?state.directCount:0;
+            paint();
+            checkPendingReviewTip();
+          });
+          return;
         }catch(err){
           var msg=String((err&&err.name==='AbortError')?'加载超时，请重试':(err&&err.message)||'账号资料读取失败');
           // Keep valid session on profile init failure — never treat as logged out.
@@ -492,7 +515,8 @@ async function load(){
           }else{
             state.error=msg;
           }
-        }finally{state.loading=false;paint();checkPendingReviewTip()}
+        }
+        state.loading=false;paint();checkPendingReviewTip();
       }
       document.addEventListener('click',async function(e){
         var openTip=e.target.closest('[data-open-pending-review]');

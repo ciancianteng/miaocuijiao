@@ -8,7 +8,7 @@
 (function () {
   "use strict";
 
-  var GATE_VERSION = "20260910supportGuest1";
+  var GATE_VERSION = "20260911authPerfP0";
   var OVERLAY_ID = "mcjAuthBootOverlay";
   /** Once true, deferred DOMContentLoaded overlay paint must no-op (auth hang fix). */
   var gateClosed = false;
@@ -202,23 +202,30 @@
     }
   }
 
-  function hasValidAccessJwt(access) {
+  /**
+   * JWT `exp` is source of truth. Never prefer mcjAdminExpiresAt when validating a
+   * boss/companion/CS token — stale/cross-portal storage mirrors previously forced
+   * every navigation into a full-screen pending_restore overlay while the page
+   * had already painted underneath.
+   * @param {string} access
+   * @param {{expiresKey?: string}} [opts] optional scoped storage fallback only when JWT has no exp
+   */
+  function hasValidAccessJwt(access, opts) {
     if (!looksLikeJwt(access)) return false;
-    var expRaw = "";
-    try {
-      expRaw =
-        sessionStorage.getItem("mcjAdminExpiresAt") ||
-        localStorage.getItem("mcjAdminExpiresAt") ||
-        sessionStorage.getItem("mcjAuthExpiresAt") ||
-        localStorage.getItem("mcjAuthExpiresAt") ||
-        "";
-    } catch (e) {}
-    var exp = 0;
-    if (expRaw) {
-      var n = Number(expRaw);
-      if (Number.isFinite(n) && n > 0) exp = n < 1e12 ? n * 1000 : n;
+    var exp = decodeJwtExpMs(access);
+    if (!exp) {
+      var expRaw = "";
+      var key = (opts && opts.expiresKey) || "";
+      try {
+        if (key) {
+          expRaw = sessionStorage.getItem(key) || localStorage.getItem(key) || "";
+        }
+      } catch (e) {}
+      if (expRaw) {
+        var n = Number(expRaw);
+        if (Number.isFinite(n) && n > 0) exp = n < 1e12 ? n * 1000 : n;
+      }
     }
-    if (!exp) exp = decodeJwtExpMs(access);
     if (exp && Date.now() >= exp) return false;
     return true;
   }
@@ -466,7 +473,8 @@
 
     // —— Boss protected pages ——
     // Soft session alone NEVER unlocks. Non-expired access JWT unlocks immediately.
-    // Expired access + refresh → keep pending overlay; role-gates/MCJBossAuth restores.
+    // Expired access + refresh → soft-restore (NO full-screen lock). Page shell stays
+    // usable; role-gates / MCJBossAuth.ensureSession refreshes in background.
     // NOTE: profile.html is public companion detail — do NOT gate it.
     // NOTE: support.html is a public contact hub (Discord / channels) — guests MUST enter.
     //       Account-bound chat/order actions still require login inside the page.
@@ -477,7 +485,8 @@
     ) {
       // P0: never clear body here — blank DOM was the white-screen trigger for guests
       // and for late-running scripts when body already existed.
-      hideShell("boss_private_pending");
+      // P0 perf: do NOT paint overlay before JWT check — logged-in navigations used to
+      // flash/lock「正在验证登录状态」even when background HTML had already rendered.
       var bossUser = null;
       try {
         bossUser = JSON.parse(bossItem("customerUser") || "null") || {};
@@ -492,13 +501,20 @@
       }
       var bossAccess = bossItem("mcjAuthAccessToken");
       var bossRefresh = bossItem("mcjAuthRefreshToken");
-      if (hasValidAccessJwt(bossAccess)) {
+      if (hasValidAccessJwt(bossAccess, { expiresKey: "mcjAuthExpiresAt" })) {
         revealShell();
         return true;
       }
-      // Token expired / missing access but refresh still present — do not wipe; let restore run.
+      // Token expired / missing access but refresh still present — soft restore.
+      // Full-screen pending_restore was the Production hang: overlay excluded from
+      // PENDING_SAFETY_MS and waited on deferred boss-auth-session.js.
       if (String(bossRefresh || "").trim()) {
-        hideShell("pending_restore");
+        try {
+          document.documentElement.setAttribute("data-mcj-auth-gate", "soft-restore");
+          document.documentElement.setAttribute("data-mcj-auth-reason", "pending_restore");
+          document.documentElement.style.visibility = "";
+        } catch (eSoft) {}
+        removeAuthGateOverlay();
         return true;
       }
       wipeBossIdentity();
