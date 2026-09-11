@@ -1,7 +1,10 @@
 # Performance Phase 2 — Feel Audit & Low-Risk Fixes
 
 Branch: `cursor/boss-perf-phase2-feel-6f29`  
+PR: `#228` (draft) — Preview Ready  
 Base: `main` @ `#227` (auth overlay P0) — **not** mixed with `#226`.
+
+Final acceptance checklist: [`AK-REPORT.md`](./AK-REPORT.md).
 
 ## Production root causes (measured)
 
