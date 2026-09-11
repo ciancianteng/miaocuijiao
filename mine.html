@@ -7,6 +7,10 @@
   <title>我的账号 - MEOW CUI JIAO</title>
   <link rel="stylesheet" href="src/style.css">
   <link rel="stylesheet" href="src/boss-header.css">
+  <link rel="prefetch" href="orders.html" as="document">
+  <link rel="prefetch" href="messages.html" as="document">
+  <link rel="prefetch" href="support.html" as="document">
+  <link rel="prefetch" href="recharge.html" as="document">
   <style>
     :root{
       --bg:#050505;
@@ -32,6 +36,15 @@
       font-size:12px;font-weight:700;letter-spacing:.04em;opacity:.85;
     }
     .topbar .brand img{width:24px;height:24px;border-radius:8px;object-fit:cover}
+    /* Perf Phase2: instant click feedback (<100ms) on full-page nav */
+    a,button{touch-action:manipulation}
+    a:active,button:active{opacity:.78}
+    .mine-quick a,.entry-trigger,.boss-nav a{
+      transition:opacity .08s linear,transform .08s linear,background-color .12s ease;
+    }
+    .mine-quick a.is-nav-pending,.entry-trigger.is-nav-pending,.boss-nav a.is-nav-pending{
+      opacity:.62;transform:scale(.98);
+    }
     .topbar .boss-nav{display:none!important}
     body.mcj-boss-shell header.mcj-boss-header{
       min-height:70px!important;height:70px!important;padding:0 16px!important;
@@ -232,7 +245,7 @@
   </style>
 </head>
 <body>
-  <header class="topbar"><a class="brand" href="index.html"><img src="assets/meow-cuijiao-brand.jpg" alt="MEOW CUI JIAO"><span>MEOW CUI JIAO</span></a><nav class="boss-nav"><a href="index.html">首页</a><a href="companion-center.html">陪玩大厅</a><a href="orders.html">我的订单</a><a href="support.html?start=1">在线客服</a></nav></header>
+  <header class="topbar"><a class="brand" href="index.html"><img src="assets/meow-cuijiao-brand-96.webp" alt="MEOW CUI JIAO" width="24" height="24" decoding="async" onerror="this.onerror=null;this.src='assets/meow-cuijiao-brand-96.jpg'"><span>MEOW CUI JIAO</span></a><nav class="boss-nav"><a href="index.html">首页</a><a href="companion-center.html">陪玩大厅</a><a href="orders.html">我的订单</a><a href="support.html?start=1">在线客服</a></nav></header>
   <main class="boss-shell" id="accountApp"></main>
   <div class="modal" id="featureModal" aria-hidden="true">
     <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="featureModalTitle">
@@ -261,6 +274,8 @@
     </form>
   </div>
   <script src="src/boss-auth-session.js?v=20260911authPerfP0"></script>
+  <script src="src/boss-profile-cache.js?v=20260911perfP2"></script>
+  <script src="src/boss-nav-prefetch.js?v=20260911perfP2"></script>
   <script src="src/role-gates.js?v=20260911authPerfP0"></script>
   <script src="src/account-security.js?v=20260805acctSec1"></script>
   <script src="src/boss-header.js" defer></script>
@@ -467,9 +482,16 @@ async function load(){
         if(params.get('register')==='1'&&!token()){state.loading=false;paintRegister();return}
         state.loading=true;state.error='';paint();
         try{
-          var res=await fetchWithTimeout('/api/auth?action=me',{headers:{Authorization:'Bearer '+token()},cache:'no-store'},10000);
-          var body=await res.json().catch(function(){return {}});
-          if(!res.ok||!body.ok)throw new Error(body.message||'账号资料读取失败');
+          var mePack=null;
+          if(window.MCJBossProfileCache&&typeof window.MCJBossProfileCache.getMe==='function'){
+            mePack=await window.MCJBossProfileCache.getMe({timeoutMs:10000});
+            if(!mePack||!mePack.ok||!mePack.user)throw new Error((mePack&&mePack.message)||'账号资料读取失败');
+            var body={ok:true,user:mePack.user,passwordHint:mePack.passwordHint||''};
+          }else{
+            var res=await fetchWithTimeout('/api/auth?action=me',{headers:{Authorization:'Bearer '+token()},cache:'no-store'},10000);
+            body=await res.json().catch(function(){return {}});
+            if(!res.ok||!body.ok)throw new Error(body.message||'账号资料读取失败');
+          }
           if(!(body.user.hasBoss||body.user.role==='boss'||body.user.role==='customer'))throw new Error('当前账号不是老板角色。');
           state.user=body.user;
           state.passwordHint=body.passwordHint||'';
@@ -478,6 +500,9 @@ async function load(){
           // First usable UI: paint identity shell immediately after /me.
           // Non-critical wallet/points/direct/security must not block first paint.
           state.loading=false;paint();
+          try{
+            if(window.MCJBossNavPrefetch) window.MCJBossNavPrefetch.run({delayMs:500});
+          }catch(ePrefetch){}
           var authHdr={Authorization:'Bearer '+token(),Accept:'application/json'};
           var secondary=Promise.all([
             fetch('/api/auth',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token()},body:JSON.stringify({action:'account_security'}),cache:'no-store'})
@@ -494,6 +519,11 @@ async function load(){
             if(sec&&sec.r&&sec.r.ok&&sec.b&&sec.b.ok&&sec.b.user){
               state.user=Object.assign({},state.user,sec.b.user);
               state.passwordHint=sec.b.passwordHint||state.passwordHint;
+              if(window.MCJBossProfileCache){
+                try{
+                  window.MCJBossProfileCache.invalidate();
+                }catch(eInv){}
+              }
             }
             if(wr&&wr.r&&wr.r.ok&&wr.b&&wr.b.ok)state.wallet=wr.b.wallet||wr.b.summary||null;
             else state.wallet=state.wallet||null;
@@ -705,18 +735,39 @@ async function load(){
           },450);
           // Re-fetch from API so refresh/login always matches DB.
           try{
-            var me=await fetch('/api/auth?action=me',{headers:{Authorization:'Bearer '+token()},cache:'no-store'});
-            var meBody=await me.json().catch(function(){return{}});
-            if(me.ok&&meBody.ok&&meBody.user){
-              state.user=meBody.user;
+            if(window.MCJBossProfileCache) window.MCJBossProfileCache.invalidate();
+            var mePack2=window.MCJBossProfileCache
+              ? await window.MCJBossProfileCache.getMe({force:true,timeoutMs:10000})
+              : null;
+            if(mePack2&&mePack2.ok&&mePack2.user){
+              state.user=mePack2.user;
               if(window.MCJRoleGate&&window.MCJRoleGate.saveSession){
                 window.MCJRoleGate.saveSession({user:state.user,accessToken:token(),refreshToken:sessionStorage.getItem('mcjAuthRefreshToken')||''},true);
               }
               paint();
+            }else{
+              var me=await fetch('/api/auth?action=me',{headers:{Authorization:'Bearer '+token()},cache:'no-store'});
+              var meBody=await me.json().catch(function(){return{}});
+              if(me.ok&&meBody.ok&&meBody.user){
+                state.user=meBody.user;
+                if(window.MCJRoleGate&&window.MCJRoleGate.saveSession){
+                  window.MCJRoleGate.saveSession({user:state.user,accessToken:token(),refreshToken:sessionStorage.getItem('mcjAuthRefreshToken')||''},true);
+                }
+                paint();
+              }
             }
           }catch(syncErr){}
         }catch(err){editState.textContent=err.message||'保存失败'}
       });
+      // Instant visual feedback on full-page navigations (MPA).
+      document.addEventListener('pointerdown',function(e){
+        var a=e.target&&e.target.closest?e.target.closest('a[href]'):null;
+        if(!a)return;
+        var href=a.getAttribute('href')||'';
+        if(!href||href.charAt(0)==='#'||href.indexOf('javascript:')===0)return;
+        if(a.target==='_blank'||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;
+        a.classList.add('is-nav-pending');
+      },true);
       load();
     })();
   </script>
