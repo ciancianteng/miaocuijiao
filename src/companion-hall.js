@@ -406,14 +406,14 @@
       return '<span class="mcj-service-tag companion-game-chip">' + esc(game) + "</span>";
     }).join("");
   }
-  /** Unified ✓ 已认证 badge — hall + home share .mcj-verified-badge CSS */
+  /** Unified verified badge — CSS ::before provides ✓; text is 已认证 only */
   function verifiedBadgeHtml(item) {
     var has =
       item.certificationStatus === "approved" ||
       (Array.isArray(item.certTags) && item.certTags.length) ||
       (Array.isArray(item.certificationTags) && item.certificationTags.length);
     if (!has) return "";
-    return '<span class="mcj-verified-badge">✓ 已认证</span>';
+    return '<span class="mcj-verified-badge">已认证</span>';
   }
   function card(item) {
     var pillStyle = "";
