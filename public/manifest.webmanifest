@@ -1,14 +1,21 @@
 {
+  "id": "https://www.meowcuijiao.com/",
   "name": "妙脆角 MEOW CUI JIAO",
   "short_name": "妙脆角",
   "description": "专业陪玩，每一场游戏认真对待每一位热爱电竞的你。",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
+  "display_override": [
+    "standalone",
+    "minimal-ui"
+  ],
   "orientation": "portrait-primary",
   "background_color": "#0a0610",
   "theme_color": "#0a0610",
   "lang": "zh-CN",
+  "dir": "ltr",
+  "prefer_related_applications": false,
   "icons": [
     {
       "src": "/icons/icon-192.png",
