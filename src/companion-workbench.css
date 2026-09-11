@@ -876,3 +876,50 @@ a.pw-btn{display:inline-flex;align-items:center;justify-content:center;text-deco
   .pw-gallery-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
 
+
+
+/* Hall redesign — compact status + app-like grab cards */
+.pw-hall-status-bar{display:flex;align-items:center;gap:8px;min-height:42px;margin:0 0 12px;padding:8px 12px;border-radius:12px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.06)}
+.pw-hall-status-bar strong{font-size:13px;font-weight:750;color:#fff}
+.pw-hall-status-hint{flex:1;min-width:0;color:var(--pw-muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pw-hall-status-dot{width:8px;height:8px;border-radius:50%;background:#94a3b8;box-shadow:0 0 0 3px rgba(148,163,184,.15)}
+.pw-hall-status-dot.is-online{background:#4ade80;box-shadow:0 0 0 3px rgba(74,222,128,.18)}
+.pw-hall-status-dot.is-busy{background:#fb923c;box-shadow:0 0 0 3px rgba(251,146,60,.18)}
+.pw-hall-status-dot.is-paused,.pw-hall-status-dot.is-offline{background:#94a3b8}
+.pw-hall-seg{display:inline-flex;padding:3px;border-radius:999px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);gap:2px}
+.pw-seg-item{height:30px;padding:0 12px;border:0;border-radius:999px;background:transparent;color:var(--pw-muted);font-size:12px;font-weight:700}
+.pw-seg-item.active{background:rgba(255,143,197,.18);color:#ffe8f3}
+.pw-hall-filter-tools{display:flex;align-items:center;gap:8px;margin-left:auto}
+.pw-hall-filters{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:12px 0}
+.pw-btn-mini{height:34px;padding:0 12px;border-radius:10px;font-size:12px}
+.pw-hall-head{margin-bottom:10px}
+.pw-hall-list{gap:12px}
+.pw-grab-main{display:grid;gap:6px;margin-bottom:10px}
+.pw-grab-title-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.pw-grab-card h3{margin:0;font-size:18px;font-weight:780}
+.pw-grab-service{margin:0;color:#ffd0e4;font-size:13px;font-weight:650}
+.pw-grab-desc{margin:0;color:var(--pw-muted);font-size:12px;line-height:1.45}
+.pw-grab-price{display:flex;align-items:baseline;gap:6px;margin-top:4px}
+.pw-grab-price strong{font-size:28px;line-height:1;font-weight:820;color:#ff9ec8;text-shadow:0 0 18px rgba(255,145,195,.25)}
+.pw-grab-price span{font-size:13px;color:#ffd0e4;font-weight:700}
+.pw-grab-meta{display:flex;flex-wrap:wrap;gap:8px 12px;margin:0 0 12px;color:rgba(255,232,243,.55);font-size:11px}
+.pw-grab-foot{display:flex;flex-direction:column;gap:8px;padding-top:12px;border-top:1px solid rgba(255,255,255,.06)}
+.pw-grab-reason{margin:0;color:#fda4af;font-size:12px}
+.pw-grab-cta{width:100%;min-height:44px;border-radius:12px;font-size:15px;font-weight:800}
+.pw-grab-card.is-blocked{opacity:.96}
+@media (max-width:720px){
+  .pw-hall-filter-tools{margin-left:0;width:100%}
+  .pw-hall-status-hint{display:none}
+}
+
+.pw-hall-status-dot{width:8px;height:8px;border-radius:50%;background:#94a3b8;box-shadow:0 0 0 3px rgba(148,163,184,.15);flex:0 0 auto}
+.pw-hall-status-dot.is-online{background:#4ade80;box-shadow:0 0 0 3px rgba(74,222,128,.18)}
+.pw-hall-status-dot.is-busy{background:#fb923c;box-shadow:0 0 0 3px rgba(251,146,60,.18)}
+.pw-hall-status-dot.is-paused,.pw-hall-status-dot.is-offline{background:#94a3b8}
+.pw-hall-status-hint{flex:1;min-width:0;color:var(--pw-muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pw-grab-title-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.pw-grab-meta{display:flex;flex-wrap:wrap;gap:8px 12px;margin:0 0 12px;color:rgba(255,232,243,.55);font-size:11px}
+.pw-grab-foot{display:flex;flex-direction:column;gap:8px;padding-top:12px;border-top:1px solid rgba(255,255,255,.06)}
+.pw-grab-reason{margin:0;color:#fda4af;font-size:12px}
+.pw-grab-cta{width:100%;min-height:44px;border-radius:12px;font-size:15px;font-weight:800}
+.pw-grab-card.is-blocked{opacity:.96}

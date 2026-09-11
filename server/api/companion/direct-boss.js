@@ -109,6 +109,11 @@ export default async function handler(req, res) {
         message: "直属关系尚未开通",
       });
     }
-    return json(res, err.status || 500, { ok: false, message: err.message || "读取失败" });
+    const raw = String(err.message || "");
+    console.error("[companion/direct-boss]", err?.status || 500, raw, err?.body || "");
+    const friendly = /supabase|PGRST|schema cache|Could not find|JWT|permission|network|fetch/i.test(raw)
+      ? "负责人信息暂时无法加载，请稍后重试"
+      : (raw || "负责人信息暂时无法加载，请稍后重试");
+    return json(res, err.status || 500, { ok: false, message: friendly, retryable: true });
   }
 }
