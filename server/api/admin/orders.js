@@ -1127,6 +1127,18 @@ export default async function handler(req, res) {
       body: JSON.stringify(patch),
     });
     const after = updated[0] || { ...before, ...patch };
+    if ((action === "cancel" || String(after.status || "") === "cancelled" || String(after.status || "") === "refunded") && before.status !== after.status) {
+      try {
+        const { clawbackCompanionIncomeForOrder } = await import("../_companion-income.js");
+        await clawbackCompanionIncomeForOrder(
+          { supabaseJson, restUrl, serviceHeaders },
+          after,
+          { reason: String(payload.reason || body.reason || action), mode: action === "refund" || after.status === "refunded" ? "refund" : "cancel" }
+        );
+      } catch (err) {
+        console.warn("[admin/orders] companion income clawback", err?.message || err);
+      }
+    }
     const ids = [after.boss_id, after.companion_id, after.customer_service_id].filter(Boolean);
     const profiles = ids.length
       ? await supabaseJson(restUrl("profiles", `?id=in.(${ids.map(encodeURIComponent).join(",")})`), { headers: serviceHeaders() }).catch(() => [])
