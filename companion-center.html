@@ -8,12 +8,13 @@
   <link rel="stylesheet" href="src/platform.css">
   <link rel="stylesheet" href="src/notify-system.css">
   <link rel="stylesheet" href="src/design-system.css">
-  <link rel="stylesheet" href="src/companion-hall.css?v=20260911bannerHall2">
   <link rel="stylesheet" href="src/companion-identity.css?v=20260907capsuleFix1">
   <link rel="stylesheet" href="src/place-order-modal.css">
   <link rel="stylesheet" href="src/boss-header.css?v=20260810hallLevel1">
-  <link rel="stylesheet" href="src/ui-linglu-polish.css?v=20260911bannerHall2">
-  <link rel="stylesheet" href="src/home-app-mobile.css?v=20260911bannerHall2">
+  <link rel="stylesheet" href="src/ui-linglu-polish.css?v=20260911hallCompact4">
+  <link rel="stylesheet" href="src/home-app-mobile.css?v=20260911hallCompact4">
+  <!-- Hall compact MUST load after ui-linglu-polish (Prod Vite keeps link order) -->
+  <link rel="stylesheet" href="src/companion-hall.css?v=20260911hallCompact4">
 </head>
 <body>
   <header class="topbar companion-market-header">
@@ -176,7 +177,7 @@
   <script src="src/companion-levels.js?v=20260907capsuleFix1"></script>
   <script src="src/role-gates.js?v=20260908antiBlank1"></script>
   <script src="src/boss-auth-session.js?v=20260811authUnify2"></script>
-  <script src="src/avatar-fallback.js?v=20260911bannerHall2"></script>
+  <script src="src/avatar-fallback.js?v=20260911hallCompact4"></script>
   <script src="src/companion-media.js?v=20260802mediaSync"></script>
   <script src="src/companion-identity.js?v=20260907capsuleFix1"></script>
   <script src="src/boss-header.js?v=20260810hallLevel1" defer></script>
@@ -186,7 +187,7 @@
   <script src="src/currency.js"></script>
   <script src="src/companion-presence.js?v=20260810hallLevel1"></script>
   <script src="/src/place-order-modal.js?v=20260811authUnify1" defer></script>
-  <script src="src/companion-hall.js?v=20260911bannerHall2" defer></script>
+  <script src="src/companion-hall.js?v=20260911hallCompact4" defer></script>
   <script src="src/companion-hall-channels.js?v=20260911channels2" defer></script>
   <script src="src/notify-system.js" defer></script>
   <script src="src/launch-readiness-fixes.js" defer></script>
