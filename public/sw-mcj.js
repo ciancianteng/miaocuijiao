@@ -1,4 +1,5 @@
 /* MCJ minimal service worker — network-first passthrough for installability.
+   Version: 20260911pwaFix1
    Do NOT aggressively cache HTML/API (avoids stale login/session pages). */
 self.addEventListener("install", function (event) {
   self.skipWaiting();

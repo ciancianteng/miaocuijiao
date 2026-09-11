@@ -100,7 +100,7 @@
 
   function ensurePwaMeta() {
     if (!document.head) return;
-    var iconV = "20260911pwaIcon2";
+    var iconV = "20260911pwaFix1";
     ensureMetaTag('link[rel="manifest"][data-mcj-pwa-manifest]', function () {
       var l = document.createElement("link");
       l.rel = "manifest";
@@ -121,6 +121,13 @@
       l.sizes = "180x180";
       l.href = "/icons/apple-touch-icon.png?v=" + iconV;
       l.setAttribute("data-mcj-pwa-ati-icons", "1");
+      return l;
+    });
+    ensureMetaTag('link[rel="icon"][data-mcj-pwa-favicon-ico]', function () {
+      var l = document.createElement("link");
+      l.rel = "icon";
+      l.href = "/favicon.ico?v=" + iconV;
+      l.setAttribute("data-mcj-pwa-favicon-ico", "1");
       return l;
     });
     ensureMetaTag('link[rel="icon"][data-mcj-pwa-favicon-32]', function () {
@@ -181,12 +188,12 @@
   function registerServiceWorker() {
     if (!("serviceWorker" in navigator)) return;
     try {
-      navigator.serviceWorker.register("/sw-mcj.js", { scope: "/" }).catch(function () {});
+      navigator.serviceWorker.register("/sw-mcj.js?v=20260911pwaFix1", { scope: "/" }).catch(function () {});
     } catch (e) {}
   }
 
   function logoSrc() {
-    return "/icons/icon-192.png?v=20260911pwaIcon2";
+    return "/icons/icon-192.png?v=20260911pwaFix1";
   }
 
   function buildFlow(platform, hasBip) {
@@ -205,20 +212,22 @@
     if (platform.android && hasBip) {
       return (
         '<div class="mcj-pwa-flow" aria-hidden="true">' +
-        '<div class="mcj-pwa-step"><div class="mcj-pwa-step-ico">◎</div><span>一键安装</span></div>' +
+        '<div class="mcj-pwa-step"><div class="mcj-pwa-step-ico">◎</div><span>点「安装应用」</span></div>' +
         '<div class="mcj-pwa-arrow">→</div>' +
         '<div class="mcj-pwa-step"><div class="mcj-pwa-step-ico">⌂</div><span>出现在主屏幕</span></div>' +
-        "</div>"
+        "</div>" +
+        '<div class="mcj-pwa-hint"><span class="mcj-pwa-chevron">▼</span><span>请选「安装应用」，不要选「添加网页快捷方式」</span></div>'
       );
     }
     return (
       '<div class="mcj-pwa-flow" aria-hidden="true">' +
       '<div class="mcj-pwa-step"><div class="mcj-pwa-step-ico">⋮</div><span>Chrome 菜单</span></div>' +
       '<div class="mcj-pwa-arrow">→</div>' +
-      '<div class="mcj-pwa-step"><div class="mcj-pwa-step-ico">＋</div><span>安装应用 / 添加到主屏幕</span></div>' +
+      '<div class="mcj-pwa-step"><div class="mcj-pwa-step-ico">＋</div><span>优先选「安装应用」</span></div>' +
       '<div class="mcj-pwa-arrow">→</div>' +
       '<div class="mcj-pwa-step"><div class="mcj-pwa-step-ico">✓</div><span>确认</span></div>' +
-      "</div>"
+      "</div>" +
+      '<div class="mcj-pwa-hint"><span class="mcj-pwa-chevron">▼</span><span>不要选「添加网页快捷方式」（会灰 M + Chrome 角标）</span></div>'
     );
   }
 
@@ -231,14 +240,14 @@
     }
     if (platform.android && hasBip) {
       return {
-        title: "安装妙脆角到主屏幕",
-        sub: "一键安装，随时打开陪玩大厅",
+        title: "安装妙脆角应用",
+        sub: "点「安装应用」安装到主屏幕，不要选「添加网页快捷方式」",
       };
     }
     if (platform.android) {
       return {
-        title: "把妙脆角加到主屏幕",
-        sub: "通过 Chrome 菜单安装，像 App 一样使用",
+        title: "安装妙脆角应用",
+        sub: "Chrome 菜单优先选「安装应用」，不要选「添加网页快捷方式」",
       };
     }
     return {
@@ -310,7 +319,7 @@
       if (platform.android && hasBip) {
         actions.innerHTML =
           '<button type="button" class="mcj-pwa-btn" data-mcj-pwa-later>稍后再说</button>' +
-          '<button type="button" class="mcj-pwa-btn primary" data-mcj-pwa-install>安装</button>';
+          '<button type="button" class="mcj-pwa-btn primary" data-mcj-pwa-install>安装应用</button>';
       } else if (platform.iOS) {
         actions.innerHTML =
           '<button type="button" class="mcj-pwa-btn" data-mcj-pwa-later>稍后再说</button>' +
