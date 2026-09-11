@@ -519,11 +519,12 @@
 
   function resolveHomeBanners() {
     var remote = activeBanners();
-    if (isProductionHost()) return remote;
-    // Preview/Staging: need ≥3 real slides to verify autoplay/swipe/dots.
-    // Admin currently often has 0–2 (or pink stubs). Use labeled preview pack.
-    if (remote.length >= 3) return remote;
-    return buildPreviewVerifySlides();
+    // CRITICAL: admin SoT wins whenever any published banner exists.
+    // Never replace real A/B/C with the preview pack (that made every slide look identical).
+    if (remote.length > 0) return remote;
+    // Empty admin list only: local/preview may show labeled demo pack; production stays empty.
+    if (!isProductionHost()) return buildPreviewVerifySlides();
+    return remote;
   }
 
   function isUsableBannerImage(img) {

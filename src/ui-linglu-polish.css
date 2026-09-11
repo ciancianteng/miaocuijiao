@@ -185,10 +185,10 @@
 
 .companion-hall-grid .companion-brand-watermark {
   margin: 0 !important;
-  font-size: 9px !important;
+  font-size: 10px !important;
   font-weight: 600 !important;
-  letter-spacing: 0.06em !important;
-  color: rgba(255, 214, 232, 0.38) !important;
+  letter-spacing: 0.12em !important;
+  color: rgba(255, 214, 232, 0.34) !important;
   text-transform: uppercase !important;
 }
 
@@ -200,24 +200,24 @@
   display: flex !important;
   flex-wrap: wrap !important;
   align-items: center !important;
-  gap: 6px !important;
+  gap: 8px !important;
 }
 
 .companion-hall-grid .companion-status-inline {
-  font-size: 11px !important;
+  font-size: 12px !important;
 }
 
 .companion-hall-grid .companion-identity-row,
 .companion-hall-grid .companion-capsule-row {
-  gap: 4px !important;
+  gap: 8px !important;
   margin: 0 !important;
 }
 
 .companion-hall-grid .companion-identity-row .mcj-service-tag,
 .companion-hall-grid .companion-identity-row .mcj-category-tag,
 .companion-hall-grid .companion-identity-row .mcj-voice-tag {
-  font-size: 10px !important;
-  padding: 2px 6px !important;
+  font-size: 12px !important;
+  padding: 0 10px !important;
 }
 
 .companion-hall-grid .companion-cert-row {
@@ -231,25 +231,28 @@
 }
 
 .companion-hall-grid .companion-card-actions {
-  margin-top: 4px !important;
-  gap: 6px !important;
+  margin-top: 6px !important;
+  gap: 10px !important;
 }
 
 .companion-hall-grid .companion-card-action {
-  height: 34px !important;
-  min-height: 34px !important;
-  max-height: 34px !important;
-  font-size: 12px !important;
+  height: 50px !important;
+  min-height: 50px !important;
+  max-height: 50px !important;
+  font-size: 14px !important;
+  border-radius: 15px !important;
 }
 
 @media (max-width: 560px) {
   .companion-hall-grid .companion-nickname-line {
-    font-size: 15px !important;
+    font-size: 20px !important;
+    font-weight: 700 !important;
+    color: #fff !important;
   }
 
   .companion-hall-grid .companion-card-body {
-    padding: 8px 8px 10px !important;
-    gap: 5px !important;
+    padding: 12px 14px 14px !important;
+    gap: 8px !important;
   }
 }
 

@@ -125,6 +125,14 @@
     if (status === "暂停接单") return " is-paused";
     return " is-offline";
   }
+  /** Short UI label for hall cards — still driven by real presence status. */
+  function statusChipText(status) {
+    var s = String(status || "");
+    if (/在线/.test(s) && !/暂停|忙碌/.test(s)) return "在线";
+    if (/忙碌/.test(s)) return "忙碌";
+    if (/暂停/.test(s)) return "暂停";
+    return "离线";
+  }
   async function readItems() {
     var dataItems = [];
     state.loadError = "";
@@ -405,7 +413,7 @@
       (Array.isArray(item.certTags) && item.certTags.length) ||
       (Array.isArray(item.certificationTags) && item.certificationTags.length);
     if (!has) return "";
-    return '<span class="mcj-verified-badge">已认证</span>';
+    return '<span class="mcj-verified-badge">✓ 已认证</span>';
   }
   function card(item) {
     var pillStyle = "";
@@ -434,7 +442,7 @@
       (item.serviceTypes || []).forEach(pushTag);
       if (item.serviceType) pushTag(item.serviceType);
       (item.tags || []).forEach(pushTag);
-      return out.slice(0, game ? 2 : 3);
+      return out.slice(0, 8);
     })();
     var levelHtml = item.level
       ? '<span class="companion-level-pill mcj-level-tag" data-level-id="' +
@@ -446,7 +454,17 @@
         "</span>"
       : "";
     var gameHtml = item.game
-      ? '<span class="mcj-service-tag mcj-category-tag">' + esc(item.game) + "</span>"
+      ? String(item.game)
+          .split(/[,，/|·\s]+/)
+          .map(function (part) {
+            return String(part || "").trim();
+          })
+          .filter(Boolean)
+          .slice(0, 4)
+          .map(function (part) {
+            return '<span class="mcj-service-tag mcj-category-tag">' + esc(part) + "</span>";
+          })
+          .join("")
       : "";
     var tagsHtml =
       '<div class="companion-identity-row companion-tags companion-capsule-row">' +
@@ -459,6 +477,7 @@
         .join("") +
       "</div>";
     var badgeClass = statusBadgeClass(item.status);
+    var statusText = statusChipText(item.status);
     var publicId = item.publicId || "未生成";
     var nickname = String(item.name || "").trim() || "未命名陪玩";
     var uuid = String(item.id || "").trim();
@@ -515,11 +534,7 @@
       esc(pos) +
       "\" onerror=\"this.onerror=null;this.src='" +
       DEFAULT_AVATAR +
-      '\'"><span class="companion-online-badge' +
-      badgeClass +
-      '">' +
-      esc(item.status) +
-      "</span></div>" +
+      '\'"></div>' +
       '<div class="companion-card-body">' +
       '<p class="companion-brand-watermark" aria-hidden="true">MEOW CUI JIAO</p>' +
       '<p class="companion-nickname-line">' +
@@ -530,7 +545,7 @@
       '<span class="companion-status-inline' +
       badgeClass +
       '">' +
-      esc(item.status) +
+      esc(statusText) +
       "</span></div>" +
       tagsHtml +
       '<div class="companion-card-actions"><a class="companion-card-action" href="' +

@@ -32,14 +32,16 @@
 .mcj-home-hero--promo .mcj-hero-viewport {
   position: relative !important;
   width: 100% !important;
-  /* Match packaged brand banner ~1.87:1; avoid flat 2.35 + 155px crop that squashes art */
-  aspect-ratio: 16 / 9 !important;
+  /* Compact “small & precise” banner — ~3:1 (within 2.8–3.2:1) */
+  aspect-ratio: 3 / 1 !important;
   height: auto !important;
   min-height: 0 !important;
-  max-height: 220px !important;
-  border-radius: 12px !important;
+  max-height: 148px !important;
+  border: 0 !important;
+  border-radius: 18px !important;
   overflow: hidden !important;
   background: #0a070c !important;
+  box-shadow: none !important;
   touch-action: none !important;
   cursor: grab !important;
   user-select: none !important;
@@ -224,8 +226,9 @@
   }
 
   .mcj-home-hero--promo .mcj-hero-viewport {
-    aspect-ratio: 16 / 9 !important;
-    max-height: none !important;
+    aspect-ratio: 3 / 1 !important;
+    max-height: 220px !important;
+    border-radius: 18px !important;
   }
 
   /* Still no floating arrows on desktop for Linglu promo carousel */
@@ -248,15 +251,16 @@
   }
 
   .mcj-home-hero--promo .mcj-hero-viewport {
-    aspect-ratio: 16 / 9 !important;
+    aspect-ratio: 3 / 1 !important;
     height: auto !important;
-    max-height: 200px !important;
+    max-height: 132px !important;
     min-height: 0 !important;
-    border-radius: 12px !important;
+    border-radius: 18px !important;
     overflow: hidden !important;
   }
 
   .mcj-home-hero--promo .mcj-hero-dots {
-    margin-top: 12px !important;
+    margin-top: 8px !important;
+    gap: 5px !important;
   }
 }
