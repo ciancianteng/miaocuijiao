@@ -796,29 +796,32 @@ body{background:radial-gradient(circle at 76% 4%,rgba(255,145,195,.055),transpar
   .hall-gp-body strong{font-size:13px}
 }
 
-/* ===== Banner+Hall compact v1 (2026-09-11) ===== */
+/* ===== Banner+Hall compact v1 (2026-09-11) — denser ~2 cards / viewport ===== */
 .companion-hall-grid .player-card{
-  border-radius:22px!important;
+  border-radius:18px!important;
   border:1px solid rgba(255,150,210,.28)!important;
   background:
     linear-gradient(165deg,rgba(36,20,48,.97),rgba(10,8,16,.99) 52%,rgba(6,5,10,.99))!important;
   box-shadow:
     0 0 0 1px rgba(255,120,180,.04),
-    0 10px 28px rgba(0,0,0,.32)!important;
+    0 8px 22px rgba(0,0,0,.3)!important;
 }
 .companion-hall-grid .player-card:hover,
 .companion-hall-grid .player-card:active{
   border-color:rgba(255,160,215,.48)!important;
   box-shadow:
-    0 0 22px rgba(255,110,180,.16),
-    0 14px 34px rgba(0,0,0,.38)!important;
+    0 0 18px rgba(255,110,180,.14),
+    0 12px 28px rgba(0,0,0,.36)!important;
 }
 .companion-hall-grid .companion-card-media,
 .companion-card-media{
-  aspect-ratio:16 / 10!important;
+  aspect-ratio:16 / 9!important;
   width:100%!important;
+  max-height:none!important;
+  min-height:0!important;
   border-radius:0!important;
   background:#141018!important;
+  overflow:hidden!important;
 }
 .companion-hall-grid .companion-card-media img{
   object-fit:cover!important;
@@ -832,25 +835,25 @@ body{background:radial-gradient(circle at 76% 4%,rgba(255,145,195,.055),transpar
   display:flex!important;
   flex-direction:column!important;
   align-items:stretch!important;
-  gap:8px!important;
-  padding:12px 14px 14px!important;
+  gap:5px!important;
+  padding:8px 12px 10px!important;
 }
 .companion-hall-grid .companion-brand-watermark{
   order:0;
   margin:0!important;
-  font-size:10px!important;
+  font-size:9px!important;
   font-weight:600!important;
   letter-spacing:.12em!important;
   text-transform:uppercase!important;
-  color:rgba(255,214,232,.34)!important;
-  line-height:1.2!important;
+  color:rgba(255,214,232,.3)!important;
+  line-height:1.15!important;
 }
 .companion-hall-grid .companion-nickname-line{
   order:1;
   margin:0!important;
-  font-size:19px!important;
+  font-size:17px!important;
   font-weight:700!important;
-  line-height:1.25!important;
+  line-height:1.2!important;
   color:#fff!important;
   letter-spacing:.01em!important;
   white-space:nowrap!important;
@@ -862,27 +865,31 @@ body{background:radial-gradient(circle at 76% 4%,rgba(255,145,195,.055),transpar
   display:flex!important;
   flex-wrap:wrap!important;
   align-items:center!important;
-  gap:8px!important;
+  gap:6px!important;
   margin:0!important;
 }
-.companion-hall-grid .companion-status-inline{
+.companion-hall-grid .companion-status-inline,
+.companion-hall-grid .mcj-verified-badge{
   display:inline-flex!important;
   align-items:center!important;
-  gap:6px!important;
-  height:26px!important;
-  padding:0 10px!important;
+  gap:5px!important;
+  height:24px!important;
+  min-height:24px!important;
+  padding:0 9px!important;
   border-radius:999px!important;
-  border:1px solid rgba(255,255,255,.14)!important;
-  background:rgba(4,4,7,.45)!important;
-  color:rgba(255,240,248,.88)!important;
-  font-size:12px!important;
+  font-size:11px!important;
   font-weight:700!important;
   line-height:1!important;
 }
+.companion-hall-grid .companion-status-inline{
+  border:1px solid rgba(255,255,255,.14)!important;
+  background:rgba(4,4,7,.45)!important;
+  color:rgba(255,240,248,.88)!important;
+}
 .companion-hall-grid .companion-status-inline:before{
   content:""!important;
-  width:7px!important;
-  height:7px!important;
+  width:6px!important;
+  height:6px!important;
   border-radius:50%!important;
   background:#5ee6bd!important;
   box-shadow:0 0 8px rgba(94,230,189,.35)!important;
@@ -906,44 +913,51 @@ body{background:radial-gradient(circle at 76% 4%,rgba(255,145,195,.055),transpar
   display:flex!important;
   flex-wrap:wrap!important;
   align-items:center!important;
-  gap:8px!important;
-  row-gap:8px!important;
+  gap:5px!important;
+  row-gap:5px!important;
   margin:0!important;
   width:100%!important;
+  max-height:58px!important;
+  overflow:hidden!important;
 }
 .companion-hall-grid .companion-identity-row .companion-level-pill,
 .companion-hall-grid .companion-identity-row .mcj-level-tag{
-  height:28px!important;
-  min-height:28px!important;
-  padding:0 11px!important;
+  height:24px!important;
+  min-height:24px!important;
+  padding:0 9px!important;
   border-radius:999px!important;
   border:1px solid rgba(232,196,120,.55)!important;
   background:
     linear-gradient(135deg,rgba(210,168,82,.28),rgba(120,80,20,.18))!important;
   color:#f6e2b0!important;
-  font-size:12px!important;
+  font-size:11px!important;
   font-weight:800!important;
   box-shadow:none!important;
   text-shadow:none!important;
 }
 .companion-hall-grid .companion-identity-row .mcj-service-tag,
 .companion-hall-grid .companion-identity-row .mcj-category-tag{
-  height:28px!important;
-  min-height:28px!important;
-  padding:0 10px!important;
+  height:24px!important;
+  min-height:24px!important;
+  padding:0 8px!important;
   border-radius:999px!important;
   border:1px solid rgba(255,150,210,.28)!important;
   background:rgba(70,30,90,.35)!important;
   color:rgba(255,230,244,.9)!important;
-  font-size:12px!important;
+  font-size:11px!important;
   font-weight:650!important;
+}
+.companion-hall-grid .companion-identity-row .companion-tag-more{
+  border-style:dashed!important;
+  opacity:.92!important;
+  font-weight:750!important;
 }
 .companion-hall-grid .companion-card-actions{
   order:4;
   display:flex!important;
   flex-direction:row!important;
-  gap:10px!important;
-  margin-top:6px!important;
+  gap:8px!important;
+  margin-top:2px!important;
   width:100%!important;
 }
 .companion-hall-grid .companion-card-action,
@@ -951,11 +965,11 @@ body{background:radial-gradient(circle at 76% 4%,rgba(255,145,195,.055),transpar
 .companion-hall-grid button.companion-card-action{
   flex:1 1 0%!important;
   width:0!important;
-  height:50px!important;
-  min-height:50px!important;
-  max-height:50px!important;
-  border-radius:15px!important;
-  font-size:14px!important;
+  height:46px!important;
+  min-height:46px!important;
+  max-height:46px!important;
+  border-radius:13px!important;
+  font-size:13px!important;
   font-weight:750!important;
   border:1px solid rgba(255,150,210,.32)!important;
   background:rgba(255,255,255,.05)!important;
@@ -967,41 +981,47 @@ body{background:radial-gradient(circle at 76% 4%,rgba(255,145,195,.055),transpar
   border-color:rgba(255,140,200,.45)!important;
   background:linear-gradient(135deg,#ff7eb6,#e85aa0 55%,#c44fd0)!important;
   color:#fff!important;
-  box-shadow:0 8px 18px rgba(220,70,150,.22)!important;
+  box-shadow:0 6px 14px rgba(220,70,150,.2)!important;
 }
 
 @media(max-width:560px){
-  .companion-hall-page{width:calc(100% - 28px)!important}
+  .companion-hall-page{
+    width:calc(100% - 24px)!important;
+    padding-bottom:calc(64px + env(safe-area-inset-bottom, 0px) + 12px)!important;
+  }
+  #playerList.companion-hall-grid,
   .companion-hall-grid{
     grid-template-columns:1fr!important;
-    gap:14px!important;
+    gap:10px!important;
     width:100%!important;
+    padding-bottom:4px!important;
   }
   .companion-hall-grid .player-card{
     width:100%!important;
     max-width:100%!important;
     margin:0 auto!important;
-    border-radius:22px!important;
+    border-radius:16px!important;
   }
   .companion-hall-grid .companion-card-media,
   .companion-card-media{
-    aspect-ratio:16 / 10!important;
+    aspect-ratio:16 / 9!important;
+    max-height:none!important;
   }
   .companion-hall-grid .companion-nickname-line{
-    font-size:20px!important;
+    font-size:17px!important;
     font-weight:700!important;
   }
   .companion-hall-grid .companion-card-body{
-    padding:12px 14px 14px!important;
-    gap:8px!important;
+    padding:7px 11px 9px!important;
+    gap:4px!important;
   }
   .companion-hall-grid .companion-card-action,
   .companion-hall-grid a.companion-card-action,
   .companion-hall-grid button.companion-card-action{
-    height:50px!important;
-    min-height:50px!important;
-    max-height:50px!important;
-    font-size:14px!important;
+    height:46px!important;
+    min-height:46px!important;
+    max-height:46px!important;
+    font-size:13px!important;
   }
   .hall-channel-tabs{
     border-radius:16px!important;
@@ -1011,9 +1031,9 @@ body{background:radial-gradient(circle at 76% 4%,rgba(255,145,195,.055),transpar
       linear-gradient(180deg,rgba(28,18,34,.9),rgba(10,8,14,.95))!important;
   }
   .hall-channel-tab{
-    min-height:42px!important;
+    min-height:40px!important;
     border-radius:12px!important;
-    font-size:14px!important;
+    font-size:13px!important;
   }
   .hall-channel-indicator{
     border-radius:12px!important;

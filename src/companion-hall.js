@@ -425,6 +425,7 @@
         (item.levelColor ? "background:" + esc(item.levelColor) + "33;" : "") +
         '"';
     }
+    var MAX_VISIBLE_TAGS = 5; /* level separate; ~5 tags then +N */
     var categoryTags = (function () {
       var game = String(item.game || "").trim();
       var seen = {};
@@ -432,17 +433,25 @@
       function pushTag(raw) {
         var t = String(raw || "").trim();
         if (!t) return;
-        if (game && (t === game || game.indexOf(t) >= 0 || t.indexOf(game) >= 0)) return;
         if (/未设置/.test(t)) return;
         var key = t.toLowerCase();
         if (seen[key]) return;
         seen[key] = true;
         out.push(t);
       }
-      (item.serviceTypes || []).forEach(pushTag);
-      if (item.serviceType) pushTag(item.serviceType);
-      (item.tags || []).forEach(pushTag);
-      return out.slice(0, 8);
+      String(item.game || "")
+        .split(/[,，/|·\s]+/)
+        .forEach(pushTag);
+      function pushExtra(raw) {
+        var t = String(raw || "").trim();
+        if (!t) return;
+        if (game && t === game) return;
+        pushTag(t);
+      }
+      (item.serviceTypes || []).forEach(pushExtra);
+      if (item.serviceType) pushExtra(item.serviceType);
+      (item.tags || []).forEach(pushExtra);
+      return out;
     })();
     var levelHtml = item.level
       ? '<span class="companion-level-pill mcj-level-tag" data-level-id="' +
@@ -453,28 +462,23 @@
         esc(item.level) +
         "</span>"
       : "";
-    var gameHtml = item.game
-      ? String(item.game)
-          .split(/[,，/|·\s]+/)
-          .map(function (part) {
-            return String(part || "").trim();
-          })
-          .filter(Boolean)
-          .slice(0, 4)
-          .map(function (part) {
-            return '<span class="mcj-service-tag mcj-category-tag">' + esc(part) + "</span>";
-          })
-          .join("")
-      : "";
+    var visibleTags = categoryTags.slice(0, MAX_VISIBLE_TAGS);
+    var hiddenTagCount = Math.max(0, categoryTags.length - visibleTags.length);
     var tagsHtml =
       '<div class="companion-identity-row companion-tags companion-capsule-row">' +
       levelHtml +
-      gameHtml +
-      categoryTags
+      visibleTags
         .map(function (t) {
           return '<span class="mcj-service-tag mcj-category-tag">' + esc(t) + "</span>";
         })
         .join("") +
+      (hiddenTagCount > 0
+        ? '<span class="mcj-service-tag mcj-category-tag companion-tag-more" aria-label="另有' +
+          hiddenTagCount +
+          '个标签">+' +
+          hiddenTagCount +
+          "</span>"
+        : "") +
       "</div>";
     var badgeClass = statusBadgeClass(item.status);
     var statusText = statusChipText(item.status);

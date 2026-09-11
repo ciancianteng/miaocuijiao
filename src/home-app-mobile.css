@@ -563,6 +563,18 @@ body.mcj-app-shell {
   }
 }
 
+/* Hall page: clear fixed tabbar so last cards are not covered */
+@media (max-width: 720px) {
+  body:has(.companion-hall-page) .companion-hall-page,
+  .companion-hall-page {
+    padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px) + 12px) !important;
+  }
+  #playerList.companion-hall-grid,
+  .companion-hall-grid#playerList {
+    padding-bottom: 8px !important;
+  }
+}
+
 /* Desktop: keep existing header/footer behavior; hide app tabbar */
 @media (min-width: 721px) {
   .mobile-bottom-nav.mcj-app-tabbar,
