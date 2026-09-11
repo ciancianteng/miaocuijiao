@@ -1,0 +1,75 @@
+{
+  "evidenceType": "UI validation snapshot only",
+  "tip": "415f153 fix(ui): compact home Banner carousel + hall card visual language",
+  "sha": "415f153bfc4a8d5ec4aa617d31d997768243c6a6",
+  "base": "http://127.0.0.1:4177",
+  "proxy": {
+    "script": "scripts/local-static-api-proxy.mjs",
+    "MCJ_API_ORIGIN": "https://www.meowcuijiao.com",
+    "methodsUsed": ["GET"],
+    "note": "Local static from ui/banner-hall-compact-v1; API GETs proxied to Production read-only"
+  },
+  "dataSource": "Production /api/public/companions READ-ONLY via local proxy — UI validation snapshot only",
+  "mockCompanions": false,
+  "companionCount": 8,
+  "sampleCards": [
+    {
+      "name": "哦嗯调",
+      "status": "离线",
+      "verified": true,
+      "tags": [
+        "Lv4 喵神",
+        "三角洲",
+        "手游",
+        "国服",
+        "陪玩服务",
+        "陪聊服务",
+        "甜妹",
+        "幽默",
+        "娱乐",
+        "夜猫子",
+        "连麦"
+      ],
+      "imageUrlHost": "jqfaknpmcnqwqvatrwgo.supabase.co"
+    },
+    {
+      "name": "许拓",
+      "status": "离线",
+      "verified": false,
+      "tags": [
+        "Lv4 喵神",
+        "三角洲",
+        "端游",
+        "陪玩服务",
+        "猛男",
+        "温柔",
+        "技术"
+      ],
+      "imageUrlHost": "jqfaknpmcnqwqvatrwgo.supabase.co"
+    }
+  ],
+  "bannerApiCount": 2,
+  "bannerFrontNote": "Carousel has 2 dots; hero <img.mcj-hero-image> resolved to /default-avatar.png (naturalWidth 0) under local+Prod proxy — banner image render FAIL in this snapshot; hall cards PASS with real Prod companions",
+  "homePopularityNote": "首页「本周人气榜」shows 暂无陪玩 in this snapshot (separate from hall /api/public/companions which returned 8)",
+  "screenshots": [
+    "hall-375-cards.png",
+    "hall-390-cards.png",
+    "hall-393-cards.png",
+    "hall-430-cards.png",
+    "hall-375-top.png",
+    "hall-390-top.png",
+    "home-390.png",
+    "home-390-banner-s0.png",
+    "home-390-banner-s1.png"
+  ],
+  "qa": {
+    "hallCardsRealData": true,
+    "approxCardsPerViewport": "~1.5–2",
+    "imageAspect": "wide landscape cover; no obvious stretch distortion",
+    "blankSpaceRight": "minor trailing gap after last tag on a row; cards themselves near full-width with small side margins",
+    "tagsWrap": true,
+    "buttonsAligned": true,
+    "tabbarOcclusion": "fixed tabbar occludes lower portion of second card when scrolled to cards view — expected",
+    "segmentedTabsVisible": true
+  }
+}
