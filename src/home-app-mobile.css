@@ -265,11 +265,15 @@ body.mcj-app-shell {
     width: auto !important;
     max-width: none !important;
     min-width: 0 !important;
+    min-height: 0 !important;
+    height: auto !important;
     border-radius: 16px !important;
     border: 1px solid rgba(255, 214, 232, 0.14) !important;
     box-shadow: 0 8px 20px rgba(0, 0, 0, 0.22) !important;
     background: linear-gradient(165deg, rgba(32, 20, 36, 0.96), rgba(10, 8, 14, 0.98)) !important;
     overflow: hidden !important;
+    display: flex !important;
+    flex-direction: column !important;
   }
 
   .mcj-app-home #hotCompanionTrack .hot-cover,
@@ -279,8 +283,10 @@ body.mcj-app-shell {
   .mcj-app-home .companion-track .hot-cover {
     height: auto !important;
     min-height: 0 !important;
-    aspect-ratio: 3 / 4 !important;
+    max-height: none !important;
+    aspect-ratio: 4 / 5 !important;
     border-radius: 0 !important;
+    flex: 0 0 auto !important;
   }
 
   .mcj-app-home #hotCompanionTrack .hot-cover img,
@@ -296,8 +302,12 @@ body.mcj-app-shell {
   .mcj-app-home #recentCompanionTrack .hot-info,
   .mcj-app-home #gameCompanionTrack .hot-info,
   .mcj-app-home #reviewCompanionTrack .hot-info {
-    padding: 10px 10px 12px !important;
-    gap: 4px !important;
+    padding: 6px 8px 8px !important;
+    gap: 3px !important;
+    display: flex !important;
+    flex-direction: column !important;
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
   }
 
   .mcj-app-home #hotCompanionTrack .hot-info h3,
@@ -332,9 +342,11 @@ body.mcj-app-shell {
   .mcj-app-home #gameCompanionTrack .hot-meta,
   .mcj-app-home #reviewCompanionTrack .hot-meta {
     display: flex !important;
-    flex-wrap: wrap !important;
+    flex-wrap: nowrap !important;
     gap: 4px !important;
     align-items: center !important;
+    overflow: hidden !important;
+    min-width: 0 !important;
   }
 
   .mcj-app-home #hotCompanionTrack .hot-orders,
@@ -353,10 +365,12 @@ body.mcj-app-shell {
   .mcj-app-home .hot-tags {
     display: flex !important;
     flex-wrap: wrap !important;
-    gap: 4px !important;
+    gap: 3px !important;
     justify-content: flex-start !important;
-    max-height: 44px !important;
+    max-height: 38px !important;
     overflow: hidden !important;
+    align-content: flex-start !important;
+    flex: 0 0 auto !important;
   }
 
   .mcj-app-home #hotCompanionTrack .hot-tags span,
@@ -384,9 +398,10 @@ body.mcj-app-shell {
     width: 100% !important;
     min-height: 34px !important;
     height: 34px !important;
-    margin-top: 6px !important;
+    margin-top: auto !important;
     border-radius: 11px !important;
     font-size: 12px !important;
+    flex: 0 0 auto !important;
   }
 
   .mcj-app-home #hotCompanionTrack .hot-more-card,

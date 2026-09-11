@@ -30,22 +30,117 @@
   color: #ff9ecf;
 }
 
-/* —— Home recommend cards: lighter, no price, larger name —— */
+/* —— Home recommend cards: 4:5 photo + controlled info (no stretch-tall) —— */
 .mcj-app-home .hot-card.companion-card,
-.hot-recommend-section .hot-card.companion-card {
+.hot-recommend-section .hot-card.companion-card,
+.companion-track .hot-card.companion-card {
   padding: 0 !important;
   overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+  min-height: 0 !important;
+  height: auto !important;
 }
 
-.hot-recommend-section .hot-card .hot-cover {
-  aspect-ratio: 1 / 1 !important;
+.hot-recommend-section .hot-card .hot-cover,
+.companion-track .hot-card .hot-cover,
+#hotCompanionTrack .hot-cover,
+#recentCompanionTrack .hot-cover,
+#gameCompanionTrack .hot-cover,
+#reviewCompanionTrack .hot-cover {
+  aspect-ratio: 4 / 5 !important;
+  width: 100% !important;
+  height: auto !important;
+  min-height: 0 !important;
   max-height: none !important;
+  flex: 0 0 auto !important;
+  overflow: hidden !important;
+  position: relative !important;
 }
 
-.hot-recommend-section .hot-card .hot-info {
-  padding: 10px 10px 12px !important;
-  gap: 6px !important;
-  display: grid !important;
+.hot-recommend-section .hot-card .hot-cover img,
+.companion-track .hot-card .hot-cover img,
+#hotCompanionTrack .hot-cover img,
+#recentCompanionTrack .hot-cover img,
+#gameCompanionTrack .hot-cover img,
+#reviewCompanionTrack .hot-cover img {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+}
+
+/* Status dots — never default green; class always set by site-data.js */
+.hot-recommend-section .online-dot,
+.companion-track .online-dot,
+#hotCompanionTrack .online-dot,
+#recentCompanionTrack .online-dot,
+#gameCompanionTrack .online-dot,
+#reviewCompanionTrack .online-dot {
+  position: absolute !important;
+  right: 10px !important;
+  top: 10px !important;
+  width: 10px !important;
+  height: 10px !important;
+  border-radius: 50% !important;
+  border: 2px solid rgba(7, 4, 10, 0.9) !important;
+  background: #94a3b8 !important;
+  box-shadow: none !important;
+  animation: none !important;
+  z-index: 3 !important;
+}
+.hot-recommend-section .online-dot.is-online,
+.companion-track .online-dot.is-online,
+#hotCompanionTrack .online-dot.is-online,
+#recentCompanionTrack .online-dot.is-online,
+#gameCompanionTrack .online-dot.is-online,
+#reviewCompanionTrack .online-dot.is-online {
+  background: #58efad !important;
+  box-shadow: 0 0 10px rgba(88, 239, 173, 0.75) !important;
+  animation: onlineBreath 2.1s ease-in-out infinite !important;
+}
+.hot-recommend-section .online-dot.is-busy,
+.companion-track .online-dot.is-busy,
+#hotCompanionTrack .online-dot.is-busy,
+#recentCompanionTrack .online-dot.is-busy,
+#gameCompanionTrack .online-dot.is-busy,
+#reviewCompanionTrack .online-dot.is-busy {
+  background: #f59e0b !important;
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.45) !important;
+  animation: none !important;
+}
+.hot-recommend-section .online-dot.is-paused,
+.companion-track .online-dot.is-paused,
+#hotCompanionTrack .online-dot.is-paused,
+#recentCompanionTrack .online-dot.is-paused,
+#gameCompanionTrack .online-dot.is-paused,
+#reviewCompanionTrack .online-dot.is-paused {
+  background: #94a3b8 !important;
+  box-shadow: none !important;
+  animation: none !important;
+}
+.hot-recommend-section .online-dot.is-offline,
+.companion-track .online-dot.is-offline,
+#hotCompanionTrack .online-dot.is-offline,
+#recentCompanionTrack .online-dot.is-offline,
+#gameCompanionTrack .online-dot.is-offline,
+#reviewCompanionTrack .online-dot.is-offline {
+  background: #64748b !important;
+  box-shadow: none !important;
+  animation: none !important;
+}
+
+.hot-recommend-section .hot-card .hot-info,
+.companion-track .hot-card .hot-info,
+#hotCompanionTrack .hot-info,
+#recentCompanionTrack .hot-info,
+#gameCompanionTrack .hot-info,
+#reviewCompanionTrack .hot-info {
+  padding: 8px 10px 10px !important;
+  gap: 4px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
 }
 
 .hot-recommend-section .hot-name-row {
@@ -53,6 +148,7 @@
   align-items: baseline !important;
   gap: 6px !important;
   min-width: 0 !important;
+  flex: 0 0 auto !important;
 }
 
 .hot-recommend-section .hot-name-row h3 {
@@ -89,13 +185,18 @@
   display: -webkit-box !important;
   -webkit-line-clamp: 2 !important;
   -webkit-box-orient: vertical !important;
+  flex: 0 0 auto !important;
 }
 
 .hot-recommend-section .hot-meta {
   display: flex !important;
-  flex-wrap: wrap !important;
+  flex-wrap: nowrap !important;
   gap: 4px !important;
   align-items: center !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  overflow: hidden !important;
+  flex: 0 0 auto !important;
 }
 
 .hot-recommend-section .hot-orders,
@@ -103,11 +204,19 @@
   display: none !important;
 }
 
-.hot-recommend-section .hot-tags {
+.hot-recommend-section .hot-tags,
+#hotCompanionTrack .hot-tags,
+#recentCompanionTrack .hot-tags,
+#gameCompanionTrack .hot-tags,
+#reviewCompanionTrack .hot-tags {
   display: flex !important;
   flex-wrap: wrap !important;
   gap: 4px !important;
   margin: 0 !important;
+  max-height: 40px !important;
+  overflow: hidden !important;
+  align-content: flex-start !important;
+  flex: 0 0 auto !important;
 }
 
 .hot-recommend-section .hot-tags span {
@@ -122,6 +231,7 @@
   font-size: 11px !important;
   font-weight: 650 !important;
   color: rgba(255, 214, 232, 0.78) !important;
+  white-space: nowrap !important;
 }
 
 .hot-recommend-section .mcj-verified-badge,
@@ -129,17 +239,40 @@
   display: none !important;
 }
 
-.hot-recommend-section .mini-order {
-  margin-top: 2px !important;
+.hot-recommend-section .mini-order,
+#hotCompanionTrack .mini-order,
+#recentCompanionTrack .mini-order,
+#gameCompanionTrack .mini-order,
+#reviewCompanionTrack .mini-order {
+  margin-top: auto !important;
   min-height: 34px !important;
   height: 34px !important;
   font-size: 12px !important;
+  flex: 0 0 auto !important;
 }
 
 @media (max-width: 720px) {
   .mcj-app-home .hot-recommend-section .hot-name-row h3 {
-    font-size: 15px !important;
+    font-size: 14px !important;
     font-weight: 800 !important;
+  }
+
+  .hot-recommend-section .hot-card .hot-info,
+  #hotCompanionTrack .hot-info,
+  #recentCompanionTrack .hot-info,
+  #gameCompanionTrack .hot-info,
+  #reviewCompanionTrack .hot-info {
+    padding: 6px 8px 8px !important;
+    gap: 3px !important;
+  }
+
+  .hot-recommend-section .hot-tags,
+  #hotCompanionTrack .hot-tags,
+  #recentCompanionTrack .hot-tags,
+  #gameCompanionTrack .hot-tags,
+  #reviewCompanionTrack .hot-tags {
+    max-height: 38px !important;
+    gap: 3px !important;
   }
 }
 
