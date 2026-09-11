@@ -2,11 +2,13 @@
  * MCJ PWA boot — keep standalone across multi-HTML portals.
  * - Re-assert apple-web-app meta (static tags remain primary for iOS).
  * - Register SW at scope "/".
+ * - Load shared PWA install guide (boss / companion / CS / admin).
  * - In standalone/display-mode, force same-origin navigations to stay in-app
  *   (no target=_blank / window.open that would eject to Safari).
  */
 (function () {
   var ICON_V = "20260911pwa3";
+  var INSTALL_V = "20260912pwaGuide1";
   function inStandalone() {
     try {
       if (window.navigator && navigator.standalone === true) return true;
@@ -89,11 +91,35 @@
       return nativeOpen.apply(window, arguments);
     };
   }
+  function loadInstallGuide() {
+    if (!document.head) return;
+    if (!document.querySelector('link[data-mcj-pwa-install-css]')) {
+      var css = document.createElement("link");
+      css.rel = "stylesheet";
+      css.href = "/src/pwa-install-prompt.css?v=" + INSTALL_V;
+      css.setAttribute("data-mcj-pwa-install-css", "1");
+      document.head.appendChild(css);
+    }
+    if (
+      document.querySelector('script[data-mcj-pwa-install-js]') ||
+      window.__MCJPwaInstallLoaded
+    ) {
+      return;
+    }
+    var js = document.createElement("script");
+    js.src = "/src/pwa-install-prompt.js?v=" + INSTALL_V;
+    js.defer = true;
+    js.setAttribute("data-mcj-pwa-install-js", "1");
+    document.head.appendChild(js);
+  }
+
   ensureHead();
+  loadInstallGuide();
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", function () {
       registerSw();
       installNavGuards();
+      loadInstallGuide();
     });
   } else {
     registerSw();
