@@ -100,7 +100,7 @@
 
   function ensurePwaMeta() {
     if (!document.head) return;
-    var iconV = "20260911pwaIcon2";
+    var iconV = "20260911pwaFix1";
     ensureMetaTag('link[rel="manifest"][data-mcj-pwa-manifest]', function () {
       var l = document.createElement("link");
       l.rel = "manifest";
@@ -121,6 +121,13 @@
       l.sizes = "180x180";
       l.href = "/icons/apple-touch-icon.png?v=" + iconV;
       l.setAttribute("data-mcj-pwa-ati-icons", "1");
+      return l;
+    });
+    ensureMetaTag('link[rel="icon"][data-mcj-pwa-favicon-ico]', function () {
+      var l = document.createElement("link");
+      l.rel = "icon";
+      l.href = "/favicon.ico?v=" + iconV;
+      l.setAttribute("data-mcj-pwa-favicon-ico", "1");
       return l;
     });
     ensureMetaTag('link[rel="icon"][data-mcj-pwa-favicon-32]', function () {
@@ -181,12 +188,12 @@
   function registerServiceWorker() {
     if (!("serviceWorker" in navigator)) return;
     try {
-      navigator.serviceWorker.register("/sw-mcj.js", { scope: "/" }).catch(function () {});
+      navigator.serviceWorker.register("/sw-mcj.js?v=20260911pwaFix1", { scope: "/" }).catch(function () {});
     } catch (e) {}
   }
 
   function logoSrc() {
-    return "/icons/icon-192.png?v=20260911pwaIcon2";
+    return "/icons/icon-192.png?v=20260911pwaFix1";
   }
 
   function buildFlow(platform, hasBip) {
@@ -215,7 +222,7 @@
       '<div class="mcj-pwa-flow" aria-hidden="true">' +
       '<div class="mcj-pwa-step"><div class="mcj-pwa-step-ico">⋮</div><span>Chrome 菜单</span></div>' +
       '<div class="mcj-pwa-arrow">→</div>' +
-      '<div class="mcj-pwa-step"><div class="mcj-pwa-step-ico">＋</div><span>安装应用 / 添加到主屏幕</span></div>' +
+      '<div class="mcj-pwa-step"><div class="mcj-pwa-step-ico">＋</div><span>优先选「安装应用」</span></div>' +
       '<div class="mcj-pwa-arrow">→</div>' +
       '<div class="mcj-pwa-step"><div class="mcj-pwa-step-ico">✓</div><span>确认</span></div>' +
       "</div>"
