@@ -548,8 +548,10 @@
     root.querySelectorAll("img.mcj-hero-image").forEach(function (img) {
       if (img.dataset.fallbackBound === "1") return;
       img.dataset.fallbackBound = "1";
+      // Only replace after the image has finished (complete) — never race an in-flight SoT URL.
       function ensureRealArt() {
         if (isUsableBannerImage(img)) return;
+        if (!img.complete) return;
         useBrandBannerAsset(img, img.naturalWidth ? "tiny-stub" : "empty");
       }
       img.addEventListener("error", function onBannerError() {
@@ -558,9 +560,9 @@
       });
       if (img.complete) ensureRealArt();
       else img.addEventListener("load", ensureRealArt, { once: true });
-      // Late decode / cached stub: re-check shortly after bind.
-      setTimeout(ensureRealArt, 0);
-      setTimeout(ensureRealArt, 300);
+      // Late decode / cached stub: re-check only when decode may have finished.
+      setTimeout(ensureRealArt, 400);
+      setTimeout(ensureRealArt, 1200);
     });
   }
 
