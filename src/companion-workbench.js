@@ -2055,7 +2055,7 @@
   function renderLogin(){
     var tab=state.authTab==='register'?'register':'login';
     var method=state.loginMethod==='password'?'password':'otp';
-    var header=Auth&&Auth.brandHeader?Auth.brandHeader('陪玩端登录','邮箱注册 / 邮箱验证码登录'):'<h1 class="mcj-auth-title">陪玩端登录</h1><p class="mcj-auth-desc">邮箱注册 / 邮箱验证码登录</p>';
+    var header=Auth&&Auth.brandHeader?Auth.brandHeader('陪玩端',''):'<h1 class="mcj-auth-title">陪玩端</h1>';
     var loginPwd=Auth&&Auth.passwordField?Auth.passwordField('password','密码'):'<label class="mcj-auth-field">密码<input name="password" type="password" autocomplete="current-password" data-auth-sensitive="1" required value=""></label>';
     var regPwd=Auth&&Auth.passwordField?Auth.passwordField('password','密码','autocomplete="new-password" minlength="8"'):'<label class="mcj-auth-field">密码<input name="password" type="password" autocomplete="new-password" data-auth-sensitive="1" minlength="8" required value=""></label>';
     var regConfirm=Auth&&Auth.passwordField?Auth.passwordField('confirm_password','确认密码','autocomplete="new-password" minlength="8"'):'<label class="mcj-auth-field">确认密码<input name="confirm_password" type="password" autocomplete="new-password" data-auth-sensitive="1" minlength="8" required value=""></label>';
@@ -2086,18 +2086,20 @@
         '</form>';
     }else{
       var methodTabs=
-        '<div class="mcj-auth-tabs mcj-auth-method-tabs" role="tablist">'+
-        '<button class="mcj-auth-btn '+(method==='otp'?'primary active':'ghost')+'" type="button" data-login-method-tab="otp" role="tab" aria-selected="'+(method==='otp'?'true':'false')+'">验证码登录</button>'+
-        '<button class="mcj-auth-btn '+(method==='password'?'primary active':'ghost')+'" type="button" data-login-method-tab="password" role="tab" aria-selected="'+(method==='password'?'true':'false')+'">密码登录</button>'+
-        '</div>';
+        '<div class="mcj-auth-method-block">'+
+        '<p class="mcj-auth-method-label">登录方式</p>'+
+        '<div class="mcj-auth-segment" role="tablist" aria-label="登录方式">'+
+        '<button class="mcj-auth-segment-btn'+(method==='otp'?' is-active':'')+'" type="button" data-login-method-tab="otp" role="tab" aria-selected="'+(method==='otp'?'true':'false')+'">验证码登录</button>'+
+        '<button class="mcj-auth-segment-btn'+(method==='password'?' is-active':'')+'" type="button" data-login-method-tab="password" role="tab" aria-selected="'+(method==='password'?'true':'false')+'">密码登录</button>'+
+        '</div></div>';
       if(method==='password'){
         bodyHtml=methodTabs+
           '<form class="mcj-auth-form" data-login data-login-method="password" data-auth-panel="login-password" autocomplete="on">'+
           '<input type="hidden" name="remember" value="1">'+
           '<label class="mcj-auth-field">邮箱<input name="account" type="email" inputmode="email" autocomplete="email" required placeholder="name@example.com" value=""></label>'+
           loginPwd+
-          '<button class="mcj-auth-btn primary" type="submit"'+(state.loginBusy?' disabled':'')+'>'+(state.loginBusy?'登录中…':'密码登录')+'</button>'+
-          '<button class="mcj-auth-btn ghost" type="button" data-forgot-password data-forgot-role="companion">忘记密码</button>'+
+          '<button class="mcj-auth-btn primary" type="submit"'+(state.loginBusy?' disabled':'')+'>'+(state.loginBusy?'登录中…':'登录')+'</button>'+
+          '<button class="mcj-auth-text-btn" type="button" data-forgot-password data-forgot-role="companion">忘记密码</button>'+
           '<p class="mcj-auth-error" data-auth-error data-login-error>'+esc(state.loginError||'')+'</p>'+
           '</form>';
       }else{
@@ -2106,21 +2108,20 @@
           '<input type="hidden" name="remember" value="1">'+
           '<label class="mcj-auth-field">邮箱<input id="loginOtpEmail" name="account" type="email" inputmode="email" autocomplete="email" required placeholder="name@example.com" value=""></label>'+
           '<label class="mcj-auth-field">验证码<div class="mcj-auth-code-row"><input id="loginOtpCode" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" data-auth-code="1" data-auth-sensitive="1" maxlength="6" placeholder="6 位验证码" required value=""><button class="mcj-auth-btn ghost" type="button" data-send-login-otp data-login-role="companion">获取验证码</button></div></label>'+
-          '<button class="mcj-auth-btn primary" type="submit"'+(state.loginBusy?' disabled':'')+'>'+(state.loginBusy?'登录中…':'验证码登录')+'</button>'+
-          '<button class="mcj-auth-btn ghost" type="button" data-forgot-password data-forgot-role="companion">忘记密码</button>'+
+          '<button class="mcj-auth-btn primary" type="submit"'+(state.loginBusy?' disabled':'')+'>'+(state.loginBusy?'登录中…':'登录')+'</button>'+
           '<p class="mcj-auth-error" data-auth-error data-login-error>'+esc(state.loginError||'')+'</p>'+
           '</form>';
       }
     }
     root.innerHTML=
       '<main class="mcj-auth-page">'+
-      '<section class="mcj-auth-card">'+header+
-      '<div class="mcj-auth-tabs">'+
+      '<section class="mcj-auth-card mcj-auth-card--companion">'+header+
+      '<div class="mcj-auth-tabs mcj-auth-primary-tabs">'+
       '<button class="mcj-auth-btn '+(tab==='login'?'primary active':'ghost')+'" type="button" data-auth-tab="login">登录</button>'+
       '<button class="mcj-auth-btn '+(tab==='register'?'primary active':'ghost')+'" type="button" data-auth-tab="register">注册陪玩</button>'+
       '</div>'+
       bodyHtml+
-      '<p class="mcj-auth-note">MVP 使用邮箱体系（验证码 / 找回密码走邮件）。身份认证、押金与身份证审核流程不变。</p>'+
+      '<p class="mcj-auth-note">使用邮箱登录或注册。身份认证、押金与身份证审核流程不变。</p>'+
       '</section></main>'+forgotPasswordModalHtml();
     if(Auth&&Auth.bindPasswordToggles)Auth.bindPasswordToggles(root);
     if(Auth&&Auth.prepareAuthForm)Auth.prepareAuthForm(root,{clearAccount:!state.loginError&&!state.loginBusy,keepErrors:!!state.loginError});

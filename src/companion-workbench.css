@@ -509,7 +509,11 @@ a.pw-btn{display:inline-flex;align-items:center;justify-content:center;text-deco
 .pw-app .mcj-auth-form[hidden],
 .pw-app .mcj-auth-card [hidden]{display:none!important}
 .pw-app .mcj-auth-card{min-height:0;height:auto}
-.pw-app .mcj-auth-method-tabs{margin:20px 0 0}
+.pw-app .mcj-auth-method-block{margin:16px 0 2px}
+.pw-app .mcj-auth-segment{margin:0}
+.pw-app .mcj-auth-card--companion{min-height:0;height:auto;padding:28px 22px}
+.pw-app .mcj-auth-card--companion .mcj-auth-form{gap:14px}
+.pw-app .mcj-auth-text-btn{margin-top:2px}
 .mcj-auth-check input{width:18px!important;height:18px!important;min-height:18px!important;min-width:18px!important}
 
 /* Ops form controls — dark + pink (companion workbench only) */
