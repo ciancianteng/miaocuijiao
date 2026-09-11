@@ -7,10 +7,10 @@
   <title>我的账号 - MEOW CUI JIAO</title>
   <link rel="stylesheet" href="src/style.css">
   <link rel="stylesheet" href="src/boss-header.css">
-  <link rel="prefetch" href="orders.html" as="document">
-  <link rel="prefetch" href="messages.html" as="document">
-  <link rel="prefetch" href="support.html" as="document">
-  <link rel="prefetch" href="recharge.html" as="document">
+  <link rel="prefetch" href="/orders.html" as="document">
+  <link rel="prefetch" href="/messages.html" as="document">
+  <link rel="prefetch" href="/support.html" as="document">
+  <link rel="prefetch" href="/recharge.html" as="document">
   <style>
     :root{
       --bg:#050505;
@@ -245,7 +245,7 @@
   </style>
 </head>
 <body>
-  <header class="topbar"><a class="brand" href="index.html"><img src="assets/meow-cuijiao-brand-96.webp" alt="MEOW CUI JIAO" width="24" height="24" decoding="async" onerror="this.onerror=null;this.src='assets/meow-cuijiao-brand-96.jpg'"><span>MEOW CUI JIAO</span></a><nav class="boss-nav"><a href="index.html">首页</a><a href="companion-center.html">陪玩大厅</a><a href="orders.html">我的订单</a><a href="support.html?start=1">在线客服</a></nav></header>
+  <header class="topbar"><a class="brand" href="index.html"><img src="assets/meow-cuijiao-brand-96.webp" alt="MEOW CUI JIAO" width="24" height="24" decoding="async" onerror="this.onerror=null;this.src='assets/meow-cuijiao-brand-96.jpg'"><span>MEOW CUI JIAO</span></a><nav class="boss-nav"><a href="index.html">首页</a><a href="companion-center.html">陪玩大厅</a><a href="/orders.html">我的订单</a><a href="support.html?start=1">在线客服</a></nav></header>
   <main class="boss-shell" id="accountApp"></main>
   <div class="modal" id="featureModal" aria-hidden="true">
     <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="featureModalTitle">
@@ -402,13 +402,13 @@
         }else if(key==='assets'){
           body='<p class="feature-modal-note">钱包与积分入口。</p>'+
             '<p class="feature-modal-note">总猫粮 '+esc(totalBal)+' · 充值 '+esc(paidBal)+' · 赠送 '+esc(bonusBal)+' · 积分 '+esc(pointsBal)+'</p>'+
-            entryLink({tag:'a',title:'充值中心 / 钱包流水',attrs:'href="recharge.html"'})+
+            entryLink({tag:'a',title:'充值中心 / 钱包流水',attrs:'href="/recharge.html"'})+
             entryLink({tag:'a',title:'我的积分',attrs:'href="points.html"'});
         }else if(key==='security'){
           body='<div id="bossAccountSecurity"></div>';
         }else if(key==='orders'){
-          body=entryLink({tag:'a',title:'查看我的订单',attrs:'href="orders.html"'})+
-            entryLink({tag:'a',title:'联系客服',attrs:'href="support.html"'})+
+          body=entryLink({tag:'a',title:'查看我的订单',attrs:'href="/orders.html"'})+
+            entryLink({tag:'a',title:'联系客服',attrs:'href="/support.html"'})+
             (u.hasCompanion
               ?entryLink({tag:'button',title:'切换到陪玩端',attrs:'type="button" data-switch-portal="companion"'})
               :entryLink({tag:'a',title:'申请成为陪玩',attrs:'href="companion-apply.html"'}));
@@ -455,10 +455,10 @@
           '</section>'+
           (setHint?'<p style="margin:0 0 14px;color:#fbbf24;font-size:12px;line-height:1.45">'+esc(setHint)+'</p>':'')+
           '<div class="mine-quick" aria-label="常用功能">'+
-            '<a href="orders.html"><span class="mine-quick-ico" aria-hidden="true">单</span><span class="mine-quick-label">订单</span></a>'+
-            '<a href="messages.html"><span class="mine-quick-ico" aria-hidden="true">信</span><span class="mine-quick-label">消息</span></a>'+
+            '<a href="/orders.html"><span class="mine-quick-ico" aria-hidden="true">单</span><span class="mine-quick-label">订单</span></a>'+
+            '<a href="/messages.html"><span class="mine-quick-ico" aria-hidden="true">信</span><span class="mine-quick-label">消息</span></a>'+
             '<a href="support.html?start=1"><span class="mine-quick-ico" aria-hidden="true">客</span><span class="mine-quick-label">客服</span></a>'+
-            '<a href="recharge.html"><span class="mine-quick-ico" aria-hidden="true">充</span><span class="mine-quick-label">充值</span></a>'+
+            '<a href="/recharge.html"><span class="mine-quick-ico" aria-hidden="true">充</span><span class="mine-quick-label">充值</span></a>'+
           '</div>'+
           '<p class="mine-section-title">账户与服务</p>'+
           '<div class="entry-stack">'+
@@ -466,7 +466,7 @@
           entryRow('assets','我的资产')+
           entryRow('security','账号安全')+
           entryRow('orders','订单与服务')+
-          '<section class="entry"><a class="entry-trigger" href="messages.html"><span class="entry-title">消息中心</span><span class="entry-arrow" aria-hidden="true"></span></a></section>'+
+          '<section class="entry"><a class="entry-trigger" href="/messages.html"><span class="entry-title">消息中心</span><span class="entry-arrow" aria-hidden="true"></span></a></section>'+
           '<section class="entry"><a class="entry-trigger" href="points.html"><span class="entry-title">我的积分</span><span class="entry-arrow" aria-hidden="true"></span></a></section>'+
           '<section class="entry"><a class="entry-trigger" href="gifts.html"><span class="entry-title">礼物中心</span><span class="entry-arrow" aria-hidden="true"></span></a></section>'+
           '<section class="entry"><a class="entry-trigger" href="my-direct-companions.html"><span class="entry-title">直属陪玩</span><span class="entry-arrow" aria-hidden="true"></span></a></section>'+
