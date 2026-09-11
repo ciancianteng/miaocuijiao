@@ -724,6 +724,8 @@
     ensureCss("/src/boss-header.css?v=20260815applyBossHeader1", "data-mcj-boss-header-css");
     ensureCss("/src/mcj-safe-area.css?v=20260802mobileP0c", "data-mcj-safe-area-css");
     ensureCss("/src/home-mobile.css?v=20260802mobileP0c", "data-mcj-home-mobile-css");
+    ensureCss("/src/pwa-install-prompt.css?v=20260911pwaIcon2", "data-mcj-pwa-install-css");
+    ensureScript("/src/pwa-install-prompt.js?v=20260911pwaIcon2", "data-mcj-pwa-install-js");
     document.body.classList.add("mcj-boss-shell");
     purgeGuestAuthArtifacts();
 

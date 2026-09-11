@@ -1,0 +1,233 @@
+/* MCJ PWA install prompt — dark esports glass bottom sheet */
+.mcj-pwa-root {
+  position: fixed;
+  inset: 0;
+  z-index: 120000;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.28s ease, visibility 0.28s ease;
+}
+
+.mcj-pwa-root.is-open {
+  pointer-events: auto;
+  opacity: 1;
+  visibility: visible;
+}
+
+.mcj-pwa-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(4, 2, 10, 0.42);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+}
+
+.mcj-pwa-sheet {
+  position: relative;
+  width: min(440px, calc(100vw - 20px));
+  margin: 0 10px calc(12px + env(safe-area-inset-bottom, 0px));
+  padding: 22px 20px 18px;
+  border-radius: 24px;
+  border: 1px solid rgba(243, 168, 203, 0.34);
+  background:
+    linear-gradient(165deg, rgba(42, 22, 48, 0.82), rgba(10, 6, 16, 0.94) 48%, rgba(8, 4, 14, 0.97)),
+    rgba(12, 8, 18, 0.88);
+  box-shadow:
+    0 0 0 1px rgba(141, 114, 255, 0.12) inset,
+    0 18px 48px rgba(0, 0, 0, 0.55),
+    0 0 36px rgba(243, 168, 203, 0.12);
+  backdrop-filter: blur(22px) saturate(1.15);
+  -webkit-backdrop-filter: blur(22px) saturate(1.15);
+  color: #fff5fa;
+  transform: translateY(28px);
+  opacity: 0.92;
+  transition: transform 0.32s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.28s ease;
+}
+
+.mcj-pwa-root.is-open .mcj-pwa-sheet {
+  transform: translateY(0);
+  opacity: 1;
+}
+
+.mcj-pwa-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid rgba(243, 168, 203, 0.28);
+  background: rgba(0, 0, 0, 0.28);
+  color: #ffe1ef;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+}
+
+.mcj-pwa-close:hover {
+  border-color: rgba(255, 220, 235, 0.5);
+}
+
+.mcj-pwa-brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding-right: 36px;
+  margin-bottom: 14px;
+}
+
+.mcj-pwa-logo {
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  object-fit: cover;
+  border: 1px solid rgba(243, 168, 203, 0.36);
+  box-shadow: 0 0 18px rgba(243, 168, 203, 0.22);
+  background: #0a0610;
+  flex: 0 0 auto;
+}
+
+.mcj-pwa-brand h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  color: #ffe8f3;
+}
+
+.mcj-pwa-brand p {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: rgba(191, 174, 187, 0.95);
+  line-height: 1.4;
+  font-weight: 650;
+}
+
+.mcj-pwa-flow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin: 8px 0 16px;
+  padding: 12px 10px;
+  border-radius: 16px;
+  border: 1px solid rgba(243, 168, 203, 0.16);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.mcj-pwa-step {
+  flex: 1;
+  text-align: center;
+  min-width: 0;
+}
+
+.mcj-pwa-step-ico {
+  width: 40px;
+  height: 40px;
+  margin: 0 auto 6px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(243, 168, 203, 0.28);
+  background: rgba(243, 168, 203, 0.1);
+  color: #ffd6e7;
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.mcj-pwa-step span {
+  display: block;
+  font-size: 11px;
+  line-height: 1.35;
+  color: rgba(255, 220, 235, 0.88);
+  font-weight: 750;
+}
+
+.mcj-pwa-arrow {
+  flex: 0 0 auto;
+  color: rgba(243, 168, 203, 0.55);
+  font-size: 16px;
+  font-weight: 900;
+  margin-bottom: 16px;
+}
+
+.mcj-pwa-hint {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px dashed rgba(243, 168, 203, 0.32);
+  background: rgba(141, 114, 255, 0.08);
+  color: #ffdceb;
+  font-size: 12px;
+  font-weight: 800;
+  text-align: center;
+  line-height: 1.4;
+}
+
+.mcj-pwa-root.is-ios .mcj-pwa-hint {
+  display: flex;
+}
+
+.mcj-pwa-chevron {
+  display: inline-block;
+  font-size: 14px;
+  animation: mcjPwaBounce 1.4s ease-in-out infinite;
+  color: #f3a8cb;
+}
+
+@keyframes mcjPwaBounce {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(4px);
+  }
+}
+
+.mcj-pwa-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.mcj-pwa-btn {
+  min-height: 44px;
+  border-radius: 999px;
+  border: 1px solid rgba(243, 168, 203, 0.28);
+  background: rgba(255, 255, 255, 0.04);
+  color: #ffe8f3;
+  font-weight: 900;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.mcj-pwa-btn.primary {
+  border: 0;
+  background: linear-gradient(180deg, #ffe2ef, #e9a0c6);
+  color: #1b0712;
+  box-shadow: 0 0 20px rgba(243, 168, 203, 0.22);
+}
+
+.mcj-pwa-btn:active {
+  transform: scale(0.98);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mcj-pwa-root,
+  .mcj-pwa-sheet,
+  .mcj-pwa-chevron {
+    transition: none !important;
+    animation: none !important;
+  }
+}
