@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <!-- mcj-pwa-meta:begin -->
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="妙脆角">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#0a0610">
+  <meta name="mobile-web-app-capable" content="yes">
+  <script src="/pwa-boot.js" defer></script>
+  <!-- mcj-pwa-meta:end -->
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>PWA Standalone Check | 妙脆角</title>
+  <style>
+    body{margin:0;font-family:ui-sans-serif,system-ui,sans-serif;background:#0a0610;color:#ffe8f2;padding:24px}
+    h1{font-size:20px;margin:0 0 12px}
+    .card{background:#16101c;border:1px solid #3a2a44;border-radius:12px;padding:14px 16px;margin:10px 0}
+    .ok{color:#7dffa8}.bad{color:#ff8f9f}.muted{color:#c9a8b8;font-size:13px}
+    code{color:#ffd0e4}
+    a{color:#ff9ec8}
+  </style>
+</head>
+<body>
+  <h1>妙脆角 PWA Standalone 自检</h1>
+  <p class="muted">从主屏幕打开本页，确认下方 display-mode / navigator.standalone 为 standalone。</p>
+  <div class="card" id="status">检测中…</div>
+  <div class="card">
+    <div>快捷入口（应保持同一 PWA 容器）：</div>
+    <p>
+      <a href="/">首页</a> ·
+      <a href="/mine.html">我的</a> ·
+      <a href="/companion/login/">陪玩登录</a> ·
+      <a href="/customer-service/login/">客服登录</a> ·
+      <a href="/admin/login/">后台登录</a>
+    </p>
+  </div>
+  <script>
+    (function () {
+      var standaloneMedia = window.matchMedia && window.matchMedia("(display-mode: standalone)").matches;
+      var minimal = window.matchMedia && window.matchMedia("(display-mode: minimal-ui)").matches;
+      var ios = !!(window.navigator && navigator.standalone);
+      var ok = standaloneMedia || ios || minimal;
+      var el = document.getElementById("status");
+      el.innerHTML =
+        '<div class="' + (ok ? "ok" : "bad") + '">' + (ok ? "PASS · 当前为类 App / standalone 容器" : "FAIL · 当前像普通 Safari/浏览器页") + "</div>" +
+        "<div class=\"muted\">display-mode:standalone = <code>" + String(!!standaloneMedia) + "</code></div>" +
+        "<div class=\"muted\">display-mode:minimal-ui = <code>" + String(!!minimal) + "</code></div>" +
+        "<div class=\"muted\">navigator.standalone = <code>" + String(ios) + "</code></div>" +
+        "<div class=\"muted\">origin = <code>" + location.origin + "</code></div>" +
+        "<div class=\"muted\">path = <code>" + location.pathname + "</code></div>";
+    })();
+  </script>
+</body>
+</html>

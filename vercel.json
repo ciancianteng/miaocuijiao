@@ -210,5 +210,13 @@
     { "source": "/report", "destination": "/report/index.html" },
     { "source": "/report/:path*", "destination": "/report/index.html" },
     { "source": "/api/:seg/:path+", "destination": "/api/gateway?path=:seg/:path+" }
+  ],
+  "redirects": [
+    {
+      "source": "/:path*",
+      "has": [{ "type": "host", "value": "meowcuijiao.com" }],
+      "destination": "https://www.meowcuijiao.com/:path*",
+      "permanent": true
+    }
   ]
 }

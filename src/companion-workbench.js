@@ -336,6 +336,40 @@
     try{return Object.assign({notify:true,sound:true,theme:'dark'},JSON.parse(localStorage.getItem(SETTINGS_KEY)||'{}'))}catch(e){return {notify:true,sound:true,theme:'dark'}}
   }
   function saveSettings(next){state.settings=next;try{localStorage.setItem(SETTINGS_KEY,JSON.stringify(next))}catch(e){}}
+  function openPwaInstallGuide(){
+    function tryOpen(){
+      if(window.MCJPwaInstall&&typeof window.MCJPwaInstall.openGuide==='function'){
+        window.MCJPwaInstall.openGuide();
+        return true;
+      }
+      return false;
+    }
+    if(tryOpen())return;
+    // Ensure shared guide assets (normally loaded by /pwa-boot.js).
+    try{
+      if(!document.querySelector('link[data-mcj-pwa-install-css]')){
+        var css=document.createElement('link');
+        css.rel='stylesheet';
+        css.href='/src/pwa-install-prompt.css?v=20260912pwaGuide1';
+        css.setAttribute('data-mcj-pwa-install-css','1');
+        document.head.appendChild(css);
+      }
+      if(!document.querySelector('script[data-mcj-pwa-install-js]')&&!window.__MCJPwaInstallLoaded){
+        var js=document.createElement('script');
+        js.src='/src/pwa-install-prompt.js?v=20260912pwaGuide1';
+        js.defer=true;
+        js.setAttribute('data-mcj-pwa-install-js','1');
+        js.onload=function(){tryOpen()};
+        document.head.appendChild(js);
+        return;
+      }
+    }catch(e){}
+    var n=0;
+    var t=setInterval(function(){
+      n+=1;
+      if(tryOpen()||n>20)clearInterval(t);
+    },100);
+  }
   function readMsgRead(){try{return JSON.parse(localStorage.getItem(MSG_READ_KEY)||'{}')}catch(e){return {}}}
   function markMsgRead(id){var map=readMsgRead();map[id]=1;try{localStorage.setItem(MSG_READ_KEY,JSON.stringify(map))}catch(e){}}
   function availableGames(){
@@ -3072,10 +3106,16 @@
   }
   function settingsHtml(){
     var s=state.settings||readSettings();
+    var standalone=!!(window.MCJPwaInstall&&window.MCJPwaInstall.isStandalone&&window.MCJPwaInstall.isStandalone());
+    var installBlock=standalone
+      ? '<p class="pw-note">已从主屏幕打开，当前为 App 模式。</p>'
+      : '<p class="pw-note">添加到主屏幕后打开更快，使用起来更像 App。关闭自动提示后仍可从这里重新查看说明。</p>'+
+        '<button class="pw-btn primary" type="button" data-pwa-install-guide>安装妙脆角 / 添加到主屏幕</button>';
     return '<div class="pw-page-head"><div><h2>设置</h2><p>仅影响本机陪玩端体验。</p></div></div>'+
       '<section class="pw-card pad"><h3>主题</h3><p class="pw-note">当前为固定黑粉运营主题（上线版不可切换品牌色）。</p><div class="pw-info-list"><div><span>主题</span><strong>暗色粉（默认）</strong></div></div></section>'+
       '<section class="pw-card pad" style="margin-top:14px"><h3>通知</h3><label class="pw-check"><input type="checkbox" data-setting="notify" '+(s.notify?'checked':'')+'> 接收订单 / 提现 / 审核提醒</label></section>'+
       '<section class="pw-card pad" style="margin-top:14px"><h3>声音</h3><label class="pw-check"><input type="checkbox" data-setting="sound" '+(s.sound?'checked':'')+'> 提示音（新消息 / 订单 / 抢单 / 审核）</label></section>'+
+      '<section class="pw-card pad" style="margin-top:14px"><h3>安装妙脆角</h3>'+installBlock+'</section>'+
       '<section class="pw-card pad" style="margin-top:14px"><h3>账号</h3><button class="pw-btn danger" type="button" data-logout>退出登录</button></section>';
   }
   function fieldErr(name){var msg=state.profileErrors&&state.profileErrors[name];return msg?'<span class="pw-field-error" data-field-error="'+esc(name)+'">'+esc(msg)+'</span>':''}
@@ -3918,7 +3958,10 @@
       '<button class="pw-btn primary" type="submit">保存联系方式</button></form>'+
       (verifyLocked?verifyView:verifyForm)+
       depositBlock+
-      '<section class="pw-card pad pw-form-narrow" style="margin-top:14px" id="pwAccountSecurityMount"><h3>账号安全</h3><div class="pw-empty">加载中…</div></section>';
+      '<section class="pw-card pad pw-form-narrow" style="margin-top:14px" id="pwAccountSecurityMount"><h3>账号安全</h3><div class="pw-empty">加载中…</div></section>'+
+      '<section class="pw-card pad" style="margin-top:14px"><h3>安装妙脆角</h3>'+
+      '<p class="pw-note">把妙脆角加到主屏幕，打开更快，使用起来更像 App。</p>'+
+      '<button class="pw-btn" type="button" data-pwa-install-guide>安装妙脆角 / 添加到主屏幕</button></section>';
   }
   function rulesHtml(){
     var rules=state.workRules||[];
@@ -4501,6 +4544,11 @@
       return;
     }
     if(e.target.closest('[data-logout]')){clearSession();location.replace('/companion/login/');return}
+    if(e.target.closest('[data-pwa-install-guide]')){
+      e.preventDefault();
+      openPwaInstallGuide();
+      return;
+    }
     if(e.target.closest('[data-reload-inbox]')){reloadInbox().then(function(){return loadActiveThread({force:true});});return}
     if(e.target.closest('[data-reload-thread]')){loadActiveThread({force:true,clear:false});return}
     if(e.target.closest('[data-forgot-dialog] [data-forgot-close]')|| (e.target.closest('[data-forgot-close]')&&!e.target.closest('[data-forgot-dialog]'))){
