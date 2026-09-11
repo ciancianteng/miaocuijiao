@@ -1,0 +1,16 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>P5 fixture</title>
+<link rel="stylesheet" href="/src/style.css">
+<link rel="stylesheet" href="/src/chat-ui.css">
+<!-- NOTE: production messages.html links /src/messages.css which 404s -->
+<style>body{background:#050406;margin:0;padding:12px}</style>
+</head><body>
+<div class="mcj-customer-chat" data-customer-chat="fixture">
+  <aside class="mcj-chat-card mcj-customer-chat-list">
+    <div class="mcj-customer-chat-title"><h1>消息中心</h1><p>订单消息和客服会话</p></div>
+    <input class="mcj-chat-search" placeholder="搜索会话、订单号、客服">
+    <div class="mcj-conversation-list"><div class="mcj-chat-state"><strong>暂无会话</strong><span>点击在线客服后，会话会显示在这里</span></div></div>
+  </aside>
+  <main class="mcj-chat-card mcj-customer-chat-main"><div class="mcj-chat-state"><strong>请选择会话</strong><span>左侧选择客服会话后开始聊天</span></div></main>
+</div>
+<p style="color:#aaa;font-size:12px;margin-top:12px">P5 BEFORE: dual empty cards each min-height 620px + missing messages.css</p>
+</body></html>
