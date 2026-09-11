@@ -124,7 +124,8 @@
   color: rgba(255, 214, 232, 0.78) !important;
 }
 
-.hot-recommend-section .mcj-verified-badge {
+.hot-recommend-section .mcj-verified-badge,
+.companion-hall-grid .mcj-verified-badge {
   display: none !important;
 }
 
@@ -149,8 +150,8 @@
 }
 
 .companion-hall-grid .companion-card-media {
-  aspect-ratio: 16 / 9 !important;
-  max-height: none !important;
+  aspect-ratio: 2 / 1 !important;
+  max-height: min(42vw, 168px) !important;
   min-height: 0 !important;
   overflow: hidden !important;
 }

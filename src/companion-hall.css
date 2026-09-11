@@ -817,10 +817,10 @@ body{background:radial-gradient(circle at 76% 4%,rgba(255,145,195,.055),transpar
 .companion-hall-grid .companion-card-media,
 .companion-card-media{
   aspect-ratio:2 / 1!important;
-  max-height:min(42vw, 168px)!important;
   width:100%!important;
-  max-height:none!important;
+  max-height:min(42vw, 168px)!important;
   min-height:0!important;
+  height:auto!important;
   border-radius:0!important;
   background:#141018!important;
   overflow:hidden!important;
@@ -870,8 +870,10 @@ body{background:radial-gradient(circle at 76% 4%,rgba(255,145,195,.055),transpar
   gap:6px!important;
   margin:0!important;
 }
-.companion-hall-grid .companion-status-inline,
 .companion-hall-grid .mcj-verified-badge{
+  display:none!important;
+}
+.companion-hall-grid .companion-status-inline{
   display:inline-flex!important;
   align-items:center!important;
   gap:5px!important;
@@ -1007,8 +1009,9 @@ body{background:radial-gradient(circle at 76% 4%,rgba(255,145,195,.055),transpar
   .companion-hall-grid .companion-card-media,
   .companion-card-media{
     aspect-ratio:2 / 1!important;
-  max-height:min(42vw, 168px)!important;
-    max-height:none!important;
+    max-height:min(42vw, 168px)!important;
+    min-height:0!important;
+    height:auto!important;
   }
   .companion-hall-grid .companion-nickname-line{
     font-size:17px!important;
@@ -1051,7 +1054,7 @@ body{background:radial-gradient(circle at 76% 4%,rgba(255,145,195,.055),transpar
 
 
 
-/* ===== Banner+Hall compact v2 (2026-09-11) — force shorter media on Prod/Vite ===== */
+/* ===== Banner+Hall compact v3 (2026-09-11) — beat ui-linglu-polish 16/9 + max-height:none ===== */
 .companion-hall-grid .companion-card-media,
 .companion-card-media{
   aspect-ratio:2 / 1!important;
@@ -1064,8 +1067,10 @@ body{background:radial-gradient(circle at 76% 4%,rgba(255,145,195,.055),transpar
 .companion-card-media img{
   width:100%!important;
   height:100%!important;
-  max-height:none!important;
   object-fit:cover!important;
+}
+.companion-hall-grid .mcj-verified-badge{
+  display:none!important;
 }
 @media(max-width:820px){
   .companion-hall-grid .companion-card-media,
