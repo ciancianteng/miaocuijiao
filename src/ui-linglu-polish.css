@@ -150,8 +150,8 @@
 }
 
 .companion-hall-grid .companion-card-media {
-  aspect-ratio: 2 / 1 !important;
-  max-height: min(42vw, 168px) !important;
+  aspect-ratio: 4 / 5 !important;
+  max-height: none !important;
   min-height: 0 !important;
   overflow: hidden !important;
 }
@@ -163,10 +163,10 @@
 }
 
 .companion-hall-grid .companion-card-body {
-  padding: 8px 12px 10px !important;
+  padding: 5px 10px 7px !important;
   display: flex !important;
   flex-direction: column !important;
-  gap: 5px !important;
+  gap: 3px !important;
 }
 
 .companion-hall-grid .companion-card-title-row {
@@ -175,9 +175,9 @@
 
 .companion-hall-grid .companion-nickname-line {
   margin: 0 !important;
-  font-size: 17px !important;
+  font-size: 15px !important;
   font-weight: 700 !important;
-  line-height: 1.2 !important;
+  line-height: 1.15 !important;
   color: #fff8fc !important;
   letter-spacing: 0.01em !important;
   white-space: nowrap !important;
@@ -211,10 +211,10 @@
 
 .companion-hall-grid .companion-identity-row,
 .companion-hall-grid .companion-capsule-row {
-  gap: 5px !important;
-  row-gap: 5px !important;
+  gap: 4px !important;
+  row-gap: 4px !important;
   margin: 0 !important;
-  max-height: 58px !important;
+  max-height: 42px !important;
   overflow: hidden !important;
 }
 
@@ -223,10 +223,10 @@
 .companion-hall-grid .companion-identity-row .mcj-voice-tag,
 .companion-hall-grid .companion-identity-row .companion-level-pill,
 .companion-hall-grid .companion-identity-row .mcj-level-tag {
-  height: 24px !important;
-  min-height: 24px !important;
-  font-size: 11px !important;
-  padding: 0 8px !important;
+  height: 20px !important;
+  min-height: 20px !important;
+  font-size: 10px !important;
+  padding: 0 6px !important;
 }
 
 .companion-hall-grid .companion-cert-row {
@@ -240,34 +240,39 @@
 }
 
 .companion-hall-grid .companion-card-actions {
-  margin-top: 2px !important;
-  gap: 8px !important;
+  margin-top: 1px !important;
+  gap: 6px !important;
 }
 
 .companion-hall-grid .companion-card-action {
-  height: 46px !important;
-  min-height: 46px !important;
-  max-height: 46px !important;
-  font-size: 13px !important;
-  border-radius: 13px !important;
+  height: 36px !important;
+  min-height: 36px !important;
+  max-height: 36px !important;
+  font-size: 12px !important;
+  border-radius: 11px !important;
 }
 
 @media (max-width: 560px) {
+  .companion-hall-grid .companion-card-media {
+    aspect-ratio: 4 / 5 !important;
+    max-height: none !important;
+  }
+
   .companion-hall-grid .companion-nickname-line {
-    font-size: 17px !important;
+    font-size: 15px !important;
     font-weight: 700 !important;
     color: #fff !important;
   }
 
   .companion-hall-grid .companion-card-body {
-    padding: 7px 11px 9px !important;
-    gap: 4px !important;
+    padding: 5px 10px 7px !important;
+    gap: 2px !important;
   }
 
   .companion-hall-grid .companion-card-action {
-    height: 46px !important;
-    min-height: 46px !important;
-    max-height: 46px !important;
+    height: 36px !important;
+    min-height: 36px !important;
+    max-height: 36px !important;
   }
 }
 
