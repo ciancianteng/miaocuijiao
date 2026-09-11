@@ -125,6 +125,14 @@
     if (status === "暂停接单") return " is-paused";
     return " is-offline";
   }
+  /** Short UI label for hall cards — still driven by real presence status. */
+  function statusChipText(status) {
+    var s = String(status || "");
+    if (/在线/.test(s) && !/暂停|忙碌/.test(s)) return "在线";
+    if (/忙碌/.test(s)) return "忙碌";
+    if (/暂停/.test(s)) return "暂停";
+    return "离线";
+  }
   async function readItems() {
     var dataItems = [];
     state.loadError = "";
@@ -405,7 +413,7 @@
       (Array.isArray(item.certTags) && item.certTags.length) ||
       (Array.isArray(item.certificationTags) && item.certificationTags.length);
     if (!has) return "";
-    return '<span class="mcj-verified-badge">已认证</span>';
+    return '<span class="mcj-verified-badge">✓ 已认证</span>';
   }
   function card(item) {
     var pillStyle = "";
@@ -417,6 +425,7 @@
         (item.levelColor ? "background:" + esc(item.levelColor) + "33;" : "") +
         '"';
     }
+    var MAX_VISIBLE_TAGS = 5; /* level separate; ~5 tags then +N */
     var categoryTags = (function () {
       var game = String(item.game || "").trim();
       var seen = {};
@@ -424,17 +433,25 @@
       function pushTag(raw) {
         var t = String(raw || "").trim();
         if (!t) return;
-        if (game && (t === game || game.indexOf(t) >= 0 || t.indexOf(game) >= 0)) return;
         if (/未设置/.test(t)) return;
         var key = t.toLowerCase();
         if (seen[key]) return;
         seen[key] = true;
         out.push(t);
       }
-      (item.serviceTypes || []).forEach(pushTag);
-      if (item.serviceType) pushTag(item.serviceType);
-      (item.tags || []).forEach(pushTag);
-      return out.slice(0, game ? 2 : 3);
+      String(item.game || "")
+        .split(/[,，/|·\s]+/)
+        .forEach(pushTag);
+      function pushExtra(raw) {
+        var t = String(raw || "").trim();
+        if (!t) return;
+        if (game && t === game) return;
+        pushTag(t);
+      }
+      (item.serviceTypes || []).forEach(pushExtra);
+      if (item.serviceType) pushExtra(item.serviceType);
+      (item.tags || []).forEach(pushExtra);
+      return out;
     })();
     var levelHtml = item.level
       ? '<span class="companion-level-pill mcj-level-tag" data-level-id="' +
@@ -445,20 +462,26 @@
         esc(item.level) +
         "</span>"
       : "";
-    var gameHtml = item.game
-      ? '<span class="mcj-service-tag mcj-category-tag">' + esc(item.game) + "</span>"
-      : "";
+    var visibleTags = categoryTags.slice(0, MAX_VISIBLE_TAGS);
+    var hiddenTagCount = Math.max(0, categoryTags.length - visibleTags.length);
     var tagsHtml =
       '<div class="companion-identity-row companion-tags companion-capsule-row">' +
       levelHtml +
-      gameHtml +
-      categoryTags
+      visibleTags
         .map(function (t) {
           return '<span class="mcj-service-tag mcj-category-tag">' + esc(t) + "</span>";
         })
         .join("") +
+      (hiddenTagCount > 0
+        ? '<span class="mcj-service-tag mcj-category-tag companion-tag-more" aria-label="另有' +
+          hiddenTagCount +
+          '个标签">+' +
+          hiddenTagCount +
+          "</span>"
+        : "") +
       "</div>";
     var badgeClass = statusBadgeClass(item.status);
+    var statusText = statusChipText(item.status);
     var publicId = item.publicId || "未生成";
     var nickname = String(item.name || "").trim() || "未命名陪玩";
     var uuid = String(item.id || "").trim();
@@ -515,11 +538,7 @@
       esc(pos) +
       "\" onerror=\"this.onerror=null;this.src='" +
       DEFAULT_AVATAR +
-      '\'"><span class="companion-online-badge' +
-      badgeClass +
-      '">' +
-      esc(item.status) +
-      "</span></div>" +
+      '\'"></div>' +
       '<div class="companion-card-body">' +
       '<p class="companion-brand-watermark" aria-hidden="true">MEOW CUI JIAO</p>' +
       '<p class="companion-nickname-line">' +
@@ -530,7 +549,7 @@
       '<span class="companion-status-inline' +
       badgeClass +
       '">' +
-      esc(item.status) +
+      esc(statusText) +
       "</span></div>" +
       tagsHtml +
       '<div class="companion-card-actions"><a class="companion-card-action" href="' +

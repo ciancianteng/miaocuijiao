@@ -519,11 +519,12 @@
 
   function resolveHomeBanners() {
     var remote = activeBanners();
-    if (isProductionHost()) return remote;
-    // Preview/Staging: need ≥3 real slides to verify autoplay/swipe/dots.
-    // Admin currently often has 0–2 (or pink stubs). Use labeled preview pack.
-    if (remote.length >= 3) return remote;
-    return buildPreviewVerifySlides();
+    // CRITICAL: admin SoT wins whenever any published banner exists.
+    // Never replace real A/B/C with the preview pack (that made every slide look identical).
+    if (remote.length > 0) return remote;
+    // Empty admin list only: local/preview may show labeled demo pack; production stays empty.
+    if (!isProductionHost()) return buildPreviewVerifySlides();
+    return remote;
   }
 
   function isUsableBannerImage(img) {
@@ -547,8 +548,10 @@
     root.querySelectorAll("img.mcj-hero-image").forEach(function (img) {
       if (img.dataset.fallbackBound === "1") return;
       img.dataset.fallbackBound = "1";
+      // Only replace after the image has finished (complete) — never race an in-flight SoT URL.
       function ensureRealArt() {
         if (isUsableBannerImage(img)) return;
+        if (!img.complete) return;
         useBrandBannerAsset(img, img.naturalWidth ? "tiny-stub" : "empty");
       }
       img.addEventListener("error", function onBannerError() {
@@ -557,9 +560,9 @@
       });
       if (img.complete) ensureRealArt();
       else img.addEventListener("load", ensureRealArt, { once: true });
-      // Late decode / cached stub: re-check shortly after bind.
-      setTimeout(ensureRealArt, 0);
-      setTimeout(ensureRealArt, 300);
+      // Late decode / cached stub: re-check only when decode may have finished.
+      setTimeout(ensureRealArt, 400);
+      setTimeout(ensureRealArt, 1200);
     });
   }
 

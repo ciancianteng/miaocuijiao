@@ -87,6 +87,25 @@
     return false;
   }
 
+  /** Homepage / admin banner SoT images — never race-swap to default-avatar. */
+  function isBannerHero(img) {
+    if (!img || img.tagName !== "IMG") return false;
+    if (img.getAttribute("data-mcj-banner-img") === "1") return true;
+    if (img.classList && img.classList.contains("mcj-hero-image")) return true;
+    if (typeof img.closest === "function") {
+      if (
+        img.closest(
+          ".mcj-home-hero, [data-mcj-home-hero], .mcj-hero-slide, [data-mcj-banner], .mcj-home-banner, #homeBanner"
+        )
+      ) {
+        return true;
+      }
+    }
+    var src = String(img.getAttribute("src") || img.src || "");
+    if (/default-home-banner|\/banners?\//i.test(src)) return true;
+    return false;
+  }
+
   function shouldSkip(img) {
     return (
       isBrandLogo(img) ||
@@ -94,7 +113,8 @@
       isPayQr(img) ||
       isPaymentProof(img) ||
       isChatImage(img) ||
-      isDecorImage(img)
+      isDecorImage(img) ||
+      isBannerHero(img)
     );
   }
 
