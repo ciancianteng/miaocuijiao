@@ -1,0 +1,10 @@
+const fs = require("fs");
+const i = fs.readFileSync("index.html", "utf8");
+const line = i.split(/\r?\n/).find((l) => l.includes("apple-mobile-web-app-title"));
+const og = i.split(/\r?\n/).find((l) => l.includes("og:site_name"));
+console.log("title line:", JSON.stringify(line));
+console.log("og line:", JSON.stringify(og));
+const m = /content="([^"]+)"/.exec(line || "");
+const chars = m ? [...m[1]].map((c) => c.codePointAt(0).toString(16)) : [];
+console.log("title codepoints:", chars.join(" "));
+console.log("title is 妙脆角:", m && m[1] === "妙脆角");
