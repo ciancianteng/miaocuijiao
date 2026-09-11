@@ -1,0 +1,97 @@
+{
+  "preview": "https://meow-cuijiao-homepage-git-cu-e740fd-ciancianteng-4581s-projects.vercel.app",
+  "mineMs": 4011,
+  "logoInfo": [
+    {
+      "src": "meow-cuijiao-brand-96.webp",
+      "bytes": 3494,
+      "dw": 34,
+      "dh": 34,
+      "nw": 96,
+      "nh": 96
+    },
+    {
+      "src": "svg%3e",
+      "bytes": 1096,
+      "dw": 54,
+      "dh": 54,
+      "nw": 150,
+      "nh": 150
+    },
+    {
+      "src": "svg%3e",
+      "bytes": 1041,
+      "dw": 38,
+      "dh": 38,
+      "nw": 150,
+      "nh": 150
+    },
+    {
+      "src": "svg%3e",
+      "bytes": 1096,
+      "dw": 48,
+      "dh": 48,
+      "nw": 150,
+      "nh": 150
+    },
+    {
+      "src": "svg%3e",
+      "bytes": 1041,
+      "dw": 0,
+      "dh": 0,
+      "nw": 150,
+      "nh": 150
+    },
+    {
+      "src": "svg%3e",
+      "bytes": 1096,
+      "dw": 0,
+      "dh": 0,
+      "nw": 150,
+      "nh": 150
+    },
+    {
+      "src": "svg%3e",
+      "bytes": 1041,
+      "dw": 0,
+      "dh": 0,
+      "nw": 150,
+      "nh": 150
+    },
+    {
+      "src": "meow-cuijiao-hero-ip-ouEvZ9-k.webp",
+      "bytes": 89604,
+      "dw": 117,
+      "dh": 117,
+      "nw": 1024,
+      "nh": 1024
+    },
+    {
+      "src": "default-home-banner.png",
+      "bytes": 3294472,
+      "dw": 362,
+      "dh": 121,
+      "nw": 1717,
+      "nh": 916
+    }
+  ],
+  "srcFirstCount": 21,
+  "toOrdersMs": 1499,
+  "srcOnOrders": 20,
+  "apiOnOrders": {
+    "/api/platform/settings": 1,
+    "/api/public/companions": 1,
+    "/api/platform/content": 3,
+    "/api/gateway": 2,
+    "/api/popularity": 1,
+    "/api/platform/services": 1,
+    "/api/platform/gameplay-products": 1
+  },
+  "smoke": {
+    "375": "/opt/cursor/artifacts/screenshots/perf2-after-mine-375.png",
+    "390": "/opt/cursor/artifacts/screenshots/perf2-after-mine-390.png",
+    "393": "/opt/cursor/artifacts/screenshots/perf2-after-mine-393.png",
+    "430": "/opt/cursor/artifacts/screenshots/perf2-after-mine-430.png"
+  },
+  "at": "2026-09-11T14:33:38.651Z"
+}
