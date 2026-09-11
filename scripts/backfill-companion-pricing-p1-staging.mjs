@@ -65,7 +65,11 @@ function headers(extra = {}) {
 }
 
 async function rest(path, init = {}) {
-  const res = await fetch(`${STAGING_URL.replace(/\/$/, "")}${path}`, init);
+  const { headers: initHeaders, ...restInit } = init || {};
+  const res = await fetch(`${STAGING_URL.replace(/\/$/, "")}${path}`, {
+    ...restInit,
+    headers: headers(initHeaders || {}),
+  });
   const text = await res.text();
   let body = null;
   try {
@@ -231,7 +235,7 @@ async function fetchAllCompanions() {
   const all = [];
   for (;;) {
     const chunk = await rest(
-      `/rest/v1/companion_profiles?select=user_id,level_id,price,game_prices,game,main_service,service_ids,tags,application_status,verification_status,allow_orders,pricing_unit&order=user_id.asc&limit=${pageSize}&offset=${from}`
+      `/rest/v1/companion_profiles?select=user_id,level_id,price,game_prices,game,main_service,service_ids,tags,application_status,verification_status,allow_orders&order=user_id.asc&limit=${pageSize}&offset=${from}`
     );
     if (!Array.isArray(chunk) || !chunk.length) break;
     all.push(...chunk);
