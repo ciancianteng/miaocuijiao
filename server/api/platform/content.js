@@ -61,11 +61,11 @@ function bannerItem(row) {
             offsetX: x,
             offsetY: y,
             ratioW: Number(cropRaw.ratioW ?? cropRaw.ratio_w ?? 1920) || 1920,
-            ratioH: Number(cropRaw.ratioH ?? cropRaw.ratio_h ?? 700) || 700,
-            ratio: String(cropRaw.ratio || `${cropRaw.ratioW || 1920}:${cropRaw.ratioH || 700}`),
+            ratioH: Number(cropRaw.ratioH ?? cropRaw.ratio_h ?? 640) || 640,
+            ratio: String(cropRaw.ratio || `${cropRaw.ratioW || 1920}:${cropRaw.ratioH || 640}`),
           };
         })()
-      : { zoom: 1, scale: 1, x: 0, y: 0, offsetX: 0, offsetY: 0, ratioW: 1920, ratioH: 700, ratio: "1920:700" };
+      : { zoom: 1, scale: 1, x: 0, y: 0, offsetX: 0, offsetY: 0, ratioW: 1920, ratioH: 640, ratio: "1920:640" };
   const mobileCrop =
     mobileCropRaw && typeof mobileCropRaw === "object" && !Array.isArray(mobileCropRaw)
       ? {
@@ -73,10 +73,10 @@ function bannerItem(row) {
           x: Number(mobileCropRaw.x ?? mobileCropRaw.offsetX ?? mobileCropRaw.nx ?? 0) || 0,
           y: Number(mobileCropRaw.y ?? mobileCropRaw.offsetY ?? mobileCropRaw.ny ?? 0) || 0,
           ratioW: Number(mobileCropRaw.ratioW ?? mobileCropRaw.ratio_w ?? 1080) || 1080,
-          ratioH: Number(mobileCropRaw.ratioH ?? mobileCropRaw.ratio_h ?? 1350) || 1350,
-          ratio: String(mobileCropRaw.ratio || `${mobileCropRaw.ratioW || 1080}:${mobileCropRaw.ratioH || 1350}`),
+          ratioH: Number(mobileCropRaw.ratioH ?? mobileCropRaw.ratio_h ?? 360) || 360,
+          ratio: String(mobileCropRaw.ratio || `${mobileCropRaw.ratioW || 1080}:${mobileCropRaw.ratioH || 360}`),
         }
-      : { zoom: 1, x: 0, y: 0, ratioW: 1080, ratioH: 1350, ratio: "1080:1350" };
+      : { zoom: 1, x: 0, y: 0, ratioW: 1080, ratioH: 360, ratio: "1080:360" };
   return {
     id: row.id,
     title: title,

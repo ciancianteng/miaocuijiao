@@ -3,9 +3,20 @@
  *   zoom >= 1  (cover multiplier; 1 = exact cover)
  *   x, y in [-1.5, 1.5]  (pan as fraction of frame width / height)
  * Render: size = coverBase * zoom; transform translate(calc(-50% + x*fw), calc(-50% + y*fh))
+ *
+ * Display frame (Production promo homepage): aspect-ratio 3 / 1.
+ * ratioW/ratioH stored in crop_meta are labels for that display frame — NOT upload pixel mandates.
+ * Do not confuse recommended upload pixels with the live front-end ratio.
  */
 (function (root) {
   "use strict";
+
+  /** Live homepage promo viewport ratio (mobile + desktop). */
+  var DISPLAY_RATIO_W = 3;
+  var DISPLAY_RATIO_H = 1;
+  /** Canonical crop_meta labels matching DISPLAY 3:1 (not forced encode size). */
+  var DESKTOP_FRAME = { ratioW: 1920, ratioH: 640 };
+  var MOBILE_FRAME = { ratioW: 1080, ratioH: 360 };
 
   function clamp(value, min, max, fallback) {
     var number = Number(value);
@@ -14,7 +25,7 @@
   }
 
   function normalizeCrop(raw, defaults) {
-    defaults = defaults || { ratioW: 1920, ratioH: 700 };
+    defaults = defaults || DESKTOP_FRAME;
     raw = raw && typeof raw === "object" ? raw : {};
     var zoom = clamp(raw.zoom != null ? raw.zoom : raw.scale, 1, 4, 1);
     var x = clamp(raw.x != null ? raw.x : raw.offsetX != null ? raw.offsetX : raw.nx, -1.5, 1.5, 0);
@@ -96,5 +107,9 @@
     coverBaseSize: coverBaseSize,
     applyCropToImg: applyCropToImg,
     objectPositionFromCrop: objectPositionFromCrop,
+    DISPLAY_RATIO_W: DISPLAY_RATIO_W,
+    DISPLAY_RATIO_H: DISPLAY_RATIO_H,
+    DESKTOP_FRAME: DESKTOP_FRAME,
+    MOBILE_FRAME: MOBILE_FRAME,
   };
 })(typeof window !== "undefined" ? window : globalThis);

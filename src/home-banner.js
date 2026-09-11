@@ -258,10 +258,10 @@
       mobileDedicated = String(config.mobileImage || "").trim();
     }
     var link = normalizeHref(config.link || config.href || config.button_link || "");
-    var crop = normalizeCrop(config.crop || config.crop_meta || {}, { ratioW: 1920, ratioH: 700 });
+    var crop = normalizeCrop(config.crop || config.crop_meta || {}, { ratioW: 1920, ratioH: 640 });
     var mobileCrop = normalizeCrop(
       config.mobileCrop || config.mobile_crop || config.mobile_crop_meta || (mobileDedicated ? {} : crop),
-      { ratioW: 1080, ratioH: 1350 }
+      { ratioW: 1080, ratioH: 360 }
     );
     return {
       id: config.id || "",
@@ -305,20 +305,26 @@
   function cropFor(data, device) {
     var desktop = data.crop || normalizeCrop({});
     if (device === "mobile") {
-      var mobile = data.mobileCrop || normalizeCrop({}, { ratioW: 1080, ratioH: 1350 });
-      // Dedicated mobile image may exist, but unless mobileCrop was explicitly customized,
-      // reuse the same admin framing (zoom/x/y) with responsive container sizing.
-      var useMobile = data.hasDedicatedMobile && isCustomCrop(mobile);
+      var mobile = data.mobileCrop || normalizeCrop({}, { ratioW: 1080, ratioH: 360 });
+      // When a dedicated mobile image exists, always prefer mobile_crop_meta so admin
+      // pan/zoom matches the phone homepage (do not require a "custom" threshold).
+      var useMobile = !!data.hasDedicatedMobile;
       var src = useMobile ? mobile : desktop;
       return {
         zoom: Math.max(1, Number(src.zoom) || 1),
         x: Number(src.x) || 0,
         y: Number.isFinite(Number(src.y)) ? Number(src.y) : 0,
         ratioW: 1080,
-        ratioH: 1350,
+        ratioH: 360,
       };
     }
-    return desktop;
+    return {
+      zoom: Math.max(1, Number(desktop.zoom) || 1),
+      x: Number(desktop.x) || 0,
+      y: Number.isFinite(Number(desktop.y)) ? Number(desktop.y) : 0,
+      ratioW: 1920,
+      ratioH: 640,
+    };
   }
 
   function applyVars(root, data, device) {
@@ -375,7 +381,11 @@
         esc(safeSrc) +
         '" alt="' +
         esc(data.alt) +
-        '" decoding="async">'
+        '" decoding="async"' +
+        (isActive
+          ? ' fetchpriority="high" loading="eager"'
+          : ' loading="lazy" fetchpriority="low"') +
+        ">"
       : '<div class="mcj-hero-image mcj-hero-image-missing" role="img" aria-label="' + esc(data.alt || "Banner") + '"></div>';
     var previewMark =
       data.previewVerify || data.previewSlide > 1
