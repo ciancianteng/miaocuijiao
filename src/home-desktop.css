@@ -42,7 +42,7 @@
     box-sizing: border-box;
   }
 
-  /* Banner: full-bleed; aspect owned by home-banner.css (1920:700) */
+  /* Banner: full-bleed; live promo aspect owned by home-banner-promo.css (3:1) */
   .container > .mcj-home-hero,
   .mcj-home-hero[data-mcj-home-hero] {
     height: auto !important;

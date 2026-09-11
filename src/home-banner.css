@@ -1,6 +1,6 @@
 /* Homepage Banner + Quick Entry size lock (loaded after index inline / design-system) */
 
-/* ——— Banner: full-bleed frame matched to admin crop 1920:700 ——— */
+/* ——— Banner: full-bleed frame; promo path uses 3:1 (see home-banner-promo.css) ——— */
 .container > .mcj-home-hero,
 .mcj-home-hero[data-mcj-home-hero] {
   position: relative !important;

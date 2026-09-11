@@ -125,7 +125,7 @@
   display: block !important;
   border-radius: 0 !important;
   object-fit: cover !important;
-  object-position: center 42% !important;
+  object-position: var(--hero-position, 50% 42%) !important;
   opacity: 1 !important;
   z-index: 1 !important;
 }
