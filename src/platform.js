@@ -103,8 +103,12 @@ document.addEventListener("click", function(e) {
     return;
   }
 
+  // Legacy demo toast — disabled on the real gifts mall (data-gifts-mall / gifts-mall.js).
   var gift = e.target.closest("[data-gift]");
   if (gift) {
+    if (document.documentElement.getAttribute("data-gifts-mall") === "1" || gift.closest("[data-gifts-mall]") || gift.hasAttribute("data-mall-gift-id")) {
+      return;
+    }
     var name = gift.dataset.gift;
     var arr = JSON.parse(localStorage.getItem("mcjGiftSpend") || "[]");
     arr.unshift({ name: name, time: new Date().toLocaleString() });
