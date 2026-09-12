@@ -1,13 +1,12 @@
 {
+  "id": "/customer-service/",
   "name": "妙脆角 · 客服端",
   "short_name": "妙脆角客服",
   "description": "妙脆角客服端 — 会话、派单、售后。",
-  "scope": "/",
+  "start_url": "/customer-service/",
+  "scope": "/customer-service/",
   "display": "standalone",
-  "display_override": [
-    "standalone",
-    "minimal-ui"
-  ],
+  "display_override": ["standalone", "minimal-ui"],
   "orientation": "portrait-primary",
   "background_color": "#0a0610",
   "theme_color": "#0a0610",
@@ -39,7 +38,5 @@
       "type": "image/png",
       "purpose": "maskable"
     }
-  ],
-  "id": "https://www.meowcuijiao.com/customer-service/",
-  "start_url": "/customer-service/?utm_source=pwa&utm_portal=cs"
+  ]
 }

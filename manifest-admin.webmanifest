@@ -1,14 +1,13 @@
 {
-  "name": "妙脆角 · 后台中心",
+  "id": "/admin/",
+  "name": "妙脆角 · 管理后台",
   "short_name": "妙脆角后台",
-  "description": "妙脆角后台中心 — 审核、订单、运营配置。",
+  "description": "妙脆角管理后台 — 审核、配置、运营。",
+  "start_url": "/admin/",
   "scope": "/",
   "display": "standalone",
-  "display_override": [
-    "standalone",
-    "minimal-ui"
-  ],
-  "orientation": "portrait-primary",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "any",
   "background_color": "#0a0610",
   "theme_color": "#0a0610",
   "lang": "zh-CN",
@@ -39,7 +38,5 @@
       "type": "image/png",
       "purpose": "maskable"
     }
-  ],
-  "id": "https://www.meowcuijiao.com/admin/",
-  "start_url": "/admin/?utm_source=pwa&utm_portal=admin"
+  ]
 }

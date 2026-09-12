@@ -1,13 +1,12 @@
 {
+  "id": "/companion/",
   "name": "妙脆角 · 陪玩端",
   "short_name": "妙脆角陪玩",
   "description": "妙脆角陪玩端 — 工作台、抢单、订单、收益。",
-  "scope": "/",
+  "start_url": "/companion/",
+  "scope": "/companion/",
   "display": "standalone",
-  "display_override": [
-    "standalone",
-    "minimal-ui"
-  ],
+  "display_override": ["standalone", "minimal-ui"],
   "orientation": "portrait-primary",
   "background_color": "#0a0610",
   "theme_color": "#0a0610",
@@ -39,7 +38,5 @@
       "type": "image/png",
       "purpose": "maskable"
     }
-  ],
-  "id": "https://www.meowcuijiao.com/companion/",
-  "start_url": "/companion/?utm_source=pwa&utm_portal=companion"
+  ]
 }

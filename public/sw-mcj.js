@@ -1,5 +1,7 @@
 /* MCJ minimal service worker — network-first passthrough for installability.
-   Do NOT aggressively cache HTML/API (avoids stale login/session pages). */
+   Do NOT aggressively cache HTML/API (avoids stale login/session pages).
+   Do NOT rewrite navigations to "/". Portal PWAs (companion / customer-service /
+   admin) must keep their own start_url paths when launched from the home screen. */
 self.addEventListener("install", function (event) {
   self.skipWaiting();
 });
