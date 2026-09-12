@@ -1432,35 +1432,43 @@
   function stepNav(index, draft) {
     draft = draft || readDraft();
     var reachable = maxReachableStep(draft);
-    var chips = steps.map(function (s, i) {
+    var items = steps.map(function (s, i) {
       var done = stepComplete(i, draft) || (i < index);
       var locked = i > reachable;
+      var active = i === index;
       var numberText = String(i + 1).padStart(2, "0");
       var label = (typeof stepChipLabels !== "undefined" && stepChipLabels[i]) || s;
+      var stateClass = active ? " is-active" : done ? " is-done" : locked ? " is-todo is-locked" : " is-todo";
+      var dotInner = done && !active ? "✓" : "";
       return (
-        '<button class="apply-step-chip' +
-        (i === index ? " is-active" : "") +
-        (done ? " is-done" : "") +
-        (locked ? " is-locked" : "") +
-        '" data-apply-step="' +
+        '<li class="apply-stepper-item' +
+        stateClass +
+        '">' +
+        '<button class="apply-stepper-btn" data-apply-step="' +
         i +
         '" type="button" ' +
         (locked ? 'aria-disabled="true" tabindex="-1"' : "") +
         ' aria-current="' +
-        (i === index ? "step" : "false") +
-        '"><span>' +
+        (active ? "step" : "false") +
+        '">' +
+        '<span class="apply-stepper-num">' +
         esc(numberText) +
-        "</span><em>" +
+        "</span>" +
+        '<span class="apply-stepper-dot" aria-hidden="true">' +
+        dotInner +
+        "</span>" +
+        '<span class="apply-stepper-label">' +
         esc(label) +
-        "</em></button>"
+        "</span>" +
+        "</button></li>"
       );
     }).join("");
-    // Simple 4-chip stepper only: 01 认证 — 02 须知 — 03 资料 — 04 完成
+    // Lightweight progress stepper: 01–04 + 认证/须知/资料/完成 (full labels, no truncation)
     return (
-      '<div class="apply-progress-compact" aria-label="申请进度">' +
-      '<div class="apply-step-chip-row" role="navigation">' +
-      chips +
-      "</div></div>"
+      '<nav class="apply-stepper" aria-label="申请进度">' +
+      '<ol class="apply-stepper-track">' +
+      items +
+      "</ol></nav>"
     );
   }
 
