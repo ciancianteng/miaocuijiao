@@ -204,6 +204,8 @@
     { "source": "/customer-service/:path*", "destination": "/customer-service/index.html" },
     { "source": "/admin/login", "destination": "/admin/login/index.html" },
     { "source": "/admin/login/", "destination": "/admin/login/index.html" },
+    { "source": "/auth/reset-password", "destination": "/auth/reset-password/index.html" },
+    { "source": "/auth/reset-password/", "destination": "/auth/reset-password/index.html" },
     { "source": "/admin", "destination": "/admin.html" },
     { "source": "/admin/", "destination": "/admin.html" },
     { "source": "/admin/:path*", "destination": "/admin.html" },
