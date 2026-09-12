@@ -1,7 +1,7 @@
 {
-  "name": "妙脆角 · 老板端",
-  "short_name": "妙脆角",
-  "description": "妙脆角老板端 — 下单、大厅、消息。",
+  "name": "妙脆角 · 后台中心",
+  "short_name": "妙脆角后台",
+  "description": "妙脆角后台中心 — 审核、订单、运营配置。",
   "scope": "/",
   "display": "standalone",
   "display_override": [
@@ -40,6 +40,6 @@
       "purpose": "maskable"
     }
   ],
-  "id": "https://www.meowcuijiao.com/",
-  "start_url": "/?utm_source=pwa&utm_portal=boss"
+  "id": "https://www.meowcuijiao.com/admin/",
+  "start_url": "/admin/?utm_source=pwa&utm_portal=admin"
 }

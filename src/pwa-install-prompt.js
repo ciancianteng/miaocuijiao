@@ -195,14 +195,44 @@
 
   function ensurePwaMeta() {
     if (!document.head) return;
-    var iconV = ICON_CACHE_V;
+    var iconV = typeof ICON_CACHE_V !== "undefined" ? ICON_CACHE_V : "20260912pwaPortal2";
+    function portalManifestHref() {
+      var p = "";
+      try {
+        p = String(location.pathname || "/");
+      } catch (e) {
+        p = "/";
+      }
+      if (/^\/companion(\/|$)/i.test(p) || /^\/companion-apply\.html$/i.test(p)) {
+        return absoluteAsset("/manifest-companion.webmanifest?v=" + iconV);
+      }
+      if (/^\/customer-service(\/|$)/i.test(p)) {
+        return absoluteAsset("/manifest-cs.webmanifest?v=" + iconV);
+      }
+      if (
+        /^\/admin(\/|$)/i.test(p) ||
+        /^\/admin\.html$/i.test(p) ||
+        /^\/admin-(dashboard|center|audit)\.html$/i.test(p)
+      ) {
+        return absoluteAsset("/manifest-admin.webmanifest?v=" + iconV);
+      }
+      return absoluteAsset("/manifest.webmanifest?v=" + iconV);
+    }
     ensureMetaTag('link[rel="manifest"][data-mcj-pwa-manifest]', function () {
       var l = document.createElement("link");
       l.rel = "manifest";
-      l.href = absoluteAsset("/manifest.webmanifest?v=" + iconV);
+      l.href = portalManifestHref();
       l.setAttribute("data-mcj-pwa-manifest", "1");
       return l;
     });
+    // If a static/boot manifest link already exists, retarget it to this portal.
+    try {
+      var href = portalManifestHref();
+      document.head.querySelectorAll('link[rel="manifest"]').forEach(function (el) {
+        el.href = href;
+        el.setAttribute("data-mcj-pwa-manifest", "1");
+      });
+    } catch (eRetarget) {}
     ensureMetaTag('link[rel="apple-touch-icon"][data-mcj-pwa-ati]', function () {
       var l = document.createElement("link");
       l.rel = "apple-touch-icon";
@@ -253,10 +283,42 @@
     ensureMetaTag('meta[name="apple-mobile-web-app-title"][data-mcj-pwa]', function () {
       var m = document.createElement("meta");
       m.name = "apple-mobile-web-app-title";
-      m.content = "妙脆角";
+      var title = "妙脆角";
+      try {
+        var p = String(location.pathname || "/");
+        if (/^\/companion(\/|$)/i.test(p) || /^\/companion-apply\.html$/i.test(p)) title = "妙脆角陪玩";
+        else if (/^\/customer-service(\/|$)/i.test(p)) title = "妙脆角客服";
+        else if (
+          /^\/admin(\/|$)/i.test(p) ||
+          /^\/admin\.html$/i.test(p) ||
+          /^\/admin-(dashboard|center|audit)\.html$/i.test(p)
+        ) {
+          title = "妙脆角后台";
+        }
+      } catch (eTitle) {}
+      m.content = title;
       m.setAttribute("data-mcj-pwa", "1");
       return m;
     });
+    try {
+      var titleEl = document.head.querySelector('meta[name="apple-mobile-web-app-title"]');
+      if (titleEl) {
+        var p2 = String(location.pathname || "/");
+        if (/^\/companion(\/|$)/i.test(p2) || /^\/companion-apply\.html$/i.test(p2)) {
+          titleEl.content = "妙脆角陪玩";
+        } else if (/^\/customer-service(\/|$)/i.test(p2)) {
+          titleEl.content = "妙脆角客服";
+        } else if (
+          /^\/admin(\/|$)/i.test(p2) ||
+          /^\/admin\.html$/i.test(p2) ||
+          /^\/admin-(dashboard|center|audit)\.html$/i.test(p2)
+        ) {
+          titleEl.content = "妙脆角后台";
+        } else {
+          titleEl.content = "妙脆角";
+        }
+      }
+    } catch (eTitle2) {}
     ensureMetaTag('meta[name="theme-color"][data-mcj-pwa]', function () {
       var m = document.createElement("meta");
       m.name = "theme-color";
