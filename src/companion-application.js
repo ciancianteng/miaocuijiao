@@ -22,20 +22,17 @@
 
   var steps = [
     "认证",
-    "制度",
+    "须知",
     "资料",
-    "游戏",
-    "验证",
-    "提交"
+    "完成"
   ];
   var stepLabels = [
-    "选择认证方式",
-    "阅读陪玩制度",
-    "填写基本资料",
-    "游戏 / 陪玩资料",
-    "上传认证资料",
-    "确认并提交"
+    "选择认证并完成认证",
+    "阅读陪玩须知",
+    "填写资料并提交",
+    "申请已提交"
   ];
+  var stepChipLabels = ["认证", "须知", "资料", "完成"];
 
   var tagGroups = {
     personalTags: {
@@ -396,26 +393,31 @@
       });
     }
     
-    // Apply flow V3: cert method → rules → basic → games → proof → confirm
-    if (draft && draft._applyStepsV3 !== true) {
+    // Apply flow V4: STEP1 cert+materials → STEP2 rules → STEP3 profile+games+submit → STEP4 done
+    if (draft && draft._applyStepsV4 !== true) {
       var legacyStep = Number(draft.step || 0) || 0;
       var mode0 = String(((draft.identity || {}).authMode) || draft.certification_method || "").trim();
-      if (draft._p2StepMigrated === true) {
-        // prior 4-step: 0 rules+basic, 1 game, 2 upload+auth, 3 confirm
+      var submitted = !!(draft.submitted || draft.status === "pending" || draft.status === "review");
+      if (submitted) {
+        draft.step = 3;
+      } else if (draft._applyStepsV3 === true) {
+        // prior 6-step: 0 cert,1 rules,2 basic,3 games,4 proof,5 confirm
+        if (!mode0) draft.step = 0;
+        else if (legacyStep <= 0) draft.step = 0;
+        else if (legacyStep === 1) draft.step = 1;
+        else if (legacyStep >= 2 && legacyStep <= 5) draft.step = 2;
+        else draft.step = 2;
+      } else if (draft._p2StepMigrated === true) {
+        // prior 4-step p2
         if (!mode0) draft.step = 0;
         else if (legacyStep <= 0) draft.step = ((draft.rulesAgreement || {}).accepted) ? 2 : 1;
-        else if (legacyStep === 1) draft.step = 3;
-        else if (legacyStep === 2) draft.step = 4;
-        else draft.step = 5;
+        else draft.step = 2;
       } else {
-        // older 5-step: 0 rules,1 basic,2 game,3 upload,4 auth
         if (!mode0) draft.step = 0;
         else if (legacyStep <= 0) draft.step = ((draft.rulesAgreement || {}).accepted) ? 2 : 1;
-        else if (legacyStep === 1) draft.step = 2;
-        else if (legacyStep === 2) draft.step = 3;
-        else if (legacyStep === 3 || legacyStep === 4) draft.step = 4;
-        else draft.step = 5;
+        else draft.step = 2;
       }
+      draft._applyStepsV4 = true;
       draft._applyStepsV3 = true;
       draft._p2StepMigrated = true;
     }
@@ -629,42 +631,8 @@
     var missing = [];
     var mode = String(identity.authMode || draft.certification_method || "").trim();
     if (index === 0) {
-      // STEP1: choose certification method first
+      // STEP1: choose certification method + complete corresponding materials
       if (mode !== "id_card" && mode !== "deposit") missing.push("选择认证方式（身份证或押金）");
-      return missing;
-    }
-    if (index === 1) {
-      // STEP2: rules accordion + agree
-      if (!publishedRule()) missing.push("后台暂未发布陪玩制度");
-      if (!((draft.rulesAgreement || {}).accepted)) missing.push("阅读并同意陪玩制度");
-      return missing;
-    }
-    if (index === 2) {
-      // STEP3: basic profile
-      [["nickname", "昵称"], ["age", "年龄"], ["gender", "性别"], ["region", "地区"], ["phone", "联系电话"], ["email", "邮箱"]].forEach(function (item) {
-        if (!hasText(data, item[0])) missing.push(item[1]);
-      });
-      if (!hasArray(data, "personalTags")) missing.push("个人标签");
-      return missing;
-    }
-    if (index === 3) {
-      // STEP4: games + companion media — no applicant prices
-      if (!hasText(data, "gameNickname")) missing.push("游戏昵称");
-      if (!hasArray(data, "mainGames")) missing.push("主玩游戏");
-      if (!hasArray(data, "positions")) missing.push("擅长位置");
-      if (!hasArray(data, "modes")) missing.push("可接模式");
-      [["rank", "游戏段位"], ["voiceType", "声线"], ["onlineStart", "常在线开始时间"], ["onlineEnd", "常在线结束时间"], ["intro", "自我介绍"]].forEach(function (item) {
-        if (!hasText(data, item[0])) missing.push(item[1]);
-      });
-      if (!hasDurableUpload(uploads.avatar)) missing.push("头像");
-      if (!(voice.confirmed && (hasDurableUpload(voice) || hasDurableUpload(voice.url) || voice.storagePath || voice.path))) {
-        missing.push("试音并确认使用");
-      }
-      return missing;
-    }
-    if (index === 4) {
-      // STEP5: cert materials only — branch by STEP1 certification_method
-      if (mode !== "id_card" && mode !== "deposit") missing.push("选择认证方式（身份证或押金二选一）");
       if (mode === "id_card") {
         if (!hasDurableUpload(identity.idFront)) missing.push("证件正面");
         if (!hasDurableUpload(identity.idBack)) missing.push("证件背面");
@@ -682,41 +650,63 @@
           missing.push(remoteDepositPay.emptyMessage || "平台暂未配置押金收款方式，请联系客服");
         }
       }
-      [["settlementMethod", "结款方式"]].forEach(function (item) {
-        if (!hasText(identity, item[0])) missing.push(item[1]);
-      });
-      var settleMethod = String(identity.settlementMethod || "").trim();
-      if (isBankSettlementMethod(settleMethod)) {
-        if (!hasText(identity, "settlementName")) missing.push("银行户名");
-        if (!hasText(identity, "settlementAccount")) missing.push("银行账号");
-        var bankSel = String(identity.settlementBank || "").trim();
-        if (bankSel === SETTLEMENT_BANK_OTHER && !String(identity.settlementBankOther || "").trim()) {
-          missing.push("自定义银行名称");
-        } else if (!effectiveSettlementBankName(identity)) {
-          missing.push("银行名称");
+      if (mode === "id_card" || mode === "deposit") {
+        [["settlementMethod", "结款方式"]].forEach(function (item) {
+          if (!hasText(identity, item[0])) missing.push(item[1]);
+        });
+        var settleMethod = String(identity.settlementMethod || "").trim();
+        if (isBankSettlementMethod(settleMethod)) {
+          if (!hasText(identity, "settlementName")) missing.push("银行户名");
+          if (!hasText(identity, "settlementAccount")) missing.push("银行账号");
+          var bankSel = String(identity.settlementBank || "").trim();
+          if (bankSel === SETTLEMENT_BANK_OTHER && !String(identity.settlementBankOther || "").trim()) {
+            missing.push("自定义银行名称");
+          } else if (!effectiveSettlementBankName(identity)) {
+            missing.push("银行名称");
+          }
+        } else if (isTngSettlementMethod(settleMethod)) {
+          if (!String(identity.tngAccount || identity.settlementAccount || "").trim()) {
+            missing.push("TNG 手机号码");
+          }
+        } else if (isAlipaySettlementMethod(settleMethod)) {
+          if (!String(identity.alipayAccount || identity.settlementAccount || "").trim()) {
+            missing.push("支付宝账号 / 手机号");
+          }
+        } else if (isDuitNowSettlementMethod(settleMethod)) {
+          if (!hasText(identity, "settlementAccount")) missing.push("DuitNow 账号");
+        } else if (settleMethod) {
+          if (!hasText(identity, "settlementAccount")) missing.push(settlementAccountLabel(settleMethod));
         }
-      } else if (isTngSettlementMethod(settleMethod)) {
-        if (!String(identity.tngAccount || identity.settlementAccount || "").trim()) {
-          missing.push("TNG 手机号码");
-        }
-      } else if (isAlipaySettlementMethod(settleMethod)) {
-        if (!String(identity.alipayAccount || identity.settlementAccount || "").trim()) {
-          missing.push("支付宝账号 / 手机号");
-        }
-      } else if (isDuitNowSettlementMethod(settleMethod)) {
-        if (!hasText(identity, "settlementAccount")) missing.push("DuitNow 账号");
-      } else if (settleMethod) {
-        if (!hasText(identity, "settlementAccount")) missing.push(settlementAccountLabel(settleMethod));
       }
       return missing;
     }
-    if (index === 5) {
-      // STEP6 confirm: all prior steps must be complete
-      [0, 1, 2, 3, 4].forEach(function (i) {
-        missingForStep(i, draft).forEach(function (item) {
-          if (missing.indexOf(item) < 0) missing.push(item);
-        });
+    if (index === 1) {
+      // STEP2: rules + agree
+      if (!publishedRule()) missing.push("后台暂未发布陪玩制度");
+      if (!((draft.rulesAgreement || {}).accepted)) missing.push("阅读并同意陪玩制度");
+      return missing;
+    }
+    if (index === 2) {
+      // STEP3: basic + games + media — no applicant prices/levels
+      [["nickname", "昵称"], ["age", "年龄"], ["gender", "性别"], ["region", "地区"], ["phone", "联系电话"], ["email", "邮箱"]].forEach(function (item) {
+        if (!hasText(data, item[0])) missing.push(item[1]);
       });
+      if (!hasArray(data, "personalTags")) missing.push("个人标签");
+      if (!hasText(data, "gameNickname")) missing.push("游戏昵称");
+      if (!hasArray(data, "mainGames")) missing.push("主玩游戏");
+      if (!hasArray(data, "positions")) missing.push("擅长位置");
+      if (!hasArray(data, "modes")) missing.push("可接模式");
+      [["rank", "游戏段位"], ["voiceType", "声线"], ["onlineStart", "常在线开始时间"], ["onlineEnd", "常在线结束时间"], ["intro", "自我介绍"]].forEach(function (item) {
+        if (!hasText(data, item[0])) missing.push(item[1]);
+      });
+      if (!hasDurableUpload(uploads.avatar)) missing.push("头像");
+      if (!(voice.confirmed && (hasDurableUpload(voice) || hasDurableUpload(voice.url) || voice.storagePath || voice.path))) {
+        missing.push("试音并确认使用");
+      }
+      return missing;
+    }
+    if (index === 3) {
+      // STEP4 done page — no form fields
       return missing;
     }
     return missing;
@@ -1408,19 +1398,32 @@
       backToBoss +
       tabs +
       (mode === "register" ? registerPanel : loginTabs + loginPwd + loginOtp + authMessageHtml()) +
-      '<p class="apply-note">新用户：邮箱 → 发送验证码 → 验证成功 → 设置密码与昵称 → 注册并进入 1/6 申请流程。</p>' +
+      '<p class="apply-note">新用户：邮箱 → 发送验证码 → 验证成功 → 设置密码与昵称 → 注册并进入申请流程（共 4 步）。</p>' +
       "</section>"
     );
   }
+  function isApplicationSubmitted(draft) {
+    draft = draft || readDraft();
+    if (draft.submitted || draft.status === "pending" || draft.status === "review") return true;
+    if (remoteStatus && /pending|review|submitted|approved|verified|passed|resubmit|need_more|rejected/.test(String(remoteStatus.applicationStatus || remoteStatus.application_status || ""))) {
+      return true;
+    }
+    return false;
+  }
   function stepComplete(index, draft) {
+    draft = draft || readDraft();
+    if (index === 3) return isApplicationSubmitted(draft);
     return missingForStep(index, draft).length === 0;
   }
 
   function maxReachableStep(draft) {
     draft = draft || readDraft();
+    if (isApplicationSubmitted(draft)) {
+      return steps.length - 1; // allow STEP4 done page
+    }
     var max = 0;
-    for (var i = 0; i < steps.length; i++) {
-      if (stepComplete(i, draft)) max = Math.min(i + 1, steps.length - 1);
+    for (var i = 0; i < steps.length - 1; i++) { // never auto-unlock done page without submit
+      if (stepComplete(i, draft)) max = Math.min(i + 1, steps.length - 2);
       else break;
     }
     return max;
@@ -1429,14 +1432,11 @@
   function stepNav(index, draft) {
     draft = draft || readDraft();
     var reachable = maxReachableStep(draft);
-    // Progress follows the current step position (not noisy "doneCount" which can show 6/6 while still on step 3).
-    var percent = Math.round(((index + 1) / steps.length) * 100);
-    var shortLabels = ["认证", "阅读", "资料", "游戏", "认证资料", "提交"];
     var chips = steps.map(function (s, i) {
-      var done = stepComplete(i, draft);
+      var done = stepComplete(i, draft) || (i < index);
       var locked = i > reachable;
       var numberText = String(i + 1).padStart(2, "0");
-      var label = shortLabels[i] || s;
+      var label = (typeof stepChipLabels !== "undefined" && stepChipLabels[i]) || s;
       return (
         '<button class="apply-step-chip' +
         (i === index ? " is-active" : "") +
@@ -1446,32 +1446,21 @@
         i +
         '" type="button" ' +
         (locked ? 'aria-disabled="true" tabindex="-1"' : "") +
-        "><span>" +
-        esc(done && i !== index ? "✓" : numberText) +
+        ' aria-current="' +
+        (i === index ? "step" : "false") +
+        '"><span>' +
+        esc(numberText) +
         "</span><em>" +
         esc(label) +
         "</em></button>"
       );
     }).join("");
+    // Simple 4-chip stepper only: 01 认证 — 02 须知 — 03 资料 — 04 完成
     return (
       '<div class="apply-progress-compact" aria-label="申请进度">' +
-      '<div class="apply-progress-compact-head">' +
-      "<strong>第 " +
-      (index + 1) +
-      " / " +
-      steps.length +
-      " 步</strong>" +
-      "<span>" +
-      esc(stepLabels[index] || steps[index]) +
-      "</span>" +
-      "</div>" +
-      '<div class="apply-progress-compact-bar" aria-hidden="true"><i style="width:' +
-      percent +
-      '%"></i></div>' +
       '<div class="apply-step-chip-row" role="navigation">' +
       chips +
-      "</div>" +
-      "</div>"
+      "</div></div>"
     );
   }
 
@@ -1490,84 +1479,29 @@
     }
     if (index === 2) {
       var bits = [data.nickname, data.gender, data.region].filter(Boolean);
-      return bits.length ? bits.join(" · ") : "已填写";
+      var games = Array.isArray(data.mainGames) ? data.mainGames : [];
+      var line = bits.length ? bits.join(" · ") : "已填写";
+      if (games.length) line += " · " + games.slice(0, 2).join("、");
+      return line;
     }
     if (index === 3) {
-      var games = Array.isArray(data.mainGames) ? data.mainGames : [];
-      return games.length ? ("可接：" + games.slice(0, 3).join("、")) : "已填写游戏资料";
+      return draft.submitted || draft.status === "pending" || draft.status === "review" ? "待审核" : "待提交";
     }
-    if (index === 4) {
-      if (mode === "id_card") return "身份证资料已上传";
-      if (mode === "deposit") return "押金凭证已上传";
-      return "认证资料";
-    }
-    return "确认资料后提交";
+    return "";
   }
 
   function wizardStackHtml(activeIndex, draft) {
     draft = draft || readDraft();
-    var shortLabels = ["认证", "阅读", "资料", "游戏", "认证资料", "提交"];
-    var reachable = maxReachableStep(draft);
-    var html = '<div class="apply-wizard-stack">';
-    for (var i = 0; i < steps.length; i++) {
-      var num = String(i + 1).padStart(2, "0");
-      var done = stepComplete(i, draft);
-      var locked = i > reachable;
-      if (i === activeIndex) {
-        html +=
-          '<section class="apply-wizard-item is-open" data-wizard-step="' +
-          i +
-          '">' +
-          '<header class="apply-wizard-item-head is-current"><span class="apply-wizard-num">▼ ' +
-          esc(num) +
-          "</span><strong>" +
-          esc(stepLabels[i] || shortLabels[i]) +
-          '</strong><small>当前填写</small></header>' +
-          '<div class="apply-wizard-item-body">' +
-          stepHtml(i, draft) +
-          "</div></section>";
-        continue;
-      }
-      if (done && i < activeIndex) {
-        html +=
-          '<section class="apply-wizard-item is-done" data-wizard-step="' +
-          i +
-          '">' +
-          '<header class="apply-wizard-item-head">' +
-          '<span class="apply-wizard-num">✓ ' +
-          esc(num) +
-          "</span><strong>" +
-          esc(shortLabels[i] || steps[i]) +
-          "</strong>" +
-          '<span class="apply-wizard-summary">' +
-          esc(stepSummaryLine(i, draft)) +
-          "</span>" +
-          '<button type="button" class="apply-btn small" data-apply-step="' +
-          i +
-          '">修改</button>' +
-          "</header></section>";
-        continue;
-      }
-      // Upcoming / locked — collapsed title only, never expand full forms.
-      html +=
-        '<section class="apply-wizard-item is-upcoming' +
-        (locked ? " is-locked" : "") +
-        '" data-wizard-step="' +
-        i +
-        '">' +
-        '<header class="apply-wizard-item-head">' +
-        '<span class="apply-wizard-num">' +
-        esc(num) +
-        "</span><strong>" +
-        esc(shortLabels[i] || steps[i]) +
-        "</strong>" +
-        (locked
-          ? '<small>待完成上一步</small>'
-          : '<button type="button" class="apply-btn small ghost" data-apply-step="' + i + '">前往</button>') +
-        "</header></section>";
-    }
-    html += "</div>";
-    return html;
+    // Only render the active STEP body — no stacked accordion of all steps.
+    return (
+      '<div class="apply-wizard-stack apply-wizard-single">' +
+      '<section class="apply-wizard-item is-open" data-wizard-step="' +
+      activeIndex +
+      '">' +
+      '<div class="apply-wizard-item-body">' +
+      stepHtml(activeIndex, draft) +
+      "</div></section></div>"
+    );
   }
 
   function field(name, label, type, value, attrs) {
@@ -1850,10 +1784,10 @@
       );
     }).join("");
     return (
-      '<section class="apply-panel apply-rules-card"><h2>阅读陪玩制度</h2>' +
+      '<section class="apply-panel apply-rules-card"><h2>陪玩申请须知</h2>' +
       '<div class="rules-reader"><h3>' + esc(rule.title) + '</h3><p>' + esc(rule.subtitle || "") + "</p>" + updated +
       '<div class="apply-rules-accordion" data-rules-accordion>' + accordion + "</div></div>" +
-      '<div class="agree-bar"><label class="agree-row"><input type="checkbox" data-rule-agree ' + (agreed ? "checked" : "") + '><span>我已阅读并同意妙脆角陪玩制度</span></label></div></section>'
+      '<div class="agree-bar"><label class="agree-row"><input type="checkbox" data-rule-agree ' + (agreed ? "checked" : "") + '><span>我已阅读并同意陪玩申请须知</span></label></div></section>'
     );
   }
   function basicHtml(data) {
@@ -2190,7 +2124,7 @@
     var mode = String(id.authMode || draft.certification_method || "").trim();
     return (
       '<section class="apply-panel apply-cert-method"><h2>请选择认证方式</h2>' +
-      '<p class="apply-note full">这是申请的第一步。请先选择一种认证方式，选择后才能进入下一步。</p>' +
+      '<p class="apply-note full">请二选一：身份证认证或押金认证。选择后请在本页完成对应资料，再点「保存并下一步」。</p>' +
       '<div class="apply-cert-cards">' +
       '<button class="apply-cert-card' + (mode === "id_card" ? " is-selected" : "") + '" type="button" data-auth-mode="id_card" aria-pressed="' + (mode === "id_card" ? "true" : "false") + '">' +
       "<h3>身份证认证</h3><p>提交身份证资料进行认证</p><strong>" + (mode === "id_card" ? "已选择" : "点击选择") + "</strong></button>" +
@@ -2214,7 +2148,7 @@
     } else if (mode === "deposit") {
       modeForm = depositPayPanelHtml(id);
     } else {
-      modeForm = '<div class="apply-subcard"><p class="apply-note">请先返回第一步选择认证方式。</p></div>';
+      modeForm = '<div class="apply-subcard"><p class="apply-note">请先在上方选择认证方式（身份证或押金）。</p></div>';
     }
     var settlement =
       mode === "id_card" || mode === "deposit"
@@ -2283,54 +2217,53 @@
           })()
         : "";
     return (
-      '<section class="apply-panel"><h2>证明与认证资料</h2>' +
-      '<p class="apply-note full">认证方式：<b>' + esc(modeLabel) + "</b>（在第一步已选择，如需更改请返回第一步）</p>" +
+      '<section class="apply-panel apply-cert-materials"><h2>完成认证资料</h2>' +
+      '<p class="apply-note full">当前认证方式：<b>' + esc(modeLabel) + "</b>。可点上方卡片切换；切换后请重新上传对应资料。</p>" +
       modeForm +
       settlement +
       "</section>"
     );
   }
-  function confirmHtml(draft) {
+
+  function doneHtml(draft) {
     draft = draft || readDraft();
     var data = draft.data || {};
     var identity = draft.identity || {};
-    var uploads = draft.uploads || {};
-    var voice = draft.voice || {};
-    var games = Array.isArray(data.mainGames) ? data.mainGames.filter(Boolean) : [];
-    var authMode = String(identity.authMode || "").trim();
-    var authLabel = authMode === "id_card" ? "身份证认证" : authMode === "deposit" ? "押金认证" : "未选择";
+    var mode = String(identity.authMode || draft.certification_method || "").trim();
+    var modeLabel = mode === "id_card" ? "身份证认证" : mode === "deposit" ? "押金认证" : "—";
+    var appId = draft.applicationId || draft.submittedId || "";
+    var submittedAt = draft.submittedAt || "";
     function row(label, value) {
-      return '<div class="apply-confirm-row"><span>' + esc(label) + '</span><strong>' + esc(value || "—") + '</strong></div>';
+      return '<div class="apply-confirm-row"><span>' + esc(label) + '</span><strong>' + esc(value || "—") + "</strong></div>";
     }
     return (
-      '<section class="apply-panel"><h2>确认并提交</h2>' +
-      '<p class="apply-note full">请确认以下资料无误后提交。申请阶段不设置接单价格；价格将在管理员审核通过并指定等级后，按等级基础价格自动生效。</p>' +
+      '<section class="apply-panel apply-done-panel">' +
+      "<h2>✓ 申请已提交</h2>" +
+      '<p class="apply-note full">你的陪玩申请已经成功提交，请等待平台管理员审核。</p>' +
+      '<div class="apply-done-status"><span>状态</span><strong>待审核</strong></div>' +
       '<div class="apply-confirm-card">' +
+      row("认证方式", modeLabel) +
       row("昵称", data.nickname) +
-      row("年龄", data.age) +
-      row("性别", data.gender) +
-      row("地区", data.region) +
-      row("电话", data.phone) +
-      row("邮箱", data.email) +
-      row("可接游戏", games.join("、")) +
-      row("段位", data.rank) +
-      row("声线", data.voiceType) +
-      row("认证方式", authLabel) +
-      row("头像", uploads.avatar ? "已上传" : "未上传") +
-      row("试音", voice.confirmed ? "已确认" : "未确认") +
+      row("提交时间", submittedAt) +
+      row("申请编号", appId) +
       "</div>" +
-      '<p class="apply-note full">提交后进入审核队列。如需修改，可点「上一步」返回，草稿会自动保留。</p>' +
+      '<div class="apply-done-actions">' +
+      '<a class="apply-btn" href="companion/index.html">返回陪玩端</a>' +
+      '<a class="apply-btn primary" href="companion-apply.html">查看申请状态</a>' +
+      "</div>" +
+      '<p class="apply-note full">等级与基础价格由管理员审核时指定，申请人无需填写。</p>' +
       "</section>"
     );
   }
 
   function stepHtml(index, draft) {
-    if (index === 0) return certMethodHtml(draft);
+    if (index === 0) {
+      // STEP1: choose method + complete corresponding cert materials on the same page
+      return certMethodHtml(draft) + (String(((draft.identity || {}).authMode) || draft.certification_method || "").trim() ? identityHtml(draft) : "");
+    }
     if (index === 1) return rulesHtml(draft);
-    if (index === 2) return basicHtml(draft.data || {});
-    if (index === 3) return gameHtml(draft.data || {}) + uploadHtml(draft);
-    if (index === 4) return identityHtml(draft);
-    return confirmHtml(draft);
+    if (index === 2) return basicHtml(draft.data || {}) + gameHtml(draft.data || {}) + uploadHtml(draft);
+    return doneHtml(draft);
   }
   function statusNotice() {
     var code = remoteStatus && remoteStatus.applicationStatus;
@@ -2380,11 +2313,37 @@
       list.scrollLeft = Math.max(0, left);
     } catch (e) {}
   }
+  function actionsHtml(activeIndex, draft) {
+    draft = draft || readDraft();
+    var submitted = !!(draft.submitted || draft.status === "pending" || draft.status === "review");
+    if (activeIndex === 3 || submitted && activeIndex >= 3) {
+      // STEP4 result — no form actions
+      return "";
+    }
+    var nextLabel = "保存并下一步";
+    if (activeIndex === 1) nextLabel = "同意并下一步";
+    if (activeIndex === 2) nextLabel = "提交陪玩申请";
+    return (
+      '<div class="apply-actions">' +
+      '<button class="apply-btn" data-apply-prev type="button" ' + (activeIndex === 0 ? "disabled" : "") + ">上一步</button>" +
+      (activeIndex === 2
+        ? ""
+        : '<button class="apply-btn" data-apply-save type="button">保存草稿</button>') +
+      '<button class="apply-btn primary" data-apply-next type="button">' +
+      nextLabel +
+      "</button></div>" +
+      '<p class="apply-note">填写内容会自动保存草稿。等级与价格由管理员审核时指定，申请页不可填写。</p>'
+    );
+  }
   function render(index, opts) {
     opts = opts || {};
     var root = document.getElementById("companionApplyRoot");
     if (!root) return;
     var draft = readDraft();
+    if (isApplicationSubmitted(draft) && (index == null || Number(index) >= 3 || Number(draft.step) >= 3)) {
+      index = 3;
+      draft.step = 3;
+    }
     var rawIndex = index == null ? draft.step : index;
     var requestedIndex = Math.max(0, Math.min(steps.length - 1, Number(rawIndex || 0)));
     var reachable = maxReachableStep(draft);
@@ -2393,7 +2352,7 @@
     root.dataset.step = String(activeIndex);
     draft = readDraft();
     preservePageScroll(function () {
-      root.innerHTML = loadingBannerHtml() + statusNotice() + authGateHtml() + '<div class="apply-layout"' + (!companionToken() ? ' hidden' : '') + '>' + stepNav(activeIndex, draft) + '<div class="apply-main">' + wizardStackHtml(activeIndex, draft) + '<div class="apply-actions"><button class="apply-btn" data-apply-prev type="button" ' + (activeIndex === 0 ? "disabled" : "") + '>上一步</button><button class="apply-btn" data-apply-save type="button">保存草稿</button><button class="apply-btn primary" data-apply-next type="button">' + (activeIndex === steps.length - 1 ? "提交审核" : "下一步") + '</button></div><p class="apply-note">每填写一个输入框都会自动保存草稿，刷新网页或返回修改后会自动恢复。</p></div></div>';
+      root.innerHTML = loadingBannerHtml() + statusNotice() + authGateHtml() + '<div class="apply-layout"' + (!companionToken() ? ' hidden' : '') + '>' + stepNav(activeIndex, draft) + '<div class="apply-main">' + wizardStackHtml(activeIndex, draft) + actionsHtml(activeIndex, draft) + '</div></div>';
       if (opts.alignStepNav) syncStepNavOnly(root);
     });
   }
@@ -2421,9 +2380,9 @@
     });
     // File uploads are handled immediately by MCJUpload → Storage; do not stash data URLs here.
     Array.prototype.slice.call(root.querySelectorAll("select[name],input[name]:not([type=file]),textarea[name]")).forEach(function (el) {
-      if (step === 4) identity[el.name] = el.value.trim ? el.value.trim() : el.value;
+      if (step === 0) identity[el.name] = el.value.trim ? el.value.trim() : el.value;
     });
-    if (step === 4) {
+    if (step === 0) {
       // Keep bankName as the effective persisted label (dropdown value or「其他」custom text).
       if (isBankSettlementMethod(identity.settlementMethod)) {
         identity.bankName = effectiveSettlementBankName(identity);
@@ -2478,7 +2437,7 @@
   }
   function validateBeforeSubmit() {
     var missing = [];
-    for (var i = 0; i < steps.length; i++) {
+    for (var i = 0; i < 3; i++) {
       missingForStep(i, readDraft()).forEach(function (item) {
         missing.push(stepLabels[i] + "：" + item);
       });
@@ -2773,21 +2732,35 @@
         writeDB(db);
         syncPlatform(db);
         // Formal submit: clear editable local draft so it won't look like a parallel draft.
-        try {
-          clearCurrentUserDraft();
-        } catch (e) { /* ignore */ }
         remoteStatus = { applicationStatus: "pending", rejectReason: "" };
-        showSuccess();
+        try {
+          saveDraft({
+            submitted: true,
+            status: "pending",
+            submittedAt: now(),
+            applicationId: id,
+            step: 3,
+          });
+        } catch (e) { /* ignore */ }
+        showSuccess(id);
       })
       .catch(function (err) {
         showApplyTip(err.message || "提交失败。请先注册/登录陪玩端后再提交申请，以便写入数据库。");
       });
   }
-  function showSuccess() {
-    var modal = document.createElement("div");
-    modal.className = "apply-submit-modal";
-    modal.innerHTML = '<div><h2>申请已提交，等待后台审核。</h2><p>当前状态：审核中。你可随时回到本页查看审核进度。</p><div class="apply-actions"><a class="apply-btn" href="companion-apply.html">查看审核进度</a><a class="apply-btn primary" href="index.html">返回首页</a></div></div>';
-    document.body.appendChild(modal);
+  function showSuccess(applicationId) {
+    // Land on STEP4 result page (no more form). Keep draft summary for display.
+    try {
+      var d = readDraft();
+      if (!d.applicationId && applicationId) d.applicationId = applicationId;
+      d.submitted = true;
+      d.status = "pending";
+      d.step = 3;
+      if (!d.submittedAt) d.submittedAt = now();
+      writeDraftRecord(d);
+    } catch (e) {}
+    render(3, { alignStepNav: true });
+    try { window.scrollTo(0, 0); } catch (e2) {}
   }
   function hasPlayableVoiceDraft() {
     var v = readDraft().voice || {};
@@ -4109,7 +4082,7 @@
         render(targetStep, { alignStepNav: true });
         return;
       }
-      if (e.target.closest("[data-apply-next]")) { e.preventDefault(); await collect(root); var idx = Number(root.dataset.step || 0); var missing = missingForStep(idx, readDraft()); if (missing.length) { showMissing(missing); return; } if (idx === steps.length - 1) submitApplication(); else render(idx + 1, { alignStepNav: true }); return; }
+      if (e.target.closest("[data-apply-next]")) { e.preventDefault(); await collect(root); var idx = Number(root.dataset.step || 0); var missing = missingForStep(idx, readDraft()); if (missing.length) { showMissing(missing); return; } if (idx === 2) submitApplication(); else if (idx < 2) render(idx + 1, { alignStepNav: true }); return; }
       if (e.target.closest("[data-apply-prev]")) { e.preventDefault(); await collect(root); render(Math.max(0, Number(root.dataset.step || 0) - 1), { alignStepNav: true }); return; }
       if (e.target.closest("[data-rule-agree]")) {
         var rule = publishedRule();
@@ -4217,7 +4190,7 @@
           delete cur.identity.documentType;
         }
         writeDraftRecord(cur);
-        // STEP1 only selects certification_method; deposit QR / proof live on STEP5.
+        // STEP1 selects certification_method and shows corresponding cert materials on the same page.
         render(0);
         return;
       }
