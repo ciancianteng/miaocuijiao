@@ -20,20 +20,46 @@
   var liveVoiceBlob = null;
   var liveVoiceObjectUrl = "";
 
-  var steps = [
-    "阅读陪玩制度",
-    "基本资料",
-    "游戏资料",
-    "上传头像与资料",
-    "选择认证方式"
-  ];
-  var stepLabels = [
-    "阅读陪玩制度",
-    "填写基本资料",
-    "填写游戏资料",
-    "上传头像与资料",
-    "选择认证方式"
-  ];
+  function tt(key, fallback, vars) {
+    try {
+      if (window.MCJI18n && typeof window.MCJI18n.t === "function") {
+        var out = window.MCJI18n.t(key, vars);
+        if (out && out !== key) return out;
+      }
+    } catch (e) {}
+    var text = fallback != null ? String(fallback) : String(key || "");
+    if (vars && typeof vars === "object") {
+      text = text.replace(/\{(\w+)\}/g, function (_, name) {
+        return vars[name] != null ? String(vars[name]) : "{" + name + "}";
+      });
+    }
+    return text;
+  }
+
+  function stepsList() {
+    return [
+      tt("apply.step1", "阅读陪玩制度"),
+      tt("apply.step2", "基本资料"),
+      tt("apply.step3", "游戏资料"),
+      tt("apply.step4", "上传头像与资料"),
+      tt("apply.step5", "选择认证方式"),
+    ];
+  }
+  function stepLabelsList() {
+    return [
+      tt("apply.step1", "阅读陪玩制度"),
+      tt("apply.step2_label", "填写基本资料"),
+      tt("apply.step3_label", "填写游戏资料"),
+      tt("apply.step4_label", "上传头像与资料"),
+      tt("apply.step5", "选择认证方式"),
+    ];
+  }
+  var steps = stepsList();
+  var stepLabels = stepLabelsList();
+  function refreshStepLabels() {
+    steps = stepsList();
+    stepLabels = stepLabelsList();
+  }
 
   var tagGroups = {
     personalTags: {
@@ -645,7 +671,7 @@
     return missing;
   }
   function showMissing(missing) {
-    missing = missing && missing.length ? missing : ["请按顺序完成前面的步骤"];
+    missing = missing && missing.length ? missing : [tt("apply.validation_order", "请按顺序完成前面的步骤")];
     showApplyTip("请先补充以下内容：\n" + missing.map(function (item) { return "- " + item; }).join("\n"));
   }
   var applyTipTimer = null;
@@ -1355,11 +1381,11 @@
     var reachable = maxReachableStep(draft);
     var percent = Math.round((doneCount / steps.length) * 100);
     var lockIcon = "🔒";
-    return '<div class="apply-mobile-step"><span>第 ' + (index + 1) + ' 步，共 ' + steps.length + ' 步</span><strong>' + esc(stepLabels[index] || steps[index]) + '</strong><small>已完成 ' + doneCount + ' / ' + steps.length + '</small></div>' +
+    return '<div class="apply-mobile-step"><span>' + esc(tt("apply.step_progress", "第 {current} 步，共 {total} 步", { current: index + 1, total: steps.length })) + '</span><strong>' + esc(stepLabels[index] || steps[index]) + '</strong><small>' + esc(tt("apply.completed_count", "已完成 {done} / {total}", { done: doneCount, total: steps.length })) + '</small></div>' +
       '<aside class="apply-steps" aria-label="申请流程导航"><div class="apply-progress-head"><strong>申请进度</strong><span>' + doneCount + ' / ' + steps.length + ' · ' + percent + '%</span></div><div class="apply-progress-bar" aria-hidden="true"><i style="width:' + percent + '%"></i></div><div class="apply-step-list">' + steps.map(function (s, i) {
         var done = stepComplete(i, draft);
         var locked = i > reachable;
-        var stateText = i === index ? "当前步骤" : done ? "已完成" : locked ? "完成上一步后解锁" : "未完成";
+        var stateText = i === index ? tt("apply.state_current", "当前步骤") : done ? tt("apply.state_done", "已完成") : locked ? tt("apply.state_locked", "完成上一步后解锁") : tt("apply.state_todo", "未完成");
         var stateIcon = done ? "查看" : locked ? lockIcon : "›";
         var numberText = String(i + 1).padStart(2, "0");
         return '<button class="apply-step ' + (i === index ? "active" : "") + (done ? " done" : "") + (locked ? " locked" : "") + '" data-apply-step="' + i + '" type="button" ' + (locked ? 'aria-disabled="true" tabindex="-1"' : "") + '><span class="apply-step-index">' + esc(done ? "✓" : numberText) + '</span><span class="apply-step-copy"><strong>' + esc(stepLabels[i] || s) + '</strong><small>' + esc(stateText) + '</small></span><span class="apply-step-state" aria-hidden="true">' + esc(stateIcon) + '</span></button>';
@@ -2125,7 +2151,8 @@
     root.dataset.step = String(activeIndex);
     draft = readDraft();
     preservePageScroll(function () {
-      root.innerHTML = loadingBannerHtml() + statusNotice() + authGateHtml() + '<div class="apply-layout"' + (!companionToken() ? ' hidden' : '') + '>' + stepNav(activeIndex, draft) + '<div>' + stepHtml(activeIndex, draft) + '<div class="step-complete-mark">' + (stepComplete(activeIndex, draft) ? "已完成 ✔" : "未完成 ○") + '</div><div class="apply-actions"><button class="apply-btn" data-apply-prev type="button" ' + (activeIndex === 0 ? "disabled" : "") + '>上一步</button><button class="apply-btn" data-apply-save type="button">保存草稿</button><button class="apply-btn primary" data-apply-next type="button">' + (activeIndex === steps.length - 1 ? "提交审核" : "下一步") + '</button></div><p class="apply-note">每填写一个输入框都会自动保存草稿，刷新网页或返回修改后会自动恢复。</p></div></div>';
+      refreshStepLabels();
+      root.innerHTML = loadingBannerHtml() + statusNotice() + authGateHtml() + '<div class="apply-layout"' + (!companionToken() ? ' hidden' : '') + '>' + stepNav(activeIndex, draft) + '<div>' + stepHtml(activeIndex, draft) + '<div class="step-complete-mark">' + (stepComplete(activeIndex, draft) ? tt("apply.done", "已完成 ✔") : tt("apply.undone", "未完成 ○")) + '</div><div class="apply-actions"><button class="apply-btn" data-apply-prev type="button" ' + (activeIndex === 0 ? "disabled" : "") + '>' + tt("apply.prev", "上一步") + '</button><button class="apply-btn" data-apply-save type="button">' + tt("apply.save_draft", "保存草稿") + '</button><button class="apply-btn primary" data-apply-next type="button">' + (activeIndex === steps.length - 1 ? tt("apply.submit_review", "提交审核") : tt("apply.next", "下一步")) + '</button></div><p class="apply-note">' + tt("apply.auto_save_note", "每填写一个输入框都会自动保存草稿，刷新网页或返回修改后会自动恢复。") + '</p></div></div>';
       if (opts.alignStepNav) syncStepNavOnly(root);
     });
   }
@@ -4389,6 +4416,15 @@
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
   else init();
+  window.addEventListener("mcj:localechange", function () {
+    refreshStepLabels();
+    try {
+      if (window.MCJI18n && typeof window.MCJI18n.apply === "function") window.MCJI18n.apply(document);
+    } catch (eApply) {}
+    var root = document.getElementById("companionApplyRoot");
+    if (!root) return;
+    render(Number(root.dataset.step || 0));
+  });
   window.addEventListener("pagehide", saveApplyScroll);
   window.addEventListener("pageshow", function (ev) {
     if (ev.persisted) {

@@ -3606,7 +3606,7 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
       <div class="section-title hot-title-row">
         <div>
           <h2 data-i18n="home.weekly_popular">本周人气榜</h2>
-          <p>实时根据接单、好评、在线和礼物热度更新。</p>
+          <p data-i18n="home.weekly_popular_live">实时根据接单、好评、在线和礼物热度更新。</p>
         </div>
         <a class="btn lobby-link" href="companion-center.html" data-i18n="home.more_companions">更多陪玩</a>
       </div>
@@ -3614,8 +3614,8 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
     </section>
         <section class="section hot-recommend-section">
       <div class="section-title hot-title-row">
-        <div><h2>热门推荐陪玩</h2><p>真实陪玩入驻后将在这里展示</p></div>
-        <a class="btn lobby-link" href="companion-center.html">进入大厅</a>
+        <div><h2 data-i18n="home.hot_recommend">热门推荐陪玩</h2><p data-i18n="home.hot_recommend_sub">真实陪玩入驻后将在这里展示</p></div>
+        <a class="btn lobby-link" href="companion-center.html" data-i18n="home.enter_hall">进入大厅</a>
       </div>
       <div class="auto-carousel">
         <div class="companion-track" id="hotCompanionTrack"></div>
@@ -3626,8 +3626,8 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
         <section class="section recent-companions">
           <div class="section-title">
             <div>
-              <h2>最近下单陪玩</h2>
-              <p>有真实订单后将在这里展示</p>
+              <h2 data-i18n="home.recent_companions">最近下单陪玩</h2>
+              <p data-i18n="home.recent_companions_sub">有真实订单后将在这里展示</p>
             </div>
             <a class="btn lobby-link" href="companion-center.html" data-i18n="home.more_companions">更多陪玩</a>
           </div>
@@ -3640,7 +3640,7 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
           <div class="section-title">
             <div>
               <h2 data-i18n="home.hot_games">热门游戏陪玩</h2>
-              <p>热门游戏陪玩实时推荐</p>
+              <p data-i18n="home.hot_games_sub">热门游戏陪玩实时推荐</p>
             </div>
             <a class="btn lobby-link" href="companion-center.html" data-i18n="home.more_companions">更多陪玩</a>
           </div>
@@ -3652,8 +3652,8 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
         <section class="section review-companions">
           <div class="section-title">
             <div>
-              <h2>最新好评陪玩</h2>
-              <p>最新评价同步展示</p>
+              <h2 data-i18n="home.latest_reviews">最新好评陪玩</h2>
+              <p data-i18n="home.latest_reviews_sub">最新评价同步展示</p>
             </div>
             <a class="btn lobby-link" href="companion-center.html" data-i18n="home.more_companions">更多陪玩</a>
           </div>
@@ -3814,44 +3814,44 @@ html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!import
       mode = mode === 'register' ? 'register' : 'login';
       var otpPanel =
         '<div class="login-panel'+(mode==='login'?' active':'')+'" data-login-panel="otp" data-auth-panel="login-otp">'+
-        '<label class="wide">邮箱<input id="loginOtpEmail" type="email" inputmode="email" autocomplete="email" placeholder="请输入邮箱" value=""></label>'+
-        '<label class="wide">验证码<div class="login-code-row">'+
-        '<input id="loginOtpCode" name="otp" type="text" inputmode="numeric" autocomplete="one-time-code" data-auth-code="1" data-auth-sensitive="1" placeholder="6 位验证码" maxlength="6" value="">'+
-        '<button class="login-small-btn" type="button" data-send-login-otp data-login-role="boss">获取验证码</button>'+
+        '<label class="wide"><span data-i18n="auth.email">邮箱</span><input id="loginOtpEmail" type="email" inputmode="email" autocomplete="email" placeholder="请输入邮箱" data-i18n-placeholder="auth.email_placeholder" value=""></label>'+
+        '<label class="wide"><span data-i18n="auth.code">验证码</span><div class="login-code-row">'+
+        '<input id="loginOtpCode" name="otp" type="text" inputmode="numeric" autocomplete="one-time-code" data-auth-code="1" data-auth-sensitive="1" placeholder="6 位验证码" data-i18n-placeholder="auth.code_placeholder" maxlength="6" value="">'+
+        '<button class="login-small-btn" type="button" data-send-login-otp data-login-role="boss" data-i18n="auth.get_code">获取验证码</button>'+
         '</div></label>'+
-        '<button class="login-submit" type="button" data-login-confirm data-login-method="otp">验证码登录</button>'+
+        '<button class="login-submit" type="button" data-login-confirm data-login-method="otp" data-i18n="auth.login_otp_submit">验证码登录</button>'+
         '</div>';
       var passPanel =
         '<div class="login-panel" data-login-panel="email" data-auth-panel="login-pass">'+
-        '<label class="wide">邮箱<input id="loginGmail" type="email" inputmode="email" autocomplete="email" placeholder="请输入邮箱" value=""></label>'+
-        '<label class="wide">密码<input id="loginGmailCode" type="password" autocomplete="current-password" data-auth-sensitive="1" placeholder="请输入密码" value=""></label>'+
-        '<button class="login-submit" type="button" data-login-confirm data-login-method="email">密码登录</button>'+
+        '<label class="wide"><span data-i18n="auth.email">邮箱</span><input id="loginGmail" type="email" inputmode="email" autocomplete="email" placeholder="请输入邮箱" data-i18n-placeholder="auth.email_placeholder" value=""></label>'+
+        '<label class="wide"><span data-i18n="auth.password">密码</span><input id="loginGmailCode" type="password" autocomplete="current-password" data-auth-sensitive="1" placeholder="请输入密码" data-i18n-placeholder="auth.password_placeholder" value=""></label>'+
+        '<button class="login-submit" type="button" data-login-confirm data-login-method="email" data-i18n="auth.login_password_submit">密码登录</button>'+
         '</div>';
       var loginPanel = mode==='login'
         ? ('<div class="login-tabs">'+
-          '<button class="login-tab active" type="button" data-login-tab="otp">验证码登录</button>'+
-          '<button class="login-tab" type="button" data-login-tab="email">密码登录</button></div>'+
+          '<button class="login-tab active" type="button" data-login-tab="otp" data-i18n="auth.tab_otp">验证码登录</button>'+
+          '<button class="login-tab" type="button" data-login-tab="email" data-i18n="auth.tab_password">密码登录</button></div>'+
           otpPanel+passPanel)
         : '';
       var registerPanel = '<div class="login-panel'+(mode==='register'?' active':'')+'" data-login-panel="register" data-auth-panel="register">'+
-        '<label class="wide">昵称<input id="registerNickname" type="text" autocomplete="nickname" placeholder="请输入昵称" maxlength="40" value=""></label>'+
-        '<label class="wide">邮箱<div class="login-code-row">'+
-        '<input id="registerEmail" type="email" inputmode="email" autocomplete="email" placeholder="请输入邮箱" value="">'+
-        '<button class="login-small-btn" type="button" data-send-register-otp data-register-role="boss">获取验证码</button>'+
+        '<label class="wide"><span data-i18n="auth.nickname">昵称</span><input id="registerNickname" type="text" autocomplete="nickname" placeholder="请输入昵称" data-i18n-placeholder="auth.nickname_placeholder" maxlength="40" value=""></label>'+
+        '<label class="wide"><span data-i18n="auth.email">邮箱</span><div class="login-code-row">'+
+        '<input id="registerEmail" type="email" inputmode="email" autocomplete="email" placeholder="请输入邮箱" data-i18n-placeholder="auth.email_placeholder" value="">'+
+        '<button class="login-small-btn" type="button" data-send-register-otp data-register-role="boss" data-i18n="auth.get_code">获取验证码</button>'+
         '</div></label>'+
-        '<label class="wide">邮箱验证码<div class="login-code-row">'+
-        '<input id="registerOtpCode" name="registerOtp" type="text" inputmode="numeric" autocomplete="one-time-code" data-auth-code="1" data-auth-sensitive="1" placeholder="6 位验证码" maxlength="6" value="">'+
-        '<button class="login-small-btn" type="button" data-verify-register-otp data-register-role="boss">验证邮箱</button>'+
+        '<label class="wide"><span data-i18n="auth.code_email_label">邮箱验证码</span><div class="login-code-row">'+
+        '<input id="registerOtpCode" name="registerOtp" type="text" inputmode="numeric" autocomplete="one-time-code" data-auth-code="1" data-auth-sensitive="1" placeholder="6 位验证码" data-i18n-placeholder="auth.code_placeholder" maxlength="6" value="">'+
+        '<button class="login-small-btn" type="button" data-verify-register-otp data-register-role="boss" data-i18n="auth.verify_email">验证邮箱</button>'+
         '</div></label>'+
-        '<p class="muted" data-register-verified-hint style="margin:0 0 8px">请先完成邮箱验证，验证成功后才能注册。</p>'+
+        '<p class="muted" data-register-verified-hint data-i18n="auth.register_hint" style="margin:0 0 8px">请先完成邮箱验证，验证成功后才能注册。</p>'+
         '<input type="hidden" id="registerEmailToken" value="">'+
-        '<label class="wide">密码<input id="registerPassword" type="password" autocomplete="new-password" data-auth-sensitive="1" placeholder="至少 8 位，含字母和数字" value=""></label>'+
-        '<label class="wide">确认密码<input id="registerPasswordConfirm" type="password" autocomplete="new-password" data-auth-sensitive="1" placeholder="再次输入密码" value=""></label>'+
-        '<button class="login-submit" type="button" data-register-confirm disabled>注册</button></div>';
+        '<label class="wide"><span data-i18n="auth.password">密码</span><input id="registerPassword" type="password" autocomplete="new-password" data-auth-sensitive="1" placeholder="至少 8 位，含字母和数字" data-i18n-placeholder="auth.password_rule_placeholder" value=""></label>'+
+        '<label class="wide"><span data-i18n="auth.password_confirm">确认密码</span><input id="registerPasswordConfirm" type="password" autocomplete="new-password" data-auth-sensitive="1" placeholder="再次输入密码" data-i18n-placeholder="auth.password_confirm_placeholder" value=""></label>'+
+        '<button class="login-submit" type="button" data-register-confirm data-i18n="auth.register" disabled>注册</button></div>';
       var links = mode === 'register'
-        ? '<div class="login-links"><button class="linkish" type="button" data-switch-auth="login">已有账号？立即登录</button></div>'
-        : '<div class="login-links"><button class="linkish" type="button" data-forgot-password data-forgot-role="boss">忘记密码</button><button class="linkish" type="button" data-switch-auth="register">还没有账号？立即注册</button></div>';
-      return '<div class="boss-login-modal" data-auth-mode="'+mode+'"><h2>'+(mode==='register'?'注册老板账号':'登录 MEOW CUI JIAO')+'</h2><p class="muted">'+(mode==='register'?'邮箱验证码验证通过后才能注册，成功后自动登录并生成老板 UID。':'邮箱验证码登录（也可使用密码）。')+'</p>'+loginPanel+registerPanel+'<p id="loginState" data-login-error></p>'+links+'</div>';
+        ? '<div class="login-links"><button class="linkish" type="button" data-switch-auth="login" data-i18n="auth.have_account">已有账号？立即登录</button></div>'
+        : '<div class="login-links"><button class="linkish" type="button" data-forgot-password data-forgot-role="boss" data-i18n="auth.forgot_password">忘记密码</button><button class="linkish" type="button" data-switch-auth="register" data-i18n="auth.no_account">还没有账号？立即注册</button></div>';
+      return '<div class="boss-login-modal" data-auth-mode="'+mode+'"><h2 data-i18n="'+(mode==='register'?'auth.register_boss_title':'auth.login_title')+'">'+(mode==='register'?'注册老板账号':'登录 MEOW CUI JIAO')+'</h2><p class="muted" data-i18n="'+(mode==='register'?'auth.register_sub':'auth.login_sub')+'">'+(mode==='register'?'邮箱验证码验证通过后才能注册，成功后自动登录并生成老板 UID。':'邮箱验证码登录（也可使用密码）。')+'</p>'+loginPanel+registerPanel+'<p id="loginState" data-login-error></p>'+links+'</div>';
     }
     window.bossLoginHtml = bossLoginHtml;
     function loginRequiredModal(){

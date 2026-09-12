@@ -1,14 +1,20 @@
 ﻿(function () {
   "use strict";
 
-  function tt(key, fallback) {
+  function tt(key, fallback, vars) {
     try {
       if (window.MCJI18n && typeof window.MCJI18n.t === "function") {
-        var out = window.MCJI18n.t(key);
+        var out = window.MCJI18n.t(key, vars);
         if (out && out !== key) return out;
       }
     } catch (e) {}
-    return fallback != null ? String(fallback) : String(key || "");
+    var text = fallback != null ? String(fallback) : String(key || "");
+    if (vars && typeof vars === "object") {
+      text = text.replace(/\{(\w+)\}/g, function (_, name) {
+        return vars[name] != null ? String(vars[name]) : "{" + name + "}";
+      });
+    }
+    return text;
   }
 
   var PER_PAGE = 12;
@@ -138,10 +144,10 @@
   /** Short UI label for hall cards — still driven by real presence status. */
   function statusChipText(status) {
     var s = String(status || "");
-    if (/在线/.test(s) && !/暂停|忙碌/.test(s)) return "在线";
-    if (/忙碌/.test(s)) return "忙碌";
-    if (/暂停/.test(s)) return "暂停";
-    return "离线";
+    if (/在线/.test(s) && !/暂停|忙碌/.test(s)) return tt("hall.online", "在线");
+    if (/忙碌/.test(s)) return tt("hall.status_busy_short", "忙碌");
+    if (/暂停/.test(s)) return tt("hall.status_paused_short", "暂停");
+    return tt("hall.status_offline_short", "离线");
   }
   async function readItems() {
     var dataItems = [];
@@ -149,11 +155,11 @@
     try {
       var response = await fetch("/api/public/companions", { headers: { Accept: "application/json" }, cache: "no-store" });
       var body = await response.json().catch(function () { return {}; });
-      if (!response.ok || !body.ok) throw new Error(body.message || "陪玩列表读取失败");
+      if (!response.ok || !body.ok) throw new Error(body.message || tt("hall.load_failed", "陪玩列表读取失败"));
       dataItems = Array.isArray(body.companions) ? body.companions : [];
     } catch (error) {
       console.error("陪玩大厅读取失败", error);
-      state.loadError = error.message || "陪玩列表读取失败";
+      state.loadError = error.message || tt("hall.load_failed", "陪玩列表读取失败");
       dataItems = [];
     }
     var levelApi = window.MCJCompanionLevels;
@@ -559,7 +565,9 @@
       tagsHtml +
       '<div class="companion-card-actions"><a class="companion-card-action" href="' +
       esc(detailHref) +
-      '">查看详情</a><button type="button" class="companion-card-action primary" data-hall-order="' +
+      '">' +
+      tt("hall.view_detail", tt("hall.view_profile", "查看详情")) +
+      '</a><button type="button" class="companion-card-action primary" data-hall-order="' +
       esc(uuid) +
       '" data-hall-name="' +
       esc(nickname) +
@@ -577,7 +585,9 @@
       esc(item.availabilityStatus || "") +
       '" data-hall-status-text="' +
       esc(item.status || "") +
-      '">" + tt("hall.book_now", "立即下单") + "</button></div>' +
+      '">' +
+      tt("hall.book_now", "立即下单") +
+      "</button></div>" +
       "</div>" +
       "</article>"
     );
@@ -592,7 +602,7 @@
     // Never keep stale cards when the filtered set is empty.
     list.innerHTML = items.length ? items.slice(start, start + PER_PAGE).map(card).join("") : "";
     var count = document.getElementById("resultCount");
-    if (count) count.textContent = "共 " + items.length + " 位陪玩";
+    if (count) count.textContent = tt("hall.count", "共 {n} 位陪玩", { n: items.length });
     var empty = document.getElementById("emptyState");
     if (empty) {
       var showEmpty = !items.length;
@@ -602,7 +612,7 @@
         var title = empty.querySelector("strong");
         var hint = empty.querySelector("span");
         if (state.loadError) {
-          if (title) title.textContent = "陪玩列表加载失败";
+          if (title) title.textContent = tt("hall.load_failed", "陪玩列表加载失败");
           if (hint) hint.textContent = state.loadError;
         } else if (filteredEmpty) {
           if (title) title.textContent = tt("hall.empty_filtered_title", "暂无符合条件的陪玩");
@@ -680,7 +690,7 @@
   }
   async function start() {
     var count = document.getElementById("resultCount");
-    if (count) count.textContent = "正在加载陪玩…";
+    if (count) count.textContent = tt("hall.count_loading", "正在加载陪玩…");
     // Do not auto-seed preview fixtures into the public hall path.
     // Hydrate admin levels before building the level/price dropdowns.
     if (window.MCJCompanionLevels && typeof window.MCJCompanionLevels.hydrateFromApi === "function") {
@@ -704,6 +714,12 @@
         .then(function () { render(); })
         .catch(function () {});
     }
+    window.addEventListener("mcj:localechange", function () {
+      try {
+        if (window.MCJI18n && typeof window.MCJI18n.apply === "function") window.MCJI18n.apply(document);
+      } catch (eApply) {}
+      render();
+    });
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
   else init();

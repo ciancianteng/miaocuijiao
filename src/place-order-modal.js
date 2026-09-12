@@ -1625,4 +1625,7 @@
   window.addEventListener("popstate", function () {
     if (state.open) close({ fromPop: true });
   });
+  window.addEventListener("mcj:localechange", function () {
+    if (state.open) paint();
+  });
 })();

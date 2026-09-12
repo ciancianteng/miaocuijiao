@@ -295,31 +295,49 @@
     if (platform.iOS) {
       return (
         '<div class="mcj-pwa-flow" aria-hidden="true">' +
-        '<div class="mcj-pwa-step"><div class="mcj-pwa-step-ico">⇪</div><span>分享</span></div>' +
+        '<div class="mcj-pwa-step"><div class="mcj-pwa-step-ico">⇪</div><span>' +
+        tt("pwa.step_share", "分享") +
+        "</span></div>" +
         '<div class="mcj-pwa-arrow">→</div>' +
-        '<div class="mcj-pwa-step"><div class="mcj-pwa-step-ico">＋</div><span>" + tt("pwa.add_to_home", "添加到主屏幕") + "</span></div>' +
+        '<div class="mcj-pwa-step"><div class="mcj-pwa-step-ico">＋</div><span>' +
+        tt("pwa.add_to_home", "添加到主屏幕") +
+        "</span></div>" +
         '<div class="mcj-pwa-arrow">→</div>' +
-        '<div class="mcj-pwa-step"><div class="mcj-pwa-step-ico">✓</div><span>添加</span></div>' +
+        '<div class="mcj-pwa-step"><div class="mcj-pwa-step-ico">✓</div><span>' +
+        tt("pwa.step_add", "添加") +
+        "</span></div>" +
         "</div>" +
-        '<div class="mcj-pwa-hint"><span class="mcj-pwa-chevron">▼</span><span>点击 Safari 分享按钮 → 添加到主屏幕</span></div>'
+        '<div class="mcj-pwa-hint"><span class="mcj-pwa-chevron">▼</span><span>' +
+        tt("pwa.ios_hint", "点击 Safari 分享按钮 → 添加到主屏幕") +
+        "</span></div>"
       );
     }
     if (platform.android && hasBip) {
       return (
         '<div class="mcj-pwa-flow" aria-hidden="true">' +
-        '<div class="mcj-pwa-step"><div class="mcj-pwa-step-ico">◎</div><span>" + tt("pwa.install_btn", tt("pwa.install_btn", "安装妙脆角")) + "</span></div>' +
+        '<div class="mcj-pwa-step"><div class="mcj-pwa-step-ico">◎</div><span>' +
+        tt("pwa.install_btn", "安装妙脆角") +
+        "</span></div>" +
         '<div class="mcj-pwa-arrow">→</div>' +
-        '<div class="mcj-pwa-step"><div class="mcj-pwa-step-ico">⌂</div><span>出现在主屏幕</span></div>' +
+        '<div class="mcj-pwa-step"><div class="mcj-pwa-step-ico">⌂</div><span>' +
+        tt("pwa.step_homescreen", "出现在主屏幕") +
+        "</span></div>" +
         "</div>"
       );
     }
     return (
       '<div class="mcj-pwa-flow" aria-hidden="true">' +
-      '<div class="mcj-pwa-step"><div class="mcj-pwa-step-ico">⋮</div><span>Chrome 菜单</span></div>' +
+      '<div class="mcj-pwa-step"><div class="mcj-pwa-step-ico">⋮</div><span>' +
+      tt("pwa.step_chrome_menu", "Chrome 菜单") +
+      "</span></div>" +
       '<div class="mcj-pwa-arrow">→</div>' +
-      '<div class="mcj-pwa-step"><div class="mcj-pwa-step-ico">＋</div><span>安装应用 / 添加到主屏幕</span></div>' +
+      '<div class="mcj-pwa-step"><div class="mcj-pwa-step-ico">＋</div><span>' +
+      tt("pwa.step_install", "安装应用 / 添加到主屏幕") +
+      "</span></div>" +
       '<div class="mcj-pwa-arrow">→</div>' +
-      '<div class="mcj-pwa-step"><div class="mcj-pwa-step-ico">✓</div><span>确认</span></div>' +
+      '<div class="mcj-pwa-step"><div class="mcj-pwa-step-ico">✓</div><span>' +
+      tt("common.confirm", "确认") +
+      "</span></div>" +
       "</div>"
     );
   }
@@ -328,15 +346,15 @@
     if (platform.iOS) {
       return {
         title: tt("pwa.install_title", "把妙脆角装到主屏幕"),
-        sub: "打开更快，使用起来更像 App",
-        hint: "点击 Safari 分享按钮 → 添加到主屏幕 → 添加",
+        sub: tt("pwa.install_sub", "打开更快，使用起来更像 App"),
+        hint: tt("pwa.ios_hint_full", "点击 Safari 分享按钮 → 添加到主屏幕 → 添加"),
       };
     }
     if (platform.android && hasBip) {
       return {
         title: tt("pwa.install_title", "把妙脆角装到主屏幕"),
-        sub: "打开更快，使用起来更像 App",
-        hint: "点击下方「安装妙脆角」，使用系统原生安装提示",
+        sub: tt("pwa.install_sub", "打开更快，使用起来更像 App"),
+        hint: tt("pwa.android_hint", "点击下方「安装妙脆角」，使用系统原生安装提示"),
       };
     }
     if (platform.android) {
@@ -369,8 +387,8 @@
       '" alt="" width="56" height="56" decoding="async" fetchpriority="high">' +
       "</div>" +
       "<div>" +
-      '<h2 id="mcjPwaTitle">" + tt("pwa.install_title", "把妙脆角装到主屏幕") + "</h2>' +
-      '<p data-mcj-pwa-sub>打开更快，使用起来更像 App</p>' +
+      '<h2 id="mcjPwaTitle">' + tt("pwa.install_title", "把妙脆角装到主屏幕") + '</h2>' +
+      '<p data-mcj-pwa-sub>' + tt("pwa.install_sub", "打开更快，使用起来更像 App") + '</p>' +
       "</div></div>" +
       '<div data-mcj-pwa-body></div>' +
       '<div class="mcj-pwa-actions" data-mcj-pwa-actions></div>' +
@@ -423,16 +441,16 @@
     if (actions) {
       if (platform.android && hasBip) {
         actions.innerHTML =
-          '<button type="button" class="mcj-pwa-btn" data-mcj-pwa-later>" + tt("pwa.later", tt("pwa.later", "稍后再说")) + "</button>' +
-          '<button type="button" class="mcj-pwa-btn primary" data-mcj-pwa-install>" + tt("pwa.install_btn", tt("pwa.install_btn", "安装妙脆角")) + "</button>';
+          '<button type="button" class="mcj-pwa-btn" data-mcj-pwa-later>' + tt("pwa.later", "稍后再说") + '</button>' +
+          '<button type="button" class="mcj-pwa-btn primary" data-mcj-pwa-install>' + tt("pwa.install_btn", "安装妙脆角") + '</button>';
       } else if (platform.iOS) {
         actions.innerHTML =
-          '<button type="button" class="mcj-pwa-btn" data-mcj-pwa-later>" + tt("pwa.later", tt("pwa.later", "稍后再说")) + "</button>' +
-          '<button type="button" class="mcj-pwa-btn primary" data-mcj-pwa-ok>我知道了</button>';
+          '<button type="button" class="mcj-pwa-btn" data-mcj-pwa-later>' + tt("pwa.later", "稍后再说") + '</button>' +
+          '<button type="button" class="mcj-pwa-btn primary" data-mcj-pwa-ok>' + tt("pwa.got_it", "我知道了") + '</button>';
       } else {
         actions.innerHTML =
-          '<button type="button" class="mcj-pwa-btn" data-mcj-pwa-later>" + tt("pwa.later", tt("pwa.later", "稍后再说")) + "</button>' +
-          '<button type="button" class="mcj-pwa-btn primary" data-mcj-pwa-ok>我知道了</button>';
+          '<button type="button" class="mcj-pwa-btn" data-mcj-pwa-later>' + tt("pwa.later", "稍后再说") + '</button>' +
+          '<button type="button" class="mcj-pwa-btn primary" data-mcj-pwa-ok>' + tt("pwa.got_it", "我知道了") + '</button>';
       }
     }
   }
@@ -582,6 +600,9 @@
 
     window.addEventListener("beforeinstallprompt", onBeforeInstallPrompt);
     window.addEventListener("appinstalled", onAppInstalled);
+    window.addEventListener("mcj:localechange", function () {
+      if (openState) renderContent();
+    });
 
     if (document.readyState === "loading") {
       document.addEventListener("DOMContentLoaded", waitBrieflyForBipThenSchedule);

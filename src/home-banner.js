@@ -243,14 +243,44 @@
     return "_self";
   }
 
+  function isEnLocale() {
+    try {
+      if (window.MCJI18n && typeof window.MCJI18n.getLocale === "function") {
+        return window.MCJI18n.getLocale() === "en";
+      }
+    } catch (e) {}
+    return false;
+  }
+
+  function pickLocaleField(config, baseKeys, enKeys) {
+    config = config || {};
+    var i;
+    if (isEnLocale()) {
+      for (i = 0; i < enKeys.length; i += 1) {
+        var enVal = config[enKeys[i]];
+        if (enVal != null && String(enVal).trim()) return String(enVal).trim();
+      }
+    }
+    for (i = 0; i < baseKeys.length; i += 1) {
+      var val = config[baseKeys[i]];
+      if (val != null && String(val).trim()) return String(val).trim();
+    }
+    return "";
+  }
+
   function normalized(config) {
     config = config || {};
     var image =
+      pickLocaleField(config, ["desktopImage", "image", "image_url"], ["image_url_en", "image_en", "desktopImage_en", "desktop_image_en"]) ||
       config.desktopImage ||
       config.image ||
       config.image_url ||
       "";
-    var mobileDedicated = String(config.mobile_image_url || "").trim();
+    var mobileDedicated = String(
+      (isEnLocale() && (config.mobile_image_url_en || config.mobileImage_en || config.mobile_image_en)) ||
+        config.mobile_image_url ||
+        ""
+    ).trim();
     if (!mobileDedicated && config.hasDedicatedMobile === true && config.mobileImage && config.mobileImage !== image) {
       mobileDedicated = String(config.mobileImage || "").trim();
     }
@@ -263,16 +293,23 @@
       config.mobileCrop || config.mobile_crop || config.mobile_crop_meta || (mobileDedicated ? {} : crop),
       { ratioW: 1080, ratioH: 360 }
     );
+    var title = pickLocaleField(config, ["title"], ["title_en"]);
+    var subtitle = pickLocaleField(config, ["subtitle"], ["subtitle_en"]);
+    var buttonText = pickLocaleField(
+      config,
+      ["buttonText", "button_text", "cta"],
+      ["button_text_en", "buttonText_en", "cta_en"]
+    );
     return {
       id: config.id || "",
-      name: config.name || config.title || "MEOW CUI JIAO Banner",
-      title: String(config.title || "").trim(),
-      subtitle: String(config.subtitle || "").trim(),
-      buttonText: String(config.buttonText || config.button_text || "").trim(),
+      name: config.name || title || config.title || "MEOW CUI JIAO Banner",
+      title: title,
+      subtitle: subtitle,
+      buttonText: buttonText,
       desktopImage: image,
       mobileImage: mobileDedicated || image,
       hasDedicatedMobile: !!mobileDedicated,
-      alt: config.alt || config.title || "首页 Banner",
+      alt: config.alt || title || config.title || "首页 Banner",
       fitMode: "cover",
       crop: crop,
       mobileCrop: mobileCrop,
@@ -921,6 +958,7 @@
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", applyHome);
   else applyHome();
   window.addEventListener("mcj:platform-data-updated", applyHome);
+  window.addEventListener("mcj:localechange", applyHome);
   window.addEventListener("storage", function (event) {
     if (event.key === "mcj_banner_published_at") {
       remoteLoaded = false;

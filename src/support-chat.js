@@ -11,6 +11,15 @@ import {
 (function () {
   var root = document.getElementById("supportApp");
   if (!root) return;
+  function tt(key, fallback) {
+    try {
+      if (window.MCJI18n && typeof window.MCJI18n.t === "function") {
+        var out = window.MCJI18n.t(key);
+        if (out && out !== key) return out;
+      }
+    } catch (e) {}
+    return fallback != null ? String(fallback) : String(key || "");
+  }
   try {
     window.__MCJ_SUPPORT_CHAT_LAGFIX = "20260811bossMsgQr4";
   } catch (_) {}
@@ -35,7 +44,7 @@ import {
     conversation: null,
     messages: [],
     orders: [],
-    serviceStatus: "等待客服接待",
+    serviceStatus: "等待客服接待", // i18n via statusLabel helpers
     serviceOnline: false,
     pollTimer: null,
     composerDraft: "",
@@ -1309,7 +1318,7 @@ import {
       '<div class="support-list-actions"><button class="support-btn primary" type="button" data-contact-service' +
       (state.creatingGeneral ? " disabled" : "") +
       ">" +
-      (state.creatingGeneral ? "创建中…" : guest ? "登录后新建客服咨询" : "新建客服咨询") +
+      (state.creatingGeneral ? tt("common.loading", "创建中…") : guest ? tt("support.login_cta", "登录后新建客服咨询") : tt("support.new_consult", "新建客服咨询")) +
       "</button></div>";
     if (guest) {
       return (
@@ -1322,7 +1331,7 @@ import {
       return (
         publicBlock +
         actions +
-        '<div class="support-empty-panel support-empty-list"><strong>暂无客服会话</strong><span>需要帮助时，点击上方按钮新建咨询。从订单详情进入时会自动关联当前订单。</span></div>'
+        '<div class="support-empty-panel support-empty-list"><strong>' + tt("support.empty", "暂无客服会话") + '</strong><span>' + tt("support.empty_hint", "需要帮助时，点击上方按钮新建咨询。") + '</span></div>'
       );
     }
     return (
@@ -1637,7 +1646,8 @@ import {
       '<section class="support-layout' +
       (state.mobileDetail ? " mobile-detail" : "") +
       '" aria-label="我的客服会话">' +
-      '<aside class="support-aside"><div class="support-aside-head"><div><h1>客服中心' +
+      '<aside class="support-aside"><div class="support-aside-head"><div><h1>' +
+      tt("support.center", "客服中心") +
       (Number(state.totalUnread || 0) > 0
         ? '<em class="support-unread support-unread-total">' +
           esc(Number(state.totalUnread) > 99 ? "99+" : state.totalUnread) +
@@ -1647,7 +1657,7 @@ import {
       '<span class="support-online-chip' +
       (state.serviceOnline ? " is-online" : "") +
       '" aria-live="polite">' +
-      (state.serviceOnline ? "客服在线" : "客服忙碌/离线") +
+      (state.serviceOnline ? tt("support.online_badge", "客服在线") : tt("support.busy_badge", "客服忙碌/离线")) +
       '</span></div><div class="support-session-list">' +
       listHtml() +
       "</div></aside>" +
@@ -2316,6 +2326,9 @@ import {
 
   if (window.MCJChatMedia) window.MCJChatMedia.bindLightboxClicks(root);
   paint();
+  window.addEventListener("mcj:localechange", function () {
+    paint({ keepScroll: true });
+  });
   refreshDiscordInviteFromPlatform().then(function () {
     softUpdate({ keepScroll: true });
   });

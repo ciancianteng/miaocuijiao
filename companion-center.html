@@ -38,7 +38,7 @@
       </a>
       <nav class="nav companion-market-nav" aria-label="页面导航">
         <a href="index.html" data-i18n="nav.home">首页</a>
-        <a class="active" href="companion-center.html">陪玩大厅</a>
+        <a class="active" href="companion-center.html" data-i18n="hall.title">陪玩大厅</a>
         <a href="mine.html" data-i18n="nav.mine">我的</a>
       </nav>
     </div>
@@ -52,10 +52,10 @@
       </div>
     </section>
 
-    <section class="hall-search-panel" data-hall-search="companions" aria-label="搜索陪玩">
+    <section class="hall-search-panel" data-hall-search="companions" data-i18n-aria="hall.search_aria" aria-label="搜索陪玩">
       <div class="hall-search-main">
         <label class="hall-search-field" for="searchInput">
-          <span>搜索</span>
+          <span data-i18n="hall.search_label">搜索</span>
           <input id="searchInput" type="search" placeholder="搜索昵称、陪玩ID、游戏或标签" data-i18n-placeholder="hall.search_placeholder" autocomplete="off">
         </label>
         <button class="hall-search-btn" id="applyFilter" type="button" data-i18n="hall.search">搜索</button>
@@ -63,28 +63,28 @@
         <button class="hall-filter-toggle" id="filterToggle" type="button" aria-expanded="false" aria-controls="searchFilters" data-i18n="hall.filter">筛选</button>
       </div>
 
-      <div class="hall-filter-drawer" id="searchFilters" aria-label="筛选工具栏">
+      <div class="hall-filter-drawer" id="searchFilters" data-i18n-aria="hall.filter_aria" aria-label="筛选工具栏">
         <div class="hall-filter-head">
-          <strong>筛选</strong>
-          <button class="hall-drawer-close" id="filterClose" type="button">完成</button>
+          <strong data-i18n="hall.filter">筛选</strong>
+          <button class="hall-drawer-close" id="filterClose" type="button" data-i18n="hall.filter_done">完成</button>
         </div>
         <div class="hall-filter-row">
           <label class="hall-filter-field">
-            <span>游戏分类</span>
+            <span data-i18n="hall.filter_game">游戏分类</span>
             <select id="gameFilter"></select>
           </label>
           <label class="hall-filter-field">
-            <span>服务类型</span>
+            <span data-i18n="hall.filter_type">服务类型</span>
             <select id="typeFilter"></select>
           </label>
           <label class="hall-filter-field">
-            <span>陪玩等级</span>
+            <span data-i18n="hall.filter_level">陪玩等级</span>
             <select id="levelFilter"></select>
           </label>
           <label class="hall-filter-field">
-            <span>价格</span>
+            <span data-i18n="hall.filter_price">价格</span>
             <select id="priceFilter">
-              <option value="">全部价格</option>
+              <option value="" data-i18n="hall.price_all">全部价格</option>
               <option value="20-30">20-30 猫粮</option>
               <option value="30-40">30-40 猫粮</option>
               <option value="40-45">40-45 猫粮</option>
@@ -93,16 +93,16 @@
             </select>
           </label>
           <label class="hall-filter-field">
-            <span>在线状态</span>
+            <span data-i18n="hall.filter_status">在线状态</span>
             <select id="onlineFilter">
-              <option value="">全部状态</option>
-              <option value="在线可接单">在线可接单</option>
-              <option value="忙碌中">忙碌中</option>
-              <option value="暂停接单">暂停接单</option>
-              <option value="离线">离线</option>
+              <option value="" data-i18n="hall.status_all">全部状态</option>
+              <option value="在线可接单" data-i18n="hall.status_online">在线可接单</option>
+              <option value="忙碌中" data-i18n="hall.status_busy">忙碌中</option>
+              <option value="暂停接单" data-i18n="hall.status_paused">暂停接单</option>
+              <option value="离线" data-i18n="hall.status_offline">离线</option>
             </select>
           </label>
-          <button class="hall-reset-text" id="resetFilterDrawer" type="button">重置筛选</button>
+          <button class="hall-reset-text" id="resetFilterDrawer" type="button" data-i18n="hall.filter_reset">重置筛选</button>
         </div>
       </div>
     </section>
@@ -128,8 +128,8 @@
     </section>
 
     <div class="hall-channel-tabs" role="tablist" aria-label="大厅频道">
-      <button type="button" class="hall-channel-tab is-active" role="tab" id="hallTabCompanions" aria-selected="true" aria-controls="hallPanelCompanions" data-hall-tab="companions">陪玩大厅</button>
-      <button type="button" class="hall-channel-tab" role="tab" id="hallTabServices" aria-selected="false" aria-controls="hallPanelServices" data-hall-tab="services">更多玩法</button>
+      <button type="button" class="hall-channel-tab is-active" role="tab" id="hallTabCompanions" aria-selected="true" aria-controls="hallPanelCompanions" data-hall-tab="companions" data-i18n="hall.tab_hall">陪玩大厅</button>
+      <button type="button" class="hall-channel-tab" role="tab" id="hallTabServices" aria-selected="false" aria-controls="hallPanelServices" data-hall-tab="services" data-i18n="hall.tab_more">更多玩法</button>
       <span class="hall-channel-indicator" aria-hidden="true"></span>
     </div>
 
@@ -141,20 +141,20 @@
             <p id="resultCount">共 0 位陪玩</p>
           </div>
           <label class="hall-sort-field">
-            <span>排序</span>
+            <span data-i18n="hall.sort">排序</span>
             <select id="sortFilter">
               <option value="recommend" data-i18n="hall.sort_default">默认推荐</option>
-              <option value="levelDesc">等级优先</option>
-              <option value="priceAsc">价格低到高</option>
-              <option value="priceDesc">价格高到低</option>
+              <option value="levelDesc" data-i18n="hall.sort_level">等级优先</option>
+              <option value="priceAsc" data-i18n="hall.sort_price_asc">价格低到高</option>
+              <option value="priceDesc" data-i18n="hall.sort_price_desc">价格高到低</option>
             </select>
           </label>
         </div>
 
         <div class="companion-hall-grid" id="playerList"></div>
         <div class="empty companion-empty" id="emptyState" hidden>
-          <strong>暂无符合条件的陪玩</strong>
-          <span>试试调整搜索词或筛选条件。</span>
+          <strong data-i18n="hall.empty_filtered_title">暂无符合条件的陪玩</strong>
+          <span data-i18n="hall.empty_filtered_hint">试试调整搜索词或筛选条件。</span>
         </div>
         <div class="companion-pagination" id="companionPagination"></div>
       </div>
