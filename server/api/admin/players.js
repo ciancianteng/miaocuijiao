@@ -21,17 +21,21 @@ import { requireAdmin as requireAdminJwt, ADMIN_ROLES as SHARED_ADMIN_ROLES } fr
 import { isTestAccountRecord } from "../_test-accounts.js";
 import {
   hasPositivePrice,
-  assertHasPositivePrice,
   isFirstApprovalTransition,
   adminPublishSnapshot,
   assertApproveCanPublish,
   APPROVE_INCOMPLETE_MESSAGE,
 } from "../_companion-publish-gate.js";
+import {
+  seedCompanionServicesFromLevel,
+} from "../_companion-services-seed.js";
 
 // PERMANENT: price / hall-critical checks apply only to new submit + first approval.
 // Admin edits of already-approved companions must never be blocked by this.
-const APPROVE_MISSING_PRICE_MESSAGE =
-  "无法通过审核：该陪玩尚未设置接单价格（单价 price > 0，或至少一个游戏价格 game_prices > 0）。请先填写价格后再通过。";
+const APPROVE_MISSING_LEVEL_MESSAGE =
+  "无法通过审核：必须选择陪玩等级。禁止无等级默认 Lv1 或静默回退。";
+const APPROVE_MISSING_LEVEL_PRICE_MESSAGE =
+  "无法通过审核：所选等级缺少有效的基础价格 base_price。";
 
 const ADMIN_ROLES = SHARED_ADMIN_ROLES;
 const PLAYER_TABLE = "companion_profiles";
@@ -69,8 +73,10 @@ async function resolveLevelMeta(levelIdOrName) {
     return keys.includes(keyN) || Number(l.level) === num;
   });
   if (!found) {
-    return { id: key, name: key, min: null, commissionRate: null };
+    return { id: key, name: key, min: null, basePrice: null, commissionRate: null };
   }
+  const basePriceRaw = found.basePrice ?? found.base_price ?? found.min;
+  const basePrice = Number(basePriceRaw);
   return {
     id: found.id,
     name: `${found.code || ""} ${found.name || ""}`.trim() || found.name || key,
@@ -78,6 +84,8 @@ async function resolveLevelMeta(levelIdOrName) {
     min: found.min,
     max: found.max,
     maxPlus: found.maxPlus,
+    basePrice: Number.isFinite(basePrice) ? basePrice : null,
+    base_price: Number.isFinite(basePrice) ? basePrice : null,
     commissionRate: found.commissionRate,
   };
 }
@@ -1054,18 +1062,38 @@ async function activateCompanionProfile(userId) {
 }
 
 
-/** Shared first-approval gate used by review_application AND edit/auditStatus paths. No bypass. */
-function ensureFirstApprovalReady(companion, payload, profile) {
-  try {
-    assertHasPositivePrice(payload, companion, APPROVE_MISSING_PRICE_MESSAGE);
-  } catch (priceErr) {
-    throw Object.assign(new Error(priceErr?.message || APPROVE_MISSING_PRICE_MESSAGE), {
+/** Shared first-approval gate used by review_application AND edit/auditStatus paths. No bypass.
+ * Pricing V2 P2: require admin-selected level (with base_price). Applicant price is no longer required.
+ * Listing price is derived from level.base_price and injected into payload before publish checks.
+ */
+async function ensureFirstApprovalReady(companion, payload, profile) {
+  const levelKey = String(payload.levelId || payload.level_id || payload.levelName || payload.level_name || "").trim();
+  if (!levelKey) {
+    throw Object.assign(new Error(APPROVE_MISSING_LEVEL_MESSAGE), {
       status: 400,
-      code: "MISSING_PRICE",
-      blockReasons: ["缺少价格"],
-      criticalMissing: ["缺少价格"],
+      code: "MISSING_LEVEL",
+      blockReasons: ["缺少陪玩等级"],
+      criticalMissing: ["缺少陪玩等级"],
     });
   }
+  const meta = await resolveLevelMeta(levelKey);
+  const basePrice = Number(meta?.basePrice ?? meta?.base_price);
+  if (!meta?.id || !(basePrice > 0)) {
+    throw Object.assign(new Error(APPROVE_MISSING_LEVEL_PRICE_MESSAGE), {
+      status: 400,
+      code: "MISSING_LEVEL_BASE_PRICE",
+      blockReasons: ["等级基础价格无效"],
+      criticalMissing: ["等级基础价格无效"],
+    });
+  }
+  // Inject level + derived listing price so assertApproveCanPublish / criticalMissing("缺少价格") passes.
+  payload.levelId = meta.id;
+  payload.level_id = meta.id;
+  payload.levelName = meta.name;
+  payload.level_name = meta.name;
+  payload.price = basePrice;
+  payload._p2LevelMeta = meta;
+  payload._p2BasePrice = basePrice;
   try {
     return assertApproveCanPublish(companion, payload, profile || {});
   } catch (readyErr) {
@@ -1089,13 +1117,26 @@ async function reviewApplication(req, companion, payload) {
   let profileBefore = companion.user_id ? await getProfile(companion.user_id) : {};
   let patch;
   if (status === "approved") {
-    // First approval only — must be hall-ready for real (non-test) companions.
-    // Guards run BEFORE any companion_profiles write so failed approve leaves DB unchanged.
+    // Pricing V2 P2: require level, seed companion_services from level.base_price, no applicant price.
     let publishPreview = null;
+    let levelMeta = null;
+    let basePrice = 0;
     if (isFirstApprovalTransition(companion, status)) {
-      publishPreview = ensureFirstApprovalReady(companion, payload, profileBefore);
+      publishPreview = await ensureFirstApprovalReady(companion, payload, profileBefore);
       void publishPreview;
-      // Activate profile BEFORE writing application_status=approved (no partial approve).
+      levelMeta = payload._p2LevelMeta || (await resolveLevelMeta(payload.levelId || payload.level_id));
+      basePrice = Number(payload._p2BasePrice ?? levelMeta?.basePrice ?? levelMeta?.base_price);
+      try {
+        await seedCompanionServicesFromLevel(
+          { ...companion, user_id: companion.user_id },
+          { id: levelMeta.id, basePrice, base_price: basePrice, name: levelMeta.name }
+        );
+      } catch (seedErr) {
+        throw Object.assign(new Error(seedErr?.message || "初始化陪玩服务价格失败"), {
+          status: seedErr?.status || 500,
+          code: seedErr?.code || "SERVICES_SEED_FAILED",
+        });
+      }
       if (companion.user_id) {
         try {
           profileBefore = (await activateCompanionProfile(companion.user_id)) || {
@@ -1109,26 +1150,39 @@ async function reviewApplication(req, companion, payload) {
           );
         }
       }
+    } else {
+      const levelKey = String(payload.levelId || payload.level_id || companion.level_id || "").trim();
+      if (!levelKey) {
+        throw Object.assign(new Error(APPROVE_MISSING_LEVEL_MESSAGE), {
+          status: 400,
+          code: "MISSING_LEVEL",
+          blockReasons: ["缺少陪玩等级"],
+          criticalMissing: ["缺少陪玩等级"],
+        });
+      }
+      levelMeta = await resolveLevelMeta(levelKey);
+      basePrice = Number(levelMeta?.basePrice ?? levelMeta?.base_price);
+      if (!(basePrice > 0)) {
+        throw Object.assign(new Error(APPROVE_MISSING_LEVEL_PRICE_MESSAGE), {
+          status: 400,
+          code: "MISSING_LEVEL_BASE_PRICE",
+        });
+      }
     }
     const extras = {
       online_status: "offline",
       application_reject_reason: "",
-      // Approve workflow opens order permission unless payload explicitly disables it.
       allow_orders: payload.allowOrders === false || payload.allow_orders === false ? false : true,
+      level_id: String(levelMeta.id),
+      level_name: String(levelMeta.name || ""),
+      price: basePrice,
     };
-    if (payload.levelId != null || payload.level_id != null) {
-      extras.level_id = String(payload.levelId || payload.level_id || "").trim();
-    }
-    if (payload.levelName != null || payload.level_name != null) {
-      extras.level_name = String(payload.levelName || payload.level_name || "").trim();
-    }
     const orderRate = percent(payload.orderCommissionRate ?? payload.commission_rate ?? payload.commissionRate);
     if (orderRate !== undefined) extras.commission_rate = orderRate;
     const giftRate = percent(payload.giftCommissionRate ?? payload.gift_commission_rate);
     if (giftRate !== undefined) extras.gift_commission_rate = giftRate;
     const rebate = percent(payload.directRebateRate ?? payload.direct_rebate_rate);
     if (rebate !== undefined) extras.direct_rebate_rate = rebate;
-    if (payload.price != null) extras.price = money(payload.price);
     if (payload.minPrice != null || payload.price_min != null) {
       extras.price_min = money(payload.minPrice ?? payload.price_min);
     }
@@ -1509,7 +1563,25 @@ export default async function handler(req, res) {
     let profileBeforeEdit = companion.user_id ? await getProfile(companion.user_id) : {};
     if (firstApproveViaEdit) {
       // Same shared guard as review_application — no bypass via auditStatus/edit.
-      ensureFirstApprovalReady(companion, { ...payload, ...companionPatch }, profileBeforeEdit);
+      const gatePayload = { ...payload, ...companionPatch };
+      await ensureFirstApprovalReady(companion, gatePayload, profileBeforeEdit);
+      const levelMeta = gatePayload._p2LevelMeta;
+      const basePrice = Number(gatePayload._p2BasePrice);
+      companionPatch.level_id = levelMeta.id;
+      companionPatch.level_name = levelMeta.name;
+      companionPatch.price = basePrice;
+      try {
+        await seedCompanionServicesFromLevel(
+          { ...companion, user_id: companion.user_id },
+          { id: levelMeta.id, basePrice, base_price: basePrice, name: levelMeta.name }
+        );
+      } catch (seedErr) {
+        return json(res, seedErr?.status || 500, {
+          ok: false,
+          code: seedErr?.code || "SERVICES_SEED_FAILED",
+          message: seedErr?.message || "初始化陪玩服务价格失败",
+        });
+      }
       companionPatch.allow_orders = companionPatch.allow_orders === false ? false : true;
       companionPatch.verification_status = "approved";
       companionPatch.application_status = "approved";
@@ -1538,8 +1610,9 @@ export default async function handler(req, res) {
       if (meta) {
         companionPatch.level_id = meta.id;
         companionPatch.level_name = meta.name;
-        if (companionPatch.price == null && !(money(companion.price) > 0) && meta.min != null) {
-          companionPatch.price = money(meta.min);
+        if (companionPatch.price == null && !(money(companion.price) > 0)) {
+          const levelPrice = money(meta.basePrice ?? meta.base_price ?? meta.min);
+          if (levelPrice > 0) companionPatch.price = levelPrice;
         }
       } else if (!companionPatch.level_name && companionPatch.level_id) {
         companionPatch.level_name = companionPatch.level_id;

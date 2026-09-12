@@ -21,18 +21,16 @@
   var liveVoiceObjectUrl = "";
 
   var steps = [
-    "阅读陪玩制度",
     "基本资料",
     "游戏资料",
-    "上传头像与资料",
-    "选择认证方式"
+    "证明资料",
+    "确认并提交"
   ];
   var stepLabels = [
-    "阅读陪玩制度",
     "填写基本资料",
     "填写游戏资料",
-    "上传头像与资料",
-    "选择认证方式"
+    "上传证明资料",
+    "确认并提交"
   ];
 
   var tagGroups = {
@@ -391,6 +389,27 @@
           : "本地录音已失效，请重新录制",
       });
     }
+    
+    // Pricing V2 P2: migrate legacy 5-step draft indices -> 4-step
+    if (draft && draft.step != null) {
+      var legacyStep = Number(draft.step || 0) || 0;
+      // old: 0 rules,1 basic,2 game,3 upload,4 auth
+      // new: 0 rules+basic,1 game,2 upload+auth,3 confirm
+      if (draft._p2StepMigrated !== true) {
+        if (legacyStep <= 0) draft.step = 0;
+        else if (legacyStep === 1) draft.step = 0;
+        else if (legacyStep === 2) draft.step = 1;
+        else if (legacyStep === 3 || legacyStep === 4) draft.step = 2;
+        else draft.step = Math.min(3, legacyStep);
+        draft._p2StepMigrated = true;
+      }
+      draft.step = Math.max(0, Math.min(steps.length - 1, Number(draft.step || 0) || 0));
+    }
+    // Drop any leftover applicant price fields from local draft (UI must not revive them)
+    if (draft && draft.data) {
+      delete draft.data.hourlyPrice;
+      delete draft.data.gamePriceMap;
+    }
     return draft;
   }
   function saveDraft(patch) {
@@ -565,18 +584,22 @@
     var identity = draft.identity || {};
     var missing = [];
     if (index === 0) {
+      // Step1 基本资料 = 制度同意 + 基本资料
+
       if (!publishedRule()) missing.push("后台暂未发布陪玩制度");
       if (!((draft.rulesAgreement || {}).accepted)) missing.push("阅读并同意陪玩制度");
-      return missing;
-    }
-    if (index === 1) {
+      
+
       [["nickname", "昵称"], ["age", "年龄"], ["gender", "性别"], ["region", "地区"], ["phone", "联系电话"], ["email", "邮箱"]].forEach(function (item) {
         if (!hasText(data, item[0])) missing.push(item[1]);
       });
       if (!hasArray(data, "personalTags")) missing.push("个人标签");
+      
       return missing;
     }
-    if (index === 2) {
+    if (index === 1) {
+      // Step2 游戏资料 — 不再要求接单价格
+
       if (!hasText(data, "gameNickname")) missing.push("游戏昵称");
       if (!hasArray(data, "mainGames")) missing.push("主玩游戏");
       if (!hasArray(data, "positions")) missing.push("擅长位置");
@@ -584,17 +607,18 @@
       [["rank", "游戏段位"], ["voiceType", "声线"], ["onlineStart", "常在线开始时间"], ["onlineEnd", "常在线结束时间"], ["intro", "自我介绍"]].forEach(function (item) {
         if (!hasText(data, item[0])) missing.push(item[1]);
       });
-      if (!draftHasPositivePrice(data)) missing.push("接单价格（单价 > 0 或至少一个游戏价格 > 0）");
+      
       return missing;
     }
-    if (index === 3) {
+    if (index === 2) {
+      // Step3 证明资料 = 上传 + 认证
+
       if (!hasDurableUpload(uploads.avatar)) missing.push("头像");
       if (!(voice.confirmed && (hasDurableUpload(voice) || hasDurableUpload(voice.url) || voice.storagePath || voice.path))) {
         missing.push("试音并确认使用");
       }
-      return missing;
-    }
-    if (index === 4) {
+      
+
       var mode = String(identity.authMode || "").trim();
       if (mode !== "id_card" && mode !== "deposit") missing.push("选择认证方式（身份证或押金二选一）");
       if (mode === "id_card") {
@@ -640,6 +664,16 @@
       } else if (settleMethod) {
         if (!hasText(identity, "settlementAccount")) missing.push(settlementAccountLabel(settleMethod));
       }
+      
+      return missing;
+    }
+    if (index === 3) {
+      // Step4 确认并提交：前面三步都必须完成
+      [0, 1, 2].forEach(function (i) {
+        missingForStep(i, draft).forEach(function (item) {
+          if (missing.indexOf(item) < 0) missing.push(item);
+        });
+      });
       return missing;
     }
     return missing;
@@ -1331,7 +1365,7 @@
       backToBoss +
       tabs +
       (mode === "register" ? registerPanel : loginTabs + loginPwd + loginOtp + authMessageHtml()) +
-      '<p class="apply-note">新用户：邮箱 → 发送验证码 → 验证成功 → 设置密码与昵称 → 注册并进入 1/5 申请流程。</p>' +
+      '<p class="apply-note">新用户：邮箱 → 发送验证码 → 验证成功 → 设置密码与昵称 → 注册并进入 1/4 申请流程。</p>' +
       "</section>"
     );
   }
@@ -1606,55 +1640,13 @@
       tagPicker("personalTags", "个人标签（必填，最多 10 个）", data.personalTags, tagGroups.personalTags, 10) +
       '</form></section>';
   }
-  function draftHasPositivePrice(data) {
-    data = data || {};
-    var hourly = Number(data.hourlyPrice);
-    if (Number.isFinite(hourly) && hourly > 0) return true;
-    var map = data.gamePriceMap || {};
-    return Object.keys(map).some(function (k) {
-      var n = Number(map[k]);
-      return Number.isFinite(n) && n > 0;
-    });
-  }
-  function applyPriceFieldsHtml(data) {
-    data = data || {};
-    var games = Array.isArray(data.mainGames) ? data.mainGames.filter(Boolean) : [];
-    var map = data.gamePriceMap || {};
-    var rows = games.length
-      ? games
-          .map(function (g) {
-            return (
-              '<label class="form-field">' +
-              esc(g) +
-              "（RM/小时）" +
-              '<input data-game-price="' +
-              esc(g) +
-              '" type="number" inputmode="decimal" step="0.01" min="0" value="' +
-              esc(map[g] != null ? map[g] : "") +
-              '" placeholder="例如 25"></label>'
-            );
-          })
-          .join("")
-      : field("hourlyPrice", "接单单价（RM/小时）", "number", data.hourlyPrice, 'min="0" step="0.01" inputmode="decimal" placeholder="例如 25"');
+  function pricingNoticeHtml() {
     return (
-      '<div class="form-field full" data-apply-price-block>' +
-      "<span>接单价格（必填）</span>" +
-      '<p class="apply-note">提交申请前须设置价格：填写单价，或为至少一个已选游戏填写价格（> 0）。审核通过后仍可在陪玩工作台按等级区间调整。</p>' +
-      '<div class="apply-grid" data-apply-price-grid>' +
-      rows +
-      "</div></div>"
+      '<div class="form-field full" data-apply-pricing-notice>' +
+      "<span>接单价格说明</span>" +
+      '<p class="apply-note">申请阶段无需填写接单价格。审核通过后，系统将按管理员指定的陪玩等级自动写入该等级的基础价格（base_price）。</p>' +
+      "</div>"
     );
-  }
-  function syncApplyPriceGrid(root) {
-    if (!root) return;
-    var block = root.querySelector("[data-apply-price-block]");
-    if (!block) return;
-    var draft = readDraft();
-    var html = applyPriceFieldsHtml(draft.data || {});
-    var tmp = document.createElement("div");
-    tmp.innerHTML = html;
-    var next = tmp.firstChild;
-    if (next) block.replaceWith(next);
   }
   function gameHtml(data) {
     return '<section class="apply-panel"><h2>填写游戏资料</h2><form class="apply-grid">' +
@@ -1666,7 +1658,7 @@
       selectField("voiceType", "声线", data.voiceType, voiceTypeOptions()) +
       field("onlineStart", "常在线开始时间", "time", data.onlineStart) +
       field("onlineEnd", "常在线结束时间", "time", data.onlineEnd) +
-      applyPriceFieldsHtml(data) +
+      pricingNoticeHtml() +
       field("intro", "自我介绍（展示在个人主页）", "textarea", data.intro) +
       '</form></section>';
   }
@@ -2057,12 +2049,48 @@
       "</section>"
     );
   }
+  
+  function confirmHtml(draft) {
+    draft = draft || readDraft();
+    var data = draft.data || {};
+    var identity = draft.identity || {};
+    var uploads = draft.uploads || {};
+    var voice = draft.voice || {};
+    var games = Array.isArray(data.mainGames) ? data.mainGames.filter(Boolean) : [];
+    var authMode = String(identity.authMode || "").trim();
+    var authLabel = authMode === "id_card" ? "身份证认证" : authMode === "deposit" ? "押金认证" : "未选择";
+    function row(label, value) {
+      return '<div class="apply-confirm-row"><span>' + esc(label) + '</span><strong>' + esc(value || "—") + '</strong></div>';
+    }
+    return (
+      '<section class="apply-panel"><h2>确认并提交</h2>' +
+      '<p class="apply-note full">请确认以下资料无误后提交。申请阶段不设置接单价格；价格将在管理员审核通过并指定等级后，按等级基础价格自动生效。</p>' +
+      '<div class="apply-confirm-card">' +
+      row("昵称", data.nickname) +
+      row("年龄", data.age) +
+      row("性别", data.gender) +
+      row("地区", data.region) +
+      row("电话", data.phone) +
+      row("邮箱", data.email) +
+      row("可接游戏", games.join("、")) +
+      row("段位", data.rank) +
+      row("声线", data.voiceType) +
+      row("认证方式", authLabel) +
+      row("头像", uploads.avatar ? "已上传" : "未上传") +
+      row("试音", voice.confirmed ? "已确认" : "未确认") +
+      "</div>" +
+      '<p class="apply-note full">提交后进入审核队列。如需修改，可点「上一步」返回，草稿会自动保留。</p>' +
+      "</section>"
+    );
+  }
+
   function stepHtml(index, draft) {
-    if (index === 0) return rulesHtml(draft);
-    if (index === 1) return basicHtml(draft.data || {});
-    if (index === 2) return gameHtml(draft.data || {});
-    if (index === 3) return uploadHtml(draft);
-    return identityHtml(draft);
+    if (index === 0) {
+      return rulesHtml(draft) + basicHtml(draft.data || {});
+    }
+    if (index === 1) return gameHtml(draft.data || {});
+    if (index === 2) return uploadHtml(draft) + identityHtml(draft);
+    return confirmHtml(draft);
   }
   function statusNotice() {
     var code = remoteStatus && remoteStatus.applicationStatus;
@@ -2146,25 +2174,16 @@
     var uploads = draft.uploads || {};
     var step = Number(root.dataset.step || 0);
     Array.prototype.slice.call(root.querySelectorAll("[data-apply-field]")).forEach(function (el) { data[el.name] = el.value.trim(); });
-    var priceMap = {};
-    Array.prototype.slice.call(root.querySelectorAll("[data-game-price]")).forEach(function (el) {
-      var g = el.getAttribute("data-game-price");
-      var v = String(el.value || "").trim();
-      if (g && v) priceMap[g] = v;
-    });
-    data.gamePriceMap = priceMap;
-    if (Object.keys(priceMap).length) {
-      if (!data.hourlyPrice) data.hourlyPrice = priceMap[Object.keys(priceMap)[0]] || "";
-    }
+    // Pricing V2 P2: do not collect applicant price fields
     Array.prototype.slice.call(root.querySelectorAll("[data-tag-picker]")).forEach(function (picker) {
       var key = picker.dataset.tagPicker;
       data[key] = Array.prototype.slice.call(picker.querySelectorAll("[data-tag-field]:checked")).map(function (el) { return el.value; });
     });
     // File uploads are handled immediately by MCJUpload → Storage; do not stash data URLs here.
     Array.prototype.slice.call(root.querySelectorAll("select[name],input[name]:not([type=file]),textarea[name]")).forEach(function (el) {
-      if (step === 4) identity[el.name] = el.value.trim ? el.value.trim() : el.value;
+      if (step === 2) identity[el.name] = el.value.trim ? el.value.trim() : el.value;
     });
-    if (step === 4) {
+    if (step === 2) {
       // Keep bankName as the effective persisted label (dropdown value or「其他」custom text).
       if (isBankSettlementMethod(identity.settlementMethod)) {
         identity.bankName = effectiveSettlementBankName(identity);
@@ -2406,8 +2425,7 @@
         // Optional admin-only remark — never send self-intro as application note.
         note: draft.data.remark || draft.data.applicationRemark || "",
         tags: (draft.data.personalTags || []).join(","),
-        price: draft.data.hourlyPrice || (draft.data.gamePriceMap && draft.data.gamePriceMap[mainGames[0]]) || "",
-        game_prices: draft.data.gamePriceMap || {},
+        // Pricing V2 P2: never submit applicant price fields
         nickname: draft.data.nickname || "",
         age: draft.data.age || "",
         gender: draft.data.gender || "",
@@ -4023,7 +4041,7 @@
         if (countEl) countEl.textContent = String(checked.length);
         await collect(root);
         if (picker.dataset.tagPicker === "mainGames") {
-          syncApplyPriceGrid(root);
+
           await collect(root);
         }
         var mark = root.querySelector(".step-complete-mark");
@@ -4311,7 +4329,7 @@
       render(readDraft().step || 0);
       restoreApplyScroll();
       var idMode = String(((readDraft().identity || {}).authMode) || "");
-      if (idMode === "deposit" || Number(readDraft().step || 0) === 4) {
+      if (idMode === "deposit" || Number(readDraft().step || 0) === 2) {
         return fetchDepositPayMethods(false).then(function () {
           render(readDraft().step || 0);
         });

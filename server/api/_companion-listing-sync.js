@@ -189,14 +189,13 @@ export function approveListingPatch(extra = {}) {
 }
 
 /**
- * Approve patch that fills default level ONLY when the current row has none.
- * Never overwrites an existing level with Lv1.
+ * Approve patch for admin review.
+ * Pricing V2 P2: do NOT silently fall back to Lv1 — level_id must come from admin extras.
+ * ensureDefaultLevelPatch remains available for explicit backfill tooling only.
  * Preserves existing online_status when not explicitly provided.
  */
 export function approveListingPatchForRow(row = {}, extra = {}) {
-  const levelFromRow = ensureDefaultLevelPatch(row);
   const merged = preserveExistingContent(row, {
-    ...levelFromRow,
     ...extra,
   });
   if (merged.online_status == null && row.online_status) {

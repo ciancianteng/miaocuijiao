@@ -317,14 +317,22 @@
   }
 
   function levelOptions(selected, levels) {
-    var html = '<option value="">未设置</option>';
+    var html = '<option value="">请选择等级</option>';
     (levels || []).forEach(function (level) {
       var value = level.id || level.code || level.name;
+      var base =
+        level.basePrice != null
+          ? level.basePrice
+          : level.base_price != null
+            ? level.base_price
+            : level.minPrice != null
+              ? level.minPrice
+              : level.min;
       var label =
         (level.code ? level.code + " " : "") +
         (level.name || value) +
-        (level.color ? " · " + level.color : "") +
-        (level.minPrice != null ? " · RM" + level.minPrice + (level.maxPrice != null ? "-" + level.maxPrice : "") : "");
+        (base != null && base !== "" ? " · 基础价格 " + base + " 猫粮" : "") +
+        (level.color ? " · " + level.color : "");
       html +=
         '<option value="' +
         esc(value) +
@@ -335,6 +343,44 @@
         "</option>";
     });
     return html;
+  }
+  function levelBasePriceOf(level) {
+    if (!level) return 0;
+    var n = Number(
+      level.basePrice != null
+        ? level.basePrice
+        : level.base_price != null
+          ? level.base_price
+          : level.minPrice != null
+            ? level.minPrice
+            : level.min
+    );
+    return Number.isFinite(n) ? n : 0;
+  }
+  function findLevelByValue(value, levels) {
+    var key = String(value || "").trim();
+    if (!key) return null;
+    return (levels || []).find(function (level) {
+      return (
+        String(level.id) === key ||
+        String(level.code) === key ||
+        String(level.name) === key
+      );
+    }) || null;
+  }
+  function levelPricePreviewHtml(selected, levels) {
+    var lv = findLevelByValue(selected, levels);
+    if (!lv) {
+      return '<p class="admin-sync-note" data-level-price-preview style="grid-column:1/-1">通过审核前必须选择陪玩等级；服务价格将按该等级 base_price 自动写入。</p>';
+    }
+    var base = levelBasePriceOf(lv);
+    return (
+      '<p class="admin-sync-note" data-level-price-preview style="grid-column:1/-1">已选等级：' +
+      esc((lv.code || "") + " " + (lv.name || "")) +
+      " · 基础价格：" +
+      esc(String(base)) +
+      " 猫粮（通过后按此价格初始化 companion_services）</p>"
+    );
   }
 
   function getLevels() {
@@ -604,9 +650,7 @@
           field("礼物抽成 %", "giftCommissionRate", d.giftCommissionRate != null ? d.giftCommissionRate : d.gift_commission_rate || 0) +
           field("直属陪返点 %", "directRebateRate", d.directRebateRate != null ? d.directRebateRate : d.direct_rebate_rate || 0) +
           field("调整原因", "reason", "") +
-          (playerMissingPrice(d)
-            ? '<p class="admin-sync-note error" style="grid-column:1/-1">未设置接单价格：通过申请前请先填写单价（> 0），否则审核将被拦截。</p>'
-            : "") +
+          levelPricePreviewHtml(d.levelId || d.level_id || d.levelName, levels) +
           "</div>"
         : "");
 
@@ -1004,11 +1048,17 @@
         return;
       }
       if (kind2 === "application" && status === "approved") {
-        var priceInput = form3.querySelector('[name="price"]');
-        var formPrice = priceInput ? Number(priceInput.value) : NaN;
-        var hasFormPrice = Number.isFinite(formPrice) && formPrice > 0;
-        if (!hasFormPrice && form3.getAttribute("data-missing-price") === "1") {
-          alert("无法通过：该陪玩尚未设置接单价格（单价 > 0 或至少一个游戏价格 > 0）。请先在「等级与价格」填写单价后再通过。");
+        var levelEl = form3.querySelector('[name="levelId"]');
+        var levelVal = levelEl ? String(levelEl.value || "").trim() : "";
+        if (!levelVal) {
+          alert("无法通过：必须选择陪玩等级。禁止无等级默认 Lv1。");
+          return;
+        }
+        var levelsNow = getLevels();
+        var lv = findLevelByValue(levelVal, levelsNow);
+        var base = levelBasePriceOf(lv);
+        if (!(base > 0)) {
+          alert("无法通过：所选等级缺少有效的基础价格 base_price。");
           return;
         }
       }
@@ -1024,10 +1074,16 @@
                 : "review_application";
       var payload = { status: status, rejectReason: reason };
       if (kind2 === "application" && status === "approved") {
-        var priceEl = form3.querySelector('[name="price"]');
-        if (priceEl && String(priceEl.value || "").trim() !== "") {
-          payload.price = priceEl.value;
+        var levelEl2 = form3.querySelector('[name="levelId"]');
+        var levelVal2 = levelEl2 ? String(levelEl2.value || "").trim() : "";
+        payload.levelId = levelVal2;
+        payload.level_id = levelVal2;
+        var lv2 = findLevelByValue(levelVal2, getLevels());
+        if (lv2) {
+          payload.levelName = lv2.name || "";
+          payload.level_name = lv2.name || "";
         }
+        // Do not send applicant/admin free-form price on approve — server seeds from level.base_price.
       }
       apiPost({
         action: action,

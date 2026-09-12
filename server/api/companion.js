@@ -5450,18 +5450,7 @@ export default async function handler(req, res) {
 
     if (action === "submit_application") {
       const row = await ensureCompanionRow(auth.profile, companion);
-      // PERMANENT: price required on new application submit only.
-      // Admin edits of already-approved companions are handled separately and must not reuse this as a lock.
-      try {
-        assertHasPositivePrice(body, row, MISSING_PRICE_MESSAGE);
-      } catch (priceErr) {
-        return json(res, 400, {
-          ok: false,
-          code: "MISSING_PRICE",
-          message: priceErr?.message || MISSING_PRICE_MESSAGE,
-          field: "price",
-        });
-      }
+      // Pricing V2 P2: applicant must NOT set sell price. Price is assigned at admin approve via level.base_price.
       const applyGameNames = splitGames(body.main_game || body.game || body.mainGame || "");
       const servicesBundle = await loadPublicServices().catch(() => ({ services: [] }));
       const catalog = Array.isArray(servicesBundle?.services) ? servicesBundle.services : [];
@@ -5525,14 +5514,12 @@ export default async function handler(req, res) {
       if (authMode) patch.credential_mode = authMode;
       if (body.nickname) patch.nickname = String(body.nickname).trim();
       if (body.phone || body.contact_phone) patch.contact_phone = String(body.phone || body.contact_phone || "").trim();
-      if (body.price != null && body.price !== "") patch.price = money(body.price);
+      // P2: ignore applicant price on submit_application
       if (body.age != null && body.age !== "") patch.age = Number(body.age) || null;
       if (body.gender) patch.gender = String(body.gender).trim();
       if (body.region) patch.region = String(body.region).trim();
       if (body.contact_public != null) patch.contact_public = String(body.contact_public).trim();
-      if (body.game_prices && typeof body.game_prices === "object") {
-        try { patch.game_prices = body.game_prices; } catch { /* optional column */ }
-      }
+      // P2: ignore applicant game_prices on submit_application
       try {
         await supabaseJson(restUrl("companion_profiles", `?id=eq.${encodeURIComponent(row.id)}`), {
           method: "PATCH",
@@ -5573,7 +5560,7 @@ export default async function handler(req, res) {
           };
           if (patch.nickname) core.nickname = patch.nickname;
           if (patch.contact_phone) core.contact_phone = patch.contact_phone;
-          if (patch.price != null) core.price = patch.price;
+          // P2: do not copy applicant price into core patch
           try {
             await supabaseJson(restUrl("companion_profiles", `?id=eq.${encodeURIComponent(row.id)}`), {
               method: "PATCH",
