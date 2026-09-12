@@ -281,66 +281,57 @@
   }
 
 
-  function buildFlow(platform, hasBip) {
+  function buildSteps(platform, hasBip) {
     if (platform.iOS) {
       return (
-        '<div class="mcj-pwa-flow" aria-hidden="true">' +
-        '<div class="mcj-pwa-step"><div class="mcj-pwa-step-ico">⇪</div><span>分享</span></div>' +
-        '<div class="mcj-pwa-arrow">→</div>' +
-        '<div class="mcj-pwa-step"><div class="mcj-pwa-step-ico">＋</div><span>添加到主屏幕</span></div>' +
-        '<div class="mcj-pwa-arrow">→</div>' +
-        '<div class="mcj-pwa-step"><div class="mcj-pwa-step-ico">✓</div><span>添加</span></div>' +
-        "</div>" +
-        '<div class="mcj-pwa-hint"><span class="mcj-pwa-chevron">▼</span><span>点击 Safari 分享按钮 → 添加到主屏幕</span></div>'
+        '<ol class="mcj-pwa-steps">' +
+        '<li><span class="mcj-pwa-ico" aria-hidden="true">⇪</span><span>点击 Safari 底部分享按钮</span></li>' +
+        '<li><span class="mcj-pwa-ico" aria-hidden="true">＋</span><span>选择「添加到主屏幕」</span></li>' +
+        '<li><span class="mcj-pwa-ico" aria-hidden="true">✓</span><span>点击右上角「添加」</span></li>' +
+        "</ol>"
       );
     }
     if (platform.android && hasBip) {
-      return (
-        '<div class="mcj-pwa-flow" aria-hidden="true">' +
-        '<div class="mcj-pwa-step"><div class="mcj-pwa-step-ico">◎</div><span>安装妙脆角</span></div>' +
-        '<div class="mcj-pwa-arrow">→</div>' +
-        '<div class="mcj-pwa-step"><div class="mcj-pwa-step-ico">⌂</div><span>出现在主屏幕</span></div>' +
-        "</div>"
-      );
+      // Native install available — keep steps collapsed until user asks.
+      return '<ol class="mcj-pwa-steps" hidden data-mcj-pwa-manual-steps></ol>';
     }
+    // Android / desktop without BIP — compact text steps (no giant icon cards)
     return (
-      '<div class="mcj-pwa-flow" aria-hidden="true">' +
-      '<div class="mcj-pwa-step"><div class="mcj-pwa-step-ico">⋮</div><span>Chrome 菜单</span></div>' +
-      '<div class="mcj-pwa-arrow">→</div>' +
-      '<div class="mcj-pwa-step"><div class="mcj-pwa-step-ico">＋</div><span>安装应用 / 添加到主屏幕</span></div>' +
-      '<div class="mcj-pwa-arrow">→</div>' +
-      '<div class="mcj-pwa-step"><div class="mcj-pwa-step-ico">✓</div><span>确认</span></div>' +
-      "</div>"
+      '<ol class="mcj-pwa-steps">' +
+      '<li><span class="mcj-pwa-ico" aria-hidden="true">⋮</span><span>点击浏览器菜单</span></li>' +
+      '<li><span class="mcj-pwa-ico" aria-hidden="true">＋</span><span>选择「安装应用」或「添加到主屏幕」</span></li>' +
+      '<li><span class="mcj-pwa-ico" aria-hidden="true">✓</span><span>确认安装</span></li>' +
+      "</ol>"
     );
   }
 
   function titles(platform, hasBip) {
     if (platform.iOS) {
       return {
-        title: "把妙脆角装到主屏幕",
-        sub: "打开更快，使用起来更像 App",
-        hint: "点击 Safari 分享按钮 → 添加到主屏幕 → 添加",
+        title: "添加妙脆角到主屏幕",
+        sub: "像 App 一样快速打开",
       };
     }
     if (platform.android && hasBip) {
       return {
-        title: "把妙脆角装到主屏幕",
-        sub: "打开更快，使用起来更像 App",
-        hint: "点击下方「安装妙脆角」，使用系统原生安装提示",
-      };
-    }
-    if (platform.android) {
-      return {
-        title: "把妙脆角装到主屏幕",
-        sub: "打开更快，使用起来更像 App",
-        hint: "打开 Chrome 菜单 → 安装应用 / 添加到主屏幕",
+        title: "添加妙脆角到主屏幕",
+        sub: "像 App 一样快速打开",
       };
     }
     return {
-      title: "把妙脆角装到主屏幕",
-      sub: "打开更快，使用起来更像 App",
-      hint: "使用浏览器菜单中的「安装应用 / 添加到主屏幕」",
+      title: "添加妙脆角到主屏幕",
+      sub: "像 App 一样快速打开",
     };
+  }
+
+  function androidManualStepsHtml() {
+    return (
+      '<ol class="mcj-pwa-steps">' +
+      '<li><span class="mcj-pwa-ico" aria-hidden="true">⋮</span><span>点击浏览器菜单</span></li>' +
+      '<li><span class="mcj-pwa-ico" aria-hidden="true">＋</span><span>选择「安装应用」或「添加到主屏幕」</span></li>' +
+      '<li><span class="mcj-pwa-ico" aria-hidden="true">✓</span><span>确认安装</span></li>' +
+      "</ol>"
+    );
   }
 
   function ensureDom() {
@@ -351,16 +342,17 @@
     rootEl.innerHTML =
       '<div class="mcj-pwa-overlay" data-mcj-pwa-overlay></div>' +
       '<div class="mcj-pwa-sheet" role="dialog" aria-modal="true" aria-labelledby="mcjPwaTitle">' +
+      '<div class="mcj-pwa-handle" aria-hidden="true"></div>' +
       '<button type="button" class="mcj-pwa-close" data-mcj-pwa-close aria-label="关闭">×</button>' +
       '<div class="mcj-pwa-brand">' +
       '<div class="mcj-pwa-logo-wrap" aria-hidden="true">' +
       '<img class="mcj-pwa-logo" src="' +
       logoSrc() +
-      '" alt="" width="56" height="56" decoding="async" fetchpriority="high">' +
+      '" alt="" width="40" height="40" decoding="async">' +
       "</div>" +
       "<div>" +
-      '<h2 id="mcjPwaTitle">把妙脆角装到主屏幕</h2>' +
-      '<p data-mcj-pwa-sub>打开更快，使用起来更像 App</p>' +
+      '<h2 id="mcjPwaTitle">添加妙脆角到主屏幕</h2>' +
+      '<p data-mcj-pwa-sub>像 App 一样快速打开</p>' +
       "</div></div>" +
       '<div data-mcj-pwa-body></div>' +
       '<div class="mcj-pwa-actions" data-mcj-pwa-actions></div>' +
@@ -383,9 +375,11 @@
         dismiss("later");
         return;
       }
-      var ok = e.target.closest("[data-mcj-pwa-ok]");
-      if (ok) {
-        dismiss("ok");
+      var guide = e.target.closest("[data-mcj-pwa-guide]");
+      if (guide) {
+        var body = rootEl.querySelector("[data-mcj-pwa-body]");
+        if (body) body.innerHTML = androidManualStepsHtml();
+        guide.setAttribute("hidden", "true");
         return;
       }
       var install = e.target.closest("[data-mcj-pwa-install]");
@@ -408,21 +402,28 @@
     var body = root.querySelector("[data-mcj-pwa-body]");
     var actions = root.querySelector("[data-mcj-pwa-actions]");
     if (titleEl) titleEl.textContent = t.title;
-    if (subEl) subEl.textContent = t.sub + (t.hint ? " · " + t.hint : "");
-    if (body) body.innerHTML = buildFlow(platform, hasBip);
+    if (subEl) subEl.textContent = t.sub;
+    if (body) {
+      if (platform.iOS) {
+        body.innerHTML = buildSteps(platform, hasBip);
+      } else {
+        // Android / desktop: collapse steps until user taps 查看安装方法
+        body.innerHTML = '<ol class="mcj-pwa-steps" hidden data-mcj-pwa-manual-steps></ol>';
+      }
+    }
     if (actions) {
       if (platform.android && hasBip) {
         actions.innerHTML =
-          '<button type="button" class="mcj-pwa-btn" data-mcj-pwa-later>稍后再说</button>' +
-          '<button type="button" class="mcj-pwa-btn primary" data-mcj-pwa-install>安装妙脆角</button>';
+          '<button type="button" class="mcj-pwa-btn primary" data-mcj-pwa-install>安装妙脆角</button>' +
+          '<button type="button" class="mcj-pwa-btn ghost" data-mcj-pwa-guide>查看安装方法</button>' +
+          '<button type="button" class="mcj-pwa-btn ghost" data-mcj-pwa-later>暂不安装</button>';
       } else if (platform.iOS) {
         actions.innerHTML =
-          '<button type="button" class="mcj-pwa-btn" data-mcj-pwa-later>稍后再说</button>' +
-          '<button type="button" class="mcj-pwa-btn primary" data-mcj-pwa-ok>我知道了</button>';
+          '<button type="button" class="mcj-pwa-btn ghost" data-mcj-pwa-later>暂不安装</button>';
       } else {
         actions.innerHTML =
-          '<button type="button" class="mcj-pwa-btn" data-mcj-pwa-later>稍后再说</button>' +
-          '<button type="button" class="mcj-pwa-btn primary" data-mcj-pwa-ok>我知道了</button>';
+          '<button type="button" class="mcj-pwa-btn primary" data-mcj-pwa-guide>查看安装方法</button>' +
+          '<button type="button" class="mcj-pwa-btn ghost" data-mcj-pwa-later>暂不安装</button>';
       }
     }
   }

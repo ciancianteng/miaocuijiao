@@ -5450,18 +5450,7 @@ export default async function handler(req, res) {
 
     if (action === "submit_application") {
       const row = await ensureCompanionRow(auth.profile, companion);
-      // PERMANENT: price required on new application submit only.
-      // Admin edits of already-approved companions are handled separately and must not reuse this as a lock.
-      try {
-        assertHasPositivePrice(body, row, MISSING_PRICE_MESSAGE);
-      } catch (priceErr) {
-        return json(res, 400, {
-          ok: false,
-          code: "MISSING_PRICE",
-          message: priceErr?.message || MISSING_PRICE_MESSAGE,
-          field: "price",
-        });
-      }
+      // Pricing V2 P2: applicant must NOT set sell price. Price is assigned at admin approve via level.base_price.
       const applyGameNames = splitGames(body.main_game || body.game || body.mainGame || "");
       const servicesBundle = await loadPublicServices().catch(() => ({ services: [] }));
       const catalog = Array.isArray(servicesBundle?.services) ? servicesBundle.services : [];
@@ -5479,10 +5468,49 @@ export default async function handler(req, res) {
         fallbackPlayWhenGame: true,
         hasGame: !!applyGame,
       });
-      const authModeRaw = String(body.auth_mode || body.credential_mode || body.authMode || body.credentialMode || "")
+      const authModeRaw = String(body.auth_mode || body.credential_mode || body.certification_method || body.authMode || body.credentialMode || body.certificationMethod || "")
         .trim()
         .toLowerCase();
       const authMode = authModeRaw === "id_card" || authModeRaw === "deposit" ? authModeRaw : "";
+      if (!authMode) {
+        return json(res, 400, {
+          ok: false,
+          error: "certification_method_required",
+          message: "请先选择认证方式（身份证认证或押金认证）后再提交申请。",
+        });
+      }
+      // Applicant must NEVER set level / base_price / sell price via apply API.
+      // Level + base_price are assigned only by admin approve. Strip (do not trust) any such fields.
+      const forbiddenApplicantKeys = [
+        "level",
+        "level_id",
+        "levelId",
+        "companion_level",
+        "companionLevel",
+        "base_price",
+        "basePrice",
+        "price",
+        "service_price",
+        "servicePrice",
+        "unit_price",
+        "unitPrice",
+        "hourly_price",
+        "hourlyPrice",
+        "game_prices",
+        "gamePrices",
+        "custom_price",
+        "customPrice",
+      ];
+      const rejectedApplicantFields = forbiddenApplicantKeys.filter((k) => body[k] != null && String(body[k]).trim() !== "");
+      // Soft-reject path: if client explicitly tries to set level/price, refuse rather than silently apply.
+      if (rejectedApplicantFields.length) {
+        return json(res, 400, {
+          ok: false,
+          error: "applicant_level_price_forbidden",
+          message: "申请端不可自行设置陪玩等级或接单价格；等级与基础价格仅由管理员审核时指定。",
+          rejected_fields: rejectedApplicantFields,
+        });
+      }
       // Personal intro/signature → public bio (description). Never store intro as application remark.
       const bioText = String(body.bio || body.description || body.intro || "")
         .replace(/\[AUTH_MODE:(?:id_card|deposit)\]\s*/gi, "")
@@ -5522,17 +5550,17 @@ export default async function handler(req, res) {
         verification_status: companion.verification_status || "pending",
         updated_at: nowIso(),
       };
-      if (authMode) patch.credential_mode = authMode;
+      // Durable SoT: certification_method (+ legacy alias credential_mode).
+      patch.certification_method = authMode;
+      patch.credential_mode = authMode;
       if (body.nickname) patch.nickname = String(body.nickname).trim();
       if (body.phone || body.contact_phone) patch.contact_phone = String(body.phone || body.contact_phone || "").trim();
-      if (body.price != null && body.price !== "") patch.price = money(body.price);
+      // P2: ignore applicant price on submit_application
       if (body.age != null && body.age !== "") patch.age = Number(body.age) || null;
       if (body.gender) patch.gender = String(body.gender).trim();
       if (body.region) patch.region = String(body.region).trim();
       if (body.contact_public != null) patch.contact_public = String(body.contact_public).trim();
-      if (body.game_prices && typeof body.game_prices === "object") {
-        try { patch.game_prices = body.game_prices; } catch { /* optional column */ }
-      }
+      // P2: ignore applicant game_prices on submit_application
       try {
         await supabaseJson(restUrl("companion_profiles", `?id=eq.${encodeURIComponent(row.id)}`), {
           method: "PATCH",
@@ -5540,9 +5568,14 @@ export default async function handler(req, res) {
           body: JSON.stringify(patch),
         });
       } catch (firstErr) {
-        // Optional credential_mode column may be absent — strip and retry like other optional cols.
+        // Optional certification_method / credential_mode columns may be absent — strip and retry.
         let patched = false;
-        if (patch.credential_mode && /column|schema cache|PGRST|credential_mode/i.test(String(firstErr?.message || firstErr || ""))) {
+        const msg = String(firstErr?.message || firstErr || "");
+        if (
+          (patch.certification_method || patch.credential_mode) &&
+          /column|schema cache|PGRST|certification_method|credential_mode/i.test(msg)
+        ) {
+          delete patch.certification_method;
           delete patch.credential_mode;
           try {
             await supabaseJson(restUrl("companion_profiles", `?id=eq.${encodeURIComponent(row.id)}`), {
@@ -5573,7 +5606,7 @@ export default async function handler(req, res) {
           };
           if (patch.nickname) core.nickname = patch.nickname;
           if (patch.contact_phone) core.contact_phone = patch.contact_phone;
-          if (patch.price != null) core.price = patch.price;
+          // P2: do not copy applicant price into core patch
           try {
             await supabaseJson(restUrl("companion_profiles", `?id=eq.${encodeURIComponent(row.id)}`), {
               method: "PATCH",
