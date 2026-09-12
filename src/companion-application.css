@@ -2,8 +2,29 @@
 .companion-apply-guide-card{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:22px 24px;border-radius:22px;background:linear-gradient(135deg,rgba(255,255,255,.055),rgba(255,255,255,.018)),rgba(17,10,22,.82);border:1px solid rgba(243,168,203,.26);box-shadow:0 0 26px rgba(243,168,203,.12)}
 .companion-apply-guide-card h2{margin:0 0 8px;color:#fff5fa;font-size:24px}
 .companion-apply-guide-card p{margin:0;color:#d9bfcd;font-weight:850;line-height:1.55}
-.companion-apply-page{min-height:100vh;background:radial-gradient(circle at 18% 10%,rgba(255,91,170,.16),transparent 34%),linear-gradient(180deg,#07050a,#100812 48%,#060407);color:#fff5fa;padding:24px;font-family:"Microsoft YaHei UI",Inter,sans-serif}
-.apply-shell{width:min(1100px,100%);margin:0 auto}
+/*
+  Layout ownership (do NOT put page inset on body):
+  - body.companion-apply-page: full-bleed canvas only (margin/padding 0).
+    boss-header.js injects header.mcj-boss-header as body.firstChild; any
+    body padding-top / UA margin creates the visible blank band ABOVE the header.
+  - header.mcj-boss-header (+ mcj-safe-area.css): sole owner of safe-area-inset-top.
+  - main.apply-shell: content inset for 返回首页 / hero / steps (all STEPs share this).
+*/
+.companion-apply-page{
+  box-sizing:border-box;
+  min-height:100vh;
+  margin:0;
+  padding:0;
+  background:radial-gradient(circle at 18% 10%,rgba(255,91,170,.16),transparent 34%),linear-gradient(180deg,#07050a,#100812 48%,#060407);
+  color:#fff5fa;
+  font-family:"Microsoft YaHei UI",Inter,sans-serif;
+}
+.apply-shell{
+  box-sizing:border-box;
+  width:min(1100px,100%);
+  margin:0 auto;
+  padding:24px;
+}
 .apply-top{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:20px}
 .apply-brand{display:flex;align-items:center;gap:12px;color:#fff;text-decoration:none;font-weight:1000}.apply-brand img{width:48px;height:48px;border-radius:50%;object-fit:cover;border:1px solid rgba(255,220,235,.36)}
 .apply-hero{border:1px solid rgba(243,168,203,.28);border-radius:28px;background:linear-gradient(145deg,rgba(33,18,40,.82),rgba(8,5,13,.92));box-shadow:0 0 38px rgba(243,168,203,.14),0 24px 80px rgba(0,0,0,.45);padding:28px;margin-bottom:18px}
@@ -37,7 +58,8 @@
   .apply-steps{position:static;display:flex;overflow:auto}
   .apply-step{flex:0 0 auto;width:auto}
   .apply-grid,.mcj-app-detail{grid-template-columns:1fr}
-  .companion-apply-page{padding:10px 16px 16px}
+  .companion-apply-page{margin:0;padding:0}
+  .apply-shell{padding:10px 16px 16px}
   .apply-hero{margin-bottom:14px;padding:22px 18px}
   .apply-hero h1{font-size:26px}
 }
@@ -94,8 +116,9 @@
   .apply-actions{flex-wrap:nowrap}
   .apply-actions .apply-btn{flex:1 1 0;min-width:0}
   .upload-card,.apply-preview{min-height:148px;height:148px}
-  /* Keep tighter top after hiding duplicate .apply-brand on mobile. */
-  .companion-apply-page{padding:10px 16px 16px;overflow-x:hidden}
+  /* Content inset stays on main — never reintroduce body padding-top. */
+  .companion-apply-page{margin:0;padding:0;overflow-x:hidden}
+  .apply-shell{padding:10px 16px 16px}
   .apply-brand{display:none!important}
   .apply-top{
     align-items:center;
