@@ -11,7 +11,7 @@
    - No edits to `server/api/auth.js`, `server/api/_mail.js`, `server/api/_otp-store.js` in the Performance commits.
 
 2. **Production probe (2026-09-12, this agent):**
-   - `POST /api/auth` body `{ action: "send_login_otp", email: "<unknown>", role: "boss" }` → **HTTP 200** with anti-enumeration message + `retryAfterSec: 60`.
+   - `POST /api/auth` body `{ action: "send_login_otp", email: "<unknown>", role: "boss" }` → **HTTP 200** with anti-enumeration success + `retryAfterSec: 60` (matches `server/api/auth.js` action name).
    - Wrong payload shapes (`purpose: login` without action) → 400 "请输入邮箱和密码。" — client contract issue, not perf regression.
 
 3. **OTP delivery reliability was fixed on main via #239** (`925d925` / merge `faf64fe`) before this perf branch was cut. Perf branch is based on that merge.
