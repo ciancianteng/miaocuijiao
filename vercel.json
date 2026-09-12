@@ -91,6 +91,15 @@
       ]
     },
     {
+      "source": "/api/platform/services",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=30, s-maxage=60, stale-while-revalidate=120" },
+        { "key": "CDN-Cache-Control", "value": "public, max-age=30, s-maxage=60, stale-while-revalidate=120" },
+        { "key": "Vercel-CDN-Cache-Control", "value": "public, max-age=30, s-maxage=60, stale-while-revalidate=120" },
+        { "key": "X-Content-Type-Options", "value": "nosniff" }
+      ]
+    },
+    {
       "source": "/",
       "headers": [
         { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" },

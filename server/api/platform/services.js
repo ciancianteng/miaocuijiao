@@ -138,6 +138,8 @@ function filterByScope(services, scope) {
 }
 
 export default async function handler(req, res) {
+  // Public read-mostly catalog — short edge cache. Never used for auth/order/OTP.
+  res.setHeader("Cache-Control", "public, max-age=30, s-maxage=60, stale-while-revalidate=120");
   if (req.method !== "GET") {
     res.setHeader("Allow", "GET");
     return json(res, 405, { ok: false, message: "Method Not Allowed" });

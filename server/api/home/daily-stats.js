@@ -209,11 +209,15 @@ export function buildHomeDailyStatsPayload({
 // Re-export for offline verification.
 export { buildDashboardStats, localDateYmd, PLATFORM_STATS_TIMEZONE };
 
+/** Process-local warm cache — complements CDN s-maxage (same isolate / warm lambda). */
+const MEM_TTL_MS = 45_000;
+const memCache = globalThis.__mcjDailyStatsMem || (globalThis.__mcjDailyStatsMem = { at: 0, key: "", payload: null });
+
 export default async function handler(req, res) {
   const timeZone = process.env.HOME_STATS_TIMEZONE || PLATFORM_STATS_TIMEZONE;
   const now = new Date();
   const date = localDateYmd(now, timeZone);
-  // Phase 1 perf: short public cache — stats are aggregate + timezone-day scoped.
+  // Phase 1+2 perf: short public cache — stats are aggregate + timezone-day scoped.
   // vercel.json must allow this path (see /api/home/daily-stats header override).
   res.setHeader("Cache-Control", "public, max-age=30, s-maxage=60, stale-while-revalidate=120");
   res.setHeader("Content-Type", "application/json; charset=utf-8");
@@ -234,6 +238,12 @@ export default async function handler(req, res) {
     });
   }
 
+  const cacheKey = `${date}|${timeZone}`;
+  if (memCache.payload && memCache.key === cacheKey && Date.now() - memCache.at < MEM_TTL_MS) {
+    res.setHeader("X-MCJ-Mem-Cache", "HIT");
+    return res.status(200).json(memCache.payload);
+  }
+
   try {
     const [profiles, orders] = await Promise.all([loadProfiles(), loadOrders()]);
     const [onlineCompanions, reviews] = await Promise.all([
@@ -248,6 +258,10 @@ export default async function handler(req, res) {
       now,
       timeZone,
     });
+    memCache.at = Date.now();
+    memCache.key = cacheKey;
+    memCache.payload = payload;
+    res.setHeader("X-MCJ-Mem-Cache", "MISS");
     return res.status(200).json(payload);
   } catch (error) {
     return res.status(error.status || 500).json({

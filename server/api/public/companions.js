@@ -346,15 +346,27 @@ function summarizeReviews(list = []) {
   };
 }
 
-async function attachReviews(companions = []) {
+/**
+ * @param {object[]} companions
+ * @param {{ summaryOnly?: boolean }} [opts]
+ *   summaryOnly (hall list): ratings aggregate only — skip boss/order joins + review bodies.
+ *   Detail path keeps full reviews for the companion detail page.
+ */
+async function attachReviews(companions = [], opts = {}) {
+  const summaryOnly = !!opts.summaryOnly;
   const ids = [...new Set((companions || []).map((c) => c.id || c.uid).filter(Boolean))];
   if (!ids.length) return companions || [];
   let rows = [];
   try {
+    // List: lighter select + lower limit — hall only needs rating aggregates.
+    const select = summaryOnly
+      ? "id,companion_id,order_id,rating,status,created_at"
+      : "id,companion_id,boss_id,order_id,rating,content,status,created_at";
+    const limit = summaryOnly ? 800 : 3000;
     rows = await supabaseJson(
       restUrl(
         "companion_reviews",
-        `?companion_id=in.(${ids.map(encodeURIComponent).join(",")})&or=(status.eq.published,status.is.null)&order=created_at.desc&limit=3000&select=id,companion_id,boss_id,order_id,rating,content,status,created_at`
+        `?companion_id=in.(${ids.map(encodeURIComponent).join(",")})&or=(status.eq.published,status.is.null)&order=created_at.desc&limit=${limit}&select=${select}`
       ),
       { headers: headers() }
     );
@@ -371,6 +383,23 @@ async function attachReviews(companions = []) {
     byOrder.set(key, r);
   }
   const deduped = [...byOrder.values()];
+  const byCid = {};
+  for (const r of deduped) {
+    const cid = r.companion_id;
+    if (!cid) continue;
+    if (!byCid[cid]) byCid[cid] = [];
+    byCid[cid].push(r);
+  }
+
+  if (summaryOnly) {
+    return (companions || []).map((c) => {
+      const cid = c.id || c.uid;
+      const list = byCid[cid] || [];
+      const summary = summarizeReviews(list);
+      return { ...c, ...summary, reviews: [] };
+    });
+  }
+
   const bossIds = [...new Set(deduped.map((r) => r.boss_id).filter(Boolean))];
   const orderIds = [...new Set(deduped.map((r) => r.order_id).filter(Boolean))];
   let bosses = {};
@@ -389,15 +418,13 @@ async function attachReviews(companions = []) {
     ).catch(() => []);
     orders = Object.fromEntries((orderRows || []).map((o) => [o.id, o]));
   }
-  const byCid = {};
-  for (const r of deduped) {
-    const cid = r.companion_id;
-    if (!cid) continue;
-    // Never attach a review to the wrong companion even if companion_id was corrupted.
-    const order = orders[r.order_id] || {};
-    if (order.companion_id && String(order.companion_id) !== String(cid)) continue;
-    if (!byCid[cid]) byCid[cid] = [];
-    byCid[cid].push(r);
+  // Detail: drop reviews whose order.companion_id disagrees (same as before).
+  for (const cid of Object.keys(byCid)) {
+    byCid[cid] = byCid[cid].filter((r) => {
+      const order = orders[r.order_id] || {};
+      if (order.companion_id && String(order.companion_id) !== String(cid)) return false;
+      return true;
+    });
   }
   return (companions || []).map((c) => {
     const cid = c.id || c.uid;
@@ -461,34 +488,42 @@ async function mediaExtrasByProfile(profileIds = []) {
       throw e;
     }
   }
-  const byProfile = {};
-  for (const row of Array.isArray(rows) ? rows : []) {
-    const pid = row.companion_profile_id;
-    if (!pid) continue;
-    if (!byProfile[pid]) byProfile[pid] = { avatarUrl: "", coverUrl: "", voiceUrl: "", videoUrl: "", showcaseVideoUrl: "", gallery: [] };
-    const bucket = String(row.storage_bucket || "").trim();
-    const path = String(row.storage_path || "").trim();
-    if (!bucket || !path) continue;
-    const status = String(row.status || "pending").toLowerCase();
-    const ctype = String(row.content_type || "").toLowerCase();
-    const isVideo =
-      row.media_type === "video" ||
-      (row.media_type === "gallery" && /^video\//.test(ctype)) ||
-      (row.media_type === "gallery" && /\/video\//i.test(path));
-    // Boss/public: voice + video only after approve (existing review rule).
-    if ((row.media_type === "voice" || isVideo) && status && status !== "approved") continue;
-    let url = "";
-    try {
-      if (bucket === "companion-public" || /public/i.test(bucket)) {
-        url = publicObjectUrl(bucket, path);
-      } else {
-        url = await createSignedUrl(bucket, path, 60 * 60 * 12);
+  const list = Array.isArray(rows) ? rows : [];
+  // Phase 2: resolve all signed URLs in parallel (was sequential N×RTT per media row).
+  const resolved = await Promise.all(
+    list.map(async (row) => {
+      const pid = row.companion_profile_id;
+      const bucket = String(row.storage_bucket || "").trim();
+      const path = String(row.storage_path || "").trim();
+      if (!pid || !bucket || !path) return null;
+      const status = String(row.status || "pending").toLowerCase();
+      const ctype = String(row.content_type || "").toLowerCase();
+      const isVideo =
+        row.media_type === "video" ||
+        (row.media_type === "gallery" && /^video\//.test(ctype)) ||
+        (row.media_type === "gallery" && /\/video\//i.test(path));
+      // Boss/public: voice + video only after approve (existing review rule).
+      if ((row.media_type === "voice" || isVideo) && status && status !== "approved") return null;
+      let url = "";
+      try {
+        if (bucket === "companion-public" || /public/i.test(bucket)) {
+          url = publicObjectUrl(bucket, path);
+        } else {
+          url = await createSignedUrl(bucket, path, 60 * 60 * 12);
+        }
+      } catch (err) {
+        console.warn("[public/companions] media URL resolve failed", bucket, path, err?.message || err);
+        return null;
       }
-    } catch (err) {
-      console.warn("[public/companions] media URL resolve failed", bucket, path, err?.message || err);
-      continue;
-    }
-    if (!url || !/^https?:\/\//i.test(url)) continue;
+      if (!url || !/^https?:\/\//i.test(url)) return null;
+      return { row, pid, url, isVideo };
+    })
+  );
+  const byProfile = {};
+  for (const item of resolved) {
+    if (!item) continue;
+    const { row, pid, url, isVideo } = item;
+    if (!byProfile[pid]) byProfile[pid] = { avatarUrl: "", coverUrl: "", voiceUrl: "", videoUrl: "", showcaseVideoUrl: "", gallery: [] };
     if (row.media_type === "avatar" && !byProfile[pid].avatarUrl) byProfile[pid].avatarUrl = url;
     if (row.media_type === "cover" && !byProfile[pid].coverUrl) byProfile[pid].coverUrl = url;
     if (row.media_type === "gallery" && !isVideo) {
@@ -686,7 +721,8 @@ async function loadCompanions(id = "") {
   }
 
   const mapped = (await Promise.all((companions || []).map((row) => enrichOne(row)))).filter(Boolean);
-  return attachReviews(mapped);
+  // Hall list: summaryOnly (rating aggregates). Detail keeps full review bodies + joins.
+  return attachReviews(mapped, { summaryOnly: !String(id || "").trim() });
 }
 
 export default async function handler(req, res) {

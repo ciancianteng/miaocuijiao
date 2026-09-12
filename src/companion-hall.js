@@ -575,6 +575,7 @@
   function render() {
     var list = document.getElementById("playerList");
     if (!list) return;
+    list.removeAttribute("aria-busy");
     var items = filtered();
     var pages = Math.max(1, Math.ceil(items.length / PER_PAGE));
     if (state.page > pages) state.page = pages;
@@ -668,7 +669,20 @@
       });
     });
   }
+  
+  function paintHallSkeleton() {
+    var list = document.getElementById("playerList");
+    if (!list) return;
+    if (list.querySelector(".player-card, .hall-skel-card")) return;
+    var card = '<article class="player-card hall-skel-card" aria-hidden="true"><div class="companion-card-media hall-skel-media"></div><div class="player-info"><div class="hall-skel-line lg"></div><div class="hall-skel-line"></div><div class="hall-skel-line short"></div></div></article>';
+    list.innerHTML = card + card + card + card;
+    list.setAttribute("aria-busy", "true");
+    var count = document.getElementById("resultCount");
+    if (count) count.textContent = "正在加载陪玩…";
+  }
+
   async function start() {
+    paintHallSkeleton();
     var count = document.getElementById("resultCount");
     if (count) count.textContent = "正在加载陪玩…";
     // Do not auto-seed preview fixtures into the public hall path.
