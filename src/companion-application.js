@@ -21,12 +21,16 @@
   var liveVoiceObjectUrl = "";
 
   var steps = [
+    "认证方式",
+    "陪玩制度",
     "基本资料",
     "游戏资料",
     "证明资料",
     "确认并提交"
   ];
   var stepLabels = [
+    "选择认证方式",
+    "阅读陪玩制度",
     "填写基本资料",
     "填写游戏资料",
     "上传证明资料",
@@ -124,7 +128,9 @@
       uploads: {},
       gameCards: [],
       voice: {},
+      identity: {},
       rulesAgreement: {},
+      certification_method: "",
       ownerUserId: "",
     };
   }
@@ -390,21 +396,37 @@
       });
     }
     
-    // Pricing V2 P2: migrate legacy 5-step draft indices -> 4-step
-    if (draft && draft.step != null) {
+    // Apply flow V3: cert method → rules → basic → games → proof → confirm
+    if (draft && draft._applyStepsV3 !== true) {
       var legacyStep = Number(draft.step || 0) || 0;
-      // old: 0 rules,1 basic,2 game,3 upload,4 auth
-      // new: 0 rules+basic,1 game,2 upload+auth,3 confirm
-      if (draft._p2StepMigrated !== true) {
-        if (legacyStep <= 0) draft.step = 0;
-        else if (legacyStep === 1) draft.step = 0;
-        else if (legacyStep === 2) draft.step = 1;
-        else if (legacyStep === 3 || legacyStep === 4) draft.step = 2;
-        else draft.step = Math.min(3, legacyStep);
-        draft._p2StepMigrated = true;
+      var mode0 = String(((draft.identity || {}).authMode) || draft.certification_method || "").trim();
+      if (draft._p2StepMigrated === true) {
+        // prior 4-step: 0 rules+basic, 1 game, 2 upload+auth, 3 confirm
+        if (!mode0) draft.step = 0;
+        else if (legacyStep <= 0) draft.step = ((draft.rulesAgreement || {}).accepted) ? 2 : 1;
+        else if (legacyStep === 1) draft.step = 3;
+        else if (legacyStep === 2) draft.step = 4;
+        else draft.step = 5;
+      } else {
+        // older 5-step: 0 rules,1 basic,2 game,3 upload,4 auth
+        if (!mode0) draft.step = 0;
+        else if (legacyStep <= 0) draft.step = ((draft.rulesAgreement || {}).accepted) ? 2 : 1;
+        else if (legacyStep === 1) draft.step = 2;
+        else if (legacyStep === 2) draft.step = 3;
+        else if (legacyStep === 3 || legacyStep === 4) draft.step = 4;
+        else draft.step = 5;
       }
-      draft.step = Math.max(0, Math.min(steps.length - 1, Number(draft.step || 0) || 0));
+      draft._applyStepsV3 = true;
+      draft._p2StepMigrated = true;
     }
+    draft.identity = Object.assign({}, draft.identity || {});
+    if (draft.certification_method && !draft.identity.authMode) {
+      draft.identity.authMode = draft.certification_method;
+    }
+    if (draft.identity.authMode && !draft.certification_method) {
+      draft.certification_method = draft.identity.authMode;
+    }
+    draft.step = Math.max(0, Math.min(steps.length - 1, Number(draft.step || 0) || 0));
     // Drop any leftover applicant price fields from local draft (UI must not revive them)
     if (draft && draft.data) {
       delete draft.data.hourlyPrice;
@@ -583,23 +605,28 @@
     var voice = draft.voice || {};
     var identity = draft.identity || {};
     var missing = [];
+    var mode = String(identity.authMode || draft.certification_method || "").trim();
     if (index === 0) {
-      // Step1 基本资料 = 制度同意 + 基本资料
-
+      // STEP1: choose certification method first
+      if (mode !== "id_card" && mode !== "deposit") missing.push("选择认证方式（身份证或押金）");
+      return missing;
+    }
+    if (index === 1) {
+      // STEP2: rules accordion + agree
       if (!publishedRule()) missing.push("后台暂未发布陪玩制度");
       if (!((draft.rulesAgreement || {}).accepted)) missing.push("阅读并同意陪玩制度");
-      
-
+      return missing;
+    }
+    if (index === 2) {
+      // STEP3: basic profile
       [["nickname", "昵称"], ["age", "年龄"], ["gender", "性别"], ["region", "地区"], ["phone", "联系电话"], ["email", "邮箱"]].forEach(function (item) {
         if (!hasText(data, item[0])) missing.push(item[1]);
       });
       if (!hasArray(data, "personalTags")) missing.push("个人标签");
-      
       return missing;
     }
-    if (index === 1) {
-      // Step2 游戏资料 — 不再要求接单价格
-
+    if (index === 3) {
+      // STEP4: game profile — no applicant prices
       if (!hasText(data, "gameNickname")) missing.push("游戏昵称");
       if (!hasArray(data, "mainGames")) missing.push("主玩游戏");
       if (!hasArray(data, "positions")) missing.push("擅长位置");
@@ -607,19 +634,14 @@
       [["rank", "游戏段位"], ["voiceType", "声线"], ["onlineStart", "常在线开始时间"], ["onlineEnd", "常在线结束时间"], ["intro", "自我介绍"]].forEach(function (item) {
         if (!hasText(data, item[0])) missing.push(item[1]);
       });
-      
       return missing;
     }
-    if (index === 2) {
-      // Step3 证明资料 = 上传 + 认证
-
+    if (index === 4) {
+      // STEP5: uploads + voice + cert materials (branch by STEP1)
       if (!hasDurableUpload(uploads.avatar)) missing.push("头像");
       if (!(voice.confirmed && (hasDurableUpload(voice) || hasDurableUpload(voice.url) || voice.storagePath || voice.path))) {
         missing.push("试音并确认使用");
       }
-      
-
-      var mode = String(identity.authMode || "").trim();
       if (mode !== "id_card" && mode !== "deposit") missing.push("选择认证方式（身份证或押金二选一）");
       if (mode === "id_card") {
         if (!hasDurableUpload(identity.idFront)) missing.push("证件正面");
@@ -664,12 +686,11 @@
       } else if (settleMethod) {
         if (!hasText(identity, "settlementAccount")) missing.push(settlementAccountLabel(settleMethod));
       }
-      
       return missing;
     }
-    if (index === 3) {
-      // Step4 确认并提交：前面三步都必须完成
-      [0, 1, 2].forEach(function (i) {
+    if (index === 5) {
+      // STEP6 confirm: all prior steps must be complete
+      [0, 1, 2, 3, 4].forEach(function (i) {
         missingForStep(i, draft).forEach(function (item) {
           if (missing.indexOf(item) < 0) missing.push(item);
         });
@@ -1365,7 +1386,7 @@
       backToBoss +
       tabs +
       (mode === "register" ? registerPanel : loginTabs + loginPwd + loginOtp + authMessageHtml()) +
-      '<p class="apply-note">新用户：邮箱 → 发送验证码 → 验证成功 → 设置密码与昵称 → 注册并进入 1/4 申请流程。</p>' +
+      '<p class="apply-note">新用户：邮箱 → 发送验证码 → 验证成功 → 设置密码与昵称 → 注册并进入 1/6 申请流程。</p>' +
       "</section>"
     );
   }
@@ -1612,6 +1633,50 @@
     return '<div class="form-field full tag-picker" data-tag-picker="' + esc(fieldName) + '" data-tag-limit="' + (limit || 99) + '"><span>' + esc(label) + '</span>' + body + '<small>已选择 <em data-tag-count="' + esc(fieldName) + '">' + selected.length + '</em> / ' + (limit || 99) + '</small></div>';
   }
 
+  function splitRulesChapters(rule) {
+    var body = String((rule && rule.body) || "").replace(/\r\n/g, "\n").trim();
+    var chapters = [];
+    var defaults = [
+      { id: "basic", title: "基本接单规则" },
+      { id: "service", title: "服务规范" },
+      { id: "forbid", title: "禁止行为" },
+      { id: "income", title: "收益与结算" },
+      { id: "penalty", title: "违规处理" }
+    ];
+    if (!body) {
+      return defaults.map(function (d) {
+        return { id: d.id, title: d.title, body: "暂无内容" };
+      });
+    }
+    // Split on numbered / titled lines when possible
+    var parts = body.split(/\n(?=(?:[一二三四五六七八九十]+[、.．]|第[一二三四五六七八九十\d]+[章节条]|【[^】]+】|\d+[\.、]\s*\S))/);
+    if (parts.length >= 2) {
+      parts.forEach(function (part, i) {
+        var lines = String(part || "").trim().split("\n");
+        var title = String(lines[0] || "").trim().replace(/^【|】$/g, "").slice(0, 40) || ("章节 " + (i + 1));
+        var content = lines.slice(1).join("\n").trim() || String(part || "").trim();
+        chapters.push({ id: "ch" + i, title: title, body: content });
+      });
+    } else {
+      // Chunk long body into ~5 accordion panels
+      var paras = body.split(/\n{2,}/).filter(Boolean);
+      var chunkSize = Math.max(1, Math.ceil(paras.length / defaults.length));
+      defaults.forEach(function (d, i) {
+        var slice = paras.slice(i * chunkSize, (i + 1) * chunkSize);
+        if (!slice.length && i > 0) return;
+        chapters.push({
+          id: d.id,
+          title: d.title,
+          body: (slice.join("\n\n") || (i === 0 ? body : "暂无内容")).trim()
+        });
+      });
+      if (!chapters.length) chapters.push({ id: "all", title: "陪玩制度全文", body: body });
+    }
+    if (rule && rule.notes) chapters.push({ id: "notes", title: "注意事项", body: String(rule.notes) });
+    if (rule && rule.penaltyRules) chapters.push({ id: "penaltyExtra", title: "处罚规则", body: String(rule.penaltyRules) });
+    if (rule && rule.depositRules) chapters.push({ id: "depositExtra", title: "退款与押金规则", body: String(rule.depositRules) });
+    return chapters;
+  }
   function rulesHtml(draft) {
     var rule = publishedRule();
     var agreed = draft.rulesAgreement && draft.rulesAgreement.accepted;
@@ -1622,11 +1687,23 @@
     var updated = rule.updatedAt
       ? ('<p class="rules-updated">最后更新：' + esc(formatRulesUpdatedAt(rule.updatedAt)) + (rule.version ? ' · 版本 ' + esc(rule.version) : '') + '</p>')
       : (rule.version ? '<p class="rules-updated">版本 ' + esc(rule.version) + '</p>' : '');
-    var extras = '';
-    if (rule.notes) extras += '<b>注意事项</b><pre>' + esc(rule.notes) + '</pre>';
-    if (rule.penaltyRules) extras += '<b>处罚规则</b><pre>' + esc(rule.penaltyRules) + '</pre>';
-    if (rule.depositRules) extras += '<b>退款与押金规则</b><pre>' + esc(rule.depositRules) + '</pre>';
-    return '<section class="apply-panel apply-rules-card"><h2>阅读陪玩制度</h2><div class="rules-reader"><h3>' + esc(rule.title) + '</h3><p>' + esc(rule.subtitle || "") + '</p>' + updated + '<pre>' + esc(rule.body || "") + '</pre>' + (extras ? '<div class="rules-extra">' + extras + '</div>' : '') + '</div><div class="agree-bar"><label class="agree-row"><input type="checkbox" data-rule-agree ' + (agreed ? "checked" : "") + '><span>我已阅读并同意陪玩制度</span></label></div></section>';
+    var chapters = splitRulesChapters(rule);
+    var openId = String((draft.ui || {}).rulesOpenId || (chapters[0] && chapters[0].id) || "");
+    var accordion = chapters.map(function (ch, i) {
+      var open = openId ? String(ch.id) === openId : i === 0;
+      return (
+        '<div class="apply-rules-acc-item' + (open ? " is-open" : "") + '" data-rules-acc="' + esc(ch.id) + '">' +
+        '<button type="button" class="apply-rules-acc-head" data-rules-acc-toggle="' + esc(ch.id) + '" aria-expanded="' + (open ? "true" : "false") + '">' +
+        '<span>' + esc(ch.title) + '</span><i class="apply-rules-chevron" aria-hidden="true"></i></button>' +
+        '<div class="apply-rules-acc-body"' + (open ? "" : " hidden") + '><pre>' + esc(ch.body || "") + "</pre></div></div>"
+      );
+    }).join("");
+    return (
+      '<section class="apply-panel apply-rules-card"><h2>阅读陪玩制度</h2>' +
+      '<div class="rules-reader"><h3>' + esc(rule.title) + '</h3><p>' + esc(rule.subtitle || "") + "</p>" + updated +
+      '<div class="apply-rules-accordion" data-rules-accordion>' + accordion + "</div></div>" +
+      '<div class="agree-bar"><label class="agree-row"><input type="checkbox" data-rule-agree ' + (agreed ? "checked" : "") + '><span>我已阅读并同意陪玩制度</span></label></div></section>'
+    );
   }
   function basicHtml(data) {
     return '<section class="apply-panel"><h2>填写基本资料</h2><form class="apply-grid">' +
@@ -1956,14 +2033,24 @@
     );
   }
 
+  function certMethodHtml(draft) {
+    var id = draft.identity || {};
+    var mode = String(id.authMode || draft.certification_method || "").trim();
+    return (
+      '<section class="apply-panel apply-cert-method"><h2>请选择认证方式</h2>' +
+      '<p class="apply-note full">这是申请的第一步。请先选择一种认证方式，选择后才能进入下一步。</p>' +
+      '<div class="apply-cert-cards">' +
+      '<button class="apply-cert-card' + (mode === "id_card" ? " is-selected" : "") + '" type="button" data-auth-mode="id_card" aria-pressed="' + (mode === "id_card" ? "true" : "false") + '">' +
+      "<h3>身份证认证</h3><p>提交身份证资料进行认证</p><strong>" + (mode === "id_card" ? "已选择" : "点击选择") + "</strong></button>" +
+      '<button class="apply-cert-card' + (mode === "deposit" ? " is-selected" : "") + '" type="button" data-auth-mode="deposit" aria-pressed="' + (mode === "deposit" ? "true" : "false") + '">' +
+      "<h3>押金认证</h3><p>使用押金方式完成认证</p><strong>" + (mode === "deposit" ? "已选择" : "点击选择") + "</strong></button>" +
+      "</div></section>"
+    );
+  }
   function identityHtml(draft) {
     var id = draft.identity || {};
-    var mode = String(id.authMode || "").trim();
-    var choice =
-      '<div class="apply-split">' +
-      '<button class="apply-subcard" type="button" data-auth-mode="id_card" aria-pressed="' + (mode === "id_card" ? "true" : "false") + '"><h3>身份证认证</h3><p>上传证件正反面完成认证。选择后无需缴纳押金。</p><strong>' + (mode === "id_card" ? "已选择" : "点击选择") + "</strong></button>" +
-      '<button class="apply-subcard" type="button" data-auth-mode="deposit" aria-pressed="' + (mode === "deposit" ? "true" : "false") + '"><h3>押金认证</h3><p>按平台收款账号支付押金并上传凭证。选择后无需上传身份证。</p><strong>' + (mode === "deposit" ? "已选择" : "点击选择") + "</strong></button>" +
-      "</div>";
+    var mode = String(id.authMode || draft.certification_method || "").trim();
+    var modeLabel = mode === "id_card" ? "身份证认证" : mode === "deposit" ? "押金认证" : "未选择";
     var modeForm = "";
     if (mode === "id_card") {
       modeForm =
@@ -1974,6 +2061,8 @@
         "</form></div>";
     } else if (mode === "deposit") {
       modeForm = depositPayPanelHtml(id);
+    } else {
+      modeForm = '<div class="apply-subcard"><p class="apply-note">请先返回第一步选择认证方式。</p></div>';
     }
     var settlement =
       mode === "id_card" || mode === "deposit"
@@ -1985,14 +2074,12 @@
               var split = splitSettlementBankFields(
                 id.settlementBank || id.bankName || ""
               );
-              // Prefer explicit draft select/other when already set (e.g. mid-edit「其他」).
               var bankSelect = String(id.settlementBank || "").trim();
               var bankOther = String(id.settlementBankOther || "").trim();
               if (!bankSelect && (id.bankName || split.settlementBank)) {
                 bankSelect = split.settlementBank;
                 if (!bankOther) bankOther = split.settlementBankOther;
               } else if (bankSelect && SETTLEMENT_BANKS.indexOf(bankSelect) < 0) {
-                // Draft held a free-text name as settlementBank — coerce to 其他.
                 bankOther = bankOther || bankSelect;
                 bankSelect = SETTLEMENT_BANK_OTHER;
               }
@@ -2035,21 +2122,22 @@
               selectField("settlementMethod", "结款方式", method, SETTLEMENT_METHODS) +
               bankBlock +
               accountBlock +
-              '</form><div class="deposit-status"><strong>审核通过后即可成为陪玩</strong><p>认证方式为二选一，审核对应方式通过后即可接单。' +
+              '</form><div class="deposit-status"><strong>审核通过后即可成为陪玩</strong><p>当前认证方式：' +
+              esc(modeLabel) +
+              "。" +
               hint +
               "</p></div></div>"
             );
           })()
         : "";
     return (
-      '<section class="apply-panel"><h2>选择认证方式</h2><p class="apply-note full">请先选择一种认证方式（身份证认证 或 押金认证，二选一）。结款资料为必填项。</p>' +
-      choice +
+      '<section class="apply-panel"><h2>证明与认证资料</h2>' +
+      '<p class="apply-note full">认证方式：<b>' + esc(modeLabel) + "</b>（在第一步已选择，如需更改请返回第一步）</p>" +
       modeForm +
       settlement +
       "</section>"
     );
   }
-  
   function confirmHtml(draft) {
     draft = draft || readDraft();
     var data = draft.data || {};
@@ -2085,11 +2173,11 @@
   }
 
   function stepHtml(index, draft) {
-    if (index === 0) {
-      return rulesHtml(draft) + basicHtml(draft.data || {});
-    }
-    if (index === 1) return gameHtml(draft.data || {});
-    if (index === 2) return uploadHtml(draft) + identityHtml(draft);
+    if (index === 0) return certMethodHtml(draft);
+    if (index === 1) return rulesHtml(draft);
+    if (index === 2) return basicHtml(draft.data || {});
+    if (index === 3) return gameHtml(draft.data || {});
+    if (index === 4) return uploadHtml(draft) + identityHtml(draft);
     return confirmHtml(draft);
   }
   function statusNotice() {
@@ -2181,9 +2269,9 @@
     });
     // File uploads are handled immediately by MCJUpload → Storage; do not stash data URLs here.
     Array.prototype.slice.call(root.querySelectorAll("select[name],input[name]:not([type=file]),textarea[name]")).forEach(function (el) {
-      if (step === 2) identity[el.name] = el.value.trim ? el.value.trim() : el.value;
+      if (step === 4) identity[el.name] = el.value.trim ? el.value.trim() : el.value;
     });
-    if (step === 2) {
+    if (step === 4) {
       // Keep bankName as the effective persisted label (dropdown value or「其他」custom text).
       if (isBankSettlementMethod(identity.settlementMethod)) {
         identity.bankName = effectiveSettlementBankName(identity);
@@ -2435,6 +2523,7 @@
         contact_public: draft.data.contactPublic || "",
         auth_mode: authMode,
         credential_mode: authMode,
+        certification_method: authMode,
       });
     });
     chain = chain.then(function () {
@@ -3944,6 +4033,18 @@
         }
         return;
       }
+      var rulesAccBtn = e.target.closest("[data-rules-acc-toggle]");
+      if (rulesAccBtn) {
+        e.preventDefault();
+        var accId = String(rulesAccBtn.getAttribute("data-rules-acc-toggle") || "").trim();
+        if (!accId) return;
+        var dAcc = readDraft();
+        dAcc.ui = Object.assign({}, dAcc.ui || {});
+        dAcc.ui.rulesOpenId = dAcc.ui.rulesOpenId === accId ? "" : accId;
+        writeDraftRecord(dAcc);
+        render(Number(root.dataset.step || 1));
+        return;
+      }
       var authModeBtn = e.target.closest("[data-auth-mode]");
       if (authModeBtn) {
         e.preventDefault();
@@ -3952,6 +4053,8 @@
         var cur = readDraft();
         cur.identity = Object.assign({}, cur.identity || {});
         cur.identity.authMode = nextMode;
+        cur.identity.certification_method = nextMode;
+        cur.certification_method = nextMode;
         if (nextMode === "id_card") {
           delete cur.identity.depositProof;
           delete cur.identity.depositMethod;
@@ -3962,7 +4065,7 @@
           delete cur.identity.documentType;
         }
         writeDraftRecord(cur);
-        render(4);
+        render(0);
         if (nextMode === "deposit") {
           fetchDepositPayMethods(true).then(function () {
             var d = readDraft();
@@ -3974,7 +4077,7 @@
               d.identity.depositMethod = onlyId;
               writeDraftRecord(d);
             }
-            render(4);
+            render(0);
             // Mobile: bring live QR into view so payment info is not below the fold.
             try {
               var qrEl =
@@ -4019,7 +4122,7 @@
           dCh.identity.depositChannelId = channelId;
           dCh.identity.depositMethod = channelId;
           writeDraftRecord(dCh);
-          render(4);
+          render(Number(root.dataset.step || 0));
         }
         return;
       }

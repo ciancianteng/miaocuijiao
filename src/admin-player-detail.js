@@ -208,14 +208,17 @@
   }
 
   function section(key, title, html) {
+    var open = key === "basic" || key === "application" || key === "split";
     return (
-      '<section class="player-detail-section" data-player-detail-section="' +
+      '<details class="player-detail-section" data-player-detail-section="' +
       esc(key) +
-      '"><h3>' +
+      '"' +
+      (open ? " open" : "") +
+      "><summary><h3>" +
       esc(title) +
-      "</h3>" +
+      "</h3></summary>" +
       html +
-      "</section>"
+      "</details>"
     );
   }
 
@@ -467,6 +470,7 @@
       ? emptyText("尚未提交陪玩申请资料")
       : rows([
           ["申请时间", app.submittedAt || "—"],
+          ["认证方式", d.certificationMethodLabel || app.certificationMethodLabel || (String(d.certificationMethod || app.certificationMethod || d.credential_mode || "").toLowerCase() === "deposit" ? "押金认证" : String(d.certificationMethod || app.certificationMethod || d.credential_mode || "").toLowerCase() === "id_card" ? "身份证认证" : "未选择")],
           ["主接服务", app.mainService || "尚未填写"],
           ["主接游戏", app.mainGame || "尚未填写"],
           ["游戏段位", app.gameRank || "尚未填写"],
@@ -856,12 +860,20 @@
       "</span></div>" +
       section("basic", "基础资料", basic) +
       section("application", "陪玩申请资料", applicationHtml) +
-      section("identity", "身份认证", identityHtml) +
-      section("payment", "结款账户", paymentHtml) +
+      (function () {
+        var mode = String(d.certificationMethod || d.certification_method || d.credential_mode || (d.application && (d.application.certificationMethod || d.application.credential_mode)) || "").toLowerCase();
+        if (mode === "deposit") {
+          return section("deposit", "押金认证资料", depositHtml) + section("payment", "结款账户", paymentHtml);
+        }
+        if (mode === "id_card") {
+          return section("identity", "身份证认证资料", identityHtml) + section("payment", "结款账户", paymentHtml);
+        }
+        return section("identity", "身份认证", identityHtml) + section("deposit", "押金记录", depositHtml) + section("payment", "结款账户", paymentHtml);
+      })() +
       section("media", "头像 / 相册 / 语音", mediaHtml) +
       section("split", "等级与价格", split) +
       section("cert-badges", "认证徽章（前台卡片）", certHtml) +
-      section("deposit", "押金记录", depositHtml) +
+      (String(d.certificationMethod || d.certification_method || d.credential_mode || "").toLowerCase() === "id_card" || String(d.certificationMethod || d.certification_method || d.credential_mode || "").toLowerCase() === "deposit" ? "" : section("deposit", "押金记录", depositHtml)) +
       section("income", "订单与收益", income) +
       section("account", "账号管理", account) +
       (edit

@@ -246,6 +246,21 @@ function attachPublishFields(mapped = {}, row = {}, profile = {}) {
   return mapped;
 }
 
+
+function resolveCertificationMethod(row = {}) {
+  const raw = String(row.credential_mode || row.auth_mode || row.certification_method || "").trim().toLowerCase();
+  if (raw === "id_card" || raw === "deposit") return raw;
+  const note = String(row.application_note || "");
+  const m = note.match(/\[AUTH_MODE:(id_card|deposit)\]/i);
+  if (m) return String(m[1] || "").toLowerCase();
+  return "";
+}
+function certificationMethodLabel(mode) {
+  if (mode === "id_card") return "身份证认证";
+  if (mode === "deposit") return "押金认证";
+  return "未选择";
+}
+
 function mapListPlayer(row = {}, profile = {}) {
   const accountRaw = profile.status || "active";
   const identityRaw = row.identity_status || row.verification_status || "pending";
@@ -304,6 +319,11 @@ function mapListPlayer(row = {}, profile = {}) {
     voiceType: row.voice_type || "",
     deposit_status: depositRaw,
     depositStatus: labelStatus(depositRaw, depositRaw),
+    certification_method: resolveCertificationMethod(row),
+    certificationMethod: resolveCertificationMethod(row),
+    certificationMethodLabel: certificationMethodLabel(resolveCertificationMethod(row)),
+    credential_mode: resolveCertificationMethod(row),
+    auth_mode: resolveCertificationMethod(row),
     verification_status: applicationRaw,
     auditStatus: labelStatus(applicationRaw),
     audit: labelStatus(applicationRaw),
@@ -607,6 +627,11 @@ async function buildDetail(row, profile, opts = {}) {
     region: row.region || "",
     description: row.description || "",
     contact_phone: row.contact_phone || profile.phone || "",
+    certification_method: resolveCertificationMethod(row),
+    certificationMethod: resolveCertificationMethod(row),
+    certificationMethodLabel: certificationMethodLabel(resolveCertificationMethod(row)),
+    credential_mode: resolveCertificationMethod(row),
+    auth_mode: resolveCertificationMethod(row),
     voice_url: row.voice_url || "",
     card_image_url: row.card_image_url || "",
     level_effective_at: row.level_effective_at || "",
@@ -623,6 +648,11 @@ async function buildDetail(row, profile, opts = {}) {
       note: String(row.application_note || "")
         .replace(/\[AUTH_MODE:(?:id_card|deposit)\]\s*/gi, "")
         .trim(),
+      certificationMethod: resolveCertificationMethod(row),
+      certification_method: resolveCertificationMethod(row),
+      certificationMethodLabel: certificationMethodLabel(resolveCertificationMethod(row)),
+      credential_mode: resolveCertificationMethod(row),
+      auth_mode: resolveCertificationMethod(row),
       status: row.application_status || row.verification_status || "pending",
       statusLabel: labelStatus(row.application_status || row.verification_status || "pending"),
       rejectReason: row.application_reject_reason || "",

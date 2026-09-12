@@ -5468,7 +5468,7 @@ export default async function handler(req, res) {
         fallbackPlayWhenGame: true,
         hasGame: !!applyGame,
       });
-      const authModeRaw = String(body.auth_mode || body.credential_mode || body.authMode || body.credentialMode || "")
+      const authModeRaw = String(body.auth_mode || body.credential_mode || body.certification_method || body.authMode || body.credentialMode || body.certificationMethod || "")
         .trim()
         .toLowerCase();
       const authMode = authModeRaw === "id_card" || authModeRaw === "deposit" ? authModeRaw : "";

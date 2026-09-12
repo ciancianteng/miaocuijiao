@@ -4,6 +4,15 @@
   var TARGET = "table-companion_applications";
   var state = { loading: true, error: "", rows: [], filter: "pending", message: "", levels: [], selectedLevelById: {} };
 
+  function certMethodOf(item) {
+    var mode = String(
+      (item && (item.certificationMethod || item.certification_method || item.credential_mode || item.auth_mode || item.authMode)) || ""
+    ).trim().toLowerCase();
+    if (mode === "id_card") return "身份证认证";
+    if (mode === "deposit") return "押金认证";
+    if (item && item.certificationMethodLabel) return String(item.certificationMethodLabel);
+    return "未选择";
+  }
   function esc(v) {
     return String(v == null ? "" : v).replace(/[&<>"']/g, function (c) {
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
@@ -240,6 +249,8 @@
           esc(statusText) +
           (hidden && hint ? "<br><small>" + esc(hint) + "</small>" : "") +
           "</td><td>" +
+          esc(certMethodOf(item)) +
+          "</td><td>" +
           esc(item.depositStatus || item.deposit_status || "-") +
           "</td><td>" +
           levelPickerHtml(id) +
@@ -287,8 +298,8 @@
         .join("") +
       '</select><button class="mini-btn" type="button" data-capp-reload>刷新</button></div></div>' +
       (state.message ? '<div class="admin-sync-note">' + esc(state.message) + "</div>" : "") +
-      '<div class="table-wrap"><table><thead><tr><th>申请ID</th><th>昵称</th><th>联系方式</th><th>游戏</th><th>申请/大厅状态</th><th>押金</th><th>操作</th></tr></thead><tbody>' +
-      (body || '<tr><td colspan="7">暂无陪玩申请</td></tr>') +
+      '<div class="table-wrap"><table><thead><tr><th>申请ID</th><th>昵称</th><th>联系方式</th><th>游戏</th><th>申请/大厅状态</th><th>认证方式</th><th>押金</th><th>操作</th></tr></thead><tbody>' +
+      (body || '<tr><td colspan="8">暂无陪玩申请</td></tr>') +
       "</tbody></table></div>";
   }
   function load() {
