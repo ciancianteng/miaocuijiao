@@ -957,20 +957,36 @@ body.companion-apply-page .apply-status-note{
 #companionApplyRoot .apply-stepper-item.is-active:not(:last-child)::after{
   background:linear-gradient(90deg,rgba(255,140,200,.85),rgba(255,190,220,.45));
 }
-#companionApplyRoot .apply-stepper-btn{
-  position:relative;
+/* Kill design-system.css global button:!important chrome on stepper taps */
+#companionApplyRoot .apply-stepper-btn,
+#companionApplyRoot button.apply-stepper-btn{
+  position:relative !important;
   z-index:1;
-  width:100%;
-  display:grid;
-  justify-items:center;
-  gap:3px;
-  border:0;
-  background:transparent;
-  color:rgba(255,230,242,.55);
-  padding:0;
+  width:100% !important;
+  min-width:0 !important;
+  min-height:0 !important;
+  height:auto !important;
+  display:grid !important;
+  justify-items:center !important;
+  align-content:start !important;
+  gap:3px !important;
+  border:0 !important;
+  border-radius:0 !important;
+  background:transparent !important;
+  box-shadow:none !important;
+  color:rgba(255,230,242,.55) !important;
+  padding:0 !important;
+  margin:0 !important;
   cursor:pointer;
-  font:inherit;
-  min-width:0;
+  font:inherit !important;
+  font-size:inherit !important;
+  font-weight:inherit !important;
+  letter-spacing:inherit !important;
+  line-height:normal !important;
+  text-transform:none !important;
+  backdrop-filter:none !important;
+  -webkit-backdrop-filter:none !important;
+  transform:none !important;
 }
 #companionApplyRoot .apply-stepper-num{
   font-size:10px;
