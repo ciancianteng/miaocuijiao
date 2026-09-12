@@ -1,0 +1,57 @@
+.club-levels-page{
+  margin:0;
+  min-height:100vh;
+  background:
+    radial-gradient(1200px 500px at 10% -10%,rgba(244,114,182,.22),transparent 55%),
+    radial-gradient(900px 420px at 100% 0%,rgba(251,113,133,.16),transparent 50%),
+    #0b070c;
+  color:#ffe4f0;
+  font-family:"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+}
+.club-levels-top{
+  position:sticky;top:0;z-index:5;
+  display:flex;align-items:center;gap:12px;
+  padding:12px 16px;
+  background:rgba(12,8,14,.88);
+  backdrop-filter:blur(10px);
+  border-bottom:1px solid rgba(244,114,182,.22);
+}
+.club-levels-back{color:#f9a8d4;text-decoration:none;font-size:14px}
+.club-levels-top strong{font-size:16px;letter-spacing:.02em}
+.club-levels-main{max-width:980px;margin:0 auto;padding:18px 16px 48px}
+.club-levels-loading,.club-levels-empty{padding:28px;text-align:center;color:rgba(255,228,240,.62)}
+.club-levels-hero{margin-bottom:18px}
+.club-levels-hero h1{margin:0 0 8px;font-size:clamp(22px,4vw,32px);color:#fff}
+.club-levels-hero p{margin:0;line-height:1.65;color:rgba(255,228,240,.78);font-size:15px}
+.club-levels-hero small{display:block;margin-top:8px;color:rgba(255,228,240,.45)}
+.club-levels-grid{display:grid;gap:12px;grid-template-columns:1fr}
+.club-level-card{
+  border:1px solid color-mix(in srgb,var(--lvl,#f472b6) 45%,transparent);
+  border-radius:16px;padding:16px;display:grid;gap:10px;
+  box-shadow:0 10px 28px rgba(0,0,0,.28);
+}
+.club-level-card header{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.club-level-card strong{font-size:18px;color:#fff}
+.club-level-badge{
+  display:inline-flex;align-items:center;gap:6px;
+  min-height:28px;padding:0 10px;border-radius:999px;
+  border:1px solid rgba(255,255,255,.18);
+  background:rgba(0,0,0,.25);font-size:12px;font-weight:700;color:#ffe4f0;
+}
+.club-level-price{margin:0;font-size:16px;font-weight:800;color:#fda4af}
+.club-level-desc{margin:0;color:rgba(255,228,240,.72);line-height:1.55;font-size:13px;white-space:pre-wrap}
+.club-level-meta{margin:0;display:grid;gap:8px}
+.club-level-meta div{display:grid;gap:4px}
+.club-level-meta dt{font-size:11px;letter-spacing:.04em;color:rgba(255,228,240,.48);text-transform:uppercase}
+.club-level-meta dd{margin:0;font-size:13px;line-height:1.55;color:rgba(255,228,240,.82);white-space:pre-wrap}
+@media(min-width:720px){
+  .club-levels-grid{grid-template-columns:1fr 1fr}
+}
+@media(min-width:1024px){
+  .club-levels-grid{grid-template-columns:1fr 1fr}
+  .club-levels-main{padding-top:28px}
+}
+@media(max-width:430px){
+  .club-levels-main{padding:14px 12px 40px}
+  .club-level-card{border-radius:14px;padding:14px}
+}

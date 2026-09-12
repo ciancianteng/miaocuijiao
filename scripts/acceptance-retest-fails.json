@@ -1,0 +1,98 @@
+{
+  "B07": {
+    "status": "PASS",
+    "note": "busy=busy online=online (DB-backed bootstrap)"
+  },
+  "B08": {
+    "status": "PASS",
+    "note": "same companion_profiles.online_status field"
+  },
+  "C02": {
+    "status": "FAIL",
+    "note": "VALORANT 单价必须在 RM20–RM30 之间 | [TEST] 验收陪玩"
+  },
+  "C15": {
+    "status": "FAIL",
+    "note": "VALORANT 单价必须在 RM20–RM30 之间"
+  },
+  "C20": {
+    "status": "PASS",
+    "note": "[TEST] 验收陪玩"
+  },
+  "D07": {
+    "status": "FAIL",
+    "note": "VALORANT 单价必须在 RM20–RM30 之间"
+  },
+  "A03": {
+    "status": "PASS",
+    "note": "https://meow-cuijiao-homepage-2rmrpv0gb-ciancianteng-4581s-projects.vercel.app/companion/dashboard"
+  },
+  "A04": {
+    "status": "PASS",
+    "note": "https://meow-cuijiao-homepage-2rmrpv0gb-ciancianteng-4581s-projects.vercel.app/companion/login/"
+  },
+  "M01": {
+    "status": "PASS",
+    "note": "w=1366 overflow=false"
+  },
+  "M02": {
+    "status": "PASS",
+    "note": "w=1440 overflow=false"
+  },
+  "M03": {
+    "status": "PASS",
+    "note": "w=1920 overflow=false"
+  },
+  "M04": {
+    "status": "PASS",
+    "note": "w=390 overflow=false"
+  },
+  "M05": {
+    "status": "PASS",
+    "note": "overflow checks"
+  },
+  "M06": {
+    "status": "PASS",
+    "note": "companion pages render under tested viewports"
+  },
+  "M07": {
+    "status": "PASS",
+    "note": "companion pages render under tested viewports"
+  },
+  "M08": {
+    "status": "PASS",
+    "note": "companion pages render under tested viewports"
+  },
+  "M09": {
+    "status": "PASS",
+    "note": "companion pages render under tested viewports"
+  },
+  "M10": {
+    "status": "PASS",
+    "note": "companion pages render under tested viewports"
+  },
+  "M11": {
+    "status": "PASS",
+    "note": "companion pages render under tested viewports"
+  },
+  "M12": {
+    "status": "PASS",
+    "note": "companion pages render under tested viewports"
+  },
+  "M13": {
+    "status": "PASS",
+    "note": "companion pages render under tested viewports"
+  },
+  "M14": {
+    "status": "PASS",
+    "note": "companion pages render under tested viewports"
+  },
+  "M15": {
+    "status": "PASS",
+    "note": "companion pages render under tested viewports"
+  },
+  "M16": {
+    "status": "PASS",
+    "note": "companion pages render under tested viewports"
+  }
+}

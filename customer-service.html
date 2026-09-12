@@ -4,7 +4,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>客服工作台 · MEOW CUI JIAO</title>
   <style>
     :root{--bg:#050406;--panel:rgba(18,11,18,.82);--panel2:rgba(255,255,255,.055);--line:rgba(255,198,226,.18);--line2:rgba(255,126,190,.42);--pink:#ff8ec7;--pink2:#ffd6e7;--text:#fff7fb;--muted:#bfaeba;--green:#78f5c0;--yellow:#ffd36f;--red:#ff5f86;--blue:#7cc7ff}
@@ -13,9 +13,10 @@
   <link rel="stylesheet" href="src/notify-system.css">
   <link rel="stylesheet" href="src/real-data-admin.css">
   <link rel="stylesheet" href="src/design-system.css">
+  <link rel="stylesheet" href="/src/mcj-safe-area.css?v=20260801safeArea">
 </head>
 <body>
-  <script src="src/auth-system.js"></script>
+  <script type="module" src="src/auth-system.js"></script>
   <script>
     if (window.MCJAuth && !window.MCJAuth.guardRole("customer_service", "index.html")) {
       throw new Error("Blocked customer-service route for current role");
@@ -43,7 +44,7 @@
         <button data-view="mine">我的</button>
       </nav>
       <div class="top-actions">
-        <span class="pill coin" id="coinPill">喵币 0</span>
+        <span class="pill coin" id="coinPill">猫粮 0</span>
         <button class="pill auth pending" id="authPill" type="button">未认证</button>
       </div>
     </header>
@@ -72,7 +73,7 @@
     </section>
 
     <section class="view" id="view-income">
-      <div class="section-title"><div><h1>客服收入</h1><p>底薪、对话服务、老板打赏、派单提成和喵币明细。</p></div><span class="tag green">自动统计</span></div>
+      <div class="section-title"><div><h1>客服收入</h1><p>底薪、对话服务、老板打赏、派单提成和猫粮明细。</p></div><span class="tag green">自动统计</span></div>
       <div class="grid income-grid" id="incomeCards"></div>
       <div class="card" style="margin-top:14px"><h3>收入明细</h3><div class="table" id="incomeRows"></div></div>
     </section>
@@ -89,7 +90,7 @@
 
     <section class="view" id="view-auth">
       <div class="section-title"><div><h1>身份认证</h1><p>认证通过后可以开始接待老板、打卡和派单。状态会保存在本机，已认证后无需重复验证。</p></div></div>
-      <div class="auth-layout"><form class="card form-grid" id="authForm"><label>真实姓名<input id="realName" placeholder="请输入姓名"></label><label>手机号<input id="authPhone" placeholder="国内或马来西亚手机号"></label><label class="full">身份证号 / 护照号<input id="idNumber" placeholder="请输入证件号码"></label><label>身份证正面<input type="file" id="idFront"></label><label>身份证反面<input type="file" id="idBack"></label><div class="button-row full"><button class="primary-btn" type="button" id="submitAuthBtn">提交认证审核</button><button class="ghost-btn" type="button" id="demoApproveBtn">模拟后台通过</button></div></form><div class="card"><h3>认证规则</h3><div class="info-row"><span>未认证</span><strong>不能开始工作</strong></div><div class="info-row"><span>审核中</span><strong>等待后台确认</strong></div><div class="info-row"><span>已认证</span><strong>可接待 / 派单 / 打卡</strong></div><div class="info-row"><span>认证失败</span><strong>需要重新提交</strong></div></div></div>
+      <div class="auth-layout"><form class="card form-grid" id="authForm"><label>真实姓名<input id="realName" placeholder="请输入姓名"></label><label>手机号<input id="authPhone" placeholder="国内或马来西亚手机号"></label><label class="full">身份证号 / 护照号<input id="idNumber" placeholder="请输入证件号码"></label><label>身份证正面<input type="file" id="idFront"></label><label>身份证反面<input type="file" id="idBack"></label><div class="button-row full"><button class="primary-btn" type="button" id="submitAuthBtn">提交认证审核</button></div></form><div class="card"><h3>认证规则</h3><div class="info-row"><span>未认证</span><strong>不能开始工作</strong></div><div class="info-row"><span>审核中</span><strong>等待后台确认</strong></div><div class="info-row"><span>已认证</span><strong>可接待 / 派单 / 打卡</strong></div><div class="info-row"><span>认证失败</span><strong>需要重新提交</strong></div></div></div>
     </section>
   </div>
   <div class="toast" id="toast">已完成</div>
@@ -106,7 +107,7 @@
     let auth=localStorage.getItem('mcjCustomerAuthStatus')||'pending';
     function toast(t){const el=$('#toast');el.textContent=t;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),1700)}
     function authText(){return auth==='approved'?'已认证':auth==='review'?'审核中':auth==='failed'?'认证失败':'未认证'}
-    function updateTop(){const pill=$('#authPill');pill.textContent=authText();pill.className='pill auth '+(auth==='approved'?'approved':auth==='review'?'review':'pending');$('#coinPill').textContent='喵币 '+coins;$('#authNotice').classList.toggle('hide',auth==='approved')}
+    function updateTop(){const pill=$('#authPill');pill.textContent=authText();pill.className='pill auth '+(auth==='approved'?'approved':auth==='review'?'review':'pending');$('#coinPill').textContent='猫粮 '+coins;$('#authNotice').classList.toggle('hide',auth==='approved')}
     function requireAuth(){if(auth!=='approved'){toast('请先完成客服身份认证');showView('auth');return false}return true}
     function showView(id){$$('.view').forEach(v=>v.classList.remove('active'));$('#view-'+id).classList.add('active');$$('#topNav button').forEach(b=>b.classList.toggle('active',b.dataset.view===id));window.scrollTo({top:0,behavior:'smooth'})}
     function boss(){return bosses.find(b=>b.id===activeBoss)||bosses[0]}
@@ -116,7 +117,7 @@
     function addIncome(type,amount,coin,desc){incomeRows.unshift({type,amount,coins:coin,desc});store.set('mcjCustomerIncomeRows',incomeRows);coins+=coin;localStorage.setItem('mcjCustomerCoins',coins);updateTop();renderIncome();window.MCJNotify?.push(type==='老板'?'tip':'income',type,'RM'+amount+' · '+desc,'收入已写入客服收入页')}
     function renderDispatch(){const bossSelect=$('#dispatchBoss');bossSelect.innerHTML=bosses.map(b=>`<option>${b.name}</option>`).join('');$('#dispatchList').innerHTML=dispatches.map(o=>`<article class="order-card"><header><strong>${o.id}</strong><span class="tag ${o.status==='已完成'?'green':o.status==='进行中'?'blue':o.status==='待抢单'?'yellow':'gray'}">${o.status}</span></header><p><strong>${o.boss}</strong> / ${o.service}</p><p>时长：${o.duration} · 价格：RM${o.price}</p><p>渠道：${o.channel}</p><p>${o.note}</p><div class="button-row"><button class="ghost-btn" data-next="已抢单" data-id="${o.id}">已抢单</button><button class="ghost-btn" data-next="进行中" data-id="${o.id}">进行中</button><button class="primary-btn" data-next="已完成" data-id="${o.id}">已完成</button></div></article>`).join('')||'<p style="color:var(--muted)">暂无派单。</p>';$$('[data-next]').forEach(btn=>btn.onclick=()=>{const o=dispatches.find(x=>x.id===btn.dataset.id);if(o){o.status=btn.dataset.next;store.set('mcjCustomerDispatches',dispatches);renderDispatch();toast('派单状态已更新')}})}
     function createDispatch(send){if(!requireAuth())return;const o={id:'#CS-'+Date.now().toString().slice(-8),boss:$('#dispatchBoss').value,service:$('#dispatchService').value,duration:$('#dispatchDuration').value,price:Number($('#dispatchPrice').value||0),channel:$('#dispatchChannel').value,status:send?'待抢单':'草稿',note:$('#dispatchNote').value};dispatches.unshift(o);store.set('mcjCustomerDispatches',dispatches);if(send){const hall=store.get('mcjCompanionGrabHall',[]);hall.unshift({...o,source:'客服派单'});store.set('mcjCompanionGrabHall',hall);window.MCJNotify?.push('dispatch','客服派单已发出',o.boss+' · '+o.service+' · RM'+o.price,'派单状态：待抢单');window.MCJNotify?.push('newOrder','新订单',o.id+' 已生成并进入派单池','陪玩端可看到并抢单');addIncome('派单提成',5,0,'生成并派出 '+o.service)}renderDispatch();toast(send?'已一键派单到陪玩端':'已生成订单草稿')}
-    function renderIncome(){const fixed=2800,chat=sum('对话服务收入'),tip=sum('老板'),commission=sum('派单提成'),bonus=sum('全勤奖励'),total=fixed+chat+tip+commission+bonus;const cards=[['本月底薪','RM'+fixed],['对话服务收入','RM'+chat],['老板','RM'+tip],['派单提成','RM'+commission],['全勤奖励','RM'+bonus],['本月总收入','RM'+total],['可提现金额','RM'+(total-300)],['喵币余额',coins]];$('#incomeCards').innerHTML=cards.map(c=>`<div class="card metric"><span>${c[0]}</span><strong>${c[1]}</strong></div>`).join('');$('#incomeRows').innerHTML=incomeRows.map(r=>`<div class="table-row"><strong>${r.type}</strong><span>RM${r.amount}</span><span>喵币 +${r.coins}</span><span>${r.desc}</span></div>`).join('')}
+    function renderIncome(){const fixed=2800,chat=sum('对话服务收入'),tip=sum('老板'),commission=sum('派单提成'),bonus=sum('全勤奖励'),total=fixed+chat+tip+commission+bonus;const cards=[['本月底薪','RM'+fixed],['对话服务收入','RM'+chat],['老板','RM'+tip],['派单提成','RM'+commission],['全勤奖励','RM'+bonus],['本月总收入','RM'+total],['可提现金额','RM'+(total-300)],['猫粮余额',coins]];$('#incomeCards').innerHTML=cards.map(c=>`<div class="card metric"><span>${c[0]}</span><strong>${c[1]}</strong></div>`).join('');$('#incomeRows').innerHTML=incomeRows.map(r=>`<div class="table-row"><strong>${r.type}</strong><span>RM${r.amount}</span><span>猫粮 +${r.coins}</span><span>${r.desc}</span></div>`).join('')}
     function sum(type){return incomeRows.filter(r=>r.type===type).reduce((a,b)=>a+Number(b.amount||0),0)}
     function renderReplies(){store.set('mcjCustomerQuickReplies',quickReplies);$('#replyList').innerHTML=quickReplies.map((r,i)=>`<div class="reply-item"><div><strong>${r.title}</strong><p>${r.text}</p></div><div class="button-row"><button class="ghost-btn" data-edit-reply="${i}">编辑</button><button class="ghost-btn" data-del-reply="${i}">删除</button></div></div>`).join('');$$('[data-del-reply]').forEach(btn=>btn.onclick=()=>{quickReplies.splice(Number(btn.dataset.delReply),1);renderReplies();renderChat()});$$('[data-edit-reply]').forEach(btn=>btn.onclick=()=>{const r=quickReplies[btn.dataset.editReply];$('#replyTitle').value=r.title;$('#replyText').value=r.text;$('#saveReplyBtn').dataset.edit=btn.dataset.editReply;$('#saveReplyBtn').textContent='保存快捷回复'});renderChat()}
     function renderAttendance(){const logs=store.get('mcjCustomerAttendance',[]);$('#attendanceLog').innerHTML=logs.map(r=>`<div class="table-row"><strong>${r.type}</strong><span>${r.time}</span><span>${r.status}</span><span>${r.note}</span></div>`).join('')||'<p style="color:var(--muted)">暂无打卡记录。</p>'}
@@ -125,13 +126,12 @@
     (function login(){const gate=$('#staffLoginGate'),key='mcjStaffGate:customer';function enter(){gate.classList.add('hide')}function submit(){if(!$('#staffUserId').value.trim()||!$('#staffPassword').value.trim()){ $('#staffLoginError').textContent='请先输入 User ID 和密码'; return }const id=$('#staffUserId').value.trim();localStorage.setItem(key,'1');localStorage.setItem('mcjCustomerUserId',id);if(window.MCJAuth)window.MCJAuth.setLogin('customer_service',{user_id:id,name:id,role:'customer_service'});enter()}if((window.MCJAuth&&window.MCJAuth.getRole()==='customer_service')||localStorage.getItem(key)==='1'){if(window.MCJAuth&&window.MCJAuth.getRole()!=='customer_service')window.MCJAuth.setLogin('customer_service',{user_id:localStorage.getItem('mcjCustomerUserId')||'customer_service',name:'客服账号',role:'customer_service'});enter()}$('#staffLoginBtn').onclick=submit;$('#staffPassword').onkeydown=e=>{if(e.key==='Enter')submit()}})();
     renderAll();
   </script>
-  <script src="src/notify-system.js" defer></script>
-  <script src="src/dropdown-system.js" defer></script>
-  <script src="src/meow-butler.js?v=20260710-fixed" defer></script>
-  <script src="src/cooperation-crm.js" defer></script>
-  <script src="src/customer-ticket-crm.js" defer></script>
-  <script src="src/footer-system.js" defer></script>
-  <script src="src/text-guard.js" defer></script>
+  <script type="module" src="src/notify-system.js" defer></script>
+  <script type="module" src="src/dropdown-system.js" defer></script>
+<script type="module" src="src/cooperation-crm.js" defer></script>
+  <script type="module" src="src/customer-ticket-crm.js" defer></script>
+  <script type="module" src="src/footer-system.js" defer></script>
+  <script type="module" src="src/text-guard.js" defer></script>
 </body>
 </html>
 -->

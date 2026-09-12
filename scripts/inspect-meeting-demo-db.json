@@ -1,0 +1,76 @@
+{
+  "tables": [
+    "banners",
+    "boss_notifications",
+    "companion_deposits",
+    "companion_identity_verifications",
+    "companion_levels",
+    "companion_media",
+    "companion_notification_reads",
+    "companion_payment_accounts",
+    "companion_penalties",
+    "companion_profiles",
+    "companion_reviews",
+    "companion_withdrawals",
+    "finance_payments",
+    "payment_orders",
+    "profiles",
+    "recharge_campaigns",
+    "wallet_settings",
+    "wallet_transactions",
+    "wallets"
+  ],
+  "bannersCols": [
+    "id",
+    "title",
+    "subtitle",
+    "image_url",
+    "button_text",
+    "button_link",
+    "is_active",
+    "sort_order",
+    "created_at",
+    "updated_at"
+  ],
+  "banners": {
+    "ok": true,
+    "rows": [
+      {
+        "id": "acf2c9cc-58c3-4748-a525-ffdc89a77855",
+        "title": "[TEST] 手游组队频道",
+        "subtitle": "P0-3 Preview 验收测试频道（正式上线前可删除）。|__team_lobby__",
+        "image_url": "/default-avatar.png",
+        "button_text": "立即进入",
+        "button_link": "https://discord.gg/discord-developers",
+        "is_active": true,
+        "sort_order": 1,
+        "created_at": "2026-07-29T22:17:22.492Z",
+        "updated_at": "2026-08-02T15:37:19.856Z"
+      },
+      {
+        "id": "954b9c39-377d-4ec8-8580-07e258445e71",
+        "title": "MEOW CUI JIAO",
+        "subtitle": "首页轮播",
+        "image_url": "/default-home-banner.png",
+        "button_text": "进入陪玩大厅",
+        "button_link": "/companion-center.html",
+        "is_active": true,
+        "sort_order": 10,
+        "created_at": "2026-08-02T23:41:40.779Z",
+        "updated_at": "2026-08-02T23:41:40.779Z"
+      }
+    ]
+  },
+  "campaigns": {
+    "ok": true,
+    "rows": []
+  },
+  "payMethods": {
+    "ok": false,
+    "err": "relation \"public.payment_methods\" does not exist"
+  },
+  "payChannels": {
+    "ok": false,
+    "err": "relation \"public.payment_channels\" does not exist"
+  }
+}

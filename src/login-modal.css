@@ -1,0 +1,383 @@
+/* Login / shared homepage modal: viewport-fixed portal + auth dialog polish */
+#modal.modal,
+body > #modal {
+  position: fixed !important;
+  inset: 0 !important;
+  top: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  left: 0 !important;
+  width: 100vw !important;
+  height: 100dvh !important;
+  max-width: none !important;
+  max-height: 100dvh !important;
+  margin: 0 !important;
+  padding: 16px !important;
+  transform: none !important;
+  z-index: 100100 !important;
+  display: none !important;
+  align-items: center !important;
+  justify-content: center !important;
+  place-items: unset !important;
+  overflow: hidden !important;
+  background: rgba(2, 1, 4, 0.76) !important;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-sizing: border-box !important;
+}
+
+#modal.modal.open,
+body > #modal.open {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+#modal .dialog {
+  position: relative !important;
+  margin: 0 !important;
+  top: auto !important;
+  left: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+  transform: none !important;
+  flex-shrink: 0;
+  max-height: calc(100dvh - 32px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* —— Auth dialog sizing & density —— */
+#modal .dialog.is-auth-dialog,
+#modal .dialog:has(.boss-login-modal) {
+  width: 460px !important;
+  max-width: 480px !important;
+  height: auto !important;
+  height: fit-content !important;
+  min-height: 560px !important;
+  max-height: calc(100dvh - 32px) !important;
+  /* Allow vertical scroll when register fields exceed viewport (esp. mobile + keyboard). */
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  padding: 36px 28px 28px !important;
+  box-sizing: border-box !important;
+  align-self: center !important;
+  flex: 0 0 auto !important;
+}
+
+#modal .dialog.is-auth-dialog .close,
+#modal .dialog:has(.boss-login-modal) .close {
+  position: absolute !important;
+  top: 18px !important;
+  right: 18px !important;
+  width: 42px !important;
+  height: 42px !important;
+  border-radius: 50% !important;
+  font-size: 22px !important;
+  line-height: 1 !important;
+  z-index: 3 !important;
+  float: none !important;
+  transition: box-shadow 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+}
+
+#modal .dialog.is-auth-dialog .close:hover,
+#modal .dialog:has(.boss-login-modal) .close:hover {
+  border-color: rgba(255, 158, 207, 0.55) !important;
+  box-shadow: 0 0 18px rgba(255, 120, 180, 0.45);
+}
+
+#modal .boss-login-modal {
+  display: grid !important;
+  gap: 0 !important;
+  clear: both;
+  padding: 0 !important;
+  padding-right: 36px !important; /* room for close */
+  height: auto !important;
+  min-height: unset !important;
+}
+
+#modal .boss-login-modal h2 {
+  margin: 0 !important;
+  padding: 0 8px 0 0 !important;
+  color: #fff5fa;
+  font-size: 32px !important;
+  font-weight: 700 !important;
+  line-height: 1.2 !important;
+  letter-spacing: 0.01em;
+}
+
+#modal .boss-login-modal > .muted {
+  margin: 10px 0 0 !important;
+  padding: 0 !important;
+  font-size: 16px !important;
+  font-weight: 500 !important;
+  line-height: 1.45 !important;
+  color: rgba(255, 255, 255, 0.72) !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+}
+
+/* Push method tabs below title + description */
+#modal .boss-login-modal .login-tabs {
+  display: grid !important;
+  grid-template-columns: 1fr 1fr !important;
+  gap: 10px !important;
+  margin: 28px 0 0 !important;
+  padding: 0 !important;
+}
+
+#modal .boss-login-modal .login-tab {
+  height: 44px !important;
+  min-height: 44px !important;
+  border-radius: 999px !important;
+  border: 1px solid rgba(243, 168, 203, 0.24) !important;
+  background: rgba(255, 255, 255, 0.045) !important;
+  color: #ffe1ef !important;
+  font-weight: 800 !important;
+  font-size: 14px !important;
+  cursor: pointer;
+}
+
+#modal .boss-login-modal .login-tab.active {
+  border: 0 !important;
+  background: linear-gradient(180deg, #ffe2ef, #e7a0c4) !important;
+  color: #1b0712 !important;
+}
+
+#modal .boss-login-modal .login-panel {
+  display: none !important;
+  grid-template-columns: 1fr !important;
+  gap: 18px !important;
+  margin-top: 0 !important;
+}
+
+#modal .boss-login-modal .login-panel.active {
+  display: grid !important;
+  margin-top: 22px !important;
+  gap: 18px !important;
+}
+
+#modal .boss-login-modal .login-panel label {
+  display: grid !important;
+  gap: 8px !important;
+  color: #ffdceb;
+  font-weight: 700 !important;
+  font-size: 13px !important;
+  margin: 0 !important;
+}
+
+#modal .boss-login-modal .login-code-row {
+  display: grid !important;
+  grid-template-columns: 1fr 132px !important;
+  gap: 10px !important;
+  align-items: stretch !important;
+}
+
+#modal .boss-login-modal .login-code-row input {
+  width: 100% !important;
+  min-width: 0 !important;
+}
+
+#modal .boss-login-modal .login-small-btn {
+  height: 52px !important;
+  min-height: 52px !important;
+  border-radius: 14px !important;
+  border: 1px solid rgba(243, 168, 203, 0.24) !important;
+  background: rgba(255, 255, 255, 0.045) !important;
+  color: #ffe1ef !important;
+  font-weight: 800 !important;
+  cursor: pointer;
+  white-space: nowrap;
+  padding: 0 10px !important;
+}
+
+#modal .boss-login-modal .login-panel input,
+#modal .boss-login-modal .login-panel select {
+  width: 100% !important;
+  height: 52px !important;
+  min-height: 52px !important;
+  border-radius: 14px !important;
+  border: 1.5px solid rgba(255, 120, 180, 0.35) !important;
+  border-width: 1.5px !important;
+  border-style: solid !important;
+  border-color: rgba(255, 120, 180, 0.35) !important;
+  background: rgba(255, 255, 255, 0.055) !important;
+  color: #fff !important;
+  padding: 0 16px !important;
+  outline: 0 !important;
+  box-sizing: border-box !important;
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+#modal .boss-login-modal .login-panel input:focus,
+#modal .boss-login-modal .login-panel select:focus {
+  border-color: rgba(255, 158, 207, 0.7) !important;
+  box-shadow: 0 0 0 3px rgba(255, 120, 180, 0.18), 0 0 18px rgba(255, 120, 180, 0.35);
+}
+
+#modal .boss-login-modal .login-submit {
+  grid-column: 1 / -1;
+  width: 100% !important;
+  height: 52px !important;
+  min-height: 52px !important;
+  margin: 0 !important;
+  border: 0 !important;
+  border-radius: 14px !important;
+  background: linear-gradient(180deg, #ffe2ef, #e7a0c4) !important;
+  color: #1b0712 !important;
+  font-weight: 800 !important;
+  font-size: 16px !important;
+  cursor: pointer;
+  box-shadow:
+    0 10px 28px rgba(0, 0, 0, 0.35),
+    0 0 22px rgba(243, 168, 203, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35) !important;
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+#modal .boss-login-modal .login-submit:hover {
+  transform: translateY(-1px);
+  box-shadow:
+    0 12px 32px rgba(0, 0, 0, 0.4),
+    0 0 28px rgba(255, 120, 180, 0.42),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4) !important;
+}
+
+#modal .boss-login-modal #loginState,
+#modal .boss-login-modal [data-login-error] {
+  margin: 10px 0 0 !important;
+  min-height: 0 !important;
+  color: #ff8fc5;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+#modal .boss-login-modal .login-links {
+  display: flex !important;
+  flex-wrap: nowrap !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  gap: 12px !important;
+  height: 40px !important;
+  min-height: 40px !important;
+  margin: 12px 0 0 !important;
+  padding: 0 !important;
+}
+
+#modal .boss-login-modal[data-auth-mode="register"] .login-links {
+  justify-content: center !important;
+}
+
+#modal .boss-login-modal .login-links a,
+#modal .boss-login-modal .login-links button.linkish,
+#modal .boss-login-modal .login-links button[data-forgot-password] {
+  appearance: none;
+  border: 0;
+  background: none;
+  padding: 0;
+  margin: 0;
+  color: #ffdceb;
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+  font-family: inherit;
+  white-space: nowrap;
+  line-height: 40px;
+}
+
+#modal .boss-login-modal .login-links a:hover,
+#modal .boss-login-modal .login-links button.linkish:hover,
+#modal .boss-login-modal .login-links button[data-forgot-password]:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 560px) {
+  /* Overlay: vertically center auth dialog on mobile. */
+  #modal.modal,
+  body > #modal {
+    align-items: center !important;
+    justify-content: center !important;
+    padding: max(8px, env(safe-area-inset-top, 0px)) 12px max(8px, env(safe-area-inset-bottom, 0px)) !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  #modal.modal.open,
+  body > #modal.open {
+    align-items: center !important;
+    justify-content: center !important;
+  }
+
+  #modal .dialog.is-auth-dialog,
+  #modal .dialog:has(.boss-login-modal) {
+    width: calc(100vw - 24px) !important;
+    max-width: calc(100vw - 24px) !important;
+    min-height: min(520px, 86dvh) !important;
+    max-height: 90dvh !important;
+    max-height: 90vh !important; /* fallback */
+    margin: auto !important;
+    padding: 30px 20px calc(26px + env(safe-area-inset-bottom, 0px)) !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    align-self: center !important;
+  }
+
+  #modal .boss-login-modal {
+    padding-right: 28px !important;
+    padding-bottom: 8px !important;
+  }
+
+  #modal .boss-login-modal h2 {
+    font-size: 26px !important;
+  }
+
+  #modal .boss-login-modal > .muted {
+    font-size: 14px !important;
+  }
+
+  #modal .boss-login-modal .login-tabs {
+    margin-top: 24px !important;
+  }
+
+  #modal .boss-login-modal .login-panel.active {
+    margin-top: 20px !important;
+    gap: 16px !important;
+    padding-bottom: 4px !important;
+  }
+
+  #modal .boss-login-modal .login-code-row {
+    grid-template-columns: 1fr 118px !important;
+  }
+
+  #modal .boss-login-modal .login-submit {
+    margin-bottom: 4px !important;
+  }
+
+  #modal .boss-login-modal .login-links {
+    gap: 8px !important;
+    height: auto !important;
+    min-height: 40px !important;
+    padding-bottom: 4px !important;
+  }
+
+  #modal .boss-login-modal .login-links a,
+  #modal .boss-login-modal .login-links button.linkish,
+  #modal .boss-login-modal .login-links button[data-forgot-password] {
+    font-size: 12px;
+    line-height: 1.4;
+  }
+}
+
+/* Body scroll lock only — modal dialog remains scrollable. */
+html.mcj-modal-open,
+body.mcj-modal-open {
+  overflow: hidden !important;
+}

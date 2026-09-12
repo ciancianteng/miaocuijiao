@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="zh-CN" class="mcj-auth-html mcj-admin-login">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>后台中心登录 | 妙脆角</title>
+  <link rel="stylesheet" href="/src/auth-shell.css?v=20260805loginUi1">
+  <!-- Modules are deferred; login form is static so the page never blacks out if JS fails. -->
+  <script type="module" src="/src/admin-boot-guard.js?v=20260804adminLoginFix"></script>
+  <script type="module" src="/src/role-gates.js"></script>
+  <script type="module" src="/src/auth-shell.js?v=20260806emailKeyboard1"></script>
+</head>
+<body class="mcj-admin-login">
+  <main class="mcj-auth-page" id="adminLoginApp">
+    <section class="mcj-auth-card">
+      <div class="mcj-auth-brand">
+        <p class="mcj-auth-brand-name">妙脆角</p>
+        <p class="mcj-auth-brand-en">MEOW CUI JIAO</p>
+      </div>
+      <h1 class="mcj-auth-title">后台中心</h1>
+      <p class="mcj-auth-desc">仅限管理员账号登录</p>
+      <form class="mcj-auth-form" data-admin-login autocomplete="on" method="post" action="#">
+        <label class="mcj-auth-field">管理员邮箱
+          <input name="account" type="email" inputmode="email" autocomplete="email" required placeholder="请输入管理员邮箱">
+        </label>
+        <label class="mcj-auth-field">密码
+          <div class="mcj-auth-password password-field">
+            <input name="password" type="password" autocomplete="current-password" required>
+            <button class="mcj-auth-eye" type="button" tabindex="-1" data-toggle-password aria-label="显示密码" aria-pressed="false" title="显示密码">显示</button>
+          </div>
+        </label>
+        <label class="mcj-auth-check"><input name="remember" type="checkbox" checked> 记住登录</label>
+        <button class="mcj-auth-btn primary" type="submit">登录</button>
+        <button class="mcj-auth-btn ghost" type="button" data-forgot-password data-forgot-role="admin">忘记密码</button>
+        <p class="mcj-auth-error" data-auth-error></p>
+        <p class="mcj-auth-note">后台中心不提供注册入口，仅管理员可登录。</p>
+      </form>
+    </section>
+  </main>
+  <script type="module" src="/src/forgot-password.js?v=20260806forgotP0"></script>
+  <script type="module">
+    // Runs after deferred head modules; never depends on platform_settings / business APIs.
+    function waitFor(getter, tries) {
+      return new Promise(function (resolve, reject) {
+        var n = 0;
+        var max = tries || 80;
+        (function tick() {
+          var v = getter();
+          if (v) return resolve(v);
+          if (++n >= max) return reject(new Error("后台登录脚本未就绪"));
+          setTimeout(tick, 25);
+        })();
+      });
+    }
+
+    function escapeHtml(s) {
+      return String(s || "").replace(/[&<>"']/g, function (c) {
+        return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+      });
+    }
+
+    async function boot() {
+      var root = document.getElementById("adminLoginApp");
+      if (!root) throw new Error("缺少登录根节点 #adminLoginApp");
+
+      var Auth = await waitFor(function () { return window.MCJAuthShell; });
+      var Gate = await waitFor(function () { return window.MCJRoleGate; });
+
+      if (Gate.isLogged("admin")) {
+        location.replace("/admin.html#dashboard");
+        return;
+      }
+
+      var form = root.querySelector("[data-admin-login]");
+      if (!form) throw new Error("缺少登录表单");
+
+      var loginNotice = "";
+      try {
+        loginNotice = sessionStorage.getItem("mcjAdminLoginNotice") || "";
+        if (loginNotice) sessionStorage.removeItem("mcjAdminLoginNotice");
+      } catch (e) {}
+
+      var errBox = form.querySelector("[data-auth-error]");
+      if (errBox && loginNotice) errBox.textContent = loginNotice;
+
+      if (Auth.bindPasswordToggles) Auth.bindPasswordToggles(root);
+      if (Auth.prepareAuthForm) Auth.prepareAuthForm(form, { clearAccount: false });
+      if (window.MCJAdminBootGuard && window.MCJAdminBootGuard.markReady) {
+        window.MCJAdminBootGuard.markReady();
+      }
+
+      var submitting = false;
+      root.addEventListener("submit", function (e) {
+        var target = e.target && e.target.closest && e.target.closest("[data-admin-login]");
+        if (!target) return;
+        e.preventDefault();
+        if (submitting) return;
+        var fd = new FormData(target);
+        var btn = target.querySelector('[type="submit"]');
+        var account = String(fd.get("account") || "").trim();
+        var password = String(fd.get("password") || "");
+        var remember = true; // Always persist: refresh + new tab keep login
+        if (!account || !password) {
+          Auth.setFormError(target, "请输入管理员邮箱和密码。");
+          return;
+        }
+        submitting = true;
+        Auth.setFormError(target, "");
+        Auth.setLoading(btn, true);
+        Gate.loginPortal("admin", account, password, remember)
+          .then(function (result) {
+            var redirect = "/admin.html#dashboard";
+            try {
+              redirect = sessionStorage.getItem("mcjAfterLoginRedirect") || (result && result.redirect) || redirect;
+              sessionStorage.removeItem("mcjAfterLoginRedirect");
+            } catch (e) {}
+            if (redirect === "/admin/" || redirect === "/admin") redirect = "/admin.html#dashboard";
+            location.replace(redirect);
+          })
+          .catch(function (err) {
+            submitting = false;
+            Auth.setLoading(btn, false, "登录");
+            var raw = String((err && err.message) || "").trim();
+            var friendly =
+              !raw || /bad request|invalid|credentials|unauthorized|^\d{3}\b/i.test(raw)
+                ? "账号或密码错误，请重试。"
+                : raw;
+            Auth.setFormError(target, friendly);
+          });
+      });
+    }
+
+    boot().catch(function (err) {
+      var detail = (err && (err.stack || err.message)) || String(err);
+      if (window.MCJAdminBootGuard && typeof window.MCJAdminBootGuard.show === "function") {
+        window.MCJAdminBootGuard.show(detail);
+        return;
+      }
+      // Fallback if boot-guard chunk failed: still avoid blank black screen.
+      var host = document.getElementById("adminLoginApp") || document.body;
+      var box = document.createElement("div");
+      box.setAttribute("role", "alert");
+      box.style.cssText =
+        "max-width:420px;margin:48px auto;padding:24px;border-radius:16px;background:#16161c;color:#f7f7fb;font-family:Segoe UI,PingFang SC,Microsoft YaHei,sans-serif;border:1px solid rgba(255,143,197,.35);";
+      box.innerHTML =
+        "<h1 style=\"margin:0 0 8px;font-size:20px;\">后台初始化失败</h1>" +
+        "<p style=\"margin:0 0 16px;opacity:.85;\">登录页脚本异常，请重试。业务数据失败不应阻断登录。</p>" +
+        "<pre style=\"white-space:pre-wrap;word-break:break-word;font-size:12px;opacity:.7;max-height:160px;overflow:auto;\">" +
+        escapeHtml(detail) +
+        "</pre>" +
+        "<div style=\"display:flex;gap:10px;margin-top:16px;flex-wrap:wrap;\">" +
+        "<button type=\"button\" style=\"padding:10px 14px;border-radius:10px;border:0;background:#ff8fc5;color:#111;font-weight:600;cursor:pointer;\" data-reload>重新加载</button>" +
+        "<a href=\"/\" style=\"padding:10px 14px;border-radius:10px;border:1px solid rgba(255,255,255,.2);color:#f7f7fb;text-decoration:none;\">返回首页</a>" +
+        "</div>";
+      host.innerHTML = "";
+      host.appendChild(box);
+      var reloadBtn = box.querySelector("[data-reload]");
+      if (reloadBtn) reloadBtn.onclick = function () { location.reload(); };
+    });
+  </script>
+</body>
+</html>

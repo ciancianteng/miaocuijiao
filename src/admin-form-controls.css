@@ -1,0 +1,400 @@
+/* Unified admin form controls — Switch + custom Select only. Do not restyle shell. */
+.admin-native-hidden{
+  position:absolute!important;
+  width:1px!important;
+  height:1px!important;
+  padding:0!important;
+  margin:-1px!important;
+  overflow:hidden!important;
+  clip:rect(0,0,0,0)!important;
+  white-space:nowrap!important;
+  border:0!important;
+  opacity:0!important;
+  pointer-events:none!important;
+}
+
+.admin-switch-field,
+.admin-select-field{
+  display:grid;
+  gap:8px;
+  margin:0;
+  color:rgba(255,255,255,.72);
+  font-size:12px;
+  font-weight:700;
+}
+.admin-switch-field > span.admin-field-label,
+.admin-select-field > span.admin-field-label{
+  color:rgba(255,255,255,.68);
+}
+
+.admin-switch-row{
+  display:inline-flex;
+  align-items:center;
+  gap:10px;
+  min-height:44px;
+}
+
+.admin-switch{
+  position:relative;
+  width:46px;
+  height:26px;
+  border:0;
+  border-radius:999px;
+  padding:0;
+  background:#3a3a42;
+  cursor:pointer;
+  flex:0 0 auto;
+  transition:background .18s ease;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.08);
+}
+.admin-switch[aria-checked="true"]{
+  background:rgba(243,168,203,.78);
+  box-shadow:inset 0 0 0 1px rgba(255,220,235,.28);
+}
+.admin-switch:disabled{
+  opacity:.55;
+  cursor:not-allowed;
+}
+.admin-select-trigger:disabled{
+  opacity:.55;
+  cursor:not-allowed;
+}
+.admin-switch::after{
+  content:"";
+  position:absolute;
+  top:3px;
+  left:3px;
+  width:20px;
+  height:20px;
+  border-radius:50%;
+  background:#fff;
+  box-shadow:0 2px 6px rgba(0,0,0,.28);
+  transition:transform .18s ease;
+}
+.admin-switch[aria-checked="true"]::after{
+  transform:translateX(20px);
+}
+.admin-switch-text{
+  color:#ffe7f2;
+  font-size:13px;
+  font-weight:800;
+  min-width:2.5em;
+}
+
+.admin-select{
+  position:relative;
+  width:100%;
+}
+.admin-select-trigger{
+  width:100%;
+  height:44px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  border-radius:12px;
+  border:1px solid rgba(243,168,203,.22);
+  background:rgba(0,0,0,.34);
+  color:#fff;
+  padding:0 12px 0 14px;
+  font:inherit;
+  font-size:13px;
+  font-weight:700;
+  cursor:pointer;
+  text-align:left;
+}
+.admin-select-trigger:hover{
+  border-color:rgba(243,168,203,.38);
+}
+.admin-select-trigger:focus-visible{
+  outline:2px solid rgba(243,168,203,.65);
+  outline-offset:2px;
+}
+.admin-select-trigger[aria-expanded="true"]{
+  border-color:rgba(243,168,203,.48);
+}
+.admin-select-value{
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.admin-select-value.is-placeholder{
+  color:rgba(255,255,255,.42);
+  font-weight:600;
+}
+.admin-select-caret{
+  width:10px;
+  height:10px;
+  flex:0 0 auto;
+  border-right:2px solid rgba(255,220,235,.7);
+  border-bottom:2px solid rgba(255,220,235,.7);
+  transform:rotate(45deg) translate(-2px,-2px);
+  opacity:.85;
+}
+.admin-select-menu{
+  position:absolute;
+  left:0;
+  right:0;
+  top:calc(100% + 6px);
+  z-index:80;
+  max-height:260px;
+  overflow:auto;
+  border-radius:12px;
+  border:1px solid rgba(243,168,203,.22);
+  background:rgba(12,8,16,.96);
+  box-shadow:0 18px 40px rgba(0,0,0,.45);
+  padding:6px;
+  display:none;
+}
+.admin-select.is-open .admin-select-menu{display:block}
+.admin-select-menu.is-up{
+  top:auto;
+  bottom:calc(100% + 6px);
+}
+.admin-select-option{
+  width:100%;
+  border:0;
+  background:transparent;
+  color:#fff;
+  text-align:left;
+  border-radius:10px;
+  min-height:40px;
+  padding:8px 12px;
+  font:inherit;
+  font-size:13px;
+  font-weight:700;
+  cursor:pointer;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+}
+.admin-select-option:hover,
+.admin-select-option.is-active{
+  background:rgba(243,168,203,.12);
+}
+.admin-select-option.is-selected{
+  color:#ffd6e7;
+}
+.admin-select-option.is-selected::after{
+  content:"✓";
+  color:#ff9ecf;
+  font-size:12px;
+}
+.admin-select-option:focus-visible{
+  outline:2px solid rgba(243,168,203,.55);
+  outline-offset:0;
+}
+
+/* Service form two-column layout (module-internal only) */
+.admin-service-form .admin-service-grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:14px;
+}
+.admin-service-form .admin-service-span-2{grid-column:1 / -1}
+.admin-service-form .admin-service-switches{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:14px;
+  grid-column:1 / -1;
+}
+@media (max-width:760px){
+  .admin-service-form .admin-service-grid,
+  .admin-service-form .admin-service-switches{
+    grid-template-columns:1fr;
+  }
+}
+
+/* Normalize enhanced controls inside existing admin form grids */
+.platform-content-form .admin-switch-field,
+.platform-content-form .admin-select-field,
+.admin-final-form .admin-switch-field,
+.admin-final-form .admin-select-field,
+.service-account-form .admin-switch-field,
+.service-account-form .admin-select-field,
+.coupon-form .admin-switch-field,
+.coupon-form .admin-select-field,
+.payment-editor .admin-switch-field,
+.payment-editor .admin-select-field,
+.payment-field-grid .admin-switch-field,
+.payment-field-grid .admin-select-field,
+.boss-filters .admin-select-field,
+.player-filters .admin-select-field,
+.order-toolbar .admin-select-field{
+  width:100%;
+}
+.boss-filters .admin-select-trigger,
+.player-filters .admin-select-trigger,
+.order-toolbar .admin-select-trigger,
+.boss-pagination .admin-select-trigger,
+.player-pagination .admin-select-trigger{
+  height:40px;
+  border-radius:10px;
+}
+
+/* Native form controls inside admin shell: dark + pink (no browser defaults) */
+.admin-shell,
+.admin-shell *{
+  color-scheme: dark;
+}
+.admin-shell input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"]):not([type="range"]):not(.admin-native-hidden),
+.admin-shell textarea,
+.admin-shell select,
+.admin-modal input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"]):not([type="range"]):not(.admin-native-hidden),
+.admin-modal textarea,
+.admin-modal select,
+#adminModal input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"]):not([type="range"]):not(.admin-native-hidden),
+#adminModal textarea,
+#adminModal select{
+  appearance:none;
+  -webkit-appearance:none;
+  background:rgba(12,10,16,.92)!important;
+  color:#fff!important;
+  border:1px solid rgba(255,145,195,.45)!important;
+  border-radius:12px!important;
+  font:inherit!important;
+  font-size:13px!important;
+  font-weight:600!important;
+  box-shadow:none!important;
+  outline:none;
+}
+.admin-shell input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"]):not([type="range"]),
+.admin-modal input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"]):not([type="range"]),
+#adminModal input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"]):not([type="range"]){
+  height:42px;
+  padding:0 12px;
+}
+.admin-shell textarea,
+.admin-modal textarea,
+#adminModal textarea{
+  min-height:88px;
+  padding:10px 12px;
+  line-height:1.45;
+  resize:vertical;
+}
+.admin-shell select,
+.admin-modal select,
+#adminModal select{
+  height:42px;
+  padding:0 34px 0 12px;
+  background-image:
+    linear-gradient(45deg, transparent 50%, rgba(255,145,195,.9) 50%),
+    linear-gradient(135deg, rgba(255,145,195,.9) 50%, transparent 50%),
+    linear-gradient(to right, rgba(12,10,16,.92), rgba(12,10,16,.92))!important;
+  background-position:
+    calc(100% - 16px) calc(50% - 2px),
+    calc(100% - 10px) calc(50% - 2px),
+    0 0!important;
+  background-size:6px 6px,6px 6px,100% 100%!important;
+  background-repeat:no-repeat!important;
+  cursor:pointer;
+}
+.admin-shell input:focus,
+.admin-shell textarea:focus,
+.admin-shell select:focus,
+.admin-modal input:focus,
+.admin-modal textarea:focus,
+.admin-modal select:focus,
+#adminModal input:focus,
+#adminModal textarea:focus,
+#adminModal select:focus{
+  border-color:rgba(243,168,203,.72)!important;
+  box-shadow:0 0 0 2px rgba(243,168,203,.18)!important;
+}
+.admin-shell input::placeholder,
+.admin-shell textarea::placeholder,
+.admin-modal input::placeholder,
+.admin-modal textarea::placeholder,
+#adminModal input::placeholder,
+#adminModal textarea::placeholder{
+  color:rgba(255,200,225,.55)!important;
+}
+.admin-shell input[type="checkbox"],
+.admin-shell input[type="radio"],
+.admin-modal input[type="checkbox"],
+.admin-modal input[type="radio"],
+#adminModal input[type="checkbox"],
+#adminModal input[type="radio"]{
+  appearance:none;
+  -webkit-appearance:none;
+  width:18px;
+  height:18px;
+  margin:0;
+  flex:0 0 auto;
+  border:1.5px solid rgba(243,168,203,.55)!important;
+  background:rgba(0,0,0,.5)!important;
+  border-radius:5px!important;
+  display:inline-grid;
+  place-content:center;
+  cursor:pointer;
+  vertical-align:middle;
+}
+.admin-shell input[type="radio"],
+.admin-modal input[type="radio"],
+#adminModal input[type="radio"]{
+  border-radius:50%!important;
+}
+.admin-shell input[type="checkbox"]::before,
+.admin-modal input[type="checkbox"]::before,
+#adminModal input[type="checkbox"]::before{
+  content:"";
+  width:10px;
+  height:10px;
+  transform:scale(0);
+  transition:transform .12s ease;
+  background:rgba(243,168,203,.95);
+  clip-path:polygon(14% 44%,0 65%,50% 100%,100% 16%,80% 0,43% 62%);
+}
+.admin-shell input[type="checkbox"]:checked::before,
+.admin-modal input[type="checkbox"]:checked::before,
+#adminModal input[type="checkbox"]:checked::before{
+  transform:scale(1);
+}
+.admin-shell input[type="radio"]::before,
+.admin-modal input[type="radio"]::before,
+#adminModal input[type="radio"]::before{
+  content:"";
+  width:8px;
+  height:8px;
+  border-radius:50%;
+  transform:scale(0);
+  transition:transform .12s ease;
+  background:rgba(243,168,203,.95);
+}
+.admin-shell input[type="radio"]:checked::before,
+.admin-modal input[type="radio"]:checked::before,
+#adminModal input[type="radio"]:checked::before{
+  transform:scale(1);
+}
+.admin-shell input[type="date"],
+.admin-shell input[type="datetime-local"],
+.admin-shell input[type="time"],
+.admin-modal input[type="date"],
+.admin-modal input[type="datetime-local"],
+.admin-modal input[type="time"],
+#adminModal input[type="date"],
+#adminModal input[type="datetime-local"],
+#adminModal input[type="time"]{
+  color-scheme:dark;
+}
+.admin-shell input[type="date"]::-webkit-calendar-picker-indicator,
+.admin-shell input[type="datetime-local"]::-webkit-calendar-picker-indicator,
+.admin-shell input[type="time"]::-webkit-calendar-picker-indicator,
+.admin-modal input[type="date"]::-webkit-calendar-picker-indicator,
+.admin-modal input[type="datetime-local"]::-webkit-calendar-picker-indicator,
+.admin-modal input[type="time"]::-webkit-calendar-picker-indicator,
+#adminModal input[type="date"]::-webkit-calendar-picker-indicator,
+#adminModal input[type="datetime-local"]::-webkit-calendar-picker-indicator,
+#adminModal input[type="time"]::-webkit-calendar-picker-indicator{
+  opacity:.85;
+  cursor:pointer;
+  filter:invert(1) sepia(1) saturate(3) hue-rotate(295deg);
+}
+.admin-shell select option,
+.admin-modal select option,
+#adminModal select option{
+  background:#16131b;
+  color:#fff;
+}

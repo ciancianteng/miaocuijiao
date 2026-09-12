@@ -1,0 +1,228 @@
+{
+  "at": "2026-08-03T22:45:03.091Z",
+  "dumps": {
+    "PW00002": {
+      "companion_profiles": {
+        "id": "f6fa3ebf-8dd2-41b7-a990-5699e30a5128",
+        "user_id": "db27b7be-f0e2-4af1-9c1b-d1ddd18c6c81",
+        "nickname": "1717",
+        "game": "VALORANT、三角洲",
+        "level_name": "Lv5 喵皇",
+        "price": 75,
+        "commission_rate": 20,
+        "deposit_status": "paid",
+        "verification_status": "approved",
+        "online_status": "online",
+        "description": "我是老板的纸尿裤 给老板全兜住",
+        "voice_url": "storage://companion-audio/db27b7be-f0e2-4af1-9c1b-d1ddd18c6c81/voice/1785750711074-664066f9-Jalan_Puj_9-8_292.m4a",
+        "card_image_url": "https://jqfaknpmcnqwqvatrwgo.supabase.co/storage/v1/object/public/companion-public/db27b7be-f0e2-4af1-9c1b-d1ddd18c6c81/avatar/1785748957892-7ad819bb-Image_20260601115805_454_50.jpg",
+        "created_at": "2026-08-02T23:57:04.913+00:00",
+        "updated_at": "2026-08-03T22:34:01.543+00:00",
+        "tags": "随和,[[MCJ_PRICES:{\"bf6d095c-5e42-4eb6-9885-c5e0b189c3ec\":75,\"VALORANT\":75,\"f75f90e8-bbf2-4cad-8487-5e50a2aac9a4\":80,\"三角洲\":80}]]",
+        "age": 23,
+        "gender": "女",
+        "region": "kl/kch",
+        "contact_phone": "",
+        "game_rank": "绝密2kd",
+        "position": "全能",
+        "game_id": "1717大王",
+        "media_status": "approved",
+        "media_reject_reason": "",
+        "application_status": "approved",
+        "gift_commission_rate": 0,
+        "direct_rebate_rate": 0,
+        "featured": true,
+        "allow_orders": true,
+        "main_service": "",
+        "voice_type": "甜妹",
+        "schedule": "",
+        "application_note": "[AUTH_MODE:deposit]",
+        "application_reject_reason": "",
+        "application_submitted_at": "2026-08-02T23:57:08.561+00:00",
+        "level_id": "lv5",
+        "level_effective_at": "2026-08-03T20:24:27.362+00:00",
+        "commission_effective_at": "2026-08-03T20:24:27.671+00:00",
+        "last_login_at": null,
+        "service_type": "陪玩服务",
+        "service_ids": [
+          "bf6d095c-5e42-4eb6-9885-c5e0b189c3ec",
+          "f75f90e8-bbf2-4cad-8487-5e50a2aac9a4"
+        ],
+        "game_prices": {
+          "VALORANT": 75,
+          "三角洲": 80,
+          "bf6d095c-5e42-4eb6-9885-c5e0b189c3ec": 75,
+          "f75f90e8-bbf2-4cad-8487-5e50a2aac9a4": 80
+        },
+        "companion_code": "PW00002",
+        "companion_uid": null
+      },
+      "profile": {
+        "id": "db27b7be-f0e2-4af1-9c1b-d1ddd18c6c81",
+        "email": "companion.final.1785714993009@meow.test",
+        "display_name": "1717",
+        "avatar_url": "https://jqfaknpmcnqwqvatrwgo.supabase.co/storage/v1/object/public/companion-public/db27b7be-f0e2-4af1-9c1b-d1ddd18c6c81/avatar/1785748957892-7ad819bb-Image_20260601115805_454_50.jpg",
+        "status": "active",
+        "role": "companion"
+      },
+      "media": [
+        {
+          "companion_profile_id": "f6fa3ebf-8dd2-41b7-a990-5699e30a5128",
+          "media_type": "avatar",
+          "status": "approved",
+          "storage_bucket": "companion-public",
+          "storage_path": "db27b7be-f0e2-4af1-9c1b-d1ddd18c6c81/avatar/1785748957892-7ad819bb-Image_20260601115805_454_50.jpg"
+        },
+        {
+          "companion_profile_id": "f6fa3ebf-8dd2-41b7-a990-5699e30a5128",
+          "media_type": "voice",
+          "status": "approved",
+          "storage_bucket": "companion-audio",
+          "storage_path": "db27b7be-f0e2-4af1-9c1b-d1ddd18c6c81/voice/1785750711074-664066f9-Jalan_Puj_9-8_292.m4a"
+        },
+        {
+          "companion_profile_id": "f6fa3ebf-8dd2-41b7-a990-5699e30a5128",
+          "media_type": "gallery",
+          "status": "approved",
+          "storage_bucket": "companion-public",
+          "storage_path": "db27b7be-f0e2-4af1-9c1b-d1ddd18c6c81/gallery/1785750629270-0d26aa5f-________2026_7_22_18_25_36.png"
+        }
+      ],
+      "certs": [
+        "cert-official"
+      ]
+    },
+    "PW00004": {
+      "companion_profiles": {
+        "id": "dbffd3fa-b6d5-40b1-aa4f-25edcb7c24d5",
+        "user_id": "bc2b1d20-e7e7-4399-ae9d-b3663f2b2abc",
+        "nickname": "凝梦",
+        "game": "VALORANT、CS2",
+        "level_name": "Lv4 喵神",
+        "price": 3,
+        "commission_rate": 20,
+        "deposit_status": "paid",
+        "verification_status": "approved",
+        "online_status": "offline",
+        "description": "",
+        "voice_url": "https://jqfaknpmcnqwqvatrwgo.supabase.co/storage/v1/object/sign/companion-audio/bc2b1d20-e7e7-4399-ae9d-b3663f2b2abc/voice/1785782501011-917615d1-voice.webm?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV9iZmRjMWQ1OS1iMTFiLTQ0MmEtODg4Yy1lMDliOGFjYTE5YTYiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJjb21wYW5pb24tYXVkaW8vYmMyYjFkMjAtZTdlNy00Mzk5LWFlOWQtYjM2NjNmMmIyYWJjL3ZvaWNlLzE3ODU3ODI1MDEwMTEtOTE3NjE1ZDEtdm9pY2Uud2VibSIsInNjb3BlIjoiZG93bmxvYWQiLCJpYXQiOjE3ODU3ODI1MDQsImV4cCI6MTc4ODM3NDUwNH0.TQP6_1ICfJ8eiLZ7KLUFBbYYlz6qeAoRBzpnsfbUff4",
+        "card_image_url": "https://jqfaknpmcnqwqvatrwgo.supabase.co/storage/v1/object/public/companion-public/bc2b1d20-e7e7-4399-ae9d-b3663f2b2abc/avatar/1785782484128-c7c8ed1a-avatar.jpg",
+        "created_at": "2026-08-03T18:26:12.864+00:00",
+        "updated_at": "2026-08-03T22:34:01.543+00:00",
+        "tags": "活泼,烟嗓,娱乐",
+        "age": null,
+        "gender": "",
+        "region": "",
+        "contact_phone": "169244188",
+        "game_rank": "青铜",
+        "position": "辅助",
+        "game_id": "",
+        "media_status": "approved",
+        "media_reject_reason": "",
+        "application_status": "approved",
+        "gift_commission_rate": 0,
+        "direct_rebate_rate": 0,
+        "featured": true,
+        "allow_orders": true,
+        "main_service": "VALORANT",
+        "voice_type": "少女音",
+        "schedule": "20:30 - 02:30",
+        "application_note": "妙脆角喵~",
+        "application_reject_reason": "",
+        "application_submitted_at": "2026-08-03T18:44:10.164+00:00",
+        "level_id": "lv4",
+        "level_effective_at": "2026-08-03T22:22:15.268+00:00",
+        "commission_effective_at": "2026-08-03T22:22:15.57+00:00",
+        "last_login_at": null,
+        "service_type": "陪玩服务,陪聊服务",
+        "service_ids": [],
+        "game_prices": {},
+        "companion_code": "PW00004",
+        "companion_uid": null
+      },
+      "profile": {
+        "id": "bc2b1d20-e7e7-4399-ae9d-b3663f2b2abc",
+        "email": "xinyilxy28@gamil.com",
+        "display_name": "凝梦",
+        "avatar_url": "https://jqfaknpmcnqwqvatrwgo.supabase.co/storage/v1/object/public/companion-public/bc2b1d20-e7e7-4399-ae9d-b3663f2b2abc/avatar/1785782484128-c7c8ed1a-avatar.jpg",
+        "status": "active",
+        "role": "companion"
+      },
+      "media": [
+        {
+          "companion_profile_id": "dbffd3fa-b6d5-40b1-aa4f-25edcb7c24d5",
+          "media_type": "gallery",
+          "status": "approved",
+          "storage_bucket": "companion-public",
+          "storage_path": "bc2b1d20-e7e7-4399-ae9d-b3663f2b2abc/gallery/1785782484705-85f95df3-gallery.jpg"
+        },
+        {
+          "companion_profile_id": "dbffd3fa-b6d5-40b1-aa4f-25edcb7c24d5",
+          "media_type": "avatar",
+          "status": "approved",
+          "storage_bucket": "companion-public",
+          "storage_path": "bc2b1d20-e7e7-4399-ae9d-b3663f2b2abc/avatar/1785782484128-c7c8ed1a-avatar.jpg"
+        },
+        {
+          "companion_profile_id": "dbffd3fa-b6d5-40b1-aa4f-25edcb7c24d5",
+          "media_type": "gallery",
+          "status": "approved",
+          "storage_bucket": "companion-public",
+          "storage_path": "bc2b1d20-e7e7-4399-ae9d-b3663f2b2abc/gallery/1785782487031-9999d8b0-gallery.jpg"
+        },
+        {
+          "companion_profile_id": "dbffd3fa-b6d5-40b1-aa4f-25edcb7c24d5",
+          "media_type": "gallery",
+          "status": "approved",
+          "storage_bucket": "companion-public",
+          "storage_path": "bc2b1d20-e7e7-4399-ae9d-b3663f2b2abc/gallery/1785782492397-1503ba59-cover.jpg"
+        },
+        {
+          "companion_profile_id": "dbffd3fa-b6d5-40b1-aa4f-25edcb7c24d5",
+          "media_type": "gallery",
+          "status": "approved",
+          "storage_bucket": "companion-public",
+          "storage_path": "bc2b1d20-e7e7-4399-ae9d-b3663f2b2abc/gallery/1785782492331-380068d6-gallery.jpg"
+        },
+        {
+          "companion_profile_id": "dbffd3fa-b6d5-40b1-aa4f-25edcb7c24d5",
+          "media_type": "gallery",
+          "status": "approved",
+          "storage_bucket": "companion-public",
+          "storage_path": "bc2b1d20-e7e7-4399-ae9d-b3663f2b2abc/gallery/1785782493237-84c03f38-cover.jpg"
+        },
+        {
+          "companion_profile_id": "dbffd3fa-b6d5-40b1-aa4f-25edcb7c24d5",
+          "media_type": "gallery",
+          "status": "approved",
+          "storage_bucket": "companion-public",
+          "storage_path": "bc2b1d20-e7e7-4399-ae9d-b3663f2b2abc/gallery/1785782492778-ba5cadfe-gallery.jpg"
+        },
+        {
+          "companion_profile_id": "dbffd3fa-b6d5-40b1-aa4f-25edcb7c24d5",
+          "media_type": "gallery",
+          "status": "approved",
+          "storage_bucket": "companion-public",
+          "storage_path": "bc2b1d20-e7e7-4399-ae9d-b3663f2b2abc/gallery/1785782493872-32195793-gallery.jpg"
+        },
+        {
+          "companion_profile_id": "dbffd3fa-b6d5-40b1-aa4f-25edcb7c24d5",
+          "media_type": "voice",
+          "status": "approved",
+          "storage_bucket": "companion-audio",
+          "storage_path": "bc2b1d20-e7e7-4399-ae9d-b3663f2b2abc/voice/1785782500027-3887c76b-voice.webm"
+        },
+        {
+          "companion_profile_id": "dbffd3fa-b6d5-40b1-aa4f-25edcb7c24d5",
+          "media_type": "voice",
+          "status": "approved",
+          "storage_bucket": "companion-audio",
+          "storage_path": "bc2b1d20-e7e7-4399-ae9d-b3663f2b2abc/voice/1785782501011-917615d1-voice.webm"
+        }
+      ],
+      "certs": [
+        "cert-gold"
+      ]
+    }
+  }
+}

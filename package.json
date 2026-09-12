@@ -2,6 +2,7 @@
   "name": "meow-cuijiao-homepage",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
@@ -9,9 +10,13 @@
   },
   "dependencies": {
     "@vitejs/plugin-react": "latest",
-    "vite": "latest",
+    "nodemailer": "^6.10.1",
     "react": "latest",
-    "react-dom": "latest"
+    "react-dom": "latest",
+    "vite": "latest"
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "pg": "^8.22.0",
+    "playwright-core": "^1.62.0"
+  }
 }

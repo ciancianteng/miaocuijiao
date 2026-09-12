@@ -4,19 +4,23 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>陪玩大厅 | Meow Cui Jiao</title>
+  <link rel="icon" href="assets/meow-cuijiao-brand.jpg">
   <link rel="stylesheet" href="src/platform.css">
   <link rel="stylesheet" href="src/notify-system.css">
   <link rel="stylesheet" href="src/design-system.css">
-  <link rel="stylesheet" href="src/companion-hall.css">
+  <link rel="stylesheet" href="src/companion-hall.css?v=20260805p0home1">
+  <link rel="stylesheet" href="src/companion-identity.css?v=20260805p0home1">
+  <link rel="stylesheet" href="src/place-order-modal.css">
+  <link rel="stylesheet" href="src/boss-header.css?v=20260805p0home1">
 </head>
 <body>
-  <header class="topbar">
-    <div class="topbar-inner">
-      <a class="brand" href="index.html">
-        <img src="assets/meow-cuijiao-brand.jpg" alt="MEOW CUI JIAO">
+  <header class="topbar companion-market-header">
+    <div class="topbar-inner companion-market-header-inner">
+      <a class="brand companion-market-brand" href="index.html">
+        <img src="/default-avatar.png" alt="MEOW CUI JIAO" onerror="this.onerror=null;this.src='/default-avatar.png'">
         <span>MEOW CUI JIAO<small>妙脆角电竞</small></span>
       </a>
-      <nav class="nav">
+      <nav class="nav companion-market-nav" aria-label="页面导航">
         <a href="index.html">首页</a>
         <a class="active" href="companion-center.html">陪玩大厅</a>
         <a href="mine.html">我的</a>
@@ -25,89 +29,89 @@
   </header>
 
   <main class="page companion-hall-page">
-    <section class="hero companion-hall-hero">
+    <section class="hall-intro" aria-labelledby="companionHallTitle">
       <div>
-        <h1>陪玩大厅</h1>
-        <p>搜索昵称、游戏和标签，快速找到合适的陪玩</p>
+        <h1 id="companionHallTitle">陪玩大厅</h1>
+        <p>找到喜欢的陪玩，立即开始游戏。</p>
       </div>
     </section>
 
-    <section class="section card companion-filter-card">
-      <div class="section-title">
-        <div>
-          <h2>搜索与筛选</h2>
-          <p>按昵称、陪玩 ID、游戏、标签、位置和简介关键词筛选。</p>
-        </div>
-        <div class="mobile-filter-actions">
-          <button class="btn" id="filterToggle" type="button">筛选</button>
-          <button class="btn" id="sortToggle" type="button">排序</button>
-        </div>
+    <section class="hall-search-panel" aria-label="搜索陪玩">
+      <div class="hall-search-main">
+        <label class="hall-search-field" for="searchInput">
+          <span>搜索</span>
+          <input id="searchInput" type="search" placeholder="搜索昵称、陪玩ID、游戏或标签" autocomplete="off">
+        </label>
+        <button class="hall-search-btn" id="applyFilter" type="button">搜索</button>
+        <button class="hall-clear-btn" id="resetFilter" type="button">清除</button>
+        <button class="hall-filter-toggle" id="filterToggle" type="button" aria-expanded="false" aria-controls="searchFilters">筛选</button>
       </div>
 
-      <div class="filters companion-filters" id="searchFilters">
-        <label class="field companion-search-field">
-          <span>搜索</span>
-          <input id="searchInput" placeholder="昵称 / ID / 游戏 / 标签 / 简介">
-        </label>
-        <label class="field">
-          <span>类型</span>
-          <select id="typeFilter"></select>
-        </label>
-        <label class="field">
-          <span>游戏</span>
-          <select id="gameFilter"></select>
-        </label>
-        <label class="field">
-          <span>性别</span>
-          <select id="genderFilter">
-            <option value="">全部性别</option>
-            <option value="女">女</option>
-            <option value="男">男</option>
-            <option value="保密">保密</option>
-          </select>
-        </label>
-        <label class="field">
-          <span>价格区间</span>
-          <select id="priceFilter">
-            <option value="">全部价格</option>
-            <option value="20-30">RM20–RM30</option>
-            <option value="30-40">RM30–RM40</option>
-            <option value="40-45">RM40–RM45</option>
-            <option value="60-75">RM60–RM75</option>
-            <option value="75-99999">RM75–RM100+</option>
-          </select>
-        </label>
-        <label class="field">
-          <span>等级</span>
-          <select id="levelFilter"></select>
-        </label>
-        <label class="field">
-          <span>排序方式</span>
+      <div class="hall-filter-drawer" id="searchFilters" aria-label="筛选工具栏">
+        <div class="hall-filter-head">
+          <strong>筛选</strong>
+          <button class="hall-drawer-close" id="filterClose" type="button">完成</button>
+        </div>
+        <div class="hall-filter-row">
+          <label class="hall-filter-field">
+            <span>游戏分类</span>
+            <select id="gameFilter"></select>
+          </label>
+          <label class="hall-filter-field">
+            <span>服务类型</span>
+            <select id="typeFilter"></select>
+          </label>
+          <label class="hall-filter-field">
+            <span>陪玩等级</span>
+            <select id="levelFilter"></select>
+          </label>
+          <label class="hall-filter-field">
+            <span>价格</span>
+            <select id="priceFilter">
+              <option value="">全部价格</option>
+              <option value="20-30">20-30 猫粮</option>
+              <option value="30-40">30-40 猫粮</option>
+              <option value="40-45">40-45 猫粮</option>
+              <option value="60-75">60-75 猫粮</option>
+              <option value="75-99999">75+ 猫粮</option>
+            </select>
+          </label>
+          <label class="hall-filter-field">
+            <span>在线状态</span>
+            <select id="onlineFilter">
+              <option value="">全部状态</option>
+              <option value="在线可接单">在线可接单</option>
+              <option value="忙碌中">忙碌中</option>
+              <option value="暂停接单">暂停接单</option>
+              <option value="离线">离线</option>
+            </select>
+          </label>
+          <button class="hall-reset-text" id="resetFilterDrawer" type="button">重置筛选</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="hall-results" aria-labelledby="companionListTitle">
+      <div class="hall-results-head">
+        <div>
+          <h2 id="companionListTitle">陪玩推荐</h2>
+          <p id="resultCount">共 0 位陪玩</p>
+        </div>
+        <label class="hall-sort-field">
+          <span>排序</span>
           <select id="sortFilter">
             <option value="recommend">默认推荐</option>
-            <option value="levelDesc">等级从高到低</option>
-            <option value="ratingDesc">评分从高到低</option>
-            <option value="priceAsc">价格从低到高</option>
-            <option value="priceDesc">价格从高到低</option>
-            <option value="ordersDesc">订单量从高到低</option>
-            <option value="activeDesc">最近在线</option>
-            <option value="newest">新加入</option>
+            <option value="levelDesc">等级优先</option>
+            <option value="priceAsc">价格低到高</option>
+            <option value="priceDesc">价格高到低</option>
           </select>
         </label>
-        <button class="btn primary companion-filter-apply" id="applyFilter" type="button">应用筛选</button>
       </div>
-    </section>
 
-    <section class="section">
-      <div class="section-title">
-        <h2>陪玩列表</h2>
-        <p id="resultCount">等待后台真实陪玩数据</p>
-      </div>
-      <div class="grid grid-3 companion-hall-grid" id="playerList"></div>
+      <div class="companion-hall-grid" id="playerList"></div>
       <div class="empty companion-empty" id="emptyState" hidden>
-        <strong>暂无符合条件的陪玩</strong>
-        <span>完成认证并通过审核的陪玩将在这里展示。</span>
-        <a class="btn primary" href="companion-apply.html">申请成为陪玩</a>
+        <strong>目前暂无可接单陪玩</strong>
+        <span>通过审核并上线接单的陪玩将在这里展示。</span>
       </div>
       <div class="companion-pagination" id="companionPagination"></div>
     </section>
@@ -120,13 +124,52 @@
   </nav>
 
   <script src="src/platform-store.js"></script>
+  <script src="src/platform-taxonomy.js"></script>
   <script src="src/companion-levels.js"></script>
+  <script src="src/role-gates.js?v=20260805p0home1"></script>
+  <script src="src/boss-auth-session.js?v=20260805p0home1"></script>
+  <script src="src/avatar-fallback.js"></script>
+  <script src="src/companion-media.js?v=20260802mediaSync"></script>
+  <script src="src/companion-identity.js?v=20260805p0home1"></script>
+  <script src="src/boss-header.js?v=20260805p0home1" defer></script>
   <script src="src/dropdown-system.js" defer></script>
   <script src="src/design-system.js" defer></script>
-  <script src="src/site-data.js" defer></script>
-  <script src="src/companion-hall.js" defer></script>
+  <script src="src/site-data.js?v=20260804profileUuid1" defer></script>
+  <script src="src/currency.js"></script>
+  <script src="src/companion-presence.js?v=20260805profileLock1"></script>
+  <script src="src/place-order-modal.js?v=20260807payChannel1"></script>
+  <script src="src/companion-hall.js?v=20260805profileLock1" defer></script>
   <script src="src/notify-system.js" defer></script>
   <script src="src/launch-readiness-fixes.js" defer></script>
-  <script src="src/meow-butler.js?v=20260711-floating" defer></script>
+<script>
+    (function () {
+      var panel = document.querySelector('.hall-search-panel');
+      var toggle = document.getElementById('filterToggle');
+      var close = document.getElementById('filterClose');
+      var reset = document.getElementById('resetFilter');
+      var resetDrawer = document.getElementById('resetFilterDrawer');
+      function setOpen(open) {
+        if (!panel || !toggle) return;
+        panel.classList.toggle('filters-open', open);
+        document.body.classList.toggle('hall-filter-lock', open);
+        toggle.setAttribute('aria-expanded', String(open));
+      }
+      if (toggle) toggle.addEventListener('click', function () { setOpen(!(panel && panel.classList.contains('filters-open'))); });
+      if (close) close.addEventListener('click', function () { setOpen(false); });
+      if (reset) {
+        reset.addEventListener('click', function () {
+          ['searchInput','gameFilter','typeFilter','levelFilter','priceFilter','onlineFilter','sortFilter'].forEach(function (id) {
+            var el = document.getElementById(id);
+            if (!el) return;
+            el.value = id === 'sortFilter' ? 'recommend' : '';
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+          });
+        });
+      }
+      if (resetDrawer && reset) resetDrawer.addEventListener('click', function () { reset.click(); });
+      document.addEventListener('keydown', function (event) { if (event.key === 'Escape') setOpen(false); });
+    })();
+  </script>
 </body>
 </html>

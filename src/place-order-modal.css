@@ -1,0 +1,468 @@
+/* Place-order portal: viewport-centered overlay (portal to document.body) */
+
+.mcj-po-mask {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100dvh !important;
+  z-index: 99998 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 20px !important;
+  padding: max(20px, env(safe-area-inset-top, 0px)) max(20px, env(safe-area-inset-right, 0px))
+    max(20px, env(safe-area-inset-bottom, 0px)) max(20px, env(safe-area-inset-left, 0px)) !important;
+  box-sizing: border-box !important;
+  overflow: hidden !important;
+  background: rgba(2, 1, 4, 0.72);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  touch-action: none;
+  margin: 0 !important;
+  transform: none !important;
+  filter: none !important;
+}
+
+.mcj-po-dialog {
+  position: relative !important;
+  z-index: 99999 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  left: auto !important;
+  top: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+  transform: none !important;
+  width: min(760px, calc(100vw - 40px)) !important;
+  max-width: calc(100vw - 40px) !important;
+  height: auto !important;
+  max-height: calc(100dvh - 40px) !important;
+  max-height: min(88dvh, calc(100dvh - 40px)) !important;
+  min-height: 0 !important;
+  border: 1px solid rgba(243, 168, 203, 0.28);
+  border-radius: 24px;
+  background: linear-gradient(180deg, rgba(30, 24, 36, 0.99), rgba(9, 8, 13, 0.99));
+  color: #fff;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
+  opacity: 1;
+  visibility: visible;
+  filter: none !important;
+  touch-action: auto;
+}
+
+@media (max-width: 767px) {
+  .mcj-po-mask {
+    align-items: flex-end !important;
+    padding: 0 !important;
+    padding-top: env(safe-area-inset-top, 0px) !important;
+  }
+
+  .mcj-po-dialog {
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: min(88dvh, calc(100dvh - env(safe-area-inset-top, 0px))) !important;
+    border-radius: 28px 28px 0 0 !important;
+    border-bottom: 0;
+  }
+}
+
+/* ---- Layer 1: fixed header ---- */
+.mcj-po-header {
+  flex: 0 0 auto;
+  padding: 16px 18px 14px;
+  border-bottom: 1px solid rgba(243, 168, 203, 0.18);
+  background: rgba(10, 8, 14, 0.98);
+  backdrop-filter: blur(12px);
+}
+
+.mcj-po-header-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.mcj-po-header-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  flex: 1;
+}
+
+.mcj-po-header-info img {
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  object-fit: cover;
+  background: rgba(255, 255, 255, 0.06);
+  flex: 0 0 auto;
+}
+
+.mcj-po-header-copy {
+  min-width: 0;
+}
+
+.mcj-po-header-copy h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 900;
+  color: #fff5fa;
+  line-height: 1.2;
+}
+
+.mcj-po-header-copy .mcj-po-name {
+  margin: 4px 0 0;
+  font-size: 15px;
+  font-weight: 800;
+  color: #ffe1ef;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mcj-po-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.mcj-po-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  color: #ffd6e7;
+  background: rgba(255, 145, 195, 0.12);
+  border: 1px solid rgba(255, 145, 195, 0.28);
+}
+
+.mcj-po-pill.online {
+  color: #b8ffd4;
+  border-color: rgba(120, 220, 160, 0.35);
+  background: rgba(80, 180, 120, 0.14);
+}
+
+.mcj-po-close {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  border: 1px solid rgba(255, 145, 195, 0.35);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #ffe1ef;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.mcj-po-close:hover {
+  background: rgba(255, 145, 195, 0.18);
+}
+
+/* ---- Layer 2: scrollable form ---- */
+.mcj-po-scroll {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  padding: 20px;
+  box-sizing: border-box;
+}
+
+.mcj-po-price-card {
+  margin: 0 0 16px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 145, 195, 0.22);
+  background: rgba(255, 145, 195, 0.08);
+  display: grid;
+  gap: 8px;
+}
+
+.mcj-po-price-row {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.mcj-po-price-row > span {
+  color: rgba(255, 225, 239, 0.7);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.mcj-po-price-row > small {
+  color: rgba(255, 214, 231, 0.55);
+  font-size: 12px;
+}
+
+.mcj-po-price-hero {
+  font-size: 22px;
+  font-weight: 900;
+  color: #ffe2ef;
+}
+
+.mcj-po-field {
+  margin: 0 0 14px;
+}
+
+.mcj-po-label {
+  display: block;
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 800;
+  color: rgba(255, 214, 231, 0.78);
+}
+
+.mcj-po-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.mcj-po-chip {
+  border: 1px solid rgba(255, 145, 195, 0.28);
+  background: rgba(255, 255, 255, 0.04);
+  color: #ffe1ef;
+  border-radius: 999px;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.mcj-po-chip.active {
+  background: rgba(255, 145, 195, 0.22);
+  border-color: rgba(255, 145, 195, 0.55);
+}
+
+.mcj-po-custom-service,
+.mcj-po-custom-hours {
+  display: none;
+  margin-top: 10px;
+}
+
+.mcj-po-custom-service.show,
+.mcj-po-custom-hours.show {
+  display: block;
+}
+
+.mcj-po-scroll label {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 12px;
+  font-size: 13px;
+  font-weight: 700;
+  color: rgba(255, 214, 231, 0.78);
+}
+
+.mcj-po-scroll input,
+.mcj-po-scroll textarea {
+  width: 100%;
+  box-sizing: border-box;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.28);
+  color: #fff;
+  padding: 12px 14px;
+  font-size: 15px;
+  font-family: inherit;
+}
+
+.mcj-po-scroll textarea {
+  resize: vertical;
+  min-height: 72px;
+}
+
+.mcj-po-pay-block {
+  margin-top: 8px;
+}
+
+.mcj-po-pay-label {
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-weight: 800;
+  color: rgba(255, 214, 231, 0.78);
+}
+
+.mcj-po-pay-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.mcj-po-pay-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 48px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 145, 195, 0.28);
+  background: rgba(255, 255, 255, 0.04);
+  color: #ffe1ef;
+  cursor: pointer;
+  text-align: left;
+}
+
+.mcj-po-pay-card.active {
+  border-color: rgba(255, 145, 195, 0.6);
+  background: rgba(255, 145, 195, 0.16);
+}
+
+.mcj-po-pay-title {
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.mcj-po-pay-check {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 145, 195, 0.45);
+  flex: 0 0 auto;
+}
+
+.mcj-po-pay-card.active .mcj-po-pay-check {
+  background: #ff8fc5;
+  border-color: #ff8fc5;
+  box-shadow: inset 0 0 0 3px rgba(20, 10, 16, 0.9);
+}
+
+.mcj-po-pay-card.is-maintenance {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.mcj-po-pay-card.is-maintenance .mcj-po-pay-check {
+  width: auto;
+  height: auto;
+  border: 0;
+  border-radius: 0;
+  font-size: 12px;
+  font-weight: 800;
+  color: #ffb7d0;
+}
+
+.mcj-po-error {
+  margin: 8px 0 0;
+  color: #ff9bb8;
+  font-size: 13px;
+  min-height: 1.2em;
+}
+
+.mcj-po-footer-error {
+  margin: 0;
+  text-align: center;
+  font-weight: 800;
+}
+
+/* ---- Layer 3: fixed footer ---- */
+.mcj-po-footer {
+  flex: 0 0 auto;
+  display: grid;
+  gap: 12px;
+  padding: 14px 16px calc(16px + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid rgba(243, 168, 203, 0.2);
+  background: rgba(8, 6, 12, 0.98);
+  backdrop-filter: blur(12px);
+  box-sizing: border-box;
+}
+
+.mcj-po-footer-breakdown {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 12px;
+  font-size: 12px;
+  color: rgba(255, 214, 231, 0.7);
+  font-weight: 700;
+}
+
+.mcj-po-footer-breakdown strong {
+  color: #ffe2ef;
+  font-weight: 900;
+}
+
+.mcj-po-footer-total-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.mcj-po-footer-total-row > span {
+  font-size: 13px;
+  color: rgba(255, 214, 231, 0.7);
+  font-weight: 700;
+}
+
+.mcj-po-footer-total-row strong {
+  font-size: 22px;
+  font-weight: 900;
+  color: #ffe2ef;
+}
+
+.mcj-po-submit.primary,
+.mcj-po-footer .mcj-po-submit {
+  width: 100%;
+  height: 56px;
+  min-height: 56px;
+  padding: 0 20px;
+  border: 0;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #ffe2ef, #e7a0c4);
+  color: #1b0712;
+  font-weight: 900;
+  font-size: 16px;
+  cursor: pointer;
+  box-shadow: 0 10px 24px rgba(225, 120, 180, 0.32);
+}
+
+.mcj-po-submit.primary:disabled,
+.mcj-po-footer .mcj-po-submit:disabled {
+  opacity: 0.55;
+  cursor: wait;
+  box-shadow: none;
+}
+
+/* In-page toast (never native alert) */
+.mcj-po-toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  z-index: 100050;
+  max-width: min(92vw, 420px);
+  padding: 12px 16px;
+  border-radius: 14px;
+  background: rgba(24, 14, 22, 0.96);
+  border: 1px solid rgba(255, 145, 195, 0.35);
+  color: #ffe1ef;
+  font-size: 14px;
+  font-weight: 700;
+  text-align: center;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.mcj-po-toast.show {
+  opacity: 1;
+}

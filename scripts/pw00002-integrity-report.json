@@ -1,0 +1,158 @@
+{
+  "at": "2026-08-03T22:46:46.524Z",
+  "conclusion": "PW00002 data intact in DB — no restore write performed",
+  "pw00002": {
+    "code": "PW00002",
+    "id": "f6fa3ebf-8dd2-41b7-a990-5699e30a5128",
+    "nickname": "1717",
+    "email": "companion.final.1785714993009@meow.test",
+    "application_status": "approved",
+    "allow_orders": true,
+    "updated_at": "2026-08-03T22:34:01.543+00:00",
+    "price": 75,
+    "game": "VALORANT、三角洲",
+    "level_id": "lv5",
+    "level_name": "Lv5 喵皇",
+    "gender": "女",
+    "voice_type": "甜妹",
+    "featured": true,
+    "hasAvatarUrl": true,
+    "hasVoiceUrl": true,
+    "mediaTypes": [
+      "avatar",
+      "voice",
+      "gallery"
+    ],
+    "mediaCount": 3,
+    "certTags": [
+      "cert-official"
+    ],
+    "emptyContentFields": [
+      "main_service"
+    ],
+    "looksIncomplete": false,
+    "isMeowTest": true
+  },
+  "approvedComplete": [
+    {
+      "code": "PW00002",
+      "nick": "1717",
+      "price": 75,
+      "level": "Lv5 喵皇",
+      "media": [
+        "avatar",
+        "voice",
+        "gallery"
+      ],
+      "certs": [
+        "cert-official"
+      ]
+    },
+    {
+      "code": "PW00004",
+      "nick": "凝梦",
+      "price": 3,
+      "level": "Lv4 喵神",
+      "media": [
+        "gallery",
+        "avatar",
+        "voice"
+      ],
+      "certs": [
+        "cert-gold"
+      ]
+    }
+  ],
+  "approvedIncomplete": [
+    {
+      "code": "PW00005",
+      "nick": "流程验9314",
+      "email": "pw.flow.1785793479314@meow.test",
+      "empty": [
+        "price",
+        "level_id",
+        "level_name",
+        "description",
+        "voice_url",
+        "card_image_url",
+        "tags",
+        "age",
+        "gender",
+        "region",
+        "game_rank",
+        "position",
+        "game_id",
+        "voice_type",
+        "game_prices"
+      ]
+    },
+    {
+      "code": "PW00006",
+      "nick": "流程验6898",
+      "email": "pw.flow.1785793856898@meow.test",
+      "empty": [
+        "price",
+        "level_id",
+        "level_name",
+        "description",
+        "voice_url",
+        "card_image_url",
+        "tags",
+        "age",
+        "gender",
+        "region",
+        "game_rank",
+        "position",
+        "game_id",
+        "voice_type",
+        "game_prices"
+      ]
+    },
+    {
+      "code": "PW00007",
+      "nick": "流程验9213",
+      "email": "pw.flow.1785794539213@meow.test",
+      "empty": [
+        "price",
+        "level_id",
+        "level_name",
+        "description",
+        "voice_url",
+        "card_image_url",
+        "tags",
+        "age",
+        "gender",
+        "region",
+        "game_rank",
+        "position",
+        "game_id",
+        "voice_type",
+        "game_prices"
+      ]
+    },
+    {
+      "code": "PW00008",
+      "nick": "流程验7254",
+      "email": "pw.flow.1785794717254@meow.test",
+      "empty": [
+        "price",
+        "level_id",
+        "level_name",
+        "description",
+        "voice_url",
+        "card_image_url",
+        "tags",
+        "age",
+        "gender",
+        "region",
+        "game_rank",
+        "position",
+        "game_id",
+        "voice_type",
+        "game_prices"
+      ]
+    }
+  ],
+  "snapshotPath": "scripts/companion-profile-recovery-snapshot.json",
+  "rootCause": "backfill listing sync only PATCHed status fields (application/verification/allow_orders/online/updated_at); PW00002 content fields remain full. Homepage pollution came from incomplete flow-test approved rows (流程验*), not from wiping 1717. Residual risk: approveListingPatch/admin price!=null could write 0 — hardened with preserveExistingContent + listingStatusOnlyPatch."
+}

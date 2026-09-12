@@ -5,35 +5,21 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>组队大厅 · MEOW CUI JIAO</title>
   <style>
-    :root{
-      --bg:#050406;
-      --panel:rgba(18,12,24,.78);
-      --panel-strong:rgba(27,16,34,.92);
-      --pink:#f3a8cb;
-      --pink-soft:#ffdceb;
-      --hot:#ff6fb4;
-      --purple:#8d72ff;
-      --text:#fff5fa;
-      --muted:#bfaebb;
-      --line:rgba(243,168,203,.28);
-      --glow:0 0 28px rgba(243,168,203,.16),0 18px 58px rgba(0,0,0,.42);
-    }
+    :root{--bg:#050406;--panel:rgba(18,12,24,.78);--pink:#f3a8cb;--pink-soft:#ffdceb;--text:#fff5fa;--muted:#bfaebb;--line:rgba(243,168,203,.28);--glow:0 0 28px rgba(243,168,203,.14),0 18px 58px rgba(0,0,0,.42)}
     *{box-sizing:border-box}
-    body{margin:0;background:radial-gradient(circle at 16% 4%,rgba(243,168,203,.16),transparent 30%),radial-gradient(circle at 84% 16%,rgba(141,114,255,.13),transparent 28%),var(--bg);color:var(--text);font-family:Inter,Arial,"Microsoft YaHei",sans-serif;overflow-x:hidden}
+    body{margin:0;background:radial-gradient(circle at 18% 2%,rgba(243,168,203,.06),transparent 32%),linear-gradient(180deg,#050507,#08070a 52%,#050406);color:var(--text);font-family:Inter,Arial,"Microsoft YaHei",sans-serif;overflow-x:hidden}
     a{color:inherit;text-decoration:none}button{font:inherit}
     .site-header{background:rgba(5,4,6,.9);border-bottom:1px solid rgba(243,168,203,.16);backdrop-filter:blur(16px)}
     .header-inner{max-width:1200px;margin:0 auto;min-height:72px;padding:0 24px;display:flex;align-items:center;justify-content:space-between;gap:24px}
-    .brand{display:flex;align-items:center;gap:12px;font-weight:1000;color:var(--pink-soft);white-space:nowrap}.brand img{width:48px;height:48px;border-radius:50%;object-fit:cover;border:1px solid rgba(255,220,235,.42);box-shadow:0 0 22px rgba(243,168,203,.22)}.brand small{display:block;color:var(--pink);font-size:11px;letter-spacing:.1em;margin-top:2px}
-    .top-actions{display:flex;gap:12px;align-items:center}.top-actions a{height:40px;padding:0 16px;border-radius:999px;border:1px solid var(--line);background:rgba(255,255,255,.035);display:inline-flex;align-items:center;font-weight:950}.top-actions a:hover{box-shadow:0 0 20px rgba(243,168,203,.18)}
+    .brand{display:flex;align-items:center;gap:12px;font-weight:1000;color:var(--pink-soft);white-space:nowrap}.brand img{width:48px;height:48px;border-radius:50%;object-fit:cover;border:1px solid rgba(255,220,235,.42);box-shadow:0 0 22px rgba(243,168,203,.20)}.brand small{display:block;color:var(--pink);font-size:11px;letter-spacing:.1em;margin-top:2px}
+    .top-actions{display:flex;gap:12px;align-items:center}.top-actions a{height:40px;padding:0 16px;border-radius:999px;border:1px solid var(--line);background:rgba(255,255,255,.035);display:inline-flex;align-items:center;font-weight:950}.top-actions a:hover{box-shadow:0 0 20px rgba(243,168,203,.16)}
     .container{max-width:1200px;margin:0 auto;padding:28px 24px 72px}
-    .hero{position:relative;overflow:hidden;border:1px solid var(--line);border-radius:26px;background:linear-gradient(135deg,rgba(255,255,255,.07),rgba(255,255,255,.02) 45%,rgba(243,168,203,.09)),var(--panel);box-shadow:var(--glow);padding:44px 36px;margin-bottom:28px}.hero:before{content:"🐾";position:absolute;right:38px;top:26px;font-size:86px;opacity:.10;filter:drop-shadow(0 0 20px rgba(243,168,203,.5))}.hero h1{margin:0;font-size:48px;letter-spacing:.04em}.hero p{margin:12px 0 0;color:var(--muted);font-size:18px;font-weight:850}
-    .layout{display:grid;grid-template-columns:1fr 320px;gap:24px;align-items:start}.section-title{display:flex;justify-content:space-between;align-items:end;gap:14px;margin:0 0 18px}.section-title h2{margin:0;font-size:26px}.section-title p{margin:4px 0 0;color:var(--muted)}
-    .games{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}.game-card,.discord-card{position:relative;overflow:hidden;border:1px solid var(--line);border-radius:24px;background:linear-gradient(145deg,rgba(255,255,255,.07),rgba(255,255,255,.025) 42%,rgba(243,168,203,.08)),var(--panel);box-shadow:var(--glow);padding:22px;transition:.22s ease}.game-card:hover,.discord-card:hover{transform:translateY(-5px);border-color:rgba(255,220,235,.62);box-shadow:0 0 38px rgba(243,168,203,.24),0 22px 68px rgba(0,0,0,.5)}.game-card:after{content:"";position:absolute;right:-36px;bottom:-36px;width:120px;height:120px;border-radius:50%;background:radial-gradient(circle,rgba(243,168,203,.18),transparent 68%)}
-    .game-head{display:flex;align-items:center;justify-content:space-between;gap:12px}.game-name{margin:0;font-size:24px}.game-icon{width:48px;height:48px;border-radius:18px;display:grid;place-items:center;background:rgba(243,168,203,.13);border:1px solid rgba(243,168,203,.28);font-size:24px}.game-stats{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:20px 0}.stat{border:1px solid rgba(243,168,203,.16);border-radius:18px;background:rgba(255,255,255,.035);padding:14px}.stat span{display:block;color:var(--muted);font-size:12px;font-weight:900}.stat strong{display:block;margin-top:6px;font-size:28px;color:#fff}.join-btn{position:relative;z-index:1;width:100%;height:44px;border:0;border-radius:999px;background:linear-gradient(180deg,#ffe2ef,#e9a0c6);color:#1b0712;font-weight:1000;cursor:pointer;box-shadow:0 0 22px rgba(243,168,203,.18);transition:.2s ease}.join-btn:hover{transform:translateY(-2px);box-shadow:0 0 30px rgba(243,168,203,.34)}
-    .discord-card{position:sticky;top:94px;cursor:pointer}.discord-logo{width:64px;height:64px;border-radius:22px;display:grid;place-items:center;background:linear-gradient(180deg,rgba(141,114,255,.22),rgba(243,168,203,.12));border:1px solid rgba(255,220,235,.24);font-size:32px;margin-bottom:18px}.discord-card h2{margin:0;font-size:28px}.discord-card p{margin:8px 0 22px;color:var(--muted);font-weight:850}.community-stat{display:flex;align-items:center;justify-content:space-between;border:1px solid rgba(243,168,203,.16);border-radius:16px;background:rgba(255,255,255,.035);padding:13px;margin-bottom:10px}.community-stat span{color:var(--muted);font-weight:900}.community-stat strong{font-size:20px}.discord-card .join-btn{margin-top:12px}
-    .paw-note{margin-top:20px;color:var(--muted);font-size:13px;text-align:center}.paw-note b{color:var(--pink-soft)}
-    @media(max-width:940px){.layout{grid-template-columns:1fr}.discord-card{position:relative;top:auto}.games{grid-template-columns:1fr}.hero h1{font-size:40px}}
-    @media(max-width:560px){.header-inner{padding:0 16px}.brand span{display:none}.top-actions a{padding:0 12px}.container{padding:20px 16px 52px}.hero{padding:32px 24px}.hero h1{font-size:34px}.hero p{font-size:15px}.game-stats{grid-template-columns:1fr}.discord-card h2{font-size:24px}}
+    .hero{position:relative;overflow:hidden;border:1px solid var(--line);border-radius:26px;background:linear-gradient(135deg,rgba(255,255,255,.06),rgba(255,255,255,.02) 45%,rgba(243,168,203,.06)),var(--panel);box-shadow:var(--glow);padding:42px 36px;margin-bottom:28px}.hero h1{margin:0;font-size:46px;letter-spacing:.03em}.hero p{margin:12px 0 0;color:var(--muted);font-size:17px;font-weight:850;line-height:1.6}
+    .section-title{display:flex;justify-content:space-between;align-items:end;gap:14px;margin:0 0 18px}.section-title h2{margin:0;font-size:26px}.section-title p{margin:4px 0 0;color:var(--muted)}
+    .channel-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px}.channel-card{position:relative;overflow:hidden;border:1px solid var(--line);border-radius:24px;background:linear-gradient(145deg,rgba(255,255,255,.06),rgba(255,255,255,.02) 42%,rgba(243,168,203,.055)),var(--panel);box-shadow:var(--glow);transition:.22s ease}.channel-card.is-open{cursor:pointer}.channel-card.is-open:hover{transform:translateY(-5px);border-color:rgba(255,220,235,.58);box-shadow:0 0 34px rgba(243,168,203,.20),0 22px 68px rgba(0,0,0,.48)}
+    .channel-cover{aspect-ratio:16/10;background:linear-gradient(135deg,rgba(255,220,235,.12),rgba(255,255,255,.035)),#100c13;border-bottom:1px solid rgba(243,168,203,.16);overflow:hidden}.channel-cover img{display:block;width:100%;height:100%;object-fit:cover;object-position:center}.channel-body{padding:20px}.channel-body h3{margin:0;font-size:24px;color:#fff5fa}.channel-body p{margin:8px 0 20px;color:var(--muted);font-weight:780;line-height:1.6;min-height:50px}.join-btn{width:100%;height:44px;border:0;border-radius:999px;background:linear-gradient(180deg,#ffe2ef,#e9a0c6);color:#1b0712;font-weight:1000;cursor:pointer;box-shadow:0 0 20px rgba(243,168,203,.16);transition:.18s ease}.join-btn:hover{transform:translateY(-1px);box-shadow:0 0 28px rgba(243,168,203,.28)}.join-btn[disabled]{cursor:not-allowed;opacity:.62;background:rgba(255,255,255,.08);color:#d7c6cf;border:1px solid rgba(243,168,203,.18);box-shadow:none}.empty{border:1px dashed rgba(243,168,203,.28);border-radius:18px;padding:22px;color:#ffdceb;background:rgba(255,255,255,.035)}
+    @media(max-width:940px){.channel-grid{grid-template-columns:1fr}.hero h1{font-size:40px}.channel-body p{min-height:0}}
+    @media(max-width:560px){.header-inner{padding:0 16px}.brand span{display:none}.top-actions a{padding:0 12px}.container{padding:20px 16px 52px}.hero{padding:32px 24px}.hero h1{font-size:34px}.hero p{font-size:15px}.section-title{display:block}.channel-body h3{font-size:22px}}
   </style>
 </head>
 <body>
@@ -47,52 +33,35 @@
   <main class="container">
     <section class="hero">
       <h1>组队大厅</h1>
-      <p>寻找队友，立即开黑。</p>
+      <p>选择 Discord 频道入口，进入对应频道找队友、开黑或闲聊。频道内容由后台统一配置。</p>
     </section>
 
-    <section class="layout">
-      <div>
-        <div class="section-title">
-          <div><h2>游戏分类</h2><p>选择游戏，加入 Discord 语音社区快速组队。</p></div>
-        </div>
-        <div class="games" id="gameList"></div>
+    <section>
+      <div class="section-title">
+        <div><h2>Discord 频道</h2><p>卡面、介绍和跳转链接由后台「组队大厅管理」配置，无硬编码链接。</p></div>
       </div>
-
-      <aside class="discord-card" id="discordCard">
-        <div class="discord-logo">💬</div>
-        <h2>Discord Community</h2>
-        <p>进入妙脆角电竞社区，找队友、开黑、语音聊天。</p>
-        <div class="community-stat"><span>Members</span><strong>8,926</strong></div>
-        <div class="community-stat"><span>Online</span><strong>1,284</strong></div>
-        <button class="join-btn" type="button">加入 Discord</button>
-        <div class="paw-note">点击卡片即可跳转 <b>Discord</b></div>
-      </aside>
+      <div class="channel-grid" id="teamChannelGrid" aria-live="polite"></div>
     </section>
   </main>
 
+  <script type="module" src="/src/role-gates.js"></script>
   <script>
-    const DISCORD_INVITE_URL = "https://discord.gg/xxxxxxxx";
-    const games = [
-      { name: "APEX", icon: "▲", online: 342, rooms: 28 },
-      { name: "CS2", icon: "✦", online: 218, rooms: 19 },
-      { name: "Valorant", icon: "V", online: 426, rooms: 36 },
-      { name: "League of Legends", icon: "L", online: 389, rooms: 31 },
-      { name: "Delta Force", icon: "△", online: 174, rooms: 12 }
-    ];
-    const gameList = document.getElementById("gameList");
-    function goDiscord(){ window.location.href = DISCORD_INVITE_URL; }
-    gameList.innerHTML = games.map(game => `
-      <article class="game-card">
-        <div class="game-head"><h3 class="game-name">${game.name}</h3><div class="game-icon">${game.icon}</div></div>
-        <div class="game-stats">
-          <div class="stat"><span>在线人数</span><strong>${game.online}</strong></div>
-          <div class="stat"><span>语音房</span><strong>${game.rooms}</strong></div>
-        </div>
-        <button class="join-btn" type="button">立即加入</button>
-      </article>
-    `).join("");
-    document.querySelectorAll(".game-card .join-btn").forEach(button => button.addEventListener("click", goDiscord));
-    document.getElementById("discordCard").addEventListener("click", goDiscord);
+    (function(){
+      var TYPE='team_lobby_channels';
+      var PLACEHOLDER='assets/meow-cuijiao-brand.jpg';
+      function esc(value){return String(value==null?'':value).replace(/[&<>"']/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]})}
+      function published(item){var status=String(item.status||'').toLowerCase();return item.enabled!==false && item.enabled!=='false' && (status==='published'||status.indexOf('发布')>-1||status==='已发布'||!status)}
+      function normalize(row){var data=row&&row.published&&typeof row.published==='object'?Object.assign({},row.draft||{},row.published):(row&&row.draft?row.draft:(row||{}));var showOnHome=data.showOnHome;if(showOnHome==null)showOnHome=true;return {id:row.id||data.id||'',image:data.image||data.cover||'',name:data.name||row.title||row.name||'未命名频道',description:data.description||data.intro||'',discordUrl:data.discordUrl||data.discordLink||data.link||'',sort:Number(data.sort||row.sort||99),enabled:row.enabled!==false&&data.enabled!==false&&data.visible!==false,showOnHome:showOnHome!==false&&showOnHome!=='false',status:row.status||data.status||''}}
+      function openChannel(channel){if(!channel.discordUrl)return;window.open(channel.discordUrl,'_blank','noopener')}
+      function card(channel){var open=!!channel.discordUrl;return '<article class="channel-card '+(open?'is-open':'is-closed')+'" data-channel-id="'+esc(channel.id)+'">'+
+        '<div class="channel-cover"><img src="'+esc(channel.image||PLACEHOLDER)+'" alt="'+esc(channel.name)+'" loading="lazy"></div>'+
+        '<div class="channel-body"><h3>'+esc(channel.name)+'</h3><p>'+esc(channel.description||'后台配置介绍后将在这里显示。')+'</p><button class="join-btn" type="button" '+(open?'data-discord-url="'+esc(channel.discordUrl)+'"':'disabled')+'>'+(open?'立即进入':'暂未开放')+'</button></div></article>'}
+      function render(list){var grid=document.getElementById('teamChannelGrid');if(!grid)return;var channels=(list||[]).filter(function(x){return x.enabled!==false && published(x)}).sort(function(a,b){var homeDiff=Number(!!b.showOnHome)-Number(!!a.showOnHome);if(homeDiff)return homeDiff;return a.sort-b.sort});grid.innerHTML=channels.length?channels.map(card).join(''):'<div class="empty">暂无组队频道</div>'}
+      function load(){var grid=document.getElementById('teamChannelGrid');if(grid)grid.innerHTML='<div class="empty">正在读取组队频道...</div>';fetch('/api/platform/content?types='+encodeURIComponent(TYPE),{headers:{Accept:'application/json'},cache:'no-store'}).then(function(res){return res.json().catch(function(){return {ok:false}})}).then(function(result){var rows=(result.byType&&result.byType[TYPE])||[];render(rows.map(normalize).filter(function(x){return x.enabled!==false}))}).catch(function(){render([])})}
+      document.addEventListener('click',function(event){var button=event.target.closest('[data-discord-url]');var cardNode=event.target.closest('.channel-card.is-open');var url=button?button.dataset.discordUrl:(cardNode&&cardNode.querySelector('[data-discord-url]')?cardNode.querySelector('[data-discord-url]').dataset.discordUrl:'');if(!url)return;event.preventDefault();openChannel({discordUrl:url})});
+      document.addEventListener('error',function(event){var img=event.target;if(img&&img.tagName==='IMG'&&img.src.indexOf(PLACEHOLDER)===-1)img.src=PLACEHOLDER},true);
+      load();
+    })();
   </script>
 </body>
 </html>

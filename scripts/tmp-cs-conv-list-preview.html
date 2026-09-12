@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CS Conversation List Preview</title>
+  <link rel="stylesheet" href="/src/customer-service-v2.css?v=20260804convlist2">
+  <style>
+    body{margin:0;background:#07070a;font-family:"Microsoft YaHei",sans-serif}
+    .preview-shell{display:grid;grid-template-columns:220px 340px minmax(0,1fr);height:100vh}
+    .preview-side{background:#08080b;border-right:1px solid rgba(255,255,255,.09);padding:22px 14px}
+    .preview-side strong{display:block;font-size:22px;color:#fff}
+    .preview-side span{display:block;margin-top:6px;color:#9ca3af;font-size:13px}
+    .preview-main{padding:12px;height:100vh;box-sizing:border-box}
+    .preview-panel{height:calc(100vh - 24px);display:flex;flex-direction:column;border:1px solid rgba(255,255,255,.1);border-radius:12px;overflow:hidden;background:rgba(255,255,255,.035);width:340px}
+    .cs-chat-list{display:flex;flex-direction:column;height:100%;background:#101016}
+    [data-cs-virt-body]{flex:1;overflow:auto;min-height:0}
+    .preview-note{padding:16px;color:#9ca3af;font-size:13px;line-height:1.6}
+  </style>
+</head>
+<body>
+  <div class="preview-shell">
+    <aside class="preview-side">
+      <strong>MEOW CUI JIAO</strong>
+      <span>客服端 · 会话列表预览</span>
+    </aside>
+    <section class="preview-main">
+      <div class="preview-panel">
+        <aside class="cs-chat-list is-open">
+          <div class="cs-chat-list-head"><strong>会话列表</strong><div class="cs-actions"><button class="cs-btn" type="button">刷新</button></div></div>
+          <div class="cs-conv-tabs" role="tablist">
+            <button type="button" class="cs-conv-tab active">待接待 <em>3</em></button>
+            <button type="button" class="cs-conv-tab">接待中 <em>2</em></button>
+            <button type="button" class="cs-conv-tab">已结束 <em>1</em></button>
+          </div>
+          <div data-cs-virt-body id="list"></div>
+        </aside>
+      </div>
+    </section>
+    <div class="preview-note">固定行高 92px · 微信/Discord/Slack 列表结构 · 禁止 UUID 堆砌</div>
+  </div>
+  <script>
+    function card(opts){
+      return '<button type="button" class="cs-conversation'+(opts.active?' active':'')+' is-'+opts.kind+'" data-conversation="'+opts.id+'">'+
+        '<div class="cs-conv-row cs-conv-row-top">'+
+          '<strong class="cs-conv-name">'+opts.name+'</strong>'+
+          '<time class="cs-conv-time">'+opts.time+'</time>'+
+        '</div>'+
+        '<div class="cs-conv-row cs-conv-row-mid">'+
+          '<span class="cs-conv-meta">'+opts.meta+'</span>'+
+          '<span class="cs-conv-tag '+opts.kind+'">'+opts.tag+'</span>'+
+        '</div>'+
+        '<div class="cs-conv-row cs-conv-row-bot">'+
+          '<span class="cs-conv-preview">'+opts.preview+'</span>'+
+          (opts.unread?'<b class="cs-conv-unread">'+opts.unread+'</b>':'')+
+        '</div>'+
+      '</button>';
+    }
+    var rows=[
+      {id:'1',kind:'waiting',name:'老板 · 小橘',time:'14:32',meta:'王者荣耀 · XB1K',tag:'🟡 待接待',preview:'你好，这个订单可以改时间吗？',unread:2,active:true},
+      {id:'2',kind:'waiting',name:'陪玩 · 夜雨',time:'14:18',meta:'永劫无间 · 陪玩咨询',tag:'🟡 待接待',preview:'想问一下提现多久到账',unread:1},
+      {id:'3',kind:'waiting',name:'老板 · 阿柠',time:'13:55',meta:'和平精英 · A9F2',tag:'🟡 待接待',preview:'[图片]',unread:5},
+      {id:'4',kind:'active',name:'老板 · 晨星',time:'12:40',meta:'英雄联盟 · K7M1',tag:'🟢 接待中',preview:'好的，我这边安排陪玩',unread:0},
+      {id:'5',kind:'active',name:'陪玩 · 糖糖',time:'昨天',meta:'三角洲行动 · 陪玩咨询',tag:'🟢 接待中',preview:'已收到，马上处理',unread:0},
+      {id:'6',kind:'ended',name:'老板 · 北北',time:'8/3',meta:'无畏契约 · C2P8',tag:'⚪ 已结束',preview:'谢谢，问题解决了',unread:0}
+    ];
+    document.getElementById('list').innerHTML=rows.map(card).join('');
+  </script>
+</body>
+</html>

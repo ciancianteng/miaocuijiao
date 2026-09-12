@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>陪玩资料 | MEOW CUI JIAO</title>
+<script>
+(function () {
+  var p = new URLSearchParams(location.search);
+  var id = p.get('id') || p.get('player') || p.get('uid') || '';
+  var target = '/profile.html' + (id ? ('?player=' + encodeURIComponent(id)) : '');
+  location.replace(target);
+})();
+</script>
+</head>
+<body>
+<p>正在跳转到陪玩资料...</p>
+</body>
+</html>

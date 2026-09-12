@@ -1,354 +1,184 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="zh-CN">
 <head>
+  <script src="/portal-early-gate.js?v=20260805bossSessionDual1"></script>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>我的 - MEOW CUI JIAO</title>
+  <title>我的账号 - MEOW CUI JIAO</title>
+  <link rel="stylesheet" href="src/style.css">
+  <link rel="stylesheet" href="src/boss-header.css">
   <style>
-    :root{--bg:#050406;--panel:rgba(18,11,23,.86);--line:rgba(243,168,203,.24);--text:#fff4fa;--muted:#cdb8c4;--pink:#f3a8cb;--hot:#ff6fb4;--green:#78f5c0}
-    *{box-sizing:border-box}html,body{margin:0;min-height:100%;overflow-x:hidden}body{background:radial-gradient(circle at 18% 0%,rgba(243,168,203,.14),transparent 30%),linear-gradient(180deg,#050406,#09060b 54%,#050406);color:var(--text);font-family:Inter,"Microsoft YaHei UI",Arial,sans-serif}a{text-decoration:none;color:inherit}button,input,select,textarea{font:inherit}
-    .site-header{background:rgba(5,4,6,.92);border-bottom:1px solid rgba(243,168,203,.16);backdrop-filter:blur(16px)}.header-inner{width:min(1120px,calc(100% - 32px));min-height:72px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;gap:16px}.brand{color:#ffe1ef;font-weight:1000}.brand small{display:block;color:var(--pink);font-size:11px;letter-spacing:.08em}.nav{display:flex;gap:10px;flex-wrap:wrap}.nav a{min-height:38px;padding:0 14px;border-radius:999px;border:1px solid var(--line);display:inline-flex;align-items:center;background:rgba(255,255,255,.04);font-weight:900}.nav .active{background:linear-gradient(180deg,#ffe2ef,#e7a0c4);color:#1b0712;border:0}
-    .shell{width:min(1120px,calc(100% - 32px));margin:0 auto;padding:24px 0 42px}.boss-card{border:1px solid var(--line);border-radius:24px;background:linear-gradient(145deg,rgba(255,255,255,.075),rgba(255,255,255,.025)),var(--panel);box-shadow:0 0 28px rgba(243,168,203,.14),0 20px 62px rgba(0,0,0,.42);padding:22px;display:grid;grid-template-columns:1fr 320px;gap:22px;align-items:center}.boss-left{display:flex;align-items:center;gap:18px;min-width:0}.boss-avatar{width:86px;height:86px;border-radius:28px;border:1px solid rgba(255,220,235,.34);background:radial-gradient(circle at 45% 35%,#fff,#f3a8cb 58%,#20101a);display:grid;place-items:center;overflow:hidden;cursor:pointer;box-shadow:0 0 24px rgba(243,168,203,.24)}.boss-avatar img{width:100%;height:100%;object-fit:cover;display:none}.boss-avatar.has-image img{display:block}.boss-avatar span{font-size:34px}.boss-avatar.has-image span{display:none}.avatar-actions{display:flex;gap:8px;margin-top:9px}.mini-btn,.ghost-btn{height:32px;border-radius:999px;border:1px solid rgba(243,168,203,.22);background:rgba(255,255,255,.045);color:#ffe1ef;font-size:12px;font-weight:900;padding:0 10px;cursor:pointer}.boss-name strong{display:block;font-size:26px;color:#fff5fa}.boss-name span{display:block;margin-top:8px;color:var(--muted);font-weight:850}.vip-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.badge{border-radius:999px;border:1px solid rgba(243,168,203,.24);background:rgba(243,168,203,.10);color:#ffdceb;font-size:12px;font-weight:1000;padding:7px 10px;cursor:pointer}.boss-right{display:grid;gap:12px}.balance-link,.vip-progress-box{border:1px solid rgba(243,168,203,.25);border-radius:18px;background:rgba(255,255,255,.045);padding:14px 16px;transition:.2s ease}.balance-link:hover,.vip-progress-box:hover{transform:translateY(-2px);border-color:rgba(255,220,235,.58);box-shadow:0 0 22px rgba(243,168,203,.16)}.balance-link span,.vip-progress-box span{display:block;color:var(--muted);font-size:13px;font-weight:900}.balance-link strong{display:block;margin-top:5px;font-size:30px;color:#ffe1ef}.progress{height:8px;border-radius:99px;background:rgba(255,255,255,.09);overflow:hidden;margin-top:10px}.progress i{display:block;height:100%;width:0%;border-radius:inherit;background:linear-gradient(90deg,#ffd6e7,#ff7fbd);box-shadow:0 0 14px rgba(255,127,189,.5)}.settings-btn{height:40px;border-radius:999px;border:1px solid var(--line);background:rgba(255,255,255,.045);color:#ffe1ef;padding:0 14px;font-weight:1000;cursor:pointer}
-    .entry-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:18px}.entry-card{position:relative;min-height:116px;border:1px solid var(--line);border-radius:22px;background:linear-gradient(145deg,rgba(255,255,255,.055),rgba(255,255,255,.018)),rgba(17,10,22,.82);padding:20px 22px;display:flex;align-items:center;transition:.2s ease;cursor:pointer}.entry-card:hover{transform:translateY(-3px);border-color:rgba(255,220,235,.58);box-shadow:0 0 24px rgba(243,168,203,.16)}.entry-card strong{display:block;font-size:21px}.entry-card span{display:block;margin-top:5px;color:var(--muted);font-size:13px;font-weight:850;line-height:1.4}.unread-dot{position:absolute;right:16px;top:14px;min-width:22px;height:22px;padding:0 7px;border-radius:999px;background:#ff4f7d;color:#fff;font-size:12px;font-weight:1000;display:grid;place-items:center;box-shadow:0 0 14px rgba(255,79,125,.4)}
-    .panel{margin-top:18px;border:1px solid rgba(243,168,203,.20);border-radius:22px;background:rgba(255,255,255,.04);padding:18px;display:none}.panel.active{display:block}.panel-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px}.panel h2,.panel h3{margin:0;color:#fff5fa}.tabs{display:flex;gap:8px;overflow-x:auto}.tab{height:34px;border-radius:999px;border:1px solid rgba(243,168,203,.20);background:rgba(255,255,255,.04);color:#ffdceb;font-weight:900;padding:0 12px;cursor:pointer;white-space:nowrap}.tab.active{background:rgba(243,168,203,.16);border-color:rgba(255,220,235,.5);color:#fff}.message-box{display:grid;grid-template-columns:220px 1fr;gap:14px}.msg-list{display:grid;gap:8px}.msg-item{border:1px solid rgba(243,168,203,.14);border-radius:14px;background:rgba(0,0,0,.18);padding:12px;color:#ffe1ef;font-weight:850}.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.form-grid label{display:grid;gap:7px;color:#ffddeb;font-size:13px;font-weight:900}.form-grid input,.form-grid select,.form-grid textarea{width:100%;border:1px solid rgba(243,168,203,.22);border-radius:14px;background:rgba(255,255,255,.055);color:#fff;padding:11px;outline:0}.form-grid textarea{min-height:94px;resize:vertical}.wide{grid-column:1/-1}.primary-btn{height:42px;border:0;border-radius:999px;background:linear-gradient(180deg,#ffe2ef,#e7a0c4);color:#1b0712;font-weight:1000;cursor:pointer}.pay-grid,.vip-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.pay-option,.vip-card{border:1px solid rgba(243,168,203,.18);border-radius:16px;background:rgba(0,0,0,.18);padding:14px}.pay-option strong,.vip-card strong{display:block;color:#fff}.pay-option span,.vip-card span{display:block;margin-top:6px;color:var(--muted);font-size:13px;line-height:1.5}.state-warn{border:1px solid rgba(255,211,111,.28);border-radius:16px;background:rgba(255,211,111,.08);color:#ffe8a8;padding:12px;font-weight:900;margin-bottom:12px}.simple-footer{margin-top:28px;text-align:center;color:#bfaebb;font-weight:900;font-size:13px}
-    .modal{position:fixed;inset:0;z-index:100000;display:none;place-items:center;background:rgba(0,0,0,.62);backdrop-filter:blur(10px);padding:18px}.modal.show{display:grid}.modal-box{width:min(680px,100%);max-height:86vh;overflow:auto;border:1px solid rgba(243,168,203,.35);border-radius:24px;background:linear-gradient(145deg,rgba(20,12,24,.96),rgba(7,6,10,.98));box-shadow:0 30px 70px rgba(0,0,0,.65),0 0 34px rgba(243,168,203,.18);padding:20px}.modal-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:14px}.close{width:38px;height:38px;border-radius:14px;border:1px solid rgba(243,168,203,.24);background:rgba(255,255,255,.055);color:#ffe1ef;font-size:20px;cursor:pointer}
-    @media(max-width:820px){.boss-card{grid-template-columns:1fr}.entry-grid,.pay-grid,.vip-grid{grid-template-columns:1fr}.message-box{grid-template-columns:1fr}.form-grid{grid-template-columns:1fr}}@media(max-width:460px){.shell{width:calc(100% - 24px);padding-top:14px}.boss-left{align-items:flex-start;flex-direction:column}.nav a{font-size:13px;padding:0 12px}}
+    body{background:#08070a;color:#fff}.boss-shell{width:min(920px,calc(100% - 32px));margin:0 auto;padding:26px 0 76px}.account-card,.empty-card{border:1px solid rgba(255,255,255,.1);border-radius:18px;background:rgba(255,255,255,.045);padding:22px}.account-head{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-bottom:18px}.profile-main{display:flex;align-items:center;gap:16px;min-width:0}.avatar{width:74px;height:74px;border-radius:18px;border:1px solid rgba(255,143,197,.28);background:rgba(255,143,197,.12);display:grid;place-items:center;overflow:hidden;color:#ffd6e7;font-weight:1000;font-size:24px}.avatar img{width:100%;height:100%;object-fit:cover}.profile-title h1{margin:0;font-size:26px}.profile-title p{margin:6px 0 0;color:#9ca3af}.info-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}.info-item{border:1px solid rgba(255,255,255,.08);border-radius:12px;background:rgba(0,0,0,.18);padding:13px}.info-item span{display:block;color:#9ca3af;font-size:12px}.info-item strong{display:block;margin-top:5px;color:#fff;word-break:break-word}.action-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}.boss-btn{border:1px solid rgba(255,143,197,.36);border-radius:12px;background:rgba(255,143,197,.13);color:#fff;padding:10px 14px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center}.boss-btn.ghost{border-color:rgba(255,255,255,.12);background:rgba(255,255,255,.055)}.modal{position:fixed;inset:0;background:rgba(0,0,0,.68);display:none;align-items:center;justify-content:center;padding:18px;z-index:40}.modal.open{display:flex}.modal-box{width:min(520px,100%);border:1px solid rgba(255,143,197,.26);border-radius:18px;background:#111014;padding:20px}.modal-head{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:12px}.modal-head h2{margin:0}.close{width:36px;height:36px;border:1px solid rgba(255,255,255,.12);border-radius:10px;background:rgba(255,255,255,.06);color:#fff;cursor:pointer}.form-grid{display:grid;gap:12px}.form-grid label{display:grid;gap:7px;color:#ffd6e7;font-weight:800}.form-grid input{height:42px;border:1px solid rgba(255,255,255,.12);border-radius:10px;background:rgba(0,0,0,.24);color:#fff;padding:0 12px}.state{margin-top:10px;color:#ffb9d6;min-height:20px}@media(max-width:720px){.account-head{align-items:flex-start;flex-direction:column}.info-grid{grid-template-columns:1fr}.boss-btn{width:100%}}
   </style>
-  <link rel="stylesheet" href="src/design-system.css">
 </head>
 <body>
-  <header class="site-header">
-    <div class="header-inner">
-      <a class="brand" href="index.html"><span>MEOW CUI JIAO<small>老板中心</small></span></a>
-      <nav class="nav" aria-label="页面导航">
-        <a href="index.html">首页</a>
-        <a href="companion-center.html">陪玩大厅</a>
-        <a class="active" href="mine.html">我的</a>
-      </nav>
-    </div>
-  </header>
-  <main class="shell">
-    <section class="boss-card">
-      <div class="boss-left">
-        <div>
-          <button class="boss-avatar" type="button" data-avatar-pick aria-label="上传老板头像"><img id="bossAvatarPreview" alt="老板头像"><span>🐱</span></button>
-          <input id="bossAvatarInput" type="file" accept="image/*" hidden>
-          <div class="avatar-actions"><button class="mini-btn" type="button" data-avatar-pick>更换</button><button class="mini-btn" type="button" data-avatar-save>保存</button><button class="mini-btn" type="button" data-avatar-remove>删除</button></div>
-        </div>
-        <div class="boss-name">
-          <strong id="bossName">老板账号</strong>
-          <span id="bossUserId">用户 ID：MCJ------</span>
-          <div class="vip-row"><button class="badge" type="button" data-open-vip id="vipBadge">VIP 0</button></div>
-        </div>
+  <header class="topbar"><a class="brand" href="index.html"><img src="assets/meow-cuijiao-brand.jpg" alt="MEOW CUI JIAO"><span>MEOW CUI JIAO</span></a><nav class="boss-nav"><a href="index.html">首页</a><a href="companion-center.html">陪玩大厅</a><a href="orders.html">我的订单</a><a href="support.html?start=1">在线客服</a></nav></header>
+  <main class="boss-shell" id="accountApp"></main>
+  <div class="modal" id="editModal" aria-hidden="true">
+    <form class="modal-box" id="profileForm">
+      <div class="modal-head"><h2>编辑资料</h2><button class="close" type="button" data-close>×</button></div>
+      <div class="form-grid">
+        <label>头像地址<input name="avatarUrl" placeholder="https://..." autocomplete="off"></label>
+        <label>昵称<input name="displayName" maxlength="40" required></label>
+        <label>手机号<input name="phone" maxlength="30" autocomplete="tel"></label>
+        <button class="boss-btn" type="submit">保存资料</button>
+        <p class="state" id="editState"></p>
       </div>
-      <div class="boss-right">
-        <a class="balance-link" href="#recharge" data-open-panel="recharge"><span>喵币余额</span><strong id="coinBalance">RM 0.00</strong></a>
-        <button class="vip-progress-box" type="button" data-open-vip>
-          <span id="vipNeedText">VIP 等级读取中</span>
-          <div class="progress"><i id="vipProgress"></i></div>
-        </button>
-        <button class="settings-btn" type="button" data-open-settings>设置</button>
-      </div>
-    </section>
-
-    <section class="entry-grid" aria-label="我的功能入口">
-      <button class="entry-card" type="button" data-open-panel="orders"><div><strong>我的订单</strong><span>查看进行中和历史订单</span></div></button>
-      <button class="entry-card" type="button" data-open-panel="favorites"><div><strong>我的收藏</strong><span>查看已收藏的陪玩</span></div></button>
-      <button class="entry-card" type="button" data-open-panel="messages"><i class="unread-dot" id="messageUnread" hidden>0</i><div><strong>消息中心</strong><span>订单消息、客服回复和系统通知</span></div></button>
-      <button class="entry-card" type="button" data-open-panel="referrals"><div><strong>邀请返点</strong><span>查看直属陪玩和返点收益</span></div></button>
-    </section>
-
-    <section class="panel active" id="panel-orders">
-      <div class="panel-head"><h2>我的订单</h2></div>
-      <div class="tabs" data-order-tabs></div>
-      <div id="orderPanelBody" style="margin-top:14px"></div>
-    </section>
-
-    <section class="panel" id="panel-favorites">
-      <div class="panel-head"><h2>我的收藏</h2></div>
-      <div class="msg-item">暂无收藏。你收藏的陪玩会显示在这里。</div>
-    </section>
-
-    <section class="panel" id="panel-messages">
-      <div class="panel-head"><h2>消息中心</h2></div>
-      <div class="tabs" data-message-tabs>
-        <button class="tab active" type="button" data-message-tab="order">订单通知</button>
-        <button class="tab" type="button" data-message-tab="service">客服会话</button>
-        <button class="tab" type="button" data-message-tab="system">系统通知</button>
-      </div>
-      <div class="message-box" style="margin-top:14px">
-        <div class="msg-list" id="messageList"></div>
-        <div id="messageDetail"></div>
-      </div>
-    </section>
-
-    <section class="panel" id="panel-recharge">
-      <div class="panel-head"><h2>充值中心</h2></div>
-      <div class="state-warn">请选择金额和支付渠道，上传付款凭证后提交后台审核；审核通过后余额到账。</div>
-      <div class="pay-grid">
-        <button class="pay-option" type="button"><strong>RM 10</strong><span>基础充值金额</span></button>
-        <button class="pay-option" type="button"><strong>RM 30</strong><span>常用充值金额</span></button>
-        <button class="pay-option" type="button"><strong>RM 50</strong><span>常用充值金额</span></button>
-        <button class="pay-option" type="button"><strong>RM 100</strong><span>高频充值金额</span></button>
-        <button class="pay-option" type="button"><strong>RM 200</strong><span>高频充值金额</span></button>
-        <label class="pay-option"><strong>自定义金额</strong><input id="customRecharge" inputmode="decimal" placeholder="输入 RM 金额"></label>
-      </div>
-      <h3 style="margin-top:18px">支付方式</h3>
-      <div class="pay-grid" id="paymentMethods"></div>
-      <h3 style="margin-top:18px">充值 / 消费 / 退款记录</h3>
-      <div class="msg-list"><div class="msg-item">暂无记录。真实支付接通后会同步显示。</div></div>
-      <div class="msg-item" style="margin-top:12px">充值说明：请按照后台启用的支付方式完成付款，支付完成后等待平台确认。</div>
-    </section>
-
-    <section class="panel" id="panel-referrals">
-      <div class="panel-head"><h2>邀请返点</h2></div>
-      <div id="referralPanel"></div>
-    </section>
-
-    <footer class="simple-footer">© 2026 Meow Cui Jiao</footer>
-  </main>
-
-  <div class="modal" id="vipModal" aria-hidden="true">
-    <div class="modal-box">
-      <div class="modal-head"><div><h2>VIP 等级</h2><p style="margin:6px 0 0;color:var(--muted)">查看当前消费进度和等级要求。</p></div><button class="close" type="button" data-close-modal>×</button></div>
-      <div id="vipModalBody"></div>
-    </div>
+    </form>
   </div>
-
-  <div class="modal" id="settingsModal" aria-hidden="true">
-    <div class="modal-box">
-      <div class="modal-head"><div><h2>账户设置</h2><p style="margin:6px 0 0;color:var(--muted)">老板个人资料、安全、退款资料和通知设置。</p></div><button class="close" type="button" data-close-modal>×</button></div>
-      <form class="form-grid" id="settingsForm">
-        <label>昵称<input name="name"></label><label>手机号<input name="phone"></label>
-        <label>Gmail<input name="gmail" type="email"></label><label>性别（可选）<select name="gender"><option></option><option>男</option><option>女</option><option>保密</option></select></label>
-        <label>生日（可选）<input name="birthday" type="date"></label><label>修改密码<input name="password" type="password" placeholder="输入新密码"></label>
-        <label>手机验证<select name="phoneVerify"><option>未验证</option><option>已验证</option></select></label><label>Gmail 验证<select name="gmailVerify"><option>未验证</option><option>已验证</option></select></label>
-        <label class="wide">登录设备<input name="devices" placeholder="当前设备"></label>
-        <label>账户持有人姓名<input name="refundName"></label><label>银行名称<input name="refundBank"></label>
-        <label>银行账号<input name="refundAccount"></label><label>DuitNow ID<input name="refundDuitNow"></label>
-        <label>TNG 手机号<input name="refundTng"></label><label>默认退款账户<select name="refundDefault"><option>银行账户</option><option>DuitNow</option><option>TNG</option></select></label>
-        <label><input name="notifyOrder" type="checkbox"> 订单通知</label><label><input name="notifyService" type="checkbox"> 客服回复</label>
-        <label><input name="notifyRecharge" type="checkbox"> 充值结果</label><label><input name="notifySystem" type="checkbox"> 系统通知</label>
-        <button class="primary-btn wide" type="submit">保存设置</button>
-        <button class="ghost-btn" type="button" data-logout>退出登录</button>
-        <button class="ghost-btn" type="button" data-close-devices>退出其他设备</button>
-        <button class="ghost-btn" type="button" data-delete-account>注销账户</button>
-      </form>
-    </div>
-  </div>
-
   <script src="src/role-gates.js"></script>
+  <script src="src/account-security.js?v=20260805acctSec1"></script>
+  <script src="src/boss-header.js" defer></script>
   <script>
-    (function initMinePage(){
-      var DB_KEY = "mcjRealDB.v1";
-      if (!window.MCJRoleGate || !window.MCJRoleGate.isLogged("customer")) {
-        document.body.innerHTML = '<main class="shell" style="min-height:100vh;display:grid;place-items:center"><section class="boss-card" style="width:min(560px,100%);grid-template-columns:1fr"><div><h1 style="margin:0 0 8px">登录 / 注册</h1><p style="margin:0;color:var(--muted);line-height:1.7">登录后才能查看老板中心、余额、订单、消息、退款账户和设备记录。</p></div><div class="tabs" data-login-tabs><button class="tab active" type="button" data-login-mode="phone">手机号验证码</button><button class="tab" type="button" data-login-mode="gmail">Gmail 验证</button></div><form class="form-grid" id="mineLoginForm"><label class="phone-field">国家区号<select name="dial"><option value="+60">+60 马来西亚</option><option value="+86">+86 中国</option></select></label><label class="phone-field">手机号<input name="phone" inputmode="tel" placeholder="请输入手机号"></label><label class="gmail-field wide" hidden>Gmail 邮箱<input name="gmail" type="email" placeholder="name@gmail.com"></label><label class="wide">验证码<input name="code" inputmode="numeric" placeholder="请输入验证码"></label><button class="ghost-btn" type="button" data-mine-send-code>获取验证码</button><button class="primary-btn" type="submit">登录并进入</button><p class="wide" id="mineLoginState" style="margin:0;color:var(--muted);font-weight:900"></p></form><a class="ghost-btn" href="index.html" style="display:inline-flex;align-items:center;justify-content:center">返回首页</a></section></main>';
-        document.addEventListener("click",function(e){
-          var mode=e.target.closest("[data-login-mode]");
-          if(mode){document.querySelectorAll("[data-login-mode]").forEach(function(b){b.classList.toggle("active",b===mode)});var gmail=mode.dataset.loginMode==="gmail";document.querySelectorAll(".phone-field").forEach(function(el){el.hidden=gmail});document.querySelectorAll(".gmail-field").forEach(function(el){el.hidden=!gmail});}
-          if(e.target.closest("[data-mine-send-code]")){document.getElementById("mineLoginState").textContent="验证码已发送，请查收后输入";}
-        });
-        document.getElementById("mineLoginForm").addEventListener("submit",function(e){
-          e.preventDefault();
-          var form=e.target;var active=document.querySelector("[data-login-mode].active");var isGmail=active&&active.dataset.loginMode==="gmail";
-          var account=isGmail?form.elements.gmail.value.trim():form.elements.phone.value.trim();
-          if(!account){document.getElementById("mineLoginState").textContent="请填写登录信息";return}
-          if(!form.elements.code.value.trim()){document.getElementById("mineLoginState").textContent="请填写验证码";return}
-          window.MCJRoleGate.login("customer",account);
-          location.reload();
-        });
-        return;
+    (function(){
+      var root=document.getElementById('accountApp');
+      var modal=document.getElementById('editModal');
+      var form=document.getElementById('profileForm');
+      var editState=document.getElementById('editState');
+      var state={loading:true,error:'',user:null,wallet:null,passwordHint:''};
+      function token(){try{return sessionStorage.getItem('mcjAuthAccessToken')||localStorage.getItem('mcjAuthAccessToken')||''}catch(e){return ''}}
+      function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
+      function date(v){if(!v)return '-';try{return new Date(v).toLocaleString('zh-CN',{hour12:false})}catch(e){return v}}
+      function avatarHtml(user){var src=user&&user.avatarUrl;if(src)return '<img src="'+esc(src)+'" alt="头像">';var name=(user&&user.displayName)||'老板';return esc(name.slice(0,1)||'B')}
+      function statusText(s){return {active:'正常',disabled:'停用',pending:'待审核'}[s]||s||'-'}
+      function paint(){
+        if(!token()){root.innerHTML='<section class="empty-card"><h1>请先登录</h1><p style="color:#9ca3af">登录后可以查看账号资料、订单和在线客服。</p><a class="boss-btn" href="index.html">返回首页登录</a></section>';return}
+        if(state.loading){root.innerHTML='<section class="empty-card">正在登录…</section>';return}
+        if(state.error){root.innerHTML='<section class="empty-card"><h1>账号资料读取失败</h1><p style="color:#ffb9d6">'+esc(state.error)+'</p><button class="boss-btn" data-refresh>重试</button></section>';return}
+        var u=state.user||{};
+        var publicUid=u.bossUid||u.boss_uid||u.uid||'-';
+        var techHtml=(location.hostname==='127.0.0.1'||location.hostname==='localhost')?'<details class="info-item" style="grid-column:1/-1"><summary style="cursor:pointer;color:#9ca3af;font-size:12px">技术信息（开发环境）</summary><strong style="display:block;margin-top:8px;word-break:break-all">内部 UUID：'+esc(u.id||'-')+'</strong></details>':'';
+        var wallet=state.wallet||{};
+        var totalBal=wallet.totalBalance!=null?wallet.totalBalance:(wallet.balance!=null?wallet.balance:'-');
+        var paidBal=wallet.paidBalance!=null?wallet.paidBalance:'-';
+        var bonusBal=wallet.bonusBalance!=null?wallet.bonusBalance:'-';
+        var setHint=u.hasPassword===true||u.has_password===true?'':'<p style="margin:12px 0 0;color:#fbbf24;font-size:13px">提示：建议设置登录密码，便于下次邮箱+密码登录（不强制）。</p>';
+        root.innerHTML='<section class="account-card"><div class="account-head"><div class="profile-main"><div class="avatar">'+avatarHtml(u)+'</div><div class="profile-title"><h1>'+esc(u.displayName||'老板账号')+'</h1><p>我的账号</p></div></div><button class="boss-btn" data-edit type="button">编辑资料</button></div><div class="info-grid"><div class="info-item"><span>老板 UID</span><strong>'+esc(publicUid)+'</strong></div><div class="info-item"><span>总猫粮</span><strong>'+esc(totalBal)+'</strong></div><div class="info-item"><span>充值猫粮</span><strong>'+esc(paidBal)+'</strong></div><div class="info-item"><span>赠送猫粮</span><strong>'+esc(bonusBal)+'</strong></div><div class="info-item"><span>邮箱</span><strong>'+esc(u.email||'-')+'</strong></div><div class="info-item"><span>手机号</span><strong>'+esc(u.phone||'-')+'</strong></div><div class="info-item"><span>注册时间</span><strong>'+esc(date(u.createdAt))+'</strong></div><div class="info-item"><span>账号状态</span><strong>'+esc(statusText(u.status))+'</strong></div>'+techHtml+'</div>'+setHint+'<div class="action-row"><a class="boss-btn ghost" href="recharge.html">充值中心 / 钱包流水</a><a class="boss-btn ghost" href="orders.html">查看我的订单</a><a class="boss-btn ghost" href="support.html">联系在线客服</a><button class="boss-btn ghost" type="button" data-logout>退出登录</button></div><div id="bossAccountSecurity"></div></section>';
+        if(window.MCJAccountSecurity){
+          window.MCJAccountSecurity.mount('#bossAccountSecurity',u,{role:'boss',passwordHint:state.passwordHint,onUpdated:function(data){if(data&&data.user)state.user=data.user;paint();}});
+        }
       }
-      function readDB(){try{return JSON.parse(localStorage.getItem(DB_KEY)||"{}")||{}}catch(e){return {}}}
-      function readPlatformDB(){try{return JSON.parse(localStorage.getItem("mcjPlatformData.v1")||"{}")||{}}catch(e){return {}}}
-      function saveDB(db){localStorage.setItem(DB_KEY,JSON.stringify(db||{}))}
-      function money(v){return "RM " + Number(v||0).toFixed(2)}
-      function esc(v){return String(v==null?"":v).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}
-      function userSettings(){try{return JSON.parse(localStorage.getItem("mcjBossSettings")||"{}")}catch(e){return {}}}
-      function saveSettings(v){localStorage.setItem("mcjBossSettings",JSON.stringify(v||{}))}
-      var user = window.MCJRoleGate.user("customer") || {};
-      var settings = userSettings();
-      var totalSpend = Number(settings.totalSpend || 0);
-      var balance = Number(settings.balance || 0);
-      var activeOrderStatus = "all";
-      var vipLevels = getVipLevels();
-      var currentVip = vipLevels.slice().reverse().find(function(v){return totalSpend >= Number(v.threshold||0)}) || vipLevels[0];
-      var nextVip = vipLevels.find(function(v){return Number(v.threshold||0) > totalSpend});
-      document.getElementById("bossName").textContent = settings.name || user.name || "老板账号";
-      document.getElementById("bossUserId").textContent = "用户 ID：" + currentCustomerId();
-      document.getElementById("coinBalance").textContent = money(balance);
-      document.getElementById("vipBadge").textContent = currentVip.name || "VIP 0";
-      if (nextVip) {
-        var need = Math.max(0, Number(nextVip.threshold || 0) - totalSpend);
-        var prev = Number(currentVip.threshold || 0);
-        var total = Math.max(1, Number(nextVip.threshold || 0) - prev);
-        document.getElementById("vipNeedText").textContent = "距离 " + nextVip.name + " 还需消费 " + money(need);
-        document.getElementById("vipProgress").style.width = Math.min(100, Math.max(0, (totalSpend - prev) / total * 100)) + "%";
-      } else {
-        document.getElementById("vipNeedText").textContent = "已达到当前最高 VIP 等级";
-        document.getElementById("vipProgress").style.width = "100%";
+      function paintRegister(){
+        root.innerHTML='<section class="account-card"><h1>注册老板账号</h1><p style="color:#9ca3af">必须先完成邮箱验证码验证，成功后系统会自动分配老板 UID。密码至少 8 位且含字母和数字。</p><form class="form-grid" data-register-form style="margin-top:16px"><label>昵称<input name="displayName" maxlength="40" required placeholder="请输入昵称"></label><label>邮箱<div style="display:flex;gap:8px;align-items:center"><input name="email" type="email" inputmode="email" required autocomplete="email" style="flex:1"><button class="boss-btn ghost" type="button" data-mine-send-register-otp>获取验证码</button></div></label><label>邮箱验证码<div style="display:flex;gap:8px;align-items:center"><input name="otp" type="text" inputmode="numeric" maxlength="6" autocomplete="one-time-code" data-auth-code="1" placeholder="6 位验证码" style="flex:1"><button class="boss-btn ghost" type="button" data-mine-verify-register-otp>验证邮箱</button></div></label><input type="hidden" name="registerToken" value=""><p class="state" data-register-verified-hint style="color:#9ca3af">请先完成邮箱验证，验证成功后才能注册。</p><label>密码<input name="password" type="password" required minlength="8" autocomplete="new-password"></label><label>确认密码<input name="confirmPassword" type="password" required minlength="8" autocomplete="new-password"></label><button class="boss-btn" type="submit" data-register-submit disabled>注册</button><p class="state" data-register-state></p><p style="color:#9ca3af;font-size:13px">已有账号？<a href="index.html" style="color:#ffd6e7">返回登录</a></p></form></section>';
       }
-      initAvatar();
-      renderPayments();
-      renderOrders(activeOrderStatus);
-      renderMessages("order");
-      renderVipModal();
-      fillSettings();
-
-      function getVipLevels(){
-        var platform = readPlatformDB();
-        var local = readDB();
-        var rows = Array.isArray(platform.vipLevels) && platform.vipLevels.length ? platform.vipLevels : (Array.isArray(local.vipLevels) ? local.vipLevels : []);
-        if (!rows.length) rows = [{name:"VIP 0",threshold:0,benefit:"权益即将开放",enabled:true,sort:0,color:"#f3a8cb",icon:""}];
-        return rows.filter(function(v){return v.enabled !== false && v.enabled !== "false"}).sort(function(a,b){return Number(a.sort||0)-Number(b.sort||0)});
+async function load(){
+        var params=new URLSearchParams(location.search);
+        if(params.get('register')==='1'&&!token()){state.loading=false;paintRegister();return}
+        state.loading=true;state.error='';paint();
+        try{
+          var res=await fetch('/api/auth?action=me',{headers:{Authorization:'Bearer '+token()}});
+          var body=await res.json().catch(function(){return {}});
+          if(!res.ok||!body.ok)throw new Error(body.message||'账号资料读取失败');
+          if(body.user.role!=='boss')throw new Error('当前账号不是老板角色。');
+          state.user=body.user;
+          state.passwordHint=body.passwordHint||'';
+          var saved=window.MCJRoleGate&&window.MCJRoleGate.saveSession;
+          if(saved)saved({user:body.user,accessToken:token()},true);
+          try{
+            var sec=await fetch('/api/auth',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token()},body:JSON.stringify({action:'account_security'})});
+            var secBody=await sec.json().catch(function(){return {}});
+            if(sec.ok&&secBody.ok&&secBody.user){state.user=Object.assign({},state.user,secBody.user);state.passwordHint=secBody.passwordHint||state.passwordHint;}
+          }catch(e){}
+          try{var wr=await fetch('/api/recharge',{headers:{Authorization:'Bearer '+token(),Accept:'application/json'}});var wb=await wr.json().catch(function(){return {}});if(wr.ok&&wb.ok)state.wallet=wb.wallet||wb.summary||null;}catch(e){state.wallet=null}
+        }catch(err){
+          var msg=String(err&&err.message||'账号资料读取失败');
+          // Keep valid session on profile init failure — never treat as logged out.
+          if(/账号初始化失败|PROFILE_INIT_FAILED|未绑定平台资料/.test(msg)){
+            state.error='账号初始化失败，请刷新重试或联系客服。';
+          }else if(/未登录|登录已过期|401/.test(msg) && !token()){
+            state.error='请先登录';
+          }else{
+            state.error=msg;
+          }
+        }finally{state.loading=false;paint()}
       }
-      function renderVipModal(){
-        var html = '<div class="state-warn">当前累计消费：'+money(totalSpend)+(nextVip?'，距离下一等级还需 '+money(Number(nextVip.threshold)-totalSpend):'，已达最高等级')+'</div><div class="vip-grid">';
-        html += vipLevels.map(function(v){
-          var reached = totalSpend >= Number(v.threshold||0);
-          return '<div class="vip-card"><strong>'+v.name+'</strong><span>所需累计消费：'+money(v.threshold)+'</span><span>等级名称：'+v.name+'</span><span>'+(v.benefit||"权益即将开放")+'</span><span>当前状态：'+(reached?'已达到':'未达到')+'</span></div>';
-        }).join("") + '</div>';
-        document.getElementById("vipModalBody").innerHTML = html;
-      }
-      function renderPayments(){
-        var db = readDB();
-        var rows = Array.isArray(db.paymentMethods) && db.paymentMethods.length ? db.paymentMethods : [
-          {name:"TNG",enabled:true,desc:"支付渠道配置中"},
-          {name:"银行转账",enabled:true,desc:"支付渠道配置中"},
-          {name:"DuitNow",enabled:true,desc:"支付渠道配置中"},
-          {name:"其他",enabled:false,desc:"后台未开放"}
-        ];
-        document.getElementById("paymentMethods").innerHTML = rows.filter(function(x){return x.enabled !== false && x.enabled !== "false"}).sort(function(a,b){return Number(a.sort||0)-Number(b.sort||0)}).map(function(x){
-          return '<div class="pay-option"><strong>'+x.name+'</strong><span>'+(x.desc||x.note||"支付渠道配置中")+'</span></div>';
-        }).join("") || '<div class="msg-item">后台暂未启用支付方式。</div>';
-      }
-      function currentCustomerId(){return user.user_id||user.id||user.userId||user.account||"MCJ------"}
-      function allCustomerOrders(){
-        var db=readPlatformDB();
-        var legacy=readDB();
-        var id=currentCustomerId();
-        var rows=(Array.isArray(db.orders)?db.orders:[]).concat(Array.isArray(legacy.orders)?legacy.orders:[]);
-        var seen={};
-        return rows.filter(function(o){
-          var oid=o.id||o.order_no||o.orderNo||"";
-          if(seen[oid])return false;
-          var match=[o.customerId,o.customer_id,o.boss_id,o.bossId,o.userId,o.user_id].indexOf(id)>=0;
-          if(!match&&o.bossName&&settings.name)match=o.bossName===settings.name;
-          if(!match&&o.customerName&&settings.name)match=o.customerName===settings.name;
-          if(match)seen[oid]=true;
-          return match;
-        });
-      }
-      function orderStatusText(status){
-        var map={pending_payment:"待付款",pending_start:"待开始",running:"进行中",completed:"已完成",cancelled:"已取消",after_sale:"售后中",refund_pending:"退款中",refunded:"已退款",paid:"待开始"};
-        return map[status]||status||"待付款";
-      }
-      function renderOrders(status){
-        activeOrderStatus=status||"all";
-        var tabs=[["all","全部"],["pending_payment","待付款"],["pending_start","待开始"],["running","进行中"],["completed","已完成"],["cancelled","已取消"],["after_sale","售后中"],["refund_pending","退款中"],["refunded","已退款"]];
-        document.querySelector("[data-order-tabs]").innerHTML=tabs.map(function(t){return '<button class="tab '+(activeOrderStatus===t[0]?'active':'')+'" type="button" data-order-tab="'+t[0]+'">'+t[1]+'</button>'}).join("");
-        var rows=allCustomerOrders().filter(function(o){return activeOrderStatus==="all"||o.status===activeOrderStatus||orderStatusText(o.status)===orderStatusText(activeOrderStatus)});
-        document.getElementById("orderPanelBody").innerHTML=rows.length?rows.map(orderCard).join(""):'<div class="msg-item">暂无该状态订单</div>';
-      }
-      function orderCard(o){
-        var no=o.order_no||o.orderNo||o.id||"-";
-        var player=o.playerName||o.player||o.companionName||"未分配陪玩";
-        var amount=money(o.amount||o.totalAmount||o.paidAmount||0);
-        return '<div class="msg-item"><strong>'+esc(no)+' · '+esc(orderStatusText(o.status))+'</strong><span style="display:block;margin-top:6px;color:var(--muted)">陪玩：'+esc(player)+' / 金额：'+amount+' / 时间：'+esc(o.scheduled_at||o.appointmentAt||o.createdAt||"-")+'</span><button class="mini-btn" type="button" data-order-detail="'+esc(no)+'">查看详情</button></div>';
-      }
-      function orderDetailHtml(no){
-        var db=readPlatformDB();
-        var order=allCustomerOrders().find(function(o){return (o.order_no||o.orderNo||o.id)===no})||{};
-        var chats=(Array.isArray(db.orderChats)?db.orderChats:[]).filter(function(c){return c.orderId===order.id||c.order_no===no});
-        var refunds=(Array.isArray(db.refunds)?db.refunds:[]).filter(function(r){return r.orderId===order.id||r.order_no===no});
-        var timeline=order.timeline||order.statusTimeline||[];
-        return '<h2>订单详情</h2><div class="detail-list"><div><span>订单编号</span><strong>'+esc(no)+'</strong></div><div><span>陪玩资料</span><strong>'+esc(order.playerName||order.player||order.companionName||"未分配")+'</strong></div><div><span>金额</span><strong>'+money(order.amount||order.totalAmount||order.paidAmount||0)+'</strong></div><div><span>当前状态</span><strong>'+esc(orderStatusText(order.status))+'</strong></div><div><span>时间线</span><strong>'+esc(timeline.length?timeline.map(function(t){return (t.time||"")+" "+(t.text||t.status||"")}).join("\\n"):"暂无时间线")+'</strong></div><div><span>客服聊天记录</span><strong>'+esc(chats.length?chats.map(function(c){return c.id||c.orderId}).join("、"):"暂无聊天记录")+'</strong></div><div><span>退款记录</span><strong>'+esc(refunds.length?refunds.map(function(r){return (r.id||"退款")+" "+(r.status||"")}).join("、"):"暂无退款记录")+'</strong></div></div>';
-      }
-      function renderReferralPanel(){
-        var box=document.getElementById("referralPanel");if(!box)return;
-        var db=readPlatformDB();var id=currentCustomerId();
-        var relations=Array.isArray(db.referralRelations)?db.referralRelations.filter(function(r){return r.inviter_user_id===id&&r.relation_type==="OWNER_INVITES_PLAYER"&&(r.status||"active")!=="disabled"}):[];
-        var playerIds=relations.map(function(r){return r.invited_user_id});
-        var players=Array.isArray(db.players)?db.players.filter(function(p){return playerIds.indexOf(p.id)>=0}):[];
-        var records=Array.isArray(db.referralCommissionRecords)?db.referralCommissionRecords.filter(function(r){return r.inviter_user_id===id}):[];
-        var wallet=(Array.isArray(db.referralWallets)?db.referralWallets:[]).find(function(w){return w.user_id===id})||{};
-        var rows=players.map(function(p){var total=records.filter(function(r){return r.invited_player_id===p.id&&r.status==="SETTLED"}).reduce(function(sum,r){return sum+Number(r.rebate_amount||0)},0);return '<tr><td>'+esc(p.nickname||p.name||"-")+'</td><td>'+esc(p.id||"-")+'</td><td>'+esc(p.level||"-")+'</td><td>'+esc(p.audit||p.status||"-")+'</td><td>'+money(total)+'</td></tr>'}).join("");
-        var flow=records.map(function(r){return '<tr><td>'+esc(r.settled_at||r.created_at||"")+'</td><td>'+esc(r.commission_type==="GIFT_REBATE"?"礼物返点":"订单返点")+'</td><td>'+esc(r.order_id||r.gift_id||"-")+'</td><td>'+esc(r.invited_player_id||"")+'</td><td>'+money(r.base_amount)+'</td><td>'+esc(r.rebate_rate||0)+'%</td><td>'+money(r.rebate_amount)+'</td><td>'+esc(r.status||"")+'</td></tr>'}).join("");
-        box.innerHTML='<div class="pay-grid"><div class="pay-option"><strong>'+money(wallet.available_amount)+'</strong><span>可提现返点</span></div><div class="pay-option"><strong>'+money(wallet.pending_amount)+'</strong><span>待结算返点</span></div><div class="pay-option"><strong>'+money(wallet.total_earned)+'</strong><span>累计返点收益</span></div></div><div class="panel-head" style="margin-top:16px"><h3>直属陪玩</h3></div><div class="msg-item" style="overflow:auto"><table style="width:100%;border-collapse:collapse"><thead><tr><th>昵称</th><th>陪玩ID</th><th>等级</th><th>状态</th><th>累计返点</th></tr></thead><tbody>'+(rows||'<tr><td colspan="5">暂无直属陪玩</td></tr>')+'</tbody></table></div><div class="panel-head" style="margin-top:16px"><h3>返点流水</h3></div><div class="msg-item" style="overflow:auto"><table style="width:100%;border-collapse:collapse"><thead><tr><th>时间</th><th>类型</th><th>订单/礼物</th><th>直属陪玩</th><th>基础金额</th><th>返点</th><th>收益</th><th>状态</th></tr></thead><tbody>'+(flow||'<tr><td colspan="8">暂无返点流水</td></tr>')+'</tbody></table></div>';
-      }
-      function renderMessages(type){
-        type=type||"order";
-        var tabs = document.querySelectorAll("[data-message-tab]");
-        tabs.forEach(function(btn){btn.classList.toggle("active",btn.dataset.messageTab===type)});
-        var threads = messageThreads(type);
-        var unread = threads.reduce(function(sum,t){return sum+Number(t.unread||0)},0);
-        var dot=document.getElementById("messageUnread");if(dot){dot.hidden=!unread;dot.textContent=unread;}
-        document.getElementById("messageList").innerHTML = threads.length ? threads.map(function(t){return '<button class="msg-item" type="button" data-thread-id="'+esc(t.id)+'" style="text-align:left;width:100%"><strong>'+esc(t.name||"会话")+'</strong>'+(t.unread?'<i class="unread-dot">'+t.unread+'</i>':'')+'<span style="display:block;margin-top:6px;color:var(--muted)">'+esc(t.last||"暂无消息")+'</span><small>'+esc(t.time||"")+'</small></button>';}).join("") : '<div class="msg-item">暂无会话</div>';
-        document.getElementById("messageDetail").innerHTML = threads.length ? '<div class="msg-item">点击左侧会话查看聊天内容。</div>' : '<div class="msg-item">暂无会话</div>';
-      }
-      function messageThreads(type){
-        var db=readPlatformDB();var legacy=readDB();var id=currentCustomerId();
-        var chats=(Array.isArray(db.customerServiceChats)?db.customerServiceChats:[]).filter(function(c){return c.customerId===id});
-        var msgs=(Array.isArray(db.messages)?db.messages:[]).concat(Array.isArray(legacy.messages)?legacy.messages:[]).filter(function(m){return m.userId===id||m.participantId===id});
-        var list=[];
-        if(type==="service") list=chats.map(function(c){var ms=c.messages||[];var last=ms[ms.length-1]||{};return {id:c.id,name:c.customerServiceName||"平台客服",avatar:c.avatar,last:last.text||"",time:last.time||c.updatedAt||c.createdAt,unread:c.unreadForCustomer||0,messages:ms};});
-        if(type==="order") list=msgs.filter(function(m){return /订单/.test(m.category||m.type||"")}).map(normalizeThread);
-        if(type==="system") list=msgs.filter(function(m){return /系统|公告|通知/.test(m.category||m.type||"")}).map(normalizeThread);
-        return list.sort(function(a,b){return String(b.time||"").localeCompare(String(a.time||""))});
-      }
-      function normalizeThread(m){
-        var ms=m.messages||[];var last=ms[ms.length-1]||{};
-        return {id:m.id,name:m.name||m.participantName||"系统通知",last:last.text||m.lastMessage||"",time:last.time||m.updatedAt||m.createdAt,unread:m.unread||0,messages:ms};
-      }
-      function renderThread(id){
-        var thread=[].concat(messageThreads("service"),messageThreads("order"),messageThreads("system")).find(function(t){return t.id===id});
-        if(!thread){document.getElementById("messageDetail").innerHTML='<div class="msg-item">会话不存在</div>';return}
-        document.getElementById("messageDetail").innerHTML='<div class="msg-item"><strong>'+esc(thread.name)+'</strong><div style="margin-top:12px;display:grid;gap:10px">'+((thread.messages||[]).length?thread.messages.map(function(m){return '<div class="msg-item" style="background:'+(m.from==="customer"||m.sender_role==="customer"?'rgba(243,168,203,.10)':'rgba(0,0,0,.18)')+'"><span>'+esc(m.text||m.content||"")+'</span><small style="display:block;margin-top:5px;color:var(--muted)">'+esc(m.time||m.created_at||"")+'</small></div>'}).join(""):'<div>暂无消息记录</div>')+'</div></div>';
-      }
-      function initAvatar(){
-        var avatar = document.querySelector(".boss-avatar");
-        var img = document.getElementById("bossAvatarPreview");
-        var input = document.getElementById("bossAvatarInput");
-        var pending = localStorage.getItem("mcjBossAvatar") || "";
-        function render(src){if(src){img.src=src;avatar.classList.add("has-image")}else{img.removeAttribute("src");avatar.classList.remove("has-image")}}
-        render(pending);
-        document.addEventListener("click",function(e){
-          if(e.target.closest("[data-avatar-pick]"))input.click();
-          if(e.target.closest("[data-avatar-save]")){if(pending)localStorage.setItem("mcjBossAvatar",pending);alert("头像已保存")}
-          if(e.target.closest("[data-avatar-remove]")){pending="";localStorage.removeItem("mcjBossAvatar");render("")}
-        });
-        input.addEventListener("change",function(){var file=input.files&&input.files[0];if(!file)return;var r=new FileReader();r.onload=function(){pending=String(r.result||"");render(pending)};r.readAsDataURL(file)});
-      }
-      function fillSettings(){
-        var form = document.getElementById("settingsForm");
-        Object.keys(settings).forEach(function(k){if(form.elements[k]){if(form.elements[k].type==="checkbox")form.elements[k].checked=!!settings[k];else form.elements[k].value=settings[k]}});
-        if(form.elements.name&&!form.elements.name.value)form.elements.name.value=user.name||"老板账号";
-      }
-      document.addEventListener("click",function(e){
-        var panel=e.target.closest("[data-open-panel]");
-        if(panel){document.querySelectorAll(".panel").forEach(function(p){p.classList.remove("active")});document.getElementById("panel-"+panel.dataset.openPanel).classList.add("active");if(panel.dataset.openPanel==="referrals")renderReferralPanel();return}
-        var od=e.target.closest("[data-order-detail]");if(od){document.getElementById("messageDetail").innerHTML="";document.getElementById("vipModalBody").innerHTML=orderDetailHtml(od.dataset.orderDetail);document.getElementById("vipModal").classList.add("show");return}
-        var th=e.target.closest("[data-thread-id]");if(th){renderThread(th.dataset.threadId);return}
-        if(e.target.closest("[data-open-vip]")){document.getElementById("vipModal").classList.add("show");return}
-        if(e.target.closest("[data-open-settings]")){document.getElementById("settingsModal").classList.add("show");return}
-        if(e.target.closest("[data-close-modal]")||e.target.classList.contains("modal")){document.querySelectorAll(".modal").forEach(function(m){m.classList.remove("show")});return}
-        if(e.target.closest("[data-logout]")){window.MCJRoleGate.logout("customer");location.href="index.html";return}
-        if(e.target.closest("[data-close-devices]"))alert("已保留当前设备，其他设备将在真实登录系统接入后退出。");
-        if(e.target.closest("[data-delete-account]"))alert("注销账户需联系客服审核。");
-      });
-      document.addEventListener("click",function(e){var tab=e.target.closest("[data-message-tab]");if(tab)renderMessages(tab.dataset.messageTab);var ot=e.target.closest("[data-order-tab]");if(ot)renderOrders(ot.dataset.orderTab)});
-      document.addEventListener("submit",function(e){
-        if(e.target.id==="settingsForm"){
-          e.preventDefault();
-          var data={};Array.prototype.forEach.call(e.target.elements,function(el){if(!el.name)return;data[el.name]=el.type==="checkbox"?el.checked:el.value});
-          data.balance=balance;data.totalSpend=totalSpend;saveSettings(data);alert("设置已保存");
+      document.addEventListener('click',async function(e){
+        var sendBtn=e.target.closest('[data-mine-send-register-otp]');
+        var verifyBtn=e.target.closest('[data-mine-verify-register-otp]');
+        if(!sendBtn&&!verifyBtn)return;
+        var form=document.querySelector('[data-register-form]');
+        if(!form)return;
+        e.preventDefault();
+        var box=form.querySelector('[data-register-state]');
+        var hint=form.querySelector('[data-register-verified-hint]');
+        var submit=form.querySelector('[data-register-submit]');
+        var email=String(form.elements.email.value||'').trim().toLowerCase();
+        if(!email||!/^\S+@\S+\.\S+$/.test(email)){if(box)box.textContent='请输入有效邮箱。';return}
+        if(sendBtn){
+          if(sendBtn.disabled)return;
+          form.elements.registerToken.value='';
+          if(submit)submit.disabled=true;
+          if(hint)hint.textContent='请先完成邮箱验证，验证成功后才能注册。';
+          sendBtn.disabled=true;var old=sendBtn.textContent;sendBtn.textContent='发送中…';
+          try{
+            var res=await fetch('/api/auth',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'send_register_otp',email:email,role:'boss'})});
+            var body=await res.json().catch(function(){return {}});
+            if(!res.ok||!body.ok)throw new Error(body.message||'发送失败');
+            var tip=body.message||'验证码已发送';if(body.devCode)tip+='（测试 '+body.devCode+'）';
+            if(box)box.textContent=tip;
+            var left=Number(body.retryAfterSec)||60;sendBtn.textContent=left+'s';
+            var t=setInterval(function(){left-=1;if(left<=0){clearInterval(t);sendBtn.disabled=false;sendBtn.textContent=old||'获取验证码';}else sendBtn.textContent=left+'s';},1000);
+          }catch(err){sendBtn.disabled=false;sendBtn.textContent=old||'获取验证码';if(box)box.textContent=err.message||'发送失败'}
+          return;
+        }
+        if(verifyBtn){
+          var code=String(form.elements.otp.value||'').trim();
+          if(!/^\d{6}$/.test(code)){if(box)box.textContent='请输入 6 位邮箱验证码。';return}
+          verifyBtn.disabled=true;var oldV=verifyBtn.textContent;verifyBtn.textContent='验证中…';
+          try{
+            var vres=await fetch('/api/auth',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'verify_register_otp',email:email,code:code,role:'boss'})});
+            var vbody=await vres.json().catch(function(){return {}});
+            if(!vres.ok||!vbody.ok)throw new Error(vbody.message||'验证失败');
+            form.elements.registerToken.value=vbody.registerToken||'';
+            if(submit)submit.disabled=!form.elements.registerToken.value;
+            if(hint)hint.textContent='邮箱已验证 · '+(vbody.emailMasked||email)+'，请设置密码并注册。';
+            if(box)box.textContent=vbody.message||'邮箱已验证';
+            form.elements.otp.value='';
+          }catch(err){form.elements.registerToken.value='';if(submit)submit.disabled=true;if(box)box.textContent=err.message||'验证失败'}
+          finally{verifyBtn.disabled=false;verifyBtn.textContent=oldV||'验证邮箱'}
         }
       });
+      document.addEventListener('submit',async function(e){
+        var form=e.target.closest('[data-register-form]');
+        if(!form)return;
+        e.preventDefault();
+        var box=form.querySelector('[data-register-state]');
+        var token=String(form.elements.registerToken.value||'').trim();
+        var password=String(form.elements.password.value||'');
+        var confirmPassword=String(form.elements.confirmPassword.value||'');
+        if(!token){if(box)box.textContent='请先完成邮箱验证。';return}
+        if(password!==confirmPassword){if(box)box.textContent='两次输入的密码不一致。';return}
+        if(box)box.textContent='注册中...';
+        try{
+          var res=await fetch('/api/auth',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'register',email:form.elements.email.value,password:password,confirmPassword:confirmPassword,displayName:form.elements.displayName.value,registerToken:token,role:'boss'})});
+          var body=await res.json().catch(function(){return {}});
+          if(!res.ok||!body.ok)throw new Error(body.message||'注册失败');
+          var session=body.session||{};
+          if(window.MCJRoleGate&&window.MCJRoleGate.saveSession)window.MCJRoleGate.saveSession(session,true);
+          else if(session.accessToken){
+            try{
+              localStorage.setItem('mcjAuthAccessToken',session.accessToken);
+              if(session.refreshToken)localStorage.setItem('mcjAuthRefreshToken',session.refreshToken);
+              if(session.expiresAt)localStorage.setItem('mcjAuthExpiresAt',String(session.expiresAt));
+            }catch(e){}
+          }
+          if(box)box.textContent=body.message||('注册成功。您的老板 UID：'+(body.bossUid||''));
+          setTimeout(function(){location.href='mine.html'},800);
+        }catch(err){if(box)box.textContent=err.message||'注册失败'}
+      });
+      document.addEventListener('click',function(e){
+        if(e.target.closest('[data-refresh]')){load();return}
+        if(e.target.closest('[data-edit]')){var u=state.user||{};form.elements.avatarUrl.value=u.avatarUrl||'';form.elements.displayName.value=u.displayName||'';form.elements.phone.value=u.phone||'';editState.textContent='';modal.classList.add('open');return}
+        if(e.target.closest('[data-close]')||e.target===modal){modal.classList.remove('open');return}
+        if(e.target.closest('[data-logout]')){if(window.MCJBossAuth&&window.MCJBossAuth.clearSession)window.MCJBossAuth.clearSession();if(window.MCJRoleGate){window.MCJRoleGate.logout('boss');window.MCJRoleGate.logout('customer')}['mcjAuthAccessToken','mcjAuthRefreshToken','mcjAuthExpiresAt','customerAuthToken','customerUser','mcjCurrentUser','mcjRole'].forEach(function(k){try{localStorage.removeItem(k);sessionStorage.removeItem(k)}catch(e){}});location.href='index.html';return}
+      });
+      form.addEventListener('submit',async function(e){
+        e.preventDefault();editState.textContent='保存中...';
+        try{var res=await fetch('/api/auth',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token()},body:JSON.stringify({action:'update_profile',avatarUrl:form.elements.avatarUrl.value,displayName:form.elements.displayName.value,phone:form.elements.phone.value})});var body=await res.json().catch(function(){return {}});if(!res.ok||!body.ok)throw new Error(body.message||'保存失败');state.user=body.user;if(window.MCJRoleGate&&window.MCJRoleGate.saveSession)window.MCJRoleGate.saveSession({user:body.user,accessToken:token(),refreshToken:sessionStorage.getItem('mcjAuthRefreshToken')||''},true);editState.textContent='资料已保存';setTimeout(function(){modal.classList.remove('open');paint()},450)}catch(err){editState.textContent=err.message||'保存失败'}
+      });
+      load();
     })();
   </script>
-  <script src="src/dropdown-system.js" defer></script>
-  <script src="src/launch-readiness-fixes.js" defer></script>
-  <script src="src/meow-butler.js?v=20260711-floating" defer></script>
-  <script src="src/design-system.js" defer></script>
 </body>
 </html>
+

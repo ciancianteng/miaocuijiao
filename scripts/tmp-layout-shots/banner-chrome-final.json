@@ -1,0 +1,53 @@
+[
+  {
+    "viewport": "1920",
+    "pass": true,
+    "arrowHitOk": true,
+    "arrowVisualOk": true,
+    "arrowsVisible": true,
+    "equalInset": true,
+    "dotsSizeOk": true,
+    "dotsBottomOk": true,
+    "dotsCount": 2,
+    "announceGapPx": 16,
+    "announceGapOk": true,
+    "announceNoOverlap": true,
+    "segPadRight": "52px",
+    "barGap": "16px",
+    "heroAspectOk": true
+  },
+  {
+    "viewport": "1366",
+    "pass": true,
+    "arrowHitOk": true,
+    "arrowVisualOk": true,
+    "arrowsVisible": true,
+    "equalInset": true,
+    "dotsSizeOk": true,
+    "dotsBottomOk": true,
+    "dotsCount": 2,
+    "announceGapPx": 16,
+    "announceGapOk": true,
+    "announceNoOverlap": true,
+    "segPadRight": "52px",
+    "barGap": "16px",
+    "heroAspectOk": true
+  },
+  {
+    "viewport": "390",
+    "pass": true,
+    "arrowHitOk": true,
+    "arrowVisualOk": true,
+    "arrowsVisible": true,
+    "equalInset": true,
+    "dotsSizeOk": true,
+    "dotsBottomOk": true,
+    "dotsCount": 2,
+    "announceGapPx": 16,
+    "announceGapOk": true,
+    "announceNoOverlap": true,
+    "segPadRight": "52px",
+    "barGap": "16px",
+    "heroAspectOk": true
+  }
+]

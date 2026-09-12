@@ -1,0 +1,119 @@
+{
+  "ok": true,
+  "steps": [
+    {
+      "id": "CFG_SAVE_2",
+      "pass": true,
+      "note": "orderCommission=2",
+      "cfg": {
+        "baseSalary": 350,
+        "attendanceBonus": 50,
+        "receptionBonus": 0,
+        "orderCommission": 2,
+        "commissionPercent": 5,
+        "nightShiftAllowance": 30,
+        "otherAdjustment": 0,
+        "standardDays": 22,
+        "graceMinutes": 10,
+        "lateDeduction": 0,
+        "absenceDeduction": 0,
+        "earlyLeaveDeduction": 0,
+        "settleOnOrderComplete": true,
+        "settleOnPayment": false,
+        "clawbackOnRefund": true,
+        "employeeCode": "",
+        "shiftName": "默认班次",
+        "shiftStart": "09:00",
+        "shiftEnd": "18:00",
+        "joinDate": "",
+        "frozen": false,
+        "rowId": "platform_settings:global",
+        "source": "platform_settings",
+        "serviceId": "global"
+      }
+    },
+    {
+      "id": "CFG_SAVE_5",
+      "pass": true,
+      "note": "orderCommission=5 source=platform_settings"
+    },
+    {
+      "id": "CFG_PLATFORM",
+      "pass": true,
+      "note": "config readable after save"
+    },
+    {
+      "id": "CS_PROFILE",
+      "pass": true,
+      "note": "serviceId=268e8205…"
+    },
+    {
+      "id": "ORDER_CREATE",
+      "pass": true,
+      "note": "order=CS-COMM-1785787455289"
+    },
+    {
+      "id": "SETTLE_RM5",
+      "pass": true,
+      "note": "订单佣金已结算 RM 10（固定 5 + 提成 5）。",
+      "settlement": {
+        "id": "f2d09ca2-4665-4339-8b1d-d17e72ed8063",
+        "serviceId": "268e8205-0e09-4870-b44f-72676ade6ce5",
+        "bossId": "268e8205-0e09-4870-b44f-72676ade6ce5",
+        "conversationId": null,
+        "orderId": "f505c9cc-6959-4e1a-8a97-fdbdc3e1b806",
+        "orderNo": "CS-COMM-1785787455289",
+        "orderAmount": 100,
+        "rewardType": "order_commission",
+        "fixedRewardRm": 5,
+        "percentCommissionRm": 5,
+        "nightShiftRm": 0,
+        "attendanceBonusRm": 0,
+        "clawbackRm": 0,
+        "finalAmountRm": 10,
+        "commissionPercent": 5,
+        "configSnapshot": {
+          "baseSalary": 350,
+          "snapshottedAt": "2026-08-03T20:04:15.506Z",
+          "receptionBonus": 0,
+          "attendanceBonus": 50,
+          "orderCommission": 5,
+          "settleOnPayment": false,
+          "clawbackOnRefund": true,
+          "commissionPercent": 5,
+          "nightShiftAllowance": 30,
+          "settleOnOrderComplete": true
+        },
+        "status": "settled",
+        "settleNode": "completed",
+        "settledAt": "2026-08-03T20:04:15.506+00:00",
+        "clawbackAt": "",
+        "clawbackReason": "",
+        "source": "accept-cs-commission-live",
+        "createdAt": "2026-08-03T20:04:15.506+00:00"
+      },
+      "code": "SETTLED"
+    },
+    {
+      "id": "CFG_SAVE_8",
+      "pass": true,
+      "note": "orderCommission=8"
+    },
+    {
+      "id": "HISTORY_ISOLATION",
+      "pass": true,
+      "note": "snapshot fixed=5 final=10 (live cfg now 8)"
+    },
+    {
+      "id": "WAGE_LEDGER",
+      "pass": true,
+      "note": "wage settlement fixed=5 final=10"
+    },
+    {
+      "id": "INCOME_FIELDS",
+      "pass": true,
+      "note": "incomeToday=20 incomeMonth=20 incomeTotal=20 estimated=483"
+    }
+  ],
+  "at": "2026-08-03T20:04:14.393Z"
+}

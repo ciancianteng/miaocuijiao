@@ -1,4 +1,4 @@
-(function () {
+﻿(function () {
   if (window.MCJUnifiedAPI) return;
 
   function config() {
@@ -104,7 +104,7 @@
       ["价格", "/price-services", "俱乐部价格表"],
       ["订单", "/orders", "老板端 / 陪玩端 / 客服端 / 后台"],
       ["聊天", "/chat", "站内消息系统"],
-      ["充值", "/payments/recharges", "老板充值中心"],
+      ["猫粮充值", "/payments/recharges", "老板猫粮充值"],
       ["提现", "/withdrawals", "陪玩提现 / 后台审核"],
       ["退款", "/refunds", "订单售后"],
       ["抽成", "/commission-rules", "结算快照"],

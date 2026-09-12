@@ -1,0 +1,36 @@
+{
+  "appliedAt": "2026-08-02T22:49:33.227Z",
+  "bosses": [
+    {
+      "boss_uid": "MCJ00001",
+      "display_name": "boss.final.1785706919378",
+      "email": "boss.final.1785706919378@meow.test"
+    }
+  ],
+  "companions": [
+    {
+      "companion_code": "PW00001",
+      "companion_uid": null,
+      "nickname": "终验陪玩",
+      "application_status": "approved"
+    }
+  ],
+  "admins": [
+    {
+      "email": "admin@meow.test",
+      "display_name": "管理员",
+      "role": "admin",
+      "status": "active"
+    }
+  ],
+  "customerServices": [
+    {
+      "display_name": "终验客服",
+      "email": "service.final.1785706919378@meow.test",
+      "status": "active"
+    }
+  ],
+  "firstBossCode": "MCJ00001",
+  "firstCompanionCode": "PW00001",
+  "adminCount": 1
+}
