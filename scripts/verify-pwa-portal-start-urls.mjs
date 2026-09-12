@@ -60,6 +60,15 @@ if (boss && companion && cs && admin) {
   if (new Set(starts).size !== 4) failures.push("start_url values must be unique across 4 portals");
   const ids = [boss.id, companion.id, cs.id, admin.id];
   if (new Set(ids).size !== 4) failures.push("manifest id values must be unique across 4 portals");
+  const expectScope = [
+    [boss, "/", "boss"],
+    [companion, "/companion/", "companion"],
+    [cs, "/customer-service/", "cs"],
+    [admin, "/admin/", "admin"],
+  ];
+  for (const [m, scope, label] of expectScope) {
+    if (m.scope !== scope) failures.push(label + " scope must be " + scope + " got " + m.scope);
+  }
 }
 
 function htmlHasManifest(rel, needle) {

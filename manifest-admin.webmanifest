@@ -4,9 +4,12 @@
   "short_name": "妙脆角后台",
   "description": "妙脆角管理后台 — 审核、配置、运营。",
   "start_url": "/admin/",
-  "scope": "/",
+  "scope": "/admin/",
   "display": "standalone",
-  "display_override": ["standalone", "minimal-ui"],
+  "display_override": [
+    "standalone",
+    "minimal-ui"
+  ],
   "orientation": "any",
   "background_color": "#0a0610",
   "theme_color": "#0a0610",
