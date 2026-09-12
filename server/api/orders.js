@@ -552,29 +552,28 @@ function viewOrder(row = {}) {
   };
 }
 async function loadOrders(profile, id = "") {
-  try {
-    const { expireCompanionConfirmTimeouts } = await import("./_order-confirm-timeout.js");
-    await Promise.race([
-      expireCompanionConfirmTimeouts({ limit: 30 }),
-      new Promise((resolve) => setTimeout(resolve, 1500)),
-    ]);
-  } catch {
-    /* best-effort SLA — never block boss list */
-  }
-  try {
-    const helpers = createOrderCompleteHelpers({
-      restUrl,
-      supabaseJson,
-      serviceHeaders,
-      addSystemMessage: async (order, actorId, content) => addSystemMessage(order, actorId || order.boss_id, content),
-    });
-    await Promise.race([
-      helpers.expireCompletionAutoConfirms({ limit: 20 }),
-      new Promise((resolve) => setTimeout(resolve, 2000)),
-    ]);
-  } catch {
-    /* best-effort auto-complete */
-  }
+  // Phase 1 perf: do not block GET list/detail on expire helpers (was up to ~3.5s race).
+  // Fire-and-forget — cron + next mutation still converge; list stays eventually consistent.
+  void (async () => {
+    try {
+      const { expireCompanionConfirmTimeouts } = await import("./_order-confirm-timeout.js");
+      await expireCompanionConfirmTimeouts({ limit: 30 });
+    } catch {
+      /* best-effort SLA */
+    }
+    try {
+      const helpers = createOrderCompleteHelpers({
+        restUrl,
+        supabaseJson,
+        serviceHeaders,
+        addSystemMessage: async (order, actorId, content) =>
+          addSystemMessage(order, actorId || order.boss_id, content),
+      });
+      await helpers.expireCompletionAutoConfirms({ limit: 20 });
+    } catch {
+      /* best-effort auto-complete */
+    }
+  })();
   // Core columns always include description (completion-pending marker dual-writes here).
   // note is preferred for markers; cancel_reason is optional — never drop note when cancel_reason is missing.
   const selectCore =

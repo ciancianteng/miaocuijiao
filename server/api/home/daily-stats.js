@@ -213,8 +213,9 @@ export default async function handler(req, res) {
   const timeZone = process.env.HOME_STATS_TIMEZONE || PLATFORM_STATS_TIMEZONE;
   const now = new Date();
   const date = localDateYmd(now, timeZone);
-  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
-  res.setHeader("Pragma", "no-cache");
+  // Phase 1 perf: short public cache — stats are aggregate + timezone-day scoped.
+  // vercel.json must allow this path (see /api/home/daily-stats header override).
+  res.setHeader("Cache-Control", "public, max-age=30, s-maxage=60, stale-while-revalidate=120");
   res.setHeader("Content-Type", "application/json; charset=utf-8");
 
   if (req.method !== "GET") {

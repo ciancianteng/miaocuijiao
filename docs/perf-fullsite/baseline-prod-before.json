@@ -1,0 +1,119 @@
+{
+  "at": "2026-09-12T19:47:09Z",
+  "prod": "https://www.meowcuijiao.com",
+  "method": "server-side curl/urllib from cloud agent (network RTT included; not Lab Web Vitals)",
+  "html": [
+    {
+      "path": "/",
+      "ttfb_proxy_s": 0.088,
+      "bytes": 255609,
+      "http": 200
+    },
+    {
+      "path": "/companion-center.html",
+      "ttfb_proxy_s": 0.06,
+      "bytes": 11642,
+      "http": 200
+    },
+    {
+      "path": "/mine.html",
+      "ttfb_proxy_s": 0.063,
+      "bytes": 53227,
+      "http": 200
+    },
+    {
+      "path": "/orders.html",
+      "ttfb_proxy_s": 0.057,
+      "bytes": 56687,
+      "http": 200
+    },
+    {
+      "path": "/messages.html",
+      "ttfb_proxy_s": 0.057,
+      "bytes": 2470,
+      "http": 200
+    },
+    {
+      "path": "/support.html",
+      "ttfb_proxy_s": 0.056,
+      "bytes": 2907,
+      "http": 200
+    },
+    {
+      "path": "/recharge.html",
+      "ttfb_proxy_s": 0.055,
+      "bytes": 10161,
+      "http": 200
+    },
+    {
+      "path": "/login.html",
+      "ttfb_proxy_s": 0.05,
+      "bytes": 1775,
+      "http": 200
+    },
+    {
+      "path": "/companion/index.html",
+      "ttfb_proxy_s": 0.051,
+      "bytes": 2129,
+      "http": 200
+    },
+    {
+      "path": "/admin/index.html",
+      "ttfb_proxy_s": 0.05,
+      "bytes": 19032,
+      "http": 200
+    }
+  ],
+  "apis": [
+    {
+      "path": "/api/home/daily-stats",
+      "p50_s": 0.719,
+      "cold_s": 1.152,
+      "bytes": 853,
+      "cache_control": "no-store"
+    },
+    {
+      "path": "/api/public/companions",
+      "p50_s": 2.781,
+      "cold_s": 3.044,
+      "bytes": 35613,
+      "companion_count": 8,
+      "cache_control": "no-store"
+    },
+    {
+      "path": "/api/platform/services",
+      "p50_s": 0.29,
+      "bytes": 4666,
+      "cache_control": "no-store"
+    }
+  ],
+  "static": {
+    "brand_jpg_header_path_bytes": 638486,
+    "brand_96_webp_bytes": 3494,
+    "index_html_bytes": 255609,
+    "role_gates_js_bytes": 83182,
+    "boss_header_js_bytes": 41542,
+    "dist_index_js_kb": 236,
+    "dist_companion_workbench_js_kb": 220,
+    "brand_jpg_prod": {
+      "http": 200,
+      "content_length": "638486",
+      "cache": "public, max-age=3600, stale-while-revalidate=86400"
+    },
+    "brand_webp_prod": {
+      "http": 200,
+      "content_length": "3494",
+      "cache": "public, max-age=31536000, immutable"
+    }
+  },
+  "nav_feel_from_perf_phase2_prod_audit": {
+    "note": "docs/perf-phase2/prod-audit.json (2026-09-11) \u2014 browser timings with APIs mocked for paint",
+    "home_navToSettledMs": 1304,
+    "mine_to_orders_clickToFirstVisibleMs": 4144,
+    "mine_to_hall_clickToFirstVisibleMs": 4134,
+    "api_dupes_home": [
+      "chat conversations x2",
+      "notifications list x2"
+    ]
+  }
+}

@@ -20,9 +20,17 @@ import {
 } from "../_companion-public-map.js";
 import { createSignedUrl, publicObjectUrl } from "../_companion-media-store.js";
 
-async function resolvePlayableUrl(raw) {
+/**
+ * Resolve storage:// or http(s) media to a playable URL.
+ * @param {string} raw
+ * @param {{ skipHead?: boolean }} [opts]
+ *   skipHead: hall/list path — skip per-URL HEAD (was sequential N×RTT on every companion).
+ *   Detail/single lookup still size-gates voice stubs via HEAD.
+ */
+async function resolvePlayableUrl(raw, opts = {}) {
   const s = String(raw || "").trim();
   if (!s) return "";
+  const skipHead = !!opts.skipHead;
   let url = "";
   // Never treat expired/private signed links as durable — re-sign from storage:// instead.
   const looksSigned =
@@ -51,6 +59,7 @@ async function resolvePlayableUrl(raw) {
     url = s;
   }
   if (!url) return "";
+  if (skipHead) return url;
   // Drop empty / header-only audio stubs (WAV header alone is 44 bytes).
   // Also drop expired/invalid signed URLs (non-OK HEAD) so callers can fall back to storage://.
   try {
@@ -620,25 +629,32 @@ async function loadCompanions(id = "") {
   const catalog = Array.isArray(servicesBundle?.services) ? servicesBundle.services : [];
   const profileMap = Object.fromEntries((profiles || []).map((row) => [row.id, row]));
   const levelList = Array.isArray(levels) ? levels.map((l) => toPublicLevel(l)) : [];
-  const mapped = [];
-  for (const row of companions) {
-    if (!isAuditApprovedCompanion(row)) continue;
+  // List/hall: skip HEAD size-gate (N companions × voice/video/gallery was multi-second).
+  // Single-id detail keeps HEAD so tiny voice stubs still drop.
+  const skipHead = !String(id || "").trim();
+  const resolveOpts = { skipHead };
+
+  async function enrichOne(row) {
+    if (!isAuditApprovedCompanion(row)) return null;
     const profile = profileMap[row.user_id];
     // Approved companions drop here only when profile join missed (inactive/missing) —
     // approve flow activates profile before writing application_status=approved.
-    if (!profile) continue;
+    if (!profile) return null;
     // Hide smoke/test accounts from homepage / hall / public detail (matches admin filter).
     // Heuristics are mirrored at approve-time (assertApproveCanPublish) so real approve
     // cannot create a silent approved-but-hidden hall row via smoke name/email.
-    if (isTestAccountRecord(profile, row)) continue;
-    if (profile.is_test_account === true || row.is_test_account === true) continue;
+    if (isTestAccountRecord(profile, row)) return null;
+    if (profile.is_test_account === true || row.is_test_account === true) return null;
     const media = { ...(mediaMap[row.id] || {}) };
-    // Prefer companion_media voice, else durable storage:// / legacy URL — always size-gate.
+    // Prefer companion_media voice, else durable storage:// / legacy URL.
     // If media signed URL is expired/invalid, fall back to companion_profiles.voice_url.
-    const fromMedia = await resolvePlayableUrl(media.voiceUrl);
-    const fromProfile = fromMedia ? "" : await resolvePlayableUrl(row.voice_url);
+    const [fromMedia, fromProfile, videoUrl] = await Promise.all([
+      resolvePlayableUrl(media.voiceUrl, resolveOpts),
+      resolvePlayableUrl(row.voice_url, resolveOpts),
+      resolvePlayableUrl(media.videoUrl || media.showcaseVideoUrl || "", resolveOpts),
+    ]);
     media.voiceUrl = fromMedia || fromProfile;
-    media.videoUrl = await resolvePlayableUrl(media.videoUrl || media.showcaseVideoUrl || "");
+    media.videoUrl = videoUrl;
     media.showcaseVideoUrl = media.videoUrl;
     // Parse legacy gallery tags when companion_media has no gallery rows.
     if (!Array.isArray(media.gallery) || !media.gallery.length) {
@@ -647,12 +663,15 @@ async function loadCompanions(id = "") {
       if (m) {
         try {
           const items = JSON.parse(m[1]);
-          const gallery = [];
-          for (const item of Array.isArray(items) ? items : []) {
-            const raw = typeof item === "string" ? item : item?.url || item?.path || "";
-            const url = await resolvePlayableUrl(raw);
-            if (url) gallery.push({ id: item?.id || url, url });
-          }
+          const galleryRaw = Array.isArray(items) ? items : [];
+          const resolved = await Promise.all(
+            galleryRaw.map(async (item) => {
+              const raw = typeof item === "string" ? item : item?.url || item?.path || "";
+              const url = await resolvePlayableUrl(raw, resolveOpts);
+              return url ? { id: item?.id || url, url } : null;
+            })
+          );
+          const gallery = resolved.filter(Boolean);
           if (gallery.length) media.gallery = gallery;
         } catch {
           /* ignore bad gallery tag */
@@ -662,14 +681,23 @@ async function loadCompanions(id = "") {
     const gate = evaluatePublishGate(row, profile, media);
     // Homepage / hall (PR A): hallVisible = approved + active + allow_orders + !test.
     // Critical profile is approve-time only; credential OR does not hide hall.
-    if (!gate.hallVisible) continue;
-    mapped.push(publicCompanion(row, profile, levelList, catalog, media, certMap[row.id] || []));
+    if (!gate.hallVisible) return null;
+    return publicCompanion(row, profile, levelList, catalog, media, certMap[row.id] || []);
   }
+
+  const mapped = (await Promise.all((companions || []).map((row) => enrichOne(row)))).filter(Boolean);
   return attachReviews(mapped);
 }
 
 export default async function handler(req, res) {
-  res.setHeader("Cache-Control", "no-store");
+  const lookup = String(req.query.id || req.query.uid || req.query.player || "").trim();
+  // List is public + slowly changing; allow short edge cache (overridden only if vercel.json permits).
+  // Detail stays no-store so voice HEAD gating / signed URLs stay fresh.
+  if (lookup) {
+    res.setHeader("Cache-Control", "no-store");
+  } else {
+    res.setHeader("Cache-Control", "public, max-age=15, s-maxage=30, stale-while-revalidate=60");
+  }
   if (req.method !== "GET") {
     res.setHeader("Allow", "GET");
     return json(res, 405, { ok: false, message: "Method Not Allowed" });
@@ -678,7 +706,6 @@ export default async function handler(req, res) {
     return json(res, 200, { ok: true, configured: false, companions: [], message: "未配置 Supabase，陪玩大厅不返回假数据。" });
   }
   try {
-    const lookup = String(req.query.id || req.query.uid || req.query.player || "").trim();
     const companions = await loadCompanions(lookup);
     return json(res, 200, { ok: true, configured: true, companions });
   } catch (error) {
