@@ -125,32 +125,35 @@
     return priceNumber(value) + " " + tt("hall.price_unit", "猫粮/小时");
   }
   function normalizeStatus(value) {
-    if (window.MCJCompanionPresence) {
-      return window.MCJCompanionPresence.label(value);
+    // Stable machine codes for filters; display via statusChipText/tt().
+    if (window.MCJCompanionPresence && typeof window.MCJCompanionPresence.code === "function") {
+      var coded = window.MCJCompanionPresence.code(value);
+      if (coded) return coded;
     }
-    var text = String(value || "离线").trim();
-    if (/^online$/i.test(text) || /在线可接单|在线/.test(text)) return "在线可接单";
-    if (/^busy$/i.test(text) || /忙碌/.test(text)) return "忙碌中";
-    if (/^paused$/i.test(text) || /暂停/.test(text)) return "暂停接单";
-    if (/^offline$/i.test(text) || /离线/.test(text)) return "离线";
-    return text || "离线";
+    var text = String(value || "offline").trim();
+    if (/^online$/i.test(text) || /在线可接单|在线/.test(text)) return "online";
+    if (/^busy$/i.test(text) || /忙碌/.test(text)) return "busy";
+    if (/^paused$/i.test(text) || /暂停/.test(text)) return "paused";
+    if (/^offline$/i.test(text) || /离线/.test(text)) return "offline";
+    return "offline";
   }
   function statusBadgeClass(status) {
+    var code = normalizeStatus(status);
     if (window.MCJCompanionPresence) {
-      return window.MCJCompanionPresence.badgeClass({ availabilityText: status, status: status });
+      return window.MCJCompanionPresence.badgeClass({ availabilityText: code, status: code });
     }
-    if (status === "在线可接单") return " is-online";
-    if (status === "忙碌中") return " is-busy";
-    if (status === "暂停接单") return " is-paused";
+    if (code === "online") return " is-online";
+    if (code === "busy") return " is-busy";
+    if (code === "paused") return " is-paused";
     return " is-offline";
   }
   /** Short UI label for hall cards — still driven by real presence status. */
   function statusChipText(status) {
-    var s = String(status || "");
-    if (/在线/.test(s) && !/暂停|忙碌/.test(s)) return tt("hall.online", "在线");
-    if (/忙碌/.test(s)) return tt("hall.status_busy_short", "忙碌");
-    if (/暂停/.test(s)) return tt("hall.status_paused_short", "暂停");
-    return tt("hall.status_offline_short", "离线");
+    var code = normalizeStatus(status);
+    if (code === "online") return tt("hall.status_online", "在线可接单");
+    if (code === "busy") return tt("hall.status_busy", "忙碌中");
+    if (code === "paused") return tt("hall.status_paused", "暂停接单");
+    return tt("hall.status_offline", "离线");
   }
   async function readItems() {
     var dataItems = [];

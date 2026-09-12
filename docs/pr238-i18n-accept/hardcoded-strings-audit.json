@@ -1,0 +1,844 @@
+{
+  "generatedAt": "2026-09-12T18:25:18.389Z",
+  "report": [
+    {
+      "file": "src/companion-workbench.js",
+      "count": 829,
+      "samples": [
+        {
+          "line": 43,
+          "text": "['dashboard',navLabel('companion.nav.dashboard','工作台'),'/companion/dashboard'],"
+        },
+        {
+          "line": 44,
+          "text": "['hall',navLabel('companion.nav.hall','抢单大厅'),'/companion/order-hall'],"
+        },
+        {
+          "line": 45,
+          "text": "['orders',navLabel('companion.nav.orders','我的订单'),'/companion/orders'],"
+        },
+        {
+          "line": 46,
+          "text": "['earnings',navLabel('companion.nav.earnings','收益中心'),'/companion/earnings'],"
+        },
+        {
+          "line": 47,
+          "text": "['profile',navLabel('companion.nav.profile','我的资料（公开）'),'/companion/profile'],"
+        },
+        {
+          "line": 48,
+          "text": "['account',navLabel('companion.nav.account','账号中心（隐私）'),'/companion/account'],"
+        },
+        {
+          "line": 49,
+          "text": "['messages',navLabel('companion.nav.messages','消息中心'),'/companion/messages'],"
+        },
+        {
+          "line": 50,
+          "text": "['settings',navLabel('companion.nav.settings','设置'),'/companion/settings']"
+        },
+        {
+          "line": 55,
+          "text": "['dashboard',navLabel('companion.bottom.dashboard','工作台'),'/companion/dashboard'],"
+        },
+        {
+          "line": 56,
+          "text": "['hall',navLabel('companion.bottom.hall','抢单'),'/companion/order-hall'],"
+        },
+        {
+          "line": 57,
+          "text": "['orders',navLabel('companion.bottom.orders','订单'),'/companion/orders'],"
+        },
+        {
+          "line": 58,
+          "text": "['earnings',navLabel('companion.bottom.earnings','收益'),'/companion/earnings'],"
+        }
+      ]
+    },
+    {
+      "file": "src/companion-application.js",
+      "count": 398,
+      "samples": [
+        {
+          "line": 66,
+          "text": "\"性格\": [\"随和\", \"高冷\", \"活泼\", \"幽默\", \"社恐\", \"社牛\", \"粘人\", \"高情商\", \"氛围感\", \"耐心\", \"话多\"],"
+        },
+        {
+          "line": 67,
+          "text": "\"陪玩风格\": [\"娱乐\", \"上分\", \"护航\", \"指挥\", \"教学\", \"技术流\", \"长期搭子\", \"深夜档\", \"全天在线\"]"
+        },
+        {
+          "line": 69,
+          "text": "positions: { \"擅长位置\": [\"指挥\", \"输出\", \"辅助\", \"打野\", \"中路\", \"射手\", \"坦克\", \"自由位\", \"狙击位\", \"突破位\"] },"
+        },
+        {
+          "line": 70,
+          "text": "modes: { \"可接模式\": [] },"
+        },
+        {
+          "line": 71,
+          "text": "mainGames: { \"主打服务\": [] }"
+        },
+        {
+          "line": 74,
+          "text": "var rankOptions = [\"青铜\", \"白银\", \"黄金\", \"铂金\", \"钻石\", \"星耀\", \"王者\", \"荣耀王者\", \"大师\", \"宗师\", \"超凡\", \"无畏战神\", \"其他\"];"
+        },
+        {
+          "line": 272,
+          "text": "\"浏览器本地草稿空间已满（不是云端 Storage 配额）。已改为仅保存图片云端地址；请刷新后重新上传头像/相册。\""
+        },
+        {
+          "line": 301,
+          "text": "\"浏览器本地草稿空间已满（不是云端 Storage 配额）。已改为仅保存图片云端地址；请刷新后重新上传头像/相册。\""
+        },
+        {
+          "line": 323,
+          "text": "chinaRateSource: \"支付页面实时汇率\","
+        },
+        {
+          "line": 325,
+          "text": "description: \"认证押金用于保障平台服务秩序，最终支付金额以支付页面显示为准。\","
+        },
+        {
+          "line": 326,
+          "text": "refundRule: \"退出俱乐部并完成全部订单结算后，可按平台规则申请退还押金。\","
+        },
+        {
+          "line": 372,
+          "text": "name: (u && (u.name || u.nickname || u.email)) || \"当前账号\","
+        }
+      ]
+    },
+    {
+      "file": "src/support-chat.js",
+      "count": 152,
+      "samples": [
+        {
+          "line": 47,
+          "text": "serviceStatus: \"等待客服接待\", // i18n via statusLabel helpers"
+        },
+        {
+          "line": 69,
+          "text": "{ key: \"other\", labelKey: \"support.type_other\", label: \"普通咨询（无需下单）\", needsOrder: false },"
+        },
+        {
+          "line": 70,
+          "text": "{ key: \"new_order\", labelKey: \"support.type_new_order\", label: \"新订单咨询\", needsOrder: false },"
+        },
+        {
+          "line": 71,
+          "text": "{ key: \"current_order\", labelKey: \"support.type_current_order\", label: \"当前订单问题\", needsOrder: true },"
+        },
+        {
+          "line": 72,
+          "text": "{ key: \"recharge\", labelKey: \"support.type_recharge\", label: \"充值问题\", needsOrder: false },"
+        },
+        {
+          "line": 73,
+          "text": "{ key: \"refund\", labelKey: \"support.type_refund\", label: \"退款售后\", needsOrder: true },"
+        },
+        {
+          "line": 264,
+          "text": "state.authError = \"请先登录后使用在线客服\";"
+        },
+        {
+          "line": 269,
+          "text": "var ready = auth && auth.ensureSession ? withTimeout(auth.ensureSession(), 4000, \"登录校验\").catch(function () { return null; }) : Promise.resolve();"
+        },
+        {
+          "line": 292,
+          "text": "state.authError = \"当前登录的是陪玩账号，请使用老板账号打开在线客服。\";"
+        },
+        {
+          "line": 294,
+          "text": "state.authError = \"当前登录的是客服账号，请使用老板账号打开在线客服。\";"
+        },
+        {
+          "line": 296,
+          "text": "state.authError = \"当前账号不是老板客户身份，无法使用老板端在线客服。\";"
+        },
+        {
+          "line": 316,
+          "text": "var msg = (err && err.message) || \"账号资料加载失败，请重试\";"
+        }
+      ]
+    },
+    {
+      "file": "orders.html",
+      "count": 151,
+      "samples": [
+        {
+          "line": 121,
+          "text": "<header class=\"topbar\"><a class=\"brand\" href=\"index.html\"><img src=\"/assets/meow-cuijiao-brand-96.webp\" alt=\"MEOW CUI JIAO\" width=\"32\" height=\"32\" decoding=\"asy"
+        },
+        {
+          "line": 128,
+          "text": "<div class=\"modal-head\"><h2>订单详情</h2><button class=\"close\" type=\"button\" data-close aria-label=\"关闭\">×</button></div>"
+        },
+        {
+          "line": 135,
+          "text": "<div class=\"modal-head\"><h2>评价陪玩</h2><button class=\"close\" type=\"button\" data-review-close aria-label=\"关闭\">×</button></div>"
+        },
+        {
+          "line": 139,
+          "text": "<div class=\"review-stars\" id=\"reviewStars\" role=\"radiogroup\" aria-label=\"星级评分\"></div>"
+        },
+        {
+          "line": 142,
+          "text": "<label>评价内容<textarea name=\"content\" id=\"reviewContent\" rows=\"4\" maxlength=\"500\" placeholder=\"写下你的评价（选填）\"></textarea></label>"
+        },
+        {
+          "line": 144,
+          "text": "<button class=\"order-btn primary\" type=\"submit\" id=\"reviewSubmitBtn\">提交评价</button>"
+        },
+        {
+          "line": 145,
+          "text": "<button class=\"order-btn\" type=\"button\" data-review-close>取消</button>"
+        },
+        {
+          "line": 185,
+          "text": "var statusText=(window.MCJOrderStatus&&window.MCJOrderStatus.LABELS)||{awaiting_payment:'待付款',payment_review:'待人工审核',pending:'待客服处理',claimed:'等待陪玩确认',waiting_bo"
+        },
+        {
+          "line": 188,
+          "text": "function money(v){if(window.MCJCurrency)return window.MCJCurrency.formatPlain(v);var n=Number(v||0);return (Number.isFinite(n)?n:0).toFixed(2).replace(/\\.00$/,'"
+        },
+        {
+          "line": 191,
+          "text": "function isPaymentReview(o){return !!(o&&(o.paymentReview||o.paymentStatus==='待审核'||o.paymentStatus==='待人工审核'||/待审核|待人工审核/.test(String(o.statusText||o.paymentSt"
+        },
+        {
+          "line": 193,
+          "text": "if(o.reviewed||o.status==='reviewed')return '已评价';"
+        },
+        {
+          "line": 194,
+          "text": "if(o.status==='in_progress'&&o.completionPending)return o.autoConfirmPaused?'等待处理订单问题':'等待您确认完成';"
+        }
+      ]
+    },
+    {
+      "file": "src/profile-detail.js",
+      "count": 106,
+      "samples": [
+        {
+          "line": 28,
+          "text": "return (Number.isFinite(n) ? n : 0).toFixed(2).replace(/\\.00$/, \"\") + \" 猫粮\";"
+        },
+        {
+          "line": 31,
+          "text": "if (window.MCJCurrency) return window.MCJCurrency.formatRate(v, unit || \"小时\");"
+        },
+        {
+          "line": 32,
+          "text": "return money(v).replace(/\\s*猫粮$/, \"\") + \" 猫粮/\" + (unit || \"小时\");"
+        },
+        {
+          "line": 72,
+          "text": "var text = (c && (c.availabilityText || c.status || c.onlineStatus)) || \"离线\";"
+        },
+        {
+          "line": 74,
+          "text": "code === \"online\" || /在线/.test(text)"
+        },
+        {
+          "line": 76,
+          "text": ": code === \"busy\" || /忙碌/.test(text)"
+        },
+        {
+          "line": 78,
+          "text": ": code === \"paused\" || /暂停/.test(text)"
+        },
+        {
+          "line": 99,
+          "text": "if (!Number.isFinite(v) || v <= 0) return \"暂无数据\";"
+        },
+        {
+          "line": 119,
+          "text": "friendly = \"该陪玩资料不存在\";"
+        },
+        {
+          "line": 121,
+          "text": "friendly = \"该陪玩资料不存在或已下架\";"
+        },
+        {
+          "line": 130,
+          "text": "'<section class=\"detail-card\"><h1>暂无资料</h1><p>' +"
+        },
+        {
+          "line": 134,
+          "text": "'<a class=\"order-now\" href=\"companion-center.html\" style=\"opacity:.9\">返回陪玩大厅</a></div></section>';"
+        }
+      ]
+    },
+    {
+      "file": "src/place-order-modal.js",
+      "count": 95,
+      "samples": [
+        {
+          "line": 14,
+          "text": "var LEGACY_SERVICE_NAMES = { \"陪玩\": 1, \"护航\": 1, \"跑刀\": 1, \"代肝\": 1, \"自定义\": 1, \"陪玩服务\": 1, \"陪聊服务\": 1 };"
+        },
+        {
+          "line": 16,
+          "text": "{ id: \"1\", label: \"1 小时\", value: 1 },"
+        },
+        {
+          "line": 17,
+          "text": "{ id: \"2\", label: \"2 小时\", value: 2 },"
+        },
+        {
+          "line": 18,
+          "text": "{ id: \"3\", label: \"3 小时\", value: 3 },"
+        },
+        {
+          "line": 19,
+          "text": "{ id: \"custom\", label: \"自定义\", value: 0, custom: true },"
+        },
+        {
+          "line": 77,
+          "text": "return \"🐱 \" + money(v).toFixed(2).replace(/\\.00$/, \"\") + \" 猫粮\";"
+        },
+        {
+          "line": 186,
+          "text": "btn.textContent = \"提交中…\";"
+        },
+        {
+          "line": 198,
+          "text": "btn.textContent = \"提交中…\";"
+        },
+        {
+          "line": 204,
+          "text": "btn.textContent = \"支付方式加载中…\";"
+        },
+        {
+          "line": 209,
+          "text": "btn.textContent = \"暂无可用支付方式\";"
+        },
+        {
+          "line": 214,
+          "text": "btn.textContent = \"请选择支付方式\";"
+        },
+        {
+          "line": 218,
+          "text": "btn.textContent = \"确认订单并付款\";"
+        }
+      ]
+    },
+    {
+      "file": "mine.html",
+      "count": 69,
+      "samples": [
+        {
+          "line": 261,
+          "text": "<header class=\"topbar\"><a class=\"brand\" href=\"index.html\"><img src=\"assets/meow-cuijiao-brand-96.webp\" alt=\"MEOW CUI JIAO\" width=\"24\" height=\"24\" decoding=\"asyn"
+        },
+        {
+          "line": 265,
+          "text": "<div class=\"modal-head\"><h2 id=\"featureModalTitle\">设置</h2><button class=\"close\" type=\"button\" data-close-feature aria-label=\"关闭\">×</button></div>"
+        },
+        {
+          "line": 271,
+          "text": "<div class=\"modal-head\"><h2>编辑资料</h2><button class=\"close\" type=\"button\" data-close>×</button></div>"
+        },
+        {
+          "line": 274,
+          "text": "<div class=\"avatar-edit-preview\" id=\"avatarPreview\" aria-label=\"当前头像\">B</div>"
+        },
+        {
+          "line": 276,
+          "text": "<button class=\"boss-btn\" type=\"button\" id=\"avatarPickBtn\">更换头像</button>"
+        },
+        {
+          "line": 279,
+          "text": "<p class=\"avatar-edit-hint\">支持 JPG / PNG / WEBP，最大 4MB</p>"
+        },
+        {
+          "line": 284,
+          "text": "<button class=\"boss-btn\" type=\"submit\">保存资料</button>"
+        },
+        {
+          "line": 343,
+          "text": "function avatarHtml(user){var src=user&&user.avatarUrl;if(src)return '<img src=\"'+esc(src)+'\" alt=\"头像\">';var name=(user&&user.displayName)||'老板';return esc(name"
+        },
+        {
+          "line": 344,
+          "text": "function statusText(s){return {active:'正常',disabled:'停用',pending:'待审核'}[s]||s||'-'}"
+        },
+        {
+          "line": 349,
+          "text": "if(src){avatarPreview.innerHTML='<img src=\"'+esc(src)+'\" alt=\"当前头像\">';return}"
+        },
+        {
+          "line": 350,
+          "text": "var name=String(displayName||(state.user&&state.user.displayName)||'老板');"
+        },
+        {
+          "line": 357,
+          "text": "reader.onerror=function(){reject(new Error('读取图片失败'))};"
+        }
+      ]
+    },
+    {
+      "file": "index.html",
+      "count": 50,
+      "samples": [
+        {
+          "line": 22,
+          "text": "<meta property=\"og:title\" content=\"妙脆角 MEOW CUI JIAO｜专业游戏陪玩\">"
+        },
+        {
+          "line": 23,
+          "text": "<meta property=\"og:description\" content=\"专业陪玩，每一场游戏认真对待每一位热爱电竞的你。\">"
+        },
+        {
+          "line": 29,
+          "text": "<meta property=\"og:image:alt\" content=\"妙脆角 MEOW CUI JIAO 品牌形象\">"
+        },
+        {
+          "line": 35,
+          "text": "<meta property=\"og:image:alt\" content=\"妙脆角 MEOW CUI JIAO｜专业游戏陪玩\">"
+        },
+        {
+          "line": 3525,
+          "text": "<header class=\"site-header mcj-boss-header\" data-mcj-boss-header=\"1\" aria-label=\"顶部导航\">"
+        },
+        {
+          "line": 3527,
+          "text": "<a class=\"mcj-header-brand\" href=\"/\" aria-label=\"MEOW CUI JIAO 妙脆角 首页\">"
+        },
+        {
+          "line": 3534,
+          "text": "<nav class=\"mcj-desk-nav\" aria-label=\"桌面主导航\">"
+        },
+        {
+          "line": 3535,
+          "text": "<a href=\"index.html\" class=\"active\">首页</a>"
+        },
+        {
+          "line": 3536,
+          "text": "<a href=\"companion-center.html\">大厅</a>"
+        },
+        {
+          "line": 3537,
+          "text": "<a href=\"orders.html\">订单</a>"
+        },
+        {
+          "line": 3538,
+          "text": "<a href=\"support.html?start=1\">客服</a>"
+        },
+        {
+          "line": 3539,
+          "text": "<a href=\"login.html\" data-mcj-boss-login>登录</a>"
+        }
+      ]
+    },
+    {
+      "file": "src/boss-header.js",
+      "count": 37,
+      "samples": [
+        {
+          "line": 101,
+          "text": "reject(new Error(\"鉴权模块未加载\"));"
+        },
+        {
+          "line": 111,
+          "text": "else reject(new Error(\"鉴权模块未加载\"));"
+        },
+        {
+          "line": 114,
+          "text": "reject(new Error(\"鉴权模块加载失败\"));"
+        },
+        {
+          "line": 247,
+          "text": "navLink(\"mine.html\", t(\"nav.profile\", \"个人中心\")) +"
+        },
+        {
+          "line": 249,
+          "text": "t(\"nav.logout\", \"退出登录\") +"
+        },
+        {
+          "line": 257,
+          "text": "t(\"nav.login\", \"登录\") +"
+        },
+        {
+          "line": 341,
+          "text": "navLink(\"index.html\", t(\"nav.home\", \"首页\")) +"
+        },
+        {
+          "line": 342,
+          "text": "navLink(\"companion-center.html\", t(\"nav.hall\", \"大厅\")) +"
+        },
+        {
+          "line": 343,
+          "text": "navLink(\"orders.html\", t(\"nav.orders\", \"订单\")) +"
+        },
+        {
+          "line": 381,
+          "text": "t(\"nav.support\", \"客服\") +"
+        },
+        {
+          "line": 497,
+          "text": "'<div class=\"mcj-mnav-lang-label\">' + esc(t(\"nav.language\", \"语言\")) + \"</div>\" +"
+        },
+        {
+          "line": 499,
+          "text": "zhMark + esc(t(\"nav.language_zh\", \"中文\")) +"
+        }
+      ]
+    },
+    {
+      "file": "companion-center.html",
+      "count": 19,
+      "samples": [
+        {
+          "line": 39,
+          "text": "<nav class=\"nav companion-market-nav\" aria-label=\"页面导航\">"
+        },
+        {
+          "line": 88,
+          "text": "<option value=\"20-30\">20-30 猫粮</option>"
+        },
+        {
+          "line": 89,
+          "text": "<option value=\"30-40\">30-40 猫粮</option>"
+        },
+        {
+          "line": 90,
+          "text": "<option value=\"40-45\">40-45 猫粮</option>"
+        },
+        {
+          "line": 91,
+          "text": "<option value=\"60-75\">60-75 猫粮</option>"
+        },
+        {
+          "line": 92,
+          "text": "<option value=\"75-99999\">75+ 猫粮</option>"
+        },
+        {
+          "line": 110,
+          "text": "<section class=\"hall-search-panel hall-services-search\" data-hall-search=\"services\" aria-label=\"搜索玩法商品\" hidden>"
+        },
+        {
+          "line": 114,
+          "text": "<input id=\"hallGpSearch\" type=\"search\" placeholder=\"搜索玩法商品、分类或游戏\" autocomplete=\"off\">"
+        },
+        {
+          "line": 119,
+          "text": "<option value=\"recommend\">综合</option>"
+        },
+        {
+          "line": 120,
+          "text": "<option value=\"sold\">销量</option>"
+        },
+        {
+          "line": 121,
+          "text": "<option value=\"priceAsc\">价格从低到高</option>"
+        },
+        {
+          "line": 122,
+          "text": "<option value=\"priceDesc\">价格从高到低</option>"
+        }
+      ]
+    },
+    {
+      "file": "src/companion-hall.js",
+      "count": 17,
+      "samples": [
+        {
+          "line": 112,
+          "text": "if (fromLevels && fromLevels !== \"未设置等级\" && fromLevels !== levelUnsetLabel()) return fromLevels;"
+        },
+        {
+          "line": 120,
+          "text": "if (raw && raw !== \"未设置等级\" && raw !== \"未设置\" && raw !== levelUnsetLabel()) return raw;"
+        },
+        {
+          "line": 167,
+          "text": "console.error(\"陪玩大厅读取失败\", error);"
+        },
+        {
+          "line": 208,
+          "text": "|| \"陪玩服务\","
+        },
+        {
+          "line": 211,
+          "text": ": String(normalized.serviceType || normalized.service_type || \"陪玩服务\")"
+        },
+        {
+          "line": 499,
+          "text": "? '<span class=\"mcj-service-tag mcj-category-tag companion-tag-more\" aria-label=\"另有' +"
+        },
+        {
+          "line": 501,
+          "text": "'个标签\">+' +"
+        },
+        {
+          "line": 508,
+          "text": "var publicId = item.publicId || \"未生成\";"
+        },
+        {
+          "line": 514,
+          "text": "(publicId && publicId !== \"未生成\" ? \"&code=\" + encodeURIComponent(publicId) : \"\")"
+        },
+        {
+          "line": 515,
+          "text": ": publicId && publicId !== \"未生成\""
+        },
+        {
+          "line": 678,
+          "text": "companionName: orderBtn.getAttribute(\"data-hall-name\") || \"陪玩\","
+        },
+        {
+          "line": 679,
+          "text": "name: orderBtn.getAttribute(\"data-hall-name\") || \"陪玩\","
+        }
+      ]
+    },
+    {
+      "file": "src/forgot-password.js",
+      "count": 15,
+      "samples": [
+        {
+          "line": 135,
+          "text": "var err = new Error((j && j.message) || \"请求失败\");"
+        },
+        {
+          "line": 459,
+          "text": "setMsg(\"发送过于频繁，请 \" + left0 + \" 秒后再试。\");"
+        },
+        {
+          "line": 462,
+          "text": "return Promise.reject(new Error(\"发送过于频繁\"));"
+        },
+        {
+          "line": 474,
+          "text": "var hint = res.message || \"验证码已发送\";"
+        },
+        {
+          "line": 476,
+          "text": "if (debugCode) hint += \"（调试验证码 \" + debugCode + \"）\";"
+        },
+        {
+          "line": 502,
+          "text": "setMsg((err && err.message) || \"发送失败\");"
+        },
+        {
+          "line": 514,
+          "text": "setMsg(\"请输入有效邮箱。\");"
+        },
+        {
+          "line": 524,
+          "text": "setMsg(\"请输入 6 位验证码\");"
+        },
+        {
+          "line": 536,
+          "text": "setMsg(\"验证失败，请重试\");"
+        },
+        {
+          "line": 541,
+          "text": "setMsg(res.message || \"验证成功，请设置新密码\", true);"
+        },
+        {
+          "line": 546,
+          "text": "setMsg((err && err.message) || \"验证失败\");"
+        },
+        {
+          "line": 553,
+          "text": "setMsg(\"请先完成邮箱验证\");"
+        }
+      ]
+    },
+    {
+      "file": "src/home-banner.js",
+      "count": 15,
+      "samples": [
+        {
+          "line": 48,
+          "text": "console.error(\"[首页 Banner] 远程内容读取失败\", error);"
+        },
+        {
+          "line": 312,
+          "text": "alt: config.alt || title || config.title || \"首页 Banner\","
+        },
+        {
+          "line": 429,
+          "text": "? '<div class=\"mcj-hero-preview-badge\" data-preview-badge=\"1\">Preview 验证 · Slide ' +"
+        },
+        {
+          "line": 433,
+          "text": "? '<div class=\"mcj-hero-preview-badge mcj-hero-preview-badge--brand\" data-preview-badge=\"1\">Slide 1 · 妙脆角电竞</div>'"
+        },
+        {
+          "line": 470,
+          "text": "'\" aria-label=\"切换 Banner\"></button>';"
+        },
+        {
+          "line": 473,
+          "text": "'<button class=\"mcj-hero-arrow prev\" type=\"button\" data-hero-prev aria-label=\"上一张\"></button>' +"
+        },
+        {
+          "line": 474,
+          "text": "'<button class=\"mcj-hero-arrow next\" type=\"button\" data-hero-next aria-label=\"下一张\"></button>' +"
+        },
+        {
+          "line": 475,
+          "text": "'<div class=\"mcj-hero-dots\" role=\"tablist\" aria-label=\"Banner 轮播状态\">' +"
+        },
+        {
+          "line": 496,
+          "text": "? '<div class=\"mcj-hero-dots\" role=\"tablist\" aria-label=\"Banner 轮播状态\">' +"
+        },
+        {
+          "line": 504,
+          "text": "'\" aria-label=\"切换到 Banner ' +"
+        },
+        {
+          "line": 521,
+          "text": "'<div class=\"mcj-hero-image-link\" aria-label=\"暂无 Banner\">' +"
+        },
+        {
+          "line": 522,
+          "text": "'<div class=\"mcj-hero-image mcj-hero-image-missing\" role=\"img\" aria-label=\"暂无 Banner\"></div>' +"
+        }
+      ]
+    },
+    {
+      "file": "src/site-data.js",
+      "count": 12,
+      "samples": [
+        {
+          "line": 293,
+          "text": "'<div class=\"official-ad-copy\"><h3>' + esc(ad.title || \"\") + '</h3><p>' + esc(ad.description || ad.subtitle || \"\") + '</p><button type=\"button\">' + esc(ad.butto"
+        },
+        {
+          "line": 305,
+          "text": "{ slug: \"companion-hall\", name: \"陪玩大厅\", description: \"浏览已上架陪玩，立即下单\", href: \"companion-center.html\", sort: 1, enabled: true, inGrid: true },"
+        },
+        {
+          "line": 306,
+          "text": "{ slug: \"more-gameplays\", name: \"更多玩法\", description: \"护航、跑刀、代肝、趣味单\", href: \"more-gameplays.html\", sort: 2, enabled: true, inGrid: true },"
+        },
+        {
+          "line": 307,
+          "text": "{ slug: \"custom-order\", name: \"自定义订单\", description: \"填写需求，客服匹配陪玩\", href: \"custom-order.html\", sort: 3, enabled: true, inGrid: true },"
+        },
+        {
+          "line": 308,
+          "text": "{ slug: \"team-lobby\", name: \"组队大厅\", description: \"进入组队社区找队友\", href: \"team-lobby.html\", sort: 4, enabled: true, inGrid: true }"
+        },
+        {
+          "line": 317,
+          "text": "name: data.name || row.title || base.name || \"未命名入口\","
+        },
+        {
+          "line": 356,
+          "text": "console.error(\"[首页入口] 读取后台配置失败\", err);"
+        },
+        {
+          "line": 366,
+          "text": "? window.MCJCurrency.formatRate(priceNum, item.pricingUnit || \"小时\")"
+        },
+        {
+          "line": 367,
+          "text": ": (String(priceNum).replace(/\\.0+$/, \"\") + \" 猫粮/\" + (item.pricingUnit || \"小时\")))"
+        },
+        {
+          "line": 382,
+          "text": "level: item.levelName || item.level || \"未设置等级\","
+        },
+        {
+          "line": 483,
+          "text": "console.error(\"[首页陪玩] 读取公开陪玩失败\", err);"
+        },
+        {
+          "line": 512,
+          "text": "if (value < Number(found.min) || value > Number(found.max)) return { ok: false, message: \"价格超出俱乐部允许范围\" };"
+        }
+      ]
+    },
+    {
+      "file": "src/home-popularity.js",
+      "count": 11,
+      "samples": [
+        {
+          "line": 307,
+          "text": "state.error = \"人气榜暂未开启\";"
+        },
+        {
+          "line": 317,
+          "text": "state.error = \"暂时无法连接服务器，请稍后重试\";"
+        },
+        {
+          "line": 320,
+          "text": "state.error = \"人气榜读取失败\";"
+        },
+        {
+          "line": 323,
+          "text": "state.error = msg || \"人气榜暂不可用\";"
+        },
+        {
+          "line": 347,
+          "text": "alert(\"陪玩资料缺失，无法下单\");"
+        },
+        {
+          "line": 364,
+          "text": "companionName: orderBtn.getAttribute(\"data-pop-name\") || \"陪玩\","
+        },
+        {
+          "line": 365,
+          "text": "name: orderBtn.getAttribute(\"data-pop-name\") || \"陪玩\","
+        },
+        {
+          "line": 369,
+          "text": "service: orderBtn.getAttribute(\"data-pop-game\") || \"陪玩\","
+        },
+        {
+          "line": 370,
+          "text": "game: orderBtn.getAttribute(\"data-pop-game\") || \"陪玩\","
+        },
+        {
+          "line": 373,
+          "text": "pricingUnit: \"小时\","
+        },
+        {
+          "line": 383,
+          "text": "alert((err && err.message) || \"打开下单弹窗失败，请重试\");"
+        }
+      ]
+    },
+    {
+      "file": "src/home-announcements.js",
+      "count": 3,
+      "samples": [
+        {
+          "line": 532,
+          "text": "title: \"🎉 MEOW CUI JIAO 妙脆角开启试运营！\","
+        },
+        {
+          "line": 535,
+          "text": "\"欢迎来到妙脆角陪玩平台！目前平台已进入试运营阶段，我们将持续优化功能与服务体验。欢迎大家注册体验并提出宝贵建议。\\n\\n感谢您的支持，让我们一起玩得开心、赢得尽兴！💗\","
+        },
+        {
+          "line": 539,
+          "text": "\"欢迎来到妙脆角陪玩平台！目前平台已进入试运营阶段，我们将持续优化功能与服务体验。欢迎大家注册体验并提出宝贵建议。\\n\\n感谢您的支持，让我们一起玩得开心、赢得尽兴！💗\","
+        }
+      ]
+    },
+    {
+      "file": "login.html",
+      "count": 1,
+      "samples": [
+        {
+          "line": 43,
+          "text": "<p><a href=\"/index.html#login\" style=\"color:#ff8fc5\">如果没有自动跳转，请点这里</a></p>"
+        }
+      ]
+    },
+    {
+      "file": "src/home-daily-stats.js",
+      "count": 0,
+      "samples": []
+    }
+  ]
+}

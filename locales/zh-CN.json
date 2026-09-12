@@ -474,5 +474,7 @@
   "banner.i18n_section": "英文素材（English）",
   "banner.field_mobile_image_en": "英文手机图片",
   "announce.field_title_en": "英文标题",
-  "announce.field_content_en": "英文内容"
+  "announce.field_content_en": "英文内容",
+  "home.view_orders": "查看订单",
+  "auth.forgot_code_label": "验证码"
 }

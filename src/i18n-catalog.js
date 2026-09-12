@@ -478,7 +478,9 @@
     "banner.i18n_section": "英文素材（English）",
     "banner.field_mobile_image_en": "英文手机图片",
     "announce.field_title_en": "英文标题",
-    "announce.field_content_en": "英文内容"
+    "announce.field_content_en": "英文内容",
+    "home.view_orders": "查看订单",
+    "auth.forgot_code_label": "验证码"
   },
   "en": {
     "common.confirm": "Confirm",
@@ -855,16 +857,16 @@
     "order.pay_none": "No payment methods available",
     "order.pay_select": "Please select a payment method",
     "support.cancel": "Cancel",
-    "support.consult_hint": "Different topics open separate chats. General questions do not require an order.",
+    "support.consult_hint": "Each issue opens its own chat; general questions do not need an order.",
     "support.consult_type": "Topic",
-    "support.type_other": "General question (no order needed)",
+    "support.type_other": "General question (no order)",
     "support.type_new_order": "New order question",
     "support.type_current_order": "Current order issue",
     "support.type_recharge": "Top-up issue",
     "support.type_refund": "Refund / after-sales",
     "support.related_order": "Related order (optional)",
-    "support.no_order": "No related order",
-    "support.create_session": "Start chat",
+    "support.no_order": "No linked order",
+    "support.create_session": "Create chat",
     "hall.sort_sold": "Sales",
     "hall.sort_newest": "Newest",
     "profile.perf_empty": "No data yet. Performance stats appear after completed orders.",
@@ -956,7 +958,9 @@
     "banner.i18n_section": "English assets",
     "banner.field_mobile_image_en": "Mobile image (EN)",
     "announce.field_title_en": "Title (EN)",
-    "announce.field_content_en": "Content (EN)"
+    "announce.field_content_en": "Content (EN)",
+    "home.view_orders": "View orders",
+    "auth.forgot_code_label": "Verification code"
   }
 };
 })(typeof window !== "undefined" ? window : globalThis);

@@ -66,12 +66,16 @@ import {
   var EMOJIS = ["😀", "😁", "😂", "😊", "😍", "😘", "👍", "🙏", "🎉", "🐱", "💖", "🔥"];
   var toastTimer = null;
   var BOSS_CONSULT_TYPES = [
-    { key: "other", label: "普通咨询（无需下单）", needsOrder: false },
-    { key: "new_order", label: "新订单咨询", needsOrder: false },
-    { key: "current_order", label: "当前订单问题", needsOrder: true },
-    { key: "recharge", label: "充值问题", needsOrder: false },
-    { key: "refund", label: "退款售后", needsOrder: true },
+    { key: "other", labelKey: "support.type_other", label: "普通咨询（无需下单）", needsOrder: false },
+    { key: "new_order", labelKey: "support.type_new_order", label: "新订单咨询", needsOrder: false },
+    { key: "current_order", labelKey: "support.type_current_order", label: "当前订单问题", needsOrder: true },
+    { key: "recharge", labelKey: "support.type_recharge", label: "充值问题", needsOrder: false },
+    { key: "refund", labelKey: "support.type_refund", label: "退款售后", needsOrder: true },
   ];
+
+  function consultTypeLabel(t) {
+    return tt(t.labelKey, t.label);
+  }
 
   /** Modal picker — never use browser prompt / number entry. */
   function pickBossConsultType(defaultKey) {
@@ -85,10 +89,18 @@ import {
       modal.setAttribute("data-support-consult-modal", "1");
       modal.innerHTML =
         '<div class="support-consult-dialog" role="dialog" aria-modal="true" aria-labelledby="supportConsultTitle">' +
-        '<div class="support-consult-head"><h3 id="supportConsultTitle">新建人工客服咨询</h3>' +
-        '<button type="button" class="support-btn" data-consult-cancel>取消</button></div>' +
-        '<p class="support-consult-hint">不同问题会进入独立会话；普通咨询无需先下单。</p>' +
-        '<div class="support-consult-types" role="listbox" aria-label="咨询类型">' +
+        '<div class="support-consult-head"><h3 id="supportConsultTitle">' +
+        esc(tt("support.consult_title", "新建人工客服咨询")) +
+        "</h3>" +
+        '<button type="button" class="support-btn" data-consult-cancel>' +
+        esc(tt("support.cancel", "取消")) +
+        "</button></div>" +
+        '<p class="support-consult-hint">' +
+        esc(tt("support.consult_hint", "不同问题会进入独立会话；普通咨询无需先下单。")) +
+        "</p>" +
+        '<div class="support-consult-types" role="listbox" aria-label="' +
+        esc(tt("support.consult_types_aria", "咨询类型")) +
+        '">' +
         BOSS_CONSULT_TYPES.map(function (t) {
           return (
             '<button type="button" class="support-consult-type' +
@@ -98,13 +110,16 @@ import {
             '" data-needs-order="' +
             (t.needsOrder ? "1" : "0") +
             '">' +
-            esc(t.label) +
+            esc(consultTypeLabel(t)) +
             "</button>"
           );
         }).join("") +
         "</div>" +
-        '<label class="support-consult-order" data-consult-order-wrap hidden>关联订单（可选）' +
-        '<select data-consult-order><option value="">不关联订单</option>' +
+        '<label class="support-consult-order" data-consult-order-wrap hidden>' +
+        esc(tt("support.link_order", "关联订单（可选）")) +
+        '<select data-consult-order><option value="">' +
+        esc(tt("support.no_order", "不关联订单")) +
+        "</option>" +
         orders
           .map(function (o) {
             return (
@@ -119,7 +134,9 @@ import {
           })
           .join("") +
         "</select></label>" +
-        '<button type="button" class="support-btn primary" data-consult-confirm>创建会话</button>' +
+        '<button type="button" class="support-btn primary" data-consult-confirm>' +
+        esc(tt("support.create_session", "创建会话")) +
+        "</button>" +
         "</div>";
       document.body.appendChild(modal);
       var selected = def;
@@ -244,7 +261,7 @@ import {
         localStorage.getItem("mcjAuthAccessToken") ||
         sessionStorage.getItem("mcjAuthAccessToken")
       )) {
-        state.authError = "请先登录后使用在线客服";
+        state.authError = tt("support.need_login", "请先登录后使用在线客服");
       }
       return Promise.resolve(null);
     }
@@ -272,11 +289,11 @@ import {
             });
           }
           if (role === "companion" || role === "player") {
-            state.authError = "当前登录的是陪玩账号，请使用老板账号打开在线客服。";
+            state.authError = tt("support.wrong_role_companion", "当前登录的是陪玩账号，请使用老板账号打开在线客服。");
           } else if (role === "customer_service" || role === "service") {
-            state.authError = "当前登录的是客服账号，请使用老板账号打开在线客服。";
+            state.authError = tt("support.wrong_role_cs", "当前登录的是客服账号，请使用老板账号打开在线客服。");
           } else {
-            state.authError = "当前账号不是老板客户身份，无法使用老板端在线客服。";
+            state.authError = tt("support.wrong_role", "当前账号不是老板客户身份，无法使用老板端在线客服。");
           }
           state.identity = null;
           return null;
@@ -296,9 +313,9 @@ import {
         return state.identity;
       })
       .catch(function (err) {
-        var msg = (err && err.message) || "账号资料加载失败，请重试";
+        var msg = (err && err.message) || tt("support.profile_load_failed", "账号资料加载失败，请重试");
         if (/登录|过期|未登录|请先登录/i.test(msg)) {
-          state.authError = "请先登录后使用在线客服";
+          state.authError = tt("support.need_login", "请先登录后使用在线客服");
         } else {
           state.authError = msg;
         }
@@ -477,18 +494,24 @@ import {
     return null;
   }
   function titleFor(c) {
-    if (!c) return "在线客服";
-    if (c.conversationType === "order_support" || c.orderId || c.order_id || c.orderNo || c.order_no) return "订单咨询";
-    return "人工客服咨询";
+    if (!c) return tt("support.title_default", "在线客服");
+    if (c.conversationType === "order_support" || c.orderId || c.order_id || c.orderNo || c.order_no) {
+      return tt("support.title_order", "订单咨询");
+    }
+    return tt("support.title_human", "人工客服咨询");
   }
   function topStatusText(c) {
     var s = String((c && c.status) || "");
-    if (s === "closed" || s === "ended") return "会话已结束";
-    if (s === "pending_transfer") return "正在为你更换客服。";
-    if (s === "open" || s === "active" || s === "serving" || (c && (c.customerServiceId || c.customer_service_id))) return "客服已接入";
-    if (s === "offline" || (state.serviceOnline === false && s !== "waiting_service" && s !== "waiting")) return "客服暂时离线";
-    if (s === "waiting_service" || s === "waiting" || !s) return "等待客服接待";
-    return "可重新发起咨询";
+    if (s === "closed" || s === "ended") return tt("support.ended", "会话已结束");
+    if (s === "pending_transfer") return tt("support.transferring", "正在为你更换客服。");
+    if (s === "open" || s === "active" || s === "serving" || (c && (c.customerServiceId || c.customer_service_id))) {
+      return tt("support.connected", "客服已接入");
+    }
+    if (s === "offline" || (state.serviceOnline === false && s !== "waiting_service" && s !== "waiting")) {
+      return tt("support.offline_tmp", "客服暂时离线");
+    }
+    if (s === "waiting_service" || s === "waiting" || !s) return tt("support.waiting", "等待客服接待");
+    return tt("support.reopen", "可重新发起咨询");
   }
   function isClosedConversation(c) {
     var s = String((c && c.status) || "");
@@ -1811,7 +1834,7 @@ import {
           state.authError = "当前账号不是老板客户身份，无法使用老板端在线客服。";
           state.error = "";
         } else if (/请先登录|登录已过期|未登录/i.test(msg)) {
-          state.authError = "请先登录后使用在线客服";
+          state.authError = tt("support.need_login", "请先登录后使用在线客服");
           state.error = "";
         } else {
           state.error = msg;

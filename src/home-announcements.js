@@ -530,10 +530,15 @@
     {
       id: "mcj-default-home-ops-announcement",
       title: "🎉 MEOW CUI JIAO 妙脆角开启试运营！",
+      title_en: "🎉 MEOW CUI JIAO soft launch is live!",
       content:
         "欢迎来到妙脆角陪玩平台！目前平台已进入试运营阶段，我们将持续优化功能与服务体验。欢迎大家注册体验并提出宝贵建议。\n\n感谢您的支持，让我们一起玩得开心、赢得尽兴！💗",
+      content_en:
+        "Welcome to MEOW CUI JIAO! We are in soft launch and keep improving features and service. Please try it out and share feedback.\n\nThanks for your support — play hard and have fun! 💗",
       text:
         "欢迎来到妙脆角陪玩平台！目前平台已进入试运营阶段，我们将持续优化功能与服务体验。欢迎大家注册体验并提出宝贵建议。\n\n感谢您的支持，让我们一起玩得开心、赢得尽兴！💗",
+      text_en:
+        "Welcome to MEOW CUI JIAO! We are in soft launch and keep improving features and service. Please try it out and share feedback.\n\nThanks for your support — play hard and have fun! 💗",
       category: "home",
       audience: "home",
       kind: "normal",
