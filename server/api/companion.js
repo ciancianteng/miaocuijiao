@@ -5472,6 +5472,13 @@ export default async function handler(req, res) {
         .trim()
         .toLowerCase();
       const authMode = authModeRaw === "id_card" || authModeRaw === "deposit" ? authModeRaw : "";
+      if (!authMode) {
+        return json(res, 400, {
+          ok: false,
+          error: "certification_method_required",
+          message: "请先选择认证方式（身份证认证或押金认证）后再提交申请。",
+        });
+      }
       // Personal intro/signature → public bio (description). Never store intro as application remark.
       const bioText = String(body.bio || body.description || body.intro || "")
         .replace(/\[AUTH_MODE:(?:id_card|deposit)\]\s*/gi, "")
@@ -5511,7 +5518,9 @@ export default async function handler(req, res) {
         verification_status: companion.verification_status || "pending",
         updated_at: nowIso(),
       };
-      if (authMode) patch.credential_mode = authMode;
+      // Durable SoT: certification_method (+ legacy alias credential_mode).
+      patch.certification_method = authMode;
+      patch.credential_mode = authMode;
       if (body.nickname) patch.nickname = String(body.nickname).trim();
       if (body.phone || body.contact_phone) patch.contact_phone = String(body.phone || body.contact_phone || "").trim();
       // P2: ignore applicant price on submit_application
@@ -5527,9 +5536,14 @@ export default async function handler(req, res) {
           body: JSON.stringify(patch),
         });
       } catch (firstErr) {
-        // Optional credential_mode column may be absent — strip and retry like other optional cols.
+        // Optional certification_method / credential_mode columns may be absent — strip and retry.
         let patched = false;
-        if (patch.credential_mode && /column|schema cache|PGRST|credential_mode/i.test(String(firstErr?.message || firstErr || ""))) {
+        const msg = String(firstErr?.message || firstErr || "");
+        if (
+          (patch.certification_method || patch.credential_mode) &&
+          /column|schema cache|PGRST|certification_method|credential_mode/i.test(msg)
+        ) {
+          delete patch.certification_method;
           delete patch.credential_mode;
           try {
             await supabaseJson(restUrl("companion_profiles", `?id=eq.${encodeURIComponent(row.id)}`), {

@@ -21,19 +21,19 @@
   var liveVoiceObjectUrl = "";
 
   var steps = [
-    "认证方式",
-    "陪玩制度",
-    "基本资料",
-    "游戏资料",
-    "证明资料",
-    "确认并提交"
+    "认证",
+    "制度",
+    "资料",
+    "游戏",
+    "验证",
+    "提交"
   ];
   var stepLabels = [
     "选择认证方式",
     "阅读陪玩制度",
     "填写基本资料",
-    "填写游戏资料",
-    "上传证明资料",
+    "游戏 / 陪玩资料",
+    "上传认证资料",
     "确认并提交"
   ];
 
@@ -626,7 +626,7 @@
       return missing;
     }
     if (index === 3) {
-      // STEP4: game profile — no applicant prices
+      // STEP4: games + companion media — no applicant prices
       if (!hasText(data, "gameNickname")) missing.push("游戏昵称");
       if (!hasArray(data, "mainGames")) missing.push("主玩游戏");
       if (!hasArray(data, "positions")) missing.push("擅长位置");
@@ -634,14 +634,14 @@
       [["rank", "游戏段位"], ["voiceType", "声线"], ["onlineStart", "常在线开始时间"], ["onlineEnd", "常在线结束时间"], ["intro", "自我介绍"]].forEach(function (item) {
         if (!hasText(data, item[0])) missing.push(item[1]);
       });
-      return missing;
-    }
-    if (index === 4) {
-      // STEP5: uploads + voice + cert materials (branch by STEP1)
       if (!hasDurableUpload(uploads.avatar)) missing.push("头像");
       if (!(voice.confirmed && (hasDurableUpload(voice) || hasDurableUpload(voice.url) || voice.storagePath || voice.path))) {
         missing.push("试音并确认使用");
       }
+      return missing;
+    }
+    if (index === 4) {
+      // STEP5: cert materials only — branch by STEP1 certification_method
       if (mode !== "id_card" && mode !== "deposit") missing.push("选择认证方式（身份证或押金二选一）");
       if (mode === "id_card") {
         if (!hasDurableUpload(identity.idFront)) missing.push("证件正面");
@@ -1637,10 +1637,10 @@
     var body = String((rule && rule.body) || "").replace(/\r\n/g, "\n").trim();
     var chapters = [];
     var defaults = [
-      { id: "basic", title: "基本接单规则" },
+      { id: "basic", title: "基本规范" },
+      { id: "order", title: "接单规范" },
       { id: "service", title: "服务规范" },
-      { id: "forbid", title: "禁止行为" },
-      { id: "income", title: "收益与结算" },
+      { id: "income", title: "收益/结算规则" },
       { id: "penalty", title: "违规处理" }
     ];
     if (!body) {
@@ -1681,16 +1681,17 @@
     var rule = publishedRule();
     var agreed = draft.rulesAgreement && draft.rulesAgreement.accepted;
     if (!remoteConfigLoaded && !rule) {
-      return '<section class="apply-panel apply-rules-card"><h2>阅读陪玩制度</h2><div class="rules-reader"><h3>正在加载制度…</h3><p>正在从后台读取最新陪玩制度，请稍候。</p></div><div class="agree-bar"><label class="agree-row"><input type="checkbox" disabled><span>我已阅读并同意陪玩制度</span></label></div></section>';
+      return '<section class="apply-panel apply-rules-card"><h2>阅读陪玩制度</h2><div class="rules-reader"><h3>正在加载制度…</h3><p>正在从后台读取最新陪玩制度，请稍候。</p></div><div class="agree-bar"><label class="agree-row"><input type="checkbox" disabled><span>我已阅读并同意妙脆角陪玩制度</span></label></div></section>';
     }
-    if (!rule) return '<section class="apply-panel apply-rules-card"><h2>阅读陪玩制度</h2><div class="rules-reader"><h3>后台暂未发布陪玩制度</h3><p>请等待超级管理员在「后台中心 → 制度管理」发布陪玩申请制度后再继续申请。</p></div><div class="agree-bar"><label class="agree-row"><input type="checkbox" disabled><span>我已阅读并同意陪玩制度</span></label></div></section>';
+    if (!rule) return '<section class="apply-panel apply-rules-card"><h2>阅读陪玩制度</h2><div class="rules-reader"><h3>后台暂未发布陪玩制度</h3><p>请等待超级管理员在「后台中心 → 制度管理」发布陪玩申请制度后再继续申请。</p></div><div class="agree-bar"><label class="agree-row"><input type="checkbox" disabled><span>我已阅读并同意妙脆角陪玩制度</span></label></div></section>';
     var updated = rule.updatedAt
       ? ('<p class="rules-updated">最后更新：' + esc(formatRulesUpdatedAt(rule.updatedAt)) + (rule.version ? ' · 版本 ' + esc(rule.version) : '') + '</p>')
       : (rule.version ? '<p class="rules-updated">版本 ' + esc(rule.version) + '</p>' : '');
     var chapters = splitRulesChapters(rule);
-    var openId = String((draft.ui || {}).rulesOpenId || (chapters[0] && chapters[0].id) || "");
-    var accordion = chapters.map(function (ch, i) {
-      var open = openId ? String(ch.id) === openId : i === 0;
+    // Default: all chapters collapsed — only open when user explicitly toggles.
+    var openId = String((draft.ui || {}).rulesOpenId || "");
+    var accordion = chapters.map(function (ch) {
+      var open = openId && String(ch.id) === openId;
       return (
         '<div class="apply-rules-acc-item' + (open ? " is-open" : "") + '" data-rules-acc="' + esc(ch.id) + '">' +
         '<button type="button" class="apply-rules-acc-head" data-rules-acc-toggle="' + esc(ch.id) + '" aria-expanded="' + (open ? "true" : "false") + '">' +
@@ -1702,7 +1703,7 @@
       '<section class="apply-panel apply-rules-card"><h2>阅读陪玩制度</h2>' +
       '<div class="rules-reader"><h3>' + esc(rule.title) + '</h3><p>' + esc(rule.subtitle || "") + "</p>" + updated +
       '<div class="apply-rules-accordion" data-rules-accordion>' + accordion + "</div></div>" +
-      '<div class="agree-bar"><label class="agree-row"><input type="checkbox" data-rule-agree ' + (agreed ? "checked" : "") + '><span>我已阅读并同意陪玩制度</span></label></div></section>'
+      '<div class="agree-bar"><label class="agree-row"><input type="checkbox" data-rule-agree ' + (agreed ? "checked" : "") + '><span>我已阅读并同意妙脆角陪玩制度</span></label></div></section>'
     );
   }
   function basicHtml(data) {
@@ -2176,8 +2177,8 @@
     if (index === 0) return certMethodHtml(draft);
     if (index === 1) return rulesHtml(draft);
     if (index === 2) return basicHtml(draft.data || {});
-    if (index === 3) return gameHtml(draft.data || {});
-    if (index === 4) return uploadHtml(draft) + identityHtml(draft);
+    if (index === 3) return gameHtml(draft.data || {}) + uploadHtml(draft);
+    if (index === 4) return identityHtml(draft);
     return confirmHtml(draft);
   }
   function statusNotice() {
@@ -4065,33 +4066,8 @@
           delete cur.identity.documentType;
         }
         writeDraftRecord(cur);
+        // STEP1 only selects certification_method; deposit QR / proof live on STEP5.
         render(0);
-        if (nextMode === "deposit") {
-          fetchDepositPayMethods(true).then(function () {
-            var d = readDraft();
-            var chans = depositChannels();
-            if (chans.length === 1) {
-              d.identity = Object.assign({}, d.identity || {});
-              var onlyId = String(chans[0].id || chans[0].code || "").trim();
-              d.identity.depositChannelId = onlyId;
-              d.identity.depositMethod = onlyId;
-              writeDraftRecord(d);
-            }
-            render(0);
-            // Mobile: bring live QR into view so payment info is not below the fold.
-            try {
-              var qrEl =
-                document.querySelector(".apply-deposit-qr") ||
-                document.querySelector("[data-apply-deposit-qr-zoom]") ||
-                document.querySelector(".apply-deposit-pay");
-              if (qrEl && qrEl.scrollIntoView) {
-                setTimeout(function () {
-                  qrEl.scrollIntoView({ behavior: "smooth", block: "center" });
-                }, 80);
-              }
-            } catch (scrollErr) {}
-          });
-        }
         return;
       }
       // QR zoom must run before channel-card selection: the QR button lives inside the
