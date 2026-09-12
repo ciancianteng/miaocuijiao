@@ -498,6 +498,13 @@
           galleryWall +
           "</div></section>"
         : "") +
+      '<section class="detail-card real-review-wall"><div class="section-head"><h2>真实订单评价</h2><span>' +
+      (isNewcomer
+        ? "新人陪玩"
+        : "好评 " + esc(goodText) + " · 共 " + esc(reviewCount) + " 条") +
+      '</span></div><div class="review-list" id="realReviewList">' +
+      reviewHtml +
+      "</div></section>" +
       (function () {
         var wall = Array.isArray(c.giftWall) ? c.giftWall : Array.isArray(c.gift_wall) ? c.gift_wall : [];
         var chips = wall.length
@@ -525,14 +532,7 @@
           chips +
           "</div></section>"
         );
-      })() +
-      '<section class="detail-card real-review-wall"><div class="section-head"><h2>真实订单评价</h2><span>' +
-      (isNewcomer
-        ? "新人陪玩"
-        : "好评 " + esc(goodText) + " · 共 " + esc(reviewCount) + " 条") +
-      '</span></div><div class="review-list" id="realReviewList">' +
-      reviewHtml +
-      "</div></section>";
+      })();
 
     bindReviewExpand(s.querySelector("#realReviewList"));
 

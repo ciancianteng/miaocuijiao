@@ -1328,6 +1328,7 @@
     if(state.data&&state.data.summary&&state.inbox){
       state.data.summary.unreadMessages=num(state.inbox.unreadTotal);
     }
+    try{setTimeout(maybeShowGiftReceivedPopup,0)}catch(e){}
   }
   function cacheThreadMessages(cid,messages){
     if(!cid)return;
@@ -1898,6 +1899,7 @@
         bindCompanionOrdersRealtime();
         var s=(state.data||{}).summary||{};
         updateTabBadge(s.waitingConfirm||s.designatedPending);
+        try{setTimeout(maybeShowGiftReceivedPopup,300)}catch(e){}
       });
     }else paint();
   }
@@ -2232,6 +2234,7 @@
         restoreAccountFocus();
         mountCompanionAccountSecurity();
         mountDirectBossCard();
+        try{setTimeout(maybeShowGiftReceivedPopup,200)}catch(e){}
       }
       return;
     }
@@ -3764,28 +3767,144 @@
           '</label>'))+
       '</div>';
   }
-    function giftsHtml(){
-    var list=(state.giftsData&&state.giftsData.gifts)||state._gifts||[];
-    var wall=(state.giftsData&&state.giftsData.wall)||[];
-    if(!state._giftsLoaded&&!state._giftsLoading){
+  function giftsHtml(){
+    var list=(state.giftsData&&state.giftsData.gifts)||state.myGifts||[];
+    var wall=(state.giftsData&&state.giftsData.wall)||state.giftWall||[];
+    if(!state._giftsLoaded&&!state._giftsLoading&&!state.myGiftsBusy){
       state._giftsLoading=true;
-      api('my_gifts').then(function(res){
-        state._giftsLoading=false;state._giftsLoaded=true;state.giftsData=res||{};paint();
+      state.myGiftsBusy=true;
+      api('my_gifts',{},'GET').then(function(res){
+        state._giftsLoading=false;
+        state.myGiftsBusy=false;
+        state._giftsLoaded=true;
+        state.giftsData=res||{};
+        state.myGifts=Array.isArray(res.gifts)?res.gifts:[];
+        state.giftWall=Array.isArray(res.wall)?res.wall:[];
+        state.giftsError='';
+        state.myGiftsError='';
+        paint();
       }).catch(function(err){
-        state._giftsLoading=false;state._giftsLoaded=true;state.giftsError=err.message||'加载失败';paint();
+        state._giftsLoading=false;
+        state.myGiftsBusy=false;
+        state._giftsLoaded=true;
+        state.giftsError=err.message||'加载失败';
+        state.myGiftsError=state.giftsError;
+        paint();
       });
     }
-    if(state._giftsLoading)return '<section class="pw-card pad"><h2>我的礼物</h2><p class="pw-note">加载中…</p></section>';
-    if(state.giftsError)return '<section class="pw-card pad"><h2>我的礼物</h2><p class="pw-note">'+esc(state.giftsError)+'</p></section>';
+    if(state._giftsLoading||state.myGiftsBusy){
+      return '<div class="pw-page-head"><div><h2>我的礼物</h2><p>客服审核通过后到账的礼物。</p></div></div><section class="pw-card pad"><p class="pw-note">加载中…</p></section>';
+    }
+    if(state.giftsError||state.myGiftsError){
+      return '<div class="pw-page-head"><div><h2>我的礼物</h2><p>客服审核通过后到账的礼物。</p></div></div><section class="pw-card pad"><p class="pw-note">'+esc(state.giftsError||state.myGiftsError)+'</p><button class="pw-btn" type="button" data-gifts-reload>重试</button></section>';
+    }
     var hist=list.length?list.map(function(g){
-      return '<div class="pw-gift-row"><div class="pw-gift-ico">'+(g.giftImage?'<img src="'+esc(g.giftImage)+'" alt="">':'🎁')+'</div><div><strong>'+esc(g.giftName||'礼物')+'</strong><span>×'+esc(g.quantity)+' · '+esc((g.createdAt||'').slice(0,16).replace('T',' '))+'</span></div></div>';
+      return '<div class="pw-gift-row"><div class="pw-gift-ico">'+(g.giftImage?'<img src="'+esc(g.giftImage)+'" alt="">':'🎁')+'</div><div><strong>'+esc(g.giftName||'礼物')+'</strong><span>×'+esc(g.quantity||1)+' · '+esc(String(g.createdAt||'').slice(0,16).replace('T',' '))+'</span></div></div>';
     }).join(''):'<p class="pw-note">还没有收到礼物</p>';
     var wallHtml=wall.length?wall.map(function(w){
-      return '<div class="pw-gift-chip">'+(w.giftImage?'<img src="'+esc(w.giftImage)+'" alt="">':'🎁')+'<strong>'+esc(w.giftName)+'</strong><em>×'+esc(w.totalQuantity)+'</em></div>';
+      return '<div class="pw-gift-chip">'+(w.giftImage?'<img src="'+esc(w.giftImage)+'" alt="">':'🎁')+'<strong>'+esc(w.giftName||'礼物')+'</strong><em>×'+esc(w.totalQuantity||0)+'</em></div>';
     }).join(''):'<p class="pw-note">礼物墙为空</p>';
-    return '<section class="pw-card pad"><h2>我的礼物</h2><p class="pw-note">仅展示客服审核通过后的真实到账礼物。</p><div class="pw-gift-list">'+hist+'</div><h3 style="margin-top:18px">礼物墙汇总</h3><div class="pw-gift-wall">'+wallHtml+'</div></section>';
+    return '<div class="pw-page-head"><div><h2>我的礼物</h2><p>仅展示客服审核通过后的真实到账礼物。</p></div><button class="pw-btn" type="button" data-gifts-reload>刷新</button></div>'+
+      '<section class="pw-card pad"><div class="pw-gift-list">'+hist+'</div><h3 class="pw-gift-wall-title">礼物墙汇总</h3><div class="pw-gift-wall">'+wallHtml+'</div></section>';
   }
-function accountHtml(){
+  function giftPopupDismissedKeys(){
+    try{
+      var raw=sessionStorage.getItem('mcj_gift_popup_dismissed')||'[]';
+      var arr=JSON.parse(raw);
+      return Array.isArray(arr)?arr.map(String):[];
+    }catch(e){return []}
+  }
+  function markGiftPopupDismissed(key){
+    if(!key)return;
+    var keys=giftPopupDismissedKeys();
+    if(keys.indexOf(String(key))>=0)return;
+    keys.push(String(key));
+    try{sessionStorage.setItem('mcj_gift_popup_dismissed',JSON.stringify(keys.slice(-40)))}catch(e){}
+  }
+  function isGiftReceivedNotice(n){
+    if(!n)return false;
+    var type=String(n.notificationType||n.notification_type||'').toLowerCase();
+    if(type==='gift_received')return true;
+    var key=String(n.noticeKey||n.key||n.id||'');
+    if(/^gift-order-approved-/i.test(key))return true;
+    return String(n.category||'').toLowerCase()==='gift';
+  }
+  function giftPopupHtml(gift,notice){
+    gift=gift||{};
+    notice=notice||{};
+    var name=gift.giftName||'礼物';
+    var qty=gift.quantity||1;
+    var img=gift.giftImage||'';
+    var body=notice.body||('你收到了「'+name+'」×'+qty);
+    return '<div class="pw-modal pw-gift-popup" data-gift-popup data-gift-notice-key="'+esc(notice.key||notice.id||'')+'">'+
+      '<div class="pw-dialog" role="dialog" aria-modal="true" aria-label="收到新礼物">'+
+      '<div class="pw-dialog-head"><h3>你收到了一份新礼物</h3><button type="button" class="pw-btn" data-close-gift-popup>关闭</button></div>'+
+      '<div class="pw-gift-popup-body">'+
+      '<div class="pw-gift-popup-visual">'+(img?'<img src="'+esc(img)+'" alt="">':'<span aria-hidden="true">🎁</span>')+'</div>'+
+      '<strong>'+esc(name)+'</strong><em>×'+esc(qty)+'</em>'+
+      '<p>'+esc(body)+'</p>'+
+      '</div>'+
+      '<div class="pw-actions" style="margin-top:14px">'+
+      '<button class="pw-btn primary" type="button" data-route="/companion/gifts" data-close-gift-popup>查看我的礼物</button>'+
+      '<button class="pw-btn" type="button" data-close-gift-popup>知道了</button>'+
+      '</div></div></div>';
+  }
+  function maybeShowGiftReceivedPopup(){
+    if(!state.session||state._giftPopupShown)return;
+    if(document.querySelector('[data-gift-popup]'))return;
+    var notices=((state.inbox&&state.inbox.systemNotices)||[]).filter(function(n){return n&&n.unread&&isGiftReceivedNotice(n)});
+    if(!notices.length)return;
+    var dismissed=giftPopupDismissedKeys();
+    var notice=null;
+    for(var i=0;i<notices.length;i++){
+      var k=String(notices[i].key||notices[i].id||'');
+      if(k&&dismissed.indexOf(k)<0){notice=notices[i];break;}
+    }
+    if(!notice)return;
+    state._giftPopupShown=true;
+    var noticeKey=String(notice.key||notice.id||'');
+    var orderId=noticeKey.replace(/^gift-order-approved-/i,'');
+    function showWithGift(gift){
+      if(document.querySelector('[data-gift-popup]'))return;
+      var holder=document.createElement('div');
+      holder.innerHTML=giftPopupHtml(gift,notice);
+      var node=holder.firstChild;
+      if(node)document.body.appendChild(node);
+    }
+    var parsedName='';
+    var parsedQty=1;
+    try{
+      var m=String(notice.body||'').match(/「([^」]+)」\s*×\s*(\d+)/);
+      if(m){parsedName=m[1];parsedQty=Number(m[2])||1;}
+    }catch(e){}
+    var fallback={giftName:parsedName||'礼物',quantity:parsedQty,giftImage:''};
+    api('my_gifts',{},'GET').then(function(res){
+      var gifts=Array.isArray(res.gifts)?res.gifts:[];
+      state.giftsData=res||{};
+      state.myGifts=gifts;
+      state.giftWall=Array.isArray(res.wall)?res.wall:[];
+      var hit=gifts.find(function(g){return orderId&&String(g.giftOrderId||'')===String(orderId);})||gifts[0];
+      showWithGift(hit||fallback);
+    }).catch(function(){
+      showWithGift(fallback);
+    });
+  }
+  function closeGiftPopup(el){
+    var modal=el&&el.closest?el.closest('[data-gift-popup]'):document.querySelector('[data-gift-popup]');
+    if(!modal)return;
+    var key=modal.getAttribute('data-gift-notice-key')||'';
+    markGiftPopupDismissed(key);
+    if(key){
+      api('mark_notices_read',{keys:[key]}).catch(function(){});
+      if(state.inbox&&Array.isArray(state.inbox.systemNotices)){
+        state.inbox.systemNotices.forEach(function(n){
+          if(String(n.key||n.id||'')===String(key))n.unread=false;
+        });
+      }
+    }
+    modal.remove();
+  }
+  function accountHtml(){
     var v=(state.data&&state.data.verification)||{},d=(state.data&&state.data.deposit)||{},level=(state.data&&state.data.levelInfo)||{},p=(state.data&&state.data.player)||{};
     var ua=unifiedAccess();
     var raw=p.raw||{};
@@ -4478,6 +4597,23 @@ function accountHtml(){
       loadWorkRules();
       return;
     }
+    if(e.target.closest('[data-close-gift-popup]')||(e.target.matches&&e.target.matches('[data-gift-popup]'))){
+      var giftCloseRoute=e.target.closest('[data-route]');
+      closeGiftPopup(e.target);
+      if(giftCloseRoute){
+        go(giftCloseRoute.getAttribute('data-route')||'/companion/gifts');
+      }
+      return;
+    }
+    if(e.target.closest('[data-gifts-reload]')){
+      state._giftsLoaded=false;
+      state._giftsLoading=false;
+      state.myGiftsBusy=false;
+      state.giftsError='';
+      state.myGiftsError='';
+      paint();
+      return;
+    }
     var r=e.target.closest('[data-route]');
     if(r){
       if(isIsolationMode()){
@@ -4498,7 +4634,14 @@ function accountHtml(){
       if(r.dataset.earningsTab)state.earningsTab=r.dataset.earningsTab;
       go(r.dataset.route);
       if(/\/rules/.test(r.dataset.route||''))loadWorkRules();
-      if(/\/(wallet|earnings|withdraw|account|mine)/.test(r.dataset.route||''))loadData({soft:true});
+      if(/\/(wallet|earnings|withdraw|account|mine)/.test(r.dataset.route||'')){
+        loadData({soft:true}).then(function(){try{setTimeout(maybeShowGiftReceivedPopup,200)}catch(err){}});
+      }
+      if(/\/gifts/.test(r.dataset.route||'')){
+        state._giftsLoaded=false;
+        state._giftsLoading=false;
+        state.myGiftsBusy=false;
+      }
       if(/\/messages/.test(r.dataset.route||'')){
         loadData({soft:true}).then(function(){
           return loadActiveThread({clear:false}).then(function(){
