@@ -2383,6 +2383,12 @@
       if (step === 0) identity[el.name] = el.value.trim ? el.value.trim() : el.value;
     });
     if (step === 0) {
+      // Persist certification_method with STEP1 materials
+      if (identity.authMode === "id_card" || identity.authMode === "deposit") {
+        identity.certification_method = identity.authMode;
+      } else if (identity.certification_method === "id_card" || identity.certification_method === "deposit") {
+        identity.authMode = identity.certification_method;
+      }
       // Keep bankName as the effective persisted label (dropdown value or「其他」custom text).
       if (isBankSettlementMethod(identity.settlementMethod)) {
         identity.bankName = effectiveSettlementBankName(identity);
@@ -2414,7 +2420,12 @@
         identity.paymentPhone = "";
       }
     }
-    saveDraft({ data: data, identity: identity, uploads: uploads });
+    saveDraft({
+      data: data,
+      identity: identity,
+      uploads: uploads,
+      certification_method: identity.authMode || identity.certification_method || draft.certification_method || "",
+    });
   }
   function storagePayloadForSubmit(asset) {
     var a = normalizeUploadAsset(asset);
