@@ -609,7 +609,7 @@
           if (hint) hint.textContent = tt("hall.empty_filtered_hint", "试试调整搜索词或筛选条件。");
         } else {
           if (title) title.textContent = tt("hall.empty_title", "目前暂无可接单陪玩");
-          if (hint) hint.textContent = "通过审核并上线接单的陪玩将在这里展示。";
+          if (hint) hint.textContent = tt("hall.empty_hint", "通过审核并上线接单的陪玩将在这里展示。");
         }
       }
     }

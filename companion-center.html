@@ -47,8 +47,8 @@
   <main class="page companion-hall-page" data-hall-channel="companions">
     <section class="hall-intro" aria-labelledby="companionHallTitle">
       <div>
-        <h1 id="companionHallTitle">陪玩大厅</h1>
-        <p id="companionHallLead">找到喜欢的陪玩，立即开始游戏。</p>
+        <h1 id="companionHallTitle" data-i18n="hall.title">陪玩大厅</h1>
+        <p id="companionHallLead" data-i18n="hall.subtitle">找到喜欢的陪玩，立即开始游戏。</p>
       </div>
     </section>
 
@@ -56,11 +56,11 @@
       <div class="hall-search-main">
         <label class="hall-search-field" for="searchInput">
           <span>搜索</span>
-          <input id="searchInput" type="search" placeholder="搜索昵称、陪玩ID、游戏或标签" autocomplete="off">
+          <input id="searchInput" type="search" placeholder="搜索昵称、陪玩ID、游戏或标签" data-i18n-placeholder="hall.search_placeholder" autocomplete="off">
         </label>
-        <button class="hall-search-btn" id="applyFilter" type="button">搜索</button>
-        <button class="hall-clear-btn" id="resetFilter" type="button">清除</button>
-        <button class="hall-filter-toggle" id="filterToggle" type="button" aria-expanded="false" aria-controls="searchFilters">筛选</button>
+        <button class="hall-search-btn" id="applyFilter" type="button" data-i18n="hall.search">搜索</button>
+        <button class="hall-clear-btn" id="resetFilter" type="button" data-i18n="hall.clear">清除</button>
+        <button class="hall-filter-toggle" id="filterToggle" type="button" aria-expanded="false" aria-controls="searchFilters" data-i18n="hall.filter">筛选</button>
       </div>
 
       <div class="hall-filter-drawer" id="searchFilters" aria-label="筛选工具栏">
@@ -114,7 +114,7 @@
           <input id="hallGpSearch" type="search" placeholder="搜索玩法商品、分类或游戏" autocomplete="off">
         </label>
         <label class="hall-sort-field hall-services-sort">
-          <span>排序</span>
+          <span data-i18n="hall.sort">排序</span>
           <select id="hallGpSort">
             <option value="recommend">综合</option>
             <option value="sold">销量</option>
@@ -137,13 +137,13 @@
       <div class="hall-results" aria-labelledby="companionListTitle">
         <div class="hall-results-head">
           <div>
-            <h2 id="companionListTitle">陪玩推荐</h2>
+            <h2 id="companionListTitle" data-i18n="hall.recommend">陪玩推荐</h2>
             <p id="resultCount">共 0 位陪玩</p>
           </div>
           <label class="hall-sort-field">
             <span>排序</span>
             <select id="sortFilter">
-              <option value="recommend">默认推荐</option>
+              <option value="recommend" data-i18n="hall.sort_default">默认推荐</option>
               <option value="levelDesc">等级优先</option>
               <option value="priceAsc">价格低到高</option>
               <option value="priceDesc">价格高到低</option>
