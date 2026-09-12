@@ -1378,7 +1378,8 @@ function viewOrder(row = {}, boss = {}, settlement = null) {
   };
 }
 async function bossesForOrders(orders) { const ids=[...new Set((orders||[]).map((row)=>row.boss_id).filter(Boolean))]; if(!ids.length) return {}; const rows=await supabaseJson(restUrl("profiles", `?id=in.(${ids.map(encodeURIComponent).join(",")})`), { headers: serviceHeaders() }); return Object.fromEntries((rows||[]).map((row)=>[row.id,row])); }
-async function loadOrdersFor(profile, companion, transactions = []) {
+async function loadOrdersFor(profile, companion, transactions = [], opts = {}) {
+  const includeSettledHall = opts.includeSettledHall === true;
   const {
     resolveAssignmentType,
     isPublicHallEligible,
@@ -1386,66 +1387,80 @@ async function loadOrdersFor(profile, companion, transactions = []) {
     ASSIGNMENT_ASSIGNED,
     ASSIGNMENT_PUBLIC,
   } = await import("./_order-assignment.js");
-  try {
-    const { expireCompanionConfirmTimeouts } = await import("./_order-confirm-timeout.js");
-    await expireCompanionConfirmTimeouts({ companionId: profile.id, limit: 40 });
-  } catch {
-    /* best-effort */
-  }
-  try {
-    const { createOrderCompleteHelpers } = await import("./_order-complete.js");
-    const helpers = createOrderCompleteHelpers({
-      restUrl,
-      supabaseJson,
-      serviceHeaders,
-      addSystemMessage: async (order, actorId, content) =>
-        addSystemMessage(order, actorId || order.boss_id, "system", content),
-    });
-    await Promise.race([
-      helpers.expireCompletionAutoConfirms({ limit: 15 }),
-      new Promise((resolve) => setTimeout(resolve, 1500)),
-    ]);
-  } catch {
-    /* best-effort auto-complete */
-  }
-  const myRows = await supabaseJson(restUrl("orders", `?companion_id=eq.${encodeURIComponent(profile.id)}&order=created_at.desc&limit=200`), { headers: serviceHeaders() });
-  // Best-effort: warn near confirm timeout (idempotent email/inbox).
-  try {
-    const { maybeNotifyConfirmDeadlineWarning } = await import("./_companion-order-notify.js");
-    const claimed = (myRows || []).filter((row) => row.status === "claimed").slice(0, 8);
-    await Promise.all(
-      claimed.map((row) =>
-        maybeNotifyConfirmDeadlineWarning(row).catch(() => null)
-      )
-    );
-  } catch {
-    /* ignore */
-  }
-  // Never surface unpaid designated orders (awaiting_payment) as actionable confirm tasks.
-  // Assigned pending-confirm stays in 我的订单→待确认 only.
-  const visibleMine = (myRows || []).filter((row) => row.status !== "awaiting_payment");
+  // Keep maintenance work best-effort and time-boxed so first paint cannot stall on it.
+  await Promise.all([
+    (async () => {
+      try {
+        const { expireCompanionConfirmTimeouts } = await import("./_order-confirm-timeout.js");
+        await Promise.race([
+          expireCompanionConfirmTimeouts({ companionId: profile.id, limit: 20 }),
+          new Promise((resolve) => setTimeout(resolve, 800)),
+        ]);
+      } catch {
+        /* best-effort */
+      }
+    })(),
+    (async () => {
+      try {
+        const { createOrderCompleteHelpers } = await import("./_order-complete.js");
+        const helpers = createOrderCompleteHelpers({
+          restUrl,
+          supabaseJson,
+          serviceHeaders,
+          addSystemMessage: async (order, actorId, content) =>
+            addSystemMessage(order, actorId || order.boss_id, "system", content),
+        });
+        await Promise.race([
+          helpers.expireCompletionAutoConfirms({ limit: 10 }),
+          new Promise((resolve) => setTimeout(resolve, 800)),
+        ]);
+      } catch {
+        /* best-effort auto-complete */
+      }
+    })(),
+  ]);
   // 抢单大厅 ONLY: public (or null assignment_type) + companion_id null + hall-open statuses.
   const openQueryWithType =
     "?and=(or(assignment_type.eq.public,assignment_type.is.null),companion_id.is.null,or(status.eq.pending,status.eq.waiting_boss_confirm))&order=created_at.desc&limit=100";
   const openQueryFallback =
     "?and=(companion_id.is.null,or(status.eq.pending,status.eq.waiting_boss_confirm))&order=created_at.desc&limit=100";
-  let openRows = [];
-  try {
-    openRows = await supabaseJson(restUrl("orders", openQueryWithType), { headers: serviceHeaders() });
-  } catch (err) {
-    if (/assignment_type|PGRST204|schema cache|column/i.test(String(err?.message || err || ""))) {
-      openRows = await supabaseJson(restUrl("orders", openQueryFallback), { headers: serviceHeaders() }).catch(() => []);
-    } else {
-      openRows = [];
-    }
-  }
-  openRows = (openRows || []).filter((row) => isPublicHallEligible(row));
-  // Self-trade guard: never show own boss orders in the grab hall for the same user_id.
-  openRows = (openRows || []).filter((row) => String(row.boss_id || "") !== String(profile.id || ""));
   const { createOrderGrabHelpers } = await import("./_order-grabs.js");
   const { hallStateForOrder, hallStateLabel, toFlowStatus, isOrderExpired } = await import("./_order-flow.js");
   const grabsApi = createOrderGrabHelpers({ restUrl, supabaseJson, serviceHeaders });
-  const myGrabRows = await grabsApi.listMyPendingGrabs(profile.id);
+
+  // Critical reads in parallel — this is the main first-paint win.
+  const [myRows, openRowsRaw, myGrabRows] = await Promise.all([
+    supabaseJson(restUrl("orders", `?companion_id=eq.${encodeURIComponent(profile.id)}&order=created_at.desc&limit=120`), {
+      headers: serviceHeaders(),
+    }),
+    (async () => {
+      try {
+        return await supabaseJson(restUrl("orders", openQueryWithType), { headers: serviceHeaders() });
+      } catch (err) {
+        if (/assignment_type|PGRST204|schema cache|column/i.test(String(err?.message || err || ""))) {
+          return supabaseJson(restUrl("orders", openQueryFallback), { headers: serviceHeaders() }).catch(() => []);
+        }
+        return [];
+      }
+    })(),
+    grabsApi.listMyPendingGrabs(profile.id),
+  ]);
+
+  // Best-effort: warn near confirm timeout (idempotent email/inbox). Never block hall paint.
+  Promise.resolve()
+    .then(async () => {
+      const { maybeNotifyConfirmDeadlineWarning } = await import("./_companion-order-notify.js");
+      const claimed = (myRows || []).filter((row) => row.status === "claimed").slice(0, 4);
+      await Promise.all(claimed.map((row) => maybeNotifyConfirmDeadlineWarning(row).catch(() => null)));
+    })
+    .catch(() => {});
+
+  // Never surface unpaid designated orders (awaiting_payment) as actionable confirm tasks.
+  // Assigned pending-confirm stays in 我的订单→待确认 only.
+  const visibleMine = (myRows || []).filter((row) => row.status !== "awaiting_payment");
+  let openRows = (openRowsRaw || []).filter((row) => isPublicHallEligible(row));
+  // Self-trade guard: never show own boss orders in the grab hall for the same user_id.
+  openRows = (openRows || []).filter((row) => String(row.boss_id || "") !== String(profile.id || ""));
   // Also load not_selected / selected grabs for this companion (outcome visibility).
   let myOutcomeGrabs = [];
   try {
@@ -1468,31 +1483,32 @@ async function loadOrdersFor(profile, companion, transactions = []) {
       { headers: serviceHeaders() }
     ).catch(() => []);
   }
-  // Settled hall cards: ONLY public-hall history (had grabs). Never assigned-only orders.
+  // Settled hall cards are optional. Skip on first-paint bootstrap to cut serial Supabase round-trips.
   // Prefer orders this companion actually grabbed; fall back to recent public settled with grabs.
-  const settledCandidateIds = [...new Set(grabOrderIds)];
+  const settledCandidateIds = includeSettledHall ? [...new Set(grabOrderIds)] : [];
   let settledRows = [];
-  if (settledCandidateIds.length) {
-    settledRows = await supabaseJson(
-      restUrl(
-        "orders",
-        `?id=in.(${settledCandidateIds.map(encodeURIComponent).join(",")})&or=(status.eq.claimed,status.eq.confirmed,status.eq.in_progress,status.eq.cancelled,status.eq.completed)&order=created_at.desc&limit=40`
-      ),
-      { headers: serviceHeaders() }
-    ).catch(() => []);
-  }
-  // Optional: recent public settled (assignment_type=public) that others grabbed — still only if grabs exist.
   let recentPublicSettled = [];
-  try {
-    recentPublicSettled = await supabaseJson(
-      restUrl(
-        "orders",
-        "?and=(assignment_type.eq.public,companion_id.not.is.null,or(status.eq.claimed,status.eq.confirmed,status.eq.in_progress,status.eq.cancelled))&order=created_at.desc&limit=30"
-      ),
-      { headers: serviceHeaders() }
-    );
-  } catch {
-    recentPublicSettled = [];
+  if (includeSettledHall) {
+    if (settledCandidateIds.length) {
+      settledRows = await supabaseJson(
+        restUrl(
+          "orders",
+          `?id=in.(${settledCandidateIds.map(encodeURIComponent).join(",")})&or=(status.eq.claimed,status.eq.confirmed,status.eq.in_progress,status.eq.cancelled,status.eq.completed)&order=created_at.desc&limit=40`
+        ),
+        { headers: serviceHeaders() }
+      ).catch(() => []);
+    }
+    try {
+      recentPublicSettled = await supabaseJson(
+        restUrl(
+          "orders",
+          "?and=(assignment_type.eq.public,companion_id.not.is.null,or(status.eq.claimed,status.eq.confirmed,status.eq.in_progress,status.eq.cancelled))&order=created_at.desc&limit=30"
+        ),
+        { headers: serviceHeaders() }
+      );
+    } catch {
+      recentPublicSettled = [];
+    }
   }
   const settledById = new Map();
   for (const row of [...(settledRows || []), ...(recentPublicSettled || [])]) {
@@ -2013,14 +2029,28 @@ async function bootstrapData(profile, companion) {
   let wallet = emptyWalletBundle();
   if (!isolated) {
     try {
-      // Prefetch transactions for settlement notes; soft-fail inside transactionsFor.
-      const preTx = await transactionsFor(profile.id).catch((error) => {
-        warnings.push(`transactions:preload: ${error.message || error}`);
-        return [];
-      });
-      const loaded = await loadOrdersFor(profile, companionRow, preTx);
+      // Parallelize settlement ledger + order graph. Skip settled-hall history on first paint.
+      const [preTx, loaded] = await Promise.all([
+        transactionsFor(profile.id).catch((error) => {
+          warnings.push(`transactions:preload: ${error.message || error}`);
+          return [];
+        }),
+        loadOrdersFor(profile, companionRow, [], { includeSettledHall: false }),
+      ]);
       myOrders = loaded.myOrders || [];
       openOrders = loaded.openOrders || [];
+      // Attach settlement notes from ledger without another orders round-trip.
+      if (preTx?.length && myOrders.length) {
+        const byOrder = {};
+        for (const tx of preTx) {
+          if (tx.transaction_type !== "companion_income" || !tx.order_id) continue;
+          byOrder[tx.order_id] = tx;
+        }
+        myOrders = myOrders.map((o) => {
+          const tx = byOrder[o.id];
+          return tx ? { ...o, settlementTxId: tx.id, settledAmount: Number(tx.amount) || o.settledAmount } : o;
+        });
+      }
     } catch (error) {
       warnings.push(`orders: ${error.message || error}`);
       myOrders = [];
@@ -3087,8 +3117,12 @@ async function claimOrder(profile, companion, id) {
     throw Object.assign(new Error(reason), { status: 403 });
   }
   const { resolveAssignmentType, ASSIGNMENT_ASSIGNED, isPublicHallEligible } = await import("./_order-assignment.js");
+  const { isTestOrderRecord, rejectTestOrderMessage } = await import("./_test-order-isolation.js");
   // Open grab only: never auto-bind companion_id; never jump to confirmed/in_progress.
   // Assigned / 指定陪玩 orders are invisible to the public hall and cannot be grabbed.
+  if (isTestOrderRecord(before)) {
+    throw Object.assign(new Error(rejectTestOrderMessage()), { status: 404, code: "TEST_ORDER_HIDDEN" });
+  }
   if (resolveAssignmentType(before) === ASSIGNMENT_ASSIGNED || before.companion_id) {
     throw Object.assign(new Error("该订单为指定陪玩单，不在公开抢单大厅。"), { status: 409 });
   }

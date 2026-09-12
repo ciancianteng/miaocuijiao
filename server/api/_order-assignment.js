@@ -10,6 +10,8 @@
  *   waiting_boss_confirm             → hall selecting after grabs
  *   claimed / waiting_companion_confirm → 待陪玩确认 (DB: claimed)
  */
+import { isTestOrderRecord } from "./_test-order-isolation.js";
+
 export const ASSIGNMENT_PUBLIC = "public";
 export const ASSIGNMENT_ASSIGNED = "assigned";
 
@@ -33,6 +35,8 @@ export function resolveAssignmentType(row = {}) {
 
 export function isPublicHallEligible(row = {}) {
   if (row.companion_id) return false;
+  // Defense in depth: never let smoke / e2e / lifecycle verify orders into the live hall.
+  if (isTestOrderRecord(row)) return false;
   const assignment = resolveAssignmentType(row);
   // Treat missing assignment_type as public when companion_id is null (legacy / soft-patch rows).
   if (assignment !== ASSIGNMENT_PUBLIC) return false;

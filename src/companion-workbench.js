@@ -704,7 +704,8 @@
     if(leavingAccount)state.accountDraft=null;
     closeMobileMenus();
     history.pushState(null,'',next);
-    paint({routeChange:true});
+    // Leaving account must rebuild the shell so privacy sections cannot linger outside .pw-page.
+    paint({routeChange:true,forceFull:leavingAccount});
   }
   function isAccountRoute(route){
     var r=route!=null?route:state.route;
@@ -1519,12 +1520,34 @@
         })
       : Promise.resolve(null);
     var inboxReq=api('inbox',inboxQueryParams({light:'1',include_messages:'0'}),'GET').catch(function(){return null});
-    return Promise.all([boot,loadProfileServices(),loadProfileVoiceTypes(),walletReq,inboxReq]).then(function(results){
-      var result=results[0]||{};
-      var walletResult=results[3];
-      var inboxResult=results[4];
+    // First paint waits on bootstrap ONLY. Profile services / voice / wallet / inbox enrich in background.
+    return boot.then(function(result){
+      result=result||{};
       state.data=Object.assign({},state.data||{},result.data||{});
       // Drop stale client media errors once bootstrap shows durable avatar/gallery/voice.
+      reconcileProfileMediaFlags();
+      state.ordersCacheAt=Date.now();
+      state.error='';
+      state.loading=false;
+      if(!(opts.soft&&isEditingLiveForm()&&!opts.forcePaint)){
+        paint({preserveScroll:!!opts.preserveScroll||!!opts.forcePaint||isEditingLiveForm()});
+      }
+      var walletResult=null;
+      var inboxResult=null;
+      return Promise.all([loadProfileServices(),loadProfileVoiceTypes(),walletReq,inboxReq]).then(function(extra){
+        walletResult=extra[2];
+        inboxResult=extra[3];
+        return {result:result,walletResult:walletResult,inboxResult:inboxResult};
+      }).catch(function(){
+        return {result:result,walletResult:null,inboxResult:null};
+      });
+    }).then(function(pack){
+      pack=pack||{};
+      var result=pack.result||{};
+      var walletResult=pack.walletResult;
+      var inboxResult=pack.inboxResult;
+      // Keep bootstrap fields; secondary payloads only fill gaps.
+      state.data=Object.assign({},state.data||{},result.data||{});
       reconcileProfileMediaFlags();
       state.ordersCacheAt=Date.now();
       if(inboxResult&&inboxResult.ok){
@@ -1905,8 +1928,12 @@
       init();
       return;
     }
+    var prev=state.route;
+    var nextRoute=routeFromPath(location.pathname);
+    var leavingAccount=isAccountRoute(prev)&&!isAccountRoute(nextRoute);
     // Soft route restore — do not remount the whole workbench / re-run cold init.
-    paint({routeChange:true});
+    // Exception: leaving account forces a full shell rebuild to drop privacy DOM.
+    paint({routeChange:true,forceFull:leavingAccount});
     loadData({soft:true}).catch(function(){});
   });
   document.addEventListener('visibilitychange',function(){
@@ -2207,32 +2234,43 @@
       if(routeChanged)resetRouteScroll();
       var pageEl=existing.querySelector('.pw-page');
       if(pageEl)pageEl.innerHTML=pageHtml();
-      var menu=existing.querySelector('.pw-menu');
-      if(menu)menu.innerHTML=accountMenu;
-      var annHost=existing.querySelector('[data-pw-announcement-host], .pw-announcement-host');
-      if(!isolated&&!annHost&&window.MCJCompanionAnnouncements&&window.MCJCompanionAnnouncements.hostHtml){
-        var top=existing.querySelector('.pw-top');
-        if(top&&top.parentNode){
-          var holder=document.createElement('div');
-          holder.innerHTML=window.MCJCompanionAnnouncements.hostHtml();
-          if(holder.firstChild)top.parentNode.insertBefore(holder.firstChild,top.nextSibling);
+      else{
+        // Broken shell boundary (page node missing) — fall through to full rebuild.
+        opts.forceFull=true;
+        canPatch=false;
+      }
+      if(canPatch){
+        scrubCrossPageArtifacts(existing);
+        var menu=existing.querySelector('.pw-menu');
+        if(menu)menu.innerHTML=accountMenu;
+        var annHost=existing.querySelector('[data-pw-announcement-host], .pw-announcement-host');
+        if(!isolated&&!annHost&&window.MCJCompanionAnnouncements&&window.MCJCompanionAnnouncements.hostHtml){
+          var top=existing.querySelector('.pw-top');
+          if(top&&top.parentNode){
+            var holder=document.createElement('div');
+            holder.innerHTML=window.MCJCompanionAnnouncements.hostHtml();
+            if(holder.firstChild)top.parentNode.insertBefore(holder.firstChild,top.nextSibling);
+          }
         }
+        syncTransientOverlays();
+        if(routeChanged)resetRouteScroll();
+        else if(scrollPos)applyScrollPos(scrollPos);
+        bindPwKeyboardInset();
+        syncPwKeyboardInset();
+        if(!isolated&&window.MCJCompanionAnnouncements){
+          if(window.MCJCompanionAnnouncements.onShellPaint)window.MCJCompanionAnnouncements.onShellPaint();
+        }
+        if(state.route==='profile')restoreProfileFocus();
+        if(isAccountRoute()){
+          restoreAccountFocus();
+          mountCompanionAccountSecurity();
+          mountDirectBossCard();
+        }else{
+          // Defense in depth: never leave account mounts alive on other tabs.
+          scrubCrossPageArtifacts(existing);
+        }
+        return;
       }
-      syncTransientOverlays();
-      if(routeChanged)resetRouteScroll();
-      else if(scrollPos)applyScrollPos(scrollPos);
-      bindPwKeyboardInset();
-      syncPwKeyboardInset();
-      if(!isolated&&window.MCJCompanionAnnouncements){
-        if(window.MCJCompanionAnnouncements.onShellPaint)window.MCJCompanionAnnouncements.onShellPaint();
-      }
-      if(state.route==='profile')restoreProfileFocus();
-      if(isAccountRoute()){
-        restoreAccountFocus();
-        mountCompanionAccountSecurity();
-        mountDirectBossCard();
-      }
-      return;
     }
 
     state.drawerOpen=false;
@@ -2270,6 +2308,7 @@
     }
     bindPwKeyboardInset();
     syncPwKeyboardInset();
+    scrubCrossPageArtifacts(root);
     if(state.route==='profile')restoreProfileFocus();
     if(isAccountRoute()){
       restoreAccountFocus();
@@ -2277,9 +2316,48 @@
       mountDirectBossCard();
     }
   }
+  // Account/privacy sections must never survive outside the account page tree.
+  // Root cause class: SPA patch replaces only .pw-page; any node that escaped that
+  // container (broken nesting / stale mount) would otherwise keep showing on 抢单大厅.
+  function scrubCrossPageArtifacts(scope){
+    scope=scope||root;
+    if(!scope||!scope.querySelectorAll)return;
+    if(isAccountRoute()){
+      // Still remove duplicates that landed outside the active page.
+      var page=scope.querySelector('.pw-page');
+      scope.querySelectorAll('#pwDirectBossCard,[data-direct-boss-card],#pwAccountSecurityMount').forEach(function(el){
+        if(page&&page.contains(el))return;
+        el.remove();
+      });
+      return;
+    }
+    scope.querySelectorAll(
+      '#pwDirectBossCard,[data-direct-boss-card],#pwAccountSecurityMount,'+
+      '[data-private-contact-form],[data-verification-form],[data-deposit-form],'+
+      '[data-verification-view],[data-deposit-view],.pw-account-page'
+    ).forEach(function(el){el.remove();});
+    var main=scope.querySelector('.pw-main');
+    var pageEl=scope.querySelector('.pw-page');
+    if(!main||!pageEl)return;
+    Array.prototype.slice.call(main.children).forEach(function(child){
+      if(child===pageEl)return;
+      if(child.matches&&child.matches('.pw-top,.pw-announcement-host,[data-pw-announcement-host],header'))return;
+      if(child.id==='pwDirectBossCard'||(child.getAttribute&&child.getAttribute('data-direct-boss-card')!=null)){
+        child.remove();
+        return;
+      }
+      if(child.querySelector&&child.querySelector('#pwDirectBossCard,[data-direct-boss-card],[data-private-contact-form],[data-verification-form],[data-deposit-form]')){
+        child.remove();
+      }
+    });
+  }
   function mountDirectBossCard(){
+    if(!isAccountRoute())return;
     var mount=document.getElementById('pwDirectBossCard');
     if(!mount)return;
+    // Refuse to hydrate boss card unless it lives under the account page boundary.
+    if(!mount.closest||!mount.closest('.pw-page [data-pw-page="account"], .pw-account-page, .pw-page'))return;
+    if(mount.closest('[data-pw-page]')&&!mount.closest('[data-pw-page="account"]'))return;
     var token='';
     try{token=sessionStorage.getItem('companionAuthToken')||localStorage.getItem('companionAuthToken')||'';}catch(e){}
     if(!token&&state.session)token=String(state.session.token||state.session.accessToken||'').trim();
@@ -2293,7 +2371,12 @@
     }).then(function(r){return r.json().catch(function(){return {};});}).then(function(body){
       if(!mount.isConnected)return;
       if(!body||body.ok===false){
-        mount.innerHTML='<h3>直属负责人</h3><div class="pw-empty">'+esc((body&&body.message)||'读取失败')+'</div>';
+        var raw=String((body&&body.message)||'');
+        var friendly=/supabase|PGRST|schema cache|Could not find|JWT|permission|network|failed to fetch|请求失败/i.test(raw)
+          ? '负责人信息暂时无法加载，请稍后重试'
+          : (raw||'负责人信息暂时无法加载，请稍后重试');
+        mount.innerHTML='<h3>直属负责人</h3><div class="pw-empty">'+esc(friendly)+'</div>'+
+          '<div class="pw-actions" style="margin-top:10px"><button type="button" class="pw-btn pw-btn-mini" data-reload-direct-boss>重新加载</button></div>';
         return;
       }
       if(body.tablesReady===false){
@@ -3678,43 +3761,51 @@
       if(gameFilter!=='all'&&o.game!==gameFilter)return false;
       return true;
     });
-    var statusReadout='<div class="pw-card pad" style="margin-bottom:14px;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px">'+
-      '<span>当前状态：<strong>'+esc((todayStatusLockLabel()||(statusMeta.emoji+' '+statusMeta.label)))+'</strong>。如需切换，请前往工作台。</span>'+
-      '<button class="pw-btn" type="button" data-route="/companion/dashboard">前往工作台</button>'+
+    var statusBar='<div class="pw-hall-status-bar" role="status">'+
+      '<span class="pw-hall-status-dot is-'+esc(statusKey)+'" aria-hidden="true"></span>'+
+      '<strong>'+esc((statusMeta.label||'离线'))+'</strong>'+
+      '<span class="pw-hall-status-hint">如需切换请前往工作台</span>'+
+      '<button class="pw-btn pw-btn-mini" type="button" data-route="/companion/dashboard">去工作台</button>'+
       '</div>';
     var filtersRow='<div class="pw-hall-filters">'+
-      HALL_TYPE_FILTERS.map(function(t){return '<button type="button" class="pw-tab-chip'+(typeFilter===t[0]?' active':'')+'" data-hall-type="'+t[0]+'">'+t[1]+'</button>'}).join('')+
-      '<select data-hall-game aria-label="游戏筛选">'+
+      '<div class="pw-hall-seg" role="tablist" aria-label="订单类型">'+
+      HALL_TYPE_FILTERS.map(function(t){
+        return '<button type="button" role="tab" class="pw-seg-item'+(typeFilter===t[0]?' active':'')+'" data-hall-type="'+t[0]+'">'+t[1]+'</button>';
+      }).join('')+
+      '</div>'+
+      '<div class="pw-hall-filter-tools">'+
+      '<select class="pw-hall-select" data-hall-game aria-label="游戏筛选">'+
         '<option value="all">全部游戏</option>'+
         games.map(function(g){return '<option value="'+esc(g)+'" '+(gameFilter===g?'selected':'')+'>'+esc(g)+'</option>'}).join('')+
       '</select>'+
-      '<button class="pw-btn" type="button" data-hall-refresh>刷新</button>'+
-      '</div>';
-    return '<div class="pw-page-head"><div><h2>抢单大厅</h2><p>仅「在线接单」可进入抢单。</p></div></div>'+
-      statusReadout+
+      '<button class="pw-btn pw-btn-mini" type="button" data-hall-refresh>刷新</button>'+
+      '</div></div>';
+    return '<div class="pw-hall-page" data-pw-page="hall">'+
+      '<div class="pw-page-head pw-hall-head"><div><h2>抢单大厅</h2><p>只展示真实可抢订单。</p></div></div>'+
+      statusBar+
       (locked?'<div class="pw-empty" style="margin-bottom:12px"><strong>暂不可抢单</strong><span>'+esc(auditHint())+'</span></div>':'')+
       filtersRow+
-      '<section class="pw-card-list">'+(filtered.length?filtered.map(function(o){
+      '<section class="pw-card-list pw-hall-list">'+(filtered.length?filtered.map(function(o){
         var already=!!o.alreadyGrabbed||!!(o.myGrab&&o.myGrab.companionId);
         var hallState=o.hallState||'open';
         var grabCount=Number(o.grabCount||0)||0;
-        var disabled=false,btnLabel='立即抢单';
-        if(hallState==='settled'){disabled=true;btnLabel='已结单';}
-        else if(hallState==='cancelled'){disabled=true;btnLabel='已取消';}
-        else if(hallState==='expired'){disabled=true;btnLabel='已失效';}
-        else if(already){disabled=true;btnLabel='已抢单，等待老板选择';}
-        else if(locked){disabled=true;btnLabel=orderGateButtonLabel('审核通过后可抢单');}
-        else if(statusKey==='busy'){disabled=true;btnLabel='当前忙碌，无法抢新订单';}
-        else if(statusKey==='paused'){disabled=true;btnLabel='已暂停接单，无法抢新订单';}
-        else if(statusKey==='offline'){disabled=true;btnLabel='离线状态无法抢单';}
-        else if(!perm.canAcceptOrder){disabled=true;btnLabel=perm.lockReason||perm.acceptLockReason||'暂不可接单';}
+        var disabled=false,btnLabel='立即抢单',blockReason='';
+        if(hallState==='settled'){disabled=true;btnLabel='已结单';blockReason='订单已结算';}
+        else if(hallState==='cancelled'){disabled=true;btnLabel='已取消';blockReason='订单已取消';}
+        else if(hallState==='expired'){disabled=true;btnLabel='已失效';blockReason='订单已失效';}
+        else if(already){disabled=true;btnLabel='已抢单';blockReason='已抢单，等待老板选择';}
+        else if(locked){disabled=true;btnLabel='暂不可抢';blockReason=orderGateButtonLabel('审核通过后可抢单');}
+        else if(statusKey==='busy'){disabled=true;btnLabel='暂不可抢';blockReason='当前忙碌，无法抢新订单';}
+        else if(statusKey==='paused'){disabled=true;btnLabel='暂不可抢';blockReason='已暂停接单，无法抢新订单';}
+        else if(statusKey==='offline'){disabled=true;btnLabel='暂不可抢';blockReason='当前离线，请先前往工作台上线';}
+        else if(!perm.canAcceptOrder){disabled=true;btnLabel='暂不可抢';blockReason=perm.lockReason||perm.acceptLockReason||'暂不可接单';}
         var hallBadge=hallState==='settled'
           ?'<em class="pw-hall-badge settled">已结单</em>'
           :hallState==='cancelled'
             ?'<em class="pw-hall-badge cancelled">已取消</em>'
             :hallState==='expired'
               ?'<em class="pw-hall-badge expired">已失效</em>'
-              :(hallState==='grabbing'||grabCount>0?'<em class="pw-hall-badge grabbing">抢单中 · 已有 '+grabCount+' 人抢单</em>':'<em class="pw-hall-badge open">待抢单 · 已有 '+grabCount+' 人抢单</em>');
+              :(hallState==='grabbing'||grabCount>0?'<em class="pw-hall-badge grabbing">抢单中 · '+grabCount+'人</em>':'<em class="pw-hall-badge open">待抢单</em>');
         var serviceText=String(o.serviceContent||'')
           .replace(/\[\[ORDER_GRABS\]\][\s\S]*$/g,'')
           .replace(/\[\[COMPLETION_PENDING\]\]/g,'')
@@ -3722,13 +3813,34 @@
           .replace(/\buuid\s+create\s+regression\s+\d+\b/gi,'')
           .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi,'')
           .replace(/\b(selector|grabber)\b/gi,'')
-          .trim()||'-';
+          .trim();
         var orderNo=o.orderNo||humanId(o.id)||'-';
-        var created=o.createdAt||o.appointmentAt||'';
-        var createdLabel=created?fmtTime(created):'-';
-        return '<article class="pw-grab-card'+(hallState==='settled'?' is-settled':'')+'" data-order-id="'+esc(o.id)+'"><header><div><span class="pw-type">'+esc(o.orderType||o.orderSource||'订单')+'</span>'+hallBadge+'<h3>'+esc(o.game||'-')+'</h3><p>'+esc(serviceText)+'</p></div><strong>'+money(o.amount||o.budget||0)+'</strong></header><div class="pw-order-meta"><div><span>订单编号</span><strong>'+esc(orderNo)+'</strong></div><div><span>服务类型</span><strong>'+esc(o.serviceType||o.serviceName||o.orderType||'-')+'</strong></div><div><span>游戏</span><strong>'+esc(o.game||'-')+'</strong></div><div><span>区服</span><strong>'+esc(o.gameServer||'-')+'</strong></div><div><span>单价</span><strong>'+money(o.unitPrice||0)+'</strong></div><div><span>时长/局数</span><strong>'+esc(o.duration||'-')+'</strong></div><div><span>老板备注</span><strong>'+esc(o.bossNotes||o.remark||'-')+'</strong></div><div><span>下单时间</span><strong>'+esc(createdLabel)+'</strong></div><div><span>订单来源</span><strong>'+esc(o.orderSource||o.orderType||'-')+'</strong></div><div><span>预计收入</span><strong>'+money(o.playerIncome||0)+'</strong></div><div><span>抢单人数</span><strong>'+esc(grabCount)+'</strong></div><div><span>当前状态</span><strong>'+esc(o.hallStateLabel||o.statusText||o.orderStatus||'待抢单')+'</strong></div></div><footer><button class="pw-btn primary" data-accept-order="'+esc(o.id)+'" '+(disabled?'disabled':'')+'>'+esc(btnLabel)+'</button></footer></article>';
-      }).join(''):'<div class="pw-empty"><strong>暂无可抢订单</strong><span>'+(locked?auditHint():(!online?'请先切换为在线接单。':'客服发布订单后会自动显示，或调整筛选条件。'))+'</span></div>')+'</section>';
+        var price=Number(o.amount||o.budget||0)||0;
+        var serviceType=o.serviceType||o.serviceName||o.orderType||'-';
+        return '<article class="pw-grab-card'+(hallState==='settled'?' is-settled':'')+(disabled?' is-blocked':'')+'" data-order-id="'+esc(o.id)+'">'+
+          '<div class="pw-grab-main">'+
+            '<div class="pw-grab-title-row">'+
+              '<h3>'+esc(o.game||'-')+'</h3>'+
+              hallBadge+
+            '</div>'+
+            '<p class="pw-grab-service">'+esc(serviceType)+'</p>'+
+            (serviceText?'<p class="pw-grab-desc">'+esc(serviceText.slice(0,80))+(serviceText.length>80?'…':'')+'</p>':'')+
+            '<div class="pw-grab-price"><strong>'+esc(String(price))+'</strong><span>猫粮</span></div>'+
+          '</div>'+
+          '<div class="pw-grab-meta">'+
+            '<span>单号 '+esc(orderNo)+'</span>'+
+            '<span>'+esc(o.gameServer||o.server||'区服-')+'</span>'+
+            '<span>'+esc(o.duration||'-')+'</span>'+
+            '<span>'+esc(o.hallStateLabel||o.statusText||'待抢单')+'</span>'+
+          '</div>'+
+          '<footer class="pw-grab-foot">'+
+            (blockReason?'<p class="pw-grab-reason">'+esc(blockReason)+'</p>':'')+
+            '<button class="pw-btn primary pw-grab-cta" data-accept-order="'+esc(o.id)+'" '+(disabled?'disabled':'')+'>'+esc(btnLabel)+'</button>'+
+          '</footer>'+
+        '</article>';
+      }).join(''):'<div class="pw-empty"><strong>暂无可抢订单</strong><span>'+(locked?auditHint():(!online?'请先切换为在线接单。':'客服发布订单后会自动显示，或调整筛选条件。'))+'</span></div>')+'</section></div>';
   }
+
   function accountDocCard(opts){
     var key=opts.key;
     var label=opts.label;
@@ -3914,7 +4026,7 @@
       '<label>备注（可选）<textarea name="remark">'+esc((depositRemark||'').replace(/\[\[DEPOSIT_PAY\]\][\s\S]*?\[\[\/DEPOSIT_PAY\]\]/g,'').trim())+'</textarea></label>'+
       '<button class="pw-btn primary" type="submit" '+(depositChannelList.length?'':'disabled')+'>'+(depositPhase==='rejected'?'重新提交押金审核':'提交押金审核')+'</button></form>';
     var depositBlock=depositPhase==='approved'?depositPaidView:(depositLocked?depositPendingView:depositForm);
-    return '<div class="pw-page-head"><div><h2>账号中心（隐私）</h2><p>仅本人 / 客服 / 后台可见，老板永远看不到。</p></div><button class="pw-btn" type="button" data-route="/companion/profile">公开资料</button></div>'+
+    return '<div class="pw-account-page" data-pw-page="account"><div class="pw-page-head"><div><h2>账号中心（隐私）</h2><p>仅本人 / 客服 / 后台可见，老板永远看不到。</p></div><button class="pw-btn" type="button" data-route="/companion/profile">公开资料</button></div>'+
       accountAccessBannerHtml()+
       reviewRejectBannerHtml('/companion/account')+
       credentialBanner+
@@ -3961,7 +4073,7 @@
       '<section class="pw-card pad pw-form-narrow" style="margin-top:14px" id="pwAccountSecurityMount"><h3>账号安全</h3><div class="pw-empty">加载中…</div></section>'+
       '<section class="pw-card pad" style="margin-top:14px"><h3>安装妙脆角</h3>'+
       '<p class="pw-note">把妙脆角加到主屏幕，打开更快，使用起来更像 App。</p>'+
-      '<button class="pw-btn" type="button" data-pwa-install-guide>安装妙脆角 / 添加到主屏幕</button></section>';
+      '<button class="pw-btn" type="button" data-pwa-install-guide>安装妙脆角 / 添加到主屏幕</button></section></div>';
   }
   function rulesHtml(){
     var rules=state.workRules||[];
@@ -4552,6 +4664,7 @@
       if(willOpen)account.classList.add('open');
       return;
     }
+    if(e.target.closest('[data-reload-direct-boss]')){e.preventDefault();mountDirectBossCard();return}
     if(e.target.closest('[data-logout]')){clearSession();location.replace('/companion/login/');return}
     if(e.target.closest('[data-pwa-install-guide]')){
       e.preventDefault();
