@@ -2424,7 +2424,7 @@
       data: data,
       identity: identity,
       uploads: uploads,
-      certification_method: identity.authMode || identity.certification_method || draft.certification_method || "",
+      certification_method: identity.authMode || identity.certification_method || (readDraft().certification_method || ""),
     });
   }
   function storagePayloadForSubmit(asset) {
@@ -4670,6 +4670,19 @@
     clearCurrentUserDraft: clearCurrentUserDraft,
     purgeUnscopedDraftKeys: purgeUnscopedDraftKeys,
     draftKeyForUser: draftKeyForUser,
+    /** Capture/debug helper: jump to a step without chip lock checks. */
+    gotoStep: function (step, opts) {
+      render(Math.max(0, Math.min(steps.length - 1, Number(step) || 0)), opts || { alignStepNav: true });
+    },
+    /** Capture/debug helper: reload deposit pay channels then re-render. */
+    reloadDepositPayMethods: function () {
+      return fetchDepositPayMethods(true).then(function () {
+        render(Number((document.getElementById("companionApplyRoot") || {}).dataset.step || readDraft().step || 0), {
+          alignStepNav: true,
+        });
+        return remoteDepositPay;
+      });
+    },
   };
 })();
 
