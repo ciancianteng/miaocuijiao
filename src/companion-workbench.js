@@ -13,7 +13,7 @@
     '/companion/order-hall':'hall','/companion/orders':'orders',
     '/companion/earnings':'earnings','/companion/wallet':'earnings',
     '/companion/profile':'profile',
-    '/companion/account':'account','/companion/mine':'account','/companion/verification':'account',
+    '/companion/account':'account','/companion/gifts':'gifts','/companion/mine':'account','/companion/verification':'account',
     '/companion/withdraw':'withdraw',
     '/companion/messages':'messages',
     '/companion/settings':'settings',
@@ -29,6 +29,7 @@
     ['earnings','收益中心','/companion/earnings'],
     ['profile','我的资料（公开）','/companion/profile'],
     ['account','账号中心（隐私）','/companion/account'],
+    ['gifts','我的礼物','/companion/gifts'],
     ['messages','消息中心','/companion/messages'],
     ['settings','设置','/companion/settings']
   ];
@@ -2356,6 +2357,7 @@
     else if(state.route==='popularity')body=popularityHtml();
     else if(state.route==='profile')body=profileHtml();
     else if(state.route==='account'||state.route==='mine')body=accountHtml();
+    else if(state.route==='gifts')body=giftsHtml();
     else if(state.route==='rules')body=rulesHtml();
     else body=dashboardHtml();
     return softBanner+body;
@@ -3762,7 +3764,28 @@
           '</label>'))+
       '</div>';
   }
-  function accountHtml(){
+    function giftsHtml(){
+    var list=(state.giftsData&&state.giftsData.gifts)||state._gifts||[];
+    var wall=(state.giftsData&&state.giftsData.wall)||[];
+    if(!state._giftsLoaded&&!state._giftsLoading){
+      state._giftsLoading=true;
+      api('my_gifts').then(function(res){
+        state._giftsLoading=false;state._giftsLoaded=true;state.giftsData=res||{};paint();
+      }).catch(function(err){
+        state._giftsLoading=false;state._giftsLoaded=true;state.giftsError=err.message||'加载失败';paint();
+      });
+    }
+    if(state._giftsLoading)return '<section class="pw-card pad"><h2>我的礼物</h2><p class="pw-note">加载中…</p></section>';
+    if(state.giftsError)return '<section class="pw-card pad"><h2>我的礼物</h2><p class="pw-note">'+esc(state.giftsError)+'</p></section>';
+    var hist=list.length?list.map(function(g){
+      return '<div class="pw-gift-row"><div class="pw-gift-ico">'+(g.giftImage?'<img src="'+esc(g.giftImage)+'" alt="">':'🎁')+'</div><div><strong>'+esc(g.giftName||'礼物')+'</strong><span>×'+esc(g.quantity)+' · '+esc((g.createdAt||'').slice(0,16).replace('T',' '))+'</span></div></div>';
+    }).join(''):'<p class="pw-note">还没有收到礼物</p>';
+    var wallHtml=wall.length?wall.map(function(w){
+      return '<div class="pw-gift-chip">'+(w.giftImage?'<img src="'+esc(w.giftImage)+'" alt="">':'🎁')+'<strong>'+esc(w.giftName)+'</strong><em>×'+esc(w.totalQuantity)+'</em></div>';
+    }).join(''):'<p class="pw-note">礼物墙为空</p>';
+    return '<section class="pw-card pad"><h2>我的礼物</h2><p class="pw-note">仅展示客服审核通过后的真实到账礼物。</p><div class="pw-gift-list">'+hist+'</div><h3 style="margin-top:18px">礼物墙汇总</h3><div class="pw-gift-wall">'+wallHtml+'</div></section>';
+  }
+function accountHtml(){
     var v=(state.data&&state.data.verification)||{},d=(state.data&&state.data.deposit)||{},level=(state.data&&state.data.levelInfo)||{},p=(state.data&&state.data.player)||{};
     var ua=unifiedAccess();
     var raw=p.raw||{};

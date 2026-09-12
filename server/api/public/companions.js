@@ -680,6 +680,16 @@ export default async function handler(req, res) {
   try {
     const lookup = String(req.query.id || req.query.uid || req.query.player || "").trim();
     const companions = await loadCompanions(lookup);
+    // Detail lookup: attach approved gift wall (aggregated, permanent).
+    if (lookup && companions?.length === 1) {
+      try {
+        const { getCompanionGiftWall } = await import("../_gift-orders.js");
+        const cid = String(companions[0].id || companions[0].uid || "").trim();
+        companions[0].giftWall = cid ? await getCompanionGiftWall(cid) : [];
+      } catch {
+        companions[0].giftWall = companions[0].giftWall || [];
+      }
+    }
     return json(res, 200, { ok: true, configured: true, companions });
   } catch (error) {
     const msg = String(error?.message || error || "陪玩列表接口异常");

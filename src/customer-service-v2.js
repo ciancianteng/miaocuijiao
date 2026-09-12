@@ -9,8 +9,8 @@ import './mcj-chat-realtime.js';
     return;
   }
   var SESSION_KEY='mcjServiceSession';
-  var ROUTES={'/customer-service/':'dashboard','/customer-service':'dashboard','/customer-service/login':'login','/customer-service/dashboard':'dashboard','/customer-service/conversations':'conversations','/customer-service/chats':'conversations','/customer-service/orders':'orders','/customer-service/create-order':'createOrder','/customer-service/compensation':'compensation','/customer-service/reports':'reports','/customer-service/profile':'profile'};
-  var NAV=[['dashboard','工作台','/customer-service/dashboard'],['conversations','统一会话池','/customer-service/conversations'],['orders','订单处理','/customer-service/orders'],['compensation','申请补偿','/customer-service/compensation'],['reports','工资中心','/customer-service/reports'],['createOrder','客服代下单','/customer-service/create-order'],['profile','我的资料','/customer-service/profile'],['logout','退出登录','logout']];
+  var ROUTES={'/customer-service/':'dashboard','/customer-service':'dashboard','/customer-service/login':'login','/customer-service/dashboard':'dashboard','/customer-service/conversations':'conversations','/customer-service/chats':'conversations','/customer-service/orders':'orders','/customer-service/gift-orders':'giftOrders','/customer-service/create-order':'createOrder','/customer-service/compensation':'compensation','/customer-service/reports':'reports','/customer-service/profile':'profile'};
+  var NAV=[['dashboard','工作台','/customer-service/dashboard'],['conversations','统一会话池','/customer-service/conversations'],['orders','订单处理','/customer-service/orders'],['giftOrders','礼物审核','/customer-service/gift-orders'],['compensation','申请补偿','/customer-service/compensation'],['reports','工资中心','/customer-service/reports'],['createOrder','客服代下单','/customer-service/create-order'],['profile','我的资料','/customer-service/profile'],['logout','退出登录','logout']];
   var HIDDEN_MVP_ROUTES={};
   var Auth=window.MCJAuthShell;
   var softRefreshSeq=0;
@@ -1217,6 +1217,7 @@ import './mcj-chat-realtime.js';
     if(next==='dashboard')url='/customer-service/dashboard/';
     else if(next==='conversations')url='/customer-service/conversations';
     else if(next==='orders')url='/customer-service/orders';
+    else if(next==='giftOrders')url='/customer-service/gift-orders';
     else if(next==='profile')url='/customer-service/profile';
     history.pushState(null,'',url);
     state.route=next;
@@ -2059,7 +2060,7 @@ import './mcj-chat-realtime.js';
       });
     }
   }
-  function title(){return ({dashboard:'客服工作台',conversations:'统一会话池',orders:'订单处理',createOrder:'客服代下单',compensation:'申请补偿',reports:'工资中心',profile:'我的资料'})[state.route]||'客服端'}
+  function title(){return ({dashboard:'客服工作台',conversations:'统一会话池',orders:'订单处理',giftOrders:'礼物审核',createOrder:'客服代下单',compensation:'申请补偿',reports:'工资中心',profile:'我的资料'})[state.route]||'客服端'}
   function renderShell(){
     var staff=(state.data&&state.data.staff)||(state.session&&state.session.user)||{};
     recomputeSummaryFromConversations();
@@ -2079,6 +2080,7 @@ import './mcj-chat-realtime.js';
     if(HIDDEN_MVP_ROUTES[state.route])return note+maintenanceHtml(title());
     if(state.route==='conversations')return note+conversationsHtml();
     if(state.route==='orders')return note+ordersHtml();
+    if(state.route==='giftOrders')return note+giftOrdersHtml();
     if(state.route==='compensation')return note+compensationHtml();
     if(state.route==='reports')return note+reportsHtml();
     if(state.route==='createOrder')return (state.loading?note:'')+createOrderHtml();
@@ -2835,6 +2837,81 @@ import './mcj-chat-realtime.js';
     var failed=m._failed?' · 发送失败 <button type="button" class="cs-link" data-retry-img="'+esc(m._localId||m.id||'')+'">重试</button>':'';
     return '<div class="cs-msg '+(mine?'mine':'')+(system?' system':'')+(m._failed?' failed':'')+'" data-msg-id="'+esc(m.id||m._localId||'')+'">'+(who?'<strong>'+esc(who)+'</strong>':'')+body+'<small>'+esc(when)+pending+failed+'</small></div>';
   }
+  var giftOrdersState={loading:false,orders:[],filter:'under_review',error:'',proofMap:{}};
+  function giftOrderStatusLabel(st){
+    return ({pending_payment:'待付款',payment_submitted:'已提交付款',under_review:'待审核',approved:'已通过',rejected:'已拒绝',cancelled:'已取消'})[st]||st||'-';
+  }
+  function hydrateGiftProofThumbs(orders){
+    (orders||[]).forEach(function(o){
+      if(!o||!o.id)return;
+      if(giftOrdersState.proofMap[o.id])return;
+      if(o.paymentProofUrl){
+        giftOrdersState.proofMap[o.id]=o.paymentProofUrl;
+        return;
+      }
+      giftOrdersState.proofMap[o.id]='__loading__';
+      api('get_gift_order_proof',{id:o.id}).then(function(res){
+        giftOrdersState.proofMap[o.id]=res.paymentProofUrl||'';
+        var btn=root.querySelector('[data-gift-proof-thumb="'+o.id+'"]');
+        if(!btn)return;
+        var url=giftOrdersState.proofMap[o.id];
+        if(url){
+          btn.innerHTML='<img class="cs-proof-thumb" src="'+esc(url)+'" alt="付款凭证" loading="lazy">';
+          btn.setAttribute('data-proof-lightbox',url);
+        }else{
+          btn.innerHTML='<span class="cs-btn ghost cs-proof-fallback">无截图</span>';
+        }
+      }).catch(function(){
+        giftOrdersState.proofMap[o.id]='';
+        var btn=root.querySelector('[data-gift-proof-thumb="'+o.id+'"]');
+        if(btn)btn.innerHTML='<span class="cs-btn ghost cs-proof-fallback">加载失败</span>';
+      });
+    });
+  }
+  function loadGiftOrders(){
+    giftOrdersState.loading=true;giftOrdersState.error='';paint();
+    api('list_gift_orders',{status:giftOrdersState.filter||'under_review'}).then(function(res){
+      giftOrdersState.orders=Array.isArray(res.orders)?res.orders:[];
+      giftOrdersState.loading=false;paint();
+      hydrateGiftProofThumbs(giftOrdersState.orders);
+    }).catch(function(err){
+      giftOrdersState.loading=false;giftOrdersState.error=err.message||'加载失败';paint();
+    });
+  }
+  function giftOrdersHtml(){
+    if(!giftOrdersState._booted){giftOrdersState._booted=true;setTimeout(loadGiftOrders,0)}
+    var filters=[['under_review','待审核'],['approved','已通过'],['rejected','已拒绝'],['all','全部']];
+    var tabs=filters.map(function(f){
+      return '<button type="button" class="cs-btn'+(giftOrdersState.filter===f[0]?' active':'')+'" data-gift-filter="'+f[0]+'">'+f[1]+'</button>';
+    }).join('');
+    var body='';
+    if(giftOrdersState.loading) body='<div class="cs-card">加载礼物订单…</div>';
+    else if(giftOrdersState.error) body='<div class="cs-card">'+esc(giftOrdersState.error)+' <button class="cs-btn" data-gift-reload>重试</button></div>';
+    else if(!giftOrdersState.orders.length) body='<div class="cs-card">暂无礼物订单</div>';
+    else body='<section class="cs-table-wrap"><table class="cs-table"><thead><tr><th>订单号</th><th>老板</th><th>陪玩</th><th>礼物</th><th>数量</th><th>金额</th><th>凭证</th><th>时间</th><th>状态</th><th>操作</th></tr></thead><tbody>'+
+      giftOrdersState.orders.map(function(o){
+        var proof=giftOrdersState.proofMap[o.id]||o.paymentProofUrl||'';
+        var proofCell=proof&&proof!=='__loading__'
+          ?('<button type="button" class="cs-proof-thumb-btn" data-gift-proof-thumb="'+esc(o.id)+'" data-proof-lightbox="'+esc(proof)+'" title="查看付款截图"><img class="cs-proof-thumb" src="'+esc(proof)+'" alt="付款凭证" loading="lazy"></button>')
+          :('<button type="button" class="cs-proof-thumb-btn" data-gift-proof-thumb="'+esc(o.id)+'" data-gift-proof="'+esc(o.id)+'" title="加载付款截图"><span class="cs-btn ghost cs-proof-fallback">'+(proof==='__loading__'?'加载中…':'加载截图')+'</span></button>');
+        var actions=(o.status==='under_review'||o.status==='payment_submitted')
+          ?('<button class="cs-btn primary" data-gift-approve="'+esc(o.id)+'">通过</button> <button class="cs-btn danger" data-gift-reject="'+esc(o.id)+'">拒绝</button>')
+          :'-';
+        return '<tr data-gift-order="'+esc(o.id)+'">'+
+          '<td>'+esc(o.orderNo||o.id)+'</td>'+
+          '<td>'+esc(o.senderName||o.senderBossId||'-')+'</td>'+
+          '<td>'+esc(o.receiverName||o.receiverCompanionId||'-')+'</td>'+
+          '<td>'+esc(o.giftName||'-')+'</td>'+
+          '<td>×'+esc(o.quantity||1)+'</td>'+
+          '<td>'+esc(o.totalAmount)+' 猫粮</td>'+
+          '<td>'+proofCell+'</td>'+
+          '<td>'+esc(String(o.paymentProofUploadedAt||o.createdAt||'-').replace('T',' ').slice(0,19))+'</td>'+
+          '<td>'+esc(giftOrderStatusLabel(o.status))+(o.rejectReason?'<br><small>'+esc(o.rejectReason)+'</small>':'')+'</td>'+
+          '<td><div class="cs-actions">'+actions+'</div></td></tr>';
+      }).join('')+'</tbody></table></section>';
+    return '<div class="cs-page-head"><div><h2>礼物审核</h2><p>审核付款截图；通过后礼物到账并进入礼物墙。</p></div></div>'+
+      '<div class="cs-actions" style="margin-bottom:12px">'+tabs+'<button class="cs-btn" data-gift-reload>刷新</button></div>'+body;
+  }
   function ordersHtml(){
     var rows=((state.data&&state.data.orders)||[]).slice().filter(function(o){return !state.orderFilter||o.status===state.orderFilter});
     rows.sort(function(a,b){
@@ -3576,7 +3653,35 @@ import './mcj-chat-realtime.js';
         toast(err.message||'确认付款失败');
       });
       return;
-    }var rejectProof=e.target.closest('[data-reject-payment-proof]');if(rejectProof){var reason=String(prompt('请输入驳回付款原因')||'').trim();if(!reason){toast('驳回必须填写原因');return;}api('reject_payment_proof',{id:rejectProof.dataset.rejectPaymentProof,reason:reason}).then(function(res){toast(res.message||'已驳回付款凭证');return softRefresh()}).catch(function(err){toast(err.message)});return}
+    }    var giftFilter=e.target.closest('[data-gift-filter]');
+    if(giftFilter){giftOrdersState.filter=giftFilter.getAttribute('data-gift-filter')||'under_review';giftOrdersState._booted=false;loadGiftOrders();return;}
+    if(e.target.closest('[data-gift-reload]')){loadGiftOrders();return;}
+    var giftProof=e.target.closest('[data-gift-proof]');
+    if(giftProof){
+      api('get_gift_order_proof',{id:giftProof.getAttribute('data-gift-proof')}).then(function(res){
+        if(res.paymentProofUrl) window.open(res.paymentProofUrl,'_blank');
+        else toast('暂无付款截图');
+      }).catch(function(err){toast(err.message||'打开失败')});
+      return;
+    }
+    var giftApprove=e.target.closest('[data-gift-approve]');
+    if(giftApprove){
+      if(!confirm('确认通过该礼物订单？通过后礼物将正式到账。'))return;
+      api('approve_gift_order',{id:giftApprove.getAttribute('data-gift-approve')}).then(function(res){
+        toast(res.message||'已通过');loadGiftOrders();
+      }).catch(function(err){toast(err.message||'操作失败')});
+      return;
+    }
+    var giftReject=e.target.closest('[data-gift-reject]');
+    if(giftReject){
+      var reason=String(prompt('请输入拒绝原因')||'').trim();
+      if(!reason){toast('拒绝必须填写原因');return;}
+      api('reject_gift_order',{id:giftReject.getAttribute('data-gift-reject'),reason:reason}).then(function(res){
+        toast(res.message||'已拒绝');loadGiftOrders();
+      }).catch(function(err){toast(err.message||'操作失败')});
+      return;
+    }
+var rejectProof=e.target.closest('[data-reject-payment-proof]');if(rejectProof){var reason=String(prompt('请输入驳回付款原因')||'').trim();if(!reason){toast('驳回必须填写原因');return;}api('reject_payment_proof',{id:rejectProof.dataset.rejectPaymentProof,reason:reason}).then(function(res){toast(res.message||'已驳回付款凭证');return softRefresh()}).catch(function(err){toast(err.message)});return}
     var urge=e.target.closest('[data-urge-companion]');
     if(urge){
       e.preventDefault();

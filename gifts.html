@@ -19,7 +19,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>礼物商城 · Meow Cui Jiao</title>
   <link rel="stylesheet" href="src/platform.css">
-  <link rel="stylesheet" href="src/gifts-mall.css?v=20260912giftMall3">
+  <link rel="stylesheet" href="src/gifts-mall.css?v=20260912giftOrder1">
 </head>
 <body>
 <header class="topbar">
@@ -44,7 +44,7 @@
 <main class="page gm-page" data-gifts-mall="1">
   <section class="gm-hero">
     <h1>礼物商城</h1>
-    <p>选择礼物后指定赠送对象，确认后才会扣除猫粮并记入陪玩收礼记录。</p>
+    <p>选择礼物与真实陪玩后创建订单，付款并上传截图，客服审核通过后才会正式到账。</p>
   </section>
 
   <div id="gmSuccess" class="gm-success" hidden></div>
@@ -73,10 +73,25 @@
   </div>
   <div id="gmCompanionList" class="gm-companion-list"></div>
   <div class="gm-sheet-foot">
+    <label class="gm-qty-row">数量
+      <input id="gmQty" type="number" min="1" max="99" value="1" inputmode="numeric" />
+    </label>
     <p id="gmConfirmLine" class="gm-confirm-line">请选择一位陪玩</p>
     <p id="gmConfirmHint" class="gm-confirm-hint">未选择陪玩时无法确认赠送</p>
-    <button type="button" id="gmConfirmBtn" class="gm-btn primary" disabled>确认赠送</button>
+    <button type="button" id="gmConfirmBtn" class="gm-btn primary" disabled>确认赠送并去付款</button>
   </div>
+</div>
+
+<div id="gmPayBackdrop" class="gm-sheet-backdrop" hidden data-gm-pay-close></div>
+<div id="gmPay" class="gm-sheet gm-pay-sheet" hidden role="dialog" aria-modal="true" aria-labelledby="gmPayTitle">
+  <div class="gm-sheet-head">
+    <div>
+      <h2 id="gmPayTitle">付款并上传凭证</h2>
+      <p class="gm-confirm-hint" style="margin-top:4px">审核通过前不算真正赠送成功</p>
+    </div>
+    <button type="button" class="gm-sheet-close" data-gm-pay-close aria-label="关闭">×</button>
+  </div>
+  <div id="gmPayBody" class="gm-pay-body"></div>
 </div>
 
 <div id="gmToast" class="gm-toast" hidden></div>
@@ -84,6 +99,6 @@
 <script src="src/platform.js"></script>
 <script src="src/boss-auth-session.js?v=20260911authPerfP0"></script>
 <script src="src/role-gates.js?v=20260911authPerfP0"></script>
-<script src="src/gifts-mall.js?v=20260912giftMall3"></script>
+<script src="src/gifts-mall.js?v=20260912giftOrder1"></script>
 </body>
 </html>
