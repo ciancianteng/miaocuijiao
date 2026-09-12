@@ -403,6 +403,31 @@ function otpRetryAfterSec() {
   return Math.floor((OTP_STORE_COOLDOWN_MS || OTP_RESEND_COOLDOWN_MS) / 1000);
 }
 
+function newOtpRequestId() {
+  return `otp_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function maskEmailForLog(email) {
+  const value = String(email || "").trim().toLowerCase();
+  const at = value.indexOf("@");
+  if (at <= 0) return "***";
+  return `${value.slice(0, Math.min(2, at))}***@${value.slice(at + 1)}`;
+}
+
+function logOtpSendEvent(event, fields = {}) {
+  const safe = { event, ts: new Date().toISOString(), ...fields };
+  // Never log plaintext OTP / passwords / tokens.
+  delete safe.code;
+  delete safe.otp;
+  delete safe.password;
+  delete safe.token;
+  delete safe.accessToken;
+  delete safe.refreshToken;
+  if (safe.ok) console.info("[otp/send]", safe);
+  else console.error("[otp/send]", safe);
+}
+
+
 async function commitForgotOtpAfterSend(accountKey, role, code, kind, mailMeta = {}) {
   return commitOtpAfterSuccessfulSend({
     accountKey,
@@ -642,6 +667,7 @@ async function createSessionForUserId(userId, email) {
 }
 
 async function handleForgotSendOtp(body, res) {
+  const requestId = newOtpRequestId();
   const role = normalizeForgotRole(body.role);
   const account = String(body.email || body.account || body.phone || "").trim();
   const genericOk = {
@@ -677,7 +703,7 @@ async function handleForgotSendOtp(body, res) {
   let mailError = "";
   let mailMeta = { provider: "", providerMessageId: "" };
   try {
-    const sendResult = await sendEmailOtp({ to: email, code, purpose: "forgot", roleLabel: roleLabelOf(role) });
+    const sendResult = await sendEmailOtp({ to: email, code, purpose: "forgot", roleLabel: roleLabelOf(role), requestId });
     mailMeta = extractMailProviderMeta(sendResult);
     mailOk = true;
   } catch (err) {
@@ -691,19 +717,36 @@ async function handleForgotSendOtp(body, res) {
         ok: false,
         message: "验证码存储失败，请稍后重试。",
         mail: publicMailHint(),
-        retryAfterSec: otpRetryAfterSec(),
+        requestId,
       });
     }
   } else {
-    console.error("[auth/forgot_send_otp] mail failed", mailError, mailProviderStatus());
+    logOtpSendEvent("forgot_mail_failed", {
+      ok: false,
+      requestId,
+      role,
+      emailMasked: maskEmailForLog(email),
+      provider: mailMeta.provider || "",
+      error: String(mailError || "").slice(0, 240),
+    });
     await recordOtpSendFailure({
       accountKey: key,
       role,
       kind: "otp",
-      code,
       error: mailError,
       provider: mailMeta.provider,
+      providerMessageId: mailMeta.providerMessageId || "",
     }).catch(() => null);
+  }
+  if (mailOk) {
+    logOtpSendEvent("forgot_mail_accepted", {
+      ok: true,
+      requestId,
+      role,
+      emailMasked: maskEmailForLog(email),
+      provider: mailMeta.provider || "resend",
+      providerMessageId: mailMeta.providerMessageId || "",
+    });
   }
   const payload = clientOtpSendPayload({
     mailOk,
@@ -713,13 +756,15 @@ async function handleForgotSendOtp(body, res) {
     successMessage: `验证码已发送至邮箱 ${maskEmailHint(email)}。请同时检查垃圾箱，并确认选择了正确的端。`,
     genericMessage: RESET_EMAIL_GENERIC_MESSAGE,
   });
-  return json(res, payload.ok ? 200 : 503, {
+  const responseBody = {
     ...payload,
     phoneMasked: "",
     expiresInSec: Math.floor(OTP_TTL_MS / 1000),
-    retryAfterSec: otpRetryAfterSec(),
     role,
-  });
+    requestId,
+  };
+  if (payload.ok) responseBody.retryAfterSec = otpRetryAfterSec();
+  return json(res, payload.ok ? 200 : 503, responseBody);
 }
 
 function rejectProductionTestIdentity(res, { email = "", displayName = "" } = {}) {
@@ -732,6 +777,7 @@ function rejectProductionTestIdentity(res, { email = "", displayName = "" } = {}
 }
 
 async function handleLoginSendOtp(body, res) {
+  const requestId = newOtpRequestId();
   const role = normalizeForgotRole(body.role || "boss");
   if (role === "customer_service" || role === "admin" || role === "super_admin") {
     return json(res, 400, { ok: false, message: "该端请使用邮箱密码登录。" });
@@ -744,7 +790,7 @@ async function handleLoginSendOtp(body, res) {
   if (blockedSend) return blockedSend;
   const generic = {
     ok: true,
-    message: "如该邮箱已注册，将收到登录验证码。请确认邮箱与端一致，并检查垃圾箱。",
+    message: "如该邮箱已在当前端注册，将收到登录验证码。请确认选择了正确入口（老板/陪玩），并检查收件箱与垃圾箱。",
     channel: "email",
     expiresInSec: Math.floor(OTP_TTL_MS / 1000),
     retryAfterSec: otpRetryAfterSec(),
@@ -776,6 +822,7 @@ async function handleLoginSendOtp(body, res) {
       code,
       purpose: "login",
       roleLabel: roleLabelOf(role),
+      requestId,
     });
     mailMeta = extractMailProviderMeta(sendResult);
     mailOk = true;
@@ -790,19 +837,37 @@ async function handleLoginSendOtp(body, res) {
         ok: false,
         message: "验证码存储失败，请稍后重试。",
         mail: publicMailHint(),
-        retryAfterSec: otpRetryAfterSec(),
+        requestId,
       });
     }
   } else {
-    console.error("[auth/send_login_otp] mail failed", mailError, mailProviderStatus());
+    logOtpSendEvent("login_mail_failed", {
+      ok: false,
+      requestId,
+      role,
+      emailMasked: maskEmailForLog(profile.email || email),
+      provider: mailMeta.provider || "",
+      error: String(mailError || "").slice(0, 240),
+      mail: { configured: !!publicMailHint()?.configured, otpFromDomain: publicMailHint()?.otpFromDomain || "" },
+    });
     await recordOtpSendFailure({
       accountKey: key,
       role,
       kind: "login_otp",
-      code,
       error: mailError,
       provider: mailMeta.provider,
+      providerMessageId: mailMeta.providerMessageId || "",
     }).catch(() => null);
+  }
+  if (mailOk) {
+    logOtpSendEvent("login_mail_accepted", {
+      ok: true,
+      requestId,
+      role,
+      emailMasked: maskEmailForLog(profile.email || email),
+      provider: mailMeta.provider || "resend",
+      providerMessageId: mailMeta.providerMessageId || "",
+    });
   }
   const payload = clientOtpSendPayload({
     mailOk,
@@ -812,12 +877,14 @@ async function handleLoginSendOtp(body, res) {
     successMessage: `登录验证码已发送至 ${maskEmailHint(profile.email || email)}。请同时检查垃圾箱，并确认选择了正确的端。`,
     genericMessage: generic.message,
   });
-  return json(res, payload.ok ? 200 : 503, {
+  const responseBody = {
     ...payload,
     expiresInSec: Math.floor(OTP_TTL_MS / 1000),
-    retryAfterSec: otpRetryAfterSec(),
     role,
-  });
+    requestId,
+  };
+  if (payload.ok) responseBody.retryAfterSec = otpRetryAfterSec();
+  return json(res, payload.ok ? 200 : 503, responseBody);
 }
 
 async function handleLoginWithOtp(body, res) {
@@ -960,6 +1027,7 @@ export async function assertRegisterEmailVerified(emailRaw, tokenRaw, roleRaw = 
 }
 
 async function handleSendRegisterOtp(body, res) {
+  const requestId = newOtpRequestId();
   const role = normalizeForgotRole(body.role || "companion");
   if (role !== "companion" && role !== "boss") {
     return json(res, 400, { ok: false, message: "该端不支持邮箱注册验证码。" });
@@ -1015,7 +1083,7 @@ async function handleSendRegisterOtp(body, res) {
   let mailError = "";
   let mailMeta = { provider: "", providerMessageId: "" };
   try {
-    const sendResult = await sendEmailOtp({ to: email, code, purpose: "register", roleLabel: roleLabelOf(role) });
+    const sendResult = await sendEmailOtp({ to: email, code, purpose: "register", roleLabel: roleLabelOf(role), requestId });
     mailMeta = extractMailProviderMeta(sendResult);
     mailOk = true;
   } catch (err) {
@@ -1029,19 +1097,36 @@ async function handleSendRegisterOtp(body, res) {
         ok: false,
         message: "验证码存储失败，请稍后重试。",
         mail: publicMailHint(),
-        retryAfterSec: otpRetryAfterSec(),
+        requestId,
       });
     }
   } else {
-    console.error("[auth/send_register_otp] mail failed", mailError, mailProviderStatus());
+    logOtpSendEvent("register_mail_failed", {
+      ok: false,
+      requestId,
+      role,
+      emailMasked: maskEmailForLog(email),
+      provider: mailMeta.provider || "",
+      error: String(mailError || "").slice(0, 240),
+    });
     await recordOtpSendFailure({
       accountKey: email,
       role,
       kind: "register_otp",
-      code,
       error: mailError,
       provider: mailMeta.provider,
+      providerMessageId: mailMeta.providerMessageId || "",
     }).catch(() => null);
+  }
+  if (mailOk) {
+    logOtpSendEvent("register_mail_accepted", {
+      ok: true,
+      requestId,
+      role,
+      emailMasked: maskEmailForLog(email),
+      provider: mailMeta.provider || "resend",
+      providerMessageId: mailMeta.providerMessageId || "",
+    });
   }
   const payload = clientOtpSendPayload({
     mailOk,
@@ -1051,12 +1136,14 @@ async function handleSendRegisterOtp(body, res) {
     successMessage: `注册验证码已发送至 ${maskEmailHint(email)}。请同时检查垃圾箱。`,
     genericMessage: "如邮箱可用，将收到注册验证码，请查收后继续。",
   });
-  return json(res, payload.ok ? 200 : 503, {
+  const responseBody = {
     ...payload,
     expiresInSec: Math.floor(OTP_TTL_MS / 1000),
-    retryAfterSec: otpRetryAfterSec(),
     role,
-  });
+    requestId,
+  };
+  if (payload.ok) responseBody.retryAfterSec = otpRetryAfterSec();
+  return json(res, payload.ok ? 200 : 503, responseBody);
 }
 
 async function handleVerifyRegisterOtp(body, res) {

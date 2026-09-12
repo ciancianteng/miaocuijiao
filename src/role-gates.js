@@ -1588,6 +1588,8 @@
               if (!r.ok || j.ok === false) {
                 var err = new Error((j && j.message) || "发送失败");
                 err.retryAfterSec = j && j.retryAfterSec;
+                err.status = r.status;
+                err.code = j && j.code;
                 throw err;
               }
               return j;
@@ -1615,8 +1617,9 @@
           })
           .catch(function (err) {
             var retry = Number(err && err.retryAfterSec) || 0;
-            if (retry > 0 && Cd) Cd.setCooldown("send_login_otp", role, otpEmail, retry);
-            if (retry > 0) {
+            var rateLimited = Number(err && err.status) === 429 || String((err && err.code) || "") === "OTP_RESEND_COOLDOWN";
+            if (rateLimited && retry > 0 && Cd) Cd.setCooldown("send_login_otp", role, otpEmail, retry);
+            if (rateLimited && retry > 0) {
               sendOtpBtn.disabled = true;
               sendOtpBtn.textContent = retry + "s";
               var deadline = Date.now() + retry * 1000;
@@ -1682,6 +1685,8 @@
               if (!r.ok || j.ok === false) {
                 var err = new Error((j && j.message) || "发送失败");
                 err.retryAfterSec = j && j.retryAfterSec;
+                err.status = r.status;
+                err.code = j && j.code;
                 throw err;
               }
               return j;
@@ -1709,8 +1714,9 @@
           })
           .catch(function (err) {
             var retry = Number(err && err.retryAfterSec) || 0;
-            if (retry > 0 && CdReg) CdReg.setCooldown("send_register_otp", regRole, regEmail, retry);
-            if (retry > 0) {
+            var rateLimited = Number(err && err.status) === 429 || String((err && err.code) || "") === "OTP_RESEND_COOLDOWN";
+            if (rateLimited && retry > 0 && CdReg) CdReg.setCooldown("send_register_otp", regRole, regEmail, retry);
+            if (rateLimited && retry > 0) {
               sendRegOtpBtn.disabled = true;
               var deadline = Date.now() + retry * 1000;
               sendRegOtpBtn.textContent = retry + "s";
