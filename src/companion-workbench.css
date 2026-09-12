@@ -481,8 +481,9 @@ a.pw-btn{display:inline-flex;align-items:center;justify-content:center;text-deco
   .pw-bottom-nav{position:fixed;left:0;right:0;bottom:0;z-index:45;display:grid;grid-template-columns:repeat(5,1fr);gap:4px;padding:8px max(8px,env(safe-area-inset-left)) calc(8px + env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-right));border-top:1px solid var(--pw-line);background:rgba(12,11,16,.96);backdrop-filter:blur(10px)}
   .pw-shell.is-isolation .pw-bottom-nav{grid-template-columns:repeat(3,1fr)}
   .pw-shell.is-drawer-open .pw-bottom-nav{pointer-events:none}
-  .pw-bottom-nav button{height:44px;border:0;border-radius:12px;background:transparent;color:var(--pw-muted);font-size:11px;padding:0 2px;line-height:1.2}
-  .pw-bottom-nav button.active{background:var(--pw-pink-soft);color:#fff}
+  /* Higher specificity than .pw-app button:not(...) so Production tab chrome wins */
+  .pw-app .pw-bottom-nav button{height:44px;border:0;border-radius:12px;background:transparent;color:var(--pw-muted);font-size:11px;padding:0 2px;line-height:1.2}
+  .pw-app .pw-bottom-nav button.active{background:var(--pw-pink-soft);color:#fff}
 }
 @media (max-width:414px){
   .pw-page{padding-left:14px;padding-right:14px}
@@ -619,7 +620,10 @@ a.pw-btn{display:inline-flex;align-items:center;justify-content:center;text-deco
   background:rgba(255,145,195,.95);
 }
 .pw-app input[type="radio"]:checked::before{transform:scale(1)}
-.pw-app button:not(.pw-btn):not(.pw-nav button):not(.pw-tab){
+/* Do NOT style shell chrome (side nav / bottom nav / tabs) — those have their own rules.
+   :not(.pw-nav button) already spares desktop side nav; bottom nav must be excluded too
+   or mobile tabs become 5 pink-border chips and lose .active background. */
+.pw-app button:not(.pw-btn):not(.pw-nav button):not(.pw-bottom-nav button):not(.pw-tab){
   border:1px solid rgba(255,145,195,.35);
   background:rgba(12,10,16,.92);
   color:#fff;
