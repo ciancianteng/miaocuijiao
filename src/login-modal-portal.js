@@ -50,6 +50,27 @@
     return window.MCJAuthShell || null;
   }
 
+  /** Strip #login / #register without pushing history (replaceState does not fire hashchange). */
+  function clearAuthHash() {
+    try {
+      if (/^#(login|register)$/i.test(location.hash || "")) {
+        history.replaceState(null, "", location.pathname + location.search);
+      }
+    } catch (e) {}
+  }
+
+  function isAuthModalOpen() {
+    var modal = document.getElementById("modal");
+    var body = document.getElementById("modalBody");
+    return !!(
+      modal &&
+      modal.classList.contains("open") &&
+      body &&
+      body.querySelector &&
+      body.querySelector(".boss-login-modal")
+    );
+  }
+
   function prepareAuthSurface(root, opts) {
     var shell = authShell();
     if (shell && typeof shell.prepareAuthForm === "function") {
@@ -108,7 +129,8 @@
   function closeModal() {
     var modal = document.getElementById("modal");
     var body = document.getElementById("modalBody");
-    if (body && body.querySelector && body.querySelector(".boss-login-modal")) {
+    var wasAuth = !!(body && body.querySelector && body.querySelector(".boss-login-modal"));
+    if (wasAuth) {
       clearAuthSurface(body);
       body.innerHTML = "";
     }
@@ -117,6 +139,9 @@
       if (dialog) dialog.classList.remove("is-auth-dialog");
       modal.classList.remove("open");
     }
+    // Always drop auth hash on close — otherwise Back re-lands on #login and
+    // reopens the dialog (wiping in-progress OTP / registerToken state).
+    clearAuthHash();
     unlockBodyScroll();
   }
 
@@ -139,11 +164,7 @@
   function openLogin(mode) {
     if (isBossLoggedIn()) {
       closeModal();
-      try {
-        if (/^#(login|register)$/i.test(location.hash || "")) {
-          history.replaceState(null, "", location.pathname + location.search);
-        }
-      } catch (e) {}
+      clearAuthHash();
       return null;
     }
     var want = mode === "register" ? "register" : "login";
@@ -151,22 +172,30 @@
       typeof window.bossLoginHtml === "function"
         ? window.bossLoginHtml(want)
         : '<div class="boss-login-modal" data-auth-mode="login"><h2>登录 MEOW CUI JIAO</h2><p class="muted">邮箱验证码登录（也可使用密码）。</p><div class="login-tabs"><button class="login-tab active" type="button" data-login-tab="otp">验证码登录</button><button class="login-tab" type="button" data-login-tab="email">密码登录</button></div><div class="login-panel active" data-login-panel="otp"><label class="wide">邮箱<input id="loginOtpEmail" type="email" inputmode="email" autocomplete="email" placeholder="请输入邮箱" value=""></label><label class="wide">验证码<div class="login-code-row"><input id="loginOtpCode" name="otp" type="text" inputmode="numeric" autocomplete="one-time-code" data-auth-code="1" data-auth-sensitive="1" placeholder="6 位验证码" maxlength="6" value=""><button class="login-small-btn" type="button" data-send-login-otp data-login-role="boss">获取验证码</button></div></label><button class="login-submit" type="button" data-login-confirm data-login-method="otp">验证码登录</button></div><div class="login-panel" data-login-panel="email"><label class="wide">邮箱<input id="loginGmail" type="email" inputmode="email" autocomplete="email" placeholder="请输入邮箱" value=""></label><label class="wide">密码<input id="loginGmailCode" type="password" autocomplete="current-password" data-auth-sensitive="1" placeholder="请输入密码" value=""></label><button class="login-submit" type="button" data-login-confirm data-login-method="email">密码登录</button></div><p id="loginState" data-login-error></p></div>';
-    return openModal(html, { auth: true });
+    var opened = openModal(html, { auth: true });
+    // Never leave #login in the address bar while the dialog is open.
+    clearAuthHash();
+    return opened;
   }
 
   function handleHashLogin() {
     var hash = String(location.hash || "")
       .replace(/^#/, "")
       .toLowerCase();
-    if (hash !== "login" && hash !== "register") return;
+    // Left #login/#register (e.g. browser Back) — dismiss auth dialog; do not reopen.
+    if (hash !== "login" && hash !== "register") {
+      if (isAuthModalOpen()) closeModal();
+      return;
+    }
     if (isBossLoggedIn()) {
-      try {
-        history.replaceState(null, "", location.pathname + location.search);
-      } catch (e) {}
+      clearAuthHash();
       return;
     }
     var y = window.scrollY || window.pageYOffset || 0;
     openLogin(hash === "register" ? "register" : "login");
+    // Consume the auth hash so history no longer contains #login. Otherwise
+    // every Back into this entry reopens the modal and clears OTP/registerToken.
+    clearAuthHash();
     window.scrollTo(0, y);
   }
 
@@ -179,6 +208,7 @@
     unlockBodyScroll: unlockBodyScroll,
     prepareAuthSurface: prepareAuthSurface,
     clearAuthSurface: clearAuthSurface,
+    clearAuthHash: clearAuthHash,
   };
 
   function boot() {
