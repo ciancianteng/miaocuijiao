@@ -1,0 +1,66 @@
+name: Promote Production cc56689
+
+# One-shot: deploy git sha cc56689 (PR #134) to Vercel Production.
+# Uses true --prod (Production env vars). Does NOT alias Staging preview to prod domains.
+on:
+  push:
+    branches:
+      - cursor/prod-promote-cc56689-36a7
+    paths:
+      - .github/workflows/promote-production-cc56689.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  deployments: read
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout release cc56689
+        uses: actions/checkout@v4
+        with:
+          ref: cc5668900119180b2b62d3a606c1d5f521e1b72e
+
+      - name: Deploy to Vercel Production
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_SCOPE: ciancianteng-4581s-projects
+          VERCEL_PROJECT: meow-cuijiao-homepage
+          EXPECT_SHA: cc5668900119180b2b62d3a606c1d5f521e1b72e
+        run: |
+          set -euo pipefail
+          if [ -z "${VERCEL_TOKEN:-}" ]; then
+            echo "::error::VERCEL_TOKEN secret is not set"
+            exit 1
+          fi
+          HEAD="$(git rev-parse HEAD)"
+          echo "Checked out HEAD=$HEAD"
+          if [ "$HEAD" != "$EXPECT_SHA" ]; then
+            echo "::error::Expected $EXPECT_SHA but got $HEAD"
+            exit 1
+          fi
+          npm i -g vercel@58.5.1
+          mkdir -p /tmp/vercel-promote
+          echo "y" | vercel link --yes --project "$VERCEL_PROJECT" --scope "$VERCEL_SCOPE" --token "$VERCEL_TOKEN" \
+            >/tmp/vercel-promote/link.out 2>/tmp/vercel-promote/link.err || true
+          echo "vercel link: $(head -c 300 /tmp/vercel-promote/link.out || true) $(head -c 300 /tmp/vercel-promote/link.err || true)"
+
+          echo "Deploying Production from $HEAD ..."
+          # True Production deployment (Production env vars), not Preview promote/alias.
+          URL="$(vercel deploy --prod --yes --token "$VERCEL_TOKEN" --scope "$VERCEL_SCOPE" | tee /tmp/vercel-promote/deploy.out | tail -n 1)"
+          echo "Deploy URL: $URL"
+          sleep 8
+          echo "=== deployment build-info ==="
+          curl -sS "${URL%/}/api/build-info" || true
+          echo
+          echo "=== www.meowcuijiao.com build-info ==="
+          for i in 1 2 3 4 5 6 7 8; do
+            INFO="$(curl -sS "https://www.meowcuijiao.com/api/build-info" || true)"
+            echo "attempt $i: $INFO"
+            echo "$INFO" | grep -q "cc56689" && exit 0
+            sleep 5
+          done
+          echo "::error::www.meowcuijiao.com did not show cc56689 after deploy"
+          exit 1
